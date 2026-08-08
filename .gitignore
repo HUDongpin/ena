@@ -1,0 +1,32 @@
+# Dependencies
+/node_modules
+
+# Next.js
+/.next/
+/out/
+
+# Production
+/build
+
+# Local configuration and credentials
+.env*
+!.env.example
+.vercel
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local browser QA artifacts
+/.playwright-cli/
+/output/
+
+# Editors and macOS
+.DS_Store
+*.swp
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
