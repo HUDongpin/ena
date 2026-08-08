@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getLocaleMeta, locales, type Locale } from "./i18n";
+import { siteConfig } from "./site";
 
 export function pageMetadata({
   locale,
@@ -13,7 +14,7 @@ export function pageMetadata({
   description: string;
 }): Metadata {
   return {
-    title: { absolute: `${title} | ENA` },
+    title: { absolute: `${title} | ${siteConfig.brandName}` },
     description,
     alternates: {
       canonical: `/${locale}${path}`,
@@ -22,7 +23,7 @@ export function pageMetadata({
       ),
     },
     openGraph: {
-      title: `${title} | ENA`,
+      title: `${title} | ${siteConfig.brandName}`,
       description,
       url: `/${locale}${path}`,
       locale: getLocaleMeta(locale).htmlLang,

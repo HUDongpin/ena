@@ -1,4 +1,23 @@
-export const locales = ["en", "zh-hant", "zh-hans"] as const;
+import { asianDictionaries } from "./i18n-asian";
+import { globalDictionaries } from "./i18n-global";
+import { westernDictionaries } from "./i18n-western";
+
+export const locales = [
+  "en",
+  "zh-hant",
+  "zh-hans",
+  "es",
+  "fr",
+  "pt",
+  "de",
+  "ar",
+  "ko",
+  "ja",
+  "hi",
+  "ru",
+  "id",
+  "bn",
+] as const;
 
 export type Locale = (typeof locales)[number];
 export type TextDirection = "ltr" | "rtl";
@@ -17,6 +36,17 @@ export const localeMeta: Record<
   en: { label: "English", shortLabel: "EN", htmlLang: "en-HK", dir: "ltr" },
   "zh-hant": { label: "繁體中文", shortLabel: "繁", htmlLang: "zh-Hant-HK", dir: "ltr" },
   "zh-hans": { label: "简体中文", shortLabel: "简", htmlLang: "zh-Hans-CN", dir: "ltr" },
+  es: { label: "Español", shortLabel: "ES", htmlLang: "es", dir: "ltr" },
+  fr: { label: "Français", shortLabel: "FR", htmlLang: "fr", dir: "ltr" },
+  pt: { label: "Português", shortLabel: "PT", htmlLang: "pt", dir: "ltr" },
+  de: { label: "Deutsch", shortLabel: "DE", htmlLang: "de", dir: "ltr" },
+  ar: { label: "العربية", shortLabel: "AR", htmlLang: "ar", dir: "rtl" },
+  ko: { label: "한국어", shortLabel: "KO", htmlLang: "ko", dir: "ltr" },
+  ja: { label: "日本語", shortLabel: "JA", htmlLang: "ja", dir: "ltr" },
+  hi: { label: "हिन्दी", shortLabel: "HI", htmlLang: "hi", dir: "ltr" },
+  ru: { label: "Русский", shortLabel: "RU", htmlLang: "ru", dir: "ltr" },
+  id: { label: "Bahasa Indonesia", shortLabel: "ID", htmlLang: "id", dir: "ltr" },
+  bn: { label: "বাংলা", shortLabel: "BN", htmlLang: "bn", dir: "ltr" },
 };
 
 export interface Dictionary {
@@ -97,31 +127,29 @@ export interface Dictionary {
     eyebrow: string;
     title: string;
     intro: string;
-    purposeTitle: string;
-    purposeText: string;
-    values: Array<{ title: string; text: string }>;
-    boundariesTitle: string;
-    boundariesText: string;
-    resourcesTitle: string;
-    resourcesText: string;
-    webtoolTitle: string;
-    webtoolText: string;
-    libraryTitle: string;
-    libraryText: string;
-    tutorialTitle: string;
-    tutorialText: string;
+    principalLabel: string;
+    personTitle: string;
+    personText: string;
+    focusTitle: string;
+    focusItems: string[];
+    companyTitle: string;
+    companyText: string;
+    productsTitle: string;
+    products: Array<{ name: "MAIS" | "CAIS" | "UAIS"; text: string }>;
+    linksTitle: string;
   };
   footer: {
     description: string;
     navigation: string;
     primaryResources: string;
+    tutorialTitle: string;
     copyright: string;
   };
 }
 
 const en: Dictionary = {
   meta: {
-    siteTitle: "ENA | Epistemic Network Analysis",
+    siteTitle: "ENA.HK | Epistemic Network Analysis",
     siteDescription:
       "A multilingual knowledge site for learning, applying, and discussing Epistemic Network Analysis.",
   },
@@ -207,7 +235,7 @@ const en: Dictionary = {
     eyebrow: "Mission and method",
     title: "Make relational thinking easier to learn, apply, and discuss.",
     intro:
-      "ENA.hk is designed as a clear public entry point to Epistemic Network Analysis, with accurate concepts, transparent scope, and direct paths to primary resources.",
+      "ENA.HK is designed as a clear public entry point to Epistemic Network Analysis, with accurate concepts, transparent scope, and direct paths to primary resources.",
     definitionTitle: "What ENA makes visible",
     definitionText:
       "Epistemic Network Analysis is a method for identifying, quantifying, and visualizing connections among elements in coded data. It supports comparison while keeping interpretation tied to qualitative context.",
@@ -278,52 +306,44 @@ const en: Dictionary = {
     emptyNote: "Begin with the Mission page or the official ENA resources.",
   },
   about: {
-    eyebrow: "About ENA.hk",
-    title: "A focused knowledge site for Epistemic Network Analysis",
-    intro:
-      "ENA.hk provides a multilingual public structure for explaining the method, sharing reviewed updates, and developing a future learning academy.",
-    purposeTitle: "What this site is for",
-    purposeText:
-      "The site is built to help researchers, educators, students, and practitioners find a clear starting point without separating mathematical models from qualitative meaning.",
-    values: [
-      {
-        title: "Clarity",
-        text: "Explain ENA concepts in precise language without hiding important analytic choices.",
-      },
-      {
-        title: "Evidence",
-        text: "Connect summaries and lessons to identifiable primary sources and reviewed materials.",
-      },
-      {
-        title: "Interpretability",
-        text: "Keep network models connected to the coded evidence, context, and claims they support.",
-      },
+    eyebrow: "About",
+    title: "The Initiator of ENA.HK, The Company, & The Products",
+    intro: "Meet Dr. Peter Hu Dongpin and the research and development context behind ENA.HK.",
+    principalLabel: "Initiator",
+    personTitle: "About Dr. Peter Hu Dongpin",
+    personText:
+      "Dr. Peter Hu Dongpin is the initiator of ENA.HK. His work connects Epistemic Network Analysis with learning analytics, collaborative knowledge-building research, and the responsible translation of research into educational practice and technology.",
+    focusTitle: "ENA research and application focus",
+    focusItems: [
+      "Epistemic Network Analysis",
+      "Learning and discourse connections",
+      "Collaborative knowledge building",
+      "Research-to-practice translation",
     ],
-    boundariesTitle: "Scope and source transparency",
-    boundariesText:
-      "ENA.hk is a knowledge site. The ENA webtool and the established project resource library remain the primary destinations for official software access and core project materials.",
-    resourcesTitle: "Primary resources",
-    resourcesText:
-      "These external destinations provide the software, foundational guidance, and peer-reviewed method description.",
-    webtoolTitle: "ENA webtool",
-    webtoolText: "Create and inspect ENA models in the established browser-based analysis environment.",
-    libraryTitle: "ENA resource library",
-    libraryText: "Find getting-started material, data preparation guidance, worked examples, and software links.",
-    tutorialTitle: "Peer-reviewed tutorial",
-    tutorialText: "Read the Journal of Learning Analytics tutorial on identifying and quantifying connections in coded data.",
+    companyTitle: "Company",
+    companyText:
+      "PedaNova Ed-Tech is an R&D company rooted in research-driven educational innovation. Its vision is to advance future-facing educational innovation that improves learning, teaching, and evidence-based growth.",
+    productsTitle: "Products",
+    products: [
+      { name: "MAIS", text: "Mathematic Adaptive Interactive System" },
+      { name: "CAIS", text: "Chinese Adaptive Interactive System" },
+      { name: "UAIS", text: "University Adaptive Interactive System" },
+    ],
+    linksTitle: "R&D links",
   },
   footer: {
     description:
       "A multilingual knowledge site for learning, applying, and discussing Epistemic Network Analysis.",
     navigation: "Navigation",
     primaryResources: "Primary resources",
-    copyright: "© 2026 ENA.hk. All rights reserved.",
+    tutorialTitle: "Peer-reviewed tutorial",
+    copyright: "© 2026 ENA.HK. All rights reserved.",
   },
 };
 
 const zhHant: Dictionary = {
   meta: {
-    siteTitle: "ENA | 認知網絡分析",
+    siteTitle: "ENA.HK | 認知網絡分析",
     siteDescription: "一個用於學習、應用和討論認知網絡分析的多語言知識網站。",
   },
   nav: {
@@ -377,7 +397,7 @@ const zhHant: Dictionary = {
   mission: {
     eyebrow: "使命與方法",
     title: "讓關聯思考更容易學習、應用和討論。",
-    intro: "ENA.hk 旨在成為清晰的認知網絡分析公共入口，提供準確概念、透明範圍，以及通往第一手資源的直接路徑。",
+    intro: "ENA.HK 旨在成為清晰的認知網絡分析公共入口，提供準確概念、透明範圍，以及通往第一手資源的直接路徑。",
     definitionTitle: "ENA 讓甚麼變得可見",
     definitionText: "認知網絡分析是一種用於識別、量化和視覺化編碼資料中各元素連結的方法。它支援比較，同時讓詮釋與質性脈絡保持連結。",
     modelTitle: "模型始於研究設計",
@@ -416,38 +436,38 @@ const zhHant: Dictionary = {
     emptyNote: "可先閱讀使命頁面或瀏覽官方 ENA 資源。",
   },
   about: {
-    eyebrow: "關於 ENA.hk",
-    title: "專注於認知網絡分析的知識網站",
-    intro: "ENA.hk 提供多語言公共架構，用於解釋方法、分享經審核的更新，以及建立未來的學習學院。",
-    purposeTitle: "本網站的用途",
-    purposeText: "本網站協助研究人員、教育工作者、學生和實務工作者找到清晰起點，同時不把數學模型與質性意義分開。",
-    values: [
-      { title: "清晰", text: "以準確語言解釋 ENA 概念，不隱藏重要分析選擇。" },
-      { title: "證據", text: "把摘要和課程連結至可識別的第一手來源和審核材料。" },
-      { title: "可詮釋性", text: "讓網絡模型與其所依據的編碼證據、脈絡和主張保持連結。" },
+    eyebrow: "關於",
+    title: "ENA.HK 的發起人、公司與產品",
+    intro: "認識 Dr. Peter Hu Dongpin，以及 ENA.HK 背後的研究與開發脈絡。",
+    principalLabel: "發起人",
+    personTitle: "關於 Dr. Peter Hu Dongpin",
+    personText:
+      "Dr. Peter Hu Dongpin 是 ENA.HK 的發起人。他的工作把認知網絡分析連結至學習分析、協作知識建構研究，以及把研究負責任地轉化為教育實踐與科技。",
+    focusTitle: "ENA 研究與應用重點",
+    focusItems: ["認知網絡分析", "學習與話語連結", "協作知識建構", "研究轉化為實踐"],
+    companyTitle: "公司",
+    companyText:
+      "PedaNova Ed-Tech 是一家以研究驅動教育創新為基礎的研發公司，致力推進面向未來的教育創新，以改善學習、教學和實證成長。",
+    productsTitle: "產品",
+    products: [
+      { name: "MAIS", text: "數學自適應互動系統" },
+      { name: "CAIS", text: "中文自適應互動系統" },
+      { name: "UAIS", text: "大學自適應互動系統" },
     ],
-    boundariesTitle: "範圍與來源透明度",
-    boundariesText: "ENA.hk 是知識網站。ENA 網頁工具和既有項目資源庫仍是官方軟件和核心項目材料的第一手目的地。",
-    resourcesTitle: "第一手資源",
-    resourcesText: "以下外部網站提供軟件、基礎指南和經同儕評審的方法說明。",
-    webtoolTitle: "ENA 網頁工具",
-    webtoolText: "在既有的瀏覽器分析環境中建立和檢視 ENA 模型。",
-    libraryTitle: "ENA 資源庫",
-    libraryText: "尋找入門材料、資料準備指南、實例和軟件連結。",
-    tutorialTitle: "同儕評審教程",
-    tutorialText: "閱讀《Journal of Learning Analytics》關於識別和量化編碼資料連結的教程。",
+    linksTitle: "研發連結",
   },
   footer: {
     description: "一個用於學習、應用和討論認知網絡分析的多語言知識網站。",
     navigation: "導覽",
     primaryResources: "第一手資源",
-    copyright: "© 2026 ENA.hk。版權所有。",
+    tutorialTitle: "同儕評審教程",
+    copyright: "© 2026 ENA.HK。版權所有。",
   },
 };
 
 const zhHans: Dictionary = {
   meta: {
-    siteTitle: "ENA | 认知网络分析",
+    siteTitle: "ENA.HK | 认知网络分析",
     siteDescription: "一个用于学习、应用和讨论认知网络分析的多语言知识网站。",
   },
   nav: {
@@ -501,7 +521,7 @@ const zhHans: Dictionary = {
   mission: {
     eyebrow: "使命与方法",
     title: "让关联思考更容易学习、应用和讨论。",
-    intro: "ENA.hk 旨在成为清晰的认知网络分析公共入口，提供准确概念、透明范围，以及通往第一手资源的直接路径。",
+    intro: "ENA.HK 旨在成为清晰的认知网络分析公共入口，提供准确概念、透明范围，以及通往第一手资源的直接路径。",
     definitionTitle: "ENA 让什么变得可见",
     definitionText: "认知网络分析是一种用于识别、量化和可视化编码数据中各元素连接的方法。它支持比较，同时让诠释与质性情境保持连接。",
     modelTitle: "模型始于研究设计",
@@ -540,32 +560,32 @@ const zhHans: Dictionary = {
     emptyNote: "可先阅读使命页面或浏览官方 ENA 资源。",
   },
   about: {
-    eyebrow: "关于 ENA.hk",
-    title: "专注于认知网络分析的知识网站",
-    intro: "ENA.hk 提供多语言公共框架，用于解释方法、分享经审核的更新，以及建立未来的学习学院。",
-    purposeTitle: "本网站的用途",
-    purposeText: "本网站协助研究人员、教育工作者、学生和实务工作者找到清晰起点，同时不把数学模型与质性意义分开。",
-    values: [
-      { title: "清晰", text: "以准确语言解释 ENA 概念，不隐藏重要分析选择。" },
-      { title: "证据", text: "把摘要和课程连接至可识别的第一手来源和审核材料。" },
-      { title: "可诠释性", text: "让网络模型与其所依据的编码证据、情境和主张保持连接。" },
+    eyebrow: "关于",
+    title: "ENA.HK 的发起人、公司与产品",
+    intro: "认识 Dr. Peter Hu Dongpin，以及 ENA.HK 背后的研究与开发脉络。",
+    principalLabel: "发起人",
+    personTitle: "关于 Dr. Peter Hu Dongpin",
+    personText:
+      "Dr. Peter Hu Dongpin 是 ENA.HK 的发起人。他的工作把认知网络分析连接至学习分析、协作知识建构研究，以及把研究负责任地转化为教育实践与科技。",
+    focusTitle: "ENA 研究与应用重点",
+    focusItems: ["认知网络分析", "学习与话语连接", "协作知识建构", "研究转化为实践"],
+    companyTitle: "公司",
+    companyText:
+      "PedaNova Ed-Tech 是一家以研究驱动教育创新为基础的研发公司，致力推进面向未来的教育创新，以改善学习、教学和实证成长。",
+    productsTitle: "产品",
+    products: [
+      { name: "MAIS", text: "数学自适应互动系统" },
+      { name: "CAIS", text: "中文自适应互动系统" },
+      { name: "UAIS", text: "大学自适应互动系统" },
     ],
-    boundariesTitle: "范围与来源透明度",
-    boundariesText: "ENA.hk 是知识网站。ENA 网页工具和既有项目资源库仍是官方软件和核心项目材料的第一手目的地。",
-    resourcesTitle: "第一手资源",
-    resourcesText: "以下外部网站提供软件、基础指南和经同行评审的方法说明。",
-    webtoolTitle: "ENA 网页工具",
-    webtoolText: "在既有的浏览器分析环境中建立和检视 ENA 模型。",
-    libraryTitle: "ENA 资源库",
-    libraryText: "寻找入门材料、数据准备指南、实例和软件连接。",
-    tutorialTitle: "同行评审教程",
-    tutorialText: "阅读《Journal of Learning Analytics》关于识别和量化编码数据连接的教程。",
+    linksTitle: "研发链接",
   },
   footer: {
     description: "一个用于学习、应用和讨论认知网络分析的多语言知识网站。",
     navigation: "导航",
     primaryResources: "第一手资源",
-    copyright: "© 2026 ENA.hk。版权所有。",
+    tutorialTitle: "同行评审教程",
+    copyright: "© 2026 ENA.HK。版权所有。",
   },
 };
 
@@ -573,6 +593,9 @@ const dictionaries: Record<Locale, Dictionary> = {
   en,
   "zh-hant": zhHant,
   "zh-hans": zhHans,
+  ...westernDictionaries,
+  ...globalDictionaries,
+  ...asianDictionaries,
 };
 
 export function isLocale(value: string): value is Locale {

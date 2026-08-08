@@ -41,7 +41,7 @@ export async function generateMetadata({
     },
     openGraph: {
       type: "website",
-      siteName: "ENA",
+      siteName: siteConfig.brandName,
       title: dictionary.meta.siteTitle,
       description: dictionary.meta.siteDescription,
       locale: getLocaleMeta(typedLocale).htmlLang,
@@ -60,8 +60,8 @@ export default async function LocaleLayout({ children, params }: LocaleLayoutPro
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "WebSite",
-    name: siteConfig.name,
-    alternateName: siteConfig.longName,
+    name: siteConfig.brandName,
+    alternateName: [siteConfig.name, siteConfig.longName, siteConfig.tagline],
     url: siteConfig.url,
     description: dictionary.meta.siteDescription,
     inLanguage: meta.htmlLang,

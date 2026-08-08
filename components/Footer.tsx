@@ -19,7 +19,7 @@ export default function Footer({ locale, dictionary }: FooterProps) {
   const resourceItems = [
     { href: siteConfig.officialWebtoolUrl, label: dictionary.common.openWebtool },
     { href: siteConfig.officialResourcesUrl, label: dictionary.common.browseResources },
-    { href: siteConfig.tutorialUrl, label: dictionary.about.tutorialTitle },
+    { href: siteConfig.tutorialUrl, label: dictionary.footer.tutorialTitle },
   ];
 
   return (

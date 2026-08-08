@@ -18,11 +18,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
   title: {
-    default: "ENA | Epistemic Network Analysis",
-    template: "%s | ENA",
+    default: "ENA.HK | Epistemic Network Analysis",
+    template: "%s | ENA.HK",
   },
   description: siteConfig.description,
-  applicationName: "ENA",
+  applicationName: "ENA.HK",
   icons: {
     icon: "/icon.svg",
     shortcut: "/icon.svg",
@@ -30,15 +30,15 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   openGraph: {
     type: "website",
-    siteName: "ENA",
-    title: "ENA | Epistemic Network Analysis",
+    siteName: "ENA.HK",
+    title: "ENA.HK | Epistemic Network Analysis",
     description: siteConfig.description,
     url: siteConfig.url,
-    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "ENA, Epistemic Network Analysis" }],
+    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "ENA.HK, Epistemic Network Analysis Hub of Knowledge" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ENA | Epistemic Network Analysis",
+    title: "ENA.HK | Epistemic Network Analysis",
     description: siteConfig.description,
     images: ["/opengraph-image"],
   },

@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "ENA, Epistemic Network Analysis";
+export const alt = "ENA.HK, Epistemic Network Analysis Hub of Knowledge";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -20,8 +20,8 @@ export default function OpenGraphImage() {
         height: "100%",
         display: "flex",
         alignItems: "stretch",
-        background: "#f4f8f7",
-        color: "#20332f",
+        background: "#f6fbfa",
+        color: "#1f293d",
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
@@ -40,49 +40,49 @@ export default function OpenGraphImage() {
               width: 76,
               height: 76,
               borderRadius: 18,
-              border: "2px solid #c8ddd8",
-              background: "#eef7f5",
+              border: "2px solid #d7eeea",
+              background: "#eef9f7",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "#2d4b46",
+              color: "#1f293d",
               fontSize: 28,
               fontWeight: 800,
             }}
           >
             ENA
           </div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: "#5b716c" }}>
-            Epistemic Network Analysis
+          <div style={{ width: 430, fontSize: 20, lineHeight: 1.2, fontWeight: 700, color: "#6f7c91" }}>
+            Epistemic Network Analysis Hub of Knowledge
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
           <div style={{ fontSize: 72, lineHeight: 0.98, fontWeight: 800, letterSpacing: -4 }}>
             See how ideas connect.
           </div>
-          <div style={{ fontSize: 27, lineHeight: 1.35, color: "#526964", maxWidth: 555 }}>
+          <div style={{ fontSize: 27, lineHeight: 1.35, color: "#3e4b63", maxWidth: 555 }}>
             A multilingual knowledge site for learning, applying, and discussing ENA.
           </div>
         </div>
-        <div style={{ fontSize: 22, color: "#526964", fontWeight: 700 }}>www.ena.hk</div>
+        <div style={{ fontSize: 22, color: "#3e4b63", fontWeight: 700 }}>www.ena.hk</div>
       </div>
       <div
         style={{
           width: 510,
           position: "relative",
-          background: "#263431",
-          borderLeft: "8px solid #56b09d",
+          background: "#1f293d",
+          borderLeft: "8px solid #72c7bd",
           display: "flex",
         }}
       >
         <div
-          style={{ position: "absolute", left: 48, top: 90, width: 380, height: 6, background: "#56b09d", transform: "rotate(-12deg)", opacity: 0.65 }}
+          style={{ position: "absolute", left: 48, top: 90, width: 380, height: 6, background: "#72c7bd", transform: "rotate(-12deg)", opacity: 0.65 }}
         />
         <div
-          style={{ position: "absolute", left: 126, top: 285, width: 350, height: 12, background: "#56b09d", transform: "rotate(20deg)", opacity: 0.9 }}
+          style={{ position: "absolute", left: 126, top: 285, width: 350, height: 12, background: "#72c7bd", transform: "rotate(20deg)", opacity: 0.9 }}
         />
         <div
-          style={{ position: "absolute", left: 178, top: 158, width: 298, height: 5, background: "#8fbdb3", transform: "rotate(68deg)", opacity: 0.55 }}
+          style={{ position: "absolute", left: 178, top: 158, width: 298, height: 5, background: "#66bfb5", transform: "rotate(68deg)", opacity: 0.55 }}
         />
         {nodes.map((node, index) => (
           <div
@@ -94,8 +94,8 @@ export default function OpenGraphImage() {
               width: index === 2 ? 86 : 66,
               height: index === 2 ? 86 : 66,
               borderRadius: 999,
-              border: "6px solid #56b09d",
-              background: index === 2 ? "#56b09d" : "#263431",
+              border: "6px solid #72c7bd",
+              background: index === 2 ? "#72c7bd" : "#1f293d",
               display: "flex",
             }}
           />

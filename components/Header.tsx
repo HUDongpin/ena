@@ -2,13 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
-import {
-  localeMeta,
-  locales,
-  type Dictionary,
-  type Locale,
-} from "@/lib/i18n";
+import { Suspense, useState } from "react";
+import { type Dictionary, type Locale } from "@/lib/i18n";
+import LanguageSwitcher, { LanguageSwitcherFallback } from "./LanguageSwitcher";
 import Logo from "./Logo";
 
 interface HeaderProps {
@@ -18,13 +14,6 @@ interface HeaderProps {
 
 function normalizePath(path: string) {
   return path.replace(/\/$/, "") || "/";
-}
-
-function localizedPath(pathname: string, locale: Locale) {
-  const segments = pathname.split("/").filter(Boolean);
-  if (segments.length === 0) return `/${locale}`;
-  segments[0] = locale;
-  return `/${segments.join("/")}`;
 }
 
 export default function Header({ locale, dictionary }: HeaderProps) {
@@ -47,7 +36,6 @@ export default function Header({ locale, dictionary }: HeaderProps) {
 
   return (
     <header className="site-header">
-      <div className="status-strip" aria-hidden="true" />
       <div className="container header-inner">
         <Logo locale={locale} />
         <nav className="desktop-nav" aria-label="Primary navigation">
@@ -62,18 +50,10 @@ export default function Header({ locale, dictionary }: HeaderProps) {
             </Link>
           ))}
         </nav>
-        <div className="locale-links" aria-label={dictionary.nav.language}>
-          {locales.map((item) => (
-            <Link
-              key={item}
-              href={localizedPath(pathname, item)}
-              hrefLang={localeMeta[item].htmlLang}
-              aria-current={item === locale ? "true" : undefined}
-              className="locale-link focus-ring"
-            >
-              {localeMeta[item].shortLabel}
-            </Link>
-          ))}
+        <div className="desktop-language">
+          <Suspense fallback={<LanguageSwitcherFallback locale={locale} label={dictionary.nav.language} />}>
+            <LanguageSwitcher locale={locale} label={dictionary.nav.language} />
+          </Suspense>
         </div>
         <button
           type="button"
@@ -103,18 +83,14 @@ export default function Header({ locale, dictionary }: HeaderProps) {
             </Link>
           ))}
           <div className="mobile-locales" aria-label={dictionary.nav.language}>
-            {locales.map((item) => (
-              <Link
-                key={item}
-                href={localizedPath(pathname, item)}
-                hrefLang={localeMeta[item].htmlLang}
-                aria-current={item === locale ? "true" : undefined}
-                className="mobile-locale-link focus-ring"
-                onClick={() => setOpen(false)}
-              >
-                {localeMeta[item].label}
-              </Link>
-            ))}
+            <Suspense fallback={<LanguageSwitcherFallback locale={locale} label={dictionary.nav.language} />}>
+              <LanguageSwitcher
+                locale={locale}
+                label={dictionary.nav.language}
+                align="left"
+                onSelect={() => setOpen(false)}
+              />
+            </Suspense>
           </div>
         </nav>
       </div>

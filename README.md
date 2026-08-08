@@ -1,6 +1,6 @@
-# ENA Hong Kong
+# ENA.HK
 
-The public website for [www.ena.hk](https://www.ena.hk), focused on Epistemic Network Analysis.
+The [Epistemic Network Analysis Hub of Knowledge](https://www.ena.hk).
 
 ## Structure
 
@@ -13,6 +13,10 @@ The site follows the public information architecture of AIEDHK while using an or
 - About
 
 News and Academy intentionally start with empty, publication-ready states.
+
+The interface supports the same 14 languages as AIEDHK: English, Traditional Chinese,
+Simplified Chinese, Spanish, French, Portuguese, German, Arabic, Korean, Japanese,
+Hindi, Russian, Indonesian, and Bengali.
 
 ## Local development
 
