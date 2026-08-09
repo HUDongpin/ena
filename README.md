@@ -12,7 +12,10 @@ The site follows the public information architecture of AIEDHK while using an or
 - Academy
 - About
 
-News and Academy intentionally start with empty, publication-ready states.
+News is a reviewed collection of ENA research summaries. Academy is a progressive
+tutorial collection with searchable track and level filters, localized index and detail
+interfaces, an English reviewed-content fallback, and downloadable synthetic practice
+data for learning the ENA workflow.
 
 The interface supports the same 14 languages as AIEDHK: English, Traditional Chinese,
 Simplified Chinese, Spanish, French, Portuguese, German, Arabic, Korean, Japanese,

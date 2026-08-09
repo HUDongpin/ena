@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { academyLessons } from "@/lib/academy-data";
 import { locales } from "@/lib/i18n";
 import { newsArticles } from "@/lib/news-data";
 import { getNewsTopics } from "@/lib/news-topics";
@@ -47,5 +48,19 @@ export default function sitemap(): MetadataRoute.Sitemap {
     }))
   );
 
-  return [...indexRoutes, ...articleRoutes, ...topicRoutes];
+  const academyRoutes = academyLessons.flatMap((lesson) =>
+    locales.map((locale) => ({
+      url: `${siteConfig.url}/${locale}/academy/${lesson.slug}`,
+      lastModified: lesson.publishedAt,
+      changeFrequency: "monthly" as const,
+      priority: 0.75,
+      alternates: {
+        languages: Object.fromEntries(
+          locales.map((item) => [item, `${siteConfig.url}/${item}/academy/${lesson.slug}`])
+        ),
+      },
+    }))
+  );
+
+  return [...indexRoutes, ...articleRoutes, ...topicRoutes, ...academyRoutes];
 }

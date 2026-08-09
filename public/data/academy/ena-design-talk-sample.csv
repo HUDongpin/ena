@@ -1,0 +1,49 @@
+team_id,condition,discussion_round,conversation_id,line_number,speaker,utterance,goal,evidence,strategy,tradeoff,revision
+team-01,baseline,round-1,team-01-round-1,1,A,The activity should help students explain their reasoning,1,0,0,0,0
+team-01,baseline,round-1,team-01-round-1,2,B,Several exit tickets only state the answer,0,1,0,0,0
+team-01,baseline,round-1,team-01-round-1,3,A,We could add a prompt for justification,0,0,1,0,0
+team-01,baseline,round-1,team-01-round-1,4,B,That prompt may take more class time,0,0,0,1,0
+team-01,baseline,round-1,team-01-round-1,5,A,A worked example could prepare students,0,0,1,0,0
+team-01,baseline,round-1,team-01-round-1,6,B,Let us revise the prompt and test it,0,0,1,0,1
+team-02,baseline,round-1,team-02-round-1,1,A,We want feedback students can use independently,1,0,0,0,0
+team-02,baseline,round-1,team-02-round-1,2,B,The current comments repeat the score,0,1,0,0,0
+team-02,baseline,round-1,team-02-round-1,3,A,We could give one next-step sentence,0,0,1,0,0
+team-02,baseline,round-1,team-02-round-1,4,B,Teachers may not have time to write it,0,0,0,1,0
+team-02,baseline,round-1,team-02-round-1,5,A,A short comment bank might help,0,0,1,0,0
+team-02,baseline,round-1,team-02-round-1,6,B,We will revise the bank after a trial,0,0,1,0,1
+team-03,baseline,round-1,team-03-round-1,1,A,The goal is to make peer feedback specific,1,0,0,0,0
+team-03,baseline,round-1,team-03-round-1,2,B,Students often write only good job,0,1,0,0,0
+team-03,baseline,round-1,team-03-round-1,3,A,We can provide two question stems,0,0,1,0,0
+team-03,baseline,round-1,team-03-round-1,4,B,Too many stems may make talk mechanical,0,0,0,1,0
+team-03,baseline,round-1,team-03-round-1,5,A,We should model one example first,0,0,1,0,0
+team-03,baseline,round-1,team-03-round-1,6,B,Then we can revise the stems together,0,0,1,0,1
+team-04,baseline,round-1,team-04-round-1,1,A,Students should connect claims to evidence,1,0,0,0,0
+team-04,baseline,round-1,team-04-round-1,2,B,Their drafts contain claims without examples,0,1,0,0,0
+team-04,baseline,round-1,team-04-round-1,3,A,We could add an evidence checklist,0,0,1,0,0
+team-04,baseline,round-1,team-04-round-1,4,B,A checklist could encourage box ticking,0,0,0,1,0
+team-04,baseline,round-1,team-04-round-1,5,A,Maybe students explain one checklist choice,0,0,1,0,0
+team-04,baseline,round-1,team-04-round-1,6,B,We will revise the checklist to require that explanation,0,0,1,0,1
+team-05,scaffolded,round-1,team-05-round-1,1,A,Our goal is an explanation that uses evidence,1,1,0,0,0
+team-05,scaffolded,round-1,team-05-round-1,2,B,Exit tickets show answers without reasons so we need a justification prompt,0,1,1,0,0
+team-05,scaffolded,round-1,team-05-round-1,3,A,A longer prompt supports reasoning but reduces practice time,0,0,1,1,0
+team-05,scaffolded,round-1,team-05-round-1,4,B,We can ask for one reason and one example,0,1,1,0,0
+team-05,scaffolded,round-1,team-05-round-1,5,A,That keeps the goal while managing time,1,0,1,1,0
+team-05,scaffolded,round-1,team-05-round-1,6,B,Let us revise the activity and check new exit tickets,0,1,1,0,1
+team-06,scaffolded,round-1,team-06-round-1,1,A,We want students to act on feedback without waiting for a score,1,0,0,0,0
+team-06,scaffolded,round-1,team-06-round-1,2,B,Current comments repeat scores and students make no revision,0,1,0,0,1
+team-06,scaffolded,round-1,team-06-round-1,3,A,A next-step prompt could connect the comment to action,0,1,1,0,0
+team-06,scaffolded,round-1,team-06-round-1,4,B,Individual comments are useful but take teacher time,0,0,1,1,0
+team-06,scaffolded,round-1,team-06-round-1,5,A,We can use a small verified comment bank with teacher choice,0,1,1,1,0
+team-06,scaffolded,round-1,team-06-round-1,6,B,We will revise the bank after comparing student changes,0,1,1,0,1
+team-07,scaffolded,round-1,team-07-round-1,1,A,The goal is specific peer feedback that supports revision,1,0,0,0,1
+team-07,scaffolded,round-1,team-07-round-1,2,B,Students write good job because criteria are not visible,0,1,0,0,0
+team-07,scaffolded,round-1,team-07-round-1,3,A,Two question stems can connect comments to the criteria,0,1,1,0,0
+team-07,scaffolded,round-1,team-07-round-1,4,B,Too many stems could make the exchange mechanical,0,0,1,1,0
+team-07,scaffolded,round-1,team-07-round-1,5,A,We can model one stem and let students choose the other,0,1,1,1,0
+team-07,scaffolded,round-1,team-07-round-1,6,B,We will revise the protocol after reviewing the comments,0,1,1,0,1
+team-08,scaffolded,round-1,team-08-round-1,1,A,Students should connect each claim with relevant evidence,1,1,0,0,0
+team-08,scaffolded,round-1,team-08-round-1,2,B,Drafts show examples that do not support the claim,0,1,0,0,0
+team-08,scaffolded,round-1,team-08-round-1,3,A,An evidence check can ask how each example supports the claim,0,1,1,0,0
+team-08,scaffolded,round-1,team-08-round-1,4,B,A fixed checklist might hide unexpected but valid evidence,0,0,1,1,0
+team-08,scaffolded,round-1,team-08-round-1,5,A,We can keep an open explanation field for that tradeoff,0,1,1,1,0
+team-08,scaffolded,round-1,team-08-round-1,6,B,We will revise the check after reading the explanations,0,1,1,0,1

@@ -39,11 +39,17 @@ test("the locale set matches the complete AIEDHK language menu", () => {
   assert.equal(localeMeta.ar.dir, "rtl");
 });
 
-test("News launches with six reviewed ENA articles while Academy remains empty", () => {
+test("News and Academy expose their reviewed launch collections", () => {
   assert.equal(newsItems.length, 6);
   assert.equal(newsItems.filter((article) => article.type === "journal").length, 3);
   assert.equal(newsItems.filter((article) => article.type === "conference").length, 3);
-  assert.equal(academyLessons.length, 0);
+  assert.equal(academyLessons.length, 4);
+  assert.deepEqual(academyLessons.map((lesson) => lesson.id), [
+    "academy-001",
+    "academy-002",
+    "academy-003",
+    "academy-004",
+  ]);
 });
 
 test("every locale exposes the five requested navigation destinations", () => {
@@ -103,7 +109,7 @@ test("visible dictionary copy contains no long dash characters", () => {
   }
 });
 
-test("the locale route tree includes reviewed News details but no Academy details", () => {
+test("the locale route tree includes reviewed News and Academy details", () => {
   for (const route of publicRoutes) {
     const path = route
       ? join(projectRoot, "app", "[locale]", route, "page.tsx")
@@ -113,7 +119,7 @@ test("the locale route tree includes reviewed News details but no Academy detail
 
   assert.equal(existsSync(join(projectRoot, "app", "[locale]", "news", "[slug]", "page.tsx")), true);
   assert.equal(existsSync(join(projectRoot, "app", "[locale]", "news", "topic", "[slug]", "page.tsx")), true);
-  assert.equal(existsSync(join(projectRoot, "app", "[locale]", "academy", "[slug]")), false);
+  assert.equal(existsSync(join(projectRoot, "app", "[locale]", "academy", "[slug]", "page.tsx")), true);
 });
 
 test("ENA logo assets use the Yanzi mint palette and remain free of AIEDHK branding", () => {
@@ -150,7 +156,7 @@ test("the ENA About page carries the Dr. Peter profile topology", () => {
   assert.equal(existsSync(join(projectRoot, "public", "images", "about", "dr-peter-hu-dongpin.png")), true);
 });
 
-test("sitemap publishes News detail and topic routes while Academy remains an index", () => {
+test("sitemap publishes News and Academy detail routes", () => {
   const sitemapSource = readFileSync(join(projectRoot, "app", "sitemap.ts"), "utf8");
   assert.match(sitemapSource, /mission/);
   assert.match(sitemapSource, /news/);
@@ -158,5 +164,6 @@ test("sitemap publishes News detail and topic routes while Academy remains an in
   assert.match(sitemapSource, /about/);
   assert.match(sitemapSource, /newsArticles/);
   assert.match(sitemapSource, /getNewsTopics/);
-  assert.doesNotMatch(sitemapSource, /academyLessons/);
+  assert.match(sitemapSource, /academyLessons/);
+  assert.match(sitemapSource, /academyRoutes/);
 });

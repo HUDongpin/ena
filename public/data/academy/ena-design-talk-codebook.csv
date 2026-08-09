@@ -1,0 +1,6 @@
+code,definition,inclusion_rule,exclusion_rule,positive_example
+goal,A desired learning or activity outcome,Code when the speaker states what the activity or feedback should accomplish,Do not code a proposed procedure unless the intended outcome is also stated,The activity should help students explain their reasoning
+evidence,Observed information used to characterize the current situation or judge a proposal,Code references to student work behavior records or an explicit basis for a judgment,Do not code unsupported predictions or general preferences,Several exit tickets only state the answer
+strategy,A proposed action tool prompt routine or design response,Code a concrete way to pursue the goal or address the evidence,Do not code a problem description without a proposed response,We could add a prompt for justification
+tradeoff,A constraint tension risk or competing value attached to a strategy,Code when the speaker identifies a cost limitation or downside that shapes a decision,Do not code simple disagreement without a named constraint,That prompt may take more class time
+revision,A decision to change test or refine the current design,Code an explicit commitment to modify or reevaluate a proposal,Do not code a new idea that is not framed as a change to the current design,Let us revise the prompt and test it

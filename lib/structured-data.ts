@@ -86,3 +86,43 @@ export function reviewArticleJsonLd(input: {
     url: input.url,
   };
 }
+
+export function learningResourceJsonLd(input: {
+  name: string;
+  description: string;
+  datePublished: string;
+  educationalLevel: string;
+  teaches: string[];
+  keywords: string[];
+  durationMinutes: number;
+  url: string;
+  sourceUrls: string[];
+  steps: Array<{ name: string; text: string }>;
+}) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "LearningResource",
+    name: input.name,
+    description: input.description,
+    learningResourceType: "Tutorial",
+    educationalLevel: input.educationalLevel,
+    teaches: input.teaches,
+    keywords: input.keywords,
+    timeRequired: `PT${input.durationMinutes}M`,
+    datePublished: input.datePublished,
+    dateModified: input.datePublished,
+    inLanguage: "en",
+    isAccessibleForFree: true,
+    author: { "@type": "Organization", name: "ENA.HK Academy", url: "https://www.ena.hk" },
+    publisher: { "@type": "Organization", name: "ENA.HK", url: "https://www.ena.hk" },
+    citation: input.sourceUrls,
+    hasPart: input.steps.map((step, index) => ({
+      "@type": "HowToStep",
+      position: index + 1,
+      name: step.name,
+      text: step.text,
+    })),
+    mainEntityOfPage: { "@type": "WebPage", "@id": input.url },
+    url: input.url,
+  };
+}
