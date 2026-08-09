@@ -39,8 +39,10 @@ test("the locale set matches the complete AIEDHK language menu", () => {
   assert.equal(localeMeta.ar.dir, "rtl");
 });
 
-test("News and Academy intentionally begin empty", () => {
-  assert.equal(newsItems.length, 0);
+test("News launches with six reviewed ENA articles while Academy remains empty", () => {
+  assert.equal(newsItems.length, 6);
+  assert.equal(newsItems.filter((article) => article.type === "journal").length, 3);
+  assert.equal(newsItems.filter((article) => article.type === "conference").length, 3);
   assert.equal(academyLessons.length, 0);
 });
 
@@ -101,7 +103,7 @@ test("visible dictionary copy contains no long dash characters", () => {
   }
 });
 
-test("the locale route tree contains only the initial public page families", () => {
+test("the locale route tree includes reviewed News details but no Academy details", () => {
   for (const route of publicRoutes) {
     const path = route
       ? join(projectRoot, "app", "[locale]", route, "page.tsx")
@@ -109,7 +111,8 @@ test("the locale route tree contains only the initial public page families", () 
     assert.equal(existsSync(path), true, `Missing route source: ${path}`);
   }
 
-  assert.equal(existsSync(join(projectRoot, "app", "[locale]", "news", "[slug]")), false);
+  assert.equal(existsSync(join(projectRoot, "app", "[locale]", "news", "[slug]", "page.tsx")), true);
+  assert.equal(existsSync(join(projectRoot, "app", "[locale]", "news", "topic", "[slug]", "page.tsx")), true);
   assert.equal(existsSync(join(projectRoot, "app", "[locale]", "academy", "[slug]")), false);
 });
 
@@ -147,11 +150,13 @@ test("the ENA About page carries the Dr. Peter profile topology", () => {
   assert.equal(existsSync(join(projectRoot, "public", "images", "about", "dr-peter-hu-dongpin.png")), true);
 });
 
-test("sitemap publishes indexes but no future detail routes", () => {
+test("sitemap publishes News detail and topic routes while Academy remains an index", () => {
   const sitemapSource = readFileSync(join(projectRoot, "app", "sitemap.ts"), "utf8");
   assert.match(sitemapSource, /mission/);
   assert.match(sitemapSource, /news/);
   assert.match(sitemapSource, /academy/);
   assert.match(sitemapSource, /about/);
-  assert.doesNotMatch(sitemapSource, /\[slug\]|topic/);
+  assert.match(sitemapSource, /newsArticles/);
+  assert.match(sitemapSource, /getNewsTopics/);
+  assert.doesNotMatch(sitemapSource, /academyLessons/);
 });

@@ -43,6 +43,7 @@ export default function Header({ locale, dictionary }: HeaderProps) {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={item.href.endsWith("/about") ? false : undefined}
               aria-current={isActive(item.href) ? "page" : undefined}
               className="nav-link focus-ring"
             >
@@ -75,6 +76,7 @@ export default function Header({ locale, dictionary }: HeaderProps) {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={item.href.endsWith("/about") ? false : undefined}
               aria-current={isActive(item.href) ? "page" : undefined}
               className="mobile-nav-link focus-ring"
               onClick={() => setOpen(false)}

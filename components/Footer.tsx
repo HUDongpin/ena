@@ -33,7 +33,7 @@ export default function Footer({ locale, dictionary }: FooterProps) {
           <h2>{dictionary.footer.navigation}</h2>
           <div className="footer-links">
             {navItems.map((item) => (
-              <Link key={item.href} href={item.href}>
+              <Link key={item.href} href={item.href} prefetch={item.href.endsWith("/about") ? false : undefined}>
                 {item.label}
               </Link>
             ))}

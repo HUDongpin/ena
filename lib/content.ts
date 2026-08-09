@@ -1,8 +1,4 @@
-export interface NewsItem {
-  slug: string;
-  title: string;
-  publishedAt: string;
-}
+import { newsArticles } from "./news-data";
 
 export interface AcademyLesson {
   slug: string;
@@ -10,7 +6,7 @@ export interface AcademyLesson {
   level: string;
 }
 
-// These collections intentionally begin empty. Future content should be
-// reviewed before it is added to the public News or Academy routes.
-export const newsItems: readonly NewsItem[] = [];
+// News is a reviewed, source-linked research collection. Academy remains empty
+// until its first method lesson passes a separate publication review.
+export const newsItems = newsArticles;
 export const academyLessons: readonly AcademyLesson[] = [];
