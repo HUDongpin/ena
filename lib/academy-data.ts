@@ -31,6 +31,100 @@ const foundationalSources = [
 
 const academyLessonRecords: AcademyLesson[] = [
   {
+    id: "academy-005",
+    slug: "audit-ena-normalization-projection-and-rotation",
+    sequence: 5,
+    title: "Audit ENA Normalization, Projection, and Rotation",
+    track: "modeling",
+    level: "intermediate",
+    durationMinutes: 35,
+    publishedAt: "2026-08-12",
+    tags: ["sphere normalization", "SVD projection", "means rotation", "model audit"],
+    visual: "model",
+    visualAlt:
+      "The same ENA units compared under an SVD projection and a two-group means rotation",
+    shortSummary:
+      "Separate connection accumulation from normalization and dimensional reduction, then justify whether an SVD or two-group means rotation answers the research question.",
+    introduction: [
+      "An ENA model contains more than a network picture. After coded connections are accumulated for each unit, the model may normalize those high-dimensional connection vectors and then project them into a low-dimensional space. Those operations affect what comparisons are visible and how strongly total connection volume influences distance among units.",
+      "This lesson deepens the shared teacher-design example from Lessons 1 through 4. You will hold the data, units, conversations, codes, and moving window constant while auditing sphere normalization, a singular value decomposition projection, and a two-group means rotation. The objective is not to find the most dramatic plot. It is to choose and report a representation that matches the planned comparison.",
+    ],
+    learningObjectives: [
+      "Explain what sphere normalization preserves and removes from an accumulated ENA connection vector.",
+      "Distinguish an SVD projection that summarizes variance from a means rotation aligned to two prespecified groups.",
+      "Record a reproducible projection decision without treating visual separation as inferential evidence.",
+    ],
+    caseStudy: {
+      title: "One synthetic dataset, two defensible views",
+      text: "The 48-row teaching dataset contains eight fictional teacher-design teams, four baseline and four scaffolded. The units, conversations, five codes, and moving-window specification remain unchanged. You will compare an exploratory SVD view with a means-rotated view of the same accumulated unit networks, then explain which question each view can answer.",
+    },
+    steps: [
+      {
+        title: "Freeze the accumulated model specification",
+        text: "Open the existing ENA decision record and copy the dataset filename, file hash, unit field, conversation field, row-order field, five code columns, moving-window size, weighting rule, exclusions, and software version into a new run entry. Do not change any of these elements while comparing normalization or rotation. Otherwise, a shifted point could reflect a different evidence model rather than a different projection of the same networks.",
+        checkpoint: "The SVD and means-rotation runs reference one identical accumulated connection matrix and one dated settings record.",
+      },
+      {
+        title: "Inspect connection magnitude before normalization",
+        text: "For each team, inspect the accumulated edge-weight vector or a complete edge table before normalization. Compare its Euclidean length and total connection weight with the number and density of coded lines. In this balanced teaching file, every team has six rows, yet teams can still produce different total connection weight because rows contain different combinations of codes. Mark any all-zero unit, because its direction is undefined and requires an explicit zero-network policy.",
+        checkpoint: "Your audit table records every team's connection magnitude and confirms whether any unit has an empty network.",
+      },
+      {
+        title: "Apply and explain sphere normalization",
+        text: "Run the model with sphere normalization and record the setting. Sphere normalization divides a non-zero unit's accumulated connection vector by its Euclidean norm. The normalized vector keeps that unit's relative profile of stronger and weaker connections while removing overall vector magnitude. Compare normalized and unnormalized coordinates, but do not describe normalization as neutral: it changes the estimand from total connection volume toward connection composition.",
+        checkpoint: "A short note states what magnitude information was removed, what relational profile was retained, and how zero networks were handled.",
+      },
+      {
+        title: "Build an exploratory SVD baseline",
+        text: "Using the normalized vectors and no group-directed rotation, create a singular value decomposition projection. Record the labels and variance represented by the first two displayed dimensions. SVD chooses orthogonal directions that summarize variation in the modeled unit networks; it does not automatically align the first axis with the baseline-versus-scaffolded contrast. Inspect points, mean networks, and node positions together so the plotted geometry remains connected to the edge data.",
+        checkpoint: "The saved SVD view includes all eight units, both axis statistics, shared node positions, and an interpretation that does not assume a treatment axis.",
+      },
+      {
+        title: "Apply a prespecified two-group means rotation",
+        text: "Return to the same normalized vectors and define the baseline and scaffolded groups from the condition field. Apply means rotation only because the planned question explicitly compares these two groups. The first rotated dimension passes through their mean locations in the original high-dimensional space; subsequent displayed dimensions are computed from remaining variation. The rotation makes the planned contrast easier to inspect, but it does not create new connections or test whether the groups differ in a population.",
+        checkpoint: "Exactly two prespecified groups determine the first rotated axis, and group membership matches the frozen decision record.",
+      },
+      {
+        title: "Compare representations without mixing spaces",
+        text: "Place the SVD and means-rotated outputs side by side and label them as separate projections of the same networks. Compare variance, group-mean positions, unit overlap, network subtractions, and the edges that support the first-axis interpretation. Never subtract coordinates or measure distances across separately fitted spaces. Within each space, confirm that every point and network uses the same rotation and node placement as the other units in that model.",
+        checkpoint: "The comparison distinguishes stable edge evidence from projection-dependent axis orientation and avoids cross-space distance claims.",
+      },
+      {
+        title: "Write the projection decision and claim boundary",
+        text: "Choose the SVD view when the goal is an exploratory summary of dominant variation, or the means-rotated view when the planned two-group contrast is the analytic focus. Record the rejected alternative, the reason for the choice, normalization status, axis variance, group definitions, zero-network handling, and exported model artifact. Pair any statistical comparison with its sampling assumptions and inspect the underlying coded rows before writing a substantive interpretation.",
+        checkpoint: "A second analyst can reproduce the chosen view and explain why its projection serves the stated research question.",
+      },
+    ],
+    coreIdeas: [
+      "Sphere normalization emphasizes connection composition by removing a non-zero unit vector's overall magnitude.",
+      "SVD summarizes major variation, while a two-group means rotation aligns the first dimension to a planned contrast.",
+      "Projection choices orient the view of existing networks; they do not create edges, validate codes, or prove group differences.",
+    ],
+    analysisChecks: [
+      "Were the data, accumulation settings, units, conversations, codes, weighting, and window held constant across projections?",
+      "Is the decision to normalize justified in relation to connection magnitude and the research question?",
+      "Were exactly two prespecified groups used for means rotation, with every compared unit in one shared space?",
+      "Does the report separate axis orientation and visual distance from statistical and substantive claims?",
+    ],
+    methodBoundary:
+      "Normalization and rotation cannot repair invalid codes, inappropriate units, dependent observations, weak sampling, or a poorly justified conversation window. The synthetic eight-team dataset is suitable for learning the audit workflow, not for selecting a universally correct projection or making claims about real teachers. A visually clear means-rotated separation is still a representation of modeled networks, not evidence that a scaffold caused a difference.",
+    sources: [
+      {
+        label: "Bowman et al.: The Mathematical Foundations of Epistemic Network Analysis",
+        url: "https://doi.org/10.1007/978-3-030-67788-6_7",
+      },
+      {
+        label: "Tan et al.: Epistemic Network Analysis and Ordered Network Analysis in Learning Analytics",
+        url: "https://doi.org/10.1007/978-3-031-54464-4_18",
+      },
+      {
+        label: "CRAN reference manual for rENA",
+        url: "https://cran.r-project.org/web/packages/rENA/rENA.pdf",
+      },
+    ],
+    downloads: [...sharedDownloads],
+  },
+  {
     id: "academy-004",
     slug: "interpret-ena-networks-with-qualitative-evidence",
     sequence: 4,

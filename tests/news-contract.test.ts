@@ -26,35 +26,65 @@ function pngDimensions(path: string) {
   return { width: data.readUInt32BE(16), height: data.readUInt32BE(20) };
 }
 
-test("the reviewed corpus contains balanced journal and conference evidence", () => {
-  assert.equal(newsArticles.length, 6);
-  assert.deepEqual(newsArticles.map((article) => article.id), ["ena-006", "ena-005", "ena-004", "ena-003", "ena-002", "ena-001"]);
-  assert.equal(newsArticles.filter((article) => article.type === "journal").length, 3);
-  assert.equal(newsArticles.filter((article) => article.type === "conference").length, 3);
+function normalize(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+test("the reviewed corpus keeps continuous ids, unique evidence, and balanced publication types", () => {
+  const numericIds = newsArticles.map((article) => Number(article.id.replace("ena-", "")));
+  const newestId = Math.max(...numericIds);
+  assert.equal(newsArticles.length, newestId);
+  assert.deepEqual(numericIds, Array.from({ length: newestId }, (_, index) => newestId - index));
+
+  const journalCount = newsArticles.filter((article) => article.type === "journal").length;
+  const conferenceCount = newsArticles.filter((article) => article.type === "conference").length;
+  assert.equal(Math.abs(journalCount - conferenceCount) <= 1, true);
+  assert.equal(journalCount > 0 && conferenceCount > 0, true);
   assert.deepEqual(newsArticles.find((article) => article.id === "ena-003")?.authors, ["Yotam Hod", "Shir Katz", "Brendan Eagan"]);
+
+  assert.equal(new Set(newsArticles.map((article) => article.id)).size, newsArticles.length);
+  assert.equal(new Set(newsArticles.map((article) => article.slug)).size, newsArticles.length);
+  assert.equal(new Set(newsArticles.map((article) => normalize(article.title))).size, newsArticles.length);
+  assert.equal(new Set(newsArticles.map((article) => article.doi.toLocaleLowerCase())).size, newsArticles.length);
+  assert.equal(new Set(newsArticles.map((article) => article.sourceUrl.toLocaleLowerCase())).size, newsArticles.length);
+  assert.equal(new Set(newsArticles.map((article) => article.authors.map(normalize).sort().join("|"))).size, newsArticles.length);
+  assert.equal(new Set(newsArticles.map((article) => article.tags.map(normalize).sort().join("|"))).size, newsArticles.length);
 
   for (const article of newsArticles) {
     assert.match(article.id, /^ena-\d{3}$/);
     assert.match(article.slug, /^[a-z0-9-]+$/);
     assert.match(article.sourceUrl, /^https:\/\//);
     assert.match(article.doi, /^10\./);
+    assert.match(article.createdAt, /^\d{4}-\d{2}-\d{2}$/);
+    assert.equal(article.authors.length > 0 && article.authors.every((author) => author.trim().length > 2), true);
+    assert.equal(article.tags.length >= 3, true);
     assert.equal(article.sourceUrls.length >= 2, true);
+    assert.equal(new Set(article.sourceUrls.map((source) => source.url)).size, article.sourceUrls.length);
+    assert.equal(article.sourceUrls.every((source) => source.label.trim().length > 3 && source.url.startsWith("https://")), true);
+    assert.equal(article.sourceUrls.some((source) => source.url === article.sourceUrl), true);
     assert.equal(article.keyTakeaways.length, 3);
+    assert.equal(article.shortSummary.trim().length >= 120 && article.shortSummary.trim().length <= 600, true);
     assert.equal(article.fullSummary.trim().split(/\s+/).length >= 350, true);
     assert.equal(article.whyItMatters.trim().length >= 80, true);
   }
 });
 
 test("filters search bibliographic and ENA topic fields and clamp pagination", () => {
-  assert.equal(filterNewsArticles(newsArticles, { type: "journal" }).total, 3);
-  assert.equal(filterNewsArticles(newsArticles, { type: "conference" }).total, 3);
+  assert.equal(filterNewsArticles(newsArticles, { type: "journal" }).total, newsArticles.filter((article) => article.type === "journal").length);
+  assert.equal(filterNewsArticles(newsArticles, { type: "conference" }).total, newsArticles.filter((article) => article.type === "conference").length);
   assert.deepEqual(filterNewsArticles(newsArticles, { year: "2024" }).items.map((article) => article.id), ["ena-006"]);
+  assert.deepEqual(filterNewsArticles(newsArticles, { q: "natural language processing" }).items.map((article) => article.id), ["ena-007"]);
   assert.deepEqual(filterNewsArticles(newsArticles, { q: "gaze" }).items.map((article) => article.id), ["ena-001"]);
   assert.deepEqual(filterNewsArticles(newsArticles, { q: "Gašević" }).items.map((article) => article.id), ["ena-005", "ena-002"]);
   const paged = filterNewsArticles(newsArticles, { page: 99, pageSize: 2 });
-  assert.equal(paged.page, 3);
-  assert.equal(paged.totalPages, 3);
-  assert.deepEqual(paged.items.map((article) => article.id), ["ena-002", "ena-001"]);
+  assert.equal(paged.page, Math.ceil(newsArticles.length / 2));
+  assert.equal(paged.totalPages, Math.ceil(newsArticles.length / 2));
+  assert.deepEqual(paged.items.map((article) => article.id), newsArticles.slice((paged.page - 1) * 2).map((article) => article.id));
 });
 
 test("every article has unique, id-aligned 16:10 media with same-bitmap placements", () => {

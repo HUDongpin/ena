@@ -39,17 +39,21 @@ test("the locale set matches the complete AIEDHK language menu", () => {
   assert.equal(localeMeta.ar.dir, "rtl");
 });
 
-test("News and Academy expose their reviewed launch collections", () => {
-  assert.equal(newsItems.length, 6);
-  assert.equal(newsItems.filter((article) => article.type === "journal").length, 3);
-  assert.equal(newsItems.filter((article) => article.type === "conference").length, 3);
-  assert.equal(academyLessons.length, 4);
-  assert.deepEqual(academyLessons.map((lesson) => lesson.id), [
-    "academy-001",
-    "academy-002",
-    "academy-003",
-    "academy-004",
-  ]);
+test("News and Academy expose continuous reviewed collections that can grow", () => {
+  const newsIds = newsItems.map((article) => Number(article.id.replace("ena-", "")));
+  const newestNewsId = Math.max(...newsIds);
+  assert.equal(newsItems.length, newestNewsId);
+  assert.deepEqual(newsIds, Array.from({ length: newestNewsId }, (_, index) => newestNewsId - index));
+  assert.equal(Math.abs(
+    newsItems.filter((article) => article.type === "journal").length
+      - newsItems.filter((article) => article.type === "conference").length,
+  ) <= 1, true);
+
+  assert.deepEqual(
+    academyLessons.map((lesson) => lesson.id),
+    Array.from({ length: academyLessons.length }, (_, index) => `academy-${String(index + 1).padStart(3, "0")}`),
+  );
+  assert.deepEqual(academyLessons.map((lesson) => lesson.sequence), Array.from({ length: academyLessons.length }, (_, index) => index + 1));
 });
 
 test("every locale exposes the five requested navigation destinations", () => {

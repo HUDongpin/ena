@@ -2,6 +2,47 @@ import type { NewsArticle } from "./news-types";
 
 export const newsArticles: NewsArticle[] = [
   {
+    id: "ena-007",
+    slug: "ai-dialog-knowledge-integration-networks",
+    title: "ENA traced NLP-coded science ideas across an adaptive AI dialog",
+    authors: ["Weiying Li", "Hsin-Yi Chang", "Allison Bradford", "Libby Gerard", "Marcia C. Linn"],
+    venue: "Journal of Science Education and Technology",
+    year: 2025,
+    type: "journal",
+    tags: ["AI dialog", "knowledge integration", "natural language processing", "science education", "idea networks"],
+    image: "/images/research/covers/ena-007-ai-dialog-knowledge-integration.png",
+    imageAlt: "An eighth-grade student revises a science explanation beside a plant as glowing links connect sunlight, leaves, animals, and cellular energy",
+    summaryImage: "/images/research/summary/ena-007-ai-dialog-knowledge-integration-summary.png",
+    summaryImageAlt: "An eighth-grade student revises a science explanation beside a plant as glowing links connect sunlight, leaves, animals, and cellular energy",
+    summaryAudio: "/audio/research/ena-007-ai-dialog-knowledge-integration-summary.m4a",
+    summaryAudioTitle: "Listen to the reviewed journal-article summary",
+    shortSummary:
+      "A study of 196 eighth-grade students combined NLP-generated idea codes with ENA to represent how science explanations changed across two adaptive prompts. Higher knowledge-integration scores were associated with more connections among microscopic and mechanistic ideas, but the one-school design does not isolate a causal dialog effect.",
+    fullSummary: `Li and colleagues investigate whether Epistemic Network Analysis can make automatically detected changes in students' science ideas interpretable across an adaptive dialog. The study involved 196 eighth-grade students taught by two science teachers at one public school in the western United States. Students completed a short Energy Story activity at the beginning of the school year. They first explained how energy from the sun helps animals survive, responded to two prompts from an AI avatar, and then revised their explanation. The four responses from each student produced 784 records for analysis.
+
+The workflow joined two kinds of natural language processing with ENA. A previously validated knowledge-integration scoring model assigned levels to the initial and revised explanations; the paper reports quadratic weighted kappa of .809 with human ratings in the earlier validation work. A multi-label idea-detection model identified concepts in every explanation and dialog response. Its training corpus contained 1,206 responses, with two researchers collaboratively annotating 20 percent and reporting Cohen's kappa of .79. The deployed detector had a micro-averaged F-score of .7297. For this study, a researcher reviewed 132 responses that the model initially treated as non-scorable, excluded 67 off-topic responses from the science-code model, assigned 54 to existing ideas, and added one new idea represented in 11 responses. This human review expanded the final ENA code set to 20 idea nodes.
+
+Each student was the ENA unit, and the stanza size was one response because the records were individual written turns rather than student-to-student interaction. Edges represented the relative frequency with which detected ideas appeared together within a response. The researchers compared final-explanation networks across knowledge-integration levels and also examined four-stage trajectories from the initial explanation through the two dialog turns to the revision. The trajectory model's co-registration correlations were .94 on the x-axis and about .74 to .75 on the y-axis. Its first two dimensions together represented 28 percent of the variance reported for that model.
+
+Students' mean knowledge-integration score increased from 2.46 to 2.76 between the initial and revised explanations, with t(195) equal to 6.42 and p below .001. The number of detected ideas rose from 415 in initial explanations to 593 in final explanations. Final responses at higher knowledge-integration levels contained more links and more frequent microscopic and mechanistic ideas. The 93 students who began with intuitive ideas increased their mean score from 1.87 to 2.54 and added links from broad food-chain descriptions toward energy-transfer and photosynthesis ideas. The 103 students who began with partially linked ideas moved from 3.00 to 2.95 on average; their trajectories showed added micro-macro links but less sustained mechanistic linking in the final response.
+
+The evidence supports a methodological contribution, not a broad causal claim. The combination of NLP and ENA scaled a relational view of hundreds of written responses while preserving a visible audit trail from model-generated codes to idea networks. However, the students came from one school and two teachers, 33 percent had a home language other than English, and the study had no non-adaptive comparison condition. Automated coding was imperfect and required manual review, and a two-dimensional display necessarily omitted other variation. The observed pre-to-post change therefore cannot by itself establish that the dialog caused learning or that the same patterns would generalize to other students, languages, science topics, or AI systems.`,
+    keyTakeaways: [
+      "NLP-generated idea codes can feed ENA at classroom scale, but model validation and review of non-scorable responses remain part of the evidence chain.",
+      "Higher knowledge-integration levels were associated with denser connections among microscopic and mechanistic science ideas across the reported networks.",
+      "One school, two teachers, no non-adaptive comparison condition, and imperfect automated coding limit causal and general claims.",
+    ],
+    whyItMatters:
+      "The study shows a practical route from automated discourse analysis to interpretable idea networks while making clear that scalable coding still requires human validation and bounded claims.",
+    sourceUrl: "https://doi.org/10.1007/s10956-024-10176-y",
+    sourceUrls: [
+      { label: "Springer open-access journal article", url: "https://doi.org/10.1007/s10956-024-10176-y" },
+      { label: "National Taiwan Normal University research record", url: "https://scholar.lib.ntnu.edu.tw/en/publications/combining-natural-language-processing-with-epistemic-network-anal/" },
+    ],
+    doi: "10.1007/s10956-024-10176-y",
+    createdAt: "2026-08-12",
+  },
+  {
     id: "ena-006",
     slug: "geriatric-caregiving-empathy-training-networks",
     title: "ENA mapped an empathy gap between real geriatric caregiving and training narratives",

@@ -9,6 +9,7 @@ import {
 } from "../lib/academy-data";
 import { filterAcademyLessons } from "../lib/academy-filter";
 import { getAcademyCopy, getAcademyResultLabel } from "../lib/academy-i18n";
+import { ACADEMY_LEVELS, ACADEMY_TRACKS, ACADEMY_VISUALS } from "../lib/academy-types";
 import { locales } from "../lib/i18n";
 import { learningResourceJsonLd } from "../lib/structured-data";
 
@@ -18,42 +19,50 @@ function publicPath(value: string) {
   return join(projectRoot, "public", value.replace(/^\//, ""));
 }
 
-test("the ENA Academy launches as a four-lesson cumulative pathway", () => {
-  assert.equal(academyLessons.length, 4);
-  assert.deepEqual(academyLessons.map((lesson) => lesson.id), [
-    "academy-001",
-    "academy-002",
-    "academy-003",
-    "academy-004",
-  ]);
-  assert.deepEqual(academyLessons.map((lesson) => lesson.sequence), [1, 2, 3, 4]);
-  assert.equal(new Set(academyLessons.map((lesson) => lesson.slug)).size, 4);
-  assert.equal(new Set(academyLessons.map((lesson) => lesson.title)).size, 4);
-  assert.equal(new Set(academyLessons.map((lesson) => lesson.visual)).size, 4);
-  assert.deepEqual(new Set(academyLessons.map((lesson) => lesson.track)), new Set([
-    "research-design",
-    "data-preparation",
-    "modeling",
-    "interpretation",
-  ]));
-  assert.equal(academyLessons.filter((lesson) => lesson.level === "beginner").length, 2);
-  assert.equal(academyLessons.filter((lesson) => lesson.level === "intermediate").length, 2);
+function normalize(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+test("the ENA Academy remains a continuous, unique, and cumulative pathway", () => {
+  const expectedSequences = Array.from({ length: academyLessons.length }, (_, index) => index + 1);
+  assert.deepEqual(academyLessons.map((lesson) => lesson.id), expectedSequences.map((sequence) => `academy-${String(sequence).padStart(3, "0")}`));
+  assert.deepEqual(academyLessons.map((lesson) => lesson.sequence), expectedSequences);
+  assert.equal(new Set(academyLessons.map((lesson) => lesson.slug)).size, academyLessons.length);
+  assert.equal(new Set(academyLessons.map((lesson) => normalize(lesson.title))).size, academyLessons.length);
+  assert.equal(new Set(academyLessons.map((lesson) => lesson.tags.map(normalize).sort().join("|"))).size, academyLessons.length);
+  assert.equal(new Set(academyLessons.flatMap((lesson) => lesson.learningObjectives.map(normalize))).size, academyLessons.length * 3);
+  assert.deepEqual(new Set(academyLessons.map((lesson) => lesson.visual)), new Set(ACADEMY_VISUALS));
+  assert.deepEqual(new Set(academyLessons.map((lesson) => lesson.track)), new Set(ACADEMY_TRACKS));
+  assert.deepEqual(new Set(academyLessons.map((lesson) => lesson.level)), new Set(ACADEMY_LEVELS));
 
   for (const lesson of academyLessons) {
     assert.match(lesson.id, /^academy-\d{3}$/);
     assert.match(lesson.slug, /^[a-z0-9-]+$/);
+    assert.match(lesson.publishedAt, /^\d{4}-\d{2}-\d{2}$/);
+    assert.equal(Number(lesson.id.replace("academy-", "")), lesson.sequence);
+    assert.equal(lesson.tags.length >= 4, true);
     assert.equal(lesson.learningObjectives.length, 3);
+    assert.equal(new Set(lesson.learningObjectives.map(normalize)).size, 3);
     assert.equal(lesson.steps.length >= 6, true);
     assert.equal(lesson.steps.every((step) => step.title.length > 5 && step.text.length > 120 && step.checkpoint.length > 40), true);
+    assert.equal(new Set(lesson.steps.map((step) => normalize(step.title))).size, lesson.steps.length);
     assert.equal(lesson.coreIdeas.length, 3);
     assert.equal(lesson.analysisChecks.length, 4);
     assert.equal(lesson.methodBoundary.length > 180, true);
     assert.equal(lesson.sources.length >= 2, true);
     assert.equal(lesson.sources.every((source) => source.url.startsWith("https://")), true);
+    assert.equal(new Set(lesson.sources.map((source) => source.url)).size, lesson.sources.length);
     assert.equal(getAcademyLessonText(lesson).trim().split(/\s+/).length >= 650, true);
-    assert.equal(lesson.downloads?.length, 3);
+    assert.equal((lesson.downloads?.length ?? 0) > 0, true);
+    assert.equal(new Set((lesson.downloads ?? []).map((download) => download.href)).size, lesson.downloads?.length);
     for (const download of lesson.downloads ?? []) {
       assert.equal(existsSync(publicPath(download.href)), true, `Missing Academy download: ${download.href}`);
+      assert.equal(download.label.trim().length > 5 && download.note.trim().length > 20, true);
     }
   }
 });
@@ -61,7 +70,7 @@ test("the ENA Academy launches as a four-lesson cumulative pathway", () => {
 test("Academy filtering searches tutorial semantics and clamps pagination", () => {
   assert.deepEqual(
     filterAcademyLessons(academyLessons, { track: "modeling" }).items.map((lesson) => lesson.id),
-    ["academy-003"],
+    ["academy-003", "academy-005"],
   );
   assert.deepEqual(
     filterAcademyLessons(academyLessons, { level: "beginner" }).items.map((lesson) => lesson.id),
@@ -77,16 +86,16 @@ test("Academy filtering searches tutorial semantics and clamps pagination", () =
   );
   assert.deepEqual(
     filterAcademyLessons(academyLessons, { q: "normalization" }).items.map((lesson) => lesson.id),
-    ["academy-001", "academy-003", "academy-004"],
+    ["academy-001", "academy-003", "academy-004", "academy-005"],
   );
   assert.deepEqual(
     filterAcademyLessons(academyLessons, { q: "Siebert-Evenstone" }).items.map((lesson) => lesson.id),
     ["academy-003"],
   );
   const paged = filterAcademyLessons(academyLessons, { page: 99, pageSize: 2 });
-  assert.equal(paged.page, 2);
-  assert.equal(paged.totalPages, 2);
-  assert.deepEqual(paged.items.map((lesson) => lesson.id), ["academy-003", "academy-004"]);
+  assert.equal(paged.page, Math.ceil(academyLessons.length / 2));
+  assert.equal(paged.totalPages, Math.ceil(academyLessons.length / 2));
+  assert.deepEqual(paged.items.map((lesson) => lesson.id), academyLessons.slice((paged.page - 1) * 2).map((lesson) => lesson.id));
 });
 
 test("the synthetic practice dataset is complete, ordered, balanced, and explicitly coded", () => {
@@ -171,8 +180,10 @@ test("Academy related records follow curriculum adjacency", () => {
   );
   assert.deepEqual(
     getRelatedAcademyLessons(academyLessons[3]).map((lesson) => lesson.id),
-    ["academy-003", "academy-002", "academy-001"],
+    ["academy-003", "academy-005", "academy-002"],
   );
+  assert.equal(getRelatedAcademyLessons(academyLessons[2])[0].id, "academy-005");
+  assert.equal(getRelatedAcademyLessons(academyLessons[4])[0].id, "academy-003");
 });
 
 test("Academy structured data identifies an English tutorial rather than News", () => {
