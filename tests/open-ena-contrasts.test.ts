@@ -1,0 +1,371 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { analyzeDataset } from "../lib/open-ena/analyze";
+import {
+  buildPairwiseGroupContrast,
+  buildPairwiseGroupContrastExport,
+  pairwiseGroupContrastEdgesToCsv,
+} from "../lib/open-ena/contrasts";
+import { parseCsv } from "../lib/open-ena/csv";
+import { mannWhitneyU } from "../lib/open-ena/inference";
+import { SAMPLE_CONFIG, type OpenEnaConfig, type OpenEnaResult } from "../lib/open-ena/types";
+
+function threeGroupEndpoint(): { result: OpenEnaResult; config: OpenEnaConfig } {
+  const dataset = parseCsv(
+    [
+      "unit,conversation,group,A,B,C",
+      "a1,c1,Alpha,1,1,0",
+      "a2,c2,Alpha,1,1,1",
+      "b1,c3,Beta,0,1,1",
+      "b2,c4,Beta,0,1,1",
+      "g1,c5,Gamma,1,0,1",
+      "g2,c6,Gamma,1,0,1",
+    ].join("\n") + "\n",
+    { name: "three-group-endpoint.csv", source: "upload" },
+  );
+  const config: OpenEnaConfig = {
+    ...SAMPLE_CONFIG,
+    unitColumns: ["unit"],
+    conversationColumns: ["conversation"],
+    groupColumn: "group",
+    codes: ["A", "B", "C"],
+    model: "EndPoint",
+    window: "Conversation",
+  };
+  return { result: analyzeDataset(dataset, config), config };
+}
+
+test("builds an ordered pairwise endpoint contrast from two selected groups in a three-group model", () => {
+  const { result, config } = threeGroupEndpoint();
+  const axes = [result.dimensions[1], result.dimensions[0]] as const;
+  const contrast = buildPairwiseGroupContrast(
+    result,
+    config,
+    "Gamma",
+    "Alpha",
+    axes,
+    "2026-08-13T12:00:00.000Z",
+  );
+
+  assert.deepEqual(contrast.groupOrder, ["Gamma", "Alpha"]);
+  assert.deepEqual(contrast.declaredGroups.map((group) => group.name), ["Alpha", "Beta", "Gamma"]);
+  assert.deepEqual(contrast.axes, axes);
+  assert.equal(contrast.primary.name, "Gamma");
+  assert.equal(contrast.secondary.name, "Alpha");
+  assert.equal(contrast.primary.unitCount, 2);
+  assert.equal(contrast.secondary.unitCount, 2);
+  assert.ok(contrast.primary.points.every((point) => point.group === "Gamma"));
+  assert.ok(contrast.secondary.points.every((point) => point.group === "Alpha"));
+
+  const gamma = result.groups.find((group) => group.name === "Gamma");
+  const alpha = result.groups.find((group) => group.name === "Alpha");
+  assert.ok(gamma && alpha);
+  assert.equal(contrast.primary.meanPoint[axes[0]], gamma.meanPoint[axes[0]]);
+  assert.equal(contrast.secondary.meanPoint[axes[1]], alpha.meanPoint[axes[1]]);
+  for (const edge of contrast.edges) {
+    assert.equal(edge.primaryWeight, gamma.meanWeights[edge.name]);
+    assert.equal(edge.secondaryWeight, alpha.meanWeights[edge.name]);
+    assert.equal(edge.signedDifference, edge.primaryWeight - edge.secondaryWeight);
+  }
+  assert.equal(
+    contrast.edgeScaleDenominators.difference,
+    Math.max(...contrast.edges.map((edge) => Math.abs(edge.signedDifference))),
+  );
+  assert.equal(
+    contrast.edgeScaleDenominators.sharedMean,
+    Math.max(...contrast.edges.flatMap((edge) => [Math.abs(edge.primaryWeight), Math.abs(edge.secondaryWeight)])),
+  );
+
+  assert.equal(contrast.inference.status, "available");
+  assert.deepEqual(contrast.inference.groupOrder, ["Gamma", "Alpha"]);
+  assert.deepEqual(contrast.inference.rows.map((row) => row.dimension), axes);
+  const firstAxis = axes[0];
+  const expected = mannWhitneyU(
+    result.set.points.filter((row) => row.group === "Gamma").map((row) => Number(row[firstAxis])),
+    result.set.points.filter((row) => row.group === "Alpha").map((row) => Number(row[firstAxis])),
+  );
+  assert.deepEqual(contrast.inference.rows[0], { dimension: firstAxis, ...expected });
+});
+
+test("every selected pair shares one full-result coordinate extent and the extent includes reference nodes", () => {
+  const { result, config } = threeGroupEndpoint();
+  const axes = result.dimensions.slice(0, 2) as [string, string];
+  const allPointX = result.set.points.map((row) => Number(row[axes[0]])).filter(Number.isFinite);
+  const allPointY = result.set.points.map((row) => Number(row[axes[1]])).filter(Number.isFinite);
+  const node = result.set.rotation.nodes?.[0];
+  assert.ok(node);
+  const nodeMaxX = Math.max(...allPointX) + 10;
+  const nodeMinY = Math.min(...allPointY) - 10;
+  node[axes[0]] = nodeMaxX;
+  node[axes[1]] = nodeMinY;
+  const allNodeX = (result.set.rotation.nodes ?? []).map((row) => Number(row[axes[0]])).filter(Number.isFinite);
+  const allNodeY = (result.set.rotation.nodes ?? []).map((row) => Number(row[axes[1]])).filter(Number.isFinite);
+
+  const alphaBeta = buildPairwiseGroupContrast(result, config, "Alpha", "Beta", axes);
+  const betaGamma = buildPairwiseGroupContrast(result, config, "Beta", "Gamma", axes);
+
+  assert.deepEqual(alphaBeta.coordinateExtent, betaGamma.coordinateExtent);
+  assert.deepEqual(alphaBeta.coordinateExtent, {
+    minX: Math.min(...allPointX, ...allNodeX),
+    maxX: Math.max(...allPointX, ...allNodeX),
+    minY: Math.min(...allPointY, ...allNodeY),
+    maxY: Math.max(...allPointY, ...allNodeY),
+  });
+  assert.deepEqual(
+    buildPairwiseGroupContrastExport(alphaBeta).coordinateExtent,
+    alphaBeta.coordinateExtent,
+  );
+});
+
+test("pairwise contrasts fail closed for unsupported models, ambiguous groups, empty groups, and invalid axes", () => {
+  const { result, config } = threeGroupEndpoint();
+  const axes = result.dimensions.slice(0, 2);
+
+  const trajectory = structuredClone(result);
+  trajectory.set.modelType = "SeparateTrajectory";
+  assert.throws(
+    () => buildPairwiseGroupContrast(trajectory, { ...config, model: "SeparateTrajectory" }, "Alpha", "Beta", axes),
+    /endpoint/i,
+  );
+  assert.throws(() => buildPairwiseGroupContrast(result, config, "Alpha", "Alpha", axes), /distinct/i);
+  assert.throws(() => buildPairwiseGroupContrast(result, config, "alpha", "Beta", axes), /exactly match/i);
+  assert.throws(() => buildPairwiseGroupContrast(result, config, "missing", "Beta", axes), /exactly match/i);
+  assert.throws(() => buildPairwiseGroupContrast(result, config, "Alpha", "Beta", [axes[0]]), /two distinct axes/i);
+  assert.throws(() => buildPairwiseGroupContrast(result, config, "Alpha", "Beta", [axes[0], axes[0]]), /two distinct axes/i);
+  assert.throws(() => buildPairwiseGroupContrast(result, config, "Alpha", "Beta", [axes[0], "missing-axis"]), /current ENA result geometry/i);
+
+  const empty = structuredClone(result);
+  empty.set.points = empty.set.points.filter((row) => row.group !== "Alpha");
+  empty.set.lineWeights = empty.set.lineWeights.filter((row) => row.group !== "Alpha");
+  assert.throws(() => buildPairwiseGroupContrast(empty, config, "Alpha", "Beta", axes), /must contain/i);
+
+  const duplicateDeclaration = structuredClone(result);
+  duplicateDeclaration.groups[1].name = "Alpha";
+  assert.throws(
+    () => buildPairwiseGroupContrast(duplicateDeclaration, config, "Alpha", "Gamma", axes),
+    /unique|ambiguous/i,
+  );
+});
+
+test("endpoint contrasts reject duplicate rows instead of overweighting a repeated analytic unit", () => {
+  const { result, config } = threeGroupEndpoint();
+  const duplicated = structuredClone(result);
+  duplicated.set.points.push({ ...duplicated.set.points.find((row) => row.ENA_UNIT === "a1")! });
+  duplicated.set.lineWeights.push({ ...duplicated.set.lineWeights.find((row) => row.ENA_UNIT === "a1")! });
+
+  assert.throws(
+    () => buildPairwiseGroupContrast(duplicated, config, "Alpha", "Beta"),
+    /exactly one coordinate row and one network row per endpoint analytic unit/i,
+  );
+});
+
+test("endpoint contrasts reject an analytic unit assigned to both selected groups", () => {
+  const { result, config } = threeGroupEndpoint();
+  const unstable = structuredClone(result);
+  const alphaPoint = unstable.set.points.find((row) => row.ENA_UNIT === "a1");
+  const alphaLine = unstable.set.lineWeights.find((row) => row.ENA_UNIT === "a1");
+  assert.ok(alphaPoint && alphaLine);
+  unstable.set.points.push({ ...alphaPoint, group: "Beta" });
+  unstable.set.lineWeights.push({ ...alphaLine, group: "Beta" });
+
+  assert.throws(
+    () => buildPairwiseGroupContrast(unstable, config, "Alpha", "Beta"),
+    /exactly one selected group|populations overlap/i,
+  );
+});
+
+test("swapping Primary and Secondary negates signed quantities without changing geometry or fit provenance", () => {
+  const { result, config } = threeGroupEndpoint();
+  const axes = result.dimensions.slice(0, 2);
+  const forward = buildPairwiseGroupContrast(result, config, "Alpha", "Beta", axes, "2026-08-13T12:00:00.000Z");
+  const reverse = buildPairwiseGroupContrast(result, config, "Beta", "Alpha", axes, "2026-08-13T12:00:00.000Z");
+
+  assert.deepEqual(forward.geometry, reverse.geometry);
+  assert.deepEqual(forward.coordinateExtent, reverse.coordinateExtent);
+  assert.deepEqual(forward.resultProvenance.fit, reverse.resultProvenance.fit);
+  assert.deepEqual(forward.primary, reverse.secondary);
+  assert.deepEqual(forward.secondary, reverse.primary);
+  for (const edge of forward.edges) {
+    const swapped = reverse.edges.find((candidate) => candidate.name === edge.name);
+    assert.ok(swapped);
+    assert.equal(swapped.signedDifference, -edge.signedDifference);
+    assert.equal(
+      swapped.stronger,
+      edge.stronger === "primary" ? "secondary" : edge.stronger === "secondary" ? "primary" : "equal",
+    );
+  }
+  for (const row of forward.inference.rows) {
+    const swapped = reverse.inference.rows.find((candidate) => candidate.dimension === row.dimension);
+    assert.ok(swapped);
+    assert.equal(swapped.uFirst, row.uSecond);
+    assert.equal(swapped.uSecond, row.uFirst);
+    assert.equal(swapped.z, row.z === null ? null : -row.z);
+    assert.equal(swapped.rankBiserialFirstVsSecond, row.rankBiserialFirstVsSecond === null ? null : -row.rankBiserialFirstVsSecond);
+    assert.equal(swapped.pValueTwoSided, row.pValueTwoSided);
+  }
+});
+
+test("JSON and CSV exports bind group order, axes, configuration, result geometry, reference provenance, and interpretation boundaries", () => {
+  const { result, config } = threeGroupEndpoint();
+  const boundResult: OpenEnaResult = {
+    ...result,
+    provenanceBinding: {
+      datasetNormalizedUtf8TextSha256: "a".repeat(64),
+      configuration: structuredClone(config),
+    },
+  };
+  const axes = result.dimensions.slice(0, 2);
+  const contrast = buildPairwiseGroupContrast(
+    boundResult,
+    config,
+    "Beta",
+    "Gamma",
+    axes,
+    "2026-08-13T12:30:00.000Z",
+  );
+  const bundle = buildPairwiseGroupContrastExport(contrast);
+
+  assert.equal(bundle.kind, "open-ena-pairwise-group-contrast");
+  assert.deepEqual(bundle.declaredGroups.map((group) => group.name), ["Alpha", "Beta", "Gamma"]);
+  assert.deepEqual(bundle.groupOrder, ["Beta", "Gamma"]);
+  assert.deepEqual(bundle.selectedAxes, axes);
+  assert.deepEqual(bundle.configuration, config);
+  assert.equal(bundle.resultProvenance.analyzedAt, result.analyzedAt);
+  assert.equal(bundle.resultProvenance.model, "EndPoint");
+  assert.equal(bundle.resultProvenance.sourceDatasetNormalizedUtf8TextSha256, "a".repeat(64));
+  assert.equal(bundle.resultProvenance.projectionReference, null);
+  assert.deepEqual(bundle.geometry.rotationColumns, result.set.rotation.rotationColumns);
+  assert.deepEqual(bundle.geometry.rotationMatrix, result.set.rotation.rotationMatrix);
+  assert.deepEqual(bundle.geometry.adjacencyKey, result.set.adjacencyKey);
+  assert.deepEqual(bundle.comparison.edges, contrast.edges);
+  assert.deepEqual(bundle.inference.groupOrder, ["Beta", "Gamma"]);
+  assert.equal(bundle.inference.multiplicityCorrection, "none");
+  assert.ok(bundle.boundaries.some((boundary) => /descriptive/i.test(boundary)));
+  assert.ok(bundle.boundaries.some((boundary) => /primary.*minus.*secondary/i.test(boundary)));
+  assert.ok(bundle.boundaries.some((boundary) => /multiplicity/i.test(boundary)));
+  assert.ok(bundle.boundaries.some((boundary) => /raw source rows/i.test(boundary)));
+  assert.doesNotMatch(JSON.stringify(bundle), /rawRows|rowConnectionCounts|pointsForProjection/);
+
+  const csv = pairwiseGroupContrastEdgesToCsv(contrast);
+  const header = csv.split("\r\n")[0];
+  assert.match(header, /primaryGroup,secondaryGroup,xAxis,yAxis/);
+  assert.match(header, /configurationJson,resultProvenanceJson,boundariesJson/);
+  assert.match(csv, /Beta,Gamma/);
+  assert.match(csv, new RegExp(axes[0]));
+  assert.match(csv, /sourceDatasetNormalizedUtf8TextSha256/);
+  assert.match(csv, /Primary-minus-Secondary/);
+});
+
+test("projected mean-rotation lineage remains intact for circularity classification", () => {
+  const { result, config } = threeGroupEndpoint();
+  const projectedConfig: OpenEnaConfig = {
+    ...config,
+    rotation: "reference",
+    referenceRotationId: "open-ena-ref:mean-three-group",
+  };
+  const projected: OpenEnaResult = {
+    ...result,
+    projectionReference: {
+      schemaVersion: 1,
+      kind: "open-ena-reference-rotation",
+      app: "ENA.HK Open ENA",
+      runtime: "jena-js",
+      runtimeVersion: "0.6.2",
+      referenceId: "open-ena-ref:mean-three-group",
+      name: "Mean contrast reference",
+      source: {
+        datasetName: "fitted-source.csv",
+        normalizedUtf8TextSha256: "c".repeat(64),
+        analyzedAt: "2026-08-13T10:00:00.000Z",
+      },
+      fit: {
+        method: "mean",
+        unitColumns: ["unit"],
+        conversationColumns: ["conversation"],
+        groupColumn: "group",
+        groupOrder: ["Alpha", "Beta"],
+      },
+      compatibility: {
+        model: "EndPoint",
+        codes: ["A", "B", "C"],
+        window: "Conversation",
+        windowSizeBack: "Infinity",
+        windowSizeForward: 0,
+        weightBy: "binary",
+        centerAlignToOrigin: true,
+        normalization: "sphere",
+      },
+    },
+    provenanceBinding: {
+      datasetNormalizedUtf8TextSha256: "d".repeat(64),
+      configuration: structuredClone(projectedConfig),
+    },
+  };
+
+  const bundle = buildPairwiseGroupContrastExport(
+    buildPairwiseGroupContrast(projected, projectedConfig, "Alpha", "Gamma"),
+  );
+  assert.deepEqual(bundle.resultProvenance.projectionReference?.fit, projected.projectionReference?.fit);
+  assert.deepEqual(bundle.resultProvenance.projectionReference?.source, projected.projectionReference?.source);
+  assert.equal(bundle.resultProvenance.sourceDatasetNormalizedUtf8TextSha256, "d".repeat(64));
+});
+
+test("a directly fitted mean rotation exports its original fit order independently of selected pair order", () => {
+  const dataset = parseCsv(
+    [
+      "unit,conversation,group,A,B,C",
+      "a1,c1,Alpha,1,1,0",
+      "a2,c2,Alpha,1,1,1",
+      "b1,c3,Beta,0,1,1",
+      "b2,c4,Beta,0,1,1",
+    ].join("\n") + "\n",
+    { name: "direct-mean-fit.csv", source: "upload" },
+  );
+  const config: OpenEnaConfig = {
+    ...SAMPLE_CONFIG,
+    unitColumns: ["unit"],
+    conversationColumns: ["conversation"],
+    groupColumn: "group",
+    codes: ["A", "B", "C"],
+    model: "EndPoint",
+    window: "Conversation",
+    rotation: "mean",
+  };
+  const analyzed = analyzeDataset(dataset, config);
+  const result: OpenEnaResult = {
+    ...analyzed,
+    provenanceBinding: {
+      datasetNormalizedUtf8TextSha256: "e".repeat(64),
+      configuration: structuredClone(config),
+    },
+  };
+  const bundle = buildPairwiseGroupContrastExport(
+    buildPairwiseGroupContrast(result, config, "Beta", "Alpha"),
+  );
+
+  assert.deepEqual(bundle.groupOrder, ["Beta", "Alpha"]);
+  assert.deepEqual(bundle.resultProvenance.fit, {
+    method: "mean",
+    unitColumns: ["unit"],
+    conversationColumns: ["conversation"],
+    groupColumn: "group",
+    groupOrder: ["Alpha", "Beta"],
+  });
+  assert.equal(bundle.resultProvenance.sourceDatasetNormalizedUtf8TextSha256, "e".repeat(64));
+});
+
+test("a result provenance binding must match the supplied configuration", () => {
+  const { result, config } = threeGroupEndpoint();
+  const mismatched: OpenEnaResult = {
+    ...result,
+    provenanceBinding: {
+      datasetNormalizedUtf8TextSha256: "b".repeat(64),
+      configuration: { ...config, weightBy: "sum" },
+    },
+  };
+
+  assert.throws(
+    () => buildPairwiseGroupContrast(mismatched, config, "Alpha", "Beta"),
+    /provenance binding.*configuration|configuration.*provenance binding/i,
+  );
+});

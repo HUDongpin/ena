@@ -6,6 +6,8 @@ export const siteConfig = {
   url: "https://www.ena.hk",
   description:
     "A multilingual knowledge site for learning, applying, and discussing Epistemic Network Analysis.",
+  openEnaPath: "/open-ena",
+  threeDenaUrl: "https://www.3dena.com",
   officialWebtoolUrl: "https://app.epistemicnetwork.org/login.html",
   officialResourcesUrl: "https://www.epistemicnetwork.org/resources/",
   tutorialUrl: "https://learning-analytics.info/index.php/JLA/article/view/4329",

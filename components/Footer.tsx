@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Dictionary, Locale } from "@/lib/i18n";
+import { getOpenEnaNavLabel } from "@/lib/open-ena-i18n";
 import { siteConfig } from "@/lib/site";
 import Logo from "./Logo";
 
@@ -12,14 +13,16 @@ export default function Footer({ locale, dictionary }: FooterProps) {
   const navItems = [
     { href: `/${locale}`, label: dictionary.nav.home },
     { href: `/${locale}/mission`, label: dictionary.nav.mission },
+    { href: `/${locale}/open-ena`, label: getOpenEnaNavLabel(locale) },
     { href: `/${locale}/news`, label: dictionary.nav.news },
     { href: `/${locale}/academy`, label: dictionary.nav.academy },
     { href: `/${locale}/about`, label: dictionary.nav.about },
   ];
   const resourceItems = [
-    { href: siteConfig.officialWebtoolUrl, label: dictionary.common.openWebtool },
-    { href: siteConfig.officialResourcesUrl, label: dictionary.common.browseResources },
-    { href: siteConfig.tutorialUrl, label: dictionary.footer.tutorialTitle },
+    { href: `/${locale}/open-ena`, label: dictionary.common.openWebtool, external: false },
+    { href: siteConfig.officialWebtoolUrl, label: "Official webENA", external: true },
+    { href: siteConfig.officialResourcesUrl, label: dictionary.common.browseResources, external: true },
+    { href: siteConfig.tutorialUrl, label: dictionary.footer.tutorialTitle, external: true },
   ];
 
   return (
@@ -42,10 +45,10 @@ export default function Footer({ locale, dictionary }: FooterProps) {
         <div>
           <h2>{dictionary.footer.primaryResources}</h2>
           <div className="footer-links">
-            {resourceItems.map((item) => (
-              <a key={item.href} href={item.href} target="_blank" rel="noreferrer">
-                {item.label}
-              </a>
+            {resourceItems.map((item) => item.external ? (
+              <a key={item.href} href={item.href} target="_blank" rel="noreferrer">{item.label}</a>
+            ) : (
+              <Link key={item.href} href={item.href}>{item.label}</Link>
             ))}
           </div>
         </div>

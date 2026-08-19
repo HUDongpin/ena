@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import CTA from "@/components/CTA";
 import NetworkFigure from "@/components/NetworkFigure";
+import OpenEnaHomeFeature from "@/components/OpenEnaHomeFeature";
 import { getDictionary, isLocale, type Locale } from "@/lib/i18n";
 import { siteConfig } from "@/lib/site";
 
@@ -24,7 +25,7 @@ export default async function HomePage({ params }: HomePageProps) {
           <p className="hero-text">{dictionary.home.heroText}</p>
           <div className="button-row">
             <CTA href={`/${typedLocale}/mission`}>{dictionary.common.exploreMethod}</CTA>
-            <CTA href={siteConfig.officialWebtoolUrl} variant="secondary" external>
+            <CTA href={`/${typedLocale}/open-ena`} variant="secondary">
               {dictionary.common.openWebtool}
             </CTA>
           </div>
@@ -42,6 +43,11 @@ export default async function HomePage({ params }: HomePageProps) {
           <p>{dictionary.home.principleText}</p>
         </div>
       </section>
+
+      <OpenEnaHomeFeature
+        locale={typedLocale}
+        ctaLabel={dictionary.common.openWebtool}
+      />
 
       <section className="container workflow-section">
         <div className="section-heading">

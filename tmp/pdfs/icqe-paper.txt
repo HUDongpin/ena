@@ -1,0 +1,617 @@
+    Design and Development from rENA to jENA: Accelerating the
+                  Creation of Web-Based Open ENA Tools
+
+
+           Abstract. Epistemic Network Analysis (ENA) has become an important ap-
+       proach for modeling connections among coded elements in discourse, interaction,
+       and educational data. Although several ENA variants have been developed, such
+       as TopicENA and Ordered Network Analysis (ONA), there remains a lack of a
+       unified platform through which researchers can easily develop, share, and dis-
+       seminate methodological innovations, while enabling users to readily access and
+       apply them. This paper presents the design and development of the OpenENA
+       platform, an extensible ecosystem that allows researchers to create and publish
+       ENA variants as JavaScript plugins. This paper also introduces jENA, a Type-
+       Script/JavaScript port that treats rENA's observable behavior as the specification
+       while reorganizing the ENA workflow for web deployment. The paper describes
+       the software-engineering method used to translate accumulation, normalization,
+       rotation, projection, and visualization-support routines; compares the architec-
+       tures of rENA and jENA; and discusses the significance of a web-native ENA
+       library for educational research, discourse analysis, and the ENA community in
+       the GenAI era. The contribution is both infrastructural and theoretical: infrastruc-
+       turally, jENA aims to preserve the analytical spine of rENA while making ENA
+       computation easier to embed, inspect, rerun, and distribute in modern web-based
+       scholarly tools; theoretically, it initiates an Open ENA platform orientation in
+       which browser-ready ENA tools and an open ENA Hub Kit can become shared,
+       inspectable, and reproducible community resources for Open Science in educa-
+       tional research and broader discourse-analysis communities. A Lesson 1 empiri-
+       cal comparison, including Mann-Whitney U tests on rENA and jENA coordi-
+       nates, found the same substantive inference in both implementations: a signifi-
+       cant group difference on MR1 and no significant difference on SVD2, while ren-
+       dering formats remained different.
+
+
+       Keywords: Epistemic Network Analysis, Quantitative Ethnography, rENA,
+       jENA, TypeScript, Web-based learning analytics, Discourse analysis, Genera-
+       tive AI, Open Science, Open ENA.
+
+
+1      Introduction
+
+Quantitative Ethnography (QE) offers a way to model patterned connections in situated
+activity without separating numerical comparison from qualitative interpretation. Epis-
+temic Network Analysis (ENA) is central to this methodological approach because it
+represents how coded elements in discourse, interaction, and learning data co-occur
+within meaningful units and conversations [1-4].
+   rENA is a mature R implementation of this workflow. It gives researchers program-
+mable access to standard ENA features of accumulation, rotation, projection, statistical
+2       Anonymous Author(s)
+
+
+summaries, and visual outputs [5]. rENA operates in a standalone execution environ-
+ment. However, many current ENA use cases now occur inside web-based environ-
+ments, including learning dashboards, collaborative coding systems, classroom analyt-
+ics tools, interactive papers, and workshop demonstrations. These environments often
+require browser, Node, or worker-thread execution rather than a live R process.
+   The generative artificial intelligence (GenAI) era makes this deployment problem
+more urgent. Large language models (LLMs) can support segmentation, candidate cod-
+ing, translation, and codebook review, but valid ENA research still requires human in-
+spection, reproducible computation, and transparent reporting. A JavaScript ENA
+runtime can keep these steps closer to the interactive tools where coding, review, mod-
+eling, and visualization increasingly take place.
+   jENA responds to this need by translating the rENA workflow into a TypeScript/Ja-
+vaScript library for browser, Node, and Web Worker contexts [6]. TypeScript is a syn-
+tactic superset of JavaScript. The goal is not to replace rENA or alter ENA theory.
+Instead, jENA treats rENA behavior as the reference while reorganizing the implemen-
+tation for web deployment, explicit data contracts, framework-independent computa-
+tion, and reusable plotting adapters.
+   This paper contributes a behavioral porting method, an architectural comparison of
+rENA and jENA, an empirical rENA-jENA result comparison using Lesson 1 reflection
+data, including Mann-Whitney U tests on ENA coordinates, and an argument for jENA
+as part of an Open ENA platform for web-based, inspectable, and reproducible ENA
+tooling. Section 2 reviews the relevant literature, Section 3.1 describes the development
+method, Section 3.2 compares architectures, Section 4 compares architectures, Section
+5 reports the rENA-jENA result comparison, Section 6 discusses significance for web-
+based ENA tools, and Section 7 concludes with limitations and future work.
+
+
+2      Literature Review
+
+2.1    Quantitative Ethnography and Epistemic Network Analysis
+QE frames learning and professional activity as situated meaning-making that can be
+interpreted ethnographically and compared systematically. ENA operationalizes this
+stance by transforming coded discourse into normalized connection networks, pro-
+jected points, centroids, and interpretable visualizations [1-4]. Prior work emphasizes
+that ENA interpretation depends on theoretically meaningful codes, units, conversa-
+tions, and segmentation choices rather than on network geometry alone.
+
+2.2    Computational Implementations of ENA and the Role of rENA
+ENA has appeared in web tools, package interfaces, and methodological prototypes,
+but rENA is especially important for programmatic research because it exposes the an-
+alytical workflow in R [5]. Its strength is integration with R data handling, statistical
+                                               Design and development of jENA        3
+
+
+modeling, and reproducible scripting. Its limitation for the present problem is deploy-
+ment: browser-based tools and privacy-sensitive web workflows often cannot assume
+a maintained R backend, native compilation, or server-side data transfer.
+
+2.3    Temporal, Ordered, and Visualization Extensions of ENA
+Windowing, sequence, and visualization are part of how ENA operationalizes QE
+methodology. Moving stanza windows model conversational grain size, trajectory-ori-
+ented work represents change through projected space, and visualization research each
+highlight the importance of readable comparison networks [7-13]. For example, Tan et
+al. proposed the combination of ENA and ONA for quantifying, visualizing, and inter-
+preting network data, where associations between codes are represented as directed
+weighted network. TopicENA merges BERTopic with ENA to create a topic-based
+ENA framework. Hierarchical Epistemic Network Analysis (hENA) is another exten-
+sion of ENA that models the nested effects of multiple grouping variables. Neural Ep-
+istemic Network Analysis (NENA) employs Graph Neural Networks (GNNs) to gen-
+erate embeddings for each unit in ENA. These extensions matter for jENA because a
+web-native implementation must preserve core analytical behavior while allowing
+downstream tools to build interactive visualizations and temporal interfaces.
+
+
+
+2.4    Web-Based and GenAI-Era Discourse Analysis Workflows
+
+Discourse-analysis research shows that coding-and-counting is often insufficient for
+collaborative learning data [14]. GenAI tools can assist with segmentation and qualita-
+tive coding, but they do not remove the need for human validation, audit trails, and
+transparent computational pipelines [15]. Web execution is therefore a methodological
+affordance: it supports local computation, interactive review, and reproducible demon-
+strations in the same environment where researchers and educators inspect evidence.
+
+2.5    Gap Addressed by jENA
+The literature establishes ENA as theory-grounded, rENA as a key implementation, and
+web-based discourse analysis as an increasingly important workflow. The remaining
+gap is an inspectable ENA runtime that follows rENA behavior while running naturally
+in JavaScript environments. jENA addresses this gap by treating rENA as the behav-
+ioral specification and translating the pipeline into browser-safe TypeScript modules
+for scalable educational research and discourse-analysis tools.
+
+
+3      Methods: The development of Open ENA and jENA
+
+3.1    The Open ENA Platform Architecture
+4       Anonymous Author(s)
+
+
+
+   The proposed platform conceptualizes ENA as a modular pipeline consisting of three
+layers: Model, View, and Presenter. This architecture enables researchers and develop-
+ers to extend individual stages of the analytical work-flow through a plugin-based
+framework while maintaining interoperability among different methodological innova-
+tions.
+   The Model layer is responsible for data preparation and network construction. It
+comprises four primary components: Dataset, Coding Processor, Windows Build-er,
+and Relation Builder. The Dataset component stores the raw data that serve as the foun-
+dation for subsequent analyses. The Coding Processor transforms raw data into coded
+representations suitable for network analysis. Coding may be performed manually by
+researchers using traditional qualitative coding approaches or automati-cally through
+AI-assisted coding plugins. In addition, the Coding Processor supports topic modeling
+methods, enabling the implementation of TopicENA and other topic-based analytical
+approaches.
+   The Windows Builder determines how coded concepts are grouped into contextual
+units for co-occurrence analysis. Standard implementations may define contexts using
+fixed window sizes or hierarchical layers. However, the plugin architecture allows de-
+velopers to implement alternative mechanisms for context definition. For example,
+multimodal ENA can be realized through plugins that construct windows spanning mul-
+tiple data modalities. Similarly, temporal windows can be defined using fixed time in-
+tervals, such as 30-second segments, allowing the analysis of time-series data within
+the ENA framework.
+   The Relation Builder defines the procedures used to construct network connections
+from the contextual windows generated in the previous stage. This component deter-
+mines how relationships among concepts are identified and weighted. Through exten-
+sible plugins, researchers can implement alternative weighting schemes or relationship
+models. For instance, connections between specific topics, such as calculus and ma-
+chine learning, may be assigned greater weights than connections between calculus and
+AI ethics, thereby reflecting domain-specific analytical priorities.
+   The View layer is responsible for transforming relational data into graph represen-
+tations and lower-dimensional analytical spaces. This layer consists of two compo-
+nents: Graph Building and Projection. The Graph Building component generates graph
+structures from the nodes and edges produced by the Model layer. Different graph rep-
+resentations can be implemented through plugins. For example, an ONA plugin may
+construct directed graphs, whereas conventional ENA produces undirected networks.
+   The Projection component performs dimensionality reduction on graph data to fa-
+cilitate interpretation and visualization. Traditional ENA employs Singular Value De-
+composition (SVD) to derive low-dimensional representations of network struc-tures.
+However, alternative projection methods can also be implemented. For exam-ple, factor
+analytic approaches that combine Principal Component Analysis (PCA) with rotational
+techniques may be used to identify interpretable latent dimensions underlying the ob-
+served network patterns.
+   The Presenter layer is responsible for communicating analytical results through vis-
+ualization. This layer currently consists of a Visualization component that renders the
+                                                 Design and development of jENA       5
+
+
+projected ENA models. Because the visualization process is also extensible, developers
+can introduce alternative presentation techniques through plugins. For example, an
+ENA3D plugin can provide three-dimensional visualizations that support ex-ploratory
+analysis of complex network structures.
+   The modular design of this architecture facilitates the integration of methodological
+innovations across different stages of the ENA workflow. Plugins developed for one
+component can be readily combined with plugins developed for other components, en-
+abling the construction of novel analytical configurations. For example, a TopicE-NA
+coding plugin can be integrated with ONA plugins in the Relation Builder and Graph
+Building components to create a directed Topic ENA model. Likewise, ONA-generated
+networks can be combined with the ENA3D visualization plugin to produce three-di-
+mensional representations of directed epistemic networks. Through this extensible and
+interoperable framework, the platform supports the rapid development, evaluation, and
+dissemination of new ENA methodologies.
+
+
+
+
+                    Fig. 1.A three-layer of ENA as a modular pipeline.
+
+3.2 Architecture and Design of jENA
+
+The JavaScript library jENA was treated as the backbone library of an Open ENA plat-
+form, rather than as a theoretical rewrite of ENA itself. The reference package was
+therefore inspected in two layers: the R-facing workflow that constructs ENAdata and
+ENAset objects, and the Rcpp/Armadillo utilities that implement the computational
+kernels [5]. This decision shaped the engineering method. Instead of beginning with a
+6       Anonymous Author(s)
+
+
+new JavaScript Application Programming Interface (API) and approximating the math-
+ematics, each rENA behavior was mapped to a TypeScript target, documented in the
+porting map, and checked against fixtures generated from the reference implementa-
+tion. This approach makes the theoretical contribution practical: jENA does not rede-
+fine ENA's mathematics, but it makes parity, inspectability, and shareable web deploy-
+ment explicit design commitments for future ENA-based tools. The resulting package,
+jENA, is a standalone TypeScript/JavaScript library for Node, browsers, and web work-
+ers [6]. It deliberately avoids R, Rserve, OpenCPU, React, Next.js, and server-only de-
+pendencies at runtime. R remains useful only as a fixture generator during development.
+   The first engineering step was to freeze the analytical contract. jENA accepts ordi-
+nary row objects with units, conversation identifiers, metadata columns, and code col-
+umns. It constructs ENA_UNIT with the same double-colon separator used in rENA,
+preserving multi-column unit identity and avoiding a subtle but consequential compat-
+ibility break. It also preserves rENA upper-triangle ordering. For code names A, B, and
+C, the adjacency columns are A & B, A & C, and B & C. Internally this ordering comes
+from the same nested loop pattern as rENA vector_to_ut and svector_to_ut: target codes
+advance from left to right, and each target is paired with all prior source codes. jENA
+exposes that structure as a typed adjacencyKey with source, target, name, and index
+fields. This small piece of machinery is central to parity because rotations, masks, line
+weights, projections, and plots all assume that every adjacency vector has exactly the
+same meaning across both packages.
+   Accumulation is the heart of the port. In rENA, ena.accumulate.data defines how
+coded rows become co-occurrences under MovingStanzaWindow or Conversation win-
+dows. jENA reproduces this in accumulateData. In MovingStanzaWindow mode, each
+row is grouped by conversation, then a stanza is formed from the focal row, a configu-
+rable number of prior rows, and optionally future rows. The implementation preserves
+zero, finite, and infinite backward windows, finite and infinite forward windows, binary
+co-occurrence behavior, weighted products, mask application in upper.tri order, and
+user-defined weightBy functions on the main thread. In Conversation mode, all rows
+for a unit within a conversation are summed before the upper-triangle vector is formed.
+After row-level co-occurrences are produced, endpoint models sum by unit, while Sep-
+arateTrajectory and AccumulatedTrajectory models sum by unit-conversation steps and
+then either retain step networks or build running accumulations. Metadata handling fol-
+lows rENA's practical rule: metadata is attached to unit-level results only when it is
+stable within a unit.
+   Model construction ports ena.make.set. The connection-count matrix is first normal-
+ized by row-wise L2 sphere normalization, reproducing rENA's fun_sphere_norm.
+jENA then centers the normalized line weights before projection. When centerAlign-
+ToOrigin is true, only rows with nonzero signal are used to compute the center vector;
+zero rows remain at the origin. The default rotation is an SVD/PCA rotation equivalent
+to rENA's use of prcomp with center = FALSE and scale = FALSE. Because TypeScript
+must run without a native numerical dependency, jENA implements a dependency-free
+symmetric Jacobi eigensolver over the covariance-like cross-product matrix. The tests
+                                                 Design and development of jENA          7
+
+
+compare SVD results sign-invariantly because eigenvector sign is mathematically ar-
+bitrary and differs across numerical libraries. Projection into an existing rotation set is
+supported through projectIn, but only when adjacency keys match exactly.
+   The port also includes the major non-default rotation families exposed in rENA
+workflows. Mean rotation derives leading axes from group mean differences and then
+completes the basis with orthogonal SVD. Generalized rotation models categorical or
+numeric metadata effects and supports a browser-safe elastic-net/cross-validation sub-
+set for common generalized-mean cases. Regression and regression2 rotations parse
+common formula patterns, build explicit design matrices, solve least-squares systems,
+and convert coefficients into rotation vectors. HENA rotation constructs centered pre-
+dictor columns, includes optional control variables and interactions, and derives leading
+axes from fitted coefficients before completing the residual space. Spherical rotation is
+compatibility-defined in TypeScript because the inspected rENA source exposes spher-
+ical normalization helpers but not a public spherical rotation function. Node placement
+is handled by a least-squares solver ported from lws_lsq_positions: line weights are
+transformed into node weights, normal equations are solved for node coordinates, and
+centroids are recomputed from the solved node positions.
+   Parity was enforced with a test harness rather than by confidence in translation. The
+fixture generator loads the checked-in rENA source and emits JSON fixtures for low-
+level utilities, accumulation scenarios, rotations, statistics, plotting adapters, and
+writeup summaries. When native RcppArmadillo linkage is unavailable, the generator
+falls back to plain-R equivalents transcribed from the exported low-level routines; this
+keeps comparison available even on machines without a full native R toolchain. Vitest
+tests compare rows_to_co_occurrences, ref_window_df, sphere normalization, end-
+point accumulation, conversation windows, trajectory models, line weights, points, ro-
+tated points, variance, node positions, centroids, generalized/regression/HENA rota-
+tions, project-in validation, Cohen's d, correlations, plot traces, and streaming behavior.
+Performance work was added only after this parity contract existed: typed-array co-
+occurrence kernels, chunked accumulation, low-memory materialization, progress re-
+porting, and a browser worker client preserve the row-object API while allowing large
+web jobs to run off the UI thread. Plotting remains separate from computation, so down-
+stream tools can render with SVG, Plotly, D3, or their own interfaces.
+   The final packaging step converted the port from a collection of algorithms into a
+reusable software artifact. The package exposes separate ESM entrypoints for the main
+API, low-level core utilities, plot adapters, browser helpers, and the worker script. Type
+declarations are generated with the build, and the published surface keeps computa-
+tional code independent of any frontend framework [6]. This matters methodologically
+because it makes the ENA pipeline inspectable and composable: one tool can stop after
+accumulation, another can reuse an existing rotation, and a third can build only a plot
+model for a custom visualization.
+8       Anonymous Author(s)
+
+
+
+
+        Fig. 2. rENA architecture as represented by the inspected reference package.
+
+
+
+
+                  Fig. 3. jENA architecture in the current TypeScript port.
+
+   Fig. 2 and Fig. 3 show that rENA and jENA share the same analytical spine. Both
+start from coded rows, construct units and conversations, accumulate co-occurrence
+vectors in rENA upper-triangle order, normalize and rotate line weights, project units
+and means, and prepare node and edge data for interpretation. This shared structure is
+what makes parity testing meaningful.
+   The main architectural difference is runtime context. rENA is idiomatic R: it relies
+on R data frames, data.table operations, Rcpp/C++ helpers, native numerical tooling,
+                                                 Design and development of jENA         9
+
+
+and R plotting workflows. This makes it powerful for exploratory statistical research.
+jENA reorganizes the same pipeline into TypeScript modules with explicit types, ESM
+entrypoints, browser helpers, Web Worker support, and plotting adapters that do not
+depend on a frontend framework.
+   This difference creates complementary strengths. rENA remains the methodological
+reference point for analysts who want mature R tooling and interactive model develop-
+ment. jENA is strongest when ENA computation must be embedded in a larger web
+application, run locally in a browser, support responsive user interfaces, or integrate
+with GenAI-era coding and review tools without requiring a live R service.
+   The design principle is therefore parity before platform adaptation. jENA should
+preserve observable rENA behavior for coded data, unit definitions, conversation win-
+dows, adjacency ordering, normalization, rotation, projection, and node placement,
+subject to documented numerical tolerances. The next section tests that principle on a
+Lesson 1 reflection dataset.
+
+
+4      ENA Results Run by rENA and jENA
+
+The empirical comparison used Lesson 1 self-reported reflection data from a tablet-
+supported collaborative Content and Language Integrated Learning (CLIL) study in
+east China. Two seventh-grade classes were recruited and randomly allocated to an
+intervention condition, Group A, with 45 students, including 26 males and 19 females,
+or a control condition, Group B, with 42 students, including 24 males and 18 females.
+The students were 12 to 13 years old and had prior experience with English, science
+learning, and tablet-based collaboration.
+   The learning context was a traditional classroom supported by tablets, GoodNotes,
+styluses, and browser access to online resources. Students worked in groups of three on
+CLIL materials adapted from Light Up Science, including Lesson 1 on the interdepend-
+ence of animals and plants. After the lesson, each student wrote a 200-word Chinese
+reflection in ten minutes, describing actions, reasons, and feelings during collaboration.
+These reflections formed the coded discourse data for the ENA comparison, with unit
+defined as Group::Name and conversation defined as Group::Name::Lesson.
+   The comparison reviewed the three supplied pairs of outputs: Group A experimental
+networks, Group B control networks, and the Group A versus Group B comparison
+network. Fig. 4 presents the rENA outputs and Fig. 5 presents the corresponding jENA
+outputs using the same three-in-one layout. Because rENA produced PNG plots while
+jENA produced SVG plots, strict pixel identity is not the correct standard; the compar-
+ison therefore focused on coordinate alignment, node placement, group means, and
+edge-direction patterns.
+10      Anonymous Author(s)
+
+
+
+
+Fig. 4. rENA results for Lesson 1: (a) Group A experimental network, (b) Group B control net-
+                work, and (c) Group A versus Group B comparison network.
+
+
+
+
+Fig. 5. jENA results for Lesson 1: (a) Group A experimental network, (b) Group B control net-
+                work, and (c) Group A versus Group B comparison network.
+
+
+   The results support functional equivalence for this Lesson 1 analysis. All seven node
+positions, EC, ICT, MCO, NI, SR, SC, and ATT, in jENA mapped onto the rENA node
+centers within approximately 1.2 pixels across all three plots. The group means also
+aligned: Group A was slightly left of zero on MR1, Group B was slightly right of zero,
+and both were near zero on SVD2. The strongest edge patterns matched as well. Group
+A showed strong SC-ATT, EC-ICT, ATT-MCO, and ICT-MCO connections, whereas
+Group B showed strong ATT-EC, ATT-SC, ATT-MCO, EC-MCO, and EC-SR con-
+nections. In the comparison network, Group A was stronger mainly around ICT links,
+while Group B was stronger around the EC, ATT, MCO, and SR cluster. Automated
+color sampling of the rENA comparison PNG agreed with the jENA comparison-edge
+signs for the strongest displayed edges.
+   A second, coordinate-level check used two-sided Mann-Whitney U tests on the same
+Lesson 1 ENA point coordinates. The test compared Group A (n = 45) and Group B (n
+                                                  Design and development of jENA     11
+
+
+= 42) on MR1 and SVD2. The U column reports two groups’ statistics shown in the
+test outputs.
+
+     Table 1. Two-sided Mann-Whitney U tests for Lesson 1 ENA coordinates (Experi-
+                    mental/Group A n = 45; Control/Group B n = 42).
+
+      Coord.   Runtime/scale     U    Exp. med.    Ctrl. med.     p        r_rb
+      MR1      rENA             582     0.0000       0.0098     0.00186   -0.384
+      MR1      jENA             582     0.0000       0.0098     0.00189   -0.384
+      SVD2     rENA             990     0.0000      -0.0038     0.69973   0.048
+      SVD2     jENA             991     0.0000      -0.0036     0.69656   0.049
+
+
+   Table 1 shows that the implementations make the same statistical distinction. MR1
+is significant in rENA (p = 0.00186) and jENA (p = 0.00189), whereas SVD2 is not
+significant in either output (rENA p = 0.69973; jENA p = 0.69656). The jENA MR1
+row matches the rEN on U (582) and rank-biserial effect (-0.384). The small SVD2
+differences in U, median, and rank-biserial values are rounding-level differences and
+do not alter the inference.
+   The objective judgement is therefore cautious but stronger than a visual comparison
+alone: jENA and rENA are not strictly identical as rendered tools, because their output
+formats, dimensions, fonts, legends, and visual styling differ. For the supplied Lesson
+1 example, however, they are functionally equivalent in the ENA analysis result and in
+the group-comparison inference. This evidence strengthens the claim that jENA is a
+JavaScript-based ENA package capable of serving as a powerful web and Node runtime
+for ENA tools in the GenAI era, while also showing why future work should continue
+to report numerical tolerances, coordinate-level tests, and benchmark coverage rather
+than making an unqualified identity claim.
+
+
+5      Significance for Web-Based ENA Tools in the GenAI Era
+
+The significance of jENA is clearest in the practical problem of building ENA tools for
+contemporary educational research. ENA is increasingly needed inside dashboards, an-
+notation systems, classroom analytics tools, mixed-methods notebooks, and public
+demonstrations. If these tools require a live R backend, developers must manage serv-
+ers, package versions, data transfer, institutional review, and security approvals. jENA
+lowers this barrier by making ENA computation available as ordinary JavaScript while
+keeping rENA as the reference point [5, 6]. The Lesson 1 comparison makes this claim
+concrete by showing analysis-level equivalence for a realistic classroom-reflection da-
+taset.
+   This matters in the GenAI era because coding and modeling workflows are becom-
+ing more interactive. LLMs may assist with segmentation, translation, coding sugges-
+tions, and codebook refinement, but researchers still need human review and reproduc-
+ible analysis [15]. A browser-safe ENA runtime allows candidate codes, revised da-
+tasets, rotations, comparison networks, and visualizations to be recomputed in the same
+interface where researchers inspect and contest the evidence.
+12      Anonymous Author(s)
+
+
+   For educational researchers and discourse analysts, this supports faster and more
+transparent tool-building. Teacher-facing dashboards [16], web-based coding inter-
+faces, collaborative inquiry platforms [17], and workshop demos can include ENA
+without exporting data to a separate statistical script. Local browser execution can also
+reduce unnecessary movement of sensitive transcripts, while Node execution supports
+reproducible pipelines and batch jobs.
+   For the ENA community, jENA can broaden the method ecology without displacing
+rENA. Browser-ready APIs, examples, fixtures, and plotting adapters can become part
+of an Open ENA Hub Kit: shared infrastructure that helps researchers teach, bench-
+mark, inspect, rerun, and extend ENA tools. The value of jENA is therefore not that
+JavaScript is inherently superior, but that it makes ENA easier to embed in modern
+scholarly software while preserving a transparent link to the rENA reference imple-
+mentation.
+
+
+6      Conclusion
+
+This paper has presented OpenENA as a unified platform for researchers to publish
+ENA techniques, as well as jENA as a web-native TypeScript/JavaScript translation of
+the ENA workflow associated with rENA. The central contribution is both infrastruc-
+tural and theoretical. jENA does not introduce a new ENA theory, a new interpretation
+of co-occurrence, or a new claim about what networks mean. Instead, it translates the
+analytical spine of rENA - coded rows, units, conversations, upper-triangle co-occur-
+rence vectors, sphere normalization, centering, rotation, projection, node placement,
+and visualization-ready outputs - into a runtime that can be embedded in browsers, Web
+Workers, Node services, and framework-independent web tools. The theoretical con-
+tribution is to frame this translation as the first step toward an Open ENA platform,
+where an open ENA Hub Kit of web-based tools, APIs, tests, and examples can support
+Open Science and reproducible research across educational research and discourse-
+analysis communities. This shift matters because ENA is increasingly needed inside
+interactive research environments rather than only after data have been exported to a
+local statistical script. The added empirical comparison further shows that, for the sup-
+plied classroom-reflection analysis, jENA reproduces the rENA ENA result at the level
+of node placement, group means, strongest connections, comparison-edge direction,
+and Mann-Whitney inference: both implementations identify a significant MR1 differ-
+ence between Experimental and Control groups, with no significant SVD2 difference.
+   The first contribution is the software-engineering method for porting rENA behavior
+into jENA. The port treated rENA's observable behavior as the specification, mapped
+R functions and Rcpp kernels to TypeScript modules, and used rENA-generated fix-
+tures to check accumulation, normalization, rotations, statistics, plotting outputs, and
+project-in behavior. The second contribution is the architecture comparison. rENA and
+jENA share the same ENA pipeline, but rENA is organized around the strengths of R-
+based statistical work while jENA is organized around portability, serialization, typed
+APIs, modular computation, worker execution, and separation between computation
+and visualization. The third contribution is the significance argument: a web-native
+                                                 Design and development of jENA        13
+
+
+ENA library can reduce the engineering cost of building dashboards, annotation inter-
+faces, workshop tools, interactive supplements, and GenAI-era coding workflows for
+educational research and discourse analysis. The fourth contribution is theoretical:
+jENA begins the Open ENA platform initiative by treating web-based ENA tooling as
+shared, open, inspectable, and reproducible infrastructure rather than as software that
+remains limited to a particular research team or individual user.
+   Several limitations follow from this framing. First, jENA should be understood as a
+port, deployment substrate, and initial Open ENA platform contribution, not as a re-
+placement for rENA or a competing theoretical formulation of ENA's core mathemat-
+ics. Its theoretical contribution lies in platform openness and reproducible tool-build-
+ing, not in redefining co-occurrence, normalization, rotation, or interpretation. Second,
+parity is based on documented source inspection and fixture-based tests. This is
+stronger than informal reimplementation, but it is not a permanent guarantee. As rENA
+evolves, parity coverage should be rerun, extended, and publicly documented. Third,
+GenAI-assisted coding remains methodologically sensitive. LLMs may help with seg-
+mentation or coding suggestions, but valid ENA research still depends on human re-
+view, codebook validation, intercoder reasoning where appropriate, ethical oversight,
+and transparent reporting of how coded data were produced [15]. Fourth, browser exe-
+cution introduces performance and numerical tradeoffs for very large datasets. Worker-
+based computation and typed-array kernels can reduce interface blocking, but they do
+not remove the need for careful benchmarking and memory-aware design. The empiri-
+cal comparison should therefore be read as evidence of functional equivalence for this
+dataset and configuration, including the Mann-Whitney coordinate inference, not as a
+claim that every possible rENA workflow is already identical in jENA.
+   Future work should therefore focus on community-verifiable and community-usable
+Open ENA infrastructure. Larger benchmark suites are needed to compare jENA out-
+puts with rENA across diverse datasets, rotation choices, missing-data patterns, trajec-
+tory models, masks, and edge cases. Public parity tests would make it easier for ENA
+researchers to inspect what is and is not guaranteed. Additional coverage should be
+added as rENA changes, especially for specialized rotations and formula patterns that
+are difficult to translate into browser-safe TypeScript. jENA should also be integrated
+with web-based annotation systems, classroom dashboards, mixed-methods notebooks,
+and educational research platforms so that tool builders can evaluate the library in au-
+thentic workflows. An Open ENA Hub Kit should include documented APIs, runnable
+examples, template interfaces, dataset and fixture repositories, and contribution guide-
+lines so that new ENA-based tools can be created and reviewed by the educational re-
+search community and by other discourse-analysis communities, not only by the origi-
+nal development team. Finally, the ENA community should be invited to review exam-
+ples, report discrepancies, contribute test fixtures, and identify the interpretive behav-
+iors that must be preserved. The Lesson 1 result provides a useful template for that
+work: each future benchmark should preserve the data source description, the rENA
+configuration, the jENA configuration, coordinate-level statistical checks, and a clear
+judgement about analysis-level equivalence versus rendering-level difference.
+14       Anonymous Author(s)
+
+
+   The long-term value of jENA will depend on whether it helps researchers build tools
+that are both easier to use and methodologically more transparent. In a research envi-
+ronment where coding, modeling, visualization, and interpretation are becoming in-
+creasingly interactive, the community needs shared infrastructure that can be inspected,
+tested, and deployed without unnecessary runtime barriers. jENA contributes one step
+toward that goal by making ENA computation more available to web-based tools while
+keeping rENA as the methodological reference point and by proposing Open ENA plat-
+form-building as a shared theoretical direction. Such shared, transparent, and web-de-
+ployable infrastructure can help the ENA and Quantitative Ethnography communities
+focus less on rebuilding software scaffolding and more on reproducible evidence, in-
+terpretation, and learning research.
+
+Acknowledgments. Omitted for double-anonymous review.
+
+Disclosure of Interests. The author(s) declare that they have no competing interests.
+
+
+References
+ 1. Shaffer, D.W., Collier, W., Ruis, A.R.: A tutorial on epistemic network analysis: Analyzing
+    the structure of connections in cognitive, social, and interaction data. Journal of Learning
+    Analytics 3(3), 9-45 (2016). https://doi.org/10.18608/jla.2016.33.3
+ 2. Shaffer, D.W.: Quantitative Ethnography. Cathcart Press, Madison (2017)
+ 3. Shaffer, D.W., Ruis, A.R.: Epistemic network analysis: A worked example of theory-based
+    learning analytics. In: Lang, C., Siemens, G., Wise, A.F., Gasevic, D. (eds.) Handbook of
+    Learning Analytics, pp. 175-187. Society for Learning Analytics Research (2017).
+    https://doi.org/10.18608/hla17.015
+ 4. Bowman, D., Swiecki, Z., Cai, Z., Wang, Y., Eagan, B., Linderoth, J., Shaffer, D.W.: The
+    mathematical foundations of epistemic network analysis. In: Ruis, A.R., Lee, S.B. (eds.)
+    Advances in Quantitative Ethnography. ICQE 2020, CCIS, vol. 1312, pp. 91-105. Springer,
+    Cham (2021). https://doi.org/10.1007/978-3-030-67788-6_7
+ 5. Marquart, C.L., Swiecki, Z., Collier, W., Eagan, B., Woodward, R., Shaffer, D.W.: rENA:
+    Epistemic Network Analysis. R package version 0.3.1, https://cran.r-project.org/pack-
+    age=rENA, last accessed 2026/05/29
+ 6. HUDongpin: jENA. Github repository. https://github.com/HUDongpin/jENA, last accessed
+    2026/05/29
+ 7. Siebert-Evenstone, A.L., Arastoopour Irgens, G., Collier, W., Swiecki, Z., Ruis, A.R., Shaf-
+    fer, D.W.: In search of conversational grain size: Modeling semantic structure using moving
+    stanza windows. Journal of Learning Analytics 4(3), 123-139 (2017).
+    https://doi.org/10.18608/jla.2017.43.7
+ 8. Brohinsky, J., Marquart, C., Wang, J., Ruis, A.R., Shaffer, D.W.: Trajectories in epistemic
+    network analysis. In: Ruis, A.R., Lee, S.B. (eds.) Advances in Quantitative Ethnography.
+    ICQE 2020, CCIS, vol. 1312, pp. 106-121. Springer, Cham (2021).
+    https://doi.org/10.1007/978-3-030-67788-6_8
+ 9. Tan, Y., Hinojosa, C., Marquart, C., Ruis, A.R., Shaffer, D.W.: Epistemic network analysis
+    visualization. In: Wasson, B., Zorgo, S. (eds.) Advances in Quantitative Ethnography. ICQE
+    2021, CCIS, vol. 1522, pp. 129-143. Springer, Cham (2022). https://doi.org/10.1007/978-3-
+    030-93859-8_9
+                                                     Design and development of jENA            15
+
+10. Tan, Y., Ruis, A.R., Marquart, C., Cai, Z., Knowles, M.A., Shaffer, D.W.: Ordered network
+    analysis. In: Damsa, C., Barany, A. (eds.) Advances in Quantitative Ethnography. ICQE
+    2022, CCIS, vol. 1785, pp. 101-116. Springer, Cham (2023). https://doi.org/10.1007/978-3-
+    031-31726-2_8
+11. Yu, J., Hu, D., Wang, C.H.: Development of ENA 3D: A Tool for Epistemic Network Anal-
+    ysis in Three-Dimensional Space. In: Kim, Y.J., Swiecki, Z. (eds.) Advances in Quantitative
+    Ethnography. ICQE 2024, CCIS, vol. 2278, pp. 152-165. Springer, Cham (2024).
+    https://doi.org/10.1007/978-3-031-76335-9_11
+12. Gašević, D., Joksimović, S., Eagan, B.R., Shaffer, D.W.: SENS: Network analytics to com-
+    bine social and cognitive perspectives of collaborative learning. Computers in Human Be-
+    havior 92, 562-577 (2019). https://doi.org/10.1016/j.chb.2018.07.003
+13. Fan, Y., Tan, Y., Raković, M., Wang, Y., Cai, Z., Shaffer, D.W., Gašević, D.: Dissecting
+    learning tactics in MOOC using ordered network analysis. Journal of Computer Assisted
+    Learning 39(1), 154-166 (2023). https://doi.org/10.1111/jcal.12735
+14. Csanadi, A., Eagan, B., Kollar, I., Shaffer, D.W., Fischer, F.: When coding-and-counting is
+    not enough: using epistemic network analysis (ENA) to analyze verbal data in CSCL re-
+    search. International Journal of Computer-Supported Collaborative Learning 13(4), 419-438
+    (2018). https://doi.org/10.1007/s11412-018-9292-z
+15. Liu, X., Zhang, J., Barany, A., Pankiewicz, M., Baker, R.S.: Assessing the potential and
+    limits of large language models in qualitative coding. In: Kim, Y.J., Swiecki, Z. (eds.) Ad-
+    vances in Quantitative Ethnography. ICQE 2024, CCIS, vol. 2278, pp. 89-103. Springer,
+    Cham (2024). https://doi.org/10.1007/978-3-031-76335-9_7
+16. Pozdniakov, S., Martinez-Maldonado, R., Tsai, Y.S., Echeverria, V., Swiecki, Z., Gašević,
+    D.: Investigating the Effect of Visualization Literacy and Guidance on Teachers' Dashboard
+    Interpretation.    Journal      of   Learning     Analytics     12(1),    367-390      (2025).
+    https://doi.org/10.18608/jla.2024.8471
+17. Ba, S., Hu, X., Stein, D., Liu, Q.: Anatomizing online collaborative inquiry using directional
+    epistemic network analysis and trajectory tracking. British Journal of Educational Technol-
+    ogy 55(5), 2173-2191 (2024). https://doi.org/10.1111/bjet.13441
+

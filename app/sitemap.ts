@@ -1,25 +1,27 @@
 import type { MetadataRoute } from "next";
 import { academyLessons } from "@/lib/academy-data";
-import { locales } from "@/lib/i18n";
+import { getLocaleMeta, locales, type Locale } from "@/lib/i18n";
 import { newsArticles } from "@/lib/news-data";
 import { getNewsTopics } from "@/lib/news-topics";
+import { openEnaLocalizedLocales } from "@/lib/open-ena-i18n";
 import { siteConfig } from "@/lib/site";
 
-const routes = ["", "/mission", "/news", "/academy", "/about"] as const;
+const routes = ["", "/mission", "/open-ena", "/news", "/academy", "/about"] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const indexRoutes: MetadataRoute.Sitemap = routes.flatMap((route) =>
-    locales.map((locale) => ({
+  const indexRoutes: MetadataRoute.Sitemap = routes.flatMap((route) => {
+    const routeLocales: readonly Locale[] = route === "/open-ena" ? openEnaLocalizedLocales : locales;
+    return routeLocales.map((locale) => ({
       url: `${siteConfig.url}/${locale}${route}`,
       changeFrequency: route === "/news" || route === "/academy" ? "weekly" : "monthly",
       priority: route === "" ? 1 : 0.8,
       alternates: {
         languages: Object.fromEntries(
-          locales.map((item) => [item, `${siteConfig.url}/${item}${route}`])
+          routeLocales.map((item) => [getLocaleMeta(item).htmlLang, `${siteConfig.url}/${item}${route}`])
         ),
       },
-    }))
-  );
+    }));
+  });
 
   const articleRoutes = newsArticles.flatMap((article) =>
     locales.map((locale) => ({

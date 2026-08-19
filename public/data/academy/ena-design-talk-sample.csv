@@ -10,11 +10,11 @@ team-02,baseline,round-1,team-02-round-1,2,B,The current comments repeat the sco
 team-02,baseline,round-1,team-02-round-1,3,A,We could give one next-step sentence,0,0,1,0,0
 team-02,baseline,round-1,team-02-round-1,4,B,Teachers may not have time to write it,0,0,0,1,0
 team-02,baseline,round-1,team-02-round-1,5,A,A short comment bank might help,0,0,1,0,0
-team-02,baseline,round-1,team-02-round-1,6,B,We will revise the bank after a trial,0,0,1,0,1
+team-02,baseline,round-1,team-02-round-1,6,B,The trial showed repeated errors so we will revise the bank,0,1,1,0,1
 team-03,baseline,round-1,team-03-round-1,1,A,The goal is to make peer feedback specific,1,0,0,0,0
 team-03,baseline,round-1,team-03-round-1,2,B,Students often write only good job,0,1,0,0,0
 team-03,baseline,round-1,team-03-round-1,3,A,We can provide two question stems,0,0,1,0,0
-team-03,baseline,round-1,team-03-round-1,4,B,Too many stems may make talk mechanical,0,0,0,1,0
+team-03,baseline,round-1,team-03-round-1,4,B,Too many stems may make talk mechanical,0,0,1,1,0
 team-03,baseline,round-1,team-03-round-1,5,A,We should model one example first,0,0,1,0,0
 team-03,baseline,round-1,team-03-round-1,6,B,Then we can revise the stems together,0,0,1,0,1
 team-04,baseline,round-1,team-04-round-1,1,A,Students should connect claims to evidence,1,0,0,0,0
@@ -22,7 +22,7 @@ team-04,baseline,round-1,team-04-round-1,2,B,Their drafts contain claims without
 team-04,baseline,round-1,team-04-round-1,3,A,We could add an evidence checklist,0,0,1,0,0
 team-04,baseline,round-1,team-04-round-1,4,B,A checklist could encourage box ticking,0,0,0,1,0
 team-04,baseline,round-1,team-04-round-1,5,A,Maybe students explain one checklist choice,0,0,1,0,0
-team-04,baseline,round-1,team-04-round-1,6,B,We will revise the checklist to require that explanation,0,0,1,0,1
+team-04,baseline,round-1,team-04-round-1,6,B,We will revise the checklist so students explain why each example supports the claim,1,0,1,0,1
 team-05,scaffolded,round-1,team-05-round-1,1,A,Our goal is an explanation that uses evidence,1,1,0,0,0
 team-05,scaffolded,round-1,team-05-round-1,2,B,Exit tickets show answers without reasons so we need a justification prompt,0,1,1,0,0
 team-05,scaffolded,round-1,team-05-round-1,3,A,A longer prompt supports reasoning but reduces practice time,0,0,1,1,0
@@ -39,7 +39,7 @@ team-07,scaffolded,round-1,team-07-round-1,1,A,The goal is specific peer feedbac
 team-07,scaffolded,round-1,team-07-round-1,2,B,Students write good job because criteria are not visible,0,1,0,0,0
 team-07,scaffolded,round-1,team-07-round-1,3,A,Two question stems can connect comments to the criteria,0,1,1,0,0
 team-07,scaffolded,round-1,team-07-round-1,4,B,Too many stems could make the exchange mechanical,0,0,1,1,0
-team-07,scaffolded,round-1,team-07-round-1,5,A,We can model one stem and let students choose the other,0,1,1,1,0
+team-07,scaffolded,round-1,team-07-round-1,5,A,We can model one stem but let students choose the other to avoid making talk mechanical,0,0,1,1,0
 team-07,scaffolded,round-1,team-07-round-1,6,B,We will revise the protocol after reviewing the comments,0,1,1,0,1
 team-08,scaffolded,round-1,team-08-round-1,1,A,Students should connect each claim with relevant evidence,1,1,0,0,0
 team-08,scaffolded,round-1,team-08-round-1,2,B,Drafts show examples that do not support the claim,0,1,0,0,0

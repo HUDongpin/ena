@@ -3,9 +3,11 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
+  agentRules: false,
   async redirects() {
     return [
       { source: "/mission", destination: "/en/mission", permanent: false },
+      { source: "/open-ena", destination: "/en/open-ena", permanent: false },
       { source: "/news", destination: "/en/news", permanent: false },
       { source: "/academy", destination: "/en/academy", permanent: false },
       { source: "/academy/:slug*", destination: "/en/academy/:slug*", permanent: false },

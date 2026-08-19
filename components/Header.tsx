@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useState } from "react";
 import { type Dictionary, type Locale } from "@/lib/i18n";
+import { getOpenEnaNavLabel } from "@/lib/open-ena-i18n";
 import LanguageSwitcher, { LanguageSwitcherFallback } from "./LanguageSwitcher";
 import Logo from "./Logo";
 
@@ -23,6 +24,7 @@ export default function Header({ locale, dictionary }: HeaderProps) {
   const navItems = [
     { href: `/${locale}`, label: dictionary.nav.home },
     { href: `/${locale}/mission`, label: dictionary.nav.mission },
+    { href: `/${locale}/open-ena`, label: getOpenEnaNavLabel(locale), featured: true },
     { href: `/${locale}/news`, label: dictionary.nav.news },
     { href: `/${locale}/academy`, label: dictionary.nav.academy },
     { href: `/${locale}/about`, label: dictionary.nav.about },
@@ -45,7 +47,7 @@ export default function Header({ locale, dictionary }: HeaderProps) {
               href={item.href}
               prefetch={item.href.endsWith("/about") ? false : undefined}
               aria-current={isActive(item.href) ? "page" : undefined}
-              className="nav-link focus-ring"
+              className={`nav-link focus-ring${item.featured ? " nav-link-open-ena" : ""}`}
             >
               {item.label}
             </Link>
@@ -78,7 +80,7 @@ export default function Header({ locale, dictionary }: HeaderProps) {
               href={item.href}
               prefetch={item.href.endsWith("/about") ? false : undefined}
               aria-current={isActive(item.href) ? "page" : undefined}
-              className="mobile-nav-link focus-ring"
+              className={`mobile-nav-link focus-ring${item.featured ? " mobile-nav-link-open-ena" : ""}`}
               onClick={() => setOpen(false)}
             >
               {item.label}

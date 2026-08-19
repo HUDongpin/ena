@@ -93,7 +93,7 @@ export default async function MissionPage({ params }: MissionPageProps) {
           <p>{dictionary.mission.resourcesText}</p>
         </div>
         <div className="button-row">
-          <CTA href={siteConfig.officialWebtoolUrl} external>
+          <CTA href={`/${typedLocale}/open-ena`}>
             {dictionary.common.openWebtool}
           </CTA>
           <CTA href={siteConfig.officialResourcesUrl} variant="secondary" external>
