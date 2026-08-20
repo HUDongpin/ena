@@ -2102,6 +2102,355 @@ button:focus-visible {
   margin-top: 8px;
 }
 
+/* Open ENA authentication uses one restrained academic workspace card. */
+.open-ena-login-page {
+  display: grid;
+  min-height: calc(100dvh - 80px);
+  place-items: center;
+  padding: 52px 24px 68px;
+  background: #eef4f4;
+}
+
+body:has(.open-ena-login-page) .back-to-top {
+  display: none;
+}
+
+.open-ena-login-shell {
+  display: grid;
+  width: min(100%, 1040px);
+  min-height: 610px;
+  grid-template-columns: minmax(330px, 0.88fr) minmax(440px, 1.12fr);
+  overflow: hidden;
+  border: 1px solid #cad9d7;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 20px 54px rgba(23, 49, 56, 0.12);
+}
+
+.open-ena-login-context {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 38px 40px 34px;
+  color: #edf7f5;
+  background: #1d2b3a;
+}
+
+.open-ena-login-brand {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.open-ena-login-brand img {
+  width: 54px;
+  height: 54px;
+}
+
+.open-ena-login-brand div {
+  display: grid;
+  gap: 3px;
+}
+
+.open-ena-login-brand strong {
+  color: #f4fbfa;
+  font-size: 0.96rem;
+  font-weight: 780;
+  letter-spacing: 0.11em;
+}
+
+.open-ena-login-brand span {
+  color: #8faaa6;
+  font-size: 0.66rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+}
+
+.open-ena-login-network {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  place-items: center;
+  padding-block: 26px 18px;
+}
+
+.open-ena-login-network svg {
+  display: block;
+  width: min(100%, 410px);
+  height: auto;
+}
+
+.open-ena-login-edges path {
+  fill: none;
+  stroke: #65817e;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.open-ena-login-edges path:first-child {
+  stroke: #72c7bd;
+  stroke-width: 3;
+}
+
+.open-ena-login-nodes circle {
+  fill: #233849;
+  stroke: #9bc7c1;
+  stroke-width: 2;
+}
+
+.open-ena-login-nodes circle:nth-child(4) {
+  fill: #72c7bd;
+  stroke: #e8f8f5;
+}
+
+.open-ena-login-context-copy {
+  display: grid;
+  gap: 15px;
+}
+
+.open-ena-login-context-copy > p {
+  margin: 0;
+  color: #c8d8d5;
+  font-size: 0.78rem;
+  font-weight: 560;
+  line-height: 1.55;
+}
+
+.open-ena-login-context-copy ol {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.open-ena-login-context-copy li {
+  display: grid;
+  gap: 5px;
+  border-top: 1px solid #55706e;
+  padding-top: 9px;
+  color: #edf7f5;
+  font-size: 0.7rem;
+  font-weight: 660;
+}
+
+.open-ena-login-context-copy li + li {
+  margin-inline-start: 10px;
+}
+
+.open-ena-login-context-copy li span {
+  color: #72c7bd;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.56rem;
+  letter-spacing: 0.08em;
+}
+
+.open-ena-login-panel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  padding: 58px clamp(40px, 6vw, 76px) 48px;
+}
+
+.open-ena-login-heading {
+  display: grid;
+  gap: 9px;
+}
+
+.open-ena-login-heading .eyebrow {
+  margin: 0;
+  color: #39736e;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.67rem;
+  font-weight: 760;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.open-ena-login-heading h1 {
+  margin: 0;
+  color: #172234;
+  font-size: clamp(1.85rem, 3vw, 2.4rem);
+  font-weight: 780;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+}
+
+.open-ena-login-heading > p:last-child {
+  max-width: 480px;
+  margin: 0;
+  color: #566376;
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.open-ena-login-form {
+  display: grid;
+  gap: 9px;
+  margin-top: 30px;
+}
+
+.open-ena-login-form label {
+  color: #29364a;
+  font-size: 0.76rem;
+  font-weight: 720;
+}
+
+.open-ena-login-form label:not(:first-of-type) {
+  margin-top: 9px;
+}
+
+.open-ena-login-form input:not([type="hidden"]) {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid #b9c9c7;
+  border-radius: 3px;
+  padding: 11px 13px;
+  color: #172234;
+  background: #fbfdfd;
+  font-size: 0.86rem;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.open-ena-login-form input:not([type="hidden"])::placeholder {
+  color: #84908f;
+}
+
+.open-ena-login-form input:not([type="hidden"]):focus {
+  border-color: #39736e;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(114, 199, 189, 0.22);
+}
+
+.open-ena-login-form input[aria-invalid="true"] {
+  border-color: #a64b55;
+}
+
+.open-ena-login-error {
+  margin: 2px 0 0;
+  border-inline-start: 3px solid #a64b55;
+  padding: 7px 10px;
+  color: #80343d;
+  background: #fff4f4;
+  font-size: 0.73rem;
+  line-height: 1.5;
+}
+
+.open-ena-login-submit {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 13px;
+  border: 1px solid #39736e;
+  border-radius: 3px;
+  padding-inline: 16px;
+  color: #fff;
+  background: #39736e;
+  font-size: 0.81rem;
+  font-weight: 740;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.open-ena-login-submit:hover {
+  border-color: #2f625e;
+  background: #2f625e;
+}
+
+.open-ena-login-submit:active {
+  transform: translateY(1px);
+}
+
+.open-ena-login-submit span {
+  font-size: 1.05rem;
+}
+
+.open-ena-login-notes {
+  display: grid;
+  gap: 11px;
+  margin-top: 27px;
+  border-top: 1px solid #dce6e4;
+  padding-top: 20px;
+}
+
+.open-ena-login-notes p {
+  margin: 0;
+  color: #586477;
+  font-size: 0.72rem;
+  line-height: 1.62;
+}
+
+.open-ena-login-collaboration a {
+  color: #2f6c67;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.open-ena-login-privacy {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.open-ena-login-privacy span {
+  padding-top: 0.18em;
+  color: #72c7bd;
+  font-size: 0.5rem;
+}
+
+@media (max-width: 820px) {
+  .open-ena-login-page {
+    padding: 28px 16px 44px;
+  }
+
+  .open-ena-login-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .open-ena-login-context {
+    min-height: 250px;
+    padding: 28px 30px 24px;
+  }
+
+  .open-ena-login-network {
+    display: none;
+  }
+
+  .open-ena-login-context-copy {
+    margin-top: 34px;
+  }
+
+  .open-ena-login-panel {
+    padding: 42px 30px 38px;
+  }
+}
+
+@media (max-width: 480px) {
+  .open-ena-login-page {
+    padding-inline: 10px;
+  }
+
+  .open-ena-login-context,
+  .open-ena-login-panel {
+    padding-inline: 22px;
+  }
+
+  .open-ena-login-context-copy ol {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .open-ena-login-context-copy li + li {
+    margin-inline-start: 0;
+  }
+}
+
 /* Open ENA is a dense research workbench inspired by the 3D ENA interaction model. */
 .open-ena-page {
   height: 100dvh;
@@ -2522,6 +2871,55 @@ button:focus-visible {
   letter-spacing: 0.08em;
   line-height: 1;
   text-transform: uppercase;
+}
+
+.ena-rail-logout {
+  flex: 0 0 auto;
+  margin: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 5px;
+  background: #1a2836;
+}
+
+.ena-rail-logout button {
+  display: flex;
+  width: 100%;
+  min-height: 50px;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 3px;
+  padding: 4px 2px;
+  color: #9fb2b2;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ena-rail-logout button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ena-rail-logout svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.ena-rail-logout span {
+  max-width: 58px;
+  overflow: hidden;
+  font-size: 0.48rem;
+  font-weight: 690;
+  line-height: 1.15;
+  text-align: center;
+  text-overflow: ellipsis;
 }
 
 .ena-control-panel {
@@ -4346,6 +4744,27 @@ button:focus-visible {
 
   .ena-rail-meta {
     display: none;
+  }
+
+  .ena-rail-brand,
+  .ena-rail-modes,
+  .ena-rail-logout {
+    grid-column: 1 / -1;
+  }
+
+  .ena-rail-logout {
+    padding: 5px 8px;
+  }
+
+  .ena-rail-logout button {
+    min-height: 42px;
+    flex-direction: row;
+    gap: 7px;
+  }
+
+  .ena-rail-logout span {
+    max-width: none;
+    font-size: 0.62rem;
   }
 
   .ena-rail-button {

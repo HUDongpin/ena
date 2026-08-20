@@ -1,8 +1,14 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import JsonLd from "@/components/JsonLd";
+import OpenEnaLogin from "@/components/open-ena/OpenEnaLogin";
 import OpenEnaWorkspace from "@/components/open-ena/OpenEnaWorkspace";
 import { getLocaleMeta, isLocale, type Locale } from "@/lib/i18n";
+import {
+  OPEN_ENA_SESSION_COOKIE,
+  verifyOpenEnaSessionToken,
+} from "@/lib/open-ena-auth";
 import {
   getOpenEnaCopy,
   isOpenEnaLocalizedLocale,
@@ -13,7 +19,10 @@ import { siteConfig } from "@/lib/site";
 
 interface OpenEnaPageProps {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ auth?: string | string[] }>;
 }
+
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: OpenEnaPageProps): Promise<Metadata> {
   const { locale } = await params;
@@ -48,10 +57,18 @@ export async function generateMetadata({ params }: OpenEnaPageProps): Promise<Me
   };
 }
 
-export default async function OpenEnaPage({ params }: OpenEnaPageProps) {
+export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageProps) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
   const typedLocale = locale as Locale;
+  const sessionCookie = (await cookies()).get(OPEN_ENA_SESSION_COOKIE)?.value;
+  const isAuthenticated = verifyOpenEnaSessionToken(sessionCookie);
+  const query = await searchParams;
+
+  if (!isAuthenticated) {
+    return <OpenEnaLogin locale={typedLocale} error={query.auth === "invalid"} />;
+  }
+
   const copy = getOpenEnaCopy(typedLocale);
   const canonicalLocale = isOpenEnaLocalizedLocale(typedLocale) ? typedLocale : "en";
   const structuredData = {

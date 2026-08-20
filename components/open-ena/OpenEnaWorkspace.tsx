@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ModelType, Row, WindowType } from "jena-js";
 import type { Locale } from "@/lib/i18n";
+import { getOpenEnaAuthCopy } from "@/lib/open-ena-auth-copy";
 import { getOpenEnaCopy, isOpenEnaLocalizedLocale } from "@/lib/open-ena-i18n";
 import { siteConfig } from "@/lib/site";
 import { buildManifest, dimensionEffect } from "@/lib/open-ena/analyze";
@@ -176,6 +177,7 @@ function validateWorkspaceConfig(
 
 export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const copy = getOpenEnaCopy(locale);
+  const authCopy = getOpenEnaAuthCopy(locale);
   const workspaceIsLocalized = isOpenEnaLocalizedLocale(locale);
   const [mode, setMode] = useState<OpenEnaMode>("sets");
   const [modelTab, setModelTab] = useState<OpenEnaModelPanelTab>("units");
@@ -2489,6 +2491,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 </button>
               ))}
             </div>
+            <form className="ena-rail-logout" action="/api/open-ena/logout" method="post">
+              <input type="hidden" name="locale" value={locale} />
+              <button type="submit" aria-label={authCopy.signOut} title={authCopy.signOut}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M10 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19H10" />
+                  <path d="M14 8l4 4-4 4M9 12h9" />
+                </svg>
+                <span>{authCopy.signOut}</span>
+              </button>
+            </form>
             <div className="ena-rail-meta">
               <div
                 className="ena-run-status"
