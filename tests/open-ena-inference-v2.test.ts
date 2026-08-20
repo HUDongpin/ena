@@ -217,6 +217,7 @@ test("coordinates endpoint Mann-Whitney axes into one frozen Holm family", async
   assert.equal(output.binding.analyzedAt, ANALYZED_AT);
   assert.equal(output.binding.dataset.normalizedUtf8TextSha256, HASH);
   assert.equal(output.binding.dataset.hashKind, "normalized-utf8-csv-text-sha256");
+  assert.equal(output.binding.trajectoryMapping, null);
   assert.equal(output.rows.length, 2);
   assert.equal(output.families.length, 1);
   assert.equal(output.families[0].familySizePlanned, 2);
@@ -316,6 +317,10 @@ test("coordinator snapshots request, frame, result provenance, and current bindi
   assert.ok(trajectory.comparisonFrame);
   trajectory.comparisonFrame.points[0].x = 1e200;
   trajectory.comparisonFrame.points[0].sourcePointCount = 99;
+  trajectory.comparisonFrame.repeatedEntityColumns = ["changed-after-start"];
+  trajectory.comparisonFrame.identityConfirmed = false;
+  trajectory.comparisonFrame.timeColumn = "changed-after-start";
+  trajectory.comparisonFrame.timeOrder.reverse();
   assert.ok(trajectory.result.provenanceBinding);
   trajectory.result.provenanceBinding.configuration.codes = ["changed-after-start"];
   trajectory.currentBinding.datasetNormalizedUtf8TextSha256 = OTHER_HASH;
@@ -327,6 +332,14 @@ test("trajectory independent inference uses only the explicitly selected period"
   const input = trajectoryFixture();
   const first = await runOpenEnaInferenceV2(input);
   assert.equal(first.kind, "trajectory-independent-period");
+  assert.deepEqual(first.binding.trajectoryMapping, {
+    contractVersion: 1,
+    repeatedEntityColumns: ["Group", "Name"],
+    identityConfirmed: true,
+    timeColumn: "Period",
+    timeOrder: ["T1", "T2", "T3"],
+  });
+  assertDeeplyFrozen(first.binding.trajectoryMapping);
   assert.equal(first.rows.length, 2);
   assert.deepEqual(first.ledger, {
     candidateEntityCount: 6,

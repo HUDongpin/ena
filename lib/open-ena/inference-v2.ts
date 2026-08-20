@@ -150,6 +150,16 @@ interface OpenEnaInferenceCoordinatorSnapshotV2 {
   comparisonFrame?: OpenEnaLongitudinalComparisonFrame;
 }
 
+export const OPEN_ENA_INFERENCE_TRAJECTORY_MAPPING_CONTRACT_VERSION_V2 = 1 as const;
+
+export interface OpenEnaInferenceTrajectoryMappingV2 {
+  contractVersion: typeof OPEN_ENA_INFERENCE_TRAJECTORY_MAPPING_CONTRACT_VERSION_V2;
+  repeatedEntityColumns: string[];
+  identityConfirmed: true;
+  timeColumn: string;
+  timeOrder: string[];
+}
+
 export interface OpenEnaInferenceBindingV2 {
   analyzedAt: string;
   dataset: {
@@ -159,6 +169,8 @@ export interface OpenEnaInferenceBindingV2 {
   modelType: OpenEnaConfig["model"];
   configuration: OpenEnaConfig;
   axes: [string, string];
+  /** Null for endpoint or an inference disabled before a trajectory mapping was confirmed. */
+  trajectoryMapping: OpenEnaInferenceTrajectoryMappingV2 | null;
 }
 
 export const OPEN_ENA_INFERENCE_PROVENANCE_V2 = "ENA.HK post-projection inference" as const;
@@ -646,7 +658,24 @@ function validateBinding(input: OpenEnaInferenceCoordinatorSnapshotV2): OpenEnaI
     modelType: currentBinding.configuration.model,
     configuration: cloneConfig(currentBinding.configuration),
     axes: [...request.axes],
+    trajectoryMapping: null,
   };
+}
+
+function withValidatedTrajectoryMapping(
+  binding: OpenEnaInferenceBindingV2,
+  frame: OpenEnaLongitudinalComparisonFrame,
+): OpenEnaInferenceBindingV2 {
+  return deepFreeze({
+    ...binding,
+    trajectoryMapping: {
+      contractVersion: OPEN_ENA_INFERENCE_TRAJECTORY_MAPPING_CONTRACT_VERSION_V2,
+      repeatedEntityColumns: [...frame.repeatedEntityColumns],
+      identityConfirmed: true as const,
+      timeColumn: frame.timeColumn,
+      timeOrder: [...frame.timeOrder],
+    },
+  });
 }
 
 function designWarnings(
@@ -711,6 +740,15 @@ function canonicalIdentityBinding(binding: OpenEnaInferenceBindingV2) {
       centerAlignToOrigin: configuration.centerAlignToOrigin,
     },
     axes: [...binding.axes],
+    trajectoryMapping: binding.trajectoryMapping
+      ? {
+          contractVersion: binding.trajectoryMapping.contractVersion,
+          repeatedEntityColumns: [...binding.trajectoryMapping.repeatedEntityColumns],
+          identityConfirmed: binding.trajectoryMapping.identityConfirmed,
+          timeColumn: binding.trajectoryMapping.timeColumn,
+          timeOrder: [...binding.trajectoryMapping.timeOrder],
+        }
+      : null,
   };
 }
 
@@ -1150,6 +1188,7 @@ async function coordinateTrajectoryIndependent(
   if (!frame.identityConfirmed || !frame.eligibility.eligible) {
     return disabledTrajectoryIndependent(request, binding, "identity-not-confirmed");
   }
+  binding = withValidatedTrajectoryMapping(binding, frame);
   let slice;
   try {
     slice = sliceLongitudinalIndependentPeriod(frame, request);
@@ -1320,6 +1359,7 @@ async function coordinateTrajectoryPaired(
   if (!frame.identityConfirmed || !frame.eligibility.eligible) {
     return disabledTrajectoryPaired(request, binding, "identity-not-confirmed");
   }
+  binding = withValidatedTrajectoryMapping(binding, frame);
   let slice;
   try {
     slice = sliceLongitudinalPairedPeriods(frame, request);
@@ -1518,6 +1558,7 @@ async function coordinateTrajectoryRepeated(
   if (!frame.identityConfirmed || !frame.eligibility.eligible) {
     return disabledTrajectoryRepeated(request, binding, "identity-not-confirmed");
   }
+  binding = withValidatedTrajectoryMapping(binding, frame);
   let slice;
   try {
     slice = sliceLongitudinalRepeatedPeriods(frame, request);

@@ -3,6 +3,7 @@ import type {
   OpenEnaFriedmanInferenceRowV2,
   OpenEnaInferenceFamilyV2,
   OpenEnaInferenceResultV2,
+  OpenEnaInferenceTrajectoryMappingV2,
   OpenEnaMannWhitneyInferenceRowV2,
   OpenEnaWilcoxonInferenceRowV2,
 } from "./inference-v2";
@@ -19,6 +20,8 @@ export interface OpenEnaInferenceExpectedBindingV2 {
   modelType: OpenEnaConfig["model"];
   configuration: OpenEnaConfig;
   axes: readonly [string, string];
+  /** Supply this when the consumer has a current longitudinal mapping to bind. */
+  trajectoryMapping?: OpenEnaInferenceTrajectoryMappingV2 | null;
 }
 
 const BINDING_MISMATCH = "Inference consumer binding mismatch.";
@@ -35,6 +38,55 @@ function sameUnknownArrays(left: unknown, right: unknown) {
     && Array.isArray(right)
     && left.length === right.length
     && left.every((entry, index) => entry === right[index]);
+}
+
+function sameTrajectoryMapping(
+  left: OpenEnaInferenceTrajectoryMappingV2 | null,
+  right: OpenEnaInferenceTrajectoryMappingV2 | null,
+) {
+  if (left === null || right === null) return left === right;
+  return left.contractVersion === right.contractVersion
+    && left.identityConfirmed === right.identityConfirmed
+    && left.timeColumn === right.timeColumn
+    && sameUnknownArrays(left.repeatedEntityColumns, right.repeatedEntityColumns)
+    && sameUnknownArrays(left.timeOrder, right.timeOrder);
+}
+
+function trajectoryMappingMatchesRequest(inference: OpenEnaInferenceResultV2) {
+  const mapping = inference.binding.trajectoryMapping;
+  if (inference.kind === "endpoint-independent") return mapping === null;
+  if (mapping === null) return inference.status === "disabled";
+  if (inference.binding.modelType !== "SeparateTrajectory"
+    && inference.binding.modelType !== "AccumulatedTrajectory") return false;
+  if (mapping.contractVersion !== 1
+    || mapping.identityConfirmed !== true
+    || mapping.repeatedEntityColumns.length === 0
+    || new Set(mapping.repeatedEntityColumns).size !== mapping.repeatedEntityColumns.length
+    || mapping.repeatedEntityColumns.some((column) => (
+      !inference.binding.configuration.unitColumns.includes(column)
+    ))
+    || (inference.binding.configuration.groupColumn !== null
+      && mapping.repeatedEntityColumns.length === 1
+      && mapping.repeatedEntityColumns[0] === inference.binding.configuration.groupColumn
+      && inference.binding.configuration.unitColumns.some((column) => (
+        column !== inference.binding.configuration.groupColumn
+      )))
+    || mapping.timeOrder.length === 0
+    || new Set(mapping.timeOrder).size !== mapping.timeOrder.length
+    || !sameUnknownArrays(mapping.repeatedEntityColumns, inference.request.repeatedEntityColumns)
+    || mapping.timeColumn !== inference.request.timeColumn
+    || !inference.binding.configuration.conversationColumns.includes(mapping.timeColumn)) return false;
+  const requestedPeriods = inference.kind === "trajectory-independent-period"
+    ? [inference.request.period]
+    : inference.kind === "trajectory-paired-periods"
+      ? [inference.request.earlierPeriod, inference.request.laterPeriod]
+      : inference.request.periods;
+  if (requestedPeriods.some((period) => !mapping.timeOrder.includes(period))) return false;
+  if (inference.kind === "trajectory-repeated-periods") {
+    const indexes = requestedPeriods.map((period) => mapping.timeOrder.indexOf(period));
+    return indexes.every((index, position) => position === 0 || index > indexes[position - 1]);
+  }
+  return true;
 }
 
 function isDeeplyFrozen(value: unknown, seen = new Set<unknown>()): boolean {
@@ -62,7 +114,13 @@ export function assertOpenEnaInferenceBindingV2(
     || inference.binding.modelType !== expected.modelType
     || !sameOpenEnaConfig(inference.binding.configuration, expected.configuration)
     || !sameAxes(inference.binding.axes, expected.axes)
-    || !sameAxes(inference.request.axes, expected.axes)) {
+    || !sameAxes(inference.request.axes, expected.axes)
+    || !trajectoryMappingMatchesRequest(inference)
+    || (Object.prototype.hasOwnProperty.call(expected, "trajectoryMapping")
+      && !sameTrajectoryMapping(
+        inference.binding.trajectoryMapping,
+        expected.trajectoryMapping ?? null,
+      ))) {
     throw new Error(BINDING_MISMATCH);
   }
 }
@@ -523,7 +581,12 @@ function validateRequest(value: unknown, kind: OpenEnaInferenceResultV2["kind"])
 
 function validateBinding(value: unknown) {
   if (!isRecord(value)) throw new Error("Inference binding is invalid.");
-  exactKeys(value, ["analyzedAt", "dataset", "modelType", "configuration", "axes"], "Inference binding");
+  exactKeys(
+    value,
+    ["analyzedAt", "dataset", "modelType", "configuration", "axes", "trajectoryMapping"],
+    "Inference binding",
+  );
+  if (!("trajectoryMapping" in value)) throw new Error("Inference binding is incomplete.");
   if (!isRecord(value.dataset)) throw new Error("Inference dataset binding is invalid.");
   exactKeys(value.dataset, ["normalizedUtf8TextSha256", "hashKind"], "Inference dataset binding");
   if (typeof value.dataset.normalizedUtf8TextSha256 !== "string"
@@ -564,6 +627,43 @@ function validateBinding(value: unknown) {
   }
   validateStringArray(value.axes, "Inference binding axes");
   if ((value.axes as unknown[]).length !== 2) throw new Error("Inference binding axes are invalid.");
+  if (value.trajectoryMapping !== null) {
+    if (!isRecord(value.trajectoryMapping)) {
+      throw new Error("Inference trajectory mapping is invalid.");
+    }
+    exactKeys(value.trajectoryMapping, [
+      "contractVersion", "repeatedEntityColumns", "identityConfirmed", "timeColumn", "timeOrder",
+    ], "Inference trajectory mapping");
+    validateStringArray(
+      value.trajectoryMapping.repeatedEntityColumns,
+      "Inference trajectory identity columns",
+    );
+    validateStringArray(value.trajectoryMapping.timeOrder, "Inference trajectory time order");
+    const repeatedEntityColumns = value.trajectoryMapping.repeatedEntityColumns as string[];
+    const timeOrder = value.trajectoryMapping.timeOrder as string[];
+    const unitColumns = value.configuration.unitColumns as string[];
+    const conversationColumns = value.configuration.conversationColumns as string[];
+    const groupColumn = value.configuration.groupColumn as string | null;
+    if (value.trajectoryMapping.contractVersion !== 1
+      || value.trajectoryMapping.identityConfirmed !== true
+      || repeatedEntityColumns.length === 0
+      || new Set(repeatedEntityColumns).size !== repeatedEntityColumns.length
+      || repeatedEntityColumns.some((column) => column.length === 0 || column.length > 4_096)
+      || repeatedEntityColumns.some((column) => !unitColumns.includes(column))
+      || (groupColumn !== null
+        && repeatedEntityColumns.length === 1
+        && repeatedEntityColumns[0] === groupColumn
+        && unitColumns.some((column) => column !== groupColumn))
+      || typeof value.trajectoryMapping.timeColumn !== "string"
+      || value.trajectoryMapping.timeColumn.length === 0
+      || value.trajectoryMapping.timeColumn.length > 4_096
+      || !conversationColumns.includes(value.trajectoryMapping.timeColumn)
+      || timeOrder.length === 0
+      || new Set(timeOrder).size !== timeOrder.length
+      || timeOrder.some((period) => period.length === 0 || period.length > 4_096)) {
+      throw new Error("Inference trajectory mapping is invalid.");
+    }
+  }
 }
 
 function validateFamilies(value: unknown) {
@@ -796,6 +896,9 @@ export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceR
           && scope.cohortPolicy === request.cohortPolicy
           && scope.posthocContrasts === request.posthocContrasts;
   if (!scopeMatchesRequest) throw new Error("Inference request and scope are inconsistent.");
+  if (!trajectoryMappingMatchesRequest(value as unknown as OpenEnaInferenceResultV2)) {
+    throw new Error("Inference trajectory mapping is inconsistent.");
+  }
   const families = value.families as Record<string, unknown>[];
   const familyById = new Map(families.map((family) => [family.familyId, family]));
   if (new Set(familyById.keys()).size !== families.length) throw new Error("Inference families are duplicated.");

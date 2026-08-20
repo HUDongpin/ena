@@ -3,9 +3,12 @@ import test from "node:test";
 import { analyzeDataset } from "../lib/open-ena/analyze";
 import { parseCsv } from "../lib/open-ena/csv";
 import {
+  OpenEnaLongitudinalIntegrityError,
+  buildLongitudinalDerivation,
   buildLongitudinalGroupCentroidExport,
   buildLongitudinalGroupCentroidView,
   longitudinalPeriodRowsToCsv,
+  sliceLongitudinalIndependentPeriod,
   type OpenEnaLongitudinalSettings,
 } from "../lib/open-ena/longitudinal";
 import { SAMPLE_CONFIG, type OpenEnaConfig, type OpenEnaResult, type ParsedDataset } from "../lib/open-ena/types";
@@ -69,6 +72,74 @@ function settings(cohortPolicy: "available" | "complete" = "available"): OpenEna
     datasetNormalizedUtf8TextSha256: SOURCE_HASH,
   };
 }
+
+test("one-period derivation exposes a private independent slice without fabricating a public Plot trajectory", () => {
+  const dataset = parseCsv([
+    "student,case,period,group,A,B,C",
+    "A,one,T1,G1,1,1,0",
+    "B,one,T1,G1,1,0,1",
+    "C,one,T1,G2,0,1,1",
+    "D,one,T1,G2,1,1,1",
+  ].join("\n") + "\n", { name: "one-period.csv", source: "upload" });
+  const config: OpenEnaConfig = {
+    ...SAMPLE_CONFIG,
+    unitColumns: ["student", "case"],
+    conversationColumns: ["period"],
+    groupColumn: "group",
+    codes: ["A", "B", "C"],
+    model: "SeparateTrajectory",
+    window: "Conversation",
+  };
+  const analyzed = analyzeDataset(dataset, config);
+  const result: OpenEnaResult = {
+    ...analyzed,
+    provenanceBinding: {
+      datasetNormalizedUtf8TextSha256: SOURCE_HASH,
+      datasetHashKind: dataset.hashKind,
+      configuration: structuredClone(config),
+    },
+  };
+  const onePeriodSettings: OpenEnaLongitudinalSettings = {
+    repeatedEntityColumns: ["student", "case"],
+    identityConfirmed: true,
+    timeColumn: "period",
+    timeOrder: ["T1"],
+    cohortPolicy: "available",
+    axes: result.dimensions.slice(0, 2) as [string, string],
+    datasetNormalizedUtf8TextSha256: SOURCE_HASH,
+  };
+
+  const derivation = buildLongitudinalDerivation(
+    result,
+    config,
+    dataset,
+    onePeriodSettings,
+    "2026-08-21T14:00:00.000Z",
+  );
+  const slice = sliceLongitudinalIndependentPeriod(derivation.comparisonFrame, {
+    period: "T1",
+    primaryGroup: "G1",
+    secondaryGroup: "G2",
+  });
+  assert.equal(slice.rows.length, 4);
+  assert.deepEqual(slice.ledger, {
+    candidateEntityCount: 4,
+    primaryAvailableCount: 2,
+    secondaryAvailableCount: 2,
+    includedEntityCount: 4,
+  });
+  assert.throws(
+    () => buildLongitudinalGroupCentroidView(
+      result,
+      config,
+      dataset,
+      onePeriodSettings,
+      "2026-08-21T14:00:00.000Z",
+    ),
+    (error: unknown) => error instanceof OpenEnaLongitudinalIntegrityError
+      && error.code === "period-invalid",
+  );
+});
 
 test("derives explicit-order available-cohort group centroids from compact jENA trajectory points", () => {
   const { dataset, config, result } = longitudinalFixture();

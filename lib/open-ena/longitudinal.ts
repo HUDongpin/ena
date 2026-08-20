@@ -601,10 +601,10 @@ function validateInputs(
     || axes.some((axis) => !result.dimensions.includes(axis))) {
     throw new OpenEnaLongitudinalIntegrityError("axes-invalid");
   }
-  if (!Array.isArray(settings.timeOrder) || settings.timeOrder.length < 2
+  if (!Array.isArray(settings.timeOrder) || settings.timeOrder.length < 1
     || settings.timeOrder.some((time) => typeof time !== "string" || time.length === 0)
     || new Set(settings.timeOrder).size !== settings.timeOrder.length) {
-    throw new Error("The explicit time order must contain at least two unique, nonempty periods.");
+    throw new Error("The explicit time order must contain at least one unique, nonempty period.");
   }
   if (settings.cohortPolicy !== "available" && settings.cohortPolicy !== "complete") {
     throw new Error("The cohort policy must be available or complete.");
@@ -1085,6 +1085,10 @@ export function buildLongitudinalGroupCentroidView(
   settings: OpenEnaLongitudinalSettings,
   createdAt = new Date().toISOString(),
 ): OpenEnaLongitudinalView {
+  const resolvedSettings = normalizeSettings(settings);
+  if (resolvedSettings.timeOrder.length < 2) {
+    throw new OpenEnaLongitudinalIntegrityError("period-invalid");
+  }
   return buildLongitudinalDerivation(result, config, dataset, settings, createdAt).view;
 }
 
@@ -1329,6 +1333,9 @@ export function buildLongitudinalGroupCentroidExport(
 ) {
   if (inference) {
     if (inference.kind === "endpoint-independent"
+      || !view.identityConfirmed
+      || !Array.isArray(view.repeatedEntityColumns)
+      || view.repeatedEntityColumns.length === 0
       || !view.source.normalizedUtf8TextSha256
       || !view.source.hashKind) {
       throw new Error("Inference consumer binding mismatch.");
@@ -1340,6 +1347,13 @@ export function buildLongitudinalGroupCentroidExport(
       modelType: view.resultProvenance.modelType,
       configuration: view.configuration,
       axes: view.axes,
+      trajectoryMapping: {
+        contractVersion: 1,
+        repeatedEntityColumns: [...view.repeatedEntityColumns],
+        identityConfirmed: true,
+        timeColumn: view.timeColumn,
+        timeOrder: [...view.timeOrder],
+      },
     });
   }
   const finiteOr = (value: number | undefined, fallback: number) => (

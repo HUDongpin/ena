@@ -193,10 +193,38 @@ function expectedBinding(
 }
 
 test("consumer binding guard fails closed and aggregate flattening contains no individual evidence", async () => {
-  const { endpoint, endpointInference, repeatedInference } = await allInferenceFixtures();
+  const {
+    endpoint,
+    trajectory,
+    endpointInference,
+    independentInference,
+    pairedInference,
+    repeatedInference,
+  } = await allInferenceFixtures();
+  assert.equal(endpointInference.binding.trajectoryMapping, null);
+  assert.deepEqual(repeatedInference.binding.trajectoryMapping, {
+    contractVersion: 1,
+    repeatedEntityColumns: ["Group", "Name"],
+    identityConfirmed: true,
+    timeColumn: "Period",
+    timeOrder: ["T1", "T2", "T3"],
+  });
   assert.doesNotThrow(() => assertOpenEnaInferenceBindingV2(
     endpointInference,
     expectedBinding(endpoint),
+  ));
+  assert.doesNotThrow(() => assertOpenEnaInferenceBindingV2(
+    repeatedInference,
+    {
+      ...expectedBinding(trajectory),
+      trajectoryMapping: {
+        contractVersion: 1,
+        repeatedEntityColumns: ["Group", "Name"],
+        identityConfirmed: true,
+        timeColumn: "Period",
+        timeOrder: ["T1", "T2", "T3"],
+      },
+    },
   ));
   assert.throws(
     () => assertOpenEnaInferenceBindingV2(endpointInference, {
@@ -217,13 +245,79 @@ test("consumer binding guard fails closed and aggregate flattening contains no i
   for (const forbidden of ["entityToken", "entityId", "points", "pairs", "blocks", "differences"]) {
     assert.equal(keys.has(forbidden), false);
   }
-  const parsed = parseOpenEnaInferenceResultV2(JSON.parse(JSON.stringify(repeatedInference)));
-  assert.deepEqual(parsed, repeatedInference);
-  assert.equal(Object.isFrozen(parsed), true);
+  for (const inference of [
+    endpointInference,
+    independentInference,
+    pairedInference,
+    repeatedInference,
+  ]) {
+    const parsed = parseOpenEnaInferenceResultV2(JSON.parse(JSON.stringify(inference)));
+    assert.deepEqual(parsed, inference);
+    assert.equal(Object.isFrozen(parsed), true);
+    assert.equal(Object.isFrozen(parsed.binding.trajectoryMapping), true);
+  }
+
+  const missingMapping = structuredClone(endpointInference) as unknown as {
+    binding: Record<string, unknown>;
+  };
+  delete missingMapping.binding.trajectoryMapping;
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(missingMapping),
+    /inference binding/i,
+  );
+
+  const endpointWithMapping = structuredClone(endpointInference);
+  endpointWithMapping.binding.trajectoryMapping = structuredClone(
+    repeatedInference.binding.trajectoryMapping,
+  );
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(endpointWithMapping),
+    /inference trajectory mapping.*(?:invalid|inconsistent)|binding and rows.*inconsistent/i,
+  );
+
+  for (const mutate of [
+    (mapping: Record<string, unknown>) => { mapping.contractVersion = 2; },
+    (mapping: Record<string, unknown>) => { mapping.identityConfirmed = false; },
+    (mapping: Record<string, unknown>) => { mapping.repeatedEntityColumns = ["Group"]; },
+    (mapping: Record<string, unknown>) => { mapping.timeColumn = "Wrong period field"; },
+  ]) {
+    const malformed = structuredClone(repeatedInference) as unknown as {
+      binding: { trajectoryMapping: Record<string, unknown> };
+    };
+    mutate(malformed.binding.trajectoryMapping);
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(malformed),
+      /trajectory mapping|binding and rows.*inconsistent/i,
+    );
+  }
+
+  const forgedSingularIdentity = structuredClone(repeatedInference) as unknown as {
+    request: { repeatedEntityColumns: string[] };
+    binding: { trajectoryMapping: { repeatedEntityColumns: string[] } };
+  };
+  forgedSingularIdentity.request.repeatedEntityColumns = ["Group"];
+  forgedSingularIdentity.binding.trajectoryMapping.repeatedEntityColumns = ["Group"];
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(forgedSingularIdentity),
+    /trajectory mapping|binding/i,
+  );
+
+  const forgedTimeField = structuredClone(repeatedInference) as unknown as {
+    request: { timeColumn: string };
+    binding: { trajectoryMapping: { timeColumn: string } };
+    scope: { timeColumn: string };
+  };
+  forgedTimeField.request.timeColumn = "Wrong period field";
+  forgedTimeField.binding.trajectoryMapping.timeColumn = "Wrong period field";
+  forgedTimeField.scope.timeColumn = "Wrong period field";
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(forgedTimeField),
+    /trajectory mapping|binding/i,
+  );
 });
 
 test("analysis bundle v2 preserves one supplied frozen inference authority and reads v1/v2 strictly", async () => {
-  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const { endpoint, trajectory, endpointInference, repeatedInference } = await allInferenceFixtures();
   const contrast = buildPairwiseGroupContrast(
     endpoint.result,
     endpoint.configuration,
@@ -289,6 +383,26 @@ test("analysis bundle v2 preserves one supplied frozen inference authority and r
       inference: endpointInference,
     }),
     /inference consumer binding mismatch/i,
+  );
+
+  const trajectoryBundle = buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    { methodsDimensions: trajectory.axes, inference: repeatedInference },
+  );
+  assert.strictEqual(trajectoryBundle.inference, repeatedInference);
+  assert.deepEqual(
+    trajectoryBundle.inference?.binding.trajectoryMapping,
+    repeatedInference.binding.trajectoryMapping,
+  );
+  const parsedTrajectoryBundle = parseOpenEnaAnalysisBundle(JSON.stringify(trajectoryBundle));
+  assert.equal(parsedTrajectoryBundle.schemaVersion, 2);
+  if (parsedTrajectoryBundle.schemaVersion !== 2) assert.fail("expected schema v2");
+  assert.deepEqual(
+    parsedTrajectoryBundle.inference?.binding.trajectoryMapping,
+    repeatedInference.binding.trajectoryMapping,
   );
 });
 
@@ -443,6 +557,26 @@ test("longitudinal JSON v2 and the separate inference CSV preserve aggregates on
   assert.match(inferenceHeader, /nMatched,nMissing,nPositive,nNegative,nZero,nNonzero/);
   assert.match(inferenceHeader, /wPositive,wNegative,t,z,rankBiserialLaterVsEarlier/);
   assert.doesNotMatch(inferenceCsv, /entityToken|entityId|Control,Name|open-ena-entity-/i);
+
+  const forgedViews = [
+    (view: typeof trajectory.derivation.view) => { view.identityConfirmed = false; },
+    (view: typeof trajectory.derivation.view) => {
+      view.repeatedEntityColumns = [];
+      view.repeatedEntityColumn = "Group";
+    },
+    (view: typeof trajectory.derivation.view) => { view.repeatedEntityColumns = ["Name", "Group"]; },
+    (view: typeof trajectory.derivation.view) => { view.timeColumn = "Wrong period field"; },
+    (view: typeof trajectory.derivation.view) => { view.timeOrder.reverse(); },
+  ];
+  for (const mutate of forgedViews) {
+    const forged = structuredClone(trajectory.derivation.view);
+    mutate(forged);
+    assert.throws(
+      () => buildLongitudinalGroupCentroidExport(forged, undefined, pairedInference),
+      (error: unknown) => error instanceof Error
+        && error.message === "Inference consumer binding mismatch.",
+    );
+  }
 });
 
 test("consumer surfaces do not import or invoke low-level rank engines", () => {
