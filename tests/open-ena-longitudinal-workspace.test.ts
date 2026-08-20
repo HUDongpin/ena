@@ -16,24 +16,19 @@ const copy = source("lib/open-ena-i18n.ts");
 const longitudinal = source("lib/open-ena/longitudinal.ts");
 const site = source("lib/site.ts");
 
-test("trajectory analysis is launched by a same-route workspace button", () => {
-  const launchButton = workspace.match(
-    /<button[\s\S]{0,700}data-testid="open-ena-trajectory-analysis-button"[\s\S]{0,700}<\/button>/,
-  )?.[0] ?? "";
-  const launchHandler = workspace.match(
-    /function launchTrajectoryAnalysis\(\)[\s\S]*?(?=\n  function [A-Za-z]|\n  async function [A-Za-z])/,
-  )?.[0] ?? "";
-
-  assert.match(launchButton, /^<button/);
-  assert.match(launchButton, /onClick=\{launchTrajectoryAnalysis\}/);
-  assert.doesNotMatch(launchButton, /\bhref\s*=/);
-  assert.match(launchHandler, /if \(!dataset\)[\s\S]{0,160}setMode\("data"\)/);
-  assert.match(launchHandler, /result\.set\.modelType !== "EndPoint"[\s\S]{0,220}setMode\("plot"\)/);
-  assert.match(launchHandler, /model:\s*"SeparateTrajectory"/);
-  assert.match(launchHandler, /rotation:\s*"svd"/);
-  assert.match(launchHandler, /setModelTab\("windows"\)/);
-  assert.match(launchHandler, /setMode\("model"\)/);
-  assert.doesNotMatch(launchHandler, /router|window\.location|location\.assign|href/);
+test("trajectory models are configured in Model type instead of launched from the plot toolbar", () => {
+  assert.doesNotMatch(workspace, /open-ena-trajectory-analysis-button|launchTrajectoryAnalysis/);
+  assert.doesNotMatch(copy, /launch:\s*"Trajectory Analysis"/);
+  assert.match(
+    workspace,
+    /<span>\{copy\.model\.modelType\}<\/span>[\s\S]{0,1200}<option value="EndPoint">[\s\S]{0,300}<option value="SeparateTrajectory">[\s\S]{0,300}<option value="AccumulatedTrajectory">/,
+    "Endpoint, Separate trajectory, and Accumulated trajectory must remain explicit peer model choices",
+  );
+  assert.match(
+    workspace,
+    /config\.model !== "EndPoint" \? <p className="ena-sequence-note">\{copy\.model\.trajectoryHint\}<\/p> : null/,
+    "trajectory requirements must stay beside the model choice that creates the pending configuration",
+  );
 });
 
 test("longitudinal group-centroid analysis is derived only from successful jENA trajectory results", () => {

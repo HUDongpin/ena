@@ -222,26 +222,21 @@ test("Data View is the official-style bottom research bar while plot evidence st
   );
 });
 
-test("Trajectory Analysis is a compact same-route action without restoring the legacy toolbar", () => {
+test("the plot toolbar contains view and export actions, not a model-type launcher", () => {
   const toolbarActions = sourceSegment(
     workspace,
     '<div className="ena-visual-toolbar-actions">',
-    "</div>",
+    "{activeSetComparison ? (",
   );
-  const trajectoryButton = toolbarActions.match(
-    /<button[\s\S]{0,700}data-testid="open-ena-trajectory-analysis-button"[\s\S]{0,700}<\/button>/,
-  )?.[0] ?? "";
 
-  assert.match(trajectoryButton, /^<button/);
-  assert.match(trajectoryButton, /className="ena-compact-toolbar-button ena-trajectory-analysis-button"/);
-  assert.match(trajectoryButton, /onClick=\{launchTrajectoryAnalysis\}/);
-  assert.doesNotMatch(trajectoryButton, /\bhref\s*=|router|window\.location|location\.assign/);
-  assert.doesNotMatch(workspace, /className="ena-workbench-topbar"|className="ena-workbench-statusbar"/);
-  assert.match(
-    styles,
-    /\.ena-trajectory-analysis-button\s*\{[\s\S]*?border-color:\s*var\(--ena-accent-line\);[\s\S]*?background:\s*var\(--ena-accent-soft\);[\s\S]*?\}/,
-    "the new action must use the compact Baby Blue workbench grammar",
+  assert.doesNotMatch(toolbarActions, /trajectory-analysis-button|launchTrajectoryAnalysis|copy\.longitudinal\.launch/);
+  assert.doesNotMatch(
+    toolbarActions,
+    /SeparateTrajectory|AccumulatedTrajectory|setModelTab|updateConfig/,
+    "plot actions must never mutate or navigate the model configuration workflow",
   );
+  assert.doesNotMatch(styles, /\.ena-trajectory-analysis-button/);
+  assert.doesNotMatch(workspace, /className="ena-workbench-topbar"|className="ena-workbench-statusbar"/);
 });
 
 test("the visible comparison caption keeps only the official Units and Horizon definitions", () => {

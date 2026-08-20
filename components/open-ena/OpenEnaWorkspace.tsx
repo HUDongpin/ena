@@ -640,31 +640,6 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     setView("2d");
   }
 
-  function launchTrajectoryAnalysis() {
-    setError("");
-    setActiveComparisonSurface("groups");
-    setCenterSurface("plot");
-
-    if (!dataset) {
-      setMode("data");
-      return;
-    }
-
-    if (result && resultConfig && !resultIsStale && result.set.modelType !== "EndPoint") {
-      setMode("plot");
-      return;
-    }
-
-    updateConfig((current) => ({
-      ...current,
-      model: "SeparateTrajectory",
-      rotation: "svd",
-      referenceRotationId: null,
-    }));
-    setModelTab("windows");
-    setMode("model");
-  }
-
   function captureCurrentAnalysisSet() {
     if (!dataset || !resultConfig || !result) {
       setError("Build an endpoint model before capturing an analysis set.");
@@ -2657,16 +2632,6 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   : "SVD research space"}</span>
               </div>
               <div className="ena-visual-toolbar-actions">
-                <button
-                  type="button"
-                  className="ena-compact-toolbar-button ena-trajectory-analysis-button"
-                  data-testid="open-ena-trajectory-analysis-button"
-                  aria-pressed={config.model !== "EndPoint"}
-                  title={copy.longitudinal.launch}
-                  onClick={launchTrajectoryAnalysis}
-                >
-                  <span aria-hidden="true">↝</span>{copy.longitudinal.launch}
-                </button>
                 <button
                   type="button"
                   className="ena-compact-toolbar-button"
