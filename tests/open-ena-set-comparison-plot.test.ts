@@ -224,6 +224,47 @@ test("all three plots publish one absolute edge scale while preserving signed di
   assert.doesNotMatch(markup, />Evidence</, "code labels should obey showLabels");
 });
 
+test("saved-set zoom keeps all three SVG papers fixed and clips centered plot layers", () => {
+  const markup = renderToStaticMarkup(createElement(OpenEnaSetComparison, {
+    comparison,
+    edgeThreshold: 0,
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    edgeScale: 1,
+    pointScale: 1,
+    plotZoom: 99,
+    flipX: false,
+    flipY: false,
+  }));
+  const plotSvgs = [
+    markup.match(/<svg[^>]*data-testid="open-ena-shared-difference-plot"[\s\S]*?<\/svg>/)?.[0] ?? "",
+    markup.match(/<svg[^>]*data-testid="open-ena-primary-plot"[\s\S]*?<\/svg>/)?.[0] ?? "",
+    markup.match(/<svg[^>]*data-testid="open-ena-secondary-plot"[\s\S]*?<\/svg>/)?.[0] ?? "",
+  ];
+
+  plotSvgs.forEach((svg) => {
+    const root = svg.match(/^<svg\b[^>]*>/)?.[0] ?? "";
+    const viewportIndex = svg.indexOf('data-ena-plot-viewport="true"');
+    assert.match(root, /data-ena-plot-zoom="2\.4"/);
+    assert.doesNotMatch(root, /transform:\s*scale|transform-origin/);
+    assert.ok(
+      svg.indexOf('class="ena-set-plot-background"') < viewportIndex,
+      "the saved-set paper must remain outside the zoom layer",
+    );
+    assert.ok(
+      svg.indexOf('opacity="0.62"') < viewportIndex,
+      "the saved-set grid must remain outside the zoom layer",
+    );
+  });
+  assert.equal((markup.match(/transform="translate\(460 295\) scale\(2\.4\) translate\(-460 -295\)"/g) ?? []).length, 1);
+  assert.equal((markup.match(/transform="translate\(220 140\) scale\(2\.4\) translate\(-220 -140\)"/g) ?? []).length, 2);
+  const clipIds = plotSvgs.map((svg) => svg.match(/<clipPath\b[^>]*id="([^"]+)"[^>]*>/)?.[1] ?? "");
+  assert.ok(clipIds.every(Boolean));
+  assert.equal(new Set(clipIds).size, 3);
+});
+
 test("shared point geometry preserves namespaced unit identity and distinct non-color set encodings", () => {
   const markup = renderToStaticMarkup(createElement(OpenEnaSetComparison, {
     comparison,

@@ -3,6 +3,7 @@ import { rowsToCsv } from "./export";
 import {
   JENA_RUNTIME_VERSION,
   sameOpenEnaConfig,
+  type DatasetHashKind,
   type OpenEnaConfig,
   type OpenEnaProjectionReference,
   type OpenEnaResult,
@@ -133,6 +134,7 @@ export interface OpenEnaLongitudinalView {
     source: ParsedDataset["source"];
     rowCount: number;
     columnCount: number;
+    hashKind?: DatasetHashKind;
     normalizedUtf8TextSha256: string | null;
   };
   resultProvenance: {
@@ -168,7 +170,7 @@ export const LONGITUDINAL_BOUNDARIES = [
   "Duplicate entity-by-time projected points are first averaged to one equal-weight participant-period point, then participant-period points receive equal weight in each group centroid.",
   "A missing group-period centroid or zero repeated-entity overlap between adjacent centroids creates a discontinuity; no displacement or distance is inferred across that gap.",
   "Endpoint significance and effect-size tests are not applied to repeated trajectory observations.",
-  "Raw source rows and row-level co-occurrence records are excluded from longitudinal exports; preserve the exact source CSV and codebook beside the source hash and derived result.",
+  "Raw source rows and row-level co-occurrence records are excluded from longitudinal exports; preserve the exact source coded-data file and codebook beside the analyzed-table hash, hashKind, and derived result.",
 ] as const;
 
 export const LONGITUDINAL_INDIVIDUAL_MARK_LIMIT = 2_000;
@@ -636,17 +638,17 @@ export function buildLongitudinalGroupCentroidView(
   canonicalTime(createdAt, "The longitudinal view creation time");
   const bindingHash = validateHash(
     result.provenanceBinding?.datasetNormalizedUtf8TextSha256,
-    "The trajectory result provenance source hash",
+    "The trajectory result provenance analyzed-table hash",
   );
   const settingsHash = validateHash(
     settings.datasetNormalizedUtf8TextSha256,
-    "The longitudinal source hash",
+    "The longitudinal analyzed-table hash",
   );
   if (bindingHash && !settingsHash) {
-    throw new Error("The longitudinal source hash is required to verify the successful trajectory result provenance binding.");
+    throw new Error("The longitudinal analyzed-table hash is required to verify the successful trajectory result provenance binding.");
   }
   if (bindingHash && settingsHash && bindingHash !== settingsHash) {
-    throw new Error("The longitudinal source hash does not match the successful trajectory result provenance binding.");
+    throw new Error("The longitudinal analyzed-table hash does not match the successful trajectory result provenance binding.");
   }
   const { rows: sourceRows } = dataset;
   const { byStep, groupByEntity, observedTimeOrder, analyticUnitTimeOrder } = sourceStepIdentities(sourceRows, config, settings);
@@ -738,6 +740,7 @@ export function buildLongitudinalGroupCentroidView(
       source: dataset.source,
       rowCount: sourceRows.length,
       columnCount: dataset.headers.length,
+      hashKind: dataset.hashKind,
       normalizedUtf8TextSha256: bindingHash ?? settingsHash,
     },
     resultProvenance: {
@@ -869,6 +872,7 @@ export function longitudinalPeriodRowsToCsv(view: OpenEnaLongitudinalView) {
     xAxis: view.axes[0],
     yAxis: view.axes[1],
     sourceDatasetName: view.source.datasetName,
+    sourceDatasetHashKind: view.source.hashKind ?? null,
     sourceDatasetNormalizedUtf8TextSha256: view.source.normalizedUtf8TextSha256,
     sourceBindingStatus: view.resultProvenance.sourceBindingStatus,
     modelType: view.resultProvenance.modelType,

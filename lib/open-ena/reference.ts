@@ -1,5 +1,6 @@
 import type { AdjacencyKeyEntry, RotationSet, Row } from "jena-js";
 import type {
+  DatasetHashKind,
   OpenEnaConfig,
   OpenEnaManifest,
   OpenEnaReferenceFit,
@@ -8,7 +9,7 @@ import type {
   OpenEnaRotationReference,
   ParsedDataset,
 } from "./types";
-import { JENA_RUNTIME_VERSION } from "./types";
+import { datasetHashKindFor, JENA_RUNTIME_VERSION } from "./types";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -27,6 +28,14 @@ function asSha256(value: unknown, label: string) {
   const hash = asString(value, label);
   if (!/^[0-9a-f]{64}$/i.test(hash)) throw new Error(`${label} must be a 64-character SHA-256 value or null.`);
   return hash.toLowerCase();
+}
+
+function asDatasetHashKind(value: unknown): DatasetHashKind | undefined {
+  if (value === undefined) return undefined;
+  if (value === "normalized-utf8-text-sha256"
+    || value === "normalized-utf8-csv-text-sha256"
+    || value === "canonical-first-xlsx-worksheet-v1-sha256") return value;
+  throw new Error("Reference dataset hash kind is not supported.");
 }
 
 function asIsoTimestamp(value: unknown, label: string) {
@@ -259,6 +268,7 @@ function parseReferenceObject(value: unknown): OpenEnaRotationReference {
     name: asString(value.name, "Reference name"),
     source: {
       datasetName: asString(value.source.datasetName, "Reference dataset name"),
+      hashKind: asDatasetHashKind(value.source.hashKind),
       normalizedUtf8TextSha256: asSha256(value.source.normalizedUtf8TextSha256, "Reference dataset hash"),
       analyzedAt: asIsoTimestamp(value.source.analyzedAt, "Reference analysis timestamp"),
     },
@@ -295,7 +305,7 @@ function referenceFromResultBundle(value: JsonRecord, filename: string): OpenEna
       throw new Error("Result-bundle reference identifier is inconsistent with its projection provenance.");
     }
     if (effective.rotation.sourceDatasetSha256 !== manifest.result.projectionReference.source.normalizedUtf8TextSha256) {
-      throw new Error("Result-bundle reference source hash is inconsistent with its projection provenance.");
+      throw new Error("Result-bundle reference analyzed-table hash is inconsistent with its projection provenance.");
     }
     return parseReferenceObject({
       ...manifest.result.projectionReference,
@@ -312,6 +322,7 @@ function referenceFromResultBundle(value: JsonRecord, filename: string): OpenEna
     name: `Reference from ${filename}`,
     source: {
       datasetName: manifest.dataset.name,
+      hashKind: manifest.dataset.hashKind,
       normalizedUtf8TextSha256: hash,
       analyzedAt,
     },
@@ -376,6 +387,7 @@ export function buildReferenceRotationPackage(
     name: `${dataset.name} reference rotation`,
     source: {
       datasetName: dataset.name,
+      hashKind: datasetHashKindFor(dataset),
       normalizedUtf8TextSha256: sha256,
       analyzedAt: result.analyzedAt,
     },

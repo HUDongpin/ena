@@ -326,15 +326,18 @@ test("a replacement source aborts the current run only at the source commit boun
   );
   const loadSample = workspace.slice(
     workspace.indexOf("async function loadSample"),
-    workspace.indexOf("async function openCsv"),
+    workspace.indexOf("async function openCodedData"),
   );
-  const openCsv = workspace.slice(
-    workspace.indexOf("async function openCsv"),
+  const openCodedData = workspace.slice(
+    workspace.indexOf("async function openCodedData"),
     workspace.indexOf("function resetPlot"),
   );
 
-  for (const sourceCommit of [loadSample, openCsv]) {
-    const hashFinished = sourceCommit.indexOf("const nextHash = await sha256Hex(text)");
+  for (const [sourceCommit, hashStatement] of [
+    [loadSample, "const nextHash = await sha256Hex(text)"],
+    [openCodedData, "const nextHash = await sha256Hex(normalizedHashText)"],
+  ] as const) {
+    const hashFinished = sourceCommit.indexOf(hashStatement);
     const abortCurrentRun = sourceCommit.indexOf("abortRef.current?.abort()");
     const commitDataset = sourceCommit.indexOf("setDataset(nextDataset)");
     assert.ok(hashFinished >= 0, "source ingestion must hash the complete source before commit");
@@ -365,6 +368,7 @@ test("the reproducibility bundle retains normalized tables, count evidence, and 
   const bundle = buildAnalysisBundle(dataset, SAMPLE_CONFIG, result, "abc123");
 
   assert.equal(bundle.manifest.dataset.normalizedUtf8TextSha256, "abc123");
+  assert.equal(bundle.manifest.dataset.hashKind, "normalized-utf8-csv-text-sha256");
   assert.equal(bundle.tables.coordinates.length, 8);
   assert.equal(bundle.tables.lineWeights.length, 8);
   assert.equal(bundle.tables.connectionCounts.length, 8);
@@ -731,7 +735,14 @@ test("source evidence can be searched and filtered locally without entering expo
   assert.match(workspace, /Source evidence/);
   assert.match(workspace, /filterSourceEvidence/);
   assert.match(workspace, /activeCodesOnly/);
-  assert.match(workspace, /Source rows remain in browser memory/);
+  assert.match(workspace, /copy\.aiInterpretation\.privacyLocal/);
+  assert.match(workspace, /copy\.aiInterpretation\.privacyExternal/);
+  const i18n = readFileSync(
+    join(projectRoot, "lib", "open-ena-i18n.ts"),
+    "utf8",
+  );
+  assert.match(i18n, /raw source rows and raw source data are never sent to the AI provider/);
+  assert.match(i18n, /reviewed aggregate request is sent to an external AI provider/);
   assert.doesNotMatch(readFileSync(join(projectRoot, "lib", "open-ena", "export.ts"), "utf8"), /sourceRows|rawRows/);
   assert.match(readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8"), /Parsed record/);
 });

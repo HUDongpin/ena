@@ -1,6 +1,6 @@
 import { buildEndpointMannWhitney } from "./inference";
 import type { OpenEnaConfig, OpenEnaResult, ParsedDataset } from "./types";
-import { JENA_RUNTIME_VERSION, OPEN_ENA_APP_VERSION } from "./types";
+import { datasetHashKindFor, JENA_RUNTIME_VERSION, OPEN_ENA_APP_VERSION } from "./types";
 import {
   marginalMeanIntervalPair,
   type OpenEnaMarginalMeanInterval,
@@ -120,12 +120,12 @@ export function referenceMeanRotationInterpretation(
   const sourceHash = reference.source.normalizedUtf8TextSha256;
   const contrast = `${formatLabel(reference.fit.groupColumn)}: ${reference.fit.groupOrder.map(formatLabel).join(" then ")}`;
   if (sourceHash && targetHash && sourceHash === targetHash) {
-    return `The declared reference source hash matches this dataset (${contrast}). If the imported package accurately records its fit, separation and inference on MR1 are descriptive by construction, not independent confirmation.`;
+    return `The declared reference analyzed-table hash matches this dataset (${contrast}). If the imported package accurately records its fit, separation and inference on MR1 are descriptive by construction, not independent confirmation.`;
   }
   if (sourceHash && targetHash) {
     return `The fixed MR1 axis was defined on a different recorded source (${contrast}). Treat MR1 inference as held-out only when analytic units are independent and the contrast was prespecified.`;
   }
-  return `The fixed MR1 axis was defined by ${contrast}, but independence from the fitting sample cannot be verified because a source hash is missing.`;
+  return `The fixed MR1 axis was defined by ${contrast}, but independence from the fitting sample cannot be verified because an analyzed-table hash is missing.`;
 }
 
 function rotationDescription(config: OpenEnaConfig, result: OpenEnaResult, targetHash: string | null) {
@@ -134,7 +134,7 @@ function rotationDescription(config: OpenEnaConfig, result: OpenEnaResult, targe
     const meanInterpretation = referenceMeanRotationInterpretation(result, targetHash, inline);
     return [
       `Reference projection into ${inline(result.projectionReference.name)} (${inline(result.projectionReference.referenceId)}).`,
-      `The center, axes, and reference node positions were fixed from ${inline(result.projectionReference.source.datasetName)} (declared source SHA-256: ${inline(sourceHash)}). Imported source metadata is structurally validated but not independently authenticated by ENA.HK.`,
+      `The center, axes, and reference node positions were fixed from ${inline(result.projectionReference.source.datasetName)} (declared analyzed-table SHA-256: ${inline(sourceHash)}). Imported provenance metadata is structurally validated but not independently authenticated by ENA.HK.`,
       `The reference was fitted with unit mapping ${result.projectionReference.fit.unitColumns.map(inline).join(" + ")} and conversation mapping ${result.projectionReference.fit.conversationColumns.map(inline).join(" + ")}.`,
       "Variance shares describe the current dataset in the fixed reference basis, not explained variance in the fitted reference sample.",
       ...(meanInterpretation ? [meanInterpretation] : []),
@@ -196,6 +196,7 @@ export function buildMethodsReport(
     reportedDimensions,
     presentation.selectedGroupOrder,
   );
+  const sourceHashKind = datasetHashKindFor(dataset);
 
   return [
     "# ENA.HK Open ENA Methods & Reproducibility Report",
@@ -205,9 +206,10 @@ export function buildMethodsReport(
     "## Data identity",
     "",
     `- Dataset: ${inline(dataset.name)}`,
-    `- Normalized UTF-8 text SHA-256: ${inline(sourceHash ?? "not recorded")}`,
+    `- Analyzed-table SHA-256: ${inline(sourceHash ?? "not recorded")}`,
+    `- Hash scope: ${inline(sourceHashKind)}. CSV hashes BOM-normalized UTF-8 source text; XLSX hashes the versioned canonical values of the analyzed first worksheet, excluding workbook styling and other worksheets.`,
     `- Input shape: ${dataset.rows.length.toLocaleString()} rows and ${dataset.headers.length.toLocaleString()} columns`,
-    "- CSV row order defined sequence within conversations.",
+    "- Source row order defined sequence within conversations; XLSX analysis used the first worksheet.",
     "- Raw source rows and unselected source columns are intentionally excluded from derived result exports.",
     "",
     "## ENA model",
@@ -246,7 +248,7 @@ export function buildMethodsReport(
     "",
     "- Rotation axis signs are arbitrary; a mirrored solution can represent the same geometry.",
     "- Network edges, group means, visual separation, and post-projection statistics are descriptive of the specified model and do not establish causality.",
-    "- The exact source CSV, codebook, this report, analysis manifest, and derived result bundle should be preserved together.",
+    "- The exact source coded-data file, codebook, this report, analysis manifest, and derived result bundle should be preserved together.",
     "- For trajectories, repeated steps require a design-appropriate longitudinal method and were not treated as independent endpoint observations.",
     "",
   ].join("\n");

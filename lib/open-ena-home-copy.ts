@@ -30,7 +30,7 @@ const en: OpenEnaHomeCopy = {
   eyebrow: "Open tools · Transparent methods",
   title: "An open path from coded evidence to interpretable networks.",
   lead:
-    "Open coded CSV data directly in your browser, define the analysis, inspect two-dimensional network comparisons, and take the model specification and results with you.",
+    "Open coded CSV or XLSX data directly in your browser, define the analysis, inspect two-dimensional network comparisons, and take the model specification and results with you.",
   pillars: [
     {
       title: "Open by design",
@@ -38,7 +38,7 @@ const en: OpenEnaHomeCopy = {
     },
     {
       title: "Local by default",
-      text: "Your source CSV is processed in this browser. The Open ENA workspace has no data-upload endpoint.",
+      text: "Your source CSV or XLSX file is processed in this browser. The Open ENA workspace has no data-upload endpoint.",
     },
     {
       title: "Reproducible in practice",
@@ -73,7 +73,7 @@ const zhHant: OpenEnaHomeCopy = {
   eyebrow: "開放工具 · 透明方法",
   title: "Open ENA：從編碼證據走向可解釋網絡的開放路徑。",
   lead:
-    "在瀏覽器中直接開啟編碼 CSV、定義分析模型、檢視二維網絡比較，並帶走模型規格與結果。",
+    "在瀏覽器中直接開啟編碼 CSV 或 XLSX、定義分析模型、檢視二維網絡比較，並帶走模型規格與結果。",
   pillars: [
     {
       title: "開放使用",
@@ -81,7 +81,7 @@ const zhHant: OpenEnaHomeCopy = {
     },
     {
       title: "本機優先",
-      text: "來源 CSV 在目前瀏覽器中處理；Open ENA 工作區不設資料上傳端點。",
+      text: "來源 CSV 或 XLSX 檔案在目前瀏覽器中處理；Open ENA 工作區不設資料上傳端點。",
     },
     {
       title: "實踐可重現",
@@ -116,7 +116,7 @@ const zhHans: OpenEnaHomeCopy = {
   eyebrow: "开放工具 · 透明方法",
   title: "Open ENA：从编码证据走向可解释网络的开放路径。",
   lead:
-    "在浏览器中直接打开编码 CSV、定义分析模型、查看二维网络比较，并带走模型规格与结果。",
+    "在浏览器中直接打开编码 CSV 或 XLSX、定义分析模型、查看二维网络比较，并带走模型规格与结果。",
   pillars: [
     {
       title: "开放使用",
@@ -124,7 +124,7 @@ const zhHans: OpenEnaHomeCopy = {
     },
     {
       title: "本地优先",
-      text: "源 CSV 在当前浏览器中处理；Open ENA 工作区不设置数据上传端点。",
+      text: "源 CSV 或 XLSX 文件在当前浏览器中处理；Open ENA 工作区不设置数据上传端点。",
     },
     {
       title: "实践可复现",

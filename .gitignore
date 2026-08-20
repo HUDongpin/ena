@@ -12,6 +12,7 @@
 .env*
 !.env.example
 .vercel
+/All API Keys.docx
 
 # Logs
 npm-debug.log*

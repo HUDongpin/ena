@@ -22,6 +22,11 @@ test("Yu 0712-style headers infer composite units and horizons without merging n
   assert.equal(config.groupColumn, "Group");
   assert.deepEqual(config.codes, ["EC", "ICT", "MCO", "NI", "SR", "SC", "ATT"]);
   assert.equal(
+    config.window,
+    "Conversation",
+    "one-row composite conversations should default to Whole conversation",
+  );
+  assert.equal(
     config.rotation,
     "mean",
     "official webENA automatically uses Means Rotation for an eligible two-group endpoint comparison",

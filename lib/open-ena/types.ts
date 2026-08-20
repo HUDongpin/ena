@@ -10,9 +10,21 @@ export interface ParsedDataset {
   rows: Row[];
   sizeBytes: number;
   source: "sample" | "upload";
+  /** Exact semantics of the digest derived from this imported table. */
+  hashKind?: DatasetHashKind;
 }
 
-export type DatasetHashKind = "normalized-utf8-text-sha256";
+export type DatasetHashKind =
+  | "normalized-utf8-text-sha256"
+  | "normalized-utf8-csv-text-sha256"
+  | "canonical-first-xlsx-worksheet-v1-sha256";
+
+export function datasetHashKindFor(dataset: Pick<ParsedDataset, "name" | "hashKind">): DatasetHashKind {
+  return dataset.hashKind
+    ?? (/\.xlsx$/iu.test(dataset.name)
+      ? "canonical-first-xlsx-worksheet-v1-sha256"
+      : "normalized-utf8-csv-text-sha256");
+}
 
 export interface OpenEnaConfig {
   unitColumns: string[];
@@ -54,6 +66,7 @@ export interface OpenEnaRotationReference {
   name: string;
   source: {
     datasetName: string;
+    hashKind?: DatasetHashKind;
     normalizedUtf8TextSha256: string | null;
     analyzedAt: string;
   };
@@ -90,6 +103,7 @@ export interface OpenEnaResult {
   /** Optional immutable source/config binding added by the browser client. */
   provenanceBinding?: {
     datasetNormalizedUtf8TextSha256: string;
+    datasetHashKind?: DatasetHashKind;
     configuration: OpenEnaConfig;
   };
 }
@@ -111,6 +125,7 @@ export interface OpenEnaAnalysisSet {
     rowCount: number;
     columnCount: number;
     sizeBytes: number;
+    hashKind?: DatasetHashKind;
     normalizedUtf8TextSha256: string | null;
   };
   config: OpenEnaConfig;
@@ -193,6 +208,7 @@ export interface OpenEnaManifest {
     rows: number;
     columns: number;
     source: ParsedDataset["source"];
+    hashKind?: DatasetHashKind;
     normalizedUtf8TextSha256: string | null;
   };
   configuration: OpenEnaConfig;

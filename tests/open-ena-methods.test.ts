@@ -245,7 +245,7 @@ test("reference MR1 interpretation distinguishes same-source, held-out, and unve
     },
   };
 
-  assert.match(referenceMeanRotationInterpretation(projected, sourceHash) ?? "", /declared reference source hash matches/);
+  assert.match(referenceMeanRotationInterpretation(projected, sourceHash) ?? "", /declared reference analyzed-table hash matches/);
   assert.match(referenceMeanRotationInterpretation(projected, sourceHash) ?? "", /If the imported package accurately records its fit/);
   assert.match(referenceMeanRotationInterpretation(projected, "b".repeat(64)) ?? "", /held-out only/);
   assert.match(referenceMeanRotationInterpretation({

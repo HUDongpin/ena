@@ -441,7 +441,7 @@ test("plot papers use color-coded group captions and official scale notation", (
   );
 });
 
-test("the local 2D and external 3D controls remain available without occupying the official plot-title row", () => {
+test("the local 2D and external 3D controls sit immediately before Download Model in the plot-title toolbar", () => {
   const controls = sourceSegment(
     workspace,
     '<aside className="ena-control-panel"',
@@ -453,10 +453,35 @@ test("the local 2D and external 3D controls remain available without occupying t
     '{activeSetComparison ? (',
   );
 
-  assert.match(controls, /className="ena-control-view-toggle"[\s\S]*?className="ena-view-toggle"/);
-  assert.match(controls, /aria-pressed=\{view === "2d"\}/);
-  assert.match(controls, /href=\{siteConfig\.threeDenaUrl\}/);
-  assert.doesNotMatch(toolbar, /className="ena-view-toggle"/, "the local view switch must not cover Primary Plot");
+  assert.doesNotMatch(controls, /className="ena-view-toggle"/, "the view switch no longer belongs to the Model control panel");
+  assert.match(toolbar, /className="ena-analysis-toolbar-cluster"[\s\S]*?className="ena-view-toggle"/);
+  assert.match(toolbar, /aria-pressed=\{view === "2d"\}/);
+  assert.match(toolbar, /href=\{siteConfig\.threeDenaUrl\}/);
+
+  const viewToggleIndex = toolbar.indexOf('className="ena-view-toggle"');
+  const downloadIndex = toolbar.indexOf('className="ena-compact-toolbar-button ena-download-model-button"');
+  assert.ok(viewToggleIndex >= 0 && downloadIndex > viewToggleIndex,
+    "2D/3D must immediately precede Download Model in reading and keyboard order");
+  assert.match(
+    styles,
+    /\.ena-analysis-toolbar-cluster\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*stretch;[^}]*gap:\s*6px;/,
+    "the two controls must render as one adjacent toolbar group",
+  );
+  const responsiveToolbarBase = sourceSegment(
+    styles,
+    ".ena-analysis-toolbar-cluster",
+    "@media (min-width: 1400px)",
+  );
+  assert.match(
+    responsiveToolbarBase,
+    /\.ena-download-model-button-icon\s*\{[^}]*width:\s*13px;[^}]*height:\s*13px;[^}]*fill:\s*none;[^}]*stroke:\s*currentColor;/,
+    "the download icon must remain compact before the desktop-only breakpoint",
+  );
+  assert.match(
+    styles,
+    /@media \(min-width:\s*1400px\)[\s\S]*?\.ena-analysis-toolbar-cluster\s*\{[^}]*position:\s*absolute;[^}]*top:\s*16px;[^}]*right:\s*calc\(35% \+ 19px\);/,
+    "the desktop group must retain Download Model's measured anchor while placing the view switch on its left",
+  );
 });
 
 test("narrow desktop side-card actions remain inside the plot instead of falling beneath Comparison", () => {

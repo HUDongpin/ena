@@ -12,7 +12,7 @@ import type {
 import { coerceSelectedCodes } from "./csv";
 import { JENA_GROUP_COLORS } from "./plot-style";
 import { validateReferenceCompatibility } from "./reference";
-import { JENA_RUNTIME_VERSION, OPEN_ENA_APP_VERSION } from "./types";
+import { datasetHashKindFor, JENA_RUNTIME_VERSION, OPEN_ENA_APP_VERSION } from "./types";
 
 export const AUTO_CORRELATION_UNIT_LIMIT = 500;
 
@@ -325,6 +325,7 @@ export function buildManifest(
       rows: dataset.rows.length,
       columns: dataset.headers.length,
       source: dataset.source,
+      hashKind: datasetHashKindFor(dataset),
       normalizedUtf8TextSha256: sha256,
     },
     configuration: config,
@@ -365,16 +366,17 @@ export function buildManifest(
     generatedAt: new Date().toISOString(),
     boundaries: [
       "The graph depends on the supplied codes, units, conversations, window, weighting, normalization, and rotation.",
-      "Rows are analyzed in their CSV order within each conversation; reorder the source before analysis when sequence matters.",
+      "Rows are analyzed in source order within each conversation; XLSX analysis uses the first worksheet. Reorder the source before analysis when sequence matters.",
+      "Dataset hash scope is recorded in dataset.hashKind: CSV uses BOM-normalized UTF-8 source text; XLSX uses the versioned canonical values of the analyzed first worksheet, excluding workbook styling and unselected worksheets.",
       "Moving stanza windows may span multiple units that share a conversation, matching jENA/rENA discourse-window semantics; whole-conversation windows are accumulated per unit and conversation.",
       "Rotation-axis signs are arbitrary, so mirrored coordinates can represent the same ENA solution.",
       "Visual separation and edge thickness are descriptive; they do not establish statistical significance or causality.",
       "Trajectory steps are repeated observations of analytic units. Open ENA does not apply endpoint group tests or point-centroid correlation diagnostics to trajectory models.",
       "For reference projections, the axes, center, and reference nodes remain fixed; variance describes the current dataset in that basis, not explained variance in the fitted reference sample.",
       "For reference projections, point-centroid correlations and target-fitted centroid tables are withheld because jENA 0.6.2 does not compute them from the displayed fixed reference nodes.",
-      "Imported reference names, source hashes, timestamps, and fit descriptors are declared provenance: ENA.HK validates their structure but does not independently authenticate their origin.",
+      "Imported reference names, analyzed-table hashes, hash kinds, timestamps, and fit descriptors are declared provenance: ENA.HK validates their structure but does not independently authenticate their origin.",
       "The 3D ENA link opens a separate website; this workspace does not automatically transfer the dataset, configuration, or computed model.",
-      "The result bundle excludes raw source rows. Preserve the exact source CSV and its codebook alongside the manifest and derived outputs for reproducibility.",
+      "The result bundle excludes raw source rows. Preserve the exact source coded-data file and its codebook alongside the manifest and derived outputs for reproducibility.",
     ],
   };
 }

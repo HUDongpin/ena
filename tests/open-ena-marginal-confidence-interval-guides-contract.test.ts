@@ -363,7 +363,14 @@ test("interval geometry flips with the shared projector while zoom keeps it insi
   approximately(numberAttribute(flippedMeanX, "x2"), centerXTwice - numberAttribute(normalMeanX, "x2"));
   approximately(numberAttribute(flippedMeanY, "y1"), centerYTwice - numberAttribute(normalMeanY, "y1"));
   approximately(numberAttribute(flippedMeanY, "y2"), centerYTwice - numberAttribute(normalMeanY, "y2"));
-  assert.match(flippedSvg.match(/^<svg\b[^>]*>/)?.[0] ?? "", /style="[^"]*transform:scale\(2\)/);
+  const root = flippedSvg.match(/^<svg\b[^>]*>/)?.[0] ?? "";
+  assert.match(root, /data-ena-plot-zoom="2"/);
+  assert.doesNotMatch(root, /transform:\s*scale|transform-origin/);
+  assert.match(
+    flippedSvg,
+    /<g\b(?=[^>]*data-ena-plot-viewport="true")[^>]*>[\s\S]*?<g\b(?=[^>]*data-ena-plot-content="true")(?=[^>]*data-ena-plot-zoom-layer="true")(?=[^>]*transform="translate\(460 361\.5\) scale\(2\) translate\(-460 -361\.5\)")[^>]*>[\s\S]*?data-ena-uncertainty-guide="marginal-student-t-95"/,
+    "the interval guides must be descendants of the fixed viewport's zoom layer",
+  );
 
   for (const modelAttribute of ["data-ena-x-lower", "data-ena-x-upper", "data-ena-y-lower", "data-ena-y-upper"]) {
     approximately(

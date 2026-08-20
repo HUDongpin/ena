@@ -313,7 +313,7 @@ test("the reference-space workflow is visible, local, and explicitly endpoint-on
   assert.match(workspace, /const \[referenceBusy, setReferenceBusy\] = useState\(false\)/);
   assert.match(workspace, /referenceImportRef\.current !== importToken/);
   assert.match(workspace, /async function loadSample\(\) \{[\s\S]{0,140}referenceImportRef\.current = null;[\s\S]{0,80}setReferenceBusy\(false\)/);
-  assert.match(workspace, /async function openCsv\(file: File\) \{[\s\S]{0,140}referenceImportRef\.current = null;[\s\S]{0,80}setReferenceBusy\(false\)/);
+  assert.match(workspace, /async function openCodedData\(file: File\) \{[\s\S]{0,140}referenceImportRef\.current = null;[\s\S]{0,80}setReferenceBusy\(false\)/);
   assert.match(workspace, /async function openReferenceRotation\(file: File\) \{[\s\S]{0,100}if \(sourceAbortRef\.current\) return/);
   assert.match(workspace, /setResult\(null\)[\s\S]{0,80}setResultConfig\(null\)/);
   assert.match(workspace, /size-bounded convenience/);
@@ -325,7 +325,7 @@ test("the reference-space workflow is visible, local, and explicitly endpoint-on
   assert.match(workspace, /buildAnalysisBundle\([\s\S]{0,1600}true,/);
   assert.match(workspace, /buildReferenceRotationPackage\([\s\S]{0,180}true,/);
   assert.match(plot, /Projected into fixed reference:/);
-  assert.match(plot, /source SHA-256/);
+  assert.match(plot, /analyzed-table SHA-256/);
   assert.match(plot, /Variance shares describe current data in this fixed basis, not reference-fit explained variance/);
   assert.match(plot, /ena-reference-figure-provenance/);
 });

@@ -112,7 +112,14 @@ export function parseCsv(text: string, options: { name: string; sizeBytes?: numb
     return Object.fromEntries(headers.map((header, columnIndex) => [header, toScalar(values[columnIndex])]));
   });
 
-  return { name: options.name, headers, rows, sizeBytes, source: options.source };
+  return {
+    name: options.name,
+    headers,
+    rows,
+    sizeBytes,
+    source: options.source,
+    hashKind: "normalized-utf8-csv-text-sha256",
+  };
 }
 
 function findHeader(headers: string[], candidates: string[]) {
@@ -225,6 +232,9 @@ export function inferConfig(dataset: ParsedDataset): OpenEnaConfig {
   const conversationColumns = unitSpansGroups
     ? [...new Set([...unitColumns, conversationColumn])]
     : [conversationColumn];
+  const oneRowPerConversation = new Set(rows.map((row) => JSON.stringify(
+    conversationColumns.map((column) => row[column] ?? null),
+  ))).size === rows.length;
   const excluded = new Set([...unitColumns, ...conversationColumns, ...(groupColumn ? [groupColumn] : [])]);
   const codes: string[] = [];
   for (const header of headers) {
@@ -246,7 +256,7 @@ export function inferConfig(dataset: ParsedDataset): OpenEnaConfig {
     groupColumn,
     codes,
     model: "EndPoint",
-    window: "MovingStanzaWindow",
+    window: oneRowPerConversation ? "Conversation" : "MovingStanzaWindow",
     windowSizeBack: 5,
     windowSizeForward: 0,
     weightBy: "binary",
@@ -307,15 +317,15 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
     ["Unit", config.unitColumns],
     ["Conversation", config.conversationColumns],
   ] as const) {
-    if (columns.length === 0) errors.push(`${label} requires at least one CSV column.`);
+    if (columns.length === 0) errors.push(`${label} requires at least one coded-data column.`);
     if (new Set(columns).size !== columns.length) errors.push(`${label} identity columns must be unique.`);
     for (const column of columns) {
-      if (!dataset.headers.includes(column)) errors.push(`${label} must reference a CSV column.`);
+      if (!dataset.headers.includes(column)) errors.push(`${label} must reference a coded-data column.`);
       else if (dataset.rows.some((row) => row[column] === null || row[column] === "")) errors.push(`${label} column “${column}” contains missing values.`);
     }
   }
   if (config.groupColumn) {
-    if (!dataset.headers.includes(config.groupColumn)) errors.push("Group must reference a CSV column.");
+    if (!dataset.headers.includes(config.groupColumn)) errors.push("Group must reference a coded-data column.");
     else if (dataset.rows.some((row) => row[config.groupColumn as string] === null || row[config.groupColumn as string] === "")) errors.push(`Group column “${config.groupColumn}” contains missing values.`);
   }
   if ([...config.unitColumns, ...config.conversationColumns].every((column) => dataset.headers.includes(column))) {

@@ -14,6 +14,7 @@ import {
   parseCsv,
   validateConfig,
 } from "@/lib/open-ena/csv";
+import { codedDataFileKind, parseXlsx } from "@/lib/open-ena/spreadsheet";
 import { filterSourceEvidence } from "@/lib/open-ena/evidence";
 import {
   buildPairwiseGroupContrast,
@@ -28,6 +29,7 @@ import {
   type OpenEnaLongitudinalCohortPolicy,
 } from "@/lib/open-ena/longitudinal";
 import { buildMethodsReport, referenceMeanRotationInterpretation } from "@/lib/open-ena/methods";
+import { buildOpenEnaAiInterpretationRequest } from "@/lib/open-ena/ai-interpretation";
 import { buildAnalysisBundle, buildResultTables, rowsToCsv } from "@/lib/open-ena/export";
 import {
   buildReferenceRotationPackage,
@@ -68,6 +70,7 @@ import OpenEnaGroupContrast from "./OpenEnaGroupContrast";
 import OpenEnaLongitudinalTrajectory from "./OpenEnaLongitudinalTrajectory";
 import OpenEnaPersistentPlotTools from "./OpenEnaPersistentPlotTools";
 import OpenEnaSetComparison from "./OpenEnaSetComparison";
+import OpenEnaAiInterpretation from "./OpenEnaAiInterpretation";
 
 interface OpenEnaWorkspaceProps {
   locale: Locale;
@@ -597,6 +600,21 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     && result?.set.modelType !== "EndPoint"
     ? longitudinalView
     : null;
+  const aiInterpretationRequest = useMemo(() => {
+    if (!result || !resultConfig || resultIsStale) return null;
+    try {
+      return buildOpenEnaAiInterpretationRequest({
+        locale,
+        result,
+        config: resultConfig,
+        datasetHash,
+        groupContrast: result.set.modelType === "EndPoint" ? groupContrast : null,
+        longitudinalView: result.set.modelType === "EndPoint" ? null : longitudinalView,
+      });
+    } catch {
+      return null;
+    }
+  }, [datasetHash, groupContrast, locale, longitudinalView, result, resultConfig, resultIsStale]);
   const currentProjectedResult = Boolean(
     result
     && resultConfig
@@ -693,6 +711,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         ...nextResult,
         provenanceBinding: {
           datasetNormalizedUtf8TextSha256: nextDatasetHash ?? "",
+          datasetHashKind: nextDataset.hashKind,
           configuration: {
             ...nextConfig,
             unitColumns: [...nextConfig.unitColumns],
@@ -776,7 +795,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     }
   }
 
-  async function openCsv(file: File) {
+  async function openCodedData(file: File) {
     referenceImportRef.current = null;
     setReferenceBusy(false);
     sourceAbortRef.current?.abort();
@@ -787,11 +806,22 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     setSourceBusy(true);
     setError("");
     try {
-      if (file.size > 5 * 1024 * 1024) throw new Error("CSV files must be 5 MB or smaller.");
-      const text = await file.text();
+      const fileKind = codedDataFileKind(file.name);
+      if (file.size > 5 * 1024 * 1024) throw new Error("CSV and XLSX files must be 5 MB or smaller.");
+      let nextDataset: ParsedDataset;
+      let normalizedHashText: string;
+      if (fileKind === "csv") {
+        const text = await file.text();
+        nextDataset = parseCsv(text, { name: file.name, sizeBytes: file.size, source: "upload" });
+        normalizedHashText = text;
+      } else {
+        const buffer = await file.arrayBuffer();
+        const parsed = await parseXlsx(buffer, { name: file.name, sizeBytes: file.size, source: "upload" });
+        nextDataset = parsed.dataset;
+        normalizedHashText = parsed.normalizedText;
+      }
       if (sourceController.signal.aborted || sourceAbortRef.current !== sourceController || datasetGenerationRef.current !== sourceGeneration) return;
-      const nextDataset = parseCsv(text, { name: file.name, sizeBytes: file.size, source: "upload" });
-      const nextHash = await sha256Hex(text);
+      const nextHash = await sha256Hex(normalizedHashText);
       if (sourceController.signal.aborted || sourceAbortRef.current !== sourceController || datasetGenerationRef.current !== sourceGeneration) return;
       abortRef.current?.abort();
       abortRef.current = null;
@@ -1032,7 +1062,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           </li>
           <li data-done={currentProjectedResult ? "true" : "false"}>
             <strong>Build a target in that reference</strong>
-            <span>Open another CSV, choose the installed reference rotation, and rebuild.</span>
+            <span>Open another CSV or XLSX file, choose the installed reference rotation, and rebuild.</span>
           </li>
           <li data-done={projectedSetCount > 0 ? "true" : "false"}>
             <strong>Capture the projected endpoint</strong>
@@ -1086,6 +1116,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   <dl>
                     <div><dt>Dataset</dt><dd>{analysisSet.dataset.name}</dd></div>
                     <div><dt>{copy.sets.sourceHash}</dt><dd title={analysisSet.dataset.normalizedUtf8TextSha256 ?? "Unavailable"}>{analysisSet.dataset.normalizedUtf8TextSha256 ?? "Unavailable"}</dd></div>
+                    <div><dt>{copy.sets.hashScope}</dt><dd>{analysisSet.dataset.hashKind ?? "legacy normalized UTF-8 text"}</dd></div>
                     <div><dt>Role</dt><dd>{analysisSet.role}</dd></div>
                     <div>
                       <dt>{analysisSet.generatedReference ? copy.sets.generatedReference : copy.sets.projectionReference}</dt>
@@ -1195,13 +1226,13 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             hidden
             tabIndex={-1}
             aria-hidden="true"
             onChange={(event) => {
               const file = event.target.files?.[0];
-              if (file) void openCsv(file);
+              if (file) void openCodedData(file);
               event.currentTarget.value = "";
             }}
           />
@@ -2160,6 +2191,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               </div>
             </div>
             <div className="ena-stats-export-region" data-ena-stats-export="true">
+              <OpenEnaAiInterpretation
+                request={aiInterpretationRequest}
+                disabled={!result || resultIsStale || !aiInterpretationRequest}
+                disabledReason={resultIsStale
+                  ? copy.aiInterpretation.staleResult
+                  : result && !aiInterpretationRequest
+                    ? copy.aiInterpretation.aggregatePrivacyGate
+                    : copy.aiInterpretation.noCurrentResult}
+                copy={copy.aiInterpretation}
+              />
               <section className="ena-manifest-section">
               <h3>{copy.stats.manifest}</h3>
               <dl>
@@ -2172,9 +2213,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 {result.projectionReference ? <div><dt>Reference space</dt><dd>{result.projectionReference.name}</dd></div> : null}
                 <div><dt>{copy.model.forward}</dt><dd>{manifestConfig.windowSizeForward}</dd></div>
                 <div>
-                  <dt>Normalized UTF-8 text SHA-256</dt>
+                  <dt>{copy.sets.sourceHash}</dt>
                   <dd title={datasetHash ?? "Not recorded"}>{datasetHash ? `${datasetHash.slice(0, 12)}…` : "—"}</dd>
                 </div>
+                <div><dt>{copy.sets.hashScope}</dt><dd>{dataset?.hashKind ?? "legacy normalized UTF-8 text"}</dd></div>
               </dl>
               <div className="ena-export-stack">
                 <button type="button" className="ena-action-button ena-action-primary" disabled={!manifest} onClick={() => manifest && downloadJson(`open-ena-${Date.now()}-manifest.json`, manifest)}>
@@ -2277,7 +2319,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       <details className="ena-source-evidence">
         <summary>
           <span>Source evidence</span>
-          <small>{sourceEvidenceRows.length.toLocaleString()} of {dataset.rows.length.toLocaleString()} CSV rows</small>
+          <small>{sourceEvidenceRows.length.toLocaleString()} of {dataset.rows.length.toLocaleString()} coded rows</small>
         </summary>
         <div className="ena-source-evidence-controls">
           <label className="ena-field">
@@ -2305,7 +2347,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           </label>
         </div>
         <p className="ena-source-privacy">
-          Source rows remain in browser memory. They are not sent to a server and are not included in the derived result bundle.
+          {copy.aiInterpretation.privacyLocal} {copy.aiInterpretation.privacyExternal}
           Derived exports retain selected analytic-unit and group identifiers, plus conversation identifiers for trajectories; pseudonymize them before sharing when needed.
         </p>
         <div className="ena-source-table-wrap" role="region" aria-label="Filtered source evidence table" tabIndex={0}>
@@ -2536,21 +2578,6 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
 
           <aside className="ena-control-panel" data-ena-workbench-region="controls">
             {panel}
-            <div className="ena-control-view-toggle">
-              <div className="ena-view-toggle" role="group" aria-label="ENA visualization options">
-                <button type="button" aria-pressed={view === "2d"} onClick={() => setView("2d")}>
-                  <strong>{copy.views.twoD}</strong><small>{copy.views.default}</small>
-                </button>
-                <a
-                  href={siteConfig.threeDenaUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label={`${copy.views.threeD} ${copy.views.exploratory}. Opens www.3dena.com in a new tab.`}
-                >
-                  <strong>{copy.views.threeD}</strong><small>{copy.views.exploratory} <span aria-hidden="true">↗</span></small>
-                </a>
-              </div>
-            </div>
           </aside>
 
           <div className="ena-visual-workspace" data-testid="open-ena-center-surface">
@@ -2587,43 +2614,58 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 >
                   <span aria-hidden="true">▦</span>{centerSurface === "data" ? "Comparison Plot" : "Data View"}
                 </button>
-                <button
-                  type="button"
-                  className="ena-compact-toolbar-button ena-download-model-button"
-                  disabled={!dataset || !result || !resultConfig}
-                  onClick={() => {
-                    if (dataset && result && resultConfig) {
-                      downloadJson(
-                        `open-ena-${Date.now()}-results.json`,
-                        buildAnalysisBundle(dataset, resultConfig, result, datasetHash, {
-                          methodsDimensions: [xDimension, yDimension],
-                          methodsFlipX: flipX,
-                          methodsFlipY: flipY,
-                          edgeThreshold,
-                          showNetworks,
-                          showPoints,
-                          showTrajectories,
-                          showLabels,
-                          showGroupLabels,
-                          showUnitLabels,
-                          showVariance,
-                          edgeScale,
-                          pointScale,
-                          plotZoom,
-                          selectedGroupOrder: groupContrast?.groupOrder,
-                          groupContrast,
-                        }),
-                        true,
-                      );
-                    }
-                  }}
-                >
-                  <svg className="ena-download-model-button-icon" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M14 3H7.5A1.5 1.5 0 0 0 6 4.5v15A1.5 1.5 0 0 0 7.5 21h9a1.5 1.5 0 0 0 1.5-1.5V7l-4-4Z" />
-                    <path d="M14 3v4h4M12 10v7m-3-3 3 3 3-3" />
-                  </svg>
-                  Download Model
-                </button>
+                <div className="ena-analysis-toolbar-cluster">
+                  <div className="ena-view-toggle" role="group" aria-label="ENA visualization options">
+                    <button type="button" aria-pressed={view === "2d"} onClick={() => setView("2d")}>
+                      <strong>{copy.views.twoD}</strong>
+                    </button>
+                    <a
+                      href={siteConfig.threeDenaUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`${copy.views.threeD}. Opens www.3dena.com in a new tab.`}
+                    >
+                      <strong>{copy.views.threeD}</strong>
+                    </a>
+                  </div>
+                  <button
+                    type="button"
+                    className="ena-compact-toolbar-button ena-download-model-button"
+                    disabled={!dataset || !result || !resultConfig}
+                    onClick={() => {
+                      if (dataset && result && resultConfig) {
+                        downloadJson(
+                          `open-ena-${Date.now()}-results.json`,
+                          buildAnalysisBundle(dataset, resultConfig, result, datasetHash, {
+                            methodsDimensions: [xDimension, yDimension],
+                            methodsFlipX: flipX,
+                            methodsFlipY: flipY,
+                            edgeThreshold,
+                            showNetworks,
+                            showPoints,
+                            showTrajectories,
+                            showLabels,
+                            showGroupLabels,
+                            showUnitLabels,
+                            showVariance,
+                            edgeScale,
+                            pointScale,
+                            plotZoom,
+                            selectedGroupOrder: groupContrast?.groupOrder,
+                            groupContrast,
+                          }),
+                          true,
+                        );
+                      }
+                    }}
+                  >
+                    <svg className="ena-download-model-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M14 3H7.5A1.5 1.5 0 0 0 6 4.5v15A1.5 1.5 0 0 0 7.5 21h9a1.5 1.5 0 0 0 1.5-1.5V7l-4-4Z" />
+                      <path d="M14 3v4h4M12 10v7m-3-3 3 3 3-3" />
+                    </svg>
+                    Download Model
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -2845,7 +2887,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   </div>
                 </div>
                 <div className="ena-empty-data-view" data-testid="open-ena-empty-data-view">
-                  <strong>Data View</strong><span>{dataset ? `${dataset.rows.length.toLocaleString()} coded rows ready for review` : "Open a CSV or load the teaching sample to inspect coded rows."}</span><span aria-hidden="true">⌃</span>
+                  <strong>Data View</strong><span>{dataset ? `${dataset.rows.length.toLocaleString()} coded rows ready for review` : "Open a CSV or XLSX file, or load the teaching sample, to inspect coded rows."}</span><span aria-hidden="true">⌃</span>
                 </div>
               </section>
             )}

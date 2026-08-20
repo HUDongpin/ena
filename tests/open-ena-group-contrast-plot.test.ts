@@ -457,12 +457,36 @@ test("large persistent point layers disclose deterministic sampling without reve
   assert.doesNotMatch(markup, /reveal|overlap-count|concentric/i);
 });
 
-test("all panels use the fixed full-result coordinate extent and honor flips and zoom", async () => {
+test("all panels keep fixed SVG papers while flips and zoom stay inside clipped plot layers", async () => {
   const markup = await render({ flipX: true, flipY: true, plotZoom: 99 });
+  const comparison = plotSvg(markup, "open-ena-group-comparison-plot");
+  const primary = plotSvg(markup, "open-ena-group-primary-plot");
+  const secondary = plotSvg(markup, "open-ena-group-secondary-plot");
+  const plotSvgs = [comparison, primary, secondary];
 
   assert.equal((markup.match(/data-ena-extent-source="full-result"/g) ?? []).length, 3);
   assert.equal((markup.match(/data-ena-coordinate-extent="-10 30 -20 20"/g) ?? []).length, 3);
-  assert.equal((markup.match(/style="transform:scale\(2\.4\);transform-origin:center;--ena-plot-text-scale:1"/g) ?? []).length, 3);
+  assert.equal((markup.match(/data-ena-plot-zoom="2\.4"/g) ?? []).length, 3);
+  plotSvgs.forEach((svg) => {
+    const root = svg.match(/^<svg\b[^>]*>/)?.[0] ?? "";
+    assert.doesNotMatch(root, /transform:\s*scale|transform-origin/);
+    assert.ok(
+      svg.indexOf('class="ena-set-plot-background"') < svg.indexOf('data-ena-plot-viewport="true"'),
+      "the fixed white paper must remain outside the clipped zoom layer",
+    );
+  });
+  assert.match(
+    comparison,
+    /<g\b(?=[^>]*data-ena-plot-content="true")(?=[^>]*data-ena-plot-zoom-layer="true")(?=[^>]*transform="translate\(460 361\.5\) scale\(2\.4\) translate\(-460 -361\.5\)")[^>]*>/,
+  );
+  assert.equal((markup.match(/transform="translate\(220 111\.5\) scale\(2\.4\) translate\(-220 -111\.5\)"/g) ?? []).length, 2);
+  const clipIds = plotSvgs.map((svg) => svg.match(/<clipPath\b[^>]*id="([^"]+)"[^>]*>/)?.[1] ?? "");
+  assert.ok(clipIds.every(Boolean), "every plot must declare a viewport clip path");
+  assert.equal(new Set(clipIds).size, 3, "each inline SVG needs a unique clip-path identifier");
+  plotSvgs.forEach((svg, index) => {
+    const escapedClipId = clipIds[index].replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    assert.match(svg, new RegExp(`<g\\b(?=[^>]*data-ena-plot-viewport="true")(?=[^>]*clip-path="url\\(#${escapedClipId}\\)")[^>]*>`));
+  });
   assert.match(markup, /SVD1 · 50\.0% · flipped/);
   assert.match(markup, /SVD2 · 30\.0% · flipped/);
   assert.doesNotMatch(markup, /data-ena-extent-source="derived-selected-points-and-nodes"/);
@@ -514,7 +538,7 @@ test("projected comparison figures carry fixed-reference identity and variance s
 
   assert.match(comparisonSvg, /Projected into fixed reference/);
   assert.match(comparisonSvg, /ID open-ena-ref:fixed-geometry/);
-  assert.match(comparisonSvg, /declared source SHA-256 cccccccccccc…/);
+  assert.match(comparisonSvg, /declared analyzed-table SHA-256 cccccccccccc…/);
   assert.match(comparisonSvg, /Reference: Independent reference geometry/);
   assert.match(comparisonSvg, /Variance shares describe current data in this fixed basis/);
 });
@@ -676,6 +700,15 @@ test("the central comparison SVG accepts the Workspace export ref", () => {
   const source = readFileSync(componentPath, "utf8");
   assert.match(source, /svgRef\?:\s*Ref<SVGSVGElement>/);
   assert.match(source, /kind\s*===\s*"comparison"\s*\?\s*svgRef\s*:\s*undefined/);
+});
+
+test("Copy image resolves the semantic plot SVG instead of a toolbar icon", () => {
+  const source = readFileSync(componentPath, "utf8");
+  assert.match(
+    source,
+    /closest\("figure"\)\?\.querySelector<SVGSVGElement>\("svg\[data-ena-plot-kind\]"\)/,
+  );
+  assert.doesNotMatch(source, /closest\("figure"\)\?\.querySelector\("svg"\)/);
 });
 
 test("all horizontally scrollable plot figures are keyboard focusable and labelled", async () => {

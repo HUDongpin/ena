@@ -348,7 +348,7 @@ export default function OpenEnaPlot({
   const safeReferenceId = result.projectionReference?.referenceId
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/gu, " ");
   const referenceToken = result.projectionReference
-    ? `ID ${safeReferenceId?.slice(-28)}${referenceSourceHash ? ` · declared source SHA-256 ${referenceSourceHash.slice(0, 12)}…` : ""}`
+    ? `ID ${safeReferenceId?.slice(-28)}${referenceSourceHash ? ` · declared analyzed-table SHA-256 ${referenceSourceHash.slice(0, 12)}…` : ""}`
     : null;
   const referenceFigureName = result.projectionReference ? `Reference: ${referenceName}` : null;
   const referenceFigureCaveat = result.projectionReference

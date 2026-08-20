@@ -425,14 +425,14 @@ test("fails closed when source identity, compact trajectory identity, or source 
       ...settings(),
       datasetNormalizedUtf8TextSha256: "b".repeat(64),
     }),
-    /source hash.*does not match/i,
+    /analyzed-table hash.*does not match/i,
   );
   assert.throws(
     () => buildLongitudinalGroupCentroidView(fixture.result, fixture.config, fixture.dataset, {
       ...settings(),
       datasetNormalizedUtf8TextSha256: null,
     }),
-    /source hash.*required|verify.*provenance/i,
+    /analyzed-table hash.*required|verify.*provenance/i,
   );
 
   const mismatchedConfigResult: OpenEnaResult = {
@@ -525,6 +525,8 @@ test("exports descriptive geometry, cohort diagnostics, and provenance without r
   const csv = longitudinalPeriodRowsToCsv(view);
   assert.match(csv.split("\r\n")[0], /group,time,timeIndex,nTotal,nUsed,nExcluded,availableEntityCount,completeEntityCount,includedEntityCount,excludedEntityCount/);
   assert.match(csv, /G1,T1/);
+  assert.match(csv, /sourceDatasetHashKind/);
+  assert.match(csv, /normalized-utf8-csv-text-sha256/);
   assert.match(csv, /sourceDatasetNormalizedUtf8TextSha256/);
   assert.match(csv, /timeOrderJson/);
   assert.match(csv, /\[""T1"",""T2"",""T3""\]/);

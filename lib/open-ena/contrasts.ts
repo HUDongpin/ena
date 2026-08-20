@@ -8,6 +8,7 @@ import {
 import {
   JENA_RUNTIME_VERSION,
   sameOpenEnaConfig,
+  type DatasetHashKind,
   type OpenEnaConfig,
   type OpenEnaProjectionReference,
   type OpenEnaReferenceFit,
@@ -27,9 +28,9 @@ export const PAIRWISE_CONTRAST_BOUNDARIES = [
   "Mann-Whitney inference is ENA.HK post-projection inference on the two selected axes, not a jENA statistic; no multiplicity correction is applied across axes or repeated pair selections.",
   "Endpoint analytic units are the independent observations assumed by the descriptive means and Mann-Whitney calculations.",
   "The plotted uncertainty guides are two separate marginal 95% Student-t confidence intervals for arithmetic mean endpoint-unit coordinates on the displayed axes; they are not a joint two-dimensional confidence region or a significance test.",
-  "Raw source rows and row-level co-occurrence records are excluded; preserve the exact source CSV, its codebook, and the enclosing ENA manifest with its dataset hash for reproducibility.",
-  "An absent source SHA-256 means the result did not carry an immutable browser provenance binding; it is not evidence that two results came from the same source.",
-  "Imported reference names, source hashes, timestamps, and fit descriptors are declared provenance and are not independently authenticated by this comparison.",
+  "Raw source rows and row-level co-occurrence records are excluded; preserve the exact source coded-data file, its codebook, and the enclosing ENA manifest with its analyzed-table hash and hashKind for reproducibility.",
+  "An absent analyzed-table SHA-256 means the result did not carry an immutable browser provenance binding; it is not evidence that two results came from the same analyzed table.",
+  "Imported reference names, analyzed-table hashes, timestamps, and fit descriptors are declared provenance and are not independently authenticated by this comparison.",
 ] as const;
 
 export interface OpenEnaPairwiseContrastSide {
@@ -78,6 +79,7 @@ export interface OpenEnaPairwiseContrast {
     model: "EndPoint";
     dimensions: string[];
     sourceDatasetNormalizedUtf8TextSha256: string | null;
+    sourceDatasetHashKind?: DatasetHashKind;
     sourceBindingStatus: "bound" | "not-present";
     projectionReference: OpenEnaProjectionReference | null;
     rotationMethod: OpenEnaConfig["rotation"];
@@ -618,6 +620,9 @@ export function buildPairwiseGroupContrast(
       model: "EndPoint",
       dimensions,
       sourceDatasetNormalizedUtf8TextSha256: sourceHash?.toLowerCase() ?? null,
+      ...(result.provenanceBinding?.datasetHashKind
+        ? { sourceDatasetHashKind: result.provenanceBinding.datasetHashKind }
+        : {}),
       sourceBindingStatus: result.provenanceBinding ? "bound" : "not-present",
       projectionReference: result.projectionReference ? cloneJson(result.projectionReference) : null,
       rotationMethod: config.rotation,

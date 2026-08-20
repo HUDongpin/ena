@@ -3,6 +3,7 @@ import { rowsToCsv } from "./export";
 import { buildReferenceRotationPackage } from "./reference";
 import {
   JENA_RUNTIME_VERSION,
+  datasetHashKindFor,
   type OpenEnaAnalysisSet,
   type OpenEnaConfig,
   type OpenEnaProjectionReference,
@@ -206,6 +207,7 @@ export function buildAnalysisSet(
       rowCount: dataset.rows.length,
       columnCount: dataset.headers.length,
       sizeBytes: dataset.sizeBytes,
+      hashKind: datasetHashKindFor(dataset),
       normalizedUtf8TextSha256: hash,
     },
     config: cloneConfig(config),

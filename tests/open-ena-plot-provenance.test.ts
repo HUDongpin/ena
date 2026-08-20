@@ -61,7 +61,7 @@ test("long reference names cannot displace the visible reference token or varian
   const provenance = markup.match(/<g class="ena-reference-figure-provenance"[\s\S]*?<\/g>/)?.[0];
 
   assert.ok(provenance, "the standalone plot should render a visible provenance block");
-  const referenceToken = `ID ${referenceId.slice(-28)} · declared source SHA-256 ${"a".repeat(12)}…`;
+  const referenceToken = `ID ${referenceId.slice(-28)} · declared analyzed-table SHA-256 ${"a".repeat(12)}…`;
   const visibleName = `Reference: ${longName.slice(0, 69)}…`;
   const caveat = "Variance shares describe current data in this fixed basis, not reference-fit explained variance.";
   assert.match(provenance, new RegExp(`<text[^>]*>${referenceToken}</text>`));

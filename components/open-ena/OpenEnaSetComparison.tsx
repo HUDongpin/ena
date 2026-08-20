@@ -198,9 +198,12 @@ function NetworkSvg({
 }) {
   const titleId = useId();
   const descriptionId = useId();
+  const viewportId = useId();
   const compact = kind !== "difference";
   const width = compact ? MINI_WIDTH : MAIN_WIDTH;
   const height = compact ? MINI_HEIGHT : MAIN_HEIGHT;
+  const zoom = Math.min(2.4, Math.max(0.6, plotZoom));
+  const viewportClipId = `ena-${kind}-${viewportId.replace(/[^a-zA-Z0-9_-]/gu, "")}-viewport`;
   const project = buildProjector(comparison, width, height, flipX, flipY);
   const nodePoints = new Map<string, ProjectedPoint>();
   comparison.nodes.forEach((node) => nodePoints.set(node.code, project(node.x, node.y)));
@@ -259,7 +262,7 @@ function NetworkSvg({
       data-ena-plot-kind={kind}
       data-ena-points-shown={pointsShown}
       data-ena-points-total={pointsTotal}
-      style={{ transform: `scale(${Math.min(2.4, Math.max(0.6, plotZoom))})`, transformOrigin: "center" }}
+      data-ena-plot-zoom={dataScaleValue(zoom)}
     >
       <title id={titleId}>{title}</title>
       <desc id={descriptionId}>{description}</desc>
@@ -272,9 +275,18 @@ function NetworkSvg({
             strokeWidth="1"
           />
         </pattern>
+        <clipPath id={viewportClipId} clipPathUnits="userSpaceOnUse">
+          <rect x={0} y={0} width={width} height={height} />
+        </clipPath>
       </defs>
       <rect width={width} height={height} rx={compact ? 7 : 10} className="ena-set-plot-background" />
       <rect width={width} height={height} rx={compact ? 7 : 10} fill={`url(#${titleId}-grid)`} opacity="0.62" />
+      <g data-ena-plot-viewport="true" clipPath={`url(#${viewportClipId})`}>
+      <g
+        data-ena-plot-content="true"
+        data-ena-plot-zoom-layer="true"
+        transform={`translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}
+      >
       <g className="ena-set-zero-axes" aria-hidden="true">
         <line x1={width / 2} y1={22} x2={width / 2} y2={height - 22} />
         <line x1={22} y1={height / 2} x2={width - 22} y2={height / 2} />
@@ -394,6 +406,8 @@ function NetworkSvg({
       </g>
       {kind === "difference" || kind === "primary" ? <PrimaryMeanMarker point={primaryMean} compact={compact} /> : null}
       {kind === "difference" || kind === "secondary" ? <SecondaryMeanMarker point={secondaryMean} compact={compact} /> : null}
+      </g>
+      </g>
     </svg>
   );
 }

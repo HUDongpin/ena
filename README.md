@@ -19,7 +19,7 @@ interfaces, an English reviewed-content fallback, and downloadable synthetic pra
 data for learning the ENA workflow.
 
 Open ENA is a browser-based research workspace powered by the pinned
-`jena-js` runtime. It accepts coded CSV data and keeps the standard two-dimensional
+`jena-js` runtime. It accepts coded CSV or XLSX data and keeps the standard two-dimensional
 ENA view selected by default. Its 3D ENA exploratory option opens the separate
 `www.3dena.com` application and does not transfer the current data or model.
 
@@ -40,6 +40,7 @@ The researcher workspace currently provides:
 - jENA dimension summaries, correlations, Welch/ANOVA test statistics, and absolute Cohen's d for datasets within the automatic diagnostics limit;
 - ENA.HK endpoint Mann–Whitney summaries for the selected Primary/Secondary pair, including medians, U, a two-sided tie-corrected normal-approximation p-value, and signed rank-biserial effect size;
 - a local source-evidence browser with text search and active-code filtering that keeps raw source rows out of model exports;
+- an optional, researcher-triggered GPT-5.6 Luna interpretation of a reviewed, anonymized aggregate evidence request through a server-only OpenRouter connection;
 - inspectable and downloadable coordinates, pre-normalization connection counts, line weights, centroids, node positions, adjacency keys, a derived analysis bundle with the full rotation set, a reusable reference-rotation package, and an analysis manifest.
 
 Open ENA follows the pinned jENA 0.6.2 plotting defaults for scientific data
@@ -134,6 +135,35 @@ trajectories, selected conversation identifiers. Pseudonymize those fields befor
 sharing when required; “raw-row-excluding” does not mean anonymous.
 CSV exports prefix spreadsheet-active string cells with an apostrophe while leaving
 numeric scalar values unchanged.
+
+### Optional AI-assisted interpretation
+
+AI interpretation is disabled unless the server is configured with
+`OPEN_ENA_AI_ENABLED=true` and a server-only `OPENROUTER_API_KEY`. The default
+provider URL is `https://openrouter.ai/api/v1` and the default model is
+`openai/gpt-5.6-luna`. `OPEN_ENA_AI_MODEL` may select another OpenRouter model,
+but the provider URL is intentionally restricted to the official HTTPS OpenRouter
+API so a configuration mistake cannot send the bearer key to another host. Copy
+`.env.example` to a local ignored environment file and never use a `NEXT_PUBLIC_*`
+variable for the provider key. AI requests also require an explicit Open ENA
+username, a password of at least 12 characters, and an independent session secret
+of at least 32 characters; the source-code fallback login is not accepted by the AI
+route.
+
+The core ENA model and raw source rows remain in the browser. The AI request is not
+automatic: Stats & Export first shows the exact versioned aggregate JSON, and the
+researcher must review it, explicitly consent, and press Generate. The server route
+accepts only the strict aggregate schema. It excludes raw rows, source filenames,
+group names, analytic-unit identifiers, conversation identifiers, and per-unit
+coordinates. AI output is descriptive, evidence-referenced, and must not be treated
+as statistical inference or a substitute for the codebook, coded evidence, research
+design, or researcher review. To prevent aggregate centroids from degenerating into
+individual records, every exported AI group and non-missing trajectory group-period
+must contain at least three entities. The route limits each session to six requests
+per minute, caps provider output at 1,800 tokens, propagates browser cancellation,
+and bounds both request and response bodies. Configure a provider-side OpenRouter
+budget as the durable production cost ceiling; the in-process limiter is only a
+local abuse-control layer and is not a distributed deployment quota.
 
 ## Open-source distribution gate
 

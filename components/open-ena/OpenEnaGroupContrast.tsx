@@ -225,7 +225,7 @@ function boundedZoom(value: number) {
 }
 
 async function copyPlotImage(button: HTMLButtonElement) {
-  const svg = button.closest("figure")?.querySelector("svg");
+  const svg = button.closest("figure")?.querySelector<SVGSVGElement>("svg[data-ena-plot-kind]");
   if (!(svg instanceof SVGSVGElement)) throw new Error("Plot image is unavailable.");
   const clone = svg.cloneNode(true) as SVGSVGElement;
   clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
@@ -789,9 +789,11 @@ function ContrastSvg({
 }) {
   const titleId = useId();
   const descriptionId = useId();
+  const viewportId = useId();
   const compact = kind !== "comparison";
   const width = compact ? MINI_WIDTH : MAIN_WIDTH;
   const height = compact ? MINI_HEIGHT : MAIN_HEIGHT;
+  const viewportClipId = `ena-${kind}-${viewportId.replace(/[^a-zA-Z0-9_-]/gu, "")}-viewport`;
   const padding = compact ? MINI_PADDING : MAIN_PADDING;
   const { extent, source: extentSource } = resolveExtent(contrast);
   const officialFrame = resolveOfficialPlotFrame(contrast, extent);
@@ -883,7 +885,7 @@ function ContrastSvg({
   const referenceName = reference ? safeFigureLabel(reference.name, 72) : null;
   const sourceHash = reference?.source.normalizedUtf8TextSha256;
   const referenceToken = referenceId
-    ? `ID ${referenceId}${sourceHash ? ` · declared source SHA-256 ${sourceHash.slice(0, 12)}…` : ""}`
+    ? `ID ${referenceId}${sourceHash ? ` · declared analyzed-table SHA-256 ${sourceHash.slice(0, 12)}…` : ""}`
     : null;
   const referenceCaveat = reference
     ? "Variance shares describe current data in this fixed basis, not reference-fit explained variance."
@@ -963,16 +965,25 @@ function ContrastSvg({
       data-ena-points-valid={pointsValid}
       data-ena-points-shown={pointsShown}
       data-ena-points-dropped={pointsTotal - pointsValid}
+      data-ena-plot-zoom={dataNumber(zoom)}
       style={{
-        transform: `scale(${zoom})`,
-        transformOrigin: "center",
         "--ena-plot-text-scale": labelScale,
       } as CSSProperties}
     >
       <title id={titleId}>{`${title}${referenceDescription}`}</title>
       <desc id={descriptionId}>{`${description}${pointSamplingDescription}${referenceDescription}`}</desc>
+      <defs>
+        <clipPath id={viewportClipId} clipPathUnits="userSpaceOnUse">
+          <rect x={0} y={0} width={width} height={height} />
+        </clipPath>
+      </defs>
       <rect width={width} height={height} rx={compact ? 7 : 10} className="ena-set-plot-background" />
-      <g data-ena-plot-content="true">
+      <g data-ena-plot-viewport="true" clipPath={`url(#${viewportClipId})`}>
+      <g
+        data-ena-plot-content="true"
+        data-ena-plot-zoom-layer="true"
+        transform={`translate(${width / 2} ${height / 2}) scale(${zoom}) translate(${-width / 2} ${-height / 2})`}
+      >
       <g className="ena-set-zero-axes" aria-hidden="true">
         <line x1={verticalStart.x} y1={verticalStart.y} x2={verticalEnd.x} y2={verticalEnd.y} />
         <line x1={horizontalStart.x} y1={horizontalStart.y} x2={horizontalEnd.x} y2={horizontalEnd.y} />
@@ -1200,6 +1211,7 @@ function ContrastSvg({
           />
         );
       }) : null}
+      </g>
       </g>
       {kind === "comparison" && referenceToken && referenceName && referenceCaveat ? (
         <g className="ena-reference-figure-provenance" role="note" aria-label={referenceDescription.trim()}>

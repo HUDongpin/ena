@@ -206,9 +206,9 @@ test("the documented Academy sample runs through real jENA 0.6.2 deterministical
   assert.equal(manifest.appVersion, "0.1.0");
   assert.equal(manifest.result.analyzedAt, result.analyzedAt);
   assert.ok(manifest.boundaries.length >= 9);
-  assert.match(manifest.boundaries.join(" "), /CSV order/);
+  assert.match(manifest.boundaries.join(" "), /source order/);
   assert.match(manifest.boundaries.join(" "), /signs are arbitrary/);
-  assert.match(manifest.boundaries.join(" "), /source CSV and its codebook/);
+  assert.match(manifest.boundaries.join(" "), /source coded-data file and its codebook/);
   assert.match(manifest.boundaries.join(" "), /target-fitted centroid tables are withheld/);
   assert.match(manifest.boundaries.join(" "), /declared provenance/);
 });
@@ -219,9 +219,15 @@ test("2D is the local default and 3D ENA is an explicit external destination", (
   const site = readFileSync(join(projectRoot, "lib", "site.ts"), "utf8");
   const worker = readFileSync(join(projectRoot, "lib", "open-ena", "jena.worker.ts"), "utf8");
   const client = readFileSync(join(projectRoot, "lib", "open-ena", "client.ts"), "utf8");
+  const viewToggleStart = workspace.indexOf('<div className="ena-view-toggle"');
+  const viewToggle = workspace.slice(viewToggleStart, workspace.indexOf("</div>", viewToggleStart));
 
   assert.match(workspace, /useState<OpenEnaView>\("2d"\)/);
   assert.match(workspace, /aria-pressed=\{view === "2d"\}/);
+  assert.match(workspace, /<strong>\{copy\.views\.twoD\}<\/strong>/);
+  assert.match(workspace, /<strong>\{copy\.views\.threeD\}<\/strong>/);
+  assert.doesNotMatch(workspace, /copy\.views\.(?:default|exploratory)/);
+  assert.doesNotMatch(viewToggle, /<small|Default|Exploratory/);
   assert.match(site, /threeDenaUrl: "https:\/\/www\.3dena\.com"/);
   assert.match(workspace, /href=\{siteConfig\.threeDenaUrl\}/);
   assert.match(workspace, /target="_blank"/);
