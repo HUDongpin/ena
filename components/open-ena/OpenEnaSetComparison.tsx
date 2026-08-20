@@ -1,9 +1,15 @@
 import { useId, type Ref } from "react";
-import { JENA_PRIMARY_COLOR, JENA_SECONDARY_COLOR } from "@/lib/open-ena/plot-style";
+import {
+  JENA_PRIMARY_COLOR,
+  JENA_SECONDARY_COLOR,
+  codeColorFor,
+  type OpenEnaCodeColors,
+} from "@/lib/open-ena/plot-style";
 import type { OpenEnaSharedComparison } from "@/lib/open-ena/sets";
 
 interface OpenEnaSetComparisonProps {
   comparison: OpenEnaSharedComparison;
+  codeColors?: OpenEnaCodeColors;
   edgeThreshold: number;
   showPoints: boolean;
   showNetworks: boolean;
@@ -179,6 +185,7 @@ function SecondaryMeanMarker({ point, compact }: { point: ProjectedPoint; compac
 
 function NetworkSvg({
   comparison,
+  codeColors,
   kind,
   edgeThreshold,
   showPoints,
@@ -392,9 +399,17 @@ function NetworkSvg({
         {comparison.nodes.map((node: ComparisonNode) => {
           const point = nodePoints.get(node.code);
           if (!point) return null;
+          const nodeColor = codeColorFor(codeColors, node.code);
           return (
             <g key={node.code} transform={`translate(${point.x} ${point.y})`}>
-              <circle r={compact ? 8 : 12} className="ena-set-result-node" />
+              <circle
+                r={compact ? 8 : 12}
+                className="ena-set-result-node"
+                data-ena-code={node.code}
+                fill={nodeColor}
+                stroke={nodeColor}
+                style={{ fill: nodeColor, stroke: nodeColor }}
+              />
               {showLabels ? (
                 <text y={compact ? -14 : -20} textAnchor="middle" className="ena-set-result-label">
                   {node.code}

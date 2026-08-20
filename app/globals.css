@@ -1,24 +1,24 @@
 :root {
   color-scheme: light;
-  --page: #edf8f7;
-  --surface: #f6fbfa;
+  --page: #f1f9fd;
+  --surface: #f7fbfe;
   --surface-strong: #ffffff;
-  --surface-soft: #eef9f7;
+  --surface-soft: #edf8fd;
   --ink: #1f293d;
   --muted: #3e4b63;
   --faint: #6f7c91;
-  --line: #d7eeea;
-  --line-strong: #a8d9d3;
-  --accent: #72c7bd;
-  --accent-hover: #66bfb5;
-  --accent-strong: #39736e;
-  --accent-soft: #eef9f7;
+  --line: #d5ebf6;
+  --line-strong: #acd9ee;
+  --accent: #89cff0;
+  --accent-hover: #73c2e8;
+  --accent-strong: #1f6f9e;
+  --accent-soft: #edf8fd;
   --nav: #1f293d;
   --nav-deep: #0f172a;
   --nav-text: #f8fffd;
   --nav-muted: #c5d6d2;
-  --shadow: 0 18px 45px rgba(36, 71, 80, 0.1);
-  --shadow-soft: 0 8px 24px rgba(36, 71, 80, 0.08);
+  --shadow: 0 18px 45px rgba(31, 111, 158, 0.1);
+  --shadow-soft: 0 8px 24px rgba(31, 111, 158, 0.08);
 }
 
 * {
@@ -35,8 +35,8 @@ body {
   min-width: 320px;
   color: var(--ink);
   background:
-    radial-gradient(circle at 50% 10%, rgba(114, 199, 189, 0.18), transparent 38%),
-    linear-gradient(#f6fbfa, #edf8f7 55%, #f7fcfb);
+    radial-gradient(circle at 50% 10%, rgba(137, 207, 240, 0.18), transparent 38%),
+    linear-gradient(#f7fbfe, #f1f9fd 55%, #f8fcfe);
   background-attachment: fixed;
   font-family: var(--font-geist), "Noto Sans", "Noto Sans TC", "Noto Sans SC", system-ui, sans-serif;
   text-rendering: optimizeLegibility;
@@ -110,14 +110,14 @@ button:focus-visible {
   transform: translateY(0);
 }
 
-/* Public shell follows the 80px AIEDHK header geometry with the Yanzi mint system. */
+/* Public shell follows the 80px AIEDHK header geometry with the ENA Baby Blue system. */
 .site-header {
   position: sticky;
   top: 0;
   z-index: 50;
   color: var(--ink);
   background: rgba(255, 255, 255, 0.82);
-  border-bottom: 1px solid rgba(114, 199, 189, 0.28);
+  border-bottom: 1px solid rgba(137, 207, 240, 0.34);
   box-shadow: 0 4px 18px rgba(31, 41, 61, 0.04);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
@@ -211,7 +211,7 @@ button:focus-visible {
 .nav-link[aria-current="page"] {
   color: var(--nav-deep);
   background: var(--accent);
-  box-shadow: 0 10px 24px rgba(114, 199, 189, 0.3), 0 8px 18px rgba(15, 23, 42, 0.1);
+  box-shadow: 0 10px 24px rgba(137, 207, 240, 0.34), 0 8px 18px rgba(15, 23, 42, 0.1);
 }
 
 .desktop-language {
@@ -331,7 +331,7 @@ button:focus-visible {
 .language-option[aria-selected="true"] {
   color: var(--nav-deep);
   background: var(--accent);
-  box-shadow: 0 10px 24px rgba(114, 199, 189, 0.25);
+  box-shadow: 0 10px 24px rgba(137, 207, 240, 0.3);
 }
 
 .menu-button {
@@ -394,7 +394,7 @@ button:focus-visible {
 .mobile-nav-link[aria-current="page"] {
   color: var(--nav-deep);
   background: var(--accent);
-  box-shadow: 0 10px 24px rgba(114, 199, 189, 0.25);
+  box-shadow: 0 10px 24px rgba(137, 207, 240, 0.3);
 }
 
 .mobile-locales {
@@ -695,7 +695,7 @@ button:focus-visible {
 }
 
 .open-ena-home-copy .eyebrow {
-  color: #91ddd4;
+  color: var(--accent);
 }
 
 .open-ena-home-copy h2 {
@@ -739,7 +739,7 @@ button:focus-visible {
 }
 
 .open-ena-home-pillars li > span {
-  color: #76cfc4;
+  color: var(--accent);
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.72rem;
   font-weight: 800;
@@ -770,8 +770,8 @@ button:focus-visible {
 }
 
 .open-ena-home-action .button-primary {
-  color: #102723;
-  background: #83d5cb;
+  color: var(--nav-deep);
+  background: var(--accent);
 }
 
 .open-ena-home-action > p {
@@ -786,7 +786,7 @@ button:focus-visible {
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  border: 1px solid rgba(155, 218, 210, 0.36);
+  border: 1px solid rgba(137, 207, 240, 0.42);
   border-radius: 22px;
   background: #e9f2f1;
   box-shadow: 0 34px 80px rgba(0, 0, 0, 0.28);
@@ -820,13 +820,13 @@ button:focus-visible {
 
 .open-ena-figure-brand-ring {
   fill: none;
-  stroke: #79d0c5;
+  stroke: var(--accent);
   stroke-width: 2;
 }
 
 .open-ena-figure-brand-dot,
 .open-ena-figure-status-dot {
-  fill: #83d5cb;
+  fill: var(--accent);
 }
 
 .open-ena-figure-brand,
@@ -881,13 +881,13 @@ button:focus-visible {
 
 .open-ena-figure-mode.is-active rect {
   fill: #294551;
-  stroke: #7ed2c7;
+  stroke: var(--accent);
 }
 
 .open-ena-figure-mode.is-active circle,
 .open-ena-figure-mode.is-active path {
-  fill: #85d7cd;
-  stroke: #85d7cd;
+  fill: var(--accent);
+  stroke: var(--accent);
 }
 
 .open-ena-figure-panel {
@@ -896,7 +896,7 @@ button:focus-visible {
 }
 
 .open-ena-figure-kicker {
-  fill: #39736e;
+  fill: var(--accent-strong);
   font-size: 9px;
   font-weight: 820;
   letter-spacing: 0.12em;
@@ -928,26 +928,26 @@ button:focus-visible {
 }
 
 .open-ena-figure-run {
-  fill: #75c9be;
-  stroke: #39736e;
+  fill: var(--accent);
+  stroke: var(--accent-strong);
 }
 
 .open-ena-figure-run circle {
-  fill: #163832;
+  fill: var(--nav-deep);
 }
 
 .open-ena-figure-run path {
-  stroke: #234640;
+  stroke: var(--nav-deep);
   stroke-width: 4;
   stroke-linecap: round;
 }
 
 .open-ena-figure-note {
-  fill: #dcece9;
+  fill: var(--accent-soft);
 }
 
 .open-ena-figure-note + path {
-  stroke: #82aaa4;
+  stroke: var(--accent-strong);
   stroke-width: 3;
   stroke-linecap: round;
 }
@@ -1052,12 +1052,12 @@ button:focus-visible {
 }
 
 .open-ena-figure-flow {
-  fill: #dce9e7;
+  fill: var(--accent-soft);
 }
 
 .open-ena-figure-flow-step circle {
   fill: #ffffff;
-  stroke: #4e8a82;
+  stroke: var(--accent-strong);
   stroke-width: 2;
 }
 
@@ -1070,7 +1070,7 @@ button:focus-visible {
 
 .open-ena-figure-flow-step path {
   fill: none;
-  stroke: #71938f;
+  stroke: var(--accent-strong);
   stroke-width: 1.5;
 }
 
@@ -2188,7 +2188,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .open-ena-login-edges path:first-child {
-  stroke: #72c7bd;
+  stroke: var(--accent);
   stroke-width: 3;
 }
 
@@ -2199,7 +2199,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .open-ena-login-nodes circle:nth-child(4) {
-  fill: #72c7bd;
+  fill: var(--accent);
   stroke: #e8f8f5;
 }
 
@@ -2239,7 +2239,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .open-ena-login-context-copy li span {
-  color: #72c7bd;
+  color: var(--accent);
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.56rem;
   letter-spacing: 0.08em;
@@ -2321,7 +2321,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .open-ena-login-form input:not([type="hidden"]):focus {
   border-color: #39736e;
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(114, 199, 189, 0.22);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .open-ena-login-form input[aria-invalid="true"] {
@@ -2400,7 +2400,7 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .open-ena-login-privacy span {
   padding-top: 0.18em;
-  color: #72c7bd;
+  color: var(--accent);
   font-size: 0.5rem;
 }
 
@@ -2518,7 +2518,13 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .open-ena-workbench {
-  --ena-teal: #56b09d;
+  --ena-accent: var(--accent);
+  --ena-accent-hover: var(--accent-hover);
+  --ena-accent-strong: var(--accent-strong);
+  --ena-accent-soft: var(--accent-soft);
+  --ena-accent-line: var(--line-strong);
+  --ena-teal: var(--ena-accent);
+  --ena-font-step: 1px;
   display: grid;
   width: 100vw;
   height: 100dvh;
@@ -2530,6 +2536,7 @@ body:has(.open-ena-login-page) .back-to-top {
   background: #f8fbfb;
   box-shadow: none;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: calc(1rem + var(--ena-font-step));
 }
 
 .ena-workbench-topbar {
@@ -2556,14 +2563,14 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-workbench-brand strong {
-  color: #67c9b8;
-  font-size: 1.05rem;
+  color: var(--ena-accent);
+  font-size: calc(1.05rem + var(--ena-font-step, 1px));
   letter-spacing: 0.045em;
 }
 
 .ena-workbench-brand small {
   color: #f3f7f6;
-  font-size: 0.64rem;
+  font-size: calc(0.64rem + var(--ena-font-step, 1px));
   font-weight: 650;
   letter-spacing: 0.01em;
 }
@@ -2578,7 +2585,7 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-workbench-title strong {
   overflow: hidden;
-  font-size: 0.82rem;
+  font-size: calc(0.82rem + var(--ena-font-step, 1px));
   font-weight: 760;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2586,7 +2593,7 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-workbench-title span {
   color: #aeb9bc;
-  font-size: 0.61rem;
+  font-size: calc(0.61rem + var(--ena-font-step, 1px));
 }
 
 .ena-mini-mark {
@@ -2609,8 +2616,8 @@ body:has(.open-ena-login-page) .back-to-top {
   justify-content: space-between;
   gap: 14px;
   padding: 4px 16px;
-  color: #fff;
-  background: #56b09d;
+  color: var(--nav-deep);
+  background: var(--ena-accent);
 }
 
 .ena-run-status {
@@ -2619,7 +2626,7 @@ body:has(.open-ena-login-page) .back-to-top {
   align-items: center;
   gap: 8px;
   color: inherit;
-  font-size: 0.65rem;
+  font-size: calc(0.65rem + var(--ena-font-step, 1px));
   font-weight: 690;
 }
 
@@ -2644,7 +2651,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-workbench-status-summary {
   overflow: hidden;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.61rem;
+  font-size: calc(0.61rem + var(--ena-font-step, 1px));
   font-weight: 680;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2662,7 +2669,7 @@ body:has(.open-ena-login-page) .back-to-top {
   padding: 10px 12px;
   color: #644b13;
   background: #fff8df;
-  font-size: 0.7rem;
+  font-size: calc(0.7rem + var(--ena-font-step, 1px));
 }
 
 .ena-stale-banner strong {
@@ -2672,15 +2679,15 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-inline-progress {
-  color: #284b46;
-  border-color: #8bb5ae;
-  background: #eaf6f4;
+  color: var(--ena-accent-strong);
+  border-color: var(--ena-accent-line);
+  background: var(--ena-accent-soft);
   font-family: var(--font-geist-mono), monospace;
 }
 
 .ena-inline-progress button {
   min-height: 32px;
-  border: 1px solid #5c8b84;
+  border: 1px solid var(--ena-accent-strong);
   border-radius: 3px;
   padding-inline: 11px;
   color: inherit;
@@ -2740,7 +2747,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-rail-product {
   margin-top: 2px;
   color: #eaf4f2;
-  font-size: 0.51rem;
+  font-size: calc(0.51rem + var(--ena-font-step, 1px));
   font-weight: 760;
   letter-spacing: 0.045em;
   line-height: 1;
@@ -2748,7 +2755,7 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-rail-version {
   color: #8fa6a6;
-  font-size: 0.48rem;
+  font-size: calc(0.48rem + var(--ena-font-step, 1px));
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }
@@ -2803,7 +2810,7 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-rail-button span {
   max-width: 62px;
-  font-size: 0.62rem;
+  font-size: calc(0.62rem + var(--ena-font-step, 1px));
   font-weight: 720;
   line-height: 1.15;
   text-align: center;
@@ -2840,7 +2847,7 @@ body:has(.open-ena-login-page) .back-to-top {
   min-height: 16px;
   justify-content: center;
   gap: 5px;
-  font-size: 0.51rem;
+  font-size: calc(0.51rem + var(--ena-font-step, 1px));
   line-height: 1;
 }
 
@@ -2852,8 +2859,8 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-rail-meta .ena-run-status[data-state="result"] > span:first-child {
-  background: #72c7bd;
-  box-shadow: 0 0 0 2px rgba(114, 199, 189, 0.18);
+  background: var(--ena-accent);
+  box-shadow: 0 0 0 2px rgba(137, 207, 240, 0.24);
 }
 
 .ena-rail-status-label {
@@ -2866,7 +2873,7 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-rail-privacy {
   color: #718987;
-  font-size: 0.46rem;
+  font-size: calc(0.46rem + var(--ena-font-step, 1px));
   font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 1;
@@ -2935,7 +2942,8 @@ body:has(.open-ena-login-page) .back-to-top {
   height: 100%;
   max-height: none;
   overflow: auto;
-  padding: 18px 18px 24px;
+  padding: 18px 18px 80px;
+  scroll-padding-bottom: 80px;
   overscroll-behavior: contain;
 }
 
@@ -2948,7 +2956,7 @@ body:has(.open-ena-login-page) .back-to-top {
   margin: 0;
   color: var(--accent-strong);
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.64rem;
+  font-size: calc(0.64rem + var(--ena-font-step, 1px));
   font-weight: 820;
   letter-spacing: 0.11em;
   text-transform: uppercase;
@@ -2957,7 +2965,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-panel-heading h2 {
   margin: 7px 0 0;
   color: #182333;
-  font-size: 1.22rem;
+  font-size: calc(1.22rem + var(--ena-font-step, 1px));
   font-weight: 790;
   letter-spacing: -0.03em;
 }
@@ -2965,7 +2973,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-panel-heading > p:last-child {
   margin: 9px 0 0;
   color: #5a6774;
-  font-size: 0.79rem;
+  font-size: calc(0.79rem + var(--ena-font-step, 1px));
   line-height: 1.55;
 }
 
@@ -2978,7 +2986,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-source-actions > p {
   margin: -1px 0 6px;
   color: #5e6b74;
-  font-size: 0.68rem;
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
 }
 
 .ena-action-button {
@@ -2990,7 +2998,7 @@ body:has(.open-ena-login-page) .back-to-top {
   border: 1px solid transparent;
   border-radius: 3px;
   padding: 9px 13px;
-  font-size: 0.77rem;
+  font-size: calc(0.77rem + var(--ena-font-step, 1px));
   font-weight: 790;
   cursor: pointer;
   transition: color 140ms ease, background 140ms ease, border-color 140ms ease;
@@ -3002,13 +3010,13 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-action-primary {
-  color: #102420;
-  border-color: #58afa5;
+  color: var(--nav-deep);
+  border-color: var(--ena-accent-strong);
   background: var(--accent);
 }
 
 .ena-action-primary:hover:not(:disabled) {
-  background: #8fd8d0;
+  background: var(--ena-accent);
 }
 
 .ena-action-secondary {
@@ -3018,7 +3026,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-action-secondary:hover:not(:disabled) {
-  color: #244e49;
+  color: var(--ena-accent-strong);
   border-color: var(--accent-strong);
 }
 
@@ -3028,9 +3036,9 @@ body:has(.open-ena-login-page) .back-to-top {
   border: 1px solid #c8e2de;
   border-radius: 4px;
   padding: 10px 11px;
-  color: #315c57;
-  background: #e9f7f5;
-  font-size: 0.7rem;
+  color: var(--ena-accent-strong);
+  background: var(--ena-accent-soft);
+  font-size: calc(0.7rem + var(--ena-font-step, 1px));
   line-height: 1.45;
 }
 
@@ -3056,13 +3064,13 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-reference-card strong,
 .ena-reference-model-note strong {
   color: #263d3a;
-  font-size: 0.73rem;
+  font-size: calc(0.73rem + var(--ena-font-step, 1px));
 }
 
 .ena-reference-card span,
 .ena-reference-model-note span {
   color: #53666a;
-  font-size: 0.67rem;
+  font-size: calc(0.67rem + var(--ena-font-step, 1px));
   line-height: 1.45;
 }
 
@@ -3096,7 +3104,7 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-reference-active small {
   color: #68777d;
-  font-size: 0.62rem;
+  font-size: calc(0.62rem + var(--ena-font-step, 1px));
 }
 
 .ena-reference-active button {
@@ -3105,7 +3113,7 @@ body:has(.open-ena-login-page) .back-to-top {
   border: 0;
   color: #7b3f43;
   background: transparent;
-  font-size: 0.65rem;
+  font-size: calc(0.65rem + var(--ena-font-step, 1px));
   font-weight: 760;
   cursor: pointer;
 }
@@ -3113,10 +3121,10 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-reference-model-note {
   display: grid;
   gap: 4px;
-  border: 1px solid #9dc9c1;
+  border: 1px solid var(--ena-accent-line);
   border-radius: 4px;
   padding: 10px 11px;
-  background: #eaf7f4;
+  background: var(--ena-accent-soft);
 }
 
 .ena-projection-badge {
@@ -3124,12 +3132,12 @@ body:has(.open-ena-login-page) .back-to-top {
   align-items: center;
   gap: 9px;
   margin: 12px 16px 0;
-  border: 1px solid #80b5aa;
+  border: 1px solid var(--ena-accent-line);
   border-radius: 999px;
   padding: 7px 11px;
-  color: #23574e;
-  background: #e8f6f3;
-  font-size: 0.68rem;
+  color: var(--ena-accent-strong);
+  background: var(--ena-accent-soft);
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
 }
 
 .ena-projection-badge strong {
@@ -3148,7 +3156,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-no-dataset {
   padding: 22px 14px;
   color: #59666f;
-  font-size: 0.76rem;
+  font-size: calc(0.76rem + var(--ena-font-step, 1px));
   text-align: center;
 }
 
@@ -3161,7 +3169,7 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-dataset-card-title > span {
   color: #596662;
-  font-size: 0.65rem;
+  font-size: calc(0.65rem + var(--ena-font-step, 1px));
   font-weight: 760;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -3171,7 +3179,7 @@ body:has(.open-ena-login-page) .back-to-top {
   overflow: hidden;
   color: #22303b;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem + var(--ena-font-step, 1px));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3190,13 +3198,13 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-dataset-card dt {
   color: #596662;
-  font-size: 0.61rem;
+  font-size: calc(0.61rem + var(--ena-font-step, 1px));
 }
 
 .ena-dataset-card dd {
   margin: 0;
   color: #22303b;
-  font-size: 0.75rem;
+  font-size: calc(0.75rem + var(--ena-font-step, 1px));
   font-weight: 800;
 }
 
@@ -3211,7 +3219,7 @@ body:has(.open-ena-login-page) .back-to-top {
   min-width: 100%;
   border-collapse: collapse;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.61rem;
+  font-size: calc(0.61rem + var(--ena-font-step, 1px));
   white-space: nowrap;
 }
 
@@ -3243,7 +3251,7 @@ body:has(.open-ena-login-page) .back-to-top {
   display: grid;
   gap: 7px;
   color: #30404d;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem + var(--ena-font-step, 1px));
   font-weight: 750;
 }
 
@@ -3263,7 +3271,7 @@ body:has(.open-ena-login-page) .back-to-top {
   padding: 7px 30px 7px 10px;
   color: #27343f;
   background: #fff;
-  font-size: 0.75rem;
+  font-size: calc(0.75rem + var(--ena-font-step, 1px));
 }
 
 .ena-field select:focus,
@@ -3292,7 +3300,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-camera-fieldset legend {
   padding-inline: 5px;
   color: #30404d;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem + var(--ena-font-step, 1px));
   font-weight: 760;
 }
 
@@ -3303,15 +3311,15 @@ body:has(.open-ena-login-page) .back-to-top {
   margin-inline-start: 5px;
   place-items: center;
   border-radius: 50%;
-  color: #153630;
+  color: var(--ena-accent-strong);
   background: var(--accent);
-  font-size: 0.62rem;
+  font-size: calc(0.62rem + var(--ena-font-step, 1px));
 }
 
 .ena-identity-fieldset > p {
   margin: 0 0 8px;
   color: #53636a;
-  font-size: 0.68rem;
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
   line-height: 1.45;
 }
 
@@ -3326,6 +3334,42 @@ body:has(.open-ena-login-page) .back-to-top {
   gap: 4px;
 }
 
+.ena-code-option-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 6px;
+}
+
+.ena-code-option-row > label {
+  min-width: 0;
+}
+
+.ena-code-color-input {
+  width: 20px;
+  height: 20px;
+  border: 1px solid #a9bab8;
+  border-radius: 3px;
+  padding: 1px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.ena-code-color-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.ena-code-color-input::-webkit-color-swatch,
+.ena-code-color-input::-moz-color-swatch {
+  border: 0;
+  border-radius: 2px;
+}
+
+.ena-code-color-input:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
 .ena-code-options label,
 .ena-camera-fieldset label {
   display: flex;
@@ -3336,13 +3380,26 @@ body:has(.open-ena-login-page) .back-to-top {
   padding: 4px 6px;
   color: #4c5b66;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.66rem;
+  font-size: calc(0.66rem + var(--ena-font-step, 1px));
   cursor: pointer;
 }
 
 .ena-code-options label:hover,
 .ena-camera-fieldset label:hover {
   background: #e5efed;
+}
+
+.ena-code-options .ena-code-color-control {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  place-items: center;
+  justify-self: end;
+  gap: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .ena-code-options input,
@@ -3359,10 +3416,10 @@ body:has(.open-ena-login-page) .back-to-top {
   min-width: 34px;
   border-radius: 3px;
   padding: 3px 6px;
-  color: #163b35;
-  background: #d8eeeb;
+  color: var(--ena-accent-strong);
+  background: var(--ena-accent-soft);
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.65rem;
+  font-size: calc(0.65rem + var(--ena-font-step, 1px));
   text-align: center;
 }
 
@@ -3379,7 +3436,7 @@ body:has(.open-ena-login-page) .back-to-top {
   padding: 7px 8px;
   color: #253b3a;
   background: #fff;
-  font-size: 0.69rem;
+  font-size: calc(0.69rem + var(--ena-font-step, 1px));
   font-weight: 760;
   cursor: pointer;
 }
@@ -3387,8 +3444,8 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-plot-actions button:hover,
 .ena-plot-actions button[aria-pressed="true"] {
   border-color: var(--accent-strong);
-  color: #123f37;
-  background: #dff1ee;
+  color: var(--ena-accent-strong);
+  background: var(--ena-accent-soft);
 }
 
 .ena-plot-actions button:focus-visible {
@@ -3409,7 +3466,7 @@ body:has(.open-ena-login-page) .back-to-top {
   border: 1px solid #efc8cc;
   border-radius: 4px;
   background: #fff2f2;
-  font-size: 0.68rem;
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
   line-height: 1.4;
 }
 
@@ -3417,9 +3474,9 @@ body:has(.open-ena-login-page) .back-to-top {
   margin: 0;
   padding: 9px 10px;
   color: #5d6b72;
-  border-inline-start: 3px solid #86cfc6;
-  background: #eaf5f3;
-  font-size: 0.65rem;
+  border-inline-start: 3px solid var(--ena-accent);
+  background: var(--ena-accent-soft);
+  font-size: calc(0.65rem + var(--ena-font-step, 1px));
   line-height: 1.48;
 }
 
@@ -3428,7 +3485,7 @@ body:has(.open-ena-login-page) .back-to-top {
   align-items: center;
   gap: 8px;
   color: #2b6758;
-  font-size: 0.7rem;
+  font-size: calc(0.7rem + var(--ena-font-step, 1px));
   font-weight: 720;
 }
 
@@ -3452,7 +3509,7 @@ body:has(.open-ena-login-page) .back-to-top {
   padding: 0;
   color: var(--accent-strong);
   background: transparent;
-  font-size: 0.75rem;
+  font-size: calc(0.75rem + var(--ena-font-step, 1px));
   font-weight: 760;
   cursor: pointer;
 }
@@ -3474,7 +3531,7 @@ body:has(.open-ena-login-page) .back-to-top {
   padding-inline: 11px;
   border-bottom: 1px solid #e5eae9;
   color: #394a56;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem + var(--ena-font-step, 1px));
   font-weight: 720;
 }
 
@@ -3516,7 +3573,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-methods-preview summary {
   padding: 10px 11px;
   color: #32514c;
-  font-size: 0.69rem;
+  font-size: calc(0.69rem + var(--ena-font-step, 1px));
   font-weight: 760;
   cursor: pointer;
 }
@@ -3530,7 +3587,7 @@ body:has(.open-ena-login-page) .back-to-top {
   color: #35474c;
   background: #fff;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.62rem;
+  font-size: calc(0.62rem + var(--ena-font-step, 1px));
   line-height: 1.55;
   white-space: pre-wrap;
 }
@@ -3538,14 +3595,14 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-stats-stack h3 {
   margin: 0 0 10px;
   color: #293943;
-  font-size: 0.75rem;
+  font-size: calc(0.75rem + var(--ena-font-step, 1px));
   font-weight: 800;
 }
 
 .ena-stats-stack section > p {
   margin: 9px 0 0;
   color: #69767e;
-  font-size: 0.64rem;
+  font-size: calc(0.64rem + var(--ena-font-step, 1px));
   line-height: 1.45;
 }
 
@@ -3553,7 +3610,7 @@ body:has(.open-ena-login-page) .back-to-top {
   width: 100%;
   border-collapse: collapse;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.66rem;
+  font-size: calc(0.66rem + var(--ena-font-step, 1px));
 }
 
 .ena-stats-table th,
@@ -3575,7 +3632,7 @@ body:has(.open-ena-login-page) .back-to-top {
   justify-content: space-between;
   gap: 12px;
   color: #4b5963;
-  font-size: 0.68rem;
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
 }
 
 .ena-group-stat span {
@@ -3606,12 +3663,12 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-effect-grid span {
   color: #56636b;
-  font-size: 0.62rem;
+  font-size: calc(0.62rem + var(--ena-font-step, 1px));
 }
 
 .ena-effect-grid strong {
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.88rem;
+  font-size: calc(0.88rem + var(--ena-font-step, 1px));
 }
 
 .ena-manifest-section dl {
@@ -3625,7 +3682,7 @@ body:has(.open-ena-login-page) .back-to-top {
   justify-content: space-between;
   gap: 12px;
   color: #637078;
-  font-size: 0.64rem;
+  font-size: calc(0.64rem + var(--ena-font-step, 1px));
 }
 
 .ena-manifest-section dd {
@@ -3681,7 +3738,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-result-data > summary span {
-  font-size: 0.75rem;
+  font-size: calc(0.75rem + var(--ena-font-step, 1px));
   font-weight: 820;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -3690,7 +3747,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-result-data > summary small {
   color: #53636a;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.61rem;
+  font-size: calc(0.61rem + var(--ena-font-step, 1px));
 }
 
 .ena-result-data-tools {
@@ -3717,15 +3774,15 @@ body:has(.open-ena-login-page) .back-to-top {
   padding: 5px 9px;
   color: #405159;
   background: #fff;
-  font-size: 0.64rem;
+  font-size: calc(0.64rem + var(--ena-font-step, 1px));
   font-weight: 740;
   cursor: pointer;
 }
 
 .ena-result-tabs button[aria-selected="true"] {
-  color: #173a34;
-  border-color: #317d72;
-  background: #d8eeeb;
+  color: var(--ena-accent-strong);
+  border-color: var(--ena-accent-strong);
+  background: var(--ena-accent-soft);
 }
 
 .ena-result-tabs button span {
@@ -3749,7 +3806,7 @@ body:has(.open-ena-login-page) .back-to-top {
   min-width: 100%;
   border-collapse: collapse;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.63rem;
+  font-size: calc(0.63rem + var(--ena-font-step, 1px));
   white-space: nowrap;
 }
 
@@ -3769,14 +3826,14 @@ body:has(.open-ena-login-page) .back-to-top {
   z-index: 1;
   top: 0;
   color: #30443f;
-  background: #e6f0ee;
+  background: var(--ena-accent-soft);
 }
 
 .ena-result-data > p {
   margin: 0;
   padding: 9px 12px;
   color: #53636a;
-  font-size: 0.63rem;
+  font-size: calc(0.63rem + var(--ena-font-step, 1px));
 }
 
 .ena-source-evidence {
@@ -3798,7 +3855,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-source-evidence > summary span {
-  font-size: 0.75rem;
+  font-size: calc(0.75rem + var(--ena-font-step, 1px));
   font-weight: 820;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -3807,7 +3864,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-source-evidence > summary small {
   color: #b4c7c5;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.62rem;
+  font-size: calc(0.62rem + var(--ena-font-step, 1px));
 }
 
 .ena-source-evidence-controls {
@@ -3833,7 +3890,7 @@ body:has(.open-ena-login-page) .back-to-top {
   color: #40555c;
   border-top: 1px solid #cbd7d5;
   background: #e2ecea;
-  font-size: 0.66rem;
+  font-size: calc(0.66rem + var(--ena-font-step, 1px));
 }
 
 .ena-source-table-wrap {
@@ -3848,7 +3905,7 @@ body:has(.open-ena-login-page) .back-to-top {
   min-width: 100%;
   border-collapse: collapse;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.63rem;
+  font-size: calc(0.63rem + var(--ena-font-step, 1px));
   white-space: nowrap;
 }
 
@@ -3868,7 +3925,7 @@ body:has(.open-ena-login-page) .back-to-top {
   z-index: 1;
   top: 0;
   color: #263e3a;
-  background: #dcebe8;
+  background: var(--ena-accent-soft);
 }
 
 .ena-source-table-wrap tbody th {
@@ -3894,7 +3951,7 @@ body:has(.open-ena-login-page) .back-to-top {
   padding: 7px 12px;
   color: #d4e0de;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.63rem;
+  font-size: calc(0.63rem + var(--ena-font-step, 1px));
 }
 
 .ena-source-pagination div {
@@ -3943,13 +4000,13 @@ body:has(.open-ena-login-page) .back-to-top {
   display: grid;
   gap: 3px;
   padding-inline-start: 9px;
-  border-inline-start: 3px solid #56b09d;
+  border-inline-start: 3px solid var(--ena-accent);
 }
 
 .ena-visual-toolbar p {
   margin: 0;
   color: #25323c;
-  font-size: 0.75rem;
+  font-size: calc(0.75rem + var(--ena-font-step, 1px));
   font-weight: 820;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -3958,7 +4015,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-visual-toolbar > div:first-child > span {
   color: #59676f;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.63rem;
+  font-size: calc(0.63rem + var(--ena-font-step, 1px));
 }
 
 .ena-view-toggle {
@@ -3991,19 +4048,19 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-view-toggle button[aria-pressed="true"] {
-  color: #173a34;
+  color: var(--ena-accent-strong);
   background: var(--accent);
   box-shadow: inset 0 -3px var(--accent-strong);
 }
 
 .ena-view-toggle a:hover {
-  color: #173a34;
-  background: #dcebea;
+  color: var(--ena-accent-strong);
+  background: var(--ena-accent-soft);
 }
 
 .ena-view-toggle strong,
 .ena-view-toggle a strong {
-  font-size: 0.72rem;
+  font-size: calc(0.72rem + var(--ena-font-step, 1px));
 }
 
 .ena-three-d-note {
@@ -4012,7 +4069,7 @@ body:has(.open-ena-login-page) .back-to-top {
   color: #43555d;
   border-bottom: 1px solid #d9e1e0;
   background: #f0f5f4;
-  font-size: 0.69rem;
+  font-size: calc(0.69rem + var(--ena-font-step, 1px));
   line-height: 1.45;
 }
 
@@ -4047,7 +4104,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-three-axes text {
   fill: #5c6c72;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 12px;
+  font-size: calc(12px + var(--ena-font-step, 1px));
   font-weight: 690;
 }
 
@@ -4066,17 +4123,17 @@ body:has(.open-ena-login-page) .back-to-top {
   stroke-linejoin: round;
   stroke-width: 5px;
   font-family: var(--font-geist), sans-serif;
-  font-size: 13px;
+  font-size: calc(13px + var(--ena-font-step, 1px));
   font-weight: 790;
 }
 
 .ena-mini-label {
-  font-size: 24px;
+  font-size: calc(24px + var(--ena-font-step, 1px));
   stroke-width: 7px;
 }
 
 .ena-mean-label {
-  font-size: 12px;
+  font-size: calc(12px + var(--ena-font-step, 1px));
 }
 
 .ena-unit-label {
@@ -4086,7 +4143,7 @@ body:has(.open-ena-login-page) .back-to-top {
   stroke-linejoin: round;
   stroke-width: 4px;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 10px;
+  font-size: calc(10px + var(--ena-font-step, 1px));
   font-weight: 720;
 }
 
@@ -4096,7 +4153,7 @@ body:has(.open-ena-login-page) .back-to-top {
   gap: 13px 18px;
   padding: 11px 4px 7px;
   color: #52636a;
-  font-size: 0.65rem;
+  font-size: calc(0.65rem + var(--ena-font-step, 1px));
 }
 
 .open-ena-legend > span {
@@ -4145,7 +4202,7 @@ body:has(.open-ena-login-page) .back-to-top {
   margin: 0;
   padding: 8px 0 14px;
   color: #58676e;
-  font-size: 0.67rem;
+  font-size: calc(0.67rem + var(--ena-font-step, 1px));
   line-height: 1.48;
 }
 
@@ -4156,13 +4213,13 @@ body:has(.open-ena-login-page) .back-to-top {
   padding: 0 12px 12px;
   color: #394a52;
   background: #fff;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem + var(--ena-font-step, 1px));
 }
 
 .ena-result-summary summary {
   min-height: 44px;
   padding-block: 12px;
-  color: #254f49;
+  color: var(--ena-accent-strong);
   font-weight: 800;
   cursor: pointer;
 }
@@ -4173,14 +4230,14 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-result-summary h3 {
-  font-size: 0.74rem;
+  font-size: calc(0.74rem + var(--ena-font-step, 1px));
 }
 
 .ena-result-summary table {
   width: 100%;
   border-collapse: collapse;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.68rem;
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
 }
 
 .ena-result-summary th,
@@ -4192,7 +4249,7 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .open-ena-plot-figure:focus-visible,
   .ena-result-summary summary:focus-visible {
-  outline: 3px solid #276d65;
+  outline: 3px solid var(--ena-accent-strong);
   outline-offset: 3px;
 }
 
@@ -4217,7 +4274,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-subpanel-title h2 {
   margin: 0;
   color: #27363f;
-  font-size: 0.75rem;
+  font-size: calc(0.75rem + var(--ena-font-step, 1px));
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -4225,7 +4282,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-subpanel-title > span {
   color: #59676f;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.6rem;
+  font-size: calc(0.6rem + var(--ena-font-step, 1px));
 }
 
 .ena-group-network-grid {
@@ -4246,7 +4303,7 @@ body:has(.open-ena-login-page) .back-to-top {
   padding-inline: 11px;
   color: #54636b;
   border-bottom: 1px solid #e1e7e6;
-  font-size: 0.66rem;
+  font-size: calc(0.66rem + var(--ena-font-step, 1px));
 }
 
 .ena-group-network-heading span {
@@ -4285,7 +4342,7 @@ body:has(.open-ena-login-page) .back-to-top {
   max-width: 640px;
   margin: 13px 0 0;
   color: #25353f;
-  font-size: clamp(1.7rem, 3vw, 2.8rem);
+  font-size: calc(clamp(1.7rem, 3vw, 2.8rem) + var(--ena-font-step, 1px));
   letter-spacing: -0.045em;
 }
 
@@ -4293,7 +4350,7 @@ body:has(.open-ena-login-page) .back-to-top {
   max-width: 610px;
   margin: 14px 0 0;
   color: #63727a;
-  font-size: 0.82rem;
+  font-size: calc(0.82rem + var(--ena-font-step, 1px));
   line-height: 1.62;
 }
 
@@ -4346,7 +4403,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-empty-network line {
-  stroke: #56b09d;
+  stroke: var(--ena-accent);
   stroke-width: 5;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -4369,14 +4426,14 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-empty-guidance h2 {
   margin: 7px 0 0;
   color: #25353f;
-  font-size: clamp(1.25rem, 2vw, 1.65rem);
+  font-size: calc(clamp(1.25rem, 2vw, 1.65rem) + var(--ena-font-step, 1px));
   letter-spacing: -0.035em;
 }
 
 .ena-empty-guidance > p:not(.ena-panel-kicker) {
   margin: 8px 0 0;
   color: #607078;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem + var(--ena-font-step, 1px));
   line-height: 1.5;
 }
 
@@ -4398,7 +4455,7 @@ body:has(.open-ena-login-page) .back-to-top {
   border: 1px solid #d9e1e0;
   border-radius: 2px;
   background: #fbfcfc;
-  font-size: 0.67rem;
+  font-size: calc(0.67rem + var(--ena-font-step, 1px));
 }
 
 .ena-empty-guidance li::before {
@@ -4433,7 +4490,7 @@ body:has(.open-ena-login-page) .back-to-top {
   background:
     linear-gradient(#fff, #fff) padding-box,
     #fff;
-  font-size: 0.65rem;
+  font-size: calc(0.65rem + var(--ena-font-step, 1px));
   text-align: center;
 }
 
@@ -4444,7 +4501,7 @@ body:has(.open-ena-login-page) .back-to-top {
   margin-bottom: -26px;
   border: 1px solid #dbe3e2;
   border-radius: 50%;
-  box-shadow: 26px -12px 0 -25px #56b09d, -27px 9px 0 -25px #56b09d;
+  box-shadow: 26px -12px 0 -25px var(--ena-accent), -27px 9px 0 -25px var(--ena-accent);
 }
 
 .ena-empty-plot-tools > header {
@@ -4455,12 +4512,12 @@ body:has(.open-ena-login-page) .back-to-top {
   padding-inline: 10px;
   color: #25353f;
   border-bottom: 1px solid #dbe3e2;
-  font-size: 0.68rem;
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
 }
 
 .ena-empty-plot-tools > header span {
   color: #7a878b;
-  font-size: 0.58rem;
+  font-size: calc(0.58rem + var(--ena-font-step, 1px));
 }
 
 .ena-empty-plot-tools dl {
@@ -4477,7 +4534,7 @@ body:has(.open-ena-login-page) .back-to-top {
   padding-inline: 10px;
   color: #647278;
   border-top: 1px solid #edf0f0;
-  font-size: 0.61rem;
+  font-size: calc(0.61rem + var(--ena-font-step, 1px));
 }
 
 .ena-empty-plot-tools dd {
@@ -4495,7 +4552,7 @@ body:has(.open-ena-login-page) .back-to-top {
   padding-inline: 13px;
   color: #fff;
   background: #202426;
-  font-size: 0.65rem;
+  font-size: calc(0.65rem + var(--ena-font-step, 1px));
 }
 
 .ena-empty-data-view span:nth-child(2) {
@@ -4582,7 +4639,7 @@ body:has(.open-ena-login-page) .back-to-top {
   color: #792f36;
   background: #fff1f1;
   box-shadow: 0 12px 35px rgba(95, 32, 41, 0.16);
-  font-size: 0.71rem;
+  font-size: calc(0.71rem + var(--ena-font-step, 1px));
 }
 
 .ena-error-banner button {
@@ -4593,7 +4650,7 @@ body:has(.open-ena-login-page) .back-to-top {
   border: 0;
   color: inherit;
   background: transparent;
-  font-size: 1.1rem;
+  font-size: calc(1.1rem + var(--ena-font-step, 1px));
   cursor: pointer;
 }
 
@@ -4613,7 +4670,7 @@ body:has(.open-ena-login-page) .back-to-top {
   color: #9fb1b1;
   border-top: 1px solid #28394a;
   background: #1b2937;
-  font-size: 0.63rem;
+  font-size: calc(0.63rem + var(--ena-font-step, 1px));
   line-height: 1.45;
 }
 
@@ -4624,13 +4681,13 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .nav-link-open-ena:not([aria-current="page"]) {
-  color: #244f49;
-  box-shadow: inset 0 0 0 1px #a6d6d0;
+  color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 
 .mobile-nav-link-open-ena:not([aria-current="page"]) {
-  border: 1px solid #a6d6d0;
-  color: #244f49;
+  border: 1px solid var(--line-strong);
+  color: var(--accent-strong);
 }
 
 @media (min-width: 1181px) and (max-width: 1320px) {
@@ -4853,7 +4910,7 @@ body:has(.open-ena-login-page) .back-to-top {
   }
 
   .open-ena-intro h1 {
-    font-size: 2.35rem;
+    font-size: calc(2.35rem + var(--ena-font-step, 1px));
   }
 
   .ena-intro-badges > span:last-child {
@@ -4880,7 +4937,7 @@ body:has(.open-ena-login-page) .back-to-top {
   }
 
   .ena-tool-rail {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .ena-rail-button {
@@ -4894,7 +4951,7 @@ body:has(.open-ena-login-page) .back-to-top {
   }
 
   .ena-rail-button span {
-    font-size: 0.56rem;
+    font-size: calc(0.56rem + var(--ena-font-step, 1px));
   }
 
   .ena-source-actions,
@@ -5343,8 +5400,8 @@ body:has(.open-ena-login-page) .back-to-top {
 .academy-detail-page {
   min-height: 100dvh;
   background:
-    radial-gradient(circle at 6% 4%, rgba(114, 199, 189, 0.17), transparent 30rem),
-    radial-gradient(circle at 96% 18%, rgba(114, 199, 189, 0.1), transparent 28rem),
+    radial-gradient(circle at 6% 4%, rgba(137, 207, 240, 0.17), transparent 30rem),
+    radial-gradient(circle at 96% 18%, rgba(137, 207, 240, 0.1), transparent 28rem),
     linear-gradient(180deg, var(--surface), var(--page));
 }
 
@@ -6003,12 +6060,12 @@ body:has(.open-ena-login-page) .back-to-top {
   position: relative;
   min-height: 312px;
   overflow: hidden;
-  border: 1px solid rgba(114, 199, 189, 0.3);
+  border: 1px solid rgba(137, 207, 240, 0.34);
   border-radius: 30px;
   padding: clamp(28px, 4vw, 40px);
   color: var(--nav-text);
   background:
-    radial-gradient(circle at 88% 10%, rgba(114, 199, 189, 0.22), transparent 12rem),
+    radial-gradient(circle at 88% 10%, rgba(137, 207, 240, 0.22), transparent 12rem),
     var(--nav-deep);
   box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18);
 }
@@ -6125,7 +6182,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .news-filter-form select:focus {
   border-color: var(--accent-strong);
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(114, 199, 189, 0.18);
+  box-shadow: 0 0 0 3px rgba(137, 207, 240, 0.2);
 }
 
 .news-filter-form input::placeholder {
@@ -6923,8 +6980,8 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-set-comparison-kicker,
 .ena-set-plot-heading h3 {
-  color: #2e625c;
-  font-size: 0.64rem;
+  color: var(--ena-accent-strong);
+  font-size: calc(0.64rem + var(--ena-font-step, 1px));
   font-weight: 820;
   letter-spacing: 0.085em;
 }
@@ -6932,22 +6989,22 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-set-comparison-header h2 {
   margin-top: 3px;
   color: #25353f;
-  font-size: 1rem;
+  font-size: calc(1rem + var(--ena-font-step, 1px));
   letter-spacing: -0.018em;
 }
 
 .ena-set-reference-id {
   max-width: min(55%, 620px);
   color: #55676d;
-  font-size: 0.65rem;
+  font-size: calc(0.65rem + var(--ena-font-step, 1px));
   text-align: end;
 }
 
 .ena-set-reference-id code {
   overflow-wrap: anywhere;
-  color: #254f49;
+  color: var(--ena-accent-strong);
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.63rem;
+  font-size: calc(0.63rem + var(--ena-font-step, 1px));
   font-weight: 720;
 }
 
@@ -6970,7 +7027,7 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-set-main-plot:focus-visible,
 .ena-set-side-plots > figure:focus-visible {
-  outline: 3px solid #276d65;
+  outline: 3px solid var(--ena-accent-strong);
   outline-offset: 3px;
 }
 
@@ -6998,7 +7055,7 @@ body:has(.open-ena-login-page) .back-to-top {
   overflow: hidden;
   margin-top: 2px;
   color: #263740;
-  font-size: 0.68rem;
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
   font-weight: 730;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -7008,7 +7065,7 @@ body:has(.open-ena-login-page) .back-to-top {
   flex: 0 0 auto;
   color: #596b70;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.58rem;
+  font-size: calc(0.58rem + var(--ena-font-step, 1px));
   text-align: end;
 }
 
@@ -7034,7 +7091,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-set-zero-axes text {
   fill: #586a70;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 11px;
+  font-size: calc(11px + var(--ena-font-step, 1px));
   font-weight: 690;
 }
 
@@ -7051,7 +7108,7 @@ body:has(.open-ena-login-page) .back-to-top {
   stroke-linejoin: round;
   stroke-width: 3px;
   font-family: var(--font-geist), sans-serif;
-  font-size: 10.5px;
+  font-size: calc(10.5px + var(--ena-font-step, 1px));
   font-weight: 740;
 }
 
@@ -7079,7 +7136,7 @@ body:has(.open-ena-login-page) .back-to-top {
   paint-order: normal;
   stroke: none;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  font-size: calc(10px * var(--ena-plot-text-scale, 1));
+  font-size: calc(10px * var(--ena-plot-text-scale, 1) + var(--ena-font-step, 1px));
   font-weight: 600;
 }
 
@@ -7088,7 +7145,7 @@ body:has(.open-ena-login-page) .back-to-top {
   paint-order: normal;
   stroke: none;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  font-size: calc(10px * var(--ena-plot-text-scale, 1));
+  font-size: calc(10px * var(--ena-plot-text-scale, 1) + var(--ena-font-step, 1px));
   font-weight: 600;
   pointer-events: none;
 }
@@ -7100,7 +7157,7 @@ body:has(.open-ena-login-page) .back-to-top {
   stroke-linejoin: round;
   stroke-width: 3px;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 8px;
+  font-size: calc(8px + var(--ena-font-step, 1px));
   font-weight: 700;
 }
 
@@ -7108,7 +7165,7 @@ body:has(.open-ena-login-page) .back-to-top {
   padding: 8px 10px 10px;
   color: #59686e;
   border-top: 1px solid #e0e7e6;
-  font-size: 0.64rem;
+  font-size: calc(0.64rem + var(--ena-font-step, 1px));
   line-height: 1.45;
 }
 
@@ -7119,7 +7176,7 @@ body:has(.open-ena-login-page) .back-to-top {
   gap: 8px 16px;
   padding: 11px 4px 7px;
   color: #45575d;
-  font-size: 0.64rem;
+  font-size: calc(0.64rem + var(--ena-font-step, 1px));
 }
 
 .ena-set-signed-legend > span {
@@ -7183,7 +7240,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-set-difference-table:focus-visible {
-  outline: 3px solid #276d65;
+  outline: 3px solid var(--ena-accent-strong);
   outline-offset: 2px;
 }
 
@@ -7191,7 +7248,7 @@ body:has(.open-ena-login-page) .back-to-top {
   padding: 9px 11px;
   color: #51636a;
   border-bottom: 1px solid #dce4e3;
-  font-size: 0.66rem;
+  font-size: calc(0.66rem + var(--ena-font-step, 1px));
   line-height: 1.45;
 }
 
@@ -7200,14 +7257,14 @@ body:has(.open-ena-login-page) .back-to-top {
   min-width: 650px;
   border-collapse: collapse;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.65rem;
+  font-size: calc(0.65rem + var(--ena-font-step, 1px));
 }
 
 .ena-set-difference-table caption {
   padding: 10px 11px 6px;
-  color: #254f49;
+  color: var(--ena-accent-strong);
   font-family: var(--font-geist), sans-serif;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem + var(--ena-font-step, 1px));
   font-weight: 820;
   text-align: start;
 }
@@ -7328,29 +7385,29 @@ body:has(.open-ena-login-page) .back-to-top {
   background: #fff;
   content: counter(ena-set-step);
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.57rem;
+  font-size: calc(0.57rem + var(--ena-font-step, 1px));
   font-weight: 750;
 }
 
 .ena-sets-workflow li[data-done="true"] {
-  color: #315c55;
-  border-inline-start-color: #56b09d;
+  color: var(--ena-accent-strong);
+  border-inline-start-color: var(--ena-accent);
   background: #f0f7f5;
 }
 
 .ena-sets-workflow li[data-done="true"]::before {
   color: #fff;
-  border-color: #397f73;
-  background: #397f73;
+  border-color: var(--ena-accent-strong);
+  background: var(--ena-accent-strong);
   content: "✓";
 }
 
 .ena-sets-workflow strong {
-  font-size: 0.67rem;
+  font-size: calc(0.67rem + var(--ena-font-step, 1px));
 }
 
 .ena-sets-workflow span {
-  font-size: 0.61rem;
+  font-size: calc(0.61rem + var(--ena-font-step, 1px));
   line-height: 1.4;
 }
 
@@ -7368,7 +7425,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-sets-comparison-controls > p {
   margin: 0;
   color: #56686d;
-  font-size: 0.69rem;
+  font-size: calc(0.69rem + var(--ena-font-step, 1px));
   line-height: 1.5;
 }
 
@@ -7383,7 +7440,7 @@ body:has(.open-ena-login-page) .back-to-top {
   gap: 9px;
   padding: 11px;
   border: 1px solid #cad6d4;
-  border-inline-start: 4px solid #56b09d;
+  border-inline-start: 4px solid var(--ena-accent);
   border-radius: 3px;
   background: #fff;
 }
@@ -7408,7 +7465,7 @@ body:has(.open-ena-login-page) .back-to-top {
   display: block;
   overflow: hidden;
   color: #263940;
-  font-size: 0.75rem;
+  font-size: calc(0.75rem + var(--ena-font-step, 1px));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -7419,7 +7476,7 @@ body:has(.open-ena-login-page) .back-to-top {
   align-items: center;
   gap: 5px;
   color: #397168;
-  font-size: 0.62rem;
+  font-size: calc(0.62rem + var(--ena-font-step, 1px));
   font-weight: 780;
   letter-spacing: 0.035em;
   text-transform: uppercase;
@@ -7446,7 +7503,7 @@ body:has(.open-ena-login-page) .back-to-top {
   border: 1px solid #d4c1bc;
   border-radius: 2px;
   background: #fff;
-  font-size: 0.62rem;
+  font-size: calc(0.62rem + var(--ena-font-step, 1px));
   font-weight: 720;
   cursor: pointer;
 }
@@ -7457,7 +7514,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-sets-remove:focus-visible {
-  outline: 3px solid #276d65;
+  outline: 3px solid var(--ena-accent-strong);
   outline-offset: 2px;
 }
 
@@ -7479,7 +7536,7 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-sets-card dt {
   color: #69797d;
-  font-size: 0.6rem;
+  font-size: calc(0.6rem + var(--ena-font-step, 1px));
   font-weight: 700;
 }
 
@@ -7488,7 +7545,7 @@ body:has(.open-ena-login-page) .back-to-top {
   margin: 0;
   color: #34484e;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.58rem;
+  font-size: calc(0.58rem + var(--ena-font-step, 1px));
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -7504,7 +7561,7 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-sets-empty strong {
   color: #344a4e;
-  font-size: 0.74rem;
+  font-size: calc(0.74rem + var(--ena-font-step, 1px));
 }
 
 .ena-sets-comparison-controls {
@@ -7517,7 +7574,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-sets-comparison-controls h3 {
   margin: 0;
   color: #29463f;
-  font-size: 0.76rem;
+  font-size: calc(0.76rem + var(--ena-font-step, 1px));
   letter-spacing: 0.045em;
   text-transform: uppercase;
 }
@@ -7560,7 +7617,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-group-contrast-heading h3 {
   margin: 0;
   color: #24443d;
-  font-size: 0.78rem;
+  font-size: calc(0.78rem + var(--ena-font-step, 1px));
   letter-spacing: 0.045em;
   text-transform: uppercase;
 }
@@ -7570,7 +7627,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-export-identifier-note {
   margin: 0;
   color: #4f6266;
-  font-size: 0.68rem;
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
   line-height: 1.5;
 }
 
@@ -7610,7 +7667,7 @@ body:has(.open-ena-login-page) .back-to-top {
   border-radius: 3px;
   background: transparent;
   color: #52656a;
-  font-size: 0.67rem;
+  font-size: calc(0.67rem + var(--ena-font-step, 1px));
   font-weight: 750;
   cursor: pointer;
 }
@@ -7623,7 +7680,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-surface-choice button:focus-visible {
-  outline: 3px solid #276d65;
+  outline: 3px solid var(--ena-accent-strong);
   outline-offset: 2px;
 }
 
@@ -7653,7 +7710,7 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-longitudinal-time-order > strong {
   color: #314f4a;
-  font-size: 0.68rem;
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
 }
 
 .ena-longitudinal-time-order ol {
@@ -7677,7 +7734,7 @@ body:has(.open-ena-login-page) .back-to-top {
   background: #fff;
   color: #304d49;
   counter-increment: ena-period;
-  font-size: 0.69rem;
+  font-size: calc(0.69rem + var(--ena-font-step, 1px));
   font-weight: 720;
 }
 
@@ -7701,7 +7758,7 @@ body:has(.open-ena-login-page) .back-to-top {
   background: #eff6f4;
   color: #245e55;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: calc(0.9rem + var(--ena-font-step, 1px));
   font-weight: 800;
 }
 
@@ -7711,7 +7768,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-longitudinal-order-actions button:focus-visible {
-  outline: 3px solid #276d65;
+  outline: 3px solid var(--ena-accent-strong);
   outline-offset: 2px;
 }
 
@@ -7733,7 +7790,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .open-ena-longitudinal-trajectory:focus-visible {
-  outline: 3px solid #276d65;
+  outline: 3px solid var(--ena-accent-strong);
   outline-offset: 3px;
 }
 
@@ -7745,7 +7802,7 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-longitudinal-heading > span {
   color: #28675e;
-  font-size: 0.66rem;
+  font-size: calc(0.66rem + var(--ena-font-step, 1px));
   font-weight: 800;
   letter-spacing: 0.055em;
   text-transform: uppercase;
@@ -7758,14 +7815,14 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-longitudinal-heading h3 {
   color: #203f39;
-  font-size: 1rem;
+  font-size: calc(1rem + var(--ena-font-step, 1px));
   line-height: 1.3;
 }
 
 .ena-longitudinal-heading p {
   max-width: 78ch;
   color: #4b5f63;
-  font-size: 0.74rem;
+  font-size: calc(0.74rem + var(--ena-font-step, 1px));
   line-height: 1.55;
 }
 
@@ -7785,7 +7842,7 @@ body:has(.open-ena-login-page) .back-to-top {
   border-radius: 999px;
   background: #eef7f5;
   color: #245b53;
-  font-size: 0.65rem;
+  font-size: calc(0.65rem + var(--ena-font-step, 1px));
   font-weight: 780;
 }
 
@@ -7813,14 +7870,14 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-longitudinal-counts dt {
   color: #576a6e;
-  font-size: 0.64rem;
+  font-size: calc(0.64rem + var(--ena-font-step, 1px));
   font-weight: 720;
 }
 
 .ena-longitudinal-counts dd {
   margin: 0;
   color: #214e47;
-  font-size: 1rem;
+  font-size: calc(1rem + var(--ena-font-step, 1px));
   font-variant-numeric: tabular-nums;
   font-weight: 800;
 }
@@ -7854,7 +7911,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-longitudinal-axis-label {
   fill: #40565a;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 13px;
+  font-size: calc(13px + var(--ena-font-step, 1px));
   font-weight: 680;
 }
 
@@ -7889,13 +7946,13 @@ body:has(.open-ena-login-page) .back-to-top {
   stroke-width: 4px;
   stroke-linejoin: round;
   fill: #263f43;
-  font-size: 12px;
+  font-size: calc(12px + var(--ena-font-step, 1px));
   font-weight: 730;
 }
 
 .ena-longitudinal-period-label {
   font-family: var(--font-geist-mono), monospace;
-  font-size: 11px;
+  font-size: calc(11px + var(--ena-font-step, 1px));
 }
 
 .ena-longitudinal-legend {
@@ -7916,7 +7973,7 @@ body:has(.open-ena-login-page) .back-to-top {
   align-items: center;
   gap: 8px;
   color: #40555a;
-  font-size: 0.67rem;
+  font-size: calc(0.67rem + var(--ena-font-step, 1px));
   line-height: 1.4;
 }
 
@@ -7967,7 +8024,7 @@ body:has(.open-ena-login-page) .back-to-top {
   color: #4e6165;
   border-inline-start: 3px solid #6e9992;
   background: #f2f8f7;
-  font-size: 0.69rem;
+  font-size: calc(0.69rem + var(--ena-font-step, 1px));
   line-height: 1.5;
 }
 
@@ -7990,14 +8047,14 @@ body:has(.open-ena-login-page) .back-to-top {
   min-width: 650px;
   border-collapse: collapse;
   color: #33494e;
-  font-size: 0.67rem;
+  font-size: calc(0.67rem + var(--ena-font-step, 1px));
   font-variant-numeric: tabular-nums;
 }
 
 .ena-longitudinal-table caption {
   padding: 10px 12px;
   color: #294b45;
-  font-size: 0.72rem;
+  font-size: calc(0.72rem + var(--ena-font-step, 1px));
   font-weight: 800;
   text-align: start;
 }
@@ -8088,12 +8145,12 @@ body:has(.open-ena-page) #main-content {
 
 .ena-panel-heading h2 {
   margin-top: 5px;
-  font-size: 1.02rem;
+  font-size: calc(1.02rem + var(--ena-font-step, 1px));
 }
 
 .ena-panel-heading > p:last-child {
   margin-top: 6px;
-  font-size: 0.7rem;
+  font-size: calc(0.7rem + var(--ena-font-step, 1px));
   line-height: 1.45;
 }
 
@@ -8115,7 +8172,7 @@ body:has(.open-ena-page) #main-content {
   color: #59686d;
   background: transparent;
   cursor: pointer;
-  font-size: 0.63rem;
+  font-size: calc(0.63rem + var(--ena-font-step, 1px));
   font-weight: 720;
 }
 
@@ -8130,17 +8187,17 @@ body:has(.open-ena-page) #main-content {
 }
 
 .ena-model-tabs button[aria-selected="true"] {
-  color: #235e55;
+  color: var(--ena-accent-strong);
   background: #fff;
 }
 
 .ena-model-tabs button[aria-selected="true"]::after {
-  background: #56b09d;
+  background: var(--ena-accent);
 }
 
 .ena-model-tabs button:focus-visible {
   z-index: 1;
-  outline: 3px solid #276d65;
+  outline: 3px solid var(--ena-accent-strong);
   outline-offset: -3px;
 }
 
@@ -8205,20 +8262,20 @@ body:has(.open-ena-page) #main-content {
   color: #59686d;
   background: transparent;
   cursor: pointer;
-  font-size: 0.61rem;
+  font-size: calc(0.61rem + var(--ena-font-step, 1px));
   font-weight: 720;
   line-height: 1.25;
 }
 
 .ena-stats-tabs button[aria-selected="true"] {
-  color: #235e55;
+  color: var(--ena-accent-strong);
   border-bottom-color: var(--ena-teal);
   background: #fff;
 }
 
 .ena-stats-tabs button:focus-visible {
   z-index: 1;
-  outline: 3px solid #276d65;
+  outline: 3px solid var(--ena-accent-strong);
   outline-offset: -3px;
 }
 
@@ -8436,7 +8493,7 @@ body:has(.open-ena-page) #main-content {
 }
 
 .ena-visual-toolbar p {
-  font-size: 0.68rem;
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
 }
 
 .ena-visual-toolbar-actions {
@@ -8476,14 +8533,20 @@ body:has(.open-ena-page) #main-content {
   color: #344d49;
   background: #fff;
   cursor: pointer;
-  font-size: 0.63rem;
+  font-size: calc(0.63rem + var(--ena-font-step, 1px));
   font-weight: 760;
 }
 
 .ena-compact-toolbar-button[aria-pressed="true"] {
-  color: #143d37;
-  border-color: #56b09d;
-  background: #ddf1ed;
+  color: var(--ena-accent-strong);
+  border-color: var(--ena-accent);
+  background: var(--ena-accent-soft);
+}
+
+.ena-trajectory-analysis-button {
+  color: var(--ena-accent-strong);
+  border-color: var(--ena-accent-line);
+  background: var(--ena-accent-soft);
 }
 
 .ena-compact-toolbar-button:disabled {
@@ -8504,7 +8567,7 @@ body:has(.open-ena-page) #main-content {
   color: #fff;
   background: #202425;
   box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.18);
-  font-size: 0.68rem;
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
   letter-spacing: 0.01em;
 }
 
@@ -8526,7 +8589,7 @@ body:has(.open-ena-page) #main-content {
   min-width: 84px;
   min-height: 34px;
   padding: 4px 8px;
-  font-size: 0.62rem;
+  font-size: calc(0.62rem + var(--ena-font-step, 1px));
 }
 
 .open-ena-set-comparison.open-ena-group-contrast {
@@ -8543,12 +8606,12 @@ body:has(.open-ena-page) #main-content {
 }
 
 .open-ena-group-contrast .ena-set-comparison-kicker {
-  font-size: 0.54rem;
+  font-size: calc(0.54rem + var(--ena-font-step, 1px));
 }
 
 .open-ena-group-contrast .ena-set-comparison-header h2 {
   margin-top: 1px;
-  font-size: 0.82rem;
+  font-size: calc(0.82rem + var(--ena-font-step, 1px));
 }
 
 .open-ena-group-contrast .ena-set-comparison-layout {
@@ -8585,19 +8648,19 @@ body:has(.open-ena-page) #main-content {
 .open-ena-group-contrast .ena-set-plot-heading {
   min-height: 40px;
   padding: 5px 8px;
-  border-inline-start: 3px solid #56b09d;
+  border-inline-start: 3px solid var(--ena-accent);
 }
 
 .open-ena-group-contrast .ena-set-plot-heading h3 {
-  color: #397e73;
-  font-size: 0.68rem;
+  color: var(--ena-accent-strong);
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
   letter-spacing: 0;
   text-transform: none;
 }
 
 .open-ena-group-contrast .ena-set-plot-heading p {
   margin-top: 1px;
-  font-size: 0.6rem;
+  font-size: calc(0.6rem + var(--ena-font-step, 1px));
 }
 
 .open-ena-group-contrast .ena-set-series-caption > span {
@@ -8617,7 +8680,7 @@ body:has(.open-ena-page) #main-content {
 
 .open-ena-group-contrast .ena-set-plot-heading-tools > span {
   max-width: 54%;
-  font-size: 0.51rem;
+  font-size: calc(0.51rem + var(--ena-font-step, 1px));
   line-height: 1.3;
   white-space: normal;
 }
@@ -8648,7 +8711,7 @@ body:has(.open-ena-page) #main-content {
   border-radius: 3px;
   background: transparent;
   font: inherit;
-  font-size: 0.82rem;
+  font-size: calc(0.82rem + var(--ena-font-step, 1px));
   line-height: 1;
   cursor: pointer;
 }
@@ -8687,8 +8750,8 @@ body:has(.open-ena-page) #main-content {
 
 .ena-official-panel-actions button:hover,
 .ena-official-panel-actions button:focus-visible {
-  color: #267e70;
-  background: rgba(86, 176, 157, 0.12);
+  color: var(--ena-accent-strong);
+  background: color-mix(in srgb, var(--ena-accent) 16%, transparent);
 }
 
 .open-ena-group-contrast [data-ena-panel-state="hidden"] [data-ena-plot-content] {
@@ -8730,18 +8793,18 @@ body:has(.open-ena-page) #main-content {
 .ena-empty-side-plot-prompt p {
   max-width: 300px;
   margin: 0;
-  font-size: 0.68rem;
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
   line-height: 1.45;
 }
 
 .ena-official-plot-actions button:hover {
-  color: #1d5f57;
-  border-color: #bfd2ce;
-  background: #eef5f3;
+  color: var(--ena-accent-strong);
+  border-color: var(--ena-accent-line);
+  background: var(--ena-accent-soft);
 }
 
 .ena-official-plot-actions button:focus-visible {
-  outline: 3px solid #276d65;
+  outline: 3px solid var(--ena-accent-strong);
   outline-offset: 1px;
 }
 
@@ -8761,20 +8824,20 @@ body:has(.open-ena-page) #main-content {
 }
 
 .ena-set-zero-axes text {
-  font-size: calc(11px * var(--ena-plot-text-scale, 1));
+  font-size: calc(11px * var(--ena-plot-text-scale, 1) + var(--ena-font-step, 1px));
 }
 
 .ena-set-result-label {
-  font-size: calc(10.5px * var(--ena-plot-text-scale, 1));
+  font-size: calc(10.5px * var(--ena-plot-text-scale, 1) + var(--ena-font-step, 1px));
 }
 
 .ena-set-unit-label {
-  font-size: calc(8px * var(--ena-plot-text-scale, 1));
+  font-size: calc(8px * var(--ena-plot-text-scale, 1) + var(--ena-font-step, 1px));
 }
 
 .ena-set-main-plot figcaption {
   padding: 6px 8px;
-  font-size: 0.58rem;
+  font-size: calc(0.58rem + var(--ena-font-step, 1px));
 }
 
 .ena-set-plot-definitions {
@@ -8811,11 +8874,11 @@ body:has(.open-ena-page) #main-content {
   justify-content: space-between;
   gap: 8px;
   padding: 3px 8px;
-  border-inline-start: 3px solid #56b09d;
-  color: #397e73;
+  border-inline-start: 3px solid var(--ena-accent);
+  color: var(--ena-accent-strong);
   border-bottom: 0;
   background: transparent;
-  font-size: 1rem;
+  font-size: calc(1rem + var(--ena-font-step, 1px));
 }
 
 .ena-persistent-plot-tools-header button {
@@ -8832,8 +8895,8 @@ body:has(.open-ena-page) #main-content {
 }
 
 .ena-persistent-plot-tools-header button:hover {
-  color: #267e70;
-  background: rgba(86, 176, 157, 0.12);
+  color: var(--ena-accent-strong);
+  background: color-mix(in srgb, var(--ena-accent) 16%, transparent);
 }
 
 .ena-plot-settings-trigger svg {
@@ -8859,7 +8922,7 @@ body:has(.open-ena-page) #main-content {
   grid-template-columns: 96px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  font-size: 0.64rem;
+  font-size: calc(0.64rem + var(--ena-font-step, 1px));
 }
 
 .ena-persistent-plot-tools-scroll > .ena-official-tool-row {
@@ -8922,7 +8985,7 @@ body:has(.open-ena-page) #main-content {
   border-radius: 0;
   background: linear-gradient(
     to right,
-    #4db6ac 0 var(--ena-range-progress),
+    var(--ena-accent) 0 var(--ena-range-progress),
     rgba(0, 0, 0, 0.38) var(--ena-range-progress) 100%
   );
 }
@@ -8935,7 +8998,7 @@ body:has(.open-ena-page) #main-content {
   appearance: none;
   border: 0;
   border-radius: 50%;
-  background: #4db6ac;
+  background: var(--ena-accent);
 }
 
 .ena-official-tool-control input[type="range"]::-moz-range-track {
@@ -8947,7 +9010,7 @@ body:has(.open-ena-page) #main-content {
 
 .ena-official-tool-control input[type="range"]::-moz-range-progress {
   height: 2px;
-  background: #4db6ac;
+  background: var(--ena-accent);
 }
 
 .ena-official-tool-control input[type="range"]::-moz-range-thumb {
@@ -8955,11 +9018,11 @@ body:has(.open-ena-page) #main-content {
   height: 14px;
   border: 0;
   border-radius: 50%;
-  background: #4db6ac;
+  background: var(--ena-accent);
 }
 
 .ena-official-tool-control input[type="range"]:focus-visible {
-  outline: 3px solid #276d65;
+  outline: 3px solid var(--ena-accent-strong);
   outline-offset: 2px;
 }
 
@@ -8972,7 +9035,7 @@ body:has(.open-ena-page) #main-content {
   color: #39484a;
   background: transparent;
   font: inherit;
-  font-size: 0.63rem;
+  font-size: calc(0.63rem + var(--ena-font-step, 1px));
   text-align: center;
 }
 
@@ -8984,7 +9047,7 @@ body:has(.open-ena-page) #main-content {
   color: #7a8586;
   background: transparent;
   cursor: pointer;
-  font-size: 1rem;
+  font-size: calc(1rem + var(--ena-font-step, 1px));
   line-height: 1;
 }
 
@@ -9007,7 +9070,7 @@ body:has(.open-ena-page) #main-content {
   background: transparent;
   cursor: pointer;
   font: inherit;
-  font-size: 0.61rem;
+  font-size: calc(0.61rem + var(--ena-font-step, 1px));
   line-height: 15px;
   text-align: center;
 }
@@ -9021,7 +9084,7 @@ body:has(.open-ena-page) #main-content {
   padding: 0;
   border: 0;
   border-radius: 0;
-  background: #56b09d;
+  background: var(--ena-accent);
   cursor: pointer;
 }
 
@@ -9042,7 +9105,7 @@ body:has(.open-ena-page) #main-content {
 }
 
 .ena-official-binary-toggle button:focus-visible {
-  outline: 2px solid #276d65;
+  outline: 2px solid var(--ena-accent-strong);
   outline-offset: 2px;
 }
 
@@ -9059,7 +9122,7 @@ body:has(.open-ena-page) #main-content {
 
 .ena-persistent-plot-tools .ena-field > span,
 .ena-persistent-plot-tools .ena-switch-row {
-  font-size: 0.58rem;
+  font-size: calc(0.58rem + var(--ena-font-step, 1px));
 }
 
 .ena-persistent-plot-tools .ena-range-field input[type="range"] {
@@ -9095,7 +9158,7 @@ body:has(.open-ena-page) #main-content {
   color: #36544f;
   background: #f7faf9;
   cursor: pointer;
-  font-size: 0.59rem;
+  font-size: calc(0.59rem + var(--ena-font-step, 1px));
   font-weight: 730;
 }
 
@@ -9114,8 +9177,8 @@ body:has(.open-ena-page) #main-content {
 }
 
 .ena-persistent-plot-tools button[aria-pressed="true"]:not(.ena-official-switch-label) {
-  color: #143f38;
-  background: #dff2ee;
+  color: var(--ena-accent-strong);
+  background: var(--ena-accent-soft);
 }
 
 .ena-persistent-plot-tools .ena-official-switch-label[aria-pressed="true"] {
@@ -9142,7 +9205,7 @@ body:has(.open-ena-page) #main-content {
   justify-content: space-between;
   padding: 6px 9px;
   border-bottom: 1px solid #d5dedd;
-  font-size: 0.76rem;
+  font-size: calc(0.76rem + var(--ena-font-step, 1px));
 }
 
 .ena-official-plot-settings > header button {
@@ -9153,7 +9216,7 @@ body:has(.open-ena-page) #main-content {
   color: #5e6c6e;
   background: transparent;
   cursor: pointer;
-  font-size: 1.35rem;
+  font-size: calc(1.35rem + var(--ena-font-step, 1px));
 }
 
 .ena-official-plot-settings-scroll {
@@ -9173,12 +9236,12 @@ body:has(.open-ena-page) #main-content {
   margin: 0;
   padding-bottom: 3px;
   border-bottom: 1px solid #d4dddc;
-  color: #397e73;
-  font-size: 0.69rem;
+  color: var(--ena-accent-strong);
+  font-size: calc(0.69rem + var(--ena-font-step, 1px));
 }
 
 .ena-official-plot-settings .ena-range-field {
-  font-size: 0.61rem;
+  font-size: calc(0.61rem + var(--ena-font-step, 1px));
 }
 
 .ena-reset-all-plot-tools {
@@ -9188,7 +9251,7 @@ body:has(.open-ena-page) #main-content {
   color: #31564f;
   background: #fff;
   cursor: pointer;
-  font-size: 0.61rem;
+  font-size: calc(0.61rem + var(--ena-font-step, 1px));
   font-weight: 700;
 }
 
@@ -9196,7 +9259,7 @@ body:has(.open-ena-page) #main-content {
 .ena-data-view button:focus-visible,
 .ena-data-view select:focus-visible,
 .ena-compact-toolbar-button:focus-visible {
-  outline: 3px solid #276d65;
+  outline: 3px solid var(--ena-accent-strong);
   outline-offset: 2px;
 }
 
@@ -9223,7 +9286,7 @@ body:has(.open-ena-page) #main-content {
   align-items: center;
   gap: 8px;
   padding: 5px 10px;
-  font-size: 0.68rem;
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
 }
 
 .ena-data-view-header button {
@@ -9234,7 +9297,7 @@ body:has(.open-ena-page) #main-content {
   color: #fff;
   background: #303638;
   cursor: pointer;
-  font-size: 0.56rem;
+  font-size: calc(0.56rem + var(--ena-font-step, 1px));
 }
 
 .ena-data-view-toolbar {
@@ -9255,18 +9318,18 @@ body:has(.open-ena-page) #main-content {
   align-self: center;
   color: #53666a;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.59rem;
+  font-size: calc(0.59rem + var(--ena-font-step, 1px));
 }
 
 .ena-data-view-toolbar > button {
   min-height: 34px;
-  border: 1px solid #4c9488;
+  border: 1px solid var(--ena-accent-strong);
   border-radius: 3px;
   padding-inline: 10px;
-  color: #153f38;
-  background: #dff2ee;
+  color: var(--ena-accent-strong);
+  background: var(--ena-accent-soft);
   cursor: pointer;
-  font-size: 0.59rem;
+  font-size: calc(0.59rem + var(--ena-font-step, 1px));
   font-weight: 750;
 }
 
@@ -9281,7 +9344,7 @@ body:has(.open-ena-page) #main-content {
   min-width: 720px;
   border-collapse: collapse;
   font-family: var(--font-geist-mono), monospace;
-  font-size: 0.6rem;
+  font-size: calc(0.6rem + var(--ena-font-step, 1px));
   font-variant-numeric: tabular-nums;
 }
 
@@ -9297,15 +9360,15 @@ body:has(.open-ena-page) #main-content {
   position: sticky;
   z-index: 2;
   top: 0;
-  color: #fff;
-  background: #418476;
+  color: var(--nav-deep);
+  background: var(--ena-accent);
   text-align: left;
 }
 
 .ena-data-view-table thead tr:nth-child(2) th {
   top: 28px;
-  color: #1d3e38;
-  background: #cfe8e3;
+  color: var(--ena-accent-strong);
+  background: var(--ena-accent-soft);
 }
 
 .ena-data-view-table tbody th {
@@ -9357,8 +9420,8 @@ body:has(.open-ena-page) #main-content {
   }
 
   .ena-visual-toolbar p {
-    color: #397e73;
-    font-size: 1rem;
+    color: var(--ena-accent-strong);
+    font-size: calc(1rem + var(--ena-font-step, 1px));
     font-weight: 650;
     letter-spacing: 0;
     line-height: 1.05;
@@ -9381,6 +9444,16 @@ body:has(.open-ena-page) #main-content {
     position: static;
   }
 
+  .ena-trajectory-analysis-button {
+    position: absolute;
+    top: 16px;
+    right: calc(35% + 313px);
+    min-width: 142px;
+    min-height: 24px;
+    padding: 2px 9px;
+    font-size: calc(0.7rem + var(--ena-font-step, 1px));
+  }
+
   .ena-analysis-toolbar-cluster {
     position: absolute;
     top: 16px;
@@ -9401,17 +9474,17 @@ body:has(.open-ena-page) #main-content {
     min-height: 24px;
     padding: 2px 9px;
     gap: 6px;
-    font-size: 0.7rem;
-    color: #fff;
-    border-color: #419889;
-    background: #49a892;
+    font-size: calc(0.7rem + var(--ena-font-step, 1px));
+    color: var(--nav-deep);
+    border-color: var(--ena-accent-strong);
+    background: var(--ena-accent);
   }
 
   .ena-download-model-button:not(:disabled):hover,
   .ena-download-model-button:not(:disabled):focus-visible {
-    color: #fff;
-    border-color: #327e72;
-    background: #419889;
+    color: var(--nav-deep);
+    border-color: var(--ena-accent-strong);
+    background: var(--ena-accent-hover);
   }
 
   .ena-view-toggle button,
@@ -9484,7 +9557,7 @@ body:has(.open-ena-page) #main-content {
     left: 4px;
     margin: 0;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    font-size: 0.69rem;
+    font-size: calc(0.69rem + var(--ena-font-step, 1px));
     font-weight: 500;
   }
 
@@ -9521,7 +9594,7 @@ body:has(.open-ena-page) #main-content {
     border: 0;
     background: transparent;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    font-size: 0.75rem;
+    font-size: calc(0.75rem + var(--ena-font-step, 1px));
   }
 
   .open-ena-group-contrast .ena-set-side-plots {
@@ -9555,13 +9628,13 @@ body:has(.open-ena-page) #main-content {
     left: -3px;
     width: 3px;
     height: 17px;
-    background: #56b09d;
+    background: var(--ena-accent);
     content: "";
   }
 
   .open-ena-group-contrast .ena-set-side-plots .ena-set-plot-heading h3 {
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    font-size: 1rem;
+    font-size: calc(1rem + var(--ena-font-step, 1px));
     font-weight: 650;
     line-height: 22px;
   }
@@ -9573,7 +9646,7 @@ body:has(.open-ena-page) #main-content {
     left: 0;
     margin: 0;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    font-size: 0.69rem;
+    font-size: calc(0.69rem + var(--ena-font-step, 1px));
     font-weight: 500;
   }
 
@@ -9626,12 +9699,12 @@ body:has(.open-ena-page) #main-content {
   .open-ena-group-contrast .ena-official-plot-actions button {
     width: 24px;
     height: 24px;
-    font-size: 0.75rem;
+    font-size: calc(0.75rem + var(--ena-font-step, 1px));
   }
 
   .open-ena-group-contrast .ena-set-zero-axes text {
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    font-size: calc(12px * var(--ena-plot-text-scale, 1));
+    font-size: calc(12px * var(--ena-plot-text-scale, 1) + var(--ena-font-step, 1px));
   }
 
   .open-ena-group-contrast .ena-set-axis-label tspan:first-of-type {
@@ -9666,7 +9739,7 @@ body:has(.open-ena-page) #main-content {
     left: -3px;
     width: 3px;
     height: 17px;
-    background: #56b09d;
+    background: var(--ena-accent);
     content: "";
     transform: translateY(-50%);
   }
@@ -9790,9 +9863,15 @@ body:has(.open-ena-page) #main-content {
   }
 
   .ena-download-model-button,
+  .ena-trajectory-analysis-button,
   .ena-view-toggle {
     width: 100%;
     min-width: 0;
+  }
+
+  .ena-trajectory-analysis-button {
+    grid-column: 1 / -1;
+    justify-content: center;
   }
 
   .ena-view-toggle button,

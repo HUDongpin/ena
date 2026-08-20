@@ -306,3 +306,10 @@ test("visible and accessible prose accepts locale copy from the Open ENA transla
   assert.match(markup, /aria-label="縱向軌跡圖例"/);
   assert.match(markup, /箭頭＝所選期間方向/);
 });
+
+test("longitudinal code nodes use the selected palette and default remaining codes to black", async () => {
+  const markup = await render({ codeColors: { Evidence: "#00695c" } });
+
+  assert.match(markup, /<circle[^>]*data-ena-code="Evidence"[^>]*fill="#00695c"/);
+  assert.match(markup, /<circle[^>]*data-ena-code="Reflection"[^>]*fill="#000000"/);
+});

@@ -25,12 +25,14 @@ import { buildEndpointMannWhitney } from "@/lib/open-ena/inference";
 import {
   buildLongitudinalGroupCentroidExport,
   buildLongitudinalGroupCentroidView,
+  inferLongitudinalMappingDefaults,
   longitudinalPeriodRowsToCsv,
   type OpenEnaLongitudinalCohortPolicy,
 } from "@/lib/open-ena/longitudinal";
 import { buildMethodsReport, referenceMeanRotationInterpretation } from "@/lib/open-ena/methods";
 import { buildOpenEnaAiInterpretationRequest } from "@/lib/open-ena/ai-interpretation";
 import { buildAnalysisBundle, buildResultTables, rowsToCsv } from "@/lib/open-ena/export";
+import { codeColorFor, updateCodeColor } from "@/lib/open-ena/plot-style";
 import {
   buildReferenceRotationPackage,
   parseRotationReference,
@@ -189,6 +191,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const [view, setView] = useState<OpenEnaView>("2d");
   const [dataset, setDataset] = useState<ParsedDataset | null>(null);
   const [config, setConfig] = useState<OpenEnaConfig>(SAMPLE_CONFIG);
+  const [codeColors, setCodeColors] = useState<Record<string, string>>({});
   const [resultConfig, setResultConfig] = useState<OpenEnaConfig | null>(null);
   const [datasetHash, setDatasetHash] = useState<string | null>(null);
   const [result, setResult] = useState<OpenEnaResult | null>(null);
@@ -321,12 +324,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       if (timeColumn) setTimeColumn("");
       return;
     }
+    const defaults = inferLongitudinalMappingDefaults(resultConfig);
     const nextEntity = resultConfig.unitColumns.includes(repeatedEntityColumn)
+      && repeatedEntityColumn !== resultConfig.groupColumn
       ? repeatedEntityColumn
-      : resultConfig.unitColumns[0] ?? "";
+      : defaults.repeatedEntityColumn;
     const nextTime = resultConfig.conversationColumns.includes(timeColumn)
+      && timeColumn !== resultConfig.groupColumn
+      && timeColumn !== nextEntity
       ? timeColumn
-      : resultConfig.conversationColumns[0] ?? "";
+      : defaults.timeColumn;
     if (nextEntity !== repeatedEntityColumn) setRepeatedEntityColumn(nextEntity);
     if (nextTime !== timeColumn) setTimeColumn(nextTime);
   }, [repeatedEntityColumn, result, resultConfig, timeColumn, trajectoryMappingKey]);
@@ -633,6 +640,31 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     setView("2d");
   }
 
+  function launchTrajectoryAnalysis() {
+    setError("");
+    setActiveComparisonSurface("groups");
+    setCenterSurface("plot");
+
+    if (!dataset) {
+      setMode("data");
+      return;
+    }
+
+    if (result && resultConfig && !resultIsStale && result.set.modelType !== "EndPoint") {
+      setMode("plot");
+      return;
+    }
+
+    updateConfig((current) => ({
+      ...current,
+      model: "SeparateTrajectory",
+      rotation: "svd",
+      referenceRotationId: null,
+    }));
+    setModelTab("windows");
+    setMode("model");
+  }
+
   function captureCurrentAnalysisSet() {
     if (!dataset || !resultConfig || !result) {
       setError("Build an endpoint model before capturing an analysis set.");
@@ -776,6 +808,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       setDataset(nextDataset);
       setDatasetHash(nextHash);
       setConfig(SAMPLE_CONFIG);
+      setCodeColors({});
       setResult(null);
       setResultConfig(null);
       setSourceQuery("");
@@ -829,6 +862,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       setDataset(nextDataset);
       setDatasetHash(nextHash);
       setConfig(inferConfig(nextDataset));
+      setCodeColors({});
       setResult(null);
       setResultConfig(null);
       setSourceQuery("");
@@ -951,26 +985,26 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       text { font-family: Arial, Helvetica, sans-serif; }
       .ena-plot-background { fill: #fff; }
       .ena-zero-axes line, .ena-three-axes line { stroke: #8b999f; stroke-width: 1.25; stroke-dasharray: 4 5; }
-      .ena-zero-axes text, .ena-three-axes text { fill: #5c6c72; font-size: 12px; font-weight: 690; }
+      .ena-zero-axes text, .ena-three-axes text { fill: #5c6c72; font-size: 13px; font-weight: 690; }
       .ena-result-node { fill: #fff; stroke: #283d48; stroke-width: 5; }
-      .ena-result-label, .ena-mean-label { fill: #263740; paint-order: stroke; stroke: #fff; stroke-linejoin: round; stroke-width: 5px; font-size: 13px; font-weight: 700; }
-      .ena-mean-label { font-size: 12px; }
+      .ena-result-label, .ena-mean-label { fill: #263740; paint-order: stroke; stroke: #fff; stroke-linejoin: round; stroke-width: 5px; font-size: 14px; font-weight: 700; }
+      .ena-mean-label { font-size: 13px; }
       .ena-set-plot-background { fill: #fff; }
       .ena-set-zero-axes line { stroke: #8b999f; stroke-width: 1.2; stroke-dasharray: 4 5; }
       .ena-set-axis-endpoint { fill: #333; }
-      .ena-set-zero-axes text { fill: #5c6c72; font-size: 12px; font-weight: 690; }
+      .ena-set-zero-axes text { fill: #5c6c72; font-size: 13px; font-weight: 690; }
       .ena-set-result-node { fill: #fff; stroke: #283d48; stroke-width: 4; }
-      .ena-set-result-label, .ena-set-group-label, .ena-set-unit-label { fill: #263740; paint-order: stroke; stroke: #fff; stroke-linejoin: round; stroke-width: 4px; font-size: 12px; font-weight: 700; }
-      .ena-set-unit-label { font-size: 10px; }
+      .ena-set-result-label, .ena-set-group-label, .ena-set-unit-label { fill: #263740; paint-order: stroke; stroke: #fff; stroke-linejoin: round; stroke-width: 4px; font-size: 13px; font-weight: 700; }
+      .ena-set-unit-label { font-size: 11px; }
       .ena-longitudinal-background { fill: #fbfcfc; }
       .ena-longitudinal-axis { stroke: #c1cdcb; stroke-width: 1.15; stroke-dasharray: 3 5; }
-      .ena-longitudinal-axis-label { fill: #40565a; font-family: monospace; font-size: 13px; font-weight: 680; }
+      .ena-longitudinal-axis-label { fill: #40565a; font-family: monospace; font-size: 14px; font-weight: 680; }
       .ena-individual-trajectory-path { fill: none; stroke-width: 1.65; stroke-linecap: round; opacity: 0.32; }
       .ena-group-centroid-path { fill: none; stroke-width: 4; stroke-linecap: round; opacity: 0.94; }
       .ena-longitudinal-node circle:first-child { fill: #fff; stroke: #385b58; stroke-width: 2.2; }
       .ena-longitudinal-node circle:nth-child(2) { fill: #385b58; }
-      .ena-longitudinal-node text, .ena-longitudinal-period-label { fill: #263f43; paint-order: stroke; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; font-size: 12px; font-weight: 730; }
-      .ena-longitudinal-period-label { font-family: monospace; font-size: 11px; }
+      .ena-longitudinal-node text, .ena-longitudinal-period-label { fill: #263f43; paint-order: stroke; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; font-size: 13px; font-weight: 730; }
+      .ena-longitudinal-period-label { font-family: monospace; font-size: 12px; }
     `;
     clone.insertBefore(styles, clone.firstChild);
     return `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(clone)}\n`;
@@ -1558,19 +1592,36 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 <fieldset className="ena-code-fieldset">
                   <legend>{copy.model.codes} <span>{config.codes.length}</span></legend>
                   <div className="ena-code-options">
-                    {codeOptions.map((header) => (
-                      <label key={header}>
-                        <input
-                          type="checkbox"
-                          checked={config.codes.includes(header)}
-                          onChange={(event) => updateConfig((current) => ({
-                            ...current,
-                            codes: toggleInHeaderOrder(headers, current.codes, header, event.target.checked),
-                          }))}
-                        />
-                        <span>{header}</span>
-                      </label>
-                    ))}
+                    {codeOptions.map((header) => {
+                      const selected = config.codes.includes(header);
+                      return (
+                        <div className="ena-code-option-row" key={header}>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={config.codes.includes(header)}
+                              onChange={(event) => updateConfig((current) => ({
+                                ...current,
+                                codes: toggleInHeaderOrder(headers, current.codes, header, event.target.checked),
+                              }))}
+                            />
+                            <span>{header}</span>
+                          </label>
+                          {selected ? (
+                            <label className="ena-code-color-control" title={`${copy.model.codeColor}: ${header}`}>
+                              <input
+                                className="ena-code-color-input"
+                                type="color"
+                                aria-label={`${copy.model.codeColor}: ${header}`}
+                                data-ena-code-color={header}
+                                value={codeColorFor(codeColors, header)}
+                                onChange={(event) => setCodeColors((current) => updateCodeColor(current, header, event.target.value))}
+                              />
+                            </label>
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </div>
                 </fieldset>
               ) : null}
@@ -1612,7 +1663,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   value={repeatedEntityColumn}
                   onChange={(event) => updateLongitudinalSettings({ repeatedEntityColumn: event.target.value })}
                 >
-                  {resultConfig.unitColumns.map((column) => <option key={column} value={column}>{column}</option>)}
+                  {resultConfig.unitColumns
+                    .filter((column) => column !== resultConfig.groupColumn)
+                    .map((column) => <option key={column} value={column}>{column}</option>)}
                 </select>
               </label>
               <label className="ena-field">
@@ -1621,7 +1674,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   value={timeColumn}
                   onChange={(event) => updateLongitudinalSettings({ timeColumn: event.target.value })}
                 >
-                  {resultConfig.conversationColumns.map((column) => <option key={column} value={column}>{column}</option>)}
+                  {resultConfig.conversationColumns
+                    .filter((column) => column !== resultConfig.groupColumn && column !== repeatedEntityColumn)
+                    .map((column) => <option key={column} value={column}>{column}</option>)}
                 </select>
               </label>
             </div>
@@ -2231,6 +2286,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                       downloadJson(
                         `open-ena-${Date.now()}-results.json`,
                         buildAnalysisBundle(dataset, resultConfig, result, datasetHash, {
+                          codeColors,
                           methodsDimensions: [xDimension, yDimension],
                           methodsFlipX: flipX,
                           methodsFlipY: flipY,
@@ -2603,6 +2659,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               <div className="ena-visual-toolbar-actions">
                 <button
                   type="button"
+                  className="ena-compact-toolbar-button ena-trajectory-analysis-button"
+                  data-testid="open-ena-trajectory-analysis-button"
+                  aria-pressed={config.model !== "EndPoint"}
+                  title={copy.longitudinal.launch}
+                  onClick={launchTrajectoryAnalysis}
+                >
+                  <span aria-hidden="true">↝</span>{copy.longitudinal.launch}
+                </button>
+                <button
+                  type="button"
                   className="ena-compact-toolbar-button"
                   data-testid="open-ena-data-view-toggle"
                   aria-pressed={centerSurface === "data"}
@@ -2637,6 +2703,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                         downloadJson(
                           `open-ena-${Date.now()}-results.json`,
                           buildAnalysisBundle(dataset, resultConfig, result, datasetHash, {
+                            codeColors,
                             methodsDimensions: [xDimension, yDimension],
                             methodsFlipX: flipX,
                             methodsFlipY: flipY,
@@ -2671,6 +2738,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
 
             {activeSetComparison ? (
               <OpenEnaSetComparison
+                codeColors={codeColors}
                 comparison={activeSetComparison}
                 edgeThreshold={edgeThreshold}
                 showPoints={showPoints}
@@ -2723,6 +2791,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 ) : null}
                 {activeLongitudinalView ? (
                   <OpenEnaLongitudinalTrajectory
+                    codeColors={codeColors}
                     trajectory={activeLongitudinalView}
                     showIndividualPaths={showTrajectories}
                     showGroupCentroidPaths={showGroupCentroidPaths}
@@ -2738,6 +2807,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   />
                 ) : activeGroupContrast ? (
                   <OpenEnaGroupContrast
+                    codeColors={codeColors}
                     contrast={activeGroupContrast}
                     edgeThreshold={edgeThreshold}
                     showPoints={showPoints}
@@ -2769,6 +2839,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   />
                 ) : (
                   <OpenEnaPlot
+                    codeColors={codeColors}
                     result={result}
                     groupColumn={resultConfig?.groupColumn ?? null}
                     view={view}
@@ -2808,6 +2879,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                             </strong>
                           </div>
                           <MiniNetwork
+                            codeColors={codeColors}
                             result={result}
                             group={group}
                             xDimension={xDimension}

@@ -126,5 +126,5 @@ test("loaded results retain the dense main Comparison plus stacked Primary and S
   assert.match(css, /\.ena-set-comparison-layout\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*2fr\)\s*minmax\(270px,\s*1fr\);/);
   assert.match(css, /\.ena-set-side-plots\s*\{[\s\S]*?display:\s*grid;[\s\S]*?gap:\s*10px;/);
   assert.match(css, /\.ena-set-plot-heading\s*\{[\s\S]*?min-height:\s*48px;[\s\S]*?padding:\s*7px 10px;/);
-  assert.match(css, /\.ena-set-comparison-kicker,[\s\S]*?\.ena-set-plot-heading h3\s*\{[\s\S]*?font-size:\s*0\.64rem;[\s\S]*?letter-spacing:\s*0\.085em;/);
+  assert.match(css, /\.ena-set-comparison-kicker,[\s\S]*?\.ena-set-plot-heading h3\s*\{[\s\S]*?font-size:\s*calc\(0\.64rem \+ var\(--ena-font-step, 1px\)\);[\s\S]*?letter-spacing:\s*0\.085em;/);
 });

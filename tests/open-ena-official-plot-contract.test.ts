@@ -36,7 +36,7 @@ test("official-style group contrast plots are plain and keep scientific network 
   assert.match(contrast, /<circle[\s\S]*?r=\{nodeSize\}[\s\S]*?className="ena-set-result-node"[\s\S]*?data-ena-code-node="neutral"/);
   assert.match(css, /\.ena-set-zero-axes line\s*\{[\s\S]*?stroke-width:\s*1;(?:(?!stroke-dasharray)[\s\S])*?\}/);
   assert.match(css, /\.open-ena-group-contrast \.ena-set-result-node\s*\{[\s\S]*?stroke-width:\s*0;/);
-  assert.match(css, /\.open-ena-group-contrast \.ena-set-result-label\s*\{[\s\S]*?font-size:\s*calc\(10px \* var\(--ena-plot-text-scale, 1\)\);/);
+  assert.match(css, /\.open-ena-group-contrast \.ena-set-result-label\s*\{[\s\S]*?font-size:\s*calc\(10px \* var\(--ena-plot-text-scale, 1\) \+ var\(--ena-font-step, 1px\)\);/);
 });
 
 test("official-style plot headings and renderer slots keep the workbench roles explicit", () => {

@@ -2,6 +2,7 @@ import type { Row, Scalar } from "jena-js";
 import { buildManifest } from "./analyze";
 import type { OpenEnaPairwiseContrast } from "./contrasts";
 import { buildMethodsReport, type OpenEnaPresentationOptions } from "./methods";
+import { codeColorFor } from "./plot-style";
 import { JENA_RUNTIME_VERSION, type OpenEnaConfig, type OpenEnaResult, type ParsedDataset } from "./types";
 
 export const OPEN_ENA_POINT_INDEX = "OPEN_ENA_POINT_INDEX";
@@ -95,6 +96,14 @@ export function buildAnalysisBundle(
   const selectedAxes = [...(options.methodsDimensions ?? result.dimensions.slice(0, 2))];
   const presentation = {
     selectedAxes,
+    ...(options.codeColors
+      ? {
+          codeColors: Object.fromEntries(result.set.rotation.codes.map((code) => [
+            code,
+            codeColorFor(options.codeColors, code),
+          ])),
+        }
+      : {}),
     flipX: options.methodsFlipX ?? options.flipX ?? false,
     flipY: options.methodsFlipY ?? options.flipY ?? false,
     edgeThreshold: options.edgeThreshold ?? 0,

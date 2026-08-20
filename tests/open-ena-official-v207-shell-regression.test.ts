@@ -222,6 +222,28 @@ test("Data View is the official-style bottom research bar while plot evidence st
   );
 });
 
+test("Trajectory Analysis is a compact same-route action without restoring the legacy toolbar", () => {
+  const toolbarActions = sourceSegment(
+    workspace,
+    '<div className="ena-visual-toolbar-actions">',
+    "</div>",
+  );
+  const trajectoryButton = toolbarActions.match(
+    /<button[\s\S]{0,700}data-testid="open-ena-trajectory-analysis-button"[\s\S]{0,700}<\/button>/,
+  )?.[0] ?? "";
+
+  assert.match(trajectoryButton, /^<button/);
+  assert.match(trajectoryButton, /className="ena-compact-toolbar-button ena-trajectory-analysis-button"/);
+  assert.match(trajectoryButton, /onClick=\{launchTrajectoryAnalysis\}/);
+  assert.doesNotMatch(trajectoryButton, /\bhref\s*=|router|window\.location|location\.assign/);
+  assert.doesNotMatch(workspace, /className="ena-workbench-topbar"|className="ena-workbench-statusbar"/);
+  assert.match(
+    styles,
+    /\.ena-trajectory-analysis-button\s*\{[\s\S]*?border-color:\s*var\(--ena-accent-line\);[\s\S]*?background:\s*var\(--ena-accent-soft\);[\s\S]*?\}/,
+    "the new action must use the compact Baby Blue workbench grammar",
+  );
+});
+
 test("the visible comparison caption keeps only the official Units and Horizon definitions", () => {
   assert.match(
     groupContrast,
@@ -253,26 +275,26 @@ test("the persistent right stack fills its available height down to the Data Vie
   );
 });
 
-test("Comparison, Primary, Secondary, and Plot Tools use the observed teal title accent", () => {
+test("Comparison, Primary, Secondary, and Plot Tools use the ENA.HK Baby Blue title accent", () => {
   assert.match(
     styles,
-    /\.ena-visual-toolbar\s*>\s*div:first-child\s*\{[\s\S]*?border-inline-start:\s*3px\s+solid\s+#56b09d;[\s\S]*?\}/,
-    "the single Comparison heading needs the official teal rule",
+    /\.ena-visual-toolbar\s*>\s*div:first-child\s*\{[\s\S]*?border-inline-start:\s*3px\s+solid\s+var\(--ena-accent\);[\s\S]*?\}/,
+    "the single Comparison heading needs the shared Baby Blue rule",
   );
   assert.match(
     styles,
-    /\.open-ena-group-contrast\s+\.ena-set-plot-heading\s*\{[\s\S]*?border-inline-start:\s*3px\s+solid\s+#56b09d;[\s\S]*?\}/,
+    /\.open-ena-group-contrast\s+\.ena-set-plot-heading\s*\{[\s\S]*?border-inline-start:\s*3px\s+solid\s+var\(--ena-accent\);[\s\S]*?\}/,
     "Primary and Secondary cards need the same title accent grammar",
   );
   assert.match(
     styles,
-    /\.open-ena-group-contrast\s+\.ena-set-plot-heading\s+h3\s*\{[\s\S]*?color:\s*#397e73;[\s\S]*?\}/,
-    "plot titles use the observed teal label color",
+    /\.open-ena-group-contrast\s+\.ena-set-plot-heading\s+h3\s*\{[\s\S]*?color:\s*var\(--ena-accent-strong\);[\s\S]*?\}/,
+    "plot titles use the accessible dark Baby Blue label color",
   );
   assert.match(
     styles,
-    /\.ena-persistent-plot-tools-header\s*\{[\s\S]*?border-inline-start:\s*3px\s+solid\s+#56b09d;[\s\S]*?color:\s*#397e73;[\s\S]*?\}/,
-    "the persistent Plot Tools heading uses the same teal accent family",
+    /\.ena-persistent-plot-tools-header\s*\{[\s\S]*?border-inline-start:\s*3px\s+solid\s+var\(--ena-accent\);[\s\S]*?color:\s*var\(--ena-accent-strong\);[\s\S]*?\}/,
+    "the persistent Plot Tools heading uses the same Baby Blue accent family",
   );
 });
 
@@ -338,8 +360,8 @@ test("official plot papers, model download, and group-label settings keep the ob
   assert.match(styles, /\.open-ena-group-contrast\s+\.open-ena-set-comparison-svg\s*\{[\s\S]*?box-shadow:\s*0\s+2px\s+5px\s+rgba\(36,\s*55,\s*60,\s*0\.2\);/);
   assert.match(
     styles,
-    /\.ena-download-model-button\s*\{[\s\S]*?width:\s*138px;[\s\S]*?min-width:\s*138px;[\s\S]*?font-size:\s*0\.7rem;[\s\S]*?color:\s*#fff;[\s\S]*?background:\s*#49a892;/,
-    "Download Model must use the official filled teal action rather than a local outline button",
+    /\.ena-download-model-button\s*\{[\s\S]*?width:\s*138px;[\s\S]*?min-width:\s*138px;[\s\S]*?font-size:\s*calc\(0\.7rem \+ var\(--ena-font-step, 1px\)\);[\s\S]*?color:\s*var\(--nav-deep\);[\s\S]*?background:\s*var\(--ena-accent\);/,
+    "Download Model must use the filled Baby Blue action with readable dark text",
   );
   assert.match(workspace, /className="ena-download-model-button-icon"/);
   assert.match(workspace, /const \[showGroupLabels,\s*setShowGroupLabels\]\s*=\s*useState\(true\)/);
@@ -405,7 +427,7 @@ test("copied plot images preserve the live official renderer styles", () => {
   assert.match(copyPlotImage, /\.ena-set-result-node\s*\{\s*fill:\s*#4d4d4d;\s*stroke:\s*#4d4d4d;\s*stroke-width:\s*0;\s*\}/);
   assert.match(
     copyPlotImage,
-    /\.ena-set-result-label\s*\{[^}]*fill:\s*#111;[^}]*paint-order:\s*normal;[^}]*stroke:\s*none;[^}]*font-family:\s*"Helvetica Neue", Helvetica, Arial, sans-serif;[^}]*font-size:\s*calc\(10px \* var\(--ena-plot-text-scale, 1\)\);[^}]*font-weight:\s*600;[^}]*\}/,
+    /\.ena-set-result-label\s*\{[^}]*fill:\s*#111;[^}]*paint-order:\s*normal;[^}]*stroke:\s*none;[^}]*font-family:\s*"Helvetica Neue", Helvetica, Arial, sans-serif;[^}]*font-size:\s*calc\(10px \* var\(--ena-plot-text-scale, 1\) \+ var\(--ena-font-step, 1px\)\);[^}]*font-weight:\s*600;[^}]*\}/,
     "copied SVG and PNG node labels must keep the live text scale without reintroducing a white halo",
   );
 });
@@ -431,7 +453,7 @@ test("plot papers use color-coded group captions and official scale notation", (
   );
   assert.match(
     styles,
-    /\.open-ena-group-contrast\s+\.ena-set-plot-heading-tools\s*>\s*span\s*\{[\s\S]*?font-size:\s*0\.51rem;/,
+    /\.open-ena-group-contrast\s+\.ena-set-plot-heading-tools\s*>\s*span\s*\{[\s\S]*?font-size:\s*calc\(0\.51rem \+ var\(--ena-font-step, 1px\)\);/,
     "only the hidden technical metadata span retains the compact technical size",
   );
   assert.match(
@@ -482,6 +504,12 @@ test("the local 2D and external 3D controls sit immediately before Download Mode
     /@media \(min-width:\s*1400px\)[\s\S]*?\.ena-analysis-toolbar-cluster\s*\{[^}]*position:\s*absolute;[^}]*top:\s*16px;[^}]*right:\s*calc\(35% \+ 19px\);/,
     "the desktop group must retain Download Model's measured anchor while placing the view switch on its left",
   );
+});
+
+test("the scrollable control panel reserves pointer clearance above the fixed 2D and 3D switch", () => {
+  const controlContent = firstCssRuleBody(styles, ".ena-control-content");
+  assert.match(controlContent, /padding:\s*18px 18px 80px;/);
+  assert.match(controlContent, /scroll-padding-bottom:\s*80px;/);
 });
 
 test("narrow desktop side-card actions remain inside the plot instead of falling beneath Comparison", () => {
