@@ -379,6 +379,56 @@ test("builds the comparison frame before Plot available or complete cohort filte
   }, TypeError);
 });
 
+test("keeps the all-period comparison frame usable when the complete Plot cohort is empty", () => {
+  const fixture = frameFixture([
+    "Group,Name,Case,Period,A,B,C",
+    "Control,Alex,one,T1,1,1,0",
+    "Control,Alex,one,T2,1,0,1",
+    "Control,Blair,one,T3,0,1,1",
+    "Experimental,Jordan,one,T1,1,0,1",
+    "Experimental,Kai,one,T2,1,1,0",
+    "Experimental,Kai,one,T3,0,1,1",
+  ]);
+  const available = derive(fixture, confirmedSettings("available"));
+  const complete = derive(fixture, confirmedSettings("complete"));
+
+  assert.equal(complete.view.completeEntityCount, 0);
+  assert.equal(complete.view.includedEntityCount, 0);
+  assert.deepEqual(complete.view.entityPeriods, []);
+  assert.ok(complete.view.periodDiagnostics.every((period) => (
+    period.includedEntityCount === 0 && period.centroid === null
+  )));
+  assert.ok(complete.view.groups.every((group) => group.entityCount === 0 && group.segments.length === 0));
+  assert.deepEqual(complete.comparisonFrame, available.comparisonFrame);
+
+  const independentRequest = {
+    period: "T1",
+    primaryGroup: "Control",
+    secondaryGroup: "Experimental",
+  } as const;
+  const pairedRequest = {
+    group: "Control",
+    earlierPeriod: "T1",
+    laterPeriod: "T2",
+  } as const;
+  assert.deepEqual(
+    sliceLongitudinalIndependentPeriod(complete.comparisonFrame, independentRequest),
+    sliceLongitudinalIndependentPeriod(available.comparisonFrame, independentRequest),
+  );
+  assert.deepEqual(
+    sliceLongitudinalPairedPeriods(complete.comparisonFrame, pairedRequest),
+    sliceLongitudinalPairedPeriods(available.comparisonFrame, pairedRequest),
+  );
+  assert.equal(
+    sliceLongitudinalIndependentPeriod(complete.comparisonFrame, independentRequest).ledger.includedEntityCount,
+    2,
+  );
+  assert.equal(
+    sliceLongitudinalPairedPeriods(complete.comparisonFrame, pairedRequest).ledger.matchedEntityCount,
+    1,
+  );
+});
+
 test("independent-period slice isolates one known period and two disjoint entity groups", () => {
   const { comparisonFrame } = derive();
   const slice = sliceLongitudinalIndependentPeriod(comparisonFrame, {
@@ -437,6 +487,55 @@ test("paired slice uses only A and B pairwise completion and reports third-perio
     periods: ["T1", "T2", "T3"],
   });
   assert.ok(paired.pairs.length > repeated.blocks.length);
+});
+
+test("paired slice treats either distinct known period as the requested earlier or later slot", () => {
+  const { comparisonFrame } = derive();
+  const forward = sliceLongitudinalPairedPeriods(comparisonFrame, {
+    group: "Control",
+    earlierPeriod: "T1",
+    laterPeriod: "T2",
+  });
+  const reverse = sliceLongitudinalPairedPeriods(comparisonFrame, {
+    group: "Control",
+    earlierPeriod: "T2",
+    laterPeriod: "T1",
+  });
+
+  assert.equal(reverse.ledger.matchedEntityCount, forward.ledger.matchedEntityCount);
+  assert.equal(reverse.ledger.earlierAvailableCount, forward.ledger.laterAvailableCount);
+  assert.equal(reverse.ledger.laterAvailableCount, forward.ledger.earlierAvailableCount);
+  assert.equal(reverse.ledger.earlierOnlyCount, forward.ledger.laterOnlyCount);
+  assert.equal(reverse.ledger.laterOnlyCount, forward.ledger.earlierOnlyCount);
+  assert.deepEqual(reverse.ledger.zeroDifferenceCountByAxis, forward.ledger.zeroDifferenceCountByAxis);
+  assert.ok(reverse.pairs.every((pair) => pair.earlier.time === "T2" && pair.later.time === "T1"));
+
+  const forwardByToken = new Map(forward.pairs.map((pair) => [pair.entityToken, pair]));
+  for (const pair of reverse.pairs) {
+    const opposite = forwardByToken.get(pair.entityToken);
+    assert.ok(opposite);
+    assert.deepEqual(pair.earlier, opposite.later);
+    assert.deepEqual(pair.later, opposite.earlier);
+  }
+
+  const samePeriod = caught(() => sliceLongitudinalPairedPeriods(comparisonFrame, {
+    group: "Control",
+    earlierPeriod: "T1",
+    laterPeriod: "T1",
+  }));
+  assert.equal(samePeriod.code, "periods-must-differ");
+  const unknownPeriod = caught(() => sliceLongitudinalPairedPeriods(comparisonFrame, {
+    group: "Control",
+    earlierPeriod: "unknown-period",
+    laterPeriod: "T1",
+  }));
+  assert.equal(unknownPeriod.code, "period-invalid");
+
+  const reversedRepeated = caught(() => sliceLongitudinalRepeatedPeriods(comparisonFrame, {
+    group: "Control",
+    periods: ["T2", "T1", "T3"],
+  }));
+  assert.equal(reversedRepeated.code, "period-invalid");
 });
 
 test("repeated-period slice builds one common all-selected-period complete cohort", () => {
@@ -517,4 +616,27 @@ test("throws stable safe integrity errors for binding drift, unstable compact po
   const coordinate = caught(() => derive({ ...fixture, result: nonfinite }));
   assert.equal(coordinate.code, "nonfinite-coordinate");
   assertSafeMessage(coordinate);
+});
+
+test("fails closed when provenance hash kind disagrees with the known or resolved dataset hash kind", () => {
+  const knownKindFixture = frameFixture();
+  knownKindFixture.result.provenanceBinding!.datasetHashKind = "canonical-first-xlsx-worksheet-v1-sha256";
+  const knownKindMismatch = caught(() => derive(knownKindFixture));
+  assert.equal(knownKindMismatch.code, "binding-mismatch");
+  assertSafeMessage(knownKindMismatch);
+
+  const resolvedKindFixture = frameFixture();
+  delete resolvedKindFixture.dataset.hashKind;
+  resolvedKindFixture.result.provenanceBinding!.datasetHashKind = "canonical-first-xlsx-worksheet-v1-sha256";
+  const resolvedKindMismatch = caught(() => derive(resolvedKindFixture));
+  assert.equal(resolvedKindMismatch.code, "binding-mismatch");
+  assertSafeMessage(resolvedKindMismatch);
+
+  const legacyProvenanceFixture = frameFixture();
+  delete legacyProvenanceFixture.result.provenanceBinding!.datasetHashKind;
+  delete legacyProvenanceFixture.dataset.hashKind;
+  assert.equal(
+    derive(legacyProvenanceFixture).comparisonFrame.binding.datasetHashKind,
+    "normalized-utf8-csv-text-sha256",
+  );
 });

@@ -2,6 +2,7 @@ import type { Row } from "jena-js";
 import { rowsToCsv } from "./export";
 import {
   JENA_RUNTIME_VERSION,
+  datasetHashKindFor,
   sameOpenEnaConfig,
   type DatasetHashKind,
   type OpenEnaConfig,
@@ -562,6 +563,10 @@ function validateInputs(
   if (result.provenanceBinding && !sameOpenEnaConfig(result.provenanceBinding.configuration, config)) {
     throw new OpenEnaLongitudinalIntegrityError("binding-mismatch");
   }
+  if (result.provenanceBinding?.datasetHashKind
+    && result.provenanceBinding.datasetHashKind !== datasetHashKindFor(dataset)) {
+    throw new OpenEnaLongitudinalIntegrityError("binding-mismatch");
+  }
   if (!Array.isArray(settings.repeatedEntityColumns)
     || settings.repeatedEntityColumns.length === 0
     || settings.repeatedEntityColumns.some((column) => typeof column !== "string" || column.length === 0)
@@ -906,9 +911,7 @@ function buildComparisonFrame(
     binding: {
       analyzedAt: result.analyzedAt,
       datasetNormalizedUtf8TextSha256,
-      ...(result.provenanceBinding?.datasetHashKind ?? dataset.hashKind
-        ? { datasetHashKind: result.provenanceBinding?.datasetHashKind ?? dataset.hashKind }
-        : {}),
+      datasetHashKind: datasetHashKindFor(dataset),
       modelType: result.set.modelType as OpenEnaTrajectoryModel,
       configuration: cloneConfig(config),
       axes: [...settings.axes] as [string, string],
@@ -995,9 +998,6 @@ export function buildLongitudinalDerivation(
   const completeEntities = new Set(
     [...allEntities].filter((entity) => resolvedSettings.timeOrder.every((time) => timesByEntity.get(entity)?.has(time))),
   );
-  if (resolvedSettings.cohortPolicy === "complete" && completeEntities.size === 0) {
-    throw new Error("Longitudinal analysis is unavailable: no eligible complete-cohort repeated entity is observed in every selected ordered period.");
-  }
   const includedEntities = resolvedSettings.cohortPolicy === "complete" ? completeEntities : allEntities;
   const includedPeriods = allEntityPeriods
     .filter((period) => includedEntities.has(period.entityId))
@@ -1223,7 +1223,6 @@ export function sliceLongitudinalPairedPeriods(
   }
   const earlierIndex = comparisonPeriodIndex(frame, request.earlierPeriod);
   const laterIndex = comparisonPeriodIndex(frame, request.laterPeriod);
-  if (earlierIndex >= laterIndex) throw new OpenEnaLongitudinalIntegrityError("period-invalid");
   const group = comparisonGroupName(frame, request.group);
   const groupPoints = frame.points.filter((point) => point.group.name === group);
   const candidates = new Set(groupPoints.map((point) => point.entityToken));

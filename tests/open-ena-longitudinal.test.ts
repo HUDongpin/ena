@@ -358,7 +358,7 @@ test("fails closed for endpoint results, missing mappings, invalid time orders, 
   );
 });
 
-test("fails closed when one repeated entity changes groups or no complete entity remains", () => {
+test("fails closed when one repeated entity changes groups and represents an empty complete Plot cohort", () => {
   const fixture = longitudinalFixture();
   const changingGroupDataset = structuredClone(fixture.dataset);
   const changingRow = changingGroupDataset.rows.find((row) => row.student === "A" && row.case === "two");
@@ -388,10 +388,18 @@ test("fails closed when one repeated entity changes groups or no complete entity
     { name: "no-complete.csv", source: "upload" },
   );
   const noCompleteResult = analyzeDataset(noCompleteDataset, fixture.config);
-  assert.throws(
-    () => buildLongitudinalGroupCentroidView(noCompleteResult, fixture.config, noCompleteDataset, settings("complete")),
-    /no eligible complete|complete cohort.*no/i,
+  const noCompleteView = buildLongitudinalGroupCentroidView(
+    noCompleteResult,
+    fixture.config,
+    noCompleteDataset,
+    settings("complete"),
   );
+  assert.equal(noCompleteView.completeEntityCount, 0);
+  assert.equal(noCompleteView.includedEntityCount, 0);
+  assert.deepEqual(noCompleteView.entityPeriods, []);
+  assert.ok(noCompleteView.periodDiagnostics.every((period) => (
+    period.includedEntityCount === 0 && period.centroid === null
+  )));
 });
 
 test("fails closed when source identity, compact trajectory identity, or source binding drifts", () => {
