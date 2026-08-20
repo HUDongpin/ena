@@ -107,7 +107,7 @@ test("group contrast defaults to the first two groups in stable result order", (
   );
 });
 
-test("one top-level selected pair persists across Plot and Stats and follows selected axes", () => {
+test("one top-level selected pair persists across Plot while Stats requires an explicit inference run", () => {
   const componentState = workspace.slice(0, workspace.indexOf("function renderSetsPanel"));
   assert.match(componentState, /const\s*\[[^\n]*(?:primaryGroup|groupPrimary)[^\n]*useState/i);
   assert.match(componentState, /const\s*\[[^\n]*(?:secondaryGroup|groupSecondary)[^\n]*useState/i);
@@ -118,9 +118,11 @@ test("one top-level selected pair persists across Plot and Stats and follows sel
   );
   assert.match(
     workspace,
-    /buildEndpointMannWhitney\([\s\S]{0,500}(?:groupContrastAxes|contrastAxes|\[xDimension,\s*yDimension\])[\s\S]{0,500}groupContrast\?\.groupOrder/,
-    "Stats must use the same selected pair and axes as the plot",
+    /kind:\s*"endpoint-independent"[\s\S]{0,500}primaryGroup:[\s\S]{0,500}secondaryGroup:[\s\S]{0,500}axes:\s*groupContrastAxes/,
+    "the explicit endpoint request must use the selected pair and axes",
   );
+  assert.match(workspace, /runOpenEnaInferenceV2\(/);
+  assert.doesNotMatch(workspace, /const mannWhitney\s*=\s*useMemo/);
   assert.match(
     workspace,
     /onClick=\{\(\) => setMode\(item\)\}/,
@@ -168,7 +170,7 @@ test("selected-pair inference works with three total groups and preserves select
   assert.ok(selectedInference.rows.every((row) => row.nFirst === 2 && row.nSecond === 2));
 });
 
-test("selected-pair inference remains pairwise with six total groups and declares no multiplicity correction", () => {
+test("the legacy pairwise wrapper remains compatible while the explicit Stats workflow declares Holm", () => {
   const result = endpointResult(["G4", "G1", "G6", "G2", "G5", "G3"]);
   const axes = result.dimensions.slice(0, 2);
   const selectedOrder = ["G5", "G1"] as const;
@@ -184,11 +186,9 @@ test("selected-pair inference remains pairwise with six total groups and declare
   assert.deepEqual(selectedInference.groupOrder, selectedOrder);
   assert.equal(selectedInference.multiplicityCorrection, "none");
   assert.match(inference, /selected[^\n]*(?:group|pair)/i);
-  assert.match(
-    `${workspace}\n${copy}`,
-    /(?:selected group order|selected pair)[\s\S]{0,700}No multiplicity correction/i,
-    "the visible inference note must state selected order and that no multiplicity correction is applied",
-  );
+  assert.match(workspace, /<OpenEnaInferencePanel\b/);
+  assert.match(copy, /multiplicity:[^\n]*Holm/);
+  assert.doesNotMatch(`${workspace}\n${copy}`, /No multiplicity correction is applied/i);
 });
 
 test("research exports record the selected group pair and selected X/Y axes", () => {

@@ -163,15 +163,27 @@ test("models with more than two groups disable endpoint Mann-Whitney inference",
   assert.equal(inference.reason, "exactly-two-groups-required");
 });
 
-test("the inference UI discloses exact-first policy, resolved methods, multiplicity, group order, and MR1 circularity", () => {
+test("the inference UI requires an explicit V2 run and discloses immutable provenance, resolved methods, Holm, and MR1 circularity", () => {
   const workspace = readFileSync(
     join(process.cwd(), "components", "open-ena", "OpenEnaWorkspace.tsx"),
     "utf8",
   );
-  assert.match(workspace, /ENA\.HK post-projection inference, not a jENA statistic/);
-  assert.match(workspace, /mannWhitney\.method/);
-  assert.match(workspace, /row\.resolvedPMethod/);
+  const panel = readFileSync(
+    join(process.cwd(), "components", "open-ena", "OpenEnaInferencePanel.tsx"),
+    "utf8",
+  );
+  const copy = readFileSync(
+    join(process.cwd(), "lib", "open-ena-i18n.ts"),
+    "utf8",
+  );
+  assert.match(workspace, /runOpenEnaInferenceV2/);
+  assert.match(workspace, /runInferentialComparison/);
+  assert.doesNotMatch(workspace, /buildEndpointMannWhitney|const mannWhitney\b/);
+  assert.match(panel, /inference\.provenance/);
+  assert.match(panel, /row\.resolvedPMethod/);
+  assert.match(panel, /copy\.pHolm/);
   assert.doesNotMatch(workspace, /Two-sided normal approximation uses average ranks/);
-  assert.match(workspace, /No multiplicity correction is applied/);
-  assert.match(workspace, /MR1 is constructed from the same group contrast/);
+  assert.doesNotMatch(`${workspace}\n${panel}`, /No multiplicity correction is applied/);
+  assert.match(workspace, /copy\.stats\.ui\.mr1Circularity/);
+  assert.match(copy, /MR1 is constructed from the same group contrast/);
 });

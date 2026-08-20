@@ -3657,6 +3657,304 @@ body:has(.open-ena-login-page) .back-to-top {
   min-width: 320px;
 }
 
+.ena-inference-panel {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+  gap: 12px;
+  border: 1px solid #b9ceca;
+  border-radius: 5px;
+  padding: 13px;
+  background: #fff;
+}
+
+.ena-inference-panel > h3,
+.ena-inference-panel h4,
+.ena-inference-panel p {
+  margin: 0;
+}
+
+.ena-inference-designs,
+.ena-inference-identity,
+.ena-inference-periods {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.ena-inference-designs > legend,
+.ena-inference-identity > legend,
+.ena-inference-periods > legend {
+  margin-bottom: 7px;
+  color: #294942;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.ena-inference-design-card {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 7px 9px;
+  border: 1px solid #cad8d5;
+  border-radius: 4px;
+  padding: 10px;
+  color: #344b48;
+  background: #f8fbfa;
+  cursor: pointer;
+}
+
+.ena-inference-design-card[data-selected="true"] {
+  border-color: #4b9488;
+  background: #edf7f5;
+  box-shadow: inset 3px 0 0 #4b9488;
+}
+
+.ena-inference-design-card:has(input:disabled) {
+  cursor: default;
+  opacity: 0.68;
+}
+
+.ena-inference-design-card input,
+.ena-inference-confirmation input,
+.ena-inference-check-grid input {
+  margin-top: 2px;
+  accent-color: #2f887b;
+}
+
+.ena-inference-design-card > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.ena-inference-design-card strong {
+  color: #244b44;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.ena-inference-design-card small,
+.ena-inference-identity > p,
+.ena-inference-periods > p,
+.ena-inference-ledger > p,
+.ena-inference-results > p,
+.ena-inference-empty,
+.ena-inference-all-units {
+  color: #5c6c70;
+  font-size: 0.62rem;
+  line-height: 1.5;
+}
+
+.ena-inference-design-card > small {
+  grid-column: 2;
+  color: #765420;
+}
+
+.ena-inference-identity,
+.ena-inference-periods,
+.ena-inference-ledger,
+.ena-inference-results {
+  min-width: 0;
+  border: 1px solid #d4dfdd;
+  border-radius: 4px;
+  padding: 11px;
+  background: #fbfdfc;
+}
+
+.ena-inference-check-grid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.ena-inference-check-grid label,
+.ena-inference-confirmation {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 7px;
+  color: #354d49;
+  font-size: 0.65rem;
+  line-height: 1.4;
+}
+
+.ena-inference-check-grid span,
+.ena-inference-confirmation span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ena-inference-confirmation {
+  margin-top: 4px;
+  border-top: 1px solid #e0e8e6;
+  padding-top: 9px;
+  font-weight: 720;
+}
+
+.ena-inference-scope {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.ena-inference-scope > .ena-inference-periods,
+.ena-inference-scope > .ena-inference-all-units {
+  grid-column: 1 / -1;
+}
+
+.ena-inference-eligibility {
+  border-inline-start: 3px solid #4b9488;
+  padding: 8px 9px;
+  color: #3f5853;
+  background: #eef7f5;
+  font-size: 0.64rem;
+  line-height: 1.5;
+}
+
+.ena-inference-table-wrap {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.ena-inference-result-table {
+  min-width: 920px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ena-inference-result-table caption,
+.ena-inference-ledger caption {
+  padding: 0 0 8px;
+  color: #314f49;
+  font-family: var(--font-geist), sans-serif;
+  font-size: 0.66rem;
+  font-weight: 760;
+  text-align: start;
+}
+
+.ena-inference-result-table th,
+.ena-inference-result-table td {
+  white-space: nowrap;
+}
+
+.ena-inference-primary-value {
+  color: #174f46;
+  background: #e9f5f2;
+  font-weight: 850;
+}
+
+.ena-inference-error {
+  border-inline-start: 3px solid #a64b45;
+  padding: 8px 9px;
+  color: #753832;
+  background: #fff4f2;
+  font-size: 0.64rem;
+  line-height: 1.5;
+}
+
+.ena-inference-run {
+  width: 100%;
+}
+
+.ena-inference-jump {
+  justify-self: start;
+}
+
+.ena-inference-results {
+  display: grid;
+  gap: 11px;
+}
+
+.ena-inference-results > h4:focus-visible {
+  outline: 3px solid #276d65;
+  outline-offset: 3px;
+}
+
+.ena-inference-provenance {
+  min-width: 0;
+  border-top: 1px solid #dbe5e3;
+  padding-top: 10px;
+}
+
+.ena-inference-provenance h5 {
+  margin: 0 0 7px;
+  color: #294942;
+  font-size: 0.64rem;
+}
+
+.ena-inference-provenance dl {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.ena-inference-provenance dl > div {
+  min-width: 0;
+  border: 1px solid #dbe5e3;
+  border-radius: 3px;
+  padding: 7px;
+  background: #fff;
+}
+
+.ena-inference-provenance dt {
+  color: #60716d;
+  font-size: 0.56rem;
+  font-weight: 760;
+}
+
+.ena-inference-provenance dd {
+  min-width: 0;
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: #344b48;
+  font-size: 0.58rem;
+  line-height: 1.45;
+}
+
+.ena-inference-provenance code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 0.55rem;
+}
+
+.ena-inference-warnings summary {
+  color: #4b5e5a;
+  cursor: pointer;
+  font-size: 0.64rem;
+  font-weight: 760;
+}
+
+.ena-inference-warnings ul {
+  margin: 8px 0 0;
+  padding-inline-start: 19px;
+  color: #5d696d;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.58rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .ena-inference-panel {
+    padding: 10px;
+  }
+
+  .ena-inference-scope,
+  .ena-inference-check-grid,
+  .ena-inference-provenance dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .ena-export-stack {
   display: grid;
   gap: 8px;

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 
 const projectRoot = process.cwd();
 const workspace = readFileSync(
@@ -9,6 +10,8 @@ const workspace = readFileSync(
   "utf8",
 );
 const styles = readFileSync(join(projectRoot, "app/globals.css"), "utf8");
+const inferencePanelPath = join(projectRoot, "components/open-ena/OpenEnaInferencePanel.tsx");
+const inferencePanel = existsSync(inferencePanelPath) ? readFileSync(inferencePanelPath, "utf8") : "";
 
 function functionSegment(startMarker: string, endMarker: string) {
   const start = workspace.indexOf(startMarker);
@@ -39,13 +42,11 @@ test("Stats exposes exactly Comparison, Goodness of Fit, and Variance tabs in th
     /const\s+(?:STATS_TABS|statsTabs)\s*=\s*\[([\s\S]*?)\]\s*(?:as const)?;/,
   )?.[1] ?? "";
   assert.ok(definitions, "Stats must declare one stable ordered tab collection");
-  const tabs = [...definitions.matchAll(/id:\s*["']([^"']+)["'][\s\S]*?label:\s*["']([^"']+)["']/g)]
-    .map((match) => ({ id: match[1], label: match[2] }));
-  assert.deepEqual(tabs, [
-    { id: "comparison", label: "Comparison" },
-    { id: "goodness", label: "Goodness of Fit" },
-    { id: "variance", label: "Variance" },
-  ]);
+  const ids = [...definitions.matchAll(/id:\s*["']([^"']+)["']/g)].map((match) => match[1]);
+  assert.deepEqual(ids, ["comparison", "goodness", "variance"]);
+  assert.match(definitions, /copy\.stats\.tabs\.comparison/);
+  assert.match(definitions, /copy\.stats\.tabs\.goodness/);
+  assert.match(definitions, /copy\.stats\.tabs\.variance/);
   assert.match(statsPanel, /role="tablist"/, "Stats must expose one accessible tablist");
   assert.match(statsPanel, /role="tab"/);
   assert.match(statsPanel, /data-ena-stats-tab=\{tab\.id\}/);
@@ -72,15 +73,15 @@ test("Stats tabs expose selected state and an owned tabpanel", () => {
   );
 });
 
-test("Comparison explicitly separates selected-pair results from all-group jENA omnibus tests", () => {
+test("Comparison owns one explicit frozen-inference workflow and no automatic endpoint p-value", () => {
   const selectedPair = markerPosition('data-ena-stats-scope="selected-pair"');
   const omnibus = markerPosition('data-ena-stats-scope="all-groups-omnibus"');
   assert.notEqual(selectedPair, omnibus);
 
   const selectedPairBlock = statsPanel.slice(selectedPair, omnibus);
-  assert.match(selectedPairBlock, /groupContrast\.groupOrder/, "selected-pair results must name the current Primary and Secondary groups");
-  assert.match(selectedPairBlock, /groupContrast\.axes/, "selected-pair results must follow the current X and Y axes");
-  assert.match(selectedPairBlock, /mannWhitney|dimensionEffect/, "selected-pair inference must remain inside the selected-pair scope");
+  assert.match(selectedPairBlock, /<OpenEnaInferencePanel\b/);
+  assert.match(selectedPairBlock, /inference=\{currentInference\}/);
+  assert.doesNotMatch(`${componentState}\n${selectedPairBlock}`, /buildEndpointMannWhitney|const mannWhitney\b/);
   assert.doesNotMatch(selectedPairBlock, /result\.stats\.tests/, "all-group jENA tests must not masquerade as selected-pair results");
 
   const omnibusEnd = markerPosition('data-ena-stats-panel="goodness"');
@@ -89,7 +90,24 @@ test("Comparison explicitly separates selected-pair results from all-group jENA 
   const omnibusCondition = statsPanel.slice(Math.max(0, omnibus - 180), omnibus);
   assert.match(omnibusCondition, /result\.groups\.length\s*>\s*2/, "the omnibus scope applies only when more than two groups are present");
   assert.match(omnibusBlock, /renderJenaTestContent/, "the omnibus scope must own the jENA fitted-model test output");
-  assert.match(omnibusBlock, /all-group omnibus/i, "the omnibus scope must be visibly named, not explained only in trailing prose");
+  assert.match(omnibusBlock, /copy\.stats\.ui\.allGroupTitle/, "the omnibus scope must render its localized visible name");
+  assert.match(getOpenEnaCopy("en").stats.ui.allGroupTitle, /all-group omnibus/i);
+});
+
+test("research-design changes synchronously hide stale inference while plot presentation is excluded from its binding", () => {
+  assert.match(componentState, /const \[lastInference, setLastInference\]/);
+  assert.match(componentState, /lastInferenceRequestKey/);
+  assert.match(componentState, /currentInference\s*=\s*[^\n]*inferenceRequestKey/);
+  assert.match(componentState, /runOpenEnaInferenceV2\(/);
+  assert.match(componentState, /comparisonFrame:/);
+  const keyBlock = componentState.match(/const inferenceRequestKey\s*=\s*useMemo\([\s\S]*?\n  \);/)?.[0] ?? "";
+  assert.ok(keyBlock, "the current research design must have one synchronous binding key");
+  assert.match(keyBlock, /result\?\.analyzedAt|result\.analyzedAt/);
+  assert.match(keyBlock, /datasetHash/);
+  assert.match(keyBlock, /repeatedEntityColumns/);
+  assert.match(keyBlock, /identityConfirmed/);
+  assert.match(keyBlock, /longitudinalTimeOrder/);
+  assert.doesNotMatch(keyBlock, /flipX|flipY|zoom|showLabels|showPoints|cohortPolicy|edgeScale|pointScale/);
 });
 
 test("Goodness of Fit contains only correlation diagnostics and Variance contains only selected-axis shares", () => {
@@ -98,8 +116,8 @@ test("Goodness of Fit contains only correlation diagnostics and Variance contain
     'data-ena-stats-panel="variance"',
   );
   assert.match(goodness, /result\.stats\.correlations/, "Goodness of Fit must use the verified correlation diagnostics");
-  assert.match(goodness, /Pearson/);
-  assert.match(goodness, /Spearman/);
+  assert.match(goodness, /copy\.stats\.ui\.pearsonR/);
+  assert.match(goodness, /copy\.stats\.ui\.spearmanRho/);
   assert.doesNotMatch(goodness, /result\.stats\.tests|mannWhitney|dimensionEffect|result\.set\.variance|downloadJson|methodsReport/);
 
   const variance = statsPanelSlice(
@@ -137,4 +155,21 @@ test("Stats tabs remain compact and visibly keyboard focused", () => {
   assert.match(styles, /\.ena-stats-tabs button\[aria-selected="true"\][\s\S]*?border-bottom-color:\s*var\(--ena-teal\)/);
   assert.match(styles, /\.ena-stats-tabs button:focus-visible[\s\S]*?outline:/);
   assert.match(styles, /\.ena-stats-export-region[\s\S]*?border-top:/, "local export tools must be visually separated from the official Stats views");
+  assert.equal((`${statsPanel}\n${inferencePanel}`.match(/role="tablist"/g) ?? []).length, 1);
+  assert.match(styles, /\.ena-inference-table-wrap[\s\S]*?overflow-x:\s*auto/);
+});
+
+test("all visible Stats labels and explanatory prose come from structured en, zh-Hant, and zh-Hans copy", () => {
+  assert.match(statsPanel, /copy\.stats\.ui\./);
+  assert.doesNotMatch(statsPanel, /aria-label="Statistics views"/);
+  assert.doesNotMatch(statsPanel, /<th>Axis<\/th>|<th>Test<\/th>|<th>Statistic<\/th>|<th>Share<\/th>/);
+  assert.doesNotMatch(statsPanel, /<h3>Reference MR1 interpretation<\/h3>|<h3>jENA all-group omnibus statistics<\/h3>/);
+  assert.doesNotMatch(statsPanel, />Copy methods text(?:\s|<)|>Methods report(?:\s|<)|>Preview generated report</);
+
+  for (const locale of ["en", "zh-hant", "zh-hans"] as const) {
+    const ui = getOpenEnaCopy(locale).stats.ui;
+    for (const [key, value] of Object.entries(ui)) {
+      assert.ok(value.trim(), `${locale} Stats UI copy ${key} must not be empty`);
+    }
+  }
 });

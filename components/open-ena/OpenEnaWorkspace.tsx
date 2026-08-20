@@ -21,13 +21,22 @@ import {
   buildPairwiseGroupContrastExport,
   pairwiseGroupContrastEdgesToCsv,
 } from "@/lib/open-ena/contrasts";
-import { buildEndpointMannWhitney } from "@/lib/open-ena/inference";
 import {
+  buildLongitudinalDerivation,
   buildLongitudinalGroupCentroidExport,
-  buildLongitudinalGroupCentroidView,
   longitudinalPeriodRowsToCsv,
+  sliceLongitudinalIndependentPeriod,
+  sliceLongitudinalPairedPeriods,
+  sliceLongitudinalRepeatedPeriods,
+  OpenEnaLongitudinalIntegrityError,
   type OpenEnaLongitudinalCohortPolicy,
 } from "@/lib/open-ena/longitudinal";
+import {
+  OpenEnaInferenceIntegrityError,
+  runOpenEnaInferenceV2,
+  type OpenEnaInferenceRequestV2,
+  type OpenEnaInferenceResultV2,
+} from "@/lib/open-ena/inference-v2";
 import { buildMethodsReport, referenceMeanRotationInterpretation } from "@/lib/open-ena/methods";
 import { buildOpenEnaAiInterpretationRequest } from "@/lib/open-ena/ai-interpretation";
 import { buildAnalysisBundle, buildResultTables, rowsToCsv } from "@/lib/open-ena/export";
@@ -50,6 +59,7 @@ import {
   JENA_RUNTIME_VERSION,
   SAMPLE_CONFIG,
   SAMPLE_DATASET_URL,
+  datasetHashKindFor,
   sameOpenEnaConfig,
   type CameraPreset,
   type OpenEnaAnalysisSet,
@@ -71,6 +81,10 @@ import OpenEnaLongitudinalTrajectory from "./OpenEnaLongitudinalTrajectory";
 import OpenEnaPersistentPlotTools from "./OpenEnaPersistentPlotTools";
 import OpenEnaSetComparison from "./OpenEnaSetComparison";
 import OpenEnaAiInterpretation from "./OpenEnaAiInterpretation";
+import OpenEnaInferencePanel, {
+  type OpenEnaInferenceDesignChoice,
+  type OpenEnaInferencePreview,
+} from "./OpenEnaInferencePanel";
 
 interface OpenEnaWorkspaceProps {
   locale: Locale;
@@ -144,8 +158,17 @@ function tableHeaders(rows: Row[]) {
   return headers;
 }
 
-function formatStatistic(value: number | undefined, digits = 3) {
-  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "Not estimable";
+function formatStatistic(value: number | undefined, digits = 3, notEstimable = "Not estimable") {
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : notEstimable;
+}
+
+function formatCopyTemplate(
+  template: string,
+  values: Readonly<Record<string, string | number>>,
+) {
+  return template.replace(/\{([A-Za-z0-9]+)\}/gu, (placeholder, key: string) => (
+    Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : placeholder
+  ));
 }
 
 function officialPlotAxisLabel(axis: string) {
@@ -218,10 +241,23 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const [showVariance, setShowVariance] = useState(true);
   const [showTrajectories, setShowTrajectories] = useState(true);
   const [showGroupCentroidPaths, setShowGroupCentroidPaths] = useState(true);
-  const [repeatedEntityColumn, setRepeatedEntityColumn] = useState("");
+  const [repeatedEntityColumns, setRepeatedEntityColumns] = useState<string[]>([]);
+  const [identityConfirmed, setIdentityConfirmed] = useState(false);
   const [timeColumn, setTimeColumn] = useState("");
   const [longitudinalTimeOrder, setLongitudinalTimeOrder] = useState<string[]>([]);
   const [cohortPolicy, setCohortPolicy] = useState<OpenEnaLongitudinalCohortPolicy>("available");
+  const [inferenceDesign, setInferenceDesign] = useState<OpenEnaInferenceDesignChoice | null>(null);
+  const [inferencePrimaryGroup, setInferencePrimaryGroup] = useState("");
+  const [inferenceSecondaryGroup, setInferenceSecondaryGroup] = useState("");
+  const [inferenceGroup, setInferenceGroup] = useState<string | null>(null);
+  const [inferencePeriod, setInferencePeriod] = useState("");
+  const [inferenceEarlierPeriod, setInferenceEarlierPeriod] = useState("");
+  const [inferenceLaterPeriod, setInferenceLaterPeriod] = useState("");
+  const [inferenceRepeatedPeriods, setInferenceRepeatedPeriods] = useState<string[]>([]);
+  const [lastInference, setLastInference] = useState<OpenEnaInferenceResultV2 | null>(null);
+  const [lastInferenceRequestKey, setLastInferenceRequestKey] = useState<string | null>(null);
+  const [inferenceRunning, setInferenceRunning] = useState(false);
+  const [inferenceIntegrityError, setInferenceIntegrityError] = useState<string | null>(null);
   const [edgeScale, setEdgeScale] = useState(1);
   const [edgeThreshold, setEdgeThreshold] = useState(0);
   const [pointScale, setPointScale] = useState(1);
@@ -245,6 +281,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const referenceImportRef = useRef<object | null>(null);
   const datasetGenerationRef = useRef(0);
   const groupSelectionColumnRef = useRef<string | null>(null);
+  const inferenceGenerationRef = useRef(0);
+  const inferenceRequestKeyRef = useRef<string | null>(null);
 
   useEffect(() => () => {
     abortRef.current?.abort();
@@ -313,23 +351,19 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   }, [currentResultGroupKey, primaryGroupName, result, resultConfig, secondaryGroupName]);
 
   const trajectoryMappingKey = result && resultConfig && result.set.modelType !== "EndPoint"
-    ? `${result.analyzedAt}\u001f${resultConfig.unitColumns.join("\u001e")}\u001f${resultConfig.conversationColumns.join("\u001e")}`
+    ? `${result.analyzedAt}\u001f${resultConfig.unitColumns.join("\u001e")}\u001f${resultConfig.conversationColumns.join("\u001e")}\u001f${resultConfig.groupColumn ?? ""}`
     : "";
   useEffect(() => {
     if (!result || !resultConfig || result.set.modelType === "EndPoint") {
-      if (repeatedEntityColumn) setRepeatedEntityColumn("");
-      if (timeColumn) setTimeColumn("");
+      setRepeatedEntityColumns([]);
+      setIdentityConfirmed(false);
+      setTimeColumn("");
       return;
     }
-    const nextEntity = resultConfig.unitColumns.includes(repeatedEntityColumn)
-      ? repeatedEntityColumn
-      : resultConfig.unitColumns[0] ?? "";
-    const nextTime = resultConfig.conversationColumns.includes(timeColumn)
-      ? timeColumn
-      : resultConfig.conversationColumns[0] ?? "";
-    if (nextEntity !== repeatedEntityColumn) setRepeatedEntityColumn(nextEntity);
-    if (nextTime !== timeColumn) setTimeColumn(nextTime);
-  }, [repeatedEntityColumn, result, resultConfig, timeColumn, trajectoryMappingKey]);
+    setRepeatedEntityColumns([...resultConfig.unitColumns]);
+    setIdentityConfirmed(false);
+    setTimeColumn(resultConfig.conversationColumns[0] ?? "");
+  }, [trajectoryMappingKey]);
 
   const observedLongitudinalTimeOrder = useMemo(() => {
     if (!dataset || !timeColumn) return [];
@@ -351,29 +385,35 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   }, [observedLongitudinalTimeOrderKey, result?.analyzedAt, timeColumn]);
 
   function updateLongitudinalSettings(update: {
-    repeatedEntityColumn?: string;
+    repeatedEntityColumns?: string[];
+    identityConfirmed?: boolean;
     timeColumn?: string;
     cohortPolicy?: OpenEnaLongitudinalCohortPolicy;
   }) {
-    if (update.repeatedEntityColumn !== undefined) setRepeatedEntityColumn(update.repeatedEntityColumn);
+    if (update.repeatedEntityColumns !== undefined) {
+      setRepeatedEntityColumns(update.repeatedEntityColumns);
+      setIdentityConfirmed(false);
+    }
+    if (update.identityConfirmed !== undefined) setIdentityConfirmed(update.identityConfirmed);
     if (update.timeColumn !== undefined) setTimeColumn(update.timeColumn);
     if (update.cohortPolicy !== undefined) setCohortPolicy(update.cohortPolicy);
   }
 
-  const longitudinalViewState = useMemo(() => {
-    if (!result || !resultConfig || !dataset) return { view: null, error: copy.longitudinal.unavailableModel };
-    if (result.set.modelType === "EndPoint") return { view: null, error: copy.longitudinal.unavailableModel };
-    if (!repeatedEntityColumn) return { view: null, error: copy.longitudinal.unavailableEntity };
-    if (!timeColumn) return { view: null, error: copy.longitudinal.unavailableTime };
-    if (longitudinalTimeOrder.length < 2) return { view: null, error: copy.longitudinal.unavailablePeriods };
+  const longitudinalDerivationState = useMemo(() => {
+    if (!result || !resultConfig || !dataset) return { derivation: null, error: copy.longitudinal.unavailableModel };
+    if (result.set.modelType === "EndPoint") return { derivation: null, error: copy.longitudinal.unavailableModel };
+    if (!repeatedEntityColumns.length) return { derivation: null, error: copy.longitudinal.unavailableEntity };
+    if (!timeColumn) return { derivation: null, error: copy.longitudinal.unavailableTime };
+    if (longitudinalTimeOrder.length < 2) return { derivation: null, error: copy.longitudinal.unavailablePeriods };
     try {
       return {
-        view: buildLongitudinalGroupCentroidView(
+        derivation: buildLongitudinalDerivation(
           result,
           resultConfig,
           dataset,
           {
-            repeatedEntityColumn,
+            repeatedEntityColumns,
+            identityConfirmed,
             timeColumn,
             timeOrder: longitudinalTimeOrder,
             cohortPolicy,
@@ -384,27 +424,364 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         error: null,
       };
     } catch (caught) {
-      return { view: null, error: caught instanceof Error ? caught.message : String(caught) };
+      return { derivation: null, error: caught instanceof Error ? caught.message : String(caught) };
     }
   }, [
     cohortPolicy,
     copy.longitudinal,
     dataset,
     datasetHash,
+    identityConfirmed,
     longitudinalTimeOrder,
-    repeatedEntityColumn,
+    repeatedEntityColumns,
     result,
     resultConfig,
     timeColumn,
     xDimension,
     yDimension,
   ]);
-  const longitudinalView = longitudinalViewState.view;
+  const longitudinalView = longitudinalDerivationState.derivation?.view ?? null;
+  const longitudinalComparisonFrame = longitudinalDerivationState.derivation?.comparisonFrame ?? null;
+
+  const inferenceResultInitializationKey = result && resultConfig
+    ? `${result.analyzedAt}\u001f${resultConfig.model}\u001f${resultConfig.groupColumn ?? ""}\u001f${currentResultGroupKey}`
+    : "";
+  useEffect(() => {
+    setInferenceDesign(null);
+    setInferencePrimaryGroup(currentResultGroupNames[0] ?? "");
+    setInferenceSecondaryGroup(currentResultGroupNames.find((group) => group !== currentResultGroupNames[0]) ?? "");
+    setInferenceGroup(resultConfig?.groupColumn ? currentResultGroupNames[0] ?? null : null);
+    setLastInference(null);
+    setLastInferenceRequestKey(null);
+    setInferenceIntegrityError(null);
+    setInferenceRunning(false);
+    inferenceGenerationRef.current += 1;
+  }, [inferenceResultInitializationKey]);
+
+  useEffect(() => {
+    setInferencePeriod(longitudinalTimeOrder[0] ?? "");
+    setInferenceEarlierPeriod(longitudinalTimeOrder[0] ?? "");
+    setInferenceLaterPeriod(longitudinalTimeOrder[1] ?? "");
+    setInferenceRepeatedPeriods([...longitudinalTimeOrder]);
+  }, [observedLongitudinalTimeOrderKey, result?.analyzedAt, timeColumn]);
 
   const groupContrastAxes = useMemo(
     (): [string, string] => [xDimension, yDimension],
     [xDimension, yDimension],
   );
+  const inferenceGroupOptions = resultConfig?.groupColumn ? currentResultGroupNames : [];
+  const selectedInferencePrimaryGroup = result?.set.modelType === "EndPoint"
+    ? primaryGroupName
+    : inferencePrimaryGroup;
+  const selectedInferenceSecondaryGroup = result?.set.modelType === "EndPoint"
+    ? secondaryGroupName
+    : inferenceSecondaryGroup;
+  const inferenceDesignAvailability = useMemo(() => {
+    const inferenceCopy = copy.stats.inference;
+    const endpoint = result?.set.modelType === "EndPoint";
+    const trajectory = Boolean(result && result.set.modelType !== "EndPoint");
+    const hasTwoGroups = Boolean(resultConfig?.groupColumn && currentResultGroupNames.length >= 2);
+    return {
+      independent: {
+        enabled: Boolean(result && hasTwoGroups && (endpoint || (trajectory && longitudinalTimeOrder.length >= 1))),
+        reason: result && !hasTwoGroups
+          ? inferenceCopy.independentRequiresTwoGroups
+          : trajectory && longitudinalTimeOrder.length < 1
+            ? inferenceCopy.independentRequiresPeriod
+            : null,
+      },
+      paired: {
+        enabled: Boolean(trajectory && longitudinalTimeOrder.length >= 2),
+        reason: endpoint
+          ? inferenceCopy.pairedRequiresTrajectory
+          : longitudinalTimeOrder.length < 2
+            ? inferenceCopy.pairedRequiresTwoPeriods
+            : null,
+      },
+      repeated: {
+        enabled: Boolean(trajectory && longitudinalTimeOrder.length >= 3),
+        reason: endpoint
+          ? inferenceCopy.repeatedRequiresTrajectory
+          : longitudinalTimeOrder.length < 3
+            ? inferenceCopy.repeatedRequiresThreePeriods
+            : null,
+      },
+    };
+  }, [copy.stats.inference, currentResultGroupKey, longitudinalTimeOrder.length, result, resultConfig]);
+
+  const inferenceRequest = useMemo((): OpenEnaInferenceRequestV2 | null => {
+    if (!result || !resultConfig || !inferenceDesign || resultIsStale) return null;
+    if (groupContrastAxes[0] === groupContrastAxes[1]
+      || groupContrastAxes.some((axis) => !result.dimensions.includes(axis))) return null;
+    if (result.set.modelType === "EndPoint") {
+      if (inferenceDesign !== "independent" || !resultConfig.groupColumn
+        || !selectedInferencePrimaryGroup || !selectedInferenceSecondaryGroup
+        || selectedInferencePrimaryGroup === selectedInferenceSecondaryGroup) return null;
+      return {
+        kind: "endpoint-independent",
+        primaryGroup: selectedInferencePrimaryGroup,
+        secondaryGroup: selectedInferenceSecondaryGroup,
+        axes: groupContrastAxes,
+      };
+    }
+    if (!identityConfirmed || repeatedEntityColumns.length === 0 || !timeColumn) return null;
+    if (inferenceDesign === "independent") {
+      if (!resultConfig.groupColumn || !inferencePeriod
+        || !selectedInferencePrimaryGroup || !selectedInferenceSecondaryGroup
+        || selectedInferencePrimaryGroup === selectedInferenceSecondaryGroup) return null;
+      return {
+        kind: "trajectory-independent-period",
+        repeatedEntityColumns: [...repeatedEntityColumns],
+        timeColumn,
+        period: inferencePeriod,
+        primaryGroup: selectedInferencePrimaryGroup,
+        secondaryGroup: selectedInferenceSecondaryGroup,
+        axes: groupContrastAxes,
+      };
+    }
+    const selectedGroup = resultConfig.groupColumn ? inferenceGroup : null;
+    if (resultConfig.groupColumn && !selectedGroup) return null;
+    if (inferenceDesign === "paired") {
+      if (!inferenceEarlierPeriod || !inferenceLaterPeriod
+        || inferenceEarlierPeriod === inferenceLaterPeriod) return null;
+      return {
+        kind: "trajectory-paired-periods",
+        repeatedEntityColumns: [...repeatedEntityColumns],
+        timeColumn,
+        group: selectedGroup,
+        earlierPeriod: inferenceEarlierPeriod,
+        laterPeriod: inferenceLaterPeriod,
+        axes: groupContrastAxes,
+        cohortPolicy: "pairwise-complete",
+      };
+    }
+    const orderedPeriods = longitudinalTimeOrder.filter((period) => inferenceRepeatedPeriods.includes(period));
+    if (orderedPeriods.length < 3) return null;
+    return {
+      kind: "trajectory-repeated-periods",
+      repeatedEntityColumns: [...repeatedEntityColumns],
+      timeColumn,
+      group: selectedGroup,
+      periods: orderedPeriods,
+      axes: groupContrastAxes,
+      cohortPolicy: "all-period-complete",
+      posthocContrasts: "all-period-pairs",
+    };
+  }, [
+    groupContrastAxes,
+    identityConfirmed,
+    inferenceDesign,
+    inferenceEarlierPeriod,
+    inferenceGroup,
+    inferenceLaterPeriod,
+    inferencePeriod,
+    inferenceRepeatedPeriods,
+    longitudinalTimeOrder,
+    repeatedEntityColumns,
+    result,
+    resultConfig,
+    resultIsStale,
+    selectedInferencePrimaryGroup,
+    selectedInferenceSecondaryGroup,
+    timeColumn,
+  ]);
+
+  const inferencePreviewState = useMemo((): {
+    preview: OpenEnaInferencePreview | null;
+    error: string | null;
+  } => {
+    if (!inferenceRequest || !result || !resultConfig) return { preview: null, error: null };
+    const inferenceCopy = copy.stats.inference;
+    try {
+      if (inferenceRequest.kind === "endpoint-independent") {
+        const primary = result.groups.find((group) => group.name === inferenceRequest.primaryGroup)?.count ?? 0;
+        const secondary = result.groups.find((group) => group.name === inferenceRequest.secondaryGroup)?.count ?? 0;
+        return {
+          preview: {
+            message: inferenceCopy.eligibilityReady,
+            rows: [
+              { id: "candidates", label: inferenceCopy.candidateEntities, value: primary + secondary },
+              { id: "primary", label: inferenceCopy.availablePrimary, value: primary },
+              { id: "secondary", label: inferenceCopy.availableSecondary, value: secondary },
+              { id: "included", label: inferenceCopy.includedEntities, value: primary + secondary },
+            ],
+          },
+          error: null,
+        };
+      }
+      if (!longitudinalComparisonFrame) return { preview: null, error: null };
+      if (inferenceRequest.kind === "trajectory-independent-period") {
+        const slice = sliceLongitudinalIndependentPeriod(longitudinalComparisonFrame, inferenceRequest);
+        return {
+          preview: {
+            message: inferenceCopy.eligibilityReady,
+            rows: [
+              { id: "candidates", label: inferenceCopy.candidateEntities, value: slice.ledger.candidateEntityCount },
+              { id: "primary", label: inferenceCopy.availablePrimary, value: slice.ledger.primaryAvailableCount },
+              { id: "secondary", label: inferenceCopy.availableSecondary, value: slice.ledger.secondaryAvailableCount },
+              { id: "included", label: inferenceCopy.includedEntities, value: slice.ledger.includedEntityCount },
+            ],
+          },
+          error: null,
+        };
+      }
+      if (inferenceRequest.kind === "trajectory-paired-periods") {
+        const slice = sliceLongitudinalPairedPeriods(longitudinalComparisonFrame, inferenceRequest);
+        return {
+          preview: {
+            message: inferenceCopy.eligibilityReady,
+            rows: [
+              { id: "candidates", label: inferenceCopy.candidateEntities, value: slice.ledger.candidateEntityCount },
+              { id: "earlier", label: inferenceCopy.earlierAvailable, value: slice.ledger.earlierAvailableCount },
+              { id: "later", label: inferenceCopy.laterAvailable, value: slice.ledger.laterAvailableCount },
+              { id: "matched", label: inferenceCopy.matchedEntities, value: slice.ledger.matchedEntityCount },
+              { id: "earlier-only", label: inferenceCopy.earlierOnly, value: slice.ledger.earlierOnlyCount },
+              { id: "later-only", label: inferenceCopy.laterOnly, value: slice.ledger.laterOnlyCount },
+              {
+                id: "missing",
+                label: inferenceCopy.missingPairs,
+                value: slice.ledger.candidateEntityCount - slice.ledger.matchedEntityCount,
+              },
+              { id: "zero-x", label: inferenceCopy.provisionalZeroFirstAxis, value: slice.ledger.zeroDifferenceCountByAxis.x },
+              { id: "zero-y", label: inferenceCopy.provisionalZeroSecondAxis, value: slice.ledger.zeroDifferenceCountByAxis.y },
+            ],
+          },
+          error: null,
+        };
+      }
+      const slice = sliceLongitudinalRepeatedPeriods(longitudinalComparisonFrame, inferenceRequest);
+      return {
+        preview: {
+          message: inferenceCopy.eligibilityReady,
+          rows: [
+            { id: "candidates", label: inferenceCopy.candidateEntities, value: slice.ledger.candidateEntityCount },
+            ...slice.ledger.availableByPeriod.map((entry) => ({
+              id: `period-${entry.periodIndex}`,
+              label: `${inferenceCopy.availableAtPeriod}: ${entry.period}`,
+              value: entry.availableEntityCount,
+            })),
+            { id: "complete", label: inferenceCopy.completeBlocks, value: slice.ledger.completeBlockCount },
+            {
+              id: "missing-any",
+              label: inferenceCopy.missingAnySelectedPeriod,
+              value: slice.ledger.missingAnySelectedPeriodCount,
+            },
+          ],
+        },
+        error: null,
+      };
+    } catch (caught) {
+      if (caught instanceof OpenEnaLongitudinalIntegrityError) {
+        return { preview: null, error: caught.code };
+      }
+      return { preview: null, error: "binding-mismatch" };
+    }
+  }, [copy.stats.inference, inferenceRequest, longitudinalComparisonFrame, result, resultConfig]);
+
+  const inferenceRequestKey = useMemo(() => JSON.stringify({
+    analyzedAt: result?.analyzedAt ?? null,
+    datasetHash,
+    datasetHashKind: dataset ? datasetHashKindFor(dataset) : null,
+    configuration: resultConfig,
+    request: inferenceRequest,
+    design: inferenceDesign,
+    repeatedEntityColumns,
+    identityConfirmed,
+    timeColumn,
+    longitudinalTimeOrder,
+  }), [
+    dataset,
+    datasetHash,
+    identityConfirmed,
+    inferenceDesign,
+    inferenceRequest,
+    longitudinalTimeOrder,
+    repeatedEntityColumns,
+    result?.analyzedAt,
+    resultConfig,
+    timeColumn,
+  ]);
+  inferenceRequestKeyRef.current = inferenceRequestKey;
+  const currentInference = lastInferenceRequestKey === inferenceRequestKey ? lastInference : null;
+
+  useEffect(() => {
+    inferenceGenerationRef.current += 1;
+    setLastInference(null);
+    setLastInferenceRequestKey(null);
+    setInferenceIntegrityError(null);
+    setInferenceRunning(false);
+  }, [inferenceRequestKey]);
+
+  const inferenceEligibilityMessage = !inferenceDesign
+    ? copy.stats.inference.eligibilitySelectDesign
+    : !inferenceDesignAvailability[inferenceDesign].enabled
+      ? inferenceDesignAvailability[inferenceDesign].reason ?? copy.stats.inference.eligibilityCompleteScope
+      : result?.set.modelType !== "EndPoint" && !identityConfirmed
+        ? copy.stats.inference.eligibilityConfirmIdentity
+        : !inferenceRequest || !inferencePreviewState.preview || inferencePreviewState.error
+          ? copy.stats.inference.eligibilityCompleteScope
+          : copy.stats.inference.eligibilityReady;
+  const canRunInference = Boolean(
+    dataset
+    && datasetHash
+    && /^[0-9a-f]{64}$/iu.test(datasetHash)
+    && result
+    && resultConfig
+    && inferenceRequest
+    && inferencePreviewState.preview
+    && !inferencePreviewState.error
+    && !resultIsStale
+    && !inferenceRunning
+  );
+
+  async function runInferentialComparison() {
+    if (!canRunInference || !dataset || !datasetHash || !result || !resultConfig || !inferenceRequest) return;
+    if (inferenceRequest.kind !== "endpoint-independent" && !longitudinalComparisonFrame) return;
+    const requestedKey = inferenceRequestKey;
+    const generation = inferenceGenerationRef.current + 1;
+    inferenceGenerationRef.current = generation;
+    setInferenceRunning(true);
+    setInferenceIntegrityError(null);
+    setLastInference(null);
+    setLastInferenceRequestKey(null);
+    try {
+      const coordinatorInput = inferenceRequest.kind === "endpoint-independent"
+        ? {
+            request: inferenceRequest,
+            result,
+            currentBinding: {
+              datasetNormalizedUtf8TextSha256: datasetHash,
+              datasetHashKind: datasetHashKindFor(dataset),
+              configuration: resultConfig,
+            },
+          }
+        : {
+            request: inferenceRequest,
+            result,
+            currentBinding: {
+              datasetNormalizedUtf8TextSha256: datasetHash,
+              datasetHashKind: datasetHashKindFor(dataset),
+              configuration: resultConfig,
+            },
+            comparisonFrame: longitudinalComparisonFrame!,
+          };
+      const completed = await runOpenEnaInferenceV2(coordinatorInput);
+      if (inferenceGenerationRef.current !== generation
+        || inferenceRequestKeyRef.current !== requestedKey) return;
+      setLastInference(completed);
+      setLastInferenceRequestKey(requestedKey);
+    } catch (caught) {
+      if (inferenceGenerationRef.current !== generation
+        || inferenceRequestKeyRef.current !== requestedKey) return;
+      setLastInference(null);
+      setLastInferenceRequestKey(null);
+      setInferenceIntegrityError(
+        caught instanceof OpenEnaInferenceIntegrityError ? caught.code : "binding-mismatch",
+      );
+    } finally {
+      if (inferenceGenerationRef.current === generation) setInferenceRunning(false);
+    }
+  }
   const contrastUnavailable = useMemo(() => {
     if (!result || !resultConfig) return "Build an endpoint model to compare groups.";
     if (result.set.modelType !== "EndPoint") return copy.contrast.endpointOnly;
@@ -445,17 +822,6 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     }
     return maximum;
   }, [result]);
-  const mannWhitney = useMemo(
-    () => result
-      ? buildEndpointMannWhitney(
-          result,
-          resultConfig?.groupColumn ?? null,
-          groupContrastAxes,
-          groupContrast?.groupOrder,
-        )
-      : null,
-    [groupContrast, groupContrastAxes, result, resultConfig],
-  );
   const methodsReport = useMemo(
     () => dataset && result && resultConfig
       ? buildMethodsReport(dataset, resultConfig, result, datasetHash, [xDimension, yDimension], {
@@ -1606,15 +1972,35 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         ) : (
           <>
             <div className="ena-two-fields">
-              <label className="ena-field">
-                <span>{copy.longitudinal.repeatedEntity}</span>
-                <select
-                  value={repeatedEntityColumn}
-                  onChange={(event) => updateLongitudinalSettings({ repeatedEntityColumn: event.target.value })}
-                >
-                  {resultConfig.unitColumns.map((column) => <option key={column} value={column}>{column}</option>)}
-                </select>
-              </label>
+              <fieldset className="ena-inference-identity ena-longitudinal-identity">
+                <legend>{copy.longitudinal.repeatedEntity}</legend>
+                <div className="ena-inference-check-grid">{resultConfig.unitColumns.map((column) => (
+                  <label key={column}>
+                    <input
+                      type="checkbox"
+                      checked={repeatedEntityColumns.includes(column)}
+                      onChange={(event) => updateLongitudinalSettings({
+                        repeatedEntityColumns: resultConfig.unitColumns.filter((candidate) => (
+                          candidate === column
+                            ? event.currentTarget.checked
+                            : repeatedEntityColumns.includes(candidate)
+                        )),
+                      })}
+                    />
+                    <span>{column}</span>
+                  </label>
+                ))}</div>
+                <label className="ena-inference-confirmation">
+                  <input
+                    type="checkbox"
+                    checked={identityConfirmed}
+                    disabled={repeatedEntityColumns.length === 0}
+                    onChange={(event) => updateLongitudinalSettings({ identityConfirmed: event.currentTarget.checked })}
+                  />
+                  <span>{copy.longitudinal.confirmIdentity}</span>
+                </label>
+                <p className="ena-sequence-note">{copy.longitudinal.identityConfirmationHint}</p>
+              </fieldset>
               <label className="ena-field">
                 <span>{copy.longitudinal.timeOrder}</span>
                 <select
@@ -1763,7 +2149,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 </div>
               </>
             ) : (
-              <p className="ena-sets-compatibility-note">{longitudinalViewState.error}</p>
+              <p className="ena-sets-compatibility-note">{longitudinalDerivationState.error}</p>
             )}
           </>
         )}
@@ -1978,9 +2364,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   function renderStatsPanel() {
     const manifestConfig = resultConfig ?? config;
     const statsTabs = [
-      { id: "comparison", label: "Comparison" },
-      { id: "goodness", label: "Goodness of Fit" },
-      { id: "variance", label: "Variance" },
+      { id: "comparison", label: copy.stats.tabs.comparison },
+      { id: "goodness", label: copy.stats.tabs.goodness },
+      { id: "variance", label: copy.stats.tabs.variance },
     ] as const;
 
     function handleStatsTabKeyDown(
@@ -2021,25 +2407,37 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         <>
           <div className="ena-stats-scroll">
             <table className="ena-stats-table">
-              <thead><tr><th>Axis</th><th>Test</th><th>Statistic</th><th>df</th></tr></thead>
+              <caption className="sr-only">{copy.stats.ui.jenaTestsCaption}</caption>
+              <thead><tr>
+                <th scope="col">{copy.stats.ui.axis}</th>
+                <th scope="col">{copy.stats.ui.test}</th>
+                <th scope="col">{copy.stats.ui.statistic}</th>
+                <th scope="col">{copy.stats.ui.degreesFreedom}</th>
+              </tr></thead>
               <tbody>{result.stats.tests.map((test) => (
                 <tr key={`${test.dimension}-${test.test}`}>
-                  <td>{test.dimension}</td>
-                  <td>{test.test === "welch-t" ? "Welch t" : "One-way F"}</td>
-                  <td>{formatStatistic(test.statistic)}</td>
+                  <th scope="row">{test.dimension}</th>
+                  <td>{test.test === "welch-t" ? copy.stats.ui.welchT : copy.stats.ui.oneWayF}</td>
+                  <td>{formatStatistic(test.statistic, 3, copy.stats.ui.notEstimable)}</td>
                   <td>{test.df !== undefined
-                    ? formatStatistic(test.df, 2)
-                    : `${formatStatistic(test.dfBetween, 0)}/${formatStatistic(test.dfWithin, 0)}`}</td>
+                    ? formatStatistic(test.df, 2, copy.stats.ui.notEstimable)
+                    : `${formatStatistic(test.dfBetween, 0, copy.stats.ui.notEstimable)}/${formatStatistic(test.dfWithin, 0, copy.stats.ui.notEstimable)}`}</td>
                 </tr>
               ))}</tbody>
             </table>
           </div>
           <p>
-            Fitted-model group order: {result.stats.tests[0]?.groups.join(" → ")}. A Welch t sign follows this order, while rotated-axis signs themselves are arbitrary. “Not estimable” indicates insufficient group replication or within-group variance. {copy.stats.notTest}
+            {formatCopyTemplate(copy.stats.ui.fittedModelGroupOrder, {
+              groups: result.stats.tests[0]?.groups.join(" → ") ?? "—",
+              notEstimable: copy.stats.ui.notEstimable,
+            })} {copy.stats.notTest}
           </p>
         </>
       ) : result.statsDiagnostics.tests === "omitted-unit-limit" ? (
-        <p>Omitted for {result.set.points.length.toLocaleString()} units. In jENA 0.6.2, these test summaries are currently coupled to the same quadratic correlation helper, so Open ENA does not run them automatically above {result.statsDiagnostics.correlationUnitLimit.toLocaleString()} units.</p>
+        <p>{formatCopyTemplate(copy.stats.ui.omittedTests, {
+          units: result.set.points.length.toLocaleString(),
+          limit: result.statsDiagnostics.correlationUnitLimit.toLocaleString(),
+        })}</p>
       ) : result.statsDiagnostics.tests === "not-applicable-trajectory" ? (
         <p>{copy.stats.trajectoryNotice}</p>
       ) : null;
@@ -2048,11 +2446,11 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     return (
       <div className="ena-control-content">
         <div className="ena-panel-heading">
-          <p className="ena-panel-kicker">04 · Evidence</p>
+          <p className="ena-panel-kicker">{copy.stats.ui.evidenceKicker}</p>
           <h2>{copy.stats.title}</h2>
           <p>{copy.stats.description}</p>
         </div>
-        <div className="ena-stats-tabs" role="tablist" aria-label="Statistics views">
+        <div className="ena-stats-tabs" role="tablist" aria-label={copy.stats.ui.viewsAriaLabel}>
           {statsTabs.map((tab) => (
             <button
               key={tab.id}
@@ -2087,6 +2485,50 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   ))}
                 </section>
                 <div data-ena-stats-scope="selected-pair">
+                  <OpenEnaInferencePanel
+                    copy={copy.stats.inference}
+                    modelType={result.set.modelType}
+                    design={inferenceDesign}
+                    designAvailability={inferenceDesignAvailability}
+                    onDesignChange={setInferenceDesign}
+                    repeatedEntityColumns={repeatedEntityColumns}
+                    repeatedEntityColumnOptions={resultConfig?.unitColumns ?? []}
+                    identityConfirmed={identityConfirmed}
+                    onRepeatedEntityColumnsChange={(columns) => updateLongitudinalSettings({ repeatedEntityColumns: columns })}
+                    onIdentityConfirmedChange={(confirmed) => updateLongitudinalSettings({ identityConfirmed: confirmed })}
+                    timeColumn={timeColumn}
+                    timeColumnOptions={resultConfig?.conversationColumns ?? []}
+                    onTimeColumnChange={(column) => updateLongitudinalSettings({ timeColumn: column })}
+                    groupOptions={inferenceGroupOptions}
+                    selectedGroup={inferenceGroup}
+                    primaryGroup={selectedInferencePrimaryGroup}
+                    secondaryGroup={selectedInferenceSecondaryGroup}
+                    onSelectedGroupChange={setInferenceGroup}
+                    onPrimaryGroupChange={(group) => {
+                      if (result.set.modelType === "EndPoint") setPrimaryGroupName(group);
+                      else setInferencePrimaryGroup(group);
+                    }}
+                    onSecondaryGroupChange={(group) => {
+                      if (result.set.modelType === "EndPoint") setSecondaryGroupName(group);
+                      else setInferenceSecondaryGroup(group);
+                    }}
+                    periodOptions={longitudinalTimeOrder}
+                    selectedPeriod={inferencePeriod}
+                    earlierPeriod={inferenceEarlierPeriod}
+                    laterPeriod={inferenceLaterPeriod}
+                    repeatedPeriods={inferenceRepeatedPeriods}
+                    onSelectedPeriodChange={setInferencePeriod}
+                    onEarlierPeriodChange={setInferenceEarlierPeriod}
+                    onLaterPeriodChange={setInferenceLaterPeriod}
+                    onRepeatedPeriodsChange={setInferenceRepeatedPeriods}
+                    preview={inferencePreviewState.preview}
+                    eligibilityMessage={inferenceEligibilityMessage}
+                    canRun={canRunInference}
+                    running={inferenceRunning}
+                    inference={currentInference}
+                    integrityError={inferenceIntegrityError ?? inferencePreviewState.error}
+                    onRun={() => void runInferentialComparison()}
+                  />
                   {groupContrast ? (
                     <section className="ena-selected-contrast-summary">
                       <h3>{copy.contrast.title}</h3>
@@ -2095,12 +2537,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   ) : null}
                   {referenceMeanNotice ? (
                     <section className="ena-reference-interpretation">
-                      <h3>Reference MR1 interpretation</h3>
+                      <h3>{copy.stats.ui.referenceMr1Title}</h3>
                       <p>{referenceMeanNotice}</p>
                     </section>
                   ) : null}
                   {result.set.modelType === "EndPoint" && groupContrast ? <section>
-                    <h3 aria-label="Absolute Cohen's d">{copy.stats.effect} · selected pair</h3>
+                    <h3 aria-label={copy.stats.effect}>{copy.stats.effect} · {copy.stats.ui.selectedPair}</h3>
                     <div className="ena-effect-grid">
                       {groupContrast.axes.map((dimension) => {
                         const effect = dimensionEffect(result, manifestConfig.groupColumn, dimension, groupContrast.groupOrder);
@@ -2109,39 +2551,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     </div>
                     <p>{copy.stats.notTest}</p>
                     {manifestConfig.rotation === "mean" ? (
-                      <p>MR1 is constructed from the same group contrast used for the original fitted order {result.groups.slice(0, 2).map((group) => group.name).join(" → ")}, independently of the current selector order. Separation and inference on MR1 remain descriptive by construction, not independent confirmation.</p>
+                      <p>{formatCopyTemplate(copy.stats.ui.mr1Circularity, {
+                        groups: result.groups.slice(0, 2).map((group) => group.name).join(" → "),
+                      })}</p>
                     ) : null}
                   </section> : null}
-                  {mannWhitney?.status === "available" ? (
-                    <section>
-                      <h3>Mann–Whitney group comparison</h3>
-                      <div className="ena-stats-scroll">
-                        <table className="ena-stats-table">
-                          <thead><tr><th>Axis</th><th>{mannWhitney.groupOrder?.[0]} median</th><th>{mannWhitney.groupOrder?.[1]} median</th><th>U first</th><th>p (two-sided)</th><th>p method</th><th>r<sub>rb</sub></th></tr></thead>
-                          <tbody>{mannWhitney.rows.map((row) => (
-                            <tr key={row.dimension}>
-                              <td>{row.dimension}</td>
-                              <td>{formatStatistic(row.medianFirst ?? undefined)}</td>
-                              <td>{formatStatistic(row.medianSecond ?? undefined)}</td>
-                              <td>{formatStatistic(row.uFirst ?? undefined, 2)}</td>
-                              <td>{row.pValueTwoSided === null ? "Not estimable" : row.pValueTwoSided < 0.001 ? "< .001" : row.pValueTwoSided.toFixed(3)}</td>
-                              <td>{row.resolvedPMethod ?? "Not estimable"}</td>
-                              <td>{formatStatistic(row.rankBiserialFirstVsSecond ?? undefined)}</td>
-                            </tr>
-                          ))}</tbody>
-                        </table>
-                      </div>
-                      <p>
-                        ENA.HK post-projection inference, not a jENA statistic. Selected group order is {mannWhitney.groupOrder?.join(" → ")}. Method policy: {mannWhitney.method}. The resolved p-value method is shown for each axis. r<sub>rb</sub> is signed for Primary versus Secondary; axis signs remain arbitrary. Plot flips are presentation-only, so these statistics remain in unflipped model coordinates. No multiplicity correction is applied across axes or repeated pair selections. Small groups and extreme ties limit interpretation; exact p-values are discrete. Endpoint analytic units are assumed independent; paired, nested, repeated-measure, or clustered designs require a design-appropriate analysis.
-                        {manifestConfig.rotation === "mean" ? " MR1 was constructed from the original fitted contrast, so inference on MR1 remains descriptive by construction even when the displayed Primary and Secondary order is reversed." : ""}
-                      </p>
-                    </section>
-                  ) : null}
                 </div>
                 {result.groups.length > 2 ? (
                   <section data-ena-stats-scope="all-groups-omnibus">
-                    <h3>jENA all-group omnibus statistics</h3>
-                    <p>This fitted-model result covers every declared group and is separate from the selected Primary-versus-Secondary comparison above.</p>
+                    <h3>{copy.stats.ui.allGroupTitle}</h3>
+                    <p>{copy.stats.ui.allGroupDescription}</p>
                     {renderJenaTestContent()}
                   </section>
                 ) : (
@@ -2158,20 +2577,32 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     <>
                       <div className="ena-stats-scroll">
                         <table className="ena-stats-table">
-                          <thead><tr><th>Axis</th><th>Pearson r</th><th>Spearman ρ</th></tr></thead>
+                          <caption className="sr-only">{copy.stats.ui.correlationsCaption}</caption>
+                          <thead><tr>
+                            <th scope="col">{copy.stats.ui.axis}</th>
+                            <th scope="col">{copy.stats.ui.pearsonR}</th>
+                            <th scope="col">{copy.stats.ui.spearmanRho}</th>
+                          </tr></thead>
                           <tbody>{result.stats.correlations
                             .filter((correlation) => [xDimension, yDimension].includes(correlation.dimension))
                             .map((correlation) => (
-                              <tr key={correlation.dimension}><td>{correlation.dimension}</td><td>{formatStatistic(correlation.pearson)}</td><td>{formatStatistic(correlation.spearman)}</td></tr>
+                              <tr key={correlation.dimension}>
+                                <th scope="row">{correlation.dimension}</th>
+                                <td>{formatStatistic(correlation.pearson, 3, copy.stats.ui.notEstimable)}</td>
+                                <td>{formatStatistic(correlation.spearman, 3, copy.stats.ui.notEstimable)}</td>
+                              </tr>
                             ))}</tbody>
                         </table>
                       </div>
-                      <p>Pearson and Spearman values correlate pairwise signed differences among unit-point coordinates with the corresponding signed differences among network-centroid coordinates along each selected axis; they are not correlations between axes.</p>
+                      <p>{copy.stats.ui.correlationsExplanation}</p>
                     </>
                   ) : result.statsDiagnostics.correlations === "omitted-unit-limit" ? (
-                    <p>Omitted for {result.set.points.length.toLocaleString()} units. Pairwise correspondence diagnostics scale quadratically and run automatically only through {result.statsDiagnostics.correlationUnitLimit.toLocaleString()} units; the ENA model and linear summaries remain available.</p>
+                    <p>{formatCopyTemplate(copy.stats.ui.omittedCorrelations, {
+                      units: result.set.points.length.toLocaleString(),
+                      limit: result.statsDiagnostics.correlationUnitLimit.toLocaleString(),
+                    })}</p>
                   ) : result.statsDiagnostics.correlations === "not-applicable-reference" ? (
-                    <p>Not reported for reference projection. jENA 0.6.2 retains target-fitted centroids while this plot uses fixed imported nodes, so those point–centroid correlations would not describe the displayed reference geometry.</p>
+                    <p>{copy.stats.ui.projectionCorrelationBoundary}</p>
                   ) : (
                     <p>{copy.stats.trajectoryNotice}</p>
                   )}
@@ -2181,22 +2612,32 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 <section>
                   <h3>{copy.stats.variance}</h3>
                   <table className="ena-stats-table">
-                    <thead><tr><th>Axis</th><th>Share</th></tr></thead>
-                    <tbody>{[xDimension, yDimension].map((dimension) => <tr key={dimension}><td>{dimension}</td><td>{((result.set.variance[dimension] ?? 0) * 100).toFixed(1)}%</td></tr>)}</tbody>
+                    <caption className="sr-only">{copy.stats.ui.varianceCaption}</caption>
+                    <thead><tr>
+                      <th scope="col">{copy.stats.ui.axis}</th>
+                      <th scope="col">{copy.stats.ui.share}</th>
+                    </tr></thead>
+                    <tbody>{[xDimension, yDimension].map((dimension) => <tr key={dimension}>
+                      <th scope="row">{dimension}</th>
+                      <td>{((result.set.variance[dimension] ?? 0) * 100).toFixed(1)}%</td>
+                    </tr>)}</tbody>
                   </table>
                   <p>
-                    Shares use all rotated dimensions, so the selected axes may not total 100%.
-                    {result.projectionReference ? " For this projected model, these shares describe the current dataset in the fixed reference basis—not variance explained in the reference sample." : ""}
+                    {copy.stats.ui.varianceExplanation}
+                    {result.projectionReference ? ` ${copy.stats.ui.projectedVarianceBoundary}` : ""}
                   </p>
                 </section>
               </div>
             </div>
             <div className="ena-stats-export-region" data-ena-stats-export="true">
               <OpenEnaAiInterpretation
+                key={`${locale}:${inferenceRequestKey}:${currentInference?.analyzedAt ?? "no-inference"}`}
                 request={aiInterpretationRequest}
-                disabled={!result || resultIsStale || !aiInterpretationRequest}
+                disabled={!result || resultIsStale || !aiInterpretationRequest || !currentInference}
                 disabledReason={resultIsStale
                   ? copy.aiInterpretation.staleResult
+                  : result && !currentInference
+                    ? copy.stats.inference.noResult
                   : result && !aiInterpretationRequest
                     ? copy.aiInterpretation.aggregatePrivacyGate
                     : copy.aiInterpretation.noCurrentResult}
@@ -2211,13 +2652,13 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 <div><dt>{copy.model.modelType}</dt><dd>{manifestConfig.model}</dd></div>
                 <div><dt>{copy.model.window}</dt><dd>{manifestConfig.window}</dd></div>
                 <div><dt>{copy.model.rotation}</dt><dd>{manifestConfig.rotation}</dd></div>
-                {result.projectionReference ? <div><dt>Reference space</dt><dd>{result.projectionReference.name}</dd></div> : null}
+                {result.projectionReference ? <div><dt>{copy.stats.ui.referenceSpace}</dt><dd>{result.projectionReference.name}</dd></div> : null}
                 <div><dt>{copy.model.forward}</dt><dd>{manifestConfig.windowSizeForward}</dd></div>
                 <div>
                   <dt>{copy.sets.sourceHash}</dt>
-                  <dd title={datasetHash ?? "Not recorded"}>{datasetHash ? `${datasetHash.slice(0, 12)}…` : "—"}</dd>
+                  <dd title={datasetHash ?? copy.stats.ui.notRecorded}>{datasetHash ? `${datasetHash.slice(0, 12)}…` : "—"}</dd>
                 </div>
-                <div><dt>{copy.sets.hashScope}</dt><dd>{dataset?.hashKind ?? "legacy normalized UTF-8 text"}</dd></div>
+                <div><dt>{copy.sets.hashScope}</dt><dd>{dataset?.hashKind ?? copy.stats.ui.legacyHashScope}</dd></div>
               </dl>
               <div className="ena-export-stack">
                 <button type="button" className="ena-action-button ena-action-primary" disabled={!manifest} onClick={() => manifest && downloadJson(`open-ena-${Date.now()}-manifest.json`, manifest)}>
@@ -2269,13 +2710,13 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     }
                   }}
                 >
-                  Reference rotation JSON <span aria-hidden="true">↓</span>
+                  {copy.stats.ui.referenceRotationJson} <span aria-hidden="true">↓</span>
                 </button>
               </div>
             </section>
-            <section className="ena-methods-section" aria-label="Methods & Reproducibility">
-              <h3>Methods &amp; Reproducibility</h3>
-              <p>A publication-ready starting point that records the exact model, projection, inference, source identity, and interpretation boundaries. Review and adapt it to the study design before use.</p>
+            <section className="ena-methods-section" aria-label={copy.stats.ui.methodsTitle}>
+              <h3>{copy.stats.ui.methodsTitle}</h3>
+              <p>{copy.stats.ui.methodsDescription}</p>
               <div className="ena-two-fields">
                 <button
                   type="button"
@@ -2283,7 +2724,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   disabled={!methodsReport}
                   onClick={() => void copyMethodsReport()}
                 >
-                  Copy methods text {methodsCopyStatus ? "✓" : ""}
+                  {copy.stats.ui.copyMethods} {methodsCopyStatus ? "✓" : ""}
                 </button>
                 <button
                   type="button"
@@ -2295,12 +2736,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     "text/markdown;charset=utf-8",
                   )}
                 >
-                  Methods report ↓
+                  {copy.stats.ui.methodsReport} ↓
                 </button>
               </div>
               {methodsReport ? (
                 <details className="ena-methods-preview">
-                  <summary>Preview generated report</summary>
+                  <summary>{copy.stats.ui.methodsPreview}</summary>
                   <pre>{methodsReport}</pre>
                 </details>
               ) : null}

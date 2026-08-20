@@ -19,8 +19,8 @@ const site = source("lib/site.ts");
 test("longitudinal group-centroid analysis is derived only from successful jENA trajectory results", () => {
   assert.match(
     longitudinal,
-    /export function buildLongitudinalGroupCentroidView\(/,
-    "the workflow needs one pure derived-view builder instead of another jENA run",
+    /export function buildLongitudinalDerivation\(/,
+    "the workflow needs one pure derivation that returns Plot view plus a private comparison frame",
   );
   assert.match(longitudinal, /SeparateTrajectory/);
   assert.match(longitudinal, /AccumulatedTrajectory/);
@@ -31,30 +31,84 @@ test("longitudinal group-centroid analysis is derived only from successful jENA 
   );
   assert.match(
     workspace,
-    /buildLongitudinalGroupCentroidView\([\s\S]{0,600}result[\s\S]{0,300}resultConfig/,
+    /buildLongitudinalDerivation\([\s\S]{0,600}result[\s\S]{0,300}resultConfig/,
     "the derived view must bind to the last successful result and its immutable resultConfig",
   );
 });
 
 test("researchers explicitly select repeated-entity and time-order fields", () => {
   const controls = workspace.match(
-    /data-testid="open-ena-longitudinal-controls"[\s\S]*?(?=data-testid="open-ena-longitudinal-(?:time-order|period-diagnostics)"|<\/fieldset>|<\/section>)/,
+    /data-testid="open-ena-longitudinal-controls"[\s\S]*?(?=data-testid="open-ena-longitudinal-(?:time-order|period-diagnostics)"|<\/section>)/,
   )?.[0] ?? "";
 
-  assert.match(workspace, /repeatedEntityColumn/);
+  assert.match(workspace, /repeatedEntityColumns/);
+  assert.match(workspace, /identityConfirmed/);
   assert.match(workspace, /timeColumn/);
   assert.match(controls, /(?:Repeated entity|copy\.longitudinal\.repeatedEntity)/i);
   assert.match(controls, /(?:Time\s*(?:\/|and)?\s*order|copy\.longitudinal\.timeOrder)/i);
   assert.match(
     controls,
-    /resultConfig\.unitColumns\.map\([\s\S]{0,300}<option/,
-    "repeated-entity choices must come from the unit fields bound to the successful result",
+    /resultConfig\.unitColumns\.map\([\s\S]{0,500}type="checkbox"/,
+    "composite repeated-entity choices must come from every unit field bound to the successful result",
   );
+  assert.match(controls, /copy\.longitudinal\.confirmIdentity/);
   assert.match(
     controls,
     /resultConfig\.conversationColumns\.map\([\s\S]{0,300}<option/,
     "time/order choices must come from the conversation fields bound to the successful result",
   );
+  assert.match(
+    workspace,
+    /setRepeatedEntityColumns\(\[\.\.\.resultConfig\.unitColumns\]\)[\s\S]{0,120}setIdentityConfirmed\(false\)/,
+    "every successful trajectory result must prefill all fitted unit fields but require fresh identity confirmation",
+  );
+  assert.match(
+    workspace,
+    /if \(update\.repeatedEntityColumns !== undefined\)[\s\S]{0,220}setIdentityConfirmed\(false\)/,
+    "editing any composite identity field must synchronously revoke confirmation",
+  );
+});
+
+test("the Stats coordinator builds all three trajectory designs from aggregate frame slices before one explicit Run", () => {
+  const requestBlock = workspace.match(
+    /const inferenceRequest\s*=\s*useMemo\([\s\S]*?(?=\n  const inferencePreviewState)/,
+  )?.[0] ?? "";
+  const previewBlock = workspace.match(
+    /const inferencePreviewState\s*=\s*useMemo\([\s\S]*?(?=\n  const inferenceRequestKey)/,
+  )?.[0] ?? "";
+
+  assert.match(requestBlock, /kind: "trajectory-independent-period"/);
+  assert.match(requestBlock, /kind: "trajectory-paired-periods"/);
+  assert.match(requestBlock, /cohortPolicy: "pairwise-complete"/);
+  assert.match(requestBlock, /kind: "trajectory-repeated-periods"/);
+  assert.match(requestBlock, /cohortPolicy: "all-period-complete"/);
+  assert.match(requestBlock, /posthocContrasts: "all-period-pairs"/);
+  assert.match(requestBlock, /repeatedEntityColumns: \[\.\.\.repeatedEntityColumns\]/);
+  assert.match(requestBlock, /identityConfirmed/);
+
+  assert.match(previewBlock, /sliceLongitudinalIndependentPeriod\(/);
+  assert.match(previewBlock, /sliceLongitudinalPairedPeriods\(/);
+  assert.match(previewBlock, /sliceLongitudinalRepeatedPeriods\(/);
+  assert.doesNotMatch(previewBlock, /runOpenEnaInferenceV2|mannWhitneyRankTest|wilcoxonSignedRankTest|friedmanRankTest/);
+  assert.equal((workspace.match(/runOpenEnaInferenceV2\(/g) ?? []).length, 1);
+  assert.match(workspace, /comparisonFrame: longitudinalComparisonFrame/);
+  assert.doesNotMatch(
+    workspace.match(/<OpenEnaInferencePanel[\s\S]*?\/>/)?.[0] ?? "",
+    /comparisonFrame|entityToken|pairs|blocks/,
+    "the private frame must never cross the sanitized panel boundary",
+  );
+});
+
+test("trajectory independent design stays disabled until one valid period is available", () => {
+  const availabilityBlock = workspace.match(
+    /const inferenceDesignAvailability\s*=\s*useMemo\([\s\S]*?(?=\n  const inferenceRequest)/,
+  )?.[0] ?? "";
+  assert.match(
+    availabilityBlock,
+    /independent:[\s\S]{0,260}trajectory[\s\S]{0,260}longitudinalTimeOrder\.length\s*>=\s*1/,
+  );
+  assert.match(availabilityBlock, /independentRequiresPeriod/);
+  assert.match(copy, /independentRequiresPeriod:[^\n]+/);
 });
 
 test("the discovered period order is reviewed visibly and is never a hidden lexical sort", () => {
@@ -148,15 +202,16 @@ test("the workbench exposes per-period group counts and missingness diagnostics"
 
 test("changing longitudinal settings invalidates only the derived view and never jENA coordinates", () => {
   const controls = workspace.match(
-    /data-testid="open-ena-longitudinal-controls"[\s\S]*?(?=<\/fieldset>|<\/section>)/,
+    /data-testid="open-ena-longitudinal-controls"[\s\S]*?(?=data-testid="open-ena-longitudinal-time-order"|<\/section>)/,
   )?.[0] ?? "";
   const derivedView = workspace.match(
-    /const longitudinalViewState\s*=\s*useMemo\([\s\S]*?\n  \]\);/,
+    /const longitudinalDerivationState\s*=\s*useMemo\([\s\S]*?\n  \]\);/,
   )?.[0] ?? "";
 
-  assert.match(controls, /updateLongitudinalSettings|setRepeatedEntityColumn|setTimeColumn|setCohortPolicy/);
-  assert.match(derivedView, /buildLongitudinalGroupCentroidView/);
-  assert.match(derivedView, /repeatedEntityColumn|longitudinalSettings/);
+  assert.match(controls, /updateLongitudinalSettings|setRepeatedEntityColumns|setTimeColumn|setCohortPolicy/);
+  assert.match(derivedView, /buildLongitudinalDerivation/);
+  assert.match(derivedView, /repeatedEntityColumns|longitudinalSettings/);
+  assert.match(derivedView, /identityConfirmed/);
   assert.match(derivedView, /timeColumn|longitudinalSettings/);
   assert.match(derivedView, /cohortPolicy|longitudinalSettings/);
   assert.doesNotMatch(controls, /setResult\s*\(/);
@@ -189,12 +244,12 @@ test("the longitudinal view and its exports are bound to successful-result prove
   assert.match(longitudinal, /projectionReference/);
   assert.match(
     workspace,
-    /buildLongitudinalGroupCentroidView\(\s*result,\s*resultConfig,/,
+    /buildLongitudinalDerivation\(\s*result,\s*resultConfig,/,
     "pending model controls must not be mixed into a prior successful trajectory result",
   );
   assert.doesNotMatch(
     workspace,
-    /buildLongitudinalGroupCentroidView\(\s*result,\s*config,/,
+    /buildLongitudinalDerivation\(\s*result,\s*config,/,
   );
 });
 
