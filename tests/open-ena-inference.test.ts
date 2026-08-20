@@ -104,6 +104,27 @@ test("endpoint inference declares ENA.HK provenance, group order, and visible di
   assert.ok(inference.rows.every((row) => row.nFirst === 2 && row.nSecond === 2));
 });
 
+test("endpoint inference fails closed without leaking non-finite selected-group coordinates", () => {
+  const result = analyzeDataset(groupedDataset(), groupedConfig());
+  const dimension = result.dimensions[0];
+
+  for (const invalidCoordinate of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    const invalidResult = {
+      ...result,
+      set: {
+        ...result.set,
+        points: result.set.points.map((row, index) => index === 0
+          ? { ...row, [dimension]: invalidCoordinate }
+          : row),
+      },
+    };
+    assert.throws(
+      () => buildEndpointMannWhitney(invalidResult, "group", [dimension]),
+      (error: unknown) => error instanceof Error && error.message === "nonfinite-coordinate",
+    );
+  }
+});
+
 test("trajectory results disable endpoint Mann-Whitney inference", () => {
   const result = analyzeDataset(groupedDataset(), {
     ...groupedConfig(),
@@ -142,13 +163,15 @@ test("models with more than two groups disable endpoint Mann-Whitney inference",
   assert.equal(inference.reason, "exactly-two-groups-required");
 });
 
-test("the inference UI discloses approximation, multiplicity, group order, and MR1 circularity", () => {
+test("the inference UI discloses exact-first policy, resolved methods, multiplicity, group order, and MR1 circularity", () => {
   const workspace = readFileSync(
     join(process.cwd(), "components", "open-ena", "OpenEnaWorkspace.tsx"),
     "utf8",
   );
   assert.match(workspace, /ENA\.HK post-projection inference, not a jENA statistic/);
-  assert.match(workspace, /Two-sided normal approximation/);
+  assert.match(workspace, /mannWhitney\.method/);
+  assert.match(workspace, /row\.resolvedPMethod/);
+  assert.doesNotMatch(workspace, /Two-sided normal approximation uses average ranks/);
   assert.match(workspace, /No multiplicity correction is applied/);
   assert.match(workspace, /MR1 is constructed from the same group contrast/);
 });

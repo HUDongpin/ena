@@ -27,6 +27,10 @@ test("the generated methods report records the analytic estimand without source-
   assert.match(report, /sphere normalization/);
   assert.match(report, /SVD rotation/);
   assert.match(report, /Mann–Whitney U/);
+  assert.match(report, /auto exact-first/i);
+  assert.match(report, /Resolved p method/);
+  assert.match(report, /(?:exact-classic|exact-conditional-rank-permutation|normal-approximation-tie-corrected)/);
+  assert.doesNotMatch(report, /two-sided normal-approximation p-value/i);
   assert.match(report, /no multiplicity correction/);
   assert.match(report, /abc123/);
   assert.match(report, /axis signs are arbitrary/i);

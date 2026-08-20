@@ -38,7 +38,7 @@ The researcher workspace currently provides:
 - cohort-aware longitudinal group-centroid paths for separate and accumulated trajectory results, with an explicit repeated-entity field, a reviewable/reorderable period sequence, Available versus Complete cohort policies, equal-weight entity-period centroids, missing-period gaps, and per-period inclusion diagnostics;
 - standalone SVG and 3x-resolution PNG figure export for the current 2D research view;
 - jENA dimension summaries, correlations, Welch/ANOVA test statistics, and absolute Cohen's d for datasets within the automatic diagnostics limit;
-- ENA.HK endpoint Mann–Whitney summaries for the selected Primary/Secondary pair, including medians, U, a two-sided tie-corrected normal-approximation p-value, and signed rank-biserial effect size;
+- ENA.HK endpoint Mann–Whitney summaries for the selected Primary/Secondary pair, including medians, U, a two-sided auto exact-first p-value, the resolved exact-or-approximation method, and signed rank-biserial effect size;
 - a local source-evidence browser with text search and active-code filtering that keeps raw source rows out of model exports;
 - an optional, researcher-triggered GPT-5.6 Luna interpretation of a reviewed, anonymized aggregate evidence request through a server-only OpenRouter connection;
 - inspectable and downloadable coordinates, pre-normalization connection counts, line weights, centroids, node positions, adjacency keys, a derived analysis bundle with the full rotation set, a reusable reference-rotation package, and an analysis manifest.
@@ -56,10 +56,13 @@ summaries. Trajectory models preserve ordered unit-conversation steps and direct
 paths, but Open ENA intentionally does not apply endpoint group tests or correlation
 diagnostics to repeated trajectory observations. jENA's statistical helper reports
 test statistics and degrees of freedom but does not calculate p-values. For exactly
-two through six endpoint groups, ENA.HK separately offers an explicitly labeled
-post-projection Mann–Whitney normal approximation for the currently selected ordered
-pair. No multiplicity correction is applied across displayed axes or repeated pair
-selections. Researchers remain responsible for choosing and reporting inference that
+two through six endpoint groups, ENA.HK separately offers explicitly labeled
+post-projection Mann–Whitney auto exact-first inference for the currently selected
+ordered pair. Fixed-size exact rank permutations are used through total N=50; above
+that boundary, a tie-corrected normal approximation with a 0.5 continuity correction
+is used. The resolved p-value method is disclosed per axis. No multiplicity
+correction is applied across displayed axes or repeated pair selections. Researchers
+remain responsible for choosing and reporting inference that
 fits their sampling, independence, multiplicity, and study design; paired, nested,
 repeated-measure, or clustered observations require a design-appropriate analysis.
 

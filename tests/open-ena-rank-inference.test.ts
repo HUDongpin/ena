@@ -8,6 +8,7 @@ import {
   mannWhitneyRankTest,
   minimumAttainableWilcoxonP,
   normalizeRankValue,
+  regularizedGammaQ,
   summarizeType7,
   twoSidedNormalP,
   wilcoxonSignedRankTest,
@@ -447,6 +448,23 @@ test("Friedman locks exact-assignment thresholds and R chi-square df=2/df=3 tail
   assert.deepEqual(approximateDf3.warnings, ["small-sample"]);
 });
 
+test("empty Friedman inference requires a non-negative safe-integer period count", () => {
+  const invalidPeriodCounts = [
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    -1,
+    1.5,
+    Number.MAX_SAFE_INTEGER + 1,
+  ];
+  for (const periodCountWhenEmpty of invalidPeriodCounts) {
+    assert.throws(
+      () => friedmanRankTest([], { periodCountWhenEmpty }),
+      /Friedman period count must be a non-negative safe integer/,
+    );
+  }
+});
+
 test("Holm is standard, monotone, order-invariant, and retains planned unavailable members", () => {
   const standard = holmAdjustPlanned([
     { memberId: "a", pRaw: 0.01 },
@@ -539,4 +557,13 @@ test("rank helpers preserve average-rank ties and high-precision distribution ta
   close(twoSidedNormalP(8), 1.244192114854348e-15, 2e-12);
   close(chiSquareUpperTail(16, 2), 0.00033546262790251185);
   close(chiSquareUpperTail(15, 3), 0.0018166489665723214);
+});
+
+test("regularized gamma rejects every non-finite shape parameter", () => {
+  for (const shape of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    assert.throws(
+      () => regularizedGammaQ(shape, 1),
+      /regularizedGammaQ requires shape > 0 and x >= 0/,
+    );
+  }
 });

@@ -175,12 +175,12 @@ export function buildMethodsReport(
         "## ENA.HK post-projection group inference",
         "",
         `${presentation.selectedGroupOrder ? "Selected" : "Declared"} group order: ${inline(inference.groupOrder?.[0] ?? "first")} then ${inline(inference.groupOrder?.[1] ?? "second")}.`,
-        `Mann–Whitney U used average ranks, tie-corrected variance, a 0.5 continuity correction, and a two-sided normal-approximation p-value. Rank-biserial effects are signed for the ${presentation.selectedGroupOrder ? "Primary selected" : "first declared"} group versus the ${presentation.selectedGroupOrder ? "Secondary selected" : "second declared"} group. This calculation is provided by ENA.HK after projection; it is not a jENA statistic, and no multiplicity correction was applied across axes or repeated pair selections.`,
+        `${inference.method.replace("Mann-Whitney", "Mann–Whitney")}. The resolved p-value method for each axis is recorded below. Rank-biserial effects are signed for the ${presentation.selectedGroupOrder ? "Primary selected" : "first declared"} group versus the ${presentation.selectedGroupOrder ? "Secondary selected" : "second declared"} group. This calculation is provided by ENA.HK after projection; it is not a jENA statistic, and no multiplicity correction was applied across axes or repeated pair selections.`,
         "",
-        "| Axis | First median | Second median | U (first) | Two-sided p | Rank-biserial |",
-        "| --- | ---: | ---: | ---: | ---: | ---: |",
+        "| Axis | First median | Second median | U (first) | Two-sided p | Resolved p method | Rank-biserial |",
+        "| --- | ---: | ---: | ---: | ---: | --- | ---: |",
         ...inference.rows.map((row) => (
-          `| ${row.dimension} | ${formatNumber(row.medianFirst)} | ${formatNumber(row.medianSecond)} | ${formatNumber(row.uFirst, 2)} | ${formatPValue(row.pValueTwoSided)} | ${formatNumber(row.rankBiserialFirstVsSecond)} |`
+          `| ${row.dimension} | ${formatNumber(row.medianFirst)} | ${formatNumber(row.medianSecond)} | ${formatNumber(row.uFirst, 2)} | ${formatPValue(row.pValueTwoSided)} | ${row.resolvedPMethod ?? "not estimable"} | ${formatNumber(row.rankBiserialFirstVsSecond)} |`
         )),
         "",
       ]

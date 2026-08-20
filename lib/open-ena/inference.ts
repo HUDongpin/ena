@@ -111,8 +111,13 @@ export function buildEndpointMannWhitney(
   const rows = visibleDimensions.map((dimension): MannWhitneyDimensionRow => {
     const valuesFor = (group: string) => result.set.points
       .filter((row) => String(row[groupColumn] ?? "") === group)
-      .map((row) => row[dimension])
-      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+      .map((row) => {
+        const value = row[dimension];
+        if (typeof value !== "number" || !Number.isFinite(value)) {
+          throw new Error("nonfinite-coordinate");
+        }
+        return value;
+      });
     return {
       dimension,
       ...mannWhitneyU(valuesFor(groupOrder[0]), valuesFor(groupOrder[1])),

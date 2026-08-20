@@ -2117,7 +2117,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                       <h3>Mann–Whitney group comparison</h3>
                       <div className="ena-stats-scroll">
                         <table className="ena-stats-table">
-                          <thead><tr><th>Axis</th><th>{mannWhitney.groupOrder?.[0]} median</th><th>{mannWhitney.groupOrder?.[1]} median</th><th>U first</th><th>p (two-sided)</th><th>r<sub>rb</sub></th></tr></thead>
+                          <thead><tr><th>Axis</th><th>{mannWhitney.groupOrder?.[0]} median</th><th>{mannWhitney.groupOrder?.[1]} median</th><th>U first</th><th>p (two-sided)</th><th>p method</th><th>r<sub>rb</sub></th></tr></thead>
                           <tbody>{mannWhitney.rows.map((row) => (
                             <tr key={row.dimension}>
                               <td>{row.dimension}</td>
@@ -2125,13 +2125,14 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                               <td>{formatStatistic(row.medianSecond ?? undefined)}</td>
                               <td>{formatStatistic(row.uFirst ?? undefined, 2)}</td>
                               <td>{row.pValueTwoSided === null ? "Not estimable" : row.pValueTwoSided < 0.001 ? "< .001" : row.pValueTwoSided.toFixed(3)}</td>
+                              <td>{row.resolvedPMethod ?? "Not estimable"}</td>
                               <td>{formatStatistic(row.rankBiserialFirstVsSecond ?? undefined)}</td>
                             </tr>
                           ))}</tbody>
                         </table>
                       </div>
                       <p>
-                        ENA.HK post-projection inference, not a jENA statistic. Selected group order is {mannWhitney.groupOrder?.join(" → ")}. Two-sided normal approximation uses average ranks, tie-corrected variance, and a 0.5 continuity correction. r<sub>rb</sub> is signed for Primary versus Secondary; axis signs remain arbitrary. Plot flips are presentation-only, so these statistics remain in unflipped model coordinates. No multiplicity correction is applied across axes or repeated pair selections. The approximation can be fragile with very small groups or extreme ties. Endpoint analytic units are assumed independent; paired, nested, repeated-measure, or clustered designs require a design-appropriate analysis.
+                        ENA.HK post-projection inference, not a jENA statistic. Selected group order is {mannWhitney.groupOrder?.join(" → ")}. Method policy: {mannWhitney.method}. The resolved p-value method is shown for each axis. r<sub>rb</sub> is signed for Primary versus Secondary; axis signs remain arbitrary. Plot flips are presentation-only, so these statistics remain in unflipped model coordinates. No multiplicity correction is applied across axes or repeated pair selections. Small groups and extreme ties limit interpretation; exact p-values are discrete. Endpoint analytic units are assumed independent; paired, nested, repeated-measure, or clustered designs require a design-appropriate analysis.
                         {manifestConfig.rotation === "mean" ? " MR1 was constructed from the original fitted contrast, so inference on MR1 remains descriptive by construction even when the displayed Primary and Secondary order is reversed." : ""}
                       </p>
                     </section>

@@ -244,3 +244,27 @@ test("server-side AI request parsing rejects extra fields, oversized labels, and
     /inference row 1 method is invalid/i,
   );
 });
+
+test("AI v1 request parsing keeps historical normal-only Mann-Whitney evidence readable", async () => {
+  const ai = await loadAiModule();
+  assert.ok(ai);
+
+  const { config, contrast, result } = endpointFixture();
+  const legacyContrast = {
+    ...contrast,
+    inference: {
+      ...contrast.inference,
+      method: "Mann-Whitney U for the first selected group; two-sided normal approximation with average ranks, tie-corrected variance, and a 0.5 continuity correction" as const,
+    },
+  };
+  const request = ai.buildOpenEnaAiInterpretationRequest({
+    locale: "en",
+    result,
+    config,
+    datasetHash: "c".repeat(64),
+    groupContrast: legacyContrast,
+    longitudinalView: null,
+  });
+
+  assert.deepEqual(ai.parseOpenEnaAiInterpretationRequest(request), request);
+});

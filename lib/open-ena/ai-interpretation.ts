@@ -1,5 +1,6 @@
 import type { Locale } from "../i18n";
 import {
+  LEGACY_PAIRWISE_MANN_WHITNEY_METHOD,
   PAIRWISE_MANN_WHITNEY_METHOD,
   type OpenEnaPairwiseContrast,
 } from "./contrasts";
@@ -594,7 +595,7 @@ function parseInference(value: unknown): OpenEnaAiEndpointEvidence["inference"] 
       axis: boundedLabel(record.axis, `AI inference row ${index + 1} axis`),
       method: enumValue(
         record.method,
-        [PAIRWISE_MANN_WHITNEY_METHOD],
+        [PAIRWISE_MANN_WHITNEY_METHOD, LEGACY_PAIRWISE_MANN_WHITNEY_METHOD],
         `AI inference row ${index + 1} method`,
       ),
       uFirst: finiteOrNull(record.uFirst, `AI inference row ${index + 1} U`),

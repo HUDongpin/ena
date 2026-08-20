@@ -147,7 +147,7 @@ function unitInterval(value: number): number {
 }
 
 export function regularizedGammaQ(shape: number, x: number): number {
-  if (!(shape > 0) || Number.isNaN(x) || x < 0) {
+  if (!Number.isFinite(shape) || shape <= 0 || Number.isNaN(x) || x < 0) {
     throw new Error("regularizedGammaQ requires shape > 0 and x >= 0");
   }
   if (x === 0) return 1;
@@ -772,9 +772,15 @@ export function friedmanRankTest(
   if (!Number.isInteger(nMissingCompleteBlocks) || nMissingCompleteBlocks < 0) {
     throw new Error("Friedman missing-complete-block count must be a non-negative integer.");
   }
+  const periodCountWhenEmpty = options.periodCountWhenEmpty === undefined
+    ? 0
+    : options.periodCountWhenEmpty;
+  if (!Number.isSafeInteger(periodCountWhenEmpty) || periodCountWhenEmpty < 0) {
+    throw new Error("Friedman period count must be a non-negative safe integer.");
+  }
   const nPeriods = nComplete > 0
     ? completeBlocksByPeriod[0].length
-    : options.periodCountWhenEmpty ?? 0;
+    : periodCountWhenEmpty;
   if (nComplete === 0) {
     return {
       status: "not-estimable",
