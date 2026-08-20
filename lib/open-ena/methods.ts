@@ -45,6 +45,10 @@ function inline(value: string) {
     : `${fence}${normalized}${fence}`;
 }
 
+function tableInline(value: string) {
+  return inline(value).replaceAll("|", "\\|");
+}
+
 function formatNumber(value: number | null, digits = 3) {
   return value === null || !Number.isFinite(value) ? "not estimable" : value.toFixed(digits);
 }
@@ -67,9 +71,9 @@ function marginalIntervalTableRow(
   interval: OpenEnaMarginalMeanInterval,
 ) {
   if (interval.status === "not-estimable") {
-    return `| ${inline(groupName)} | ${inline(axis)} | ${interval.sampleSize} | not estimable | not estimable | not estimable | not estimable | not estimable | not estimable (${interval.reason}) |`;
+    return `| ${tableInline(groupName)} | ${tableInline(axis)} | ${interval.sampleSize} | not estimable | not estimable | not estimable | not estimable | not estimable | not estimable (${interval.reason}) |`;
   }
-  return `| ${inline(groupName)} | ${inline(axis)} | ${interval.sampleSize} | ${formatNumber(interval.mean, 6)} | ${formatNumber(interval.sampleStandardDeviation, 6)} | ${formatNumber(interval.standardError, 6)} | ${interval.degreesFreedom} | ${formatNumber(interval.lower, 6)} | ${formatNumber(interval.upper, 6)} |`;
+  return `| ${tableInline(groupName)} | ${tableInline(axis)} | ${interval.sampleSize} | ${formatNumber(interval.mean, 6)} | ${formatNumber(interval.sampleStandardDeviation, 6)} | ${formatNumber(interval.standardError, 6)} | ${interval.degreesFreedom} | ${formatNumber(interval.lower, 6)} | ${formatNumber(interval.upper, 6)} |`;
 }
 
 function marginalIntervalSection(
@@ -151,7 +155,15 @@ function rotationDescription(config: OpenEnaConfig, result: OpenEnaResult, targe
   return "SVD rotation fitted to the current model.";
 }
 
-function warningDisclosure(code: string) {
+function warningDisclosure(code: string, kind: OpenEnaInferenceResultV2["kind"]) {
+  if (code === "independent-entity-assumption") {
+    if (kind === "trajectory-paired-periods") {
+      return "Wilcoxon signed-rank inference assumes matched repeated entities are independent of other matched entities.";
+    }
+    if (kind === "trajectory-repeated-periods") {
+      return "Friedman and Wilcoxon signed-rank inference assume repeated-entity blocks are independent of one another.";
+    }
+  }
   const messages: Record<string, string> = {
     "small-sample": "The effective sample is small.",
     "discrete-attainable-p": "The exact two-sided p-value is discrete and bounded by the reported minimum attainable p where applicable.",
@@ -224,7 +236,7 @@ function mannWhitneyRows(rows: readonly OpenEnaMannWhitneyInferenceRowV2[]) {
   return [
     "| Axis | Primary n | Secondary n | Primary median | Secondary median | U primary | U secondary | Raw p | Holm-adjusted p | Rank-biserial primary vs secondary | Resolved p method |",
     "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
-    ...rows.map((row) => `| ${inline(row.axis)} | ${row.nPrimary} | ${row.nSecondary} | ${auditNumber(row.medianPrimary)} | ${auditNumber(row.medianSecondary)} | ${auditNumber(row.uPrimary)} | ${auditNumber(row.uSecondary)} | ${auditNumber(row.pRaw)} | ${auditNumber(row.pHolm)} | ${auditNumber(row.rankBiserialPrimaryVsSecondary)} | ${inline(row.resolvedPMethod ?? "not estimable")} |`),
+    ...rows.map((row) => `| ${tableInline(row.axis)} | ${row.nPrimary} | ${row.nSecondary} | ${auditNumber(row.medianPrimary)} | ${auditNumber(row.medianSecondary)} | ${auditNumber(row.uPrimary)} | ${auditNumber(row.uSecondary)} | ${auditNumber(row.pRaw)} | ${auditNumber(row.pHolm)} | ${auditNumber(row.rankBiserialPrimaryVsSecondary)} | ${tableInline(row.resolvedPMethod ?? "not estimable")} |`),
     "",
   ];
 }
@@ -248,7 +260,7 @@ function wilcoxonRows(
       const later = inference.kind === "trajectory-paired-periods"
         ? inference.scope.laterPeriod
         : periods[row.laterPeriodIndex] ?? `period ${row.laterPeriodIndex}`;
-      return `| ${inline(row.axis)} | ${inline(earlier)} → ${inline(later)} | ${row.nMatched} | ${row.nMissing} | ${row.nPositive} | ${row.nNegative} | ${row.nZero} | ${row.nNonzero}/${row.nRanked} | ${auditNumber(row.medianDifference)} | ${auditNumber(row.iqrDifference)} | ${auditNumber(row.wPositive)} | ${auditNumber(row.wNegative)} | ${auditNumber(row.t)} | ${auditNumber(row.pRaw)} | ${auditNumber(row.pHolm)} | ${auditNumber(row.rankBiserialLaterVsEarlier)} | ${inline(row.resolvedPMethod ?? "not estimable")} |`;
+      return `| ${tableInline(row.axis)} | ${tableInline(earlier)} → ${tableInline(later)} | ${row.nMatched} | ${row.nMissing} | ${row.nPositive} | ${row.nNegative} | ${row.nZero} | ${row.nNonzero}/${row.nRanked} | ${auditNumber(row.medianDifference)} | ${auditNumber(row.iqrDifference)} | ${auditNumber(row.wPositive)} | ${auditNumber(row.wNegative)} | ${auditNumber(row.t)} | ${auditNumber(row.pRaw)} | ${auditNumber(row.pHolm)} | ${auditNumber(row.rankBiserialLaterVsEarlier)} | ${tableInline(row.resolvedPMethod ?? "not estimable")} |`;
     }),
     "",
   ];
@@ -267,7 +279,7 @@ function inferenceResultTables(inference: OpenEnaInferenceResultV2) {
     "",
     "| Axis | Complete n | Missing complete blocks | Period count | Q | df | Raw p | Holm-adjusted p | Kendall’s W | Resolved p method |",
     "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
-    ...inference.omnibusRows.map((row) => `| ${inline(row.axis)} | ${row.nComplete} | ${row.nMissingCompleteBlocks} | ${row.nPeriods} | ${auditNumber(row.q)} | ${auditNumber(row.degreesFreedom)} | ${auditNumber(row.pRaw)} | ${auditNumber(row.pHolm)} | ${auditNumber(row.kendallsW)} | ${inline(row.resolvedPMethod ?? "not estimable")} |`),
+    ...inference.omnibusRows.map((row) => `| ${tableInline(row.axis)} | ${row.nComplete} | ${row.nMissingCompleteBlocks} | ${row.nPeriods} | ${auditNumber(row.q)} | ${auditNumber(row.degreesFreedom)} | ${auditNumber(row.pRaw)} | ${auditNumber(row.pHolm)} | ${auditNumber(row.kendallsW)} | ${tableInline(row.resolvedPMethod ?? "not estimable")} |`),
     "",
     "#### Wilcoxon signed-rank follow-up · all period pairs",
     "",
@@ -303,12 +315,12 @@ function inferenceSection(inference: OpenEnaInferenceResultV2 | null) {
     "",
     "| Family role | Family ID | Planned size | Member IDs |",
     "| --- | --- | ---: | --- |",
-    ...inference.families.map((family) => `| ${inline(family.role)} | ${inline(family.familyId)} | ${family.familySizePlanned} | ${family.memberIds.map(inline).join(", ")} |`),
+    ...inference.families.map((family) => `| ${tableInline(family.role)} | ${tableInline(family.familyId)} | ${family.familySizePlanned} | ${family.memberIds.map(tableInline).join(", ")} |`),
     "",
     "#### Inference warnings and boundaries",
     "",
     ...(inference.warnings.length
-      ? inference.warnings.map((warning) => `- ${inline(warning)}: ${warningDisclosure(warning)}`)
+      ? inference.warnings.map((warning) => `- ${inline(warning)}: ${warningDisclosure(warning, inference.kind)}`)
       : ["- No additional inference warning code was recorded."]),
     "- Raw and Holm-adjusted p-values are audit values, not measures of practical importance. These post-projection tests do not establish causality, learning gain, intervention effects, or the substantive importance of a coordinate difference.",
     "",

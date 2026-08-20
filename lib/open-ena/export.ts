@@ -167,7 +167,9 @@ export function buildAnalysisBundle(
           )),
           inference: null,
           inferenceAuthority: "top-level-inference-v2" as const,
-          compatibilityNotice: "This plot-oriented group contrast is non-authoritative compatibility data. Inferential results are present only in the top-level schema-v2 inference field.",
+          compatibilityNotice: inference
+            ? "This plot-oriented group contrast is non-authoritative compatibility data. Researcher-confirmed inferential results are present only in the top-level schema-v2 inference field."
+            : "This plot-oriented group contrast is non-authoritative compatibility data. No researcher-confirmed inferential result is included in this bundle.",
         };
       })()
     : null;

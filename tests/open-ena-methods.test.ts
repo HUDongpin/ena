@@ -5,6 +5,8 @@ import test from "node:test";
 import { analyzeDataset } from "../lib/open-ena/analyze";
 import { parseCsv } from "../lib/open-ena/csv";
 import { buildAnalysisBundle } from "../lib/open-ena/export";
+import { runOpenEnaInferenceV2, type OpenEnaInferenceResultV2 } from "../lib/open-ena/inference-v2";
+import { buildLongitudinalDerivation } from "../lib/open-ena/longitudinal";
 import { buildMethodsReport, referenceMeanRotationInterpretation } from "../lib/open-ena/methods";
 import { SAMPLE_CONFIG } from "../lib/open-ena/types";
 
@@ -12,6 +14,92 @@ const sampleText = readFileSync(
   join(process.cwd(), "public", "data", "academy", "ena-design-talk-sample.csv"),
   "utf8",
 );
+
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const nested of Object.values(value)) deepFreeze(nested);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+async function trajectoryMethodsFixture() {
+  const sourceHash = "c".repeat(64);
+  const dataset = parseCsv([
+    "group,unit,period,A,B,C",
+    "G,u1,T1,1,1,0", "G,u1,T2,1,0,1", "G,u1,T3,0,1,1",
+    "G,u2,T1,1,1,0", "G,u2,T2,0,1,1", "G,u2,T3,1,0,1",
+    "G,u3,T1,1,0,1", "G,u3,T2,1,1,0", "G,u3,T3,0,1,1",
+    "G,u4,T1,0,1,1", "G,u4,T2,1,0,1", "G,u4,T3,1,1,0",
+    "G,u5,T1,1,1,1", "G,u5,T2,1,1,0", "G,u5,T3,1,0,1",
+    "G,u6,T1,1,0,1", "G,u6,T2,0,1,1", "G,u6,T3,1,1,1",
+  ].join("\n") + "\n", { name: "trajectory-methods.csv", source: "upload" });
+  const config = {
+    ...SAMPLE_CONFIG,
+    unitColumns: ["group", "unit"],
+    conversationColumns: ["period"],
+    groupColumn: "group",
+    codes: ["A", "B", "C"],
+    model: "SeparateTrajectory" as const,
+    window: "Conversation" as const,
+  };
+  const analyzed = analyzeDataset(dataset, config);
+  const result = {
+    ...analyzed,
+    analyzedAt: "2026-08-21T12:13:14.000Z",
+    provenanceBinding: {
+      datasetNormalizedUtf8TextSha256: sourceHash,
+      datasetHashKind: "normalized-utf8-csv-text-sha256" as const,
+      configuration: structuredClone(config),
+    },
+  };
+  const axes = result.dimensions.slice(0, 2) as [string, string];
+  const comparisonFrame = buildLongitudinalDerivation(result, config, dataset, {
+    repeatedEntityColumns: ["group", "unit"],
+    identityConfirmed: true,
+    timeColumn: "period",
+    timeOrder: ["T1", "T2", "T3"],
+    cohortPolicy: "available",
+    axes,
+    datasetNormalizedUtf8TextSha256: sourceHash,
+  }, "2026-08-21T12:14:15.000Z").comparisonFrame;
+  const currentBinding = {
+    datasetNormalizedUtf8TextSha256: sourceHash,
+    datasetHashKind: "normalized-utf8-csv-text-sha256" as const,
+    configuration: config,
+  };
+  const paired = await runOpenEnaInferenceV2({
+    request: {
+      kind: "trajectory-paired-periods",
+      repeatedEntityColumns: ["group", "unit"],
+      timeColumn: "period",
+      group: "G",
+      earlierPeriod: "T1",
+      laterPeriod: "T2",
+      axes,
+      cohortPolicy: "pairwise-complete",
+    },
+    result,
+    comparisonFrame,
+    currentBinding,
+  });
+  const repeated = await runOpenEnaInferenceV2({
+    request: {
+      kind: "trajectory-repeated-periods",
+      repeatedEntityColumns: ["group", "unit"],
+      timeColumn: "period",
+      group: "G",
+      periods: ["T1", "T2", "T3"],
+      axes,
+      cohortPolicy: "all-period-complete",
+      posthocContrasts: "all-period-pairs",
+    },
+    result,
+    comparisonFrame,
+    currentBinding,
+  });
+  return { dataset, config, result, sourceHash, axes, paired, repeated };
+}
 
 test("the generated methods report records the model but never invents inference before an explicit run", () => {
   const dataset = parseCsv(sampleText, { name: "academy.csv", source: "sample" });
@@ -200,6 +288,127 @@ test("user-controlled methods labels cannot inject Markdown headings or escape c
   assert.doesNotMatch(report, /\r|\t/);
   assert.equal(datasetLine?.includes("## Fabricated result"), true);
   assert.match(datasetLine ?? "", /```` `reported value {3}## Fabricated result ``` ````/);
+});
+
+test("user-controlled labels cannot add columns to Methods GFM tables", () => {
+  const dataset = parseCsv([
+    "unit,conversation,group,A,B,C",
+    "a1,c1,Alpha|North,1,1,0",
+    "a2,c2,Alpha|North,1,0,1",
+    "b1,c3,Beta|South,0,1,1",
+    "b2,c4,Beta|South,1,1,1",
+  ].join("\n") + "\n", { name: "pipe-labels.csv", source: "upload" });
+  const config = {
+    ...SAMPLE_CONFIG,
+    unitColumns: ["unit"],
+    conversationColumns: ["conversation"],
+    groupColumn: "group",
+    codes: ["A", "B", "C"],
+    model: "EndPoint" as const,
+    window: "Conversation" as const,
+  };
+  const result = analyzeDataset(dataset, config);
+  const report = buildMethodsReport(dataset, config, result, "a".repeat(64));
+  const rows = report.split("\n").filter((line) => (
+    line.startsWith("| ") && (line.includes("Alpha") || line.includes("Beta"))
+  ));
+  const countUnescapedPipes = (line: string) => [...line].reduce((count, character, index) => (
+    character === "|" && line[index - 1] !== "\\" ? count + 1 : count
+  ), 0);
+
+  assert.equal(rows.length, 4);
+  assert.ok(rows.some((line) => line.includes("`Alpha\\|North`")));
+  assert.ok(rows.some((line) => line.includes("`Beta\\|South`")));
+  assert.deepEqual(rows.map(countUnescapedPipes), [10, 10, 10, 10]);
+});
+
+test("supplied inference identifiers cannot add columns to Methods GFM tables", async () => {
+  const sourceHash = "b".repeat(64);
+  const dataset = parseCsv([
+    "unit,conversation,group,A,B,C",
+    "a1,c1,Alpha,1,1,0",
+    "a2,c2,Alpha,1,0,1",
+    "b1,c3,Beta,0,1,1",
+    "b2,c4,Beta,1,1,1",
+  ].join("\n") + "\n", { name: "inference-pipe-labels.csv", source: "upload" });
+  const config = {
+    ...SAMPLE_CONFIG,
+    unitColumns: ["unit"],
+    conversationColumns: ["conversation"],
+    groupColumn: "group",
+    codes: ["A", "B", "C"],
+    model: "EndPoint" as const,
+    window: "Conversation" as const,
+  };
+  const analyzed = analyzeDataset(dataset, config);
+  const result = {
+    ...analyzed,
+    analyzedAt: "2026-08-21T11:12:13.000Z",
+    provenanceBinding: {
+      datasetNormalizedUtf8TextSha256: sourceHash,
+      datasetHashKind: "normalized-utf8-csv-text-sha256" as const,
+      configuration: structuredClone(config),
+    },
+  };
+  const axes = result.dimensions.slice(0, 2) as [string, string];
+  const generated = await runOpenEnaInferenceV2({
+    request: {
+      kind: "endpoint-independent",
+      primaryGroup: "Alpha",
+      secondaryGroup: "Beta",
+      axes,
+    },
+    result,
+    currentBinding: {
+      datasetNormalizedUtf8TextSha256: sourceHash,
+      datasetHashKind: "normalized-utf8-csv-text-sha256",
+      configuration: config,
+    },
+  });
+  assert.equal(generated.kind, "endpoint-independent");
+  const mutable = structuredClone(generated) as Extract<OpenEnaInferenceResultV2, {
+    kind: "endpoint-independent";
+  }>;
+  mutable.families[0].familyId = "family|audit";
+  mutable.families[0].memberIds = mutable.families[0].memberIds.map((_, index) => `member|${index}`);
+  mutable.rows.forEach((row, index) => {
+    row.familyId = "family|audit";
+    row.memberId = `member|${index}`;
+  });
+  const inference = deepFreeze(mutable);
+  const report = buildMethodsReport(dataset, config, result, sourceHash, axes, {}, inference);
+  const familyRow = report.split("\n").find((line) => (
+    line.startsWith("| ") && line.includes("family")
+  ));
+  const unescapedPipes = [...(familyRow ?? "")].reduce((count, character, index) => (
+    character === "|" && familyRow?.[index - 1] !== "\\" ? count + 1 : count
+  ), 0);
+
+  assert.match(familyRow ?? "", /`family\\\|audit`/);
+  assert.match(familyRow ?? "", /`member\\\|0`/);
+  assert.equal(unescapedPipes, 5);
+});
+
+test("paired and repeated Methods disclose independence between repeated entities, not between groups", async () => {
+  const fixture = await trajectoryMethodsFixture();
+  for (const inference of [fixture.paired, fixture.repeated]) {
+    const report = buildMethodsReport(
+      fixture.dataset,
+      fixture.config,
+      fixture.result,
+      fixture.sourceHash,
+      fixture.axes,
+      {},
+      inference,
+    );
+    const disclosure = report.split("\n").find((line) => (
+      line.includes("independent-entity-assumption")
+    ));
+
+    assert.ok(disclosure);
+    assert.doesNotMatch(disclosure, /Mann[–-]Whitney|between groups/i);
+    assert.match(disclosure, /repeated entities|matched entities|blocks/i);
+  }
 });
 
 test("reference MR1 interpretation distinguishes same-source, held-out, and unverifiable projections", () => {

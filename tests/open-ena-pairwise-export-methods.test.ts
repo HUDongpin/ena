@@ -140,6 +140,8 @@ test("analysis bundle v2 keeps the active plot contrast as non-authoritative com
   assert.equal(inference, null);
   assert.equal(inferenceAuthority, "top-level-inference-v2");
   assert.match(compatibilityNotice, /non-authoritative/i);
+  assert.match(compatibilityNotice, /no researcher-confirmed inferential (?:comparison|result) is included/i);
+  assert.doesNotMatch(compatibilityNotice, /inferential results are present/i);
   assert.doesNotMatch(JSON.stringify(bundle.groupContrast), /"multiplicityCorrection":"none"|no multiplicity correction/i);
   assert.notStrictEqual(bundle.groupContrast, contrast);
   assert.deepEqual(bundle.manifest.result.groups.map(({ name }) => name), ["Alpha", "Beta", "Gamma"]);
