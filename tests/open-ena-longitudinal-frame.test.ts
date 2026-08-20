@@ -174,7 +174,7 @@ test("validates ordered plural identity columns against the successful configura
     if (invalidComponent === undefined) delete emptyComponentDataset.rows[0].Name;
     else emptyComponentDataset.rows[0].Name = invalidComponent;
     const emptyComponent = caught(() => derive({ ...fixture, dataset: emptyComponentDataset }));
-    assert.equal(emptyComponent.code, "identity-columns-invalid");
+    assert.equal(emptyComponent.code, "identity-component-empty");
     assertSafeMessage(emptyComponent);
   }
 });

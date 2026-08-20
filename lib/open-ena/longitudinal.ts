@@ -177,6 +177,7 @@ export interface OpenEnaLongitudinalView {
 export type OpenEnaLongitudinalIntegrityCode =
   | "identity-not-confirmed"
   | "identity-columns-invalid"
+  | "identity-component-empty"
   | "time-column-invalid"
   | "axes-invalid"
   | "binding-mismatch"
@@ -194,6 +195,7 @@ export type OpenEnaLongitudinalIntegrityCode =
 const LONGITUDINAL_INTEGRITY_MESSAGES: Record<OpenEnaLongitudinalIntegrityCode, string> = {
   "identity-not-confirmed": "Repeated-entity identity must be confirmed before comparison-frame slicing.",
   "identity-columns-invalid": "Repeated-entity identity columns must be nonempty, unique configured unit columns present in the dataset.",
+  "identity-component-empty": "Repeated-entity identity contains an empty component.",
   "time-column-invalid": "The time mapping must be one configured conversation column present in the dataset.",
   "axes-invalid": "The selected axes are invalid for the successful result.",
   "binding-mismatch": "Longitudinal inputs or configuration do not match the successful result binding.",
@@ -618,7 +620,7 @@ function sourceStepIdentities(
   for (const [index, row] of sourceRows.entries()) {
     const identityComponents = settings.repeatedEntityColumns.map((column) => normalizedIdentityComponent(row[column]));
     if (identityComponents.some((component) => component.trim().length === 0)) {
-      throw new OpenEnaLongitudinalIntegrityError("identity-columns-invalid");
+      throw new OpenEnaLongitudinalIntegrityError("identity-component-empty");
     }
     const canonicalIdentity = JSON.stringify(
       settings.repeatedEntityColumns.map((column, columnIndex) => [column, identityComponents[columnIndex]]),
