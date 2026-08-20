@@ -20,7 +20,11 @@ import {
   type OpenEnaMarginalMeanIntervalPair,
 } from "./uncertainty";
 
-export const PAIRWISE_MANN_WHITNEY_METHOD = "Mann-Whitney U for the first selected group; two-sided normal approximation with average ranks, tie-corrected variance, and a 0.5 continuity correction";
+export const PAIRWISE_MANN_WHITNEY_METHOD = "Mann-Whitney U for the first selected group; two-sided auto exact-first inference with 12-significant-digit average ranks, fixed-size exact rank permutations through total N=50, and a tie-corrected normal approximation with a 0.5 continuity correction above that boundary";
+export const LEGACY_PAIRWISE_MANN_WHITNEY_METHOD = "Mann-Whitney U for the first selected group; two-sided normal approximation with average ranks, tie-corrected variance, and a 0.5 continuity correction";
+export type PairwiseMannWhitneyMethod =
+  | typeof PAIRWISE_MANN_WHITNEY_METHOD
+  | typeof LEGACY_PAIRWISE_MANN_WHITNEY_METHOD;
 export const PAIRWISE_MANN_WHITNEY_EFFECT_DEFINITION = "r_rb(primary vs secondary) = 2 * U(primary) / (nPrimary * nSecondary) - 1; positive values indicate higher ranks in the primary selected group";
 export const WEB_ENA_MAX_POSITION_MODIFIER = 1.2;
 export const PAIRWISE_CONTRAST_BOUNDARIES = [
@@ -124,7 +128,7 @@ export interface OpenEnaPairwiseContrast {
   inference: {
     status: "available";
     provenance: typeof MANN_WHITNEY_PROVENANCE;
-    method: typeof PAIRWISE_MANN_WHITNEY_METHOD;
+    method: PairwiseMannWhitneyMethod;
     effectDefinition: typeof PAIRWISE_MANN_WHITNEY_EFFECT_DEFINITION;
     multiplicityCorrection: "none";
     groupOrder: [string, string];

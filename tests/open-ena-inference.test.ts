@@ -37,7 +37,7 @@ function groupedConfig() {
   } as typeof SAMPLE_CONFIG;
 }
 
-test("Mann-Whitney uses average ranks, tie-corrected variance, and continuity correction", () => {
+test("legacy Mann-Whitney uses exact-first p-values while retaining its diagnostic fields", () => {
   const estimate = mannWhitneyU([1, 2, 2], [2, 3]);
 
   assert.equal(estimate.status, "estimable");
@@ -48,8 +48,16 @@ test("Mann-Whitney uses average ranks, tie-corrected variance, and continuity co
   assert.equal(estimate.uFirst, 1);
   assert.equal(estimate.uSecond, 5);
   assert.ok(Math.abs((estimate.z ?? 0) - -0.9682458365518543) < 1e-12);
-  assert.ok(Math.abs((estimate.pValueTwoSided ?? 0) - 0.3329216080655659) < 2e-7);
+  assert.equal(estimate.pValueTwoSided, 0.6);
   assert.ok(Math.abs((estimate.rankBiserialFirstVsSecond ?? 0) - -2 / 3) < 1e-12);
+  assert.equal(estimate.resolvedPMethod, "exact-conditional-rank-permutation");
+  assert.deepEqual(estimate.exactTail, {
+    extremeAssignmentCount: "6",
+    totalAssignmentCount: "10",
+    inclusive: true,
+    midP: false,
+  });
+  assert.deepEqual(estimate.warnings, ["small-sample", "discrete-attainable-p", "ties-present"]);
 });
 
 test("Mann-Whitney returns not-estimable when either ordered group is empty", () => {
@@ -89,6 +97,7 @@ test("endpoint inference declares ENA.HK provenance, group order, and visible di
   assert.equal(inference.effectDefinition, MANN_WHITNEY_EFFECT_DEFINITION);
   assert.doesNotMatch(inference.provenance, /jENA/i);
   assert.match(inference.method, /first declared group/);
+  assert.match(inference.method, /auto exact-first/i);
   assert.match(inference.method, /0\.5 continuity correction/);
   assert.deepEqual(inference.groupOrder, ["first", "second"]);
   assert.deepEqual(inference.rows.map((row) => row.dimension), visibleDimensions);

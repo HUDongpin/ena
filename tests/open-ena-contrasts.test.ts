@@ -85,7 +85,10 @@ test("builds an ordered pairwise endpoint contrast from two selected groups in a
 
   assert.equal(contrast.inference.status, "available");
   assert.deepEqual(contrast.inference.groupOrder, ["Gamma", "Alpha"]);
+  assert.match(contrast.inference.method, /auto exact-first/i);
+  assert.doesNotMatch(contrast.inference.method, /two-sided normal approximation with average ranks/i);
   assert.deepEqual(contrast.inference.rows.map((row) => row.dimension), axes);
+  assert.ok(contrast.inference.rows.every((row) => row.resolvedPMethod !== null));
   const firstAxis = axes[0];
   const expected = mannWhitneyU(
     result.set.points.filter((row) => row.group === "Gamma").map((row) => Number(row[firstAxis])),
