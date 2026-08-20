@@ -74,11 +74,11 @@ function endpointFixture() {
   return { dataset, configuration, result, axes };
 }
 
-function trajectoryFixture() {
+function trajectoryFixture(periodCount = 3) {
   const rows = ["Group,Name,Period,A,B,C"];
   for (const group of ["Control", "Experimental"] as const) {
     for (let entity = 1; entity <= 4; entity += 1) {
-      for (let period = 1; period <= 3; period += 1) {
+      for (let period = 1; period <= periodCount; period += 1) {
         const first = (entity + period + (group === "Experimental" ? 1 : 0)) % 2;
         const second = (entity * period + 1) % 2;
         const third = (entity + 2 * period) % 2;
@@ -105,7 +105,7 @@ function trajectoryFixture() {
     repeatedEntityColumns: ["Group", "Name"],
     identityConfirmed: true,
     timeColumn: "Period",
-    timeOrder: ["T1", "T2", "T3"],
+    timeOrder: Array.from({ length: periodCount }, (_, index) => `T${index + 1}`),
     cohortPolicy: "available",
     axes,
     datasetNormalizedUtf8TextSha256: HASH,
@@ -963,6 +963,388 @@ test("strict readers reject oversized aggregate arrays before accepting their co
     () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
     /warnings|array|bounded|too many/i,
   );
+});
+
+test("repeated-period parsing rejects an excessive all-pairs plan before pair expansion", async () => {
+  const { trajectory, repeatedInference } = await allInferenceFixtures();
+  const excessive = structuredClone(repeatedInference);
+  if (excessive.kind !== "trajectory-repeated-periods" || !excessive.binding.trajectoryMapping) {
+    assert.fail("expected mapped repeated inference");
+  }
+  const periods = Array.from({ length: 65 }, (_, index) => `P${index + 1}`);
+  excessive.request.periods = periods;
+  excessive.scope.periods = [...periods];
+  excessive.binding.trajectoryMapping.timeOrder = [...periods];
+  const bundle = buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    { methodsDimensions: trajectory.axes, inference: repeatedInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = excessive;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(excessive),
+    /bounded aggregate row budget/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /bounded aggregate row budget/i,
+  );
+});
+
+test("strict readers bind non-disabled inference to a possible model and distinct selections", async () => {
+  const {
+    endpoint,
+    trajectory,
+    endpointInference,
+    independentInference,
+    pairedInference,
+  } = await allInferenceFixtures();
+  const endpointBundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const trajectoryBundle = buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    { methodsDimensions: trajectory.axes, inference: independentInference },
+  );
+
+  const endpointWrongModel = structuredClone(endpointInference);
+  endpointWrongModel.binding.modelType = "SeparateTrajectory";
+  endpointWrongModel.binding.configuration.model = "SeparateTrajectory";
+  const endpointWrongModelBundle = structuredClone(endpointBundle);
+  endpointWrongModelBundle.inference = endpointWrongModel;
+  endpointWrongModelBundle.manifest.result.model = "SeparateTrajectory";
+  endpointWrongModelBundle.manifest.configuration.model = "SeparateTrajectory";
+
+  const endpointSameGroup = structuredClone(endpointInference);
+  if (endpointSameGroup.kind !== "endpoint-independent") {
+    assert.fail("expected endpoint inference");
+  }
+  endpointSameGroup.request.secondaryGroup = endpointSameGroup.request.primaryGroup;
+  endpointSameGroup.scope.secondaryGroup = endpointSameGroup.scope.primaryGroup;
+  const endpointSameGroupBundle = structuredClone(endpointBundle);
+  endpointSameGroupBundle.inference = endpointSameGroup;
+
+  const periodSameGroup = structuredClone(independentInference);
+  if (periodSameGroup.kind !== "trajectory-independent-period") {
+    assert.fail("expected independent-period inference");
+  }
+  periodSameGroup.request.secondaryGroup = periodSameGroup.request.primaryGroup;
+  periodSameGroup.scope.secondaryGroup = periodSameGroup.scope.primaryGroup;
+  const periodSameGroupBundle = structuredClone(trajectoryBundle);
+  periodSameGroupBundle.inference = periodSameGroup;
+
+  const pairedSamePeriod = structuredClone(pairedInference);
+  if (pairedSamePeriod.kind !== "trajectory-paired-periods") {
+    assert.fail("expected paired-period inference");
+  }
+  pairedSamePeriod.request.laterPeriod = pairedSamePeriod.request.earlierPeriod;
+  pairedSamePeriod.scope.laterPeriod = pairedSamePeriod.scope.earlierPeriod;
+  const pairedBundle = buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    { methodsDimensions: trajectory.axes, inference: pairedInference },
+  );
+  const pairedSamePeriodBundle = structuredClone(pairedBundle);
+  pairedSamePeriodBundle.inference = pairedSamePeriod;
+
+  for (const { label, inference, bundle } of [
+    { label: "endpoint inference with trajectory model", inference: endpointWrongModel, bundle: endpointWrongModelBundle },
+    { label: "endpoint inference with identical groups", inference: endpointSameGroup, bundle: endpointSameGroupBundle },
+    { label: "one-period inference with identical groups", inference: periodSameGroup, bundle: periodSameGroupBundle },
+    { label: "paired inference with identical periods", inference: pairedSamePeriod, bundle: pairedSamePeriodBundle },
+  ]) {
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(inference),
+      /design|model|distinct|groups|periods/i,
+      `${label} standalone`,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(bundle)),
+      /design|model|distinct|groups|periods/i,
+      `${label} bundle`,
+    );
+  }
+});
+
+test("strict readers preserve genuine coordinator-disabled design diagnostics", async () => {
+  const endpoint = endpointFixture();
+  const trajectory = trajectoryFixture();
+  const sameGroup = await runInference(endpoint, {
+    kind: "endpoint-independent",
+    primaryGroup: "Primary",
+    secondaryGroup: "Primary",
+    axes: endpoint.axes,
+  });
+  const samePeriod = await runInference(trajectory, {
+    kind: "trajectory-paired-periods",
+    repeatedEntityColumns: ["Group", "Name"],
+    timeColumn: "Period",
+    group: "Control",
+    earlierPeriod: "T1",
+    laterPeriod: "T1",
+    axes: trajectory.axes,
+    cohortPolicy: "pairwise-complete",
+  });
+  for (const [fixture, inference] of [
+    [endpoint, sameGroup],
+    [trajectory, samePeriod],
+  ] as const) {
+    assert.equal(inference.status, "disabled");
+    assert.equal(inference.ledger, null);
+    assert.deepEqual(parseOpenEnaInferenceResultV2(structuredClone(inference)), inference);
+    const bundle = buildAnalysisBundle(
+      fixture.dataset,
+      fixture.configuration,
+      fixture.result,
+      HASH,
+      {
+        methodsDimensions: fixture.axes,
+        inference,
+      },
+    );
+    assert.deepEqual(
+      parseOpenEnaAnalysisBundle(JSON.stringify(bundle)).inference,
+      inference,
+    );
+  }
+});
+
+test("strict readers bind paired indexes and Friedman metadata to the selected periods", async () => {
+  const { trajectory, pairedInference, repeatedInference } = await allInferenceFixtures();
+  const pairedBundle = buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    { methodsDimensions: trajectory.axes, inference: pairedInference },
+  );
+  const repeatedBundle = buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    { methodsDimensions: trajectory.axes, inference: repeatedInference },
+  );
+
+  const wrongPairIndexes = structuredClone(pairedInference);
+  if (wrongPairIndexes.kind !== "trajectory-paired-periods") {
+    assert.fail("expected paired-period inference");
+  }
+  wrongPairIndexes.rows.forEach((row) => {
+    row.earlierPeriodIndex = 999;
+    row.laterPeriodIndex = 1_000;
+  });
+  const wrongPairIndexesBundle = structuredClone(pairedBundle);
+  wrongPairIndexesBundle.inference = wrongPairIndexes;
+
+  const wrongPeriodCount = structuredClone(repeatedInference);
+  if (wrongPeriodCount.kind !== "trajectory-repeated-periods") {
+    assert.fail("expected repeated-period inference");
+  }
+  wrongPeriodCount.omnibusRows.forEach((row) => { row.nPeriods = 999; });
+  const wrongPeriodCountBundle = structuredClone(repeatedBundle);
+  wrongPeriodCountBundle.inference = wrongPeriodCount;
+
+  const wrongDegreesFreedom = structuredClone(repeatedInference);
+  if (wrongDegreesFreedom.kind !== "trajectory-repeated-periods") {
+    assert.fail("expected repeated-period inference");
+  }
+  wrongDegreesFreedom.omnibusRows.forEach((row) => { row.degreesFreedom = 999; });
+  const wrongDegreesFreedomBundle = structuredClone(repeatedBundle);
+  wrongDegreesFreedomBundle.inference = wrongDegreesFreedom;
+
+  const missingDegreesFreedom = structuredClone(repeatedInference);
+  if (missingDegreesFreedom.kind !== "trajectory-repeated-periods") {
+    assert.fail("expected repeated-period inference");
+  }
+  missingDegreesFreedom.omnibusRows.forEach((row) => { row.degreesFreedom = null; });
+  const missingDegreesFreedomBundle = structuredClone(repeatedBundle);
+  missingDegreesFreedomBundle.inference = missingDegreesFreedom;
+
+  for (const { label, inference, bundle } of [
+    { label: "paired row indexes", inference: wrongPairIndexes, bundle: wrongPairIndexesBundle },
+    { label: "Friedman period count", inference: wrongPeriodCount, bundle: wrongPeriodCountBundle },
+    { label: "Friedman degrees of freedom", inference: wrongDegreesFreedom, bundle: wrongDegreesFreedomBundle },
+    { label: "missing Friedman degrees of freedom", inference: missingDegreesFreedom, bundle: missingDegreesFreedomBundle },
+  ]) {
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(inference),
+      /period|index|Friedman|degrees|metadata|cardinality/i,
+      `${label} standalone`,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(bundle)),
+      /period|index|Friedman|degrees|metadata|cardinality/i,
+      `${label} bundle`,
+    );
+  }
+});
+
+test("repeated ledger indexes bind exactly to a selected non-prefix time-order subset", async () => {
+  const trajectory = trajectoryFixture(4);
+  const inference = await runInference(trajectory, {
+    kind: "trajectory-repeated-periods",
+    repeatedEntityColumns: ["Group", "Name"],
+    timeColumn: "Period",
+    group: "Control",
+    periods: ["T2", "T3", "T4"],
+    axes: trajectory.axes,
+    cohortPolicy: "all-period-complete",
+    posthocContrasts: "all-period-pairs",
+  });
+  if (inference.kind !== "trajectory-repeated-periods" || !inference.ledger) {
+    assert.fail("expected repeated-period inference ledger");
+  }
+  assert.deepEqual(
+    inference.ledger.availableByPeriod.map((period) => period.periodIndex),
+    [1, 2, 3],
+  );
+  const bundle = buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    { methodsDimensions: trajectory.axes, inference },
+  );
+  assert.deepEqual(parseOpenEnaInferenceResultV2(structuredClone(inference)), inference);
+  assert.deepEqual(parseOpenEnaAnalysisBundle(JSON.stringify(bundle)).inference, inference);
+
+  const permuted = structuredClone(inference);
+  if (!permuted.ledger) assert.fail("expected repeated-period inference ledger");
+  permuted.ledger.availableByPeriod.reverse();
+  const permutedBundle = structuredClone(bundle);
+  permutedBundle.inference = permuted;
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(permuted),
+    /ledger|period|index|order|cardinality/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(permutedBundle)),
+    /ledger|period|index|order|cardinality/i,
+  );
+});
+
+test("strict readers require bounded exact-tail audits and complete aggregate ledgers", async () => {
+  const {
+    endpoint,
+    trajectory,
+    endpointInference,
+    pairedInference,
+    repeatedInference,
+  } = await allInferenceFixtures();
+  const endpointBundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const pairedBundle = buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    { methodsDimensions: trajectory.axes, inference: pairedInference },
+  );
+  const repeatedBundle = buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    { methodsDimensions: trajectory.axes, inference: repeatedInference },
+  );
+
+  const boundaryTail = structuredClone(endpointInference);
+  if (boundaryTail.kind !== "endpoint-independent" || !boundaryTail.rows[0].exactTail) {
+    assert.fail("expected endpoint exact-tail audit");
+  }
+  boundaryTail.rows[0].exactTail.extremeAssignmentCount = "1".repeat(4_096);
+  boundaryTail.rows[0].exactTail.totalAssignmentCount = "9".repeat(4_096);
+  const boundaryTailBundle = structuredClone(endpointBundle);
+  boundaryTailBundle.inference = boundaryTail;
+  assert.doesNotThrow(() => parseOpenEnaInferenceResultV2(boundaryTail));
+  assert.doesNotThrow(() => parseOpenEnaAnalysisBundle(JSON.stringify(boundaryTailBundle)));
+
+  const oversizedTail = structuredClone(endpointInference);
+  if (oversizedTail.kind !== "endpoint-independent" || !oversizedTail.rows[0].exactTail) {
+    assert.fail("expected endpoint exact-tail audit");
+  }
+  oversizedTail.rows[0].exactTail.totalAssignmentCount = "9".repeat(4_097);
+  const oversizedTailBundle = structuredClone(endpointBundle);
+  oversizedTailBundle.inference = oversizedTail;
+
+  const missingLedger = structuredClone(endpointInference);
+  missingLedger.ledger = null;
+  const missingLedgerBundle = structuredClone(endpointBundle);
+  missingLedgerBundle.inference = missingLedger;
+
+  const duplicatePairedAxes = structuredClone(pairedInference);
+  if (duplicatePairedAxes.kind !== "trajectory-paired-periods" || !duplicatePairedAxes.ledger) {
+    assert.fail("expected paired inference ledger");
+  }
+  duplicatePairedAxes.ledger.axes[1].axisIndex = 0;
+  const duplicatePairedAxesBundle = structuredClone(pairedBundle);
+  duplicatePairedAxesBundle.inference = duplicatePairedAxes;
+
+  const emptyRepeatedPeriods = structuredClone(repeatedInference);
+  if (emptyRepeatedPeriods.kind !== "trajectory-repeated-periods" || !emptyRepeatedPeriods.ledger) {
+    assert.fail("expected repeated inference ledger");
+  }
+  emptyRepeatedPeriods.ledger.availableByPeriod = [];
+  const emptyRepeatedPeriodsBundle = structuredClone(repeatedBundle);
+  emptyRepeatedPeriodsBundle.inference = emptyRepeatedPeriods;
+
+  const duplicateRepeatedPeriods = structuredClone(repeatedInference);
+  if (duplicateRepeatedPeriods.kind !== "trajectory-repeated-periods" || !duplicateRepeatedPeriods.ledger) {
+    assert.fail("expected repeated inference ledger");
+  }
+  duplicateRepeatedPeriods.ledger.availableByPeriod[1].periodIndex = 0;
+  const duplicateRepeatedPeriodsBundle = structuredClone(repeatedBundle);
+  duplicateRepeatedPeriodsBundle.inference = duplicateRepeatedPeriods;
+
+  const oversizedRepeatedPeriods = structuredClone(repeatedInference);
+  if (oversizedRepeatedPeriods.kind !== "trajectory-repeated-periods" || !oversizedRepeatedPeriods.ledger) {
+    assert.fail("expected repeated inference ledger");
+  }
+  oversizedRepeatedPeriods.ledger.availableByPeriod = Array.from(
+    { length: 4_097 },
+    () => structuredClone(oversizedRepeatedPeriods.ledger!.availableByPeriod[0]),
+  );
+  const oversizedRepeatedPeriodsBundle = structuredClone(repeatedBundle);
+  oversizedRepeatedPeriodsBundle.inference = oversizedRepeatedPeriods;
+
+  for (const { label, inference, bundle } of [
+    { label: "oversized exact-tail digit string", inference: oversizedTail, bundle: oversizedTailBundle },
+    { label: "available result without ledger", inference: missingLedger, bundle: missingLedgerBundle },
+    { label: "duplicate paired ledger axes", inference: duplicatePairedAxes, bundle: duplicatePairedAxesBundle },
+    { label: "empty repeated-period ledger", inference: emptyRepeatedPeriods, bundle: emptyRepeatedPeriodsBundle },
+    { label: "duplicate repeated-period ledger indexes", inference: duplicateRepeatedPeriods, bundle: duplicateRepeatedPeriodsBundle },
+    { label: "oversized repeated-period ledger", inference: oversizedRepeatedPeriods, bundle: oversizedRepeatedPeriodsBundle },
+  ]) {
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(inference),
+      /exact-tail|bounded|ledger|axis|period|required|cardinality/i,
+      `${label} standalone`,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(bundle)),
+      /exact-tail|bounded|ledger|axis|period|required|cardinality/i,
+      `${label} bundle`,
+    );
+  }
 });
 
 test("Methods escapes hostile inference labels without losing exact supplied values", async () => {

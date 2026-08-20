@@ -460,6 +460,10 @@ function validateExactTail(value: unknown) {
   exactKeys(value, ["extremeAssignmentCount", "totalAssignmentCount", "inclusive", "midP"], "Inference exact-tail audit");
   if (typeof value.extremeAssignmentCount !== "string"
     || typeof value.totalAssignmentCount !== "string"
+    || value.extremeAssignmentCount.length === 0
+    || value.totalAssignmentCount.length === 0
+    || value.extremeAssignmentCount.length > MAX_INFERENCE_STRING_LENGTH
+    || value.totalAssignmentCount.length > MAX_INFERENCE_STRING_LENGTH
     || !/^\d+$/u.test(value.extremeAssignmentCount)
     || !/^\d+$/u.test(value.totalAssignmentCount)
     || value.inclusive !== true
@@ -743,7 +747,9 @@ function validateBinding(value: unknown) {
 }
 
 function validateFamilies(value: unknown) {
-  if (!Array.isArray(value)) throw new Error("Inference families are invalid.");
+  if (!Array.isArray(value) || value.length > MAX_INFERENCE_ARRAY_LENGTH) {
+    throw new Error("Inference families are invalid.");
+  }
   for (const family of value) {
     if (!isRecord(family)) throw new Error("Inference family is invalid.");
     exactKeys(family, ["role", "familyId", "familySizePlanned", "memberIds"], "Inference family");
@@ -751,6 +757,7 @@ function validateFamilies(value: unknown) {
       || typeof family.familyId !== "string"
       || !/^openena-family-v2-[0-9a-f]{64}$/u.test(family.familyId)
       || !Array.isArray(family.memberIds)
+      || family.memberIds.length > MAX_INFERENCE_ARRAY_LENGTH
       || family.memberIds.some((member) => typeof member !== "string")
       || family.memberIds.some((member) => !/^openena-member-v2-[0-9a-f]{64}$/u.test(member))
       || new Set(family.memberIds).size !== family.memberIds.length
@@ -856,6 +863,12 @@ function validateLedger(value: unknown, kind: OpenEnaInferenceResultV2["kind"]) 
       validateCountRecord(axis, ["axisIndex", "zeroDifferenceCount", "nonzeroDifferenceCount", "rankedCount"], "Paired inference ledger axis");
       if (axis.axisIndex !== 0 && axis.axisIndex !== 1) throw new Error("Paired inference ledger axis is invalid.");
     }
+    const axisIndexes = value.axes.map((axis) => (axis as Record<string, unknown>).axisIndex);
+    if (new Set(axisIndexes).size !== 2
+      || !axisIndexes.includes(0)
+      || !axisIndexes.includes(1)) {
+      throw new Error("Paired inference ledger axes are invalid.");
+    }
     return;
   }
   const countKeys = [
@@ -864,7 +877,10 @@ function validateLedger(value: unknown, kind: OpenEnaInferenceResultV2["kind"]) 
   ] as const;
   exactKeys(value, [...countKeys, "availableByPeriod"], "Repeated inference ledger");
   for (const key of countKeys) nonNegativeInteger(value[key], `Repeated inference ledger ${key}`);
-  if (!Array.isArray(value.availableByPeriod)) throw new Error("Repeated inference ledger periods are invalid.");
+  if (!Array.isArray(value.availableByPeriod)
+    || value.availableByPeriod.length > MAX_INFERENCE_ARRAY_LENGTH) {
+    throw new Error("Repeated inference ledger periods are invalid.");
+  }
   for (const period of value.availableByPeriod) {
     if (!isRecord(period)) throw new Error("Repeated inference ledger period is invalid.");
     validateCountRecord(period, [
@@ -913,6 +929,23 @@ export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceR
     "Inference result",
   );
   validateRequest(value.request, kind);
+  if (kind === "trajectory-repeated-periods") {
+    if (!Array.isArray(value.omnibusRows)
+      || !Array.isArray(value.followupRows)
+      || value.omnibusRows.length > MAX_INFERENCE_ARRAY_LENGTH
+      || value.followupRows.length > MAX_INFERENCE_ARRAY_LENGTH) {
+      throw new Error("Repeated inference rows exceed the bounded aggregate row budget.");
+    }
+    const periodCount = ((value.request as Record<string, unknown>).periods as string[]).length;
+    const plannedFollowupCount = periodCount * (periodCount - 1);
+    if (!Number.isSafeInteger(plannedFollowupCount)
+      || plannedFollowupCount > MAX_INFERENCE_ARRAY_LENGTH) {
+      throw new Error("Repeated inference exceeds the bounded aggregate row budget.");
+    }
+  } else if (!Array.isArray(value.rows)
+    || value.rows.length > MAX_INFERENCE_ARRAY_LENGTH) {
+    throw new Error("Inference rows exceed the bounded aggregate row budget.");
+  }
   validateBinding(value.binding);
   validateFamilies(value.families);
   validateWarnings(value.warnings, "Inference warnings");
@@ -1006,6 +1039,57 @@ export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceR
   if (!scopeMatchesRequest) throw new Error("Inference request and scope are inconsistent.");
   if (!trajectoryMappingMatchesRequest(value as unknown as OpenEnaInferenceResultV2)) {
     throw new Error("Inference trajectory mapping is inconsistent.");
+  }
+  if (value.status !== "disabled") {
+    if (value.ledger === null) {
+      throw new Error("Non-disabled inference requires an aggregate inclusion ledger.");
+    }
+    const modelType = binding.modelType;
+    if ((kind === "endpoint-independent" && modelType !== "EndPoint")
+      || (kind !== "endpoint-independent" && modelType === "EndPoint")) {
+      throw new Error("Inference design and model are inconsistent.");
+    }
+    if ((kind === "endpoint-independent" || kind === "trajectory-independent-period")
+      && request.primaryGroup === request.secondaryGroup) {
+      throw new Error("Independent inference groups must be distinct.");
+    }
+    if (kind === "trajectory-paired-periods") {
+      if (request.earlierPeriod === request.laterPeriod) {
+        throw new Error("Paired inference periods must be distinct.");
+      }
+      const mapping = binding.trajectoryMapping as Record<string, unknown>;
+      const timeOrder = mapping.timeOrder as string[];
+      const earlierPeriodIndex = timeOrder.indexOf(request.earlierPeriod as string);
+      const laterPeriodIndex = timeOrder.indexOf(request.laterPeriod as string);
+      if (parsedRows.some((row) => (
+        row.earlierPeriodIndex !== earlierPeriodIndex
+        || row.laterPeriodIndex !== laterPeriodIndex
+      ))) {
+        throw new Error("Paired inference row period indexes are inconsistent.");
+      }
+    }
+    if (kind === "trajectory-repeated-periods") {
+      const periods = request.periods as string[];
+      const omnibusRows = value.omnibusRows as Record<string, unknown>[];
+      if (omnibusRows.some((row) => (
+        row.nPeriods !== periods.length
+        || row.degreesFreedom !== periods.length - 1
+      ))) {
+        throw new Error("Friedman period metadata is inconsistent.");
+      }
+      const availableByPeriod = (value.ledger as Record<string, unknown>).availableByPeriod as Array<Record<string, unknown>>;
+      const availablePeriodIndexes = availableByPeriod.map((period) => period.periodIndex);
+      const timeOrder = ((binding.trajectoryMapping as Record<string, unknown>).timeOrder as string[]);
+      const expectedPeriodIndexes = periods.map((period) => timeOrder.indexOf(period));
+      if (availablePeriodIndexes.length !== periods.length
+        || availablePeriodIndexes.some((periodIndex, index) => (
+          typeof periodIndex !== "number"
+          || !Number.isSafeInteger(periodIndex)
+          || periodIndex !== expectedPeriodIndexes[index]
+        ))) {
+        throw new Error("Repeated inference ledger period cardinality is invalid.");
+      }
+    }
   }
   const families = value.families as Record<string, unknown>[];
   const familyById = new Map(families.map((family) => [family.familyId, family]));
