@@ -500,9 +500,12 @@ test("exports descriptive geometry, cohort diagnostics, and provenance without r
     pointScale: 1.2,
     plotZoom: 1.1,
   });
+  assert.equal(exported.schemaVersion, 2);
   assert.equal(exported.kind, "open-ena-longitudinal-group-centroids");
   assert.equal(exported.runtime, "jena-js");
   assert.deepEqual(exported.settings.timeOrder, ["T1", "T2", "T3"]);
+  assert.deepEqual(exported.settings.repeatedEntityColumns, view.repeatedEntityColumns);
+  assert.equal(exported.settings.identityConfirmed, view.identityConfirmed);
   assert.equal(exported.settings.cohortPolicy, "available");
   assert.equal(exported.source.normalizedUtf8TextSha256, SOURCE_HASH);
   assert.deepEqual(exported.configuration, config);
@@ -523,9 +526,11 @@ test("exports descriptive geometry, cohort diagnostics, and provenance without r
   });
   assert.deepEqual(exported.privacy, {
     rawSourceRowsIncluded: false,
-    repeatedEntityIdentifiersIncluded: false,
+    entityTokensIncluded: false,
+    entityValuesIncluded: false,
+    pairedDifferencesIncluded: false,
     entityPeriodCoordinatesIncluded: false,
-    note: "The derived export contains group-period summaries and fitted geometry, not repeated-entity identifiers or entity-period coordinates.",
+    note: "The derived export contains aggregate group-period geometry and aggregate inference only; it excludes repeated-entity values, opaque tokens, paired differences, entity-period coordinates, and raw source rows.",
   });
   assert.match(exported.boundaries.join(" "), /descriptive/i);
   assert.match(exported.boundaries.join(" "), /no endpoint.*test|endpoint.*not applied/i);
@@ -538,6 +543,7 @@ test("exports descriptive geometry, cohort diagnostics, and provenance without r
   assert.match(csv, /normalized-utf8-csv-text-sha256/);
   assert.match(csv, /sourceDatasetNormalizedUtf8TextSha256/);
   assert.match(csv, /timeOrderJson/);
+  assert.match(csv, /repeatedEntityColumnsJson/);
   assert.match(csv, /\[""T1"",""T2"",""T3""\]/);
   assert.match(csv, /runtimeVersion/);
   assert.match(csv, /timeOrderLocked,timeOrderBasis/);

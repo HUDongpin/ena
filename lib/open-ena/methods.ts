@@ -1,4 +1,9 @@
-import { buildEndpointMannWhitney } from "./inference";
+import { assertOpenEnaInferenceBindingV2 } from "./inference-consumers";
+import type {
+  OpenEnaInferenceResultV2,
+  OpenEnaMannWhitneyInferenceRowV2,
+  OpenEnaWilcoxonInferenceRowV2,
+} from "./inference-v2";
 import type { OpenEnaConfig, OpenEnaResult, ParsedDataset } from "./types";
 import { datasetHashKindFor, JENA_RUNTIME_VERSION, OPEN_ENA_APP_VERSION } from "./types";
 import {
@@ -44,9 +49,9 @@ function formatNumber(value: number | null, digits = 3) {
   return value === null || !Number.isFinite(value) ? "not estimable" : value.toFixed(digits);
 }
 
-function formatPValue(value: number | null) {
+function auditNumber(value: number | null) {
   if (value === null || !Number.isFinite(value)) return "not estimable";
-  return value < 0.001 ? "< .001" : value.toFixed(3);
+  return Object.is(value, -0) ? "0" : String(value);
 }
 
 function effectiveWindow(config: OpenEnaConfig) {
@@ -146,6 +151,170 @@ function rotationDescription(config: OpenEnaConfig, result: OpenEnaResult, targe
   return "SVD rotation fitted to the current model.";
 }
 
+function warningDisclosure(code: string) {
+  const messages: Record<string, string> = {
+    "small-sample": "The effective sample is small.",
+    "discrete-attainable-p": "The exact two-sided p-value is discrete and bounded by the reported minimum attainable p where applicable.",
+    "ties-present": "Average ranks and the recorded conditional exact or tie-corrected approximation policy were used for ties.",
+    "zero-differences-present": "Matched zero differences were retained in diagnostics and excluded from signed-rank ranking under the Wilcox zero policy.",
+    "missing-pairs": "Pairwise-complete inclusion omitted entities without both selected periods.",
+    "missing-complete-blocks": "The all-period-complete cohort omitted entities missing any selected period.",
+    "signed-rank-symmetry-assumption": "Wilcoxon signed-rank inference assumes a symmetric distribution of paired differences.",
+    "independent-entity-assumption": "Mann–Whitney U inference assumes independent analytic entities between groups.",
+    "cluster-independence-unverified": "Cluster independence is unverified; the ordinary rank test does not model nested or clustered entities.",
+    "accumulated-trajectory-path-dependence": "Accumulated trajectory coordinates contain prior history, so later points are path-dependent rather than ordinary independent time points.",
+    "arbitrary-axis-sign": "ENA rotation-axis signs are arbitrary; reversing an axis reverses signed effects but not two-sided p-values.",
+    "mr1-circularity": "MR1/GMR1 was defined using the comparison contrast; inference on that axis is descriptive by construction unless genuinely held out.",
+  };
+  return messages[code] ?? `Recorded inference warning: ${code}.`;
+}
+
+function inferenceIdentityColumns(inference: OpenEnaInferenceResultV2) {
+  return inference.kind === "endpoint-independent"
+    ? null
+    : inference.request.repeatedEntityColumns;
+}
+
+function inferenceScopeLines(inference: OpenEnaInferenceResultV2) {
+  switch (inference.kind) {
+    case "endpoint-independent":
+      return [
+        "### Independent endpoint groups · Mann–Whitney U",
+        "",
+        `- Primary group: ${inline(inference.scope.primaryGroup)}`,
+        `- Secondary group: ${inline(inference.scope.secondaryGroup)}`,
+        "- Temporal scope: endpoint common period was not verified by the system.",
+        "- Analysis unit: one endpoint analytic unit.",
+      ];
+    case "trajectory-independent-period":
+      return [
+        "### Independent groups at one period · Mann–Whitney U",
+        "",
+        `- Time field: ${inline(inference.scope.timeColumn)}`,
+        `- Selected period: ${inline(inference.scope.period)}`,
+        `- Primary group: ${inline(inference.scope.primaryGroup)}`,
+        `- Secondary group: ${inline(inference.scope.secondaryGroup)}`,
+        "- Analysis unit: one compact entity-period point at the selected period.",
+      ];
+    case "trajectory-paired-periods":
+      return [
+        "### Paired periods · Wilcoxon signed-rank",
+        "",
+        `- Time field: ${inline(inference.scope.timeColumn)}`,
+        `- Selected group: ${inline(inference.scope.group ?? "All units")}`,
+        `- Period direction: ${inline(inference.scope.earlierPeriod)} → ${inline(inference.scope.laterPeriod)}; every difference is later minus earlier.`,
+        `- Cohort policy: ${inline(inference.scope.cohortPolicy)}.`,
+        "- Analysis unit: one repeated entity matched across both selected periods.",
+      ];
+    case "trajectory-repeated-periods":
+      return [
+        "### Repeated periods · Friedman + Holm-adjusted Wilcoxon signed-rank follow-up",
+        "",
+        `- Time field: ${inline(inference.scope.timeColumn)}`,
+        `- Selected group: ${inline(inference.scope.group ?? "All units")}`,
+        `- Ordered periods: ${inference.scope.periods.map(inline).join(" → ")}`,
+        `- Cohort policy: ${inline(inference.scope.cohortPolicy)} shared by the omnibus and every follow-up contrast.`,
+        "- Follow-up policy: all selected period pairs, generated regardless of the omnibus p-value.",
+        "- Analysis unit: one all-period-complete repeated entity block.",
+      ];
+  }
+}
+
+function mannWhitneyRows(rows: readonly OpenEnaMannWhitneyInferenceRowV2[]) {
+  return [
+    "| Axis | Primary n | Secondary n | Primary median | Secondary median | U primary | U secondary | Raw p | Holm-adjusted p | Rank-biserial primary vs secondary | Resolved p method |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+    ...rows.map((row) => `| ${inline(row.axis)} | ${row.nPrimary} | ${row.nSecondary} | ${auditNumber(row.medianPrimary)} | ${auditNumber(row.medianSecondary)} | ${auditNumber(row.uPrimary)} | ${auditNumber(row.uSecondary)} | ${auditNumber(row.pRaw)} | ${auditNumber(row.pHolm)} | ${auditNumber(row.rankBiserialPrimaryVsSecondary)} | ${inline(row.resolvedPMethod ?? "not estimable")} |`),
+    "",
+  ];
+}
+
+function wilcoxonRows(
+  inference: Extract<OpenEnaInferenceResultV2, {
+    kind: "trajectory-paired-periods" | "trajectory-repeated-periods";
+  }>,
+  rows: readonly OpenEnaWilcoxonInferenceRowV2[],
+) {
+  const periods = inference.kind === "trajectory-paired-periods"
+    ? [inference.scope.earlierPeriod, inference.scope.laterPeriod]
+    : inference.scope.periods;
+  return [
+    "| Axis | Earlier → later | Matched | Missing | Positive | Negative | Zero | Nonzero/ranked | Median difference | IQR difference | W+ | W− | T | Raw p | Holm-adjusted p | Paired rank-biserial later vs earlier | Resolved p method |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+    ...rows.map((row) => {
+      const earlier = inference.kind === "trajectory-paired-periods"
+        ? inference.scope.earlierPeriod
+        : periods[row.earlierPeriodIndex] ?? `period ${row.earlierPeriodIndex}`;
+      const later = inference.kind === "trajectory-paired-periods"
+        ? inference.scope.laterPeriod
+        : periods[row.laterPeriodIndex] ?? `period ${row.laterPeriodIndex}`;
+      return `| ${inline(row.axis)} | ${inline(earlier)} → ${inline(later)} | ${row.nMatched} | ${row.nMissing} | ${row.nPositive} | ${row.nNegative} | ${row.nZero} | ${row.nNonzero}/${row.nRanked} | ${auditNumber(row.medianDifference)} | ${auditNumber(row.iqrDifference)} | ${auditNumber(row.wPositive)} | ${auditNumber(row.wNegative)} | ${auditNumber(row.t)} | ${auditNumber(row.pRaw)} | ${auditNumber(row.pHolm)} | ${auditNumber(row.rankBiserialLaterVsEarlier)} | ${inline(row.resolvedPMethod ?? "not estimable")} |`;
+    }),
+    "",
+  ];
+}
+
+function inferenceResultTables(inference: OpenEnaInferenceResultV2) {
+  if (inference.kind === "endpoint-independent"
+    || inference.kind === "trajectory-independent-period") {
+    return mannWhitneyRows(inference.rows);
+  }
+  if (inference.kind === "trajectory-paired-periods") {
+    return wilcoxonRows(inference, inference.rows);
+  }
+  return [
+    "#### Friedman omnibus",
+    "",
+    "| Axis | Complete n | Missing complete blocks | Period count | Q | df | Raw p | Holm-adjusted p | Kendall’s W | Resolved p method |",
+    "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+    ...inference.omnibusRows.map((row) => `| ${inline(row.axis)} | ${row.nComplete} | ${row.nMissingCompleteBlocks} | ${row.nPeriods} | ${auditNumber(row.q)} | ${auditNumber(row.degreesFreedom)} | ${auditNumber(row.pRaw)} | ${auditNumber(row.pHolm)} | ${auditNumber(row.kendallsW)} | ${inline(row.resolvedPMethod ?? "not estimable")} |`),
+    "",
+    "#### Wilcoxon signed-rank follow-up · all period pairs",
+    "",
+    ...wilcoxonRows(inference, inference.followupRows),
+  ];
+}
+
+function inferenceSection(inference: OpenEnaInferenceResultV2 | null) {
+  if (!inference) {
+    return [
+      "## Inferential comparison",
+      "",
+      "No researcher-confirmed inferential comparison was run for this successful result. Descriptive geometry and uncertainty guides must not be read as substitutes for an inferential test.",
+      "",
+    ];
+  }
+  const identityColumns = inferenceIdentityColumns(inference);
+  const ledger = inference.ledger === null ? "not available" : JSON.stringify(inference.ledger);
+  return [
+    "## Inferential comparison",
+    "",
+    ...inferenceScopeLines(inference),
+    ...(identityColumns
+      ? [`- Confirmed composite repeated-entity identity fields: ${identityColumns.map(inline).join(" + ")}.`]
+      : []),
+    `- Result status: ${inline(inference.status)}${inference.reason ? ` (${inline(inference.reason)})` : ""}.`,
+    `- Inclusion and exclusion ledger: ${inline(ledger)}`,
+    `- Fixed policy: two-sided; auto exact-first; ranks and paired differences normalized to 12 significant digits; exact ranked N ≤ ${inference.method.exactMaxRankedN}; Wilcox zero handling; continuity correction ${inference.method.continuityCorrection} for approximation branches; Holm correction with planned unavailable members retained in family size.`,
+    "- Statistics and signed effects use the unflipped model coordinate system. Plot flips, labels, scaling, visibility and zoom do not alter these inferential rows.",
+    "",
+    ...inferenceResultTables(inference),
+    "#### Multiplicity families",
+    "",
+    "| Family role | Family ID | Planned size | Member IDs |",
+    "| --- | --- | ---: | --- |",
+    ...inference.families.map((family) => `| ${inline(family.role)} | ${inline(family.familyId)} | ${family.familySizePlanned} | ${family.memberIds.map(inline).join(", ")} |`),
+    "",
+    "#### Inference warnings and boundaries",
+    "",
+    ...(inference.warnings.length
+      ? inference.warnings.map((warning) => `- ${inline(warning)}: ${warningDisclosure(warning)}`)
+      : ["- No additional inference warning code was recorded."]),
+    "- Raw and Holm-adjusted p-values are audit values, not measures of practical importance. These post-projection tests do not establish causality, learning gain, intervention effects, or the substantive importance of a coordinate difference.",
+    "",
+  ];
+}
+
 export function buildMethodsReport(
   dataset: ParsedDataset,
   config: OpenEnaConfig,
@@ -153,14 +322,22 @@ export function buildMethodsReport(
   sourceHash: string | null = null,
   reportedDimensions: readonly string[] = result.dimensions.slice(0, 2),
   presentation: OpenEnaPresentationOptions = {},
+  inference: OpenEnaInferenceResultV2 | null = null,
 ) {
   const unitCount = new Set(result.set.points.map((row) => String(row.ENA_UNIT ?? ""))).size;
-  const inference = buildEndpointMannWhitney(
-    result,
-    config.groupColumn,
-    reportedDimensions,
-    presentation.selectedGroupOrder,
-  );
+  if (inference) {
+    if (!sourceHash || reportedDimensions.length !== 2) {
+      throw new Error("Inference consumer binding mismatch.");
+    }
+    assertOpenEnaInferenceBindingV2(inference, {
+      analyzedAt: result.analyzedAt,
+      datasetNormalizedUtf8TextSha256: sourceHash,
+      datasetHashKind: datasetHashKindFor(dataset),
+      modelType: result.set.modelType,
+      configuration: config,
+      axes: [reportedDimensions[0], reportedDimensions[1]],
+    });
+  }
   const groupText = config.groupColumn
     ? `${inline(config.groupColumn)} (${result.groups.map((group) => `${inline(group.name)}: n=${group.count}`).join(", ")})`
     : "No comparison field; all units were summarized together.";
@@ -170,26 +347,7 @@ export function buildMethodsReport(
   const [displayedX = result.dimensions[0] ?? "X", displayedY = result.dimensions[1] ?? displayedX] = reportedDimensions;
   const edgeThreshold = presentation.edgeThreshold ?? 0;
   const shown = (value: boolean | undefined, fallback = true) => (value ?? fallback) ? "shown" : "hidden";
-  const inferenceSection = inference.status === "available"
-    ? [
-        "## ENA.HK post-projection group inference",
-        "",
-        `${presentation.selectedGroupOrder ? "Selected" : "Declared"} group order: ${inline(inference.groupOrder?.[0] ?? "first")} then ${inline(inference.groupOrder?.[1] ?? "second")}.`,
-        `${inference.method.replace("Mann-Whitney", "Mann–Whitney")}. The resolved p-value method for each axis is recorded below. Rank-biserial effects are signed for the ${presentation.selectedGroupOrder ? "Primary selected" : "first declared"} group versus the ${presentation.selectedGroupOrder ? "Secondary selected" : "second declared"} group. This calculation is provided by ENA.HK after projection; it is not a jENA statistic, and no multiplicity correction was applied across axes or repeated pair selections.`,
-        "",
-        "| Axis | First median | Second median | U (first) | Two-sided p | Resolved p method | Rank-biserial |",
-        "| --- | ---: | ---: | ---: | ---: | --- | ---: |",
-        ...inference.rows.map((row) => (
-          `| ${row.dimension} | ${formatNumber(row.medianFirst)} | ${formatNumber(row.medianSecond)} | ${formatNumber(row.uFirst, 2)} | ${formatPValue(row.pValueTwoSided)} | ${row.resolvedPMethod ?? "not estimable"} | ${formatNumber(row.rankBiserialFirstVsSecond)} |`
-        )),
-        "",
-      ]
-    : [
-        "## Group inference boundary",
-        "",
-        "Endpoint Mann–Whitney inference was not applied because this result is not an endpoint model with exactly two declared comparison groups.",
-        "",
-      ];
+  const inferenceReportSection = inferenceSection(inference);
   const intervalSection = marginalIntervalSection(
     result,
     config,
@@ -232,7 +390,7 @@ export function buildMethodsReport(
     `- ${result.groups.length} displayed group network(s) and ${result.set.codes.length} codes`,
     `- Rotated dimensions: ${dimensions}`,
     `- Displayed 2D axes: X ${inline(displayedX)} (${presentation.flipX ? "flipped" : "unflipped"}); Y ${inline(displayedY)} (${presentation.flipY ? "flipped" : "unflipped"}).`,
-    "- Axis flips are presentation-only. Coordinates, medians, U, p-values, and signed rank-biserial effects remain in the unflipped model coordinate system.",
+    "- Axis flips are presentation-only. Coordinates and every supplied inferential statistic remain in the unflipped model coordinate system.",
     `- Relative edge display threshold: ${(edgeThreshold * 100).toFixed(1)}% (${edgeThreshold}). This is a presentation-only filter relative to the applicable strongest edge; edges below the threshold remain in the computed model and exported tables, so hidden edges are not model absence.`,
     `- Group networks: ${shown(presentation.showNetworks)}; Unit points: ${shown(presentation.showPoints)}; Trajectory paths: ${shown(presentation.showTrajectories)}.`,
     `- Code labels: ${shown(presentation.showLabels)}; group labels: ${shown(presentation.showGroupLabels)}; unit labels: ${shown(presentation.showUnitLabels, false)}; variance labels: ${shown(presentation.showVariance)}.`,
@@ -243,7 +401,7 @@ export function buildMethodsReport(
       : []),
     "",
     ...intervalSection,
-    ...inferenceSection,
+    ...inferenceReportSection,
     "## Interpretation and reproducibility boundaries",
     "",
     "- Rotation axis signs are arbitrary; a mirrored solution can represent the same geometry.",

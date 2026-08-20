@@ -1,6 +1,11 @@
 import type { Row } from "jena-js";
 import { rowsToCsv } from "./export";
 import {
+  assertOpenEnaInferenceBindingV2,
+  flattenOpenEnaInferenceRows,
+} from "./inference-consumers";
+import type { OpenEnaInferenceResultV2 } from "./inference-v2";
+import {
   JENA_RUNTIME_VERSION,
   datasetHashKindFor,
   sameOpenEnaConfig,
@@ -1320,7 +1325,23 @@ export function sliceLongitudinalRepeatedPeriods(
 export function buildLongitudinalGroupCentroidExport(
   view: OpenEnaLongitudinalView,
   presentationOptions?: OpenEnaLongitudinalPresentationOptions,
+  inference: OpenEnaInferenceResultV2 | null = null,
 ) {
+  if (inference) {
+    if (inference.kind === "endpoint-independent"
+      || !view.source.normalizedUtf8TextSha256
+      || !view.source.hashKind) {
+      throw new Error("Inference consumer binding mismatch.");
+    }
+    assertOpenEnaInferenceBindingV2(inference, {
+      analyzedAt: view.resultProvenance.analyzedAt,
+      datasetNormalizedUtf8TextSha256: view.source.normalizedUtf8TextSha256,
+      datasetHashKind: view.source.hashKind,
+      modelType: view.resultProvenance.modelType,
+      configuration: view.configuration,
+      axes: view.axes,
+    });
+  }
   const finiteOr = (value: number | undefined, fallback: number) => (
     typeof value === "number" && Number.isFinite(value) ? value : fallback
   );
@@ -1354,13 +1375,14 @@ export function buildLongitudinalGroupCentroidExport(
       }
     : null;
   return {
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     kind: "open-ena-longitudinal-group-centroids" as const,
     app: "ENA.HK Open ENA" as const,
     runtime: "jena-js" as const,
     runtimeVersion: JENA_RUNTIME_VERSION,
     settings: {
-      repeatedEntityColumn: view.repeatedEntityColumn,
+      repeatedEntityColumns: [...view.repeatedEntityColumns],
+      identityConfirmed: view.identityConfirmed,
       timeColumn: view.timeColumn,
       timeOrder: [...view.timeOrder],
       timeOrderPolicy: { ...view.timeOrderPolicy },
@@ -1385,12 +1407,23 @@ export function buildLongitudinalGroupCentroidExport(
     },
     periodDiagnostics: cloneJson(view.periodDiagnostics),
     groups: cloneJson(view.groups),
-    inference: null,
+    inference,
+    inferenceDiagnostics: inference
+      ? {
+          status: inference.status,
+          reason: inference.reason,
+          ledger: inference.ledger,
+          families: inference.families,
+          warnings: inference.warnings,
+        }
+      : null,
     privacy: {
       rawSourceRowsIncluded: false,
-      repeatedEntityIdentifiersIncluded: false,
+      entityTokensIncluded: false,
+      entityValuesIncluded: false,
+      pairedDifferencesIncluded: false,
       entityPeriodCoordinatesIncluded: false,
-      note: "The derived export contains group-period summaries and fitted geometry, not repeated-entity identifiers or entity-period coordinates.",
+      note: "The derived export contains aggregate group-period geometry and aggregate inference only; it excludes repeated-entity values, opaque tokens, paired differences, entity-period coordinates, and raw source rows.",
     },
     presentation,
     createdAt: view.createdAt,
@@ -1399,6 +1432,7 @@ export function buildLongitudinalGroupCentroidExport(
 }
 
 export function longitudinalPeriodRowsToCsv(view: OpenEnaLongitudinalView) {
+  const repeatedEntityColumnsJson = JSON.stringify(view.repeatedEntityColumns);
   const timeOrderJson = JSON.stringify(view.timeOrder);
   const configurationJson = JSON.stringify(view.configuration);
   const geometryJson = JSON.stringify(view.geometry);
@@ -1423,7 +1457,8 @@ export function longitudinalPeriodRowsToCsv(view: OpenEnaLongitudinalView) {
     dy: period.dy,
     stepDistance: period.stepDistance,
     cumulativeDistance: period.cumulativeDistance,
-    repeatedEntityColumn: view.repeatedEntityColumn,
+    repeatedEntityColumnsJson,
+    identityConfirmed: view.identityConfirmed,
     timeColumn: view.timeColumn,
     cohortPolicy: view.cohortPolicy,
     timeOrderJson,
@@ -1445,4 +1480,9 @@ export function longitudinalPeriodRowsToCsv(view: OpenEnaLongitudinalView) {
     projectionReferenceJson,
     boundariesJson,
   })));
+}
+
+/** Separate aggregate inference CSV; descriptive geometry remains in the period CSV. */
+export function longitudinalInferenceRowsToCsv(inference: OpenEnaInferenceResultV2) {
+  return rowsToCsv(flattenOpenEnaInferenceRows(inference));
 }

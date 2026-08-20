@@ -279,7 +279,9 @@ function parseReferenceObject(value: unknown): OpenEnaRotationReference {
 }
 
 function referenceFromResultBundle(value: JsonRecord, filename: string): OpenEnaRotationReference {
-  if (value.schemaVersion !== 1 || value.app !== "ENA.HK Open ENA" || !isRecord(value.manifest)) {
+  if ((value.schemaVersion !== 1 && value.schemaVersion !== 2)
+    || value.app !== "ENA.HK Open ENA"
+    || !isRecord(value.manifest)) {
     throw new Error("This JSON is neither an ENA.HK reference rotation nor a supported result bundle.");
   }
   const manifest = value.manifest as unknown as OpenEnaManifest;

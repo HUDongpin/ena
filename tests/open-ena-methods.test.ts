@@ -13,7 +13,7 @@ const sampleText = readFileSync(
   "utf8",
 );
 
-test("the generated methods report records the analytic estimand without source-text leakage", () => {
+test("the generated methods report records the model but never invents inference before an explicit run", () => {
   const dataset = parseCsv(sampleText, { name: "academy.csv", source: "sample" });
   const result = analyzeDataset(dataset, SAMPLE_CONFIG);
   const report = buildMethodsReport(dataset, SAMPLE_CONFIG, result, "abc123");
@@ -26,18 +26,16 @@ test("the generated methods report records the analytic estimand without source-
   assert.match(report, /5 rows total including the current row/);
   assert.match(report, /sphere normalization/);
   assert.match(report, /SVD rotation/);
-  assert.match(report, /Mann–Whitney U/);
-  assert.match(report, /auto exact-first/i);
-  assert.match(report, /Resolved p method/);
-  assert.match(report, /(?:exact-classic|exact-conditional-rank-permutation|normal-approximation-tie-corrected)/);
-  assert.doesNotMatch(report, /two-sided normal-approximation p-value/i);
-  assert.match(report, /no multiplicity correction/);
+  assert.match(report, /## Inferential comparison/);
+  assert.match(report, /No researcher-confirmed inferential comparison was run/);
+  assert.doesNotMatch(report, /Mann–Whitney U|Resolved p method|auto exact-first/i);
+  assert.doesNotMatch(report, /raw p|Holm p|no multiplicity correction/i);
   assert.match(report, /abc123/);
   assert.match(report, /axis signs are arbitrary/i);
   assert.doesNotMatch(report, /compare alternatives|utterance/);
 });
 
-test("publication methods never render a small valid p-value as zero", () => {
+test("publication methods do not fabricate p-values from visibly separated points before Run", () => {
   const dataset = parseCsv(sampleText, { name: "academy.csv", source: "sample" });
   const result = analyzeDataset(dataset, SAMPLE_CONFIG);
   const dimension = result.dimensions[0];
@@ -65,8 +63,9 @@ test("publication methods never render a small valid p-value as zero", () => {
     [dimension],
   );
 
-  assert.match(report, /\| < \.001 \|/);
-  assert.doesNotMatch(report, /\| 0\.000 \|/);
+  assert.match(report, /No researcher-confirmed inferential comparison was run/);
+  assert.doesNotMatch(report, /\| < \.001 \||\| 0\.000 \|/);
+  assert.doesNotMatch(report, /Mann–Whitney U|raw p|Holm p/i);
 });
 
 test("the derived result bundle includes the same raw-row-excluding methods report", () => {
@@ -80,17 +79,14 @@ test("the derived result bundle includes the same raw-row-excluding methods repo
   assert.doesNotMatch(bundle.methodsReportMarkdown ?? "", /compare alternatives|utterance/);
 });
 
-test("methods and bundle inference follow the researcher-selected visible axes", () => {
+test("methods and bundle record researcher-selected visible axes without automatic inference", () => {
   const dataset = parseCsv(sampleText, { name: "academy.csv", source: "sample" });
   const result = analyzeDataset(dataset, SAMPLE_CONFIG);
   const selectedAxes = [result.dimensions[1], result.dimensions[2]];
   const report = buildMethodsReport(dataset, SAMPLE_CONFIG, result, "abc123", selectedAxes, { flipX: true, flipY: false });
-  const inferenceTable = report.slice(report.indexOf("| Axis |"), report.indexOf("## Interpretation"));
-  assert.match(inferenceTable, new RegExp(`\\| ${selectedAxes[0]} \\|`));
-  assert.match(inferenceTable, new RegExp(`\\| ${selectedAxes[1]} \\|`));
-  assert.doesNotMatch(inferenceTable, new RegExp(`\\| ${result.dimensions[0]} \\|`));
   assert.match(report, new RegExp(`Displayed 2D axes: X .*${selectedAxes[0]}.*\\(flipped\\); Y .*${selectedAxes[1]}.*\\(unflipped\\)`));
   assert.match(report, /in the unflipped model coordinate system/);
+  assert.match(report, /No researcher-confirmed inferential comparison was run/);
 
   const bundle = buildAnalysisBundle(dataset, SAMPLE_CONFIG, result, "abc123", {
     methodsDimensions: selectedAxes,
@@ -108,12 +104,8 @@ test("methods and bundle inference follow the researcher-selected visible axes",
     pointScale: 0.8,
     plotZoom: 1.6,
   });
-  const bundledTable = bundle.methodsReportMarkdown.slice(
-    bundle.methodsReportMarkdown.indexOf("| Axis |"),
-    bundle.methodsReportMarkdown.indexOf("## Interpretation"),
-  );
-  assert.match(bundledTable, new RegExp(`\\| ${selectedAxes[1]} \\|`));
   assert.match(bundle.methodsReportMarkdown, /X .*\(flipped\); Y .*\(unflipped\)/);
+  assert.match(bundle.methodsReportMarkdown, /No researcher-confirmed inferential comparison was run/);
   assert.deepEqual(bundle.presentation, {
     selectedAxes,
     flipX: true,
@@ -139,14 +131,14 @@ test("methods and bundle inference follow the researcher-selected visible axes",
   assert.match(bundle.methodsReportMarkdown, /Edge width scale: 1\.4×; unit point scale: 0\.8×; plot zoom: 1\.6×/);
 });
 
-test("methods record displayed axes even when group inference is unavailable", () => {
+test("methods record displayed axes while confirmed inference is unavailable", () => {
   const dataset = parseCsv(sampleText, { name: "academy.csv", source: "sample" });
   const ungroupedConfig = { ...SAMPLE_CONFIG, groupColumn: null };
   const result = analyzeDataset(dataset, ungroupedConfig);
   const selectedAxes = [result.dimensions[1], result.dimensions[2]];
   const report = buildMethodsReport(dataset, ungroupedConfig, result, null, selectedAxes, { flipY: true });
 
-  assert.match(report, /Group inference boundary/);
+  assert.match(report, /No researcher-confirmed inferential comparison was run/);
   assert.match(report, new RegExp(`Displayed 2D axes: X .*${selectedAxes[0]}.*; Y .*${selectedAxes[1]}.*\\(flipped\\)`));
 });
 
@@ -267,13 +259,25 @@ test("the Stats panel exposes copy and download actions for the generated method
     join(process.cwd(), "components", "open-ena", "OpenEnaWorkspace.tsx"),
     "utf8",
   );
+  const inferencePanel = readFileSync(
+    join(process.cwd(), "components", "open-ena", "OpenEnaInferencePanel.tsx"),
+    "utf8",
+  );
+  const inferenceCopy = readFileSync(
+    join(process.cwd(), "lib", "open-ena-i18n.ts"),
+    "utf8",
+  );
   assert.match(workspace, /buildMethodsReport/);
-  assert.match(workspace, /Methods & Reproducibility/);
-  assert.match(workspace, /Copy methods text/);
+  assert.match(workspace, /copy\.stats\.ui\.methodsTitle/);
+  assert.match(workspace, /copy\.stats\.ui\.copyMethods/);
   assert.match(workspace, /methods-report\.md/);
   assert.match(workspace, /navigator\.clipboard\.writeText/);
-  assert.match(workspace, /Reference MR1 interpretation/);
-  assert.match(workspace, /statistics remain in unflipped model coordinates/);
+  assert.match(workspace, /copy\.stats\.ui\.referenceMr1Title/);
+  assert.match(inferenceCopy, /methodsTitle: "Methods & Reproducibility"/);
+  assert.match(
+    `${workspace}\n${inferencePanel}\n${inferenceCopy}`,
+    /(?:statistics remain in|Coordinates are the) unflipped (?:fitted-)?model coordinates/i,
+  );
   assert.match(workspace, /edgeThreshold,/);
   assert.match(workspace, /showNetworks,/);
   assert.match(workspace, /showUnitLabels,/);
