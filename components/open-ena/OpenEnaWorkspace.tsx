@@ -186,6 +186,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const workspaceIsLocalized = isOpenEnaLocalizedLocale(locale);
   const [mode, setMode] = useState<OpenEnaMode>("sets");
   const [modelTab, setModelTab] = useState<OpenEnaModelPanelTab>("units");
+  const [trajectoryModelFocusRequest, setTrajectoryModelFocusRequest] = useState(0);
   const [statsTab, setStatsTab] = useState<OpenEnaStatsTab>("comparison");
   const [centerSurface, setCenterSurface] = useState<OpenEnaCenterSurface>("plot");
   const [view, setView] = useState<OpenEnaView>("2d");
@@ -248,12 +249,20 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const referenceImportRef = useRef<object | null>(null);
   const datasetGenerationRef = useRef(0);
   const groupSelectionColumnRef = useRef<string | null>(null);
+  const trajectoryModelFocusHandledRef = useRef(0);
+  const modelTypeSelectRef = useRef<HTMLSelectElement>(null);
 
   useEffect(() => () => {
     abortRef.current?.abort();
     sourceAbortRef.current?.abort();
     referenceImportRef.current = null;
   }, []);
+
+  useEffect(() => {
+    if (trajectoryModelFocusRequest === trajectoryModelFocusHandledRef.current || modelTab !== "windows") return;
+    trajectoryModelFocusHandledRef.current = trajectoryModelFocusRequest;
+    modelTypeSelectRef.current?.focus();
+  }, [modelTab, trajectoryModelFocusRequest]);
 
   const configErrors = useMemo(
     () => dataset ? validateWorkspaceConfig(dataset, config, rotationReference) : [],
@@ -638,6 +647,11 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     setLoading(false);
     setConfig(update);
     setView("2d");
+  }
+
+  function openTrajectoryModelConfiguration() {
+    setModelTab("windows");
+    setTrajectoryModelFocusRequest((request) => request + 1);
   }
 
   function captureCurrentAnalysisSet() {
@@ -1380,6 +1394,23 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           <p className="ena-panel-kicker">02 · Model</p>
           <h2>{copy.model.title}</h2>
           <p>{dataset?.source === "sample" ? "Teaching Sample · jENA model configuration" : copy.model.description}</p>
+          {dataset ? (
+            <button
+              type="button"
+              className="ena-action-button ena-action-secondary ena-trajectory-model-shortcut"
+              data-testid="open-ena-configure-trajectory-model"
+              onClick={openTrajectoryModelConfiguration}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="5" cy="17" r="2" />
+                <circle cx="12" cy="10" r="2" />
+                <circle cx="19" cy="5" r="2" />
+                <path d="m6.5 15.6 4-4m3.2-2.8 3.6-2.6" />
+              </svg>
+              <span>{copy.model.configureTrajectory}</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          ) : null}
         </div>
         <div className="ena-model-tabs" role="tablist" aria-label="Model configuration">
           {modelTabs.map((tab) => (
@@ -1505,7 +1536,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   <div className="ena-two-fields">
                     <label className="ena-field">
                       <span>{copy.model.modelType}</span>
-                      <select value={config.model} onChange={(event) => updateConfig((current) => {
+                      <select id="open-ena-model-type" ref={modelTypeSelectRef} value={config.model} onChange={(event) => updateConfig((current) => {
                         const model = event.target.value as ModelType;
                         const rotation = officialComparisonRotation(dataset, {
                           groupColumn: current.groupColumn,

@@ -31,6 +31,58 @@ test("trajectory models are configured in Model type instead of launched from th
   );
 });
 
+test("the Model heading shortcut opens and focuses Model type without choosing or running a trajectory model", () => {
+  const modelPanel = workspace.match(
+    /function renderModelPanel\(\)[\s\S]*?(?=\n  function renderLongitudinalPanel\(\))/,
+  )?.[0] ?? "";
+  const shortcut = modelPanel.match(
+    /<button[\s\S]{0,900}data-testid="open-ena-configure-trajectory-model"[\s\S]{0,900}<\/button>/,
+  )?.[0] ?? "";
+  const handler = workspace.match(
+    /function openTrajectoryModelConfiguration\(\)[\s\S]*?(?=\n  function |\n  async function )/,
+  )?.[0] ?? "";
+
+  assert.match(shortcut, /^<button/);
+  assert.match(shortcut, /onClick=\{openTrajectoryModelConfiguration\}/);
+  assert.doesNotMatch(shortcut, /aria-pressed/);
+  assert.match(
+    modelPanel,
+    /<div className="ena-panel-heading">[\s\S]{0,1000}\{dataset \? \([\s\S]{0,500}data-testid="open-ena-configure-trajectory-model"[\s\S]{0,500}<\/button>[\s\S]{0,120}: null\}[\s\S]{0,80}<\/div>\s*<div className="ena-model-tabs"/,
+    "the shortcut must render only for a loaded dataset and remain inside the Model heading",
+  );
+  assert.ok(
+    modelPanel.indexOf('className="ena-panel-heading"')
+      < modelPanel.indexOf('data-testid="open-ena-configure-trajectory-model"'),
+    "the shortcut must follow the Model heading",
+  );
+  assert.ok(
+    modelPanel.indexOf('data-testid="open-ena-configure-trajectory-model"')
+      < modelPanel.indexOf('className="ena-model-tabs"'),
+    "the shortcut must stay in the Model header area rather than inside a model-type option or plot toolbar",
+  );
+
+  assert.match(handler, /setModelTab\("windows"\)/);
+  assert.match(handler, /setTrajectoryModelFocusRequest\(\(request\) => request \+ 1\)/);
+  assert.doesNotMatch(
+    handler,
+    /updateConfig|runAnalysis|\bsetMode\(|SeparateTrajectory|AccumulatedTrajectory|rotation/,
+    "the shortcut may navigate and request focus, but must not choose or run a model",
+  );
+  assert.match(
+    workspace,
+    /trajectoryModelFocusRequest === trajectoryModelFocusHandledRef\.current \|\| modelTab !== "windows"[\s\S]{0,180}trajectoryModelFocusHandledRef\.current = trajectoryModelFocusRequest[\s\S]{0,120}modelTypeSelectRef\.current\?\.focus\(\)/,
+    "each shortcut request must focus once after Windows renders without stealing focus on later ordinary tab navigation",
+  );
+  assert.match(
+    modelPanel,
+    /id="open-ena-model-type"[\s\S]{0,180}ref=\{modelTypeSelectRef\}/,
+    "the shortcut's controlled target must be the real Model type selector",
+  );
+  assert.match(copy, /configureTrajectory:\s*"Configure trajectory model"/);
+  assert.match(copy, /configureTrajectory:\s*"設定軌跡模型"/);
+  assert.match(copy, /configureTrajectory:\s*"配置轨迹模型"/);
+});
+
 test("longitudinal group-centroid analysis is derived only from successful jENA trajectory results", () => {
   assert.match(
     longitudinal,

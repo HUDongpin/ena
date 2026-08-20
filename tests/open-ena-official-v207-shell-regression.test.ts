@@ -239,6 +239,34 @@ test("the plot toolbar contains view and export actions, not a model-type launch
   assert.doesNotMatch(workspace, /className="ena-workbench-topbar"|className="ena-workbench-statusbar"/);
 });
 
+test("the trajectory configuration shortcut stays in the responsive Model heading flow", () => {
+  const modelPanel = sourceSegment(
+    workspace,
+    "function renderModelPanel()",
+    "function renderLongitudinalPanel()",
+  );
+  const shortcutRule = styles.match(/\.ena-trajectory-model-shortcut\s*\{([^}]*)\}/)?.[1] ?? "";
+
+  assert.match(
+    modelPanel,
+    /<div className="ena-panel-heading">[\s\S]{0,1600}data-testid="open-ena-configure-trajectory-model"[\s\S]{0,1000}<\/div>\s*<div className="ena-model-tabs"/,
+    "the shortcut belongs after the Model description and before its tablist",
+  );
+  assert.match(shortcutRule, /max-width:\s*100%/);
+  assert.match(shortcutRule, /white-space:\s*normal/);
+  assert.doesNotMatch(shortcutRule, /position:\s*absolute/);
+  assert.ok(
+    (styles.match(/\.ena-panel-heading\s*>\s*p:last-of-type/g) ?? []).length >= 2,
+    "both heading typography rules must keep matching the description after the shortcut is appended",
+  );
+  assert.doesNotMatch(styles, /\.ena-panel-heading\s*>\s*p:last-child/);
+  assert.match(
+    styles,
+    /@media \(max-width:\s*640px\)[\s\S]*?\.ena-trajectory-model-shortcut\s*\{[^}]*width:\s*100%;/,
+    "the localized shortcut must use a full-width mobile hit target",
+  );
+});
+
 test("the visible comparison caption keeps only the official Units and Horizon definitions", () => {
   assert.match(
     groupContrast,

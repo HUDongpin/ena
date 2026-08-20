@@ -2970,7 +2970,7 @@ body:has(.open-ena-login-page) .back-to-top {
   letter-spacing: -0.03em;
 }
 
-.ena-panel-heading > p:last-child {
+.ena-panel-heading > p:last-of-type {
   margin: 9px 0 0;
   color: #5a6774;
   font-size: calc(0.79rem + var(--ena-font-step, 1px));
@@ -8148,10 +8148,31 @@ body:has(.open-ena-page) #main-content {
   font-size: calc(1.02rem + var(--ena-font-step, 1px));
 }
 
-.ena-panel-heading > p:last-child {
+.ena-panel-heading > p:last-of-type {
   margin-top: 6px;
   font-size: calc(0.7rem + var(--ena-font-step, 1px));
   line-height: 1.45;
+}
+
+.ena-trajectory-model-shortcut {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  justify-content: flex-start;
+  line-height: 1.25;
+  white-space: normal;
+}
+
+.ena-trajectory-model-shortcut svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
 }
 
 .ena-model-tabs {
@@ -9834,6 +9855,11 @@ body:has(.open-ena-page) #main-content {
 }
 
 @media (max-width: 640px) {
+  .ena-trajectory-model-shortcut {
+    width: 100%;
+    justify-content: center;
+  }
+
   .ena-visual-toolbar-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
