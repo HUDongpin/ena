@@ -215,6 +215,28 @@ test("normalizes identity components with NFC and intentional String type-bounda
   );
 });
 
+test("preserves case so Alex and alex remain distinct repeated identities", () => {
+  const fixture = frameFixture([
+    "Group,Name,Case,Period,A,B,C",
+    "Only,Alex,one,T1,1,1,0",
+    "Only,alex,two,T1,0,1,1",
+    "Only,Alex,one,T2,1,0,1",
+    "Only,alex,two,T2,1,1,0",
+  ]);
+  const { comparisonFrame } = derive(fixture, {
+    ...confirmedSettings(),
+    repeatedEntityColumns: ["Name"],
+    timeOrder: ["T1", "T2"],
+  });
+
+  const pointCountByToken = new Map<string, number>();
+  for (const point of comparisonFrame.points) {
+    pointCountByToken.set(point.entityToken, (pointCountByToken.get(point.entityToken) ?? 0) + 1);
+  }
+  assert.equal(pointCountByToken.size, 2);
+  assert.deepEqual([...pointCountByToken.values()].sort((left, right) => left - right), [2, 2]);
+});
+
 test("migrates the deliberate v1 input to one unconfirmed column while keeping Plot usable", () => {
   const fixture = frameFixture();
   const derivation = buildLongitudinalDerivation(
