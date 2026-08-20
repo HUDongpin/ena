@@ -139,8 +139,12 @@ test("applicable Plot Tools control the active shared-set plot and the mobile ra
   const responsiveModeRules = [...css.matchAll(/\.ena-rail-modes\s*\{[^}]*?grid-template-columns:\s*repeat\((\d),/g)]
     .map((match) => Number(match[1]));
   assert.ok(
-    responsiveRailRules.includes(5) || responsiveModeRules.includes(5),
-    "the mobile rail or its dedicated mode row must allocate all five preserved controls",
+    responsiveModeRules.includes(5),
+    "the dedicated mobile mode row must allocate all five preserved controls",
+  );
+  assert.ok(
+    !responsiveRailRules.includes(5),
+    "the outer mobile rail must remain one column so the brand and five-button row cannot overlap",
   );
   assert.match(css, /\.ena-sets-remove\s*\{[\s\S]*?min-height:\s*44px;/);
 });

@@ -7,6 +7,7 @@ import {
 } from "./uncertainty";
 
 export interface OpenEnaPresentationOptions {
+  codeColors?: Readonly<Record<string, string>>;
   flipX?: boolean;
   flipY?: boolean;
   edgeThreshold?: number;

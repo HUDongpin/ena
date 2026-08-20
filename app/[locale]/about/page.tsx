@@ -76,7 +76,7 @@ function ProfileLogoMark({ logo }: { logo: ProfileLogo }) {
     return (
       <svg viewBox="0 0 48 48" aria-hidden="true">
         <circle cx="24" cy="24" r="21" fill="#fff" stroke="#1f293d" strokeWidth="2" />
-        <path d="M9.5 32.2 18.6 12.6 24 25.4 29.4 12.6 38.5 32.2" fill="none" stroke="#72c7bd" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4.2" />
+        <path d="M9.5 32.2 18.6 12.6 24 25.4 29.4 12.6 38.5 32.2" fill="none" stroke="#89cff0" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4.2" />
         <path d="M13.6 31.3c7-3.5 13.8-3.5 20.8 0" fill="none" stroke="#f07c4c" strokeLinecap="round" strokeWidth="2.8" />
       </svg>
     );
@@ -86,7 +86,7 @@ function ProfileLogoMark({ logo }: { logo: ProfileLogo }) {
     <span className="ph-link-mark" aria-hidden="true">
       <svg viewBox="0 0 44 44">
         <path d="M10 29c6-10 13 0 22-15" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.4" />
-        <circle cx="32" cy="14" r="2.5" fill="#72c7bd" />
+        <circle cx="32" cy="14" r="2.5" fill="#89cff0" />
       </svg>
       <span>PH</span>
     </span>

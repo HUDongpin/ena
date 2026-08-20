@@ -60,7 +60,8 @@ test("persistent Plot Tools expose every controlled visual setting with accessib
   }
   assert.match(markup, /aria-label="Plot Settings"[^>]*aria-expanded="false"/);
   assert.match(markup, /data-ena-plot-tool="edge-scale"[\s\S]*?type="range"[^>]*min="0\.1"[^>]*max="4"[^>]*step="0\.1"[\s\S]*?type="number"[^>]*min="0\.1"[^>]*max="4"/);
-  assert.match(markup, /data-ena-plot-tool="text-size"[\s\S]*?type="range"[^>]*min="8"[^>]*max="20"[^>]*step="1"[\s\S]*?type="number"[^>]*min="8"[^>]*max="20"/);
+  assert.match(markup, /data-ena-plot-tool="text-size"[\s\S]*?type="range"[^>]*min="9"[^>]*max="21"[^>]*step="1"[\s\S]*?type="number"[^>]*min="9"[^>]*max="21"/);
+  assert.match(markup, /aria-valuetext="13 pixels"/);
   assert.match(markup, /data-ena-plot-tool="code-labels"[\s\S]*?role="switch"[^>]*aria-label="Code labels"[^>]*aria-checked="true"/);
   assert.match(markup, /data-ena-plot-tool="unit-circle"[\s\S]*?role="switch"[^>]*aria-label="Unit circle"[^>]*aria-checked="false"/);
   assert.doesNotMatch(

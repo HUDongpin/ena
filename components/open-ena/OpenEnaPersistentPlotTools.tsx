@@ -117,7 +117,7 @@ export default function OpenEnaPersistentPlotTools({
   onSettingsOpenChange = () => {},
   disabled = false,
 }: OpenEnaPersistentPlotToolsProps) {
-  const textSize = Math.round(12 * textScale);
+  const textSize = Math.round(12 * textScale + 1);
 
   return (
     <section
@@ -184,25 +184,25 @@ export default function OpenEnaPersistentPlotTools({
           <div className="ena-official-tool-control">
             <input
               type="range"
-              min="8"
-              max="20"
+              min="9"
+              max="21"
               step="1"
               value={textSize}
-              style={rangeProgressStyle(textSize, 8, 20)}
+              style={rangeProgressStyle(textSize, 9, 21)}
               disabled={disabled}
               aria-label="Text Size"
               aria-valuetext={`${textSize} pixels`}
-              onChange={(event) => onTextScaleChange(clamp(Number(event.target.value) / 12, 8 / 12, 20 / 12))}
+              onChange={(event) => onTextScaleChange(clamp((Number(event.target.value) - 1) / 12, 8 / 12, 20 / 12))}
             />
             <input
               type="number"
-              min="8"
-              max="20"
+              min="9"
+              max="21"
               step="1"
               value={textSize}
               disabled={disabled}
               aria-label="Text Size value"
-              onChange={(event) => onTextScaleChange(clamp(Number(event.target.value) / 12, 8 / 12, 20 / 12))}
+              onChange={(event) => onTextScaleChange(clamp((Number(event.target.value) - 1) / 12, 8 / 12, 20 / 12))}
             />
             <button type="button" aria-label="Reset Text Size" title="Reset Text Size" disabled={disabled} onClick={() => onTextScaleChange(1)}>↻</button>
           </div>

@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "A multilingual hub of knowledge for Epistemic Network Analysis.",
     start_url: "/en",
     display: "standalone",
-    background_color: "#edf8f7",
-    theme_color: "#72c7bd",
+    background_color: "#f1f9fd",
+    theme_color: "#89cff0",
     icons: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
   };
 }

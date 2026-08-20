@@ -20,7 +20,7 @@ export default function OpenGraphImage() {
         height: "100%",
         display: "flex",
         alignItems: "stretch",
-        background: "#f6fbfa",
+        background: "#f7fbfe",
         color: "#1f293d",
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
@@ -40,8 +40,8 @@ export default function OpenGraphImage() {
               width: 76,
               height: 76,
               borderRadius: 18,
-              border: "2px solid #d7eeea",
-              background: "#eef9f7",
+              border: "2px solid #d5ebf6",
+              background: "#edf8fd",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -71,18 +71,18 @@ export default function OpenGraphImage() {
           width: 510,
           position: "relative",
           background: "#1f293d",
-          borderLeft: "8px solid #72c7bd",
+          borderLeft: "8px solid #89cff0",
           display: "flex",
         }}
       >
         <div
-          style={{ position: "absolute", left: 48, top: 90, width: 380, height: 6, background: "#72c7bd", transform: "rotate(-12deg)", opacity: 0.65 }}
+          style={{ position: "absolute", left: 48, top: 90, width: 380, height: 6, background: "#89cff0", transform: "rotate(-12deg)", opacity: 0.65 }}
         />
         <div
-          style={{ position: "absolute", left: 126, top: 285, width: 350, height: 12, background: "#72c7bd", transform: "rotate(20deg)", opacity: 0.9 }}
+          style={{ position: "absolute", left: 126, top: 285, width: 350, height: 12, background: "#89cff0", transform: "rotate(20deg)", opacity: 0.9 }}
         />
         <div
-          style={{ position: "absolute", left: 178, top: 158, width: 298, height: 5, background: "#66bfb5", transform: "rotate(68deg)", opacity: 0.55 }}
+          style={{ position: "absolute", left: 178, top: 158, width: 298, height: 5, background: "#73c2e8", transform: "rotate(68deg)", opacity: 0.55 }}
         />
         {nodes.map((node, index) => (
           <div
@@ -94,8 +94,8 @@ export default function OpenGraphImage() {
               width: index === 2 ? 86 : 66,
               height: index === 2 ? 86 : 66,
               borderRadius: 999,
-              border: "6px solid #72c7bd",
-              background: index === 2 ? "#72c7bd" : "#1f293d",
+              border: "6px solid #89cff0",
+              background: index === 2 ? "#89cff0" : "#1f293d",
               display: "flex",
             }}
           />

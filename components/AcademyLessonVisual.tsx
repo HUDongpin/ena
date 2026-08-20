@@ -190,11 +190,11 @@ export default function AcademyLessonVisual({ variant, alt, sequence }: AcademyL
       <svg viewBox="0 0 800 500" aria-hidden="true" focusable="false">
         <defs>
           <linearGradient id={`academy-grid-fade-${sequence}`} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#f7fbfa" />
-            <stop offset="1" stopColor="#e9f5f3" />
+            <stop offset="0" stopColor="#f7fbfe" />
+            <stop offset="1" stopColor="#edf8fd" />
           </linearGradient>
           <pattern id={`academy-grid-${sequence}`} width="28" height="28" patternUnits="userSpaceOnUse">
-            <path d="M28 0H0V28" fill="none" stroke="#d9e7e4" strokeWidth="1" />
+            <path d="M28 0H0V28" fill="none" stroke="#89cff0" strokeOpacity="0.28" strokeWidth="1" />
           </pattern>
         </defs>
         <rect width="800" height="500" rx="28" fill={`url(#academy-grid-fade-${sequence})`} />

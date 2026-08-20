@@ -16,6 +16,26 @@ const copy = source("lib/open-ena-i18n.ts");
 const longitudinal = source("lib/open-ena/longitudinal.ts");
 const site = source("lib/site.ts");
 
+test("trajectory analysis is launched by a same-route workspace button", () => {
+  const launchButton = workspace.match(
+    /<button[\s\S]{0,700}data-testid="open-ena-trajectory-analysis-button"[\s\S]{0,700}<\/button>/,
+  )?.[0] ?? "";
+  const launchHandler = workspace.match(
+    /function launchTrajectoryAnalysis\(\)[\s\S]*?(?=\n  function [A-Za-z]|\n  async function [A-Za-z])/,
+  )?.[0] ?? "";
+
+  assert.match(launchButton, /^<button/);
+  assert.match(launchButton, /onClick=\{launchTrajectoryAnalysis\}/);
+  assert.doesNotMatch(launchButton, /\bhref\s*=/);
+  assert.match(launchHandler, /if \(!dataset\)[\s\S]{0,160}setMode\("data"\)/);
+  assert.match(launchHandler, /result\.set\.modelType !== "EndPoint"[\s\S]{0,220}setMode\("plot"\)/);
+  assert.match(launchHandler, /model:\s*"SeparateTrajectory"/);
+  assert.match(launchHandler, /rotation:\s*"svd"/);
+  assert.match(launchHandler, /setModelTab\("windows"\)/);
+  assert.match(launchHandler, /setMode\("model"\)/);
+  assert.doesNotMatch(launchHandler, /router|window\.location|location\.assign|href/);
+});
+
 test("longitudinal group-centroid analysis is derived only from successful jENA trajectory results", () => {
   assert.match(
     longitudinal,
@@ -47,13 +67,13 @@ test("researchers explicitly select repeated-entity and time-order fields", () =
   assert.match(controls, /(?:Time\s*(?:\/|and)?\s*order|copy\.longitudinal\.timeOrder)/i);
   assert.match(
     controls,
-    /resultConfig\.unitColumns\.map\([\s\S]{0,300}<option/,
-    "repeated-entity choices must come from the unit fields bound to the successful result",
+    /resultConfig\.unitColumns[\s\S]{0,220}\.filter\(\(column\) => column !== resultConfig\.groupColumn\)[\s\S]{0,180}\.map\([\s\S]{0,180}<option/,
+    "repeated-entity choices must come from successful-result unit fields while excluding the comparison-group namespace",
   );
   assert.match(
     controls,
-    /resultConfig\.conversationColumns\.map\([\s\S]{0,300}<option/,
-    "time/order choices must come from the conversation fields bound to the successful result",
+    /resultConfig\.conversationColumns[\s\S]{0,260}\.filter\(\(column\) => column !== resultConfig\.groupColumn && column !== repeatedEntityColumn\)[\s\S]{0,180}\.map\([\s\S]{0,180}<option/,
+    "time/order choices must come from successful-result conversation fields while remaining distinct from group and entity fields",
   );
 });
 
