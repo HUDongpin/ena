@@ -406,6 +406,565 @@ test("analysis bundle v2 preserves one supplied frozen inference authority and r
   );
 });
 
+test("strict inference and bundle readers reject a duplicate row for one planned member", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const duplicated = structuredClone(endpointInference);
+  if (duplicated.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  duplicated.rows.push(structuredClone(duplicated.rows[0]));
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = duplicated;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(duplicated),
+    /duplicate|planned member|cardinality/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /duplicate|planned member|cardinality/i,
+  );
+});
+
+test("strict readers reject missing, extra, duplicate-member, and wrong-role comparison plans", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const validBundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const variants: Array<{ label: string; inference: typeof endpointInference }> = [];
+
+  const missing = structuredClone(endpointInference);
+  if (missing.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  missing.rows.pop();
+  variants.push({ label: "missing row", inference: missing });
+
+  const extra = structuredClone(endpointInference);
+  if (extra.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  const extraMemberId = `openena-member-v2-${"f".repeat(64)}`;
+  extra.rows.push({ ...structuredClone(extra.rows[0]), memberId: extraMemberId });
+  extra.families[0].memberIds.push(extraMemberId);
+  extra.families[0].familySizePlanned = 3;
+  extra.rows.forEach((row) => { row.familySizePlanned = 3; });
+  variants.push({ label: "extra row", inference: extra });
+
+  const duplicateMember = structuredClone(endpointInference);
+  if (duplicateMember.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  duplicateMember.rows[1].memberId = duplicateMember.rows[0].memberId;
+  variants.push({ label: "duplicate member", inference: duplicateMember });
+
+  const wrongRole = structuredClone(endpointInference);
+  wrongRole.families[0].role = "omnibus";
+  variants.push({ label: "wrong family role", inference: wrongRole });
+
+  for (const { label, inference } of variants) {
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(inference),
+      /duplicate|member|family|axis|cardinality|role/i,
+      `${label} standalone`,
+    );
+    const bundle = structuredClone(validBundle);
+    bundle.inference = inference;
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(bundle)),
+      /duplicate|member|family|axis|cardinality|role/i,
+      `${label} bundle`,
+    );
+  }
+});
+
+test("strict readers require one comparison row for each bound axis", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const duplicatedAxis = structuredClone(endpointInference);
+  if (duplicatedAxis.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  duplicatedAxis.rows[1].axisIndex = 0;
+  duplicatedAxis.rows[1].axis = duplicatedAxis.request.axes[0];
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = duplicatedAxis;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(duplicatedAxis),
+    /axis|cardinality|planned member/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /axis|cardinality|planned member/i,
+  );
+});
+
+test("strict readers require one exact two-member comparison family", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const splitFamily = structuredClone(endpointInference);
+  if (splitFamily.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  const original = splitFamily.families[0];
+  const secondFamilyId = `openena-family-v2-${"e".repeat(64)}`;
+  splitFamily.families = [
+    {
+      ...original,
+      familySizePlanned: 1,
+      memberIds: [splitFamily.rows[0].memberId],
+    },
+    {
+      ...original,
+      familyId: secondFamilyId,
+      familySizePlanned: 1,
+      memberIds: [splitFamily.rows[1].memberId],
+    },
+  ];
+  splitFamily.rows[0].familySizePlanned = 1;
+  splitFamily.rows[1].familyId = secondFamilyId;
+  splitFamily.rows[1].familySizePlanned = 1;
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = splitFamily;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(splitFamily),
+    /comparison family|planned family|cardinality/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /comparison family|planned family|cardinality/i,
+  );
+});
+
+test("strict readers require one Friedman omnibus row for each bound axis", async () => {
+  const { trajectory, repeatedInference } = await allInferenceFixtures();
+  const missingOmnibus = structuredClone(repeatedInference);
+  if (missingOmnibus.kind !== "trajectory-repeated-periods") {
+    assert.fail("expected repeated-period inference");
+  }
+  const removed = missingOmnibus.omnibusRows.pop();
+  assert.ok(removed);
+  const family = missingOmnibus.families.find((candidate) => candidate.role === "omnibus");
+  assert.ok(family);
+  family.memberIds = family.memberIds.filter((memberId) => memberId !== removed.memberId);
+  family.familySizePlanned = family.memberIds.length;
+  missingOmnibus.omnibusRows.forEach((row) => {
+    row.familySizePlanned = family.familySizePlanned;
+  });
+  const bundle = buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    { methodsDimensions: trajectory.axes, inference: repeatedInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = missingOmnibus;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(missingOmnibus),
+    /Friedman|omnibus|axis|cardinality/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /Friedman|omnibus|axis|cardinality/i,
+  );
+});
+
+test("strict readers require every selected axis by all-period-pairs Wilcoxon follow-up", async () => {
+  const { trajectory, repeatedInference } = await allInferenceFixtures();
+  const missingFollowup = structuredClone(repeatedInference);
+  if (missingFollowup.kind !== "trajectory-repeated-periods") {
+    assert.fail("expected repeated-period inference");
+  }
+  const removed = missingFollowup.followupRows.pop();
+  assert.ok(removed);
+  const family = missingFollowup.families.find((candidate) => candidate.role === "posthoc");
+  assert.ok(family);
+  family.memberIds = family.memberIds.filter((memberId) => memberId !== removed.memberId);
+  family.familySizePlanned = family.memberIds.length;
+  missingFollowup.followupRows.forEach((row) => {
+    row.familySizePlanned = family.familySizePlanned;
+  });
+  const bundle = buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    { methodsDimensions: trajectory.axes, inference: repeatedInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = missingFollowup;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(missingFollowup),
+    /Wilcoxon|follow-up|period pair|cardinality/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /Wilcoxon|follow-up|period pair|cardinality/i,
+  );
+});
+
+test("strict readers reject a nonnumeric window even when inference and manifest agree", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const malformed = structuredClone(endpointInference) as unknown as {
+    binding: { configuration: Record<string, unknown> };
+  };
+  malformed.binding.configuration.windowSizeBack = "bad";
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  ) as unknown as {
+    inference: unknown;
+    manifest: { configuration: Record<string, unknown> };
+  };
+  bundle.inference = malformed;
+  bundle.manifest.configuration.windowSizeBack = "bad";
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(malformed),
+    /configuration|backward window|windowSizeBack/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(bundle)),
+    /configuration|backward window|windowSizeBack/i,
+  );
+});
+
+test("strict readers bound both window sizes to safe integers from zero through one hundred", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const validBundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  for (const field of ["windowSizeBack", "windowSizeForward"] as const) {
+    for (const invalid of [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      -1,
+      101,
+    ]) {
+      const malformed = structuredClone(endpointInference) as unknown as {
+        binding: { configuration: Record<string, unknown> };
+      };
+      malformed.binding.configuration[field] = invalid;
+      const bundle = structuredClone(validBundle) as unknown as {
+        inference: unknown;
+        manifest: { configuration: Record<string, unknown> };
+      };
+      bundle.inference = malformed;
+      bundle.manifest.configuration[field] = invalid;
+
+      assert.throws(
+        () => parseOpenEnaInferenceResultV2(malformed),
+        /window|safe integer|configuration/i,
+        `${field}=${String(invalid)} standalone`,
+      );
+      assert.throws(
+        () => parseOpenEnaAnalysisBundle(JSON.stringify(bundle)),
+        /window|safe integer|configuration/i,
+        `${field}=${String(invalid)} bundle`,
+      );
+    }
+  }
+});
+
+test("strict readers enforce closed configuration enums and reference-rotation identity", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const validBundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const mutations: Array<(configuration: Record<string, unknown>) => void> = [
+    (configuration) => { configuration.model = "Endpoint"; },
+    (configuration) => { configuration.window = "SlidingWindow"; },
+    (configuration) => { configuration.weightBy = "average"; },
+    (configuration) => { configuration.rotation = "wilcoxon"; },
+    (configuration) => { configuration.referenceRotationId = 42; },
+    (configuration) => {
+      configuration.rotation = "reference";
+      configuration.referenceRotationId = null;
+    },
+    (configuration) => { configuration.referenceRotationId = "stale-reference"; },
+  ];
+  for (const mutate of mutations) {
+    const malformed = structuredClone(endpointInference) as unknown as {
+      binding: { configuration: Record<string, unknown> };
+    };
+    mutate(malformed.binding.configuration);
+    const bundle = structuredClone(validBundle) as unknown as {
+      inference: unknown;
+      manifest: { configuration: Record<string, unknown> };
+    };
+    bundle.inference = malformed;
+    mutate(bundle.manifest.configuration);
+
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(malformed),
+      /configuration|binding|model|window|weight|rotation|reference/i,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(bundle)),
+      /configuration|binding|model|window|weight|rotation|reference/i,
+    );
+  }
+});
+
+test("strict readers reject duplicate unit, conversation, and code configuration arrays", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const validBundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  for (const field of ["unitColumns", "conversationColumns", "codes"] as const) {
+    const malformed = structuredClone(endpointInference) as unknown as {
+      binding: { configuration: Record<string, unknown> };
+    };
+    const original = malformed.binding.configuration[field] as string[];
+    malformed.binding.configuration[field] = [original[0], original[0]];
+    const bundle = structuredClone(validBundle) as unknown as {
+      inference: unknown;
+      manifest: { configuration: Record<string, unknown> };
+    };
+    bundle.inference = malformed;
+    bundle.manifest.configuration[field] = [original[0], original[0]];
+
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(malformed),
+      /configuration|columns|unique|duplicate/i,
+      `${field} standalone`,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(bundle)),
+      /configuration|columns|unique|duplicate/i,
+      `${field} bundle`,
+    );
+  }
+});
+
+test("strict readers bound configuration identity arrays and code arrays", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const validBundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const cases = [
+    { field: "unitColumns", values: Array.from({ length: 257 }, (_, index) => `unit-${index}`) },
+    { field: "conversationColumns", values: Array.from({ length: 257 }, (_, index) => `conversation-${index}`) },
+    { field: "codes", values: Array.from({ length: 31 }, (_, index) => `code-${index}`) },
+  ] as const;
+  for (const { field, values } of cases) {
+    const malformed = structuredClone(endpointInference) as unknown as {
+      binding: { configuration: Record<string, unknown> };
+    };
+    malformed.binding.configuration[field] = values;
+    const bundle = structuredClone(validBundle) as unknown as {
+      inference: unknown;
+      manifest: { configuration: Record<string, unknown> };
+    };
+    bundle.inference = malformed;
+    bundle.manifest.configuration[field] = values;
+
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(malformed),
+      /columns|configuration|bounded|unique/i,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(bundle)),
+      /columns|configuration|bounded|unique/i,
+    );
+  }
+});
+
+test("strict readers accept 4096-character axes and reject 4097-character or larger axes", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const validBundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const withAxis = (length: number) => {
+    const inference = structuredClone(endpointInference);
+    if (inference.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+    const axis = "A".repeat(length);
+    inference.request.axes[0] = axis;
+    inference.binding.axes[0] = axis;
+    inference.rows[0].axis = axis;
+    return inference;
+  };
+  const bundleWithAxis = (length: number) => {
+    const bundle = structuredClone(validBundle);
+    bundle.inference = withAxis(length);
+    bundle.presentation.selectedAxes[0] = "A".repeat(length);
+    return bundle;
+  };
+
+  assert.doesNotThrow(() => parseOpenEnaInferenceResultV2(withAxis(4_096)));
+  assert.doesNotThrow(() => parseOpenEnaAnalysisBundle(JSON.stringify(bundleWithAxis(4_096))));
+  for (const length of [4_097, 5_000]) {
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(withAxis(length)),
+      /axis|bounded|string/i,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(bundleWithAxis(length))),
+      /axis|bounded|string/i,
+    );
+  }
+});
+
+test("strict readers apply the 4096-character boundary to groups, periods, and identity fields", async () => {
+  const { endpoint, trajectory, endpointInference, pairedInference } = await allInferenceFixtures();
+  const endpointBundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const trajectoryBundle = buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    { methodsDimensions: trajectory.axes, inference: pairedInference },
+  );
+  const cases = [
+    {
+      label: "group",
+      inference(length: number) {
+        const value = structuredClone(endpointInference);
+        if (value.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+        value.request.primaryGroup = "G".repeat(length);
+        value.scope.primaryGroup = value.request.primaryGroup;
+        return value;
+      },
+      bundle(length: number) {
+        const value = structuredClone(endpointBundle);
+        value.inference = this.inference(length);
+        return value;
+      },
+    },
+    {
+      label: "period",
+      inference(length: number) {
+        const value = structuredClone(pairedInference);
+        if (value.kind !== "trajectory-paired-periods" || !value.binding.trajectoryMapping) {
+          assert.fail("expected mapped paired inference");
+        }
+        value.request.earlierPeriod = "P".repeat(length);
+        value.scope.earlierPeriod = value.request.earlierPeriod;
+        value.binding.trajectoryMapping.timeOrder[0] = value.request.earlierPeriod;
+        return value;
+      },
+      bundle(length: number) {
+        const value = structuredClone(trajectoryBundle);
+        value.inference = this.inference(length);
+        return value;
+      },
+    },
+    {
+      label: "identity",
+      inference(length: number) {
+        const value = structuredClone(pairedInference);
+        if (value.kind !== "trajectory-paired-periods" || !value.binding.trajectoryMapping) {
+          assert.fail("expected mapped paired inference");
+        }
+        const identity = "I".repeat(length);
+        value.request.repeatedEntityColumns[1] = identity;
+        value.binding.trajectoryMapping.repeatedEntityColumns[1] = identity;
+        value.binding.configuration.unitColumns[1] = identity;
+        return value;
+      },
+      bundle(length: number) {
+        const value = structuredClone(trajectoryBundle);
+        const inference = this.inference(length);
+        value.inference = inference;
+        value.manifest.configuration.unitColumns[1] = "I".repeat(length);
+        return value;
+      },
+    },
+  ];
+  for (const boundary of cases) {
+    assert.doesNotThrow(
+      () => parseOpenEnaInferenceResultV2(boundary.inference(4_096)),
+      `${boundary.label}=4096 standalone`,
+    );
+    assert.doesNotThrow(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(boundary.bundle(4_096))),
+      `${boundary.label}=4096 bundle`,
+    );
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(boundary.inference(4_097)),
+      /bounded|string|group|period|identity|columns|mapping/i,
+      `${boundary.label}=4097 standalone`,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(boundary.bundle(4_097))),
+      /bounded|string|group|period|identity|columns|mapping/i,
+      `${boundary.label}=4097 bundle`,
+    );
+  }
+});
+
+test("strict readers reject oversized aggregate arrays before accepting their contents", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const oversized = structuredClone(endpointInference);
+  oversized.warnings = Array.from({ length: 4_097 }, () => "small-sample");
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = oversized;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(oversized),
+    /warnings|array|bounded|too many/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /warnings|array|bounded|too many/i,
+  );
+});
+
 test("Methods escapes hostile inference labels without losing exact supplied values", async () => {
   const primary = "`Primary\r\n\n## Fabricated result|";
   const secondary = "`Secondary\t|";

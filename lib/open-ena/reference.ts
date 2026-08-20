@@ -1,4 +1,5 @@
 import type { AdjacencyKeyEntry, RotationSet, Row } from "jena-js";
+import { parseOpenEnaAnalysisBundle } from "./export";
 import type {
   DatasetHashKind,
   OpenEnaConfig,
@@ -363,6 +364,12 @@ export function parseRotationReference(text: string, filename = "reference.json"
     throw new Error("Reference rotation file is not valid JSON.");
   }
   if (isRecord(value) && value.kind === "open-ena-reference-rotation") return parseReferenceObject(value);
+  if (isRecord(value) && value.schemaVersion === 2) {
+    return referenceFromResultBundle(
+      parseOpenEnaAnalysisBundle(text) as JsonRecord,
+      filename,
+    );
+  }
   if (isRecord(value)) return referenceFromResultBundle(value, filename);
   throw new Error("Reference rotation JSON must contain an object.");
 }

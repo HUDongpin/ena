@@ -319,13 +319,38 @@ function probabilityOrNull(value: unknown) {
 }
 
 function validateStringArray(value: unknown, label: string) {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
-    throw new Error(`${label} must be a string array.`);
+  if (!Array.isArray(value)
+    || value.length > MAX_INFERENCE_ARRAY_LENGTH
+    || value.some((item) => (
+      typeof item !== "string" || item.length > MAX_INFERENCE_STRING_LENGTH
+    ))) {
+    throw new Error(`${label} must be a bounded string array.`);
+  }
+}
+
+const MAX_INFERENCE_STRING_LENGTH = 4_096;
+const MAX_INFERENCE_ARRAY_LENGTH = 4_096;
+const MAX_CONFIGURATION_COLUMNS = 256;
+const MAX_CONFIGURATION_CODES = 30;
+
+function validateUniqueBoundedStringArray(
+  value: unknown,
+  label: string,
+  minimumLength: number,
+  maximumLength: number,
+) {
+  validateStringArray(value, label);
+  const items = value as string[];
+  if (items.length < minimumLength
+    || items.length > maximumLength
+    || new Set(items).size !== items.length
+    || items.some((item) => item.length === 0 || item.length > MAX_INFERENCE_STRING_LENGTH)) {
+    throw new Error(`${label} must contain unique bounded strings.`);
   }
 }
 
 function nonEmptyString(value: unknown, label: string) {
-  if (typeof value !== "string" || value.length === 0 || value.length > 4_096) {
+  if (typeof value !== "string" || value.length === 0 || value.length > MAX_INFERENCE_STRING_LENGTH) {
     throw new Error(`${label} must be a bounded non-empty string.`);
   }
   return value;
@@ -334,6 +359,15 @@ function nonEmptyString(value: unknown, label: string) {
 function nonNegativeInteger(value: unknown, label: string) {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${label} must be a non-negative safe integer.`);
+  }
+}
+
+function windowInteger(value: unknown, label: string) {
+  if (typeof value !== "number"
+    || !Number.isSafeInteger(value)
+    || value < 0
+    || value > 100) {
+    throw new Error(`${label} must be a safe integer from 0 to 100.`);
   }
 }
 
@@ -448,6 +482,7 @@ function validateRow(value: unknown, expectedTest: "mann-whitney-u" | "wilcoxon-
   if ((value.axisIndex !== 0 && value.axisIndex !== 1)
     || typeof value.axis !== "string"
     || value.axis.length === 0
+    || value.axis.length > MAX_INFERENCE_STRING_LENGTH
     || (value.status !== "available" && value.status !== "not-estimable")
     || typeof value.familyId !== "string"
     || !/^openena-family-v2-[0-9a-f]{64}$/u.test(value.familyId)
@@ -544,6 +579,7 @@ function validateRequest(value: unknown, kind: OpenEnaInferenceResultV2["kind"])
         : ["kind", "repeatedEntityColumns", "timeColumn", "group", "periods", "axes", "cohortPolicy", "posthocContrasts"];
   exactKeys(value, keys, "Inference request");
   validateStringArray(value.axes, "Inference axes");
+  (value.axes as string[]).forEach((axis) => nonEmptyString(axis, "Inference axis"));
   if ((value.axes as unknown[]).length !== 2
     || new Set(value.axes as string[]).size !== 2) throw new Error("Inference axes are invalid.");
   if (kind === "endpoint-independent") {
@@ -616,9 +652,48 @@ function validateBinding(value: unknown) {
   ]) {
     if (!(required in value.configuration)) throw new Error("Inference configuration binding is incomplete.");
   }
-  validateStringArray(value.configuration.unitColumns, "Inference unit columns");
-  validateStringArray(value.configuration.conversationColumns, "Inference conversation columns");
-  validateStringArray(value.configuration.codes, "Inference code columns");
+  validateUniqueBoundedStringArray(
+    value.configuration.unitColumns,
+    "Inference unit columns",
+    1,
+    MAX_CONFIGURATION_COLUMNS,
+  );
+  validateUniqueBoundedStringArray(
+    value.configuration.conversationColumns,
+    "Inference conversation columns",
+    1,
+    MAX_CONFIGURATION_COLUMNS,
+  );
+  validateUniqueBoundedStringArray(
+    value.configuration.codes,
+    "Inference code columns",
+    3,
+    MAX_CONFIGURATION_CODES,
+  );
+  windowInteger(value.configuration.windowSizeBack, "Inference backward window");
+  windowInteger(value.configuration.windowSizeForward, "Inference forward window");
+  if ((value.configuration.model !== "EndPoint"
+      && value.configuration.model !== "SeparateTrajectory"
+      && value.configuration.model !== "AccumulatedTrajectory")
+    || (value.configuration.window !== "MovingStanzaWindow"
+      && value.configuration.window !== "Conversation")
+    || (value.configuration.weightBy !== "binary" && value.configuration.weightBy !== "sum")
+    || (value.configuration.rotation !== "svd"
+      && value.configuration.rotation !== "mean"
+      && value.configuration.rotation !== "reference")) {
+    throw new Error("Inference configuration binding contains an unsupported model policy.");
+  }
+  if (value.configuration.rotation === "reference") {
+    nonEmptyString(value.configuration.referenceRotationId, "Inference reference rotation ID");
+    if (value.configuration.model !== "EndPoint") {
+      throw new Error("Inference reference rotation configuration requires an endpoint model.");
+    }
+  } else if (value.configuration.referenceRotationId !== null) {
+    throw new Error("Inference non-reference rotation configuration cannot retain a reference rotation ID.");
+  }
+  if (value.configuration.rotation === "mean" && value.configuration.model !== "EndPoint") {
+    throw new Error("Inference mean rotation configuration requires an endpoint model.");
+  }
   if (value.configuration.groupColumn !== null) {
     nonEmptyString(value.configuration.groupColumn, "Inference group column");
   }
@@ -627,6 +702,7 @@ function validateBinding(value: unknown) {
   }
   validateStringArray(value.axes, "Inference binding axes");
   if ((value.axes as unknown[]).length !== 2) throw new Error("Inference binding axes are invalid.");
+  (value.axes as string[]).forEach((axis) => nonEmptyString(axis, "Inference binding axis"));
   if (value.trajectoryMapping !== null) {
     if (!isRecord(value.trajectoryMapping)) {
       throw new Error("Inference trajectory mapping is invalid.");
@@ -866,6 +942,38 @@ export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceR
     value.rows.forEach((row) => validateRow(row, test));
     parsedRows.push(...value.rows as Record<string, unknown>[]);
   }
+  if (kind !== "trajectory-repeated-periods" && value.status !== "disabled") {
+    const axisIndexes = parsedRows.map((row) => row.axisIndex);
+    if (parsedRows.length !== 2 || new Set(axisIndexes).size !== 2
+      || !axisIndexes.includes(0) || !axisIndexes.includes(1)) {
+      throw new Error("Inference comparison row axis cardinality is invalid.");
+    }
+  } else if (kind === "trajectory-repeated-periods" && value.status !== "disabled") {
+    const omnibusRows = value.omnibusRows as Record<string, unknown>[];
+    const omnibusAxisIndexes = omnibusRows.map((row) => row.axisIndex);
+    if (omnibusRows.length !== 2 || new Set(omnibusAxisIndexes).size !== 2
+      || !omnibusAxisIndexes.includes(0) || !omnibusAxisIndexes.includes(1)) {
+      throw new Error("Friedman omnibus row axis cardinality is invalid.");
+    }
+    const periods = (value.request as Record<string, unknown>).periods as string[];
+    const expectedFollowupKeys = new Set<string>();
+    for (const axisIndex of [0, 1]) {
+      for (let earlierPeriodIndex = 0; earlierPeriodIndex < periods.length; earlierPeriodIndex += 1) {
+        for (let laterPeriodIndex = earlierPeriodIndex + 1; laterPeriodIndex < periods.length; laterPeriodIndex += 1) {
+          expectedFollowupKeys.add(`${axisIndex}:${earlierPeriodIndex}:${laterPeriodIndex}`);
+        }
+      }
+    }
+    const followupRows = value.followupRows as Record<string, unknown>[];
+    const actualFollowupKeys = followupRows.map((row) => (
+      `${row.axisIndex}:${row.earlierPeriodIndex}:${row.laterPeriodIndex}`
+    ));
+    if (actualFollowupKeys.length !== expectedFollowupKeys.size
+      || new Set(actualFollowupKeys).size !== actualFollowupKeys.length
+      || actualFollowupKeys.some((key) => !expectedFollowupKeys.has(key))) {
+      throw new Error("Wilcoxon all-period-pairs follow-up row cardinality is invalid.");
+    }
+  }
   const request = value.request as Record<string, unknown>;
   const binding = value.binding as Record<string, unknown>;
   const scope = value.scope as Record<string, unknown>;
@@ -902,6 +1010,27 @@ export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceR
   const families = value.families as Record<string, unknown>[];
   const familyById = new Map(families.map((family) => [family.familyId, family]));
   if (new Set(familyById.keys()).size !== families.length) throw new Error("Inference families are duplicated.");
+  if (value.status !== "disabled") {
+    if (kind !== "trajectory-repeated-periods") {
+      if (families.length !== 1
+        || families[0].role !== "comparison"
+        || families[0].familySizePlanned !== 2) {
+        throw new Error("Inference comparison family cardinality is invalid.");
+      }
+    } else {
+      const omnibusFamilies = families.filter((family) => family.role === "omnibus");
+      const posthocFamilies = families.filter((family) => family.role === "posthoc");
+      const periodCount = ((value.request as Record<string, unknown>).periods as string[]).length;
+      const posthocSize = 2 * periodCount * (periodCount - 1) / 2;
+      if (families.length !== 2
+        || omnibusFamilies.length !== 1
+        || posthocFamilies.length !== 1
+        || omnibusFamilies[0].familySizePlanned !== 2
+        || posthocFamilies[0].familySizePlanned !== posthocSize) {
+        throw new Error("Repeated inference planned family cardinality is invalid.");
+      }
+    }
+  }
   for (const row of parsedRows) {
     const family = familyById.get(row.familyId);
     const expectedFamilyRole = kind !== "trajectory-repeated-periods"
@@ -915,6 +1044,9 @@ export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceR
     }
   }
   const rowMemberIds = new Set(parsedRows.map((row) => row.memberId));
+  if (rowMemberIds.size !== parsedRows.length) {
+    throw new Error("Inference rows contain a duplicate planned member.");
+  }
   if (families.some((family) => (family.memberIds as string[]).some((member) => !rowMemberIds.has(member)))) {
     throw new Error("Inference family contains an unknown planned member.");
   }
