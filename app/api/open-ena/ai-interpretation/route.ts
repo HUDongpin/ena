@@ -149,6 +149,12 @@ function safeProviderFailure(error: unknown) {
       429,
     );
   }
+  if (code === "upgrade-required") {
+    return jsonResponse(
+      { error: "Historical AI requests cannot be sent. Build and review a current v2 inference request." },
+      400,
+    );
+  }
   if (
     status === 503
     || code === "disabled"

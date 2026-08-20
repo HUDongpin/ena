@@ -5,7 +5,6 @@ import type {
 import {
   collectOpenEnaAiEvidenceIds,
   OPEN_ENA_AI_REQUEST_SCHEMA_VERSION_V1,
-  OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V1,
   OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2,
   parseOpenEnaAiInterpretationResponse,
 } from "../open-ena/ai-interpretation";
@@ -19,6 +18,7 @@ export const OPEN_ENA_AI_MAX_RESPONSE_BYTES = 64 * 1024;
 export type LunaClientErrorCode =
   | "disabled"
   | "missing-api-key"
+  | "upgrade-required"
   | "invalid-configuration"
   | "upstream-payment-required"
   | "upstream-unauthorized"
@@ -103,6 +103,7 @@ function systemPrompt(request: OpenEnaAiInterpretationRequest) {
       "The browser already computed the supplied inferential cells. Do not recompute, replace, invent, or silently alter any statistic, count, raw p, Holm p, effect, method, or cohort.",
       "Distinguish the research designs exactly: independent groups use Mann-Whitney U; paired periods use Wilcoxon signed-rank with later-minus-earlier differences and a symmetry assumption; repeated periods use a Friedman omnibus plus every selected-period-pair Wilcoxon follow-up on one all-period-complete cohort.",
       "Treat Holm-adjusted p as the primary multiplicity-controlled value and raw p as an audit value. Never gate discussion at .05 or hide a supplied member.",
+      "If a minimum-aggregate privacy redaction is disclosed, state that the complete Holm vector cannot be reconstructed from the provider payload; never infer or request the hidden raw p, effect, or statistic.",
       "Never infer causality, a learning gain, improvement, treatment impact, or practical importance from a p-value, effect sign, visual separation, or trajectory movement.",
       "Disclose applicable missingness, zero-difference removal under the Wilcox rule, ties, multiplicity, entity independence or clustering limits, accumulated-trajectory path dependence, MR1 circularity, and arbitrary ENA axis signs.",
       "The payload contains no raw qualitative evidence. Do not invent excerpts, participants, group names, period names, identity fields, code meanings, or study context.",
@@ -194,6 +195,12 @@ export async function generateLunaInterpretation(
   request: OpenEnaAiInterpretationRequest,
   options: LunaClientOptions = {},
 ): Promise<OpenEnaAiInterpretationResponse> {
+  if (request.schemaVersion === OPEN_ENA_AI_REQUEST_SCHEMA_VERSION_V1) {
+    throw new LunaClientError(
+      "upgrade-required",
+      "Historical AI requests cannot be sent to the provider. Build and review a current v2 inference request.",
+    );
+  }
   const environment = options.environment ?? process.env;
   if (environment.OPEN_ENA_AI_ENABLED !== "true") {
     throw new LunaClientError("disabled", "AI interpretation is disabled.");
@@ -288,9 +295,7 @@ export async function generateLunaInterpretation(
     try {
       const interpretation = JSON.parse(content) as unknown;
       return parseOpenEnaAiInterpretationResponse({
-        schemaVersion: request.schemaVersion === OPEN_ENA_AI_REQUEST_SCHEMA_VERSION_V1
-          ? OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V1
-          : OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2,
+        schemaVersion: OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2,
         promptVersion: request.promptVersion,
         binding: request.binding,
         provider: "openrouter",

@@ -904,6 +904,7 @@ export type OpenEnaAiBoundaryCodeV2 =
   | "p-values-do-not-establish-practical-importance"
   | "axis-sign-arbitrary"
   | "holm-multiplicity"
+  | "holm-audit-not-reconstructible-after-privacy-redaction"
   | "missingness-reported"
   | "independent-entity-assumption"
   | "cluster-independence-unverified"
@@ -1132,6 +1133,7 @@ const V2_BOUNDARY_ORDER: readonly OpenEnaAiBoundaryCodeV2[] = [
   "all-period-complete-cohort",
   "accumulated-trajectory-path-dependence",
   "mr1-circularity",
+  "holm-audit-not-reconstructible-after-privacy-redaction",
   "minimum-aggregate-disclosure",
 ];
 
@@ -1404,7 +1406,10 @@ function buildInferenceProjection(
     const id = `posthoc-${axisRole(row.axisIndex)}-period-${earlier + 1}-period-${later + 1}`;
     if (row.status !== "available") {
       omissions.push(omission(id, row, "posthoc-family", "not-available", earlier, later));
-    } else if (!completeGate) {
+    } else if (!completeGate
+      || row.nMatched < OPEN_ENA_AI_MIN_AGGREGATE_N
+      || row.nNonzero < OPEN_ENA_AI_MIN_AGGREGATE_N
+      || row.nRanked < OPEN_ENA_AI_MIN_AGGREGATE_N) {
       omissions.push(omission(id, row, "posthoc-family", "minimum-aggregate", earlier, later));
     } else {
       members.push({
@@ -1643,7 +1648,10 @@ function boundariesV2(
     selected.add("accumulated-trajectory-path-dependence");
   }
   if (inference.warnings.includes("mr1-circularity")) selected.add("mr1-circularity");
-  if (hasMinimumAggregateOmission) selected.add("minimum-aggregate-disclosure");
+  if (hasMinimumAggregateOmission) {
+    selected.add("holm-audit-not-reconstructible-after-privacy-redaction");
+    selected.add("minimum-aggregate-disclosure");
+  }
   return V2_BOUNDARY_ORDER.filter((boundary) => selected.has(boundary));
 }
 
@@ -2385,15 +2393,155 @@ function validatePlannedMembersV2(
       throw new Error("AI v2 paired design can contain only matched Wilcoxon inference for its group role.");
     }
   } else {
-    const completeCounts = members.flatMap((member) => member.test === "friedman"
-      ? [member.nComplete]
-      : member.test === "wilcoxon-signed-rank"
-        ? [member.nMatched]
-        : []);
-    if (new Set(completeCounts).size > 1
-      || members.some((member) => (member.test === "friedman" || member.test === "wilcoxon-signed-rank")
-        && member.groupRole !== scope.groupRole)) {
+    if (members.some((member) => (member.test === "friedman" || member.test === "wilcoxon-signed-rank")
+      && member.groupRole !== scope.groupRole)) {
       throw new Error("AI v2 repeated-period members must share one complete cohort and group role.");
+    }
+  }
+}
+
+function validateInferenceSemanticsV2(
+  scope: OpenEnaAiInferenceScopeV2,
+  descriptive: OpenEnaAiDescriptiveEvidenceV2,
+  members: readonly OpenEnaAiInferenceMemberV2[],
+) {
+  if (scope.kind === "endpoint-independent" || scope.kind === "trajectory-independent-period") {
+    const mannWhitney = members.filter(
+      (member): member is OpenEnaAiMannWhitneyMemberV2 => member.test === "mann-whitney-u",
+    );
+    const sampleCounts = new Set(mannWhitney.map((member) => `${member.nPrimary}:${member.nSecondary}`));
+    if (sampleCounts.size > 1) {
+      throw new Error("AI v2 independent Mann-Whitney sample counts must match across axes.");
+    }
+    const reference = mannWhitney[0];
+    if (!reference) return;
+    const primary = descriptive.groups.find((group) => group.role === "primary");
+    const secondary = descriptive.groups.find((group) => group.role === "secondary");
+    if (!primary || !secondary) {
+      throw new Error("AI v2 Mann-Whitney descriptive sample roles are missing.");
+    }
+    if (scope.kind === "endpoint-independent") {
+      if (primary.n !== reference.nPrimary || secondary.n !== reference.nSecondary) {
+        throw new Error("AI v2 Mann-Whitney descriptive sample counts do not match inference.");
+      }
+      return;
+    }
+    if (!descriptive.trajectory) {
+      throw new Error("AI v2 trajectory Mann-Whitney descriptive evidence is missing.");
+    }
+    const selectedPrimary = descriptive.trajectory.groupPeriods.find((period) => (
+      period.groupRole === "primary" && period.periodIndex === scope.periodIndex
+    ));
+    const selectedSecondary = descriptive.trajectory.groupPeriods.find((period) => (
+      period.groupRole === "secondary" && period.periodIndex === scope.periodIndex
+    ));
+    if (!selectedPrimary || !selectedSecondary) {
+      throw new Error("AI v2 Mann-Whitney selected period descriptive roles are missing.");
+    }
+    if (descriptive.trajectory.cohortPolicy === "available"
+      && (selectedPrimary.nUsed !== reference.nPrimary
+        || selectedSecondary.nUsed !== reference.nSecondary)) {
+      throw new Error("AI v2 Mann-Whitney selected-period sample counts do not match inference.");
+    }
+    return;
+  }
+
+  if (scope.kind === "trajectory-paired-periods") {
+    const paired = members.filter(
+      (member): member is OpenEnaAiWilcoxonMemberV2 => member.test === "wilcoxon-signed-rank",
+    );
+    const cohortCounts = new Set(paired.map((member) => `${member.nMatched}:${member.nMissing}`));
+    if (cohortCounts.size > 1) {
+      throw new Error("AI v2 paired matched and missing cohort counts must match across axes.");
+    }
+    return;
+  }
+
+  const omnibus = members.filter(
+    (member): member is OpenEnaAiFriedmanMemberV2 => member.test === "friedman",
+  );
+  const followups = members.filter(
+    (member): member is OpenEnaAiWilcoxonMemberV2 => (
+      member.test === "wilcoxon-signed-rank" && member.familyRole === "posthoc-family"
+    ),
+  );
+  const selectedScope = JSON.stringify(scope.selectedPeriodIndices);
+  if (omnibus.some((member) => (
+    JSON.stringify(member.selectedPeriodIndices) !== selectedScope
+    || member.nPeriods !== scope.selectedPeriodIndices.length
+  ))) {
+    throw new Error("AI v2 Friedman selected periods do not match the repeated-period scope.");
+  }
+  const omnibusCohorts = new Set(omnibus.map((member) => (
+    `${member.nComplete}:${member.nMissingCompleteBlocks}:${member.nPeriods}`
+  )));
+  if (omnibusCohorts.size > 1) {
+    throw new Error("AI v2 Friedman complete cohort and missing counts must match across axes.");
+  }
+  if (followups.some((member) => (
+    member.nMatched < OPEN_ENA_AI_MIN_AGGREGATE_N
+    || member.nNonzero < OPEN_ENA_AI_MIN_AGGREGATE_N
+    || member.nRanked < OPEN_ENA_AI_MIN_AGGREGATE_N
+  ))) {
+    throw new Error("AI v2 repeated-period post-hoc Wilcoxon member is below the disclosure minimum.");
+  }
+  const followupCohorts = new Set(followups.map((member) => `${member.nMatched}:${member.nMissing}`));
+  if (followupCohorts.size > 1 || followups.some((member) => member.nMissing !== 0)) {
+    throw new Error("AI v2 repeated-period follow-up missing counts do not match one complete cohort.");
+  }
+  const completeCount = omnibus[0]?.nComplete;
+  if (completeCount !== undefined && followups.some((member) => member.nMatched !== completeCount)) {
+    throw new Error("AI v2 repeated-period follow-up matched counts do not equal the omnibus complete cohort.");
+  }
+}
+
+function validateHolmFamiliesV2(
+  members: readonly OpenEnaAiInferenceMemberV2[],
+  omissions: readonly OpenEnaAiInferenceOmissionV2[],
+) {
+  for (const familyRole of [
+    "comparison-family",
+    "omnibus-family",
+    "posthoc-family",
+  ] as const) {
+    const familyMembers = members.filter((member) => member.familyRole === familyRole);
+    const familyOmissions = omissions.filter((entry) => entry.familyRole === familyRole);
+    if (familyMembers.length + familyOmissions.length === 0) continue;
+
+    if (familyOmissions.some((entry) => entry.reason === "minimum-aggregate")) {
+      const visible = [...familyMembers].sort((left, right) => left.pRaw - right.pRaw
+        || left.id.localeCompare(right.id));
+      for (let index = 1; index < visible.length; index += 1) {
+        if (visible[index].pHolm < visible[index - 1].pHolm) {
+          throw new Error("AI v2 privacy-redacted Holm family order is inconsistent.");
+        }
+      }
+      continue;
+    }
+
+    const planned = [
+      ...familyMembers.map((member) => ({
+        id: member.id,
+        effectiveP: member.pRaw,
+        member,
+      })),
+      ...familyOmissions.map((entry) => ({
+        id: entry.id,
+        effectiveP: 1,
+        member: null,
+      })),
+    ].sort((left, right) => left.effectiveP - right.effectiveP
+      || left.id.localeCompare(right.id));
+    let runningMaximum = 0;
+    for (let index = 0; index < planned.length; index += 1) {
+      const entry = planned[index];
+      runningMaximum = Math.min(
+        1,
+        Math.max(runningMaximum, (planned.length - index) * entry.effectiveP),
+      );
+      if (entry.member && entry.member.pHolm !== runningMaximum) {
+        throw new Error("AI v2 Holm family vector audit is inconsistent.");
+      }
     }
   }
 }
@@ -2411,6 +2559,9 @@ function parseBoundariesV2(
   const hasMinimumOmission = omissions.some((entry) => entry.reason === "minimum-aggregate");
   if (boundaries.includes("minimum-aggregate-disclosure") !== hasMinimumOmission) {
     throw new Error("AI v2 minimum-aggregate boundary is inconsistent with inference omissions.");
+  }
+  if (boundaries.includes("holm-audit-not-reconstructible-after-privacy-redaction") !== hasMinimumOmission) {
+    throw new Error("AI v2 privacy-redacted Holm audit boundary is inconsistent with inference omissions.");
   }
   return boundaries;
 }
@@ -2473,6 +2624,8 @@ function parseEvidenceV2(value: unknown): OpenEnaAiEvidenceV2 {
   const inference = parseInferenceMembersV2(record.inference);
   const inferenceOmissions = parseInferenceOmissionsV2(record.inferenceOmissions);
   validatePlannedMembersV2(scope, inference, inferenceOmissions);
+  validateInferenceSemanticsV2(scope, descriptive, inference);
+  validateHolmFamiliesV2(inference, inferenceOmissions);
   const boundaries = parseBoundariesV2(record.boundaries, inferenceOmissions);
   if ((kind === "endpoint-independent" || kind === "trajectory-independent-period")
     && !boundaries.includes("independent-entity-assumption")) {

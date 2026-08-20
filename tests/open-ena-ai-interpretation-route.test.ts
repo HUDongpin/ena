@@ -274,6 +274,7 @@ for (const [providerCode, expectedStatus] of [
   ["upstream-unauthorized", 502],
   ["upstream-network", 502],
   ["upstream-malformed", 502],
+  ["upgrade-required", 400],
 ] as const) {
   test(`AI interpretation maps provider code ${providerCode} to safe HTTP ${expectedStatus}`, async () => {
     const { handler } = dependencies({
@@ -293,6 +294,27 @@ for (const [providerCode, expectedStatus] of [
     assert.doesNotMatch(responseText, /provider detail must stay private/);
   });
 }
+
+test("AI interpretation returns a fixed safe upgrade response for historical provider dispatch", async () => {
+  const sentinel = "V1_PRIVATE_EVIDENCE_MUST_NOT_LEAK";
+  const { handler } = dependencies({
+    generate: async () => {
+      throw Object.assign(new Error(sentinel), {
+        name: "LunaClientError",
+        code: "upgrade-required",
+      });
+    },
+  });
+
+  const response = await handler(request());
+  const body = await json(response);
+  assert.equal(response.status, 400);
+  assert.equal(
+    body.error,
+    "Historical AI requests cannot be sent. Build and review a current v2 inference request.",
+  );
+  assert.doesNotMatch(JSON.stringify(body), /V1_PRIVATE_EVIDENCE_MUST_NOT_LEAK/);
+});
 
 test("AI interpretation reports the OpenRouter credit gate without exposing account details", async () => {
   const { handler } = dependencies({

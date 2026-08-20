@@ -37,6 +37,38 @@ function freezeDeep<T>(value: T, seen = new Set<unknown>()): T {
   return Object.freeze(value);
 }
 
+function stableAiEvidenceKey(evidence: unknown) {
+  const text = JSON.stringify(evidence);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `fnv1a32-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+function resignAiRequest<T extends { evidence: unknown; binding: { evidenceKey: string } }>(request: T) {
+  request.binding.evidenceKey = stableAiEvidenceKey(request.evidence);
+  return request;
+}
+
+function applyTestHolm(
+  members: Array<{ id: string; pRaw: number; pHolm: number }>,
+) {
+  const ordered = members
+    .map((member, index) => ({ member, index }))
+    .sort((left, right) => left.member.pRaw - right.member.pRaw
+      || left.member.id.localeCompare(right.member.id));
+  let runningMaximum = 0;
+  ordered.forEach(({ member }, index) => {
+    runningMaximum = Math.min(
+      1,
+      Math.max(runningMaximum, (ordered.length - index) * member.pRaw),
+    );
+    member.pHolm = runningMaximum;
+  });
+}
+
 async function endpointFixture(unitsPerGroup = 3) {
   const rows = ["Group,Lesson,Name,PrivateCodeA,PrivateCodeB,PrivateCodeC"];
   for (let index = 0; index < unitsPerGroup; index += 1) {
@@ -87,13 +119,19 @@ async function endpointFixture(unitsPerGroup = 3) {
 
 async function trajectoryFixture(
   kind: "trajectory-independent-period" | "trajectory-paired-periods" | "trajectory-repeated-periods",
+  periods: string[] = ["Secret T1", "Secret T2", "Secret T3"],
 ) {
   const rows = ["Group,Name,Period,PrivateCodeA,PrivateCodeB,PrivateCodeC"];
   for (const group of ["Secret Control", "Secret Experimental"]) {
     for (let entity = 1; entity <= 3; entity += 1) {
-      rows.push(`${group},Private Person ${group.at(-1)}${entity},Secret T1,1,1,0`);
-      rows.push(`${group},Private Person ${group.at(-1)}${entity},Secret T2,1,0,1`);
-      rows.push(`${group},Private Person ${group.at(-1)}${entity},Secret T3,0,1,1`);
+      periods.forEach((period, periodIndex) => {
+        const values = [
+          [1, 1, 0],
+          [1, 0, 1],
+          [0, 1, 1],
+        ][periodIndex % 3];
+        rows.push(`${group},Private Person ${group.at(-1)}${entity},${period},${values.join(",")}`);
+      });
     }
   }
   const dataset = parseCsv(`${rows.join("\n")}\n`, { name: "trajectory-private.csv", source: "upload" });
@@ -117,7 +155,7 @@ async function trajectoryFixture(
     repeatedEntityColumns: ["Group", "Name"],
     identityConfirmed: true,
     timeColumn: "Period",
-    timeOrder: ["Secret T1", "Secret T2", "Secret T3"],
+    timeOrder: periods,
     cohortPolicy: "available",
     axes,
     datasetNormalizedUtf8TextSha256: HASH,
@@ -135,7 +173,7 @@ async function trajectoryFixture(
         kind,
         repeatedEntityColumns: ["Group", "Name"],
         timeColumn: "Period",
-        period: "Secret T1",
+        period: periods[0],
         primaryGroup: "Secret Control",
         secondaryGroup: "Secret Experimental",
         axes,
@@ -146,8 +184,8 @@ async function trajectoryFixture(
           repeatedEntityColumns: ["Group", "Name"],
           timeColumn: "Period",
           group: "Secret Control",
-          earlierPeriod: "Secret T1",
-          laterPeriod: "Secret T2",
+          earlierPeriod: periods[0],
+          laterPeriod: periods[1],
           axes,
           cohortPolicy: "pairwise-complete",
         }
@@ -156,7 +194,7 @@ async function trajectoryFixture(
           repeatedEntityColumns: ["Group", "Name"],
           timeColumn: "Period",
           group: "Secret Control",
-          periods: ["Secret T1", "Secret T2", "Secret T3"],
+          periods,
           axes,
           cohortPolicy: "all-period-complete",
           posthocContrasts: "all-period-pairs",
@@ -272,6 +310,27 @@ test("AI v2 discriminates endpoint, one-period independent, paired, and repeated
   assert.ok(repeatedRequest.evidence.boundaries.includes("all-period-complete-cohort"));
 });
 
+test("a one-period trajectory still produces aggregate AI evidence for its selected-period Mann-Whitney comparison", async () => {
+  const ai = await loadAiModule();
+  const fixture = await trajectoryFixture("trajectory-independent-period", ["Secret Only Period"]);
+
+  assert.equal(fixture.derivation.view.timeOrder.length, 1);
+  const request = ai.buildOpenEnaAiInterpretationRequest({
+    locale: "en",
+    result: fixture.result,
+    config: fixture.config,
+    datasetHash: HASH,
+    groupContrast: null,
+    longitudinalView: fixture.derivation.view,
+    currentInference: fixture.currentInference,
+  });
+
+  assert.equal(request.evidence.scope.kind, "trajectory-independent-period");
+  assert.equal(request.evidence.descriptive.trajectory?.periodCount, 1);
+  assert.equal(request.evidence.inference.length, 2);
+  assert.ok(request.evidence.inference.every((member) => member.test === "mann-whitney-u"));
+});
+
 test("legacy contrast inference cannot affect v2 evidence while a valid current inference change does", async () => {
   const ai = await loadAiModule();
   const fixture = await endpointFixture();
@@ -310,13 +369,14 @@ test("per-cell disclosure gates omit only ineligible inference and retain descri
   assert.equal(request.evidence.descriptive.axes.length, 2);
 });
 
-test("repeated follow-ups inherit the all-period complete disclosure gate even when only one difference is ranked", async () => {
+test("repeated follow-ups below the complete-cohort ranked minimum are omitted without removing descriptive evidence", async () => {
   const ai = await loadAiModule();
   const fixture = await trajectoryFixture("trajectory-repeated-periods");
   const changedInference = structuredClone(fixture.currentInference);
   assert.equal(changedInference.kind, "trajectory-repeated-periods");
   const row = changedInference.followupRows.find((candidate) => candidate.status === "available");
   assert.ok(row);
+  const privateOmittedP = 0.3141592653589793;
   Object.assign(row, {
     nMatched: 3,
     nMissing: 0,
@@ -329,6 +389,8 @@ test("repeated follow-ups inherit the all-period complete disclosure gate even w
     wNegative: 0,
     t: 0,
     rankBiserialLaterVsEarlier: 1,
+    pRaw: privateOmittedP,
+    pHolm: privateOmittedP,
   });
   freezeDeep(changedInference);
 
@@ -342,10 +404,240 @@ test("repeated follow-ups inherit the all-period complete disclosure gate even w
     currentInference: changedInference,
   });
 
-  assert.ok(request.evidence.inference.some((member) => member.id === (
-    `posthoc-axis-${row.axisIndex + 1}-period-${row.earlierPeriodIndex + 1}-period-${row.laterPeriodIndex + 1}`
-  ) && member.test === "wilcoxon-signed-rank" && member.nNonzero === 1));
+  const omittedId = `posthoc-axis-${row.axisIndex + 1}-period-${row.earlierPeriodIndex + 1}-period-${row.laterPeriodIndex + 1}`;
+  assert.equal(request.evidence.inference.some((member) => member.id === omittedId), false);
+  assert.ok(request.evidence.inferenceOmissions.some((member) => (
+    member.id === omittedId && member.reason === "minimum-aggregate"
+  )));
+  assert.ok((request.evidence.descriptive.trajectory?.groupPeriods.length ?? 0) > 0);
+  assert.ok(request.evidence.boundaries.includes("minimum-aggregate-disclosure"));
+  assert.ok(request.evidence.boundaries.includes("holm-audit-not-reconstructible-after-privacy-redaction"));
+  const omittedProjection = request.evidence.inferenceOmissions.find((member) => member.id === omittedId);
+  assert.deepEqual(Object.keys(omittedProjection ?? {}).sort(), [
+    "axisRole",
+    "earlierPeriodIndex",
+    "familyRole",
+    "id",
+    "laterPeriodIndex",
+    "reason",
+    "test",
+  ]);
+  const providerEvidence = JSON.stringify(request.evidence);
+  assert.equal(providerEvidence.includes(String(privateOmittedP)), false);
+  assert.doesNotMatch(providerEvidence, /omitted.*(?:pRaw|pHolm|wPositive|wNegative|rankBiserial|effect|statistic)/iu);
   assert.deepEqual(ai.parseOpenEnaAiInterpretationRequest(JSON.parse(JSON.stringify(request))), request);
+});
+
+test("strict v2 parser rejects an available repeated follow-up forged below every per-cell minimum", async () => {
+  const ai = await loadAiModule();
+  const fixture = await trajectoryFixture("trajectory-repeated-periods");
+  const request = ai.buildOpenEnaAiInterpretationRequest({
+    locale: "en",
+    result: fixture.result,
+    config: fixture.config,
+    datasetHash: HASH,
+    groupContrast: null,
+    longitudinalView: fixture.derivation.view,
+    currentInference: fixture.currentInference,
+  });
+  const forged = structuredClone(request);
+  const row = forged.evidence.inference.find((member) => (
+    member.test === "wilcoxon-signed-rank" && member.familyRole === "posthoc-family"
+  ));
+  assert.ok(row && row.test === "wilcoxon-signed-rank");
+  Object.assign(row, {
+    nMatched: 3,
+    nMissing: 0,
+    nPositive: 1,
+    nNegative: 0,
+    nZero: 2,
+    nNonzero: 1,
+    nRanked: 1,
+    wPositive: 1,
+    wNegative: 0,
+    t: 0,
+    rankBiserialLaterVsEarlier: 1,
+  });
+
+  assert.throws(
+    () => ai.parseOpenEnaAiInterpretationRequest(resignAiRequest(forged)),
+    /repeated-period.*minimum|complete-cohort.*Wilcoxon|post-hoc.*minimum/i,
+  );
+});
+
+test("strict v2 parser binds independent sample counts across axes and descriptive roles", async () => {
+  const ai = await loadAiModule();
+  const endpoint = await endpointFixture();
+  const baseline = ai.buildOpenEnaAiInterpretationRequest(requestInput(endpoint));
+
+  const crossAxis = structuredClone(baseline);
+  const axisTwo = crossAxis.evidence.inference.find((member) => member.axisRole === "axis-2");
+  assert.ok(axisTwo && axisTwo.test === "mann-whitney-u");
+  axisTwo.nPrimary += 1;
+  axisTwo.uPrimary = 0;
+  axisTwo.uSecondary = axisTwo.nPrimary * axisTwo.nSecondary;
+  axisTwo.rankBiserialPrimaryVsSecondary = -1;
+  assert.throws(
+    () => ai.parseOpenEnaAiInterpretationRequest(resignAiRequest(crossAxis)),
+    /Mann-Whitney.*counts.*axes|independent.*sample counts/i,
+  );
+
+  const descriptive = structuredClone(baseline);
+  const primary = descriptive.evidence.descriptive.groups.find((group) => group.role === "primary");
+  assert.ok(primary);
+  primary.n += 1;
+  assert.throws(
+    () => ai.parseOpenEnaAiInterpretationRequest(resignAiRequest(descriptive)),
+    /Mann-Whitney.*descriptive|descriptive.*sample counts/i,
+  );
+});
+
+test("strict v2 parser binds a trajectory Mann-Whitney sample to the selected descriptive period", async () => {
+  const ai = await loadAiModule();
+  const fixture = await trajectoryFixture("trajectory-independent-period");
+  const baseline = ai.buildOpenEnaAiInterpretationRequest({
+    locale: "en", result: fixture.result, config: fixture.config, datasetHash: HASH,
+    groupContrast: null, longitudinalView: fixture.derivation.view, currentInference: fixture.currentInference,
+  });
+  const forged = structuredClone(baseline);
+  assert.equal(forged.evidence.scope.kind, "trajectory-independent-period");
+  const selectedPeriodIndex = forged.evidence.scope.periodIndex;
+  const primary = forged.evidence.descriptive.groups.find((group) => group.role === "primary");
+  const periods = forged.evidence.descriptive.trajectory?.groupPeriods.filter((period) => (
+    period.groupRole === "primary"
+  ));
+  assert.ok(primary && periods?.length);
+  primary.n += 1;
+  periods.forEach((period) => {
+    if (period.periodIndex === selectedPeriodIndex) period.nUsed += 1;
+    else period.nExcluded += 1;
+  });
+
+  assert.throws(
+    () => ai.parseOpenEnaAiInterpretationRequest(resignAiRequest(forged)),
+    /Mann-Whitney.*selected period|selected-period.*sample counts/i,
+  );
+});
+
+test("strict v2 parser binds paired axes to the same matched and missing cohort", async () => {
+  const ai = await loadAiModule();
+  const fixture = await trajectoryFixture("trajectory-paired-periods");
+  const baseline = ai.buildOpenEnaAiInterpretationRequest({
+    locale: "en", result: fixture.result, config: fixture.config, datasetHash: HASH,
+    groupContrast: null, longitudinalView: fixture.derivation.view, currentInference: fixture.currentInference,
+  });
+  const forged = structuredClone(baseline);
+  const axisTwo = forged.evidence.inference.find((member) => member.axisRole === "axis-2");
+  assert.ok(axisTwo && axisTwo.test === "wilcoxon-signed-rank");
+  axisTwo.nMissing += 1;
+
+  assert.throws(
+    () => ai.parseOpenEnaAiInterpretationRequest(resignAiRequest(forged)),
+    /paired.*matched.*missing|paired.*cohort.*axes/i,
+  );
+});
+
+test("strict v2 parser binds every Friedman and follow-up member to one exact complete cohort and scope", async () => {
+  const ai = await loadAiModule();
+  const fixture = await trajectoryFixture("trajectory-repeated-periods");
+  const baseline = ai.buildOpenEnaAiInterpretationRequest({
+    locale: "en", result: fixture.result, config: fixture.config, datasetHash: HASH,
+    groupContrast: null, longitudinalView: fixture.derivation.view, currentInference: fixture.currentInference,
+  });
+
+  const wrongScope = structuredClone(baseline);
+  const friedman = wrongScope.evidence.inference.find((member) => member.test === "friedman");
+  assert.ok(friedman && friedman.test === "friedman");
+  friedman.selectedPeriodIndices = [...friedman.selectedPeriodIndices].reverse();
+  assert.throws(
+    () => ai.parseOpenEnaAiInterpretationRequest(resignAiRequest(wrongScope)),
+    /Friedman.*selected periods.*scope|selected-period.*scope/i,
+  );
+
+  const missingCohort = structuredClone(baseline);
+  const axisTwoFriedman = missingCohort.evidence.inference.find((member) => (
+    member.test === "friedman" && member.axisRole === "axis-2"
+  ));
+  assert.ok(axisTwoFriedman && axisTwoFriedman.test === "friedman");
+  axisTwoFriedman.nMissingCompleteBlocks += 1;
+  assert.throws(
+    () => ai.parseOpenEnaAiInterpretationRequest(resignAiRequest(missingCohort)),
+    /Friedman.*complete cohort.*axes|repeated-period.*missing.*cohort/i,
+  );
+
+  const followupCohort = structuredClone(baseline);
+  const followup = followupCohort.evidence.inference.find((member) => (
+    member.test === "wilcoxon-signed-rank" && member.familyRole === "posthoc-family"
+  ));
+  assert.ok(followup && followup.test === "wilcoxon-signed-rank");
+  followup.nMissing += 1;
+  assert.throws(
+    () => ai.parseOpenEnaAiInterpretationRequest(resignAiRequest(followupCohort)),
+    /follow-up.*complete cohort|repeated-period.*follow-up.*missing/i,
+  );
+});
+
+test("strict v2 parser audits exact Holm vectors for comparison, omnibus, and post-hoc families", async () => {
+  const ai = await loadAiModule();
+  const endpoint = await endpointFixture();
+  const repeatedFixture = await trajectoryFixture("trajectory-repeated-periods");
+  const repeated = ai.buildOpenEnaAiInterpretationRequest({
+    locale: "en", result: repeatedFixture.result, config: repeatedFixture.config, datasetHash: HASH,
+    groupContrast: null, longitudinalView: repeatedFixture.derivation.view,
+    currentInference: repeatedFixture.currentInference,
+  });
+
+  for (const [request, familyRole] of [
+    [ai.buildOpenEnaAiInterpretationRequest(requestInput(endpoint)), "comparison-family"],
+    [repeated, "omnibus-family"],
+    [repeated, "posthoc-family"],
+  ] as const) {
+    const correct = structuredClone(request);
+    const members = correct.evidence.inference.filter((member) => member.familyRole === familyRole);
+    assert.ok(members.length >= 2);
+    members.forEach((member, index) => { member.pRaw = (index + 1) / 100; });
+    applyTestHolm(members);
+    resignAiRequest(correct);
+    assert.deepEqual(ai.parseOpenEnaAiInterpretationRequest(correct), correct);
+
+    const forged = structuredClone(correct);
+    const target = forged.evidence.inference.find((member) => member.familyRole === familyRole);
+    assert.ok(target);
+    target.pHolm = Math.min(1, target.pHolm + 0.01);
+    assert.throws(
+      () => ai.parseOpenEnaAiInterpretationRequest(resignAiRequest(forged)),
+      /Holm.*vector|Holm.*family.*audit/i,
+    );
+  }
+});
+
+test("strict v2 Holm audit keeps a not-available planned member as p=1", async () => {
+  const ai = await loadAiModule();
+  const fixture = await endpointFixture();
+  const request = structuredClone(ai.buildOpenEnaAiInterpretationRequest(requestInput(fixture)));
+  const omitted = request.evidence.inference.pop();
+  const remaining = request.evidence.inference[0];
+  assert.ok(omitted && remaining && omitted.test === "mann-whitney-u");
+  remaining.pRaw = 0.01;
+  remaining.pHolm = 0.02;
+  request.evidence.inferenceOmissions.push({
+    id: omitted.id,
+    axisRole: omitted.axisRole,
+    familyRole: omitted.familyRole,
+    test: omitted.test,
+    earlierPeriodIndex: null,
+    laterPeriodIndex: null,
+    reason: "not-available",
+  });
+  resignAiRequest(request);
+  assert.deepEqual(ai.parseOpenEnaAiInterpretationRequest(request), request);
+
+  const forged = structuredClone(request);
+  forged.evidence.inference[0].pHolm = 0.03;
+  assert.throws(
+    () => ai.parseOpenEnaAiInterpretationRequest(resignAiRequest(forged)),
+    /Holm.*vector|Holm.*family.*audit/i,
+  );
 });
 
 test("v2 builder fails closed for disabled inference and stale longitudinal descriptive bindings", async () => {
@@ -473,7 +765,9 @@ test("v2 preserves exact finite inference values instead of rounding to six deci
   assert.equal(changedInference.kind, "endpoint-independent");
   const exact = 0.123456789012345;
   changedInference.rows[0].pRaw = exact;
-  changedInference.rows[0].pHolm = exact;
+  changedInference.rows[0].pHolm = 2 * exact;
+  changedInference.rows[1].pRaw = 0.9;
+  changedInference.rows[1].pHolm = 0.9;
   freezeDeep(changedInference);
   const request = ai.buildOpenEnaAiInterpretationRequest(requestInput(fixture, changedInference));
   assert.equal(request.evidence.inference[0].pRaw, exact);

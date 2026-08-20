@@ -444,6 +444,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const longitudinalView = longitudinalTimeOrder.length >= 2
     ? longitudinalDerivationState.derivation?.view ?? null
     : null;
+  const aiLongitudinalView = longitudinalDerivationState.derivation?.view ?? null;
   const longitudinalComparisonFrame = longitudinalDerivationState.derivation?.comparisonFrame ?? null;
   const longitudinalViewError = longitudinalDerivationState.error
     ?? (longitudinalTimeOrder.length < 2 ? copy.longitudinal.unavailablePeriods : null);
@@ -981,13 +982,13 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         config: resultConfig,
         datasetHash,
         groupContrast: result.set.modelType === "EndPoint" ? groupContrast : null,
-        longitudinalView: result.set.modelType === "EndPoint" ? null : longitudinalView,
+        longitudinalView: result.set.modelType === "EndPoint" ? null : aiLongitudinalView,
         currentInference,
       });
     } catch {
       return null;
     }
-  }, [currentInference, datasetHash, groupContrast, locale, longitudinalView, result, resultConfig, resultIsStale]);
+  }, [aiLongitudinalView, currentInference, datasetHash, groupContrast, locale, result, resultConfig, resultIsStale]);
   const currentProjectedResult = Boolean(
     result
     && resultConfig
