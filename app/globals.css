@@ -8673,6 +8673,22 @@ body:has(.open-ena-page) #main-content {
   text-transform: none;
 }
 
+.ena-visual-toolbar.ena-visual-toolbar-group-contrast > div:first-child {
+  border-inline-start-color: #000;
+}
+
+.ena-visual-toolbar.ena-visual-toolbar-group-contrast p {
+  color: #000;
+}
+
+.open-ena-group-contrast .ena-group-contrast-plot-heading {
+  border-inline-start-color: #000;
+}
+
+.open-ena-group-contrast .ena-group-contrast-plot-heading h3 {
+  color: #000;
+}
+
 .open-ena-group-contrast .ena-set-plot-heading p {
   margin-top: 1px;
   font-size: calc(0.6rem + var(--ena-font-step, 1px));
@@ -9626,14 +9642,14 @@ body:has(.open-ena-page) #main-content {
     background: transparent;
   }
 
-  .open-ena-group-contrast .ena-set-side-plots .ena-set-plot-heading::before {
+  .open-ena-group-contrast .ena-set-side-plots .ena-group-contrast-plot-heading::before {
     position: absolute;
     top: 0;
     bottom: auto;
     left: -3px;
     width: 3px;
     height: 17px;
-    background: var(--ena-accent);
+    background: #000;
     content: "";
   }
 

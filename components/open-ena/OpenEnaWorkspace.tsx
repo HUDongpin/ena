@@ -2643,7 +2643,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           </aside>
 
           <div className="ena-visual-workspace" data-testid="open-ena-center-surface">
-            <div className="ena-visual-toolbar">
+            <div className={`ena-visual-toolbar${activeGroupContrast ? " ena-visual-toolbar-group-contrast" : ""}`}>
               <div>
                 <p>{activeSetComparison
                   ? copy.workspace.comparison
