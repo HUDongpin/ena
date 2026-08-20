@@ -44,7 +44,17 @@ test("News and Academy expose continuous reviewed collections that can grow", ()
   const newsIds = newsItems.map((article) => Number(article.id.replace("ena-", "")));
   const newestNewsId = Math.max(...newsIds);
   assert.equal(newsItems.length, newestNewsId);
-  assert.deepEqual(newsIds, Array.from({ length: newestNewsId }, (_, index) => newestNewsId - index));
+  assert.deepEqual(
+    [...newsIds].sort((left, right) => right - left),
+    Array.from({ length: newestNewsId }, (_, index) => newestNewsId - index),
+  );
+  assert.deepEqual(
+    newsItems.map((article) => `${article.createdAt}:${article.id}`),
+    [...newsItems]
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt)
+        || Number(right.id.replace("ena-", "")) - Number(left.id.replace("ena-", "")))
+      .map((article) => `${article.createdAt}:${article.id}`),
+  );
   assert.equal(Math.abs(
     newsItems.filter((article) => article.type === "journal").length
       - newsItems.filter((article) => article.type === "conference").length,

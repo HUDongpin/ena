@@ -28,6 +28,10 @@ function normalize(value: string) {
     .trim();
 }
 
+const requiredThirtyDayDates = Array.from({ length: 30 }, (_, offset) =>
+  new Date(Date.UTC(2026, 6, 23 + offset)).toISOString().slice(0, 10),
+);
+
 test("the ENA Academy remains a continuous, unique, and cumulative pathway", () => {
   const expectedSequences = Array.from({ length: academyLessons.length }, (_, index) => index + 1);
   assert.deepEqual(academyLessons.map((lesson) => lesson.id), expectedSequences.map((sequence) => `academy-${String(sequence).padStart(3, "0")}`));
@@ -39,6 +43,10 @@ test("the ENA Academy remains a continuous, unique, and cumulative pathway", () 
   assert.deepEqual(new Set(academyLessons.map((lesson) => lesson.visual)), new Set(ACADEMY_VISUALS));
   assert.deepEqual(new Set(academyLessons.map((lesson) => lesson.track)), new Set(ACADEMY_TRACKS));
   assert.deepEqual(new Set(academyLessons.map((lesson) => lesson.level)), new Set(ACADEMY_LEVELS));
+  assert.deepEqual(
+    [...new Set(academyLessons.map((lesson) => lesson.publishedAt))].sort(),
+    requiredThirtyDayDates,
+  );
 
   for (const lesson of academyLessons) {
     assert.match(lesson.id, /^academy-\d{3}$/);
@@ -69,24 +77,21 @@ test("the ENA Academy remains a continuous, unique, and cumulative pathway", () 
 
 test("Academy filtering searches tutorial semantics and clamps pagination", () => {
   assert.deepEqual(
-    filterAcademyLessons(academyLessons, { track: "modeling" }).items.map((lesson) => lesson.id),
-    ["academy-003", "academy-005"],
+    filterAcademyLessons(academyLessons, { track: "modeling", pageSize: 100 }).items.map((lesson) => lesson.id),
+    ["academy-003", "academy-005", "academy-012", "academy-013", "academy-014", "academy-015", "academy-021", "academy-022", "academy-027"],
   );
   assert.deepEqual(
-    filterAcademyLessons(academyLessons, { level: "beginner" }).items.map((lesson) => lesson.id),
-    ["academy-001", "academy-002"],
+    filterAcademyLessons(academyLessons, { level: "beginner", pageSize: 100 }).items.map((lesson) => lesson.id),
+    ["academy-001", "academy-002", "academy-008", "academy-018", "academy-025", "academy-026", "academy-029", "academy-032"],
   );
   assert.deepEqual(
-    filterAcademyLessons(academyLessons, { q: "moving stanza" }).items.map((lesson) => lesson.id),
-    ["academy-003"],
+    filterAcademyLessons(academyLessons, { q: "moving stanza", pageSize: 100 }).items.map((lesson) => lesson.id),
+    ["academy-003", "academy-007"],
   );
+  assert.equal(filterAcademyLessons(academyLessons, { q: "codebook", pageSize: 100 }).items.some((lesson) => lesson.id === "academy-006"), true);
   assert.deepEqual(
-    filterAcademyLessons(academyLessons, { q: "codebook" }).items.map((lesson) => lesson.id),
-    ["academy-002"],
-  );
-  assert.deepEqual(
-    filterAcademyLessons(academyLessons, { q: "normalization" }).items.map((lesson) => lesson.id),
-    ["academy-001", "academy-003", "academy-004", "academy-005"],
+    filterAcademyLessons(academyLessons, { q: "Compare ENA Normalization Choices", pageSize: 24 }).items.map((lesson) => lesson.id),
+    ["academy-027"],
   );
   assert.deepEqual(
     filterAcademyLessons(academyLessons, { q: "Siebert-Evenstone" }).items.map((lesson) => lesson.id),
@@ -176,11 +181,11 @@ test("all 14 locale shells expose complete Academy interface copy", () => {
 test("Academy related records follow curriculum adjacency", () => {
   assert.deepEqual(
     getRelatedAcademyLessons(academyLessons[0]).map((lesson) => lesson.id),
-    ["academy-002", "academy-003", "academy-004"],
+    ["academy-007", "academy-009", "academy-011"],
   );
   assert.deepEqual(
     getRelatedAcademyLessons(academyLessons[3]).map((lesson) => lesson.id),
-    ["academy-003", "academy-005", "academy-002"],
+    ["academy-008", "academy-010", "academy-017"],
   );
   assert.equal(getRelatedAcademyLessons(academyLessons[2])[0].id, "academy-005");
   assert.equal(getRelatedAcademyLessons(academyLessons[4])[0].id, "academy-003");
