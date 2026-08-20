@@ -115,8 +115,11 @@ test("derives explicit-order available-cohort group centroids from compact jENA 
     { time: "T3", nTotal: 1, nUsed: 1, nExcluded: 0, centroid: "present" },
   ]);
 
-  const collapsed = view.entityPeriods.find((period) => period.entityId === "A" && period.time === "T1");
+  const collapsed = view.entityPeriods.find((period) => (
+    period.group === "G1" && period.time === "T1" && period.sourcePointCount === 2
+  ));
   assert.ok(collapsed);
+  assert.match(collapsed.entityId, /^entity-\d{6}$/);
   assert.equal(collapsed.sourcePointCount, 2);
   const compactCoordinates = result.set.points
     .map((point, index) => ({ point, trajectory: result.set.trajectories?.[index] }))
@@ -137,11 +140,9 @@ test("complete cohort uses one all-period entity set and reports exclusions per 
   assert.equal(view.availableEntityCount, 3);
   assert.equal(view.completeEntityCount, 1);
   assert.equal(view.includedEntityCount, 1);
-  assert.deepEqual(view.entityPeriods.map(({ entityId, time }) => [entityId, time]), [
-    ["B", "T3"],
-    ["B", "T2"],
-    ["B", "T1"],
-  ]);
+  assert.deepEqual(view.entityPeriods.map(({ time }) => time), ["T3", "T2", "T1"]);
+  assert.equal(new Set(view.entityPeriods.map(({ entityId }) => entityId)).size, 1);
+  assert.match(view.entityPeriods[0].entityId, /^entity-\d{6}$/);
   assert.deepEqual(view.groups[0].periods.map(({ nTotal, nUsed, nExcluded }) => [nTotal, nUsed, nExcluded]), [
     [2, 1, 1],
     [2, 1, 1],
@@ -399,7 +400,7 @@ test("fails closed when source identity, compact trajectory identity, or source 
   missingSourceStep.rows.pop();
   assert.throws(
     () => buildLongitudinalGroupCentroidView(fixture.result, fixture.config, missingSourceStep, settings()),
-    /same unit-conversation identities|no exact source/i,
+    /same unit-conversation identities|no exact source|unstable entity-period mapping/i,
   );
   const unmappedPoint = structuredClone(fixture.result);
   if (unmappedPoint.set.trajectories) unmappedPoint.set.trajectories[0].period = "private-period-value";
@@ -417,7 +418,7 @@ test("fails closed when source identity, compact trajectory identity, or source 
   duplicateCompactStep.set.trajectories?.push({ ...duplicateCompactStep.set.trajectories[0] });
   assert.throws(
     () => buildLongitudinalGroupCentroidView(duplicateCompactStep, fixture.config, fixture.dataset, settings()),
-    /duplicate unit-conversation point identity/i,
+    /duplicate unit-conversation point identity|unstable entity-period mapping/i,
   );
 
   assert.throws(
@@ -425,14 +426,14 @@ test("fails closed when source identity, compact trajectory identity, or source 
       ...settings(),
       datasetNormalizedUtf8TextSha256: "b".repeat(64),
     }),
-    /analyzed-table hash.*does not match/i,
+    /analyzed-table hash.*does not match|successful result binding/i,
   );
   assert.throws(
     () => buildLongitudinalGroupCentroidView(fixture.result, fixture.config, fixture.dataset, {
       ...settings(),
       datasetNormalizedUtf8TextSha256: null,
     }),
-    /analyzed-table hash.*required|verify.*provenance/i,
+    /analyzed-table hash.*required|verify.*provenance|successful result binding/i,
   );
 
   const mismatchedConfigResult: OpenEnaResult = {
@@ -444,7 +445,7 @@ test("fails closed when source identity, compact trajectory identity, or source 
   };
   assert.throws(
     () => buildLongitudinalGroupCentroidView(mismatchedConfigResult, fixture.config, fixture.dataset, settings()),
-    /provenance binding.*configuration/i,
+    /provenance binding.*configuration|configuration.*successful result binding/i,
   );
 
   const unboundResult = { ...fixture.result, provenanceBinding: undefined };

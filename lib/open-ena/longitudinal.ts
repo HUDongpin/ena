@@ -13,7 +13,21 @@ import {
 export type OpenEnaLongitudinalCohortPolicy = "available" | "complete";
 export type OpenEnaTrajectoryModel = "SeparateTrajectory" | "AccumulatedTrajectory";
 
-export interface OpenEnaLongitudinalSettings {
+export interface OpenEnaLongitudinalSettingsV2 {
+  /** Ordered composite identity fields. Order is part of the identity contract. */
+  repeatedEntityColumns: string[];
+  /** Inference remains unavailable until the researcher confirms the identity fields. */
+  identityConfirmed: boolean;
+  timeColumn: string;
+  /** Explicit period order; it is never inferred by a lexical sort. */
+  timeOrder: string[];
+  cohortPolicy: OpenEnaLongitudinalCohortPolicy;
+  axes: [string, string];
+  datasetNormalizedUtf8TextSha256?: string | null;
+}
+
+/** Deliberate v1 Plot-only compatibility input. Migration always clears identity confirmation. */
+export interface OpenEnaLongitudinalSettingsV1 {
   repeatedEntityColumn: string;
   timeColumn: string;
   /** Explicit period order; it is never inferred by a lexical sort. */
@@ -23,7 +37,14 @@ export interface OpenEnaLongitudinalSettings {
   datasetNormalizedUtf8TextSha256?: string | null;
 }
 
+export type OpenEnaLongitudinalSettings = OpenEnaLongitudinalSettingsV2 | OpenEnaLongitudinalSettingsV1;
+
+interface NormalizedOpenEnaLongitudinalSettings extends OpenEnaLongitudinalSettingsV2 {
+  migratedFromV1: boolean;
+}
+
 export interface OpenEnaLongitudinalEntityPeriod {
+  /** Opaque, derivation-local entity token. It is never exported or rendered. */
   entityId: string;
   group: string;
   time: string;
@@ -111,6 +132,9 @@ export interface OpenEnaLongitudinalGeometry {
 }
 
 export interface OpenEnaLongitudinalView {
+  repeatedEntityColumns: string[];
+  identityConfirmed: boolean;
+  /** @deprecated Schema-v1 descriptive export compatibility; use repeatedEntityColumns. */
   repeatedEntityColumn: string;
   timeColumn: string;
   timeOrder: string[];
@@ -150,6 +174,163 @@ export interface OpenEnaLongitudinalView {
   boundaries: string[];
 }
 
+export type OpenEnaLongitudinalIntegrityCode =
+  | "identity-not-confirmed"
+  | "identity-columns-invalid"
+  | "time-column-invalid"
+  | "axes-invalid"
+  | "binding-mismatch"
+  | "identity-collision"
+  | "group-instability"
+  | "entity-period-instability"
+  | "nonfinite-coordinate"
+  | "group-required"
+  | "group-invalid"
+  | "groups-must-differ"
+  | "period-invalid"
+  | "periods-must-differ"
+  | "at-least-three-periods-required";
+
+const LONGITUDINAL_INTEGRITY_MESSAGES: Record<OpenEnaLongitudinalIntegrityCode, string> = {
+  "identity-not-confirmed": "Repeated-entity identity must be confirmed before comparison-frame slicing.",
+  "identity-columns-invalid": "Repeated-entity identity columns must be nonempty, unique configured unit columns present in the dataset.",
+  "time-column-invalid": "The time mapping must be one configured conversation column present in the dataset.",
+  "axes-invalid": "The selected axes are invalid for the successful result.",
+  "binding-mismatch": "Longitudinal inputs or configuration do not match the successful result binding.",
+  "identity-collision": "Repeated-entity identity maps across incompatible groups.",
+  "group-instability": "Repeated entity has an unstable group mapping.",
+  "entity-period-instability": "The compact trajectory has an unstable entity-period mapping.",
+  "nonfinite-coordinate": "Required coordinate or geometry value is not finite.",
+  "group-required": "One configured comparison group must be selected.",
+  "group-invalid": "The selected comparison group is invalid for this frame.",
+  "groups-must-differ": "Independent comparison groups must be distinct.",
+  "period-invalid": "Selected period is invalid for this frame.",
+  "periods-must-differ": "Selected periods must be distinct.",
+  "at-least-three-periods-required": "Repeated comparison requires at least three ordered periods.",
+};
+
+export class OpenEnaLongitudinalIntegrityError extends Error {
+  readonly code: OpenEnaLongitudinalIntegrityCode;
+
+  constructor(code: OpenEnaLongitudinalIntegrityCode) {
+    super(LONGITUDINAL_INTEGRITY_MESSAGES[code]);
+    this.name = "OpenEnaLongitudinalIntegrityError";
+    this.code = code;
+  }
+}
+
+export interface OpenEnaLongitudinalComparisonFrameBinding {
+  analyzedAt: string;
+  datasetNormalizedUtf8TextSha256: string | null;
+  datasetHashKind?: DatasetHashKind;
+  modelType: OpenEnaTrajectoryModel;
+  configuration: OpenEnaConfig;
+  axes: [string, string];
+}
+
+export interface OpenEnaLongitudinalComparisonGroup {
+  role: "configured-group" | "all-units";
+  index: number;
+  name: string;
+}
+
+export interface OpenEnaLongitudinalComparisonPoint {
+  entityToken: string;
+  group: OpenEnaLongitudinalComparisonGroup;
+  time: string;
+  timeIndex: number;
+  x: number;
+  y: number;
+  sourcePointCount: number;
+}
+
+export interface OpenEnaLongitudinalComparisonFrame {
+  kind: "open-ena-longitudinal-comparison-frame";
+  coordinateSystem: "unflipped-model-coordinates";
+  binding: OpenEnaLongitudinalComparisonFrameBinding;
+  repeatedEntityColumns: string[];
+  identityConfirmed: boolean;
+  eligibility: {
+    eligible: boolean;
+    reason: "identity-not-confirmed" | null;
+  };
+  timeColumn: string;
+  timeOrder: string[];
+  axes: [string, string];
+  groups: OpenEnaLongitudinalComparisonGroup[];
+  points: OpenEnaLongitudinalComparisonPoint[];
+}
+
+export interface OpenEnaLongitudinalIndependentLedger {
+  candidateEntityCount: number;
+  primaryAvailableCount: number;
+  secondaryAvailableCount: number;
+  includedEntityCount: number;
+}
+
+export interface OpenEnaLongitudinalIndependentSlice {
+  kind: "trajectory-independent-period";
+  period: string;
+  rows: Array<OpenEnaLongitudinalComparisonPoint & { groupRole: "primary" | "secondary" }>;
+  ledger: OpenEnaLongitudinalIndependentLedger;
+}
+
+export interface OpenEnaLongitudinalPairedLedger {
+  candidateEntityCount: number;
+  earlierAvailableCount: number;
+  laterAvailableCount: number;
+  matchedEntityCount: number;
+  earlierOnlyCount: number;
+  laterOnlyCount: number;
+  zeroDifferenceCountByAxis: { x: number; y: number };
+}
+
+export interface OpenEnaLongitudinalPairedPoint {
+  time: string;
+  timeIndex: number;
+  x: number;
+  y: number;
+  sourcePointCount: number;
+}
+
+export interface OpenEnaLongitudinalPairedSlice {
+  kind: "trajectory-paired-periods";
+  earlierPeriod: string;
+  laterPeriod: string;
+  pairs: Array<{
+    entityToken: string;
+    earlier: OpenEnaLongitudinalPairedPoint;
+    later: OpenEnaLongitudinalPairedPoint;
+  }>;
+  ledger: OpenEnaLongitudinalPairedLedger;
+}
+
+export interface OpenEnaLongitudinalRepeatedLedger {
+  candidateEntityCount: number;
+  availableByPeriod: Array<{
+    period: string;
+    periodIndex: number;
+    availableEntityCount: number;
+  }>;
+  completeBlockCount: number;
+  missingAnySelectedPeriodCount: number;
+}
+
+export interface OpenEnaLongitudinalRepeatedSlice {
+  kind: "trajectory-repeated-periods";
+  periods: string[];
+  blocks: Array<{
+    entityToken: string;
+    periods: OpenEnaLongitudinalPairedPoint[];
+  }>;
+  ledger: OpenEnaLongitudinalRepeatedLedger;
+}
+
+export interface OpenEnaLongitudinalDerivation {
+  view: OpenEnaLongitudinalView;
+  comparisonFrame: OpenEnaLongitudinalComparisonFrame;
+}
+
 export interface OpenEnaLongitudinalPresentationOptions {
   flipX?: boolean;
   flipY?: boolean;
@@ -176,19 +357,18 @@ export const LONGITUDINAL_BOUNDARIES = [
 export const LONGITUDINAL_INDIVIDUAL_MARK_LIMIT = 2_000;
 
 interface SourceStepIdentity {
-  entityId: string;
+  entityToken: string;
   time: string;
   group: string;
 }
 
 interface MutableEntityPeriod {
-  entityId: string;
+  entityToken: string;
   group: string;
   time: string;
   timeIndex: number;
-  xTotal: number;
-  yTotal: number;
-  sourcePointCount: number;
+  xValues: number[];
+  yValues: number[];
 }
 
 function cloneJson<T>(value: T): T {
@@ -204,23 +384,65 @@ function cloneConfig(config: OpenEnaConfig): OpenEnaConfig {
   };
 }
 
-function normalized(value: unknown) {
-  return String(value ?? "");
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const nested of Object.values(value as Record<string, unknown>)) deepFreeze(nested);
+    Object.freeze(value);
+  }
+  return value;
 }
 
-function merged(row: Row, columns: readonly string[]) {
-  return columns.map((column) => normalized(row[column])).join("::");
+function normalized(value: unknown) {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function normalizedIdentityComponent(value: unknown) {
+  return normalized(value).normalize("NFC");
+}
+
+function canonicalColumns(row: Row, columns: readonly string[]) {
+  return JSON.stringify(columns.map((column) => [column, normalized(row[column])]));
+}
+
+function normalizeSettings(settings: OpenEnaLongitudinalSettings): NormalizedOpenEnaLongitudinalSettings {
+  if ("repeatedEntityColumns" in settings) {
+    return {
+      repeatedEntityColumns: Array.isArray(settings.repeatedEntityColumns)
+        ? [...settings.repeatedEntityColumns]
+        : [],
+      identityConfirmed: settings.identityConfirmed === true,
+      timeColumn: settings.timeColumn,
+      timeOrder: [...settings.timeOrder],
+      cohortPolicy: settings.cohortPolicy,
+      axes: [...settings.axes],
+      datasetNormalizedUtf8TextSha256: settings.datasetNormalizedUtf8TextSha256,
+      migratedFromV1: false,
+    };
+  }
+  return {
+    repeatedEntityColumns: [settings.repeatedEntityColumn],
+    identityConfirmed: false,
+    timeColumn: settings.timeColumn,
+    timeOrder: [...settings.timeOrder],
+    cohortPolicy: settings.cohortPolicy,
+    axes: [...settings.axes],
+    datasetNormalizedUtf8TextSha256: settings.datasetNormalizedUtf8TextSha256,
+    migratedFromV1: true,
+  };
+}
+
+function deterministicMean(values: readonly number[]) {
+  if (values.length === 0) return Number.NaN;
+  const ordered = [...values].sort((left, right) => left - right);
+  return ordered.reduce((sum, value) => sum + value, 0) / ordered.length;
 }
 
 function exactStepKey(row: Row, config: OpenEnaConfig) {
-  return JSON.stringify([
-    ...config.unitColumns.map((column) => normalized(row[column])),
-    ...config.conversationColumns.map((column) => normalized(row[column])),
-  ]);
+  return canonicalColumns(row, [...config.unitColumns, ...config.conversationColumns]);
 }
 
-function entityPeriodKey(entityId: string, time: string) {
-  return JSON.stringify([entityId, time]);
+function entityPeriodKey(entityToken: string, time: string) {
+  return JSON.stringify([entityToken, time]);
 }
 
 function individualSegmentCount(periods: readonly OpenEnaLongitudinalEntityPeriod[]) {
@@ -241,9 +463,9 @@ function individualSegmentCount(periods: readonly OpenEnaLongitudinalEntityPerio
   return count;
 }
 
-function finite(value: unknown, label: string) {
+function finite(value: unknown, _label: string) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new Error(`${label} must be a finite coordinate or geometry value.`);
+    throw new OpenEnaLongitudinalIntegrityError("nonfinite-coordinate");
   }
   return value;
 }
@@ -312,7 +534,7 @@ function validateInputs(
   result: OpenEnaResult,
   config: OpenEnaConfig,
   dataset: ParsedDataset,
-  settings: OpenEnaLongitudinalSettings,
+  settings: NormalizedOpenEnaLongitudinalSettings,
 ) {
   if ((result.set.modelType !== "SeparateTrajectory" && result.set.modelType !== "AccumulatedTrajectory")
     || (config.model !== "SeparateTrajectory" && config.model !== "AccumulatedTrajectory")) {
@@ -333,22 +555,31 @@ function validateInputs(
     || result.set.functionParams.windowSizeBack !== expectedWindowSizeBack
     || result.set.functionParams.windowSizeForward !== expectedWindowSizeForward
     || result.set.functionParams.weightBy !== config.weightBy) {
-    throw new Error("The successful jENA trajectory result does not match the supplied successful-result configuration.");
+    throw new OpenEnaLongitudinalIntegrityError("binding-mismatch");
   }
   if (result.provenanceBinding && !sameOpenEnaConfig(result.provenanceBinding.configuration, config)) {
-    throw new Error("The trajectory result provenance binding does not match the supplied successful-result configuration.");
+    throw new OpenEnaLongitudinalIntegrityError("binding-mismatch");
   }
-  if (!settings.repeatedEntityColumn || !config.unitColumns.includes(settings.repeatedEntityColumn)) {
-    throw new Error("Longitudinal analysis is unavailable: the repeated-entity mapping must be one configured unit column.");
+  if (!Array.isArray(settings.repeatedEntityColumns)
+    || settings.repeatedEntityColumns.length === 0
+    || settings.repeatedEntityColumns.some((column) => typeof column !== "string" || column.length === 0)
+    || new Set(settings.repeatedEntityColumns).size !== settings.repeatedEntityColumns.length
+    || settings.repeatedEntityColumns.some((column) => !config.unitColumns.includes(column))
+    || settings.repeatedEntityColumns.some((column) => !dataset.headers.includes(column))) {
+    throw new OpenEnaLongitudinalIntegrityError("identity-columns-invalid");
+  }
+  if (settings.identityConfirmed
+    && config.groupColumn
+    && settings.repeatedEntityColumns.length === 1
+    && settings.repeatedEntityColumns[0] === config.groupColumn
+    && config.unitColumns.some((column) => column !== config.groupColumn)) {
+    throw new OpenEnaLongitudinalIntegrityError("identity-columns-invalid");
   }
   if (!settings.timeColumn || !config.conversationColumns.includes(settings.timeColumn)) {
-    throw new Error("Longitudinal analysis is unavailable: the time/order mapping must be one configured conversation column.");
-  }
-  if (!dataset.headers.includes(settings.repeatedEntityColumn)) {
-    throw new Error("The source dataset is missing the configured repeated-entity mapping column.");
+    throw new OpenEnaLongitudinalIntegrityError("time-column-invalid");
   }
   if (!dataset.headers.includes(settings.timeColumn)) {
-    throw new Error("The source dataset is missing the configured time/order mapping column.");
+    throw new OpenEnaLongitudinalIntegrityError("time-column-invalid");
   }
   if (config.groupColumn && !dataset.headers.includes(config.groupColumn)) {
     throw new Error("The source dataset is missing the configured comparison-group column.");
@@ -356,7 +587,7 @@ function validateInputs(
   const axes = settings.axes;
   if (!Array.isArray(axes) || axes.length !== 2 || axes[0] === axes[1]
     || axes.some((axis) => !result.dimensions.includes(axis))) {
-    throw new Error("Longitudinal analysis requires two distinct axes from the successful trajectory result.");
+    throw new OpenEnaLongitudinalIntegrityError("axes-invalid");
   }
   if (!Array.isArray(settings.timeOrder) || settings.timeOrder.length < 2
     || settings.timeOrder.some((time) => typeof time !== "string" || time.length === 0)
@@ -376,40 +607,51 @@ function validateInputs(
 function sourceStepIdentities(
   sourceRows: Row[],
   config: OpenEnaConfig,
-  settings: OpenEnaLongitudinalSettings,
+  settings: NormalizedOpenEnaLongitudinalSettings,
 ) {
   const byStep = new Map<string, SourceStepIdentity>();
   const groupByEntity = new Map<string, string>();
+  const tokenByCanonicalIdentity = new Map<string, string>();
   const observedTimes = new Set<string>();
   const observedTimeOrder: string[] = [];
   const analyticUnitTimeOrder = new Map<string, string[]>();
   for (const [index, row] of sourceRows.entries()) {
-    const entityId = normalized(row[settings.repeatedEntityColumn]);
+    const identityComponents = settings.repeatedEntityColumns.map((column) => normalizedIdentityComponent(row[column]));
+    if (identityComponents.some((component) => component.trim().length === 0)) {
+      throw new OpenEnaLongitudinalIntegrityError("identity-columns-invalid");
+    }
+    const canonicalIdentity = JSON.stringify(
+      settings.repeatedEntityColumns.map((column, columnIndex) => [column, identityComponents[columnIndex]]),
+    );
+    let entityToken = tokenByCanonicalIdentity.get(canonicalIdentity);
+    if (!entityToken) {
+      entityToken = `entity-${String(tokenByCanonicalIdentity.size + 1).padStart(6, "0")}`;
+      tokenByCanonicalIdentity.set(canonicalIdentity, entityToken);
+    }
     const time = normalized(row[settings.timeColumn]);
     const group = config.groupColumn ? normalized(row[config.groupColumn]) : "All units";
-    if (!entityId) throw new Error(`Source row ${index + 1} has an empty repeated-entity value.`);
-    if (!time) throw new Error(`Source row ${index + 1} has an empty time/order value.`);
-    if (!group) throw new Error(`Source row ${index + 1} has an empty comparison-group value.`);
+    if (!time.trim()) throw new OpenEnaLongitudinalIntegrityError("time-column-invalid");
+    if (!group.trim()) throw new OpenEnaLongitudinalIntegrityError("group-instability");
     if (!observedTimes.has(time)) observedTimeOrder.push(time);
     observedTimes.add(time);
-    const priorGroup = groupByEntity.get(entityId);
+    const priorGroup = groupByEntity.get(entityToken);
     if (priorGroup !== undefined && priorGroup !== group) {
-      throw new Error(`One repeated entity changes comparison group at source row ${index + 1}; identifiers and group values are omitted.`);
+      throw new OpenEnaLongitudinalIntegrityError("identity-collision");
     }
-    groupByEntity.set(entityId, group);
+    groupByEntity.set(entityToken, group);
 
     const key = exactStepKey(row, config);
     const prior = byStep.get(key);
-    if (prior && (prior.entityId !== entityId || prior.time !== time || prior.group !== group)) {
-      throw new Error("One compact unit-conversation identity maps to changing entity, time, or group values.");
+    if (prior && (prior.entityToken !== entityToken || prior.time !== time || prior.group !== group)) {
+      throw new OpenEnaLongitudinalIntegrityError("entity-period-instability");
     }
     if (!prior) {
-      const analyticUnit = merged(row, config.unitColumns);
+      const analyticUnit = canonicalColumns(row, config.unitColumns);
       const unitTimes = analyticUnitTimeOrder.get(analyticUnit) ?? [];
       unitTimes.push(time);
       analyticUnitTimeOrder.set(analyticUnit, unitTimes);
     }
-    byStep.set(key, { entityId, time, group });
+    byStep.set(key, { entityToken, time, group });
   }
   if (!byStep.size) throw new Error("Longitudinal analysis requires source rows with repeated-entity and time mappings.");
   const orderedTimes = new Set(settings.timeOrder);
@@ -423,7 +665,7 @@ function sourceStepIdentities(
 function compactEntityPeriods(
   result: OpenEnaResult,
   config: OpenEnaConfig,
-  settings: OpenEnaLongitudinalSettings,
+  settings: NormalizedOpenEnaLongitudinalSettings,
   byStep: Map<string, SourceStepIdentity>,
 ) {
   const trajectoryRows = result.set.trajectories;
@@ -438,69 +680,63 @@ function compactEntityPeriods(
     const point = result.set.points[index];
     const key = exactStepKey(trajectory, config);
     if (seenSteps.has(key)) {
-      throw new Error("The compact jENA trajectory result contains a duplicate unit-conversation point identity.");
+      throw new OpenEnaLongitudinalIntegrityError("entity-period-instability");
     }
     seenSteps.add(key);
     const source = byStep.get(key);
     if (!source) {
-      throw new Error("One compact jENA trajectory point has no exact source unit-conversation mapping.");
+      throw new OpenEnaLongitudinalIntegrityError("entity-period-instability");
     }
-    const expectedUnit = merged(trajectory, config.unitColumns);
-    if (normalized(trajectory.ENA_UNIT) !== expectedUnit || normalized(point.ENA_UNIT) !== expectedUnit) {
-      throw new Error("A compact jENA trajectory point does not preserve its exact composite analytic-unit identity.");
-    }
-    if (normalized(trajectory[settings.repeatedEntityColumn]) !== source.entityId
-      || normalized(trajectory[settings.timeColumn]) !== source.time) {
-      throw new Error("A compact jENA trajectory point does not match its repeated-entity or time mapping.");
+    const trajectoryUnit = normalized(trajectory.ENA_UNIT);
+    if (!trajectoryUnit || normalized(point.ENA_UNIT) !== trajectoryUnit) {
+      throw new OpenEnaLongitudinalIntegrityError("entity-period-instability");
     }
     if (config.groupColumn) {
       const trajectoryGroup = normalized(trajectory[config.groupColumn]);
       const pointGroup = normalized(point[config.groupColumn]);
       if (trajectoryGroup !== source.group || pointGroup !== source.group) {
-        throw new Error("A compact jENA trajectory point does not preserve its stable entity group mapping.");
+        throw new OpenEnaLongitudinalIntegrityError("group-instability");
       }
     }
     const indexForTime = timeIndex.get(source.time);
     if (indexForTime === undefined) {
-      throw new Error(`Compact trajectory period ${source.time} is absent from the explicit time order.`);
+      throw new OpenEnaLongitudinalIntegrityError("entity-period-instability");
     }
     for (const dimension of result.dimensions) {
       finite(point[dimension], `Projected point ${index + 1} ${dimension} coordinate`);
     }
     const x = finite(point[settings.axes[0]], `Projected point ${index + 1} ${settings.axes[0]} coordinate`);
     const y = finite(point[settings.axes[1]], `Projected point ${index + 1} ${settings.axes[1]} coordinate`);
-    const collapsedKey = entityPeriodKey(source.entityId, source.time);
+    const collapsedKey = entityPeriodKey(source.entityToken, source.time);
     const current = mutable.get(collapsedKey);
     if (current) {
       if (current.group !== source.group || current.timeIndex !== indexForTime) {
-        throw new Error("One entity-period maps to changing group or time identities.");
+        throw new OpenEnaLongitudinalIntegrityError("entity-period-instability");
       }
-      current.xTotal += x;
-      current.yTotal += y;
-      current.sourcePointCount += 1;
+      current.xValues.push(x);
+      current.yValues.push(y);
     } else {
       mutable.set(collapsedKey, {
-        entityId: source.entityId,
+        entityToken: source.entityToken,
         group: source.group,
         time: source.time,
         timeIndex: indexForTime,
-        xTotal: x,
-        yTotal: y,
-        sourcePointCount: 1,
+        xValues: [x],
+        yValues: [y],
       });
     }
   }
   if (seenSteps.size !== byStep.size || [...byStep.keys()].some((key) => !seenSteps.has(key))) {
-    throw new Error("The source and compact jENA trajectory results must describe the same unit-conversation identities.");
+    throw new OpenEnaLongitudinalIntegrityError("entity-period-instability");
   }
   return [...mutable.values()].map((period): OpenEnaLongitudinalEntityPeriod => ({
-    entityId: period.entityId,
+    entityId: period.entityToken,
     group: period.group,
     time: period.time,
     timeIndex: period.timeIndex,
-    x: period.xTotal / period.sourcePointCount,
-    y: period.yTotal / period.sourcePointCount,
-    sourcePointCount: period.sourcePointCount,
+    x: deterministicMean(period.xValues),
+    y: deterministicMean(period.yValues),
+    sourcePointCount: period.xValues.length,
   }));
 }
 
@@ -549,8 +785,8 @@ function buildGroupSummaries(
       const includedEntityCount = new Set(usedRows.map((period) => period.entityId)).size;
       const centroid = usedRows.length
         ? {
-            x: usedRows.reduce((sum, period) => sum + period.x, 0) / usedRows.length,
-            y: usedRows.reduce((sum, period) => sum + period.y, 0) / usedRows.length,
+            x: deterministicMean(usedRows.map((period) => period.x)),
+            y: deterministicMean(usedRows.map((period) => period.y)),
           }
         : null;
       const previous = periods[timeIndex - 1];
@@ -627,38 +863,104 @@ function buildGroupSummaries(
   return { groups, periodDiagnostics: flatPeriods };
 }
 
-export function buildLongitudinalGroupCentroidView(
+function buildComparisonFrame(
+  result: OpenEnaResult,
+  config: OpenEnaConfig,
+  dataset: ParsedDataset,
+  settings: NormalizedOpenEnaLongitudinalSettings,
+  allEntityPeriods: readonly OpenEnaLongitudinalEntityPeriod[],
+  groupNames: readonly string[],
+  datasetNormalizedUtf8TextSha256: string | null,
+): OpenEnaLongitudinalComparisonFrame {
+  const stableGroupNames = [...groupNames].sort(compareStrings);
+  const groups = stableGroupNames.map((name, index): OpenEnaLongitudinalComparisonGroup => ({
+    role: config.groupColumn ? "configured-group" : "all-units",
+    index,
+    name,
+  }));
+  const groupByName = new Map(groups.map((group) => [group.name, group]));
+  const points = allEntityPeriods
+    .map((period): OpenEnaLongitudinalComparisonPoint => {
+      const group = groupByName.get(period.group);
+      if (!group) throw new OpenEnaLongitudinalIntegrityError("group-instability");
+      return {
+        entityToken: period.entityId,
+        group: { ...group },
+        time: period.time,
+        timeIndex: period.timeIndex,
+        x: finite(period.x, "Comparison-frame x coordinate"),
+        y: finite(period.y, "Comparison-frame y coordinate"),
+        sourcePointCount: period.sourcePointCount,
+      };
+    })
+    .sort((left, right) => (
+      left.timeIndex - right.timeIndex
+      || left.group.index - right.group.index
+      || compareStrings(left.entityToken, right.entityToken)
+    ));
+  return deepFreeze({
+    kind: "open-ena-longitudinal-comparison-frame",
+    coordinateSystem: "unflipped-model-coordinates",
+    binding: {
+      analyzedAt: result.analyzedAt,
+      datasetNormalizedUtf8TextSha256,
+      ...(result.provenanceBinding?.datasetHashKind ?? dataset.hashKind
+        ? { datasetHashKind: result.provenanceBinding?.datasetHashKind ?? dataset.hashKind }
+        : {}),
+      modelType: result.set.modelType as OpenEnaTrajectoryModel,
+      configuration: cloneConfig(config),
+      axes: [...settings.axes] as [string, string],
+    },
+    repeatedEntityColumns: [...settings.repeatedEntityColumns],
+    identityConfirmed: settings.identityConfirmed,
+    eligibility: settings.identityConfirmed
+      ? { eligible: true, reason: null }
+      : { eligible: false, reason: "identity-not-confirmed" },
+    timeColumn: settings.timeColumn,
+    timeOrder: [...settings.timeOrder],
+    axes: [...settings.axes] as [string, string],
+    groups,
+    points,
+  });
+}
+
+export function buildLongitudinalDerivation(
   result: OpenEnaResult,
   config: OpenEnaConfig,
   dataset: ParsedDataset,
   settings: OpenEnaLongitudinalSettings,
   createdAt = new Date().toISOString(),
-): OpenEnaLongitudinalView {
-  validateInputs(result, config, dataset, settings);
+): OpenEnaLongitudinalDerivation {
+  const resolvedSettings = normalizeSettings(settings);
+  validateInputs(result, config, dataset, resolvedSettings);
   canonicalTime(createdAt, "The longitudinal view creation time");
   const bindingHash = validateHash(
     result.provenanceBinding?.datasetNormalizedUtf8TextSha256,
     "The trajectory result provenance analyzed-table hash",
   );
   const settingsHash = validateHash(
-    settings.datasetNormalizedUtf8TextSha256,
+    resolvedSettings.datasetNormalizedUtf8TextSha256,
     "The longitudinal analyzed-table hash",
   );
   if (bindingHash && !settingsHash) {
-    throw new Error("The longitudinal analyzed-table hash is required to verify the successful trajectory result provenance binding.");
+    throw new OpenEnaLongitudinalIntegrityError("binding-mismatch");
   }
   if (bindingHash && settingsHash && bindingHash !== settingsHash) {
-    throw new Error("The longitudinal analyzed-table hash does not match the successful trajectory result provenance binding.");
+    throw new OpenEnaLongitudinalIntegrityError("binding-mismatch");
   }
   const { rows: sourceRows } = dataset;
-  const { byStep, groupByEntity, observedTimeOrder, analyticUnitTimeOrder } = sourceStepIdentities(sourceRows, config, settings);
+  const { byStep, groupByEntity, observedTimeOrder, analyticUnitTimeOrder } = sourceStepIdentities(
+    sourceRows,
+    config,
+    resolvedSettings,
+  );
   const modelType = result.set.modelType as OpenEnaTrajectoryModel;
   const timeOrderPolicy: OpenEnaLongitudinalView["timeOrderPolicy"] = modelType === "AccumulatedTrajectory"
     ? { locked: true, basis: "source-encounter-and-jena-step-order" }
     : { locked: false, basis: "researcher-explicit-order" };
   if (modelType === "AccumulatedTrajectory"
-    && (settings.timeOrder.length !== observedTimeOrder.length
-      || settings.timeOrder.some((time, index) => time !== observedTimeOrder[index]))) {
+    && (resolvedSettings.timeOrder.length !== observedTimeOrder.length
+      || resolvedSettings.timeOrder.some((time, index) => time !== observedTimeOrder[index]))) {
     throw new Error("Accumulated trajectory time order is locked to the source encounter and jENA step order and cannot be changed after fitting.");
   }
   if (modelType === "AccumulatedTrajectory") {
@@ -670,7 +972,17 @@ export function buildLongitudinalGroupCentroidView(
       throw new Error("Accumulated trajectory periods do not share one source encounter order across analytic units; identifiers are omitted.");
     }
   }
-  const allEntityPeriods = compactEntityPeriods(result, config, settings, byStep);
+  const allEntityPeriods = compactEntityPeriods(result, config, resolvedSettings, byStep);
+  const groupNames = orderedGroups(result, config, groupByEntity);
+  const comparisonFrame = buildComparisonFrame(
+    result,
+    config,
+    dataset,
+    resolvedSettings,
+    allEntityPeriods,
+    groupNames,
+    bindingHash ?? settingsHash,
+  );
   const timesByEntity = new Map<string, Set<string>>();
   for (const period of allEntityPeriods) {
     const times = timesByEntity.get(period.entityId) ?? new Set<string>();
@@ -679,16 +991,15 @@ export function buildLongitudinalGroupCentroidView(
   }
   const allEntities = new Set(allEntityPeriods.map((period) => period.entityId));
   const completeEntities = new Set(
-    [...allEntities].filter((entity) => settings.timeOrder.every((time) => timesByEntity.get(entity)?.has(time))),
+    [...allEntities].filter((entity) => resolvedSettings.timeOrder.every((time) => timesByEntity.get(entity)?.has(time))),
   );
-  if (settings.cohortPolicy === "complete" && completeEntities.size === 0) {
+  if (resolvedSettings.cohortPolicy === "complete" && completeEntities.size === 0) {
     throw new Error("Longitudinal analysis is unavailable: no eligible complete-cohort repeated entity is observed in every selected ordered period.");
   }
-  const includedEntities = settings.cohortPolicy === "complete" ? completeEntities : allEntities;
+  const includedEntities = resolvedSettings.cohortPolicy === "complete" ? completeEntities : allEntities;
   const includedPeriods = allEntityPeriods
     .filter((period) => includedEntities.has(period.entityId))
     .sort((left, right) => left.timeIndex - right.timeIndex || compareStrings(left.group, right.group) || compareStrings(left.entityId, right.entityId));
-  const groupNames = orderedGroups(result, config, groupByEntity);
   const { groups, periodDiagnostics } = buildGroupSummaries(
     groupNames,
     allEntityPeriods,
@@ -696,31 +1007,33 @@ export function buildLongitudinalGroupCentroidView(
     groupByEntity,
     completeEntities,
     includedEntities,
-    settings.timeOrder,
+    resolvedSettings.timeOrder,
   );
   const geometry = buildGeometry(result);
   const nodes = geometry.nodes.map((node) => ({
     code: node.code,
-    x: node.coordinates[settings.axes[0]],
-    y: node.coordinates[settings.axes[1]],
+    x: node.coordinates[resolvedSettings.axes[0]],
+    y: node.coordinates[resolvedSettings.axes[1]],
   }));
   const fullCoordinates = [
     ...result.set.points.map((point, index) => ({
-      x: finite(point[settings.axes[0]], `Projected point ${index + 1} ${settings.axes[0]} coordinate`),
-      y: finite(point[settings.axes[1]], `Projected point ${index + 1} ${settings.axes[1]} coordinate`),
+      x: finite(point[resolvedSettings.axes[0]], `Projected point ${index + 1} ${resolvedSettings.axes[0]} coordinate`),
+      y: finite(point[resolvedSettings.axes[1]], `Projected point ${index + 1} ${resolvedSettings.axes[1]} coordinate`),
     })),
     ...nodes,
   ];
   if (!fullCoordinates.length) {
     throw new Error("The successful trajectory result has no finite projected point or node geometry.");
   }
-  return {
-    repeatedEntityColumn: settings.repeatedEntityColumn,
-    timeColumn: settings.timeColumn,
-    timeOrder: [...settings.timeOrder],
+  const view: OpenEnaLongitudinalView = {
+    repeatedEntityColumns: [...resolvedSettings.repeatedEntityColumns],
+    identityConfirmed: resolvedSettings.identityConfirmed,
+    repeatedEntityColumn: resolvedSettings.repeatedEntityColumns[0],
+    timeColumn: resolvedSettings.timeColumn,
+    timeOrder: [...resolvedSettings.timeOrder],
     timeOrderPolicy,
-    cohortPolicy: settings.cohortPolicy,
-    axes: [...settings.axes],
+    cohortPolicy: resolvedSettings.cohortPolicy,
+    axes: [...resolvedSettings.axes],
     availableEntityCount: allEntities.size,
     completeEntityCount: completeEntities.size,
     includedEntityCount: includedEntities.size,
@@ -755,6 +1068,252 @@ export function buildLongitudinalGroupCentroidView(
     createdAt,
     boundaries: [...LONGITUDINAL_BOUNDARIES],
   };
+  return { view, comparisonFrame };
+}
+
+export function buildLongitudinalGroupCentroidView(
+  result: OpenEnaResult,
+  config: OpenEnaConfig,
+  dataset: ParsedDataset,
+  settings: OpenEnaLongitudinalSettings,
+  createdAt = new Date().toISOString(),
+): OpenEnaLongitudinalView {
+  return buildLongitudinalDerivation(result, config, dataset, settings, createdAt).view;
+}
+
+function assertComparisonFrame(frame: OpenEnaLongitudinalComparisonFrame) {
+  if (frame.kind !== "open-ena-longitudinal-comparison-frame"
+    || frame.coordinateSystem !== "unflipped-model-coordinates"
+    || !sameOrderedValues(frame.axes, frame.binding.axes)
+    || !frame.binding.configuration.conversationColumns.includes(frame.timeColumn)
+    || frame.repeatedEntityColumns.some((column) => !frame.binding.configuration.unitColumns.includes(column))) {
+    throw new OpenEnaLongitudinalIntegrityError("binding-mismatch");
+  }
+  if (!frame.identityConfirmed || !frame.eligibility.eligible) {
+    throw new OpenEnaLongitudinalIntegrityError("identity-not-confirmed");
+  }
+  const groupNames = new Set(frame.groups.map((group) => group.name));
+  const timeIndex = new Map(frame.timeOrder.map((time, index) => [time, index]));
+  for (const point of frame.points) {
+    finite(point.x, "Comparison-frame x coordinate");
+    finite(point.y, "Comparison-frame y coordinate");
+    if (!groupNames.has(point.group.name)
+      || point.group.index !== frame.groups.find((group) => group.name === point.group.name)?.index) {
+      throw new OpenEnaLongitudinalIntegrityError("group-instability");
+    }
+    if (timeIndex.get(point.time) !== point.timeIndex) {
+      throw new OpenEnaLongitudinalIntegrityError("entity-period-instability");
+    }
+  }
+}
+
+function comparisonPeriodIndex(frame: OpenEnaLongitudinalComparisonFrame, period: string) {
+  const index = frame.timeOrder.indexOf(period);
+  if (index < 0) throw new OpenEnaLongitudinalIntegrityError("period-invalid");
+  return index;
+}
+
+function comparisonGroupName(frame: OpenEnaLongitudinalComparisonFrame, group: string | null) {
+  const grouped = Boolean(frame.binding.configuration.groupColumn);
+  if (!grouped) {
+    if (group !== null && group !== "All units") {
+      throw new OpenEnaLongitudinalIntegrityError("group-invalid");
+    }
+    return "All units";
+  }
+  if (group === null) throw new OpenEnaLongitudinalIntegrityError("group-required");
+  if (!frame.groups.some((candidate) => candidate.name === group)) {
+    throw new OpenEnaLongitudinalIntegrityError("group-invalid");
+  }
+  return group;
+}
+
+function uniquePointsByToken(points: readonly OpenEnaLongitudinalComparisonPoint[]) {
+  const byToken = new Map<string, OpenEnaLongitudinalComparisonPoint>();
+  for (const point of points) {
+    if (byToken.has(point.entityToken)) {
+      throw new OpenEnaLongitudinalIntegrityError("entity-period-instability");
+    }
+    byToken.set(point.entityToken, point);
+  }
+  return byToken;
+}
+
+function compareComparisonPoints(
+  left: OpenEnaLongitudinalComparisonPoint,
+  right: OpenEnaLongitudinalComparisonPoint,
+) {
+  return left.timeIndex - right.timeIndex
+    || left.group.index - right.group.index
+    || left.x - right.x
+    || left.y - right.y
+    || compareStrings(left.entityToken, right.entityToken);
+}
+
+export function sliceLongitudinalIndependentPeriod(
+  frame: OpenEnaLongitudinalComparisonFrame,
+  request: {
+    period: string;
+    primaryGroup: string;
+    secondaryGroup: string;
+  },
+): OpenEnaLongitudinalIndependentSlice {
+  assertComparisonFrame(frame);
+  const periodIndex = comparisonPeriodIndex(frame, request.period);
+  if (request.primaryGroup === request.secondaryGroup) {
+    throw new OpenEnaLongitudinalIntegrityError("groups-must-differ");
+  }
+  const primaryGroup = comparisonGroupName(frame, request.primaryGroup);
+  const secondaryGroup = comparisonGroupName(frame, request.secondaryGroup);
+  const primary = [...uniquePointsByToken(frame.points.filter((point) => (
+    point.timeIndex === periodIndex && point.group.name === primaryGroup
+  ))).values()];
+  const secondary = [...uniquePointsByToken(frame.points.filter((point) => (
+    point.timeIndex === periodIndex && point.group.name === secondaryGroup
+  ))).values()];
+  const primaryTokens = new Set(primary.map((point) => point.entityToken));
+  if (secondary.some((point) => primaryTokens.has(point.entityToken))) {
+    throw new OpenEnaLongitudinalIntegrityError("identity-collision");
+  }
+  const candidates = new Set(frame.points
+    .filter((point) => point.group.name === primaryGroup || point.group.name === secondaryGroup)
+    .map((point) => point.entityToken));
+  const rows = [
+    ...primary.map((point) => ({ ...point, group: { ...point.group }, groupRole: "primary" as const })),
+    ...secondary.map((point) => ({ ...point, group: { ...point.group }, groupRole: "secondary" as const })),
+  ].sort((left, right) => (
+    compareStrings(left.groupRole, right.groupRole) || compareComparisonPoints(left, right)
+  ));
+  return deepFreeze({
+    kind: "trajectory-independent-period",
+    period: request.period,
+    rows,
+    ledger: {
+      candidateEntityCount: candidates.size,
+      primaryAvailableCount: primary.length,
+      secondaryAvailableCount: secondary.length,
+      includedEntityCount: rows.length,
+    },
+  });
+}
+
+function asPairedPoint(point: OpenEnaLongitudinalComparisonPoint): OpenEnaLongitudinalPairedPoint {
+  return {
+    time: point.time,
+    timeIndex: point.timeIndex,
+    x: point.x,
+    y: point.y,
+    sourcePointCount: point.sourcePointCount,
+  };
+}
+
+export function sliceLongitudinalPairedPeriods(
+  frame: OpenEnaLongitudinalComparisonFrame,
+  request: {
+    group: string | null;
+    earlierPeriod: string;
+    laterPeriod: string;
+  },
+): OpenEnaLongitudinalPairedSlice {
+  assertComparisonFrame(frame);
+  if (request.earlierPeriod === request.laterPeriod) {
+    throw new OpenEnaLongitudinalIntegrityError("periods-must-differ");
+  }
+  const earlierIndex = comparisonPeriodIndex(frame, request.earlierPeriod);
+  const laterIndex = comparisonPeriodIndex(frame, request.laterPeriod);
+  if (earlierIndex >= laterIndex) throw new OpenEnaLongitudinalIntegrityError("period-invalid");
+  const group = comparisonGroupName(frame, request.group);
+  const groupPoints = frame.points.filter((point) => point.group.name === group);
+  const candidates = new Set(groupPoints.map((point) => point.entityToken));
+  const earlier = uniquePointsByToken(groupPoints.filter((point) => point.timeIndex === earlierIndex));
+  const later = uniquePointsByToken(groupPoints.filter((point) => point.timeIndex === laterIndex));
+  const matchedTokens = [...earlier.keys()]
+    .filter((token) => later.has(token))
+    .sort((leftToken, rightToken) => {
+      const leftEarlier = earlier.get(leftToken)!;
+      const rightEarlier = earlier.get(rightToken)!;
+      const pointOrder = compareComparisonPoints(leftEarlier, rightEarlier);
+      if (pointOrder !== 0) return pointOrder;
+      return compareComparisonPoints(later.get(leftToken)!, later.get(rightToken)!);
+    });
+  const pairs = matchedTokens.map((entityToken) => ({
+    entityToken,
+    earlier: asPairedPoint(earlier.get(entityToken)!),
+    later: asPairedPoint(later.get(entityToken)!),
+  }));
+  const zeroDifferenceCountByAxis = {
+    x: pairs.filter((pair) => pair.later.x - pair.earlier.x === 0).length,
+    y: pairs.filter((pair) => pair.later.y - pair.earlier.y === 0).length,
+  };
+  return deepFreeze({
+    kind: "trajectory-paired-periods",
+    earlierPeriod: request.earlierPeriod,
+    laterPeriod: request.laterPeriod,
+    pairs,
+    ledger: {
+      candidateEntityCount: candidates.size,
+      earlierAvailableCount: earlier.size,
+      laterAvailableCount: later.size,
+      matchedEntityCount: pairs.length,
+      earlierOnlyCount: [...earlier.keys()].filter((token) => !later.has(token)).length,
+      laterOnlyCount: [...later.keys()].filter((token) => !earlier.has(token)).length,
+      zeroDifferenceCountByAxis,
+    },
+  });
+}
+
+export function sliceLongitudinalRepeatedPeriods(
+  frame: OpenEnaLongitudinalComparisonFrame,
+  request: {
+    group: string | null;
+    periods: readonly string[];
+  },
+): OpenEnaLongitudinalRepeatedSlice {
+  assertComparisonFrame(frame);
+  if (request.periods.length < 3) {
+    throw new OpenEnaLongitudinalIntegrityError("at-least-three-periods-required");
+  }
+  if (new Set(request.periods).size !== request.periods.length) {
+    throw new OpenEnaLongitudinalIntegrityError("periods-must-differ");
+  }
+  const periodIndexes = request.periods.map((period) => comparisonPeriodIndex(frame, period));
+  if (periodIndexes.some((periodIndex, index) => index > 0 && periodIndex <= periodIndexes[index - 1])) {
+    throw new OpenEnaLongitudinalIntegrityError("period-invalid");
+  }
+  const group = comparisonGroupName(frame, request.group);
+  const groupPoints = frame.points.filter((point) => point.group.name === group);
+  const candidates = new Set(groupPoints.map((point) => point.entityToken));
+  const byPeriod = periodIndexes.map((periodIndex) => uniquePointsByToken(
+    groupPoints.filter((point) => point.timeIndex === periodIndex),
+  ));
+  const completeTokens = [...candidates]
+    .filter((token) => byPeriod.every((points) => points.has(token)))
+    .sort((leftToken, rightToken) => {
+      for (const points of byPeriod) {
+        const pointOrder = compareComparisonPoints(points.get(leftToken)!, points.get(rightToken)!);
+        if (pointOrder !== 0) return pointOrder;
+      }
+      return compareStrings(leftToken, rightToken);
+    });
+  const blocks = completeTokens.map((entityToken) => ({
+    entityToken,
+    periods: byPeriod.map((points) => asPairedPoint(points.get(entityToken)!)),
+  }));
+  return deepFreeze({
+    kind: "trajectory-repeated-periods",
+    periods: [...request.periods],
+    blocks,
+    ledger: {
+      candidateEntityCount: candidates.size,
+      availableByPeriod: request.periods.map((period, index) => ({
+        period,
+        periodIndex: periodIndexes[index],
+        availableEntityCount: byPeriod[index].size,
+      })),
+      completeBlockCount: blocks.length,
+      missingAnySelectedPeriodCount: candidates.size - blocks.length,
+    },
+  });
 }
 
 export function buildLongitudinalGroupCentroidExport(
