@@ -23,7 +23,7 @@ The Stats surface keeps exactly three top-level tabs: **Comparison**, **Goodness
 
 Every successful ENA result starts with no inferential result. A researcher must select a design, confirm the composite repeated-entity identity when applicable, choose valid group/time/period inputs, inspect the inclusion ledger, and activate **Run inferential comparison**. No p-value is calculated or displayed before this action.
 
-All tests are two-sided. Every family stores raw and Holm-adjusted p-values; the UI treats Holm p as the primary value and raw p as an audit value. A `.05` threshold never determines calculation, generation, visibility, styling, export, or AI inclusion.
+All pairwise rank comparisons are two-sided. The non-directional Friedman omnibus uses its inclusive upper tail, as defined in Section 5.3. Every family stores raw and Holm-adjusted p-values; the UI treats Holm p as the primary value and raw p as an audit value. A `.05` threshold never determines calculation, generation, visibility, styling, export, or AI inclusion.
 
 Inference always uses unflipped model coordinates. Plot cohort selection (`available`/`complete`), axis flips, labels, zoom, scales, and visibility controls cannot change its frame, cohort, statistics, family, or result identity.
 
@@ -72,7 +72,7 @@ export type OpenEnaInferenceRequestV2 =
     };
 ```
 
-Every request serializes this fixed method configuration:
+Every request serializes this fixed method configuration. `alternative: "two-sided"` governs Mann–Whitney and Wilcoxon rows; Friedman remains the non-directional upper-tail omnibus specified in Section 5.3:
 
 ```ts
 export const OPEN_ENA_RANK_INFERENCE_METHOD = {
@@ -85,9 +85,11 @@ export const OPEN_ENA_RANK_INFERENCE_METHOD = {
   friedmanExactAssignmentLimit: 1_000_000,
   continuityCorrection: 0.5,
 } as const;
+
+export const OPEN_ENA_SMALL_SAMPLE_EFFECTIVE_N = 10 as const;
 ```
 
-The ordinary UI cannot change these values.
+The ordinary UI cannot change these values. `small-sample` is an audit warning, never an estimability, display, export, Holm, or AI gate. It is emitted when either Mann–Whitney group has `n<10`, when a standalone paired Wilcoxon row has `nNonzero<10`, when a Friedman row has `nComplete<10`, or when a repeated-period Wilcoxon follow-up has `nNonzero<10`. The comparison is strictly `<10`, not `<=10`.
 
 ## 3. Unified immutable result
 
@@ -110,6 +112,21 @@ The complete stable v2 reason-code set is:
 - integrity codes `binding-mismatch`, `identity-collision`, `group-instability`, `entity-period-instability`, and `nonfinite-coordinate`.
 
 The complete stable v2 warning-code set is `small-sample`, `discrete-attainable-p`, `ties-present`, `zero-differences-present`, `missing-pairs`, `missing-complete-blocks`, `signed-rank-symmetry-assumption`, `independent-entity-assumption`, `cluster-independence-unverified`, `accumulated-trajectory-path-dependence`, `arbitrary-axis-sign`, and `mr1-circularity`. Adding or renaming a reason or warning code requires a design-and-ledger amendment before implementation.
+
+The complete resolved p-method set is:
+
+```ts
+export type OpenEnaResolvedRankPMethod =
+  | "exact-classic"
+  | "exact-conditional-rank-permutation"
+  | "normal-approximation-tie-corrected"
+  | "exact-conditional-sign-flip"
+  | "normal-approximation-actual-ranks"
+  | "exact-conditional-period-permutation"
+  | "chi-square-approximation-tie-corrected";
+```
+
+An available row receives `discrete-attainable-p` exactly when its resolved method is one of the four exact methods. Approximation rows do not receive it, and disabled/not-estimable rows have `resolvedPMethod=null` and do not receive it.
 
 Local `familyId` hashes a canonical representation of binding, design, axes, role-based group/period scope, and method version. Local family and member IDs cannot contain or reversibly encode entity values, entity tokens, group/period labels, source text, or other clear-text private inputs. These canonical local IDs are never sent to the external AI provider; Section 7 defines separate request-local role-only AI identifiers.
 
@@ -169,10 +186,10 @@ The Plot view retains current Available/Complete behavior. The private compariso
 The frame validates its binding and supports three typed slices:
 
 1. `trajectory-independent-period`: exactly one period, two distinct groups, one compact point per token, finite coordinates, and disjoint token sets.
-2. `trajectory-paired-periods`: exactly one stable group (or `All units` only when there is no group column), explicit earlier/later periods, an inner join by private token, and separate earlier-only/later-only counts.
+2. `trajectory-paired-periods`: exactly one stable group (or `All units` only when there is no group column), two explicit distinct period slots, an inner join by private token, and separate earlier-only/later-only counts. The public field names `earlierPeriod` and `laterPeriod` define subtraction direction rather than enforcing chronological order: either known period may occupy either slot, so reversing the slots reverses the signed result. Unknown or equal periods remain invalid.
 3. `trajectory-repeated-periods`: exactly one stable group and at least three ordered periods, retaining only private entity blocks present at every selected period and counting missing-any-selected-period.
 
-Pairwise A/B inference ignores missing values at unselected periods. Friedman and every follow-up share one all-selected-period complete cohort.
+Pairwise A/B inference ignores missing values at unselected periods. Friedman and every follow-up share one all-selected-period complete cohort, and the repeated-period selector remains strictly ordered by `timeOrder`. Private slice ledgers establish membership and missingness; their provisional raw-coordinate zero counts, if present for descriptive compatibility, are not authoritative inference counts. The coordinator alone computes public zero/nonzero/ranked counts with the shared 12-significant-digit difference normalizer.
 
 ## 5. Numerical methods
 
@@ -184,6 +201,8 @@ const normalized = Object.is(rounded, -0) ? 0 : rounded;
 ```
 
 Non-finite inputs fail closed as `nonfinite-coordinate`. Equality, zero classification, tie groups, differences, and ranks use the resulting `Number`; this also makes values represented with exponential notation deterministic. Average ranks are multiplied by two before exact dynamic programming.
+
+Normalization order is part of the contract. Mann–Whitney normalizes each group coordinate before pooling and ranking. Friedman normalizes each entity-period coordinate before within-entity ranking. Wilcoxon first checks that both source coordinates are finite, computes the raw JavaScript difference `later - earlier`, and then normalizes that difference exactly once; it must not normalize the two coordinates separately before subtraction. The coordinator uses that same normalized difference for the inclusion ledger, zero/tie classification, descriptive difference summary, ranks, statistic, effect, and method resolution.
 
 Median, quartiles, and IQR use R quantile type 7 on ascending normalized values. For probability `p`, `h=(n-1)*p`, `j=floor(h)`, and the quantile is `x[j] + (h-j) * (x[ceil(h)] - x[j])` with zero-based indexing. Reports store scalar `q1=Q(0.25)`, `q3=Q(0.75)`, and `iqr=q3-q1`; median is `Q(0.5)`. Locked small-sample goldens are `[5] -> q1=5,q3=5,iqr=0`, `[1,3] -> q1=1.5,q3=2.5,iqr=1`, `[1,2,9] -> q1=1.5,q3=5.5,iqr=4`, and `[1,2,3,4] -> q1=1.75,q3=3.25,iqr=1.5`.
 
@@ -211,13 +230,37 @@ Differences are `later - earlier`. After 12-significant-digit normalization, zer
 - positive, negative, zero, matched, missing, nonzero, and ranked counts;
 - the minimum attainable inclusive two-sided p-value.
 
-For `nNonzero <= 50`, a doubled-midrank BigInt sign-flip DP computes the inclusive conditional two-sided distribution. It resolves to `exact-classic` only with no absolute-rank ties and no original zero differences; otherwise it is `exact-conditional-sign-flip`. For `nNonzero > 50`, the normal variance is derived directly from the actual ranks and uses a 0.5 continuity correction. All-zero differences are not estimable. Small/discrete samples retain their exact p-value and a warning.
+For `nNonzero <= 50`, a doubled-midrank BigInt sign-flip DP computes the inclusive conditional two-sided distribution. It resolves to `exact-classic` only with no absolute-rank ties and no original zero differences; otherwise it is `exact-conditional-sign-flip`. For `nNonzero > 50`, the normal variance is `sum(rank^2)/4`, derived directly from the actual average ranks, and uses a 0.5 continuity correction. All-zero differences are not estimable. Small/discrete samples retain their exact p-value and the fixed warnings above.
+
+For every estimable Wilcoxon row, the minimum attainable inclusive two-sided sign-flip p-value is represented without underflow as:
+
+```ts
+minimumAttainableTwoSidedP: {
+  formula: "2^(1-nNonzero)";
+  log2: number; // 1 - nNonzero
+  numeric: number | null;
+}
+```
+
+For `1<=nNonzero<=1075`, `numeric=2 ** (1-nNonzero)`. For `nNonzero>=1076`, `numeric=null` and the formula/log2 representation remains authoritative; the UI and exports never display an underflowed zero. A not-estimable row with `nNonzero=0` stores the whole field as `null`. Absolute-rank ties and original zeros do not change this support property because `nNonzero` already reflects Wilcox zero removal.
 
 ### 5.3 Friedman and follow-ups
 
-For each axis, every complete entity ranks its selected periods internally with average ranks and tie correction. The result reports corrected Friedman `Q`, `df=k-1`, raw/Holm p, Kendall's W, ties, complete `n`, and resolved method.
+For each axis, every complete entity ranks its selected periods internally with average ranks and tie correction. If `R_j` is the rank sum for period `j`, `A=sum_j[R_j-n(k+1)/2]^2`, and `Ties` is the sum of `t^3-t` over every within-block tie group, the corrected statistic is:
 
-When `(k!)^n <= 1_000_000`, the engine enumerates every within-entity period-label assignment and uses the inclusive conditional upper-tail probability (`exact-conditional-period-permutation`). Above the limit it uses a tie-corrected chi-square approximation. If every entity is tied across all selected periods, the row is not estimable.
+```text
+C = 1 - Ties / [n(k^3-k)]
+Q = [12A / (n*k*(k+1))] / C
+  = 12A / [n*k*(k+1) - Ties/(k-1)]
+df = k - 1
+Kendall's W = Q / [n*(k-1)]
+```
+
+The result reports this tie-corrected `Q`, `df`, raw/Holm p, tie-corrected Kendall's W, ties, complete `n`, and resolved method. A zero denominator means every complete block is tied across all selected periods and is not estimable.
+
+When `(k!)^n <= 1_000_000`, the engine enumerates every within-entity period-label assignment and uses the inclusive conditional upper-tail probability (`exact-conditional-period-permutation`). Tied-value duplicate permutations retain their period-label assignment multiplicity, the total assignment count remains `(k!)^n`, and the exact tail compares doubled-rank-sum integer scores rather than floating-point `Q` values. Above the limit it uses `regularizedGammaQ(df/2,Q/2)` and resolves to `chi-square-approximation-tie-corrected`. If every entity is tied across all selected periods, the row is not estimable.
+
+The normal and chi-square tail implementations must match the locked R/SciPy fixtures to approximately `1e-12` absolute or relative tolerance; the legacy low-precision `erfc` approximation is not reused as the v2 numerical contract.
 
 Every one of the `k(k-1)/2` period pairs is generated on every axis, regardless of the omnibus p-value. Each follow-up uses the exact same all-period complete cohort as Friedman; it never silently switches to pairwise completion.
 

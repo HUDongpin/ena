@@ -12,34 +12,34 @@
 
 | ID | Acceptance condition | Evidence | Status |
 | --- | --- | --- | --- |
-| P0-01 | Work occurs only in the named isolated worktree and branch; shared `/Volumes/Starship/ENA` is not modified. | Pending | Open |
-| P0-02 | Recorded baseline matches the then-current `origin/codex/login`, without reset, stash, clean, or overwrite. | Pending | Open |
-| P0-03 | Dependencies install and the complete pre-change test suite passes. | Pending | Open |
-| P0-04 | Approved design has no unresolved alternatives or contradictory method branches. | Pending independent re-review | Open |
-| P0-05 | This ledger covers every implementation, review, verification, and release-boundary criterion. | Pending independent re-review | Open |
-| P0-06 | Commits stage only exact planned paths and never absorb unrelated changes. | Pending | Open |
+| P0-01 | Work occurs only in the named isolated worktree and branch; shared `/Volumes/Starship/ENA` is not modified. | Verified through `4bee050` in `/Volumes/Starship/ENA-stats-inference-wt`; this remains a continuous invariant until final P5-11 audit. | Open |
+| P0-02 | Recorded baseline matches the then-current `origin/codex/login`, without reset, stash, clean, or overwrite. | Baseline `a2289765273a2ac092d0713d6d7a1572d1f93fea` verified equal to `origin/codex/login` before worktree creation; no reset/stash/clean used. | Closed |
+| P0-03 | Dependencies install and the complete pre-change test suite passes. | Existing dependencies loaded; pre-change `npm test` passed 379/379. | Closed |
+| P0-04 | Approved design has no unresolved alternatives or contradictory method branches. | Independent design re-review PASS at `f4578b6`; exact Phase 2 amendment final-diff mathematical re-review PASS before commit. | Closed |
+| P0-05 | This ledger covers every implementation, review, verification, and release-boundary criterion. | Independent ledger coverage review PASS at `f4578b6`; exact Phase 2 amendment review confirmed P2-26 through P2-28 and continuous P0/P5 boundaries. | Closed |
+| P0-06 | Commits stage only exact planned paths and never absorb unrelated changes. | Exact-path commits through `4bee050` ended clean; this remains a continuous invariant until final P5-11 audit. | Open |
 
 ## Phase 1 — Composite identity and comparison frame
 
 | ID | Acceptance condition | Evidence | Status |
 | --- | --- | --- | --- |
-| P1-01 | Longitudinal settings support ordered, unique, nonempty `repeatedEntityColumns`; every field belongs to successful `unitColumns`. | Pending | Open |
-| P1-02 | The core v2 settings/default contract represents ordered `repeatedEntityColumns`, defaults `identityConfirmed=false`, and rejects inference unless confirmation is explicit; Phase 1 makes no production Workspace-prefill claim. | Pending | Open |
-| P1-03 | A v1 singular repeated-entity setting migrates to one element and forces identity confirmation off. | Pending | Open |
-| P1-04 | Canonical identity uses JSON field/value tuples; components use exact null/NFC/string/blank rules and map only to private opaque tokens, with no delimiter-concatenated identity. | Pending | Open |
-| P1-05 | `Group + Name` pairs Yu-style entities correctly and same names in different groups do not merge. | Pending | Open |
-| P1-06 | Selecting only the group field when additional unit fields exist is blocked; selecting a colliding name field fails closed. | Pending | Open |
-| P1-07 | Identity collision, group instability, entity-period instability, and non-finite coordinates fail closed without value/token leakage. | Pending | Open |
-| P1-08 | `buildLongitudinalDerivation()` returns a descriptive Plot view and a private all-period comparison frame; tokens/coordinates/differences required for calculation remain internal. | Pending | Open |
-| P1-09 | Plot Available/Complete changes only the view; comparison-frame membership and later inference do not change. | Pending | Open |
-| P1-10 | Duplicate entity-period fitted steps are averaged exactly once before any slice. | Pending | Open |
-| P1-11 | Independent-period slice contains only one selected period, two disjoint groups, and one point per private entity token. | Pending | Open |
-| P1-12 | Paired slice inner-joins only A/B by private token, counts earlier-only/later-only, and ignores missingness at unselected periods. | Pending | Open |
-| P1-13 | Repeated slice retains one all-selected-period complete block and counts missing-any-selected-period. | Pending | Open |
-| P1-14 | Analytical frame membership, slices, diagnostics, and resulting statistics are invariant to input-row permutations; private token spelling is non-contractual. | Pending | Open |
-| P1-15 | Existing Plot geometry, longitudinal diagnostics, geometry CSV, and rendering behavior remain valid. | Pending | Open |
-| P1-16 | Inference DOM, errors, logs, public inference result/JSON/CSV, Methods inference section, and AI payload contain no repeated-entity value/key/token, individual pair difference, or entity-period coordinate; private computational frame internals are out of this public-surface assertion. | Pending | Open |
-| P1-17 | Identity goldens cover null and undefined rejection, whitespace-only rejection, NFC equivalence, preserved case/leading/trailing whitespace, and intentional numeric `1`/string `"1"` equivalence under `identity-component-empty`. | Pending | Open |
+| P1-01 | Longitudinal settings support ordered, unique, nonempty `repeatedEntityColumns`; every field belongs to successful `unitColumns`. | `46ef5cb`; frame goldens; final Phase 1 spec review PASS. | Closed |
+| P1-02 | The core v2 settings/default contract represents ordered `repeatedEntityColumns`, defaults `identityConfirmed=false`, and rejects inference unless confirmation is explicit; Phase 1 makes no production Workspace-prefill claim. | `46ef5cb`; confirmed/unconfirmed slice tests; Workspace prefill remains P3-22. | Closed |
+| P1-03 | A v1 singular repeated-entity setting migrates to one element and forces identity confirmation off. | `46ef5cb`; v1 Plot compatibility golden. | Closed |
+| P1-04 | Canonical identity uses JSON field/value tuples; components use exact null/NFC/string/blank rules and map only to private opaque tokens, with no delimiter-concatenated identity. | `46ef5cb` + `3fccad1`; privacy and identity normalization goldens. | Closed |
+| P1-05 | `Group + Name` pairs Yu-style entities correctly and same names in different groups do not merge. | `46ef5cb`; Group+Name collision fixture. | Closed |
+| P1-06 | Selecting only the group field when additional unit fields exist is blocked; selecting a colliding name field fails closed. | `46ef5cb`; pseudo-entity/cross-group collision goldens. | Closed |
+| P1-07 | Identity collision, group instability, entity-period instability, and non-finite coordinates fail closed without value/token leakage. | `46ef5cb` + `3fccad1` + `4bee050`; safe typed-error tests. | Closed |
+| P1-08 | `buildLongitudinalDerivation()` returns a descriptive Plot view and a private all-period comparison frame; tokens/coordinates/differences required for calculation remain internal. | `46ef5cb`; derivation/frame immutability and privacy tests. | Closed |
+| P1-09 | Plot Available/Complete changes only the view; comparison-frame membership and later inference do not change. | `4bee050` proves frame/slice invariance including an empty Complete Plot cohort; final inference invariance awaits P3-12. | Open |
+| P1-10 | Duplicate entity-period fitted steps are averaged exactly once before any slice. | `46ef5cb`; duplicate compact-step golden. | Closed |
+| P1-11 | Independent-period slice contains only one selected period, two disjoint groups, and one point per private entity token. | `46ef5cb` + `4bee050`; independent slice/empty Complete cohort goldens. | Closed |
+| P1-12 | Paired slice inner-joins only A/B by private token, counts earlier-only/later-only, and ignores missingness at unselected periods. | `46ef5cb` + `4bee050`; pairwise completion and bidirectional-slot goldens. | Closed |
+| P1-13 | Repeated slice retains one all-selected-period complete block and counts missing-any-selected-period. | `46ef5cb`; common complete-block golden. | Closed |
+| P1-14 | Analytical frame membership, slices, diagnostics, and resulting statistics are invariant to input-row permutations; private token spelling is non-contractual. | Frame/slice/diagnostic invariance passed in `46ef5cb`; resulting-statistics portion awaits Phase 2. | Open |
+| P1-15 | Existing Plot geometry, longitudinal diagnostics, geometry CSV, and rendering behavior remain valid. | Focused longitudinal/frame/Plot/Workspace suite 52/52 at `4bee050`; typecheck PASS. | Closed |
+| P1-16 | Inference DOM, errors, logs, public inference result/JSON/CSV, Methods inference section, and AI payload contain no repeated-entity value/key/token, individual pair difference, or entity-period coordinate; private computational frame internals are out of this public-surface assertion. | Frame/error/descriptive-export privacy tests pass; future inference DOM/export/Methods/AI surfaces await Phase 4. | Open |
+| P1-17 | Identity goldens cover null and undefined rejection, whitespace-only rejection, NFC equivalence, preserved case/leading/trailing whitespace, and intentional numeric `1`/string `"1"` equivalence under `identity-component-empty`. | `3fccad1` + `7cf6f10`; final Phase 1 spec review PASS. | Closed |
 
 ## Phase 2 — Numerical engine and inference coordinator
 
@@ -67,9 +67,12 @@
 | P2-20 | One frozen coordinator result binds request, successful result/config/hash/axes, ledgers, methods, warnings, and families. | Pending | Open |
 | P2-21 | Request/binding mismatch fails closed; legitimate insufficiency returns typed disabled/not-estimable. | Pending | Open |
 | P2-22 | Decimal and exponential-notation inputs share deterministic 12-significant-digit equality/ranking; `-0` becomes `0`; locked type-7 quartile/IQR goldens for n=1..4 pass. | Pending | Open |
-| P2-23 | MW is estimable at finite n>=1 per group unless pooled ranks all tie; Wilcoxon at ranked nonzero n>=1 unless all zero; Friedman at complete n>=1 and k>=3 unless all within-block ranks tie. Tiny valid samples remain available with small/discrete warnings independently of the AI gate. | Pending | Open |
+| P2-23 | MW is estimable at finite n>=1 per group unless pooled ranks all tie; Wilcoxon at ranked nonzero n>=1 unless all zero; Friedman at complete n>=1 and k>=3 unless all within-block ranks tie. Tiny valid samples remain available with `small-sample` and, only when the resolved row is exact, `discrete-attainable-p`; both warnings remain independent of the AI gate. | Pending | Open |
 | P2-24 | `insufficient-ranked-observations` appears only after design exclusions leave no rankable observation and no specific code applies; every reason and warning emitted belongs to the complete closed code sets in Design §3. | Pending | Open |
 | P2-25 | Canonical local family/member IDs contain no clear-text or reversible private values, and AI-facing family/member IDs are separate request-local role-only values with no dataset linkage. | Pending | Open |
+| P2-26 | Warning triggers are fixed: effective rank `n<10` for `small-sample`; available exact rows only for `discrete-attainable-p`; neither warning changes estimability, display, Holm, export, or AI gating. | Pending | Open |
+| P2-27 | Wilcoxon minimum attainable p uses the locked formula/log2/numeric representation and emits `numeric=null`, never zero, on JavaScript underflow. | Pending | Open |
+| P2-28 | Every available row uses one of the seven closed resolved-method literals; approximation tails meet the locked approximately `1e-12` R/SciPy tolerance. | Pending | Open |
 
 ## Phase 3 — Stats Comparison UI, state, a11y, and i18n
 
