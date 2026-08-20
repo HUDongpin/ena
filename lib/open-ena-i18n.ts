@@ -1,4 +1,12 @@
 import type { Locale } from "./i18n";
+import type {
+  OpenEnaInferenceIntegrityCodeV2,
+  OpenEnaInferenceReasonCodeV2,
+} from "./open-ena/inference-v2";
+import type {
+  OpenEnaRankWarningCode,
+  OpenEnaResolvedRankPMethod,
+} from "./open-ena/rank-inference";
 
 export interface OpenEnaInferenceCopy {
   designLegend: string;
@@ -104,6 +112,11 @@ export interface OpenEnaInferenceCopy {
   fixedMethodLabel: string;
   noResult: string;
   warnings: string;
+  auditCodeLabel: string;
+  reasonMessages: Readonly<Record<OpenEnaInferenceReasonCodeV2, string>>;
+  integrityMessages: Readonly<Record<OpenEnaInferenceIntegrityCodeV2, string>>;
+  warningMessages: Readonly<Record<OpenEnaRankWarningCode, string>>;
+  resolvedMethodNames: Readonly<Record<OpenEnaResolvedRankPMethod, string>>;
 }
 
 export interface OpenEnaStatsUiCopy {
@@ -278,6 +291,7 @@ export interface OpenEnaCopy {
     noEndpointTests: string;
     exportJson: string;
     exportCsv: string;
+    exportInferenceCsv: string;
     allUnits: string;
     period: string;
     group: string;
@@ -502,6 +516,56 @@ const inferenceEn: OpenEnaInferenceCopy = {
   fixedMethodLabel: "Fixed method policy",
   noResult: "No inferential result has been run for the current confirmed design.",
   warnings: "Method and design warnings",
+  auditCodeLabel: "Audit code",
+  reasonMessages: {
+    "design-not-confirmed": "The research design has not been confirmed.",
+    "identity-not-confirmed": "The composite repeated-entity identity has not been confirmed.",
+    "identity-columns-invalid": "The repeated-entity identity fields are invalid for the successful model.",
+    "identity-component-empty": "At least one repeated-entity identity component is empty.",
+    "time-column-invalid": "The selected time field is invalid for the successful model.",
+    "axes-invalid": "The selected inference axes are invalid for the successful result.",
+    "group-required": "Select one comparison group for this repeated-measures design.",
+    "group-invalid": "The selected comparison group is invalid for the current result.",
+    "groups-must-differ": "The Primary and Secondary groups must be different.",
+    "period-invalid": "The selected period is invalid for the current comparison frame.",
+    "periods-must-differ": "The earlier and later periods must be different.",
+    "at-least-three-periods-required": "Repeated-period inference requires at least three selected periods.",
+    "empty-group": "At least one selected comparison group has no eligible entities.",
+    "insufficient-ranked-observations": "There are too few ranked observations to estimate this test.",
+    "all-values-tied": "All eligible values are tied, so this comparison cannot be estimated.",
+    "all-zero-differences": "Every matched difference is zero, so the signed-rank test cannot be estimated.",
+    "no-complete-blocks": "No entity has a complete block across all selected periods.",
+  },
+  integrityMessages: {
+    "binding-mismatch": "The inference inputs do not match the immutable successful-result binding.",
+    "identity-collision": "The repeated-entity identity maps across incompatible comparison groups.",
+    "group-instability": "Repeated-entity comparison-group membership is unstable.",
+    "entity-period-instability": "The compact entity-period mapping is unstable.",
+    "nonfinite-coordinate": "A required model coordinate is missing or not finite.",
+  },
+  warningMessages: {
+    "small-sample": "The ranked sample is small; attainable two-sided p-values are discrete.",
+    "discrete-attainable-p": "The exact two-sided p-value can take only discrete attainable values for this sample.",
+    "ties-present": "Tied ranks are present and are handled by average ranks and the recorded conditional or corrected method.",
+    "zero-differences-present": "Zero paired differences are counted in the ledger but excluded from signed ranks under the Wilcox zero rule.",
+    "missing-pairs": "Some candidate entities are missing one of the two selected periods and are excluded from this pairwise-complete comparison.",
+    "missing-complete-blocks": "Some candidate entities are missing at least one selected period and are excluded from the all-period-complete cohort.",
+    "signed-rank-symmetry-assumption": "Wilcoxon signed-rank inference assumes a symmetric distribution of paired differences.",
+    "independent-entity-assumption": "Mann–Whitney U inference assumes the compared entity observations are independent between groups.",
+    "cluster-independence-unverified": "The ordinary rank test does not verify or adjust for additional clustering among entities.",
+    "accumulated-trajectory-path-dependence": "Each accumulated-trajectory point contains its preceding network history and is not an isolated time-point measurement.",
+    "arbitrary-axis-sign": "ENA axis signs are arbitrary; reversing an axis reverses signed effects without changing two-sided p-values.",
+    "mr1-circularity": "MR1 is constructed from the fitted group contrast, so inference on MR1 is circular and should be treated cautiously.",
+  },
+  resolvedMethodNames: {
+    "exact-classic": "Exact two-sided rank distribution",
+    "exact-conditional-rank-permutation": "Exact conditional rank-permutation distribution",
+    "normal-approximation-tie-corrected": "Tie-corrected normal approximation with continuity correction",
+    "exact-conditional-sign-flip": "Exact conditional sign-flip distribution",
+    "normal-approximation-actual-ranks": "Normal approximation from actual signed ranks with continuity correction",
+    "exact-conditional-period-permutation": "Exact conditional within-entity period permutation",
+    "chi-square-approximation-tie-corrected": "Tie-corrected chi-square approximation",
+  },
 };
 
 const inferenceZhHant: OpenEnaInferenceCopy = {
@@ -608,6 +672,56 @@ const inferenceZhHant: OpenEnaInferenceCopy = {
   fixedMethodLabel: "固定方法政策",
   noResult: "目前已確認的設計尚未執行推論結果。",
   warnings: "方法與設計警告",
+  auditCodeLabel: "稽核代碼",
+  reasonMessages: {
+    "design-not-confirmed": "尚未確認研究設計。",
+    "identity-not-confirmed": "尚未確認複合重複實體識別。",
+    "identity-columns-invalid": "重複實體識別欄位不適用於成功模型。",
+    "identity-component-empty": "至少一個重複實體識別組成值為空。",
+    "time-column-invalid": "所選時間欄位不適用於成功模型。",
+    "axes-invalid": "所選推論軸不適用於成功結果。",
+    "group-required": "請為此重複測量設計選擇一個比較群組。",
+    "group-invalid": "所選比較群組不適用於目前結果。",
+    "groups-must-differ": "主要群組與次要群組必須不同。",
+    "period-invalid": "所選期間不適用於目前比較框架。",
+    "periods-must-differ": "較早期間與較後期間必須不同。",
+    "at-least-three-periods-required": "重複期間推論至少需要三個所選期間。",
+    "empty-group": "至少一個所選比較群組沒有合資格實體。",
+    "insufficient-ranked-observations": "可排秩觀察太少，無法估計此檢定。",
+    "all-values-tied": "所有合資格值均為同秩，因此無法估計此比較。",
+    "all-zero-differences": "所有配對差值均為零，因此無法估計符號秩檢定。",
+    "no-complete-blocks": "沒有實體在所有所選期間形成完整區組。",
+  },
+  integrityMessages: {
+    "binding-mismatch": "推論輸入與不可變的成功結果綁定不一致。",
+    "identity-collision": "重複實體識別被映射至不相容的比較群組。",
+    "group-instability": "重複實體的比較群組成員資格不穩定。",
+    "entity-period-instability": "精簡實體—期間映射不穩定。",
+    "nonfinite-coordinate": "必要的模型座標缺失或不是有限數值。",
+  },
+  warningMessages: {
+    "small-sample": "排秩樣本較小；可達的雙側 p 值是離散的。",
+    "discrete-attainable-p": "在此樣本下，精確雙側 p 值只能取離散的可達值。",
+    "ties-present": "資料包含同秩；系統以平均秩及記錄的條件精確或校正方法處理。",
+    "zero-differences-present": "零配對差計入納入帳本，但依 Wilcox 零值規則不進入符號秩。",
+    "missing-pairs": "部分候選實體缺少兩個所選期間之一，已從成對完整比較排除。",
+    "missing-complete-blocks": "部分候選實體缺少至少一個所選期間，已從全期間完整隊列排除。",
+    "signed-rank-symmetry-assumption": "Wilcoxon 符號秩推論假設配對差值分布對稱。",
+    "independent-entity-assumption": "Mann–Whitney U 推論假設兩群組的實體觀察彼此獨立。",
+    "cluster-independence-unverified": "一般秩檢定不會驗證或校正實體之間的額外聚類。",
+    "accumulated-trajectory-path-dependence": "每個累積軌跡點包含此前的網絡歷史，並非孤立的時間點測量。",
+    "arbitrary-axis-sign": "ENA 軸的正負方向是任意的；反轉軸會反轉帶符號效應，但不改變雙側 p 值。",
+    "mr1-circularity": "MR1 由已擬合的群組對比建構，因此對 MR1 的推論具有循環性，應審慎解讀。",
+  },
+  resolvedMethodNames: {
+    "exact-classic": "經典精確雙側秩分布",
+    "exact-conditional-rank-permutation": "精確條件秩置換分布",
+    "normal-approximation-tie-corrected": "同秩校正並含連續性校正的常態近似",
+    "exact-conditional-sign-flip": "精確條件符號翻轉分布",
+    "normal-approximation-actual-ranks": "依實際符號秩並含連續性校正的常態近似",
+    "exact-conditional-period-permutation": "實體內期間標籤的精確條件置換",
+    "chi-square-approximation-tie-corrected": "同秩校正的卡方近似",
+  },
 };
 
 const inferenceZhHans: OpenEnaInferenceCopy = {
@@ -712,6 +826,56 @@ const inferenceZhHans: OpenEnaInferenceCopy = {
   fixedMethodLabel: "固定方法策略",
   noResult: "当前已确认的设计尚未运行推断结果。",
   warnings: "方法与设计警告",
+  auditCodeLabel: "审计代码",
+  reasonMessages: {
+    "design-not-confirmed": "尚未确认研究设计。",
+    "identity-not-confirmed": "尚未确认复合重复实体标识。",
+    "identity-columns-invalid": "重复实体标识字段不适用于成功模型。",
+    "identity-component-empty": "至少一个重复实体标识组成值为空。",
+    "time-column-invalid": "所选时间字段不适用于成功模型。",
+    "axes-invalid": "所选推断轴不适用于成功结果。",
+    "group-required": "请为此重复测量设计选择一个比较组。",
+    "group-invalid": "所选比较组不适用于当前结果。",
+    "groups-must-differ": "主要组与次要组必须不同。",
+    "period-invalid": "所选时期不适用于当前比较框架。",
+    "periods-must-differ": "较早时期与较后时期必须不同。",
+    "at-least-three-periods-required": "重复时期推断至少需要三个所选时期。",
+    "empty-group": "至少一个所选比较组没有合格实体。",
+    "insufficient-ranked-observations": "可排序观察太少，无法估计此检验。",
+    "all-values-tied": "所有合格值均为同秩，因此无法估计此比较。",
+    "all-zero-differences": "所有配对差值均为零，因此无法估计符号秩检验。",
+    "no-complete-blocks": "没有实体在所有所选时期形成完整区组。",
+  },
+  integrityMessages: {
+    "binding-mismatch": "推断输入与不可变的成功结果绑定不一致。",
+    "identity-collision": "重复实体标识被映射至不兼容的比较组。",
+    "group-instability": "重复实体的比较组成员资格不稳定。",
+    "entity-period-instability": "紧凑实体—时期映射不稳定。",
+    "nonfinite-coordinate": "必要的模型坐标缺失或不是有限数值。",
+  },
+  warningMessages: {
+    "small-sample": "排序样本较小；可达的双侧 p 值是离散的。",
+    "discrete-attainable-p": "在此样本下，精确双侧 p 值只能取离散的可达值。",
+    "ties-present": "数据包含同秩；系统以平均秩及记录的条件精确或校正方法处理。",
+    "zero-differences-present": "零配对差计入纳入账本，但依 Wilcox 零值规则不进入符号秩。",
+    "missing-pairs": "部分候选实体缺少两个所选时期之一，已从成对完整比较排除。",
+    "missing-complete-blocks": "部分候选实体缺少至少一个所选时期，已从全时期完整队列排除。",
+    "signed-rank-symmetry-assumption": "Wilcoxon 符号秩推断假设配对差值分布对称。",
+    "independent-entity-assumption": "Mann–Whitney U 推断假设两组的实体观察彼此独立。",
+    "cluster-independence-unverified": "普通秩检验不会验证或校正实体之间的额外聚类。",
+    "accumulated-trajectory-path-dependence": "每个累积轨迹点包含此前的网络历史，并非孤立的时间点测量。",
+    "arbitrary-axis-sign": "ENA 轴的正负方向是任意的；反转轴会反转带符号效应，但不改变双侧 p 值。",
+    "mr1-circularity": "MR1 由已拟合的组对比构建，因此对 MR1 的推断具有循环性，应谨慎解读。",
+  },
+  resolvedMethodNames: {
+    "exact-classic": "经典精确双侧秩分布",
+    "exact-conditional-rank-permutation": "精确条件秩置换分布",
+    "normal-approximation-tie-corrected": "同秩校正并含连续性校正的正态近似",
+    "exact-conditional-sign-flip": "精确条件符号翻转分布",
+    "normal-approximation-actual-ranks": "按实际符号秩并含连续性校正的正态近似",
+    "exact-conditional-period-permutation": "实体内时期标签的精确条件置换",
+    "chi-square-approximation-tie-corrected": "同秩校正的卡方近似",
+  },
 };
 
 const statsUiEn: OpenEnaStatsUiCopy = {
@@ -964,6 +1128,7 @@ const en: OpenEnaCopy = {
     noEndpointTests: "Endpoint Mann–Whitney and Welch tests are not applied to repeated trajectory periods.",
     exportJson: "Export longitudinal JSON",
     exportCsv: "Export longitudinal periods CSV",
+    exportInferenceCsv: "Export inferential comparison CSV",
     allUnits: "No comparison group: one overall All units centroid path is shown.",
     period: "Period",
     group: "Group",
@@ -1095,7 +1260,7 @@ const zhHant: OpenEnaCopy = {
   model: { ...en.model, title: "定義 ENA 模型", description: "對應賦予網絡分析意義的欄位，然後執行已驗證的 jENA 流程。", sequenceNote: "CSV 或 XLSX 資料列順序定義每段對話中的序列；若順序重要，請在分析前先排序來源檔案。", unit: "分析單位", conversation: "對話", group: "比較群組", identityHint: "可選一個或多個欄位；順序會定義複合識別。", noGroup: "不設比較群組（全部分析單位）", codes: "編碼", window: "窗口", movingWindow: "移動段落窗口", conversationWindow: "完整對話", back: "向後跨度（包括目前列）", forward: "向前資料列", modelType: "模型類型", endpoint: "端點（每個分析單位一個網絡）", separateTrajectory: "分離軌跡（每一步一個點）", accumulatedTrajectory: "累積軌跡（每一步為累積網絡）", trajectoryHint: "軌跡步驟依每個分析單位首次出現的對話順序排列；統計面板不會將重複步驟視為獨立分析單位。", rotation: "旋轉", svd: "SVD（資料變異）", means: "廣義均值旋轉（GMR）", center: "將零網絡分析單位置於原點", weighting: "加權", binary: "二元", run: "建立 ENA 模型", rerun: "重新建立模型", valid: "模型輸入有效" },
   plot: { ...en.plot, title: "調整研究視圖", description: "這些控制只改變呈現方式，不會在未提示下重新建立模型。", showPoints: "分析單位點", showNetworks: "群組網絡", showLabels: "編碼標籤", showTrajectories: "軌跡路徑", edgeScale: "連線寬度", camera: "相機", isometric: "等距", reset: "重設視圖" },
   contrast: { ...en.contrast, title: "端點群組對比", description: "依序選擇主要與次要群組。中央圖以同一比例尺疊加兩個平均網絡；帶符號的「主要減次要」差異保留在證據表與匯出中。", primary: "主要群組", secondary: "次要群組", swap: "交換主要與次要群組", selectedOrder: "所選群組順序", multiplicity: "此網絡對比只作描述；已確認的統計推論工作流程會在明確執行後套用固定 Holm 檢定族。", exportJson: "匯出群組對比 JSON", exportEdges: "匯出群組對比連線 CSV", requiresGroup: "無法使用群組對比：端點模型需要群組變項。", requiresTwoGroups: "無法使用群組對比：端點模型需要至少兩個不同群組。", endpointOnly: "無法使用群組對比：此功能只適用於端點模型。" },
-  longitudinal: { ...en.longitudinal, title: "縱向群組質心路徑", description: "依明確期間順序，在固定 jENA 空間中衍生等權實體群組質心。這些呈現設定不會重建 jENA 或改變投影座標。", repeatedEntity: "重複測量實體", timeOrder: "時間／順序欄位", observedOrder: "明確時間順序（依來源資料首次出現）", moveEarlier: "將期間向前移", moveLater: "將期間向後移", cohortPolicy: "隊列政策", available: "可用隊列", complete: "完整隊列", availableHint: "可用隊列使用各期間實際出現的重複實體。", completeHint: "完整隊列只保留每個排序期間均有資料的重複實體。", showIndividualPaths: "個別軌跡路徑", showGroupPaths: "群組質心路徑", descriptive: "描述性縱向幾何", noEndpointTests: "重複軌跡期間不套用端點 Mann–Whitney 或 Welch 檢定。", exportJson: "匯出縱向 JSON", exportCsv: "匯出縱向期間 CSV", allUnits: "未設定比較群組：顯示一條「全部單位」總體質心路徑。", period: "期間", group: "群組", availableCount: "可用", completeCount: "完整", includedCount: "納入", excludedCount: "缺失／排除", unavailableModel: "縱向群組質心分析需要成功的分離或累積軌跡結果。", unavailableEntity: "縱向分析需要來自擬合單位對應的重複實體欄位。", unavailableTime: "縱向分析需要來自擬合對話對應的時間／順序欄位。", unavailablePeriods: "縱向分析至少需要兩個排序期間。", unavailableComplete: "完整隊列中沒有在每個所選期間均有資料的合資格重複實體。", figureAriaLabel: "群組質心軌跡圖；小螢幕可水平捲動。", geometryView: "軌跡幾何視圖", diagnosticsCaption: "群組與期間質心診斷", nUsed: "使用數", nExcluded: "排除數", centroid: "質心", status: "狀態", gap: "缺口", observed: "已觀察", gapRule: "缺失期間之間不連線。", legendAriaLabel: "縱向軌跡圖例", largerCentroidMarker: "較大輪廓標記＝群組期間質心", timeDirectionArrow: "箭頭＝觀察時間方向", flipped: "已翻轉", firstAxis: "維度 1", secondAxis: "維度 2", circle: "圓形", diamond: "菱形", triangle: "三角形", square: "方形", cross: "十字形", hexagon: "六邊形", solid: "實線", dashed: "虛線", dotted: "點線", dashDot: "點劃線", shortDashed: "短虛線", longShortDashed: "長短虛線", marker: "標記", path: "路徑", rowsTruncated: "畫面省略了其餘期間列；請使用縱向匯出取得完整診斷。", individualMarksSampled: "個別圖形標記已抽樣：顯示 {pointsShown}/{pointsTotal} 個點與 {segmentsShown}/{segmentsTotal} 段。群組質心路徑保持完整。" },
+  longitudinal: { ...en.longitudinal, title: "縱向群組質心路徑", description: "依明確期間順序，在固定 jENA 空間中衍生等權實體群組質心。這些呈現設定不會重建 jENA 或改變投影座標。", repeatedEntity: "重複測量實體", timeOrder: "時間／順序欄位", observedOrder: "明確時間順序（依來源資料首次出現）", moveEarlier: "將期間向前移", moveLater: "將期間向後移", cohortPolicy: "隊列政策", available: "可用隊列", complete: "完整隊列", availableHint: "可用隊列使用各期間實際出現的重複實體。", completeHint: "完整隊列只保留每個排序期間均有資料的重複實體。", showIndividualPaths: "個別軌跡路徑", showGroupPaths: "群組質心路徑", descriptive: "描述性縱向幾何", noEndpointTests: "重複軌跡期間不套用端點 Mann–Whitney 或 Welch 檢定。", exportJson: "匯出縱向 JSON", exportCsv: "匯出縱向期間 CSV", exportInferenceCsv: "匯出推論比較 CSV", allUnits: "未設定比較群組：顯示一條「全部單位」總體質心路徑。", period: "期間", group: "群組", availableCount: "可用", completeCount: "完整", includedCount: "納入", excludedCount: "缺失／排除", unavailableModel: "縱向群組質心分析需要成功的分離或累積軌跡結果。", unavailableEntity: "縱向分析需要來自擬合單位對應的重複實體欄位。", unavailableTime: "縱向分析需要來自擬合對話對應的時間／順序欄位。", unavailablePeriods: "縱向分析至少需要兩個排序期間。", unavailableComplete: "完整隊列中沒有在每個所選期間均有資料的合資格重複實體。", figureAriaLabel: "群組質心軌跡圖；小螢幕可水平捲動。", geometryView: "軌跡幾何視圖", diagnosticsCaption: "群組與期間質心診斷", nUsed: "使用數", nExcluded: "排除數", centroid: "質心", status: "狀態", gap: "缺口", observed: "已觀察", gapRule: "缺失期間之間不連線。", legendAriaLabel: "縱向軌跡圖例", largerCentroidMarker: "較大輪廓標記＝群組期間質心", timeDirectionArrow: "箭頭＝觀察時間方向", flipped: "已翻轉", firstAxis: "維度 1", secondAxis: "維度 2", circle: "圓形", diamond: "菱形", triangle: "三角形", square: "方形", cross: "十字形", hexagon: "六邊形", solid: "實線", dashed: "虛線", dotted: "點線", dashDot: "點劃線", shortDashed: "短虛線", longShortDashed: "長短虛線", marker: "標記", path: "路徑", rowsTruncated: "畫面省略了其餘期間列；請使用縱向匯出取得完整診斷。", individualMarksSampled: "個別圖形標記已抽樣：顯示 {pointsShown}/{pointsTotal} 個點與 {segmentsShown}/{segmentsTotal} 段。群組質心路徑保持完整。" },
   stats: { ...en.stats, title: "證據與可重現性", description: "將描述性摘要與模型規格一併閱讀；發表層級的推論需要有理據的檢定與研究設計。", variance: "解釋變異", groupSummary: "群組摘要", effect: "絕對 Cohen’s d", verifiedTests: "jENA 檢定統計量", correlations: "維度相關", notTest: "jENA 報告檢定統計量與自由度，但不計算 p 值；請依研究設計選擇及報告推論檢定。", manifest: "分析清單", export: "匯出清單", exportBundle: "匯出結果套件", trajectoryNotice: "端點群組檢定與點—質心相關不適用於重複軌跡步驟。請以描述方式解讀軌跡幾何，或在工作區外使用符合研究設計的縱向方法。", ui: statsUiZhHant },
   aiInterpretation: {
     ...en.aiInterpretation,
@@ -1143,7 +1308,7 @@ const zhHans: OpenEnaCopy = {
   model: { ...zhHant.model, title: "定义 ENA 模型", description: "映射赋予网络分析意义的字段，然后运行已验证的 jENA 流程。", sequenceNote: "CSV 或 XLSX 数据行顺序定义每段对话中的序列；若顺序重要，请在分析前先排序源文件。", unit: "分析单位", conversation: "对话", group: "比较组", identityHint: "可选一个或多个字段；顺序会定义复合标识。", noGroup: "不设比较组（全部分析单位）", codes: "编码", window: "窗口", movingWindow: "移动段落窗口", conversationWindow: "完整对话", back: "向后跨度（包括当前行）", forward: "向前数据行", modelType: "模型类型", endpoint: "端点（每个分析单位一个网络）", separateTrajectory: "分离轨迹（每一步一个点）", accumulatedTrajectory: "累积轨迹（每一步为累积网络）", trajectoryHint: "轨迹步骤按每个分析单位首次出现的对话顺序排列；统计面板不会将重复步骤视为独立分析单位。", rotation: "旋转", svd: "SVD（数据方差）", means: "广义均值旋转（GMR）", center: "将零网络分析单位置于原点", weighting: "加权", binary: "二元", run: "构建 ENA 模型", rerun: "重新构建模型", valid: "模型输入有效" },
   plot: { ...zhHant.plot, title: "调整研究视图", description: "这些控件只改变呈现方式，不会在未提示下重新构建模型。", showPoints: "分析单位点", showNetworks: "组网络", showLabels: "编码标签", showTrajectories: "轨迹路径", edgeScale: "连线宽度", camera: "相机", isometric: "等距", reset: "重置视图" },
   contrast: { ...en.contrast, title: "端点组对比", description: "依次选择主要组和次要组。中央图以同一比例尺叠加两个平均网络；带符号的“主要减次要”差异保留在证据表与导出中。", primary: "主要组", secondary: "次要组", swap: "交换主要组和次要组", selectedOrder: "所选组顺序", multiplicity: "此网络对比仅作描述；已确认的统计推断工作流程会在明确运行后应用固定 Holm 检验族。", exportJson: "导出组对比 JSON", exportEdges: "导出组对比连线 CSV", requiresGroup: "无法使用组对比：端点模型需要分组变量。", requiresTwoGroups: "无法使用组对比：端点模型需要至少两个不同组。", endpointOnly: "无法使用组对比：此功能仅适用于端点模型。" },
-  longitudinal: { ...en.longitudinal, title: "纵向组质心路径", description: "按明确时期顺序，在固定 jENA 空间中派生等权实体组质心。这些呈现设置不会重建 jENA 或改变投影坐标。", repeatedEntity: "重复测量实体", timeOrder: "时间／顺序字段", observedOrder: "明确时间顺序（按来源数据首次出现）", moveEarlier: "将时期前移", moveLater: "将时期后移", cohortPolicy: "队列策略", available: "可用队列", complete: "完整队列", availableHint: "可用队列使用各时期实际出现的重复实体。", completeHint: "完整队列只保留每个排序时期均有数据的重复实体。", showIndividualPaths: "个体轨迹路径", showGroupPaths: "组质心路径", descriptive: "描述性纵向几何", noEndpointTests: "重复轨迹时期不应用端点 Mann–Whitney 或 Welch 检验。", exportJson: "导出纵向 JSON", exportCsv: "导出纵向时期 CSV", allUnits: "未设置比较组：显示一条“所有单位”总体质心路径。", period: "时期", group: "组", availableCount: "可用", completeCount: "完整", includedCount: "纳入", excludedCount: "缺失／排除", unavailableModel: "纵向组质心分析需要成功的分离或累积轨迹结果。", unavailableEntity: "纵向分析需要来自拟合单位映射的重复实体字段。", unavailableTime: "纵向分析需要来自拟合对话映射的时间／顺序字段。", unavailablePeriods: "纵向分析至少需要两个排序时期。", unavailableComplete: "完整队列中没有在每个所选时期均有数据的合格重复实体。", figureAriaLabel: "组质心轨迹图；小屏幕可水平滚动。", geometryView: "轨迹几何视图", diagnosticsCaption: "组与时期质心诊断", nUsed: "使用数", nExcluded: "排除数", centroid: "质心", status: "状态", gap: "缺口", observed: "已观察", gapRule: "缺失时期之间不连线。", legendAriaLabel: "纵向轨迹图例", largerCentroidMarker: "较大轮廓标记＝组时期质心", timeDirectionArrow: "箭头＝观察时间方向", flipped: "已翻转", firstAxis: "维度 1", secondAxis: "维度 2", circle: "圆形", diamond: "菱形", triangle: "三角形", square: "方形", cross: "十字形", hexagon: "六边形", solid: "实线", dashed: "虚线", dotted: "点线", dashDot: "点划线", shortDashed: "短虚线", longShortDashed: "长短虚线", marker: "标记", path: "路径", rowsTruncated: "画面省略了其余时期行；请使用纵向导出获取完整诊断。", individualMarksSampled: "个体图形标记已抽样：显示 {pointsShown}/{pointsTotal} 个点与 {segmentsShown}/{segmentsTotal} 段。组质心路径保持完整。" },
+  longitudinal: { ...en.longitudinal, title: "纵向组质心路径", description: "按明确时期顺序，在固定 jENA 空间中派生等权实体组质心。这些呈现设置不会重建 jENA 或改变投影坐标。", repeatedEntity: "重复测量实体", timeOrder: "时间／顺序字段", observedOrder: "明确时间顺序（按来源数据首次出现）", moveEarlier: "将时期前移", moveLater: "将时期后移", cohortPolicy: "队列策略", available: "可用队列", complete: "完整队列", availableHint: "可用队列使用各时期实际出现的重复实体。", completeHint: "完整队列只保留每个排序时期均有数据的重复实体。", showIndividualPaths: "个体轨迹路径", showGroupPaths: "组质心路径", descriptive: "描述性纵向几何", noEndpointTests: "重复轨迹时期不应用端点 Mann–Whitney 或 Welch 检验。", exportJson: "导出纵向 JSON", exportCsv: "导出纵向时期 CSV", exportInferenceCsv: "导出推断比较 CSV", allUnits: "未设置比较组：显示一条“所有单位”总体质心路径。", period: "时期", group: "组", availableCount: "可用", completeCount: "完整", includedCount: "纳入", excludedCount: "缺失／排除", unavailableModel: "纵向组质心分析需要成功的分离或累积轨迹结果。", unavailableEntity: "纵向分析需要来自拟合单位映射的重复实体字段。", unavailableTime: "纵向分析需要来自拟合对话映射的时间／顺序字段。", unavailablePeriods: "纵向分析至少需要两个排序时期。", unavailableComplete: "完整队列中没有在每个所选时期均有数据的合格重复实体。", figureAriaLabel: "组质心轨迹图；小屏幕可水平滚动。", geometryView: "轨迹几何视图", diagnosticsCaption: "组与时期质心诊断", nUsed: "使用数", nExcluded: "排除数", centroid: "质心", status: "状态", gap: "缺口", observed: "已观察", gapRule: "缺失时期之间不连线。", legendAriaLabel: "纵向轨迹图例", largerCentroidMarker: "较大轮廓标记＝组时期质心", timeDirectionArrow: "箭头＝观察时间方向", flipped: "已翻转", firstAxis: "维度 1", secondAxis: "维度 2", circle: "圆形", diamond: "菱形", triangle: "三角形", square: "方形", cross: "十字形", hexagon: "六边形", solid: "实线", dashed: "虚线", dotted: "点线", dashDot: "点划线", shortDashed: "短虚线", longShortDashed: "长短虚线", marker: "标记", path: "路径", rowsTruncated: "画面省略了其余时期行；请使用纵向导出获取完整诊断。", individualMarksSampled: "个体图形标记已抽样：显示 {pointsShown}/{pointsTotal} 个点与 {segmentsShown}/{segmentsTotal} 段。组质心路径保持完整。" },
   stats: { ...zhHant.stats, title: "证据与可复现性", description: "将描述性摘要与模型规格一并解读；发表层级的推论需要有依据的检验与研究设计。", variance: "解释方差", groupSummary: "组摘要", effect: "绝对 Cohen’s d", verifiedTests: "jENA 检验统计量", correlations: "维度相关", notTest: "jENA 报告检验统计量和自由度，但不计算 p 值；请根据研究设计选择并报告推论检验。", manifest: "分析清单", export: "导出清单", exportBundle: "导出结果包", trajectoryNotice: "端点组检验与点—质心相关不适用于重复轨迹步骤。请描述性解读轨迹几何，或在工作区外使用符合研究设计的纵向方法。", ui: statsUiZhHans },
   aiInterpretation: {
     ...zhHant.aiInterpretation,

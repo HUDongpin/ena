@@ -24,6 +24,7 @@ import {
 import {
   buildLongitudinalDerivation,
   buildLongitudinalGroupCentroidExport,
+  longitudinalInferenceRowsToCsv,
   longitudinalPeriodRowsToCsv,
   sliceLongitudinalIndependentPeriod,
   sliceLongitudinalPairedPeriods,
@@ -404,7 +405,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     if (result.set.modelType === "EndPoint") return { derivation: null, error: copy.longitudinal.unavailableModel };
     if (!repeatedEntityColumns.length) return { derivation: null, error: copy.longitudinal.unavailableEntity };
     if (!timeColumn) return { derivation: null, error: copy.longitudinal.unavailableTime };
-    if (longitudinalTimeOrder.length < 2) return { derivation: null, error: copy.longitudinal.unavailablePeriods };
+    if (longitudinalTimeOrder.length < 1) return { derivation: null, error: copy.longitudinal.unavailablePeriods };
     try {
       return {
         derivation: buildLongitudinalDerivation(
@@ -440,8 +441,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     xDimension,
     yDimension,
   ]);
-  const longitudinalView = longitudinalDerivationState.derivation?.view ?? null;
+  const longitudinalView = longitudinalTimeOrder.length >= 2
+    ? longitudinalDerivationState.derivation?.view ?? null
+    : null;
   const longitudinalComparisonFrame = longitudinalDerivationState.derivation?.comparisonFrame ?? null;
+  const longitudinalViewError = longitudinalDerivationState.error
+    ?? (longitudinalTimeOrder.length < 2 ? copy.longitudinal.unavailablePeriods : null);
 
   const inferenceResultInitializationKey = result && resultConfig
     ? `${result.analyzedAt}\u001f${resultConfig.model}\u001f${resultConfig.groupColumn ?? ""}\u001f${currentResultGroupKey}`
@@ -839,11 +844,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           pointScale,
           plotZoom,
           selectedGroupOrder: groupContrast?.groupOrder,
-        })
+        }, currentInference)
       : null,
     [
       dataset,
       datasetHash,
+      currentInference,
       edgeScale,
       edgeThreshold,
       flipX,
@@ -967,7 +973,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     ? longitudinalView
     : null;
   const aiInterpretationRequest = useMemo(() => {
-    if (!result || !resultConfig || resultIsStale) return null;
+    if (!result || !resultConfig || resultIsStale || !currentInference) return null;
     try {
       return buildOpenEnaAiInterpretationRequest({
         locale,
@@ -980,7 +986,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     } catch {
       return null;
     }
-  }, [datasetHash, groupContrast, locale, longitudinalView, result, resultConfig, resultIsStale]);
+  }, [currentInference, datasetHash, groupContrast, locale, longitudinalView, result, resultConfig, resultIsStale]);
   const currentProjectedResult = Boolean(
     result
     && resultConfig
@@ -2129,7 +2135,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                         showVariance,
                         pointScale,
                         plotZoom,
-                      }),
+                      }, currentInference),
                       true,
                     )}
                   >
@@ -2149,8 +2155,26 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 </div>
               </>
             ) : (
-              <p className="ena-sets-compatibility-note">{longitudinalDerivationState.error}</p>
+              <p className="ena-sets-compatibility-note">{longitudinalViewError}</p>
             )}
+            <div className="ena-longitudinal-export-actions">
+              <button
+                type="button"
+                className="ena-action-button ena-action-secondary"
+                disabled={!currentInference}
+                onClick={() => {
+                  if (currentInference) {
+                    downloadText(
+                      `open-ena-${Date.now()}-longitudinal-inference.csv`,
+                      longitudinalInferenceRowsToCsv(currentInference),
+                      "text/csv;charset=utf-8",
+                    );
+                  }
+                }}
+              >
+                {copy.longitudinal.exportInferenceCsv} ↓
+              </button>
+            </div>
           </>
         )}
       </section>
@@ -2688,6 +2712,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                           plotZoom,
                           selectedGroupOrder: groupContrast?.groupOrder,
                           groupContrast,
+                          inference: currentInference,
                         }),
                         true,
                       );
@@ -3095,6 +3120,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                             plotZoom,
                             selectedGroupOrder: groupContrast?.groupOrder,
                             groupContrast,
+                            inference: currentInference,
                           }),
                           true,
                         );

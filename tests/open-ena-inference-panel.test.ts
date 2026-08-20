@@ -153,6 +153,7 @@ function availableEndpointInference(): Extract<OpenEnaInferenceResultV2, { kind:
       modelType: "EndPoint",
       configuration: SAMPLE_CONFIG,
       axes: ["MR1", "SVD2"],
+      trajectoryMapping: null,
     },
     coordinateSystem: "unflipped-model-coordinates",
     provenance: "ENA.HK post-projection inference",
@@ -226,6 +227,13 @@ function trajectoryBinding() {
     modelType: "SeparateTrajectory" as const,
     configuration: TRAJECTORY_CONFIG,
     axes: ["MR1", "SVD2"] as [string, string],
+    trajectoryMapping: {
+      contractVersion: 1 as const,
+      repeatedEntityColumns: ["Group", "Name"],
+      identityConfirmed: true as const,
+      timeColumn: "Lesson",
+      timeOrder: ["Lesson 1", "Lesson 2", "Lesson 3"],
+    },
   };
 }
 

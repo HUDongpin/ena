@@ -84,6 +84,35 @@ function resultStatus(copy: OpenEnaInferenceCopy, result: OpenEnaInferenceResult
   return copy.resultDisabled;
 }
 
+function localizedCode(
+  dictionary: object,
+  fallback: string,
+  auditCodeLabel: string,
+  code: string | null,
+) {
+  if (!code) return "";
+  const message = (dictionary as Record<string, string>)[code] ?? fallback;
+  return `${message} (${auditCodeLabel}: ${code})`;
+}
+
+function localizedReason(copy: OpenEnaInferenceCopy, code: string | null) {
+  return localizedCode(copy.reasonMessages, copy.resultNotEstimable, copy.auditCodeLabel, code);
+}
+
+function localizedIntegrity(copy: OpenEnaInferenceCopy, code: string) {
+  return localizedCode(copy.integrityMessages, copy.integrityError, copy.auditCodeLabel, code);
+}
+
+function localizedWarning(copy: OpenEnaInferenceCopy, code: string) {
+  return localizedCode(copy.warningMessages, copy.warnings, copy.auditCodeLabel, code);
+}
+
+function localizedResolvedMethod(copy: OpenEnaInferenceCopy, code: string | null) {
+  return code
+    ? localizedCode(copy.resolvedMethodNames, copy.resolvedMethod, copy.auditCodeLabel, code)
+    : "—";
+}
+
 function InferenceProvenance({
   copy,
   inference,
@@ -178,7 +207,7 @@ function MannWhitneyTable({
             <td className="ena-inference-primary-value">{formatNumber(row.pHolm, 6)}</td>
             <td>{formatNumber(row.pRaw, 6)}</td>
             <td>{formatNumber(row.rankBiserialPrimaryVsSecondary)}</td>
-            <td>{row.resolvedPMethod ?? "—"}</td>
+            <td>{localizedResolvedMethod(copy, row.resolvedPMethod)}</td>
           </tr>
         ))}</tbody>
       </table>
@@ -239,7 +268,7 @@ function WilcoxonTable({
             <td>{formatNumber(row.pRaw, 6)}</td>
             <td>{formatNumber(row.rankBiserialLaterVsEarlier)}</td>
             <td>{formatMinimumAttainable(row.minimumAttainableTwoSidedP)}</td>
-            <td>{row.resolvedPMethod ?? "—"}</td>
+            <td>{localizedResolvedMethod(copy, row.resolvedPMethod)}</td>
           </tr>
         ))}</tbody>
       </table>
@@ -282,7 +311,7 @@ function RepeatedTables({
               <td className="ena-inference-primary-value">{formatNumber(row.pHolm, 6)}</td>
               <td>{formatNumber(row.pRaw, 6)}</td>
               <td>{formatNumber(row.kendallsW)}</td>
-              <td>{row.resolvedPMethod ?? "—"}</td>
+              <td>{localizedResolvedMethod(copy, row.resolvedPMethod)}</td>
             </tr>
           ))}</tbody>
         </table>
@@ -319,7 +348,7 @@ function RepeatedTables({
               <td className="ena-inference-primary-value">{formatNumber(row.pHolm, 6)}</td>
               <td>{formatNumber(row.pRaw, 6)}</td>
               <td>{formatNumber(row.rankBiserialLaterVsEarlier)}</td>
-              <td>{row.resolvedPMethod ?? "—"}</td>
+              <td>{localizedResolvedMethod(copy, row.resolvedPMethod)}</td>
             </tr>
           ))}</tbody>
         </table>
@@ -549,7 +578,7 @@ export default function OpenEnaInferencePanel({
         </section>
       ) : null}
 
-      {integrityError ? <p className="ena-inference-error" role="alert"><strong>{copy.integrityError}</strong> {integrityError}</p> : null}
+      {integrityError ? <p className="ena-inference-error" role="alert"><strong>{copy.integrityError}</strong> {localizedIntegrity(copy, integrityError)}</p> : null}
 
       <button
         type="button"
@@ -565,7 +594,7 @@ export default function OpenEnaInferencePanel({
       {inference ? (
         <section className="ena-inference-results" aria-labelledby="open-ena-inference-results">
           <h4 id="open-ena-inference-results" tabIndex={-1}>{copy.resultsTitle}</h4>
-          <p>{resultStatus(copy, inference)}{inference.reason ? ` · ${inference.reason}` : ""}</p>
+          <p>{resultStatus(copy, inference)}{inference.reason ? <> · {localizedReason(copy, inference.reason)}</> : null}</p>
           {inference.kind === "endpoint-independent" || inference.kind === "trajectory-independent-period"
             ? <MannWhitneyTable copy={copy} inference={inference} />
             : inference.kind === "trajectory-paired-periods"
@@ -577,7 +606,7 @@ export default function OpenEnaInferencePanel({
           {inference.warnings.length ? (
             <details className="ena-inference-warnings">
               <summary>{copy.warnings}</summary>
-              <ul>{inference.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+              <ul>{inference.warnings.map((warning) => <li key={warning}>{localizedWarning(copy, warning)}</li>)}</ul>
             </details>
           ) : null}
         </section>
