@@ -222,6 +222,7 @@ export interface OpenEnaManifest {
     rotation:
       | { method: "svd" }
       | { method: "mean"; params: { groups: [string[], string[]] } }
+      | { method: "generalized"; params: { xVar: string; select2Groups: [string, string] } }
       | { method: "reference"; referenceId: string; sourceDatasetSha256: string | null };
     centerAlignToOrigin: boolean;
     normalization: "sphere";

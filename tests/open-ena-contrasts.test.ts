@@ -9,6 +9,7 @@ import {
 import { parseCsv } from "../lib/open-ena/csv";
 import { mannWhitneyU } from "../lib/open-ena/inference";
 import { SAMPLE_CONFIG, type OpenEnaConfig, type OpenEnaResult } from "../lib/open-ena/types";
+import { marginalMeanStudentT95 } from "../lib/open-ena/uncertainty";
 
 function threeGroupEndpoint(): { result: OpenEnaResult; config: OpenEnaConfig } {
   const dataset = parseCsv(
@@ -56,10 +57,16 @@ test("builds an ordered pairwise endpoint contrast from two selected groups in a
   assert.equal(contrast.secondary.unitCount, 2);
   assert.ok(contrast.primary.points.every((point) => point.group === "Gamma"));
   assert.ok(contrast.secondary.points.every((point) => point.group === "Alpha"));
+  assert.equal(contrast.primary.meanConfidenceIntervals?.observationUnit, "endpoint-analytic-unit");
+  assert.equal(contrast.primary.meanConfidenceIntervals?.interpretation, "two-separate-marginal-confidence-intervals");
+  assert.equal(contrast.primary.meanConfidenceIntervals?.jointRegion, false);
+  assert.equal(contrast.primary.meanConfidenceIntervals?.significanceTest, false);
 
   const gamma = result.groups.find((group) => group.name === "Gamma");
   const alpha = result.groups.find((group) => group.name === "Alpha");
   assert.ok(gamma && alpha);
+  assert.equal(contrast.primary.color, gamma.color);
+  assert.equal(contrast.secondary.color, alpha.color);
   assert.equal(contrast.primary.meanPoint[axes[0]], gamma.meanPoint[axes[0]]);
   assert.equal(contrast.secondary.meanPoint[axes[1]], alpha.meanPoint[axes[1]]);
   for (const edge of contrast.edges) {
@@ -115,6 +122,107 @@ test("every selected pair shares one full-result coordinate extent and the exten
     buildPairwiseGroupContrastExport(alphaBeta).coordinateExtent,
     alphaBeta.coordinateExtent,
   );
+});
+
+test("official plot framing reproduces webENA points.rotated.scaled across every fitted dimension", () => {
+  const { result, config } = threeGroupEndpoint();
+  const axes = result.dimensions.slice(0, 2) as [string, string];
+  const contrast = buildPairwiseGroupContrast(result, config, "Alpha", "Beta", axes);
+  const frame = contrast.officialPlotFrame;
+  assert.ok(frame, "pairwise figures must carry the official webENA frame metadata");
+
+  const pointValues = (axis: string) => result.set.points.map((row) => Number(row[axis]));
+  const nodeValues = (axis: string) => (result.set.rotation.nodes ?? []).map((row) => Number(row[axis]));
+  const minRatios = axes.map((axis) => Math.min(...nodeValues(axis)) / Math.min(...pointValues(axis)));
+  const maxRatios = axes.map((axis) => Math.max(...nodeValues(axis)) / Math.max(...pointValues(axis)));
+  const expectedPointScale = Math.min(
+    Math.abs(Math.max(...minRatios)),
+    Math.abs(Math.max(...maxRatios)),
+  );
+
+  const rotation = result.set.rotation.rotationMatrix;
+  const edgeColumns = result.set.codeColumns;
+  const fullDimensionCount = result.set.rotation.rotationColumns.length;
+  const fullCoordinateRows = result.set.pointsForProjection.map((row) => Array.from(
+    { length: fullDimensionCount },
+    (_, dimension) => edgeColumns.reduce(
+      (sum, column, index) => sum + Number(row[column]) * Number(rotation[index]?.[dimension]),
+      0,
+    ),
+  ));
+  const rawFullDimensionMaximum = Math.max(...fullCoordinateRows.flat().map(Math.abs));
+  const confidenceMaximum = result.groups.reduce((maximum, group) => {
+    const groupRowIndexes = result.set.pointsForProjection
+      .map((row, index) => row.group === group.name ? index : -1)
+      .filter((index) => index >= 0);
+    for (let dimension = 0; dimension < fullDimensionCount; dimension += 1) {
+      const interval = marginalMeanStudentT95(
+        groupRowIndexes.map((index) => fullCoordinateRows[index][dimension]),
+      );
+      if (interval.status === "estimable") {
+        maximum = Math.max(
+          maximum,
+          Math.abs(interval.lower * expectedPointScale),
+          Math.abs(interval.upper * expectedPointScale),
+        );
+      }
+    }
+    return maximum;
+  }, 0);
+  const expectedMaxPosition = Math.max(rawFullDimensionMaximum * expectedPointScale, confidenceMaximum);
+
+  assert.equal(frame.source, "webena-points-rotated-scaled");
+  assert.ok(Math.abs(frame.pointScaleFactor - expectedPointScale) < 1e-12);
+  assert.ok(Math.abs(frame.maxPosition - expectedMaxPosition) < 1e-12);
+  assert.ok(Math.abs(frame.extremePosition - frame.maxPosition * 1.2) < 1e-12);
+
+  const reversed = buildPairwiseGroupContrast(result, config, "Beta", "Alpha", axes);
+  assert.deepEqual(reversed.officialPlotFrame, frame, "plot switching must not change the camera frame");
+});
+
+test("official plot framing includes every declared group's confidence bounds across the full rotation", () => {
+  const { result, config } = threeGroupEndpoint();
+  const axes = result.dimensions.slice(0, 2) as [string, string];
+  const baseline = buildPairwiseGroupContrast(result, config, "Alpha", "Beta", axes);
+  const ciDominant = structuredClone(result);
+  const edgeColumns = ciDominant.set.codeColumns;
+  const fullDimensionCount = ciDominant.set.rotation.rotationColumns.length;
+  assert.equal(edgeColumns.length, 3);
+  assert.equal(fullDimensionCount, 3);
+  ciDominant.set.rotation.rotationMatrix = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ];
+  for (const row of ciDominant.set.pointsForProjection) {
+    for (const column of edgeColumns) row[column] = 0;
+  }
+  const unselectedGroupPoints = ciDominant.set.pointsForProjection
+    .filter((row) => row.group === "Gamma");
+  assert.equal(unselectedGroupPoints.length, 2);
+  unselectedGroupPoints[0][edgeColumns[2]] = -1;
+  unselectedGroupPoints[1][edgeColumns[2]] = 1;
+
+  const contrast = buildPairwiseGroupContrast(ciDominant, config, "Alpha", "Beta", axes);
+  const frame = contrast.officialPlotFrame;
+  assert.ok(frame);
+  assert.ok(!contrast.groupOrder.includes("Gamma"));
+  assert.ok(!contrast.axes.includes(ciDominant.set.rotation.rotationColumns[2]));
+  const thirdDimensionInterval = marginalMeanStudentT95([-1, 1]);
+  assert.equal(thirdDimensionInterval.status, "estimable");
+  const expectedConfidenceMaximum = Math.max(
+    Math.abs(thirdDimensionInterval.lower),
+    Math.abs(thirdDimensionInterval.upper),
+  ) * frame.pointScaleFactor;
+  assert.ok(
+    expectedConfidenceMaximum > frame.pointScaleFactor,
+    "the synthetic third-dimension confidence bound must dominate its scaled endpoint points",
+  );
+  assert.ok(Math.abs(frame.maxPosition - expectedConfidenceMaximum) < 1e-12);
+  assert.ok(Math.abs(frame.extremePosition - expectedConfidenceMaximum * 1.2) < 1e-12);
+
+  assert.deepEqual(contrast.coordinateExtent, baseline.coordinateExtent);
+  assert.deepEqual(contrast.inference, baseline.inference);
 });
 
 test("pairwise contrasts fail closed for unsupported models, ambiguous groups, empty groups, and invalid axes", () => {

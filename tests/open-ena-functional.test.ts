@@ -41,19 +41,17 @@ test("advanced endpoint options reach jENA and means rotation is deterministic",
     "revision",
   ]);
   assert.deepEqual(options.rotation, {
-    method: "mean",
+    method: "generalized",
     params: {
-      groups: [
-        ["team-01", "team-02", "team-03", "team-04"],
-        ["team-05", "team-06", "team-07", "team-08"],
-      ],
+      xVar: "condition",
+      select2Groups: ["baseline", "scaffolded"],
     },
   });
 
   const noForward = analyzeDataset(dataset, { ...config, windowSizeForward: 0 });
   assert.equal(noForward.dimensions[0], "MR1");
   assert.ok(Math.abs((noForward.set.variance.MR1 ?? 0) - 0.3778080150968768) < 1e-10);
-  assert.ok(Math.abs(Number(noForward.set.points[0].MR1) - 0.1992186012089415) < 1e-10);
+  assert.ok(Math.abs(Number(noForward.set.points[0].MR1) + 0.1992186012089415) < 1e-10);
 });
 
 test("means rotation requires exactly two non-empty comparison groups", () => {
@@ -307,15 +305,17 @@ test("source ingestion owns dataset generation and blocks analysis until the sou
   assert.match(workspace, /aria-busy=\{loading \|\| sourceBusy \|\| referenceBusy\}/);
 });
 
-test("composite identity and code selections remain in visible CSV-header order", () => {
+test("composite identities preserve declared order while codes remain in visible CSV-header order", () => {
   const workspace = readFileSync(
     join(process.cwd(), "components", "open-ena", "OpenEnaWorkspace.tsx"),
     "utf8",
   );
+  assert.match(workspace, /function toggleInSelectionOrder/);
+  assert.match(workspace, /return checked[\s\S]*?selected\.includes\(header\)[\s\S]*?\[\.\.\.selected, header\][\s\S]*?: selected\.filter/);
   assert.match(workspace, /function toggleInHeaderOrder/);
   assert.match(workspace, /return headers\.filter\(\(candidate\) => next\.has\(candidate\)\)/);
-  assert.match(workspace, /unitColumns: toggleInHeaderOrder\(headers, current\.unitColumns, header, event\.target\.checked\)/);
-  assert.match(workspace, /conversationColumns: toggleInHeaderOrder\(headers, current\.conversationColumns, header, event\.target\.checked\)/);
+  assert.match(workspace, /unitColumns: toggleInSelectionOrder\(current\.unitColumns, header, event\.target\.checked\)/);
+  assert.match(workspace, /conversationColumns: toggleInSelectionOrder\(current\.conversationColumns, header, event\.target\.checked\)/);
   assert.match(workspace, /codes: toggleInHeaderOrder\(headers, current\.codes, header, event\.target\.checked\)/);
 });
 

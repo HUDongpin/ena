@@ -201,6 +201,7 @@ async function renderTeachingContrast() {
     showPoints: true,
     showNetworks: true,
     showLabels: true,
+    showGroupLabels: true,
     showUnitLabels: false,
     showVariance: true,
     edgeScale: 1,
@@ -214,7 +215,9 @@ async function renderTeachingContrast() {
 test("desktop shell preserves ENA.HK identity and exposes four stable workbench regions", async () => {
   const markup = await renderInitialWorkspace();
 
-  expectMatch(markup, /<strong>ENA<\/strong><small>Hub of Knowledge<\/small>/, "the exact ENA / Hub of Knowledge brand must remain visible");
+  expectMatch(markup, /data-ena-rail-brand="true"[^>]*aria-label="ENA\.HK Open ENA"/, "the compact rail must own the ENA.HK Open ENA identity");
+  expectMatch(markup, /src="\/ena-mark\.svg"/, "the existing ENA mark must remain visible in the rail");
+  expectMatch(markup, /data-ena-rail-version="true"/, "the compact rail must disclose its bound jENA runtime version");
   for (const label of ["Sets", "Data", "Model", "Plot Tools", "Stats &amp; Export"]) {
     expectMatch(markup, new RegExp(`aria-label="${label}"`), `preserve the existing ${label} rail control`);
   }
@@ -231,9 +234,10 @@ test("desktop shell preserves ENA.HK identity and exposes four stable workbench 
   const gridRule = css.match(/\.ena-workbench-grid\s*\{([^}]*)\}/)?.[1] ?? "";
   const desktopTracks = gridRule.match(/grid-template-columns:\s*([^;]+)/)?.[1] ?? "";
   assert.ok(desktopTracks, "the desktop workbench must declare its region tracks");
-  assert.ok(
-    topLevelCssTracks(desktopTracks).length >= 4,
-    "the desktop shell needs four tracks: rail, controls, center research surface, and right stack",
+  assert.equal(
+    topLevelCssTracks(desktopTracks).length,
+    3,
+    "the official-inspired shell uses rail, controls, and one research-surface track; center and right stack remain semantic regions inside that surface",
   );
 });
 
@@ -270,7 +274,7 @@ test("loaded Teaching Sample keeps Comparison central and Primary, Secondary, th
     /data-testid="open-ena-persistent-plot-tools"/,
     "Plot Tools must be rendered as a persistent right-stack region, not only as a rail-selected left panel",
   );
-  for (const tool of ["edge-scale", "text-size", "code-labels", "unit-points", "flip-x", "flip-y"]) {
+  for (const tool of ["edge-scale", "text-size", "code-labels", "unit-points", "group-labels", "flip-x", "flip-y"]) {
     expectMatch(
       combinedSurface,
       new RegExp(`data-ena-plot-tool="${tool}"`),

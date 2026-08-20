@@ -1,6 +1,11 @@
 import { createAccumulationStream, extractMakeSetOptions, makeSet } from "jena-js";
 import type { ENAWorkerOptions, ENAWorkerProgress } from "jena-js/browser";
-import { attachStableGroupMetadata, buildOpenEnaSummary, compactOpenEnaSet } from "./analyze";
+import {
+  attachStableGroupMetadata,
+  buildOpenEnaSummary,
+  canonicalizeOfficialMeanRotation,
+  compactOpenEnaSet,
+} from "./analyze";
 import type { OpenEnaConfig, OpenEnaResult, OpenEnaRotationReference } from "./types";
 
 export type OpenEnaWorkerRequest =
@@ -59,8 +64,12 @@ async function executeRun(run: WorkerRun) {
     }
     const data = stream.finish();
     scope.postMessage({ kind: "progress", id: run.id, progress: 0.9, stage: "model" });
+    const generatedSet = makeSet(data, extractMakeSetOptions(run.options));
+    const fittedSet = run.config.rotation === "mean"
+      ? canonicalizeOfficialMeanRotation(generatedSet)
+      : generatedSet;
     const fullSet = attachStableGroupMetadata(
-      makeSet(data, extractMakeSetOptions(run.options)),
+      fittedSet,
       rows,
       run.config,
     );

@@ -315,7 +315,7 @@ function referenceFromResultBundle(value: JsonRecord, filename: string): OpenEna
       normalizedUtf8TextSha256: hash,
       analyzedAt,
     },
-    fit: effective.rotation.method === "mean"
+    fit: effective.rotation.method === "mean" || effective.rotation.method === "generalized"
       ? {
           method: "mean",
           unitColumns: manifest.configuration.unitColumns,

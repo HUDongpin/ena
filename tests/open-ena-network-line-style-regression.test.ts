@@ -19,6 +19,8 @@ import { SAMPLE_CONFIG } from "../lib/open-ena/types";
 
 const JENA_PRIMARY_BLUE = "#3366cc";
 const JENA_SECONDARY_RED = "#dc3912";
+const OFFICIAL_FIRST_GROUP_RED = "#cc423a";
+const OFFICIAL_SECOND_GROUP_BLUE = "#218ebf";
 
 function lineTags(markup: string) {
   return markup.match(/<line\b[^>]*>/g) ?? [];
@@ -56,6 +58,10 @@ function expectStroke(lines: string[], color: string, context: string) {
 
 const pairwiseContrast = {
   groupColumn: "condition",
+  declaredGroups: [
+    { name: "Primary cohort", unitCount: 2, pointCount: 2 },
+    { name: "Secondary cohort", unitCount: 2, pointCount: 2 },
+  ],
   axes: ["SVD1", "SVD2"],
   coordinateExtent: { minX: -1, maxX: 1, minY: -1, maxY: 1 },
   configuration: {
@@ -78,12 +84,14 @@ const pairwiseContrast = {
   },
   primary: {
     name: "Primary cohort",
+    color: JENA_PRIMARY_BLUE,
     unitCount: 2,
     points: [],
     meanPoint: { SVD1: -0.4, SVD2: 0.2 },
   },
   secondary: {
     name: "Secondary cohort",
+    color: JENA_SECONDARY_RED,
     unitCount: 2,
     points: [],
     meanPoint: { SVD1: 0.4, SVD2: -0.2 },
@@ -168,6 +176,7 @@ const comparisonProps = {
   showPoints: false,
   showNetworks: true,
   showLabels: false,
+  showGroupLabels: true,
   showUnitLabels: false,
   edgeScale: 1,
   pointScale: 1,
@@ -248,16 +257,16 @@ function renderMainPlot(result: OpenEnaResult, showNetworks: boolean, showTrajec
   }));
 }
 
-test("current-result pairwise network edges use jENA blue for Primary/positive and red for Secondary/negative", () => {
+test("current-result pairwise network edges use the official stable declared-group colors", () => {
   const markup = renderPairwiseContrast();
   const difference = plotSvg(markup, "open-ena-group-comparison-plot");
   const primary = plotSvg(markup, "open-ena-group-primary-plot");
   const secondary = plotSvg(markup, "open-ena-group-secondary-plot");
 
-  expectStroke([lineBySign(difference, "positive")], JENA_PRIMARY_BLUE, "positive pairwise edge");
-  expectStroke([lineBySign(difference, "negative")], JENA_SECONDARY_RED, "negative pairwise edge");
-  expectStroke(endpointEdgeLines(primary), JENA_PRIMARY_BLUE, "Primary pairwise network");
-  expectStroke(endpointEdgeLines(secondary), JENA_SECONDARY_RED, "Secondary pairwise network");
+  expectStroke([lineBySign(difference, "positive")], OFFICIAL_FIRST_GROUP_RED, "first-group pairwise edge");
+  expectStroke([lineBySign(difference, "negative")], OFFICIAL_SECOND_GROUP_BLUE, "second-group pairwise edge");
+  expectStroke(endpointEdgeLines(primary), OFFICIAL_FIRST_GROUP_RED, "first-group side network");
+  expectStroke(endpointEdgeLines(secondary), OFFICIAL_SECOND_GROUP_BLUE, "second-group side network");
 });
 
 test("current-result pairwise network edges are solid on the plain research canvas", () => {
@@ -270,7 +279,7 @@ test("current-result pairwise network edges are solid on the plain research canv
 
   expectSolid(allEndpointEdges, "current-result pairwise plot");
   assert.doesNotMatch(markup, /Dashed negative/, "the pairwise legend must not describe a solid edge as dashed");
-  assert.match(markup, /Solid red difference: Secondary is stronger/, "the pairwise legend must disclose the solid Secondary difference encoding");
+  assert.match(markup, /Solid Secondary cohort color: Secondary is stronger/, "the pairwise legend must disclose the solid Secondary difference encoding without rebinding group identity to a role color");
 });
 
 test("captured-set comparison edges use jENA blue for Primary/positive and red for Secondary/negative", () => {

@@ -13,8 +13,8 @@ test("the central Comparison Plot renders one signed Primary-minus-Secondary net
   assert.match(contrast, /kind\s*===\s*"comparison"[\s\S]*?edge\.signedDifference/);
   assert.match(contrast, /differenceSign\(edge\)/);
   assert.match(contrast, /kind="comparison"/);
-  assert.match(contrast, /data-ena-edge-scale-kind=\{kind === "comparison" \? "signed-difference" : "shared-group-mean"\}/);
-  assert.match(contrast, /kind === "comparison" \? comparisonScale : groupMeanScale/);
+  assert.match(contrast, /data-ena-edge-scale-kind=\{signedComparison \? "signed-difference" : "shared-group-mean"\}/);
+  assert.match(contrast, /signedComparison \? comparisonScale : groupMeanScale/);
   assert.match(contrast, /Difference scale/);
 });
 
@@ -25,15 +25,18 @@ test("signed Primary-minus-Secondary evidence remains available outside the over
   assert.match(contrast, /data-ena-difference-edge-scale-max/);
 });
 
-test("official-style group contrast plots are plain, compact, and use solid jENA role colors", () => {
+test("official-style group contrast plots are plain and keep scientific network edges solid", () => {
   assert.match(plotStyle, /"#3366cc"[\s\S]*?"#dc3912"/);
   assert.doesNotMatch(contrast, /<pattern\b|fill=\{`url\(#/);
-  assert.doesNotMatch(contrast, /strokeDasharray|stroke-dasharray/);
-  assert.match(contrast, /strokeWidth=\{\(1 \+ ratio \* \(compact \? 4 : 6\)\) \* scaleFactor\}/);
-  assert.match(contrast, /<circle[\s\S]*?r=\{compact \? 7 : 9\}[\s\S]*?className="ena-set-result-node"[\s\S]*?data-ena-code-node="neutral"/);
+  assert.match(contrast, /data-ena-uncertainty-guide="marginal-student-t-95"/);
+  assert.match(contrast, /strokeDasharray=\{dash\}/);
+  assert.doesNotMatch(contrast, /strokeDasharray[\s\S]{0,420}data-ena-edge=\{edge\.name\}/);
+  assert.equal((contrast.match(/strokeWidth=\{magnitude \* 7\.5 \* scaleFactor\}/g) ?? []).length, 2);
+  assert.match(contrast, /const codeNodeSize = \(code: string\) => bounded\([\s\S]*?magnitude \* 5 \* scaleFactor[\s\S]*?1,[\s\S]*?20,/);
+  assert.match(contrast, /<circle[\s\S]*?r=\{nodeSize\}[\s\S]*?className="ena-set-result-node"[\s\S]*?data-ena-code-node="neutral"/);
   assert.match(css, /\.ena-set-zero-axes line\s*\{[\s\S]*?stroke-width:\s*1;(?:(?!stroke-dasharray)[\s\S])*?\}/);
-  assert.match(css, /\.ena-set-result-node\s*\{[\s\S]*?stroke-width:\s*2\.5;/);
-  assert.match(css, /\.ena-set-result-label\s*\{[\s\S]*?font-size:\s*10(?:\.5)?px;/);
+  assert.match(css, /\.open-ena-group-contrast \.ena-set-result-node\s*\{[\s\S]*?stroke-width:\s*0;/);
+  assert.match(css, /\.open-ena-group-contrast \.ena-set-result-label\s*\{[\s\S]*?font-size:\s*calc\(10px \* var\(--ena-plot-text-scale, 1\)\);/);
 });
 
 test("official-style plot headings and renderer slots keep the workbench roles explicit", () => {
@@ -47,7 +50,9 @@ test("official-style plot headings and renderer slots keep the workbench roles e
   assert.doesNotMatch(contrast, /revealedPointGroup|onRevealGroupPoints|nextRevealedPointGroup/);
   assert.match(contrast, /data-ena-point-shape="circle"/);
   assert.match(contrast, /data-ena-point-shape="square"/);
-  assert.doesNotMatch(contrast, /aria-pressed=|activateMeanMarker/);
+  assert.doesNotMatch(contrast, /activateMeanMarker/);
   assert.match(contrast, /data-testid="open-ena-group-center-surface"/);
   assert.match(contrast, /data-testid="open-ena-group-right-tools"/);
+  assert.match(css, /\.ena-set-plot-heading\s*\{[\s\S]*?position:\s*relative;[\s\S]*?z-index:\s*3;/);
+  assert.match(css, /\.open-ena-set-comparison-svg,[\s\S]*?z-index:\s*1;/);
 });

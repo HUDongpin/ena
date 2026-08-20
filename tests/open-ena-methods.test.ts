@@ -97,6 +97,7 @@ test("methods and bundle inference follow the researcher-selected visible axes",
     showPoints: true,
     showTrajectories: false,
     showLabels: false,
+    showGroupLabels: true,
     showUnitLabels: true,
     showVariance: false,
     edgeScale: 1.4,
@@ -118,6 +119,7 @@ test("methods and bundle inference follow the researcher-selected visible axes",
     showPoints: true,
     showTrajectories: false,
     showLabels: false,
+    showGroupLabels: true,
     showUnitLabels: true,
     showVariance: false,
     edgeScale: 1.4,
@@ -129,7 +131,7 @@ test("methods and bundle inference follow the researcher-selected visible axes",
   assert.match(bundle.methodsReportMarkdown, /Group networks: hidden/);
   assert.match(bundle.methodsReportMarkdown, /Unit points: shown/);
   assert.match(bundle.methodsReportMarkdown, /Trajectory paths: hidden/);
-  assert.match(bundle.methodsReportMarkdown, /Code labels: hidden; unit labels: shown; variance labels: hidden/);
+  assert.match(bundle.methodsReportMarkdown, /Code labels: hidden; group labels: shown; unit labels: shown; variance labels: hidden/);
   assert.match(bundle.methodsReportMarkdown, /Edge width scale: 1\.4×; unit point scale: 0\.8×; plot zoom: 1\.6×/);
 });
 

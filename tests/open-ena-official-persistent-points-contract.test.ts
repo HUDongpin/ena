@@ -8,8 +8,10 @@ import OpenEnaGroupContrast from "../components/open-ena/OpenEnaGroupContrast";
 import { analyzeDataset } from "../lib/open-ena/analyze";
 import { buildPairwiseGroupContrast } from "../lib/open-ena/contrasts";
 import { parseCsv } from "../lib/open-ena/csv";
-import { JENA_PRIMARY_COLOR, JENA_SECONDARY_COLOR } from "../lib/open-ena/plot-style";
 import { SAMPLE_CONFIG } from "../lib/open-ena/types";
+
+const OFFICIAL_PRIMARY_COLOR = "#cc423a";
+const OFFICIAL_SECONDARY_COLOR = "#218ebf";
 
 const projectRoot = process.cwd();
 const sampleText = readFileSync(
@@ -65,25 +67,26 @@ function attribute(tag: string, name: string) {
   return tag.match(new RegExp(`${name}="([^"]*)"`))?.[1] ?? "";
 }
 
-test("official endpoint plots persistently render every enabled unit as a small group-colored circle", () => {
+test("official Comparison persistently renders unit circles while side plots isolate the mean networks", () => {
   const markup = renderTeachingContrast(true);
   const comparison = plotSvg(markup, "open-ena-group-comparison-plot");
   const primary = plotSvg(markup, "open-ena-group-primary-plot");
   const secondary = plotSvg(markup, "open-ena-group-secondary-plot");
 
   assert.equal(groupsWithAttribute(comparison, 'data-ena-unit-point="true"').length, 8);
-  assert.equal(groupsWithAttribute(primary, 'data-ena-unit-point="true"').length, 4);
-  assert.equal(groupsWithAttribute(secondary, 'data-ena-unit-point="true"').length, 4);
+  assert.equal(groupsWithAttribute(primary, 'data-ena-unit-point="true"').length, 0);
+  assert.equal(groupsWithAttribute(secondary, 'data-ena-unit-point="true"').length, 0);
 
   for (const block of groupsWithAttribute(comparison, 'data-ena-unit-point="true"')) {
     const tag = openingTag(block);
     const role = attribute(tag, "data-ena-group-role");
     assert.equal(attribute(tag, "data-ena-point-shape"), "circle");
-    assert.ok(Number(attribute(tag, "data-ena-marker-size")) <= 5);
+    assert.equal(Number(attribute(tag, "data-ena-marker-size")), 3.85);
     assert.match(
       block,
-      new RegExp(`<circle\\b[^>]*fill="${role === "primary" ? JENA_PRIMARY_COLOR : JENA_SECONDARY_COLOR}"`),
+      new RegExp(`<circle\\b[^>]*fill="${role === "primary" ? OFFICIAL_PRIMARY_COLOR : OFFICIAL_SECONDARY_COLOR}"`),
     );
+    assert.doesNotMatch(block, /fill-opacity=|stroke="#ffffff"/);
   }
 
   assert.doesNotMatch(markup, /point-reveal|revealed-unit|revealed-point|overlap-label/i);
@@ -92,7 +95,7 @@ test("official endpoint plots persistently render every enabled unit as a small 
   assert.equal((hidden.match(/data-ena-unit-point="true"/g) ?? []).length, 0);
 });
 
-test("group summaries are larger colored squares and never reveal controls", () => {
+test("group summaries appear only in Comparison as official 11.5px colored squares", () => {
   const markup = renderTeachingContrast(true);
   const comparison = plotSvg(markup, "open-ena-group-comparison-plot");
   const primary = plotSvg(markup, "open-ena-group-primary-plot");
@@ -100,8 +103,8 @@ test("group summaries are larger colored squares and never reveal controls", () 
 
   const expectedPlots = [
     [comparison, ["primary", "secondary"]],
-    [primary, ["primary"]],
-    [secondary, ["secondary"]],
+    [primary, []],
+    [secondary, []],
   ] as const;
 
   for (const [svg, expectedRoles] of expectedPlots) {
@@ -112,13 +115,14 @@ test("group summaries are larger colored squares and never reveal controls", () 
       const role = expectedRoles[index];
       assert.equal(attribute(tag, "data-ena-group-role"), role);
       assert.equal(attribute(tag, "data-ena-point-shape"), "square");
-      assert.ok(Number(attribute(tag, "data-ena-marker-size")) > 5);
+      assert.equal(Number(attribute(tag, "data-ena-marker-size")), 11.5);
       assert.match(tag, /role="img"/);
       assert.doesNotMatch(tag, /role="button"|tabindex=|aria-pressed=|aria-controls=/);
       assert.match(
         block,
-        new RegExp(`<rect\\b[^>]*fill="${role === "primary" ? JENA_PRIMARY_COLOR : JENA_SECONDARY_COLOR}"`),
+        new RegExp(`<rect\\b[^>]*fill="${role === "primary" ? OFFICIAL_PRIMARY_COLOR : OFFICIAL_SECONDARY_COLOR}"`),
       );
+      assert.doesNotMatch(block, /stroke="#263740"|stroke-width="2"/);
     }
   }
 

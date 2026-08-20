@@ -115,8 +115,13 @@ export function parseCsv(text: string, options: { name: string; sizeBytes?: numb
   return { name: options.name, headers, rows, sizeBytes, source: options.source };
 }
 
+function findHeader(headers: string[], candidates: string[]) {
+  const candidateSet = new Set(candidates.map((candidate) => candidate.toLowerCase()));
+  return headers.find((header) => candidateSet.has(header.toLowerCase()));
+}
+
 function chooseHeader(headers: string[], candidates: string[], fallbackIndex = 0) {
-  return candidates.find((candidate) => headers.includes(candidate)) ?? headers[fallbackIndex] ?? "";
+  return findHeader(headers, candidates) ?? headers[fallbackIndex] ?? "";
 }
 
 function isBinaryCode(rows: Row[], header: string) {
@@ -199,14 +204,28 @@ function hasCoOccurrence(dataset: ParsedDataset, config: OpenEnaConfig) {
 
 export function inferConfig(dataset: ParsedDataset): OpenEnaConfig {
   const { headers, rows } = dataset;
-  const unitColumn = chooseHeader(headers, ["unit", "unit_id", "team_id", "participant_id", "student_id", "case_id"]);
+  const explicitUnitColumn = findHeader(headers, ["unit", "unit_id", "team_id", "participant_id", "student_id", "case_id"]);
+  const nameColumn = findHeader(headers, ["name"]);
+  const unitColumn = explicitUnitColumn ?? nameColumn ?? headers[0] ?? "";
   const conversationColumn = chooseHeader(
     headers,
-    ["conversation", "conversation_id", "session_id", "discussion_id", "document_id"],
+    ["conversation", "conversation_id", "session_id", "discussion_id", "document_id", "lesson"],
     Math.min(1, headers.length - 1),
   );
-  const groupColumn = ["group", "condition", "treatment", "cohort", "class"].find((candidate) => headers.includes(candidate)) ?? null;
-  const excluded = new Set([unitColumn, conversationColumn, ...(groupColumn ? [groupColumn] : [])]);
+  const groupColumn = findHeader(headers, ["group", "condition", "treatment", "cohort", "class"]) ?? null;
+  const groupByUnit = new Map<string, string>();
+  const unitSpansGroups = Boolean(!explicitUnitColumn && nameColumn && groupColumn && groupColumn !== unitColumn && rows.some((row) => {
+    const unit = String(row[unitColumn] ?? "");
+    const group = String(row[groupColumn] ?? "");
+    const previous = groupByUnit.get(unit);
+    groupByUnit.set(unit, group);
+    return previous !== undefined && previous !== group;
+  }));
+  const unitColumns = unitSpansGroups && groupColumn ? [groupColumn, unitColumn] : [unitColumn];
+  const conversationColumns = unitSpansGroups
+    ? [...new Set([...unitColumns, conversationColumn])]
+    : [conversationColumn];
+  const excluded = new Set([...unitColumns, ...conversationColumns, ...(groupColumn ? [groupColumn] : [])]);
   const codes: string[] = [];
   for (const header of headers) {
     if (!excluded.has(header) && isBinaryCode(rows, header)) {
@@ -215,9 +234,15 @@ export function inferConfig(dataset: ParsedDataset): OpenEnaConfig {
     }
   }
 
+  const rotation = officialComparisonRotation(dataset, {
+    groupColumn,
+    model: "EndPoint",
+    currentRotation: "svd",
+  });
+
   return {
-    unitColumns: [unitColumn],
-    conversationColumns: [conversationColumn],
+    unitColumns,
+    conversationColumns,
     groupColumn,
     codes,
     model: "EndPoint",
@@ -225,10 +250,32 @@ export function inferConfig(dataset: ParsedDataset): OpenEnaConfig {
     windowSizeBack: 5,
     windowSizeForward: 0,
     weightBy: "binary",
-    rotation: "svd",
+    rotation,
     referenceRotationId: null,
     centerAlignToOrigin: true,
   };
+}
+
+export function officialComparisonRotation(
+  dataset: ParsedDataset | null,
+  options: {
+    groupColumn: string | null;
+    model: OpenEnaConfig["model"];
+    currentRotation: OpenEnaConfig["rotation"];
+  },
+): OpenEnaConfig["rotation"] {
+  if (options.model !== "EndPoint") return "svd";
+  if (options.currentRotation === "reference") return "reference";
+  if (!dataset || !options.groupColumn || !dataset.headers.includes(options.groupColumn)) return "svd";
+
+  const groups = new Set<string>();
+  for (const row of dataset.rows) {
+    const group = String(row[options.groupColumn] ?? "").trim();
+    if (!group) return "svd";
+    groups.add(group);
+    if (groups.size > 2) return "svd";
+  }
+  return groups.size === 2 ? "mean" : "svd";
 }
 
 export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): string[] {

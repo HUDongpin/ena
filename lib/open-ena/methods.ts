@@ -1,6 +1,10 @@
 import { buildEndpointMannWhitney } from "./inference";
 import type { OpenEnaConfig, OpenEnaResult, ParsedDataset } from "./types";
 import { JENA_RUNTIME_VERSION, OPEN_ENA_APP_VERSION } from "./types";
+import {
+  marginalMeanIntervalPair,
+  type OpenEnaMarginalMeanInterval,
+} from "./uncertainty";
 
 export interface OpenEnaPresentationOptions {
   flipX?: boolean;
@@ -10,6 +14,7 @@ export interface OpenEnaPresentationOptions {
   showPoints?: boolean;
   showTrajectories?: boolean;
   showLabels?: boolean;
+  showGroupLabels?: boolean;
   showUnitLabels?: boolean;
   showVariance?: boolean;
   edgeScale?: number;
@@ -51,6 +56,60 @@ function effectiveWindow(config: OpenEnaConfig) {
   return `Moving stanza window with ${config.windowSizeBack} rows total including the current row and ${config.windowSizeForward} forward context rows.`;
 }
 
+function marginalIntervalTableRow(
+  groupName: string,
+  axis: string,
+  interval: OpenEnaMarginalMeanInterval,
+) {
+  if (interval.status === "not-estimable") {
+    return `| ${inline(groupName)} | ${inline(axis)} | ${interval.sampleSize} | not estimable | not estimable | not estimable | not estimable | not estimable | not estimable (${interval.reason}) |`;
+  }
+  return `| ${inline(groupName)} | ${inline(axis)} | ${interval.sampleSize} | ${formatNumber(interval.mean, 6)} | ${formatNumber(interval.sampleStandardDeviation, 6)} | ${formatNumber(interval.standardError, 6)} | ${interval.degreesFreedom} | ${formatNumber(interval.lower, 6)} | ${formatNumber(interval.upper, 6)} |`;
+}
+
+function marginalIntervalSection(
+  result: OpenEnaResult,
+  config: OpenEnaConfig,
+  reportedDimensions: readonly string[],
+  selectedGroupOrder: readonly [string, string] | undefined,
+) {
+  if (result.set.modelType !== "EndPoint" || !config.groupColumn || reportedDimensions.length < 2) {
+    return [];
+  }
+  const groupOrder = selectedGroupOrder
+    ? [selectedGroupOrder[0], selectedGroupOrder[1]] as const
+    : result.groups.length === 2
+      ? [result.groups[0].name, result.groups[1].name] as const
+      : null;
+  if (!groupOrder) return [];
+  const axes = [reportedDimensions[0], reportedDimensions[1]] as const;
+  const rows = groupOrder.flatMap((groupName) => {
+    const points = result.set.points
+      .filter((row) => String(row[config.groupColumn!] ?? "") === groupName)
+      .map((row) => ({ x: Number(row[axes[0]]), y: Number(row[axes[1]]) }));
+    const intervals = marginalMeanIntervalPair(points, axes);
+    return [
+      marginalIntervalTableRow(groupName, axes[0], intervals.x),
+      marginalIntervalTableRow(groupName, axes[1], intervals.y),
+    ];
+  });
+  const geometryBoundary = result.projectionReference
+    ? "Intervals are conditional on the fixed imported reference geometry and do not propagate uncertainty from fitting its center, rotation, or node positions."
+    : "Intervals are conditional on the ENA coordinate system fitted to this dataset and do not propagate uncertainty from fitting its center, rotation, or node positions.";
+  return [
+    "## Group-mean uncertainty guides",
+    "",
+    `For ${inline(groupOrder[0])} and ${inline(groupOrder[1])}, ENA.HK calculated a two-sided 95% one-sample Student-t confidence interval separately on ${inline(axes[0])} and ${inline(axes[1])}: arithmetic mean ± t(0.975, n−1) × sample SD / √n. Endpoint analytic units were treated as the independent observations; the sample variance used n−1 degrees of freedom.`,
+    "The dashed guide is the Cartesian product of the two separate marginal intervals. It is not a joint 95% two-dimensional confidence region, prediction interval, group-difference interval, or significance test. No simultaneous-coverage correction was applied across axes, and interval overlap or non-overlap must not be used as a substitute for a group-comparison test.",
+    `${geometryBoundary} With small groups, the interval is sensitive to individual observations and the per-axis approximate-normality assumption. A guide is not estimable when n < 2 or either displayed axis has zero or non-finite standard error.`,
+    "",
+    "| Group | Axis | n | Mean | Sample SD | SE | df | Lower 95% | Upper 95% |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ...rows,
+    "",
+  ];
+}
+
 export function referenceMeanRotationInterpretation(
   result: OpenEnaResult,
   targetHash: string | null,
@@ -82,7 +141,7 @@ function rotationDescription(config: OpenEnaConfig, result: OpenEnaResult, targe
     ].join(" ");
   }
   if (config.rotation === "mean") {
-    return "Two-group means rotation (MR1) followed by remaining SVD dimensions. MR1 is constructed from the same group contrast, so its separation and inference are descriptive by construction rather than independent confirmation.";
+    return "Generalized means rotation (displayed as GMR1; serialized as MR1 for Open ENA reference compatibility) followed by remaining SVD dimensions. GMR1 is constructed from the same group contrast, so its separation and inference are descriptive by construction rather than independent confirmation.";
   }
   return "SVD rotation fitted to the current model.";
 }
@@ -131,6 +190,12 @@ export function buildMethodsReport(
         "Endpoint Mann–Whitney inference was not applied because this result is not an endpoint model with exactly two declared comparison groups.",
         "",
       ];
+  const intervalSection = marginalIntervalSection(
+    result,
+    config,
+    reportedDimensions,
+    presentation.selectedGroupOrder,
+  );
 
   return [
     "# ENA.HK Open ENA Methods & Reproducibility Report",
@@ -168,13 +233,14 @@ export function buildMethodsReport(
     "- Axis flips are presentation-only. Coordinates, medians, U, p-values, and signed rank-biserial effects remain in the unflipped model coordinate system.",
     `- Relative edge display threshold: ${(edgeThreshold * 100).toFixed(1)}% (${edgeThreshold}). This is a presentation-only filter relative to the applicable strongest edge; edges below the threshold remain in the computed model and exported tables, so hidden edges are not model absence.`,
     `- Group networks: ${shown(presentation.showNetworks)}; Unit points: ${shown(presentation.showPoints)}; Trajectory paths: ${shown(presentation.showTrajectories)}.`,
-    `- Code labels: ${shown(presentation.showLabels)}; unit labels: ${shown(presentation.showUnitLabels, false)}; variance labels: ${shown(presentation.showVariance)}.`,
+    `- Code labels: ${shown(presentation.showLabels)}; group labels: ${shown(presentation.showGroupLabels)}; unit labels: ${shown(presentation.showUnitLabels, false)}; variance labels: ${shown(presentation.showVariance)}.`,
     `- Edge width scale: ${presentation.edgeScale ?? 1}×; unit point scale: ${presentation.pointScale ?? 1}×; plot zoom: ${presentation.plotZoom ?? 1}×.`,
     "- jENA diagnostic statistics were used only where the model type and automatic unit limit permitted them.",
     ...(result.projectionReference
       ? ["- Point-centroid correlations and target-fitted centroids were withheld because they do not describe the fixed imported node geometry in jENA 0.6.2 reference projections."]
       : []),
     "",
+    ...intervalSection,
     ...inferenceSection,
     "## Interpretation and reproducibility boundaries",
     "",

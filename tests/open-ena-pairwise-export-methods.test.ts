@@ -142,6 +142,13 @@ test("analysis bundle binds the active ordered three-group pair, axes, and prese
   assert.match(bundle.methodsReportMarkdown, /no multiplicity correction was applied across axes or repeated pair selections/i);
   assert.match(bundle.methodsReportMarkdown, /37\.5% \(0\.375\).*presentation-only/i);
   assert.match(bundle.methodsReportMarkdown, /X .*\(flipped\); Y .*\(unflipped\)/);
+  assert.match(bundle.methodsReportMarkdown, /## Group-mean uncertainty guides/);
+  assert.match(bundle.methodsReportMarkdown, /mean ± t\(0\.975, n−1\) × sample SD \/ √n/);
+  assert.match(bundle.methodsReportMarkdown, /not a joint 95% two-dimensional confidence region/i);
+  assert.match(bundle.methodsReportMarkdown, /No simultaneous-coverage correction was applied across axes/i);
+  assert.match(bundle.methodsReportMarkdown, /conditional on the ENA coordinate system fitted to this dataset/i);
+  assert.match(bundle.methodsReportMarkdown, /\| `Beta` \| `SVD\d+` \| \d+ \|/);
+  assert.match(bundle.methodsReportMarkdown, /\| `Gamma` \| `SVD\d+` \| \d+ \|/);
 });
 
 test("every repeated selected-pair Methods report names the selected order and declares no multiplicity correction", () => {
@@ -191,6 +198,7 @@ test("dedicated contrast export omits raw source text while preserving declared 
     showNetworks: true,
     showPoints: false,
     showLabels: true,
+    showGroupLabels: true,
     showUnitLabels: false,
     showVariance: true,
     edgeScale: 1.4,
@@ -232,6 +240,7 @@ test("dedicated contrast export omits raw source text while preserving declared 
     showNetworks: true,
     showPoints: false,
     showLabels: true,
+    showGroupLabels: true,
     showUnitLabels: false,
     showVariance: true,
     edgeScale: 1.4,

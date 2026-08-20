@@ -13,13 +13,20 @@ import {
   type OpenEnaReferenceFit,
   type OpenEnaResult,
 } from "./types";
+import {
+  marginalMeanIntervalPair,
+  marginalMeanStudentT95,
+  type OpenEnaMarginalMeanIntervalPair,
+} from "./uncertainty";
 
 export const PAIRWISE_MANN_WHITNEY_METHOD = "Mann-Whitney U for the first selected group; two-sided normal approximation with average ranks, tie-corrected variance, and a 0.5 continuity correction";
 export const PAIRWISE_MANN_WHITNEY_EFFECT_DEFINITION = "r_rb(primary vs secondary) = 2 * U(primary) / (nPrimary * nSecondary) - 1; positive values indicate higher ranks in the primary selected group";
+export const WEB_ENA_MAX_POSITION_MODIFIER = 1.2;
 export const PAIRWISE_CONTRAST_BOUNDARIES = [
   "Primary-minus-Secondary network differences and group mean positions are descriptive; they do not establish statistical significance or causality.",
   "Mann-Whitney inference is ENA.HK post-projection inference on the two selected axes, not a jENA statistic; no multiplicity correction is applied across axes or repeated pair selections.",
   "Endpoint analytic units are the independent observations assumed by the descriptive means and Mann-Whitney calculations.",
+  "The plotted uncertainty guides are two separate marginal 95% Student-t confidence intervals for arithmetic mean endpoint-unit coordinates on the displayed axes; they are not a joint two-dimensional confidence region or a significance test.",
   "Raw source rows and row-level co-occurrence records are excluded; preserve the exact source CSV, its codebook, and the enclosing ENA manifest with its dataset hash for reproducibility.",
   "An absent source SHA-256 means the result did not carry an immutable browser provenance binding; it is not evidence that two results came from the same source.",
   "Imported reference names, source hashes, timestamps, and fit descriptors are declared provenance and are not independently authenticated by this comparison.",
@@ -27,6 +34,8 @@ export const PAIRWISE_CONTRAST_BOUNDARIES = [
 
 export interface OpenEnaPairwiseContrastSide {
   name: string;
+  /** Stable group-identity color inherited from the fitted ENA result. */
+  color?: string;
   unitCount: number;
   unitIds: string[];
   points: Array<{
@@ -37,6 +46,7 @@ export interface OpenEnaPairwiseContrastSide {
   }>;
   meanPoint: Record<string, number>;
   meanWeights: Record<string, number>;
+  meanConfidenceIntervals?: OpenEnaMarginalMeanIntervalPair;
 }
 
 export interface OpenEnaPairwiseContrast {
@@ -50,6 +60,17 @@ export interface OpenEnaPairwiseContrast {
     maxX: number;
     minY: number;
     maxY: number;
+  };
+  /**
+   * webENA's display-only square camera frame. Fitted coordinates remain raw
+   * in every result/export table; endpoint points, group means, and their
+   * marginal guides are multiplied by pointScaleFactor only while rendering.
+   */
+  officialPlotFrame?: {
+    source: "webena-points-rotated-scaled";
+    pointScaleFactor: number;
+    maxPosition: number;
+    extremePosition: number;
   };
   configuration: OpenEnaConfig;
   resultProvenance: {
@@ -118,6 +139,7 @@ export interface OpenEnaPairwiseContrastPresentationOptions {
   showNetworks?: boolean;
   showPoints?: boolean;
   showLabels?: boolean;
+  showGroupLabels?: boolean;
   showUnitLabels?: boolean;
   showVariance?: boolean;
   edgeScale?: number;
@@ -175,6 +197,7 @@ function fullResultCoordinateExtent(
   result: OpenEnaResult,
   axes: [string, string],
   nodes: Array<{ x: number; y: number }>,
+  groupColumn: string,
 ) {
   const coordinates = nodes.map(({ x, y }) => ({ x, y }));
   for (const row of result.set.points) {
@@ -183,6 +206,26 @@ function fullResultCoordinateExtent(
     if (typeof x === "number" && Number.isFinite(x)
       && typeof y === "number" && Number.isFinite(y)) {
       coordinates.push({ x, y });
+    }
+  }
+  // Confidence guides are part of the plotted evidence. Include every
+  // declared group's marginal interval in the shared frame so changing the
+  // selected pair never clips a guide or silently rescales the geometry.
+  for (const group of result.groups) {
+    const groupPoints = result.set.points
+      .filter((row) => String(row[groupColumn] ?? "") === group.name)
+      .map((row) => ({
+        x: typeof row[axes[0]] === "number" ? row[axes[0]] as number : Number.NaN,
+        y: typeof row[axes[1]] === "number" ? row[axes[1]] as number : Number.NaN,
+      }));
+    const intervals = marginalMeanIntervalPair(groupPoints, axes);
+    if (intervals.x.status === "estimable" && intervals.y.status === "estimable") {
+      coordinates.push(
+        { x: intervals.x.lower, y: intervals.y.lower },
+        { x: intervals.x.lower, y: intervals.y.upper },
+        { x: intervals.x.upper, y: intervals.y.lower },
+        { x: intervals.x.upper, y: intervals.y.upper },
+      );
     }
   }
   if (!coordinates.length) {
@@ -196,11 +239,160 @@ function fullResultCoordinateExtent(
   };
 }
 
+function finiteValues(values: unknown[]) {
+  return values
+    .map((value) => Number(value))
+    .filter((value): value is number => Number.isFinite(value));
+}
+
+function officialPointPositionScale(
+  result: OpenEnaResult,
+  axes: readonly [string, string],
+) {
+  const ratios = (kind: "min" | "max") => axes.flatMap((axis) => {
+    const pointValues = finiteValues(result.set.points.map((row) => row[axis]));
+    const nodeValues = finiteValues((result.set.rotation.nodes ?? []).map((row) => row[axis]));
+    if (!pointValues.length || !nodeValues.length) return [];
+    const pointExtreme = kind === "min" ? Math.min(...pointValues) : Math.max(...pointValues);
+    const nodeExtreme = kind === "min" ? Math.min(...nodeValues) : Math.max(...nodeValues);
+    if (Math.abs(pointExtreme) <= 1e-12) return [];
+    const ratio = nodeExtreme / pointExtreme;
+    return Number.isFinite(ratio) ? [ratio] : [];
+  });
+  const minimumRatios = ratios("min");
+  const maximumRatios = ratios("max");
+  if (!minimumRatios.length || !maximumRatios.length) return 1;
+  const scale = Math.min(
+    Math.abs(Math.max(...minimumRatios)),
+    Math.abs(Math.max(...maximumRatios)),
+  );
+  return Number.isFinite(scale) && scale > 1e-12 ? scale : 1;
+}
+
+function fullRotatedPointCoordinates(result: OpenEnaResult) {
+  const matrix = result.set.rotation.rotationMatrix;
+  const columns = result.set.codeColumns;
+  const dimensionCount = result.set.rotation.rotationColumns.length;
+  if (matrix.length !== columns.length || dimensionCount <= 0) return null;
+  return result.set.pointsForProjection.map((point) => Array.from(
+    { length: dimensionCount },
+    (_, dimension) => {
+      let coordinate = 0;
+      for (let edge = 0; edge < columns.length; edge += 1) {
+        const pointValue = Number(point[columns[edge]]);
+        const rotationValue = Number(matrix[edge]?.[dimension]);
+        if (!Number.isFinite(pointValue) || !Number.isFinite(rotationValue)) {
+          return Number.NaN;
+        }
+        coordinate += pointValue * rotationValue;
+      }
+      return coordinate;
+    },
+  ));
+}
+
+function fullRotatedPointMaximum(
+  result: OpenEnaResult,
+  fullCoordinates: number[][] | null,
+) {
+  let maximum = 0;
+  for (const coordinates of fullCoordinates ?? []) {
+    for (const coordinate of coordinates) {
+      if (Number.isFinite(coordinate)) maximum = Math.max(maximum, Math.abs(coordinate));
+    }
+  }
+  if (maximum > 1e-12) return maximum;
+  return result.set.points.reduce((outerMaximum, point) => Math.max(
+    outerMaximum,
+    ...result.dimensions.map((dimension) => {
+      const value = Number(point[dimension]);
+      return Number.isFinite(value) ? Math.abs(value) : 0;
+    }),
+  ), 0);
+}
+
+function fullRotatedGroupConfidenceMaximum(
+  result: OpenEnaResult,
+  groupColumn: string,
+  fullCoordinates: number[][] | null,
+) {
+  const declaredGroups = new Set(result.groups.map((group) => group.name));
+  const groupByUnit = new Map<string, string>();
+  for (const point of result.set.points) {
+    const groupName = String(point[groupColumn] ?? "");
+    const unitId = String(point.ENA_UNIT ?? "");
+    if (unitId && declaredGroups.has(groupName)) groupByUnit.set(unitId, groupName);
+  }
+  const sourceRows = fullCoordinates ? result.set.pointsForProjection : result.set.points;
+  const coordinateRows = fullCoordinates ?? result.set.points.map((point) => result.dimensions.map(
+    (dimension) => Number(point[dimension]),
+  ));
+  const dimensionCount = coordinateRows[0]?.length ?? 0;
+  const groupCoordinates = new Map(
+    [...declaredGroups].map((groupName) => [
+      groupName,
+      Array.from({ length: dimensionCount }, () => [] as number[]),
+    ]),
+  );
+  for (const [index, row] of sourceRows.entries()) {
+    const directGroupName = String(row[groupColumn] ?? "");
+    const groupName = declaredGroups.has(directGroupName)
+      ? directGroupName
+      : groupByUnit.get(String(row.ENA_UNIT ?? ""));
+    const perDimension = groupName ? groupCoordinates.get(groupName) : undefined;
+    if (!perDimension) continue;
+    for (let dimension = 0; dimension < dimensionCount; dimension += 1) {
+      perDimension[dimension].push(coordinateRows[index]?.[dimension] ?? Number.NaN);
+    }
+  }
+  let maximum = 0;
+  for (const perDimension of groupCoordinates.values()) {
+    for (const values of perDimension) {
+      const interval = marginalMeanStudentT95(values);
+      if (interval.status === "estimable") {
+        maximum = Math.max(maximum, Math.abs(interval.lower), Math.abs(interval.upper));
+      }
+    }
+  }
+  return maximum;
+}
+
+function officialWebEnaPlotFrame(
+  result: OpenEnaResult,
+  groupColumn: string,
+) {
+  const defaultAxes = result.dimensions.slice(0, 2) as [string, string];
+  const pointScaleFactor = officialPointPositionScale(result, defaultAxes);
+  const fullCoordinates = fullRotatedPointCoordinates(result);
+  const scaledPointMaximum = fullRotatedPointMaximum(result, fullCoordinates) * pointScaleFactor;
+  const confidenceMaximum = fullRotatedGroupConfidenceMaximum(
+    result,
+    groupColumn,
+    fullCoordinates,
+  ) * pointScaleFactor;
+  const rawMaximum = Math.max(scaledPointMaximum, confidenceMaximum);
+  const fallbackNodeMaximum = (result.set.rotation.nodes ?? []).reduce((maximum, node) => Math.max(
+    maximum,
+    ...defaultAxes.map((axis) => {
+      const value = Number(node[axis]);
+      return Number.isFinite(value) ? Math.abs(value) : 0;
+    }),
+  ), 0);
+  const maxPosition = rawMaximum > 1e-12 ? rawMaximum : Math.max(fallbackNodeMaximum, 1);
+  return {
+    source: "webena-points-rotated-scaled" as const,
+    pointScaleFactor,
+    maxPosition,
+    extremePosition: maxPosition * WEB_ENA_MAX_POSITION_MODIFIER,
+  };
+}
+
 function buildSide(
   result: OpenEnaResult,
   groupColumn: string,
   groupName: string,
   axes: [string, string],
+  color?: string,
 ): OpenEnaPairwiseContrastSide {
   const pointRows = rowsForGroup(result.set.points, groupColumn, groupName);
   const lineRows = rowsForGroup(result.set.lineWeights, groupColumn, groupName);
@@ -218,16 +410,18 @@ function buildSide(
     || [...pointUnits].some((unitId) => !lineUnits.has(unitId))) {
     throw new Error(`Selected group ${groupName} must have exactly one coordinate row and one network row per endpoint analytic unit.`);
   }
+  const points = pointRows.map((row) => ({
+    unitId: String(row.ENA_UNIT),
+    group: groupName,
+    x: finite(row[axes[0]], `${groupName} ${axes[0]} coordinate`),
+    y: finite(row[axes[1]], `${groupName} ${axes[1]} coordinate`),
+  }));
   return {
     name: groupName,
+    color,
     unitCount: pointUnits.size,
     unitIds: [...pointUnits],
-    points: pointRows.map((row) => ({
-      unitId: String(row.ENA_UNIT),
-      group: groupName,
-      x: finite(row[axes[0]], `${groupName} ${axes[0]} coordinate`),
-      y: finite(row[axes[1]], `${groupName} ${axes[1]} coordinate`),
-    })),
+    points,
     meanPoint: Object.fromEntries(axes.map((axis) => [
       axis,
       equalUnitMean(pointRows, axis, `${groupName} endpoint coordinates`),
@@ -236,6 +430,7 @@ function buildSide(
       edge.name,
       equalUnitMean(lineRows, edge.name, `${groupName} endpoint network`),
     ])),
+    meanConfidenceIntervals: marginalMeanIntervalPair(points, axes),
   };
 }
 
@@ -293,8 +488,20 @@ export function buildPairwiseGroupContrast(
     throw new Error("The ENA result analysis time must be a canonical ISO timestamp.");
   }
   const axes: [string, string] = [selectedAxes[0], selectedAxes[1]];
-  const primary = buildSide(result, config.groupColumn, primaryGroup, axes);
-  const secondary = buildSide(result, config.groupColumn, secondaryGroup, axes);
+  const primary = buildSide(
+    result,
+    config.groupColumn,
+    primaryGroup,
+    axes,
+    result.groups.find((group) => group.name === primaryGroup)?.color,
+  );
+  const secondary = buildSide(
+    result,
+    config.groupColumn,
+    secondaryGroup,
+    axes,
+    result.groups.find((group) => group.name === secondaryGroup)?.color,
+  );
   const secondaryUnits = new Set(secondary.unitIds);
   if (primary.unitIds.some((unitId) => secondaryUnits.has(unitId))) {
     throw new Error("Each endpoint analytic unit must belong to exactly one selected group; Primary and Secondary unit populations overlap.");
@@ -308,7 +515,8 @@ export function buildPairwiseGroupContrast(
       y: finite(node[axes[1]], `Node ${code} ${axes[1]}`),
     };
   });
-  const coordinateExtent = fullResultCoordinateExtent(result, axes, nodes);
+  const coordinateExtent = fullResultCoordinateExtent(result, axes, nodes, config.groupColumn);
+  const officialPlotFrame = officialWebEnaPlotFrame(result, config.groupColumn);
   const edges = result.set.adjacencyKey.map((edge) => {
     const primaryWeight = primary.meanWeights[edge.name];
     const secondaryWeight = secondary.meanWeights[edge.name];
@@ -403,6 +611,7 @@ export function buildPairwiseGroupContrast(
     groupOrder: [primaryGroup, secondaryGroup],
     axes,
     coordinateExtent,
+    officialPlotFrame,
     configuration: cloneConfig(config),
     resultProvenance: {
       analyzedAt: result.analyzedAt,
@@ -451,6 +660,7 @@ export function buildPairwiseGroupContrastExport(
         showNetworks: presentationOptions.showNetworks ?? true,
         showPoints: presentationOptions.showPoints ?? true,
         showLabels: presentationOptions.showLabels ?? true,
+        showGroupLabels: presentationOptions.showGroupLabels ?? true,
         showUnitLabels: presentationOptions.showUnitLabels ?? false,
         showVariance: presentationOptions.showVariance ?? true,
         edgeScale: finiteOr(presentationOptions.edgeScale, 1),
@@ -475,6 +685,7 @@ export function buildPairwiseGroupContrastExport(
     groupOrder: [...contrast.groupOrder] as [string, string],
     selectedAxes: [...contrast.axes] as [string, string],
     coordinateExtent: { ...contrast.coordinateExtent },
+    officialPlotFrame: contrast.officialPlotFrame ? { ...contrast.officialPlotFrame } : null,
     edgeScaleDenominators: { ...contrast.edgeScaleDenominators },
     configuration: cloneConfig(contrast.configuration),
     resultProvenance: cloneJson(contrast.resultProvenance),

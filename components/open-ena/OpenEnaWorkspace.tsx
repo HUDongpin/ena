@@ -7,7 +7,12 @@ import { getOpenEnaCopy, isOpenEnaLocalizedLocale } from "@/lib/open-ena-i18n";
 import { siteConfig } from "@/lib/site";
 import { buildManifest, dimensionEffect } from "@/lib/open-ena/analyze";
 import { analyzeDatasetInWorker } from "@/lib/open-ena/client";
-import { inferConfig, parseCsv, validateConfig } from "@/lib/open-ena/csv";
+import {
+  inferConfig,
+  officialComparisonRotation,
+  parseCsv,
+  validateConfig,
+} from "@/lib/open-ena/csv";
 import { filterSourceEvidence } from "@/lib/open-ena/evidence";
 import {
   buildPairwiseGroupContrast,
@@ -139,6 +144,16 @@ function formatStatistic(value: number | undefined, digits = 3) {
   return typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "Not estimable";
 }
 
+function officialPlotAxisLabel(axis: string) {
+  return axis === "MR1" ? "GMR1" : axis;
+}
+
+function toggleInSelectionOrder(selected: readonly string[], header: string, checked: boolean) {
+  return checked
+    ? selected.includes(header) ? [...selected] : [...selected, header]
+    : selected.filter((candidate) => candidate !== header);
+}
+
 function toggleInHeaderOrder(headers: readonly string[], selected: readonly string[], header: string, checked: boolean) {
   const next = new Set(selected);
   if (checked) next.add(header);
@@ -192,7 +207,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const [showPoints, setShowPoints] = useState(true);
   const [showNetworks, setShowNetworks] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
+  const [showGroupLabels, setShowGroupLabels] = useState(true);
   const [showUnitLabels, setShowUnitLabels] = useState(false);
+  const [unitCircle, setUnitCircle] = useState(false);
   const [showVariance, setShowVariance] = useState(true);
   const [showTrajectories, setShowTrajectories] = useState(true);
   const [showGroupCentroidPaths, setShowGroupCentroidPaths] = useState(true);
@@ -205,6 +222,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const [pointScale, setPointScale] = useState(1);
   const [textScale, setTextScale] = useState(1);
   const [plotZoom, setPlotZoom] = useState(1);
+  const [plotResetRevision, setPlotResetRevision] = useState(0);
+  const [plotSettingsOpen, setPlotSettingsOpen] = useState(false);
   const [flipX, setFlipX] = useState(false);
   const [flipY, setFlipY] = useState(false);
   const [sourceQuery, setSourceQuery] = useState("");
@@ -442,6 +461,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           showPoints,
           showTrajectories,
           showLabels,
+          showGroupLabels,
           showUnitLabels,
           showVariance,
           edgeScale,
@@ -463,6 +483,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       result,
       resultConfig,
       showLabels,
+      showGroupLabels,
       showNetworks,
       showPoints,
       showTrajectories,
@@ -862,7 +883,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     setShowPoints(true);
     setShowNetworks(true);
     setShowLabels(true);
+    setShowGroupLabels(true);
     setShowUnitLabels(false);
+    setUnitCircle(false);
     setShowVariance(true);
     setShowTrajectories(true);
     setShowGroupCentroidPaths(true);
@@ -873,6 +896,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     setPlotZoom(1);
     setFlipX(false);
     setFlipY(false);
+    setPlotResetRevision((current) => current + 1);
   }
 
   function serializedPlotSvg() {
@@ -901,9 +925,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       .ena-mean-label { font-size: 12px; }
       .ena-set-plot-background { fill: #fff; }
       .ena-set-zero-axes line { stroke: #8b999f; stroke-width: 1.2; stroke-dasharray: 4 5; }
+      .ena-set-axis-endpoint { fill: #333; }
       .ena-set-zero-axes text { fill: #5c6c72; font-size: 12px; font-weight: 690; }
       .ena-set-result-node { fill: #fff; stroke: #283d48; stroke-width: 4; }
-      .ena-set-result-label, .ena-set-unit-label { fill: #263740; paint-order: stroke; stroke: #fff; stroke-linejoin: round; stroke-width: 4px; font-size: 12px; font-weight: 700; }
+      .ena-set-result-label, .ena-set-group-label, .ena-set-unit-label { fill: #263740; paint-order: stroke; stroke: #fff; stroke-linejoin: round; stroke-width: 4px; font-size: 12px; font-weight: 700; }
       .ena-set-unit-label { font-size: 10px; }
       .ena-longitudinal-background { fill: #fbfcfc; }
       .ena-longitudinal-axis { stroke: #c1cdcb; stroke-width: 1.15; stroke-dasharray: 3 5; }
@@ -1355,7 +1380,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                             checked={config.unitColumns.includes(header)}
                             onChange={(event) => updateConfig((current) => ({
                               ...current,
-                              unitColumns: toggleInHeaderOrder(headers, current.unitColumns, header, event.target.checked),
+                              unitColumns: toggleInSelectionOrder(current.unitColumns, header, event.target.checked),
                             }))}
                           />
                           <span>{header}</span>
@@ -1367,12 +1392,20 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     <span>{copy.model.group}</span>
                     <select
                       value={config.groupColumn ?? ""}
-                      onChange={(event) => updateConfig((current) => ({
-                        ...current,
-                        groupColumn: event.target.value || null,
-                        rotation: !event.target.value && current.rotation === "mean" ? "svd" : current.rotation,
-                        referenceRotationId: current.rotation === "reference" ? current.referenceRotationId : null,
-                      }))}
+                      onChange={(event) => updateConfig((current) => {
+                        const groupColumn = event.target.value || null;
+                        const rotation = officialComparisonRotation(dataset, {
+                          groupColumn,
+                          model: current.model,
+                          currentRotation: current.rotation,
+                        });
+                        return {
+                          ...current,
+                          groupColumn,
+                          rotation,
+                          referenceRotationId: rotation === "reference" ? current.referenceRotationId : null,
+                        };
+                      })}
                     >
                       <option value="">{copy.model.noGroup}</option>
                       {identityOptions.map((header) => <option key={header} value={header}>{header}</option>)}
@@ -1394,7 +1427,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                             checked={config.conversationColumns.includes(header)}
                             onChange={(event) => updateConfig((current) => ({
                               ...current,
-                              conversationColumns: toggleInHeaderOrder(headers, current.conversationColumns, header, event.target.checked),
+                              conversationColumns: toggleInSelectionOrder(current.conversationColumns, header, event.target.checked),
                             }))}
                           />
                           <span>{header}</span>
@@ -1432,11 +1465,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                       <span>{copy.model.modelType}</span>
                       <select value={config.model} onChange={(event) => updateConfig((current) => {
                         const model = event.target.value as ModelType;
+                        const rotation = officialComparisonRotation(dataset, {
+                          groupColumn: current.groupColumn,
+                          model,
+                          currentRotation: current.rotation,
+                        });
                         return {
                           ...current,
                           model,
-                          rotation: model === "EndPoint" ? current.rotation : "svd",
-                          referenceRotationId: model === "EndPoint" ? current.referenceRotationId : null,
+                          rotation,
+                          referenceRotationId: rotation === "reference" ? current.referenceRotationId : null,
                         };
                       })}>
                         <option value="EndPoint">{copy.model.endpoint}</option>
@@ -1791,6 +1829,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                         showNetworks,
                         showPoints,
                         showLabels,
+                        showGroupLabels,
                         showUnitLabels,
                         showVariance,
                         edgeScale,
@@ -1859,7 +1898,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             <>
               <label className="ena-field ena-range-field">
                 <span>{copy.plot.edgeScale}<output>{edgeScale.toFixed(1)}×</output></span>
-                <input type="range" min="0.5" max="2" step="0.1" value={edgeScale} onChange={(event) => setEdgeScale(Number(event.target.value))} />
+                <input type="range" min="0.1" max="4" step="0.1" value={edgeScale} onChange={(event) => setEdgeScale(Number(event.target.value))} />
               </label>
               <label className="ena-field ena-range-field">
                 <span>{copy.plot.edgeThreshold}<output>{Math.round(edgeThreshold * 100)}%</output></span>
@@ -2390,8 +2429,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       pointScale={pointScale}
       textScale={textScale}
       showLabels={showLabels}
+      showGroupLabels={showGroupLabels}
       showUnitLabels={showUnitLabels}
       showPoints={showPoints}
+      unitCircle={unitCircle}
       flipX={flipX}
       flipY={flipY}
       plotZoom={plotZoom}
@@ -2400,12 +2441,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       onPointScaleChange={setPointScale}
       onTextScaleChange={setTextScale}
       onShowLabelsChange={setShowLabels}
+      onShowGroupLabelsChange={setShowGroupLabels}
       onShowUnitLabelsChange={setShowUnitLabels}
       onShowPointsChange={updatePointVisibility}
+      onUnitCircleChange={setUnitCircle}
       onFlipXChange={setFlipX}
       onFlipYChange={setFlipY}
       onPlotZoomChange={setPlotZoom}
       onReset={resetPlot}
+      settingsOpen={plotSettingsOpen}
+      onSettingsOpenChange={setPlotSettingsOpen}
       disabled={!result || loading}
     />
   );
@@ -2417,79 +2462,99 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       dir={workspaceIsLocalized ? undefined : "ltr"}
     >
       <section className="open-ena-workbench" aria-label="Open ENA analysis workspace" aria-busy={loading || sourceBusy || referenceBusy}>
-        <div className="ena-workbench-topbar">
-          <div className="ena-workbench-brand">
-            <span className="ena-mini-mark" aria-hidden="true"><img src="/ena-mark.svg" alt="" /></span>
-            <span className="ena-workbench-brand-copy"><strong>ENA</strong><small>Hub of Knowledge</small></span>
-          </div>
-          <div className="ena-workbench-title" aria-label="Workspace title">
-            <strong>{dataset?.source === "sample" ? "Open ENA Teaching Sample Analysis Workbench" : "Open ENA Analysis Workbench"}</strong>
-            <span>2D-first analysis powered by jENA</span>
-          </div>
-        </div>
-        <div className="ena-workbench-statusbar">
-          <div
-            className="ena-run-status"
-            data-state={loading || sourceBusy || referenceBusy ? "running" : result ? "result" : "ready"}
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-          >
-            <span />{sourceBusy
-              ? "Preparing dataset…"
-              : referenceBusy
-                ? "Validating reference rotation…"
-              : loading
-                ? `${copy.workspace.running} ${progress}% · ${progressStage}`
-              : resultIsStale
-                ? "Configuration changed · rebuild pending"
-                : result
-                  ? copy.workspace.result
-                  : copy.workspace.ready}
-          </div>
-          <span className="ena-workbench-status-summary">
-            {result
-              ? `${result.set.codes.length} ${copy.workspace.codes.toLowerCase()} · ${result.groups.length} ${copy.workspace.groups.toLowerCase()} · ${resultUnitCount} ${copy.workspace.units.toLowerCase()}`
-              : dataset
-                ? `${dataset.rows.length.toLocaleString()} rows · ${dataset.headers.length.toLocaleString()} fields`
-                : "No model loaded"}
-          </span>
-        </div>
-
         <div className="ena-workbench-grid">
           <nav className="ena-tool-rail" aria-label="Analysis modes" data-ena-workbench-region="rail">
-            {(Object.keys(copy.modes) as OpenEnaMode[]).map((item) => (
-              <button
-                key={item}
-                type="button"
-                className="ena-rail-button"
-                aria-current={mode === item ? "step" : undefined}
-                aria-label={copy.modes[item]}
-                title={copy.modes[item]}
-                onClick={() => setMode(item)}
+            <div className="ena-rail-brand" data-ena-rail-brand="true" aria-label="ENA.HK Open ENA">
+              <span className="ena-mini-mark" aria-hidden="true"><img src="/ena-mark.svg" alt="" /></span>
+              <span className="ena-rail-product">OPEN ENA</span>
+              <span
+                className="ena-rail-version"
+                data-ena-rail-version="true"
+                title={`ENA computation powered by jENA v${JENA_RUNTIME_VERSION} (GPL-3.0-only)`}
+              >jENA {JENA_RUNTIME_VERSION}</span>
+            </div>
+            <div className="ena-rail-modes">
+              {(Object.keys(copy.modes) as OpenEnaMode[]).map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  className="ena-rail-button"
+                  aria-current={mode === item ? "step" : undefined}
+                  aria-label={copy.modes[item]}
+                  title={copy.modes[item]}
+                  onClick={() => setMode(item)}
+                >
+                  {modeIcons[item]}
+                  <span>{copy.modes[item]}</span>
+                </button>
+              ))}
+            </div>
+            <div className="ena-rail-meta">
+              <div
+                className="ena-run-status"
+                data-state={loading || sourceBusy || referenceBusy ? "running" : result ? "result" : "ready"}
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                title={result
+                  ? `${result.set.codes.length} ${copy.workspace.codes.toLowerCase()} · ${result.groups.length} ${copy.workspace.groups.toLowerCase()} · ${resultUnitCount} ${copy.workspace.units.toLowerCase()}`
+                  : dataset
+                    ? `${dataset.rows.length.toLocaleString()} rows · ${dataset.headers.length.toLocaleString()} fields`
+                    : "No model loaded"}
               >
-                {modeIcons[item]}
-                <span>{copy.modes[item]}</span>
-              </button>
-            ))}
+                <span aria-hidden="true" />
+                <span className="ena-rail-status-label">{sourceBusy
+                  ? "Preparing"
+                  : referenceBusy
+                    ? "Reference"
+                  : loading
+                    ? `${progress}%`
+                  : resultIsStale
+                    ? "Rebuild"
+                    : result
+                      ? copy.workspace.result
+                      : copy.workspace.ready}</span>
+              </div>
+              <span className="ena-rail-privacy" title="Source data stays in this browser workspace unless intentionally exported.">Local</span>
+              <span className="sr-only">
+                ENA computation powered by jENA v{JENA_RUNTIME_VERSION} (GPL-3.0-only); ENA.HK provides the interface, plotting, and exports. Source data stays in this workspace’s browser memory unless you intentionally export it.
+              </span>
+            </div>
           </nav>
 
-          <aside className="ena-control-panel" data-ena-workbench-region="controls">{panel}</aside>
+          <aside className="ena-control-panel" data-ena-workbench-region="controls">
+            {panel}
+            <div className="ena-control-view-toggle">
+              <div className="ena-view-toggle" role="group" aria-label="ENA visualization options">
+                <button type="button" aria-pressed={view === "2d"} onClick={() => setView("2d")}>
+                  <strong>{copy.views.twoD}</strong><small>{copy.views.default}</small>
+                </button>
+                <a
+                  href={siteConfig.threeDenaUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`${copy.views.threeD} ${copy.views.exploratory}. Opens www.3dena.com in a new tab.`}
+                >
+                  <strong>{copy.views.threeD}</strong><small>{copy.views.exploratory} <span aria-hidden="true">↗</span></small>
+                </a>
+              </div>
+            </div>
+          </aside>
 
           <div className="ena-visual-workspace" data-testid="open-ena-center-surface">
             <div className="ena-visual-toolbar">
               <div>
                 <p>{activeSetComparison
-                  ? "Captured-set comparison"
+                  ? copy.workspace.comparison
                   : activeGroupContrast
-                    ? "Current-result group contrast"
+                    ? copy.workspace.comparison
                     : activeLongitudinalView
                       ? copy.longitudinal.title
                       : copy.workspace.comparison}</p>
                 <span>{activeSetComparison
                   ? `${activeSetComparison.primary.name} − ${activeSetComparison.secondary.name} · shared ${activeSetComparison.axes[0]} × ${activeSetComparison.axes[1]}`
                   : activeGroupContrast
-                    ? `${activeGroupContrast.groupOrder[0]} − ${activeGroupContrast.groupOrder[1]} · fixed ${activeGroupContrast.axes[0]} × ${activeGroupContrast.axes[1]}`
+                    ? `${activeGroupContrast.groupOrder[0]} − ${activeGroupContrast.groupOrder[1]} · fixed ${officialPlotAxisLabel(activeGroupContrast.axes[0])} × ${officialPlotAxisLabel(activeGroupContrast.axes[1])}`
                   : activeLongitudinalView
                     ? `${activeLongitudinalView.cohortPolicy === "complete" ? copy.longitudinal.complete : copy.longitudinal.available} · ${activeLongitudinalView.axes[0]} × ${activeLongitudinalView.axes[1]} · ${activeLongitudinalView.timeOrder.length} ${copy.longitudinal.period.toLowerCase()}`
                   : result
@@ -2527,6 +2592,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                           showPoints,
                           showTrajectories,
                           showLabels,
+                          showGroupLabels,
                           showUnitLabels,
                           showVariance,
                           edgeScale,
@@ -2540,21 +2606,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     }
                   }}
                 >
-                  <span aria-hidden="true">⇩</span>Download Model
+                  <svg className="ena-download-model-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M14 3H7.5A1.5 1.5 0 0 0 6 4.5v15A1.5 1.5 0 0 0 7.5 21h9a1.5 1.5 0 0 0 1.5-1.5V7l-4-4Z" />
+                    <path d="M14 3v4h4M12 10v7m-3-3 3 3 3-3" />
+                  </svg>
+                  Download Model
                 </button>
-                <div className="ena-view-toggle" role="group" aria-label="ENA visualization options">
-                  <button type="button" aria-pressed={view === "2d"} onClick={() => setView("2d")}>
-                    <strong>{copy.views.twoD}</strong><small>{copy.views.default}</small>
-                  </button>
-                  <a
-                    href={siteConfig.threeDenaUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label={`${copy.views.threeD} ${copy.views.exploratory}. Opens www.3dena.com in a new tab.`}
-                  >
-                    <strong>{copy.views.threeD}</strong><small>{copy.views.exploratory} <span aria-hidden="true">↗</span></small>
-                  </a>
-                </div>
               </div>
             </div>
 
@@ -2632,12 +2689,15 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     showPoints={showPoints}
                     showNetworks={showNetworks}
                     showLabels={showLabels}
+                    showGroupLabels={showGroupLabels}
                     showUnitLabels={showUnitLabels}
+                    unitCircle={unitCircle}
                     showVariance={showVariance}
                     edgeScale={edgeScale}
                     pointScale={pointScale}
                     textScale={textScale}
                     plotZoom={plotZoom}
+                    plotResetRevision={plotResetRevision}
                     flipX={flipX}
                     flipY={flipY}
                     centerMode={centerSurface}
@@ -2648,6 +2708,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     ) : null}
                     rightTools={persistentPlotTools}
                     svgRef={plotSvgRef}
+                    onSwitchPlots={() => {
+                      setPrimaryGroupName(secondaryGroupName);
+                      setSecondaryGroupName(primaryGroupName);
+                    }}
                   />
                 ) : (
                   <OpenEnaPlot
@@ -2776,11 +2840,6 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             {error ? <div className="ena-error-banner" role="alert"><strong>{copy.workspace.errorTitle}</strong><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Dismiss error">×</button></div> : null}
           </div>
         </div>
-
-        <footer className="ena-workbench-footer">
-          <span>ENA computation powered by <a href="https://github.com/HUDongpin/jENA" target="_blank" rel="noreferrer">jENA</a> v{JENA_RUNTIME_VERSION} (GPL-3.0-only); ENA.HK provides the interface, plotting, and exports.</span>
-          <span>Source data stays in this workspace’s browser memory unless you intentionally export it.</span>
-        </footer>
       </section>
     </div>
   );

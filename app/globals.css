@@ -2173,13 +2173,14 @@ button:focus-visible {
   display: grid;
   width: 100vw;
   height: 100dvh;
-  grid-template-rows: 54px 31px minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
   margin: 0;
   overflow: hidden;
   border: 0;
   border-radius: 0;
   background: #f8fbfb;
   box-shadow: none;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 .ena-workbench-topbar {
@@ -2273,19 +2274,20 @@ button:focus-visible {
   font-weight: 690;
 }
 
-.ena-run-status > span {
+.ena-run-status > span:first-child {
   width: 7px;
   height: 7px;
+  flex: 0 0 7px;
   border-radius: 50%;
   background: #91a6a3;
 }
 
-.ena-run-status[data-state="result"] > span {
+.ena-run-status[data-state="result"] > span:first-child {
   background: #fff;
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18);
 }
 
-.ena-run-status[data-state="running"] > span {
+.ena-run-status[data-state="running"] > span:first-child {
   background: #fff4b3;
   animation: ena-pulse 1.2s ease-in-out infinite;
 }
@@ -2349,32 +2351,81 @@ button:focus-visible {
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: 72px 340px minmax(0, 1fr) minmax(300px, 33vw);
+  grid-template-columns: 65px 380px minmax(0, 1fr);
   overflow: hidden;
 }
 
 .ena-tool-rail {
   display: flex;
+  min-width: 0;
+  min-height: 0;
   flex-direction: column;
   align-items: stretch;
-  gap: 4px;
-  padding: 12px 7px;
+  padding: 0;
   color: #c4d0d0;
   border-inline-end: 1px solid #263646;
   background: #1d2b3a;
+  overflow: hidden;
+}
+
+.ena-rail-brand {
+  display: grid;
+  flex: 0 0 auto;
+  min-height: 94px;
+  place-items: center;
+  align-content: center;
+  gap: 2px;
+  padding: 9px 4px 8px;
+  color: #f8fffd;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: #182533;
+  text-align: center;
+}
+
+.ena-rail-brand .ena-mini-mark,
+.ena-rail-brand .ena-mini-mark img {
+  width: 34px;
+  height: 34px;
+}
+
+.ena-rail-product {
+  margin-top: 2px;
+  color: #eaf4f2;
+  font-size: 0.51rem;
+  font-weight: 760;
+  letter-spacing: 0.045em;
+  line-height: 1;
+}
+
+.ena-rail-version {
+  color: #8fa6a6;
+  font-size: 0.48rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.ena-rail-modes {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 5px;
 }
 
 .ena-rail-button {
   position: relative;
   display: flex;
-  min-height: 78px;
+  min-height: 72px;
   align-items: center;
   flex-direction: column;
   justify-content: center;
   gap: 7px;
   border: 0;
   border-radius: 4px;
-  padding: 7px 4px;
+  padding: 6px 3px;
   color: #aebfc0;
   background: transparent;
   cursor: pointer;
@@ -2385,7 +2436,7 @@ button:focus-visible {
   position: absolute;
   top: 10px;
   bottom: 10px;
-  inset-inline-start: -7px;
+  inset-inline-start: -5px;
   width: 3px;
   border-radius: 0 4px 4px 0;
   background: transparent;
@@ -2423,12 +2474,74 @@ button:focus-visible {
   background: var(--accent);
 }
 
+.ena-rail-meta {
+  display: grid;
+  flex: 0 0 auto;
+  min-height: 58px;
+  align-content: center;
+  gap: 4px;
+  padding: 7px 5px 8px;
+  color: #aebfbe;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: #182533;
+  text-align: center;
+}
+
+.ena-rail-meta .ena-run-status {
+  min-height: 16px;
+  justify-content: center;
+  gap: 5px;
+  font-size: 0.51rem;
+  line-height: 1;
+}
+
+.ena-rail-meta .ena-run-status > span:first-child {
+  width: 6px;
+  height: 6px;
+  flex-basis: 6px;
+  background: #8ea5a2;
+}
+
+.ena-rail-meta .ena-run-status[data-state="result"] > span:first-child {
+  background: #72c7bd;
+  box-shadow: 0 0 0 2px rgba(114, 199, 189, 0.18);
+}
+
+.ena-rail-status-label {
+  min-width: 0;
+  overflow: hidden;
+  color: #d9e5e3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ena-rail-privacy {
+  color: #718987;
+  font-size: 0.46rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
 .ena-control-panel {
+  position: relative;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   border-inline-end: 1px solid #d5dfde;
   background: #f0f3f4;
+}
+
+.ena-control-view-toggle {
+  position: absolute;
+  z-index: 8;
+  bottom: 12px;
+  left: 18px;
+}
+
+.ena-control-view-toggle .ena-view-toggle {
+  position: static;
 }
 
 .ena-control-content {
@@ -3422,7 +3535,6 @@ button:focus-visible {
   display: flex;
   min-width: 0;
   min-height: 0;
-  grid-column: 3 / 5;
   flex-direction: column;
   overflow: auto;
   overscroll-behavior: contain;
@@ -3437,12 +3549,14 @@ button:focus-visible {
   gap: 20px;
   padding: 10px 16px 10px 19px;
   border-bottom: 1px solid #d9e1e0;
-  background: #fff;
+  background: #edf1f2;
 }
 
 .ena-visual-toolbar > div:first-child {
   display: grid;
   gap: 3px;
+  padding-inline-start: 9px;
+  border-inline-start: 3px solid #56b09d;
 }
 
 .ena-visual-toolbar p {
@@ -4153,7 +4267,8 @@ button:focus-visible {
 
 @media (max-width: 1260px) {
   .ena-workbench-grid {
-    grid-template-columns: 66px 320px minmax(540px, 1fr) minmax(280px, 34vw);
+    grid-template-columns: 65px 340px minmax(860px, 1fr);
+    overflow-x: auto;
   }
 
   .ena-control-content {
@@ -4183,7 +4298,7 @@ button:focus-visible {
   }
 
   .ena-workbench-grid {
-    grid-template-columns: 62px 300px minmax(560px, 1fr) 300px;
+    grid-template-columns: 65px 320px minmax(820px, 1fr);
     overflow-x: auto;
   }
 }
@@ -4201,11 +4316,36 @@ button:focus-visible {
 
   .ena-tool-rail {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    flex-direction: row;
-    padding: 6px;
+    grid-template-columns: 1fr;
+    padding: 0;
     border-inline-end: 0;
     border-bottom: 1px solid #263646;
+  }
+
+  .ena-rail-brand {
+    min-height: 58px;
+    grid-template-columns: auto auto auto;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .ena-rail-brand .ena-mini-mark,
+  .ena-rail-brand .ena-mini-mark img {
+    width: 32px;
+    height: 32px;
+  }
+
+  .ena-rail-modes {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+    overflow: visible;
+    padding: 6px;
+  }
+
+  .ena-rail-meta {
+    display: none;
   }
 
   .ena-rail-button {
@@ -6439,6 +6579,8 @@ button:focus-visible {
 }
 
 .ena-set-plot-heading {
+  position: relative;
+  z-index: 3;
   min-height: 48px;
   padding: 7px 10px;
   border-bottom: 1px solid #dbe3e2;
@@ -6469,6 +6611,8 @@ button:focus-visible {
 
 .open-ena-set-comparison-svg,
 .open-ena-set-mini-svg {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   height: auto;
@@ -6480,7 +6624,7 @@ button:focus-visible {
 }
 
 .ena-set-zero-axes line {
-  stroke: #8b999f;
+  stroke: #4d4d4d;
   stroke-width: 1;
 }
 
@@ -6492,8 +6636,8 @@ button:focus-visible {
 }
 
 .ena-set-result-node {
-  fill: #fff;
-  stroke: #283d48;
+  fill: #333;
+  stroke: #333;
   stroke-width: 2.5;
 }
 
@@ -6506,6 +6650,44 @@ button:focus-visible {
   font-family: var(--font-geist), sans-serif;
   font-size: 10.5px;
   font-weight: 740;
+}
+
+.open-ena-group-contrast .ena-set-zero-axes line {
+  stroke: #333;
+  stroke-width: 0.5;
+}
+
+.open-ena-group-contrast .ena-set-axis-endpoint {
+  fill: #333;
+}
+
+.open-ena-group-contrast .ena-set-zero-axes text {
+  fill: #333;
+}
+
+.open-ena-group-contrast .ena-set-result-node {
+  fill: #4d4d4d;
+  stroke: #4d4d4d;
+  stroke-width: 0;
+}
+
+.open-ena-group-contrast .ena-set-result-label {
+  fill: #111;
+  paint-order: normal;
+  stroke: none;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: calc(10px * var(--ena-plot-text-scale, 1));
+  font-weight: 600;
+}
+
+.open-ena-group-contrast .ena-set-group-label {
+  fill: #111;
+  paint-order: normal;
+  stroke: none;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: calc(10px * var(--ena-plot-text-scale, 1));
+  font-weight: 600;
+  pointer-events: none;
 }
 
 .ena-set-unit-label {
@@ -6580,6 +6762,13 @@ button:focus-visible {
   border: 2px solid #542d1d;
   border-radius: 1px;
   background: #dc3912;
+}
+
+.ena-set-key-confidence {
+  width: 18px;
+  height: 12px;
+  border: 1px dashed #3366cc;
+  background: transparent;
 }
 
 .ena-set-difference-table {
@@ -7460,7 +7649,7 @@ button:focus-visible {
 /* Open ENA official-workbench frame: four persistent research regions. */
 body:has(.open-ena-page) {
   overflow: hidden;
-  background: #f0f3f4;
+  background: #edf1f2;
 }
 
 body:has(.open-ena-page) .site-header,
@@ -7487,8 +7676,7 @@ body:has(.open-ena-page) #main-content {
 
 .ena-tool-rail {
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
 }
 
 .ena-panel-heading {
@@ -7657,6 +7845,36 @@ body:has(.open-ena-page) #main-content {
   opacity: 0.45;
 }
 
+.ena-visual-toolbar [data-testid="open-ena-data-view-toggle"] {
+  position: absolute;
+  z-index: 12;
+  right: 10px;
+  bottom: 0;
+  left: 10px;
+  min-height: 39px;
+  justify-content: center;
+  border: 0;
+  border-radius: 0;
+  color: #fff;
+  background: #202425;
+  box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.18);
+  font-size: 0.68rem;
+  letter-spacing: 0.01em;
+}
+
+.ena-visual-toolbar [data-testid="open-ena-data-view-toggle"]:hover,
+.ena-visual-toolbar [data-testid="open-ena-data-view-toggle"][aria-pressed="true"] {
+  color: #fff;
+  border: 0;
+  background: #1d2122;
+}
+
+.open-ena-group-contrast[data-ena-center-mode="plot"] > .ena-set-signed-legend,
+.open-ena-group-contrast[data-ena-center-mode="plot"] > .ena-set-reference-id,
+.open-ena-group-contrast[data-ena-center-mode="plot"] > .ena-set-difference-table {
+  display: none;
+}
+
 .ena-view-toggle button,
 .ena-view-toggle a {
   min-width: 84px;
@@ -7673,7 +7891,7 @@ body:has(.open-ena-page) #main-content {
   flex: 1 0 auto;
   padding: 8px 9px 12px;
   border-top: 0;
-  background: #f0f3f4;
+  background: #edf1f2;
 }
 
 .open-ena-group-contrast > .ena-set-comparison-header {
@@ -7698,16 +7916,38 @@ body:has(.open-ena-page) #main-content {
 }
 
 .open-ena-group-contrast .ena-set-side-plots {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  align-content: stretch;
   gap: 8px;
+}
+
+.open-ena-group-contrast .ena-set-right-tools {
+  height: 100%;
+}
+
+.open-ena-group-contrast .ena-set-right-tools > .ena-persistent-plot-tools {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+}
+
+.open-ena-group-contrast .ena-set-right-tools .ena-persistent-plot-tools-scroll {
+  max-height: none;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 0;
+  row-gap: 13px;
+  padding: 11px 8px 9px;
 }
 
 .open-ena-group-contrast .ena-set-plot-heading {
   min-height: 40px;
   padding: 5px 8px;
+  border-inline-start: 3px solid #56b09d;
 }
 
 .open-ena-group-contrast .ena-set-plot-heading h3 {
-  color: #263740;
+  color: #397e73;
   font-size: 0.68rem;
   letter-spacing: 0;
   text-transform: none;
@@ -7718,11 +7958,164 @@ body:has(.open-ena-page) #main-content {
   font-size: 0.6rem;
 }
 
-.open-ena-group-contrast .ena-set-plot-heading span {
+.open-ena-group-contrast .ena-set-series-caption > span {
+  max-width: none;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  text-align: inherit;
+  white-space: inherit;
+}
+
+.open-ena-group-contrast .ena-set-scale-caption {
+  color: #818b8c;
+  font-style: italic;
+  font-weight: 400;
+}
+
+.open-ena-group-contrast .ena-set-plot-heading-tools > span {
   max-width: 54%;
   font-size: 0.51rem;
   line-height: 1.3;
   white-space: normal;
+}
+
+.ena-set-plot-heading-tools {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.ena-official-plot-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.ena-official-plot-actions button {
+  display: inline-grid;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  place-items: center;
+  color: #47595f;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.open-ena-group-contrast .ena-official-plot-actions button > span {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.ena-official-action-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.ena-official-panel-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ena-official-panel-actions button {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  padding: 2px;
+  place-items: center;
+  border: 0;
+  border-radius: 2px;
+  color: #667274;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ena-official-panel-actions button:hover,
+.ena-official-panel-actions button:focus-visible {
+  color: #267e70;
+  background: rgba(86, 176, 157, 0.12);
+}
+
+.open-ena-group-contrast [data-ena-panel-state="hidden"] [data-ena-plot-content] {
+  opacity: 0.18;
+  transition: opacity 150ms ease;
+}
+
+.open-ena-group-contrast [data-ena-panel-state="visible"] [data-ena-plot-content] {
+  opacity: 1;
+  transition: opacity 150ms ease;
+}
+
+.open-ena-group-contrast [data-ena-restore-panel] {
+  pointer-events: bounding-box;
+  cursor: pointer;
+}
+
+.ena-empty-side-plot {
+  min-width: 0;
+}
+
+.ena-empty-side-plot-prompt {
+  display: grid;
+  min-height: 170px;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 20px;
+  color: #777f81;
+  text-align: center;
+}
+
+.ena-empty-side-plot-prompt .ena-official-action-icon {
+  width: 42px;
+  height: 42px;
+  color: #c2c7c8;
+}
+
+.ena-empty-side-plot-prompt p {
+  max-width: 300px;
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.ena-official-plot-actions button:hover {
+  color: #1d5f57;
+  border-color: #bfd2ce;
+  background: #eef5f3;
+}
+
+.ena-official-plot-actions button:focus-visible {
+  outline: 3px solid #276d65;
+  outline-offset: 1px;
+}
+
+.ena-official-plot-actions button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.ena-official-plot-actions .ena-plot-copy-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .ena-set-zero-axes text {
@@ -7743,15 +8136,14 @@ body:has(.open-ena-page) #main-content {
 }
 
 .ena-set-plot-definitions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 8px;
-  margin-top: 3px;
+  display: grid;
+  gap: 2px;
+  margin-top: 0;
   color: #3d5b56;
 }
 
-.ena-set-plot-definitions strong:not(:first-child) {
-  margin-inline-start: 5px;
+.ena-set-plot-definitions > span {
+  display: block;
 }
 
 .ena-set-right-tools,
@@ -7764,9 +8156,10 @@ body:has(.open-ena-page) #main-content {
 }
 
 .ena-persistent-plot-tools {
+  position: relative;
   min-width: 0;
   color: #33474b;
-  background: #fff;
+  background: #edf1f2;
 }
 
 .ena-persistent-plot-tools-header {
@@ -7775,32 +8168,245 @@ body:has(.open-ena-page) #main-content {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 5px 9px;
-  border-bottom: 1px solid #dbe3e2;
-  background: #f8faf9;
-  font-size: 0.66rem;
+  padding: 3px 8px;
+  border-inline-start: 3px solid #56b09d;
+  color: #397e73;
+  border-bottom: 0;
+  background: transparent;
+  font-size: 1rem;
 }
 
 .ena-persistent-plot-tools-header button {
-  min-height: 27px;
-  border: 1px solid #b8c5c3;
-  border-radius: 3px;
-  padding-inline: 8px;
-  color: #31564f;
-  background: #fff;
+  display: grid;
+  width: 28px;
+  min-height: 28px;
+  padding: 3px;
+  place-items: center;
+  border: 0;
+  border-radius: 2px;
+  color: #5c6668;
+  background: transparent;
   cursor: pointer;
-  font-size: 0.57rem;
-  font-weight: 740;
+}
+
+.ena-persistent-plot-tools-header button:hover {
+  color: #267e70;
+  background: rgba(86, 176, 157, 0.12);
+}
+
+.ena-plot-settings-trigger svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
 }
 
 .ena-persistent-plot-tools-scroll {
   display: grid;
   max-height: 172px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 10px;
+  grid-template-columns: 1fr;
+  gap: 5px;
   overflow: auto;
-  padding: 8px 9px 10px;
+  padding: 4px 8px 9px;
   overscroll-behavior: contain;
+}
+
+.ena-official-tool-row,
+.ena-official-toggle-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  font-size: 0.64rem;
+}
+
+.ena-persistent-plot-tools-scroll > .ena-official-tool-row {
+  min-height: 31px;
+  grid-column: 1 / -1;
+  grid-template-columns: 85px minmax(0, 1fr);
+}
+
+.ena-persistent-plot-tools-scroll > .ena-official-tool-row:first-child {
+  margin-bottom: 12px;
+}
+
+.ena-persistent-plot-tools-scroll > .ena-official-toggle-row {
+  min-height: 34px;
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 1px;
+}
+
+.ena-persistent-plot-tools-scroll > .ena-official-toggle-row .ena-official-binary-toggle {
+  width: auto;
+  justify-self: start;
+}
+
+.ena-persistent-plot-tools-scroll > [data-ena-plot-tool="code-labels"] {
+  transform: translateX(-7px);
+}
+
+.ena-persistent-plot-tools-scroll > [data-ena-plot-tool="unit-circle"] .ena-official-binary-toggle {
+  margin-inline-start: 0;
+}
+
+.ena-official-tool-control {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(70px, 1fr) 45px 24px;
+  align-items: center;
+  gap: 5px;
+}
+
+.ena-persistent-plot-tools-scroll > .ena-official-tool-row .ena-official-tool-control {
+  grid-template-columns: 245px minmax(0, 1fr) 24px;
+  gap: 8px;
+}
+
+.ena-official-tool-control input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 14px;
+  min-width: 0;
+  margin: 0 0 0 3px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ena-official-tool-control input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  border: 0;
+  border-radius: 0;
+  background: linear-gradient(
+    to right,
+    #4db6ac 0 var(--ena-range-progress),
+    rgba(0, 0, 0, 0.38) var(--ena-range-progress) 100%
+  );
+}
+
+.ena-official-tool-control input[type="range"]::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  margin-top: -6px;
+  -webkit-appearance: none;
+  appearance: none;
+  border: 0;
+  border-radius: 50%;
+  background: #4db6ac;
+}
+
+.ena-official-tool-control input[type="range"]::-moz-range-track {
+  height: 2px;
+  border: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.38);
+}
+
+.ena-official-tool-control input[type="range"]::-moz-range-progress {
+  height: 2px;
+  background: #4db6ac;
+}
+
+.ena-official-tool-control input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: #4db6ac;
+}
+
+.ena-official-tool-control input[type="range"]:focus-visible {
+  outline: 3px solid #276d65;
+  outline-offset: 2px;
+}
+
+.ena-official-tool-control input[type="number"] {
+  width: 45px;
+  min-height: 25px;
+  padding: 2px 3px;
+  border: 0;
+  border-bottom: 1px solid #c9d2d1;
+  color: #39484a;
+  background: transparent;
+  font: inherit;
+  font-size: 0.63rem;
+  text-align: center;
+}
+
+.ena-official-tool-control button {
+  width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  color: #7a8586;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.ena-official-binary-toggle {
+  display: inline-flex;
+  height: 18px;
+  align-items: center;
+  gap: 3px;
+}
+
+.ena-official-binary-toggle .ena-official-switch-label {
+  width: 23px;
+  min-width: 23px;
+  height: 15px;
+  min-height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: #111;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.61rem;
+  line-height: 15px;
+  text-align: center;
+}
+
+.ena-official-binary-toggle .ena-official-switch-track {
+  position: relative;
+  width: 35px;
+  min-width: 35px;
+  height: 15px;
+  min-height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #56b09d;
+  cursor: pointer;
+}
+
+.ena-official-switch-handle {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+  transition: left 120ms ease;
+}
+
+.ena-official-switch-track[aria-checked="false"] .ena-official-switch-handle {
+  left: 21px;
+}
+
+.ena-official-binary-toggle button:focus-visible {
+  outline: 2px solid #276d65;
+  outline-offset: 2px;
+}
+
+.ena-official-binary-toggle button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .ena-persistent-plot-tools .ena-field,
@@ -7852,13 +8458,96 @@ body:has(.open-ena-page) #main-content {
 }
 
 .ena-persistent-plot-tools .ena-plot-flips {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  grid-column: auto;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
-.ena-persistent-plot-tools button[aria-pressed="true"] {
+.ena-persistent-plot-tools .ena-plot-flips button {
+  min-height: 27px;
+  border: 0;
+  color: #536264;
+  background: transparent;
+}
+
+.ena-persistent-plot-tools button[aria-pressed="true"]:not(.ena-official-switch-label) {
   color: #143f38;
-  border-color: #56b09d;
   background: #dff2ee;
+}
+
+.ena-persistent-plot-tools .ena-official-switch-label[aria-pressed="true"] {
+  color: #111;
+  background: transparent;
+}
+
+.ena-official-plot-settings {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  color: #33474b;
+  background: #f4f6f6;
+  box-shadow: -3px 0 10px rgba(35, 54, 58, 0.16);
+}
+
+.ena-official-plot-settings > header {
+  display: flex;
+  min-height: 39px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 9px;
+  border-bottom: 1px solid #d5dedd;
+  font-size: 0.76rem;
+}
+
+.ena-official-plot-settings > header button {
+  width: 27px;
+  min-height: 27px;
+  padding: 0;
+  border: 0;
+  color: #5e6c6e;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1.35rem;
+}
+
+.ena-official-plot-settings-scroll {
+  display: grid;
+  min-height: 0;
+  gap: 10px;
+  overflow: auto;
+  padding: 9px;
+}
+
+.ena-official-plot-settings section {
+  display: grid;
+  gap: 7px;
+}
+
+.ena-official-plot-settings h4 {
+  margin: 0;
+  padding-bottom: 3px;
+  border-bottom: 1px solid #d4dddc;
+  color: #397e73;
+  font-size: 0.69rem;
+}
+
+.ena-official-plot-settings .ena-range-field {
+  font-size: 0.61rem;
+}
+
+.ena-reset-all-plot-tools {
+  min-height: 29px;
+  border: 1px solid #8aa9a3;
+  border-radius: 2px;
+  color: #31564f;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.61rem;
+  font-weight: 700;
 }
 
 .ena-persistent-plot-tools button:focus-visible,
@@ -8008,6 +8697,368 @@ body:has(.open-ena-page) #main-content {
   max-height: 172px;
 }
 
+@media (min-width: 1400px) {
+  .ena-visual-toolbar {
+    position: static;
+    min-height: 44px;
+    height: 44px;
+    padding: 0 24px;
+    overflow: visible;
+  }
+
+  .ena-visual-toolbar > div:first-child {
+    position: absolute;
+    top: 16px;
+    left: 30px;
+    gap: 0;
+    padding-inline-start: 9px;
+  }
+
+  .ena-visual-toolbar p {
+    color: #397e73;
+    font-size: 1rem;
+    font-weight: 650;
+    letter-spacing: 0;
+    line-height: 1.05;
+    text-transform: none;
+  }
+
+  .ena-visual-toolbar > div:first-child > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .ena-visual-toolbar-actions {
+    position: static;
+  }
+
+  .ena-download-model-button {
+    position: absolute;
+    top: 16px;
+    right: calc(35% + 19px);
+    width: 138px;
+    min-width: 138px;
+    max-width: 138px;
+    min-height: 24px;
+    padding: 2px 9px;
+    gap: 6px;
+    font-size: 0.7rem;
+    color: #fff;
+    border-color: #419889;
+    background: #49a892;
+  }
+
+  .ena-download-model-button-icon {
+    width: 13px;
+    height: 13px;
+    flex: 0 0 13px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+  }
+
+  .ena-download-model-button:not(:disabled):hover,
+  .ena-download-model-button:not(:disabled):focus-visible {
+    color: #fff;
+    border-color: #327e72;
+    background: #419889;
+  }
+
+  .ena-view-toggle button,
+  .ena-view-toggle a {
+    min-width: 72px;
+    min-height: 24px;
+    padding: 2px 6px;
+  }
+
+  .ena-visual-toolbar [data-testid="open-ena-data-view-toggle"] {
+    right: 24px;
+    left: 24px;
+    min-height: 35px;
+  }
+
+  .open-ena-set-comparison.open-ena-group-contrast {
+    padding: 0 24px 41px;
+  }
+
+  .open-ena-group-contrast .ena-set-comparison-layout {
+    grid-template-columns: 65% 35%;
+    gap: 0;
+  }
+
+  .open-ena-group-contrast [data-testid="open-ena-group-center-surface"] {
+    padding-inline: 5px 11px;
+  }
+
+  .open-ena-group-contrast .ena-set-main-plot,
+  .open-ena-group-contrast .ena-set-side-plots > figure,
+  .open-ena-group-contrast .ena-set-side-plots > .ena-empty-side-plot {
+    position: relative;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .open-ena-group-contrast .ena-set-main-plot {
+    height: calc(100dvh - 90px);
+  }
+
+  .open-ena-group-contrast .ena-set-main-plot > .ena-set-plot-heading {
+    position: absolute;
+    z-index: 4;
+    inset: 0 0 auto;
+    min-height: 0;
+    height: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .open-ena-group-contrast .ena-set-main-plot > .ena-set-plot-heading h3 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .open-ena-group-contrast .ena-set-main-plot > .ena-set-plot-heading p {
+    position: absolute;
+    z-index: 2;
+    top: 4px;
+    left: 4px;
+    margin: 0;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 0.69rem;
+    font-weight: 500;
+  }
+
+  .open-ena-group-contrast .ena-set-main-plot > .ena-set-plot-heading .ena-set-plot-heading-tools > span,
+  .open-ena-group-contrast .ena-set-side-plots .ena-set-plot-heading-tools > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .open-ena-group-contrast .open-ena-set-comparison-svg {
+    width: 100%;
+    height: calc(100dvh - 90px);
+    padding: 12px;
+    border: 1px solid #cbd7d5;
+    border-radius: 3px;
+    background: #fff;
+    box-shadow: 0 2px 5px rgba(36, 55, 60, 0.2);
+  }
+
+  .open-ena-group-contrast .ena-set-main-plot figcaption {
+    position: absolute;
+    z-index: 3;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 0.75rem;
+  }
+
+  .open-ena-group-contrast .ena-set-side-plots {
+    height: calc(100dvh - 22px);
+    margin-top: -28px;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: 16px;
+    padding: 0 28px 0 18px;
+  }
+
+  .open-ena-group-contrast .ena-set-side-plots > figure,
+  .open-ena-group-contrast .ena-set-side-plots > .ena-empty-side-plot {
+    height: 267px;
+    overflow: visible;
+  }
+
+  .open-ena-group-contrast .ena-set-side-plots .ena-set-plot-heading {
+    position: relative;
+    min-height: 22px;
+    height: 22px;
+    padding: 0 0 0 8px;
+    border-inline-start-color: transparent;
+    border-bottom: 0;
+    background: transparent;
+  }
+
+  .open-ena-group-contrast .ena-set-side-plots .ena-set-plot-heading::before {
+    position: absolute;
+    top: 0;
+    bottom: auto;
+    left: -3px;
+    width: 3px;
+    height: 17px;
+    background: #56b09d;
+    content: "";
+  }
+
+  .open-ena-group-contrast .ena-set-side-plots .ena-set-plot-heading h3 {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 1rem;
+    font-weight: 650;
+    line-height: 22px;
+  }
+
+  .open-ena-group-contrast .ena-set-side-plots .ena-set-plot-heading p {
+    position: absolute;
+    z-index: 3;
+    top: 36px;
+    left: 0;
+    margin: 0;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 0.69rem;
+    font-weight: 500;
+  }
+
+  .open-ena-group-contrast .open-ena-set-mini-svg {
+    width: 100%;
+    height: 236px;
+    margin-top: 11px;
+    padding: 5px;
+    border: 1px solid #cbd7d5;
+    border-radius: 3px;
+    background: #fff;
+    box-shadow: 0 2px 5px rgba(36, 55, 60, 0.2);
+  }
+
+  .open-ena-group-contrast .ena-empty-side-plot-prompt {
+    height: 236px;
+    min-height: 0;
+    margin-top: 11px;
+    border: 1px solid #cbd7d5;
+    border-radius: 3px;
+    background: #fff;
+    box-shadow: 0 2px 5px rgba(36, 55, 60, 0.2);
+  }
+
+  .open-ena-group-contrast .ena-set-side-plots .ena-official-panel-actions {
+    position: absolute;
+    z-index: 7;
+    top: -2px;
+    right: 1px;
+  }
+
+  .open-ena-group-contrast .ena-official-plot-actions {
+    position: absolute;
+    display: flex;
+    z-index: 5;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .open-ena-group-contrast .ena-set-main-plot .ena-official-plot-actions {
+    top: 8px;
+    right: 7px;
+  }
+
+  .open-ena-group-contrast .ena-set-side-plots .ena-official-plot-actions {
+    top: 39px;
+    right: 5px;
+  }
+
+  .open-ena-group-contrast .ena-official-plot-actions button {
+    width: 24px;
+    height: 24px;
+    font-size: 0.75rem;
+  }
+
+  .open-ena-group-contrast .ena-set-zero-axes text {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: calc(12px * var(--ena-plot-text-scale, 1));
+  }
+
+  .open-ena-group-contrast .ena-set-axis-label tspan:first-of-type {
+    font-weight: 700;
+  }
+
+  .open-ena-group-contrast .ena-set-axis-label tspan:not(:first-of-type) {
+    font-size: 0.94em;
+    font-weight: 650;
+  }
+
+  .open-ena-group-contrast .ena-set-right-tools .ena-plot-actions[aria-label="Plot zoom"] {
+    display: none;
+  }
+
+  .open-ena-group-contrast .ena-set-right-tools {
+    overflow: visible;
+    border: 0;
+    border-top: 1px solid #d8dede;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .open-ena-group-contrast .ena-persistent-plot-tools-header {
+    position: relative;
+    border-inline-start-color: transparent;
+  }
+
+  .open-ena-group-contrast .ena-persistent-plot-tools-header::before {
+    position: absolute;
+    top: 50%;
+    left: -3px;
+    width: 3px;
+    height: 17px;
+    background: #56b09d;
+    content: "";
+    transform: translateY(-50%);
+  }
+}
+
+@media (max-width: 1399px) and (min-width: 901px) {
+  .open-ena-group-contrast .ena-set-side-plots .ena-set-plot-heading-tools {
+    margin-inline-start: auto;
+  }
+
+  .open-ena-group-contrast .ena-set-side-plots .ena-set-plot-heading-tools > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .open-ena-group-contrast .ena-set-side-plots .ena-official-plot-actions {
+    position: absolute;
+    z-index: 5;
+    top: 39px;
+    right: 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+}
+
 @media (max-width: 1120px) and (min-width: 901px) {
   .open-ena-group-contrast .ena-set-comparison-layout,
   .ena-empty-analysis-layout {
@@ -8033,7 +9084,7 @@ body:has(.open-ena-page) #main-content {
 
   .open-ena-workbench {
     width: 100%;
-    grid-template-rows: auto auto auto auto;
+    grid-template-rows: auto;
   }
 
   .ena-workbench-grid {
@@ -8054,6 +9105,33 @@ body:has(.open-ena-page) #main-content {
 
   .open-ena-group-contrast .ena-set-right-tools {
     grid-column: 1 / -1;
+  }
+
+  .open-ena-group-contrast .ena-set-side-plots .ena-set-plot-heading-tools {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .open-ena-group-contrast .ena-set-side-plots .ena-set-plot-heading-tools > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .open-ena-group-contrast .ena-set-side-plots .ena-official-plot-actions {
+    position: absolute;
+    z-index: 5;
+    top: 39px;
+    right: 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
   }
 }
 

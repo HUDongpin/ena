@@ -43,24 +43,67 @@ function compositeValue(row: Row, columns: string[]) {
   return columns.map((column) => String(row[column] ?? "")).join("::");
 }
 
-function meanRotationGroups(dataset: ParsedDataset, config: OpenEnaConfig): [string[], string[]] {
-  if (!config.groupColumn) return [[], []];
+function comparisonGroupNames(dataset: ParsedDataset, config: OpenEnaConfig): [string, string] {
+  if (!config.groupColumn) {
+    throw new Error("Generalized means rotation requires a comparison-group column.");
+  }
   const groupColumn = config.groupColumn;
-  const groupNames = [...new Set(dataset.rows.map((row) => String(row[groupColumn] ?? "")))];
-  return groupNames.slice(0, 2).map((groupName) => [
-    ...new Set(
-      dataset.rows
-        .filter((row) => String(row[groupColumn] ?? "") === groupName)
-        .map((row) => compositeValue(row, config.unitColumns)),
-    ),
-  ]) as [string[], string[]];
+  const groupNames = [...new Set(dataset.rows.map((row) => String(row[groupColumn] ?? "")))].filter(Boolean);
+  if (groupNames.length < 2) {
+    throw new Error("Generalized means rotation requires at least two non-empty comparison groups.");
+  }
+  return [groupNames[0], groupNames[1]];
 }
 
 export function effectiveRotation(dataset: ParsedDataset, config: OpenEnaConfig) {
   if (config.rotation === "mean") {
-    return { method: "mean" as const, params: { groups: meanRotationGroups(dataset, config) } };
+    const groupColumn = config.groupColumn;
+    if (!groupColumn) {
+      throw new Error("Generalized means rotation requires a comparison-group column.");
+    }
+    return {
+      method: "generalized" as const,
+      params: {
+        xVar: groupColumn,
+        select2Groups: comparisonGroupNames(dataset, config),
+      },
+    };
   }
   return { method: "svd" as const };
+}
+
+function renameProjectedAxis(row: Row, from: string, to: string): Row {
+  if (!(from in row) || from === to) return row;
+  return Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [key === from ? to : key, value]),
+  ) as Row;
+}
+
+/**
+ * jENA names the first generalized-regression axis RR1. Open ENA historically
+ * serializes a two-group fitted axis as MR1, and its reference-rotation schema
+ * uses that canonical name. Keep the verified generalized geometry while
+ * preserving that stable analytical/export key; the figure layer presents it
+ * as the official webENA label GMR1.
+ */
+export function canonicalizeOfficialMeanRotation(set: ENASet): ENASet {
+  const from = set.rotation.rotationColumns[0];
+  if (from !== "RR1") return set;
+  const to = "MR1";
+  return {
+    ...set,
+    points: set.points.map((row) => renameProjectedAxis(row, from, to)),
+    centroids: set.centroids?.map((row) => renameProjectedAxis(row, from, to)),
+    trajectories: set.trajectories?.map((row) => renameProjectedAxis(row, from, to)),
+    rotation: {
+      ...set.rotation,
+      rotationColumns: set.rotation.rotationColumns.map((column, index) => index === 0 ? to : column),
+      nodes: set.rotation.nodes?.map((row) => renameProjectedAxis(row, from, to)),
+    },
+    variance: Object.fromEntries(
+      Object.entries(set.variance).map(([key, value]) => [key === from ? to : key, value]),
+    ),
+  };
 }
 
 export function buildJenaOptions(
@@ -235,7 +278,11 @@ export function analyzeDataset(
   reference: OpenEnaRotationReference | null = null,
 ): OpenEnaResult {
   const options = buildJenaOptions(dataset, config, reference);
-  const set = attachStableGroupMetadata(ena(options), options.rows, config);
+  const generatedSet = ena(options);
+  const fittedSet = config.rotation === "mean"
+    ? canonicalizeOfficialMeanRotation(generatedSet)
+    : generatedSet;
+  const set = attachStableGroupMetadata(fittedSet, options.rows, config);
   return buildOpenEnaResult(set, config, reference);
 }
 

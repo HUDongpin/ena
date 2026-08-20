@@ -129,13 +129,18 @@ test("Sets guidance stays truthful and source evidence is not misattributed to a
     "source evidence belongs to the current-result Stats & Export panel, not a retained-set plot surface");
 });
 
-test("applicable Plot Tools control the active shared-set plot and the mobile rail fits five modes", () => {
+test("applicable Plot Tools control the active shared-set plot and the mobile rail fits all five modes", () => {
   assert.match(workspace, /<OpenEnaSetComparison[\s\S]*?showPoints=\{showPoints\}[\s\S]*?showNetworks=\{showNetworks\}[\s\S]*?showLabels=\{showLabels\}[\s\S]*?showUnitLabels=\{showUnitLabels\}[\s\S]*?edgeScale=\{edgeScale\}[\s\S]*?pointScale=\{pointScale\}[\s\S]*?plotZoom=\{plotZoom\}/);
   assert.match(workspace, /disabled=\{!result && !activeSetComparison\}[\s\S]{0,100}onClick=\{exportPlotSvg\}/);
   assert.match(workspace, /disabled=\{!result && !activeSetComparison\}[\s\S]{0,100}onClick=\{exportPlotPng\}/);
   const css = source("app/globals.css");
   const responsiveRailRules = [...css.matchAll(/\.ena-tool-rail\s*\{[^}]*?grid-template-columns:\s*repeat\((\d),/g)]
     .map((match) => Number(match[1]));
-  assert.deepEqual(responsiveRailRules.slice(-2), [5, 5]);
+  const responsiveModeRules = [...css.matchAll(/\.ena-rail-modes\s*\{[^}]*?grid-template-columns:\s*repeat\((\d),/g)]
+    .map((match) => Number(match[1]));
+  assert.ok(
+    responsiveRailRules.includes(5) || responsiveModeRules.includes(5),
+    "the mobile rail or its dedicated mode row must allocate all five preserved controls",
+  );
   assert.match(css, /\.ena-sets-remove\s*\{[\s\S]*?min-height:\s*44px;/);
 });

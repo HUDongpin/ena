@@ -102,6 +102,7 @@ export function buildAnalysisBundle(
     showPoints: options.showPoints ?? true,
     showTrajectories: options.showTrajectories ?? true,
     showLabels: options.showLabels ?? true,
+    showGroupLabels: options.showGroupLabels ?? true,
     showUnitLabels: options.showUnitLabels ?? false,
     showVariance: options.showVariance ?? true,
     edgeScale: options.edgeScale ?? 1,

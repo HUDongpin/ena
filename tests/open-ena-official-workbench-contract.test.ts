@@ -24,12 +24,14 @@ function workspaceSegment(startMarker: string, endMarker: string) {
   return workspace.slice(start, end);
 }
 
-test("the workbench brand is visibly ENA Hub of Knowledge, never ENA Hong Kong", () => {
-  const brand = workspace.match(/<div className="ena-workbench-brand"[\s\S]*?<\/div>/)?.[0] ?? "";
+test("the compact workbench rail retains the existing ENA mark and Open ENA identity", () => {
+  const brand = workspace.match(/<div className="ena-rail-brand"[\s\S]*?<\/div>/)?.[0] ?? "";
 
-  assert.ok(brand, "the workbench must retain one visible brand block");
-  assert.match(brand, /<strong>ENA<\/strong>/, "ENA must be the visible workbench brand name");
-  assert.match(brand, /<small>Hub of Knowledge<\/small>/, "Hub of Knowledge is the exact brand subtitle");
+  assert.ok(brand, "the workbench rail must retain one compact brand block");
+  assert.match(brand, /data-ena-rail-brand="true"/, "the rail brand needs one stable semantic owner");
+  assert.match(brand, /src="\/ena-mark\.svg"/, "the existing ENA network mark remains unchanged");
+  assert.match(brand, />OPEN ENA<\//, "Open ENA remains the visible product name");
+  assert.match(brand, /data-ena-rail-version="true"[\s\S]*?JENA_RUNTIME_VERSION/, "the visible version stays bound to the runtime constant");
   assert.doesNotMatch(workspace, /ENA Hong Kong/i);
 });
 
