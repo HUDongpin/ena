@@ -243,8 +243,7 @@ test("dedicated contrast export omits raw source text while preserving declared 
   assert.deepEqual(exported.geometry.dimensions, result.dimensions);
   assert.deepEqual(exported.geometry.rotationColumns, result.set.rotation.rotationColumns);
   assert.deepEqual(exported.geometry.rotationMatrix, result.set.rotation.rotationMatrix);
-  assert.deepEqual(exported.inference.groupOrder, ["Beta", "Gamma"]);
-  assert.equal(exported.inference.multiplicityCorrection, "none");
+  assert.equal(exported.inference, null);
   assert.deepEqual(exported.presentation, {
     selectedAxes: axes,
     flipX: true,

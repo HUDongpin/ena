@@ -5,13 +5,13 @@ import {
   OPEN_ENA_AI_CONSENT_HEADER,
   OPEN_ENA_AI_CONSENT_VALUE,
   parseOpenEnaAiInterpretationResponse,
-  type OpenEnaAiInterpretationRequestV1,
-  type OpenEnaAiInterpretationResponseV1,
+  type OpenEnaAiInterpretationRequest,
+  type OpenEnaAiInterpretationResponse,
 } from "@/lib/open-ena/ai-interpretation";
 import type { OpenEnaAiInterpretationCopy } from "@/lib/open-ena-i18n";
 
 interface OpenEnaAiInterpretationProps {
-  request: OpenEnaAiInterpretationRequestV1 | null;
+  request: OpenEnaAiInterpretationRequest | null;
   copy: OpenEnaAiInterpretationCopy;
   disabled: boolean;
   disabledReason: string;
@@ -27,7 +27,7 @@ export default function OpenEnaAiInterpretation({
 }: OpenEnaAiInterpretationProps) {
   const [consentedRequestIdentity, setConsentedRequestIdentity] = useState<string | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>("idle");
-  const [aiResponse, setAiResponse] = useState<OpenEnaAiInterpretationResponseV1 | null>(null);
+  const [aiResponse, setAiResponse] = useState<OpenEnaAiInterpretationResponse | null>(null);
   const [aiResponseRequestIdentity, setAiResponseRequestIdentity] = useState<string | null>(null);
   const [aiError, setAiError] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -37,6 +37,7 @@ export default function OpenEnaAiInterpretation({
         promptVersion: request.promptVersion,
         locale: request.locale,
         binding: request.binding,
+        evidence: request.evidence,
       })
     : null;
   const currentRequestIdentityRef = useRef(requestIdentity);

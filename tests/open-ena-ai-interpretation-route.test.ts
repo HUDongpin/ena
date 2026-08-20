@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   OPEN_ENA_AI_CONSENT_VALUE,
-  type OpenEnaAiInterpretationRequestV1,
-  type OpenEnaAiInterpretationResponseV1,
+  type OpenEnaAiInterpretationRequest,
+  type OpenEnaAiInterpretationResponse,
 } from "../lib/open-ena/ai-interpretation";
 import {
   createOpenEnaAiInterpretationPostHandler,
@@ -13,8 +13,8 @@ import {
 
 const WORKSPACE_URL = "http://localhost:3000/api/open-ena/ai-interpretation";
 const VALID_SESSION = "test-session-token-not-real";
-const parsedRequest = { marker: "strictly-parsed-request" } as unknown as OpenEnaAiInterpretationRequestV1;
-const generatedResponse = { marker: "generated-interpretation" } as unknown as OpenEnaAiInterpretationResponseV1;
+const parsedRequest = { marker: "strictly-parsed-request" } as unknown as OpenEnaAiInterpretationRequest;
+const generatedResponse = { marker: "generated-interpretation" } as unknown as OpenEnaAiInterpretationResponse;
 
 function request(
   body: BodyInit | null = JSON.stringify({ schemaVersion: "fixture" }),
@@ -41,7 +41,7 @@ function request(
 function dependencies(overrides: Partial<Parameters<typeof createOpenEnaAiInterpretationPostHandler>[0]> = {}) {
   const calls = {
     parsedValues: [] as unknown[],
-    generatedRequests: [] as OpenEnaAiInterpretationRequestV1[],
+    generatedRequests: [] as OpenEnaAiInterpretationRequest[],
     generatedSignals: [] as AbortSignal[],
   };
   const handler = createOpenEnaAiInterpretationPostHandler({

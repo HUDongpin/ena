@@ -177,6 +177,16 @@ test("generation is disabled when there is no current result or the fitted evide
     "the component's Generate button must fail closed when no reviewed request is available",
   );
   assert.match(
+    workspace,
+    /if\s*\([^)]*!currentInference[^)]*\)\s*return null;/,
+    "Stats must not build any AI request before the explicit inference coordinator has produced a current result",
+  );
+  assert.match(
+    workspace,
+    /buildOpenEnaAiInterpretationRequest\(\{[\s\S]*?currentInference,?[\s\S]*?\}\)/,
+    "the AI builder must receive the exact current inference authority rather than a plot contrast statistic",
+  );
+  assert.match(
     aiComponent,
     /(?:disabledReason|copy\.noCurrentResult|copy\.staleResult)/,
     "the disabled state must explain whether evidence is absent or stale",
@@ -206,8 +216,8 @@ test("the UI supports cancellation, a visible error, and an explicit retry", () 
 test("changing the evidence binding aborts work, revokes consent, and makes old output unrenderable", () => {
   assert.match(
     aiComponent,
-    /const\s+requestIdentity\s*=\s*request[\s\S]*?schemaVersion:[\s\S]*?promptVersion:[\s\S]*?locale:[\s\S]*?binding:/,
-    "response validity must be bound to the complete reviewed request identity",
+    /const\s+requestIdentity\s*=\s*request[\s\S]*?schemaVersion:[\s\S]*?promptVersion:[\s\S]*?locale:[\s\S]*?binding:[\s\S]*?evidence:/,
+    "response validity must be bound to the complete reviewed request, including its exact sanitized evidence",
   );
   const invalidationEffect = aiComponent.match(
     /useEffect\(\(\)\s*=>\s*\{([\s\S]*?)\},\s*\[requestIdentity\]\);/,
@@ -238,7 +248,7 @@ test("AI output carries permanent limitations and visible provider, model, and p
   assert.match(
     aiComponent,
     /<aside\b[^>]*data-ena-ai-disclosure=["']permanent["'][^>]*>[\s\S]*?copy\.aiGenerated[\s\S]*?copy\.descriptiveOnly[\s\S]*?copy\.notStatisticalInference[\s\S]*?<\/aside>/,
-    "AI-generated, descriptive-only, and not-statistical-inference disclosures must be permanently rendered",
+    "AI-generated, aggregate-evidence, and no-recomputation disclosures must be permanently rendered",
   );
   assert.match(aiComponent, /<dl\b[^>]*data-ena-ai-provenance=["']true["']/);
   for (const value of [
@@ -315,13 +325,16 @@ test("en, zh-Hant, and zh-Hans provide complete AI UI, disclosure, and truthful 
 
   assert.match(copies.en.aiGenerated, /AI[- ]generated/i);
   assert.match(copies.en.descriptiveOnly, /descriptive/i);
-  assert.match(copies.en.notStatisticalInference, /not (?:a )?statistical (?:test|inference)|does not establish statistical/i);
+  assert.match(copies.en.notStatisticalInference, /does not recompute statistical tests/i);
+  assert.match(copies.en.notStatisticalInference, /does not replace researcher judgment/i);
   assert.match(copies["zh-hant"].aiGenerated, /AI.*生成/u);
   assert.match(copies["zh-hant"].descriptiveOnly, /描述性/u);
-  assert.match(copies["zh-hant"].notStatisticalInference, /不.*統計(?:推論|檢定)|不能取代.*統計/u);
+  assert.match(copies["zh-hant"].notStatisticalInference, /不會重新計算統計檢定/u);
+  assert.match(copies["zh-hant"].notStatisticalInference, /不能取代研究者判斷/u);
   assert.match(copies["zh-hans"].aiGenerated, /AI.*生成/u);
   assert.match(copies["zh-hans"].descriptiveOnly, /描述性/u);
-  assert.match(copies["zh-hans"].notStatisticalInference, /不.*统计(?:推断|推论|检验)|不能取代.*统计/u);
+  assert.match(copies["zh-hans"].notStatisticalInference, /不会重新计算统计检验/u);
+  assert.match(copies["zh-hans"].notStatisticalInference, /不能取代研究者判断/u);
 
   assert.match(copies.en.privacyLocal, /ENA.*(?:locally|in (?:this|your) browser)|(?:locally|in (?:this|your) browser).*ENA/i);
   assert.match(copies.en.privacyLocal, /raw (?:source )?(?:rows|data).*(?:not|never).*(?:sent|uploaded)|(?:not|never).*(?:send|upload).*raw/i);

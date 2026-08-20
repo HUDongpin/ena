@@ -1,11 +1,6 @@
 import type { Row } from "jena-js";
 import { rowsToCsv } from "./export";
 import {
-  mannWhitneyU,
-  MANN_WHITNEY_PROVENANCE,
-  type MannWhitneyDimensionRow,
-} from "./inference";
-import {
   JENA_RUNTIME_VERSION,
   sameOpenEnaConfig,
   type DatasetHashKind,
@@ -29,8 +24,8 @@ export const PAIRWISE_MANN_WHITNEY_EFFECT_DEFINITION = "r_rb(primary vs secondar
 export const WEB_ENA_MAX_POSITION_MODIFIER = 1.2;
 export const PAIRWISE_CONTRAST_BOUNDARIES = [
   "Primary-minus-Secondary network differences and group mean positions are descriptive; they do not establish statistical significance or causality.",
-  "Mann-Whitney inference is ENA.HK post-projection inference on the two selected axes, not a jENA statistic; no multiplicity correction is applied across axes or repeated pair selections.",
-  "Endpoint analytic units are the independent observations assumed by the descriptive means and Mann-Whitney calculations.",
+  "This plot-oriented contrast does not calculate inferential statistics. Researcher-confirmed inference is available only through the explicit Stats workflow.",
+  "Endpoint analytic units are the equal-weight observations used by the descriptive group means.",
   "The plotted uncertainty guides are two separate marginal 95% Student-t confidence intervals for arithmetic mean endpoint-unit coordinates on the displayed axes; they are not a joint two-dimensional confidence region or a significance test.",
   "Raw source rows and row-level co-occurrence records are excluded; preserve the exact source coded-data file, its codebook, and the enclosing ENA manifest with its analyzed-table hash and hashKind for reproducibility.",
   "An absent analyzed-table SHA-256 means the result did not carry an immutable browser provenance binding; it is not evidence that two results came from the same analyzed table.",
@@ -125,15 +120,8 @@ export interface OpenEnaPairwiseContrast {
     differenceDefinition: "maximum absolute Primary-minus-Secondary edge difference";
     sharedMeanDefinition: "shared maximum absolute Primary or Secondary mean edge weight";
   };
-  inference: {
-    status: "available";
-    provenance: typeof MANN_WHITNEY_PROVENANCE;
-    method: PairwiseMannWhitneyMethod;
-    effectDefinition: typeof PAIRWISE_MANN_WHITNEY_EFFECT_DEFINITION;
-    multiplicityCorrection: "none";
-    groupOrder: [string, string];
-    rows: MannWhitneyDimensionRow[];
-  };
+  /** Inferential authority lives only in the explicit frozen v2 coordinator result. */
+  inference: null;
   createdAt: string;
   boundaries: string[];
 }
@@ -551,15 +539,6 @@ export function buildPairwiseGroupContrast(
     differenceDefinition: "maximum absolute Primary-minus-Secondary edge difference" as const,
     sharedMeanDefinition: "shared maximum absolute Primary or Secondary mean edge weight" as const,
   };
-  const inferenceRows = axes.map((dimension): MannWhitneyDimensionRow => ({
-    dimension,
-    ...mannWhitneyU(
-      rowsForGroup(result.set.points, config.groupColumn!, primaryGroup)
-        .map((row) => finite(row[dimension], `${primaryGroup} ${dimension}`)),
-      rowsForGroup(result.set.points, config.groupColumn!, secondaryGroup)
-        .map((row) => finite(row[dimension], `${secondaryGroup} ${dimension}`)),
-    ),
-  }));
   const dimensions = [...result.dimensions];
   const geometry = {
     codes: [...result.set.rotation.codes],
@@ -639,15 +618,7 @@ export function buildPairwiseGroupContrast(
     nodes,
     edges,
     edgeScaleDenominators,
-    inference: {
-      status: "available",
-      provenance: MANN_WHITNEY_PROVENANCE,
-      method: PAIRWISE_MANN_WHITNEY_METHOD,
-      effectDefinition: PAIRWISE_MANN_WHITNEY_EFFECT_DEFINITION,
-      multiplicityCorrection: "none",
-      groupOrder: [primaryGroup, secondaryGroup],
-      rows: inferenceRows,
-    },
+    inference: null,
     createdAt,
     boundaries: [...PAIRWISE_CONTRAST_BOUNDARIES],
   };

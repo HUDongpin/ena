@@ -8,8 +8,8 @@ import {
   OPEN_ENA_AI_CONSENT_HEADER,
   OPEN_ENA_AI_CONSENT_VALUE,
   parseOpenEnaAiInterpretationRequest,
-  type OpenEnaAiInterpretationRequestV1,
-  type OpenEnaAiInterpretationResponseV1,
+  type OpenEnaAiInterpretationRequest,
+  type OpenEnaAiInterpretationResponse,
 } from "@/lib/open-ena/ai-interpretation";
 import { generateLunaInterpretation } from "@/lib/server/luna-client";
 
@@ -21,11 +21,11 @@ interface OpenEnaAiInterpretationRouteDependencies {
   verifySessionToken: (token: string | undefined) => boolean;
   authConfigurationReady: () => boolean;
   consumeQuota: (sessionToken: string) => boolean;
-  parseRequest: (value: unknown) => OpenEnaAiInterpretationRequestV1;
+  parseRequest: (value: unknown) => OpenEnaAiInterpretationRequest;
   generate: (
-    request: OpenEnaAiInterpretationRequestV1,
+    request: OpenEnaAiInterpretationRequest,
     signal: AbortSignal,
-  ) => Promise<OpenEnaAiInterpretationResponseV1>;
+  ) => Promise<OpenEnaAiInterpretationResponse>;
 }
 
 export const OPEN_ENA_AI_RATE_LIMIT_WINDOW_MS = 60_000;
@@ -245,7 +245,7 @@ export function createOpenEnaAiInterpretationPostHandler(
       );
     }
 
-    let parsedRequest: OpenEnaAiInterpretationRequestV1;
+    let parsedRequest: OpenEnaAiInterpretationRequest;
     try {
       parsedRequest = dependencies.parseRequest(value);
     } catch (error) {

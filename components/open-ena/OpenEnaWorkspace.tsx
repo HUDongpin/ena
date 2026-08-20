@@ -982,6 +982,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         datasetHash,
         groupContrast: result.set.modelType === "EndPoint" ? groupContrast : null,
         longitudinalView: result.set.modelType === "EndPoint" ? null : longitudinalView,
+        currentInference,
       });
     } catch {
       return null;
