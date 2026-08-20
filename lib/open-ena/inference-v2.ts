@@ -119,6 +119,37 @@ export interface OpenEnaInferenceCoordinatorInputV2 {
   comparisonFrame?: OpenEnaLongitudinalComparisonFrame;
 }
 
+interface OpenEnaInferenceResultSnapshotV2 {
+  analyzedAt: string;
+  dimensions: string[];
+  groups: Array<{ name: string }>;
+  projectionReferenceFitMethod: "svd" | "mean" | null;
+  provenanceBinding?: {
+    datasetNormalizedUtf8TextSha256: string;
+    datasetHashKind?: DatasetHashKind;
+    configuration: OpenEnaConfig;
+  };
+  set: {
+    modelType: OpenEnaResult["set"]["modelType"];
+    functionParams: Pick<
+      OpenEnaResult["set"]["functionParams"],
+      "model" | "window" | "windowSizeBack" | "windowSizeForward" | "weightBy"
+    >;
+    units: string[];
+    conversation: string[];
+    codes: string[];
+    rotation: { codes: string[] };
+    points: Array<Record<string, unknown>>;
+  };
+}
+
+interface OpenEnaInferenceCoordinatorSnapshotV2 {
+  request: OpenEnaInferenceRequestV2;
+  result: OpenEnaInferenceResultSnapshotV2;
+  currentBinding: OpenEnaInferenceCurrentBindingV2;
+  comparisonFrame?: OpenEnaLongitudinalComparisonFrame;
+}
+
 export interface OpenEnaInferenceBindingV2 {
   analyzedAt: string;
   dataset: {
@@ -420,6 +451,97 @@ function cloneRequest<Request extends OpenEnaInferenceRequestV2>(request: Reques
   }
 }
 
+function cloneComparisonFrame(
+  frame: OpenEnaLongitudinalComparisonFrame,
+): OpenEnaLongitudinalComparisonFrame {
+  return {
+    kind: frame.kind,
+    coordinateSystem: frame.coordinateSystem,
+    binding: {
+      analyzedAt: frame.binding.analyzedAt,
+      datasetNormalizedUtf8TextSha256: frame.binding.datasetNormalizedUtf8TextSha256,
+      datasetHashKind: frame.binding.datasetHashKind,
+      modelType: frame.binding.modelType,
+      configuration: cloneConfig(frame.binding.configuration),
+      axes: [...frame.binding.axes],
+    },
+    repeatedEntityColumns: [...frame.repeatedEntityColumns],
+    identityConfirmed: frame.identityConfirmed,
+    eligibility: { ...frame.eligibility },
+    timeColumn: frame.timeColumn,
+    timeOrder: [...frame.timeOrder],
+    axes: [...frame.axes],
+    groups: frame.groups.map((group) => ({ ...group })),
+    points: frame.points.map((point) => ({
+      entityToken: point.entityToken,
+      group: { ...point.group },
+      time: point.time,
+      timeIndex: point.timeIndex,
+      x: point.x,
+      y: point.y,
+      sourcePointCount: point.sourcePointCount,
+    })),
+  };
+}
+
+function snapshotCoordinatorInput(
+  input: OpenEnaInferenceCoordinatorInputV2,
+): OpenEnaInferenceCoordinatorSnapshotV2 {
+  const request = cloneRequest(input.request);
+  const currentConfiguration = cloneConfig(input.currentBinding.configuration);
+  const pointColumns = new Set<string>(["ENA_UNIT", ...request.axes]);
+  if (currentConfiguration.groupColumn) pointColumns.add(currentConfiguration.groupColumn);
+  const snapshot: OpenEnaInferenceCoordinatorSnapshotV2 = {
+    request,
+    result: {
+      analyzedAt: input.result.analyzedAt,
+      dimensions: [...input.result.dimensions],
+      groups: input.result.groups.map((group) => ({ name: group.name })),
+      projectionReferenceFitMethod: input.result.projectionReference?.fit.method ?? null,
+      ...(input.result.provenanceBinding
+        ? {
+            provenanceBinding: {
+              datasetNormalizedUtf8TextSha256:
+                input.result.provenanceBinding.datasetNormalizedUtf8TextSha256,
+              datasetHashKind: input.result.provenanceBinding.datasetHashKind,
+              configuration: cloneConfig(input.result.provenanceBinding.configuration),
+            },
+          }
+        : {}),
+      set: {
+        modelType: input.result.set.modelType,
+        functionParams: {
+          model: input.result.set.functionParams.model,
+          window: input.result.set.functionParams.window,
+          windowSizeBack: input.result.set.functionParams.windowSizeBack,
+          windowSizeForward: input.result.set.functionParams.windowSizeForward,
+          weightBy: input.result.set.functionParams.weightBy,
+        },
+        units: [...input.result.set.units],
+        conversation: [...input.result.set.conversation],
+        codes: [...input.result.set.codes],
+        rotation: { codes: [...input.result.set.rotation.codes] },
+        points: input.result.set.points.map((point) => Object.fromEntries(
+          [...pointColumns].map((column) => {
+            const value = point[column];
+            return [column, value !== null && typeof value === "object" ? null : value];
+          }),
+        )),
+      },
+    },
+    currentBinding: {
+      datasetNormalizedUtf8TextSha256:
+        input.currentBinding.datasetNormalizedUtf8TextSha256,
+      datasetHashKind: input.currentBinding.datasetHashKind,
+      configuration: currentConfiguration,
+    },
+    ...(input.comparisonFrame
+      ? { comparisonFrame: cloneComparisonFrame(input.comparisonFrame) }
+      : {}),
+  };
+  return deepFreeze(snapshot);
+}
+
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     for (const nested of Object.values(value as Record<string, unknown>)) deepFreeze(nested);
@@ -470,14 +592,15 @@ function sumSourcePointCounts(points: readonly { sourcePointCount: number }[]) {
   return total;
 }
 
-function validateAxes(result: OpenEnaResult, axes: readonly string[]): asserts axes is [string, string] {
-  if (!Array.isArray(axes) || axes.length !== 2 || axes[0] === axes[1]
-    || axes.some((axis) => typeof axis !== "string" || !result.dimensions.includes(axis))) {
-    throw new OpenEnaInferenceIntegrityError("binding-mismatch");
-  }
+function requestAxesAreValid(
+  result: OpenEnaInferenceResultSnapshotV2,
+  axes: readonly string[],
+) {
+  return Array.isArray(axes) && axes.length === 2 && axes[0] !== axes[1]
+    && axes.every((axis) => typeof axis === "string" && result.dimensions.includes(axis));
 }
 
-function validateBinding(input: OpenEnaInferenceCoordinatorInputV2): OpenEnaInferenceBindingV2 {
+function validateBinding(input: OpenEnaInferenceCoordinatorSnapshotV2): OpenEnaInferenceBindingV2 {
   const { result, currentBinding, request } = input;
   const currentHash = normalizedHash(currentBinding.datasetNormalizedUtf8TextSha256);
   const provenance = result.provenanceBinding;
@@ -514,7 +637,6 @@ function validateBinding(input: OpenEnaInferenceCoordinatorInputV2): OpenEnaInfe
     || new Set(resultGroupNames).size !== resultGroupNames.length) {
     throw new OpenEnaInferenceIntegrityError("group-instability");
   }
-  validateAxes(result, request.axes);
   return {
     analyzedAt: result.analyzedAt,
     dataset: {
@@ -530,7 +652,7 @@ function validateBinding(input: OpenEnaInferenceCoordinatorInputV2): OpenEnaInfe
 function designWarnings(
   binding: OpenEnaInferenceBindingV2,
   axis: string,
-  result: OpenEnaResult,
+  result: OpenEnaInferenceResultSnapshotV2,
 ): OpenEnaRankWarningCode[] {
   const warnings: OpenEnaRankWarningCode[] = [
     "independent-entity-assumption",
@@ -541,7 +663,8 @@ function designWarnings(
     warnings.push("accumulated-trajectory-path-dependence");
   }
   const meanDerived = binding.configuration.rotation === "mean"
-    || (binding.configuration.rotation === "reference" && result.projectionReference?.fit.method === "mean");
+    || (binding.configuration.rotation === "reference"
+      && result.projectionReferenceFitMethod === "mean");
   if (meanDerived && /^(?:G?MR1)$/iu.test(axis)) {
     warnings.push("mr1-circularity");
   }
@@ -657,7 +780,7 @@ function validateFrameBinding(
   frame: OpenEnaLongitudinalComparisonFrame | undefined,
   request: Exclude<OpenEnaInferenceRequestV2, { kind: "endpoint-independent" }>,
   binding: OpenEnaInferenceBindingV2,
-  result: OpenEnaResult,
+  result: OpenEnaInferenceResultSnapshotV2,
 ) {
   if (!frame || frame.kind !== "open-ena-longitudinal-comparison-frame"
     || frame.coordinateSystem !== "unflipped-model-coordinates"
@@ -691,14 +814,40 @@ function validateFrameBinding(
     ))) {
     throw new OpenEnaInferenceIntegrityError("group-instability");
   }
-  if (new Set(frame.timeOrder).size !== frame.timeOrder.length
-    || frame.points.some((point) => (
-      typeof point.entityToken !== "string"
+  if (new Set(frame.timeOrder).size !== frame.timeOrder.length) {
+    throw new OpenEnaInferenceIntegrityError("entity-period-instability");
+  }
+  const frameGroupByName = new Map(frame.groups.map((group) => [group.name, group]));
+  const timeIndexByName = new Map(frame.timeOrder.map((time, index) => [time, index]));
+  const groupNameByToken = new Map<string, string>();
+  const timeIndexesByToken = new Map<string, Set<number>>();
+  for (const point of frame.points) {
+    if (typeof point.entityToken !== "string"
       || point.entityToken.length === 0
       || !Number.isSafeInteger(point.sourcePointCount)
       || point.sourcePointCount < 1
-    ))) {
-    throw new OpenEnaInferenceIntegrityError("entity-period-instability");
+      || timeIndexByName.get(point.time) !== point.timeIndex) {
+      throw new OpenEnaInferenceIntegrityError("entity-period-instability");
+    }
+    finiteCoordinate(point.x);
+    finiteCoordinate(point.y);
+    const stableGroup = frameGroupByName.get(point.group.name);
+    if (!stableGroup
+      || stableGroup.index !== point.group.index
+      || stableGroup.role !== point.group.role) {
+      throw new OpenEnaInferenceIntegrityError("group-instability");
+    }
+    const priorGroupName = groupNameByToken.get(point.entityToken);
+    if (priorGroupName !== undefined && priorGroupName !== point.group.name) {
+      throw new OpenEnaInferenceIntegrityError("identity-collision");
+    }
+    groupNameByToken.set(point.entityToken, point.group.name);
+    const observedTimeIndexes = timeIndexesByToken.get(point.entityToken) ?? new Set<number>();
+    if (observedTimeIndexes.has(point.timeIndex)) {
+      throw new OpenEnaInferenceIntegrityError("entity-period-instability");
+    }
+    observedTimeIndexes.add(point.timeIndex);
+    timeIndexesByToken.set(point.entityToken, observedTimeIndexes);
   }
   return frame;
 }
@@ -793,7 +942,7 @@ function disabledEndpoint(
 }
 
 function endpointSamples(
-  result: OpenEnaResult,
+  result: OpenEnaInferenceResultSnapshotV2,
   groupColumn: string,
   primaryGroup: string,
   secondaryGroup: string,
@@ -801,34 +950,37 @@ function endpointSamples(
 ) {
   const primary: Array<[number, number]> = [];
   const secondary: Array<[number, number]> = [];
-  const groupByUnit = new Map<string, "primary" | "secondary">();
+  const configuredGroups = new Set(result.groups.map((group) => group.name));
+  const groupByUnit = new Map<string, string>();
   for (const point of result.set.points) {
     const groupValue = point[groupColumn] === null || point[groupColumn] === undefined
       ? ""
       : String(point[groupColumn]);
+    if (!configuredGroups.has(groupValue)) {
+      throw new OpenEnaInferenceIntegrityError("group-instability");
+    }
+    const unit = point.ENA_UNIT === null || point.ENA_UNIT === undefined
+      ? ""
+      : String(point.ENA_UNIT);
+    if (!unit) throw new OpenEnaInferenceIntegrityError("entity-period-instability");
+    const priorGroup = groupByUnit.get(unit);
+    if (priorGroup !== undefined) {
+      throw new OpenEnaInferenceIntegrityError(
+        priorGroup === groupValue ? "entity-period-instability" : "identity-collision",
+      );
+    }
+    groupByUnit.set(unit, groupValue);
+    const coordinates: [number, number] = [
+      finiteCoordinate(point[axes[0]]),
+      finiteCoordinate(point[axes[1]]),
+    ];
     const role = groupValue === primaryGroup
       ? "primary" as const
       : groupValue === secondaryGroup
         ? "secondary" as const
         : null;
-    if (!role) continue;
-    const unit = point.ENA_UNIT === null || point.ENA_UNIT === undefined
-      ? ""
-      : String(point.ENA_UNIT);
-    if (!unit) throw new OpenEnaInferenceIntegrityError("entity-period-instability");
-    const priorRole = groupByUnit.get(unit);
-    if (priorRole) {
-      throw new OpenEnaInferenceIntegrityError(
-        priorRole === role ? "entity-period-instability" : "identity-collision",
-      );
-    }
-    groupByUnit.set(unit, role);
-    const coordinates: [number, number] = [
-      finiteCoordinate(point[axes[0]]),
-      finiteCoordinate(point[axes[1]]),
-    ];
     if (role === "primary") primary.push(coordinates);
-    else secondary.push(coordinates);
+    else if (role === "secondary") secondary.push(coordinates);
   }
   return { primary, secondary };
 }
@@ -884,7 +1036,7 @@ function mannWhitneyRow(
 }
 
 async function coordinateEndpoint(
-  input: OpenEnaInferenceCoordinatorInputV2,
+  input: OpenEnaInferenceCoordinatorSnapshotV2,
   request: Extract<OpenEnaInferenceRequestV2, { kind: "endpoint-independent" }>,
   binding: OpenEnaInferenceBindingV2,
 ): Promise<OpenEnaEndpointInferenceResultV2> {
@@ -896,8 +1048,11 @@ async function coordinateEndpoint(
   if (request.primaryGroup === request.secondaryGroup) {
     return disabledEndpoint(request, binding, "groups-must-differ");
   }
-  const primaryGroupIndex = input.result.groups.findIndex((group) => group.name === request.primaryGroup);
-  const secondaryGroupIndex = input.result.groups.findIndex((group) => group.name === request.secondaryGroup);
+  const canonicalGroupNames = input.result.groups.map((group) => group.name).sort((left, right) => (
+    left < right ? -1 : left > right ? 1 : 0
+  ));
+  const primaryGroupIndex = canonicalGroupNames.indexOf(request.primaryGroup);
+  const secondaryGroupIndex = canonicalGroupNames.indexOf(request.secondaryGroup);
   if (primaryGroupIndex < 0 || secondaryGroupIndex < 0) {
     return disabledEndpoint(request, binding, "group-invalid");
   }
@@ -978,7 +1133,7 @@ function disabledTrajectoryIndependent(
 }
 
 async function coordinateTrajectoryIndependent(
-  input: OpenEnaInferenceCoordinatorInputV2,
+  input: OpenEnaInferenceCoordinatorSnapshotV2,
   request: Extract<OpenEnaInferenceRequestV2, { kind: "trajectory-independent-period" }>,
   binding: OpenEnaInferenceBindingV2,
 ): Promise<OpenEnaTrajectoryIndependentInferenceResultV2> {
@@ -1145,7 +1300,7 @@ function wilcoxonRow(
 }
 
 async function coordinateTrajectoryPaired(
-  input: OpenEnaInferenceCoordinatorInputV2,
+  input: OpenEnaInferenceCoordinatorSnapshotV2,
   request: Extract<OpenEnaInferenceRequestV2, { kind: "trajectory-paired-periods" }>,
   binding: OpenEnaInferenceBindingV2,
 ): Promise<OpenEnaTrajectoryPairedInferenceResultV2> {
@@ -1342,7 +1497,7 @@ function friedmanRow(
 }
 
 async function coordinateTrajectoryRepeated(
-  input: OpenEnaInferenceCoordinatorInputV2,
+  input: OpenEnaInferenceCoordinatorSnapshotV2,
   request: Extract<OpenEnaInferenceRequestV2, { kind: "trajectory-repeated-periods" }>,
   binding: OpenEnaInferenceBindingV2,
 ): Promise<OpenEnaTrajectoryRepeatedInferenceResultV2> {
@@ -1501,18 +1656,32 @@ async function coordinateTrajectoryRepeated(
 export async function runOpenEnaInferenceV2(
   input: OpenEnaInferenceCoordinatorInputV2,
 ): Promise<OpenEnaInferenceResultV2> {
-  const binding = validateBinding(input);
-  if (input.request.kind === "endpoint-independent" && input.comparisonFrame !== undefined) {
+  const snapshot = snapshotCoordinatorInput(input);
+  const binding = validateBinding(snapshot);
+  if (snapshot.request.kind === "endpoint-independent"
+    && snapshot.comparisonFrame !== undefined) {
     throw new OpenEnaInferenceIntegrityError("binding-mismatch");
   }
-  switch (input.request.kind) {
+  if (!requestAxesAreValid(snapshot.result, snapshot.request.axes)) {
+    switch (snapshot.request.kind) {
+      case "endpoint-independent":
+        return disabledEndpoint(snapshot.request, binding, "axes-invalid");
+      case "trajectory-independent-period":
+        return disabledTrajectoryIndependent(snapshot.request, binding, "axes-invalid");
+      case "trajectory-paired-periods":
+        return disabledTrajectoryPaired(snapshot.request, binding, "axes-invalid");
+      case "trajectory-repeated-periods":
+        return disabledTrajectoryRepeated(snapshot.request, binding, "axes-invalid");
+    }
+  }
+  switch (snapshot.request.kind) {
     case "endpoint-independent":
-      return coordinateEndpoint(input, input.request, binding);
+      return coordinateEndpoint(snapshot, snapshot.request, binding);
     case "trajectory-independent-period":
-      return coordinateTrajectoryIndependent(input, input.request, binding);
+      return coordinateTrajectoryIndependent(snapshot, snapshot.request, binding);
     case "trajectory-paired-periods":
-      return coordinateTrajectoryPaired(input, input.request, binding);
+      return coordinateTrajectoryPaired(snapshot, snapshot.request, binding);
     case "trajectory-repeated-periods":
-      return coordinateTrajectoryRepeated(input, input.request, binding);
+      return coordinateTrajectoryRepeated(snapshot, snapshot.request, binding);
   }
 }

@@ -236,6 +236,93 @@ test("coordinates endpoint Mann-Whitney axes into one frozen Holm family", async
   assertDeeplyFrozen(output);
 });
 
+test("reversing coordinator Mann-Whitney groups swaps direction but preserves two-sided raw and Holm p", async () => {
+  const forwardInput = endpointFixture();
+  const forward = await runOpenEnaInferenceV2(forwardInput);
+  assert.equal(forward.kind, "endpoint-independent");
+
+  const reversedInput = endpointFixture();
+  assert.equal(reversedInput.request.kind, "endpoint-independent");
+  [reversedInput.request.primaryGroup, reversedInput.request.secondaryGroup] = [
+    reversedInput.request.secondaryGroup,
+    reversedInput.request.primaryGroup,
+  ];
+  const reversed = await runOpenEnaInferenceV2(reversedInput);
+  assert.equal(reversed.kind, "endpoint-independent");
+  for (let index = 0; index < forward.rows.length; index += 1) {
+    assert.equal(reversed.rows[index].nPrimary, forward.rows[index].nSecondary);
+    assert.equal(reversed.rows[index].nSecondary, forward.rows[index].nPrimary);
+    assert.equal(reversed.rows[index].medianPrimary, forward.rows[index].medianSecondary);
+    assert.equal(reversed.rows[index].medianSecondary, forward.rows[index].medianPrimary);
+    assert.equal(reversed.rows[index].uPrimary, forward.rows[index].uSecondary);
+    assert.equal(reversed.rows[index].uSecondary, forward.rows[index].uPrimary);
+    const forwardEffect: number | null = forward.rows[index].rankBiserialPrimaryVsSecondary;
+    assert.ok(forwardEffect !== null);
+    assert.equal(
+      reversed.rows[index].rankBiserialPrimaryVsSecondary,
+      forwardEffect === 0 ? 0 : -forwardEffect,
+    );
+    assert.equal(reversed.rows[index].pRaw, forward.rows[index].pRaw);
+    assert.equal(reversed.rows[index].pHolm, forward.rows[index].pHolm);
+  }
+});
+
+test("endpoint family IDs are invariant to successful-result group presentation order", async () => {
+  const baselineInput = endpointFixture();
+  const baseline = await runOpenEnaInferenceV2(baselineInput);
+  assert.equal(baseline.kind, "endpoint-independent");
+
+  const reorderedInput = endpointFixture();
+  reorderedInput.result.groups.reverse();
+  const reordered = await runOpenEnaInferenceV2(reorderedInput);
+  assert.equal(reordered.kind, "endpoint-independent");
+  assert.deepEqual(reordered.families, baseline.families);
+  assert.deepEqual(
+    reordered.rows.map((row) => ({ familyId: row.familyId, memberId: row.memberId })),
+    baseline.rows.map((row) => ({ familyId: row.familyId, memberId: row.memberId })),
+  );
+  assert.deepEqual(reordered.rows, baseline.rows);
+});
+
+test("coordinator snapshots request, frame, result provenance, and current binding before its first await", async () => {
+  const endpoint = endpointFixture();
+  const endpointBaseline = await runOpenEnaInferenceV2(structuredClone(endpoint));
+  const endpointPending = runOpenEnaInferenceV2(endpoint);
+  assert.equal(endpoint.request.kind, "endpoint-independent");
+  endpoint.request.primaryGroup = "changed-after-start";
+  endpoint.result.groups.reverse();
+  endpoint.result.set.points[0][endpoint.request.axes[0]] = 1e200;
+  assert.ok(endpoint.result.provenanceBinding);
+  endpoint.result.provenanceBinding.datasetNormalizedUtf8TextSha256 = OTHER_HASH;
+  endpoint.currentBinding.configuration.codes = ["changed-after-start"];
+  const endpointOutput = await endpointPending;
+  assert.deepEqual(endpointOutput, endpointBaseline);
+
+  const trajectory = trajectoryFixture();
+  trajectory.request = {
+    kind: "trajectory-paired-periods",
+    repeatedEntityColumns: ["Group", "Name"],
+    timeColumn: "Period",
+    group: "Control",
+    earlierPeriod: "T1",
+    laterPeriod: "T2",
+    axes: trajectory.request.axes,
+    cohortPolicy: "pairwise-complete",
+  };
+  const trajectoryBaseline = await runOpenEnaInferenceV2(structuredClone(trajectory));
+  const trajectoryPending = runOpenEnaInferenceV2(trajectory);
+  assert.equal(trajectory.request.kind, "trajectory-paired-periods");
+  trajectory.request.earlierPeriod = "T3";
+  assert.ok(trajectory.comparisonFrame);
+  trajectory.comparisonFrame.points[0].x = 1e200;
+  trajectory.comparisonFrame.points[0].sourcePointCount = 99;
+  assert.ok(trajectory.result.provenanceBinding);
+  trajectory.result.provenanceBinding.configuration.codes = ["changed-after-start"];
+  trajectory.currentBinding.datasetNormalizedUtf8TextSha256 = OTHER_HASH;
+  const trajectoryOutput = await trajectoryPending;
+  assert.deepEqual(trajectoryOutput, trajectoryBaseline);
+});
+
 test("trajectory independent inference uses only the explicitly selected period", async () => {
   const input = trajectoryFixture();
   const first = await runOpenEnaInferenceV2(input);
@@ -460,6 +547,30 @@ test("identity and ordinary design errors return typed disabled results", async 
   assert.equal(wrongModelOutput.reason, "design-not-confirmed");
 });
 
+test("unknown or duplicate request axes return typed disabled results after source binding verification", async () => {
+  const endpoint = endpointFixture();
+  endpoint.request.axes = [endpoint.request.axes[0], endpoint.request.axes[0]];
+  const endpointOutput = await runOpenEnaInferenceV2(endpoint);
+  assert.equal(endpointOutput.kind, "endpoint-independent");
+  assert.equal(endpointOutput.status, "disabled");
+  assert.equal(endpointOutput.reason, "axes-invalid");
+  assert.equal(endpointOutput.ledger, null);
+  assert.deepEqual(endpointOutput.families, []);
+  assert.deepEqual(endpointOutput.rows, []);
+  assert.equal(endpointOutput.binding.dataset.normalizedUtf8TextSha256, HASH);
+
+  const trajectory = trajectoryFixture();
+  trajectory.request.axes = [trajectory.request.axes[0], "unknown-axis"];
+  const trajectoryOutput = await runOpenEnaInferenceV2(trajectory);
+  assert.equal(trajectoryOutput.kind, "trajectory-independent-period");
+  assert.equal(trajectoryOutput.status, "disabled");
+  assert.equal(trajectoryOutput.reason, "axes-invalid");
+  assert.equal(trajectoryOutput.ledger, null);
+  assert.deepEqual(trajectoryOutput.families, []);
+  assert.deepEqual(trajectoryOutput.rows, []);
+  assert.equal(trajectoryOutput.binding.dataset.normalizedUtf8TextSha256, HASH);
+});
+
 test("result/current binding drift and malformed axes fail closed with static integrity errors", async () => {
   const mutations: Array<(input: OpenEnaInferenceCoordinatorInputV2) => void> = [
     (input) => { input.currentBinding.datasetNormalizedUtf8TextSha256 = "bad"; },
@@ -468,7 +579,6 @@ test("result/current binding drift and malformed axes fail closed with static in
     (input) => { input.currentBinding.configuration.codes = ["A", "B"]; },
     (input) => { delete input.result.provenanceBinding; },
     (input) => { input.result.analyzedAt = "not-a-time"; },
-    (input) => { input.request.axes = [input.request.axes[0], input.request.axes[0]]; },
     (input) => { input.result.set.functionParams.windowSizeForward = 99; },
   ];
   for (const mutate of mutations) {
@@ -551,6 +661,54 @@ test("trajectory private-frame collision codes remain typed and value-free", asy
   );
 });
 
+test("paired slicing fails closed on identity collisions and duplicate compact points outside selected periods", async () => {
+  const pairedRequest = (input: OpenEnaInferenceCoordinatorInputV2) => {
+    input.request = {
+      kind: "trajectory-paired-periods",
+      repeatedEntityColumns: ["Group", "Name"],
+      timeColumn: "Period",
+      group: "Control",
+      earlierPeriod: "T1",
+      laterPeriod: "T2",
+      axes: input.request.axes,
+      cohortPolicy: "pairwise-complete",
+    };
+  };
+
+  const unselectedGroupCollision = trajectoryFixture();
+  pairedRequest(unselectedGroupCollision);
+  assert.ok(unselectedGroupCollision.comparisonFrame);
+  const controlPoint = unselectedGroupCollision.comparisonFrame.points.find((point) => (
+    point.group.name === "Control" && point.time === "T1"
+  ));
+  const experimentalUnselectedPeriod = unselectedGroupCollision.comparisonFrame.points.find((point) => (
+    point.group.name === "Experimental" && point.time === "T3"
+  ));
+  assert.ok(controlPoint);
+  assert.ok(experimentalUnselectedPeriod);
+  experimentalUnselectedPeriod.entityToken = controlPoint.entityToken;
+  await caughtIntegrity(
+    () => runOpenEnaInferenceV2(unselectedGroupCollision),
+    "identity-collision",
+  );
+
+  const duplicateUnselectedPeriod = trajectoryFixture();
+  pairedRequest(duplicateUnselectedPeriod);
+  assert.ok(duplicateUnselectedPeriod.comparisonFrame);
+  const existingT3 = duplicateUnselectedPeriod.comparisonFrame.points.find((point) => (
+    point.group.name === "Control" && point.time === "T3"
+  ));
+  assert.ok(existingT3);
+  duplicateUnselectedPeriod.comparisonFrame.points.push({
+    ...structuredClone(existingT3),
+    x: existingT3.x + 100,
+  });
+  await caughtIntegrity(
+    () => runOpenEnaInferenceV2(duplicateUnselectedPeriod),
+    "entity-period-instability",
+  );
+});
+
 test("endpoint and trajectory aggregate inference is invariant to private row order", async () => {
   const endpoint = endpointFixture();
   const endpointBaseline = await runOpenEnaInferenceV2(endpoint);
@@ -600,6 +758,27 @@ test("endpoint duplicate, overlapping, and non-finite analytic units fail closed
   const unexpectedFrame = endpointFixture();
   unexpectedFrame.comparisonFrame = trajectoryFixture().comparisonFrame;
   await caughtIntegrity(() => runOpenEnaInferenceV2(unexpectedFrame), "binding-mismatch");
+});
+
+test("endpoint validates unselected and unknown-group analytic units before group slicing", async () => {
+  const crossGroup = endpointFixture();
+  const crossGroupPoint = structuredClone(crossGroup.result.set.points[0]);
+  crossGroupPoint.group = "Third";
+  crossGroup.result.set.points.push(crossGroupPoint);
+  crossGroup.result.groups.push({
+    ...structuredClone(crossGroup.result.groups[0]),
+    name: "Third",
+    count: 1,
+    pointCount: 1,
+  });
+  await caughtIntegrity(() => runOpenEnaInferenceV2(crossGroup), "identity-collision");
+
+  const unknownGroup = endpointFixture();
+  const unknownGroupPoint = structuredClone(unknownGroup.result.set.points[0]);
+  unknownGroupPoint.ENA_UNIT = "opaque-unknown-unit";
+  unknownGroupPoint.group = "unknown-group-value";
+  unknownGroup.result.set.points.push(unknownGroupPoint);
+  await caughtIntegrity(() => runOpenEnaInferenceV2(unknownGroup), "group-instability");
 });
 
 test("warning aggregation covers accumulated paths, MR1 circularity, ties, zeros, and exact discreteness", async () => {
