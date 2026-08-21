@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   OPEN_ENA_AI_CONSENT_VALUE,
-  type OpenEnaAiInterpretationRequestV1,
-  type OpenEnaAiInterpretationResponseV1,
+  type OpenEnaAiInterpretationRequest,
+  type OpenEnaAiInterpretationResponse,
 } from "../lib/open-ena/ai-interpretation";
 import {
   createOpenEnaAiInterpretationPostHandler,
@@ -13,8 +13,8 @@ import {
 
 const WORKSPACE_URL = "http://localhost:3000/api/open-ena/ai-interpretation";
 const VALID_SESSION = "test-session-token-not-real";
-const parsedRequest = { marker: "strictly-parsed-request" } as unknown as OpenEnaAiInterpretationRequestV1;
-const generatedResponse = { marker: "generated-interpretation" } as unknown as OpenEnaAiInterpretationResponseV1;
+const parsedRequest = { marker: "strictly-parsed-request" } as unknown as OpenEnaAiInterpretationRequest;
+const generatedResponse = { marker: "generated-interpretation" } as unknown as OpenEnaAiInterpretationResponse;
 
 function request(
   body: BodyInit | null = JSON.stringify({ schemaVersion: "fixture" }),
@@ -41,7 +41,7 @@ function request(
 function dependencies(overrides: Partial<Parameters<typeof createOpenEnaAiInterpretationPostHandler>[0]> = {}) {
   const calls = {
     parsedValues: [] as unknown[],
-    generatedRequests: [] as OpenEnaAiInterpretationRequestV1[],
+    generatedRequests: [] as OpenEnaAiInterpretationRequest[],
     generatedSignals: [] as AbortSignal[],
   };
   const handler = createOpenEnaAiInterpretationPostHandler({
@@ -274,6 +274,7 @@ for (const [providerCode, expectedStatus] of [
   ["upstream-unauthorized", 502],
   ["upstream-network", 502],
   ["upstream-malformed", 502],
+  ["upgrade-required", 400],
 ] as const) {
   test(`AI interpretation maps provider code ${providerCode} to safe HTTP ${expectedStatus}`, async () => {
     const { handler } = dependencies({
@@ -293,6 +294,27 @@ for (const [providerCode, expectedStatus] of [
     assert.doesNotMatch(responseText, /provider detail must stay private/);
   });
 }
+
+test("AI interpretation returns a fixed safe upgrade response for historical provider dispatch", async () => {
+  const sentinel = "V1_PRIVATE_EVIDENCE_MUST_NOT_LEAK";
+  const { handler } = dependencies({
+    generate: async () => {
+      throw Object.assign(new Error(sentinel), {
+        name: "LunaClientError",
+        code: "upgrade-required",
+      });
+    },
+  });
+
+  const response = await handler(request());
+  const body = await json(response);
+  assert.equal(response.status, 400);
+  assert.equal(
+    body.error,
+    "Historical AI requests cannot be sent. Build and review a current v2 inference request.",
+  );
+  assert.doesNotMatch(JSON.stringify(body), /V1_PRIVATE_EVIDENCE_MUST_NOT_LEAK/);
+});
 
 test("AI interpretation reports the OpenRouter credit gate without exposing account details", async () => {
   const { handler } = dependencies({

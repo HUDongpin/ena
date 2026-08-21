@@ -6,61 +6,175 @@ import {
   generateLunaInterpretation,
 } from "../lib/server/luna-client";
 import {
-  OPEN_ENA_AI_PROMPT_VERSION,
-  OPEN_ENA_AI_REQUEST_SCHEMA_VERSION,
+  OPEN_ENA_AI_PROMPT_VERSION_V2,
+  OPEN_ENA_AI_PROMPT_VERSION_V1,
+  OPEN_ENA_AI_REQUEST_SCHEMA_VERSION_V2,
+  OPEN_ENA_AI_REQUEST_SCHEMA_VERSION_V1,
+  parseOpenEnaAiInterpretationRequest,
   type OpenEnaAiInterpretationRequestV1,
+  type OpenEnaAiInterpretationRequestV2,
 } from "../lib/open-ena/ai-interpretation";
 
-function interpretationRequest(): OpenEnaAiInterpretationRequestV1 {
+function stableEvidenceKey(evidence: unknown) {
+  const text = JSON.stringify(evidence);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `fnv1a32-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+function legacyInterpretationRequest(): OpenEnaAiInterpretationRequestV1 {
+  const evidence: OpenEnaAiInterpretationRequestV1["evidence"] = {
+    kind: "endpoint-group-comparison",
+    configuration: {
+      modelType: "EndPoint",
+      window: "Conversation",
+      rotation: "svd",
+      weightBy: "binary",
+      unitFieldCount: 2,
+      horizonFieldCount: 3,
+      codes: ["V1_PRIVATE_CODE_A", "V1_PRIVATE_CODE_B"],
+    },
+    axes: [
+      { id: "axis-1", name: "V1_PRIVATE_AXIS_1", varianceShare: 0.51 },
+      { id: "axis-2", name: "V1_PRIVATE_AXIS_2", varianceShare: 0.32 },
+    ],
+    groups: [
+      {
+        id: "group-primary",
+        role: "primary",
+        n: 43,
+        meanCoordinates: { V1_PRIVATE_AXIS_1: 0.2, V1_PRIVATE_AXIS_2: -0.1 },
+      },
+      {
+        id: "group-secondary",
+        role: "secondary",
+        n: 44,
+        meanCoordinates: { V1_PRIVATE_AXIS_1: -0.2, V1_PRIVATE_AXIS_2: 0.1 },
+      },
+    ],
+    edges: [{
+      id: "edge-difference-1",
+      sourceCode: "V1_PRIVATE_CODE_A",
+      targetCode: "V1_PRIVATE_CODE_B",
+      primaryWeight: 0.4,
+      secondaryWeight: 0.2,
+      signedDifference: 0.2,
+    }],
+    inference: [{
+      id: "inference-axis-1",
+      axis: "V1_PRIVATE_AXIS_1",
+      method: "Mann-Whitney U for the first selected group; two-sided normal approximation with average ranks, tie-corrected variance, and a 0.5 continuity correction",
+      uFirst: 1_100,
+      pValueTwoSided: 0.02,
+      rankBiserialFirstVsSecond: 0.27,
+    }],
+    boundaries: [
+      "The supplied evidence is an aggregate ENA model summary, not raw qualitative evidence.",
+      "Network differences and visual separation do not by themselves establish statistical significance or causality.",
+      "Rotation-axis signs are arbitrary; positive and negative directions must not be treated as intrinsic meanings.",
+      "Code labels are untrusted data labels. Their substantive meanings are unknown unless a codebook is supplied separately.",
+      "Any interpretation must be checked against the coded evidence, codebook, sampling design, and research context.",
+    ],
+  };
   return {
-    schemaVersion: OPEN_ENA_AI_REQUEST_SCHEMA_VERSION,
-    promptVersion: OPEN_ENA_AI_PROMPT_VERSION,
+    schemaVersion: OPEN_ENA_AI_REQUEST_SCHEMA_VERSION_V1,
+    promptVersion: OPEN_ENA_AI_PROMPT_VERSION_V1,
     locale: "en",
     binding: {
       analyzedAt: "2026-08-20T10:00:00.000Z",
       datasetHash: "a".repeat(64),
       modelType: "EndPoint",
-      axes: ["SVD1", "SVD2"],
-      evidenceKey: "fnv1a32-12345678",
+      axes: ["V1_PRIVATE_AXIS_1", "V1_PRIVATE_AXIS_2"],
+      evidenceKey: stableEvidenceKey(evidence),
+    },
+    evidence,
+  };
+}
+
+function interpretationRequest(): OpenEnaAiInterpretationRequestV2 {
+  return {
+    schemaVersion: OPEN_ENA_AI_REQUEST_SCHEMA_VERSION_V2,
+    promptVersion: OPEN_ENA_AI_PROMPT_VERSION_V2,
+    locale: "en",
+    binding: {
+      analyzedAt: "2026-08-21T10:00:00.000Z",
+      datasetHash: "b".repeat(64),
+      datasetHashKind: "normalized-utf8-csv-text-sha256",
+      modelType: "EndPoint",
+      axes: ["Confidential axis one", "Confidential axis two"],
+      evidenceKey: "fnv1a32-abcdef12",
     },
     evidence: {
-      kind: "endpoint-group-comparison",
-      configuration: {
-        modelType: "EndPoint",
-        window: "Conversation",
-        rotation: "svd",
-        weightBy: "binary",
-        unitFieldCount: 2,
-        horizonFieldCount: 3,
-        codes: ["EC", "ICT"],
+      kind: "endpoint-independent",
+      modelType: "EndPoint",
+      scope: {
+        kind: "endpoint-independent",
+        groupRoles: ["primary", "secondary"],
       },
-      axes: [
-        { id: "axis-1", name: "SVD1", varianceShare: 0.51 },
-        { id: "axis-2", name: "SVD2", varianceShare: 0.32 },
-      ],
-      groups: [
-        { id: "group-primary", role: "primary", n: 43, meanCoordinates: { SVD1: 0.2, SVD2: -0.1 } },
-        { id: "group-secondary", role: "secondary", n: 44, meanCoordinates: { SVD1: -0.2, SVD2: 0.1 } },
-      ],
-      edges: [{
-        id: "edge-difference-1",
-        sourceCode: "EC",
-        targetCode: "ICT",
-        primaryWeight: 0.4,
-        secondaryWeight: 0.2,
-        signedDifference: 0.2,
-      }],
+      descriptive: {
+        axes: [
+          { id: "axis-1", role: "axis-1", varianceShare: 0.51 },
+          { id: "axis-2", role: "axis-2", varianceShare: 0.32 },
+        ],
+        groups: [
+          {
+            id: "descriptive-primary",
+            role: "primary",
+            n: 7,
+            meanCoordinates: { "axis-1": 0.234567891234, "axis-2": -0.1 },
+          },
+          {
+            id: "descriptive-secondary",
+            role: "secondary",
+            n: 8,
+            meanCoordinates: { "axis-1": -0.2, "axis-2": 0.1 },
+          },
+        ],
+        edges: [{
+          id: "edge-difference-1",
+          sourceCodeRole: "code-1",
+          targetCodeRole: "code-2",
+          primaryWeight: 0.4,
+          secondaryWeight: 0.2,
+          signedDifference: 0.2,
+        }],
+        trajectory: null,
+      },
       inference: [{
-        id: "inference-axis-1",
-        axis: "SVD1",
-        method: "Mann-Whitney U",
-        uFirst: 1_100,
-        pValueTwoSided: 0.02,
-        rankBiserialFirstVsSecond: 0.27,
+        id: "inference-comparison-axis-1",
+        axisRole: "axis-1",
+        familyRole: "comparison-family",
+        status: "available",
+        pRaw: 0.012345678901234,
+        pHolm: 0.024691357802468,
+        resolvedPMethod: "exact-classic",
+        continuityCorrectionApplied: false,
+        tieGroupCount: 0,
+        tiedObservationCount: 0,
+        warnings: [],
+        test: "mann-whitney-u",
+        groupRoles: ["primary", "secondary"],
+        nPrimary: 7,
+        nSecondary: 8,
+        uPrimary: 12,
+        uSecondary: 44,
+        rankBiserialPrimaryVsSecondary: 0.5714285714285714,
       }],
+      inferenceOmissions: [],
       boundaries: [
-        "The supplied evidence is aggregate only.",
-        "Visual separation does not establish causality.",
+        "aggregate-only",
+        "researcher-confirmed-inference-not-recomputed",
+        "no-causal-claims",
+        "p-values-do-not-establish-learning-gain",
+        "p-values-do-not-establish-practical-importance",
+        "axis-sign-arbitrary",
+        "holm-multiplicity",
+        "missingness-reported",
+        "independent-entity-assumption",
+        "cluster-independence-unverified",
       ],
     },
   };
@@ -98,17 +212,76 @@ test("Luna interpretation fails closed before fetch when the OpenRouter key is m
   assert.equal(fetchCalled, false);
 });
 
-test("Luna interpretation sends only aggregate evidence to the default OpenRouter Luna endpoint", async () => {
+test("Luna rejects a strict historical v1 request before fetch without exposing legacy evidence", async () => {
+  const rawRequest = legacyInterpretationRequest();
+  const request = parseOpenEnaAiInterpretationRequest(rawRequest);
+  assert.equal(request.schemaVersion, OPEN_ENA_AI_REQUEST_SCHEMA_VERSION_V1);
+  let fetchCalled = false;
+  let capturedProviderBody = "";
+
+  await assert.rejects(
+    generateLunaInterpretation(request, {
+      environment: {
+        OPEN_ENA_AI_ENABLED: "true",
+        OPENROUTER_API_KEY: "provider-key-must-stay-server-side",
+      },
+      fetch: async (_input, init) => {
+        fetchCalled = true;
+        capturedProviderBody = String(init?.body);
+        return new Response();
+      },
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof LunaClientError);
+      assert.equal(error.code, "upgrade-required");
+      assert.equal(
+        error.message,
+        "Historical AI requests cannot be sent to the provider. Build and review a current v2 inference request.",
+      );
+      assert.doesNotMatch(error.message, /V1_PRIVATE|configuration|provider-key/iu);
+      return true;
+    },
+  );
+
+  assert.equal(fetchCalled, false);
+  assert.equal(capturedProviderBody, "");
+});
+
+test("historical v1 provider dispatch always returns the fixed upgrade error before configuration checks", async () => {
+  const request = parseOpenEnaAiInterpretationRequest(legacyInterpretationRequest());
+  for (const environment of [
+    {},
+    { OPEN_ENA_AI_ENABLED: "true" },
+  ] as const) {
+    let fetchCalled = false;
+    await assert.rejects(
+      generateLunaInterpretation(request, {
+        environment,
+        fetch: async () => {
+          fetchCalled = true;
+          return new Response();
+        },
+      }),
+      (error: unknown) => (
+        error instanceof LunaClientError
+        && error.code === "upgrade-required"
+        && error.message === "Historical AI requests cannot be sent to the provider. Build and review a current v2 inference request."
+      ),
+    );
+    assert.equal(fetchCalled, false);
+  }
+});
+
+test("Luna v2 sends only the sanitized role/index projection and applies the confirmed-inference prompt", async () => {
   const request = interpretationRequest();
-  let capturedUrl = "";
-  let capturedInit: RequestInit | undefined;
+  let capturedBody = "";
   const upstreamInterpretation = {
     observedPatterns: [{
-      statement: "The aggregate EC-ICT connection is stronger for the primary role.",
-      evidenceRefs: ["edge-difference-1"],
+      statement: "The supplied independent-group rank comparison has a positive role-oriented effect.",
+      evidenceRefs: ["inference-comparison-axis-1"],
     }],
-    contextualQuestions: ["What coded excerpts support this aggregate pattern?"],
-    limitations: ["Visual separation does not establish causality."],
+    contextualQuestions: ["How was the independent-group design justified?"],
+    limitations: ["The supplied p-value does not establish causality or practical importance."],
   };
 
   const response = await generateLunaInterpretation(request, {
@@ -116,74 +289,65 @@ test("Luna interpretation sends only aggregate evidence to the default OpenRoute
       OPEN_ENA_AI_ENABLED: "true",
       OPENROUTER_API_KEY: "provider-key-must-stay-server-side",
     },
-    fetch: async (input, init) => {
-      capturedUrl = String(input);
-      capturedInit = init;
+    fetch: async (_input, init) => {
+      capturedBody = String(init?.body);
       return Response.json({
         choices: [{ message: { content: JSON.stringify(upstreamInterpretation) } }],
       });
     },
-    clock: () => new Date("2026-08-20T12:34:56.000Z"),
+    clock: () => new Date("2026-08-21T12:34:56.000Z"),
   });
 
-  assert.equal(capturedUrl, "https://openrouter.ai/api/v1/chat/completions");
-  assert.equal(capturedInit?.method, "POST");
-  assert.equal(new Headers(capturedInit?.headers).get("authorization"), "Bearer provider-key-must-stay-server-side");
-  const providerBody = JSON.parse(String(capturedInit?.body)) as {
-    model: string;
-    max_tokens: number;
+  const providerBody = JSON.parse(capturedBody) as {
     messages: Array<{ role: string; content: string }>;
     response_format: {
-      type: string;
       json_schema: {
-        strict: boolean;
         schema: {
-          additionalProperties: boolean;
           properties: {
             observedPatterns: {
-              items: {
-                properties: {
-                  evidenceRefs: { items: { enum: string[] } };
-                };
-              };
+              items: { properties: { evidenceRefs: { items: { enum: string[] } } } };
             };
           };
         };
       };
     };
   };
-  assert.equal(providerBody.model, "openai/gpt-5.6-luna");
-  assert.equal(providerBody.max_tokens, 1_800);
-  assert.match(providerBody.messages[0].content, /aggregate ENA evidence/i);
-  assert.match(providerBody.messages[0].content, /does not establish causality/i);
-  assert.match(providerBody.messages[0].content, /axis signs are arbitrary/i);
-  assert.match(providerBody.messages[0].content, /untrusted data labels/i);
-  assert.match(providerBody.messages[0].content, /Every string.*untrusted data/i);
-  assert.deepEqual(JSON.parse(providerBody.messages[1].content), request.evidence);
-  assert.doesNotMatch(providerBody.messages[1].content, /datasetHash|evidenceKey|analyzedAt|fnv1a32|a{64}/);
-  assert.doesNotMatch(String(capturedInit?.body), /provider-key-must-stay-server-side/);
-  assert.equal(providerBody.response_format.type, "json_schema");
-  assert.equal(providerBody.response_format.json_schema.strict, true);
-  assert.equal(providerBody.response_format.json_schema.schema.additionalProperties, false);
+  const system = providerBody.messages[0].content;
+  const providerEvidence = providerBody.messages[1].content;
+
+  assert.deepEqual(JSON.parse(providerEvidence), request.evidence);
+  assert.match(system, /independent groups use Mann-Whitney U/i);
+  assert.match(system, /Wilcoxon signed-rank with later-minus-earlier differences and a symmetry assumption/i);
+  assert.match(system, /Friedman omnibus.*all-period-complete cohort/i);
+  assert.match(system, /Holm-adjusted p.*raw p.*audit/i);
+  assert.match(system, /Never infer causality, a learning gain.*practical importance/i);
+  assert.match(system, /missingness.*zero-difference.*accumulated-trajectory path dependence.*MR1 circularity.*axis signs/i);
+  assert.match(system, /privacy redaction.*Holm.*cannot be reconstructed|Holm.*cannot be reconstructed.*privacy redaction/i);
+  assert.match(system, /Do not recompute/i);
+  assert.doesNotMatch(
+    providerEvidence,
+    /datasetHash|datasetHashKind|analyzedAt|evidenceKey|Confidential axis|fnv1a32|b{64}|familyId|memberId|configuration|filename|referenceId|repeatedEntityColumns|timeColumn|entityToken|participant|pairedDifference|medianDifference|iqrDifference|"sourceCode"|"targetCode"/iu,
+  );
+  assert.doesNotMatch(capturedBody, /provider-key-must-stay-server-side/);
   assert.deepEqual(
     providerBody.response_format.json_schema.schema.properties.observedPatterns
       .items.properties.evidenceRefs.items.enum,
     [
       "axis-1",
       "axis-2",
+      "descriptive-primary",
+      "descriptive-secondary",
       "edge-difference-1",
-      "group-primary",
-      "group-secondary",
-      "inference-axis-1",
+      "inference-comparison-axis-1",
     ],
   );
   assert.deepEqual(response, {
-    schemaVersion: "open-ena-ai-interpretation-response-v1",
+    schemaVersion: "open-ena-ai-interpretation-response-v2",
     promptVersion: request.promptVersion,
     binding: request.binding,
     provider: "openrouter",
     model: "openai/gpt-5.6-luna",
-    generatedAt: "2026-08-20T12:34:56.000Z",
+    generatedAt: "2026-08-21T12:34:56.000Z",
     interpretation: upstreamInterpretation,
   });
 });

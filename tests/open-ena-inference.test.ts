@@ -37,7 +37,7 @@ function groupedConfig() {
   } as typeof SAMPLE_CONFIG;
 }
 
-test("Mann-Whitney uses average ranks, tie-corrected variance, and continuity correction", () => {
+test("legacy Mann-Whitney uses exact-first p-values while retaining its diagnostic fields", () => {
   const estimate = mannWhitneyU([1, 2, 2], [2, 3]);
 
   assert.equal(estimate.status, "estimable");
@@ -48,8 +48,16 @@ test("Mann-Whitney uses average ranks, tie-corrected variance, and continuity co
   assert.equal(estimate.uFirst, 1);
   assert.equal(estimate.uSecond, 5);
   assert.ok(Math.abs((estimate.z ?? 0) - -0.9682458365518543) < 1e-12);
-  assert.ok(Math.abs((estimate.pValueTwoSided ?? 0) - 0.3329216080655659) < 2e-7);
+  assert.equal(estimate.pValueTwoSided, 0.6);
   assert.ok(Math.abs((estimate.rankBiserialFirstVsSecond ?? 0) - -2 / 3) < 1e-12);
+  assert.equal(estimate.resolvedPMethod, "exact-conditional-rank-permutation");
+  assert.deepEqual(estimate.exactTail, {
+    extremeAssignmentCount: "6",
+    totalAssignmentCount: "10",
+    inclusive: true,
+    midP: false,
+  });
+  assert.deepEqual(estimate.warnings, ["small-sample", "discrete-attainable-p", "ties-present"]);
 });
 
 test("Mann-Whitney returns not-estimable when either ordered group is empty", () => {
@@ -89,10 +97,32 @@ test("endpoint inference declares ENA.HK provenance, group order, and visible di
   assert.equal(inference.effectDefinition, MANN_WHITNEY_EFFECT_DEFINITION);
   assert.doesNotMatch(inference.provenance, /jENA/i);
   assert.match(inference.method, /first declared group/);
+  assert.match(inference.method, /auto exact-first/i);
   assert.match(inference.method, /0\.5 continuity correction/);
   assert.deepEqual(inference.groupOrder, ["first", "second"]);
   assert.deepEqual(inference.rows.map((row) => row.dimension), visibleDimensions);
   assert.ok(inference.rows.every((row) => row.nFirst === 2 && row.nSecond === 2));
+});
+
+test("endpoint inference fails closed without leaking non-finite selected-group coordinates", () => {
+  const result = analyzeDataset(groupedDataset(), groupedConfig());
+  const dimension = result.dimensions[0];
+
+  for (const invalidCoordinate of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    const invalidResult = {
+      ...result,
+      set: {
+        ...result.set,
+        points: result.set.points.map((row, index) => index === 0
+          ? { ...row, [dimension]: invalidCoordinate }
+          : row),
+      },
+    };
+    assert.throws(
+      () => buildEndpointMannWhitney(invalidResult, "group", [dimension]),
+      (error: unknown) => error instanceof Error && error.message === "nonfinite-coordinate",
+    );
+  }
 });
 
 test("trajectory results disable endpoint Mann-Whitney inference", () => {
@@ -133,13 +163,27 @@ test("models with more than two groups disable endpoint Mann-Whitney inference",
   assert.equal(inference.reason, "exactly-two-groups-required");
 });
 
-test("the inference UI discloses approximation, multiplicity, group order, and MR1 circularity", () => {
+test("the inference UI requires an explicit V2 run and discloses immutable provenance, resolved methods, Holm, and MR1 circularity", () => {
   const workspace = readFileSync(
     join(process.cwd(), "components", "open-ena", "OpenEnaWorkspace.tsx"),
     "utf8",
   );
-  assert.match(workspace, /ENA\.HK post-projection inference, not a jENA statistic/);
-  assert.match(workspace, /Two-sided normal approximation/);
-  assert.match(workspace, /No multiplicity correction is applied/);
-  assert.match(workspace, /MR1 is constructed from the same group contrast/);
+  const panel = readFileSync(
+    join(process.cwd(), "components", "open-ena", "OpenEnaInferencePanel.tsx"),
+    "utf8",
+  );
+  const copy = readFileSync(
+    join(process.cwd(), "lib", "open-ena-i18n.ts"),
+    "utf8",
+  );
+  assert.match(workspace, /runOpenEnaInferenceV2/);
+  assert.match(workspace, /runInferentialComparison/);
+  assert.doesNotMatch(workspace, /buildEndpointMannWhitney|const mannWhitney\b/);
+  assert.match(panel, /inference\.provenance/);
+  assert.match(panel, /row\.resolvedPMethod/);
+  assert.match(panel, /copy\.pHolm/);
+  assert.doesNotMatch(workspace, /Two-sided normal approximation uses average ranks/);
+  assert.doesNotMatch(`${workspace}\n${panel}`, /No multiplicity correction is applied/);
+  assert.match(workspace, /copy\.stats\.ui\.mr1Circularity/);
+  assert.match(copy, /MR1 is constructed from the same group contrast/);
 });

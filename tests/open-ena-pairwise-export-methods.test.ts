@@ -88,7 +88,7 @@ function twoGroupFixture() {
   return { dataset, config, result: analyzeDataset(dataset, config) };
 }
 
-test("analysis bundle binds the active ordered three-group pair, axes, and presentation to its contrast and Methods report", () => {
+test("analysis bundle v2 keeps the active plot contrast as non-authoritative compatibility data", () => {
   const { dataset, config, result } = threeGroupMeanFixture();
   const selectedAxes = [result.dimensions[1], result.dimensions[0]] as [string, string];
   const selectedGroupOrder = ["Beta", "Gamma"] as [string, string];
@@ -112,12 +112,17 @@ test("analysis bundle binds the active ordered three-group pair, axes, and prese
   });
 
   assert.ok(bundle.groupContrast);
+  assert.equal(bundle.schemaVersion, 2);
+  assert.equal(bundle.inference, null);
   const {
     schemaVersion,
     kind,
     app,
     runtime,
     runtimeVersion,
+    inference,
+    inferenceAuthority,
+    compatibilityNotice,
     ...bundledContrast
   } = bundle.groupContrast;
   assert.equal(schemaVersion, 1);
@@ -125,7 +130,19 @@ test("analysis bundle binds the active ordered three-group pair, axes, and prese
   assert.equal(app, "ENA.HK Open ENA");
   assert.equal(runtime, "jena-js");
   assert.equal(runtimeVersion, "0.6.2");
-  assert.deepEqual(bundledContrast, contrast);
+  const { inference: _legacyInference, ...contrastWithoutInference } = contrast;
+  assert.deepEqual(bundledContrast, {
+    ...contrastWithoutInference,
+    boundaries: contrastWithoutInference.boundaries.filter((boundary) => (
+      !/Mann[-–]Whitney inference|multiplicity correction/iu.test(boundary)
+    )),
+  });
+  assert.equal(inference, null);
+  assert.equal(inferenceAuthority, "top-level-inference-v2");
+  assert.match(compatibilityNotice, /non-authoritative/i);
+  assert.match(compatibilityNotice, /no researcher-confirmed inferential (?:comparison|result) is included/i);
+  assert.doesNotMatch(compatibilityNotice, /inferential results are present/i);
+  assert.doesNotMatch(JSON.stringify(bundle.groupContrast), /"multiplicityCorrection":"none"|no multiplicity correction/i);
   assert.notStrictEqual(bundle.groupContrast, contrast);
   assert.deepEqual(bundle.manifest.result.groups.map(({ name }) => name), ["Alpha", "Beta", "Gamma"]);
   assert.equal(bundle.manifest.dataset.normalizedUtf8TextSha256, SOURCE_HASH);
@@ -137,9 +154,7 @@ test("analysis bundle binds the active ordered three-group pair, axes, and prese
   assert.equal(bundle.presentation.showNetworks, false);
   assert.equal(bundle.presentation.showPoints, true);
 
-  assert.match(bundle.methodsReportMarkdown, /Selected group order: `Beta` then `Gamma`\./);
-  assert.match(bundle.methodsReportMarkdown, /Primary selected.*Secondary selected/);
-  assert.match(bundle.methodsReportMarkdown, /no multiplicity correction was applied across axes or repeated pair selections/i);
+  assert.match(bundle.methodsReportMarkdown, /No researcher-confirmed inferential comparison was run/i);
   assert.match(bundle.methodsReportMarkdown, /37\.5% \(0\.375\).*presentation-only/i);
   assert.match(bundle.methodsReportMarkdown, /X .*\(flipped\); Y .*\(unflipped\)/);
   assert.match(bundle.methodsReportMarkdown, /## Group-mean uncertainty guides/);
@@ -151,7 +166,7 @@ test("analysis bundle binds the active ordered three-group pair, axes, and prese
   assert.match(bundle.methodsReportMarkdown, /\| `Gamma` \| `SVD\d+` \| \d+ \|/);
 });
 
-test("every repeated selected-pair Methods report names the selected order and declares no multiplicity correction", () => {
+test("selected plot pairs affect descriptive guides but never trigger Methods inference", () => {
   const { dataset, config, result } = threeGroupMeanFixture();
   const axes = result.dimensions.slice(0, 2);
   const repeatedSelections = [
@@ -164,11 +179,9 @@ test("every repeated selected-pair Methods report names the selected order and d
     const report = buildMethodsReport(dataset, config, result, SOURCE_HASH, axes, {
       selectedGroupOrder: groupOrder,
     });
-    assert.ok(
-      report.includes(`Selected group order: \`${groupOrder[0]}\` then \`${groupOrder[1]}\`.`),
-    );
-    assert.match(report, /no multiplicity correction was applied across axes or repeated pair selections/i);
-    assert.doesNotMatch(report, /(?:Bonferroni|Holm|Benjamini|adjusted p-value)/i);
+    assert.ok(report.includes(`For \`${groupOrder[0]}\` and \`${groupOrder[1]}\``));
+    assert.match(report, /No researcher-confirmed inferential comparison was run/i);
+    assert.doesNotMatch(report, /Holm-adjusted p/i);
   }
 });
 
@@ -230,8 +243,7 @@ test("dedicated contrast export omits raw source text while preserving declared 
   assert.deepEqual(exported.geometry.dimensions, result.dimensions);
   assert.deepEqual(exported.geometry.rotationColumns, result.set.rotation.rotationColumns);
   assert.deepEqual(exported.geometry.rotationMatrix, result.set.rotation.rotationMatrix);
-  assert.deepEqual(exported.inference.groupOrder, ["Beta", "Gamma"]);
-  assert.equal(exported.inference.multiplicityCorrection, "none");
+  assert.equal(exported.inference, null);
   assert.deepEqual(exported.presentation, {
     selectedAxes: axes,
     flipX: true,
@@ -273,7 +285,7 @@ test("dedicated contrast export omits raw source text while preserving declared 
   assert.match(serialized, /Primary-minus-Secondary/);
 });
 
-test("selected-pair inference uses Primary wording while the legacy two-group call retains first-declared wording", () => {
+test("legacy low-level pair selection remains compatible but Methods never invokes it", () => {
   const threeGroup = threeGroupMeanFixture();
   const axes = threeGroup.result.dimensions.slice(0, 2);
   const selected = buildEndpointMannWhitney(
@@ -298,9 +310,9 @@ test("selected-pair inference uses Primary wording while the legacy two-group ca
     axes,
     { selectedGroupOrder: ["Gamma", "Beta"] },
   );
-  assert.match(selectedReport, /Selected group order: `Gamma` then `Beta`/);
-  assert.match(selectedReport, /Primary selected.*Secondary selected/);
-  assert.doesNotMatch(selectedReport, /Rank-biserial effects are signed for the first declared group/);
+  assert.match(selectedReport, /For `Gamma` and `Beta`/);
+  assert.match(selectedReport, /No researcher-confirmed inferential comparison was run/i);
+  assert.doesNotMatch(selectedReport, /Rank-biserial effects/);
 
   const legacyFixture = twoGroupFixture();
   const legacy = buildEndpointMannWhitney(
@@ -319,7 +331,6 @@ test("selected-pair inference uses Primary wording while the legacy two-group ca
     legacyFixture.config,
     legacyFixture.result,
   );
-  assert.match(legacyReport, /Declared group order: `Alpha` then `Beta`/);
-  assert.match(legacyReport, /first declared.*second declared/);
-  assert.doesNotMatch(legacyReport, /Selected group order/);
+  assert.match(legacyReport, /No researcher-confirmed inferential comparison was run/i);
+  assert.doesNotMatch(legacyReport, /(?:Selected|Declared) group order/);
 });

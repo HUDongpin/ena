@@ -1,9 +1,15 @@
 import type { OpenEnaResult } from "./types";
+import {
+  mannWhitneyRankTest,
+  type OpenEnaExactTailAudit,
+  type OpenEnaRankWarningCode,
+  type OpenEnaResolvedRankPMethod,
+} from "./rank-inference";
 
 export const MANN_WHITNEY_PROVENANCE = "ENA.HK post-projection inference";
-export const MANN_WHITNEY_METHOD = "Mann-Whitney U for the first declared group; two-sided normal approximation with average ranks, tie-corrected variance, and a 0.5 continuity correction";
+export const MANN_WHITNEY_METHOD = "Mann-Whitney U for the first declared group; two-sided auto exact-first inference with 12-significant-digit average ranks, fixed-size exact rank permutations through total N=50, and a tie-corrected normal approximation with a 0.5 continuity correction above that boundary";
 export const MANN_WHITNEY_EFFECT_DEFINITION = "r_rb(first vs second) = 2 * U(first) / (nFirst * nSecond) - 1; positive values indicate higher ranks in the first group";
-export const SELECTED_MANN_WHITNEY_METHOD = "Mann-Whitney U for the Primary selected group; two-sided normal approximation with average ranks, tie-corrected variance, and a 0.5 continuity correction";
+export const SELECTED_MANN_WHITNEY_METHOD = "Mann-Whitney U for the Primary selected group; two-sided auto exact-first inference with 12-significant-digit average ranks, fixed-size exact rank permutations through total N=50, and a tie-corrected normal approximation with a 0.5 continuity correction above that boundary";
 export const SELECTED_MANN_WHITNEY_EFFECT_DEFINITION = "r_rb(Primary vs Secondary) = 2 * U(Primary) / (nPrimary * nSecondary) - 1; positive values indicate higher ranks in the Primary selected group";
 
 export type MannWhitneyNotEstimableReason = "empty-group" | "zero-rank-variance";
@@ -27,6 +33,10 @@ export interface MannWhitneyEstimate {
   pValueTwoSided: number | null;
   /** 2 * U(first) / (nFirst * nSecond) - 1. */
   rankBiserialFirstVsSecond: number | null;
+  resolvedPMethod: OpenEnaResolvedRankPMethod | null;
+  continuityCorrectionApplied: boolean;
+  exactTail: OpenEnaExactTailAudit | null;
+  warnings: OpenEnaRankWarningCode[];
 }
 
 export interface MannWhitneyDimensionRow extends MannWhitneyEstimate {
@@ -44,115 +54,24 @@ export interface EndpointMannWhitneyInference {
   rows: MannWhitneyDimensionRow[];
 }
 
-function median(values: readonly number[]) {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((left, right) => left - right);
-  const midpoint = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1
-    ? sorted[midpoint]
-    : (sorted[midpoint - 1] + sorted[midpoint]) / 2;
-}
-
-/** Numerical Recipes erfc approximation; adequate for the reported normal approximation. */
-function complementaryErrorFunction(value: number) {
-  const magnitude = Math.abs(value);
-  const t = 1 / (1 + 0.5 * magnitude);
-  const approximation = t * Math.exp(
-    -magnitude * magnitude
-      - 1.26551223
-      + t * (1.00002368
-        + t * (0.37409196
-          + t * (0.09678418
-            + t * (-0.18628806
-              + t * (0.27886807
-                + t * (-1.13520398
-                  + t * (1.48851587
-                    + t * (-0.82215223
-                      + t * 0.17087277)))))))),
-  );
-  return value >= 0 ? approximation : 2 - approximation;
-}
-
-function twoSidedNormalP(z: number) {
-  return Math.max(0, Math.min(1, complementaryErrorFunction(Math.abs(z) / Math.SQRT2)));
-}
-
 export function mannWhitneyU(firstValues: readonly number[], secondValues: readonly number[]): MannWhitneyEstimate {
-  const nFirst = firstValues.length;
-  const nSecond = secondValues.length;
-  const medianFirst = median(firstValues);
-  const medianSecond = median(secondValues);
-  if (nFirst === 0 || nSecond === 0) {
-    return {
-      status: "not-estimable",
-      reason: "empty-group",
-      nFirst,
-      nSecond,
-      medianFirst,
-      medianSecond,
-      uFirst: null,
-      uSecond: null,
-      z: null,
-      pValueTwoSided: null,
-      rankBiserialFirstVsSecond: null,
-    };
-  }
-
-  const ranked = [
-    ...firstValues.map((value) => ({ value, group: 0 as const, rank: 0 })),
-    ...secondValues.map((value) => ({ value, group: 1 as const, rank: 0 })),
-  ].sort((left, right) => left.value - right.value);
-  let tieCorrection = 0;
-  for (let start = 0; start < ranked.length;) {
-    let end = start + 1;
-    while (end < ranked.length && ranked[end].value === ranked[start].value) end += 1;
-    const averageRank = ((start + 1) + end) / 2;
-    for (let index = start; index < end; index += 1) ranked[index].rank = averageRank;
-    const tieSize = end - start;
-    tieCorrection += tieSize ** 3 - tieSize;
-    start = end;
-  }
-
-  const rankSumFirst = ranked
-    .filter((entry) => entry.group === 0)
-    .reduce((sum, entry) => sum + entry.rank, 0);
-  const uFirst = rankSumFirst - nFirst * (nFirst + 1) / 2;
-  const uSecond = nFirst * nSecond - uFirst;
-  const rankBiserialFirstVsSecond = 2 * uFirst / (nFirst * nSecond) - 1;
-  const total = nFirst + nSecond;
-  const variance = nFirst * nSecond / 12
-    * (total + 1 - tieCorrection / (total * (total - 1)));
-  if (!(variance > 0) || !Number.isFinite(variance)) {
-    return {
-      status: "not-estimable",
-      reason: "zero-rank-variance",
-      nFirst,
-      nSecond,
-      medianFirst,
-      medianSecond,
-      uFirst,
-      uSecond,
-      z: null,
-      pValueTwoSided: null,
-      rankBiserialFirstVsSecond,
-    };
-  }
-
-  const expectedU = nFirst * nSecond / 2;
-  const continuityDirection = uFirst > expectedU ? 0.5 : uFirst < expectedU ? -0.5 : 0;
-  const z = (uFirst - expectedU - continuityDirection) / Math.sqrt(variance);
+  const result = mannWhitneyRankTest(firstValues, secondValues);
   return {
-    status: "estimable",
-    reason: null,
-    nFirst,
-    nSecond,
-    medianFirst,
-    medianSecond,
-    uFirst,
-    uSecond,
-    z,
-    pValueTwoSided: twoSidedNormalP(z),
-    rankBiserialFirstVsSecond,
+    status: result.status === "available" ? "estimable" : "not-estimable",
+    reason: result.reason === "all-values-tied" ? "zero-rank-variance" : result.reason,
+    nFirst: result.nPrimary,
+    nSecond: result.nSecondary,
+    medianFirst: result.medianPrimary,
+    medianSecond: result.medianSecondary,
+    uFirst: result.uPrimary,
+    uSecond: result.uSecondary,
+    z: result.z,
+    pValueTwoSided: result.pValueTwoSided,
+    rankBiserialFirstVsSecond: result.rankBiserialPrimaryVsSecondary,
+    resolvedPMethod: result.resolvedPMethod,
+    continuityCorrectionApplied: result.continuityCorrectionApplied,
+    exactTail: result.exactTail ? { ...result.exactTail } : null,
+    warnings: [...result.warnings],
   };
 }
 
@@ -192,8 +111,13 @@ export function buildEndpointMannWhitney(
   const rows = visibleDimensions.map((dimension): MannWhitneyDimensionRow => {
     const valuesFor = (group: string) => result.set.points
       .filter((row) => String(row[groupColumn] ?? "") === group)
-      .map((row) => row[dimension])
-      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+      .map((row) => {
+        const value = row[dimension];
+        if (typeof value !== "number" || !Number.isFinite(value)) {
+          throw new Error("nonfinite-coordinate");
+        }
+        return value;
+      });
     return {
       dimension,
       ...mannWhitneyU(valuesFor(groupOrder[0]), valuesFor(groupOrder[1])),

@@ -177,9 +177,37 @@ test("generation is disabled when there is no current result or the fitted evide
     "the component's Generate button must fail closed when no reviewed request is available",
   );
   assert.match(
+    workspace,
+    /if\s*\([^)]*!currentInference[^)]*\)\s*return null;/,
+    "Stats must not build any AI request before the explicit inference coordinator has produced a current result",
+  );
+  assert.match(
+    workspace,
+    /buildOpenEnaAiInterpretationRequest\(\{[\s\S]*?currentInference,?[\s\S]*?\}\)/,
+    "the AI builder must receive the exact current inference authority rather than a plot contrast statistic",
+  );
+  assert.match(
     aiComponent,
     /(?:disabledReason|copy\.noCurrentResult|copy\.staleResult)/,
     "the disabled state must explain whether evidence is absent or stale",
+  );
+});
+
+test("one-period trajectory AI uses the derivation aggregate while the Plot view keeps its two-period minimum", () => {
+  assert.match(
+    workspace,
+    /const\s+longitudinalView\s*=\s*longitudinalTimeOrder\.length\s*>=\s*2[\s\S]*?derivation\?\.view\s*\?\?\s*null/,
+    "the descriptive Plot must retain its existing two-period trajectory requirement",
+  );
+  assert.match(
+    workspace,
+    /const\s+aiLongitudinalView\s*=\s*longitudinalDerivationState\.derivation\?\.view\s*\?\?\s*null/,
+    "AI must receive the separately derived aggregate view even when only one period is selected",
+  );
+  assert.match(
+    workspace,
+    /buildOpenEnaAiInterpretationRequest\(\{[\s\S]*?longitudinalView:\s*result\.set\.modelType\s*===\s*["']EndPoint["']\s*\?\s*null\s*:\s*aiLongitudinalView/,
+    "a one-period trajectory comparison must not be suppressed by the Plot-only view gate",
   );
 });
 
@@ -206,8 +234,8 @@ test("the UI supports cancellation, a visible error, and an explicit retry", () 
 test("changing the evidence binding aborts work, revokes consent, and makes old output unrenderable", () => {
   assert.match(
     aiComponent,
-    /const\s+requestIdentity\s*=\s*request[\s\S]*?schemaVersion:[\s\S]*?promptVersion:[\s\S]*?locale:[\s\S]*?binding:/,
-    "response validity must be bound to the complete reviewed request identity",
+    /const\s+requestIdentity\s*=\s*request[\s\S]*?schemaVersion:[\s\S]*?promptVersion:[\s\S]*?locale:[\s\S]*?binding:[\s\S]*?evidence:/,
+    "response validity must be bound to the complete reviewed request, including its exact sanitized evidence",
   );
   const invalidationEffect = aiComponent.match(
     /useEffect\(\(\)\s*=>\s*\{([\s\S]*?)\},\s*\[requestIdentity\]\);/,
@@ -234,11 +262,109 @@ test("changing the evidence binding aborts work, revokes consent, and makes old 
   );
 });
 
+test("a deferred A generation cannot settle over a newer A generation after A to B to A", async () => {
+  const module = await import("../components/open-ena/OpenEnaAiInterpretation") as Record<string, unknown>;
+  type ExecuteGeneration = <T>(input: {
+    task: () => Promise<T>;
+    isStaleGeneration: () => boolean;
+    onSuccess: (value: T) => void;
+    onError: (message: string) => void;
+    onSettled: () => void;
+    fallbackError: string;
+  }) => Promise<void>;
+  const execute = module.executeOpenEnaAiGeneration as ExecuteGeneration | undefined;
+  assert.equal(typeof execute, "function", "the async settlement guard must be executable without a DOM harness");
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason: unknown) => void;
+    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+      resolve = resolvePromise;
+      reject = rejectPromise;
+    });
+    return { promise, resolve, reject };
+  }
+
+  async function runStaleSettlement(mode: "success" | "error") {
+    let activeController: AbortController | null = null;
+    let currentIdentity = "";
+    let status: "idle" | "loading" = "idle";
+    let response = "";
+    let error = "";
+    let dispatchCount = 0;
+
+    function launch(identity: string, pending: ReturnType<typeof deferred<string>>) {
+      const controller = new AbortController();
+      activeController = controller;
+      currentIdentity = identity;
+      status = "loading";
+      dispatchCount += 1;
+      return {
+        controller,
+        completion: execute!({
+          task: () => pending.promise,
+          isStaleGeneration: () => (
+            activeController !== controller
+            || controller.signal.aborted
+            || currentIdentity !== identity
+          ),
+          onSuccess: (value) => { response = value; },
+          onError: (message) => { error = message; },
+          onSettled: () => {
+            activeController = null;
+            status = "idle";
+          },
+          fallbackError: "safe fallback",
+        }),
+      };
+    }
+
+    const oldA = deferred<string>();
+    const first = launch("A", oldA);
+    first.controller.abort();
+    currentIdentity = "B";
+    activeController = null;
+    const newA = deferred<string>();
+    const second = launch("A", newA);
+
+    if (mode === "success") oldA.resolve("STALE_A_RESPONSE");
+    else oldA.reject(new Error("STALE_A_PRIVATE_ERROR"));
+    await first.completion;
+
+    assert.equal(dispatchCount, 2, "settling A1 must never trigger a third dispatch");
+    assert.equal(status, "loading", "A2 must remain loading after A1 settles");
+    assert.equal(activeController, second.controller, "A1 must not clear A2's controller");
+    assert.equal(response, "", "A1 must not publish a stale response");
+    assert.equal(error, "", "A1 must not publish a stale error");
+
+    newA.resolve("CURRENT_A_RESPONSE");
+    await second.completion;
+    assert.equal(response, "CURRENT_A_RESPONSE");
+    assert.equal(error, "");
+    assert.equal(status, "idle");
+    assert.equal(activeController, null);
+  }
+
+  await runStaleSettlement("success");
+  await runStaleSettlement("error");
+
+  const handler = sourceBlock(
+    aiComponent,
+    /async function\s+handleGenerateInterpretation\s*\([^)]*\)/,
+    "the explicit handleGenerateInterpretation handler",
+  );
+  assert.match(
+    handler,
+    /abortControllerRef\.current\s*!==\s*controller[\s\S]*?controller\.signal\.aborted[\s\S]*?currentRequestIdentityRef\.current\s*!==\s*requestedIdentity/,
+    "the component must bind every settlement to both the controller token and request identity",
+  );
+});
+
 test("AI output carries permanent limitations and visible provider, model, and provenance", () => {
   assert.match(
     aiComponent,
     /<aside\b[^>]*data-ena-ai-disclosure=["']permanent["'][^>]*>[\s\S]*?copy\.aiGenerated[\s\S]*?copy\.descriptiveOnly[\s\S]*?copy\.notStatisticalInference[\s\S]*?<\/aside>/,
-    "AI-generated, descriptive-only, and not-statistical-inference disclosures must be permanently rendered",
+    "AI-generated, aggregate-evidence, and no-recomputation disclosures must be permanently rendered",
   );
   assert.match(aiComponent, /<dl\b[^>]*data-ena-ai-provenance=["']true["']/);
   for (const value of [
@@ -315,13 +441,16 @@ test("en, zh-Hant, and zh-Hans provide complete AI UI, disclosure, and truthful 
 
   assert.match(copies.en.aiGenerated, /AI[- ]generated/i);
   assert.match(copies.en.descriptiveOnly, /descriptive/i);
-  assert.match(copies.en.notStatisticalInference, /not (?:a )?statistical (?:test|inference)|does not establish statistical/i);
+  assert.match(copies.en.notStatisticalInference, /does not recompute statistical tests/i);
+  assert.match(copies.en.notStatisticalInference, /does not replace researcher judgment/i);
   assert.match(copies["zh-hant"].aiGenerated, /AI.*生成/u);
   assert.match(copies["zh-hant"].descriptiveOnly, /描述性/u);
-  assert.match(copies["zh-hant"].notStatisticalInference, /不.*統計(?:推論|檢定)|不能取代.*統計/u);
+  assert.match(copies["zh-hant"].notStatisticalInference, /不會重新計算統計檢定/u);
+  assert.match(copies["zh-hant"].notStatisticalInference, /不能取代研究者判斷/u);
   assert.match(copies["zh-hans"].aiGenerated, /AI.*生成/u);
   assert.match(copies["zh-hans"].descriptiveOnly, /描述性/u);
-  assert.match(copies["zh-hans"].notStatisticalInference, /不.*统计(?:推断|推论|检验)|不能取代.*统计/u);
+  assert.match(copies["zh-hans"].notStatisticalInference, /不会重新计算统计检验/u);
+  assert.match(copies["zh-hans"].notStatisticalInference, /不能取代研究者判断/u);
 
   assert.match(copies.en.privacyLocal, /ENA.*(?:locally|in (?:this|your) browser)|(?:locally|in (?:this|your) browser).*ENA/i);
   assert.match(copies.en.privacyLocal, /raw (?:source )?(?:rows|data).*(?:not|never).*(?:sent|uploaded)|(?:not|never).*(?:send|upload).*raw/i);

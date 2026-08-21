@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { analyzeDataset, buildJenaOptions } from "../lib/open-ena/analyze";
 import { inferConfig, parseCsv, validateConfig } from "../lib/open-ena/csv";
+import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 import { SAMPLE_CONFIG } from "../lib/open-ena/types";
 
 const projectRoot = process.cwd();
@@ -443,7 +444,11 @@ test("the researcher interface exposes the implemented model controls, data tabl
   assert.match(workspace, /Line weights CSV/);
   assert.match(workspace, /Connection counts CSV/);
   assert.match(workspace, /Centroids CSV/);
-  assert.match(workspace, /Absolute Cohen/);
+  assert.match(workspace, /copy\.stats\.effect/);
+  assert.deepEqual(
+    (["en", "zh-hant", "zh-hans"] as const).map((locale) => getOpenEnaCopy(locale).stats.effect),
+    ["Absolute Cohen’s d", "絕對 Cohen’s d", "绝对 Cohen’s d"],
+  );
   assert.match(workspace, /Not estimable/);
   assert.match(workspace, /Number\.isFinite/);
   assert.match(workspace, /disabled=\{dimension === oppositeDimension\}/);

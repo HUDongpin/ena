@@ -3,9 +3,12 @@ import test from "node:test";
 import { analyzeDataset } from "../lib/open-ena/analyze";
 import { parseCsv } from "../lib/open-ena/csv";
 import {
+  OpenEnaLongitudinalIntegrityError,
+  buildLongitudinalDerivation,
   buildLongitudinalGroupCentroidExport,
   buildLongitudinalGroupCentroidView,
   longitudinalPeriodRowsToCsv,
+  sliceLongitudinalIndependentPeriod,
   type OpenEnaLongitudinalSettings,
 } from "../lib/open-ena/longitudinal";
 import { SAMPLE_CONFIG, type OpenEnaConfig, type OpenEnaResult, type ParsedDataset } from "../lib/open-ena/types";
@@ -70,6 +73,74 @@ function settings(cohortPolicy: "available" | "complete" = "available"): OpenEna
   };
 }
 
+test("one-period derivation exposes a private independent slice without fabricating a public Plot trajectory", () => {
+  const dataset = parseCsv([
+    "student,case,period,group,A,B,C",
+    "A,one,T1,G1,1,1,0",
+    "B,one,T1,G1,1,0,1",
+    "C,one,T1,G2,0,1,1",
+    "D,one,T1,G2,1,1,1",
+  ].join("\n") + "\n", { name: "one-period.csv", source: "upload" });
+  const config: OpenEnaConfig = {
+    ...SAMPLE_CONFIG,
+    unitColumns: ["student", "case"],
+    conversationColumns: ["period"],
+    groupColumn: "group",
+    codes: ["A", "B", "C"],
+    model: "SeparateTrajectory",
+    window: "Conversation",
+  };
+  const analyzed = analyzeDataset(dataset, config);
+  const result: OpenEnaResult = {
+    ...analyzed,
+    provenanceBinding: {
+      datasetNormalizedUtf8TextSha256: SOURCE_HASH,
+      datasetHashKind: dataset.hashKind,
+      configuration: structuredClone(config),
+    },
+  };
+  const onePeriodSettings: OpenEnaLongitudinalSettings = {
+    repeatedEntityColumns: ["student", "case"],
+    identityConfirmed: true,
+    timeColumn: "period",
+    timeOrder: ["T1"],
+    cohortPolicy: "available",
+    axes: result.dimensions.slice(0, 2) as [string, string],
+    datasetNormalizedUtf8TextSha256: SOURCE_HASH,
+  };
+
+  const derivation = buildLongitudinalDerivation(
+    result,
+    config,
+    dataset,
+    onePeriodSettings,
+    "2026-08-21T14:00:00.000Z",
+  );
+  const slice = sliceLongitudinalIndependentPeriod(derivation.comparisonFrame, {
+    period: "T1",
+    primaryGroup: "G1",
+    secondaryGroup: "G2",
+  });
+  assert.equal(slice.rows.length, 4);
+  assert.deepEqual(slice.ledger, {
+    candidateEntityCount: 4,
+    primaryAvailableCount: 2,
+    secondaryAvailableCount: 2,
+    includedEntityCount: 4,
+  });
+  assert.throws(
+    () => buildLongitudinalGroupCentroidView(
+      result,
+      config,
+      dataset,
+      onePeriodSettings,
+      "2026-08-21T14:00:00.000Z",
+    ),
+    (error: unknown) => error instanceof OpenEnaLongitudinalIntegrityError
+      && error.code === "period-invalid",
+  );
+});
+
 test("derives explicit-order available-cohort group centroids from compact jENA trajectory points", () => {
   const { dataset, config, result } = longitudinalFixture();
   const view = buildLongitudinalGroupCentroidView(
@@ -115,8 +186,11 @@ test("derives explicit-order available-cohort group centroids from compact jENA 
     { time: "T3", nTotal: 1, nUsed: 1, nExcluded: 0, centroid: "present" },
   ]);
 
-  const collapsed = view.entityPeriods.find((period) => period.entityId === "A" && period.time === "T1");
+  const collapsed = view.entityPeriods.find((period) => (
+    period.group === "G1" && period.time === "T1" && period.sourcePointCount === 2
+  ));
   assert.ok(collapsed);
+  assert.match(collapsed.entityId, /^entity-\d{6}$/);
   assert.equal(collapsed.sourcePointCount, 2);
   const compactCoordinates = result.set.points
     .map((point, index) => ({ point, trajectory: result.set.trajectories?.[index] }))
@@ -137,11 +211,9 @@ test("complete cohort uses one all-period entity set and reports exclusions per 
   assert.equal(view.availableEntityCount, 3);
   assert.equal(view.completeEntityCount, 1);
   assert.equal(view.includedEntityCount, 1);
-  assert.deepEqual(view.entityPeriods.map(({ entityId, time }) => [entityId, time]), [
-    ["B", "T3"],
-    ["B", "T2"],
-    ["B", "T1"],
-  ]);
+  assert.deepEqual(view.entityPeriods.map(({ time }) => time), ["T3", "T2", "T1"]);
+  assert.equal(new Set(view.entityPeriods.map(({ entityId }) => entityId)).size, 1);
+  assert.match(view.entityPeriods[0].entityId, /^entity-\d{6}$/);
   assert.deepEqual(view.groups[0].periods.map(({ nTotal, nUsed, nExcluded }) => [nTotal, nUsed, nExcluded]), [
     [2, 1, 1],
     [2, 1, 1],
@@ -357,7 +429,7 @@ test("fails closed for endpoint results, missing mappings, invalid time orders, 
   );
 });
 
-test("fails closed when one repeated entity changes groups or no complete entity remains", () => {
+test("fails closed when one repeated entity changes groups and represents an empty complete Plot cohort", () => {
   const fixture = longitudinalFixture();
   const changingGroupDataset = structuredClone(fixture.dataset);
   const changingRow = changingGroupDataset.rows.find((row) => row.student === "A" && row.case === "two");
@@ -387,10 +459,18 @@ test("fails closed when one repeated entity changes groups or no complete entity
     { name: "no-complete.csv", source: "upload" },
   );
   const noCompleteResult = analyzeDataset(noCompleteDataset, fixture.config);
-  assert.throws(
-    () => buildLongitudinalGroupCentroidView(noCompleteResult, fixture.config, noCompleteDataset, settings("complete")),
-    /no eligible complete|complete cohort.*no/i,
+  const noCompleteView = buildLongitudinalGroupCentroidView(
+    noCompleteResult,
+    fixture.config,
+    noCompleteDataset,
+    settings("complete"),
   );
+  assert.equal(noCompleteView.completeEntityCount, 0);
+  assert.equal(noCompleteView.includedEntityCount, 0);
+  assert.deepEqual(noCompleteView.entityPeriods, []);
+  assert.ok(noCompleteView.periodDiagnostics.every((period) => (
+    period.includedEntityCount === 0 && period.centroid === null
+  )));
 });
 
 test("fails closed when source identity, compact trajectory identity, or source binding drifts", () => {
@@ -399,7 +479,7 @@ test("fails closed when source identity, compact trajectory identity, or source 
   missingSourceStep.rows.pop();
   assert.throws(
     () => buildLongitudinalGroupCentroidView(fixture.result, fixture.config, missingSourceStep, settings()),
-    /same unit-conversation identities|no exact source/i,
+    /same unit-conversation identities|no exact source|unstable entity-period mapping/i,
   );
   const unmappedPoint = structuredClone(fixture.result);
   if (unmappedPoint.set.trajectories) unmappedPoint.set.trajectories[0].period = "private-period-value";
@@ -417,7 +497,7 @@ test("fails closed when source identity, compact trajectory identity, or source 
   duplicateCompactStep.set.trajectories?.push({ ...duplicateCompactStep.set.trajectories[0] });
   assert.throws(
     () => buildLongitudinalGroupCentroidView(duplicateCompactStep, fixture.config, fixture.dataset, settings()),
-    /duplicate unit-conversation point identity/i,
+    /duplicate unit-conversation point identity|unstable entity-period mapping/i,
   );
 
   assert.throws(
@@ -425,14 +505,14 @@ test("fails closed when source identity, compact trajectory identity, or source 
       ...settings(),
       datasetNormalizedUtf8TextSha256: "b".repeat(64),
     }),
-    /analyzed-table hash.*does not match/i,
+    /analyzed-table hash.*does not match|successful result binding/i,
   );
   assert.throws(
     () => buildLongitudinalGroupCentroidView(fixture.result, fixture.config, fixture.dataset, {
       ...settings(),
       datasetNormalizedUtf8TextSha256: null,
     }),
-    /analyzed-table hash.*required|verify.*provenance/i,
+    /analyzed-table hash.*required|verify.*provenance|successful result binding/i,
   );
 
   const mismatchedConfigResult: OpenEnaResult = {
@@ -444,7 +524,7 @@ test("fails closed when source identity, compact trajectory identity, or source 
   };
   assert.throws(
     () => buildLongitudinalGroupCentroidView(mismatchedConfigResult, fixture.config, fixture.dataset, settings()),
-    /provenance binding.*configuration/i,
+    /provenance binding.*configuration|configuration.*successful result binding/i,
   );
 
   const unboundResult = { ...fixture.result, provenanceBinding: undefined };
@@ -491,9 +571,12 @@ test("exports descriptive geometry, cohort diagnostics, and provenance without r
     pointScale: 1.2,
     plotZoom: 1.1,
   });
+  assert.equal(exported.schemaVersion, 2);
   assert.equal(exported.kind, "open-ena-longitudinal-group-centroids");
   assert.equal(exported.runtime, "jena-js");
   assert.deepEqual(exported.settings.timeOrder, ["T1", "T2", "T3"]);
+  assert.deepEqual(exported.settings.repeatedEntityColumns, view.repeatedEntityColumns);
+  assert.equal(exported.settings.identityConfirmed, view.identityConfirmed);
   assert.equal(exported.settings.cohortPolicy, "available");
   assert.equal(exported.source.normalizedUtf8TextSha256, SOURCE_HASH);
   assert.deepEqual(exported.configuration, config);
@@ -514,9 +597,11 @@ test("exports descriptive geometry, cohort diagnostics, and provenance without r
   });
   assert.deepEqual(exported.privacy, {
     rawSourceRowsIncluded: false,
-    repeatedEntityIdentifiersIncluded: false,
+    entityTokensIncluded: false,
+    entityValuesIncluded: false,
+    pairedDifferencesIncluded: false,
     entityPeriodCoordinatesIncluded: false,
-    note: "The derived export contains group-period summaries and fitted geometry, not repeated-entity identifiers or entity-period coordinates.",
+    note: "The derived export contains aggregate group-period geometry and aggregate inference only; it excludes repeated-entity values, opaque tokens, paired differences, entity-period coordinates, and raw source rows.",
   });
   assert.match(exported.boundaries.join(" "), /descriptive/i);
   assert.match(exported.boundaries.join(" "), /no endpoint.*test|endpoint.*not applied/i);
@@ -529,6 +614,7 @@ test("exports descriptive geometry, cohort diagnostics, and provenance without r
   assert.match(csv, /normalized-utf8-csv-text-sha256/);
   assert.match(csv, /sourceDatasetNormalizedUtf8TextSha256/);
   assert.match(csv, /timeOrderJson/);
+  assert.match(csv, /repeatedEntityColumnsJson/);
   assert.match(csv, /\[""T1"",""T2"",""T3""\]/);
   assert.match(csv, /runtimeVersion/);
   assert.match(csv, /timeOrderLocked,timeOrderBasis/);

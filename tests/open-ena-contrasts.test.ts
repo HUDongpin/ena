@@ -7,7 +7,6 @@ import {
   pairwiseGroupContrastEdgesToCsv,
 } from "../lib/open-ena/contrasts";
 import { parseCsv } from "../lib/open-ena/csv";
-import { mannWhitneyU } from "../lib/open-ena/inference";
 import { SAMPLE_CONFIG, type OpenEnaConfig, type OpenEnaResult } from "../lib/open-ena/types";
 import { marginalMeanStudentT95 } from "../lib/open-ena/uncertainty";
 
@@ -83,15 +82,7 @@ test("builds an ordered pairwise endpoint contrast from two selected groups in a
     Math.max(...contrast.edges.flatMap((edge) => [Math.abs(edge.primaryWeight), Math.abs(edge.secondaryWeight)])),
   );
 
-  assert.equal(contrast.inference.status, "available");
-  assert.deepEqual(contrast.inference.groupOrder, ["Gamma", "Alpha"]);
-  assert.deepEqual(contrast.inference.rows.map((row) => row.dimension), axes);
-  const firstAxis = axes[0];
-  const expected = mannWhitneyU(
-    result.set.points.filter((row) => row.group === "Gamma").map((row) => Number(row[firstAxis])),
-    result.set.points.filter((row) => row.group === "Alpha").map((row) => Number(row[firstAxis])),
-  );
-  assert.deepEqual(contrast.inference.rows[0], { dimension: firstAxis, ...expected });
+  assert.equal(contrast.inference, null);
 });
 
 test("every selected pair shares one full-result coordinate extent and the extent includes reference nodes", () => {
@@ -302,15 +293,8 @@ test("swapping Primary and Secondary negates signed quantities without changing 
       edge.stronger === "primary" ? "secondary" : edge.stronger === "secondary" ? "primary" : "equal",
     );
   }
-  for (const row of forward.inference.rows) {
-    const swapped = reverse.inference.rows.find((candidate) => candidate.dimension === row.dimension);
-    assert.ok(swapped);
-    assert.equal(swapped.uFirst, row.uSecond);
-    assert.equal(swapped.uSecond, row.uFirst);
-    assert.equal(swapped.z, row.z === null ? null : -row.z);
-    assert.equal(swapped.rankBiserialFirstVsSecond, row.rankBiserialFirstVsSecond === null ? null : -row.rankBiserialFirstVsSecond);
-    assert.equal(swapped.pValueTwoSided, row.pValueTwoSided);
-  }
+  assert.equal(forward.inference, null);
+  assert.equal(reverse.inference, null);
 });
 
 test("JSON and CSV exports bind group order, axes, configuration, result geometry, reference provenance, and interpretation boundaries", () => {
@@ -346,11 +330,11 @@ test("JSON and CSV exports bind group order, axes, configuration, result geometr
   assert.deepEqual(bundle.geometry.rotationMatrix, result.set.rotation.rotationMatrix);
   assert.deepEqual(bundle.geometry.adjacencyKey, result.set.adjacencyKey);
   assert.deepEqual(bundle.comparison.edges, contrast.edges);
-  assert.deepEqual(bundle.inference.groupOrder, ["Beta", "Gamma"]);
-  assert.equal(bundle.inference.multiplicityCorrection, "none");
+  assert.equal(bundle.inference, null);
   assert.ok(bundle.boundaries.some((boundary) => /descriptive/i.test(boundary)));
   assert.ok(bundle.boundaries.some((boundary) => /primary.*minus.*secondary/i.test(boundary)));
-  assert.ok(bundle.boundaries.some((boundary) => /multiplicity/i.test(boundary)));
+  assert.ok(bundle.boundaries.some((boundary) => /does not calculate inferential statistics/i.test(boundary)));
+  assert.doesNotMatch(JSON.stringify(bundle), /pValueTwoSided|uFirst|rankBiserialFirstVsSecond/);
   assert.ok(bundle.boundaries.some((boundary) => /raw source rows/i.test(boundary)));
   assert.doesNotMatch(JSON.stringify(bundle), /rawRows|rowConnectionCounts|pointsForProjection/);
 

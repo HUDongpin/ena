@@ -115,15 +115,7 @@ function fixtureContrast(): OpenEnaPairwiseContrast {
       differenceDefinition: "maximum absolute Primary-minus-Secondary edge difference",
       sharedMeanDefinition: "shared maximum absolute Primary or Secondary mean edge weight",
     },
-    inference: {
-      status: "available",
-      provenance: "ENA.HK post-projection inference",
-      method: "Mann-Whitney U for the first selected group; two-sided normal approximation with average ranks, tie-corrected variance, and a 0.5 continuity correction",
-      effectDefinition: "r_rb(primary vs secondary) = 2 * U(primary) / (nPrimary * nSecondary) - 1; positive values indicate higher ranks in the primary selected group",
-      multiplicityCorrection: "none",
-      groupOrder: ["Studio", "Seminar"],
-      rows: [],
-    },
+    inference: null,
     createdAt: "2026-08-19T00:01:00.000Z",
     boundaries: [],
   };

@@ -5,19 +5,49 @@ import {
   OPEN_ENA_AI_CONSENT_HEADER,
   OPEN_ENA_AI_CONSENT_VALUE,
   parseOpenEnaAiInterpretationResponse,
-  type OpenEnaAiInterpretationRequestV1,
-  type OpenEnaAiInterpretationResponseV1,
+  type OpenEnaAiInterpretationRequest,
+  type OpenEnaAiInterpretationResponse,
 } from "@/lib/open-ena/ai-interpretation";
 import type { OpenEnaAiInterpretationCopy } from "@/lib/open-ena-i18n";
 
 interface OpenEnaAiInterpretationProps {
-  request: OpenEnaAiInterpretationRequestV1 | null;
+  request: OpenEnaAiInterpretationRequest | null;
   copy: OpenEnaAiInterpretationCopy;
   disabled: boolean;
   disabledReason: string;
 }
 
 type GenerationStatus = "idle" | "loading";
+
+interface ExecuteOpenEnaAiGenerationInput<T> {
+  task: () => Promise<T>;
+  isStaleGeneration: () => boolean;
+  onSuccess: (value: T) => void;
+  onError: (message: string) => void;
+  onSettled: () => void;
+  fallbackError: string;
+}
+
+export async function executeOpenEnaAiGeneration<T>({
+  task,
+  isStaleGeneration,
+  onSuccess,
+  onError,
+  onSettled,
+  fallbackError,
+}: ExecuteOpenEnaAiGenerationInput<T>) {
+  try {
+    const value = await task();
+    if (isStaleGeneration()) return;
+    onSuccess(value);
+  } catch (caught) {
+    if (isStaleGeneration()) return;
+    if (caught instanceof DOMException && caught.name === "AbortError") return;
+    onError(caught instanceof Error ? caught.message : fallbackError);
+  } finally {
+    if (!isStaleGeneration()) onSettled();
+  }
+}
 
 export default function OpenEnaAiInterpretation({
   request,
@@ -27,7 +57,7 @@ export default function OpenEnaAiInterpretation({
 }: OpenEnaAiInterpretationProps) {
   const [consentedRequestIdentity, setConsentedRequestIdentity] = useState<string | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>("idle");
-  const [aiResponse, setAiResponse] = useState<OpenEnaAiInterpretationResponseV1 | null>(null);
+  const [aiResponse, setAiResponse] = useState<OpenEnaAiInterpretationResponse | null>(null);
   const [aiResponseRequestIdentity, setAiResponseRequestIdentity] = useState<string | null>(null);
   const [aiError, setAiError] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -37,6 +67,7 @@ export default function OpenEnaAiInterpretation({
         promptVersion: request.promptVersion,
         locale: request.locale,
         binding: request.binding,
+        evidence: request.evidence,
       })
     : null;
   const currentRequestIdentityRef = useRef(requestIdentity);
@@ -63,38 +94,47 @@ export default function OpenEnaAiInterpretation({
     abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    const isStaleGeneration = () => (
+      abortControllerRef.current !== controller
+      || controller.signal.aborted
+      || currentRequestIdentityRef.current !== requestedIdentity
+    );
     setGenerationStatus("loading");
     setAiError("");
-    try {
-      const response = await fetch("/api/open-ena/ai-interpretation", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          "Content-Type": "application/json",
-          [OPEN_ENA_AI_CONSENT_HEADER]: OPEN_ENA_AI_CONSENT_VALUE,
-        },
-        body: JSON.stringify(request),
-        signal: controller.signal,
-      });
-      const payload = await response.json().catch(() => null) as unknown;
-      if (!response.ok) {
-        const safeMessage = payload && typeof payload === "object" && "error" in payload
-          && typeof (payload as { error?: unknown }).error === "string"
-          ? (payload as { error: string }).error
-          : copy.errorTitle;
-        throw new Error(safeMessage);
-      }
-      const parsed = parseOpenEnaAiInterpretationResponse(payload, request);
-      if (currentRequestIdentityRef.current !== requestedIdentity) return;
-      setAiResponse(parsed);
-      setAiResponseRequestIdentity(requestedIdentity);
-    } catch (caught) {
-      if (caught instanceof DOMException && caught.name === "AbortError") return;
-      setAiError(caught instanceof Error ? caught.message : copy.errorTitle);
-    } finally {
-      if (abortControllerRef.current === controller) abortControllerRef.current = null;
-      setGenerationStatus("idle");
-    }
+    await executeOpenEnaAiGeneration({
+      task: async () => {
+        const response = await fetch("/api/open-ena/ai-interpretation", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json",
+            [OPEN_ENA_AI_CONSENT_HEADER]: OPEN_ENA_AI_CONSENT_VALUE,
+          },
+          body: JSON.stringify(request),
+          signal: controller.signal,
+        });
+        const payload = await response.json().catch(() => null) as unknown;
+        if (!response.ok) {
+          const safeMessage = payload && typeof payload === "object" && "error" in payload
+            && typeof (payload as { error?: unknown }).error === "string"
+            ? (payload as { error: string }).error
+            : copy.errorTitle;
+          throw new Error(safeMessage);
+        }
+        return parseOpenEnaAiInterpretationResponse(payload, request);
+      },
+      isStaleGeneration,
+      onSuccess: (parsed) => {
+        setAiResponse(parsed);
+        setAiResponseRequestIdentity(requestedIdentity);
+      },
+      onError: setAiError,
+      onSettled: () => {
+        abortControllerRef.current = null;
+        setGenerationStatus("idle");
+      },
+      fallbackError: copy.errorTitle,
+    });
   }
 
   function handleCancelInterpretation() {
