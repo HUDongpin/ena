@@ -88,3 +88,47 @@ test("six comparison groups retain unique non-color plot encodings and accessibl
     );
   }
 });
+
+test("standalone and mini-network code nodes share the selected palette", async () => {
+  const { default: OpenEnaPlot, MiniNetwork } = await import("../components/open-ena/OpenEnaPlot");
+  const result = sixGroupTrajectoryResult();
+  const codeColors = { A: "#c2185b" };
+  const markup = renderToStaticMarkup(createElement(OpenEnaPlot, {
+    result,
+    groupColumn: "group",
+    view: "2d",
+    xDimension: result.dimensions[0],
+    yDimension: result.dimensions[1],
+    zDimension: result.dimensions[2],
+    camera: "xy",
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    showTrajectories: true,
+    edgeScale: 1,
+    edgeThreshold: 0,
+    pointScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+    copy: getOpenEnaCopy("en"),
+    codeColors,
+  } as never));
+  const miniMarkup = renderToStaticMarkup(createElement(MiniNetwork, {
+    result,
+    group: result.groups[0],
+    xDimension: result.dimensions[0],
+    yDimension: result.dimensions[1],
+    label: "g1 network",
+    maxNetworkWeight: 1,
+    edgeThreshold: 0,
+    codeColors,
+  } as never));
+
+  assert.match(markup, /<circle[^>]*data-ena-code="A"[^>]*fill="#c2185b"/);
+  assert.match(markup, /<circle[^>]*data-ena-code="B"[^>]*fill="#000000"/);
+  assert.match(miniMarkup, /<circle[^>]*data-ena-code="A"[^>]*fill="#c2185b"/);
+  assert.match(miniMarkup, /<circle[^>]*data-ena-code="B"[^>]*fill="#000000"/);
+});

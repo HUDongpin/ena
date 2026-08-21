@@ -1,6 +1,7 @@
 import type { NewsArticle } from "./news-types";
+import { backfillNewsArticles } from "./news-backfill-data";
 
-export const newsArticles: NewsArticle[] = [
+const existingNewsArticles: NewsArticle[] = [
   {
     id: "ena-007",
     slug: "ai-dialog-knowledge-integration-networks",
@@ -289,6 +290,15 @@ The findings are specific to a controlled, object-focused collaboration with a s
     createdAt: "2026-08-09",
   },
 ];
+
+export const newsArticles: NewsArticle[] = [
+  ...backfillNewsArticles,
+  ...existingNewsArticles,
+].sort(
+  (a, b) =>
+    b.createdAt.localeCompare(a.createdAt) ||
+    Number(b.id.replace("ena-", "")) - Number(a.id.replace("ena-", "")),
+);
 
 export const newsYears = [...new Set(newsArticles.map((article) => article.year))].sort((a, b) => b - a);
 

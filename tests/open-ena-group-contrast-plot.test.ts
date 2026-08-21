@@ -273,9 +273,9 @@ test("unit, group-summary, and code-node encodings follow the official plot gram
   assert.doesNotMatch(comparisonSvg, /<g\b(?=[^>]*data-ena-summary-marker="true")(?=[^>]*(?:role="button"|tabindex=|aria-pressed=|aria-controls=))[^>]*>/);
   assert.equal((comparisonSvg.match(/data-ena-code-node="neutral"/g) ?? []).length, 3);
   assert.equal(
-    (comparisonSvg.match(/data-ena-code-node="neutral"[^>]*fill="#4D4D4D"[^>]*stroke="#4D4D4D"/g) ?? []).length,
+    (comparisonSvg.match(/data-ena-code-node="neutral"[^>]*fill="#000000"[^>]*stroke="#000000"/g) ?? []).length,
     3,
-    "official-style code nodes use the observed dark solid visual grammar while retaining neutral analytical meaning",
+    "code nodes default to black while retaining neutral analytical meaning",
   );
   assert.equal(Number(tagAttribute(codeNodeCircle(comparisonSvg, "Evidence"), "data-ena-code-node-size")), 5.5);
   assert.equal(Number(tagAttribute(codeNodeCircle(comparisonSvg, "Reflection"), "data-ena-code-node-size")), 3);
@@ -1043,4 +1043,19 @@ test("Workspace retains the single Comparison Download Model and Data View toolb
   assert.equal((workspaceSource.match(/className="ena-download-model-button-icon"/g) ?? []).length, 1);
   assert.match(workspaceSource, /data-testid="open-ena-data-view-toggle"[\s\S]{0,500}setCenterSurface/);
   assert.match(workspaceSource, /ena-download-model-button[\s\S]{0,1000}buildAnalysisBundle/);
+});
+
+test("one selected code color is reused by Comparison, Primary, and Secondary code nodes", async () => {
+  const markup = await render({
+    codeColors: { Evidence: "#7b1fa2" },
+  } as unknown as Partial<OpenEnaGroupContrastProps>);
+  const coloredEvidenceNodes = markup.match(
+    /<circle\b[^>]*data-ena-code="Evidence"[^>]*fill="#7b1fa2"[^>]*>/g,
+  ) ?? [];
+  const defaultReflectionNodes = markup.match(
+    /<circle\b[^>]*data-ena-code="Reflection"[^>]*fill="#000000"[^>]*>/g,
+  ) ?? [];
+
+  assert.equal(coloredEvidenceNodes.length, 3);
+  assert.equal(defaultReflectionNodes.length, 3);
 });

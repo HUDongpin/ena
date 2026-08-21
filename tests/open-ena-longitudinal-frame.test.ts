@@ -237,14 +237,14 @@ test("preserves case so Alex and alex remain distinct repeated identities", () =
   assert.deepEqual([...pointCountByToken.values()].sort((left, right) => left - right), [2, 2]);
 });
 
-test("migrates the deliberate v1 input to one unconfirmed column while keeping Plot usable", () => {
+test("migrates a valid v1 person field to one unconfirmed column while keeping Plot usable", () => {
   const fixture = frameFixture();
   const derivation = buildLongitudinalDerivation(
     fixture.result,
     fixture.config,
     fixture.dataset,
     {
-      repeatedEntityColumn: "Group",
+      repeatedEntityColumn: "Name",
       timeColumn: "Period",
       timeOrder: ["T1", "T2", "T3"],
       cohortPolicy: "available",
@@ -254,10 +254,10 @@ test("migrates the deliberate v1 input to one unconfirmed column while keeping P
     CREATED_AT,
   );
 
-  assert.deepEqual(derivation.view.repeatedEntityColumns, ["Group"]);
+  assert.deepEqual(derivation.view.repeatedEntityColumns, ["Name"]);
   assert.equal(derivation.view.identityConfirmed, false);
   assert.ok(derivation.view.entityPeriods.length > 0, "the compatibility Plot view remains usable");
-  assert.deepEqual(derivation.comparisonFrame.repeatedEntityColumns, ["Group"]);
+  assert.deepEqual(derivation.comparisonFrame.repeatedEntityColumns, ["Name"]);
   assert.equal(derivation.comparisonFrame.identityConfirmed, false);
   assert.deepEqual(derivation.comparisonFrame.eligibility, {
     eligible: false,
@@ -290,7 +290,7 @@ test("uses full Group plus Name identity so the same Name in different groups st
   );
 });
 
-test("rejects confirmed group-only pseudo-entities and fails closed on a Name-only cross-group collision", () => {
+test("rejects group-only pseudo-entities and scopes a Name-only identity by comparison group", () => {
   const fixture = frameFixture();
   const groupOnly = caught(() => derive(fixture, {
     ...confirmedSettings(),
@@ -299,12 +299,20 @@ test("rejects confirmed group-only pseudo-entities and fails closed on a Name-on
   assert.equal(groupOnly.code, "identity-columns-invalid");
   assertSafeMessage(groupOnly);
 
-  const nameOnly = caught(() => derive(fixture, {
+  const nameOnly = derive(fixture, {
     ...confirmedSettings(),
     repeatedEntityColumns: ["Name"],
-  }));
-  assert.ok(nameOnly.code === "identity-collision" || nameOnly.code === "group-instability");
-  assertSafeMessage(nameOnly);
+  });
+  const tokensByGroup = new Map<string, Set<string>>();
+  for (const point of nameOnly.comparisonFrame.points) {
+    const tokens = tokensByGroup.get(point.group.name) ?? new Set<string>();
+    tokens.add(point.entityToken);
+    tokensByGroup.set(point.group.name, tokens);
+  }
+  assert.deepEqual(
+    new Set([...(tokensByGroup.get("Control") ?? [])].filter((token) => tokensByGroup.get("Experimental")?.has(token))),
+    new Set(),
+  );
 });
 
 test("keeps canonical identity values out of the frame and tokens or values out of public ledgers and exports", () => {

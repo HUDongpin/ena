@@ -1,9 +1,11 @@
 import type { Row } from "jena-js";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
+import { codeColorFor, type OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
 import type { CameraPreset, GroupNetwork, OpenEnaResult, OpenEnaView } from "@/lib/open-ena/types";
 
 interface OpenEnaPlotProps {
   result: OpenEnaResult;
+  codeColors?: OpenEnaCodeColors;
   groupColumn: string | null;
   view: OpenEnaView;
   xDimension: string;
@@ -172,6 +174,7 @@ function edgeWeight(groups: GroupNetwork[], edgeName: string) {
 
 export function MiniNetwork({
   result,
+  codeColors,
   group,
   xDimension,
   yDimension,
@@ -180,6 +183,7 @@ export function MiniNetwork({
   edgeThreshold,
 }: {
   result: OpenEnaResult;
+  codeColors?: OpenEnaCodeColors;
   group: GroupNetwork;
   xDimension: string;
   yDimension: string;
@@ -233,7 +237,13 @@ export function MiniNetwork({
         if (!point) return null;
         return (
           <g key={node.label} transform={`translate(${point.x} ${point.y})`}>
-            <circle r="16" fill="#fff" stroke={group.color} strokeWidth="6" />
+            <circle
+              r="16"
+              data-ena-code={node.label}
+              fill={codeColorFor(codeColors, node.label)}
+              stroke={group.color}
+              strokeWidth="6"
+            />
             <text y="-24" textAnchor="middle" className="ena-mini-label">{node.label}</text>
           </g>
         );
@@ -244,6 +254,7 @@ export function MiniNetwork({
 
 export default function OpenEnaPlot({
   result,
+  codeColors,
   groupColumn,
   view,
   xDimension,
@@ -565,9 +576,17 @@ export default function OpenEnaPlot({
         {nodes.map((node) => {
           const point = positions.get(node.key);
           if (!point) return null;
+          const nodeColor = codeColorFor(codeColors, node.label);
           return (
             <g key={node.label} transform={`translate(${point.x} ${point.y})`} filter="url(#ena-node-shadow)">
-              <circle r={view === "3d" ? Math.max(11, 14 + point.depth * 2) : 14} className="ena-result-node" />
+              <circle
+                r={view === "3d" ? Math.max(11, 14 + point.depth * 2) : 14}
+                className="ena-result-node"
+                data-ena-code={node.label}
+                fill={nodeColor}
+                stroke={nodeColor}
+                style={{ fill: nodeColor, stroke: nodeColor }}
+              />
               {showLabels ? <text y="-23" textAnchor="middle" className="ena-result-label">{node.label}</text> : null}
             </g>
           );
@@ -575,9 +594,9 @@ export default function OpenEnaPlot({
         {referenceFigureNote ? (
           <g className="ena-reference-figure-provenance" role="note" aria-label={referenceFigureNote}>
             <rect x="18" y="512" width="884" height="64" rx="8" fill="#ffffff" fillOpacity="0.94" stroke="#8aa8a5" />
-            <text x="30" y="530" fill="#334b52" fontSize="10.5" fontWeight="700">{referenceToken}</text>
-            <text x="30" y="549" fill="#334b52" fontSize="10.5" fontWeight="700">{referenceFigureName}</text>
-            <text x="30" y="568" fill="#334b52" fontSize="10.5" fontWeight="700">{referenceFigureCaveat}</text>
+            <text x="30" y="530" fill="#334b52" fontSize="11.5" fontWeight="700">{referenceToken}</text>
+            <text x="30" y="549" fill="#334b52" fontSize="11.5" fontWeight="700">{referenceFigureName}</text>
+            <text x="30" y="568" fill="#334b52" fontSize="11.5" fontWeight="700">{referenceFigureCaveat}</text>
           </g>
         ) : null}
       </svg>

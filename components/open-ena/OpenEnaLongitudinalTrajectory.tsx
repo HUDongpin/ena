@@ -4,7 +4,11 @@ import {
   type OpenEnaLongitudinalEntityPeriod,
   type OpenEnaLongitudinalView,
 } from "@/lib/open-ena/longitudinal";
-import { JENA_GROUP_COLORS } from "@/lib/open-ena/plot-style";
+import {
+  JENA_GROUP_COLORS,
+  codeColorFor,
+  type OpenEnaCodeColors,
+} from "@/lib/open-ena/plot-style";
 
 export interface OpenEnaLongitudinalTrajectoryCopy {
   title: string;
@@ -58,6 +62,7 @@ export interface OpenEnaLongitudinalTrajectoryCopy {
 
 export interface OpenEnaLongitudinalTrajectoryProps {
   trajectory: OpenEnaLongitudinalView;
+  codeColors?: OpenEnaCodeColors;
   showIndividualPaths: boolean;
   showGroupCentroidPaths: boolean;
   showPoints: boolean;
@@ -380,6 +385,7 @@ function formatCoordinate(point: PlotPoint | null) {
 
 export default function OpenEnaLongitudinalTrajectory({
   trajectory,
+  codeColors,
   showIndividualPaths,
   showGroupCentroidPaths,
   showPoints,
@@ -676,10 +682,26 @@ export default function OpenEnaLongitudinalTrajectory({
 
             {nodeMarks.map((node, nodeIndex) => {
               const point = project(node.x, node.y);
+              const nodeColor = codeColorFor(codeColors, node.code);
               return (
                 <g key={`node-${nodeIndex}`} className="ena-longitudinal-node">
-                  <circle cx={point.x} cy={point.y} r="10" />
-                  <circle cx={point.x} cy={point.y} r="3.2" />
+                  <circle
+                    cx={point.x}
+                    cy={point.y}
+                    r="10"
+                    fill="#ffffff"
+                    stroke={nodeColor}
+                    style={{ fill: "#ffffff", stroke: nodeColor }}
+                  />
+                  <circle
+                    cx={point.x}
+                    cy={point.y}
+                    r="3.2"
+                    data-ena-code={node.code}
+                    fill={nodeColor}
+                    stroke={nodeColor}
+                    style={{ fill: nodeColor, stroke: nodeColor }}
+                  />
                   {showLabels ? (
                     <text x={point.x} y={point.y - 17} textAnchor="middle">{safeText(node.code, 64)}</text>
                   ) : null}

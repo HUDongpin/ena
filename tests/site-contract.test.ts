@@ -44,7 +44,17 @@ test("News and Academy expose continuous reviewed collections that can grow", ()
   const newsIds = newsItems.map((article) => Number(article.id.replace("ena-", "")));
   const newestNewsId = Math.max(...newsIds);
   assert.equal(newsItems.length, newestNewsId);
-  assert.deepEqual(newsIds, Array.from({ length: newestNewsId }, (_, index) => newestNewsId - index));
+  assert.deepEqual(
+    [...newsIds].sort((left, right) => right - left),
+    Array.from({ length: newestNewsId }, (_, index) => newestNewsId - index),
+  );
+  assert.deepEqual(
+    newsItems.map((article) => `${article.createdAt}:${article.id}`),
+    [...newsItems]
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt)
+        || Number(right.id.replace("ena-", "")) - Number(left.id.replace("ena-", "")))
+      .map((article) => `${article.createdAt}:${article.id}`),
+  );
   assert.equal(Math.abs(
     newsItems.filter((article) => article.type === "journal").length
       - newsItems.filter((article) => article.type === "conference").length,
@@ -128,25 +138,25 @@ test("the locale route tree includes reviewed News and Academy details", () => {
   assert.equal(existsSync(join(projectRoot, "app", "[locale]", "academy", "[slug]", "page.tsx")), true);
 });
 
-test("ENA logo assets use the Yanzi mint palette and remain free of AIEDHK branding", () => {
+test("ENA logo assets use the Baby Blue palette and remain free of AIEDHK branding", () => {
   for (const filename of ["ena-mark.svg", "ena-logo.svg"]) {
     const path = join(projectRoot, "public", filename);
     assert.equal(existsSync(path), true);
     const svg = readFileSync(path, "utf8");
     assert.match(svg, /<svg/);
     assert.match(svg, /circle/);
-    assert.match(svg, /#72c7bd/i);
-    assert.doesNotMatch(svg, /#56b09d/i);
+    assert.match(svg, /#89cff0/i);
+    assert.doesNotMatch(svg, /#72c7bd|#56b09d/i);
     assert.doesNotMatch(svg, /AIEDHK/i);
   }
 });
 
-test("the visual system includes the exact Yanzi palette tokens", () => {
+test("the visual system includes the exact ENA Baby Blue palette tokens", () => {
   const css = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
-  assert.match(css, /--accent:\s*#72c7bd/i);
-  assert.match(css, /--accent-hover:\s*#66bfb5/i);
-  assert.match(css, /--accent-soft:\s*#eef9f7/i);
-  assert.match(css, /--accent-strong:\s*#39736e/i);
+  assert.match(css, /--accent:\s*#89cff0/i);
+  assert.match(css, /--accent-hover:\s*#73c2e8/i);
+  assert.match(css, /--accent-soft:\s*#edf8fd/i);
+  assert.match(css, /--accent-strong:\s*#1f6f9e/i);
   assert.match(css, /radial-gradient\(circle at 50% 10%/);
   assert.match(css, /\.language-menu\[data-align="right"\][^{]*\{[\s\S]*?inset-inline-end:\s*0/);
   assert.match(css, /\.language-menu\[data-align="left"\][^{]*\{[\s\S]*?inset-inline-start:\s*0/);

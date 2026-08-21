@@ -374,3 +374,29 @@ test("the comparison layout stacks responsively and contains wide evidence witho
   assert.match(comparisonCss, /@media\s*\(max-width:\s*640px\)[\s\S]*?\.ena-set-main-plot[\s\S]*?overflow-x:\s*auto;/);
   assert.match(comparisonCss, /@media\s*\(max-width:\s*640px\)[\s\S]*?\.open-ena-set-comparison-svg\s*\{[\s\S]*?width:\s*700px;[\s\S]*?max-width:\s*none;/);
 });
+
+test("captured-set comparison preserves the active code palette in all three plots", () => {
+  const markup = renderToStaticMarkup(createElement(OpenEnaSetComparison, {
+    comparison,
+    edgeThreshold: 0,
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    edgeScale: 1,
+    pointScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+    codeColors: { Revision: "#ef6c00" },
+  } as never));
+
+  assert.equal(
+    markup.match(/<circle[^>]*data-ena-code="Revision"[^>]*fill="#ef6c00"/g)?.length,
+    3,
+  );
+  assert.equal(
+    markup.match(/<circle[^>]*data-ena-code="Evidence"[^>]*fill="#000000"/g)?.length,
+    3,
+  );
+});

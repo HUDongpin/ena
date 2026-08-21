@@ -16,6 +16,73 @@ const copy = source("lib/open-ena-i18n.ts");
 const longitudinal = source("lib/open-ena/longitudinal.ts");
 const site = source("lib/site.ts");
 
+test("trajectory models are configured in Model type instead of launched from the plot toolbar", () => {
+  assert.doesNotMatch(workspace, /open-ena-trajectory-analysis-button|launchTrajectoryAnalysis/);
+  assert.doesNotMatch(copy, /launch:\s*"Trajectory Analysis"/);
+  assert.match(
+    workspace,
+    /<span>\{copy\.model\.modelType\}<\/span>[\s\S]{0,1200}<option value="EndPoint">[\s\S]{0,300}<option value="SeparateTrajectory">[\s\S]{0,300}<option value="AccumulatedTrajectory">/,
+    "Endpoint, Separate trajectory, and Accumulated trajectory must remain explicit peer model choices",
+  );
+  assert.match(
+    workspace,
+    /config\.model !== "EndPoint" \? <p className="ena-sequence-note">\{copy\.model\.trajectoryHint\}<\/p> : null/,
+    "trajectory requirements must stay beside the model choice that creates the pending configuration",
+  );
+});
+
+test("the Model heading shortcut opens and focuses Model type without choosing or running a trajectory model", () => {
+  const modelPanel = workspace.match(
+    /function renderModelPanel\(\)[\s\S]*?(?=\n  function renderLongitudinalPanel\(\))/,
+  )?.[0] ?? "";
+  const shortcut = modelPanel.match(
+    /<button[\s\S]{0,900}data-testid="open-ena-configure-trajectory-model"[\s\S]{0,900}<\/button>/,
+  )?.[0] ?? "";
+  const handler = workspace.match(
+    /function openTrajectoryModelConfiguration\(\)[\s\S]*?(?=\n  function |\n  async function )/,
+  )?.[0] ?? "";
+
+  assert.match(shortcut, /^<button/);
+  assert.match(shortcut, /onClick=\{openTrajectoryModelConfiguration\}/);
+  assert.doesNotMatch(shortcut, /aria-pressed/);
+  assert.match(
+    modelPanel,
+    /<div className="ena-panel-heading">[\s\S]{0,1000}\{dataset \? \([\s\S]{0,500}data-testid="open-ena-configure-trajectory-model"[\s\S]{0,500}<\/button>[\s\S]{0,120}: null\}[\s\S]{0,80}<\/div>\s*<div className="ena-model-tabs"/,
+    "the shortcut must render only for a loaded dataset and remain inside the Model heading",
+  );
+  assert.ok(
+    modelPanel.indexOf('className="ena-panel-heading"')
+      < modelPanel.indexOf('data-testid="open-ena-configure-trajectory-model"'),
+    "the shortcut must follow the Model heading",
+  );
+  assert.ok(
+    modelPanel.indexOf('data-testid="open-ena-configure-trajectory-model"')
+      < modelPanel.indexOf('className="ena-model-tabs"'),
+    "the shortcut must stay in the Model header area rather than inside a model-type option or plot toolbar",
+  );
+
+  assert.match(handler, /setModelTab\("windows"\)/);
+  assert.match(handler, /setTrajectoryModelFocusRequest\(\(request\) => request \+ 1\)/);
+  assert.doesNotMatch(
+    handler,
+    /updateConfig|runAnalysis|\bsetMode\(|SeparateTrajectory|AccumulatedTrajectory|rotation/,
+    "the shortcut may navigate and request focus, but must not choose or run a model",
+  );
+  assert.match(
+    workspace,
+    /trajectoryModelFocusRequest === trajectoryModelFocusHandledRef\.current \|\| modelTab !== "windows"[\s\S]{0,180}trajectoryModelFocusHandledRef\.current = trajectoryModelFocusRequest[\s\S]{0,120}modelTypeSelectRef\.current\?\.focus\(\)/,
+    "each shortcut request must focus once after Windows renders without stealing focus on later ordinary tab navigation",
+  );
+  assert.match(
+    modelPanel,
+    /id="open-ena-model-type"[\s\S]{0,180}ref=\{modelTypeSelectRef\}/,
+    "the shortcut's controlled target must be the real Model type selector",
+  );
+  assert.match(copy, /configureTrajectory:\s*"Configure trajectory model"/);
+  assert.match(copy, /configureTrajectory:\s*"設定軌跡模型"/);
+  assert.match(copy, /configureTrajectory:\s*"配置轨迹模型"/);
+});
+
 test("longitudinal group-centroid analysis is derived only from successful jENA trajectory results", () => {
   assert.match(
     longitudinal,
@@ -48,19 +115,19 @@ test("researchers explicitly select repeated-entity and time-order fields", () =
   assert.match(controls, /(?:Time\s*(?:\/|and)?\s*order|copy\.longitudinal\.timeOrder)/i);
   assert.match(
     controls,
-    /resultConfig\.unitColumns\.map\([\s\S]{0,500}type="checkbox"/,
-    "composite repeated-entity choices must come from every unit field bound to the successful result",
+    /resultConfig\.unitColumns[\s\S]{0,220}\.filter\(\(column\) => column !== resultConfig\.groupColumn\)[\s\S]{0,180}\.map\([\s\S]{0,500}type="checkbox"/,
+    "composite repeated-entity choices must come from successful-result unit fields while excluding the comparison-group namespace",
   );
   assert.match(controls, /copy\.longitudinal\.confirmIdentity/);
   assert.match(
     controls,
-    /resultConfig\.conversationColumns\.map\([\s\S]{0,300}<option/,
-    "time/order choices must come from the conversation fields bound to the successful result",
+    /resultConfig\.conversationColumns[\s\S]{0,260}\.filter\(\(column\) => column !== resultConfig\.groupColumn && !repeatedEntityColumns\.includes\(column\)\)[\s\S]{0,180}\.map\([\s\S]{0,180}<option/,
+    "time/order choices must come from successful-result conversation fields while remaining distinct from the group and every identity field",
   );
   assert.match(
     workspace,
-    /setRepeatedEntityColumns\(\[\.\.\.resultConfig\.unitColumns\]\)[\s\S]{0,120}setIdentityConfirmed\(false\)/,
-    "every successful trajectory result must prefill all fitted unit fields but require fresh identity confirmation",
+    /setRepeatedEntityColumns\(nextEntityColumns\)[\s\S]{0,120}setIdentityConfirmed\(false\)/,
+    "every successful trajectory result must prefill non-group fitted unit fields but require fresh identity confirmation",
   );
   assert.match(
     workspace,

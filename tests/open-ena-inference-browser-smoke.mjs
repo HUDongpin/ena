@@ -29,6 +29,11 @@ const fixturePeriods = [
 ];
 const fixtureEntityPrefix = "PRIVATE_ENTITY_";
 const fixtureCodePrefix = "PRIVATE_CODE_";
+const smokeBrowser = process.env.OPEN_ENA_SMOKE_BROWSER || "chrome";
+assert.ok(
+  ["chrome", "firefox", "webkit", "msedge"].includes(smokeBrowser),
+  "OPEN_ENA_SMOKE_BROWSER must name a supported Playwright browser.",
+);
 const bundledPlaywrightWrapper = join(
   homedir(),
   ".codex",
@@ -313,7 +318,7 @@ try {
   });
 
   await waitForServer(`${baseUrl}/en/open-ena`);
-  const openArgs = ["open", `${baseUrl}/en/open-ena`];
+  const openArgs = ["open", `${baseUrl}/en/open-ena`, "--browser", smokeBrowser];
   browserSessionAttempted = true;
   runCli(openArgs, "open browser");
   browserOpened = true;
@@ -462,7 +467,10 @@ try {
     const selectedIdentity = await identity.getByRole("checkbox").evaluateAll((nodes) => nodes
       .filter((node) => node.checked && !node.parentElement.classList.contains("ena-inference-confirmation"))
       .map((node) => node.parentElement.textContent.trim()));
-    assert(selectedIdentity.includes("Group") && selectedIdentity.includes("Name"), "Trajectory composite identity was not prefilled");
+    assert(
+      JSON.stringify(selectedIdentity) === JSON.stringify(["Name"]),
+      "Trajectory identity did not exclude the comparison-group namespace while retaining the person field",
+    );
     await identity.getByRole("checkbox", { name: /I confirm this composite identity/ }).check();
     await page.getByRole("combobox", { name: "Time field" }).selectOption("Lesson");
     const period = page.getByRole("combobox", { name: "Selected period" });
@@ -1159,6 +1167,7 @@ try {
       ...locales,
     },
     console: { errors: 0, warnings: 0 },
+    browser: smokeBrowser,
     artifacts: artifactDirectory,
   };
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);

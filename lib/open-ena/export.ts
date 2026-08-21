@@ -10,6 +10,7 @@ import {
 } from "./inference-consumers";
 import type { OpenEnaInferenceResultV2 } from "./inference-v2";
 import { buildMethodsReport, type OpenEnaPresentationOptions } from "./methods";
+import { codeColorFor } from "./plot-style";
 import {
   datasetHashKindFor,
   JENA_RUNTIME_VERSION,
@@ -155,6 +156,14 @@ export function buildAnalysisBundle(
   }
   const presentation = {
     selectedAxes,
+    ...(options.codeColors
+      ? {
+          codeColors: Object.fromEntries(result.set.rotation.codes.map((code) => [
+            code,
+            codeColorFor(options.codeColors, code),
+          ])),
+        }
+      : {}),
     flipX: options.methodsFlipX ?? options.flipX ?? false,
     flipY: options.methodsFlipY ?? options.flipY ?? false,
     edgeThreshold: options.edgeThreshold ?? 0,

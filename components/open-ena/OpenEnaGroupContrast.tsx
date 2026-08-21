@@ -11,6 +11,7 @@ import type {
   OpenEnaPairwiseContrast,
   OpenEnaPairwiseContrastSide,
 } from "@/lib/open-ena/contrasts";
+import { codeColorFor, type OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
 import {
   marginalMeanIntervalPair,
   type OpenEnaMarginalMeanIntervalPair,
@@ -18,6 +19,7 @@ import {
 
 export interface OpenEnaGroupContrastProps {
   contrast: OpenEnaPairwiseContrast;
+  codeColors?: OpenEnaCodeColors;
   edgeThreshold: number;
   showPoints: boolean;
   showNetworks: boolean;
@@ -240,12 +242,12 @@ async function copyPlotImage(button: HTMLButtonElement) {
     .ena-set-plot-background { fill: #fff; }
     .ena-set-zero-axes line { stroke: #333; stroke-width: 0.5; }
     .ena-set-axis-endpoint { fill: #333; }
-    .ena-set-zero-axes text { fill: #4d4d4d; font-size: calc(12px * var(--ena-plot-text-scale, 1)); font-weight: 690; }
+    .ena-set-zero-axes text { fill: #4d4d4d; font-size: calc(12px * var(--ena-plot-text-scale, 1) + var(--ena-font-step, 1px)); font-weight: 690; }
     .ena-set-result-node { fill: #4d4d4d; stroke: #4d4d4d; stroke-width: 0; }
-    .ena-set-result-label { fill: #111; paint-order: normal; stroke: none; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: calc(10px * var(--ena-plot-text-scale, 1)); font-weight: 600; }
-    .ena-set-group-label { fill: #111; paint-order: normal; stroke: none; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: calc(10px * var(--ena-plot-text-scale, 1)); font-weight: 600; }
+    .ena-set-result-label { fill: #111; paint-order: normal; stroke: none; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: calc(10px * var(--ena-plot-text-scale, 1) + var(--ena-font-step, 1px)); font-weight: 600; }
+    .ena-set-group-label { fill: #111; paint-order: normal; stroke: none; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: calc(10px * var(--ena-plot-text-scale, 1) + var(--ena-font-step, 1px)); font-weight: 600; }
     .ena-set-unit-label { fill: #263740; paint-order: stroke; stroke: #fff; stroke-linejoin: round; stroke-width: 4px; font-weight: 700; }
-    .ena-set-unit-label { font-size: calc(8px * var(--ena-plot-text-scale, 1)); }
+    .ena-set-unit-label { font-size: calc(8px * var(--ena-plot-text-scale, 1) + var(--ena-font-step, 1px)); }
   `;
   clone.insertBefore(style, clone.firstChild);
   const serialized = new XMLSerializer().serializeToString(clone);
@@ -758,6 +760,7 @@ function PlotPanelActionToolbar({
 
 function ContrastSvg({
   contrast,
+  codeColors,
   kind,
   edgeThreshold,
   showPoints,
@@ -1170,6 +1173,7 @@ function ContrastSvg({
           if (!point) return null;
           const codeLabel = safeFigureLabel(node.code, 72) || "Unnamed code";
           const nodeSize = codeNodeSize(node.code);
+          const nodeColor = codeColorFor(codeColors, node.code);
           return (
             <g
               key={node.code}
@@ -1183,8 +1187,10 @@ function ContrastSvg({
                 className="ena-set-result-node"
                 data-ena-code-node="neutral"
                 data-ena-code-node-size={dataNumber(nodeSize)}
-                fill="#4D4D4D"
-                stroke="#4D4D4D"
+                data-ena-code={node.code}
+                fill={nodeColor}
+                stroke={nodeColor}
+                style={{ fill: nodeColor, stroke: nodeColor }}
               />
               {showLabels ? (
                 <text x={nodeSize + 3} y="3" textAnchor="start" className="ena-set-result-label">
@@ -1216,9 +1222,9 @@ function ContrastSvg({
       {kind === "comparison" && referenceToken && referenceName && referenceCaveat ? (
         <g className="ena-reference-figure-provenance" role="note" aria-label={referenceDescription.trim()}>
           <rect x="18" y="514" width="884" height="64" rx="8" fill="#f1f7f6" stroke="#c7dbd7" />
-          <text x="30" y="532" fill="#334b52" fontSize="10.5" fontWeight="700">{referenceToken}</text>
-          <text x="30" y="551" fill="#334b52" fontSize="10.5" fontWeight="700">Reference: {referenceName}</text>
-          <text x="30" y="570" fill="#334b52" fontSize="10.5" fontWeight="700">{referenceCaveat}</text>
+          <text x="30" y="532" fill="#334b52" fontSize="11.5" fontWeight="700">{referenceToken}</text>
+          <text x="30" y="551" fill="#334b52" fontSize="11.5" fontWeight="700">Reference: {referenceName}</text>
+          <text x="30" y="570" fill="#334b52" fontSize="11.5" fontWeight="700">{referenceCaveat}</text>
         </g>
       ) : null}
     </svg>
@@ -1435,7 +1441,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
             </section>
           ) : (
             <figure className="ena-set-main-plot" tabIndex={0} aria-label="Comparison plot. Scroll horizontally on small screens.">
-              <header className="ena-set-plot-heading">
+              <header className="ena-set-plot-heading ena-group-contrast-plot-heading">
                 <div>
                   <h3>Comparison Plot</h3>
                   <p
@@ -1513,7 +1519,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
               data-ena-panel-role="primary"
               data-ena-panel-state={panelStates.primary}
             >
-              <header className="ena-set-plot-heading">
+              <header className="ena-set-plot-heading ena-group-contrast-plot-heading">
                 <div>
                   <h3>Primary Plot</h3>
                   <p
@@ -1558,7 +1564,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
             </figure>
           ) : (
             <section className="ena-empty-side-plot" data-ena-panel-role="primary" data-ena-panel-state="removed" aria-label="Primary Plot is empty">
-              <header className="ena-set-plot-heading"><h3>Primary Plot</h3></header>
+              <header className="ena-set-plot-heading ena-group-contrast-plot-heading"><h3>Primary Plot</h3></header>
               <div className="ena-empty-side-plot-prompt"><OfficialPlotIcon name="restore" /><p>Click or hover points in the comparison plot to display networks here</p></div>
             </section>
           )}
@@ -1569,7 +1575,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
               data-ena-panel-role="secondary"
               data-ena-panel-state={panelStates.secondary}
             >
-              <header className="ena-set-plot-heading">
+              <header className="ena-set-plot-heading ena-group-contrast-plot-heading">
                 <div>
                   <h3>Secondary Plot</h3>
                   <p
@@ -1615,7 +1621,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
             </figure>
           ) : (
             <section className="ena-empty-side-plot" data-ena-panel-role="secondary" data-ena-panel-state="removed" aria-label="Secondary Plot is empty">
-              <header className="ena-set-plot-heading"><h3>Secondary Plot</h3></header>
+              <header className="ena-set-plot-heading ena-group-contrast-plot-heading"><h3>Secondary Plot</h3></header>
               <div className="ena-empty-side-plot-prompt"><OfficialPlotIcon name="restore" /><p>Click or hover points in the comparison plot to display networks here</p></div>
             </section>
           )}

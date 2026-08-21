@@ -6,18 +6,20 @@
 
 **Baseline:** `a2289765273a2ac092d0713d6d7a1572d1f93fea`
 
+**Authorized integration baseline:** `origin/main@6b8872289d6216494ec07b483ccf04b2439f61cf`
+
 **Rule:** A row closes only after its acceptance condition has reproducible local evidence. `Open` is not completion.
 
 ## Phase 0 — Isolation, specification, and baseline
 
 | ID | Acceptance condition | Evidence | Status |
 | --- | --- | --- | --- |
-| P0-01 | Work occurs only in the named isolated worktree and branch; shared `/Volumes/Starship/ENA` is not modified. | Final audit: feature work is on `codex/open-ena-complete-rank-inference` in `/Volumes/Starship/ENA-stats-inference-wt`; shared `/Volumes/Starship/ENA` remains clean at baseline `a228976`. | Closed |
+| P0-01 | Work occurs only in the named isolated worktree and branch; shared `/Volumes/Starship/ENA` is not modified. | Implementation remained isolated through the original closeout. During the separately authorized 2026-08-22 release integration, only this feature worktree received `origin/main@6b88722`; the shared root remained clean on `main@6b88722`. | Closed |
 | P0-02 | Recorded baseline matches the then-current `origin/codex/login`, without reset, stash, clean, or overwrite. | Baseline `a2289765273a2ac092d0713d6d7a1572d1f93fea` verified equal to `origin/codex/login` before worktree creation; no reset/stash/clean used. | Closed |
 | P0-03 | Dependencies install and the complete pre-change test suite passes. | Existing dependencies loaded; pre-change `npm test` passed 379/379. | Closed |
 | P0-04 | Approved design has no unresolved alternatives or contradictory method branches. | Independent design re-review PASS at `f4578b6`; exact Phase 2 amendment final-diff mathematical re-review PASS before commit. | Closed |
 | P0-05 | This ledger covers every implementation, review, verification, and release-boundary criterion. | Independent ledger coverage review PASS at `f4578b6`; exact Phase 2 amendment review confirmed P2-26 through P2-28 and continuous P0/P5 boundaries. | Closed |
-| P0-06 | Commits stage only exact planned paths and never absorb unrelated changes. | Every existing implementation and browser commit through final production HEAD `69f5366` used exact-path staging; the current uncommitted closeout diff is limited to the design and this ledger and is ready for exact-path staging. | Closed |
+| P0-06 | Commits stage only exact planned paths and never absorb unrelated changes. | Every implementation/browser commit used exact-path staging. The authorized main-integration resolution stages only the five conflicted files plus the reviewed longitudinal-frame, browser-smoke, and ledger updates; no broad staging, stash, reset, or clean was used. | Closed |
 
 ## Phase 1 — Composite identity and comparison frame
 
@@ -28,7 +30,7 @@
 | P1-03 | A v1 singular repeated-entity setting migrates to one element and forces identity confirmation off. | `46ef5cb`; v1 Plot compatibility golden. | Closed |
 | P1-04 | Canonical identity uses JSON field/value tuples; components use exact null/NFC/string/blank rules and map only to private opaque tokens, with no delimiter-concatenated identity. | `46ef5cb` + `3fccad1`; privacy and identity normalization goldens. | Closed |
 | P1-05 | `Group + Name` pairs Yu-style entities correctly and same names in different groups do not merge. | `46ef5cb`; Group+Name collision fixture. | Closed |
-| P1-06 | Selecting only the group field when additional unit fields exist is blocked; selecting a colliding name field fails closed. | `46ef5cb`; pseudo-entity/cross-group collision goldens. | Closed |
+| P1-06 | Selecting only the group field is blocked; non-group identity fields are automatically scoped by the configured group namespace when that namespace belongs to the fitted unit identity. | Original pseudo-entity goldens plus the 2026-08-22 Yu-style integration goldens: Group-only fails closed, while same-looking names in different groups remain distinct without exposing Group as a repeated-entity control. | Closed |
 | P1-07 | Identity collision, group instability, entity-period instability, and non-finite coordinates fail closed without value/token leakage. | `46ef5cb` + `3fccad1` + `4bee050`; safe typed-error tests. | Closed |
 | P1-08 | `buildLongitudinalDerivation()` returns a descriptive Plot view and a private all-period comparison frame; tokens/coordinates/differences required for calculation remain internal. | `46ef5cb`; derivation/frame immutability and privacy tests. | Closed |
 | P1-09 | Plot Available/Complete changes only the view; comparison-frame membership and later inference do not change. | `4bee050` frame/slice goldens plus browser smoke `e484760`: Complete/Available and presentation changes preserve the same eight-member repeated inference. | Closed |
@@ -99,7 +101,7 @@
 | P3-19 | A same-four-person baseline/scaffolded configuration can only enter paired Wilcoxon, never 4+4 independent Mann–Whitney. | `32b9e01` real frame/coordinator fixture: matched=4 Wilcoxon; period-as-group request is `group-invalid` with no MW row. | Closed |
 | P3-20 | EndPoint inference is titled exactly **Independent endpoint groups** and makes no claim that a common time period was verified. | `32b9e01`; exact en/zh-Hant/zh-Hans browser captions and temporal-boundary copy PASS. | Closed |
 | P3-21 | Locale or AI prompt-version changes clear AI consent/interpretation only and preserve the statistical inference result and inference export. | Workspace/AI lifecycle tests distinguish inference key from locale/prompt interpretation key. | Closed |
-| P3-22 | The production Workspace preselects every successful `unitColumn` for v2 identity controls while keeping `identityConfirmed=false`; the existing v1 descriptive Plot remains compatible until this Phase 3 integration. | Phase 3 Workspace tests and browser `Group + Name` identity confirmation flow PASS. | Closed |
+| P3-22 | The production Workspace preselects every successful non-group `unitColumn` for v2 composite identity controls while keeping `identityConfirmed=false`; the configured group remains an internal namespace rather than a repeated-entity choice. | Integrated Workspace tests and browser `Name` confirmation flow PASS; fitted unit identity remains ordered `Group + Name`, and same-looking names are group-scoped internally. | Closed |
 
 ## Phase 4 — Schema v2, export, Methods, AI, and privacy
 
@@ -132,17 +134,17 @@
 | P5-02 | Independent data/privacy reviewer approves composite identity, private tokens, error handling, exports, and AI payload. | Final post-`69f5366` data/privacy review PASS: endpoint and trajectory old-authority drift probes closed and no P0-P3 findings; final reproducible privacy/authority/AI focused suite 194/194 PASS. | Closed |
 | P5-03 | Independent UI reviewer approves discoverability, three languages, keyboard/screen reader, focus, and narrow screens. | Independent real-browser/UI review PASS at browser commit `e484760`, no P0-P3 findings. | Closed |
 | P5-04 | Targeted mathematical and comparison-frame tests pass. | Final reproducible rank/frame/coordinator/strict-consumer/legacy-inference/longitudinal targeted run 136/136 PASS. | Closed |
-| P5-05 | Existing inference, longitudinal, Stats, export, Methods, and AI tests pass. | Final full test suite includes all existing and new focused contracts: 543/543 PASS. | Closed |
-| P5-06 | Full `npm test` passes. | `npm test`: 543 tests, 543 pass, 0 fail. | Closed |
-| P5-07 | `npm run typecheck` passes. | Final typecheck after `69f5366`: PASS. | Closed |
-| P5-08 | `npm run build` passes. | Final production `next build` after `69f5366`: PASS; 752 static pages generated. | Closed |
-| P5-09 | Browser smoke passes EndPoint independent, trajectory-period independent, paired A/B, and repeated-period workflows. | Final post-fix browser run exits 0: endpoint MW, selected-period MW 7+7, paired Wilcoxon 7 matched/2 missing, Friedman 2 + follow-up 6. | Closed |
-| P5-10 | Browser smoke passes three languages, 320/375/1024 layouts, keyboard/focus, JSON/CSV/Methods, and AI preview privacy. | Final browser run: en/zh-Hant/zh-Hans actual Run; widths 320/375/1024; keyboard/focus; eight-row parity; console 0/0; cleanup PASS. | Closed |
-| P5-11 | Final worktree contains only planned files and all local commits use exact-path staging. | Inventory matches the baseline diff at 45/45 paths; all existing implementation/browser commits are exact-path, and the only current uncommitted changes are these two planned documentation paths. | Closed |
-| P5-12 | Final report identifies local commit SHA(s), tests, build, browser evidence, review outcomes, and residual limitations. | This ledger records commits and evidence; final handoff reports the final documentation SHA, local-only boundary, tests/build/browser and three review verdicts. | Closed |
-| P5-13 | Local commit is allowed; no push is performed. | Feature branch remains local with no upstream; no push command was executed. | Closed |
-| P5-14 | PR creation, merge, and branch integration are explicitly out of scope. | No PR, merge, cherry-pick, or branch integration performed. | Closed |
-| P5-15 | Vercel deployment/readiness and live-route proof are explicitly out of scope. | No deployment, Vercel mutation, alias change, or live-route completion claim performed. | Closed |
+| P5-05 | Existing inference, longitudinal, Stats, export, Methods, and AI tests pass. | Post-main-integration full suite: 567/567 PASS. | Closed |
+| P5-06 | Full `npm test` passes. | Post-main-integration `npm test`: 567 tests, 567 pass, 0 fail. | Closed |
+| P5-07 | `npm run typecheck` passes. | Post-main-integration typecheck: PASS. | Closed |
+| P5-08 | `npm run build` passes. | Post-main-integration production `next build`: PASS; 3,370 static pages generated. | Closed |
+| P5-09 | Browser smoke passes EndPoint independent, trajectory-period independent, paired A/B, and repeated-period workflows. | Post-main-integration WebKit run exits 0: endpoint MW, selected-period MW 7+7, paired Wilcoxon 7 matched/2 missing, Friedman 2 + follow-up 6. | Closed |
+| P5-10 | Browser smoke passes three languages, 320/375/1024 layouts, keyboard/focus, JSON/CSV/Methods, and AI preview privacy. | Post-main-integration browser run: en/zh-Hant/zh-Hans actual Run; widths 320/375/1024; keyboard/focus; eight-row parity; console 0/0; owned server/browser cleanup PASS. | Closed |
+| P5-11 | Final worktree contains only planned files and all local commits use exact-path staging. | Original 45-path feature inventory remains recorded below; the authorized integration adds only reviewed `main` history and explicit conflict/test/ledger resolutions. Generated browser outputs remain ignored. | Closed |
+| P5-12 | Final report identifies local commit SHA(s), tests, build, browser evidence, review outcomes, and residual limitations. | This ledger records original commits and the authorized integration baseline; GitHub PR, Production SHA, live proof, and cleanup remain separate release evidence. | Closed |
+| P5-13 | Original local closeout did not authorize a push. | Historical boundary only: it was superseded on 2026-08-22 by explicit user authorization to push the feature branch and create a Draft PR after integration QA. | Closed |
+| P5-14 | Original local closeout excluded PR creation and branch integration. | Historical boundary only: it was superseded on 2026-08-22 by explicit user authorization for Draft PR review and merge to `main`. | Closed |
+| P5-15 | Original local closeout excluded Vercel and live-route proof. | Historical boundary only: it was superseded on 2026-08-22 by explicit user authorization to verify the exact Production deployment and live route after merge. | Closed |
 
 ## Final local verification record
 
@@ -150,16 +152,26 @@
 - Reproducible browser suite: `e4847604f9cffaf79374102789fa27ef275a471a`; rerun after `69f5366` exited 0.
 - Targeted math/frame/coordinator/consumer: 136/136 PASS from `./node_modules/.bin/tsx --test tests/open-ena-rank-inference.test.ts tests/open-ena-longitudinal-frame.test.ts tests/open-ena-inference-v2.test.ts tests/open-ena-inference-consumers-v2.test.ts tests/open-ena-inference.test.ts tests/open-ena-longitudinal.test.ts`.
 - Privacy/authority/AI focused integration: 194/194 PASS from `./node_modules/.bin/tsx --test tests/open-ena-longitudinal-frame.test.ts tests/open-ena-inference-v2.test.ts tests/open-ena-inference-consumers-v2.test.ts tests/open-ena-ai-interpretation-payload.test.ts tests/open-ena-ai-interpretation-client.test.ts tests/open-ena-ai-interpretation-route.test.ts tests/open-ena-ai-interpretation-workspace.test.ts tests/open-ena-workspace-inference-consumers.test.ts`.
-- Full `npm test`: 543/543 PASS.
+- Post-main-integration full `npm test`: 567/567 PASS.
 - `npm run typecheck`: PASS.
-- `npm run build`: PASS; 752 static pages generated.
-- Browser: four designs, 7+7 selected-period independent, 7 matched/2 missing paired, 6 complete/3 missing repeated, 2 Friedman + 6 follow-ups, eight-row consumer parity, three locales, three widths, keyboard/focus, console 0/0, no residual server/browser session.
+- `npm run build`: PASS; 3,370 static pages generated.
+- Post-main-integration browser (WebKit): four designs, 7+7 selected-period independent, 7 matched/2 missing paired, 6 complete/3 missing repeated, 2 Friedman + 6 follow-ups, eight-row consumer parity, three locales, three widths, keyboard/focus, console 0/0, no residual server/browser session.
 - Mathematical review: PASS. Browser/UI review: PASS. Final data/privacy review: PASS with endpoint and trajectory old-authority adversarial probes.
-- Release boundary: local commits only; no push, PR, merge, deployment, Vercel readiness check, or live proof.
+- Release boundary: the original local-only boundary has been superseded by explicit authorization for push, Draft PR, review, merge, exact Production verification, live proof, and post-release branch/worktree cleanup. This pre-PR ledger snapshot does not itself claim those later gates have completed.
 
-## Final source and test inventory
+## Authorized release integration record — 2026-08-22 pre-PR snapshot
 
-This reviewed inventory contains every path changed from baseline `a228976` through final production HEAD `69f5366`, including browser commit `e484760`, plus the final design/ledger closeout. There are 45 paths: 30 baseline files modified and 15 approved additions. No generated browser artifact, downloaded output, dependency lockfile, credential, or unrelated worktree file is included.
+- Latest `origin/main@6b8872289d6216494ec07b483ccf04b2439f61cf` was merged into the feature worktree without rebase or force push.
+- The five expected conflicts were resolved in `OpenEnaWorkspace.tsx`, `open-ena-i18n.ts`, `export.ts`, `longitudinal.ts`, and `open-ena-longitudinal-workspace.test.ts`.
+- Integration preserves the current Model-heading trajectory setup shortcut, Baby Blue site/login theme, code-color exports, 30-day News/Academy backfill, composite identity confirmation, exact-first rank inference, and aggregate-only inference consumers.
+- Group is excluded from the repeated-entity UI and from the time field; non-group composite fields remain selectable, same-looking names are internally group-scoped, and exact jENA unit/trajectory identity is revalidated before comparison-frame construction.
+- Focused longitudinal/Yu integration: 52/52 PASS. Full verify: 567/567 tests, typecheck PASS, build PASS, 3,370 static pages.
+- WebKit browser smoke: all four inference designs, all aggregate exports/Methods/AI parity and privacy checks, three locales, three narrow-layout widths, keyboard/focus, and console 0 errors/0 warnings PASS.
+- At this snapshot the feature push, Draft PR, GitHub review/checks, merge to `main`, Production SHA/alias verification, live proof, and final branch/worktree cleanup remain later evidence gates.
+
+## Original reviewed feature source and test inventory
+
+This historical inventory contains every original feature path changed from baseline `a228976` through feature HEAD `69f5366`, including browser commit `e484760`, plus the original design/ledger closeout. It intentionally excludes the subsequently authorized `main@6b88722` integration, whose evidence is recorded above. There are 45 original feature paths: 30 baseline files modified and 15 approved additions. No generated browser artifact, downloaded output, dependency lockfile, credential, or unrelated worktree file is included.
 
 | Area | File | State | Final responsibility |
 | --- | --- | --- | --- |
