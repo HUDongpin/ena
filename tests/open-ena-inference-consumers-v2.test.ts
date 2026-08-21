@@ -37,6 +37,63 @@ import {
 const HASH = "d".repeat(64);
 const HASH_KIND = "normalized-utf8-csv-text-sha256" as const;
 const ANALYZED_AT = "2026-08-21T12:34:56.000Z";
+const INFERENCE_RESOLVED_METHOD_AUDIT_ERROR =
+  "Inference resolved p method, exact-tail, and continuity audit are inconsistent.";
+const INFERENCE_JSON_DATA_ERROR =
+  "Inference result must be plain JSON data with own enumerable data properties.";
+const INFERENCE_JSON_BUDGET_ERROR =
+  "Inference result exceeds the bounded plain JSON data budget.";
+const INFERENCE_ROW_FIELDS_ERROR =
+  "Inference result row must contain exactly its required fields.";
+const INFERENCE_ROW_REASON_ERROR =
+  "Inference row not-estimable reason is inconsistent with its rank test.";
+const INFERENCE_OVERALL_REASON_ERROR =
+  "Inference overall reason does not match its planned rows.";
+const INFERENCE_AVAILABLE_STATISTICS_ERROR =
+  "Inference available row statistics are incomplete.";
+const INFERENCE_ROW_COUNT_ERROR =
+  "Inference row count audit is inconsistent.";
+const INFERENCE_LEDGER_AUDIT_ERROR =
+  "Inference inclusion ledger audit is inconsistent.";
+const INFERENCE_EXACT_FIRST_ERROR =
+  "Inference resolved p method is inconsistent with exact-first audit.";
+const INFERENCE_MINIMUM_P_ERROR =
+  "Inference Wilcoxon minimum attainable p audit is inconsistent with nNonzero.";
+const INFERENCE_EXACT_TAIL_ERROR =
+  "Inference exact-tail counts and raw p-value are inconsistent.";
+const INFERENCE_HOLM_AUDIT_ERROR =
+  "Inference Holm family adjustment audit is inconsistent.";
+
+function isInconsistentRowMethodAuditError(error: unknown) {
+  return error instanceof Error && error.message === INFERENCE_RESOLVED_METHOD_AUDIT_ERROR;
+}
+
+function hasExactErrorMessage(expected: string) {
+  return (error: unknown) => error instanceof Error && error.message === expected;
+}
+
+function freezeOwnDataRecursively<T>(value: T, seen = new Set<unknown>()): T {
+  if (value === null || typeof value !== "object" || seen.has(value)) return value;
+  seen.add(value);
+  for (const key of Reflect.ownKeys(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor && "value" in descriptor) freezeOwnDataRecursively(descriptor.value, seen);
+  }
+  return Object.freeze(value);
+}
+
+function markRowNotEstimable(row: Record<string, unknown>, reason: string) {
+  row.status = "not-estimable";
+  row.reason = reason;
+  row.pRaw = null;
+  row.pHolm = null;
+  row.holmRank = null;
+  row.holmMultiplier = null;
+  row.resolvedPMethod = null;
+  row.exactTail = null;
+  row.continuityCorrectionApplied = false;
+  if (row.test === "wilcoxon-signed-rank") row.minimumAttainableTwoSidedP = null;
+}
 
 function bindResult(result: OpenEnaResult, configuration: OpenEnaConfig): OpenEnaResult {
   return {
@@ -60,6 +117,41 @@ function endpointFixture() {
     "s2,c5,Secondary,1,1,1",
     "s3,c6,Secondary,0,1,0",
   ].join("\n") + "\n", { name: "endpoint-v2.csv", source: "upload" });
+  const configuration: OpenEnaConfig = {
+    ...SAMPLE_CONFIG,
+    unitColumns: ["unit"],
+    conversationColumns: ["conversation"],
+    groupColumn: "group",
+    codes: ["A", "B", "C"],
+    model: "EndPoint",
+    window: "Conversation",
+  };
+  const result = bindResult(analyzeDataset(dataset, configuration), configuration);
+  const axes = result.dimensions.slice(0, 2) as [string, string];
+  return { dataset, configuration, result, axes };
+}
+
+function endpointApproximationFixture() {
+  const rows = ["unit,conversation,group,A,B,C"];
+  const patterns = [
+    [1, 1, 0],
+    [1, 0, 1],
+    [0, 1, 1],
+    [1, 1, 1],
+  ] as const;
+  for (const [group, count, offset] of [
+    ["Primary", 26, 0],
+    ["Secondary", 25, 1],
+  ] as const) {
+    for (let index = 0; index < count; index += 1) {
+      const pattern = patterns[(index + offset) % patterns.length];
+      rows.push(`${group[0]}${index + 1},c-${group[0]}${index + 1},${group},${pattern.join(",")}`);
+    }
+  }
+  const dataset = parseCsv(rows.join("\n") + "\n", {
+    name: "endpoint-approximation-v2.csv",
+    source: "upload",
+  });
   const configuration: OpenEnaConfig = {
     ...SAMPLE_CONFIG,
     unitColumns: ["unit"],
@@ -111,6 +203,50 @@ function trajectoryFixture(periodCount = 3) {
     datasetNormalizedUtf8TextSha256: HASH,
   }, ANALYZED_AT);
   return { dataset, configuration, result, axes, derivation };
+}
+
+function trajectoryComparisonFrameWithCoordinates(
+  fixture: ReturnType<typeof trajectoryFixture>,
+  entityCount: number,
+) {
+  const frame = structuredClone(fixture.derivation.comparisonFrame);
+  const group = frame.groups.find((candidate) => candidate.name === "Control");
+  if (!group) assert.fail("expected Control comparison group");
+  frame.points = [];
+  for (let entity = 1; entity <= entityCount; entity += 1) {
+    const entityToken = `opaque-test-${entity}`;
+    const base = entity / 100;
+    frame.points.push(
+      {
+        entityToken,
+        group,
+        time: "T1",
+        timeIndex: 0,
+        x: base,
+        y: base * 2,
+        sourcePointCount: 1,
+      },
+      {
+        entityToken,
+        group,
+        time: "T2",
+        timeIndex: 1,
+        x: base + 1 + entity / 10_000,
+        y: base * 2 - 1 - entity / 20_000,
+        sourcePointCount: 1,
+      },
+      {
+        entityToken,
+        group,
+        time: "T3",
+        timeIndex: 2,
+        x: base + 2 + entity / 5_000,
+        y: base * 2 + 1 + entity / 10_000,
+        sourcePointCount: 1,
+      },
+    );
+  }
+  return frame;
 }
 
 async function runInference(
@@ -1275,8 +1411,6 @@ test("strict readers require bounded exact-tail audits and complete aggregate le
   boundaryTail.rows[0].exactTail.totalAssignmentCount = "9".repeat(4_096);
   const boundaryTailBundle = structuredClone(endpointBundle);
   boundaryTailBundle.inference = boundaryTail;
-  assert.doesNotThrow(() => parseOpenEnaInferenceResultV2(boundaryTail));
-  assert.doesNotThrow(() => parseOpenEnaAnalysisBundle(JSON.stringify(boundaryTailBundle)));
 
   const oversizedTail = structuredClone(endpointInference);
   if (oversizedTail.kind !== "endpoint-independent" || !oversizedTail.rows[0].exactTail) {
@@ -1327,6 +1461,7 @@ test("strict readers require bounded exact-tail audits and complete aggregate le
   oversizedRepeatedPeriodsBundle.inference = oversizedRepeatedPeriods;
 
   for (const { label, inference, bundle } of [
+    { label: "bounded but arithmetically impossible exact-tail digits", inference: boundaryTail, bundle: boundaryTailBundle },
     { label: "oversized exact-tail digit string", inference: oversizedTail, bundle: oversizedTailBundle },
     { label: "available result without ledger", inference: missingLedger, bundle: missingLedgerBundle },
     { label: "duplicate paired ledger axes", inference: duplicatePairedAxes, bundle: duplicatePairedAxesBundle },
@@ -1344,6 +1479,1695 @@ test("strict readers require bounded exact-tail audits and complete aggregate le
       /exact-tail|bounded|ledger|axis|period|required|cardinality/i,
       `${label} bundle`,
     );
+  }
+});
+
+test("strict readers and longitudinal CSV reject a stateful inherited getter without invoking it", async () => {
+  const { trajectory, pairedInference } = await allInferenceFixtures();
+  const forged = structuredClone(pairedInference);
+  if (forged.kind !== "trajectory-paired-periods") assert.fail("expected paired inference");
+  const row = forged.rows[0];
+  delete (row as unknown as { reason?: unknown }).reason;
+  let getterReadCount = 0;
+  const mutablePrototype = Object.create(null) as Record<string, unknown>;
+  Object.defineProperty(mutablePrototype, "reason", {
+    enumerable: true,
+    configurable: true,
+    get() {
+      getterReadCount += 1;
+      return getterReadCount <= 4 ? null : "no-complete-blocks";
+    },
+  });
+  Object.setPrototypeOf(row, mutablePrototype);
+  freezeOwnDataRecursively(forged);
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(forged),
+    hasExactErrorMessage(INFERENCE_JSON_DATA_ERROR),
+  );
+  assert.throws(
+    () => longitudinalInferenceRowsToCsv(trajectory.derivation.view, forged),
+    (error: unknown) => error instanceof Error
+      && error.message === "Inference consumer binding mismatch.",
+  );
+  assert.equal(getterReadCount, 0, "validation must inspect descriptors without invoking getters");
+});
+
+test("strict inference JSON boundary rejects inherited, accessor, symbol, sparse, and exotic-array state", async () => {
+  const { pairedInference } = await allInferenceFixtures();
+  const cases: Array<{
+    label: string;
+    mutate: (inference: Extract<OpenEnaInferenceResultV2, { kind: "trajectory-paired-periods" }>) => () => number;
+  }> = [
+    {
+      label: "inherited required field",
+      mutate(inference) {
+        const row = inference.rows[0];
+        delete (row as unknown as { reason?: unknown }).reason;
+        Object.setPrototypeOf(row, Object.freeze({ reason: null }));
+        return () => 0;
+      },
+    },
+    {
+      label: "own getter",
+      mutate(inference) {
+        let reads = 0;
+        Object.defineProperty(inference.rows[0], "reason", {
+          enumerable: true,
+          configurable: true,
+          get() { reads += 1; return null; },
+        });
+        return () => reads;
+      },
+    },
+    {
+      label: "custom record prototype",
+      mutate(inference) {
+        Object.setPrototypeOf(inference.rows[0], Object.freeze({}));
+        return () => 0;
+      },
+    },
+    {
+      label: "symbol field",
+      mutate(inference) {
+        Object.defineProperty(inference.rows[0], Symbol("hidden"), {
+          enumerable: true,
+          value: "unexpected",
+        });
+        return () => 0;
+      },
+    },
+    {
+      label: "non-enumerable field",
+      mutate(inference) {
+        Object.defineProperty(inference.rows[0], "hidden", {
+          enumerable: false,
+          value: "unexpected",
+        });
+        return () => 0;
+      },
+    },
+    {
+      label: "sparse row array",
+      mutate(inference) {
+        delete inference.rows[1];
+        return () => 0;
+      },
+    },
+    {
+      label: "accessor array index",
+      mutate(inference) {
+        let reads = 0;
+        const first = inference.rows[0];
+        Object.defineProperty(inference.rows, "0", {
+          enumerable: true,
+          configurable: true,
+          get() { reads += 1; return first; },
+        });
+        return () => reads;
+      },
+    },
+    {
+      label: "custom array prototype",
+      mutate(inference) {
+        Object.setPrototypeOf(inference.rows, Object.create(Array.prototype));
+        return () => 0;
+      },
+    },
+  ];
+
+  for (const { label, mutate } of cases) {
+    const forged = structuredClone(pairedInference);
+    if (forged.kind !== "trajectory-paired-periods") assert.fail("expected paired inference");
+    const getterReads = mutate(forged);
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(forged),
+      hasExactErrorMessage(INFERENCE_JSON_DATA_ERROR),
+      label,
+    );
+    assert.equal(getterReads(), 0, `${label} must be rejected without invoking an accessor`);
+  }
+});
+
+test("plain-data budget rejects an oversized dense array before inspecting its elements", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const standalone = structuredClone(endpointInference);
+  if (standalone.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  const oversizedRows = Array.from({ length: 4_097 }, () => standalone.rows[0]);
+  let elementGetterReads = 0;
+  Object.defineProperty(oversizedRows, "0", {
+    enumerable: true,
+    configurable: true,
+    get() {
+      elementGetterReads += 1;
+      return standalone.rows[0];
+    },
+  });
+  standalone.rows = oversizedRows as typeof standalone.rows;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(standalone),
+    hasExactErrorMessage(INFERENCE_JSON_BUDGET_ERROR),
+  );
+  assert.equal(elementGetterReads, 0, "oversized-array rejection must not inspect an element accessor");
+
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const bundledInference = structuredClone(endpointInference);
+  if (bundledInference.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  bundledInference.rows = Array.from(
+    { length: 4_097 },
+    () => structuredClone(bundledInference.rows[0]),
+  ) as typeof bundledInference.rows;
+  const bundled = structuredClone(bundle);
+  bundled.inference = bundledInference;
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(bundled)),
+    hasExactErrorMessage(INFERENCE_JSON_BUDGET_ERROR),
+  );
+});
+
+test("plain-data budget bounds one object and cumulative object-node and own-key work", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const cases: Array<{ label: string; extra: unknown }> = [
+    {
+      label: "one oversized object",
+      extra: Object.fromEntries(Array.from(
+        { length: 4_097 },
+        (_, index) => [`field-${index}`, index],
+      )),
+    },
+    {
+      label: "cumulative object-node budget",
+      extra: Array.from({ length: 4_096 }, () => ({
+        children: Array.from({ length: 8 }, () => ({})),
+      })),
+    },
+    {
+      label: "cumulative own-key budget",
+      extra: Array.from(
+        { length: 65 },
+        () => Array.from({ length: 4_096 }, () => 0),
+      ),
+    },
+  ];
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+
+  for (const { label, extra } of cases) {
+    const standalone = structuredClone(endpointInference) as unknown as Record<string, unknown>;
+    standalone.oversizedTree = extra;
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(standalone),
+      hasExactErrorMessage(INFERENCE_JSON_BUDGET_ERROR),
+      `${label} standalone`,
+    );
+
+    const bundled = structuredClone(bundle) as unknown as Record<string, unknown>;
+    bundled.inference = standalone;
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(bundled)),
+      hasExactErrorMessage(INFERENCE_JSON_BUDGET_ERROR),
+      `${label} bundle`,
+    );
+  }
+});
+
+test("plain-data budget accepts a maximum bounded dense array and counts shared objects once", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const standalone = structuredClone(endpointInference);
+  if (standalone.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  const sharedWarnings = Array.from({ length: 4_096 }, () => "small-sample" as const);
+  standalone.warnings = sharedWarnings;
+  standalone.rows[0].warnings = sharedWarnings;
+  standalone.rows[1].warnings = sharedWarnings;
+
+  assert.deepEqual(parseOpenEnaInferenceResultV2(standalone), standalone);
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const bundled = structuredClone(bundle);
+  bundled.inference = standalone;
+  assert.deepEqual(
+    parseOpenEnaAnalysisBundle(JSON.stringify(bundled)).inference,
+    standalone,
+  );
+
+  const sharedLeaf = Array.from({ length: 4_096 }, () => 0);
+  const sharedBranch = Array.from({ length: 4_096 }, () => sharedLeaf);
+  const sharedGraph = Array.from({ length: 4_096 }, () => sharedBranch);
+  const sharedGraphForgery = structuredClone(endpointInference) as unknown as Record<string, unknown>;
+  sharedGraphForgery.sharedGraph = sharedGraph;
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(sharedGraphForgery),
+    hasExactErrorMessage("Inference result contains an unsupported field."),
+    "shared subgraphs are counted once and reach schema validation instead of exhausting the budget",
+  );
+});
+
+test("schema-v2 bundle inference rows require every field as own JSON data", async () => {
+  const { trajectory, pairedInference } = await allInferenceFixtures();
+  const bundle = buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    { methodsDimensions: trajectory.axes, inference: pairedInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  if (!forgedBundle.inference || forgedBundle.inference.kind !== "trajectory-paired-periods") {
+    assert.fail("expected paired bundle inference");
+  }
+  delete (forgedBundle.inference.rows[0] as unknown as {
+    reason?: unknown;
+  }).reason;
+
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    hasExactErrorMessage(INFERENCE_ROW_FIELDS_ERROR),
+  );
+});
+
+test("strict readers bind not-estimable and overall reasons to coordinator semantics", async () => {
+  const fixtures = await allInferenceFixtures();
+  const cases: Array<{
+    label: string;
+    fixture: typeof fixtures.endpoint | typeof fixtures.trajectory;
+    inference: OpenEnaInferenceResultV2;
+    expectedError: string;
+    mutate: (inference: OpenEnaInferenceResultV2) => void;
+  }> = [
+    {
+      label: "Mann–Whitney row with a repeated-period reason",
+      fixture: fixtures.endpoint,
+      inference: fixtures.endpointInference,
+      expectedError: INFERENCE_ROW_REASON_ERROR,
+      mutate(inference) {
+        if (inference.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+        markRowNotEstimable(
+          inference.rows[0] as unknown as Record<string, unknown>,
+          "no-complete-blocks",
+        );
+      },
+    },
+    {
+      label: "paired Wilcoxon row with an independent-group reason",
+      fixture: fixtures.trajectory,
+      inference: fixtures.pairedInference,
+      expectedError: INFERENCE_ROW_REASON_ERROR,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-paired-periods") assert.fail("expected paired inference");
+        markRowNotEstimable(
+          inference.rows[0] as unknown as Record<string, unknown>,
+          "empty-group",
+        );
+      },
+    },
+    {
+      label: "repeated follow-up claims no complete blocks while the cohort is nonempty",
+      fixture: fixtures.trajectory,
+      inference: fixtures.repeatedInference,
+      expectedError: INFERENCE_ROW_REASON_ERROR,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-repeated-periods") assert.fail("expected repeated inference");
+        assert.ok(inference.ledger && inference.ledger.completeBlockCount > 0);
+        markRowNotEstimable(
+          inference.followupRows[0] as unknown as Record<string, unknown>,
+          "no-complete-blocks",
+        );
+      },
+    },
+    {
+      label: "overall reason disagrees with two homogeneous row reasons",
+      fixture: fixtures.endpoint,
+      inference: fixtures.endpointInference,
+      expectedError: INFERENCE_OVERALL_REASON_ERROR,
+      mutate(inference) {
+        if (inference.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+        inference.rows.forEach((row) => {
+          markRowNotEstimable(row as unknown as Record<string, unknown>, "all-values-tied");
+          row.z = null;
+        });
+        inference.status = "not-estimable";
+        inference.reason = "empty-group";
+      },
+    },
+  ];
+
+  for (const { label, fixture, inference, expectedError, mutate } of cases) {
+    const forged = structuredClone(inference);
+    mutate(forged);
+    const bundle = buildAnalysisBundle(
+      fixture.dataset,
+      fixture.configuration,
+      fixture.result,
+      HASH,
+      { methodsDimensions: fixture.axes, inference },
+    );
+    const forgedBundle = structuredClone(bundle);
+    forgedBundle.inference = forged;
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(forged),
+      hasExactErrorMessage(expectedError),
+      `${label} standalone`,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+      hasExactErrorMessage(expectedError),
+      `${label} bundle`,
+    );
+  }
+});
+
+test("available rows require complete core statistics and internally coherent counts", async () => {
+  const fixtures = await allInferenceFixtures();
+  const cases: Array<{
+    label: string;
+    fixture: typeof fixtures.endpoint | typeof fixtures.trajectory;
+    inference: OpenEnaInferenceResultV2;
+    expectedError: string;
+    mutate: (inference: OpenEnaInferenceResultV2) => void;
+  }> = [
+    {
+      label: "available Mann–Whitney missing a median",
+      fixture: fixtures.endpoint,
+      inference: fixtures.endpointInference,
+      expectedError: INFERENCE_AVAILABLE_STATISTICS_ERROR,
+      mutate(inference) {
+        if (inference.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+        inference.rows[0].medianPrimary = null;
+      },
+    },
+    {
+      label: "available Wilcoxon missing W positive",
+      fixture: fixtures.trajectory,
+      inference: fixtures.pairedInference,
+      expectedError: INFERENCE_AVAILABLE_STATISTICS_ERROR,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-paired-periods") assert.fail("expected paired inference");
+        inference.rows[0].wPositive = null;
+      },
+    },
+    {
+      label: "available Friedman missing Q",
+      fixture: fixtures.trajectory,
+      inference: fixtures.repeatedInference,
+      expectedError: INFERENCE_AVAILABLE_STATISTICS_ERROR,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-repeated-periods") assert.fail("expected repeated inference");
+        inference.omnibusRows[0].q = null;
+      },
+    },
+    {
+      label: "Mann–Whitney available with an empty primary group",
+      fixture: fixtures.endpoint,
+      inference: fixtures.endpointInference,
+      expectedError: INFERENCE_ROW_COUNT_ERROR,
+      mutate(inference) {
+        if (inference.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+        inference.rows[0].nPrimary = 0;
+      },
+    },
+    {
+      label: "Wilcoxon matched count does not equal signed and zero counts",
+      fixture: fixtures.trajectory,
+      inference: fixtures.pairedInference,
+      expectedError: INFERENCE_ROW_COUNT_ERROR,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-paired-periods") assert.fail("expected paired inference");
+        inference.rows[0].nMatched += 1;
+      },
+    },
+    {
+      label: "Friedman available without a complete block",
+      fixture: fixtures.trajectory,
+      inference: fixtures.repeatedInference,
+      expectedError: INFERENCE_ROW_COUNT_ERROR,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-repeated-periods") assert.fail("expected repeated inference");
+        inference.omnibusRows[0].nComplete = 0;
+      },
+    },
+  ];
+
+  for (const { label, fixture, inference, expectedError, mutate } of cases) {
+    const forged = structuredClone(inference);
+    mutate(forged);
+    const bundle = buildAnalysisBundle(
+      fixture.dataset,
+      fixture.configuration,
+      fixture.result,
+      HASH,
+      { methodsDimensions: fixture.axes, inference },
+    );
+    const forgedBundle = structuredClone(bundle);
+    forgedBundle.inference = forged;
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(forged),
+      hasExactErrorMessage(expectedError),
+      `${label} standalone`,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+      hasExactErrorMessage(expectedError),
+      `${label} bundle`,
+    );
+  }
+});
+
+test("aggregate ledgers bind exactly to the supplied per-axis row counts", async () => {
+  const fixtures = await allInferenceFixtures();
+  const cases: Array<{
+    label: string;
+    fixture: typeof fixtures.endpoint | typeof fixtures.trajectory;
+    inference: OpenEnaInferenceResultV2;
+    mutate: (inference: OpenEnaInferenceResultV2) => void;
+  }> = [
+    {
+      label: "endpoint primary count drift",
+      fixture: fixtures.endpoint,
+      inference: fixtures.endpointInference,
+      mutate(inference) {
+        if (inference.kind !== "endpoint-independent" || !inference.ledger) {
+          assert.fail("expected endpoint ledger");
+        }
+        inference.ledger.primaryAvailableCount += 1;
+      },
+    },
+    {
+      label: "paired zero-count axis drift",
+      fixture: fixtures.trajectory,
+      inference: fixtures.pairedInference,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-paired-periods" || !inference.ledger) {
+          assert.fail("expected paired ledger");
+        }
+        inference.ledger.axes[0].zeroDifferenceCount += 1;
+      },
+    },
+    {
+      label: "repeated complete-cohort drift",
+      fixture: fixtures.trajectory,
+      inference: fixtures.repeatedInference,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-repeated-periods" || !inference.ledger) {
+          assert.fail("expected repeated ledger");
+        }
+        inference.ledger.completeBlockCount += 1;
+      },
+    },
+  ];
+
+  for (const { label, fixture, inference, mutate } of cases) {
+    const forged = structuredClone(inference);
+    mutate(forged);
+    const bundle = buildAnalysisBundle(
+      fixture.dataset,
+      fixture.configuration,
+      fixture.result,
+      HASH,
+      { methodsDimensions: fixture.axes, inference },
+    );
+    const forgedBundle = structuredClone(bundle);
+    forgedBundle.inference = forged;
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(forged),
+      hasExactErrorMessage(INFERENCE_LEDGER_AUDIT_ERROR),
+      `${label} standalone`,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+      hasExactErrorMessage(INFERENCE_LEDGER_AUDIT_ERROR),
+      `${label} bundle`,
+    );
+  }
+});
+
+test("resolved methods obey every exact-first threshold and tie or zero branch", async () => {
+  const fixtures = await allInferenceFixtures();
+  const endpointApproximation = endpointApproximationFixture();
+  const endpointApproximationInference = await runInference(endpointApproximation, {
+    kind: "endpoint-independent",
+    primaryGroup: "Primary",
+    secondaryGroup: "Secondary",
+    axes: endpointApproximation.axes,
+  });
+  const currentBinding = {
+    datasetNormalizedUtf8TextSha256: HASH,
+    datasetHashKind: HASH_KIND,
+    configuration: fixtures.trajectory.configuration,
+  } as const;
+  const pairedApproximationInference = await runOpenEnaInferenceV2({
+    request: {
+      kind: "trajectory-paired-periods",
+      repeatedEntityColumns: ["Group", "Name"],
+      timeColumn: "Period",
+      group: "Control",
+      earlierPeriod: "T1",
+      laterPeriod: "T2",
+      axes: fixtures.trajectory.axes,
+      cohortPolicy: "pairwise-complete",
+    },
+    result: fixtures.trajectory.result,
+    currentBinding,
+    comparisonFrame: trajectoryComparisonFrameWithCoordinates(fixtures.trajectory, 51),
+  });
+  const friedmanApproximationInference = await runOpenEnaInferenceV2({
+    request: {
+      kind: "trajectory-repeated-periods",
+      repeatedEntityColumns: ["Group", "Name"],
+      timeColumn: "Period",
+      group: "Control",
+      periods: ["T1", "T2", "T3"],
+      axes: fixtures.trajectory.axes,
+      cohortPolicy: "all-period-complete",
+      posthocContrasts: "all-period-pairs",
+    },
+    result: fixtures.trajectory.result,
+    currentBinding,
+    comparisonFrame: trajectoryComparisonFrameWithCoordinates(fixtures.trajectory, 8),
+  });
+  const fakeExactTail = {
+    extremeAssignmentCount: "1",
+    totalAssignmentCount: "2",
+    inclusive: true as const,
+    midP: false as const,
+  };
+  const cases: Array<{
+    label: string;
+    fixture: typeof fixtures.endpoint | typeof fixtures.trajectory | typeof endpointApproximation;
+    inference: OpenEnaInferenceResultV2;
+    mutate: (inference: OpenEnaInferenceResultV2) => void;
+  }> = [
+    {
+      label: "small Mann–Whitney claims normal approximation",
+      fixture: fixtures.endpoint,
+      inference: fixtures.endpointInference,
+      mutate(inference) {
+        if (inference.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+        inference.rows[0].resolvedPMethod = "normal-approximation-tie-corrected";
+        inference.rows[0].exactTail = null;
+        inference.rows[0].continuityCorrectionApplied = true;
+      },
+    },
+    {
+      label: "tied Mann–Whitney claims classic exact",
+      fixture: fixtures.endpoint,
+      inference: fixtures.endpointInference,
+      mutate(inference) {
+        if (inference.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+        inference.rows[0].tieGroupCount = Math.max(1, inference.rows[0].tieGroupCount);
+        inference.rows[0].tiedObservationCount = Math.max(2, inference.rows[0].tiedObservationCount);
+        inference.rows[0].tieCorrectionSum = Math.max(6, inference.rows[0].tieCorrectionSum);
+        inference.rows[0].resolvedPMethod = "exact-classic";
+      },
+    },
+    {
+      label: "untied Mann–Whitney claims conditional exact",
+      fixture: fixtures.endpoint,
+      inference: fixtures.endpointInference,
+      mutate(inference) {
+        if (inference.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+        inference.rows[0].tieGroupCount = 0;
+        inference.rows[0].tiedObservationCount = 0;
+        inference.rows[0].tieCorrectionSum = 0;
+        inference.rows[0].resolvedPMethod = "exact-conditional-rank-permutation";
+      },
+    },
+    {
+      label: "large Mann–Whitney claims exact",
+      fixture: endpointApproximation,
+      inference: endpointApproximationInference,
+      mutate(inference) {
+        if (inference.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+        inference.rows[0].resolvedPMethod = inference.rows[0].tieGroupCount === 0
+          ? "exact-classic"
+          : "exact-conditional-rank-permutation";
+        inference.rows[0].exactTail = structuredClone(fakeExactTail);
+        inference.rows[0].continuityCorrectionApplied = false;
+      },
+    },
+    {
+      label: "small Wilcoxon claims normal approximation",
+      fixture: fixtures.trajectory,
+      inference: fixtures.pairedInference,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-paired-periods") assert.fail("expected paired inference");
+        inference.rows[0].resolvedPMethod = "normal-approximation-actual-ranks";
+        inference.rows[0].exactTail = null;
+        inference.rows[0].continuityCorrectionApplied = true;
+      },
+    },
+    {
+      label: "tied Wilcoxon claims classic exact",
+      fixture: fixtures.trajectory,
+      inference: fixtures.pairedInference,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-paired-periods") assert.fail("expected paired inference");
+        inference.rows[0].tieGroupCount = Math.max(1, inference.rows[0].tieGroupCount);
+        inference.rows[0].tiedObservationCount = Math.max(2, inference.rows[0].tiedObservationCount);
+        inference.rows[0].tieCorrectionSum = Math.max(6, inference.rows[0].tieCorrectionSum);
+        inference.rows[0].resolvedPMethod = "exact-classic";
+      },
+    },
+    {
+      label: "untied zero-free Wilcoxon claims conditional exact",
+      fixture: fixtures.trajectory,
+      inference: fixtures.pairedInference,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-paired-periods") assert.fail("expected paired inference");
+        inference.rows[0].tieGroupCount = 0;
+        inference.rows[0].tiedObservationCount = 0;
+        inference.rows[0].tieCorrectionSum = 0;
+        inference.rows[0].nZero = 0;
+        inference.rows[0].nMatched = inference.rows[0].nNonzero;
+        inference.rows[0].resolvedPMethod = "exact-conditional-sign-flip";
+      },
+    },
+    {
+      label: "large Wilcoxon claims exact",
+      fixture: fixtures.trajectory,
+      inference: pairedApproximationInference,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-paired-periods") assert.fail("expected paired inference");
+        inference.rows[0].resolvedPMethod = inference.rows[0].tieGroupCount === 0
+          && inference.rows[0].nZero === 0
+          ? "exact-classic"
+          : "exact-conditional-sign-flip";
+        inference.rows[0].exactTail = structuredClone(fakeExactTail);
+        inference.rows[0].continuityCorrectionApplied = false;
+      },
+    },
+    {
+      label: "small Friedman assignment space claims chi-square approximation",
+      fixture: fixtures.trajectory,
+      inference: fixtures.repeatedInference,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-repeated-periods") assert.fail("expected repeated inference");
+        inference.omnibusRows[0].resolvedPMethod = "chi-square-approximation-tie-corrected";
+        inference.omnibusRows[0].exactTail = null;
+      },
+    },
+    {
+      label: "large Friedman assignment space claims exact",
+      fixture: fixtures.trajectory,
+      inference: friedmanApproximationInference,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-repeated-periods") assert.fail("expected repeated inference");
+        inference.omnibusRows[0].resolvedPMethod = "exact-conditional-period-permutation";
+        inference.omnibusRows[0].exactTail = structuredClone(fakeExactTail);
+      },
+    },
+  ];
+
+  for (const { label, fixture, inference, mutate } of cases) {
+    const forged = structuredClone(inference);
+    mutate(forged);
+    const bundle = buildAnalysisBundle(
+      fixture.dataset,
+      fixture.configuration,
+      fixture.result,
+      HASH,
+      { methodsDimensions: fixture.axes, inference },
+    );
+    const forgedBundle = structuredClone(bundle);
+    forgedBundle.inference = forged;
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(forged),
+      hasExactErrorMessage(INFERENCE_EXACT_FIRST_ERROR),
+      `${label} standalone`,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+      hasExactErrorMessage(INFERENCE_EXACT_FIRST_ERROR),
+      `${label} bundle`,
+    );
+  }
+});
+
+test("Wilcoxon minimum attainable p audit is exactly derived from nNonzero", async () => {
+  const fixtures = await allInferenceFixtures();
+  const largeInference = await runOpenEnaInferenceV2({
+    request: {
+      kind: "trajectory-paired-periods",
+      repeatedEntityColumns: ["Group", "Name"],
+      timeColumn: "Period",
+      group: "Control",
+      earlierPeriod: "T1",
+      laterPeriod: "T2",
+      axes: fixtures.trajectory.axes,
+      cohortPolicy: "pairwise-complete",
+    },
+    result: fixtures.trajectory.result,
+    currentBinding: {
+      datasetNormalizedUtf8TextSha256: HASH,
+      datasetHashKind: HASH_KIND,
+      configuration: fixtures.trajectory.configuration,
+    },
+    comparisonFrame: trajectoryComparisonFrameWithCoordinates(fixtures.trajectory, 1_076),
+  });
+  if (largeInference.kind !== "trajectory-paired-periods") assert.fail("expected paired inference");
+  if (fixtures.pairedInference.kind !== "trajectory-paired-periods") {
+    assert.fail("expected paired inference fixture");
+  }
+  const pairedInference = fixtures.pairedInference;
+  assert.ok(largeInference.rows.every((row) => (
+    row.nNonzero === 1_076
+    && row.minimumAttainableTwoSidedP?.log2 === -1_075
+    && row.minimumAttainableTwoSidedP.numeric === null
+  )));
+  const cases: Array<{
+    label: string;
+    inference: Extract<OpenEnaInferenceResultV2, { kind: "trajectory-paired-periods" }>;
+    mutate: (inference: Extract<OpenEnaInferenceResultV2, { kind: "trajectory-paired-periods" }>) => void;
+  }> = [
+    {
+      label: "wrong log2",
+      inference: pairedInference,
+      mutate(inference) {
+        if (!inference.rows[0].minimumAttainableTwoSidedP) assert.fail("expected minimum-p audit");
+        inference.rows[0].minimumAttainableTwoSidedP.log2 = 999;
+      },
+    },
+    {
+      label: "negative numeric p",
+      inference: pairedInference,
+      mutate(inference) {
+        if (!inference.rows[0].minimumAttainableTwoSidedP) assert.fail("expected minimum-p audit");
+        inference.rows[0].minimumAttainableTwoSidedP.numeric = -7;
+      },
+    },
+    {
+      label: "wrong finite numeric p",
+      inference: pairedInference,
+      mutate(inference) {
+        if (!inference.rows[0].minimumAttainableTwoSidedP) assert.fail("expected minimum-p audit");
+        inference.rows[0].minimumAttainableTwoSidedP.numeric = 0.75;
+      },
+    },
+    {
+      label: "premature numeric underflow marker",
+      inference: pairedInference,
+      mutate(inference) {
+        if (!inference.rows[0].minimumAttainableTwoSidedP) assert.fail("expected minimum-p audit");
+        inference.rows[0].minimumAttainableTwoSidedP.numeric = null;
+      },
+    },
+    {
+      label: "numeric value retained beyond the underflow boundary",
+      inference: largeInference,
+      mutate(inference) {
+        if (!inference.rows[0].minimumAttainableTwoSidedP) assert.fail("expected minimum-p audit");
+        inference.rows[0].minimumAttainableTwoSidedP.numeric = Number.MIN_VALUE;
+      },
+    },
+  ];
+
+  for (const { label, inference, mutate } of cases) {
+    const forged = structuredClone(inference);
+    mutate(forged);
+    const bundle = buildAnalysisBundle(
+      fixtures.trajectory.dataset,
+      fixtures.trajectory.configuration,
+      fixtures.trajectory.result,
+      HASH,
+      { methodsDimensions: fixtures.trajectory.axes, inference },
+    );
+    const forgedBundle = structuredClone(bundle);
+    forgedBundle.inference = forged;
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(forged),
+      hasExactErrorMessage(INFERENCE_MINIMUM_P_ERROR),
+      `${label} standalone`,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+      hasExactErrorMessage(INFERENCE_MINIMUM_P_ERROR),
+      `${label} bundle`,
+    );
+  }
+
+  assert.deepEqual(parseOpenEnaInferenceResultV2(structuredClone(largeInference)), largeInference);
+});
+
+test("exact-tail counts, assignment totals, and raw p-values remain arithmetically coherent", async () => {
+  const fixtures = await allInferenceFixtures();
+  const cases: Array<{
+    label: string;
+    fixture: typeof fixtures.endpoint | typeof fixtures.trajectory;
+    inference: OpenEnaInferenceResultV2;
+    mutate: (inference: OpenEnaInferenceResultV2) => void;
+  }> = [
+    {
+      label: "zero extreme assignments",
+      fixture: fixtures.endpoint,
+      inference: fixtures.endpointInference,
+      mutate(inference) {
+        if (inference.kind !== "endpoint-independent" || !inference.rows[0].exactTail) {
+          assert.fail("expected endpoint exact tail");
+        }
+        inference.rows[0].exactTail.extremeAssignmentCount = "0";
+      },
+    },
+    {
+      label: "extreme assignments exceed total",
+      fixture: fixtures.endpoint,
+      inference: fixtures.endpointInference,
+      mutate(inference) {
+        if (inference.kind !== "endpoint-independent" || !inference.rows[0].exactTail) {
+          assert.fail("expected endpoint exact tail");
+        }
+        inference.rows[0].exactTail.extremeAssignmentCount = (
+          BigInt(inference.rows[0].exactTail.totalAssignmentCount) + BigInt(1)
+        ).toString();
+      },
+    },
+    {
+      label: "raw p disagrees with exact counts",
+      fixture: fixtures.endpoint,
+      inference: fixtures.endpointInference,
+      mutate(inference) {
+        if (inference.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+        inference.rows[0].pRaw = inference.rows[0].pRaw === 1 ? 0.5 : 1;
+      },
+    },
+    {
+      label: "Mann–Whitney assignment total is not the fixed-size combination count",
+      fixture: fixtures.endpoint,
+      inference: fixtures.endpointInference,
+      mutate(inference) {
+        if (inference.kind !== "endpoint-independent" || !inference.rows[0].exactTail) {
+          assert.fail("expected endpoint exact tail");
+        }
+        const audit = inference.rows[0].exactTail;
+        audit.totalAssignmentCount = (BigInt(audit.totalAssignmentCount) + BigInt(1)).toString();
+        inference.rows[0].pRaw = Number(BigInt(audit.extremeAssignmentCount))
+          / Number(BigInt(audit.totalAssignmentCount));
+      },
+    },
+    {
+      label: "Wilcoxon assignment total is not two to nNonzero",
+      fixture: fixtures.trajectory,
+      inference: fixtures.pairedInference,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-paired-periods" || !inference.rows[0].exactTail) {
+          assert.fail("expected paired exact tail");
+        }
+        const audit = inference.rows[0].exactTail;
+        audit.totalAssignmentCount = (BigInt(audit.totalAssignmentCount) + BigInt(1)).toString();
+        inference.rows[0].pRaw = Number(BigInt(audit.extremeAssignmentCount))
+          / Number(BigInt(audit.totalAssignmentCount));
+      },
+    },
+    {
+      label: "Friedman assignment total is not factorial to complete blocks",
+      fixture: fixtures.trajectory,
+      inference: fixtures.repeatedInference,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-repeated-periods"
+          || !inference.omnibusRows[0].exactTail) {
+          assert.fail("expected Friedman exact tail");
+        }
+        const row = inference.omnibusRows[0];
+        const audit = row.exactTail!;
+        audit.totalAssignmentCount = (BigInt(audit.totalAssignmentCount) + BigInt(1)).toString();
+        row.pRaw = Number(BigInt(audit.extremeAssignmentCount))
+          / Number(BigInt(audit.totalAssignmentCount));
+      },
+    },
+  ];
+
+  for (const { label, fixture, inference, mutate } of cases) {
+    const forged = structuredClone(inference);
+    mutate(forged);
+    const bundle = buildAnalysisBundle(
+      fixture.dataset,
+      fixture.configuration,
+      fixture.result,
+      HASH,
+      { methodsDimensions: fixture.axes, inference },
+    );
+    const forgedBundle = structuredClone(bundle);
+    forgedBundle.inference = forged;
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(forged),
+      hasExactErrorMessage(INFERENCE_EXACT_TAIL_ERROR),
+      `${label} standalone`,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+      hasExactErrorMessage(INFERENCE_EXACT_TAIL_ERROR),
+      `${label} bundle`,
+    );
+  }
+});
+
+test("Holm audit is reconstructed over every planned member including null-p placeholders", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const cases: Array<{
+    label: string;
+    mutate: (inference: Extract<OpenEnaInferenceResultV2, { kind: "endpoint-independent" }>) => void;
+  }> = [
+    {
+      label: "forged Holm p",
+      mutate(inference) {
+        inference.rows[0].pHolm = inference.rows[0].pHolm === 1 ? 0.5 : 1;
+      },
+    },
+    {
+      label: "forged Holm rank",
+      mutate(inference) {
+        inference.rows[0].holmRank = inference.rows[0].holmRank === 1 ? 2 : 1;
+      },
+    },
+    {
+      label: "forged Holm multiplier",
+      mutate(inference) {
+        inference.rows[0].holmMultiplier = inference.rows[0].holmMultiplier === 1 ? 2 : 1;
+      },
+    },
+    {
+      label: "planned null member incorrectly removed from the multiplier",
+      mutate(inference) {
+        markRowNotEstimable(
+          inference.rows[0] as unknown as Record<string, unknown>,
+          "all-values-tied",
+        );
+        inference.rows[0].z = null;
+        const available = inference.rows[1];
+        if (available.pRaw === null) assert.fail("expected available planned member");
+        available.pHolm = available.pRaw;
+        available.holmRank = 1;
+        available.holmMultiplier = 1;
+      },
+    },
+  ];
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+
+  for (const { label, mutate } of cases) {
+    const forged = structuredClone(endpointInference);
+    if (forged.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+    mutate(forged);
+    const forgedBundle = structuredClone(bundle);
+    forgedBundle.inference = forged;
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(forged),
+      hasExactErrorMessage(INFERENCE_HOLM_AUDIT_ERROR),
+      `${label} standalone`,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+      hasExactErrorMessage(INFERENCE_HOLM_AUDIT_ERROR),
+      `${label} bundle`,
+    );
+  }
+});
+
+test("strict readers round-trip genuine coordinator not-estimable audits", async () => {
+  const trajectory = trajectoryFixture();
+  const currentBinding = {
+    datasetNormalizedUtf8TextSha256: HASH,
+    datasetHashKind: HASH_KIND,
+    configuration: trajectory.configuration,
+  } as const;
+
+  const allTiedFrame = structuredClone(trajectory.derivation.comparisonFrame);
+  allTiedFrame.points.forEach((point) => {
+    if (point.time === "T1") {
+      point.x = 1;
+      point.y = 1;
+    }
+  });
+  const allTied = await runOpenEnaInferenceV2({
+    request: {
+      kind: "trajectory-independent-period",
+      repeatedEntityColumns: ["Group", "Name"],
+      timeColumn: "Period",
+      period: "T1",
+      primaryGroup: "Control",
+      secondaryGroup: "Experimental",
+      axes: trajectory.axes,
+    },
+    result: trajectory.result,
+    currentBinding,
+    comparisonFrame: allTiedFrame,
+  });
+
+  const allZeroFrame = trajectoryComparisonFrameWithCoordinates(trajectory, 4);
+  for (const entityToken of new Set(allZeroFrame.points.map((point) => point.entityToken))) {
+    const earlier = allZeroFrame.points.find((point) => (
+      point.entityToken === entityToken && point.time === "T1"
+    ));
+    const later = allZeroFrame.points.find((point) => (
+      point.entityToken === entityToken && point.time === "T2"
+    ));
+    if (!earlier || !later) assert.fail("expected complete paired fixture");
+    later.x = earlier.x;
+    later.y = earlier.y;
+  }
+  const allZero = await runOpenEnaInferenceV2({
+    request: {
+      kind: "trajectory-paired-periods",
+      repeatedEntityColumns: ["Group", "Name"],
+      timeColumn: "Period",
+      group: "Control",
+      earlierPeriod: "T1",
+      laterPeriod: "T2",
+      axes: trajectory.axes,
+      cohortPolicy: "pairwise-complete",
+    },
+    result: trajectory.result,
+    currentBinding,
+    comparisonFrame: allZeroFrame,
+  });
+
+  const noCompleteFrame = structuredClone(trajectory.derivation.comparisonFrame);
+  noCompleteFrame.points = [];
+  const noComplete = await runOpenEnaInferenceV2({
+    request: {
+      kind: "trajectory-repeated-periods",
+      repeatedEntityColumns: ["Group", "Name"],
+      timeColumn: "Period",
+      group: "Control",
+      periods: ["T1", "T2", "T3"],
+      axes: trajectory.axes,
+      cohortPolicy: "all-period-complete",
+      posthocContrasts: "all-period-pairs",
+    },
+    result: trajectory.result,
+    currentBinding,
+    comparisonFrame: noCompleteFrame,
+  });
+
+  assert.equal(allTied.status, "not-estimable");
+  assert.equal(allTied.reason, "all-values-tied");
+  assert.equal(allZero.status, "not-estimable");
+  assert.equal(allZero.reason, "all-zero-differences");
+  assert.equal(noComplete.status, "not-estimable");
+  assert.equal(noComplete.reason, "no-complete-blocks");
+
+  for (const inference of [allTied, allZero, noComplete]) {
+    assert.deepEqual(parseOpenEnaInferenceResultV2(structuredClone(inference)), inference);
+    const bundle = buildAnalysisBundle(
+      trajectory.dataset,
+      trajectory.configuration,
+      trajectory.result,
+      HASH,
+      { methodsDimensions: trajectory.axes, inference },
+    );
+    assert.deepEqual(parseOpenEnaAnalysisBundle(JSON.stringify(bundle)).inference, inference);
+  }
+});
+
+test("not-estimable rows cannot retain inferential p-value or Holm audit state", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const forged = structuredClone(endpointInference);
+  if (forged.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  forged.status = "not-estimable";
+  forged.reason = "all-values-tied";
+  forged.rows.forEach((row) => {
+    row.status = "not-estimable";
+    row.reason = "all-values-tied";
+    // Deliberately retain the coordinator's available p/method/Holm audit fields.
+  });
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = forged;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(forged),
+    /not-estimable|status|p-values|Holm|method/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /not-estimable|status|p-values|Holm|method/i,
+  );
+});
+
+test("not-estimable rows cannot retain an exact-tail audit", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const forged = structuredClone(endpointInference);
+  if (forged.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  forged.status = "not-estimable";
+  forged.reason = "all-values-tied";
+  forged.rows.forEach((row) => {
+    assert.ok(row.exactTail, "fixture must begin with an exact-tail audit");
+    row.status = "not-estimable";
+    row.reason = "all-values-tied";
+    row.pRaw = null;
+    row.pHolm = null;
+    row.resolvedPMethod = null;
+    row.holmRank = null;
+    row.holmMultiplier = null;
+    // Deliberately retain exactTail after clearing all p-value state.
+  });
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = forged;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(forged),
+    /not-estimable|status|exact-tail|audit/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /not-estimable|status|exact-tail|audit/i,
+  );
+});
+
+test("not-estimable rows cannot claim that a continuity correction was applied", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const forged = structuredClone(endpointInference);
+  if (forged.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  forged.status = "not-estimable";
+  forged.reason = "all-values-tied";
+  forged.rows.forEach((row) => {
+    row.status = "not-estimable";
+    row.reason = "all-values-tied";
+    row.pRaw = null;
+    row.pHolm = null;
+    row.resolvedPMethod = null;
+    row.holmRank = null;
+    row.holmMultiplier = null;
+    row.exactTail = null;
+    row.continuityCorrectionApplied = true;
+  });
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = forged;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(forged),
+    /not-estimable|status|continuity|correction/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /not-estimable|status|continuity|correction/i,
+  );
+});
+
+test("not-estimable Wilcoxon rows cannot retain a minimum attainable p audit", async () => {
+  const { trajectory, pairedInference } = await allInferenceFixtures();
+  const forged = structuredClone(pairedInference);
+  if (forged.kind !== "trajectory-paired-periods") assert.fail("expected paired inference");
+  forged.status = "not-estimable";
+  forged.reason = "all-zero-differences";
+  forged.rows.forEach((row) => {
+    assert.ok(row.minimumAttainableTwoSidedP, "fixture must begin with a minimum-p audit");
+    row.status = "not-estimable";
+    row.reason = "all-zero-differences";
+    row.pRaw = null;
+    row.pHolm = null;
+    row.resolvedPMethod = null;
+    row.holmRank = null;
+    row.holmMultiplier = null;
+    row.exactTail = null;
+    row.continuityCorrectionApplied = false;
+    // Deliberately retain minimumAttainableTwoSidedP after clearing p-value state.
+  });
+  const bundle = buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    { methodsDimensions: trajectory.axes, inference: pairedInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = forged;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(forged),
+    /not-estimable|status|minimum|attainable|audit/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /not-estimable|status|minimum|attainable|audit/i,
+  );
+});
+
+test("a not-estimable result requires a stable overall reason", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const forged = structuredClone(endpointInference);
+  if (forged.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  forged.status = "not-estimable";
+  forged.reason = null;
+  forged.rows.forEach((row) => {
+    row.status = "not-estimable";
+    row.reason = "all-values-tied";
+    row.pRaw = null;
+    row.pHolm = null;
+    row.resolvedPMethod = null;
+    row.holmRank = null;
+    row.holmMultiplier = null;
+    row.exactTail = null;
+    row.continuityCorrectionApplied = false;
+  });
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = forged;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(forged),
+    /not-estimable|overall|reason|status/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /not-estimable|overall|reason|status/i,
+  );
+});
+
+test("available rows cannot retain a not-estimable reason", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const forged = structuredClone(endpointInference);
+  if (forged.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  forged.rows[0].reason = "all-values-tied";
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = forged;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(forged),
+    /available|reason|status/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /available|reason|status/i,
+  );
+});
+
+test("available rows require complete p-value, method, and Holm audit state", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  type EndpointRow = Extract<
+    OpenEnaInferenceResultV2,
+    { kind: "endpoint-independent" }
+  >["rows"][number];
+  const cases: Array<{ label: string; mutate: (row: EndpointRow) => void }> = [
+    {
+      label: "missing raw and Holm p-values",
+      mutate(row) { row.pRaw = null; row.pHolm = null; },
+    },
+    {
+      label: "missing Holm p-value",
+      mutate(row) { row.pHolm = null; },
+    },
+    {
+      label: "missing resolved method",
+      mutate(row) { row.resolvedPMethod = null; },
+    },
+    {
+      label: "missing Holm rank",
+      mutate(row) { row.holmRank = null; },
+    },
+    {
+      label: "missing Holm multiplier",
+      mutate(row) { row.holmMultiplier = null; },
+    },
+    {
+      label: "invalid Holm rank",
+      mutate(row) { row.holmRank = 0; },
+    },
+    {
+      label: "invalid Holm multiplier",
+      mutate(row) { row.holmMultiplier = 0; },
+    },
+  ];
+  for (const { label, mutate } of cases) {
+    const forged = structuredClone(endpointInference);
+    if (forged.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+    mutate(forged.rows[0]);
+    const forgedBundle = structuredClone(bundle);
+    forgedBundle.inference = forged;
+
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(forged),
+      /available|p-values|resolved|method|status|Holm/i,
+      `${label} standalone`,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+      /available|p-values|resolved|method|status|Holm/i,
+      `${label} bundle`,
+    );
+  }
+});
+
+test("available rows reject a resolved p-value method from another rank test", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const forged = structuredClone(endpointInference);
+  if (forged.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  forged.rows[0].resolvedPMethod = "exact-conditional-sign-flip";
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = forged;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(forged),
+    /resolved|method|Mann|test/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /resolved|method|Mann|test/i,
+  );
+});
+
+test("an available exact row requires its exact-tail audit", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const forged = structuredClone(endpointInference);
+  if (forged.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  assert.match(forged.rows[0].resolvedPMethod ?? "", /^exact-/);
+  forged.rows[0].exactTail = null;
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = forged;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(forged),
+    isInconsistentRowMethodAuditError,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    isInconsistentRowMethodAuditError,
+  );
+});
+
+test("an available exact row cannot claim a continuity correction", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const forged = structuredClone(endpointInference);
+  if (forged.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  assert.match(forged.rows[0].resolvedPMethod ?? "", /^exact-/);
+  assert.ok(forged.rows[0].exactTail);
+  forged.rows[0].continuityCorrectionApplied = true;
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = forged;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(forged),
+    /exact|continuity|method|audit/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /exact|continuity|method|audit/i,
+  );
+});
+
+test("an available approximation row cannot retain an exact-tail audit", async () => {
+  const { endpoint, endpointInference } = await allInferenceFixtures();
+  const forged = structuredClone(endpointInference);
+  if (forged.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  assert.ok(forged.rows[0].exactTail);
+  forged.rows[0].resolvedPMethod = "normal-approximation-tie-corrected";
+  forged.rows[0].continuityCorrectionApplied = true;
+  const bundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = forged;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(forged),
+    /approximation|exact-tail|method|audit/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /approximation|exact-tail|method|audit/i,
+  );
+});
+
+test("available approximation rows require method-specific continuity audit state", async () => {
+  const fixtures = await allInferenceFixtures();
+  const endpointBundle = buildAnalysisBundle(
+    fixtures.endpoint.dataset,
+    fixtures.endpoint.configuration,
+    fixtures.endpoint.result,
+    HASH,
+    { inference: fixtures.endpointInference },
+  );
+  const pairedBundle = buildAnalysisBundle(
+    fixtures.trajectory.dataset,
+    fixtures.trajectory.configuration,
+    fixtures.trajectory.result,
+    HASH,
+    { methodsDimensions: fixtures.trajectory.axes, inference: fixtures.pairedInference },
+  );
+  const repeatedBundle = buildAnalysisBundle(
+    fixtures.trajectory.dataset,
+    fixtures.trajectory.configuration,
+    fixtures.trajectory.result,
+    HASH,
+    { methodsDimensions: fixtures.trajectory.axes, inference: fixtures.repeatedInference },
+  );
+  const cases: Array<{
+    label: string;
+    inference: OpenEnaInferenceResultV2;
+    bundle: ReturnType<typeof buildAnalysisBundle>;
+    mutate: (inference: OpenEnaInferenceResultV2) => void;
+  }> = [
+    {
+      label: "Mann–Whitney normal approximation without continuity correction",
+      inference: fixtures.endpointInference,
+      bundle: endpointBundle,
+      mutate(inference) {
+        if (inference.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+        inference.rows[0].resolvedPMethod = "normal-approximation-tie-corrected";
+        inference.rows[0].exactTail = null;
+        inference.rows[0].continuityCorrectionApplied = false;
+      },
+    },
+    {
+      label: "Wilcoxon normal approximation without continuity correction",
+      inference: fixtures.pairedInference,
+      bundle: pairedBundle,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-paired-periods") assert.fail("expected paired inference");
+        inference.rows[0].resolvedPMethod = "normal-approximation-actual-ranks";
+        inference.rows[0].exactTail = null;
+        inference.rows[0].continuityCorrectionApplied = false;
+      },
+    },
+    {
+      label: "Friedman chi-square approximation with continuity correction",
+      inference: fixtures.repeatedInference,
+      bundle: repeatedBundle,
+      mutate(inference) {
+        if (inference.kind !== "trajectory-repeated-periods") assert.fail("expected repeated inference");
+        inference.omnibusRows[0].resolvedPMethod = "chi-square-approximation-tie-corrected";
+        inference.omnibusRows[0].exactTail = null;
+        inference.omnibusRows[0].continuityCorrectionApplied = true;
+      },
+    },
+  ];
+
+  for (const { label, inference, bundle, mutate } of cases) {
+    const forged = structuredClone(inference);
+    mutate(forged);
+    const forgedBundle = structuredClone(bundle);
+    forgedBundle.inference = forged;
+
+    assert.throws(
+      () => parseOpenEnaInferenceResultV2(forged),
+      /continuity|approximation|method|audit/i,
+      `${label} standalone`,
+    );
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+      /continuity|approximation|method|audit/i,
+      `${label} bundle`,
+    );
+  }
+});
+
+test("available Wilcoxon rows require the minimum attainable two-sided p audit", async () => {
+  const { trajectory, pairedInference } = await allInferenceFixtures();
+  const forged = structuredClone(pairedInference);
+  if (forged.kind !== "trajectory-paired-periods") assert.fail("expected paired inference");
+  assert.ok(forged.rows[0].minimumAttainableTwoSidedP);
+  forged.rows[0].minimumAttainableTwoSidedP = null;
+  const bundle = buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    { methodsDimensions: trajectory.axes, inference: pairedInference },
+  );
+  const forgedBundle = structuredClone(bundle);
+  forgedBundle.inference = forged;
+
+  assert.throws(
+    () => parseOpenEnaInferenceResultV2(forged),
+    /Wilcoxon|minimum|attainable|method|audit/i,
+  );
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(forgedBundle)),
+    /Wilcoxon|minimum|attainable|method|audit/i,
+  );
+});
+
+test("strict readers round-trip genuine coordinator approximation audits", async () => {
+  const endpoint = endpointApproximationFixture();
+  const endpointInference = await runInference(endpoint, {
+    kind: "endpoint-independent",
+    primaryGroup: "Primary",
+    secondaryGroup: "Secondary",
+    axes: endpoint.axes,
+  });
+  if (endpointInference.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  assert.ok(endpointInference.rows.every((row) => (
+    row.status === "available"
+    && row.resolvedPMethod === "normal-approximation-tie-corrected"
+    && row.exactTail === null
+    && row.continuityCorrectionApplied
+  )));
+
+  const trajectory = trajectoryFixture();
+  const currentBinding = {
+    datasetNormalizedUtf8TextSha256: HASH,
+    datasetHashKind: HASH_KIND,
+    configuration: trajectory.configuration,
+  } as const;
+  const pairedInference = await runOpenEnaInferenceV2({
+    request: {
+      kind: "trajectory-paired-periods",
+      repeatedEntityColumns: ["Group", "Name"],
+      timeColumn: "Period",
+      group: "Control",
+      earlierPeriod: "T1",
+      laterPeriod: "T2",
+      axes: trajectory.axes,
+      cohortPolicy: "pairwise-complete",
+    },
+    result: trajectory.result,
+    currentBinding,
+    comparisonFrame: trajectoryComparisonFrameWithCoordinates(trajectory, 51),
+  });
+  if (pairedInference.kind !== "trajectory-paired-periods") assert.fail("expected paired inference");
+  assert.ok(pairedInference.rows.every((row) => (
+    row.status === "available"
+    && row.resolvedPMethod === "normal-approximation-actual-ranks"
+    && row.exactTail === null
+    && row.continuityCorrectionApplied
+    && row.minimumAttainableTwoSidedP !== null
+  )));
+
+  const repeatedInference = await runOpenEnaInferenceV2({
+    request: {
+      kind: "trajectory-repeated-periods",
+      repeatedEntityColumns: ["Group", "Name"],
+      timeColumn: "Period",
+      group: "Control",
+      periods: ["T1", "T2", "T3"],
+      axes: trajectory.axes,
+      cohortPolicy: "all-period-complete",
+      posthocContrasts: "all-period-pairs",
+    },
+    result: trajectory.result,
+    currentBinding,
+    comparisonFrame: trajectoryComparisonFrameWithCoordinates(trajectory, 8),
+  });
+  if (repeatedInference.kind !== "trajectory-repeated-periods") {
+    assert.fail("expected repeated inference");
+  }
+  assert.ok(repeatedInference.omnibusRows.every((row) => (
+    row.status === "available"
+    && row.resolvedPMethod === "chi-square-approximation-tie-corrected"
+    && row.exactTail === null
+    && !row.continuityCorrectionApplied
+  )));
+
+  for (const { fixture, inference } of [
+    { fixture: endpoint, inference: endpointInference },
+    { fixture: trajectory, inference: pairedInference },
+    { fixture: trajectory, inference: repeatedInference },
+  ] as const) {
+    const parsed = parseOpenEnaInferenceResultV2(structuredClone(inference));
+    assert.deepEqual(parsed, inference);
+    const bundle = buildAnalysisBundle(
+      fixture.dataset,
+      fixture.configuration,
+      fixture.result,
+      HASH,
+      { methodsDimensions: fixture.axes, inference },
+    );
+    assert.deepEqual(parseOpenEnaAnalysisBundle(JSON.stringify(bundle)).inference, inference);
   }
 });
 
@@ -1490,7 +3314,10 @@ test("longitudinal JSON v2 and the separate inference CSV preserve aggregates on
   assert.doesNotMatch(geometryHeader, /(?:^|,)repeatedEntityColumn(?:,|$)/);
   assert.doesNotMatch(geometryHeader, /pRaw|pHolm|familyId|memberId/);
 
-  const inferenceCsv = longitudinalInferenceRowsToCsv(pairedInference);
+  const inferenceCsv = longitudinalInferenceRowsToCsv(
+    trajectory.derivation.view,
+    pairedInference,
+  );
   const inferenceHeader = inferenceCsv.split("\r\n")[0];
   assert.match(inferenceHeader, /test,axisIndex,axis,status,reason/);
   assert.match(inferenceHeader, /familyId,memberId,familySizePlanned/);
@@ -1520,11 +3347,54 @@ test("longitudinal JSON v2 and the separate inference CSV preserve aggregates on
   }
 });
 
+test("longitudinal inference CSV rejects inference axes that do not bind to the current view", async () => {
+  const { trajectory, pairedInference } = await allInferenceFixtures();
+  const forged = structuredClone(pairedInference);
+  if (forged.kind !== "trajectory-paired-periods") assert.fail("expected paired inference");
+  forged.request.axes.reverse();
+  forged.binding.axes.reverse();
+  forged.rows.forEach((row) => {
+    row.axis = forged.request.axes[row.axisIndex];
+  });
+  const parsedForgery = parseOpenEnaInferenceResultV2(forged);
+
+  assert.throws(
+    () => longitudinalInferenceRowsToCsv(trajectory.derivation.view, parsedForgery),
+    (error: unknown) => error instanceof Error
+      && error.message === "Inference consumer binding mismatch.",
+  );
+});
+
+test("longitudinal inference CSV rejects an unparsed mutable inference clone", async () => {
+  const { trajectory, pairedInference } = await allInferenceFixtures();
+  const unparsedClone = structuredClone(pairedInference);
+  assert.equal(Object.isFrozen(unparsedClone), false);
+
+  assert.throws(
+    () => longitudinalInferenceRowsToCsv(trajectory.derivation.view, unparsedClone),
+    (error: unknown) => error instanceof Error
+      && error.message === "Inference consumer binding mismatch.",
+  );
+});
+
+test("longitudinal inference CSV rejects a current-view trajectory mapping mismatch", async () => {
+  const { trajectory, pairedInference } = await allInferenceFixtures();
+  const forgedView = structuredClone(trajectory.derivation.view);
+  forgedView.timeOrder.reverse();
+
+  assert.throws(
+    () => longitudinalInferenceRowsToCsv(forgedView, pairedInference),
+    (error: unknown) => error instanceof Error
+      && error.message === "Inference consumer binding mismatch.",
+  );
+});
+
 test("consumer surfaces do not import or invoke low-level rank engines", () => {
   const root = process.cwd();
   for (const relativePath of [
     "lib/open-ena/inference-consumers.ts",
     "lib/open-ena/export.ts",
+    "lib/open-ena/longitudinal.ts",
     "lib/open-ena/methods.ts",
   ]) {
     const source = readFileSync(join(root, relativePath), "utf8");

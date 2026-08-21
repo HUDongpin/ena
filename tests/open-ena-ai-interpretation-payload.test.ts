@@ -209,7 +209,7 @@ async function trajectoryFixture(
       configuration: config,
     },
   });
-  return { config, currentInference, derivation, result };
+  return { comparisonFrame, config, currentInference, dataset, derivation, request, result };
 }
 
 function requestInput(
@@ -372,27 +372,42 @@ test("per-cell disclosure gates omit only ineligible inference and retain descri
 test("repeated follow-ups below the complete-cohort ranked minimum are omitted without removing descriptive evidence", async () => {
   const ai = await loadAiModule();
   const fixture = await trajectoryFixture("trajectory-repeated-periods");
-  const changedInference = structuredClone(fixture.currentInference);
-  assert.equal(changedInference.kind, "trajectory-repeated-periods");
-  const row = changedInference.followupRows.find((candidate) => candidate.status === "available");
-  assert.ok(row);
-  const privateOmittedP = 0.3141592653589793;
-  Object.assign(row, {
-    nMatched: 3,
-    nMissing: 0,
-    nPositive: 1,
-    nNegative: 0,
-    nZero: 2,
-    nNonzero: 1,
-    nRanked: 1,
-    wPositive: 1,
-    wNegative: 0,
-    t: 0,
-    rankBiserialLaterVsEarlier: 1,
-    pRaw: privateOmittedP,
-    pHolm: privateOmittedP,
+  assert.equal(fixture.request.kind, "trajectory-repeated-periods");
+  const lowRankFrame = structuredClone(fixture.comparisonFrame);
+  const selectedTokens = [...new Set(lowRankFrame.points
+    .filter((point) => point.group.name === "Secret Control")
+    .map((point) => point.entityToken))];
+  assert.equal(selectedTokens.length, 3);
+  selectedTokens.forEach((entityToken, index) => {
+    const earlier = lowRankFrame.points.find((point) => (
+      point.entityToken === entityToken && point.timeIndex === 0
+    ));
+    const later = lowRankFrame.points.find((point) => (
+      point.entityToken === entityToken && point.timeIndex === 1
+    ));
+    assert.ok(earlier && later);
+    later.x = index === 0 ? earlier.x + 1 : earlier.x;
   });
-  freezeDeep(changedInference);
+  const changedInference = await runOpenEnaInferenceV2({
+    request: fixture.request,
+    result: fixture.result,
+    comparisonFrame: lowRankFrame,
+    currentBinding: {
+      datasetNormalizedUtf8TextSha256: HASH,
+      datasetHashKind: datasetHashKindFor(fixture.dataset),
+      configuration: fixture.config,
+    },
+  });
+  assert.equal(changedInference.kind, "trajectory-repeated-periods");
+  const row = changedInference.followupRows.find((candidate) => (
+    candidate.status === "available"
+    && candidate.axisIndex === 0
+    && candidate.earlierPeriodIndex === 0
+    && candidate.laterPeriodIndex === 1
+  ));
+  assert.ok(row);
+  assert.equal(row.nNonzero, 1);
+  assert.equal(row.nRanked, 1);
 
   const request = ai.buildOpenEnaAiInterpretationRequest({
     locale: "en",
@@ -423,8 +438,12 @@ test("repeated follow-ups below the complete-cohort ranked minimum are omitted w
     "test",
   ]);
   const providerEvidence = JSON.stringify(request.evidence);
-  assert.equal(providerEvidence.includes(String(privateOmittedP)), false);
   assert.doesNotMatch(providerEvidence, /omitted.*(?:pRaw|pHolm|wPositive|wNegative|rankBiserial|effect|statistic)/iu);
+  for (const forbidden of [
+    "pRaw", "pHolm", "wPositive", "wNegative", "t", "rankBiserialLaterVsEarlier",
+  ]) {
+    assert.equal(forbidden in (omittedProjection ?? {}), false);
+  }
   assert.deepEqual(ai.parseOpenEnaAiInterpretationRequest(JSON.parse(JSON.stringify(request))), request);
 });
 
@@ -760,17 +779,32 @@ test("strict v2 parser rejects unknown identity fields, individual arrays, hosti
 
 test("v2 preserves exact finite inference values instead of rounding to six decimals", async () => {
   const ai = await loadAiModule();
-  const fixture = await endpointFixture();
-  const changedInference = structuredClone(fixture.currentInference);
-  assert.equal(changedInference.kind, "endpoint-independent");
-  const exact = 0.123456789012345;
-  changedInference.rows[0].pRaw = exact;
-  changedInference.rows[0].pHolm = 2 * exact;
-  changedInference.rows[1].pRaw = 0.9;
-  changedInference.rows[1].pHolm = 0.9;
-  freezeDeep(changedInference);
-  const request = ai.buildOpenEnaAiInterpretationRequest(requestInput(fixture, changedInference));
-  assert.equal(request.evidence.inference[0].pRaw, exact);
+  let exactFixture: Awaited<ReturnType<typeof endpointFixture>> | null = null;
+  let exactAxisIndex = -1;
+  for (const unitsPerGroup of [4, 5, 6, 7]) {
+    const candidate = await endpointFixture(unitsPerGroup);
+    assert.equal(candidate.currentInference.kind, "endpoint-independent");
+    const candidateRow = candidate.currentInference.rows.find((row) => (
+      row.pRaw !== null && row.pRaw !== Number(row.pRaw.toFixed(6))
+    ));
+    if (candidateRow) {
+      exactFixture = candidate;
+      exactAxisIndex = candidateRow.axisIndex;
+      break;
+    }
+  }
+  assert.ok(exactFixture, "a genuine coordinator exact tail must retain more than six decimal places");
+  assert.equal(exactFixture.currentInference.kind, "endpoint-independent");
+  const exactRow = exactFixture.currentInference.rows.find((row) => row.axisIndex === exactAxisIndex);
+  assert.ok(exactRow?.pRaw !== null && exactRow?.pRaw !== undefined);
+
+  const request = ai.buildOpenEnaAiInterpretationRequest(requestInput(exactFixture));
+  const projected = request.evidence.inference.find((member) => (
+    member.axisRole === `axis-${exactAxisIndex + 1}`
+  ));
+  assert.ok(projected);
+  assert.equal(projected.pRaw, exactRow.pRaw);
+  assert.notEqual(projected.pRaw, Number(projected.pRaw.toFixed(6)));
 });
 
 test("historical v1 parser retains legacy and exact-first Mann-Whitney method literals", async () => {

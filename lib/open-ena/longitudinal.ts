@@ -3,6 +3,7 @@ import { rowsToCsv } from "./export";
 import {
   assertOpenEnaInferenceBindingV2,
   flattenOpenEnaInferenceRows,
+  parseOpenEnaInferenceResultV2,
 } from "./inference-consumers";
 import type { OpenEnaInferenceResultV2 } from "./inference-v2";
 import {
@@ -1332,29 +1333,7 @@ export function buildLongitudinalGroupCentroidExport(
   inference: OpenEnaInferenceResultV2 | null = null,
 ) {
   if (inference) {
-    if (inference.kind === "endpoint-independent"
-      || !view.identityConfirmed
-      || !Array.isArray(view.repeatedEntityColumns)
-      || view.repeatedEntityColumns.length === 0
-      || !view.source.normalizedUtf8TextSha256
-      || !view.source.hashKind) {
-      throw new Error("Inference consumer binding mismatch.");
-    }
-    assertOpenEnaInferenceBindingV2(inference, {
-      analyzedAt: view.resultProvenance.analyzedAt,
-      datasetNormalizedUtf8TextSha256: view.source.normalizedUtf8TextSha256,
-      datasetHashKind: view.source.hashKind,
-      modelType: view.resultProvenance.modelType,
-      configuration: view.configuration,
-      axes: view.axes,
-      trajectoryMapping: {
-        contractVersion: 1,
-        repeatedEntityColumns: [...view.repeatedEntityColumns],
-        identityConfirmed: true,
-        timeColumn: view.timeColumn,
-        timeOrder: [...view.timeOrder],
-      },
-    });
+    parseBoundLongitudinalInference(view, inference);
   }
   const finiteOr = (value: number | undefined, fallback: number) => (
     typeof value === "number" && Number.isFinite(value) ? value : fallback
@@ -1445,6 +1424,36 @@ export function buildLongitudinalGroupCentroidExport(
   };
 }
 
+function parseBoundLongitudinalInference(
+  view: OpenEnaLongitudinalView,
+  inference: OpenEnaInferenceResultV2,
+) {
+  if (inference.kind === "endpoint-independent"
+    || !view.identityConfirmed
+    || !Array.isArray(view.repeatedEntityColumns)
+    || view.repeatedEntityColumns.length === 0
+    || !view.source.normalizedUtf8TextSha256
+    || !view.source.hashKind) {
+    throw new Error("Inference consumer binding mismatch.");
+  }
+  assertOpenEnaInferenceBindingV2(inference, {
+    analyzedAt: view.resultProvenance.analyzedAt,
+    datasetNormalizedUtf8TextSha256: view.source.normalizedUtf8TextSha256,
+    datasetHashKind: view.source.hashKind,
+    modelType: view.resultProvenance.modelType,
+    configuration: view.configuration,
+    axes: view.axes,
+    trajectoryMapping: {
+      contractVersion: 1,
+      repeatedEntityColumns: [...view.repeatedEntityColumns],
+      identityConfirmed: true,
+      timeColumn: view.timeColumn,
+      timeOrder: [...view.timeOrder],
+    },
+  });
+  return parseOpenEnaInferenceResultV2(inference);
+}
+
 export function longitudinalPeriodRowsToCsv(view: OpenEnaLongitudinalView) {
   const repeatedEntityColumnsJson = JSON.stringify(view.repeatedEntityColumns);
   const timeOrderJson = JSON.stringify(view.timeOrder);
@@ -1497,6 +1506,11 @@ export function longitudinalPeriodRowsToCsv(view: OpenEnaLongitudinalView) {
 }
 
 /** Separate aggregate inference CSV; descriptive geometry remains in the period CSV. */
-export function longitudinalInferenceRowsToCsv(inference: OpenEnaInferenceResultV2) {
-  return rowsToCsv(flattenOpenEnaInferenceRows(inference));
+export function longitudinalInferenceRowsToCsv(
+  view: OpenEnaLongitudinalView,
+  inference: OpenEnaInferenceResultV2,
+) {
+  return rowsToCsv(flattenOpenEnaInferenceRows(
+    parseBoundLongitudinalInference(view, inference),
+  ));
 }

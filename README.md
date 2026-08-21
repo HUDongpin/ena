@@ -38,7 +38,7 @@ The researcher workspace currently provides:
 - cohort-aware longitudinal group-centroid paths for separate and accumulated trajectory results, with an explicit repeated-entity field, a reviewable/reorderable period sequence, Available versus Complete cohort policies, equal-weight entity-period centroids, missing-period gaps, and per-period inclusion diagnostics;
 - standalone SVG and 3x-resolution PNG figure export for the current 2D research view;
 - jENA dimension summaries, correlations, Welch/ANOVA test statistics, and absolute Cohen's d for datasets within the automatic diagnostics limit;
-- ENA.HK endpoint Mann–Whitney summaries for the selected Primary/Secondary pair, including medians, U, a two-sided auto exact-first p-value, the resolved exact-or-approximation method, and signed rank-biserial effect size;
+- researcher-triggered, design-matched rank inference for independent endpoint groups, independent groups at one selected trajectory period, paired trajectory periods, and three-or-more-period repeated trajectories, with raw and Holm-adjusted p-values from one frozen inference result;
 - a local source-evidence browser with text search and active-code filtering that keeps raw source rows out of model exports;
 - an optional, researcher-triggered GPT-5.6 Luna interpretation of a reviewed, anonymized aggregate evidence request through a server-only OpenRouter connection;
 - inspectable and downloadable coordinates, pre-normalization connection counts, line weights, centroids, node positions, adjacency keys, a derived analysis bundle with the full rotation set, a reusable reference-rotation package, and an analysis manifest.
@@ -53,36 +53,74 @@ standard Primary-blue, Secondary-red, solid-line subtraction convention.
 
 Endpoint models expose jENA's descriptive, group-test, and point-centroid diagnostic
 summaries. Trajectory models preserve ordered unit-conversation steps and directed
-paths, but Open ENA intentionally does not apply endpoint group tests or correlation
-diagnostics to repeated trajectory observations. jENA's statistical helper reports
-test statistics and degrees of freedom but does not calculate p-values. For exactly
-two through six endpoint groups, ENA.HK separately offers explicitly labeled
-post-projection Mann–Whitney auto exact-first inference for the currently selected
-ordered pair. Fixed-size exact rank permutations are used through total N=50; above
-that boundary, a tie-corrected normal approximation with a 0.5 continuity correction
-is used. The resolved p-value method is disclosed per axis. No multiplicity
-correction is applied across displayed axes or repeated pair selections. Researchers
-remain responsible for choosing and reporting inference that
-fits their sampling, independence, multiplicity, and study design; paired, nested,
-repeated-measure, or clustered observations require a design-appropriate analysis.
+paths; endpoint group tests and correlations are not silently reused for repeated
+trajectory observations. jENA's statistical helper reports test statistics and
+degrees of freedom but does not calculate p-values.
+
+### Inferential comparison contract
+
+Open ENA does not run an inferential test automatically. In the Comparison workflow,
+the researcher selects the study design, confirms the composite repeated-entity identity
+for a trajectory design, reviews the candidate/included/missing/zero ledger, and then
+clicks **Run inferential comparison**. The selected design determines the method; there
+is no arbitrary statistical-method selector.
+
+1. **Independent endpoint groups — Mann–Whitney U.** The selected Primary and Secondary
+   groups are compared in the fitted endpoint coordinates. Because an endpoint result
+   has no longitudinal time mapping, Open ENA does not claim that the endpoint groups
+   were observed in the same period.
+2. **Independent groups at one selected trajectory period — Mann–Whitney U.** Only the
+   compact entity-period points from the selected period and two disjoint groups enter
+   the comparison; other periods do not enter its inferential sample.
+3. **Paired periods — Wilcoxon signed-rank.** Within one selected group, the composite
+   identity pairs the same entity across two periods using a pairwise-complete cohort.
+   Differences and effect direction are fixed as later minus earlier; complete zero
+   differences remain in matched/zero diagnostics but are excluded from signed ranks.
+4. **Repeated periods — Friedman plus all-pairs Wilcoxon signed-rank.** Within one
+   selected group and at least three periods, Friedman and every period-pair follow-up
+   use the same all-period-complete cohort; follow-ups are produced regardless of the
+   omnibus p-value.
+
+All Mann–Whitney and Wilcoxon pairwise comparisons are fixed to two-sided tests.
+The non-directional Friedman omnibus uses its inclusive upper tail. All four paths
+use an **auto exact-first** p-value policy and **Holm** multiplicity correction;
+signed-rank rows use the **Wilcox zero** method.
+Each estimable planned member retains raw p as an audit value and presents the
+Holm-adjusted p as the primary p-value. Not-estimable planned members retain null
+raw/Holm p values while remaining in the planned family size.
+Stats, inference CSV/JSON, Methods, and AI review consume the same frozen inference
+result instead of recomputing separate statistics.
+
+### Longitudinal plot and inference independence
 
 The longitudinal group-centroid overlay is a descriptive view derived from a
-successful jENA trajectory model; changing its repeated-entity mapping, time mapping,
-cohort policy, or presenter controls does not rebuild jENA or move the fitted coordinates.
+successful jENA trajectory model. Available and Complete control only the descriptive plot
+cohort; they do not filter the all-period comparison frame. Axis flips, labels, zoom,
+scaling, and display toggles do not change the inferential sample, statistics, effect
+direction, or p-values. Changing the confirmed identity, time order, selected group,
+periods, axes, model result, or provenance invalidates the prior inference and requires
+an explicit rerun.
+
 Separate trajectories permit a researcher-selected period order. Accumulated trajectories
 are instead locked to a source encounter order that must agree with every analytic unit's
 fitted jENA step sequence, because each accumulated point contains its preceding network
-history. The Available cohort uses the entities observed in each
-period, while the Complete cohort retains only entities observed in every selected
-period. Duplicate entity-period projected steps are first averaged to one equal-weight
-entity-period point. Missing group-period centroids and adjacent centroids with zero
+history. Duplicate entity-period projected steps are first averaged to one equal-weight
+entity-period point before either descriptive aggregation or inferential slicing. Missing
+group-period centroids and adjacent centroids with zero
 shared repeated entities create visible discontinuities and are never bridged. Individual
 plot marks are deterministically stratified by group and visibly disclosed when sampled;
 the scientific group-centroid path is never sampled. Dedicated JSON and CSV exports preserve cohort counts, movement,
 the complete fitted rotation geometry, source hash, model timestamp, configuration,
 and reference-projection lineage while excluding raw source rows and repeated-entity
-identifiers. Endpoint Mann–Whitney, Welch, and Cohen's-d results are not reused as
-longitudinal inference.
+identifiers.
+
+The rank procedures assume that independent groups, matched entities, or complete
+repeated-entity blocks are independent of other analytic units at the corresponding
+design level. Clustered observations and cluster-robust inference are out of scope,
+and mixed-effects models are out of scope. The resulting associations do not establish
+causality, learning gains, or practical importance. Accumulated-trajectory comparisons
+are additionally path-dependent because a later point contains its preceding network
+history; fitted-axis sign and MR1 group-separation geometry also constrain interpretation.
 
 Reference projection is endpoint-only in this release. The imported reference must
 match the code names and order, window method and effective spans, weighting,

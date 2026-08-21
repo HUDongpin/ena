@@ -121,8 +121,14 @@ test("Workspace routes one current frozen inference authority to every local con
     longitudinalBlock,
     /buildLongitudinalGroupCentroidExport\(\s*longitudinalView,\s*\{[\s\S]*?\},\s*currentInference\s*,?\s*\)/,
   );
-  assert.match(longitudinalBlock, /longitudinalInferenceRowsToCsv\(currentInference\)/);
-  assert.match(longitudinalBlock, /disabled=\{!currentInference\}/);
+  assert.match(
+    longitudinalBlock,
+    /longitudinalInferenceRowsToCsv\(\s*longitudinalView,\s*currentInference\s*,?\s*\)/,
+  );
+  assert.match(
+    longitudinalBlock,
+    /disabled=\{!currentInference \|\| !longitudinalView\}/,
+  );
   assert.doesNotMatch(
     longitudinalBlock,
     /currentInference\.(?:status|reason)[\s\S]{0,80}(?:available|not-estimable)/,
@@ -179,7 +185,10 @@ test("JSON, Methods and inference CSV retain the exact values of one current inf
     undefined,
     currentInference,
   );
-  const inferenceCsv = longitudinalInferenceRowsToCsv(currentInference);
+  const inferenceCsv = longitudinalInferenceRowsToCsv(
+    trajectory.derivation.view,
+    currentInference,
+  );
   const parsedCsv = parseCsv(inferenceCsv, { name: "current-inference.csv", source: "upload" });
   const expectedRows = flattenOpenEnaInferenceRows(currentInference);
 

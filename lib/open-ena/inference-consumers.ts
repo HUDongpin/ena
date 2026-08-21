@@ -25,6 +25,15 @@ export interface OpenEnaInferenceExpectedBindingV2 {
 }
 
 const BINDING_MISMATCH = "Inference consumer binding mismatch.";
+const INFERENCE_JSON_DATA_ERROR =
+  "Inference result must be plain JSON data with own enumerable data properties.";
+const INFERENCE_JSON_BUDGET_ERROR =
+  "Inference result exceeds the bounded plain JSON data budget.";
+const MAX_INFERENCE_STRING_LENGTH = 4_096;
+const MAX_INFERENCE_ARRAY_LENGTH = 4_096;
+const MAX_INFERENCE_JSON_RECORD_OWN_KEYS = 4_096;
+const MAX_INFERENCE_JSON_OBJECT_NODES = 32_768;
+const MAX_INFERENCE_JSON_OWN_KEYS = 262_144;
 
 function sameAxes(left: readonly string[], right: readonly string[]) {
   return left.length === 2
@@ -89,12 +98,116 @@ function trajectoryMappingMatchesRequest(inference: OpenEnaInferenceResultV2) {
   return true;
 }
 
-function isDeeplyFrozen(value: unknown, seen = new Set<unknown>()): boolean {
+function assertPlainInferenceJsonData(
+  value: unknown,
+  state: {
+    active: Set<object>;
+    validated: Set<object>;
+    objectNodeCount: number;
+    ownKeyCount: number;
+  } = {
+    active: new Set<object>(),
+    validated: new Set<object>(),
+    objectNodeCount: 0,
+    ownKeyCount: 0,
+  },
+  depth = 0,
+): void {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return;
+  if (typeof value === "number") return;
+  if (typeof value !== "object") throw new Error(INFERENCE_JSON_DATA_ERROR);
+  if (state.validated.has(value)) return;
+  if (depth > 256 || state.active.has(value)) throw new Error(INFERENCE_JSON_DATA_ERROR);
+
+  state.objectNodeCount += 1;
+  if (state.objectNodeCount > MAX_INFERENCE_JSON_OBJECT_NODES) {
+    throw new Error(INFERENCE_JSON_BUDGET_ERROR);
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  const isArray = Array.isArray(value);
+  let arrayLength: number | null = null;
+  if (isArray) {
+    if (prototype !== Array.prototype) throw new Error(INFERENCE_JSON_DATA_ERROR);
+    const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+    if (!lengthDescriptor
+      || !("value" in lengthDescriptor)
+      || typeof lengthDescriptor.value !== "number"
+      || !Number.isSafeInteger(lengthDescriptor.value)
+      || lengthDescriptor.value < 0
+      || lengthDescriptor.enumerable) {
+      throw new Error(INFERENCE_JSON_DATA_ERROR);
+    }
+    arrayLength = lengthDescriptor.value;
+    if (arrayLength > MAX_INFERENCE_ARRAY_LENGTH) {
+      throw new Error(INFERENCE_JSON_BUDGET_ERROR);
+    }
+  } else if (prototype !== Object.prototype && prototype !== null) {
+    throw new Error(INFERENCE_JSON_DATA_ERROR);
+  }
+
+  // Enumerate keys once, enforce the work budget, and only then request each
+  // descriptor individually. This avoids materializing a second full
+  // descriptors object for hostile multi-megabyte records.
+  const keys = Reflect.ownKeys(value);
+  const containerOwnKeyLimit = isArray
+    ? MAX_INFERENCE_ARRAY_LENGTH + 1
+    : MAX_INFERENCE_JSON_RECORD_OWN_KEYS;
+  state.ownKeyCount += keys.length;
+  if (keys.length > containerOwnKeyLimit
+    || state.ownKeyCount > MAX_INFERENCE_JSON_OWN_KEYS) {
+    throw new Error(INFERENCE_JSON_BUDGET_ERROR);
+  }
+
+  state.active.add(value);
+  if (isArray) {
+    if (keys.some((key) => typeof key !== "string")
+      || keys.length !== (arrayLength as number) + 1) {
+      throw new Error(INFERENCE_JSON_DATA_ERROR);
+    }
+    for (let index = 0; index < (arrayLength as number); index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
+        throw new Error(INFERENCE_JSON_DATA_ERROR);
+      }
+      assertPlainInferenceJsonData(descriptor.value, state, depth + 1);
+    }
+  } else {
+    if (keys.some((key) => typeof key !== "string")) {
+      throw new Error(INFERENCE_JSON_DATA_ERROR);
+    }
+    for (const key of keys as string[]) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
+        throw new Error(INFERENCE_JSON_DATA_ERROR);
+      }
+      assertPlainInferenceJsonData(descriptor.value, state, depth + 1);
+    }
+  }
+
+  state.active.delete(value);
+  state.validated.add(value);
+}
+
+function isDeeplyFrozenOwnData(value: unknown, seen = new Set<object>()): boolean {
   if (value === null || typeof value !== "object" || seen.has(value)) return true;
   if (!Object.isFrozen(value)) return false;
   seen.add(value);
-  return Object.values(value as Record<string, unknown>)
-    .every((nested) => isDeeplyFrozen(nested, seen));
+  return Reflect.ownKeys(value).every((key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor !== undefined
+      && "value" in descriptor
+      && isDeeplyFrozenOwnData(descriptor.value, seen);
+  });
+}
+
+function isDeeplyFrozen(value: unknown): boolean {
+  try {
+    assertPlainInferenceJsonData(value);
+  } catch {
+    return false;
+  }
+  return isDeeplyFrozenOwnData(value);
 }
 
 /**
@@ -303,8 +416,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function exactKeys(value: Record<string, unknown>, allowed: readonly string[], label: string) {
   const allowedSet = new Set(allowed);
-  const unexpected = Object.keys(value).find((key) => !allowedSet.has(key));
-  if (unexpected) throw new Error(`${label} contains an unsupported field.`);
+  const actual = Object.keys(value);
+  if (actual.some((key) => !allowedSet.has(key))) {
+    throw new Error(`${label} contains an unsupported field.`);
+  }
+  if (actual.length !== allowed.length
+    || allowed.some((key) => !Object.prototype.hasOwnProperty.call(value, key))) {
+    throw new Error(`${label} must contain exactly its required fields.`);
+  }
 }
 
 function finiteOrNull(value: unknown, label: string) {
@@ -328,8 +447,6 @@ function validateStringArray(value: unknown, label: string) {
   }
 }
 
-const MAX_INFERENCE_STRING_LENGTH = 4_096;
-const MAX_INFERENCE_ARRAY_LENGTH = 4_096;
 const MAX_CONFIGURATION_COLUMNS = 256;
 const MAX_CONFIGURATION_CODES = 30;
 
@@ -406,15 +523,45 @@ const REASON_CODES = new Set([
   "no-complete-blocks",
 ]);
 
-const RESOLVED_METHODS = new Set([
-  "exact-classic",
-  "exact-conditional-rank-permutation",
-  "normal-approximation-tie-corrected",
-  "exact-conditional-sign-flip",
-  "normal-approximation-actual-ranks",
-  "exact-conditional-period-permutation",
-  "chi-square-approximation-tie-corrected",
-]);
+const RESOLVED_METHODS_BY_TEST = {
+  "mann-whitney-u": new Set([
+    "exact-classic",
+    "exact-conditional-rank-permutation",
+    "normal-approximation-tie-corrected",
+  ]),
+  "wilcoxon-signed-rank": new Set([
+    "exact-classic",
+    "exact-conditional-sign-flip",
+    "normal-approximation-actual-ranks",
+  ]),
+  friedman: new Set([
+    "exact-conditional-period-permutation",
+    "chi-square-approximation-tie-corrected",
+  ]),
+} as const;
+
+const INFERENCE_ROW_STATE_ERROR =
+  "Inference row status, p-values, or method audit are inconsistent.";
+const INFERENCE_RESOLVED_METHOD_AUDIT_ERROR =
+  "Inference resolved p method, exact-tail, and continuity audit are inconsistent.";
+const INFERENCE_ROW_REASON_ERROR =
+  "Inference row not-estimable reason is inconsistent with its rank test.";
+const INFERENCE_OVERALL_REASON_ERROR =
+  "Inference overall reason does not match its planned rows.";
+const INFERENCE_AVAILABLE_STATISTICS_ERROR =
+  "Inference available row statistics are incomplete.";
+const INFERENCE_ROW_COUNT_ERROR =
+  "Inference row count audit is inconsistent.";
+const INFERENCE_LEDGER_AUDIT_ERROR =
+  "Inference inclusion ledger audit is inconsistent.";
+const INFERENCE_EXACT_FIRST_ERROR =
+  "Inference resolved p method is inconsistent with exact-first audit.";
+const INFERENCE_MINIMUM_P_ERROR =
+  "Inference Wilcoxon minimum attainable p audit is inconsistent with nNonzero.";
+const INFERENCE_EXACT_TAIL_ERROR =
+  "Inference exact-tail counts and raw p-value are inconsistent.";
+const INFERENCE_HOLM_AUDIT_ERROR =
+  "Inference Holm family adjustment audit is inconsistent.";
 
 function validateWarnings(value: unknown, label: string) {
   validateStringArray(value, label);
@@ -472,6 +619,248 @@ function validateExactTail(value: unknown) {
   }
 }
 
+type OpenEnaAggregateRankTest =
+  | "mann-whitney-u"
+  | "wilcoxon-signed-rank"
+  | "friedman";
+
+function finiteNumberFields(
+  row: Record<string, unknown>,
+  fields: readonly string[],
+) {
+  return fields.every((field) => (
+    typeof row[field] === "number" && Number.isFinite(row[field])
+  ));
+}
+
+function rowHasTies(row: Record<string, unknown>) {
+  const tieGroupCount = row.tieGroupCount as number;
+  const tiedObservationCount = row.tiedObservationCount as number;
+  const tieCorrectionSum = row.tieCorrectionSum as number;
+  const noTies = tieGroupCount === 0
+    && tiedObservationCount === 0
+    && tieCorrectionSum === 0;
+  const coherentTies = tieGroupCount > 0
+    && tiedObservationCount >= 2 * tieGroupCount
+    && tieCorrectionSum >= 6 * tieGroupCount;
+  if (!noTies && !coherentTies) throw new Error(INFERENCE_EXACT_FIRST_ERROR);
+  return coherentTies;
+}
+
+function combinationCount(total: number, selected: number) {
+  const size = Math.min(selected, total - selected);
+  let count = BigInt(1);
+  for (let index = 1; index <= size; index += 1) {
+    count = count * BigInt(total - size + index) / BigInt(index);
+  }
+  return count;
+}
+
+function factorialCount(value: number) {
+  let count = BigInt(1);
+  for (let factor = 2; factor <= value; factor += 1) count *= BigInt(factor);
+  return count;
+}
+
+function powerCountWithinLimit(base: bigint, exponent: number, limit: bigint) {
+  let count = BigInt(1);
+  for (let index = 0; index < exponent; index += 1) {
+    count *= base;
+    if (count > limit) return null;
+  }
+  return count;
+}
+
+function expectedResolvedMethod(
+  row: Record<string, unknown>,
+  test: OpenEnaAggregateRankTest,
+  hasTies: boolean,
+) {
+  if (test === "mann-whitney-u") {
+    const rankedN = (row.nPrimary as number) + (row.nSecondary as number);
+    return rankedN <= 50
+      ? hasTies ? "exact-conditional-rank-permutation" : "exact-classic"
+      : "normal-approximation-tie-corrected";
+  }
+  if (test === "wilcoxon-signed-rank") {
+    const rankedN = row.nNonzero as number;
+    return rankedN <= 50
+      ? !hasTies && row.nZero === 0 ? "exact-classic" : "exact-conditional-sign-flip"
+      : "normal-approximation-actual-ranks";
+  }
+  const assignmentLimit = BigInt(1_000_000);
+  const assignmentCount = powerCountWithinLimit(
+    factorialCount(row.nPeriods as number),
+    row.nComplete as number,
+    assignmentLimit,
+  );
+  return assignmentCount !== null
+    ? "exact-conditional-period-permutation"
+    : "chi-square-approximation-tie-corrected";
+}
+
+function expectedExactAssignmentTotal(
+  row: Record<string, unknown>,
+  test: OpenEnaAggregateRankTest,
+) {
+  if (test === "mann-whitney-u") {
+    const nPrimary = row.nPrimary as number;
+    const nSecondary = row.nSecondary as number;
+    return combinationCount(nPrimary + nSecondary, Math.min(nPrimary, nSecondary));
+  }
+  if (test === "wilcoxon-signed-rank") {
+    return BigInt(1) << BigInt(row.nNonzero as number);
+  }
+  const count = powerCountWithinLimit(
+    factorialCount(row.nPeriods as number),
+    row.nComplete as number,
+    BigInt(1_000_000),
+  );
+  if (count === null) throw new Error(INFERENCE_EXACT_TAIL_ERROR);
+  return count;
+}
+
+function validateNotEstimableReason(
+  row: Record<string, unknown>,
+  test: OpenEnaAggregateRankTest,
+) {
+  if (row.status !== "not-estimable") return;
+  const reason = row.reason;
+  const valid = test === "mann-whitney-u"
+    ? reason === "empty-group" || reason === "all-values-tied"
+    : test === "wilcoxon-signed-rank"
+      ? reason === "insufficient-ranked-observations"
+        || reason === "all-zero-differences"
+        || reason === "no-complete-blocks"
+      : reason === "no-complete-blocks"
+        || reason === "insufficient-ranked-observations"
+        || reason === "all-values-tied";
+  if (!valid) throw new Error(INFERENCE_ROW_REASON_ERROR);
+}
+
+function validateRowCounts(
+  row: Record<string, unknown>,
+  test: OpenEnaAggregateRankTest,
+) {
+  if (test === "mann-whitney-u") {
+    const nPrimary = row.nPrimary as number;
+    const nSecondary = row.nSecondary as number;
+    if ((row.status === "available" && (nPrimary === 0 || nSecondary === 0))
+      || (row.reason === "empty-group" && nPrimary > 0 && nSecondary > 0)
+      || (row.reason === "all-values-tied" && (nPrimary === 0 || nSecondary === 0))) {
+      throw new Error(INFERENCE_ROW_COUNT_ERROR);
+    }
+    return;
+  }
+  if (test === "wilcoxon-signed-rank") {
+    const nMatched = row.nMatched as number;
+    const nPositive = row.nPositive as number;
+    const nNegative = row.nNegative as number;
+    const nZero = row.nZero as number;
+    const nNonzero = row.nNonzero as number;
+    const nRanked = row.nRanked as number;
+    if (nMatched !== nPositive + nNegative + nZero
+      || nNonzero !== nPositive + nNegative
+      || nRanked !== nNonzero
+      || (row.status === "available" && nNonzero === 0)
+      || (row.reason === "insufficient-ranked-observations" && nMatched !== 0)
+      || (row.reason === "all-zero-differences"
+        && (nMatched === 0 || nZero !== nMatched || nNonzero !== 0))) {
+      throw new Error(INFERENCE_ROW_COUNT_ERROR);
+    }
+    return;
+  }
+  const nComplete = row.nComplete as number;
+  const nPeriods = row.nPeriods as number;
+  if ((row.status === "available" && (nComplete === 0 || nPeriods < 3))
+    || (row.reason === "no-complete-blocks" && nComplete !== 0)
+    || (row.reason === "insufficient-ranked-observations"
+      && (nComplete === 0 || nPeriods >= 3))
+    || (row.reason === "all-values-tied" && nComplete === 0)) {
+    throw new Error(INFERENCE_ROW_COUNT_ERROR);
+  }
+}
+
+function validateAvailableStatistics(
+  row: Record<string, unknown>,
+  test: OpenEnaAggregateRankTest,
+) {
+  if (row.status !== "available") return;
+  const fields = test === "mann-whitney-u"
+    ? [
+        "medianPrimary", "medianSecondary", "uPrimary", "uSecondary", "z",
+        "rankBiserialPrimaryVsSecondary",
+      ]
+    : test === "wilcoxon-signed-rank"
+      ? [
+          "medianDifference", "q1Difference", "q3Difference", "iqrDifference",
+          "wPositive", "wNegative", "t", "z", "rankBiserialLaterVsEarlier",
+        ]
+      : ["q", "degreesFreedom", "kendallsW"];
+  if (!finiteNumberFields(row, fields)) {
+    throw new Error(INFERENCE_AVAILABLE_STATISTICS_ERROR);
+  }
+}
+
+function validateMinimumAttainableP(row: Record<string, unknown>) {
+  if (row.test !== "wilcoxon-signed-rank" || row.status !== "available") return;
+  const audit = row.minimumAttainableTwoSidedP;
+  const nNonzero = row.nNonzero as number;
+  const expectedLog2 = 1 - nNonzero;
+  const expectedNumeric = nNonzero <= 1_075 ? 2 ** expectedLog2 : null;
+  if (!isRecord(audit)
+    || audit.formula !== "2^(1-nNonzero)"
+    || audit.log2 !== expectedLog2
+    || audit.numeric !== expectedNumeric
+    || (audit.numeric !== null
+      && (typeof audit.numeric !== "number" || audit.numeric <= 0 || audit.numeric > 1))) {
+    throw new Error(INFERENCE_MINIMUM_P_ERROR);
+  }
+}
+
+function validateExactTailArithmetic(
+  row: Record<string, unknown>,
+  test: OpenEnaAggregateRankTest,
+) {
+  if (row.status !== "available"
+    || typeof row.resolvedPMethod !== "string"
+    || !row.resolvedPMethod.startsWith("exact-")) return;
+  const audit = row.exactTail;
+  if (!isRecord(audit)
+    || typeof audit.extremeAssignmentCount !== "string"
+    || typeof audit.totalAssignmentCount !== "string") {
+    throw new Error(INFERENCE_EXACT_TAIL_ERROR);
+  }
+  const extreme = BigInt(audit.extremeAssignmentCount);
+  const total = BigInt(audit.totalAssignmentCount);
+  const maximumSafeCount = BigInt(Number.MAX_SAFE_INTEGER);
+  if (extreme <= BigInt(0)
+    || total <= BigInt(0)
+    || extreme > total
+    || extreme > maximumSafeCount
+    || total > maximumSafeCount
+    || total !== expectedExactAssignmentTotal(row, test)
+    || row.pRaw !== Number(extreme) / Number(total)) {
+    throw new Error(INFERENCE_EXACT_TAIL_ERROR);
+  }
+}
+
+function validateRowSemanticAudit(
+  row: Record<string, unknown>,
+  test: OpenEnaAggregateRankTest,
+) {
+  validateNotEstimableReason(row, test);
+  validateRowCounts(row, test);
+  validateAvailableStatistics(row, test);
+  const hasTies = rowHasTies(row);
+  if (row.status === "available"
+    && row.resolvedPMethod !== expectedResolvedMethod(row, test, hasTies)) {
+    throw new Error(INFERENCE_EXACT_FIRST_ERROR);
+  }
+  validateMinimumAttainableP(row);
+  validateExactTailArithmetic(row, test);
+}
+
 function validateRow(value: unknown, expectedTest: "mann-whitney-u" | "wilcoxon-signed-rank" | "friedman") {
   if (!isRecord(value) || value.test !== expectedTest) throw new Error("Inference result row is invalid.");
   exactKeys(
@@ -502,7 +891,8 @@ function validateRow(value: unknown, expectedTest: "mann-whitney-u" | "wilcoxon-
   validateReason(value.reason);
   validateWarnings(value.warnings, "Inference row warnings");
   if (value.resolvedPMethod !== null
-    && (typeof value.resolvedPMethod !== "string" || !RESOLVED_METHODS.has(value.resolvedPMethod))) {
+    && (typeof value.resolvedPMethod !== "string"
+      || !RESOLVED_METHODS_BY_TEST[expectedTest].has(value.resolvedPMethod))) {
     throw new Error("Inference resolved p method is invalid.");
   }
   for (const key of ["tieGroupCount", "tiedObservationCount", "tieCorrectionSum"] as const) {
@@ -538,10 +928,49 @@ function validateRow(value: unknown, expectedTest: "mann-whitney-u" | "wilcoxon-
         || value.differenceDirection !== "later-minus-earlier"))) {
     throw new Error("Inference effect direction is invalid.");
   }
+  const resolvedPMethod = typeof value.resolvedPMethod === "string"
+    ? value.resolvedPMethod
+    : null;
+  const exactPMethod = resolvedPMethod?.startsWith("exact-") ?? false;
+  const continuityCorrectedApproximation = resolvedPMethod === "normal-approximation-tie-corrected"
+    || resolvedPMethod === "normal-approximation-actual-ranks";
+  const uncorrectedApproximation = resolvedPMethod === "chi-square-approximation-tie-corrected";
   if ((value.pRaw === null) !== (value.pHolm === null)
-    || (value.status === "available" && value.pRaw === null)
-    || (value.status === "not-estimable" && value.reason === null)) {
-    throw new Error("Inference row status and p-values are inconsistent.");
+    || (value.status === "available" && (
+      value.reason !== null
+      || value.pRaw === null
+      || value.resolvedPMethod === null
+      || (expectedTest === "wilcoxon-signed-rank"
+        && value.minimumAttainableTwoSidedP === null)
+    ))
+    || (value.status === "not-estimable" && (
+      value.reason === null
+      || value.pRaw !== null
+      || value.pHolm !== null
+      || value.resolvedPMethod !== null
+      || value.holmRank !== null
+      || value.holmMultiplier !== null
+      || value.exactTail !== null
+      || value.continuityCorrectionApplied !== false
+      || (expectedTest === "wilcoxon-signed-rank"
+        && value.minimumAttainableTwoSidedP !== null)
+    ))) {
+    throw new Error(INFERENCE_ROW_STATE_ERROR);
+  }
+  if (value.status === "available" && (
+    (exactPMethod && (
+      value.exactTail === null
+      || value.continuityCorrectionApplied !== false
+    ))
+    || (!exactPMethod
+      && resolvedPMethod !== null
+      && value.exactTail !== null)
+    || (continuityCorrectedApproximation
+      && value.continuityCorrectionApplied !== true)
+    || (uncorrectedApproximation
+      && value.continuityCorrectionApplied !== false)
+  )) {
+    throw new Error(INFERENCE_RESOLVED_METHOD_AUDIT_ERROR);
   }
   if (value.pRaw !== null
     && (typeof value.holmRank !== "number"
@@ -889,6 +1318,178 @@ function validateLedger(value: unknown, kind: OpenEnaInferenceResultV2["kind"]) 
   }
 }
 
+function validateLedgerSemanticAudit(
+  kind: OpenEnaInferenceResultV2["kind"],
+  ledger: Record<string, unknown>,
+  rows: readonly Record<string, unknown>[],
+  request: Record<string, unknown>,
+) {
+  if (kind === "endpoint-independent") {
+    const mannWhitneyRows = rows.filter((row) => row.test === "mann-whitney-u");
+    const primary = ledger.primaryAvailableCount as number;
+    const secondary = ledger.secondaryAvailableCount as number;
+    const included = primary + secondary;
+    if (ledger.candidateEntityCount !== included
+      || ledger.includedEntityCount !== included
+      || ledger.includedAnalyticPointCount !== included
+      || mannWhitneyRows.some((row) => (
+        row.nPrimary !== primary || row.nSecondary !== secondary
+      ))) {
+      throw new Error(INFERENCE_LEDGER_AUDIT_ERROR);
+    }
+    return;
+  }
+
+  if (kind === "trajectory-independent-period") {
+    const primary = ledger.primaryAvailableCount as number;
+    const secondary = ledger.secondaryAvailableCount as number;
+    const included = primary + secondary;
+    if ((ledger.candidateEntityCount as number) < included
+      || ledger.includedEntityCount !== included
+      || ledger.includedCompactPointCount !== included
+      || (ledger.includedSourcePointCount as number) < included
+      || rows.some((row) => row.nPrimary !== primary || row.nSecondary !== secondary)) {
+      throw new Error(INFERENCE_LEDGER_AUDIT_ERROR);
+    }
+    return;
+  }
+
+  if (kind === "trajectory-paired-periods") {
+    const candidate = ledger.candidateEntityCount as number;
+    const earlierAvailable = ledger.earlierAvailableCount as number;
+    const laterAvailable = ledger.laterAvailableCount as number;
+    const matched = ledger.matchedEntityCount as number;
+    const earlierOnly = ledger.earlierOnlyCount as number;
+    const laterOnly = ledger.laterOnlyCount as number;
+    const missing = candidate - matched;
+    const axes = ledger.axes as Record<string, unknown>[];
+    if (matched > earlierAvailable
+      || matched > laterAvailable
+      || earlierOnly !== earlierAvailable - matched
+      || laterOnly !== laterAvailable - matched
+      || candidate < earlierAvailable + laterAvailable - matched
+      || ledger.missingPairCount !== missing
+      || ledger.earlierAvailableCompactPointCount !== earlierAvailable
+      || ledger.laterAvailableCompactPointCount !== laterAvailable
+      || (ledger.earlierAvailableSourcePointCount as number) < earlierAvailable
+      || (ledger.laterAvailableSourcePointCount as number) < laterAvailable
+      || ledger.matchedCompactPointCount !== 2 * matched
+      || (ledger.matchedSourcePointCount as number) < 2 * matched
+      || rows.some((row) => row.nMatched !== matched || row.nMissing !== missing)
+      || axes.some((axis) => {
+        const row = rows.find((candidateRow) => candidateRow.axisIndex === axis.axisIndex);
+        return !row
+          || axis.zeroDifferenceCount !== row.nZero
+          || axis.nonzeroDifferenceCount !== row.nNonzero
+          || axis.rankedCount !== row.nRanked;
+      })) {
+      throw new Error(INFERENCE_LEDGER_AUDIT_ERROR);
+    }
+    return;
+  }
+
+  const periods = request.periods as string[];
+  const periodCount = periods.length;
+  const candidate = ledger.candidateEntityCount as number;
+  const complete = ledger.completeBlockCount as number;
+  const missing = ledger.missingAnySelectedPeriodCount as number;
+  const availableByPeriod = ledger.availableByPeriod as Record<string, unknown>[];
+  const omnibusRows = rows.filter((row) => row.test === "friedman");
+  const followupRows = rows.filter((row) => row.test === "wilcoxon-signed-rank");
+  if (candidate !== complete + missing
+    || ledger.completeBlockCompactPointCount !== complete * periodCount
+    || (ledger.completeBlockSourcePointCount as number) < complete * periodCount
+    || availableByPeriod.some((period) => (
+      (period.availableEntityCount as number) < complete
+      || period.availableCompactPointCount !== period.availableEntityCount
+      || (period.availableSourcePointCount as number) < (period.availableCompactPointCount as number)
+    ))
+    || omnibusRows.some((row) => (
+      row.nComplete !== complete || row.nMissingCompleteBlocks !== missing
+    ))
+    || followupRows.some((row) => row.nMatched !== complete || row.nMissing !== 0)) {
+    throw new Error(INFERENCE_LEDGER_AUDIT_ERROR);
+  }
+}
+
+function validateLongitudinalReasonContext(
+  kind: OpenEnaInferenceResultV2["kind"],
+  ledger: Record<string, unknown>,
+  rows: readonly Record<string, unknown>[],
+) {
+  if (kind === "trajectory-paired-periods"
+    && rows.some((row) => row.reason === "no-complete-blocks")) {
+    throw new Error(INFERENCE_ROW_REASON_ERROR);
+  }
+  if (kind !== "trajectory-repeated-periods") return;
+  const noCompleteBlocks = ledger.completeBlockCount === 0;
+  if (rows.some((row) => (
+    noCompleteBlocks
+      ? row.reason !== "no-complete-blocks"
+      : row.reason === "no-complete-blocks"
+  ))) {
+    throw new Error(INFERENCE_ROW_REASON_ERROR);
+  }
+}
+
+function expectedOverallReason(
+  rows: readonly Record<string, unknown>[],
+  preferred?: string,
+) {
+  if (rows.some((row) => row.status === "available")) return null;
+  if (preferred) return preferred;
+  const reasons = [...new Set(rows.map((row) => row.reason).filter((reason) => reason !== null))];
+  return reasons.length === 1 ? reasons[0] : "insufficient-ranked-observations";
+}
+
+function validateOverallSemanticAudit(
+  result: Record<string, unknown>,
+  kind: OpenEnaInferenceResultV2["kind"],
+  rows: readonly Record<string, unknown>[],
+  ledger: Record<string, unknown>,
+) {
+  const determinantRows = kind === "trajectory-repeated-periods"
+    ? rows.filter((row) => row.test === "friedman")
+    : rows;
+  const expectedStatus = determinantRows.some((row) => row.status === "available")
+    ? "available"
+    : "not-estimable";
+  const preferred = kind === "trajectory-repeated-periods"
+    && ledger.completeBlockCount === 0
+    ? "no-complete-blocks"
+    : undefined;
+  if (result.status !== expectedStatus
+    || result.reason !== expectedOverallReason(determinantRows, preferred)) {
+    throw new Error(INFERENCE_OVERALL_REASON_ERROR);
+  }
+}
+
+function validateHolmSemanticAudit(
+  families: readonly Record<string, unknown>[],
+  rows: readonly Record<string, unknown>[],
+) {
+  for (const family of families) {
+    const familyRows = rows.filter((row) => row.familyId === family.familyId);
+    const ordered = familyRows
+      .map((row) => ({ row, effectiveP: row.pRaw === null ? 1 : row.pRaw as number }))
+      .sort((left, right) => left.effectiveP - right.effectiveP
+        || (left.row.memberId as string).localeCompare(right.row.memberId as string));
+    let runningMaximum = 0;
+    for (let index = 0; index < ordered.length; index += 1) {
+      const { row, effectiveP } = ordered[index];
+      const multiplier = ordered.length - index;
+      runningMaximum = Math.min(1, Math.max(runningMaximum, multiplier * effectiveP));
+      const nullMember = row.pRaw === null;
+      if (row.familySizePlanned !== ordered.length
+        || row.pHolm !== (nullMember ? null : runningMaximum)
+        || row.holmRank !== (nullMember ? null : index + 1)
+        || row.holmMultiplier !== (nullMember ? null : multiplier)) {
+        throw new Error(INFERENCE_HOLM_AUDIT_ERROR);
+      }
+    }
+  }
+}
+
 function assertNoIndividualEvidence(value: unknown, seen = new Set<unknown>()) {
   if (value === null || typeof value !== "object" || seen.has(value)) return;
   seen.add(value);
@@ -913,6 +1514,7 @@ function deepFreeze<T>(value: T, seen = new Set<unknown>()): T {
 
 /** Strict aggregate inference reader used by schema-v2 result-bundle parsing. */
 export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceResultV2 {
+  assertPlainInferenceJsonData(value);
   if (!isRecord(value) || value.schemaVersion !== 2) throw new Error("Inference result schema v2 is required.");
   const kind = value.kind;
   if (kind !== "endpoint-independent"
@@ -1090,6 +1692,13 @@ export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceR
         throw new Error("Repeated inference ledger period cardinality is invalid.");
       }
     }
+    for (const row of parsedRows) {
+      validateRowSemanticAudit(row, row.test as OpenEnaAggregateRankTest);
+    }
+    const aggregateLedger = value.ledger as Record<string, unknown>;
+    validateLedgerSemanticAudit(kind, aggregateLedger, parsedRows, request);
+    validateLongitudinalReasonContext(kind, aggregateLedger, parsedRows);
+    validateOverallSemanticAudit(value, kind, parsedRows, aggregateLedger);
   }
   const families = value.families as Record<string, unknown>[];
   const familyById = new Map(families.map((family) => [family.familyId, family]));
@@ -1134,12 +1743,12 @@ export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceR
   if (families.some((family) => (family.memberIds as string[]).some((member) => !rowMemberIds.has(member)))) {
     throw new Error("Inference family contains an unknown planned member.");
   }
-  if ((value.status === "available") !== parsedRows.some((row) => row.status === "available")
-    || (value.status === "available" && value.reason !== null)
-    || (value.status === "disabled" && (value.reason === null
+  if (value.status !== "disabled") {
+    validateHolmSemanticAudit(families, parsedRows);
+  } else if (value.reason === null
       || value.ledger !== null
       || parsedRows.length !== 0
-      || families.length !== 0))) {
+      || families.length !== 0) {
     throw new Error("Inference overall status is inconsistent.");
   }
   assertNoIndividualEvidence(value);

@@ -2163,12 +2163,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               <button
                 type="button"
                 className="ena-action-button ena-action-secondary"
-                disabled={!currentInference}
+                disabled={!currentInference || !longitudinalView}
                 onClick={() => {
-                  if (currentInference) {
+                  if (currentInference && longitudinalView) {
                     downloadText(
                       `open-ena-${Date.now()}-longitudinal-inference.csv`,
-                      longitudinalInferenceRowsToCsv(currentInference),
+                      longitudinalInferenceRowsToCsv(longitudinalView, currentInference),
                       "text/csv;charset=utf-8",
                     );
                   }
