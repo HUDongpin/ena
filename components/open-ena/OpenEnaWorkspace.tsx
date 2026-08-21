@@ -2558,7 +2558,11 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   {groupContrast ? (
                     <section className="ena-selected-contrast-summary">
                       <h3>{copy.contrast.title}</h3>
-                      <p>{copy.contrast.selectedOrder}: <strong>{groupContrast.groupOrder.join(" → ")}</strong> on {groupContrast.axes.join(" × ")}. {copy.contrast.multiplicity}</p>
+                      <p>
+                        {copy.contrast.selectedOrder}: <strong>{groupContrast.groupOrder.join(" → ")}</strong>.{" "}
+                        {copy.contrast.selectedAxes}: <strong>{groupContrast.axes.join(" × ")}</strong>.{" "}
+                        {copy.contrast.multiplicity}
+                      </p>
                     </section>
                   ) : null}
                   {referenceMeanNotice ? (

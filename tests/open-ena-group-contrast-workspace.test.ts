@@ -5,6 +5,7 @@ import test from "node:test";
 import { analyzeDataset } from "../lib/open-ena/analyze";
 import { parseCsv } from "../lib/open-ena/csv";
 import { buildEndpointMannWhitney } from "../lib/open-ena/inference";
+import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 import { SAMPLE_CONFIG } from "../lib/open-ena/types";
 
 const projectRoot = process.cwd();
@@ -127,6 +128,21 @@ test("one top-level selected pair persists across Plot while Stats requires an e
     workspace,
     /onClick=\{\(\) => setMode\(item\)\}/,
     "rail navigation should only change the mode so the top-level pair remains selected",
+  );
+});
+
+test("Stats localizes the selected axes instead of leaking an English connector", () => {
+  const summary = workspace.match(
+    /<section className="ena-selected-contrast-summary">[\s\S]*?<\/section>/,
+  )?.[0] ?? "";
+  assert.ok(summary, "the selected contrast summary must remain present in Stats");
+  assert.match(summary, /copy\.contrast\.selectedAxes/);
+  assert.doesNotMatch(summary, /\}\s+on\s+\{/i);
+  assert.deepEqual(
+    (["en", "zh-hant", "zh-hans"] as const).map((locale) => (
+      getOpenEnaCopy(locale).contrast.selectedAxes
+    )),
+    ["Selected axes", "所選座標軸", "所选坐标轴"],
   );
 });
 

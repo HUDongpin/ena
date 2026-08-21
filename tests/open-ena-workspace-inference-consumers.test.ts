@@ -77,6 +77,44 @@ function trajectoryFixture(periods: readonly string[]) {
   return { dataset, configuration, result, axes, derivation };
 }
 
+function sameFourPeoplePairedFixture() {
+  const dataset = parseCsv([
+    "Cohort,Name,Period,A,B,C",
+    "Study,P1,baseline,1,1,0",
+    "Study,P1,scaffolded,1,0,1",
+    "Study,P2,baseline,1,0,1",
+    "Study,P2,scaffolded,0,1,1",
+    "Study,P3,baseline,0,1,1",
+    "Study,P3,scaffolded,1,1,0",
+    "Study,P4,baseline,1,1,1",
+    "Study,P4,scaffolded,0,1,0",
+  ].join("\n") + "\n", {
+    name: "same-four-people-baseline-scaffolded.csv",
+    source: "upload",
+  });
+  const configuration: OpenEnaConfig = {
+    ...SAMPLE_CONFIG,
+    unitColumns: ["Cohort", "Name"],
+    conversationColumns: ["Period"],
+    groupColumn: "Cohort",
+    codes: ["A", "B", "C"],
+    model: "SeparateTrajectory",
+    window: "Conversation",
+  };
+  const result = bindResult(analyzeDataset(dataset, configuration), configuration);
+  const axes = result.dimensions.slice(0, 2) as [string, string];
+  const derivation = buildLongitudinalDerivation(result, configuration, dataset, {
+    repeatedEntityColumns: ["Cohort", "Name"],
+    identityConfirmed: true,
+    timeColumn: "Period",
+    timeOrder: ["baseline", "scaffolded"],
+    cohortPolicy: "available",
+    axes,
+    datasetNormalizedUtf8TextSha256: HASH,
+  }, ANALYZED_AT);
+  return { configuration, result, axes, derivation };
+}
+
 function workspaceSource() {
   return readFileSync(
     join(process.cwd(), "components/open-ena/OpenEnaWorkspace.tsx"),
@@ -251,6 +289,64 @@ test("a real one-period trajectory builds a private frame and runs independent M
     "one-period inference must not masquerade as a plotted trajectory",
   );
   assert.match(workspace, /const longitudinalComparisonFrame = longitudinalDerivationState\.derivation\?\.comparisonFrame \?\? null/);
+});
+
+test("the same four people at baseline and scaffolded enter paired Wilcoxon, never 4+4 Mann–Whitney", async () => {
+  const fixture = sameFourPeoplePairedFixture();
+  assert.deepEqual(fixture.result.groups.map((group) => group.name), ["Study"]);
+  assert.deepEqual(fixture.derivation.comparisonFrame.repeatedEntityColumns, ["Cohort", "Name"]);
+  assert.equal(fixture.derivation.comparisonFrame.points.length, 8);
+
+  const commonInput = {
+    result: fixture.result,
+    currentBinding: {
+      datasetNormalizedUtf8TextSha256: HASH,
+      datasetHashKind: HASH_KIND,
+      configuration: fixture.configuration,
+    },
+    comparisonFrame: fixture.derivation.comparisonFrame,
+  };
+  const paired = await runOpenEnaInferenceV2({
+    ...commonInput,
+    request: {
+      kind: "trajectory-paired-periods",
+      repeatedEntityColumns: ["Cohort", "Name"],
+      timeColumn: "Period",
+      group: "Study",
+      earlierPeriod: "baseline",
+      laterPeriod: "scaffolded",
+      axes: fixture.axes,
+      cohortPolicy: "pairwise-complete",
+    },
+  });
+  assert.equal(paired.kind, "trajectory-paired-periods");
+  assert.equal(paired.ledger?.matchedEntityCount, 4);
+  assert.equal(paired.rows.length, 2);
+  assert.ok(paired.rows.every((row) => row.test === "wilcoxon-signed-rank"));
+  assert.ok(paired.rows.every((row) => row.nMatched === 4));
+
+  const periodAsGroup = await runOpenEnaInferenceV2({
+    ...commonInput,
+    request: {
+      kind: "trajectory-independent-period",
+      repeatedEntityColumns: ["Cohort", "Name"],
+      timeColumn: "Period",
+      period: "baseline",
+      primaryGroup: "baseline",
+      secondaryGroup: "scaffolded",
+      axes: fixture.axes,
+    },
+  });
+  assert.equal(periodAsGroup.kind, "trajectory-independent-period");
+  assert.equal(periodAsGroup.status, "disabled");
+  assert.equal(periodAsGroup.reason, "group-invalid");
+  assert.deepEqual(periodAsGroup.rows, []);
+  assert.doesNotMatch(JSON.stringify(periodAsGroup.rows), /mann-whitney-u/);
+
+  const workspace = workspaceSource();
+  assert.match(workspace, /const hasTwoGroups = Boolean\([\s\S]{0,160}currentResultGroupNames\.length >= 2/);
+  assert.match(workspace, /independent:\s*\{[\s\S]{0,160}enabled: Boolean\(result && hasTwoGroups/);
+  assert.match(workspace, /paired:\s*\{[\s\S]{0,120}enabled: Boolean\(trajectory && longitudinalTimeOrder\.length >= 2\)/);
 });
 
 test("stable result, warning, integrity and p-method codes have localized researcher-facing copy", () => {

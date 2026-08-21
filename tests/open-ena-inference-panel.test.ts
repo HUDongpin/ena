@@ -74,6 +74,20 @@ test("all supported workbench locales use full rank-test names and complete infe
   }
 });
 
+test("endpoint output uses the exact non-temporal title in every locale while retaining the full test name", () => {
+  const expectedTitles = {
+    en: "Independent endpoint groups",
+    "zh-hant": "獨立端點群組",
+    "zh-hans": "独立端点组",
+  } as const;
+  for (const locale of ["en", "zh-hant", "zh-hans"] as const) {
+    const copy = getOpenEnaCopy(locale).stats.inference;
+    assert.equal(copy.mannWhitneyEndpointCaption, expectedTitles[locale]);
+    assert.match(copy.designIndependent, /Mann[–-]Whitney U/);
+    assert.ok(copy.endpointTemporalBoundary.trim());
+  }
+});
+
 test("Simplified Chinese Stats navigation and inference copy do not fall back to Traditional Chinese or English frame jargon", () => {
   const copy = getOpenEnaCopy("zh-hans");
   assert.deepEqual(copy.stats.tabs, {
@@ -582,6 +596,9 @@ test("server-rendered result foregrounds Holm and discloses the immutable result
   assert.match(markup, /ENA\.HK post-projection inference/);
   assert.match(markup, /2026-08-21T09:08:07\.000Z/);
   assert.match(markup, /aaaaaaaaaaaa…/);
+  assert.match(markup, /<caption>Independent endpoint groups<\/caption>/);
+  assert.match(markup, /Independent groups · Mann–Whitney U/);
+  assert.match(markup, /does not verify that the two independent groups share one common time period/);
   assert.ok(markup.indexOf("Holm-adjusted p (primary)") < markup.indexOf("Raw p (audit)"));
   assert.doesNotMatch(markup, /opaque-secret|participant-private|paired-difference-private/);
 });
