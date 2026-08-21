@@ -1723,6 +1723,29 @@ async function coordinateOpenEnaInferenceV2(
   }
 }
 
+function coordinatorAuthorityTrajectoryMapping(
+  snapshot: OpenEnaInferenceCoordinatorSnapshotV2,
+  inference: OpenEnaInferenceResultV2,
+): OpenEnaInferenceTrajectoryMappingV2 | null {
+  if (inference.kind === "endpoint-independent") return null;
+  if (inference.binding.trajectoryMapping) {
+    return inference.binding.trajectoryMapping;
+  }
+  // A typed disabled diagnostic may be produced before a trajectory mapping is
+  // published in the result binding. Retain the confirmed coordinator-time
+  // frame mapping only in process-local authority metadata so consumers can
+  // still reject a later mapping drift without exposing participant evidence.
+  const frame = snapshot.comparisonFrame;
+  if (!frame?.identityConfirmed) return null;
+  return {
+    contractVersion: OPEN_ENA_INFERENCE_TRAJECTORY_MAPPING_CONTRACT_VERSION_V2,
+    repeatedEntityColumns: [...frame.repeatedEntityColumns],
+    identityConfirmed: true,
+    timeColumn: frame.timeColumn,
+    timeOrder: [...frame.timeOrder],
+  };
+}
+
 export async function runOpenEnaInferenceV2(
   input: OpenEnaInferenceCoordinatorInputV2,
 ): Promise<OpenEnaInferenceResultV2> {
@@ -1732,7 +1755,13 @@ export async function runOpenEnaInferenceV2(
     && snapshot.comparisonFrame !== undefined) {
     throw new OpenEnaInferenceIntegrityError("binding-mismatch");
   }
+  const inference = await coordinateOpenEnaInferenceV2(snapshot, binding);
   return markOpenEnaInferenceCoordinatorAuthorityV2(
-    await coordinateOpenEnaInferenceV2(snapshot, binding),
+    inference,
+    {
+      groupNames: snapshot.result.groups.map((group) => group.name),
+      groupColumn: snapshot.currentBinding.configuration.groupColumn,
+      trajectoryMapping: coordinatorAuthorityTrajectoryMapping(snapshot, inference),
+    },
   );
 }

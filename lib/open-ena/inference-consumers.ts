@@ -7,7 +7,10 @@ import type {
   OpenEnaMannWhitneyInferenceRowV2,
   OpenEnaWilcoxonInferenceRowV2,
 } from "./inference-v2";
-import { assertOpenEnaInferenceCoordinatorAuthorityV2 } from "./inference-authority";
+import {
+  assertOpenEnaInferenceCoordinatorAuthorityV2,
+  assertOpenEnaInferenceCoordinatorCurrentContextAuthorityV2,
+} from "./inference-authority";
 import {
   sameOpenEnaConfig,
   type DatasetHashKind,
@@ -266,10 +269,14 @@ export function assertOpenEnaInferenceCurrentContextV2(
       || group.length > MAX_INFERENCE_STRING_LENGTH
     ))
     || groupNameSet.size !== groupNames.length
-    || context.groupColumn !== inference.binding.configuration.groupColumn
     || (context.groupColumn !== null
       && (context.groupColumn.length === 0
         || context.groupColumn.length > MAX_INFERENCE_STRING_LENGTH))) {
+    throw new Error(CURRENT_CONTEXT_MISMATCH);
+  }
+
+  assertOpenEnaInferenceCoordinatorCurrentContextAuthorityV2(inference, context);
+  if (context.groupColumn !== inference.binding.configuration.groupColumn) {
     throw new Error(CURRENT_CONTEXT_MISMATCH);
   }
 
@@ -277,10 +284,9 @@ export function assertOpenEnaInferenceCurrentContextV2(
     if (mapping !== null || context.trajectoryMapping !== null) {
       throw new Error(CURRENT_CONTEXT_MISMATCH);
     }
-  } else if (inference.status === "disabled" && mapping === null) {
-    if (context.trajectoryMapping !== null) throw new Error(CURRENT_CONTEXT_MISMATCH);
-  } else if (mapping === null
-    || context.trajectoryMapping === null
+  } else if (mapping === null) {
+    if (inference.status !== "disabled") throw new Error(CURRENT_CONTEXT_MISMATCH);
+  } else if (context.trajectoryMapping === null
     || !sameTrajectoryMapping(mapping, context.trajectoryMapping)) {
     throw new Error(CURRENT_CONTEXT_MISMATCH);
   }

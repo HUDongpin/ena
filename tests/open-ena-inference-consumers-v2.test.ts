@@ -77,6 +77,21 @@ function hasExactErrorMessage(expected: string) {
   return (error: unknown) => error instanceof Error && error.message === expected;
 }
 
+function assertValueFreeCurrentContextMismatch(
+  run: () => unknown,
+  forbiddenValues: readonly string[],
+) {
+  let caught: unknown;
+  try {
+    run();
+  } catch (error) {
+    caught = error;
+  }
+  assert.ok(caught instanceof Error, "expected a current-context mismatch");
+  assert.equal(caught.message, "Inference consumer current context mismatch.");
+  for (const value of forbiddenValues) assert.doesNotMatch(caught.message, new RegExp(value, "u"));
+}
+
 function freezeOwnDataRecursively<T>(value: T, seen = new Set<unknown>()): T {
   if (value === null || typeof value !== "object" || seen.has(value)) return value;
   seen.add(value);
@@ -855,6 +870,180 @@ test("producer current context rejects an old genuine authority after group or t
     pairedInference,
     reorderedCurrentContext,
   ));
+});
+
+test("disabled coordinator authority remains bound to its original group set and private trajectory context", async () => {
+  const endpoint = endpointFixture();
+  const trajectory = trajectoryFixture();
+  const disabledEndpoint = await runInference(endpoint, {
+    kind: "endpoint-independent",
+    primaryGroup: "Primary",
+    secondaryGroup: "Primary",
+    axes: endpoint.axes,
+  });
+  assert.equal(disabledEndpoint.status, "disabled");
+  assert.equal(disabledEndpoint.reason, "groups-must-differ");
+
+  assert.doesNotThrow(() => buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: disabledEndpoint },
+  ));
+  assert.doesNotThrow(() => buildMethodsReport(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    endpoint.axes,
+    {},
+    disabledEndpoint,
+  ));
+
+  const replacementGroup = "PRIVATE_REPLACEMENT_GROUP_SENTINEL";
+  const endpointDrifts = [
+    {
+      ...endpoint.result,
+      groups: endpoint.result.groups.filter((group) => group.name !== "Primary"),
+    },
+    {
+      ...endpoint.result,
+      groups: endpoint.result.groups.map((group) => (
+        group.name === "Primary" ? { ...group, name: replacementGroup } : group
+      )),
+    },
+  ];
+  for (const result of endpointDrifts) {
+    assertValueFreeCurrentContextMismatch(
+      () => buildAnalysisBundle(
+        endpoint.dataset,
+        endpoint.configuration,
+        result,
+        HASH,
+        { inference: disabledEndpoint },
+      ),
+      ["Primary", replacementGroup],
+    );
+    assertValueFreeCurrentContextMismatch(
+      () => buildMethodsReport(
+        endpoint.dataset,
+        endpoint.configuration,
+        result,
+        HASH,
+        endpoint.axes,
+        {},
+        disabledEndpoint,
+      ),
+      ["Primary", replacementGroup],
+    );
+  }
+
+  const disabledBeforePublicMapping = await runInference(trajectory, {
+    kind: "trajectory-paired-periods",
+    repeatedEntityColumns: ["Group"],
+    timeColumn: "Period",
+    group: "Control",
+    earlierPeriod: "T1",
+    laterPeriod: "T2",
+    axes: trajectory.axes,
+    cohortPolicy: "pairwise-complete",
+  });
+  assert.equal(disabledBeforePublicMapping.status, "disabled");
+  assert.equal(disabledBeforePublicMapping.reason, "identity-columns-invalid");
+  assert.equal(disabledBeforePublicMapping.binding.trajectoryMapping, null);
+
+  const originalTrajectoryContext: OpenEnaInferenceProducerContextV2 = {
+    groupNames: trajectory.result.groups.map((group) => group.name),
+    groupColumn: trajectory.configuration.groupColumn,
+    trajectoryMapping: {
+      contractVersion: 1,
+      repeatedEntityColumns: [...trajectory.derivation.view.repeatedEntityColumns],
+      identityConfirmed: true,
+      timeColumn: trajectory.derivation.view.timeColumn,
+      timeOrder: [...trajectory.derivation.view.timeOrder],
+    },
+  };
+  assert.doesNotThrow(() => buildAnalysisBundle(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    {
+      methodsDimensions: trajectory.axes,
+      inference: disabledBeforePublicMapping,
+      inferenceContext: originalTrajectoryContext,
+    },
+  ));
+  assert.doesNotThrow(() => buildMethodsReport(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    trajectory.axes,
+    {},
+    disabledBeforePublicMapping,
+    originalTrajectoryContext,
+  ));
+
+  const privateTime = "PRIVATE_TIME_SENTINEL";
+  const privateIdentity = "PRIVATE_IDENTITY_SENTINEL";
+  const trajectoryDrifts: OpenEnaInferenceProducerContextV2[] = [
+    {
+      ...originalTrajectoryContext,
+      trajectoryMapping: {
+        ...originalTrajectoryContext.trajectoryMapping!,
+        timeColumn: privateTime,
+      },
+    },
+    {
+      ...originalTrajectoryContext,
+      trajectoryMapping: {
+        ...originalTrajectoryContext.trajectoryMapping!,
+        timeOrder: ["T1", "T2", privateTime],
+      },
+    },
+    {
+      ...originalTrajectoryContext,
+      trajectoryMapping: {
+        ...originalTrajectoryContext.trajectoryMapping!,
+        repeatedEntityColumns: ["Group", privateIdentity],
+      },
+    },
+    {
+      ...originalTrajectoryContext,
+      trajectoryMapping: null,
+    },
+  ];
+  for (const driftedContext of trajectoryDrifts) {
+    assertValueFreeCurrentContextMismatch(
+      () => buildAnalysisBundle(
+        trajectory.dataset,
+        trajectory.configuration,
+        trajectory.result,
+        HASH,
+        {
+          methodsDimensions: trajectory.axes,
+          inference: disabledBeforePublicMapping,
+          inferenceContext: driftedContext,
+        },
+      ),
+      [privateTime, privateIdentity, "Control"],
+    );
+    assertValueFreeCurrentContextMismatch(
+      () => buildMethodsReport(
+        trajectory.dataset,
+        trajectory.configuration,
+        trajectory.result,
+        HASH,
+        trajectory.axes,
+        {},
+        disabledBeforePublicMapping,
+        driftedContext,
+      ),
+      [privateTime, privateIdentity, "Control"],
+    );
+  }
 });
 
 test("strict inference and bundle readers reject a duplicate row for one planned member", async () => {
