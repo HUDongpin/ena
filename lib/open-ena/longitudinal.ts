@@ -173,8 +173,22 @@ export const LONGITUDINAL_BOUNDARIES = [
 
 export const LONGITUDINAL_INDIVIDUAL_MARK_LIMIT = 2_000;
 
+export function inferLongitudinalMappingDefaults(config: OpenEnaConfig) {
+  const repeatedEntityColumn = config.unitColumns.find((column) => column !== config.groupColumn) ?? "";
+  const unitColumns = new Set(config.unitColumns);
+  const timeColumn = config.conversationColumns.find((column) => (
+    column !== config.groupColumn
+    && column !== repeatedEntityColumn
+    && !unitColumns.has(column)
+  )) ?? config.conversationColumns.find((column) => (
+    column !== config.groupColumn && column !== repeatedEntityColumn
+  )) ?? "";
+  return { repeatedEntityColumn, timeColumn };
+}
+
 interface SourceStepIdentity {
   entityId: string;
+  rawEntityId: string;
   time: string;
   group: string;
 }
@@ -342,6 +356,15 @@ function validateInputs(
   if (!settings.timeColumn || !config.conversationColumns.includes(settings.timeColumn)) {
     throw new Error("Longitudinal analysis is unavailable: the time/order mapping must be one configured conversation column.");
   }
+  if (config.groupColumn && settings.repeatedEntityColumn === config.groupColumn) {
+    throw new Error("Longitudinal analysis requires the repeated-entity field and comparison-group field to be distinct.");
+  }
+  if (config.groupColumn && settings.timeColumn === config.groupColumn) {
+    throw new Error("Longitudinal analysis requires the time/order field and comparison-group field to be distinct.");
+  }
+  if (settings.repeatedEntityColumn === settings.timeColumn) {
+    throw new Error("Longitudinal analysis requires the repeated-entity field and time/order field to be distinct.");
+  }
   if (!dataset.headers.includes(settings.repeatedEntityColumn)) {
     throw new Error("The source dataset is missing the configured repeated-entity mapping column.");
   }
@@ -382,12 +405,15 @@ function sourceStepIdentities(
   const observedTimeOrder: string[] = [];
   const analyticUnitTimeOrder = new Map<string, string[]>();
   for (const [index, row] of sourceRows.entries()) {
-    const entityId = normalized(row[settings.repeatedEntityColumn]);
+    const rawEntityId = normalized(row[settings.repeatedEntityColumn]);
     const time = normalized(row[settings.timeColumn]);
     const group = config.groupColumn ? normalized(row[config.groupColumn]) : "All units";
-    if (!entityId) throw new Error(`Source row ${index + 1} has an empty repeated-entity value.`);
+    if (!rawEntityId) throw new Error(`Source row ${index + 1} has an empty repeated-entity value.`);
     if (!time) throw new Error(`Source row ${index + 1} has an empty time/order value.`);
     if (!group) throw new Error(`Source row ${index + 1} has an empty comparison-group value.`);
+    const entityId = config.groupColumn && config.unitColumns.includes(config.groupColumn)
+      ? JSON.stringify([group, rawEntityId])
+      : rawEntityId;
     if (!observedTimes.has(time)) observedTimeOrder.push(time);
     observedTimes.add(time);
     const priorGroup = groupByEntity.get(entityId);
@@ -407,7 +433,7 @@ function sourceStepIdentities(
       unitTimes.push(time);
       analyticUnitTimeOrder.set(analyticUnit, unitTimes);
     }
-    byStep.set(key, { entityId, time, group });
+    byStep.set(key, { entityId, rawEntityId, time, group });
   }
   if (!byStep.size) throw new Error("Longitudinal analysis requires source rows with repeated-entity and time mappings.");
   const orderedTimes = new Set(settings.timeOrder);
@@ -447,7 +473,7 @@ function compactEntityPeriods(
     if (normalized(trajectory.ENA_UNIT) !== expectedUnit || normalized(point.ENA_UNIT) !== expectedUnit) {
       throw new Error("A compact jENA trajectory point does not preserve its exact composite analytic-unit identity.");
     }
-    if (normalized(trajectory[settings.repeatedEntityColumn]) !== source.entityId
+    if (normalized(trajectory[settings.repeatedEntityColumn]) !== source.rawEntityId
       || normalized(trajectory[settings.timeColumn]) !== source.time) {
       throw new Error("A compact jENA trajectory point does not match its repeated-entity or time mapping.");
     }

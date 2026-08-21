@@ -18,6 +18,7 @@ import { buildEndpointMannWhitney } from "@/lib/open-ena/inference";
 import {
   buildLongitudinalGroupCentroidExport,
   buildLongitudinalGroupCentroidView,
+  inferLongitudinalMappingDefaults,
   longitudinalPeriodRowsToCsv,
   type OpenEnaLongitudinalCohortPolicy,
 } from "@/lib/open-ena/longitudinal";
@@ -297,12 +298,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       if (timeColumn) setTimeColumn("");
       return;
     }
+    const defaults = inferLongitudinalMappingDefaults(resultConfig);
     const nextEntity = resultConfig.unitColumns.includes(repeatedEntityColumn)
+      && repeatedEntityColumn !== resultConfig.groupColumn
       ? repeatedEntityColumn
-      : resultConfig.unitColumns[0] ?? "";
+      : defaults.repeatedEntityColumn;
     const nextTime = resultConfig.conversationColumns.includes(timeColumn)
+      && timeColumn !== resultConfig.groupColumn
+      && timeColumn !== nextEntity
       ? timeColumn
-      : resultConfig.conversationColumns[0] ?? "";
+      : defaults.timeColumn;
     if (nextEntity !== repeatedEntityColumn) setRepeatedEntityColumn(nextEntity);
     if (nextTime !== timeColumn) setTimeColumn(nextTime);
   }, [repeatedEntityColumn, result, resultConfig, timeColumn, trajectoryMappingKey]);
@@ -590,6 +595,31 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     setLoading(false);
     setConfig(update);
     setView("2d");
+  }
+
+  function launchTrajectoryAnalysis() {
+    setError("");
+    setActiveComparisonSurface("groups");
+    setCenterSurface("plot");
+
+    if (!dataset) {
+      setMode("data");
+      return;
+    }
+
+    if (result && resultConfig && !resultIsStale && result.set.modelType !== "EndPoint") {
+      setMode("plot");
+      return;
+    }
+
+    updateConfig((current) => ({
+      ...current,
+      model: "SeparateTrajectory",
+      rotation: "svd",
+      referenceRotationId: null,
+    }));
+    setModelTab("windows");
+    setMode("model");
   }
 
   function captureCurrentAnalysisSet() {
@@ -1541,7 +1571,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   value={repeatedEntityColumn}
                   onChange={(event) => updateLongitudinalSettings({ repeatedEntityColumn: event.target.value })}
                 >
-                  {resultConfig.unitColumns.map((column) => <option key={column} value={column}>{column}</option>)}
+                  {resultConfig.unitColumns
+                    .filter((column) => column !== resultConfig.groupColumn)
+                    .map((column) => <option key={column} value={column}>{column}</option>)}
                 </select>
               </label>
               <label className="ena-field">
@@ -1550,7 +1582,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   value={timeColumn}
                   onChange={(event) => updateLongitudinalSettings({ timeColumn: event.target.value })}
                 >
-                  {resultConfig.conversationColumns.map((column) => <option key={column} value={column}>{column}</option>)}
+                  {resultConfig.conversationColumns
+                    .filter((column) => column !== resultConfig.groupColumn && column !== repeatedEntityColumn)
+                    .map((column) => <option key={column} value={column}>{column}</option>)}
                 </select>
               </label>
             </div>
@@ -2497,6 +2531,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   : "SVD research space"}</span>
               </div>
               <div className="ena-visual-toolbar-actions">
+                <button
+                  type="button"
+                  className="ena-compact-toolbar-button ena-trajectory-analysis-button"
+                  data-testid="open-ena-trajectory-analysis-button"
+                  aria-pressed={config.model !== "EndPoint"}
+                  title={copy.longitudinal.launch}
+                  onClick={launchTrajectoryAnalysis}
+                >
+                  <span aria-hidden="true">↝</span>{copy.longitudinal.launch}
+                </button>
                 <button
                   type="button"
                   className="ena-compact-toolbar-button"

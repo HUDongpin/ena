@@ -7652,6 +7652,12 @@ body:has(.open-ena-page) #main-content {
   background: #ddf1ed;
 }
 
+.ena-trajectory-analysis-button {
+  color: #174b43;
+  border-color: #72a69e;
+  background: #f4fbf9;
+}
+
 .ena-compact-toolbar-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
@@ -8064,8 +8070,14 @@ body:has(.open-ena-page) #main-content {
   }
 
   .ena-download-model-button,
+  .ena-trajectory-analysis-button,
   .ena-view-toggle {
     width: 100%;
+  }
+
+  .ena-trajectory-analysis-button {
+    grid-column: 1 / -1;
+    justify-content: center;
   }
 
   .ena-view-toggle {
