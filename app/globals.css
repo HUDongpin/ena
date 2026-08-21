@@ -2345,11 +2345,11 @@ body:has(.open-ena-login-page) .back-to-top {
   justify-content: space-between;
   gap: 14px;
   margin-top: 13px;
-  border: 1px solid #39736e;
+  border: 1px solid var(--accent);
   border-radius: 3px;
   padding-inline: 16px;
-  color: #fff;
-  background: #39736e;
+  color: #172234;
+  background: var(--accent);
   font-size: 0.81rem;
   font-weight: 740;
   cursor: pointer;
@@ -2357,8 +2357,8 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .open-ena-login-submit:hover {
-  border-color: #2f625e;
-  background: #2f625e;
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
 }
 
 .open-ena-login-submit:active {
@@ -2385,7 +2385,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .open-ena-login-collaboration a {
-  color: #2f6c67;
+  color: var(--accent);
   font-weight: 700;
   text-decoration: underline;
   text-decoration-thickness: 1px;

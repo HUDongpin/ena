@@ -118,6 +118,23 @@ test("the public back-to-top control cannot cover the login form", () => {
   );
 });
 
+test("the login action and contact email use the site baby-blue accent", () => {
+  const css = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
+
+  assert.match(
+    css,
+    /\.open-ena-login-submit\s*\{[\s\S]*?border:\s*1px solid var\(--accent\);[\s\S]*?background:\s*var\(--accent\);/,
+  );
+  assert.match(
+    css,
+    /\.open-ena-login-submit:hover\s*\{[\s\S]*?border-color:\s*var\(--accent-hover\);[\s\S]*?background:\s*var\(--accent-hover\);/,
+  );
+  assert.match(
+    css,
+    /\.open-ena-login-collaboration a\s*\{[\s\S]*?color:\s*var\(--accent\);/,
+  );
+});
+
 test("login and logout handlers use a hardened HttpOnly session cookie", () => {
   const loginRoutePath = join(projectRoot, "app", "api", "open-ena", "login", "route.ts");
   const logoutRoutePath = join(projectRoot, "app", "api", "open-ena", "logout", "route.ts");
