@@ -107,6 +107,7 @@ test("researchers explicitly select repeated-entity and time-order fields", () =
   const controls = workspace.match(
     /data-testid="open-ena-longitudinal-controls"[\s\S]*?(?=data-testid="open-ena-longitudinal-(?:time-order|period-diagnostics)"|<\/section>)/,
   )?.[0] ?? "";
+  const inferencePanel = workspace.match(/<OpenEnaInferencePanel[\s\S]*?\/>/)?.[0] ?? "";
 
   assert.match(workspace, /repeatedEntityColumns/);
   assert.match(workspace, /identityConfirmed/);
@@ -123,6 +124,16 @@ test("researchers explicitly select repeated-entity and time-order fields", () =
     controls,
     /resultConfig\.conversationColumns[\s\S]{0,260}\.filter\(\(column\) => column !== resultConfig\.groupColumn && !repeatedEntityColumns\.includes\(column\)\)[\s\S]{0,180}\.map\([\s\S]{0,180}<option/,
     "time/order choices must come from successful-result conversation fields while remaining distinct from the group and every identity field",
+  );
+  assert.match(
+    inferencePanel,
+    /repeatedEntityColumnOptions=\{\(resultConfig\?\.unitColumns \?\? \[\]\)[\s\S]{0,120}\.filter\(\(column\) => column !== resultConfig\?\.groupColumn\)\}/,
+    "Stats inference must not reintroduce the comparison-group namespace as a repeated-entity choice",
+  );
+  assert.match(
+    inferencePanel,
+    /timeColumnOptions=\{\(resultConfig\?\.conversationColumns \?\? \[\]\)[\s\S]{0,220}column !== resultConfig\?\.groupColumn[\s\S]{0,120}!repeatedEntityColumns\.includes\(column\)/,
+    "Stats inference time choices must remain distinct from both the group and every selected identity field",
   );
   assert.match(
     workspace,

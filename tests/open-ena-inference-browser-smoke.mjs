@@ -464,6 +464,11 @@ try {
     const designs = page.locator("[data-ena-inference-design=true]");
     await designs.getByRole("radio", { name: /Independent groups · Mann–Whitney U/ }).check();
     const identity = page.locator(".ena-inference-identity").first();
+    const identityOptions = await identity.locator(".ena-inference-check-grid label").allTextContents();
+    assert(
+      JSON.stringify(identityOptions.map((label) => label.trim())) === JSON.stringify(["Name"]),
+      "Stats identity choices reintroduced the comparison-group namespace",
+    );
     const selectedIdentity = await identity.getByRole("checkbox").evaluateAll((nodes) => nodes
       .filter((node) => node.checked && !node.parentElement.classList.contains("ena-inference-confirmation"))
       .map((node) => node.parentElement.textContent.trim()));
@@ -472,7 +477,13 @@ try {
       "Trajectory identity did not exclude the comparison-group namespace while retaining the person field",
     );
     await identity.getByRole("checkbox", { name: /I confirm this composite identity/ }).check();
-    await page.getByRole("combobox", { name: "Time field" }).selectOption("Lesson");
+    const timeField = page.getByRole("combobox", { name: "Time field" });
+    const timeOptions = await timeField.locator("option").allTextContents();
+    assert(
+      JSON.stringify(timeOptions.map((label) => label.trim())) === JSON.stringify(["Lesson"]),
+      "Stats time choices were not kept distinct from group and repeated-entity fields",
+    );
+    await timeField.selectOption("Lesson");
     const period = page.getByRole("combobox", { name: "Selected period" });
     await period.selectOption(${JSON.stringify(fixturePeriods[1])});
     const ledgerTable = page.locator(".ena-inference-ledger table");

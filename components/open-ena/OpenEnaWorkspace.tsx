@@ -2603,12 +2603,17 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     designAvailability={inferenceDesignAvailability}
                     onDesignChange={setInferenceDesign}
                     repeatedEntityColumns={repeatedEntityColumns}
-                    repeatedEntityColumnOptions={resultConfig?.unitColumns ?? []}
+                    repeatedEntityColumnOptions={(resultConfig?.unitColumns ?? [])
+                      .filter((column) => column !== resultConfig?.groupColumn)}
                     identityConfirmed={identityConfirmed}
                     onRepeatedEntityColumnsChange={(columns) => updateLongitudinalSettings({ repeatedEntityColumns: columns })}
                     onIdentityConfirmedChange={(confirmed) => updateLongitudinalSettings({ identityConfirmed: confirmed })}
                     timeColumn={timeColumn}
-                    timeColumnOptions={resultConfig?.conversationColumns ?? []}
+                    timeColumnOptions={(resultConfig?.conversationColumns ?? [])
+                      .filter((column) => (
+                        column !== resultConfig?.groupColumn
+                        && !repeatedEntityColumns.includes(column)
+                      ))}
                     onTimeColumnChange={(column) => updateLongitudinalSettings({ timeColumn: column })}
                     groupOptions={inferenceGroupOptions}
                     selectedGroup={inferenceGroup}
