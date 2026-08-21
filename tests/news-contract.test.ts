@@ -35,11 +35,29 @@ function normalize(value: string) {
     .trim();
 }
 
+const requiredThirtyDayDates = Array.from({ length: 30 }, (_, offset) =>
+  new Date(Date.UTC(2026, 6, 23 + offset)).toISOString().slice(0, 10),
+);
+
 test("the reviewed corpus keeps continuous ids, unique evidence, and balanced publication types", () => {
   const numericIds = newsArticles.map((article) => Number(article.id.replace("ena-", "")));
   const newestId = Math.max(...numericIds);
   assert.equal(newsArticles.length, newestId);
-  assert.deepEqual(numericIds, Array.from({ length: newestId }, (_, index) => newestId - index));
+  assert.deepEqual([...numericIds].sort((a, b) => a - b), Array.from({ length: newestId }, (_, index) => index + 1));
+  assert.deepEqual(
+    newsArticles.map((article) => `${article.createdAt}:${article.id}`),
+    [...newsArticles]
+      .sort(
+        (a, b) =>
+          b.createdAt.localeCompare(a.createdAt) ||
+          Number(b.id.replace("ena-", "")) - Number(a.id.replace("ena-", "")),
+      )
+      .map((article) => `${article.createdAt}:${article.id}`),
+  );
+  assert.deepEqual(
+    [...new Set(newsArticles.map((article) => article.createdAt))].sort(),
+    requiredThirtyDayDates,
+  );
 
   const journalCount = newsArticles.filter((article) => article.type === "journal").length;
   const conferenceCount = newsArticles.filter((article) => article.type === "conference").length;
@@ -77,8 +95,8 @@ test("the reviewed corpus keeps continuous ids, unique evidence, and balanced pu
 test("filters search bibliographic and ENA topic fields and clamp pagination", () => {
   assert.equal(filterNewsArticles(newsArticles, { type: "journal" }).total, newsArticles.filter((article) => article.type === "journal").length);
   assert.equal(filterNewsArticles(newsArticles, { type: "conference" }).total, newsArticles.filter((article) => article.type === "conference").length);
-  assert.deepEqual(filterNewsArticles(newsArticles, { year: "2024" }).items.map((article) => article.id), ["ena-006"]);
-  assert.deepEqual(filterNewsArticles(newsArticles, { q: "natural language processing" }).items.map((article) => article.id), ["ena-007"]);
+  assert.deepEqual(filterNewsArticles(newsArticles, { year: "2024", pageSize: 100 }).items.map((article) => article.id), ["ena-006", "ena-018", "ena-016", "ena-014"]);
+  assert.deepEqual(filterNewsArticles(newsArticles, { q: "natural language processing", pageSize: 100 }).items.map((article) => article.id), ["ena-007", "ena-013"]);
   assert.deepEqual(filterNewsArticles(newsArticles, { q: "gaze" }).items.map((article) => article.id), ["ena-001"]);
   assert.deepEqual(filterNewsArticles(newsArticles, { q: "Gašević" }).items.map((article) => article.id), ["ena-005", "ena-002"]);
   const paged = filterNewsArticles(newsArticles, { page: 99, pageSize: 2 });

@@ -1,4 +1,5 @@
 import type { AcademyLesson } from "./academy-types";
+import { backfillAcademyLessons } from "./academy-backfill-data";
 
 const sharedDownloads = [
   {
@@ -456,7 +457,10 @@ const academyLessonRecords: AcademyLesson[] = [
   },
 ];
 
-export const academyLessons = [...academyLessonRecords].sort((a, b) => a.sequence - b.sequence);
+export const academyLessons = [
+  ...academyLessonRecords,
+  ...backfillAcademyLessons,
+].sort((a, b) => a.sequence - b.sequence);
 
 export const academyTracks = [...new Set(academyLessons.map((lesson) => lesson.track))];
 export const academyLevels = [...new Set(academyLessons.map((lesson) => lesson.level))];
