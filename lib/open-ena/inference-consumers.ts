@@ -7,6 +7,7 @@ import type {
   OpenEnaMannWhitneyInferenceRowV2,
   OpenEnaWilcoxonInferenceRowV2,
 } from "./inference-v2";
+import { assertOpenEnaInferenceCoordinatorAuthorityV2 } from "./inference-authority";
 import {
   sameOpenEnaConfig,
   type DatasetHashKind,
@@ -24,7 +25,14 @@ export interface OpenEnaInferenceExpectedBindingV2 {
   trajectoryMapping?: OpenEnaInferenceTrajectoryMappingV2 | null;
 }
 
+export interface OpenEnaInferenceProducerContextV2 {
+  groupNames: readonly string[];
+  groupColumn: string | null;
+  trajectoryMapping: OpenEnaInferenceTrajectoryMappingV2 | null;
+}
+
 const BINDING_MISMATCH = "Inference consumer binding mismatch.";
+const CURRENT_CONTEXT_MISMATCH = "Inference consumer current context mismatch.";
 const INFERENCE_JSON_DATA_ERROR =
   "Inference result must be plain JSON data with own enumerable data properties.";
 const INFERENCE_JSON_BUDGET_ERROR =
@@ -235,6 +243,64 @@ export function assertOpenEnaInferenceBindingV2(
         expected.trajectoryMapping ?? null,
       ))) {
     throw new Error(BINDING_MISMATCH);
+  }
+}
+
+/**
+ * Binds one coordinator authority to the consumer's current descriptive
+ * result and longitudinal mapping. This is a comparison only; it never
+ * reconstructs samples or invokes a statistical engine.
+ */
+export function assertOpenEnaInferenceCurrentContextV2(
+  inference: OpenEnaInferenceResultV2,
+  context: OpenEnaInferenceProducerContextV2,
+): asserts inference is OpenEnaInferenceResultV2 {
+  const groupNames = context.groupNames;
+  const groupNameSet = new Set(groupNames);
+  const mapping = inference.binding.trajectoryMapping;
+  if (!Array.isArray(groupNames)
+    || groupNames.length > MAX_INFERENCE_ARRAY_LENGTH
+    || groupNames.some((group) => (
+      typeof group !== "string"
+      || group.length === 0
+      || group.length > MAX_INFERENCE_STRING_LENGTH
+    ))
+    || groupNameSet.size !== groupNames.length
+    || context.groupColumn !== inference.binding.configuration.groupColumn
+    || (context.groupColumn !== null
+      && (context.groupColumn.length === 0
+        || context.groupColumn.length > MAX_INFERENCE_STRING_LENGTH))) {
+    throw new Error(CURRENT_CONTEXT_MISMATCH);
+  }
+
+  if (inference.kind === "endpoint-independent") {
+    if (mapping !== null || context.trajectoryMapping !== null) {
+      throw new Error(CURRENT_CONTEXT_MISMATCH);
+    }
+  } else if (inference.status === "disabled" && mapping === null) {
+    if (context.trajectoryMapping !== null) throw new Error(CURRENT_CONTEXT_MISMATCH);
+  } else if (mapping === null
+    || context.trajectoryMapping === null
+    || !sameTrajectoryMapping(mapping, context.trajectoryMapping)) {
+    throw new Error(CURRENT_CONTEXT_MISMATCH);
+  }
+
+  if (inference.status === "disabled") return;
+  if (inference.kind === "endpoint-independent"
+    || inference.kind === "trajectory-independent-period") {
+    if (context.groupColumn === null
+      || !groupNameSet.has(inference.request.primaryGroup)
+      || !groupNameSet.has(inference.request.secondaryGroup)) {
+      throw new Error(CURRENT_CONTEXT_MISMATCH);
+    }
+    return;
+  }
+  if (context.groupColumn === null) {
+    if (inference.request.group !== null) throw new Error(CURRENT_CONTEXT_MISMATCH);
+    return;
+  }
+  if (inference.request.group === null || !groupNameSet.has(inference.request.group)) {
+    throw new Error(CURRENT_CONTEXT_MISMATCH);
   }
 }
 
@@ -1753,4 +1819,19 @@ export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceR
   }
   assertNoIndividualEvidence(value);
   return deepFreeze(value as unknown as OpenEnaInferenceResultV2);
+}
+
+/**
+ * Producer-only authority gate. Strict schema parsing deliberately remains a
+ * separate reader contract so valid imported v2 JSON stays readable, while an
+ * imported or cloned value cannot be reused as the current coordinator result
+ * by exports, Methods, CSV, or AI consumers.
+ */
+export function assertOpenEnaInferenceCoordinatorConsumerV2(
+  value: unknown,
+): OpenEnaInferenceResultV2 {
+  const parsed = parseOpenEnaInferenceResultV2(value);
+  if (parsed !== value) throw new Error("Inference consumer authority mismatch.");
+  assertOpenEnaInferenceCoordinatorAuthorityV2(parsed);
+  return parsed;
 }

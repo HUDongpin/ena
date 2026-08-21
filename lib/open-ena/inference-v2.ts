@@ -5,6 +5,7 @@ import {
   sliceLongitudinalRepeatedPeriods,
   type OpenEnaLongitudinalComparisonFrame,
 } from "./longitudinal";
+import { markOpenEnaInferenceCoordinatorAuthorityV2 } from "./inference-authority";
 import {
   OPEN_ENA_RANK_INFERENCE_METHOD,
   friedmanRankTest,
@@ -1694,15 +1695,10 @@ async function coordinateTrajectoryRepeated(
   });
 }
 
-export async function runOpenEnaInferenceV2(
-  input: OpenEnaInferenceCoordinatorInputV2,
+async function coordinateOpenEnaInferenceV2(
+  snapshot: OpenEnaInferenceCoordinatorSnapshotV2,
+  binding: OpenEnaInferenceBindingV2,
 ): Promise<OpenEnaInferenceResultV2> {
-  const snapshot = snapshotCoordinatorInput(input);
-  const binding = validateBinding(snapshot);
-  if (snapshot.request.kind === "endpoint-independent"
-    && snapshot.comparisonFrame !== undefined) {
-    throw new OpenEnaInferenceIntegrityError("binding-mismatch");
-  }
   if (!requestAxesAreValid(snapshot.result, snapshot.request.axes)) {
     switch (snapshot.request.kind) {
       case "endpoint-independent":
@@ -1725,4 +1721,18 @@ export async function runOpenEnaInferenceV2(
     case "trajectory-repeated-periods":
       return coordinateTrajectoryRepeated(snapshot, snapshot.request, binding);
   }
+}
+
+export async function runOpenEnaInferenceV2(
+  input: OpenEnaInferenceCoordinatorInputV2,
+): Promise<OpenEnaInferenceResultV2> {
+  const snapshot = snapshotCoordinatorInput(input);
+  const binding = validateBinding(snapshot);
+  if (snapshot.request.kind === "endpoint-independent"
+    && snapshot.comparisonFrame !== undefined) {
+    throw new OpenEnaInferenceIntegrityError("binding-mismatch");
+  }
+  return markOpenEnaInferenceCoordinatorAuthorityV2(
+    await coordinateOpenEnaInferenceV2(snapshot, binding),
+  );
 }

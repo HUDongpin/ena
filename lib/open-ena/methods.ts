@@ -1,4 +1,9 @@
-import { assertOpenEnaInferenceBindingV2 } from "./inference-consumers";
+import {
+  assertOpenEnaInferenceBindingV2,
+  assertOpenEnaInferenceCoordinatorConsumerV2,
+  assertOpenEnaInferenceCurrentContextV2,
+  type OpenEnaInferenceProducerContextV2,
+} from "./inference-consumers";
 import type {
   OpenEnaInferenceResultV2,
   OpenEnaMannWhitneyInferenceRowV2,
@@ -335,9 +340,25 @@ export function buildMethodsReport(
   reportedDimensions: readonly string[] = result.dimensions.slice(0, 2),
   presentation: OpenEnaPresentationOptions = {},
   inference: OpenEnaInferenceResultV2 | null = null,
+  inferenceContext: OpenEnaInferenceProducerContextV2 | null = null,
 ) {
   const unitCount = new Set(result.set.points.map((row) => String(row.ENA_UNIT ?? ""))).size;
   if (inference) {
+    assertOpenEnaInferenceCoordinatorConsumerV2(inference);
+    const currentGroupNames = result.groups.map((group) => group.name);
+    const suppliedGroupNames = new Set(inferenceContext?.groupNames ?? []);
+    if (inferenceContext
+      && (inferenceContext.groupColumn !== config.groupColumn
+        || inferenceContext.groupNames.length !== currentGroupNames.length
+        || suppliedGroupNames.size !== inferenceContext.groupNames.length
+        || currentGroupNames.some((group) => !suppliedGroupNames.has(group)))) {
+      throw new Error("Inference consumer current context mismatch.");
+    }
+    assertOpenEnaInferenceCurrentContextV2(inference, {
+      groupNames: currentGroupNames,
+      groupColumn: config.groupColumn,
+      trajectoryMapping: inferenceContext?.trajectoryMapping ?? null,
+    });
     if (!sourceHash || reportedDimensions.length !== 2) {
       throw new Error("Inference consumer binding mismatch.");
     }

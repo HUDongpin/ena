@@ -331,7 +331,7 @@ test("a one-period trajectory still produces aggregate AI evidence for its selec
   assert.ok(request.evidence.inference.every((member) => member.test === "mann-whitney-u"));
 });
 
-test("legacy contrast inference cannot affect v2 evidence while a valid current inference change does", async () => {
+test("legacy contrast inference cannot affect v2 evidence and cloned inference cannot become producer authority", async () => {
   const ai = await loadAiModule();
   const fixture = await endpointFixture();
   const baseline = ai.buildOpenEnaAiInterpretationRequest(requestInput(fixture));
@@ -353,8 +353,80 @@ test("legacy contrast inference cannot affect v2 evidence while a valid current 
   [row.uPrimary, row.uSecondary] = [row.uSecondary, row.uPrimary];
   row.rankBiserialPrimaryVsSecondary = -(row.rankBiserialPrimaryVsSecondary ?? 0);
   freezeDeep(changedInference);
-  const changed = ai.buildOpenEnaAiInterpretationRequest(requestInput(fixture, changedInference));
-  assert.notDeepEqual(changed.evidence.inference, baseline.evidence.inference);
+  assert.throws(
+    () => ai.buildOpenEnaAiInterpretationRequest(requestInput(fixture, changedInference)),
+    (error: unknown) => error instanceof Error
+      && error.message === "Inference consumer authority mismatch.",
+  );
+});
+
+test("AI producer rejects valid frozen imports and internally consistent group or trajectory mapping clones", async () => {
+  const ai = await loadAiModule();
+  const endpoint = await endpointFixture();
+  const validFrozenClone = freezeDeep(structuredClone(endpoint.currentInference));
+  const groupForgery = structuredClone(endpoint.currentInference);
+  assert.equal(groupForgery.kind, "endpoint-independent");
+  if (groupForgery.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  groupForgery.request.primaryGroup = "PRIVATE_PERSON_SENTINEL";
+  groupForgery.scope.primaryGroup = "PRIVATE_PERSON_SENTINEL";
+  freezeDeep(groupForgery);
+
+  for (const inference of [validFrozenClone, groupForgery]) {
+    assert.throws(
+      () => ai.buildOpenEnaAiInterpretationRequest(requestInput(endpoint, inference)),
+      (error: unknown) => error instanceof Error
+        && error.message === "Inference consumer authority mismatch.",
+    );
+  }
+  const changedCurrentGroups = {
+    ...endpoint.result,
+    groups: endpoint.result.groups.filter((group) => group.name !== "Primary Secret Group"),
+  };
+  assert.throws(
+    () => ai.buildOpenEnaAiInterpretationRequest({
+      ...requestInput(endpoint),
+      result: changedCurrentGroups,
+    }),
+    (error: unknown) => error instanceof Error
+      && error.message === "Inference consumer current context mismatch.",
+  );
+
+  const trajectory = await trajectoryFixture("trajectory-paired-periods");
+  const trajectoryClone = structuredClone(trajectory.currentInference);
+  if (trajectoryClone.kind !== "trajectory-paired-periods"
+    || !trajectoryClone.binding.trajectoryMapping) {
+    assert.fail("expected paired trajectory mapping");
+  }
+  trajectoryClone.binding.trajectoryMapping.timeOrder[2] = "PRIVATE_TIME_SENTINEL";
+  freezeDeep(trajectoryClone);
+  assert.throws(
+    () => ai.buildOpenEnaAiInterpretationRequest({
+      locale: "en",
+      result: trajectory.result,
+      config: trajectory.config,
+      datasetHash: HASH,
+      groupContrast: null,
+      longitudinalView: trajectory.derivation.view,
+      currentInference: trajectoryClone,
+    }),
+    (error: unknown) => error instanceof Error
+      && error.message === "Inference consumer authority mismatch.",
+  );
+  const changedCurrentView = structuredClone(trajectory.derivation.view);
+  changedCurrentView.timeOrder[2] = "Changed current period";
+  assert.throws(
+    () => ai.buildOpenEnaAiInterpretationRequest({
+      locale: "en",
+      result: trajectory.result,
+      config: trajectory.config,
+      datasetHash: HASH,
+      groupContrast: null,
+      longitudinalView: changedCurrentView,
+      currentInference: trajectory.currentInference,
+    }),
+    (error: unknown) => error instanceof Error
+      && error.message === "Inference consumer current context mismatch.",
+  );
 });
 
 test("per-cell disclosure gates omit only ineligible inference and retain descriptive evidence", async () => {
@@ -662,17 +734,24 @@ test("strict v2 Holm audit keeps a not-available planned member as p=1", async (
 test("v2 builder fails closed for disabled inference and stale longitudinal descriptive bindings", async () => {
   const ai = await loadAiModule();
   const endpoint = await endpointFixture();
-  const disabled = structuredClone(endpoint.currentInference);
-  assert.equal(disabled.kind, "endpoint-independent");
-  Object.assign(disabled, {
-    status: "disabled",
-    reason: "design-not-confirmed",
-    ledger: null,
-    families: [],
-    rows: [],
-    warnings: [],
+  if (endpoint.currentInference.kind !== "endpoint-independent") {
+    assert.fail("expected endpoint inference");
+  }
+  const disabled = await runOpenEnaInferenceV2({
+    request: {
+      kind: "endpoint-independent",
+      primaryGroup: "Primary Secret Group",
+      secondaryGroup: "Primary Secret Group",
+      axes: endpoint.currentInference.request.axes,
+    },
+    result: endpoint.result,
+    currentBinding: {
+      datasetNormalizedUtf8TextSha256: HASH,
+      datasetHashKind: datasetHashKindFor(endpoint.dataset),
+      configuration: endpoint.config,
+    },
   });
-  freezeDeep(disabled);
+  assert.equal(disabled.status, "disabled");
   assert.throws(
     () => ai.buildOpenEnaAiInterpretationRequest(requestInput(endpoint, disabled)),
     /available or not-estimable confirmed inference/i,

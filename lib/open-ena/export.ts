@@ -3,7 +3,10 @@ import { buildManifest } from "./analyze";
 import type { OpenEnaPairwiseContrast } from "./contrasts";
 import {
   assertOpenEnaInferenceBindingV2,
+  assertOpenEnaInferenceCoordinatorConsumerV2,
+  assertOpenEnaInferenceCurrentContextV2,
   parseOpenEnaInferenceResultV2,
+  type OpenEnaInferenceProducerContextV2,
 } from "./inference-consumers";
 import type { OpenEnaInferenceResultV2 } from "./inference-v2";
 import { buildMethodsReport, type OpenEnaPresentationOptions } from "./methods";
@@ -24,6 +27,7 @@ export interface BuildAnalysisBundleOptions extends OpenEnaPresentationOptions {
   methodsFlipY?: boolean;
   groupContrast?: OpenEnaPairwiseContrast | null;
   inference?: OpenEnaInferenceResultV2 | null;
+  inferenceContext?: OpenEnaInferenceProducerContextV2;
 }
 
 export interface OpenEnaAnalysisBundleV1 extends Record<string, unknown> {
@@ -121,7 +125,24 @@ export function buildAnalysisBundle(
     throw new Error("Analysis bundle inference requires exactly two selected axes.");
   }
   const inference = options.inference ?? null;
+  let resolvedInferenceContext: OpenEnaInferenceProducerContextV2 | null = null;
   if (inference) {
+    assertOpenEnaInferenceCoordinatorConsumerV2(inference);
+    const currentGroupNames = result.groups.map((group) => group.name);
+    const suppliedGroupNames = new Set(options.inferenceContext?.groupNames ?? []);
+    if (options.inferenceContext
+      && (options.inferenceContext.groupColumn !== config.groupColumn
+        || options.inferenceContext.groupNames.length !== currentGroupNames.length
+        || suppliedGroupNames.size !== options.inferenceContext.groupNames.length
+        || currentGroupNames.some((group) => !suppliedGroupNames.has(group)))) {
+      throw new Error("Inference consumer current context mismatch.");
+    }
+    resolvedInferenceContext = {
+      groupNames: currentGroupNames,
+      groupColumn: config.groupColumn,
+      trajectoryMapping: options.inferenceContext?.trajectoryMapping ?? null,
+    };
+    assertOpenEnaInferenceCurrentContextV2(inference, resolvedInferenceContext);
     if (!sha256) throw new Error("Inference consumer binding mismatch.");
     assertOpenEnaInferenceBindingV2(inference, {
       analyzedAt: result.analyzedAt,
@@ -209,6 +230,7 @@ export function buildAnalysisBundle(
       selectedAxes,
       presentation,
       inference,
+      resolvedInferenceContext,
     ),
   };
 }

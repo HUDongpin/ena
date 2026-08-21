@@ -5,7 +5,7 @@ import test from "node:test";
 import { analyzeDataset } from "../lib/open-ena/analyze";
 import { parseCsv } from "../lib/open-ena/csv";
 import { buildAnalysisBundle } from "../lib/open-ena/export";
-import { runOpenEnaInferenceV2, type OpenEnaInferenceResultV2 } from "../lib/open-ena/inference-v2";
+import { runOpenEnaInferenceV2 } from "../lib/open-ena/inference-v2";
 import { buildLongitudinalDerivation } from "../lib/open-ena/longitudinal";
 import { buildMethodsReport, referenceMeanRotationInterpretation } from "../lib/open-ena/methods";
 import { SAMPLE_CONFIG } from "../lib/open-ena/types";
@@ -322,7 +322,7 @@ test("user-controlled labels cannot add columns to Methods GFM tables", () => {
   assert.deepEqual(rows.map(countUnescapedPipes), [10, 10, 10, 10]);
 });
 
-test("supplied inference identifiers cannot add columns to Methods GFM tables", async () => {
+test("cloned inference identifiers cannot enter Methods GFM tables", async () => {
   const sourceHash = "b".repeat(64);
   const dataset = parseCsv([
     "unit,conversation,group,A,B,C",
@@ -365,10 +365,8 @@ test("supplied inference identifiers cannot add columns to Methods GFM tables", 
       configuration: config,
     },
   });
-  assert.equal(generated.kind, "endpoint-independent");
-  const mutable = structuredClone(generated) as Extract<OpenEnaInferenceResultV2, {
-    kind: "endpoint-independent";
-  }>;
+  if (generated.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  const mutable = structuredClone(generated);
   mutable.families[0].familyId = "family|audit";
   mutable.families[0].memberIds = mutable.families[0].memberIds.map((_, index) => `member|${index}`);
   mutable.rows.forEach((row, index) => {
@@ -376,17 +374,11 @@ test("supplied inference identifiers cannot add columns to Methods GFM tables", 
     row.memberId = `member|${index}`;
   });
   const inference = deepFreeze(mutable);
-  const report = buildMethodsReport(dataset, config, result, sourceHash, axes, {}, inference);
-  const familyRow = report.split("\n").find((line) => (
-    line.startsWith("| ") && line.includes("family")
-  ));
-  const unescapedPipes = [...(familyRow ?? "")].reduce((count, character, index) => (
-    character === "|" && familyRow?.[index - 1] !== "\\" ? count + 1 : count
-  ), 0);
-
-  assert.match(familyRow ?? "", /`family\\\|audit`/);
-  assert.match(familyRow ?? "", /`member\\\|0`/);
-  assert.equal(unescapedPipes, 5);
+  assert.throws(
+    () => buildMethodsReport(dataset, config, result, sourceHash, axes, {}, inference),
+    (error: unknown) => error instanceof Error
+      && error.message === "Inference family is invalid.",
+  );
 });
 
 test("paired and repeated Methods disclose independence between repeated entities, not between groups", async () => {
@@ -400,6 +392,11 @@ test("paired and repeated Methods disclose independence between repeated entitie
       fixture.axes,
       {},
       inference,
+      {
+        groupNames: fixture.result.groups.map((group) => group.name),
+        groupColumn: fixture.config.groupColumn,
+        trajectoryMapping: inference.binding.trajectoryMapping,
+      },
     );
     const disclosure = report.split("\n").find((line) => (
       line.includes("independent-entity-assumption")

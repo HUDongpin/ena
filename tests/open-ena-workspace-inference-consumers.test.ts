@@ -139,15 +139,27 @@ test("Workspace routes one current frozen inference authority to every local con
   const methodsEnd = workspace.indexOf("const referenceMeanNotice", methodsStart);
   assert.ok(methodsStart >= 0 && methodsEnd > methodsStart);
   const methodsBlock = workspace.slice(methodsStart, methodsEnd);
-  assert.match(methodsBlock, /buildMethodsReport\([\s\S]*?\},\s*currentInference\s*,?\s*\)/);
+  assert.match(
+    methodsBlock,
+    /buildMethodsReport\([\s\S]*?\},\s*currentInference\s*,\s*inferenceProducerContext\s*\)/,
+  );
   assert.match(methodsBlock, /\[[\s\S]*?currentInference[\s\S]*?\]\s*,?\s*\)/);
   assert.doesNotMatch(methodsBlock, /buildMethodsReport\([\s\S]*?lastInference/);
+
+  const contextStart = workspace.indexOf("const inferenceProducerContext = useMemo");
+  const contextEnd = workspace.indexOf("useEffect", contextStart);
+  assert.ok(contextStart >= 0 && contextEnd > contextStart);
+  const contextBlock = workspace.slice(contextStart, contextEnd);
+  assert.match(contextBlock, /aiLongitudinalView\?\.identityConfirmed/);
+  assert.match(contextBlock, /repeatedEntityColumns:\s*\[\.\.\.aiLongitudinalView\.repeatedEntityColumns\]/);
+  assert.match(contextBlock, /timeOrder:\s*\[\.\.\.aiLongitudinalView\.timeOrder\]/);
 
   const bundleCalls = [...workspace.matchAll(/buildAnalysisBundle\(/g)];
   assert.equal(bundleCalls.length, 2, "both Workspace result-bundle download actions must remain explicit");
   for (const [index, call] of bundleCalls.entries()) {
     const block = workspace.slice(call.index, call.index + 1_600);
     assert.match(block, /inference:\s*currentInference/, `bundle download ${index + 1} must use currentInference`);
+    assert.match(block, /inferenceContext:\s*inferenceProducerContext/, `bundle download ${index + 1} must bind current context`);
     assert.doesNotMatch(block, /inference:\s*lastInference/);
   }
 
@@ -202,6 +214,17 @@ test("JSON, Methods and inference CSV retain the exact values of one current inf
     },
     comparisonFrame: trajectory.derivation.comparisonFrame,
   });
+  const inferenceContext = {
+    groupNames: trajectory.result.groups.map((group) => group.name),
+    groupColumn: trajectory.configuration.groupColumn,
+    trajectoryMapping: {
+      contractVersion: 1 as const,
+      repeatedEntityColumns: [...trajectory.derivation.view.repeatedEntityColumns],
+      identityConfirmed: true as const,
+      timeColumn: trajectory.derivation.view.timeColumn,
+      timeOrder: [...trajectory.derivation.view.timeOrder],
+    },
+  };
   const methods = buildMethodsReport(
     trajectory.dataset,
     trajectory.configuration,
@@ -210,13 +233,18 @@ test("JSON, Methods and inference CSV retain the exact values of one current inf
     trajectory.axes,
     {},
     currentInference,
+    inferenceContext,
   );
   const bundle = buildAnalysisBundle(
     trajectory.dataset,
     trajectory.configuration,
     trajectory.result,
     HASH,
-    { methodsDimensions: trajectory.axes, inference: currentInference },
+    {
+      methodsDimensions: trajectory.axes,
+      inference: currentInference,
+      inferenceContext,
+    },
   );
   const longitudinal = buildLongitudinalGroupCentroidExport(
     trajectory.derivation.view,

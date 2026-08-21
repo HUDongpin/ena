@@ -2,8 +2,9 @@ import type { Row } from "jena-js";
 import { rowsToCsv } from "./export";
 import {
   assertOpenEnaInferenceBindingV2,
+  assertOpenEnaInferenceCoordinatorConsumerV2,
+  assertOpenEnaInferenceCurrentContextV2,
   flattenOpenEnaInferenceRows,
-  parseOpenEnaInferenceResultV2,
 } from "./inference-consumers";
 import type { OpenEnaInferenceResultV2 } from "./inference-v2";
 import {
@@ -1428,7 +1429,8 @@ function parseBoundLongitudinalInference(
   view: OpenEnaLongitudinalView,
   inference: OpenEnaInferenceResultV2,
 ) {
-  if (inference.kind === "endpoint-independent"
+  const authoritativeInference = assertOpenEnaInferenceCoordinatorConsumerV2(inference);
+  if (authoritativeInference.kind === "endpoint-independent"
     || !view.identityConfirmed
     || !Array.isArray(view.repeatedEntityColumns)
     || view.repeatedEntityColumns.length === 0
@@ -1436,22 +1438,28 @@ function parseBoundLongitudinalInference(
     || !view.source.hashKind) {
     throw new Error("Inference consumer binding mismatch.");
   }
-  assertOpenEnaInferenceBindingV2(inference, {
+  const trajectoryMapping = {
+    contractVersion: 1 as const,
+    repeatedEntityColumns: [...view.repeatedEntityColumns],
+    identityConfirmed: true as const,
+    timeColumn: view.timeColumn,
+    timeOrder: [...view.timeOrder],
+  };
+  assertOpenEnaInferenceCurrentContextV2(authoritativeInference, {
+    groupNames: view.groups.map((group) => group.name),
+    groupColumn: view.configuration.groupColumn,
+    trajectoryMapping,
+  });
+  assertOpenEnaInferenceBindingV2(authoritativeInference, {
     analyzedAt: view.resultProvenance.analyzedAt,
     datasetNormalizedUtf8TextSha256: view.source.normalizedUtf8TextSha256,
     datasetHashKind: view.source.hashKind,
     modelType: view.resultProvenance.modelType,
     configuration: view.configuration,
     axes: view.axes,
-    trajectoryMapping: {
-      contractVersion: 1,
-      repeatedEntityColumns: [...view.repeatedEntityColumns],
-      identityConfirmed: true,
-      timeColumn: view.timeColumn,
-      timeOrder: [...view.timeOrder],
-    },
+    trajectoryMapping,
   });
-  return parseOpenEnaInferenceResultV2(inference);
+  return authoritativeInference;
 }
 
 export function longitudinalPeriodRowsToCsv(view: OpenEnaLongitudinalView) {

@@ -709,6 +709,24 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   ]);
   inferenceRequestKeyRef.current = inferenceRequestKey;
   const currentInference = lastInferenceRequestKey === inferenceRequestKey ? lastInference : null;
+  const inferenceProducerContext = useMemo(() => {
+    if (!result || !resultConfig) return null;
+    return {
+      groupNames: result.groups.map((group) => group.name),
+      groupColumn: resultConfig.groupColumn,
+      trajectoryMapping: result.set.modelType === "EndPoint"
+        ? null
+        : aiLongitudinalView?.identityConfirmed
+          ? {
+              contractVersion: 1 as const,
+              repeatedEntityColumns: [...aiLongitudinalView.repeatedEntityColumns],
+              identityConfirmed: true as const,
+              timeColumn: aiLongitudinalView.timeColumn,
+              timeOrder: [...aiLongitudinalView.timeOrder],
+            }
+          : null,
+    };
+  }, [aiLongitudinalView, result, resultConfig]);
 
   useEffect(() => {
     inferenceGenerationRef.current += 1;
@@ -845,7 +863,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           pointScale,
           plotZoom,
           selectedGroupOrder: groupContrast?.groupOrder,
-        }, currentInference)
+        }, currentInference, inferenceProducerContext)
       : null,
     [
       dataset,
@@ -856,6 +874,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       flipX,
       flipY,
       groupContrast,
+      inferenceProducerContext,
       plotZoom,
       pointScale,
       result,
@@ -2719,6 +2738,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                           selectedGroupOrder: groupContrast?.groupOrder,
                           groupContrast,
                           inference: currentInference,
+                          inferenceContext: inferenceProducerContext ?? undefined,
                         }),
                         true,
                       );
@@ -3127,6 +3147,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                             selectedGroupOrder: groupContrast?.groupOrder,
                             groupContrast,
                             inference: currentInference,
+                            inferenceContext: inferenceProducerContext ?? undefined,
                           }),
                           true,
                         );

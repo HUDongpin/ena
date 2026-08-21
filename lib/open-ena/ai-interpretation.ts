@@ -17,7 +17,8 @@ import {
 } from "./types";
 import {
   assertOpenEnaInferenceBindingV2,
-  parseOpenEnaInferenceResultV2,
+  assertOpenEnaInferenceCoordinatorConsumerV2,
+  assertOpenEnaInferenceCurrentContextV2,
 } from "./inference-consumers";
 import type {
   OpenEnaFriedmanInferenceRowV2,
@@ -1662,19 +1663,25 @@ function deepFreeze<T>(value: T, seen = new Set<unknown>()): T {
   return Object.freeze(value);
 }
 
-function assertFrozenInference(inference: OpenEnaInferenceResultV2) {
-  if (!Object.isFrozen(inference) || !Object.isFrozen(inference.binding)) {
-    throw new Error("AI interpretation requires the frozen coordinator inference result.");
-  }
-}
-
 export function buildOpenEnaAiInterpretationRequest(
   input: BuildOpenEnaAiInterpretationRequestInput,
 ): OpenEnaAiInterpretationRequestV2 {
-  assertFrozenInference(input.currentInference);
-  if (parseOpenEnaInferenceResultV2(input.currentInference) !== input.currentInference) {
-    throw new Error("AI interpretation requires the exact coordinator inference object.");
-  }
+  assertOpenEnaInferenceCoordinatorConsumerV2(input.currentInference);
+  assertOpenEnaInferenceCurrentContextV2(input.currentInference, {
+    groupNames: input.result.groups.map((group) => group.name),
+    groupColumn: input.config.groupColumn,
+    trajectoryMapping: input.currentInference.kind === "endpoint-independent"
+      ? null
+      : input.longitudinalView?.identityConfirmed
+        ? {
+            contractVersion: 1,
+            repeatedEntityColumns: [...input.longitudinalView.repeatedEntityColumns],
+            identityConfirmed: true,
+            timeColumn: input.longitudinalView.timeColumn,
+            timeOrder: [...input.longitudinalView.timeOrder],
+          }
+        : null,
+  });
   if (input.currentInference.status === "disabled") {
     throw new Error("AI interpretation requires an available or not-estimable confirmed inference result.");
   }

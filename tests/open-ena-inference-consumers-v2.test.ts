@@ -6,13 +6,15 @@ import { analyzeDataset } from "../lib/open-ena/analyze";
 import { buildPairwiseGroupContrast } from "../lib/open-ena/contrasts";
 import { parseCsv } from "../lib/open-ena/csv";
 import {
-  buildAnalysisBundle,
+  buildAnalysisBundle as buildAnalysisBundleProduction,
   parseOpenEnaAnalysisBundle,
+  type BuildAnalysisBundleOptions,
 } from "../lib/open-ena/export";
 import {
   assertOpenEnaInferenceBindingV2,
   flattenOpenEnaInferenceRows,
   parseOpenEnaInferenceResultV2,
+  type OpenEnaInferenceProducerContextV2,
 } from "../lib/open-ena/inference-consumers";
 import {
   runOpenEnaInferenceV2,
@@ -25,7 +27,10 @@ import {
   longitudinalInferenceRowsToCsv,
   longitudinalPeriodRowsToCsv,
 } from "../lib/open-ena/longitudinal";
-import { buildMethodsReport } from "../lib/open-ena/methods";
+import {
+  buildMethodsReport as buildMethodsReportProduction,
+  type OpenEnaPresentationOptions,
+} from "../lib/open-ena/methods";
 import { parseRotationReference } from "../lib/open-ena/reference";
 import {
   SAMPLE_CONFIG,
@@ -328,6 +333,57 @@ function expectedBinding(
   } as const;
 }
 
+function producerContext(
+  result: OpenEnaResult,
+  configuration: OpenEnaConfig,
+  inference: OpenEnaInferenceResultV2,
+): OpenEnaInferenceProducerContextV2 {
+  return {
+    groupNames: result.groups.map((group) => group.name),
+    groupColumn: configuration.groupColumn,
+    trajectoryMapping: inference.kind === "endpoint-independent"
+      ? null
+      : inference.binding.trajectoryMapping,
+  };
+}
+
+function buildAnalysisBundle(
+  dataset: ParsedDataset,
+  configuration: OpenEnaConfig,
+  result: OpenEnaResult,
+  sourceHash: string | null = null,
+  options: BuildAnalysisBundleOptions = {},
+) {
+  const inference = options.inference ?? null;
+  return buildAnalysisBundleProduction(dataset, configuration, result, sourceHash, {
+    ...options,
+    inferenceContext: options.inferenceContext
+      ?? (inference ? producerContext(result, configuration, inference) : undefined),
+  });
+}
+
+function buildMethodsReport(
+  dataset: ParsedDataset,
+  configuration: OpenEnaConfig,
+  result: OpenEnaResult,
+  sourceHash: string | null = null,
+  dimensions: readonly string[] = result.dimensions.slice(0, 2),
+  presentation: OpenEnaPresentationOptions = {},
+  inference: OpenEnaInferenceResultV2 | null = null,
+  inferenceContext: OpenEnaInferenceProducerContextV2 | null = null,
+) {
+  return buildMethodsReportProduction(
+    dataset,
+    configuration,
+    result,
+    sourceHash,
+    dimensions,
+    presentation,
+    inference,
+    inferenceContext ?? (inference ? producerContext(result, configuration, inference) : null),
+  );
+}
+
 test("consumer binding guard fails closed and aggregate flattening contains no individual evidence", async () => {
   const {
     endpoint,
@@ -540,6 +596,265 @@ test("analysis bundle v2 preserves one supplied frozen inference authority and r
     parsedTrajectoryBundle.inference?.binding.trajectoryMapping,
     repeatedInference.binding.trajectoryMapping,
   );
+});
+
+test("bundle and Methods producers reject frozen inference clones with private or forged authority", async () => {
+  const {
+    endpoint,
+    trajectory,
+    endpointInference,
+    pairedInference,
+  } = await allInferenceFixtures();
+  const privateSentinel = "PRIVATE_PERSON_SENTINEL";
+  const privateForgery = structuredClone(endpointInference) as unknown as Record<string, unknown>;
+  privateForgery.participantRows = [{
+    name: privateSentinel,
+    difference: 123,
+  }];
+  freezeOwnDataRecursively(privateForgery);
+
+  const validFrozenClone = freezeOwnDataRecursively(structuredClone(endpointInference));
+  assert.strictEqual(parseOpenEnaInferenceResultV2(validFrozenClone), validFrozenClone);
+
+  const groupForgery = structuredClone(endpointInference);
+  if (groupForgery.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  groupForgery.request.primaryGroup = privateSentinel;
+  groupForgery.scope.primaryGroup = privateSentinel;
+  freezeOwnDataRecursively(groupForgery);
+  assert.strictEqual(parseOpenEnaInferenceResultV2(groupForgery), groupForgery);
+
+  const semanticForgery = structuredClone(endpointInference);
+  if (semanticForgery.kind !== "endpoint-independent") assert.fail("expected endpoint inference");
+  semanticForgery.rows[0].pRaw = semanticForgery.rows[0].pRaw === 1 ? 0.5 : 1;
+  freezeOwnDataRecursively(semanticForgery);
+
+  const mutableClone = structuredClone(endpointInference);
+  const producers = [
+    {
+      label: "analysis bundle",
+      run(inference: OpenEnaInferenceResultV2) {
+        return buildAnalysisBundle(
+          endpoint.dataset,
+          endpoint.configuration,
+          endpoint.result,
+          HASH,
+          { inference },
+        );
+      },
+    },
+    {
+      label: "Methods report",
+      run(inference: OpenEnaInferenceResultV2) {
+        return buildMethodsReport(
+          endpoint.dataset,
+          endpoint.configuration,
+          endpoint.result,
+          HASH,
+          endpoint.axes,
+          {},
+          inference,
+        );
+      },
+    },
+  ];
+
+  for (const producer of producers) {
+    assert.throws(
+      () => producer.run(privateForgery as unknown as OpenEnaInferenceResultV2),
+      hasExactErrorMessage("Inference result contains an unsupported field."),
+      `${producer.label} private evidence`,
+    );
+    assert.throws(
+      () => producer.run(semanticForgery),
+      hasExactErrorMessage(INFERENCE_EXACT_TAIL_ERROR),
+      `${producer.label} semantic forgery`,
+    );
+    assert.throws(
+      () => producer.run(mutableClone),
+      hasExactErrorMessage("Inference consumer authority mismatch."),
+      `${producer.label} mutable clone`,
+    );
+    assert.throws(
+      () => producer.run(validFrozenClone),
+      hasExactErrorMessage("Inference consumer authority mismatch."),
+      `${producer.label} valid frozen imported clone`,
+    );
+    assert.throws(
+      () => producer.run(groupForgery),
+      hasExactErrorMessage("Inference consumer authority mismatch."),
+      `${producer.label} internally consistent forged group`,
+    );
+  }
+
+  const trajectoryFrozenClone = freezeOwnDataRecursively(structuredClone(pairedInference));
+  const mappingForgery = structuredClone(pairedInference);
+  if (mappingForgery.kind !== "trajectory-paired-periods"
+    || !mappingForgery.binding.trajectoryMapping) {
+    assert.fail("expected paired trajectory inference mapping");
+  }
+  mappingForgery.binding.trajectoryMapping.timeOrder[2] = "PRIVATE_TIME_SENTINEL";
+  freezeOwnDataRecursively(mappingForgery);
+  assert.strictEqual(parseOpenEnaInferenceResultV2(mappingForgery), mappingForgery);
+
+  for (const inference of [trajectoryFrozenClone, mappingForgery]) {
+    assert.throws(
+      () => buildLongitudinalGroupCentroidExport(
+        trajectory.derivation.view,
+        undefined,
+        inference,
+      ),
+      hasExactErrorMessage("Inference consumer authority mismatch."),
+    );
+    assert.throws(
+      () => longitudinalInferenceRowsToCsv(trajectory.derivation.view, inference),
+      hasExactErrorMessage("Inference consumer authority mismatch."),
+    );
+  }
+
+  const genuineBundle = buildAnalysisBundle(
+    endpoint.dataset,
+    endpoint.configuration,
+    endpoint.result,
+    HASH,
+    { inference: endpointInference },
+  );
+  assert.strictEqual(genuineBundle.inference, endpointInference);
+  assert.doesNotMatch(JSON.stringify(genuineBundle), new RegExp(privateSentinel));
+  const importedBundle = parseOpenEnaAnalysisBundle(JSON.stringify(genuineBundle));
+  assert.deepEqual(importedBundle.inference, endpointInference);
+  assert.notStrictEqual(importedBundle.inference, endpointInference);
+  assert.throws(
+    () => buildAnalysisBundle(
+      endpoint.dataset,
+      endpoint.configuration,
+      endpoint.result,
+      HASH,
+      { inference: importedBundle.inference as OpenEnaInferenceResultV2 },
+    ),
+    hasExactErrorMessage("Inference consumer authority mismatch."),
+  );
+});
+
+test("producer current context rejects an old genuine authority after group or trajectory mapping drift", async () => {
+  const {
+    endpoint,
+    trajectory,
+    endpointInference,
+    pairedInference,
+  } = await allInferenceFixtures();
+  const changedGroupResult = {
+    ...endpoint.result,
+    groups: endpoint.result.groups.filter((group) => group.name !== "Primary"),
+  };
+  assert.throws(
+    () => buildAnalysisBundle(
+      endpoint.dataset,
+      endpoint.configuration,
+      changedGroupResult,
+      HASH,
+      { inference: endpointInference },
+    ),
+    hasExactErrorMessage("Inference consumer current context mismatch."),
+  );
+  assert.throws(
+    () => buildMethodsReport(
+      endpoint.dataset,
+      endpoint.configuration,
+      changedGroupResult,
+      HASH,
+      endpoint.axes,
+      {},
+      endpointInference,
+    ),
+    hasExactErrorMessage("Inference consumer current context mismatch."),
+  );
+
+  if (!pairedInference.binding.trajectoryMapping) {
+    assert.fail("expected paired trajectory mapping");
+  }
+  const changedMapping = structuredClone(pairedInference.binding.trajectoryMapping);
+  changedMapping.timeOrder[2] = "Changed current T3";
+  const changedTrajectoryContext = {
+    groupNames: trajectory.result.groups.map((group) => group.name),
+    groupColumn: trajectory.configuration.groupColumn,
+    trajectoryMapping: changedMapping,
+  };
+  assert.throws(
+    () => buildAnalysisBundle(
+      trajectory.dataset,
+      trajectory.configuration,
+      trajectory.result,
+      HASH,
+      {
+        methodsDimensions: trajectory.axes,
+        inference: pairedInference,
+        inferenceContext: changedTrajectoryContext,
+      } as Parameters<typeof buildAnalysisBundle>[4],
+    ),
+    hasExactErrorMessage("Inference consumer current context mismatch."),
+  );
+  assert.throws(
+    () => buildMethodsReport(
+      trajectory.dataset,
+      trajectory.configuration,
+      trajectory.result,
+      HASH,
+      trajectory.axes,
+      {},
+      pairedInference,
+      changedTrajectoryContext,
+    ),
+    hasExactErrorMessage("Inference consumer current context mismatch."),
+  );
+
+  assert.throws(
+    () => buildAnalysisBundleProduction(
+      trajectory.dataset,
+      trajectory.configuration,
+      trajectory.result,
+      HASH,
+      { methodsDimensions: trajectory.axes, inference: pairedInference },
+    ),
+    hasExactErrorMessage("Inference consumer current context mismatch."),
+  );
+  assert.throws(
+    () => buildMethodsReportProduction(
+      trajectory.dataset,
+      trajectory.configuration,
+      trajectory.result,
+      HASH,
+      trajectory.axes,
+      {},
+      pairedInference,
+    ),
+    hasExactErrorMessage("Inference consumer current context mismatch."),
+  );
+
+  const reorderedCurrentContext = {
+    ...producerContext(trajectory.result, trajectory.configuration, pairedInference),
+    groupNames: trajectory.result.groups.map((group) => group.name).reverse(),
+  };
+  assert.doesNotThrow(() => buildAnalysisBundleProduction(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    {
+      methodsDimensions: trajectory.axes,
+      inference: pairedInference,
+      inferenceContext: reorderedCurrentContext,
+    },
+  ));
+  assert.doesNotThrow(() => buildMethodsReportProduction(
+    trajectory.dataset,
+    trajectory.configuration,
+    trajectory.result,
+    HASH,
+    trajectory.axes,
+    {},
+    pairedInference,
+    reorderedCurrentContext,
+  ));
 });
 
 test("strict inference and bundle readers reject a duplicate row for one planned member", async () => {
@@ -1507,8 +1822,7 @@ test("strict readers and longitudinal CSV reject a stateful inherited getter wit
   );
   assert.throws(
     () => longitudinalInferenceRowsToCsv(trajectory.derivation.view, forged),
-    (error: unknown) => error instanceof Error
-      && error.message === "Inference consumer binding mismatch.",
+    hasExactErrorMessage(INFERENCE_JSON_DATA_ERROR),
   );
   assert.equal(getterReadCount, 0, "validation must inspect descriptors without invoking getters");
 });
@@ -3327,22 +3641,38 @@ test("longitudinal JSON v2 and the separate inference CSV preserve aggregates on
   assert.doesNotMatch(inferenceCsv, /entityToken|entityId|Control,Name|open-ena-entity-/i);
 
   const forgedViews = [
-    (view: typeof trajectory.derivation.view) => { view.identityConfirmed = false; },
-    (view: typeof trajectory.derivation.view) => {
-      view.repeatedEntityColumns = [];
-      view.repeatedEntityColumn = "Group";
+    {
+      mutate(view: typeof trajectory.derivation.view) { view.identityConfirmed = false; },
+      error: "Inference consumer binding mismatch.",
     },
-    (view: typeof trajectory.derivation.view) => { view.repeatedEntityColumns = ["Name", "Group"]; },
-    (view: typeof trajectory.derivation.view) => { view.timeColumn = "Wrong period field"; },
-    (view: typeof trajectory.derivation.view) => { view.timeOrder.reverse(); },
+    {
+      mutate(view: typeof trajectory.derivation.view) {
+        view.repeatedEntityColumns = [];
+        view.repeatedEntityColumn = "Group";
+      },
+      error: "Inference consumer binding mismatch.",
+    },
+    {
+      mutate(view: typeof trajectory.derivation.view) {
+        view.repeatedEntityColumns = ["Name", "Group"];
+      },
+      error: "Inference consumer current context mismatch.",
+    },
+    {
+      mutate(view: typeof trajectory.derivation.view) { view.timeColumn = "Wrong period field"; },
+      error: "Inference consumer current context mismatch.",
+    },
+    {
+      mutate(view: typeof trajectory.derivation.view) { view.timeOrder.reverse(); },
+      error: "Inference consumer current context mismatch.",
+    },
   ];
-  for (const mutate of forgedViews) {
+  for (const { mutate, error } of forgedViews) {
     const forged = structuredClone(trajectory.derivation.view);
     mutate(forged);
     assert.throws(
       () => buildLongitudinalGroupCentroidExport(forged, undefined, pairedInference),
-      (error: unknown) => error instanceof Error
-        && error.message === "Inference consumer binding mismatch.",
+      hasExactErrorMessage(error),
     );
   }
 });
@@ -3360,8 +3690,7 @@ test("longitudinal inference CSV rejects inference axes that do not bind to the 
 
   assert.throws(
     () => longitudinalInferenceRowsToCsv(trajectory.derivation.view, parsedForgery),
-    (error: unknown) => error instanceof Error
-      && error.message === "Inference consumer binding mismatch.",
+    hasExactErrorMessage("Inference consumer authority mismatch."),
   );
 });
 
@@ -3372,8 +3701,7 @@ test("longitudinal inference CSV rejects an unparsed mutable inference clone", a
 
   assert.throws(
     () => longitudinalInferenceRowsToCsv(trajectory.derivation.view, unparsedClone),
-    (error: unknown) => error instanceof Error
-      && error.message === "Inference consumer binding mismatch.",
+    hasExactErrorMessage("Inference consumer authority mismatch."),
   );
 });
 
@@ -3384,14 +3712,14 @@ test("longitudinal inference CSV rejects a current-view trajectory mapping misma
 
   assert.throws(
     () => longitudinalInferenceRowsToCsv(forgedView, pairedInference),
-    (error: unknown) => error instanceof Error
-      && error.message === "Inference consumer binding mismatch.",
+    hasExactErrorMessage("Inference consumer current context mismatch."),
   );
 });
 
 test("consumer surfaces do not import or invoke low-level rank engines", () => {
   const root = process.cwd();
   for (const relativePath of [
+    "lib/open-ena/inference-authority.ts",
     "lib/open-ena/inference-consumers.ts",
     "lib/open-ena/export.ts",
     "lib/open-ena/longitudinal.ts",
