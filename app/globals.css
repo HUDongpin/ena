@@ -2970,7 +2970,7 @@ body:has(.open-ena-login-page) .back-to-top {
   letter-spacing: -0.03em;
 }
 
-.ena-panel-heading > p:last-child {
+.ena-panel-heading > p:last-of-type {
   margin: 9px 0 0;
   color: #5a6774;
   font-size: calc(0.79rem + var(--ena-font-step, 1px));
@@ -8148,10 +8148,31 @@ body:has(.open-ena-page) #main-content {
   font-size: calc(1.02rem + var(--ena-font-step, 1px));
 }
 
-.ena-panel-heading > p:last-child {
+.ena-panel-heading > p:last-of-type {
   margin-top: 6px;
   font-size: calc(0.7rem + var(--ena-font-step, 1px));
   line-height: 1.45;
+}
+
+.ena-trajectory-model-shortcut {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  justify-content: flex-start;
+  line-height: 1.25;
+  white-space: normal;
+}
+
+.ena-trajectory-model-shortcut svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
 }
 
 .ena-model-tabs {
@@ -8543,12 +8564,6 @@ body:has(.open-ena-page) #main-content {
   background: var(--ena-accent-soft);
 }
 
-.ena-trajectory-analysis-button {
-  color: var(--ena-accent-strong);
-  border-color: var(--ena-accent-line);
-  background: var(--ena-accent-soft);
-}
-
 .ena-compact-toolbar-button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
@@ -8656,6 +8671,22 @@ body:has(.open-ena-page) #main-content {
   font-size: calc(0.68rem + var(--ena-font-step, 1px));
   letter-spacing: 0;
   text-transform: none;
+}
+
+.ena-visual-toolbar.ena-visual-toolbar-group-contrast > div:first-child {
+  border-inline-start-color: #000;
+}
+
+.ena-visual-toolbar.ena-visual-toolbar-group-contrast p {
+  color: #000;
+}
+
+.open-ena-group-contrast .ena-group-contrast-plot-heading {
+  border-inline-start-color: #000;
+}
+
+.open-ena-group-contrast .ena-group-contrast-plot-heading h3 {
+  color: #000;
 }
 
 .open-ena-group-contrast .ena-set-plot-heading p {
@@ -9444,16 +9475,6 @@ body:has(.open-ena-page) #main-content {
     position: static;
   }
 
-  .ena-trajectory-analysis-button {
-    position: absolute;
-    top: 16px;
-    right: calc(35% + 313px);
-    min-width: 142px;
-    min-height: 24px;
-    padding: 2px 9px;
-    font-size: calc(0.7rem + var(--ena-font-step, 1px));
-  }
-
   .ena-analysis-toolbar-cluster {
     position: absolute;
     top: 16px;
@@ -9621,14 +9642,14 @@ body:has(.open-ena-page) #main-content {
     background: transparent;
   }
 
-  .open-ena-group-contrast .ena-set-side-plots .ena-set-plot-heading::before {
+  .open-ena-group-contrast .ena-set-side-plots .ena-group-contrast-plot-heading::before {
     position: absolute;
     top: 0;
     bottom: auto;
     left: -3px;
     width: 3px;
     height: 17px;
-    background: var(--ena-accent);
+    background: #000;
     content: "";
   }
 
@@ -9850,6 +9871,11 @@ body:has(.open-ena-page) #main-content {
 }
 
 @media (max-width: 640px) {
+  .ena-trajectory-model-shortcut {
+    width: 100%;
+    justify-content: center;
+  }
+
   .ena-visual-toolbar-actions {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -9863,15 +9889,9 @@ body:has(.open-ena-page) #main-content {
   }
 
   .ena-download-model-button,
-  .ena-trajectory-analysis-button,
   .ena-view-toggle {
     width: 100%;
     min-width: 0;
-  }
-
-  .ena-trajectory-analysis-button {
-    grid-column: 1 / -1;
-    justify-content: center;
   }
 
   .ena-view-toggle button,

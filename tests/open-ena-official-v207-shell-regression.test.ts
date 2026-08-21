@@ -156,6 +156,59 @@ test("GroupContrast keeps Comparison central and Primary, Secondary, then Plot T
   assert.match(workspace, /rightTools=\{persistentPlotTools\}/, "the workspace supplies the controlled persistent Plot Tools surface");
 });
 
+test("Comparison, Primary, and Secondary plot titles and markers use black ink", () => {
+  assert.match(
+    workspace,
+    /className=\{`ena-visual-toolbar\$\{activeGroupContrast\s*\?\s*" ena-visual-toolbar-group-contrast"\s*:\s*""\}`\}/,
+    "the shared Comparison Plot heading needs a contrast-only styling hook",
+  );
+
+  const plotHeadingClass = 'className="ena-set-plot-heading ena-group-contrast-plot-heading"';
+  assert.equal(
+    (groupContrast.match(new RegExp(plotHeadingClass, "g")) ?? []).length,
+    5,
+    "Comparison plus the rendered and empty Primary/Secondary states need the scoped plot-heading class",
+  );
+  for (const title of ["Comparison Plot", "Primary Plot", "Secondary Plot"]) {
+    assert.match(
+      groupContrast,
+      new RegExp(`${plotHeadingClass}[\\s\\S]{0,160}<h3>${title}<\\/h3>`),
+      `${title} needs the scoped black-title hook`,
+    );
+  }
+  assert.match(
+    groupContrast,
+    /<header className="ena-set-plot-heading">\s*<div>\s*<h3>Data View<\/h3>/,
+    "Data View remains outside the requested black plot-heading treatment",
+  );
+
+  assert.match(
+    firstCssRuleBody(styles, ".ena-visual-toolbar.ena-visual-toolbar-group-contrast > div:first-child"),
+    /border-inline-start-color:\s*#000(?:000)?\s*;/,
+    "the wide Comparison Plot marker must be black",
+  );
+  assert.match(
+    firstCssRuleBody(styles, ".ena-visual-toolbar.ena-visual-toolbar-group-contrast p"),
+    /color:\s*#000(?:000)?\s*;/,
+    "the wide Comparison Plot title must be black",
+  );
+  assert.match(
+    firstCssRuleBody(styles, ".open-ena-group-contrast .ena-group-contrast-plot-heading"),
+    /border-inline-start-color:\s*#000(?:000)?\s*;/,
+    "the compact plot-title markers must be black",
+  );
+  assert.match(
+    firstCssRuleBody(styles, ".open-ena-group-contrast .ena-group-contrast-plot-heading h3"),
+    /color:\s*#000(?:000)?\s*;/,
+    "the compact plot titles must be black",
+  );
+  assert.match(
+    firstCssRuleBody(styles, ".open-ena-group-contrast .ena-set-side-plots .ena-group-contrast-plot-heading::before"),
+    /background:\s*#000(?:000)?\s*;/,
+    "the wide Primary and Secondary plot markers must be black",
+  );
+});
+
 test("Data View replaces only the center plot and never displaces the right comparison context", () => {
   const center = sourceSegment(
     groupContrast,
@@ -222,25 +275,48 @@ test("Data View is the official-style bottom research bar while plot evidence st
   );
 });
 
-test("Trajectory Analysis is a compact same-route action without restoring the legacy toolbar", () => {
+test("the plot toolbar contains view and export actions, not a model-type launcher", () => {
   const toolbarActions = sourceSegment(
     workspace,
     '<div className="ena-visual-toolbar-actions">',
-    "</div>",
+    "{activeSetComparison ? (",
   );
-  const trajectoryButton = toolbarActions.match(
-    /<button[\s\S]{0,700}data-testid="open-ena-trajectory-analysis-button"[\s\S]{0,700}<\/button>/,
-  )?.[0] ?? "";
 
-  assert.match(trajectoryButton, /^<button/);
-  assert.match(trajectoryButton, /className="ena-compact-toolbar-button ena-trajectory-analysis-button"/);
-  assert.match(trajectoryButton, /onClick=\{launchTrajectoryAnalysis\}/);
-  assert.doesNotMatch(trajectoryButton, /\bhref\s*=|router|window\.location|location\.assign/);
+  assert.doesNotMatch(toolbarActions, /trajectory-analysis-button|launchTrajectoryAnalysis|copy\.longitudinal\.launch/);
+  assert.doesNotMatch(
+    toolbarActions,
+    /SeparateTrajectory|AccumulatedTrajectory|setModelTab|updateConfig/,
+    "plot actions must never mutate or navigate the model configuration workflow",
+  );
+  assert.doesNotMatch(styles, /\.ena-trajectory-analysis-button/);
   assert.doesNotMatch(workspace, /className="ena-workbench-topbar"|className="ena-workbench-statusbar"/);
+});
+
+test("the trajectory configuration shortcut stays in the responsive Model heading flow", () => {
+  const modelPanel = sourceSegment(
+    workspace,
+    "function renderModelPanel()",
+    "function renderLongitudinalPanel()",
+  );
+  const shortcutRule = styles.match(/\.ena-trajectory-model-shortcut\s*\{([^}]*)\}/)?.[1] ?? "";
+
+  assert.match(
+    modelPanel,
+    /<div className="ena-panel-heading">[\s\S]{0,1600}data-testid="open-ena-configure-trajectory-model"[\s\S]{0,1000}<\/div>\s*<div className="ena-model-tabs"/,
+    "the shortcut belongs after the Model description and before its tablist",
+  );
+  assert.match(shortcutRule, /max-width:\s*100%/);
+  assert.match(shortcutRule, /white-space:\s*normal/);
+  assert.doesNotMatch(shortcutRule, /position:\s*absolute/);
+  assert.ok(
+    (styles.match(/\.ena-panel-heading\s*>\s*p:last-of-type/g) ?? []).length >= 2,
+    "both heading typography rules must keep matching the description after the shortcut is appended",
+  );
+  assert.doesNotMatch(styles, /\.ena-panel-heading\s*>\s*p:last-child/);
   assert.match(
     styles,
-    /\.ena-trajectory-analysis-button\s*\{[\s\S]*?border-color:\s*var\(--ena-accent-line\);[\s\S]*?background:\s*var\(--ena-accent-soft\);[\s\S]*?\}/,
-    "the new action must use the compact Baby Blue workbench grammar",
+    /@media \(max-width:\s*640px\)[\s\S]*?\.ena-trajectory-model-shortcut\s*\{[^}]*width:\s*100%;/,
+    "the localized shortcut must use a full-width mobile hit target",
   );
 });
 
@@ -275,21 +351,21 @@ test("the persistent right stack fills its available height down to the Data Vie
   );
 });
 
-test("Comparison, Primary, Secondary, and Plot Tools use the ENA.HK Baby Blue title accent", () => {
+test("the base shell and Plot Tools retain the ENA.HK Baby Blue accent beneath scoped plot overrides", () => {
   assert.match(
     styles,
     /\.ena-visual-toolbar\s*>\s*div:first-child\s*\{[\s\S]*?border-inline-start:\s*3px\s+solid\s+var\(--ena-accent\);[\s\S]*?\}/,
-    "the single Comparison heading needs the shared Baby Blue rule",
+    "the shared toolbar keeps Baby Blue as its non-contrast default",
   );
   assert.match(
     styles,
     /\.open-ena-group-contrast\s+\.ena-set-plot-heading\s*\{[\s\S]*?border-inline-start:\s*3px\s+solid\s+var\(--ena-accent\);[\s\S]*?\}/,
-    "Primary and Secondary cards need the same title accent grammar",
+    "the shared plot-card heading keeps Baby Blue as its non-contrast default",
   );
   assert.match(
     styles,
     /\.open-ena-group-contrast\s+\.ena-set-plot-heading\s+h3\s*\{[\s\S]*?color:\s*var\(--ena-accent-strong\);[\s\S]*?\}/,
-    "plot titles use the accessible dark Baby Blue label color",
+    "the shared plot-card title keeps the accessible dark Baby Blue fallback",
   );
   assert.match(
     styles,
@@ -471,7 +547,7 @@ test("the local 2D and external 3D controls sit immediately before Download Mode
   );
   const toolbar = sourceSegment(
     workspace,
-    '<div className="ena-visual-toolbar">',
+    '<div className={`ena-visual-toolbar${activeGroupContrast ? " ena-visual-toolbar-group-contrast" : ""}`}>',
     '{activeSetComparison ? (',
   );
 

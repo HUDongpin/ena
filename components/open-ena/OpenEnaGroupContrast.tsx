@@ -1441,7 +1441,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
             </section>
           ) : (
             <figure className="ena-set-main-plot" tabIndex={0} aria-label="Comparison plot. Scroll horizontally on small screens.">
-              <header className="ena-set-plot-heading">
+              <header className="ena-set-plot-heading ena-group-contrast-plot-heading">
                 <div>
                   <h3>Comparison Plot</h3>
                   <p
@@ -1519,7 +1519,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
               data-ena-panel-role="primary"
               data-ena-panel-state={panelStates.primary}
             >
-              <header className="ena-set-plot-heading">
+              <header className="ena-set-plot-heading ena-group-contrast-plot-heading">
                 <div>
                   <h3>Primary Plot</h3>
                   <p
@@ -1564,7 +1564,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
             </figure>
           ) : (
             <section className="ena-empty-side-plot" data-ena-panel-role="primary" data-ena-panel-state="removed" aria-label="Primary Plot is empty">
-              <header className="ena-set-plot-heading"><h3>Primary Plot</h3></header>
+              <header className="ena-set-plot-heading ena-group-contrast-plot-heading"><h3>Primary Plot</h3></header>
               <div className="ena-empty-side-plot-prompt"><OfficialPlotIcon name="restore" /><p>Click or hover points in the comparison plot to display networks here</p></div>
             </section>
           )}
@@ -1575,7 +1575,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
               data-ena-panel-role="secondary"
               data-ena-panel-state={panelStates.secondary}
             >
-              <header className="ena-set-plot-heading">
+              <header className="ena-set-plot-heading ena-group-contrast-plot-heading">
                 <div>
                   <h3>Secondary Plot</h3>
                   <p
@@ -1621,7 +1621,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
             </figure>
           ) : (
             <section className="ena-empty-side-plot" data-ena-panel-role="secondary" data-ena-panel-state="removed" aria-label="Secondary Plot is empty">
-              <header className="ena-set-plot-heading"><h3>Secondary Plot</h3></header>
+              <header className="ena-set-plot-heading ena-group-contrast-plot-heading"><h3>Secondary Plot</h3></header>
               <div className="ena-empty-side-plot-prompt"><OfficialPlotIcon name="restore" /><p>Click or hover points in the comparison plot to display networks here</p></div>
             </section>
           )}
