@@ -226,7 +226,11 @@ test("2D is the local default and 3D ENA switches the same fitted result in plac
   assert.match(workspace, /useState<OpenEnaView>\("2d"\)/);
   assert.match(workspace, /aria-pressed=\{view === "2d"\}/);
   assert.match(workspace, /aria-pressed=\{view === "3d"\}/);
-  assert.match(workspace, /<strong>\{copy\.views\.twoD\}<\/strong>/);
+  assert.match(
+    workspace,
+    /<strong>\{completedResultKind === "ona" \? "2D ONA" : copy\.views\.twoD\}<\/strong>/,
+    "the ONA label may be specialized while standard ENA must still resolve to the localized 2D label",
+  );
   assert.match(workspace, /<strong>\{copy\.views\.threeD\}<\/strong>/);
   assert.doesNotMatch(workspace, /copy\.views\.(?:default|exploratory)/);
   assert.doesNotMatch(viewToggle, /<small|Default|Exploratory/);

@@ -11,6 +11,7 @@ import {
   beginAnalysisFamilyConfiguration,
   createAnalysisFamilyDrafts,
   switchAnalysisFamily,
+  transitionOpenEnaOrderPanelValue,
   type OpenEnaAnalysisFamilyDrafts,
 } from "@/lib/open-ena/analysis-family";
 import { openEnaAnalysisKindFromResult } from "@/lib/open-ena/capabilities";
@@ -25,8 +26,6 @@ import {
   buildOpenEnaOnaDeidentifiedAuditExport,
 } from "@/lib/open-ena/ona-export";
 import {
-  isOpenEnaOrderPanelValueComplete,
-  orderPolicyFromPanelValue,
   type OpenEnaOrderPanelValue,
 } from "@/lib/open-ena/ona-order-preview";
 import {
@@ -277,6 +276,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const [config, setConfig] = useState<OpenEnaConfig>(SAMPLE_CONFIG);
   const [analysisFamilyDrafts, setAnalysisFamilyDrafts] = useState<OpenEnaAnalysisFamilyDrafts>(
     () => createAnalysisFamilyDrafts(SAMPLE_CONFIG),
+  );
+  const [onaOrderPanelDraft, setOnaOrderPanelDraft] = useState<OpenEnaOrderPanelValue>(
+    () => orderPanelValueFromConfig(createAnalysisFamilyDrafts(SAMPLE_CONFIG).ona),
   );
   const [directionalMaskOpen, setDirectionalMaskOpen] = useState(false);
   const [codeColors, setCodeColors] = useState<Record<string, string>>({});
@@ -1183,7 +1185,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
 
   function installAnalysisConfig(nextConfig: OpenEnaConfig) {
     const next = cloneOpenEnaConfig(nextConfig);
-    setAnalysisFamilyDrafts(createAnalysisFamilyDrafts(next));
+    const nextFamilyDrafts = createAnalysisFamilyDrafts(next);
+    setAnalysisFamilyDrafts(nextFamilyDrafts);
+    setOnaOrderPanelDraft(orderPanelValueFromConfig(nextFamilyDrafts.ona));
     setConfig(next);
     setDirectionalMaskOpen(false);
   }
@@ -1222,44 +1226,23 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     setView("2d");
     setCenterSurface("plot");
     setMode("model");
-    if (target === "ona") setModelTab("windows");
+    if (target === "ona") {
+      setOnaOrderPanelDraft((current) => ({
+        ...current,
+        windowSizeBack: transition.activeConfig.windowSizeBack,
+      }));
+      setModelTab("windows");
+    }
   }
 
   function updateOnaOrderPanel(value: OpenEnaOrderPanelValue) {
     if (currentAnalysisKind !== "ona") return;
-    const directionalMask = reconcileDirectionalMask(config.directionalMask, config.codes);
-    const staged: OpenEnaConfig = {
-      ...config,
-      analysisKind: "ona",
-      model: "EndPoint",
-      window: "MovingStanzaWindow",
-      windowSizeBack: value.windowSizeBack,
-      windowSizeForward: 0,
-      weightBy: "sum",
-      rotation: "svd",
-      referenceRotationId: null,
-      directionalMask,
-      orderPolicy: null,
-    };
-    if (!isOpenEnaOrderPanelValueComplete(value)) {
-      const transition = beginAnalysisFamilyConfiguration(
-        analysisFamilyDrafts,
-        staged,
-        "ona",
-      );
-      setAnalysisFamilyDrafts(transition.drafts);
-      setConfig(transition.activeConfig);
-      setView("2d");
-      return;
-    }
-    const orderPolicy = orderPolicyFromPanelValue(value);
-    const executable = { ...staged, orderPolicy };
-    const transition = switchAnalysisFamily(
+    const transition = transitionOpenEnaOrderPanelValue(
       analysisFamilyDrafts,
-      executable,
-      "ona",
-      { orderPolicy },
+      config,
+      value,
     );
+    setOnaOrderPanelDraft(transition.panelValue);
     setAnalysisFamilyDrafts(transition.drafts);
     setConfig(transition.activeConfig);
     setView("2d");
@@ -2238,7 +2221,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               {modelTab === "windows" ? (
                 currentAnalysisKind === "ona" ? (
                   <OpenEnaOrderPanel
-                    value={orderPanelValueFromConfig(config)}
+                    value={onaOrderPanelDraft}
                     onChange={updateOnaOrderPanel}
                     rows={dataset.rows}
                     unitColumns={config.unitColumns}

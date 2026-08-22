@@ -95,7 +95,11 @@ test("a selected shared comparison remains the plot anchor across rail modes and
   assert.match(workspace, /const comparisonAxes\s*=\s*useMemo/);
   assert.match(workspace, /primarySet\?\.geometry\.dimensions[\s\S]*?dimensions\.includes\(xDimension\)[\s\S]*?dimensions\.includes\(yDimension\)/);
   assert.match(workspace, /compareAnalysisSets\(primarySet,\s*secondarySet,\s*comparisonAxes\)/);
-  assert.match(workspace, /\{activeSetComparison\s*&&\s*view === "2d"\s*\?\s*\([\s\S]*?<OpenEnaSetComparison/);
+  assert.match(
+    workspace,
+    /completedResultKind === "ona" && result && resultConfig\s*\?\s*\([\s\S]*?<OpenEnaOrderedResultLayout[\s\S]*?\) : activeSetComparison && view === "2d" \? \([\s\S]*?<OpenEnaSetComparison/,
+    "the directed ONA layout must take precedence without weakening the standard set-comparison anchor",
+  );
   assert.doesNotMatch(workspace, /mode === "sets" && activeSetComparison\s*\?\s*\([\s\S]*?<OpenEnaSetComparison/);
   assert.match(workspace, /displayedComparisonSurface === "sets"[\s\S]{0,160}primarySet\?\.geometry\.dimensions/);
 });

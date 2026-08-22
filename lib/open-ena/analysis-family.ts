@@ -3,6 +3,11 @@ import {
   canonicalizeOpenEnaConfig,
   reconcileDirectionalMask,
 } from "./network-config";
+import {
+  isOpenEnaOrderPanelValueComplete,
+  orderPolicyFromPanelValue,
+  type OpenEnaOrderPanelValue,
+} from "./ona-order-preview";
 import type {
   AnalysisKind,
   OpenEnaConfig,
@@ -17,6 +22,11 @@ export interface OpenEnaAnalysisFamilyDrafts {
 export interface OpenEnaAnalysisFamilyTransition {
   drafts: OpenEnaAnalysisFamilyDrafts;
   activeConfig: OpenEnaConfig;
+}
+
+export interface OpenEnaOrderPanelTransition extends OpenEnaAnalysisFamilyTransition {
+  panelValue: OpenEnaOrderPanelValue;
+  executable: boolean;
 }
 
 interface OpenEnaAnalysisFamilySwitchOptions {
@@ -189,4 +199,59 @@ export function switchAnalysisFamily(
   drafts[target] = activeConfig;
 
   return { drafts, activeConfig };
+}
+
+/**
+ * Persist the complete order-form value independently from the executable
+ * configuration. Partial column/comparator choices remain renderable while the
+ * active ONA configuration stays intentionally non-canonical and fail-closed.
+ */
+export function transitionOpenEnaOrderPanelValue(
+  familyDrafts: OpenEnaAnalysisFamilyDrafts,
+  currentConfig: OpenEnaConfig,
+  value: OpenEnaOrderPanelValue,
+): OpenEnaOrderPanelTransition {
+  if (analysisKindFor(currentConfig) !== "ona") {
+    throw new Error("The ONA order panel can only update an active ordered-family draft.");
+  }
+  const panelValue: OpenEnaOrderPanelValue = {
+    policyKind: value.policyKind,
+    columns: [...value.columns],
+    comparators: { ...value.comparators },
+    sourceRowConfirmed: value.sourceRowConfirmed,
+    windowSizeBack: value.windowSizeBack,
+  };
+  const staged: OpenEnaConfig = {
+    ...currentConfig,
+    analysisKind: "ona",
+    model: "EndPoint",
+    window: "MovingStanzaWindow",
+    windowSizeBack: panelValue.windowSizeBack,
+    windowSizeForward: 0,
+    weightBy: "sum",
+    rotation: "svd",
+    referenceRotationId: null,
+    directionalMask: reconcileDirectionalMask(currentConfig.directionalMask, currentConfig.codes),
+    orderPolicy: null,
+  };
+
+  if (!isOpenEnaOrderPanelValueComplete(panelValue)) {
+    return {
+      ...beginAnalysisFamilyConfiguration(familyDrafts, staged, "ona"),
+      panelValue,
+      executable: false,
+    };
+  }
+
+  const orderPolicy = orderPolicyFromPanelValue(panelValue);
+  return {
+    ...switchAnalysisFamily(
+      familyDrafts,
+      { ...staged, orderPolicy },
+      "ona",
+      { orderPolicy },
+    ),
+    panelValue,
+    executable: true,
+  };
 }

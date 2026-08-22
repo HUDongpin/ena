@@ -24,22 +24,31 @@ test("Workspace integrates ONA as a complete analysis family rather than one swi
 
 test("incomplete order-column edits stay in the draft-safe family transition", () => {
   const handlerStart = workspace.indexOf("function updateOnaOrderPanel");
-  const incompleteStart = workspace.indexOf(
-    "if (!isOpenEnaOrderPanelValueComplete(value))",
+  const handlerEnd = workspace.indexOf(
+    "function openTrajectoryModelConfiguration",
     handlerStart,
-  );
-  const completeStart = workspace.indexOf(
-    "const orderPolicy = orderPolicyFromPanelValue(value)",
-    incompleteStart,
   );
 
   assert.notEqual(handlerStart, -1);
-  assert.notEqual(incompleteStart, -1);
-  assert.notEqual(completeStart, -1);
+  assert.notEqual(handlerEnd, -1);
 
-  const incompleteBranch = workspace.slice(incompleteStart, completeStart);
-  assert.match(incompleteBranch, /beginAnalysisFamilyConfiguration/);
-  assert.doesNotMatch(incompleteBranch, /cloneOpenEnaConfig|canonicalizeOpenEnaConfig/);
+  const handler = workspace.slice(handlerStart, handlerEnd);
+  assert.match(handler, /transitionOpenEnaOrderPanelValue/);
+  assert.doesNotMatch(handler, /cloneOpenEnaConfig|canonicalizeOpenEnaConfig/);
+  assert.match(workspace, /useState<OpenEnaOrderPanelValue>/);
+  assert.match(workspace, /setOnaOrderPanelDraft\(transition\.panelValue\)/);
+  assert.match(workspace, /value=\{onaOrderPanelDraft\}/);
+  assert.doesNotMatch(workspace, /value=\{orderPanelValueFromConfig\(config\)\}/);
+  assert.match(
+    workspace,
+    /const nextFamilyDrafts = createAnalysisFamilyDrafts\(next\);[\s\S]{0,180}setOnaOrderPanelDraft\(orderPanelValueFromConfig\(nextFamilyDrafts\.ona\)\)/,
+    "a newly installed dataset/configuration must reset the ordered-form draft from its ONA family draft",
+  );
+  assert.match(
+    workspace,
+    /if \(target === "ona"\) \{[\s\S]{0,220}setOnaOrderPanelDraft\(\(current\) => \(\{[\s\S]{0,160}windowSizeBack: transition\.activeConfig\.windowSizeBack/,
+    "returning to ONA must preserve its partial form while synchronizing the family-specific window",
+  );
 });
 
 test("completed result kind, not mutable draft kind, selects the ONA renderer and audited Data View", () => {
