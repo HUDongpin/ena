@@ -87,6 +87,69 @@ test("ONA accepts finite nonnegative raw code counts while standard ENA remains 
   }
 });
 
+function csvDatasetWithFirstCount(value: string): ParsedDataset {
+  return parseCsv([
+    "unit,horizon,turn,group,A,B,C",
+    `u1,h1,1,g1,${value},0,0`,
+    "u1,h1,2,g1,0,1,0",
+    "u1,h2,1,g1,1,0,0",
+    "u1,h2,2,g1,0,1,0",
+    "u1,h3,1,g1,0,1,1",
+  ].join("\n") + "\n", { name: "textual-count-boundary.csv", source: "upload" });
+}
+
+test("ONA CSV counts preserve representable nonnegative decimal boundaries", () => {
+  for (const [source, expected] of [
+    ["0", 0],
+    ["0e-324", 0],
+    ["5e-324", Number.MIN_VALUE],
+    [" 5e-324 ", Number.MIN_VALUE],
+  ] as const) {
+    const dataset = csvDatasetWithFirstCount(source);
+    assert.deepEqual(validateConfig(dataset, orderedConfig()), [], source);
+    const plan = buildOpenEnaAnalysisPlan(dataset, orderedConfig());
+    assert.equal(plan.options.rows[0]?.A, expected, source);
+  }
+});
+
+test("ONA CSV counts reject mathematical underflow, negative text including negative zero, and non-finite decimals before plan construction", () => {
+  for (const source of [
+    "1e-324",
+    " 1e-324 ",
+    "-1e-324",
+    "-0",
+    "-0.0e-324",
+    "1e309",
+    "-1",
+    "   ",
+  ]) {
+    const dataset = csvDatasetWithFirstCount(source);
+    assert.match(
+      validateConfig(dataset, orderedConfig()).join(" "),
+      /finite nonnegative|underflow|representable/i,
+      source,
+    );
+    assert.throws(
+      () => buildOpenEnaAnalysisPlan(dataset, orderedConfig()),
+      /finite nonnegative|underflow|representable/i,
+      source,
+    );
+  }
+});
+
+test("ONA preflight uses the same stable finite-window history as the runtime", () => {
+  const dataset = manualDataset([
+    { unit: "u1", horizon: "h1", turn: 1, group: "g1", A: 1e16, B: 0, C: 0 },
+    { unit: "u1", horizon: "h1", turn: 2, group: "g1", A: 1.5, B: 0, C: 0 },
+    { unit: "u1", horizon: "h1", turn: 3, group: "g1", A: 0, B: 1e308, C: 0 },
+    { unit: "u1", horizon: "h2", turn: 1, group: "g1", A: 0, B: 1, C: 1 },
+  ]);
+
+  assert.deepEqual(validateConfig(dataset, orderedConfig()), []);
+  const plan = buildOpenEnaAnalysisPlan(dataset, orderedConfig());
+  assert.equal(plan.options.rows[1]?.A, 1.5);
+});
+
 test("ONA rejects finite raw counts whose ordered products would overflow", () => {
   const unsafe = manualDataset([
     { unit: "u1", horizon: "h1", turn: 1, group: "g1", A: 1e308, B: 0, C: 1 },

@@ -1,3 +1,4 @@
+import { accumulateDataChunked } from "jena-js";
 import type { Row, Scalar } from "jena-js";
 import type { OpenEnaConfig, ParsedDataset } from "./types";
 import {
@@ -15,6 +16,7 @@ const MAX_HEADER_CHARACTERS = 256;
 const MAX_CODE_COLUMNS = 30;
 const MAX_GROUPS = 6;
 const MAX_MODELED_EDGE_CELLS = 2_000_000;
+const DECIMAL_CODE_COUNT = /^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:[eE][+-]?\d+)?$/;
 
 function assertColumnCount(columnCount: number) {
   if (columnCount > MAX_COLUMNS) {
@@ -45,8 +47,13 @@ function rawCodeCount(value: Row[string]): number | null {
   if (value === false) return 0;
   if (typeof value === "number") return Number.isFinite(value) && value >= 0 ? value : null;
   if (typeof value !== "string" || value.trim() === "") return null;
-  const parsed = Number(value.trim());
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  const normalized = value.trim();
+  if (!DECIMAL_CODE_COUNT.test(normalized) || normalized.startsWith("-")) return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  const significand = normalized.replace(/^\+/, "").split(/[eE]/, 1)[0] ?? "";
+  if (parsed === 0 && /[1-9]/.test(significand)) return null;
+  return parsed;
 }
 
 export function parseCsv(text: string, options: { name: string; sizeBytes?: number; source: ParsedDataset["source"] }): ParsedDataset {
@@ -295,79 +302,47 @@ function hasOrderedConnection(dataset: ParsedDataset, config: OpenEnaConfig) {
  * jENA's ordered accumulator deliberately preserves raw count magnitude. That
  * means a finite input can still overflow while forming a lagged product,
  * updating a horizon's running sum, or summing row connections into a unit.
- * Downstream numeric materialization treats non-finite values as zero, so fail
- * before execution instead of silently changing the network.
+ * Downstream numeric materialization treats non-finite values as zero, so use
+ * the ordered accumulator itself as a preflight before rotation/model fitting
+ * instead of maintaining a second sliding-window implementation here.
  */
 function hasFiniteOrderedConnectionNumerics(dataset: ParsedDataset, config: OpenEnaConfig) {
   const canonical = canonicalizeOpenEnaConfig(config);
   if (canonical.analysisKind !== "ona" || !canonical.orderPolicy || !canonical.directionalMask) return false;
-  const ordered = orderRowsForOpenEna(dataset.rows, canonical.conversationColumns, canonical.orderPolicy);
-  const width = canonical.codes.length;
-  const edgeCount = width * width;
-  const priorLimit = Number.isFinite(canonical.windowSizeBack)
-    ? Math.max(0, canonical.windowSizeBack - 1)
-    : Number.POSITIVE_INFINITY;
-  const horizonStates = new Map<string, { running: number[]; history: number[][] }>();
-  const unitSums = new Map<string, number[]>();
-
-  for (const row of ordered.rows) {
-    const values = canonical.codes.map((code) => rawCodeCount(row[code]) ?? 0);
-    const horizonKey = typedHorizonIdentity(row, canonical.conversationColumns);
-    const state = horizonStates.get(horizonKey) ?? {
-      running: Array.from({ length: width }, () => 0),
-      history: [],
-    };
-    horizonStates.set(horizonKey, state);
-
-    const unitKey = typedTupleIdentity(row, canonical.unitColumns, "ONA unit column");
-    const accumulated = unitSums.get(unitKey) ?? Array.from({ length: edgeCount }, () => 0);
-    unitSums.set(unitKey, accumulated);
-
-    for (let responseIndex = 0; responseIndex < width; responseIndex += 1) {
-      for (let groundIndex = 0; groundIndex < width; groundIndex += 1) {
-        const priorGround = state.running[groundIndex] ?? 0;
-        const responseValue = values[responseIndex] ?? 0;
-        const sameRowGround = values[groundIndex] ?? 0;
-        const lagged = priorGround * responseValue;
-        const sameRow = groundIndex === responseIndex
-          ? 0
-          : 0.5 * sameRowGround * responseValue;
-        const connection = lagged + sameRow;
-        // Validate every raw connection, including masked-out cells: jENA
-        // retains full ONA rowConnectionCounts, and Infinity * 0 becomes NaN.
-        if (!Number.isFinite(lagged)
-          || !Number.isFinite(sameRow)
-          || !Number.isFinite(connection)
-          || (priorGround > 0 && responseValue > 0 && lagged === 0)
-          || (groundIndex !== responseIndex
-            && sameRowGround > 0
-            && responseValue > 0
-            && sameRow === 0)) {
-          return false;
-        }
-        if (!canonical.directionalMask.enabled[groundIndex][responseIndex]) continue;
-        const edgeIndex = responseIndex * width + groundIndex;
-        const total = (accumulated[edgeIndex] ?? 0) + connection;
-        if (!Number.isFinite(total)) return false;
-        accumulated[edgeIndex] = total;
-      }
-    }
-
-    const updated = state.running.map((value, index) => value + (values[index] ?? 0));
-    if (updated.some((value) => !Number.isFinite(value))) return false;
-    if (Number.isFinite(priorLimit)) {
-      state.history.push(values);
-      if (state.history.length > priorLimit) {
-        const removed = state.history.shift() ?? [];
-        for (let index = 0; index < width; index += 1) {
-          updated[index] = (updated[index] ?? 0) - (removed[index] ?? 0);
-          if (!Number.isFinite(updated[index])) return false;
-        }
-      }
-    }
-    state.running = updated;
+  try {
+    const ordered = orderRowsForOpenEna(
+      dataset.rows,
+      canonical.conversationColumns,
+      canonical.orderPolicy,
+    );
+    const retainedColumns = [
+      ...canonical.unitColumns,
+      ...canonical.conversationColumns,
+      ...(canonical.groupColumn ? [canonical.groupColumn] : []),
+    ];
+    const rows = coerceSelectedCodes(ordered.rows, canonical.codes, retainedColumns, "ona");
+    const accumulated = accumulateDataChunked({
+      rows,
+      units: [...canonical.unitColumns],
+      conversation: [...canonical.conversationColumns],
+      codes: [...canonical.codes],
+      networkType: "ordered",
+      model: "EndPoint",
+      window: "MovingStanzaWindow",
+      windowSizeBack: canonical.windowSizeBack,
+      windowSizeForward: 0,
+      weightBy: "sum",
+      mask: canonical.directionalMask.enabled.map((row) => row.map((enabled) => enabled ? 1 : 0)),
+      includeMeta: false,
+      materialization: "model",
+      chunkSize: Math.max(1, Math.min(rows.length, 1_000)),
+    });
+    return accumulated.connectionCounts.every((row) =>
+      accumulated.codeColumns.every((column) => Number.isFinite(Number(row[column])))
+    );
+  } catch {
+    return false;
   }
-  return true;
 }
 
 export function inferConfig(dataset: ParsedDataset): OpenEnaConfig {
