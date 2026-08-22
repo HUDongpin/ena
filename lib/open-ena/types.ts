@@ -53,10 +53,18 @@ export type DatasetHashKind =
   | "canonical-first-xlsx-worksheet-v1-sha256";
 
 export function datasetHashKindFor(dataset: Pick<ParsedDataset, "name" | "hashKind">): DatasetHashKind {
-  return dataset.hashKind
-    ?? (/\.xlsx$/iu.test(dataset.name)
-      ? "canonical-first-xlsx-worksheet-v1-sha256"
-      : "normalized-utf8-csv-text-sha256");
+  const explicitKind = dataset.hashKind as unknown;
+  if (explicitKind !== undefined) {
+    if (explicitKind === "normalized-utf8-text-sha256"
+      || explicitKind === "normalized-utf8-csv-text-sha256"
+      || explicitKind === "canonical-first-xlsx-worksheet-v1-sha256") {
+      return explicitKind;
+    }
+    throw new Error("Open ENA dataset provenance contains an unsupported hash kind.");
+  }
+  return /\.xlsx$/iu.test(dataset.name)
+    ? "canonical-first-xlsx-worksheet-v1-sha256"
+    : "normalized-utf8-csv-text-sha256";
 }
 
 export interface OpenEnaConfig {

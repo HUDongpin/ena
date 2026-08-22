@@ -5,6 +5,7 @@ import {
   analyzeDataset,
   bindOpenEnaResultProvenance,
   buildJenaOptions,
+  buildManifest,
   buildOpenEnaAnalysisPlan,
   dimensionEffect,
 } from "../lib/open-ena/analyze";
@@ -12,6 +13,7 @@ import { parseCsv, validateConfig } from "../lib/open-ena/csv";
 import { createDirectionalMask } from "../lib/open-ena/network-config";
 import {
   SAMPLE_CONFIG,
+  datasetHashKindFor,
   type OpenEnaConfig,
   type OpenEnaResult,
   type ParsedDataset,
@@ -253,6 +255,18 @@ test("result provenance binding deep-clones the canonical config and validates t
       { ...dataset, hashKind: "unknown-hash-kind" as never },
       "d".repeat(64),
       orderedConfig(),
+    ),
+    /hash kind|hashKind|dataset provenance/i,
+  );
+  assert.throws(
+    () => datasetHashKindFor({ name: dataset.name, hashKind: "unknown-hash-kind" as never }),
+    /hash kind|hashKind|dataset provenance/i,
+  );
+  assert.throws(
+    () => buildManifest(
+      { ...dataset, hashKind: "unknown-hash-kind" as never },
+      orderedConfig(),
+      result,
     ),
     /hash kind|hashKind|dataset provenance/i,
   );
