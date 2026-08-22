@@ -1,7 +1,8 @@
 "use client";
 
 import type { ENAWorkerProgress } from "jena-js/browser";
-import { bindOpenEnaResultProvenance, buildOpenEnaAnalysisPlan } from "./analyze";
+import { bindOpenEnaResultProvenance } from "./analyze";
+import { cloneOpenEnaConfig } from "./network-config";
 import type { OpenEnaConfig, OpenEnaResult, OpenEnaRotationReference, ParsedDataset } from "./types";
 import type { OpenEnaWorkerRequest, OpenEnaWorkerResponse } from "./jena.worker";
 
@@ -17,8 +18,13 @@ export function buildOpenEnaWorkerRunRequest(
   return {
     kind: "run",
     id: options.id,
-    plan: buildOpenEnaAnalysisPlan(dataset, config, options.reference),
-    reference: options.reference,
+    dataset: {
+      ...dataset,
+      headers: [...dataset.headers],
+      rows: dataset.rows.map((row) => ({ ...row })),
+    },
+    config: cloneOpenEnaConfig(config),
+    reference: options.reference ? structuredClone(options.reference) : null,
     chunkSize: options.chunkSize,
   };
 }
@@ -71,7 +77,7 @@ export async function analyzeDatasetInWorker(
             message.result,
             dataset,
             options.datasetSha256,
-            request.plan.configuration,
+            request.config,
           );
           finish(() => resolve(bound));
         } catch (error) {

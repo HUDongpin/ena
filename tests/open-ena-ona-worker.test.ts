@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createAccumulationStream, type Row } from "jena-js";
-import { buildOpenEnaAnalysisPlan } from "../lib/open-ena/analyze";
 import { buildOpenEnaWorkerRunRequest } from "../lib/open-ena/client";
 import { createDirectionalMask } from "../lib/open-ena/network-config";
 import {
@@ -85,8 +84,8 @@ const rows: Row[] = [
   { unit: "u2", horizon: "h2", turn: 2, group: "g2", A: 0, B: 0, C: 2 },
 ];
 
-test("client request construction snapshots one immutable analysis plan", () => {
-  const source = dataset(rows);
+test("client request construction snapshots one dataset/config source of truth", () => {
+  const source = dataset(rows.map((row) => ({ ...row })));
   const mutableConfig = config("ona");
   const request = buildOpenEnaWorkerRunRequest(source, mutableConfig, {
     id: "snapshot",
@@ -99,27 +98,56 @@ test("client request construction snapshots one immutable analysis plan", () => 
   source.rows[0].A = 99;
 
   assert.equal(request.kind, "run");
-  assert.deepEqual(request.plan.configuration.codes, ["A", "B", "C"]);
-  assert.equal(request.plan.configuration.directionalMask?.enabled[0][1], true);
-  assert.equal(request.plan.options.rows[0].A, 2);
+  assert.deepEqual(request.config.codes, ["A", "B", "C"]);
+  assert.equal(request.config.directionalMask?.enabled[0][1], true);
+  assert.equal(request.dataset.rows[0].A, 2);
+  assert.equal("plan" in request, false);
+  assert.equal("options" in request, false);
+  assert.equal("executionProvenance" in request, false);
   assert.equal(request.chunkSize, 7);
 });
 
-test("worker uses full ONA materialization but strips source rows and keeps ordered audit rows", async () => {
+test("worker replaces identity-bearing ONA rows with a compact de-identified ordered audit", async () => {
   const scope = new MemoryScope();
   createOpenEnaWorkerHost(scope);
-  const plan = buildOpenEnaAnalysisPlan(dataset(rows), config("ona"));
+  const request = buildOpenEnaWorkerRunRequest(dataset(rows), config("ona"), {
+    id: "ona",
+    reference: null,
+    chunkSize: 1,
+  });
 
-  scope.send({ kind: "run", id: "ona", plan, reference: null, chunkSize: 1 });
+  scope.send(request);
   const response = await scope.waitFor((message) => message.id === "ona" && message.kind === "result");
   assert.equal(response.kind, "result");
   if (response.kind !== "result") return;
 
   assert.equal(response.result.set.networkType, "ordered");
+  assert.equal(new Set(response.result.set.points.map((row) => String(row.ENA_UNIT))).size, 2);
   assert.equal(response.result.set.rawRows.length, 0);
   assert.equal(response.result.set.metaData.length, 0);
-  assert.equal(response.result.set.rowConnectionCounts.length, rows.length);
-  assert.equal(response.result.set.rowWindowProvenance?.length, rows.length);
+  assert.deepEqual(response.result.set.rowConnectionCounts, []);
+  assert.deepEqual(response.result.set.rowWindowProvenance, []);
+  assert.deepEqual(response.result.orderedAudit, {
+    schemaVersion: 1,
+    codeOrder: ["A", "B", "C"],
+    edgeOrder: "response-major-ground-minor",
+    responseRowIndices: [0, 1, 2, 3],
+    previousResponseRowIndices: [null, 0, null, 2],
+    priorRowCounts: [0, 1, 0, 1],
+    horizonOrdinals: [0, 0, 1, 1],
+    edgeValues: [
+      [0, 0, 1, 0, 0, 0, 1, 0, 0],
+      [0, 0, 0, 6, 0, 3, 0, 0, 0],
+      [0, 0.5, 0, 0.5, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 2, 2, 0],
+    ],
+  });
+  assert.doesNotMatch(JSON.stringify(response.result.orderedAudit), /"u1"|"u2"|"h1"|"h2"|"g1"|"g2"|horizonIdentity/);
+  assert.equal(
+    response.result.orderedAudit?.edgeValues.reduce((cells, row) => cells + row.length, 0),
+    rows.length * 3 * 3,
+  );
+  assert.equal(response.result.orderedAudit?.edgeValues.every(Array.isArray), true);
   assert.deepEqual(
     response.result.executionProvenance?.ordering?.responseRowSourceIndices,
     [0, 1, 2, 3],
@@ -129,14 +157,19 @@ test("worker uses full ONA materialization but strips source rows and keeps orde
 test("worker keeps the standard ENA model-only payload unchanged", async () => {
   const scope = new MemoryScope();
   createOpenEnaWorkerHost(scope);
-  const plan = buildOpenEnaAnalysisPlan(dataset(rows.map((row) => ({
+  const source = dataset(rows.map((row) => ({
     ...row,
     A: Number(row.A) > 0 ? 1 : 0,
     B: Number(row.B) > 0 ? 1 : 0,
     C: Number(row.C) > 0 ? 1 : 0,
-  }))), config("ena"));
+  })));
+  const request = buildOpenEnaWorkerRunRequest(source, config("ena"), {
+    id: "ena",
+    reference: null,
+    chunkSize: 2,
+  });
 
-  scope.send({ kind: "run", id: "ena", plan, reference: null, chunkSize: 2 });
+  scope.send(request);
   const response = await scope.waitFor((message) => message.id === "ena" && message.kind === "result");
   assert.equal(response.kind, "result");
   if (response.kind !== "result") return;
@@ -145,6 +178,7 @@ test("worker keeps the standard ENA model-only payload unchanged", async () => {
   assert.deepEqual(response.result.set.rawRows, []);
   assert.deepEqual(response.result.set.rowConnectionCounts, []);
   assert.deepEqual(response.result.set.metaData, []);
+  assert.equal(response.result.orderedAudit, undefined);
 });
 
 test("worker rejects duplicate ids and cancels a queued id exactly once", async () => {
@@ -159,11 +193,20 @@ test("worker rejects duplicate ids and cancels a queued id exactly once", async 
     B: index % 3 === 1 ? 1 : 0,
     C: index % 3 === 2 ? 1 : 0,
   }));
-  const plan = buildOpenEnaAnalysisPlan(dataset(repeatedRows), config("ona"));
+  const activeRequest = buildOpenEnaWorkerRunRequest(dataset(repeatedRows), config("ona"), {
+    id: "active",
+    reference: null,
+    chunkSize: 1,
+  });
+  const queuedRequest = buildOpenEnaWorkerRunRequest(dataset(repeatedRows), config("ona"), {
+    id: "queued",
+    reference: null,
+    chunkSize: 1,
+  });
 
-  scope.send({ kind: "run", id: "active", plan, reference: null, chunkSize: 1 });
-  scope.send({ kind: "run", id: "queued", plan, reference: null, chunkSize: 1 });
-  scope.send({ kind: "run", id: "queued", plan, reference: null, chunkSize: 1 });
+  scope.send(activeRequest);
+  scope.send(queuedRequest);
+  scope.send(queuedRequest);
   const duplicate = await scope.waitFor((message) => message.id === "queued" && message.kind === "error");
   assert.equal(duplicate.kind, "error");
   assert.match(duplicate.kind === "error" ? duplicate.message : "", /already active or queued/i);
@@ -194,13 +237,53 @@ test("active cancellation disposes its accumulation stream", async () => {
     B: index % 3 === 1 ? 1 : 0,
     C: index % 3 === 2 ? 1 : 0,
   }));
-  const plan = buildOpenEnaAnalysisPlan(dataset(repeatedRows), config("ona"));
+  const request = buildOpenEnaWorkerRunRequest(dataset(repeatedRows), config("ona"), {
+    id: "cancel-me",
+    reference: null,
+    chunkSize: 1,
+  });
 
-  scope.send({ kind: "run", id: "cancel-me", plan, reference: null, chunkSize: 1 });
+  scope.send(request);
   scope.send({ kind: "cancel", id: "cancel-me" });
   await scope.waitFor((message) => message.id === "cancel-me" && message.kind === "cancelled");
 
   assert.equal(streams.length, 1);
   assert.equal(streams[0].state.isDisposed, true);
   assert.equal(scope.responses.some((message) => message.id === "cancel-me" && message.kind === "result"), false);
+});
+
+test("worker rejects the removed externally supplied plan shape before opening a stream", async () => {
+  const scope = new MemoryScope();
+  let streamCreations = 0;
+  createOpenEnaWorkerHost(scope, {
+    createAccumulationStream(options) {
+      streamCreations += 1;
+      return createAccumulationStream(options);
+    },
+  });
+  const legacyPlanOnly = {
+    kind: "run",
+    id: "legacy-plan",
+    plan: { options: { centerAlignToOrigin: false } },
+    reference: null,
+    chunkSize: 1,
+  } as unknown as OpenEnaWorkerRequest;
+
+  scope.send(legacyPlanOnly);
+  const response = await scope.waitFor((message) => message.id === "legacy-plan" && message.kind === "error");
+  assert.equal(response.kind, "error");
+  const injectedOptions = {
+    ...buildOpenEnaWorkerRunRequest(dataset(rows), config("ona"), {
+      id: "injected-options",
+      reference: null,
+      chunkSize: 1,
+    }),
+    options: { unitsUsed: ["u1"], centerAlignToOrigin: false },
+  } as unknown as OpenEnaWorkerRequest;
+  scope.send(injectedOptions);
+  const injectedResponse = await scope.waitFor((message) => (
+    message.id === "injected-options" && message.kind === "error"
+  ));
+  assert.equal(injectedResponse.kind, "error");
+  assert.equal(streamCreations, 0);
 });

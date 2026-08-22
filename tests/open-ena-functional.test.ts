@@ -703,13 +703,15 @@ test("pending model edits preserve the last valid research result until rebuild"
   assert.match(workspace, /Configuration changed/);
 });
 
-test("the worker retains ordered audit rows only for ONA materialization", () => {
+test("the worker derives a de-identified ordered audit before clearing jENA row materialization", () => {
   const worker = readFileSync(
     join(projectRoot, "lib", "open-ena", "jena.worker.ts"),
     "utf8",
   );
   assert.match(worker, /materialization:\s*configuration\.analysisKind === "ona" \? "full" : "model"/);
+  assert.match(worker, /buildOpenEnaOrderedAudit\(fullSet\)/);
   assert.match(worker, /compactOpenEnaSet/);
+  assert.match(worker, /orderedAudit \? \{ \.\.\.result, orderedAudit \} : result/);
 });
 
 test("source evidence can be searched and filtered locally without entering exports", async () => {

@@ -166,6 +166,23 @@ export interface GroupNetwork {
   meanWeights: Record<string, number>;
 }
 
+/**
+ * De-identified ordered-network row audit retained by the browser runtime.
+ * Parallel arrays avoid per-cell object overhead; row indices address the
+ * already ordered worker input and map back to source rows only through the
+ * separately validated execution provenance.
+ */
+export interface OpenEnaOrderedAudit {
+  schemaVersion: 1;
+  codeOrder: string[];
+  edgeOrder: "response-major-ground-minor";
+  responseRowIndices: number[];
+  previousResponseRowIndices: Array<number | null>;
+  priorRowCounts: number[];
+  horizonOrdinals: number[];
+  edgeValues: number[][];
+}
+
 export interface OpenEnaResult {
   set: ENASet;
   groups: GroupNetwork[];
@@ -180,6 +197,8 @@ export interface OpenEnaResult {
   projectionReference: OpenEnaProjectionReference | null;
   /** Explicit application-level record of the options that selected the runtime path. */
   executionProvenance?: OpenEnaExecutionProvenance;
+  /** Ordered-only, de-identified row audit. Generic exports intentionally omit it. */
+  orderedAudit?: OpenEnaOrderedAudit;
   /** Optional immutable source/config binding added by the browser client. */
   provenanceBinding?: {
     datasetNormalizedUtf8TextSha256: string;

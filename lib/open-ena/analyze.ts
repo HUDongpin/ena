@@ -370,13 +370,9 @@ export function compactOpenEnaSet(set: ENASet): ENASet {
   return {
     ...set,
     rawRows: [],
-    rowConnectionCounts: orderedNetwork
-      ? set.rowConnectionCounts.map((row) => ({ ...row }))
-      : [],
+    rowConnectionCounts: [],
     metaData: [],
-    ...(orderedNetwork && set.rowWindowProvenance
-      ? { rowWindowProvenance: set.rowWindowProvenance.map((entry) => ({ ...entry })) }
-      : {}),
+    ...(orderedNetwork ? { rowWindowProvenance: [] } : {}),
     trajectories: set.trajectories?.map((row) => ({ ...row })),
   };
 }
