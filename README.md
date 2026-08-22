@@ -38,7 +38,7 @@ The researcher workspace currently provides:
 - an in-memory Sets workspace that retains up to six endpoint analyses in one exact reference geometry, assigns Primary and Secondary sets, and renders stable comparison/primary/secondary plots with signed Primary-minus-Secondary edge differences;
 - linked 2D and interactive WebGL 3D unit, directed trajectory, group-mean, and network views in the same fitted jENA space, with selectable axes, relative edge filtering, point scaling, zoom/fit, camera controls, axis flips, and optional unit/variance labels;
 - cohort-aware longitudinal group-centroid paths for separate and accumulated trajectory results, with an explicit repeated-entity field, a reviewable/reorderable period sequence, Available versus Complete cohort policies, equal-weight entity-period centroids, missing-period gaps, and per-period inclusion diagnostics;
-- standalone SVG and 3x-resolution PNG figure export for the current 2D research view, plus PNG capture from the interactive 3D mode bar;
+- standalone SVG and 3x-resolution PNG figure export for the current 2D research view, plus PNG clipboard capture from each interactive 3D plot toolbar;
 - jENA dimension summaries, correlations, Welch/ANOVA test statistics, and absolute Cohen's d for datasets within the automatic diagnostics limit;
 - researcher-triggered, design-matched rank inference for independent endpoint groups, independent groups at one selected trajectory period, paired trajectory periods, and three-or-more-period repeated trajectories, with raw and Holm-adjusted p-values from one frozen inference result;
 - a local source-evidence browser with text search and active-code filtering that keeps raw source rows out of model exports;

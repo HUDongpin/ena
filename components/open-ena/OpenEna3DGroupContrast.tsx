@@ -4,7 +4,7 @@ import type { CSSProperties } from "react";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
-import type { OpenEna3dCamera } from "@/lib/open-ena/plot3d";
+import type { OpenEna3dAspectRatio, OpenEna3dCamera } from "@/lib/open-ena/plot3d";
 import type { CameraPreset, OpenEnaResult } from "@/lib/open-ena/types";
 import OpenEnaInteractive3DPlot from "./OpenEnaInteractive3DPlot";
 
@@ -31,6 +31,8 @@ export interface OpenEna3DGroupContrastProps {
   plotResetRevision?: number;
   sharedCamera?: OpenEna3dCamera | null;
   onCameraChange?: (camera: OpenEna3dCamera) => void;
+  sharedAspectRatio?: OpenEna3dAspectRatio | null;
+  onAspectRatioChange?: (aspectRatio: OpenEna3dAspectRatio | null) => void;
   copy: OpenEnaCopy;
 }
 
@@ -57,6 +59,8 @@ export default function OpenEna3DGroupContrast({
   plotResetRevision = 0,
   sharedCamera = null,
   onCameraChange,
+  sharedAspectRatio = null,
+  onAspectRatioChange,
   copy,
 }: OpenEna3DGroupContrastProps) {
   const sharedPlotProps = {
@@ -82,6 +86,9 @@ export default function OpenEna3DGroupContrast({
     flipY,
     plotResetRevision,
     initialCamera: sharedCamera,
+    onCameraChange,
+    initialAspectRatio: sharedAspectRatio,
+    onAspectRatioChange,
     copy,
   } as const;
 
@@ -123,9 +130,9 @@ export default function OpenEna3DGroupContrast({
           <OpenEnaInteractive3DPlot
             {...sharedPlotProps}
             plotKind="comparison"
+            displayModeBar={false}
             testId="open-ena-interactive-3d-plot"
             ariaLabel={`Comparison 3D plot: ${contrast.primary.name} minus ${contrast.secondary.name}.`}
-            onCameraChange={onCameraChange}
           />
         </article>
 

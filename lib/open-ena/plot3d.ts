@@ -3,7 +3,8 @@ import type { OpenEnaPairwiseContrast } from "./contrasts";
 import { codeColorFor, JENA_GROUP_COLORS, type OpenEnaCodeColors } from "./plot-style";
 import type { CameraPreset, GroupNetwork, OpenEnaResult } from "./types";
 
-export const OPEN_ENA_3D_UI_REVISION = "open-ena-3d-camera-v1";
+export const OPEN_ENA_3D_UI_REVISION = "open-ena-3d-camera-v2";
+export const OPEN_ENA_3D_DEFAULT_CAMERA_ZOOM = 1.5;
 
 const AXIS_COLORS = ["#b91c1c", "#1d4ed8", "#15803d"] as const;
 const GROUP_MARKER_SYMBOLS = ["circle", "square", "diamond", "cross", "x", "circle-open"] as const;
@@ -80,6 +81,12 @@ export interface OpenEna3dCamera {
   projection: { type: "perspective" | "orthographic" };
 }
 
+export interface OpenEna3dAspectRatio {
+  x: number;
+  y: number;
+  z: number;
+}
+
 export interface OpenEna3dSceneAxis {
   title: { text: string };
   color: string;
@@ -116,7 +123,8 @@ export interface OpenEna3dPlotLayout {
     zaxis: OpenEna3dSceneAxis;
     camera: OpenEna3dCamera;
     bgcolor: string;
-    aspectmode: "cube";
+    aspectmode: "cube" | "manual";
+    aspectratio?: OpenEna3dAspectRatio;
     dragmode: "orbit" | false;
   };
 }
@@ -167,7 +175,12 @@ export interface CompileOpenEna3dPlotInput {
 const CAMERA_PRESETS: Record<CameraPreset, OpenEna3dCamera> = {
   isometric: {
     center: { x: 0, y: 0, z: 0 },
-    eye: { x: 1.45, y: 1.45, z: 1.25 },
+    // Start one modest step closer so codes and network edges use more of all three papers.
+    eye: {
+      x: 1.45 / OPEN_ENA_3D_DEFAULT_CAMERA_ZOOM,
+      y: 1.45 / OPEN_ENA_3D_DEFAULT_CAMERA_ZOOM,
+      z: 1.25 / OPEN_ENA_3D_DEFAULT_CAMERA_ZOOM,
+    },
     up: { x: 0, y: 0, z: 1 },
     projection: { type: "perspective" },
   },
@@ -310,6 +323,7 @@ function edgeWeight(result: OpenEnaResult, edgeName: string) {
 
 function scaledCamera(preset: CameraPreset, plotZoom: number) {
   const camera = cameraForPreset(preset);
+  if (camera.projection.type === "orthographic") return camera;
   const distanceScale = 1 / clamp(plotZoom, 0.35, 3, 1);
   return {
     ...camera,
@@ -319,6 +333,12 @@ function scaledCamera(preset: CameraPreset, plotZoom: number) {
       z: camera.eye.z * distanceScale,
     },
   };
+}
+
+function displayAspectRatio(preset: CameraPreset, plotZoom: number) {
+  if (cameraForPreset(preset).projection.type !== "orthographic") return undefined;
+  const scale = clamp(plotZoom, 0.35, 3, 1);
+  return { x: scale, y: scale, z: scale } satisfies OpenEna3dAspectRatio;
 }
 
 function axisTraces(
@@ -715,6 +735,8 @@ export function compileOpenEna3dPlotSpec({
     range: reversed ? [sceneExtent, -sceneExtent] : [-sceneExtent, sceneExtent],
   });
 
+  const aspectratio = displayAspectRatio(camera, plotZoom);
+
   return {
     data: traces.map((trace) => ({
       ...trace,
@@ -743,7 +765,8 @@ export function compileOpenEna3dPlotSpec({
         zaxis: sceneAxis(zDimension, AXIS_COLORS[2], false),
         camera: scaledCamera(camera, plotZoom),
         bgcolor: "#ffffff",
-        aspectmode: "cube",
+        aspectmode: aspectratio ? "manual" : "cube",
+        ...(aspectratio ? { aspectratio } : {}),
         dragmode: compact ? false : "orbit",
       },
     },

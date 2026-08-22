@@ -4660,8 +4660,54 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .open-ena-interactive-3d-region .modebar {
-  top: 7px !important;
-  right: 7px !important;
+  display: none !important;
+}
+
+.open-ena-interactive-3d-region .open-ena-3d-plot-actions {
+  position: absolute;
+  z-index: 6;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+}
+
+.open-ena-interactive-3d-region .open-ena-3d-plot-actions button {
+  width: 32px;
+  height: 32px;
+  padding: 4px;
+  color: #47595f;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+}
+
+.open-ena-interactive-3d-region .open-ena-3d-plot-actions .ena-official-action-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.open-ena-interactive-3d-region .open-ena-3d-plot-actions button:hover {
+  color: var(--ena-accent-strong);
+  border: 0;
+  background: transparent;
+}
+
+.open-ena-interactive-3d-region .open-ena-3d-plot-actions button:focus-visible {
+  color: var(--ena-accent-strong);
+  border: 0;
+  border-radius: 50%;
+  outline: 2px solid var(--ena-accent-strong);
+  outline-offset: 1px;
+  background: transparent;
+}
+
+.open-ena-interactive-3d-region .open-ena-3d-plot-actions button:disabled {
+  opacity: 0.34;
 }
 
 .open-ena-interactive-3d-summary {
@@ -9038,7 +9084,7 @@ body:has(.open-ena-page) #main-content {
 .ena-ai-stats-source-summary p {
   margin-top: 3px;
   color: #596b70;
-  font-size: calc(0.65rem + var(--ena-font-step, 1px));
+  font-size: calc(0.65rem + var(--ena-font-step, 1px) + 1px);
   line-height: 1.45;
 }
 
@@ -9112,7 +9158,7 @@ body:has(.open-ena-page) #main-content {
   padding: 8px 10px;
   color: #624a21;
   background: #fff8e9;
-  font-size: 0.66rem;
+  font-size: calc(0.66rem + var(--ena-font-step, 1px));
   line-height: 1.45;
 }
 
@@ -9127,6 +9173,11 @@ body:has(.open-ena-page) #main-content {
   border-radius: 3px;
   padding: 9px 10px;
   background: #eef8f6;
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
+}
+
+.ena-ai-disabled-reason {
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
 }
 
 .ena-ai-payload-preview {

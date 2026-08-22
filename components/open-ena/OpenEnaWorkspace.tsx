@@ -42,7 +42,11 @@ import { buildMethodsReport, referenceMeanRotationInterpretation } from "@/lib/o
 import { buildOpenEnaAiInterpretationRequest } from "@/lib/open-ena/ai-interpretation";
 import { buildAnalysisBundle, buildResultTables, rowsToCsv } from "@/lib/open-ena/export";
 import { codeColorFor, updateCodeColor } from "@/lib/open-ena/plot-style";
-import { cameraForPreset, type OpenEna3dCamera } from "@/lib/open-ena/plot3d";
+import {
+  cameraForPreset,
+  type OpenEna3dAspectRatio,
+  type OpenEna3dCamera,
+} from "@/lib/open-ena/plot3d";
 import {
   buildReferenceRotationPackage,
   parseRotationReference,
@@ -252,6 +256,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const [zDimension, setZDimension] = useState("SVD3");
   const [camera, setCamera] = useState<CameraPreset>("isometric");
   const [interactive3dCamera, setInteractive3dCamera] = useState<OpenEna3dCamera | null>(null);
+  const [interactive3dAspectRatio, setInteractive3dAspectRatio] = useState<OpenEna3dAspectRatio | null>(null);
   const [showPoints, setShowPoints] = useState(true);
   const [showNetworks, setShowNetworks] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
@@ -1164,6 +1169,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       setYDimension(y);
       setZDimension(z);
       setInteractive3dCamera(null);
+      setInteractive3dAspectRatio(null);
       setView("2d");
       setMode("model");
       setActiveComparisonSurface("groups");
@@ -1345,6 +1351,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   function selectCameraPreset(nextCamera: CameraPreset) {
     setCamera(nextCamera);
     setInteractive3dCamera(cameraForPreset(nextCamera));
+    setInteractive3dAspectRatio(null);
     setPlotResetRevision((current) => current + 1);
   }
 
@@ -1379,6 +1386,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     }
     setCamera("isometric");
     setInteractive3dCamera(null);
+    setInteractive3dAspectRatio(null);
     setShowPoints(true);
     setShowNetworks(true);
     setShowLabels(true);
@@ -2539,7 +2547,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         data-ena-ai-readiness={aiReady ? "ready" : "required"}
       >
         <div className="ena-panel-heading ena-ai-mode-heading">
-          <p className="ena-panel-kicker">AI · OpenRouter</p>
+          <p className="ena-panel-kicker">AI</p>
           <h2>{copy.aiInterpretation.title}</h2>
           <p>{copy.aiInterpretation.description}</p>
         </div>
@@ -3541,6 +3549,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     plotResetRevision={plotResetRevision}
                     sharedCamera={interactive3dCamera}
                     onCameraChange={setInteractive3dCamera}
+                    sharedAspectRatio={interactive3dAspectRatio}
+                    onAspectRatioChange={setInteractive3dAspectRatio}
                     flipX={flipX}
                     flipY={flipY}
                     copy={copy}
@@ -3567,6 +3577,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     plotResetRevision={plotResetRevision}
                     initialCamera={interactive3dCamera}
                     onCameraChange={setInteractive3dCamera}
+                    initialAspectRatio={interactive3dAspectRatio}
+                    onAspectRatioChange={setInteractive3dAspectRatio}
                     flipX={flipX}
                     flipY={flipY}
                     copy={copy}

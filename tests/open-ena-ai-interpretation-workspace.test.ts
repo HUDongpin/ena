@@ -9,10 +9,12 @@ const projectRoot = process.cwd();
 const workspacePath = join(projectRoot, "components/open-ena/OpenEnaWorkspace.tsx");
 const aiComponentPath = join(projectRoot, "components/open-ena/OpenEnaAiInterpretation.tsx");
 const typesPath = join(projectRoot, "lib/open-ena/types.ts");
+const globalStylesPath = join(projectRoot, "app/globals.css");
 
 const workspace = readFileSync(workspacePath, "utf8");
 const aiComponent = existsSync(aiComponentPath) ? readFileSync(aiComponentPath, "utf8") : "";
 const types = readFileSync(typesPath, "utf8");
+const globalStyles = readFileSync(globalStylesPath, "utf8");
 
 type AiInterpretationCopy = Record<string, string>;
 
@@ -104,6 +106,31 @@ test("AI interpretation is a dedicated sixth rail mode sourced from Stats result
     assert.match(iconBlock, svgContract, "each of the five existing rail SVG designs must remain unchanged");
   }
   assert.match(iconBlock, /ai:\s*\([\s\S]*?<rect x="3\.5" y="4" width="17" height="16" rx="4"[\s\S]*?m7\.5 15 2\.2-6 2\.2 6M8\.2 13h3M15 9v6/);
+});
+
+test("AI panel uses a provider-neutral kicker and enlarges the requested review guidance by one pixel", () => {
+  const aiPanel = workspaceAiPanel();
+  assert.match(aiPanel, /<p className="ena-panel-kicker">AI<\/p>/);
+  assert.doesNotMatch(aiPanel, /AI · OpenRouter/);
+  assert.match(aiComponent, /<p className="ena-panel-kicker">AI<\/p>/);
+  assert.doesNotMatch(aiComponent, /AI · OpenRouter/);
+
+  assert.match(
+    globalStyles,
+    /\.ena-ai-stats-source-summary p\s*\{[\s\S]*?font-size:\s*calc\(0\.65rem \+ var\(--ena-font-step, 1px\) \+ 1px\);/,
+  );
+  assert.match(
+    globalStyles,
+    /\.ena-ai-disclosure\s*\{[\s\S]*?font-size:\s*calc\(0\.66rem \+ var\(--ena-font-step, 1px\)\);/,
+  );
+  assert.match(
+    globalStyles,
+    /\.ena-ai-privacy\s*\{[\s\S]*?font-size:\s*calc\(0\.68rem \+ var\(--ena-font-step, 1px\)\);/,
+  );
+  assert.match(
+    globalStyles,
+    /\.ena-ai-disabled-reason\s*\{[\s\S]*?font-size:\s*calc\(0\.68rem \+ var\(--ena-font-step, 1px\)\);/,
+  );
 });
 
 test("the researcher must review the aggregate payload and give explicit consent before generation", () => {

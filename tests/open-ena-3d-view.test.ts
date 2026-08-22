@@ -2,9 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import OpenEna3DGroupContrast from "../components/open-ena/OpenEna3DGroupContrast";
+import {
+  OPEN_ENA_3D_CAMERA_ZOOM_STEP,
+  zoomOpenEna3dAspectRatio,
+  zoomOpenEna3dCamera,
+} from "../components/open-ena/OpenEnaInteractive3DPlot";
 import { analyzeDataset } from "../lib/open-ena/analyze";
 import { parseCsv } from "../lib/open-ena/csv";
+import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 import {
+  OPEN_ENA_3D_DEFAULT_CAMERA_ZOOM,
   cameraForPreset,
   compileOpenEna3dPlotSpec,
   type OpenEna3dPlotKind,
@@ -139,7 +149,7 @@ test("the 3D compiler selects retained x/y/z coordinates without refitting or mu
   assert.equal(spec.layout.paper_bgcolor, "#ffffff");
   assert.equal(spec.layout.plot_bgcolor, "#ffffff");
   assert.equal(spec.layout.scene.bgcolor, "#ffffff");
-  assert.equal(spec.layout.uirevision, "open-ena-3d-camera-v1");
+  assert.equal(spec.layout.uirevision, "open-ena-3d-camera-v2");
   assert.equal(spec.config.responsive, true);
   assert.equal(spec.config.scrollZoom, true);
 });
@@ -270,6 +280,8 @@ test("3D pairwise compilation gives Comparison, Primary, and Secondary distinct 
   assert.deepEqual(secondary.layout.scene.xaxis.range, comparison.layout.scene.xaxis.range);
   assert.deepEqual(secondary.layout.scene.yaxis.range, comparison.layout.scene.yaxis.range);
   assert.deepEqual(secondary.layout.scene.zaxis.range, comparison.layout.scene.zaxis.range);
+  assert.deepEqual(primary.layout.scene.camera, comparison.layout.scene.camera);
+  assert.deepEqual(secondary.layout.scene.camera, comparison.layout.scene.camera);
   assert.equal(comparison.config.displayModeBar, true);
   assert.equal(primary.config.displayModeBar, false);
   assert.equal(secondary.config.scrollZoom, false);
@@ -375,6 +387,16 @@ test("3D trajectories retain six stable non-color group encodings and all three 
 
 test("camera presets are explicit display-only orientations and the client plot owns the full interaction lifecycle", () => {
   const cameraPresets = ["isometric", "xy", "xz", "yz", "yx", "zx", "zy"] as const;
+  const defaultCamera = cameraForPreset("isometric");
+  const previousDistance = Math.hypot(1.45, 1.45, 1.25);
+  const currentDistance = Math.hypot(defaultCamera.eye.x, defaultCamera.eye.y, defaultCamera.eye.z);
+
+  assert.equal(OPEN_ENA_3D_DEFAULT_CAMERA_ZOOM, 1.5);
+  assert.deepEqual(defaultCamera.eye, { x: 1.45 / 1.5, y: 1.45 / 1.5, z: 1.25 / 1.5 });
+  assert.ok(
+    Math.abs(previousDistance / currentDistance - OPEN_ENA_3D_DEFAULT_CAMERA_ZOOM) < 1e-12,
+    "the default isometric camera must begin at 1.5x visual zoom without changing fitted coordinates",
+  );
   assert.equal(
     new Set(cameraPresets.map((preset) => JSON.stringify(cameraForPreset(preset)))).size,
     cameraPresets.length,
@@ -429,9 +451,12 @@ test("camera presets are explicit display-only orientations and the client plot 
   );
   assert.match(workspace, /initialCamera=\{interactive3dCamera\}/);
   assert.match(workspace, /onCameraChange=\{setInteractive3dCamera\}/);
+  assert.match(workspace, /initialAspectRatio=\{interactive3dAspectRatio\}/);
+  assert.match(workspace, /onAspectRatioChange=\{setInteractive3dAspectRatio\}/);
   assert.match(workspace, /view === "3d" && activeGroupContrast && resultConfig\?\.groupColumn/);
   assert.match(workspace, /<OpenEna3DGroupContrast/);
   assert.match(workspace, /sharedCamera=\{interactive3dCamera\}/);
+  assert.match(workspace, /sharedAspectRatio=\{interactive3dAspectRatio\}/);
   assert.match(workspace, /function selectCameraPreset/);
   assert.match(workspace, /function selectAxisDimension/);
   assert.match(workspace, /setters\[occupiedAxis\]\(previousDimension\)/);
@@ -450,4 +475,183 @@ test("camera presets are explicit display-only orientations and the client plot 
   assert.match(styles, /\.open-ena-3d-triptych-layout[\s\S]*?grid-template-columns: minmax\(0, 2fr\) minmax\(290px, 1fr\)/);
   assert.match(styles, /\.open-ena-3d-triptych-sides[\s\S]*?grid-template-rows: repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(styles, /@media \(max-width: 640px\)[\s\S]*?\.open-ena-3d-triptych-sides[\s\S]*?grid-template-columns: 1fr/);
+});
+
+test("each 3D paper replaces the Plotly modebar with the same four unframed plot-action logos", () => {
+  const interactive = readFileSync(
+    join(projectRoot, "components", "open-ena", "OpenEnaInteractive3DPlot.tsx"),
+    "utf8",
+  );
+  const groupContrast3d = readFileSync(
+    join(projectRoot, "components", "open-ena", "OpenEna3DGroupContrast.tsx"),
+    "utf8",
+  );
+  const groupContrast2d = readFileSync(
+    join(projectRoot, "components", "open-ena", "OpenEnaGroupContrast.tsx"),
+    "utf8",
+  );
+  const icons = readFileSync(
+    join(projectRoot, "components", "open-ena", "OpenEnaPlotActionIcon.tsx"),
+    "utf8",
+  );
+  const styles = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
+
+  assert.deepEqual(
+    [...interactive.matchAll(/data-ena-plot-action="([^"]+)"/gu)].map((match) => match[1]),
+    ["zoom-in", "zoom-out", "recenter", "copy-image"],
+    "the custom 3D rail must expose exactly the four requested actions in the reference order",
+  );
+  assert.match(interactive, /data-ena-toolbar-design="unframed-four-button"/);
+  assert.match(interactive, /displayModeBar = false/);
+  assert.match(interactive, /activeCamera\.projection\.type === "orthographic"/);
+  assert.match(interactive, /zoomOpenEna3dAspectRatio\(currentAspectRatio\(\), resetAspectRatio\(\), direction\)/);
+  assert.match(interactive, /zoomOpenEna3dCamera\(activeCamera, spec\.layout\.scene\.camera, direction\)/);
+  assert.match(interactive, /getAspectratio\?\.\(\)/);
+  assert.match(interactive, /"scene\.aspectratio": nextAspectRatio/);
+  assert.match(interactive, /void applyResetView\(\)/);
+  assert.match(interactive, /toImage\(plotRoot,/);
+  assert.match(interactive, /const png = pngBlobFromDataUrl\(dataUrl\)/);
+  assert.doesNotMatch(interactive, /fetch\(dataUrl\)/);
+  assert.match(interactive, /navigator\.clipboard\.write\(\[new ClipboardItem\(\{ "image\/png": png \}\)\]\)/);
+  assert.match(interactive, /navigator\.clipboard\.writeText\(dataUrl\)/);
+  assert.doesNotMatch(interactive, /querySelectorAll[^\n]*data-ena-plotly-root/);
+
+  assert.equal(
+    [...groupContrast3d.matchAll(/<OpenEnaInteractive3DPlot/gu)].length,
+    3,
+    "Comparison, Primary, and Secondary must each own the shared four-button plot component",
+  );
+  assert.match(
+    groupContrast3d,
+    /const sharedPlotProps = \{[\s\S]*?initialCamera: sharedCamera,[\s\S]*?onCameraChange,[\s\S]*?initialAspectRatio: sharedAspectRatio,[\s\S]*?onAspectRatioChange,[\s\S]*?copy,/,
+    "all three toolbars must publish camera and orthographic zoom changes into the linked display state",
+  );
+  assert.match(groupContrast3d, /plotKind="comparison"[\s\S]*?displayModeBar=\{false\}/);
+  assert.match(groupContrast2d, /import OpenEnaPlotActionIcon from "\.\/OpenEnaPlotActionIcon"/);
+  assert.match(interactive, /import OpenEnaPlotActionIcon from "\.\/OpenEnaPlotActionIcon"/);
+  for (const icon of ["zoom-in", "zoom-out", "recenter", "copy"] as const) {
+    assert.match(icons, new RegExp(`(?:"${icon}"|${icon}): <path d=`));
+  }
+
+  assert.match(styles, /\.open-ena-interactive-3d-region \.modebar \{\s*display: none !important;/);
+  assert.match(
+    styles,
+    /\.open-ena-interactive-3d-region \.open-ena-3d-plot-actions button \{[\s\S]*?border: 0;[\s\S]*?border-radius: 50%;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/,
+    "the requested logos must float directly on the paper without square borders or button boxes",
+  );
+  assert.match(
+    styles,
+    /\.open-ena-interactive-3d-region \.open-ena-3d-plot-actions button:hover \{[\s\S]*?border: 0;[\s\S]*?background: transparent;/,
+    "hover must change the icon without adding a square frame",
+  );
+});
+
+test("the four-button 3D triptych renders on every paper and zooms the linked camera without changing orientation", () => {
+  const result = threeDimensionalResult();
+  const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
+  const contrast = buildPairwiseGroupContrast(
+    result,
+    THREE_DIMENSIONAL_CONFIG,
+    "second",
+    "first",
+    [xDimension, yDimension],
+    "2026-08-22T00:00:00.000Z",
+  );
+  const markup = renderToStaticMarkup(createElement(OpenEna3DGroupContrast, {
+    result,
+    contrast,
+    groupColumn: "group",
+    xDimension,
+    yDimension,
+    zDimension,
+    camera: "isometric",
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    edgeScale: 1,
+    edgeThreshold: 0,
+    pointScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+    copy: getOpenEnaCopy("en"),
+  }));
+
+  assert.equal([...markup.matchAll(/data-ena-toolbar-design="unframed-four-button"/gu)].length, 3);
+  assert.deepEqual(
+    [...markup.matchAll(/data-ena-plot-toolbar="([^"]+)"/gu)].map((match) => match[1]),
+    ["comparison", "primary", "secondary"],
+  );
+  assert.deepEqual(
+    [...markup.matchAll(/data-ena-plot-action="([^"]+)"/gu)].map((match) => match[1]),
+    [
+      "zoom-in", "zoom-out", "recenter", "copy-image",
+      "zoom-in", "zoom-out", "recenter", "copy-image",
+      "zoom-in", "zoom-out", "recenter", "copy-image",
+    ],
+  );
+
+  const camera = cameraForPreset("isometric");
+  const zoomedIn = zoomOpenEna3dCamera(camera, camera, "in");
+  const zoomedOut = zoomOpenEna3dCamera(camera, camera, "out");
+  const distance = (target: typeof camera) => Math.hypot(target.eye.x, target.eye.y, target.eye.z);
+  assert.equal(OPEN_ENA_3D_CAMERA_ZOOM_STEP, 1.2);
+  assert.ok(Math.abs(distance(camera) / distance(zoomedIn) - 1.2) < 1e-12);
+  assert.ok(Math.abs(distance(zoomedOut) / distance(camera) - 1.2) < 1e-12);
+  assert.deepEqual(zoomedIn.center, camera.center);
+  assert.deepEqual(zoomedIn.up, camera.up);
+  assert.deepEqual(zoomedIn.projection, camera.projection);
+  assert.deepEqual(zoomedOut.center, camera.center);
+  assert.deepEqual(zoomedOut.up, camera.up);
+  assert.deepEqual(zoomedOut.projection, camera.projection);
+});
+
+test("orthographic plane zoom changes the visible Plotly aspect ratio and remains bounded around its reset frame", () => {
+  const resetAspectRatio = { x: 1, y: 1, z: 1 };
+  const zoomedIn = zoomOpenEna3dAspectRatio(resetAspectRatio, resetAspectRatio, "in");
+  const zoomedOut = zoomOpenEna3dAspectRatio(resetAspectRatio, resetAspectRatio, "out");
+
+  assert.deepEqual(zoomedIn, { x: 1.2, y: 1.2, z: 1.2 });
+  assert.deepEqual(zoomedOut, { x: 1 / 1.2, y: 1 / 1.2, z: 1 / 1.2 });
+
+  let upperBound = resetAspectRatio;
+  let lowerBound = resetAspectRatio;
+  for (let step = 0; step < 20; step += 1) {
+    upperBound = zoomOpenEna3dAspectRatio(upperBound, resetAspectRatio, "in");
+    lowerBound = zoomOpenEna3dAspectRatio(lowerBound, resetAspectRatio, "out");
+  }
+  assert.deepEqual(upperBound, { x: 3, y: 3, z: 3 });
+  assert.deepEqual(lowerBound, { x: 0.35, y: 0.35, z: 0.35 });
+
+  const flatCamera = cameraForPreset("xy");
+  assert.equal(flatCamera.projection.type, "orthographic");
+  assert.deepEqual(flatCamera.eye, { x: 0, y: 0, z: 2.5 });
+
+  const result = threeDimensionalResult();
+  const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
+  const spec = compileOpenEna3dPlotSpec({
+    result,
+    groupColumn: "group",
+    xDimension,
+    yDimension,
+    zDimension,
+    camera: "xy",
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    showTrajectories: false,
+    edgeScale: 1,
+    edgeThreshold: 0,
+    pointScale: 1,
+    plotZoom: 1.4,
+    flipX: false,
+    flipY: false,
+  });
+  assert.equal(spec.layout.scene.aspectmode, "manual");
+  assert.deepEqual(spec.layout.scene.aspectratio, { x: 1.4, y: 1.4, z: 1.4 });
+  assert.deepEqual(spec.layout.scene.camera.eye, flatCamera.eye);
 });

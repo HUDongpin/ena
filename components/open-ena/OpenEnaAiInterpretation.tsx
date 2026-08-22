@@ -153,7 +153,7 @@ export default function OpenEnaAiInterpretation({
     >
       {showHeading ? (
         <header className="ena-ai-heading">
-          <p className="ena-panel-kicker">AI · OpenRouter</p>
+          <p className="ena-panel-kicker">AI</p>
           <h3 id="ena-ai-interpretation-title">{copy.title}</h3>
           <p>{copy.description}</p>
         </header>
