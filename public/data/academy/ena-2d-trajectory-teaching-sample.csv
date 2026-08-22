@@ -1,0 +1,55 @@
+Group,Speaker,Period,line_number,utterance,TE,EX,IN,RE,SP,TP
+G1,S01,TP1,1,A question frames the initial problem,1,0,0,0,0,1
+G1,S01,TP1,2,The learner proposes an idea with peer support,0,1,0,0,1,0
+G1,S01,TP1,3,The initial question opens exploration,1,1,0,0,0,0
+G1,S01,TP2,1,Guidance helps compare possible explanations,0,1,0,0,0,1
+G1,S01,TP2,2,The learner connects ideas with peer support,0,0,1,0,1,0
+G1,S01,TP2,3,Exploration is combined into an explanation,0,1,1,0,0,0
+G1,S01,TP3,1,Guidance supports applying the explanation,0,0,1,0,0,1
+G1,S01,TP3,2,The learner tests a resolution with peers,0,0,0,1,1,0
+G1,S01,TP3,3,Integrated ideas lead to a resolution,0,0,1,1,0,0
+G1,S02,TP1,1,Peer discussion identifies the problem,1,0,0,0,1,0
+G1,S02,TP1,2,Guidance invites several possible ideas,0,1,0,0,0,1
+G1,S02,TP1,3,The question is explored and connected to prior ideas,1,1,1,0,0,0
+G1,S02,TP2,1,Peers compare the proposed explanations,0,1,0,0,1,0
+G1,S02,TP2,2,Guidance helps connect the strongest ideas,0,0,1,0,0,1
+G1,S02,TP2,3,Explored ideas are integrated together,0,1,1,0,0,0
+G1,S02,TP3,1,Peers explore and review the integrated explanation,0,1,1,0,1,0
+G1,S02,TP3,2,Guidance supports a practical resolution,0,0,0,1,0,1
+G1,S02,TP3,3,The learner links integration to resolution,0,0,1,1,0,0
+G1,S03,TP1,1,Guidance focuses attention on a new question,1,0,0,0,0,1
+G1,S03,TP1,2,Peers contribute alternative possibilities,0,1,0,0,1,0
+G1,S03,TP1,3,The learner explores the triggering issue,1,1,0,0,0,0
+G1,S03,TP2,1,Guidance extends the exploration,0,1,0,0,0,1
+G1,S03,TP2,2,Peers help synthesize related ideas,0,0,1,0,1,0
+G1,S03,TP2,3,The learner integrates explored evidence toward resolution,0,1,1,1,0,0
+G1,S03,TP3,1,Guidance checks the integrated account,0,0,1,0,0,1
+G1,S03,TP3,2,Peers discuss how to apply the solution,0,0,0,1,1,0
+G1,S03,TP3,3,The final account resolves the issue,0,0,1,1,0,0
+G2,S04,TP1,1,Peers surface the initial uncertainty,1,0,0,0,1,0
+G2,S04,TP1,2,Guidance clarifies the driving question,1,0,0,0,0,1
+G2,S04,TP1,3,The learner begins exploring and integrating alternatives,0,1,1,0,0,1
+G2,S04,TP2,1,The learner connects the trigger to integrated ideas,1,1,1,0,0,0
+G2,S04,TP2,2,Guidance turns the synthesis toward resolution,0,0,1,1,0,1
+G2,S04,TP2,3,Peers test the emerging resolution,0,1,0,1,1,0
+G2,S04,TP3,1,The learner explores and applies the integrated account,0,1,1,1,0,0
+G2,S04,TP3,2,Guidance checks the proposed resolution,0,0,0,1,0,1
+G2,S04,TP3,3,Peers refine how the solution will work,0,0,0,1,1,0
+G2,S05,TP1,1,The question emerges through peer discussion,1,0,0,0,1,0
+G2,S05,TP1,2,Guidance keeps attention on the issue,1,0,0,0,0,1
+G2,S05,TP1,3,Several explanations are explored and integrated toward resolution,0,1,1,1,0,1
+G2,S05,TP2,1,Several possibilities are explored through integrated ideas,0,1,1,0,0,0
+G2,S05,TP2,2,Peers evaluate the synthesis as a resolution,0,0,1,1,1,0
+G2,S05,TP2,3,Guidance strengthens the resolution,0,0,1,1,0,1
+G2,S05,TP3,1,A new trigger is explored and integrated toward resolution,1,1,1,1,0,0
+G2,S05,TP3,2,Peers examine the proposed application,0,0,0,1,1,0
+G2,S05,TP3,3,Guidance confirms the final resolution,0,0,0,1,0,1
+G2,S06,TP1,1,Guidance introduces the central problem,1,0,0,0,0,1
+G2,S06,TP1,2,Peers explain why the issue matters,1,0,0,0,1,0
+G2,S06,TP1,3,The learner explores and integrates an initial approach,0,1,1,0,0,1
+G2,S06,TP2,1,The learner connects the trigger with competing ideas,1,1,1,0,0,0
+G2,S06,TP2,2,Guidance develops the synthesis into a resolution,0,0,1,1,0,1
+G2,S06,TP2,3,Peers extend and test the resolution,0,1,0,1,1,0
+G2,S06,TP3,1,The learner explores and integrates a resolution,0,1,1,1,0,0
+G2,S06,TP3,2,Guidance tests the final solution,0,0,0,1,0,1
+G2,S06,TP3,3,Peers refine the resolution together,0,0,0,1,1,0

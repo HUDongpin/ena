@@ -404,16 +404,18 @@ test("standalone longitudinal SVG and PNG exports embed the complete plot visual
   )?.[0] ?? "";
   const embeddedStyles = serializer.match(/styles\.textContent\s*=\s*`([\s\S]*?)`;/)?.[1] ?? "";
 
-  assert.match(serializer, /source\.cloneNode\(true\)/, "the export must retain inline marker and arrow definitions from the live SVG");
+  assert.match(serializer, /source\.cloneNode\(true\)/, "the export must retain the live SVG trajectory paths and direction glyphs");
   assert.match(embeddedStyles, /\.ena-longitudinal-background\s*\{[^}]*fill:/);
   assert.match(embeddedStyles, /\.ena-longitudinal-axis\s*\{[^}]*stroke:[^}]*stroke-width:[^}]*stroke-dasharray:/);
   assert.match(embeddedStyles, /\.ena-longitudinal-axis-label\s*\{[^}]*fill:[^}]*font-family:[^}]*font-size:[^}]*font-weight:/);
   assert.match(embeddedStyles, /\.ena-individual-trajectory-path\s*\{[^}]*fill:[^}]*stroke-width:[^}]*stroke-linecap:[^}]*opacity:/);
   assert.match(embeddedStyles, /\.ena-group-centroid-path\s*\{[^}]*fill:[^}]*stroke-width:[^}]*stroke-linecap:[^}]*opacity:/);
+  assert.match(embeddedStyles, /\.ena-group-centroid-direction-arrow\s*\{[^}]*fill:[^}]*stroke-width:[^}]*stroke-linecap:[^}]*stroke-linejoin:[^}]*opacity:/);
+  assert.match(embeddedStyles, /\.ena-individual-direction-arrow\s*\{[^}]*fill:[^}]*stroke-width:[^}]*stroke-linecap:[^}]*stroke-linejoin:[^}]*opacity:/);
   assert.match(embeddedStyles, /\.ena-longitudinal-node circle:first-child\s*\{[^}]*fill:[^}]*stroke:[^}]*stroke-width:/);
   assert.match(embeddedStyles, /\.ena-longitudinal-node circle:nth-child\(2\)\s*\{[^}]*fill:/);
   const sharedLabelRule = embeddedStyles.match(
-    /\.ena-longitudinal-node text\s*,\s*\.ena-longitudinal-period-label\s*\{([^}]*)\}/,
+    /\.ena-longitudinal-node text\s*,\s*\.ena-longitudinal-node-label\s*,\s*\.ena-longitudinal-period-label\s*\{([^}]*)\}/,
   )?.[1] ?? "";
   for (const declaration of ["paint-order:", "stroke:", "fill:", "font-size:", "font-weight:"]) {
     assert.ok(sharedLabelRule.includes(declaration), `longitudinal node/period labels need ${declaration} in the embedded SVG stylesheet`);
@@ -427,8 +429,8 @@ test("standalone longitudinal SVG and PNG exports embed the complete plot visual
   );
   assert.match(
     longitudinalPlot,
-    /<marker[\s\S]{0,500}<path[^>]*fill=\{color\}/,
-    "trajectory arrowheads must retain their fill inside the cloned SVG definitions",
+    /function DirectionArrow[\s\S]*?<path[\s\S]{0,500}className=\{className\}[\s\S]{0,500}fill=\{DIRECTION_ARROW_FILL\}[\s\S]{0,500}stroke=\{DIRECTION_ARROW_HALO\}/,
+    "direction glyphs must retain their explicit dark fill and white halo inside the cloned SVG",
   );
   assert.match(
     workspace,

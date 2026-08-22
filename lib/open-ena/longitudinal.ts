@@ -473,22 +473,245 @@ function entityPeriodKey(entityToken: string, time: string) {
   return JSON.stringify([entityToken, time]);
 }
 
-function individualSegmentCount(periods: readonly OpenEnaLongitudinalEntityPeriod[]) {
-  const byEntity = new Map<string, OpenEnaLongitudinalEntityPeriod[]>();
-  periods.forEach((period) => {
-    const entries = byEntity.get(period.entityId);
-    if (entries) entries.push(period);
-    else byEntity.set(period.entityId, [period]);
+export interface OpenEnaLongitudinalIndividualRun {
+  /** Opaque internal identity used only to keep one entity's runs together. Never render or export it. */
+  opaqueEntityId: string;
+  group: string;
+  periods: OpenEnaLongitudinalEntityPeriod[];
+  sourceIndex: number;
+}
+
+export interface OpenEnaLongitudinalIndividualSegment {
+  from: OpenEnaLongitudinalEntityPeriod;
+  to: OpenEnaLongitudinalEntityPeriod;
+  group: string;
+  sourceIndex: number;
+}
+
+export interface OpenEnaLongitudinalIndividualEntityBundle {
+  /** Opaque internal identity used only for all-or-none entity sampling. Never render or export it. */
+  opaqueEntityId: string;
+  group: string;
+  runs: OpenEnaLongitudinalIndividualRun[];
+  segmentCount: number;
+  sourceIndex: number;
+}
+
+export interface OpenEnaLongitudinalIndividualPathPlan {
+  allBundles: OpenEnaLongitudinalIndividualEntityBundle[];
+  selectedBundles: OpenEnaLongitudinalIndividualEntityBundle[];
+  allRuns: OpenEnaLongitudinalIndividualRun[];
+  selectedRuns: OpenEnaLongitudinalIndividualRun[];
+  allSegments: OpenEnaLongitudinalIndividualSegment[];
+  selectedSegments: OpenEnaLongitudinalIndividualSegment[];
+  allDirectionSegments: OpenEnaLongitudinalIndividualSegment[];
+  selectedDirectionSegments: OpenEnaLongitudinalIndividualSegment[];
+  groupCoverage: Array<{
+    group: string;
+    entityTotal: number;
+    entityShown: number;
+    segmentTotal: number;
+    segmentShown: number;
+  }>;
+}
+
+function validLongitudinalEntityPeriod(period: OpenEnaLongitudinalEntityPeriod) {
+  return Number.isFinite(period.x) && Number.isFinite(period.y) && Number.isFinite(period.timeIndex);
+}
+
+function flattenIndividualBundles(
+  bundles: readonly OpenEnaLongitudinalIndividualEntityBundle[],
+) {
+  const runs = bundles
+    .flatMap((bundle) => bundle.runs)
+    .sort((left, right) => left.sourceIndex - right.sourceIndex);
+  const segments = runs.flatMap((run) => run.periods.slice(1).map((to, index) => ({
+    from: run.periods[index],
+    to,
+    group: run.group,
+    sourceIndex: run.sourceIndex + index,
+  }))).sort((left, right) => left.sourceIndex - right.sourceIndex)
+    .map((segment, sourceIndex) => ({ ...segment, sourceIndex }));
+  return { runs, segments };
+}
+
+function stratifiedIndividualSegments(
+  segments: readonly OpenEnaLongitudinalIndividualSegment[],
+  maximum: number,
+) {
+  if (segments.length <= maximum) return [...segments];
+  const buckets = new Map<string, OpenEnaLongitudinalIndividualSegment[]>();
+  segments.forEach((segment) => {
+    const bucket = buckets.get(segment.group);
+    if (bucket) bucket.push(segment);
+    else buckets.set(segment.group, [segment]);
   });
-  let count = 0;
-  byEntity.forEach((entries) => {
-    entries.sort((left, right) => left.timeIndex - right.timeIndex);
+  const entries = [...buckets.values()];
+  const quotas = entries.map(() => 0);
+  let remaining = maximum;
+  while (remaining > 0) {
+    let assigned = false;
+    entries.forEach((bucket, index) => {
+      if (remaining > 0 && quotas[index] < bucket.length) {
+        quotas[index] += 1;
+        remaining -= 1;
+        assigned = true;
+      }
+    });
+    if (!assigned) break;
+  }
+  return entries.flatMap((bucket, index) => {
+    const quota = quotas[index];
+    if (quota <= 0) return [];
+    if (quota >= bucket.length) return bucket;
+    return Array.from({ length: quota }, (_, sampleIndex) => (
+      bucket[Math.round(sampleIndex * (bucket.length - 1) / Math.max(1, quota - 1))]
+    ));
+  }).sort((left, right) => left.sourceIndex - right.sourceIndex);
+}
+
+/**
+ * Plans privacy-safe individual trajectory rendering. Every selected entity retains all of its
+ * legal connected runs; gaps are never bridged. The segment budget is soft only when needed to
+ * retain one complete entity from each group or one individually oversized entity. Direction
+ * glyphs remain hard-capped separately because a full run is only one SVG path.
+ */
+export function planLongitudinalIndividualPaths(
+  periods: readonly OpenEnaLongitudinalEntityPeriod[],
+  maximumSegments = LONGITUDINAL_INDIVIDUAL_MARK_LIMIT,
+): OpenEnaLongitudinalIndividualPathPlan {
+  const byEntity = new Map<string, Array<{
+    period: OpenEnaLongitudinalEntityPeriod;
+    sourceIndex: number;
+  }>>();
+  periods.forEach((period, sourceIndex) => {
+    if (!validLongitudinalEntityPeriod(period)) return;
+    const rawIdentity = String(period.entityId ?? "").trim();
+    const opaqueEntityId = rawIdentity || `__missing-identity-${sourceIndex}`;
+    const entries = byEntity.get(opaqueEntityId);
+    const entry = { period, sourceIndex };
+    if (entries) entries.push(entry);
+    else byEntity.set(opaqueEntityId, [entry]);
+  });
+
+  const allBundles: OpenEnaLongitudinalIndividualEntityBundle[] = [];
+  byEntity.forEach((entries, opaqueEntityId) => {
+    entries.sort((left, right) => (
+      left.period.timeIndex - right.period.timeIndex || left.sourceIndex - right.sourceIndex
+    ));
+    const runs: OpenEnaLongitudinalIndividualRun[] = [];
+    let current = entries.length ? [entries[0]] : [];
+    const retainCurrent = () => {
+      if (current.length < 2) return;
+      runs.push({
+        opaqueEntityId,
+        group: current[0].period.group,
+        periods: current.map((entry) => entry.period),
+        sourceIndex: current[0].sourceIndex,
+      });
+    };
     for (let index = 1; index < entries.length; index += 1) {
-      if (entries[index].timeIndex === entries[index - 1].timeIndex + 1
-        && entries[index].group === entries[index - 1].group) count += 1;
+      const from = entries[index - 1];
+      const to = entries[index];
+      if (
+        to.period.timeIndex === from.period.timeIndex + 1
+        && to.period.group === from.period.group
+      ) {
+        current.push(to);
+      } else {
+        retainCurrent();
+        current = [to];
+      }
     }
+    retainCurrent();
+    if (!runs.length) return;
+    const segmentCount = runs.reduce((total, run) => total + run.periods.length - 1, 0);
+    allBundles.push({
+      opaqueEntityId,
+      group: runs[0].group,
+      runs,
+      segmentCount,
+      sourceIndex: Math.min(...runs.map((run) => run.sourceIndex)),
+    });
   });
-  return count;
+  allBundles.sort((left, right) => left.sourceIndex - right.sourceIndex);
+
+  const segmentLimit = Math.max(1, Math.trunc(maximumSegments));
+  const totalSegmentCount = allBundles.reduce((total, bundle) => total + bundle.segmentCount, 0);
+  let selectedBundles = [...allBundles];
+  if (totalSegmentCount > segmentLimit) {
+    const buckets = new Map<string, OpenEnaLongitudinalIndividualEntityBundle[]>();
+    allBundles.forEach((bundle) => {
+      const bucket = buckets.get(bundle.group);
+      if (bucket) bucket.push(bundle);
+      else buckets.set(bundle.group, [bundle]);
+    });
+    const selected = new Set<OpenEnaLongitudinalIndividualEntityBundle>();
+    let consumed = 0;
+
+    // Preserve group coverage first. Whole entities may make this soft budget exceed the limit.
+    buckets.forEach((bucket) => {
+      bucket.sort((left, right) => (
+        left.segmentCount - right.segmentCount || left.sourceIndex - right.sourceIndex
+      ));
+      const candidate = bucket.shift();
+      if (!candidate) return;
+      selected.add(candidate);
+      consumed += candidate.segmentCount;
+    });
+
+    let remaining = Math.max(0, segmentLimit - consumed);
+    let assigned = true;
+    while (remaining > 0 && assigned) {
+      assigned = false;
+      buckets.forEach((bucket) => {
+        const fittingIndex = bucket.findIndex((bundle) => bundle.segmentCount <= remaining);
+        if (fittingIndex < 0) return;
+        const [candidate] = bucket.splice(fittingIndex, 1);
+        selected.add(candidate);
+        remaining -= candidate.segmentCount;
+        assigned = true;
+      });
+    }
+    selectedBundles = allBundles.filter((bundle) => selected.has(bundle));
+  }
+
+  const all = flattenIndividualBundles(allBundles);
+  const selected = flattenIndividualBundles(selectedBundles);
+  const allDirectionSegments = all.segments.filter((segment) => (
+    Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y) > 1e-12
+  ));
+  const selectedDirectionCandidates = selected.segments.filter((segment) => (
+    Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y) > 1e-12
+  ));
+  const selectedDirectionSegments = stratifiedIndividualSegments(
+    selectedDirectionCandidates,
+    segmentLimit,
+  );
+  const groups = [...new Set(allBundles.map((bundle) => bundle.group))];
+  const groupCoverage = groups.map((group) => {
+    const allForGroup = allBundles.filter((bundle) => bundle.group === group);
+    const selectedForGroup = selectedBundles.filter((bundle) => bundle.group === group);
+    return {
+      group,
+      entityTotal: allForGroup.length,
+      entityShown: selectedForGroup.length,
+      segmentTotal: allForGroup.reduce((total, bundle) => total + bundle.segmentCount, 0),
+      segmentShown: selectedForGroup.reduce((total, bundle) => total + bundle.segmentCount, 0),
+    };
+  });
+
+  return {
+    allBundles,
+    selectedBundles,
+    allRuns: all.runs,
+    selectedRuns: selected.runs,
+    allSegments: all.segments,
+    selectedSegments: selected.segments,
+    allDirectionSegments,
+    selectedDirectionSegments,
+    groupCoverage,
+  };
 }
 
 function finite(value: unknown, _label: string) {
@@ -1379,6 +1602,11 @@ export function buildLongitudinalGroupCentroidExport(
   const finiteOr = (value: number | undefined, fallback: number) => (
     typeof value === "number" && Number.isFinite(value) ? value : fallback
   );
+  const individualPathPlan = planLongitudinalIndividualPaths(
+    view.entityPeriods,
+    LONGITUDINAL_INDIVIDUAL_MARK_LIMIT,
+  );
+  const individualPathsVisible = presentationOptions?.showIndividualPaths !== false;
   const presentation = presentationOptions
     ? {
         selectedAxes: [...view.axes] as [string, string],
@@ -1400,10 +1628,26 @@ export function buildLongitudinalGroupCentroidExport(
             ? 0
             : Math.min(view.entityPeriods.length, LONGITUDINAL_INDIVIDUAL_MARK_LIMIT),
           individualSegmentLimit: LONGITUDINAL_INDIVIDUAL_MARK_LIMIT,
-          individualSegmentTotal: individualSegmentCount(view.entityPeriods),
-          individualSegmentShown: presentationOptions.showIndividualPaths === false
-            ? 0
-            : Math.min(individualSegmentCount(view.entityPeriods), LONGITUDINAL_INDIVIDUAL_MARK_LIMIT),
+          individualSegmentLimitPolicy: "soft-whole-entity-with-group-coverage" as const,
+          individualEntityTotal: individualPathPlan.allBundles.length,
+          individualEntityShown: individualPathsVisible
+            ? individualPathPlan.selectedBundles.length
+            : 0,
+          individualSegmentTotal: individualPathPlan.allSegments.length,
+          individualSegmentShown: individualPathsVisible
+            ? individualPathPlan.selectedSegments.length
+            : 0,
+          individualDirectionArrowLimit: LONGITUDINAL_INDIVIDUAL_MARK_LIMIT,
+          individualDirectionArrowTotal: individualPathPlan.allDirectionSegments.length,
+          individualDirectionArrowShown: individualPathsVisible
+            ? individualPathPlan.selectedDirectionSegments.length
+            : 0,
+          wholeEntityPaths: true,
+          groupCoverage: individualPathPlan.groupCoverage.map((coverage) => ({
+            ...coverage,
+            entityShown: individualPathsVisible ? coverage.entityShown : 0,
+            segmentShown: individualPathsVisible ? coverage.segmentShown : 0,
+          })),
           groupCentroidPathsComplete: true,
         },
       }

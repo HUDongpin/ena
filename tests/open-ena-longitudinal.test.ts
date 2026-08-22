@@ -591,9 +591,42 @@ test("exports descriptive geometry, cohort diagnostics, and provenance without r
     individualPointTotal: view.entityPeriods.length,
     individualPointShown: view.entityPeriods.length,
     individualSegmentLimit: 2_000,
+    individualSegmentLimitPolicy: "soft-whole-entity-with-group-coverage",
+    individualEntityTotal: 1,
+    individualEntityShown: 1,
     individualSegmentTotal: 2,
     individualSegmentShown: 2,
+    individualDirectionArrowLimit: 2_000,
+    individualDirectionArrowTotal: 2,
+    individualDirectionArrowShown: 2,
+    wholeEntityPaths: true,
+    groupCoverage: [{
+      group: "G1",
+      entityTotal: 1,
+      entityShown: 1,
+      segmentTotal: 2,
+      segmentShown: 2,
+    }],
     groupCentroidPathsComplete: true,
+  });
+  const hiddenIndividualLayers = buildLongitudinalGroupCentroidExport(view, {
+    showPoints: false,
+    showIndividualPaths: false,
+    showGroupCentroidPaths: true,
+  });
+  assert.deepEqual(hiddenIndividualLayers.presentation?.sampling, {
+    ...exported.presentation!.sampling,
+    individualPointShown: 0,
+    individualEntityShown: 0,
+    individualSegmentShown: 0,
+    individualDirectionArrowShown: 0,
+    groupCoverage: [{
+      group: "G1",
+      entityTotal: 1,
+      entityShown: 0,
+      segmentTotal: 2,
+      segmentShown: 0,
+    }],
   });
   assert.deepEqual(exported.privacy, {
     rawSourceRowsIncluded: false,

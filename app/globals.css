@@ -8203,7 +8203,26 @@ body:has(.open-ena-login-page) .back-to-top {
   fill: none;
   stroke-width: 4;
   stroke-linecap: round;
+  stroke-linejoin: round;
   opacity: 0.94;
+}
+
+.ena-group-centroid-direction-arrow {
+  fill: #17212b;
+  stroke: #fff;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.98;
+}
+
+.ena-individual-direction-arrow {
+  fill: #17212b;
+  stroke: #fff;
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.82;
 }
 
 .ena-longitudinal-node circle:first-child {
@@ -8217,6 +8236,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-longitudinal-node text,
+.ena-longitudinal-node-label,
 .ena-longitudinal-period-label {
   paint-order: stroke;
   stroke: #fff;
@@ -8294,6 +8314,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-longitudinal-gap-note,
+.ena-longitudinal-no-paths,
 .ena-longitudinal-inference-note,
 .ena-longitudinal-table-note {
   margin: 0;
@@ -8303,6 +8324,13 @@ body:has(.open-ena-login-page) .back-to-top {
   background: #f2f8f7;
   font-size: calc(0.69rem + var(--ena-font-step, 1px));
   line-height: 1.5;
+}
+
+.ena-longitudinal-no-paths {
+  color: #742f24;
+  border-inline-start-color: #c96f54;
+  background: #fff4ef;
+  font-weight: 720;
 }
 
 .ena-longitudinal-inference-note {

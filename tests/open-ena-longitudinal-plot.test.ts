@@ -112,13 +112,34 @@ test("independent individual and centroid layers render together with non-color 
   const both = await render();
   assert.match(both, /class="ena-individual-trajectory-path"/);
   assert.match(both, /class="ena-group-centroid-path"/);
+  assert.equal(
+    (both.match(/data-ena-centroid-run="true"/g) ?? []).length,
+    1,
+    "the connected Studio TP1 -> TP2 -> TP3 trajectory must be one complete path",
+  );
+  assert.match(both, /data-ena-time-index-sequence="0,1,2"/);
+  assert.equal(
+    (both.match(/class="ena-group-centroid-direction-arrow"/g) ?? []).length,
+    2,
+    "one visible direction arrow is required inside each connected centroid segment",
+  );
+  assert.equal(
+    (both.match(/class="ena-individual-direction-arrow"/g) ?? []).length,
+    1,
+    "the connected individual path also needs a direction arrow",
+  );
+  assert.match(both, /data-ena-direction-progress="0\.58"/);
+  assert.match(both, /class="ena-group-centroid-direction-arrow"[^>]*fill="#17212b"[^>]*stroke="#fff"/);
+  assert.match(both, /class="ena-individual-direction-arrow"[^>]*fill="#17212b"[^>]*stroke="#fff"/);
   assert.match(both, /data-ena-group-shape="circle"/);
   assert.match(both, /data-ena-group-shape="diamond"/);
   assert.match(both, /data-ena-line-style="solid"/);
   assert.doesNotMatch(both, /class="ena-(?:individual-trajectory|group-centroid)-path"[^>]*stroke-dasharray=/);
   assert.match(both, /class="ena-individual-trajectory-path"[^>]*stroke="#3366cc"[^>]*data-ena-group-index="0"/);
   assert.match(both, /data-ena-group-shape="diamond"[^>]*style="color:#dc3912"/);
-  assert.match(both, /marker-end="url\(#/);
+  assert.match(both, /data-ena-group-centroid="true"[^>]*data-ena-group-index="0"(?:(?!<\/g>)[\s\S])*?<text[^>]*text-anchor="start"/);
+  assert.match(both, /data-ena-group-centroid="true"[^>]*data-ena-group-index="1"(?:(?!<\/g>)[\s\S])*?<text[^>]*text-anchor="end"/);
+  assert.doesNotMatch(both, /marker-end="url\(#/);
 
   const centroidsOnly = await render({ showIndividualPaths: false });
   assert.doesNotMatch(centroidsOnly, /ena-individual-trajectory-path/);
@@ -127,18 +148,103 @@ test("independent individual and centroid layers render together with non-color 
   const individualsOnly = await render({ showGroupCentroidPaths: false });
   assert.match(individualsOnly, /ena-individual-trajectory-path/);
   assert.doesNotMatch(individualsOnly, /class="ena-group-centroid-path"/);
-  assert.doesNotMatch(individualsOnly, /Larger outlined marker|Arrow = observed time direction|<marker /);
+  assert.match(individualsOnly, /ena-individual-direction-arrow/);
+  assert.doesNotMatch(individualsOnly, /Larger outlined marker|class="ena-group-centroid-direction-arrow"|<marker /);
 
   const pointsOnly = await render({ showIndividualPaths: false, showGroupCentroidPaths: false });
   assert.match(pointsOnly, /Studio: circle marker<\/span>/);
   assert.doesNotMatch(pointsOnly, /Studio: circle marker, solid path/);
 });
 
+test("a zero-segment result explains the mapping problem instead of claiming a visible trajectory", async () => {
+  const disconnected = structuredClone(view);
+  disconnected.entityPeriods = disconnected.entityPeriods.map((period, index) => ({
+    ...period,
+    entityId: `one-period-entity-${index}`,
+  }));
+  disconnected.groups = disconnected.groups.map((group) => ({
+    ...group,
+    segments: [],
+    cumulativeDistance: 0,
+  }));
+
+  const markup = await render({ trajectory: disconnected });
+
+  assert.match(markup, /data-ena-connected-paths="false"/);
+  assert.match(markup, /No connected trajectory can be drawn/i);
+  assert.match(markup, /repeated entity.*adjacent selected periods/i);
+  assert.doesNotMatch(markup, /Arrow = selected period direction/);
+});
+
+test("hidden individual layers preserve eligible totals while setting every shown count to zero", async () => {
+  const markup = await render({
+    showPoints: false,
+    showIndividualPaths: false,
+    showGroupCentroidPaths: false,
+  });
+  const encodedMetadata = markup.match(
+    /<metadata[^>]*data-ena-sampling-strategy="deterministic-stratified-by-group"[^>]*>([\s\S]*?)<\/metadata>/,
+  )?.[1] ?? "";
+  const metadata = JSON.parse(encodedMetadata.replaceAll("&quot;", "\"").replaceAll("&amp;", "&"));
+
+  assert.match(markup, /data-ena-entity-marks-total="4"[^>]*data-ena-entity-marks-shown="0"/);
+  assert.match(markup, /data-ena-individual-entities-total="1"[^>]*data-ena-individual-entities-shown="0"/);
+  assert.match(markup, /data-ena-individual-segments-total="1"[^>]*data-ena-individual-segments-shown="0"/);
+  assert.match(markup, /data-ena-individual-direction-arrows-total="1"[^>]*data-ena-individual-direction-arrows-shown="0"/);
+  assert.deepEqual(metadata.individualPoints, { total: 4, shown: 0 });
+  assert.deepEqual(metadata.individualEntities, { total: 1, shown: 0, wholeEntityPaths: true });
+  assert.deepEqual(metadata.individualSegments, { total: 1, shown: 0 });
+  assert.deepEqual(metadata.individualDirectionArrows, { limit: 2_000, total: 1, shown: 0 });
+  assert.deepEqual(metadata.groupCoverage, [{
+    group: "Studio",
+    entityTotal: 1,
+    entityShown: 0,
+    segmentTotal: 1,
+    segmentShown: 0,
+  }]);
+});
+
+test("stationary connected transitions do not claim a direction arrow", async () => {
+  const stationary = structuredClone(view);
+  stationary.entityPeriods = stationary.entityPeriods.map((period) => ({ ...period, x: 0, y: 0 }));
+  stationary.groups = stationary.groups.map((group) => ({
+    ...group,
+    periods: group.periods.map((period) => ({
+      ...period,
+      centroid: period.centroid ? { x: 0, y: 0 } : null,
+    })),
+    segments: group.segments.map((segment) => ({
+      ...segment,
+      x1: 0,
+      y1: 0,
+      x2: 0,
+      y2: 0,
+      dx: 0,
+      dy: 0,
+      distance: 0,
+    })),
+  })) as never;
+
+  const markup = await render({ trajectory: stationary });
+
+  assert.match(markup, /data-ena-connected-paths="true"/);
+  assert.match(markup, /data-ena-rendered-connected-paths="true"/);
+  assert.match(markup, /data-ena-individual-direction-arrows-total="0"/);
+  assert.match(markup, /data-ena-centroid-direction-arrows-total="0"/);
+  assert.doesNotMatch(markup, /class="ena-(?:individual|group-centroid)-direction-arrow"/);
+  assert.doesNotMatch(markup, /Arrow = selected period direction/);
+});
+
 test("missing periods are explicit gaps and are never bridged", async () => {
   const markup = await render();
   assert.match(markup, /Seminar · T2<\/th><td>0<\/td><td>1<\/td><td>Gap<\/td>/);
   assert.match(markup, /No segment bridges a missing period/);
-  assert.doesNotMatch(markup, /data-ena-from-time="T1"[^>]*data-ena-to-time="T3"/);
+  assert.doesNotMatch(markup, /class="ena-group-centroid-direction-arrow"[^>]*data-ena-from-time-index="0"[^>]*data-ena-to-time-index="2"/);
+  assert.equal(
+    (markup.match(/data-ena-centroid-run="true"/g) ?? []).length,
+    1,
+    "the Seminar T1/T3 gap must not be bridged into a second run",
+  );
   assert.match(markup, /<caption>Group-by-period centroid diagnostics<\/caption>/);
   assert.match(markup, /<th[^>]*scope="col"[^>]*>n used<\/th>/);
   assert.match(markup, /<th[^>]*scope="col"[^>]*>n excluded<\/th>/);
@@ -157,7 +263,7 @@ test("zero adjacent contributor overlap is disclosed as a discontinuity", async 
   const markup = await render({ trajectory: noOverlapView });
   assert.match(markup, /Studio · T2<\/th><td>2<\/td><td>0<\/td><td>No shared contributors<\/td>/);
   assert.match(markup, /zero shared repeated entities/);
-  assert.doesNotMatch(markup, /data-ena-from-time="T1"[^>]*data-ena-to-time="T2"/);
+  assert.doesNotMatch(markup, /class="ena-group-centroid-direction-arrow"[^>]*data-ena-from-time-index="0"[^>]*data-ena-to-time-index="1"/);
 });
 
 test("plot presenter state controls labels, points, flips, zoom, and variance without exposing identities", async () => {
@@ -179,6 +285,40 @@ test("plot presenter state controls labels, points, flips, zoom, and variance wi
   assert.doesNotMatch(markup, /data-ena-individual-point/);
   assert.doesNotMatch(markup, />Evidence<\/text>|>T1<\/text>|41\.2%|27\.3%/);
   assert.doesNotMatch(markup, /private-student|entityId/i);
+});
+
+test("label-free SVG geometry never serializes source time values", async () => {
+  const privateTimeView = structuredClone(view);
+  privateTimeView.timeOrder = ["private-time-a", "private-time-b", "private-time-c"];
+  privateTimeView.entityPeriods = privateTimeView.entityPeriods.map((period) => ({
+    ...period,
+    time: privateTimeView.timeOrder[period.timeIndex],
+  }));
+  privateTimeView.groups = privateTimeView.groups.map((group) => ({
+    ...group,
+    periods: group.periods.map((period) => ({
+      ...period,
+      time: privateTimeView.timeOrder[period.timeIndex],
+    })),
+    segments: group.segments.map((segment) => ({
+      ...segment,
+      fromTime: privateTimeView.timeOrder[segment.fromTimeIndex],
+      toTime: privateTimeView.timeOrder[segment.toTimeIndex],
+    })),
+  })) as never;
+
+  const markup = await render({
+    trajectory: privateTimeView,
+    showLabels: false,
+    showPoints: false,
+  });
+  const svg = markup.match(/<svg[\s\S]*?<\/svg>/)?.[0] ?? "";
+
+  assert.ok(svg);
+  assert.doesNotMatch(svg, /private-time-/);
+  assert.doesNotMatch(svg, /data-ena-(?:time-sequence|from-time|to-time)=/);
+  assert.match(svg, /data-ena-time-index-sequence="0,1,2"/);
+  assert.match(svg, /data-ena-from-time-index="0"[^>]*data-ena-to-time-index="1"/);
 });
 
 test("individual identifiers stay out of markup and graphical marks are deterministically bounded", async () => {
@@ -209,6 +349,80 @@ test("individual identifiers stay out of markup and graphical marks are determin
   assert.match(first, /data-ena-individual-segments-shown="[^"]+"/);
   assert.match(first, /Small retained group/, "stratified sampling must retain a mark from a small group");
   assert.doesNotMatch(first, /private-entity-/);
+});
+
+test("individual sampling keeps every connected run for each selected entity and retains every group", async () => {
+  const sampledView = structuredClone(view);
+  const firstRun = Array.from({ length: 1_001 }, (_, index) => ({
+    entityId: "private-gapped-entity",
+    group: "Studio",
+    time: `private-a-${index}`,
+    timeIndex: index,
+    x: -0.9 + index / 2_000,
+    y: -0.4 + index / 4_000,
+    sourcePointCount: 1,
+  }));
+  const secondRun = Array.from({ length: 1_001 }, (_, index) => ({
+    entityId: "private-gapped-entity",
+    group: "Studio",
+    time: `private-b-${index}`,
+    timeIndex: 1_002 + index,
+    x: -0.2 + index / 2_000,
+    y: 0.1 + index / 4_000,
+    sourcePointCount: 1,
+  }));
+  sampledView.entityPeriods = [
+    ...firstRun,
+    ...secondRun,
+    { entityId: "private-small-group", group: "Seminar", time: "private-c-0", timeIndex: 0, x: 0.1, y: 0.1, sourcePointCount: 1 },
+    { entityId: "private-small-group", group: "Seminar", time: "private-c-1", timeIndex: 1, x: 0.2, y: 0.2, sourcePointCount: 1 },
+  ];
+
+  const markup = await render({
+    trajectory: sampledView,
+    showGroupCentroidPaths: false,
+    showPoints: false,
+    showLabels: false,
+  });
+
+  assert.equal((markup.match(/class="ena-individual-trajectory-path"/g) ?? []).length, 3);
+  assert.match(markup, /data-ena-individual-entities-total="2"/);
+  assert.match(markup, /data-ena-individual-entities-shown="2"/);
+  assert.match(markup, /data-ena-individual-segments-total="2001"/);
+  assert.match(markup, /data-ena-individual-segments-shown="2001"/);
+  assert.match(markup, /data-ena-individual-direction-arrows-shown="2000"/);
+  assert.equal((markup.match(/class="ena-individual-direction-arrow"/g) ?? []).length, 2_000);
+  assert.doesNotMatch(markup, /private-(?:gapped-entity|small-group|a-|b-|c-)/);
+});
+
+test("one oversized entity remains a complete polyline while direction glyphs stay bounded", async () => {
+  const oversizedView = structuredClone(view);
+  oversizedView.entityPeriods = Array.from({ length: 2_002 }, (_, index) => ({
+    entityId: "private-oversized-entity",
+    group: "Studio",
+    time: `private-oversized-time-${index}`,
+    timeIndex: index,
+    x: -0.8 + index / 2_500,
+    y: -0.3 + index / 5_000,
+    sourcePointCount: 1,
+  }));
+
+  const markup = await render({
+    trajectory: oversizedView,
+    showGroupCentroidPaths: false,
+    showPoints: false,
+    showLabels: false,
+  });
+
+  assert.equal((markup.match(/class="ena-individual-trajectory-path"/g) ?? []).length, 1);
+  assert.match(markup, /data-ena-connected-paths="true"/);
+  assert.match(markup, /data-ena-rendered-connected-paths="true"/);
+  assert.match(markup, /data-ena-individual-segments-total="2001"/);
+  assert.match(markup, /data-ena-individual-segments-shown="2001"/);
+  assert.match(markup, /data-ena-individual-direction-arrows-total="2001"/);
+  assert.match(markup, /data-ena-individual-direction-arrows-shown="2000"/);
+  assert.equal((markup.match(/class="ena-individual-direction-arrow"/g) ?? []).length, 2_000);
+  assert.doesNotMatch(markup, /private-oversized-/);
 });
 
 test("scientific group-centroid paths are never silently sampled", async () => {
@@ -251,7 +465,16 @@ test("scientific group-centroid paths are never silently sampled", async () => {
   manyPeriods.periodDiagnostics = manyPeriods.groups[0].periods;
 
   const markup = await render({ trajectory: manyPeriods, showPoints: false, showIndividualPaths: false });
-  assert.equal((markup.match(/class="ena-group-centroid-path"/g) ?? []).length, periodCount - 1);
+  assert.equal(
+    (markup.match(/class="ena-group-centroid-path"/g) ?? []).length,
+    1,
+    "all adjacent periods in one group must remain one continuous SVG path",
+  );
+  assert.equal(
+    (markup.match(/class="ena-group-centroid-direction-arrow"/g) ?? []).length,
+    periodCount - 1,
+    "every observed adjacent transition keeps its own direction cue",
+  );
   assert.equal((markup.match(/data-ena-group-centroid="true"/g) ?? []).length, periodCount);
   assert.match(markup, new RegExp(`data-ena-centroid-segments-total="${periodCount - 1}"`));
   assert.match(markup, new RegExp(`data-ena-centroid-segments-shown="${periodCount - 1}"`));
@@ -260,6 +483,7 @@ test("scientific group-centroid paths are never silently sampled", async () => {
 
 test("the longitudinal figure has an accessible legend, table, and isolated responsive CSS", async () => {
   const markup = await render();
+  const component = readFileSync(componentPath, "utf8");
   const css = readFileSync(join(process.cwd(), "app", "globals.css"), "utf8");
   const marker = "/* Longitudinal group-centroid trajectories: fixed 2D jENA geometry. */";
   const markerIndex = css.lastIndexOf(marker);
@@ -275,6 +499,10 @@ test("the longitudinal figure has an accessible legend, table, and isolated resp
   assert.match(longitudinalCss, /\.open-ena-longitudinal-trajectory\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/);
   assert.match(longitudinalCss, /\.ena-longitudinal-table-wrap\s*\{[\s\S]*?max-width:\s*100%;[\s\S]*?overflow-x:\s*auto;/);
   assert.match(longitudinalCss, /\.open-ena-longitudinal-trajectory:focus-visible\s*\{[\s\S]*?outline:/);
+  assert.match(longitudinalCss, /\.ena-group-centroid-direction-arrow\s*\{[\s\S]*?stroke-linecap:\s*round;/);
+  assert.match(longitudinalCss, /\.ena-individual-direction-arrow\s*\{[\s\S]*?opacity:/);
+  assert.match(component, /const arrowLength = Math\.min\(maximumArrowLength, length \* 0\.3\)/);
+  assert.match(component, /const haloWidth = Math\.min\(maximumHaloWidth, arrowLength \* 0\.18\)/);
   assert.match(longitudinalCss, /@media\s*\(max-width:\s*640px\)[\s\S]*?\.open-ena-longitudinal-trajectory\s*\{[\s\S]*?overflow-x:\s*auto;/);
   assert.match(longitudinalCss, /@media\s*\(max-width:\s*640px\)[\s\S]*?\.open-ena-longitudinal-svg\s*\{[\s\S]*?width:\s*700px;[\s\S]*?max-width:\s*none;/);
 });

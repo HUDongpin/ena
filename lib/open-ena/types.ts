@@ -250,6 +250,8 @@ export interface OpenEnaManifest {
 
 export const SAMPLE_DATASET_URL = "/data/academy/ena-design-talk-sample.csv";
 
+export const TRAJECTORY_SAMPLE_DATASET_URL = "/data/academy/ena-2d-trajectory-teaching-sample.csv";
+
 export const SAMPLE_CONFIG: OpenEnaConfig = {
   unitColumns: ["team_id"],
   conversationColumns: ["conversation_id"],
@@ -257,6 +259,21 @@ export const SAMPLE_CONFIG: OpenEnaConfig = {
   codes: ["goal", "evidence", "strategy", "tradeoff", "revision"],
   model: "EndPoint",
   window: "MovingStanzaWindow",
+  windowSizeBack: 5,
+  windowSizeForward: 0,
+  weightBy: "binary",
+  rotation: "svd",
+  referenceRotationId: null,
+  centerAlignToOrigin: true,
+};
+
+export const TRAJECTORY_SAMPLE_CONFIG: OpenEnaConfig = {
+  unitColumns: ["Group", "Speaker"],
+  conversationColumns: ["Group", "Speaker", "Period"],
+  groupColumn: "Group",
+  codes: ["TE", "EX", "IN", "RE", "SP", "TP"],
+  model: "SeparateTrajectory",
+  window: "Conversation",
   windowSizeBack: 5,
   windowSizeForward: 0,
   weightBy: "binary",

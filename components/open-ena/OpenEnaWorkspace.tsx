@@ -62,6 +62,8 @@ import {
   JENA_RUNTIME_VERSION,
   SAMPLE_CONFIG,
   SAMPLE_DATASET_URL,
+  TRAJECTORY_SAMPLE_CONFIG,
+  TRAJECTORY_SAMPLE_DATASET_URL,
   datasetHashKindFor,
   sameOpenEnaConfig,
   type CameraPreset,
@@ -1217,6 +1219,53 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     }
   }
 
+  async function loadTrajectorySample() {
+    referenceImportRef.current = null;
+    setReferenceBusy(false);
+    sourceAbortRef.current?.abort();
+    const sourceController = new AbortController();
+    sourceAbortRef.current = sourceController;
+    datasetGenerationRef.current += 1;
+    const sourceGeneration = datasetGenerationRef.current;
+    setSourceBusy(true);
+    setError("");
+    try {
+      const response = await fetch(TRAJECTORY_SAMPLE_DATASET_URL, { cache: "no-store", signal: sourceController.signal });
+      if (!response.ok) throw new Error(`The 2D trajectory sample could not be opened (${response.status}).`);
+      const text = await response.text();
+      if (sourceController.signal.aborted || sourceAbortRef.current !== sourceController || datasetGenerationRef.current !== sourceGeneration) return;
+      const nextDataset = parseCsv(text, {
+        name: "ena-2d-trajectory-teaching-sample.csv",
+        source: "sample",
+      });
+      const nextHash = await sha256Hex(text);
+      if (sourceController.signal.aborted || sourceAbortRef.current !== sourceController || datasetGenerationRef.current !== sourceGeneration) return;
+      abortRef.current?.abort();
+      abortRef.current = null;
+      setLoading(false);
+      setDataset(nextDataset);
+      setDatasetHash(nextHash);
+      setConfig(TRAJECTORY_SAMPLE_CONFIG);
+      setCodeColors({});
+      setResult(null);
+      setResultConfig(null);
+      setSourceQuery("");
+      setActiveCodesOnly(false);
+      setSourcePage(0);
+      sourceAbortRef.current = null;
+      setSourceBusy(false);
+      await runAnalysis(nextDataset, TRAJECTORY_SAMPLE_CONFIG, nextHash);
+    } catch (caught) {
+      if (sourceController.signal.aborted) return;
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      if (sourceAbortRef.current === sourceController && datasetGenerationRef.current === sourceGeneration) {
+        sourceAbortRef.current = null;
+        setSourceBusy(false);
+      }
+    }
+  }
+
   async function openCodedData(file: File) {
     referenceImportRef.current = null;
     setReferenceBusy(false);
@@ -1401,10 +1450,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       .ena-longitudinal-axis { stroke: #c1cdcb; stroke-width: 1.15; stroke-dasharray: 3 5; }
       .ena-longitudinal-axis-label { fill: #40565a; font-family: monospace; font-size: 14px; font-weight: 680; }
       .ena-individual-trajectory-path { fill: none; stroke-width: 1.65; stroke-linecap: round; opacity: 0.32; }
-      .ena-group-centroid-path { fill: none; stroke-width: 4; stroke-linecap: round; opacity: 0.94; }
+      .ena-group-centroid-path { fill: none; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; opacity: 0.94; }
+      .ena-group-centroid-direction-arrow { fill: #17212b; stroke: #fff; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; opacity: 0.98; }
+      .ena-individual-direction-arrow { fill: #17212b; stroke: #fff; stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; opacity: 0.82; }
       .ena-longitudinal-node circle:first-child { fill: #fff; stroke: #385b58; stroke-width: 2.2; }
       .ena-longitudinal-node circle:nth-child(2) { fill: #385b58; }
-      .ena-longitudinal-node text, .ena-longitudinal-period-label { fill: #263f43; paint-order: stroke; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; font-size: 13px; font-weight: 730; }
+      .ena-longitudinal-node text, .ena-longitudinal-node-label, .ena-longitudinal-period-label { fill: #263f43; paint-order: stroke; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; font-size: 13px; font-weight: 730; }
       .ena-longitudinal-period-label { font-family: monospace; font-size: 12px; }
     `;
     clone.insertBefore(styles, clone.firstChild);
@@ -1692,6 +1743,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             <span aria-hidden="true">◇</span> {copy.data.sample}
           </button>
           <p>{copy.data.sampleHint}</p>
+          <button type="button" className="ena-action-button ena-action-secondary" onClick={() => void loadTrajectorySample()} disabled={sourceBusy || referenceBusy || loading}>
+            <span aria-hidden="true">↗</span> {copy.data.trajectorySample}
+          </button>
+          <p>{copy.data.trajectorySampleHint}</p>
         </div>
         <div className="ena-local-note"><span aria-hidden="true">◉</span>{copy.data.local}</div>
         <div className="ena-reference-card">

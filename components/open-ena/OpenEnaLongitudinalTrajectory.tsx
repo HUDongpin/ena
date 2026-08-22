@@ -1,6 +1,7 @@
 import { useId, type Ref } from "react";
 import {
   LONGITUDINAL_INDIVIDUAL_MARK_LIMIT,
+  planLongitudinalIndividualPaths,
   type OpenEnaLongitudinalEntityPeriod,
   type OpenEnaLongitudinalView,
 } from "@/lib/open-ena/longitudinal";
@@ -58,6 +59,7 @@ export interface OpenEnaLongitudinalTrajectoryCopy {
   path: string;
   rowsTruncated: string;
   individualMarksSampled: string;
+  noConnectedPaths: string;
 }
 
 export interface OpenEnaLongitudinalTrajectoryProps {
@@ -90,6 +92,9 @@ const MAX_LONGITUDINAL_ENTITY_PERIOD_MARKS = LONGITUDINAL_INDIVIDUAL_MARK_LIMIT;
 const MAX_LONGITUDINAL_INDIVIDUAL_SEGMENTS = LONGITUDINAL_INDIVIDUAL_MARK_LIMIT;
 const MAX_LONGITUDINAL_NODES = 200;
 const MAX_LONGITUDINAL_DIAGNOSTIC_ROWS = 600;
+const DIRECTION_ARROW_PROGRESS = 0.58;
+const DIRECTION_ARROW_FILL = "#17212b";
+const DIRECTION_ARROW_HALO = "#fff";
 
 const DEFAULT_COPY: OpenEnaLongitudinalTrajectoryCopy = {
   title: "Group-centroid longitudinal trajectory",
@@ -138,7 +143,8 @@ const DEFAULT_COPY: OpenEnaLongitudinalTrajectoryCopy = {
   marker: "marker",
   path: "path",
   rowsTruncated: "Additional period rows are omitted from this on-screen table; use the longitudinal export for the complete diagnostics.",
-  individualMarksSampled: "Individual plot marks are sampled: {pointsShown} of {pointsTotal} points and {segmentsShown} of {segmentsTotal} segments are shown. Group-centroid paths remain complete.",
+  individualMarksSampled: "Individual plot marks are sampled: {pointsShown} of {pointsTotal} points, {segmentsShown} of {segmentsTotal} whole-entity path transitions, and {arrowsShown} of {arrowsTotal} direction arrows are shown. Group-centroid paths remain complete.",
+  noConnectedPaths: "No connected trajectory can be drawn. No repeated entity occurs in adjacent selected periods. Check the repeated-entity and time-point mapping.",
 };
 
 const GROUP_ENCODINGS = [
@@ -178,10 +184,17 @@ function safeText(value: unknown, maximumLength = 72, fallback = "—") {
 
 function samplingDisclosure(
   template: string,
-  values: { pointsShown: number; pointsTotal: number; segmentsShown: number; segmentsTotal: number },
+  values: {
+    pointsShown: number;
+    pointsTotal: number;
+    segmentsShown: number;
+    segmentsTotal: number;
+    arrowsShown: number;
+    arrowsTotal: number;
+  },
 ) {
   return template.replace(
-    /\{(pointsShown|pointsTotal|segmentsShown|segmentsTotal)\}/gu,
+    /\{(pointsShown|pointsTotal|segmentsShown|segmentsTotal|arrowsShown|arrowsTotal)\}/gu,
     (_, key: keyof typeof values) => String(values[key]),
   );
 }
@@ -327,6 +340,66 @@ function MarkerGlyph({
   );
 }
 
+function DirectionArrow({
+  from,
+  to,
+  className,
+  fromTimeIndex,
+  toTimeIndex,
+}: {
+  from: PlotPoint;
+  to: PlotPoint;
+  className: "ena-group-centroid-direction-arrow" | "ena-individual-direction-arrow";
+  fromTimeIndex?: number;
+  toTimeIndex?: number;
+}) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy);
+  if (length <= ZERO_TOLERANCE) return null;
+  const unitX = dx / length;
+  const unitY = dy / length;
+  const perpendicularX = -unitY;
+  const perpendicularY = unitX;
+  const maximumArrowLength = className === "ena-group-centroid-direction-arrow" ? 12 : 8;
+  const arrowLength = Math.min(maximumArrowLength, length * 0.3);
+  const maximumHaloWidth = className === "ena-group-centroid-direction-arrow" ? 1.4 : 1;
+  const haloWidth = Math.min(maximumHaloWidth, arrowLength * 0.18);
+  const tip = {
+    x: from.x + dx * DIRECTION_ARROW_PROGRESS,
+    y: from.y + dy * DIRECTION_ARROW_PROGRESS,
+  };
+  const baseCenter = {
+    x: tip.x - unitX * arrowLength,
+    y: tip.y - unitY * arrowLength,
+  };
+  const wingSpread = arrowLength * 0.56;
+  const firstWing = {
+    x: baseCenter.x + perpendicularX * wingSpread,
+    y: baseCenter.y + perpendicularY * wingSpread,
+  };
+  const secondWing = {
+    x: baseCenter.x - perpendicularX * wingSpread,
+    y: baseCenter.y - perpendicularY * wingSpread,
+  };
+
+  return (
+    <path
+      className={className}
+      d={`M ${tip.x} ${tip.y} L ${firstWing.x} ${firstWing.y} L ${secondWing.x} ${secondWing.y} Z`}
+      fill={DIRECTION_ARROW_FILL}
+      stroke={DIRECTION_ARROW_HALO}
+      strokeWidth={haloWidth}
+      style={{ fill: DIRECTION_ARROW_FILL, stroke: DIRECTION_ARROW_HALO, strokeWidth: haloWidth }}
+      data-ena-arrow-length={String(arrowLength)}
+      data-ena-direction-progress={String(DIRECTION_ARROW_PROGRESS)}
+      data-ena-from-time-index={finiteNumber(fromTimeIndex) ? String(fromTimeIndex) : undefined}
+      data-ena-to-time-index={finiteNumber(toTimeIndex) ? String(toTimeIndex) : undefined}
+      vectorEffect="non-scaling-stroke"
+    />
+  );
+}
+
 function validEntityPeriods(periods: readonly OpenEnaLongitudinalEntityPeriod[]) {
   return periods
     .map((period, sourceIndex) => ({ period, sourceIndex }))
@@ -337,36 +410,48 @@ function validEntityPeriods(periods: readonly OpenEnaLongitudinalEntityPeriod[])
     ));
 }
 
-function individualSegments(periods: readonly OpenEnaLongitudinalEntityPeriod[]) {
-  const byEntity = new Map<string, Array<{ period: OpenEnaLongitudinalEntityPeriod; sourceIndex: number }>>();
-  validEntityPeriods(periods).forEach((entry) => {
-    const identity = String(entry.period.entityId ?? "");
-    const existing = byEntity.get(identity);
-    if (existing) existing.push(entry);
-    else byEntity.set(identity, [entry]);
-  });
-
-  const segments: Array<{
-    from: OpenEnaLongitudinalEntityPeriod;
-    to: OpenEnaLongitudinalEntityPeriod;
-    sourceIndex: number;
-  }> = [];
-  byEntity.forEach((entries) => {
-    entries.sort((left, right) => (
-      left.period.timeIndex - right.period.timeIndex || left.sourceIndex - right.sourceIndex
-    ));
-    for (let index = 1; index < entries.length; index += 1) {
-      const from = entries[index - 1];
-      const to = entries[index];
-      if (
-        to.period.timeIndex === from.period.timeIndex + 1
-        && to.period.group === from.period.group
-      ) {
-        segments.push({ from: from.period, to: to.period, sourceIndex: from.sourceIndex });
+function centroidRuns(view: OpenEnaLongitudinalView) {
+  return view.groups.flatMap((group, groupIndex) => {
+    const segments = group.segments
+      .map((segment, segmentIndex) => ({ segment, segmentIndex }))
+      .filter(({ segment }) => (
+        segment.toTimeIndex === segment.fromTimeIndex + 1
+        && finiteNumber(segment.x1)
+        && finiteNumber(segment.y1)
+        && finiteNumber(segment.x2)
+        && finiteNumber(segment.y2)
+      ))
+      .sort((left, right) => (
+        left.segment.fromTimeIndex - right.segment.fromTimeIndex
+        || left.segmentIndex - right.segmentIndex
+      ));
+    const runs: Array<{
+      group: typeof group;
+      groupIndex: number;
+      segments: typeof segments;
+      runIndex: number;
+    }> = [];
+    let current: typeof segments = [];
+    segments.forEach((entry) => {
+      const previous = current.at(-1)?.segment;
+      const isContinuous = !previous || (
+        entry.segment.fromTimeIndex === previous.toTimeIndex
+        && Math.abs(entry.segment.x1 - previous.x2) <= ZERO_TOLERANCE
+        && Math.abs(entry.segment.y1 - previous.y2) <= ZERO_TOLERANCE
+      );
+      if (!isContinuous) {
+        if (current.length) runs.push({ group, groupIndex, segments: current, runIndex: runs.length });
+        current = [];
       }
-    }
+      current.push(entry);
+    });
+    if (current.length) runs.push({ group, groupIndex, segments: current, runIndex: runs.length });
+    return runs;
   });
-  return segments.sort((left, right) => left.sourceIndex - right.sourceIndex);
+}
+
+function pathThrough(points: readonly PlotPoint[]) {
+  return points.map((point, index) => `${index ? "L" : "M"} ${point.x} ${point.y}`).join(" ");
 }
 
 function varianceForAxis(view: OpenEnaLongitudinalView, axis: string) {
@@ -419,43 +504,58 @@ export default function OpenEnaLongitudinalTrajectory({
     MAX_LONGITUDINAL_ENTITY_PERIOD_MARKS,
     (entry) => entry.period.group,
   );
-  const allIndividualSegments = individualSegments(view.entityPeriods);
-  const sampledIndividualSegments = deterministicStratifiedSample(
-    allIndividualSegments,
+  const individualPathPlan = planLongitudinalIndividualPaths(
+    view.entityPeriods,
     MAX_LONGITUDINAL_INDIVIDUAL_SEGMENTS,
-    (segment) => segment.from.group,
   );
+  const allIndividualSegments = individualPathPlan.allSegments;
+  const sampledIndividualRuns = individualPathPlan.selectedRuns;
+  const sampledIndividualSegments = individualPathPlan.selectedSegments;
+  const sampledIndividualDirectionSegments = individualPathPlan.selectedDirectionSegments;
   const centroidPeriods = view.groups.flatMap((group, groupIndex) => (
     group.periods
       .filter((period) => period.centroid && finiteNumber(period.centroid.x) && finiteNumber(period.centroid.y))
       .map((period, periodIndex) => ({ group, groupIndex, period, periodIndex }))
   ));
   const renderedCentroidPeriods = centroidPeriods.map((item, sourceIndex) => ({ item, sourceIndex }));
-  const centroidSegments = view.groups.flatMap((group, groupIndex) => (
-    group.segments
-      .filter((segment) => (
-        segment.toTimeIndex === segment.fromTimeIndex + 1
-        && finiteNumber(segment.x1)
-        && finiteNumber(segment.y1)
-        && finiteNumber(segment.x2)
-        && finiteNumber(segment.y2)
-      ))
-      .map((segment, segmentIndex) => ({ group, groupIndex, segment, segmentIndex }))
-  ));
+  const renderedCentroidRuns = centroidRuns(view);
+  const centroidSegments = renderedCentroidRuns.flatMap((run) => run.segments.map(({ segment, segmentIndex }) => ({
+    group: run.group,
+    groupIndex: run.groupIndex,
+    segment,
+    segmentIndex,
+  })));
   const renderedCentroidSegments = centroidSegments.map((item, sourceIndex) => ({ item, sourceIndex }));
+  const renderedCentroidDirectionSegments = renderedCentroidSegments.filter(({ item: { segment } }) => (
+    Math.hypot(segment.x2 - segment.x1, segment.y2 - segment.y1) > ZERO_TOLERANCE
+  ));
+  const hasConnectedPaths = allIndividualSegments.length > 0 || centroidSegments.length > 0;
+  const hasRenderedConnectedPaths = (
+    (showIndividualPaths && sampledIndividualSegments.length > 0)
+    || (showGroupCentroidPaths && centroidSegments.length > 0)
+  );
+  const hasRenderedDirectionArrows = (
+    (showIndividualPaths && sampledIndividualDirectionSegments.length > 0)
+    || (showGroupCentroidPaths && renderedCentroidDirectionSegments.length > 0)
+  );
   const individualMarksAreSampled = (
     (showPoints && sampledPeriods.length < finitePeriods.length)
     || (showIndividualPaths && sampledIndividualSegments.length < allIndividualSegments.length)
+    || (showIndividualPaths && sampledIndividualDirectionSegments.length < individualPathPlan.allDirectionSegments.length)
   );
   const individualSamplingDisclosure = samplingDisclosure(strings.individualMarksSampled, {
     pointsShown: showPoints ? sampledPeriods.length : 0,
     pointsTotal: showPoints ? finitePeriods.length : 0,
     segmentsShown: showIndividualPaths ? sampledIndividualSegments.length : 0,
     segmentsTotal: showIndividualPaths ? allIndividualSegments.length : 0,
+    arrowsShown: showIndividualPaths ? sampledIndividualDirectionSegments.length : 0,
+    arrowsTotal: showIndividualPaths ? individualPathPlan.allDirectionSegments.length : 0,
   });
-  const svgDescription = individualMarksAreSampled
-    ? `${strings.description} ${individualSamplingDisclosure}`
-    : strings.description;
+  const svgDescription = [
+    strings.description,
+    individualMarksAreSampled ? individualSamplingDisclosure : null,
+    hasConnectedPaths ? null : strings.noConnectedPaths,
+  ].filter(Boolean).join(" ");
   const diagnosticRows = view.periodDiagnostics.length
     ? view.periodDiagnostics
     : view.groups.flatMap((group) => group.periods);
@@ -483,12 +583,20 @@ export default function OpenEnaLongitudinalTrajectory({
       data-ena-coordinate-extent-source="fixed-longitudinal-view"
       data-ena-entity-marks-total={String(view.entityPeriods.length)}
       data-ena-entity-marks-shown={String(showPoints ? sampledPeriods.length : 0)}
-      data-ena-individual-segments-total={String(showIndividualPaths ? allIndividualSegments.length : 0)}
+      data-ena-individual-entities-total={String(individualPathPlan.allBundles.length)}
+      data-ena-individual-entities-shown={String(showIndividualPaths ? individualPathPlan.selectedBundles.length : 0)}
+      data-ena-individual-segments-total={String(allIndividualSegments.length)}
       data-ena-individual-segments-shown={String(showIndividualPaths ? sampledIndividualSegments.length : 0)}
+      data-ena-individual-direction-arrows-total={String(individualPathPlan.allDirectionSegments.length)}
+      data-ena-individual-direction-arrows-shown={String(showIndividualPaths ? sampledIndividualDirectionSegments.length : 0)}
       data-ena-centroid-marks-total={String(centroidPeriods.length)}
       data-ena-centroid-marks-shown={String(showGroupCentroidPaths ? renderedCentroidPeriods.length : 0)}
       data-ena-centroid-segments-total={String(centroidSegments.length)}
       data-ena-centroid-segments-shown={String(showGroupCentroidPaths ? renderedCentroidSegments.length : 0)}
+      data-ena-centroid-direction-arrows-total={String(renderedCentroidDirectionSegments.length)}
+      data-ena-centroid-direction-arrows-shown={String(showGroupCentroidPaths ? renderedCentroidDirectionSegments.length : 0)}
+      data-ena-connected-paths={String(hasConnectedPaths)}
+      data-ena-rendered-connected-paths={String(hasRenderedConnectedPaths)}
       tabIndex={0}
       aria-label={strings.figureAriaLabel}
     >
@@ -523,13 +631,28 @@ export default function OpenEnaLongitudinalTrajectory({
           <metadata data-ena-sampling-strategy="deterministic-stratified-by-group">
             {JSON.stringify({
               individualPoints: {
-                total: showPoints ? finitePeriods.length : 0,
+                total: finitePeriods.length,
                 shown: showPoints ? sampledPeriods.length : 0,
               },
               individualSegments: {
-                total: showIndividualPaths ? allIndividualSegments.length : 0,
+                total: allIndividualSegments.length,
                 shown: showIndividualPaths ? sampledIndividualSegments.length : 0,
               },
+              individualEntities: {
+                total: individualPathPlan.allBundles.length,
+                shown: showIndividualPaths ? individualPathPlan.selectedBundles.length : 0,
+                wholeEntityPaths: true,
+              },
+              individualDirectionArrows: {
+                limit: MAX_LONGITUDINAL_INDIVIDUAL_SEGMENTS,
+                total: individualPathPlan.allDirectionSegments.length,
+                shown: showIndividualPaths ? sampledIndividualDirectionSegments.length : 0,
+              },
+              groupCoverage: individualPathPlan.groupCoverage.map((coverage) => ({
+                ...coverage,
+                entityShown: showIndividualPaths ? coverage.entityShown : 0,
+                segmentShown: showIndividualPaths ? coverage.segmentShown : 0,
+              })),
               groupCentroidPathsComplete: true,
             })}
           </metadata>
@@ -537,148 +660,11 @@ export default function OpenEnaLongitudinalTrajectory({
             <clipPath id={clipId}>
               <rect x={PAD_X} y={PAD_Y} width={WIDTH - PAD_X * 2} height={HEIGHT - PAD_Y * 2} rx="12" />
             </clipPath>
-            {showGroupCentroidPaths ? view.groups.map((group, groupIndex) => {
-              const color = JENA_GROUP_COLORS[groupIndex % JENA_GROUP_COLORS.length];
-              return (
-                <marker
-                  key={`arrow-${groupIndex}`}
-                  id={`${reactId}-arrow-${groupIndex}`}
-                  viewBox="0 0 10 10"
-                  refX="8.5"
-                  refY="5"
-                  markerWidth="7"
-                  markerHeight="7"
-                  orient="auto-start-reverse"
-                >
-                  <path d="M 0 0 L 10 5 L 0 10 Z" fill={color} />
-                </marker>
-              );
-            }) : null}
           </defs>
           <rect width={WIDTH} height={HEIGHT} rx="18" className="ena-longitudinal-background" />
           <g clipPath={`url(#${clipId})`} aria-hidden="true">
             <line x1={PAD_X} y1={origin.y} x2={WIDTH - PAD_X} y2={origin.y} className="ena-longitudinal-axis" />
             <line x1={origin.x} y1={PAD_Y} x2={origin.x} y2={HEIGHT - PAD_Y} className="ena-longitudinal-axis" />
-
-            {showIndividualPaths && sampledIndividualSegments.map(({ item: itemSegment, sourceIndex }) => {
-              const { from, to } = itemSegment;
-              const groupIndex = groupLookup.get(from.group) ?? 0;
-              const encoding = getEncoding(groupIndex);
-              const color = JENA_GROUP_COLORS[groupIndex % JENA_GROUP_COLORS.length];
-              const fromPoint = project(from.x, from.y);
-              const toPoint = project(to.x, to.y);
-              return (
-                <line
-                  key={`individual-segment-${sourceIndex}`}
-                  className="ena-individual-trajectory-path"
-                  x1={fromPoint.x}
-                  y1={fromPoint.y}
-                  x2={toPoint.x}
-                  y2={toPoint.y}
-                  stroke={color}
-                  data-ena-group-index={groupIndex}
-                  data-ena-group-shape={encoding.markerShape}
-                  data-ena-line-style={encoding.lineStyle}
-                  vectorEffect="non-scaling-stroke"
-                />
-              );
-            })}
-
-            {showGroupCentroidPaths && renderedCentroidSegments.map(({ item: entry, sourceIndex }) => {
-              const { groupIndex, segment } = entry;
-              const encoding = getEncoding(groupIndex);
-              const color = JENA_GROUP_COLORS[groupIndex % JENA_GROUP_COLORS.length];
-              const from = project(segment.x1, segment.y1);
-              const to = project(segment.x2, segment.y2);
-              return (
-                <line
-                  key={`centroid-segment-${sourceIndex}`}
-                  className="ena-group-centroid-path"
-                  x1={from.x}
-                  y1={from.y}
-                  x2={to.x}
-                  y2={to.y}
-                  stroke={color}
-                  markerEnd={`url(#${reactId}-arrow-${groupIndex})`}
-                  data-ena-group-index={groupIndex}
-                  data-ena-group-shape={encoding.markerShape}
-                  data-ena-line-style={encoding.lineStyle}
-                  data-ena-from-time={safeText(segment.fromTime, 48)}
-                  data-ena-to-time={safeText(segment.toTime, 48)}
-                  vectorEffect="non-scaling-stroke"
-                />
-              );
-            })}
-
-            {showPoints && sampledPeriods.map(({ item: entry, sourceIndex }) => {
-              const { period } = entry;
-              const groupIndex = groupLookup.get(period.group) ?? 0;
-              const encoding = getEncoding(groupIndex);
-              const color = JENA_GROUP_COLORS[groupIndex % JENA_GROUP_COLORS.length];
-              const point = project(period.x, period.y);
-              return (
-                <g
-                  key={`individual-point-${sourceIndex}`}
-                  data-ena-individual-point="true"
-                  data-ena-group-index={groupIndex}
-                  data-ena-group-shape={encoding.markerShape}
-                  aria-label={`${strings.showIndividualPaths}, ${safeText(period.group, 48)}, ${safeText(period.time, 48)}`}
-                >
-                  <MarkerGlyph
-                    shape={encoding.markerShape}
-                    x={point.x}
-                    y={point.y}
-                    size={pointRadius}
-                    fill={color}
-                    stroke="#ffffff"
-                    strokeWidth={1.4}
-                  />
-                </g>
-              );
-            })}
-
-            {showGroupCentroidPaths && renderedCentroidPeriods.map(({ item: entry, sourceIndex }) => {
-              const { groupIndex, period } = entry;
-              if (!period.centroid) return null;
-              const encoding = getEncoding(groupIndex);
-              const color = JENA_GROUP_COLORS[groupIndex % JENA_GROUP_COLORS.length];
-              const point = project(period.centroid.x, period.centroid.y);
-              const groupName = safeText(period.group, 48);
-              const timeName = safeText(period.time, 48);
-              return (
-                <g
-                  key={`centroid-point-${sourceIndex}`}
-                  data-ena-group-centroid="true"
-                  data-ena-group-index={groupIndex}
-                  data-ena-group-shape={encoding.markerShape}
-                  aria-label={`${groupName}, ${timeName}, ${strings.centroid}`}
-                >
-                  <MarkerGlyph
-                    shape={encoding.markerShape}
-                    x={point.x}
-                    y={point.y}
-                    size={pointRadius * 2.15}
-                    fill="#ffffff"
-                    stroke={color}
-                    strokeWidth={3}
-                  />
-                  <MarkerGlyph
-                    shape={encoding.markerShape}
-                    x={point.x}
-                    y={point.y}
-                    size={pointRadius * 1.1}
-                    fill={color}
-                    stroke="#ffffff"
-                    strokeWidth={1}
-                  />
-                  {showLabels ? (
-                    <text x={point.x + 12} y={point.y - 12} className="ena-longitudinal-period-label">
-                      {timeName}
-                    </text>
-                  ) : null}
-                </g>
-              );
-            })}
 
             {nodeMarks.map((node, nodeIndex) => {
               const point = project(node.x, node.y);
@@ -702,12 +688,180 @@ export default function OpenEnaLongitudinalTrajectory({
                     stroke={nodeColor}
                     style={{ fill: nodeColor, stroke: nodeColor }}
                   />
+                </g>
+              );
+            })}
+
+            {showIndividualPaths && sampledIndividualRuns.map((run, runIndex) => {
+              const groupIndex = groupLookup.get(run.group) ?? 0;
+              const encoding = getEncoding(groupIndex);
+              const color = JENA_GROUP_COLORS[groupIndex % JENA_GROUP_COLORS.length];
+              const points = run.periods.map((period) => project(period.x, period.y));
+              const timeIndexSequence = run.periods.map((period) => boundedCount(period.timeIndex)).join(",");
+              return (
+                <path
+                  key={`individual-run-${run.sourceIndex}-${runIndex}`}
+                  className="ena-individual-trajectory-path"
+                  d={pathThrough(points)}
+                  stroke={color}
+                  data-ena-group-index={groupIndex}
+                  data-ena-group-shape={encoding.markerShape}
+                  data-ena-line-style={encoding.lineStyle}
+                  data-ena-time-index-sequence={timeIndexSequence}
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            })}
+
+            {showIndividualPaths && sampledIndividualDirectionSegments.map((segment, sourceIndex) => {
+              return (
+                <DirectionArrow
+                  key={`individual-arrow-${sourceIndex}`}
+                  from={project(segment.from.x, segment.from.y)}
+                  to={project(segment.to.x, segment.to.y)}
+                  className="ena-individual-direction-arrow"
+                  fromTimeIndex={segment.from.timeIndex}
+                  toTimeIndex={segment.to.timeIndex}
+                />
+              );
+            })}
+
+            {showPoints && sampledPeriods.map(({ item: entry, sourceIndex }) => {
+              const { period } = entry;
+              const groupIndex = groupLookup.get(period.group) ?? 0;
+              const encoding = getEncoding(groupIndex);
+              const color = JENA_GROUP_COLORS[groupIndex % JENA_GROUP_COLORS.length];
+              const point = project(period.x, period.y);
+              return (
+                <g
+                  key={`individual-point-${sourceIndex}`}
+                  data-ena-individual-point="true"
+                  data-ena-group-index={groupIndex}
+                  data-ena-group-shape={encoding.markerShape}
+                  aria-label={`${strings.showIndividualPaths}, ${safeText(period.group, 48)}, ${strings.period} ${boundedCount(period.timeIndex) + 1}`}
+                >
+                  <MarkerGlyph
+                    shape={encoding.markerShape}
+                    x={point.x}
+                    y={point.y}
+                    size={pointRadius}
+                    fill={color}
+                    stroke="#ffffff"
+                    strokeWidth={1.4}
+                  />
+                </g>
+              );
+            })}
+
+            {showGroupCentroidPaths && renderedCentroidRuns.map((run) => {
+              const { groupIndex } = run;
+              const encoding = getEncoding(groupIndex);
+              const color = JENA_GROUP_COLORS[groupIndex % JENA_GROUP_COLORS.length];
+              const first = run.segments[0].segment;
+              const points = [
+                project(first.x1, first.y1),
+                ...run.segments.map(({ segment }) => project(segment.x2, segment.y2)),
+              ];
+              const timeIndexSequence = [
+                boundedCount(first.fromTimeIndex),
+                ...run.segments.map(({ segment }) => boundedCount(segment.toTimeIndex)),
+              ].join(",");
+              return (
+                <path
+                  key={`centroid-run-${groupIndex}-${run.runIndex}`}
+                  className="ena-group-centroid-path"
+                  d={pathThrough(points)}
+                  stroke={color}
+                  data-ena-centroid-run="true"
+                  data-ena-group-index={groupIndex}
+                  data-ena-group-shape={encoding.markerShape}
+                  data-ena-line-style={encoding.lineStyle}
+                  data-ena-time-index-sequence={timeIndexSequence}
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            })}
+
+            {showGroupCentroidPaths && renderedCentroidDirectionSegments.map(({ item: entry, sourceIndex }) => {
+              const { segment } = entry;
+              const from = project(segment.x1, segment.y1);
+              const to = project(segment.x2, segment.y2);
+              return (
+                <DirectionArrow
+                  key={`centroid-arrow-${sourceIndex}`}
+                  from={from}
+                  to={to}
+                  className="ena-group-centroid-direction-arrow"
+                  fromTimeIndex={segment.fromTimeIndex}
+                  toTimeIndex={segment.toTimeIndex}
+                />
+              );
+            })}
+
+            {showLabels && nodeMarks.map((node, nodeIndex) => {
+              const point = project(node.x, node.y);
+              return (
+                <text
+                  key={`node-label-${nodeIndex}`}
+                  x={point.x}
+                  y={point.y - 17}
+                  textAnchor="middle"
+                  className="ena-longitudinal-node-label"
+                >
+                  {safeText(node.code, 64)}
+                </text>
+              );
+            })}
+
+            {showGroupCentroidPaths && renderedCentroidPeriods.map(({ item: entry, sourceIndex }) => {
+              const { groupIndex, period } = entry;
+              if (!period.centroid) return null;
+              const encoding = getEncoding(groupIndex);
+              const color = JENA_GROUP_COLORS[groupIndex % JENA_GROUP_COLORS.length];
+              const point = project(period.centroid.x, period.centroid.y);
+              const groupName = safeText(period.group, 48);
+              const timeName = safeText(period.time, 48);
+              const labelOnLeft = groupIndex % 2 === 1;
+              return (
+                <g
+                  key={`centroid-point-${sourceIndex}`}
+                  data-ena-group-centroid="true"
+                  data-ena-group-index={groupIndex}
+                  data-ena-group-shape={encoding.markerShape}
+                  aria-label={`${groupName}, ${strings.period} ${boundedCount(period.timeIndex) + 1}, ${strings.centroid}`}
+                >
+                  <MarkerGlyph
+                    shape={encoding.markerShape}
+                    x={point.x}
+                    y={point.y}
+                    size={pointRadius * 2.15}
+                    fill="#ffffff"
+                    stroke={color}
+                    strokeWidth={3}
+                  />
+                  <MarkerGlyph
+                    shape={encoding.markerShape}
+                    x={point.x}
+                    y={point.y}
+                    size={pointRadius * 1.1}
+                    fill={color}
+                    stroke="#ffffff"
+                    strokeWidth={1}
+                  />
                   {showLabels ? (
-                    <text x={point.x} y={point.y - 17} textAnchor="middle">{safeText(node.code, 64)}</text>
+                    <text
+                      x={point.x + (labelOnLeft ? -12 : 12)}
+                      y={point.y + (labelOnLeft ? 18 : -12)}
+                      textAnchor={labelOnLeft ? "end" : "start"}
+                      className="ena-longitudinal-period-label"
+                    >
+                      {timeName}
+                    </text>
                   ) : null}
                 </g>
               );
             })}
+
           </g>
           <text x={WIDTH - PAD_X} y={HEIGHT - 22} textAnchor="end" className="ena-longitudinal-axis-label">
             {xAxisLabel}
@@ -746,9 +900,14 @@ export default function OpenEnaLongitudinalTrajectory({
           );
         })}
         {showGroupCentroidPaths ? <li>{strings.largerCentroidMarker}</li> : null}
-        {showGroupCentroidPaths ? <li>{strings.timeDirectionArrow}</li> : null}
+        {hasRenderedDirectionArrows
+          ? <li>{strings.timeDirectionArrow}</li>
+          : null}
       </ul>
 
+      {!hasConnectedPaths ? (
+        <p className="ena-longitudinal-no-paths" role="status">{strings.noConnectedPaths}</p>
+      ) : null}
       <p className="ena-longitudinal-gap-note">{strings.gapRule}</p>
       {individualMarksAreSampled ? (
         <p className="ena-longitudinal-table-note" role="status">{individualSamplingDisclosure}</p>
