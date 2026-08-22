@@ -186,13 +186,14 @@ test("direction decisions are pairwise, exact ties show both chevrons, and masks
   assert.ok(!model.visibleEdges.some((edge) => edge.ground === "C" && edge.response === "A"));
 });
 
-test("edge geometry is a source-apex / response-base triangle with a separate keyboard hit path", () => {
+test("edge geometry is a source-apex / response-base triangle whose presentation scale changes the filled glyph", () => {
   const glyph = buildOrderedEdgeGlyph({
     source: { x: 10, y: 50 },
     target: { x: 110, y: 50 },
     sourceRadius: 10,
     targetRadius: 14,
     relativeMagnitude: 0.5,
+    visualScale: 1,
     lane: 1,
     showChevron: true,
   });
@@ -203,12 +204,44 @@ test("edge geometry is a source-apex / response-base triangle with a separate ke
   for (const value of Object.values(glyph.points).flatMap((point) => [point.x, point.y])) {
     assert.ok(Number.isFinite(value));
   }
+  const small = buildOrderedEdgeGlyph({
+    source: { x: 10, y: 50 },
+    target: { x: 110, y: 50 },
+    sourceRadius: 10,
+    targetRadius: 14,
+    relativeMagnitude: 0.5,
+    visualScale: 0.5,
+    lane: 1,
+    showChevron: true,
+  });
+  const large = buildOrderedEdgeGlyph({
+    source: { x: 10, y: 50 },
+    target: { x: 110, y: 50 },
+    sourceRadius: 10,
+    targetRadius: 14,
+    relativeMagnitude: 0.5,
+    visualScale: 2,
+    lane: 1,
+    showChevron: true,
+  });
+  assert.notEqual(small.trianglePath, large.trianglePath);
+  assert.notEqual(small.chevronPath, large.chevronPath);
+  assert.ok(
+    Math.hypot(
+      large.points.baseLeft.x - large.points.baseRight.x,
+      large.points.baseLeft.y - large.points.baseRight.y,
+    ) > Math.hypot(
+      small.points.baseLeft.x - small.points.baseRight.x,
+      small.points.baseLeft.y - small.points.baseRight.y,
+    ),
+  );
   assert.throws(() => buildOrderedEdgeGlyph({
     source: { x: 1, y: 1 },
     target: { x: 1, y: 1 },
     sourceRadius: 10,
     targetRadius: 10,
     relativeMagnitude: 1,
+    visualScale: 1,
     lane: 1,
     showChevron: false,
   }), /distinct source and response nodes/);
@@ -249,7 +282,7 @@ test("node sizing uses response-code totals when supplied and explicitly labels 
   assert.equal(fallback.nodeSizeDefinition, "incoming normalized directed mass (response-total fallback)");
 });
 
-test("the ordered SVG renders triangles, pair chevrons, self inner discs, raw tooltips, and a keyboard edge list", async () => {
+test("the ordered SVG renders scaled triangles, pair chevrons, self inner discs, raw tooltips, and one external edge-list stop", async () => {
   const { result, config } = orderedFixture();
   const { default: OpenEnaOrderedPlot } = await import("../components/open-ena/OpenEnaOrderedPlot");
   const markup = renderToStaticMarkup(createElement(OpenEnaOrderedPlot, {
@@ -281,8 +314,42 @@ test("the ordered SVG renders triangles, pair chevrons, self inner discs, raw to
   assert.match(markup, /A ground\/source → B response\/target/);
   assert.match(markup, /raw aggregate count 20/);
   assert.match(markup, /aria-label="Visible directed connections"/);
-  assert.match(markup, /data-ona-edge-hit-target[^>]*tabindex="0"/);
+  assert.match(markup, /data-ona-edge-hit-target="true"[^>]*aria-hidden="true"/);
+  assert.doesNotMatch(markup, /data-ona-edge-hit-target[^>]*tabindex=/);
+  assert.doesNotMatch(markup, /data-ona-self-loop[^>]*tabindex=/);
+  assert.doesNotMatch(markup, /<li[^>]*tabindex=/);
   assert.doesNotMatch(markup, /<line[^>]*data-ona-ground=/, "self-connections and directed edges must never use a degenerate line glyph");
+
+  const compactMarkup = renderToStaticMarkup(createElement(OpenEnaOrderedPlot, {
+    result,
+    config,
+    scope: { kind: "group", name: "first" },
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    edgeThreshold: 0,
+    edgeScale: 2,
+    pointScale: 1,
+    textScale: 1,
+    plotZoom: 1,
+    flipX: true,
+    flipY: false,
+    showPoints: false,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: false,
+    compact: true,
+    copy: {
+      groundSourceLabel: "來源",
+      responseTargetLabel: "回應",
+      directionLegendLabel: "順序網絡方向圖例",
+      flippedLabel: "已翻轉",
+    },
+  }));
+  assert.match(compactMarkup, /aria-label="順序網絡方向圖例"/);
+  assert.match(compactMarkup, /A 來源 → B 回應/);
+  assert.match(compactMarkup, /SVD1 · 已翻轉/);
+  assert.match(compactMarkup, /<details[^>]*class="ona-visible-edge-summary"/);
 });
 
 test("malformed ordered adjacency and nonfinite scientific values fail closed", () => {

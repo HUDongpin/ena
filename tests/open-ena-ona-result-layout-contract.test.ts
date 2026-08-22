@@ -34,3 +34,8 @@ test("ONA headings are semantically ordered and never call the center a comparis
   assert.match(layout, /<h3>\{copy\.dataView\}<\/h3>/);
   assert.doesNotMatch(layout, /<h3>Comparison Plot<\/h3>/);
 });
+
+test("ONA result tools use localized copy rather than a hard-coded English accessible name", () => {
+  assert.match(layout, /aria-label=\{copy\.rightToolsLabel\}/);
+  assert.doesNotMatch(layout, /aria-label="Ordered plot tools"/);
+});

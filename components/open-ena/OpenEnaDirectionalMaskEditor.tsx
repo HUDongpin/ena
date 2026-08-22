@@ -9,6 +9,15 @@ import type { OpenEnaDirectionalMask } from "@/lib/open-ena/types";
 
 export type OpenEnaDirectionalMaskPreset = "all" | "none" | "diagonal" | "off-diagonal";
 
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
 export interface OpenEnaDirectionalMaskEditorCopy {
   triggerLabel: string;
   dialogTitle: string;
@@ -82,6 +91,7 @@ export function OpenEnaDirectionalMaskEditor({
 }: OpenEnaDirectionalMaskEditorProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
   const wasOpenRef = useRef(false);
   const [announcement, setAnnouncement] = useState("");
   const errors = validateDirectionalMask(value);
@@ -90,14 +100,48 @@ export function OpenEnaDirectionalMaskEditor({
   useEffect(() => {
     if (open) {
       wasOpenRef.current = true;
+      const previousOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
       closeRef.current?.focus();
-      return;
+      return () => {
+        document.body.style.overflow = previousOverflow;
+      };
     }
     if (wasOpenRef.current) {
       wasOpenRef.current = false;
       triggerRef.current?.focus();
     }
   }, [open]);
+
+  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onOpenChange(false);
+      return;
+    }
+    if (event.key === "Tab") {
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+        .filter((element) => element.getAttribute("aria-hidden") !== "true" && !element.hidden);
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first || !last) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  };
 
   const applyPreset = (preset: OpenEnaDirectionalMaskPreset) => {
     if (!valid) return;
@@ -138,21 +182,23 @@ export function OpenEnaDirectionalMaskEditor({
       </button>
 
       {open ? (
-        <section
-          id={`${id}-dialog`}
-          className="ena-directional-mask-sheet"
-          role="dialog"
-          aria-modal={false}
-          aria-labelledby={`${id}-title`}
-          aria-describedby={`${id}-description`}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              onOpenChange(false);
-            }
+        <div
+          className="ena-directional-mask-modal"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) onOpenChange(false);
           }}
         >
+          <section
+            ref={dialogRef}
+            id={`${id}-dialog`}
+            className="ena-directional-mask-sheet"
+            role="dialog"
+            aria-modal={true}
+            aria-labelledby={`${id}-title`}
+            aria-describedby={`${id}-description`}
+            tabIndex={-1}
+            onKeyDown={handleDialogKeyDown}
+          >
           <header>
             <div>
               <h4 id={`${id}-title`}>{copy.dialogTitle}</h4>
@@ -201,12 +247,14 @@ export function OpenEnaDirectionalMaskEditor({
                         const diagonal = groundIndex === responseIndex;
                         return (
                           <td key={response} data-diagonal={diagonal ? "true" : "false"}>
-                            <input
-                              type="checkbox"
-                              checked={value.enabled[groundIndex][responseIndex]}
-                              aria-label={copy.cellLabel(ground, response, diagonal)}
-                              onChange={() => toggleCell(groundIndex, responseIndex)}
-                            />
+                            <label className="ena-directional-mask-cell">
+                              <input
+                                type="checkbox"
+                                checked={value.enabled[groundIndex][responseIndex]}
+                                onChange={() => toggleCell(groundIndex, responseIndex)}
+                              />
+                              <span className="sr-only">{copy.cellLabel(ground, response, diagonal)}</span>
+                            </label>
                           </td>
                         );
                       })}
@@ -220,7 +268,8 @@ export function OpenEnaDirectionalMaskEditor({
           <p className="ena-directional-mask-announcement" aria-live="polite" aria-atomic="true">
             {announcement}
           </p>
-        </section>
+          </section>
+        </div>
       ) : null}
     </div>
   );

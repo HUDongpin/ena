@@ -30,6 +30,11 @@ export interface OpenEnaOrderedPlotCopy {
   selfDiscLegend: string;
   nodeSizeLabel: string;
   unitsLabel: string;
+  groundSourceLabel: string;
+  responseTargetLabel: string;
+  directionLegendLabel: string;
+  flippedLabel: string;
+  visibleCellsLabel: string;
 }
 
 const DEFAULT_COPY: OpenEnaOrderedPlotCopy = {
@@ -47,6 +52,11 @@ const DEFAULT_COPY: OpenEnaOrderedPlotCopy = {
   selfDiscLegend: "Inner disc = self-connection",
   nodeSizeLabel: "Node size",
   unitsLabel: "units",
+  groundSourceLabel: "ground/source",
+  responseTargetLabel: "response/target",
+  directionLegendLabel: "Ordered network direction legend",
+  flippedLabel: "flipped",
+  visibleCellsLabel: "visible directed cells",
 };
 
 export interface OpenEnaOrderedPlotProps {
@@ -114,7 +124,7 @@ function edgeDescription(
   copy: OpenEnaOrderedPlotCopy,
 ) {
   return [
-    `${edge.ground} ground/source → ${edge.response} response/target`,
+    `${edge.ground} ${copy.groundSourceLabel} → ${edge.response} ${copy.responseTargetLabel}`,
     copy.respondedToWith.replace("{ground}", edge.ground).replace("{response}", edge.response),
     `${copy.normalizedMeanWeight} ${displayNumber(edge.normalizedMeanWeight)}`,
     `${copy.rawAggregateCount} ${displayNumber(edge.rawAggregateCount)}`,
@@ -169,17 +179,17 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
       >
         <title>{title}</title>
         <desc>
-          {copy.directedNetworkDescription} {model.points.length} {copy.unitsLabel}; {model.visibleEdges.length} visible directed cells. {copy.nodeSizeLabel}: {model.nodeSizeDefinition}.
+          {copy.directedNetworkDescription} {model.points.length} {copy.unitsLabel}; {model.visibleEdges.length} {copy.visibleCellsLabel}. {copy.nodeSizeLabel}: {model.nodeSizeDefinition}.
         </desc>
         <rect width={WIDTH} height={height} className="ena-set-plot-background ona-plot-background" />
         <g className="ona-zero-axes" aria-hidden="true">
           <line x1={WIDTH / 2} y1={PAD_Y / 2} x2={WIDTH / 2} y2={height - PAD_Y / 2} />
           <line x1={PAD_X / 2} y1={height / 2} x2={WIDTH - PAD_X / 2} y2={height / 2} />
           <text x={WIDTH - 30} y={height / 2 - 10} textAnchor="end">
-            {props.xDimension}{props.showVariance ? ` · ${(model.xVariance * 100).toFixed(1)}%` : ""}{props.flipX ? " · flipped" : ""}
+            {props.xDimension}{props.showVariance ? ` · ${(model.xVariance * 100).toFixed(1)}%` : ""}{props.flipX ? ` · ${copy.flippedLabel}` : ""}
           </text>
           <text x={WIDTH / 2 + 10} y={26}>
-            {props.yDimension}{props.showVariance ? ` · ${(model.yVariance * 100).toFixed(1)}%` : ""}{props.flipY ? " · flipped" : ""}
+            {props.yDimension}{props.showVariance ? ` · ${(model.yVariance * 100).toFixed(1)}%` : ""}{props.flipY ? ` · ${copy.flippedLabel}` : ""}
           </text>
         </g>
 
@@ -195,6 +205,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
             sourceRadius: sourceNode.radius,
             targetRadius: responseNode.radius,
             relativeMagnitude: edge.relativeMagnitude,
+            visualScale: edgeScale,
             // Reversing source/target reverses the normal, so the same lane
             // value places reciprocal triangles on opposite sides.
             lane: 1,
@@ -226,9 +237,8 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
                 data-ona-edge-hit-target="true"
                 data-ona-ground={edge.ground}
                 data-ona-response={edge.response}
-                role="img"
-                tabIndex={0}
-                aria-label={label}
+                aria-hidden="true"
+                focusable="false"
                 fill="none"
                 stroke="transparent"
                 strokeWidth={18}
@@ -259,7 +269,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
           const size = 6.5 * pointScale;
           const label = `${point.unit}${point.group ? ` · ${point.group}` : ""}: ${props.xDimension} ${displayNumber(point.x)}, ${props.yDimension} ${displayNumber(point.y)}`;
           return (
-            <g key={point.key} role="img" aria-label={label} data-ona-unit-point="true" data-ona-point-shape={groupIndex % 2 === 0 ? "circle" : "square"}>
+            <g key={point.key} data-ona-unit-point="true" data-ona-point-shape={groupIndex % 2 === 0 ? "circle" : "square"}>
               <title>{label}</title>
               {groupIndex % 2 === 0 ? (
                 <circle cx={screen.x} cy={screen.y} r={size} fill={group?.color ?? "#52636a"} stroke="#263740" strokeWidth={1.2} />
@@ -277,7 +287,10 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
           const self = selfEdges.get(node.code);
           const nodeColor = codeColorFor(props.codeColors, node.code);
           const selfRadius = self
-            ? Math.max(2.5, node.radius * (0.18 + Math.sqrt(self.relativeMagnitude) * 0.42))
+            ? Math.min(
+              node.radius * 0.9,
+              Math.max(1.5, node.radius * (0.18 + Math.sqrt(self.relativeMagnitude) * 0.42) * Math.sqrt(edgeScale)),
+            )
             : 0;
           const selfLabel = self ? edgeDescription(self, copy) : null;
           return (
@@ -296,9 +309,6 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
                 <circle
                   r={selfRadius}
                   data-ona-self-loop={node.code}
-                  role="img"
-                  tabIndex={0}
-                  aria-label={`${node.code} ↻ ${node.code} · ${selfLabel}`}
                   fill={model.scopeColor}
                   fillOpacity={0.35 + self.relativeMagnitude * 0.6}
                   stroke="#17313a"
@@ -313,24 +323,22 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
         })}
       </svg>
 
-      <div className="ona-direction-legend" aria-label="Ordered network direction legend">
+      <div className="ona-direction-legend" aria-label={copy.directionLegendLabel}>
         <span>{copy.sourceApexLegend}</span>
         <span>{copy.chevronLegend}</span>
         <span>{copy.selfDiscLegend}</span>
         <span>{copy.nodeSizeLabel}: {model.nodeSizeDefinition}</span>
       </div>
-      {!props.compact ? (
-        <details className="ona-visible-edge-summary">
-          <summary>{copy.visibleConnections}</summary>
-          {model.visibleEdges.length > 0 ? (
-            <ol aria-label="Visible directed connections">
-              {model.visibleEdges
-                .toSorted((left, right) => right.normalizedMeanWeight - left.normalizedMeanWeight)
-                .map((edge) => <li key={edge.name} tabIndex={0}>{edgeDescription(edge, copy)}</li>)}
-            </ol>
-          ) : <p>{copy.noVisibleConnections}</p>}
-        </details>
-      ) : null}
+      <details className="ona-visible-edge-summary">
+        <summary>{copy.visibleConnections}</summary>
+        {model.visibleEdges.length > 0 ? (
+          <ol aria-label={copy.visibleConnections}>
+            {model.visibleEdges
+              .toSorted((left, right) => right.normalizedMeanWeight - left.normalizedMeanWeight)
+              .map((edge) => <li key={edge.name}>{edgeDescription(edge, copy)}</li>)}
+          </ol>
+        ) : <p>{copy.noVisibleConnections}</p>}
+      </details>
     </div>
   );
 }

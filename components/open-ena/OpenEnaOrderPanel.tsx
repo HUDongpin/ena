@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { Row } from "jena-js";
 import {
   buildOpenEnaOrderPreview,
@@ -70,6 +70,9 @@ export interface OpenEnaOrderPanelCopy {
   boundaryWithin: string;
   boundaryEnd: string;
   emptyFields: string;
+  previousPage: string;
+  nextPage: string;
+  previewRange: string;
 }
 
 interface OpenEnaOrderColumnOption {
@@ -91,6 +94,16 @@ interface OpenEnaOrderPanelProps {
 }
 
 const COMPARATORS = ["number", "string", "boolean", "iso-datetime"] as const;
+const PREVIEW_PAGE_SIZE = 100;
+
+function formatRange(
+  template: string,
+  values: Readonly<Record<"start" | "end" | "total" | "page" | "pages", number>>,
+) {
+  return template.replace(/\{(start|end|total|page|pages)\}/gu, (_placeholder, key: keyof typeof values) => (
+    String(values[key])
+  ));
+}
 
 function formatPreviewValue(field: OpenEnaOrderPreviewField) {
   if (field.valueType === "missing") return "";
@@ -141,6 +154,15 @@ export function OpenEnaOrderPanel({
       return { kind: "rejected" as const, preview: null };
     }
   }, [horizonColumns, rows, unitColumns, value]);
+  const [previewPage, setPreviewPage] = useState(0);
+  const previewRowCount = previewState.preview?.rows.length ?? 0;
+  const previewPageCount = Math.max(1, Math.ceil(previewRowCount / PREVIEW_PAGE_SIZE));
+  const safePreviewPage = Math.min(previewPage, previewPageCount - 1);
+  const previewStart = safePreviewPage * PREVIEW_PAGE_SIZE;
+  const visiblePreviewRows = previewState.preview?.rows.slice(
+    previewStart,
+    previewStart + PREVIEW_PAGE_SIZE,
+  ) ?? [];
 
   const entireHorizon = value.windowSizeBack === Number.POSITIVE_INFINITY;
   const finiteWindow = !entireHorizon;
@@ -327,6 +349,37 @@ export function OpenEnaOrderPanel({
                 </>
               )}
             </section>
+            <nav
+              className="ena-table-pagination"
+              data-testid="open-ena-order-preview-pagination"
+              data-total-rows={previewRowCount}
+              data-visible-rows={visiblePreviewRows.length}
+              aria-label={copy.previewTitle}
+            >
+              <button
+                type="button"
+                disabled={safePreviewPage === 0}
+                onClick={() => setPreviewPage(Math.max(0, safePreviewPage - 1))}
+              >
+                {copy.previousPage}
+              </button>
+              <output aria-live="polite">
+                {formatRange(copy.previewRange, {
+                  start: previewRowCount === 0 ? 0 : previewStart + 1,
+                  end: previewStart + visiblePreviewRows.length,
+                  total: previewRowCount,
+                  page: safePreviewPage + 1,
+                  pages: previewPageCount,
+                })}
+              </output>
+              <button
+                type="button"
+                disabled={safePreviewPage >= previewPageCount - 1}
+                onClick={() => setPreviewPage(Math.min(previewPageCount - 1, safePreviewPage + 1))}
+              >
+                {copy.nextPage}
+              </button>
+            </nav>
             <div className="ena-order-preview-table-wrap">
               <table>
                 <thead>
@@ -341,8 +394,8 @@ export function OpenEnaOrderPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {previewState.preview.rows.map((row) => (
-                    <tr key={`${row.sourceIndex}-${row.orderedPosition}`}>
+                  {visiblePreviewRows.map((row) => (
+                    <tr key={`${row.sourceIndex}-${row.orderedPosition}`} data-order-preview-row={row.orderedPosition}>
                       <td>{row.orderedPosition}</td>
                       <td>{row.sourceRecord}</td>
                       <td>{row.horizonOrdinal}</td>

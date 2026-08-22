@@ -22,6 +22,16 @@ function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasOrderedResultBundleIdentity(value: JsonRecord) {
+  if (value.schemaVersion !== 2 || value.app !== "ENA.HK Open ENA") return false;
+  const modelData = isRecord(value.modelData) ? value.modelData : null;
+  const manifest = isRecord(value.manifest) ? value.manifest : null;
+  const configuration = manifest && isRecord(manifest.configuration)
+    ? manifest.configuration
+    : null;
+  return modelData?.analysisKind === "ona" || configuration?.analysisKind === "ona";
+}
+
 function asString(value: unknown, label: string) {
   if (typeof value !== "string" || value.length === 0) throw new Error(`${label} must be a non-empty string.`);
   if (value.length > 1_024) throw new Error(`${label} must be 1,024 characters or fewer.`);
@@ -369,6 +379,9 @@ export function parseRotationReference(text: string, filename = "reference.json"
   }
   if (isRecord(value) && value.kind === "open-ena-reference-rotation") return parseReferenceObject(value);
   if (isRecord(value) && value.schemaVersion === 2) {
+    if (hasOrderedResultBundleIdentity(value)) {
+      throw new Error("ONA result bundles cannot be used as reference rotations.");
+    }
     return referenceFromResultBundle(
       parseOpenEnaAnalysisBundle(text) as JsonRecord,
       filename,

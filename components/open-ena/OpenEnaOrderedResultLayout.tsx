@@ -15,6 +15,7 @@ export interface OpenEnaOrderedResultLayoutCopy {
   unavailableGroupPlot: string;
   descriptiveBoundary: string;
   directionGuide: string;
+  rightToolsLabel: string;
 }
 
 const DEFAULT_COPY: OpenEnaOrderedResultLayoutCopy = {
@@ -28,6 +29,7 @@ const DEFAULT_COPY: OpenEnaOrderedResultLayoutCopy = {
   unavailableGroupPlot: "A second descriptive group network is not available for this model.",
   descriptiveBoundary: "Ordered networks are descriptive-only in this release; these panels do not compute a group difference or inferential effect.",
   directionGuide: "Direction: triangle apex is ground/source, base is response/target; a chevron marks the stronger direction and an inner disc marks a self-connection.",
+  rightToolsLabel: "Ordered plot tools",
 };
 
 export interface OpenEnaOrderedResultLayoutProps {
@@ -182,7 +184,7 @@ export default function OpenEnaOrderedResultLayout(props: OpenEnaOrderedResultLa
           <div
             className="ena-set-right-tools"
             data-testid="open-ena-ordered-right-tools"
-            aria-label="Ordered plot tools"
+            aria-label={copy.rightToolsLabel}
           >
             {rightTools}
           </div>

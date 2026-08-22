@@ -208,7 +208,7 @@ test("Data View owns a contained center table while preserving plot context cont
   assert.match(markup, /aria-label="Data View center surface"/);
   assert.match(markup, /background-color:#212121;color:#ffffff/);
   assert.match(markup, /aria-label="Return to Comparison Plot"[^>]*>Return to Comparison<\/button>/);
-  assert.match(markup, /<select[^>]*aria-label="Show units in plot context"[^>]*>/);
+  assert.match(markup, /<select[^>]*aria-label="Show units in"[^>]*>/);
   assert.match(markup, /<option value="comparison" selected="">Comparison<\/option>/);
   assert.match(markup, /<output aria-live="polite">2 Data View records<\/output>/);
   assert.match(markup, /aria-label="Export Data View records as CSV"/);
@@ -218,6 +218,40 @@ test("Data View owns a contained center table while preserving plot context cont
   assert.ok(markup.indexOf(">Unit</th>") < markup.indexOf(">Goal</th>"), "metadata columns are presented before code columns");
   assert.match(markup, /<th scope="row"[^>]*>A<\/th>/);
   assert.match(markup, /data-record-id="record-b"/);
+});
+
+test("Data View paginates both rows and variable columns within a bounded DOM surface", () => {
+  const columns = [
+    { key: "unit", label: "Unit", kind: "metadata" as const },
+    ...Array.from({ length: 70 }, (_, index) => ({
+      key: `edge:${index}`,
+      label: `Edge ${index}`,
+      kind: "directed-edge" as const,
+    })),
+  ];
+  const rows = Array.from({ length: 250 }, (_, rowIndex) => ({
+    id: `record-${rowIndex}`,
+    values: Object.fromEntries([
+      ["unit", `u${rowIndex}`],
+      ...Array.from({ length: 70 }, (__, columnIndex) => [`edge:${columnIndex}`, rowIndex + columnIndex]),
+    ]),
+  }));
+  const markup = renderToStaticMarkup(createElement(OpenEnaDataView, {
+    columns,
+    rows,
+    context: "comparison",
+    onContextChange: noOp,
+    onReturnToComparison: noOp,
+    onExportCsv: noOp,
+  }));
+
+  assert.match(markup, /data-testid="open-ena-data-view-pagination"/);
+  assert.match(markup, /data-total-rows="250"/);
+  assert.match(markup, /data-visible-rows="100"/);
+  assert.match(markup, /data-total-variable-columns="70"/);
+  assert.match(markup, /data-visible-variable-columns="32"/);
+  assert.equal((markup.match(/data-record-id=/g) ?? []).length, 100);
+  assert.equal((markup.match(/data-view-variable-column=/g) ?? []).length, 32);
 });
 
 test("Data View describes supplied rows conservatively and has a semantic empty state", () => {

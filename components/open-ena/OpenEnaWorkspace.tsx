@@ -21,6 +21,7 @@ import {
   reconcileDirectionalMask,
 } from "@/lib/open-ena/network-config";
 import { buildOpenEnaOnaDataView } from "@/lib/open-ena/ona-data-view";
+import { buildOpenEnaDataViewExportRows } from "@/lib/open-ena/data-view-export";
 import {
   buildOpenEnaOnaAggregateEdgeExport,
   buildOpenEnaOnaDeidentifiedAuditExport,
@@ -1075,6 +1076,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               ? copy.ona.dataView.provenanceLabels[
                   column.key as keyof typeof copy.ona.dataView.provenanceLabels
                 ] ?? column.label
+              : column.kind === "directed-edge"
+                ? `${column.ground} ${copy.ona.mask.groundHeader} → ${column.response} ${copy.ona.mask.responseHeader}`
               : column.label,
             kind: column.kind,
             align: column.kind === "metadata" ? "left" : "right",
@@ -2625,13 +2628,66 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           <p>{completedResultKind === "ona" ? copy.ona.presenter.description : copy.plot.description}</p>
         </div>
         <div className="ena-form-stack">
-          {completedResultKind === "ona" ? (
+          {completedResultKind === "ona" ? (<>
             <section className="ena-ordered-presenter-boundary" role="note">
               <strong>{copy.ona.layout.directionGuide}</strong>
               <p>{copy.ona.presenter.directionBoundary}</p>
               <p>{copy.ona.layout.descriptiveBoundary}</p>
             </section>
-          ) : <>
+            {result && result.groups.length >= 2 ? (
+              <section
+                className="ena-group-contrast-controls ena-ona-descriptive-group-controls"
+                aria-label={copy.ona.presenter.groupPanelsTitle}
+                data-testid="open-ena-ona-descriptive-group-controls"
+              >
+                <div className="ena-group-contrast-heading">
+                  <h3>{copy.ona.presenter.groupPanelsTitle}</h3>
+                  <p>{copy.ona.presenter.groupPanelsDescription}</p>
+                </div>
+                <div className="ena-two-fields">
+                  <label className="ena-field">
+                    <span>{copy.ona.layout.primaryPlot}</span>
+                    <select
+                      value={primaryGroupName || result.groups[0]?.name || ""}
+                      onChange={(event) => {
+                        const nextPrimary = event.target.value;
+                        setPrimaryGroupName(nextPrimary);
+                        if (secondaryGroupName === nextPrimary) {
+                          setSecondaryGroupName(result.groups.find((group) => group.name !== nextPrimary)?.name ?? "");
+                        }
+                      }}
+                    >
+                      {result.groups.map((group) => (
+                        <option key={group.name} value={group.name} disabled={group.name === secondaryGroupName}>
+                          {group.name} · n = {group.count}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="ena-field">
+                    <span>{copy.ona.layout.secondaryPlot}</span>
+                    <select
+                      value={secondaryGroupName || result.groups[1]?.name || ""}
+                      onChange={(event) => {
+                        const nextSecondary = event.target.value;
+                        setSecondaryGroupName(nextSecondary);
+                        if (primaryGroupName === nextSecondary) {
+                          setPrimaryGroupName(result.groups.find((group) => group.name !== nextSecondary)?.name ?? "");
+                        }
+                      }}
+                    >
+                      {result.groups.map((group) => (
+                        <option key={group.name} value={group.name} disabled={group.name === primaryGroupName}>
+                          {group.name} · n = {group.count}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <p className="ena-sets-compatibility-note">{copy.ona.layout.descriptiveBoundary}</p>
+              </section>
+            ) : null}
+          </>) : <>
           {renderLongitudinalPanel()}
           <section
             className="ena-group-contrast-controls"
@@ -3541,11 +3597,21 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         onReturnToComparison={() => setCenterSurface("plot")}
         onExportCsv={() => {
           if (ordered && !window.confirm(copy.ona.dataView.exportConfirmation)) return;
+          const exportRows = ordered
+            ? buildOpenEnaDataViewExportRows({
+                columns: dataViewModel.columns,
+                rows,
+                groupLabels: {
+                  provenance: copy.ona.dataView.provenanceGroup,
+                  metadata: copy.ona.dataView.metadataGroup,
+                  code: copy.ona.dataView.codeGroup,
+                  "directed-edge": copy.ona.dataView.directedEdgeGroup,
+                },
+              })
+            : rows.map((row) => row.values as Row);
           downloadText(
             `open-ena-${ordered ? "ona-local-" : ""}${Date.now()}-data-view.csv`,
-            rowsToCsv(rows.map((row) => Object.fromEntries(
-              Object.entries(row.values).map(([key, value]) => [key, value ?? null]),
-            ) as Row)),
+            rowsToCsv(exportRows),
             "text/csv;charset=utf-8",
           );
         }}
@@ -3562,8 +3628,15 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           exportLabel: copy.ona.dataView.exportLabel,
           exportAriaLabel: copy.ona.dataView.exportAriaLabel,
           tableAriaLabel: copy.ona.dataView.tableAriaLabel,
+          previousPage: copy.ona.dataView.previousPage,
+          nextPage: copy.ona.dataView.nextPage,
+          rowsShown: copy.ona.dataView.rowsShown,
+          columnsShown: copy.ona.dataView.columnsShown,
+          rowPaginationLabel: copy.ona.dataView.rowPaginationLabel,
+          columnPaginationLabel: copy.ona.dataView.columnPaginationLabel,
           provenanceGroup: copy.ona.dataView.provenanceGroup,
           metadataGroup: copy.ona.dataView.metadataGroup,
+          codeGroup: copy.ona.dataView.codeGroup,
           directedEdgeGroup: copy.ona.dataView.directedEdgeGroup,
           yes: copy.ona.dataView.yes,
           no: copy.ona.dataView.no,

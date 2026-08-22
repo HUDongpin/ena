@@ -60,6 +60,20 @@ test("completed result kind, not mutable draft kind, selects the ONA renderer an
   assert.match(workspace, /OpenEnaOnaStats/);
 });
 
+test("ONA Presenter exposes every completed descriptive group instead of freezing the first two", () => {
+  assert.match(workspace, /data-testid="open-ena-ona-descriptive-group-controls"/);
+  const controls = workspace.match(
+    /<section[\s\S]{0,300}data-testid="open-ena-ona-descriptive-group-controls"[\s\S]*?<\/section>/,
+  )?.[0] ?? "";
+  assert.ok(controls);
+  assert.equal(controls.match(/result\.groups\.map\(/g)?.length, 2);
+  assert.match(controls, /setPrimaryGroupName/);
+  assert.match(controls, /setSecondaryGroupName/);
+  assert.match(controls, /copy\.ona\.layout\.primaryPlot/);
+  assert.match(controls, /copy\.ona\.layout\.secondaryPlot/);
+  assert.match(controls, /copy\.ona\.layout\.descriptiveBoundary/);
+});
+
 test("ONA Data View and capability controls are wired before unsupported actions can run", () => {
   assert.match(dataView, /"provenance"/);
   assert.match(dataView, /"directed-edge"/);

@@ -10201,6 +10201,52 @@ body:has(.open-ena-page) #main-content {
   font-weight: 750;
 }
 
+.ena-data-view-pagination,
+.ena-table-pagination {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px 12px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #d7e0df;
+  background: #f8faf9;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: calc(0.57rem + var(--ena-font-step, 1px));
+}
+
+.ena-data-view-pagination nav {
+  display: flex;
+  min-width: min(100%, 340px);
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ena-data-view-pagination button,
+.ena-table-pagination button {
+  min-height: 34px;
+  border: 1px solid #8ea4a0;
+  border-radius: 3px;
+  padding: 5px 9px;
+  color: #294a44;
+  background: #fff;
+  cursor: pointer;
+}
+
+.ena-data-view-pagination button:disabled,
+.ena-table-pagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.ena-data-view-pagination output,
+.ena-table-pagination output {
+  color: #465d59;
+  text-align: center;
+}
+
 .ena-data-view-scroll {
   min-height: 360px;
   max-height: min(65vh, 690px) !important;
@@ -11097,7 +11143,7 @@ body:has(.open-ena-page) #main-content {
 
 .ena-directional-mask-editor > button,
 .ena-directional-mask-presets button {
-  min-height: 36px;
+  min-height: 44px;
   border: 1px solid var(--ena-accent-strong);
   border-radius: 3px;
   padding: 6px 10px;
@@ -11108,26 +11154,33 @@ body:has(.open-ena-page) #main-content {
   font-weight: 760;
 }
 
-.ena-directional-mask-sheet {
+.ena-directional-mask-modal {
   position: fixed;
   z-index: 100;
-  top: max(14px, env(safe-area-inset-top));
-  right: max(14px, env(safe-area-inset-right));
-  bottom: max(14px, env(safe-area-inset-bottom));
-  left: max(14px, env(safe-area-inset-left));
+  inset: 0;
   display: grid;
+  place-items: center;
+  padding:
+    max(14px, env(safe-area-inset-top))
+    max(14px, env(safe-area-inset-right))
+    max(14px, env(safe-area-inset-bottom))
+    max(14px, env(safe-area-inset-left));
+  background: rgba(17, 29, 31, 0.32);
+}
+
+.ena-directional-mask-sheet {
+  position: relative;
   width: min(980px, calc(100vw - 28px));
   max-height: calc(100dvh - 28px);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 11px;
-  margin: auto;
   overflow: hidden;
   border: 1px solid #739b94;
   border-radius: 7px;
   padding: 14px;
   color: #2b4045;
   background: #fff;
-  box-shadow: 0 24px 80px rgba(16, 33, 36, 0.35), 0 0 0 9999px rgba(17, 29, 31, 0.32);
+  box-shadow: 0 24px 80px rgba(16, 33, 36, 0.35);
 }
 
 .ena-directional-mask-sheet > header {
@@ -11156,9 +11209,9 @@ body:has(.open-ena-page) #main-content {
 }
 
 .ena-directional-mask-sheet header > button {
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   border: 1px solid #9eb0ad;
   border-radius: 3px;
   color: #334b50;
@@ -11229,12 +11282,29 @@ body:has(.open-ena-page) #main-content {
 }
 
 .ena-directional-mask-sheet th span:first-child {
-  color: #647679;
+  color: #526568;
   font-size: 0.86em;
 }
 
 .ena-directional-mask-sheet td[data-diagonal="true"] {
   background: #f5faf2;
+}
+
+.ena-directional-mask-sheet td {
+  padding: 0;
+}
+
+.ena-directional-mask-cell {
+  display: grid;
+  min-width: 44px;
+  min-height: 44px;
+  place-items: center;
+  cursor: pointer;
+}
+
+.ena-directional-mask-cell:focus-within {
+  outline: 3px solid var(--ena-accent-strong);
+  outline-offset: -3px;
 }
 
 .ena-directional-mask-sheet input[type="checkbox"] {

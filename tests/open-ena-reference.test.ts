@@ -161,6 +161,28 @@ test("reference import rejects malformed matrices and accepts a raw-row-excludin
   assert.equal(JSON.stringify(fromBundle).includes("utterance"), false);
 });
 
+test("reference import rejects ONA bundle identity before full bundle validation", () => {
+  const orderedIdentities = [
+    {
+      schemaVersion: 2,
+      app: "ENA.HK Open ENA",
+      modelData: { analysisKind: "ona" },
+    },
+    {
+      schemaVersion: 2,
+      app: "ENA.HK Open ENA",
+      manifest: { configuration: { analysisKind: "ona" } },
+    },
+  ];
+
+  for (const identity of orderedIdentities) {
+    assert.throws(
+      () => parseRotationReference(JSON.stringify(identity), "ordered-results.json"),
+      /ONA result bundles cannot be used as reference rotations/i,
+    );
+  }
+});
+
 test("reference import rejects noncanonical axes, adjacency metadata, and node schemas", () => {
   const dataset = sampleDataset();
   const fitted = analyzeDataset(dataset, SAMPLE_CONFIG);

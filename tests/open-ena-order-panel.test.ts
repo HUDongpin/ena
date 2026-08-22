@@ -104,6 +104,9 @@ const panelCopy: OpenEnaOrderPanelCopy = {
   boundaryWithin: "Within",
   boundaryEnd: "End",
   emptyFields: "None",
+  previousPage: "Previous page",
+  nextPage: "Next page",
+  previewRange: "Rows {start}–{end} of {total} · Page {page} of {pages}",
 };
 
 test("order preview delegates canonical sorting and exposes source, horizon, field, and policy provenance", () => {
@@ -141,6 +144,31 @@ test("order preview delegates canonical sorting and exposes source, horizon, fie
     ties: "reject",
     stable: true,
   });
+});
+
+test("order preview paginates the legal input instead of materializing every row in the DOM", () => {
+  const rows = Array.from({ length: 250 }, (_, turn): Row => ({
+    unit: "u1",
+    horizon: "h1",
+    turn,
+    A: 1,
+    B: 0,
+  }));
+  const markup = renderToStaticMarkup(createElement(OpenEnaOrderPanel, {
+    value: panelValue,
+    onChange: () => undefined,
+    rows,
+    unitColumns: ["unit"],
+    horizonColumns: ["horizon"],
+    columnOptions: [{ value: "turn", label: "turn" }],
+    copy: panelCopy,
+  }));
+
+  assert.match(markup, /data-testid="open-ena-order-preview-pagination"/);
+  assert.match(markup, /data-total-rows="250"/);
+  assert.match(markup, /data-visible-rows="100"/);
+  assert.equal((markup.match(/data-order-preview-row=/g) ?? []).length, 100);
+  assert.match(markup, /Rows 1–100 of 250 · Page 1 of 3/);
 });
 
 test("order policy and preview fail closed for unconfirmed source order, missing values, and ties", () => {

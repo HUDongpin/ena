@@ -373,6 +373,7 @@ export function buildOrderedEdgeGlyph(input: {
   sourceRadius: number;
   targetRadius: number;
   relativeMagnitude: number;
+  visualScale: number;
   lane: -1 | 1;
   showChevron: boolean;
 }): OpenEnaOrderedEdgeGlyph {
@@ -384,12 +385,15 @@ export function buildOrderedEdgeGlyph(input: {
     input.sourceRadius,
     input.targetRadius,
     input.relativeMagnitude,
+    input.visualScale,
   ];
   if (values.some((value) => !Number.isFinite(value))
     || input.sourceRadius < 0
     || input.targetRadius < 0
     || input.relativeMagnitude < 0
-    || input.relativeMagnitude > 1) {
+    || input.relativeMagnitude > 1
+    || input.visualScale < 0.1
+    || input.visualScale > 4) {
     throw new Error("ONA broadcast glyph geometry requires finite bounded inputs.");
   }
   const dx = input.target.x - input.source.x;
@@ -411,7 +415,10 @@ export function buildOrderedEdgeGlyph(input: {
     x: input.target.x - ux * input.targetRadius + nx * laneOffset,
     y: input.target.y - uy * input.targetRadius + ny * laneOffset,
   };
-  const halfWidth = 2.5 + Math.sqrt(input.relativeMagnitude) * 8;
+  const halfWidth = Math.min(
+    34,
+    Math.max(1.5, (2.5 + Math.sqrt(input.relativeMagnitude) * 8) * input.visualScale),
+  );
   const baseLeft = {
     x: baseCenter.x + nx * halfWidth,
     y: baseCenter.y + ny * halfWidth,
@@ -424,12 +431,13 @@ export function buildOrderedEdgeGlyph(input: {
     x: apex.x + (baseCenter.x - apex.x) * 0.72,
     y: apex.y + (baseCenter.y - apex.y) * 0.72,
   };
+  const chevronScale = Math.sqrt(input.visualScale);
   const chevronBack = {
-    x: chevronTip.x - ux * 9,
-    y: chevronTip.y - uy * 9,
+    x: chevronTip.x - ux * 9 * chevronScale,
+    y: chevronTip.y - uy * 9 * chevronScale,
   };
   const chevronPath = input.showChevron
-    ? `M ${pointText({ x: chevronBack.x + nx * 6, y: chevronBack.y + ny * 6 })} L ${pointText(chevronTip)} L ${pointText({ x: chevronBack.x - nx * 6, y: chevronBack.y - ny * 6 })}`
+    ? `M ${pointText({ x: chevronBack.x + nx * 6 * chevronScale, y: chevronBack.y + ny * 6 * chevronScale })} L ${pointText(chevronTip)} L ${pointText({ x: chevronBack.x - nx * 6 * chevronScale, y: chevronBack.y - ny * 6 * chevronScale })}`
     : null;
   return {
     trianglePath: `M ${pointText(apex)} L ${pointText(baseLeft)} L ${pointText(baseRight)} Z`,

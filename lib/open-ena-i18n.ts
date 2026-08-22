@@ -227,6 +227,9 @@ export interface OpenEnaOnaCopy {
     boundaryWithin: string;
     boundaryEnd: string;
     emptyFields: string;
+    previousPage: string;
+    nextPage: string;
+    previewRange: string;
   };
   mask: {
     triggerLabel: string;
@@ -256,6 +259,7 @@ export interface OpenEnaOnaCopy {
     unavailableGroupPlot: string;
     descriptiveBoundary: string;
     directionGuide: string;
+    rightToolsLabel: string;
   };
   plot: {
     overallTitle: string;
@@ -272,6 +276,11 @@ export interface OpenEnaOnaCopy {
     selfDiscLegend: string;
     nodeSizeLabel: string;
     unitsLabel: string;
+    groundSourceLabel: string;
+    responseTargetLabel: string;
+    directionLegendLabel: string;
+    flippedLabel: string;
+    visibleCellsLabel: string;
   };
   dataView: {
     ariaLabel: string;
@@ -287,8 +296,15 @@ export interface OpenEnaOnaCopy {
     exportLabel: string;
     exportAriaLabel: string;
     tableAriaLabel: string;
+    previousPage: string;
+    nextPage: string;
+    rowsShown: string;
+    columnsShown: string;
+    rowPaginationLabel: string;
+    columnPaginationLabel: string;
     provenanceGroup: string;
     metadataGroup: string;
+    codeGroup: string;
     directedEdgeGroup: string;
     provenanceLabels: {
       orderedResponsePosition: string;
@@ -359,6 +375,8 @@ export interface OpenEnaOnaCopy {
     title: string;
     description: string;
     directionBoundary: string;
+    groupPanelsTitle: string;
+    groupPanelsDescription: string;
   };
 }
 
@@ -1308,6 +1326,9 @@ const en: OpenEnaCopy = {
       boundaryWithin: "Within",
       boundaryEnd: "End",
       emptyFields: "—",
+      previousPage: "Previous page",
+      nextPage: "Next page",
+      previewRange: "Rows {start}–{end} of {total} · Page {page} of {pages}",
     },
     mask: {
       triggerLabel: "Edit p² directional mask",
@@ -1337,6 +1358,7 @@ const en: OpenEnaCopy = {
       unavailableGroupPlot: "A second descriptive group network is not available for this model.",
       descriptiveBoundary: "ONA is descriptive-only in this release; these panels do not calculate group differences, p-values, effect sizes, confidence intervals, or causal effects.",
       directionGuide: "Triangle apex is ground/source, triangle base is response/target; a chevron marks the stronger reciprocal direction and an inner disc marks a self-connection.",
+      rightToolsLabel: "Ordered plot tools",
     },
     plot: {
       overallTitle: "Overall ordered network",
@@ -1353,6 +1375,11 @@ const en: OpenEnaCopy = {
       selfDiscLegend: "Inner disc = diagonal self-connection",
       nodeSizeLabel: "Node size",
       unitsLabel: "analytic units",
+      groundSourceLabel: "ground/source",
+      responseTargetLabel: "response/target",
+      directionLegendLabel: "Ordered network direction legend",
+      flippedLabel: "flipped",
+      visibleCellsLabel: "visible directed cells",
     },
     dataView: {
       ariaLabel: "Ordered Data View center surface",
@@ -1368,8 +1395,15 @@ const en: OpenEnaCopy = {
       exportLabel: "Export local Data View CSV ↓",
       exportAriaLabel: "Export identity-bearing local ONA Data View as CSV",
       tableAriaLabel: "Audited ONA response contributions",
+      previousPage: "Previous page",
+      nextPage: "Next page",
+      rowsShown: "Rows {start}–{end} of {total} · Page {page} of {pages}",
+      columnsShown: "Variable columns {start}–{end} of {total} · Page {page} of {pages}",
+      rowPaginationLabel: "Data View row pages",
+      columnPaginationLabel: "Data View variable-column pages",
       provenanceGroup: "Ordered provenance",
       metadataGroup: "Local metadata join",
+      codeGroup: "Codes",
       directedEdgeGroup: "Directed p² contributions",
       provenanceLabels: {
         orderedResponsePosition: "Ordered response position",
@@ -1440,6 +1474,8 @@ const en: OpenEnaCopy = {
       title: "Tune the directed ONA view",
       description: "These controls change only the directed 2D presentation; they do not rebuild the ordered model.",
       directionBoundary: "Display thresholds never change the fitted p² matrix or the configured directional mask.",
+      groupPanelsTitle: "Descriptive group panels",
+      groupPanelsDescription: "Choose any two completed groups for independent mean-network panels. Selection never computes subtraction, contrast, or inference.",
     },
   },
   sets: {
@@ -1792,6 +1828,9 @@ const zhHant: OpenEnaCopy = {
       boundaryWithin: "內部",
       boundaryEnd: "結束",
       emptyFields: "—",
+      previousPage: "上一頁",
+      nextPage: "下一頁",
+      previewRange: "第 {start}–{end} 列，共 {total} 列 · 第 {page}/{pages} 頁",
     },
     mask: {
       triggerLabel: "編輯 p² 方向遮罩",
@@ -1821,6 +1860,7 @@ const zhHant: OpenEnaCopy = {
       unavailableGroupPlot: "此模型沒有第二個可用的描述性群組網絡。",
       descriptiveBoundary: "此版本的 ONA 只作描述；這些面板不計算群組差異、p 值、效應量、信賴區間或因果效應。",
       directionGuide: "三角形頂點為來源碼／ground、底邊為回應碼／response；箭角標示互惠方向中較強者，內圓盤標示自連線。",
+      rightToolsLabel: "順序網絡繪圖工具",
     },
     plot: {
       overallTitle: "整體順序網絡",
@@ -1837,6 +1877,11 @@ const zhHant: OpenEnaCopy = {
       selfDiscLegend: "內圓盤＝對角自連線",
       nodeSizeLabel: "節點大小",
       unitsLabel: "分析單位",
+      groundSourceLabel: "來源碼／ground",
+      responseTargetLabel: "回應碼／response",
+      directionLegendLabel: "順序網絡方向圖例",
+      flippedLabel: "已翻轉",
+      visibleCellsLabel: "個可見有方向儲存格",
     },
     dataView: {
       ariaLabel: "順序資料檢視中央區域",
@@ -1852,8 +1897,15 @@ const zhHant: OpenEnaCopy = {
       exportLabel: "匯出本機資料檢視 CSV ↓",
       exportAriaLabel: "匯出含本機識別資料的 ONA 資料檢視 CSV",
       tableAriaLabel: "經審計的 ONA response 貢獻",
+      previousPage: "上一頁",
+      nextPage: "下一頁",
+      rowsShown: "第 {start}–{end} 列，共 {total} 列 · 第 {page}/{pages} 頁",
+      columnsShown: "第 {start}–{end} 個可變欄，共 {total} 欄 · 第 {page}/{pages} 頁",
+      rowPaginationLabel: "資料檢視列分頁",
+      columnPaginationLabel: "資料檢視可變欄分頁",
       provenanceGroup: "順序來源追蹤",
       metadataGroup: "本機詮釋資料連接",
+      codeGroup: "編碼",
       directedEdgeGroup: "有方向 p² 貢獻",
       provenanceLabels: {
         orderedResponsePosition: "排序後 response 位置",
@@ -1924,6 +1976,8 @@ const zhHant: OpenEnaCopy = {
       title: "調整有方向 ONA 視圖",
       description: "這些控制只改變有方向 2D 呈現，不會重新建立順序模型。",
       directionBoundary: "顯示門檻不會改變已擬合 p² 矩陣或已設定方向遮罩。",
+      groupPanelsTitle: "描述性群組面板",
+      groupPanelsDescription: "可從已完成結果選擇任意兩個群組，分別顯示平均網絡；此選擇不會計算相減、對比或推論。",
     },
   },
   sets: { ...en.sets, title: "分析集", description: "將端點模型保留在瀏覽器記憶體中，並比較共享同一參照幾何的擬合或投影網絡。", capture: "擷取目前模型", captureHint: "只擷取衍生座標與等權單位網絡平均值，不保留原始來源資料列；分析單位識別碼仍會保留，必要時請先假名化。", emptyTitle: "尚未擷取分析集", emptyText: "先建立端點模型，再在這裡擷取。擬合模型會安裝其可重用參照，使之後的 CSV 或 XLSX 檔案可投影到完全相同的 ENA 空間。", fitted: "擬合", projected: "投影", generatedReference: "可重用擬合參照", projectionReference: "已投影至參照", sourceHash: "分析資料表 SHA-256", hashScope: "雜湊範圍", primary: "主要分析集", secondary: "次要分析集", choosePrimary: "選擇主要分析集", chooseSecondary: "選擇相容的次要分析集", comparisonHint: "帶符號連線差異為共享固定幾何中的「主要減次要」。JSON 會保留分析單位識別碼；需要分享時請先假名化。", noCompatibleSecondary: "沒有可用的相容次要分析集。請在同一參照幾何中擷取或投影另一個端點模型。", remove: "移除", exportJson: "匯出比較 JSON", exportEdges: "匯出連線差異 CSV" },
@@ -2056,6 +2110,9 @@ const zhHans: OpenEnaCopy = {
       boundaryWithin: "内部",
       boundaryEnd: "结束",
       emptyFields: "—",
+      previousPage: "上一页",
+      nextPage: "下一页",
+      previewRange: "第 {start}–{end} 行，共 {total} 行 · 第 {page}/{pages} 页",
     },
     mask: {
       triggerLabel: "编辑 p² 方向遮罩",
@@ -2085,6 +2142,7 @@ const zhHans: OpenEnaCopy = {
       unavailableGroupPlot: "此模型没有第二个可用的描述性组网络。",
       descriptiveBoundary: "此版本的 ONA 仅作描述；这些面板不计算组差异、p 值、效应量、置信区间或因果效应。",
       directionGuide: "三角形顶点为源码／ground、底边为响应码／response；箭角标示互惠方向中较强者，内圆盘标示自连线。",
+      rightToolsLabel: "顺序网络绘图工具",
     },
     plot: {
       overallTitle: "整体顺序网络",
@@ -2101,6 +2159,11 @@ const zhHans: OpenEnaCopy = {
       selfDiscLegend: "内圆盘＝对角自连线",
       nodeSizeLabel: "节点大小",
       unitsLabel: "分析单位",
+      groundSourceLabel: "源码／ground",
+      responseTargetLabel: "响应码／response",
+      directionLegendLabel: "顺序网络方向图例",
+      flippedLabel: "已翻转",
+      visibleCellsLabel: "个可见有向单元格",
     },
     dataView: {
       ariaLabel: "顺序数据视图中央区域",
@@ -2116,8 +2179,15 @@ const zhHans: OpenEnaCopy = {
       exportLabel: "导出本地数据视图 CSV ↓",
       exportAriaLabel: "导出含本地标识数据的 ONA 数据视图 CSV",
       tableAriaLabel: "经审计的 ONA response 贡献",
+      previousPage: "上一页",
+      nextPage: "下一页",
+      rowsShown: "第 {start}–{end} 行，共 {total} 行 · 第 {page}/{pages} 页",
+      columnsShown: "第 {start}–{end} 个可变列，共 {total} 列 · 第 {page}/{pages} 页",
+      rowPaginationLabel: "数据视图行分页",
+      columnPaginationLabel: "数据视图可变列分页",
       provenanceGroup: "顺序来源追踪",
       metadataGroup: "本地元数据连接",
+      codeGroup: "编码",
       directedEdgeGroup: "有向 p² 贡献",
       provenanceLabels: {
         orderedResponsePosition: "排序后 response 位置",
@@ -2188,6 +2258,8 @@ const zhHans: OpenEnaCopy = {
       title: "调整有向 ONA 视图",
       description: "这些控件只改变有向 2D 呈现，不会重新构建顺序模型。",
       directionBoundary: "显示阈值不会改变已拟合 p² 矩阵或已设置方向遮罩。",
+      groupPanelsTitle: "描述性组面板",
+      groupPanelsDescription: "可从已完成结果选择任意两个组，分别显示平均网络；此选择不会计算相减、对比或推断。",
     },
   },
   sets: { ...zhHant.sets, title: "分析集", description: "将端点模型保留在浏览器内存中，并比较共享同一参考几何的拟合或投影网络。", capture: "捕获当前模型", captureHint: "只捕获派生坐标与等权单位网络均值，不保留原始来源数据行；分析单位标识符仍会保留，必要时请先假名化。", emptyTitle: "尚未捕获分析集", emptyText: "先构建端点模型，再在此捕获。拟合模型会安装其可复用参考，使之后的 CSV 或 XLSX 文件可投影到完全相同的 ENA 空间。", fitted: "拟合", projected: "投影", generatedReference: "可复用拟合参考", projectionReference: "已投影至参考", sourceHash: "分析数据表 SHA-256", hashScope: "哈希范围", primary: "主要分析集", secondary: "次要分析集", choosePrimary: "选择主要分析集", chooseSecondary: "选择兼容的次要分析集", comparisonHint: "带符号连线差异为共享固定几何中的“主要减次要”。JSON 会保留分析单位标识符；需要分享时请先假名化。", noCompatibleSecondary: "没有可用的兼容次要分析集。请在同一参考几何中捕获或投影另一个端点模型。", remove: "移除", exportJson: "导出比较 JSON", exportEdges: "导出连线差异 CSV" },
