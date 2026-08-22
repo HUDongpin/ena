@@ -85,6 +85,27 @@ test("ONA accepts finite nonnegative raw code counts while standard ENA remains 
   }
 });
 
+test("ONA rejects finite raw counts whose ordered products would overflow", () => {
+  const unsafe = manualDataset([
+    { unit: "u1", horizon: "h1", turn: 1, group: "g1", A: 1e308, B: 0, C: 1 },
+    { unit: "u1", horizon: "h1", turn: 2, group: "g1", A: 0, B: 1e308, C: 1 },
+  ]);
+  const safe = manualDataset([
+    { unit: "u1", horizon: "h1", turn: 1, group: "g1", A: 1e100, B: 0, C: 1 },
+    { unit: "u1", horizon: "h1", turn: 2, group: "g1", A: 0, B: 1e100, C: 1 },
+  ]);
+
+  assert.deepEqual(validateConfig(safe, orderedConfig()), []);
+  assert.match(
+    validateConfig(unsafe, orderedConfig()).join(" "),
+    /finite numeric safety range|ordered connection accumulation/i,
+  );
+  assert.throws(
+    () => buildOpenEnaAnalysisPlan(unsafe, orderedConfig()),
+    /finite numeric safety range|ordered connection accumulation/i,
+  );
+});
+
 test("the ONA plan binds ordered rows, source indices, raw counts, mask direction, and directed nodes", () => {
   const dataset = manualDataset([
     { unit: "u1", horizon: "h1", turn: 2, group: "g1", A: 0, B: 3, C: 0 },

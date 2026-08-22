@@ -291,6 +291,75 @@ function hasOrderedConnection(dataset: ParsedDataset, config: OpenEnaConfig) {
   return false;
 }
 
+/**
+ * jENA's ordered accumulator deliberately preserves raw count magnitude. That
+ * means a finite input can still overflow while forming a lagged product,
+ * updating a horizon's running sum, or summing row connections into a unit.
+ * Downstream numeric materialization treats non-finite values as zero, so fail
+ * before execution instead of silently changing the network.
+ */
+function hasFiniteOrderedConnectionNumerics(dataset: ParsedDataset, config: OpenEnaConfig) {
+  const canonical = canonicalizeOpenEnaConfig(config);
+  if (canonical.analysisKind !== "ona" || !canonical.orderPolicy || !canonical.directionalMask) return false;
+  const ordered = orderRowsForOpenEna(dataset.rows, canonical.conversationColumns, canonical.orderPolicy);
+  const width = canonical.codes.length;
+  const edgeCount = width * width;
+  const priorLimit = Number.isFinite(canonical.windowSizeBack)
+    ? Math.max(0, canonical.windowSizeBack - 1)
+    : Number.POSITIVE_INFINITY;
+  const horizonStates = new Map<string, { running: number[]; history: number[][] }>();
+  const unitSums = new Map<string, number[]>();
+
+  for (const row of ordered.rows) {
+    const values = canonical.codes.map((code) => rawCodeCount(row[code]) ?? 0);
+    const horizonKey = typedHorizonIdentity(row, canonical.conversationColumns);
+    const state = horizonStates.get(horizonKey) ?? {
+      running: Array.from({ length: width }, () => 0),
+      history: [],
+    };
+    horizonStates.set(horizonKey, state);
+
+    const unitKey = typedTupleIdentity(row, canonical.unitColumns, "ONA unit column");
+    const accumulated = unitSums.get(unitKey) ?? Array.from({ length: edgeCount }, () => 0);
+    unitSums.set(unitKey, accumulated);
+
+    for (let responseIndex = 0; responseIndex < width; responseIndex += 1) {
+      for (let groundIndex = 0; groundIndex < width; groundIndex += 1) {
+        const lagged = (state.running[groundIndex] ?? 0) * (values[responseIndex] ?? 0);
+        const sameRow = groundIndex === responseIndex
+          ? 0
+          : 0.5 * (values[groundIndex] ?? 0) * (values[responseIndex] ?? 0);
+        const connection = lagged + sameRow;
+        // Validate every raw connection, including masked-out cells: jENA
+        // retains full ONA rowConnectionCounts, and Infinity * 0 becomes NaN.
+        if (!Number.isFinite(lagged) || !Number.isFinite(sameRow) || !Number.isFinite(connection)) {
+          return false;
+        }
+        if (!canonical.directionalMask.enabled[groundIndex][responseIndex]) continue;
+        const edgeIndex = responseIndex * width + groundIndex;
+        const total = (accumulated[edgeIndex] ?? 0) + connection;
+        if (!Number.isFinite(total)) return false;
+        accumulated[edgeIndex] = total;
+      }
+    }
+
+    const updated = state.running.map((value, index) => value + (values[index] ?? 0));
+    if (updated.some((value) => !Number.isFinite(value))) return false;
+    if (Number.isFinite(priorLimit)) {
+      state.history.push(values);
+      if (state.history.length > priorLimit) {
+        const removed = state.history.shift() ?? [];
+        for (let index = 0; index < width; index += 1) {
+          updated[index] = (updated[index] ?? 0) - (removed[index] ?? 0);
+          if (!Number.isFinite(updated[index])) return false;
+        }
+      }
+    }
+    state.running = updated;
+  }
+  return true;
+}
+
 export function inferConfig(dataset: ParsedDataset): OpenEnaConfig {
   const { headers, rows } = dataset;
   const explicitUnitColumn = findHeader(headers, ["unit", "unit_id", "team_id", "participant_id", "student_id", "case_id"]);
@@ -573,7 +642,9 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
     }
   }
   if (errors.length === 0) {
-    if (analysisKind === "ona" && !hasOrderedConnection(dataset, config)) {
+    if (analysisKind === "ona" && !hasFiniteOrderedConnectionNumerics(dataset, config)) {
+      errors.push("ONA raw counts exceed the finite numeric safety range for ordered connection accumulation.");
+    } else if (analysisKind === "ona" && !hasOrderedConnection(dataset, config)) {
       errors.push("The selected codes do not form an enabled ordered connection within one typed horizon and backward window.");
     } else if (analysisKind === "ena" && !hasCoOccurrence(dataset, config)) {
       errors.push("The selected codes do not co-occur within the configured conversation window.");
