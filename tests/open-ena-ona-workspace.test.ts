@@ -74,6 +74,23 @@ test("ONA Presenter exposes every completed descriptive group instead of freezin
   assert.match(controls, /copy\.ona\.layout\.descriptiveBoundary/);
 });
 
+test("ONA bundle presentation records the two descriptive groups selected in Presenter", () => {
+  assert.match(
+    workspace,
+    /const selectedPresentationGroupOrder = useMemo(?:<[^>]+>)?\([\s\S]*?completedResultKind !== "ona"[\s\S]*?primaryGroupName[\s\S]*?secondaryGroupName/,
+  );
+  assert.equal(
+    workspace.match(/selectedGroupOrder: selectedPresentationGroupOrder/g)?.length,
+    3,
+    "Methods, Stats export, and toolbar export must share the completed ONA Presenter selection",
+  );
+  assert.doesNotMatch(
+    workspace,
+    /selectedGroupOrder: groupContrast\?\.groupOrder/,
+    "ONA has no subtraction contrast, so bundle presentation cannot derive its group selection from groupContrast",
+  );
+});
+
 test("ONA Data View and capability controls are wired before unsupported actions can run", () => {
   assert.match(dataView, /"provenance"/);
   assert.match(dataView, /"directed-edge"/);

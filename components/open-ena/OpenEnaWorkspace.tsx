@@ -943,6 +943,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     }
   }, [contrastUnavailable, groupContrastAxes, primaryGroupName, result, resultConfig, secondaryGroupName]);
   const groupContrast = groupContrastState.contrast;
+  const selectedPresentationGroupOrder = useMemo<readonly [string, string] | undefined>(() => {
+    if (completedResultKind !== "ona") return groupContrast?.groupOrder;
+    if (!result || !primaryGroupName || !secondaryGroupName || primaryGroupName === secondaryGroupName) {
+      return undefined;
+    }
+    const completedGroupNames = new Set(result.groups.map((group) => group.name));
+    return completedGroupNames.has(primaryGroupName) && completedGroupNames.has(secondaryGroupName)
+      ? [primaryGroupName, secondaryGroupName]
+      : undefined;
+  }, [completedResultKind, groupContrast, primaryGroupName, result, secondaryGroupName]);
   const maxNetworkWeight = useMemo(() => {
     if (!result) return 1e-9;
     let maximum = 1e-9;
@@ -969,7 +979,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           edgeScale,
           pointScale,
           plotZoom,
-          selectedGroupOrder: groupContrast?.groupOrder,
+          selectedGroupOrder: selectedPresentationGroupOrder,
         }, currentInference, inferenceProducerContext)
       : null,
     [
@@ -980,12 +990,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       edgeThreshold,
       flipX,
       flipY,
-      groupContrast,
       inferenceProducerContext,
       plotZoom,
       pointScale,
       result,
       resultConfig,
+      selectedPresentationGroupOrder,
       showLabels,
       showGroupLabels,
       showNetworks,
@@ -3373,7 +3383,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                           edgeScale,
                           pointScale,
                           plotZoom,
-                          selectedGroupOrder: groupContrast?.groupOrder,
+                          selectedGroupOrder: selectedPresentationGroupOrder,
                           groupContrast,
                           inference: currentInference,
                           inferenceContext: inferenceProducerContext ?? undefined,
@@ -3875,7 +3885,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                             edgeScale,
                             pointScale,
                             plotZoom,
-                            selectedGroupOrder: groupContrast?.groupOrder,
+                            selectedGroupOrder: selectedPresentationGroupOrder,
                             groupContrast,
                             inference: currentInference,
                             inferenceContext: inferenceProducerContext ?? undefined,
