@@ -482,7 +482,7 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
       const group = String(row[groupColumn] ?? "");
       const previous = groupByUnit.get(unit);
       if (previous !== undefined && previous !== group) {
-        errors.push(`Comparison group “${groupColumn}” must be stable within each unit; unit “${unit}” has multiple values.`);
+        errors.push(`Comparison group “${groupColumn}” must be stable within each unit; at least one analytic unit maps to multiple group values.`);
         break;
       }
       groupByUnit.set(unit, group);

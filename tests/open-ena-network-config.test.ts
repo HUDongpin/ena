@@ -239,6 +239,31 @@ test("CSV numeric order values use a recorded numeric comparator rather than lex
   });
 });
 
+test("numeric ordering compares large integers, precise decimals, and exponents losslessly", () => {
+  for (const values of [
+    ["9007199254740993", "9007199254740992"],
+    ["1.0000000000000002", "1.0000000000000001"],
+    ["1e1000", "9e999"],
+    ["-9007199254740992", "-9007199254740993"],
+  ]) {
+    const rows: Row[] = values.map((turn, index) => ({ horizon: "h", turn, index }));
+    assert.deepEqual(
+      orderRowsForOpenEna(rows, ["horizon"], columnOrder(["turn"])).sourceIndices,
+      [1, 0],
+      `lossless ascending order failed for ${values.join(" and ")}`,
+    );
+  }
+  assert.throws(
+    () => orderRowsForOpenEna([
+      { horizon: "h", turn: "1" },
+      { horizon: "h", turn: "1.0" },
+      { horizon: "h", turn: "1e0" },
+    ], ["horizon"], columnOrder(["turn"])),
+    /tie/i,
+    "textually different but numerically equal decimals must remain a true tie",
+  );
+});
+
 test("partially numeric string order values fail closed instead of silently changing comparator", () => {
   assert.throws(
     () => orderRowsForOpenEna([
@@ -457,6 +482,20 @@ test("ONA preflight rejects typed unit tuples that collapse to one display label
 
   assert.match(errors.join(" "), /unit identity.*ambiguous|distinct typed unit tuples/i);
   assert.doesNotMatch(errors.join(" "), /unit “?1”?/i, "the collision error must not disclose a participant label");
+});
+
+test("group-stability errors never expose an analytic-unit value or typed identity", () => {
+  const sentinel = "student-secret-42";
+  const dataset = manualDataset([
+    { unit: sentinel, horizon: "h", turn: 1, group: "control", A: 1, B: 0, C: 0 },
+    { unit: sentinel, horizon: "h", turn: 2, group: "treatment", A: 0, B: 1, C: 1 },
+  ], ["unit", "horizon", "turn", "group", "A", "B", "C"]);
+  const errors = validateConfig(dataset, orderedConfig({ groupColumn: "group" }));
+  const message = errors.join(" ");
+
+  assert.match(message, /stable within each.*unit|unit.*multiple group/i);
+  assert.doesNotMatch(message, new RegExp(sentinel, "i"));
+  assert.doesNotMatch(message, /\[\["unit"/u);
 });
 
 test("ONA keeps the conservative unit delimiter guard for multi-column display identities", () => {

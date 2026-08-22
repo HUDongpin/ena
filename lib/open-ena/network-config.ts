@@ -13,6 +13,19 @@ import type {
 type ComparableScalar = string | number | boolean;
 type TypedScalar = readonly ["string" | "number" | "boolean", ComparableScalar];
 
+interface DecimalOrderValue {
+  sign: -1 | 0 | 1;
+  digits: string;
+  /** Base-10 exponent applied to the integer significand in digits. */
+  exponent: bigint;
+}
+
+type OrderScalar =
+  | { kind: "number"; value: DecimalOrderValue }
+  | { kind: "string"; value: string }
+  | { kind: "boolean"; value: boolean }
+  | { kind: "iso-datetime"; value: number };
+
 const ORDER_COMPARATORS = new Set<OpenEnaOrderComparator>([
   "number",
   "string",
@@ -300,17 +313,34 @@ function typedScalar(value: unknown, label: string): TypedScalar {
   throw new Error(`${label} values must be strings, finite numbers, or booleans.`);
 }
 
-function orderTupleKey(tuple: readonly TypedScalar[]) {
-  return JSON.stringify(tuple);
+function orderTupleKey(tuple: readonly OrderScalar[]) {
+  return JSON.stringify(tuple.map((scalar) => scalar.kind === "number"
+    ? [scalar.kind, scalar.value.sign, scalar.value.digits, scalar.value.exponent.toString()]
+    : [scalar.kind, scalar.value]));
 }
 
-const CANONICAL_ORDER_NUMBER = /^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/u;
+const CANONICAL_ORDER_NUMBER = /^([+-]?)(0|[1-9]\d*)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/u;
 const ISO_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(?:Z|([+-])(\d{2}):(\d{2}))$/u;
 
-function canonicalNumericString(value: string): number | null {
-  if (!CANONICAL_ORDER_NUMBER.test(value)) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+function decimalOrderValue(value: string): DecimalOrderValue | null {
+  const match = CANONICAL_ORDER_NUMBER.exec(value);
+  if (!match) return null;
+  const exponentText = match[4] ?? "0";
+  if (exponentText.replace(/^[+-]/u, "").length > 9) return null;
+  const fraction = match[3] ?? "";
+  let digits = `${match[2]}${fraction}`.replace(/^0+/u, "");
+  if (digits.length === 0) return { sign: 0, digits: "0", exponent: BigInt(0) };
+  let exponent = BigInt(exponentText) - BigInt(fraction.length);
+  const trailingZeroCount = /0+$/u.exec(digits)?.[0].length ?? 0;
+  if (trailingZeroCount > 0) {
+    digits = digits.slice(0, -trailingZeroCount);
+    exponent += BigInt(trailingZeroCount);
+  }
+  return {
+    sign: match[1] === "-" ? -1 : 1,
+    digits,
+    exponent,
+  };
 }
 
 function isoDateTimeValue(value: string): number | null {
@@ -339,26 +369,27 @@ function isoDateTimeValue(value: string): number | null {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
-function orderScalar(value: unknown, column: string, comparator: OpenEnaOrderComparator): TypedScalar {
+function orderScalar(value: unknown, column: string, comparator: OpenEnaOrderComparator): OrderScalar {
   const scalar = typedScalar(value, `ONA order column “${column}”`);
   if (comparator === "number") {
-    if (scalar[0] === "number") return scalar;
-    if (scalar[0] === "string") {
-      const parsed = canonicalNumericString(String(scalar[1]));
-      if (parsed !== null) return ["number", parsed];
+    if (scalar[0] === "number" || scalar[0] === "string") {
+      const parsed = decimalOrderValue(String(scalar[1]));
+      if (parsed !== null) return { kind: "number", value: parsed };
     }
   } else if (comparator === "boolean") {
-    if (scalar[0] === "boolean") return scalar;
+    if (scalar[0] === "boolean" && typeof scalar[1] === "boolean") {
+      return { kind: "boolean", value: scalar[1] };
+    }
     if (scalar[0] === "string" && (scalar[1] === "true" || scalar[1] === "false")) {
-      return ["boolean", scalar[1] === "true"];
+      return { kind: "boolean", value: scalar[1] === "true" };
     }
   } else if (comparator === "iso-datetime") {
     if (scalar[0] === "string" && typeof scalar[1] === "string") {
       const timestamp = isoDateTimeValue(scalar[1]);
-      if (timestamp !== null) return ["number", timestamp];
+      if (timestamp !== null) return { kind: "iso-datetime", value: timestamp };
     }
-  } else if (comparator === "string" && scalar[0] === "string") {
-    return scalar;
+  } else if (comparator === "string" && scalar[0] === "string" && typeof scalar[1] === "string") {
+    return { kind: "string", value: scalar[1] };
   }
   throw new Error(`ONA order column “${column}” contains values incompatible with its resolved ${comparator} comparator.`);
 }
@@ -389,19 +420,47 @@ export function typedHorizonIdentity(row: Row, columns: readonly string[]): stri
   return typedTupleIdentity(row, columns, "ONA horizon column");
 }
 
-function compareTyped(left: TypedScalar, right: TypedScalar) {
-  if (left[0] !== right[0]) {
+function compareDecimal(left: DecimalOrderValue, right: DecimalOrderValue) {
+  if (left.sign !== right.sign) return left.sign < right.sign ? -1 : 1;
+  if (left.sign === 0) return 0;
+  const leftMagnitude = BigInt(left.digits.length) + left.exponent;
+  const rightMagnitude = BigInt(right.digits.length) + right.exponent;
+  let comparison = leftMagnitude === rightMagnitude ? 0 : leftMagnitude < rightMagnitude ? -1 : 1;
+  if (comparison === 0) {
+    const width = Math.max(left.digits.length, right.digits.length);
+    for (let index = 0; index < width; index += 1) {
+      const leftDigit = left.digits.charCodeAt(index) || 48;
+      const rightDigit = right.digits.charCodeAt(index) || 48;
+      if (leftDigit !== rightDigit) {
+        comparison = leftDigit < rightDigit ? -1 : 1;
+        break;
+      }
+    }
+  }
+  return left.sign === 1 ? comparison : -comparison;
+}
+
+function compareOrderScalars(left: OrderScalar, right: OrderScalar) {
+  if (left.kind !== right.kind) {
     throw new Error("ONA order values must have one comparable scalar type within each horizon and order column; mixed values are rejected.");
   }
-  if (left[1] === right[1]) return 0;
-  if (left[0] === "boolean") return left[1] === false ? -1 : 1;
-  return left[1] < right[1] ? -1 : 1;
+  if (left.kind === "number" && right.kind === "number") return compareDecimal(left.value, right.value);
+  if (left.kind === "boolean" && right.kind === "boolean") {
+    return left.value === right.value ? 0 : left.value === false ? -1 : 1;
+  }
+  if (left.kind === "iso-datetime" && right.kind === "iso-datetime") {
+    return left.value === right.value ? 0 : left.value < right.value ? -1 : 1;
+  }
+  if (left.kind === "string" && right.kind === "string") {
+    return left.value === right.value ? 0 : left.value < right.value ? -1 : 1;
+  }
+  throw new Error("ONA order comparator state is inconsistent.");
 }
 
 interface IndexedOrderedRow {
   row: Row;
   sourceIndex: number;
-  orderTuple: TypedScalar[];
+  orderTuple: OrderScalar[];
 }
 
 export function orderRowsForOpenEna(
@@ -446,16 +505,15 @@ export function orderRowsForOpenEna(
   const ordered: IndexedOrderedRow[] = [];
   for (const group of groups.values()) {
     for (let columnIndex = 0; columnIndex < clonedPolicy.columns.length; columnIndex += 1) {
-      const types = new Set(group.map((entry) => entry.orderTuple[columnIndex][0]));
+      const types = new Set(group.map((entry) => entry.orderTuple[columnIndex].kind));
       if (types.size > 1) {
         throw new Error(`ONA order column “${clonedPolicy.columns[columnIndex]}” contains mixed incomparable values within one horizon.`);
       }
     }
     const seenOrderTuples = new Set<string>();
     for (const entry of group) {
-      // Numeric -0 and +0 are an ordering tie even though they are distinct
-      // horizon identities. The ordinary JSON number encoding intentionally
-      // normalizes both here so the configured tie policy remains fail-closed.
+      // Equivalent decimal forms (including -0/+0, 1/1.0, and exponent
+      // spellings) share one lossless key so the tie policy remains fail-closed.
       const key = orderTupleKey(entry.orderTuple);
       if (seenOrderTuples.has(key)) {
         throw new Error("ONA column ordering contains a tie within one horizon; add an order column that uniquely resolves every row.");
@@ -464,7 +522,7 @@ export function orderRowsForOpenEna(
     }
     group.sort((left, right) => {
       for (let index = 0; index < left.orderTuple.length; index += 1) {
-        const comparison = compareTyped(left.orderTuple[index], right.orderTuple[index]);
+        const comparison = compareOrderScalars(left.orderTuple[index], right.orderTuple[index]);
         if (comparison !== 0) return comparison;
       }
       return left.sourceIndex - right.sourceIndex;
