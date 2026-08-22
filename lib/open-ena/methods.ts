@@ -431,7 +431,7 @@ export function buildMethodsReport(
     `- Edge width scale: ${presentation.edgeScale ?? 1}×; unit point scale: ${presentation.pointScale ?? 1}×; plot zoom: ${presentation.plotZoom ?? 1}×.`,
     "- jENA diagnostic statistics were used only where the model type and automatic unit limit permitted them.",
     ...(result.projectionReference
-      ? ["- Point-centroid correlations and target-fitted centroids were withheld because they do not describe the fixed imported node geometry in jENA 0.6.2 reference projections."]
+      ? ["- Point-centroid correlations and target-fitted centroids were withheld because they do not describe the fixed imported node geometry in jENA 0.7.0-ona.0 reference projections."]
       : []),
     "",
     ...intervalSection,

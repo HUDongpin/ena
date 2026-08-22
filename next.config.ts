@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
   agentRules: false,
+  transpilePackages: ["jena-js"],
   async redirects() {
     return [
       { source: "/mission", destination: "/en/mission", permanent: false },

@@ -373,7 +373,7 @@ export function buildManifest(
       "Visual separation and edge thickness are descriptive; they do not establish statistical significance or causality.",
       "Trajectory steps are repeated observations of analytic units. Open ENA does not apply endpoint group tests or point-centroid correlation diagnostics to trajectory models.",
       "For reference projections, the axes, center, and reference nodes remain fixed; variance describes the current dataset in that basis, not explained variance in the fitted reference sample.",
-      "For reference projections, point-centroid correlations and target-fitted centroid tables are withheld because jENA 0.6.2 does not compute them from the displayed fixed reference nodes.",
+      "For reference projections, point-centroid correlations and target-fitted centroid tables are withheld because jENA 0.7.0-ona.0 does not compute them from the displayed fixed reference nodes.",
       "Imported reference names, analyzed-table hashes, hash kinds, timestamps, and fit descriptors are declared provenance: ENA.HK validates their structure but does not independently authenticate their origin.",
       "The 3D ENA link opens a separate website; this workspace does not automatically transfer the dataset, configuration, or computed model.",
       "The result bundle excludes raw source rows. Preserve the exact source coded-data file and its codebook alongside the manifest and derived outputs for reproducibility.",

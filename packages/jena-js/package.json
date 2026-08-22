@@ -1,0 +1,102 @@
+{
+  "name": "jena-js",
+  "version": "0.7.0-ona.0",
+  "private": true,
+  "description": "Standalone TypeScript/JavaScript library for Epistemic Network Analysis, ported from rENA for browser and Node runtimes.",
+  "type": "module",
+  "license": "GPL-3.0-only",
+  "author": "Dongpin Hu",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HUDongpin/jENA.git"
+  },
+  "homepage": "https://github.com/HUDongpin/jENA#readme",
+  "bugs": {
+    "url": "https://github.com/HUDongpin/jENA/issues"
+  },
+  "keywords": [
+    "ena",
+    "epistemic-network-analysis",
+    "rENA",
+    "learning-analytics",
+    "quantitative-ethnography",
+    "network-analysis"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "sideEffects": [
+    "./dist/browser/worker.js"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./rotation": {
+      "types": "./dist/rotation/index.d.ts",
+      "import": "./dist/rotation/index.js"
+    },
+    "./experimental": {
+      "types": "./dist/experimental.d.ts",
+      "import": "./dist/experimental.js"
+    },
+    "./plot": {
+      "types": "./dist/plot/index.d.ts",
+      "import": "./dist/plot/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser/index.d.ts",
+      "import": "./dist/browser/index.js"
+    },
+    "./browser/worker": {
+      "types": "./dist/browser/worker.d.ts",
+      "import": "./dist/browser/worker.js"
+    }
+  },
+  "files": [
+    "dist",
+    "PROVENANCE.md",
+    "NUMERICS.md",
+    "CHANGELOG.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts src/core/index.ts src/rotation/index.ts src/experimental.ts src/plot/index.ts src/browser/index.ts src/browser/worker.ts --format esm --dts --sourcemap --clean",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run test:pack-contract && npm run build && npm run pack:check",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:browser": "vitest run --config vitest.browser.config.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "bench": "npm run build && node scripts/bench.mjs",
+    "pack:check": "node scripts/pack-check.mjs",
+    "test:pack-contract": "node --test scripts/package-contract.test.mjs",
+    "goldens:r": "Rscript scripts/regen-goldens-rstudio.R .",
+    "goldens:stats": "Rscript scripts/generate-stats-goldens.R .",
+    "goldens:rotations": "Rscript scripts/generate-rotation-goldens.R .",
+    "goldens:elasticnet": "Rscript scripts/generate-elasticnet-goldens.R .",
+    "goldens:diff": "node scripts/compare-goldens.mjs",
+    "goldens:compare": "vitest run tests/r-goldens.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@typescript-eslint/eslint-plugin": "^8.32.0",
+    "@typescript-eslint/parser": "^8.32.0",
+    "@vitest/browser": "^3.2.7",
+    "eslint": "^9.26.0",
+    "playwright": "^1.61.1",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.7"
+  }
+}

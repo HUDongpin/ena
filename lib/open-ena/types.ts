@@ -282,7 +282,7 @@ export const TRAJECTORY_SAMPLE_CONFIG: OpenEnaConfig = {
   centerAlignToOrigin: true,
 };
 
-export const JENA_RUNTIME_VERSION = "0.6.2";
+export const JENA_RUNTIME_VERSION = "0.7.0-ona.0";
 export const OPEN_ENA_APP_VERSION = "0.1.0";
 
 export function sameOpenEnaConfig(left: OpenEnaConfig, right: OpenEnaConfig) {
