@@ -4,27 +4,29 @@ export interface HorizontalScrollableRegion {
   scrollLeft: number;
 }
 
+/** Returns true only when the key produces horizontal movement. */
 export function moveHorizontalScrollableRegion(
   region: HorizontalScrollableRegion,
   key: string,
 ): boolean {
   const maximum = Math.max(0, region.scrollWidth - region.clientWidth);
+  const current = Math.min(maximum, Math.max(0, region.scrollLeft));
   const lineStep = Math.max(40, Math.floor(region.clientWidth * 0.12));
   const pageStep = Math.max(80, Math.floor(region.clientWidth * 0.85));
   let next: number;
 
   switch (key) {
     case "ArrowLeft":
-      next = region.scrollLeft - lineStep;
+      next = current - lineStep;
       break;
     case "ArrowRight":
-      next = region.scrollLeft + lineStep;
+      next = current + lineStep;
       break;
     case "PageUp":
-      next = region.scrollLeft - pageStep;
+      next = current - pageStep;
       break;
     case "PageDown":
-      next = region.scrollLeft + pageStep;
+      next = current + pageStep;
       break;
     case "Home":
       next = 0;
@@ -36,6 +38,8 @@ export function moveHorizontalScrollableRegion(
       return false;
   }
 
-  region.scrollLeft = Math.min(maximum, Math.max(0, next));
+  const clamped = Math.min(maximum, Math.max(0, next));
+  if (clamped === current) return false;
+  region.scrollLeft = clamped;
   return true;
 }

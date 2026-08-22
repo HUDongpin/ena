@@ -452,14 +452,36 @@ test("horizontal evidence regions implement deterministic cross-browser keyboard
   assert.equal(region.scrollLeft, 295);
   assert.equal(moveHorizontalScrollableRegion(region, "End"), true);
   assert.equal(region.scrollLeft, 700);
-  assert.equal(moveHorizontalScrollableRegion(region, "ArrowRight"), true);
+  assert.equal(moveHorizontalScrollableRegion(region, "ArrowRight"), false);
   assert.equal(region.scrollLeft, 700, "right movement must clamp at the maximum");
   assert.equal(moveHorizontalScrollableRegion(region, "Home"), true);
   assert.equal(region.scrollLeft, 0);
-  assert.equal(moveHorizontalScrollableRegion(region, "ArrowLeft"), true);
+  assert.equal(moveHorizontalScrollableRegion(region, "ArrowLeft"), false);
   assert.equal(region.scrollLeft, 0, "left movement must clamp at zero");
   assert.equal(moveHorizontalScrollableRegion(region, "Enter"), false);
   assert.equal(region.scrollLeft, 0, "unhandled keys must not change the region");
+
+  for (const key of ["ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End"]) {
+    const unscrollable = { clientWidth: 500, scrollWidth: 400, scrollLeft: 0 };
+    assert.equal(
+      moveHorizontalScrollableRegion(unscrollable, key),
+      false,
+      `${key} must preserve page navigation when the region has no horizontal overflow`,
+    );
+    assert.equal(unscrollable.scrollLeft, 0);
+  }
+
+  const leftBoundary = { clientWidth: 300, scrollWidth: 1_000, scrollLeft: 0 };
+  for (const key of ["ArrowLeft", "PageUp", "Home"]) {
+    assert.equal(moveHorizontalScrollableRegion(leftBoundary, key), false);
+    assert.equal(leftBoundary.scrollLeft, 0);
+  }
+
+  const rightBoundary = { clientWidth: 300, scrollWidth: 1_000, scrollLeft: 700 };
+  for (const key of ["ArrowRight", "PageDown", "End"]) {
+    assert.equal(moveHorizontalScrollableRegion(rightBoundary, key), false);
+    assert.equal(rightBoundary.scrollLeft, 700);
+  }
 });
 
 test("Data View paginates both rows and variable columns within a bounded DOM surface", () => {
