@@ -4,6 +4,7 @@ import type { Row } from "jena-js";
 import { analyzeDataset, buildManifest } from "../lib/open-ena/analyze";
 import { OpenEnaCapabilityError } from "../lib/open-ena/capabilities";
 import { buildAnalysisBundle, parseOpenEnaAnalysisBundle } from "../lib/open-ena/export";
+import { buildMethodsReport } from "../lib/open-ena/methods";
 import { createDirectionalMask } from "../lib/open-ena/network-config";
 import {
   SAMPLE_CONFIG,
@@ -256,4 +257,79 @@ test("ONA bundle blocks a forged reference rotation before reading result rotati
     (error) => error instanceof OpenEnaCapabilityError
       && error.feature === "reference-rotation",
   );
+});
+
+test("ONA Methods records the resolved directed scientific contract and omits ENA-only claims", () => {
+  const { dataset, config, result } = orderedFixture();
+  const report = buildMethodsReport(dataset, config, result, SOURCE_HASH);
+
+  assert.match(report, /Order Network Analysis \(ONA\)|ordered network/i);
+  assert.match(report, /requested order policy/i);
+  assert.match(report, /resolved order policy/i);
+  assert.match(report, /`turn`[^\n]*`number`|number[^\n]*`turn`/i);
+  assert.match(report, /ascending/i);
+  assert.match(report, /missing[^\n]*reject|reject[^\n]*missing/i);
+  assert.match(report, /ties?[^\n]*reject|reject[^\n]*ties?/i);
+  assert.match(report, /ground\/source[^\n]*response\/target|ground[^\n]*→[^\n]*response/i);
+  assert.match(report, /3²|3 × 3|9 directed cells/i);
+  assert.match(report, /diagonal/i);
+  assert.match(report, /total stanza rows including the current row/i);
+  assert.match(report, /unbounded|all earlier rows/i);
+  assert.match(report, /raw code-count products/i);
+  assert.match(report, /half-weight|0\.5/i);
+  assert.match(report, /directed method|directed node/i);
+  assert.match(report, /directional mask/i);
+  assert.match(report, /9 of 9|9\/9/);
+  assert.match(report, /descriptive-only|descriptive only/i);
+  assert.match(report, /sorted-to-source[^\n]*excluded|source mapping[^\n]*excluded/i);
+
+  assert.doesNotMatch(report, /Source row order defined sequence/i);
+  assert.doesNotMatch(report, /node positions used the undirected method/i);
+  assert.doesNotMatch(report, /Group-mean uncertainty guides/i);
+  assert.doesNotMatch(report, /Student-t confidence interval/i);
+  assert.doesNotMatch(report, /jENA diagnostic statistics were used/i);
+  assert.doesNotMatch(report, /reference projection/i);
+});
+
+test("ONA Methods blocks unverified inference and forged reference rotation before legacy reads", () => {
+  const { dataset, config, result } = orderedFixture();
+  assert.throws(
+    () => buildMethodsReport(
+      dataset,
+      config,
+      result,
+      SOURCE_HASH,
+      result.dimensions.slice(0, 2),
+      {},
+      {} as never,
+    ),
+    (error) => error instanceof OpenEnaCapabilityError && error.feature === "inference",
+  );
+
+  const forgedConfig: OpenEnaConfig = {
+    ...config,
+    rotation: "reference",
+    referenceRotationId: "forged-reference",
+  };
+  const poisonedResult = new Proxy(result, {
+    get(target, property, receiver) {
+      if (property === "projectionReference") {
+        throw new Error("result projectionReference was read before the ONA Methods reference guard");
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  assert.throws(
+    () => buildMethodsReport(dataset, forgedConfig, poisonedResult, SOURCE_HASH),
+    (error) => error instanceof OpenEnaCapabilityError
+      && error.feature === "reference-rotation",
+  );
+});
+
+test("standard ENA Methods retains its established source-order and undirected wording", () => {
+  const { dataset, config, result } = standardFixture();
+  const report = buildMethodsReport(dataset, config, result, SOURCE_HASH);
+  assert.match(report, /Source row order defined sequence within conversations/);
+  assert.match(report, /node positions used the undirected method/);
+  assert.match(report, /Group-mean uncertainty guides/);
 });
