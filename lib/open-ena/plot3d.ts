@@ -429,32 +429,33 @@ function axisTraces(
  * Compiles the already-fitted jENA x/y/z result into Plotly display data.
  * This function neither invokes jENA nor changes any scientific coordinate.
  */
-export function compileOpenEna3dPlotSpec({
-  result,
-  contrast = null,
-  plotKind = "comparison",
-  compact = false,
-  displayModeBar = true,
-  codeColors,
-  groupColumn,
-  xDimension,
-  yDimension,
-  zDimension,
-  camera,
-  showPoints,
-  showNetworks,
-  showLabels,
-  showUnitLabels,
-  showVariance,
-  showTrajectories,
-  edgeScale,
-  edgeThreshold,
-  pointScale,
-  plotZoom,
-  flipX,
-  flipY,
-}: CompileOpenEna3dPlotInput): OpenEna3dPlotSpec {
-  assertOpenEnaCapabilityForResult(result, "3d");
+export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): OpenEna3dPlotSpec {
+  assertOpenEnaCapabilityForResult(input.result, "3d");
+  const {
+    result,
+    contrast = null,
+    plotKind = "comparison",
+    compact = false,
+    displayModeBar = true,
+    codeColors,
+    groupColumn,
+    xDimension,
+    yDimension,
+    zDimension,
+    camera,
+    showPoints,
+    showNetworks,
+    showLabels,
+    showUnitLabels,
+    showVariance,
+    showTrajectories,
+    edgeScale,
+    edgeThreshold,
+    pointScale,
+    plotZoom,
+    flipX,
+    flipY,
+  } = input;
   const dimensions = [xDimension, yDimension, zDimension] as const;
   const traces: OpenEna3dTrace[] = [];
   const nodeRows = result.set.rotation.nodes ?? [];

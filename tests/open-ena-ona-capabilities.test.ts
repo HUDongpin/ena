@@ -168,6 +168,13 @@ test("all unverified production entry points fail closed for ONA before legacy p
   );
   expectBlocked(() => buildLongitudinalDerivation(result, config, dataset, {} as never), "trajectory");
   expectBlocked(() => compileOpenEna3dPlotSpec({ result } as never), "3d");
+  const poisoned3dInput = new Proxy({ result }, {
+    get(target, property, receiver) {
+      if (property === "result") return Reflect.get(target, property, receiver);
+      throw new Error(`3D input property ${String(property)} was read before the ONA capability guard`);
+    },
+  });
+  expectBlocked(() => compileOpenEna3dPlotSpec(poisoned3dInput as never), "3d");
   expectBlocked(() => buildEndpointMannWhitney(result, "group", result.dimensions), "inference");
   await assert.rejects(
     () => runOpenEnaInferenceV2({ result } as never),
