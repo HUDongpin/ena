@@ -1,5 +1,10 @@
 import type { Row, Scalar } from "jena-js";
 import type { OpenEnaConfig, ParsedDataset } from "./types";
+import {
+  analysisKindFor,
+  canonicalizeOpenEnaConfig,
+  orderRowsForOpenEna,
+} from "./network-config";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_ROWS = 20_000;
@@ -209,6 +214,63 @@ function hasCoOccurrence(dataset: ParsedDataset, config: OpenEnaConfig) {
   return false;
 }
 
+function typedTupleIdentity(row: Row, columns: readonly string[]) {
+  return JSON.stringify(columns.map((column) => {
+    const value = row[column];
+    if (typeof value === "number") return ["number", value];
+    if (typeof value === "boolean") return ["boolean", value];
+    return ["string", value];
+  }));
+}
+
+function hasOrderedConnection(dataset: ParsedDataset, config: OpenEnaConfig) {
+  const canonical = canonicalizeOpenEnaConfig(config);
+  if (canonical.analysisKind !== "ona" || !canonical.orderPolicy || !canonical.directionalMask) return false;
+  const ordered = orderRowsForOpenEna(dataset.rows, canonical.conversationColumns, canonical.orderPolicy);
+  const rowsByHorizon = new Map<string, Row[]>();
+  for (const row of ordered.rows) {
+    const key = typedTupleIdentity(row, canonical.conversationColumns);
+    const rows = rowsByHorizon.get(key) ?? [];
+    rows.push(row);
+    rowsByHorizon.set(key, rows);
+  }
+  for (const rows of rowsByHorizon.values()) {
+    const priorCodeCounts = new Uint32Array(canonical.codes.length);
+    const activeCodeHistory: number[][] = [];
+    let historyStart = 0;
+    const maxPriorRows = canonical.windowSizeBack === Number.POSITIVE_INFINITY
+      ? Number.POSITIVE_INFINITY
+      : Math.max(0, canonical.windowSizeBack - 1);
+    for (let responseIndex = 0; responseIndex < rows.length; responseIndex += 1) {
+      const response = rows[responseIndex];
+      while (responseIndex - historyStart > maxPriorRows) {
+        for (const codeIndex of activeCodeHistory[historyStart]) priorCodeCounts[codeIndex] -= 1;
+        historyStart += 1;
+      }
+      const responseCodes = canonical.codes
+        .map((code, codeIndex) => isActiveCode(response[code]) ? codeIndex : -1)
+        .filter((codeIndex) => codeIndex >= 0);
+      for (const sourceCode of responseCodes) {
+        for (const targetCode of responseCodes) {
+          if (sourceCode !== targetCode && canonical.directionalMask.enabled[sourceCode][targetCode]) {
+            return true;
+          }
+        }
+      }
+      for (const targetCode of responseCodes) {
+        for (let sourceCode = 0; sourceCode < priorCodeCounts.length; sourceCode += 1) {
+          if (priorCodeCounts[sourceCode] > 0 && canonical.directionalMask.enabled[sourceCode][targetCode]) {
+            return true;
+          }
+        }
+      }
+      for (const codeIndex of responseCodes) priorCodeCounts[codeIndex] += 1;
+      activeCodeHistory.push(responseCodes);
+    }
+  }
+  return false;
+}
+
 export function inferConfig(dataset: ParsedDataset): OpenEnaConfig {
   const { headers, rows } = dataset;
   const explicitUnitColumn = findHeader(headers, ["unit", "unit_id", "team_id", "participant_id", "student_id", "case_id"]);
@@ -251,6 +313,7 @@ export function inferConfig(dataset: ParsedDataset): OpenEnaConfig {
   });
 
   return {
+    analysisKind: "ena",
     unitColumns,
     conversationColumns,
     groupColumn,
@@ -290,6 +353,18 @@ export function officialComparisonRotation(
 
 export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): string[] {
   const errors: string[] = [];
+  let analysisKind: "ena" | "ona";
+  try {
+    analysisKind = analysisKindFor(config);
+  } catch (error) {
+    return [error instanceof Error ? error.message : "Open ENA analysis kind is invalid."];
+  }
+  let canonicalConfig: ReturnType<typeof canonicalizeOpenEnaConfig> | null = null;
+  try {
+    canonicalConfig = canonicalizeOpenEnaConfig(config);
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : "Open ENA configuration canonicalization failed.");
+  }
   if (config.codes.length > MAX_CODE_COLUMNS) {
     return [`This browser release supports up to ${MAX_CODE_COLUMNS} code columns per run.`];
   }
@@ -303,11 +378,25 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
   if (config.rotation === "mean" && config.model !== "EndPoint") {
     errors.push("Mean rotation is currently limited to endpoint models so every analytic unit receives equal weight.");
   }
+  if (analysisKind === "ona") {
+    if (config.model !== "EndPoint") errors.push("ONA is currently limited to endpoint models.");
+    if (config.window !== "MovingStanzaWindow") errors.push("ONA requires the moving stanza window.");
+    if (!(config.windowSizeBack === Number.POSITIVE_INFINITY
+      || (Number.isInteger(config.windowSizeBack) && config.windowSizeBack >= 1))) {
+      errors.push("ONA backward window size must be an integer of at least 1 or Infinity.");
+    }
+    if (config.windowSizeForward !== 0) errors.push("ONA requires the forward window size to be zero.");
+    if (config.weightBy !== "sum") errors.push("ONA requires raw sum weighting.");
+    if (config.rotation !== "svd") errors.push("ONA currently requires SVD rotation.");
+    if (config.referenceRotationId !== null) errors.push("ONA cannot retain or import a reference rotation.");
+  }
   const reservedColumns = new Set(["ENA_UNIT", "TRAJ_UNIT", "OPEN_ENA_POINT_INDEX"]);
   const edgeColumns = new Set<string>();
   const edgeColumnNames: string[] = [];
-  for (let target = 1; target < config.codes.length; target += 1) {
-    for (let source = 0; source < target; source += 1) {
+  const targetStart = analysisKind === "ona" ? 0 : 1;
+  for (let target = targetStart; target < config.codes.length; target += 1) {
+    const sourceEnd = analysisKind === "ona" ? config.codes.length : target;
+    for (let source = 0; source < sourceEnd; source += 1) {
       const edgeName = `${config.codes[source]} & ${config.codes[target]}`;
       edgeColumns.add(edgeName);
       edgeColumnNames.push(edgeName);
@@ -372,11 +461,25 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
       groupByUnit.set(unit, group);
     }
   }
-  if (!Number.isInteger(config.windowSizeBack) || config.windowSizeBack < 0 || config.windowSizeBack > 100) {
+  if (analysisKind === "ena"
+    && (!Number.isInteger(config.windowSizeBack) || config.windowSizeBack < 0 || config.windowSizeBack > 100)) {
     errors.push("The backward window must be an integer from 0 to 100.");
   }
-  if (!Number.isInteger(config.windowSizeForward) || config.windowSizeForward < 0 || config.windowSizeForward > 100) {
+  if (analysisKind === "ena"
+    && (!Number.isInteger(config.windowSizeForward) || config.windowSizeForward < 0 || config.windowSizeForward > 100)) {
     errors.push("The forward window must be an integer from 0 to 100.");
+  }
+  if (analysisKind === "ona" && canonicalConfig?.orderPolicy) {
+    if (canonicalConfig.orderPolicy.kind === "columns") {
+      for (const column of canonicalConfig.orderPolicy.columns) {
+        if (!dataset.headers.includes(column)) errors.push(`ONA order column “${column}” is not in the dataset.`);
+      }
+    }
+    try {
+      orderRowsForOpenEna(dataset.rows, canonicalConfig.conversationColumns, canonicalConfig.orderPolicy);
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : "ONA row ordering is invalid.");
+    }
   }
   if (config.groupColumn && dataset.headers.includes(config.groupColumn)) {
     const groupColumn = config.groupColumn;
@@ -401,16 +504,22 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
           ...config.unitColumns,
           ...config.conversationColumns,
         ]))).size;
-    const edgeCount = config.codes.length * (config.codes.length - 1) / 2;
+    const edgeCount = analysisKind === "ona"
+      ? config.codes.length * config.codes.length
+      : config.codes.length * (config.codes.length - 1) / 2;
     const modeledEdgeCells = edgeCount * (dataset.rows.length + projectedRowCount * 3);
     if (modeledEdgeCells > MAX_MODELED_EDGE_CELLS) {
-      errors.push(
-        `This configuration exceeds the browser model-size safety budget (${modeledEdgeCells.toLocaleString()} derived edge cells; limit ${MAX_MODELED_EDGE_CELLS.toLocaleString()}). Reduce rows, codes, or unique units.`,
-      );
+      errors.push(analysisKind === "ona"
+        ? `This ONA configuration exceeds the browser model-size safety budget (${modeledEdgeCells.toLocaleString()} derived directed edge cells including diagonal; limit ${MAX_MODELED_EDGE_CELLS.toLocaleString()}). Reduce rows, codes, or unique units.`
+        : `This configuration exceeds the browser model-size safety budget (${modeledEdgeCells.toLocaleString()} derived edge cells; limit ${MAX_MODELED_EDGE_CELLS.toLocaleString()}). Reduce rows, codes, or unique units.`);
     }
   }
-  if (errors.length === 0 && !hasCoOccurrence(dataset, config)) {
-    errors.push("The selected codes do not co-occur within the configured conversation window.");
+  if (errors.length === 0) {
+    if (analysisKind === "ona" && !hasOrderedConnection(dataset, config)) {
+      errors.push("The selected codes do not form an enabled ordered connection within one typed horizon and backward window.");
+    } else if (analysisKind === "ena" && !hasCoOccurrence(dataset, config)) {
+      errors.push("The selected codes do not co-occur within the configured conversation window.");
+    }
   }
   return [...new Set(errors)];
 }

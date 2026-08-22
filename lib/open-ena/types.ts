@@ -3,6 +3,30 @@ import type { ENASet, ENAStatsResult, ModelType, RotationSet, Row, WindowType } 
 export type OpenEnaMode = "sets" | "data" | "model" | "plot" | "stats" | "ai";
 export type OpenEnaView = "2d" | "3d";
 export type CameraPreset = "isometric" | "xy" | "xz" | "yz" | "yx" | "zx" | "zy";
+export type AnalysisKind = "ena" | "ona";
+
+export type OpenEnaOrderPolicy =
+  | { kind: "columns"; columns: string[] }
+  | { kind: "source-row"; confirmed: true };
+
+export type OpenEnaResolvedOrderPolicy =
+  | {
+      kind: "columns";
+      columns: string[];
+      direction: "ascending";
+      missing: "reject";
+      ties: "reject";
+      stable: true;
+    }
+  | { kind: "source-row"; confirmed: true; stable: true };
+
+export interface OpenEnaDirectionalMask {
+  schemaVersion: 1;
+  /** Labels bind mask identity independently of current display/reorder state. */
+  codeOrder: string[];
+  /** Full p by p matrix: row = source/ground, column = target/response. */
+  enabled: boolean[][];
+}
 
 export interface ParsedDataset {
   name: string;
@@ -27,6 +51,8 @@ export function datasetHashKindFor(dataset: Pick<ParsedDataset, "name" | "hashKi
 }
 
 export interface OpenEnaConfig {
+  /** Legacy configurations omit this field and canonicalize only to standard ENA. */
+  analysisKind?: AnalysisKind;
   unitColumns: string[];
   conversationColumns: string[];
   groupColumn: string | null;
@@ -39,7 +65,15 @@ export interface OpenEnaConfig {
   rotation: "svd" | "mean" | "reference";
   referenceRotationId: string | null;
   centerAlignToOrigin: boolean;
+  orderPolicy?: OpenEnaOrderPolicy | null;
+  directionalMask?: OpenEnaDirectionalMask | null;
 }
+
+export type CanonicalOpenEnaConfig = Omit<OpenEnaConfig, "analysisKind" | "orderPolicy" | "directionalMask"> & {
+  analysisKind: AnalysisKind;
+  orderPolicy: OpenEnaOrderPolicy | null;
+  directionalMask: OpenEnaDirectionalMask | null;
+};
 
 export interface OpenEnaReferenceCompatibility {
   model: "EndPoint";
@@ -253,6 +287,7 @@ export const SAMPLE_DATASET_URL = "/data/academy/ena-design-talk-sample.csv";
 export const TRAJECTORY_SAMPLE_DATASET_URL = "/data/academy/ena-2d-trajectory-teaching-sample.csv";
 
 export const SAMPLE_CONFIG: OpenEnaConfig = {
+  analysisKind: "ena",
   unitColumns: ["team_id"],
   conversationColumns: ["conversation_id"],
   groupColumn: "condition",
@@ -268,6 +303,7 @@ export const SAMPLE_CONFIG: OpenEnaConfig = {
 };
 
 export const TRAJECTORY_SAMPLE_CONFIG: OpenEnaConfig = {
+  analysisKind: "ena",
   unitColumns: ["Group", "Speaker"],
   conversationColumns: ["Group", "Speaker", "Period"],
   groupColumn: "Group",
@@ -285,20 +321,6 @@ export const TRAJECTORY_SAMPLE_CONFIG: OpenEnaConfig = {
 export const JENA_RUNTIME_VERSION = "0.7.0-ona.0";
 export const OPEN_ENA_APP_VERSION = "0.1.0";
 
-export function sameOpenEnaConfig(left: OpenEnaConfig, right: OpenEnaConfig) {
-  return left.model === right.model
-    && left.groupColumn === right.groupColumn
-    && left.window === right.window
-    && left.windowSizeBack === right.windowSizeBack
-    && left.windowSizeForward === right.windowSizeForward
-    && left.weightBy === right.weightBy
-    && left.rotation === right.rotation
-    && left.referenceRotationId === right.referenceRotationId
-    && left.centerAlignToOrigin === right.centerAlignToOrigin
-    && left.unitColumns.length === right.unitColumns.length
-    && left.unitColumns.every((value, index) => value === right.unitColumns[index])
-    && left.conversationColumns.length === right.conversationColumns.length
-    && left.conversationColumns.every((value, index) => value === right.conversationColumns[index])
-    && left.codes.length === right.codes.length
-    && left.codes.every((value, index) => value === right.codes[index]);
-}
+// Preserve the long-standing import surface while routing identity checks
+// through the one canonical ENA/ONA configuration contract.
+export { sameOpenEnaConfig } from "./network-config";
