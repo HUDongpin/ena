@@ -5,6 +5,7 @@ import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
 import {
+  cameraForPreset,
   compileOpenEna3dPlotSpec,
   type OpenEna3dAspectRatio,
   type OpenEna3dCamera,
@@ -171,6 +172,27 @@ export function zoomOpenEna3dCamera(
       y: camera.eye.y * distanceScale,
       z: camera.eye.z * distanceScale,
     },
+    up: { ...camera.up },
+    projection: { ...camera.projection },
+  } satisfies OpenEna3dCamera;
+}
+
+export function resetOpenEna3dCameraDistance(
+  camera: OpenEna3dCamera,
+  reference: OpenEna3dCamera,
+) {
+  const distance = cameraDistance(camera);
+  const referenceDistance = cameraDistance(reference);
+  const eye = distance > Number.EPSILON
+    ? {
+        x: camera.eye.x * referenceDistance / distance,
+        y: camera.eye.y * referenceDistance / distance,
+        z: camera.eye.z * referenceDistance / distance,
+      }
+    : { ...reference.eye };
+  return {
+    center: { ...camera.center },
+    eye,
     up: { ...camera.up },
     projection: { ...camera.projection },
   } satisfies OpenEna3dCamera;
@@ -513,7 +535,7 @@ export default function OpenEnaInteractive3DPlot({
   }
 
   function resetAspectRatio() {
-    return spec.layout.scene.aspectratio ?? UNIT_ASPECT_RATIO;
+    return { ...UNIT_ASPECT_RATIO };
   }
 
   function currentAspectRatio() {
@@ -545,10 +567,20 @@ export default function OpenEnaInteractive3DPlot({
     onAspectRatioChange?.(nextAspectRatio);
   }
 
-  async function applyResetView() {
+  async function applyDefaultDisplayDistance() {
     if (!Plotly || status !== "ready" || !plotRootRef.current) return;
-    const nextCamera = spec.layout.scene.camera;
-    const nextAspectRatio = spec.layout.scene.aspectratio ?? null;
+    const activeCamera = currentCamera();
+    const nextCamera = activeCamera.projection.type === "orthographic"
+      ? {
+          center: { ...activeCamera.center },
+          eye: { ...activeCamera.eye },
+          up: { ...activeCamera.up },
+          projection: { ...activeCamera.projection },
+        }
+      : resetOpenEna3dCameraDistance(activeCamera, cameraForPreset(camera));
+    const nextAspectRatio = activeCamera.projection.type === "orthographic"
+      ? resetAspectRatio()
+      : null;
     lastCameraRef.current = nextCamera;
     lastAspectRatioRef.current = nextAspectRatio;
     await Plotly.relayout(plotRootRef.current, {
@@ -564,14 +596,14 @@ export default function OpenEnaInteractive3DPlot({
     const activeCamera = currentCamera();
     const action = activeCamera.projection.type === "orthographic"
       ? applyDisplayAspectRatio(zoomOpenEna3dAspectRatio(currentAspectRatio(), resetAspectRatio(), direction))
-      : applyDisplayCamera(zoomOpenEna3dCamera(activeCamera, spec.layout.scene.camera, direction));
+      : applyDisplayCamera(zoomOpenEna3dCamera(activeCamera, cameraForPreset(camera), direction));
     void action.catch(() => {
       announceAction("3D view action unavailable");
     });
   }
 
   function recenterCamera() {
-    void applyResetView().catch(() => {
+    void applyDefaultDisplayDistance().catch(() => {
       announceAction("3D view action unavailable");
     });
   }
@@ -678,6 +710,7 @@ export default function OpenEnaInteractive3DPlot({
           <button
             type="button"
             data-ena-plot-action="recenter"
+            data-ena-recenter-behavior="default-distance"
             aria-label={`${plotName} Plot: Recenter`}
             aria-controls={canvasId}
             title="Recenter Plot"

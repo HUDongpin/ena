@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import OpenEna3DGroupContrast from "../components/open-ena/OpenEna3DGroupContrast";
 import {
   OPEN_ENA_3D_CAMERA_ZOOM_STEP,
+  resetOpenEna3dCameraDistance,
   zoomOpenEna3dAspectRatio,
   zoomOpenEna3dCamera,
 } from "../components/open-ena/OpenEnaInteractive3DPlot";
@@ -505,10 +506,13 @@ test("each 3D paper replaces the Plotly modebar with the same four unframed plot
   assert.match(interactive, /displayModeBar = false/);
   assert.match(interactive, /activeCamera\.projection\.type === "orthographic"/);
   assert.match(interactive, /zoomOpenEna3dAspectRatio\(currentAspectRatio\(\), resetAspectRatio\(\), direction\)/);
-  assert.match(interactive, /zoomOpenEna3dCamera\(activeCamera, spec\.layout\.scene\.camera, direction\)/);
+  assert.match(interactive, /zoomOpenEna3dCamera\(activeCamera, cameraForPreset\(camera\), direction\)/);
   assert.match(interactive, /getAspectratio\?\.\(\)/);
   assert.match(interactive, /"scene\.aspectratio": nextAspectRatio/);
-  assert.match(interactive, /void applyResetView\(\)/);
+  assert.match(interactive, /resetOpenEna3dCameraDistance\(activeCamera, cameraForPreset\(camera\)\)/);
+  assert.match(interactive, /void applyDefaultDisplayDistance\(\)/);
+  assert.match(interactive, /data-ena-recenter-behavior="default-distance"/);
+  assert.match(groupContrast2d, /onClick=\{\(\) => onZoomChange\(1\)\}/);
   assert.match(interactive, /toImage\(plotRoot,/);
   assert.match(interactive, /const png = pngBlobFromDataUrl\(dataUrl\)/);
   assert.doesNotMatch(interactive, /fetch\(dataUrl\)/);
@@ -654,4 +658,27 @@ test("orthographic plane zoom changes the visible Plotly aspect ratio and remain
   assert.equal(spec.layout.scene.aspectmode, "manual");
   assert.deepEqual(spec.layout.scene.aspectratio, { x: 1.4, y: 1.4, z: 1.4 });
   assert.deepEqual(spec.layout.scene.camera.eye, flatCamera.eye);
+});
+
+test("3D Recenter matches 2D by restoring the default display distance without replacing the current orientation", () => {
+  const reference = cameraForPreset("isometric");
+  const current = {
+    center: { x: 0.15, y: -0.1, z: 0.05 },
+    eye: { x: -4, y: 2, z: 1 },
+    up: { x: 0, y: 1, z: 0 },
+    projection: { type: "perspective" as const },
+  };
+  const reset = resetOpenEna3dCameraDistance(current, reference);
+  const distance = (camera: typeof current | typeof reference) => Math.hypot(
+    camera.eye.x,
+    camera.eye.y,
+    camera.eye.z,
+  );
+
+  assert.ok(Math.abs(distance(reset) - distance(reference)) < 1e-12);
+  assert.deepEqual(reset.center, current.center);
+  assert.deepEqual(reset.up, current.up);
+  assert.deepEqual(reset.projection, current.projection);
+  assert.ok(reset.eye.x < 0 && reset.eye.y > 0 && reset.eye.z > 0);
+  assert.notDeepEqual(reset.eye, reference.eye);
 });
