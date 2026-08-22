@@ -29,6 +29,7 @@ const ar: Dictionary = {
     heroTitle: "اكتشف كيف تترابط الأفكار.",
     heroText:
       "ينمذج ENA كيفية ترابط المفاهيم في الخطاب والممارسة، فيجعل أنماط التفكير مرئية وقابلة للمقارنة.",
+    originCredit: "اقترح ENA وطوره باحثون ومطورون من",
     graphTitle: "نموذج شبكة مفاهيمية",
     graphCaption:
       "رسم توضيحي لشبكة ENA. تمثل العقد المفاهيم المرمزة، ويمثل سمك الخط القوة النسبية للاتصال.",
@@ -222,6 +223,7 @@ const ru: Dictionary = {
     heroTitle: "Увидьте, как связаны идеи.",
     heroText:
       "ENA моделирует связи между понятиями в дискурсе и практике, делая структуры мышления видимыми и сопоставимыми.",
+    originCredit: "ENA был предложен и разработан исследователями и разработчиками из",
     graphTitle: "Концептуальная сетевая модель",
     graphCaption:
       "Иллюстративный граф ENA. Узлы обозначают закодированные понятия, а толщина линий отражает относительную силу связи.",
@@ -416,6 +418,7 @@ const id: Dictionary = {
     heroTitle: "Lihat bagaimana gagasan saling terhubung.",
     heroText:
       "ENA memodelkan hubungan antarkonsep dalam wacana dan praktik sehingga pola berpikir dapat terlihat dan dibandingkan.",
+    originCredit: "ENA diusulkan dan dikembangkan oleh para peneliti dan pengembang dari",
     graphTitle: "Model jaringan konseptual",
     graphCaption:
       "Ilustrasi graf ENA. Simpul mewakili konsep yang dikodekan dan ketebalan garis menunjukkan kekuatan hubungan relatif.",
@@ -610,6 +613,7 @@ const bn: Dictionary = {
     heroTitle: "ধারণাগুলো কীভাবে যুক্ত হয় তা দেখুন।",
     heroText:
       "ENA কথোপকথন ও চর্চায় ধারণাগুলোর পারস্পরিক সংযোগের মডেল তৈরি করে, ফলে চিন্তার ধরন দৃশ্যমান ও তুলনাযোগ্য হয়।",
+    originCredit: "ENA প্রস্তাব ও উন্নয়ন করেছেন এই প্রতিষ্ঠানের গবেষক ও ডেভেলপাররা:",
     graphTitle: "ধারণাভিত্তিক নেটওয়ার্ক মডেল",
     graphCaption:
       "একটি উদাহরণমূলক ENA গ্রাফ। নোডগুলো কোড করা ধারণা বোঝায় এবং রেখার পুরুত্ব আপেক্ষিক সংযোগের শক্তি বোঝায়।",

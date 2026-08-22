@@ -455,6 +455,11 @@ button:focus-visible {
   line-height: 1.62;
 }
 
+.hero-text strong {
+  color: var(--ink);
+  font-weight: 780;
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;
@@ -521,7 +526,6 @@ button:focus-visible {
   display: flex;
   min-height: 77px;
   align-items: center;
-  justify-content: space-between;
   gap: 20px;
   padding: 16px 20px;
   border-bottom: 1px solid var(--line);
@@ -543,28 +547,6 @@ button:focus-visible {
   font-size: 1rem;
   font-weight: 780;
   letter-spacing: -0.02em;
-}
-
-.plot-key {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.key-line {
-  display: block;
-  width: 28px;
-  border-radius: 999px;
-  background: var(--accent);
-}
-
-.key-line-light {
-  height: 2px;
-  opacity: 0.55;
-}
-
-.key-line-strong {
-  height: 7px;
 }
 
 .plot-canvas {
@@ -1313,83 +1295,6 @@ button:focus-visible {
   gap: clamp(44px, 8vw, 120px);
   align-items: center;
   padding-block: clamp(80px, 11vw, 142px);
-}
-
-.definition-visual {
-  position: relative;
-  min-height: 350px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background:
-    linear-gradient(var(--line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--line) 1px, transparent 1px),
-    var(--surface-strong);
-  background-size: 52px 52px;
-  box-shadow: var(--shadow-soft);
-}
-
-.definition-node,
-.definition-edge {
-  position: absolute;
-  display: block;
-}
-
-.definition-node {
-  z-index: 2;
-  width: 34px;
-  height: 34px;
-  border: 8px solid var(--accent);
-  border-radius: 50%;
-  background: var(--surface-strong);
-}
-
-.node-one {
-  top: 72px;
-  left: 18%;
-}
-
-.node-two {
-  top: 126px;
-  right: 17%;
-  width: 46px;
-  height: 46px;
-}
-
-.node-three {
-  right: 38%;
-  bottom: 58px;
-}
-
-.definition-edge {
-  z-index: 1;
-  height: 7px;
-  transform-origin: 0 50%;
-  border-radius: 999px;
-  background: var(--accent);
-  opacity: 0.68;
-}
-
-.edge-one {
-  top: 105px;
-  left: 24%;
-  width: 57%;
-  transform: rotate(13deg);
-}
-
-.edge-two {
-  top: 176px;
-  right: 22%;
-  width: 40%;
-  height: 12px;
-  transform: rotate(104deg);
-}
-
-.edge-three {
-  bottom: 110px;
-  left: 24%;
-  width: 44%;
-  height: 4px;
-  transform: rotate(-24deg);
 }
 
 .definition-copy {
@@ -4978,16 +4883,6 @@ body:has(.open-ena-login-page) .back-to-top {
   text-underline-offset: 3px;
 }
 
-.nav-link-open-ena:not([aria-current="page"]) {
-  color: var(--accent-strong);
-  box-shadow: inset 0 0 0 1px var(--line-strong);
-}
-
-.mobile-nav-link-open-ena:not([aria-current="page"]) {
-  border: 1px solid var(--line-strong);
-  color: var(--accent-strong);
-}
-
 @media (min-width: 1181px) and (max-width: 1320px) {
   .header-inner {
     gap: 11px;
@@ -5489,10 +5384,6 @@ body:has(.open-ena-login-page) .back-to-top {
     min-height: 190px;
   }
 
-  .definition-visual {
-    min-height: 300px;
-  }
-
   .definition-copy {
     order: -1;
   }
@@ -5587,10 +5478,6 @@ body:has(.open-ena-login-page) .back-to-top {
 
   .plot-header {
     padding: 14px 16px;
-  }
-
-  .plot-key {
-    display: none;
   }
 
   .plot-canvas {

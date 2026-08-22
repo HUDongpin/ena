@@ -77,6 +77,7 @@ export interface Dictionary {
     eyebrow: string;
     heroTitle: string;
     heroText: string;
+    originCredit: string;
     graphTitle: string;
     graphCaption: string;
     networkLabels: [string, string, string, string, string];
@@ -177,6 +178,7 @@ const en: Dictionary = {
     heroTitle: "See how ideas connect.",
     heroText:
       "ENA models how concepts connect in discourse and practice, making patterns of thinking visible and comparable.",
+    originCredit: "ENA was proposed and developed by researchers and developers from",
     graphTitle: "Conceptual network model",
     graphCaption:
       "An illustrative ENA graph. Nodes represent coded concepts and line weight represents relative connection strength.",
@@ -369,6 +371,7 @@ const zhHant: Dictionary = {
     eyebrow: "認知網絡分析",
     heroTitle: "看見觀念如何連結。",
     heroText: "ENA 建模話語與實踐中的概念連結，讓思考模式可以被看見和比較。",
+    originCredit: "ENA 由以下機構的研究人員與開發人員提出並發展：",
     graphTitle: "概念網絡模型",
     graphCaption: "示意 ENA 圖。節點代表編碼概念，線條粗細代表相對連結強度。",
     networkLabels: ["證據", "設計", "身份", "實踐", "反思"],
@@ -493,6 +496,7 @@ const zhHans: Dictionary = {
     eyebrow: "认知网络分析",
     heroTitle: "看见观念如何连接。",
     heroText: "ENA 建模话语与实践中的概念连接，让思考模式可以被看见和比较。",
+    originCredit: "ENA 由以下机构的研究人员与开发人员提出并发展：",
     graphTitle: "概念网络模型",
     graphCaption: "示意 ENA 图。节点代表编码概念，线条粗细代表相对连接强度。",
     networkLabels: ["证据", "设计", "身份", "实践", "反思"],

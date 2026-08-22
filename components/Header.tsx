@@ -24,7 +24,7 @@ export default function Header({ locale, dictionary }: HeaderProps) {
   const navItems = [
     { href: `/${locale}`, label: dictionary.nav.home },
     { href: `/${locale}/mission`, label: dictionary.nav.mission },
-    { href: `/${locale}/open-ena`, label: getOpenEnaNavLabel(locale), featured: true },
+    { href: `/${locale}/open-ena`, label: getOpenEnaNavLabel(locale) },
     { href: `/${locale}/news`, label: dictionary.nav.news },
     { href: `/${locale}/academy`, label: dictionary.nav.academy },
     { href: `/${locale}/about`, label: dictionary.nav.about },
@@ -47,7 +47,7 @@ export default function Header({ locale, dictionary }: HeaderProps) {
               href={item.href}
               prefetch={item.href.endsWith("/about") ? false : undefined}
               aria-current={isActive(item.href) ? "page" : undefined}
-              className={`nav-link focus-ring${item.featured ? " nav-link-open-ena" : ""}`}
+              className="nav-link focus-ring"
             >
               {item.label}
             </Link>
@@ -80,7 +80,7 @@ export default function Header({ locale, dictionary }: HeaderProps) {
               href={item.href}
               prefetch={item.href.endsWith("/about") ? false : undefined}
               aria-current={isActive(item.href) ? "page" : undefined}
-              className={`mobile-nav-link focus-ring${item.featured ? " mobile-nav-link-open-ena" : ""}`}
+              className="mobile-nav-link focus-ring"
               onClick={() => setOpen(false)}
             >
               {item.label}

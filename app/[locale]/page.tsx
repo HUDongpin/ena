@@ -22,7 +22,11 @@ export default async function HomePage({ params }: HomePageProps) {
         <div className="hero-copy">
           <p className="eyebrow">{dictionary.home.eyebrow}</p>
           <h1>{dictionary.home.heroTitle}</h1>
-          <p className="hero-text">{dictionary.home.heroText}</p>
+          <p className="hero-text">
+            {dictionary.home.heroText}{" "}
+            {dictionary.home.originCredit}{" "}
+            <strong><bdi>Wisconsin Center for Education Research.</bdi></strong>
+          </p>
           <div className="button-row">
             <CTA href={`/${typedLocale}/mission`}>{dictionary.common.exploreMethod}</CTA>
             <CTA href={`/${typedLocale}/open-ena`} variant="secondary">

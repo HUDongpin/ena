@@ -88,6 +88,36 @@ test("every locale exposes the six requested navigation destinations", () => {
   }
 });
 
+test("Open ENA uses the same neutral navigation treatment as the other destinations", () => {
+  const headerSource = readFileSync(join(projectRoot, "components", "Header.tsx"), "utf8");
+  const css = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
+
+  assert.doesNotMatch(headerSource, /featured|nav-link-open-ena|mobile-nav-link-open-ena/);
+  assert.doesNotMatch(css, /nav-link-open-ena|mobile-nav-link-open-ena/);
+  assert.match(headerSource, /mission[\s\S]*?open-ena[\s\S]*?news/);
+});
+
+test("the home and Mission pages share the standard ENA figure and disclose its origin", () => {
+  const homeSource = readFileSync(join(projectRoot, "app", "[locale]", "page.tsx"), "utf8");
+  const missionSource = readFileSync(join(projectRoot, "app", "[locale]", "mission", "page.tsx"), "utf8");
+  const figureSource = readFileSync(join(projectRoot, "components", "NetworkFigure.tsx"), "utf8");
+  const css = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
+
+  assert.match(missionSource, /<NetworkFigure/);
+  assert.doesNotMatch(missionSource, /definition-(?:visual|node|edge)/);
+  assert.doesNotMatch(css, /\.definition-(?:visual|node|edge)/);
+  assert.doesNotMatch(figureSource, /plot-key|key-line/);
+  assert.match(homeSource, /dictionary\.home\.originCredit/);
+  assert.match(homeSource, /<strong><bdi>Wisconsin Center for Education Research\.<\/bdi><\/strong>/);
+  assert.equal(
+    getDictionary("en").home.originCredit,
+    "ENA was proposed and developed by researchers and developers from",
+  );
+  for (const locale of locales) {
+    assert.ok(getDictionary(locale).home.originCredit.trim().length > 0);
+  }
+});
+
 test("visible brand copy consistently uses ENA.HK capitalization", () => {
   for (const locale of locales) {
     const copy = JSON.stringify(getDictionary(locale));

@@ -30,6 +30,7 @@ const es: Dictionary = {
     heroTitle: "Descubra cómo se conectan las ideas.",
     heroText:
       "ENA modela cómo se conectan los conceptos en el discurso y la práctica, haciendo visibles y comparables los patrones de pensamiento.",
+    originCredit: "ENA fue propuesto y desarrollado por investigadores y desarrolladores del",
     graphTitle: "Modelo de red conceptual",
     graphCaption:
       "Un gráfico ENA ilustrativo. Los nodos representan conceptos codificados y el grosor de las líneas representa la intensidad relativa de las conexiones.",
@@ -224,6 +225,7 @@ const fr: Dictionary = {
     heroTitle: "Découvrez comment les idées se relient.",
     heroText:
       "ENA modélise les liens entre les concepts dans le discours et la pratique afin de rendre les modes de pensée visibles et comparables.",
+    originCredit: "ENA a été proposé et développé par des chercheurs et des développeurs du",
     graphTitle: "Modèle de réseau conceptuel",
     graphCaption:
       "Un graphe ENA illustratif. Les noeuds représentent des concepts codés et l'épaisseur des lignes représente la force relative des connexions.",
@@ -418,6 +420,7 @@ const pt: Dictionary = {
     heroTitle: "Veja como as ideias se ligam.",
     heroText:
       "ENA modela a forma como os conceitos se ligam no discurso e na prática, tornando os padrões de pensamento visíveis e comparáveis.",
+    originCredit: "A ENA foi proposta e desenvolvida por investigadores e programadores do",
     graphTitle: "Modelo de rede conceptual",
     graphCaption:
       "Um gráfico ENA ilustrativo. Os nós representam conceitos codificados e a espessura das linhas representa a força relativa das ligações.",
@@ -612,6 +615,7 @@ const de: Dictionary = {
     heroTitle: "Erkennen Sie, wie Ideen zusammenhängen.",
     heroText:
       "ENA modelliert, wie Konzepte in Diskurs und Praxis miteinander verbunden sind, und macht Denkmuster sichtbar und vergleichbar.",
+    originCredit: "ENA wurde von Forschenden und Entwickelnden des",
     graphTitle: "Konzeptionelles Netzwerkmodell",
     graphCaption:
       "Eine illustrative ENA-Grafik. Knoten stehen für codierte Konzepte, und die Linienstärke zeigt die relative Stärke der Verbindungen.",

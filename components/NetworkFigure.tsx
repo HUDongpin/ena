@@ -20,10 +20,6 @@ export default function NetworkFigure({ title, caption, labels }: NetworkFigureP
           <span className="plot-kicker">ENA</span>
           <h2>{title}</h2>
         </div>
-        <div className="plot-key" aria-hidden="true">
-          <span className="key-line key-line-light" />
-          <span className="key-line key-line-strong" />
-        </div>
       </div>
       <div className="plot-canvas">
         <svg
