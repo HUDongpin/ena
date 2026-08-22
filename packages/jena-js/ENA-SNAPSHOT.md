@@ -7,7 +7,7 @@ It is not a separately authored fork inside the ENA repository.
 
 - Upstream repository: https://github.com/HUDongpin/jENA.git
 - Upstream base release: `0.6.3`
-- Exact reviewed source commit: `1f9bd03ba81a2edd9e41b744d952ddcbd26cdeb0`
+- Exact reviewed source commit: `303a12f549ef9e1914cec10d6e9e1b842dad8908`
 - Snapshot date: `2026-08-22`
 - Package version: `0.7.0-ona.0`
 - Publication status: not pushed and unpublished
