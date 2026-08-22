@@ -13,11 +13,18 @@ import type {
 type ComparableScalar = string | number | boolean;
 type TypedScalar = readonly ["string" | "number" | "boolean", ComparableScalar];
 
+interface DecimalInteger {
+  sign: -1 | 0 | 1;
+  digits: string;
+}
+
 interface DecimalOrderValue {
   sign: -1 | 0 | 1;
   digits: string;
   /** Base-10 exponent applied to the integer significand in digits. */
-  exponent: bigint;
+  exponent: DecimalInteger;
+  /** digits.length + exponent, retained for exact magnitude comparison. */
+  magnitude: DecimalInteger;
 }
 
 type OrderScalar =
@@ -315,31 +322,120 @@ function typedScalar(value: unknown, label: string): TypedScalar {
 
 function orderTupleKey(tuple: readonly OrderScalar[]) {
   return JSON.stringify(tuple.map((scalar) => scalar.kind === "number"
-    ? [scalar.kind, scalar.value.sign, scalar.value.digits, scalar.value.exponent.toString()]
+    ? [
+        scalar.kind,
+        scalar.value.sign,
+        scalar.value.digits,
+        scalar.value.exponent.sign,
+        scalar.value.exponent.digits,
+      ]
     : [scalar.kind, scalar.value]));
 }
 
 const CANONICAL_ORDER_NUMBER = /^([+-]?)(0|[1-9]\d*)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/u;
 const ISO_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(?:Z|([+-])(\d{2}):(\d{2}))$/u;
 
+function decimalInteger(value: string): DecimalInteger {
+  const negative = value.startsWith("-");
+  const unsigned = (value.startsWith("-") || value.startsWith("+")) ? value.slice(1) : value;
+  const digits = unsigned.replace(/^0+/u, "") || "0";
+  return digits === "0" ? { sign: 0, digits } : { sign: negative ? -1 : 1, digits };
+}
+
+function incrementUnsignedDecimal(value: string) {
+  let index = value.length - 1;
+  while (index >= 0 && value[index] === "9") index -= 1;
+  if (index < 0) return `1${"0".repeat(value.length)}`;
+  const incremented = String.fromCharCode(value.charCodeAt(index) + 1);
+  return `${value.slice(0, index)}${incremented}${"0".repeat(value.length - index - 1)}`;
+}
+
+function decrementUnsignedDecimal(value: string) {
+  let index = value.length - 1;
+  while (index >= 0 && value[index] === "0") index -= 1;
+  if (index < 0) throw new Error("Internal decimal subtraction underflowed.");
+  const decremented = String.fromCharCode(value.charCodeAt(index) - 1);
+  return (`${value.slice(0, index)}${decremented}${"9".repeat(value.length - index - 1)}`).replace(/^0+/u, "") || "0";
+}
+
+const DECIMAL_TAIL_WIDTH = 15;
+const DECIMAL_TAIL_BASE = 1_000_000_000_000_000;
+
+function addUnsignedDecimalSmall(value: string, amount: number) {
+  if (amount === 0) return value;
+  if (value.length <= DECIMAL_TAIL_WIDTH) return String(Number(value) + amount);
+  const prefix = value.slice(0, -DECIMAL_TAIL_WIDTH);
+  const tail = Number(value.slice(-DECIMAL_TAIL_WIDTH));
+  const sum = tail + amount;
+  if (sum < DECIMAL_TAIL_BASE) {
+    return `${prefix}${String(sum).padStart(DECIMAL_TAIL_WIDTH, "0")}`;
+  }
+  return `${incrementUnsignedDecimal(prefix)}${String(sum - DECIMAL_TAIL_BASE).padStart(DECIMAL_TAIL_WIDTH, "0")}`;
+}
+
+function subtractUnsignedDecimalSmall(value: string, amount: number) {
+  if (amount === 0) return value;
+  if (value.length <= DECIMAL_TAIL_WIDTH) return String(Number(value) - amount);
+  const prefix = value.slice(0, -DECIMAL_TAIL_WIDTH);
+  const tail = Number(value.slice(-DECIMAL_TAIL_WIDTH));
+  if (tail >= amount) {
+    return `${prefix}${String(tail - amount).padStart(DECIMAL_TAIL_WIDTH, "0")}`;
+  }
+  const borrowedPrefix = decrementUnsignedDecimal(prefix);
+  return (`${borrowedPrefix}${String(DECIMAL_TAIL_BASE + tail - amount).padStart(DECIMAL_TAIL_WIDTH, "0")}`).replace(/^0+/u, "") || "0";
+}
+
+function addDecimalIntegerSmall(value: DecimalInteger, amount: number): DecimalInteger {
+  if (!Number.isSafeInteger(amount)) throw new Error("Internal decimal exponent adjustment must be a safe integer.");
+  if (value.digits.length <= DECIMAL_TAIL_WIDTH) {
+    const next = value.sign * Number(value.digits) + amount;
+    return decimalInteger(String(next));
+  }
+  if (value.sign === 1) {
+    return amount >= 0
+      ? { sign: 1, digits: addUnsignedDecimalSmall(value.digits, amount) }
+      : { sign: 1, digits: subtractUnsignedDecimalSmall(value.digits, -amount) };
+  }
+  if (value.sign === -1) {
+    return amount <= 0
+      ? { sign: -1, digits: addUnsignedDecimalSmall(value.digits, -amount) }
+      : { sign: -1, digits: subtractUnsignedDecimalSmall(value.digits, amount) };
+  }
+  return decimalInteger(String(amount));
+}
+
+function compareDecimalInteger(left: DecimalInteger, right: DecimalInteger) {
+  if (left.sign !== right.sign) return left.sign < right.sign ? -1 : 1;
+  if (left.sign === 0) return 0;
+  let comparison = left.digits.length === right.digits.length
+    ? left.digits === right.digits ? 0 : left.digits < right.digits ? -1 : 1
+    : left.digits.length < right.digits.length ? -1 : 1;
+  if (left.sign === -1) comparison *= -1;
+  return comparison;
+}
+
 function decimalOrderValue(value: string): DecimalOrderValue | null {
   const match = CANONICAL_ORDER_NUMBER.exec(value);
   if (!match) return null;
-  const exponentText = match[4] ?? "0";
-  if (exponentText.replace(/^[+-]/u, "").length > 9) return null;
   const fraction = match[3] ?? "";
   let digits = `${match[2]}${fraction}`.replace(/^0+/u, "");
-  if (digits.length === 0) return { sign: 0, digits: "0", exponent: BigInt(0) };
-  let exponent = BigInt(exponentText) - BigInt(fraction.length);
+  if (digits.length === 0) {
+    const zero = decimalInteger("0");
+    return { sign: 0, digits: "0", exponent: zero, magnitude: zero };
+  }
   const trailingZeroCount = /0+$/u.exec(digits)?.[0].length ?? 0;
   if (trailingZeroCount > 0) {
     digits = digits.slice(0, -trailingZeroCount);
-    exponent += BigInt(trailingZeroCount);
   }
+  const exponent = addDecimalIntegerSmall(
+    decimalInteger(match[4] ?? "0"),
+    trailingZeroCount - fraction.length,
+  );
   return {
     sign: match[1] === "-" ? -1 : 1,
     digits,
     exponent,
+    magnitude: addDecimalIntegerSmall(exponent, digits.length),
   };
 }
 
@@ -423,9 +519,7 @@ export function typedHorizonIdentity(row: Row, columns: readonly string[]): stri
 function compareDecimal(left: DecimalOrderValue, right: DecimalOrderValue) {
   if (left.sign !== right.sign) return left.sign < right.sign ? -1 : 1;
   if (left.sign === 0) return 0;
-  const leftMagnitude = BigInt(left.digits.length) + left.exponent;
-  const rightMagnitude = BigInt(right.digits.length) + right.exponent;
-  let comparison = leftMagnitude === rightMagnitude ? 0 : leftMagnitude < rightMagnitude ? -1 : 1;
+  let comparison = compareDecimalInteger(left.magnitude, right.magnitude);
   if (comparison === 0) {
     const width = Math.max(left.digits.length, right.digits.length);
     for (let index = 0; index < width; index += 1) {

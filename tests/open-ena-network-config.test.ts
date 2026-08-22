@@ -262,6 +262,31 @@ test("numeric ordering compares large integers, precise decimals, and exponents 
     /tie/i,
     "textually different but numerically equal decimals must remain a true tie",
   );
+  for (const values of [
+    ["1", "1e0000000000"],
+    ["0", "0e1000000000"],
+    ["-0", "+0.0e-1000000000"],
+    ["120e9999999999999999", "12e10000000000000000"],
+    ["1.2e9999999999999999", "12e9999999999999998"],
+    ["1.2e-9999999999999999", "12e-10000000000000000"],
+    ["120e-10000000000000000", "12e-9999999999999999"],
+  ]) {
+    assert.throws(
+      () => orderRowsForOpenEna(values.map((turn) => ({ horizon: "h", turn })), ["horizon"], columnOrder(["turn"])),
+      /tie/i,
+      `equivalent decimal spellings must not diverge at an exponent text boundary: ${values.join(" and ")}`,
+    );
+  }
+  for (const values of [
+    ["1e1000000000", "9e999999999"],
+    ["1e-1000000000", "9e-1000000001"],
+  ]) {
+    assert.deepEqual(
+      orderRowsForOpenEna(values.map((turn, index) => ({ horizon: "h", turn, index })), ["horizon"], columnOrder(["turn"])).sourceIndices,
+      [1, 0],
+      `arbitrarily large decimal exponents must remain losslessly comparable: ${values.join(" and ")}`,
+    );
+  }
 });
 
 test("partially numeric string order values fail closed instead of silently changing comparator", () => {
