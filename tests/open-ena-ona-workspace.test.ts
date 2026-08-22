@@ -22,6 +22,26 @@ test("Workspace integrates ONA as a complete analysis family rather than one swi
   assert.doesNotMatch(workspace, /role=["']switch["'][^\n]*analysisKind/i);
 });
 
+test("incomplete order-column edits stay in the draft-safe family transition", () => {
+  const handlerStart = workspace.indexOf("function updateOnaOrderPanel");
+  const incompleteStart = workspace.indexOf(
+    "if (!isOpenEnaOrderPanelValueComplete(value))",
+    handlerStart,
+  );
+  const completeStart = workspace.indexOf(
+    "const orderPolicy = orderPolicyFromPanelValue(value)",
+    incompleteStart,
+  );
+
+  assert.notEqual(handlerStart, -1);
+  assert.notEqual(incompleteStart, -1);
+  assert.notEqual(completeStart, -1);
+
+  const incompleteBranch = workspace.slice(incompleteStart, completeStart);
+  assert.match(incompleteBranch, /beginAnalysisFamilyConfiguration/);
+  assert.doesNotMatch(incompleteBranch, /cloneOpenEnaConfig|canonicalizeOpenEnaConfig/);
+});
+
 test("completed result kind, not mutable draft kind, selects the ONA renderer and audited Data View", () => {
   assert.match(workspace, /openEnaAnalysisKindFromResult/);
   assert.match(workspace, /completedResultKind\s*===\s*["']ona["']/);

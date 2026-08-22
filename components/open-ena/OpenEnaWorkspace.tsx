@@ -1242,8 +1242,13 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       orderPolicy: null,
     };
     if (!isOpenEnaOrderPanelValueComplete(value)) {
-      setConfig(staged);
-      setAnalysisFamilyDrafts((drafts) => ({ ...drafts, ona: cloneOpenEnaConfig(staged) }));
+      const transition = beginAnalysisFamilyConfiguration(
+        analysisFamilyDrafts,
+        staged,
+        "ona",
+      );
+      setAnalysisFamilyDrafts(transition.drafts);
+      setConfig(transition.activeConfig);
       setView("2d");
       return;
     }
