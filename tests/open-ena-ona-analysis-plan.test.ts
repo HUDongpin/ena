@@ -125,6 +125,28 @@ test("ONA rejects positive raw counts whose ordered products underflow to zero",
   );
 });
 
+test("ONA stably normalizes finite directed counts near 5e299 instead of producing a zero network", () => {
+  const mixed = manualDataset([
+    { unit: "huge", horizon: "huge-h", turn: 1, group: "g1", A: 1e150, B: 1e150, C: 0 },
+    { unit: "normal", horizon: "normal-h", turn: 1, group: "g2", A: 1, B: 0, C: 1 },
+  ]);
+
+  assert.deepEqual(validateConfig(mixed, orderedConfig()), []);
+  const result = analyzeDataset(mixed, orderedConfig());
+  const hugeCounts = result.set.connectionCounts.find((row) => row.ENA_UNIT === "huge");
+  const hugeWeights = result.set.lineWeights.find((row) => row.ENA_UNIT === "huge");
+  assert.ok(hugeCounts);
+  assert.ok(hugeWeights);
+  assert.equal(Number.isFinite(Number(hugeCounts["A & B"])), true);
+  assert.equal(Number.isFinite(Number(hugeCounts["B & A"])), true);
+  assert.ok(Math.abs(Number(hugeCounts["A & B"]) / 5e299 - 1) < 1e-15);
+  assert.ok(Math.abs(Number(hugeCounts["B & A"]) / 5e299 - 1) < 1e-15);
+  assert.ok(Math.abs(Number(hugeWeights["A & B"]) - 1 / Math.sqrt(2)) < 1e-12);
+  assert.ok(Math.abs(Number(hugeWeights["B & A"]) - 1 / Math.sqrt(2)) < 1e-12);
+  assert.ok(Number(hugeWeights["A & B"]) > 0);
+  assert.ok(Number(hugeWeights["B & A"]) > 0);
+});
+
 test("the ONA plan binds ordered rows, source indices, raw counts, mask direction, and directed nodes", () => {
   const dataset = manualDataset([
     { unit: "u1", horizon: "h1", turn: 2, group: "g1", A: 0, B: 3, C: 0 },
