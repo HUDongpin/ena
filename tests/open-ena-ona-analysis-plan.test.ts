@@ -10,7 +10,12 @@ import {
 } from "../lib/open-ena/analyze";
 import { parseCsv, validateConfig } from "../lib/open-ena/csv";
 import { createDirectionalMask } from "../lib/open-ena/network-config";
-import { SAMPLE_CONFIG, type OpenEnaConfig, type ParsedDataset } from "../lib/open-ena/types";
+import {
+  SAMPLE_CONFIG,
+  type OpenEnaConfig,
+  type OpenEnaResult,
+  type ParsedDataset,
+} from "../lib/open-ena/types";
 
 function orderedConfig(overrides: Partial<OpenEnaConfig> = {}): OpenEnaConfig {
   const codes = overrides.codes ?? ["A", "B", "C"];
@@ -302,5 +307,52 @@ test("binding refuses unexecuted config fields and malformed execution provenanc
   assert.throws(
     () => bindOpenEnaResultProvenance(wrongResolvedPolicy, dataset, hash, executedConfig),
     /resolved|order|execution provenance/i,
+  );
+});
+
+test("binding recomputes the exact ordered source mapping and rejects sparse or wrong permutations", () => {
+  const dataset = manualDataset([
+    { unit: "u1", horizon: "h1", turn: 4, group: "g1", A: 1, B: 0, C: 1 },
+    { unit: "u1", horizon: "h1", turn: 1, group: "g1", A: 0, B: 1, C: 1 },
+    { unit: "u1", horizon: "h1", turn: 3, group: "g1", A: 1, B: 1, C: 0 },
+    { unit: "u1", horizon: "h1", turn: 2, group: "g1", A: 1, B: 0, C: 1 },
+  ]);
+  const config = orderedConfig();
+  const result = analyzeDataset(dataset, config);
+  const hash = "e".repeat(64);
+  assert.deepEqual(result.executionProvenance?.ordering?.responseRowSourceIndices, [1, 3, 2, 0]);
+
+  const sparse = new Array<number>(4);
+  sparse[1] = 1;
+  sparse[2] = 2;
+  sparse[3] = 3;
+  const sparseResult: OpenEnaResult = {
+    ...result,
+    executionProvenance: {
+      ...structuredClone(result.executionProvenance!),
+      ordering: {
+        ...structuredClone(result.executionProvenance!.ordering!),
+        responseRowSourceIndices: sparse,
+      },
+    },
+  };
+  assert.throws(
+    () => bindOpenEnaResultProvenance(sparseResult, dataset, hash, config),
+    /source-index|mapping|permutation/i,
+  );
+
+  const wrongPermutation: OpenEnaResult = {
+    ...result,
+    executionProvenance: {
+      ...structuredClone(result.executionProvenance!),
+      ordering: {
+        ...structuredClone(result.executionProvenance!.ordering!),
+        responseRowSourceIndices: [0, 1, 2, 3],
+      },
+    },
+  };
+  assert.throws(
+    () => bindOpenEnaResultProvenance(wrongPermutation, dataset, hash, config),
+    /source-index|mapping|permutation/i,
   );
 });

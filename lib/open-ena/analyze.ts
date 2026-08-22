@@ -7,6 +7,7 @@ import type {
   OpenEnaConfig,
   OpenEnaExecutionProvenance,
   OpenEnaManifest,
+  OpenEnaResolvedOrderPolicy,
   OpenEnaResult,
   OpenEnaRotationReference,
   OpenEnaSummary,
@@ -433,6 +434,35 @@ function resolvedOrderPolicyMatches(provenance: OpenEnaExecutionProvenance) {
     && resolved.stable === true;
 }
 
+function sameResolvedOrderPolicy(
+  actual: OpenEnaResolvedOrderPolicy,
+  expected: OpenEnaResolvedOrderPolicy,
+) {
+  if (actual.kind !== expected.kind) return false;
+  if (actual.kind === "source-row" && expected.kind === "source-row") {
+    return hasExactKeys(actual, ["kind", "confirmed", "stable"])
+      && actual.confirmed === expected.confirmed
+      && actual.stable === expected.stable;
+  }
+  if (actual.kind !== "columns" || expected.kind !== "columns") return false;
+  return hasExactKeys(actual, [
+    "kind",
+    "columns",
+    "comparators",
+    "direction",
+    "missing",
+    "ties",
+    "stable",
+  ])
+    && sameStringArray(actual.columns, expected.columns)
+    && hasExactKeys(actual.comparators, expected.columns)
+    && expected.columns.every((column) => actual.comparators[column] === expected.comparators[column])
+    && actual.direction === expected.direction
+    && actual.missing === expected.missing
+    && actual.ties === expected.ties
+    && actual.stable === expected.stable;
+}
+
 function assertResultExecutionProvenance(
   result: OpenEnaResult,
   dataset: ParsedDataset,
@@ -504,15 +534,30 @@ function assertResultExecutionProvenance(
     directionalMask: provenance.directionalMask,
   };
   const sourceIndices = provenance.ordering?.responseRowSourceIndices;
+  const recomputedOrder = provenance.ordering
+    ? orderRowsForOpenEna(
+        dataset.rows,
+        executedConfig.conversationColumns,
+        provenance.ordering.requestedPolicy,
+      )
+    : null;
+  const exactSourceMapping = Boolean(recomputedOrder
+    && Array.isArray(sourceIndices)
+    && sourceIndices.length === recomputedOrder.sourceIndices.length
+    && recomputedOrder.sourceIndices.every((expectedIndex, responseIndex) => (
+      Object.hasOwn(sourceIndices, responseIndex)
+      && sourceIndices[responseIndex] === expectedIndex
+    )));
   if (provenance.nodePositionMethod !== "directed"
     || !sameOpenEnaConfig(executedConfig, provenanceConfig)
     || !resolvedOrderPolicyMatches(provenance)
-    || !Array.isArray(sourceIndices)
-    || sourceIndices.length !== dataset.rows.length
-    || new Set(sourceIndices).size !== dataset.rows.length
-    || sourceIndices.some((index) => (
-      !Number.isSafeInteger(index) || index < 0 || index >= dataset.rows.length
-    ))) {
+    || !recomputedOrder
+    || !provenance.ordering
+    || !sameResolvedOrderPolicy(
+      provenance.ordering.resolvedPolicy,
+      recomputedOrder.resolvedPolicy,
+    )
+    || !exactSourceMapping) {
     throw new Error("ONA execution provenance has an invalid directed mask, resolved order, or source-index permutation.");
   }
   return provenance;
