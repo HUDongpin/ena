@@ -123,6 +123,47 @@ test("official Plot Settings sheet contains the less-frequent jENA controls with
   }
 });
 
+test("ordered Plot Tools retain meaningful presentation controls and remove ENA-only affordances", () => {
+  const markup = renderToStaticMarkup(createElement(OpenEnaPersistentPlotTools, {
+    analysisKind: "ona",
+    title: "Tune the directed ONA view",
+    edgeScale: 1,
+    edgeThreshold: 0,
+    pointScale: 1,
+    textScale: 1,
+    showLabels: true,
+    showGroupLabels: true,
+    showUnitLabels: false,
+    showPoints: true,
+    unitCircle: false,
+    flipX: false,
+    flipY: false,
+    plotZoom: 1,
+    onEdgeScaleChange: noOp,
+    onEdgeThresholdChange: noOp,
+    onPointScaleChange: noOp,
+    onTextScaleChange: noOp,
+    onShowLabelsChange: noOp,
+    onShowGroupLabelsChange: noOp,
+    onShowUnitLabelsChange: noOp,
+    onShowPointsChange: noOp,
+    onUnitCircleChange: noOp,
+    onFlipXChange: noOp,
+    onFlipYChange: noOp,
+    onPlotZoomChange: noOp,
+    onReset: noOp,
+    settingsOpen: true,
+    onSettingsOpenChange: noOp,
+  }));
+
+  assert.match(markup, /data-analysis-kind="ona"/);
+  assert.match(markup, /aria-label="Tune the directed ONA view"/);
+  assert.match(markup, /data-ena-plot-tool="unit-points"/);
+  assert.match(markup, /data-ena-plot-tool="unit-labels"/);
+  assert.doesNotMatch(markup, /data-ena-plot-tool="unit-circle"/);
+  assert.doesNotMatch(markup, /data-ena-plot-tool="group-labels"/);
+});
+
 test("persistent Plot Tools source wires controlled values exclusively through callbacks", () => {
   const component = source("components/open-ena/OpenEnaPersistentPlotTools.tsx");
 

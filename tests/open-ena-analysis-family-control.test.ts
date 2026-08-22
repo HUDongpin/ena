@@ -3,6 +3,7 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
+  beginAnalysisFamilyConfiguration,
   createAnalysisFamilyDrafts,
   switchAnalysisFamily,
 } from "../lib/open-ena/analysis-family";
@@ -95,6 +96,28 @@ test("ONA family activation fails closed until an explicit order policy exists",
 
   assert.throws(
     () => switchAnalysisFamily(drafts, ena, "ona"),
+    /explicit order policy/i,
+  );
+});
+
+test("ONA configuration can begin as an explicitly incomplete draft without becoming executable", () => {
+  const ena = trajectoryEna();
+  const drafts = createAnalysisFamilyDrafts(ena);
+  const begun = beginAnalysisFamilyConfiguration(drafts, ena, "ona");
+
+  assert.equal(begun.activeConfig.analysisKind, "ona");
+  assert.equal(begun.activeConfig.orderPolicy, null);
+  assert.equal(begun.activeConfig.model, "EndPoint");
+  assert.equal(begun.activeConfig.window, "MovingStanzaWindow");
+  assert.equal(begun.activeConfig.windowSizeForward, 0);
+  assert.equal(begun.activeConfig.weightBy, "sum");
+  assert.equal(begun.activeConfig.rotation, "svd");
+  assert.deepEqual(begun.activeConfig.directionalMask?.codeOrder, ena.codes);
+  assert.equal(begun.drafts.ena.model, "SeparateTrajectory");
+  assert.equal(begun.drafts.ona.orderPolicy, null);
+
+  assert.throws(
+    () => switchAnalysisFamily(begun.drafts, begun.activeConfig, "ona"),
     /explicit order policy/i,
   );
 });

@@ -135,6 +135,36 @@ export function createAnalysisFamilyDrafts(
 }
 
 /**
+ * Select a family for editing without weakening the execution gate. This is
+ * the only transition that may return an ONA draft with orderPolicy=null, so
+ * the researcher can see and complete the order workflow. Canonical analysis
+ * and switchAnalysisFamily continue to reject that incomplete draft.
+ */
+export function beginAnalysisFamilyConfiguration(
+  familyDrafts: OpenEnaAnalysisFamilyDrafts,
+  currentConfig: OpenEnaConfig,
+  target: AnalysisKind,
+): OpenEnaAnalysisFamilyTransition {
+  const drafts = cloneDrafts(familyDrafts);
+  const currentKind = analysisKindFor(currentConfig);
+  const current = currentKind === "ona"
+    ? currentConfig.orderPolicy
+      ? orderedDraft(currentConfig)
+      : incompleteOrderedDraft(currentConfig)
+    : standardDraft(currentConfig);
+  drafts[currentKind] = current;
+
+  const destinationBase = withSharedConfiguration(drafts[target], current);
+  const activeConfig = target === "ona"
+    ? destinationBase.orderPolicy
+      ? orderedDraft(destinationBase)
+      : incompleteOrderedDraft(destinationBase)
+    : standardDraft(destinationBase);
+  drafts[target] = activeConfig;
+  return { drafts, activeConfig };
+}
+
+/**
  * Store the active family, carry only shared mappings into the destination,
  * then restore the destination's family-specific draft. No caller-owned array,
  * mask, or policy is mutated.

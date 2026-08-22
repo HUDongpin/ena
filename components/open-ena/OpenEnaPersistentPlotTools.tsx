@@ -1,6 +1,8 @@
 import type { CSSProperties } from "react";
 
 export interface OpenEnaPersistentPlotToolsProps {
+  analysisKind?: "ena" | "ona";
+  title?: string;
   edgeScale: number;
   edgeThreshold: number;
   pointScale: number;
@@ -88,6 +90,8 @@ function OfficialBinaryToggle({
 }
 
 export default function OpenEnaPersistentPlotTools({
+  analysisKind = "ena",
+  title = "Plot Tools",
   edgeScale,
   edgeThreshold,
   pointScale,
@@ -118,12 +122,14 @@ export default function OpenEnaPersistentPlotTools({
   disabled = false,
 }: OpenEnaPersistentPlotToolsProps) {
   const textSize = Math.round(12 * textScale + 1);
+  const ordered = analysisKind === "ona";
 
   return (
     <section
       className="ena-persistent-plot-tools"
       data-testid="open-ena-persistent-plot-tools"
-      aria-label="Plot Tools"
+      data-analysis-kind={analysisKind}
+      aria-label={title}
       onKeyDown={(event) => {
         if (settingsOpen && event.key === "Escape") {
           event.preventDefault();
@@ -132,7 +138,7 @@ export default function OpenEnaPersistentPlotTools({
       }}
     >
       <header className="ena-persistent-plot-tools-header">
-        <strong>Plot Tools</strong>
+        <strong>{title}</strong>
         <button
           type="button"
           className="ena-plot-settings-trigger"
@@ -213,10 +219,12 @@ export default function OpenEnaPersistentPlotTools({
           <OfficialBinaryToggle label="Code labels" checked={showLabels} onChange={onShowLabelsChange} disabled={disabled} />
         </div>
 
-        <div className="ena-official-toggle-row" data-ena-plot-tool="unit-circle">
-          <span>Unit circle:</span>
-          <OfficialBinaryToggle label="Unit circle" checked={unitCircle} onChange={onUnitCircleChange} disabled={disabled} />
-        </div>
+        {!ordered ? (
+          <div className="ena-official-toggle-row" data-ena-plot-tool="unit-circle">
+            <span>Unit circle:</span>
+            <OfficialBinaryToggle label="Unit circle" checked={unitCircle} onChange={onUnitCircleChange} disabled={disabled} />
+          </div>
+        ) : null}
 
         <div className="ena-plot-actions ena-plot-flips" role="group" aria-label="Axis direction">
           <button
@@ -272,10 +280,12 @@ export default function OpenEnaPersistentPlotTools({
             </section>
             <section aria-labelledby="ena-plot-settings-points">
               <h4 id="ena-plot-settings-points">Plotted Points</h4>
-              <div className="ena-official-toggle-row" data-ena-plot-tool="group-labels">
-                <span>Group labels:</span>
-                <OfficialBinaryToggle label="Group labels" checked={showGroupLabels} onChange={onShowGroupLabelsChange} disabled={disabled} />
-              </div>
+              {!ordered ? (
+                <div className="ena-official-toggle-row" data-ena-plot-tool="group-labels">
+                  <span>Group labels:</span>
+                  <OfficialBinaryToggle label="Group labels" checked={showGroupLabels} onChange={onShowGroupLabelsChange} disabled={disabled} />
+                </div>
+              ) : null}
               <div className="ena-official-toggle-row" data-ena-plot-tool="unit-points">
                 <span>Unit points:</span>
                 <OfficialBinaryToggle label="Unit points" checked={showPoints} onChange={onShowPointsChange} disabled={disabled} />

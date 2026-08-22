@@ -284,7 +284,7 @@ test("the plot toolbar contains view and export actions, not a model-type launch
   const toolbarActions = sourceSegment(
     workspace,
     '<div className="ena-visual-toolbar-actions">',
-    '{activeSetComparison && view === "2d" ? (',
+    '{view === "3d" && result ? (',
   );
 
   assert.doesNotMatch(toolbarActions, /trajectory-analysis-button|launchTrajectoryAnalysis|copy\.longitudinal\.launch/);
@@ -307,7 +307,7 @@ test("the trajectory configuration shortcut stays in the responsive Model headin
 
   assert.match(
     modelPanel,
-    /<div className="ena-panel-heading">[\s\S]{0,1600}data-testid="open-ena-configure-trajectory-model"[\s\S]{0,1000}<\/div>\s*<div className="ena-model-tabs"/,
+    /<div className="ena-panel-heading">[\s\S]{0,1600}data-testid="open-ena-configure-trajectory-model"[\s\S]{0,1000}<\/div>\s*<OpenEnaAnalysisFamilyControl[\s\S]{0,500}<div className="ena-model-tabs"/,
     "the shortcut belongs after the Model description and before its tablist",
   );
   assert.match(shortcutRule, /max-width:\s*100%/);
@@ -553,7 +553,7 @@ test("the local 2D and in-place 3D controls sit immediately before Download Mode
   const toolbar = sourceSegment(
     workspace,
     '<div className={`ena-visual-toolbar${view === "2d" && activeGroupContrast ? " ena-visual-toolbar-group-contrast" : ""}`}>',
-    '{activeSetComparison && view === "2d" ? (',
+    '{view === "3d" && result ? (',
   );
 
   assert.doesNotMatch(controls, /className="ena-view-toggle"/, "the view switch no longer belongs to the Model control panel");

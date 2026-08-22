@@ -815,11 +815,14 @@ test("Plot Tools expose dense-network inspection controls without rebuilding the
   assert.match(plot, /plotZoom/);
 });
 
-test("de-labeled SVG exports scrub analytic-unit identities from point metadata", () => {
+test("de-labeled ENA and every ONA SVG export scrub analytic-unit identities from point metadata", () => {
   const workspace = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8");
   const plot = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaPlot.tsx"), "utf8");
+  const orderedPlot = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaOrderedPlot.tsx"), "utf8");
   assert.match(plot, /data-ena-unit-point="true"/);
-  assert.match(workspace, /if \(!showUnitLabels\)/);
-  assert.match(workspace, /querySelectorAll<SVGGElement>\("\[data-ena-unit-point='true'\]"\)/);
+  assert.match(orderedPlot, /data-ona-unit-point="true"/);
+  assert.match(workspace, /if \(completedResultKind === "ona" \|\| !showUnitLabels\)/);
+  assert.match(workspace, /\[data-ena-unit-point='true'\], \[data-ona-unit-point='true'\]/);
+  assert.match(workspace, /querySelectorAll\("\.ena-set-unit-label"\).*\.remove\(\)/);
   assert.match(workspace, /identifier omitted from this SVG export/);
 });

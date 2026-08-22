@@ -158,6 +158,210 @@ export interface OpenEnaStatsUiCopy {
   methodsPreview: string;
 }
 
+export interface OpenEnaOnaCopy {
+  family: {
+    legend: string;
+    methodBoundaryLabel: string;
+    selectedLabel: string;
+    ena: { label: string; description: string; methodBoundary: string };
+    ona: { label: string; description: string; methodBoundary: string };
+  };
+  setupIncomplete: string;
+  run: string;
+  rerun: string;
+  order: {
+    title: string;
+    description: string;
+    orderPolicyLegend: string;
+    columnsPolicyLabel: string;
+    columnsPolicyDescription: string;
+    sourceRowPolicyLabel: string;
+    sourceRowPolicyDescription: string;
+    orderColumnsLegend: string;
+    comparatorLabel: string;
+    comparatorPlaceholder: string;
+    comparatorLabels: Record<"number" | "string" | "boolean" | "iso-datetime", string>;
+    sourceRowConfirmationLabel: string;
+    windowTitle: string;
+    windowModeLegend: string;
+    finiteWindowLabel: string;
+    entireHorizonLabel: string;
+    windowSizeLabel: string;
+    invalidWindowSize: string;
+    lockedTitle: string;
+    modelLabel: string;
+    modelValue: string;
+    windowTypeLabel: string;
+    windowTypeValue: string;
+    forwardLabel: string;
+    forwardValue: string;
+    weightLabel: string;
+    weightValue: string;
+    rotationLabel: string;
+    rotationValue: string;
+    referenceLabel: string;
+    referenceValue: string;
+    previewTitle: string;
+    previewReady: string;
+    previewNeedsConfiguration: string;
+    previewRejected: string;
+    resolvedPolicyTitle: string;
+    directionLabel: string;
+    directionAscending: string;
+    missingLabel: string;
+    missingReject: string;
+    tiesLabel: string;
+    tiesReject: string;
+    stableLabel: string;
+    stableYes: string;
+    sourceOrderValue: string;
+    orderedPositionHeader: string;
+    sourceRecordHeader: string;
+    horizonOrdinalHeader: string;
+    boundaryHeader: string;
+    unitFieldsHeader: string;
+    horizonFieldsHeader: string;
+    orderFieldsHeader: string;
+    boundarySingle: string;
+    boundaryStart: string;
+    boundaryWithin: string;
+    boundaryEnd: string;
+    emptyFields: string;
+  };
+  mask: {
+    triggerLabel: string;
+    dialogTitle: string;
+    dialogDescription: string;
+    closeLabel: string;
+    matrixCaption: string;
+    groundHeader: string;
+    responseHeader: string;
+    allLabel: string;
+    noneLabel: string;
+    diagonalLabel: string;
+    offDiagonalLabel: string;
+    invalidMaskMessage: string;
+    cellLabel: (ground: string, response: string, diagonal: boolean) => string;
+    cellAnnouncement: (ground: string, response: string, enabled: boolean) => string;
+    bulkAnnouncement: (preset: "all" | "none" | "diagonal" | "off-diagonal", enabled: number, total: number) => string;
+  };
+  layout: {
+    overallPlot: string;
+    overallSubtitle: string;
+    primaryPlot: string;
+    secondaryPlot: string;
+    groupMeanSubtitle: string;
+    dataView: string;
+    dataViewSubtitle: string;
+    unavailableGroupPlot: string;
+    descriptiveBoundary: string;
+    directionGuide: string;
+  };
+  plot: {
+    overallTitle: string;
+    groupTitle: string;
+    directedNetworkDescription: string;
+    normalizedMeanWeight: string;
+    rawAggregateCount: string;
+    respondedToWith: string;
+    selfConnection: string;
+    visibleConnections: string;
+    noVisibleConnections: string;
+    sourceApexLegend: string;
+    chevronLegend: string;
+    selfDiscLegend: string;
+    nodeSizeLabel: string;
+    unitsLabel: string;
+  };
+  dataView: {
+    ariaLabel: string;
+    title: string;
+    returnLabel: string;
+    returnAriaLabel: string;
+    contextLabel: string;
+    overall: string;
+    primary: string;
+    secondary: string;
+    record: string;
+    records: string;
+    exportLabel: string;
+    exportAriaLabel: string;
+    tableAriaLabel: string;
+    provenanceGroup: string;
+    metadataGroup: string;
+    directedEdgeGroup: string;
+    provenanceLabels: {
+      orderedResponsePosition: string;
+      sourceRecordNumber: string;
+      opaqueHorizonOrdinal: string;
+      priorRowCount: string;
+      predecessorResponsePositions: string;
+    };
+    yes: string;
+    no: string;
+    empty: string;
+    localIdentityWarning: string;
+    exportConfirmation: string;
+  };
+  stats: {
+    title: string;
+    descriptiveBoundary: string;
+    overallScopeLabel: string;
+    groupScopeLabel: string;
+    modelCoverage: string;
+    analyticUnits: string;
+    orderedRows: string;
+    opaqueHorizons: string;
+    codes: string;
+    directedCells: string;
+    enabled: string;
+    masked: string;
+    zeroNetworks: string;
+    rawMass: string;
+    total: string;
+    selfConnections: string;
+    offDiagonal: string;
+    incomingRawMass: string;
+    outgoingRawMass: string;
+    topDirectedCells: string;
+    pairAsymmetry: string;
+    groupUnitCounts: string;
+    varianceDiagnostics: string;
+    noPositiveCells: string;
+    normalizedMean: string;
+    raw: string;
+    nonzeroUnits: string;
+    absoluteNormalizedAsymmetry: string;
+    tie: string;
+  };
+  exports: {
+    title: string;
+    description: string;
+    scopeLabel: string;
+    aggregateLabel: string;
+    aggregateDescription: string;
+    auditLabel: string;
+    auditDescription: string;
+    auditWarning: string;
+    auditConfirmation: string;
+    bundleConfirmation: string;
+  };
+  unavailable: {
+    sets: string;
+    reference: string;
+    groupContrast: string;
+    trajectory: string;
+    threeD: string;
+    inference: string;
+    ai: string;
+  };
+  presenter: {
+    title: string;
+    description: string;
+    directionBoundary: string;
+  };
+}
+
 export interface OpenEnaCopy {
   eyebrow: string;
   title: string;
@@ -165,6 +369,7 @@ export interface OpenEnaCopy {
   navLabel: string;
   modes: { sets: string; data: string; model: string; plot: string; stats: string; ai: string };
   views: { twoD: string; threeD: string };
+  ona: OpenEnaOnaCopy;
   sets: {
     title: string;
     description: string;
@@ -1021,6 +1226,222 @@ const en: OpenEnaCopy = {
   navLabel: "Open ENA",
   modes: { sets: "Sets", data: "Data", model: "Model", plot: "Plot Tools", stats: "Stats & Export", ai: "AI" },
   views: { twoD: "2D ENA", threeD: "3D ENA" },
+  ona: {
+    family: {
+      legend: "Analysis family",
+      methodBoundaryLabel: "Method boundary",
+      selectedLabel: "Selected",
+      ena: {
+        label: "Standard ENA",
+        description: "Undirected co-occurrence networks with standard ENA windows, models, rotations, comparisons, and trajectories.",
+        methodBoundary: "Uses p(p−1)/2 undirected connections and excludes diagonal self-connections.",
+      },
+      ona: {
+        label: "Ordered Network Analysis (ONA)",
+        description: "Directed ground/source → response/target networks with explicit typed order and a full p² mask.",
+        methodBoundary: "Endpoint, backward-only Moving Stanza Window, raw summed products, SVD, and descriptive-only results in this release.",
+      },
+    },
+    setupIncomplete: "Complete an explicit ONA order policy before this ordered model can run.",
+    run: "Build ONA model",
+    rerun: "Rebuild ONA model",
+    order: {
+      title: "Order and backward window",
+      description: "Declare how rows are ordered inside each typed horizon. Missing values and ties are rejected rather than guessed.",
+      orderPolicyLegend: "Row-order authority",
+      columnsPolicyLabel: "Explicit order columns",
+      columnsPolicyDescription: "Sort ascending within each typed horizon using one declared comparator per column.",
+      sourceRowPolicyLabel: "Confirmed source-record order",
+      sourceRowPolicyDescription: "Use imported record order only after explicitly confirming that it carries the intended sequence.",
+      orderColumnsLegend: "Order columns and typed comparators",
+      comparatorLabel: "Comparator",
+      comparatorPlaceholder: "Choose comparator",
+      comparatorLabels: {
+        number: "Number",
+        string: "String (code-point order)",
+        boolean: "Boolean",
+        "iso-datetime": "ISO date-time",
+      },
+      sourceRowConfirmationLabel: "I confirm that source-record order is the intended within-horizon sequence.",
+      windowTitle: "Backward context",
+      windowModeLegend: "Window scope",
+      finiteWindowLabel: "Finite total stanza rows",
+      entireHorizonLabel: "Entire typed horizon",
+      windowSizeLabel: "Total rows including the current response",
+      invalidWindowSize: "Use a positive whole number or Entire typed horizon.",
+      lockedTitle: "Locked ONA execution contract",
+      modelLabel: "Model",
+      modelValue: "Endpoint",
+      windowTypeLabel: "Window",
+      windowTypeValue: "Moving Stanza Window",
+      forwardLabel: "Forward rows",
+      forwardValue: "0 (backward only)",
+      weightLabel: "Weighting",
+      weightValue: "Raw summed products",
+      rotationLabel: "Rotation",
+      rotationValue: "SVD with directed node geometry",
+      referenceLabel: "Reference rotation",
+      referenceValue: "Unavailable for ONA",
+      previewTitle: "Canonical order preview",
+      previewReady: "The same canonical ordering function used at execution produced this preview.",
+      previewNeedsConfiguration: "Choose a complete order policy to preview the executed response order.",
+      previewRejected: "The current rows do not satisfy this typed order policy. Resolve missing values, invalid types, or ties.",
+      resolvedPolicyTitle: "Resolved execution policy",
+      directionLabel: "Direction",
+      directionAscending: "Ascending within each typed horizon",
+      missingLabel: "Missing values",
+      missingReject: "Reject",
+      tiesLabel: "Tied order tuples",
+      tiesReject: "Reject",
+      stableLabel: "Stable mapping",
+      stableYes: "Yes; ordered responses retain their source-record mapping",
+      sourceOrderValue: "Confirmed source-record order; no comparator sort is applied.",
+      orderedPositionHeader: "Ordered response",
+      sourceRecordHeader: "Source record",
+      horizonOrdinalHeader: "Typed horizon",
+      boundaryHeader: "Boundary",
+      unitFieldsHeader: "Unit fields",
+      horizonFieldsHeader: "Horizon fields",
+      orderFieldsHeader: "Order fields",
+      boundarySingle: "Single-row horizon",
+      boundaryStart: "Start",
+      boundaryWithin: "Within",
+      boundaryEnd: "End",
+      emptyFields: "—",
+    },
+    mask: {
+      triggerLabel: "Edit p² directional mask",
+      dialogTitle: "Directional connection mask",
+      dialogDescription: "Each cell independently enables one ground/source row code → response/target column code. Diagonal self-connections are included.",
+      closeLabel: "Close directional mask editor",
+      matrixCaption: "ONA p² direction mask: rows are ground/source; columns are response/target",
+      groundHeader: "Ground/source",
+      responseHeader: "Response/target",
+      allLabel: "All directions",
+      noneLabel: "No directions",
+      diagonalLabel: "Diagonal only",
+      offDiagonalLabel: "Off-diagonal only",
+      invalidMaskMessage: "The mask is not bound to the current code order. Reconcile the selected codes before editing.",
+      cellLabel: (ground, response, diagonal) => `${ground} ground/source to ${response} response/target${diagonal ? "; self-connection" : ""}`,
+      cellAnnouncement: (ground, response, enabled) => `${ground} to ${response} ${enabled ? "enabled" : "disabled"}.`,
+      bulkAnnouncement: (preset, enabled, total) => `${preset} preset applied; ${enabled} of ${total} directions enabled.`,
+    },
+    layout: {
+      overallPlot: "Overall ONA",
+      overallSubtitle: "All analytic units · descriptive ordered network",
+      primaryPlot: "Primary group",
+      secondaryPlot: "Secondary group",
+      groupMeanSubtitle: "Descriptive group mean · no subtraction",
+      dataView: "Ordered Data View",
+      dataViewSubtitle: "Runtime-audited ground/source → response/target contributions",
+      unavailableGroupPlot: "A second descriptive group network is not available for this model.",
+      descriptiveBoundary: "ONA is descriptive-only in this release; these panels do not calculate group differences, p-values, effect sizes, confidence intervals, or causal effects.",
+      directionGuide: "Triangle apex is ground/source, triangle base is response/target; a chevron marks the stronger reciprocal direction and an inner disc marks a self-connection.",
+    },
+    plot: {
+      overallTitle: "Overall ordered network",
+      groupTitle: "Ordered group mean network",
+      directedNetworkDescription: "Directed ONA network; triangle apex is ground/source and triangle base is response/target.",
+      normalizedMeanWeight: "equal-unit normalized mean weight",
+      rawAggregateCount: "raw aggregate count",
+      respondedToWith: "responded to {ground} with {response}",
+      selfConnection: "self-connection",
+      visibleConnections: "Visible directed connections",
+      noVisibleConnections: "No enabled directed connection passes the current display threshold.",
+      sourceApexLegend: "Triangle apex = ground/source; base = response/target",
+      chevronLegend: "Chevron = stronger reciprocal direction; an exact tie marks both directions",
+      selfDiscLegend: "Inner disc = diagonal self-connection",
+      nodeSizeLabel: "Node size",
+      unitsLabel: "analytic units",
+    },
+    dataView: {
+      ariaLabel: "Ordered Data View center surface",
+      title: "Ordered Data View",
+      returnLabel: "Return to Overall ONA",
+      returnAriaLabel: "Return to the overall directed ONA plot",
+      contextLabel: "Show audited responses for",
+      overall: "Overall",
+      primary: "Primary group",
+      secondary: "Secondary group",
+      record: "audited response",
+      records: "audited responses",
+      exportLabel: "Export local Data View CSV ↓",
+      exportAriaLabel: "Export identity-bearing local ONA Data View as CSV",
+      tableAriaLabel: "Audited ONA response contributions",
+      provenanceGroup: "Ordered provenance",
+      metadataGroup: "Local metadata join",
+      directedEdgeGroup: "Directed p² contributions",
+      provenanceLabels: {
+        orderedResponsePosition: "Ordered response position",
+        sourceRecordNumber: "Source record number (local)",
+        opaqueHorizonOrdinal: "Opaque horizon ordinal",
+        priorRowCount: "Prior rows in backward window",
+        predecessorResponsePositions: "Predecessor response positions",
+      },
+      yes: "Yes",
+      no: "No",
+      empty: "No audited ONA response rows match this context.",
+      localIdentityWarning: "This local view joins de-identified ordered contributions to source record numbers and selected unit, horizon, group, and order metadata. It may identify participants.",
+      exportConfirmation: "This CSV contains local identity-bearing metadata and source-record mappings. Confirm that you will review and de-identify it before sharing.",
+    },
+    stats: {
+      title: "ONA descriptive statistics",
+      descriptiveBoundary: "Descriptive only. No group subtraction, inferential comparison, p-value, effect size, confidence interval, or causal claim is computed.",
+      overallScopeLabel: "Overall ordered network",
+      groupScopeLabel: "{group} ordered mean network",
+      modelCoverage: "ONA model coverage",
+      analyticUnits: "analytic units",
+      orderedRows: "ordered response rows (completed result)",
+      opaqueHorizons: "opaque horizons (completed result)",
+      codes: "codes",
+      directedCells: "directed cells",
+      enabled: "enabled",
+      masked: "masked",
+      zeroNetworks: "Zero networks",
+      rawMass: "Raw directed mass",
+      total: "Total",
+      selfConnections: "Self-connections",
+      offDiagonal: "Off-diagonal",
+      incomingRawMass: "Incoming raw mass by response/target",
+      outgoingRawMass: "Outgoing raw mass by ground/source",
+      topDirectedCells: "Top directed cells",
+      pairAsymmetry: "Reciprocal pair asymmetry",
+      groupUnitCounts: "Group unit counts",
+      varianceDiagnostics: "Model variance diagnostics",
+      noPositiveCells: "No enabled directed cell has positive completed evidence.",
+      normalizedMean: "equal-unit normalized mean",
+      raw: "raw",
+      nonzeroUnits: "nonzero units",
+      absoluteNormalizedAsymmetry: "absolute normalized asymmetry",
+      tie: "tie",
+    },
+    exports: {
+      title: "ONA research exports",
+      description: "Choose an aggregate-only edge table or a de-identified ordered audit. Neither safe export includes the local source-row mapping.",
+      scopeLabel: "Descriptive scope",
+      aggregateLabel: "Export aggregate directed edges CSV",
+      aggregateDescription: "Aggregate-only p² cells: scope, direction, mask, raw total, equal-unit normalized mean, and nonzero-unit count.",
+      auditLabel: "Export de-identified ordered audit CSV",
+      auditDescription: "Opaque response and horizon ordinals plus runtime-audited p² contributions; no unit, source-row, or metadata identifiers.",
+      auditWarning: "De-identified is not anonymous. Ordered response patterns may still carry re-identification risk when combined with outside information; share only under appropriate governance.",
+      auditConfirmation: "This audit is de-identified, not anonymous, and may carry re-identification risk. Confirm that its sharing is covered by appropriate research governance.",
+      bundleConfirmation: "The full ONA model bundle excludes raw source rows but retains analytic-unit labels and group names. Confirm that you have reviewed or pseudonymized those identifiers before exporting.",
+    },
+    unavailable: {
+      sets: "Analysis Sets and shared reference geometry are not verified for ONA.",
+      reference: "Reference rotation is not available for ONA.",
+      groupContrast: "ONA group panels show descriptive means only; pairwise subtraction is not available.",
+      trajectory: "Trajectory models are not verified for ONA.",
+      threeD: "3D ONA is not verified in this release; use the directed 2D view.",
+      inference: "Inferential tests are not verified for ONA; only descriptive diagnostics are shown.",
+      ai: "AI interpretation is unavailable for ONA until an aggregate-only ordered evidence contract is independently verified.",
+    },
+    presenter: {
+      title: "Tune the directed ONA view",
+      description: "These controls change only the directed 2D presentation; they do not rebuild the ordered model.",
+      directionBoundary: "Display thresholds never change the fitted p² matrix or the configured directional mask.",
+    },
+  },
   sets: {
     title: "Analysis sets",
     description: "Keep endpoint models in browser memory and compare fitted or projected networks that share one reference geometry.",
@@ -1293,6 +1714,218 @@ const zhHant: OpenEnaCopy = {
   navLabel: "開放 ENA",
   modes: { sets: "分析集", data: "資料", model: "模型", plot: "繪圖工具", stats: "統計與匯出", ai: "AI 解讀" },
   views: { twoD: "2D ENA", threeD: "3D ENA" },
+  ona: {
+    ...en.ona,
+    family: {
+      legend: "分析類型",
+      methodBoundaryLabel: "方法邊界",
+      selectedLabel: "已選取",
+      ena: {
+        label: "標準 ENA",
+        description: "使用標準 ENA 窗口、模型、旋轉、比較與軌跡的無方向共現網絡。",
+        methodBoundary: "使用 p(p−1)/2 個無方向連線，不包括對角自連線。",
+      },
+      ona: {
+        label: "順序網絡分析（ONA）",
+        description: "使用明確型別順序與完整 p² 遮罩的有方向來源碼／ground → 回應碼／response 網絡。",
+        methodBoundary: "此版本鎖定端點、只向後移動段落窗口、原始乘積總和、SVD，且只提供描述性結果。",
+      },
+    },
+    setupIncomplete: "必須完成明確的 ONA 排序政策，才可執行此順序模型。",
+    run: "建立 ONA 模型",
+    rerun: "重新建立 ONA 模型",
+    order: {
+      title: "順序與向後窗口",
+      description: "宣告每個具型別 horizon 內的資料列順序。缺失值與並列順序會被拒絕，不會猜測。",
+      orderPolicyLegend: "資料列順序依據",
+      columnsPolicyLabel: "明確順序欄位",
+      columnsPolicyDescription: "在每個具型別 horizon 內升冪排序，且每個欄位均須宣告比較器。",
+      sourceRowPolicyLabel: "已確認的來源記錄順序",
+      sourceRowPolicyDescription: "只有在明確確認匯入記錄順序就是研究順序後，才使用來源記錄順序。",
+      orderColumnsLegend: "順序欄位與型別比較器",
+      comparatorLabel: "比較器",
+      comparatorPlaceholder: "選擇比較器",
+      comparatorLabels: { number: "數值", string: "字串（碼位順序）", boolean: "布林值", "iso-datetime": "ISO 日期時間" },
+      sourceRowConfirmationLabel: "我確認來源記錄順序就是 horizon 內預期的研究順序。",
+      windowTitle: "向後脈絡",
+      windowModeLegend: "窗口範圍",
+      finiteWindowLabel: "有限段落總列數",
+      entireHorizonLabel: "完整具型別 horizon",
+      windowSizeLabel: "總列數（包括目前 response 列）",
+      invalidWindowSize: "請使用正整數或完整具型別 horizon。",
+      lockedTitle: "鎖定的 ONA 執行合約",
+      modelLabel: "模型",
+      modelValue: "端點",
+      windowTypeLabel: "窗口",
+      windowTypeValue: "移動段落窗口",
+      forwardLabel: "向前資料列",
+      forwardValue: "0（只向後）",
+      weightLabel: "加權",
+      weightValue: "原始乘積總和",
+      rotationLabel: "旋轉",
+      rotationValue: "SVD 與有方向節點幾何",
+      referenceLabel: "參照旋轉",
+      referenceValue: "ONA 不適用",
+      previewTitle: "規範順序預覽",
+      previewReady: "此預覽使用執行分析時的同一個規範排序函數。",
+      previewNeedsConfiguration: "完成排序政策後，才可預覽實際 response 順序。",
+      previewRejected: "目前資料列不符合此型別順序政策；請處理缺失值、錯誤型別或並列。",
+      resolvedPolicyTitle: "已解析執行政策",
+      directionLabel: "方向",
+      directionAscending: "在每個具型別 horizon 內升冪",
+      missingLabel: "缺失值",
+      missingReject: "拒絕",
+      tiesLabel: "並列順序組",
+      tiesReject: "拒絕",
+      stableLabel: "穩定對應",
+      stableYes: "是；排序後 response 保留來源記錄對應",
+      sourceOrderValue: "已確認來源記錄順序；不套用比較器排序。",
+      orderedPositionHeader: "排序後 response",
+      sourceRecordHeader: "來源記錄",
+      horizonOrdinalHeader: "具型別 horizon",
+      boundaryHeader: "邊界",
+      unitFieldsHeader: "分析單位欄位",
+      horizonFieldsHeader: "Horizon 欄位",
+      orderFieldsHeader: "順序欄位",
+      boundarySingle: "單列 horizon",
+      boundaryStart: "開始",
+      boundaryWithin: "內部",
+      boundaryEnd: "結束",
+      emptyFields: "—",
+    },
+    mask: {
+      triggerLabel: "編輯 p² 方向遮罩",
+      dialogTitle: "方向連線遮罩",
+      dialogDescription: "每個儲存格獨立啟用一個列來源碼／ground → 欄回應碼／response；包括對角自連線。",
+      closeLabel: "關閉方向遮罩編輯器",
+      matrixCaption: "ONA p² 方向遮罩：列為來源碼／ground，欄為回應碼／response",
+      groundHeader: "來源碼／ground",
+      responseHeader: "回應碼／response",
+      allLabel: "全部方向",
+      noneLabel: "不選方向",
+      diagonalLabel: "只選對角",
+      offDiagonalLabel: "只選非對角",
+      invalidMaskMessage: "遮罩未綁定目前編碼順序；請先協調所選編碼。",
+      cellLabel: (ground, response, diagonal) => `${ground} 來源碼／ground 到 ${response} 回應碼／response${diagonal ? "；自連線" : ""}`,
+      cellAnnouncement: (ground, response, enabled) => `${ground} 到 ${response} 已${enabled ? "啟用" : "停用"}。`,
+      bulkAnnouncement: (preset, enabled, total) => `已套用 ${preset} 預設；啟用 ${enabled}/${total} 個方向。`,
+    },
+    layout: {
+      overallPlot: "整體 ONA",
+      overallSubtitle: "所有分析單位 · 描述性順序網絡",
+      primaryPlot: "主要群組",
+      secondaryPlot: "次要群組",
+      groupMeanSubtitle: "描述性群組平均 · 不相減",
+      dataView: "順序資料檢視",
+      dataViewSubtitle: "由執行階段審計的來源碼／ground → 回應碼／response 貢獻",
+      unavailableGroupPlot: "此模型沒有第二個可用的描述性群組網絡。",
+      descriptiveBoundary: "此版本的 ONA 只作描述；這些面板不計算群組差異、p 值、效應量、信賴區間或因果效應。",
+      directionGuide: "三角形頂點為來源碼／ground、底邊為回應碼／response；箭角標示互惠方向中較強者，內圓盤標示自連線。",
+    },
+    plot: {
+      overallTitle: "整體順序網絡",
+      groupTitle: "順序群組平均網絡",
+      directedNetworkDescription: "有方向 ONA 網絡；三角形頂點為來源碼／ground，底邊為回應碼／response。",
+      normalizedMeanWeight: "分析單位等權正規化平均權重",
+      rawAggregateCount: "原始彙總計數",
+      respondedToWith: "以 {response} 回應 {ground}",
+      selfConnection: "自連線",
+      visibleConnections: "可見有方向連線",
+      noVisibleConnections: "沒有已啟用的有方向連線通過目前顯示門檻。",
+      sourceApexLegend: "三角形頂點＝來源碼／ground；底邊＝回應碼／response",
+      chevronLegend: "箭角＝互惠方向中較強者；完全相同時兩個方向皆標示",
+      selfDiscLegend: "內圓盤＝對角自連線",
+      nodeSizeLabel: "節點大小",
+      unitsLabel: "分析單位",
+    },
+    dataView: {
+      ariaLabel: "順序資料檢視中央區域",
+      title: "順序資料檢視",
+      returnLabel: "返回整體 ONA",
+      returnAriaLabel: "返回整體有方向 ONA 圖",
+      contextLabel: "顯示以下範圍的審計 response",
+      overall: "整體",
+      primary: "主要群組",
+      secondary: "次要群組",
+      record: "筆審計 response",
+      records: "筆審計 response",
+      exportLabel: "匯出本機資料檢視 CSV ↓",
+      exportAriaLabel: "匯出含本機識別資料的 ONA 資料檢視 CSV",
+      tableAriaLabel: "經審計的 ONA response 貢獻",
+      provenanceGroup: "順序來源追蹤",
+      metadataGroup: "本機詮釋資料連接",
+      directedEdgeGroup: "有方向 p² 貢獻",
+      provenanceLabels: {
+        orderedResponsePosition: "排序後 response 位置",
+        sourceRecordNumber: "來源記錄號（本機）",
+        opaqueHorizonOrdinal: "不透明 horizon 序號",
+        priorRowCount: "向後窗口中的先前列數",
+        predecessorResponsePositions: "先前 response 位置",
+      },
+      yes: "是",
+      no: "否",
+      empty: "此範圍沒有符合的 ONA 審計 response 列。",
+      localIdentityWarning: "此本機檢視會把去識別的順序貢獻連接至來源記錄號，以及所選分析單位、horizon、群組與順序詮釋資料；內容可能識別參與者。",
+      exportConfirmation: "此 CSV 含本機識別詮釋資料與來源記錄對應。請確認您會在分享前審閱並去識別。",
+    },
+    stats: {
+      title: "ONA 描述統計",
+      descriptiveBoundary: "只作描述；不計算群組相減、推論比較、p 值、效應量、信賴區間或因果主張。",
+      overallScopeLabel: "整體順序網絡",
+      groupScopeLabel: "{group} 順序平均網絡",
+      modelCoverage: "ONA 模型涵蓋範圍",
+      analyticUnits: "個分析單位",
+      orderedRows: "列排序後 response（完整結果）",
+      opaqueHorizons: "個不透明 horizon（完整結果）",
+      codes: "個編碼",
+      directedCells: "個有方向儲存格",
+      enabled: "已啟用",
+      masked: "已遮罩",
+      zeroNetworks: "零網絡",
+      rawMass: "原始有方向質量",
+      total: "總計",
+      selfConnections: "自連線",
+      offDiagonal: "非對角",
+      incomingRawMass: "依回應碼／response-target 的流入原始質量",
+      outgoingRawMass: "依來源碼／ground-source 的流出原始質量",
+      topDirectedCells: "最高有方向儲存格",
+      pairAsymmetry: "互惠配對不對稱",
+      groupUnitCounts: "群組分析單位數",
+      varianceDiagnostics: "模型變異診斷",
+      noPositiveCells: "沒有已啟用的有方向儲存格具有正值完整證據。",
+      normalizedMean: "分析單位等權正規化平均",
+      raw: "原始",
+      nonzeroUnits: "個非零單位",
+      absoluteNormalizedAsymmetry: "絕對正規化不對稱",
+      tie: "相同",
+    },
+    exports: {
+      title: "ONA 研究匯出",
+      description: "可選擇只含彙總的連線表或去識別順序審計；兩者都不包含本機來源列對應。",
+      scopeLabel: "描述範圍",
+      aggregateLabel: "匯出彙總有方向連線 CSV",
+      aggregateDescription: "只含彙總的 p² 儲存格：範圍、方向、遮罩、原始總量、分析單位等權正規化平均與非零單位數。",
+      auditLabel: "匯出去識別順序審計 CSV",
+      auditDescription: "只含不透明 response/horizon 序號與執行階段審計的 p² 貢獻；不含分析單位、來源列或詮釋資料識別。",
+      auditWarning: "去識別不等於匿名。順序 response 模式與外部資訊結合後仍可能有重新識別風險；只應在適當研究治理下分享。",
+      auditConfirmation: "此審計已去識別但並非匿名，仍可能有重新識別風險。請確認分享受適當研究治理規範。",
+      bundleConfirmation: "完整 ONA 模型 bundle 不含原始來源列，但保留分析單位標籤與群組名稱。請確認匯出前已審閱或假名化這些識別資料。",
+    },
+    unavailable: {
+      sets: "ONA 尚未驗證分析集與共享參照幾何。",
+      reference: "ONA 不支援參照旋轉。",
+      groupContrast: "ONA 群組面板只顯示描述性平均，不提供成對相減。",
+      trajectory: "ONA 尚未驗證軌跡模型。",
+      threeD: "此版本尚未驗證 3D ONA；請使用有方向 2D 視圖。",
+      inference: "ONA 尚未驗證推論檢定；只顯示描述性診斷。",
+      ai: "在只含彙總的順序證據合約通過獨立驗證前，ONA 不提供 AI 解讀。",
+    },
+    presenter: {
+      title: "調整有方向 ONA 視圖",
+      description: "這些控制只改變有方向 2D 呈現，不會重新建立順序模型。",
+      directionBoundary: "顯示門檻不會改變已擬合 p² 矩陣或已設定方向遮罩。",
+    },
+  },
   sets: { ...en.sets, title: "分析集", description: "將端點模型保留在瀏覽器記憶體中，並比較共享同一參照幾何的擬合或投影網絡。", capture: "擷取目前模型", captureHint: "只擷取衍生座標與等權單位網絡平均值，不保留原始來源資料列；分析單位識別碼仍會保留，必要時請先假名化。", emptyTitle: "尚未擷取分析集", emptyText: "先建立端點模型，再在這裡擷取。擬合模型會安裝其可重用參照，使之後的 CSV 或 XLSX 檔案可投影到完全相同的 ENA 空間。", fitted: "擬合", projected: "投影", generatedReference: "可重用擬合參照", projectionReference: "已投影至參照", sourceHash: "分析資料表 SHA-256", hashScope: "雜湊範圍", primary: "主要分析集", secondary: "次要分析集", choosePrimary: "選擇主要分析集", chooseSecondary: "選擇相容的次要分析集", comparisonHint: "帶符號連線差異為共享固定幾何中的「主要減次要」。JSON 會保留分析單位識別碼；需要分享時請先假名化。", noCompatibleSecondary: "沒有可用的相容次要分析集。請在同一參照幾何中擷取或投影另一個端點模型。", remove: "移除", exportJson: "匯出比較 JSON", exportEdges: "匯出連線差異 CSV" },
   data: { ...en.data, title: "從編碼資料開始", description: "在此瀏覽器開啟 CSV 或 XLSX 檔案，或載入已記錄的學院範例以查看完整流程。", upload: "開啟 CSV 或 XLSX", uploadHint: "CSV 或 XLSX，最多 5 MB、20,000 列；XLSX 使用第一個工作表", sample: "載入教學範例", trajectorySample: "載入 2D 軌跡範例", trajectorySampleHint: "54 筆合成資料 · 6 位學習者 · TP1–TP3 · 6 個編碼", noFile: "尚未載入資料", active: "使用中的資料集", rows: "資料列", columns: "欄位", source: "來源", local: "核心 ENA 運算保留在此瀏覽器；原始來源資料列不會傳送至可選的 AI 解讀服務。" },
   model: { ...en.model, title: "定義 ENA 模型", description: "對應賦予網絡分析意義的欄位，然後執行已驗證的 jENA 流程。", sequenceNote: "CSV 或 XLSX 資料列順序定義每段對話中的序列；若順序重要，請在分析前先排序來源檔案。", unit: "分析單位", conversation: "對話", group: "比較群組", identityHint: "可選一個或多個欄位；順序會定義複合識別。", noGroup: "不設比較群組（全部分析單位）", codes: "編碼", window: "窗口", movingWindow: "移動段落窗口", conversationWindow: "完整對話", back: "向後跨度（包括目前列）", forward: "向前資料列", configureTrajectory: "設定軌跡模型", modelType: "模型類型", endpoint: "端點（每個分析單位一個網絡）", separateTrajectory: "分離軌跡（每一步一個點）", accumulatedTrajectory: "累積軌跡（每一步為累積網絡）", trajectoryHint: "軌跡步驟依每個分析單位首次出現的對話順序排列；統計面板不會將重複步驟視為獨立分析單位。", rotation: "旋轉", svd: "SVD（資料變異）", means: "廣義均值旋轉（GMR）", center: "將零網絡分析單位置於原點", weighting: "加權", binary: "二元", run: "建立 ENA 模型", rerun: "重新建立模型", valid: "模型輸入有效" },
@@ -1345,6 +1978,218 @@ const zhHans: OpenEnaCopy = {
   navLabel: "开放 ENA",
   modes: { sets: "分析集", data: "数据", model: "模型", plot: "绘图工具", stats: "统计与导出", ai: "AI 解读" },
   views: { twoD: "2D ENA", threeD: "3D ENA" },
+  ona: {
+    ...zhHant.ona,
+    family: {
+      legend: "分析类型",
+      methodBoundaryLabel: "方法边界",
+      selectedLabel: "已选择",
+      ena: {
+        label: "标准 ENA",
+        description: "使用标准 ENA 窗口、模型、旋转、比较与轨迹的无向共现网络。",
+        methodBoundary: "使用 p(p−1)/2 个无向连线，不包括对角自连线。",
+      },
+      ona: {
+        label: "顺序网络分析（ONA）",
+        description: "使用明确类型顺序和完整 p² 遮罩的有向源码／ground → 响应码／response 网络。",
+        methodBoundary: "此版本锁定端点、仅向后移动段落窗口、原始乘积总和、SVD，并只提供描述性结果。",
+      },
+    },
+    setupIncomplete: "必须完成明确的 ONA 排序策略，才能运行此顺序模型。",
+    run: "构建 ONA 模型",
+    rerun: "重新构建 ONA 模型",
+    order: {
+      title: "顺序与向后窗口",
+      description: "声明每个有类型 horizon 内的数据行顺序。缺失值和并列顺序会被拒绝，不会猜测。",
+      orderPolicyLegend: "数据行顺序依据",
+      columnsPolicyLabel: "明确顺序字段",
+      columnsPolicyDescription: "在每个有类型 horizon 内升序排列，且每个字段都必须声明比较器。",
+      sourceRowPolicyLabel: "已确认的来源记录顺序",
+      sourceRowPolicyDescription: "只有在明确确认导入记录顺序就是研究顺序后，才使用来源记录顺序。",
+      orderColumnsLegend: "顺序字段与类型比较器",
+      comparatorLabel: "比较器",
+      comparatorPlaceholder: "选择比较器",
+      comparatorLabels: { number: "数值", string: "字符串（码位顺序）", boolean: "布尔值", "iso-datetime": "ISO 日期时间" },
+      sourceRowConfirmationLabel: "我确认来源记录顺序就是 horizon 内预期的研究顺序。",
+      windowTitle: "向后语境",
+      windowModeLegend: "窗口范围",
+      finiteWindowLabel: "有限段落总行数",
+      entireHorizonLabel: "完整有类型 horizon",
+      windowSizeLabel: "总行数（包括当前 response 行）",
+      invalidWindowSize: "请使用正整数或完整有类型 horizon。",
+      lockedTitle: "锁定的 ONA 执行契约",
+      modelLabel: "模型",
+      modelValue: "端点",
+      windowTypeLabel: "窗口",
+      windowTypeValue: "移动段落窗口",
+      forwardLabel: "向前数据行",
+      forwardValue: "0（仅向后）",
+      weightLabel: "加权",
+      weightValue: "原始乘积总和",
+      rotationLabel: "旋转",
+      rotationValue: "SVD 与有向节点几何",
+      referenceLabel: "参考旋转",
+      referenceValue: "ONA 不适用",
+      previewTitle: "规范顺序预览",
+      previewReady: "此预览使用运行分析时的同一个规范排序函数。",
+      previewNeedsConfiguration: "完成排序策略后，才能预览实际 response 顺序。",
+      previewRejected: "当前数据行不符合此类型顺序策略；请处理缺失值、错误类型或并列。",
+      resolvedPolicyTitle: "已解析执行策略",
+      directionLabel: "方向",
+      directionAscending: "在每个有类型 horizon 内升序",
+      missingLabel: "缺失值",
+      missingReject: "拒绝",
+      tiesLabel: "并列顺序组",
+      tiesReject: "拒绝",
+      stableLabel: "稳定映射",
+      stableYes: "是；排序后 response 保留来源记录映射",
+      sourceOrderValue: "已确认来源记录顺序；不应用比较器排序。",
+      orderedPositionHeader: "排序后 response",
+      sourceRecordHeader: "来源记录",
+      horizonOrdinalHeader: "有类型 horizon",
+      boundaryHeader: "边界",
+      unitFieldsHeader: "分析单位字段",
+      horizonFieldsHeader: "Horizon 字段",
+      orderFieldsHeader: "顺序字段",
+      boundarySingle: "单行 horizon",
+      boundaryStart: "开始",
+      boundaryWithin: "内部",
+      boundaryEnd: "结束",
+      emptyFields: "—",
+    },
+    mask: {
+      triggerLabel: "编辑 p² 方向遮罩",
+      dialogTitle: "方向连线遮罩",
+      dialogDescription: "每个单元格独立启用一个行源码／ground → 列响应码／response；包括对角自连线。",
+      closeLabel: "关闭方向遮罩编辑器",
+      matrixCaption: "ONA p² 方向遮罩：行为源码／ground，列为响应码／response",
+      groundHeader: "源码／ground",
+      responseHeader: "响应码／response",
+      allLabel: "全部方向",
+      noneLabel: "不选方向",
+      diagonalLabel: "仅选对角",
+      offDiagonalLabel: "仅选非对角",
+      invalidMaskMessage: "遮罩未绑定当前编码顺序；请先协调所选编码。",
+      cellLabel: (ground, response, diagonal) => `${ground} 源码／ground 到 ${response} 响应码／response${diagonal ? "；自连线" : ""}`,
+      cellAnnouncement: (ground, response, enabled) => `${ground} 到 ${response} 已${enabled ? "启用" : "停用"}。`,
+      bulkAnnouncement: (preset, enabled, total) => `已应用 ${preset} 预设；启用 ${enabled}/${total} 个方向。`,
+    },
+    layout: {
+      overallPlot: "整体 ONA",
+      overallSubtitle: "所有分析单位 · 描述性顺序网络",
+      primaryPlot: "主要组",
+      secondaryPlot: "次要组",
+      groupMeanSubtitle: "描述性组均值 · 不相减",
+      dataView: "顺序数据视图",
+      dataViewSubtitle: "由运行时审计的源码／ground → 响应码／response 贡献",
+      unavailableGroupPlot: "此模型没有第二个可用的描述性组网络。",
+      descriptiveBoundary: "此版本的 ONA 仅作描述；这些面板不计算组差异、p 值、效应量、置信区间或因果效应。",
+      directionGuide: "三角形顶点为源码／ground、底边为响应码／response；箭角标示互惠方向中较强者，内圆盘标示自连线。",
+    },
+    plot: {
+      overallTitle: "整体顺序网络",
+      groupTitle: "顺序组均值网络",
+      directedNetworkDescription: "有向 ONA 网络；三角形顶点为源码／ground，底边为响应码／response。",
+      normalizedMeanWeight: "分析单位等权归一化平均权重",
+      rawAggregateCount: "原始汇总计数",
+      respondedToWith: "以 {response} 响应 {ground}",
+      selfConnection: "自连线",
+      visibleConnections: "可见有向连线",
+      noVisibleConnections: "没有已启用的有向连线通过当前显示阈值。",
+      sourceApexLegend: "三角形顶点＝源码／ground；底边＝响应码／response",
+      chevronLegend: "箭角＝互惠方向中较强者；完全相同时两个方向都标示",
+      selfDiscLegend: "内圆盘＝对角自连线",
+      nodeSizeLabel: "节点大小",
+      unitsLabel: "分析单位",
+    },
+    dataView: {
+      ariaLabel: "顺序数据视图中央区域",
+      title: "顺序数据视图",
+      returnLabel: "返回整体 ONA",
+      returnAriaLabel: "返回整体有向 ONA 图",
+      contextLabel: "显示以下范围的审计 response",
+      overall: "整体",
+      primary: "主要组",
+      secondary: "次要组",
+      record: "条审计 response",
+      records: "条审计 response",
+      exportLabel: "导出本地数据视图 CSV ↓",
+      exportAriaLabel: "导出含本地标识数据的 ONA 数据视图 CSV",
+      tableAriaLabel: "经审计的 ONA response 贡献",
+      provenanceGroup: "顺序来源追踪",
+      metadataGroup: "本地元数据连接",
+      directedEdgeGroup: "有向 p² 贡献",
+      provenanceLabels: {
+        orderedResponsePosition: "排序后 response 位置",
+        sourceRecordNumber: "来源记录号（本地）",
+        opaqueHorizonOrdinal: "不透明 horizon 序号",
+        priorRowCount: "向后窗口中的先前行数",
+        predecessorResponsePositions: "先前 response 位置",
+      },
+      yes: "是",
+      no: "否",
+      empty: "此范围没有匹配的 ONA 审计 response 行。",
+      localIdentityWarning: "此本地视图会把去标识的顺序贡献连接到来源记录号，以及所选分析单位、horizon、组和顺序元数据；内容可能识别参与者。",
+      exportConfirmation: "此 CSV 含本地标识元数据与来源记录映射。请确认您会在分享前审阅并去标识。",
+    },
+    stats: {
+      title: "ONA 描述统计",
+      descriptiveBoundary: "仅作描述；不计算组相减、推断比较、p 值、效应量、置信区间或因果主张。",
+      overallScopeLabel: "整体顺序网络",
+      groupScopeLabel: "{group} 顺序均值网络",
+      modelCoverage: "ONA 模型覆盖范围",
+      analyticUnits: "个分析单位",
+      orderedRows: "行排序后 response（完整结果）",
+      opaqueHorizons: "个不透明 horizon（完整结果）",
+      codes: "个编码",
+      directedCells: "个有向单元格",
+      enabled: "已启用",
+      masked: "已遮罩",
+      zeroNetworks: "零网络",
+      rawMass: "原始有向质量",
+      total: "总计",
+      selfConnections: "自连线",
+      offDiagonal: "非对角",
+      incomingRawMass: "按响应码／response-target 的流入原始质量",
+      outgoingRawMass: "按源码／ground-source 的流出原始质量",
+      topDirectedCells: "最高有向单元格",
+      pairAsymmetry: "互惠配对不对称",
+      groupUnitCounts: "组分析单位数",
+      varianceDiagnostics: "模型方差诊断",
+      noPositiveCells: "没有已启用的有向单元格具有正值完整证据。",
+      normalizedMean: "分析单位等权归一化均值",
+      raw: "原始",
+      nonzeroUnits: "个非零单位",
+      absoluteNormalizedAsymmetry: "绝对归一化不对称",
+      tie: "相同",
+    },
+    exports: {
+      title: "ONA 研究导出",
+      description: "可选择仅含汇总的连线表或去标识顺序审计；两者都不包含本地来源行映射。",
+      scopeLabel: "描述范围",
+      aggregateLabel: "导出汇总有向连线 CSV",
+      aggregateDescription: "仅含汇总的 p² 单元格：范围、方向、遮罩、原始总量、分析单位等权归一化均值与非零单位数。",
+      auditLabel: "导出去标识顺序审计 CSV",
+      auditDescription: "仅含不透明 response/horizon 序号与运行时审计的 p² 贡献；不含分析单位、来源行或元数据标识。",
+      auditWarning: "去标识不等于匿名。顺序 response 模式与外部信息结合后仍可能有重新标识风险；仅应在适当研究治理下分享。",
+      auditConfirmation: "此审计已去标识但并非匿名，仍可能有重新标识风险。请确认分享受适当研究治理规范。",
+      bundleConfirmation: "完整 ONA 模型 bundle 不含原始来源行，但保留分析单位标签与组名称。请确认导出前已审阅或假名化这些标识数据。",
+    },
+    unavailable: {
+      sets: "ONA 尚未验证分析集与共享参考几何。",
+      reference: "ONA 不支持参考旋转。",
+      groupContrast: "ONA 组面板只显示描述性均值，不提供成对相减。",
+      trajectory: "ONA 尚未验证轨迹模型。",
+      threeD: "此版本尚未验证 3D ONA；请使用有向 2D 视图。",
+      inference: "ONA 尚未验证推断检验；只显示描述性诊断。",
+      ai: "在仅含汇总的顺序证据契约通过独立验证前，ONA 不提供 AI 解读。",
+    },
+    presenter: {
+      title: "调整有向 ONA 视图",
+      description: "这些控件只改变有向 2D 呈现，不会重新构建顺序模型。",
+      directionBoundary: "显示阈值不会改变已拟合 p² 矩阵或已设置方向遮罩。",
+    },
+  },
   sets: { ...zhHant.sets, title: "分析集", description: "将端点模型保留在浏览器内存中，并比较共享同一参考几何的拟合或投影网络。", capture: "捕获当前模型", captureHint: "只捕获派生坐标与等权单位网络均值，不保留原始来源数据行；分析单位标识符仍会保留，必要时请先假名化。", emptyTitle: "尚未捕获分析集", emptyText: "先构建端点模型，再在此捕获。拟合模型会安装其可复用参考，使之后的 CSV 或 XLSX 文件可投影到完全相同的 ENA 空间。", fitted: "拟合", projected: "投影", generatedReference: "可复用拟合参考", projectionReference: "已投影至参考", sourceHash: "分析数据表 SHA-256", hashScope: "哈希范围", primary: "主要分析集", secondary: "次要分析集", choosePrimary: "选择主要分析集", chooseSecondary: "选择兼容的次要分析集", comparisonHint: "带符号连线差异为共享固定几何中的“主要减次要”。JSON 会保留分析单位标识符；需要分享时请先假名化。", noCompatibleSecondary: "没有可用的兼容次要分析集。请在同一参考几何中捕获或投影另一个端点模型。", remove: "移除", exportJson: "导出比较 JSON", exportEdges: "导出连线差异 CSV" },
   data: { ...zhHant.data, title: "从编码数据开始", description: "在此浏览器打开 CSV 或 XLSX 文件，或加载已有说明的学院示例以查看完整流程。", upload: "打开 CSV 或 XLSX", uploadHint: "CSV 或 XLSX，最多 5 MB、20,000 行；XLSX 使用第一个工作表", sample: "加载教学示例", trajectorySample: "加载 2D 轨迹示例", trajectorySampleHint: "54 条合成数据 · 6 位学习者 · TP1–TP3 · 6 个编码", noFile: "尚未加载数据", active: "当前数据集", rows: "数据行", columns: "字段", source: "来源", local: "核心 ENA 计算保留在此浏览器；原始来源数据行不会发送到可选的 AI 解读服务。" },
   model: { ...zhHant.model, title: "定义 ENA 模型", description: "映射赋予网络分析意义的字段，然后运行已验证的 jENA 流程。", sequenceNote: "CSV 或 XLSX 数据行顺序定义每段对话中的序列；若顺序重要，请在分析前先排序源文件。", unit: "分析单位", conversation: "对话", group: "比较组", identityHint: "可选一个或多个字段；顺序会定义复合标识。", noGroup: "不设比较组（全部分析单位）", codes: "编码", window: "窗口", movingWindow: "移动段落窗口", conversationWindow: "完整对话", back: "向后跨度（包括当前行）", forward: "向前数据行", configureTrajectory: "配置轨迹模型", modelType: "模型类型", endpoint: "端点（每个分析单位一个网络）", separateTrajectory: "分离轨迹（每一步一个点）", accumulatedTrajectory: "累积轨迹（每一步为累积网络）", trajectoryHint: "轨迹步骤按每个分析单位首次出现的对话顺序排列；统计面板不会将重复步骤视为独立分析单位。", rotation: "旋转", svd: "SVD（数据方差）", means: "广义均值旋转（GMR）", center: "将零网络分析单位置于原点", weighting: "加权", binary: "二元", run: "构建 ENA 模型", rerun: "重新构建模型", valid: "模型输入有效" },

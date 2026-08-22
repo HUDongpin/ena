@@ -217,11 +217,12 @@ test("edge geometry is a source-apex / response-base triangle with a separate ke
 test("node sizing uses response-code totals when supplied and explicitly labels the fallback statistic", () => {
   const { result, config } = orderedFixture();
   const supplied: OpenEnaOrderedNodeTotals = {
+    schemaVersion: 1,
     codeOrder: codes,
-    overall: [100, 4, 1],
+    overallResponseCodeTotals: [100, 4, 1],
     groups: [
-      { name: "first", totals: [8, 2, 1] },
-      { name: "second", totals: [92, 2, 0] },
+      { name: "first", unitCount: 1, responseCodeTotals: [8, 2, 1] },
+      { name: "second", unitCount: 3, responseCodeTotals: [92, 2, 0] },
     ],
   };
   const exact = buildOpenEnaOrderedPlotModel({

@@ -4,7 +4,11 @@ import {
   canonicalizeOpenEnaConfig,
   validateDirectionalMask,
 } from "./network-config";
-import type { OpenEnaConfig, OpenEnaResult } from "./types";
+import type {
+  OpenEnaConfig,
+  OpenEnaOrderedResponseNodeSummary,
+  OpenEnaResult,
+} from "./types";
 
 const ZERO_TOLERANCE = 1e-12;
 
@@ -12,11 +16,7 @@ export type OpenEnaOrderedPlotScope =
   | { kind: "overall" }
   | { kind: "group"; name: string };
 
-export interface OpenEnaOrderedNodeTotals {
-  codeOrder: string[];
-  overall: number[];
-  groups: Array<{ name: string; totals: number[] }>;
-}
+export type OpenEnaOrderedNodeTotals = OpenEnaOrderedResponseNodeSummary;
 
 export interface OpenEnaOrderedPlotNode {
   code: string;
@@ -91,17 +91,55 @@ function validateNodeTotals(
   totals: OpenEnaOrderedNodeTotals,
   codes: readonly string[],
   scope: OpenEnaOrderedPlotScope,
+  result: OpenEnaResult,
 ) {
-  if (!sameStrings(totals.codeOrder, codes)) {
+  if (totals.schemaVersion !== 1 || !sameStrings(totals.codeOrder, codes)) {
     throw new Error("ONA ordered node totals must exactly match the configured code order.");
   }
   const values = scope.kind === "overall"
-    ? totals.overall
-    : totals.groups.find((group) => group.name === scope.name)?.totals;
+    ? totals.overallResponseCodeTotals
+    : totals.groups.find((group) => group.name === scope.name)?.responseCodeTotals;
   if (!values || values.length !== codes.length) {
     throw new Error("ONA ordered node totals are missing the requested plot scope.");
   }
-  return values.map((value, index) => finiteNonnegative(value, `ONA response total ${index + 1}`));
+  const groupNames = totals.groups.map((group) => group.name);
+  if (new Set(groupNames).size !== groupNames.length
+    || totals.groups.length !== result.groups.length
+    || result.groups.some((group) => {
+      const summary = totals.groups.find((candidate) => candidate.name === group.name);
+      return !summary
+        || !Number.isSafeInteger(summary.unitCount)
+        || summary.unitCount !== group.count
+        || summary.responseCodeTotals.length !== codes.length;
+    })) {
+    throw new Error("ONA ordered node totals must match every completed result group and unit count.");
+  }
+  for (const group of totals.groups) {
+    group.responseCodeTotals.forEach((value, index) => {
+      finiteNonnegative(value, `ONA group “${group.name}” response total ${index + 1}`);
+    });
+  }
+  const overall = totals.overallResponseCodeTotals.map((value, index) => (
+    finiteNonnegative(value, `ONA overall response total ${index + 1}`)
+  ));
+  for (let codeIndex = 0; codeIndex < codes.length; codeIndex += 1) {
+    let groupedTotal = 0;
+    let groupedMagnitude = 0;
+    for (const group of totals.groups) {
+      groupedTotal += group.responseCodeTotals[codeIndex];
+      groupedMagnitude += Math.abs(group.responseCodeTotals[codeIndex]);
+      if (!Number.isFinite(groupedTotal) || !Number.isFinite(groupedMagnitude)) {
+        throw new Error(`ONA grouped response total ${codeIndex + 1} exceeds finite arithmetic range.`);
+      }
+    }
+    const roundoffTolerance = Number.EPSILON * groupedMagnitude * Math.max(8, totals.groups.length * 2);
+    if (Math.abs(groupedTotal - overall[codeIndex]) > roundoffTolerance) {
+      throw new Error("ONA ordered node overall totals must numerically agree with their de-identified group totals.");
+    }
+  }
+  return scope.kind === "overall"
+    ? overall
+    : values.map((value, index) => finiteNonnegative(value, `ONA response total ${index + 1}`));
 }
 
 function rowBelongsToScope(
@@ -248,7 +286,7 @@ export function buildOpenEnaOrderedPlotModel(input: {
   }
   const nodeCoordinates = new Map(rotationNodes.map((row) => [String(row.code), row]));
   const responseTotals = input.nodeTotals
-    ? validateNodeTotals(input.nodeTotals, config.codes, scope)
+    ? validateNodeTotals(input.nodeTotals, config.codes, scope, result)
     : config.codes.map((_, responseIndex) => edges
         .filter((edge) => edge.responseIndex === responseIndex && edge.maskEnabled)
         .reduce((sum, edge) => sum + edge.normalizedMeanWeight, 0));
