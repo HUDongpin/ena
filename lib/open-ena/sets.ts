@@ -491,6 +491,8 @@ export function buildOpenEnaSharedComparisonBundle(
 }
 
 export function setComparisonEdgesToCsv(comparison: OpenEnaSharedComparison) {
+  assertOpenEnaCapabilityForConfig(comparison.primary.config, "analysis-sets");
+  assertOpenEnaCapabilityForConfig(comparison.secondary.config, "analysis-sets");
   return rowsToCsv(comparison.edges.map((edge) => ({
     referenceId: comparison.referenceId,
     primarySetId: comparison.primary.setId,
@@ -506,6 +508,8 @@ export function setComparisonEdgesToCsv(comparison: OpenEnaSharedComparison) {
 }
 
 export function openEnaSharedEdgesToCsv(comparison: OpenEnaSharedComparison) {
+  assertOpenEnaCapabilityForConfig(comparison.primary.config, "analysis-sets");
+  assertOpenEnaCapabilityForConfig(comparison.secondary.config, "analysis-sets");
   return setComparisonEdgesToCsv(comparison);
 }
 

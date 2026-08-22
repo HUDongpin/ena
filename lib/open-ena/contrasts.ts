@@ -437,10 +437,11 @@ export function buildPairwiseGroupContrast(
   config: OpenEnaConfig,
   primaryGroup: string,
   secondaryGroup: string,
-  selectedAxes: readonly string[] = result.dimensions.slice(0, 2),
+  selectedAxes?: readonly string[],
   createdAt = new Date().toISOString(),
 ): OpenEnaPairwiseContrast {
   assertOpenEnaCapabilityForContext(config, result, "group-contrast");
+  const resolvedAxes = selectedAxes ?? result.dimensions.slice(0, 2);
   if (result.set.modelType !== "EndPoint" || config.model !== "EndPoint") {
     throw new Error("Pairwise group contrasts require an endpoint ENA result and endpoint configuration.");
   }
@@ -474,8 +475,8 @@ export function buildPairwiseGroupContrast(
   if (!declaredGroups.includes(primaryGroup) || !declaredGroups.includes(secondaryGroup)) {
     throw new Error("Each selected group name must exactly match a declared ENA result group.");
   }
-  if (selectedAxes.length !== 2 || selectedAxes[0] === selectedAxes[1]
-    || selectedAxes.some((axis) => !result.dimensions.includes(axis))) {
+  if (resolvedAxes.length !== 2 || resolvedAxes[0] === resolvedAxes[1]
+    || resolvedAxes.some((axis) => !result.dimensions.includes(axis))) {
     throw new Error("Choose two distinct axes available in the current ENA result geometry.");
   }
   const parsedTime = Date.parse(createdAt);
@@ -486,7 +487,7 @@ export function buildPairwiseGroupContrast(
   if (!Number.isFinite(analyzedTime) || new Date(analyzedTime).toISOString() !== result.analyzedAt) {
     throw new Error("The ENA result analysis time must be a canonical ISO timestamp.");
   }
-  const axes: [string, string] = [selectedAxes[0], selectedAxes[1]];
+  const axes: [string, string] = [resolvedAxes[0], resolvedAxes[1]];
   const primary = buildSide(
     result,
     config.groupColumn,

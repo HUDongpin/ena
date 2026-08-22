@@ -16,13 +16,19 @@ import { buildLongitudinalDerivation } from "../lib/open-ena/longitudinal";
 import { createDirectionalMask } from "../lib/open-ena/network-config";
 import { compileOpenEna3dPlotSpec } from "../lib/open-ena/plot3d";
 import { buildReferenceRotationPackage, validateReferenceCompatibility } from "../lib/open-ena/reference";
-import { buildAnalysisSet, compareAnalysisSets } from "../lib/open-ena/sets";
+import {
+  buildAnalysisSet,
+  compareAnalysisSets,
+  openEnaSharedEdgesToCsv,
+  setComparisonEdgesToCsv,
+} from "../lib/open-ena/sets";
 import {
   SAMPLE_CONFIG,
   type OpenEnaAnalysisSet,
   type OpenEnaConfig,
   type OpenEnaResult,
   type OpenEnaRotationReference,
+  type OpenEnaSharedComparison,
   type ParsedDataset,
 } from "../lib/open-ena/types";
 
@@ -135,12 +141,31 @@ test("all unverified production entry points fail closed for ONA before legacy p
     { config } as OpenEnaAnalysisSet,
     { config } as OpenEnaAnalysisSet,
   ), "analysis-sets");
+  const forgedComparison = {
+    primary: { config },
+    secondary: { config },
+    edges: [],
+  } as unknown as OpenEnaSharedComparison;
+  expectBlocked(() => setComparisonEdgesToCsv(forgedComparison), "analysis-sets");
+  expectBlocked(() => openEnaSharedEdgesToCsv(forgedComparison), "analysis-sets");
   expectBlocked(() => buildReferenceRotationPackage(dataset, config, result), "reference-rotation");
   expectBlocked(() => validateReferenceCompatibility(
     config,
     {} as OpenEnaRotationReference,
   ), "reference-rotation");
   expectBlocked(() => buildPairwiseGroupContrast(result, config, "g1", "g2"), "group-contrast");
+  const poisonedDimensions: OpenEnaResult = {
+    ...result,
+    dimensions: {
+      slice() {
+        throw new Error("legacy dimensions slice ran before the ONA capability guard");
+      },
+    } as unknown as string[],
+  };
+  expectBlocked(
+    () => buildPairwiseGroupContrast(poisonedDimensions, config, "g1", "g2"),
+    "group-contrast",
+  );
   expectBlocked(() => buildLongitudinalDerivation(result, config, dataset, {} as never), "trajectory");
   expectBlocked(() => compileOpenEna3dPlotSpec({ result } as never), "3d");
   expectBlocked(() => buildEndpointMannWhitney(result, "group", result.dimensions), "inference");
