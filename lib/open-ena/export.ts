@@ -1,5 +1,9 @@
 import type { Row, Scalar } from "jena-js";
 import { buildManifest } from "./analyze";
+import {
+  assertOpenEnaCapabilityForContext,
+  openEnaAnalysisKindFromResult,
+} from "./capabilities";
 import type { OpenEnaPairwiseContrast } from "./contrasts";
 import {
   assertOpenEnaInferenceBindingV2,
@@ -10,6 +14,10 @@ import {
 } from "./inference-consumers";
 import type { OpenEnaInferenceResultV2 } from "./inference-v2";
 import { buildMethodsReport, type OpenEnaPresentationOptions } from "./methods";
+import {
+  canonicalizeOpenEnaConfig,
+  deserializeOpenEnaConfig,
+} from "./network-config";
 import { codeColorFor } from "./plot-style";
 import {
   datasetHashKindFor,
@@ -18,6 +26,7 @@ import {
   type OpenEnaResult,
   type ParsedDataset,
   type DatasetHashKind,
+  type PortableOpenEnaConfig,
 } from "./types";
 
 export const OPEN_ENA_POINT_INDEX = "OPEN_ENA_POINT_INDEX";
@@ -120,6 +129,20 @@ export function buildAnalysisBundle(
   sha256: string | null = null,
   options: BuildAnalysisBundleOptions = {},
 ) {
+  const analysisKind = openEnaAnalysisKindFromResult(result);
+  const canonicalConfig = canonicalizeOpenEnaConfig(config);
+  if (canonicalConfig.analysisKind !== analysisKind) {
+    throw new Error("The analysis bundle configuration disagrees with the completed runtime network.");
+  }
+  if (canonicalConfig.rotation === "reference") {
+    assertOpenEnaCapabilityForContext(canonicalConfig, result, "reference-rotation");
+  }
+  if (options.inference != null) {
+    assertOpenEnaCapabilityForContext(canonicalConfig, result, "inference");
+  }
+  if (options.groupContrast != null) {
+    assertOpenEnaCapabilityForContext(canonicalConfig, result, "group-contrast");
+  }
   const tables = buildResultTables(result);
   const selectedAxes = [...(options.methodsDimensions ?? result.dimensions.slice(0, 2))];
   if (selectedAxes.length !== 2) {
@@ -219,12 +242,20 @@ export function buildAnalysisBundle(
     },
     modelData: {
       modelType: result.set.modelType,
+      analysisKind,
+      networkType: analysisKind === "ona" ? "ordered" as const : "standard" as const,
       units: [...result.set.units],
       conversation: [...result.set.conversation],
       codeColumns: [...result.set.codeColumns],
       unitLabels: [...result.set.unitLabels],
       connectionMatrix: result.set.connectionMatrix.map((row) => [...row]),
-      functionParams: { ...result.set.functionParams },
+      functionParams: {
+        ...result.set.functionParams,
+        ...(analysisKind === "ona" ? { networkType: "ordered" as const } : {}),
+        windowSizeBack: result.set.functionParams.windowSizeBack === Number.POSITIVE_INFINITY
+          ? "Infinity" as const
+          : result.set.functionParams.windowSizeBack,
+      },
     },
     statistics: result.stats,
     statisticsDiagnostics: result.statsDiagnostics,
@@ -278,6 +309,378 @@ function parsedHashKind(value: unknown): DatasetHashKind | null {
     : null;
 }
 
+const PORTABLE_CONFIG_FIELDS = [
+  "analysisKind",
+  "unitColumns",
+  "conversationColumns",
+  "groupColumn",
+  "codes",
+  "model",
+  "window",
+  "windowSizeBack",
+  "windowSizeForward",
+  "weightBy",
+  "rotation",
+  "referenceRotationId",
+  "centerAlignToOrigin",
+  "orderPolicy",
+  "directionalMask",
+] as const;
+
+const LEGACY_CONFIG_REQUIRED_FIELDS = [
+  "unitColumns",
+  "conversationColumns",
+  "groupColumn",
+  "codes",
+  "model",
+  "window",
+  "windowSizeBack",
+  "windowSizeForward",
+  "weightBy",
+  "rotation",
+  "referenceRotationId",
+  "centerAlignToOrigin",
+] as const;
+
+function exactKeys(value: Record<string, unknown>, expected: readonly string[], label: string) {
+  const actual = Object.keys(value);
+  const expectedSet = new Set(expected);
+  if (actual.length !== expected.length
+    || actual.some((key) => !expectedSet.has(key))
+    || expected.some((key) => !Object.hasOwn(value, key))) {
+    throw new Error(`${label} must contain exactly its schema fields.`);
+  }
+}
+
+function boundedUniqueStrings(
+  value: unknown,
+  label: string,
+  minimum: number,
+  maximum: number,
+) {
+  if (!Array.isArray(value)
+    || value.length < minimum
+    || value.length > maximum
+    || value.some((item) => typeof item !== "string" || item.length === 0 || item.length > 4_096)
+    || new Set(value).size !== value.length) {
+    throw new Error(`${label} must contain unique bounded non-empty strings.`);
+  }
+}
+
+function assertPortableConfigScalars(config: Record<string, unknown>) {
+  boundedUniqueStrings(config.unitColumns, "Manifest unit columns", 1, 256);
+  boundedUniqueStrings(config.conversationColumns, "Manifest conversation columns", 1, 256);
+  boundedUniqueStrings(config.codes, "Manifest code columns", 3, 30);
+  if (config.groupColumn !== null
+    && (typeof config.groupColumn !== "string" || config.groupColumn.length === 0 || config.groupColumn.length > 4_096)) {
+    throw new Error("Manifest group column must be null or a bounded non-empty string.");
+  }
+  if (config.model !== "EndPoint"
+    && config.model !== "SeparateTrajectory"
+    && config.model !== "AccumulatedTrajectory") {
+    throw new Error("Manifest model type is unsupported.");
+  }
+  if (config.window !== "MovingStanzaWindow" && config.window !== "Conversation") {
+    throw new Error("Manifest window type is unsupported.");
+  }
+  if (typeof config.windowSizeForward !== "number"
+    || !Number.isSafeInteger(config.windowSizeForward)
+    || config.windowSizeForward < 0
+    || config.windowSizeForward > 100) {
+    throw new Error("Manifest windowSizeForward must be a safe integer from 0 to 100.");
+  }
+  if (config.weightBy !== "binary" && config.weightBy !== "sum") {
+    throw new Error("Manifest weighting policy is unsupported.");
+  }
+  if (config.rotation !== "svd" && config.rotation !== "mean" && config.rotation !== "reference") {
+    throw new Error("Manifest rotation policy is unsupported.");
+  }
+  if (typeof config.centerAlignToOrigin !== "boolean") {
+    throw new Error("Manifest centerAlignToOrigin must be boolean.");
+  }
+  if (config.rotation === "reference") {
+    if (typeof config.referenceRotationId !== "string" || config.referenceRotationId.length === 0) {
+      throw new Error("Manifest reference rotation requires a reference ID.");
+    }
+  } else if (config.referenceRotationId !== null) {
+    throw new Error("Manifest non-reference rotation cannot retain a reference ID.");
+  }
+}
+
+function parseManifestConfiguration(
+  value: unknown,
+  schemaVersion: 1 | 2,
+) {
+  if (!isRecord(value)) throw new Error("Analysis manifest configuration is missing.");
+  assertPortableConfigScalars(value);
+  if (schemaVersion === 1) {
+    const allowed = new Set<string>([
+      ...LEGACY_CONFIG_REQUIRED_FIELDS,
+      "analysisKind",
+      "orderPolicy",
+      "directionalMask",
+    ]);
+    if (Object.keys(value).some((key) => !allowed.has(key))
+      || LEGACY_CONFIG_REQUIRED_FIELDS.some((key) => !Object.hasOwn(value, key))) {
+      throw new Error("Legacy manifest configuration contains an unsupported field.");
+    }
+    if ((value.analysisKind !== undefined && value.analysisKind !== "ena")
+      || (value.orderPolicy !== undefined && value.orderPolicy !== null)
+      || (value.directionalMask !== undefined && value.directionalMask !== null)) {
+      throw new Error("Legacy schema-v1 bundles are ENA-only and cannot declare ordered analysis.");
+    }
+    if (typeof value.windowSizeBack !== "number"
+      || !Number.isSafeInteger(value.windowSizeBack)
+      || value.windowSizeBack < 0
+      || value.windowSizeBack > 100) {
+      throw new Error("Legacy manifest windowSizeBack must be a finite safe integer; JSON null cannot encode Infinity.");
+    }
+    return canonicalizeOpenEnaConfig({
+      ...(value as unknown as OpenEnaConfig),
+      analysisKind: "ena",
+      orderPolicy: null,
+      directionalMask: null,
+    });
+  }
+
+  exactKeys(value, PORTABLE_CONFIG_FIELDS, "Schema-v2 manifest configuration");
+  let config: ReturnType<typeof deserializeOpenEnaConfig>;
+  try {
+    config = deserializeOpenEnaConfig(value as unknown as PortableOpenEnaConfig);
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : "Portable manifest configuration is invalid.");
+  }
+  if (config.analysisKind === "ona") {
+    if (config.model !== "EndPoint"
+      || config.window !== "MovingStanzaWindow"
+      || !(config.windowSizeBack === Number.POSITIVE_INFINITY
+        || (Number.isSafeInteger(config.windowSizeBack) && config.windowSizeBack >= 1))
+      || config.windowSizeForward !== 0
+      || config.weightBy !== "sum"
+      || config.rotation !== "svd"
+      || config.referenceRotationId !== null) {
+      throw new Error("Schema-v2 ONA configuration contains an unsupported ordered model policy.");
+    }
+  } else if (!Number.isSafeInteger(config.windowSizeBack)
+    || config.windowSizeBack < 0
+    || config.windowSizeBack > 100) {
+    throw new Error("Schema-v2 ENA windowSizeBack must be a finite safe integer from 0 to 100.");
+  }
+  return config;
+}
+
+function sameJson(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function expectedResolvedOrdering(config: ReturnType<typeof canonicalizeOpenEnaConfig>) {
+  const policy = config.orderPolicy;
+  if (!policy) return null;
+  if (policy.kind === "source-row") {
+    return { kind: "source-row" as const, confirmed: true as const, stable: true as const };
+  }
+  return {
+    kind: "columns" as const,
+    columns: [...policy.columns],
+    comparators: { ...policy.comparators },
+    direction: "ascending" as const,
+    missing: "reject" as const,
+    ties: "reject" as const,
+    stable: true as const,
+  };
+}
+
+function expectedPortableBackward(config: ReturnType<typeof canonicalizeOpenEnaConfig>) {
+  return config.window === "Conversation" || config.windowSizeBack === Number.POSITIVE_INFINITY
+    ? "Infinity" as const
+    : config.windowSizeBack;
+}
+
+function expectedCodeColumns(config: ReturnType<typeof canonicalizeOpenEnaConfig>) {
+  if (config.analysisKind === "ona") {
+    return config.codes.flatMap((response) => (
+      config.codes.map((ground) => `${ground} & ${response}`)
+    ));
+  }
+  const edges: string[] = [];
+  for (let targetIndex = 1; targetIndex < config.codes.length; targetIndex += 1) {
+    for (let sourceIndex = 0; sourceIndex < targetIndex; sourceIndex += 1) {
+      edges.push(`${config.codes[sourceIndex]} & ${config.codes[targetIndex]}`);
+    }
+  }
+  return edges;
+}
+
+function parseManifestContract(
+  manifest: Record<string, unknown>,
+  modelData: Record<string, unknown>,
+) {
+  if (manifest.app !== "ENA.HK Open ENA"
+    || (manifest.schemaVersion !== 1 && manifest.schemaVersion !== 2)) {
+    throw new Error("Analysis bundle contains an unsupported nested manifest.");
+  }
+  const schemaVersion = manifest.schemaVersion;
+  const manifestFields = [
+    "schemaVersion", "app", "appVersion", "runtime", "runtimeVersion", "dataset",
+    "configuration", "result", "effectiveJenaOptions", "generatedAt", "boundaries",
+    ...(schemaVersion === 2 ? ["analysis"] : []),
+  ];
+  exactKeys(manifest, manifestFields, `Schema-v${schemaVersion} analysis manifest`);
+  const config = parseManifestConfiguration(manifest.configuration, schemaVersion);
+  if (!isRecord(manifest.effectiveJenaOptions)) {
+    throw new Error("Analysis manifest effective jENA options are missing.");
+  }
+  const effective = manifest.effectiveJenaOptions;
+  const expectedNetworkType = config.analysisKind === "ona" ? "ordered" : "standard";
+  const expectedNodeMethod = config.analysisKind === "ona" ? "directed" : "undirected";
+  const expectedMask = config.directionalMask
+    ? config.directionalMask.enabled.map((row) => row.map((enabled) => enabled ? 1 : 0))
+    : undefined;
+
+  if (schemaVersion === 1) {
+    if (Object.hasOwn(manifest, "analysis")
+      || Reflect.get(effective, "networkType") === "ordered"
+      || Reflect.get(effective, "nodePositionMethod") !== "undirected"
+      || (Reflect.get(effective, "mask") !== undefined && Reflect.get(effective, "mask") !== null)
+      || Reflect.get(modelData, "analysisKind") === "ona"
+      || Reflect.get(modelData, "networkType") === "ordered") {
+      throw new Error("Legacy schema-v1 bundles are ENA-only and cannot contain ordered runtime markers.");
+    }
+  } else {
+    if (!isRecord(manifest.analysis)) throw new Error("Schema-v2 analysis manifest identity is missing.");
+    exactKeys(
+      manifest.analysis,
+      ["analysisKind", "networkType", "ordering", "directionalMask"],
+      "Schema-v2 manifest analysis identity",
+    );
+    const expectedOrdering = config.orderPolicy
+      ? {
+          requestedPolicy: config.orderPolicy,
+          resolvedPolicy: expectedResolvedOrdering(config),
+          sourceMapping: "excluded-from-generic-bundle",
+        }
+      : null;
+    const effectiveNetworkMatches = config.analysisKind === "ona"
+      ? effective.networkType === "ordered"
+      : !Object.hasOwn(effective, "networkType");
+    const effectiveMaskMatches = config.analysisKind === "ona"
+      ? sameJson(effective.mask, expectedMask)
+      : !Object.hasOwn(effective, "mask");
+    if (manifest.analysis.analysisKind !== config.analysisKind
+      || manifest.analysis.networkType !== expectedNetworkType
+      || !sameJson(manifest.analysis.ordering, expectedOrdering)
+      || !sameJson(manifest.analysis.directionalMask, config.directionalMask)
+      || !effectiveNetworkMatches
+      || effective.nodePositionMethod !== expectedNodeMethod
+      || !effectiveMaskMatches) {
+      throw new Error("Schema-v2 manifest analysis identity contradicts its ordered network contract.");
+    }
+  }
+
+  if (!sameJson(effective.units, config.unitColumns)
+    || !sameJson(effective.conversation, config.conversationColumns)
+    || !sameJson(effective.codes, config.codes)
+    || !sameJson(effective.metadata, config.groupColumn ? [config.groupColumn] : [])
+    || effective.includeMeta !== true
+    || effective.model !== config.model
+    || effective.window !== config.window
+    || effective.windowSizeBack !== expectedPortableBackward(config)
+    || effective.windowSizeForward !== (config.window === "Conversation" ? 0 : config.windowSizeForward)
+    || effective.weightBy !== config.weightBy
+    || effective.dimensions !== 3
+    || effective.centerAlignToOrigin !== config.centerAlignToOrigin
+    || effective.normalization !== "sphere") {
+    throw new Error("Analysis manifest effective jENA model, unit, conversation, code, or window options contradict its configuration.");
+  }
+  if (!isRecord(manifest.result) || manifest.result.model !== config.model) {
+    throw new Error("Analysis manifest result model contradicts its configuration.");
+  }
+  if (!isRecord(effective.rotation)
+    || (config.analysisKind === "ona" && effective.rotation.method !== "svd")
+    || (config.analysisKind === "ena"
+      && config.rotation === "svd"
+      && effective.rotation.method !== "svd")
+    || (config.analysisKind === "ena"
+      && config.rotation === "mean"
+      && effective.rotation.method !== "generalized")
+    || (config.analysisKind === "ena"
+      && config.rotation === "reference"
+      && effective.rotation.method !== "reference")) {
+    throw new Error("Analysis manifest projection lineage is inconsistent with its rotation configuration.");
+  }
+
+  if (!isRecord(modelData.functionParams)) {
+    throw new Error("Analysis bundle model function parameters are missing.");
+  }
+  const functionParams = modelData.functionParams;
+  const functionNetworkType = Reflect.get(functionParams, "networkType");
+  if (schemaVersion === 1) {
+    if (Reflect.get(modelData, "analysisKind") === "ona"
+      || Reflect.get(modelData, "networkType") === "ordered"
+      || functionNetworkType === "ordered") {
+      throw new Error("Legacy schema-v1 bundles are ENA-only and cannot contain ordered function parameters.");
+    }
+  } else {
+    const functionNetworkMatches = config.analysisKind === "ona"
+      ? functionNetworkType === "ordered"
+      : functionNetworkType === undefined || functionNetworkType === "standard";
+    if (modelData.analysisKind !== config.analysisKind
+      || modelData.networkType !== expectedNetworkType
+      || !functionNetworkMatches) {
+      throw new Error("Schema-v2 model data contradicts its analysis kind or runtime network identity.");
+    }
+  }
+  if (modelData.modelType !== config.model
+    || !sameJson(modelData.units, config.unitColumns)
+    || !sameJson(modelData.conversation, config.conversationColumns)
+    || functionParams.model !== config.model
+    || functionParams.window !== config.window
+    || functionParams.windowSizeBack !== expectedPortableBackward(config)
+    || functionParams.windowSizeForward !== (config.window === "Conversation" ? 0 : config.windowSizeForward)
+    || functionParams.weightBy !== config.weightBy) {
+    throw new Error("Analysis bundle model, unit, conversation, or function parameters contradict its manifest.");
+  }
+  const codeColumns = expectedCodeColumns(config);
+  const expectedEdgeCount = codeColumns.length;
+  if (!Array.isArray(modelData.codeColumns)
+    || !sameJson(modelData.codeColumns, codeColumns)
+    || !Array.isArray(modelData.connectionMatrix)
+    || modelData.connectionMatrix.some((row) => (
+      !Array.isArray(row)
+      || row.length !== expectedEdgeCount
+      || row.some((cell) => typeof cell !== "number" || !Number.isFinite(cell))
+    ))) {
+    throw new Error("Analysis bundle connectionMatrix must contain finite rows matching its network shape.");
+  }
+  return config;
+}
+
+const FORBIDDEN_ROW_LEVEL_BUNDLE_KEYS = new Set([
+  "rawRows",
+  "metaData",
+  "rowConnectionCounts",
+  "rowWindowProvenance",
+  "orderedAudit",
+  "responseRowSourceIndices",
+  "responseRowIndex",
+  "responseRowIndices",
+  "previousRowIndex",
+  "previousResponseRowIndices",
+  "priorRowCount",
+  "priorRowCounts",
+  "horizonIdentity",
+  "horizonOrdinals",
+  "edgeValues",
+]);
+
+function containsForbiddenRowLevelKey(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsForbiddenRowLevelKey);
+  if (!isRecord(value)) return false;
+  return Object.entries(value).some(([key, nested]) => (
+    FORBIDDEN_ROW_LEVEL_BUNDLE_KEYS.has(key) || containsForbiddenRowLevelKey(nested)
+  ));
+}
+
 function freezeParsed<T>(value: T, seen = new Set<unknown>()): T {
   if (value === null || typeof value !== "object" || seen.has(value)) return value;
   seen.add(value);
@@ -322,11 +725,25 @@ export function parseOpenEnaAnalysisBundle(
     || typeof value.methodsReportMarkdown !== "string") {
     throw new Error("Analysis bundle is incomplete.");
   }
+  const parsedConfiguration = parseManifestContract(value.manifest, value.modelData);
+  if (value.schemaVersion === 2 && value.manifest.schemaVersion !== 2) {
+    throw new Error("Schema-v2 analysis bundles require a nested schema-v2 manifest.");
+  }
+  if (value.schemaVersion === 1 && parsedConfiguration.analysisKind !== "ena") {
+    throw new Error("Legacy schema-v1 bundles are ENA-only and cannot contain ordered analysis.");
+  }
+  if (containsForbiddenRowLevelKey(value)) {
+    throw new Error("Generic analysis bundles cannot contain raw or row-level analysis data.");
+  }
   if (value.schemaVersion === 1) {
     if ("inference" in value) throw new Error("Schema-v1 analysis bundles cannot contain v2 inference.");
     return freezeParsed(value as OpenEnaAnalysisBundleV1);
   }
   if (!("inference" in value)) throw new Error("Schema-v2 analysis bundle must contain inference.");
+  if (parsedConfiguration.analysisKind === "ona"
+    && (value.inference !== null || value.groupContrast !== null)) {
+    throw new Error("Generic ONA bundles are descriptive-only and cannot contain inference or group contrast.");
+  }
   if (value.inference !== null) value.inference = parseOpenEnaInferenceResultV2(value.inference);
   if (value.groupContrast !== null) {
     if (!isRecord(value.groupContrast)

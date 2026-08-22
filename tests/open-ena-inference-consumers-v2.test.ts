@@ -1555,6 +1555,8 @@ test("strict readers apply the 4096-character boundary to groups, periods, and i
         const inference = this.inference(length);
         value.inference = inference;
         value.manifest.configuration.unitColumns[1] = "I".repeat(length);
+        value.manifest.effectiveJenaOptions.units[1] = "I".repeat(length);
+        value.modelData.units[1] = "I".repeat(length);
         return value;
       },
     },

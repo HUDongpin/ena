@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { analyzeDataset, buildJenaOptions } from "../lib/open-ena/analyze";
 import { inferConfig, parseCsv, validateConfig } from "../lib/open-ena/csv";
+import { buildAnalysisBundle } from "../lib/open-ena/export";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 import { SAMPLE_CONFIG } from "../lib/open-ena/types";
 
@@ -753,7 +754,16 @@ test("source evidence can be searched and filtered locally without entering expo
   );
   assert.match(i18n, /raw source rows and raw source data are never sent to the AI provider/);
   assert.match(i18n, /reviewed aggregate request is sent to an external AI provider/);
-  assert.doesNotMatch(readFileSync(join(projectRoot, "lib", "open-ena", "export.ts"), "utf8"), /sourceRows|rawRows/);
+  const exported = buildAnalysisBundle(
+    dataset,
+    SAMPLE_CONFIG,
+    analyzeDataset(dataset, SAMPLE_CONFIG),
+  );
+  assert.doesNotMatch(
+    JSON.stringify(exported),
+    /"(?:sourceRows|rawRows)":/,
+    "the actual result-bundle protocol must exclude raw source-row payloads",
+  );
   assert.match(readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8"), /Parsed record/);
 });
 

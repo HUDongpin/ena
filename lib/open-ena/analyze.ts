@@ -21,6 +21,7 @@ import {
   cloneOpenEnaConfig,
   orderRowsForOpenEna,
   sameOpenEnaConfig,
+  serializeOpenEnaConfig,
 } from "./network-config";
 import { JENA_GROUP_COLORS } from "./plot-style";
 import { validateReferenceCompatibility } from "./reference";
@@ -620,8 +621,21 @@ export function buildManifest(
   result: OpenEnaResult,
   sha256: string | null = null,
 ): OpenEnaManifest {
+  const configuration = canonicalizeOpenEnaConfig(config);
+  const execution = assertResultExecutionProvenance(result, dataset, configuration);
+  const ordered = configuration.analysisKind === "ona";
+  const ordering = execution.ordering
+    ? {
+        requestedPolicy: structuredClone(execution.ordering.requestedPolicy),
+        resolvedPolicy: structuredClone(execution.ordering.resolvedPolicy),
+        sourceMapping: "excluded-from-generic-bundle" as const,
+      }
+    : null;
+  const directionalMask = execution.directionalMask
+    ? cloneDirectionalMask(execution.directionalMask)
+    : null;
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     app: "ENA.HK Open ENA",
     appVersion: OPEN_ENA_APP_VERSION,
     runtime: "jena-js",
@@ -634,7 +648,13 @@ export function buildManifest(
       hashKind: datasetHashKindFor(dataset),
       normalizedUtf8TextSha256: sha256,
     },
-    configuration: config,
+    configuration: serializeOpenEnaConfig(configuration),
+    analysis: {
+      analysisKind: configuration.analysisKind,
+      networkType: execution.networkType,
+      ordering,
+      directionalMask,
+    },
     result: {
       model: result.set.modelType,
       units: new Set(result.set.points.map((row) => String(row.ENA_UNIT ?? ""))).size,
@@ -647,32 +667,47 @@ export function buildManifest(
       analyzedAt: result.analyzedAt,
     },
     effectiveJenaOptions: {
-      units: [...config.unitColumns],
-      conversation: [...config.conversationColumns],
-      codes: [...config.codes],
-      metadata: config.groupColumn ? [config.groupColumn] : [],
+      units: [...configuration.unitColumns],
+      conversation: [...configuration.conversationColumns],
+      codes: [...configuration.codes],
+      metadata: configuration.groupColumn ? [configuration.groupColumn] : [],
       includeMeta: true,
-      model: config.model,
-      window: config.window,
-      windowSizeBack: config.window === "Conversation" ? "Infinity" : config.windowSizeBack,
-      windowSizeForward: config.window === "Conversation" ? 0 : config.windowSizeForward,
-      weightBy: config.weightBy,
+      model: configuration.model,
+      window: configuration.window,
+      windowSizeBack: configuration.window === "Conversation"
+        || configuration.windowSizeBack === Number.POSITIVE_INFINITY
+        ? "Infinity"
+        : configuration.windowSizeBack,
+      windowSizeForward: configuration.window === "Conversation" ? 0 : configuration.windowSizeForward,
+      weightBy: configuration.weightBy,
       dimensions: 3,
+      ...(ordered
+        ? {
+            networkType: "ordered" as const,
+            mask: directionalMask!.enabled.map((row) => row.map((enabled) => enabled ? 1 : 0)),
+          }
+        : {}),
       rotation: result.projectionReference
         ? {
             method: "reference",
             referenceId: result.projectionReference.referenceId,
             sourceDatasetSha256: result.projectionReference.source.normalizedUtf8TextSha256,
           }
-        : effectiveRotation(dataset, config),
-      centerAlignToOrigin: config.centerAlignToOrigin,
+        : effectiveRotation(dataset, configuration),
+      centerAlignToOrigin: configuration.centerAlignToOrigin,
       normalization: "sphere",
-      nodePositionMethod: "undirected",
+      nodePositionMethod: execution.nodePositionMethod,
     },
     generatedAt: new Date().toISOString(),
     boundaries: [
       "The graph depends on the supplied codes, units, conversations, window, weighting, normalization, and rotation.",
-      "Rows are analyzed in source order within each conversation; XLSX analysis uses the first worksheet. Reorder the source before analysis when sequence matters.",
+      ...(ordered
+        ? [
+            "ONA rows were deterministically ordered within each typed horizon using the requested and resolved policies recorded in analysis.ordering; the runtime-only sorted-to-source row mapping is intentionally excluded from this generic bundle.",
+            "ONA directed cells use earlier ground/source codes as matrix rows and current response/target codes as matrix columns, including diagonal repeat connections and symmetric half-weight same-row contributions.",
+            "ONA output in this release is descriptive-only: inference, group contrast, analysis sets, reference projection, trajectory, 3D, and AI interpretation are not verified and are excluded or blocked.",
+          ]
+        : ["Rows are analyzed in source order within each conversation; XLSX analysis uses the first worksheet. Reorder the source before analysis when sequence matters."]),
       "Dataset hash scope is recorded in dataset.hashKind: CSV uses BOM-normalized UTF-8 source text; XLSX uses the versioned canonical values of the analyzed first worksheet, excluding workbook styling and unselected worksheets.",
       "Moving stanza windows may span multiple units that share a conversation, matching jENA/rENA discourse-window semantics; whole-conversation windows are accumulated per unit and conversation.",
       "Rotation-axis signs are arbitrary, so mirrored coordinates can represent the same ENA solution.",
@@ -682,7 +717,9 @@ export function buildManifest(
       "For reference projections, point-centroid correlations and target-fitted centroid tables are withheld because jENA 0.7.0-ona.0 does not compute them from the displayed fixed reference nodes.",
       "Imported reference names, analyzed-table hashes, hash kinds, timestamps, and fit descriptors are declared provenance: ENA.HK validates their structure but does not independently authenticate their origin.",
       "The 3D ENA link opens a separate website; this workspace does not automatically transfer the dataset, configuration, or computed model.",
-      "The result bundle excludes raw source rows. Preserve the exact source coded-data file and its codebook alongside the manifest and derived outputs for reproducibility.",
+      ordered
+        ? "The generic ONA result bundle excludes raw source rows, row-level ordered connection counts, row-window provenance, and sorted-to-source row mappings. Preserve the exact source coded-data file and its codebook alongside the manifest and derived outputs for reproducibility."
+        : "The result bundle excludes raw source rows. Preserve the exact source coded-data file and its codebook alongside the manifest and derived outputs for reproducibility.",
     ],
   };
 }

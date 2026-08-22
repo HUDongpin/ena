@@ -297,7 +297,7 @@ export interface OpenEnaSharedComparison {
 export type OpenEnaSummary = Omit<OpenEnaResult, "set">;
 
 export interface OpenEnaManifest {
-  schemaVersion: 1;
+  schemaVersion: 2;
   app: "ENA.HK Open ENA";
   appVersion: string;
   runtime: "jena-js";
@@ -310,7 +310,18 @@ export interface OpenEnaManifest {
     hashKind?: DatasetHashKind;
     normalizedUtf8TextSha256: string | null;
   };
-  configuration: OpenEnaConfig;
+  configuration: PortableOpenEnaConfig;
+  analysis: {
+    analysisKind: AnalysisKind;
+    networkType: "standard" | "ordered";
+    ordering: {
+      requestedPolicy: OpenEnaOrderPolicy;
+      resolvedPolicy: OpenEnaResolvedOrderPolicy;
+      /** The validated row-index permutation remains runtime-only in generic exports. */
+      sourceMapping: "excluded-from-generic-bundle";
+    } | null;
+    directionalMask: OpenEnaDirectionalMask | null;
+  };
   result: {
     model: ModelType;
     units: number;
@@ -334,6 +345,9 @@ export interface OpenEnaManifest {
     windowSizeForward: number;
     weightBy: "binary" | "sum";
     dimensions: 3;
+    /** Ordered manifests record these runtime-only additions explicitly. */
+    networkType?: "ordered";
+    mask?: number[][];
     rotation:
       | { method: "svd" }
       | { method: "mean"; params: { groups: [string[], string[]] } }
@@ -341,7 +355,7 @@ export interface OpenEnaManifest {
       | { method: "reference"; referenceId: string; sourceDatasetSha256: string | null };
     centerAlignToOrigin: boolean;
     normalization: "sphere";
-    nodePositionMethod: "undirected";
+    nodePositionMethod: "undirected" | "directed";
   };
   generatedAt: string;
   boundaries: string[];

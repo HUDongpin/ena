@@ -303,10 +303,14 @@ test("changing longitudinal settings invalidates only the derived view and never
 
 test("a successful trajectory run returns the visible surface to the current result", () => {
   const successBlock = workspace.match(
-    /setResult\(\{[\s\S]*?setShowGroupCentroidPaths\(true\);/,
+    /async function runAnalysis\([\s\S]*?setShowGroupCentroidPaths\(true\);/,
   )?.[0] ?? "";
 
-  assert.match(successBlock, /setActiveComparisonSurface\("groups"\)/);
+  assert.match(
+    successBlock,
+    /const nextResult = await analyzeDatasetInWorker[\s\S]*?setResult\(nextResult\)[\s\S]*?setActiveComparisonSurface\("groups"\)/,
+    "the successful worker protocol result must become current before the view returns to groups",
+  );
   assert.match(
     workspace,
     /activeComparisonSurface === "sets" && setComparison[\s\S]{0,400}result[\s\S]{0,160}"model"/,
