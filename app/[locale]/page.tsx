@@ -17,7 +17,7 @@ export default async function HomePage({ params }: HomePageProps) {
   const dictionary = getDictionary(typedLocale);
 
   return (
-    <div className="home-page">
+    <div className="home-page premium-public-page premium-home">
       <section className="container home-hero">
         <div className="hero-copy">
           <p className="eyebrow">{dictionary.home.eyebrow}</p>
