@@ -106,6 +106,7 @@ test("the ONA plan binds ordered rows, source indices, raw counts, mask directio
   assert.equal(plan.options.rows[1].B, 3);
   assert.deepEqual(plan.executionProvenance, {
     schemaVersion: 1,
+    configuration: plan.configuration,
     analysisKind: "ona",
     networkType: "ordered",
     nodePositionMethod: "directed",
@@ -126,6 +127,15 @@ test("the ONA plan binds ordered rows, source indices, raw counts, mask directio
   });
   assert.notEqual(plan.executionProvenance.directionalMask, directionalMask);
   assert.notEqual(plan.executionProvenance.ordering?.requestedPolicy, config.orderPolicy);
+  assert.notEqual(plan.options.codes, plan.configuration.codes);
+  assert.notEqual(plan.options.units, plan.configuration.unitColumns);
+  assert.notEqual(plan.options.conversation, plan.configuration.conversationColumns);
+  plan.options.codes[0] = "mutated-option";
+  plan.options.units[0] = "mutated-unit";
+  plan.options.conversation[0] = "mutated-horizon";
+  assert.deepEqual(plan.configuration.codes, ["A", "B", "C"]);
+  assert.deepEqual(plan.configuration.unitColumns, ["unit"]);
+  assert.deepEqual(plan.configuration.conversationColumns, ["horizon"]);
 });
 
 test("the standard ENA builder preserves its legacy option shape and binary coercion", () => {
@@ -152,6 +162,7 @@ test("the standard ENA builder preserves its legacy option shape and binary coer
   assert.equal(Object.hasOwn(plan.options, "nodePositionMethod"), false);
   assert.deepEqual(plan.executionProvenance, {
     schemaVersion: 1,
+    configuration: plan.configuration,
     analysisKind: "ena",
     networkType: "standard",
     nodePositionMethod: "undirected",
@@ -197,6 +208,11 @@ test("result provenance binding deep-clones the canonical config and validates t
 
   assert.notEqual(bound, result);
   assert.equal(result.provenanceBinding, undefined);
+  assert.notEqual(bound.executionProvenance, result.executionProvenance);
+  assert.notEqual(
+    bound.executionProvenance?.configuration.directionalMask,
+    result.executionProvenance?.configuration.directionalMask,
+  );
   assert.equal(bound.provenanceBinding?.datasetNormalizedUtf8TextSha256, hash);
   assert.equal(bound.provenanceBinding?.datasetHashKind, "normalized-utf8-csv-text-sha256");
   assert.deepEqual(bound.provenanceBinding?.configuration.codes, ["A", "B", "C"]);
@@ -206,7 +222,85 @@ test("result provenance binding deep-clones the canonical config and validates t
     /SHA-256/i,
   );
   assert.throws(
+    () => bindOpenEnaResultProvenance(
+      result,
+      { ...dataset, hashKind: "unknown-hash-kind" as never },
+      "d".repeat(64),
+      orderedConfig(),
+    ),
+    /hash kind|hashKind|dataset provenance/i,
+  );
+  assert.throws(
     () => bindOpenEnaResultProvenance(result, dataset, "b".repeat(64), SAMPLE_CONFIG),
     /does not match|configuration/i,
+  );
+});
+
+test("binding refuses unexecuted config fields and malformed execution provenance", () => {
+  const dataset = manualDataset([
+    { unit: "u1", horizon: "h1", turn: 1, group: "g1", A: 1, B: 1, C: 1 },
+  ]);
+  const executedConfig = orderedConfig({ groupColumn: null, centerAlignToOrigin: true });
+  const result = analyzeDataset(dataset, executedConfig);
+  const hash = "c".repeat(64);
+
+  assert.throws(
+    () => bindOpenEnaResultProvenance(result, dataset, hash, {
+      ...executedConfig,
+      groupColumn: "group",
+    }),
+    /does not match|configuration/i,
+  );
+  assert.throws(
+    () => bindOpenEnaResultProvenance(result, dataset, hash, {
+      ...executedConfig,
+      centerAlignToOrigin: false,
+    }),
+    /does not match|configuration/i,
+  );
+
+  const wrongNodeMethod: typeof result = {
+    ...result,
+    executionProvenance: {
+      ...structuredClone(result.executionProvenance!),
+      nodePositionMethod: "undirected",
+    },
+  };
+  assert.throws(
+    () => bindOpenEnaResultProvenance(wrongNodeMethod, dataset, hash, executedConfig),
+    /execution provenance|directed|node/i,
+  );
+
+  const wrongSourceIndex: typeof result = {
+    ...result,
+    executionProvenance: {
+      ...structuredClone(result.executionProvenance!),
+      ordering: {
+        ...structuredClone(result.executionProvenance!.ordering!),
+        responseRowSourceIndices: [999],
+      },
+    },
+  };
+  assert.throws(
+    () => bindOpenEnaResultProvenance(wrongSourceIndex, dataset, hash, executedConfig),
+    /source-index|permutation|execution provenance/i,
+  );
+
+  const wrongResolvedPolicy: typeof result = {
+    ...result,
+    executionProvenance: {
+      ...structuredClone(result.executionProvenance!),
+      ordering: {
+        ...structuredClone(result.executionProvenance!.ordering!),
+        resolvedPolicy: {
+          ...structuredClone(result.executionProvenance!.ordering!.resolvedPolicy),
+          stable: false as never,
+        },
+      },
+    },
+  };
+  assert.throws(
+    () => bindOpenEnaResultProvenance(wrongResolvedPolicy, dataset, hash, executedConfig),
+    /resolved|order|execution provenance/i,
   );
 });

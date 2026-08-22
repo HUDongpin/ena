@@ -137,9 +137,9 @@ function buildBaseJenaOptions(
   ];
   return {
     rows: coerceSelectedCodes(rows, config.codes, retainedColumns, config.analysisKind),
-    units: config.unitColumns,
-    conversation: config.conversationColumns,
-    codes: config.codes,
+    units: [...config.unitColumns],
+    conversation: [...config.conversationColumns],
+    codes: [...config.codes],
     metadata: config.groupColumn ? [config.groupColumn] : [],
     model: config.model,
     window: config.window,
@@ -164,6 +164,7 @@ export function buildOpenEnaAnalysisPlan(
       options: buildBaseJenaOptions(dataset, configuration, dataset.rows, reference),
       executionProvenance: {
         schemaVersion: 1,
+        configuration: cloneOpenEnaConfig(configuration),
         analysisKind: "ena",
         networkType: "standard",
         nodePositionMethod: "undirected",
@@ -185,6 +186,7 @@ export function buildOpenEnaAnalysisPlan(
   const base = buildBaseJenaOptions(dataset, configuration, ordered.rows, null);
   const executionProvenance: OpenEnaExecutionProvenance = {
     schemaVersion: 1,
+    configuration: cloneOpenEnaConfig(configuration),
     analysisKind: "ona",
     networkType: "ordered",
     nodePositionMethod: "directed",
@@ -396,34 +398,124 @@ function sameStringArray(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
-function resultMatchesConfiguration(result: OpenEnaResult, config: CanonicalOpenEnaConfig) {
-  const runtimeNetworkType = result.set.networkType ?? "standard";
-  if ((config.analysisKind === "ona") !== (runtimeNetworkType === "ordered")) return false;
-  if (!sameStringArray(result.set.codes, config.codes)
-    || !sameStringArray(result.set.units, config.unitColumns)
-    || !sameStringArray(result.set.conversation, config.conversationColumns)
-    || result.set.modelType !== config.model
-    || result.set.functionParams.window !== config.window
-    || result.set.functionParams.windowSizeBack !== (config.window === "Conversation" ? Number.POSITIVE_INFINITY : config.windowSizeBack)
-    || result.set.functionParams.windowSizeForward !== (config.window === "Conversation" ? 0 : config.windowSizeForward)
-    || result.set.functionParams.weightBy !== config.weightBy) {
-    return false;
+function hasExactKeys(value: object, expected: readonly string[]) {
+  const actual = Object.keys(value).sort();
+  const sortedExpected = [...expected].sort();
+  return sameStringArray(actual, sortedExpected);
+}
+
+function resolvedOrderPolicyMatches(provenance: OpenEnaExecutionProvenance) {
+  const requested = provenance.ordering?.requestedPolicy;
+  const resolved = provenance.ordering?.resolvedPolicy;
+  if (!requested || !resolved || requested.kind !== resolved.kind) return false;
+  if (requested.kind === "source-row" && resolved.kind === "source-row") {
+    return hasExactKeys(resolved, ["kind", "confirmed", "stable"])
+      && requested.confirmed === true
+      && resolved.confirmed === true
+      && resolved.stable === true;
   }
+  if (requested.kind !== "columns" || resolved.kind !== "columns") return false;
+  return hasExactKeys(resolved, [
+    "kind",
+    "columns",
+    "comparators",
+    "direction",
+    "missing",
+    "ties",
+    "stable",
+  ])
+    && sameStringArray(requested.columns, resolved.columns)
+    && requested.columns.every((column) => requested.comparators[column] === resolved.comparators[column])
+    && hasExactKeys(resolved.comparators, requested.columns)
+    && resolved.direction === "ascending"
+    && resolved.missing === "reject"
+    && resolved.ties === "reject"
+    && resolved.stable === true;
+}
+
+function assertResultExecutionProvenance(
+  result: OpenEnaResult,
+  dataset: ParsedDataset,
+  suppliedConfig: CanonicalOpenEnaConfig,
+) {
   const provenance = result.executionProvenance;
-  if (!provenance) return config.analysisKind === "ena";
-  if (provenance.analysisKind !== config.analysisKind
-    || provenance.networkType !== (config.analysisKind === "ona" ? "ordered" : "standard")) {
-    return false;
+  if (!provenance || provenance.schemaVersion !== 1 || !provenance.configuration) {
+    throw new Error("The completed Open ENA result is missing full execution provenance.");
   }
-  if (config.analysisKind === "ona") {
-    const provenanceConfig: OpenEnaConfig = {
-      ...config,
-      orderPolicy: provenance.ordering?.requestedPolicy ?? null,
-      directionalMask: provenance.directionalMask,
-    };
-    return sameOpenEnaConfig(config, provenanceConfig);
+  let executedConfig: CanonicalOpenEnaConfig;
+  try {
+    executedConfig = canonicalizeOpenEnaConfig(provenance.configuration);
+  } catch {
+    throw new Error("The completed Open ENA result has invalid execution-provenance configuration.");
   }
-  return provenance.ordering === null && provenance.directionalMask === null;
+  if (!sameOpenEnaConfig(executedConfig, suppliedConfig)) {
+    throw new Error("The provenance configuration does not match the completed Open ENA result.");
+  }
+
+  const runtimeNetworkValue = Reflect.get(result.set, "networkType") as unknown;
+  if (runtimeNetworkValue !== undefined
+    && runtimeNetworkValue !== "standard"
+    && runtimeNetworkValue !== "ordered") {
+    throw new Error("The completed Open ENA result has an invalid runtime network type.");
+  }
+  const runtimeNetworkType = runtimeNetworkValue ?? "standard";
+  const expectedNetworkType = executedConfig.analysisKind === "ona" ? "ordered" : "standard";
+  const functionNetworkType = Reflect.get(result.set.functionParams, "networkType") as unknown;
+  if ((functionNetworkType ?? "standard") !== expectedNetworkType
+    || runtimeNetworkType !== expectedNetworkType
+    || provenance.analysisKind !== executedConfig.analysisKind
+    || provenance.networkType !== expectedNetworkType
+    || !sameStringArray(result.set.codes, executedConfig.codes)
+    || !sameStringArray(result.set.units, executedConfig.unitColumns)
+    || !sameStringArray(result.set.conversation, executedConfig.conversationColumns)
+    || result.set.modelType !== executedConfig.model
+    || result.set.functionParams.model !== executedConfig.model
+    || result.set.functionParams.window !== executedConfig.window
+    || result.set.functionParams.windowSizeBack !== (executedConfig.window === "Conversation"
+      ? Number.POSITIVE_INFINITY
+      : executedConfig.windowSizeBack)
+    || result.set.functionParams.windowSizeForward !== (executedConfig.window === "Conversation"
+      ? 0
+      : executedConfig.windowSizeForward)
+    || result.set.functionParams.weightBy !== executedConfig.weightBy) {
+    throw new Error("The execution provenance does not match the completed Open ENA runtime result.");
+  }
+  if (executedConfig.rotation === "reference") {
+    if (!result.projectionReference
+      || result.projectionReference.referenceId !== executedConfig.referenceRotationId) {
+      throw new Error("The execution provenance does not match the reference-projected result.");
+    }
+  } else if (result.projectionReference) {
+    throw new Error("The execution provenance unexpectedly omits the result reference projection.");
+  }
+
+  if (executedConfig.analysisKind === "ena") {
+    if (provenance.nodePositionMethod !== "undirected"
+      || provenance.directionalMask !== null
+      || provenance.ordering !== null) {
+      throw new Error("Standard ENA execution provenance cannot carry ordered-network options.");
+    }
+    return provenance;
+  }
+
+  const provenanceConfig: OpenEnaConfig = {
+    ...executedConfig,
+    orderPolicy: provenance.ordering?.requestedPolicy ?? null,
+    directionalMask: provenance.directionalMask,
+  };
+  const sourceIndices = provenance.ordering?.responseRowSourceIndices;
+  if (provenance.nodePositionMethod !== "directed"
+    || !sameOpenEnaConfig(executedConfig, provenanceConfig)
+    || !resolvedOrderPolicyMatches(provenance)
+    || !Array.isArray(sourceIndices)
+    || sourceIndices.length !== dataset.rows.length
+    || new Set(sourceIndices).size !== dataset.rows.length
+    || sourceIndices.some((index) => (
+      !Number.isSafeInteger(index) || index < 0 || index >= dataset.rows.length
+    ))) {
+    throw new Error("ONA execution provenance has an invalid directed mask, resolved order, or source-index permutation.");
+  }
+  return provenance;
 }
 
 /**
@@ -440,14 +532,19 @@ export function bindOpenEnaResultProvenance(
     throw new Error("Open ENA provenance binding requires a 64-character hexadecimal SHA-256 digest.");
   }
   const configuration = canonicalizeOpenEnaConfig(config);
-  if (!resultMatchesConfiguration(result, configuration)) {
-    throw new Error("The provenance configuration does not match the completed Open ENA result.");
+  const executionProvenance = assertResultExecutionProvenance(result, dataset, configuration);
+  const datasetHashKind = datasetHashKindFor(dataset);
+  if (datasetHashKind !== "normalized-utf8-text-sha256"
+    && datasetHashKind !== "normalized-utf8-csv-text-sha256"
+    && datasetHashKind !== "canonical-first-xlsx-worksheet-v1-sha256") {
+    throw new Error("Open ENA dataset provenance contains an unsupported hash kind.");
   }
   return {
     ...result,
+    executionProvenance: structuredClone(executionProvenance),
     provenanceBinding: {
       datasetNormalizedUtf8TextSha256: datasetSha256.toLowerCase(),
-      datasetHashKind: datasetHashKindFor(dataset),
+      datasetHashKind,
       configuration: cloneOpenEnaConfig(configuration),
     },
   };

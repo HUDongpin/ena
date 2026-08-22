@@ -91,6 +91,8 @@ export type PortableOpenEnaConfig = Omit<CanonicalOpenEnaConfig, "windowSizeBack
 
 export interface OpenEnaExecutionProvenance {
   schemaVersion: 1;
+  /** Full canonical configuration actually used to create the runtime options. */
+  configuration: CanonicalOpenEnaConfig;
   analysisKind: AnalysisKind;
   networkType: "standard" | "ordered";
   nodePositionMethod: "undirected" | "directed";
