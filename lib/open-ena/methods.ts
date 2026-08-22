@@ -261,6 +261,7 @@ function buildOnaMethodsReport(
     `- Codes (${config.codes.length}): ${config.codes.map(inline).join(", ")}`,
     ...onaOrderLines(execution),
     `- Window: ${onaWindowDescription(config)}`,
+    "- Window context may span analytic units whose rows share the same typed horizon. Each contribution is assigned to the current response row’s analytic unit, not to the earlier ground row.",
     `- Directed cell geometry: ${config.codes.length}² = ${directedCellCount} directed cells, including ${config.codes.length} diagonal repeat cells. Matrix row is ground/source; matrix column is response/target; flattened edge order is response-major then ground-minor; exported labels use ${inline("<ground> & <response>")}.`,
     "- Connection accumulation used raw code-count products: an earlier ground count times the current response count contributes full weight; same-row off-diagonal products contribute symmetric half-weight (0.5) in both directions; repeated codes across ordered rows contribute to diagonal cells.",
     `- Directional mask input: ${enabledMaskCells} of ${directedCellCount} cells enabled (${config.codes.length} × ${config.codes.length}, label-bound in configured code order; row ground/source → column response/target).`,

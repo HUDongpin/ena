@@ -655,6 +655,568 @@ function parseManifestContract(
   return config;
 }
 
+const ONA_TABLE_FIELDS = [
+  "coordinates",
+  "lineWeights",
+  "connectionCounts",
+  "trajectories",
+  "pointsForProjection",
+  "centroids",
+  "nodePositions",
+  "adjacencyKey",
+] as const;
+
+const ONA_ROTATION_SET_FIELDS = [
+  "codes",
+  "adjacencyKey",
+  "rotationMatrix",
+  "rotationColumns",
+  "eigenvalues",
+  "centerVector",
+  "nodes",
+] as const;
+
+const ONA_MODEL_DATA_FIELDS = [
+  "modelType",
+  "analysisKind",
+  "networkType",
+  "units",
+  "conversation",
+  "codeColumns",
+  "unitLabels",
+  "connectionMatrix",
+  "functionParams",
+] as const;
+
+const ONA_PRESENTATION_FIELDS = [
+  "selectedAxes",
+  "codeColors",
+  "flipX",
+  "flipY",
+  "edgeThreshold",
+  "showNetworks",
+  "showPoints",
+  "showTrajectories",
+  "showLabels",
+  "showGroupLabels",
+  "showUnitLabels",
+  "showVariance",
+  "edgeScale",
+  "pointScale",
+  "plotZoom",
+  "selectedGroupOrder",
+] as const;
+
+function exactAllowedKeys(
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+  required: readonly string[],
+  label: string,
+) {
+  const allowedSet = new Set(allowed);
+  if (Object.keys(value).some((key) => !allowedSet.has(key))
+    || required.some((key) => !Object.hasOwn(value, key))) {
+    throw new Error(`${label} contains an unsupported or missing schema field.`);
+  }
+}
+
+function asRecordArray(value: unknown, label: string) {
+  if (!Array.isArray(value) || value.some((item) => !isRecord(item))) {
+    throw new Error(`${label} must be an array of schema objects.`);
+  }
+  return value as Record<string, unknown>[];
+}
+
+function asFiniteBundleNumber(value: unknown, label: string, nonnegative = false) {
+  if (typeof value !== "number"
+    || !Number.isFinite(value)
+    || (nonnegative && value < 0)) {
+    throw new Error(`${label} must be ${nonnegative ? "a nonnegative " : "a "}finite number.`);
+  }
+  return value;
+}
+
+function asSafeBundleInteger(value: unknown, label: string, minimum = 0) {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum) {
+    throw new Error(`${label} must be a safe integer of at least ${minimum}.`);
+  }
+  return value;
+}
+
+function asBoundedBundleString(value: unknown, label: string, maximum = 4_096) {
+  if (typeof value !== "string" || value.length === 0 || value.length > maximum) {
+    throw new Error(`${label} must be a bounded non-empty string.`);
+  }
+  return value;
+}
+
+function assertBundleScalar(value: unknown, label: string) {
+  if (value !== null
+    && typeof value !== "string"
+    && typeof value !== "boolean"
+    && (typeof value !== "number" || !Number.isFinite(value))) {
+    throw new Error(`${label} must be a finite JSON scalar.`);
+  }
+}
+
+function asFiniteMatrix(
+  value: unknown,
+  rows: number,
+  columns: number,
+  label: string,
+  nonnegative = false,
+) {
+  if (!Array.isArray(value) || value.length !== rows) {
+    throw new Error(`${label} row count contradicts its declared shape.`);
+  }
+  return value.map((row, rowIndex) => {
+    if (!Array.isArray(row) || row.length !== columns) {
+      throw new Error(`${label} row ${rowIndex + 1} contradicts its declared shape.`);
+    }
+    return row.map((cell, columnIndex) => asFiniteBundleNumber(
+      cell,
+      `${label} cell [${rowIndex}, ${columnIndex}]`,
+      nonnegative,
+    ));
+  });
+}
+
+function uniqueSchemaKeys(keys: readonly string[]) {
+  return [...new Set(keys)];
+}
+
+function assertOnaBundleContract(
+  bundle: Record<string, unknown>,
+  config: ReturnType<typeof canonicalizeOpenEnaConfig>,
+) {
+  if (config.analysisKind !== "ona") return;
+  const manifest = bundle.manifest as Record<string, unknown>;
+  const tables = bundle.tables as Record<string, unknown>;
+  const rotationSet = bundle.rotationSet as Record<string, unknown>;
+  const modelData = bundle.modelData as Record<string, unknown>;
+  const presentation = bundle.presentation as Record<string, unknown>;
+  const statisticsDiagnostics = bundle.statisticsDiagnostics;
+  const statistics = bundle.statistics;
+
+  if (!isRecord(manifest.dataset)
+    || !isRecord(manifest.result)
+    || !isRecord(manifest.effectiveJenaOptions)
+    || !isRecord(manifest.configuration)
+    || !isRecord(modelData.functionParams)
+    || !isRecord(statisticsDiagnostics)
+    || !isRecord(statistics)) {
+    throw new Error("Schema-v2 ONA bundle is missing a closed contract object.");
+  }
+  const dataset = manifest.dataset;
+  const result = manifest.result;
+  const effective = manifest.effectiveJenaOptions;
+  const portableConfig = manifest.configuration;
+  const functionParams = modelData.functionParams;
+
+  if (!isRecord(portableConfig.orderPolicy)
+    || !isRecord(portableConfig.directionalMask)) {
+    throw new Error("Schema-v2 ONA order policy and directional mask are missing.");
+  }
+  if (portableConfig.orderPolicy.kind === "columns") {
+    exactKeys(
+      portableConfig.orderPolicy,
+      ["kind", "columns", "comparators"],
+      "Schema-v2 ONA portable order policy",
+    );
+  } else {
+    exactKeys(
+      portableConfig.orderPolicy,
+      ["kind", "confirmed"],
+      "Schema-v2 ONA portable order policy",
+    );
+  }
+  exactKeys(
+    portableConfig.directionalMask,
+    ["schemaVersion", "codeOrder", "enabled"],
+    "Schema-v2 ONA portable directional mask",
+  );
+
+  exactKeys(
+    dataset,
+    ["name", "rows", "columns", "source", "hashKind", "normalizedUtf8TextSha256"],
+    "Schema-v2 ONA manifest dataset",
+  );
+  asBoundedBundleString(dataset.name, "Schema-v2 ONA dataset name");
+  asSafeBundleInteger(dataset.rows, "Schema-v2 ONA dataset row count");
+  asSafeBundleInteger(dataset.columns, "Schema-v2 ONA dataset column count");
+  if (dataset.source !== "sample" && dataset.source !== "upload") {
+    throw new Error("Schema-v2 ONA dataset source is unsupported.");
+  }
+  if (!parsedHashKind(dataset.hashKind)) {
+    throw new Error("Schema-v2 ONA dataset hash kind is unsupported.");
+  }
+  if (dataset.normalizedUtf8TextSha256 !== null
+    && (typeof dataset.normalizedUtf8TextSha256 !== "string"
+      || !/^[0-9a-f]{64}$/u.test(dataset.normalizedUtf8TextSha256))) {
+    throw new Error("Schema-v2 ONA dataset hash must be a lowercase SHA-256 value or null.");
+  }
+
+  exactKeys(
+    effective,
+    [
+      "units", "conversation", "codes", "metadata", "includeMeta", "model", "window",
+      "windowSizeBack", "windowSizeForward", "weightBy", "dimensions", "networkType", "mask",
+      "rotation", "centerAlignToOrigin", "normalization", "nodePositionMethod",
+    ],
+    "Schema-v2 ONA effective jENA options",
+  );
+  if (!isRecord(effective.rotation)) {
+    throw new Error("Schema-v2 ONA rotation policy is missing.");
+  }
+  exactKeys(effective.rotation, ["method"], "Schema-v2 ONA rotation policy");
+
+  exactKeys(modelData, ONA_MODEL_DATA_FIELDS, "Schema-v2 ONA model data");
+  exactKeys(
+    functionParams,
+    [
+      "model", "weightBy", "window", "windowSizeBack", "windowSizeForward", "includeMeta",
+      "networkType",
+    ],
+    "Schema-v2 ONA model function parameters",
+  );
+  if (functionParams.includeMeta !== true) {
+    throw new Error("Schema-v2 ONA model function parameters must retain metadata." );
+  }
+
+  if (!Array.isArray(modelData.unitLabels)
+    || modelData.unitLabels.some((label) => (
+      typeof label !== "string" || label.length === 0 || label.length > 4_096
+    ))
+    || new Set(modelData.unitLabels).size !== modelData.unitLabels.length) {
+    throw new Error("Schema-v2 ONA unit labels must be unique bounded strings.");
+  }
+  const unitLabels = modelData.unitLabels as string[];
+  const codeColumns = expectedCodeColumns(config);
+  const edgeCount = codeColumns.length;
+  const connectionMatrix = asFiniteMatrix(
+    modelData.connectionMatrix,
+    unitLabels.length,
+    edgeCount,
+    "Schema-v2 ONA connection matrix",
+    true,
+  );
+
+  exactKeys(rotationSet, ONA_ROTATION_SET_FIELDS, "Schema-v2 ONA rotation set");
+  if (!sameJson(rotationSet.codes, config.codes)) {
+    throw new Error("Schema-v2 ONA rotation code order contradicts its manifest.");
+  }
+  const expectedAdjacency = config.codes.flatMap((response, targetIndex) => (
+    config.codes.map((ground, sourceIndex) => ({
+      source: ground,
+      target: response,
+      name: `${ground} & ${response}`,
+      sourceIndex,
+      targetIndex,
+    }))
+  ));
+  const adjacency = asRecordArray(rotationSet.adjacencyKey, "Schema-v2 ONA rotation adjacency");
+  if (adjacency.length !== edgeCount) {
+    throw new Error("Schema-v2 ONA rotation adjacency contradicts its directed network shape.");
+  }
+  adjacency.forEach((edge, index) => {
+    exactKeys(
+      edge,
+      ["source", "target", "name", "sourceIndex", "targetIndex"],
+      `Schema-v2 ONA adjacency edge ${index + 1}`,
+    );
+    if (!sameJson(edge, expectedAdjacency[index])) {
+      throw new Error("Schema-v2 ONA rotation adjacency contradicts its directed edge contract.");
+    }
+  });
+  const rotationColumns = Array.isArray(rotationSet.rotationColumns)
+    ? rotationSet.rotationColumns
+    : [];
+  const expectedRotationColumns = Array.from({ length: edgeCount }, (_, index) => `SVD${index + 1}`);
+  if (!sameJson(rotationColumns, expectedRotationColumns)) {
+    throw new Error("Schema-v2 ONA rotation columns contradict its SVD edge space.");
+  }
+  asFiniteMatrix(
+    rotationSet.rotationMatrix,
+    edgeCount,
+    edgeCount,
+    "Schema-v2 ONA rotation matrix",
+  );
+  if (!Array.isArray(rotationSet.eigenvalues)
+    || rotationSet.eigenvalues.length !== edgeCount) {
+    throw new Error("Schema-v2 ONA eigenvalues contradict its rotation columns.");
+  }
+  rotationSet.eigenvalues.forEach((value, index) => {
+    asFiniteBundleNumber(value, `Schema-v2 ONA eigenvalue ${index + 1}`, true);
+  });
+  if (!Array.isArray(rotationSet.centerVector)
+    || rotationSet.centerVector.length !== edgeCount) {
+    throw new Error("Schema-v2 ONA center vector contradicts its edge space.");
+  }
+  rotationSet.centerVector.forEach((value, index) => {
+    asFiniteBundleNumber(value, `Schema-v2 ONA center value ${index + 1}`);
+  });
+
+  const displayedDimensions = expectedRotationColumns.slice(0, 3);
+  const nodes = asRecordArray(rotationSet.nodes, "Schema-v2 ONA rotation nodes");
+  if (nodes.length !== config.codes.length) {
+    throw new Error("Schema-v2 ONA rotation nodes must contain one row per code.");
+  }
+  nodes.forEach((node, index) => {
+    exactKeys(node, ["code", ...displayedDimensions], `Schema-v2 ONA rotation node ${index + 1}`);
+    if (node.code !== config.codes[index]) {
+      throw new Error("Schema-v2 ONA rotation node order contradicts its codes.");
+    }
+    displayedDimensions.forEach((dimension) => {
+      asFiniteBundleNumber(node[dimension], `Schema-v2 ONA rotation node ${dimension}`);
+    });
+  });
+
+  exactKeys(tables, ONA_TABLE_FIELDS, "Schema-v2 ONA result tables");
+  const tableRows = Object.fromEntries(ONA_TABLE_FIELDS.map((field) => [
+    field,
+    asRecordArray(tables[field], `Schema-v2 ONA ${field} table`),
+  ])) as Record<(typeof ONA_TABLE_FIELDS)[number], Record<string, unknown>[]>;
+  if (tableRows.trajectories.length !== 0) {
+    throw new Error("Schema-v2 ONA trajectory table must be empty.");
+  }
+  for (const field of [
+    "coordinates", "lineWeights", "connectionCounts", "pointsForProjection", "centroids",
+  ] as const) {
+    if (tableRows[field].length !== unitLabels.length) {
+      throw new Error(`Schema-v2 ONA ${field} table contradicts its analytic-unit cardinality.`);
+    }
+  }
+  const identityFields = uniqueSchemaKeys([
+    "ENA_UNIT",
+    ...config.unitColumns,
+    ...(config.groupColumn ? [config.groupColumn] : []),
+  ]);
+  tableRows.coordinates.forEach((row, rowIndex) => {
+    exactKeys(
+      row,
+      uniqueSchemaKeys([...identityFields, ...displayedDimensions]),
+      `Schema-v2 ONA coordinate row ${rowIndex + 1}`,
+    );
+    if (row.ENA_UNIT !== unitLabels[rowIndex]) {
+      throw new Error("Schema-v2 ONA coordinate units contradict modelData.unitLabels.");
+    }
+    identityFields.forEach((field) => assertBundleScalar(
+      row[field],
+      `Schema-v2 ONA coordinate identity ${field}`,
+    ));
+    displayedDimensions.forEach((dimension) => {
+      asFiniteBundleNumber(row[dimension], `Schema-v2 ONA coordinate ${dimension}`);
+    });
+  });
+  for (const field of ["lineWeights", "connectionCounts", "pointsForProjection"] as const) {
+    tableRows[field].forEach((row, rowIndex) => {
+      exactKeys(
+        row,
+        uniqueSchemaKeys([...identityFields, ...codeColumns]),
+        `Schema-v2 ONA ${field} row ${rowIndex + 1}`,
+      );
+      for (const identityField of identityFields) {
+        assertBundleScalar(row[identityField], `Schema-v2 ONA ${field} identity ${identityField}`);
+        if (!sameJson(row[identityField], tableRows.coordinates[rowIndex][identityField])) {
+          throw new Error(`Schema-v2 ONA ${field} identity contradicts its coordinate row.`);
+        }
+      }
+      codeColumns.forEach((edge, edgeIndex) => {
+        const numeric = asFiniteBundleNumber(
+          row[edge],
+          `Schema-v2 ONA ${field} edge ${edge}`,
+          field !== "pointsForProjection",
+        );
+        if (field === "connectionCounts" && numeric !== connectionMatrix[rowIndex][edgeIndex]) {
+          throw new Error("Schema-v2 ONA connection-count table contradicts modelData.connectionMatrix.");
+        }
+      });
+    });
+  }
+  tableRows.centroids.forEach((row, rowIndex) => {
+    exactKeys(row, ["unit", ...displayedDimensions], `Schema-v2 ONA centroid row ${rowIndex + 1}`);
+    if (row.unit !== unitLabels[rowIndex]) {
+      throw new Error("Schema-v2 ONA centroid units contradict modelData.unitLabels.");
+    }
+    displayedDimensions.forEach((dimension) => {
+      asFiniteBundleNumber(row[dimension], `Schema-v2 ONA centroid ${dimension}`);
+    });
+  });
+  if (!sameJson(tableRows.nodePositions, nodes)) {
+    throw new Error("Schema-v2 ONA node-position table contradicts its rotation nodes.");
+  }
+  if (!sameJson(tableRows.adjacencyKey, adjacency)) {
+    throw new Error("Schema-v2 ONA adjacency table contradicts its rotation adjacency.");
+  }
+
+  exactKeys(
+    result,
+    [
+      "model", "units", "points", "groups", "dimensions", "variance", "statsDiagnostics",
+      "projectionReference", "analyzedAt",
+    ],
+    "Schema-v2 ONA manifest result",
+  );
+  if (result.model !== "EndPoint"
+    || result.units !== unitLabels.length
+    || result.points !== tableRows.coordinates.length
+    || result.projectionReference !== null
+    || !sameJson(result.dimensions, displayedDimensions)
+    || !sameJson(result.statsDiagnostics, statisticsDiagnostics)) {
+    throw new Error("Schema-v2 ONA result summary contradicts its model tables or diagnostics.");
+  }
+  asBoundedBundleString(result.analyzedAt, "Schema-v2 ONA analyzed timestamp");
+  const resultVariance = result.variance;
+  if (!isRecord(resultVariance)) {
+    throw new Error("Schema-v2 ONA variance summary is missing.");
+  }
+  exactKeys(resultVariance, expectedRotationColumns, "Schema-v2 ONA variance summary");
+  expectedRotationColumns.forEach((dimension) => {
+    asFiniteBundleNumber(resultVariance[dimension], `Schema-v2 ONA variance ${dimension}`, true);
+  });
+  const manifestGroups = asRecordArray(result.groups, "Schema-v2 ONA manifest groups");
+  let manifestUnitCount = 0;
+  manifestGroups.forEach((group, index) => {
+    exactKeys(group, ["name", "count"], `Schema-v2 ONA manifest group ${index + 1}`);
+    asBoundedBundleString(group.name, `Schema-v2 ONA manifest group ${index + 1} name`);
+    manifestUnitCount += asSafeBundleInteger(
+      group.count,
+      `Schema-v2 ONA manifest group ${index + 1} count`,
+      1,
+    );
+  });
+  if (manifestUnitCount !== unitLabels.length) {
+    throw new Error("Schema-v2 ONA manifest group counts contradict its analytic units.");
+  }
+
+  exactKeys(
+    statisticsDiagnostics,
+    ["correlations", "tests", "correlationUnitLimit"],
+    "Schema-v2 ONA statistics diagnostics",
+  );
+  if (statisticsDiagnostics.correlations !== "not-applicable-ordered-network"
+    || statisticsDiagnostics.tests !== "not-applicable-ordered-network") {
+    throw new Error("Schema-v2 ONA statistics diagnostics contradict descriptive-only scope.");
+  }
+  asSafeBundleInteger(
+    statisticsDiagnostics.correlationUnitLimit,
+    "Schema-v2 ONA correlation unit limit",
+    1,
+  );
+  exactAllowedKeys(
+    statistics,
+    ["dimensions", "correlations", "groups"],
+    ["dimensions", "correlations"],
+    "Schema-v2 ONA statistics",
+  );
+  const dimensionStats = asRecordArray(statistics.dimensions, "Schema-v2 ONA dimension statistics");
+  if (dimensionStats.length !== displayedDimensions.length) {
+    throw new Error("Schema-v2 ONA dimension statistics contradict displayed dimensions.");
+  }
+  dimensionStats.forEach((row, index) => {
+    exactKeys(
+      row,
+      ["dimension", "n", "mean", "sd", "variance", "min", "max"],
+      `Schema-v2 ONA dimension statistic ${index + 1}`,
+    );
+    if (row.dimension !== displayedDimensions[index]
+      || row.n !== unitLabels.length) {
+      throw new Error("Schema-v2 ONA dimension statistics contradict its unit or axis contract.");
+    }
+    for (const field of ["mean", "min", "max"] as const) {
+      asFiniteBundleNumber(row[field], `Schema-v2 ONA dimension statistic ${field}`);
+    }
+    for (const field of ["sd", "variance"] as const) {
+      if (unitLabels.length === 1 && row[field] === null) continue;
+      asFiniteBundleNumber(row[field], `Schema-v2 ONA dimension statistic ${field}`, true);
+    }
+  });
+  if (!Array.isArray(statistics.correlations) || statistics.correlations.length !== 0) {
+    throw new Error("Schema-v2 ONA correlation statistics must remain unavailable.");
+  }
+  if (config.groupColumn) {
+    const groupStats = asRecordArray(statistics.groups, "Schema-v2 ONA group statistics");
+    if (groupStats.length !== manifestGroups.length) {
+      throw new Error("Schema-v2 ONA group statistics contradict its manifest groups.");
+    }
+    groupStats.forEach((row, index) => {
+      exactKeys(row, ["group", "n", "means"], `Schema-v2 ONA group statistic ${index + 1}`);
+      if (row.group !== manifestGroups[index].name || row.n !== manifestGroups[index].count) {
+        throw new Error("Schema-v2 ONA group statistics contradict its manifest group identity.");
+      }
+      const means = row.means;
+      if (!isRecord(means)) throw new Error("Schema-v2 ONA group means are missing.");
+      exactKeys(means, displayedDimensions, `Schema-v2 ONA group means ${index + 1}`);
+      displayedDimensions.forEach((dimension) => {
+        asFiniteBundleNumber(means[dimension], `Schema-v2 ONA group mean ${dimension}`);
+      });
+    });
+  } else if (Object.hasOwn(statistics, "groups")) {
+    throw new Error("Schema-v2 ONA statistics cannot add groups without a comparison field.");
+  }
+
+  exactAllowedKeys(
+    presentation,
+    ONA_PRESENTATION_FIELDS,
+    [
+      "selectedAxes", "flipX", "flipY", "edgeThreshold", "showNetworks", "showPoints",
+      "showTrajectories", "showLabels", "showGroupLabels", "showUnitLabels", "showVariance",
+      "edgeScale", "pointScale", "plotZoom",
+    ],
+    "Schema-v2 ONA presentation",
+  );
+  if (!Array.isArray(presentation.selectedAxes)
+    || presentation.selectedAxes.length !== 2
+    || presentation.selectedAxes.some((axis) => (
+      typeof axis !== "string" || !displayedDimensions.includes(axis)
+    ))) {
+    throw new Error("Schema-v2 ONA presentation axes contradict its displayed dimensions.");
+  }
+  for (const field of [
+    "flipX", "flipY", "showNetworks", "showPoints", "showTrajectories", "showLabels",
+    "showGroupLabels", "showUnitLabels", "showVariance",
+  ] as const) {
+    if (typeof presentation[field] !== "boolean") {
+      throw new Error(`Schema-v2 ONA presentation ${field} must be boolean.`);
+    }
+  }
+  for (const field of ["edgeThreshold", "edgeScale", "pointScale", "plotZoom"] as const) {
+    asFiniteBundleNumber(presentation[field], `Schema-v2 ONA presentation ${field}`, true);
+  }
+  if (Object.hasOwn(presentation, "codeColors")) {
+    if (!isRecord(presentation.codeColors)) {
+      throw new Error("Schema-v2 ONA presentation code colors are invalid.");
+    }
+    exactKeys(presentation.codeColors, config.codes, "Schema-v2 ONA presentation code colors");
+    for (const color of Object.values(presentation.codeColors)) {
+      if (typeof color !== "string" || !/^#[0-9a-f]{6}$/iu.test(color)) {
+        throw new Error("Schema-v2 ONA presentation code colors must be six-digit hex values.");
+      }
+    }
+  }
+  if (Object.hasOwn(presentation, "selectedGroupOrder")) {
+    if (!Array.isArray(presentation.selectedGroupOrder)
+      || presentation.selectedGroupOrder.length !== 2
+      || presentation.selectedGroupOrder.some((group) => typeof group !== "string")) {
+      throw new Error("Schema-v2 ONA selected group order is invalid.");
+    }
+  }
+
+  if (!Array.isArray(manifest.boundaries)
+    || manifest.boundaries.some((boundary) => typeof boundary !== "string")) {
+    throw new Error("Schema-v2 ONA manifest boundaries must be strings.");
+  }
+  if (manifest.runtime !== "jena-js"
+    || typeof manifest.runtimeVersion !== "string"
+    || typeof manifest.appVersion !== "string"
+    || typeof manifest.generatedAt !== "string") {
+    throw new Error("Schema-v2 ONA manifest runtime identity is invalid.");
+  }
+}
+
+// Historical standard-ENA bundles retain a defensive deny-list because their
+// dynamic trajectory rows predate the closed schema. Schema-v2 ONA is instead
+// accepted only through assertOnaBundleContract's complete allow-listed shape.
 const FORBIDDEN_ROW_LEVEL_BUNDLE_KEYS = new Set([
   "rawRows",
   "metaData",
@@ -725,14 +1287,15 @@ export function parseOpenEnaAnalysisBundle(
     || typeof value.methodsReportMarkdown !== "string") {
     throw new Error("Analysis bundle is incomplete.");
   }
-  const parsedConfiguration = parseManifestContract(value.manifest, value.modelData);
-  if (value.schemaVersion === 2 && value.manifest.schemaVersion !== 2) {
-    throw new Error("Schema-v2 analysis bundles require a nested schema-v2 manifest.");
+  if (value.manifest.schemaVersion !== value.schemaVersion) {
+    throw new Error("Analysis bundle outer and nested schema versions must match.");
   }
+  const parsedConfiguration = parseManifestContract(value.manifest, value.modelData);
   if (value.schemaVersion === 1 && parsedConfiguration.analysisKind !== "ena") {
     throw new Error("Legacy schema-v1 bundles are ENA-only and cannot contain ordered analysis.");
   }
-  if (containsForbiddenRowLevelKey(value)) {
+  assertOnaBundleContract(value, parsedConfiguration);
+  if (parsedConfiguration.analysisKind === "ena" && containsForbiddenRowLevelKey(value)) {
     throw new Error("Generic analysis bundles cannot contain raw or row-level analysis data.");
   }
   if (value.schemaVersion === 1) {

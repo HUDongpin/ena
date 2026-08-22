@@ -143,6 +143,106 @@ test("generic ONA bundle keeps Infinity portable and excludes row-level and infe
   );
 });
 
+test("bundle parser rejects renamed row-level payloads outside the closed ONA schema", () => {
+  const { dataset, config, result } = orderedFixture();
+  const valid = structuredClone(buildAnalysisBundle(dataset, config, result, SOURCE_HASH)) as Record<string, any>;
+  const mutations: Array<[string, (bundle: Record<string, any>) => void]> = [
+    ["manifest dataset records", (bundle) => {
+      bundle.manifest.dataset.records = [
+        { student: "PRIVATE_STUDENT", horizon: "PRIVATE_HORIZON", utterance: "PRIVATE_TEXT" },
+      ];
+    }],
+    ["coordinate row identity", (bundle) => {
+      bundle.tables.coordinates[0].privateHorizon = "PRIVATE_HORIZON";
+    }],
+    ["directional-mask side channel", (bundle) => {
+      bundle.manifest.configuration.directionalMask.records = [
+        { student: "PRIVATE_STUDENT", horizon: "PRIVATE_HORIZON" },
+      ];
+    }],
+    ["renamed ordered audit", (bundle) => {
+      bundle.tables.auditTrail = [{ response: 1, previous: 0, values: [1, 0, 0] }];
+    }],
+  ];
+
+  for (const [label, mutate] of mutations) {
+    const forged = structuredClone(valid);
+    mutate(forged);
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(forged)),
+      /schema|unsupported|row-level|table|field/i,
+      label,
+    );
+  }
+});
+
+test("bundle parser binds ONA rotation and authoritative count tables to model data", () => {
+  const { dataset, config, result } = orderedFixture();
+  const valid = structuredClone(buildAnalysisBundle(dataset, config, result, SOURCE_HASH)) as Record<string, any>;
+  const mutations: Array<[string, (bundle: Record<string, any>) => void]> = [
+    ["rotation code order", (bundle) => {
+      bundle.rotationSet.codes = [...bundle.rotationSet.codes].reverse();
+    }],
+    ["directed adjacency", (bundle) => {
+      bundle.rotationSet.adjacencyKey[0].source = "C";
+    }],
+    ["connection count authority", (bundle) => {
+      bundle.tables.connectionCounts[0]["A & B"] = 123_456;
+    }],
+    ["unit row cardinality", (bundle) => {
+      bundle.modelData.unitLabels.pop();
+    }],
+  ];
+
+  for (const [label, mutate] of mutations) {
+    const forged = structuredClone(valid);
+    mutate(forged);
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(forged)),
+      /rotation|adjacency|count|matrix|unit|table|contract|contradict/i,
+      label,
+    );
+  }
+});
+
+test("closed ONA parser preserves legitimate one-unit not-estimable statistics", () => {
+  const codes = ["A", "B", "C"];
+  const dataset: ParsedDataset = {
+    name: "one-unit-ordered.csv",
+    headers: ["unit", "horizon", "turn", "A", "B", "C"],
+    rows: [{ unit: "u1", horizon: "h1", turn: 1, A: 1, B: 1, C: 1 }],
+    sizeBytes: 0,
+    source: "upload",
+  };
+  const config: OpenEnaConfig = {
+    ...SAMPLE_CONFIG,
+    analysisKind: "ona",
+    unitColumns: ["unit"],
+    conversationColumns: ["horizon"],
+    groupColumn: null,
+    codes,
+    model: "EndPoint",
+    window: "MovingStanzaWindow",
+    windowSizeBack: 1,
+    windowSizeForward: 0,
+    weightBy: "sum",
+    rotation: "svd",
+    referenceRotationId: null,
+    orderPolicy: {
+      kind: "columns",
+      columns: ["turn"],
+      comparators: { turn: "number" },
+    },
+    directionalMask: createDirectionalMask(codes),
+  };
+  const bundle = buildAnalysisBundle(dataset, config, analyzeDataset(dataset, config), SOURCE_HASH);
+  const parsed = parseOpenEnaAnalysisBundle(JSON.stringify(bundle)) as Record<string, any>;
+
+  assert.equal(parsed.statistics.dimensions[0].n, 1);
+  assert.equal(parsed.statistics.dimensions[0].sd, null);
+  assert.equal(parsed.statistics.dimensions[0].variance, null);
+});
+
 test("bundle parser migrates only legacy standard ENA manifests", () => {
   const { dataset, config, result } = standardFixture();
   const current = structuredClone(buildAnalysisBundle(dataset, config, result, SOURCE_HASH)) as Record<string, any>;
@@ -190,6 +290,19 @@ test("bundle parser migrates only legacy standard ENA manifests", () => {
     () => parseOpenEnaAnalysisBundle(JSON.stringify(widthOnlyLegacy)),
     /network shape|connectionMatrix|standard|legacy/i,
     "a p-squared matrix alone must never migrate legacy schema v1 to ONA",
+  );
+});
+
+test("bundle parser requires outer and nested schema versions to match", () => {
+  const { dataset, config, result } = standardFixture();
+  const current = structuredClone(buildAnalysisBundle(dataset, config, result, SOURCE_HASH)) as Record<string, any>;
+  const outerV1NestedV2 = structuredClone(current);
+  outerV1NestedV2.schemaVersion = 1;
+  delete outerV1NestedV2.inference;
+
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(outerV1NestedV2)),
+    /schema.*version|nested.*schema|schema.*match/i,
   );
 });
 
@@ -289,6 +402,50 @@ test("ONA Methods records the resolved directed scientific contract and omits EN
   assert.doesNotMatch(report, /Student-t confidence interval/i);
   assert.doesNotMatch(report, /jENA diagnostic statistics were used/i);
   assert.doesNotMatch(report, /reference projection/i);
+});
+
+test("ONA Methods records cross-unit horizon context and response-unit attribution", () => {
+  const codes = ["A", "B", "C"];
+  const dataset: ParsedDataset = {
+    name: "cross-unit-horizon.csv",
+    headers: ["unit", "horizon", "turn", "A", "B", "C"],
+    rows: [
+      { unit: "ground-unit", horizon: "shared", turn: 1, A: 1, B: 0, C: 1 },
+      { unit: "response-unit", horizon: "shared", turn: 2, A: 0, B: 1, C: 1 },
+    ],
+    sizeBytes: 0,
+    source: "upload",
+  };
+  const config: OpenEnaConfig = {
+    ...SAMPLE_CONFIG,
+    analysisKind: "ona",
+    unitColumns: ["unit"],
+    conversationColumns: ["horizon"],
+    groupColumn: null,
+    codes,
+    model: "EndPoint",
+    window: "MovingStanzaWindow",
+    windowSizeBack: 2,
+    windowSizeForward: 0,
+    weightBy: "sum",
+    rotation: "svd",
+    referenceRotationId: null,
+    orderPolicy: {
+      kind: "columns",
+      columns: ["turn"],
+      comparators: { turn: "number" },
+    },
+    directionalMask: createDirectionalMask(codes),
+  };
+  const result = analyzeDataset(dataset, config);
+  const groundUnit = result.set.connectionCounts.find((row) => row.ENA_UNIT === "ground-unit");
+  const responseUnit = result.set.connectionCounts.find((row) => row.ENA_UNIT === "response-unit");
+  assert.equal(Number(groundUnit?.["A & B"]), 0);
+  assert.equal(Number(responseUnit?.["A & B"]), 1);
+
+  const report = buildMethodsReport(dataset, config, result, SOURCE_HASH);
+  assert.match(report, /window[^\n]*may span[^\n]*analytic units[^\n]*same typed horizon/i);
+  assert.match(report, /contribution[^\n]*(?:assigned|credited)[^\n]*current response[^\n]*analytic unit/i);
 });
 
 test("ONA Methods blocks unverified inference and forged reference rotation before legacy reads", () => {
