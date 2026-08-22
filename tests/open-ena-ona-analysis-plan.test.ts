@@ -147,6 +147,37 @@ test("ONA stably normalizes finite directed counts near 5e299 instead of produci
   assert.ok(Number(hugeWeights["B & A"]) > 0);
 });
 
+test("Open ENA preserves the true norm when two directed cells near 1.3e308 would overflow a naive sum of squares", () => {
+  const dataset = manualDataset([
+    { unit: "huge", horizon: "huge-h", turn: 1, group: "g1", A: 1.3e308, B: 0, C: 0 },
+    { unit: "huge", horizon: "huge-h", turn: 2, group: "g1", A: 0, B: 1, C: 1 },
+  ]);
+  const config = orderedConfig();
+
+  assert.deepEqual(validateConfig(dataset, config), []);
+  const result = analyzeDataset(dataset, config);
+  const counts = result.set.connectionCounts.find((row) => row.ENA_UNIT === "huge");
+  const weights = result.set.lineWeights.find((row) => row.ENA_UNIT === "huge");
+  assert.ok(counts);
+  assert.ok(weights);
+  assert.equal(Number(counts["A & B"]), 1.3e308);
+  assert.equal(Number(counts["A & C"]), 1.3e308);
+  assert.ok(Number(weights["A & B"]) > 0);
+  assert.ok(Number(weights["A & C"]) > 0);
+  assert.ok(Math.abs(Number(weights["A & B"]) - Math.SQRT1_2) < 1e-12);
+  assert.ok(Math.abs(Number(weights["A & C"]) - Math.SQRT1_2) < 1e-12);
+  for (const row of result.set.lineWeights) {
+    for (const edge of result.set.codeColumns) {
+      assert.equal(Number.isFinite(Number(row[edge])), true, `${edge} must stay finite`);
+    }
+  }
+  for (const point of result.set.points) {
+    for (const dimension of result.dimensions) {
+      assert.equal(Number.isFinite(Number(point[dimension])), true, `${dimension} must stay finite`);
+    }
+  }
+});
+
 test("the ONA plan binds ordered rows, source indices, raw counts, mask direction, and directed nodes", () => {
   const dataset = manualDataset([
     { unit: "u1", horizon: "h1", turn: 2, group: "g1", A: 0, B: 3, C: 0 },
