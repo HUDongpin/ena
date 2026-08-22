@@ -1,8 +1,8 @@
 import type { ENASet, ENAStatsResult, ModelType, RotationSet, Row, WindowType } from "jena-js";
 
-export type OpenEnaMode = "sets" | "data" | "model" | "plot" | "stats";
+export type OpenEnaMode = "sets" | "data" | "model" | "plot" | "stats" | "ai";
 export type OpenEnaView = "2d" | "3d";
-export type CameraPreset = "isometric" | "xy" | "xz" | "yz";
+export type CameraPreset = "isometric" | "xy" | "xz" | "yz" | "yx" | "zx" | "zy";
 
 export interface ParsedDataset {
   name: string;

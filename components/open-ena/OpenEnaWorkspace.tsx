@@ -75,6 +75,7 @@ import {
 } from "@/lib/open-ena/types";
 import OpenEnaPlot, { MiniNetwork } from "./OpenEnaPlot";
 import OpenEnaInteractive3DPlot from "./OpenEnaInteractive3DPlot";
+import OpenEna3DGroupContrast from "./OpenEna3DGroupContrast";
 import OpenEnaDataView, {
   type OpenEnaDataViewColumn,
   type OpenEnaDataViewContext,
@@ -116,6 +117,9 @@ const modeIcons: Record<OpenEnaMode, React.ReactNode> = {
   ),
   stats: (
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V11h3v8zm6 0V5h3v14zm6 0V8h3v11z" /></svg>
+  ),
+  ai: (
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="4" /><path d="m7.5 15 2.2-6 2.2 6M8.2 13h3M15 9v6" /></svg>
   ),
 };
 
@@ -209,6 +213,15 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const copy = getOpenEnaCopy(locale);
   const authCopy = getOpenEnaAuthCopy(locale);
   const workspaceIsLocalized = isOpenEnaLocalizedLocale(locale);
+  const cameraPositionOptions: Array<[CameraPreset, string]> = [
+    ["isometric", copy.plot.default3dCamera],
+    ["xy", copy.plot.xy],
+    ["xz", copy.plot.xz],
+    ["yz", copy.plot.yz],
+    ["yx", copy.plot.yx],
+    ["zx", copy.plot.zx],
+    ["zy", copy.plot.zy],
+  ];
   const [mode, setMode] = useState<OpenEnaMode>("sets");
   const [modelTab, setModelTab] = useState<OpenEnaModelPanelTab>("units");
   const [trajectoryModelFocusRequest, setTrajectoryModelFocusRequest] = useState(0);
@@ -1335,8 +1348,27 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     setPlotResetRevision((current) => current + 1);
   }
 
+  function selectAxisDimension(axis: "x" | "y" | "z", nextDimension: string) {
+    const currentDimensions = { x: xDimension, y: yDimension, z: zDimension };
+    const previousDimension = currentDimensions[axis];
+    if (previousDimension === nextDimension) return;
+
+    const setters = {
+      x: setXDimension,
+      y: setYDimension,
+      z: setZDimension,
+    };
+    setters[axis](nextDimension);
+    const occupiedAxis = (["x", "y", "z"] as const).find(
+      (candidate) => candidate !== axis && currentDimensions[candidate] === nextDimension,
+    );
+    if (occupiedAxis) setters[occupiedAxis](previousDimension);
+  }
+
   function resetPlot() {
-    const activeDimensions = displayedComparisonSurface === "sets"
+    const activeDimensions = view === "3d"
+      ? result?.dimensions
+      : displayedComparisonSurface === "sets"
       ? primarySet?.geometry.dimensions ?? result?.dimensions
       : result?.dimensions ?? primarySet?.geometry.dimensions;
     if (activeDimensions) {
@@ -2284,7 +2316,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   }
 
   function renderPlotPanel() {
-    const dimensions = displayedComparisonSurface === "sets"
+    const dimensions = view === "3d"
+      ? result?.dimensions ?? ["SVD1", "SVD2", "SVD3"]
+      : displayedComparisonSurface === "sets"
       ? primarySet?.geometry.dimensions ?? result?.dimensions ?? ["SVD1", "SVD2", "SVD3"]
       : result?.dimensions ?? primarySet?.geometry.dimensions ?? ["SVD1", "SVD2", "SVD3"];
     return (
@@ -2428,14 +2462,14 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             ))}
           </div>
           {([
-            [copy.plot.axisX, xDimension, setXDimension, view === "3d" ? [yDimension, zDimension] : [yDimension]],
-            [copy.plot.axisY, yDimension, setYDimension, view === "3d" ? [xDimension, zDimension] : [xDimension]],
-            ...(view === "3d" ? [[copy.plot.axisZ, zDimension, setZDimension, [xDimension, yDimension]] as const] : []),
-          ] as Array<[string, string, (value: string) => void, readonly string[]]>).map(([label, value, setter, oppositeDimensions]) => (
+            [copy.plot.axisX, xDimension, "x"],
+            [copy.plot.axisY, yDimension, "y"],
+            ...(view === "3d" ? [[copy.plot.axisZ, zDimension, "z"] as const] : []),
+          ] as Array<[string, string, "x" | "y" | "z"]>).map(([label, value, axis]) => (
             <label key={label} className="ena-field">
               <span>{label}</span>
-              <select value={value} onChange={(event) => setter(event.target.value)}>
-                {dimensions.map((dimension) => <option key={dimension} value={dimension} disabled={oppositeDimensions.includes(dimension)}>{dimension}</option>)}
+              <select value={value} onChange={(event) => selectAxisDimension(axis, event.target.value)}>
+                {dimensions.map((dimension) => <option key={dimension} value={dimension}>{dimension}</option>)}
               </select>
             </label>
           ))}
@@ -2466,13 +2500,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           </div>
           {view === "3d" ? (
             <fieldset className="ena-camera-fieldset">
-              <legend>{copy.plot.camera}</legend>
-              {([
-                ["isometric", copy.plot.isometric],
-                ["xy", copy.plot.xy],
-                ["xz", copy.plot.xz],
-                ["yz", copy.plot.yz],
-              ] as Array<[CameraPreset, string]>).map(([value, label]) => (
+              <legend>{copy.plot.cameraPosition}</legend>
+              {cameraPositionOptions.map(([value, label]) => (
                 <label key={value}><input type="radio" name="ena-camera" value={value} checked={camera === value} onChange={() => selectCameraPreset(value)} /><span>{label}</span></label>
               ))}
             </fieldset>
@@ -2484,6 +2513,67 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           </div>
           {view === "3d" ? <p className="ena-plot-export-note">{copy.plot.threeDExportHint}</p> : null}
         </div>
+      </div>
+    );
+  }
+
+  function renderAiPanel() {
+    const aiReady = Boolean(
+      result
+      && !resultIsStale
+      && currentInference
+      && aiInterpretationRequest,
+    );
+    const disabledReason = resultIsStale
+      ? copy.aiInterpretation.staleResult
+      : result && !currentInference
+        ? copy.stats.inference.noResult
+        : result && !aiInterpretationRequest
+          ? copy.aiInterpretation.aggregatePrivacyGate
+          : copy.aiInterpretation.noCurrentResult;
+
+    return (
+      <div
+        className="ena-control-content ena-ai-mode-panel"
+        data-ena-ai-source="stats-results"
+        data-ena-ai-readiness={aiReady ? "ready" : "required"}
+      >
+        <div className="ena-panel-heading ena-ai-mode-heading">
+          <p className="ena-panel-kicker">AI · OpenRouter</p>
+          <h2>{copy.aiInterpretation.title}</h2>
+          <p>{copy.aiInterpretation.description}</p>
+        </div>
+        <section
+          className="ena-ai-stats-source"
+          data-state={aiReady ? "ready" : "required"}
+          aria-label={copy.aiInterpretation.statsSourceLabel}
+        >
+          <div className="ena-ai-stats-source-summary">
+            <span className="ena-ai-stats-badge" aria-hidden="true">STATS</span>
+            <div>
+              <strong>{copy.aiInterpretation.statsSourceLabel}</strong>
+              <p>{aiReady ? copy.aiInterpretation.statsReady : copy.aiInterpretation.statsRequired}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="ena-inline-link"
+            onClick={() => {
+              setStatsTab("comparison");
+              setMode("stats");
+            }}
+          >
+            {copy.aiInterpretation.openStats} →
+          </button>
+        </section>
+        <OpenEnaAiInterpretation
+          key={`${locale}:${inferenceRequestKey}:${currentInference?.analyzedAt ?? "no-inference"}`}
+          request={aiInterpretationRequest}
+          disabled={!result || resultIsStale || !aiInterpretationRequest || !currentInference}
+          disabledReason={disabledReason}
+          copy={copy.aiInterpretation}
+          showHeading={false}
+        />
       </div>
     );
   }
@@ -2766,19 +2856,6 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               </div>
             </div>
             <div className="ena-stats-export-region" data-ena-stats-export="true">
-              <OpenEnaAiInterpretation
-                key={`${locale}:${inferenceRequestKey}:${currentInference?.analyzedAt ?? "no-inference"}`}
-                request={aiInterpretationRequest}
-                disabled={!result || resultIsStale || !aiInterpretationRequest || !currentInference}
-                disabledReason={resultIsStale
-                  ? copy.aiInterpretation.staleResult
-                  : result && !currentInference
-                    ? copy.stats.inference.noResult
-                  : result && !aiInterpretationRequest
-                    ? copy.aiInterpretation.aggregatePrivacyGate
-                    : copy.aiInterpretation.noCurrentResult}
-                copy={copy.aiInterpretation}
-              />
               <section className="ena-manifest-section">
               <h3>{copy.stats.manifest}</h3>
               <dl>
@@ -3046,7 +3123,17 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     );
   }
 
-  const panel = mode === "sets" ? renderSetsPanel() : mode === "data" ? renderDataPanel() : mode === "model" ? renderModelPanel() : mode === "plot" ? renderPlotPanel() : renderStatsPanel();
+  const panel = mode === "sets"
+    ? renderSetsPanel()
+    : mode === "data"
+      ? renderDataPanel()
+      : mode === "model"
+        ? renderModelPanel()
+        : mode === "plot"
+          ? renderPlotPanel()
+          : mode === "stats"
+            ? renderStatsPanel()
+            : renderAiPanel();
   const persistentPlotTools = (
     <OpenEnaPersistentPlotTools
       edgeScale={edgeScale}
@@ -3105,8 +3192,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   type="button"
                   className="ena-rail-button"
                   aria-current={mode === item ? "step" : undefined}
-                  aria-label={copy.modes[item]}
-                  title={copy.modes[item]}
+                  aria-label={item === "ai" ? copy.aiInterpretation.title : copy.modes[item]}
+                  title={item === "ai" ? copy.aiInterpretation.title : copy.modes[item]}
                   onClick={() => setMode(item)}
                 >
                   {modeIcons[item]}
@@ -3161,11 +3248,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             {panel}
           </aside>
 
-          <div className="ena-visual-workspace" data-testid="open-ena-center-surface">
+          <div className="ena-visual-workspace"
+            data-ena-view={view}
+            data-testid="open-ena-center-surface"
+          >
             <div className={`ena-visual-toolbar${view === "2d" && activeGroupContrast ? " ena-visual-toolbar-group-contrast" : ""}`}>
               <div>
                 <p>{view === "3d" && result
-                  ? copy.views.threeD
+                  ? activeGroupContrast
+                    ? `${copy.workspace.comparison} · ${copy.views.threeD}`
+                    : copy.views.threeD
                   : activeSetComparison
                   ? copy.workspace.comparison
                   : activeGroupContrast
@@ -3174,7 +3266,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                       ? copy.longitudinal.title
                       : copy.workspace.comparison}</p>
                 <span>{view === "3d" && result
-                  ? `${xDimension} × ${yDimension} × ${zDimension} · ${copy.plot.sameFittedSpace}`
+                  ? activeGroupContrast
+                    ? `${activeGroupContrast.primary.name} − ${activeGroupContrast.secondary.name} · ${xDimension} × ${yDimension} × ${zDimension} · linked camera`
+                    : `${xDimension} × ${yDimension} × ${zDimension} · ${copy.plot.sameFittedSpace}`
                   : activeSetComparison
                   ? `${activeSetComparison.primary.name} − ${activeSetComparison.secondary.name} · shared ${activeSetComparison.axes[0]} × ${activeSetComparison.axes[1]}`
                   : activeGroupContrast
@@ -3256,6 +3350,73 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 </div>
               </div>
             </div>
+
+            {view === "3d" && result ? (
+              <section
+                className="ena-three-d-display-controls"
+                data-testid="open-ena-3d-display-controls"
+                aria-label={`${copy.views.threeD} ${copy.plot.title}`}
+              >
+                {activeGroupContrast ? (
+                  <p className="ena-three-d-linked-note" data-testid="open-ena-3d-linked-view-note">
+                    Linked 3D view — axes and camera apply to all three plots.
+                  </p>
+                ) : null}
+                <div
+                  className="ena-three-d-camera-position"
+                  role="radiogroup"
+                  aria-labelledby="open-ena-3d-camera-position-label"
+                  data-testid="open-ena-3d-camera-position"
+                >
+                  <span id="open-ena-3d-camera-position-label" className="ena-three-d-control-label">
+                    {copy.plot.cameraPosition}:
+                  </span>
+                  <div className="ena-three-d-camera-options">
+                    {cameraPositionOptions.map(([value, label]) => (
+                      <label key={value}>
+                        <input
+                          type="radio"
+                          name="ena-camera-position"
+                          value={value}
+                          checked={camera === value}
+                          onChange={() => selectCameraPreset(value)}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div
+                  className="ena-three-d-axis-controls"
+                  role="group"
+                  aria-label={`${copy.plot.axisX}, ${copy.plot.axisY}, ${copy.plot.axisZ}`}
+                >
+                  {([
+                    [copy.plot.axisX, xDimension, "x"],
+                    [copy.plot.axisY, yDimension, "y"],
+                    [copy.plot.axisZ, zDimension, "z"],
+                  ] as Array<[string, string, "x" | "y" | "z"]>).map(([label, value, axis]) => (
+                    <label key={axis} className="ena-three-d-axis-field">
+                      <span>{label}</span>
+                      <select
+                        value={value}
+                        onChange={(event) => selectAxisDimension(axis, event.target.value)}
+                        data-testid={`open-ena-3d-axis-${axis}`}
+                      >
+                        {result.dimensions.map((dimension) => (
+                          <option
+                            key={dimension}
+                            value={dimension}
+                          >
+                            {dimension}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              </section>
+            ) : null}
 
             {activeSetComparison && view === "2d" ? (
               <OpenEnaSetComparison
@@ -3357,6 +3518,32 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                       setPrimaryGroupName(secondaryGroupName);
                       setSecondaryGroupName(primaryGroupName);
                     }}
+                  />
+                ) : view === "3d" && activeGroupContrast && resultConfig?.groupColumn ? (
+                  <OpenEna3DGroupContrast
+                    codeColors={codeColors}
+                    result={result}
+                    contrast={activeGroupContrast}
+                    groupColumn={resultConfig.groupColumn}
+                    xDimension={xDimension}
+                    yDimension={yDimension}
+                    zDimension={zDimension}
+                    camera={camera}
+                    showPoints={showPoints}
+                    showNetworks={showNetworks}
+                    showLabels={showLabels}
+                    showUnitLabels={showUnitLabels}
+                    showVariance={showVariance}
+                    edgeScale={edgeScale}
+                    edgeThreshold={edgeThreshold}
+                    pointScale={pointScale}
+                    plotZoom={plotZoom}
+                    plotResetRevision={plotResetRevision}
+                    sharedCamera={interactive3dCamera}
+                    onCameraChange={setInteractive3dCamera}
+                    flipX={flipX}
+                    flipY={flipY}
+                    copy={copy}
                   />
                 ) : view === "3d" ? (
                   <OpenEnaInteractive3DPlot

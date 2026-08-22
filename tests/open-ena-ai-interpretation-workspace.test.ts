@@ -52,7 +52,11 @@ function workspaceStatsPanel() {
   return workspace.slice(start, end);
 }
 
-test("Stats & Export owns a dedicated AI interpretation surface without adding a sixth rail mode", () => {
+function workspaceAiPanel() {
+  return sourceBlock(workspace, /function renderAiPanel\(\)/, "renderAiPanel");
+}
+
+test("AI interpretation is a dedicated sixth rail mode sourced from Stats results", () => {
   assert.equal(
     existsSync(aiComponentPath),
     true,
@@ -65,28 +69,31 @@ test("Stats & Export owns a dedicated AI interpretation surface without adding a
   );
 
   const statsPanel = workspaceStatsPanel();
-  assert.match(statsPanel, /<OpenEnaAiInterpretation\b/, "Stats & Export must render the AI surface");
+  const aiPanel = workspaceAiPanel();
+  assert.doesNotMatch(statsPanel, /<OpenEnaAiInterpretation\b/, "Stats & Export must no longer embed the AI surface");
   assert.match(
-    statsPanel,
+    aiPanel,
     /<OpenEnaAiInterpretation\b[\s\S]*?request=\{[^}]+\}[\s\S]*?disabled=\{[^}]+\}/,
-    "the Stats surface must pass a reviewed request preview and an explicit disabled state",
+    "the AI mode must pass a reviewed Stats request and an explicit disabled state",
   );
+  assert.match(aiPanel, /data-ena-ai-source="stats-results"/);
+  assert.match(aiPanel, /setStatsTab\("comparison"\)[\s\S]*?setMode\("stats"\)/);
 
   assert.match(
     types,
-    /export type OpenEnaMode\s*=\s*"sets"\s*\|\s*"data"\s*\|\s*"model"\s*\|\s*"plot"\s*\|\s*"stats"\s*;/,
-    "AI interpretation belongs inside Stats & Export; OpenEnaMode must remain exactly five modes",
+    /export type OpenEnaMode\s*=\s*"sets"\s*\|\s*"data"\s*\|\s*"model"\s*\|\s*"plot"\s*\|\s*"stats"\s*\|\s*"ai"\s*;/,
+    "AI interpretation must be an explicit mode after Stats",
   );
   const iconStart = workspace.indexOf("const modeIcons:");
   const iconEnd = workspace.indexOf("async function sha256Hex", iconStart);
-  assert.ok(iconStart >= 0 && iconEnd > iconStart, "the five official rail icons must remain explicit");
+  assert.ok(iconStart >= 0 && iconEnd > iconStart, "all six rail icons must remain explicit");
   const iconBlock = workspace.slice(iconStart, iconEnd);
   assert.deepEqual(
-    [...iconBlock.matchAll(/^\s{2}(sets|data|model|plot|stats):\s*\(/gm)].map((match) => match[1]),
-    ["sets", "data", "model", "plot", "stats"],
-    "the existing Sets, Data, Model, Plot Tools, and Stats & Export icons must stay unchanged",
+    [...iconBlock.matchAll(/^\s{2}(sets|data|model|plot|stats|ai):\s*\(/gm)].map((match) => match[1]),
+    ["sets", "data", "model", "plot", "stats", "ai"],
+    "AI must follow the five existing workbench modes",
   );
-  assert.equal((iconBlock.match(/<svg\b/g) ?? []).length, 5, "the rail must still contain five mode icons");
+  assert.equal((iconBlock.match(/<svg\b/g) ?? []).length, 6, "the rail must contain one icon for every mode");
   for (const svgContract of [
     /sets:\s*\([\s\S]*?M4 5\.5h16v5H4zm0 8h16v5H4z[\s\S]*?M7 8h\.01M7 16h\.01/,
     /data:\s*\([\s\S]*?M4 5\.5h16v13H4zM4 10h16M9 5\.5v13/,
@@ -96,6 +103,7 @@ test("Stats & Export owns a dedicated AI interpretation surface without adding a
   ]) {
     assert.match(iconBlock, svgContract, "each of the five existing rail SVG designs must remain unchanged");
   }
+  assert.match(iconBlock, /ai:\s*\([\s\S]*?<rect x="3\.5" y="4" width="17" height="16" rx="4"[\s\S]*?m7\.5 15 2\.2-6 2\.2 6M8\.2 13h3M15 9v6/);
 });
 
 test("the researcher must review the aggregate payload and give explicit consent before generation", () => {
@@ -160,16 +168,16 @@ test("the only AI network request is a POST inside the explicit Generate handler
 });
 
 test("generation is disabled when there is no current result or the fitted evidence is stale", () => {
-  const statsPanel = workspaceStatsPanel();
+  const aiPanel = workspaceAiPanel();
   assert.match(
     workspace,
     /const\s+resultIsStale\s*=\s*Boolean\([^;]+!sameOpenEnaConfig\(config,\s*resultConfig\)\)/,
     "the existing fitted-result staleness guard must remain authoritative",
   );
   assert.match(
-    statsPanel,
+    aiPanel,
     /<OpenEnaAiInterpretation\b[\s\S]*?disabled=\{[^}]*(?:!result|resultIsStale)[^}]*\}/,
-    "Stats must disable AI generation for missing or stale fitted evidence",
+    "the AI mode must disable generation for missing or stale Stats evidence",
   );
   assert.match(
     aiComponent,
@@ -179,7 +187,7 @@ test("generation is disabled when there is no current result or the fitted evide
   assert.match(
     workspace,
     /if\s*\([^)]*!currentInference[^)]*\)\s*return null;/,
-    "Stats must not build any AI request before the explicit inference coordinator has produced a current result",
+    "the workspace must not build any AI request before the Stats inference coordinator has produced a current result",
   );
   assert.match(
     workspace,
@@ -406,6 +414,10 @@ test("en, zh-Hant, and zh-Hans provide complete AI UI, disclosure, and truthful 
   const requiredKeys = [
     "title",
     "description",
+    "statsSourceLabel",
+    "statsReady",
+    "statsRequired",
+    "openStats",
     "previewTitle",
     "previewHint",
     "consentLabel",
@@ -471,7 +483,7 @@ test("en, zh-Hant, and zh-Hans provide complete AI UI, disclosure, and truthful 
 
   for (const locale of ["en", "zh-hant", "zh-hans"] as const) {
     const modeKeys = Object.keys(getOpenEnaCopy(locale).modes);
-    assert.deepEqual(modeKeys, ["sets", "data", "model", "plot", "stats"], `${locale} must retain exactly five rail modes`);
+    assert.deepEqual(modeKeys, ["sets", "data", "model", "plot", "stats", "ai"], `${locale} must expose AI after Stats`);
   }
   assert.deepEqual(getOpenEnaCopy("en").modes, {
     sets: "Sets",
@@ -479,6 +491,7 @@ test("en, zh-Hant, and zh-Hans provide complete AI UI, disclosure, and truthful 
     model: "Model",
     plot: "Plot Tools",
     stats: "Stats & Export",
+    ai: "AI",
   });
   assert.deepEqual(getOpenEnaCopy("zh-hant").modes, {
     sets: "分析集",
@@ -486,6 +499,7 @@ test("en, zh-Hant, and zh-Hans provide complete AI UI, disclosure, and truthful 
     model: "模型",
     plot: "繪圖工具",
     stats: "統計與匯出",
+    ai: "AI 解讀",
   });
   assert.deepEqual(getOpenEnaCopy("zh-hans").modes, {
     sets: "分析集",
@@ -493,5 +507,6 @@ test("en, zh-Hant, and zh-Hans provide complete AI UI, disclosure, and truthful 
     model: "模型",
     plot: "绘图工具",
     stats: "统计与导出",
+    ai: "AI 解读",
   });
 });

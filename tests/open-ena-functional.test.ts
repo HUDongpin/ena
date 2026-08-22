@@ -451,7 +451,9 @@ test("the researcher interface exposes the implemented model controls, data tabl
   );
   assert.match(workspace, /Not estimable/);
   assert.match(workspace, /Number\.isFinite/);
-  assert.match(workspace, /disabled=\{oppositeDimensions\.includes\(dimension\)\}/);
+  assert.match(workspace, /function selectAxisDimension/);
+  assert.match(workspace, /setters\[occupiedAxis\]\(previousDimension\)/);
+  assert.doesNotMatch(workspace, /disabled=\{oppositeDimensions\.includes\(dimension\)\}/);
   assert.match(workspace, /Export SVG/);
   assert.match(workspace, /Export PNG/);
   assert.match(workspace, /XMLSerializer/);

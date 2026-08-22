@@ -1,4 +1,5 @@
 import type { Row } from "jena-js";
+import type { OpenEnaPairwiseContrast } from "./contrasts";
 import { codeColorFor, JENA_GROUP_COLORS, type OpenEnaCodeColors } from "./plot-style";
 import type { CameraPreset, GroupNetwork, OpenEnaResult } from "./types";
 
@@ -15,10 +16,15 @@ export type OpenEna3dTraceRole =
   | "network-edge"
   | "group-mean"
   | "trajectory-path"
-  | "axis";
+  | "axis"
+  | "axis-arrowhead"
+  | "axis-label";
+
+export type OpenEna3dPlotKind = "comparison" | "primary" | "secondary";
 
 export interface OpenEna3dTraceMeta {
   role: OpenEna3dTraceRole;
+  plotKind?: OpenEna3dPlotKind;
   groupName?: string;
   groupIndex?: number;
   markerSymbol?: string;
@@ -26,6 +32,8 @@ export interface OpenEna3dTraceMeta {
   unitId?: string;
   axis?: "x" | "y" | "z";
   dimension?: string;
+  edgeValue?: number;
+  edgeScaleDenominator?: number;
 }
 
 export interface OpenEna3dMarker {
@@ -37,12 +45,20 @@ export interface OpenEna3dMarker {
 }
 
 export interface OpenEna3dTrace {
-  type: "scatter3d";
-  mode: string;
+  type: "scatter3d" | "cone";
+  mode?: string;
   name: string;
   x: number[];
   y: number[];
   z: number[];
+  u?: number[];
+  v?: number[];
+  w?: number[];
+  anchor?: "tip";
+  sizemode?: "absolute";
+  sizeref?: number;
+  colorscale?: Array<[number, string]>;
+  showscale?: boolean;
   text?: string[];
   customdata?: string[];
   textposition?: string;
@@ -70,7 +86,8 @@ export interface OpenEna3dSceneAxis {
   gridcolor: string;
   zerolinecolor: string;
   showspikes: boolean;
-  autorange: true | "reversed";
+  autorange: false;
+  range: [number, number];
 }
 
 export interface OpenEna3dPlotLayout {
@@ -100,15 +117,15 @@ export interface OpenEna3dPlotLayout {
     camera: OpenEna3dCamera;
     bgcolor: string;
     aspectmode: "cube";
-    dragmode: "orbit";
+    dragmode: "orbit" | false;
   };
 }
 
 export interface OpenEna3dPlotConfig {
   responsive: true;
-  scrollZoom: true;
+  scrollZoom: boolean;
   displaylogo: false;
-  displayModeBar: true;
+  displayModeBar: boolean;
   modeBarButtonsToRemove: string[];
   toImageButtonOptions: { format: "png"; filename: string };
 }
@@ -121,6 +138,12 @@ export interface OpenEna3dPlotSpec {
 
 export interface CompileOpenEna3dPlotInput {
   result: OpenEnaResult;
+  /** Selected endpoint contrast used to compile the linked three-plot 3D workbench. */
+  contrast?: OpenEnaPairwiseContrast | null;
+  /** Defaults to comparison so existing single-plot callers keep their behavior. */
+  plotKind?: OpenEna3dPlotKind;
+  compact?: boolean;
+  displayModeBar?: boolean;
   codeColors?: OpenEnaCodeColors;
   groupColumn: string | null;
   xDimension: string;
@@ -164,6 +187,24 @@ const CAMERA_PRESETS: Record<CameraPreset, OpenEna3dCamera> = {
     center: { x: 0, y: 0, z: 0 },
     eye: { x: 2.5, y: 0, z: 0 },
     up: { x: 0, y: 0, z: 1 },
+    projection: { type: "orthographic" },
+  },
+  yx: {
+    center: { x: 0, y: 0, z: 0 },
+    eye: { x: 0, y: 0, z: -2.5 },
+    up: { x: 1, y: 0, z: 0 },
+    projection: { type: "orthographic" },
+  },
+  zx: {
+    center: { x: 0, y: 0, z: 0 },
+    eye: { x: 0, y: 2.5, z: 0 },
+    up: { x: 1, y: 0, z: 0 },
+    projection: { type: "orthographic" },
+  },
+  zy: {
+    center: { x: 0, y: 0, z: 0 },
+    eye: { x: -2.5, y: 0, z: 0 },
+    up: { x: 0, y: 1, z: 0 },
     projection: { type: "orthographic" },
   },
 };
@@ -284,33 +325,83 @@ function axisTraces(
   extent: number,
   dimensions: readonly [string, string, string],
 ): OpenEna3dTrace[] {
-  return dimensions.map((dimension, index) => {
-    const x = [0, 0];
-    const y = [0, 0];
-    const z = [0, 0];
-    if (index === 0) x[1] = extent;
-    if (index === 1) y[1] = extent;
-    if (index === 2) z[1] = extent;
-    return {
-      type: "scatter3d",
-      mode: "lines+text",
-      name: `${dimension} axis`,
-      x,
-      y,
-      z,
-      text: ["", dimension],
-      textposition: "top center",
-      textfont: { color: AXIS_COLORS[index], size: 13 },
-      line: { color: AXIS_COLORS[index], width: 6 },
-      hoverinfo: "skip",
-      showlegend: false,
-      meta: {
-        role: "axis",
-        axis: (["x", "y", "z"] as const)[index],
-        dimension,
-      },
-    };
-  });
+  const safeExtent = Math.max(0.001, Math.abs(extent));
+  const shaftExtent = safeExtent * 0.88;
+  const labelExtent = safeExtent * 1.08;
+  const coneSize = safeExtent * 0.1;
+  const directions = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ] as const;
+  const physicalAxes = ["x", "y", "z"] as const;
+  const axes = dimensions.map((dimension, index) => ({
+    dimension,
+    direction: directions[index],
+    physicalAxis: physicalAxes[index],
+    color: AXIS_COLORS[index],
+  }));
+
+  const shafts = axes.map(({ dimension, direction, physicalAxis, color }) => ({
+    type: "scatter3d",
+    mode: "lines",
+    name: `${dimension} axis shaft`,
+    x: [0, direction[0] * shaftExtent],
+    y: [0, direction[1] * shaftExtent],
+    z: [0, direction[2] * shaftExtent],
+    line: { color, width: 6 },
+    hoverinfo: "skip",
+    showlegend: false,
+    meta: {
+      role: "axis",
+      axis: physicalAxis,
+      dimension,
+    },
+  }) satisfies OpenEna3dTrace);
+
+  const arrowheads = axes.map(({ dimension, direction, physicalAxis, color }) => ({
+    type: "cone",
+    name: `${dimension} axis arrowhead`,
+    x: [direction[0] * safeExtent],
+    y: [direction[1] * safeExtent],
+    z: [direction[2] * safeExtent],
+    u: [direction[0]],
+    v: [direction[1]],
+    w: [direction[2]],
+    anchor: "tip",
+    sizemode: "absolute",
+    sizeref: coneSize,
+    colorscale: [[0, color], [1, color]],
+    showscale: false,
+    hoverinfo: "skip",
+    showlegend: false,
+    meta: {
+      role: "axis-arrowhead",
+      axis: physicalAxis,
+      dimension,
+    },
+  }) satisfies OpenEna3dTrace);
+
+  const labels = axes.map(({ dimension, direction, physicalAxis, color }) => ({
+    type: "scatter3d",
+    mode: "text",
+    name: `${dimension} axis label`,
+    x: [direction[0] * labelExtent],
+    y: [direction[1] * labelExtent],
+    z: [direction[2] * labelExtent],
+    text: [dimension],
+    textposition: "middle center",
+    textfont: { color, size: 13 },
+    hoverinfo: "skip",
+    showlegend: false,
+    meta: {
+      role: "axis-label",
+      axis: physicalAxis,
+      dimension,
+    },
+  }) satisfies OpenEna3dTrace);
+
+  return [...shafts, ...arrowheads, ...labels];
 }
 
 /**
@@ -319,6 +410,10 @@ function axisTraces(
  */
 export function compileOpenEna3dPlotSpec({
   result,
+  contrast = null,
+  plotKind = "comparison",
+  compact = false,
+  displayModeBar = true,
   codeColors,
   groupColumn,
   xDimension,
@@ -345,6 +440,24 @@ export function compileOpenEna3dPlotSpec({
   const safePointScale = clamp(pointScale, 0.2, 5, 1);
   const safeEdgeScale = clamp(edgeScale, 0.1, 5, 1);
   const safeThreshold = clamp(edgeThreshold, 0, 1, 0);
+  const primaryGroupIndex = contrast
+    ? result.groups.findIndex((group) => group.name === contrast.primary.name)
+    : -1;
+  const secondaryGroupIndex = contrast
+    ? result.groups.findIndex((group) => group.name === contrast.secondary.name)
+    : -1;
+  if (contrast && (primaryGroupIndex < 0 || secondaryGroupIndex < 0)) {
+    throw new Error("The selected 3D contrast groups must exist in the fitted ENA result.");
+  }
+  const selectedComparisonGroupIndices = contrast
+    ? new Set([primaryGroupIndex, secondaryGroupIndex])
+    : null;
+  const displayGroupEntries = contrast
+    ? [primaryGroupIndex, secondaryGroupIndex].map((groupIndex) => ({
+        group: result.groups[groupIndex] as GroupNetwork,
+        groupIndex,
+      }))
+    : result.groups.map((group, groupIndex) => ({ group, groupIndex }));
 
   const coordinateMagnitudes = [
     ...nodeRows.flatMap((row) => dimensions.map((dimension) => Math.abs(coordinate(row, dimension)))),
@@ -354,8 +467,43 @@ export function compileOpenEna3dPlotSpec({
   const axisExtent = Math.max(0.5, ...coordinateMagnitudes) * 1.15;
 
   if (showNetworks) {
-    const weightedEdges = result.set.adjacencyKey.map((edge) => ({ edge, ...edgeWeight(result, edge.name) }));
-    const maximumEdge = Math.max(1e-12, ...weightedEdges.map((edge) => edge.value));
+    const weightedEdges = contrast
+      ? contrast.edges.map((contrastEdge) => {
+          const edge = result.set.adjacencyKey.find((candidate) => candidate.name === contrastEdge.name);
+          if (!edge) {
+            throw new Error(`The selected 3D contrast is missing fitted adjacency geometry for ${contrastEdge.name}.`);
+          }
+          const rawValue = plotKind === "comparison"
+            ? contrastEdge.signedDifference
+            : plotKind === "primary"
+              ? contrastEdge.primaryWeight
+              : contrastEdge.secondaryWeight;
+          return {
+            edge,
+            value: Math.abs(rawValue),
+            rawValue,
+            groupIndex: plotKind === "primary"
+              ? primaryGroupIndex
+              : plotKind === "secondary"
+                ? secondaryGroupIndex
+                : rawValue >= 0
+                  ? primaryGroupIndex
+                  : secondaryGroupIndex,
+            comparison: plotKind === "comparison",
+          };
+        })
+      : result.set.adjacencyKey.map((edge) => {
+          const weighted = edgeWeight(result, edge.name);
+          return { edge, ...weighted, rawValue: weighted.value };
+        });
+    const maximumEdge = contrast
+      ? Math.max(
+          1e-12,
+          plotKind === "comparison"
+            ? contrast.edgeScaleDenominators.difference
+            : contrast.edgeScaleDenominators.sharedMean,
+        )
+      : Math.max(1e-12, ...weightedEdges.map((edge) => edge.value));
     const nodeByCode = new Map(nodeRows.map((row) => [String(row.code ?? ""), row]));
     for (const weighted of weightedEdges) {
       if (weighted.value <= 1e-12 || weighted.value / maximumEdge < safeThreshold) continue;
@@ -365,9 +513,9 @@ export function compileOpenEna3dPlotSpec({
       if (!source || !target || !group) continue;
       const relativeWeight = weighted.value / maximumEdge;
       const color = groupColor(group, weighted.groupIndex);
-      const meaning = weighted.comparison
-        ? `${group.name} stronger by ${formatCoordinate(weighted.value)}`
-        : `${group.name} mean weight ${formatCoordinate(weighted.value)}`;
+      const meaning = weighted.comparison && contrast
+        ? `${contrast.primary.name} − ${contrast.secondary.name}: ${formatCoordinate(weighted.rawValue)}; ${group.name} stronger by ${formatCoordinate(weighted.value)}`
+        : `${group.name} mean weight ${formatCoordinate(weighted.rawValue)}`;
       const hover = `<b>${escapeHoverText(weighted.edge.source)} ↔ ${escapeHoverText(weighted.edge.target)}</b><br>${escapeHoverText(meaning)}`;
       traces.push({
         type: "scatter3d",
@@ -389,6 +537,8 @@ export function compileOpenEna3dPlotSpec({
           groupName: group.name,
           groupIndex: weighted.groupIndex,
           edgeName: weighted.edge.name,
+          edgeValue: weighted.rawValue,
+          edgeScaleDenominator: maximumEdge,
         },
       });
     }
@@ -407,6 +557,9 @@ export function compileOpenEna3dPlotSpec({
       const firstRow = points[indices[0]];
       if (!firstRow) continue;
       const groupIndex = groupIndexForRow(result, groupColumn, firstRow);
+      if (selectedComparisonGroupIndices && (
+        plotKind !== "comparison" || !selectedComparisonGroupIndices.has(groupIndex)
+      )) continue;
       const group = result.groups[groupIndex];
       if (!group) continue;
       const color = groupColor(group, groupIndex);
@@ -441,7 +594,10 @@ export function compileOpenEna3dPlotSpec({
   }
 
   if (showPoints) {
-    result.groups.forEach((group, groupIndex) => {
+    displayGroupEntries.forEach(({ group, groupIndex }) => {
+      if (selectedComparisonGroupIndices && (
+        plotKind !== "comparison" || !selectedComparisonGroupIndices.has(groupIndex)
+      )) return;
       const selected = points.filter((row) => groupIndexForRow(result, groupColumn, row) === groupIndex);
       if (selected.length === 0) return;
       const color = groupColor(group, groupIndex);
@@ -475,7 +631,10 @@ export function compileOpenEna3dPlotSpec({
     });
   }
 
-  result.groups.forEach((group, groupIndex) => {
+  displayGroupEntries.forEach(({ group, groupIndex }) => {
+    if (selectedComparisonGroupIndices && (
+      plotKind !== "comparison" || !selectedComparisonGroupIndices.has(groupIndex)
+    )) return;
     const color = groupColor(group, groupIndex);
     const markerSymbol = GROUP_MARKER_SYMBOLS[groupIndex % GROUP_MARKER_SYMBOLS.length];
     const mean = dimensions.map((dimension) => finiteNumber(group.meanPoint[dimension])) as [number, number, number];
@@ -545,23 +704,30 @@ export function compileOpenEna3dPlotSpec({
       }))
     : [];
 
+  const sceneExtent = axisExtent * 1.14;
   const sceneAxis = (dimension: string, color: string, reversed: boolean): OpenEna3dSceneAxis => ({
     title: { text: dimension },
     color,
     gridcolor: "#dbe9e7",
     zerolinecolor: "#64748b",
     showspikes: false,
-    autorange: reversed ? "reversed" : true,
+    autorange: false,
+    range: reversed ? [sceneExtent, -sceneExtent] : [-sceneExtent, sceneExtent],
   });
 
   return {
-    data: traces,
+    data: traces.map((trace) => ({
+      ...trace,
+      meta: { ...trace.meta, plotKind },
+    })),
     layout: {
       autosize: true,
-      height: 590,
-      margin: { l: 16, r: 16, t: showVariance ? 68 : 28, b: 58 },
+      height: compact ? 260 : 590,
+      margin: compact
+        ? { l: 6, r: 6, t: showVariance ? 54 : 14, b: 18 }
+        : { l: 16, r: 16, t: showVariance ? 68 : 28, b: 58 },
       paper_bgcolor: "#ffffff",
-      plot_bgcolor: "#f8fafc",
+      plot_bgcolor: "#ffffff",
       font: {
         family: '"Helvetica Neue", Helvetica, Arial, sans-serif',
         color: "#334b52",
@@ -576,18 +742,18 @@ export function compileOpenEna3dPlotSpec({
         yaxis: sceneAxis(yDimension, AXIS_COLORS[1], flipY),
         zaxis: sceneAxis(zDimension, AXIS_COLORS[2], false),
         camera: scaledCamera(camera, plotZoom),
-        bgcolor: "#f8fafc",
+        bgcolor: "#ffffff",
         aspectmode: "cube",
-        dragmode: "orbit",
+        dragmode: compact ? false : "orbit",
       },
     },
     config: {
       responsive: true,
-      scrollZoom: true,
+      scrollZoom: !compact,
       displaylogo: false,
-      displayModeBar: true,
+      displayModeBar,
       modeBarButtonsToRemove: ["sendDataToCloud", "lasso2d", "select2d"],
-      toImageButtonOptions: { format: "png", filename: "open-ena-3d" },
+      toImageButtonOptions: { format: "png", filename: `open-ena-3d-${plotKind}` },
     },
   };
 }

@@ -218,10 +218,10 @@ test("desktop shell preserves ENA.HK identity and exposes four stable workbench 
   expectMatch(markup, /data-ena-rail-brand="true"[^>]*aria-label="ENA\.HK Open ENA"/, "the compact rail must own the ENA.HK Open ENA identity");
   expectMatch(markup, /src="\/ena-mark\.svg"/, "the existing ENA mark must remain visible in the rail");
   expectMatch(markup, /data-ena-rail-version="true"/, "the compact rail must disclose its bound jENA runtime version");
-  for (const label of ["Sets", "Data", "Model", "Plot Tools", "Stats &amp; Export"]) {
+  for (const label of ["Sets", "Data", "Model", "Plot Tools", "Stats &amp; Export", "AI-assisted interpretation"]) {
     expectMatch(markup, new RegExp(`aria-label="${label}"`), `preserve the existing ${label} rail control`);
   }
-  assert.equal((markup.match(/class="ena-rail-button"/g) ?? []).length, 5, "the approved five ENA.HK rail modes remain intact");
+  assert.equal((markup.match(/class="ena-rail-button"/g) ?? []).length, 6, "the five ENA.HK analysis modes and downstream AI entry remain intact");
 
   for (const region of ["rail", "controls", "center", "right-stack"]) {
     expectMatch(

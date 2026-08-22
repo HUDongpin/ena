@@ -15,6 +15,7 @@ interface OpenEnaAiInterpretationProps {
   copy: OpenEnaAiInterpretationCopy;
   disabled: boolean;
   disabledReason: string;
+  showHeading?: boolean;
 }
 
 type GenerationStatus = "idle" | "loading";
@@ -54,6 +55,7 @@ export default function OpenEnaAiInterpretation({
   copy,
   disabled,
   disabledReason,
+  showHeading = true,
 }: OpenEnaAiInterpretationProps) {
   const [consentedRequestIdentity, setConsentedRequestIdentity] = useState<string | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>("idle");
@@ -144,12 +146,18 @@ export default function OpenEnaAiInterpretation({
   }
 
   return (
-    <section className="ena-ai-interpretation" aria-labelledby="ena-ai-interpretation-title">
-      <header className="ena-ai-heading">
-        <p className="ena-panel-kicker">AI · OpenRouter</p>
-        <h3 id="ena-ai-interpretation-title">{copy.title}</h3>
-        <p>{copy.description}</p>
-      </header>
+    <section
+      className="ena-ai-interpretation"
+      aria-label={showHeading ? undefined : copy.title}
+      aria-labelledby={showHeading ? "ena-ai-interpretation-title" : undefined}
+    >
+      {showHeading ? (
+        <header className="ena-ai-heading">
+          <p className="ena-panel-kicker">AI · OpenRouter</p>
+          <h3 id="ena-ai-interpretation-title">{copy.title}</h3>
+          <p>{copy.description}</p>
+        </header>
+      ) : null}
 
       <aside className="ena-ai-disclosure" data-ena-ai-disclosure="permanent">
         <strong>{copy.aiGenerated}</strong>
