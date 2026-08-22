@@ -274,6 +274,26 @@ test("explicit string and ISO datetime comparators preserve their declared seman
     ], ["horizon"], columnOrder(["time"], "iso-datetime")),
     /incompatible.*iso-datetime|iso-datetime.*incompatible/i,
   );
+  for (const invalid of [
+    "2026-02-30T00:00:00Z",
+    "2025-02-29T00:00:00Z",
+    "2026-04-31T00:00:00Z",
+    "2026-01-01T24:00:00Z",
+  ]) {
+    assert.throws(
+      () => orderRowsForOpenEna([
+        { horizon: "h", time: invalid },
+      ], ["horizon"], columnOrder(["time"], "iso-datetime")),
+      /incompatible.*iso-datetime|iso-datetime.*incompatible/i,
+      `semantically invalid ISO timestamp must fail closed: ${invalid}`,
+    );
+  }
+  assert.deepEqual(
+    orderRowsForOpenEna([
+      { horizon: "h", time: "2024-02-29T00:00:00Z" },
+    ], ["horizon"], columnOrder(["time"], "iso-datetime")).sourceIndices,
+    [0],
+  );
 });
 
 test("column order policies require one explicit supported comparator per column", () => {

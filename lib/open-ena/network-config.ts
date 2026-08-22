@@ -305,12 +305,38 @@ function orderTupleKey(tuple: readonly TypedScalar[]) {
 }
 
 const CANONICAL_ORDER_NUMBER = /^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/u;
-const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/u;
+const ISO_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(?:Z|([+-])(\d{2}):(\d{2}))$/u;
 
 function canonicalNumericString(value: string): number | null {
   if (!CANONICAL_ORDER_NUMBER.test(value)) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function isoDateTimeValue(value: string): number | null {
+  const match = ISO_DATE_TIME.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6] ?? 0);
+  const offsetHour = Number(match[9] ?? 0);
+  const offsetMinute = Number(match[10] ?? 0);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month < 1 || month > 12
+    || day < 1 || day > daysInMonth[month - 1]
+    || hour < 0 || hour > 23
+    || minute < 0 || minute > 59
+    || second < 0 || second > 59
+    || offsetHour < 0 || offsetHour > 23
+    || offsetMinute < 0 || offsetMinute > 59) {
+    return null;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 function orderScalar(value: unknown, column: string, comparator: OpenEnaOrderComparator): TypedScalar {
@@ -327,9 +353,9 @@ function orderScalar(value: unknown, column: string, comparator: OpenEnaOrderCom
       return ["boolean", scalar[1] === "true"];
     }
   } else if (comparator === "iso-datetime") {
-    if (scalar[0] === "string" && typeof scalar[1] === "string" && ISO_DATE_TIME.test(scalar[1])) {
-      const timestamp = Date.parse(scalar[1]);
-      if (Number.isFinite(timestamp)) return ["number", timestamp];
+    if (scalar[0] === "string" && typeof scalar[1] === "string") {
+      const timestamp = isoDateTimeValue(scalar[1]);
+      if (timestamp !== null) return ["number", timestamp];
     }
   } else if (comparator === "string" && scalar[0] === "string") {
     return scalar;
