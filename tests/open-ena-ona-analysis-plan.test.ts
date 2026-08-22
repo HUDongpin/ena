@@ -112,6 +112,26 @@ test("ONA CSV counts preserve representable nonnegative decimal boundaries", () 
   }
 });
 
+test("ONA CSV preflight and completed analysis preserve a representable extreme same-row half-product", () => {
+  const dataset = parseCsv([
+    "unit,horizon,turn,group,A,B,C",
+    "u1,h1,1,g1,5e-324,1e308,0",
+    "u2,h2,1,g1,0,0,1",
+  ].join("\n") + "\n", { name: "stable-half-product.csv", source: "upload" });
+  const config = orderedConfig();
+
+  assert.deepEqual(validateConfig(dataset, config), []);
+  const plan = buildOpenEnaAnalysisPlan(dataset, config);
+  assert.equal(plan.options.rows[0]?.A, Number.MIN_VALUE);
+  assert.equal(plan.options.rows[0]?.B, 1e308);
+
+  const result = analyzeDataset(dataset, config);
+  const counts = result.set.connectionCounts.find((row) => row.ENA_UNIT === "u1");
+  const expected = (Number.MIN_VALUE * 1e308) / 2;
+  assert.equal(counts?.["A & B"], expected);
+  assert.equal(counts?.["B & A"], expected);
+});
+
 test("ONA CSV counts reject mathematical underflow, negative text including negative zero, and non-finite decimals before plan construction", () => {
   for (const source of [
     "1e-324",
