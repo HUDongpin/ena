@@ -1,4 +1,5 @@
 import type { Row, Scalar } from "jena-js";
+import { directedNodePositions } from "jena-js/rotation";
 import { buildManifest } from "./analyze";
 import {
   assertOpenEnaCapabilityForContext,
@@ -759,6 +760,13 @@ function assertBundleScalar(value: unknown, label: string) {
   }
 }
 
+function assertDeclaredIdentityScalar(value: unknown, label: string) {
+  assertBundleScalar(value, label);
+  if (value === null || (typeof value === "string" && value.length === 0)) {
+    throw new Error(`${label} must be a present, non-empty declared identity value.`);
+  }
+}
+
 function asFiniteMatrix(
   value: unknown,
   rows: number,
@@ -779,6 +787,91 @@ function asFiniteMatrix(
       nonnegative,
     ));
   });
+}
+
+/**
+ * JSON number round-trips and independent IEEE-754 evaluation may differ in
+ * their final bits. Scientific duplicate surfaces in an ONA bundle are equal
+ * only when |a-b| <= 1e-10 + 1e-9 * max(|a|, |b|). The absolute term protects
+ * values near zero; the relative term scales to the magnitude being checked.
+ */
+export const OPEN_ENA_BUNDLE_SCIENTIFIC_TOLERANCE = Object.freeze({
+  absolute: 1e-10,
+  relative: 1e-9,
+});
+
+function scientificTolerance(left: number, right: number) {
+  return OPEN_ENA_BUNDLE_SCIENTIFIC_TOLERANCE.absolute
+    + OPEN_ENA_BUNDLE_SCIENTIFIC_TOLERANCE.relative
+      * Math.max(Math.abs(left), Math.abs(right));
+}
+
+function scientificallyEqual(left: number, right: number) {
+  return Number.isFinite(left)
+    && Number.isFinite(right)
+    && Math.abs(left - right) <= scientificTolerance(left, right);
+}
+
+function assertScientificallyEqual(actual: number, expected: number, label: string) {
+  if (!scientificallyEqual(actual, expected)) {
+    throw new Error(`${label} contradicts the authoritative ONA scientific derivation.`);
+  }
+}
+
+function assertScientificResidual(residual: number, scale: number, label: string) {
+  const tolerance = OPEN_ENA_BUNDLE_SCIENTIFIC_TOLERANCE.absolute
+    + OPEN_ENA_BUNDLE_SCIENTIFIC_TOLERANCE.relative * Math.abs(scale);
+  if (!Number.isFinite(residual)
+    || !Number.isFinite(scale)
+    || !Number.isFinite(tolerance)
+    || Math.abs(residual) > tolerance) {
+    throw new Error(`${label} contradicts the authoritative ONA scientific derivation.`);
+  }
+}
+
+function stableSphereNormalizedRow(row: readonly number[]) {
+  let scale = 0;
+  let scaledSumSquares = 1;
+  for (const value of row) {
+    const absolute = Math.abs(value);
+    if (absolute === 0) continue;
+    if (scale < absolute) {
+      const ratio = scale / absolute;
+      scaledSumSquares = 1 + scaledSumSquares * ratio * ratio;
+      scale = absolute;
+    } else {
+      const ratio = absolute / scale;
+      scaledSumSquares += ratio * ratio;
+    }
+  }
+  if (scale === 0) return row.map(() => 0);
+  const scaledNorm = Math.sqrt(scaledSumSquares);
+  return row.map((value) => (value / scale) / scaledNorm);
+}
+
+function meanMatrixColumns(matrix: readonly (readonly number[])[]) {
+  const width = matrix[0]?.length ?? 0;
+  return Array.from({ length: width }, (_unused, columnIndex) => (
+    matrix.reduce((sum, row) => sum + (row[columnIndex] ?? 0), 0) / matrix.length
+  ));
+}
+
+function multiplyBundleMatrices(
+  left: readonly (readonly number[])[],
+  right: readonly (readonly number[])[],
+) {
+  const columns = right[0]?.length ?? 0;
+  return left.map((row) => Array.from({ length: columns }, (_unused, columnIndex) => (
+    row.reduce((sum, value, sharedIndex) => (
+      sum + value * (right[sharedIndex]?.[columnIndex] ?? 0)
+    ), 0)
+  )));
+}
+
+function sampleVariance(values: readonly number[]) {
+  if (values.length < 2) return null;
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  return values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (values.length - 1);
 }
 
 function uniqueSchemaKeys(keys: readonly string[]) {
@@ -842,8 +935,24 @@ function assertOnaBundleContract(
     "Schema-v2 ONA manifest dataset",
   );
   asBoundedBundleString(dataset.name, "Schema-v2 ONA dataset name");
-  asSafeBundleInteger(dataset.rows, "Schema-v2 ONA dataset row count");
-  asSafeBundleInteger(dataset.columns, "Schema-v2 ONA dataset column count");
+  const datasetRowCount = asSafeBundleInteger(
+    dataset.rows,
+    "Schema-v2 ONA dataset row count",
+  );
+  const datasetColumnCount = asSafeBundleInteger(
+    dataset.columns,
+    "Schema-v2 ONA dataset column count",
+  );
+  const minimumDeclaredColumns = new Set([
+    ...config.unitColumns,
+    ...config.conversationColumns,
+    ...(config.groupColumn ? [config.groupColumn] : []),
+    ...config.codes,
+    ...(config.orderPolicy?.kind === "columns" ? config.orderPolicy.columns : []),
+  ]).size;
+  if (datasetColumnCount < minimumDeclaredColumns) {
+    throw new Error("Schema-v2 ONA dataset columns cannot cover its declared analysis fields.");
+  }
   if (dataset.source !== "sample" && dataset.source !== "upload") {
     throw new Error("Schema-v2 ONA dataset source is unsupported.");
   }
@@ -884,6 +993,7 @@ function assertOnaBundleContract(
   }
 
   if (!Array.isArray(modelData.unitLabels)
+    || modelData.unitLabels.length < 1
     || modelData.unitLabels.some((label) => (
       typeof label !== "string" || label.length === 0 || label.length > 4_096
     ))
@@ -891,6 +1001,9 @@ function assertOnaBundleContract(
     throw new Error("Schema-v2 ONA unit labels must be unique bounded strings.");
   }
   const unitLabels = modelData.unitLabels as string[];
+  if (datasetRowCount < unitLabels.length) {
+    throw new Error("Schema-v2 ONA dataset rows must be at least its analytic-unit count.");
+  }
   const codeColumns = expectedCodeColumns(config);
   const edgeCount = codeColumns.length;
   const connectionMatrix = asFiniteMatrix(
@@ -900,6 +1013,17 @@ function assertOnaBundleContract(
     "Schema-v2 ONA connection matrix",
     true,
   );
+  for (let responseIndex = 0; responseIndex < config.codes.length; responseIndex += 1) {
+    for (let groundIndex = 0; groundIndex < config.codes.length; groundIndex += 1) {
+      if (config.directionalMask!.enabled[groundIndex][responseIndex]) continue;
+      const edgeIndex = responseIndex * config.codes.length + groundIndex;
+      if (connectionMatrix.some((row) => row[edgeIndex] !== 0)) {
+        throw new Error(
+          "Schema-v2 ONA disabled directional-mask cells must remain zero in the authoritative connection matrix.",
+        );
+      }
+    }
+  }
 
   exactKeys(rotationSet, ONA_ROTATION_SET_FIELDS, "Schema-v2 ONA rotation set");
   if (!sameJson(rotationSet.codes, config.codes)) {
@@ -935,7 +1059,7 @@ function assertOnaBundleContract(
   if (!sameJson(rotationColumns, expectedRotationColumns)) {
     throw new Error("Schema-v2 ONA rotation columns contradict its SVD edge space.");
   }
-  asFiniteMatrix(
+  const rotationMatrix = asFiniteMatrix(
     rotationSet.rotationMatrix,
     edgeCount,
     edgeCount,
@@ -948,6 +1072,7 @@ function assertOnaBundleContract(
   rotationSet.eigenvalues.forEach((value, index) => {
     asFiniteBundleNumber(value, `Schema-v2 ONA eigenvalue ${index + 1}`, true);
   });
+  const eigenvalues = rotationSet.eigenvalues as number[];
   if (!Array.isArray(rotationSet.centerVector)
     || rotationSet.centerVector.length !== edgeCount) {
     throw new Error("Schema-v2 ONA center vector contradicts its edge space.");
@@ -955,6 +1080,7 @@ function assertOnaBundleContract(
   rotationSet.centerVector.forEach((value, index) => {
     asFiniteBundleNumber(value, `Schema-v2 ONA center value ${index + 1}`);
   });
+  const centerVector = rotationSet.centerVector as number[];
 
   const displayedDimensions = expectedRotationColumns.slice(0, 3);
   const nodes = asRecordArray(rotationSet.nodes, "Schema-v2 ONA rotation nodes");
@@ -1004,6 +1130,21 @@ function assertOnaBundleContract(
       row[field],
       `Schema-v2 ONA coordinate identity ${field}`,
     ));
+    for (const field of [
+      ...config.unitColumns,
+      ...(config.groupColumn ? [config.groupColumn] : []),
+    ]) {
+      assertDeclaredIdentityScalar(
+        row[field],
+        `Schema-v2 ONA declared identity ${field}`,
+      );
+    }
+    const tupleLabel = config.unitColumns
+      .map((column) => String(row[column] ?? ""))
+      .join("::");
+    if (tupleLabel !== row.ENA_UNIT) {
+      throw new Error("Schema-v2 ONA analytic-unit tuple contradicts its ENA_UNIT label.");
+    }
     displayedDimensions.forEach((dimension) => {
       asFiniteBundleNumber(row[dimension], `Schema-v2 ONA coordinate ${dimension}`);
     });
@@ -1049,6 +1190,137 @@ function assertOnaBundleContract(
     throw new Error("Schema-v2 ONA adjacency table contradicts its rotation adjacency.");
   }
 
+  // modelData.connectionMatrix is the one authoritative numeric surface. All
+  // retained duplicates must reproduce the runtime's stable scientific chain:
+  // raw counts -> sphere normalization -> centering -> SVD projection.
+  const expectedLineWeights = connectionMatrix.map(stableSphereNormalizedRow);
+  const actualLineWeights = tableRows.lineWeights.map((row) => codeColumns.map((edge) => (
+    asFiniteBundleNumber(row[edge], `Schema-v2 ONA normalized line weight ${edge}`, true)
+  )));
+  expectedLineWeights.forEach((row, rowIndex) => {
+    row.forEach((expected, edgeIndex) => {
+      assertScientificallyEqual(
+        actualLineWeights[rowIndex][edgeIndex],
+        expected,
+        "Schema-v2 ONA sphere-normalized line weight",
+      );
+    });
+  });
+
+  const nonzeroLineWeights = expectedLineWeights.filter((row) => (
+    row.some((value) => value !== 0)
+  ));
+  if (nonzeroLineWeights.length === 0) {
+    throw new Error("Schema-v2 ONA requires at least one analytic unit with network signal.");
+  }
+  const centerRows = config.centerAlignToOrigin ? nonzeroLineWeights : expectedLineWeights;
+  const expectedCenterVector = meanMatrixColumns(centerRows);
+  expectedCenterVector.forEach((expected, edgeIndex) => {
+    assertScientificallyEqual(
+      centerVector[edgeIndex],
+      expected,
+      "Schema-v2 ONA center vector",
+    );
+  });
+  const expectedProjectionInputs = expectedLineWeights.map((row) => {
+    const hasSignal = row.some((value) => value !== 0);
+    if (config.centerAlignToOrigin && !hasSignal) return row.map(() => 0);
+    return row.map((value, edgeIndex) => value - expectedCenterVector[edgeIndex]);
+  });
+  const actualProjectionInputs = tableRows.pointsForProjection.map((row) => codeColumns.map((edge) => (
+    asFiniteBundleNumber(row[edge], `Schema-v2 ONA centered projection input ${edge}`)
+  )));
+  expectedProjectionInputs.forEach((row, rowIndex) => {
+    row.forEach((expected, edgeIndex) => {
+      assertScientificallyEqual(
+        actualProjectionInputs[rowIndex][edgeIndex],
+        expected,
+        "Schema-v2 ONA center-adjusted pointsForProjection",
+      );
+    });
+  });
+
+  for (let leftAxis = 0; leftAxis < edgeCount; leftAxis += 1) {
+    for (let rightAxis = leftAxis; rightAxis < edgeCount; rightAxis += 1) {
+      const dot = rotationMatrix.reduce((sum, row) => (
+        sum + row[leftAxis] * row[rightAxis]
+      ), 0);
+      assertScientificResidual(
+        dot - (leftAxis === rightAxis ? 1 : 0),
+        1,
+        "Schema-v2 ONA rotation matrix orthogonality",
+      );
+    }
+  }
+  const expectedFullCoordinates = multiplyBundleMatrices(expectedProjectionInputs, rotationMatrix);
+  const axisEnergies = Array.from({ length: edgeCount }, (_unused, axisIndex) => (
+    expectedFullCoordinates.reduce((sum, row) => sum + (row[axisIndex] ?? 0) ** 2, 0)
+  ));
+  for (let leftAxis = 0; leftAxis < edgeCount; leftAxis += 1) {
+    for (let rightAxis = leftAxis + 1; rightAxis < edgeCount; rightAxis += 1) {
+      const crossProduct = expectedFullCoordinates.reduce((sum, row) => (
+        sum + (row[leftAxis] ?? 0) * (row[rightAxis] ?? 0)
+      ), 0);
+      assertScientificResidual(
+        crossProduct,
+        Math.sqrt(axisEnergies[leftAxis] * axisEnergies[rightAxis]),
+        "Schema-v2 ONA SVD rotation axes",
+      );
+    }
+  }
+  const eigenvalueDivisor = Math.max(1, unitLabels.length - 1);
+  eigenvalues.forEach((actual, axisIndex) => {
+    assertScientificallyEqual(
+      actual,
+      axisEnergies[axisIndex] / eigenvalueDivisor,
+      `Schema-v2 ONA rotation eigenvalue ${axisIndex + 1}`,
+    );
+    if (axisIndex > 0
+      && actual > eigenvalues[axisIndex - 1] + scientificTolerance(actual, eigenvalues[axisIndex - 1])) {
+      throw new Error("Schema-v2 ONA rotation eigenvalues contradict descending SVD axis order.");
+    }
+  });
+  tableRows.coordinates.forEach((row, rowIndex) => {
+    displayedDimensions.forEach((dimension, axisIndex) => {
+      assertScientificallyEqual(
+        row[dimension] as number,
+        expectedFullCoordinates[rowIndex][axisIndex],
+        `Schema-v2 ONA projected coordinate ${dimension}`,
+      );
+    });
+  });
+
+  const expectedNodeGeometry = directedNodePositions(
+    expectedLineWeights,
+    expectedFullCoordinates.map((row) => row.slice(0, displayedDimensions.length)),
+  );
+  nodes.forEach((node, nodeIndex) => {
+    displayedDimensions.forEach((dimension, axisIndex) => {
+      assertScientificallyEqual(
+        node[dimension] as number,
+        expectedNodeGeometry.nodes[nodeIndex][axisIndex],
+        `Schema-v2 ONA directed-node position ${dimension}`,
+      );
+    });
+  });
+  tableRows.centroids.forEach((row, rowIndex) => {
+    displayedDimensions.forEach((dimension, axisIndex) => {
+      assertScientificallyEqual(
+        row[dimension] as number,
+        expectedNodeGeometry.centroids[rowIndex][axisIndex],
+        `Schema-v2 ONA directed-node centroid ${dimension}`,
+      );
+    });
+  });
+
+  const fullAxisVariances = Array.from({ length: edgeCount }, (_unused, axisIndex) => (
+    sampleVariance(expectedFullCoordinates.map((row) => row[axisIndex])) ?? 0
+  ));
+  const fullVarianceTotal = fullAxisVariances.reduce((sum, value) => sum + value, 0);
+  const expectedVariance = fullAxisVariances.map((value) => (
+    fullVarianceTotal === 0 ? 0 : value / fullVarianceTotal
+  ));
+
   exactKeys(
     result,
     [
@@ -1071,14 +1343,31 @@ function assertOnaBundleContract(
     throw new Error("Schema-v2 ONA variance summary is missing.");
   }
   exactKeys(resultVariance, expectedRotationColumns, "Schema-v2 ONA variance summary");
-  expectedRotationColumns.forEach((dimension) => {
-    asFiniteBundleNumber(resultVariance[dimension], `Schema-v2 ONA variance ${dimension}`, true);
+  expectedRotationColumns.forEach((dimension, axisIndex) => {
+    const actual = asFiniteBundleNumber(
+      resultVariance[dimension],
+      `Schema-v2 ONA variance ${dimension}`,
+      true,
+    );
+    assertScientificallyEqual(
+      actual,
+      expectedVariance[axisIndex],
+      `Schema-v2 ONA full-axis variance ${dimension}`,
+    );
   });
   const manifestGroups = asRecordArray(result.groups, "Schema-v2 ONA manifest groups");
   let manifestUnitCount = 0;
+  const manifestGroupNames = new Set<string>();
   manifestGroups.forEach((group, index) => {
     exactKeys(group, ["name", "count"], `Schema-v2 ONA manifest group ${index + 1}`);
-    asBoundedBundleString(group.name, `Schema-v2 ONA manifest group ${index + 1} name`);
+    const name = asBoundedBundleString(
+      group.name,
+      `Schema-v2 ONA manifest group ${index + 1} name`,
+    );
+    if (manifestGroupNames.has(name)) {
+      throw new Error("Schema-v2 ONA manifest group names must be unique.");
+    }
+    manifestGroupNames.add(name);
     manifestUnitCount += asSafeBundleInteger(
       group.count,
       `Schema-v2 ONA manifest group ${index + 1} count`,
@@ -1087,6 +1376,25 @@ function assertOnaBundleContract(
   });
   if (manifestUnitCount !== unitLabels.length) {
     throw new Error("Schema-v2 ONA manifest group counts contradict its analytic units.");
+  }
+  if (config.groupColumn) {
+    const tableGroupCounts = new Map<string, number>();
+    tableRows.coordinates.forEach((row) => {
+      const name = String(row[config.groupColumn!]);
+      if (!manifestGroupNames.has(name)) {
+        throw new Error("Schema-v2 ONA table group membership is absent from its manifest groups.");
+      }
+      tableGroupCounts.set(name, (tableGroupCounts.get(name) ?? 0) + 1);
+    });
+    manifestGroups.forEach((group) => {
+      if (tableGroupCounts.get(group.name as string) !== group.count) {
+        throw new Error("Schema-v2 ONA manifest group counts contradict table group membership.");
+      }
+    });
+  } else if (manifestGroups.length !== 1
+    || manifestGroups[0].name !== "All units"
+    || manifestGroups[0].count !== unitLabels.length) {
+    throw new Error("Schema-v2 ONA without a group column must declare exactly All units.");
   }
 
   exactKeys(
@@ -1123,12 +1431,44 @@ function assertOnaBundleContract(
       || row.n !== unitLabels.length) {
       throw new Error("Schema-v2 ONA dimension statistics contradict its unit or axis contract.");
     }
+    const values = expectedFullCoordinates.map((coordinates) => coordinates[index]);
+    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+    const variance = sampleVariance(values);
+    const expectedStatistics = {
+      mean,
+      sd: variance === null ? null : Math.sqrt(variance),
+      variance,
+      min: Math.min(...values),
+      max: Math.max(...values),
+    };
     for (const field of ["mean", "min", "max"] as const) {
-      asFiniteBundleNumber(row[field], `Schema-v2 ONA dimension statistic ${field}`);
+      const actual = asFiniteBundleNumber(
+        row[field],
+        `Schema-v2 ONA dimension statistic ${field}`,
+      );
+      assertScientificallyEqual(
+        actual,
+        expectedStatistics[field],
+        `Schema-v2 ONA dimension statistic ${field}`,
+      );
     }
     for (const field of ["sd", "variance"] as const) {
-      if (unitLabels.length === 1 && row[field] === null) continue;
-      asFiniteBundleNumber(row[field], `Schema-v2 ONA dimension statistic ${field}`, true);
+      if (expectedStatistics[field] === null) {
+        if (row[field] !== null) {
+          throw new Error(`Schema-v2 ONA dimension statistic ${field} must be not estimable.`);
+        }
+        continue;
+      }
+      const actual = asFiniteBundleNumber(
+        row[field],
+        `Schema-v2 ONA dimension statistic ${field}`,
+        true,
+      );
+      assertScientificallyEqual(
+        actual,
+        expectedStatistics[field],
+        `Schema-v2 ONA dimension statistic ${field}`,
+      );
     }
   });
   if (!Array.isArray(statistics.correlations) || statistics.correlations.length !== 0) {
@@ -1147,8 +1487,26 @@ function assertOnaBundleContract(
       const means = row.means;
       if (!isRecord(means)) throw new Error("Schema-v2 ONA group means are missing.");
       exactKeys(means, displayedDimensions, `Schema-v2 ONA group means ${index + 1}`);
-      displayedDimensions.forEach((dimension) => {
-        asFiniteBundleNumber(means[dimension], `Schema-v2 ONA group mean ${dimension}`);
+      const groupName = manifestGroups[index].name as string;
+      const groupRowIndices = tableRows.coordinates.flatMap((coordinate, rowIndex) => (
+        String(coordinate[config.groupColumn!]) === groupName ? [rowIndex] : []
+      ));
+      if (groupRowIndices.length !== row.n) {
+        throw new Error("Schema-v2 ONA group statistics contradict table group membership.");
+      }
+      displayedDimensions.forEach((dimension, axisIndex) => {
+        const actual = asFiniteBundleNumber(
+          means[dimension],
+          `Schema-v2 ONA group mean ${dimension}`,
+        );
+        const expected = groupRowIndices.reduce((sum, rowIndex) => (
+          sum + expectedFullCoordinates[rowIndex][axisIndex]
+        ), 0) / groupRowIndices.length;
+        assertScientificallyEqual(
+          actual,
+          expected,
+          `Schema-v2 ONA group mean ${dimension}`,
+        );
       });
     });
   } else if (Object.hasOwn(statistics, "groups")) {

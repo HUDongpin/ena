@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { Row } from "jena-js";
 import { analyzeDataset, buildManifest } from "../lib/open-ena/analyze";
@@ -13,6 +15,11 @@ import {
 } from "../lib/open-ena/types";
 
 const SOURCE_HASH = "7".repeat(64);
+const LEGACY_V1_FIXTURE_SHA256 = "e639efe9e29784f71f0c86b32cd7c7c09e75d2cc3cf625fdf0c5c90c00b0eb96";
+const LEGACY_V1_FIXTURE_URL = new URL(
+  "./fixtures/open-ena/analysis-bundle-v1.json",
+  import.meta.url,
+);
 
 function orderedFixture() {
   const rows: Row[] = [
@@ -20,6 +27,8 @@ function orderedFixture() {
     { unit: "u1", horizon: "h1", turn: 2, group: "g1", A: 0, B: 3, C: 1 },
     { unit: "u2", horizon: "h2", turn: 1, group: "g2", A: 1, B: 1, C: 0 },
     { unit: "u2", horizon: "h2", turn: 2, group: "g2", A: 0, B: 1, C: 2 },
+    { unit: "u3", horizon: "h3", turn: 1, group: "g1", A: 0, B: 2, C: 1 },
+    { unit: "u3", horizon: "h3", turn: 2, group: "g1", A: 1, B: 0, C: 2 },
   ];
   const dataset: ParsedDataset = {
     name: "ordered-portable.csv",
@@ -205,6 +214,242 @@ test("bundle parser binds ONA rotation and authoritative count tables to model d
   }
 });
 
+test("bundle parser closes the ONA scientific derivation under an explicit 1e-10 absolute and 1e-9 relative tolerance", () => {
+  const { dataset, config, result } = orderedFixture();
+  const valid = structuredClone(buildAnalysisBundle(dataset, config, result, SOURCE_HASH)) as Record<string, any>;
+  const firstEdge = valid.modelData.codeColumns[0] as string;
+  const firstAxis = valid.rotationSet.rotationColumns[0] as string;
+  const codeCount = valid.rotationSet.codes.length as number;
+  const nonzeroEdgeIndices = valid.modelData.codeColumns.flatMap((_edge: string, edgeIndex: number) => (
+    valid.modelData.connectionMatrix.some((row: number[]) => row[edgeIndex] > 0) ? [edgeIndex] : []
+  ));
+  const nonzeroDiagonal = nonzeroEdgeIndices.find((edgeIndex: number) => (
+    edgeIndex % codeCount === Math.floor(edgeIndex / codeCount)
+  ));
+  const nonzeroDirected = nonzeroEdgeIndices.find((edgeIndex: number) => (
+    edgeIndex % codeCount !== Math.floor(edgeIndex / codeCount)
+  ));
+  assert.notEqual(nonzeroDiagonal, undefined, "fixture must exercise an enabled diagonal cell");
+  assert.notEqual(nonzeroDirected, undefined, "fixture must exercise an enabled directed cell");
+
+  const disableNonzeroEdge = (bundle: Record<string, any>, edgeIndex: number) => {
+    const groundIndex = edgeIndex % codeCount;
+    const responseIndex = Math.floor(edgeIndex / codeCount);
+    bundle.manifest.configuration.directionalMask.enabled[groundIndex][responseIndex] = false;
+    bundle.manifest.analysis.directionalMask.enabled[groundIndex][responseIndex] = false;
+    bundle.manifest.effectiveJenaOptions.mask[groundIndex][responseIndex] = 0;
+  };
+
+  const roundingOnly = structuredClone(valid);
+  roundingOnly.tables.lineWeights[0][firstEdge] += 1e-12;
+  assert.doesNotThrow(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(roundingOnly)),
+    "sub-tolerance JSON roundoff must not invalidate a scientific bundle",
+  );
+
+  const corruptions: Array<[string, (bundle: Record<string, any>) => void]> = [
+    ["duplicated raw connection count", (bundle) => {
+      bundle.modelData.connectionMatrix[0][0] += 1;
+      bundle.tables.connectionCounts[0][firstEdge] += 1;
+    }],
+    ["coherently disabled nonzero diagonal", (bundle) => {
+      disableNonzeroEdge(bundle, nonzeroDiagonal!);
+    }],
+    ["coherently disabled nonzero directed edge", (bundle) => {
+      disableNonzeroEdge(bundle, nonzeroDirected!);
+    }],
+    ["sphere-normalized line weight", (bundle) => {
+      bundle.tables.lineWeights[0][firstEdge] += 1e-6;
+    }],
+    ["center vector", (bundle) => {
+      bundle.rotationSet.centerVector[0] += 1e-6;
+    }],
+    ["center-adjusted projection input", (bundle) => {
+      bundle.tables.pointsForProjection[0][firstEdge] += 1e-6;
+    }],
+    ["orthogonal rotation", (bundle) => {
+      bundle.rotationSet.rotationMatrix[0][0] += 1e-6;
+    }],
+    ["rotation eigenvalue", (bundle) => {
+      bundle.rotationSet.eigenvalues[0] += 1e-6;
+    }],
+    ["projected coordinate", (bundle) => {
+      bundle.tables.coordinates[0][firstAxis] += 1e-6;
+    }],
+    ["full-axis variance", (bundle) => {
+      bundle.manifest.result.variance[firstAxis] += 1e-6;
+    }],
+    ["dimension statistic", (bundle) => {
+      bundle.statistics.dimensions[0].mean += 1e-6;
+    }],
+    ["group statistic", (bundle) => {
+      bundle.statistics.groups[0].means[firstAxis] += 1e-6;
+    }],
+    ["coherently forged node and centroid geometry", (bundle) => {
+      for (const node of bundle.rotationSet.nodes) node[firstAxis] += 1e-6;
+      for (const node of bundle.tables.nodePositions) node[firstAxis] += 1e-6;
+      for (const centroid of bundle.tables.centroids) centroid[firstAxis] += 1e-6;
+    }],
+    ["overflowed node and centroid geometry", (bundle) => {
+      for (const dimension of bundle.rotationSet.rotationColumns.slice(0, 3)) {
+        for (const node of bundle.rotationSet.nodes) node[dimension] = Number.MAX_VALUE;
+        for (const node of bundle.tables.nodePositions) node[dimension] = Number.MAX_VALUE;
+        for (const centroid of bundle.tables.centroids) centroid[dimension] = Number.MAX_VALUE;
+      }
+    }],
+    ["duplicated adjacency geometry", (bundle) => {
+      bundle.rotationSet.adjacencyKey[0].source = "C";
+      bundle.tables.adjacencyKey[0].source = "C";
+    }],
+  ];
+
+  for (const [label, mutate] of corruptions) {
+    const forged = structuredClone(valid);
+    mutate(forged);
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(forged)),
+      /adjacency|center|connection|coordinate|eigen|group|line weight|mask|node|normaliz|orthogonal|project|rotation|statistic|variance/i,
+      label,
+    );
+  }
+
+  const rankDeficientDataset: ParsedDataset = {
+    name: "rank-deficient-ordered.csv",
+    headers: ["unit", "horizon", "turn", "group", "A", "B", "C"],
+    rows: Array.from({ length: 6 }, (_unused, index) => ({
+      unit: `u${index + 1}`,
+      horizon: `h${index + 1}`,
+      turn: 1,
+      group: "g1",
+      A: 1,
+      B: 1,
+      C: 1,
+    })),
+    sizeBytes: 0,
+    source: "upload",
+  };
+  const rankDeficient = structuredClone(buildAnalysisBundle(
+    rankDeficientDataset,
+    config,
+    analyzeDataset(rankDeficientDataset, config),
+    SOURCE_HASH,
+  )) as Record<string, any>;
+  const rankDeficientAxis = rankDeficient.rotationSet.rotationColumns[0] as string;
+  rankDeficient.rotationSet.nodes[0][rankDeficientAxis] += 1;
+  rankDeficient.rotationSet.nodes[1][rankDeficientAxis] -= 1;
+  rankDeficient.tables.nodePositions = structuredClone(rankDeficient.rotationSet.nodes);
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(rankDeficient)),
+    /node|least-squares|scientific derivation/i,
+    "a unit-scale nullspace node shift cannot hide inside the solver ridge tolerance",
+  );
+});
+
+test("bundle parser closes analytic units, dataset rows, unit tuples, and group membership", () => {
+  const { dataset, config, result } = orderedFixture();
+  const valid = structuredClone(buildAnalysisBundle(dataset, config, result, SOURCE_HASH)) as Record<string, any>;
+
+  const corruptions: Array<[string, (bundle: Record<string, any>) => void]> = [
+    ["dataset rows below analytic units", (bundle) => {
+      bundle.manifest.dataset.rows = bundle.modelData.unitLabels.length - 1;
+    }],
+    ["dataset columns below declared ONA schema", (bundle) => {
+      bundle.manifest.dataset.columns = 0;
+    }],
+    ["unit tuple disagrees with ENA_UNIT", (bundle) => {
+      for (const field of ["coordinates", "lineWeights", "connectionCounts", "pointsForProjection"] as const) {
+        bundle.tables[field][0].unit = "forged-unit-tuple";
+      }
+    }],
+    ["duplicate manifest group name", (bundle) => {
+      bundle.manifest.result.groups[1].name = bundle.manifest.result.groups[0].name;
+      bundle.statistics.groups[1].group = bundle.statistics.groups[0].group;
+    }],
+    ["manifest counts disagree with table membership", (bundle) => {
+      const firstCount = bundle.manifest.result.groups[0].count;
+      bundle.manifest.result.groups[0].count = bundle.manifest.result.groups[1].count;
+      bundle.manifest.result.groups[1].count = firstCount;
+      bundle.statistics.groups[0].n = bundle.manifest.result.groups[0].count;
+      bundle.statistics.groups[1].n = bundle.manifest.result.groups[1].count;
+    }],
+    ["table group absent from manifest", (bundle) => {
+      for (const field of ["coordinates", "lineWeights", "connectionCounts", "pointsForProjection"] as const) {
+        bundle.tables[field][0].group = "undeclared-group";
+      }
+    }],
+    ["declared group collapsed to null All units", (bundle) => {
+      for (const field of ["coordinates", "lineWeights", "connectionCounts", "pointsForProjection"] as const) {
+        for (const row of bundle.tables[field]) row.group = null;
+      }
+      const dimensions = bundle.rotationSet.rotationColumns.slice(0, 3) as string[];
+      bundle.manifest.result.groups = [{
+        name: "All units",
+        count: bundle.modelData.unitLabels.length,
+      }];
+      bundle.statistics.groups = [{
+        group: "All units",
+        n: bundle.modelData.unitLabels.length,
+        means: Object.fromEntries(dimensions.map((dimension) => [
+          dimension,
+          bundle.tables.coordinates.reduce((sum: number, row: Record<string, number>) => (
+            sum + row[dimension]
+          ), 0) / bundle.tables.coordinates.length,
+        ])),
+      }];
+    }],
+    ["zero analytic units", (bundle) => {
+      bundle.modelData.unitLabels = [];
+      bundle.modelData.connectionMatrix = [];
+      for (const field of [
+        "coordinates", "lineWeights", "connectionCounts", "pointsForProjection", "centroids",
+      ] as const) {
+        bundle.tables[field] = [];
+      }
+      bundle.manifest.result.units = 0;
+      bundle.manifest.result.points = 0;
+      bundle.manifest.result.groups = [];
+      bundle.statistics.groups = [];
+      for (const dimension of bundle.statistics.dimensions) dimension.n = 0;
+    }],
+  ];
+
+  for (const [label, mutate] of corruptions) {
+    const forged = structuredClone(valid);
+    mutate(forged);
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(forged)),
+      /analytic|dataset|group|membership|row|tuple|unit|zero/i,
+      label,
+    );
+  }
+
+  const noGroupCodes = ["A", "B", "C"];
+  const noGroupDataset: ParsedDataset = {
+    name: "no-group-ordered.csv",
+    headers: ["unit", "horizon", "turn", ...noGroupCodes],
+    rows: [{ unit: "u1", horizon: "h1", turn: 1, A: 1, B: 1, C: 1 }],
+    sizeBytes: 0,
+    source: "upload",
+  };
+  const noGroupConfig: OpenEnaConfig = {
+    ...config,
+    groupColumn: null,
+    codes: noGroupCodes,
+    directionalMask: createDirectionalMask(noGroupCodes),
+  };
+  const noGroup = structuredClone(buildAnalysisBundle(
+    noGroupDataset,
+    noGroupConfig,
+    analyzeDataset(noGroupDataset, noGroupConfig),
+    SOURCE_HASH,
+  )) as Record<string, any>;
+  noGroup.manifest.result.groups[0].name = "forged aggregate";
+  assert.throws(
+    () => parseOpenEnaAnalysisBundle(JSON.stringify(noGroup)),
+    /All units|group|comparison field/i,
+  );
+});
+
 test("closed ONA parser preserves legitimate one-unit not-estimable statistics", () => {
   const codes = ["A", "B", "C"];
   const dataset: ParsedDataset = {
@@ -243,48 +488,100 @@ test("closed ONA parser preserves legitimate one-unit not-estimable statistics",
   assert.equal(parsed.statistics.dimensions[0].variance, null);
 });
 
-test("bundle parser migrates only legacy standard ENA manifests", () => {
-  const { dataset, config, result } = standardFixture();
-  const current = structuredClone(buildAnalysisBundle(dataset, config, result, SOURCE_HASH)) as Record<string, any>;
-  const legacy = structuredClone(current);
-  legacy.schemaVersion = 1;
-  delete legacy.inference;
-  legacy.manifest.schemaVersion = 1;
-  delete legacy.manifest.analysis;
-  delete legacy.manifest.effectiveJenaOptions.networkType;
-  delete legacy.manifest.effectiveJenaOptions.mask;
-  delete legacy.modelData.analysisKind;
-  delete legacy.modelData.networkType;
-  delete legacy.modelData.functionParams.networkType;
-
-  assert.doesNotThrow(() => parseOpenEnaAnalysisBundle(JSON.stringify(legacy)));
-
-  const orderedLegacy = structuredClone(legacy);
-  orderedLegacy.manifest.configuration.analysisKind = "ona";
-  orderedLegacy.manifest.configuration.orderPolicy = {
-    kind: "source-row",
-    confirmed: true,
-  };
-  orderedLegacy.manifest.configuration.directionalMask = createDirectionalMask(["A", "B", "C"]);
-  orderedLegacy.manifest.effectiveJenaOptions.networkType = "ordered";
-  orderedLegacy.manifest.effectiveJenaOptions.nodePositionMethod = "directed";
-  orderedLegacy.modelData.functionParams.networkType = "ordered";
-  assert.throws(
-    () => parseOpenEnaAnalysisBundle(JSON.stringify(orderedLegacy)),
-    /legacy.*ENA-only|schema-v1.*ordered|legacy.*ordered/i,
+test("bundle parser symmetrically accepts v2 and a SHA-locked pre-v2 serializer artifact", () => {
+  // This artifact is the byte-for-byte output of buildAnalysisBundle at
+  // d6b90c319e5106b88203b7281dbc7872c7d4229b, the origin/main ancestor and
+  // sole parent of the commit that changed the outer bundle schema to v2.
+  const legacyText = readFileSync(LEGACY_V1_FIXTURE_URL, "utf8");
+  assert.equal(
+    createHash("sha256").update(legacyText, "utf8").digest("hex"),
+    LEGACY_V1_FIXTURE_SHA256,
   );
+  const legacy = parseOpenEnaAnalysisBundle(legacyText) as Record<string, any>;
+  assert.equal(legacy.schemaVersion, 1);
+  assert.equal(legacy.manifest.schemaVersion, 1);
+  assert.equal(legacy.manifest.runtimeVersion, "0.6.2");
+  assert.equal(
+    legacy.manifest.dataset.normalizedUtf8TextSha256,
+    "2aafd9920a0e576a584ea9d7c32cd3190e435199a065f61497b03d7c9cebff3b",
+  );
+  assert.equal(Object.hasOwn(legacy, "inference"), false);
+  assert.equal(Object.isFrozen(legacy), true);
 
-  const nullInfinityLegacy = structuredClone(legacy);
+  const { dataset, config, result } = standardFixture();
+  const current = buildAnalysisBundle(dataset, config, result, SOURCE_HASH);
+  const parsedCurrent = parseOpenEnaAnalysisBundle(JSON.stringify(current)) as Record<string, any>;
+  assert.equal(parsedCurrent.schemaVersion, 2);
+  assert.equal(parsedCurrent.manifest.schemaVersion, 2);
+  assert.equal(parsedCurrent.inference, null);
+  assert.equal(Object.isFrozen(parsedCurrent), true);
+  for (const sharedField of [
+    "app", "manifest", "tables", "rotationSet", "modelData", "statistics",
+    "statisticsDiagnostics", "groupContrast", "presentation", "methodsReportMarkdown",
+  ]) {
+    assert.equal(Object.hasOwn(legacy, sharedField), true, `legacy ${sharedField}`);
+    assert.equal(Object.hasOwn(parsedCurrent, sharedField), true, `v2 ${sharedField}`);
+  }
+
+  const legacyCodes = legacy.manifest.configuration.codes as string[];
+  const orderedMarkers: Array<[string, (bundle: Record<string, any>) => void]> = [
+    ["top-level v2 inference", (bundle) => {
+      bundle.inference = null;
+    }],
+    ["manifest analysis", (bundle) => {
+      bundle.manifest.analysis = {
+        analysisKind: "ona",
+        networkType: "ordered",
+        ordering: null,
+        directionalMask: null,
+      };
+    }],
+    ["configuration analysis kind", (bundle) => {
+      bundle.manifest.configuration.analysisKind = "ona";
+    }],
+    ["configuration order policy", (bundle) => {
+      bundle.manifest.configuration.orderPolicy = { kind: "source-row", confirmed: true };
+    }],
+    ["configuration directional mask", (bundle) => {
+      bundle.manifest.configuration.directionalMask = createDirectionalMask(legacyCodes);
+    }],
+    ["effective ordered network", (bundle) => {
+      bundle.manifest.effectiveJenaOptions.networkType = "ordered";
+    }],
+    ["directed node method", (bundle) => {
+      bundle.manifest.effectiveJenaOptions.nodePositionMethod = "directed";
+    }],
+    ["model ordered identity", (bundle) => {
+      bundle.modelData.networkType = "ordered";
+    }],
+    ["model analysis kind", (bundle) => {
+      bundle.modelData.analysisKind = "ona";
+    }],
+    ["ordered function parameters", (bundle) => {
+      bundle.modelData.functionParams.networkType = "ordered";
+    }],
+  ];
+  for (const [label, mutate] of orderedMarkers) {
+    const forged = structuredClone(legacy);
+    mutate(forged);
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(forged)),
+      /legacy.*ENA-only|schema-v1|unsupported|ordered/i,
+      label,
+    );
+  }
+
+  const nullInfinityLegacy = structuredClone(legacy) as Record<string, any>;
   nullInfinityLegacy.manifest.configuration.windowSizeBack = null;
   assert.throws(
     () => parseOpenEnaAnalysisBundle(JSON.stringify(nullInfinityLegacy)),
     /windowSizeBack|Infinity|null/i,
   );
 
-  const widthOnlyLegacy = structuredClone(legacy);
-  widthOnlyLegacy.modelData.codeColumns = Array.from({ length: 9 }, (_, index) => `edge-${index}`);
+  const widthOnlyLegacy = structuredClone(legacy) as Record<string, any>;
+  widthOnlyLegacy.modelData.codeColumns = Array.from({ length: 25 }, (_, index) => `edge-${index}`);
   widthOnlyLegacy.modelData.connectionMatrix = widthOnlyLegacy.modelData.connectionMatrix.map(() => (
-    Array.from({ length: 9 }, () => 0)
+    Array.from({ length: 25 }, () => 0)
   ));
   assert.throws(
     () => parseOpenEnaAnalysisBundle(JSON.stringify(widthOnlyLegacy)),
