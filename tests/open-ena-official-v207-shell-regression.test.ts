@@ -87,22 +87,27 @@ test("the left rail owns the ENA mark and a visible runtime version", () => {
   );
 });
 
-test("Open ENA keeps its five local inline rail icons byte-for-byte and in the existing order", () => {
+test("Open ENA preserves its five existing rail icons and adds AI after Stats", () => {
   const iconBlock = sourceSegment(
     workspace,
     "const modeIcons:",
     "async function sha256Hex",
   );
   const actualIcons = [...iconBlock.matchAll(/<svg\b[\s\S]*?<\/svg>/g)].map((match) => match[0]);
-  assert.deepEqual(actualIcons, [
+  assert.deepEqual(actualIcons.slice(0, 5), [
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v5H4zm0 8h16v5H4z" /><path d="M7 8h.01M7 16h.01" /></svg>',
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v13H4zM4 10h16M9 5.5v13" /></svg>',
     '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.2" /><circle cx="18" cy="6" r="2.2" /><circle cx="12" cy="18" r="2.2" /><path d="m8 7 7.8-.8M7.4 8.7l3.5 7.4m5.6-8.2-3.4 8.2" /></svg>',
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5V4.5M4 19.5h16" /><path d="m6.5 15 4-4 3 2 5-6" /></svg>',
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V11h3v8zm6 0V5h3v14zm6 0V8h3v11z" /></svg>',
-  ], "the local five-mode exception retains the exact existing inline SVG markup and order");
+  ], "the five existing inline SVGs retain their exact markup and order");
+  assert.equal(
+    actualIcons[5],
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="4" /><path d="m7.5 15 2.2-6 2.2 6M8.2 13h3M15 9v6" /></svg>',
+    "the sixth mode uses the dedicated AI logo",
+  );
 
-  const modeKeys = ["sets", "data", "model", "plot", "stats"] as const;
+  const modeKeys = ["sets", "data", "model", "plot", "stats", "ai"] as const;
   const modePositions = modeKeys.map((mode) => iconBlock.indexOf(`${mode}: (`));
   for (let index = 0; index < modePositions.length; index += 1) {
     assert.ok(modePositions[index] >= 0, `${modeKeys[index]} must retain its inline icon`);
@@ -112,8 +117,8 @@ test("Open ENA keeps its five local inline rail icons byte-for-byte and in the e
   }
 
   assert.ok(
-    /modes:\s*\{\s*sets:\s*"Sets",\s*data:\s*"Data",\s*model:\s*"Model",\s*plot:\s*"Plot Tools",\s*stats:\s*"Stats & Export"\s*\}/.test(copy),
-    "Sets, Data, Model, Plot Tools, and Stats remain an explicit Open ENA functional exception, not a claim about official rail modes",
+    /modes:\s*\{\s*sets:\s*"Sets",\s*data:\s*"Data",\s*model:\s*"Model",\s*plot:\s*"Plot Tools",\s*stats:\s*"Stats & Export",\s*ai:\s*"AI"\s*\}/.test(copy),
+    "the five analysis modes and downstream AI interpretation remain an explicit Open ENA functional extension",
   );
 });
 

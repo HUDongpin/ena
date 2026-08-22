@@ -16,7 +16,7 @@ const sets = source("lib/open-ena/sets.ts");
 const comparisonPlot = source("components/open-ena/OpenEnaSetComparison.tsx");
 
 test("Sets is the first Open ENA workbench mode and retains the existing Data workflow", () => {
-  assert.match(types, /OpenEnaMode\s*=\s*"sets"\s*\|\s*"data"\s*\|\s*"model"\s*\|\s*"plot"\s*\|\s*"stats"/);
+  assert.match(types, /OpenEnaMode\s*=\s*"sets"\s*\|\s*"data"\s*\|\s*"model"\s*\|\s*"plot"\s*\|\s*"stats"\s*\|\s*"ai"/);
   assert.match(copy, /modes:\s*\{\s*sets:\s*string;\s*data:\s*string;/);
   assert.match(copy, /modes:\s*\{\s*sets:\s*"Sets",\s*data:\s*"Data",\s*model:/);
   assert.match(workspace, /const modeIcons:\s*Record<OpenEnaMode,[\s\S]*?\{\s*sets:/);
@@ -128,7 +128,7 @@ test("Sets guidance stays truthful and source evidence is not misattributed to a
     "source evidence belongs to the current-result Stats & Export panel, not a retained-set plot surface");
 });
 
-test("applicable Plot Tools control the active shared-set plot and the mobile rail fits all five modes", () => {
+test("applicable Plot Tools control the active shared-set plot and the mobile rail fits all six modes", () => {
   assert.match(workspace, /<OpenEnaSetComparison[\s\S]*?showPoints=\{showPoints\}[\s\S]*?showNetworks=\{showNetworks\}[\s\S]*?showLabels=\{showLabels\}[\s\S]*?showUnitLabels=\{showUnitLabels\}[\s\S]*?edgeScale=\{edgeScale\}[\s\S]*?pointScale=\{pointScale\}[\s\S]*?plotZoom=\{plotZoom\}/);
   assert.match(workspace, /disabled=\{view === "3d" \|\| \(!result && !activeSetComparison\)\}[\s\S]{0,100}onClick=\{exportPlotSvg\}/);
   assert.match(workspace, /disabled=\{view === "3d" \|\| \(!result && !activeSetComparison\)\}[\s\S]{0,100}onClick=\{exportPlotPng\}/);
@@ -138,12 +138,12 @@ test("applicable Plot Tools control the active shared-set plot and the mobile ra
   const responsiveModeRules = [...css.matchAll(/\.ena-rail-modes\s*\{[^}]*?grid-template-columns:\s*repeat\((\d),/g)]
     .map((match) => Number(match[1]));
   assert.ok(
-    responsiveModeRules.includes(5),
-    "the dedicated mobile mode row must allocate all five preserved controls",
+    responsiveModeRules.includes(6) && responsiveModeRules.includes(3),
+    "the mobile mode row must allocate six controls on tablets and two rows of three on phones",
   );
   assert.ok(
-    !responsiveRailRules.includes(5),
-    "the outer mobile rail must remain one column so the brand and five-button row cannot overlap",
+    !responsiveRailRules.includes(6) && !responsiveRailRules.includes(3),
+    "the outer mobile rail must remain one column so the brand and mode rows cannot overlap",
   );
   assert.match(css, /\.ena-sets-remove\s*\{[\s\S]*?min-height:\s*44px;/);
 });

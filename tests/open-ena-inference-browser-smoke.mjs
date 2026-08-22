@@ -412,16 +412,6 @@ try {
     assert(headers.some((value) => value.includes("Raw p")), "Endpoint table lacks raw p");
     assert(await table.locator("tbody tr").count() === 2, "Endpoint result does not contain the two current axes");
 
-    const aiText = await page.locator("[data-ena-ai-payload-preview] pre").textContent();
-    assert(aiText && aiText.includes("open-ena-ai-interpretation-request-v2"), "Endpoint AI preview is not schema v2");
-    assert(aiText && aiText.includes("endpoint-independent"), "Endpoint AI discriminant is missing");
-    assert(aiText && !aiText.includes(${JSON.stringify(fixtureEntityPrefix)}), "Endpoint AI preview leaked entity values");
-    assert(
-      aiText && !${JSON.stringify(fixtureGroups)}.some((label) => aiText.includes(label)),
-      "Endpoint AI preview leaked real group labels",
-    );
-    assert(await page.getByRole("button", { name: "Generate AI interpretation" }).isDisabled(), "AI generation is enabled without explicit consent");
-
     const methods = await page.locator(".ena-methods-preview pre").textContent();
     assert(methods && methods.includes("Mann") && methods.includes("Holm"), "Endpoint Methods is not bound to the inference");
     const contrastSummary = await page.locator(".ena-selected-contrast-summary").textContent();
@@ -438,6 +428,17 @@ try {
     assert(bundle.schemaVersion === 2, "Endpoint result bundle is not schema v2");
     assert(bundle.inference && bundle.inference.kind === "endpoint-independent", "Endpoint bundle inference differs from Stats");
     assert(!JSON.stringify(bundle.inference).includes(${JSON.stringify(fixtureEntityPrefix)}), "Endpoint bundle inference leaked entity values");
+
+    await rail.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
+    const aiText = await page.locator("[data-ena-ai-payload-preview] pre").textContent();
+    assert(aiText && aiText.includes("open-ena-ai-interpretation-request-v2"), "Endpoint AI preview is not schema v2");
+    assert(aiText && aiText.includes("endpoint-independent"), "Endpoint AI discriminant is missing");
+    assert(aiText && !aiText.includes(${JSON.stringify(fixtureEntityPrefix)}), "Endpoint AI preview leaked entity values");
+    assert(
+      aiText && !${JSON.stringify(fixtureGroups)}.some((label) => aiText.includes(label)),
+      "Endpoint AI preview leaked real group labels",
+    );
+    assert(await page.getByRole("button", { name: "Generate AI interpretation" }).isDisabled(), "AI generation is enabled without explicit consent");
     return { rows: 2, schemaVersion: bundle.schemaVersion, inferenceKind: bundle.inference.kind };
   }`);
 
@@ -928,14 +929,15 @@ try {
       equal(request.evidence.scope.cohortPolicy, "all-period-complete", "AI repeated cohort policy mismatch");
     };
     await assertStatsTableParity();
+    const beforeResult = await page.locator(".ena-inference-results").textContent();
+    const beforeProvenance = await page.locator("[data-ena-inference-provenance=true]").textContent();
+    const rail = page.getByRole("navigation", { name: "Analysis modes" });
+    await rail.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
     const baselineAiText = await page.locator("[data-ena-ai-payload-preview] pre").textContent();
     assert(baselineAiText, "AI preview is missing for the confirmed repeated inference");
     const baselineAiRequest = JSON.parse(baselineAiText);
     assertAiRoleProjection(baselineAiRequest);
     assert(await page.getByRole("button", { name: "Generate AI interpretation" }).isDisabled(), "AI Generate is enabled without consent");
-    const beforeResult = await page.locator(".ena-inference-results").textContent();
-    const beforeProvenance = await page.locator("[data-ena-inference-provenance=true]").textContent();
-    const rail = page.getByRole("navigation", { name: "Analysis modes" });
     await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
     const longitudinal = page.getByTestId("open-ena-longitudinal-controls");
     await longitudinal.getByRole("radio", { name: "Complete cohort" }).check();

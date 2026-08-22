@@ -185,12 +185,12 @@ test("Workspace routes one current frozen inference authority to every local con
     "a completed not-estimable Run remains downloadable for audit",
   );
 
-  const statsStart = workspace.indexOf("function renderStatsPanel()");
-  const statsEnd = workspace.indexOf("function renderSourceEvidence()", statsStart);
-  assert.ok(statsStart >= 0 && statsEnd > statsStart);
-  const statsBlock = workspace.slice(statsStart, statsEnd);
-  assert.match(statsBlock, /<OpenEnaAiInterpretation[\s\S]*?disabled=\{[^}]*!currentInference[^}]*\}/);
-  assert.match(statsBlock, /key=\{`\$\{locale\}:\$\{inferenceRequestKey\}:\$\{currentInference\?\.analyzedAt/);
+  const aiStart = workspace.indexOf("function renderAiPanel()");
+  const aiEnd = workspace.indexOf("function renderStatsPanel()", aiStart);
+  assert.ok(aiStart >= 0 && aiEnd > aiStart);
+  const aiBlock = workspace.slice(aiStart, aiEnd);
+  assert.match(aiBlock, /<OpenEnaAiInterpretation[\s\S]*?disabled=\{[^}]*!currentInference[^}]*\}/);
+  assert.match(aiBlock, /key=\{`\$\{locale\}:\$\{inferenceRequestKey\}:\$\{currentInference\?\.analyzedAt/);
 });
 
 test("JSON, Methods and inference CSV retain the exact values of one current inference", async () => {
