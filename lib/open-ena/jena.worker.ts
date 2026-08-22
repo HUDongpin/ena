@@ -10,6 +10,7 @@ import {
 import { validateConfig } from "./csv";
 import { cloneOpenEnaConfig } from "./network-config";
 import { buildOpenEnaOrderedAudit } from "./ordered-audit";
+import { buildOpenEnaOrderedResponseNodeSummary } from "./ordered-node-summary";
 import type {
   OpenEnaConfig,
   OpenEnaResult,
@@ -123,6 +124,7 @@ export function createOpenEnaWorkerHost(
       const plan = buildOpenEnaAnalysisPlan(run.dataset, run.config, run.reference);
       const { options, configuration, executionProvenance } = plan;
       const { rows, ...streamOptions } = options;
+      const orderedResponseNodeSummary = buildOpenEnaOrderedResponseNodeSummary(rows, configuration);
       stream = createStream({
         ...streamOptions,
         expectedRows: rows.length,
@@ -161,11 +163,14 @@ export function createOpenEnaWorkerHost(
         run.reference,
         executionProvenance,
       );
+      const resultWithOrderedAudit = orderedAudit ? { ...result, orderedAudit } : result;
       post({ kind: "progress", id: run.id, progress: 1, stage: "model" });
       post({
         kind: "result",
         id: run.id,
-        result: orderedAudit ? { ...result, orderedAudit } : result,
+        result: orderedResponseNodeSummary
+          ? { ...resultWithOrderedAudit, orderedResponseNodeSummary }
+          : resultWithOrderedAudit,
       });
     } catch (error) {
       post({

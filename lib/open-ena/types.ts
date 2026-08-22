@@ -183,6 +183,27 @@ export interface OpenEnaOrderedAudit {
   edgeValues: number[][];
 }
 
+export interface OpenEnaOrderedResponseNodeGroupSummary {
+  /** Stable display name only; analytic-unit identities never cross this boundary. */
+  name: string;
+  /** Number of distinct analytic units represented by this group. */
+  unitCount: number;
+  /** Raw response-code totals aligned exactly to the parent codeOrder array. */
+  responseCodeTotals: number[];
+}
+
+/**
+ * Runtime-only, de-identified ONA node evidence computed from the canonical
+ * ordered response rows before the jENA result is compacted. It intentionally
+ * carries no row, unit, horizon, or ordering identities.
+ */
+export interface OpenEnaOrderedResponseNodeSummary {
+  schemaVersion: 1;
+  codeOrder: string[];
+  overallResponseCodeTotals: number[];
+  groups: OpenEnaOrderedResponseNodeGroupSummary[];
+}
+
 export interface OpenEnaResult {
   set: ENASet;
   groups: GroupNetwork[];
@@ -199,6 +220,8 @@ export interface OpenEnaResult {
   executionProvenance?: OpenEnaExecutionProvenance;
   /** Ordered-only, de-identified row audit. Generic exports intentionally omit it. */
   orderedAudit?: OpenEnaOrderedAudit;
+  /** Ordered-only response-node totals retained only by the browser runtime. */
+  orderedResponseNodeSummary?: OpenEnaOrderedResponseNodeSummary;
   /** Optional immutable source/config binding added by the browser client. */
   provenanceBinding?: {
     datasetNormalizedUtf8TextSha256: string;
