@@ -325,14 +325,24 @@ function hasFiniteOrderedConnectionNumerics(dataset: ParsedDataset, config: Open
 
     for (let responseIndex = 0; responseIndex < width; responseIndex += 1) {
       for (let groundIndex = 0; groundIndex < width; groundIndex += 1) {
-        const lagged = (state.running[groundIndex] ?? 0) * (values[responseIndex] ?? 0);
+        const priorGround = state.running[groundIndex] ?? 0;
+        const responseValue = values[responseIndex] ?? 0;
+        const sameRowGround = values[groundIndex] ?? 0;
+        const lagged = priorGround * responseValue;
         const sameRow = groundIndex === responseIndex
           ? 0
-          : 0.5 * (values[groundIndex] ?? 0) * (values[responseIndex] ?? 0);
+          : 0.5 * sameRowGround * responseValue;
         const connection = lagged + sameRow;
         // Validate every raw connection, including masked-out cells: jENA
         // retains full ONA rowConnectionCounts, and Infinity * 0 becomes NaN.
-        if (!Number.isFinite(lagged) || !Number.isFinite(sameRow) || !Number.isFinite(connection)) {
+        if (!Number.isFinite(lagged)
+          || !Number.isFinite(sameRow)
+          || !Number.isFinite(connection)
+          || (priorGround > 0 && responseValue > 0 && lagged === 0)
+          || (groundIndex !== responseIndex
+            && sameRowGround > 0
+            && responseValue > 0
+            && sameRow === 0)) {
           return false;
         }
         if (!canonical.directionalMask.enabled[groundIndex][responseIndex]) continue;

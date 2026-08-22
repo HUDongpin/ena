@@ -108,6 +108,23 @@ test("ONA rejects finite raw counts whose ordered products would overflow", () =
   );
 });
 
+test("ONA rejects positive raw counts whose ordered products underflow to zero", () => {
+  const mixed = manualDataset([
+    { unit: "tiny", horizon: "tiny-h", turn: 1, group: "g1", A: 1e-200, B: 1e-200, C: 0 },
+    { unit: "normal", horizon: "normal-h", turn: 1, group: "g2", A: 1, B: 0, C: 1 },
+    { unit: "normal", horizon: "normal-h", turn: 2, group: "g2", A: 0, B: 1, C: 0 },
+  ]);
+
+  assert.match(
+    validateConfig(mixed, orderedConfig()).join(" "),
+    /underflow|finite numeric safety range|ordered connection accumulation/i,
+  );
+  assert.throws(
+    () => buildOpenEnaAnalysisPlan(mixed, orderedConfig()),
+    /underflow|finite numeric safety range|ordered connection accumulation/i,
+  );
+});
+
 test("the ONA plan binds ordered rows, source indices, raw counts, mask direction, and directed nodes", () => {
   const dataset = manualDataset([
     { unit: "u1", horizon: "h1", turn: 2, group: "g1", A: 0, B: 3, C: 0 },
