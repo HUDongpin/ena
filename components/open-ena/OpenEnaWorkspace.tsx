@@ -581,7 +581,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const inferenceDesignAvailability = useMemo(() => {
     const inferenceCopy = copy.stats.inference;
     if (completedResultKind === "ona") {
-      const reason = "ONA is descriptive-only in this release; inferential tests are not available.";
+      const reason = copy.ona.unavailable.inference;
       return {
         independent: { enabled: false, reason },
         paired: { enabled: false, reason },
@@ -617,7 +617,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             : null,
       },
     };
-  }, [completedResultKind, copy.stats.inference, currentResultGroupKey, longitudinalTimeOrder.length, result, resultConfig]);
+  }, [completedResultKind, copy.ona.unavailable.inference, copy.stats.inference, currentResultGroupKey, longitudinalTimeOrder.length, result, resultConfig]);
 
   const inferenceRequest = useMemo((): OpenEnaInferenceRequestV2 | null => {
     if (completedResultKind === "ona" || !result || !resultConfig || !inferenceDesign || resultIsStale) return null;
@@ -914,12 +914,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   }
   const contrastUnavailable = useMemo(() => {
     if (!result || !resultConfig) return "Build an endpoint model to compare groups.";
-    if (completedResultKind === "ona") return "ONA group networks are descriptive means; pairwise subtraction is unavailable.";
+    if (completedResultKind === "ona") return copy.ona.unavailable.groupContrast;
     if (result.set.modelType !== "EndPoint") return copy.contrast.endpointOnly;
     if (!resultConfig.groupColumn) return copy.contrast.requiresGroup;
     if (result.groups.length < 2) return copy.contrast.requiresTwoGroups;
     return null;
-  }, [completedResultKind, copy.contrast, result, resultConfig]);
+  }, [completedResultKind, copy.contrast, copy.ona.unavailable.groupContrast, result, resultConfig]);
   const groupContrastState = useMemo(() => {
     if (contrastUnavailable || !result || !resultConfig || !primaryGroupName || !secondaryGroupName) {
       return { contrast: null, error: contrastUnavailable };
@@ -1053,7 +1053,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     if (!dataset || !result || !resultConfig) return empty;
 
     if (completedResultKind === "ona") {
-      if (!datasetHash) return { ...empty, error: "ONA Data View requires the analyzed dataset SHA-256 binding." };
+      if (!datasetHash) return { ...empty, error: copy.ona.dataView.missingDatasetBinding };
       const selectedGroup = dataViewContext === "primary"
         ? primaryGroupName || result.groups[0]?.name
         : dataViewContext === "secondary"
@@ -1147,6 +1147,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     activeGroupContrast,
     completedResultKind,
     copy.ona.dataView.provenanceLabels,
+    copy.ona.dataView.missingDatasetBinding,
     dataViewContext,
     dataset,
     datasetHash,
@@ -1519,7 +1520,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   async function openReferenceRotation(file: File) {
     if (sourceAbortRef.current) return;
     if (currentAnalysisKind === "ona") {
-      setError("Reference rotation is unavailable for ONA. Return to the Standard ENA family before importing a reference.");
+      setError(copy.ona.unavailable.reference);
       setMode("model");
       return;
     }
@@ -3008,7 +3009,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       return (
         <div className="ena-control-content ena-ona-stats-panel">
           <div className="ena-panel-heading">
-            <p className="ena-panel-kicker">ONA · descriptive</p>
+            <p className="ena-panel-kicker">{copy.ona.workspace.statsKicker}</p>
             <h2>{copy.ona.stats.title}</h2>
             <p>{copy.ona.stats.descriptiveBoundary}</p>
           </div>
@@ -3663,6 +3664,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     <OpenEnaPersistentPlotTools
       analysisKind={completedResultKind ?? "ena"}
       title={completedResultKind === "ona" ? copy.ona.presenter.title : "Plot Tools"}
+      copy={completedResultKind === "ona" ? copy.ona.plotTools : undefined}
       edgeScale={edgeScale}
       edgeThreshold={edgeThreshold}
       pointScale={pointScale}
@@ -3798,7 +3800,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                       ? copy.longitudinal.title
                       : copy.workspace.comparison}</p>
                 <span>{completedResultKind === "ona"
-                  ? `${resultUnitCount} ${copy.workspace.units.toLowerCase()} · ${result?.set.codes.length ?? 0} ${copy.workspace.codes.toLowerCase()} · p² directed space`
+                  ? `${resultUnitCount} ${copy.workspace.units.toLowerCase()} · ${result?.set.codes.length ?? 0} ${copy.workspace.codes.toLowerCase()} · ${copy.ona.workspace.directedSpace}`
                   : view === "3d" && result
                   ? activeGroupContrast
                     ? `${activeGroupContrast.primary.name} − ${activeGroupContrast.secondary.name} · ${xDimension} × ${yDimension} × ${zDimension} · linked camera`
@@ -3832,7 +3834,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 <div className="ena-analysis-toolbar-cluster">
                   <div className="ena-view-toggle" role="group" aria-label="ENA visualization options">
                     <button type="button" aria-pressed={view === "2d"} onClick={() => selectVisualizationView("2d")}>
-                      <strong>{completedResultKind === "ona" ? "2D ONA" : copy.views.twoD}</strong>
+                      <strong>{completedResultKind === "ona" ? copy.ona.workspace.twoD : copy.views.twoD}</strong>
                     </button>
                     <button
                       type="button"
@@ -3887,7 +3889,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                       <path d="M14 3H7.5A1.5 1.5 0 0 0 6 4.5v15A1.5 1.5 0 0 0 7.5 21h9a1.5 1.5 0 0 0 1.5-1.5V7l-4-4Z" />
                       <path d="M14 3v4h4M12 10v7m-3-3 3 3 3-3" />
                     </svg>
-                    {completedResultKind === "ona" ? "Download ONA bundle" : "Download Model"}
+                    {completedResultKind === "ona" ? copy.ona.workspace.downloadBundle : "Download Model"}
                   </button>
                 </div>
               </div>
@@ -3964,14 +3966,14 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               <>
               {resultIsStale ? (
                 <div className="ena-stale-banner" role="status">
-                  <strong>Configuration changed</strong>
-                  <span>The directed ONA view remains bound to the last successful ordered model. Rebuild to apply the pending controls.</span>
+                  <strong>{copy.ona.workspace.staleTitle}</strong>
+                  <span>{copy.ona.workspace.staleDescription}</span>
                 </div>
               ) : null}
               {loading ? (
                 <div className="ena-inline-progress" role="status" aria-live="polite">
-                  <span>Rebuilding ordered network with jENA · {progress}% · {progressStage}</span>
-                  <button type="button" onClick={() => abortRef.current?.abort()}>Cancel</button>
+                  <span>{copy.ona.workspace.rebuilding(progress, progressStage)}</span>
+                  <button type="button" onClick={() => abortRef.current?.abort()}>{copy.ona.workspace.cancel}</button>
                 </div>
               ) : null}
               <OpenEnaOrderedResultLayout

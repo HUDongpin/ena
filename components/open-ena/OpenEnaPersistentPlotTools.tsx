@@ -1,8 +1,10 @@
 import type { CSSProperties } from "react";
+import type { OpenEnaPersistentPlotToolsCopy } from "@/lib/open-ena-i18n";
 
 export interface OpenEnaPersistentPlotToolsProps {
   analysisKind?: "ena" | "ona";
   title?: string;
+  copy?: OpenEnaPersistentPlotToolsCopy;
   edgeScale: number;
   edgeThreshold: number;
   pointScale: number;
@@ -33,6 +35,48 @@ export interface OpenEnaPersistentPlotToolsProps {
   disabled?: boolean;
 }
 
+const DEFAULT_PLOT_TOOLS_COPY: OpenEnaPersistentPlotToolsCopy = {
+  plotSettings: "Plot Settings",
+  closePlotSettings: "Close Plot Settings",
+  close: "Close",
+  scaleEdgeWeights: "Scale edge weights",
+  edgeWeights: "Edge Weights",
+  edgeWeightsValue: "Edge Weights value",
+  resetEdgeWeights: "Reset Edge Weights",
+  textSize: "Text size",
+  textSizeControl: "Text Size",
+  textSizeValue: "Text Size value",
+  resetTextSize: "Reset Text Size",
+  codeLabels: "Code labels",
+  unitCircle: "Unit circle",
+  axisDirection: "Axis direction",
+  flipXAxis: "Flip X-Axis",
+  flipYAxis: "Flip Y-Axis",
+  networkGraph: "Network Graph",
+  minimumEdgeWeight: "Minimum edge weight",
+  plottedPoints: "Plotted Points",
+  groupLabels: "Group labels",
+  unitPoints: "Unit points",
+  scaleUnitCircles: "Scale unit circles",
+  unitLabels: "Unit labels",
+  advanced: "Advanced",
+  plotZoom: "Plot zoom",
+  zoomOut: "Zoom out",
+  fit: "Fit",
+  zoomIn: "Zoom in",
+  resetAllPlotTools: "Reset all plot tools",
+  resetAll: "Reset all",
+  on: "On",
+  off: "Off",
+  settingLabel: (label) => `${label} setting`,
+  enableLabel: (label) => `Enable ${label}`,
+  disableLabel: (label) => `Disable ${label}`,
+  timesValue: (value) => `${value} times`,
+  pixelsValue: (value) => `${value} pixels`,
+  minimumEdgeWeightValue: (percent) => `${percent} percent of the strongest edge`,
+  fitPlotValue: (zoom) => `Fit plot; current zoom ${zoom} times`,
+};
+
 const clamp = (value: number, minimum: number, maximum: number) => (
   Math.min(maximum, Math.max(minimum, value))
 );
@@ -43,26 +87,28 @@ const rangeProgressStyle = (value: number, minimum: number, maximum: number) => 
 
 function OfficialBinaryToggle({
   label,
+  copy,
   checked,
   onChange,
   disabled = false,
 }: {
   label: string;
+  copy: OpenEnaPersistentPlotToolsCopy;
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
 }) {
   return (
-    <div className="ena-official-binary-toggle" role="group" aria-label={`${label} setting`}>
+    <div className="ena-official-binary-toggle" role="group" aria-label={copy.settingLabel(label)}>
       <button
         type="button"
         className="ena-official-switch-label"
-        aria-label={`Enable ${label}`}
+        aria-label={copy.enableLabel(label)}
         aria-pressed={checked}
         disabled={disabled}
         onClick={() => onChange(true)}
       >
-        On
+        {copy.on}
       </button>
       <button
         type="button"
@@ -78,12 +124,12 @@ function OfficialBinaryToggle({
       <button
         type="button"
         className="ena-official-switch-label"
-        aria-label={`Disable ${label}`}
+        aria-label={copy.disableLabel(label)}
         aria-pressed={!checked}
         disabled={disabled}
         onClick={() => onChange(false)}
       >
-        Off
+        {copy.off}
       </button>
     </div>
   );
@@ -92,6 +138,7 @@ function OfficialBinaryToggle({
 export default function OpenEnaPersistentPlotTools({
   analysisKind = "ena",
   title = "Plot Tools",
+  copy = DEFAULT_PLOT_TOOLS_COPY,
   edgeScale,
   edgeThreshold,
   pointScale,
@@ -142,10 +189,10 @@ export default function OpenEnaPersistentPlotTools({
         <button
           type="button"
           className="ena-plot-settings-trigger"
-          aria-label="Plot Settings"
+          aria-label={copy.plotSettings}
           aria-expanded={settingsOpen}
           aria-controls="ena-official-plot-settings"
-          title="Plot Settings"
+          title={copy.plotSettings}
           disabled={disabled}
           onClick={() => onSettingsOpenChange(!settingsOpen)}
         >
@@ -157,7 +204,7 @@ export default function OpenEnaPersistentPlotTools({
 
       <div className="ena-persistent-plot-tools-scroll" data-ena-plot-tools-surface="frequent">
         <div className="ena-official-tool-row" data-ena-plot-tool="edge-scale">
-          <span>Scale edge weights:</span>
+          <span>{copy.scaleEdgeWeights}:</span>
           <div className="ena-official-tool-control">
             <input
               type="range"
@@ -167,8 +214,8 @@ export default function OpenEnaPersistentPlotTools({
               value={edgeScale}
               style={rangeProgressStyle(edgeScale, 0.1, 4)}
               disabled={disabled}
-              aria-label="Edge Weights"
-              aria-valuetext={`${edgeScale.toFixed(1)} times`}
+              aria-label={copy.edgeWeights}
+              aria-valuetext={copy.timesValue(edgeScale.toFixed(1))}
               onChange={(event) => onEdgeScaleChange(Number(event.target.value))}
             />
             <input
@@ -178,15 +225,15 @@ export default function OpenEnaPersistentPlotTools({
               step="0.1"
               value={edgeScale}
               disabled={disabled}
-              aria-label="Edge Weights value"
+              aria-label={copy.edgeWeightsValue}
               onChange={(event) => onEdgeScaleChange(clamp(Number(event.target.value), 0.1, 4))}
             />
-            <button type="button" aria-label="Reset Edge Weights" title="Reset Edge Weights" disabled={disabled} onClick={() => onEdgeScaleChange(1)}>↻</button>
+            <button type="button" aria-label={copy.resetEdgeWeights} title={copy.resetEdgeWeights} disabled={disabled} onClick={() => onEdgeScaleChange(1)}>↻</button>
           </div>
         </div>
 
         <div className="ena-official-tool-row" data-ena-plot-tool="text-size">
-          <span>Text size:</span>
+          <span>{copy.textSize}:</span>
           <div className="ena-official-tool-control">
             <input
               type="range"
@@ -196,8 +243,8 @@ export default function OpenEnaPersistentPlotTools({
               value={textSize}
               style={rangeProgressStyle(textSize, 9, 21)}
               disabled={disabled}
-              aria-label="Text Size"
-              aria-valuetext={`${textSize} pixels`}
+              aria-label={copy.textSizeControl}
+              aria-valuetext={copy.pixelsValue(textSize)}
               onChange={(event) => onTextScaleChange(clamp((Number(event.target.value) - 1) / 12, 8 / 12, 20 / 12))}
             />
             <input
@@ -207,26 +254,26 @@ export default function OpenEnaPersistentPlotTools({
               step="1"
               value={textSize}
               disabled={disabled}
-              aria-label="Text Size value"
+              aria-label={copy.textSizeValue}
               onChange={(event) => onTextScaleChange(clamp((Number(event.target.value) - 1) / 12, 8 / 12, 20 / 12))}
             />
-            <button type="button" aria-label="Reset Text Size" title="Reset Text Size" disabled={disabled} onClick={() => onTextScaleChange(1)}>↻</button>
+            <button type="button" aria-label={copy.resetTextSize} title={copy.resetTextSize} disabled={disabled} onClick={() => onTextScaleChange(1)}>↻</button>
           </div>
         </div>
 
         <div className="ena-official-toggle-row" data-ena-plot-tool="code-labels">
-          <span>Code labels:</span>
-          <OfficialBinaryToggle label="Code labels" checked={showLabels} onChange={onShowLabelsChange} disabled={disabled} />
+          <span>{copy.codeLabels}:</span>
+          <OfficialBinaryToggle label={copy.codeLabels} copy={copy} checked={showLabels} onChange={onShowLabelsChange} disabled={disabled} />
         </div>
 
         {!ordered ? (
           <div className="ena-official-toggle-row" data-ena-plot-tool="unit-circle">
-            <span>Unit circle:</span>
-            <OfficialBinaryToggle label="Unit circle" checked={unitCircle} onChange={onUnitCircleChange} disabled={disabled} />
+            <span>{copy.unitCircle}:</span>
+            <OfficialBinaryToggle label={copy.unitCircle} copy={copy} checked={unitCircle} onChange={onUnitCircleChange} disabled={disabled} />
           </div>
         ) : null}
 
-        <div className="ena-plot-actions ena-plot-flips" role="group" aria-label="Axis direction">
+        <div className="ena-plot-actions ena-plot-flips" role="group" aria-label={copy.axisDirection}>
           <button
             type="button"
             data-ena-plot-tool="flip-x"
@@ -234,7 +281,7 @@ export default function OpenEnaPersistentPlotTools({
             disabled={disabled}
             onClick={() => onFlipXChange(!flipX)}
           >
-            Flip X-Axis
+            {copy.flipXAxis}
           </button>
           <button
             type="button"
@@ -243,7 +290,7 @@ export default function OpenEnaPersistentPlotTools({
             disabled={disabled}
             onClick={() => onFlipYChange(!flipY)}
           >
-            Flip Y-Axis
+            {copy.flipYAxis}
           </button>
         </div>
       </div>
@@ -253,18 +300,18 @@ export default function OpenEnaPersistentPlotTools({
           id="ena-official-plot-settings"
           className="ena-official-plot-settings"
           role="dialog"
-          aria-label="Plot Settings"
+          aria-label={copy.plotSettings}
           aria-modal="false"
         >
           <header>
-            <strong>Plot Settings</strong>
-            <button type="button" aria-label="Close Plot Settings" title="Close" onClick={() => onSettingsOpenChange(false)}>×</button>
+            <strong>{copy.plotSettings}</strong>
+            <button type="button" aria-label={copy.closePlotSettings} title={copy.close} onClick={() => onSettingsOpenChange(false)}>×</button>
           </header>
           <div className="ena-official-plot-settings-scroll">
             <section aria-labelledby="ena-plot-settings-network">
-              <h4 id="ena-plot-settings-network">Network Graph</h4>
+              <h4 id="ena-plot-settings-network">{copy.networkGraph}</h4>
               <label className="ena-field ena-range-field" data-ena-plot-tool="minimum-edge-weight">
-                <span>Minimum edge weight <output>{Math.round(edgeThreshold * 100)}%</output></span>
+                <span>{copy.minimumEdgeWeight} <output>{Math.round(edgeThreshold * 100)}%</output></span>
                 <input
                   type="range"
                   min="0"
@@ -272,26 +319,26 @@ export default function OpenEnaPersistentPlotTools({
                   step="0.05"
                   value={edgeThreshold}
                   disabled={disabled}
-                  aria-label="Minimum edge weight"
-                  aria-valuetext={`${Math.round(edgeThreshold * 100)} percent of the strongest edge`}
+                  aria-label={copy.minimumEdgeWeight}
+                  aria-valuetext={copy.minimumEdgeWeightValue(Math.round(edgeThreshold * 100))}
                   onChange={(event) => onEdgeThresholdChange(Number(event.target.value))}
                 />
               </label>
             </section>
             <section aria-labelledby="ena-plot-settings-points">
-              <h4 id="ena-plot-settings-points">Plotted Points</h4>
+              <h4 id="ena-plot-settings-points">{copy.plottedPoints}</h4>
               {!ordered ? (
                 <div className="ena-official-toggle-row" data-ena-plot-tool="group-labels">
-                  <span>Group labels:</span>
-                  <OfficialBinaryToggle label="Group labels" checked={showGroupLabels} onChange={onShowGroupLabelsChange} disabled={disabled} />
+                  <span>{copy.groupLabels}:</span>
+                  <OfficialBinaryToggle label={copy.groupLabels} copy={copy} checked={showGroupLabels} onChange={onShowGroupLabelsChange} disabled={disabled} />
                 </div>
               ) : null}
               <div className="ena-official-toggle-row" data-ena-plot-tool="unit-points">
-                <span>Unit points:</span>
-                <OfficialBinaryToggle label="Unit points" checked={showPoints} onChange={onShowPointsChange} disabled={disabled} />
+                <span>{copy.unitPoints}:</span>
+                <OfficialBinaryToggle label={copy.unitPoints} copy={copy} checked={showPoints} onChange={onShowPointsChange} disabled={disabled} />
               </div>
               <label className="ena-field ena-range-field" data-ena-plot-tool="unit-scale">
-                <span>Scale unit circles <output>{pointScale.toFixed(1)}×</output></span>
+                <span>{copy.scaleUnitCircles} <output>{pointScale.toFixed(1)}×</output></span>
                 <input
                   type="range"
                   min="0.5"
@@ -299,24 +346,24 @@ export default function OpenEnaPersistentPlotTools({
                   step="0.1"
                   value={pointScale}
                   disabled={disabled}
-                  aria-label="Scale unit circles"
-                  aria-valuetext={`${pointScale.toFixed(1)} times`}
+                  aria-label={copy.scaleUnitCircles}
+                  aria-valuetext={copy.timesValue(pointScale.toFixed(1))}
                   onChange={(event) => onPointScaleChange(Number(event.target.value))}
                 />
               </label>
               <div className="ena-official-toggle-row" data-ena-plot-tool="unit-labels">
-                <span>Unit labels:</span>
-                <OfficialBinaryToggle label="Unit labels" checked={showUnitLabels} onChange={onShowUnitLabelsChange} disabled={disabled} />
+                <span>{copy.unitLabels}:</span>
+                <OfficialBinaryToggle label={copy.unitLabels} copy={copy} checked={showUnitLabels} onChange={onShowUnitLabelsChange} disabled={disabled} />
               </div>
             </section>
             <section aria-labelledby="ena-plot-settings-advanced">
-              <h4 id="ena-plot-settings-advanced">Advanced</h4>
-              <div className="ena-plot-actions" role="group" aria-label="Plot zoom">
-                <button type="button" disabled={disabled || plotZoom <= 0.6} aria-label="Zoom out" onClick={() => onPlotZoomChange(clamp(Number((plotZoom - 0.2).toFixed(1)), 0.6, 2.4))}>−</button>
-                <button type="button" disabled={disabled} aria-label={`Fit plot; current zoom ${plotZoom.toFixed(1)} times`} onClick={() => onPlotZoomChange(1)}>Fit · {plotZoom.toFixed(1)}×</button>
-                <button type="button" disabled={disabled || plotZoom >= 2.4} aria-label="Zoom in" onClick={() => onPlotZoomChange(clamp(Number((plotZoom + 0.2).toFixed(1)), 0.6, 2.4))}>+</button>
+              <h4 id="ena-plot-settings-advanced">{copy.advanced}</h4>
+              <div className="ena-plot-actions" role="group" aria-label={copy.plotZoom}>
+                <button type="button" disabled={disabled || plotZoom <= 0.6} aria-label={copy.zoomOut} onClick={() => onPlotZoomChange(clamp(Number((plotZoom - 0.2).toFixed(1)), 0.6, 2.4))}>−</button>
+                <button type="button" disabled={disabled} aria-label={copy.fitPlotValue(plotZoom.toFixed(1))} onClick={() => onPlotZoomChange(1)}>{copy.fit} · {plotZoom.toFixed(1)}×</button>
+                <button type="button" disabled={disabled || plotZoom >= 2.4} aria-label={copy.zoomIn} onClick={() => onPlotZoomChange(clamp(Number((plotZoom + 0.2).toFixed(1)), 0.6, 2.4))}>+</button>
               </div>
-              <button type="button" className="ena-reset-all-plot-tools" onClick={onReset} disabled={disabled} aria-label="Reset all plot tools">Reset all</button>
+              <button type="button" className="ena-reset-all-plot-tools" onClick={onReset} disabled={disabled} aria-label={copy.resetAllPlotTools}>{copy.resetAll}</button>
             </section>
           </div>
         </aside>

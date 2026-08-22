@@ -8,6 +8,48 @@ import type {
   OpenEnaResolvedRankPMethod,
 } from "./open-ena/rank-inference";
 
+export interface OpenEnaPersistentPlotToolsCopy {
+  plotSettings: string;
+  closePlotSettings: string;
+  close: string;
+  scaleEdgeWeights: string;
+  edgeWeights: string;
+  edgeWeightsValue: string;
+  resetEdgeWeights: string;
+  textSize: string;
+  textSizeControl: string;
+  textSizeValue: string;
+  resetTextSize: string;
+  codeLabels: string;
+  unitCircle: string;
+  axisDirection: string;
+  flipXAxis: string;
+  flipYAxis: string;
+  networkGraph: string;
+  minimumEdgeWeight: string;
+  plottedPoints: string;
+  groupLabels: string;
+  unitPoints: string;
+  scaleUnitCircles: string;
+  unitLabels: string;
+  advanced: string;
+  plotZoom: string;
+  zoomOut: string;
+  fit: string;
+  zoomIn: string;
+  resetAllPlotTools: string;
+  resetAll: string;
+  on: string;
+  off: string;
+  settingLabel: (label: string) => string;
+  enableLabel: (label: string) => string;
+  disableLabel: (label: string) => string;
+  timesValue: (value: string) => string;
+  pixelsValue: (value: number) => string;
+  minimumEdgeWeightValue: (percent: number) => string;
+  fitPlotValue: (zoom: string) => string;
+}
+
 export interface OpenEnaInferenceCopy {
   designLegend: string;
   designIndependent: string;
@@ -169,6 +211,17 @@ export interface OpenEnaOnaCopy {
   setupIncomplete: string;
   run: string;
   rerun: string;
+  workspace: {
+    directedSpace: string;
+    twoD: string;
+    downloadBundle: string;
+    staleTitle: string;
+    staleDescription: string;
+    rebuilding: (progress: number, stage: "accumulate" | "model") => string;
+    cancel: string;
+    statsKicker: string;
+  };
+  plotTools: OpenEnaPersistentPlotToolsCopy;
   order: {
     title: string;
     description: string;
@@ -316,6 +369,7 @@ export interface OpenEnaOnaCopy {
     yes: string;
     no: string;
     empty: string;
+    missingDatasetBinding: string;
     localIdentityWarning: string;
     exportConfirmation: string;
   };
@@ -1263,6 +1317,57 @@ const en: OpenEnaCopy = {
     setupIncomplete: "Complete an explicit ONA order policy before this ordered model can run.",
     run: "Build ONA model",
     rerun: "Rebuild ONA model",
+    workspace: {
+      directedSpace: "p² directed space",
+      twoD: "2D ONA",
+      downloadBundle: "Download ONA bundle",
+      staleTitle: "Configuration changed",
+      staleDescription: "The directed ONA view remains bound to the last successful ordered model. Rebuild to apply the pending controls.",
+      rebuilding: (progress, stage) => `Rebuilding ordered network with jENA · ${progress}% · ${stage === "accumulate" ? "accumulating ordered contributions" : "normalizing, rotating, and projecting the ONA model"}`,
+      cancel: "Cancel",
+      statsKicker: "ONA · descriptive",
+    },
+    plotTools: {
+      plotSettings: "Plot Settings",
+      closePlotSettings: "Close Plot Settings",
+      close: "Close",
+      scaleEdgeWeights: "Scale edge weights",
+      edgeWeights: "Edge Weights",
+      edgeWeightsValue: "Edge Weights value",
+      resetEdgeWeights: "Reset Edge Weights",
+      textSize: "Text size",
+      textSizeControl: "Text Size",
+      textSizeValue: "Text Size value",
+      resetTextSize: "Reset Text Size",
+      codeLabels: "Code labels",
+      unitCircle: "Unit circle",
+      axisDirection: "Axis direction",
+      flipXAxis: "Flip X-Axis",
+      flipYAxis: "Flip Y-Axis",
+      networkGraph: "Network Graph",
+      minimumEdgeWeight: "Minimum edge weight",
+      plottedPoints: "Plotted Points",
+      groupLabels: "Group labels",
+      unitPoints: "Unit points",
+      scaleUnitCircles: "Scale unit circles",
+      unitLabels: "Unit labels",
+      advanced: "Advanced",
+      plotZoom: "Plot zoom",
+      zoomOut: "Zoom out",
+      fit: "Fit",
+      zoomIn: "Zoom in",
+      resetAllPlotTools: "Reset all plot tools",
+      resetAll: "Reset all",
+      on: "On",
+      off: "Off",
+      settingLabel: (label) => `${label} setting`,
+      enableLabel: (label) => `Enable ${label}`,
+      disableLabel: (label) => `Disable ${label}`,
+      timesValue: (value) => `${value} times`,
+      pixelsValue: (value) => `${value} pixels`,
+      minimumEdgeWeightValue: (percent) => `${percent} percent of the strongest edge`,
+      fitPlotValue: (zoom) => `Fit plot; current zoom ${zoom} times`,
+    },
     order: {
       title: "Order and backward window",
       description: "Declare how rows are ordered inside each typed horizon. Missing values and ties are rejected rather than guessed.",
@@ -1415,6 +1520,7 @@ const en: OpenEnaCopy = {
       yes: "Yes",
       no: "No",
       empty: "No audited ONA response rows match this context.",
+      missingDatasetBinding: "ONA Data View requires the analyzed dataset SHA-256 binding.",
       localIdentityWarning: "This local view joins de-identified ordered contributions to source record numbers and selected unit, horizon, group, and order metadata. It may identify participants.",
       exportConfirmation: "This CSV contains local identity-bearing metadata and source-record mappings. Confirm that you will review and de-identify it before sharing.",
     },
@@ -1770,6 +1876,57 @@ const zhHant: OpenEnaCopy = {
     setupIncomplete: "必須完成明確的 ONA 排序政策，才可執行此順序模型。",
     run: "建立 ONA 模型",
     rerun: "重新建立 ONA 模型",
+    workspace: {
+      directedSpace: "p² 有方向空間",
+      twoD: "2D ONA",
+      downloadBundle: "下載 ONA 結果套件",
+      staleTitle: "設定已變更",
+      staleDescription: "有方向 ONA 視圖仍綁定上一次成功建立的順序模型。請重新建立，以套用待處理的控制項。",
+      rebuilding: (progress, stage) => `使用 jENA 重建順序網絡 · ${progress}% · ${stage === "accumulate" ? "累積順序貢獻" : "正規化、旋轉及投影 ONA 模型"}`,
+      cancel: "取消",
+      statsKicker: "ONA · 描述性",
+    },
+    plotTools: {
+      plotSettings: "繪圖設定",
+      closePlotSettings: "關閉繪圖設定",
+      close: "關閉",
+      scaleEdgeWeights: "縮放邊權重",
+      edgeWeights: "邊權重",
+      edgeWeightsValue: "邊權重數值",
+      resetEdgeWeights: "重設邊權重",
+      textSize: "文字大小",
+      textSizeControl: "文字大小",
+      textSizeValue: "文字大小數值",
+      resetTextSize: "重設文字大小",
+      codeLabels: "編碼標籤",
+      unitCircle: "單位圓",
+      axisDirection: "座標軸方向",
+      flipXAxis: "翻轉 X 軸",
+      flipYAxis: "翻轉 Y 軸",
+      networkGraph: "網絡圖",
+      minimumEdgeWeight: "最小邊權重",
+      plottedPoints: "已繪製點",
+      groupLabels: "群組標籤",
+      unitPoints: "分析單位點",
+      scaleUnitCircles: "縮放分析單位圓",
+      unitLabels: "分析單位標籤",
+      advanced: "進階",
+      plotZoom: "圖形縮放",
+      zoomOut: "縮小",
+      fit: "適合",
+      zoomIn: "放大",
+      resetAllPlotTools: "重設所有繪圖工具",
+      resetAll: "全部重設",
+      on: "開",
+      off: "關",
+      settingLabel: (label) => `${label}設定`,
+      enableLabel: (label) => `啟用${label}`,
+      disableLabel: (label) => `停用${label}`,
+      timesValue: (value) => `${value} 倍`,
+      pixelsValue: (value) => `${value} 像素`,
+      minimumEdgeWeightValue: (percent) => `${percent}%（相對於最強邊）`,
+      fitPlotValue: (zoom) => `使圖形符合可視範圍；目前縮放 ${zoom} 倍`,
+    },
     order: {
       title: "順序與向後窗口",
       description: "宣告每個具型別 horizon 內的資料列順序。缺失值與並列順序會被拒絕，不會猜測。",
@@ -1917,6 +2074,7 @@ const zhHant: OpenEnaCopy = {
       yes: "是",
       no: "否",
       empty: "此範圍沒有符合的 ONA 審計 response 列。",
+      missingDatasetBinding: "ONA 資料檢視需要已分析資料集的 SHA-256 綁定。",
       localIdentityWarning: "此本機檢視會把去識別的順序貢獻連接至來源記錄號，以及所選分析單位、horizon、群組與順序詮釋資料；內容可能識別參與者。",
       exportConfirmation: "此 CSV 含本機識別詮釋資料與來源記錄對應。請確認您會在分享前審閱並去識別。",
     },
@@ -2052,6 +2210,57 @@ const zhHans: OpenEnaCopy = {
     setupIncomplete: "必须完成明确的 ONA 排序策略，才能运行此顺序模型。",
     run: "构建 ONA 模型",
     rerun: "重新构建 ONA 模型",
+    workspace: {
+      directedSpace: "p² 有向空间",
+      twoD: "2D ONA",
+      downloadBundle: "下载 ONA 结果包",
+      staleTitle: "配置已更改",
+      staleDescription: "有向 ONA 视图仍绑定上一次成功构建的顺序模型。请重新构建，以应用待处理的控件。",
+      rebuilding: (progress, stage) => `使用 jENA 重建顺序网络 · ${progress}% · ${stage === "accumulate" ? "累积顺序贡献" : "归一化、旋转并投影 ONA 模型"}`,
+      cancel: "取消",
+      statsKicker: "ONA · 描述性",
+    },
+    plotTools: {
+      plotSettings: "绘图设置",
+      closePlotSettings: "关闭绘图设置",
+      close: "关闭",
+      scaleEdgeWeights: "缩放边权重",
+      edgeWeights: "边权重",
+      edgeWeightsValue: "边权重数值",
+      resetEdgeWeights: "重置边权重",
+      textSize: "文本大小",
+      textSizeControl: "文本大小",
+      textSizeValue: "文本大小数值",
+      resetTextSize: "重置文本大小",
+      codeLabels: "编码标签",
+      unitCircle: "单位圆",
+      axisDirection: "坐标轴方向",
+      flipXAxis: "翻转 X 轴",
+      flipYAxis: "翻转 Y 轴",
+      networkGraph: "网络图",
+      minimumEdgeWeight: "最小边权重",
+      plottedPoints: "已绘制点",
+      groupLabels: "组标签",
+      unitPoints: "分析单位点",
+      scaleUnitCircles: "缩放分析单位圆",
+      unitLabels: "分析单位标签",
+      advanced: "高级",
+      plotZoom: "图形缩放",
+      zoomOut: "缩小",
+      fit: "适合",
+      zoomIn: "放大",
+      resetAllPlotTools: "重置所有绘图工具",
+      resetAll: "全部重置",
+      on: "开",
+      off: "关",
+      settingLabel: (label) => `${label}设置`,
+      enableLabel: (label) => `启用${label}`,
+      disableLabel: (label) => `停用${label}`,
+      timesValue: (value) => `${value} 倍`,
+      pixelsValue: (value) => `${value} 像素`,
+      minimumEdgeWeightValue: (percent) => `${percent}%（相对于最强边）`,
+      fitPlotValue: (zoom) => `使图形适合可视范围；当前缩放 ${zoom} 倍`,
+    },
     order: {
       title: "顺序与向后窗口",
       description: "声明每个有类型 horizon 内的数据行顺序。缺失值和并列顺序会被拒绝，不会猜测。",
@@ -2199,6 +2408,7 @@ const zhHans: OpenEnaCopy = {
       yes: "是",
       no: "否",
       empty: "此范围没有匹配的 ONA 审计 response 行。",
+      missingDatasetBinding: "ONA 数据视图需要已分析数据集的 SHA-256 绑定。",
       localIdentityWarning: "此本地视图会把去标识的顺序贡献连接到来源记录号，以及所选分析单位、horizon、组和顺序元数据；内容可能识别参与者。",
       exportConfirmation: "此 CSV 含本地标识元数据与来源记录映射。请确认您会在分享前审阅并去标识。",
     },

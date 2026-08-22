@@ -6,6 +6,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import OpenEnaDataView from "../components/open-ena/OpenEnaDataView";
 import OpenEnaPersistentPlotTools from "../components/open-ena/OpenEnaPersistentPlotTools";
+import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 
 const projectRoot = process.cwd();
 
@@ -61,6 +62,7 @@ test("persistent Plot Tools expose every controlled visual setting with accessib
   assert.match(markup, /aria-label="Plot Settings"[^>]*aria-expanded="false"/);
   assert.match(markup, /data-ena-plot-tool="edge-scale"[\s\S]*?type="range"[^>]*min="0\.1"[^>]*max="4"[^>]*step="0\.1"[\s\S]*?type="number"[^>]*min="0\.1"[^>]*max="4"/);
   assert.match(markup, /data-ena-plot-tool="text-size"[\s\S]*?type="range"[^>]*min="9"[^>]*max="21"[^>]*step="1"[\s\S]*?type="number"[^>]*min="9"[^>]*max="21"/);
+  assert.match(markup, /data-ena-plot-tool="text-size"[\s\S]*?type="range"[^>]*aria-label="Text Size"/);
   assert.match(markup, /aria-valuetext="13 pixels"/);
   assert.match(markup, /data-ena-plot-tool="code-labels"[\s\S]*?role="switch"[^>]*aria-label="Code labels"[^>]*aria-checked="true"/);
   assert.match(markup, /data-ena-plot-tool="unit-circle"[\s\S]*?role="switch"[^>]*aria-label="Unit circle"[^>]*aria-checked="false"/);
@@ -162,6 +164,182 @@ test("ordered Plot Tools retain meaningful presentation controls and remove ENA-
   assert.match(markup, /data-ena-plot-tool="unit-labels"/);
   assert.doesNotMatch(markup, /data-ena-plot-tool="unit-circle"/);
   assert.doesNotMatch(markup, /data-ena-plot-tool="group-labels"/);
+});
+
+test("ordered Plot Tools consume complete Traditional and Simplified Chinese visible and accessible copy", () => {
+  for (const locale of ["zh-hant", "zh-hans"] as const) {
+    const onaCopy = getOpenEnaCopy(locale).ona;
+    const markup = renderToStaticMarkup(createElement(OpenEnaPersistentPlotTools, {
+      analysisKind: "ona",
+      title: onaCopy.presenter.title,
+      copy: onaCopy.plotTools,
+      edgeScale: 1.4,
+      edgeThreshold: 0.25,
+      pointScale: 0.8,
+      textScale: 1,
+      showLabels: true,
+      showGroupLabels: true,
+      showUnitLabels: false,
+      showPoints: true,
+      unitCircle: false,
+      flipX: true,
+      flipY: false,
+      plotZoom: 1.2,
+      onEdgeScaleChange: noOp,
+      onEdgeThresholdChange: noOp,
+      onPointScaleChange: noOp,
+      onTextScaleChange: noOp,
+      onShowLabelsChange: noOp,
+      onShowGroupLabelsChange: noOp,
+      onShowUnitLabelsChange: noOp,
+      onShowPointsChange: noOp,
+      onUnitCircleChange: noOp,
+      onFlipXChange: noOp,
+      onFlipYChange: noOp,
+      onPlotZoomChange: noOp,
+      onReset: noOp,
+      settingsOpen: true,
+      onSettingsOpenChange: noOp,
+    }));
+
+    for (const localizedText of [
+      onaCopy.plotTools.plotSettings,
+      onaCopy.plotTools.scaleEdgeWeights,
+      onaCopy.plotTools.textSize,
+      onaCopy.plotTools.codeLabels,
+      onaCopy.plotTools.axisDirection,
+      onaCopy.plotTools.flipXAxis,
+      onaCopy.plotTools.flipYAxis,
+      onaCopy.plotTools.networkGraph,
+      onaCopy.plotTools.minimumEdgeWeight,
+      onaCopy.plotTools.plottedPoints,
+      onaCopy.plotTools.unitPoints,
+      onaCopy.plotTools.scaleUnitCircles,
+      onaCopy.plotTools.unitLabels,
+      onaCopy.plotTools.advanced,
+      onaCopy.plotTools.plotZoom,
+      onaCopy.plotTools.fit,
+      onaCopy.plotTools.resetAll,
+      onaCopy.plotTools.on,
+      onaCopy.plotTools.off,
+    ]) {
+      assert.ok(markup.includes(localizedText), `${locale} Plot Tools must render ${localizedText}`);
+    }
+
+    for (const localizedAccessibleName of [
+      onaCopy.plotTools.edgeWeights,
+      onaCopy.plotTools.edgeWeightsValue,
+      onaCopy.plotTools.resetEdgeWeights,
+      onaCopy.plotTools.textSizeControl,
+      onaCopy.plotTools.textSizeValue,
+      onaCopy.plotTools.resetTextSize,
+      onaCopy.plotTools.closePlotSettings,
+      onaCopy.plotTools.zoomOut,
+      onaCopy.plotTools.zoomIn,
+      onaCopy.plotTools.resetAllPlotTools,
+      onaCopy.plotTools.settingLabel(onaCopy.plotTools.codeLabels),
+      onaCopy.plotTools.enableLabel(onaCopy.plotTools.codeLabels),
+      onaCopy.plotTools.disableLabel(onaCopy.plotTools.codeLabels),
+      onaCopy.plotTools.timesValue("1.4"),
+      onaCopy.plotTools.pixelsValue(13),
+      onaCopy.plotTools.minimumEdgeWeightValue(25),
+      onaCopy.plotTools.fitPlotValue("1.2"),
+    ]) {
+      assert.ok(markup.includes(localizedAccessibleName), `${locale} Plot Tools must expose ${localizedAccessibleName}`);
+    }
+    for (const localizedTitle of [
+      onaCopy.plotTools.plotSettings,
+      onaCopy.plotTools.resetEdgeWeights,
+      onaCopy.plotTools.resetTextSize,
+      onaCopy.plotTools.close,
+    ]) {
+      assert.ok(markup.includes(`title="${localizedTitle}"`), `${locale} Plot Tools must expose title ${localizedTitle}`);
+    }
+
+    for (const englishLeak of [
+      "Plot Settings",
+      "Scale edge weights",
+      "Text size",
+      "Code labels",
+      "Axis direction",
+      "Flip X-Axis",
+      "Flip Y-Axis",
+      "Network Graph",
+      "Minimum edge weight",
+      "Plotted Points",
+      "Unit points",
+      "Scale unit circles",
+      "Unit labels",
+      "Advanced",
+      "Plot zoom",
+      "Zoom out",
+      "Zoom in",
+      "Reset all",
+      'title="Reset Edge Weights"',
+      'title="Reset Text Size"',
+      'title="Close"',
+      "Enable ",
+      "Disable ",
+      ">On<",
+      ">Off<",
+      " times",
+      " pixels",
+      " percent of the strongest edge",
+      "current zoom",
+    ]) {
+      assert.ok(!markup.includes(englishLeak), `${locale} Plot Tools must not leak ${englishLeak}`);
+    }
+  }
+});
+
+test("ONA workspace routes locale copy for directed-space chrome and plot tools", () => {
+  const workspace = source("components/open-ena/OpenEnaWorkspace.tsx");
+
+  assert.match(workspace, /copy=\{completedResultKind === "ona" \? copy\.ona\.plotTools : undefined\}/);
+  for (const key of [
+    "directedSpace",
+    "twoD",
+    "downloadBundle",
+    "staleTitle",
+    "staleDescription",
+    "rebuilding",
+    "cancel",
+    "statsKicker",
+  ]) {
+    assert.match(workspace, new RegExp(`copy\\.ona\\.workspace\\.${key}`));
+  }
+  assert.match(workspace, /copy\.ona\.unavailable\.inference/);
+  assert.match(workspace, /copy\.ona\.unavailable\.groupContrast/);
+  assert.match(workspace, /copy\.ona\.dataView\.missingDatasetBinding/);
+  assert.match(workspace, /copy\.ona\.unavailable\.reference/);
+
+  for (const englishLiteral of [
+    "p² directed space",
+    "2D ONA",
+    "Download ONA bundle",
+    "The directed ONA view remains bound to the last successful ordered model. Rebuild to apply the pending controls.",
+    "Rebuilding ordered network with jENA",
+    "ONA · descriptive",
+    "ONA is descriptive-only in this release; inferential tests are not available.",
+    "ONA group networks are descriptive means; pairwise subtraction is unavailable.",
+    "ONA Data View requires the analyzed dataset SHA-256 binding.",
+    "Reference rotation is unavailable for ONA. Return to the Standard ENA family before importing a reference.",
+  ]) {
+    assert.ok(!workspace.includes(englishLiteral), `ONA Workspace must not hard-code ${englishLiteral}`);
+  }
+
+  const enCopy = getOpenEnaCopy("en").ona.workspace;
+  const zhHantCopy = getOpenEnaCopy("zh-hant").ona.workspace;
+  const zhHansCopy = getOpenEnaCopy("zh-hans").ona.workspace;
+  assert.equal(enCopy.twoD, "2D ONA");
+  assert.equal(zhHantCopy.twoD, "2D ONA");
+  assert.equal(zhHansCopy.twoD, "2D ONA");
+  assert.notEqual(zhHantCopy.directedSpace, enCopy.directedSpace);
+  assert.notEqual(zhHansCopy.directedSpace, enCopy.directedSpace);
+  assert.notEqual(zhHantCopy.downloadBundle, enCopy.downloadBundle);
+  assert.notEqual(zhHansCopy.downloadBundle, enCopy.downloadBundle);
+  assert.notEqual(zhHantCopy.statsKicker, enCopy.statsKicker);
+  assert.notEqual(zhHansCopy.statsKicker, enCopy.statsKicker);
 });
 
 test("persistent Plot Tools source wires controlled values exclusively through callbacks", () => {
