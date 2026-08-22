@@ -95,7 +95,7 @@ test("a selected shared comparison remains the plot anchor across rail modes and
   assert.match(workspace, /const comparisonAxes\s*=\s*useMemo/);
   assert.match(workspace, /primarySet\?\.geometry\.dimensions[\s\S]*?dimensions\.includes\(xDimension\)[\s\S]*?dimensions\.includes\(yDimension\)/);
   assert.match(workspace, /compareAnalysisSets\(primarySet,\s*secondarySet,\s*comparisonAxes\)/);
-  assert.match(workspace, /\{activeSetComparison\s*\?\s*\([\s\S]*?<OpenEnaSetComparison/);
+  assert.match(workspace, /\{activeSetComparison\s*&&\s*view === "2d"\s*\?\s*\([\s\S]*?<OpenEnaSetComparison/);
   assert.doesNotMatch(workspace, /mode === "sets" && activeSetComparison\s*\?\s*\([\s\S]*?<OpenEnaSetComparison/);
   assert.match(workspace, /displayedComparisonSurface === "sets"[\s\S]{0,160}primarySet\?\.geometry\.dimensions/);
 });
@@ -110,12 +110,11 @@ test("set comparison exports preserve signed direction in JSON and edge CSV", ()
   assert.match(workspace, /downloadText\([\s\S]*?comparison-edges\.csv[\s\S]*?setComparisonEdgesToCsv\(/);
 });
 
-test("unsupported trajectory capture fails visibly and the external 3D ENA link is unchanged", () => {
+test("unsupported trajectory capture fails visibly while 3D remains an in-place result view", () => {
   assert.match(workspace, /result\.set\.modelType\s*!==\s*"EndPoint"[\s\S]*?setError\([\s\S]*?trajectory/i);
-  assert.match(workspace, /href=\{siteConfig\.threeDenaUrl\}/);
-  assert.match(workspace, /target="_blank"/);
-  assert.match(workspace, /rel="noreferrer"/);
-  assert.match(source("lib/site.ts"), /threeDenaUrl:\s*"https:\/\/www\.3dena\.com"/);
+  assert.match(workspace, /aria-pressed=\{view === "3d"\}/);
+  assert.match(workspace, /selectVisualizationView\("3d"\)/);
+  assert.doesNotMatch(workspace, /href=\{siteConfig\.threeDenaUrl\}/);
 });
 
 test("Sets guidance stays truthful and source evidence is not misattributed to a retained comparison", () => {
@@ -131,8 +130,8 @@ test("Sets guidance stays truthful and source evidence is not misattributed to a
 
 test("applicable Plot Tools control the active shared-set plot and the mobile rail fits all five modes", () => {
   assert.match(workspace, /<OpenEnaSetComparison[\s\S]*?showPoints=\{showPoints\}[\s\S]*?showNetworks=\{showNetworks\}[\s\S]*?showLabels=\{showLabels\}[\s\S]*?showUnitLabels=\{showUnitLabels\}[\s\S]*?edgeScale=\{edgeScale\}[\s\S]*?pointScale=\{pointScale\}[\s\S]*?plotZoom=\{plotZoom\}/);
-  assert.match(workspace, /disabled=\{!result && !activeSetComparison\}[\s\S]{0,100}onClick=\{exportPlotSvg\}/);
-  assert.match(workspace, /disabled=\{!result && !activeSetComparison\}[\s\S]{0,100}onClick=\{exportPlotPng\}/);
+  assert.match(workspace, /disabled=\{view === "3d" \|\| \(!result && !activeSetComparison\)\}[\s\S]{0,100}onClick=\{exportPlotSvg\}/);
+  assert.match(workspace, /disabled=\{view === "3d" \|\| \(!result && !activeSetComparison\)\}[\s\S]{0,100}onClick=\{exportPlotPng\}/);
   const css = source("app/globals.css");
   const responsiveRailRules = [...css.matchAll(/\.ena-tool-rail\s*\{[^}]*?grid-template-columns:\s*repeat\((\d),/g)]
     .map((match) => Number(match[1]));

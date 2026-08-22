@@ -5,7 +5,6 @@ import type { ModelType, Row, WindowType } from "jena-js";
 import type { Locale } from "@/lib/i18n";
 import { getOpenEnaAuthCopy } from "@/lib/open-ena-auth-copy";
 import { getOpenEnaCopy, isOpenEnaLocalizedLocale } from "@/lib/open-ena-i18n";
-import { siteConfig } from "@/lib/site";
 import { buildManifest, dimensionEffect } from "@/lib/open-ena/analyze";
 import { analyzeDatasetInWorker } from "@/lib/open-ena/client";
 import {
@@ -43,6 +42,7 @@ import { buildMethodsReport, referenceMeanRotationInterpretation } from "@/lib/o
 import { buildOpenEnaAiInterpretationRequest } from "@/lib/open-ena/ai-interpretation";
 import { buildAnalysisBundle, buildResultTables, rowsToCsv } from "@/lib/open-ena/export";
 import { codeColorFor, updateCodeColor } from "@/lib/open-ena/plot-style";
+import { cameraForPreset, type OpenEna3dCamera } from "@/lib/open-ena/plot3d";
 import {
   buildReferenceRotationPackage,
   parseRotationReference,
@@ -74,6 +74,7 @@ import {
   type ParsedDataset,
 } from "@/lib/open-ena/types";
 import OpenEnaPlot, { MiniNetwork } from "./OpenEnaPlot";
+import OpenEnaInteractive3DPlot from "./OpenEnaInteractive3DPlot";
 import OpenEnaDataView, {
   type OpenEnaDataViewColumn,
   type OpenEnaDataViewContext,
@@ -237,6 +238,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const [yDimension, setYDimension] = useState("SVD2");
   const [zDimension, setZDimension] = useState("SVD3");
   const [camera, setCamera] = useState<CameraPreset>("isometric");
+  const [interactive3dCamera, setInteractive3dCamera] = useState<OpenEna3dCamera | null>(null);
   const [showPoints, setShowPoints] = useState(true);
   const [showNetworks, setShowNetworks] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
@@ -1148,6 +1150,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       setXDimension(x);
       setYDimension(y);
       setZDimension(z);
+      setInteractive3dCamera(null);
       setView("2d");
       setMode("model");
       setActiveComparisonSurface("groups");
@@ -1321,6 +1324,17 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     setShowPoints(visible);
   }
 
+  function selectVisualizationView(nextView: OpenEnaView) {
+    setView(nextView);
+    setCenterSurface("plot");
+  }
+
+  function selectCameraPreset(nextCamera: CameraPreset) {
+    setCamera(nextCamera);
+    setInteractive3dCamera(cameraForPreset(nextCamera));
+    setPlotResetRevision((current) => current + 1);
+  }
+
   function resetPlot() {
     const activeDimensions = displayedComparisonSurface === "sets"
       ? primarySet?.geometry.dimensions ?? result?.dimensions
@@ -1332,6 +1346,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       setZDimension(z);
     }
     setCamera("isometric");
+    setInteractive3dCamera(null);
     setShowPoints(true);
     setShowNetworks(true);
     setShowLabels(true);
@@ -2413,14 +2428,14 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             ))}
           </div>
           {([
-            [copy.plot.axisX, xDimension, setXDimension, yDimension],
-            [copy.plot.axisY, yDimension, setYDimension, xDimension],
-            ...(view === "3d" ? [[copy.plot.axisZ, zDimension, setZDimension, ""] as const] : []),
-          ] as const).map(([label, value, setter, oppositeDimension]) => (
+            [copy.plot.axisX, xDimension, setXDimension, view === "3d" ? [yDimension, zDimension] : [yDimension]],
+            [copy.plot.axisY, yDimension, setYDimension, view === "3d" ? [xDimension, zDimension] : [xDimension]],
+            ...(view === "3d" ? [[copy.plot.axisZ, zDimension, setZDimension, [xDimension, yDimension]] as const] : []),
+          ] as Array<[string, string, (value: string) => void, readonly string[]]>).map(([label, value, setter, oppositeDimensions]) => (
             <label key={label} className="ena-field">
               <span>{label}</span>
               <select value={value} onChange={(event) => setter(event.target.value)}>
-                {dimensions.map((dimension) => <option key={dimension} value={dimension} disabled={dimension === oppositeDimension}>{dimension}</option>)}
+                {dimensions.map((dimension) => <option key={dimension} value={dimension} disabled={oppositeDimensions.includes(dimension)}>{dimension}</option>)}
               </select>
             </label>
           ))}
@@ -2458,15 +2473,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 ["xz", copy.plot.xz],
                 ["yz", copy.plot.yz],
               ] as Array<[CameraPreset, string]>).map(([value, label]) => (
-                <label key={value}><input type="radio" name="ena-camera" value={value} checked={camera === value} onChange={() => setCamera(value)} /><span>{label}</span></label>
+                <label key={value}><input type="radio" name="ena-camera" value={value} checked={camera === value} onChange={() => selectCameraPreset(value)} /><span>{label}</span></label>
               ))}
             </fieldset>
           ) : null}
           <button type="button" className="ena-action-button ena-action-secondary" onClick={resetPlot}>{copy.plot.reset}</button>
           <div className="ena-two-fields ena-figure-exports">
-            <button type="button" className="ena-action-button ena-action-secondary" disabled={!result && !activeSetComparison} onClick={exportPlotSvg}>Export SVG ↓</button>
-            <button type="button" className="ena-action-button ena-action-secondary" disabled={!result && !activeSetComparison} onClick={exportPlotPng}>Export PNG ↓</button>
+            <button type="button" className="ena-action-button ena-action-secondary" disabled={view === "3d" || (!result && !activeSetComparison)} onClick={exportPlotSvg}>Export SVG ↓</button>
+            <button type="button" className="ena-action-button ena-action-secondary" disabled={view === "3d" || (!result && !activeSetComparison)} onClick={exportPlotPng}>Export PNG ↓</button>
           </div>
+          {view === "3d" ? <p className="ena-plot-export-note">{copy.plot.threeDExportHint}</p> : null}
         </div>
       </div>
     );
@@ -3146,16 +3162,20 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           </aside>
 
           <div className="ena-visual-workspace" data-testid="open-ena-center-surface">
-            <div className={`ena-visual-toolbar${activeGroupContrast ? " ena-visual-toolbar-group-contrast" : ""}`}>
+            <div className={`ena-visual-toolbar${view === "2d" && activeGroupContrast ? " ena-visual-toolbar-group-contrast" : ""}`}>
               <div>
-                <p>{activeSetComparison
+                <p>{view === "3d" && result
+                  ? copy.views.threeD
+                  : activeSetComparison
                   ? copy.workspace.comparison
                   : activeGroupContrast
                     ? copy.workspace.comparison
                     : activeLongitudinalView
                       ? copy.longitudinal.title
                       : copy.workspace.comparison}</p>
-                <span>{activeSetComparison
+                <span>{view === "3d" && result
+                  ? `${xDimension} × ${yDimension} × ${zDimension} · ${copy.plot.sameFittedSpace}`
+                  : activeSetComparison
                   ? `${activeSetComparison.primary.name} − ${activeSetComparison.secondary.name} · shared ${activeSetComparison.axes[0]} × ${activeSetComparison.axes[1]}`
                   : activeGroupContrast
                     ? `${activeGroupContrast.groupOrder[0]} − ${activeGroupContrast.groupOrder[1]} · fixed ${officialPlotAxisLabel(activeGroupContrast.axes[0])} × ${officialPlotAxisLabel(activeGroupContrast.axes[1])}`
@@ -3171,7 +3191,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   className="ena-compact-toolbar-button"
                   data-testid="open-ena-data-view-toggle"
                   aria-pressed={centerSurface === "data"}
-                  disabled={!activeGroupContrast}
+                  disabled={view === "3d" || !activeGroupContrast}
                   onClick={() => {
                     setDataViewContext("comparison");
                     setCenterSurface((current) => current === "data" ? "plot" : "data");
@@ -3181,17 +3201,17 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 </button>
                 <div className="ena-analysis-toolbar-cluster">
                   <div className="ena-view-toggle" role="group" aria-label="ENA visualization options">
-                    <button type="button" aria-pressed={view === "2d"} onClick={() => setView("2d")}>
+                    <button type="button" aria-pressed={view === "2d"} onClick={() => selectVisualizationView("2d")}>
                       <strong>{copy.views.twoD}</strong>
                     </button>
-                    <a
-                      href={siteConfig.threeDenaUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={`${copy.views.threeD}. Opens www.3dena.com in a new tab.`}
+                    <button
+                      type="button"
+                      aria-pressed={view === "3d"}
+                      onClick={() => selectVisualizationView("3d")}
+                      aria-label={`${copy.views.threeD}. ${copy.plot.threeDInteractionHint}`}
                     >
                       <strong>{copy.views.threeD}</strong>
-                    </a>
+                    </button>
                   </div>
                   <button
                     type="button"
@@ -3237,7 +3257,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               </div>
             </div>
 
-            {activeSetComparison ? (
+            {activeSetComparison && view === "2d" ? (
               <OpenEnaSetComparison
                 codeColors={codeColors}
                 comparison={activeSetComparison}
@@ -3290,7 +3310,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     <span>{result.projectionReference.name}</span>
                   </div>
                 ) : null}
-                {activeLongitudinalView ? (
+                {view === "2d" && activeLongitudinalView ? (
                   <OpenEnaLongitudinalTrajectory
                     codeColors={codeColors}
                     trajectory={activeLongitudinalView}
@@ -3306,7 +3326,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     copy={copy.longitudinal}
                     svgRef={plotSvgRef}
                   />
-                ) : activeGroupContrast ? (
+                ) : view === "2d" && activeGroupContrast ? (
                   <OpenEnaGroupContrast
                     codeColors={codeColors}
                     contrast={activeGroupContrast}
@@ -3338,6 +3358,32 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                       setSecondaryGroupName(primaryGroupName);
                     }}
                   />
+                ) : view === "3d" ? (
+                  <OpenEnaInteractive3DPlot
+                    codeColors={codeColors}
+                    result={result}
+                    groupColumn={resultConfig?.groupColumn ?? null}
+                    xDimension={xDimension}
+                    yDimension={yDimension}
+                    zDimension={zDimension}
+                    camera={camera}
+                    showPoints={showPoints}
+                    showNetworks={showNetworks}
+                    showLabels={showLabels}
+                    showUnitLabels={showUnitLabels}
+                    showVariance={showVariance}
+                    showTrajectories={showTrajectories}
+                    edgeScale={edgeScale}
+                    edgeThreshold={edgeThreshold}
+                    pointScale={pointScale}
+                    plotZoom={plotZoom}
+                    plotResetRevision={plotResetRevision}
+                    initialCamera={interactive3dCamera}
+                    onCameraChange={setInteractive3dCamera}
+                    flipX={flipX}
+                    flipY={flipY}
+                    copy={copy}
+                  />
                 ) : (
                   <OpenEnaPlot
                     codeColors={codeColors}
@@ -3364,7 +3410,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     svgRef={plotSvgRef}
                   />
                 )}
-                {showNetworks && !activeGroupContrast && !activeLongitudinalView ? (
+                {view === "2d" && showNetworks && !activeGroupContrast && !activeLongitudinalView ? (
                   <section className="ena-group-networks" aria-labelledby="ena-group-networks-title">
                     <div className="ena-subpanel-title"><h2 id="ena-group-networks-title">{copy.workspace.groupNetworks}</h2><span>Shared {xDimension} × {yDimension} space</span></div>
                     <div className="ena-group-network-grid">

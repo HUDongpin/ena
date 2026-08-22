@@ -234,10 +234,9 @@ test("ungrouped, one-group, and trajectory results explain why group contrast is
   assert.match(workspace, /result\.set\.modelType\s*!==\s*"EndPoint"[\s\S]{0,700}(?:group contrast|contrastUnavailable)/i);
 });
 
-test("the 3D ENA exploratory control remains an external link to www.3dena.com", () => {
-  assert.match(source("lib/site.ts"), /threeDenaUrl:\s*"https:\/\/www\.3dena\.com"/);
-  assert.match(workspace, /href=\{siteConfig\.threeDenaUrl\}/);
-  assert.match(workspace, /target="_blank"/);
-  assert.match(workspace, /rel="noreferrer"/);
-  assert.doesNotMatch(workspace, /setView\("3d"\)/);
+test("the 3D ENA control opens the current group result in the shared fitted space", () => {
+  assert.match(workspace, /aria-pressed=\{view === "3d"\}/);
+  assert.match(workspace, /selectVisualizationView\("3d"\)/);
+  assert.match(workspace, /view === "2d" && activeGroupContrast/);
+  assert.doesNotMatch(workspace, /href=\{siteConfig\.threeDenaUrl\}/);
 });

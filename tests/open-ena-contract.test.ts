@@ -213,25 +213,30 @@ test("the documented Academy sample runs through real jENA 0.6.2 deterministical
   assert.match(manifest.boundaries.join(" "), /declared provenance/);
 });
 
-test("2D is the local default and 3D ENA is an explicit external destination", () => {
+test("2D is the local default and 3D ENA switches the same fitted result in place", () => {
   const workspace = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8");
   const plot = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaPlot.tsx"), "utf8");
-  const site = readFileSync(join(projectRoot, "lib", "site.ts"), "utf8");
   const worker = readFileSync(join(projectRoot, "lib", "open-ena", "jena.worker.ts"), "utf8");
   const client = readFileSync(join(projectRoot, "lib", "open-ena", "client.ts"), "utf8");
   const viewToggleStart = workspace.indexOf('<div className="ena-view-toggle"');
   const viewToggle = workspace.slice(viewToggleStart, workspace.indexOf("</div>", viewToggleStart));
+  const switchHandlerStart = workspace.indexOf("function selectVisualizationView");
+  const switchHandler = workspace.slice(switchHandlerStart, workspace.indexOf("function resetPlot", switchHandlerStart));
 
   assert.match(workspace, /useState<OpenEnaView>\("2d"\)/);
   assert.match(workspace, /aria-pressed=\{view === "2d"\}/);
+  assert.match(workspace, /aria-pressed=\{view === "3d"\}/);
   assert.match(workspace, /<strong>\{copy\.views\.twoD\}<\/strong>/);
   assert.match(workspace, /<strong>\{copy\.views\.threeD\}<\/strong>/);
   assert.doesNotMatch(workspace, /copy\.views\.(?:default|exploratory)/);
   assert.doesNotMatch(viewToggle, /<small|Default|Exploratory/);
-  assert.match(site, /threeDenaUrl: "https:\/\/www\.3dena\.com"/);
-  assert.match(workspace, /href=\{siteConfig\.threeDenaUrl\}/);
-  assert.match(workspace, /target="_blank"/);
-  assert.doesNotMatch(workspace, /setView\("3d"\)/);
+  assert.match(viewToggle, /selectVisualizationView\("2d"\)/);
+  assert.match(viewToggle, /selectVisualizationView\("3d"\)/);
+  assert.doesNotMatch(viewToggle, /<a\b|href=|target=/);
+  assert.match(workspace, /view === "3d" \? \([\s\S]*?<OpenEnaInteractive3DPlot/);
+  assert.doesNotMatch(switchHandler, /analyzeDatasetInWorker|runAnalysis|setResult|updateConfig|new Worker/);
+  assert.match(workspace, /view === "2d" && activeLongitudinalView/);
+  assert.match(workspace, /view === "2d" && activeGroupContrast/);
   assert.match(plot, /result\.set\.points/);
   assert.match(worker, /createAccumulationStream/);
   assert.match(worker, /buildOpenEnaSummary/);
@@ -278,5 +283,6 @@ test("Open ENA publishes methodology, local-processing, and GPL boundaries", () 
   assert.match(workspace, /Source data stays in this workspace’s browser memory/);
   assert.match(copy, /Visual separation alone is not significance or causality/);
   assert.doesNotMatch(copy, /3D ENA exploratory option opens the separate 3D ENA website/);
-  assert.match(copy, /does not automatically receive this workspace’s dataset or model/);
+  assert.match(copy, /Interactive 3D displays the same fitted jENA coordinates as the 2D view/);
+  assert.match(copy, /Switching views does not rerun or refit the analysis/);
 });

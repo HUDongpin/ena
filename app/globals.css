@@ -4229,8 +4229,7 @@ body:has(.open-ena-login-page) .back-to-top {
   background: #edf2f1;
 }
 
-.ena-view-toggle button,
-.ena-view-toggle a {
+.ena-view-toggle button {
   display: grid;
   min-width: 116px;
   min-height: 45px;
@@ -4256,13 +4255,19 @@ body:has(.open-ena-login-page) .back-to-top {
   box-shadow: inset 0 -3px var(--accent-strong);
 }
 
-.ena-view-toggle a:hover {
+.ena-view-toggle button:not([aria-pressed="true"]):hover {
   color: var(--ena-accent-strong);
   background: var(--ena-accent-soft);
 }
 
-.ena-view-toggle strong,
-.ena-view-toggle a strong {
+.ena-view-toggle button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 3px solid color-mix(in srgb, var(--ena-accent-strong) 65%, white);
+  outline-offset: 2px;
+}
+
+.ena-view-toggle strong {
   font-size: calc(0.72rem + var(--ena-font-step, 1px));
 }
 
@@ -4448,6 +4453,80 @@ body:has(.open-ena-login-page) .back-to-top {
   padding: 7px 6px;
   border-top: 1px solid #d5dfdd;
   text-align: start;
+}
+
+.open-ena-interactive-3d-figure {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.open-ena-interactive-3d-region {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #c7d4d2;
+  border-radius: 5px;
+  background: #f8fafc;
+  isolation: isolate;
+}
+
+.open-ena-interactive-3d-region:focus-visible {
+  outline: 3px solid var(--ena-accent-strong);
+  outline-offset: 3px;
+}
+
+.open-ena-interactive-3d-canvas,
+.open-ena-interactive-3d-status,
+.open-ena-interactive-3d-error {
+  grid-area: 1 / 1;
+}
+
+.open-ena-interactive-3d-canvas {
+  width: 100%;
+  min-width: 0;
+  min-height: 460px;
+  height: min(590px, 72vh);
+}
+
+.open-ena-interactive-3d-status,
+.open-ena-interactive-3d-error {
+  z-index: 3;
+  align-self: start;
+  max-width: min(560px, calc(100% - 32px));
+  margin: 16px;
+  padding: 9px 12px;
+  border: 1px solid #9eb2ae;
+  border-radius: 4px;
+  color: #29433f;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 4px 18px rgba(20, 50, 48, 0.1);
+  font-size: calc(0.69rem + var(--ena-font-step, 1px));
+  line-height: 1.45;
+  pointer-events: none;
+}
+
+.open-ena-interactive-3d-error {
+  color: #7f1d1d;
+  border-color: #e2a7a7;
+  background: rgba(255, 247, 247, 0.97);
+}
+
+.open-ena-interactive-3d-region .modebar {
+  top: 7px !important;
+  right: 7px !important;
+}
+
+.open-ena-interactive-3d-summary {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.ena-plot-export-note {
+  margin: -2px 0 2px;
+  color: #596970;
+  font-size: calc(0.65rem + var(--ena-font-step, 1px));
+  line-height: 1.45;
 }
 
 .open-ena-plot-figure:focus-visible,
@@ -5207,6 +5286,19 @@ body:has(.open-ena-login-page) .back-to-top {
   .open-ena-main-svg {
     width: 700px;
     max-width: none;
+  }
+
+  .open-ena-interactive-3d-figure {
+    overflow: hidden;
+  }
+
+  .open-ena-interactive-3d-canvas {
+    min-height: 410px;
+    height: min(500px, 64vh);
+  }
+
+  .open-ena-interactive-3d-summary table {
+    min-width: 520px;
   }
 
   .ena-group-network-grid {
@@ -8784,8 +8876,7 @@ body:has(.open-ena-page) #main-content {
   display: none;
 }
 
-.ena-view-toggle button,
-.ena-view-toggle a {
+.ena-view-toggle button {
   min-width: 84px;
   min-height: 34px;
   padding: 4px 8px;
@@ -9693,8 +9784,7 @@ body:has(.open-ena-page) #main-content {
     background: var(--ena-accent-hover);
   }
 
-  .ena-view-toggle button,
-  .ena-view-toggle a {
+  .ena-view-toggle button {
     min-width: 72px;
     min-height: 24px;
     padding: 2px 6px;
@@ -10079,8 +10169,7 @@ body:has(.open-ena-page) #main-content {
     min-width: 0;
   }
 
-  .ena-view-toggle button,
-  .ena-view-toggle a {
+  .ena-view-toggle button {
     min-width: 0;
   }
 

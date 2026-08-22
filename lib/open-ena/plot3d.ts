@@ -1,0 +1,593 @@
+import type { Row } from "jena-js";
+import { codeColorFor, JENA_GROUP_COLORS, type OpenEnaCodeColors } from "./plot-style";
+import type { CameraPreset, GroupNetwork, OpenEnaResult } from "./types";
+
+export const OPEN_ENA_3D_UI_REVISION = "open-ena-3d-camera-v1";
+
+const AXIS_COLORS = ["#b91c1c", "#1d4ed8", "#15803d"] as const;
+const GROUP_MARKER_SYMBOLS = ["circle", "square", "diamond", "cross", "x", "circle-open"] as const;
+const GROUP_MARKER_LABELS = ["circle", "square", "diamond", "cross", "x", "open circle"] as const;
+const GROUP_LINE_DASHES = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"] as const;
+
+export type OpenEna3dTraceRole =
+  | "unit-points"
+  | "code-node"
+  | "network-edge"
+  | "group-mean"
+  | "trajectory-path"
+  | "axis";
+
+export interface OpenEna3dTraceMeta {
+  role: OpenEna3dTraceRole;
+  groupName?: string;
+  groupIndex?: number;
+  markerSymbol?: string;
+  edgeName?: string;
+  unitId?: string;
+  axis?: "x" | "y" | "z";
+  dimension?: string;
+}
+
+export interface OpenEna3dMarker {
+  color: string | string[];
+  size: number;
+  symbol?: string;
+  opacity?: number;
+  line?: { color: string; width: number };
+}
+
+export interface OpenEna3dTrace {
+  type: "scatter3d";
+  mode: string;
+  name: string;
+  x: number[];
+  y: number[];
+  z: number[];
+  text?: string[];
+  customdata?: string[];
+  textposition?: string;
+  textfont?: { color?: string; size?: number };
+  marker?: OpenEna3dMarker;
+  line?: { color: string; width: number; dash?: (typeof GROUP_LINE_DASHES)[number] };
+  hovertemplate?: string;
+  hoverinfo?: "skip";
+  connectgaps?: boolean;
+  legendgroup?: string;
+  showlegend?: boolean;
+  meta: OpenEna3dTraceMeta;
+}
+
+export interface OpenEna3dCamera {
+  center: { x: number; y: number; z: number };
+  eye: { x: number; y: number; z: number };
+  up: { x: number; y: number; z: number };
+  projection: { type: "perspective" | "orthographic" };
+}
+
+export interface OpenEna3dSceneAxis {
+  title: { text: string };
+  color: string;
+  gridcolor: string;
+  zerolinecolor: string;
+  showspikes: boolean;
+  autorange: true | "reversed";
+}
+
+export interface OpenEna3dPlotLayout {
+  autosize: true;
+  height: number;
+  margin: { l: number; r: number; t: number; b: number };
+  paper_bgcolor: string;
+  plot_bgcolor: string;
+  font: { family: string; color: string; size: number };
+  legend: { orientation: "h"; x: number; y: number };
+  hoverlabel: { bgcolor: string; font: { color: string } };
+  uirevision: typeof OPEN_ENA_3D_UI_REVISION;
+  annotations: Array<{
+    text: string;
+    x: number;
+    y: number;
+    xref: "paper";
+    yref: "paper";
+    showarrow: false;
+    font: { color: string; size: number };
+    xanchor: "left";
+  }>;
+  scene: {
+    xaxis: OpenEna3dSceneAxis;
+    yaxis: OpenEna3dSceneAxis;
+    zaxis: OpenEna3dSceneAxis;
+    camera: OpenEna3dCamera;
+    bgcolor: string;
+    aspectmode: "cube";
+    dragmode: "orbit";
+  };
+}
+
+export interface OpenEna3dPlotConfig {
+  responsive: true;
+  scrollZoom: true;
+  displaylogo: false;
+  displayModeBar: true;
+  modeBarButtonsToRemove: string[];
+  toImageButtonOptions: { format: "png"; filename: string };
+}
+
+export interface OpenEna3dPlotSpec {
+  data: OpenEna3dTrace[];
+  layout: OpenEna3dPlotLayout;
+  config: OpenEna3dPlotConfig;
+}
+
+export interface CompileOpenEna3dPlotInput {
+  result: OpenEnaResult;
+  codeColors?: OpenEnaCodeColors;
+  groupColumn: string | null;
+  xDimension: string;
+  yDimension: string;
+  zDimension: string;
+  camera: CameraPreset;
+  showPoints: boolean;
+  showNetworks: boolean;
+  showLabels: boolean;
+  showUnitLabels: boolean;
+  showVariance: boolean;
+  showTrajectories: boolean;
+  edgeScale: number;
+  edgeThreshold: number;
+  pointScale: number;
+  plotZoom: number;
+  flipX: boolean;
+  flipY: boolean;
+}
+
+const CAMERA_PRESETS: Record<CameraPreset, OpenEna3dCamera> = {
+  isometric: {
+    center: { x: 0, y: 0, z: 0 },
+    eye: { x: 1.45, y: 1.45, z: 1.25 },
+    up: { x: 0, y: 0, z: 1 },
+    projection: { type: "perspective" },
+  },
+  xy: {
+    center: { x: 0, y: 0, z: 0 },
+    eye: { x: 0, y: 0, z: 2.5 },
+    up: { x: 0, y: 1, z: 0 },
+    projection: { type: "orthographic" },
+  },
+  xz: {
+    center: { x: 0, y: 0, z: 0 },
+    eye: { x: 0, y: 2.5, z: 0 },
+    up: { x: 0, y: 0, z: 1 },
+    projection: { type: "orthographic" },
+  },
+  yz: {
+    center: { x: 0, y: 0, z: 0 },
+    eye: { x: 2.5, y: 0, z: 0 },
+    up: { x: 0, y: 0, z: 1 },
+    projection: { type: "orthographic" },
+  },
+};
+
+/** Returns a fresh display-only Plotly camera for the selected preset. */
+export function cameraForPreset(preset: CameraPreset): OpenEna3dCamera {
+  const camera = CAMERA_PRESETS[preset];
+  return {
+    center: { ...camera.center },
+    eye: { ...camera.eye },
+    up: { ...camera.up },
+    projection: { ...camera.projection },
+  };
+}
+
+function finiteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function coordinate(row: Row, dimension: string) {
+  return finiteNumber(row[dimension]);
+}
+
+function clamp(value: number, minimum: number, maximum: number, fallback: number) {
+  return Number.isFinite(value) ? Math.min(maximum, Math.max(minimum, value)) : fallback;
+}
+
+function escapeHoverText(value: unknown) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function formatCoordinate(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toPrecision(6).replace(/\.?0+$/u, "");
+}
+
+function stableHash(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function isCssColor(value: unknown): value is string {
+  return typeof value === "string" && /^(?:#[0-9a-f]{3,8}|(?:rgb|hsl)a?\([^)]*\)|[a-z]+)$/iu.test(value.trim());
+}
+
+function groupColor(group: GroupNetwork, groupIndex: number) {
+  if (isCssColor(group.color)) return group.color.trim();
+  const paletteIndex = (stableHash(group.name) + groupIndex) % JENA_GROUP_COLORS.length;
+  return JENA_GROUP_COLORS[paletteIndex] ?? JENA_GROUP_COLORS[0];
+}
+
+function groupIndexForRow(result: OpenEnaResult, groupColumn: string | null, row: Row) {
+  if (!groupColumn || result.groups.length < 2) return 0;
+  const value = String(row[groupColumn] ?? "");
+  const index = result.groups.findIndex((group) => group.name === value);
+  return index >= 0 ? index : 0;
+}
+
+function pointHover(
+  label: string,
+  groupName: string,
+  point: readonly [number, number, number],
+  dimensions: readonly [string, string, string],
+) {
+  return [
+    `<b>${escapeHoverText(label)}</b>`,
+    `Group: ${escapeHoverText(groupName)}`,
+    `${escapeHoverText(dimensions[0])}: ${formatCoordinate(point[0])}`,
+    `${escapeHoverText(dimensions[1])}: ${formatCoordinate(point[1])}`,
+    `${escapeHoverText(dimensions[2])}: ${formatCoordinate(point[2])}`,
+  ].join("<br>");
+}
+
+function edgeWeight(result: OpenEnaResult, edgeName: string) {
+  const groups = result.groups;
+  if (groups.length === 0) return { value: 0, groupIndex: 0, comparison: false };
+  if (groups.length === 1) {
+    return { value: Math.abs(groups[0]?.meanWeights[edgeName] ?? 0), groupIndex: 0, comparison: false };
+  }
+  if (groups.length === 2) {
+    const difference = (groups[0]?.meanWeights[edgeName] ?? 0) - (groups[1]?.meanWeights[edgeName] ?? 0);
+    return { value: Math.abs(difference), groupIndex: difference >= 0 ? 0 : 1, comparison: true };
+  }
+  let groupIndex = 0;
+  let value = Math.abs(groups[0]?.meanWeights[edgeName] ?? 0);
+  for (let index = 1; index < groups.length; index += 1) {
+    const candidate = Math.abs(groups[index]?.meanWeights[edgeName] ?? 0);
+    if (candidate > value) {
+      value = candidate;
+      groupIndex = index;
+    }
+  }
+  return { value, groupIndex, comparison: false };
+}
+
+function scaledCamera(preset: CameraPreset, plotZoom: number) {
+  const camera = cameraForPreset(preset);
+  const distanceScale = 1 / clamp(plotZoom, 0.35, 3, 1);
+  return {
+    ...camera,
+    eye: {
+      x: camera.eye.x * distanceScale,
+      y: camera.eye.y * distanceScale,
+      z: camera.eye.z * distanceScale,
+    },
+  };
+}
+
+function axisTraces(
+  extent: number,
+  dimensions: readonly [string, string, string],
+): OpenEna3dTrace[] {
+  return dimensions.map((dimension, index) => {
+    const x = [0, 0];
+    const y = [0, 0];
+    const z = [0, 0];
+    if (index === 0) x[1] = extent;
+    if (index === 1) y[1] = extent;
+    if (index === 2) z[1] = extent;
+    return {
+      type: "scatter3d",
+      mode: "lines+text",
+      name: `${dimension} axis`,
+      x,
+      y,
+      z,
+      text: ["", dimension],
+      textposition: "top center",
+      textfont: { color: AXIS_COLORS[index], size: 13 },
+      line: { color: AXIS_COLORS[index], width: 6 },
+      hoverinfo: "skip",
+      showlegend: false,
+      meta: {
+        role: "axis",
+        axis: (["x", "y", "z"] as const)[index],
+        dimension,
+      },
+    };
+  });
+}
+
+/**
+ * Compiles the already-fitted jENA x/y/z result into Plotly display data.
+ * This function neither invokes jENA nor changes any scientific coordinate.
+ */
+export function compileOpenEna3dPlotSpec({
+  result,
+  codeColors,
+  groupColumn,
+  xDimension,
+  yDimension,
+  zDimension,
+  camera,
+  showPoints,
+  showNetworks,
+  showLabels,
+  showUnitLabels,
+  showVariance,
+  showTrajectories,
+  edgeScale,
+  edgeThreshold,
+  pointScale,
+  plotZoom,
+  flipX,
+  flipY,
+}: CompileOpenEna3dPlotInput): OpenEna3dPlotSpec {
+  const dimensions = [xDimension, yDimension, zDimension] as const;
+  const traces: OpenEna3dTrace[] = [];
+  const nodeRows = result.set.rotation.nodes ?? [];
+  const points = result.set.points;
+  const safePointScale = clamp(pointScale, 0.2, 5, 1);
+  const safeEdgeScale = clamp(edgeScale, 0.1, 5, 1);
+  const safeThreshold = clamp(edgeThreshold, 0, 1, 0);
+
+  const coordinateMagnitudes = [
+    ...nodeRows.flatMap((row) => dimensions.map((dimension) => Math.abs(coordinate(row, dimension)))),
+    ...points.flatMap((row) => dimensions.map((dimension) => Math.abs(coordinate(row, dimension)))),
+    ...result.groups.flatMap((group) => dimensions.map((dimension) => Math.abs(finiteNumber(group.meanPoint[dimension])))),
+  ];
+  const axisExtent = Math.max(0.5, ...coordinateMagnitudes) * 1.15;
+
+  if (showNetworks) {
+    const weightedEdges = result.set.adjacencyKey.map((edge) => ({ edge, ...edgeWeight(result, edge.name) }));
+    const maximumEdge = Math.max(1e-12, ...weightedEdges.map((edge) => edge.value));
+    const nodeByCode = new Map(nodeRows.map((row) => [String(row.code ?? ""), row]));
+    for (const weighted of weightedEdges) {
+      if (weighted.value <= 1e-12 || weighted.value / maximumEdge < safeThreshold) continue;
+      const source = nodeByCode.get(weighted.edge.source) ?? nodeRows[weighted.edge.sourceIndex];
+      const target = nodeByCode.get(weighted.edge.target) ?? nodeRows[weighted.edge.targetIndex];
+      const group = result.groups[weighted.groupIndex];
+      if (!source || !target || !group) continue;
+      const relativeWeight = weighted.value / maximumEdge;
+      const color = groupColor(group, weighted.groupIndex);
+      const meaning = weighted.comparison
+        ? `${group.name} stronger by ${formatCoordinate(weighted.value)}`
+        : `${group.name} mean weight ${formatCoordinate(weighted.value)}`;
+      const hover = `<b>${escapeHoverText(weighted.edge.source)} ↔ ${escapeHoverText(weighted.edge.target)}</b><br>${escapeHoverText(meaning)}`;
+      traces.push({
+        type: "scatter3d",
+        mode: "lines",
+        name: `${weighted.edge.name} · ${group.name}`,
+        x: [coordinate(source, xDimension), coordinate(target, xDimension)],
+        y: [coordinate(source, yDimension), coordinate(target, yDimension)],
+        z: [coordinate(source, zDimension), coordinate(target, zDimension)],
+        customdata: [hover, hover],
+        line: {
+          color,
+          width: Math.max(1, (1.2 + relativeWeight * 8) * safeEdgeScale),
+        },
+        hovertemplate: "%{customdata}<extra></extra>",
+        legendgroup: `open-ena-group-${weighted.groupIndex}`,
+        showlegend: false,
+        meta: {
+          role: "network-edge",
+          groupName: group.name,
+          groupIndex: weighted.groupIndex,
+          edgeName: weighted.edge.name,
+        },
+      });
+    }
+  }
+
+  if (showTrajectories && result.set.modelType !== "EndPoint" && result.set.trajectories) {
+    const pointIndicesByUnit = new Map<string, number[]>();
+    points.forEach((row, index) => {
+      const unitId = String(row.ENA_UNIT ?? `unit-${index}`);
+      const indices = pointIndicesByUnit.get(unitId) ?? [];
+      indices.push(index);
+      pointIndicesByUnit.set(unitId, indices);
+    });
+    for (const [unitId, indices] of pointIndicesByUnit) {
+      if (indices.length < 2) continue;
+      const firstRow = points[indices[0]];
+      if (!firstRow) continue;
+      const groupIndex = groupIndexForRow(result, groupColumn, firstRow);
+      const group = result.groups[groupIndex];
+      if (!group) continue;
+      const color = groupColor(group, groupIndex);
+      const pathHover = indices.map((pointIndex, stepIndex) => {
+        const trajectoryRow = result.set.trajectories?.[pointIndex];
+        const step = result.set.conversation
+          .map((column) => String(trajectoryRow?.[column] ?? ""))
+          .filter(Boolean)
+          .join(" · ");
+        return `<b>${escapeHoverText(unitId)}</b><br>${escapeHoverText(group.name)}<br>Step ${stepIndex + 1}${step ? `: ${escapeHoverText(step)}` : ""}`;
+      });
+      traces.push({
+        type: "scatter3d",
+        mode: "lines",
+        name: `${unitId} trajectory · ${GROUP_LINE_DASHES[groupIndex % GROUP_LINE_DASHES.length]}`,
+        x: indices.map((index) => coordinate(points[index] ?? {}, xDimension)),
+        y: indices.map((index) => coordinate(points[index] ?? {}, yDimension)),
+        z: indices.map((index) => coordinate(points[index] ?? {}, zDimension)),
+        customdata: pathHover,
+        line: {
+          color,
+          width: 4,
+          dash: GROUP_LINE_DASHES[groupIndex % GROUP_LINE_DASHES.length],
+        },
+        hovertemplate: "%{customdata}<extra></extra>",
+        connectgaps: false,
+        legendgroup: `open-ena-group-${groupIndex}`,
+        showlegend: false,
+        meta: { role: "trajectory-path", groupName: group.name, groupIndex, unitId },
+      });
+    }
+  }
+
+  if (showPoints) {
+    result.groups.forEach((group, groupIndex) => {
+      const selected = points.filter((row) => groupIndexForRow(result, groupColumn, row) === groupIndex);
+      if (selected.length === 0) return;
+      const color = groupColor(group, groupIndex);
+      const markerSymbol = GROUP_MARKER_SYMBOLS[groupIndex % GROUP_MARKER_SYMBOLS.length];
+      traces.push({
+        type: "scatter3d",
+        mode: showUnitLabels ? "markers+text" : "markers",
+        name: `${group.name} units · ${GROUP_MARKER_LABELS[groupIndex % GROUP_MARKER_LABELS.length]}`,
+        x: selected.map((row) => coordinate(row, xDimension)),
+        y: selected.map((row) => coordinate(row, yDimension)),
+        z: selected.map((row) => coordinate(row, zDimension)),
+        text: selected.map((row, index) => String(row.ENA_UNIT ?? `unit-${index + 1}`)),
+        customdata: selected.map((row, index) => {
+          const label = String(row.ENA_UNIT ?? `unit-${index + 1}`);
+          const point = dimensions.map((dimension) => coordinate(row, dimension)) as [number, number, number];
+          return pointHover(label, group.name, point, dimensions);
+        }),
+        textposition: "top center",
+        marker: {
+          color,
+          size: 6 * safePointScale,
+          symbol: markerSymbol,
+          opacity: 0.68,
+          line: { color: "#263740", width: 0.8 },
+        },
+        hovertemplate: "%{customdata}<extra></extra>",
+        legendgroup: `open-ena-group-${groupIndex}`,
+        showlegend: true,
+        meta: { role: "unit-points", groupName: group.name, groupIndex, markerSymbol },
+      });
+    });
+  }
+
+  result.groups.forEach((group, groupIndex) => {
+    const color = groupColor(group, groupIndex);
+    const markerSymbol = GROUP_MARKER_SYMBOLS[groupIndex % GROUP_MARKER_SYMBOLS.length];
+    const mean = dimensions.map((dimension) => finiteNumber(group.meanPoint[dimension])) as [number, number, number];
+    traces.push({
+      type: "scatter3d",
+      mode: "markers",
+      name: `${group.name} mean · ${GROUP_MARKER_LABELS[groupIndex % GROUP_MARKER_LABELS.length]}`,
+      x: [mean[0]],
+      y: [mean[1]],
+      z: [mean[2]],
+      customdata: [pointHover(`${group.name} mean`, group.name, mean, dimensions)],
+      marker: {
+        color,
+        size: 12,
+        symbol: markerSymbol,
+        opacity: 1,
+        line: { color: "#ffffff", width: 3 },
+      },
+      hovertemplate: "%{customdata}<extra></extra>",
+      legendgroup: `open-ena-group-${groupIndex}`,
+      showlegend: !showPoints,
+      meta: { role: "group-mean", groupName: group.name, groupIndex, markerSymbol },
+    });
+  });
+
+  if (nodeRows.length > 0) {
+    traces.push({
+      type: "scatter3d",
+      mode: showLabels ? "markers+text" : "markers",
+      name: "Codes",
+      x: nodeRows.map((row) => coordinate(row, xDimension)),
+      y: nodeRows.map((row) => coordinate(row, yDimension)),
+      z: nodeRows.map((row) => coordinate(row, zDimension)),
+      text: nodeRows.map((row) => String(row.code ?? "")),
+      customdata: nodeRows.map((row) => {
+        const label = String(row.code ?? "");
+        const point = dimensions.map((dimension) => coordinate(row, dimension)) as [number, number, number];
+        return pointHover(`Code: ${label}`, "Code node", point, dimensions);
+      }),
+      textposition: "top center",
+      textfont: { color: "#263740", size: 12 },
+      marker: {
+        color: nodeRows.map((row) => codeColorFor(codeColors, String(row.code ?? ""))),
+        size: 9,
+        symbol: "circle",
+        opacity: 1,
+        line: { color: "#ffffff", width: 1.5 },
+      },
+      hovertemplate: "%{customdata}<extra></extra>",
+      showlegend: false,
+      meta: { role: "code-node", markerSymbol: "circle" },
+    });
+  }
+
+  traces.push(...axisTraces(axisExtent, dimensions));
+
+  const annotations = showVariance
+    ? dimensions.map((dimension, index) => ({
+        text: `${dimension}: ${(finiteNumber(result.set.variance[dimension]) * 100).toFixed(1)}% variance`,
+        x: 0.01,
+        y: 1.04 - index * 0.035,
+        xref: "paper" as const,
+        yref: "paper" as const,
+        showarrow: false as const,
+        font: { color: AXIS_COLORS[index], size: 11 },
+        xanchor: "left" as const,
+      }))
+    : [];
+
+  const sceneAxis = (dimension: string, color: string, reversed: boolean): OpenEna3dSceneAxis => ({
+    title: { text: dimension },
+    color,
+    gridcolor: "#dbe9e7",
+    zerolinecolor: "#64748b",
+    showspikes: false,
+    autorange: reversed ? "reversed" : true,
+  });
+
+  return {
+    data: traces,
+    layout: {
+      autosize: true,
+      height: 590,
+      margin: { l: 16, r: 16, t: showVariance ? 68 : 28, b: 58 },
+      paper_bgcolor: "#ffffff",
+      plot_bgcolor: "#f8fafc",
+      font: {
+        family: '"Helvetica Neue", Helvetica, Arial, sans-serif',
+        color: "#334b52",
+        size: 12,
+      },
+      legend: { orientation: "h", x: 0, y: -0.12 },
+      hoverlabel: { bgcolor: "#0f172a", font: { color: "#ffffff" } },
+      uirevision: OPEN_ENA_3D_UI_REVISION,
+      annotations,
+      scene: {
+        xaxis: sceneAxis(xDimension, AXIS_COLORS[0], flipX),
+        yaxis: sceneAxis(yDimension, AXIS_COLORS[1], flipY),
+        zaxis: sceneAxis(zDimension, AXIS_COLORS[2], false),
+        camera: scaledCamera(camera, plotZoom),
+        bgcolor: "#f8fafc",
+        aspectmode: "cube",
+        dragmode: "orbit",
+      },
+    },
+    config: {
+      responsive: true,
+      scrollZoom: true,
+      displaylogo: false,
+      displayModeBar: true,
+      modeBarButtonsToRemove: ["sendDataToCloud", "lasso2d", "select2d"],
+      toImageButtonOptions: { format: "png", filename: "open-ena-3d" },
+    },
+  };
+}

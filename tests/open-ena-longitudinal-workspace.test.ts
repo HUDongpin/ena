@@ -14,7 +14,6 @@ const plot = source("components/open-ena/OpenEnaPlot.tsx");
 const longitudinalPlot = source("components/open-ena/OpenEnaLongitudinalTrajectory.tsx");
 const copy = source("lib/open-ena-i18n.ts");
 const longitudinal = source("lib/open-ena/longitudinal.ts");
-const site = source("lib/site.ts");
 
 test("trajectory models are configured in Model type instead of launched from the plot toolbar", () => {
   assert.doesNotMatch(workspace, /open-ena-trajectory-analysis-button|launchTrajectoryAnalysis/);
@@ -446,10 +445,10 @@ test("accumulated trajectory order is visibly locked to the fitted source sequen
   assert.match(copy, /Accumulated trajectories are locked to the fitted source encounter order/);
 });
 
-test("the 3D ENA exploratory control remains the unchanged external website link", () => {
-  assert.match(site, /threeDenaUrl:\s*"https:\/\/www\.3dena\.com"/);
-  assert.match(workspace, /href=\{siteConfig\.threeDenaUrl\}/);
-  assert.match(workspace, /target="_blank"/);
-  assert.match(workspace, /rel="noreferrer"/);
-  assert.doesNotMatch(workspace, /setView\("3d"\)/);
+test("the 3D ENA control reuses trajectory coordinates without leaving Open ENA", () => {
+  assert.match(workspace, /aria-pressed=\{view === "3d"\}/);
+  assert.match(workspace, /selectVisualizationView\("3d"\)/);
+  assert.match(workspace, /view === "2d" && activeLongitudinalView/);
+  assert.doesNotMatch(workspace, /href=\{siteConfig\.threeDenaUrl\}/);
+  assert.match(plot, /view === "3d"[\s\S]*?zDimension/);
 });

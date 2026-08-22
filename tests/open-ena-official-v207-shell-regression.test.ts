@@ -159,7 +159,7 @@ test("GroupContrast keeps Comparison central and Primary, Secondary, then Plot T
 test("Comparison, Primary, and Secondary plot titles and markers use black ink", () => {
   assert.match(
     workspace,
-    /className=\{`ena-visual-toolbar\$\{activeGroupContrast\s*\?\s*" ena-visual-toolbar-group-contrast"\s*:\s*""\}`\}/,
+    /className=\{`ena-visual-toolbar\$\{view === "2d" && activeGroupContrast\s*\?\s*" ena-visual-toolbar-group-contrast"\s*:\s*""\}`\}/,
     "the shared Comparison Plot heading needs a contrast-only styling hook",
   );
 
@@ -279,7 +279,7 @@ test("the plot toolbar contains view and export actions, not a model-type launch
   const toolbarActions = sourceSegment(
     workspace,
     '<div className="ena-visual-toolbar-actions">',
-    "{activeSetComparison ? (",
+    '{activeSetComparison && view === "2d" ? (',
   );
 
   assert.doesNotMatch(toolbarActions, /trajectory-analysis-button|launchTrajectoryAnalysis|copy\.longitudinal\.launch/);
@@ -539,7 +539,7 @@ test("plot papers use color-coded group captions and official scale notation", (
   );
 });
 
-test("the local 2D and external 3D controls sit immediately before Download Model in the plot-title toolbar", () => {
+test("the local 2D and in-place 3D controls sit immediately before Download Model in the plot-title toolbar", () => {
   const controls = sourceSegment(
     workspace,
     '<aside className="ena-control-panel"',
@@ -547,14 +547,16 @@ test("the local 2D and external 3D controls sit immediately before Download Mode
   );
   const toolbar = sourceSegment(
     workspace,
-    '<div className={`ena-visual-toolbar${activeGroupContrast ? " ena-visual-toolbar-group-contrast" : ""}`}>',
-    '{activeSetComparison ? (',
+    '<div className={`ena-visual-toolbar${view === "2d" && activeGroupContrast ? " ena-visual-toolbar-group-contrast" : ""}`}>',
+    '{activeSetComparison && view === "2d" ? (',
   );
 
   assert.doesNotMatch(controls, /className="ena-view-toggle"/, "the view switch no longer belongs to the Model control panel");
   assert.match(toolbar, /className="ena-analysis-toolbar-cluster"[\s\S]*?className="ena-view-toggle"/);
   assert.match(toolbar, /aria-pressed=\{view === "2d"\}/);
-  assert.match(toolbar, /href=\{siteConfig\.threeDenaUrl\}/);
+  assert.match(toolbar, /aria-pressed=\{view === "3d"\}/);
+  assert.match(toolbar, /selectVisualizationView\("3d"\)/);
+  assert.doesNotMatch(toolbar, /<a\b|href=\{siteConfig\.threeDenaUrl\}/);
 
   const viewToggleIndex = toolbar.indexOf('className="ena-view-toggle"');
   const downloadIndex = toolbar.indexOf('className="ena-compact-toolbar-button ena-download-model-button"');
