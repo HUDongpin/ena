@@ -1553,10 +1553,17 @@ function assertOnaBundleContract(
     }
   }
   if (Object.hasOwn(presentation, "selectedGroupOrder")) {
-    if (!Array.isArray(presentation.selectedGroupOrder)
-      || presentation.selectedGroupOrder.length !== 2
-      || presentation.selectedGroupOrder.some((group) => typeof group !== "string")) {
+    const selectedGroupOrder = presentation.selectedGroupOrder;
+    if (!Array.isArray(selectedGroupOrder)
+      || selectedGroupOrder.length !== 2
+      || selectedGroupOrder.some((group) => typeof group !== "string")) {
       throw new Error("Schema-v2 ONA selected group order is invalid.");
+    }
+    if (selectedGroupOrder[0] === selectedGroupOrder[1]
+      || selectedGroupOrder.some((group) => !manifestGroupNames.has(group))) {
+      throw new Error(
+        "Schema-v2 ONA selected group order must contain two distinct declared manifest groups.",
+      );
     }
   }
 

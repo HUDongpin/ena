@@ -450,6 +450,33 @@ test("bundle parser closes analytic units, dataset rows, unit tuples, and group 
   );
 });
 
+test("ONA bundle parser binds selected group order to two distinct manifest groups", () => {
+  const { dataset, config, result } = orderedFixture();
+  const valid = structuredClone(buildAnalysisBundle(
+    dataset,
+    config,
+    result,
+    SOURCE_HASH,
+    { selectedGroupOrder: ["g2", "g1"] },
+  )) as Record<string, any>;
+
+  const parsed = parseOpenEnaAnalysisBundle(JSON.stringify(valid)) as Record<string, any>;
+  assert.deepEqual(parsed.presentation.selectedGroupOrder, ["g2", "g1"]);
+
+  for (const [label, selectedGroupOrder] of [
+    ["duplicate group", ["g1", "g1"]],
+    ["group absent from manifest", ["g1", "ghost-group"]],
+  ] as const) {
+    const forged = structuredClone(valid);
+    forged.presentation.selectedGroupOrder = selectedGroupOrder;
+    assert.throws(
+      () => parseOpenEnaAnalysisBundle(JSON.stringify(forged)),
+      /selected group order|manifest group|declared group|distinct/i,
+      label,
+    );
+  }
+});
+
 test("closed ONA parser preserves legitimate one-unit not-estimable statistics", () => {
   const codes = ["A", "B", "C"];
   const dataset: ParsedDataset = {
