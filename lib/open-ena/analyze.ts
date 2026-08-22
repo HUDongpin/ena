@@ -363,11 +363,17 @@ export function buildOpenEnaResult(
  * releasing jENA's row-level copies of the source data after the model exists.
  */
 export function compactOpenEnaSet(set: ENASet): ENASet {
+  const orderedNetwork = set.networkType === "ordered";
   return {
     ...set,
     rawRows: [],
-    rowConnectionCounts: [],
+    rowConnectionCounts: orderedNetwork
+      ? set.rowConnectionCounts.map((row) => ({ ...row }))
+      : [],
     metaData: [],
+    ...(orderedNetwork && set.rowWindowProvenance
+      ? { rowWindowProvenance: set.rowWindowProvenance.map((entry) => ({ ...entry })) }
+      : {}),
     trajectories: set.trajectories?.map((row) => ({ ...row })),
   };
 }

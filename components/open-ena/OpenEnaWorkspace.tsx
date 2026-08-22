@@ -7,6 +7,7 @@ import { getOpenEnaAuthCopy } from "@/lib/open-ena-auth-copy";
 import { getOpenEnaCopy, isOpenEnaLocalizedLocale } from "@/lib/open-ena-i18n";
 import { buildManifest, dimensionEffect } from "@/lib/open-ena/analyze";
 import { analyzeDatasetInWorker } from "@/lib/open-ena/client";
+import { cloneOpenEnaConfig } from "@/lib/open-ena/network-config";
 import {
   inferConfig,
   officialComparisonRotation,
@@ -1123,6 +1124,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     nextDatasetHash = datasetHash,
   ) {
     if (!nextDataset || sourceAbortRef.current || referenceImportRef.current) return;
+    if (!nextDatasetHash) {
+      setError("Commit the imported source and its SHA-256 binding before analysis.");
+      return;
+    }
     const analysisGeneration = datasetGenerationRef.current;
     const errors = validateWorkspaceConfig(nextDataset, nextConfig, rotationReference);
     if (errors.length) {
@@ -1140,6 +1145,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     try {
       const nextResult = await analyzeDatasetInWorker(nextDataset, nextConfig, {
         signal: controller.signal,
+        datasetSha256: nextDatasetHash,
         reference: nextConfig.rotation === "reference" ? rotationReference : null,
         onProgress: ({ progress: nextProgress, stage }) => {
           setProgress(Math.round(nextProgress * 100));
@@ -1147,25 +1153,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         },
       });
       if (controller.signal.aborted || datasetGenerationRef.current !== analysisGeneration) return;
-      setResult({
-        ...nextResult,
-        provenanceBinding: {
-          datasetNormalizedUtf8TextSha256: nextDatasetHash ?? "",
-          datasetHashKind: nextDataset.hashKind,
-          configuration: {
-            ...nextConfig,
-            unitColumns: [...nextConfig.unitColumns],
-            conversationColumns: [...nextConfig.conversationColumns],
-            codes: [...nextConfig.codes],
-          },
-        },
-      });
-      setResultConfig({
-        ...nextConfig,
-        unitColumns: [...nextConfig.unitColumns],
-        conversationColumns: [...nextConfig.conversationColumns],
-        codes: [...nextConfig.codes],
-      });
+      setResult(nextResult);
+      setResultConfig(cloneOpenEnaConfig(nextResult.provenanceBinding!.configuration));
       const [x = "SVD1", y = "SVD2", z = y] = nextResult.dimensions;
       setXDimension(x);
       setYDimension(y);

@@ -1,9 +1,27 @@
 "use client";
 
 import type { ENAWorkerProgress } from "jena-js/browser";
-import { buildJenaOptions } from "./analyze";
+import { bindOpenEnaResultProvenance, buildOpenEnaAnalysisPlan } from "./analyze";
 import type { OpenEnaConfig, OpenEnaResult, OpenEnaRotationReference, ParsedDataset } from "./types";
 import type { OpenEnaWorkerRequest, OpenEnaWorkerResponse } from "./jena.worker";
+
+export function buildOpenEnaWorkerRunRequest(
+  dataset: ParsedDataset,
+  config: OpenEnaConfig,
+  options: {
+    id: string;
+    reference: OpenEnaRotationReference | null;
+    chunkSize: number;
+  },
+): Extract<OpenEnaWorkerRequest, { kind: "run" }> {
+  return {
+    kind: "run",
+    id: options.id,
+    plan: buildOpenEnaAnalysisPlan(dataset, config, options.reference),
+    reference: options.reference,
+    chunkSize: options.chunkSize,
+  };
+}
 
 export async function analyzeDatasetInWorker(
   dataset: ParsedDataset,
@@ -12,10 +30,19 @@ export async function analyzeDatasetInWorker(
     signal?: AbortSignal;
     onProgress?: (progress: ENAWorkerProgress) => void;
     reference?: OpenEnaRotationReference | null;
-  } = {},
+    datasetSha256: string;
+  },
 ): Promise<OpenEnaResult> {
-  const worker = new Worker(new URL("./jena.worker.ts", import.meta.url), { type: "module" });
+  if (!/^[a-f\d]{64}$/iu.test(options.datasetSha256)) {
+    throw new Error("Open ENA analysis requires the imported dataset's SHA-256 provenance binding.");
+  }
   const id = `open-ena-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const request = buildOpenEnaWorkerRunRequest(dataset, config, {
+    id,
+    reference: options.reference ?? null,
+    chunkSize: 2_000,
+  });
+  const worker = new Worker(new URL("./jena.worker.ts", import.meta.url), { type: "module" });
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (callback: () => void) => {
@@ -39,7 +66,17 @@ export async function analyzeDatasetInWorker(
       if (message.kind === "progress") {
         options.onProgress?.({ id, progress: message.progress, stage: message.stage });
       } else if (message.kind === "result") {
-        finish(() => resolve(message.result));
+        try {
+          const bound = bindOpenEnaResultProvenance(
+            message.result,
+            dataset,
+            options.datasetSha256,
+            request.plan.configuration,
+          );
+          finish(() => resolve(bound));
+        } catch (error) {
+          finish(() => reject(error instanceof Error ? error : new Error(String(error))));
+        }
       } else if (message.kind === "cancelled") {
         finish(() => reject(new DOMException("The jENA run was cancelled.", "AbortError")));
       } else if (message.kind === "error") {
@@ -52,14 +89,7 @@ export async function analyzeDatasetInWorker(
     if (options.signal?.aborted) abortHandler();
     else {
       options.signal?.addEventListener("abort", abortHandler, { once: true });
-      worker.postMessage({
-        kind: "run",
-        id,
-        options: buildJenaOptions(dataset, config, options.reference ?? null),
-        config,
-        reference: options.reference ?? null,
-        chunkSize: 2_000,
-      } satisfies OpenEnaWorkerRequest);
+      worker.postMessage(request);
     }
   });
 }

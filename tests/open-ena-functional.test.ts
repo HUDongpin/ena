@@ -347,7 +347,7 @@ test("a replacement source aborts the current run only at the source commit boun
   }
   assert.match(
     workspace,
-    /async function runAnalysis\([\s\S]{0,240}nextDatasetHash\s*=\s*datasetHash[\s\S]*?datasetNormalizedUtf8TextSha256:\s*nextDatasetHash\s*\?\?\s*""/,
+    /async function runAnalysis\([\s\S]{0,240}nextDatasetHash\s*=\s*datasetHash[\s\S]*?datasetSha256:\s*nextDatasetHash[\s\S]*?setResult\(nextResult\)/,
     "each worker result must bind to the immutable hash supplied to that run",
   );
   assert.match(
@@ -703,12 +703,13 @@ test("pending model edits preserve the last valid research result until rebuild"
   assert.match(workspace, /Configuration changed/);
 });
 
-test("the worker uses model-only accumulation materialization", () => {
+test("the worker retains ordered audit rows only for ONA materialization", () => {
   const worker = readFileSync(
     join(projectRoot, "lib", "open-ena", "jena.worker.ts"),
     "utf8",
   );
-  assert.match(worker, /materialization: "model"/);
+  assert.match(worker, /materialization:\s*configuration\.analysisKind === "ona" \? "full" : "model"/);
+  assert.match(worker, /compactOpenEnaSet/);
 });
 
 test("source evidence can be searched and filtered locally without entering exports", async () => {

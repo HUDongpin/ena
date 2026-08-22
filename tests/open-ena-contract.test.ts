@@ -239,7 +239,7 @@ test("2D is the local default and 3D ENA switches the same fitted result in plac
   assert.match(workspace, /view === "2d" && activeGroupContrast/);
   assert.match(plot, /result\.set\.points/);
   assert.match(worker, /createAccumulationStream/);
-  assert.match(worker, /buildOpenEnaSummary/);
+  assert.match(worker, /buildOpenEnaResult/);
   assert.match(worker, /compactOpenEnaSet/);
   assert.doesNotMatch(client, /result\.worker/);
   assert.match(client, /new URL\("\.\/jena\.worker\.ts", import\.meta\.url\)/);
