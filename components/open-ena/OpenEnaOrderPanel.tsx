@@ -380,7 +380,12 @@ export function OpenEnaOrderPanel({
                 {copy.nextPage}
               </button>
             </nav>
-            <div className="ena-order-preview-table-wrap">
+            <div
+              className="ena-order-preview-table-wrap"
+              tabIndex={0}
+              role="region"
+              aria-label={copy.previewTitle}
+            >
               <table>
                 <thead>
                   <tr>

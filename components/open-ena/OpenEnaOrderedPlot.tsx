@@ -86,6 +86,17 @@ export interface OpenEnaOrderedPlotProps {
 
 type ScreenPoint = { x: number; y: number };
 
+type OrderedPointShape = "circle" | "square" | "diamond" | "triangle-up" | "triangle-down" | "cross";
+
+const ORDERED_POINT_SHAPES: readonly OrderedPointShape[] = [
+  "circle",
+  "square",
+  "diamond",
+  "triangle-up",
+  "triangle-down",
+  "cross",
+];
+
 function bounded(value: number, minimum: number, maximum: number, fallback: number) {
   return Number.isFinite(value) ? Math.min(maximum, Math.max(minimum, value)) : fallback;
 }
@@ -132,10 +143,48 @@ function edgeDescription(
   ].join(" · ");
 }
 
-function pointGroupIndex(result: OpenEnaResult, group: string | null) {
-  if (group === null) return 0;
-  const index = result.groups.findIndex((candidate) => candidate.name === group);
-  return index < 0 ? 0 : index;
+function pointShapeAssignments(result: OpenEnaResult) {
+  const names = [...new Set(result.groups.map((group) => group.name))].sort();
+  return new Map(names.map((name, index) => [
+    name,
+    ORDERED_POINT_SHAPES[index % ORDERED_POINT_SHAPES.length],
+  ]));
+}
+
+function UnitPointMarker({
+  shape,
+  x,
+  y,
+  size,
+  fill,
+}: {
+  shape: OrderedPointShape;
+  x: number;
+  y: number;
+  size: number;
+  fill: string;
+}) {
+  const markerProps = { fill, stroke: "#263740", strokeWidth: 1.2 };
+  if (shape === "circle") return <circle cx={x} cy={y} r={size} {...markerProps} />;
+  if (shape === "square") {
+    return <rect x={x - size} y={y - size} width={size * 2} height={size * 2} rx={1.5} {...markerProps} />;
+  }
+  if (shape === "diamond") {
+    return <polygon points={`${x},${y - size * 1.25} ${x + size * 1.25},${y} ${x},${y + size * 1.25} ${x - size * 1.25},${y}`} {...markerProps} />;
+  }
+  if (shape === "triangle-up") {
+    return <polygon points={`${x},${y - size * 1.3} ${x + size * 1.18},${y + size} ${x - size * 1.18},${y + size}`} {...markerProps} />;
+  }
+  if (shape === "triangle-down") {
+    return <polygon points={`${x - size * 1.18},${y - size} ${x + size * 1.18},${y - size} ${x},${y + size * 1.3}`} {...markerProps} />;
+  }
+  const arm = size * 0.38;
+  return (
+    <path
+      d={`M ${x - arm} ${y - size} H ${x + arm} V ${y - arm} H ${x + size} V ${y + arm} H ${x + arm} V ${y + size} H ${x - arm} V ${y + arm} H ${x - size} V ${y - arm} H ${x - arm} Z`}
+      {...markerProps}
+    />
+  );
 }
 
 export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
@@ -158,6 +207,17 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
   const selfEdges = new Map(model.visibleEdges
     .filter((edge) => edge.selfConnection)
     .map((edge) => [edge.ground, edge]));
+  const pointShapes = pointShapeAssignments(props.result);
+  const pointGroups = [...new Set(model.points
+    .map((point) => point.group)
+    .filter((group): group is string => group !== null))]
+    .sort()
+    .map((name, index) => ({
+      name,
+      number: index + 1,
+      shape: pointShapes.get(name) ?? ORDERED_POINT_SHAPES[0],
+      color: props.result.groups.find((group) => group.name === name)?.color ?? "#52636a",
+    }));
   const title = props.scope.kind === "overall" ? copy.overallTitle : `${props.scope.name} · ${copy.groupTitle}`;
   const figureLabel = `${title}. ${copy.directedNetworkDescription}`;
 
@@ -180,6 +240,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
         <title>{title}</title>
         <desc>
           {copy.directedNetworkDescription} {model.points.length} {copy.unitsLabel}; {model.visibleEdges.length} {copy.visibleCellsLabel}. {copy.nodeSizeLabel}: {model.nodeSizeDefinition}.
+          {props.showPoints && pointGroups.length > 1 ? ` ${copy.unitsLabel}: ${pointGroups.map((group) => `${group.number}: ${group.name}`).join("; ")}.` : ""}
         </desc>
         <rect width={WIDTH} height={height} className="ena-set-plot-background ona-plot-background" />
         <g className="ona-zero-axes" aria-hidden="true">
@@ -264,18 +325,18 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
         {props.showPoints ? model.points.map((point) => {
           const screen = positions.get(`point:${point.key}`);
           if (!screen) return null;
-          const groupIndex = pointGroupIndex(props.result, point.group);
-          const group = props.result.groups[groupIndex];
+          const group = point.group === null
+            ? null
+            : props.result.groups.find((candidate) => candidate.name === point.group) ?? null;
+          const shape = point.group === null
+            ? ORDERED_POINT_SHAPES[0]
+            : pointShapes.get(point.group) ?? ORDERED_POINT_SHAPES[0];
           const size = 6.5 * pointScale;
           const label = `${point.unit}${point.group ? ` · ${point.group}` : ""}: ${props.xDimension} ${displayNumber(point.x)}, ${props.yDimension} ${displayNumber(point.y)}`;
           return (
-            <g key={point.key} data-ona-unit-point="true" data-ona-point-shape={groupIndex % 2 === 0 ? "circle" : "square"}>
+            <g key={point.key} data-ona-unit-point="true" data-ona-group={point.group ?? ""} data-ona-point-shape={shape}>
               <title>{label}</title>
-              {groupIndex % 2 === 0 ? (
-                <circle cx={screen.x} cy={screen.y} r={size} fill={group?.color ?? "#52636a"} stroke="#263740" strokeWidth={1.2} />
-              ) : (
-                <rect x={screen.x - size} y={screen.y - size} width={size * 2} height={size * 2} rx={1.5} fill={group?.color ?? "#52636a"} stroke="#263740" strokeWidth={1.2} />
-              )}
+              <UnitPointMarker shape={shape} x={screen.x} y={screen.y} size={size} fill={group?.color ?? "#52636a"} />
               {props.showUnitLabels ? <text x={screen.x + size + 3} y={screen.y - size - 2} className="ena-set-unit-label">{point.unit}</text> : null}
             </g>
           );
@@ -329,6 +390,24 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
         <span>{copy.selfDiscLegend}</span>
         <span>{copy.nodeSizeLabel}: {model.nodeSizeDefinition}</span>
       </div>
+      {props.showPoints && pointGroups.length > 1 ? (
+        <div role="list" className="ona-unit-shape-legend" aria-label={copy.unitsLabel}>
+          {pointGroups.map((group) => (
+            <span
+              key={group.name}
+              role="listitem"
+              data-ona-group-legend={group.name}
+              data-ona-point-shape={group.shape}
+              aria-label={`${group.number}: ${group.name}`}
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                <UnitPointMarker shape={group.shape} x={10} y={10} size={6.2} fill={group.color} />
+              </svg>
+              <span aria-hidden="true">{group.number} · </span>{group.name}
+            </span>
+          ))}
+        </div>
+      ) : null}
       <details className="ona-visible-edge-summary">
         <summary>{copy.visibleConnections}</summary>
         {model.visibleEdges.length > 0 ? (

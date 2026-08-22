@@ -9840,7 +9840,8 @@ body:has(.open-ena-page) #main-content {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 14px;
+  height: 24px;
+  min-height: 24px;
   min-width: 0;
   margin: 0 0 0 3px;
   background: transparent;
@@ -9921,16 +9922,16 @@ body:has(.open-ena-page) #main-content {
 
 .ena-official-binary-toggle {
   display: inline-flex;
-  height: 18px;
+  min-height: 24px;
   align-items: center;
   gap: 3px;
 }
 
 .ena-official-binary-toggle .ena-official-switch-label {
-  width: 23px;
-  min-width: 23px;
-  height: 15px;
-  min-height: 15px;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -9939,16 +9940,16 @@ body:has(.open-ena-page) #main-content {
   cursor: pointer;
   font: inherit;
   font-size: calc(0.61rem + var(--ena-font-step, 1px));
-  line-height: 15px;
+  line-height: 24px;
   text-align: center;
 }
 
 .ena-official-binary-toggle .ena-official-switch-track {
   position: relative;
-  width: 35px;
-  min-width: 35px;
-  height: 15px;
-  min-height: 15px;
+  width: 36px;
+  min-width: 36px;
+  height: 24px;
+  min-height: 24px;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -9958,10 +9959,10 @@ body:has(.open-ena-page) #main-content {
 
 .ena-official-switch-handle {
   position: absolute;
-  top: 1px;
-  left: 1px;
-  width: 13px;
-  height: 13px;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
@@ -9969,7 +9970,7 @@ body:has(.open-ena-page) #main-content {
 }
 
 .ena-official-switch-track[aria-checked="false"] .ena-official-switch-handle {
-  left: 21px;
+  left: 15px;
 }
 
 .ena-official-binary-toggle button:focus-visible {
@@ -10251,6 +10252,11 @@ body:has(.open-ena-page) #main-content {
   min-height: 360px;
   max-height: min(65vh, 690px) !important;
   border-top: 0;
+}
+
+.ena-data-view-scroll:focus-visible {
+  outline: 3px solid var(--ena-accent-strong);
+  outline-offset: -3px;
 }
 
 .ena-data-view-table {
@@ -11110,6 +11116,11 @@ body:has(.open-ena-page) #main-content {
   overscroll-behavior: contain;
 }
 
+.ena-order-preview-table-wrap:focus-visible {
+  outline: 3px solid var(--ena-accent-strong);
+  outline-offset: 2px;
+}
+
 .ena-order-preview table {
   width: 100%;
   min-width: 780px;
@@ -11406,6 +11417,31 @@ body:has(.open-ena-page) #main-content {
   background: #f8fbfa;
   font-size: calc(0.58rem + var(--ena-font-step, 1px));
   line-height: 1.4;
+}
+
+.ona-unit-shape-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+  border-top: 1px solid #e0e7e6;
+  padding: 8px 10px;
+  color: #344f53;
+  background: #f8fbfa;
+  font-size: calc(0.6rem + var(--ena-font-step, 1px));
+}
+
+.ona-unit-shape-legend > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.ona-unit-shape-legend svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
 }
 
 .ona-visible-edge-summary {

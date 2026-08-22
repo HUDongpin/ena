@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -169,6 +170,26 @@ test("order preview paginates the legal input instead of materializing every row
   assert.match(markup, /data-visible-rows="100"/);
   assert.equal((markup.match(/data-order-preview-row=/g) ?? []).length, 100);
   assert.match(markup, /Rows 1–100 of 250 · Page 1 of 3/);
+});
+
+test("order preview exposes one clearly focused keyboard scroll stop without nesting a table tab stop", () => {
+  const markup = renderToStaticMarkup(createElement(OpenEnaOrderPanel, {
+    value: panelValue,
+    onChange: () => undefined,
+    rows,
+    unitColumns: ["unit"],
+    horizonColumns: ["horizon"],
+    columnOptions: [{ value: "turn", label: "turn" }],
+    copy: panelCopy,
+  }));
+  const styles = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(
+    markup,
+    /class="ena-order-preview-table-wrap"[^>]*tabindex="0"[^>]*role="region"[^>]*aria-label="Per-horizon order preview"/,
+  );
+  assert.doesNotMatch(markup, /<table[^>]*tabindex=/);
+  assert.match(styles, /\.ena-order-preview-table-wrap:focus-visible\s*\{[\s\S]*?outline:/);
 });
 
 test("order policy and preview fail closed for unconfirmed source order, missing values, and ties", () => {

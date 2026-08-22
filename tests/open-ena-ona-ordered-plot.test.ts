@@ -352,6 +352,66 @@ test("the ordered SVG renders scaled triangles, pair chevrons, self inner discs,
   assert.match(compactMarkup, /<details[^>]*class="ona-visible-edge-summary"/);
 });
 
+test("six ONA groups keep stable non-color point shapes and expose the mapping in the accessible legend", async () => {
+  const { result, config } = orderedFixture();
+  const { default: OpenEnaOrderedPlot } = await import("../components/open-ena/OpenEnaOrderedPlot");
+  const groupNames = ["zeta", "alpha", "echo", "bravo", "delta", "charlie"];
+  const sixGroupResult = structuredClone(result);
+  sixGroupResult.groups = groupNames.map((name, index) => ({
+    ...sixGroupResult.groups[index % sixGroupResult.groups.length],
+    name,
+    count: 1,
+    pointCount: 1,
+    color: "#52636a",
+  }));
+  sixGroupResult.set.points = groupNames.map((group, index) => ({
+    ENA_UNIT: `unit-${index + 1}`,
+    group,
+    SVD1: -0.75 + index * 0.3,
+    SVD2: index % 2 === 0 ? -0.25 : 0.25,
+  }));
+
+  const render = (candidate: OpenEnaResult) => renderToStaticMarkup(createElement(OpenEnaOrderedPlot, {
+    result: candidate,
+    config,
+    scope: { kind: "overall" },
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    edgeThreshold: 0,
+    edgeScale: 1,
+    pointScale: 1,
+    textScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    compact: false,
+  }));
+  const shapeMap = (markup: string) => new Map(
+    [...markup.matchAll(/data-ona-unit-point="true"[^>]*data-ona-group="([^"]+)"[^>]*data-ona-point-shape="([^"]+)"/g)]
+      .map((match) => [match[1], match[2]]),
+  );
+
+  const markup = render(sixGroupResult);
+  const reordered = structuredClone(sixGroupResult);
+  reordered.groups.reverse();
+  const reorderedMarkup = render(reordered);
+  const mapping = shapeMap(markup);
+
+  assert.equal(mapping.size, 6);
+  assert.equal(new Set(mapping.values()).size, 6, "six groups must remain distinguishable without color");
+  assert.deepEqual(shapeMap(reorderedMarkup), mapping, "group-name-to-shape mapping must ignore result group order");
+  assert.match(markup, /role="list"[^>]*class="ona-unit-shape-legend"[^>]*aria-label="units"/);
+  for (const [group, shape] of mapping) {
+    assert.match(markup, new RegExp(`data-ona-group-legend="${group}"[^>]*data-ona-point-shape="${shape}"`));
+    assert.match(markup, new RegExp(`<desc>[^<]*${group}`, "s"));
+  }
+});
+
 test("malformed ordered adjacency and nonfinite scientific values fail closed", () => {
   const { result, config } = orderedFixture();
   const malformed = structuredClone(result);

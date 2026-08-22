@@ -79,6 +79,23 @@ test("persistent Plot Tools expose every controlled visual setting with accessib
   assert.doesNotMatch(frequent, /Minimum edge weight|Scale unit circles|Unit labels|Plot zoom/);
 });
 
+test("persistent Plot Tools keep range and segmented-toggle touch targets at least 24px", () => {
+  const styles = source("app/globals.css");
+
+  assert.match(
+    styles,
+    /\.ena-official-tool-control input\[type="range"\]\s*\{[^}]*height:\s*24px;[^}]*min-height:\s*24px;/,
+  );
+  assert.match(
+    styles,
+    /\.ena-official-binary-toggle \.ena-official-switch-label\s*\{[^}]*width:\s*24px;[^}]*min-width:\s*24px;[^}]*height:\s*24px;[^}]*min-height:\s*24px;/,
+  );
+  assert.match(
+    styles,
+    /\.ena-official-binary-toggle \.ena-official-switch-track\s*\{[^}]*min-width:\s*36px;[^}]*height:\s*24px;[^}]*min-height:\s*24px;/,
+  );
+});
+
 test("official Plot Settings sheet contains the less-frequent jENA controls without duplicating the frequent surface", () => {
   const markup = renderToStaticMarkup(createElement(OpenEnaPersistentPlotTools, {
     edgeScale: 1,
@@ -396,6 +413,28 @@ test("Data View owns a contained center table while preserving plot context cont
   assert.ok(markup.indexOf(">Unit</th>") < markup.indexOf(">Goal</th>"), "metadata columns are presented before code columns");
   assert.match(markup, /<th scope="row"[^>]*>A<\/th>/);
   assert.match(markup, /data-record-id="record-b"/);
+});
+
+test("Data View exposes one clearly focused keyboard scroll stop without nesting a table tab stop", () => {
+  const markup = renderToStaticMarkup(createElement(OpenEnaDataView, {
+    columns: [
+      { key: "unit", label: "Unit", kind: "metadata" },
+      { key: "edge", label: "A → B", kind: "directed-edge", align: "right" },
+    ],
+    rows: [{ id: "record-a", values: { unit: "A", edge: 3 } }],
+    context: "comparison",
+    onContextChange: noOp,
+    onReturnToComparison: noOp,
+    onExportCsv: noOp,
+  }));
+  const styles = source("app/globals.css");
+
+  assert.match(
+    markup,
+    /data-testid="open-ena-data-view-scroll"[^>]*tabindex="0"[^>]*role="region"[^>]*aria-label="Data View records"/,
+  );
+  assert.doesNotMatch(markup, /<table[^>]*tabindex=/);
+  assert.match(styles, /\.ena-data-view-scroll:focus-visible\s*\{[\s\S]*?outline:/);
 });
 
 test("Data View paginates both rows and variable columns within a bounded DOM surface", () => {

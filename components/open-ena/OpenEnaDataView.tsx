@@ -258,6 +258,9 @@ export default function OpenEnaDataView({
         className="ena-data-view-scroll"
         data-testid="open-ena-data-view-scroll"
         style={{ maxHeight: maxTableHeight, overflow: "auto", overscrollBehavior: "contain" }}
+        tabIndex={0}
+        role="region"
+        aria-label={copy.tableAriaLabel}
       >
         {orderedColumns.length > 0 ? (
           <table className="ena-data-view-table" aria-label={copy.tableAriaLabel}>
