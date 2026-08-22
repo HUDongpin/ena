@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Row } from "jena-js";
+import {
+  analyzeDataset,
+  bindOpenEnaResultProvenance,
+  buildOpenEnaAnalysisPlan,
+} from "../lib/open-ena/analyze";
 import { buildOpenEnaWorkerRunRequest } from "../lib/open-ena/client";
 import { buildAnalysisBundle } from "../lib/open-ena/export";
 import {
@@ -15,6 +20,7 @@ import {
   SAMPLE_CONFIG,
   type CanonicalOpenEnaConfig,
   type OpenEnaConfig,
+  type OpenEnaOrderedResponseNodeSummary,
   type ParsedDataset,
 } from "../lib/open-ena/types";
 
@@ -65,6 +71,61 @@ test("ordered response-node summary preserves raw counts and binds arrays to con
     ],
   });
   assert.doesNotMatch(JSON.stringify(summary), /u-1|u-2|u-3|h-1|h-2|h-3|sourceRow|responseRow|turn/i);
+});
+
+test("ordered response-node totals retain small and subnormal counts across row permutations and group aggregation", () => {
+  const rows: Row[] = [
+    {
+      unit: "alpha-large",
+      horizon: "h-alpha",
+      turn: 1,
+      group: "alpha",
+      A: Number.MIN_VALUE,
+      B: 1e16,
+      C: 0,
+    },
+    ...Array.from({ length: 6 }, (_, index): Row => ({
+      unit: `alpha-small-${index + 1}`,
+      horizon: "h-alpha",
+      turn: index + 2,
+      group: "alpha",
+      A: Number.MIN_VALUE,
+      B: 1,
+      C: 0,
+    })),
+    ...Array.from({ length: 4 }, (_, index): Row => ({
+      unit: `zeta-small-${index + 1}`,
+      horizon: "h-zeta",
+      turn: index + 1,
+      group: "zeta",
+      A: Number.MIN_VALUE,
+      B: 1,
+      C: 0,
+    })),
+  ];
+
+  const forward = buildOpenEnaOrderedResponseNodeSummary(rows, onaConfig());
+  const reversed = buildOpenEnaOrderedResponseNodeSummary([...rows].reverse(), onaConfig());
+
+  assert.deepEqual(reversed, forward);
+  assert.equal(forward?.overallResponseCodeTotals[0], 10_000_000_000_000_010);
+  assert.equal(forward?.overallResponseCodeTotals[1], 11 * Number.MIN_VALUE);
+  assert.deepEqual(forward?.groups, [
+    {
+      name: "alpha",
+      unitCount: 7,
+      responseCodeTotals: [10_000_000_000_000_006, 7 * Number.MIN_VALUE, 0],
+    },
+    {
+      name: "zeta",
+      unitCount: 4,
+      responseCodeTotals: [4, 4 * Number.MIN_VALUE, 0],
+    },
+  ]);
+  assert.equal(
+    forward?.groups.reduce((total, group) => total + group.responseCodeTotals[0], 0),
+    forward?.overallResponseCodeTotals[0],
+  );
 });
 
 test("ordered response-node summary uses one stable All units group when no group is configured", () => {
@@ -121,6 +182,171 @@ function dataset(rows: Row[]): ParsedDataset {
     source: "upload",
   };
 }
+
+function provenanceFixture() {
+  const source = dataset([
+    { unit: "u1", horizon: "h1", turn: 2, group: "zeta", A: "0", B: "3", C: "0" },
+    { unit: "u1", horizon: "h1", turn: 1, group: "zeta", A: "2", B: "0", C: "0" },
+    { unit: "u2", horizon: "h2", turn: 1, group: "alpha", A: "1", B: "1", C: "1" },
+  ]);
+  const config = onaConfig();
+  const plan = buildOpenEnaAnalysisPlan(source, config);
+  const summary = buildOpenEnaOrderedResponseNodeSummary(plan.options.rows, plan.configuration);
+  assert.ok(summary);
+  return {
+    source,
+    config,
+    result: analyzeDataset(source, config),
+    summary,
+  };
+}
+
+test("ONA provenance binding recomputes response-node evidence from canonical ordered plan rows", () => {
+  const { source, config, result, summary } = provenanceFixture();
+
+  const bound = bindOpenEnaResultProvenance(result, source, SOURCE_HASH, config);
+
+  assert.deepEqual(bound.orderedResponseNodeSummary, summary);
+  assert.equal(result.orderedResponseNodeSummary, undefined);
+});
+
+test("ONA provenance binding strictly validates a supplied response-node summary", () => {
+  const { source, config, result, summary } = provenanceFixture();
+  const forgeries: Array<[
+    string,
+    (forged: OpenEnaOrderedResponseNodeSummary) => void,
+  ]> = [
+    ["schema version", (forged) => {
+      (forged as { schemaVersion: number }).schemaVersion = 2;
+    }],
+    ["code order", (forged) => {
+      forged.codeOrder.reverse();
+    }],
+    ["overall response sum", (forged) => {
+      forged.overallResponseCodeTotals[0] += 1;
+    }],
+    ["group set", (forged) => {
+      forged.groups.pop();
+    }],
+    ["group name", (forged) => {
+      forged.groups[0].name = "forged-group";
+    }],
+    ["unit count", (forged) => {
+      forged.groups[0].unitCount += 1;
+    }],
+    ["group response sum", (forged) => {
+      forged.groups[0].responseCodeTotals[0] += 1;
+    }],
+    ["unexpected schema field", (forged) => {
+      Reflect.set(forged, "rawRows", []);
+    }],
+  ];
+
+  for (const [label, mutate] of forgeries) {
+    const forged = structuredClone(summary);
+    mutate(forged);
+    assert.throws(
+      () => bindOpenEnaResultProvenance(
+        { ...result, orderedResponseNodeSummary: forged },
+        source,
+        SOURCE_HASH,
+        config,
+      ),
+      /ordered response-node summary|schema|code order|group|unit count|response total/i,
+      label,
+    );
+  }
+});
+
+test("ONA provenance binding deep-clones and recursively freezes canonical response-node evidence", () => {
+  const { source, config, result, summary } = provenanceFixture();
+  const bound = bindOpenEnaResultProvenance(
+    { ...result, orderedResponseNodeSummary: summary },
+    source,
+    SOURCE_HASH,
+    config,
+  );
+  const boundSummary = bound.orderedResponseNodeSummary;
+  assert.ok(boundSummary);
+
+  assert.notEqual(boundSummary, summary);
+  assert.notEqual(boundSummary.codeOrder, summary.codeOrder);
+  assert.notEqual(boundSummary.groups, summary.groups);
+  assert.notEqual(boundSummary.groups[0], summary.groups[0]);
+  assert.notEqual(boundSummary.groups[0].responseCodeTotals, summary.groups[0].responseCodeTotals);
+  assert.equal(Object.isFrozen(boundSummary), true);
+  assert.equal(Object.isFrozen(boundSummary.codeOrder), true);
+  assert.equal(Object.isFrozen(boundSummary.overallResponseCodeTotals), true);
+  assert.equal(Object.isFrozen(boundSummary.groups), true);
+  assert.equal(Object.isFrozen(boundSummary.groups[0]), true);
+  assert.equal(Object.isFrozen(boundSummary.groups[0].responseCodeTotals), true);
+
+  summary.overallResponseCodeTotals[0] = 999;
+  summary.groups[0].responseCodeTotals[0] = 999;
+  assert.equal(boundSummary.overallResponseCodeTotals[0], 4);
+  assert.equal(boundSummary.groups[0].responseCodeTotals[0], 1);
+});
+
+test("rebinding an authenticated ONA result replays provenance without rereading raw code cells", () => {
+  const { source, config, result, summary } = provenanceFixture();
+  const bound = bindOpenEnaResultProvenance(
+    { ...result, orderedResponseNodeSummary: summary },
+    source,
+    SOURCE_HASH,
+    config,
+  );
+  const protectedSource: ParsedDataset = {
+    ...source,
+    rows: source.rows.map((row) => new Proxy(row, {
+      get(target, key, receiver) {
+        if (config.codes.includes(String(key))) {
+          throw new Error(`authenticated rebind read forbidden raw code cell ${String(key)}`);
+        }
+        return Reflect.get(target, key, receiver);
+      },
+    })),
+  };
+
+  const rebound = bindOpenEnaResultProvenance(
+    bound,
+    protectedSource,
+    SOURCE_HASH,
+    config,
+  );
+
+  assert.deepEqual(rebound.orderedResponseNodeSummary, bound.orderedResponseNodeSummary);
+  assert.notEqual(rebound.orderedResponseNodeSummary, bound.orderedResponseNodeSummary);
+  assert.equal(Object.isFrozen(rebound.orderedResponseNodeSummary), true);
+});
+
+test("standard ENA provenance binding rejects an unexpected ordered response-node summary", () => {
+  const { summary } = provenanceFixture();
+  const source = dataset([
+    { unit: "u1", horizon: "h1", turn: 1, group: "g1", A: 1, B: 1, C: 0 },
+    { unit: "u1", horizon: "h1", turn: 2, group: "g1", A: 0, B: 1, C: 1 },
+    { unit: "u2", horizon: "h2", turn: 1, group: "g2", A: 1, B: 0, C: 1 },
+    { unit: "u2", horizon: "h2", turn: 2, group: "g2", A: 0, B: 1, C: 0 },
+  ]);
+  const config: OpenEnaConfig = {
+    ...SAMPLE_CONFIG,
+    unitColumns: ["unit"],
+    conversationColumns: ["horizon"],
+    groupColumn: "group",
+    codes: ["B", "A", "C"],
+    rotation: "svd",
+  };
+  const result = analyzeDataset(source, config);
+
+  assert.throws(
+    () => bindOpenEnaResultProvenance(
+      { ...result, orderedResponseNodeSummary: summary },
+      source,
+      SOURCE_HASH,
+      config,
+    ),
+    /standard ENA|ordered response-node summary/i,
+  );
+});
 
 class MemoryScope implements OpenEnaWorkerScope {
   responses: OpenEnaWorkerResponse[] = [];

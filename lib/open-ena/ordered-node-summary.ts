@@ -11,15 +11,66 @@ const ALL_UNITS_GROUP = "All units";
 interface MutableGroupSummary {
   name: string;
   unitIdentities: Set<string>;
-  responseCodeTotals: number[];
+  responseCodeTotals: number[][];
 }
 
-function addFiniteCount(total: number, value: number, label: string) {
-  const next = total + value;
-  if (!Number.isFinite(next)) {
-    throw new Error(`ONA ${label} exceeds the finite numeric range.`);
+/**
+ * Add one finite value to a non-overlapping floating-point expansion. This is
+ * the error-free partials step used by robust summation algorithms: every bit
+ * lost by the rounded high word is retained in a low word for the final sum.
+ */
+function addFiniteCount(partials: number[], value: number, label: string) {
+  let next = value;
+  let retained = 0;
+  for (const partial of partials) {
+    let highWord = next;
+    let lowWord = partial;
+    if (Math.abs(highWord) < Math.abs(lowWord)) {
+      [highWord, lowWord] = [lowWord, highWord];
+    }
+    const high = highWord + lowWord;
+    if (!Number.isFinite(high)) {
+      throw new Error(`ONA ${label} exceeds the finite numeric range.`);
+    }
+    const low = lowWord - (high - highWord);
+    if (low !== 0) {
+      partials[retained] = low;
+      retained += 1;
+    }
+    next = high;
   }
-  return next;
+  partials.length = retained;
+  if (next !== 0) partials.push(next);
+}
+
+/** Finish the expansion with the correctly directed half-even fix at a tie. */
+function finiteCountTotal(partials: readonly number[], label: string) {
+  const remaining = [...partials];
+  if (remaining.length === 0) return 0;
+
+  let high = remaining.pop()!;
+  let low = 0;
+  while (remaining.length > 0) {
+    const previousHigh = high;
+    const next = remaining.pop()!;
+    high = previousHigh + next;
+    if (!Number.isFinite(high)) {
+      throw new Error(`ONA ${label} exceeds the finite numeric range.`);
+    }
+    low = next - (high - previousHigh);
+    if (low !== 0) break;
+  }
+  const nextPartial = remaining[remaining.length - 1];
+  if (nextPartial !== undefined
+    && ((low < 0 && nextPartial < 0) || (low > 0 && nextPartial > 0))) {
+    const doubledLow = low * 2;
+    const adjusted = high + doubledLow;
+    if (!Number.isFinite(adjusted)) {
+      throw new Error(`ONA ${label} exceeds the finite numeric range.`);
+    }
+    if (adjusted - high === doubledLow) high = adjusted;
+  }
+  return high;
 }
 
 function stableGroupName(row: Row, groupColumn: string | null) {
@@ -56,7 +107,7 @@ export function buildOpenEnaOrderedResponseNodeSummary(
     throw new Error("ONA response-node summary requires at least one analytic-unit column.");
   }
 
-  const overallResponseCodeTotals = codeOrder.map(() => 0);
+  const overallResponseCodeTotals = codeOrder.map(() => [] as number[]);
   const groupByName = new Map<string, MutableGroupSummary>();
 
   for (const [rowIndex, row] of rows.entries()) {
@@ -66,7 +117,7 @@ export function buildOpenEnaOrderedResponseNodeSummary(
       group = {
         name: groupName,
         unitIdentities: new Set<string>(),
-        responseCodeTotals: codeOrder.map(() => 0),
+        responseCodeTotals: codeOrder.map(() => [] as number[]),
       };
       groupByName.set(groupName, group);
     }
@@ -84,12 +135,12 @@ export function buildOpenEnaOrderedResponseNodeSummary(
           `ONA response-node summary code “${code}” at ordered row ${rowIndex + 1} must be a finite nonnegative number.`,
         );
       }
-      overallResponseCodeTotals[codeIndex] = addFiniteCount(
+      addFiniteCount(
         overallResponseCodeTotals[codeIndex],
         value,
         `overall response total for code “${code}”`,
       );
-      group.responseCodeTotals[codeIndex] = addFiniteCount(
+      addFiniteCount(
         group.responseCodeTotals[codeIndex],
         value,
         `group response total for code “${code}”`,
@@ -102,13 +153,19 @@ export function buildOpenEnaOrderedResponseNodeSummary(
     .map((group) => ({
       name: group.name,
       unitCount: group.unitIdentities.size,
-      responseCodeTotals: [...group.responseCodeTotals],
+      responseCodeTotals: group.responseCodeTotals.map((partials, codeIndex) => finiteCountTotal(
+        partials,
+        `group “${group.name}” response total for code “${codeOrder[codeIndex]}”`,
+      )),
     }));
 
   return {
     schemaVersion: 1,
     codeOrder,
-    overallResponseCodeTotals,
+    overallResponseCodeTotals: overallResponseCodeTotals.map((partials, codeIndex) => finiteCountTotal(
+      partials,
+      `overall response total for code “${codeOrder[codeIndex]}”`,
+    )),
     groups,
   };
 }

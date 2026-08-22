@@ -7,6 +7,7 @@ import type {
   OpenEnaConfig,
   OpenEnaExecutionProvenance,
   OpenEnaManifest,
+  OpenEnaOrderedResponseNodeSummary,
   OpenEnaResolvedOrderPolicy,
   OpenEnaResult,
   OpenEnaRotationReference,
@@ -25,6 +26,7 @@ import {
 } from "./network-config";
 import { JENA_GROUP_COLORS } from "./plot-style";
 import { validateReferenceCompatibility } from "./reference";
+import { buildOpenEnaOrderedResponseNodeSummary } from "./ordered-node-summary";
 import { datasetHashKindFor, JENA_RUNTIME_VERSION, OPEN_ENA_APP_VERSION } from "./types";
 
 export const AUTO_CORRELATION_UNIT_LIMIT = 500;
@@ -560,6 +562,148 @@ function assertResultExecutionProvenance(
   return provenance;
 }
 
+function invalidOrderedResponseNodeSummary(detail: string): never {
+  throw new Error(`The completed ONA result has an invalid ordered response-node summary: ${detail}.`);
+}
+
+function assertExactSummaryArrayKeys(value: readonly unknown[], label: string) {
+  const expectedKeys = Array.from({ length: value.length }, (_, index) => String(index));
+  if (!hasExactKeys(value, expectedKeys)) {
+    invalidOrderedResponseNodeSummary(`${label} must be a dense array without extra fields`);
+  }
+}
+
+function assertOrderedResponseNodeTotals(
+  actual: unknown,
+  expected: readonly number[],
+  label: string,
+) {
+  if (!Array.isArray(actual) || actual.length !== expected.length) {
+    invalidOrderedResponseNodeSummary(`${label} length does not match the canonical code order`);
+  }
+  assertExactSummaryArrayKeys(actual, label);
+  for (let index = 0; index < expected.length; index += 1) {
+    const value = actual[index];
+    if (typeof value !== "number"
+      || !Number.isFinite(value)
+      || value < 0
+      || !Object.is(value, expected[index])) {
+      invalidOrderedResponseNodeSummary(`${label} does not match the canonical response total at code index ${index}`);
+    }
+  }
+}
+
+function assertOrderedResponseNodeSummary(
+  actual: unknown,
+  expected: OpenEnaOrderedResponseNodeSummary,
+) {
+  if (!actual || typeof actual !== "object" || Array.isArray(actual)) {
+    invalidOrderedResponseNodeSummary("summary schema is not an object");
+  }
+  if (!hasExactKeys(actual, [
+    "schemaVersion",
+    "codeOrder",
+    "overallResponseCodeTotals",
+    "groups",
+  ])) {
+    invalidOrderedResponseNodeSummary("summary schema fields do not match schema version 1");
+  }
+  const summary = actual as Record<string, unknown>;
+  if (summary.schemaVersion !== 1) {
+    invalidOrderedResponseNodeSummary("schemaVersion must equal 1");
+  }
+  if (!Array.isArray(summary.codeOrder)
+    || !summary.codeOrder.every((code): code is string => typeof code === "string")
+    || !sameStringArray(summary.codeOrder, expected.codeOrder)) {
+    invalidOrderedResponseNodeSummary("code order does not match the canonical configuration");
+  }
+  assertExactSummaryArrayKeys(summary.codeOrder, "codeOrder");
+  assertOrderedResponseNodeTotals(
+    summary.overallResponseCodeTotals,
+    expected.overallResponseCodeTotals,
+    "overallResponseCodeTotals",
+  );
+
+  if (!Array.isArray(summary.groups) || summary.groups.length !== expected.groups.length) {
+    invalidOrderedResponseNodeSummary("groups do not match the canonical group set");
+  }
+  assertExactSummaryArrayKeys(summary.groups, "groups");
+  for (let groupIndex = 0; groupIndex < expected.groups.length; groupIndex += 1) {
+    const actualGroup = summary.groups[groupIndex];
+    const expectedGroup = expected.groups[groupIndex];
+    if (!actualGroup || typeof actualGroup !== "object" || Array.isArray(actualGroup)
+      || !hasExactKeys(actualGroup, ["name", "unitCount", "responseCodeTotals"])) {
+      invalidOrderedResponseNodeSummary(`group ${groupIndex + 1} has invalid schema fields`);
+    }
+    const group = actualGroup as Record<string, unknown>;
+    if (group.name !== expectedGroup.name) {
+      invalidOrderedResponseNodeSummary(`group ${groupIndex + 1} name does not match the canonical group order`);
+    }
+    if (!Number.isSafeInteger(group.unitCount)
+      || (group.unitCount as number) < 0
+      || group.unitCount !== expectedGroup.unitCount) {
+      invalidOrderedResponseNodeSummary(`group “${expectedGroup.name}” unit count does not match canonical rows`);
+    }
+    assertOrderedResponseNodeTotals(
+      group.responseCodeTotals,
+      expectedGroup.responseCodeTotals,
+      `group “${expectedGroup.name}” responseCodeTotals`,
+    );
+  }
+}
+
+function deepFreezeBinding<T>(value: T, seen = new Set<unknown>()): T {
+  if (!value || typeof value !== "object" || seen.has(value)) return value;
+  seen.add(value);
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    deepFreezeBinding(nested, seen);
+  }
+  return Object.freeze(value);
+}
+
+interface AuthenticatedOrderedResponseNodeEvidence {
+  datasetSha256: string;
+  datasetHashKind: ReturnType<typeof datasetHashKindFor>;
+  configuration: OpenEnaConfig;
+  summary: OpenEnaOrderedResponseNodeSummary;
+}
+
+/**
+ * Data View deliberately replays only ordering metadata against protected local
+ * rows. Remember results authenticated by this module so that a same-runtime
+ * rebind can clone the already-frozen evidence without rereading code cells.
+ * Serialized, cloned, replaced, or otherwise unrecognized results must return
+ * to the canonical raw-plan verification path.
+ */
+const authenticatedOrderedResponseNodeEvidence = new WeakMap<
+  OpenEnaResult,
+  AuthenticatedOrderedResponseNodeEvidence
+>();
+
+function previouslyAuthenticatedOrderedResponseNodeSummary(
+  result: OpenEnaResult,
+  datasetSha256: string,
+  datasetHashKind: ReturnType<typeof datasetHashKindFor>,
+  configuration: CanonicalOpenEnaConfig,
+) {
+  const authenticated = authenticatedOrderedResponseNodeEvidence.get(result);
+  const binding = result.provenanceBinding;
+  const summary = result.orderedResponseNodeSummary;
+  if (!authenticated
+    || summary !== authenticated.summary
+    || authenticated.datasetSha256 !== datasetSha256
+    || authenticated.datasetHashKind !== datasetHashKind
+    || !sameOpenEnaConfig(authenticated.configuration, configuration)
+    || !binding
+    || binding.datasetNormalizedUtf8TextSha256 !== authenticated.datasetSha256
+    || binding.datasetHashKind !== authenticated.datasetHashKind
+    || !sameOpenEnaConfig(binding.configuration, authenticated.configuration)) {
+    return null;
+  }
+  assertOrderedResponseNodeSummary(summary, authenticated.summary);
+  return authenticated.summary;
+}
+
 /**
  * Return a new result with a canonical, deep-cloned source/config binding.
  * The completed worker result and the caller's mutable config remain untouched.
@@ -575,21 +719,57 @@ export function bindOpenEnaResultProvenance(
   }
   const configuration = canonicalizeOpenEnaConfig(config);
   const executionProvenance = assertResultExecutionProvenance(result, dataset, configuration);
+  const normalizedDatasetSha256 = datasetSha256.toLowerCase();
   const datasetHashKind = datasetHashKindFor(dataset);
   if (datasetHashKind !== "normalized-utf8-text-sha256"
     && datasetHashKind !== "normalized-utf8-csv-text-sha256"
     && datasetHashKind !== "canonical-first-xlsx-worksheet-v1-sha256") {
     throw new Error("Open ENA dataset provenance contains an unsupported hash kind.");
   }
-  return {
+  let orderedResponseNodeSummary: OpenEnaOrderedResponseNodeSummary | undefined;
+  if (configuration.analysisKind === "ona") {
+    let canonicalSummary = previouslyAuthenticatedOrderedResponseNodeSummary(
+      result,
+      normalizedDatasetSha256,
+      datasetHashKind,
+      configuration,
+    );
+    if (!canonicalSummary) {
+      const canonicalPlan = buildOpenEnaAnalysisPlan(dataset, configuration);
+      canonicalSummary = buildOpenEnaOrderedResponseNodeSummary(
+        canonicalPlan.options.rows,
+        canonicalPlan.configuration,
+      ) ?? null;
+      if (!canonicalSummary) {
+        throw new Error("The canonical ONA plan did not produce ordered response-node evidence.");
+      }
+      if (Object.hasOwn(result, "orderedResponseNodeSummary")) {
+        assertOrderedResponseNodeSummary(result.orderedResponseNodeSummary, canonicalSummary);
+      }
+    }
+    orderedResponseNodeSummary = deepFreezeBinding(structuredClone(canonicalSummary));
+  } else if (Object.hasOwn(result, "orderedResponseNodeSummary")) {
+    throw new Error("A standard ENA result cannot carry an ordered response-node summary.");
+  }
+  const boundResult: OpenEnaResult = {
     ...result,
     executionProvenance: structuredClone(executionProvenance),
+    ...(orderedResponseNodeSummary ? { orderedResponseNodeSummary } : {}),
     provenanceBinding: {
-      datasetNormalizedUtf8TextSha256: datasetSha256.toLowerCase(),
+      datasetNormalizedUtf8TextSha256: normalizedDatasetSha256,
       datasetHashKind,
       configuration: cloneOpenEnaConfig(configuration),
     },
   };
+  if (orderedResponseNodeSummary) {
+    authenticatedOrderedResponseNodeEvidence.set(boundResult, {
+      datasetSha256: normalizedDatasetSha256,
+      datasetHashKind,
+      configuration: deepFreezeBinding(cloneOpenEnaConfig(configuration)),
+      summary: orderedResponseNodeSummary,
+    });
+  }
+  return boundResult;
 }
 
 export function dimensionEffect(
