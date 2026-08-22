@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Row } from "jena-js";
+import { moveHorizontalScrollableRegion } from "@/lib/open-ena/horizontal-scroll";
 import {
   buildOpenEnaOrderPreview,
   isOpenEnaOrderPanelValueComplete,
@@ -385,6 +386,9 @@ export function OpenEnaOrderPanel({
               tabIndex={0}
               role="region"
               aria-label={copy.previewTitle}
+              onKeyDown={(event) => {
+                if (moveHorizontalScrollableRegion(event.currentTarget, event.key)) event.preventDefault();
+              }}
             >
               <table>
                 <thead>

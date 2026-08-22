@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import OpenEnaDataView from "../components/open-ena/OpenEnaDataView";
 import OpenEnaPersistentPlotTools from "../components/open-ena/OpenEnaPersistentPlotTools";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
+import { moveHorizontalScrollableRegion } from "../lib/open-ena/horizontal-scroll";
 
 const projectRoot = process.cwd();
 
@@ -428,13 +429,37 @@ test("Data View exposes one clearly focused keyboard scroll stop without nesting
     onExportCsv: noOp,
   }));
   const styles = source("app/globals.css");
+  const component = source("components/open-ena/OpenEnaDataView.tsx");
 
   assert.match(
     markup,
     /data-testid="open-ena-data-view-scroll"[^>]*tabindex="0"[^>]*role="region"[^>]*aria-label="Data View records"/,
   );
   assert.doesNotMatch(markup, /<table[^>]*tabindex=/);
+  assert.match(
+    component,
+    /onKeyDown=\{\(event\) => \{[\s\S]*?moveHorizontalScrollableRegion\(event\.currentTarget, event\.key\)[\s\S]*?event\.preventDefault\(\)/,
+  );
   assert.match(styles, /\.ena-data-view-scroll:focus-visible\s*\{[\s\S]*?outline:/);
+});
+
+test("horizontal evidence regions implement deterministic cross-browser keyboard scrolling", () => {
+  const region = { clientWidth: 300, scrollWidth: 1_000, scrollLeft: 0 };
+
+  assert.equal(moveHorizontalScrollableRegion(region, "ArrowRight"), true);
+  assert.equal(region.scrollLeft, 40);
+  assert.equal(moveHorizontalScrollableRegion(region, "PageDown"), true);
+  assert.equal(region.scrollLeft, 295);
+  assert.equal(moveHorizontalScrollableRegion(region, "End"), true);
+  assert.equal(region.scrollLeft, 700);
+  assert.equal(moveHorizontalScrollableRegion(region, "ArrowRight"), true);
+  assert.equal(region.scrollLeft, 700, "right movement must clamp at the maximum");
+  assert.equal(moveHorizontalScrollableRegion(region, "Home"), true);
+  assert.equal(region.scrollLeft, 0);
+  assert.equal(moveHorizontalScrollableRegion(region, "ArrowLeft"), true);
+  assert.equal(region.scrollLeft, 0, "left movement must clamp at zero");
+  assert.equal(moveHorizontalScrollableRegion(region, "Enter"), false);
+  assert.equal(region.scrollLeft, 0, "unhandled keys must not change the region");
 });
 
 test("Data View paginates both rows and variable columns within a bounded DOM surface", () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { moveHorizontalScrollableRegion } from "@/lib/open-ena/horizontal-scroll";
 
 export type OpenEnaDataViewContext = "comparison" | "primary" | "secondary";
 export type OpenEnaDataViewCell = string | number | boolean | null | undefined;
@@ -261,6 +262,9 @@ export default function OpenEnaDataView({
         tabIndex={0}
         role="region"
         aria-label={copy.tableAriaLabel}
+        onKeyDown={(event) => {
+          if (moveHorizontalScrollableRegion(event.currentTarget, event.key)) event.preventDefault();
+        }}
       >
         {orderedColumns.length > 0 ? (
           <table className="ena-data-view-table" aria-label={copy.tableAriaLabel}>

@@ -183,12 +183,20 @@ test("order preview exposes one clearly focused keyboard scroll stop without nes
     copy: panelCopy,
   }));
   const styles = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  const component = readFileSync(
+    new URL("../components/open-ena/OpenEnaOrderPanel.tsx", import.meta.url),
+    "utf8",
+  );
 
   assert.match(
     markup,
     /class="ena-order-preview-table-wrap"[^>]*tabindex="0"[^>]*role="region"[^>]*aria-label="Per-horizon order preview"/,
   );
   assert.doesNotMatch(markup, /<table[^>]*tabindex=/);
+  assert.match(
+    component,
+    /onKeyDown=\{\(event\) => \{[\s\S]*?moveHorizontalScrollableRegion\(event\.currentTarget, event\.key\)[\s\S]*?event\.preventDefault\(\)/,
+  );
   assert.match(styles, /\.ena-order-preview-table-wrap:focus-visible\s*\{[\s\S]*?outline:/);
 });
 
