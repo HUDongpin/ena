@@ -178,6 +178,20 @@ test("typed horizon tuples cannot collide through delimiters or scalar coercion"
   assert.deepEqual(result.sourceIndices, [0, 1, 2, 3, 4]);
 });
 
+test("typed horizon identity preserves negative zero independently from positive zero", () => {
+  const rows: Row[] = [
+    { horizon: -0, turn: 2, value: "negative-zero" },
+    { horizon: 0, turn: 1, value: "positive-zero" },
+  ];
+  const result = orderRowsForOpenEna(rows, ["horizon"], columnOrder(["turn"]));
+
+  assert.deepEqual(
+    result.sourceIndices,
+    [0, 1],
+    "separate typed horizons must retain first-appearance order instead of sorting together",
+  );
+});
+
 test("column ordering rejects missing horizons/order values, non-finite numbers, mixed values, and ties", () => {
   assert.throws(
     () => orderRowsForOpenEna([{ horizon: null, turn: 1 }], ["horizon"], columnOrder(["turn"])),
@@ -278,6 +292,54 @@ test("ONA recognizes diagonal self-transitions and cross-row transitions without
     { unit: "u1", horizon: "h1", turn: 3, A: 0, B: 0, C: 1 },
   ]);
   assert.deepEqual(validateConfig(crossRow, orderedConfig()), []);
+});
+
+test("ONA validation does not create a connection across negative-zero and positive-zero horizons", () => {
+  const codes = ["A", "B", "C"];
+  const dataset = manualDataset([
+    { unit: "u1", horizon: -0, turn: 1, A: 1, B: 0, C: 0 },
+    { unit: "u1", horizon: 0, turn: 2, A: 0, B: 1, C: 0 },
+    { unit: "u1", horizon: "third", turn: 3, A: 0, B: 0, C: 1 },
+  ], ["unit", "horizon", "turn", ...codes]);
+  const errors = validateConfig(dataset, orderedConfig({
+    codes,
+    directionalMask: createDirectionalMask(codes),
+  }));
+
+  assert.match(errors.join(" "), /do not form an enabled ordered connection/i);
+});
+
+test("ONA permits delimiter-bearing conversation tuples without identity collisions", () => {
+  const codes = ["A", "B", "C"];
+  const dataset = manualDataset([
+    { unit: "u1", h1: "a::b", h2: "c", turn: 1, A: 1, B: 0, C: 0 },
+    { unit: "u1", h1: "a::b", h2: "c", turn: 2, A: 0, B: 1, C: 0 },
+    { unit: "u2", h1: "a", h2: "b::c", turn: 1, A: 1, B: 0, C: 0 },
+    { unit: "u2", h1: "a", h2: "b::c", turn: 2, A: 0, B: 1, C: 1 },
+  ], ["unit", "h1", "h2", "turn", ...codes]);
+  const config = orderedConfig({
+    conversationColumns: ["h1", "h2"],
+    codes,
+    directionalMask: createDirectionalMask(codes),
+  });
+
+  assert.deepEqual(validateConfig(dataset, config), []);
+});
+
+test("standard ENA retains the composite-identity delimiter guard", () => {
+  const dataset = manualDataset([
+    { unit: "u1", horizon: "a::b", turn: 1, A: 1, B: 1 },
+  ], ["unit", "horizon", "turn", "A", "B"]);
+  const errors = validateConfig(dataset, {
+    ...SAMPLE_CONFIG,
+    analysisKind: "ena",
+    unitColumns: ["unit"],
+    conversationColumns: ["horizon"],
+    groupColumn: null,
+    codes: ["A", "B"],
+  });
+
+  assert.match(errors.join(" "), /cannot contain.*::.*jENA reserves/i);
 });
 
 test("ONA safety budgeting uses p squared directed cells including diagonal while ENA remains unchanged", () => {

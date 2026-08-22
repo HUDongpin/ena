@@ -4,6 +4,7 @@ import {
   analysisKindFor,
   canonicalizeOpenEnaConfig,
   orderRowsForOpenEna,
+  typedHorizonIdentity,
 } from "./network-config";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -214,22 +215,13 @@ function hasCoOccurrence(dataset: ParsedDataset, config: OpenEnaConfig) {
   return false;
 }
 
-function typedTupleIdentity(row: Row, columns: readonly string[]) {
-  return JSON.stringify(columns.map((column) => {
-    const value = row[column];
-    if (typeof value === "number") return ["number", value];
-    if (typeof value === "boolean") return ["boolean", value];
-    return ["string", value];
-  }));
-}
-
 function hasOrderedConnection(dataset: ParsedDataset, config: OpenEnaConfig) {
   const canonical = canonicalizeOpenEnaConfig(config);
   if (canonical.analysisKind !== "ona" || !canonical.orderPolicy || !canonical.directionalMask) return false;
   const ordered = orderRowsForOpenEna(dataset.rows, canonical.conversationColumns, canonical.orderPolicy);
   const rowsByHorizon = new Map<string, Row[]>();
   for (const row of ordered.rows) {
-    const key = typedTupleIdentity(row, canonical.conversationColumns);
+    const key = typedHorizonIdentity(row, canonical.conversationColumns);
     const rows = rowsByHorizon.get(key) ?? [];
     rows.push(row);
     rowsByHorizon.set(key, rows);
@@ -417,10 +409,15 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
     if (!dataset.headers.includes(config.groupColumn)) errors.push("Group must reference a coded-data column.");
     else if (dataset.rows.some((row) => row[config.groupColumn as string] === null || row[config.groupColumn as string] === "")) errors.push(`Group column “${config.groupColumn}” contains missing values.`);
   }
-  if ([...config.unitColumns, ...config.conversationColumns].every((column) => dataset.headers.includes(column))) {
+  const delimiterGuardColumns = analysisKind === "ona"
+    ? config.unitColumns
+    : [...config.unitColumns, ...config.conversationColumns];
+  if (delimiterGuardColumns.every((column) => dataset.headers.includes(column))) {
     for (const row of dataset.rows) {
-      if ([...config.unitColumns, ...config.conversationColumns].some((column) => String(row[column] ?? "").includes("::"))) {
-        errors.push("Unit and conversation component values cannot contain “::”, which jENA reserves when building composite identities.");
+      if (delimiterGuardColumns.some((column) => String(row[column] ?? "").includes("::"))) {
+        errors.push(analysisKind === "ona"
+          ? "ONA unit component values cannot contain “::”, which jENA reserves when building composite unit identities."
+          : "Unit and conversation component values cannot contain “::”, which jENA reserves when building composite identities.");
         break;
       }
     }

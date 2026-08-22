@@ -245,8 +245,26 @@ function typedScalar(value: unknown, label: string): TypedScalar {
   throw new Error(`${label} values must be strings, finite numbers, or booleans.`);
 }
 
-function tupleKey(tuple: readonly TypedScalar[]) {
+function orderTupleKey(tuple: readonly TypedScalar[]) {
   return JSON.stringify(tuple);
+}
+
+/**
+ * Build the one canonical identity used for ONA horizons in the application
+ * layer. Column labels, scalar types, and values are all bound explicitly;
+ * negative zero receives a non-numeric marker because JSON.stringify would
+ * otherwise silently serialize it as positive zero.
+ */
+export function typedHorizonIdentity(row: Row, columns: readonly string[]): string {
+  return JSON.stringify(columns.map((column) => {
+    const scalar = typedScalar(row[column], `ONA horizon column “${column}”`);
+    const value = scalar[0] === "number"
+      && typeof scalar[1] === "number"
+      && Object.is(scalar[1], -0)
+      ? "-0"
+      : scalar[1];
+    return [column, scalar[0], value];
+  }));
 }
 
 function compareTyped(left: TypedScalar, right: TypedScalar) {
@@ -285,11 +303,7 @@ export function orderRowsForOpenEna(
 
   const groups = new Map<string, IndexedOrderedRow[]>();
   rows.forEach((row, sourceIndex) => {
-    const horizonTuple = conversationColumns.map((column) => typedScalar(
-      row[column],
-      `ONA horizon column “${column}”`,
-    ));
-    const horizonKey = tupleKey(horizonTuple);
+    const horizonKey = typedHorizonIdentity(row, conversationColumns);
     const group = groups.get(horizonKey) ?? [];
     const orderTuple = clonedPolicy.kind === "columns"
       ? clonedPolicy.columns.map((column) => typedScalar(row[column], `ONA order column “${column}”`))
@@ -316,7 +330,10 @@ export function orderRowsForOpenEna(
     }
     const seenOrderTuples = new Set<string>();
     for (const entry of group) {
-      const key = tupleKey(entry.orderTuple);
+      // Numeric -0 and +0 are an ordering tie even though they are distinct
+      // horizon identities. The ordinary JSON number encoding intentionally
+      // normalizes both here so the configured tie policy remains fail-closed.
+      const key = orderTupleKey(entry.orderTuple);
       if (seenOrderTuples.has(key)) {
         throw new Error("ONA column ordering contains a tie within one horizon; add an order column that uniquely resolves every row.");
       }
