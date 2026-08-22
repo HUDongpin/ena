@@ -7,7 +7,7 @@ import test from "node:test";
 const projectRoot = process.cwd();
 const snapshotRoot = join(projectRoot, "packages", "jena-js");
 const expectedVersion = "0.7.0-ona.0";
-const expectedSourceSha = "d6456d715709e02919fc6156c79affebe725577f";
+const expectedSourceSha = "303a12f549ef9e1914cec10d6e9e1b842dad8908";
 
 function json(relativePath: string) {
   return JSON.parse(readFileSync(join(projectRoot, relativePath), "utf8")) as Record<string, unknown>;
