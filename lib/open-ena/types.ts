@@ -1,4 +1,5 @@
 import type { ENASet, ENAStatsResult, ModelType, RotationSet, Row, WindowType } from "jena-js";
+import type { ENAWorkerOptions } from "jena-js/browser";
 
 export type OpenEnaMode = "sets" | "data" | "model" | "plot" | "stats" | "ai";
 export type OpenEnaView = "2d" | "3d";
@@ -88,6 +89,26 @@ export type PortableOpenEnaConfig = Omit<CanonicalOpenEnaConfig, "windowSizeBack
   windowSizeBack: number | "Infinity";
 };
 
+export interface OpenEnaExecutionProvenance {
+  schemaVersion: 1;
+  analysisKind: AnalysisKind;
+  networkType: "standard" | "ordered";
+  nodePositionMethod: "undirected" | "directed";
+  directionalMask: OpenEnaDirectionalMask | null;
+  ordering: {
+    requestedPolicy: OpenEnaOrderPolicy;
+    resolvedPolicy: OpenEnaResolvedOrderPolicy;
+    /** Ordered response-row index -> zero-based row index in the imported dataset. */
+    responseRowSourceIndices: number[];
+  } | null;
+}
+
+export interface OpenEnaAnalysisPlan {
+  configuration: CanonicalOpenEnaConfig;
+  options: ENAWorkerOptions;
+  executionProvenance: OpenEnaExecutionProvenance;
+}
+
 export interface OpenEnaReferenceCompatibility {
   model: "EndPoint";
   codes: string[];
@@ -141,12 +162,14 @@ export interface OpenEnaResult {
   dimensions: string[];
   stats: ENAStatsResult;
   statsDiagnostics: {
-    correlations: "complete" | "omitted-unit-limit" | "not-applicable-trajectory" | "not-applicable-reference";
-    tests: "complete" | "omitted-unit-limit" | "not-applicable-trajectory";
+    correlations: "complete" | "omitted-unit-limit" | "not-applicable-trajectory" | "not-applicable-reference" | "not-applicable-ordered-network";
+    tests: "complete" | "omitted-unit-limit" | "not-applicable-trajectory" | "not-applicable-ordered-network";
     correlationUnitLimit: number;
   };
   analyzedAt: string;
   projectionReference: OpenEnaProjectionReference | null;
+  /** Explicit application-level record of the options that selected the runtime path. */
+  executionProvenance?: OpenEnaExecutionProvenance;
   /** Optional immutable source/config binding added by the browser client. */
   provenanceBinding?: {
     datasetNormalizedUtf8TextSha256: string;

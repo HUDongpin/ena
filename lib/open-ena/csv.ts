@@ -40,6 +40,15 @@ function binaryValue(value: Row[string]): 0 | 1 | null {
   return null;
 }
 
+function rawCodeCount(value: Row[string]): number | null {
+  if (value === true) return 1;
+  if (value === false) return 0;
+  if (typeof value === "number") return Number.isFinite(value) && value >= 0 ? value : null;
+  if (typeof value !== "string" || value.trim() === "") return null;
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
 export function parseCsv(text: string, options: { name: string; sizeBytes?: number; source: ParsedDataset["source"] }): ParsedDataset {
   const sizeBytes = options.sizeBytes ?? new TextEncoder().encode(text).byteLength;
   if (sizeBytes > MAX_FILE_BYTES) throw new Error("CSV files must be 5 MB or smaller.");
@@ -163,12 +172,19 @@ function analysisIdentity(
     : compositeValue(row, [...columns]);
 }
 
-export function coerceSelectedCodes(rows: Row[], codes: string[], retainedColumns: string[] = []): Row[] {
+export function coerceSelectedCodes(
+  rows: Row[],
+  codes: string[],
+  retainedColumns: string[] = [],
+  analysisKind: "ena" | "ona" = "ena",
+): Row[] {
   const modelColumns = [...new Set([...retainedColumns, ...codes])];
   const codeSet = new Set(codes);
   return rows.map((row) => Object.fromEntries(modelColumns.map((column) => [
     column,
-    codeSet.has(column) ? binaryValue(row[column]) ?? row[column] : row[column],
+    codeSet.has(column)
+      ? (analysisKind === "ona" ? rawCodeCount(row[column]) : binaryValue(row[column])) ?? row[column]
+      : row[column],
   ])));
 }
 
@@ -252,7 +268,7 @@ function hasOrderedConnection(dataset: ParsedDataset, config: OpenEnaConfig) {
         historyStart += 1;
       }
       const responseCodes = canonical.codes
-        .map((code, codeIndex) => isActiveCode(response[code]) ? codeIndex : -1)
+        .map((code, codeIndex) => (rawCodeCount(response[code]) ?? 0) > 0 ? codeIndex : -1)
         .filter((codeIndex) => codeIndex >= 0);
       for (const sourceCode of responseCodes) {
         for (const targetCode of responseCodes) {
@@ -470,9 +486,18 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
   for (const code of config.codes) {
     if (!dataset.headers.includes(code)) errors.push(`Code “${code}” is not in the dataset.`);
     if (mappedColumns.includes(code)) errors.push(`Code “${code}” is already used as a model field.`);
-    const invalid = dataset.rows.some((row) => binaryValue(row[code]) === null);
-    if (invalid) errors.push(`Code “${code}” must contain only 0/1 or true/false values.`);
-    else if (!dataset.rows.some((row) => isActiveCode(row[code]))) errors.push(`Code “${code}” has no active values.`);
+    const invalid = dataset.rows.some((row) => (
+      analysisKind === "ona" ? rawCodeCount(row[code]) : binaryValue(row[code])
+    ) === null);
+    if (invalid) {
+      errors.push(analysisKind === "ona"
+        ? `Code “${code}” must contain only finite nonnegative counts.`
+        : `Code “${code}” must contain only 0/1 or true/false values.`);
+    } else if (!dataset.rows.some((row) => (
+      analysisKind === "ona" ? (rawCodeCount(row[code]) ?? 0) > 0 : isActiveCode(row[code])
+    ))) {
+      errors.push(`Code “${code}” has no active values.`);
+    }
   }
   if (config.groupColumn && validUnitColumns && dataset.headers.includes(config.groupColumn)) {
     const groupColumn = config.groupColumn;

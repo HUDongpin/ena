@@ -1,15 +1,26 @@
 import { cohensD, dimensionSummary, ena, enaStats, groupSummary, type ENASet, type Row } from "jena-js";
 import type { ENAWorkerOptions } from "jena-js/browser";
 import type {
+  CanonicalOpenEnaConfig,
   GroupNetwork,
+  OpenEnaAnalysisPlan,
   OpenEnaConfig,
+  OpenEnaExecutionProvenance,
   OpenEnaManifest,
   OpenEnaResult,
   OpenEnaRotationReference,
   OpenEnaSummary,
   ParsedDataset,
 } from "./types";
-import { coerceSelectedCodes } from "./csv";
+import { coerceSelectedCodes, validateConfig } from "./csv";
+import {
+  analysisKindFor,
+  canonicalizeOpenEnaConfig,
+  cloneDirectionalMask,
+  cloneOpenEnaConfig,
+  orderRowsForOpenEna,
+  sameOpenEnaConfig,
+} from "./network-config";
 import { JENA_GROUP_COLORS } from "./plot-style";
 import { validateReferenceCompatibility } from "./reference";
 import { datasetHashKindFor, JENA_RUNTIME_VERSION, OPEN_ENA_APP_VERSION } from "./types";
@@ -106,9 +117,10 @@ export function canonicalizeOfficialMeanRotation(set: ENASet): ENASet {
   };
 }
 
-export function buildJenaOptions(
+function buildBaseJenaOptions(
   dataset: ParsedDataset,
-  config: OpenEnaConfig,
+  config: CanonicalOpenEnaConfig,
+  rows: Row[],
   reference: OpenEnaRotationReference | null = null,
 ): ENAWorkerOptions {
   if (config.rotation === "reference" && (!reference || config.referenceRotationId !== reference.referenceId)) {
@@ -124,7 +136,7 @@ export function buildJenaOptions(
     ...(config.groupColumn ? [config.groupColumn] : []),
   ];
   return {
-    rows: coerceSelectedCodes(dataset.rows, config.codes, retainedColumns),
+    rows: coerceSelectedCodes(rows, config.codes, retainedColumns, config.analysisKind),
     units: config.unitColumns,
     conversation: config.conversationColumns,
     codes: config.codes,
@@ -138,6 +150,69 @@ export function buildJenaOptions(
     ...(reference ? { rotationSet: reference.rotationSet } : { rotation: effectiveRotation(dataset, config) }),
     centerAlignToOrigin: config.centerAlignToOrigin,
   };
+}
+
+export function buildOpenEnaAnalysisPlan(
+  dataset: ParsedDataset,
+  config: OpenEnaConfig,
+  reference: OpenEnaRotationReference | null = null,
+): OpenEnaAnalysisPlan {
+  const configuration = canonicalizeOpenEnaConfig(config);
+  if (configuration.analysisKind === "ena") {
+    return {
+      configuration,
+      options: buildBaseJenaOptions(dataset, configuration, dataset.rows, reference),
+      executionProvenance: {
+        schemaVersion: 1,
+        analysisKind: "ena",
+        networkType: "standard",
+        nodePositionMethod: "undirected",
+        directionalMask: null,
+        ordering: null,
+      },
+    };
+  }
+
+  const errors = validateConfig(dataset, configuration);
+  if (errors.length > 0) throw new Error(errors.join(" "));
+  if (reference) throw new Error("ONA does not support reference rotation.");
+  const orderPolicy = configuration.orderPolicy;
+  const directionalMask = configuration.directionalMask;
+  if (!orderPolicy || !directionalMask) {
+    throw new Error("ONA requires an explicit order policy and directional mask.");
+  }
+  const ordered = orderRowsForOpenEna(dataset.rows, configuration.conversationColumns, orderPolicy);
+  const base = buildBaseJenaOptions(dataset, configuration, ordered.rows, null);
+  const executionProvenance: OpenEnaExecutionProvenance = {
+    schemaVersion: 1,
+    analysisKind: "ona",
+    networkType: "ordered",
+    nodePositionMethod: "directed",
+    directionalMask: cloneDirectionalMask(directionalMask),
+    ordering: {
+      requestedPolicy: cloneOpenEnaConfig(configuration).orderPolicy!,
+      resolvedPolicy: structuredClone(ordered.resolvedPolicy),
+      responseRowSourceIndices: [...ordered.sourceIndices],
+    },
+  };
+  return {
+    configuration,
+    options: {
+      ...base,
+      networkType: "ordered",
+      mask: directionalMask.enabled.map((row) => row.map((enabled) => enabled ? 1 : 0)),
+      nodePositionMethod: "directed",
+    },
+    executionProvenance,
+  };
+}
+
+export function buildJenaOptions(
+  dataset: ParsedDataset,
+  config: OpenEnaConfig,
+  reference: OpenEnaRotationReference | null = null,
+): ENAWorkerOptions {
+  return buildOpenEnaAnalysisPlan(dataset, config, reference).options;
 }
 
 /**
@@ -179,6 +254,12 @@ export function buildOpenEnaSummary(
   config: OpenEnaConfig,
   reference: OpenEnaRotationReference | null = null,
 ): OpenEnaSummary {
+  const analysisKind = analysisKindFor(config);
+  const runtimeNetworkType = set.networkType ?? "standard";
+  if ((analysisKind === "ona") !== (runtimeNetworkType === "ordered")) {
+    throw new Error(`The ${analysisKind.toUpperCase()} configuration does not match the ${runtimeNetworkType} runtime result.`);
+  }
+  const orderedNetwork = analysisKind === "ona";
   const dimensions = set.rotation.rotationColumns.slice(0, 3);
   const groupValue = (row: Row) => config.groupColumn ? String(row[config.groupColumn] ?? "All units") : "All units";
   const groupNames = [...new Set(set.points.map(groupValue))];
@@ -200,7 +281,13 @@ export function buildOpenEnaSummary(
   const endpointModel = set.modelType === "EndPoint";
   const diagnosticsAreSafe = endpointModel && set.points.length <= AUTO_CORRELATION_UNIT_LIMIT;
   const referenceProjection = Boolean(reference);
-  const stats = !endpointModel
+  const stats = orderedNetwork
+    ? {
+        dimensions: dimensionSummary(set, dimensions),
+        correlations: [],
+        ...(config.groupColumn ? { groups: groupSummary(set, config.groupColumn, dimensions) } : {}),
+      }
+    : !endpointModel
     ? {
         dimensions: dimensionSummary(set, dimensions),
         correlations: [],
@@ -226,12 +313,20 @@ export function buildOpenEnaSummary(
     statsDiagnostics: {
       correlations: !endpointModel
         ? "not-applicable-trajectory"
+        : orderedNetwork
+          ? "not-applicable-ordered-network"
         : referenceProjection
           ? "not-applicable-reference"
           : !diagnosticsAreSafe
             ? "omitted-unit-limit"
             : "complete",
-      tests: !endpointModel ? "not-applicable-trajectory" : diagnosticsAreSafe ? "complete" : "omitted-unit-limit",
+      tests: orderedNetwork
+        ? "not-applicable-ordered-network"
+        : !endpointModel
+          ? "not-applicable-trajectory"
+          : diagnosticsAreSafe
+            ? "complete"
+            : "omitted-unit-limit",
       correlationUnitLimit: AUTO_CORRELATION_UNIT_LIMIT,
     },
     analyzedAt: new Date().toISOString(),
@@ -254,8 +349,13 @@ export function buildOpenEnaResult(
   set: ENASet,
   config: OpenEnaConfig,
   reference: OpenEnaRotationReference | null = null,
+  executionProvenance?: OpenEnaExecutionProvenance,
 ): OpenEnaResult {
-  return { set, ...buildOpenEnaSummary(set, config, reference) };
+  return {
+    set,
+    ...buildOpenEnaSummary(set, config, reference),
+    ...(executionProvenance ? { executionProvenance: structuredClone(executionProvenance) } : {}),
+  };
 }
 
 /**
@@ -277,13 +377,74 @@ export function analyzeDataset(
   config: OpenEnaConfig,
   reference: OpenEnaRotationReference | null = null,
 ): OpenEnaResult {
-  const options = buildJenaOptions(dataset, config, reference);
-  const generatedSet = ena(options);
-  const fittedSet = config.rotation === "mean"
+  const plan = buildOpenEnaAnalysisPlan(dataset, config, reference);
+  const generatedSet = ena(plan.options);
+  const fittedSet = plan.configuration.rotation === "mean"
     ? canonicalizeOfficialMeanRotation(generatedSet)
     : generatedSet;
-  const set = attachStableGroupMetadata(fittedSet, options.rows, config);
-  return buildOpenEnaResult(set, config, reference);
+  const set = attachStableGroupMetadata(fittedSet, plan.options.rows, plan.configuration);
+  return buildOpenEnaResult(set, plan.configuration, reference, plan.executionProvenance);
+}
+
+function sameStringArray(left: readonly string[], right: readonly string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function resultMatchesConfiguration(result: OpenEnaResult, config: CanonicalOpenEnaConfig) {
+  const runtimeNetworkType = result.set.networkType ?? "standard";
+  if ((config.analysisKind === "ona") !== (runtimeNetworkType === "ordered")) return false;
+  if (!sameStringArray(result.set.codes, config.codes)
+    || !sameStringArray(result.set.units, config.unitColumns)
+    || !sameStringArray(result.set.conversation, config.conversationColumns)
+    || result.set.modelType !== config.model
+    || result.set.functionParams.window !== config.window
+    || result.set.functionParams.windowSizeBack !== (config.window === "Conversation" ? Number.POSITIVE_INFINITY : config.windowSizeBack)
+    || result.set.functionParams.windowSizeForward !== (config.window === "Conversation" ? 0 : config.windowSizeForward)
+    || result.set.functionParams.weightBy !== config.weightBy) {
+    return false;
+  }
+  const provenance = result.executionProvenance;
+  if (!provenance) return config.analysisKind === "ena";
+  if (provenance.analysisKind !== config.analysisKind
+    || provenance.networkType !== (config.analysisKind === "ona" ? "ordered" : "standard")) {
+    return false;
+  }
+  if (config.analysisKind === "ona") {
+    const provenanceConfig: OpenEnaConfig = {
+      ...config,
+      orderPolicy: provenance.ordering?.requestedPolicy ?? null,
+      directionalMask: provenance.directionalMask,
+    };
+    return sameOpenEnaConfig(config, provenanceConfig);
+  }
+  return provenance.ordering === null && provenance.directionalMask === null;
+}
+
+/**
+ * Return a new result with a canonical, deep-cloned source/config binding.
+ * The completed worker result and the caller's mutable config remain untouched.
+ */
+export function bindOpenEnaResultProvenance(
+  result: OpenEnaResult,
+  dataset: ParsedDataset,
+  datasetSha256: string,
+  config: OpenEnaConfig,
+): OpenEnaResult {
+  if (!/^[a-f\d]{64}$/iu.test(datasetSha256)) {
+    throw new Error("Open ENA provenance binding requires a 64-character hexadecimal SHA-256 digest.");
+  }
+  const configuration = canonicalizeOpenEnaConfig(config);
+  if (!resultMatchesConfiguration(result, configuration)) {
+    throw new Error("The provenance configuration does not match the completed Open ENA result.");
+  }
+  return {
+    ...result,
+    provenanceBinding: {
+      datasetNormalizedUtf8TextSha256: datasetSha256.toLowerCase(),
+      datasetHashKind: datasetHashKindFor(dataset),
+      configuration: cloneOpenEnaConfig(configuration),
+    },
+  };
 }
 
 export function dimensionEffect(
@@ -292,6 +453,7 @@ export function dimensionEffect(
   dimension: string,
   selectedGroupOrder?: readonly [string, string],
 ) {
+  if ((result.set.networkType ?? "standard") === "ordered") return null;
   if (result.set.modelType !== "EndPoint" || !groupColumn) return null;
   if (!selectedGroupOrder && result.groups.length !== 2) return null;
   const firstName = selectedGroupOrder?.[0] ?? result.groups[0]?.name;
