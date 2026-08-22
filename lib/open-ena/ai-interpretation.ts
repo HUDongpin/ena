@@ -1,4 +1,5 @@
 import type { Locale } from "../i18n";
+import { assertOpenEnaCapabilityForContext } from "./capabilities";
 import {
   LEGACY_PAIRWISE_MANN_WHITNEY_METHOD,
   PAIRWISE_MANN_WHITNEY_METHOD,
@@ -450,6 +451,7 @@ function trajectoryEvidence(
 export function buildOpenEnaAiInterpretationRequestV1(
   input: BuildOpenEnaAiInterpretationRequestV1Input,
 ): OpenEnaAiInterpretationRequestV1 {
+  assertOpenEnaCapabilityForContext(input.config, input.result, "ai-interpretation");
   if (input.result.set.modelType !== input.config.model) {
     throw new Error("AI interpretation requires the successful result configuration.");
   }
@@ -1666,6 +1668,7 @@ function deepFreeze<T>(value: T, seen = new Set<unknown>()): T {
 export function buildOpenEnaAiInterpretationRequest(
   input: BuildOpenEnaAiInterpretationRequestInput,
 ): OpenEnaAiInterpretationRequestV2 {
+  assertOpenEnaCapabilityForContext(input.config, input.result, "ai-interpretation");
   assertOpenEnaInferenceCoordinatorConsumerV2(input.currentInference);
   assertOpenEnaInferenceCurrentContextV2(input.currentInference, {
     groupNames: input.result.groups.map((group) => group.name),

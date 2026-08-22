@@ -1,4 +1,8 @@
 import type { Row } from "jena-js";
+import {
+  assertOpenEnaCapabilityForConfig,
+  assertOpenEnaCapabilityForContext,
+} from "./capabilities";
 import { rowsToCsv } from "./export";
 import { buildReferenceRotationPackage } from "./reference";
 import {
@@ -149,6 +153,7 @@ export function buildAnalysisSet(
   result: OpenEnaResult,
   options: BuildAnalysisSetOptions = {},
 ): OpenEnaAnalysisSet {
+  assertOpenEnaCapabilityForContext(config, result, "analysis-sets");
   if (result.set.modelType !== "EndPoint") {
     throw new Error("Trajectory results cannot be captured as shared analysis sets; build an endpoint model instead.");
   }
@@ -282,8 +287,11 @@ function compactReference(set: OpenEnaAnalysisSet): OpenEnaProjectionReference {
 export function validateOpenEnaSharedGeometry(
   primary: OpenEnaAnalysisSet,
   secondary: OpenEnaAnalysisSet,
-  axes: readonly string[] = primary.geometry.dimensions.slice(0, 2),
+  selectedAxes?: readonly string[],
 ) {
+  assertOpenEnaCapabilityForConfig(primary.config, "analysis-sets");
+  assertOpenEnaCapabilityForConfig(secondary.config, "analysis-sets");
+  const axes = selectedAxes ?? primary.geometry.dimensions.slice(0, 2);
   const errors: string[] = [];
   if (primary.id === secondary.id) errors.push("Primary and Secondary must be distinct analysis sets.");
   if (primary.geometry.referenceId !== secondary.geometry.referenceId) {
@@ -375,12 +383,15 @@ function comparisonSide(
 export function compareAnalysisSets(
   primary: OpenEnaAnalysisSet,
   secondary: OpenEnaAnalysisSet,
-  selectedAxes: readonly string[] = primary.geometry.dimensions.slice(0, 2),
+  selectedAxes?: readonly string[],
   createdAt = new Date().toISOString(),
 ): OpenEnaSharedComparison {
-  const errors = validateOpenEnaSharedGeometry(primary, secondary, selectedAxes);
+  assertOpenEnaCapabilityForConfig(primary.config, "analysis-sets");
+  assertOpenEnaCapabilityForConfig(secondary.config, "analysis-sets");
+  const resolvedAxes = selectedAxes ?? primary.geometry.dimensions.slice(0, 2);
+  const errors = validateOpenEnaSharedGeometry(primary, secondary, resolvedAxes);
   if (errors.length) throw new Error(errors.join(" "));
-  const axes: [string, string] = [selectedAxes[0], selectedAxes[1]];
+  const axes: [string, string] = [resolvedAxes[0], resolvedAxes[1]];
   canonicalTimestamp(createdAt, "Shared-set comparison time");
   const primarySummary = comparisonSide(primary, axes);
   const secondarySummary = comparisonSide(secondary, axes);
@@ -434,6 +445,8 @@ export function buildOpenEnaSharedComparison(
 }
 
 export function buildSetComparisonExport(comparison: OpenEnaSharedComparison) {
+  assertOpenEnaCapabilityForConfig(comparison.primary.config, "analysis-sets");
+  assertOpenEnaCapabilityForConfig(comparison.secondary.config, "analysis-sets");
   return {
     schemaVersion: 1 as const,
     kind: "open-ena-shared-set-comparison" as const,

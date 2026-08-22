@@ -1,4 +1,8 @@
 import type { Row } from "jena-js";
+import {
+  assertOpenEnaCapabilityForConfig,
+  assertOpenEnaCapabilityForContext,
+} from "./capabilities";
 import { rowsToCsv } from "./export";
 import {
   JENA_RUNTIME_VERSION,
@@ -436,6 +440,7 @@ export function buildPairwiseGroupContrast(
   selectedAxes: readonly string[] = result.dimensions.slice(0, 2),
   createdAt = new Date().toISOString(),
 ): OpenEnaPairwiseContrast {
+  assertOpenEnaCapabilityForContext(config, result, "group-contrast");
   if (result.set.modelType !== "EndPoint" || config.model !== "EndPoint") {
     throw new Error("Pairwise group contrasts require an endpoint ENA result and endpoint configuration.");
   }
@@ -628,6 +633,7 @@ export function buildPairwiseGroupContrastExport(
   contrast: OpenEnaPairwiseContrast,
   presentationOptions?: OpenEnaPairwiseContrastPresentationOptions,
 ) {
+  assertOpenEnaCapabilityForConfig(contrast.configuration, "group-contrast");
   const finiteOr = (value: number | undefined, fallback: number) => (
     typeof value === "number" && Number.isFinite(value) ? value : fallback
   );
@@ -684,6 +690,7 @@ export function buildPairwiseGroupContrastExport(
 }
 
 export function pairwiseGroupContrastEdgesToCsv(contrast: OpenEnaPairwiseContrast) {
+  assertOpenEnaCapabilityForConfig(contrast.configuration, "group-contrast");
   const configurationJson = JSON.stringify(contrast.configuration);
   const resultProvenanceJson = JSON.stringify(contrast.resultProvenance);
   const boundariesJson = JSON.stringify(contrast.boundaries);

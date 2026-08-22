@@ -1,4 +1,5 @@
 import type { Row } from "jena-js";
+import { assertOpenEnaCapabilityForResult } from "./capabilities";
 import type { OpenEnaPairwiseContrast } from "./contrasts";
 import { codeColorFor, JENA_GROUP_COLORS, type OpenEnaCodeColors } from "./plot-style";
 import type { CameraPreset, GroupNetwork, OpenEnaResult } from "./types";
@@ -453,6 +454,7 @@ export function compileOpenEna3dPlotSpec({
   flipX,
   flipY,
 }: CompileOpenEna3dPlotInput): OpenEna3dPlotSpec {
+  assertOpenEnaCapabilityForResult(result, "3d");
   const dimensions = [xDimension, yDimension, zDimension] as const;
   const traces: OpenEna3dTrace[] = [];
   const nodeRows = result.set.rotation.nodes ?? [];

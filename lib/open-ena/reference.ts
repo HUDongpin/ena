@@ -1,4 +1,8 @@
 import type { AdjacencyKeyEntry, RotationSet, Row } from "jena-js";
+import {
+  assertOpenEnaCapabilityForConfig,
+  assertOpenEnaCapabilityForContext,
+} from "./capabilities";
 import { parseOpenEnaAnalysisBundle } from "./export";
 import type {
   DatasetHashKind,
@@ -380,6 +384,7 @@ export function buildReferenceRotationPackage(
   result: OpenEnaResult,
   sha256: string | null = null,
 ): OpenEnaRotationReference {
+  assertOpenEnaCapabilityForContext(config, result, "reference-rotation");
   if (result.set.modelType !== "EndPoint") throw new Error("Only endpoint models can be exported as reference rotations.");
   if (result.projectionReference) {
     return { ...result.projectionReference, rotationSet: result.set.rotation };
@@ -437,6 +442,7 @@ export function buildReferenceRotationPackage(
 }
 
 export function validateReferenceCompatibility(config: OpenEnaConfig, reference: OpenEnaRotationReference) {
+  assertOpenEnaCapabilityForConfig(config, "reference-rotation");
   if (config.rotation !== "reference") return [];
   const errors: string[] = [];
   if (config.referenceRotationId !== reference.referenceId) errors.push("The selected reference rotation does not match the model configuration.");
