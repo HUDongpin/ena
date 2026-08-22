@@ -86,6 +86,8 @@ import {
 } from "@/lib/open-ena/sets";
 import {
   JENA_RUNTIME_VERSION,
+  JENA_SOURCE_COMMIT,
+  JENA_SOURCE_URL,
   SAMPLE_CONFIG,
   SAMPLE_DATASET_URL,
   TRAJECTORY_SAMPLE_CONFIG,
@@ -3718,11 +3720,15 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             <div className="ena-rail-brand" data-ena-rail-brand="true" aria-label="ENA.HK Open ENA">
               <span className="ena-mini-mark" aria-hidden="true"><img src="/ena-mark.svg" alt="" /></span>
               <span className="ena-rail-product">OPEN ENA</span>
-              <span
+              <a
                 className="ena-rail-version"
                 data-ena-rail-version="true"
-                title={`ENA computation powered by jENA v${JENA_RUNTIME_VERSION} (GPL-3.0-only)`}
-              >jENA {JENA_RUNTIME_VERSION}</span>
+                href={JENA_SOURCE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={copy.workspace.jenaSourceAriaLabel(JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT.slice(0, 7))}
+                title={copy.workspace.jenaSourceAriaLabel(JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT.slice(0, 7))}
+              >jENA {JENA_RUNTIME_VERSION} · {copy.workspace.jenaSourceLabel}</a>
             </div>
             <div className="ena-rail-modes">
               {(Object.keys(copy.modes) as OpenEnaMode[]).map((item) => (

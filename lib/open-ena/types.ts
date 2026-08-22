@@ -421,6 +421,8 @@ export const TRAJECTORY_SAMPLE_CONFIG: OpenEnaConfig = {
 };
 
 export const JENA_RUNTIME_VERSION = "0.7.0-ona.0";
+export const JENA_SOURCE_COMMIT = "8a1306c9b1d8bd7a7c9203e4ab96055ba67d4e6d";
+export const JENA_SOURCE_URL = "https://github.com/HUDongpin/jENA/tree/8a1306c9b1d8bd7a7c9203e4ab96055ba67d4e6d";
 export const OPEN_ENA_APP_VERSION = "0.1.0";
 
 // Preserve the long-standing import surface while routing identity checks

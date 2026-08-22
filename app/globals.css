@@ -2659,10 +2659,17 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-rail-version {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 3px;
   color: #8fa6a6;
   font-size: calc(0.48rem + var(--ena-font-step, 1px));
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
+  text-decoration: none;
 }
 
 .ena-rail-modes {
