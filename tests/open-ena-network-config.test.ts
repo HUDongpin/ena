@@ -8,21 +8,33 @@ import {
   cloneDirectionalMask,
   cloneOpenEnaConfig,
   createDirectionalMask,
+  deserializeOpenEnaConfig,
   networkTypeFor,
   orderRowsForOpenEna,
   reconcileDirectionalMask,
   sameOpenEnaConfig,
+  serializeOpenEnaConfig,
+  stableOpenEnaConfigJson,
   validateDirectionalMask,
 } from "../lib/open-ena/network-config";
 import {
   SAMPLE_CONFIG,
   sameOpenEnaConfig as sameOpenEnaConfigFromTypes,
   type OpenEnaConfig,
+  type OpenEnaOrderComparator,
   type OpenEnaOrderPolicy,
   type ParsedDataset,
+  type PortableOpenEnaConfig,
 } from "../lib/open-ena/types";
 
-const columnOrder = (columns: string[]): OpenEnaOrderPolicy => ({ kind: "columns", columns });
+const columnOrder = (
+  columns: string[],
+  comparator: OpenEnaOrderComparator = "number",
+): OpenEnaOrderPolicy => ({
+  kind: "columns",
+  columns,
+  comparators: Object.fromEntries(columns.map((column) => [column, comparator])),
+});
 
 function orderedConfig(overrides: Partial<OpenEnaConfig> = {}): OpenEnaConfig {
   const codes = overrides.codes ?? ["A", "B", "C"];
@@ -107,6 +119,26 @@ test("canonical clone and equality include the full order and directional-mask i
   assert.equal(original.directionalMask!.enabled[0][0], true, "deep cloning must protect the caller");
 });
 
+test("portable ONA configuration preserves an infinite backward window without JSON null coercion", () => {
+  const original = orderedConfig({ windowSizeBack: Number.POSITIVE_INFINITY });
+  const portable = serializeOpenEnaConfig(original);
+  const json = stableOpenEnaConfigJson(original);
+  const parsed = deserializeOpenEnaConfig(JSON.parse(json) as PortableOpenEnaConfig);
+
+  assert.equal(portable.windowSizeBack, "Infinity");
+  assert.match(json, /"windowSizeBack":"Infinity"/);
+  assert.doesNotMatch(json, /"windowSizeBack":null/);
+  assert.equal(parsed.windowSizeBack, Number.POSITIVE_INFINITY);
+  assert.equal(sameOpenEnaConfig(original, parsed), true);
+  assert.throws(
+    () => deserializeOpenEnaConfig({
+      ...portable,
+      windowSizeBack: null,
+    } as unknown as PortableOpenEnaConfig),
+    /finite number.*Infinity|Infinity.*finite number/i,
+  );
+});
+
 test("directional masks are full label-bound p by p matrices including the diagonal", () => {
   const mask = createDirectionalMask(["A", "B"]);
   assert.deepEqual(mask, {
@@ -158,6 +190,7 @@ test("column ordering groups interleaved typed horizons by first appearance and 
   assert.deepEqual(result.resolvedPolicy, {
     kind: "columns",
     columns: ["turn"],
+    comparators: { turn: "number" },
     direction: "ascending",
     missing: "reject",
     ties: "reject",
@@ -192,6 +225,75 @@ test("typed horizon identity preserves negative zero independently from positive
   );
 });
 
+test("CSV numeric order values use a recorded numeric comparator rather than lexical order", () => {
+  const dataset = parseCsv(
+    "unit,horizon,turn,A,B,C\nu1,h1,10,0,0,1\nu1,h1,2,0,1,0\nu1,h1,-1.5,1,0,0\n",
+    { name: "numeric-order.csv", source: "upload" },
+  );
+  const result = orderRowsForOpenEna(dataset.rows, ["horizon"], columnOrder(["turn"]));
+
+  assert.deepEqual(result.rows.map((row) => row.turn), ["-1.5", "2", "10"]);
+  assert.deepEqual(result.sourceIndices, [2, 1, 0]);
+  assert.deepEqual(result.resolvedPolicy.kind === "columns" && result.resolvedPolicy.comparators, {
+    turn: "number",
+  });
+});
+
+test("partially numeric string order values fail closed instead of silently changing comparator", () => {
+  assert.throws(
+    () => orderRowsForOpenEna([
+      { horizon: "h", turn: "1" },
+      { horizon: "h", turn: "unknown" },
+    ], ["horizon"], columnOrder(["turn"])),
+    /incompatible.*number|number.*incompatible/i,
+  );
+});
+
+test("explicit string and ISO datetime comparators preserve their declared semantics", () => {
+  const stringRows: Row[] = [
+    { horizon: "h", turn: "1" },
+    { horizon: "h", turn: "01" },
+    { horizon: "h", turn: "001" },
+  ];
+  assert.deepEqual(
+    orderRowsForOpenEna(stringRows, ["horizon"], columnOrder(["turn"], "string")).rows.map((row) => row.turn),
+    ["001", "01", "1"],
+  );
+
+  const timeRows: Row[] = [
+    { horizon: "h", time: "2026-08-22T12:00:00+08:00" },
+    { horizon: "h", time: "2026-08-22T03:30:00Z" },
+  ];
+  assert.deepEqual(
+    orderRowsForOpenEna(timeRows, ["horizon"], columnOrder(["time"], "iso-datetime")).sourceIndices,
+    [1, 0],
+  );
+  assert.throws(
+    () => orderRowsForOpenEna([
+      { horizon: "h", time: "08/22/2026 12:00" },
+    ], ["horizon"], columnOrder(["time"], "iso-datetime")),
+    /incompatible.*iso-datetime|iso-datetime.*incompatible/i,
+  );
+});
+
+test("column order policies require one explicit supported comparator per column", () => {
+  assert.throws(
+    () => orderRowsForOpenEna([{ horizon: "h", turn: 1 }], ["horizon"], {
+      kind: "columns",
+      columns: ["turn"],
+    } as unknown as OpenEnaOrderPolicy),
+    /explicit comparator/i,
+  );
+  assert.throws(
+    () => orderRowsForOpenEna([{ horizon: "h", turn: 1 }], ["horizon"], {
+      kind: "columns",
+      columns: ["turn"],
+      comparators: { different: "number" },
+    }),
+    /exactly match/i,
+  );
+});
+
 test("column ordering rejects missing horizons/order values, non-finite numbers, mixed values, and ties", () => {
   assert.throws(
     () => orderRowsForOpenEna([{ horizon: null, turn: 1 }], ["horizon"], columnOrder(["turn"])),
@@ -208,9 +310,9 @@ test("column ordering rejects missing horizons/order values, non-finite numbers,
   assert.throws(
     () => orderRowsForOpenEna([
       { horizon: "h", turn: 1 },
-      { horizon: "h", turn: "2" },
+      { horizon: "h", turn: true },
     ], ["horizon"], columnOrder(["turn"])),
-    /mixed|comparable/i,
+    /incompatible/i,
   );
   assert.throws(
     () => orderRowsForOpenEna([
@@ -326,6 +428,27 @@ test("ONA permits delimiter-bearing conversation tuples without identity collisi
   assert.deepEqual(validateConfig(dataset, config), []);
 });
 
+test("ONA preflight rejects typed unit tuples that collapse to one display label", () => {
+  const dataset = manualDataset([
+    { unit: 1, horizon: "h1", turn: 1, A: 1, B: 1, C: 0 },
+    { unit: "1", horizon: "h2", turn: 1, A: 1, B: 0, C: 1 },
+  ]);
+  const errors = validateConfig(dataset, orderedConfig());
+
+  assert.match(errors.join(" "), /unit identity.*ambiguous|distinct typed unit tuples/i);
+  assert.doesNotMatch(errors.join(" "), /unit “?1”?/i, "the collision error must not disclose a participant label");
+});
+
+test("ONA keeps the conservative unit delimiter guard for multi-column display identities", () => {
+  const dataset = manualDataset([
+    { unitA: "a::b", unitB: "c", horizon: "h1", turn: 1, A: 1, B: 1, C: 0 },
+    { unitA: "a", unitB: "b::c", horizon: "h2", turn: 1, A: 1, B: 0, C: 1 },
+  ], ["unitA", "unitB", "horizon", "turn", "A", "B", "C"]);
+  const errors = validateConfig(dataset, orderedConfig({ unitColumns: ["unitA", "unitB"] }));
+
+  assert.match(errors.join(" "), /ONA unit component values cannot contain.*::/i);
+});
+
 test("standard ENA retains the composite-identity delimiter guard", () => {
   const dataset = manualDataset([
     { unit: "u1", horizon: "a::b", turn: 1, A: 1, B: 1 },
@@ -340,6 +463,25 @@ test("standard ENA retains the composite-identity delimiter guard", () => {
   });
 
   assert.match(errors.join(" "), /cannot contain.*::.*jENA reserves/i);
+});
+
+test("standard ENA rejects both ONA-only order and mask state consistently", () => {
+  assert.throws(
+    () => canonicalizeOpenEnaConfig({
+      ...SAMPLE_CONFIG,
+      analysisKind: "ena",
+      orderPolicy: columnOrder(["turn"]),
+    }),
+    /standard ENA.*order policy|order policy.*standard ENA/i,
+  );
+  assert.throws(
+    () => canonicalizeOpenEnaConfig({
+      ...SAMPLE_CONFIG,
+      analysisKind: "ena",
+      directionalMask: createDirectionalMask(SAMPLE_CONFIG.codes),
+    }),
+    /standard ENA.*directional mask|directional mask.*standard ENA/i,
+  );
 });
 
 test("ONA safety budgeting uses p squared directed cells including diagonal while ENA remains unchanged", () => {

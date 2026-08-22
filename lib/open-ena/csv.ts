@@ -5,6 +5,7 @@ import {
   canonicalizeOpenEnaConfig,
   orderRowsForOpenEna,
   typedHorizonIdentity,
+  typedTupleIdentity,
 } from "./network-config";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -149,6 +150,17 @@ function isActiveCode(value: Row[string]) {
 
 function compositeValue(row: Row, columns: string[]) {
   return columns.map((column) => String(row[column] ?? "")).join("::");
+}
+
+function analysisIdentity(
+  row: Row,
+  columns: readonly string[],
+  analysisKind: "ena" | "ona",
+  label: string,
+) {
+  return analysisKind === "ona"
+    ? typedTupleIdentity(row, columns, label)
+    : compositeValue(row, [...columns]);
 }
 
 export function coerceSelectedCodes(rows: Row[], codes: string[], retainedColumns: string[] = []): Row[] {
@@ -402,7 +414,7 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
     if (new Set(columns).size !== columns.length) errors.push(`${label} identity columns must be unique.`);
     for (const column of columns) {
       if (!dataset.headers.includes(column)) errors.push(`${label} must reference a coded-data column.`);
-      else if (dataset.rows.some((row) => row[column] === null || row[column] === "")) errors.push(`${label} column “${column}” contains missing values.`);
+      else if (dataset.rows.some((row) => row[column] === null || row[column] === undefined || row[column] === "")) errors.push(`${label} column “${column}” contains missing values.`);
     }
   }
   if (config.groupColumn) {
@@ -420,6 +432,24 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
           : "Unit and conversation component values cannot contain “::”, which jENA reserves when building composite identities.");
         break;
       }
+    }
+  }
+  const validUnitColumns = config.unitColumns.length > 0
+    && config.unitColumns.every((column) => dataset.headers.includes(column))
+    && dataset.rows.every((row) => config.unitColumns.every((column) => (
+      row[column] !== null && row[column] !== undefined && row[column] !== ""
+    )));
+  if (analysisKind === "ona" && validUnitColumns) {
+    const typedIdentityByDisplay = new Map<string, string>();
+    for (const row of dataset.rows) {
+      const display = compositeValue(row, config.unitColumns);
+      const identity = typedTupleIdentity(row, config.unitColumns, "ONA unit column");
+      const previous = typedIdentityByDisplay.get(display);
+      if (previous !== undefined && previous !== identity) {
+        errors.push("ONA unit identity is ambiguous because distinct typed unit tuples produce the same display label; use unambiguous unit values or columns.");
+        break;
+      }
+      typedIdentityByDisplay.set(display, identity);
     }
   }
   const structuralColumns = [...new Set([...config.unitColumns, ...config.conversationColumns])];
@@ -444,11 +474,11 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
     if (invalid) errors.push(`Code “${code}” must contain only 0/1 or true/false values.`);
     else if (!dataset.rows.some((row) => isActiveCode(row[code]))) errors.push(`Code “${code}” has no active values.`);
   }
-  if (config.groupColumn && config.unitColumns.every((column) => dataset.headers.includes(column)) && dataset.headers.includes(config.groupColumn)) {
+  if (config.groupColumn && validUnitColumns && dataset.headers.includes(config.groupColumn)) {
     const groupColumn = config.groupColumn;
     const groupByUnit = new Map<string, string>();
     for (const row of dataset.rows) {
-      const unit = compositeValue(row, config.unitColumns);
+      const unit = analysisIdentity(row, config.unitColumns, analysisKind, "ONA unit column");
       const group = String(row[groupColumn] ?? "");
       const previous = groupByUnit.get(unit);
       if (previous !== undefined && previous !== group) {
@@ -491,16 +521,22 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
     errors.push("Mean rotation requires a comparison group with exactly two values.");
   }
   if (
-    config.unitColumns.length > 0
-    && config.unitColumns.every((column) => dataset.headers.includes(column))
+    validUnitColumns
     && config.codes.length >= 2
   ) {
-    const projectedRowCount = config.model === "EndPoint"
-      ? new Set(dataset.rows.map((row) => compositeValue(row, config.unitColumns))).size
-      : new Set(dataset.rows.map((row) => compositeValue(row, [
-          ...config.unitColumns,
-          ...config.conversationColumns,
-        ]))).size;
+    const projectedRowCount = config.model === "EndPoint" || analysisKind === "ona"
+      ? new Set(dataset.rows.map((row) => analysisIdentity(
+          row,
+          config.unitColumns,
+          analysisKind,
+          "ONA unit column",
+        ))).size
+      : new Set(dataset.rows.map((row) => analysisIdentity(
+          row,
+          [...config.unitColumns, ...config.conversationColumns],
+          analysisKind,
+          "ONA projected identity column",
+        ))).size;
     const edgeCount = analysisKind === "ona"
       ? config.codes.length * config.codes.length
       : config.codes.length * (config.codes.length - 1) / 2;

@@ -5,14 +5,22 @@ export type OpenEnaView = "2d" | "3d";
 export type CameraPreset = "isometric" | "xy" | "xz" | "yz" | "yx" | "zx" | "zy";
 export type AnalysisKind = "ena" | "ona";
 
+export type OpenEnaOrderComparator = "number" | "string" | "boolean" | "iso-datetime";
+
 export type OpenEnaOrderPolicy =
-  | { kind: "columns"; columns: string[] }
+  | {
+      kind: "columns";
+      columns: string[];
+      /** Explicit comparison semantics for every declared order column. */
+      comparators: Record<string, OpenEnaOrderComparator>;
+    }
   | { kind: "source-row"; confirmed: true };
 
 export type OpenEnaResolvedOrderPolicy =
   | {
       kind: "columns";
       columns: string[];
+      comparators: Record<string, OpenEnaOrderComparator>;
       direction: "ascending";
       missing: "reject";
       ties: "reject";
@@ -73,6 +81,11 @@ export type CanonicalOpenEnaConfig = Omit<OpenEnaConfig, "analysisKind" | "order
   analysisKind: AnalysisKind;
   orderPolicy: OpenEnaOrderPolicy | null;
   directionalMask: OpenEnaDirectionalMask | null;
+};
+
+/** JSON-safe configuration form used by manifests and result bundles. */
+export type PortableOpenEnaConfig = Omit<CanonicalOpenEnaConfig, "windowSizeBack"> & {
+  windowSizeBack: number | "Infinity";
 };
 
 export interface OpenEnaReferenceCompatibility {

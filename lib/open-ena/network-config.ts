@@ -4,12 +4,21 @@ import type {
   CanonicalOpenEnaConfig,
   OpenEnaConfig,
   OpenEnaDirectionalMask,
+  OpenEnaOrderComparator,
   OpenEnaOrderPolicy,
   OpenEnaResolvedOrderPolicy,
+  PortableOpenEnaConfig,
 } from "./types";
 
 type ComparableScalar = string | number | boolean;
 type TypedScalar = readonly ["string" | "number" | "boolean", ComparableScalar];
+
+const ORDER_COMPARATORS = new Set<OpenEnaOrderComparator>([
+  "number",
+  "string",
+  "boolean",
+  "iso-datetime",
+]);
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -49,7 +58,22 @@ function cloneOrderPolicy(policy: OpenEnaOrderPolicy | null | undefined): OpenEn
     if (new Set(policy.columns).size !== policy.columns.length) {
       throw new Error("ONA order columns must be unique.");
     }
-    return { kind: "columns", columns: [...policy.columns] };
+    if (!asRecord(policy.comparators)) {
+      throw new Error("ONA column ordering requires an explicit comparator for every order column.");
+    }
+    const comparatorKeys = Object.keys(policy.comparators);
+    if (comparatorKeys.length !== policy.columns.length
+      || comparatorKeys.some((column) => !policy.columns.includes(column))) {
+      throw new Error("ONA order comparators must exactly match the declared order columns.");
+    }
+    const comparators = Object.fromEntries(policy.columns.map((column) => {
+      const comparator = policy.comparators[column];
+      if (!ORDER_COMPARATORS.has(comparator)) {
+        throw new Error(`ONA order column “${column}” must declare a supported comparator.`);
+      }
+      return [column, comparator];
+    })) as Record<string, OpenEnaOrderComparator>;
+    return { kind: "columns", columns: [...policy.columns], comparators };
   }
   if (policy.kind === "source-row") {
     if (policy.confirmed !== true) {
@@ -150,13 +174,17 @@ export function reconcileDirectionalMask(
 
 export function canonicalizeOpenEnaConfig(config: OpenEnaConfig): CanonicalOpenEnaConfig {
   const analysisKind = analysisKindFor(config);
-  const orderPolicy = cloneOrderPolicy(config.orderPolicy);
+  let orderPolicy: OpenEnaOrderPolicy | null = null;
   let directionalMask: OpenEnaDirectionalMask | null = null;
   if (analysisKind === "ena") {
+    if (config.orderPolicy != null) {
+      throw new Error("Standard ENA configurations cannot carry an ONA order policy.");
+    }
     if (config.directionalMask != null) {
       throw new Error("Standard ENA configurations cannot carry an ONA directional mask.");
     }
   } else {
+    orderPolicy = cloneOrderPolicy(config.orderPolicy);
     if (!orderPolicy) throw new Error("ONA requires an explicit order policy.");
     directionalMask = reconcileDirectionalMask(config.directionalMask, config.codes);
   }
@@ -183,6 +211,32 @@ export function cloneOpenEnaConfig(config: OpenEnaConfig): CanonicalOpenEnaConfi
   return canonicalizeOpenEnaConfig(config);
 }
 
+export function serializeOpenEnaConfig(config: OpenEnaConfig): PortableOpenEnaConfig {
+  const canonical = canonicalizeOpenEnaConfig(config);
+  return {
+    ...canonical,
+    windowSizeBack: canonical.windowSizeBack === Number.POSITIVE_INFINITY
+      ? "Infinity"
+      : canonical.windowSizeBack,
+  };
+}
+
+export function deserializeOpenEnaConfig(config: PortableOpenEnaConfig): CanonicalOpenEnaConfig {
+  const { windowSizeBack: portableWindowSizeBack, ...rest } = config;
+  const windowSizeBack = portableWindowSizeBack === "Infinity"
+    ? Number.POSITIVE_INFINITY
+    : portableWindowSizeBack;
+  if (typeof windowSizeBack !== "number"
+    || !(Number.isFinite(windowSizeBack) || windowSizeBack === Number.POSITIVE_INFINITY)) {
+    throw new Error("Portable Open ENA windowSizeBack must be a finite number or the explicit “Infinity” sentinel.");
+  }
+  return canonicalizeOpenEnaConfig({ ...rest, windowSizeBack });
+}
+
+export function stableOpenEnaConfigJson(config: OpenEnaConfig): string {
+  return JSON.stringify(serializeOpenEnaConfig(config));
+}
+
 function sameStrings(left: readonly string[], right: readonly string[]) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
@@ -193,7 +247,8 @@ function sameOrderPolicy(left: OpenEnaOrderPolicy | null, right: OpenEnaOrderPol
   if (left.kind === "source-row" && right.kind === "source-row") return true;
   return left.kind === "columns"
     && right.kind === "columns"
-    && sameStrings(left.columns, right.columns);
+    && sameStrings(left.columns, right.columns)
+    && left.columns.every((column) => left.comparators[column] === right.comparators[column]);
 }
 
 function sameMask(left: OpenEnaDirectionalMask | null, right: OpenEnaDirectionalMask | null) {
@@ -249,15 +304,52 @@ function orderTupleKey(tuple: readonly TypedScalar[]) {
   return JSON.stringify(tuple);
 }
 
+const CANONICAL_ORDER_NUMBER = /^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/u;
+const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/u;
+
+function canonicalNumericString(value: string): number | null {
+  if (!CANONICAL_ORDER_NUMBER.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function orderScalar(value: unknown, column: string, comparator: OpenEnaOrderComparator): TypedScalar {
+  const scalar = typedScalar(value, `ONA order column “${column}”`);
+  if (comparator === "number") {
+    if (scalar[0] === "number") return scalar;
+    if (scalar[0] === "string") {
+      const parsed = canonicalNumericString(String(scalar[1]));
+      if (parsed !== null) return ["number", parsed];
+    }
+  } else if (comparator === "boolean") {
+    if (scalar[0] === "boolean") return scalar;
+    if (scalar[0] === "string" && (scalar[1] === "true" || scalar[1] === "false")) {
+      return ["boolean", scalar[1] === "true"];
+    }
+  } else if (comparator === "iso-datetime") {
+    if (scalar[0] === "string" && typeof scalar[1] === "string" && ISO_DATE_TIME.test(scalar[1])) {
+      const timestamp = Date.parse(scalar[1]);
+      if (Number.isFinite(timestamp)) return ["number", timestamp];
+    }
+  } else if (comparator === "string" && scalar[0] === "string") {
+    return scalar;
+  }
+  throw new Error(`ONA order column “${column}” contains values incompatible with its resolved ${comparator} comparator.`);
+}
+
 /**
  * Build the one canonical identity used for ONA horizons in the application
  * layer. Column labels, scalar types, and values are all bound explicitly;
  * negative zero receives a non-numeric marker because JSON.stringify would
  * otherwise silently serialize it as positive zero.
  */
-export function typedHorizonIdentity(row: Row, columns: readonly string[]): string {
+export function typedTupleIdentity(
+  row: Row,
+  columns: readonly string[],
+  label = "ONA identity column",
+): string {
   return JSON.stringify(columns.map((column) => {
-    const scalar = typedScalar(row[column], `ONA horizon column “${column}”`);
+    const scalar = typedScalar(row[column], `${label} “${column}”`);
     const value = scalar[0] === "number"
       && typeof scalar[1] === "number"
       && Object.is(scalar[1], -0)
@@ -265,6 +357,10 @@ export function typedHorizonIdentity(row: Row, columns: readonly string[]): stri
       : scalar[1];
     return [column, scalar[0], value];
   }));
+}
+
+export function typedHorizonIdentity(row: Row, columns: readonly string[]): string {
+  return typedTupleIdentity(row, columns, "ONA horizon column");
 }
 
 function compareTyped(left: TypedScalar, right: TypedScalar) {
@@ -300,13 +396,14 @@ export function orderRowsForOpenEna(
   }
   const clonedPolicy = cloneOrderPolicy(policy);
   if (!clonedPolicy) throw new Error("ONA requires an explicit order policy.");
+  const comparators = clonedPolicy.kind === "columns" ? clonedPolicy.comparators : {};
 
   const groups = new Map<string, IndexedOrderedRow[]>();
   rows.forEach((row, sourceIndex) => {
     const horizonKey = typedHorizonIdentity(row, conversationColumns);
     const group = groups.get(horizonKey) ?? [];
     const orderTuple = clonedPolicy.kind === "columns"
-      ? clonedPolicy.columns.map((column) => typedScalar(row[column], `ONA order column “${column}”`))
+      ? clonedPolicy.columns.map((column) => orderScalar(row[column], column, comparators[column]))
       : [];
     group.push({ row, sourceIndex, orderTuple });
     groups.set(horizonKey, group);
@@ -354,6 +451,7 @@ export function orderRowsForOpenEna(
     resolvedPolicy: {
       kind: "columns",
       columns: [...clonedPolicy.columns],
+      comparators,
       direction: "ascending",
       missing: "reject",
       ties: "reject",
