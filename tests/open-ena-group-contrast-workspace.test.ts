@@ -214,8 +214,8 @@ test("research exports record the selected group pair and selected X/Y axes", ()
   assert.match(exportsSource, /axes|selectedAxes/);
   assert.match(
     workspace,
-    /buildAnalysisBundle\([\s\S]{0,1400}methodsDimensions:\s*\[xDimension,\s*yDimension\][\s\S]{0,800}selectedGroupOrder:\s*groupContrast\?\.groupOrder[\s\S]{0,300}groupContrast/,
-    "the full result bundle must receive the active pair and axes",
+    /buildAnalysisBundle\([\s\S]{0,1400}methodsDimensions:\s*\[xDimension,\s*yDimension\][\s\S]{0,800}selectedGroupOrder:\s*selectedPresentationGroupOrder[\s\S]{0,300}groupContrast/,
+    "the full result bundle must receive the validated presenter pair and active axes",
   );
   assert.match(
     workspace,

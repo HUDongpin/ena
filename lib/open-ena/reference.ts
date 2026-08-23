@@ -1,4 +1,8 @@
 import type { AdjacencyKeyEntry, RotationSet, Row } from "jena-js";
+import {
+  assertOpenEnaCapabilityForConfig,
+  assertOpenEnaCapabilityForContext,
+} from "./capabilities";
 import { parseOpenEnaAnalysisBundle } from "./export";
 import type {
   DatasetHashKind,
@@ -16,6 +20,16 @@ type JsonRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasOrderedResultBundleIdentity(value: JsonRecord) {
+  if (value.schemaVersion !== 2 || value.app !== "ENA.HK Open ENA") return false;
+  const modelData = isRecord(value.modelData) ? value.modelData : null;
+  const manifest = isRecord(value.manifest) ? value.manifest : null;
+  const configuration = manifest && isRecord(manifest.configuration)
+    ? manifest.configuration
+    : null;
+  return modelData?.analysisKind === "ona" || configuration?.analysisKind === "ona";
 }
 
 function asString(value: unknown, label: string) {
@@ -365,6 +379,9 @@ export function parseRotationReference(text: string, filename = "reference.json"
   }
   if (isRecord(value) && value.kind === "open-ena-reference-rotation") return parseReferenceObject(value);
   if (isRecord(value) && value.schemaVersion === 2) {
+    if (hasOrderedResultBundleIdentity(value)) {
+      throw new Error("ONA result bundles cannot be used as reference rotations.");
+    }
     return referenceFromResultBundle(
       parseOpenEnaAnalysisBundle(text) as JsonRecord,
       filename,
@@ -380,6 +397,7 @@ export function buildReferenceRotationPackage(
   result: OpenEnaResult,
   sha256: string | null = null,
 ): OpenEnaRotationReference {
+  assertOpenEnaCapabilityForContext(config, result, "reference-rotation");
   if (result.set.modelType !== "EndPoint") throw new Error("Only endpoint models can be exported as reference rotations.");
   if (result.projectionReference) {
     return { ...result.projectionReference, rotationSet: result.set.rotation };
@@ -437,6 +455,7 @@ export function buildReferenceRotationPackage(
 }
 
 export function validateReferenceCompatibility(config: OpenEnaConfig, reference: OpenEnaRotationReference) {
+  assertOpenEnaCapabilityForConfig(config, "reference-rotation");
   if (config.rotation !== "reference") return [];
   const errors: string[] = [];
   if (config.referenceRotationId !== reference.referenceId) errors.push("The selected reference rotation does not match the model configuration.");

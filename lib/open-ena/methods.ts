@@ -9,7 +9,22 @@ import type {
   OpenEnaMannWhitneyInferenceRowV2,
   OpenEnaWilcoxonInferenceRowV2,
 } from "./inference-v2";
-import type { OpenEnaConfig, OpenEnaResult, ParsedDataset } from "./types";
+import {
+  assertOpenEnaCapabilityForContext,
+  openEnaAnalysisKindFromResult,
+} from "./capabilities";
+import {
+  canonicalizeOpenEnaConfig,
+  orderRowsForOpenEna,
+  sameOpenEnaConfig,
+} from "./network-config";
+import type {
+  CanonicalOpenEnaConfig,
+  OpenEnaConfig,
+  OpenEnaExecutionProvenance,
+  OpenEnaResult,
+  ParsedDataset,
+} from "./types";
 import { datasetHashKindFor, JENA_RUNTIME_VERSION, OPEN_ENA_APP_VERSION } from "./types";
 import {
   marginalMeanIntervalPair,
@@ -69,6 +84,216 @@ function effectiveWindow(config: OpenEnaConfig) {
     return "Whole-conversation accumulation per analytic unit and conversation; forward context is not separately applied.";
   }
   return `Moving stanza window with ${config.windowSizeBack} rows total including the current row and ${config.windowSizeForward} forward context rows.`;
+}
+
+function sameStrings(left: readonly string[], right: readonly string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function expectedOrderedAdjacency(codes: readonly string[]) {
+  return codes.flatMap((response, responseIndex) => codes.map((ground, groundIndex) => ({
+    source: ground,
+    target: response,
+    name: `${ground} & ${response}`,
+    sourceIndex: groundIndex,
+    targetIndex: responseIndex,
+  })));
+}
+
+function assertOnaMethodsContract(
+  dataset: ParsedDataset,
+  config: CanonicalOpenEnaConfig,
+  result: OpenEnaResult,
+) {
+  const execution = result.executionProvenance;
+  const orderPolicy = config.orderPolicy;
+  const directionalMask = config.directionalMask;
+  if (!execution
+    || execution.schemaVersion !== 1
+    || execution.analysisKind !== "ona"
+    || execution.networkType !== "ordered"
+    || execution.nodePositionMethod !== "directed"
+    || !orderPolicy
+    || !directionalMask
+    || !execution.directionalMask
+    || JSON.stringify(execution.directionalMask) !== JSON.stringify(directionalMask)
+    || !sameOpenEnaConfig(execution.configuration, config)
+    || !sameOpenEnaConfig({
+      ...config,
+      orderPolicy: execution.ordering?.requestedPolicy ?? null,
+      directionalMask: execution.directionalMask,
+    }, config)
+    || config.model !== "EndPoint"
+    || config.window !== "MovingStanzaWindow"
+    || config.windowSizeForward !== 0
+    || config.weightBy !== "sum"
+    || config.rotation !== "svd"
+    || config.referenceRotationId !== null
+    || result.set.modelType !== "EndPoint"
+    || result.set.functionParams.model !== config.model
+    || result.set.functionParams.window !== "MovingStanzaWindow"
+    || result.set.functionParams.windowSizeBack !== config.windowSizeBack
+    || result.set.functionParams.windowSizeForward !== 0
+    || result.set.functionParams.weightBy !== "sum"
+    || !sameStrings(result.set.codes, config.codes)
+    || !sameStrings(result.set.units, config.unitColumns)
+    || !sameStrings(result.set.conversation, config.conversationColumns)
+    || result.statsDiagnostics.correlations !== "not-applicable-ordered-network"
+    || result.statsDiagnostics.tests !== "not-applicable-ordered-network") {
+    throw new Error("ONA Methods requires one complete, matching ordered execution contract.");
+  }
+
+  const recomputed = orderRowsForOpenEna(
+    dataset.rows,
+    config.conversationColumns,
+    orderPolicy,
+  );
+  const ordering = execution.ordering;
+  if (!ordering
+    || JSON.stringify(ordering.resolvedPolicy) !== JSON.stringify(recomputed.resolvedPolicy)
+    || ordering.responseRowSourceIndices.length !== recomputed.sourceIndices.length
+    || recomputed.sourceIndices.some((sourceIndex, responseIndex) => (
+      ordering.responseRowSourceIndices[responseIndex] !== sourceIndex
+    ))) {
+    throw new Error("ONA Methods requires the exact resolved order and sorted-to-source execution mapping.");
+  }
+
+  const expectedAdjacency = expectedOrderedAdjacency(config.codes);
+  if (result.set.codeColumns.length !== expectedAdjacency.length
+    || result.set.adjacencyKey.length !== expectedAdjacency.length
+    || result.set.adjacencyKey.some((edge, index) => {
+      const expected = expectedAdjacency[index];
+      return edge.source !== expected.source
+        || edge.target !== expected.target
+        || edge.name !== expected.name
+        || edge.sourceIndex !== expected.sourceIndex
+        || edge.targetIndex !== expected.targetIndex;
+    })) {
+    throw new Error("ONA Methods requires the full response-major, ground-minor directed adjacency contract.");
+  }
+
+  return {
+    execution: execution as OpenEnaExecutionProvenance,
+    ordering,
+    directionalMask,
+  };
+}
+
+function onaOrderLines(
+  execution: OpenEnaExecutionProvenance,
+) {
+  const ordering = execution.ordering!;
+  const requested = ordering.requestedPolicy;
+  const resolved = ordering.resolvedPolicy;
+  if (requested.kind === "source-row" && resolved.kind === "source-row") {
+    return [
+      "- Requested order policy: imported row order, explicitly confirmed by the researcher.",
+      "- Resolved order policy: confirmed source-row order with a stable deterministic traversal inside each typed horizon.",
+      "- Sorted-to-source row mapping: validated against the imported table during execution and excluded from this generic report and result bundle.",
+    ];
+  }
+  if (requested.kind !== "columns" || resolved.kind !== "columns") {
+    throw new Error("ONA Methods received inconsistent requested and resolved order policies.");
+  }
+  const declared = requested.columns.map((column) => (
+    `${inline(column)} using ${inline(requested.comparators[column])}`
+  )).join(", then ");
+  return [
+    `- Requested order policy: ${declared}.`,
+    `- Resolved order policy: ${resolved.direction}; missing order values ${resolved.missing}; ties ${resolved.ties}; stable traversal ${resolved.stable ? "enabled" : "disabled"}.`,
+    "- Sorted-to-source row mapping: validated against the imported table during execution and excluded from this generic report and result bundle.",
+  ];
+}
+
+function onaWindowDescription(config: CanonicalOpenEnaConfig) {
+  const backward = config.windowSizeBack === Number.POSITIVE_INFINITY
+    ? "unbounded backward context: all earlier rows in the same typed horizon may contribute"
+    : `${config.windowSizeBack} total stanza rows including the current row`;
+  return `Moving stanza window; windowSizeBack counts total stanza rows including the current row. Resolved backward policy: ${backward}; forward context: 0 rows.`;
+}
+
+function buildOnaMethodsReport(
+  dataset: ParsedDataset,
+  config: CanonicalOpenEnaConfig,
+  result: OpenEnaResult,
+  sourceHash: string | null,
+  reportedDimensions: readonly string[],
+  presentation: OpenEnaPresentationOptions,
+) {
+  const { execution, directionalMask } = assertOnaMethodsContract(dataset, config, result);
+  const unitCount = new Set(result.set.points.map((row) => String(row.ENA_UNIT ?? ""))).size;
+  const groupText = config.groupColumn
+    ? `${inline(config.groupColumn)} (${result.groups.map((group) => `${inline(group.name)}: n=${group.count}`).join(", ")})`
+    : "No comparison field; all units were summarized together.";
+  const dimensions = result.dimensions.map((dimension) => (
+    `${inline(dimension)} ${((result.set.variance[dimension] ?? 0) * 100).toFixed(1)}%`
+  )).join(", ");
+  const [displayedX = result.dimensions[0] ?? "X", displayedY = result.dimensions[1] ?? displayedX] = reportedDimensions;
+  const edgeThreshold = presentation.edgeThreshold ?? 0;
+  const shown = (value: boolean | undefined, fallback = true) => (value ?? fallback) ? "shown" : "hidden";
+  const sourceHashKind = datasetHashKindFor(dataset);
+  const enabledMaskCells = directionalMask.enabled.reduce((count, row) => (
+    count + row.filter(Boolean).length
+  ), 0);
+  const directedCellCount = config.codes.length * config.codes.length;
+
+  return [
+    "# ENA.HK Open ENA Methods & Reproducibility Report",
+    "",
+    `Generated from ENA.HK Open ENA ${OPEN_ENA_APP_VERSION}; analysis completed ${result.analyzedAt}.`,
+    "",
+    "## Data identity",
+    "",
+    `- Dataset: ${inline(dataset.name)}`,
+    `- Analyzed-table SHA-256: ${inline(sourceHash ?? "not recorded")}`,
+    `- Hash scope: ${inline(sourceHashKind)}. CSV hashes BOM-normalized UTF-8 source text; XLSX hashes the versioned canonical values of the analyzed first worksheet, excluding workbook styling and other worksheets.`,
+    `- Input shape: ${dataset.rows.length.toLocaleString()} rows and ${dataset.headers.length.toLocaleString()} columns`,
+    "- Sequence was determined by the explicit requested and resolved order policies below within each typed horizon; it was not inferred from display order.",
+    "- Raw source rows, row-window identities, ordered row counts, and the sorted-to-source mapping are intentionally excluded from generic derived exports.",
+    "",
+    "## Order Network Analysis (ONA) model",
+    "",
+    `The ordered network model was computed in the browser with jENA \`jena-js\` ${JENA_RUNTIME_VERSION}.`,
+    `- Model type: ${inline(result.set.modelType)}`,
+    `- Analytic unit: ${config.unitColumns.map(inline).join(" + ")}`,
+    `- Typed horizon: ${config.conversationColumns.map(inline).join(" + ")}`,
+    `- Comparison field: ${groupText}`,
+    `- Codes (${config.codes.length}): ${config.codes.map(inline).join(", ")}`,
+    ...onaOrderLines(execution),
+    `- Window: ${onaWindowDescription(config)}`,
+    "- Window context may span analytic units whose rows share the same typed horizon. Each contribution is assigned to the current response row’s analytic unit, not to the earlier ground row.",
+    `- Directed cell geometry: ${config.codes.length}² = ${directedCellCount} directed cells, including ${config.codes.length} diagonal repeat cells. Matrix row is ground/source; matrix column is response/target; flattened edge order is response-major then ground-minor; exported labels use ${inline("<ground> & <response>")}.`,
+    "- Connection accumulation used raw code-count products: an earlier ground count times the current response count contributes full weight; same-row off-diagonal products contribute symmetric half-weight (0.5) in both directions; repeated codes across ordered rows contribute to diagonal cells.",
+    `- Directional mask input: ${enabledMaskCells} of ${directedCellCount} cells enabled (${config.codes.length} × ${config.codes.length}, label-bound in configured code order; row ground/source → column response/target).`,
+    "- Network vectors used sphere normalization; node positions used the directed method.",
+    `- Zero-network handling: ${config.centerAlignToOrigin ? "zero-network units were pinned to the origin and excluded from estimating the center" : "all unit rows contributed to the fitted center"}.`,
+    "- Rotation: SVD rotation fitted to the current ordered model.",
+    "",
+    "## Result summary",
+    "",
+    `- ${unitCount.toLocaleString()} distinct analytic units and ${result.set.points.length.toLocaleString()} projected points`,
+    `- ${result.groups.length} displayed group network(s) and ${result.set.codes.length} codes`,
+    `- Rotated dimensions: ${dimensions}`,
+    `- Displayed 2D axes: X ${inline(displayedX)} (${presentation.flipX ? "flipped" : "unflipped"}); Y ${inline(displayedY)} (${presentation.flipY ? "flipped" : "unflipped"}).`,
+    "- Axis flips are presentation-only. Coordinates and directed connection values remain in the unflipped model coordinate system.",
+    `- Relative edge display threshold: ${(edgeThreshold * 100).toFixed(1)}% (${edgeThreshold}). This is a presentation-only filter; hidden directed cells remain in the computed model and exported tables.`,
+    `- Group networks: ${shown(presentation.showNetworks)}; Unit points: ${shown(presentation.showPoints)}.`,
+    `- Code labels: ${shown(presentation.showLabels)}; group labels: ${shown(presentation.showGroupLabels)}; unit labels: ${shown(presentation.showUnitLabels, false)}; variance labels: ${shown(presentation.showVariance)}.`,
+    `- Edge width scale: ${presentation.edgeScale ?? 1}×; unit point scale: ${presentation.pointScale ?? 1}×; plot zoom: ${presentation.plotZoom ?? 1}×.`,
+    "",
+    "## Statistical scope",
+    "",
+    "This ONA release is descriptive-only. Inferential comparison, group contrast, analysis sets, trajectory models, three-dimensional plotting, and AI interpretation were not run and are not verified for ordered networks.",
+    "No uncertainty guide or significance test was calculated for this ordered result. Visual separation, edge thickness, and direction must not be interpreted as statistical significance or causality.",
+    "",
+    "## Interpretation and reproducibility boundaries",
+    "",
+    "- Rotation axis signs are arbitrary; a mirrored solution can represent the same geometry.",
+    "- A ground/source → response/target connection records ordered association under the declared horizon, order, window, weighting, and mask; it does not by itself establish a causal or temporal mechanism.",
+    "- The exact source coded-data file, codebook, this report, analysis manifest, and derived result bundle should be preserved together.",
+    "- Reproduction requires the recorded requested and resolved order policies; the private sorted-to-source mapping must be regenerated from the exact source table.",
+    "",
+  ].join("\n");
 }
 
 function marginalIntervalTableRow(
@@ -343,6 +568,27 @@ export function buildMethodsReport(
   inference: OpenEnaInferenceResultV2 | null = null,
   inferenceContext: OpenEnaInferenceProducerContextV2 | null = null,
 ) {
+  const canonicalConfig = canonicalizeOpenEnaConfig(config);
+  const analysisKind = openEnaAnalysisKindFromResult(result);
+  if (canonicalConfig.analysisKind !== analysisKind) {
+    throw new Error("The Methods configuration disagrees with the completed runtime network.");
+  }
+  if (analysisKind === "ona") {
+    if (canonicalConfig.rotation === "reference") {
+      assertOpenEnaCapabilityForContext(canonicalConfig, result, "reference-rotation");
+    }
+    if (inference !== null) {
+      assertOpenEnaCapabilityForContext(canonicalConfig, result, "inference");
+    }
+    return buildOnaMethodsReport(
+      dataset,
+      canonicalConfig,
+      result,
+      sourceHash,
+      reportedDimensions,
+      presentation,
+    );
+  }
   const unitCount = new Set(result.set.points.map((row) => String(row.ENA_UNIT ?? ""))).size;
   if (inference) {
     assertOpenEnaInferenceCoordinatorConsumerV2(inference);
@@ -431,7 +677,7 @@ export function buildMethodsReport(
     `- Edge width scale: ${presentation.edgeScale ?? 1}×; unit point scale: ${presentation.pointScale ?? 1}×; plot zoom: ${presentation.plotZoom ?? 1}×.`,
     "- jENA diagnostic statistics were used only where the model type and automatic unit limit permitted them.",
     ...(result.projectionReference
-      ? ["- Point-centroid correlations and target-fitted centroids were withheld because they do not describe the fixed imported node geometry in jENA 0.6.2 reference projections."]
+      ? ["- Point-centroid correlations and target-fitted centroids were withheld because they do not describe the fixed imported node geometry in jENA 0.7.0-ona.0 reference projections."]
       : []),
     "",
     ...intervalSection,

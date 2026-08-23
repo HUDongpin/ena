@@ -555,10 +555,10 @@ test("analysis bundle v2 preserves one supplied frozen inference authority and r
   assert.deepEqual(parsedV2, JSON.parse(JSON.stringify(bundle)));
   assert.ok(parsedV2.inference === null || Object.isFrozen(parsedV2.inference));
 
-  const v1 = structuredClone(bundle) as Record<string, unknown>;
-  v1.schemaVersion = 1;
-  delete v1.inference;
-  const parsedV1 = parseOpenEnaAnalysisBundle(JSON.stringify(v1));
+  const parsedV1 = parseOpenEnaAnalysisBundle(readFileSync(
+    new URL("./fixtures/open-ena/analysis-bundle-v1.json", import.meta.url),
+    "utf8",
+  ));
   assert.equal(parsedV1.schemaVersion, 1);
   assert.equal("inference" in parsedV1, false, "v1 must not be upgraded by fabricating v2 inference");
 
@@ -1555,6 +1555,8 @@ test("strict readers apply the 4096-character boundary to groups, periods, and i
         const inference = this.inference(length);
         value.inference = inference;
         value.manifest.configuration.unitColumns[1] = "I".repeat(length);
+        value.manifest.effectiveJenaOptions.units[1] = "I".repeat(length);
+        value.modelData.units[1] = "I".repeat(length);
         return value;
       },
     },

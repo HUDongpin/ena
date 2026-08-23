@@ -107,7 +107,7 @@ test("the generated methods report records the model but never invents inference
   const report = buildMethodsReport(dataset, SAMPLE_CONFIG, result, "abc123");
 
   assert.match(report, /^# ENA\.HK Open ENA Methods & Reproducibility Report/m);
-  assert.match(report, /jENA `jena-js` 0\.6\.2/);
+  assert.match(report, /jENA `jena-js` 0\.7\.0-ona\.0/);
   assert.match(report, /Analytic unit: `team_id`/);
   assert.match(report, /Conversation: `conversation_id`/);
   assert.match(report, /Moving stanza window/);
@@ -255,7 +255,7 @@ test("user-controlled methods labels cannot inject Markdown headings or escape c
       kind: "open-ena-reference-rotation" as const,
       app: "ENA.HK Open ENA" as const,
       runtime: "jena-js" as const,
-      runtimeVersion: "0.6.2",
+      runtimeVersion: "0.7.0-ona.0",
       referenceId: hostileLabel,
       name: hostileLabel,
       source: {
@@ -419,7 +419,7 @@ test("reference MR1 interpretation distinguishes same-source, held-out, and unve
       kind: "open-ena-reference-rotation" as const,
       app: "ENA.HK Open ENA" as const,
       runtime: "jena-js" as const,
-      runtimeVersion: "0.6.2",
+      runtimeVersion: "0.7.0-ona.0",
       referenceId: "reference-id",
       name: "fitted MR1",
       source: {

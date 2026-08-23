@@ -2,19 +2,27 @@
   "name": "ena",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/jena-js"
+  ],
   "type": "module",
   "description": "ENA Hong Kong public knowledge site for Epistemic Network Analysis",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "jena:build": "npm run build --workspace=jena-js",
+    "jena:verify": "npm run lint --workspace=jena-js && npm run typecheck --workspace=jena-js && npm test --workspace=jena-js && npm run test:pack-contract --workspace=jena-js && npm run build --workspace=jena-js && npm run pack:check --workspace=jena-js",
+    "dev": "npm run jena:build && next dev",
+    "build": "npm run jena:build && npm run build:app",
+    "build:app": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
-    "verify": "npm test && npm run typecheck && npm run build"
+    "typecheck": "npm run jena:build && npm run typecheck:app",
+    "typecheck:app": "tsc --noEmit",
+    "test": "npm run jena:build && npm run test:app",
+    "test:app": "tsx --test tests/*.test.ts",
+    "verify": "npm run jena:verify && npm run test:app && npm run typecheck:app && npm run build:app"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",
-    "jena-js": "0.6.2",
+    "jena-js": "0.7.0-ona.0",
     "next": "16.3.0",
     "plotly.js-dist-min": "3.7.0",
     "react": "19.2.7",

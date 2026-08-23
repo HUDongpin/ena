@@ -362,7 +362,7 @@ test("projected mean-rotation lineage remains intact for circularity classificat
       kind: "open-ena-reference-rotation",
       app: "ENA.HK Open ENA",
       runtime: "jena-js",
-      runtimeVersion: "0.6.2",
+      runtimeVersion: "0.7.0-ona.0",
       referenceId: "open-ena-ref:mean-three-group",
       name: "Mean contrast reference",
       source: {

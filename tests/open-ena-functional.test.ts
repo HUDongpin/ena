@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { analyzeDataset, buildJenaOptions } from "../lib/open-ena/analyze";
 import { inferConfig, parseCsv, validateConfig } from "../lib/open-ena/csv";
+import { buildAnalysisBundle } from "../lib/open-ena/export";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 import { SAMPLE_CONFIG } from "../lib/open-ena/types";
 
@@ -347,7 +348,7 @@ test("a replacement source aborts the current run only at the source commit boun
   }
   assert.match(
     workspace,
-    /async function runAnalysis\([\s\S]{0,240}nextDatasetHash\s*=\s*datasetHash[\s\S]*?datasetNormalizedUtf8TextSha256:\s*nextDatasetHash\s*\?\?\s*""/,
+    /async function runAnalysis\([\s\S]{0,240}nextDatasetHash\s*=\s*datasetHash[\s\S]*?datasetSha256:\s*nextDatasetHash[\s\S]*?setResult\(nextResult\)/,
     "each worker result must bind to the immutable hash supplied to that run",
   );
   assert.match(
@@ -703,12 +704,15 @@ test("pending model edits preserve the last valid research result until rebuild"
   assert.match(workspace, /Configuration changed/);
 });
 
-test("the worker uses model-only accumulation materialization", () => {
+test("the worker derives a de-identified ordered audit before clearing jENA row materialization", () => {
   const worker = readFileSync(
     join(projectRoot, "lib", "open-ena", "jena.worker.ts"),
     "utf8",
   );
-  assert.match(worker, /materialization: "model"/);
+  assert.match(worker, /materialization:\s*configuration\.analysisKind === "ona" \? "full" : "model"/);
+  assert.match(worker, /buildOpenEnaOrderedAudit\(fullSet\)/);
+  assert.match(worker, /compactOpenEnaSet/);
+  assert.match(worker, /orderedAudit \? \{ \.\.\.result, orderedAudit \} : result/);
 });
 
 test("source evidence can be searched and filtered locally without entering exports", async () => {
@@ -750,7 +754,16 @@ test("source evidence can be searched and filtered locally without entering expo
   );
   assert.match(i18n, /raw source rows and raw source data are never sent to the AI provider/);
   assert.match(i18n, /reviewed aggregate request is sent to an external AI provider/);
-  assert.doesNotMatch(readFileSync(join(projectRoot, "lib", "open-ena", "export.ts"), "utf8"), /sourceRows|rawRows/);
+  const exported = buildAnalysisBundle(
+    dataset,
+    SAMPLE_CONFIG,
+    analyzeDataset(dataset, SAMPLE_CONFIG),
+  );
+  assert.doesNotMatch(
+    JSON.stringify(exported),
+    /"(?:sourceRows|rawRows)":/,
+    "the actual result-bundle protocol must exclude raw source-row payloads",
+  );
   assert.match(readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8"), /Parsed record/);
 });
 
@@ -802,11 +815,14 @@ test("Plot Tools expose dense-network inspection controls without rebuilding the
   assert.match(plot, /plotZoom/);
 });
 
-test("de-labeled SVG exports scrub analytic-unit identities from point metadata", () => {
+test("de-labeled ENA and every ONA SVG export scrub analytic-unit identities from point metadata", () => {
   const workspace = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8");
   const plot = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaPlot.tsx"), "utf8");
+  const orderedPlot = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaOrderedPlot.tsx"), "utf8");
   assert.match(plot, /data-ena-unit-point="true"/);
-  assert.match(workspace, /if \(!showUnitLabels\)/);
-  assert.match(workspace, /querySelectorAll<SVGGElement>\("\[data-ena-unit-point='true'\]"\)/);
+  assert.match(orderedPlot, /data-ona-unit-point="true"/);
+  assert.match(workspace, /if \(completedResultKind === "ona" \|\| !showUnitLabels\)/);
+  assert.match(workspace, /\[data-ena-unit-point='true'\], \[data-ona-unit-point='true'\]/);
+  assert.match(workspace, /querySelectorAll\("\.ena-set-unit-label"\).*\.remove\(\)/);
   assert.match(workspace, /identifier omitted from this SVG export/);
 });

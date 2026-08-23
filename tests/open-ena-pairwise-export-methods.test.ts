@@ -129,7 +129,7 @@ test("analysis bundle v2 keeps the active plot contrast as non-authoritative com
   assert.equal(kind, "open-ena-pairwise-group-contrast");
   assert.equal(app, "ENA.HK Open ENA");
   assert.equal(runtime, "jena-js");
-  assert.equal(runtimeVersion, "0.6.2");
+  assert.equal(runtimeVersion, "0.7.0-ona.0");
   const { inference: _legacyInference, ...contrastWithoutInference } = contrast;
   assert.deepEqual(bundledContrast, {
     ...contrastWithoutInference,

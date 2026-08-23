@@ -501,7 +501,7 @@ test("projected comparison figures carry fixed-reference identity and variance s
     kind: "open-ena-reference-rotation",
     app: "ENA.HK Open ENA",
     runtime: "jena-js",
-    runtimeVersion: "0.6.2",
+    runtimeVersion: "0.7.0-ona.0",
     referenceId: "open-ena-ref:fixed-geometry-1234567890",
     name: "Independent reference geometry",
     source: {
