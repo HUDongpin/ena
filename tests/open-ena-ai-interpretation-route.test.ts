@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import {
   OPEN_ENA_AI_CONSENT_VALUE,
@@ -9,12 +11,25 @@ import {
   createOpenEnaAiInterpretationPostHandler,
   openEnaAiAuthConfigurationReady,
   OPEN_ENA_AI_MAX_REQUEST_BYTES,
-} from "../app/api/open-ena/ai-interpretation/route";
+} from "../lib/server/open-ena-ai-interpretation-route";
 
 const WORKSPACE_URL = "http://localhost:3000/api/open-ena/ai-interpretation";
 const VALID_SESSION = "test-session-token-not-real";
 const parsedRequest = { marker: "strictly-parsed-request" } as unknown as OpenEnaAiInterpretationRequest;
 const generatedResponse = { marker: "generated-interpretation" } as unknown as OpenEnaAiInterpretationResponse;
+
+test("the Next AI route exports only supported route fields and handlers", () => {
+  const routeSource = readFileSync(
+    join(process.cwd(), "app", "api", "open-ena", "ai-interpretation", "route.ts"),
+    "utf8",
+  );
+  const exportedNames = [...routeSource.matchAll(
+    /^export\s+(?:async\s+)?(?:const|function|class|type|interface|enum)\s+([A-Za-z_$][\w$]*)/gmu,
+  )].map((match) => match[1]);
+
+  assert.doesNotMatch(routeSource, /^export\s+(?:default|\{|\*)/mu);
+  assert.deepEqual(exportedNames, ["runtime", "dynamic", "POST"]);
+});
 
 function request(
   body: BodyInit | null = JSON.stringify({ schemaVersion: "fixture" }),
