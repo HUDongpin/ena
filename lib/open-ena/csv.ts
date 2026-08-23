@@ -1,5 +1,13 @@
+import { accumulateDataChunked } from "jena-js";
 import type { Row, Scalar } from "jena-js";
 import type { OpenEnaConfig, ParsedDataset } from "./types";
+import {
+  analysisKindFor,
+  canonicalizeOpenEnaConfig,
+  orderRowsForOpenEna,
+  typedHorizonIdentity,
+  typedTupleIdentity,
+} from "./network-config";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_ROWS = 20_000;
@@ -8,6 +16,7 @@ const MAX_HEADER_CHARACTERS = 256;
 const MAX_CODE_COLUMNS = 30;
 const MAX_GROUPS = 6;
 const MAX_MODELED_EDGE_CELLS = 2_000_000;
+const DECIMAL_CODE_COUNT = /^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:[eE][+-]?\d+)?$/;
 
 function assertColumnCount(columnCount: number) {
   if (columnCount > MAX_COLUMNS) {
@@ -31,6 +40,20 @@ function binaryValue(value: Row[string]): 0 | 1 | null {
   if (normalized === "0" || normalized === "false") return 0;
   if (normalized === "1" || normalized === "true") return 1;
   return null;
+}
+
+function rawCodeCount(value: Row[string]): number | null {
+  if (value === true) return 1;
+  if (value === false) return 0;
+  if (typeof value === "number") return Number.isFinite(value) && value >= 0 ? value : null;
+  if (typeof value !== "string" || value.trim() === "") return null;
+  const normalized = value.trim();
+  if (!DECIMAL_CODE_COUNT.test(normalized) || normalized.startsWith("-")) return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  const significand = normalized.replace(/^\+/, "").split(/[eE]/, 1)[0] ?? "";
+  if (parsed === 0 && /[1-9]/.test(significand)) return null;
+  return parsed;
 }
 
 export function parseCsv(text: string, options: { name: string; sizeBytes?: number; source: ParsedDataset["source"] }): ParsedDataset {
@@ -145,12 +168,30 @@ function compositeValue(row: Row, columns: string[]) {
   return columns.map((column) => String(row[column] ?? "")).join("::");
 }
 
-export function coerceSelectedCodes(rows: Row[], codes: string[], retainedColumns: string[] = []): Row[] {
+function analysisIdentity(
+  row: Row,
+  columns: readonly string[],
+  analysisKind: "ena" | "ona",
+  label: string,
+) {
+  return analysisKind === "ona"
+    ? typedTupleIdentity(row, columns, label)
+    : compositeValue(row, [...columns]);
+}
+
+export function coerceSelectedCodes(
+  rows: Row[],
+  codes: string[],
+  retainedColumns: string[] = [],
+  analysisKind: "ena" | "ona" = "ena",
+): Row[] {
   const modelColumns = [...new Set([...retainedColumns, ...codes])];
   const codeSet = new Set(codes);
   return rows.map((row) => Object.fromEntries(modelColumns.map((column) => [
     column,
-    codeSet.has(column) ? binaryValue(row[column]) ?? row[column] : row[column],
+    codeSet.has(column)
+      ? (analysisKind === "ona" ? rawCodeCount(row[column]) : binaryValue(row[column])) ?? row[column]
+      : row[column],
   ])));
 }
 
@@ -209,6 +250,101 @@ function hasCoOccurrence(dataset: ParsedDataset, config: OpenEnaConfig) {
   return false;
 }
 
+function hasOrderedConnection(dataset: ParsedDataset, config: OpenEnaConfig) {
+  const canonical = canonicalizeOpenEnaConfig(config);
+  if (canonical.analysisKind !== "ona" || !canonical.orderPolicy || !canonical.directionalMask) return false;
+  const ordered = orderRowsForOpenEna(dataset.rows, canonical.conversationColumns, canonical.orderPolicy);
+  const rowsByHorizon = new Map<string, Row[]>();
+  for (const row of ordered.rows) {
+    const key = typedHorizonIdentity(row, canonical.conversationColumns);
+    const rows = rowsByHorizon.get(key) ?? [];
+    rows.push(row);
+    rowsByHorizon.set(key, rows);
+  }
+  for (const rows of rowsByHorizon.values()) {
+    const priorCodeCounts = new Uint32Array(canonical.codes.length);
+    const activeCodeHistory: number[][] = [];
+    let historyStart = 0;
+    const maxPriorRows = canonical.windowSizeBack === Number.POSITIVE_INFINITY
+      ? Number.POSITIVE_INFINITY
+      : Math.max(0, canonical.windowSizeBack - 1);
+    for (let responseIndex = 0; responseIndex < rows.length; responseIndex += 1) {
+      const response = rows[responseIndex];
+      while (responseIndex - historyStart > maxPriorRows) {
+        for (const codeIndex of activeCodeHistory[historyStart]) priorCodeCounts[codeIndex] -= 1;
+        historyStart += 1;
+      }
+      const responseCodes = canonical.codes
+        .map((code, codeIndex) => (rawCodeCount(response[code]) ?? 0) > 0 ? codeIndex : -1)
+        .filter((codeIndex) => codeIndex >= 0);
+      for (const sourceCode of responseCodes) {
+        for (const targetCode of responseCodes) {
+          if (sourceCode !== targetCode && canonical.directionalMask.enabled[sourceCode][targetCode]) {
+            return true;
+          }
+        }
+      }
+      for (const targetCode of responseCodes) {
+        for (let sourceCode = 0; sourceCode < priorCodeCounts.length; sourceCode += 1) {
+          if (priorCodeCounts[sourceCode] > 0 && canonical.directionalMask.enabled[sourceCode][targetCode]) {
+            return true;
+          }
+        }
+      }
+      for (const codeIndex of responseCodes) priorCodeCounts[codeIndex] += 1;
+      activeCodeHistory.push(responseCodes);
+    }
+  }
+  return false;
+}
+
+/**
+ * jENA's ordered accumulator deliberately preserves raw count magnitude. That
+ * means a finite input can still overflow while forming a lagged product,
+ * updating a horizon's running sum, or summing row connections into a unit.
+ * Downstream numeric materialization treats non-finite values as zero, so use
+ * the ordered accumulator itself as a preflight before rotation/model fitting
+ * instead of maintaining a second sliding-window implementation here.
+ */
+function hasFiniteOrderedConnectionNumerics(dataset: ParsedDataset, config: OpenEnaConfig) {
+  const canonical = canonicalizeOpenEnaConfig(config);
+  if (canonical.analysisKind !== "ona" || !canonical.orderPolicy || !canonical.directionalMask) return false;
+  try {
+    const ordered = orderRowsForOpenEna(
+      dataset.rows,
+      canonical.conversationColumns,
+      canonical.orderPolicy,
+    );
+    const retainedColumns = [
+      ...canonical.unitColumns,
+      ...canonical.conversationColumns,
+      ...(canonical.groupColumn ? [canonical.groupColumn] : []),
+    ];
+    const rows = coerceSelectedCodes(ordered.rows, canonical.codes, retainedColumns, "ona");
+    const accumulated = accumulateDataChunked({
+      rows,
+      units: [...canonical.unitColumns],
+      conversation: [...canonical.conversationColumns],
+      codes: [...canonical.codes],
+      networkType: "ordered",
+      model: "EndPoint",
+      window: "MovingStanzaWindow",
+      windowSizeBack: canonical.windowSizeBack,
+      windowSizeForward: 0,
+      weightBy: "sum",
+      mask: canonical.directionalMask.enabled.map((row) => row.map((enabled) => enabled ? 1 : 0)),
+      includeMeta: false,
+      materialization: "model",
+      chunkSize: Math.max(1, Math.min(rows.length, 1_000)),
+    });
+    return accumulated.connectionCounts.every((row) =>
+      accumulated.codeColumns.every((column) => Number.isFinite(Number(row[column])))
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function inferConfig(dataset: ParsedDataset): OpenEnaConfig {
   const { headers, rows } = dataset;
   const explicitUnitColumn = findHeader(headers, ["unit", "unit_id", "team_id", "participant_id", "student_id", "case_id"]);
@@ -251,6 +387,7 @@ export function inferConfig(dataset: ParsedDataset): OpenEnaConfig {
   });
 
   return {
+    analysisKind: "ena",
     unitColumns,
     conversationColumns,
     groupColumn,
@@ -290,6 +427,18 @@ export function officialComparisonRotation(
 
 export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): string[] {
   const errors: string[] = [];
+  let analysisKind: "ena" | "ona";
+  try {
+    analysisKind = analysisKindFor(config);
+  } catch (error) {
+    return [error instanceof Error ? error.message : "Open ENA analysis kind is invalid."];
+  }
+  let canonicalConfig: ReturnType<typeof canonicalizeOpenEnaConfig> | null = null;
+  try {
+    canonicalConfig = canonicalizeOpenEnaConfig(config);
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : "Open ENA configuration canonicalization failed.");
+  }
   if (config.codes.length > MAX_CODE_COLUMNS) {
     return [`This browser release supports up to ${MAX_CODE_COLUMNS} code columns per run.`];
   }
@@ -303,11 +452,25 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
   if (config.rotation === "mean" && config.model !== "EndPoint") {
     errors.push("Mean rotation is currently limited to endpoint models so every analytic unit receives equal weight.");
   }
+  if (analysisKind === "ona") {
+    if (config.model !== "EndPoint") errors.push("ONA is currently limited to endpoint models.");
+    if (config.window !== "MovingStanzaWindow") errors.push("ONA requires the moving stanza window.");
+    if (!(config.windowSizeBack === Number.POSITIVE_INFINITY
+      || (Number.isInteger(config.windowSizeBack) && config.windowSizeBack >= 1))) {
+      errors.push("ONA backward window size must be an integer of at least 1 or Infinity.");
+    }
+    if (config.windowSizeForward !== 0) errors.push("ONA requires the forward window size to be zero.");
+    if (config.weightBy !== "sum") errors.push("ONA requires raw sum weighting.");
+    if (config.rotation !== "svd") errors.push("ONA currently requires SVD rotation.");
+    if (config.referenceRotationId !== null) errors.push("ONA cannot retain or import a reference rotation.");
+  }
   const reservedColumns = new Set(["ENA_UNIT", "TRAJ_UNIT", "OPEN_ENA_POINT_INDEX"]);
   const edgeColumns = new Set<string>();
   const edgeColumnNames: string[] = [];
-  for (let target = 1; target < config.codes.length; target += 1) {
-    for (let source = 0; source < target; source += 1) {
+  const targetStart = analysisKind === "ona" ? 0 : 1;
+  for (let target = targetStart; target < config.codes.length; target += 1) {
+    const sourceEnd = analysisKind === "ona" ? config.codes.length : target;
+    for (let source = 0; source < sourceEnd; source += 1) {
       const edgeName = `${config.codes[source]} & ${config.codes[target]}`;
       edgeColumns.add(edgeName);
       edgeColumnNames.push(edgeName);
@@ -321,19 +484,42 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
     if (new Set(columns).size !== columns.length) errors.push(`${label} identity columns must be unique.`);
     for (const column of columns) {
       if (!dataset.headers.includes(column)) errors.push(`${label} must reference a coded-data column.`);
-      else if (dataset.rows.some((row) => row[column] === null || row[column] === "")) errors.push(`${label} column “${column}” contains missing values.`);
+      else if (dataset.rows.some((row) => row[column] === null || row[column] === undefined || row[column] === "")) errors.push(`${label} column “${column}” contains missing values.`);
     }
   }
   if (config.groupColumn) {
     if (!dataset.headers.includes(config.groupColumn)) errors.push("Group must reference a coded-data column.");
     else if (dataset.rows.some((row) => row[config.groupColumn as string] === null || row[config.groupColumn as string] === "")) errors.push(`Group column “${config.groupColumn}” contains missing values.`);
   }
-  if ([...config.unitColumns, ...config.conversationColumns].every((column) => dataset.headers.includes(column))) {
+  const delimiterGuardColumns = analysisKind === "ona"
+    ? config.unitColumns
+    : [...config.unitColumns, ...config.conversationColumns];
+  if (delimiterGuardColumns.every((column) => dataset.headers.includes(column))) {
     for (const row of dataset.rows) {
-      if ([...config.unitColumns, ...config.conversationColumns].some((column) => String(row[column] ?? "").includes("::"))) {
-        errors.push("Unit and conversation component values cannot contain “::”, which jENA reserves when building composite identities.");
+      if (delimiterGuardColumns.some((column) => String(row[column] ?? "").includes("::"))) {
+        errors.push(analysisKind === "ona"
+          ? "ONA unit component values cannot contain “::”, which jENA reserves when building composite unit identities."
+          : "Unit and conversation component values cannot contain “::”, which jENA reserves when building composite identities.");
         break;
       }
+    }
+  }
+  const validUnitColumns = config.unitColumns.length > 0
+    && config.unitColumns.every((column) => dataset.headers.includes(column))
+    && dataset.rows.every((row) => config.unitColumns.every((column) => (
+      row[column] !== null && row[column] !== undefined && row[column] !== ""
+    )));
+  if (analysisKind === "ona" && validUnitColumns) {
+    const typedIdentityByDisplay = new Map<string, string>();
+    for (const row of dataset.rows) {
+      const display = compositeValue(row, config.unitColumns);
+      const identity = typedTupleIdentity(row, config.unitColumns, "ONA unit column");
+      const previous = typedIdentityByDisplay.get(display);
+      if (previous !== undefined && previous !== identity) {
+        errors.push("ONA unit identity is ambiguous because distinct typed unit tuples produce the same display label; use unambiguous unit values or columns.");
+        break;
+      }
+      typedIdentityByDisplay.set(display, identity);
     }
   }
   const structuralColumns = [...new Set([...config.unitColumns, ...config.conversationColumns])];
@@ -354,29 +540,52 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
   for (const code of config.codes) {
     if (!dataset.headers.includes(code)) errors.push(`Code “${code}” is not in the dataset.`);
     if (mappedColumns.includes(code)) errors.push(`Code “${code}” is already used as a model field.`);
-    const invalid = dataset.rows.some((row) => binaryValue(row[code]) === null);
-    if (invalid) errors.push(`Code “${code}” must contain only 0/1 or true/false values.`);
-    else if (!dataset.rows.some((row) => isActiveCode(row[code]))) errors.push(`Code “${code}” has no active values.`);
+    const invalid = dataset.rows.some((row) => (
+      analysisKind === "ona" ? rawCodeCount(row[code]) : binaryValue(row[code])
+    ) === null);
+    if (invalid) {
+      errors.push(analysisKind === "ona"
+        ? `Code “${code}” must contain only finite nonnegative counts.`
+        : `Code “${code}” must contain only 0/1 or true/false values.`);
+    } else if (!dataset.rows.some((row) => (
+      analysisKind === "ona" ? (rawCodeCount(row[code]) ?? 0) > 0 : isActiveCode(row[code])
+    ))) {
+      errors.push(`Code “${code}” has no active values.`);
+    }
   }
-  if (config.groupColumn && config.unitColumns.every((column) => dataset.headers.includes(column)) && dataset.headers.includes(config.groupColumn)) {
+  if (config.groupColumn && validUnitColumns && dataset.headers.includes(config.groupColumn)) {
     const groupColumn = config.groupColumn;
     const groupByUnit = new Map<string, string>();
     for (const row of dataset.rows) {
-      const unit = compositeValue(row, config.unitColumns);
+      const unit = analysisIdentity(row, config.unitColumns, analysisKind, "ONA unit column");
       const group = String(row[groupColumn] ?? "");
       const previous = groupByUnit.get(unit);
       if (previous !== undefined && previous !== group) {
-        errors.push(`Comparison group “${groupColumn}” must be stable within each unit; unit “${unit}” has multiple values.`);
+        errors.push(`Comparison group “${groupColumn}” must be stable within each unit; at least one analytic unit maps to multiple group values.`);
         break;
       }
       groupByUnit.set(unit, group);
     }
   }
-  if (!Number.isInteger(config.windowSizeBack) || config.windowSizeBack < 0 || config.windowSizeBack > 100) {
+  if (analysisKind === "ena"
+    && (!Number.isInteger(config.windowSizeBack) || config.windowSizeBack < 0 || config.windowSizeBack > 100)) {
     errors.push("The backward window must be an integer from 0 to 100.");
   }
-  if (!Number.isInteger(config.windowSizeForward) || config.windowSizeForward < 0 || config.windowSizeForward > 100) {
+  if (analysisKind === "ena"
+    && (!Number.isInteger(config.windowSizeForward) || config.windowSizeForward < 0 || config.windowSizeForward > 100)) {
     errors.push("The forward window must be an integer from 0 to 100.");
+  }
+  if (analysisKind === "ona" && canonicalConfig?.orderPolicy) {
+    if (canonicalConfig.orderPolicy.kind === "columns") {
+      for (const column of canonicalConfig.orderPolicy.columns) {
+        if (!dataset.headers.includes(column)) errors.push(`ONA order column “${column}” is not in the dataset.`);
+      }
+    }
+    try {
+      orderRowsForOpenEna(dataset.rows, canonicalConfig.conversationColumns, canonicalConfig.orderPolicy);
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : "ONA row ordering is invalid.");
+    }
   }
   if (config.groupColumn && dataset.headers.includes(config.groupColumn)) {
     const groupColumn = config.groupColumn;
@@ -391,26 +600,40 @@ export function validateConfig(dataset: ParsedDataset, config: OpenEnaConfig): s
     errors.push("Mean rotation requires a comparison group with exactly two values.");
   }
   if (
-    config.unitColumns.length > 0
-    && config.unitColumns.every((column) => dataset.headers.includes(column))
+    validUnitColumns
     && config.codes.length >= 2
   ) {
-    const projectedRowCount = config.model === "EndPoint"
-      ? new Set(dataset.rows.map((row) => compositeValue(row, config.unitColumns))).size
-      : new Set(dataset.rows.map((row) => compositeValue(row, [
-          ...config.unitColumns,
-          ...config.conversationColumns,
-        ]))).size;
-    const edgeCount = config.codes.length * (config.codes.length - 1) / 2;
+    const projectedRowCount = config.model === "EndPoint" || analysisKind === "ona"
+      ? new Set(dataset.rows.map((row) => analysisIdentity(
+          row,
+          config.unitColumns,
+          analysisKind,
+          "ONA unit column",
+        ))).size
+      : new Set(dataset.rows.map((row) => analysisIdentity(
+          row,
+          [...config.unitColumns, ...config.conversationColumns],
+          analysisKind,
+          "ONA projected identity column",
+        ))).size;
+    const edgeCount = analysisKind === "ona"
+      ? config.codes.length * config.codes.length
+      : config.codes.length * (config.codes.length - 1) / 2;
     const modeledEdgeCells = edgeCount * (dataset.rows.length + projectedRowCount * 3);
     if (modeledEdgeCells > MAX_MODELED_EDGE_CELLS) {
-      errors.push(
-        `This configuration exceeds the browser model-size safety budget (${modeledEdgeCells.toLocaleString()} derived edge cells; limit ${MAX_MODELED_EDGE_CELLS.toLocaleString()}). Reduce rows, codes, or unique units.`,
-      );
+      errors.push(analysisKind === "ona"
+        ? `This ONA configuration exceeds the browser model-size safety budget (${modeledEdgeCells.toLocaleString()} derived directed edge cells including diagonal; limit ${MAX_MODELED_EDGE_CELLS.toLocaleString()}). Reduce rows, codes, or unique units.`
+        : `This configuration exceeds the browser model-size safety budget (${modeledEdgeCells.toLocaleString()} derived edge cells; limit ${MAX_MODELED_EDGE_CELLS.toLocaleString()}). Reduce rows, codes, or unique units.`);
     }
   }
-  if (errors.length === 0 && !hasCoOccurrence(dataset, config)) {
-    errors.push("The selected codes do not co-occur within the configured conversation window.");
+  if (errors.length === 0) {
+    if (analysisKind === "ona" && !hasFiniteOrderedConnectionNumerics(dataset, config)) {
+      errors.push("ONA raw counts exceed the finite numeric safety range for ordered connection accumulation.");
+    } else if (analysisKind === "ona" && !hasOrderedConnection(dataset, config)) {
+      errors.push("The selected codes do not form an enabled ordered connection within one typed horizon and backward window.");
+    } else if (analysisKind === "ena" && !hasCoOccurrence(dataset, config)) {
+      errors.push("The selected codes do not co-occur within the configured conversation window.");
+    }
   }
   return [...new Set(errors)];
 }

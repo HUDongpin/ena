@@ -1,3 +1,4 @@
+import { assertOpenEnaCapabilityForResult } from "./capabilities";
 import {
   OpenEnaLongitudinalIntegrityError,
   sliceLongitudinalIndependentPeriod,
@@ -1749,6 +1750,7 @@ function coordinatorAuthorityTrajectoryMapping(
 export async function runOpenEnaInferenceV2(
   input: OpenEnaInferenceCoordinatorInputV2,
 ): Promise<OpenEnaInferenceResultV2> {
+  assertOpenEnaCapabilityForResult(input.result, "inference");
   const snapshot = snapshotCoordinatorInput(input);
   const binding = validateBinding(snapshot);
   if (snapshot.request.kind === "endpoint-independent"

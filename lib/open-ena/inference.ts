@@ -1,4 +1,5 @@
 import type { OpenEnaResult } from "./types";
+import { assertOpenEnaCapabilityForResult } from "./capabilities";
 import {
   mannWhitneyRankTest,
   type OpenEnaExactTailAudit,
@@ -94,6 +95,7 @@ export function buildEndpointMannWhitney(
   dimensions: readonly string[],
   selectedGroupOrder?: readonly [string, string],
 ): EndpointMannWhitneyInference {
+  assertOpenEnaCapabilityForResult(result, "inference");
   if (result.set.modelType !== "EndPoint") return disabled("endpoint-only");
   if (!groupColumn) return disabled("comparison-group-required");
   if (!selectedGroupOrder && result.groups.length !== 2) return disabled("exactly-two-groups-required");

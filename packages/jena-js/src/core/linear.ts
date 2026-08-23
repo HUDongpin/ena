@@ -1,0 +1,196 @@
+import type { Matrix } from '../types.js';
+import { cloneMatrix, identity, multiplyMatrices, transpose, zeros } from './matrix-extra.js';
+import { dot, l2Norm, scaleVector, subtractVectors } from './matrix.js';
+
+export interface EigenResult {
+  eigenvalues: number[];
+  eigenvectors: Matrix; // columns are eigenvectors
+}
+
+export function solveLinearSystem(a: Matrix, b: number[], ridge = 1e-10): number[] {
+  const n = a.length;
+  const aug = a.map((row, i) => row.map((value, j) => value + (i === j ? ridge : 0)).concat(b[i] ?? 0));
+
+  for (let col = 0; col < n; col += 1) {
+    let pivot = col;
+    for (let row = col + 1; row < n; row += 1) {
+      if (Math.abs(aug[row]?.[col] ?? 0) > Math.abs(aug[pivot]?.[col] ?? 0)) pivot = row;
+    }
+    const pivotRow = aug[pivot];
+    const currentRow = aug[col];
+    if (!pivotRow || !currentRow) throw new Error('Invalid augmented matrix.');
+    if (Math.abs(pivotRow[col] ?? 0) < 1e-14) continue;
+    aug[pivot] = currentRow;
+    aug[col] = pivotRow;
+
+    const divisor = aug[col]?.[col] ?? 1;
+    for (let j = col; j <= n; j += 1) {
+      const row = aug[col];
+      if (row) row[j] = (row[j] ?? 0) / divisor;
+    }
+
+    for (let rowIndex = 0; rowIndex < n; rowIndex += 1) {
+      if (rowIndex === col) continue;
+      const factor = aug[rowIndex]?.[col] ?? 0;
+      for (let j = col; j <= n; j += 1) {
+        const row = aug[rowIndex];
+        if (row) row[j] = (row[j] ?? 0) - factor * (aug[col]?.[j] ?? 0);
+      }
+    }
+  }
+
+  return aug.map((row) => row[n] ?? 0);
+}
+
+export function multiplyMatrixVector(matrix: Matrix, vector: number[]): number[] {
+  return matrix.map((row) => dot(row, vector));
+}
+
+export function normalizeVector(vector: number[]): number[] {
+  const norm = l2Norm(vector);
+  return norm > 0 ? vector.map((value) => value / norm) : vector.map(() => 0);
+}
+
+export function outerProduct(a: number[], b: number[]): Matrix {
+  return a.map((left) => b.map((right) => left * right));
+}
+
+export function subtractOuterProjection(matrix: Matrix, vector: number[]): Matrix {
+  const unit = normalizeVector(vector);
+  return matrix.map((row) => {
+    const projection = dot(row, unit);
+    return subtractVectors(row, scaleVector(unit, projection));
+  });
+}
+
+export function matrixSubtract(a: Matrix, b: Matrix): Matrix {
+  return a.map((row, rowIndex) => row.map((value, colIndex) => value - (b[rowIndex]?.[colIndex] ?? 0)));
+}
+
+export function matrixAdd(a: Matrix, b: Matrix): Matrix {
+  return a.map((row, rowIndex) => row.map((value, colIndex) => value + (b[rowIndex]?.[colIndex] ?? 0)));
+}
+
+export function gramSchmidtComplete(columns: Matrix, dimension: number, tolerance = 1e-10): Matrix {
+  const basisColumns: number[][] = [];
+  const candidateColumns = [
+    ...columns,
+    ...Array.from({ length: dimension }, (_unused, index) => Array.from({ length: dimension }, (_u, row) => (row === index ? 1 : 0)))
+  ];
+
+  for (const candidate of candidateColumns) {
+    let vector = Array.from({ length: dimension }, (_unused, index) => candidate[index] ?? 0);
+    for (const basis of basisColumns) {
+      vector = subtractVectors(vector, scaleVector(basis, dot(vector, basis)));
+    }
+    const norm = l2Norm(vector);
+    if (norm > tolerance) {
+      basisColumns.push(vector.map((value) => value / norm));
+    }
+    if (basisColumns.length === dimension) break;
+  }
+
+  return Array.from({ length: dimension }, (_unused, row) => basisColumns.map((column) => column[row] ?? 0));
+}
+
+// Ridge-free by default: R's lm solves regression designs with plain QR, and
+// even a 1e-10 ridge shifts regression-rotation directions by ~1e-9, which is
+// visible against rENA goldens. Node positioning keeps its own explicit ridge
+// via solveLinearSystem (see NUMERICS.md).
+export function designSolve(design: Matrix, response: Matrix, ridge = 0): Matrix {
+  const xt = transpose(design);
+  const xtx = multiplyMatrices(xt, design);
+  const xty = multiplyMatrices(xt, response);
+  const cols = response[0]?.length ?? 0;
+  const coefficientsByColumn: Matrix = [];
+  for (let col = 0; col < cols; col += 1) {
+    coefficientsByColumn.push(solveLinearSystem(xtx, xty.map((row) => row[col] ?? 0), ridge));
+  }
+  return transpose(coefficientsByColumn);
+}
+
+export function symmetricJacobiEigen(input: Matrix, maxSweeps = 100, tolerance?: number): EigenResult {
+  const n = input.length;
+  const a = cloneMatrix(input);
+  const v = identity(n);
+
+  // Stop once every off-diagonal is at machine precision relative to the
+  // matrix scale; an absolute cutoff would leave eigenvectors of
+  // closely-spaced eigenvalues visibly less accurate than LAPACK's.
+  let scale = 0;
+  for (let i = 0; i < n; i += 1) {
+    for (let j = 0; j < n; j += 1) {
+      scale = Math.max(scale, Math.abs(a[i]?.[j] ?? 0));
+    }
+  }
+  const stopThreshold = tolerance ?? Math.max(Number.MIN_VALUE, scale * 1e-15);
+
+  // Cyclic-by-row Jacobi: sweep every (p, q) pair in order, rotating only
+  // when the off-diagonal exceeds the threshold. Classical (max-pivot)
+  // Jacobi pays an O(n^2) scan per rotation — ~3 s for a 190x190 matrix;
+  // cyclic sweeps bring that to well under the 1 s budget (advisory F-013)
+  // while converging to the same spectrum.
+  for (let sweep = 0; sweep < maxSweeps && n >= 2; sweep += 1) {
+    let rotatedAny = false;
+    for (let p = 0; p < n - 1; p += 1) {
+      for (let q = p + 1; q < n; q += 1) {
+        const apq = a[p]?.[q] ?? 0;
+        if (Math.abs(apq) <= stopThreshold) continue;
+        rotatedAny = true;
+
+        const app = a[p]?.[p] ?? 0;
+        const aqq = a[q]?.[q] ?? 0;
+        const theta = 0.5 * Math.atan2(2 * apq, aqq - app);
+        const c = Math.cos(theta);
+        const s = Math.sin(theta);
+
+        for (let i = 0; i < n; i += 1) {
+          const matrixRow = a[i];
+          const aip = matrixRow?.[p] ?? 0;
+          const aiq = matrixRow?.[q] ?? 0;
+          if (matrixRow) {
+            matrixRow[p] = c * aip - s * aiq;
+            matrixRow[q] = s * aip + c * aiq;
+          }
+        }
+        const rowP = a[p];
+        const rowQ = a[q];
+        for (let j = 0; j < n; j += 1) {
+          const apj = rowP?.[j] ?? 0;
+          const aqj = rowQ?.[j] ?? 0;
+          if (rowP) rowP[j] = c * apj - s * aqj;
+          if (rowQ) rowQ[j] = s * apj + c * aqj;
+        }
+        if (rowP) rowP[q] = 0;
+        if (rowQ) rowQ[p] = 0;
+
+        // Accumulate the rotation into the two affected eigenvector columns
+        // in place (O(n) per rotation).
+        for (let i = 0; i < n; i += 1) {
+          const vectorRow = v[i];
+          const vip = vectorRow?.[p] ?? 0;
+          const viq = vectorRow?.[q] ?? 0;
+          if (vectorRow) {
+            vectorRow[p] = c * vip - s * viq;
+            vectorRow[q] = s * vip + c * viq;
+          }
+        }
+      }
+    }
+    if (!rotatedAny) break;
+  }
+
+  const pairs = Array.from({ length: n }, (_, i) => ({ value: a[i]?.[i] ?? 0, index: i }))
+    .sort((left, right) => right.value - left.value);
+  const eigenvalues = pairs.map((pair) => Math.max(0, pair.value));
+  const eigenvectors = Array.from({ length: n }, (_, row) => pairs.map((pair) => v[row]?.[pair.index] ?? 0));
+
+  return { eigenvalues, eigenvectors };
+}
+
+export function covarianceLike(matrix: Matrix): Matrix {
+  if (matrix.length === 0) return [];
+  return multiplyMatrices(transpose(matrix), matrix);
+}
+
+export { cloneMatrix, identity, multiplyMatrices, transpose, zeros };

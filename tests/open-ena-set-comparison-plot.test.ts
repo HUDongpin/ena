@@ -14,7 +14,7 @@ const comparison = {
     kind: "open-ena-reference-rotation",
     app: "ENA.HK Open ENA",
     runtime: "jena-js",
-    runtimeVersion: "0.6.2",
+    runtimeVersion: "0.7.0-ona.0",
     referenceId: "open-ena-ref:shared-space-2026",
     name: "Shared-space reference",
     source: {

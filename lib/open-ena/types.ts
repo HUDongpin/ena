@@ -1,8 +1,41 @@
 import type { ENASet, ENAStatsResult, ModelType, RotationSet, Row, WindowType } from "jena-js";
+import type { ENAWorkerOptions } from "jena-js/browser";
 
 export type OpenEnaMode = "sets" | "data" | "model" | "plot" | "stats" | "ai";
 export type OpenEnaView = "2d" | "3d";
 export type CameraPreset = "isometric" | "xy" | "xz" | "yz" | "yx" | "zx" | "zy";
+export type AnalysisKind = "ena" | "ona";
+
+export type OpenEnaOrderComparator = "number" | "string" | "boolean" | "iso-datetime";
+
+export type OpenEnaOrderPolicy =
+  | {
+      kind: "columns";
+      columns: string[];
+      /** Explicit comparison semantics for every declared order column. */
+      comparators: Record<string, OpenEnaOrderComparator>;
+    }
+  | { kind: "source-row"; confirmed: true };
+
+export type OpenEnaResolvedOrderPolicy =
+  | {
+      kind: "columns";
+      columns: string[];
+      comparators: Record<string, OpenEnaOrderComparator>;
+      direction: "ascending";
+      missing: "reject";
+      ties: "reject";
+      stable: true;
+    }
+  | { kind: "source-row"; confirmed: true; stable: true };
+
+export interface OpenEnaDirectionalMask {
+  schemaVersion: 1;
+  /** Labels bind mask identity independently of current display/reorder state. */
+  codeOrder: string[];
+  /** Full p by p matrix: row = source/ground, column = target/response. */
+  enabled: boolean[][];
+}
 
 export interface ParsedDataset {
   name: string;
@@ -20,13 +53,23 @@ export type DatasetHashKind =
   | "canonical-first-xlsx-worksheet-v1-sha256";
 
 export function datasetHashKindFor(dataset: Pick<ParsedDataset, "name" | "hashKind">): DatasetHashKind {
-  return dataset.hashKind
-    ?? (/\.xlsx$/iu.test(dataset.name)
-      ? "canonical-first-xlsx-worksheet-v1-sha256"
-      : "normalized-utf8-csv-text-sha256");
+  const explicitKind = dataset.hashKind as unknown;
+  if (explicitKind !== undefined) {
+    if (explicitKind === "normalized-utf8-text-sha256"
+      || explicitKind === "normalized-utf8-csv-text-sha256"
+      || explicitKind === "canonical-first-xlsx-worksheet-v1-sha256") {
+      return explicitKind;
+    }
+    throw new Error("Open ENA dataset provenance contains an unsupported hash kind.");
+  }
+  return /\.xlsx$/iu.test(dataset.name)
+    ? "canonical-first-xlsx-worksheet-v1-sha256"
+    : "normalized-utf8-csv-text-sha256";
 }
 
 export interface OpenEnaConfig {
+  /** Legacy configurations omit this field and canonicalize only to standard ENA. */
+  analysisKind?: AnalysisKind;
   unitColumns: string[];
   conversationColumns: string[];
   groupColumn: string | null;
@@ -39,6 +82,41 @@ export interface OpenEnaConfig {
   rotation: "svd" | "mean" | "reference";
   referenceRotationId: string | null;
   centerAlignToOrigin: boolean;
+  orderPolicy?: OpenEnaOrderPolicy | null;
+  directionalMask?: OpenEnaDirectionalMask | null;
+}
+
+export type CanonicalOpenEnaConfig = Omit<OpenEnaConfig, "analysisKind" | "orderPolicy" | "directionalMask"> & {
+  analysisKind: AnalysisKind;
+  orderPolicy: OpenEnaOrderPolicy | null;
+  directionalMask: OpenEnaDirectionalMask | null;
+};
+
+/** JSON-safe configuration form used by manifests and result bundles. */
+export type PortableOpenEnaConfig = Omit<CanonicalOpenEnaConfig, "windowSizeBack"> & {
+  windowSizeBack: number | "Infinity";
+};
+
+export interface OpenEnaExecutionProvenance {
+  schemaVersion: 1;
+  /** Full canonical configuration actually used to create the runtime options. */
+  configuration: CanonicalOpenEnaConfig;
+  analysisKind: AnalysisKind;
+  networkType: "standard" | "ordered";
+  nodePositionMethod: "undirected" | "directed";
+  directionalMask: OpenEnaDirectionalMask | null;
+  ordering: {
+    requestedPolicy: OpenEnaOrderPolicy;
+    resolvedPolicy: OpenEnaResolvedOrderPolicy;
+    /** Ordered response-row index -> zero-based row index in the imported dataset. */
+    responseRowSourceIndices: number[];
+  } | null;
+}
+
+export interface OpenEnaAnalysisPlan {
+  configuration: CanonicalOpenEnaConfig;
+  options: ENAWorkerOptions;
+  executionProvenance: OpenEnaExecutionProvenance;
 }
 
 export interface OpenEnaReferenceCompatibility {
@@ -88,18 +166,62 @@ export interface GroupNetwork {
   meanWeights: Record<string, number>;
 }
 
+/**
+ * De-identified ordered-network row audit retained by the browser runtime.
+ * Parallel arrays avoid per-cell object overhead; row indices address the
+ * already ordered worker input and map back to source rows only through the
+ * separately validated execution provenance.
+ */
+export interface OpenEnaOrderedAudit {
+  schemaVersion: 1;
+  codeOrder: string[];
+  edgeOrder: "response-major-ground-minor";
+  responseRowIndices: number[];
+  previousResponseRowIndices: Array<number | null>;
+  priorRowCounts: number[];
+  horizonOrdinals: number[];
+  edgeValues: number[][];
+}
+
+export interface OpenEnaOrderedResponseNodeGroupSummary {
+  /** Stable display name only; analytic-unit identities never cross this boundary. */
+  name: string;
+  /** Number of distinct analytic units represented by this group. */
+  unitCount: number;
+  /** Raw response-code totals aligned exactly to the parent codeOrder array. */
+  responseCodeTotals: number[];
+}
+
+/**
+ * Runtime-only, de-identified ONA node evidence computed from the canonical
+ * ordered response rows before the jENA result is compacted. It intentionally
+ * carries no row, unit, horizon, or ordering identities.
+ */
+export interface OpenEnaOrderedResponseNodeSummary {
+  schemaVersion: 1;
+  codeOrder: string[];
+  overallResponseCodeTotals: number[];
+  groups: OpenEnaOrderedResponseNodeGroupSummary[];
+}
+
 export interface OpenEnaResult {
   set: ENASet;
   groups: GroupNetwork[];
   dimensions: string[];
   stats: ENAStatsResult;
   statsDiagnostics: {
-    correlations: "complete" | "omitted-unit-limit" | "not-applicable-trajectory" | "not-applicable-reference";
-    tests: "complete" | "omitted-unit-limit" | "not-applicable-trajectory";
+    correlations: "complete" | "omitted-unit-limit" | "not-applicable-trajectory" | "not-applicable-reference" | "not-applicable-ordered-network";
+    tests: "complete" | "omitted-unit-limit" | "not-applicable-trajectory" | "not-applicable-ordered-network";
     correlationUnitLimit: number;
   };
   analyzedAt: string;
   projectionReference: OpenEnaProjectionReference | null;
+  /** Explicit application-level record of the options that selected the runtime path. */
+  executionProvenance?: OpenEnaExecutionProvenance;
+  /** Ordered-only, de-identified row audit. Generic exports intentionally omit it. */
+  orderedAudit?: OpenEnaOrderedAudit;
+  /** Ordered-only response-node totals retained only by the browser runtime. */
+  orderedResponseNodeSummary?: OpenEnaOrderedResponseNodeSummary;
   /** Optional immutable source/config binding added by the browser client. */
   provenanceBinding?: {
     datasetNormalizedUtf8TextSha256: string;
@@ -198,7 +320,7 @@ export interface OpenEnaSharedComparison {
 export type OpenEnaSummary = Omit<OpenEnaResult, "set">;
 
 export interface OpenEnaManifest {
-  schemaVersion: 1;
+  schemaVersion: 2;
   app: "ENA.HK Open ENA";
   appVersion: string;
   runtime: "jena-js";
@@ -211,7 +333,18 @@ export interface OpenEnaManifest {
     hashKind?: DatasetHashKind;
     normalizedUtf8TextSha256: string | null;
   };
-  configuration: OpenEnaConfig;
+  configuration: PortableOpenEnaConfig;
+  analysis: {
+    analysisKind: AnalysisKind;
+    networkType: "standard" | "ordered";
+    ordering: {
+      requestedPolicy: OpenEnaOrderPolicy;
+      resolvedPolicy: OpenEnaResolvedOrderPolicy;
+      /** The validated row-index permutation remains runtime-only in generic exports. */
+      sourceMapping: "excluded-from-generic-bundle";
+    } | null;
+    directionalMask: OpenEnaDirectionalMask | null;
+  };
   result: {
     model: ModelType;
     units: number;
@@ -235,6 +368,9 @@ export interface OpenEnaManifest {
     windowSizeForward: number;
     weightBy: "binary" | "sum";
     dimensions: 3;
+    /** Ordered manifests record these runtime-only additions explicitly. */
+    networkType?: "ordered";
+    mask?: number[][];
     rotation:
       | { method: "svd" }
       | { method: "mean"; params: { groups: [string[], string[]] } }
@@ -242,7 +378,7 @@ export interface OpenEnaManifest {
       | { method: "reference"; referenceId: string; sourceDatasetSha256: string | null };
     centerAlignToOrigin: boolean;
     normalization: "sphere";
-    nodePositionMethod: "undirected";
+    nodePositionMethod: "undirected" | "directed";
   };
   generatedAt: string;
   boundaries: string[];
@@ -253,6 +389,7 @@ export const SAMPLE_DATASET_URL = "/data/academy/ena-design-talk-sample.csv";
 export const TRAJECTORY_SAMPLE_DATASET_URL = "/data/academy/ena-2d-trajectory-teaching-sample.csv";
 
 export const SAMPLE_CONFIG: OpenEnaConfig = {
+  analysisKind: "ena",
   unitColumns: ["team_id"],
   conversationColumns: ["conversation_id"],
   groupColumn: "condition",
@@ -268,6 +405,7 @@ export const SAMPLE_CONFIG: OpenEnaConfig = {
 };
 
 export const TRAJECTORY_SAMPLE_CONFIG: OpenEnaConfig = {
+  analysisKind: "ena",
   unitColumns: ["Group", "Speaker"],
   conversationColumns: ["Group", "Speaker", "Period"],
   groupColumn: "Group",
@@ -282,23 +420,11 @@ export const TRAJECTORY_SAMPLE_CONFIG: OpenEnaConfig = {
   centerAlignToOrigin: true,
 };
 
-export const JENA_RUNTIME_VERSION = "0.6.2";
+export const JENA_RUNTIME_VERSION = "0.7.0-ona.0";
+export const JENA_SOURCE_COMMIT = "8a1306c9b1d8bd7a7c9203e4ab96055ba67d4e6d";
+export const JENA_SOURCE_URL = "https://github.com/HUDongpin/jENA/tree/8a1306c9b1d8bd7a7c9203e4ab96055ba67d4e6d";
 export const OPEN_ENA_APP_VERSION = "0.1.0";
 
-export function sameOpenEnaConfig(left: OpenEnaConfig, right: OpenEnaConfig) {
-  return left.model === right.model
-    && left.groupColumn === right.groupColumn
-    && left.window === right.window
-    && left.windowSizeBack === right.windowSizeBack
-    && left.windowSizeForward === right.windowSizeForward
-    && left.weightBy === right.weightBy
-    && left.rotation === right.rotation
-    && left.referenceRotationId === right.referenceRotationId
-    && left.centerAlignToOrigin === right.centerAlignToOrigin
-    && left.unitColumns.length === right.unitColumns.length
-    && left.unitColumns.every((value, index) => value === right.unitColumns[index])
-    && left.conversationColumns.length === right.conversationColumns.length
-    && left.conversationColumns.every((value, index) => value === right.conversationColumns[index])
-    && left.codes.length === right.codes.length
-    && left.codes.every((value, index) => value === right.codes[index]);
-}
+// Preserve the long-standing import surface while routing identity checks
+// through the one canonical ENA/ONA configuration contract.
+export { sameOpenEnaConfig } from "./network-config";

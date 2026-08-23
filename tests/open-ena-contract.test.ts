@@ -152,13 +152,13 @@ test("configuration inference and validation stop at the 30-code browser boundar
   );
 });
 
-test("the documented Academy sample runs through real jENA 0.6.2 deterministically", () => {
+test("the documented Academy sample runs through real jENA 0.7.0-ona.0 deterministically", () => {
   const text = readFileSync(samplePath, "utf8");
   const dataset = parseCsv(text, { name: "ena-design-talk-sample.csv", source: "sample" });
   assert.deepEqual(validateConfig(dataset, SAMPLE_CONFIG), []);
 
   const result = analyzeDataset(dataset, SAMPLE_CONFIG);
-  assert.equal(JENA_RUNTIME_VERSION, "0.6.2");
+  assert.equal(JENA_RUNTIME_VERSION, "0.7.0-ona.0");
   assert.equal(result.set.points.length, 8);
   assert.equal(result.set.codes.length, 5);
   assert.deepEqual(result.groups.map(({ name, count }) => ({ name, count })), [
@@ -183,7 +183,7 @@ test("the documented Academy sample runs through real jENA 0.6.2 deterministical
 
   const manifest = buildManifest(dataset, SAMPLE_CONFIG, result);
   assert.equal(manifest.runtime, "jena-js");
-  assert.equal(manifest.runtimeVersion, "0.6.2");
+  assert.equal(manifest.runtimeVersion, "0.7.0-ona.0");
   assert.equal(manifest.dataset.rows, 48);
   assert.equal(manifest.dataset.normalizedUtf8TextSha256, null);
   assert.deepEqual(manifest.effectiveJenaOptions, {
@@ -226,7 +226,11 @@ test("2D is the local default and 3D ENA switches the same fitted result in plac
   assert.match(workspace, /useState<OpenEnaView>\("2d"\)/);
   assert.match(workspace, /aria-pressed=\{view === "2d"\}/);
   assert.match(workspace, /aria-pressed=\{view === "3d"\}/);
-  assert.match(workspace, /<strong>\{copy\.views\.twoD\}<\/strong>/);
+  assert.match(
+    workspace,
+    /<strong>\{completedResultKind === "ona" \? copy\.ona\.workspace\.twoD : copy\.views\.twoD\}<\/strong>/,
+    "both the specialized ONA label and standard ENA label must resolve through locale copy",
+  );
   assert.match(workspace, /<strong>\{copy\.views\.threeD\}<\/strong>/);
   assert.doesNotMatch(workspace, /copy\.views\.(?:default|exploratory)/);
   assert.doesNotMatch(viewToggle, /<small|Default|Exploratory/);
@@ -239,7 +243,7 @@ test("2D is the local default and 3D ENA switches the same fitted result in plac
   assert.match(workspace, /view === "2d" && activeGroupContrast/);
   assert.match(plot, /result\.set\.points/);
   assert.match(worker, /createAccumulationStream/);
-  assert.match(worker, /buildOpenEnaSummary/);
+  assert.match(worker, /buildOpenEnaResult/);
   assert.match(worker, /compactOpenEnaSet/);
   assert.doesNotMatch(client, /result\.worker/);
   assert.match(client, /new URL\("\.\/jena\.worker\.ts", import\.meta\.url\)/);
@@ -275,7 +279,7 @@ test("Open ENA publishes methodology, local-processing, and GPL boundaries", () 
   const copy = readFileSync(join(projectRoot, "lib", "open-ena-i18n.ts"), "utf8");
   const packageJson = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf8")) as { dependencies: Record<string, string> };
 
-  assert.equal(packageJson.dependencies["jena-js"], "0.6.2");
+  assert.equal(packageJson.dependencies["jena-js"], "0.7.0-ona.0");
   assert.match(workspace, /GPL-3\.0-only/);
   assert.match(workspace, /ENA computation powered by/);
   assert.match(workspace, /ENA\.HK provides the interface, plotting, and exports/);

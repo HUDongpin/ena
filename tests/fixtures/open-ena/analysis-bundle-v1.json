@@ -1,0 +1,1257 @@
+{
+  "schemaVersion": 1,
+  "app": "ENA.HK Open ENA",
+  "manifest": {
+    "schemaVersion": 1,
+    "app": "ENA.HK Open ENA",
+    "appVersion": "0.1.0",
+    "runtime": "jena-js",
+    "runtimeVersion": "0.6.2",
+    "dataset": {
+      "name": "ena-design-talk-sample.csv",
+      "rows": 48,
+      "columns": 12,
+      "source": "sample",
+      "hashKind": "normalized-utf8-csv-text-sha256",
+      "normalizedUtf8TextSha256": "2aafd9920a0e576a584ea9d7c32cd3190e435199a065f61497b03d7c9cebff3b"
+    },
+    "configuration": {
+      "unitColumns": [
+        "team_id"
+      ],
+      "conversationColumns": [
+        "conversation_id"
+      ],
+      "groupColumn": "condition",
+      "codes": [
+        "goal",
+        "evidence",
+        "strategy",
+        "tradeoff",
+        "revision"
+      ],
+      "model": "EndPoint",
+      "window": "MovingStanzaWindow",
+      "windowSizeBack": 5,
+      "windowSizeForward": 0,
+      "weightBy": "binary",
+      "rotation": "svd",
+      "referenceRotationId": null,
+      "centerAlignToOrigin": true
+    },
+    "result": {
+      "model": "EndPoint",
+      "units": 8,
+      "points": 8,
+      "groups": [
+        {
+          "name": "baseline",
+          "count": 4
+        },
+        {
+          "name": "scaffolded",
+          "count": 4
+        }
+      ],
+      "dimensions": [
+        "SVD1",
+        "SVD2",
+        "SVD3"
+      ],
+      "variance": {
+        "SVD1": 0.5013699933920419,
+        "SVD2": 0.3275582924311218,
+        "SVD3": 0.10197701500727081,
+        "SVD4": 0.03415275224965738,
+        "SVD5": 0.023906579292477702,
+        "SVD6": 0.008638696305194541,
+        "SVD7": 0.0023966713222355776,
+        "SVD8": 8.079915389239436e-31,
+        "SVD9": 7.06657253200182e-32,
+        "SVD10": 3.2387985624541524e-31
+      },
+      "statsDiagnostics": {
+        "correlations": "complete",
+        "tests": "complete",
+        "correlationUnitLimit": 500
+      },
+      "projectionReference": null,
+      "analyzedAt": "2026-08-20T19:54:12.000Z"
+    },
+    "effectiveJenaOptions": {
+      "units": [
+        "team_id"
+      ],
+      "conversation": [
+        "conversation_id"
+      ],
+      "codes": [
+        "goal",
+        "evidence",
+        "strategy",
+        "tradeoff",
+        "revision"
+      ],
+      "metadata": [
+        "condition"
+      ],
+      "includeMeta": true,
+      "model": "EndPoint",
+      "window": "MovingStanzaWindow",
+      "windowSizeBack": 5,
+      "windowSizeForward": 0,
+      "weightBy": "binary",
+      "dimensions": 3,
+      "rotation": {
+        "method": "svd"
+      },
+      "centerAlignToOrigin": true,
+      "normalization": "sphere",
+      "nodePositionMethod": "undirected"
+    },
+    "generatedAt": "2026-08-20T19:54:12.000Z",
+    "boundaries": [
+      "The graph depends on the supplied codes, units, conversations, window, weighting, normalization, and rotation.",
+      "Rows are analyzed in source order within each conversation; XLSX analysis uses the first worksheet. Reorder the source before analysis when sequence matters.",
+      "Dataset hash scope is recorded in dataset.hashKind: CSV uses BOM-normalized UTF-8 source text; XLSX uses the versioned canonical values of the analyzed first worksheet, excluding workbook styling and unselected worksheets.",
+      "Moving stanza windows may span multiple units that share a conversation, matching jENA/rENA discourse-window semantics; whole-conversation windows are accumulated per unit and conversation.",
+      "Rotation-axis signs are arbitrary, so mirrored coordinates can represent the same ENA solution.",
+      "Visual separation and edge thickness are descriptive; they do not establish statistical significance or causality.",
+      "Trajectory steps are repeated observations of analytic units. Open ENA does not apply endpoint group tests or point-centroid correlation diagnostics to trajectory models.",
+      "For reference projections, the axes, center, and reference nodes remain fixed; variance describes the current dataset in that basis, not explained variance in the fitted reference sample.",
+      "For reference projections, point-centroid correlations and target-fitted centroid tables are withheld because jENA 0.6.2 does not compute them from the displayed fixed reference nodes.",
+      "Imported reference names, analyzed-table hashes, hash kinds, timestamps, and fit descriptors are declared provenance: ENA.HK validates their structure but does not independently authenticate their origin.",
+      "The 3D ENA link opens a separate website; this workspace does not automatically transfer the dataset, configuration, or computed model.",
+      "The result bundle excludes raw source rows. Preserve the exact source coded-data file and its codebook alongside the manifest and derived outputs for reproducibility."
+    ]
+  },
+  "tables": {
+    "coordinates": [
+      {
+        "ENA_UNIT": "team-01",
+        "team_id": "team-01",
+        "condition": "baseline",
+        "SVD1": -0.07156972011781548,
+        "SVD2": -0.19338804919137836,
+        "SVD3": 0.019799442298480917
+      },
+      {
+        "ENA_UNIT": "team-02",
+        "team_id": "team-02",
+        "condition": "baseline",
+        "SVD1": -0.05144080154997867,
+        "SVD2": -0.11175944085303685,
+        "SVD3": 0.13622651581525952
+      },
+      {
+        "ENA_UNIT": "team-03",
+        "team_id": "team-03",
+        "condition": "baseline",
+        "SVD1": -0.1282351578494106,
+        "SVD2": -0.20732567084273207,
+        "SVD3": -0.015455397472681104
+      },
+      {
+        "ENA_UNIT": "team-04",
+        "team_id": "team-04",
+        "condition": "baseline",
+        "SVD1": -0.10119931916804592,
+        "SVD2": -0.007059597698794368,
+        "SVD3": -0.1967075513269448
+      },
+      {
+        "ENA_UNIT": "team-05",
+        "team_id": "team-05",
+        "condition": "scaffolded",
+        "SVD1": -0.17999117742357068,
+        "SVD2": 0.22532460624110398,
+        "SVD3": 0.005630549130125513
+      },
+      {
+        "ENA_UNIT": "team-06",
+        "team_id": "team-06",
+        "condition": "scaffolded",
+        "SVD1": 0.3399672440303678,
+        "SVD2": 0.06906348378058036,
+        "SVD3": -0.013719311401910059
+      },
+      {
+        "ENA_UNIT": "team-07",
+        "team_id": "team-07",
+        "condition": "scaffolded",
+        "SVD1": 0.32434193011258505,
+        "SVD2": -0.0002695418367763946,
+        "SVD3": 0.0014976589142563575
+      },
+      {
+        "ENA_UNIT": "team-08",
+        "team_id": "team-08",
+        "condition": "scaffolded",
+        "SVD1": -0.1318729980341319,
+        "SVD2": 0.22541421040103357,
+        "SVD3": 0.06272809404341369
+      }
+    ],
+    "lineWeights": [
+      {
+        "ENA_UNIT": "team-01",
+        "team_id": "team-01",
+        "condition": "baseline",
+        "goal & evidence": 0.1889822365046136,
+        "goal & strategy": 0.3779644730092272,
+        "evidence & strategy": 0.5669467095138409,
+        "goal & tradeoff": 0.1889822365046136,
+        "evidence & tradeoff": 0.1889822365046136,
+        "strategy & tradeoff": 0.5669467095138409,
+        "goal & revision": 0,
+        "evidence & revision": 0.1889822365046136,
+        "strategy & revision": 0.1889822365046136,
+        "tradeoff & revision": 0.1889822365046136
+      },
+      {
+        "ENA_UNIT": "team-02",
+        "team_id": "team-02",
+        "condition": "baseline",
+        "goal & evidence": 0.1796053020267749,
+        "goal & strategy": 0.3592106040535498,
+        "evidence & strategy": 0.5388159060803247,
+        "goal & tradeoff": 0.1796053020267749,
+        "evidence & tradeoff": 0.3592106040535498,
+        "strategy & tradeoff": 0.5388159060803247,
+        "goal & revision": 0,
+        "evidence & revision": 0.1796053020267749,
+        "strategy & revision": 0.1796053020267749,
+        "tradeoff & revision": 0.1796053020267749
+      },
+      {
+        "ENA_UNIT": "team-03",
+        "team_id": "team-03",
+        "condition": "baseline",
+        "goal & evidence": 0.15811388300841897,
+        "goal & strategy": 0.4743416490252569,
+        "evidence & strategy": 0.6324555320336759,
+        "goal & tradeoff": 0.15811388300841897,
+        "evidence & tradeoff": 0.15811388300841897,
+        "strategy & tradeoff": 0.4743416490252569,
+        "goal & revision": 0,
+        "evidence & revision": 0.15811388300841897,
+        "strategy & revision": 0.15811388300841897,
+        "tradeoff & revision": 0.15811388300841897
+      },
+      {
+        "ENA_UNIT": "team-04",
+        "team_id": "team-04",
+        "condition": "baseline",
+        "goal & evidence": 0.31622776601683794,
+        "goal & strategy": 0.4743416490252569,
+        "evidence & strategy": 0.4743416490252569,
+        "goal & tradeoff": 0.31622776601683794,
+        "evidence & tradeoff": 0.15811388300841897,
+        "strategy & tradeoff": 0.4743416490252569,
+        "goal & revision": 0.15811388300841897,
+        "evidence & revision": 0.15811388300841897,
+        "strategy & revision": 0.15811388300841897,
+        "tradeoff & revision": 0.15811388300841897
+      },
+      {
+        "ENA_UNIT": "team-05",
+        "team_id": "team-05",
+        "condition": "scaffolded",
+        "goal & evidence": 0.4662524041201569,
+        "goal & strategy": 0.4662524041201569,
+        "evidence & strategy": 0.4662524041201569,
+        "goal & tradeoff": 0.18650096164806276,
+        "evidence & tradeoff": 0.3730019232961255,
+        "strategy & tradeoff": 0.3730019232961255,
+        "goal & revision": 0.09325048082403138,
+        "evidence & revision": 0.09325048082403138,
+        "strategy & revision": 0.09325048082403138,
+        "tradeoff & revision": 0.09325048082403138
+      },
+      {
+        "ENA_UNIT": "team-06",
+        "team_id": "team-06",
+        "condition": "scaffolded",
+        "goal & evidence": 0.30304576336566325,
+        "goal & strategy": 0.30304576336566325,
+        "evidence & strategy": 0.40406101782088427,
+        "goal & tradeoff": 0.20203050891044214,
+        "evidence & tradeoff": 0.30304576336566325,
+        "strategy & tradeoff": 0.30304576336566325,
+        "goal & revision": 0.10101525445522107,
+        "evidence & revision": 0.40406101782088427,
+        "strategy & revision": 0.40406101782088427,
+        "tradeoff & revision": 0.30304576336566325
+      },
+      {
+        "ENA_UNIT": "team-07",
+        "team_id": "team-07",
+        "condition": "scaffolded",
+        "goal & evidence": 0.21566554640687682,
+        "goal & strategy": 0.3234983196103152,
+        "evidence & strategy": 0.43133109281375365,
+        "goal & tradeoff": 0.21566554640687682,
+        "evidence & tradeoff": 0.3234983196103152,
+        "strategy & tradeoff": 0.3234983196103152,
+        "goal & revision": 0.10783277320343841,
+        "evidence & revision": 0.3234983196103152,
+        "strategy & revision": 0.43133109281375365,
+        "tradeoff & revision": 0.3234983196103152
+      },
+      {
+        "ENA_UNIT": "team-08",
+        "team_id": "team-08",
+        "condition": "scaffolded",
+        "goal & evidence": 0.4923659639173309,
+        "goal & strategy": 0.3692744729379982,
+        "evidence & strategy": 0.4923659639173309,
+        "goal & tradeoff": 0.24618298195866545,
+        "evidence & tradeoff": 0.3692744729379982,
+        "strategy & tradeoff": 0.3692744729379982,
+        "goal & revision": 0,
+        "evidence & revision": 0.12309149097933272,
+        "strategy & revision": 0.12309149097933272,
+        "tradeoff & revision": 0.12309149097933272
+      }
+    ],
+    "connectionCounts": [
+      {
+        "ENA_UNIT": "team-01",
+        "team_id": "team-01",
+        "condition": "baseline",
+        "goal & evidence": 1,
+        "goal & strategy": 2,
+        "evidence & strategy": 3,
+        "goal & tradeoff": 1,
+        "evidence & tradeoff": 1,
+        "strategy & tradeoff": 3,
+        "goal & revision": 0,
+        "evidence & revision": 1,
+        "strategy & revision": 1,
+        "tradeoff & revision": 1
+      },
+      {
+        "ENA_UNIT": "team-02",
+        "team_id": "team-02",
+        "condition": "baseline",
+        "goal & evidence": 1,
+        "goal & strategy": 2,
+        "evidence & strategy": 3,
+        "goal & tradeoff": 1,
+        "evidence & tradeoff": 2,
+        "strategy & tradeoff": 3,
+        "goal & revision": 0,
+        "evidence & revision": 1,
+        "strategy & revision": 1,
+        "tradeoff & revision": 1
+      },
+      {
+        "ENA_UNIT": "team-03",
+        "team_id": "team-03",
+        "condition": "baseline",
+        "goal & evidence": 1,
+        "goal & strategy": 3,
+        "evidence & strategy": 4,
+        "goal & tradeoff": 1,
+        "evidence & tradeoff": 1,
+        "strategy & tradeoff": 3,
+        "goal & revision": 0,
+        "evidence & revision": 1,
+        "strategy & revision": 1,
+        "tradeoff & revision": 1
+      },
+      {
+        "ENA_UNIT": "team-04",
+        "team_id": "team-04",
+        "condition": "baseline",
+        "goal & evidence": 2,
+        "goal & strategy": 3,
+        "evidence & strategy": 3,
+        "goal & tradeoff": 2,
+        "evidence & tradeoff": 1,
+        "strategy & tradeoff": 3,
+        "goal & revision": 1,
+        "evidence & revision": 1,
+        "strategy & revision": 1,
+        "tradeoff & revision": 1
+      },
+      {
+        "ENA_UNIT": "team-05",
+        "team_id": "team-05",
+        "condition": "scaffolded",
+        "goal & evidence": 5,
+        "goal & strategy": 5,
+        "evidence & strategy": 5,
+        "goal & tradeoff": 2,
+        "evidence & tradeoff": 4,
+        "strategy & tradeoff": 4,
+        "goal & revision": 1,
+        "evidence & revision": 1,
+        "strategy & revision": 1,
+        "tradeoff & revision": 1
+      },
+      {
+        "ENA_UNIT": "team-06",
+        "team_id": "team-06",
+        "condition": "scaffolded",
+        "goal & evidence": 3,
+        "goal & strategy": 3,
+        "evidence & strategy": 4,
+        "goal & tradeoff": 2,
+        "evidence & tradeoff": 3,
+        "strategy & tradeoff": 3,
+        "goal & revision": 1,
+        "evidence & revision": 4,
+        "strategy & revision": 4,
+        "tradeoff & revision": 3
+      },
+      {
+        "ENA_UNIT": "team-07",
+        "team_id": "team-07",
+        "condition": "scaffolded",
+        "goal & evidence": 2,
+        "goal & strategy": 3,
+        "evidence & strategy": 4,
+        "goal & tradeoff": 2,
+        "evidence & tradeoff": 3,
+        "strategy & tradeoff": 3,
+        "goal & revision": 1,
+        "evidence & revision": 3,
+        "strategy & revision": 4,
+        "tradeoff & revision": 3
+      },
+      {
+        "ENA_UNIT": "team-08",
+        "team_id": "team-08",
+        "condition": "scaffolded",
+        "goal & evidence": 4,
+        "goal & strategy": 3,
+        "evidence & strategy": 4,
+        "goal & tradeoff": 2,
+        "evidence & tradeoff": 3,
+        "strategy & tradeoff": 3,
+        "goal & revision": 0,
+        "evidence & revision": 1,
+        "strategy & revision": 1,
+        "tradeoff & revision": 1
+      }
+    ],
+    "trajectories": [],
+    "pointsForProjection": [
+      {
+        "ENA_UNIT": "team-01",
+        "team_id": "team-01",
+        "condition": "baseline",
+        "goal & evidence": -0.10105012166622057,
+        "goal & strategy": -0.015526693884200804,
+        "evidence & strategy": 0.06612542509818786,
+        "goal & tradeoff": -0.02268141180547298,
+        "evidence & tradeoff": -0.09017289921852434,
+        "strategy & tradeoff": 0.13903841040699316,
+        "goal & revision": -0.057526548936388734,
+        "evidence & revision": -0.014607340218235176,
+        "strategy & revision": -0.028086436868664993,
+        "tradeoff & revision": -0.001980433411332555
+      },
+      {
+        "ENA_UNIT": "team-02",
+        "team_id": "team-02",
+        "condition": "baseline",
+        "goal & evidence": -0.11042705614405926,
+        "goal & strategy": -0.03428056283987818,
+        "evidence & strategy": 0.03799462166467171,
+        "goal & tradeoff": -0.03205834628331167,
+        "evidence & tradeoff": 0.08005546833041188,
+        "strategy & tradeoff": 0.11090760697347701,
+        "goal & revision": -0.057526548936388734,
+        "evidence & revision": -0.023984274696073865,
+        "strategy & revision": -0.03746337134650368,
+        "tradeoff & revision": -0.011357367889171244
+      },
+      {
+        "ENA_UNIT": "team-03",
+        "team_id": "team-03",
+        "condition": "baseline",
+        "goal & evidence": -0.1319184751624152,
+        "goal & strategy": 0.08085048213182888,
+        "evidence & strategy": 0.1316342476180229,
+        "goal & tradeoff": -0.05354976530166761,
+        "evidence & tradeoff": -0.12104125271471897,
+        "strategy & tradeoff": 0.046433349918409195,
+        "goal & revision": -0.057526548936388734,
+        "evidence & revision": -0.045475693714429805,
+        "strategy & revision": -0.05895479036485962,
+        "tradeoff & revision": -0.03284878690752718
+      },
+      {
+        "ENA_UNIT": "team-04",
+        "team_id": "team-04",
+        "condition": "baseline",
+        "goal & evidence": 0.02619540784600377,
+        "goal & strategy": 0.08085048213182888,
+        "evidence & strategy": -0.026479635390396106,
+        "goal & tradeoff": 0.10456411770675136,
+        "evidence & tradeoff": -0.12104125271471897,
+        "strategy & tradeoff": 0.046433349918409195,
+        "goal & revision": 0.10058733407203024,
+        "evidence & revision": -0.045475693714429805,
+        "strategy & revision": -0.05895479036485962,
+        "tradeoff & revision": -0.03284878690752718
+      },
+      {
+        "ENA_UNIT": "team-05",
+        "team_id": "team-05",
+        "condition": "scaffolded",
+        "goal & evidence": 0.17622004594932272,
+        "goal & strategy": 0.07276123722672889,
+        "evidence & strategy": -0.034568880295496096,
+        "goal & tradeoff": -0.025162686662023814,
+        "evidence & tradeoff": 0.09384678757298759,
+        "strategy & tradeoff": -0.05490637581072216,
+        "goal & revision": 0.03572393188764265,
+        "evidence & revision": -0.1103390958988174,
+        "strategy & revision": -0.12381819254924721,
+        "tradeoff & revision": -0.09771218909191477
+      },
+      {
+        "ENA_UNIT": "team-06",
+        "team_id": "team-06",
+        "condition": "scaffolded",
+        "goal & evidence": 0.013013405194829075,
+        "goal & strategy": -0.09044540352776476,
+        "evidence & strategy": -0.09676026659476872,
+        "goal & tradeoff": -0.009633139399644441,
+        "evidence & tradeoff": 0.02389062764252531,
+        "strategy & tradeoff": -0.12486253574118444,
+        "goal & revision": 0.043488705518832334,
+        "evidence & revision": 0.2004714410980355,
+        "strategy & revision": 0.18699234444760568,
+        "tradeoff & revision": 0.11208309344971709
+      },
+      {
+        "ENA_UNIT": "team-07",
+        "team_id": "team-07",
+        "condition": "scaffolded",
+        "goal & evidence": -0.07436681176395735,
+        "goal & strategy": -0.06999284728311278,
+        "evidence & strategy": -0.06949019160189934,
+        "goal & tradeoff": 0.004001898096790246,
+        "evidence & tradeoff": 0.044343183887177284,
+        "strategy & tradeoff": -0.10440997949653247,
+        "goal & revision": 0.05030622426704968,
+        "evidence & revision": 0.11990874288746645,
+        "strategy & revision": 0.21426241944047505,
+        "tradeoff & revision": 0.13253564969436907
+      },
+      {
+        "ENA_UNIT": "team-08",
+        "team_id": "team-08",
+        "condition": "scaffolded",
+        "goal & evidence": 0.20233360574649673,
+        "goal & strategy": -0.024216693955429802,
+        "evidence & strategy": -0.008455320498322094,
+        "goal & tradeoff": 0.03451933364857887,
+        "evidence & tradeoff": 0.09011933721486026,
+        "strategy & tradeoff": -0.05863382616884949,
+        "goal & revision": -0.057526548936388734,
+        "evidence & revision": -0.08049808574351605,
+        "strategy & revision": -0.09397718239394587,
+        "tradeoff & revision": -0.06787117893661343
+      }
+    ],
+    "centroids": [
+      {
+        "unit": "team-01",
+        "SVD1": -0.06475906865737185,
+        "SVD2": -0.19164897362108912,
+        "SVD3": 0.03057125123551495
+      },
+      {
+        "unit": "team-02",
+        "SVD1": -0.048866315068516075,
+        "SVD2": -0.11108595769463181,
+        "SVD3": 0.128939761028959
+      },
+      {
+        "unit": "team-03",
+        "SVD1": -0.13353466237079437,
+        "SVD2": -0.20714526627484908,
+        "SVD3": -0.017273601040022957
+      },
+      {
+        "unit": "team-04",
+        "SVD1": -0.10079096647031072,
+        "SVD2": -0.0003493011576310122,
+        "SVD3": -0.18946147736494462
+      },
+      {
+        "unit": "team-05",
+        "SVD1": -0.1734315757013287,
+        "SVD2": 0.21186869003633757,
+        "SVD3": -0.015534951383707904
+      },
+      {
+        "unit": "team-06",
+        "SVD1": 0.3511429735735777,
+        "SVD2": 0.08377574426587348,
+        "SVD3": 0.001487039361838638
+      },
+      {
+        "unit": "team-07",
+        "SVD1": 0.311026953223608,
+        "SVD2": -0.01828687218158164,
+        "SVD3": -0.017530474252965528
+      },
+      {
+        "unit": "team-08",
+        "SVD1": -0.14078733867885485,
+        "SVD2": 0.23287193654694877,
+        "SVD3": 0.07880245248995199
+      }
+    ],
+    "nodePositions": [
+      {
+        "code": "goal",
+        "SVD1": -1.1050380845813388,
+        "SVD2": 1.515790425633795,
+        "SVD3": -2.3101363479234864
+      },
+      {
+        "code": "evidence",
+        "SVD1": 0.7284126106341873,
+        "SVD2": 2.355537217335557,
+        "SVD3": 2.1120075728547527
+      },
+      {
+        "code": "strategy",
+        "SVD1": -1.0416148997559294,
+        "SVD2": -2.566902451187014,
+        "SVD3": -0.6053107464032084
+      },
+      {
+        "code": "tradeoff",
+        "SVD1": -0.3811481402832584,
+        "SVD2": -0.32194468678401633,
+        "SVD3": 0.9001902234196004
+      },
+      {
+        "code": "revision",
+        "SVD1": 3.2992818972055784,
+        "SVD2": -0.17625536218393056,
+        "SVD3": -0.8429498779096268
+      }
+    ],
+    "adjacencyKey": [
+      {
+        "source": "goal",
+        "target": "evidence",
+        "name": "goal & evidence",
+        "sourceIndex": 0,
+        "targetIndex": 1
+      },
+      {
+        "source": "goal",
+        "target": "strategy",
+        "name": "goal & strategy",
+        "sourceIndex": 0,
+        "targetIndex": 2
+      },
+      {
+        "source": "evidence",
+        "target": "strategy",
+        "name": "evidence & strategy",
+        "sourceIndex": 1,
+        "targetIndex": 2
+      },
+      {
+        "source": "goal",
+        "target": "tradeoff",
+        "name": "goal & tradeoff",
+        "sourceIndex": 0,
+        "targetIndex": 3
+      },
+      {
+        "source": "evidence",
+        "target": "tradeoff",
+        "name": "evidence & tradeoff",
+        "sourceIndex": 1,
+        "targetIndex": 3
+      },
+      {
+        "source": "strategy",
+        "target": "tradeoff",
+        "name": "strategy & tradeoff",
+        "sourceIndex": 2,
+        "targetIndex": 3
+      },
+      {
+        "source": "goal",
+        "target": "revision",
+        "name": "goal & revision",
+        "sourceIndex": 0,
+        "targetIndex": 4
+      },
+      {
+        "source": "evidence",
+        "target": "revision",
+        "name": "evidence & revision",
+        "sourceIndex": 1,
+        "targetIndex": 4
+      },
+      {
+        "source": "strategy",
+        "target": "revision",
+        "name": "strategy & revision",
+        "sourceIndex": 2,
+        "targetIndex": 4
+      },
+      {
+        "source": "tradeoff",
+        "target": "revision",
+        "name": "tradeoff & revision",
+        "sourceIndex": 3,
+        "targetIndex": 4
+      }
+    ]
+  },
+  "rotationSet": {
+    "codes": [
+      "goal",
+      "evidence",
+      "strategy",
+      "tradeoff",
+      "revision"
+    ],
+    "adjacencyKey": [
+      {
+        "source": "goal",
+        "target": "evidence",
+        "name": "goal & evidence",
+        "sourceIndex": 0,
+        "targetIndex": 1
+      },
+      {
+        "source": "goal",
+        "target": "strategy",
+        "name": "goal & strategy",
+        "sourceIndex": 0,
+        "targetIndex": 2
+      },
+      {
+        "source": "evidence",
+        "target": "strategy",
+        "name": "evidence & strategy",
+        "sourceIndex": 1,
+        "targetIndex": 2
+      },
+      {
+        "source": "goal",
+        "target": "tradeoff",
+        "name": "goal & tradeoff",
+        "sourceIndex": 0,
+        "targetIndex": 3
+      },
+      {
+        "source": "evidence",
+        "target": "tradeoff",
+        "name": "evidence & tradeoff",
+        "sourceIndex": 1,
+        "targetIndex": 3
+      },
+      {
+        "source": "strategy",
+        "target": "tradeoff",
+        "name": "strategy & tradeoff",
+        "sourceIndex": 2,
+        "targetIndex": 3
+      },
+      {
+        "source": "goal",
+        "target": "revision",
+        "name": "goal & revision",
+        "sourceIndex": 0,
+        "targetIndex": 4
+      },
+      {
+        "source": "evidence",
+        "target": "revision",
+        "name": "evidence & revision",
+        "sourceIndex": 1,
+        "targetIndex": 4
+      },
+      {
+        "source": "strategy",
+        "target": "revision",
+        "name": "strategy & revision",
+        "sourceIndex": 2,
+        "targetIndex": 4
+      },
+      {
+        "source": "tradeoff",
+        "target": "revision",
+        "name": "tradeoff & revision",
+        "sourceIndex": 3,
+        "targetIndex": 4
+      }
+    ],
+    "rotationMatrix": [
+      [
+        -0.16693619759464623,
+        0.7290545711202744,
+        -0.10901952981346659,
+        -0.01574820261551778,
+        -0.4354990666643238,
+        -0.16668738743650843,
+        -0.2869564658408618,
+        -0.33200835193694944,
+        -0.026766705366174134,
+        0.13320787040964616
+      ],
+      [
+        -0.259094596665472,
+        -0.02905925855517499,
+        -0.35629260655604605,
+        -0.32408055331081087,
+        0.43188403285666754,
+        -0.05854993119307815,
+        0.10869434647403224,
+        -0.3809704024919725,
+        -0.5942039290623181,
+        0.008354210170622
+      ],
+      [
+        -0.22616551626445325,
+        -0.303586733320887,
+        0.16373129457247199,
+        -0.37606301746557413,
+        -0.16098173114013697,
+        0.2506701828134589,
+        0.13375550387781934,
+        -0.4973226934628646,
+        0.4274870929356126,
+        0.38953389517059905
+      ],
+      [
+        -0.008007826425336855,
+        0.09925053441560663,
+        -0.36098660292940316,
+        0.45670376759053644,
+        -0.21539556666828039,
+        0.5976684296523357,
+        0.4715393795472724,
+        -0.06412997021997165,
+        -0.12093759436250866,
+        0.08065236568376036
+      ],
+      [
+        0.07814344153285163,
+        0.38910488035105667,
+        0.6563708009626189,
+        0.23550881291425338,
+        0.47424125773806447,
+        0.09097867210948231,
+        0.23355079143751878,
+        -0.23487551017969668,
+        -0.04458386627556781,
+        0.10640431100605455
+      ],
+      [
+        -0.27870068157774347,
+        -0.418626145425364,
+        0.08993511378482062,
+        0.6628107618337592,
+        -0.07566236127587933,
+        -0.2971831529982722,
+        -0.2585216591093334,
+        -0.2829691701589999,
+        -0.16247746209273287,
+        0.17979183864463782
+      ],
+      [
+        0.11976816512752127,
+        0.13470201952867356,
+        -0.5126018466661387,
+        0.20875639939458743,
+        0.5026712170204729,
+        -0.18283141512200995,
+        -0.05586355342756527,
+        -0.10118437130594325,
+        0.5751913926642956,
+        0.1756736590771921
+      ],
+      [
+        0.49254243106852613,
+        -0.0699530029645212,
+        -0.03465158151056781,
+        -0.029899883320340475,
+        -0.25743998183410705,
+        -0.5629766923540798,
+        0.5567847400906132,
+        -0.2001067648491633,
+        -0.0742389260504416,
+        0.10785320204620957
+      ],
+      [
+        0.6072072799172603,
+        -0.07009885857164742,
+        -0.032048449668196845,
+        -0.052344441940374,
+        0.03342996688911176,
+        0.25555570514966275,
+        -0.42363244130095784,
+        -0.010270589421987972,
+        -0.27766742274251804,
+        0.5472869598403979
+      ],
+      [
+        0.37995226272289995,
+        -0.10496215690434275,
+        -0.012313197602908572,
+        0.05221474664972472,
+        -0.028382290043611324,
+        0.19097220201709625,
+        -0.22721741866239054,
+        -0.5545853913248567,
+        0.08361648763941332,
+        -0.6620278424022347
+      ]
+    ],
+    "rotationColumns": [
+      "SVD1",
+      "SVD2",
+      "SVD3",
+      "SVD4",
+      "SVD5",
+      "SVD6",
+      "SVD7",
+      "SVD8",
+      "SVD9",
+      "SVD10"
+    ],
+    "eigenvalues": [
+      0.043573809287739976,
+      0.028467923396147173,
+      0.008862770134281339,
+      0.002968198202508593,
+      0.002077708559630752,
+      0.0007507846705195863,
+      0.00020829347686715283,
+      2.7845885400808755e-18,
+      7.227924451962645e-19,
+      0
+    ],
+    "centerVector": [
+      0.29003235817083417,
+      0.393491166893428,
+      0.500821284415653,
+      0.21166364831008658,
+      0.27915513572313794,
+      0.4279082991068477,
+      0.057526548936388734,
+      0.20358957672284878,
+      0.2170686733732786,
+      0.19096266991594615
+    ],
+    "nodes": [
+      {
+        "code": "goal",
+        "SVD1": -1.1050380845813388,
+        "SVD2": 1.515790425633795,
+        "SVD3": -2.3101363479234864
+      },
+      {
+        "code": "evidence",
+        "SVD1": 0.7284126106341873,
+        "SVD2": 2.355537217335557,
+        "SVD3": 2.1120075728547527
+      },
+      {
+        "code": "strategy",
+        "SVD1": -1.0416148997559294,
+        "SVD2": -2.566902451187014,
+        "SVD3": -0.6053107464032084
+      },
+      {
+        "code": "tradeoff",
+        "SVD1": -0.3811481402832584,
+        "SVD2": -0.32194468678401633,
+        "SVD3": 0.9001902234196004
+      },
+      {
+        "code": "revision",
+        "SVD1": 3.2992818972055784,
+        "SVD2": -0.17625536218393056,
+        "SVD3": -0.8429498779096268
+      }
+    ]
+  },
+  "modelData": {
+    "modelType": "EndPoint",
+    "units": [
+      "team_id"
+    ],
+    "conversation": [
+      "conversation_id"
+    ],
+    "codeColumns": [
+      "goal & evidence",
+      "goal & strategy",
+      "evidence & strategy",
+      "goal & tradeoff",
+      "evidence & tradeoff",
+      "strategy & tradeoff",
+      "goal & revision",
+      "evidence & revision",
+      "strategy & revision",
+      "tradeoff & revision"
+    ],
+    "unitLabels": [
+      "team-01",
+      "team-02",
+      "team-03",
+      "team-04",
+      "team-05",
+      "team-06",
+      "team-07",
+      "team-08"
+    ],
+    "connectionMatrix": [
+      [
+        1,
+        2,
+        3,
+        1,
+        1,
+        3,
+        0,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        2,
+        3,
+        1,
+        2,
+        3,
+        0,
+        1,
+        1,
+        1
+      ],
+      [
+        1,
+        3,
+        4,
+        1,
+        1,
+        3,
+        0,
+        1,
+        1,
+        1
+      ],
+      [
+        2,
+        3,
+        3,
+        2,
+        1,
+        3,
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        5,
+        5,
+        5,
+        2,
+        4,
+        4,
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        3,
+        3,
+        4,
+        2,
+        3,
+        3,
+        1,
+        4,
+        4,
+        3
+      ],
+      [
+        2,
+        3,
+        4,
+        2,
+        3,
+        3,
+        1,
+        3,
+        4,
+        3
+      ],
+      [
+        4,
+        3,
+        4,
+        2,
+        3,
+        3,
+        0,
+        1,
+        1,
+        1
+      ]
+    ],
+    "functionParams": {
+      "model": "EndPoint",
+      "weightBy": "binary",
+      "window": "MovingStanzaWindow",
+      "windowSizeBack": 5,
+      "windowSizeForward": 0,
+      "includeMeta": true
+    }
+  },
+  "statistics": {
+    "dimensions": [
+      {
+        "dimension": "SVD1",
+        "n": 8,
+        "mean": -5.898059818321144e-17,
+        "sd": 0.20874340537545139,
+        "variance": 0.043573809287740024,
+        "min": -0.17999117742357068,
+        "max": 0.3399672440303678
+      },
+      {
+        "dimension": "SVD2",
+        "n": 8,
+        "mean": -2.7755575615628914e-17,
+        "sd": 0.1687244007135518,
+        "variance": 0.028467923396147198,
+        "min": -0.20732567084273207,
+        "max": 0.22541421040103357
+      },
+      {
+        "dimension": "SVD3",
+        "n": 8,
+        "mean": 3.469446951953614e-18,
+        "sd": 0.09414228664251435,
+        "variance": 0.008862770134281337,
+        "min": -0.1967075513269448,
+        "max": 0.13622651581525952
+      }
+    ],
+    "correlations": [
+      {
+        "dimension": "SVD1",
+        "pearson": 0.9992293829206838,
+        "spearman": 0.9901477832512315,
+        "pearsonLower": 0.9983129803892904,
+        "pearsonUpper": 0.9996480759425515
+      },
+      {
+        "dimension": "SVD2",
+        "pearson": 0.9961600415481981,
+        "spearman": 0.9879584017515052,
+        "pearsonLower": 0.991608958745652,
+        "pearsonUpper": 0.9982449105101485
+      },
+      {
+        "dimension": "SVD3",
+        "pearson": 0.9876116039237093,
+        "spearman": 0.9709906951286261,
+        "pearsonLower": 0.9730656981808175,
+        "pearsonUpper": 0.9943245698809632
+      }
+    ],
+    "groups": [
+      {
+        "group": "baseline",
+        "n": 4,
+        "means": {
+          "SVD1": -0.08811124967131267,
+          "SVD2": -0.12988318964648543,
+          "SVD3": -0.014034247671471371
+        }
+      },
+      {
+        "group": "scaffolded",
+        "n": 4,
+        "means": {
+          "SVD1": 0.08811124967131256,
+          "SVD2": 0.12988318964648538,
+          "SVD3": 0.014034247671471375
+        }
+      }
+    ],
+    "tests": [
+      {
+        "dimension": "SVD1",
+        "test": "welch-t",
+        "groups": [
+          "baseline",
+          "scaffolded"
+        ],
+        "statistic": -1.238600172474281,
+        "df": 3.085146543003218
+      },
+      {
+        "dimension": "SVD2",
+        "test": "welch-t",
+        "groups": [
+          "baseline",
+          "scaffolded"
+        ],
+        "statistic": -3.5481846892851583,
+        "df": 5.749342106214311
+      },
+      {
+        "dimension": "SVD3",
+        "test": "welch-t",
+        "groups": [
+          "baseline",
+          "scaffolded"
+        ],
+        "statistic": -0.39542339374953533,
+        "df": 3.352830158611651
+      }
+    ]
+  },
+  "statisticsDiagnostics": {
+    "correlations": "complete",
+    "tests": "complete",
+    "correlationUnitLimit": 500
+  },
+  "groupContrast": null,
+  "presentation": {
+    "selectedAxes": [
+      "SVD1",
+      "SVD2"
+    ],
+    "flipX": false,
+    "flipY": false,
+    "edgeThreshold": 0,
+    "showNetworks": true,
+    "showPoints": true,
+    "showTrajectories": true,
+    "showLabels": true,
+    "showGroupLabels": true,
+    "showUnitLabels": false,
+    "showVariance": true,
+    "edgeScale": 1,
+    "pointScale": 1,
+    "plotZoom": 1
+  },
+  "methodsReportMarkdown": "# ENA.HK Open ENA Methods & Reproducibility Report\n\nGenerated from ENA.HK Open ENA 0.1.0; analysis completed 2026-08-20T19:54:12.000Z.\n\n## Data identity\n\n- Dataset: `ena-design-talk-sample.csv`\n- Analyzed-table SHA-256: `2aafd9920a0e576a584ea9d7c32cd3190e435199a065f61497b03d7c9cebff3b`\n- Hash scope: `normalized-utf8-csv-text-sha256`. CSV hashes BOM-normalized UTF-8 source text; XLSX hashes the versioned canonical values of the analyzed first worksheet, excluding workbook styling and other worksheets.\n- Input shape: 48 rows and 12 columns\n- Source row order defined sequence within conversations; XLSX analysis used the first worksheet.\n- Raw source rows and unselected source columns are intentionally excluded from derived result exports.\n\n## ENA model\n\nThe network model was computed in the browser with jENA `jena-js` 0.6.2.\n- Model type: `EndPoint`\n- Analytic unit: `team_id`\n- Conversation: `conversation_id`\n- Comparison field: `condition` (`baseline`: n=4, `scaffolded`: n=4)\n- Codes (5): `goal`, `evidence`, `strategy`, `tradeoff`, `revision`\n- Window: Moving stanza window with 5 rows total including the current row and 0 forward context rows.\n- Co-occurrence weighting: binary threshold per windowed cell\n- Network vectors used sphere normalization; node positions used the undirected method.\n- Zero-network handling: zero-network units were pinned to the origin and excluded from estimating the center.\n- Rotation: SVD rotation fitted to the current model.\n\n## Result summary\n\n- 8 distinct analytic units and 8 projected points\n- 2 displayed group network(s) and 5 codes\n- Rotated dimensions: `SVD1` 50.1%, `SVD2` 32.8%, `SVD3` 10.2%\n- Displayed 2D axes: X `SVD1` (unflipped); Y `SVD2` (unflipped).\n- Axis flips are presentation-only. Coordinates, medians, U, p-values, and signed rank-biserial effects remain in the unflipped model coordinate system.\n- Relative edge display threshold: 0.0% (0). This is a presentation-only filter relative to the applicable strongest edge; edges below the threshold remain in the computed model and exported tables, so hidden edges are not model absence.\n- Group networks: shown; Unit points: shown; Trajectory paths: shown.\n- Code labels: shown; group labels: shown; unit labels: hidden; variance labels: shown.\n- Edge width scale: 1×; unit point scale: 1×; plot zoom: 1×.\n- jENA diagnostic statistics were used only where the model type and automatic unit limit permitted them.\n\n## Group-mean uncertainty guides\n\nFor `baseline` and `scaffolded`, ENA.HK calculated a two-sided 95% one-sample Student-t confidence interval separately on `SVD1` and `SVD2`: arithmetic mean ± t(0.975, n−1) × sample SD / √n. Endpoint analytic units were treated as the independent observations; the sample variance used n−1 degrees of freedom.\nThe dashed guide is the Cartesian product of the two separate marginal intervals. It is not a joint 95% two-dimensional confidence region, prediction interval, group-difference interval, or significance test. No simultaneous-coverage correction was applied across axes, and interval overlap or non-overlap must not be used as a substitute for a group-comparison test.\nIntervals are conditional on the ENA coordinate system fitted to this dataset and do not propagate uncertainty from fitting its center, rotation, or node positions. With small groups, the interval is sensitive to individual observations and the per-axis approximate-normality assumption. A guide is not estimable when n < 2 or either displayed axis has zero or non-finite standard error.\n\n| Group | Axis | n | Mean | Sample SD | SE | df | Lower 95% | Upper 95% |\n| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n| `baseline` | `SVD1` | 4 | -0.088111 | 0.033663 | 0.016831 | 3 | -0.141676 | -0.034546 |\n| `baseline` | `SVD2` | 4 | -0.129883 | 0.092095 | 0.046047 | 3 | -0.276426 | 0.016660 |\n| `scaffolded` | `SVD1` | 4 | 0.088111 | 0.282553 | 0.141276 | 3 | -0.361493 | 0.537716 |\n| `scaffolded` | `SVD2` | 4 | 0.129883 | 0.113833 | 0.056917 | 3 | -0.051251 | 0.311017 |\n\n## ENA.HK post-projection group inference\n\nDeclared group order: `baseline` then `scaffolded`.\nMann–Whitney U for the first declared group; two-sided auto exact-first inference with 12-significant-digit average ranks, fixed-size exact rank permutations through total N=50, and a tie-corrected normal approximation with a 0.5 continuity correction above that boundary. The resolved p-value method for each axis is recorded below. Rank-biserial effects are signed for the first declared group versus the second declared group. This calculation is provided by ENA.HK after projection; it is not a jENA statistic, and no multiplicity correction was applied across axes or repeated pair selections.\n\n| Axis | First median | Second median | U (first) | Two-sided p | Resolved p method | Rank-biserial |\n| --- | ---: | ---: | ---: | ---: | --- | ---: |\n| SVD1 | -0.086 | 0.096 | 8.00 | 1.000 | exact-classic | 0.000 |\n| SVD2 | -0.153 | 0.147 | 0.00 | 0.029 | exact-classic | -1.000 |\n\n## Interpretation and reproducibility boundaries\n\n- Rotation axis signs are arbitrary; a mirrored solution can represent the same geometry.\n- Network edges, group means, visual separation, and post-projection statistics are descriptive of the specified model and do not establish causality.\n- The exact source coded-data file, codebook, this report, analysis manifest, and derived result bundle should be preserved together.\n- For trajectories, repeated steps require a design-appropriate longitudinal method and were not treated as independent endpoint observations.\n"
+}

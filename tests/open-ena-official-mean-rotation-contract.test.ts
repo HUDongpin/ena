@@ -169,7 +169,11 @@ test("the browser worker canonicalizes generalized RR1 before building the visib
   assert.match(worker, /canonicalizeOfficialMeanRotation/);
   assert.match(
     worker,
-    /run\.config\.rotation\s*===\s*["']mean["'][\s\S]{0,240}canonicalizeOfficialMeanRotation/,
+    /buildOpenEnaAnalysisPlan\(run\.dataset, run\.config, run\.reference\)/,
+  );
+  assert.match(
+    worker,
+    /configuration\.rotation\s*===\s*["']mean["'][\s\S]{0,240}canonicalizeOfficialMeanRotation/,
   );
 });
 

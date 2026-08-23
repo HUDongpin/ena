@@ -1,4 +1,8 @@
 import type { Row } from "jena-js";
+import {
+  assertOpenEnaCapabilityForConfig,
+  assertOpenEnaCapabilityForContext,
+} from "./capabilities";
 import { rowsToCsv } from "./export";
 import {
   assertOpenEnaInferenceBindingV2,
@@ -367,6 +371,7 @@ export const LONGITUDINAL_BOUNDARIES = [
 export const LONGITUDINAL_INDIVIDUAL_MARK_LIMIT = 2_000;
 
 export function inferLongitudinalMappingDefaults(config: OpenEnaConfig) {
+  assertOpenEnaCapabilityForConfig(config, "trajectory");
   const repeatedEntityColumn = config.unitColumns.find((column) => column !== config.groupColumn) ?? "";
   const unitColumns = new Set(config.unitColumns);
   const timeColumn = config.conversationColumns.find((column) => (
@@ -1206,6 +1211,7 @@ export function buildLongitudinalDerivation(
   settings: OpenEnaLongitudinalSettings,
   createdAt = new Date().toISOString(),
 ): OpenEnaLongitudinalDerivation {
+  assertOpenEnaCapabilityForContext(config, result, "trajectory");
   const resolvedSettings = normalizeSettings(settings);
   validateInputs(result, config, dataset, resolvedSettings);
   canonicalTime(createdAt, "The longitudinal view creation time");
@@ -1350,6 +1356,7 @@ export function buildLongitudinalGroupCentroidView(
   settings: OpenEnaLongitudinalSettings,
   createdAt = new Date().toISOString(),
 ): OpenEnaLongitudinalView {
+  assertOpenEnaCapabilityForContext(config, result, "trajectory");
   const resolvedSettings = normalizeSettings(settings);
   if (resolvedSettings.timeOrder.length < 2) {
     throw new OpenEnaLongitudinalIntegrityError("period-invalid");
@@ -1358,6 +1365,7 @@ export function buildLongitudinalGroupCentroidView(
 }
 
 function assertComparisonFrame(frame: OpenEnaLongitudinalComparisonFrame) {
+  assertOpenEnaCapabilityForConfig(frame.binding.configuration, "trajectory");
   if (frame.kind !== "open-ena-longitudinal-comparison-frame"
     || frame.coordinateSystem !== "unflipped-model-coordinates"
     || !sameOrderedValues(frame.axes, frame.binding.axes)
@@ -1596,6 +1604,7 @@ export function buildLongitudinalGroupCentroidExport(
   presentationOptions?: OpenEnaLongitudinalPresentationOptions,
   inference: OpenEnaInferenceResultV2 | null = null,
 ) {
+  assertOpenEnaCapabilityForConfig(view.configuration, "trajectory");
   if (inference) {
     parseBoundLongitudinalInference(view, inference);
   }
@@ -1747,6 +1756,7 @@ function parseBoundLongitudinalInference(
 }
 
 export function longitudinalPeriodRowsToCsv(view: OpenEnaLongitudinalView) {
+  assertOpenEnaCapabilityForConfig(view.configuration, "trajectory");
   const repeatedEntityColumnsJson = JSON.stringify(view.repeatedEntityColumns);
   const timeOrderJson = JSON.stringify(view.timeOrder);
   const configurationJson = JSON.stringify(view.configuration);
@@ -1802,6 +1812,7 @@ export function longitudinalInferenceRowsToCsv(
   view: OpenEnaLongitudinalView,
   inference: OpenEnaInferenceResultV2,
 ) {
+  assertOpenEnaCapabilityForConfig(view.configuration, "trajectory");
   return rowsToCsv(flattenOpenEnaInferenceRows(
     parseBoundLongitudinalInference(view, inference),
   ));

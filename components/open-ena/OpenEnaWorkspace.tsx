@@ -8,6 +8,28 @@ import { getOpenEnaCopy, isOpenEnaLocalizedLocale } from "@/lib/open-ena-i18n";
 import { buildManifest, dimensionEffect } from "@/lib/open-ena/analyze";
 import { analyzeDatasetInWorker } from "@/lib/open-ena/client";
 import {
+  beginAnalysisFamilyConfiguration,
+  createAnalysisFamilyDrafts,
+  switchAnalysisFamily,
+  transitionOpenEnaOrderPanelValue,
+  type OpenEnaAnalysisFamilyDrafts,
+} from "@/lib/open-ena/analysis-family";
+import { openEnaAnalysisKindFromResult } from "@/lib/open-ena/capabilities";
+import {
+  analysisKindFor,
+  cloneOpenEnaConfig,
+  reconcileDirectionalMask,
+} from "@/lib/open-ena/network-config";
+import { buildOpenEnaOnaDataView } from "@/lib/open-ena/ona-data-view";
+import { buildOpenEnaDataViewExportRows } from "@/lib/open-ena/data-view-export";
+import {
+  buildOpenEnaOnaAggregateEdgeExport,
+  buildOpenEnaOnaDeidentifiedAuditExport,
+} from "@/lib/open-ena/ona-export";
+import {
+  type OpenEnaOrderPanelValue,
+} from "@/lib/open-ena/ona-order-preview";
+import {
   inferConfig,
   officialComparisonRotation,
   parseCsv,
@@ -64,12 +86,15 @@ import {
 } from "@/lib/open-ena/sets";
 import {
   JENA_RUNTIME_VERSION,
+  JENA_SOURCE_COMMIT,
+  JENA_SOURCE_URL,
   SAMPLE_CONFIG,
   SAMPLE_DATASET_URL,
   TRAJECTORY_SAMPLE_CONFIG,
   TRAJECTORY_SAMPLE_DATASET_URL,
   datasetHashKindFor,
   sameOpenEnaConfig,
+  type AnalysisKind,
   type CameraPreset,
   type OpenEnaAnalysisSet,
   type OpenEnaConfig,
@@ -87,6 +112,11 @@ import OpenEnaDataView, {
   type OpenEnaDataViewContext,
   type OpenEnaDataViewRow,
 } from "./OpenEnaDataView";
+import { OpenEnaAnalysisFamilyControl } from "./OpenEnaAnalysisFamilyControl";
+import { OpenEnaDirectionalMaskEditor } from "./OpenEnaDirectionalMaskEditor";
+import OpenEnaOrderedResultLayout from "./OpenEnaOrderedResultLayout";
+import OpenEnaOnaStats from "./OpenEnaOnaStats";
+import { OpenEnaOrderPanel } from "./OpenEnaOrderPanel";
 import OpenEnaGroupContrast from "./OpenEnaGroupContrast";
 import OpenEnaLongitudinalTrajectory from "./OpenEnaLongitudinalTrajectory";
 import OpenEnaPersistentPlotTools from "./OpenEnaPersistentPlotTools";
@@ -215,6 +245,17 @@ function validateWorkspaceConfig(
   return [...new Set(errors)];
 }
 
+function orderPanelValueFromConfig(config: OpenEnaConfig): OpenEnaOrderPanelValue {
+  const policy = config.orderPolicy;
+  return {
+    policyKind: policy?.kind ?? "columns",
+    columns: policy?.kind === "columns" ? [...policy.columns] : [],
+    comparators: policy?.kind === "columns" ? { ...policy.comparators } : {},
+    sourceRowConfirmed: policy?.kind === "source-row" && policy.confirmed === true,
+    windowSizeBack: config.windowSizeBack,
+  };
+}
+
 export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const copy = getOpenEnaCopy(locale);
   const authCopy = getOpenEnaAuthCopy(locale);
@@ -236,6 +277,13 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const [view, setView] = useState<OpenEnaView>("2d");
   const [dataset, setDataset] = useState<ParsedDataset | null>(null);
   const [config, setConfig] = useState<OpenEnaConfig>(SAMPLE_CONFIG);
+  const [analysisFamilyDrafts, setAnalysisFamilyDrafts] = useState<OpenEnaAnalysisFamilyDrafts>(
+    () => createAnalysisFamilyDrafts(SAMPLE_CONFIG),
+  );
+  const [onaOrderPanelDraft, setOnaOrderPanelDraft] = useState<OpenEnaOrderPanelValue>(
+    () => orderPanelValueFromConfig(createAnalysisFamilyDrafts(SAMPLE_CONFIG).ona),
+  );
+  const [directionalMaskOpen, setDirectionalMaskOpen] = useState(false);
   const [codeColors, setCodeColors] = useState<Record<string, string>>({});
   const [resultConfig, setResultConfig] = useState<OpenEnaConfig | null>(null);
   const [datasetHash, setDatasetHash] = useState<string | null>(null);
@@ -300,6 +348,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const [methodsCopyStatus, setMethodsCopyStatus] = useState("");
   const [resultTable, setResultTable] = useState<"coordinates" | "lineWeights" | "connectionCounts" | "trajectories" | "centroids" | "nodePositions" | "adjacencyKey">("coordinates");
   const [dataViewContext, setDataViewContext] = useState<OpenEnaDataViewContext>("comparison");
+  const [onaStatsContext, setOnaStatsContext] = useState<OpenEnaDataViewContext>("comparison");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const referenceInputRef = useRef<HTMLInputElement>(null);
   const plotSvgRef = useRef<SVGSVGElement>(null);
@@ -329,6 +378,13 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     () => dataset ? validateWorkspaceConfig(dataset, config, rotationReference) : [],
     [dataset, config, rotationReference],
   );
+  const currentAnalysisKind = analysisKindFor(config);
+  const completedResultKind = useMemo(
+    () => result ? openEnaAnalysisKindFromResult(result) : null,
+    [result],
+  );
+  const capabilityAnalysisKind = completedResultKind ?? currentAnalysisKind;
+  const onaCapabilityDisabled = capabilityAnalysisKind === "ona";
   const resultIsStale = Boolean(result && resultConfig && !sameOpenEnaConfig(config, resultConfig));
   const canRun = Boolean(dataset && configErrors.length === 0 && !sourceBusy && !referenceBusy && !loading);
   const manifest = useMemo(
@@ -526,6 +582,14 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     : inferenceSecondaryGroup;
   const inferenceDesignAvailability = useMemo(() => {
     const inferenceCopy = copy.stats.inference;
+    if (completedResultKind === "ona") {
+      const reason = copy.ona.unavailable.inference;
+      return {
+        independent: { enabled: false, reason },
+        paired: { enabled: false, reason },
+        repeated: { enabled: false, reason },
+      };
+    }
     const endpoint = result?.set.modelType === "EndPoint";
     const trajectory = Boolean(result && result.set.modelType !== "EndPoint");
     const hasTwoGroups = Boolean(resultConfig?.groupColumn && currentResultGroupNames.length >= 2);
@@ -555,10 +619,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             : null,
       },
     };
-  }, [copy.stats.inference, currentResultGroupKey, longitudinalTimeOrder.length, result, resultConfig]);
+  }, [completedResultKind, copy.ona.unavailable.inference, copy.stats.inference, currentResultGroupKey, longitudinalTimeOrder.length, result, resultConfig]);
 
   const inferenceRequest = useMemo((): OpenEnaInferenceRequestV2 | null => {
-    if (!result || !resultConfig || !inferenceDesign || resultIsStale) return null;
+    if (completedResultKind === "ona" || !result || !resultConfig || !inferenceDesign || resultIsStale) return null;
     if (groupContrastAxes[0] === groupContrastAxes[1]
       || groupContrastAxes.some((axis) => !result.dimensions.includes(axis))) return null;
     if (result.set.modelType === "EndPoint") {
@@ -617,6 +681,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     };
   }, [
     groupContrastAxes,
+    completedResultKind,
     identityConfirmed,
     inferenceDesign,
     inferenceEarlierPeriod,
@@ -792,6 +857,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     && datasetHash
     && /^[0-9a-f]{64}$/iu.test(datasetHash)
     && result
+    && completedResultKind !== "ona"
     && resultConfig
     && inferenceRequest
     && inferencePreviewState.preview
@@ -850,11 +916,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   }
   const contrastUnavailable = useMemo(() => {
     if (!result || !resultConfig) return "Build an endpoint model to compare groups.";
+    if (completedResultKind === "ona") return copy.ona.unavailable.groupContrast;
     if (result.set.modelType !== "EndPoint") return copy.contrast.endpointOnly;
     if (!resultConfig.groupColumn) return copy.contrast.requiresGroup;
     if (result.groups.length < 2) return copy.contrast.requiresTwoGroups;
     return null;
-  }, [copy.contrast, result, resultConfig]);
+  }, [completedResultKind, copy.contrast, copy.ona.unavailable.groupContrast, result, resultConfig]);
   const groupContrastState = useMemo(() => {
     if (contrastUnavailable || !result || !resultConfig || !primaryGroupName || !secondaryGroupName) {
       return { contrast: null, error: contrastUnavailable };
@@ -878,6 +945,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     }
   }, [contrastUnavailable, groupContrastAxes, primaryGroupName, result, resultConfig, secondaryGroupName]);
   const groupContrast = groupContrastState.contrast;
+  const selectedPresentationGroupOrder = useMemo<readonly [string, string] | undefined>(() => {
+    if (completedResultKind !== "ona") return groupContrast?.groupOrder;
+    if (!result || !primaryGroupName || !secondaryGroupName || primaryGroupName === secondaryGroupName) {
+      return undefined;
+    }
+    const completedGroupNames = new Set(result.groups.map((group) => group.name));
+    return completedGroupNames.has(primaryGroupName) && completedGroupNames.has(secondaryGroupName)
+      ? [primaryGroupName, secondaryGroupName]
+      : undefined;
+  }, [completedResultKind, groupContrast, primaryGroupName, result, secondaryGroupName]);
   const maxNetworkWeight = useMemo(() => {
     if (!result) return 1e-9;
     let maximum = 1e-9;
@@ -904,7 +981,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           edgeScale,
           pointScale,
           plotZoom,
-          selectedGroupOrder: groupContrast?.groupOrder,
+          selectedGroupOrder: selectedPresentationGroupOrder,
         }, currentInference, inferenceProducerContext)
       : null,
     [
@@ -915,12 +992,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       edgeThreshold,
       flipX,
       flipY,
-      groupContrast,
       inferenceProducerContext,
       plotZoom,
       pointScale,
       result,
       resultConfig,
+      selectedPresentationGroupOrder,
       showLabels,
       showGroupLabels,
       showNetworks,
@@ -966,7 +1043,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       return null;
     }
   }, [comparisonAxes, primarySet, secondarySet]);
-  const displayedComparisonSurface = activeComparisonSurface === "sets" && setComparison
+  const displayedComparisonSurface = completedResultKind === "ona"
+    ? "model"
+    : activeComparisonSurface === "sets" && setComparison
     ? "sets"
     : groupContrast
       ? "groups"
@@ -975,11 +1054,59 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       : setComparison
         ? "sets"
         : "model";
-  const activeSetComparison = displayedComparisonSurface === "sets" ? setComparison : null;
-  const activeGroupContrast = displayedComparisonSurface === "groups" ? groupContrast : null;
+  const activeSetComparison = completedResultKind !== "ona" && displayedComparisonSurface === "sets" ? setComparison : null;
+  const activeGroupContrast = completedResultKind !== "ona" && displayedComparisonSurface === "groups" ? groupContrast : null;
   const dataViewModel = useMemo(() => {
-    const empty = { columns: [] as OpenEnaDataViewColumn[], rows: [] as OpenEnaDataViewRow[] };
+    const empty = {
+      columns: [] as OpenEnaDataViewColumn[],
+      rows: [] as OpenEnaDataViewRow[],
+      error: null as string | null,
+    };
     if (!dataset || !result || !resultConfig) return empty;
+
+    if (completedResultKind === "ona") {
+      if (!datasetHash) return { ...empty, error: copy.ona.dataView.missingDatasetBinding };
+      const selectedGroup = dataViewContext === "primary"
+        ? primaryGroupName || result.groups[0]?.name
+        : dataViewContext === "secondary"
+          ? secondaryGroupName || result.groups[1]?.name
+          : null;
+      try {
+        const viewModel = buildOpenEnaOnaDataView({
+          dataset,
+          datasetHash,
+          result,
+          resultConfig,
+          scope: selectedGroup
+            ? { kind: "group", name: selectedGroup }
+            : { kind: "overall" },
+        });
+        return {
+          columns: viewModel.columns.map((column): OpenEnaDataViewColumn => ({
+            key: column.key,
+            label: column.kind === "provenance"
+              ? copy.ona.dataView.provenanceLabels[
+                  column.key as keyof typeof copy.ona.dataView.provenanceLabels
+                ] ?? column.label
+              : column.kind === "directed-edge"
+                ? `${column.ground} ${copy.ona.mask.groundHeader} → ${column.response} ${copy.ona.mask.responseHeader}`
+              : column.label,
+            kind: column.kind,
+            align: column.kind === "metadata" ? "left" : "right",
+          })),
+          rows: viewModel.rows.map((row): OpenEnaDataViewRow => ({
+            id: `ordered-response-${row.responseRowIndex}`,
+            values: row.values,
+          })),
+          error: null,
+        };
+      } catch (caught) {
+        return {
+          ...empty,
+          error: caught instanceof Error ? caught.message : String(caught),
+        };
+      }
+    }
 
     const unitFields = resultConfig.unitColumns;
     const horizonFields = resultConfig.conversationColumns;
@@ -1027,8 +1154,20 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       { key: "horizon", label: `Horizon · ${horizonFields.join(" › ")}`, kind: "metadata" },
       ...resultConfig.codes.map((code) => ({ key: code, label: code, kind: "code" as const, align: "right" as const })),
     ];
-    return { columns, rows };
-  }, [activeGroupContrast, dataViewContext, dataset, result, resultConfig]);
+    return { columns, rows, error: null };
+  }, [
+    activeGroupContrast,
+    completedResultKind,
+    copy.ona.dataView.provenanceLabels,
+    copy.ona.dataView.missingDatasetBinding,
+    dataViewContext,
+    dataset,
+    datasetHash,
+    primaryGroupName,
+    result,
+    resultConfig,
+    secondaryGroupName,
+  ]);
   const activeLongitudinalView = !activeSetComparison
     && !activeGroupContrast
     && result?.set.modelType !== "EndPoint"
@@ -1060,20 +1199,83 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     && result.projectionReference.referenceId === rotationReference.referenceId,
   );
 
+  function installAnalysisConfig(nextConfig: OpenEnaConfig) {
+    const next = cloneOpenEnaConfig(nextConfig);
+    const nextFamilyDrafts = createAnalysisFamilyDrafts(next);
+    setAnalysisFamilyDrafts(nextFamilyDrafts);
+    setOnaOrderPanelDraft(orderPanelValueFromConfig(nextFamilyDrafts.ona));
+    setConfig(next);
+    setDirectionalMaskOpen(false);
+  }
+
   function updateConfig(update: (current: OpenEnaConfig) => OpenEnaConfig) {
     abortRef.current?.abort();
     abortRef.current = null;
     setLoading(false);
-    setConfig(update);
+    setConfig((current) => {
+      const candidate = update(current);
+      if (analysisKindFor(candidate) !== "ona") return candidate;
+      return {
+        ...candidate,
+        analysisKind: "ona",
+        model: "EndPoint",
+        window: "MovingStanzaWindow",
+        windowSizeForward: 0,
+        weightBy: "sum",
+        rotation: "svd",
+        referenceRotationId: null,
+        directionalMask: reconcileDirectionalMask(candidate.directionalMask, candidate.codes),
+      };
+    });
+    setView("2d");
+  }
+
+  function selectAnalysisFamily(target: AnalysisKind) {
+    if (target === currentAnalysisKind) return;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+    const transition = beginAnalysisFamilyConfiguration(analysisFamilyDrafts, config, target);
+    setAnalysisFamilyDrafts(transition.drafts);
+    setConfig(transition.activeConfig);
+    setDirectionalMaskOpen(false);
+    setView("2d");
+    setCenterSurface("plot");
+    setMode("model");
+    if (target === "ona") {
+      setOnaOrderPanelDraft((current) => ({
+        ...current,
+        windowSizeBack: transition.activeConfig.windowSizeBack,
+      }));
+      setModelTab("windows");
+    }
+  }
+
+  function updateOnaOrderPanel(value: OpenEnaOrderPanelValue) {
+    if (currentAnalysisKind !== "ona") return;
+    const transition = transitionOpenEnaOrderPanelValue(
+      analysisFamilyDrafts,
+      config,
+      value,
+    );
+    setOnaOrderPanelDraft(transition.panelValue);
+    setAnalysisFamilyDrafts(transition.drafts);
+    setConfig(transition.activeConfig);
     setView("2d");
   }
 
   function openTrajectoryModelConfiguration() {
+    if (currentAnalysisKind === "ona") return;
     setModelTab("windows");
     setTrajectoryModelFocusRequest((request) => request + 1);
   }
 
   function captureCurrentAnalysisSet() {
+    if (completedResultKind === "ona") {
+      setError(copy.ona.unavailable.sets);
+      setMode("model");
+      return;
+    }
     if (!dataset || !resultConfig || !result) {
       setError("Build an endpoint model before capturing an analysis set.");
       setMode("sets");
@@ -1123,6 +1325,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     nextDatasetHash = datasetHash,
   ) {
     if (!nextDataset || sourceAbortRef.current || referenceImportRef.current) return;
+    if (!nextDatasetHash) {
+      setError("Commit the imported source and its SHA-256 binding before analysis.");
+      return;
+    }
     const analysisGeneration = datasetGenerationRef.current;
     const errors = validateWorkspaceConfig(nextDataset, nextConfig, rotationReference);
     if (errors.length) {
@@ -1140,6 +1346,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     try {
       const nextResult = await analyzeDatasetInWorker(nextDataset, nextConfig, {
         signal: controller.signal,
+        datasetSha256: nextDatasetHash,
         reference: nextConfig.rotation === "reference" ? rotationReference : null,
         onProgress: ({ progress: nextProgress, stage }) => {
           setProgress(Math.round(nextProgress * 100));
@@ -1147,25 +1354,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         },
       });
       if (controller.signal.aborted || datasetGenerationRef.current !== analysisGeneration) return;
-      setResult({
-        ...nextResult,
-        provenanceBinding: {
-          datasetNormalizedUtf8TextSha256: nextDatasetHash ?? "",
-          datasetHashKind: nextDataset.hashKind,
-          configuration: {
-            ...nextConfig,
-            unitColumns: [...nextConfig.unitColumns],
-            conversationColumns: [...nextConfig.conversationColumns],
-            codes: [...nextConfig.codes],
-          },
-        },
-      });
-      setResultConfig({
-        ...nextConfig,
-        unitColumns: [...nextConfig.unitColumns],
-        conversationColumns: [...nextConfig.conversationColumns],
-        codes: [...nextConfig.codes],
-      });
+      setResult(nextResult);
+      setResultConfig(cloneOpenEnaConfig(nextResult.provenanceBinding!.configuration));
       const [x = "SVD1", y = "SVD2", z = y] = nextResult.dimensions;
       setXDimension(x);
       setYDimension(y);
@@ -1217,7 +1407,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       setLoading(false);
       setDataset(nextDataset);
       setDatasetHash(nextHash);
-      setConfig(SAMPLE_CONFIG);
+      installAnalysisConfig(SAMPLE_CONFIG);
       setCodeColors({});
       setResult(null);
       setResultConfig(null);
@@ -1264,7 +1454,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       setLoading(false);
       setDataset(nextDataset);
       setDatasetHash(nextHash);
-      setConfig(TRAJECTORY_SAMPLE_CONFIG);
+      installAnalysisConfig(TRAJECTORY_SAMPLE_CONFIG);
       setCodeColors({});
       setResult(null);
       setResultConfig(null);
@@ -1318,7 +1508,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       setLoading(false);
       setDataset(nextDataset);
       setDatasetHash(nextHash);
-      setConfig(inferConfig(nextDataset));
+      installAnalysisConfig(inferConfig(nextDataset));
       setCodeColors({});
       setResult(null);
       setResultConfig(null);
@@ -1341,6 +1531,11 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
 
   async function openReferenceRotation(file: File) {
     if (sourceAbortRef.current) return;
+    if (currentAnalysisKind === "ona") {
+      setError(copy.ona.unavailable.reference);
+      setMode("model");
+      return;
+    }
     const importToken = {};
     referenceImportRef.current = importToken;
     setReferenceBusy(true);
@@ -1355,7 +1550,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       const reference = parseRotationReference(text, file.name);
       if (referenceImportRef.current !== importToken) return;
       setRotationReference(reference);
-      setConfig((current) => {
+      updateConfig((current) => {
         const hasReferenceCodes = reference.compatibility.codes.every((code) => dataset?.headers.includes(code));
         return {
           ...current,
@@ -1393,6 +1588,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   }
 
   function selectVisualizationView(nextView: OpenEnaView) {
+    if (nextView === "3d" && completedResultKind === "ona") {
+      setError(copy.ona.unavailable.threeD);
+      return;
+    }
     setView(nextView);
     setCenterSurface("plot");
   }
@@ -1459,12 +1658,13 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     const source = plotSvgRef.current;
     if (!source) return null;
     const clone = source.cloneNode(true) as SVGSVGElement;
-    if (!showUnitLabels) {
-      clone.querySelectorAll<SVGGElement>("[data-ena-unit-point='true']").forEach((unitPoint, index) => {
+    if (completedResultKind === "ona" || !showUnitLabels) {
+      clone.querySelectorAll<SVGGElement>("[data-ena-unit-point='true'], [data-ona-unit-point='true']").forEach((unitPoint, index) => {
         unitPoint.setAttribute("aria-label", `Analytic unit point ${index + 1}; identifier omitted from this SVG export.`);
         unitPoint.querySelectorAll("title").forEach((title) => {
           title.textContent = `Analytic unit point ${index + 1}; identifier omitted from this SVG export.`;
         });
+        unitPoint.querySelectorAll(".ena-set-unit-label").forEach((label) => label.remove());
       });
     }
     clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
@@ -1497,6 +1697,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       .ena-longitudinal-node circle:nth-child(2) { fill: #385b58; }
       .ena-longitudinal-node text, .ena-longitudinal-node-label, .ena-longitudinal-period-label { fill: #263f43; paint-order: stroke; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; font-size: 13px; font-weight: 730; }
       .ena-longitudinal-period-label { font-family: monospace; font-size: 12px; }
+      .ona-zero-axes line { stroke: #8b999f; stroke-width: 1.15; stroke-dasharray: 4 5; }
+      .ona-zero-axes text { fill: #50646a; font-size: 13px; font-weight: 690; }
+      .ona-code-node .ena-set-result-label { fill: #263740; paint-order: stroke; stroke: #fff; stroke-linejoin: round; stroke-width: 4px; font-size: 13px; font-weight: 740; }
+      .ona-directed-edge path[data-ona-edge-hit-target='true'] { stroke: transparent; }
     `;
     clone.insertBefore(styles, clone.firstChild);
     return `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(clone)}\n`;
@@ -1565,6 +1769,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       && result
       && resultConfig
       && result.set.modelType === "EndPoint"
+      && completedResultKind !== "ona"
       && !resultIsStale
       && !loading
       && !sourceBusy
@@ -1798,7 +2003,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             type="button"
             className="ena-action-button ena-action-secondary"
             onClick={() => referenceInputRef.current?.click()}
-            disabled={sourceBusy || referenceBusy || loading}
+            disabled={currentAnalysisKind === "ona" || sourceBusy || referenceBusy || loading}
+            title={currentAnalysisKind === "ona" ? copy.ona.unavailable.reference : undefined}
           >
             Import reference rotation
           </button>
@@ -1860,6 +2066,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       && !config.conversationColumns.includes(header)
       && header !== config.groupColumn
     ));
+    const directionalMask = currentAnalysisKind === "ona"
+      ? reconcileDirectionalMask(config.directionalMask, config.codes)
+      : null;
 
     function handleModelTabKeyDown(
       event: React.KeyboardEvent<HTMLButtonElement>,
@@ -1901,7 +2110,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           <p className="ena-panel-kicker">02 · Model</p>
           <h2>{copy.model.title}</h2>
           <p>{dataset?.source === "sample" ? "Teaching Sample · jENA model configuration" : copy.model.description}</p>
-          {dataset ? (
+          {dataset && currentAnalysisKind === "ena" ? (
             <button
               type="button"
               className="ena-action-button ena-action-secondary ena-trajectory-model-shortcut"
@@ -1919,6 +2128,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             </button>
           ) : null}
         </div>
+        <OpenEnaAnalysisFamilyControl
+          value={currentAnalysisKind}
+          onChange={selectAnalysisFamily}
+          copy={copy.ona.family}
+          disabled={!dataset || loading || sourceBusy || referenceBusy}
+        />
         <div className="ena-model-tabs" role="tablist" aria-label="Model configuration">
           {modelTabs.map((tab) => (
             <button
@@ -2020,7 +2235,23 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               ) : null}
 
               {modelTab === "windows" ? (
-                <>
+                currentAnalysisKind === "ona" ? (
+                  <OpenEnaOrderPanel
+                    value={onaOrderPanelDraft}
+                    onChange={updateOnaOrderPanel}
+                    rows={dataset.rows}
+                    unitColumns={config.unitColumns}
+                    horizonColumns={config.conversationColumns}
+                    columnOptions={headers
+                      .filter((header) => !config.codes.includes(header))
+                      .map((header) => ({ value: header, label: header }))}
+                    copy={copy.ona.order}
+                    disabled={loading || sourceBusy || referenceBusy}
+                    finiteWindowFallback={Number.isSafeInteger(config.windowSizeBack)
+                      ? config.windowSizeBack
+                      : 2}
+                  />
+                ) : <>
                   <label className="ena-field">
                     <span>{copy.model.window}</span>
                     <select value={config.window} onChange={(event) => updateConfig((current) => ({ ...current, window: event.target.value as WindowType }))}>
@@ -2102,6 +2333,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               ) : null}
 
               {modelTab === "codes" ? (
+                <>
                 <fieldset className="ena-code-fieldset">
                   <legend>{copy.model.codes} <span>{config.codes.length}</span></legend>
                   <div className="ena-code-options">
@@ -2137,6 +2369,21 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     })}
                   </div>
                 </fieldset>
+                {directionalMask ? (
+                  <OpenEnaDirectionalMaskEditor
+                    id="open-ena-ona-directional-mask"
+                    open={directionalMaskOpen}
+                    onOpenChange={setDirectionalMaskOpen}
+                    value={directionalMask}
+                    onChange={(nextMask) => updateConfig((current) => ({
+                      ...current,
+                      directionalMask: nextMask,
+                    }))}
+                    copy={copy.ona.mask}
+                    disabled={loading || sourceBusy || referenceBusy}
+                  />
+                ) : null}
+                </>
               ) : null}
             </section>
 
@@ -2144,7 +2391,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               <ul className="ena-validation-list">{configErrors.map((item) => <li key={item}>{item}</li>)}</ul>
             ) : <div className="ena-valid-state"><span aria-hidden="true">✓</span>{copy.model.valid}</div>}
             <button type="button" className="ena-action-button ena-action-primary ena-run-button" disabled={!canRun} onClick={() => void runAnalysis()}>
-              {result ? copy.model.rerun : copy.model.run} <span aria-hidden="true">→</span>
+              {currentAnalysisKind === "ona"
+                ? result ? copy.ona.rerun : copy.ona.run
+                : result ? copy.model.rerun : copy.model.run} <span aria-hidden="true">→</span>
             </button>
           </div>
         )}
@@ -2388,10 +2637,70 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       <div className="ena-control-content">
         <div className="ena-panel-heading">
           <p className="ena-panel-kicker">03 · Presenter</p>
-          <h2>{copy.plot.title}</h2>
-          <p>{copy.plot.description}</p>
+          <h2>{completedResultKind === "ona" ? copy.ona.presenter.title : copy.plot.title}</h2>
+          <p>{completedResultKind === "ona" ? copy.ona.presenter.description : copy.plot.description}</p>
         </div>
         <div className="ena-form-stack">
+          {completedResultKind === "ona" ? (<>
+            <section className="ena-ordered-presenter-boundary" role="note">
+              <strong>{copy.ona.layout.directionGuide}</strong>
+              <p>{copy.ona.presenter.directionBoundary}</p>
+              <p>{copy.ona.layout.descriptiveBoundary}</p>
+            </section>
+            {result && result.groups.length >= 2 ? (
+              <section
+                className="ena-group-contrast-controls ena-ona-descriptive-group-controls"
+                aria-label={copy.ona.presenter.groupPanelsTitle}
+                data-testid="open-ena-ona-descriptive-group-controls"
+              >
+                <div className="ena-group-contrast-heading">
+                  <h3>{copy.ona.presenter.groupPanelsTitle}</h3>
+                  <p>{copy.ona.presenter.groupPanelsDescription}</p>
+                </div>
+                <div className="ena-two-fields">
+                  <label className="ena-field">
+                    <span>{copy.ona.layout.primaryPlot}</span>
+                    <select
+                      value={primaryGroupName || result.groups[0]?.name || ""}
+                      onChange={(event) => {
+                        const nextPrimary = event.target.value;
+                        setPrimaryGroupName(nextPrimary);
+                        if (secondaryGroupName === nextPrimary) {
+                          setSecondaryGroupName(result.groups.find((group) => group.name !== nextPrimary)?.name ?? "");
+                        }
+                      }}
+                    >
+                      {result.groups.map((group) => (
+                        <option key={group.name} value={group.name} disabled={group.name === secondaryGroupName}>
+                          {group.name} · n = {group.count}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="ena-field">
+                    <span>{copy.ona.layout.secondaryPlot}</span>
+                    <select
+                      value={secondaryGroupName || result.groups[1]?.name || ""}
+                      onChange={(event) => {
+                        const nextSecondary = event.target.value;
+                        setSecondaryGroupName(nextSecondary);
+                        if (primaryGroupName === nextSecondary) {
+                          setPrimaryGroupName(result.groups.find((group) => group.name !== nextSecondary)?.name ?? "");
+                        }
+                      }}
+                    >
+                      {result.groups.map((group) => (
+                        <option key={group.name} value={group.name} disabled={group.name === primaryGroupName}>
+                          {group.name} · n = {group.count}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <p className="ena-sets-compatibility-note">{copy.ona.layout.descriptiveBoundary}</p>
+              </section>
+            ) : null}
+          </>) : <>
           {renderLongitudinalPanel()}
           <section
             className="ena-group-contrast-controls"
@@ -2510,6 +2819,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               <button type="button" aria-pressed={displayedComparisonSurface === "sets"} onClick={() => setActiveComparisonSurface("sets")}>Captured sets</button>
             </div>
           ) : null}
+          </>}
           <div className="ena-switch-stack">
             {([
               [showPoints, updatePointVisibility, copy.plot.showPoints],
@@ -2581,6 +2891,17 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   }
 
   function renderAiPanel() {
+    if (capabilityAnalysisKind === "ona") {
+      return (
+        <div className="ena-control-content ena-ai-mode-panel">
+          <div className="ena-panel-heading">
+            <p className="ena-panel-kicker">AI</p>
+            <h2>{copy.aiInterpretation.title}</h2>
+            <p>{copy.ona.unavailable.ai}</p>
+          </div>
+        </div>
+      );
+    }
     const aiReady = Boolean(
       result
       && !resultIsStale
@@ -2642,6 +2963,107 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   }
 
   function renderStatsPanel() {
+    if (completedResultKind === "ona") {
+      if (!result || !resultConfig) {
+        return (
+          <div className="ena-control-content">
+            <div className="ena-panel-heading">
+              <p className="ena-panel-kicker">ONA</p>
+              <h2>{copy.ona.stats.title}</h2>
+              <p>{copy.workspace.emptyText}</p>
+            </div>
+          </div>
+        );
+      }
+      const selectedGroup = onaStatsContext === "primary"
+        ? primaryGroupName || result.groups[0]?.name
+        : onaStatsContext === "secondary"
+          ? secondaryGroupName || result.groups[1]?.name
+          : null;
+      const scope = selectedGroup
+        ? { kind: "group" as const, name: selectedGroup }
+        : { kind: "overall" as const };
+      const contextOptions = [
+        { value: "comparison" as const, label: copy.ona.dataView.overall },
+        ...(result.groups[0]
+          ? [{ value: "primary" as const, label: `${copy.ona.dataView.primary} · ${primaryGroupName || result.groups[0].name}` }]
+          : []),
+        ...(result.groups[1]
+          ? [{ value: "secondary" as const, label: `${copy.ona.dataView.secondary} · ${secondaryGroupName || result.groups[1].name}` }]
+          : []),
+      ];
+      const exportAggregate = () => {
+        try {
+          const exported = buildOpenEnaOnaAggregateEdgeExport({ result, config: resultConfig, scope });
+          downloadText(
+            `open-ena-ona-${scope.kind === "group" ? "group-" : "overall-"}${Date.now()}-aggregate-edges.csv`,
+            exported.csv,
+            "text/csv;charset=utf-8",
+          );
+        } catch (caught) {
+          setError(caught instanceof Error ? caught.message : String(caught));
+        }
+      };
+      const exportAudit = () => {
+        if (!window.confirm(copy.ona.exports.auditConfirmation)) return;
+        try {
+          const exported = buildOpenEnaOnaDeidentifiedAuditExport({ result, config: resultConfig });
+          downloadText(
+            `open-ena-ona-${Date.now()}-deidentified-audit.csv`,
+            exported.csv,
+            "text/csv;charset=utf-8",
+          );
+        } catch (caught) {
+          setError(caught instanceof Error ? caught.message : String(caught));
+        }
+      };
+
+      return (
+        <div className="ena-control-content ena-ona-stats-panel">
+          <div className="ena-panel-heading">
+            <p className="ena-panel-kicker">{copy.ona.workspace.statsKicker}</p>
+            <h2>{copy.ona.stats.title}</h2>
+            <p>{copy.ona.stats.descriptiveBoundary}</p>
+          </div>
+          <label className="ena-field ena-ona-stats-scope">
+            <span>{copy.ona.exports.scopeLabel}</span>
+            <select
+              value={onaStatsContext}
+              onChange={(event) => setOnaStatsContext(event.currentTarget.value as OpenEnaDataViewContext)}
+            >
+              {contextOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <OpenEnaOnaStats
+            result={result}
+            config={resultConfig}
+            scope={scope}
+            copy={copy.ona.stats}
+          />
+          <section className="ena-ona-export-panel" aria-labelledby="open-ena-ona-export-title">
+            <header>
+              <h3 id="open-ena-ona-export-title">{copy.ona.exports.title}</h3>
+              <p>{copy.ona.exports.description}</p>
+            </header>
+            <div>
+              <button type="button" className="ena-action-button ena-action-secondary" onClick={exportAggregate}>
+                {copy.ona.exports.aggregateLabel} ↓
+              </button>
+              <p>{copy.ona.exports.aggregateDescription}</p>
+            </div>
+            <div>
+              <button type="button" className="ena-action-button ena-action-secondary" onClick={exportAudit}>
+                {copy.ona.exports.auditLabel} ↓
+              </button>
+              <p>{copy.ona.exports.auditDescription}</p>
+            </div>
+            <p className="ena-ona-export-warning" role="note">{copy.ona.exports.auditWarning}</p>
+          </section>
+        </div>
+      );
+    }
     const manifestConfig = resultConfig ?? config;
     const statsTabs = [
       { id: "comparison", label: copy.stats.tabs.comparison },
@@ -2963,7 +3385,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                           edgeScale,
                           pointScale,
                           plotZoom,
-                          selectedGroupOrder: groupContrast?.groupOrder,
+                          selectedGroupOrder: selectedPresentationGroupOrder,
                           groupContrast,
                           inference: currentInference,
                           inferenceContext: inferenceProducerContext ?? undefined,
@@ -3167,6 +3589,18 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
 
   function renderResultData() {
     const rows = dataViewModel.rows;
+    const ordered = completedResultKind === "ona";
+    const contextOptions = ordered
+      ? [
+          { value: "comparison" as const, label: copy.ona.dataView.overall },
+          ...(result?.groups[0]
+            ? [{ value: "primary" as const, label: `${copy.ona.dataView.primary} · ${primaryGroupName || result.groups[0].name}` }]
+            : []),
+          ...(result?.groups[1]
+            ? [{ value: "secondary" as const, label: `${copy.ona.dataView.secondary} · ${secondaryGroupName || result.groups[1].name}` }]
+            : []),
+        ]
+      : undefined;
     return (
       <OpenEnaDataView
         columns={dataViewModel.columns}
@@ -3174,14 +3608,55 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         context={dataViewContext}
         onContextChange={setDataViewContext}
         onReturnToComparison={() => setCenterSurface("plot")}
-        onExportCsv={() => downloadText(
-          `open-ena-${Date.now()}-data-view.csv`,
-          rowsToCsv(rows.map((row) => Object.fromEntries(
-            Object.entries(row.values).map(([key, value]) => [key, value ?? null]),
-          ) as Row)),
-          "text/csv;charset=utf-8",
-        )}
-        emptyMessage="No derived Data View records are available for this plot context."
+        onExportCsv={() => {
+          if (ordered && !window.confirm(copy.ona.dataView.exportConfirmation)) return;
+          const exportRows = ordered
+            ? buildOpenEnaDataViewExportRows({
+                columns: dataViewModel.columns,
+                rows,
+                groupLabels: {
+                  provenance: copy.ona.dataView.provenanceGroup,
+                  metadata: copy.ona.dataView.metadataGroup,
+                  code: copy.ona.dataView.codeGroup,
+                  "directed-edge": copy.ona.dataView.directedEdgeGroup,
+                },
+              })
+            : rows.map((row) => row.values as Row);
+          downloadText(
+            `open-ena-${ordered ? "ona-local-" : ""}${Date.now()}-data-view.csv`,
+            rowsToCsv(exportRows),
+            "text/csv;charset=utf-8",
+          );
+        }}
+        contextOptions={contextOptions}
+        notice={ordered ? copy.ona.dataView.localIdentityWarning : undefined}
+        copy={ordered ? {
+          ariaLabel: copy.ona.dataView.ariaLabel,
+          title: copy.ona.dataView.title,
+          returnLabel: copy.ona.dataView.returnLabel,
+          returnAriaLabel: copy.ona.dataView.returnAriaLabel,
+          contextLabel: copy.ona.dataView.contextLabel,
+          record: copy.ona.dataView.record,
+          records: copy.ona.dataView.records,
+          exportLabel: copy.ona.dataView.exportLabel,
+          exportAriaLabel: copy.ona.dataView.exportAriaLabel,
+          tableAriaLabel: copy.ona.dataView.tableAriaLabel,
+          previousPage: copy.ona.dataView.previousPage,
+          nextPage: copy.ona.dataView.nextPage,
+          rowsShown: copy.ona.dataView.rowsShown,
+          columnsShown: copy.ona.dataView.columnsShown,
+          rowPaginationLabel: copy.ona.dataView.rowPaginationLabel,
+          columnPaginationLabel: copy.ona.dataView.columnPaginationLabel,
+          provenanceGroup: copy.ona.dataView.provenanceGroup,
+          metadataGroup: copy.ona.dataView.metadataGroup,
+          codeGroup: copy.ona.dataView.codeGroup,
+          directedEdgeGroup: copy.ona.dataView.directedEdgeGroup,
+          yes: copy.ona.dataView.yes,
+          no: copy.ona.dataView.no,
+        } : undefined}
+        exportClassification={ordered ? "local-identity-bearing-view" : "derived"}
+        emptyMessage={dataViewModel.error
+          ?? (ordered ? copy.ona.dataView.empty : "No derived Data View records are available for this plot context.")}
       />
     );
   }
@@ -3199,6 +3674,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             : renderAiPanel();
   const persistentPlotTools = (
     <OpenEnaPersistentPlotTools
+      analysisKind={completedResultKind ?? "ena"}
+      title={completedResultKind === "ona" ? copy.ona.presenter.title : "Plot Tools"}
+      copy={completedResultKind === "ona" ? copy.ona.plotTools : undefined}
       edgeScale={edgeScale}
       edgeThreshold={edgeThreshold}
       pointScale={pointScale}
@@ -3242,11 +3720,15 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             <div className="ena-rail-brand" data-ena-rail-brand="true" aria-label="ENA.HK Open ENA">
               <span className="ena-mini-mark" aria-hidden="true"><img src="/ena-mark.svg" alt="" /></span>
               <span className="ena-rail-product">OPEN ENA</span>
-              <span
+              <a
                 className="ena-rail-version"
                 data-ena-rail-version="true"
-                title={`ENA computation powered by jENA v${JENA_RUNTIME_VERSION} (GPL-3.0-only)`}
-              >jENA {JENA_RUNTIME_VERSION}</span>
+                href={JENA_SOURCE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={copy.workspace.jenaSourceAriaLabel(JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT.slice(0, 7))}
+                title={copy.workspace.jenaSourceAriaLabel(JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT.slice(0, 7))}
+              >jENA {JENA_RUNTIME_VERSION} · {copy.workspace.jenaSourceLabel}</a>
             </div>
             <div className="ena-rail-modes">
               {(Object.keys(copy.modes) as OpenEnaMode[]).map((item) => (
@@ -3256,7 +3738,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   className="ena-rail-button"
                   aria-current={mode === item ? "step" : undefined}
                   aria-label={item === "ai" ? copy.aiInterpretation.title : copy.modes[item]}
-                  title={item === "ai" ? copy.aiInterpretation.title : copy.modes[item]}
+                  title={onaCapabilityDisabled && (item === "sets" || item === "ai")
+                    ? item === "sets" ? copy.ona.unavailable.sets : copy.ona.unavailable.ai
+                    : item === "ai" ? copy.aiInterpretation.title : copy.modes[item]}
+                  disabled={onaCapabilityDisabled && (item === "sets" || item === "ai")}
                   onClick={() => setMode(item)}
                 >
                   {modeIcons[item]}
@@ -3317,7 +3802,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           >
             <div className={`ena-visual-toolbar${view === "2d" && activeGroupContrast ? " ena-visual-toolbar-group-contrast" : ""}`}>
               <div>
-                <p>{view === "3d" && result
+                <p>{completedResultKind === "ona"
+                  ? copy.ona.layout.overallPlot
+                  : view === "3d" && result
                   ? activeGroupContrast
                     ? `${copy.workspace.comparison} · ${copy.views.threeD}`
                     : copy.views.threeD
@@ -3328,7 +3815,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     : activeLongitudinalView
                       ? copy.longitudinal.title
                       : copy.workspace.comparison}</p>
-                <span>{view === "3d" && result
+                <span>{completedResultKind === "ona"
+                  ? `${resultUnitCount} ${copy.workspace.units.toLowerCase()} · ${result?.set.codes.length ?? 0} ${copy.workspace.codes.toLowerCase()} · ${copy.ona.workspace.directedSpace}`
+                  : view === "3d" && result
                   ? activeGroupContrast
                     ? `${activeGroupContrast.primary.name} − ${activeGroupContrast.secondary.name} · ${xDimension} × ${yDimension} × ${zDimension} · linked camera`
                     : `${xDimension} × ${yDimension} × ${zDimension} · ${copy.plot.sameFittedSpace}`
@@ -3348,24 +3837,30 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   className="ena-compact-toolbar-button"
                   data-testid="open-ena-data-view-toggle"
                   aria-pressed={centerSurface === "data"}
-                  disabled={view === "3d" || !activeGroupContrast}
+                  disabled={view === "3d" || (!activeGroupContrast && completedResultKind !== "ona")}
                   onClick={() => {
                     setDataViewContext("comparison");
                     setCenterSurface((current) => current === "data" ? "plot" : "data");
                   }}
                 >
-                  <span aria-hidden="true">▦</span>{centerSurface === "data" ? "Comparison Plot" : "Data View"}
+                  <span aria-hidden="true">▦</span>{centerSurface === "data"
+                    ? completedResultKind === "ona" ? copy.ona.layout.overallPlot : "Comparison Plot"
+                    : completedResultKind === "ona" ? copy.ona.dataView.title : "Data View"}
                 </button>
                 <div className="ena-analysis-toolbar-cluster">
                   <div className="ena-view-toggle" role="group" aria-label="ENA visualization options">
                     <button type="button" aria-pressed={view === "2d"} onClick={() => selectVisualizationView("2d")}>
-                      <strong>{copy.views.twoD}</strong>
+                      <strong>{completedResultKind === "ona" ? copy.ona.workspace.twoD : copy.views.twoD}</strong>
                     </button>
                     <button
                       type="button"
                       aria-pressed={view === "3d"}
                       onClick={() => selectVisualizationView("3d")}
-                      aria-label={`${copy.views.threeD}. ${copy.plot.threeDInteractionHint}`}
+                      disabled={completedResultKind === "ona"}
+                      title={completedResultKind === "ona" ? copy.ona.unavailable.threeD : undefined}
+                      aria-label={completedResultKind === "ona"
+                        ? copy.ona.unavailable.threeD
+                        : `${copy.views.threeD}. ${copy.plot.threeDInteractionHint}`}
                     >
                       <strong>{copy.views.threeD}</strong>
                     </button>
@@ -3376,6 +3871,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     disabled={!dataset || !result || !resultConfig}
                     onClick={() => {
                       if (dataset && result && resultConfig) {
+                        if (completedResultKind === "ona"
+                          && !window.confirm(copy.ona.exports.bundleConfirmation)) return;
                         downloadJson(
                           `open-ena-${Date.now()}-results.json`,
                           buildAnalysisBundle(dataset, resultConfig, result, datasetHash, {
@@ -3394,7 +3891,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                             edgeScale,
                             pointScale,
                             plotZoom,
-                            selectedGroupOrder: groupContrast?.groupOrder,
+                            selectedGroupOrder: selectedPresentationGroupOrder,
                             groupContrast,
                             inference: currentInference,
                             inferenceContext: inferenceProducerContext ?? undefined,
@@ -3408,7 +3905,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                       <path d="M14 3H7.5A1.5 1.5 0 0 0 6 4.5v15A1.5 1.5 0 0 0 7.5 21h9a1.5 1.5 0 0 0 1.5-1.5V7l-4-4Z" />
                       <path d="M14 3v4h4M12 10v7m-3-3 3 3 3-3" />
                     </svg>
-                    Download Model
+                    {completedResultKind === "ona" ? copy.ona.workspace.downloadBundle : "Download Model"}
                   </button>
                 </div>
               </div>
@@ -3481,7 +3978,54 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               </section>
             ) : null}
 
-            {activeSetComparison && view === "2d" ? (
+            {completedResultKind === "ona" && result && resultConfig ? (
+              <>
+              {resultIsStale ? (
+                <div className="ena-stale-banner" role="status">
+                  <strong>{copy.ona.workspace.staleTitle}</strong>
+                  <span>{copy.ona.workspace.staleDescription}</span>
+                </div>
+              ) : null}
+              {loading ? (
+                <div className="ena-inline-progress" role="status" aria-live="polite">
+                  <span>{copy.ona.workspace.rebuilding(progress, progressStage)}</span>
+                  <button type="button" onClick={() => abortRef.current?.abort()}>{copy.ona.workspace.cancel}</button>
+                </div>
+              ) : null}
+              <OpenEnaOrderedResultLayout
+                result={result}
+                config={resultConfig}
+                primaryGroupName={primaryGroupName || null}
+                secondaryGroupName={secondaryGroupName || null}
+                centerMode={centerSurface}
+                dataView={centerSurface === "data" ? (
+                  <div data-testid="open-ena-center-data-view">
+                    {renderResultData()}
+                  </div>
+                ) : null}
+                rightTools={persistentPlotTools}
+                xDimension={xDimension}
+                yDimension={yDimension}
+                edgeThreshold={edgeThreshold}
+                edgeScale={edgeScale}
+                pointScale={pointScale}
+                textScale={textScale}
+                plotZoom={plotZoom}
+                flipX={flipX}
+                flipY={flipY}
+                showPoints={showPoints}
+                showNetworks={showNetworks}
+                showLabels={showLabels}
+                showUnitLabels={showUnitLabels}
+                showVariance={showVariance}
+                codeColors={codeColors}
+                nodeTotals={result.orderedResponseNodeSummary}
+                copy={copy.ona.layout}
+                plotCopy={copy.ona.plot}
+                svgRef={plotSvgRef}
+              />
+              </>
+            ) : activeSetComparison && view === "2d" ? (
               <OpenEnaSetComparison
                 codeColors={codeColors}
                 comparison={activeSetComparison}
@@ -3664,7 +4208,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     svgRef={plotSvgRef}
                   />
                 )}
-                {view === "2d" && showNetworks && !activeGroupContrast && !activeLongitudinalView ? (
+                {completedResultKind !== "ona" && view === "2d" && showNetworks && !activeGroupContrast && !activeLongitudinalView ? (
                   <section className="ena-group-networks" aria-labelledby="ena-group-networks-title">
                     <div className="ena-subpanel-title"><h2 id="ena-group-networks-title">{copy.workspace.groupNetworks}</h2><span>Shared {xDimension} × {yDimension} space</span></div>
                     <div className="ena-group-network-grid">

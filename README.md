@@ -45,7 +45,7 @@ The researcher workspace currently provides:
 - an optional, researcher-triggered GPT-5.6 Luna interpretation of a reviewed, anonymized aggregate evidence request through a server-only OpenRouter connection;
 - inspectable and downloadable coordinates, pre-normalization connection counts, line weights, centroids, node positions, adjacency keys, a derived analysis bundle with the full rotation set, a reusable reference-rotation package, and an analysis manifest.
 
-Open ENA follows the pinned jENA 0.6.2 plotting defaults for scientific data
+Open ENA follows the pinned jENA 0.7.0-ona.0 plotting defaults for scientific data
 marks: the first/positive network is blue (`#3366cc`), the second/negative
 network is red (`#dc3912`), and network edges and trajectory paths are solid.
 Marker shapes, signed values, accessible labels, and tables provide redundant
@@ -130,7 +130,7 @@ normalization, and zero-network handling. The reference center, axes, and node
 positions stay fixed. Variance reported for the projected result describes the new
 dataset in that fixed basis and must not be interpreted as the fitted reference
 sample's explained variance. Reference-projected point-centroid correlations and
-target-fitted centroid exports are withheld because jENA 0.6.2 retains target-fitted
+target-fitted centroid exports are withheld because jENA 0.7.0-ona.0 retains target-fitted
 centroids while the displayed nodes are fixed from the imported reference. Reference
 packages preserve whether the fitted axis was SVD or MR1 and, for MR1, the defining
 comparison field and group order.
@@ -210,7 +210,7 @@ local abuse-control layer and is not a distributed deployment quota.
 
 ## Open-source distribution gate
 
-`jena-js` 0.6.2 is licensed `GPL-3.0-only` and is bundled into the browser-facing
+`jena-js` 0.7.0-ona.0 is licensed `GPL-3.0-only` and is bundled into the browser-facing
 Open ENA application. Before publishing this feature, the repository owner must
 record and implement a GPL-3-compliant source-distribution and site-licensing plan,
 or obtain qualified licensing advice and permissions covering every relevant
