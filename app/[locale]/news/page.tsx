@@ -52,7 +52,7 @@ export default async function NewsPage({ params, searchParams }: NewsPageProps) 
   });
 
   return (
-    <div className="interior-page collection-page news-page">
+    <div className="interior-page collection-page news-page premium-public-page premium-collection-page">
       <section className="news-hero">
         <div className="container news-hero-grid">
           <div className="news-hero-copy">

@@ -31,7 +31,7 @@ export default async function MissionPage({ params }: MissionPageProps) {
   const dictionary = getDictionary(typedLocale);
 
   return (
-    <div className="interior-page">
+    <div className="interior-page premium-public-page premium-mission">
       <PageHero
         eyebrow={dictionary.mission.eyebrow}
         title={dictionary.mission.title}

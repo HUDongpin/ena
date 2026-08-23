@@ -56,7 +56,7 @@ export default async function TopicPage({ params }: TopicPageProps) {
   ]);
 
   return (
-    <div className="news-topic-page">
+    <div className="news-topic-page premium-public-page premium-topic-page">
       <JsonLd data={breadcrumb} />
       <section className="container news-topic-inner">
         <Link href={`/${typedLocale}/news`} prefetch={false} className="news-back-link">

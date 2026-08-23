@@ -101,7 +101,7 @@ export default async function AcademyDetailPage({ params }: AcademyDetailPagePro
   ]);
 
   return (
-    <div className="academy-detail-page">
+    <div className="academy-detail-page premium-public-page premium-detail-page">
       <JsonLd data={[jsonLd, breadcrumb]} />
       <article className="container news-detail-article academy-detail-article">
         <Link href={`/${typedLocale}/academy`} prefetch={false} className="news-back-link">

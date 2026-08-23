@@ -93,7 +93,7 @@ export default async function NewsDetailPage({ params }: NewsDetailPageProps) {
   ]);
 
   return (
-    <div className="news-detail-page">
+    <div className="news-detail-page premium-public-page premium-detail-page">
       <JsonLd data={[jsonLd, breadcrumb]} />
       <article className="container news-detail-article">
         <Link href={`/${typedLocale}/news`} prefetch={false} className="news-back-link">

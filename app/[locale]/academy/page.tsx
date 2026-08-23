@@ -58,7 +58,7 @@ export default async function AcademyPage({ params, searchParams }: AcademyPageP
   });
 
   return (
-    <div className="interior-page collection-page academy-page">
+    <div className="interior-page collection-page academy-page premium-public-page premium-collection-page">
       <section className="news-hero academy-hero">
         <div className="container news-hero-grid">
           <div className="news-hero-copy">
