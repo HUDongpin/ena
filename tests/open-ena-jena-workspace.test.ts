@@ -9,7 +9,7 @@ const projectRoot = process.cwd();
 const snapshotRoot = join(projectRoot, "packages", "jena-js");
 const expectedVersion = "0.7.0-ona.0";
 const historicalSnapshotAnchor = "303a12f549ef9e1914cec10d6e9e1b842dad8908";
-const expectedSourceSha = "8a1306c9b1d8bd7a7c9203e4ab96055ba67d4e6d";
+const expectedSourceSha = "90790856f00bdef63dbd27fc3a5b502e8cffe65f";
 const expectedCanonicalMergeSha = "90790856f00bdef63dbd27fc3a5b502e8cffe65f";
 const expectedSourceUrl = `https://github.com/HUDongpin/jENA/tree/${expectedSourceSha}`;
 const expectedLicenseSha256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986";
@@ -42,7 +42,7 @@ test("Open ENA consumes the reviewed jENA source snapshot as an exact-version np
   assert.match(rootPackage.scripts?.["jena:verify"] ?? "", /lint --workspace=jena-js/);
   assert.match(rootPackage.scripts?.["jena:verify"] ?? "", /test:pack-contract --workspace=jena-js/);
   assert.match(rootPackage.scripts?.["jena:verify"] ?? "", /pack:check --workspace=jena-js/);
-  assert.equal(rootPackage.scripts?.["test:app"], "tsx --test tests/*.test.ts");
+  assert.equal(rootPackage.scripts?.["test:app"], "node --import tsx --test tests/*.test.ts");
   assert.equal(rootPackage.scripts?.["typecheck:app"], "tsc --noEmit");
   assert.equal(rootPackage.scripts?.["build:app"], "next build");
   assert.equal(rootPackage.scripts?.dev, "npm run jena:build && next dev");

@@ -43,7 +43,6 @@ import {
   pairwiseGroupContrastEdgesToCsv,
 } from "@/lib/open-ena/contrasts";
 import {
-  buildLongitudinalDerivation,
   buildLongitudinalGroupCentroidExport,
   inferLongitudinalMappingDefaults,
   longitudinalInferenceRowsToCsv,
@@ -53,6 +52,7 @@ import {
   sliceLongitudinalRepeatedPeriods,
   OpenEnaLongitudinalIntegrityError,
   type OpenEnaLongitudinalCohortPolicy,
+  type OpenEnaLongitudinalDerivation,
 } from "@/lib/open-ena/longitudinal";
 import {
   OpenEnaInferenceIntegrityError,
@@ -119,6 +119,7 @@ import OpenEnaOnaStats from "./OpenEnaOnaStats";
 import { OpenEnaOrderPanel } from "./OpenEnaOrderPanel";
 import OpenEnaGroupContrast from "./OpenEnaGroupContrast";
 import OpenEnaLongitudinalTrajectory from "./OpenEnaLongitudinalTrajectory";
+import OpenEnaLongitudinalWorkbenchV3 from "./OpenEnaLongitudinalWorkbenchV3";
 import OpenEnaPersistentPlotTools from "./OpenEnaPersistentPlotTools";
 import OpenEnaSetComparison from "./OpenEnaSetComparison";
 import OpenEnaAiInterpretation from "./OpenEnaAiInterpretation";
@@ -498,46 +499,21 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     if (update.cohortPolicy !== undefined) setCohortPolicy(update.cohortPolicy);
   }
 
-  const longitudinalDerivationState = useMemo(() => {
+  const longitudinalDerivationState = useMemo<{
+    derivation: OpenEnaLongitudinalDerivation | null;
+    error: string | null;
+  }>(() => {
     if (!result || !resultConfig || !dataset) return { derivation: null, error: copy.longitudinal.unavailableModel };
     if (result.set.modelType === "EndPoint") return { derivation: null, error: copy.longitudinal.unavailableModel };
-    if (!repeatedEntityColumns.length) return { derivation: null, error: copy.longitudinal.unavailableEntity };
-    if (!timeColumn) return { derivation: null, error: copy.longitudinal.unavailableTime };
-    if (longitudinalTimeOrder.length < 1) return { derivation: null, error: copy.longitudinal.unavailablePeriods };
-    try {
-      return {
-        derivation: buildLongitudinalDerivation(
-          result,
-          resultConfig,
-          dataset,
-          {
-            repeatedEntityColumns,
-            identityConfirmed,
-            timeColumn,
-            timeOrder: longitudinalTimeOrder,
-            cohortPolicy,
-            axes: [xDimension, yDimension],
-            datasetNormalizedUtf8TextSha256: datasetHash,
-          },
-        ),
-        error: null,
-      };
-    } catch (caught) {
-      return { derivation: null, error: caught instanceof Error ? caught.message : String(caught) };
-    }
+    return {
+      derivation: null,
+      error: "Successful trajectory results are executed by the V3 task workbench; legacy V1/V2 readers remain read-only.",
+    };
   }, [
-    cohortPolicy,
     copy.longitudinal,
     dataset,
-    datasetHash,
-    identityConfirmed,
-    longitudinalTimeOrder,
-    repeatedEntityColumns,
     result,
     resultConfig,
-    timeColumn,
-    xDimension,
-    yDimension,
   ]);
   const longitudinalView = longitudinalTimeOrder.length >= 2
     ? longitudinalDerivationState.derivation?.view ?? null
@@ -3707,6 +3683,15 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       disabled={!result || loading}
     />
   );
+  const longitudinalV3Context = mode === "plot"
+    && completedResultKind === "ena"
+    && result
+    && resultConfig
+    && dataset
+    && datasetHash
+    && result.set.modelType !== "EndPoint"
+    ? { result, config: resultConfig, dataset, datasetHash }
+    : null;
 
   return (
     <div
@@ -3792,9 +3777,20 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             </div>
           </nav>
 
-          <aside className="ena-control-panel" data-ena-workbench-region="controls">
-            {panel}
-          </aside>
+          {longitudinalV3Context ? (
+            <OpenEnaLongitudinalWorkbenchV3
+              locale={locale}
+              result={longitudinalV3Context.result}
+              config={longitudinalV3Context.config}
+              dataset={longitudinalV3Context.dataset}
+              datasetHash={longitudinalV3Context.datasetHash}
+              modelResultStale={resultIsStale}
+            />
+          ) : (
+            <>
+              <aside className="ena-control-panel" data-ena-workbench-region="controls">
+                {panel}
+              </aside>
 
           <div className="ena-visual-workspace"
             data-ena-view={view}
@@ -4309,7 +4305,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               </section>
             )}
             {error ? <div className="ena-error-banner" role="alert"><strong>{copy.workspace.errorTitle}</strong><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Dismiss error">×</button></div> : null}
-          </div>
+              </div>
+            </>
+          )}
         </div>
       </section>
     </div>
