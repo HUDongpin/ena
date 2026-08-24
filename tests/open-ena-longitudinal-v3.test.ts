@@ -176,7 +176,10 @@ test("2D and 3D compile from the same bundle and never change the result hash", 
   for (const plot of [three, two]) {
     const centroids = plot.data.filter((trace) => trace.meta.role === "centroid");
     assert.ok(centroids.length > 0);
-    assert.ok(centroids.every((trace) => trace.marker?.size === 7));
+    assert.ok(centroids.every((trace) => {
+      const marker = trace.marker as { size?: number } | undefined;
+      return marker?.size === 7;
+    }));
   }
   assert.notDeepEqual(three.layout, two.layout);
   assert.equal(isOpenEnaLongitudinalBundleStaleV3(bundle, prepared.binding), false);
