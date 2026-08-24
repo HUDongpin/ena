@@ -532,7 +532,12 @@ async function authenticateAndRunTrajectory(page, args) {
   page.__openEnaLongitudinalPageErrors = [];
   page.on("console", (message) => {
     if (message.type() === "error") page.__openEnaLongitudinalConsoleErrors.push(message.text());
-    if (message.type() === "warning") page.__openEnaLongitudinalConsoleWarnings.push(message.text());
+    if (message.type() === "warning") {
+      page.__openEnaLongitudinalConsoleWarnings.push({
+        text: message.text(),
+        location: message.location(),
+      });
+    }
   });
   page.on("pageerror", (error) => {
     page.__openEnaLongitudinalPageErrors.push(error.message);
@@ -1028,6 +1033,10 @@ async function downloadAllArtifacts(page, args) {
 async function readBrowserErrors(page, args) {
   const currentHref = page.url();
   const currentOrigin = await page.evaluate(() => window.location.origin);
+  const plotly3dPresent = await page.evaluate(() => {
+    const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
+    return Array.isArray(root?.data) && root.data.some((trace) => trace.type === "scatter3d");
+  });
   const declaredFontPreloads = new Set(await page
     .locator('link[rel="preload"][as="font"][type="font/woff2"]')
     .evaluateAll((links) => links
@@ -1035,6 +1044,8 @@ async function readBrowserErrors(page, args) {
       .map((link) => link.href)));
   const strictNextFontPath = /^\/_next\/static\/media\/[a-f0-9]+-s\.p\.[a-z0-9]+\.woff2$/u;
   const strictFirefoxPreloadWarning = /^\[JavaScript Warning: "The resource at “([^”]+)” preloaded with link preload was not used within a few seconds\. Make sure all attributes of the preload tag are set correctly\." \{file: "([^"]+)" line: 0\}\]$/u;
+  const strictChromiumCanvasReadbackWarning = /^Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true\. See: https:\/\/html\.spec\.whatwg\.org\/multipage\/canvas\.html#concept-canvas-will-read-frequently$/u;
+  const strictChromiumChunkPath = /^\/_next\/static\/chunks\/[a-z0-9_-]+\.js$/u;
   const classifyNextFontPreloadDiagnostic = (warning) => {
     const match = warning.match(strictFirefoxPreloadWarning);
     if (!match) return null;
@@ -1047,20 +1058,45 @@ async function readBrowserErrors(page, args) {
     if (!declaredFontPreloads.has(resourceHref)) return null;
     return resourceHref;
   };
+  const classifyChromiumCanvasReadbackDiagnostic = (warning) => {
+    if (!["chromium", "chrome", "msedge"].includes(args.browser) || !plotly3dPresent) return null;
+    if (!strictChromiumCanvasReadbackWarning.test(warning.text)) return null;
+    let parsedSource;
+    try {
+      parsedSource = new URL(warning.location?.url || "");
+    } catch {
+      return null;
+    }
+    if (parsedSource.origin !== currentOrigin) return null;
+    if (!strictChromiumChunkPath.test(parsedSource.pathname)) return null;
+    if (!Number.isInteger(warning.location?.lineNumber) || warning.location.lineNumber < 0) return null;
+    if (!Number.isInteger(warning.location?.columnNumber) || warning.location.columnNumber < 0) return null;
+    return {
+      sourcePath: parsedSource.pathname,
+      lineNumber: warning.location.lineNumber,
+      columnNumber: warning.location.columnNumber,
+    };
+  };
   const allWarnings = [...(page.__openEnaLongitudinalConsoleWarnings || [])];
   const consoleWarnings = [];
   const nextFontPreloadDiagnosticUrls = [];
+  const canvas2dReadbackDiagnostics = [];
   let webglDiagnosticCount = 0;
   for (const warning of allWarnings) {
+    const warningText = typeof warning === "string" ? warning : warning.text;
     const isFirefoxWebglDiagnostic = args.browser === "firefox" && (
-      warning.includes("WebGL warning:")
-      || warning.includes("After reporting 32, no further warnings will be reported for this WebGL context")
+      warningText.includes("WebGL warning:")
+      || warningText.includes("After reporting 32, no further warnings will be reported for this WebGL context")
     );
     const nextFontUrl = args.browser === "firefox"
-      ? classifyNextFontPreloadDiagnostic(warning)
+      ? classifyNextFontPreloadDiagnostic(warningText)
+      : null;
+    const canvasReadbackDiagnostic = typeof warning === "object" && warning !== null
+      ? classifyChromiumCanvasReadbackDiagnostic(warning)
       : null;
     if (isFirefoxWebglDiagnostic) webglDiagnosticCount += 1;
     else if (nextFontUrl) nextFontPreloadDiagnosticUrls.push(nextFontUrl);
+    else if (canvasReadbackDiagnostic) canvas2dReadbackDiagnostics.push(canvasReadbackDiagnostic);
     else consoleWarnings.push(warning);
   }
   return {
@@ -1069,6 +1105,7 @@ async function readBrowserErrors(page, args) {
     platformDiagnostics: {
       nextFontPreloadDiagnosticUrls: [...new Set(nextFontPreloadDiagnosticUrls)].sort(),
       webglDiagnosticCount,
+      canvas2dReadbackDiagnostics,
     },
     pageErrors: [...(page.__openEnaLongitudinalPageErrors || [])],
   };
@@ -1206,9 +1243,24 @@ try {
   assert.deepEqual(browserErrors.consoleErrors, [], "browser console contains errors");
   assert.deepEqual(browserErrors.consoleWarnings, [], "browser console contains warnings");
   assert.deepEqual(browserErrors.pageErrors, [], "browser emitted page errors");
+  assert.ok(
+    browserErrors.platformDiagnostics.canvas2dReadbackDiagnostics.length <= 1,
+    "Chromium emitted repeated Plotly Canvas2D readback diagnostics",
+  );
   const cliConsole = runCli(["console", "error"], "read Playwright console summary");
   assert.match(cliConsole, /Errors:\s*0/u);
-  if (smokeBrowser !== "firefox") assert.match(cliConsole, /Warnings:\s*0/u);
+  const cliWarningMatch = cliConsole.match(/Warnings:\s*(\d+)/u);
+  assert.ok(cliWarningMatch, "Playwright console summary omitted its warning count");
+  const cliWarningCount = Number(cliWarningMatch[1]);
+  if (["chromium", "chrome", "msedge"].includes(smokeBrowser)) {
+    assert.equal(
+      cliWarningCount,
+      browserErrors.platformDiagnostics.canvas2dReadbackDiagnostics.length,
+      "Chromium emitted an unclassified console warning",
+    );
+  } else if (smokeBrowser !== "firefox") {
+    assert.equal(cliWarningCount, 0, "browser emitted an unclassified console warning");
+  }
 
   assert.equal(Object.keys(downloads).length, 7);
   const aggregate = extractAndVerifyBundle(downloads.bundle, "aggregate", false);

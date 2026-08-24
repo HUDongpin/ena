@@ -175,6 +175,19 @@ test("the summary records the invoked Playwright CLI and actual browser runtime 
   assert.match(source, /runtimeBrowserUserAgent:\s*browserRuntimeEvidence\.userAgent/u);
 });
 
+test("the Chromium Plotly Canvas2D advisory remains a strict auditable platform diagnostic", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /message\.location\(\)/u);
+  assert.match(source, /strictChromiumCanvasReadbackWarning/u);
+  assert.match(source, /strictChromiumChunkPath/u);
+  assert.match(source, /parsedSource\.origin !== currentOrigin/u);
+  assert.match(source, /canvas2dReadbackDiagnostics/u);
+  assert.match(source, /canvas2dReadbackDiagnostics\.length <= 1/u);
+  assert.match(source, /cliWarningCount/u);
+  assert.match(source, /browserErrors\.platformDiagnostics\.canvas2dReadbackDiagnostics\.length/u);
+  assert.doesNotMatch(source, /warning(?:Text)?\.includes\("Canvas2D/u);
+});
+
 test("the Next config permits a smoke-owned build directory so concurrent local servers do not share a lock", () => {
   const source = readFileSync(join(process.cwd(), "next.config.ts"), "utf8");
   assert.match(source, /process\.env\.NEXT_DIST_DIR/u);
