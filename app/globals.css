@@ -12419,10 +12419,14 @@ body:has(.open-ena-page) #main-content {
     display: grid;
   }
 
-  .ena-longitudinal-v3-plot-shell,
+  .ena-longitudinal-v3-plot-shell {
+    min-height: 535px;
+    height: 535px;
+  }
+
   .ena-longitudinal-v3-plot {
-    min-height: 360px;
-    height: 360px;
+    min-height: 480px;
+    height: 480px;
   }
 
   .ena-longitudinal-v3-plot-actions {

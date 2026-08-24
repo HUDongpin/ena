@@ -33,7 +33,10 @@ import {
   type OpenEnaLongitudinalProgressV3,
   type OpenEnaLongitudinalRouteDecisionV3,
 } from "@/lib/open-ena/longitudinal-v3-client";
-import { cloneTrajectoryPlotlyInputV3 } from "@/lib/open-ena/longitudinal-v3-display";
+import {
+  applyCompactTrajectoryPlotlyLayoutV3,
+  cloneTrajectoryPlotlyInputV3,
+} from "@/lib/open-ena/longitudinal-v3-display";
 import { cameraForPreset, type OpenEna3dCamera } from "@/lib/open-ena/plot3d";
 import type { CameraPreset, OpenEnaConfig, OpenEnaResult, ParsedDataset } from "@/lib/open-ena/types";
 import { resetOpenEna3dCameraDistance } from "./OpenEnaInteractive3DPlot";
@@ -378,6 +381,7 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
   const shellRef = useRef<HTMLDivElement>(null);
   const [Plotly, setPlotly] = useState<PlotlyImageApi | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [compactLayout, setCompactLayout] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -388,10 +392,26 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
   }, []);
 
   useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const update = () => {
+      const next = shell.getBoundingClientRect().width <= 560;
+      setCompactLayout((current) => current === next ? current : next);
+    };
+    update();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(shell);
+    return () => observer?.disconnect();
+  }, []);
+
+  useEffect(() => {
     if (!Plotly || !rootRef.current) return;
     let active = true;
     const root = rootRef.current;
-    const mutableSpec = cloneTrajectoryPlotlyInputV3(spec);
+    const mutableSpec = applyCompactTrajectoryPlotlyLayoutV3(
+      cloneTrajectoryPlotlyInputV3(spec),
+      compactLayout,
+    );
     setStatus("loading");
     void Plotly.react(root, mutableSpec.data as never[], mutableSpec.layout as never, mutableSpec.config as never)
       .then(() => active && setStatus("ready"))
@@ -404,7 +424,7 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
       active = false;
       observer?.disconnect();
     };
-  }, [Plotly, spec]);
+  }, [Plotly, spec, compactLayout]);
 
   useEffect(() => () => {
     if (Plotly && rootRef.current) Plotly.purge(rootRef.current);
