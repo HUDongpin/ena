@@ -1057,19 +1057,15 @@ async function readBrowserErrors(page, args) {
   const classifyChromiumCanvasReadbackDiagnostic = (warning) => {
     if (!["chromium", "chrome", "msedge"].includes(args.browser)) return null;
     if (!strictChromiumCanvasReadbackWarning.test(warning.text)) return null;
-    let parsedSource;
-    try {
-      parsedSource = new URL(warning.location?.url || "");
-    } catch {
-      return null;
-    }
-    if (parsedSource.origin !== currentOrigin) return null;
-    if (!strictChromiumChunkPath.test(parsedSource.pathname)) return null;
+    const sourceUrl = typeof warning.location?.url === "string" ? warning.location.url : "";
+    if (!sourceUrl.startsWith(currentOrigin + "/")) return null;
+    const sourcePath = sourceUrl.slice(currentOrigin.length);
+    if (!strictChromiumChunkPath.test(sourcePath)) return null;
     if (!Number.isInteger(warning.location?.lineNumber) || warning.location.lineNumber < 0) return null;
     if (!Number.isInteger(warning.location?.columnNumber) || warning.location.columnNumber < 0) return null;
     return {
       warningText: warning.text,
-      sourcePath: parsedSource.pathname,
+      sourcePath,
       reportedLineNumber: warning.location.lineNumber,
       reportedColumnNumber: warning.location.columnNumber,
     };
@@ -1104,12 +1100,10 @@ async function readBrowserErrors(page, args) {
   }, candidate);
   const normalizeWarning = (warning) => {
     if (typeof warning === "string") return warning;
-    let sourcePath = null;
-    try {
-      sourcePath = new URL(warning.location?.url || "").pathname;
-    } catch {
-      // Keep malformed or opaque warning locations out of logs.
-    }
+    const sourceUrl = typeof warning.location?.url === "string" ? warning.location.url : "";
+    const sourcePath = sourceUrl.startsWith(currentOrigin + "/")
+      ? sourceUrl.slice(currentOrigin.length).split(/[?#]/u)[0]
+      : null;
     return {
       text: warning.text,
       location: {

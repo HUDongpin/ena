@@ -183,7 +183,9 @@ test("the Chromium Plotly Canvas2D advisory remains a strict auditable platform 
     source,
     /const strictChromiumChunkPath = \/\^\\\/_next\\\/static\\\/chunks\\\/\[a-z0-9\]\{2,\}-\[a-z0-9\]\{3,\}-\[a-z0-9\]\{3,\}\\\.js\$\/u/u,
   );
-  assert.match(source, /parsedSource\.origin !== currentOrigin/u);
+  assert.match(source, /!sourceUrl\.startsWith\(currentOrigin \+ "\/"\)/u);
+  assert.match(source, /sourceUrl\.slice\(currentOrigin\.length\)/u);
+  assert.doesNotMatch(source, /new URL\(warning\.location/u);
   assert.match(source, /verifyChromiumCanvasReadbackSource/u);
   assert.match(source, /fetch\(input\.sourcePath/u);
   assert.match(source, /vectorize-text: Unrecognized textAlign:/u);
