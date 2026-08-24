@@ -16,10 +16,11 @@ import {
 } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const smokeSourcePath = fileURLToPath(import.meta.url);
+const projectRoot = join(dirname(smokeSourcePath), "..");
 const tsconfigPath = join(projectRoot, "tsconfig.json");
 const originalTsconfig = readFileSync(tsconfigPath, "utf8");
 const artifactDirectory = resolve(
@@ -34,11 +35,20 @@ const password = process.env.OPEN_ENA_LONGITUDINAL_SMOKE_PASSWORD
   || "open_ena_longitudinal_smoke_password_2026";
 const sessionSecret = "open_ena_longitudinal_smoke_session_secret_0123456789abcdef";
 const sessionName = "open-ena-longitudinal-v3-smoke-" + process.pid;
-const smokeBrowser = process.env.OPEN_ENA_LONGITUDINAL_SMOKE_BROWSER || "chrome";
+const smokeBrowser = process.env.OPEN_ENA_LONGITUDINAL_SMOKE_BROWSER || "chromium";
 const externalBaseUrl = process.env.OPEN_ENA_LONGITUDINAL_SMOKE_BASE_URL?.replace(/\/+$/u, "") || null;
 const ownedDistDirName = ".next-longitudinal-smoke-" + process.pid;
 const ownedDistDirectory = join(projectRoot, ownedDistDirName);
 const cameraPresets = ["isometric", "xy", "xz", "yz", "yx", "zx", "zy"];
+const expectedCameraLabels = {
+  isometric: "ISOMETRIC",
+  xy: "XY",
+  xz: "XZ",
+  yz: "YZ",
+  yx: "YX",
+  zx: "ZX",
+  zy: "ZY",
+};
 const expectedCameraStates = {
   isometric: {
     center: { x: 0, y: 0, z: 0 },
@@ -92,8 +102,8 @@ const viewportMatrix = [
 const expectedCodeLabels = ["TE", "EX", "IN", "RE", "SP", "TP"];
 
 assert.ok(
-  ["chrome", "firefox", "webkit", "msedge"].includes(smokeBrowser),
-  "OPEN_ENA_LONGITUDINAL_SMOKE_BROWSER must name chrome, firefox, webkit, or msedge.",
+  ["chromium", "chrome", "firefox", "webkit", "msedge"].includes(smokeBrowser),
+  "OPEN_ENA_LONGITUDINAL_SMOKE_BROWSER must name chromium, chrome, firefox, webkit, or msedge.",
 );
 assert.ok(ownedDistDirName.startsWith(".next-longitudinal-smoke-"));
 
@@ -246,6 +256,47 @@ function removeOwnedDistDirectory() {
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
+
+function artifactEvidence(path) {
+  const absolutePath = resolve(path);
+  const relativePath = relative(artifactDirectory, absolutePath);
+  assert.ok(
+    relativePath.length > 0
+      && relativePath !== ".."
+      && !relativePath.startsWith(".." + sep)
+      && !isAbsolute(relativePath),
+    "evidence file must be contained by the artifact directory",
+  );
+  assert.ok(existsSync(absolutePath), "evidence file is missing: " + basename(absolutePath));
+  const portableFile = relativePath.split(sep).join("/");
+  return {
+    file: portableFile,
+    bytes: statSync(absolutePath).size,
+    sha256: sha256(readFileSync(absolutePath)),
+  };
+}
+
+function readGitEvidence() {
+  const git = (args) => execFileSync("git", args, {
+    cwd: projectRoot,
+    encoding: "utf8",
+    timeout: 30_000,
+  }).trim();
+  const status = git(["status", "--porcelain=v1", "--untracked-files=all"]);
+  return Object.freeze({
+    gitHead: git(["rev-parse", "HEAD"]),
+    gitTree: git(["rev-parse", "HEAD^{tree}"]),
+    clean: status === "",
+  });
+}
+
+const sourceEvidenceBefore = readGitEvidence();
+assert.equal(
+  sourceEvidenceBefore.clean,
+  true,
+  "longitudinal browser evidence requires a clean source worktree",
+);
+const smokeSourceSha256 = sha256(readFileSync(smokeSourcePath));
 
 function canonicalJson(value) {
   if (value === null) return "null";
@@ -513,6 +564,8 @@ async function authenticateAndRunTrajectory(page, args) {
   assertBrowser(genericEnaAudit.trajectoryMarks === 0, "generic ENA surface still renders trajectory marks");
   assertBrowser(genericEnaAudit.networkEdges > 0, "generic ENA surface omitted its network edges");
   assertBrowser(genericEnaAudit.codeNodes > 0, "generic ENA surface omitted its code nodes");
+  const genericEnaScreenshotPath = args.artifactDirectory + "/generic-ena-model.png";
+  await genericSurface.screenshot({ path: genericEnaScreenshotPath });
   const plotTools = rail.getByRole("button", { name: "Plot Tools", exact: true });
   await plotTools.click();
   await workbench.waitFor({ timeout: 30_000 });
@@ -604,7 +657,7 @@ async function authenticateAndRunTrajectory(page, args) {
   ));
   assertBrowser(networkOverlayTaskCount === 0, "trajectory scientific request still contains networkOverlayTask");
   plotAudit.networkOverlayTaskCount = networkOverlayTaskCount;
-  plotAudit.genericEnaAudit = genericEnaAudit;
+  plotAudit.genericEnaAudit = { ...genericEnaAudit, genericEnaScreenshotPath };
   return plotAudit;
 }
 
@@ -657,7 +710,7 @@ async function exerciseCamerasAndProjections(page, args) {
   }, { expected: args.expectedCameraStates.isometric }, { timeout: 15_000 });
   const beforeDrag = await plot.evaluate((root) => structuredClone(root._fullLayout.scene.camera));
   let dragVerified = false;
-  if (["chrome", "msedge"].includes(args.browser)) {
+  if (["chromium", "chrome", "msedge"].includes(args.browser)) {
     const plotBox = await plot.boundingBox();
     assertBrowser(Boolean(plotBox), "the 3D plot does not expose a mouse-interaction surface");
     await page.mouse.move(plotBox.x + plotBox.width * 0.55, plotBox.y + plotBox.height * 0.5);
@@ -695,6 +748,8 @@ async function exerciseCamerasAndProjections(page, args) {
   await assertScientificInvariants("camera preset xy after baseline interaction");
 
   const cameraStates = {};
+  const cameraLabels = {};
+  const cameraScreenshots = {};
   for (const preset of args.cameraPresets) {
     await cameraSelect.selectOption(preset);
     await page.waitForFunction(({ value, expected }) => {
@@ -723,6 +778,23 @@ async function exerciseCamerasAndProjections(page, args) {
       preset + " changed the result identity",
     );
     await assertScientificInvariants("camera preset " + preset);
+    const cameraSelection = {
+      visible: await cameraSelect.isVisible(),
+      ...await cameraSelect.evaluate((select) => ({
+        value: select.value,
+        label: select.selectedOptions[0]?.textContent?.trim() ?? "",
+      })),
+    };
+    assertBrowser(cameraSelection.visible, preset + " camera selector is not visible");
+    assertBrowser(cameraSelection.value === preset, preset + " camera option is not selected");
+    assertBrowser(
+      cameraSelection.label === args.expectedCameraLabels[preset],
+      preset + " camera option does not expose its expected visible label",
+    );
+    cameraLabels[preset] = cameraSelection.label;
+    const cameraScreenshotPath = args.artifactDirectory + "/camera-" + preset + ".png";
+    await plot.screenshot({ path: cameraScreenshotPath });
+    cameraScreenshots[preset] = cameraScreenshotPath;
   }
   assertBrowser(
     new Set(Object.values(cameraStates).map((camera) => JSON.stringify(camera))).size === args.cameraPresets.length,
@@ -770,6 +842,8 @@ async function exerciseCamerasAndProjections(page, args) {
   await assertScientificInvariants("restoring 3D projection");
   return {
     cameraStates,
+    cameraLabels,
+    cameraScreenshots,
     projectionStates,
     resultLabel,
     beforeDrag,
@@ -968,13 +1042,23 @@ async function readBrowserErrors(page, args) {
   };
 }
 
+async function readBrowserRuntimeEvidence(page) {
+  const version = page.context().browser()?.version() ?? null;
+  const userAgent = await page.evaluate(() => navigator.userAgent);
+  if (!version) throw new Error("the Playwright browser runtime did not expose its version");
+  if (!userAgent) throw new Error("the browser runtime did not expose its user agent");
+  return { version, userAgent };
+}
+
 let primaryFailure = null;
 let baseUrl = externalBaseUrl;
 let browserOpened = false;
+let completedSummary = null;
 
 try {
   execFileSync("npx", ["--version"], { encoding: "utf8", timeout: 30_000 });
-  runCli(["--version"], "resolve Playwright CLI", 120_000);
+  const playwrightCliVersion = runCli(["--version"], "resolve Playwright CLI", 120_000).trim();
+  assert.ok(playwrightCliVersion.length > 0, "the Playwright CLI did not expose its version");
   if (!baseUrl) {
     ownsDistDirectory = true;
     const port = await findOpenPort();
@@ -1032,11 +1116,20 @@ try {
   browserSessionAttempted = true;
   runCli(["open", baseUrl + "/en/open-ena", "--browser", smokeBrowser], "open browser", 120_000);
   browserOpened = true;
+  const browserRuntimeEvidence = runBrowserPhase(
+    "record the actual browser runtime identity",
+    readBrowserRuntimeEvidence,
+  );
 
   const plotAudit = runBrowserPhase(
     "authenticate, load the trajectory sample, and run the V2 envelope",
     authenticateAndRunTrajectory,
-    { username, password, expectedCodes: expectedCodeLabels },
+    {
+      username,
+      password,
+      expectedCodes: expectedCodeLabels,
+      artifactDirectory,
+    },
     240_000,
   );
   const displayAudit = runBrowserPhase(
@@ -1044,11 +1137,13 @@ try {
     exerciseCamerasAndProjections,
     {
       cameraPresets,
+      expectedCameraLabels,
       expectedCameraStates,
       expectedResultHash: plotAudit.resultHashes[0],
       expectedTaskRequestCount: plotAudit.taskRequestCount,
       projections: twoDimensionalProjections,
       browser: smokeBrowser,
+      artifactDirectory,
     },
   );
   const responsiveAudit = runBrowserPhase(
@@ -1108,16 +1203,53 @@ try {
   assert.doesNotMatch(serverLog, /open_ena_longitudinal_smoke_password/u);
   assert.doesNotMatch(serverLog, /open_ena_longitudinal_smoke_session_secret/u);
 
-  const summary = {
+  const {
+    genericEnaScreenshotPath,
+    ...genericEnaAudit
+  } = plotAudit.genericEnaAudit;
+  const portablePlotAudit = {
+    ...plotAudit,
+    genericEnaAudit: {
+      ...genericEnaAudit,
+      genericEnaScreenshot: artifactEvidence(genericEnaScreenshotPath),
+    },
+  };
+  const portableViewports = Object.fromEntries(
+    Object.entries(responsiveAudit.results).map(([name, evidence]) => {
+      const { pagePath, plotPath, ...viewportEvidence } = evidence;
+      return [name, {
+        ...viewportEvidence,
+        pageScreenshot: artifactEvidence(pagePath),
+        plotScreenshot: artifactEvidence(plotPath),
+      }];
+    }),
+  );
+
+  completedSummary = {
     status: "PASS",
     browser: smokeBrowser,
+    playwrightCliSource: playwrightCli.source,
+    playwrightCliVersion,
+    runtimeBrowserVersion: browserRuntimeEvidence.version,
+    runtimeBrowserUserAgent: browserRuntimeEvidence.userAgent,
     baseUrl,
     serverLifecycle: ownedServer ? "owned" : "external",
-    plotAudit,
+    plotAudit: portablePlotAudit,
     cameras: Object.keys(displayAudit.cameraStates),
+    cameraStates: displayAudit.cameraStates,
+    cameraLabels: displayAudit.cameraLabels,
+    cameraScreenshots: Object.fromEntries(
+      Object.entries(displayAudit.cameraScreenshots)
+        .map(([preset, path]) => [preset, artifactEvidence(path)]),
+    ),
     projections: Object.keys(displayAudit.projectionStates),
-    viewports: responsiveAudit.results,
-    fullscreen: responsiveAudit.fullscreenBox,
+    viewports: portableViewports,
+    fullscreen: {
+      box: responsiveAudit.fullscreenBox,
+      viewport: responsiveAudit.fullscreenViewport,
+      plotAudit: responsiveAudit.fullscreenPlotAudit,
+      screenshot: artifactEvidence(responsiveAudit.fullscreenPath),
+    },
     downloads: Object.fromEntries(
       Object.entries(downloads).map(([kind, path]) => [kind, {
         file: basename(path),
@@ -1141,10 +1273,8 @@ try {
       pageErrors: 0,
       platformDiagnostics: browserErrors.platformDiagnostics,
     },
-    artifacts: artifactDirectory,
+    artifacts: ".",
   };
-  writeFileSync(join(artifactDirectory, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
-  process.stdout.write(JSON.stringify(summary, null, 2) + "\n");
 } catch (caught) {
   primaryFailure = caught;
   if (browserOpened) {
@@ -1171,3 +1301,20 @@ try {
 }
 
 if (primaryFailure) throw primaryFailure;
+assert.ok(completedSummary, "the browser smoke did not produce a completed evidence summary");
+const sourceEvidenceAfter = readGitEvidence();
+assert.equal(sourceEvidenceAfter.gitHead, sourceEvidenceBefore.gitHead, "Git HEAD changed during browser evidence capture");
+assert.equal(sourceEvidenceAfter.gitTree, sourceEvidenceBefore.gitTree, "Git tree changed during browser evidence capture");
+assert.equal(sourceEvidenceAfter.clean, true, "source worktree is dirty after browser evidence cleanup");
+completedSummary.source = {
+  gitHead: sourceEvidenceBefore.gitHead,
+  gitTree: sourceEvidenceBefore.gitTree,
+  worktreeCleanBefore: sourceEvidenceBefore.clean,
+  worktreeCleanAfter: sourceEvidenceAfter.clean,
+  smokeSourceSha256,
+};
+writeFileSync(
+  join(artifactDirectory, "summary.json"),
+  JSON.stringify(completedSummary, null, 2) + "\n",
+);
+process.stdout.write(JSON.stringify(completedSummary, null, 2) + "\n");

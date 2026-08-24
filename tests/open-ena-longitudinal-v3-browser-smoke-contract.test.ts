@@ -17,6 +17,14 @@ test("the version-controlled longitudinal V3 smoke owns its server and covers th
   assert.match(source, /NEXT_DIST_DIR/u);
   assert.match(source, /OPEN_ENA_LONGITUDINAL_SMOKE_USERNAME/u);
   assert.match(source, /OPEN_ENA_LONGITUDINAL_SMOKE_PASSWORD/u);
+  assert.match(source, /"chromium"/u);
+  assert.match(source, /gitHead/u);
+  assert.match(source, /gitTree/u);
+  assert.match(source, /worktreeCleanBefore/u);
+  assert.match(source, /worktreeCleanAfter/u);
+  assert.match(source, /smokeSourceSha256/u);
+  assert.match(source, /cameraScreenshots/u);
+  assert.match(source, /genericEnaScreenshotPath/u);
   assert.match(source, /open-ena-longitudinal-v3-workbench/u);
   assert.match(source, /\["isometric",\s*"xy",\s*"xz",\s*"yz",\s*"yx",\s*"zx",\s*"zy"\]/u);
   assert.match(source, /\["xy",\s*"xz",\s*"yz",\s*"yx",\s*"zx",\s*"zy"\]/u);
@@ -54,6 +62,78 @@ test("the version-controlled longitudinal V3 smoke owns its server and covers th
   assert.match(source, /\["run",\s*"start",\s*"--",\s*"--hostname"/u);
   assert.doesNotMatch(source, /\["run",\s*"dev"/u);
   assert.match(source, /OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS/u);
+});
+
+test("GitHub CI runs the complete longitudinal application smoke in bundled Chromium and retains its evidence", () => {
+  const workflow = readFileSync(
+    join(process.cwd(), ".github", "workflows", "open-ena-ci.yml"),
+    "utf8",
+  );
+  assert.match(workflow, /OPEN_ENA_LONGITUDINAL_SMOKE_BROWSER:\s*chromium/u);
+  assert.match(workflow, /npm run test:browser:longitudinal-v3/u);
+  assert.match(workflow, /actions\/upload-artifact@/u);
+  assert.match(workflow, /open-ena-longitudinal-v3-evidence/u);
+  assert.match(workflow, /if-no-files-found:\s*error/u);
+});
+
+test("GitHub CI installs both the repository Chromium and the browser owned by the pinned Playwright CLI", () => {
+  const workflow = readFileSync(
+    join(process.cwd(), ".github", "workflows", "open-ena-ci.yml"),
+    "utf8",
+  );
+  assert.match(workflow, /npx playwright install --with-deps chromium/u);
+  assert.match(
+    workflow,
+    /npx --yes --package @playwright\/cli@0\.1\.18 playwright-cli install-browser chromium/u,
+  );
+});
+
+test("GitHub CI excludes hidden Playwright CLI session state from uploaded evidence", () => {
+  const workflow = readFileSync(
+    join(process.cwd(), ".github", "workflows", "open-ena-ci.yml"),
+    "utf8",
+  );
+  assert.doesNotMatch(workflow, /include-hidden-files\s*:/u);
+});
+
+test("the seven camera checks assert their visible selected labels and retain those labels", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(
+    source,
+    /const expectedCameraLabels = \{\s*isometric:\s*"ISOMETRIC",\s*xy:\s*"XY",\s*xz:\s*"XZ",\s*yz:\s*"YZ",\s*yx:\s*"YX",\s*zx:\s*"ZX",\s*zy:\s*"ZY",?\s*\}/u,
+  );
+  assert.match(source, /selectedOptions\[0\]\?\.textContent\?\.trim\(\)/u);
+  assert.match(source, /cameraSelection\.visible/u);
+  assert.match(source, /cameraSelection\.label === args\.expectedCameraLabels\[preset\]/u);
+  assert.match(source, /cameraLabels\[preset\] = cameraSelection\.label/u);
+  assert.match(source, /cameraLabels:\s*displayAudit\.cameraLabels/u);
+});
+
+test("the summary converts every screenshot path into a portable integrity receipt", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /function artifactEvidence\(path\)/u);
+  assert.match(source, /file:\s*portableFile/u);
+  assert.match(source, /bytes:\s*statSync\(absolutePath\)\.size/u);
+  assert.match(source, /sha256:\s*sha256\(readFileSync\(absolutePath\)\)/u);
+  assert.match(source, /genericEnaScreenshot:\s*artifactEvidence\(genericEnaScreenshotPath\)/u);
+  assert.match(source, /cameraScreenshots:\s*Object\.fromEntries/u);
+  assert.match(source, /\[preset, artifactEvidence\(path\)\]/u);
+  assert.match(source, /pageScreenshot:\s*artifactEvidence\(pagePath\)/u);
+  assert.match(source, /plotScreenshot:\s*artifactEvidence\(plotPath\)/u);
+  assert.match(source, /screenshot:\s*artifactEvidence\(responsiveAudit\.fullscreenPath\)/u);
+});
+
+test("the summary records the invoked Playwright CLI and actual browser runtime identities", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(
+    source,
+    /const playwrightCliVersion = runCli\(\["--version"\],\s*"resolve Playwright CLI",\s*120_000\)\.trim\(\)/u,
+  );
+  assert.match(source, /page\.context\(\)\.browser\(\)\?\.version\(\)/u);
+  assert.match(source, /navigator\.userAgent/u);
+  assert.match(source, /playwrightCliVersion,/u);
+  assert.match(source, /runtimeBrowserVersion:\s*browserRuntimeEvidence\.version/u);
+  assert.match(source, /runtimeBrowserUserAgent:\s*browserRuntimeEvidence\.userAgent/u);
 });
 
 test("the Next config permits a smoke-owned build directory so concurrent local servers do not share a lock", () => {

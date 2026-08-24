@@ -35,7 +35,7 @@ jobs:
   browser:
     name: Browser (Chromium)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -45,3 +45,20 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser --workspace=jena-js
+      - name: Install Chromium for the pinned Playwright CLI
+        run: npx --yes --package @playwright/cli@0.1.18 playwright-cli install-browser chromium
+      - name: Run the full Open ENA longitudinal application smoke
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          OPEN_ENA_LONGITUDINAL_SMOKE_BROWSER: chromium
+          OPEN_ENA_LONGITUDINAL_SMOKE_ARTIFACT_DIR: output/playwright/open-ena-longitudinal-v3-${{ github.sha }}-chromium
+          PWTEST_DAEMON_SESSION_DIR: ${{ runner.temp }}/open-ena-playwright-daemon
+        run: npm run test:browser:longitudinal-v3
+      - name: Upload Open ENA longitudinal browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: open-ena-longitudinal-v3-evidence-${{ github.sha }}-chromium
+          path: output/playwright/open-ena-longitudinal-v3-${{ github.sha }}-chromium
+          if-no-files-found: error
+          retention-days: 14
