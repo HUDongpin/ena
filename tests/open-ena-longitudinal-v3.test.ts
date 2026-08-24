@@ -201,6 +201,19 @@ test("2D and 3D compile from the same bundle and never change the result hash", 
     (trace.line as { color?: string } | undefined)?.color === "#000000"
     && (trace.marker as { color?: string } | undefined)?.color === "#000000"
   )));
+  const threeUncertainty = three.data.filter((trace) => trace.meta.role === "uncertainty");
+  const twoUncertainty = two.data.filter((trace) => trace.meta.role === "uncertainty");
+  assert.ok(threeUncertainty.length > 0);
+  assert.ok(twoUncertainty.length > 0);
+  assert.ok(threeUncertainty.every((trace) => (
+    trace.mode === "lines"
+    && trace.connectgaps === false
+    && (trace.line as { dash?: string } | undefined)?.dash === "dash"
+    && trace.error_x === undefined
+    && trace.error_y === undefined
+    && trace.error_z === undefined
+  )));
+  assert.ok(twoUncertainty.every((trace) => trace.error_x !== undefined && trace.error_y !== undefined));
   const expectedMidpoints = three.data
     .filter((trace) => trace.meta.role === "trajectory-path")
     .flatMap((trace) => {
