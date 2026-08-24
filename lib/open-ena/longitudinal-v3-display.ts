@@ -46,24 +46,25 @@ export function applyCompactTrajectoryPlotlyLayoutV3(
   const legendFont = mutableRecord(legend.font);
   const margin = mutableRecord(input.layout.margin);
   input.layout.autosize = true;
-  input.layout.legend = {
+  const compactLegend: Record<string, unknown> = {
     ...legend,
-    orientation: "h",
+    orientation: "v",
     x: 0,
     xanchor: "left",
-    y: -0.12,
+    y: -0.08,
     yanchor: "top",
-    font: { ...legendFont, size: 9 },
-    entrywidth: 138,
-    entrywidthmode: "pixels",
-    tracegroupgap: 2,
+    font: { ...legendFont, size: 10 },
+    tracegroupgap: 1,
   };
+  delete compactLegend.entrywidth;
+  delete compactLegend.entrywidthmode;
+  input.layout.legend = compactLegend;
   input.layout.margin = {
     ...margin,
     l: 44,
     r: 12,
     t: 52,
-    b: 168,
+    b: 210,
   };
   return input;
 }

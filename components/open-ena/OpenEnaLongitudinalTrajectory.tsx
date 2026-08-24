@@ -93,7 +93,8 @@ const MAX_LONGITUDINAL_INDIVIDUAL_SEGMENTS = LONGITUDINAL_INDIVIDUAL_MARK_LIMIT;
 const MAX_LONGITUDINAL_NODES = 200;
 const MAX_LONGITUDINAL_DIAGNOSTIC_ROWS = 600;
 const DIRECTION_ARROW_PROGRESS = 0.58;
-const DIRECTION_ARROW_FILL = "#17212b";
+const TRAJECTORY_LINE_COLOR = "#000000";
+const DIRECTION_ARROW_FILL = TRAJECTORY_LINE_COLOR;
 const DIRECTION_ARROW_HALO = "#fff";
 
 const DEFAULT_COPY: OpenEnaLongitudinalTrajectoryCopy = {
@@ -123,7 +124,7 @@ const DEFAULT_COPY: OpenEnaLongitudinalTrajectoryCopy = {
   noContributorOverlap: "No shared contributors",
   gapRule: "No segment bridges a missing period or an adjacent transition with zero shared repeated entities.",
   legendAriaLabel: "Longitudinal trajectory legend",
-  largerCentroidMarker: "Larger outlined marker = group-period centroid",
+  largerCentroidMarker: "Larger outlined square = group-period centroid",
   timeDirectionArrow: "Arrow = selected period direction",
   flipped: "flipped",
   firstAxis: "Dimension 1",
@@ -695,7 +696,6 @@ export default function OpenEnaLongitudinalTrajectory({
             {showIndividualPaths && sampledIndividualRuns.map((run, runIndex) => {
               const groupIndex = groupLookup.get(run.group) ?? 0;
               const encoding = getEncoding(groupIndex);
-              const color = JENA_GROUP_COLORS[groupIndex % JENA_GROUP_COLORS.length];
               const points = run.periods.map((period) => project(period.x, period.y));
               const timeIndexSequence = run.periods.map((period) => boundedCount(period.timeIndex)).join(",");
               return (
@@ -703,7 +703,7 @@ export default function OpenEnaLongitudinalTrajectory({
                   key={`individual-run-${run.sourceIndex}-${runIndex}`}
                   className="ena-individual-trajectory-path"
                   d={pathThrough(points)}
-                  stroke={color}
+                  stroke={TRAJECTORY_LINE_COLOR}
                   data-ena-group-index={groupIndex}
                   data-ena-group-shape={encoding.markerShape}
                   data-ena-line-style={encoding.lineStyle}
@@ -756,7 +756,6 @@ export default function OpenEnaLongitudinalTrajectory({
             {showGroupCentroidPaths && renderedCentroidRuns.map((run) => {
               const { groupIndex } = run;
               const encoding = getEncoding(groupIndex);
-              const color = JENA_GROUP_COLORS[groupIndex % JENA_GROUP_COLORS.length];
               const first = run.segments[0].segment;
               const points = [
                 project(first.x1, first.y1),
@@ -771,7 +770,7 @@ export default function OpenEnaLongitudinalTrajectory({
                   key={`centroid-run-${groupIndex}-${run.runIndex}`}
                   className="ena-group-centroid-path"
                   d={pathThrough(points)}
-                  stroke={color}
+                  stroke={TRAJECTORY_LINE_COLOR}
                   data-ena-centroid-run="true"
                   data-ena-group-index={groupIndex}
                   data-ena-group-shape={encoding.markerShape}
@@ -816,7 +815,6 @@ export default function OpenEnaLongitudinalTrajectory({
             {showGroupCentroidPaths && renderedCentroidPeriods.map(({ item: entry, sourceIndex }) => {
               const { groupIndex, period } = entry;
               if (!period.centroid) return null;
-              const encoding = getEncoding(groupIndex);
               const color = JENA_GROUP_COLORS[groupIndex % JENA_GROUP_COLORS.length];
               const point = project(period.centroid.x, period.centroid.y);
               const groupName = safeText(period.group, 48);
@@ -827,11 +825,12 @@ export default function OpenEnaLongitudinalTrajectory({
                   key={`centroid-point-${sourceIndex}`}
                   data-ena-group-centroid="true"
                   data-ena-group-index={groupIndex}
-                  data-ena-group-shape={encoding.markerShape}
+                  data-ena-group-shape="square"
+                  data-ena-centroid-shape="square"
                   aria-label={`${groupName}, ${strings.period} ${boundedCount(period.timeIndex) + 1}, ${strings.centroid}`}
                 >
                   <MarkerGlyph
-                    shape={encoding.markerShape}
+                    shape="square"
                     x={point.x}
                     y={point.y}
                     size={pointRadius * 2.15}
@@ -840,7 +839,7 @@ export default function OpenEnaLongitudinalTrajectory({
                     strokeWidth={3}
                   />
                   <MarkerGlyph
-                    shape={encoding.markerShape}
+                    shape="square"
                     x={point.x}
                     y={point.y}
                     size={pointRadius * 1.1}

@@ -72,21 +72,22 @@ test("six comparison groups retain unique non-color plot encodings and accessibl
     copy: getOpenEnaCopy("en"),
   }));
   assert.doesNotMatch(markup, /class="ena-trajectory-path"[^>]*stroke-opacity="0\./);
+  assert.match(markup, /class="ena-trajectory-path"[^>]*stroke="#000000"/);
+  assert.match(markup, /id="ena-trajectory-arrow-0"[\s\S]*?<path[^>]*fill="#000000"/);
 
   for (const [index, encoding] of encodings.entries()) {
     const group = `g${index + 1}`;
     const markerOccurrences = markup.match(new RegExp(`data-ena-group-shape="${encoding.markerShape}"`, "g")) ?? [];
-    assert.ok(markerOccurrences.length >= 3, `${group} should use ${encoding.markerShape} for units, mean, and legend`);
+    assert.ok(markerOccurrences.length >= 2, `${group} should use ${encoding.markerShape} for units and the unit legend`);
     assert.match(markup, new RegExp(`data-ena-trajectory-style="${encoding.key}"`));
     assert.ok(
       markup.includes(`${group}: ${encoding.markerLabel} marker, ${encoding.trajectoryLabel} trajectory line`),
       `${group} should expose its non-color mapping to assistive technology`,
     );
-    assert.ok(
-      markup.includes(`${group} mean: ${encoding.markerLabel} marker`),
-      `${group} mean should expose its group-specific marker shape`,
-    );
+    assert.ok(markup.includes(`${group} mean: square centroid marker`), `${group} mean should use the ENA centroid square`);
   }
+  assert.equal((markup.match(/data-ena-centroid-shape="square"/g) ?? []).length, 6);
+  assert.match(markup, /Group means use square centroid markers/);
 });
 
 test("standalone and mini-network code nodes share the selected palette", async () => {

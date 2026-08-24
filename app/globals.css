@@ -8666,7 +8666,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-group-centroid-direction-arrow {
-  fill: #17212b;
+  fill: #000;
   stroke: #fff;
   stroke-width: 1.4;
   stroke-linecap: round;
@@ -8675,7 +8675,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-individual-direction-arrow {
-  fill: #17212b;
+  fill: #000;
   stroke: #fff;
   stroke-width: 1;
   stroke-linecap: round;
