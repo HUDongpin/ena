@@ -1,6 +1,6 @@
 import type { Row } from "jena-js";
 import { assertOpenEnaCapabilityForResult } from "./capabilities";
-import type { OpenEnaPairwiseContrast } from "./contrasts";
+import type { OpenEnaPairwiseContrast, OpenEnaPairwiseContrastSide } from "./contrasts";
 import { codeColorFor, JENA_GROUP_COLORS, type OpenEnaCodeColors } from "./plot-style";
 import type { CameraPreset, GroupNetwork, OpenEnaResult } from "./types";
 
@@ -8,6 +8,7 @@ export const OPEN_ENA_3D_UI_REVISION = "open-ena-3d-camera-v2";
 export const OPEN_ENA_3D_DEFAULT_CAMERA_ZOOM = 1.5;
 
 const AXIS_COLORS = ["#b91c1c", "#1d4ed8", "#15803d"] as const;
+const TRAJECTORY_LINE_COLOR = "#000000";
 const GROUP_MARKER_SYMBOLS = ["circle", "square", "diamond", "cross", "x", "circle-open"] as const;
 const GROUP_MARKER_LABELS = ["circle", "square", "diamond", "cross", "x", "open circle"] as const;
 const GROUP_LINE_DASHES = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"] as const;
@@ -17,6 +18,7 @@ export type OpenEna3dTraceRole =
   | "code-node"
   | "network-edge"
   | "group-mean"
+  | "confidence-interval"
   | "trajectory-path"
   | "axis"
   | "axis-arrowhead"
@@ -36,6 +38,13 @@ export interface OpenEna3dTraceMeta {
   dimension?: string;
   edgeValue?: number;
   edgeScaleDenominator?: number;
+  confidenceLevel?: number;
+  intervalMethod?: "marginal-student-t-95";
+  intervalInterpretation?: "three-separate-marginal-confidence-interval-wireframe";
+  jointRegion?: false;
+  sampleSize?: number;
+  degreesFreedom?: number;
+  intervalEdge?: string;
 }
 
 export interface OpenEna3dMarker {
@@ -425,6 +434,80 @@ function axisTraces(
   return [...shafts, ...arrowheads, ...labels];
 }
 
+function confidenceIntervalBoxTraces(
+  side: OpenEnaPairwiseContrastSide,
+  groupIndex: number,
+  dimensions: readonly [string, string, string],
+  color: string,
+): OpenEna3dTrace[] {
+  const stored = side.meanConfidenceIntervalsByDimension;
+  const intervals = dimensions.map((dimension) => stored?.[dimension]);
+  if (intervals.some((interval) => interval?.status !== "estimable")) return [];
+  const [xInterval, yInterval, zInterval] = intervals;
+  if (xInterval?.status !== "estimable"
+    || yInterval?.status !== "estimable"
+    || zInterval?.status !== "estimable") return [];
+
+  type Point3 = readonly [number, number, number];
+  const point = (x: number, y: number, z: number): Point3 => [x, y, z];
+  const lowerLowerLower = point(xInterval.lower, yInterval.lower, zInterval.lower);
+  const upperLowerLower = point(xInterval.upper, yInterval.lower, zInterval.lower);
+  const upperUpperLower = point(xInterval.upper, yInterval.upper, zInterval.lower);
+  const lowerUpperLower = point(xInterval.lower, yInterval.upper, zInterval.lower);
+  const lowerLowerUpper = point(xInterval.lower, yInterval.lower, zInterval.upper);
+  const upperLowerUpper = point(xInterval.upper, yInterval.lower, zInterval.upper);
+  const upperUpperUpper = point(xInterval.upper, yInterval.upper, zInterval.upper);
+  const lowerUpperUpper = point(xInterval.lower, yInterval.upper, zInterval.upper);
+  const paths: Array<{ edge: string; points: Point3[] }> = [
+    {
+      edge: "lower-z-face",
+      points: [lowerLowerLower, upperLowerLower, upperUpperLower, lowerUpperLower, lowerLowerLower],
+    },
+    {
+      edge: "upper-z-face",
+      points: [lowerLowerUpper, upperLowerUpper, upperUpperUpper, lowerUpperUpper, lowerLowerUpper],
+    },
+    { edge: "lower-x-lower-y", points: [lowerLowerLower, lowerLowerUpper] },
+    { edge: "upper-x-lower-y", points: [upperLowerLower, upperLowerUpper] },
+    { edge: "upper-x-upper-y", points: [upperUpperLower, upperUpperUpper] },
+    { edge: "lower-x-upper-y", points: [lowerUpperLower, lowerUpperUpper] },
+  ];
+  const hover = [
+    `<b>${escapeHoverText(side.name)} mean uncertainty</b>`,
+    `Separate marginal 95% Student-t intervals`,
+    `${escapeHoverText(dimensions[0])}: ${formatCoordinate(xInterval.lower)} to ${formatCoordinate(xInterval.upper)}`,
+    `${escapeHoverText(dimensions[1])}: ${formatCoordinate(yInterval.lower)} to ${formatCoordinate(yInterval.upper)}`,
+    `${escapeHoverText(dimensions[2])}: ${formatCoordinate(zInterval.lower)} to ${formatCoordinate(zInterval.upper)}`,
+    `Wireframe Cartesian product; not a joint confidence region or significance test`,
+  ].join("<br>");
+
+  return paths.map(({ edge, points }) => ({
+    type: "scatter3d",
+    mode: "lines",
+    name: `${side.name} marginal 95% CI`,
+    x: points.map((coordinates) => coordinates[0]),
+    y: points.map((coordinates) => coordinates[1]),
+    z: points.map((coordinates) => coordinates[2]),
+    customdata: points.map(() => hover),
+    line: { color, width: 3, dash: "dash" },
+    hovertemplate: "%{customdata}<extra></extra>",
+    legendgroup: `open-ena-group-${groupIndex}`,
+    showlegend: false,
+    meta: {
+      role: "confidence-interval",
+      groupName: side.name,
+      groupIndex,
+      confidenceLevel: xInterval.confidenceLevel,
+      intervalMethod: xInterval.method,
+      intervalInterpretation: "three-separate-marginal-confidence-interval-wireframe",
+      jointRegion: false,
+      sampleSize: xInterval.sampleSize,
+      degreesFreedom: xInterval.degreesFreedom,
+      intervalEdge: edge,
+    },
+  }));
+}
+
 /**
  * Compiles the already-fitted jENA x/y/z result into Plotly display data.
  * This function neither invokes jENA nor changes any scientific coordinate.
@@ -486,6 +569,12 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     ...nodeRows.flatMap((row) => dimensions.map((dimension) => Math.abs(coordinate(row, dimension)))),
     ...points.flatMap((row) => dimensions.map((dimension) => Math.abs(coordinate(row, dimension)))),
     ...result.groups.flatMap((group) => dimensions.map((dimension) => Math.abs(finiteNumber(group.meanPoint[dimension])))),
+    ...(contrast ? [contrast.primary, contrast.secondary].flatMap((side) => dimensions.flatMap((dimension) => {
+      const interval = side.meanConfidenceIntervalsByDimension?.[dimension];
+      return interval?.status === "estimable"
+        ? [Math.abs(interval.lower), Math.abs(interval.upper)]
+        : [];
+    })) : []),
   ];
   const axisExtent = Math.max(0.5, ...coordinateMagnitudes) * 1.15;
 
@@ -585,7 +674,6 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       )) continue;
       const group = result.groups[groupIndex];
       if (!group) continue;
-      const color = groupColor(group, groupIndex);
       const pathHover = indices.map((pointIndex, stepIndex) => {
         const trajectoryRow = result.set.trajectories?.[pointIndex];
         const step = result.set.conversation
@@ -603,7 +691,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
         z: indices.map((index) => coordinate(points[index] ?? {}, zDimension)),
         customdata: pathHover,
         line: {
-          color,
+          color: TRAJECTORY_LINE_COLOR,
           width: 4,
           dash: GROUP_LINE_DASHES[groupIndex % GROUP_LINE_DASHES.length],
         },
@@ -654,17 +742,32 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     });
   }
 
+  if (contrast && plotKind === "comparison") {
+    traces.push(...confidenceIntervalBoxTraces(
+      contrast.primary,
+      primaryGroupIndex,
+      dimensions,
+      groupColor(result.groups[primaryGroupIndex] as GroupNetwork, primaryGroupIndex),
+    ));
+    traces.push(...confidenceIntervalBoxTraces(
+      contrast.secondary,
+      secondaryGroupIndex,
+      dimensions,
+      groupColor(result.groups[secondaryGroupIndex] as GroupNetwork, secondaryGroupIndex),
+    ));
+  }
+
   displayGroupEntries.forEach(({ group, groupIndex }) => {
     if (selectedComparisonGroupIndices && (
       plotKind !== "comparison" || !selectedComparisonGroupIndices.has(groupIndex)
     )) return;
     const color = groupColor(group, groupIndex);
-    const markerSymbol = GROUP_MARKER_SYMBOLS[groupIndex % GROUP_MARKER_SYMBOLS.length];
+    const markerSymbol = "square";
     const mean = dimensions.map((dimension) => finiteNumber(group.meanPoint[dimension])) as [number, number, number];
     traces.push({
       type: "scatter3d",
       mode: "markers",
-      name: `${group.name} mean · ${GROUP_MARKER_LABELS[groupIndex % GROUP_MARKER_LABELS.length]}`,
+      name: `${group.name} mean · square`,
       x: [mean[0]],
       y: [mean[1]],
       z: [mean[2]],

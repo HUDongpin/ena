@@ -51,6 +51,9 @@ export const GROUP_VISUAL_ENCODINGS = [
   markerLabel: string;
   trajectoryLabel: string;
 }>;
+const TRAJECTORY_LINE_COLOR = "#000000";
+const TRAJECTORY_ARROW_TIP_PROGRESS = 0.5;
+const TRAJECTORY_ARROW_TAIL_PROGRESS = 0.35;
 
 export function getGroupVisualEncoding(groupIndex: number) {
   const safeIndex = Number.isFinite(groupIndex) ? Math.max(0, Math.trunc(groupIndex)) : 0;
@@ -330,7 +333,6 @@ export default function OpenEnaPlot({
         key: `${unit}-${sourceIndex}-${targetIndex}`,
         sourceKey: `unit-${sourceIndex}`,
         targetKey: `unit-${targetIndex}`,
-        color: group?.color ?? "#39736e",
         groupName: group?.name ?? "All units",
         groupIndex,
         label: `${unit}: ${stepLabel(sourceStep)} → ${stepLabel(targetStep)}`,
@@ -396,7 +398,7 @@ export default function OpenEnaPlot({
           </marker>
           {result.groups.map((group, index) => (
             <marker key={group.name} id={`ena-trajectory-arrow-${index}`} markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L7,3 z" fill={group.color} />
+              <path d="M0,0 L0,6 L7,3 z" fill={TRAJECTORY_LINE_COLOR} />
             </marker>
           ))}
         </defs>
@@ -475,24 +477,45 @@ export default function OpenEnaPlot({
           const target = positions.get(segment.targetKey);
           if (!source || !target) return null;
           const encoding = getGroupVisualEncoding(segment.groupIndex);
+          const arrowTail = {
+            x: source.x + (target.x - source.x) * TRAJECTORY_ARROW_TAIL_PROGRESS,
+            y: source.y + (target.y - source.y) * TRAJECTORY_ARROW_TAIL_PROGRESS,
+          };
+          const arrowTip = {
+            x: source.x + (target.x - source.x) * TRAJECTORY_ARROW_TIP_PROGRESS,
+            y: source.y + (target.y - source.y) * TRAJECTORY_ARROW_TIP_PROGRESS,
+          };
           return (
-            <line
-              key={segment.key}
-              className="ena-trajectory-path"
-              x1={source.x}
-              y1={source.y}
-              x2={target.x}
-              y2={target.y}
-              stroke={segment.color}
-              strokeWidth="2.5"
-              strokeOpacity="1"
-              strokeLinecap="round"
-              markerEnd={`url(#ena-trajectory-arrow-${segment.groupIndex})`}
-              data-ena-trajectory-style={encoding.key}
-              aria-label={`${segment.label}. ${groupEncodingDescription(segment.groupName, segment.groupIndex)}.`}
-            >
-              <title>{`${segment.label}. ${encoding.trajectoryLabel} trajectory line.`}</title>
-            </line>
+            <g key={segment.key}>
+              <line
+                className="ena-trajectory-path"
+                x1={source.x}
+                y1={source.y}
+                x2={target.x}
+                y2={target.y}
+                stroke={TRAJECTORY_LINE_COLOR}
+                strokeWidth="2.5"
+                strokeOpacity="1"
+                strokeLinecap="round"
+                data-ena-trajectory-style={encoding.key}
+                aria-label={`${segment.label}. ${groupEncodingDescription(segment.groupName, segment.groupIndex)}.`}
+              >
+                <title>{`${segment.label}. ${encoding.trajectoryLabel} trajectory line.`}</title>
+              </line>
+              <line
+                className="ena-trajectory-direction-arrow"
+                x1={arrowTail.x}
+                y1={arrowTail.y}
+                x2={arrowTip.x}
+                y2={arrowTip.y}
+                stroke={TRAJECTORY_LINE_COLOR}
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                markerEnd={`url(#ena-trajectory-arrow-${segment.groupIndex})`}
+                data-ena-direction-progress={String(TRAJECTORY_ARROW_TIP_PROGRESS)}
+                aria-hidden="true"
+              />
+            </g>
           );
         })}
 
@@ -541,18 +564,18 @@ export default function OpenEnaPlot({
           const point = positions.get(mean.key);
           const group = result.groups[index];
           if (!point || !group) return null;
-          const encoding = getGroupVisualEncoding(index);
           return (
             <g
               key={mean.label}
               transform={`translate(${point.x} ${point.y})`}
               role="img"
-              aria-label={`${group.name} mean: ${encoding.markerLabel} marker`}
-              data-ena-group-shape={encoding.markerShape}
+              aria-label={`${group.name} mean: square centroid marker`}
+              data-ena-group-shape="square"
+              data-ena-centroid-shape="square"
             >
-              <title>{`${group.name} mean: ${encoding.markerLabel} marker.`}</title>
+              <title>{`${group.name} mean: square centroid marker.`}</title>
               <GroupMarkerGlyph
-                shape={encoding.markerShape}
+                shape="square"
                 x={0}
                 y={0}
                 size={12}
@@ -637,11 +660,11 @@ export default function OpenEnaPlot({
             </span>
           );
         })}
-        <span aria-label="Group means use larger outlined versions of each group marker.">
+        <span aria-label="Group means use square centroid markers.">
           <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true">
-            <circle cx="7.5" cy="7.5" r="5.5" fill="#52636a" stroke="#fff" strokeWidth="2.5" />
+            <rect x="2" y="2" width="11" height="11" fill="#52636a" stroke="#fff" strokeWidth="2.5" />
           </svg>
-          Outlined marker = group mean
+          Square marker = group mean
         </span>
       </div>
       <details className="ena-result-summary">

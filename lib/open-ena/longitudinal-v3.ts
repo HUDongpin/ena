@@ -381,7 +381,7 @@ export async function createOpenEnaLongitudinalSettingsV3(input: {
       explicitStrataField: null,
     },
     networkOverlay: {
-      enabled: false,
+      enabled: true,
       periodCanonical: periods[0]?.sourceTimeCanonical ?? null,
       groupCanonical: null,
     },
@@ -1010,14 +1010,22 @@ export function openEnaTrajectoryDisplaySpecV3(
     displayedGroups: [...displayedGroups],
     traces: {
       participants: true,
-      individualPaths: true,
+      individualPaths: false,
       centroids: true,
       paths: true,
       directionArrows: true,
-      uncertainty: bundle.bootstrap.some((entry) => entry.status === "available"),
-      networkOverlay: bundle.networkOverlays.some((entry) => entry.status === "available"),
+      networkOverlay: false,
       labels: true,
       ...options.traces,
+      // Trajectory presenters intentionally never draw confidence intervals.
+      // Static 3D ENA group-comparison plots own the visual CI grammar; the
+      // longitudinal bootstrap remains available only in numerical tables and
+      // exports.
+      uncertainty: false,
+      // Fitted ENA codes are reference geometry, not a mean-network edge
+      // overlay. Keep them visible whenever the immutable jENA bundle contains
+      // their canonical coordinates.
+      codeNodes: bundle.networkOverlays.some((entry) => entry.status === "available"),
     },
     axisFlips: options.axisFlips ? [...options.axisFlips] : [false, false, false],
     camera: options.camera === undefined

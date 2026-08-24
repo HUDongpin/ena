@@ -46,24 +46,68 @@ export function applyCompactTrajectoryPlotlyLayoutV3(
   const legendFont = mutableRecord(legend.font);
   const margin = mutableRecord(input.layout.margin);
   input.layout.autosize = true;
-  input.layout.legend = {
+  const compactLegend: Record<string, unknown> = {
     ...legend,
-    orientation: "h",
+    orientation: "v",
     x: 0,
     xanchor: "left",
-    y: -0.12,
+    y: -0.08,
     yanchor: "top",
-    font: { ...legendFont, size: 9 },
-    entrywidth: 138,
-    entrywidthmode: "pixels",
-    tracegroupgap: 2,
+    font: { ...legendFont, size: 10 },
+    tracegroupgap: 1,
   };
+  delete compactLegend.entrywidth;
+  delete compactLegend.entrywidthmode;
+  input.layout.legend = compactLegend;
   input.layout.margin = {
     ...margin,
     l: 44,
     r: 12,
     t: 52,
-    b: 168,
+    b: 210,
   };
+  return input;
+}
+
+/**
+ * Uses the complete fullscreen Plotly paper for the presenter. The legend is
+ * intentionally overlaid inside the paper so Plotly does not reserve a wide
+ * blank column beside a square 3D scene. This is a display-only transform of a
+ * mutable clone; it cannot change the immutable trajectory result envelope.
+ */
+export function applyFullscreenTrajectoryPlotlyLayoutV3(
+  input: MutableTrajectoryPlotlyInputV3,
+  fullscreen: boolean,
+): MutableTrajectoryPlotlyInputV3 {
+  if (!fullscreen) return input;
+
+  const legend = mutableRecord(input.layout.legend);
+  const legendFont = mutableRecord(legend.font);
+  const fullscreenLegend: Record<string, unknown> = {
+    ...legend,
+    orientation: "v",
+    x: 0.995,
+    xanchor: "right",
+    y: 0.995,
+    yanchor: "top",
+    bgcolor: "rgba(255,255,255,0.82)",
+    bordercolor: "rgba(91,111,116,0.28)",
+    borderwidth: 1,
+    font: { ...legendFont, size: 11 },
+    tracegroupgap: 2,
+  };
+  delete fullscreenLegend.entrywidth;
+  delete fullscreenLegend.entrywidthmode;
+
+  input.layout.autosize = true;
+  input.layout.legend = fullscreenLegend;
+  input.layout.margin = { l: 24, r: 8, t: 28, b: 20 };
+  const scene = mutableRecord(input.layout.scene);
+  if (Object.keys(scene).length > 0) {
+    input.layout.scene = {
+      ...scene,
+      domain: { x: [0, 1], y: [0, 1] },
+    };
+  }
   return input;
 }

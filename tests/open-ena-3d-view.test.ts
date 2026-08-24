@@ -49,6 +49,26 @@ function threeDimensionalResult() {
   return analyzeDataset(dataset, THREE_DIMENSIONAL_CONFIG);
 }
 
+function confidenceReadyThreeDimensionalResult() {
+  const rows = ["unit,conversation,group,A,B,C"];
+  const patterns = [
+    [1, 1, 0],
+    [1, 0, 1],
+    [0, 1, 1],
+    [1, 1, 1],
+  ];
+  for (const group of ["first", "second"]) {
+    patterns.forEach((pattern, index) => {
+      rows.push(`${group}-${index + 1},c${index + 1},${group},${pattern.join(",")}`);
+    });
+  }
+  const dataset = parseCsv(`${rows.join("\n")}\n`, {
+    name: "three-dimensional-confidence-contract.csv",
+    source: "upload",
+  });
+  return analyzeDataset(dataset, THREE_DIMENSIONAL_CONFIG);
+}
+
 function sixGroupTrajectoryResult() {
   const rows = ["unit,conversation,group,A,B,C"];
   for (let index = 0; index < 6; index += 1) {
@@ -289,6 +309,172 @@ test("3D pairwise compilation gives Comparison, Primary, and Secondary distinct 
   assert.equal(primary.layout.scene.dragmode, false);
 });
 
+test("3D group means always use square centroid markers regardless of unit-point shape", () => {
+  const result = threeDimensionalResult();
+  const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
+  const contrast = buildPairwiseGroupContrast(
+    result,
+    THREE_DIMENSIONAL_CONFIG,
+    "first",
+    "second",
+    [xDimension, yDimension],
+    "2026-08-24T00:00:00.000Z",
+  );
+  const spec = compileOpenEna3dPlotSpec({
+    result,
+    contrast,
+    plotKind: "comparison",
+    groupColumn: "group",
+    xDimension,
+    yDimension,
+    zDimension,
+    camera: "isometric",
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    showTrajectories: false,
+    edgeScale: 1,
+    edgeThreshold: 0,
+    pointScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+  });
+  const means = spec.data.filter((trace) => trace.meta.role === "group-mean");
+
+  assert.equal(means.length, 2);
+  assert.deepEqual(means.map((trace) => trace.marker?.symbol), ["square", "square"]);
+  assert.deepEqual(means.map((trace) => trace.meta.markerSymbol), ["square", "square"]);
+  assert.ok(means.every((trace) => trace.name.endsWith("mean · square")));
+  assert.deepEqual(
+    spec.data.filter((trace) => trace.meta.role === "unit-points").map((trace) => trace.marker?.symbol),
+    ["circle", "square"],
+    "unit points keep their non-color group encoding while both centroids use squares",
+  );
+});
+
+test("pairwise contrast freezes marginal Student-t intervals for every fitted dimension", () => {
+  const result = confidenceReadyThreeDimensionalResult();
+  const [xDimension = "SVD1", yDimension = "SVD2"] = result.dimensions;
+  const contrast = buildPairwiseGroupContrast(
+    result,
+    THREE_DIMENSIONAL_CONFIG,
+    "first",
+    "second",
+    [xDimension, yDimension],
+    "2026-08-24T00:00:00.000Z",
+  );
+  type IntervalRecord = Record<string, { status: string; lower?: number; upper?: number }>;
+  const primaryIntervals = (contrast.primary as typeof contrast.primary & {
+    meanConfidenceIntervalsByDimension?: IntervalRecord;
+  }).meanConfidenceIntervalsByDimension;
+  const secondaryIntervals = (contrast.secondary as typeof contrast.secondary & {
+    meanConfidenceIntervalsByDimension?: IntervalRecord;
+  }).meanConfidenceIntervalsByDimension;
+
+  assert.deepEqual(Object.keys(primaryIntervals ?? {}), result.dimensions);
+  assert.deepEqual(Object.keys(secondaryIntervals ?? {}), result.dimensions);
+  for (const dimension of result.dimensions) {
+    assert.equal(primaryIntervals?.[dimension]?.status, "estimable");
+    assert.equal(secondaryIntervals?.[dimension]?.status, "estimable");
+  }
+});
+
+test("3D comparison renders dashed three-axis marginal CI wireframes while compact side plots omit them", () => {
+  const result = confidenceReadyThreeDimensionalResult();
+  const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
+  const contrast = buildPairwiseGroupContrast(
+    result,
+    THREE_DIMENSIONAL_CONFIG,
+    "first",
+    "second",
+    [xDimension, yDimension],
+    "2026-08-24T00:00:00.000Z",
+  );
+  const common = {
+    result,
+    contrast,
+    groupColumn: "group",
+    xDimension,
+    yDimension,
+    zDimension,
+    camera: "isometric" as const,
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    showTrajectories: false,
+    edgeScale: 1,
+    edgeThreshold: 0,
+    pointScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+  };
+  const comparison = compileOpenEna3dPlotSpec({ ...common, plotKind: "comparison" });
+  const primary = compileOpenEna3dPlotSpec({ ...common, plotKind: "primary", compact: true });
+  const intervalTraces = comparison.data.filter(
+    (trace) => (trace.meta.role as string) === "confidence-interval",
+  );
+
+  assert.ok(intervalTraces.length >= 2, "the central 3D comparison must render both groups' CI wireframes");
+  assert.deepEqual(
+    new Set(intervalTraces.map((trace) => trace.meta.groupName)),
+    new Set([contrast.primary.name, contrast.secondary.name]),
+  );
+  assert.ok(intervalTraces.every((trace) => trace.mode === "lines"));
+  assert.ok(intervalTraces.every((trace) => trace.line?.dash === "dash"));
+  assert.ok(intervalTraces.every((trace) => trace.showlegend === false));
+  assert.equal(
+    primary.data.filter((trace) => (trace.meta.role as string) === "confidence-interval").length,
+    0,
+    "compact group-network side plots stay visually focused on their mean networks",
+  );
+});
+
+test("3D confidence wireframes have an exact non-visual interval table", () => {
+  const result = confidenceReadyThreeDimensionalResult();
+  const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
+  const contrast = buildPairwiseGroupContrast(
+    result,
+    THREE_DIMENSIONAL_CONFIG,
+    "first",
+    "second",
+    [xDimension, yDimension],
+    "2026-08-24T00:00:00.000Z",
+  );
+  const markup = renderToStaticMarkup(createElement(OpenEna3DGroupContrast, {
+    result,
+    contrast,
+    groupColumn: "group",
+    xDimension,
+    yDimension,
+    zDimension,
+    camera: "isometric",
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    edgeScale: 1,
+    edgeThreshold: 0,
+    pointScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+    copy: getOpenEnaCopy("en"),
+  }));
+
+  assert.match(markup, /data-ena-3d-confidence-interval-table="true"/);
+  assert.equal([...markup.matchAll(/data-ena-3d-confidence-interval-row="true"/gu)].length, 6);
+  assert.match(markup, /Separate marginal 95% Student-t confidence intervals/);
+  assert.match(markup, /not a joint confidence region or significance test/i);
+  assert.match(markup, /endpoint analytic units/i);
+});
+
 test("3D Comparison uses signed differences while side plots share one mean-network denominator", () => {
   const result = threeDimensionalResult();
   const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
@@ -384,6 +570,8 @@ test("3D trajectories retain six stable non-color group encodings and all three 
   assert.equal(new Set(pointTraces.map((trace) => trace.meta.groupName)).size, 6);
   assert.equal(trajectoryTraces.length, 6);
   assert.ok(trajectoryTraces.every((trace) => trace.z.length === 2));
+  assert.ok(trajectoryTraces.every((trace) => trace.line?.color === "#000000"));
+  assert.ok(pointTraces.every((trace) => trace.marker?.color !== "#000000"));
 });
 
 test("camera presets are explicit display-only orientations and the client plot owns the full interaction lifecycle", () => {

@@ -16,6 +16,7 @@ import {
 import {
   marginalMeanIntervalPair,
   marginalMeanStudentT95,
+  type OpenEnaMarginalMeanInterval,
   type OpenEnaMarginalMeanIntervalPair,
 } from "./uncertainty";
 
@@ -51,6 +52,12 @@ export interface OpenEnaPairwiseContrastSide {
   meanPoint: Record<string, number>;
   meanWeights: Record<string, number>;
   meanConfidenceIntervals?: OpenEnaMarginalMeanIntervalPair;
+  /**
+   * Frozen marginal intervals for every retained fitted dimension. The 2D
+   * presenter consumes `meanConfidenceIntervals`; the 3D presenter selects
+   * three entries from this immutable record without recomputing statistics.
+   */
+  meanConfidenceIntervalsByDimension?: Record<string, OpenEnaMarginalMeanInterval>;
 }
 
 export interface OpenEnaPairwiseContrast {
@@ -429,6 +436,12 @@ function buildSide(
       equalUnitMean(lineRows, edge.name, `${groupName} endpoint network`),
     ])),
     meanConfidenceIntervals: marginalMeanIntervalPair(points, axes),
+    meanConfidenceIntervalsByDimension: Object.fromEntries(result.dimensions.map((dimension) => [
+      dimension,
+      marginalMeanStudentT95(pointRows.map((row) => (
+        finite(row[dimension], `${groupName} ${dimension} coordinate`)
+      ))),
+    ])),
   };
 }
 

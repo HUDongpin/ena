@@ -515,6 +515,14 @@ export default function OpenEnaInteractive3DPlot({
             : group.name === contrast.primary.name || group.name === contrast.secondary.name
       ))
     : result.groups;
+  const confidenceIntervalRows = contrast && plotKind === "comparison"
+    ? [contrast.primary, contrast.secondary].flatMap((side) => (
+        [xDimension, yDimension, zDimension].flatMap((dimension) => {
+          const interval = side.meanConfidenceIntervalsByDimension?.[dimension];
+          return interval ? [{ side, dimension, interval }] : [];
+        })
+      ))
+    : [];
   const resolvedAriaLabel = ariaLabel ?? `${copy.workspace.comparison}, ${copy.views.threeD}`;
   const plotName = plotKind === "comparison" ? "Comparison" : plotKind === "primary" ? "Primary" : "Secondary";
   const canvasId = `${testId}-canvas`;
@@ -762,6 +770,49 @@ export default function OpenEnaInteractive3DPlot({
               ))}
             </tbody>
           </table>
+          {confidenceIntervalRows.length > 0 ? (
+            <>
+              <table data-ena-3d-confidence-interval-table="true">
+                <caption>Separate marginal 95% Student-t confidence intervals — exact fitted coordinates</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">{copy.workspace.groups}</th>
+                    <th scope="col">Axis</th>
+                    <th scope="col">n</th>
+                    <th scope="col">Mean</th>
+                    <th scope="col">Lower 95%</th>
+                    <th scope="col">Upper 95%</th>
+                    <th scope="col">df</th>
+                    <th scope="col">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {confidenceIntervalRows.map(({ side, dimension, interval }) => (
+                    <tr
+                      key={`${side.name}:${dimension}`}
+                      data-ena-3d-confidence-interval-row="true"
+                      data-ena-group={side.name}
+                      data-ena-dimension={dimension}
+                      data-ena-interval-status={interval.status}
+                    >
+                      <th scope="row">{side.name}</th>
+                      <td>{dimension}</td>
+                      <td>{interval.sampleSize}</td>
+                      <td>{interval.status === "estimable" ? exactCoordinate(interval.mean) : "—"}</td>
+                      <td>{interval.status === "estimable" ? exactCoordinate(interval.lower) : "—"}</td>
+                      <td>{interval.status === "estimable" ? exactCoordinate(interval.upper) : "—"}</td>
+                      <td>{interval.status === "estimable" ? interval.degreesFreedom : "—"}</td>
+                      <td>{interval.status === "estimable" ? "estimable" : interval.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p data-ena-3d-confidence-interval-boundary="marginal-not-joint">
+                Endpoint analytic units are the observations. The dashed wireframe is the Cartesian product of
+                three separate marginal intervals; it is not a joint confidence region or significance test.
+              </p>
+            </>
+          ) : null}
         </details>
       ) : null}
 

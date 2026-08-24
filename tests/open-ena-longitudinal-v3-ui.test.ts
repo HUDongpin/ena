@@ -66,6 +66,36 @@ test("the plot action toolbar occupies its own row instead of covering the 3D le
   assert.match(css, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.ena-longitudinal-v3-plot-shell\s*\{[^}]*height:\s*485px/);
 });
 
+test("individual participant paths are display-only and default off in the aggregate trajectory view", () => {
+  assert.match(component, /traces:\s*\{\s*participants:\s*true,\s*individualPaths:\s*false,[\s\S]*?uncertainty:\s*false,/);
+  assert.match(component, /\['individualPaths',\s*copy\.individualPaths\]/);
+});
+
+test("trajectory plots never expose confidence-interval traces while bootstrap remains numerical", () => {
+  assert.doesNotMatch(component, /\['uncertainty',\s*copy\.uncertainty\]/);
+  assert.match(component, /Bootstrap numerical intervals \(tables and exports only; not plotted\)/);
+  assert.match(component, /Bootstrap 数值区间（仅表格与导出，不绘图）/);
+});
+
+test("fitted ENA code nodes are always visible while mean-network edges remain display-only", () => {
+  assert.match(component, /codeNodes:\s*true/);
+  assert.match(component, /ENA code reference nodes are always shown/);
+  assert.match(component, /ENA code 参考节点始终显示/);
+  assert.match(component, /checked=\{display\.traces\.networkOverlay\}/);
+  assert.doesNotMatch(component, /checked=\{settings\.networkOverlay\.enabled\}/);
+});
+
+test("fullscreen gives the Plotly canvas the remaining dynamic viewport instead of retaining its 560px page height", () => {
+  assert.match(css, /\.ena-longitudinal-v3-plot-shell:fullscreen,\s*\.ena-longitudinal-v3-plot-shell\[data-fallback-fullscreen="true"\]\s*\{[^}]*display:\s*grid[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)[^}]*height:\s*100dvh[^}]*overflow:\s*hidden/);
+  assert.match(css, /\.ena-longitudinal-v3-plot-shell:fullscreen\s+\.ena-longitudinal-v3-plot,\s*\.ena-longitudinal-v3-plot-shell\[data-fallback-fullscreen="true"\]\s+\.ena-longitudinal-v3-plot\s*\{[^}]*height:\s*100%[^}]*min-height:\s*0/);
+  assert.match(css, /data-fallback-fullscreen="true"/);
+  assert.match(component, /setFallbackFullscreen\(true\)/);
+  assert.match(component, /requestFullscreen\(\)/);
+  assert.match(component, /document\.exitFullscreen\(\)/);
+  assert.match(component, /document\.addEventListener\("fullscreenchange",\s*resizePlot\)/);
+  assert.match(component, /window\.addEventListener\("resize",\s*resizePlot\)/);
+});
+
 test("V3 result surfaces include equivalent mapping, path, inference, bootstrap, warning, and provenance tables", () => {
   for (const testId of [
     "open-ena-longitudinal-v3-mapping-audit",

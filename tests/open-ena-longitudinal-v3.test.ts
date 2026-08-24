@@ -76,6 +76,7 @@ test("V3 defaults mirror the fitted mapping, choose three real dimensions, and k
   assert.equal(settings.bootstrap.repetitions, 500);
   assert.equal(settings.bootstrap.confidenceLevel, 0.95);
   assert.equal(settings.bootstrap.seed, 2026);
+  assert.equal(settings.networkOverlay.enabled, true);
   assert.deepEqual(settings.orderedPeriods.map((period) => period.displayLabel), ["1", "2", "3"]);
   assert.ok(settings.inference.pairedPeriods);
   assert.equal(settings.inference.pairedPeriods?.samePhysicalEntityConfirmed, false);
@@ -149,6 +150,8 @@ test("the Open ENA adapter binds, pseudonymizes, and executes one immutable jENA
   assert.equal(bundle.inference.some((item) => item.request.kind === "repeated-periods"), true);
   assert.equal(bundle.pathComparisons.length, 1);
   assert.equal(bundle.bootstrap.length, 2);
+  assert.equal(bundle.networkOverlays.length, 1);
+  assert.deepEqual(bundle.networkOverlays[0]?.nodes.map((node) => node.code), config.codes);
   assert.equal(bundle.execution.target, "node-service");
 });
 
@@ -173,14 +176,104 @@ test("2D and 3D compile from the same bundle and never change the result hash", 
   assert.equal(two.resultHash, bundle.identity.resultHash);
   assert.equal(threeDisplay.style.centroidSize, 7);
   assert.equal(twoDisplay.style.centroidSize, 7);
+  assert.equal(threeDisplay.traces.codeNodes, true);
+  assert.equal(twoDisplay.traces.codeNodes, true);
+  assert.equal(threeDisplay.traces.networkOverlay, false);
+  assert.equal(twoDisplay.traces.networkOverlay, false);
   for (const plot of [three, two]) {
+    const paths = plot.data.filter((trace) => trace.meta.role === "trajectory-path");
+    const individualPaths = plot.data.filter((trace) => trace.meta.role === "individual-path");
     const centroids = plot.data.filter((trace) => trace.meta.role === "centroid");
+    assert.ok(paths.length > 0);
+    assert.equal(individualPaths.length, 0);
     assert.ok(centroids.length > 0);
-    assert.ok(centroids.every((trace) => {
-      const marker = trace.marker as { size?: number } | undefined;
-      return marker?.size === 7;
+    assert.ok(paths.every((trace) => (
+      (trace.line as { color?: string } | undefined)?.color === "#000000"
+    )));
+    assert.ok(paths.every((trace) => {
+      const marker = trace.marker as { color?: string; symbol?: string } | undefined;
+      return marker?.symbol === "square" && marker.color !== "#000000";
     }));
+    assert.ok(centroids.every((trace) => {
+      const marker = trace.marker as { color?: string; size?: number; symbol?: string } | undefined;
+      return marker?.size === 7 && marker.symbol === "square" && marker.color !== "#000000";
+    }));
+    const codeNodes = plot.data.filter((trace) => trace.meta.role === "network-node");
+    assert.equal(codeNodes.length, 1);
+    assert.deepEqual(codeNodes[0]?.text, config.codes);
+    assert.equal(plot.data.filter((trace) => trace.meta.role === "network-edge").length, 0);
   }
+  const networkEdgeDisplay = openEnaTrajectoryDisplaySpecV3(bundle, {
+    projection: "3d",
+    traces: { ...threeDisplay.traces, networkOverlay: true },
+  });
+  const networkEdgePlot = compileTrajectoryPlotlySpec(bundle, networkEdgeDisplay);
+  assert.ok(networkEdgePlot.data.some((trace) => trace.meta.role === "network-edge"));
+  assert.equal(networkEdgePlot.resultHash, bundle.identity.resultHash);
+  const individualDisplay = openEnaTrajectoryDisplaySpecV3(bundle, {
+    projection: "3d",
+    traces: { ...threeDisplay.traces, individualPaths: true },
+  });
+  const individualPlot = compileTrajectoryPlotlySpec(bundle, individualDisplay);
+  const optionalIndividualPaths = individualPlot.data.filter((trace) => trace.meta.role === "individual-path");
+  assert.ok(optionalIndividualPaths.length > 0);
+  assert.ok(optionalIndividualPaths.every((trace) => (
+    (trace.line as { color?: string } | undefined)?.color === "#000000"
+  )));
+  assert.equal(individualPlot.resultHash, bundle.identity.resultHash);
+  const threeArrows = three.data.filter((trace) => trace.meta.role === "direction-arrow");
+  const twoArrows = two.data.filter((trace) => trace.meta.role === "direction-arrow");
+  assert.ok(threeArrows.length > 0);
+  assert.ok(twoArrows.length > 0);
+  assert.ok(threeArrows.every((trace) => JSON.stringify(trace.colorscale) === JSON.stringify([[0, "#000000"], [1, "#000000"]])));
+  assert.ok(twoArrows.every((trace) => (
+    (trace.line as { color?: string } | undefined)?.color === "#000000"
+    && (trace.marker as { color?: string } | undefined)?.color === "#000000"
+  )));
+  const threeUncertainty = three.data.filter((trace) => trace.meta.role === "uncertainty");
+  const twoUncertainty = two.data.filter((trace) => trace.meta.role === "uncertainty");
+  assert.equal(threeUncertainty.length, 0);
+  assert.equal(twoUncertainty.length, 0);
+  const requestedUncertaintyDisplay = openEnaTrajectoryDisplaySpecV3(bundle, {
+    projection: "3d",
+    traces: { ...threeDisplay.traces, uncertainty: true },
+  });
+  assert.equal(requestedUncertaintyDisplay.traces.uncertainty, false);
+  assert.equal(
+    compileTrajectoryPlotlySpec(bundle, requestedUncertaintyDisplay).data
+      .filter((trace) => trace.meta.role === "uncertainty").length,
+    0,
+  );
+  const expectedMidpoints = three.data
+    .filter((trace) => trace.meta.role === "trajectory-path")
+    .flatMap((trace) => {
+      const x = trace.x as Array<number | null>;
+      const y = trace.y as Array<number | null>;
+      const z = trace.z as Array<number | null>;
+      return x.slice(1).flatMap((currentX, index) => {
+        const previousX = x[index];
+        const previousY = y[index];
+        const currentY = y[index + 1];
+        const previousZ = z[index];
+        const currentZ = z[index + 1];
+        return previousX === null || currentX === null || previousY === null || currentY === null || previousZ === null || currentZ === null
+          ? []
+          : [[
+            previousX + (currentX - previousX) * 0.5,
+            previousY + (currentY - previousY) * 0.5,
+            previousZ + (currentZ - previousZ) * 0.5,
+          ]];
+      });
+    });
+  assert.deepEqual(threeArrows.map((trace) => [
+    (trace.x as number[])[0],
+    (trace.y as number[])[0],
+    (trace.z as number[])[0],
+  ]), expectedMidpoints);
+  assert.deepEqual(twoArrows.map((trace) => [
+    (trace.x as number[]).at(-1),
+    (trace.y as number[]).at(-1),
+  ]), expectedMidpoints.map(([x, y]) => [x, y]));
   assert.notDeepEqual(three.layout, two.layout);
   assert.equal(isOpenEnaLongitudinalBundleStaleV3(bundle, prepared.binding), false);
   assert.equal(isOpenEnaLongitudinalBundleStaleV3(bundle, { ...prepared.binding, specHash: "f".repeat(64) }), true);

@@ -128,14 +128,20 @@ test("independent individual and centroid layers render together with non-color 
     1,
     "the connected individual path also needs a direction arrow",
   );
-  assert.match(both, /data-ena-direction-progress="0\.58"/);
-  assert.match(both, /class="ena-group-centroid-direction-arrow"[^>]*fill="#17212b"[^>]*stroke="#fff"/);
-  assert.match(both, /class="ena-individual-direction-arrow"[^>]*fill="#17212b"[^>]*stroke="#fff"/);
+  assert.match(both, /data-ena-direction-progress="0\.5"/);
+  assert.match(both, /class="ena-group-centroid-direction-arrow"[^>]*fill="#000000"[^>]*stroke="#fff"/);
+  assert.match(both, /class="ena-individual-direction-arrow"[^>]*fill="#000000"[^>]*stroke="#fff"/);
   assert.match(both, /data-ena-group-shape="circle"/);
   assert.match(both, /data-ena-group-shape="diamond"/);
+  assert.ok(
+    [...both.matchAll(/data-ena-group-centroid="true"[^>]*data-ena-group-shape="([^"]+)"/g)]
+      .every((match) => match[1] === "square"),
+    "every group-period centroid must use the ENA square while individual points retain group shapes",
+  );
   assert.match(both, /data-ena-line-style="solid"/);
   assert.doesNotMatch(both, /class="ena-(?:individual-trajectory|group-centroid)-path"[^>]*stroke-dasharray=/);
-  assert.match(both, /class="ena-individual-trajectory-path"[^>]*stroke="#3366cc"[^>]*data-ena-group-index="0"/);
+  assert.match(both, /class="ena-individual-trajectory-path"[^>]*stroke="#000000"[^>]*data-ena-group-index="0"/);
+  assert.match(both, /class="ena-group-centroid-path"[^>]*stroke="#000000"/);
   assert.match(both, /data-ena-group-shape="diamond"[^>]*style="color:#dc3912"/);
   assert.match(both, /data-ena-group-centroid="true"[^>]*data-ena-group-index="0"(?:(?!<\/g>)[\s\S])*?<text[^>]*text-anchor="start"/);
   assert.match(both, /data-ena-group-centroid="true"[^>]*data-ena-group-index="1"(?:(?!<\/g>)[\s\S])*?<text[^>]*text-anchor="end"/);
@@ -491,7 +497,7 @@ test("the longitudinal figure has an accessible legend, table, and isolated resp
   assert.match(markup, /aria-label="Longitudinal trajectory legend"/);
   assert.match(markup, /Studio: circle marker, solid path/);
   assert.match(markup, /Seminar: diamond marker, solid path/);
-  assert.match(markup, /Larger outlined marker = group-period centroid/);
+  assert.match(markup, /Larger outlined square = group-period centroid/);
   assert.match(markup, /Arrow = selected period direction/);
   assert.match(markup, /No endpoint Mann–Whitney or Welch test is applied/);
   assert.ok(markerIndex >= 0, "longitudinal styles must be appended in their own isolated section");
