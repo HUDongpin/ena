@@ -6,9 +6,10 @@ import { siteConfig } from "@/lib/site";
 interface LogoProps {
   locale: Locale;
   compact?: boolean;
+  priority?: boolean;
 }
 
-export default function Logo({ locale, compact = false }: LogoProps) {
+export default function Logo({ locale, compact = false, priority = false }: LogoProps) {
   return (
     <Link
       href={`/${locale}`}
@@ -17,7 +18,7 @@ export default function Logo({ locale, compact = false }: LogoProps) {
       dir="ltr"
     >
       <span className="brand-mark">
-        <Image src="/ena-mark.svg" width={48} height={48} alt="" priority />
+        <Image src="/ena-mark.svg" width={48} height={48} alt="" priority={priority} />
       </span>
       {!compact && (
         <span className="brand-type">

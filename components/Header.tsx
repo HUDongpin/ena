@@ -21,6 +21,8 @@ export default function Header({ locale, dictionary }: HeaderProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const currentPath = normalizePath(pathname);
+  const isOpenEnaPath = currentPath === `/${locale}/open-ena`
+    || currentPath.startsWith(`/${locale}/open-ena/`);
   const navItems = [
     { href: `/${locale}`, label: dictionary.nav.home },
     { href: `/${locale}/mission`, label: dictionary.nav.mission },
@@ -39,7 +41,7 @@ export default function Header({ locale, dictionary }: HeaderProps) {
   return (
     <header className="site-header">
       <div className="container header-inner">
-        <Logo locale={locale} />
+        <Logo locale={locale} priority={!isOpenEnaPath} />
         <nav className="desktop-nav" aria-label="Primary navigation">
           {navItems.map((item) => (
             <Link

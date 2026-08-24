@@ -920,19 +920,50 @@ async function downloadAllArtifacts(page, args) {
 }
 
 async function readBrowserErrors(page, args) {
-  const isExpectedPlatformWarning = (warning) => args.browser === "firefox" && (
-    warning.includes("WebGL warning:")
-    || warning.includes("After reporting 32, no further warnings will be reported for this WebGL context")
-    || (
-      args.externalDevelopmentServer
-      && warning.includes("preloaded with link preload was not used within a few seconds")
-    )
-  );
+  const currentHref = page.url();
+  const currentOrigin = await page.evaluate(() => window.location.origin);
+  const declaredFontPreloads = new Set(await page
+    .locator('link[rel="preload"][as="font"][type="font/woff2"]')
+    .evaluateAll((links) => links
+      .filter((link) => link.hasAttribute("crossorigin"))
+      .map((link) => link.href)));
+  const strictNextFontPath = /^\/_next\/static\/media\/[a-f0-9]+-s\.p\.[a-z0-9]+\.woff2$/u;
+  const strictFirefoxPreloadWarning = /^\[JavaScript Warning: "The resource at “([^”]+)” preloaded with link preload was not used within a few seconds\. Make sure all attributes of the preload tag are set correctly\." \{file: "([^"]+)" line: 0\}\]$/u;
+  const classifyNextFontPreloadDiagnostic = (warning) => {
+    const match = warning.match(strictFirefoxPreloadWarning);
+    if (!match) return null;
+    const resourceHref = match[1];
+    const reportingHref = match[2];
+    if (!resourceHref.startsWith(currentOrigin + "/")) return null;
+    if (reportingHref !== currentHref) return null;
+    const resourcePath = resourceHref.slice(currentOrigin.length);
+    if (!strictNextFontPath.test(resourcePath)) return null;
+    if (!declaredFontPreloads.has(resourceHref)) return null;
+    return resourceHref;
+  };
   const allWarnings = [...(page.__openEnaLongitudinalConsoleWarnings || [])];
+  const consoleWarnings = [];
+  const nextFontPreloadDiagnosticUrls = [];
+  let webglDiagnosticCount = 0;
+  for (const warning of allWarnings) {
+    const isFirefoxWebglDiagnostic = args.browser === "firefox" && (
+      warning.includes("WebGL warning:")
+      || warning.includes("After reporting 32, no further warnings will be reported for this WebGL context")
+    );
+    const nextFontUrl = args.browser === "firefox"
+      ? classifyNextFontPreloadDiagnostic(warning)
+      : null;
+    if (isFirefoxWebglDiagnostic) webglDiagnosticCount += 1;
+    else if (nextFontUrl) nextFontPreloadDiagnosticUrls.push(nextFontUrl);
+    else consoleWarnings.push(warning);
+  }
   return {
     consoleErrors: [...(page.__openEnaLongitudinalConsoleErrors || [])],
-    consoleWarnings: allWarnings.filter((warning) => !isExpectedPlatformWarning(warning)),
-    expectedPlatformWarnings: allWarnings.filter(isExpectedPlatformWarning),
+    consoleWarnings,
+    platformDiagnostics: {
+      nextFontPreloadDiagnosticUrls: [...new Set(nextFontPreloadDiagnosticUrls)].sort(),
+      webglDiagnosticCount,
+    },
     pageErrors: [...(page.__openEnaLongitudinalPageErrors || [])],
   };
 }
@@ -1043,7 +1074,7 @@ try {
   const browserErrors = runBrowserPhase(
     "collect console and page errors",
     readBrowserErrors,
-    { browser: smokeBrowser, externalDevelopmentServer: Boolean(externalBaseUrl) },
+    { browser: smokeBrowser },
   );
   assert.deepEqual(browserErrors.consoleErrors, [], "browser console contains errors");
   assert.deepEqual(browserErrors.consoleWarnings, [], "browser console contains warnings");
@@ -1104,7 +1135,12 @@ try {
       contentSetHash: participant.manifest.contentSetHash,
       zipSha256: participant.zipSha256,
     },
-    browserErrors: { consoleErrors: 0, consoleWarnings: 0, pageErrors: 0 },
+    browserErrors: {
+      consoleErrors: 0,
+      consoleWarnings: 0,
+      pageErrors: 0,
+      platformDiagnostics: browserErrors.platformDiagnostics,
+    },
     artifacts: artifactDirectory,
   };
   writeFileSync(join(artifactDirectory, "summary.json"), JSON.stringify(summary, null, 2) + "\n");

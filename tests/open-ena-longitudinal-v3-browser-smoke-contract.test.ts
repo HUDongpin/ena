@@ -25,6 +25,15 @@ test("the version-controlled longitudinal V3 smoke owns its server and covers th
   assert.match(source, /\{\s*width:\s*390,\s*height:\s*844/u);
   assert.match(source, /page\.on\("console"/u);
   assert.match(source, /page\.on\("pageerror"/u);
+  assert.match(source, /strictFirefoxPreloadWarning/u);
+  assert.match(source, /strictNextFontPath/u);
+  assert.match(source, /window\.location\.origin/u);
+  assert.match(source, /resourceHref\.startsWith\(currentOrigin \+ "\/"\)/u);
+  assert.match(source, /reportingHref !== currentHref/u);
+  assert.match(source, /declaredFontPreloads\.has\(resourceHref\)/u);
+  assert.match(source, /link\[rel="preload"\]\[as="font"\]\[type="font\/woff2"\]/u);
+  assert.match(source, /nextFontPreloadDiagnosticUrls/u);
+  assert.match(source, /platformDiagnostics: browserErrors\.platformDiagnostics/u);
   assert.match(source, /continueLocal\s*\.waitFor\(\{ state: "visible"/u);
   assert.match(source, /expectedCameraStates/u);
   assert.match(source, /page\.mouse\.down\(\)/u);

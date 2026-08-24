@@ -21,7 +21,7 @@ export default function OpenEnaLogin({ locale, error }: OpenEnaLoginProps) {
       <section className="open-ena-login-shell" aria-labelledby="open-ena-login-title">
         <div className="open-ena-login-context">
           <div className="open-ena-login-brand" dir="ltr">
-            <Image src="/ena-mark.svg" width={54} height={54} alt="" priority />
+            <Image src="/ena-mark.svg" width={54} height={54} alt="" />
             <div>
               <strong>OPEN ENA</strong>
               <span>ENA.HK</span>

@@ -106,8 +106,21 @@ test("the login form is accessible and never exposes the default account or pass
   assert.match(login, /autoComplete="current-password"/);
   assert.match(login, /aria-describedby=\{error \? "open-ena-login-error" : undefined\}/);
   assert.match(login, /href="mailto:sandy0692@gmail\.com"/);
+  assert.doesNotMatch(login, /priority/u);
   assert.doesNotMatch(`${login}\n${copy}`, /sandytu/);
   assert.doesNotMatch(`${login}\n${copy}`, /12345/);
+});
+
+test("the hidden Open ENA shell never preloads the shared ENA mark", () => {
+  const header = readFileSync(join(projectRoot, "components", "Header.tsx"), "utf8");
+  const footer = readFileSync(join(projectRoot, "components", "Footer.tsx"), "utf8");
+  const logo = readFileSync(join(projectRoot, "components", "Logo.tsx"), "utf8");
+
+  assert.match(header, /isOpenEnaPath/u);
+  assert.match(header, /priority=\{!isOpenEnaPath\}/u);
+  assert.doesNotMatch(footer, /<Logo[^>]*priority=/u);
+  assert.match(logo, /priority = false/u);
+  assert.match(logo, /priority=\{priority\}/u);
 });
 
 test("the public back-to-top control cannot cover the login form", () => {
