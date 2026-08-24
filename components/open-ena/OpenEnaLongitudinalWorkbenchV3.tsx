@@ -108,6 +108,8 @@ const english = {
   labels: "Labels",
   uncertainty: "Bootstrap numerical intervals (tables and exports only; not plotted)",
   network: "Mean network overlay",
+  networkEdges: "Mean network edges",
+  codeNodesHint: "ENA code reference nodes are always shown from the fitted jENA geometry; this display-only switch adds or hides mean-network edges.",
   bootstrap: "Participant-history cluster bootstrap",
   repetitions: "Repetitions (200–500)",
   confidence: "Confidence level",
@@ -139,6 +141,7 @@ const english = {
   privacyConfirm: "Participant-level histories can create re-identification risk. Include them in a local export?",
   plotTitle: "Longitudinal trajectory presenter",
   fullscreen: "Fullscreen",
+  exitFullscreen: "Exit fullscreen",
   copyImage: "Copy image",
   resetDistance: "Reset distance",
   camera: "3D camera preset",
@@ -200,6 +203,8 @@ const zhHans: typeof english = {
   labels: "标签",
   uncertainty: "Bootstrap 数值区间（仅表格与导出，不绘图）",
   network: "平均网络叠加",
+  networkEdges: "平均网络连线",
+  codeNodesHint: "ENA code 参考节点始终显示，并直接使用拟合后的 jENA 几何坐标；此纯显示开关只添加或隐藏平均网络连线。",
   bootstrap: "参与者完整历史 cluster bootstrap",
   repetitions: "重复次数（200–500）",
   confidence: "置信水平",
@@ -231,6 +236,7 @@ const zhHans: typeof english = {
   privacyConfirm: "参与者级历史可能带来重新识别风险。是否加入本地导出？",
   plotTitle: "纵向轨迹呈现器",
   fullscreen: "全屏",
+  exitFullscreen: "退出全屏",
   copyImage: "复制图片",
   resetDistance: "重置距离",
   camera: "三维相机预设",
@@ -261,6 +267,8 @@ const zhHant: typeof english = {
   complete: "完整隊列",
   downloads: "下載",
   fullscreen: "全螢幕",
+  networkEdges: "平均網絡連線",
+  codeNodesHint: "ENA code 參考節點始終顯示，並直接使用擬合後的 jENA 幾何坐標；此純顯示開關只添加或隱藏平均網絡連線。",
   mappingAudit: "映射與實體審計",
   provenance: "來源與版本",
 };
@@ -371,7 +379,9 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
   const [Plotly, setPlotly] = useState<PlotlyImageApi | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [compactLayout, setCompactLayout] = useState(false);
-  const [fullscreenLayout, setFullscreenLayout] = useState(false);
+  const [nativeFullscreenLayout, setNativeFullscreenLayout] = useState(false);
+  const [fallbackFullscreen, setFallbackFullscreen] = useState(false);
+  const fullscreenLayout = nativeFullscreenLayout || fallbackFullscreen;
 
   useEffect(() => {
     let active = true;
@@ -423,7 +433,7 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
     if (!Plotly) return;
     let frame: number | null = null;
     const resizePlot = () => {
-      setFullscreenLayout(document.fullscreenElement === shellRef.current);
+      setNativeFullscreenLayout(document.fullscreenElement === shellRef.current);
       if (frame !== null) window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         frame = null;
@@ -441,6 +451,15 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
       if (frame !== null) window.cancelAnimationFrame(frame);
     };
   }, [Plotly]);
+
+  useEffect(() => {
+    if (!fallbackFullscreen) return;
+    const exitOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFallbackFullscreen(false);
+    };
+    document.addEventListener("keydown", exitOnEscape);
+    return () => document.removeEventListener("keydown", exitOnEscape);
+  }, [fallbackFullscreen]);
 
   useEffect(() => () => {
     if (Plotly && rootRef.current) Plotly.purge(rootRef.current);
@@ -462,10 +481,30 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
     await Plotly.relayout(rootRef.current, { "scene.camera": reset } as never);
   };
 
+  const toggleFullscreen = async () => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    if (document.fullscreenElement === shell) {
+      await document.exitFullscreen();
+      return;
+    }
+    if (fallbackFullscreen) {
+      setFallbackFullscreen(false);
+      return;
+    }
+    try {
+      await shell.requestFullscreen();
+    } catch {
+      // Extension-controlled and embedded browsers can deny the native API.
+      // Keep the interaction useful with an equivalent viewport-filling layer.
+      setFallbackFullscreen(true);
+    }
+  };
+
   return (
-    <div ref={shellRef} className="ena-longitudinal-v3-plot-shell">
+    <div ref={shellRef} className="ena-longitudinal-v3-plot-shell" data-fallback-fullscreen={fallbackFullscreen ? "true" : undefined}>
       <div className="ena-longitudinal-v3-plot-actions" role="toolbar" aria-label={labels.plotTitle}>
-        <button type="button" onClick={() => void shellRef.current?.requestFullscreen()}>{labels.fullscreen}</button>
+        <button type="button" aria-pressed={fullscreenLayout} onClick={() => void toggleFullscreen()}>{fullscreenLayout ? labels.exitFullscreen : labels.fullscreen}</button>
         <button type="button" onClick={() => void copyImage()}>{labels.copyImage}</button>
         <button type="button" onClick={() => void resetDistance()} disabled={spec.layout.scene === undefined}>{labels.resetDistance}</button>
       </div>
@@ -582,7 +621,7 @@ export default function OpenEnaLongitudinalWorkbenchV3({
   const [display, setDisplay] = useState<DisplayStateV3>({
     projection: "3d",
     displayedGroups: [],
-    traces: { participants: true, individualPaths: false, centroids: true, paths: true, directionArrows: true, uncertainty: false, networkOverlay: false, labels: true },
+    traces: { participants: true, individualPaths: false, centroids: true, paths: true, directionArrows: true, uncertainty: false, networkOverlay: false, codeNodes: true, labels: true },
     axisFlips: [false, false, false],
     cameraPreset: "isometric",
   });
@@ -828,7 +867,7 @@ export default function OpenEnaLongitudinalWorkbenchV3({
 
           <section data-trajectory-step="10"><h3><b>10</b>{copy.bootstrap}</h3><label className="ena-longitudinal-v3-check"><input type="checkbox" checked={settings.bootstrap.enabled} onChange={(event) => { const next = cloneOpenEnaLongitudinalSettingsV3(settings); next.bootstrap.enabled = event.target.checked; commitScientific(next); }} /><span>{copy.uncertainty}</span></label><div className="ena-longitudinal-v3-three"><label><span>{copy.repetitions}</span><input type="number" min="200" max="500" step="50" value={settings.bootstrap.repetitions} onChange={(event) => { const next = cloneOpenEnaLongitudinalSettingsV3(settings); next.bootstrap.repetitions = Number(event.target.value); if (next.inference.pathComparison) next.inference.pathComparison.repetitions = Number(event.target.value); commitScientific(next); }} /></label><label><span>{copy.confidence}</span><input type="number" min="0.8" max="0.99" step="0.01" value={settings.bootstrap.confidenceLevel} onChange={(event) => { const next = cloneOpenEnaLongitudinalSettingsV3(settings); next.bootstrap.confidenceLevel = Number(event.target.value); commitScientific(next); }} /></label><label><span>{copy.seed}</span><input type="number" min="0" max="4294967295" value={settings.bootstrap.seed} onChange={(event) => { const next = cloneOpenEnaLongitudinalSettingsV3(settings); next.bootstrap.seed = Number(event.target.value); if (next.inference.pathComparison) next.inference.pathComparison.seed = Number(event.target.value); commitScientific(next); }} /></label></div><label><span>{copy.resampling}</span><select value={settings.bootstrap.resamplingDesign} onChange={(event) => { const next = cloneOpenEnaLongitudinalSettingsV3(settings); next.bootstrap.resamplingDesign = event.target.value as OpenEnaLongitudinalSettingsV3["bootstrap"]["resamplingDesign"]; next.bootstrap.explicitStrataField = event.target.value === "explicit-strata" ? profile.stableParticipantMetadata[0] ?? null : null; commitScientific(next); }}>{["auto", "global-participant", "within-group", "explicit-strata"].map((value) => <option key={value} disabled={value === "explicit-strata" && profile.stableParticipantMetadata.length === 0}>{value}</option>)}</select></label>{settings.bootstrap.resamplingDesign === "explicit-strata" ? <label><span>Strata metadata</span><select value={settings.bootstrap.explicitStrataField ?? ""} onChange={(event) => { const next = cloneOpenEnaLongitudinalSettingsV3(settings); next.bootstrap.explicitStrataField = event.target.value; commitScientific(next); }}>{profile.stableParticipantMetadata.map((field) => <option key={field}>{field}</option>)}</select></label> : null}</section>
 
-          <section data-trajectory-step="11"><h3><b>11</b>{copy.network}</h3><label className="ena-longitudinal-v3-check"><input type="checkbox" checked={settings.networkOverlay.enabled} onChange={(event) => { const next = cloneOpenEnaLongitudinalSettingsV3(settings); next.networkOverlay.enabled = event.target.checked; commitScientific(next); setDisplay((current) => ({ ...current, traces: { ...current.traces, networkOverlay: event.target.checked } })); }} /><span>{copy.network}</span></label><label><span>{copy.overlayPeriod}</span><select value={settings.networkOverlay.periodCanonical ?? ""} onChange={(event) => { const next = cloneOpenEnaLongitudinalSettingsV3(settings); next.networkOverlay.periodCanonical = event.target.value; commitScientific(next); }}>{observedPeriods.map((period) => <option key={period.canonical} value={period.canonical}>{period.display}</option>)}</select></label><label><span>{copy.overlayScope}</span><select value={settings.networkOverlay.groupCanonical ?? ""} onChange={(event) => { const next = cloneOpenEnaLongitudinalSettingsV3(settings); next.networkOverlay.groupCanonical = event.target.value || null; commitScientific(next); }}><option value="">{copy.overall}</option>{inventory.groups.map((group) => <option key={group.canonical} value={group.canonical}>{group.display}</option>)}</select></label></section>
+          <section data-trajectory-step="11"><h3><b>11</b>{copy.network}</h3><p>{copy.codeNodesHint}</p><label className="ena-longitudinal-v3-check"><input type="checkbox" checked={display.traces.networkOverlay} onChange={(event) => setDisplay((current) => ({ ...current, traces: { ...current.traces, networkOverlay: event.target.checked } }))} /><span>{copy.networkEdges}</span></label><label><span>{copy.overlayPeriod}</span><select value={settings.networkOverlay.periodCanonical ?? ""} onChange={(event) => { const next = cloneOpenEnaLongitudinalSettingsV3(settings); next.networkOverlay.periodCanonical = event.target.value; commitScientific(next); }}>{observedPeriods.map((period) => <option key={period.canonical} value={period.canonical}>{period.display}</option>)}</select></label><label><span>{copy.overlayScope}</span><select value={settings.networkOverlay.groupCanonical ?? ""} onChange={(event) => { const next = cloneOpenEnaLongitudinalSettingsV3(settings); next.networkOverlay.groupCanonical = event.target.value || null; commitScientific(next); }}><option value="">{copy.overall}</option>{inventory.groups.map((group) => <option key={group.canonical} value={group.canonical}>{group.display}</option>)}</select></label></section>
 
           <section data-trajectory-step="12"><h3><b>12</b>{copy.status}</h3>{modelResultStale ? <p className="ena-longitudinal-v3-banner" role="status">{copy.modelStale}</p> : null}{stale ? <p className="ena-longitudinal-v3-banner" role="status">{copy.stale}</p> : null}{status === "remote-confirmation" && routeDecision ? <div className="ena-longitudinal-v3-remote" role="alert"><strong>{copy.remoteTitle}</strong><p>{copy.remoteText}</p><dl><div><dt>Predicted time</dt><dd>{routeDecision.predictedMilliseconds} ms</dd></div><div><dt>Predicted memory</dt><dd>{(routeDecision.predictedMemoryBytes / 1024 / 1024).toFixed(1)} MB</dd></div><div><dt>Hard deadline</dt><dd>60 s</dd></div></dl><button type="button" onClick={() => pendingRequest && void runPrepared(pendingRequest, { allowRemote: true })}>{copy.confirmRemote}</button><button type="button" onClick={() => pendingRequest && void runPrepared(pendingRequest, { forceLocal: true })}>{copy.continueLocal}</button><button type="button" onClick={() => { const next = cloneOpenEnaLongitudinalSettingsV3(settings); next.bootstrap.enabled = false; next.inference = { independentPeriod: null, pairedPeriods: null, repeatedPeriods: null, pathComparison: null }; commitScientific(next); void run(next); }}>{copy.disableHeavy}</button></div> : null}<div className="ena-longitudinal-v3-run-status" role="status" aria-live="polite"><span data-state={status} /><strong>{status === "ready" ? copy.ready : status}</strong>{status === "running" || status === "preparing" ? <progress max="1" value={progress.progress}>{Math.round(progress.progress * 100)}%</progress> : null}{cacheHit ? <small>{copy.cacheHit}</small> : null}</div>{error ? <p className="ena-longitudinal-v3-error" role="alert">{error}</p> : null}<div className="ena-longitudinal-v3-run-actions"><button type="button" className="ena-longitudinal-v3-primary" onClick={() => void run()} disabled={status === "running" || status === "preparing" || settings.participantColumns.length === 0}>{bundle ? copy.recompute : copy.run}</button>{status === "running" || status === "preparing" ? <button type="button" onClick={() => abortRef.current?.abort()}>{copy.cancel}</button> : null}{status === "error" ? <button type="button" onClick={() => void run()}>{copy.retry}</button> : null}</div></section>
 

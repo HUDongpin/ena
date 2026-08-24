@@ -84,7 +84,7 @@ test("fullscreen trajectory layout gives the scene the complete canvas and overl
   const cloned = cloneTrajectoryPlotlyInputV3(source);
   const fullscreen = applyFullscreenTrajectoryPlotlyLayoutV3(cloned, true);
 
-  assert.deepEqual(fullscreen.layout.margin, { l: 8, r: 8, t: 8, b: 8 });
+  assert.deepEqual(fullscreen.layout.margin, { l: 24, r: 8, t: 28, b: 20 });
   assert.deepEqual(fullscreen.layout.legend, {
     orientation: "v",
     x: 0.995,

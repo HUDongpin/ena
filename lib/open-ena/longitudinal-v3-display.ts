@@ -101,7 +101,7 @@ export function applyFullscreenTrajectoryPlotlyLayoutV3(
 
   input.layout.autosize = true;
   input.layout.legend = fullscreenLegend;
-  input.layout.margin = { l: 8, r: 8, t: 8, b: 8 };
+  input.layout.margin = { l: 24, r: 8, t: 28, b: 20 };
   const scene = mutableRecord(input.layout.scene);
   if (Object.keys(scene).length > 0) {
     input.layout.scene = {

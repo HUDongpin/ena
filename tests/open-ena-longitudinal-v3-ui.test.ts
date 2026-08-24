@@ -77,9 +77,21 @@ test("trajectory plots never expose confidence-interval traces while bootstrap r
   assert.match(component, /Bootstrap 数值区间（仅表格与导出，不绘图）/);
 });
 
+test("fitted ENA code nodes are always visible while mean-network edges remain display-only", () => {
+  assert.match(component, /codeNodes:\s*true/);
+  assert.match(component, /ENA code reference nodes are always shown/);
+  assert.match(component, /ENA code 参考节点始终显示/);
+  assert.match(component, /checked=\{display\.traces\.networkOverlay\}/);
+  assert.doesNotMatch(component, /checked=\{settings\.networkOverlay\.enabled\}/);
+});
+
 test("fullscreen gives the Plotly canvas the remaining dynamic viewport instead of retaining its 560px page height", () => {
-  assert.match(css, /\.ena-longitudinal-v3-plot-shell:fullscreen\s*\{[^}]*display:\s*grid[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)[^}]*height:\s*100dvh[^}]*overflow:\s*hidden/);
-  assert.match(css, /\.ena-longitudinal-v3-plot-shell:fullscreen\s+\.ena-longitudinal-v3-plot\s*\{[^}]*height:\s*100%[^}]*min-height:\s*0/);
+  assert.match(css, /\.ena-longitudinal-v3-plot-shell:fullscreen,\s*\.ena-longitudinal-v3-plot-shell\[data-fallback-fullscreen="true"\]\s*\{[^}]*display:\s*grid[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)[^}]*height:\s*100dvh[^}]*overflow:\s*hidden/);
+  assert.match(css, /\.ena-longitudinal-v3-plot-shell:fullscreen\s+\.ena-longitudinal-v3-plot,\s*\.ena-longitudinal-v3-plot-shell\[data-fallback-fullscreen="true"\]\s+\.ena-longitudinal-v3-plot\s*\{[^}]*height:\s*100%[^}]*min-height:\s*0/);
+  assert.match(css, /data-fallback-fullscreen="true"/);
+  assert.match(component, /setFallbackFullscreen\(true\)/);
+  assert.match(component, /requestFullscreen\(\)/);
+  assert.match(component, /document\.exitFullscreen\(\)/);
   assert.match(component, /document\.addEventListener\("fullscreenchange",\s*resizePlot\)/);
   assert.match(component, /window\.addEventListener\("resize",\s*resizePlot\)/);
 });

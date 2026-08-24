@@ -76,6 +76,7 @@ test("V3 defaults mirror the fitted mapping, choose three real dimensions, and k
   assert.equal(settings.bootstrap.repetitions, 500);
   assert.equal(settings.bootstrap.confidenceLevel, 0.95);
   assert.equal(settings.bootstrap.seed, 2026);
+  assert.equal(settings.networkOverlay.enabled, true);
   assert.deepEqual(settings.orderedPeriods.map((period) => period.displayLabel), ["1", "2", "3"]);
   assert.ok(settings.inference.pairedPeriods);
   assert.equal(settings.inference.pairedPeriods?.samePhysicalEntityConfirmed, false);
@@ -149,6 +150,8 @@ test("the Open ENA adapter binds, pseudonymizes, and executes one immutable jENA
   assert.equal(bundle.inference.some((item) => item.request.kind === "repeated-periods"), true);
   assert.equal(bundle.pathComparisons.length, 1);
   assert.equal(bundle.bootstrap.length, 2);
+  assert.equal(bundle.networkOverlays.length, 1);
+  assert.deepEqual(bundle.networkOverlays[0]?.nodes.map((node) => node.code), config.codes);
   assert.equal(bundle.execution.target, "node-service");
 });
 
@@ -173,6 +176,10 @@ test("2D and 3D compile from the same bundle and never change the result hash", 
   assert.equal(two.resultHash, bundle.identity.resultHash);
   assert.equal(threeDisplay.style.centroidSize, 7);
   assert.equal(twoDisplay.style.centroidSize, 7);
+  assert.equal(threeDisplay.traces.codeNodes, true);
+  assert.equal(twoDisplay.traces.codeNodes, true);
+  assert.equal(threeDisplay.traces.networkOverlay, false);
+  assert.equal(twoDisplay.traces.networkOverlay, false);
   for (const plot of [three, two]) {
     const paths = plot.data.filter((trace) => trace.meta.role === "trajectory-path");
     const individualPaths = plot.data.filter((trace) => trace.meta.role === "individual-path");
@@ -191,7 +198,18 @@ test("2D and 3D compile from the same bundle and never change the result hash", 
       const marker = trace.marker as { color?: string; size?: number; symbol?: string } | undefined;
       return marker?.size === 7 && marker.symbol === "square" && marker.color !== "#000000";
     }));
+    const codeNodes = plot.data.filter((trace) => trace.meta.role === "network-node");
+    assert.equal(codeNodes.length, 1);
+    assert.deepEqual(codeNodes[0]?.text, config.codes);
+    assert.equal(plot.data.filter((trace) => trace.meta.role === "network-edge").length, 0);
   }
+  const networkEdgeDisplay = openEnaTrajectoryDisplaySpecV3(bundle, {
+    projection: "3d",
+    traces: { ...threeDisplay.traces, networkOverlay: true },
+  });
+  const networkEdgePlot = compileTrajectoryPlotlySpec(bundle, networkEdgeDisplay);
+  assert.ok(networkEdgePlot.data.some((trace) => trace.meta.role === "network-edge"));
+  assert.equal(networkEdgePlot.resultHash, bundle.identity.resultHash);
   const individualDisplay = openEnaTrajectoryDisplaySpecV3(bundle, {
     projection: "3d",
     traces: { ...threeDisplay.traces, individualPaths: true },
