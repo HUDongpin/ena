@@ -679,6 +679,33 @@ async function exerciseCamerasAndProjections(page, args) {
       && vectorMatches(actual?.up, expected.up)
       && actual?.projection?.type === expected.projection.type;
   };
+  const readRuntimeCamera = async () => await plot.evaluate((root) => {
+    const scene = root?._fullLayout?.scene;
+    const runtimeCamera = typeof scene?._scene?.getCamera === "function"
+      ? scene._scene.getCamera()
+      : scene?.camera;
+    return runtimeCamera ? structuredClone(runtimeCamera) : null;
+  });
+  const waitForRuntimeCamera = async (expected, label) => {
+    const deadline = Date.now() + 15_000;
+    let lastCamera = null;
+    while (Date.now() <= deadline) {
+      const current = await readRuntimeCamera();
+      if (cameraMatches(current, expected)) return current;
+      lastCamera = current;
+      await page.waitForTimeout(50);
+    }
+    throw new Error(label + " did not reach its expected runtime camera: " + JSON.stringify(lastCamera));
+  };
+  const waitForRuntimeCameraChange = async (previous) => {
+    const deadline = Date.now() + 15_000;
+    while (Date.now() <= deadline) {
+      const current = await readRuntimeCamera();
+      if (JSON.stringify(current) !== JSON.stringify(previous)) return current;
+      await page.waitForTimeout(50);
+    }
+    throw new Error("mouse drag did not change the live Plotly runtime camera");
+  };
   const readScientificInvariants = async () => await plot.evaluate((root) => ({
     resultHashes: [...new Set(
       (Array.isArray(root.data) ? root.data : [])
@@ -700,16 +727,10 @@ async function exerciseCamerasAndProjections(page, args) {
   };
 
   await cameraSelect.selectOption("isometric");
-  await page.waitForFunction(({ expected }) => {
-    const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
-    const actual = root?._fullLayout?.scene?.camera;
-    const close = (left, right) => Math.abs(Number(left) - Number(right)) <= 1e-7;
-    return ["center", "eye", "up"].every((vector) => ["x", "y", "z"].every(
-      (axis) => close(actual?.[vector]?.[axis], expected[vector][axis]),
-    )) && actual?.projection?.type === expected.projection.type;
-  }, { expected: args.expectedCameraStates.isometric }, { timeout: 15_000 });
-  const beforeDrag = await plot.evaluate((root) => structuredClone(root._fullLayout.scene.camera));
+  await waitForRuntimeCamera(args.expectedCameraStates.isometric, "initial isometric preset");
+  const beforeDrag = await readRuntimeCamera();
   let dragVerified = false;
+  let afterDrag = beforeDrag;
   if (["chromium", "chrome", "msedge"].includes(args.browser)) {
     const plotBox = await plot.boundingBox();
     assertBrowser(Boolean(plotBox), "the 3D plot does not expose a mouse-interaction surface");
@@ -721,10 +742,7 @@ async function exerciseCamerasAndProjections(page, args) {
       { steps: 12 },
     );
     await page.mouse.up();
-    await page.waitForFunction((previous) => {
-      const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
-      return JSON.stringify(root?._fullLayout?.scene?.camera) !== JSON.stringify(previous);
-    }, beforeDrag, { timeout: 15_000 });
+    afterDrag = await waitForRuntimeCameraChange(beforeDrag);
     await assertScientificInvariants("mouse camera drag");
     dragVerified = true;
   } else {
@@ -732,15 +750,10 @@ async function exerciseCamerasAndProjections(page, args) {
   }
 
   await cameraSelect.selectOption("xy");
-  await page.waitForFunction(({ expected }) => {
-    const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
-    const actual = root?._fullLayout?.scene?.camera;
-    const close = (left, right) => Math.abs(Number(left) - Number(right)) <= 1e-7;
-    return ["center", "eye", "up"].every((vector) => ["x", "y", "z"].every(
-      (axis) => close(actual?.[vector]?.[axis], expected[vector][axis]),
-    )) && actual?.projection?.type === expected.projection.type;
-  }, { expected: args.expectedCameraStates.xy }, { timeout: 15_000 });
-  const restoredAfterDrag = await plot.evaluate((root) => structuredClone(root._fullLayout.scene.camera));
+  const restoredAfterDrag = await waitForRuntimeCamera(
+    args.expectedCameraStates.xy,
+    "XY preset after mouse drag",
+  );
   assertBrowser(
     cameraMatches(restoredAfterDrag, args.expectedCameraStates.xy),
     "selecting XY did not restore the exact camera preset",
@@ -752,19 +765,10 @@ async function exerciseCamerasAndProjections(page, args) {
   const cameraScreenshots = {};
   for (const preset of args.cameraPresets) {
     await cameraSelect.selectOption(preset);
-    await page.waitForFunction(({ value, expected }) => {
-      const select = [...document.querySelectorAll("select")]
-        .find((candidate) => candidate.parentElement?.textContent?.includes("3D camera preset"));
-      const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
-      const actual = root?._fullLayout?.scene?.camera;
-      const close = (left, right) => Math.abs(Number(left) - Number(right)) <= 1e-7;
-      return select?.value === value
-        && ["center", "eye", "up"].every((vector) => ["x", "y", "z"].every(
-          (axis) => close(actual?.[vector]?.[axis], expected[vector][axis]),
-        ))
-        && actual?.projection?.type === expected.projection.type;
-    }, { value: preset, expected: args.expectedCameraStates[preset] }, { timeout: 15_000 });
-    cameraStates[preset] = await plot.evaluate((root) => structuredClone(root._fullLayout.scene.camera));
+    cameraStates[preset] = await waitForRuntimeCamera(
+      args.expectedCameraStates[preset],
+      "camera preset " + preset,
+    );
     assertBrowser(
       cameraMatches(cameraStates[preset], args.expectedCameraStates[preset]),
       "camera preset " + preset + " did not restore its expected center, eye, up, and projection",
@@ -831,14 +835,7 @@ async function exerciseCamerasAndProjections(page, args) {
     return Boolean(root?._fullLayout?.scene);
   }, null, { timeout: 15_000 });
   await cameraSelect.selectOption("isometric");
-  await page.waitForFunction(({ expected }) => {
-    const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
-    const actual = root?._fullLayout?.scene?.camera;
-    const close = (left, right) => Math.abs(Number(left) - Number(right)) <= 1e-7;
-    return ["center", "eye", "up"].every((vector) => ["x", "y", "z"].every(
-      (axis) => close(actual?.[vector]?.[axis], expected[vector][axis]),
-    )) && actual?.projection?.type === expected.projection.type;
-  }, { expected: args.expectedCameraStates.isometric }, { timeout: 15_000 });
+  await waitForRuntimeCamera(args.expectedCameraStates.isometric, "restored isometric preset");
   await assertScientificInvariants("restoring 3D projection");
   return {
     cameraStates,
@@ -847,6 +844,7 @@ async function exerciseCamerasAndProjections(page, args) {
     projectionStates,
     resultLabel,
     beforeDrag,
+    afterDrag,
     restoredAfterDrag,
     dragVerified,
   };
@@ -1198,6 +1196,14 @@ try {
     "participant opt-in must produce a distinct privacy-scoped Plotly member",
   );
   verifyStandaloneDownloads(downloads, aggregate);
+  const downloadEvidence = Object.fromEntries(
+    Object.entries(downloads).map(([kind, path]) => [kind, artifactEvidence(path)]),
+  );
+  for (const receipt of Object.values(downloadEvidence)) {
+    assert.match(receipt.file, /^downloads\//u, "download receipt escaped the downloads directory");
+    assert.ok(receipt.bytes > 0, "download receipt has no bytes");
+    assert.match(receipt.sha256, /^[a-f0-9]{64}$/u, "download receipt has an invalid SHA-256");
+  }
 
   const serverLog = readServerLogTail();
   assert.doesNotMatch(serverLog, /open_ena_longitudinal_smoke_password/u);
@@ -1250,13 +1256,7 @@ try {
       plotAudit: responsiveAudit.fullscreenPlotAudit,
       screenshot: artifactEvidence(responsiveAudit.fullscreenPath),
     },
-    downloads: Object.fromEntries(
-      Object.entries(downloads).map(([kind, path]) => [kind, {
-        file: basename(path),
-        bytes: statSync(path).size,
-        sha256: sha256(readFileSync(path)),
-      }]),
-    ),
+    downloads: downloadEvidence,
     aggregate: {
       resultHash: aggregate.manifest.resultHash,
       contentSetHash: aggregate.manifest.contentSetHash,

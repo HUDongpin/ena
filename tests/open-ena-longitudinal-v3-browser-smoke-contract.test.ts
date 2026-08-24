@@ -109,6 +109,21 @@ test("the seven camera checks assert their visible selected labels and retain th
   assert.match(source, /cameraLabels:\s*displayAudit\.cameraLabels/u);
 });
 
+test("camera interaction evidence reads the live Plotly camera with a declarative fallback", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /const readRuntimeCamera = async \(\) => await plot\.evaluate/u);
+  assert.match(
+    source,
+    /typeof scene\?\._scene\?\.getCamera === "function"\s*\? scene\._scene\.getCamera\(\)\s*:\s*scene\?\.camera/u,
+  );
+  assert.match(source, /const beforeDrag = await readRuntimeCamera\(\)/u);
+  assert.match(source, /afterDrag = await waitForRuntimeCameraChange\(beforeDrag\)/u);
+  assert.match(source, /const current = await readRuntimeCamera\(\)/u);
+  assert.match(source, /const restoredAfterDrag = await waitForRuntimeCamera\(/u);
+  assert.match(source, /cameraStates\[preset\] = await waitForRuntimeCamera\(/u);
+  assert.match(source, /afterDrag,/u);
+});
+
 test("the summary converts every screenshot path into a portable integrity receipt", () => {
   const source = readFileSync(smokePath, "utf8");
   assert.match(source, /function artifactEvidence\(path\)/u);
@@ -121,6 +136,20 @@ test("the summary converts every screenshot path into a portable integrity recei
   assert.match(source, /pageScreenshot:\s*artifactEvidence\(pagePath\)/u);
   assert.match(source, /plotScreenshot:\s*artifactEvidence\(plotPath\)/u);
   assert.match(source, /screenshot:\s*artifactEvidence\(responsiveAudit\.fullscreenPath\)/u);
+});
+
+test("download receipts resolve beneath the portable artifact root and retain integrity metadata", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /const downloadDirectory = join\(artifactDirectory, "downloads"\)/u);
+  assert.match(
+    source,
+    /const downloadEvidence = Object\.fromEntries\(\s*Object\.entries\(downloads\)\.map\(\(\[kind, path\]\) => \[kind, artifactEvidence\(path\)\]\),?\s*\)/u,
+  );
+  assert.ok(source.includes("assert.match(receipt.file, /^downloads\\//u"));
+  assert.match(source, /assert\.ok\(receipt\.bytes > 0/u);
+  assert.ok(source.includes("assert.match(receipt.sha256, /^[a-f0-9]{64}$/u"));
+  assert.match(source, /downloads:\s*downloadEvidence/u);
+  assert.doesNotMatch(source, /file:\s*basename\(path\)/u);
 });
 
 test("the summary records the invoked Playwright CLI and actual browser runtime identities", () => {
