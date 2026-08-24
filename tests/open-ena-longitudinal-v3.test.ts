@@ -73,6 +73,7 @@ test("V3 defaults mirror the fitted mapping, choose three real dimensions, and k
   assert.deepEqual(settings.selectedDimensions, result.set.rotation.rotationColumns.slice(0, 3));
   assert.equal(settings.identityConfirmed, false);
   assert.equal(settings.identityBindingHash, null);
+  assert.equal(settings.bootstrap.enabled, false);
   assert.equal(settings.bootstrap.repetitions, 500);
   assert.equal(settings.bootstrap.confidenceLevel, 0.95);
   assert.equal(settings.bootstrap.seed, 2026);
@@ -112,6 +113,11 @@ test("the Open ENA adapter binds, pseudonymizes, and executes one immutable jENA
     config,
     datasetHash: HASH,
   });
+  // A persisted V3 setting created before trajectory CI was removed must not
+  // be able to re-enable a bootstrap task in a new longitudinal run.
+  settings.bootstrap.enabled = true;
+  settings.bootstrap.resamplingDesign = "explicit-strata";
+  settings.bootstrap.explicitStrataField = "stratum";
   const before = structuredClone(result.set);
   const prepared = await buildOpenEnaLongitudinalExecutionRequestV3({
     result,
@@ -128,6 +134,11 @@ test("the Open ENA adapter binds, pseudonymizes, and executes one immutable jENA
   remoteRequest.execution.target = "persistent-compute-service";
   assert.doesNotThrow(() => assertOpenEnaLongitudinalRemotePrivacyV3(remoteRequest));
   assert.equal(prepared.request.pathTask.specHash, prepared.request.dataset.specHash);
+  assert.equal(Object.hasOwn(prepared.request, "bootstrapTask"), false);
+  assert.deepEqual(
+    prepared.request.dataset.receipt.schema.columns.find((column) => column.name === "stratum")?.roles,
+    ["unmapped"],
+  );
   assert.equal(
     prepared.request.pathTask.runSpec.sourceResultHash,
     prepared.request.dataset.sourceResult?.hash,
@@ -135,11 +146,55 @@ test("the Open ENA adapter binds, pseudonymizes, and executes one immutable jENA
   assert.ok((prepared.request.dataset.sourceResult?.result as { dimensions: string[] }).dimensions.length > 3);
   const privateIdentifiers = new Set(["a1", "a2", "b1", "b2"]);
   const transportedPoints = (prepared.request.dataset.sourceResult?.result as {
-    points: Array<{ unit: { values: unknown[] }; participantLabel: { values: unknown[] } }>;
+    points: Array<{
+      unit: { values: unknown[]; canonical: string };
+      participantLabel: { values: unknown[]; canonical: string };
+    }>;
   }).points;
   assert.equal(transportedPoints.some((point) => (
     [...point.unit.values, ...point.participantLabel.values].some((value) => privateIdentifiers.has(String(value)))
   )), false);
+  assert.ok(transportedPoints.every((point) => (
+    /^opaque-participant:participant-[1-9][0-9]*-[a-f0-9]{32}$/u.test(point.participantLabel.canonical)
+    && /^opaque-unit:unit-[1-9][0-9]*-[a-f0-9]{32}$/u.test(point.unit.canonical)
+  )));
+  const repeatedParticipant = transportedPoints.filter((point) => point.participantLabel.values[0] === transportedPoints[0]?.participantLabel.values[0]);
+  assert.equal(repeatedParticipant.length, 3);
+
+  const replay = await buildOpenEnaLongitudinalExecutionRequestV3({
+    result,
+    config,
+    dataset,
+    datasetHash: HASH,
+    settings,
+    runId: "open-ena-v3-test-run",
+    executionTarget: "node-service",
+  });
+  assert.deepEqual(replay.request, prepared.request);
+
+  const independentlyLoadedResult = fitted();
+  const independentlyLoadedSettings = await createOpenEnaLongitudinalSettingsV3({
+    result: independentlyLoadedResult,
+    config,
+    dataset,
+    datasetHash: HASH,
+  });
+  const independentPreparation = await buildOpenEnaLongitudinalExecutionRequestV3({
+    result: independentlyLoadedResult,
+    config,
+    dataset,
+    datasetHash: HASH,
+    settings: independentlyLoadedSettings,
+    runId: "open-ena-v3-test-run",
+    executionTarget: "node-service",
+  });
+  const independentPoints = (independentPreparation.request.dataset.sourceResult?.result as {
+    points: Array<{ participantLabel: { canonical: string } }>;
+  }).points;
+  assert.notDeepEqual(
+    independentPoints.map((point) => point.participantLabel.canonical),
+    transportedPoints.map((point) => point.participantLabel.canonical),
+  );
   assert.deepEqual(result.set, before);
 
   const bundle = await executeLongitudinalAnalysisV2(prepared.request);
@@ -149,9 +204,9 @@ test("the Open ENA adapter binds, pseudonymizes, and executes one immutable jENA
   assert.equal(bundle.inference.some((item) => item.request.kind === "paired-periods"), true);
   assert.equal(bundle.inference.some((item) => item.request.kind === "repeated-periods"), true);
   assert.equal(bundle.pathComparisons.length, 1);
-  assert.equal(bundle.bootstrap.length, 2);
+  assert.equal(bundle.bootstrap.length, 0);
   assert.equal(bundle.networkOverlays.length, 1);
-  assert.deepEqual(bundle.networkOverlays[0]?.nodes.map((node) => node.code), config.codes);
+  assert.deepEqual(bundle.codeGeometry.nodes.map((node) => node.code), config.codes);
   assert.equal(bundle.execution.target, "node-service");
 });
 
@@ -190,10 +245,7 @@ test("2D and 3D compile from the same bundle and never change the result hash", 
     assert.ok(paths.every((trace) => (
       (trace.line as { color?: string } | undefined)?.color === "#000000"
     )));
-    assert.ok(paths.every((trace) => {
-      const marker = trace.marker as { color?: string; symbol?: string } | undefined;
-      return marker?.symbol === "square" && marker.color !== "#000000";
-    }));
+    assert.ok(paths.every((trace) => trace.mode === "lines" && !("marker" in trace)));
     assert.ok(centroids.every((trace) => {
       const marker = trace.marker as { color?: string; size?: number; symbol?: string } | undefined;
       return marker?.size === 7 && marker.symbol === "square" && marker.color !== "#000000";
@@ -295,4 +347,17 @@ test("V1/V2 settings migrate read-only to V3, add a real third dimension, and cl
   assert.equal(migrated.identityConfirmed, false);
   assert.equal(migrated.identityBindingHash, null);
   assert.equal(migrated.cohortPolicy, "complete");
+  assert.equal(migrated.bootstrap.enabled, false);
+
+  const formerV3 = await createOpenEnaLongitudinalSettingsV3({ result, config, dataset, datasetHash: HASH });
+  formerV3.bootstrap.enabled = true;
+  formerV3.bootstrap.resamplingDesign = "explicit-strata";
+  formerV3.bootstrap.explicitStrataField = "stratum";
+  const migratedFormerV3 = await migrateOpenEnaLongitudinalSettingsV3(
+    formerV3,
+    { result, config, dataset, datasetHash: HASH },
+  );
+  assert.equal(migratedFormerV3.bootstrap.enabled, false);
+  assert.equal(migratedFormerV3.bootstrap.resamplingDesign, "auto");
+  assert.equal(migratedFormerV3.bootstrap.explicitStrataField, null);
 });

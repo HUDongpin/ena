@@ -47,11 +47,12 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const analyticsEnabled = process.env.OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS !== "1";
   return (
     <html lang="en-HK" data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className={`${geist.variable} ${geistMono.variable}`}>
         {children}
-        <Analytics />
+        {analyticsEnabled ? <Analytics /> : null}
       </body>
     </html>
   );

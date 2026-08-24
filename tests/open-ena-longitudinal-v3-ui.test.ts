@@ -8,7 +8,7 @@ const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8")
 
 test("V3 trajectory controls follow the 3DENA scientific workflow order", () => {
   const order = [...component.matchAll(/data-trajectory-step="(\d+)"/gu)].map((match) => Number(match[1]));
-  assert.deepEqual(order, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+  assert.deepEqual(order, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   for (const phrase of [
     "Time / order variable",
     "Entity ID",
@@ -19,11 +19,17 @@ test("V3 trajectory controls follow the 3DENA scientific workflow order", () => 
     "Full rotation distance",
     "3D / 2D projection",
     "Direction arrows",
-    "Participant-history cluster bootstrap",
     "Mean network overlay",
     "Run trajectory analysis",
     "Analysis bundle ZIP",
   ]) assert.match(component, new RegExp(phrase, "i"));
+  for (const removed of [
+    "Participant-history cluster bootstrap",
+    "Bootstrap numerical intervals",
+    "Confidence level",
+    "Resampling design",
+    "Bootstrap CSV",
+  ]) assert.doesNotMatch(component, new RegExp(removed, "i"));
 });
 
 test("React presenter consumes the immutable package envelope and contains no scientific arithmetic", () => {
@@ -71,10 +77,21 @@ test("individual participant paths are display-only and default off in the aggre
   assert.match(component, /\['individualPaths',\s*copy\.individualPaths\]/);
 });
 
-test("trajectory plots never expose confidence-interval traces while bootstrap remains numerical", () => {
+test("trajectory analysis exposes no CI or bootstrap controls, results, or standalone download", () => {
   assert.doesNotMatch(component, /\['uncertainty',\s*copy\.uncertainty\]/);
-  assert.match(component, /Bootstrap numerical intervals \(tables and exports only; not plotted\)/);
-  assert.match(component, /Bootstrap 数值区间（仅表格与导出，不绘图）/);
+  assert.match(component, /uncertainty:\s*false/);
+  assert.match(component, /Run without inference/);
+  assert.match(component, /关闭推断后运行/);
+  assert.match(component, /關閉推斷後運行/);
+  assert.match(component, /required weights, and task parameters/);
+  assert.match(component, /必要权重以及任务参数/);
+  assert.match(component, /必要權重以及任務參數/);
+  assert.doesNotMatch(component, /required weights or strata/);
+  assert.doesNotMatch(component, /必要权重或分层/);
+  assert.doesNotMatch(component, /data-testid="open-ena-longitudinal-v3-bootstrap"/);
+  assert.doesNotMatch(component, /copy\.bootstrap(?:Results|Csv)?/);
+  assert.doesNotMatch(component, /trajectory-bootstrap\.csv/);
+  assert.doesNotMatch(component, /BOOTSTRAP_NOT_ESTIMABLE/);
 });
 
 test("fitted ENA code nodes are always visible while mean-network edges remain display-only", () => {
@@ -96,15 +113,15 @@ test("fullscreen gives the Plotly canvas the remaining dynamic viewport instead 
   assert.match(component, /window\.addEventListener\("resize",\s*resizePlot\)/);
 });
 
-test("V3 result surfaces include equivalent mapping, path, inference, bootstrap, warning, and provenance tables", () => {
+test("V3 result surfaces include equivalent mapping, path, inference, warning, and provenance tables", () => {
   for (const testId of [
     "open-ena-longitudinal-v3-mapping-audit",
     "open-ena-longitudinal-v3-path-table",
     "open-ena-longitudinal-v3-inference",
-    "open-ena-longitudinal-v3-bootstrap",
     "open-ena-longitudinal-v3-warnings",
     "open-ena-longitudinal-v3-provenance",
   ]) assert.match(component, new RegExp(`data-testid="${testId}"`));
+  assert.doesNotMatch(component, /data-testid="open-ena-longitudinal-v3-bootstrap"/);
 });
 
 test("all trajectory camera options preserve the lowercase CameraPreset value", () => {

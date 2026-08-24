@@ -1,0 +1,1071 @@
+#!/usr/bin/env node
+
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { execFileSync, spawn } from "node:child_process";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { createServer } from "node:net";
+import { homedir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const tsconfigPath = join(projectRoot, "tsconfig.json");
+const originalTsconfig = readFileSync(tsconfigPath, "utf8");
+const artifactDirectory = resolve(
+  process.env.OPEN_ENA_LONGITUDINAL_SMOKE_ARTIFACT_DIR
+    || join(projectRoot, "output", "playwright", "open-ena-longitudinal-v3-smoke"),
+);
+const downloadDirectory = join(artifactDirectory, "downloads");
+const serverLogPath = join(artifactDirectory, "next-server.log");
+const username = process.env.OPEN_ENA_LONGITUDINAL_SMOKE_USERNAME
+  || "open_ena_longitudinal_smoke_researcher";
+const password = process.env.OPEN_ENA_LONGITUDINAL_SMOKE_PASSWORD
+  || "open_ena_longitudinal_smoke_password_2026";
+const sessionSecret = "open_ena_longitudinal_smoke_session_secret_0123456789abcdef";
+const sessionName = "open-ena-longitudinal-v3-smoke-" + process.pid;
+const smokeBrowser = process.env.OPEN_ENA_LONGITUDINAL_SMOKE_BROWSER || "chrome";
+const externalBaseUrl = process.env.OPEN_ENA_LONGITUDINAL_SMOKE_BASE_URL?.replace(/\/+$/u, "") || null;
+const ownedDistDirName = ".next-longitudinal-smoke-" + process.pid;
+const ownedDistDirectory = join(projectRoot, ownedDistDirName);
+const cameraPresets = ["isometric", "xy", "xz", "yz", "yx", "zx", "zy"];
+const expectedCameraStates = {
+  isometric: {
+    center: { x: 0, y: 0, z: 0 },
+    eye: { x: 1.45 / 1.5, y: 1.45 / 1.5, z: 1.25 / 1.5 },
+    up: { x: 0, y: 0, z: 1 },
+    projection: { type: "perspective" },
+  },
+  xy: {
+    center: { x: 0, y: 0, z: 0 },
+    eye: { x: 0, y: 0, z: 2.5 },
+    up: { x: 0, y: 1, z: 0 },
+    projection: { type: "orthographic" },
+  },
+  xz: {
+    center: { x: 0, y: 0, z: 0 },
+    eye: { x: 0, y: 2.5, z: 0 },
+    up: { x: 0, y: 0, z: 1 },
+    projection: { type: "orthographic" },
+  },
+  yz: {
+    center: { x: 0, y: 0, z: 0 },
+    eye: { x: 2.5, y: 0, z: 0 },
+    up: { x: 0, y: 0, z: 1 },
+    projection: { type: "orthographic" },
+  },
+  yx: {
+    center: { x: 0, y: 0, z: 0 },
+    eye: { x: 0, y: 0, z: -2.5 },
+    up: { x: 1, y: 0, z: 0 },
+    projection: { type: "orthographic" },
+  },
+  zx: {
+    center: { x: 0, y: 0, z: 0 },
+    eye: { x: 0, y: 2.5, z: 0 },
+    up: { x: 1, y: 0, z: 0 },
+    projection: { type: "orthographic" },
+  },
+  zy: {
+    center: { x: 0, y: 0, z: 0 },
+    eye: { x: -2.5, y: 0, z: 0 },
+    up: { x: 0, y: 1, z: 0 },
+    projection: { type: "orthographic" },
+  },
+};
+const twoDimensionalProjections = ["xy", "xz", "yz", "yx", "zx", "zy"];
+const viewportMatrix = [
+  { width: 1440, height: 1000, name: "desktop" },
+  { width: 820, height: 1180, name: "tablet" },
+  { width: 390, height: 844, name: "mobile" },
+];
+const expectedCodeLabels = ["TE", "EX", "IN", "RE", "SP", "TP"];
+
+assert.ok(
+  ["chrome", "firefox", "webkit", "msedge"].includes(smokeBrowser),
+  "OPEN_ENA_LONGITUDINAL_SMOKE_BROWSER must name chrome, firefox, webkit, or msedge.",
+);
+assert.ok(ownedDistDirName.startsWith(".next-longitudinal-smoke-"));
+
+const bundledPlaywrightWrapper = join(
+  homedir(),
+  ".codex",
+  "skills",
+  "playwright",
+  "scripts",
+  "playwright_cli.sh",
+);
+const playwrightCli = existsSync(bundledPlaywrightWrapper)
+  ? { command: bundledPlaywrightWrapper, prefix: [], source: "bundled skill wrapper" }
+  : {
+      command: "npx",
+      prefix: ["--yes", "--package", "@playwright/cli@0.1.18", "playwright-cli"],
+      source: "pinned npx fallback",
+    };
+
+mkdirSync(downloadDirectory, { recursive: true });
+
+function redact(value) {
+  return String(value ?? "")
+    .replaceAll(username, "[redacted-username]")
+    .replaceAll(password, "[redacted-password]")
+    .replaceAll(sessionSecret, "[redacted-session-secret]");
+}
+
+function runCli(args, label, timeout = 120_000) {
+  try {
+    return execFileSync(
+      playwrightCli.command,
+      [...playwrightCli.prefix, "--session", sessionName, ...args],
+      {
+        cwd: artifactDirectory,
+        encoding: "utf8",
+        env: process.env,
+        maxBuffer: 32 * 1024 * 1024,
+        timeout,
+      },
+    );
+  } catch (caught) {
+    const stdout = caught && typeof caught === "object" && "stdout" in caught
+      ? redact(caught.stdout)
+      : "";
+    const stderr = caught && typeof caught === "object" && "stderr" in caught
+      ? redact(caught.stderr)
+      : "";
+    const details = (stdout + "\n" + stderr).trim().slice(-10_000);
+    throw new Error(
+      "Playwright CLI failed during " + label + (details ? ".\n" + details : "."),
+      { cause: caught },
+    );
+  }
+}
+
+function browserSource(task, args) {
+  return "async (page) => { const task = " + task.toString()
+    + "; return await task(page, " + JSON.stringify(args) + "); }";
+}
+
+function runBrowserPhase(label, task, args = {}, timeout = 180_000) {
+  process.stdout.write("[longitudinal V3 smoke] " + label + " ... ");
+  const output = runCli(
+    ["--raw", "run-code", browserSource(task, args)],
+    label,
+    timeout,
+  ).trim();
+  const result = output ? JSON.parse(output) : null;
+  process.stdout.write("PASS\n");
+  return result;
+}
+
+async function findOpenPort() {
+  return await new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = address && typeof address === "object" ? address.port : null;
+      server.close((error) => {
+        if (error) reject(error);
+        else if (port === null) reject(new Error("Could not allocate a loopback port."));
+        else resolvePort(port);
+      });
+    });
+  });
+}
+
+async function waitForServer(url, timeout = 90_000) {
+  const deadline = Date.now() + timeout;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url, { redirect: "manual" });
+      if (response.status >= 200 && response.status < 500) return;
+    } catch (caught) {
+      lastError = caught;
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+  }
+  throw new Error("Open ENA did not become ready at " + url + ".", { cause: lastError });
+}
+
+function readServerLogTail() {
+  if (!existsSync(serverLogPath)) return "";
+  return redact(readFileSync(serverLogPath, "utf8")).slice(-12_000);
+}
+
+async function stopOwnedServer(server) {
+  if (!server || server.exitCode !== null || server.signalCode !== null) return;
+  const waitForExit = (timeout) => new Promise((resolveExit) => {
+    if (server.exitCode !== null || server.signalCode !== null) {
+      resolveExit(true);
+      return;
+    }
+    const timer = setTimeout(() => {
+      server.off("exit", onExit);
+      resolveExit(false);
+    }, timeout);
+    const onExit = () => {
+      clearTimeout(timer);
+      resolveExit(true);
+    };
+    server.once("exit", onExit);
+  });
+  const signalServer = (signal) => {
+    try {
+      if (process.platform === "win32") return server.kill(signal);
+      process.kill(-server.pid, signal);
+      return true;
+    } catch {
+      return server.kill(signal);
+    }
+  };
+  signalServer("SIGTERM");
+  if (await waitForExit(5_000)) return;
+  signalServer("SIGKILL");
+  if (!await waitForExit(5_000)) {
+    throw new Error("The smoke-owned Next.js server did not exit after SIGKILL.");
+  }
+}
+
+function removeOwnedDistDirectory() {
+  assert.equal(dirname(ownedDistDirectory), projectRoot);
+  assert.ok(basename(ownedDistDirectory).startsWith(".next-longitudinal-smoke-"));
+  if (existsSync(ownedDistDirectory)) rmSync(ownedDistDirectory, { recursive: true, force: true });
+}
+
+function sha256(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function canonicalJson(value) {
+  if (value === null) return "null";
+  if (typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
+  if (typeof value === "number") {
+    assert.ok(Number.isFinite(value));
+    return Object.is(value, -0) ? "-0" : JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
+  assert.equal(typeof value, "object");
+  assert.notEqual(value, undefined);
+  const keys = Object.keys(value).sort();
+  return "{" + keys.map((key) => {
+    assert.notEqual(value[key], undefined);
+    return JSON.stringify(key) + ":" + canonicalJson(value[key]);
+  }).join(",") + "}";
+}
+
+function hashAnalysisValueV1(value) {
+  return sha256(Buffer.from(canonicalJson(value), "utf8"));
+}
+
+function safeArchiveMember(path) {
+  return typeof path === "string"
+    && path.length > 0
+    && !path.startsWith("/")
+    && !path.includes("\\")
+    && !path.split("/").includes("..");
+}
+
+function extractAndVerifyBundle(zipPath, kind, participantLevelIncluded) {
+  assert.ok(existsSync(zipPath), kind + " ZIP is missing");
+  assert.ok(statSync(zipPath).size > 0, kind + " ZIP is empty");
+  execFileSync("unzip", ["-t", zipPath], { encoding: "utf8", timeout: 30_000 });
+  const extracted = join(downloadDirectory, "extracted-" + kind);
+  if (existsSync(extracted)) rmSync(extracted, { recursive: true, force: true });
+  mkdirSync(extracted, { recursive: true });
+  execFileSync("unzip", ["-qq", "-o", zipPath, "-d", extracted], {
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  const manifestPath = join(extracted, "provenance-manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  assert.equal(manifest.schemaVersion, "3dena.longitudinal-provenance-manifest.v2");
+  assert.equal(manifest.participantLevelIncluded, participantLevelIncluded);
+  assert.ok(Array.isArray(manifest.members) && manifest.members.length >= 5);
+  for (const requiredMember of [
+    "analysis.json",
+    "trajectory-path.csv",
+    "trajectory-metadata.csv",
+    "trajectory-inference.csv",
+    "plotly-spec.json",
+  ]) {
+    assert.equal(
+      manifest.members.some((member) => member.path === requiredMember),
+      true,
+      kind + " ZIP omitted required contract member " + requiredMember,
+    );
+  }
+  assert.equal(
+    manifest.members.some((member) => member.path === "trajectory-bootstrap.csv"),
+    false,
+    kind + " trajectory ZIP still contains a bootstrap CSV",
+  );
+  assert.equal(manifest.contentSetHash, hashAnalysisValueV1(manifest.members));
+  const expectedFiles = [
+    ...manifest.members.map((member) => member.path),
+    "provenance-manifest.json",
+  ].sort();
+  assert.ok(expectedFiles.every(safeArchiveMember), kind + " ZIP contains an unsafe member path");
+  assert.deepEqual(readdirSync(extracted).sort(), expectedFiles);
+  for (const member of manifest.members) {
+    assert.ok(safeArchiveMember(member.path));
+    const memberBytes = readFileSync(join(extracted, member.path));
+    assert.equal(memberBytes.byteLength, member.byteLength, kind + ":" + member.path + " length");
+    assert.equal(sha256(memberBytes), member.sha256, kind + ":" + member.path + " SHA-256");
+  }
+  assert.equal(
+    manifest.members.some((member) => member.path === "trajectory-participants.csv"),
+    participantLevelIncluded,
+  );
+  const analysis = JSON.parse(readFileSync(join(extracted, "analysis.json"), "utf8"));
+  const plotly = JSON.parse(readFileSync(join(extracted, "plotly-spec.json"), "utf8"));
+  assert.equal(analysis.identity.resultHash, manifest.resultHash);
+  assert.equal(plotly.resultHash, manifest.resultHash);
+  assert.equal(analysis.privacy.participantLevelIncluded, false);
+  return { extracted, manifest, analysis, plotly, zipSha256: sha256(readFileSync(zipPath)) };
+}
+
+function verifyStandaloneDownloads(downloads, aggregate) {
+  const mapping = [
+    ["path", "trajectory-path.csv"],
+    ["metadata", "trajectory-metadata.csv"],
+    ["inference", "trajectory-inference.csv"],
+    ["analysis", "analysis.json"],
+    ["plotly", "plotly-spec.json"],
+  ];
+  for (const [kind, member] of mapping) {
+    const path = downloads[kind];
+    assert.ok(path && existsSync(path), "standalone " + kind + " download is missing");
+    const standaloneBytes = readFileSync(path);
+    const bundleBytes = readFileSync(join(aggregate.extracted, member));
+    assert.equal(sha256(standaloneBytes), sha256(bundleBytes), kind + " differs from aggregate ZIP");
+  }
+}
+
+let ownedServer = null;
+let ownsDistDirectory = false;
+let browserSessionAttempted = false;
+let cleanupPromise = null;
+
+function cleanupOwnedResources() {
+  if (cleanupPromise) return cleanupPromise;
+  cleanupPromise = (async () => {
+    let browserCleanupError = null;
+    if (browserSessionAttempted) {
+      try {
+        runCli(["close"], "close browser session", 30_000);
+      } catch (caught) {
+        browserCleanupError = caught;
+      }
+    }
+    await stopOwnedServer(ownedServer);
+    if (ownsDistDirectory) {
+      // Next appends the custom dist directory to tsconfig.json during build.
+      // This smoke owns that temporary build, so it must restore the exact
+      // pre-run config before deleting the matching dist directory.
+      writeFileSync(tsconfigPath, originalTsconfig, "utf8");
+      removeOwnedDistDirectory();
+    }
+    if (browserCleanupError) throw browserCleanupError;
+  })();
+  return cleanupPromise;
+}
+
+async function handleSignal(signal) {
+  const exitCode = signal === "SIGINT" ? 130 : 143;
+  try {
+    await cleanupOwnedResources();
+  } catch (caught) {
+    process.stderr.write("[longitudinal V3 smoke] cleanup after " + signal + " failed: "
+      + redact(caught) + "\n");
+  }
+  process.exit(exitCode);
+}
+
+process.once("SIGINT", () => void handleSignal("SIGINT"));
+process.once("SIGTERM", () => void handleSignal("SIGTERM"));
+
+async function authenticateAndRunTrajectory(page, args) {
+  const assertBrowser = (condition, message) => {
+    if (!condition) throw new Error(message);
+  };
+  const installTaskRequestAudit = () => {
+    if (window.__openEnaLongitudinalSmokeTaskAudit) return;
+    const audit = {
+      taskRequestCount: 0,
+      workerRunCount: 0,
+      remotePostCount: 0,
+      bootstrapTaskCount: 0,
+    };
+    Object.defineProperty(window, "__openEnaLongitudinalSmokeTaskAudit", {
+      configurable: true,
+      value: audit,
+    });
+    const originalWorkerPostMessage = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function auditedWorkerPostMessage(message, ...rest) {
+      if (message?.kind === "run" && message?.request?.pathTask) {
+        audit.workerRunCount += 1;
+        audit.taskRequestCount += 1;
+        if (Object.hasOwn(message.request, "bootstrapTask")) audit.bootstrapTaskCount += 1;
+      }
+      return originalWorkerPostMessage.call(this, message, ...rest);
+    };
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const method = String(init?.method || (typeof input === "object" && input && "method" in input
+        ? input.method
+        : "GET")).toUpperCase();
+      if (method === "POST" && new URL(url, window.location.href).pathname === "/api/open-ena/longitudinal") {
+        audit.remotePostCount += 1;
+        audit.taskRequestCount += 1;
+        try {
+          const payload = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+          if (payload?.request && Object.hasOwn(payload.request, "bootstrapTask")) {
+            audit.bootstrapTaskCount += 1;
+          }
+        } catch {
+          // Route validation remains authoritative for malformed request bodies.
+        }
+      }
+      return await originalFetch(input, init);
+    };
+  };
+  await page.addInitScript(installTaskRequestAudit);
+  await page.evaluate(installTaskRequestAudit);
+  page.__openEnaLongitudinalConsoleErrors = [];
+  page.__openEnaLongitudinalConsoleWarnings = [];
+  page.__openEnaLongitudinalPageErrors = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") page.__openEnaLongitudinalConsoleErrors.push(message.text());
+    if (message.type() === "warning") page.__openEnaLongitudinalConsoleWarnings.push(message.text());
+  });
+  page.on("pageerror", (error) => {
+    page.__openEnaLongitudinalPageErrors.push(error.message);
+  });
+
+  await page.getByRole("textbox", { name: "Account name" }).fill(args.username);
+  await page.getByRole("textbox", { name: "Password" }).fill(args.password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  const rail = page.getByRole("navigation", { name: "Analysis modes" });
+  await rail.waitFor({ timeout: 30_000 });
+  await rail.getByRole("button", { name: "Data", exact: true }).click();
+  await page.getByRole("button", { name: "Load 2D trajectory sample", exact: true }).click();
+  await page.getByRole("button", { name: "Download Model" }).waitFor({ timeout: 60_000 });
+  const plotTools = rail.getByRole("button", { name: "Plot Tools", exact: true });
+  await plotTools.click();
+  const workbench = page.getByTestId("open-ena-longitudinal-v3-workbench");
+  const openedOnFirstClick = await workbench
+    .waitFor({ state: "visible", timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!openedOnFirstClick) await plotTools.click();
+  await workbench.waitFor({ timeout: 30_000 });
+  const identity = workbench.getByRole("checkbox", {
+    name: /same raw ID represents the same physical entity/u,
+  });
+  if (!await identity.isChecked()) await identity.check();
+  const ciUiCount = await workbench.getByText(/Bootstrap|confidence interval|confidence level|resampling design/iu).count()
+    + await workbench.getByTestId("open-ena-longitudinal-v3-bootstrap").count()
+    + await workbench.getByRole("button", { name: "Bootstrap CSV", exact: true }).count();
+  assertBrowser(ciUiCount === 0, "trajectory CI/bootstrap UI is still visible");
+
+  await workbench.getByRole("button", { name: "Run trajectory analysis", exact: true }).click();
+  const continueLocal = workbench.getByRole("button", { name: "Continue locally", exact: true });
+  const remoteConfirmationVisible = await continueLocal
+    .waitFor({ state: "visible", timeout: 3_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (remoteConfirmationVisible) {
+    await continueLocal.click();
+  }
+  await workbench.locator("[data-state=complete]").waitFor({ timeout: 120_000 });
+  const postRunCiUiCount = await workbench.getByText(/Bootstrap|confidence interval|confidence level|resampling design/iu).count()
+    + await workbench.getByTestId("open-ena-longitudinal-v3-bootstrap").count()
+    + await workbench.getByRole("button", { name: "Bootstrap CSV", exact: true }).count();
+  assertBrowser(postRunCiUiCount === 0, "trajectory CI/bootstrap UI is still visible after execution");
+  const plot = page.getByTestId("open-ena-longitudinal-v3-plot");
+  await plot.waitFor({ timeout: 30_000 });
+  await page.waitForFunction(() => {
+    const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
+    return Boolean(root && root._fullLayout && Array.isArray(root.data) && root.data.length > 0);
+  }, null, { timeout: 30_000 });
+
+  const plotAudit = await plot.evaluate((root, codes) => {
+    const traces = Array.isArray(root.data) ? root.data : [];
+    const allowedRoles = new Set([
+      "participant", "individual-path", "centroid", "trajectory-path",
+      "direction-arrow", "network-node", "network-edge", "axis-shaft",
+      "axis-arrowhead",
+    ]);
+    const codeTrace = traces.find((trace) => trace.meta?.role === "network-node");
+    const displayedCodes = Array.isArray(codeTrace?.text) ? codeTrace.text.map(String) : [];
+    const centroidTraces = traces.filter((trace) => trace.meta?.role === "centroid");
+    const trajectoryTraces = traces.filter((trace) => trace.meta?.role === "trajectory-path");
+    const resultHashes = [...new Set(traces.map((trace) => trace.meta?.resultHash).filter(Boolean))];
+    return {
+      displayedCodes,
+      codesPresent: codes.every((code) => displayedCodes.includes(code)),
+      centroidSquares: centroidTraces.length > 0
+        && centroidTraces.every((trace) => trace.marker?.symbol === "square" && trace.marker?.size === 7),
+      blackTrajectories: trajectoryTraces.length > 0
+        && trajectoryTraces.every((trace) => ["black", "#000", "#000000", "rgb(0, 0, 0)"].includes(trace.line?.color)),
+      lineOnlyTrajectories: trajectoryTraces.length > 0
+        && trajectoryTraces.every((trace) => trace.mode === "lines" && trace.marker === undefined),
+      uncertaintyTraceCount: traces.filter((trace) => trace.meta?.role === "uncertainty").length,
+      errorBarTraceCount: traces.filter((trace) => (
+        trace.error_x !== undefined || trace.error_y !== undefined || trace.error_z !== undefined
+        || Object.keys(trace).some((key) => key.startsWith("error_"))
+      )).length,
+      unknownTraceRoles: traces
+        .map((trace) => trace.meta?.role)
+        .filter((role) => typeof role !== "string" || !allowedRoles.has(role)),
+      resultHashes,
+      taskRequestCount: window.__openEnaLongitudinalSmokeTaskAudit?.taskRequestCount ?? 0,
+    };
+  }, args.expectedCodes);
+  assertBrowser(plotAudit.codesPresent, "the trajectory plot omitted fitted ENA code labels");
+  assertBrowser(plotAudit.centroidSquares, "trajectory centroids are not 7px square markers");
+  assertBrowser(plotAudit.blackTrajectories, "trajectory path lines are not black");
+  assertBrowser(plotAudit.lineOnlyTrajectories, "trajectory paths still duplicate centroid square markers");
+  assertBrowser(plotAudit.uncertaintyTraceCount === 0, "trajectory analysis still plots CI geometry");
+  assertBrowser(plotAudit.errorBarTraceCount === 0, "trajectory analysis still plots XYZ/error-bar geometry");
+  assertBrowser(plotAudit.unknownTraceRoles.length === 0, "trajectory plot contains an unsupported rectangle/box trace role");
+  assertBrowser(plotAudit.resultHashes.length === 1, "plot traces do not share one immutable result hash");
+  assertBrowser(plotAudit.taskRequestCount === 1, "the trajectory analysis did not submit exactly one scientific task");
+  const bootstrapTaskCount = await page.evaluate(() => (
+    window.__openEnaLongitudinalSmokeTaskAudit?.bootstrapTaskCount ?? -1
+  ));
+  assertBrowser(bootstrapTaskCount === 0, "trajectory scientific request still contains bootstrapTask");
+  plotAudit.bootstrapTaskCount = bootstrapTaskCount;
+  return plotAudit;
+}
+
+async function exerciseCamerasAndProjections(page, args) {
+  const assertBrowser = (condition, message) => {
+    if (!condition) throw new Error(message);
+  };
+  const plot = page.getByTestId("open-ena-longitudinal-v3-plot");
+  const cameraSelect = page.getByLabel("3D camera preset");
+  const projectionSelect = page.getByLabel("3D / 2D projection");
+  const resultLabel = await plot.getAttribute("aria-label");
+  const expectedResultLabelFragment = "Result " + args.expectedResultHash.slice(0, 12) + ".";
+  const cameraMatches = (actual, expected, epsilon = 1e-7) => {
+    const vectorMatches = (left, right) => ["x", "y", "z"].every(
+      (key) => Math.abs(Number(left?.[key]) - Number(right?.[key])) <= epsilon,
+    );
+    return vectorMatches(actual?.center, expected.center)
+      && vectorMatches(actual?.eye, expected.eye)
+      && vectorMatches(actual?.up, expected.up)
+      && actual?.projection?.type === expected.projection.type;
+  };
+  const readScientificInvariants = async () => await plot.evaluate((root) => ({
+    resultHashes: [...new Set(
+      (Array.isArray(root.data) ? root.data : [])
+        .map((trace) => trace.meta?.resultHash)
+        .filter(Boolean),
+    )],
+    taskRequestCount: window.__openEnaLongitudinalSmokeTaskAudit?.taskRequestCount ?? -1,
+  }));
+  const assertScientificInvariants = async (label) => {
+    const current = await readScientificInvariants();
+    assertBrowser(
+      current.resultHashes.length === 1 && current.resultHashes[0] === args.expectedResultHash,
+      label + " changed the immutable result hash",
+    );
+    assertBrowser(
+      current.taskRequestCount === args.expectedTaskRequestCount,
+      label + " changed the scientific task request count",
+    );
+  };
+
+  await cameraSelect.selectOption("isometric");
+  await page.waitForFunction(({ expected }) => {
+    const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
+    const actual = root?._fullLayout?.scene?.camera;
+    const close = (left, right) => Math.abs(Number(left) - Number(right)) <= 1e-7;
+    return ["center", "eye", "up"].every((vector) => ["x", "y", "z"].every(
+      (axis) => close(actual?.[vector]?.[axis], expected[vector][axis]),
+    )) && actual?.projection?.type === expected.projection.type;
+  }, { expected: args.expectedCameraStates.isometric }, { timeout: 15_000 });
+  const beforeDrag = await plot.evaluate((root) => structuredClone(root._fullLayout.scene.camera));
+  let dragVerified = false;
+  if (["chrome", "msedge"].includes(args.browser)) {
+    const plotBox = await plot.boundingBox();
+    assertBrowser(Boolean(plotBox), "the 3D plot does not expose a mouse-interaction surface");
+    await page.mouse.move(plotBox.x + plotBox.width * 0.55, plotBox.y + plotBox.height * 0.5);
+    await page.mouse.down();
+    await page.mouse.move(
+      plotBox.x + plotBox.width * 0.68,
+      plotBox.y + plotBox.height * 0.62,
+      { steps: 12 },
+    );
+    await page.mouse.up();
+    await page.waitForFunction((previous) => {
+      const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
+      return JSON.stringify(root?._fullLayout?.scene?.camera) !== JSON.stringify(previous);
+    }, beforeDrag, { timeout: 15_000 });
+    await assertScientificInvariants("mouse camera drag");
+    dragVerified = true;
+  } else {
+    await assertScientificInvariants(args.browser + " camera baseline");
+  }
+
+  await cameraSelect.selectOption("xy");
+  await page.waitForFunction(({ expected }) => {
+    const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
+    const actual = root?._fullLayout?.scene?.camera;
+    const close = (left, right) => Math.abs(Number(left) - Number(right)) <= 1e-7;
+    return ["center", "eye", "up"].every((vector) => ["x", "y", "z"].every(
+      (axis) => close(actual?.[vector]?.[axis], expected[vector][axis]),
+    )) && actual?.projection?.type === expected.projection.type;
+  }, { expected: args.expectedCameraStates.xy }, { timeout: 15_000 });
+  const restoredAfterDrag = await plot.evaluate((root) => structuredClone(root._fullLayout.scene.camera));
+  assertBrowser(
+    cameraMatches(restoredAfterDrag, args.expectedCameraStates.xy),
+    "selecting XY did not restore the exact camera preset",
+  );
+  await assertScientificInvariants("camera preset xy after baseline interaction");
+
+  const cameraStates = {};
+  for (const preset of args.cameraPresets) {
+    await cameraSelect.selectOption(preset);
+    await page.waitForFunction(({ value, expected }) => {
+      const select = [...document.querySelectorAll("select")]
+        .find((candidate) => candidate.parentElement?.textContent?.includes("3D camera preset"));
+      const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
+      const actual = root?._fullLayout?.scene?.camera;
+      const close = (left, right) => Math.abs(Number(left) - Number(right)) <= 1e-7;
+      return select?.value === value
+        && ["center", "eye", "up"].every((vector) => ["x", "y", "z"].every(
+          (axis) => close(actual?.[vector]?.[axis], expected[vector][axis]),
+        ))
+        && actual?.projection?.type === expected.projection.type;
+    }, { value: preset, expected: args.expectedCameraStates[preset] }, { timeout: 15_000 });
+    cameraStates[preset] = await plot.evaluate((root) => structuredClone(root._fullLayout.scene.camera));
+    assertBrowser(
+      cameraMatches(cameraStates[preset], args.expectedCameraStates[preset]),
+      "camera preset " + preset + " did not restore its expected center, eye, up, and projection",
+    );
+    assertBrowser(
+      cameraStates[preset].projection?.type === (preset === "isometric" ? "perspective" : "orthographic"),
+      "camera preset " + preset + " uses the wrong Plotly projection type",
+    );
+    assertBrowser(
+      (await plot.getAttribute("aria-label"))?.includes(expectedResultLabelFragment),
+      preset + " changed the result identity",
+    );
+    await assertScientificInvariants("camera preset " + preset);
+  }
+  assertBrowser(
+    new Set(Object.values(cameraStates).map((camera) => JSON.stringify(camera))).size === args.cameraPresets.length,
+    "the seven camera presets did not produce seven runtime camera orientations",
+  );
+
+  const projectionStates = {};
+  for (const projection of args.projections) {
+    await projectionSelect.selectOption(projection);
+    await page.waitForFunction((value) => {
+      const selects = [...document.querySelectorAll("select")];
+      const select = selects.find((candidate) => candidate.parentElement?.textContent?.includes("3D / 2D projection"));
+      const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
+      return select?.value === value
+        && Boolean(root?._fullLayout)
+        && Array.isArray(root?.data)
+        && root.data.every((trace) => trace.type !== "scatter3d" && trace.type !== "cone");
+    }, projection, { timeout: 15_000 });
+    projectionStates[projection] = await plot.evaluate((root) => ({
+      types: [...new Set(root.data.map((trace) => trace.type))],
+      roles: [...new Set(root.data.map((trace) => trace.meta?.role).filter(Boolean))],
+      xTitle: root._fullLayout?.xaxis?.title?.text ?? null,
+      yTitle: root._fullLayout?.yaxis?.title?.text ?? null,
+    }));
+    assertBrowser(
+      (await plot.getAttribute("aria-label"))?.includes(expectedResultLabelFragment),
+      projection + " changed the result identity",
+    );
+    await assertScientificInvariants("2D projection " + projection);
+  }
+  await projectionSelect.selectOption("3d");
+  await page.waitForFunction(() => {
+    const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
+    return Boolean(root?._fullLayout?.scene);
+  }, null, { timeout: 15_000 });
+  await cameraSelect.selectOption("isometric");
+  await page.waitForFunction(({ expected }) => {
+    const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
+    const actual = root?._fullLayout?.scene?.camera;
+    const close = (left, right) => Math.abs(Number(left) - Number(right)) <= 1e-7;
+    return ["center", "eye", "up"].every((vector) => ["x", "y", "z"].every(
+      (axis) => close(actual?.[vector]?.[axis], expected[vector][axis]),
+    )) && actual?.projection?.type === expected.projection.type;
+  }, { expected: args.expectedCameraStates.isometric }, { timeout: 15_000 });
+  await assertScientificInvariants("restoring 3D projection");
+  return {
+    cameraStates,
+    projectionStates,
+    resultLabel,
+    beforeDrag,
+    restoredAfterDrag,
+    dragVerified,
+  };
+}
+
+async function captureResponsiveEvidence(page, args) {
+  const assertBrowser = (condition, message) => {
+    if (!condition) throw new Error(message);
+  };
+  const results = {};
+  for (const viewport of args.viewports) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.waitForTimeout(250);
+    const overflow = await page.evaluate(() => ({
+      documentClientWidth: document.documentElement.clientWidth,
+      documentScrollWidth: document.documentElement.scrollWidth,
+      bodyClientWidth: document.body.clientWidth,
+      bodyScrollWidth: document.body.scrollWidth,
+    }));
+    assertBrowser(
+      overflow.documentScrollWidth <= overflow.documentClientWidth + 1,
+      "document overflow at " + viewport.width + "x" + viewport.height,
+    );
+    assertBrowser(
+      overflow.bodyScrollWidth <= overflow.bodyClientWidth + 1,
+      "body overflow at " + viewport.width + "x" + viewport.height,
+    );
+    const pagePath = args.artifactDirectory + "/" + viewport.name + "-"
+      + viewport.width + "x" + viewport.height + ".png";
+    const plotPath = args.artifactDirectory + "/" + viewport.name + "-plot-"
+      + viewport.width + "x" + viewport.height + ".png";
+    await page.screenshot({ path: pagePath, fullPage: false });
+    await page.getByTestId("open-ena-longitudinal-v3-plot").screenshot({ path: plotPath });
+    results[viewport.name] = { ...viewport, ...overflow, pagePath, plotPath };
+  }
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const fullscreen = page.getByRole("button", { name: "Fullscreen", exact: true });
+  await fullscreen.click();
+  await page.waitForFunction(() => {
+    const shell = document.querySelector(".ena-longitudinal-v3-plot-shell");
+    return Boolean(
+      document.fullscreenElement === shell
+      || shell?.getAttribute("data-fallback-fullscreen") === "true",
+    );
+    }, null, { timeout: 15_000 });
+    const fullscreenBox = await page.locator(".ena-longitudinal-v3-plot-shell").boundingBox();
+    const fullscreenViewport = await page.evaluate(() => ({
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }));
+    assertBrowser(
+      fullscreenBox && fullscreenBox.width >= fullscreenViewport.width * 0.96,
+      "fullscreen plot does not fill the available viewport width",
+    );
+    assertBrowser(
+      fullscreenBox && fullscreenBox.height >= fullscreenViewport.height * 0.96,
+      "fullscreen plot does not fill the available viewport height",
+    );
+    await page.waitForFunction(() => {
+      const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
+      if (!root) return false;
+      const plotBox = root.getBoundingClientRect();
+      const canvasBoxes = [...root.querySelectorAll("canvas")]
+        .map((canvas) => canvas.getBoundingClientRect());
+      return canvasBoxes.some((canvasBox) => (
+        canvasBox.width >= plotBox.width * 0.9
+        && canvasBox.height >= plotBox.height * 0.9
+      ));
+    }, null, { timeout: 15_000 });
+    const fullscreenPlotAudit = await page.getByTestId("open-ena-longitudinal-v3-plot").evaluate((root) => {
+    const plotBox = root.getBoundingClientRect();
+    const shellBox = root.closest(".ena-longitudinal-v3-plot-shell")?.getBoundingClientRect();
+    const toolbarBox = root.closest(".ena-longitudinal-v3-plot-shell")
+      ?.querySelector(".ena-longitudinal-v3-plot-actions")?.getBoundingClientRect();
+      const canvasBox = [...root.querySelectorAll("canvas")]
+        .map((canvas) => canvas.getBoundingClientRect())
+        .sort((left, right) => right.width * right.height - left.width * left.height)[0];
+    const domain = root._fullLayout?.scene?.domain;
+    return {
+      plot: { width: plotBox.width, height: plotBox.height },
+      shell: shellBox ? { width: shellBox.width, height: shellBox.height } : null,
+      toolbarHeight: toolbarBox?.height ?? 0,
+      canvas: canvasBox ? { width: canvasBox.width, height: canvasBox.height } : null,
+      sceneDomain: domain ? { x: [...domain.x], y: [...domain.y] } : null,
+    };
+  });
+  assertBrowser(
+    fullscreenPlotAudit.shell
+      && fullscreenPlotAudit.plot.width >= fullscreenPlotAudit.shell.width * 0.96
+      && fullscreenPlotAudit.plot.height >= fullscreenPlotAudit.shell.height - fullscreenPlotAudit.toolbarHeight - 24,
+    "fullscreen Plotly root does not use the available viewport",
+  );
+  assertBrowser(
+    fullscreenPlotAudit.canvas
+      && fullscreenPlotAudit.canvas.width >= fullscreenPlotAudit.plot.width * 0.9
+      && fullscreenPlotAudit.canvas.height >= fullscreenPlotAudit.plot.height * 0.9,
+    "fullscreen WebGL canvas remains materially smaller than the Plotly root",
+  );
+  assertBrowser(
+    JSON.stringify(fullscreenPlotAudit.sceneDomain) === JSON.stringify({ x: [0, 1], y: [0, 1] }),
+    "fullscreen 3D scene does not use the complete Plotly domain",
+  );
+  const fullscreenPath = args.artifactDirectory + "/desktop-fullscreen-1440x1000.png";
+  await page.locator(".ena-longitudinal-v3-plot-shell").screenshot({ path: fullscreenPath });
+  const exitFullscreen = page.getByRole("button", { name: "Exit fullscreen", exact: true });
+  await exitFullscreen.click();
+  await page.waitForFunction(() => {
+    const shell = document.querySelector(".ena-longitudinal-v3-plot-shell");
+    return document.fullscreenElement !== shell
+      && shell?.getAttribute("data-fallback-fullscreen") !== "true";
+  }, null, { timeout: 15_000 });
+    return { results, fullscreenBox, fullscreenViewport, fullscreenPlotAudit, fullscreenPath };
+}
+
+async function downloadAllArtifacts(page, args) {
+  const buttons = [
+    ["bundle", "Analysis bundle ZIP"],
+    ["path", "Path CSV"],
+    ["metadata", "Metadata CSV"],
+    ["inference", "Inference CSV"],
+    ["analysis", "Analysis JSON"],
+    ["plotly", "Plotly spec JSON"],
+    ["participant", "Participant-level ZIP (opt-in)"],
+  ];
+  const saved = {};
+  for (const [kind, label] of buttons) {
+    const button = page.getByRole("button", { name: label, exact: true });
+    if (kind === "participant") {
+      page.once("dialog", (dialog) => void dialog.accept());
+    }
+    const downloadPromise = page.waitForEvent("download");
+    await button.click();
+    const download = await downloadPromise;
+    const extension = kind === "bundle" || kind === "participant"
+      ? ".zip"
+      : kind === "path" || kind === "metadata" || kind === "inference"
+        ? ".csv"
+        : ".json";
+    const destination = args.downloadDirectory + "/" + kind + extension;
+    await download.saveAs(destination);
+    saved[kind] = destination;
+  }
+  return saved;
+}
+
+async function readBrowserErrors(page, args) {
+  const isExpectedPlatformWarning = (warning) => args.browser === "firefox" && (
+    warning.includes("WebGL warning:")
+    || warning.includes("After reporting 32, no further warnings will be reported for this WebGL context")
+    || (
+      args.externalDevelopmentServer
+      && warning.includes("preloaded with link preload was not used within a few seconds")
+    )
+  );
+  const allWarnings = [...(page.__openEnaLongitudinalConsoleWarnings || [])];
+  return {
+    consoleErrors: [...(page.__openEnaLongitudinalConsoleErrors || [])],
+    consoleWarnings: allWarnings.filter((warning) => !isExpectedPlatformWarning(warning)),
+    expectedPlatformWarnings: allWarnings.filter(isExpectedPlatformWarning),
+    pageErrors: [...(page.__openEnaLongitudinalPageErrors || [])],
+  };
+}
+
+let primaryFailure = null;
+let baseUrl = externalBaseUrl;
+let browserOpened = false;
+
+try {
+  execFileSync("npx", ["--version"], { encoding: "utf8", timeout: 30_000 });
+  runCli(["--version"], "resolve Playwright CLI", 120_000);
+  if (!baseUrl) {
+    ownsDistDirectory = true;
+    const port = await findOpenPort();
+    baseUrl = "http://127.0.0.1:" + port;
+    removeOwnedDistDirectory();
+    const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => (
+      !key.startsWith("OPEN_ENA_LONGITUDINAL_SMOKE_")
+      && !["OPEN_ENA_USERNAME", "OPEN_ENA_PASSWORD", "OPEN_ENA_SESSION_SECRET"].includes(key)
+    )));
+    const ownedEnvironment = {
+      ...environment,
+      NODE_ENV: "production",
+      NEXT_DIST_DIR: ownedDistDirName,
+      OPEN_ENA_USERNAME: username,
+      OPEN_ENA_PASSWORD: password,
+      OPEN_ENA_SESSION_SECRET: sessionSecret,
+      OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1",
+    };
+    const logFd = openSync(serverLogPath, "w");
+    try {
+      process.stdout.write("[longitudinal V3 smoke] build production application ... ");
+      execFileSync(
+        "npm",
+        ["run", "build"],
+        {
+          cwd: projectRoot,
+          env: ownedEnvironment,
+          stdio: ["ignore", logFd, logFd],
+          timeout: 600_000,
+        },
+      );
+      process.stdout.write("PASS\n");
+      ownedServer = spawn(
+        "npm",
+        ["run", "start", "--", "--hostname", "127.0.0.1", "--port", String(port)],
+        {
+          cwd: projectRoot,
+          detached: process.platform !== "win32",
+          env: ownedEnvironment,
+          stdio: ["ignore", logFd, logFd],
+        },
+      );
+    } finally {
+      closeSync(logFd);
+    }
+    if (!ownedServer) {
+      throw new Error("The smoke-owned production server did not start.");
+    }
+    ownedServer.once("error", (error) => {
+      process.stderr.write("[longitudinal V3 smoke] server error: " + redact(error.message) + "\n");
+    });
+    await waitForServer(baseUrl + "/en/open-ena");
+  }
+
+  browserSessionAttempted = true;
+  runCli(["open", baseUrl + "/en/open-ena", "--browser", smokeBrowser], "open browser", 120_000);
+  browserOpened = true;
+
+  const plotAudit = runBrowserPhase(
+    "authenticate, load the trajectory sample, and run the V2 envelope",
+    authenticateAndRunTrajectory,
+    { username, password, expectedCodes: expectedCodeLabels },
+    240_000,
+  );
+  const displayAudit = runBrowserPhase(
+    "exercise seven 3D cameras and six 2D projections without rerunning",
+    exerciseCamerasAndProjections,
+    {
+      cameraPresets,
+      expectedCameraStates,
+      expectedResultHash: plotAudit.resultHashes[0],
+      expectedTaskRequestCount: plotAudit.taskRequestCount,
+      projections: twoDimensionalProjections,
+      browser: smokeBrowser,
+    },
+  );
+  const responsiveAudit = runBrowserPhase(
+    "capture desktop, tablet, mobile, and fullscreen overflow evidence",
+    captureResponsiveEvidence,
+    { viewports: viewportMatrix, artifactDirectory },
+  );
+  runBrowserPhase(
+    "click all seven trajectory downloads",
+    downloadAllArtifacts,
+    { downloadDirectory },
+    240_000,
+  );
+  const downloads = {
+    bundle: join(downloadDirectory, "bundle.zip"),
+    path: join(downloadDirectory, "path.csv"),
+    metadata: join(downloadDirectory, "metadata.csv"),
+    inference: join(downloadDirectory, "inference.csv"),
+    analysis: join(downloadDirectory, "analysis.json"),
+    plotly: join(downloadDirectory, "plotly.json"),
+    participant: join(downloadDirectory, "participant.zip"),
+  };
+  const browserErrors = runBrowserPhase(
+    "collect console and page errors",
+    readBrowserErrors,
+    { browser: smokeBrowser, externalDevelopmentServer: Boolean(externalBaseUrl) },
+  );
+  assert.deepEqual(browserErrors.consoleErrors, [], "browser console contains errors");
+  assert.deepEqual(browserErrors.consoleWarnings, [], "browser console contains warnings");
+  assert.deepEqual(browserErrors.pageErrors, [], "browser emitted page errors");
+  const cliConsole = runCli(["console", "error"], "read Playwright console summary");
+  assert.match(cliConsole, /Errors:\s*0/u);
+  if (smokeBrowser !== "firefox") assert.match(cliConsole, /Warnings:\s*0/u);
+
+  assert.equal(Object.keys(downloads).length, 7);
+  const aggregate = extractAndVerifyBundle(downloads.bundle, "aggregate", false);
+  const participant = extractAndVerifyBundle(downloads.participant, "participant", true);
+  assert.equal(aggregate.manifest.resultHash, participant.manifest.resultHash);
+  for (const member of aggregate.manifest.members) {
+    const participantMember = participant.manifest.members.find(
+      (candidate) => candidate.path === member.path,
+    );
+    assert.deepEqual(participantMember, member, "shared member differs: " + member.path);
+  }
+  verifyStandaloneDownloads(downloads, aggregate);
+
+  const serverLog = readServerLogTail();
+  assert.doesNotMatch(serverLog, /open_ena_longitudinal_smoke_password/u);
+  assert.doesNotMatch(serverLog, /open_ena_longitudinal_smoke_session_secret/u);
+
+  const summary = {
+    status: "PASS",
+    browser: smokeBrowser,
+    baseUrl,
+    serverLifecycle: ownedServer ? "owned" : "external",
+    plotAudit,
+    cameras: Object.keys(displayAudit.cameraStates),
+    projections: Object.keys(displayAudit.projectionStates),
+    viewports: responsiveAudit.results,
+    fullscreen: responsiveAudit.fullscreenBox,
+    downloads: Object.fromEntries(
+      Object.entries(downloads).map(([kind, path]) => [kind, {
+        file: basename(path),
+        bytes: statSync(path).size,
+        sha256: sha256(readFileSync(path)),
+      }]),
+    ),
+    aggregate: {
+      resultHash: aggregate.manifest.resultHash,
+      contentSetHash: aggregate.manifest.contentSetHash,
+      zipSha256: aggregate.zipSha256,
+    },
+    participant: {
+      participantLevelIncluded: participant.manifest.participantLevelIncluded,
+      contentSetHash: participant.manifest.contentSetHash,
+      zipSha256: participant.zipSha256,
+    },
+    browserErrors: { consoleErrors: 0, consoleWarnings: 0, pageErrors: 0 },
+    artifacts: artifactDirectory,
+  };
+  writeFileSync(join(artifactDirectory, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
+  process.stdout.write(JSON.stringify(summary, null, 2) + "\n");
+} catch (caught) {
+  primaryFailure = caught;
+  if (browserOpened) {
+    try {
+      runCli(["screenshot"], "capture failure screenshot", 30_000);
+    } catch {
+      // Preserve the primary failure.
+    }
+  }
+  const serverLog = readServerLogTail();
+  if (serverLog) {
+    process.stderr.write("[longitudinal V3 smoke] server log tail:\n" + serverLog + "\n");
+  }
+} finally {
+  try {
+    await cleanupOwnedResources();
+  } catch (cleanupError) {
+    if (primaryFailure) {
+      process.stderr.write("[longitudinal V3 smoke] cleanup failure: " + redact(cleanupError) + "\n");
+    } else {
+      primaryFailure = cleanupError;
+    }
+  }
+}
+
+if (primaryFailure) throw primaryFailure;
