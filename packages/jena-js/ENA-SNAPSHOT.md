@@ -9,22 +9,24 @@ It is not a separately authored fork inside the ENA repository.
 - Upstream base release: `0.6.3`
 - Historical snapshot anchor: `303a12f549ef9e1914cec10d6e9e1b842dad8908`
 - Exact reviewed source commit: `8a1306c9b1d8bd7a7c9203e4ab96055ba67d4e6d`
-- Canonical merge commit: `90790856f00bdef63dbd27fc3a5b502e8cffe65f`
-- Immutable corresponding-source URL: https://github.com/HUDongpin/jENA/tree/8a1306c9b1d8bd7a7c9203e4ab96055ba67d4e6d
+- Canonical runtime commit: `90790856f00bdef63dbd27fc3a5b502e8cffe65f`
+- Immutable corresponding-source URL: https://github.com/HUDongpin/jENA/tree/90790856f00bdef63dbd27fc3a5b502e8cffe65f
 - Snapshot date: `2026-08-23`
 - Package version: `0.7.0-ona.0`
 - npm publication status: unpublished
 - Deployment status: not authorized
 
 The exact source commit is a direct child of the unchanged historical anchor.
-The canonical merge commit has parents `57b7794ec3873c251c33086454523e5a3949836f`
+The canonical runtime commit has parents `57b7794ec3873c251c33086454523e5a3949836f`
 and `8a1306c9b1d8bd7a7c9203e4ab96055ba67d4e6d`; both the historical anchor and
 the reviewed source commit are ancestors of canonical jENA `main`. This records
 the merge-commit inclusion without rewriting, squashing, or replacing the
 snapshot anchor.
 
 Every tracked file from the exact reviewed source commit was copied mechanically
-except the explicit exclusions below. Open ENA adds only this note and
+except the explicit exclusions below. The complete `src/` tree and `NUMERICS.md`
+were byte-compared with canonical runtime commit `90790856f00bdef63dbd27fc3a5b502e8cffe65f`;
+they are identical. Open ENA adds only this note and
 `private: true` to the snapshot package manifest. The `private` difference
 prevents an accidental npm publication from the ENA workspace; it does not
 change jENA runtime behavior or the upstream prerelease version.

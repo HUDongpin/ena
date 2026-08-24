@@ -11755,3 +11755,696 @@ body:has(.open-ena-page) #main-content {
     grid-template-columns: 1fr;
   }
 }
+
+/* Versioned jENA trajectory workbench. Scientific controls live in the left
+   column; the right column presents the same immutable bundle in 3D or 2D. */
+.ena-longitudinal-v3-workbench {
+  grid-column: 2 / 4;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  color: #26343d;
+  background: #f4f7f7;
+}
+
+.ena-longitudinal-v3-layout {
+  display: grid;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+}
+
+.ena-longitudinal-v3-controls,
+.ena-longitudinal-v3-output {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ena-longitudinal-v3-controls {
+  padding: 18px 18px 80px;
+  border-inline-end: 1px solid #ccd9d7;
+  background: #edf2f2;
+  scroll-padding-block: 18px 80px;
+}
+
+.ena-longitudinal-v3-controls > header {
+  padding: 0 0 18px;
+  border-bottom: 1px solid #cbd7d6;
+}
+
+.ena-longitudinal-v3-controls > header p,
+.ena-longitudinal-v3-output-header p {
+  margin: 0;
+  color: var(--ena-accent-strong);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: calc(0.61rem + var(--ena-font-step, 1px));
+  font-weight: 820;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.ena-longitudinal-v3-controls > header h2,
+.ena-longitudinal-v3-output-header h2 {
+  margin: 6px 0 0;
+  color: #172633;
+  font-size: calc(1.18rem + var(--ena-font-step, 1px));
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+.ena-longitudinal-v3-controls > header span,
+.ena-longitudinal-v3-output-header span,
+.ena-longitudinal-v3-controls section > p {
+  display: block;
+  margin-top: 7px;
+  color: #55676d;
+  font-size: calc(0.66rem + var(--ena-font-step, 1px));
+  line-height: 1.5;
+}
+
+.ena-longitudinal-v3-controls > section {
+  display: grid;
+  gap: 9px;
+  padding: 15px 0;
+  border-bottom: 1px solid #d2dddc;
+}
+
+.ena-longitudinal-v3-controls h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #263b41;
+  font-size: calc(0.76rem + var(--ena-font-step, 1px));
+  line-height: 1.35;
+}
+
+.ena-longitudinal-v3-controls h3 b {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
+  place-items: center;
+  border: 1px solid var(--ena-accent-line);
+  border-radius: 50%;
+  color: var(--ena-accent-strong);
+  background: var(--ena-accent-soft);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.66rem;
+}
+
+.ena-longitudinal-v3-controls label,
+.ena-longitudinal-v3-controls fieldset {
+  min-width: 0;
+}
+
+.ena-longitudinal-v3-controls label:not(.ena-longitudinal-v3-check):not(.ena-longitudinal-v3-confirm) {
+  display: grid;
+  gap: 5px;
+  color: #46595f;
+  font-size: calc(0.66rem + var(--ena-font-step, 1px));
+  font-weight: 720;
+}
+
+.ena-longitudinal-v3-controls fieldset {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  border: 1px solid #c5d3d1;
+  border-radius: 4px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.ena-longitudinal-v3-controls legend {
+  padding-inline: 5px;
+  color: #4b6065;
+  font-size: calc(0.61rem + var(--ena-font-step, 1px));
+  font-weight: 760;
+}
+
+.ena-longitudinal-v3-controls input:not([type="checkbox"]):not([type="radio"]),
+.ena-longitudinal-v3-controls select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid #a9bcba;
+  border-radius: 4px;
+  padding: 8px 10px;
+  color: #203039;
+  background: #fff;
+}
+
+.ena-longitudinal-v3-check,
+.ena-longitudinal-v3-confirm {
+  display: flex;
+  min-height: 44px;
+  align-items: flex-start;
+  gap: 9px;
+  border-radius: 3px;
+  padding: 8px;
+  color: #3c5056;
+  background: rgba(255, 255, 255, 0.55);
+  font-size: calc(0.66rem + var(--ena-font-step, 1px));
+  line-height: 1.4;
+}
+
+.ena-longitudinal-v3-check input,
+.ena-longitudinal-v3-confirm input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin: 1px 0 0;
+  accent-color: var(--ena-accent-strong);
+}
+
+.ena-longitudinal-v3-confirm {
+  border: 1px solid #c39b3e;
+  color: #604b19;
+  background: #fff8df;
+}
+
+.ena-longitudinal-v3-two,
+.ena-longitudinal-v3-three {
+  display: grid;
+  gap: 8px;
+}
+
+.ena-longitudinal-v3-two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ena-longitudinal-v3-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ena-longitudinal-v3-mini-audit,
+.ena-longitudinal-v3-audit-grid,
+.ena-longitudinal-v3-remote dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.ena-longitudinal-v3-mini-audit > div,
+.ena-longitudinal-v3-audit-grid > div,
+.ena-longitudinal-v3-remote dl > div {
+  min-width: 0;
+  border: 1px solid #d8e1e0;
+  border-radius: 3px;
+  padding: 7px;
+  background: #fff;
+}
+
+.ena-longitudinal-v3-mini-audit dt,
+.ena-longitudinal-v3-audit-grid dt,
+.ena-longitudinal-v3-remote dt {
+  color: #68797d;
+  font-size: 0.61rem;
+}
+
+.ena-longitudinal-v3-mini-audit dd,
+.ena-longitudinal-v3-audit-grid dd,
+.ena-longitudinal-v3-remote dd {
+  min-width: 0;
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: #24403e;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.ena-longitudinal-v3-periods {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: period;
+}
+
+.ena-longitudinal-v3-periods li {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #cbd7d6;
+  border-radius: 3px;
+  padding: 4px 4px 4px 10px;
+  background: #fff;
+  counter-increment: period;
+}
+
+.ena-longitudinal-v3-periods li > span:first-child::before {
+  content: counter(period) ". ";
+  color: #75868a;
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.ena-longitudinal-v3-periods li > span:last-child {
+  display: flex;
+  gap: 3px;
+}
+
+.ena-longitudinal-v3-controls button,
+.ena-longitudinal-v3-plot-actions button,
+.ena-longitudinal-v3-downloads button {
+  min-height: 44px;
+  border: 1px solid #829d98;
+  border-radius: 4px;
+  padding: 8px 11px;
+  color: #2d4648;
+  background: #fff;
+  font-size: calc(0.64rem + var(--ena-font-step, 1px));
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.ena-longitudinal-v3-controls button:hover:not(:disabled),
+.ena-longitudinal-v3-plot-actions button:hover:not(:disabled),
+.ena-longitudinal-v3-downloads button:hover:not(:disabled) {
+  color: var(--ena-accent-strong);
+  border-color: var(--ena-accent-strong);
+  background: var(--ena-accent-soft);
+}
+
+.ena-longitudinal-v3-controls button:disabled,
+.ena-longitudinal-v3-plot-actions button:disabled,
+.ena-longitudinal-v3-downloads button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ena-longitudinal-v3-primary {
+  color: #fff !important;
+  border-color: var(--ena-accent-strong) !important;
+  background: var(--ena-accent-strong) !important;
+}
+
+.ena-longitudinal-v3-run-actions,
+.ena-longitudinal-v3-downloads,
+.ena-longitudinal-v3-plot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.ena-longitudinal-v3-run-status {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 7px 9px;
+  border: 1px solid #bdd0cc;
+  border-radius: 4px;
+  padding: 10px;
+  background: #fff;
+}
+
+.ena-longitudinal-v3-run-status > span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #78908b;
+}
+
+.ena-longitudinal-v3-run-status > span[data-state="running"],
+.ena-longitudinal-v3-run-status > span[data-state="preparing"] {
+  background: var(--ena-accent-strong);
+  animation: ena-pulse 1.1s ease-in-out infinite;
+}
+
+.ena-longitudinal-v3-run-status > span[data-state="complete"] {
+  background: #2f7a54;
+}
+
+.ena-longitudinal-v3-run-status > span[data-state="error"] {
+  background: #ad3131;
+}
+
+.ena-longitudinal-v3-run-status progress,
+.ena-longitudinal-v3-run-status small {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.ena-longitudinal-v3-banner,
+.ena-longitudinal-v3-error,
+.ena-longitudinal-v3-remote {
+  margin: 0;
+  border: 1px solid #c39b3e;
+  border-radius: 4px;
+  padding: 10px;
+  color: #604b19;
+  background: #fff8df;
+}
+
+.ena-longitudinal-v3-error {
+  border-color: #bd6e6e;
+  color: #7f2424;
+  background: #fff1f1;
+}
+
+.ena-longitudinal-v3-remote {
+  display: grid;
+  gap: 8px;
+}
+
+.ena-longitudinal-v3-output {
+  padding: 0 18px 48px;
+  background: #f8faf9;
+}
+
+.ena-longitudinal-v3-output-header {
+  position: sticky;
+  z-index: 8;
+  top: 0;
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-inline: -18px;
+  padding: 11px 18px;
+  border-bottom: 1px solid #d3dddc;
+  background: rgba(237, 242, 242, 0.96);
+  backdrop-filter: blur(10px);
+}
+
+.ena-longitudinal-v3-output-header label {
+  display: grid;
+  gap: 4px;
+  color: #52676c;
+  font-size: 0.62rem;
+  font-weight: 750;
+}
+
+.ena-longitudinal-v3-output-header select {
+  min-height: 44px;
+  border: 1px solid #9cafac;
+  border-radius: 4px;
+  padding: 7px 28px 7px 9px;
+  background: #fff;
+}
+
+.ena-longitudinal-v3-empty {
+  display: grid;
+  min-height: min(620px, calc(100dvh - 170px));
+  place-content: center;
+  gap: 10px;
+  padding: 34px;
+  color: #53656a;
+  text-align: center;
+}
+
+.ena-longitudinal-v3-empty strong {
+  color: #263b41;
+  font-size: 1.05rem;
+}
+
+.ena-longitudinal-v3-presenter {
+  position: relative;
+  min-width: 0;
+  margin-top: 18px;
+  overflow: hidden;
+  border: 1px solid #c8d5d3;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.ena-longitudinal-v3-presenter[data-stale="true"] .ena-longitudinal-v3-plot-shell {
+  opacity: 0.48;
+  filter: saturate(0.5);
+}
+
+.ena-longitudinal-v3-stale-overlay {
+  position: absolute;
+  z-index: 12;
+  inset: 50% auto auto 50%;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  border: 2px solid #8a691e;
+  border-radius: 4px;
+  padding: 10px 14px;
+  color: #5d4615;
+  background: rgba(255, 248, 223, 0.94);
+  font-family: var(--font-geist-mono), monospace;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+}
+
+.ena-longitudinal-v3-plot-shell {
+  position: relative;
+  min-width: 0;
+  min-height: 615px;
+  background: #fff;
+}
+
+.ena-longitudinal-v3-plot-shell:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  padding: 12px;
+  background: #fff;
+}
+
+.ena-longitudinal-v3-plot-actions {
+  position: static;
+  z-index: 7;
+  justify-content: flex-end;
+  padding: 8px 9px;
+  border-bottom: 1px solid #d8e1e0;
+}
+
+.ena-longitudinal-v3-plot-actions button {
+  min-height: 38px;
+  padding: 6px 9px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 4px 14px rgba(30, 52, 58, 0.08);
+}
+
+.ena-longitudinal-v3-plot {
+  width: 100%;
+  height: 560px;
+  min-width: 0;
+}
+
+.ena-longitudinal-v3-audit-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 15px;
+}
+
+.ena-longitudinal-v3-results-stack {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.ena-longitudinal-v3-result-section {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #cbd8d6;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.ena-longitudinal-v3-result-section > h3 {
+  margin: 0;
+  padding: 11px 13px;
+  color: #294b47;
+  border-bottom: 1px solid #d5dfde;
+  background: #edf4f2;
+  font-size: calc(0.76rem + var(--ena-font-step, 1px));
+}
+
+.ena-longitudinal-v3-result-section > p,
+.ena-longitudinal-v3-result-section > .ena-longitudinal-v3-audit-grid {
+  margin: 12px;
+}
+
+.ena-longitudinal-v3-table-wrap {
+  width: 100%;
+  max-height: 390px;
+  overflow-x: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ena-longitudinal-v3-table-wrap table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: calc(0.59rem + var(--ena-font-step, 1px));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ena-longitudinal-v3-table-wrap caption {
+  padding: 9px 12px;
+  color: #56696d;
+  background: #f8fbfa;
+  text-align: start;
+  white-space: normal;
+}
+
+.ena-longitudinal-v3-table-wrap th,
+.ena-longitudinal-v3-table-wrap td {
+  max-width: 260px;
+  overflow: hidden;
+  border-inline-end: 1px solid #e1e8e7;
+  border-bottom: 1px solid #e1e8e7;
+  padding: 8px 9px;
+  text-align: start;
+  text-overflow: ellipsis;
+}
+
+.ena-longitudinal-v3-table-wrap thead th {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  color: #284742;
+  background: #e6f0ed;
+}
+
+.ena-longitudinal-v3-table-wrap tbody th {
+  color: #304c49;
+  background: #f7faf9;
+}
+
+.ena-longitudinal-v3-warning-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 12px;
+  list-style: none;
+}
+
+.ena-longitudinal-v3-warning-list li {
+  display: grid;
+  gap: 3px;
+  border-inline-start: 4px solid #6e8581;
+  padding: 8px 10px;
+  color: #45595e;
+  background: #f7faf9;
+  font-size: 0.68rem;
+}
+
+.ena-longitudinal-v3-warning-list li[data-severity="error"] {
+  border-color: #ad3131;
+  color: #782828;
+  background: #fff2f2;
+}
+
+.ena-longitudinal-v3-warning-list li[data-severity="warning"] {
+  border-color: #b18428;
+  color: #655019;
+  background: #fff9e8;
+}
+
+.ena-longitudinal-v3-workbench :is(button, input, select):focus-visible {
+  outline: 3px solid var(--ena-accent-strong);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1260px) and (min-width: 901px) {
+  .ena-longitudinal-v3-layout {
+    grid-template-columns: minmax(300px, 340px) minmax(720px, 1fr);
+  }
+
+  .ena-longitudinal-v3-workbench {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 900px) {
+  .ena-longitudinal-v3-workbench {
+    grid-column: 1;
+    width: 100%;
+    overflow: visible;
+  }
+
+  .ena-longitudinal-v3-layout {
+    height: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .ena-longitudinal-v3-controls,
+  .ena-longitudinal-v3-output {
+    overflow: visible;
+  }
+
+  .ena-longitudinal-v3-controls {
+    padding: 16px;
+    border-inline-end: 0;
+    border-bottom: 1px solid #ccd9d7;
+  }
+
+  .ena-longitudinal-v3-output {
+    padding: 0 12px 36px;
+  }
+
+  .ena-longitudinal-v3-output-header {
+    position: static;
+    align-items: flex-start;
+    margin-inline: -12px;
+    padding: 12px;
+  }
+
+  .ena-longitudinal-v3-plot-shell {
+    min-height: 485px;
+    height: 485px;
+  }
+
+  .ena-longitudinal-v3-plot {
+    min-height: 430px;
+    height: 430px;
+  }
+
+  .ena-longitudinal-v3-audit-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .ena-longitudinal-v3-two,
+  .ena-longitudinal-v3-three,
+  .ena-longitudinal-v3-mini-audit,
+  .ena-longitudinal-v3-audit-grid,
+  .ena-longitudinal-v3-remote dl {
+    grid-template-columns: 1fr;
+  }
+
+  .ena-longitudinal-v3-output-header {
+    display: grid;
+  }
+
+  .ena-longitudinal-v3-plot-shell {
+    min-height: 535px;
+    height: 535px;
+  }
+
+  .ena-longitudinal-v3-plot {
+    min-height: 480px;
+    height: 480px;
+  }
+
+  .ena-longitudinal-v3-plot-actions {
+    padding: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ena-longitudinal-v3-workbench *,
+  .ena-longitudinal-v3-workbench *::before,
+  .ena-longitudinal-v3-workbench *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

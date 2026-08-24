@@ -17,11 +17,12 @@
     "typecheck": "npm run jena:build && npm run typecheck:app",
     "typecheck:app": "tsc --noEmit",
     "test": "npm run jena:build && npm run test:app",
-    "test:app": "tsx --test tests/*.test.ts",
+    "test:app": "node --import tsx --test tests/*.test.ts",
     "verify": "npm run jena:verify && npm run test:app && npm run typecheck:app && npm run build:app"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",
+    "j-3dena": "file:vendor/j-3dena/j-3dena-0.2.0-implemented-unverified.0.tgz",
     "jena-js": "0.7.0-ona.0",
     "next": "16.3.0",
     "plotly.js-dist-min": "3.7.0",

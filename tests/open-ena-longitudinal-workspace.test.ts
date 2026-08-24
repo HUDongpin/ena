@@ -14,6 +14,8 @@ const plot = source("components/open-ena/OpenEnaPlot.tsx");
 const longitudinalPlot = source("components/open-ena/OpenEnaLongitudinalTrajectory.tsx");
 const copy = source("lib/open-ena-i18n.ts");
 const longitudinal = source("lib/open-ena/longitudinal.ts");
+const longitudinalV3 = source("lib/open-ena/longitudinal-v3.ts");
+const longitudinalWorkbenchV3 = source("components/open-ena/OpenEnaLongitudinalWorkbenchV3.tsx");
 
 test("trajectory models are configured in Model type instead of launched from the plot toolbar", () => {
   assert.doesNotMatch(workspace, /open-ena-trajectory-analysis-button|launchTrajectoryAnalysis/);
@@ -82,24 +84,25 @@ test("the Model heading shortcut opens and focuses Model type without choosing o
   assert.match(copy, /configureTrajectory:\s*"配置轨迹模型"/);
 });
 
-test("longitudinal group-centroid analysis is derived only from successful jENA trajectory results", () => {
+test("longitudinal analysis is derived only from one successful fitted jENA result through the V3 package adapter", () => {
   assert.match(
-    longitudinal,
-    /export function buildLongitudinalDerivation\(/,
-    "the workflow needs one pure derivation that returns Plot view plus a private comparison frame",
+    longitudinalV3,
+    /adaptFittedJenaTrajectoryResultV2\(/,
+    "the V3 workflow must adapt one already-fitted jENA result through the package boundary",
   );
-  assert.match(longitudinal, /SeparateTrajectory/);
-  assert.match(longitudinal, /AccumulatedTrajectory/);
+  assert.match(longitudinalV3, /SeparateTrajectory/);
+  assert.match(longitudinalV3, /AccumulatedTrajectory/);
   assert.match(
-    `${longitudinal}\n${workspace}\n${copy}`,
+    `${longitudinalV3}\n${workspace}\n${copy}`,
     /(?:longitudinal|group-centroid)[^\n]*(?:unavailable|requires)[^\n]*(?:Separate|Accumulated|trajectory)/i,
     "endpoint and missing-result states must explain that a trajectory result is required",
   );
   assert.match(
     workspace,
-    /buildLongitudinalDerivation\([\s\S]{0,600}result[\s\S]{0,300}resultConfig/,
-    "the derived view must bind to the last successful result and its immutable resultConfig",
+    /longitudinalV3Context[\s\S]*?resultConfig[\s\S]*?<OpenEnaLongitudinalWorkbenchV3/,
+    "the V3 workbench must bind to the last successful result and its immutable resultConfig",
   );
+  assert.doesNotMatch(workspace, /buildLongitudinalDerivation\(/, "the active Workspace must not retain a second scientific arithmetic path");
 });
 
 test("researchers explicitly select repeated-entity and time-order fields", () => {
@@ -277,27 +280,17 @@ test("the workbench exposes per-period group counts and missingness diagnostics"
   assert.match(longitudinal, /includedEntityCount/);
 });
 
-test("changing longitudinal settings invalidates only the derived view and never jENA coordinates", () => {
-  const controls = workspace.match(
-    /data-testid="open-ena-longitudinal-controls"[\s\S]*?(?=data-testid="open-ena-longitudinal-time-order"|<\/section>)/,
-  )?.[0] ?? "";
-  const derivedView = workspace.match(
-    /const longitudinalDerivationState\s*=\s*useMemo\([\s\S]*?\n  \]\);/,
-  )?.[0] ?? "";
-
-  assert.match(controls, /updateLongitudinalSettings|setRepeatedEntityColumns|setTimeColumn|setCohortPolicy/);
-  assert.match(derivedView, /buildLongitudinalDerivation/);
-  assert.match(derivedView, /repeatedEntityColumns|longitudinalSettings/);
-  assert.match(derivedView, /identityConfirmed/);
-  assert.match(derivedView, /timeColumn|longitudinalSettings/);
-  assert.match(derivedView, /cohortPolicy|longitudinalSettings/);
-  assert.doesNotMatch(controls, /setResult\s*\(/);
-  assert.doesNotMatch(controls, /setResultConfig\s*\(/);
-  assert.doesNotMatch(controls, /runAnalysis|analyzeDatasetInWorker|buildOpenEnaResult|updateConfig/);
+test("changing V3 longitudinal settings marks the envelope stale and never refits or mutates jENA coordinates", () => {
+  assert.match(longitudinalWorkbenchV3, /function commitScientific[\s\S]*?setScientificDirty\(true\)/);
+  assert.match(longitudinalWorkbenchV3, /isOpenEnaLongitudinalBundleStaleV3/);
+  assert.match(longitudinalWorkbenchV3, /compileTrajectoryPlotlySpec\(bundle, displaySpec\)/);
+  assert.doesNotMatch(longitudinalWorkbenchV3, /setResult\s*\(/);
+  assert.doesNotMatch(longitudinalWorkbenchV3, /setResultConfig\s*\(/);
+  assert.doesNotMatch(longitudinalWorkbenchV3, /analyzeDatasetInWorker|buildLongitudinalDerivation|Math\.(?:hypot|sqrt|pow)/);
   assert.match(
-    `${workspace}\n${copy}`,
-    /(?:presentation settings|longitudinal settings)[^\n]*(?:does not|do not|never)[^\n]*(?:rebuild|change)[^\n]*(?:jENA|coordinates)/i,
-    "the UI must disclose that these settings do not refit or move the ENA solution",
+    longitudinalWorkbenchV3,
+    /display-only 3D\/2D views|display-only views/i,
+    "the UI must disclose that display changes do not refit or move the jENA solution",
   );
 });
 
@@ -318,20 +311,22 @@ test("a successful trajectory run returns the visible surface to the current res
   );
 });
 
-test("the longitudinal view and its exports are bound to successful-result provenance", () => {
-  assert.match(longitudinal, /analyzedAt/);
-  assert.match(longitudinal, /provenanceBinding/);
-  assert.match(longitudinal, /configuration/);
-  assert.match(longitudinal, /projectionReference/);
+test("the V3 bundle and exports are bound to successful-result provenance", () => {
+  assert.match(longitudinalV3, /analyzedAt/);
+  assert.match(longitudinalV3, /provenanceBinding/);
+  assert.match(longitudinalV3, /configuration/);
+  assert.match(longitudinalV3, /sourceBinding/);
+  assert.match(longitudinalV3, /configurationHash/);
   assert.match(
     workspace,
-    /buildLongitudinalDerivation\(\s*result,\s*resultConfig,/,
+    /\? \{ result, config: resultConfig, dataset, datasetHash \}/,
     "pending model controls must not be mixed into a prior successful trajectory result",
   );
   assert.doesNotMatch(
-    workspace,
-    /buildLongitudinalDerivation\(\s*result,\s*config,/,
+    longitudinalWorkbenchV3,
+    /buildOpenEnaLongitudinalExecutionRequestV3\(\{[\s\S]{0,180}config:\s*configForPendingControls/,
   );
+  assert.match(longitudinalWorkbenchV3, /createExportBundle\(bundle, \{ plotlySpec/);
 });
 
 test("longitudinal group-centroid summaries stay descriptive and never reuse endpoint tests", () => {
