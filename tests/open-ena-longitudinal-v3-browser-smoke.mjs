@@ -671,7 +671,7 @@ async function exerciseCamerasAndProjections(page, args) {
   const sceneInteraction = plot.locator("#scene");
   const cameraDragFractions = [
     { from: { x: 0.5, y: 0.5 }, to: { x: 0.75, y: 0.7 } },
-    { from: { x: 0.38, y: 0.42 }, to: { x: 0.62, y: 0.58 } },
+    { from: { x: 0.5, y: 0.5 }, to: { x: 0.25, y: 0.3 } },
   ];
   const resultLabel = await plot.getAttribute("aria-label");
   const expectedResultLabelFragment = "Result " + args.expectedResultHash.slice(0, 12) + ".";

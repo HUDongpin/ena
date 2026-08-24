@@ -113,6 +113,8 @@ test("camera interaction evidence reads the live Plotly camera with a declarativ
   const source = readFileSync(smokePath, "utf8");
   assert.match(source, /const sceneInteraction = plot\.locator\("#scene"\)/u);
   assert.match(source, /const cameraDragFractions = \[/u);
+  assert.match(source, /to:\s*\{ x:\s*0\.75, y:\s*0\.7 \}/u);
+  assert.match(source, /to:\s*\{ x:\s*0\.25, y:\s*0\.3 \}/u);
   assert.match(source, /const sceneBox = await sceneInteraction\.boundingBox\(\)/u);
   assert.doesNotMatch(source, /const plotBox = await plot\.boundingBox\(\)/u);
   assert.match(source, /const readRuntimeCamera = async \(\) => await plot\.evaluate/u);
