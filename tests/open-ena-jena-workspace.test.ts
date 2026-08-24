@@ -13,6 +13,9 @@ const expectedSourceSha = "90790856f00bdef63dbd27fc3a5b502e8cffe65f";
 const expectedCanonicalMergeSha = "90790856f00bdef63dbd27fc3a5b502e8cffe65f";
 const expectedSourceUrl = `https://github.com/HUDongpin/jENA/tree/${expectedSourceSha}`;
 const expectedLicenseSha256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986";
+const trajectoryPackagePath = "vendor/j-3dena/j-3dena-0.2.0-implemented-unverified.0.tgz";
+const trajectoryPackageSha256 = "6344fb1ac83b76c527c0a82f3c28f63677baff53e56042e676cfa5c05583c058";
+const trajectoryPackageIntegrity = "sha512-jADoyj8Tm9RpbxmAUrsbSgBDAlMhuzbB/CnViekJ26KalUvLyApjqOQ4PNgijAPycdUTWme3eNi5E8gO8MCG6Q==";
 
 function json(relativePath: string) {
   return JSON.parse(readFileSync(join(projectRoot, relativePath), "utf8")) as Record<string, unknown>;
@@ -181,6 +184,29 @@ test("the root lockfile and installed package resolve jENA only through the loca
   assert.equal(existsSync(installedPath), true);
   assert.equal(lstatSync(installedPath).isSymbolicLink(), true);
   assert.equal(relative(snapshotRoot, realpathSync(installedPath)), "");
+});
+
+test("Vercel performs a frozen install of the exact vendored trajectory package", () => {
+  const rootPackage = json("package.json") as { dependencies?: Record<string, string> };
+  const lock = json("package-lock.json") as {
+    packages?: Record<string, { resolved?: string; integrity?: string; dependencies?: Record<string, string> }>;
+  };
+  const vercel = json("vercel.json") as { installCommand?: string };
+  const localDependency = `file:${trajectoryPackagePath}`;
+
+  assert.equal(
+    vercel.installCommand,
+    "npm ci",
+    "Vercel must discard version-only dependency caches and honor the vendored tarball integrity",
+  );
+  assert.equal(rootPackage.dependencies?.["j-3dena"], localDependency);
+  assert.equal(lock.packages?.[""]?.dependencies?.["j-3dena"], localDependency);
+  assert.equal(lock.packages?.["node_modules/j-3dena"]?.resolved, localDependency);
+  assert.equal(lock.packages?.["node_modules/j-3dena"]?.integrity, trajectoryPackageIntegrity);
+  assert.equal(
+    createHash("sha256").update(readFileSync(join(projectRoot, trajectoryPackagePath))).digest("hex"),
+    trajectoryPackageSha256,
+  );
 });
 
 test("the built package entrypoint exposes the reviewed ordered-network helper", async () => {
