@@ -36,6 +36,14 @@ test("React presenter consumes the immutable package envelope and contains no sc
   assert.doesNotMatch(component, /reduce\([^\n]*(?:centroid|distance|pValue|confidence)/i);
 });
 
+test("standalone downloads use the exact aggregate files emitted by the 3DENA package", () => {
+  assert.match(component, /exported\.files\.find/);
+  assert.doesNotMatch(component, /JSON\.stringify\(bundle/);
+  assert.doesNotMatch(component, /csvRows\(pathRows\(bundle\)\)/);
+  assert.doesNotMatch(component, /csvRows\(inferenceRows\(bundle\)\)/);
+  assert.doesNotMatch(component, /csvRows\(bootstrapRows\(bundle\)\)/);
+});
+
 test("successful trajectory results use the V3 workbench instead of the legacy render-time derivation", () => {
   assert.match(workspace, /OpenEnaLongitudinalWorkbenchV3/);
   assert.match(workspace, /<OpenEnaLongitudinalWorkbenchV3/);

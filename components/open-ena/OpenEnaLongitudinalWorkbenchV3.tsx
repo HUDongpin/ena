@@ -275,18 +275,6 @@ function finiteText(value: unknown): string {
   return String(value);
 }
 
-function csvCell(value: unknown): string {
-  const text = value === null || value === undefined ? "" : typeof value === "object" ? JSON.stringify(value) : String(value);
-  return /[",\r\n]/u.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-}
-
-function csvRows(rows: Array<Record<string, unknown>>, preferred: string[] = []): string {
-  const discovered = new Set(preferred);
-  rows.forEach((row) => Object.keys(row).forEach((key) => discovered.add(key)));
-  const headers = [...discovered];
-  return `${headers.map(csvCell).join(",")}\r\n${rows.map((row) => headers.map((header) => csvCell(row[header])).join(",")).join("\r\n")}\r\n`;
-}
-
 function pathRows(bundle: LongitudinalAnalysisBundleV2): Array<Record<string, unknown>> {
   return bundle.paths.flatMap((path) => path.dynamics.periods.map((period) => ({
     group: path.group.display,
@@ -734,27 +722,19 @@ export default function OpenEnaLongitudinalWorkbenchV3({
       downloadBlob(exported.fileName, exported.bytes, "application/zip");
       return;
     }
-    if (kind === "analysis") downloadBlob(`${prefix}-analysis.json`, JSON.stringify(bundle, null, 2), "application/json");
-    else if (kind === "plotly") downloadBlob(`${prefix}-plotly-spec.json`, JSON.stringify(plotlySpec, null, 2), "application/json");
-    else if (kind === "path") downloadBlob(`${prefix}-path.csv`, csvRows(pathRows(bundle)), "text/csv;charset=utf-8");
-    else if (kind === "inference") downloadBlob(`${prefix}-inference.csv`, csvRows(inferenceRows(bundle)), "text/csv;charset=utf-8");
-    else if (kind === "bootstrap") downloadBlob(`${prefix}-bootstrap.csv`, csvRows(bootstrapRows(bundle)), "text/csv;charset=utf-8");
-    else downloadBlob(`${prefix}-metadata.csv`, csvRows([
-      { field: "participantColumns", value: settings.participantColumns.join(" | ") },
-      { field: "timeColumn", value: settings.timeColumn },
-      { field: "cohortPolicy", value: settings.cohortPolicy },
-      { field: "missingValuePolicy", value: settings.missingValuePolicy },
-      { field: "estimand", value: settings.estimand.kind },
-      { field: "selectedDimensions", value: settings.selectedDimensions.join(" | ") },
-      { field: "fullRotationDimensions", value: bundle.model.fullRotationDimensions.join(" | ") },
-      { field: "sourceRows", value: profile.sourceRows },
-      { field: "participants", value: profile.participants },
-      { field: "participantPeriods", value: profile.participantPeriods },
-      { field: "duplicates", value: profile.duplicateRows },
-      { field: "datasetHash", value: bundle.identity.datasetHash },
-      { field: "specHash", value: bundle.identity.specHash },
-      { field: "resultHash", value: bundle.identity.resultHash },
-    ]), "text/csv;charset=utf-8");
+    const packageFiles = {
+      analysis: ["analysis.json", "analysis.json"],
+      plotly: ["plotly-spec.json", "plotly-spec.json"],
+      path: ["trajectory-path.csv", "path.csv"],
+      metadata: ["trajectory-metadata.csv", "metadata.csv"],
+      inference: ["trajectory-inference.csv", "inference.csv"],
+      bootstrap: ["trajectory-bootstrap.csv", "bootstrap.csv"],
+    } as const;
+    const [packagePath, downloadSuffix] = packageFiles[kind];
+    const exported = await createExportBundle(bundle, { plotlySpec });
+    const file = exported.files.find((candidate) => candidate.path === packagePath);
+    if (!file) throw new Error(`The 3DENA export bundle omitted ${packagePath}.`);
+    downloadBlob(`${prefix}-${downloadSuffix}`, file.bytes, file.mediaType);
   };
 
   if (!settings || !profile) {
