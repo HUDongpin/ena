@@ -165,10 +165,19 @@ test("2D and 3D compile from the same bundle and never change the result hash", 
     executionTarget: "node-service",
   });
   const bundle = await executeLongitudinalAnalysisV2(prepared.request);
-  const three = compileTrajectoryPlotlySpec(bundle, openEnaTrajectoryDisplaySpecV3(bundle, { projection: "3d" }));
-  const two = compileTrajectoryPlotlySpec(bundle, openEnaTrajectoryDisplaySpecV3(bundle, { projection: "xy" }));
+  const threeDisplay = openEnaTrajectoryDisplaySpecV3(bundle, { projection: "3d" });
+  const twoDisplay = openEnaTrajectoryDisplaySpecV3(bundle, { projection: "xy" });
+  const three = compileTrajectoryPlotlySpec(bundle, threeDisplay);
+  const two = compileTrajectoryPlotlySpec(bundle, twoDisplay);
   assert.equal(three.resultHash, bundle.identity.resultHash);
   assert.equal(two.resultHash, bundle.identity.resultHash);
+  assert.equal(threeDisplay.style.centroidSize, 7);
+  assert.equal(twoDisplay.style.centroidSize, 7);
+  for (const plot of [three, two]) {
+    const centroids = plot.data.filter((trace) => trace.meta.role === "centroid");
+    assert.ok(centroids.length > 0);
+    assert.ok(centroids.every((trace) => trace.marker?.size === 7));
+  }
   assert.notDeepEqual(three.layout, two.layout);
   assert.equal(isOpenEnaLongitudinalBundleStaleV3(bundle, prepared.binding), false);
   assert.equal(isOpenEnaLongitudinalBundleStaleV3(bundle, { ...prepared.binding, specHash: "f".repeat(64) }), true);

@@ -1032,7 +1032,7 @@ export function openEnaTrajectoryDisplaySpecV3(
     style: {
       participantSize: 5,
       participantOpacity: 0.42,
-      centroidSize: 11,
+      centroidSize: 7,
       pathWidth: 5,
       ...options.style,
     },

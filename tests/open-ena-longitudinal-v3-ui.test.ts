@@ -60,6 +60,12 @@ test("V3 desktop and narrow layouts preserve controls-status-plot-table order wi
   assert.match(css, /@media\s*\(max-width:\s*560px\)[\s\S]*?\.ena-longitudinal-v3-plot\s*\{[^}]*height:\s*480px/);
 });
 
+test("the plot action toolbar occupies its own row instead of covering the 3D legend", () => {
+  assert.match(css, /\.ena-longitudinal-v3-plot-shell\s*\{[^}]*min-height:\s*615px/);
+  assert.match(css, /\.ena-longitudinal-v3-plot-actions\s*\{[^}]*position:\s*static[^}]*border-bottom:/);
+  assert.match(css, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.ena-longitudinal-v3-plot-shell\s*\{[^}]*height:\s*485px/);
+});
+
 test("V3 result surfaces include equivalent mapping, path, inference, bootstrap, warning, and provenance tables", () => {
   for (const testId of [
     "open-ena-longitudinal-v3-mapping-audit",

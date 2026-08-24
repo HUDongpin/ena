@@ -12201,7 +12201,7 @@ body:has(.open-ena-page) #main-content {
 .ena-longitudinal-v3-plot-shell {
   position: relative;
   min-width: 0;
-  min-height: 560px;
+  min-height: 615px;
   background: #fff;
 }
 
@@ -12213,11 +12213,11 @@ body:has(.open-ena-page) #main-content {
 }
 
 .ena-longitudinal-v3-plot-actions {
-  position: absolute;
+  position: static;
   z-index: 7;
-  top: 9px;
-  inset-inline-end: 9px;
   justify-content: flex-end;
+  padding: 8px 9px;
+  border-bottom: 1px solid #d8e1e0;
 }
 
 .ena-longitudinal-v3-plot-actions button {
@@ -12395,7 +12395,11 @@ body:has(.open-ena-page) #main-content {
     padding: 12px;
   }
 
-  .ena-longitudinal-v3-plot-shell,
+  .ena-longitudinal-v3-plot-shell {
+    min-height: 485px;
+    height: 485px;
+  }
+
   .ena-longitudinal-v3-plot {
     min-height: 430px;
     height: 430px;
@@ -12430,9 +12434,7 @@ body:has(.open-ena-page) #main-content {
   }
 
   .ena-longitudinal-v3-plot-actions {
-    position: static;
     padding: 8px;
-    border-bottom: 1px solid #d8e1e0;
   }
 }
 
