@@ -1033,10 +1033,6 @@ async function downloadAllArtifacts(page, args) {
 async function readBrowserErrors(page, args) {
   const currentHref = page.url();
   const currentOrigin = await page.evaluate(() => window.location.origin);
-  const plotly3dPresent = await page.evaluate(() => {
-    const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
-    return Array.isArray(root?.data) && root.data.some((trace) => trace.type === "scatter3d");
-  });
   const declaredFontPreloads = new Set(await page
     .locator('link[rel="preload"][as="font"][type="font/woff2"]')
     .evaluateAll((links) => links
@@ -1045,7 +1041,7 @@ async function readBrowserErrors(page, args) {
   const strictNextFontPath = /^\/_next\/static\/media\/[a-f0-9]+-s\.p\.[a-z0-9]+\.woff2$/u;
   const strictFirefoxPreloadWarning = /^\[JavaScript Warning: "The resource at “([^”]+)” preloaded with link preload was not used within a few seconds\. Make sure all attributes of the preload tag are set correctly\." \{file: "([^"]+)" line: 0\}\]$/u;
   const strictChromiumCanvasReadbackWarning = /^Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true\. See: https:\/\/html\.spec\.whatwg\.org\/multipage\/canvas\.html#concept-canvas-will-read-frequently$/u;
-  const strictChromiumChunkPath = /^\/_next\/static\/chunks\/[a-z0-9_-]+\.js$/u;
+  const strictChromiumChunkPath = /^\/_next\/static\/chunks\/[a-z0-9]{2,}-[a-z0-9]{3,}-[a-z0-9]{3,}\.js$/u;
   const classifyNextFontPreloadDiagnostic = (warning) => {
     const match = warning.match(strictFirefoxPreloadWarning);
     if (!match) return null;
@@ -1059,7 +1055,7 @@ async function readBrowserErrors(page, args) {
     return resourceHref;
   };
   const classifyChromiumCanvasReadbackDiagnostic = (warning) => {
-    if (!["chromium", "chrome", "msedge"].includes(args.browser) || !plotly3dPresent) return null;
+    if (!["chromium", "chrome", "msedge"].includes(args.browser)) return null;
     if (!strictChromiumCanvasReadbackWarning.test(warning.text)) return null;
     let parsedSource;
     try {
@@ -1072,15 +1068,62 @@ async function readBrowserErrors(page, args) {
     if (!Number.isInteger(warning.location?.lineNumber) || warning.location.lineNumber < 0) return null;
     if (!Number.isInteger(warning.location?.columnNumber) || warning.location.columnNumber < 0) return null;
     return {
+      warningText: warning.text,
       sourcePath: parsedSource.pathname,
-      lineNumber: warning.location.lineNumber,
-      columnNumber: warning.location.columnNumber,
+      reportedLineNumber: warning.location.lineNumber,
+      reportedColumnNumber: warning.location.columnNumber,
+    };
+  };
+  const verifyChromiumCanvasReadbackSource = async (candidate) => await page.evaluate(async (input) => {
+    const response = await fetch(input.sourcePath, {
+      cache: "force-cache",
+      credentials: "same-origin",
+    });
+    if (!response.ok || !/javascript/iu.test(response.headers.get("content-type") || "")) return null;
+    const sourceBytes = await response.arrayBuffer();
+    if (sourceBytes.byteLength < 1 || sourceBytes.byteLength > 16 * 1024 * 1024) return null;
+    const sourceText = new TextDecoder().decode(sourceBytes);
+    // Playwright reports Chromium's source line as a zero-based lineNumber.
+    const sourceLine = sourceText.split(/\r?\n/u)[input.reportedLineNumber];
+    if (
+      !sourceLine
+      || !sourceLine.includes("vectorize-text: Unrecognized textAlign:")
+      || !sourceLine.includes('getContext("2d")')
+      || !sourceLine.includes(".getImageData(0,0,")
+    ) return null;
+    const digestHex = async (bytes) => [...new Uint8Array(
+      await crypto.subtle.digest("SHA-256", bytes),
+    )].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    return {
+      ...input,
+      sourceLineNumber: input.reportedLineNumber + 1,
+      chunkBytes: sourceBytes.byteLength,
+      chunkSha256: await digestHex(sourceBytes),
+      sourceLineSha256: await digestHex(new TextEncoder().encode(sourceLine)),
+    };
+  }, candidate);
+  const normalizeWarning = (warning) => {
+    if (typeof warning === "string") return warning;
+    let sourcePath = null;
+    try {
+      sourcePath = new URL(warning.location?.url || "").pathname;
+    } catch {
+      // Keep malformed or opaque warning locations out of logs.
+    }
+    return {
+      text: warning.text,
+      location: {
+        sourcePath,
+        lineNumber: warning.location?.lineNumber ?? null,
+        columnNumber: warning.location?.columnNumber ?? null,
+      },
     };
   };
   const allWarnings = [...(page.__openEnaLongitudinalConsoleWarnings || [])];
   const consoleWarnings = [];
   const nextFontPreloadDiagnosticUrls = [];
   const canvas2dReadbackDiagnostics = [];
+  const canvas2dReadbackCandidates = [];
   let webglDiagnosticCount = 0;
   for (const warning of allWarnings) {
     const warningText = typeof warning === "string" ? warning : warning.text;
@@ -1096,8 +1139,14 @@ async function readBrowserErrors(page, args) {
       : null;
     if (isFirefoxWebglDiagnostic) webglDiagnosticCount += 1;
     else if (nextFontUrl) nextFontPreloadDiagnosticUrls.push(nextFontUrl);
-    else if (canvasReadbackDiagnostic) canvas2dReadbackDiagnostics.push(canvasReadbackDiagnostic);
-    else consoleWarnings.push(warning);
+    else if (canvasReadbackDiagnostic) {
+      canvas2dReadbackCandidates.push({ candidate: canvasReadbackDiagnostic, warning });
+    } else consoleWarnings.push(normalizeWarning(warning));
+  }
+  for (const { candidate, warning } of canvas2dReadbackCandidates) {
+    const verified = await verifyChromiumCanvasReadbackSource(candidate);
+    if (verified) canvas2dReadbackDiagnostics.push(verified);
+    else consoleWarnings.push(normalizeWarning(warning));
   }
   return {
     consoleErrors: [...(page.__openEnaLongitudinalConsoleErrors || [])],

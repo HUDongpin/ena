@@ -179,8 +179,20 @@ test("the Chromium Plotly Canvas2D advisory remains a strict auditable platform 
   const source = readFileSync(smokePath, "utf8");
   assert.match(source, /message\.location\(\)/u);
   assert.match(source, /strictChromiumCanvasReadbackWarning/u);
-  assert.match(source, /strictChromiumChunkPath/u);
+  assert.match(
+    source,
+    /const strictChromiumChunkPath = \/\^\\\/_next\\\/static\\\/chunks\\\/\[a-z0-9\]\{2,\}-\[a-z0-9\]\{3,\}-\[a-z0-9\]\{3,\}\\\.js\$\/u/u,
+  );
   assert.match(source, /parsedSource\.origin !== currentOrigin/u);
+  assert.match(source, /verifyChromiumCanvasReadbackSource/u);
+  assert.match(source, /fetch\(input\.sourcePath/u);
+  assert.match(source, /vectorize-text: Unrecognized textAlign:/u);
+  assert.ok(source.includes('sourceLine.includes(\'getContext("2d")\')'));
+  assert.ok(source.includes('sourceLine.includes(".getImageData(0,0,")'));
+  assert.match(source, /crypto\.subtle\.digest\("SHA-256"/u);
+  assert.match(source, /chunkSha256/u);
+  assert.match(source, /sourceLineSha256/u);
+  assert.match(source, /warningText:\s*warning\.text/u);
   assert.match(source, /canvas2dReadbackDiagnostics/u);
   assert.match(source, /canvas2dReadbackDiagnostics\.length <= 1/u);
   assert.match(source, /cliWarningCount/u);
