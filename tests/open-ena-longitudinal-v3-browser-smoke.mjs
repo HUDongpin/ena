@@ -668,6 +668,11 @@ async function exerciseCamerasAndProjections(page, args) {
   const plot = page.getByTestId("open-ena-longitudinal-v3-plot");
   const cameraSelect = page.getByLabel("3D camera preset");
   const projectionSelect = page.getByLabel("3D / 2D projection");
+  const sceneInteraction = plot.locator("#scene");
+  const cameraDragFractions = [
+    { from: { x: 0.5, y: 0.5 }, to: { x: 0.75, y: 0.7 } },
+    { from: { x: 0.38, y: 0.42 }, to: { x: 0.62, y: 0.58 } },
+  ];
   const resultLabel = await plot.getAttribute("aria-label");
   const expectedResultLabelFragment = "Result " + args.expectedResultHash.slice(0, 12) + ".";
   const cameraMatches = (actual, expected, epsilon = 1e-7) => {
@@ -697,14 +702,14 @@ async function exerciseCamerasAndProjections(page, args) {
     }
     throw new Error(label + " did not reach its expected runtime camera: " + JSON.stringify(lastCamera));
   };
-  const waitForRuntimeCameraChange = async (previous) => {
-    const deadline = Date.now() + 15_000;
+  const waitForRuntimeCameraChange = async (previous, timeout = 5_000) => {
+    const deadline = Date.now() + timeout;
     while (Date.now() <= deadline) {
       const current = await readRuntimeCamera();
       if (JSON.stringify(current) !== JSON.stringify(previous)) return current;
       await page.waitForTimeout(50);
     }
-    throw new Error("mouse drag did not change the live Plotly runtime camera");
+    return null;
   };
   const readScientificInvariants = async () => await plot.evaluate((root) => ({
     resultHashes: [...new Set(
@@ -731,20 +736,48 @@ async function exerciseCamerasAndProjections(page, args) {
   const beforeDrag = await readRuntimeCamera();
   let dragVerified = false;
   let afterDrag = beforeDrag;
+  const dragAttempts = [];
   if (["chromium", "chrome", "msedge"].includes(args.browser)) {
-    const plotBox = await plot.boundingBox();
-    assertBrowser(Boolean(plotBox), "the 3D plot does not expose a mouse-interaction surface");
-    await page.mouse.move(plotBox.x + plotBox.width * 0.55, plotBox.y + plotBox.height * 0.5);
-    await page.mouse.down();
-    await page.mouse.move(
-      plotBox.x + plotBox.width * 0.68,
-      plotBox.y + plotBox.height * 0.62,
-      { steps: 12 },
-    );
-    await page.mouse.up();
-    afterDrag = await waitForRuntimeCameraChange(beforeDrag);
+    await sceneInteraction.waitFor({ state: "visible", timeout: 15_000 });
+    // Plotly's root also contains margins and the legend. Drag the dedicated
+    // WebGL scene and allow one alternate in-scene gesture if the canvas is
+    // replaced during the first post-render pointer sequence.
+    await page.waitForTimeout(250);
+    for (const gesture of cameraDragFractions) {
+      const sceneBox = await sceneInteraction.boundingBox();
+      assertBrowser(
+        Boolean(sceneBox && sceneBox.width > 100 && sceneBox.height > 100),
+        "the 3D scene does not expose a usable mouse-interaction surface",
+      );
+      const attemptBefore = await readRuntimeCamera();
+      await page.mouse.move(
+        sceneBox.x + sceneBox.width * gesture.from.x,
+        sceneBox.y + sceneBox.height * gesture.from.y,
+      );
+      await page.mouse.down({ button: "left" });
+      await page.mouse.move(
+        sceneBox.x + sceneBox.width * gesture.to.x,
+        sceneBox.y + sceneBox.height * gesture.to.y,
+        { steps: 20 },
+      );
+      await page.mouse.up({ button: "left" });
+      const attemptAfter = await waitForRuntimeCameraChange(attemptBefore);
+      const changed = attemptAfter !== null;
+      dragAttempts.push({
+        from: gesture.from,
+        to: gesture.to,
+        scene: { width: sceneBox.width, height: sceneBox.height },
+        changed,
+      });
+      if (changed) {
+        afterDrag = attemptAfter;
+        dragVerified = true;
+        break;
+      }
+      await page.waitForTimeout(250);
+    }
+    assertBrowser(dragVerified, "mouse drag did not change the live Plotly runtime camera");
     await assertScientificInvariants("mouse camera drag");
-    dragVerified = true;
   } else {
     await assertScientificInvariants(args.browser + " camera baseline");
   }
@@ -847,6 +880,7 @@ async function exerciseCamerasAndProjections(page, args) {
     afterDrag,
     restoredAfterDrag,
     dragVerified,
+    dragAttempts,
   };
 }
 
@@ -1244,6 +1278,13 @@ try {
     cameras: Object.keys(displayAudit.cameraStates),
     cameraStates: displayAudit.cameraStates,
     cameraLabels: displayAudit.cameraLabels,
+    cameraInteraction: {
+      beforeDrag: displayAudit.beforeDrag,
+      afterDrag: displayAudit.afterDrag,
+      restoredAfterDrag: displayAudit.restoredAfterDrag,
+      dragVerified: displayAudit.dragVerified,
+      dragAttempts: displayAudit.dragAttempts,
+    },
     cameraScreenshots: Object.fromEntries(
       Object.entries(displayAudit.cameraScreenshots)
         .map(([preset, path]) => [preset, artifactEvidence(path)]),

@@ -44,7 +44,7 @@ test("the version-controlled longitudinal V3 smoke owns its server and covers th
   assert.match(source, /platformDiagnostics: browserErrors\.platformDiagnostics/u);
   assert.match(source, /continueLocal\s*\.waitFor\(\{ state: "visible"/u);
   assert.match(source, /expectedCameraStates/u);
-  assert.match(source, /page\.mouse\.down\(\)/u);
+  assert.match(source, /page\.mouse\.down\(\{ button: "left" \}\)/u);
   assert.match(source, /page\.mouse\.move\([^)]*steps:/u);
   assert.match(source, /projection\?\.type/u);
   assert.match(source, /taskRequestCount/u);
@@ -111,16 +111,24 @@ test("the seven camera checks assert their visible selected labels and retain th
 
 test("camera interaction evidence reads the live Plotly camera with a declarative fallback", () => {
   const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /const sceneInteraction = plot\.locator\("#scene"\)/u);
+  assert.match(source, /const cameraDragFractions = \[/u);
+  assert.match(source, /const sceneBox = await sceneInteraction\.boundingBox\(\)/u);
+  assert.doesNotMatch(source, /const plotBox = await plot\.boundingBox\(\)/u);
   assert.match(source, /const readRuntimeCamera = async \(\) => await plot\.evaluate/u);
   assert.match(
     source,
     /typeof scene\?\._scene\?\.getCamera === "function"\s*\? scene\._scene\.getCamera\(\)\s*:\s*scene\?\.camera/u,
   );
   assert.match(source, /const beforeDrag = await readRuntimeCamera\(\)/u);
-  assert.match(source, /afterDrag = await waitForRuntimeCameraChange\(beforeDrag\)/u);
+  assert.match(source, /const attemptAfter = await waitForRuntimeCameraChange\(attemptBefore\)/u);
+  assert.match(source, /afterDrag = attemptAfter/u);
   assert.match(source, /const current = await readRuntimeCamera\(\)/u);
   assert.match(source, /const restoredAfterDrag = await waitForRuntimeCamera\(/u);
   assert.match(source, /cameraStates\[preset\] = await waitForRuntimeCamera\(/u);
+  assert.match(source, /dragAttempts\.push\(/u);
+  assert.match(source, /assertBrowser\(dragVerified,/u);
+  assert.match(source, /cameraInteraction:\s*\{/u);
   assert.match(source, /afterDrag,/u);
 });
 
