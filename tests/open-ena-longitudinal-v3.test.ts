@@ -174,13 +174,33 @@ test("2D and 3D compile from the same bundle and never change the result hash", 
   assert.equal(threeDisplay.style.centroidSize, 7);
   assert.equal(twoDisplay.style.centroidSize, 7);
   for (const plot of [three, two]) {
+    const paths = plot.data.filter((trace) => trace.meta.role === "trajectory-path");
+    const individualPaths = plot.data.filter((trace) => trace.meta.role === "individual-path");
     const centroids = plot.data.filter((trace) => trace.meta.role === "centroid");
+    assert.ok(paths.length > 0);
+    assert.ok(individualPaths.length > 0);
     assert.ok(centroids.length > 0);
+    assert.ok([...paths, ...individualPaths].every((trace) => (
+      (trace.line as { color?: string } | undefined)?.color === "#000000"
+    )));
+    assert.ok(paths.every((trace) => {
+      const marker = trace.marker as { color?: string; symbol?: string } | undefined;
+      return marker?.symbol === "square" && marker.color !== "#000000";
+    }));
     assert.ok(centroids.every((trace) => {
-      const marker = trace.marker as { size?: number } | undefined;
-      return marker?.size === 7;
+      const marker = trace.marker as { color?: string; size?: number; symbol?: string } | undefined;
+      return marker?.size === 7 && marker.symbol === "square" && marker.color !== "#000000";
     }));
   }
+  const threeArrows = three.data.filter((trace) => trace.meta.role === "direction-arrow");
+  const twoArrows = two.data.filter((trace) => trace.meta.role === "direction-arrow");
+  assert.ok(threeArrows.length > 0);
+  assert.ok(twoArrows.length > 0);
+  assert.ok(threeArrows.every((trace) => JSON.stringify(trace.colorscale) === JSON.stringify([[0, "#000000"], [1, "#000000"]])));
+  assert.ok(twoArrows.every((trace) => (
+    (trace.line as { color?: string } | undefined)?.color === "#000000"
+    && (trace.marker as { color?: string } | undefined)?.color === "#000000"
+  )));
   assert.notDeepEqual(three.layout, two.layout);
   assert.equal(isOpenEnaLongitudinalBundleStaleV3(bundle, prepared.binding), false);
   assert.equal(isOpenEnaLongitudinalBundleStaleV3(bundle, { ...prepared.binding, specHash: "f".repeat(64) }), true);
