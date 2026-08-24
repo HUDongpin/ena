@@ -76,6 +76,10 @@ test("the longitudinal V3 smoke exercises all seven trajectory downloads and ver
   assert.match(source, /member\.sha256/u);
   assert.match(source, /contentSetHash/u);
   assert.match(source, /participantLevelIncluded/u);
+  assert.match(source, /aggregate Plotly export leaked participant points/u);
+  assert.match(source, /aggregate Plotly export leaked individual paths/u);
+  assert.match(source, /opt-in Plotly export omitted participant points/u);
+  assert.match(source, /participant opt-in must produce a distinct privacy-scoped Plotly member/u);
   assert.match(source, /trajectory-bootstrap\.csv/u);
   assert.match(source, /trajectory ZIP still contains a bootstrap CSV/u);
 

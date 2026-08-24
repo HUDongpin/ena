@@ -342,7 +342,25 @@ function extractAndVerifyBundle(zipPath, kind, participantLevelIncluded) {
     1,
     kind + " trajectory Plotly export omitted fitted code references",
   );
-  return { extracted, manifest, analysis, plotly, zipSha256: sha256(readFileSync(zipPath)) };
+  const participantTraceCount = plotly.data.filter((trace) => trace.meta?.role === "participant").length;
+  const individualPathTraceCount = plotly.data.filter((trace) => trace.meta?.role === "individual-path").length;
+  if (participantLevelIncluded) {
+    assert.ok(participantTraceCount > 0, kind + " opt-in Plotly export omitted participant points");
+    assert.match(manifest.privacyWarning ?? "", /privacy|re-identification/iu);
+  } else {
+    assert.equal(participantTraceCount, 0, kind + " aggregate Plotly export leaked participant points");
+    assert.equal(individualPathTraceCount, 0, kind + " aggregate Plotly export leaked individual paths");
+    assert.equal(JSON.stringify(plotly).includes("participantCanonical"), false);
+  }
+  return {
+    extracted,
+    manifest,
+    analysis,
+    plotly,
+    participantTraceCount,
+    individualPathTraceCount,
+    zipSha256: sha256(readFileSync(zipPath)),
+  };
 }
 
 function verifyStandaloneDownloads(downloads, aggregate) {
@@ -1038,12 +1056,21 @@ try {
   const aggregate = extractAndVerifyBundle(downloads.bundle, "aggregate", false);
   const participant = extractAndVerifyBundle(downloads.participant, "participant", true);
   assert.equal(aggregate.manifest.resultHash, participant.manifest.resultHash);
-  for (const member of aggregate.manifest.members) {
+  for (const member of aggregate.manifest.members.filter(
+    (candidate) => candidate.path !== "plotly-spec.json",
+  )) {
     const participantMember = participant.manifest.members.find(
       (candidate) => candidate.path === member.path,
     );
     assert.deepEqual(participantMember, member, "shared member differs: " + member.path);
   }
+  assert.equal(aggregate.participantTraceCount, 0);
+  assert.ok(participant.participantTraceCount > 0);
+  assert.notEqual(
+    sha256(readFileSync(join(aggregate.extracted, "plotly-spec.json"))),
+    sha256(readFileSync(join(participant.extracted, "plotly-spec.json"))),
+    "participant opt-in must produce a distinct privacy-scoped Plotly member",
+  );
   verifyStandaloneDownloads(downloads, aggregate);
 
   const serverLog = readServerLogTail();

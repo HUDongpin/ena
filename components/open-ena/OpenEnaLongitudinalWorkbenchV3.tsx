@@ -722,11 +722,11 @@ export default function OpenEnaLongitudinalWorkbenchV3({
   };
 
   const download = async (kind: "bundle" | "participant" | "path" | "metadata" | "inference" | "analysis" | "plotly") => {
-    if (!bundle || !plotlySpec || !settings || !profile) return;
+    if (!bundle || !plotlySpec || !displaySpec || !settings || !profile) return;
     const prefix = `open-ena-${bundle.identity.resultHash.slice(0, 12)}-trajectory`;
     if (kind === "bundle" || kind === "participant") {
       if (kind === "participant" && !window.confirm(copy.privacyConfirm)) return;
-      const exported = await createExportBundle(bundle, { plotlySpec, includeParticipantLevel: kind === "participant" });
+      const exported = await createExportBundle(bundle, { displaySpec, includeParticipantLevel: kind === "participant" });
       downloadBlob(exported.fileName, exported.bytes, "application/zip");
       return;
     }
@@ -738,7 +738,7 @@ export default function OpenEnaLongitudinalWorkbenchV3({
       inference: ["trajectory-inference.csv", "inference.csv"],
     } as const;
     const [packagePath, downloadSuffix] = packageFiles[kind];
-    const exported = await createExportBundle(bundle, { plotlySpec });
+    const exported = await createExportBundle(bundle, { displaySpec });
     const file = exported.files.find((candidate) => candidate.path === packagePath);
     if (!file) throw new Error(`The 3DENA export bundle omitted ${packagePath}.`);
     downloadBlob(`${prefix}-${downloadSuffix}`, file.bytes, file.mediaType);

@@ -267,7 +267,7 @@ test("2D and 3D compile from the same bundle and never change the result hash", 
   assert.equal(networkEdgePlot.data.filter((trace) => trace.meta.role === "network-node").length, 1);
   assert.equal(networkEdgePlot.resultHash, bundle.identity.resultHash);
   const resultHashBeforeExport = bundle.identity.resultHash;
-  const exported = await createExportBundle(bundle, { plotlySpec: networkEdgePlot });
+  const exported = await createExportBundle(bundle, { displaySpec: networkEdgeDisplay });
   const exportedPlot = exported.files.find((file) => file.path === "plotly-spec.json");
   assert.ok(exportedPlot);
   const exportedSpec = JSON.parse(new TextDecoder().decode(exportedPlot.bytes)) as typeof networkEdgePlot;
@@ -390,7 +390,7 @@ test("legacy trajectory envelopes remain readable but their ENA network overlays
   assert.equal(plot.data.filter((trace) => trace.meta.role === "network-edge").length, 0);
   assert.equal(plot.data.filter((trace) => trace.meta.role === "network-node").length, 1);
   assert.equal(legacyBundle.identity.resultHash, resultHashBeforeDisplay);
-  const exported = await createExportBundle(legacyBundle, { plotlySpec: plot });
+  const exported = await createExportBundle(legacyBundle, { displaySpec: display });
   const exportedAnalysis = exported.files.find((file) => file.path === "analysis.json");
   const exportedPlot = exported.files.find((file) => file.path === "plotly-spec.json");
   assert.ok(exportedAnalysis);

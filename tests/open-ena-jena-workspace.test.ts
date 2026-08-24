@@ -13,9 +13,9 @@ const expectedSourceSha = "90790856f00bdef63dbd27fc3a5b502e8cffe65f";
 const expectedCanonicalMergeSha = "90790856f00bdef63dbd27fc3a5b502e8cffe65f";
 const expectedSourceUrl = `https://github.com/HUDongpin/jENA/tree/${expectedSourceSha}`;
 const expectedLicenseSha256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986";
-const trajectoryPackagePath = "vendor/j-3dena/j-3dena-0.2.0-implemented-unverified.2.tgz";
-const trajectoryPackageSha256 = "6ec63c6a63e30720af3fb2430aab2a67ae3b61cb354ae2cbfe3de6be2f2d8bb9";
-const trajectoryPackageIntegrity = "sha512-ShLiyxXdQyJzYcad2QO6fKw1vrrhBtc9CG/P7CqDBDYWIjhg4I2Owyzt6TlphZZugZ7RB2HJRVigexPeXCsFHA==";
+const trajectoryPackagePath = "vendor/j-3dena/j-3dena-0.2.0-implemented-unverified.6.tgz";
+const trajectoryPackageSha256 = "d3a21a855938ed40eed8e0e6e7390cc682f83b2fa8286d8cb823b388b33f89c1";
+const trajectoryPackageIntegrity = "sha512-PEFZNy7PcX6t/VMCKbgs60sUGorXzLfGH2vpofVFk3QsbB1JaLebrLOCeU3HSLbS/fFtJ54Za89a/6Zvud5lRw==";
 
 function json(relativePath: string) {
   return JSON.parse(readFileSync(join(projectRoot, relativePath), "utf8")) as Record<string, unknown>;
@@ -189,7 +189,7 @@ test("the root lockfile and installed package resolve jENA only through the loca
 test("Vercel performs a frozen install of the exact vendored trajectory package", () => {
   const rootPackage = json("package.json") as { dependencies?: Record<string, string> };
   const lock = json("package-lock.json") as {
-    packages?: Record<string, { resolved?: string; integrity?: string; dependencies?: Record<string, string> }>;
+    packages?: Record<string, { version?: string; resolved?: string; integrity?: string; dependencies?: Record<string, string> }>;
   };
   const vercel = json("vercel.json") as { installCommand?: string };
   const localDependency = `file:${trajectoryPackagePath}`;
@@ -203,6 +203,7 @@ test("Vercel performs a frozen install of the exact vendored trajectory package"
   assert.equal(lock.packages?.[""]?.dependencies?.["j-3dena"], localDependency);
   assert.equal(lock.packages?.["node_modules/j-3dena"]?.resolved, localDependency);
   assert.equal(lock.packages?.["node_modules/j-3dena"]?.integrity, trajectoryPackageIntegrity);
+  assert.equal(lock.packages?.["node_modules/j-3dena"]?.version, "0.2.0-implemented-unverified.6");
   assert.equal(
     createHash("sha256").update(readFileSync(join(projectRoot, trajectoryPackagePath))).digest("hex"),
     trajectoryPackageSha256,

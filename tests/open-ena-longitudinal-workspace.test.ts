@@ -326,7 +326,7 @@ test("the V3 bundle and exports are bound to successful-result provenance", () =
     longitudinalWorkbenchV3,
     /buildOpenEnaLongitudinalExecutionRequestV3\(\{[\s\S]{0,180}config:\s*configForPendingControls/,
   );
-  assert.match(longitudinalWorkbenchV3, /createExportBundle\(bundle, \{ plotlySpec/);
+  assert.match(longitudinalWorkbenchV3, /createExportBundle\(bundle, \{ displaySpec/);
 });
 
 test("longitudinal group-centroid summaries stay descriptive and never reuse endpoint tests", () => {
