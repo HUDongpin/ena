@@ -13,9 +13,9 @@ const expectedSourceSha = "90790856f00bdef63dbd27fc3a5b502e8cffe65f";
 const expectedCanonicalMergeSha = "90790856f00bdef63dbd27fc3a5b502e8cffe65f";
 const expectedSourceUrl = `https://github.com/HUDongpin/jENA/tree/${expectedSourceSha}`;
 const expectedLicenseSha256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986";
-const trajectoryPackagePath = "vendor/j-3dena/j-3dena-0.2.0-implemented-unverified.0.tgz";
-const trajectoryPackageSha256 = "6344fb1ac83b76c527c0a82f3c28f63677baff53e56042e676cfa5c05583c058";
-const trajectoryPackageIntegrity = "sha512-jADoyj8Tm9RpbxmAUrsbSgBDAlMhuzbB/CnViekJ26KalUvLyApjqOQ4PNgijAPycdUTWme3eNi5E8gO8MCG6Q==";
+const trajectoryPackagePath = "vendor/j-3dena/j-3dena-0.2.0-implemented-unverified.1.tgz";
+const trajectoryPackageSha256 = "0ff236bf66b64bf254826336ff9e8ffc988f0a2166d63cedd1456c10ea07891c";
+const trajectoryPackageIntegrity = "sha512-y/FQ2fRU3tyWn7SBOePMsY6r7dcDbPc0LS/dtG3pqTO+MnypGLf+RNvsL6nxizKmcdaoSNbzDEiWVpyOpx42PA==";
 
 function json(relativePath: string) {
   return JSON.parse(readFileSync(join(projectRoot, relativePath), "utf8")) as Record<string, unknown>;

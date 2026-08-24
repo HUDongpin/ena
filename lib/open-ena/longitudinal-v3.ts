@@ -2,6 +2,7 @@ import {
   adaptFittedJenaTrajectoryResultV2,
   getAnalysisBuildIdentityV2,
   hashAnalysisValueV1,
+  hashLongitudinalExecutionRequestV2,
   type AnalysisExecutionDatasetV2,
   type AnalysisResult,
   type LongitudinalAnalysisBundleV2,
@@ -28,8 +29,62 @@ import {
 } from "./types";
 
 const SHA256 = /^[a-f0-9]{64}$/u;
-const MAX_UI_BOOTSTRAP_REPETITIONS = 500;
-const MIN_UI_BOOTSTRAP_REPETITIONS = 200;
+const OPAQUE_TOKEN_BYTES = 16;
+
+type OpaqueTokenNamespace = "participant" | "unit" | "step";
+type OpaqueTokenRegistry = Record<OpaqueTokenNamespace, Map<string, string>>;
+
+/**
+ * Pseudonyms stay stable while one immutable fitted result is alive so that a
+ * retry of the same analysis remains byte-for-byte reproducible. A newly
+ * loaded/refitted result receives an unrelated random registry, preventing the
+ * compute service from linking low-entropy raw IDs across analysis sessions.
+ */
+const opaqueTokenRegistries = new WeakMap<object, Map<string, OpaqueTokenRegistry>>();
+
+function secureRandomHex(bytes: number): string {
+  const crypto = globalThis.crypto;
+  if (!crypto?.getRandomValues) {
+    reject("SECURE_RANDOM_UNAVAILABLE", "privacy.pseudonyms", "cryptographically secure random values are required");
+  }
+  const value = new Uint8Array(bytes);
+  crypto.getRandomValues(value);
+  return Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function tokenFor(
+  registry: OpaqueTokenRegistry,
+  namespace: OpaqueTokenNamespace,
+  canonical: string,
+  index: number,
+): string {
+  const existing = registry[namespace].get(canonical);
+  if (existing) return existing;
+  const used = new Set(registry[namespace].values());
+  let candidate: string;
+  do {
+    candidate = `${namespace}-${index + 1}-${secureRandomHex(OPAQUE_TOKEN_BYTES)}`;
+  } while (used.has(candidate));
+  registry[namespace].set(canonical, candidate);
+  return candidate;
+}
+
+function opaqueTokenRegistry(
+  sourceIdentity: object,
+  scope: string,
+): OpaqueTokenRegistry {
+  let byScope = opaqueTokenRegistries.get(sourceIdentity);
+  if (!byScope) {
+    byScope = new Map();
+    opaqueTokenRegistries.set(sourceIdentity, byScope);
+  }
+  let registry = byScope.get(scope);
+  if (!registry) {
+    registry = { participant: new Map(), unit: new Map(), step: new Map() };
+    byScope.set(scope, registry);
+  }
+  return registry;
+}
 
 export interface OpenEnaLongitudinalInferenceSettingsV3 {
   independentPeriod: Extract<TrajectoryInferenceRequestV2, { kind: "independent-period" }> | null;
@@ -98,6 +153,7 @@ export interface OpenEnaLongitudinalBindingV3 {
   datasetHash: string;
   specHash: string;
   sourceResultHash: string;
+  requestHash: string;
   runId: string;
 }
 
@@ -373,7 +429,9 @@ export async function createOpenEnaLongitudinalSettingsV3(input: {
     selectedDimensions: dimensions,
     inference: defaultInference(groupValues(input.dataset, input.config), periods),
     bootstrap: {
-      enabled: true,
+      // Kept in the persisted V3 settings shape for read compatibility only.
+      // Longitudinal trajectory analysis does not request confidence intervals.
+      enabled: false,
       repetitions: 500,
       confidenceLevel: 0.95,
       seed: 2026,
@@ -593,6 +651,11 @@ export async function migrateOpenEnaLongitudinalSettingsV3(
     const candidate = structuredClone(value as OpenEnaLongitudinalSettingsV3);
     candidate.identityConfirmed = false;
     candidate.identityBindingHash = null;
+    // Bootstrap fields remain readable so existing V3 settings can be opened,
+    // but trajectory analysis no longer exposes or submits CI computation.
+    candidate.bootstrap.enabled = false;
+    candidate.bootstrap.resamplingDesign = "auto";
+    candidate.bootstrap.explicitStrataField = null;
     if (candidate.inference.pairedPeriods) candidate.inference.pairedPeriods.samePhysicalEntityConfirmed = false;
     if (candidate.inference.repeatedPeriods) candidate.inference.repeatedPeriods.samePhysicalEntityConfirmed = false;
     if (candidate.inference.pathComparison) candidate.inference.pathComparison.samePhysicalEntityConfirmed = false;
@@ -636,7 +699,8 @@ function opaqueKey(
 
 async function pseudonymizeSourceResult(
   result: AnalysisResult,
-  datasetHash: string,
+  sourceIdentity: object,
+  privacyScope: string,
   runSpecFields: Pick<OpenEnaLongitudinalSettingsV3, "participantColumns" | "timeColumn">,
   groupColumn: string | null,
 ): Promise<AnalysisResult> {
@@ -644,13 +708,19 @@ async function pseudonymizeSourceResult(
   const participantCanonicals = [...new Set(copy.points.map((point) => point.participantLabel.canonical))];
   const unitCanonicals = [...new Set(copy.points.map((point) => point.unit.canonical))];
   const stepCanonicals = [...new Set(copy.points.map((point) => point.step?.canonical ?? point.id.canonical))];
-  const tokenMap = async (values: string[], namespace: string) => new Map(await Promise.all(values.map(async (value, index) => [
-    value,
-    `${namespace}-${index + 1}-${(await hashAnalysisValueV1({ datasetHash, namespace, value })).slice(0, 20)}`,
-  ] as const)));
-  const participantTokens = await tokenMap(participantCanonicals, "participant");
-  const unitTokens = await tokenMap(unitCanonicals, "unit");
-  const stepTokens = await tokenMap(stepCanonicals, "step");
+  const registry = opaqueTokenRegistry(sourceIdentity, privacyScope);
+  const participantTokens = new Map(participantCanonicals.map((canonical, index) => [
+    canonical,
+    tokenFor(registry, "participant", canonical, index),
+  ]));
+  const unitTokens = new Map(unitCanonicals.map((canonical, index) => [
+    canonical,
+    tokenFor(registry, "unit", canonical, index),
+  ]));
+  const stepTokens = new Map(stepCanonicals.map((canonical, index) => [
+    canonical,
+    tokenFor(registry, "step", canonical, index),
+  ]));
   copy.points = copy.points.map((point) => {
     const participantToken = participantTokens.get(point.participantLabel.canonical)!;
     const unitToken = unitTokens.get(point.unit.canonical)!;
@@ -752,9 +822,6 @@ function datasetReceipt(
           ...(settings.estimand.kind === "weighted-participant" && name === settings.estimand.metadataField
             ? ["metadata" as const]
             : []),
-          ...(settings.bootstrap.resamplingDesign === "explicit-strata" && name === settings.bootstrap.explicitStrataField
-            ? ["metadata" as const]
-            : []),
         ];
         return { name, inferredType: datasetColumnType(dataset, name), roles: roles.length ? [...new Set(roles)] : ["unmapped" as const] };
       }),
@@ -795,25 +862,11 @@ function validateSettings(
     || settings.selectedDimensions.some((dimension) => !result.set.rotation.rotationColumns.includes(dimension))) {
     reject("INVALID_DIMENSIONS", "settings.selectedDimensions", "must contain three distinct fitted rotation dimensions");
   }
-  if (settings.bootstrap.enabled && (
-    !Number.isSafeInteger(settings.bootstrap.repetitions)
-    || settings.bootstrap.repetitions < MIN_UI_BOOTSTRAP_REPETITIONS
-    || settings.bootstrap.repetitions > MAX_UI_BOOTSTRAP_REPETITIONS
-  )) reject("INVALID_UI_BOOTSTRAP_REPETITIONS", "settings.bootstrap.repetitions", "must be an integer from 200 through 500");
   if (settings.estimand.kind === "weighted-participant") {
     const profile = profileOpenEnaLongitudinalMappingV3(dataset, config, settings);
     if (!profile.positiveStableNumericMetadata.includes(settings.estimand.metadataField)) {
       reject("INVALID_WEIGHT_FIELD", "settings.estimand.metadataField", "must be positive numeric and constant within every participant-period");
     }
-  }
-  if (settings.bootstrap.resamplingDesign === "explicit-strata") {
-    const profile = profileOpenEnaLongitudinalMappingV3(dataset, config, settings);
-    if (!settings.bootstrap.explicitStrataField
-      || !profile.stableParticipantMetadata.includes(settings.bootstrap.explicitStrataField)) {
-      reject("INVALID_STRATA_FIELD", "settings.bootstrap.explicitStrataField", "must be non-null and constant across every participant's complete history");
-    }
-  } else if (settings.bootstrap.explicitStrataField !== null) {
-    reject("UNEXPECTED_STRATA_FIELD", "settings.bootstrap.explicitStrataField", "must be null unless explicit-strata is selected");
   }
 }
 
@@ -841,9 +894,6 @@ export async function buildOpenEnaLongitudinalExecutionRequestV3(input: {
   }
   const metadataColumns = [
     ...(input.settings.estimand.kind === "weighted-participant" ? [input.settings.estimand.metadataField] : []),
-    ...(input.settings.bootstrap.resamplingDesign === "explicit-strata" && input.settings.bootstrap.explicitStrataField
-      ? [input.settings.bootstrap.explicitStrataField]
-      : []),
   ].filter((column, index, values) => values.indexOf(column) === index);
   const adapted = adaptFittedJenaTrajectoryResultV2({
     set: input.result.set,
@@ -867,9 +917,17 @@ export async function buildOpenEnaLongitudinalExecutionRequestV3(input: {
     },
     inputColumns: [...input.dataset.headers],
   });
+  const privacyScope = await hashAnalysisValueV1({
+    datasetHash: input.datasetHash,
+    runId: input.runId,
+    participantColumns: input.settings.participantColumns,
+    timeColumn: input.settings.timeColumn,
+    groupColumn: input.config.groupColumn,
+  });
   const scientificSource = await pseudonymizeSourceResult(
     adapted,
-    input.datasetHash,
+    input.result,
+    privacyScope,
     input.settings,
     input.config.groupColumn,
   );
@@ -932,21 +990,6 @@ export async function buildOpenEnaLongitudinalExecutionRequestV3(input: {
     requests: inferenceRequests,
     adjustment: "holm",
   } : undefined;
-  const bootstrapTask: TrajectoryBootstrapTaskV2 | undefined = input.settings.bootstrap.enabled ? {
-    schemaVersion: "3dena.trajectory-bootstrap-task.v2",
-    kind: "trajectory-bootstrap-v2",
-    datasetHash: input.datasetHash,
-    specHash,
-    sourceResultHash,
-    runId: input.runId,
-    repetitions: input.settings.bootstrap.repetitions,
-    confidenceLevel: input.settings.bootstrap.confidenceLevel,
-    seed: input.settings.bootstrap.seed,
-    resamplingDesign: input.settings.bootstrap.resamplingDesign,
-    explicitStrataField: input.settings.bootstrap.explicitStrataField,
-    interval: "pointwise-percentile-linear-type7",
-    rotationPolicy: "fixed-same-fit-projection",
-  } : undefined;
   const networkOverlayTask: TrajectoryNetworkOverlayTaskV2 | undefined = input.settings.networkOverlay.enabled
     && input.settings.networkOverlay.periodCanonical ? {
       schemaVersion: "3dena.trajectory-network-overlay-task.v2",
@@ -964,7 +1007,6 @@ export async function buildOpenEnaLongitudinalExecutionRequestV3(input: {
     dataset: executionDataset,
     pathTask,
     ...(inferenceTask ? { inferenceTask } : {}),
-    ...(bootstrapTask ? { bootstrapTask } : {}),
     ...(networkOverlayTask ? { networkOverlayTask } : {}),
     execution: {
       target: input.executionTarget,
@@ -973,12 +1015,13 @@ export async function buildOpenEnaLongitudinalExecutionRequestV3(input: {
       jenaTarballIntegrity: build.jenaTarballIntegrity,
       sdkVersion: build.sdkVersion,
       buildId: build.buildId,
-      seed: input.settings.bootstrap.seed,
+      seed: input.settings.inference.pathComparison?.seed ?? 2026,
     },
   };
+  const requestHash = await hashLongitudinalExecutionRequestV2(request);
   return {
     request,
-    binding: { datasetHash: input.datasetHash, specHash, sourceResultHash, runId: input.runId },
+    binding: { datasetHash: input.datasetHash, specHash, sourceResultHash, requestHash, runId: input.runId },
     privacy: {
       rawRowsIncluded: false,
       rawParticipantValuesIncluded: false,
@@ -995,6 +1038,7 @@ export function isOpenEnaLongitudinalBundleStaleV3(
   return bundle.identity.datasetHash !== binding.datasetHash
     || bundle.identity.specHash !== binding.specHash
     || bundle.identity.sourceResultHash !== binding.sourceResultHash
+    || bundle.identity.requestHash !== binding.requestHash
     || bundle.identity.runId !== binding.runId;
 }
 
@@ -1018,14 +1062,12 @@ export function openEnaTrajectoryDisplaySpecV3(
       labels: true,
       ...options.traces,
       // Trajectory presenters intentionally never draw confidence intervals.
-      // Static 3D ENA group-comparison plots own the visual CI grammar; the
-      // longitudinal bootstrap remains available only in numerical tables and
-      // exports.
+      // Static 3D ENA group-comparison plots own the visual CI grammar.
       uncertainty: false,
       // Fitted ENA codes are reference geometry, not a mean-network edge
       // overlay. Keep them visible whenever the immutable jENA bundle contains
       // their canonical coordinates.
-      codeNodes: bundle.networkOverlays.some((entry) => entry.status === "available"),
+      codeNodes: bundle.codeGeometry.nodes.length > 0,
     },
     axisFlips: options.axisFlips ? [...options.axisFlips] : [false, false, false],
     camera: options.camera === undefined

@@ -2,7 +2,7 @@
 
 import {
   executeLongitudinalAnalysisV2,
-  hashAnalysisValueV1,
+  hashLongitudinalExecutionRequestV2,
   verifyLongitudinalAnalysisBundleV2,
   type LongitudinalAnalysisBundleV2,
   type LongitudinalExecutionRequestV2,
@@ -16,7 +16,61 @@ import type {
 const LOCAL_TIME_BUDGET_MS = 8_000;
 const LOCAL_MEMORY_BUDGET_BYTES = 128 * 1024 * 1024;
 const HARD_DEADLINE_MS = 60_000;
+const REMOTE_POLL_INTERVAL_MS = 250;
+const REMOTE_CLEANUP_DEADLINE_MS = 10_000;
+const MAX_REMOTE_ARTIFACT_BYTES = 128 * 1024 * 1024;
+const COMPUTE_CONTRACT_VERSION = "3dena.contract.v1";
+const REMOTE_SUBMISSION_VERSION = "3dena.open-ena-longitudinal-remote-submit.v3";
+const REMOTE_CAPABILITY_VERSION = "3dena.longitudinal-compute-capability.v2";
+const REMOTE_URLS_VERSION = "3dena.longitudinal-compute-status-urls.v2";
+const REMOTE_ARTIFACT_VERSION = "3dena.compute-scientific-longitudinal-result-artifact.v2";
 const completedCache = new Map<string, LongitudinalAnalysisBundleV2>();
+
+function executionAttemptId(): string {
+  if (!globalThis.crypto?.getRandomValues) {
+    throw new Error("Secure random generation is unavailable for persistent-compute retries.");
+  }
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  const token = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return `attempt-${token}`;
+}
+
+type RemoteStateV3 =
+  | "RESERVED"
+  | "UPLOADED"
+  | "QUEUED"
+  | "LEASED"
+  | "RUNNING"
+  | "CANCEL_REQUESTED"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "CANCELLED"
+  | "EXPIRED";
+
+interface RemoteCapabilityV3 {
+  schemaVersion: typeof REMOTE_CAPABILITY_VERSION;
+  jobId: string;
+  capabilityToken: string;
+  urls: {
+    schemaVersion: typeof REMOTE_URLS_VERSION;
+    statusUrl: string;
+    eventsUrl: string;
+    resultUrl: string;
+    artifactUrl: string;
+    cancelUrl: string;
+    deleteUrl: string;
+  };
+  expiresAt: string;
+}
+
+interface RemoteStatusV3 {
+  schemaVersion: "3dena.job-status.v1";
+  jobId: string;
+  state: RemoteStateV3;
+  resultAvailable: boolean;
+  errorCode: string | null;
+}
 
 export interface OpenEnaLongitudinalRouteDecisionV3 {
   target: "browser-worker" | "persistent-compute-service";
@@ -45,6 +99,8 @@ export interface ExecuteOpenEnaLongitudinalPreparedOptionsV3 {
   forceLocal?: boolean;
   remoteEndpoint?: string;
   fetchImpl?: typeof fetch;
+  remotePollIntervalMilliseconds?: number;
+  remoteCleanupDeadlineMilliseconds?: number;
   nodeExecutor?: (request: LongitudinalExecutionRequestV2) => Promise<LongitudinalAnalysisBundleV2>;
   resultVerifier?: (bundle: unknown) => Promise<void>;
 }
@@ -59,20 +115,20 @@ export class OpenEnaLongitudinalExecutionClientErrorV3 extends Error {
   readonly code: string;
   readonly decision: OpenEnaLongitudinalRouteDecisionV3;
   readonly canContinueLocally: boolean;
-  readonly canDisableInferenceOrUncertainty: boolean;
+  readonly canDisableInference: boolean;
 
   constructor(
     code: string,
     message: string,
     decision: OpenEnaLongitudinalRouteDecisionV3,
-    options: { canContinueLocally: boolean; canDisableInferenceOrUncertainty: boolean },
+    options: { canContinueLocally: boolean; canDisableInference: boolean },
   ) {
     super(message);
     this.name = "OpenEnaLongitudinalExecutionClientErrorV3";
     this.code = code;
     this.decision = decision;
     this.canContinueLocally = options.canContinueLocally;
-    this.canDisableInferenceOrUncertainty = options.canDisableInferenceOrUncertainty;
+    this.canDisableInference = options.canDisableInference;
   }
 }
 
@@ -82,15 +138,16 @@ function requestShape(request: LongitudinalExecutionRequestV2) {
     dimensions?: unknown[];
     edges?: unknown[];
   } | undefined;
-  const points = result?.points?.length ?? request.dataset.receipt.rows;
+  // Source-row receipts are a conservative predictor when participant-period
+  // reduction makes the fitted point table smaller than the uploaded study.
+  const points = Math.max(result?.points?.length ?? 0, request.dataset.receipt.rows);
   const dimensions = result?.dimensions?.length ?? 3;
   const edges = result?.edges?.length ?? 1;
   const periods = request.pathTask.runSpec.orderedPeriods.length;
-  const bootstrap = request.bootstrapTask?.repetitions ?? 0;
   const permutations = request.inferenceTask?.requests.reduce((sum, item) => (
     item.kind === "path-comparison" ? sum + item.repetitions : sum
   ), 0) ?? 0;
-  return { points, dimensions, edges, periods, bootstrap, permutations };
+  return { points, dimensions, edges, periods, permutations };
 }
 
 export function estimateOpenEnaLongitudinalExecutionV3(
@@ -98,7 +155,7 @@ export function estimateOpenEnaLongitudinalExecutionV3(
 ): OpenEnaLongitudinalRouteDecisionV3 {
   const shape = requestShape(request);
   const baseOperations = shape.points * Math.max(3, shape.dimensions) * 28;
-  const resamplingOperations = (shape.bootstrap + shape.permutations)
+  const resamplingOperations = shape.permutations
     * shape.points
     * Math.max(2, shape.periods)
     * Math.max(3, Math.min(shape.dimensions, 12))
@@ -106,7 +163,7 @@ export function estimateOpenEnaLongitudinalExecutionV3(
   const predictedMilliseconds = Math.ceil(35 + (baseOperations + resamplingOperations) / 22_000);
   const predictedMemoryBytes = Math.ceil(
     8 * shape.points * (shape.dimensions + shape.edges + 24) * 3
-    + 8 * (shape.bootstrap + shape.permutations) * Math.max(2, shape.periods) * Math.max(3, shape.dimensions),
+    + 8 * shape.permutations * Math.max(2, shape.periods) * Math.max(3, shape.dimensions),
   );
   const overTime = predictedMilliseconds > LOCAL_TIME_BUDGET_MS;
   const overMemory = predictedMemoryBytes > LOCAL_MEMORY_BUDGET_BYTES;
@@ -134,31 +191,335 @@ export function estimateOpenEnaLongitudinalExecutionV3(
 }
 
 async function cacheKey(request: LongitudinalExecutionRequestV2): Promise<string> {
-  const { target: _target, ...scientificExecution } = request.execution;
-  return hashAnalysisValueV1({
-    dataset: request.dataset,
-    pathTask: request.pathTask,
-    inferenceTask: request.inferenceTask ?? null,
-    bootstrapTask: request.bootstrapTask ?? null,
-    networkOverlayTask: request.networkOverlayTask ?? null,
-    execution: scientificExecution,
-  });
+  return hashLongitudinalExecutionRequestV2(request);
 }
 
-function assertResultBinding(
+async function assertResultBinding(
   bundle: LongitudinalAnalysisBundleV2,
   request: LongitudinalExecutionRequestV2,
-): void {
+): Promise<void> {
+  const requestedInference = request.inferenceTask?.requests ?? [];
+  const rankRequests = requestedInference.filter((item) => item.kind !== "path-comparison");
+  const pathRequests = requestedInference.filter((item) => item.kind === "path-comparison");
+  const overlayRequests = request.networkOverlayTask?.requests ?? [];
+  const expectedJenaBuildId = `jena-js@${request.execution.jenaVersion}+${request.execution.jenaCommit}:${request.execution.buildId}`;
+  const expectedRequestHash = await hashLongitudinalExecutionRequestV2(request);
   if (
     bundle.identity.datasetHash !== request.pathTask.datasetHash
     || bundle.identity.specHash !== request.pathTask.specHash
     || bundle.identity.sourceResultHash !== request.pathTask.runSpec.sourceResultHash
+    || bundle.identity.requestHash !== expectedRequestHash
     || bundle.identity.runId !== request.pathTask.runId
+    || bundle.identity.jenaBuildId !== expectedJenaBuildId
+    || bundle.execution.jenaVersion !== request.execution.jenaVersion
+    || bundle.execution.jenaCommit !== request.execution.jenaCommit
+    || bundle.execution.jenaTarballIntegrity !== request.execution.jenaTarballIntegrity
+    || bundle.execution.sdkVersion !== request.execution.sdkVersion
+    || bundle.execution.buildId !== request.execution.buildId
+    || bundle.execution.seed !== request.execution.seed
+    || JSON.stringify(bundle.runSpec) !== JSON.stringify(request.pathTask.runSpec)
+    || bundle.inference.length !== rankRequests.length
+    || bundle.pathComparisons.length !== pathRequests.length
+    || bundle.networkOverlays.length !== overlayRequests.length
+    || bundle.bootstrap.length !== 0
   ) throw new Error("Longitudinal execution returned an envelope with a mismatched immutable binding.");
 }
 
 function abortError(message: string): DOMException {
   return new DOMException(message, "AbortError");
+}
+
+function remoteRecord(value: unknown, path: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${path} is not a valid persistent-compute object.`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function remoteExact(value: Record<string, unknown>, fields: readonly string[], path: string): void {
+  const actual = Object.keys(value).sort();
+  const expected = [...fields].sort();
+  if (actual.length !== expected.length || actual.some((field, index) => field !== expected[index])) {
+    throw new Error(`${path} contains unsupported persistent-compute fields.`);
+  }
+}
+
+function nonEmptyRemoteString(value: unknown, path: string): string {
+  if (typeof value !== "string" || value.length === 0) throw new Error(`${path} must be a non-empty string.`);
+  return value;
+}
+
+function safeRemoteControlUrls(
+  values: Record<"statusUrl" | "eventsUrl" | "resultUrl" | "artifactUrl" | "cancelUrl" | "deleteUrl", string>,
+  jobId: string,
+): void {
+  const parsed = Object.entries(values).map(([name, value]) => {
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      throw new Error(`capability.urls.${name} is not an absolute URL.`);
+    }
+    const loopback = url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    if ((!loopback && url.protocol !== "https:") || url.username || url.password || url.search || url.hash) {
+      throw new Error(`capability.urls.${name} is unsafe.`);
+    }
+    return [name, url] as const;
+  });
+  const origin = parsed[0]?.[1].origin;
+  const encodedJobId = encodeURIComponent(jobId);
+  if (!origin || parsed.some(([, url]) => url.origin !== origin || !url.pathname.includes(`/jobs/${encodedJobId}`))) {
+    throw new Error("Persistent compute control URLs do not share one job-scoped origin.");
+  }
+}
+
+function parseRemoteCapability(value: unknown): RemoteCapabilityV3 {
+  const capability = remoteRecord(value, "capability");
+  remoteExact(capability, ["schemaVersion", "jobId", "capabilityToken", "urls", "expiresAt"], "capability");
+  if (capability.schemaVersion !== REMOTE_CAPABILITY_VERSION) throw new Error("Persistent compute returned an unsupported capability version.");
+  const urls = remoteRecord(capability.urls, "capability.urls");
+  remoteExact(urls, ["schemaVersion", "statusUrl", "eventsUrl", "resultUrl", "artifactUrl", "cancelUrl", "deleteUrl"], "capability.urls");
+  if (urls.schemaVersion !== REMOTE_URLS_VERSION) throw new Error("Persistent compute returned unsupported control URLs.");
+  const expiresAt = nonEmptyRemoteString(capability.expiresAt, "capability.expiresAt");
+  if (Number.isNaN(Date.parse(expiresAt))) throw new Error("Persistent compute returned an invalid capability expiry.");
+  const jobId = nonEmptyRemoteString(capability.jobId, "capability.jobId");
+  const parsedUrls = {
+    statusUrl: nonEmptyRemoteString(urls.statusUrl, "capability.urls.statusUrl"),
+    eventsUrl: nonEmptyRemoteString(urls.eventsUrl, "capability.urls.eventsUrl"),
+    resultUrl: nonEmptyRemoteString(urls.resultUrl, "capability.urls.resultUrl"),
+    artifactUrl: nonEmptyRemoteString(urls.artifactUrl, "capability.urls.artifactUrl"),
+    cancelUrl: nonEmptyRemoteString(urls.cancelUrl, "capability.urls.cancelUrl"),
+    deleteUrl: nonEmptyRemoteString(urls.deleteUrl, "capability.urls.deleteUrl"),
+  };
+  safeRemoteControlUrls(parsedUrls, jobId);
+  return {
+    schemaVersion: REMOTE_CAPABILITY_VERSION,
+    jobId,
+    capabilityToken: nonEmptyRemoteString(capability.capabilityToken, "capability.capabilityToken"),
+    urls: {
+      schemaVersion: REMOTE_URLS_VERSION,
+      ...parsedUrls,
+    },
+    expiresAt,
+  };
+}
+
+function parseRemoteStatus(value: unknown, capability: RemoteCapabilityV3): RemoteStatusV3 {
+  const status = remoteRecord(value, "status");
+  remoteExact(status, [
+    "schemaVersion", "jobId", "state", "owner", "progress", "createdAt", "updatedAt",
+    "expiresAt", "resultAvailable", "errorCode",
+  ], "status");
+  const states: RemoteStateV3[] = [
+    "RESERVED", "UPLOADED", "QUEUED", "LEASED", "RUNNING", "CANCEL_REQUESTED",
+    "SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED",
+  ];
+  if (status.schemaVersion !== "3dena.job-status.v1"
+    || status.jobId !== capability.jobId
+    || !states.includes(status.state as RemoteStateV3)
+    || typeof status.resultAvailable !== "boolean"
+    || (status.errorCode !== null && typeof status.errorCode !== "string")) {
+    throw new Error("Persistent compute returned an invalid job status.");
+  }
+  return {
+    schemaVersion: "3dena.job-status.v1",
+    jobId: capability.jobId,
+    state: status.state as RemoteStateV3,
+    resultAvailable: status.resultAvailable,
+    errorCode: status.errorCode as string | null,
+  };
+}
+
+function computeHeaders(capability: RemoteCapabilityV3, accept = "application/json"): Headers {
+  return new Headers({
+    accept,
+    authorization: `Bearer ${capability.capabilityToken}`,
+    "x-3dena-contract-version": COMPUTE_CONTRACT_VERSION,
+  });
+}
+
+async function jsonResponse(response: Response, label: string): Promise<unknown> {
+  if (!response.ok) throw new Error(`${label} returned HTTP ${response.status}.`);
+  try {
+    return await response.json();
+  } catch {
+    throw new Error(`${label} returned invalid JSON.`);
+  }
+}
+
+function waitRemote(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(abortError("The persistent trajectory task was cancelled."));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, milliseconds);
+    const abort = () => {
+      clearTimeout(timer);
+      reject(abortError("The persistent trajectory task was cancelled."));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+}
+
+function progressForRemoteState(state: RemoteStateV3): number {
+  return ({
+    RESERVED: 0.08,
+    UPLOADED: 0.1,
+    QUEUED: 0.15,
+    LEASED: 0.25,
+    RUNNING: 0.55,
+    CANCEL_REQUESTED: 0.7,
+    SUCCEEDED: 0.9,
+    FAILED: 0.9,
+    CANCELLED: 0.9,
+    EXPIRED: 0.9,
+  } as const)[state];
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+async function boundedResponseBytes(response: Response, expectedLength: number): Promise<Uint8Array> {
+  if (expectedLength < 1 || expectedLength > MAX_REMOTE_ARTIFACT_BYTES) {
+    throw new Error("Persistent trajectory artifact exceeds the Open ENA result limit.");
+  }
+  const declared = response.headers.get("content-length");
+  if (declared !== null && (!/^(?:0|[1-9][0-9]{0,15})$/u.test(declared) || Number(declared) !== expectedLength)) {
+    throw new Error("Persistent trajectory artifact Content-Length does not match its immutable receipt.");
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Persistent trajectory artifact has no readable body.");
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      if (total + next.value.byteLength > expectedLength) {
+        await reader.cancel("artifact exceeds immutable receipt");
+        throw new Error("Persistent trajectory artifact exceeds its immutable result receipt.");
+      }
+      const copy = new Uint8Array(next.value.byteLength);
+      copy.set(next.value);
+      chunks.push(copy);
+      total += copy.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (total !== expectedLength) {
+    throw new Error("Persistent trajectory artifact length does not match its immutable result receipt.");
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+async function deleteRemoteJob(
+  capability: RemoteCapabilityV3,
+  fetchImpl: typeof fetch,
+  deadlineMilliseconds: number,
+): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), deadlineMilliseconds);
+  const operationKey = `open-ena-delete-${capability.jobId}`;
+  try {
+    while (true) {
+      const headers = computeHeaders(capability, "application/vnd.3dena.job-deletion-receipt.v2+json");
+      headers.set("idempotency-key", operationKey);
+      const response = await fetchImpl(capability.urls.deleteUrl, {
+        method: "DELETE",
+        headers,
+        signal: controller.signal,
+      });
+      const value = await jsonResponse(response, "Persistent trajectory deletion");
+      const receipt = remoteRecord(value, "deletion receipt");
+      remoteExact(receipt, [
+        "schemaVersion", "jobId", "cancelled", "inputDeleted", "resultDeleted", "deletedAt",
+        "intentAccepted", "termination", "capacity", "objects",
+      ], "deletion receipt");
+      if (receipt.schemaVersion !== "3dena.job-deletion-receipt.v2" || receipt.jobId !== capability.jobId) {
+        throw new Error("Persistent compute returned an invalid deletion receipt.");
+      }
+      if (receipt.objects === "deleted" && receipt.inputDeleted === true && receipt.resultDeleted === true
+        && receipt.termination !== "pending" && receipt.capacity !== "held" && typeof receipt.deletedAt === "string") return;
+      await waitRemote(REMOTE_POLL_INTERVAL_MS, controller.signal);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchRemoteBundle(
+  capability: RemoteCapabilityV3,
+  request: LongitudinalExecutionRequestV2,
+  fetchImpl: typeof fetch,
+  signal: AbortSignal,
+): Promise<LongitudinalAnalysisBundleV2> {
+  const referenceResponse = await fetchImpl(capability.urls.resultUrl, {
+    method: "GET",
+    headers: computeHeaders(capability),
+    signal,
+  });
+  const referenceValue = await jsonResponse(referenceResponse, "Persistent trajectory result reference");
+  const reference = remoteRecord(referenceValue, "result reference");
+  remoteExact(reference, ["schemaVersion", "jobId", "sha256", "byteLength", "resultUrl", "exportUrl", "expiresAt"], "result reference");
+  if (reference.schemaVersion !== "3dena.job-result-reference.v1"
+    || reference.jobId !== capability.jobId
+    || typeof reference.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(reference.sha256)
+    || !Number.isSafeInteger(reference.byteLength) || Number(reference.byteLength) < 1
+    || Number(reference.byteLength) > MAX_REMOTE_ARTIFACT_BYTES) {
+    throw new Error("Persistent compute returned an invalid result reference.");
+  }
+
+  const artifactResponse = await fetchImpl(capability.urls.artifactUrl, {
+    method: "GET",
+    headers: computeHeaders(capability, "application/json"),
+    signal,
+  });
+  if (!artifactResponse.ok) throw new Error(`Persistent trajectory artifact returned HTTP ${artifactResponse.status}.`);
+  const artifactBytes = await boundedResponseBytes(artifactResponse, Number(reference.byteLength));
+  const artifactSha256 = await sha256Hex(artifactBytes);
+  if (artifactBytes.byteLength !== reference.byteLength
+    || artifactSha256 !== reference.sha256
+    || artifactResponse.headers.get("x-3dena-result-sha256") !== reference.sha256) {
+    throw new Error("Persistent trajectory artifact bytes do not match the immutable result receipt.");
+  }
+  let artifactValue: unknown;
+  try {
+    artifactValue = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(artifactBytes));
+  } catch {
+    throw new Error("Persistent trajectory artifact is not canonical JSON.");
+  }
+  const artifact = remoteRecord(artifactValue, "artifact");
+  remoteExact(artifact, ["version", "owner", "taskKind", "requestHash", "bundle"], "artifact");
+  if (artifact.version !== REMOTE_ARTIFACT_VERSION || artifact.taskKind !== "longitudinal-analysis-v2") {
+    throw new Error("Persistent trajectory artifact has an unsupported contract.");
+  }
+  const owner = remoteRecord(artifact.owner, "artifact.owner");
+  remoteExact(owner, ["contractVersion", "datasetHash", "specHash", "runId", "taskId"], "artifact.owner");
+  if (owner.contractVersion !== "3dena.compute-task-owner.v1"
+    || owner.datasetHash !== request.pathTask.datasetHash
+    || owner.specHash !== request.pathTask.specHash
+    || owner.runId !== request.pathTask.runId
+    || owner.taskId !== capability.jobId) {
+    throw new Error("Persistent trajectory artifact owner does not match the submitted immutable task.");
+  }
+  const expectedRequestHash = await hashLongitudinalExecutionRequestV2(request);
+  const bundle = artifact.bundle as LongitudinalAnalysisBundleV2;
+  if (typeof artifact.requestHash !== "string"
+    || artifact.requestHash !== expectedRequestHash
+    || bundle?.identity?.requestHash !== expectedRequestHash) {
+    throw new Error("Persistent trajectory artifact request hash does not match the submitted immutable task.");
+  }
+  return bundle;
 }
 
 async function runInBrowserWorker(
@@ -209,32 +570,74 @@ async function runRemote(
   if (!options.remoteEndpoint) {
     throw new OpenEnaLongitudinalExecutionClientErrorV3(
       "REMOTE_SERVICE_UNAVAILABLE",
-      "Persistent trajectory compute is not configured. Continue locally or disable inference/uncertainty explicitly.",
+      "Persistent trajectory compute is not configured. Continue locally or disable inference explicitly.",
       decision,
-      { canContinueLocally: true, canDisableInferenceOrUncertainty: true },
+      { canContinueLocally: true, canDisableInference: true },
     );
   }
   const fetchImpl = options.fetchImpl ?? fetch;
+  const pollInterval = options.remotePollIntervalMilliseconds ?? REMOTE_POLL_INTERVAL_MS;
+  const cleanupDeadline = options.remoteCleanupDeadlineMilliseconds ?? REMOTE_CLEANUP_DEADLINE_MS;
+  if (!Number.isSafeInteger(pollInterval) || pollInterval < 1 || pollInterval > 5_000
+    || !Number.isSafeInteger(cleanupDeadline) || cleanupDeadline < 1 || cleanupDeadline > 60_000) {
+    throw new TypeError("Persistent trajectory polling configuration is invalid.");
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), HARD_DEADLINE_MS);
   const abortHandler = () => controller.abort();
   options.signal?.addEventListener("abort", abortHandler, { once: true });
+  let capability: RemoteCapabilityV3 | null = null;
   try {
     options.onProgress?.({ progress: 0.05, stage: "remote-submit" });
     const remoteRequest: LongitudinalExecutionRequestV2 = {
       ...structuredClone(request),
       execution: { ...request.execution, target: "persistent-compute-service" },
     };
+    const attemptId = executionAttemptId();
     const response = await fetchImpl(options.remoteEndpoint, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ schemaVersion: 2, request: remoteRequest }),
+      body: JSON.stringify({
+        schemaVersion: REMOTE_SUBMISSION_VERSION,
+        executionAttemptId: attemptId,
+        processingPolicyConfirmed: true,
+        request: remoteRequest,
+      }),
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(`Persistent trajectory compute returned HTTP ${response.status}.`);
-    options.onProgress?.({ progress: 0.55, stage: "remote-wait" });
-    return await response.json() as LongitudinalAnalysisBundleV2;
+    capability = parseRemoteCapability(await jsonResponse(response, "Persistent trajectory submission"));
+    options.onProgress?.({ progress: 0.1, stage: "remote-wait" });
+    while (true) {
+      const statusResponse = await fetchImpl(capability.urls.statusUrl, {
+        method: "GET",
+        headers: computeHeaders(capability),
+        signal: controller.signal,
+      });
+      const status = parseRemoteStatus(
+        await jsonResponse(statusResponse, "Persistent trajectory status"),
+        capability,
+      );
+      options.onProgress?.({ progress: progressForRemoteState(status.state), stage: "remote-wait" });
+      if (status.state === "SUCCEEDED") {
+        if (!status.resultAvailable) throw new Error("Persistent trajectory succeeded without a published result.");
+        const bundle = await fetchRemoteBundle(capability, remoteRequest, fetchImpl, controller.signal);
+        await deleteRemoteJob(capability, fetchImpl, cleanupDeadline);
+        return bundle;
+      }
+      if (["FAILED", "CANCELLED", "EXPIRED"].includes(status.state)) {
+        throw new Error(`Persistent trajectory compute ended in ${status.state}${status.errorCode ? ` (${status.errorCode})` : ""}.`);
+      }
+      await waitRemote(pollInterval, controller.signal);
+    }
   } catch (error) {
+    if (capability) {
+      try {
+        await deleteRemoteJob(capability, fetchImpl, cleanupDeadline);
+      } catch {
+        // Preserve the primary compute/cancellation failure. Durable deletion
+        // intent, if accepted, is completed by the service sweeper.
+      }
+    }
     if (controller.signal.aborted) {
       if (options.signal?.aborted) throw abortError("The persistent trajectory task was cancelled.");
       throw new Error("Persistent trajectory compute reached its 60 second hard deadline.");
@@ -250,6 +653,9 @@ export async function executeOpenEnaLongitudinalPreparedV3(
   request: LongitudinalExecutionRequestV2,
   options: ExecuteOpenEnaLongitudinalPreparedOptionsV3 = {},
 ): Promise<OpenEnaLongitudinalExecutionReceiptV3> {
+  if (request.bootstrapTask !== undefined) {
+    throw new Error("Trajectory analysis does not execute CI or bootstrap tasks; remove bootstrapTask and rerun.");
+  }
   const decision = estimateOpenEnaLongitudinalExecutionV3(request);
   const key = await cacheKey(request);
   const cached = completedCache.get(key);
@@ -258,9 +664,9 @@ export async function executeOpenEnaLongitudinalPreparedV3(
   if (decision.requiresConfirmation && !options.forceLocal && !options.allowRemote) {
     throw new OpenEnaLongitudinalExecutionClientErrorV3(
       "REMOTE_CONFIRMATION_REQUIRED",
-      `Predicted trajectory task size is ${decision.predictedMilliseconds} ms and ${decision.predictedMemoryBytes} bytes. Confirm persistent compute, continue locally, or disable inference/uncertainty.`,
+      `Predicted trajectory task size is ${decision.predictedMilliseconds} ms and ${decision.predictedMemoryBytes} bytes. Confirm persistent compute, continue locally, or disable inference.`,
       decision,
-      { canContinueLocally: true, canDisableInferenceOrUncertainty: true },
+      { canContinueLocally: true, canDisableInference: true },
     );
   }
   let bundle: LongitudinalAnalysisBundleV2;
@@ -280,7 +686,7 @@ export async function executeOpenEnaLongitudinalPreparedV3(
     });
   }
   await (options.resultVerifier ?? verifyLongitudinalAnalysisBundleV2)(bundle);
-  assertResultBinding(bundle, request);
+  await assertResultBinding(bundle, request);
   options.onProgress?.({ progress: 1, stage: "complete" });
   completedCache.set(key, bundle);
   return { bundle, cacheHit: false, decision };
