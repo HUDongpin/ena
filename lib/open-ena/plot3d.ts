@@ -8,7 +8,6 @@ export const OPEN_ENA_3D_UI_REVISION = "open-ena-3d-camera-v2";
 export const OPEN_ENA_3D_DEFAULT_CAMERA_ZOOM = 1.5;
 
 const AXIS_COLORS = ["#b91c1c", "#1d4ed8", "#15803d"] as const;
-const TRAJECTORY_LINE_COLOR = "#000000";
 const GROUP_MARKER_SYMBOLS = ["circle", "square", "diamond", "cross", "x", "circle-open"] as const;
 const GROUP_MARKER_LABELS = ["circle", "square", "diamond", "cross", "x", "open circle"] as const;
 const GROUP_LINE_DASHES = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"] as const;
@@ -531,7 +530,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     showLabels,
     showUnitLabels,
     showVariance,
-    showTrajectories,
+    showTrajectories: _legacyShowTrajectories,
     edgeScale,
     edgeThreshold,
     pointScale,
@@ -539,6 +538,9 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     flipX,
     flipY,
   } = input;
+  // Preserve the historical input shape while enforcing a strict presenter
+  // boundary: generic ENA plots never compile longitudinal trajectory marks.
+  void _legacyShowTrajectories;
   const dimensions = [xDimension, yDimension, zDimension] as const;
   const traces: OpenEna3dTrace[] = [];
   const nodeRows = result.set.rotation.nodes ?? [];
@@ -652,54 +654,6 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
           edgeValue: weighted.rawValue,
           edgeScaleDenominator: maximumEdge,
         },
-      });
-    }
-  }
-
-  if (showTrajectories && result.set.modelType !== "EndPoint" && result.set.trajectories) {
-    const pointIndicesByUnit = new Map<string, number[]>();
-    points.forEach((row, index) => {
-      const unitId = String(row.ENA_UNIT ?? `unit-${index}`);
-      const indices = pointIndicesByUnit.get(unitId) ?? [];
-      indices.push(index);
-      pointIndicesByUnit.set(unitId, indices);
-    });
-    for (const [unitId, indices] of pointIndicesByUnit) {
-      if (indices.length < 2) continue;
-      const firstRow = points[indices[0]];
-      if (!firstRow) continue;
-      const groupIndex = groupIndexForRow(result, groupColumn, firstRow);
-      if (selectedComparisonGroupIndices && (
-        plotKind !== "comparison" || !selectedComparisonGroupIndices.has(groupIndex)
-      )) continue;
-      const group = result.groups[groupIndex];
-      if (!group) continue;
-      const pathHover = indices.map((pointIndex, stepIndex) => {
-        const trajectoryRow = result.set.trajectories?.[pointIndex];
-        const step = result.set.conversation
-          .map((column) => String(trajectoryRow?.[column] ?? ""))
-          .filter(Boolean)
-          .join(" · ");
-        return `<b>${escapeHoverText(unitId)}</b><br>${escapeHoverText(group.name)}<br>Step ${stepIndex + 1}${step ? `: ${escapeHoverText(step)}` : ""}`;
-      });
-      traces.push({
-        type: "scatter3d",
-        mode: "lines",
-        name: `${unitId} trajectory · ${GROUP_LINE_DASHES[groupIndex % GROUP_LINE_DASHES.length]}`,
-        x: indices.map((index) => coordinate(points[index] ?? {}, xDimension)),
-        y: indices.map((index) => coordinate(points[index] ?? {}, yDimension)),
-        z: indices.map((index) => coordinate(points[index] ?? {}, zDimension)),
-        customdata: pathHover,
-        line: {
-          color: TRAJECTORY_LINE_COLOR,
-          width: 4,
-          dash: GROUP_LINE_DASHES[groupIndex % GROUP_LINE_DASHES.length],
-        },
-        hovertemplate: "%{customdata}<extra></extra>",
-        connectgaps: false,
-        legendgroup: `open-ena-group-${groupIndex}`,
-        showlegend: false,
-        meta: { role: "trajectory-path", groupName: group.name, groupIndex, unitId },
       });
     }
   }

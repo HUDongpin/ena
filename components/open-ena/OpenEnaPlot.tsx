@@ -51,10 +51,6 @@ export const GROUP_VISUAL_ENCODINGS = [
   markerLabel: string;
   trajectoryLabel: string;
 }>;
-const TRAJECTORY_LINE_COLOR = "#000000";
-const TRAJECTORY_ARROW_TIP_PROGRESS = 0.5;
-const TRAJECTORY_ARROW_TAIL_PROGRESS = 0.35;
-
 export function getGroupVisualEncoding(groupIndex: number) {
   const safeIndex = Number.isFinite(groupIndex) ? Math.max(0, Math.trunc(groupIndex)) : 0;
   return GROUP_VISUAL_ENCODINGS[safeIndex % GROUP_VISUAL_ENCODINGS.length];
@@ -62,7 +58,7 @@ export function getGroupVisualEncoding(groupIndex: number) {
 
 function groupEncodingDescription(groupName: string, groupIndex: number) {
   const encoding = getGroupVisualEncoding(groupIndex);
-  return `${groupName}: ${encoding.markerLabel} marker, ${encoding.trajectoryLabel} trajectory line`;
+  return `${groupName}: ${encoding.markerLabel} marker`;
 }
 
 function GroupMarkerGlyph({
@@ -269,7 +265,7 @@ export default function OpenEnaPlot({
   showLabels,
   showUnitLabels,
   showVariance,
-  showTrajectories,
+  showTrajectories: _legacyShowTrajectories,
   edgeScale,
   edgeThreshold,
   pointScale,
@@ -310,35 +306,10 @@ export default function OpenEnaPlot({
     flipX,
     flipY,
   );
-  const trajectorySegments = (() => {
-    if (result.set.modelType === "EndPoint" || !result.set.trajectories) return [];
-    const indicesByUnit = new Map<string, number[]>();
-    result.set.points.forEach((row, index) => {
-      const unit = String(row.ENA_UNIT ?? "");
-      const indices = indicesByUnit.get(unit) ?? [];
-      indices.push(index);
-      indicesByUnit.set(unit, indices);
-    });
-    return [...indicesByUnit.entries()].flatMap(([unit, indices]) => indices.slice(1).map((targetIndex, stepIndex) => {
-      const sourceIndex = indices[stepIndex];
-      const row = result.set.points[targetIndex];
-      const group = groupColumn
-        ? result.groups.find((item) => item.name === String(row?.[groupColumn])) ?? result.groups[0]
-        : result.groups[0];
-      const groupIndex = Math.max(0, result.groups.findIndex((item) => item.name === group?.name));
-      const sourceStep = result.set.trajectories?.[sourceIndex];
-      const targetStep = result.set.trajectories?.[targetIndex];
-      const stepLabel = (step: Row | undefined) => result.set.conversation.map((column) => String(step?.[column] ?? "")).join("::");
-      return {
-        key: `${unit}-${sourceIndex}-${targetIndex}`,
-        sourceKey: `unit-${sourceIndex}`,
-        targetKey: `unit-${targetIndex}`,
-        groupName: group?.name ?? "All units",
-        groupIndex,
-        label: `${unit}: ${stepLabel(sourceStep)} → ${stepLabel(targetStep)}`,
-      };
-    }));
-  })();
+  // Kept in the public prop shape so historical settings can still be read.
+  // Generic ENA presenters never render longitudinal paths; those belong only
+  // to the versioned trajectory workbench.
+  void _legacyShowTrajectories;
   const edgeValues = result.set.adjacencyKey.map((edge) => edgeWeight(result.groups, edge.name).value);
   const maxEdge = Math.max(1e-9, ...edgeValues);
   const varianceX = (result.set.variance[xDimension] ?? 0) * 100;
@@ -382,7 +353,7 @@ export default function OpenEnaPlot({
       >
         <title id="open-ena-plot-title">{`${copy.workspace.comparison}, ${view === "2d" ? copy.views.twoD : copy.views.threeD}${referenceFigureNote ? ` — ${referenceFigureNote}` : ""}`}</title>
         <desc id="open-ena-plot-description">
-          {new Set(result.set.points.map((row) => String(row.ENA_UNIT ?? ""))).size} {copy.workspace.units.toLowerCase()}, {result.set.points.length} projected points, {trajectorySegments.length} directed trajectory segments, {result.groups.length} {copy.workspace.groups.toLowerCase()}, {result.set.codes.length} {copy.workspace.codes.toLowerCase()}.
+          {new Set(result.set.points.map((row) => String(row.ENA_UNIT ?? ""))).size} {copy.workspace.units.toLowerCase()}, {result.set.points.length} projected points, {result.groups.length} {copy.workspace.groups.toLowerCase()}, {result.set.codes.length} {copy.workspace.codes.toLowerCase()}.
           {" Group encodings: "}{result.groups.map((group, index) => groupEncodingDescription(group.name, index)).join("; ")}.
           {referenceFigureNote ? ` ${referenceFigureNote}` : ""}
         </desc>
@@ -396,11 +367,6 @@ export default function OpenEnaPlot({
           <marker id="ena-axis-arrow" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto">
             <path d="M0,0 L0,6 L7,3 z" fill="#64748b" />
           </marker>
-          {result.groups.map((group, index) => (
-            <marker key={group.name} id={`ena-trajectory-arrow-${index}`} markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L7,3 z" fill={TRAJECTORY_LINE_COLOR} />
-            </marker>
-          ))}
         </defs>
         <rect width={WIDTH} height={HEIGHT} rx="18" className="ena-plot-background" />
         <rect width={WIDTH} height={HEIGHT} rx="18" fill="url(#ena-grid)" opacity={view === "2d" ? 0.72 : 0.28} />
@@ -469,53 +435,6 @@ export default function OpenEnaPlot({
             >
               <title>{`${edgeLabel}. Solid network edge.`}</title>
             </line>
-          );
-        })}
-
-        {showTrajectories && trajectorySegments.map((segment) => {
-          const source = positions.get(segment.sourceKey);
-          const target = positions.get(segment.targetKey);
-          if (!source || !target) return null;
-          const encoding = getGroupVisualEncoding(segment.groupIndex);
-          const arrowTail = {
-            x: source.x + (target.x - source.x) * TRAJECTORY_ARROW_TAIL_PROGRESS,
-            y: source.y + (target.y - source.y) * TRAJECTORY_ARROW_TAIL_PROGRESS,
-          };
-          const arrowTip = {
-            x: source.x + (target.x - source.x) * TRAJECTORY_ARROW_TIP_PROGRESS,
-            y: source.y + (target.y - source.y) * TRAJECTORY_ARROW_TIP_PROGRESS,
-          };
-          return (
-            <g key={segment.key}>
-              <line
-                className="ena-trajectory-path"
-                x1={source.x}
-                y1={source.y}
-                x2={target.x}
-                y2={target.y}
-                stroke={TRAJECTORY_LINE_COLOR}
-                strokeWidth="2.5"
-                strokeOpacity="1"
-                strokeLinecap="round"
-                data-ena-trajectory-style={encoding.key}
-                aria-label={`${segment.label}. ${groupEncodingDescription(segment.groupName, segment.groupIndex)}.`}
-              >
-                <title>{`${segment.label}. ${encoding.trajectoryLabel} trajectory line.`}</title>
-              </line>
-              <line
-                className="ena-trajectory-direction-arrow"
-                x1={arrowTail.x}
-                y1={arrowTail.y}
-                x2={arrowTip.x}
-                y2={arrowTip.y}
-                stroke={TRAJECTORY_LINE_COLOR}
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                markerEnd={`url(#ena-trajectory-arrow-${segment.groupIndex})`}
-                data-ena-direction-progress={String(TRAJECTORY_ARROW_TIP_PROGRESS)}
-                aria-hidden="true"
-              />
-            </g>
           );
         })}
 

@@ -339,12 +339,10 @@ test("generic endpoint network edges are solid and retain the jENA blue/red grou
   expectSolid(networkEdges, "generic endpoint network");
 });
 
-test("data trajectory segments are solid while grid and zero-axis styling remain out of scope", () => {
-  const markup = renderMainPlot(trajectoryResult, false, true);
-  const trajectoryLines = lineTags(markup).filter((line) => line.includes('class="ena-trajectory-path"'));
+test("generic ENA canvases ignore legacy trajectory flags", () => {
+  const requested = renderMainPlot(trajectoryResult, false, true);
+  const disabled = renderMainPlot(trajectoryResult, false, false);
 
-  assert.ok(trajectoryLines.length > 0, "the trajectory fixture must render directed data segments");
-  for (const line of trajectoryLines) {
-    assert.doesNotMatch(line, /\sstroke-dasharray=/i, `data trajectory must be solid: ${line}`);
-  }
+  assert.equal(requested, disabled);
+  assert.doesNotMatch(requested, /ena-trajectory-path|ena-trajectory-direction-arrow|data-ena-trajectory-style/);
 });

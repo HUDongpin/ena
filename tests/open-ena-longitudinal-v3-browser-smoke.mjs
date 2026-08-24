@@ -332,6 +332,16 @@ function extractAndVerifyBundle(zipPath, kind, participantLevelIncluded) {
   assert.equal(analysis.identity.resultHash, manifest.resultHash);
   assert.equal(plotly.resultHash, manifest.resultHash);
   assert.equal(analysis.privacy.participantLevelIncluded, false);
+  assert.equal(
+    plotly.data.filter((trace) => trace.meta?.role === "network-edge").length,
+    0,
+    kind + " trajectory Plotly export contains ENA mean-network edges",
+  );
+  assert.equal(
+    plotly.data.filter((trace) => trace.meta?.role === "network-node").length,
+    1,
+    kind + " trajectory Plotly export omitted fitted code references",
+  );
   return { extracted, manifest, analysis, plotly, zipSha256: sha256(readFileSync(zipPath)) };
 }
 
@@ -406,6 +416,7 @@ async function authenticateAndRunTrajectory(page, args) {
       workerRunCount: 0,
       remotePostCount: 0,
       bootstrapTaskCount: 0,
+      networkOverlayTaskCount: 0,
     };
     Object.defineProperty(window, "__openEnaLongitudinalSmokeTaskAudit", {
       configurable: true,
@@ -417,6 +428,7 @@ async function authenticateAndRunTrajectory(page, args) {
         audit.workerRunCount += 1;
         audit.taskRequestCount += 1;
         if (Object.hasOwn(message.request, "bootstrapTask")) audit.bootstrapTaskCount += 1;
+        if (Object.hasOwn(message.request, "networkOverlayTask")) audit.networkOverlayTaskCount += 1;
       }
       return originalWorkerPostMessage.call(this, message, ...rest);
     };
@@ -433,6 +445,9 @@ async function authenticateAndRunTrajectory(page, args) {
           const payload = typeof init?.body === "string" ? JSON.parse(init.body) : null;
           if (payload?.request && Object.hasOwn(payload.request, "bootstrapTask")) {
             audit.bootstrapTaskCount += 1;
+          }
+          if (payload?.request && Object.hasOwn(payload.request, "networkOverlayTask")) {
+            audit.networkOverlayTaskCount += 1;
           }
         } catch {
           // Route validation remains authoritative for malformed request bodies.
@@ -461,15 +476,27 @@ async function authenticateAndRunTrajectory(page, args) {
   await rail.waitFor({ timeout: 30_000 });
   await rail.getByRole("button", { name: "Data", exact: true }).click();
   await page.getByRole("button", { name: "Load 2D trajectory sample", exact: true }).click();
-  await page.getByRole("button", { name: "Download Model" }).waitFor({ timeout: 60_000 });
+  const workbench = page.getByTestId("open-ena-longitudinal-v3-workbench");
+  await workbench.waitFor({ timeout: 60_000 });
+  assertBrowser(
+    await page.getByTestId("open-ena-center-surface").count() === 0,
+    "the first post-fit screen fell through to the generic ENA presenter",
+  );
+
+  const modelMode = rail.getByRole("button", { name: "Model", exact: true });
+  await modelMode.click();
+  const genericSurface = page.getByTestId("open-ena-center-surface");
+  await genericSurface.waitFor({ timeout: 15_000 });
+  const genericEnaAudit = await genericSurface.evaluate((root) => ({
+    trajectoryMarks: root.querySelectorAll(".ena-trajectory-path,.ena-trajectory-direction-arrow,[data-ena-trajectory-style]").length,
+    networkEdges: [...root.querySelectorAll("line")].filter((line) => /Solid network edge/u.test(line.getAttribute("aria-label") || "")).length,
+    codeNodes: root.querySelectorAll("[data-ena-code]").length,
+  }));
+  assertBrowser(genericEnaAudit.trajectoryMarks === 0, "generic ENA surface still renders trajectory marks");
+  assertBrowser(genericEnaAudit.networkEdges > 0, "generic ENA surface omitted its network edges");
+  assertBrowser(genericEnaAudit.codeNodes > 0, "generic ENA surface omitted its code nodes");
   const plotTools = rail.getByRole("button", { name: "Plot Tools", exact: true });
   await plotTools.click();
-  const workbench = page.getByTestId("open-ena-longitudinal-v3-workbench");
-  const openedOnFirstClick = await workbench
-    .waitFor({ state: "visible", timeout: 5_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (!openedOnFirstClick) await plotTools.click();
   await workbench.waitFor({ timeout: 30_000 });
   const identity = workbench.getByRole("checkbox", {
     name: /same raw ID represents the same physical entity/u,
@@ -505,7 +532,7 @@ async function authenticateAndRunTrajectory(page, args) {
     const traces = Array.isArray(root.data) ? root.data : [];
     const allowedRoles = new Set([
       "participant", "individual-path", "centroid", "trajectory-path",
-      "direction-arrow", "network-node", "network-edge", "axis-shaft",
+      "direction-arrow", "network-node", "axis-shaft",
       "axis-arrowhead",
     ]);
     const codeTrace = traces.find((trace) => trace.meta?.role === "network-node");
@@ -522,6 +549,9 @@ async function authenticateAndRunTrajectory(page, args) {
         && trajectoryTraces.every((trace) => ["black", "#000", "#000000", "rgb(0, 0, 0)"].includes(trace.line?.color)),
       lineOnlyTrajectories: trajectoryTraces.length > 0
         && trajectoryTraces.every((trace) => trace.mode === "lines" && trace.marker === undefined),
+      participantTraceCount: traces.filter((trace) => trace.meta?.role === "participant").length,
+      directionArrowTraceCount: traces.filter((trace) => trace.meta?.role === "direction-arrow").length,
+      networkEdgeTraceCount: traces.filter((trace) => trace.meta?.role === "network-edge").length,
       uncertaintyTraceCount: traces.filter((trace) => trace.meta?.role === "uncertainty").length,
       errorBarTraceCount: traces.filter((trace) => (
         trace.error_x !== undefined || trace.error_y !== undefined || trace.error_z !== undefined
@@ -538,6 +568,9 @@ async function authenticateAndRunTrajectory(page, args) {
   assertBrowser(plotAudit.centroidSquares, "trajectory centroids are not 7px square markers");
   assertBrowser(plotAudit.blackTrajectories, "trajectory path lines are not black");
   assertBrowser(plotAudit.lineOnlyTrajectories, "trajectory paths still duplicate centroid square markers");
+  assertBrowser(plotAudit.participantTraceCount > 0, "trajectory plot omitted participant-period/time-point points");
+  assertBrowser(plotAudit.directionArrowTraceCount > 0, "trajectory plot omitted direction arrows");
+  assertBrowser(plotAudit.networkEdgeTraceCount === 0, "trajectory plot still contains ENA mean-network edges");
   assertBrowser(plotAudit.uncertaintyTraceCount === 0, "trajectory analysis still plots CI geometry");
   assertBrowser(plotAudit.errorBarTraceCount === 0, "trajectory analysis still plots XYZ/error-bar geometry");
   assertBrowser(plotAudit.unknownTraceRoles.length === 0, "trajectory plot contains an unsupported rectangle/box trace role");
@@ -548,6 +581,12 @@ async function authenticateAndRunTrajectory(page, args) {
   ));
   assertBrowser(bootstrapTaskCount === 0, "trajectory scientific request still contains bootstrapTask");
   plotAudit.bootstrapTaskCount = bootstrapTaskCount;
+  const networkOverlayTaskCount = await page.evaluate(() => (
+    window.__openEnaLongitudinalSmokeTaskAudit?.networkOverlayTaskCount ?? -1
+  ));
+  assertBrowser(networkOverlayTaskCount === 0, "trajectory scientific request still contains networkOverlayTask");
+  plotAudit.networkOverlayTaskCount = networkOverlayTaskCount;
+  plotAudit.genericEnaAudit = genericEnaAudit;
   return plotAudit;
 }
 

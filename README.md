@@ -20,10 +20,14 @@ data for learning the ENA workflow.
 
 Open ENA is a browser-based research workspace powered by the pinned
 `jena-js` runtime. It accepts coded CSV or XLSX data and keeps the standard two-dimensional
-ENA view selected by default. The in-place interactive 3D ENA view displays the same
-fitted jENA coordinates, nodes, networks, means, and trajectories. Switching between
-2D and 3D changes presentation only: it does not rerun or refit the analysis, and the
-displayed geometry remains descriptive rather than inferential evidence.
+ENA view selected by default. Its 2D and interactive 3D presenters use the same fitted
+jENA result, while ENA and longitudinal trajectory marks remain on separate research
+surfaces. Switching between 2D and 3D changes presentation only: it does not rerun or
+refit the analysis, and the displayed geometry remains descriptive rather than
+inferential evidence.
+
+Generic 2D and 3D ENA presenters show codes, network edges, unit points, and group means without trajectory paths, arrows, or time-point labels.
+The dedicated longitudinal trajectory presenter shows fitted code references, participant-period points, square centroids, black paths, and midpoint direction arrows without ENA mean-network edges.
 
 The researcher workspace currently provides:
 
@@ -36,7 +40,7 @@ The researcher workspace currently provides:
 - SVD rotation or two-group means rotation, with optional pinning of zero-network units to the origin;
 - reusable endpoint reference rotations for projecting independent datasets into the same fitted jENA geometry;
 - an in-memory Sets workspace that retains up to six endpoint analyses in one exact reference geometry, assigns Primary and Secondary sets, and renders stable comparison/primary/secondary plots with signed Primary-minus-Secondary edge differences;
-- linked 2D and interactive WebGL 3D unit, directed trajectory, group-mean, and network views in the same fitted jENA space, with selectable axes, relative edge filtering, point scaling, zoom/fit, camera controls, axis flips, and optional unit/variance labels;
+- linked 2D and interactive WebGL 3D projections within each strict presenter boundary, with selectable axes, point scaling, zoom/fit, camera controls, axis flips, and optional labels;
 - cohort-aware longitudinal group-centroid paths for separate and accumulated trajectory results, with an explicit repeated-entity field, a reviewable/reorderable period sequence, Available versus Complete cohort policies, equal-weight entity-period centroids, missing-period gaps, and per-period inclusion diagnostics;
 - standalone SVG and 3x-resolution PNG figure export for the current 2D research view, plus PNG clipboard capture from each interactive 3D plot toolbar;
 - jENA dimension summaries, correlations, Welch/ANOVA test statistics, and absolute Cohen's d for datasets within the automatic diagnostics limit;

@@ -949,7 +949,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           edgeThreshold,
           showNetworks,
           showPoints,
-          showTrajectories,
+          showTrajectories: false,
           showLabels,
           showGroupLabels,
           showUnitLabels,
@@ -978,7 +978,6 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       showGroupLabels,
       showNetworks,
       showPoints,
-      showTrajectories,
       showUnitLabels,
       showVariance,
       xDimension,
@@ -1339,7 +1338,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       setInteractive3dCamera(null);
       setInteractive3dAspectRatio(null);
       setView("2d");
-      setMode("model");
+      setMode(nextResult.set.modelType === "EndPoint" ? "model" : "plot");
       setActiveComparisonSurface("groups");
       setCenterSurface("plot");
       setResultTable("coordinates");
@@ -3354,7 +3353,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                           edgeThreshold,
                           showNetworks,
                           showPoints,
-                          showTrajectories,
+                          showTrajectories: false,
                           showLabels,
                           showUnitLabels,
                           showVariance,
@@ -3879,7 +3878,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                             edgeThreshold,
                             showNetworks,
                             showPoints,
-                            showTrajectories,
+                            showTrajectories: false,
                             showLabels,
                             showGroupLabels,
                             showUnitLabels,
@@ -4164,7 +4163,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     showLabels={showLabels}
                     showUnitLabels={showUnitLabels}
                     showVariance={showVariance}
-                    showTrajectories={showTrajectories}
+                    showTrajectories={false}
                     edgeScale={edgeScale}
                     edgeThreshold={edgeThreshold}
                     pointScale={pointScale}
@@ -4193,7 +4192,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     showLabels={showLabels}
                     showUnitLabels={showUnitLabels}
                     showVariance={showVariance}
-                    showTrajectories={showTrajectories}
+                    showTrajectories={false}
                     edgeScale={edgeScale}
                     edgeThreshold={edgeThreshold}
                     pointScale={pointScale}

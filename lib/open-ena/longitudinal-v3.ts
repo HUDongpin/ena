@@ -13,7 +13,6 @@ import {
   type TrajectoryDisplaySpecV2,
   type TrajectoryInferenceRequestV2,
   type TrajectoryInferenceTaskV2,
-  type TrajectoryNetworkOverlayTaskV2,
   type TrajectoryPathTaskV2,
   type TrajectoryRunSpecV2,
 } from "j-3dena";
@@ -439,7 +438,9 @@ export async function createOpenEnaLongitudinalSettingsV3(input: {
       explicitStrataField: null,
     },
     networkOverlay: {
-      enabled: true,
+      // Persist the former shape for read compatibility, but trajectory
+      // presenters and new tasks never request an ENA mean-network overlay.
+      enabled: false,
       periodCanonical: periods[0]?.sourceTimeCanonical ?? null,
       groupCanonical: null,
     },
@@ -656,6 +657,11 @@ export async function migrateOpenEnaLongitudinalSettingsV3(
     candidate.bootstrap.enabled = false;
     candidate.bootstrap.resamplingDesign = "auto";
     candidate.bootstrap.explicitStrataField = null;
+    candidate.networkOverlay = {
+      enabled: false,
+      periodCanonical: candidate.networkOverlay?.periodCanonical ?? candidate.orderedPeriods[0]?.sourceTimeCanonical ?? null,
+      groupCanonical: candidate.networkOverlay?.groupCanonical ?? null,
+    };
     if (candidate.inference.pairedPeriods) candidate.inference.pairedPeriods.samePhysicalEntityConfirmed = false;
     if (candidate.inference.repeatedPeriods) candidate.inference.repeatedPeriods.samePhysicalEntityConfirmed = false;
     if (candidate.inference.pathComparison) candidate.inference.pathComparison.samePhysicalEntityConfirmed = false;
@@ -990,24 +996,10 @@ export async function buildOpenEnaLongitudinalExecutionRequestV3(input: {
     requests: inferenceRequests,
     adjustment: "holm",
   } : undefined;
-  const networkOverlayTask: TrajectoryNetworkOverlayTaskV2 | undefined = input.settings.networkOverlay.enabled
-    && input.settings.networkOverlay.periodCanonical ? {
-      schemaVersion: "3dena.trajectory-network-overlay-task.v2",
-      kind: "trajectory-network-overlay-v2",
-      datasetHash: input.datasetHash,
-      specHash,
-      sourceResultHash,
-      runId: input.runId,
-      requests: [{
-        periodCanonical: input.settings.networkOverlay.periodCanonical,
-        groupCanonical: input.settings.networkOverlay.groupCanonical,
-      }],
-    } : undefined;
   const request: LongitudinalExecutionRequestV2 = {
     dataset: executionDataset,
     pathTask,
     ...(inferenceTask ? { inferenceTask } : {}),
-    ...(networkOverlayTask ? { networkOverlayTask } : {}),
     execution: {
       target: input.executionTarget,
       jenaVersion: build.jenaVersion,
@@ -1058,12 +1050,15 @@ export function openEnaTrajectoryDisplaySpecV3(
       centroids: true,
       paths: true,
       directionArrows: true,
-      networkOverlay: false,
       labels: true,
       ...options.traces,
       // Trajectory presenters intentionally never draw confidence intervals.
       // Static 3D ENA group-comparison plots own the visual CI grammar.
       uncertainty: false,
+      // A trajectory plot includes fitted code reference geometry but never
+      // the ENA mean-network edges, including when old display settings ask
+      // for them.
+      networkOverlay: false,
       // Fitted ENA codes are reference geometry, not a mean-network edge
       // overlay. Keep them visible whenever the immutable jENA bundle contains
       // their canonical coordinates.

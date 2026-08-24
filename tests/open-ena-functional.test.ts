@@ -666,7 +666,7 @@ test("trajectory export tables carry a stable step identity without leaking sour
   assert.doesNotMatch(coordinateCsv, /private source row|utterance/);
 });
 
-test("the researcher interface exposes verified trajectory models and path controls", () => {
+test("the researcher interface routes verified trajectory models to the dedicated workbench", () => {
   const workspace = readFileSync(
     join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
     "utf8",
@@ -675,13 +675,32 @@ test("the researcher interface exposes verified trajectory models and path contr
     join(projectRoot, "components", "open-ena", "OpenEnaPlot.tsx"),
     "utf8",
   );
+  const trajectoryWorkbench = readFileSync(
+    join(projectRoot, "components", "open-ena", "OpenEnaLongitudinalWorkbenchV3.tsx"),
+    "utf8",
+  );
 
   assert.match(workspace, /SeparateTrajectory/);
   assert.match(workspace, /AccumulatedTrajectory/);
   assert.match(workspace, /showTrajectories/);
   assert.match(workspace, /Trajectory steps CSV/);
-  assert.match(plot, /ena-trajectory-path/);
-  assert.match(plot, /result\.set\.trajectories/);
+  assert.doesNotMatch(plot, /ena-trajectory-path|result\.set\.trajectories/);
+  assert.match(trajectoryWorkbench, /compileTrajectoryPlotlySpec/);
+  assert.match(trajectoryWorkbench, /data-testid="open-ena-longitudinal-v3-workbench"/);
+});
+
+test("the public Open ENA contract documents mutually exclusive ENA and trajectory presenters", () => {
+  const readme = readFileSync(join(projectRoot, "README.md"), "utf8");
+
+  assert.match(
+    readme,
+    /Generic 2D and 3D ENA presenters show codes, network edges, unit points, and group means without trajectory paths, arrows, or time-point labels\./,
+  );
+  assert.match(
+    readme,
+    /The dedicated longitudinal trajectory presenter shows fitted code references, participant-period points, square centroids, black paths, and midpoint direction arrows without ENA mean-network edges\./,
+  );
+  assert.doesNotMatch(readme, /fitted jENA coordinates, nodes, networks, means, and trajectories/);
 });
 
 test("pending model edits preserve the last valid research result until rebuild", async () => {
