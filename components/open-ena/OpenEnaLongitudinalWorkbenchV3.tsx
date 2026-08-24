@@ -35,6 +35,7 @@ import {
 } from "@/lib/open-ena/longitudinal-v3-client";
 import {
   applyCompactTrajectoryPlotlyLayoutV3,
+  applyFullscreenTrajectoryPlotlyLayoutV3,
   cloneTrajectoryPlotlyInputV3,
 } from "@/lib/open-ena/longitudinal-v3-display";
 import { cameraForPreset, type OpenEna3dCamera } from "@/lib/open-ena/plot3d";
@@ -105,7 +106,7 @@ const english = {
   centroids: "Group centroid paths",
   arrows: "Direction arrows",
   labels: "Labels",
-  uncertainty: "Bootstrap uncertainty",
+  uncertainty: "Bootstrap numerical intervals (tables and exports only; not plotted)",
   network: "Mean network overlay",
   bootstrap: "Participant-history cluster bootstrap",
   repetitions: "Repetitions (200–500)",
@@ -146,7 +147,7 @@ const english = {
   pathTable: "Trajectory path metrics",
   inference: "Rank and whole-path inference",
   pathComparison: "Whole-path comparison",
-  bootstrapResults: "Bootstrap intervals",
+  bootstrapResults: "Bootstrap numerical intervals (not plotted)",
   warnings: "Warnings and diagnostics",
   provenance: "Provenance",
   noResult: "Configure the mappings and run the versioned trajectory task.",
@@ -197,7 +198,7 @@ const zhHans: typeof english = {
   centroids: "组质心路径",
   arrows: "方向箭头",
   labels: "标签",
-  uncertainty: "Bootstrap 不确定性",
+  uncertainty: "Bootstrap 数值区间（仅表格与导出，不绘图）",
   network: "平均网络叠加",
   bootstrap: "参与者完整历史 cluster bootstrap",
   repetitions: "重复次数（200–500）",
@@ -238,7 +239,7 @@ const zhHans: typeof english = {
   pathTable: "轨迹路径指标",
   inference: "秩检验与全路径推断",
   pathComparison: "全路径比较",
-  bootstrapResults: "Bootstrap 区间",
+  bootstrapResults: "Bootstrap 数值区间（不绘图）",
   warnings: "警告与诊断",
   provenance: "来源与版本",
   noResult: "完成映射后运行版本化轨迹任务。",
@@ -370,6 +371,7 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
   const [Plotly, setPlotly] = useState<PlotlyImageApi | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [compactLayout, setCompactLayout] = useState(false);
+  const [fullscreenLayout, setFullscreenLayout] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -396,9 +398,12 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
     if (!Plotly || !rootRef.current) return;
     let active = true;
     const root = rootRef.current;
-    const mutableSpec = applyCompactTrajectoryPlotlyLayoutV3(
-      cloneTrajectoryPlotlyInputV3(spec),
-      compactLayout,
+    const mutableSpec = applyFullscreenTrajectoryPlotlyLayoutV3(
+      applyCompactTrajectoryPlotlyLayoutV3(
+        cloneTrajectoryPlotlyInputV3(spec),
+        compactLayout,
+      ),
+      fullscreenLayout,
     );
     setStatus("loading");
     void Plotly.react(root, mutableSpec.data as never[], mutableSpec.layout as never, mutableSpec.config as never)
@@ -412,12 +417,13 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
       active = false;
       observer?.disconnect();
     };
-  }, [Plotly, spec, compactLayout]);
+  }, [Plotly, spec, compactLayout, fullscreenLayout]);
 
   useEffect(() => {
     if (!Plotly) return;
     let frame: number | null = null;
     const resizePlot = () => {
+      setFullscreenLayout(document.fullscreenElement === shellRef.current);
       if (frame !== null) window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         frame = null;
@@ -428,6 +434,7 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
     };
     document.addEventListener("fullscreenchange", resizePlot);
     window.addEventListener("resize", resizePlot);
+    resizePlot();
     return () => {
       document.removeEventListener("fullscreenchange", resizePlot);
       window.removeEventListener("resize", resizePlot);
@@ -575,7 +582,7 @@ export default function OpenEnaLongitudinalWorkbenchV3({
   const [display, setDisplay] = useState<DisplayStateV3>({
     projection: "3d",
     displayedGroups: [],
-    traces: { participants: true, individualPaths: false, centroids: true, paths: true, directionArrows: true, uncertainty: true, networkOverlay: false, labels: true },
+    traces: { participants: true, individualPaths: false, centroids: true, paths: true, directionArrows: true, uncertainty: false, networkOverlay: false, labels: true },
     axisFlips: [false, false, false],
     cameraPreset: "isometric",
   });

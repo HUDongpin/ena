@@ -214,17 +214,18 @@ test("2D and 3D compile from the same bundle and never change the result hash", 
   )));
   const threeUncertainty = three.data.filter((trace) => trace.meta.role === "uncertainty");
   const twoUncertainty = two.data.filter((trace) => trace.meta.role === "uncertainty");
-  assert.ok(threeUncertainty.length > 0);
-  assert.ok(twoUncertainty.length > 0);
-  assert.ok(threeUncertainty.every((trace) => (
-    trace.mode === "lines"
-    && trace.connectgaps === false
-    && (trace.line as { dash?: string } | undefined)?.dash === "dash"
-    && trace.error_x === undefined
-    && trace.error_y === undefined
-    && trace.error_z === undefined
-  )));
-  assert.ok(twoUncertainty.every((trace) => trace.error_x !== undefined && trace.error_y !== undefined));
+  assert.equal(threeUncertainty.length, 0);
+  assert.equal(twoUncertainty.length, 0);
+  const requestedUncertaintyDisplay = openEnaTrajectoryDisplaySpecV3(bundle, {
+    projection: "3d",
+    traces: { ...threeDisplay.traces, uncertainty: true },
+  });
+  assert.equal(requestedUncertaintyDisplay.traces.uncertainty, false);
+  assert.equal(
+    compileTrajectoryPlotlySpec(bundle, requestedUncertaintyDisplay).data
+      .filter((trace) => trace.meta.role === "uncertainty").length,
+    0,
+  );
   const expectedMidpoints = three.data
     .filter((trace) => trace.meta.role === "trajectory-path")
     .flatMap((trace) => {

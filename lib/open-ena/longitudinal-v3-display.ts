@@ -68,3 +68,46 @@ export function applyCompactTrajectoryPlotlyLayoutV3(
   };
   return input;
 }
+
+/**
+ * Uses the complete fullscreen Plotly paper for the presenter. The legend is
+ * intentionally overlaid inside the paper so Plotly does not reserve a wide
+ * blank column beside a square 3D scene. This is a display-only transform of a
+ * mutable clone; it cannot change the immutable trajectory result envelope.
+ */
+export function applyFullscreenTrajectoryPlotlyLayoutV3(
+  input: MutableTrajectoryPlotlyInputV3,
+  fullscreen: boolean,
+): MutableTrajectoryPlotlyInputV3 {
+  if (!fullscreen) return input;
+
+  const legend = mutableRecord(input.layout.legend);
+  const legendFont = mutableRecord(legend.font);
+  const fullscreenLegend: Record<string, unknown> = {
+    ...legend,
+    orientation: "v",
+    x: 0.995,
+    xanchor: "right",
+    y: 0.995,
+    yanchor: "top",
+    bgcolor: "rgba(255,255,255,0.82)",
+    bordercolor: "rgba(91,111,116,0.28)",
+    borderwidth: 1,
+    font: { ...legendFont, size: 11 },
+    tracegroupgap: 2,
+  };
+  delete fullscreenLegend.entrywidth;
+  delete fullscreenLegend.entrywidthmode;
+
+  input.layout.autosize = true;
+  input.layout.legend = fullscreenLegend;
+  input.layout.margin = { l: 8, r: 8, t: 8, b: 8 };
+  const scene = mutableRecord(input.layout.scene);
+  if (Object.keys(scene).length > 0) {
+    input.layout.scene = {
+      ...scene,
+      domain: { x: [0, 1], y: [0, 1] },
+    };
+  }
+  return input;
+}

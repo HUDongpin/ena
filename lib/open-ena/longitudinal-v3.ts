@@ -1014,10 +1014,14 @@ export function openEnaTrajectoryDisplaySpecV3(
       centroids: true,
       paths: true,
       directionArrows: true,
-      uncertainty: bundle.bootstrap.some((entry) => entry.status === "available"),
       networkOverlay: bundle.networkOverlays.some((entry) => entry.status === "available"),
       labels: true,
       ...options.traces,
+      // Trajectory presenters intentionally never draw confidence intervals.
+      // Static 3D ENA group-comparison plots own the visual CI grammar; the
+      // longitudinal bootstrap remains available only in numerical tables and
+      // exports.
+      uncertainty: false,
     },
     axisFlips: options.axisFlips ? [...options.axisFlips] : [false, false, false],
     camera: options.camera === undefined

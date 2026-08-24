@@ -67,8 +67,14 @@ test("the plot action toolbar occupies its own row instead of covering the 3D le
 });
 
 test("individual participant paths are display-only and default off in the aggregate trajectory view", () => {
-  assert.match(component, /traces:\s*\{\s*participants:\s*true,\s*individualPaths:\s*false,/);
+  assert.match(component, /traces:\s*\{\s*participants:\s*true,\s*individualPaths:\s*false,[\s\S]*?uncertainty:\s*false,/);
   assert.match(component, /\['individualPaths',\s*copy\.individualPaths\]/);
+});
+
+test("trajectory plots never expose confidence-interval traces while bootstrap remains numerical", () => {
+  assert.doesNotMatch(component, /\['uncertainty',\s*copy\.uncertainty\]/);
+  assert.match(component, /Bootstrap numerical intervals \(tables and exports only; not plotted\)/);
+  assert.match(component, /Bootstrap 数值区间（仅表格与导出，不绘图）/);
 });
 
 test("fullscreen gives the Plotly canvas the remaining dynamic viewport instead of retaining its 560px page height", () => {
