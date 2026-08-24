@@ -66,6 +66,11 @@ test("the plot action toolbar occupies its own row instead of covering the 3D le
   assert.match(css, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.ena-longitudinal-v3-plot-shell\s*\{[^}]*height:\s*485px/);
 });
 
+test("individual participant paths are display-only and default off in the aggregate trajectory view", () => {
+  assert.match(component, /traces:\s*\{\s*participants:\s*true,\s*individualPaths:\s*false,/);
+  assert.match(component, /\['individualPaths',\s*copy\.individualPaths\]/);
+});
+
 test("fullscreen gives the Plotly canvas the remaining dynamic viewport instead of retaining its 560px page height", () => {
   assert.match(css, /\.ena-longitudinal-v3-plot-shell:fullscreen\s*\{[^}]*display:\s*grid[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)[^}]*height:\s*100dvh[^}]*overflow:\s*hidden/);
   assert.match(css, /\.ena-longitudinal-v3-plot-shell:fullscreen\s+\.ena-longitudinal-v3-plot\s*\{[^}]*height:\s*100%[^}]*min-height:\s*0/);

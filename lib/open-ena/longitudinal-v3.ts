@@ -1010,7 +1010,7 @@ export function openEnaTrajectoryDisplaySpecV3(
     displayedGroups: [...displayedGroups],
     traces: {
       participants: true,
-      individualPaths: true,
+      individualPaths: false,
       centroids: true,
       paths: true,
       directionArrows: true,

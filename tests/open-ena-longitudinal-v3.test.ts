@@ -178,9 +178,9 @@ test("2D and 3D compile from the same bundle and never change the result hash", 
     const individualPaths = plot.data.filter((trace) => trace.meta.role === "individual-path");
     const centroids = plot.data.filter((trace) => trace.meta.role === "centroid");
     assert.ok(paths.length > 0);
-    assert.ok(individualPaths.length > 0);
+    assert.equal(individualPaths.length, 0);
     assert.ok(centroids.length > 0);
-    assert.ok([...paths, ...individualPaths].every((trace) => (
+    assert.ok(paths.every((trace) => (
       (trace.line as { color?: string } | undefined)?.color === "#000000"
     )));
     assert.ok(paths.every((trace) => {
@@ -192,6 +192,17 @@ test("2D and 3D compile from the same bundle and never change the result hash", 
       return marker?.size === 7 && marker.symbol === "square" && marker.color !== "#000000";
     }));
   }
+  const individualDisplay = openEnaTrajectoryDisplaySpecV3(bundle, {
+    projection: "3d",
+    traces: { ...threeDisplay.traces, individualPaths: true },
+  });
+  const individualPlot = compileTrajectoryPlotlySpec(bundle, individualDisplay);
+  const optionalIndividualPaths = individualPlot.data.filter((trace) => trace.meta.role === "individual-path");
+  assert.ok(optionalIndividualPaths.length > 0);
+  assert.ok(optionalIndividualPaths.every((trace) => (
+    (trace.line as { color?: string } | undefined)?.color === "#000000"
+  )));
+  assert.equal(individualPlot.resultHash, bundle.identity.resultHash);
   const threeArrows = three.data.filter((trace) => trace.meta.role === "direction-arrow");
   const twoArrows = two.data.filter((trace) => trace.meta.role === "direction-arrow");
   assert.ok(threeArrows.length > 0);

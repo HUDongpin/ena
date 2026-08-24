@@ -575,7 +575,7 @@ export default function OpenEnaLongitudinalWorkbenchV3({
   const [display, setDisplay] = useState<DisplayStateV3>({
     projection: "3d",
     displayedGroups: [],
-    traces: { participants: true, individualPaths: true, centroids: true, paths: true, directionArrows: true, uncertainty: true, networkOverlay: false, labels: true },
+    traces: { participants: true, individualPaths: false, centroids: true, paths: true, directionArrows: true, uncertainty: true, networkOverlay: false, labels: true },
     axisFlips: [false, false, false],
     cameraPreset: "isometric",
   });
