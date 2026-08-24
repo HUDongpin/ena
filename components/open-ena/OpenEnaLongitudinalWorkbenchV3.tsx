@@ -414,6 +414,27 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
     };
   }, [Plotly, spec, compactLayout]);
 
+  useEffect(() => {
+    if (!Plotly) return;
+    let frame: number | null = null;
+    const resizePlot = () => {
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        const root = rootRef.current;
+        if (!root) return;
+        try { void Promise.resolve(Plotly.Plots.resize(root)).catch(() => {}); } catch { /* detached */ }
+      });
+    };
+    document.addEventListener("fullscreenchange", resizePlot);
+    window.addEventListener("resize", resizePlot);
+    return () => {
+      document.removeEventListener("fullscreenchange", resizePlot);
+      window.removeEventListener("resize", resizePlot);
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
+  }, [Plotly]);
+
   useEffect(() => () => {
     if (Plotly && rootRef.current) Plotly.purge(rootRef.current);
   }, [Plotly]);

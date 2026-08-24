@@ -73,6 +73,9 @@ test("six comparison groups retain unique non-color plot encodings and accessibl
   }));
   assert.doesNotMatch(markup, /class="ena-trajectory-path"[^>]*stroke-opacity="0\./);
   assert.match(markup, /class="ena-trajectory-path"[^>]*stroke="#000000"/);
+  assert.doesNotMatch(markup, /class="ena-trajectory-path"[^>]*marker-end=/);
+  assert.match(markup, /class="ena-trajectory-direction-arrow"[^>]*data-ena-direction-progress="0\.5"/);
+  assert.match(markup, /class="ena-trajectory-direction-arrow"[^>]*marker-end="url\(#ena-trajectory-arrow-0\)"/);
   assert.match(markup, /id="ena-trajectory-arrow-0"[\s\S]*?<path[^>]*fill="#000000"/);
 
   for (const [index, encoding] of encodings.entries()) {

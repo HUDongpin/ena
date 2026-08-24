@@ -66,6 +66,13 @@ test("the plot action toolbar occupies its own row instead of covering the 3D le
   assert.match(css, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.ena-longitudinal-v3-plot-shell\s*\{[^}]*height:\s*485px/);
 });
 
+test("fullscreen gives the Plotly canvas the remaining dynamic viewport instead of retaining its 560px page height", () => {
+  assert.match(css, /\.ena-longitudinal-v3-plot-shell:fullscreen\s*\{[^}]*display:\s*grid[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)[^}]*height:\s*100dvh[^}]*overflow:\s*hidden/);
+  assert.match(css, /\.ena-longitudinal-v3-plot-shell:fullscreen\s+\.ena-longitudinal-v3-plot\s*\{[^}]*height:\s*100%[^}]*min-height:\s*0/);
+  assert.match(component, /document\.addEventListener\("fullscreenchange",\s*resizePlot\)/);
+  assert.match(component, /window\.addEventListener\("resize",\s*resizePlot\)/);
+});
+
 test("V3 result surfaces include equivalent mapping, path, inference, bootstrap, warning, and provenance tables", () => {
   for (const testId of [
     "open-ena-longitudinal-v3-mapping-audit",

@@ -52,6 +52,8 @@ export const GROUP_VISUAL_ENCODINGS = [
   trajectoryLabel: string;
 }>;
 const TRAJECTORY_LINE_COLOR = "#000000";
+const TRAJECTORY_ARROW_TIP_PROGRESS = 0.5;
+const TRAJECTORY_ARROW_TAIL_PROGRESS = 0.35;
 
 export function getGroupVisualEncoding(groupIndex: number) {
   const safeIndex = Number.isFinite(groupIndex) ? Math.max(0, Math.trunc(groupIndex)) : 0;
@@ -475,24 +477,45 @@ export default function OpenEnaPlot({
           const target = positions.get(segment.targetKey);
           if (!source || !target) return null;
           const encoding = getGroupVisualEncoding(segment.groupIndex);
+          const arrowTail = {
+            x: source.x + (target.x - source.x) * TRAJECTORY_ARROW_TAIL_PROGRESS,
+            y: source.y + (target.y - source.y) * TRAJECTORY_ARROW_TAIL_PROGRESS,
+          };
+          const arrowTip = {
+            x: source.x + (target.x - source.x) * TRAJECTORY_ARROW_TIP_PROGRESS,
+            y: source.y + (target.y - source.y) * TRAJECTORY_ARROW_TIP_PROGRESS,
+          };
           return (
-            <line
-              key={segment.key}
-              className="ena-trajectory-path"
-              x1={source.x}
-              y1={source.y}
-              x2={target.x}
-              y2={target.y}
-              stroke={TRAJECTORY_LINE_COLOR}
-              strokeWidth="2.5"
-              strokeOpacity="1"
-              strokeLinecap="round"
-              markerEnd={`url(#ena-trajectory-arrow-${segment.groupIndex})`}
-              data-ena-trajectory-style={encoding.key}
-              aria-label={`${segment.label}. ${groupEncodingDescription(segment.groupName, segment.groupIndex)}.`}
-            >
-              <title>{`${segment.label}. ${encoding.trajectoryLabel} trajectory line.`}</title>
-            </line>
+            <g key={segment.key}>
+              <line
+                className="ena-trajectory-path"
+                x1={source.x}
+                y1={source.y}
+                x2={target.x}
+                y2={target.y}
+                stroke={TRAJECTORY_LINE_COLOR}
+                strokeWidth="2.5"
+                strokeOpacity="1"
+                strokeLinecap="round"
+                data-ena-trajectory-style={encoding.key}
+                aria-label={`${segment.label}. ${groupEncodingDescription(segment.groupName, segment.groupIndex)}.`}
+              >
+                <title>{`${segment.label}. ${encoding.trajectoryLabel} trajectory line.`}</title>
+              </line>
+              <line
+                className="ena-trajectory-direction-arrow"
+                x1={arrowTail.x}
+                y1={arrowTail.y}
+                x2={arrowTip.x}
+                y2={arrowTip.y}
+                stroke={TRAJECTORY_LINE_COLOR}
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                markerEnd={`url(#ena-trajectory-arrow-${segment.groupIndex})`}
+                data-ena-direction-progress={String(TRAJECTORY_ARROW_TIP_PROGRESS)}
+                aria-hidden="true"
+              />
+            </g>
           );
         })}
 

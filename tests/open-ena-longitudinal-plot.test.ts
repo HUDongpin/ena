@@ -128,7 +128,7 @@ test("independent individual and centroid layers render together with non-color 
     1,
     "the connected individual path also needs a direction arrow",
   );
-  assert.match(both, /data-ena-direction-progress="0\.58"/);
+  assert.match(both, /data-ena-direction-progress="0\.5"/);
   assert.match(both, /class="ena-group-centroid-direction-arrow"[^>]*fill="#000000"[^>]*stroke="#fff"/);
   assert.match(both, /class="ena-individual-direction-arrow"[^>]*fill="#000000"[^>]*stroke="#fff"/);
   assert.match(both, /data-ena-group-shape="circle"/);

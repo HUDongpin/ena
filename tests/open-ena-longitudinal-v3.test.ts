@@ -201,6 +201,36 @@ test("2D and 3D compile from the same bundle and never change the result hash", 
     (trace.line as { color?: string } | undefined)?.color === "#000000"
     && (trace.marker as { color?: string } | undefined)?.color === "#000000"
   )));
+  const expectedMidpoints = three.data
+    .filter((trace) => trace.meta.role === "trajectory-path")
+    .flatMap((trace) => {
+      const x = trace.x as Array<number | null>;
+      const y = trace.y as Array<number | null>;
+      const z = trace.z as Array<number | null>;
+      return x.slice(1).flatMap((currentX, index) => {
+        const previousX = x[index];
+        const previousY = y[index];
+        const currentY = y[index + 1];
+        const previousZ = z[index];
+        const currentZ = z[index + 1];
+        return previousX === null || currentX === null || previousY === null || currentY === null || previousZ === null || currentZ === null
+          ? []
+          : [[
+            previousX + (currentX - previousX) * 0.5,
+            previousY + (currentY - previousY) * 0.5,
+            previousZ + (currentZ - previousZ) * 0.5,
+          ]];
+      });
+    });
+  assert.deepEqual(threeArrows.map((trace) => [
+    (trace.x as number[])[0],
+    (trace.y as number[])[0],
+    (trace.z as number[])[0],
+  ]), expectedMidpoints);
+  assert.deepEqual(twoArrows.map((trace) => [
+    (trace.x as number[]).at(-1),
+    (trace.y as number[]).at(-1),
+  ]), expectedMidpoints.map(([x, y]) => [x, y]));
   assert.notDeepEqual(three.layout, two.layout);
   assert.equal(isOpenEnaLongitudinalBundleStaleV3(bundle, prepared.binding), false);
   assert.equal(isOpenEnaLongitudinalBundleStaleV3(bundle, { ...prepared.binding, specHash: "f".repeat(64) }), true);
