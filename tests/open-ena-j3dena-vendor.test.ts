@@ -495,21 +495,23 @@ function rewriteReceipt(fixture: Fixture, mutate: (value: Record<string, any>) =
   });
 }
 
-test("the verifier pins the CI-custodied j-3dENA .8 artifact", () => {
+test("the verifier pins the CI-custodied j-3dENA .10 artifact", () => {
   assert.deepEqual(
     {
       version: J3DENA_VENDOR_CONTRACT.version,
       sourceHead: J3DENA_VENDOR_CONTRACT.sourceHead,
       tarballSha256: J3DENA_VENDOR_CONTRACT.tarballSha256,
+      treeSha256: J3DENA_VENDOR_CONTRACT.treeSha256,
       jenaSourceTreeSha256: J3DENA_VENDOR_CONTRACT.jenaSourceTreeSha256,
       jenaSourceTreeSerialization: J3DENA_VENDOR_CONTRACT.jenaSourceTreeSerialization,
       jenaSourceTreeFileCount: J3DENA_VENDOR_CONTRACT.jenaSourceTreeFileCount,
       jenaSourceTreeByteLength: J3DENA_VENDOR_CONTRACT.jenaSourceTreeByteLength,
     },
     {
-      version: "0.2.0-implemented-unverified.8",
-      sourceHead: "6127638095dce3e3791a3ea18e90bb800c9f353b",
-      tarballSha256: "03d646260f1f8ea7eff91da6cba429ac5590b26f7ee84430b83c8494f7e37d90",
+      version: "0.2.0-implemented-unverified.10",
+      sourceHead: "fa0f58dd937cc0b92514661afc7eedf0e259bac2",
+      tarballSha256: "1ac61d4d8ab2925cd184e7e2aa64851eed6aaf4ec5c46082030c06f572c8df43",
+      treeSha256: "ae993f29d0bf389b64b1f8268d20ccd5b0eaa2c19e83a8c7546342151ad1e74b",
       jenaSourceTreeSha256: "b325c61e549392f7f80a504ba235b62d2fd74e9038f48ce768c483caf06bd671",
       jenaSourceTreeSerialization: TREE_SERIALIZATION,
       jenaSourceTreeFileCount: 35,
@@ -1065,7 +1067,7 @@ test("the tar parser rejects noncanonical numeric fields, ustar drift, body padd
   }
 });
 
-test("package-lock identity must stay on the exact local .8 tarball", async (context) => {
+test("package-lock identity must stay on the exact local .10 tarball", async (context) => {
   const fixture = createFixture(context);
   const lockPath = join(fixture.root, "package-lock.json");
   const lock = JSON.parse(readFileSync(lockPath, "utf8"));
