@@ -13,34 +13,52 @@ async function loadModule(relativePath: string) {
   }
 }
 
-test("Open ENA accepts only the configured default credentials", async () => {
+test("Open ENA fails closed without explicit high-entropy authentication configuration", async () => {
   const auth = await loadModule("../lib/open-ena-auth");
   assert.ok(auth, "lib/open-ena-auth.ts must provide server-side credential verification");
 
   const environment = {};
-  assert.equal(auth.verifyOpenEnaCredentials("sandytu", "12345", environment), true);
-  assert.equal(auth.verifyOpenEnaCredentials("sandytu", "12346", environment), false);
-  assert.equal(auth.verifyOpenEnaCredentials("other", "12345", environment), false);
+  assert.equal(auth.openEnaAuthConfigurationReady(environment), false);
+  assert.equal(auth.verifyOpenEnaCredentials("sandytu", "12345", environment), false);
   assert.equal(auth.verifyOpenEnaCredentials("", "", environment), false);
+  assert.throws(
+    () => auth.createOpenEnaSessionToken(1_800_000_000_000, environment),
+    /authentication is not configured/i,
+  );
+  assert.equal(auth.verifyOpenEnaSessionToken("v1.1800000000.invalid", 1_800_000_001_000, environment), false);
 });
 
-test("deployment environment values can rotate the Open ENA credentials", async () => {
+test("explicit deployment values enable and rotate the Open ENA credentials", async () => {
   const auth = await loadModule("../lib/open-ena-auth");
   assert.ok(auth);
 
   const environment = {
     OPEN_ENA_USERNAME: "researcher",
-    OPEN_ENA_PASSWORD: "a-different-passphrase",
+    OPEN_ENA_PASSWORD: "a-different-strong-passphrase",
+    OPEN_ENA_SESSION_SECRET: "s".repeat(32),
   };
-  assert.equal(auth.verifyOpenEnaCredentials("researcher", "a-different-passphrase", environment), true);
+  assert.equal(auth.openEnaAuthConfigurationReady(environment), true);
+  assert.equal(auth.verifyOpenEnaCredentials("researcher", "a-different-strong-passphrase", environment), true);
   assert.equal(auth.verifyOpenEnaCredentials("sandytu", "12345", environment), false);
+  assert.equal(auth.openEnaAuthConfigurationReady({
+    ...environment,
+    OPEN_ENA_PASSWORD: "too-short",
+  }), false);
+  assert.equal(auth.openEnaAuthConfigurationReady({
+    ...environment,
+    OPEN_ENA_SESSION_SECRET: "too-short",
+  }), false);
 });
 
 test("Open ENA session tokens are signed, expire, and reject tampering", async () => {
   const auth = await loadModule("../lib/open-ena-auth");
   assert.ok(auth);
 
-  const environment = { OPEN_ENA_SESSION_SECRET: "test-session-secret-with-enough-entropy" };
+  const environment = {
+    OPEN_ENA_USERNAME: "researcher",
+    OPEN_ENA_PASSWORD: "strong-password-for-open-ena",
+    OPEN_ENA_SESSION_SECRET: "test-session-secret-with-enough-entropy",
+  };
   const issuedAt = 1_800_000_000_000;
   const token = auth.createOpenEnaSessionToken(issuedAt, environment);
 
@@ -62,11 +80,14 @@ test("the login copy is English, Traditional Chinese, and Simplified Chinese", a
   const zhHans = copyModule.getOpenEnaAuthCopy("zh-hans");
 
   assert.equal(en.title, "Sign in to Open ENA");
+  assert.match(en.unavailable, /secure authentication is not configured/i);
   assert.match(en.collaborationNotice, /Registration will be available in the future/);
   assert.match(en.collaborationNotice, /Professor Sandy TU Yun-Fang \(sandy0692@gmail\.com\)/);
   assert.equal(zhHant.title, "登入 Open ENA");
+  assert.match(zhHant.unavailable, /安全驗證/);
   assert.match(zhHant.collaborationNotice, /未來會開放註冊/);
   assert.equal(zhHans.title, "登录 Open ENA");
+  assert.match(zhHans.unavailable, /安全验证/);
   assert.equal(
     zhHans.collaborationNotice,
     "未来会开放注册。学术合作请联系Professor Sandy TU Yun-Fang(sandy0692@gmail.com)",
@@ -86,8 +107,9 @@ test("the localized Open ENA page renders a server-side login gate before the wo
   assert.equal(existsSync(loginPath), true, "the localized login interface must exist");
   assert.match(page, /await cookies\(\)/);
   assert.match(page, /verifyOpenEnaSessionToken/);
+  assert.match(page, /openEnaAuthConfigurationReady/);
   assert.match(page, /isAuthenticated[\s\S]*?<OpenEnaWorkspace locale=\{typedLocale\}/);
-  assert.match(page, /!isAuthenticated[\s\S]*?<OpenEnaLogin/);
+  assert.match(page, /!isAuthenticated[\s\S]*?<OpenEnaLogin[\s\S]*configurationReady=\{authConfigurationReady\}/);
   assert.match(page, /export const dynamic = "force-dynamic"/);
 });
 
@@ -96,7 +118,10 @@ test("the login form is accessible and never exposes the default account or pass
   assert.equal(existsSync(loginPath), true);
   const login = readFileSync(loginPath, "utf8");
   const copy = readFileSync(join(projectRoot, "lib", "open-ena-auth-copy.ts"), "utf8");
+  const auth = readFileSync(join(projectRoot, "lib", "open-ena-auth.ts"), "utf8");
 
+  assert.match(login, /configurationReady/);
+  assert.match(login, /copy\.unavailable/);
   assert.match(login, /action="\/api\/open-ena\/login"/);
   assert.match(login, /method="post"/);
   assert.match(login, /name="username"/);
@@ -109,6 +134,8 @@ test("the login form is accessible and never exposes the default account or pass
   assert.doesNotMatch(login, /priority/u);
   assert.doesNotMatch(`${login}\n${copy}`, /sandytu/);
   assert.doesNotMatch(`${login}\n${copy}`, /12345/);
+  assert.doesNotMatch(auth, /sandytu/);
+  assert.doesNotMatch(auth, /12345/);
 });
 
 test("the hidden Open ENA shell never preloads the shared ENA mark", () => {
@@ -157,6 +184,8 @@ test("login and logout handlers use a hardened HttpOnly session cookie", () => {
   const loginRoute = readFileSync(loginRoutePath, "utf8");
   const logoutRoute = readFileSync(logoutRoutePath, "utf8");
   assert.match(loginRoute, /verifyOpenEnaCredentials/);
+  assert.match(loginRoute, /openEnaAuthConfigurationReady/);
+  assert.match(loginRoute, /status:\s*503/);
   assert.match(loginRoute, /createOpenEnaSessionToken/);
   assert.match(loginRoute, /httpOnly:\s*true/);
   assert.match(loginRoute, /sameSite:\s*"lax"/);

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  openEnaAuthConfigurationReady,
   OPEN_ENA_SESSION_COOKIE,
   verifyOpenEnaSessionToken,
 } from "@/lib/open-ena-auth";
@@ -33,11 +34,7 @@ const quotaBySession = new Map<string, { count: number; windowStartedAt: number 
 export function openEnaAiAuthConfigurationReady(
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ) {
-  return Boolean(
-    environment.OPEN_ENA_USERNAME?.trim()
-    && environment.OPEN_ENA_PASSWORD && environment.OPEN_ENA_PASSWORD.length >= 12
-    && environment.OPEN_ENA_SESSION_SECRET && environment.OPEN_ENA_SESSION_SECRET.length >= 32,
-  );
+  return openEnaAuthConfigurationReady(environment);
 }
 
 function consumeOpenEnaAiQuota(sessionToken: string, now = Date.now()) {

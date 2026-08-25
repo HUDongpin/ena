@@ -6,6 +6,7 @@ import OpenEnaLogin from "@/components/open-ena/OpenEnaLogin";
 import OpenEnaWorkspace from "@/components/open-ena/OpenEnaWorkspace";
 import { getLocaleMeta, isLocale, type Locale } from "@/lib/i18n";
 import {
+  openEnaAuthConfigurationReady,
   OPEN_ENA_SESSION_COOKIE,
   verifyOpenEnaSessionToken,
 } from "@/lib/open-ena-auth";
@@ -61,12 +62,19 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
   const typedLocale = locale as Locale;
+  const authConfigurationReady = openEnaAuthConfigurationReady();
   const sessionCookie = (await cookies()).get(OPEN_ENA_SESSION_COOKIE)?.value;
-  const isAuthenticated = verifyOpenEnaSessionToken(sessionCookie);
+  const isAuthenticated = authConfigurationReady && verifyOpenEnaSessionToken(sessionCookie);
   const query = await searchParams;
 
   if (!isAuthenticated) {
-    return <OpenEnaLogin locale={typedLocale} error={query.auth === "invalid"} />;
+    return (
+      <OpenEnaLogin
+        locale={typedLocale}
+        error={query.auth === "invalid"}
+        configurationReady={authConfigurationReady}
+      />
+    );
   }
 
   const copy = getOpenEnaCopy(typedLocale);
