@@ -560,18 +560,23 @@ async function authenticateAndRunTrajectory(page, args) {
 
   const modelMode = rail.getByRole("button", { name: "Model", exact: true });
   await modelMode.click();
-  const genericSurface = page.getByTestId("open-ena-center-surface");
-  await genericSurface.waitFor({ timeout: 15_000 });
-  const genericEnaAudit = await genericSurface.evaluate((root) => ({
-    trajectoryMarks: root.querySelectorAll(".ena-trajectory-path,.ena-trajectory-direction-arrow,[data-ena-trajectory-style]").length,
-    networkEdges: [...root.querySelectorAll("line")].filter((line) => /Solid network edge/u.test(line.getAttribute("aria-label") || "")).length,
-    codeNodes: root.querySelectorAll("[data-ena-code]").length,
+  await workbench.waitFor({ timeout: 15_000 });
+  const trajectoryBoundaryAudit = await page.evaluate(() => ({
+    workbenchCount: document.querySelectorAll('[data-testid="open-ena-longitudinal-v3-workbench"]').length,
+    genericSurfaceCount: document.querySelectorAll('[data-testid="open-ena-center-surface"]').length,
+    ordinaryPresenterCount: document.querySelectorAll([
+      '[data-testid="open-ena-center-surface"]',
+      '[data-testid="open-ena-group-center-surface"]',
+      '[data-testid="open-ena-3d-comparison-plot"]',
+      '[data-testid="open-ena-3d-primary-plot"]',
+      '[data-testid="open-ena-3d-secondary-plot"]',
+    ].join(",")).length,
   }));
-  assertBrowser(genericEnaAudit.trajectoryMarks === 0, "generic ENA surface still renders trajectory marks");
-  assertBrowser(genericEnaAudit.networkEdges > 0, "generic ENA surface omitted its network edges");
-  assertBrowser(genericEnaAudit.codeNodes > 0, "generic ENA surface omitted its code nodes");
-  const genericEnaScreenshotPath = args.artifactDirectory + "/generic-ena-model.png";
-  await genericSurface.screenshot({ path: genericEnaScreenshotPath });
+  assertBrowser(trajectoryBoundaryAudit.workbenchCount === 1, "Model navigation unmounted the trajectory presenter");
+  assertBrowser(trajectoryBoundaryAudit.genericSurfaceCount === 0, "Model navigation exposed the generic ENA surface");
+  assertBrowser(trajectoryBoundaryAudit.ordinaryPresenterCount === 0, "Model navigation exposed an ordinary Comparison, Primary, or Secondary ENA presenter");
+  const trajectoryPresenterScreenshotPath = args.artifactDirectory + "/trajectory-presenter-after-model-navigation.png";
+  await workbench.screenshot({ path: trajectoryPresenterScreenshotPath });
   const plotTools = rail.getByRole("button", { name: "Plot Tools", exact: true });
   await plotTools.click();
   await workbench.waitFor({ timeout: 30_000 });
@@ -663,7 +668,7 @@ async function authenticateAndRunTrajectory(page, args) {
   ));
   assertBrowser(networkOverlayTaskCount === 0, "trajectory scientific request still contains networkOverlayTask");
   plotAudit.networkOverlayTaskCount = networkOverlayTaskCount;
-  plotAudit.genericEnaAudit = { ...genericEnaAudit, genericEnaScreenshotPath };
+  plotAudit.trajectoryBoundaryAudit = { ...trajectoryBoundaryAudit, trajectoryPresenterScreenshotPath };
   return plotAudit;
 }
 
@@ -1340,14 +1345,14 @@ try {
   assert.doesNotMatch(serverLog, /open_ena_longitudinal_smoke_session_secret/u);
 
   const {
-    genericEnaScreenshotPath,
-    ...genericEnaAudit
-  } = plotAudit.genericEnaAudit;
+    trajectoryPresenterScreenshotPath,
+    ...trajectoryBoundaryAudit
+  } = plotAudit.trajectoryBoundaryAudit;
   const portablePlotAudit = {
     ...plotAudit,
-    genericEnaAudit: {
-      ...genericEnaAudit,
-      genericEnaScreenshot: artifactEvidence(genericEnaScreenshotPath),
+    trajectoryBoundaryAudit: {
+      ...trajectoryBoundaryAudit,
+      trajectoryPresenterScreenshot: artifactEvidence(trajectoryPresenterScreenshotPath),
     },
   };
   const portableViewports = Object.fromEntries(

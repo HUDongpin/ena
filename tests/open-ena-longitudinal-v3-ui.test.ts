@@ -72,6 +72,17 @@ test("successful trajectory results use the V3 workbench instead of the legacy r
   );
 });
 
+test("successful trajectory results keep the trajectory presenter mounted across rail modes", () => {
+  const trajectoryRoute = workspace.match(/const longitudinalV3Context =[\s\S]*?: null;/)?.[0] ?? "";
+
+  assert.match(trajectoryRoute, /result\.set\.modelType !== "EndPoint"/);
+  assert.doesNotMatch(
+    trajectoryRoute,
+    /mode === "plot"/,
+    "Model, Data, Stats, and AI rail modes must not route a trajectory result back to generic ENA plots",
+  );
+});
+
 test("official Primary, Comparison, and Secondary presenters expose ENA marks only", () => {
   assert.doesNotMatch(groupContrast2d, /trajectory|showTrajectories/i);
   assert.match(groupContrast3d, /showTrajectories:\s*false/);

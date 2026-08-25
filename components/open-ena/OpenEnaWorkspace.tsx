@@ -3682,8 +3682,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       disabled={!result || loading}
     />
   );
-  const longitudinalV3Context = mode === "plot"
-    && completedResultKind === "ena"
+  const longitudinalV3Context = completedResultKind === "ena"
     && result
     && resultConfig
     && dataset

@@ -24,7 +24,7 @@ test("the version-controlled longitudinal V3 smoke owns its server and covers th
   assert.match(source, /worktreeCleanAfter/u);
   assert.match(source, /smokeSourceSha256/u);
   assert.match(source, /cameraScreenshots/u);
-  assert.match(source, /genericEnaScreenshotPath/u);
+  assert.match(source, /trajectoryPresenterScreenshotPath/u);
   assert.match(source, /open-ena-longitudinal-v3-workbench/u);
   assert.match(source, /\["isometric",\s*"xy",\s*"xz",\s*"yz",\s*"yx",\s*"zx",\s*"zy"\]/u);
   assert.match(source, /\["xy",\s*"xz",\s*"yz",\s*"yx",\s*"zx",\s*"zy"\]/u);
@@ -62,6 +62,16 @@ test("the version-controlled longitudinal V3 smoke owns its server and covers th
   assert.match(source, /\["run",\s*"start",\s*"--",\s*"--hostname"/u);
   assert.doesNotMatch(source, /\["run",\s*"dev"/u);
   assert.match(source, /OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS/u);
+});
+
+test("the browser smoke keeps a trajectory result in its dedicated presenter after Model navigation", () => {
+  const source = readFileSync(smokePath, "utf8");
+
+  assert.match(source, /const trajectoryBoundaryAudit =/u);
+  assert.match(source, /trajectoryBoundaryAudit\.genericSurfaceCount === 0/u);
+  assert.match(source, /trajectoryBoundaryAudit\.ordinaryPresenterCount === 0/u);
+  assert.doesNotMatch(source, /genericEnaAudit\.networkEdges > 0/u);
+  assert.doesNotMatch(source, /generic-ena-model\.png/u);
 });
 
 test("GitHub CI runs the complete longitudinal application smoke in bundled Chromium and retains its evidence", () => {
@@ -153,7 +163,7 @@ test("the summary converts every screenshot path into a portable integrity recei
   assert.match(source, /file:\s*portableFile/u);
   assert.match(source, /bytes:\s*statSync\(absolutePath\)\.size/u);
   assert.match(source, /sha256:\s*sha256\(readFileSync\(absolutePath\)\)/u);
-  assert.match(source, /genericEnaScreenshot:\s*artifactEvidence\(genericEnaScreenshotPath\)/u);
+  assert.match(source, /trajectoryPresenterScreenshot:\s*artifactEvidence\(trajectoryPresenterScreenshotPath\)/u);
   assert.match(source, /cameraScreenshots:\s*Object\.fromEntries/u);
   assert.match(source, /\[preset, artifactEvidence\(path\)\]/u);
   assert.match(source, /pageScreenshot:\s*artifactEvidence\(pagePath\)/u);
