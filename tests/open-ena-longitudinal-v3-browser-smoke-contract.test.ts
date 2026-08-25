@@ -257,6 +257,93 @@ test("the Chromium Plotly Canvas2D advisory remains a strict auditable platform 
   assert.doesNotMatch(source, /warning(?:Text)?\.includes\("Canvas2D/u);
 });
 
+test("only the exact Chromium ANGLE ReadPixels driver diagnostic is classified", () => {
+  const source = readFileSync(smokePath, "utf8");
+  const classifierSource = source.match(
+    /function classifyChromiumAngleReadPixelsDiagnostic\(input\) \{[\s\S]*?\n\}/u,
+  )?.[0] ?? "";
+  assert.notEqual(
+    classifierSource,
+    "",
+    "the smoke needs one executable, self-contained classifier for the observed ANGLE driver diagnostic",
+  );
+  const classify = new Function(
+    `${classifierSource}; return classifyChromiumAngleReadPixelsDiagnostic;`,
+  )() as (input: {
+    browser: string;
+    currentHref: string;
+    currentOrigin: string;
+    warning: unknown;
+  }) => unknown;
+  const currentOrigin = "http://127.0.0.1:43623";
+  const currentHref = `${currentOrigin}/en/open-ena`;
+  const text = "[.WebGL-0x2a6400182a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels";
+  const warning = {
+    text,
+    location: { url: currentHref, lineNumber: 0, columnNumber: 0 },
+  };
+  const normalizedPattern = "[.WebGL-0x<hex>]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels{optional-repeat-suppression}";
+
+  assert.deepEqual(classify({ browser: "chromium", currentHref, currentOrigin, warning }), {
+    normalizedPattern,
+    repeatSuppression: false,
+    sourcePath: "/en/open-ena",
+    reportedLineNumber: 0,
+    reportedColumnNumber: 0,
+  });
+  assert.deepEqual(classify({
+    browser: "chromium",
+    currentHref,
+    currentOrigin,
+    warning: {
+      ...warning,
+      text: `${text} (this message will no longer repeat)`,
+    },
+  }), {
+    normalizedPattern,
+    repeatSuppression: true,
+    sourcePath: "/en/open-ena",
+    reportedLineNumber: 0,
+    reportedColumnNumber: 0,
+  });
+
+  const rejected = [
+    { browser: "firefox", currentHref, currentOrigin, warning },
+    { browser: "chromium", currentHref, currentOrigin, warning: text },
+    { browser: "chromium", currentHref, currentOrigin, warning: { ...warning, text: text.replace("High", "Medium") } },
+    { browser: "chromium", currentHref, currentOrigin, warning: { ...warning, text: `${text} unexpected suffix` } },
+    { browser: "chromium", currentHref, currentOrigin, warning: { ...warning, text: text.replace("0x2a", "0xZA") } },
+    { browser: "chromium", currentHref, currentOrigin, warning: { ...warning, location: { ...warning.location, url: `${currentOrigin}/other` } } },
+    { browser: "chromium", currentHref, currentOrigin, warning: { ...warning, location: { ...warning.location, lineNumber: 1 } } },
+    { browser: "chromium", currentHref, currentOrigin, warning: { ...warning, location: { ...warning.location, columnNumber: 1 } } },
+  ];
+  for (const input of rejected) assert.equal(classify(input), null);
+
+  assert.match(source, /chromiumAngleReadPixelsDiagnostics/u);
+  assert.match(source, /repeatSuppressionCount/u);
+  assert.match(source, /normalizedPattern/u);
+  assert.match(source, /classifyChromiumAngleReadPixelsDiagnostic/u);
+  assert.match(source, /helpers\.map\(\(helper\) => helper\.toString\(\)\)/u);
+  assert.match(
+    source,
+    /readBrowserErrors,[\s\S]*?\[classifyChromiumAngleReadPixelsDiagnostic\]/u,
+    "the exact tested classifier must be injected into the serialized browser audit",
+  );
+  assert.match(
+    source,
+    /canvas2dReadbackDiagnostics\.length\s*\+\s*browserErrors\.platformDiagnostics\.chromiumAngleReadPixelsDiagnostics\.count/u,
+    "the CLI warning total must account for every structured Chromium platform diagnostic",
+  );
+  assert.match(
+    source,
+    /chromiumAngleReadPixelsDiagnostics\.count <= 4/u,
+    "an exact platform warning must still fail closed when it floods the console",
+  );
+  assert.match(source, /chromiumAngleReadPixelsDiagnostics\.repeatSuppressionCount <= 1/u);
+  assert.match(source, /chromiumAngleReadPixelsDiagnostics\.sourcePaths\.length <= 1/u);
+  assert.doesNotMatch(source, /warningText\.includes\("GL Driver Message/u);
+});
+
 test("the Next config permits a smoke-owned build directory so concurrent local servers do not share a lock", () => {
   const source = readFileSync(join(process.cwd(), "next.config.ts"), "utf8");
   assert.match(source, /process\.env\.NEXT_DIST_DIR/u);

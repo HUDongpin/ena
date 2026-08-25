@@ -161,15 +161,37 @@ function runCli(args, label, timeout = 120_000) {
   }
 }
 
-function browserSource(task, args) {
-  return "async (page) => { const task = " + task.toString()
+function classifyChromiumAngleReadPixelsDiagnostic(input) {
+  if (!input || typeof input !== "object") return null;
+  const { browser, currentHref, currentOrigin, warning } = input;
+  if (!["chromium", "chrome", "msedge"].includes(browser)) return null;
+  if (!warning || typeof warning !== "object" || typeof warning.text !== "string") return null;
+  if (typeof currentOrigin !== "string" || typeof currentHref !== "string") return null;
+  if (!currentHref.startsWith(currentOrigin + "/")) return null;
+  const match = warning.text.match(/^\[\.WebGL-0x[0-9a-f]+\]GL Driver Message \(OpenGL, Performance, GL_CLOSE_PATH_NV, High\): GPU stall due to ReadPixels( \(this message will no longer repeat\))?$/u);
+  if (!match) return null;
+  const sourceUrl = typeof warning.location?.url === "string" ? warning.location.url : "";
+  if (sourceUrl !== currentHref) return null;
+  if (warning.location?.lineNumber !== 0 || warning.location?.columnNumber !== 0) return null;
+  return {
+    normalizedPattern: "[.WebGL-0x<hex>]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels{optional-repeat-suppression}",
+    repeatSuppression: Boolean(match[1]),
+    sourcePath: sourceUrl.slice(currentOrigin.length),
+    reportedLineNumber: warning.location.lineNumber,
+    reportedColumnNumber: warning.location.columnNumber,
+  };
+}
+
+function browserSource(task, args, helpers = []) {
+  const helperDeclarations = helpers.map((helper) => helper.toString()).join("\n");
+  return "async (page) => { " + helperDeclarations + "; const task = " + task.toString()
     + "; return await task(page, " + JSON.stringify(args) + "); }";
 }
 
-function runBrowserPhase(label, task, args = {}, timeout = 180_000) {
+function runBrowserPhase(label, task, args = {}, timeout = 180_000, helpers = []) {
   process.stdout.write("[longitudinal V3 smoke] " + label + " ... ");
   const output = runCli(
-    ["--raw", "run-code", browserSource(task, args)],
+    ["--raw", "run-code", browserSource(task, args, helpers)],
     label,
     timeout,
   ).trim();
@@ -1191,6 +1213,7 @@ async function readBrowserErrors(page, args) {
   const nextFontPreloadDiagnosticUrls = [];
   const canvas2dReadbackDiagnostics = [];
   const canvas2dReadbackCandidates = [];
+  const chromiumAngleReadPixelsDiagnostics = [];
   let webglDiagnosticCount = 0;
   for (const warning of allWarnings) {
     const warningText = typeof warning === "string" ? warning : warning.text;
@@ -1204,10 +1227,18 @@ async function readBrowserErrors(page, args) {
     const canvasReadbackDiagnostic = typeof warning === "object" && warning !== null
       ? classifyChromiumCanvasReadbackDiagnostic(warning)
       : null;
+    const angleReadPixelsDiagnostic = classifyChromiumAngleReadPixelsDiagnostic({
+      browser: args.browser,
+      currentHref,
+      currentOrigin,
+      warning,
+    });
     if (isFirefoxWebglDiagnostic) webglDiagnosticCount += 1;
     else if (nextFontUrl) nextFontPreloadDiagnosticUrls.push(nextFontUrl);
     else if (canvasReadbackDiagnostic) {
       canvas2dReadbackCandidates.push({ candidate: canvasReadbackDiagnostic, warning });
+    } else if (angleReadPixelsDiagnostic) {
+      chromiumAngleReadPixelsDiagnostics.push(angleReadPixelsDiagnostic);
     } else consoleWarnings.push(normalizeWarning(warning));
   }
   for (const { candidate, warning } of canvas2dReadbackCandidates) {
@@ -1222,6 +1253,14 @@ async function readBrowserErrors(page, args) {
       nextFontPreloadDiagnosticUrls: [...new Set(nextFontPreloadDiagnosticUrls)].sort(),
       webglDiagnosticCount,
       canvas2dReadbackDiagnostics,
+      chromiumAngleReadPixelsDiagnostics: {
+        count: chromiumAngleReadPixelsDiagnostics.length,
+        normalizedPattern: chromiumAngleReadPixelsDiagnostics[0]?.normalizedPattern ?? null,
+        repeatSuppressionCount: chromiumAngleReadPixelsDiagnostics
+          .filter((diagnostic) => diagnostic.repeatSuppression).length,
+        sourcePaths: [...new Set(chromiumAngleReadPixelsDiagnostics
+          .map((diagnostic) => diagnostic.sourcePath))].sort(),
+      },
     },
     pageErrors: [...(page.__openEnaLongitudinalPageErrors || [])],
   };
@@ -1365,6 +1404,8 @@ try {
     "collect console and page errors",
     readBrowserErrors,
     { browser: smokeBrowser },
+    180_000,
+    [classifyChromiumAngleReadPixelsDiagnostic],
   );
   assert.deepEqual(browserErrors.consoleErrors, [], "browser console contains errors");
   assert.deepEqual(browserErrors.consoleWarnings, [], "browser console contains warnings");
@@ -1373,15 +1414,32 @@ try {
     browserErrors.platformDiagnostics.canvas2dReadbackDiagnostics.length <= 1,
     "Chromium emitted repeated Plotly Canvas2D readback diagnostics",
   );
+  const chromiumAngleReadPixelsDiagnostics =
+    browserErrors.platformDiagnostics.chromiumAngleReadPixelsDiagnostics;
+  assert.ok(
+    chromiumAngleReadPixelsDiagnostics.count <= 4,
+    "Chromium emitted more ANGLE ReadPixels driver diagnostics than the audited platform pattern allows",
+  );
+  assert.ok(
+    chromiumAngleReadPixelsDiagnostics.repeatSuppressionCount <= 1,
+    "Chromium emitted repeated ANGLE terminal suppression diagnostics",
+  );
+  assert.ok(
+    chromiumAngleReadPixelsDiagnostics.sourcePaths.length <= 1,
+    "Chromium emitted ANGLE ReadPixels diagnostics from multiple source paths",
+  );
   const cliConsole = runCli(["console", "error"], "read Playwright console summary");
   assert.match(cliConsole, /Errors:\s*0/u);
   const cliWarningMatch = cliConsole.match(/Warnings:\s*(\d+)/u);
   assert.ok(cliWarningMatch, "Playwright console summary omitted its warning count");
   const cliWarningCount = Number(cliWarningMatch[1]);
   if (["chromium", "chrome", "msedge"].includes(smokeBrowser)) {
+    const classifiedChromiumWarningCount =
+      browserErrors.platformDiagnostics.canvas2dReadbackDiagnostics.length
+      + browserErrors.platformDiagnostics.chromiumAngleReadPixelsDiagnostics.count;
     assert.equal(
       cliWarningCount,
-      browserErrors.platformDiagnostics.canvas2dReadbackDiagnostics.length,
+      classifiedChromiumWarningCount,
       "Chromium emitted an unclassified console warning",
     );
   } else if (smokeBrowser !== "firefox") {
