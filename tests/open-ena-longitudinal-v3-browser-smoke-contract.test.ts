@@ -91,6 +91,21 @@ test("the browser smoke proves every non-Plot rail panel is visible inside one i
   assert.match(source, /taskRequestCount === args\.expectedTaskRequestCount/u);
 });
 
+test("the browser smoke locates the AI rail control by its full accessible name", () => {
+  const source = readFileSync(smokePath, "utf8");
+
+  assert.match(
+    source,
+    /railLabel: "AI", accessibleName: "AI-assisted interpretation", mode: "ai"/u,
+    "AI is the visible rail label, while the button's explicit aria-label is AI-assisted interpretation",
+  );
+  assert.match(
+    source,
+    /getByRole\("button", \{ name: expectation\.accessibleName, exact: true \}\)/u,
+    "the smoke must use the product's actual accessible name instead of its shorter visible text",
+  );
+});
+
 test("GitHub CI runs the complete longitudinal application smoke in bundled Chromium and retains its evidence", () => {
   const workflow = readFileSync(
     join(process.cwd(), ".github", "workflows", "open-ena-ci.yml"),

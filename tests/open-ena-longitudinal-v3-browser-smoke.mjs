@@ -659,15 +659,15 @@ async function exerciseNonPlotRailPanels(page, args) {
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
   const workbench = page.getByTestId("open-ena-longitudinal-v3-workbench");
   const nonPlotPanelExpectations = [
-    { railLabel: "Data", mode: "data", heading: "Start with coded data" },
-    { railLabel: "Model", mode: "model", heading: "Define the ENA model" },
-    { railLabel: "Stats & Export", mode: "stats", heading: "Evidence and reproducibility" },
-    { railLabel: "AI", mode: "ai", heading: "AI-assisted interpretation" },
+    { railLabel: "Data", accessibleName: "Data", mode: "data", heading: "Start with coded data" },
+    { railLabel: "Model", accessibleName: "Model", mode: "model", heading: "Define the ENA model" },
+    { railLabel: "Stats & Export", accessibleName: "Stats & Export", mode: "stats", heading: "Evidence and reproducibility" },
+    { railLabel: "AI", accessibleName: "AI-assisted interpretation", mode: "ai", heading: "AI-assisted interpretation" },
   ];
   const panelAudits = {};
   let trajectoryPresenterScreenshotPath = null;
   for (const expectation of nonPlotPanelExpectations) {
-    await rail.getByRole("button", { name: expectation.railLabel, exact: true }).click();
+    await rail.getByRole("button", { name: expectation.accessibleName, exact: true }).click();
     const slot = page.getByTestId("open-ena-longitudinal-v3-analysis-controls");
     await slot.waitFor({ state: "visible", timeout: 15_000 });
     const audit = await page.evaluate((expected) => {
