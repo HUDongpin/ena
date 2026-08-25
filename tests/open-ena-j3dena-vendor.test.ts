@@ -495,7 +495,7 @@ function rewriteReceipt(fixture: Fixture, mutate: (value: Record<string, any>) =
   });
 }
 
-test("the verifier pins the CI-custodied j-3dENA .7 artifact", () => {
+test("the verifier pins the CI-custodied j-3dENA .8 artifact", () => {
   assert.deepEqual(
     {
       version: J3DENA_VENDOR_CONTRACT.version,
@@ -507,9 +507,9 @@ test("the verifier pins the CI-custodied j-3dENA .7 artifact", () => {
       jenaSourceTreeByteLength: J3DENA_VENDOR_CONTRACT.jenaSourceTreeByteLength,
     },
     {
-      version: "0.2.0-implemented-unverified.7",
-      sourceHead: "87b0e953129e1bacf00172c4abb6b31a5f8bb888",
-      tarballSha256: "a29c772095dd33f092fad96a422e7f0033db1b9d7c68d2ce8144da86261e7033",
+      version: "0.2.0-implemented-unverified.8",
+      sourceHead: "6127638095dce3e3791a3ea18e90bb800c9f353b",
+      tarballSha256: "03d646260f1f8ea7eff91da6cba429ac5590b26f7ee84430b83c8494f7e37d90",
       jenaSourceTreeSha256: "b325c61e549392f7f80a504ba235b62d2fd74e9038f48ce768c483caf06bd671",
       jenaSourceTreeSerialization: TREE_SERIALIZATION,
       jenaSourceTreeFileCount: 35,
@@ -1065,7 +1065,7 @@ test("the tar parser rejects noncanonical numeric fields, ustar drift, body padd
   }
 });
 
-test("package-lock identity must stay on the exact local .7 tarball", async (context) => {
+test("package-lock identity must stay on the exact local .8 tarball", async (context) => {
   const fixture = createFixture(context);
   const lockPath = join(fixture.root, "package-lock.json");
   const lock = JSON.parse(readFileSync(lockPath, "utf8"));

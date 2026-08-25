@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",
-    "j-3dena": "file:vendor/j-3dena/j-3dena-0.2.0-implemented-unverified.7.tgz",
+    "j-3dena": "file:vendor/j-3dena/j-3dena-0.2.0-implemented-unverified.8.tgz",
     "jena-js": "0.7.0-ona.0",
     "next": "16.3.0",
     "plotly.js-dist-min": "3.7.0",
