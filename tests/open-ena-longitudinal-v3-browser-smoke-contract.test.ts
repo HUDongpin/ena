@@ -96,6 +96,19 @@ test("GitHub CI excludes hidden Playwright CLI session state from uploaded evide
   assert.doesNotMatch(workflow, /include-hidden-files\s*:/u);
 });
 
+test("failure screenshots use an explicit non-hidden path inside the uploaded artifact directory", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(
+    source,
+    /const failureScreenshotPath = join\(artifactDirectory, "failure\.png"\)/u,
+  );
+  assert.match(
+    source,
+    /runCli\(\s*\["screenshot",\s*"--filename",\s*failureScreenshotPath\],\s*"capture failure screenshot"/u,
+  );
+  assert.doesNotMatch(source, /runCli\(\["screenshot"\],\s*"capture failure screenshot"/u);
+});
+
 test("the seven camera checks assert their visible selected labels and retain those labels", () => {
   const source = readFileSync(smokePath, "utf8");
   assert.match(

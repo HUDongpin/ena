@@ -29,6 +29,7 @@ const artifactDirectory = resolve(
 );
 const downloadDirectory = join(artifactDirectory, "downloads");
 const serverLogPath = join(artifactDirectory, "next-server.log");
+const failureScreenshotPath = join(artifactDirectory, "failure.png");
 const username = process.env.OPEN_ENA_LONGITUDINAL_SMOKE_USERNAME
   || "open_ena_longitudinal_smoke_researcher";
 const password = process.env.OPEN_ENA_LONGITUDINAL_SMOKE_PASSWORD
@@ -1415,7 +1416,11 @@ try {
   primaryFailure = caught;
   if (browserOpened) {
     try {
-      runCli(["screenshot"], "capture failure screenshot", 30_000);
+      runCli(
+        ["screenshot", "--filename", failureScreenshotPath],
+        "capture failure screenshot",
+        30_000,
+      );
     } catch {
       // Preserve the primary failure.
     }
