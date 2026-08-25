@@ -25,7 +25,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Verify vendored j-3dENA custody before dependency installation
+        run: node scripts/verify-j3dena-vendor.mjs
       - run: npm ci
+      - name: Verify complete installed j-3dENA tree and jENA workspace peer
+        run: node scripts/verify-j3dena-vendor.mjs --require-installed
       - name: Audit the production dependency graph
         run: npm audit --omit=dev
       - name: Reject high or critical development-tool advisories
@@ -42,7 +46,15 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Verify vendored j-3dENA custody before dependency installation
+        run: node scripts/verify-j3dena-vendor.mjs
       - run: npm ci
+      - name: Verify complete installed j-3dENA tree and jENA workspace peer
+        run: node scripts/verify-j3dena-vendor.mjs --require-installed
+      - name: Build the pinned jENA workspace
+        run: npm run jena:build
+      - name: Verify j-3dENA through package-name runtime resolution
+        run: node scripts/verify-j3dena-vendor.mjs --require-runtime
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser --workspace=jena-js
       - name: Install Chromium for the pinned Playwright CLI

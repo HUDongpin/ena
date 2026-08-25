@@ -558,28 +558,9 @@ async function authenticateAndRunTrajectory(page, args) {
     "the first post-fit screen fell through to the generic ENA presenter",
   );
 
-  const modelMode = rail.getByRole("button", { name: "Model", exact: true });
-  await modelMode.click();
-  await workbench.waitFor({ timeout: 15_000 });
-  const trajectoryBoundaryAudit = await page.evaluate(() => ({
-    workbenchCount: document.querySelectorAll('[data-testid="open-ena-longitudinal-v3-workbench"]').length,
-    genericSurfaceCount: document.querySelectorAll('[data-testid="open-ena-center-surface"]').length,
-    ordinaryPresenterCount: document.querySelectorAll([
-      '[data-testid="open-ena-center-surface"]',
-      '[data-testid="open-ena-group-center-surface"]',
-      '[data-testid="open-ena-3d-comparison-plot"]',
-      '[data-testid="open-ena-3d-primary-plot"]',
-      '[data-testid="open-ena-3d-secondary-plot"]',
-    ].join(",")).length,
-  }));
-  assertBrowser(trajectoryBoundaryAudit.workbenchCount === 1, "Model navigation unmounted the trajectory presenter");
-  assertBrowser(trajectoryBoundaryAudit.genericSurfaceCount === 0, "Model navigation exposed the generic ENA surface");
-  assertBrowser(trajectoryBoundaryAudit.ordinaryPresenterCount === 0, "Model navigation exposed an ordinary Comparison, Primary, or Secondary ENA presenter");
-  const trajectoryPresenterScreenshotPath = args.artifactDirectory + "/trajectory-presenter-after-model-navigation.png";
-  await workbench.screenshot({ path: trajectoryPresenterScreenshotPath });
   const plotTools = rail.getByRole("button", { name: "Plot Tools", exact: true });
   await plotTools.click();
-  await workbench.waitFor({ timeout: 30_000 });
+  await workbench.locator('[data-trajectory-step="1"]').waitFor({ timeout: 30_000 });
   const identity = workbench.getByRole("checkbox", {
     name: /same raw ID represents the same physical entity/u,
   });
@@ -668,8 +649,94 @@ async function authenticateAndRunTrajectory(page, args) {
   ));
   assertBrowser(networkOverlayTaskCount === 0, "trajectory scientific request still contains networkOverlayTask");
   plotAudit.networkOverlayTaskCount = networkOverlayTaskCount;
-  plotAudit.trajectoryBoundaryAudit = { ...trajectoryBoundaryAudit, trajectoryPresenterScreenshotPath };
   return plotAudit;
+}
+
+async function exerciseNonPlotRailPanels(page, args) {
+  const assertBrowser = (condition, message) => {
+    if (!condition) throw new Error(message);
+  };
+  const rail = page.getByRole("navigation", { name: "Analysis modes" });
+  const workbench = page.getByTestId("open-ena-longitudinal-v3-workbench");
+  const nonPlotPanelExpectations = [
+    { railLabel: "Data", mode: "data", heading: "Start with coded data" },
+    { railLabel: "Model", mode: "model", heading: "Define the ENA model" },
+    { railLabel: "Stats & Export", mode: "stats", heading: "Evidence and reproducibility" },
+    { railLabel: "AI", mode: "ai", heading: "AI-assisted interpretation" },
+  ];
+  const panelAudits = {};
+  let trajectoryPresenterScreenshotPath = null;
+  for (const expectation of nonPlotPanelExpectations) {
+    await rail.getByRole("button", { name: expectation.railLabel, exact: true }).click();
+    const slot = page.getByTestId("open-ena-longitudinal-v3-analysis-controls");
+    await slot.waitFor({ state: "visible", timeout: 15_000 });
+    const audit = await page.evaluate((expected) => {
+      const controls = document.querySelector('[data-testid="open-ena-longitudinal-v3-analysis-controls"]');
+      const plot = document.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]');
+      const traces = Array.isArray(plot?.data) ? plot.data : [];
+      const resultHashes = [...new Set(traces.map((trace) => trace.meta?.resultHash).filter(Boolean))];
+      return {
+        mode: expected.mode,
+        slotMode: controls?.getAttribute("data-controls-mode") ?? null,
+        panelHeading: controls?.querySelector(".ena-panel-heading h2")?.textContent?.trim() ?? "",
+        workbenchCount: document.querySelectorAll('[data-testid="open-ena-longitudinal-v3-workbench"]').length,
+        genericSurfaceCount: document.querySelectorAll('[data-testid="open-ena-center-surface"]').length,
+        ordinaryPresenterCount: document.querySelectorAll([
+          '[data-testid="open-ena-center-surface"]',
+          '[data-testid="open-ena-group-center-surface"]',
+          '[data-testid="open-ena-3d-comparison-plot"]',
+          '[data-testid="open-ena-3d-primary-plot"]',
+          '[data-testid="open-ena-3d-secondary-plot"]',
+        ].join(",")).length,
+        bundleResultHash: resultHashes.length === 1 ? resultHashes[0] : null,
+        taskRequestCount: window.__openEnaLongitudinalSmokeTaskAudit?.taskRequestCount ?? -1,
+      };
+    }, expectation);
+    assertBrowser(audit.slotMode === expectation.mode, expectation.railLabel + " did not occupy its controls slot");
+    assertBrowser(audit.panelHeading.includes(expectation.heading), expectation.railLabel + " target panel is not visible");
+    assertBrowser(audit.workbenchCount === 1, expectation.railLabel + " navigation unmounted the trajectory presenter");
+    assertBrowser(audit.genericSurfaceCount === 0, expectation.railLabel + " navigation exposed the generic ENA surface");
+    assertBrowser(audit.ordinaryPresenterCount === 0, expectation.railLabel + " navigation exposed an ordinary ENA presenter");
+    assertBrowser(audit.bundleResultHash === args.expectedResultHash, expectation.railLabel + " navigation changed the trajectory result hash");
+    assertBrowser(audit.taskRequestCount === args.expectedTaskRequestCount, expectation.railLabel + " navigation submitted a scientific task");
+    panelAudits[expectation.mode] = audit;
+    if (expectation.mode === "model") {
+      trajectoryPresenterScreenshotPath = args.artifactDirectory + "/trajectory-presenter-after-model-navigation.png";
+      await workbench.screenshot({ path: trajectoryPresenterScreenshotPath });
+    }
+  }
+
+  await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
+  await workbench.locator('[data-trajectory-step="1"]').waitFor({ state: "visible", timeout: 15_000 });
+  assertBrowser(
+    await page.getByTestId("open-ena-longitudinal-v3-analysis-controls").count() === 0,
+    "Plot Tools did not restore trajectory controls",
+  );
+  const trajectoryBoundaryAudit = await page.evaluate(() => {
+    const plot = document.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]');
+    const traces = Array.isArray(plot?.data) ? plot.data : [];
+    const resultHashes = [...new Set(traces.map((trace) => trace.meta?.resultHash).filter(Boolean))];
+    return {
+      workbenchCount: document.querySelectorAll('[data-testid="open-ena-longitudinal-v3-workbench"]').length,
+      genericSurfaceCount: document.querySelectorAll('[data-testid="open-ena-center-surface"]').length,
+      ordinaryPresenterCount: document.querySelectorAll([
+        '[data-testid="open-ena-center-surface"]',
+        '[data-testid="open-ena-group-center-surface"]',
+        '[data-testid="open-ena-3d-comparison-plot"]',
+        '[data-testid="open-ena-3d-primary-plot"]',
+        '[data-testid="open-ena-3d-secondary-plot"]',
+      ].join(",")).length,
+      bundleResultHash: resultHashes.length === 1 ? resultHashes[0] : null,
+      taskRequestCount: window.__openEnaLongitudinalSmokeTaskAudit?.taskRequestCount ?? -1,
+    };
+  });
+  assertBrowser(trajectoryBoundaryAudit.workbenchCount === 1, "Plot Tools remounted the trajectory presenter");
+  assertBrowser(trajectoryBoundaryAudit.genericSurfaceCount === 0, "Plot Tools exposed the generic ENA surface");
+  assertBrowser(trajectoryBoundaryAudit.ordinaryPresenterCount === 0, "Plot Tools exposed an ordinary ENA presenter");
+  assertBrowser(trajectoryBoundaryAudit.bundleResultHash === args.expectedResultHash, "Plot Tools changed the trajectory result hash");
+  assertBrowser(trajectoryBoundaryAudit.taskRequestCount === args.expectedTaskRequestCount, "Plot Tools submitted a scientific task");
+  assertBrowser(Boolean(trajectoryPresenterScreenshotPath), "Model panel screenshot was not captured");
+  return { ...trajectoryBoundaryAudit, panelAudits, trajectoryPresenterScreenshotPath };
 }
 
 async function exerciseCamerasAndProjections(page, args) {
@@ -1250,6 +1317,16 @@ try {
     },
     240_000,
   );
+  const railPanelAudit = runBrowserPhase(
+    "open Data, Model, Stats, and AI inside the mounted trajectory presenter",
+    exerciseNonPlotRailPanels,
+    {
+      expectedResultHash: plotAudit.resultHashes[0],
+      expectedTaskRequestCount: plotAudit.taskRequestCount,
+      artifactDirectory,
+    },
+  );
+  plotAudit.trajectoryBoundaryAudit = railPanelAudit;
   const displayAudit = runBrowserPhase(
     "exercise seven 3D cameras and six 2D projections without rerunning",
     exerciseCamerasAndProjections,

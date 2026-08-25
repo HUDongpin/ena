@@ -212,6 +212,47 @@ test("the Open ENA adapter binds, pseudonymizes, and executes one immutable jENA
   assert.equal(bundle.execution.target, "node-service");
 });
 
+test("disable-inference recovery removes only the inference task from the failed immutable request", async () => {
+  const longitudinal = await import("../lib/open-ena/longitudinal-v3") as Record<string, unknown>;
+  assert.equal(typeof longitudinal.snapshotOpenEnaLongitudinalSettingsV3, "function");
+  assert.equal(typeof longitudinal.withoutOpenEnaLongitudinalInferencePreparedV3, "function");
+  const result = fitted();
+  const settings = await createOpenEnaLongitudinalSettingsV3({ result, config, dataset, datasetHash: HASH });
+  assert.ok(settings.inference.pathComparison);
+  settings.inference.pathComparison.seed = 991;
+  const snapshot = (
+    longitudinal.snapshotOpenEnaLongitudinalSettingsV3 as (value: typeof settings) => typeof settings
+  )(settings);
+  const prepared = await buildOpenEnaLongitudinalExecutionRequestV3({
+    result,
+    config,
+    dataset,
+    datasetHash: HASH,
+    settings: snapshot,
+    runId: "disable-inference-snapshot",
+    executionTarget: "browser-worker",
+  });
+  assert.ok(prepared.request.inferenceTask);
+  const recovered = await (
+    longitudinal.withoutOpenEnaLongitudinalInferencePreparedV3 as (
+      value: typeof prepared,
+    ) => Promise<typeof prepared>
+  )(prepared);
+  const expectedRequest = structuredClone(prepared.request);
+  delete expectedRequest.inferenceTask;
+
+  assert.deepEqual(recovered.request, expectedRequest);
+  assert.deepEqual(recovered.privacy, prepared.privacy);
+  assert.deepEqual(
+    { ...recovered.binding, requestHash: prepared.binding.requestHash },
+    prepared.binding,
+    "dataset/spec/source/run identity must remain exact",
+  );
+  assert.notEqual(recovered.binding.requestHash, prepared.binding.requestHash);
+  assert.equal(recovered.request.execution.seed, 991, "the failed request's non-inference execution fields must not be rebuilt from current settings");
+  assert.ok(prepared.request.inferenceTask, "deriving the recovery request must not mutate the failed request");
+});
+
 test("2D and 3D compile from the same bundle and never change the result hash", async () => {
   const result = fitted();
   const initial = await createOpenEnaLongitudinalSettingsV3({ result, config, dataset, datasetHash: HASH });

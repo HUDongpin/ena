@@ -101,6 +101,8 @@ export interface ExecuteOpenEnaLongitudinalPreparedOptionsV3 {
   fetchImpl?: typeof fetch;
   remotePollIntervalMilliseconds?: number;
   remoteCleanupDeadlineMilliseconds?: number;
+  /** Test seam. Production callers omit this and retain the fixed 60 second contract. */
+  remoteDeadlineMilliseconds?: number;
   nodeExecutor?: (request: LongitudinalExecutionRequestV2) => Promise<LongitudinalAnalysisBundleV2>;
   resultVerifier?: (bundle: unknown) => Promise<void>;
 }
@@ -111,14 +113,25 @@ export interface OpenEnaLongitudinalExecutionReceiptV3 {
   decision: OpenEnaLongitudinalRouteDecisionV3;
 }
 
+export type OpenEnaLongitudinalExecutionClientErrorCodeV3 =
+  | "REMOTE_CONFIRMATION_REQUIRED"
+  | "REMOTE_SERVICE_UNAVAILABLE"
+  | "REMOTE_SUBMISSION_FAILED"
+  | "REMOTE_POLL_FAILED"
+  | "REMOTE_TERMINAL_FAILED"
+  | "REMOTE_TERMINAL_EXPIRED"
+  | "REMOTE_TERMINAL_CANCELLED"
+  | "REMOTE_RESULT_FAILED"
+  | "REMOTE_DEADLINE_EXCEEDED";
+
 export class OpenEnaLongitudinalExecutionClientErrorV3 extends Error {
-  readonly code: string;
+  readonly code: OpenEnaLongitudinalExecutionClientErrorCodeV3;
   readonly decision: OpenEnaLongitudinalRouteDecisionV3;
   readonly canContinueLocally: boolean;
   readonly canDisableInference: boolean;
 
   constructor(
-    code: string,
+    code: OpenEnaLongitudinalExecutionClientErrorCodeV3,
     message: string,
     decision: OpenEnaLongitudinalRouteDecisionV3,
     options: { canContinueLocally: boolean; canDisableInference: boolean },
@@ -130,6 +143,23 @@ export class OpenEnaLongitudinalExecutionClientErrorV3 extends Error {
     this.canContinueLocally = options.canContinueLocally;
     this.canDisableInference = options.canDisableInference;
   }
+}
+
+function recoverableRemoteError(
+  code: Exclude<OpenEnaLongitudinalExecutionClientErrorCodeV3, "REMOTE_CONFIRMATION_REQUIRED">,
+  message: string,
+  decision: OpenEnaLongitudinalRouteDecisionV3,
+): OpenEnaLongitudinalExecutionClientErrorV3 {
+  return new OpenEnaLongitudinalExecutionClientErrorV3(
+    code,
+    message,
+    decision,
+    { canContinueLocally: true, canDisableInference: true },
+  );
+}
+
+function caughtMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : String(error);
 }
 
 function requestShape(request: LongitudinalExecutionRequestV2) {
@@ -578,15 +608,18 @@ async function runRemote(
   const fetchImpl = options.fetchImpl ?? fetch;
   const pollInterval = options.remotePollIntervalMilliseconds ?? REMOTE_POLL_INTERVAL_MS;
   const cleanupDeadline = options.remoteCleanupDeadlineMilliseconds ?? REMOTE_CLEANUP_DEADLINE_MS;
+  const remoteDeadline = options.remoteDeadlineMilliseconds ?? HARD_DEADLINE_MS;
   if (!Number.isSafeInteger(pollInterval) || pollInterval < 1 || pollInterval > 5_000
-    || !Number.isSafeInteger(cleanupDeadline) || cleanupDeadline < 1 || cleanupDeadline > 60_000) {
+    || !Number.isSafeInteger(cleanupDeadline) || cleanupDeadline < 1 || cleanupDeadline > 60_000
+    || !Number.isSafeInteger(remoteDeadline) || remoteDeadline < 1 || remoteDeadline > HARD_DEADLINE_MS) {
     throw new TypeError("Persistent trajectory polling configuration is invalid.");
   }
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), HARD_DEADLINE_MS);
+  const timeout = setTimeout(() => controller.abort(), remoteDeadline);
   const abortHandler = () => controller.abort();
   options.signal?.addEventListener("abort", abortHandler, { once: true });
   let capability: RemoteCapabilityV3 | null = null;
+  let phase: "submission" | "poll" | "result" = "submission";
   try {
     options.onProgress?.({ progress: 0.05, stage: "remote-submit" });
     const remoteRequest: LongitudinalExecutionRequestV2 = {
@@ -606,6 +639,7 @@ async function runRemote(
       signal: controller.signal,
     });
     capability = parseRemoteCapability(await jsonResponse(response, "Persistent trajectory submission"));
+    phase = "poll";
     options.onProgress?.({ progress: 0.1, stage: "remote-wait" });
     while (true) {
       const statusResponse = await fetchImpl(capability.urls.statusUrl, {
@@ -619,13 +653,24 @@ async function runRemote(
       );
       options.onProgress?.({ progress: progressForRemoteState(status.state), stage: "remote-wait" });
       if (status.state === "SUCCEEDED") {
+        phase = "result";
         if (!status.resultAvailable) throw new Error("Persistent trajectory succeeded without a published result.");
         const bundle = await fetchRemoteBundle(capability, remoteRequest, fetchImpl, controller.signal);
         await deleteRemoteJob(capability, fetchImpl, cleanupDeadline);
+        if (controller.signal.aborted) throw abortError("Persistent trajectory deadline reached during durable deletion.");
         return bundle;
       }
-      if (["FAILED", "CANCELLED", "EXPIRED"].includes(status.state)) {
-        throw new Error(`Persistent trajectory compute ended in ${status.state}${status.errorCode ? ` (${status.errorCode})` : ""}.`);
+      if (status.state === "FAILED" || status.state === "EXPIRED" || status.state === "CANCELLED") {
+        const terminalCode = status.state === "FAILED"
+          ? "REMOTE_TERMINAL_FAILED"
+          : status.state === "EXPIRED"
+            ? "REMOTE_TERMINAL_EXPIRED"
+            : "REMOTE_TERMINAL_CANCELLED";
+        throw recoverableRemoteError(
+          terminalCode,
+          `Persistent trajectory compute ended in ${status.state}${status.errorCode ? ` (${status.errorCode})` : ""}.`,
+          decision,
+        );
       }
       await waitRemote(pollInterval, controller.signal);
     }
@@ -640,9 +685,33 @@ async function runRemote(
     }
     if (controller.signal.aborted) {
       if (options.signal?.aborted) throw abortError("The persistent trajectory task was cancelled.");
-      throw new Error("Persistent trajectory compute reached its 60 second hard deadline.");
+      throw recoverableRemoteError(
+        "REMOTE_DEADLINE_EXCEEDED",
+        "Persistent trajectory compute reached its 60 second hard deadline.",
+        decision,
+      );
     }
-    throw error;
+    if (error instanceof OpenEnaLongitudinalExecutionClientErrorV3) throw error;
+    const detail = caughtMessage(error);
+    if (phase === "submission") {
+      throw recoverableRemoteError(
+        "REMOTE_SUBMISSION_FAILED",
+        `Persistent trajectory submission failed. ${detail}`,
+        decision,
+      );
+    }
+    if (phase === "poll") {
+      throw recoverableRemoteError(
+        "REMOTE_POLL_FAILED",
+        `Persistent trajectory status polling failed. ${detail}`,
+        decision,
+      );
+    }
+    throw recoverableRemoteError(
+      "REMOTE_RESULT_FAILED",
+      `Persistent trajectory result retrieval or verification failed. ${detail}`,
+      decision,
+    );
   } finally {
     clearTimeout(timeout);
     options.signal?.removeEventListener("abort", abortHandler);
@@ -685,8 +754,19 @@ export async function executeOpenEnaLongitudinalPreparedV3(
       execution: { ...request.execution, target: "node-service" },
     });
   }
-  await (options.resultVerifier ?? verifyLongitudinalAnalysisBundleV2)(bundle);
-  await assertResultBinding(bundle, request);
+  try {
+    await (options.resultVerifier ?? verifyLongitudinalAnalysisBundleV2)(bundle);
+    await assertResultBinding(bundle, request);
+  } catch (error) {
+    if (decision.target === "persistent-compute-service" && !options.forceLocal) {
+      throw recoverableRemoteError(
+        "REMOTE_RESULT_FAILED",
+        `Persistent trajectory result verification failed. ${caughtMessage(error)}`,
+        decision,
+      );
+    }
+    throw error;
+  }
   options.onProgress?.({ progress: 1, stage: "complete" });
   completedCache.set(key, bundle);
   return { bundle, cacheHit: false, decision };

@@ -8,10 +8,10 @@
   "type": "module",
   "description": "ENA Hong Kong public knowledge site for Epistemic Network Analysis",
   "scripts": {
-    "jena:build": "npm run build --workspace=jena-js",
-    "jena:verify": "npm run lint --workspace=jena-js && npm run typecheck --workspace=jena-js && npm test --workspace=jena-js && npm run test:pack-contract --workspace=jena-js && npm run build --workspace=jena-js && npm run pack:check --workspace=jena-js",
+    "jena:build": "npm run build --workspace=jena-js -- --no-config",
+    "jena:verify": "npm run lint --workspace=jena-js && npm run typecheck --workspace=jena-js && npm test --workspace=jena-js && npm run test:pack-contract --workspace=jena-js && npm run jena:build && npm run pack:check --workspace=jena-js",
     "dev": "npm run jena:build && next dev",
-    "build": "npm run jena:build && npm run build:app",
+    "build": "npm run jena:build && node scripts/verify-j3dena-vendor.mjs --require-runtime && npm run build:app",
     "build:app": "next build",
     "start": "next start",
     "typecheck": "npm run jena:build && npm run typecheck:app",
@@ -19,11 +19,12 @@
     "test": "npm run jena:build && npm run test:app",
     "test:app": "node --import tsx --test tests/*.test.ts",
     "test:browser:longitudinal-v3": "node tests/open-ena-longitudinal-v3-browser-smoke.mjs",
-    "verify": "npm run jena:verify && npm run test:app && npm run typecheck:app && npm run build:app"
+    "verify:j3dena-vendor": "node scripts/verify-j3dena-vendor.mjs",
+    "verify": "npm run verify:j3dena-vendor -- --require-installed && npm run jena:verify && node scripts/verify-j3dena-vendor.mjs --require-runtime && npm run test:app && npm run typecheck:app && npm run build:app"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",
-    "j-3dena": "file:vendor/j-3dena/j-3dena-0.2.0-implemented-unverified.6.tgz",
+    "j-3dena": "file:vendor/j-3dena/j-3dena-0.2.0-implemented-unverified.7.tgz",
     "jena-js": "0.7.0-ona.0",
     "next": "16.3.0",
     "plotly.js-dist-min": "3.7.0",

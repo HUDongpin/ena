@@ -156,6 +156,10 @@ export interface OpenEnaLongitudinalBindingV3 {
   runId: string;
 }
 
+export interface OpenEnaLongitudinalScientificRunIdentityV3 extends OpenEnaLongitudinalBindingV3 {
+  scientificRevision: number;
+}
+
 export interface OpenEnaPreparedLongitudinalExecutionV3 {
   request: LongitudinalExecutionRequestV2;
   binding: OpenEnaLongitudinalBindingV3;
@@ -192,6 +196,90 @@ export class OpenEnaLongitudinalV3Error extends Error {
 
 function reject(code: string, path: string, message: string): never {
   throw new OpenEnaLongitudinalV3Error(code, path, message);
+}
+
+export function advanceOpenEnaLongitudinalScientificRevisionV3(current: number): number {
+  if (!Number.isSafeInteger(current) || current < 0) {
+    throw new TypeError("The longitudinal scientific revision must be a non-negative safe integer.");
+  }
+  if (current === Number.MAX_SAFE_INTEGER) {
+    throw new RangeError("The longitudinal scientific revision capacity has been exhausted.");
+  }
+  return current + 1;
+}
+
+export function bindOpenEnaLongitudinalScientificRunV3(
+  scientificRevision: number,
+  binding: OpenEnaLongitudinalBindingV3,
+): Readonly<OpenEnaLongitudinalScientificRunIdentityV3> {
+  if (!Number.isSafeInteger(scientificRevision) || scientificRevision < 0) {
+    throw new TypeError("The longitudinal scientific revision must be a non-negative safe integer.");
+  }
+  return Object.freeze({ scientificRevision, ...binding });
+}
+
+export function isOpenEnaLongitudinalScientificRunCurrentV3(
+  identity: OpenEnaLongitudinalScientificRunIdentityV3,
+  scientificRevision: number,
+  binding: OpenEnaLongitudinalBindingV3,
+): boolean {
+  return identity.scientificRevision === scientificRevision
+    && identity.datasetHash === binding.datasetHash
+    && identity.specHash === binding.specHash
+    && identity.sourceResultHash === binding.sourceResultHash
+    && identity.requestHash === binding.requestHash
+    && identity.runId === binding.runId;
+}
+
+function deepFreezeLongitudinalSnapshot<T>(value: T): T {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) deepFreezeLongitudinalSnapshot(child);
+  return Object.freeze(value);
+}
+
+export function snapshotOpenEnaLongitudinalSettingsV3(
+  settings: OpenEnaLongitudinalSettingsV3,
+): OpenEnaLongitudinalSettingsV3 {
+  return deepFreezeLongitudinalSnapshot(structuredClone(settings));
+}
+
+export function withoutOpenEnaLongitudinalInferenceSettingsV3(
+  settingsSnapshot: OpenEnaLongitudinalSettingsV3,
+): OpenEnaLongitudinalSettingsV3 {
+  const next = structuredClone(settingsSnapshot);
+  next.inference = {
+    independentPeriod: null,
+    pairedPeriods: null,
+    repeatedPeriods: null,
+    pathComparison: null,
+  };
+  return next;
+}
+
+export function snapshotOpenEnaPreparedLongitudinalExecutionV3(
+  prepared: OpenEnaPreparedLongitudinalExecutionV3,
+): OpenEnaPreparedLongitudinalExecutionV3 {
+  return deepFreezeLongitudinalSnapshot(structuredClone(prepared));
+}
+
+export async function withoutOpenEnaLongitudinalInferencePreparedV3(
+  preparedSnapshot: OpenEnaPreparedLongitudinalExecutionV3,
+): Promise<OpenEnaPreparedLongitudinalExecutionV3> {
+  const request = structuredClone(preparedSnapshot.request);
+  delete request.inferenceTask;
+  const requestHash = await hashLongitudinalExecutionRequestV2(request);
+  return snapshotOpenEnaPreparedLongitudinalExecutionV3({
+    request,
+    binding: { ...preparedSnapshot.binding, requestHash },
+    privacy: structuredClone(preparedSnapshot.privacy),
+  });
+}
+
+export function openEnaLongitudinalHeaderDimensionsV3(
+  bundle: Pick<LongitudinalAnalysisBundleV2, "model"> | null,
+  settings: Pick<OpenEnaLongitudinalSettingsV3, "selectedDimensions">,
+): [string, string, string] {
+  return [...(bundle?.model.selectedDimensions ?? settings.selectedDimensions)];
 }
 
 function scalar(value: unknown, path: string): RawScalar {

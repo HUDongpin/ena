@@ -1,0 +1,10 @@
+vendor/j-3dena/*.tgz -text
+vendor/j-3dena/*.tgz.*.json -text
+packages/jena-js/src/** text eol=lf
+packages/jena-js/package.json text eol=lf
+packages/jena-js/package-lock.json text eol=lf
+packages/jena-js/tsconfig.json text eol=lf
+packages/jena-js/PROVENANCE.md text eol=lf
+packages/jena-js/NUMERICS.md text eol=lf
+packages/jena-js/LICENSE text eol=lf
+packages/jena-js/ENA-SNAPSHOT.md text eol=lf

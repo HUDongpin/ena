@@ -3783,6 +3783,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               dataset={longitudinalV3Context.dataset}
               datasetHash={longitudinalV3Context.datasetHash}
               modelResultStale={resultIsStale}
+              analysisControls={mode === "plot" ? null : panel}
+              analysisControlsMode={mode}
             />
           ) : (
             <>

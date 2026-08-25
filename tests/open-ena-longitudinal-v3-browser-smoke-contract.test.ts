@@ -74,6 +74,23 @@ test("the browser smoke keeps a trajectory result in its dedicated presenter aft
   assert.doesNotMatch(source, /generic-ena-model\.png/u);
 });
 
+test("the browser smoke proves every non-Plot rail panel is visible inside one immutable trajectory presenter", () => {
+  const source = readFileSync(smokePath, "utf8");
+
+  assert.match(source, /const nonPlotPanelExpectations = \[/u);
+  for (const mode of ["Data", "Model", "Stats & Export", "AI"]) {
+    assert.ok(source.includes(`railLabel: "${mode}"`), `missing ${mode} navigation assertion`);
+  }
+  assert.match(source, /open-ena-longitudinal-v3-analysis-controls/u);
+  assert.match(source, /slotMode === expectation\.mode/u);
+  assert.match(source, /panelHeading\.includes\(expectation\.heading\)/u);
+  assert.match(source, /workbenchCount === 1/u);
+  assert.match(source, /genericSurfaceCount === 0/u);
+  assert.match(source, /ordinaryPresenterCount === 0/u);
+  assert.match(source, /bundleResultHash === args\.expectedResultHash/u);
+  assert.match(source, /taskRequestCount === args\.expectedTaskRequestCount/u);
+});
+
 test("GitHub CI runs the complete longitudinal application smoke in bundled Chromium and retains its evidence", () => {
   const workflow = readFileSync(
     join(process.cwd(), ".github", "workflows", "open-ena-ci.yml"),
