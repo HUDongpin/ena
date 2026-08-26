@@ -64,6 +64,25 @@ test("the version-controlled longitudinal V3 smoke owns its server and covers th
   assert.match(source, /OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS/u);
 });
 
+test("the Production smoke waits for the trajectory sample panel instead of racing post-login mode initialization", () => {
+  const source = readFileSync(smokePath, "utf8");
+
+  assert.match(source, /const trajectorySampleButton =/u);
+  assert.match(source, /for \(let attempt = 0; attempt < 3; attempt \+= 1\)/u);
+  assert.match(
+    source,
+    /trajectorySampleButton\s*\.waitFor\(\{ state: "visible", timeout: 5_000 \}\)/u,
+  );
+  assert.match(source, /assertBrowser\(dataPanelVisible/u);
+});
+
+test("the smoke converts child-process failures into sanitized errors without retaining the original cause", () => {
+  const source = readFileSync(smokePath, "utf8");
+
+  assert.match(source, /createSafePlaywrightCliError/u);
+  assert.doesNotMatch(source, /\{ cause: caught \}/u);
+});
+
 test("the browser smoke keeps a trajectory result in its dedicated presenter after Model navigation", () => {
   const source = readFileSync(smokePath, "utf8");
 
@@ -234,10 +253,18 @@ test("the Chromium Plotly Canvas2D advisory remains a strict auditable platform 
   const source = readFileSync(smokePath, "utf8");
   assert.match(source, /message\.location\(\)/u);
   assert.match(source, /strictChromiumCanvasReadbackWarning/u);
-  assert.match(
-    source,
-    /const strictChromiumChunkPath = \/\^\\\/_next\\\/static\\\/chunks\\\/\[a-z0-9\]\{2,\}-\[a-z0-9\]\{3,\}-\[a-z0-9\]\{3,\}\\\.js\$\/u/u,
+  const chunkPathLiteral = source.match(
+    /const strictChromiumChunkPath = (\/\^[^\n]+\$\/u);/u,
+  )?.[1];
+  assert.ok(chunkPathLiteral, "the strict Chromium chunk path pattern is missing");
+  const strictChromiumChunkPath = new Function(`return ${chunkPathLiteral}`)() as RegExp;
+  assert.equal(strictChromiumChunkPath.test("/_next/static/chunks/1234-abcd-efgh.js"), true);
+  assert.equal(
+    strictChromiumChunkPath.test("/_next/static/immutable/chunks/2532syt7n1xoc.js"),
+    true,
   );
+  assert.equal(strictChromiumChunkPath.test("/_next/static/immutable/chunks/evil.js"), false);
+  assert.equal(strictChromiumChunkPath.test("/_next/static/media/2532syt7n1xoc.js"), false);
   assert.match(source, /!sourceUrl\.startsWith\(currentOrigin \+ "\/"\)/u);
   assert.match(source, /sourceUrl\.slice\(currentOrigin\.length\)/u);
   assert.doesNotMatch(source, /new URL\(warning\.location/u);
