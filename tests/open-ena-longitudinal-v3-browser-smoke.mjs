@@ -18,6 +18,7 @@ import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createSafePlaywrightCliError } from "./support/safe-playwright-cli-error.mjs";
 
 const smokeSourcePath = fileURLToPath(import.meta.url);
 const projectRoot = join(dirname(smokeSourcePath), "..");
@@ -147,17 +148,7 @@ function runCli(args, label, timeout = 120_000) {
       },
     );
   } catch (caught) {
-    const stdout = caught && typeof caught === "object" && "stdout" in caught
-      ? redact(caught.stdout)
-      : "";
-    const stderr = caught && typeof caught === "object" && "stderr" in caught
-      ? redact(caught.stderr)
-      : "";
-    const details = (stdout + "\n" + stderr).trim().slice(-10_000);
-    throw new Error(
-      "Playwright CLI failed during " + label + (details ? ".\n" + details : "."),
-      { cause: caught },
-    );
+    throw createSafePlaywrightCliError({ caught, label, redact });
   }
 }
 
@@ -571,8 +562,22 @@ async function authenticateAndRunTrajectory(page, args) {
   await page.getByRole("button", { name: "Sign in" }).click();
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
   await rail.waitFor({ timeout: 30_000 });
-  await rail.getByRole("button", { name: "Data", exact: true }).click();
-  await page.getByRole("button", { name: "Load 2D trajectory sample", exact: true }).click();
+  const dataButton = rail.getByRole("button", { name: "Data", exact: true });
+  const trajectorySampleButton = page.getByRole("button", {
+    name: "Load 2D trajectory sample",
+    exact: true,
+  });
+  let dataPanelVisible = false;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await dataButton.click();
+    dataPanelVisible = await trajectorySampleButton
+      .waitFor({ state: "visible", timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (dataPanelVisible) break;
+  }
+  assertBrowser(dataPanelVisible, "the trajectory sample panel did not remain active after authentication");
+  await trajectorySampleButton.click();
   const workbench = page.getByTestId("open-ena-longitudinal-v3-workbench");
   await workbench.waitFor({ timeout: 60_000 });
   assertBrowser(
@@ -1136,7 +1141,7 @@ async function readBrowserErrors(page, args) {
   const strictNextFontPath = /^\/_next\/static\/media\/[a-f0-9]+-s\.p\.[a-z0-9]+\.woff2$/u;
   const strictFirefoxPreloadWarning = /^\[JavaScript Warning: "The resource at “([^”]+)” preloaded with link preload was not used within a few seconds\. Make sure all attributes of the preload tag are set correctly\." \{file: "([^"]+)" line: 0\}\]$/u;
   const strictChromiumCanvasReadbackWarning = /^Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true\. See: https:\/\/html\.spec\.whatwg\.org\/multipage\/canvas\.html#concept-canvas-will-read-frequently$/u;
-  const strictChromiumChunkPath = /^\/_next\/static\/chunks\/[a-z0-9]{2,}-[a-z0-9]{3,}-[a-z0-9]{3,}\.js$/u;
+  const strictChromiumChunkPath = /^\/_next\/static\/(?:chunks\/[a-z0-9]{2,}-[a-z0-9]{3,}-[a-z0-9]{3,}|immutable\/chunks\/[a-z0-9]{8,})\.js$/u;
   const classifyNextFontPreloadDiagnostic = (warning) => {
     const match = warning.match(strictFirefoxPreloadWarning);
     if (!match) return null;
