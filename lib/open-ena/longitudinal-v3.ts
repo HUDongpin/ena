@@ -1013,7 +1013,6 @@ export async function buildOpenEnaLongitudinalExecutionRequestV3(input: {
   });
   const privacyScope = await hashAnalysisValueV1({
     datasetHash: input.datasetHash,
-    runId: input.runId,
     participantColumns: input.settings.participantColumns,
     timeColumn: input.settings.timeColumn,
     groupColumn: input.config.groupColumn,

@@ -174,6 +174,31 @@ test("the Open ENA adapter binds, pseudonymizes, and executes one immutable jENA
   });
   assert.deepEqual(replay.request, prepared.request);
 
+  const operationalRerun = await buildOpenEnaLongitudinalExecutionRequestV3({
+    result,
+    config,
+    dataset,
+    datasetHash: HASH,
+    settings,
+    runId: "open-ena-v3-test-run-retry",
+    executionTarget: "node-service",
+  });
+  assert.equal(
+    operationalRerun.binding.sourceResultHash,
+    prepared.binding.sourceResultHash,
+    "an operational run ID must not change the immutable fitted-result identity",
+  );
+  assert.equal(
+    operationalRerun.binding.specHash,
+    prepared.binding.specHash,
+    "an operational run ID must not change the scientific trajectory specification",
+  );
+  assert.notEqual(
+    operationalRerun.binding.requestHash,
+    prepared.binding.requestHash,
+    "the request audit hash must still bind its operational run ID",
+  );
+
   const independentlyLoadedResult = fitted();
   const independentlyLoadedSettings = await createOpenEnaLongitudinalSettingsV3({
     result: independentlyLoadedResult,
@@ -200,7 +225,20 @@ test("the Open ENA adapter binds, pseudonymizes, and executes one immutable jENA
   assert.deepEqual(result.set, before);
 
   const bundle = await executeLongitudinalAnalysisV2(prepared.request);
+  const operationalRerunBundle = await executeLongitudinalAnalysisV2(operationalRerun.request);
   await verifyLongitudinalAnalysisBundleV2(bundle);
+  await verifyLongitudinalAnalysisBundleV2(operationalRerunBundle);
+  assert.equal(
+    operationalRerunBundle.identity.resultHash,
+    bundle.identity.resultHash,
+    "the same fitted result, specification, and seed must have a deterministic scientific result hash",
+  );
+  assert.deepEqual(
+    operationalRerunBundle.execution.permutationPlanHashes,
+    bundle.execution.permutationPlanHashes,
+    "the same fitted result, specification, and seed must have deterministic permutation plans",
+  );
+  assert.notEqual(operationalRerunBundle.identity.runId, bundle.identity.runId);
   assert.equal(bundle.paths.length, 2);
   assert.equal(bundle.inference.some((item) => item.request.kind === "independent-period"), true);
   assert.equal(bundle.inference.some((item) => item.request.kind === "paired-periods"), true);
