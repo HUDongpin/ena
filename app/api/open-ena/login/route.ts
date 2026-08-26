@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isLocale, type Locale } from "@/lib/i18n";
 import {
   createOpenEnaSessionToken,
+  openEnaAuthConfigurationReady,
   OPEN_ENA_SESSION_COOKIE,
   OPEN_ENA_SESSION_MAX_AGE_SECONDS,
   verifyOpenEnaCredentials,
@@ -22,6 +23,13 @@ export async function POST(request: NextRequest) {
   const requestOrigin = resolveOpenEnaRequestOrigin(request.headers, request.nextUrl.origin);
   if (!requestOrigin) {
     return new NextResponse("Invalid request origin", { status: 403 });
+  }
+
+  if (!openEnaAuthConfigurationReady()) {
+    return new NextResponse("Open ENA secure authentication is not configured.", {
+      status: 503,
+      headers: { "Cache-Control": "no-store" },
+    });
   }
 
   const formData = await request.formData();

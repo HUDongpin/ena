@@ -539,10 +539,10 @@ test("3D Comparison uses signed differences while side plots share one mean-netw
   );
 });
 
-test("3D trajectories retain six stable non-color group encodings and all three fitted coordinates", () => {
+test("generic 3D ENA plots retain networks and points but fail closed on legacy trajectory flags", () => {
   const result = sixGroupTrajectoryResult();
   const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
-  const spec = compileOpenEna3dPlotSpec({
+  const compile = (showTrajectories: boolean) => compileOpenEna3dPlotSpec({
     result,
     groupColumn: "group",
     xDimension,
@@ -554,7 +554,7 @@ test("3D trajectories retain six stable non-color group encodings and all three 
     showLabels: true,
     showUnitLabels: false,
     showVariance: true,
-    showTrajectories: true,
+    showTrajectories,
     edgeScale: 1,
     edgeThreshold: 0,
     pointScale: 1,
@@ -562,15 +562,18 @@ test("3D trajectories retain six stable non-color group encodings and all three 
     flipX: false,
     flipY: false,
   });
+  const spec = compile(true);
   const pointTraces = spec.data.filter((trace) => trace.meta.role === "unit-points");
   const trajectoryTraces = spec.data.filter((trace) => trace.meta.role === "trajectory-path");
 
+  assert.deepEqual(spec, compile(false), "the read-compatible trajectory flag must be a 3D presenter no-op");
   assert.equal(pointTraces.length, 6);
   assert.equal(new Set(pointTraces.map((trace) => trace.marker?.symbol)).size, 6);
   assert.equal(new Set(pointTraces.map((trace) => trace.meta.groupName)).size, 6);
-  assert.equal(trajectoryTraces.length, 6);
-  assert.ok(trajectoryTraces.every((trace) => trace.z.length === 2));
-  assert.ok(trajectoryTraces.every((trace) => trace.line?.color === "#000000"));
+  assert.equal(trajectoryTraces.length, 0);
+  assert.ok(spec.data.some((trace) => trace.meta.role === "network-edge"));
+  assert.ok(spec.data.some((trace) => trace.meta.role === "code-node"));
+  assert.ok(spec.data.some((trace) => trace.meta.role === "group-mean"));
   assert.ok(pointTraces.every((trace) => trace.marker?.color !== "#000000"));
 });
 

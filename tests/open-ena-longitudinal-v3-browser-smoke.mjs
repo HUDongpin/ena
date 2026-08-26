@@ -16,10 +16,11 @@ import {
 } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const smokeSourcePath = fileURLToPath(import.meta.url);
+const projectRoot = join(dirname(smokeSourcePath), "..");
 const tsconfigPath = join(projectRoot, "tsconfig.json");
 const originalTsconfig = readFileSync(tsconfigPath, "utf8");
 const artifactDirectory = resolve(
@@ -28,17 +29,27 @@ const artifactDirectory = resolve(
 );
 const downloadDirectory = join(artifactDirectory, "downloads");
 const serverLogPath = join(artifactDirectory, "next-server.log");
+const failureScreenshotPath = join(artifactDirectory, "failure.png");
 const username = process.env.OPEN_ENA_LONGITUDINAL_SMOKE_USERNAME
   || "open_ena_longitudinal_smoke_researcher";
 const password = process.env.OPEN_ENA_LONGITUDINAL_SMOKE_PASSWORD
   || "open_ena_longitudinal_smoke_password_2026";
 const sessionSecret = "open_ena_longitudinal_smoke_session_secret_0123456789abcdef";
 const sessionName = "open-ena-longitudinal-v3-smoke-" + process.pid;
-const smokeBrowser = process.env.OPEN_ENA_LONGITUDINAL_SMOKE_BROWSER || "chrome";
+const smokeBrowser = process.env.OPEN_ENA_LONGITUDINAL_SMOKE_BROWSER || "chromium";
 const externalBaseUrl = process.env.OPEN_ENA_LONGITUDINAL_SMOKE_BASE_URL?.replace(/\/+$/u, "") || null;
 const ownedDistDirName = ".next-longitudinal-smoke-" + process.pid;
 const ownedDistDirectory = join(projectRoot, ownedDistDirName);
 const cameraPresets = ["isometric", "xy", "xz", "yz", "yx", "zx", "zy"];
+const expectedCameraLabels = {
+  isometric: "ISOMETRIC",
+  xy: "XY",
+  xz: "XZ",
+  yz: "YZ",
+  yx: "YX",
+  zx: "ZX",
+  zy: "ZY",
+};
 const expectedCameraStates = {
   isometric: {
     center: { x: 0, y: 0, z: 0 },
@@ -92,8 +103,8 @@ const viewportMatrix = [
 const expectedCodeLabels = ["TE", "EX", "IN", "RE", "SP", "TP"];
 
 assert.ok(
-  ["chrome", "firefox", "webkit", "msedge"].includes(smokeBrowser),
-  "OPEN_ENA_LONGITUDINAL_SMOKE_BROWSER must name chrome, firefox, webkit, or msedge.",
+  ["chromium", "chrome", "firefox", "webkit", "msedge"].includes(smokeBrowser),
+  "OPEN_ENA_LONGITUDINAL_SMOKE_BROWSER must name chromium, chrome, firefox, webkit, or msedge.",
 );
 assert.ok(ownedDistDirName.startsWith(".next-longitudinal-smoke-"));
 
@@ -150,15 +161,37 @@ function runCli(args, label, timeout = 120_000) {
   }
 }
 
-function browserSource(task, args) {
-  return "async (page) => { const task = " + task.toString()
+function classifyChromiumAngleReadPixelsDiagnostic(input) {
+  if (!input || typeof input !== "object") return null;
+  const { browser, currentHref, currentOrigin, warning } = input;
+  if (!["chromium", "chrome", "msedge"].includes(browser)) return null;
+  if (!warning || typeof warning !== "object" || typeof warning.text !== "string") return null;
+  if (typeof currentOrigin !== "string" || typeof currentHref !== "string") return null;
+  if (!currentHref.startsWith(currentOrigin + "/")) return null;
+  const match = warning.text.match(/^\[\.WebGL-0x[0-9a-f]+\]GL Driver Message \(OpenGL, Performance, GL_CLOSE_PATH_NV, High\): GPU stall due to ReadPixels( \(this message will no longer repeat\))?$/u);
+  if (!match) return null;
+  const sourceUrl = typeof warning.location?.url === "string" ? warning.location.url : "";
+  if (sourceUrl !== currentHref) return null;
+  if (warning.location?.lineNumber !== 0 || warning.location?.columnNumber !== 0) return null;
+  return {
+    normalizedPattern: "[.WebGL-0x<hex>]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels{optional-repeat-suppression}",
+    repeatSuppression: Boolean(match[1]),
+    sourcePath: sourceUrl.slice(currentOrigin.length),
+    reportedLineNumber: warning.location.lineNumber,
+    reportedColumnNumber: warning.location.columnNumber,
+  };
+}
+
+function browserSource(task, args, helpers = []) {
+  const helperDeclarations = helpers.map((helper) => helper.toString()).join("\n");
+  return "async (page) => { " + helperDeclarations + "; const task = " + task.toString()
     + "; return await task(page, " + JSON.stringify(args) + "); }";
 }
 
-function runBrowserPhase(label, task, args = {}, timeout = 180_000) {
+function runBrowserPhase(label, task, args = {}, timeout = 180_000, helpers = []) {
   process.stdout.write("[longitudinal V3 smoke] " + label + " ... ");
   const output = runCli(
-    ["--raw", "run-code", browserSource(task, args)],
+    ["--raw", "run-code", browserSource(task, args, helpers)],
     label,
     timeout,
   ).trim();
@@ -247,6 +280,47 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function artifactEvidence(path) {
+  const absolutePath = resolve(path);
+  const relativePath = relative(artifactDirectory, absolutePath);
+  assert.ok(
+    relativePath.length > 0
+      && relativePath !== ".."
+      && !relativePath.startsWith(".." + sep)
+      && !isAbsolute(relativePath),
+    "evidence file must be contained by the artifact directory",
+  );
+  assert.ok(existsSync(absolutePath), "evidence file is missing: " + basename(absolutePath));
+  const portableFile = relativePath.split(sep).join("/");
+  return {
+    file: portableFile,
+    bytes: statSync(absolutePath).size,
+    sha256: sha256(readFileSync(absolutePath)),
+  };
+}
+
+function readGitEvidence() {
+  const git = (args) => execFileSync("git", args, {
+    cwd: projectRoot,
+    encoding: "utf8",
+    timeout: 30_000,
+  }).trim();
+  const status = git(["status", "--porcelain=v1", "--untracked-files=all"]);
+  return Object.freeze({
+    gitHead: git(["rev-parse", "HEAD"]),
+    gitTree: git(["rev-parse", "HEAD^{tree}"]),
+    clean: status === "",
+  });
+}
+
+const sourceEvidenceBefore = readGitEvidence();
+assert.equal(
+  sourceEvidenceBefore.clean,
+  true,
+  "longitudinal browser evidence requires a clean source worktree",
+);
+const smokeSourceSha256 = sha256(readFileSync(smokeSourcePath));
+
 function canonicalJson(value) {
   if (value === null) return "null";
   if (typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
@@ -332,7 +406,35 @@ function extractAndVerifyBundle(zipPath, kind, participantLevelIncluded) {
   assert.equal(analysis.identity.resultHash, manifest.resultHash);
   assert.equal(plotly.resultHash, manifest.resultHash);
   assert.equal(analysis.privacy.participantLevelIncluded, false);
-  return { extracted, manifest, analysis, plotly, zipSha256: sha256(readFileSync(zipPath)) };
+  assert.equal(
+    plotly.data.filter((trace) => trace.meta?.role === "network-edge").length,
+    0,
+    kind + " trajectory Plotly export contains ENA mean-network edges",
+  );
+  assert.equal(
+    plotly.data.filter((trace) => trace.meta?.role === "network-node").length,
+    1,
+    kind + " trajectory Plotly export omitted fitted code references",
+  );
+  const participantTraceCount = plotly.data.filter((trace) => trace.meta?.role === "participant").length;
+  const individualPathTraceCount = plotly.data.filter((trace) => trace.meta?.role === "individual-path").length;
+  if (participantLevelIncluded) {
+    assert.ok(participantTraceCount > 0, kind + " opt-in Plotly export omitted participant points");
+    assert.match(manifest.privacyWarning ?? "", /privacy|re-identification/iu);
+  } else {
+    assert.equal(participantTraceCount, 0, kind + " aggregate Plotly export leaked participant points");
+    assert.equal(individualPathTraceCount, 0, kind + " aggregate Plotly export leaked individual paths");
+    assert.equal(JSON.stringify(plotly).includes("participantCanonical"), false);
+  }
+  return {
+    extracted,
+    manifest,
+    analysis,
+    plotly,
+    participantTraceCount,
+    individualPathTraceCount,
+    zipSha256: sha256(readFileSync(zipPath)),
+  };
 }
 
 function verifyStandaloneDownloads(downloads, aggregate) {
@@ -406,6 +508,7 @@ async function authenticateAndRunTrajectory(page, args) {
       workerRunCount: 0,
       remotePostCount: 0,
       bootstrapTaskCount: 0,
+      networkOverlayTaskCount: 0,
     };
     Object.defineProperty(window, "__openEnaLongitudinalSmokeTaskAudit", {
       configurable: true,
@@ -417,6 +520,7 @@ async function authenticateAndRunTrajectory(page, args) {
         audit.workerRunCount += 1;
         audit.taskRequestCount += 1;
         if (Object.hasOwn(message.request, "bootstrapTask")) audit.bootstrapTaskCount += 1;
+        if (Object.hasOwn(message.request, "networkOverlayTask")) audit.networkOverlayTaskCount += 1;
       }
       return originalWorkerPostMessage.call(this, message, ...rest);
     };
@@ -434,6 +538,9 @@ async function authenticateAndRunTrajectory(page, args) {
           if (payload?.request && Object.hasOwn(payload.request, "bootstrapTask")) {
             audit.bootstrapTaskCount += 1;
           }
+          if (payload?.request && Object.hasOwn(payload.request, "networkOverlayTask")) {
+            audit.networkOverlayTaskCount += 1;
+          }
         } catch {
           // Route validation remains authoritative for malformed request bodies.
         }
@@ -448,7 +555,12 @@ async function authenticateAndRunTrajectory(page, args) {
   page.__openEnaLongitudinalPageErrors = [];
   page.on("console", (message) => {
     if (message.type() === "error") page.__openEnaLongitudinalConsoleErrors.push(message.text());
-    if (message.type() === "warning") page.__openEnaLongitudinalConsoleWarnings.push(message.text());
+    if (message.type() === "warning") {
+      page.__openEnaLongitudinalConsoleWarnings.push({
+        text: message.text(),
+        location: message.location(),
+      });
+    }
   });
   page.on("pageerror", (error) => {
     page.__openEnaLongitudinalPageErrors.push(error.message);
@@ -461,16 +573,16 @@ async function authenticateAndRunTrajectory(page, args) {
   await rail.waitFor({ timeout: 30_000 });
   await rail.getByRole("button", { name: "Data", exact: true }).click();
   await page.getByRole("button", { name: "Load 2D trajectory sample", exact: true }).click();
-  await page.getByRole("button", { name: "Download Model" }).waitFor({ timeout: 60_000 });
+  const workbench = page.getByTestId("open-ena-longitudinal-v3-workbench");
+  await workbench.waitFor({ timeout: 60_000 });
+  assertBrowser(
+    await page.getByTestId("open-ena-center-surface").count() === 0,
+    "the first post-fit screen fell through to the generic ENA presenter",
+  );
+
   const plotTools = rail.getByRole("button", { name: "Plot Tools", exact: true });
   await plotTools.click();
-  const workbench = page.getByTestId("open-ena-longitudinal-v3-workbench");
-  const openedOnFirstClick = await workbench
-    .waitFor({ state: "visible", timeout: 5_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (!openedOnFirstClick) await plotTools.click();
-  await workbench.waitFor({ timeout: 30_000 });
+  await workbench.locator('[data-trajectory-step="1"]').waitFor({ timeout: 30_000 });
   const identity = workbench.getByRole("checkbox", {
     name: /same raw ID represents the same physical entity/u,
   });
@@ -505,7 +617,7 @@ async function authenticateAndRunTrajectory(page, args) {
     const traces = Array.isArray(root.data) ? root.data : [];
     const allowedRoles = new Set([
       "participant", "individual-path", "centroid", "trajectory-path",
-      "direction-arrow", "network-node", "network-edge", "axis-shaft",
+      "direction-arrow", "network-node", "axis-shaft",
       "axis-arrowhead",
     ]);
     const codeTrace = traces.find((trace) => trace.meta?.role === "network-node");
@@ -522,6 +634,9 @@ async function authenticateAndRunTrajectory(page, args) {
         && trajectoryTraces.every((trace) => ["black", "#000", "#000000", "rgb(0, 0, 0)"].includes(trace.line?.color)),
       lineOnlyTrajectories: trajectoryTraces.length > 0
         && trajectoryTraces.every((trace) => trace.mode === "lines" && trace.marker === undefined),
+      participantTraceCount: traces.filter((trace) => trace.meta?.role === "participant").length,
+      directionArrowTraceCount: traces.filter((trace) => trace.meta?.role === "direction-arrow").length,
+      networkEdgeTraceCount: traces.filter((trace) => trace.meta?.role === "network-edge").length,
       uncertaintyTraceCount: traces.filter((trace) => trace.meta?.role === "uncertainty").length,
       errorBarTraceCount: traces.filter((trace) => (
         trace.error_x !== undefined || trace.error_y !== undefined || trace.error_z !== undefined
@@ -538,6 +653,9 @@ async function authenticateAndRunTrajectory(page, args) {
   assertBrowser(plotAudit.centroidSquares, "trajectory centroids are not 7px square markers");
   assertBrowser(plotAudit.blackTrajectories, "trajectory path lines are not black");
   assertBrowser(plotAudit.lineOnlyTrajectories, "trajectory paths still duplicate centroid square markers");
+  assertBrowser(plotAudit.participantTraceCount > 0, "trajectory plot omitted participant-period/time-point points");
+  assertBrowser(plotAudit.directionArrowTraceCount > 0, "trajectory plot omitted direction arrows");
+  assertBrowser(plotAudit.networkEdgeTraceCount === 0, "trajectory plot still contains ENA mean-network edges");
   assertBrowser(plotAudit.uncertaintyTraceCount === 0, "trajectory analysis still plots CI geometry");
   assertBrowser(plotAudit.errorBarTraceCount === 0, "trajectory analysis still plots XYZ/error-bar geometry");
   assertBrowser(plotAudit.unknownTraceRoles.length === 0, "trajectory plot contains an unsupported rectangle/box trace role");
@@ -548,7 +666,99 @@ async function authenticateAndRunTrajectory(page, args) {
   ));
   assertBrowser(bootstrapTaskCount === 0, "trajectory scientific request still contains bootstrapTask");
   plotAudit.bootstrapTaskCount = bootstrapTaskCount;
+  const networkOverlayTaskCount = await page.evaluate(() => (
+    window.__openEnaLongitudinalSmokeTaskAudit?.networkOverlayTaskCount ?? -1
+  ));
+  assertBrowser(networkOverlayTaskCount === 0, "trajectory scientific request still contains networkOverlayTask");
+  plotAudit.networkOverlayTaskCount = networkOverlayTaskCount;
   return plotAudit;
+}
+
+async function exerciseNonPlotRailPanels(page, args) {
+  const assertBrowser = (condition, message) => {
+    if (!condition) throw new Error(message);
+  };
+  const rail = page.getByRole("navigation", { name: "Analysis modes" });
+  const workbench = page.getByTestId("open-ena-longitudinal-v3-workbench");
+  const nonPlotPanelExpectations = [
+    { railLabel: "Data", accessibleName: "Data", mode: "data", heading: "Start with coded data" },
+    { railLabel: "Model", accessibleName: "Model", mode: "model", heading: "Define the ENA model" },
+    { railLabel: "Stats & Export", accessibleName: "Stats & Export", mode: "stats", heading: "Evidence and reproducibility" },
+    { railLabel: "AI", accessibleName: "AI-assisted interpretation", mode: "ai", heading: "AI-assisted interpretation" },
+  ];
+  const panelAudits = {};
+  let trajectoryPresenterScreenshotPath = null;
+  for (const expectation of nonPlotPanelExpectations) {
+    await rail.getByRole("button", { name: expectation.accessibleName, exact: true }).click();
+    const slot = page.getByTestId("open-ena-longitudinal-v3-analysis-controls");
+    await slot.waitFor({ state: "visible", timeout: 15_000 });
+    const audit = await page.evaluate((expected) => {
+      const controls = document.querySelector('[data-testid="open-ena-longitudinal-v3-analysis-controls"]');
+      const plot = document.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]');
+      const traces = Array.isArray(plot?.data) ? plot.data : [];
+      const resultHashes = [...new Set(traces.map((trace) => trace.meta?.resultHash).filter(Boolean))];
+      return {
+        mode: expected.mode,
+        slotMode: controls?.getAttribute("data-controls-mode") ?? null,
+        panelHeading: controls?.querySelector(".ena-panel-heading h2")?.textContent?.trim() ?? "",
+        workbenchCount: document.querySelectorAll('[data-testid="open-ena-longitudinal-v3-workbench"]').length,
+        genericSurfaceCount: document.querySelectorAll('[data-testid="open-ena-center-surface"]').length,
+        ordinaryPresenterCount: document.querySelectorAll([
+          '[data-testid="open-ena-center-surface"]',
+          '[data-testid="open-ena-group-center-surface"]',
+          '[data-testid="open-ena-3d-comparison-plot"]',
+          '[data-testid="open-ena-3d-primary-plot"]',
+          '[data-testid="open-ena-3d-secondary-plot"]',
+        ].join(",")).length,
+        bundleResultHash: resultHashes.length === 1 ? resultHashes[0] : null,
+        taskRequestCount: window.__openEnaLongitudinalSmokeTaskAudit?.taskRequestCount ?? -1,
+      };
+    }, expectation);
+    assertBrowser(audit.slotMode === expectation.mode, expectation.railLabel + " did not occupy its controls slot");
+    assertBrowser(audit.panelHeading.includes(expectation.heading), expectation.railLabel + " target panel is not visible");
+    assertBrowser(audit.workbenchCount === 1, expectation.railLabel + " navigation unmounted the trajectory presenter");
+    assertBrowser(audit.genericSurfaceCount === 0, expectation.railLabel + " navigation exposed the generic ENA surface");
+    assertBrowser(audit.ordinaryPresenterCount === 0, expectation.railLabel + " navigation exposed an ordinary ENA presenter");
+    assertBrowser(audit.bundleResultHash === args.expectedResultHash, expectation.railLabel + " navigation changed the trajectory result hash");
+    assertBrowser(audit.taskRequestCount === args.expectedTaskRequestCount, expectation.railLabel + " navigation submitted a scientific task");
+    panelAudits[expectation.mode] = audit;
+    if (expectation.mode === "model") {
+      trajectoryPresenterScreenshotPath = args.artifactDirectory + "/trajectory-presenter-after-model-navigation.png";
+      await workbench.screenshot({ path: trajectoryPresenterScreenshotPath });
+    }
+  }
+
+  await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
+  await workbench.locator('[data-trajectory-step="1"]').waitFor({ state: "visible", timeout: 15_000 });
+  assertBrowser(
+    await page.getByTestId("open-ena-longitudinal-v3-analysis-controls").count() === 0,
+    "Plot Tools did not restore trajectory controls",
+  );
+  const trajectoryBoundaryAudit = await page.evaluate(() => {
+    const plot = document.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]');
+    const traces = Array.isArray(plot?.data) ? plot.data : [];
+    const resultHashes = [...new Set(traces.map((trace) => trace.meta?.resultHash).filter(Boolean))];
+    return {
+      workbenchCount: document.querySelectorAll('[data-testid="open-ena-longitudinal-v3-workbench"]').length,
+      genericSurfaceCount: document.querySelectorAll('[data-testid="open-ena-center-surface"]').length,
+      ordinaryPresenterCount: document.querySelectorAll([
+        '[data-testid="open-ena-center-surface"]',
+        '[data-testid="open-ena-group-center-surface"]',
+        '[data-testid="open-ena-3d-comparison-plot"]',
+        '[data-testid="open-ena-3d-primary-plot"]',
+        '[data-testid="open-ena-3d-secondary-plot"]',
+      ].join(",")).length,
+      bundleResultHash: resultHashes.length === 1 ? resultHashes[0] : null,
+      taskRequestCount: window.__openEnaLongitudinalSmokeTaskAudit?.taskRequestCount ?? -1,
+    };
+  });
+  assertBrowser(trajectoryBoundaryAudit.workbenchCount === 1, "Plot Tools remounted the trajectory presenter");
+  assertBrowser(trajectoryBoundaryAudit.genericSurfaceCount === 0, "Plot Tools exposed the generic ENA surface");
+  assertBrowser(trajectoryBoundaryAudit.ordinaryPresenterCount === 0, "Plot Tools exposed an ordinary ENA presenter");
+  assertBrowser(trajectoryBoundaryAudit.bundleResultHash === args.expectedResultHash, "Plot Tools changed the trajectory result hash");
+  assertBrowser(trajectoryBoundaryAudit.taskRequestCount === args.expectedTaskRequestCount, "Plot Tools submitted a scientific task");
+  assertBrowser(Boolean(trajectoryPresenterScreenshotPath), "Model panel screenshot was not captured");
+  return { ...trajectoryBoundaryAudit, panelAudits, trajectoryPresenterScreenshotPath };
 }
 
 async function exerciseCamerasAndProjections(page, args) {
@@ -558,6 +768,11 @@ async function exerciseCamerasAndProjections(page, args) {
   const plot = page.getByTestId("open-ena-longitudinal-v3-plot");
   const cameraSelect = page.getByLabel("3D camera preset");
   const projectionSelect = page.getByLabel("3D / 2D projection");
+  const sceneInteraction = plot.locator("#scene");
+  const cameraDragFractions = [
+    { from: { x: 0.5, y: 0.5 }, to: { x: 0.75, y: 0.7 } },
+    { from: { x: 0.5, y: 0.5 }, to: { x: 0.25, y: 0.3 } },
+  ];
   const resultLabel = await plot.getAttribute("aria-label");
   const expectedResultLabelFragment = "Result " + args.expectedResultHash.slice(0, 12) + ".";
   const cameraMatches = (actual, expected, epsilon = 1e-7) => {
@@ -568,6 +783,33 @@ async function exerciseCamerasAndProjections(page, args) {
       && vectorMatches(actual?.eye, expected.eye)
       && vectorMatches(actual?.up, expected.up)
       && actual?.projection?.type === expected.projection.type;
+  };
+  const readRuntimeCamera = async () => await plot.evaluate((root) => {
+    const scene = root?._fullLayout?.scene;
+    const runtimeCamera = typeof scene?._scene?.getCamera === "function"
+      ? scene._scene.getCamera()
+      : scene?.camera;
+    return runtimeCamera ? structuredClone(runtimeCamera) : null;
+  });
+  const waitForRuntimeCamera = async (expected, label) => {
+    const deadline = Date.now() + 15_000;
+    let lastCamera = null;
+    while (Date.now() <= deadline) {
+      const current = await readRuntimeCamera();
+      if (cameraMatches(current, expected)) return current;
+      lastCamera = current;
+      await page.waitForTimeout(50);
+    }
+    throw new Error(label + " did not reach its expected runtime camera: " + JSON.stringify(lastCamera));
+  };
+  const waitForRuntimeCameraChange = async (previous, timeout = 5_000) => {
+    const deadline = Date.now() + timeout;
+    while (Date.now() <= deadline) {
+      const current = await readRuntimeCamera();
+      if (JSON.stringify(current) !== JSON.stringify(previous)) return current;
+      await page.waitForTimeout(50);
+    }
+    return null;
   };
   const readScientificInvariants = async () => await plot.evaluate((root) => ({
     resultHashes: [...new Set(
@@ -590,47 +832,61 @@ async function exerciseCamerasAndProjections(page, args) {
   };
 
   await cameraSelect.selectOption("isometric");
-  await page.waitForFunction(({ expected }) => {
-    const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
-    const actual = root?._fullLayout?.scene?.camera;
-    const close = (left, right) => Math.abs(Number(left) - Number(right)) <= 1e-7;
-    return ["center", "eye", "up"].every((vector) => ["x", "y", "z"].every(
-      (axis) => close(actual?.[vector]?.[axis], expected[vector][axis]),
-    )) && actual?.projection?.type === expected.projection.type;
-  }, { expected: args.expectedCameraStates.isometric }, { timeout: 15_000 });
-  const beforeDrag = await plot.evaluate((root) => structuredClone(root._fullLayout.scene.camera));
+  await waitForRuntimeCamera(args.expectedCameraStates.isometric, "initial isometric preset");
+  const beforeDrag = await readRuntimeCamera();
   let dragVerified = false;
-  if (["chrome", "msedge"].includes(args.browser)) {
-    const plotBox = await plot.boundingBox();
-    assertBrowser(Boolean(plotBox), "the 3D plot does not expose a mouse-interaction surface");
-    await page.mouse.move(plotBox.x + plotBox.width * 0.55, plotBox.y + plotBox.height * 0.5);
-    await page.mouse.down();
-    await page.mouse.move(
-      plotBox.x + plotBox.width * 0.68,
-      plotBox.y + plotBox.height * 0.62,
-      { steps: 12 },
-    );
-    await page.mouse.up();
-    await page.waitForFunction((previous) => {
-      const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
-      return JSON.stringify(root?._fullLayout?.scene?.camera) !== JSON.stringify(previous);
-    }, beforeDrag, { timeout: 15_000 });
+  let afterDrag = beforeDrag;
+  const dragAttempts = [];
+  if (["chromium", "chrome", "msedge"].includes(args.browser)) {
+    await sceneInteraction.waitFor({ state: "visible", timeout: 15_000 });
+    // Plotly's root also contains margins and the legend. Drag the dedicated
+    // WebGL scene and allow one alternate in-scene gesture if the canvas is
+    // replaced during the first post-render pointer sequence.
+    await page.waitForTimeout(250);
+    for (const gesture of cameraDragFractions) {
+      const sceneBox = await sceneInteraction.boundingBox();
+      assertBrowser(
+        Boolean(sceneBox && sceneBox.width > 100 && sceneBox.height > 100),
+        "the 3D scene does not expose a usable mouse-interaction surface",
+      );
+      const attemptBefore = await readRuntimeCamera();
+      await page.mouse.move(
+        sceneBox.x + sceneBox.width * gesture.from.x,
+        sceneBox.y + sceneBox.height * gesture.from.y,
+      );
+      await page.mouse.down({ button: "left" });
+      await page.mouse.move(
+        sceneBox.x + sceneBox.width * gesture.to.x,
+        sceneBox.y + sceneBox.height * gesture.to.y,
+        { steps: 20 },
+      );
+      await page.mouse.up({ button: "left" });
+      const attemptAfter = await waitForRuntimeCameraChange(attemptBefore);
+      const changed = attemptAfter !== null;
+      dragAttempts.push({
+        from: gesture.from,
+        to: gesture.to,
+        scene: { width: sceneBox.width, height: sceneBox.height },
+        changed,
+      });
+      if (changed) {
+        afterDrag = attemptAfter;
+        dragVerified = true;
+        break;
+      }
+      await page.waitForTimeout(250);
+    }
+    assertBrowser(dragVerified, "mouse drag did not change the live Plotly runtime camera");
     await assertScientificInvariants("mouse camera drag");
-    dragVerified = true;
   } else {
     await assertScientificInvariants(args.browser + " camera baseline");
   }
 
   await cameraSelect.selectOption("xy");
-  await page.waitForFunction(({ expected }) => {
-    const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
-    const actual = root?._fullLayout?.scene?.camera;
-    const close = (left, right) => Math.abs(Number(left) - Number(right)) <= 1e-7;
-    return ["center", "eye", "up"].every((vector) => ["x", "y", "z"].every(
-      (axis) => close(actual?.[vector]?.[axis], expected[vector][axis]),
-    )) && actual?.projection?.type === expected.projection.type;
-  }, { expected: args.expectedCameraStates.xy }, { timeout: 15_000 });
-  const restoredAfterDrag = await plot.evaluate((root) => structuredClone(root._fullLayout.scene.camera));
+  const restoredAfterDrag = await waitForRuntimeCamera(
+    args.expectedCameraStates.xy,
+    "XY preset after mouse drag",
+  );
   assertBrowser(
     cameraMatches(restoredAfterDrag, args.expectedCameraStates.xy),
     "selecting XY did not restore the exact camera preset",
@@ -638,21 +894,14 @@ async function exerciseCamerasAndProjections(page, args) {
   await assertScientificInvariants("camera preset xy after baseline interaction");
 
   const cameraStates = {};
+  const cameraLabels = {};
+  const cameraScreenshots = {};
   for (const preset of args.cameraPresets) {
     await cameraSelect.selectOption(preset);
-    await page.waitForFunction(({ value, expected }) => {
-      const select = [...document.querySelectorAll("select")]
-        .find((candidate) => candidate.parentElement?.textContent?.includes("3D camera preset"));
-      const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
-      const actual = root?._fullLayout?.scene?.camera;
-      const close = (left, right) => Math.abs(Number(left) - Number(right)) <= 1e-7;
-      return select?.value === value
-        && ["center", "eye", "up"].every((vector) => ["x", "y", "z"].every(
-          (axis) => close(actual?.[vector]?.[axis], expected[vector][axis]),
-        ))
-        && actual?.projection?.type === expected.projection.type;
-    }, { value: preset, expected: args.expectedCameraStates[preset] }, { timeout: 15_000 });
-    cameraStates[preset] = await plot.evaluate((root) => structuredClone(root._fullLayout.scene.camera));
+    cameraStates[preset] = await waitForRuntimeCamera(
+      args.expectedCameraStates[preset],
+      "camera preset " + preset,
+    );
     assertBrowser(
       cameraMatches(cameraStates[preset], args.expectedCameraStates[preset]),
       "camera preset " + preset + " did not restore its expected center, eye, up, and projection",
@@ -666,6 +915,23 @@ async function exerciseCamerasAndProjections(page, args) {
       preset + " changed the result identity",
     );
     await assertScientificInvariants("camera preset " + preset);
+    const cameraSelection = {
+      visible: await cameraSelect.isVisible(),
+      ...await cameraSelect.evaluate((select) => ({
+        value: select.value,
+        label: select.selectedOptions[0]?.textContent?.trim() ?? "",
+      })),
+    };
+    assertBrowser(cameraSelection.visible, preset + " camera selector is not visible");
+    assertBrowser(cameraSelection.value === preset, preset + " camera option is not selected");
+    assertBrowser(
+      cameraSelection.label === args.expectedCameraLabels[preset],
+      preset + " camera option does not expose its expected visible label",
+    );
+    cameraLabels[preset] = cameraSelection.label;
+    const cameraScreenshotPath = args.artifactDirectory + "/camera-" + preset + ".png";
+    await plot.screenshot({ path: cameraScreenshotPath });
+    cameraScreenshots[preset] = cameraScreenshotPath;
   }
   assertBrowser(
     new Set(Object.values(cameraStates).map((camera) => JSON.stringify(camera))).size === args.cameraPresets.length,
@@ -702,22 +968,19 @@ async function exerciseCamerasAndProjections(page, args) {
     return Boolean(root?._fullLayout?.scene);
   }, null, { timeout: 15_000 });
   await cameraSelect.selectOption("isometric");
-  await page.waitForFunction(({ expected }) => {
-    const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
-    const actual = root?._fullLayout?.scene?.camera;
-    const close = (left, right) => Math.abs(Number(left) - Number(right)) <= 1e-7;
-    return ["center", "eye", "up"].every((vector) => ["x", "y", "z"].every(
-      (axis) => close(actual?.[vector]?.[axis], expected[vector][axis]),
-    )) && actual?.projection?.type === expected.projection.type;
-  }, { expected: args.expectedCameraStates.isometric }, { timeout: 15_000 });
+  await waitForRuntimeCamera(args.expectedCameraStates.isometric, "restored isometric preset");
   await assertScientificInvariants("restoring 3D projection");
   return {
     cameraStates,
+    cameraLabels,
+    cameraScreenshots,
     projectionStates,
     resultLabel,
     beforeDrag,
+    afterDrag,
     restoredAfterDrag,
     dragVerified,
+    dragAttempts,
   };
 }
 
@@ -863,30 +1126,163 @@ async function downloadAllArtifacts(page, args) {
 }
 
 async function readBrowserErrors(page, args) {
-  const isExpectedPlatformWarning = (warning) => args.browser === "firefox" && (
-    warning.includes("WebGL warning:")
-    || warning.includes("After reporting 32, no further warnings will be reported for this WebGL context")
-    || (
-      args.externalDevelopmentServer
-      && warning.includes("preloaded with link preload was not used within a few seconds")
-    )
-  );
+  const currentHref = page.url();
+  const currentOrigin = await page.evaluate(() => window.location.origin);
+  const declaredFontPreloads = new Set(await page
+    .locator('link[rel="preload"][as="font"][type="font/woff2"]')
+    .evaluateAll((links) => links
+      .filter((link) => link.hasAttribute("crossorigin"))
+      .map((link) => link.href)));
+  const strictNextFontPath = /^\/_next\/static\/media\/[a-f0-9]+-s\.p\.[a-z0-9]+\.woff2$/u;
+  const strictFirefoxPreloadWarning = /^\[JavaScript Warning: "The resource at “([^”]+)” preloaded with link preload was not used within a few seconds\. Make sure all attributes of the preload tag are set correctly\." \{file: "([^"]+)" line: 0\}\]$/u;
+  const strictChromiumCanvasReadbackWarning = /^Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true\. See: https:\/\/html\.spec\.whatwg\.org\/multipage\/canvas\.html#concept-canvas-will-read-frequently$/u;
+  const strictChromiumChunkPath = /^\/_next\/static\/chunks\/[a-z0-9]{2,}-[a-z0-9]{3,}-[a-z0-9]{3,}\.js$/u;
+  const classifyNextFontPreloadDiagnostic = (warning) => {
+    const match = warning.match(strictFirefoxPreloadWarning);
+    if (!match) return null;
+    const resourceHref = match[1];
+    const reportingHref = match[2];
+    if (!resourceHref.startsWith(currentOrigin + "/")) return null;
+    if (reportingHref !== currentHref) return null;
+    const resourcePath = resourceHref.slice(currentOrigin.length);
+    if (!strictNextFontPath.test(resourcePath)) return null;
+    if (!declaredFontPreloads.has(resourceHref)) return null;
+    return resourceHref;
+  };
+  const classifyChromiumCanvasReadbackDiagnostic = (warning) => {
+    if (!["chromium", "chrome", "msedge"].includes(args.browser)) return null;
+    if (!strictChromiumCanvasReadbackWarning.test(warning.text)) return null;
+    const sourceUrl = typeof warning.location?.url === "string" ? warning.location.url : "";
+    if (!sourceUrl.startsWith(currentOrigin + "/")) return null;
+    const sourcePath = sourceUrl.slice(currentOrigin.length);
+    if (!strictChromiumChunkPath.test(sourcePath)) return null;
+    if (!Number.isInteger(warning.location?.lineNumber) || warning.location.lineNumber < 0) return null;
+    if (!Number.isInteger(warning.location?.columnNumber) || warning.location.columnNumber < 0) return null;
+    return {
+      warningText: warning.text,
+      sourcePath,
+      reportedLineNumber: warning.location.lineNumber,
+      reportedColumnNumber: warning.location.columnNumber,
+    };
+  };
+  const verifyChromiumCanvasReadbackSource = async (candidate) => await page.evaluate(async (input) => {
+    const response = await fetch(input.sourcePath, {
+      cache: "force-cache",
+      credentials: "same-origin",
+    });
+    if (!response.ok || !/javascript/iu.test(response.headers.get("content-type") || "")) return null;
+    const sourceBytes = await response.arrayBuffer();
+    if (sourceBytes.byteLength < 1 || sourceBytes.byteLength > 16 * 1024 * 1024) return null;
+    const sourceText = new TextDecoder().decode(sourceBytes);
+    // Playwright reports Chromium's source line as a zero-based lineNumber.
+    const sourceLine = sourceText.split(/\r?\n/u)[input.reportedLineNumber];
+    if (
+      !sourceLine
+      || !sourceLine.includes("vectorize-text: Unrecognized textAlign:")
+      || !sourceLine.includes('getContext("2d")')
+      || !sourceLine.includes(".getImageData(0,0,")
+    ) return null;
+    const digestHex = async (bytes) => [...new Uint8Array(
+      await crypto.subtle.digest("SHA-256", bytes),
+    )].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    return {
+      ...input,
+      sourceLineNumber: input.reportedLineNumber + 1,
+      chunkBytes: sourceBytes.byteLength,
+      chunkSha256: await digestHex(sourceBytes),
+      sourceLineSha256: await digestHex(new TextEncoder().encode(sourceLine)),
+    };
+  }, candidate);
+  const normalizeWarning = (warning) => {
+    if (typeof warning === "string") return warning;
+    const sourceUrl = typeof warning.location?.url === "string" ? warning.location.url : "";
+    const sourcePath = sourceUrl.startsWith(currentOrigin + "/")
+      ? sourceUrl.slice(currentOrigin.length).split(/[?#]/u)[0]
+      : null;
+    return {
+      text: warning.text,
+      location: {
+        sourcePath,
+        lineNumber: warning.location?.lineNumber ?? null,
+        columnNumber: warning.location?.columnNumber ?? null,
+      },
+    };
+  };
   const allWarnings = [...(page.__openEnaLongitudinalConsoleWarnings || [])];
+  const consoleWarnings = [];
+  const nextFontPreloadDiagnosticUrls = [];
+  const canvas2dReadbackDiagnostics = [];
+  const canvas2dReadbackCandidates = [];
+  const chromiumAngleReadPixelsDiagnostics = [];
+  let webglDiagnosticCount = 0;
+  for (const warning of allWarnings) {
+    const warningText = typeof warning === "string" ? warning : warning.text;
+    const isFirefoxWebglDiagnostic = args.browser === "firefox" && (
+      warningText.includes("WebGL warning:")
+      || warningText.includes("After reporting 32, no further warnings will be reported for this WebGL context")
+    );
+    const nextFontUrl = args.browser === "firefox"
+      ? classifyNextFontPreloadDiagnostic(warningText)
+      : null;
+    const canvasReadbackDiagnostic = typeof warning === "object" && warning !== null
+      ? classifyChromiumCanvasReadbackDiagnostic(warning)
+      : null;
+    const angleReadPixelsDiagnostic = classifyChromiumAngleReadPixelsDiagnostic({
+      browser: args.browser,
+      currentHref,
+      currentOrigin,
+      warning,
+    });
+    if (isFirefoxWebglDiagnostic) webglDiagnosticCount += 1;
+    else if (nextFontUrl) nextFontPreloadDiagnosticUrls.push(nextFontUrl);
+    else if (canvasReadbackDiagnostic) {
+      canvas2dReadbackCandidates.push({ candidate: canvasReadbackDiagnostic, warning });
+    } else if (angleReadPixelsDiagnostic) {
+      chromiumAngleReadPixelsDiagnostics.push(angleReadPixelsDiagnostic);
+    } else consoleWarnings.push(normalizeWarning(warning));
+  }
+  for (const { candidate, warning } of canvas2dReadbackCandidates) {
+    const verified = await verifyChromiumCanvasReadbackSource(candidate);
+    if (verified) canvas2dReadbackDiagnostics.push(verified);
+    else consoleWarnings.push(normalizeWarning(warning));
+  }
   return {
     consoleErrors: [...(page.__openEnaLongitudinalConsoleErrors || [])],
-    consoleWarnings: allWarnings.filter((warning) => !isExpectedPlatformWarning(warning)),
-    expectedPlatformWarnings: allWarnings.filter(isExpectedPlatformWarning),
+    consoleWarnings,
+    platformDiagnostics: {
+      nextFontPreloadDiagnosticUrls: [...new Set(nextFontPreloadDiagnosticUrls)].sort(),
+      webglDiagnosticCount,
+      canvas2dReadbackDiagnostics,
+      chromiumAngleReadPixelsDiagnostics: {
+        count: chromiumAngleReadPixelsDiagnostics.length,
+        normalizedPattern: chromiumAngleReadPixelsDiagnostics[0]?.normalizedPattern ?? null,
+        repeatSuppressionCount: chromiumAngleReadPixelsDiagnostics
+          .filter((diagnostic) => diagnostic.repeatSuppression).length,
+        sourcePaths: [...new Set(chromiumAngleReadPixelsDiagnostics
+          .map((diagnostic) => diagnostic.sourcePath))].sort(),
+      },
+    },
     pageErrors: [...(page.__openEnaLongitudinalPageErrors || [])],
   };
+}
+
+async function readBrowserRuntimeEvidence(page) {
+  const version = page.context().browser()?.version() ?? null;
+  const userAgent = await page.evaluate(() => navigator.userAgent);
+  if (!version) throw new Error("the Playwright browser runtime did not expose its version");
+  if (!userAgent) throw new Error("the browser runtime did not expose its user agent");
+  return { version, userAgent };
 }
 
 let primaryFailure = null;
 let baseUrl = externalBaseUrl;
 let browserOpened = false;
+let completedSummary = null;
 
 try {
   execFileSync("npx", ["--version"], { encoding: "utf8", timeout: 30_000 });
-  runCli(["--version"], "resolve Playwright CLI", 120_000);
+  const playwrightCliVersion = runCli(["--version"], "resolve Playwright CLI", 120_000).trim();
+  assert.ok(playwrightCliVersion.length > 0, "the Playwright CLI did not expose its version");
   if (!baseUrl) {
     ownsDistDirectory = true;
     const port = await findOpenPort();
@@ -944,23 +1340,44 @@ try {
   browserSessionAttempted = true;
   runCli(["open", baseUrl + "/en/open-ena", "--browser", smokeBrowser], "open browser", 120_000);
   browserOpened = true;
+  const browserRuntimeEvidence = runBrowserPhase(
+    "record the actual browser runtime identity",
+    readBrowserRuntimeEvidence,
+  );
 
   const plotAudit = runBrowserPhase(
     "authenticate, load the trajectory sample, and run the V2 envelope",
     authenticateAndRunTrajectory,
-    { username, password, expectedCodes: expectedCodeLabels },
+    {
+      username,
+      password,
+      expectedCodes: expectedCodeLabels,
+      artifactDirectory,
+    },
     240_000,
   );
+  const railPanelAudit = runBrowserPhase(
+    "open Data, Model, Stats, and AI inside the mounted trajectory presenter",
+    exerciseNonPlotRailPanels,
+    {
+      expectedResultHash: plotAudit.resultHashes[0],
+      expectedTaskRequestCount: plotAudit.taskRequestCount,
+      artifactDirectory,
+    },
+  );
+  plotAudit.trajectoryBoundaryAudit = railPanelAudit;
   const displayAudit = runBrowserPhase(
     "exercise seven 3D cameras and six 2D projections without rerunning",
     exerciseCamerasAndProjections,
     {
       cameraPresets,
+      expectedCameraLabels,
       expectedCameraStates,
       expectedResultHash: plotAudit.resultHashes[0],
       expectedTaskRequestCount: plotAudit.taskRequestCount,
       projections: twoDimensionalProjections,
       browser: smokeBrowser,
+      artifactDirectory,
     },
   );
   const responsiveAudit = runBrowserPhase(
@@ -986,48 +1403,137 @@ try {
   const browserErrors = runBrowserPhase(
     "collect console and page errors",
     readBrowserErrors,
-    { browser: smokeBrowser, externalDevelopmentServer: Boolean(externalBaseUrl) },
+    { browser: smokeBrowser },
+    180_000,
+    [classifyChromiumAngleReadPixelsDiagnostic],
   );
   assert.deepEqual(browserErrors.consoleErrors, [], "browser console contains errors");
   assert.deepEqual(browserErrors.consoleWarnings, [], "browser console contains warnings");
   assert.deepEqual(browserErrors.pageErrors, [], "browser emitted page errors");
+  assert.ok(
+    browserErrors.platformDiagnostics.canvas2dReadbackDiagnostics.length <= 1,
+    "Chromium emitted repeated Plotly Canvas2D readback diagnostics",
+  );
+  const chromiumAngleReadPixelsDiagnostics =
+    browserErrors.platformDiagnostics.chromiumAngleReadPixelsDiagnostics;
+  assert.ok(
+    chromiumAngleReadPixelsDiagnostics.count <= 4,
+    "Chromium emitted more ANGLE ReadPixels driver diagnostics than the audited platform pattern allows",
+  );
+  assert.ok(
+    chromiumAngleReadPixelsDiagnostics.repeatSuppressionCount <= 1,
+    "Chromium emitted repeated ANGLE terminal suppression diagnostics",
+  );
+  assert.ok(
+    chromiumAngleReadPixelsDiagnostics.sourcePaths.length <= 1,
+    "Chromium emitted ANGLE ReadPixels diagnostics from multiple source paths",
+  );
   const cliConsole = runCli(["console", "error"], "read Playwright console summary");
   assert.match(cliConsole, /Errors:\s*0/u);
-  if (smokeBrowser !== "firefox") assert.match(cliConsole, /Warnings:\s*0/u);
+  const cliWarningMatch = cliConsole.match(/Warnings:\s*(\d+)/u);
+  assert.ok(cliWarningMatch, "Playwright console summary omitted its warning count");
+  const cliWarningCount = Number(cliWarningMatch[1]);
+  if (["chromium", "chrome", "msedge"].includes(smokeBrowser)) {
+    const classifiedChromiumWarningCount =
+      browserErrors.platformDiagnostics.canvas2dReadbackDiagnostics.length
+      + browserErrors.platformDiagnostics.chromiumAngleReadPixelsDiagnostics.count;
+    assert.equal(
+      cliWarningCount,
+      classifiedChromiumWarningCount,
+      "Chromium emitted an unclassified console warning",
+    );
+  } else if (smokeBrowser !== "firefox") {
+    assert.equal(cliWarningCount, 0, "browser emitted an unclassified console warning");
+  }
 
   assert.equal(Object.keys(downloads).length, 7);
   const aggregate = extractAndVerifyBundle(downloads.bundle, "aggregate", false);
   const participant = extractAndVerifyBundle(downloads.participant, "participant", true);
   assert.equal(aggregate.manifest.resultHash, participant.manifest.resultHash);
-  for (const member of aggregate.manifest.members) {
+  for (const member of aggregate.manifest.members.filter(
+    (candidate) => candidate.path !== "plotly-spec.json",
+  )) {
     const participantMember = participant.manifest.members.find(
       (candidate) => candidate.path === member.path,
     );
     assert.deepEqual(participantMember, member, "shared member differs: " + member.path);
   }
+  assert.equal(aggregate.participantTraceCount, 0);
+  assert.ok(participant.participantTraceCount > 0);
+  assert.notEqual(
+    sha256(readFileSync(join(aggregate.extracted, "plotly-spec.json"))),
+    sha256(readFileSync(join(participant.extracted, "plotly-spec.json"))),
+    "participant opt-in must produce a distinct privacy-scoped Plotly member",
+  );
   verifyStandaloneDownloads(downloads, aggregate);
+  const downloadEvidence = Object.fromEntries(
+    Object.entries(downloads).map(([kind, path]) => [kind, artifactEvidence(path)]),
+  );
+  for (const receipt of Object.values(downloadEvidence)) {
+    assert.match(receipt.file, /^downloads\//u, "download receipt escaped the downloads directory");
+    assert.ok(receipt.bytes > 0, "download receipt has no bytes");
+    assert.match(receipt.sha256, /^[a-f0-9]{64}$/u, "download receipt has an invalid SHA-256");
+  }
 
   const serverLog = readServerLogTail();
   assert.doesNotMatch(serverLog, /open_ena_longitudinal_smoke_password/u);
   assert.doesNotMatch(serverLog, /open_ena_longitudinal_smoke_session_secret/u);
 
-  const summary = {
+  const {
+    trajectoryPresenterScreenshotPath,
+    ...trajectoryBoundaryAudit
+  } = plotAudit.trajectoryBoundaryAudit;
+  const portablePlotAudit = {
+    ...plotAudit,
+    trajectoryBoundaryAudit: {
+      ...trajectoryBoundaryAudit,
+      trajectoryPresenterScreenshot: artifactEvidence(trajectoryPresenterScreenshotPath),
+    },
+  };
+  const portableViewports = Object.fromEntries(
+    Object.entries(responsiveAudit.results).map(([name, evidence]) => {
+      const { pagePath, plotPath, ...viewportEvidence } = evidence;
+      return [name, {
+        ...viewportEvidence,
+        pageScreenshot: artifactEvidence(pagePath),
+        plotScreenshot: artifactEvidence(plotPath),
+      }];
+    }),
+  );
+
+  completedSummary = {
     status: "PASS",
     browser: smokeBrowser,
+    playwrightCliSource: playwrightCli.source,
+    playwrightCliVersion,
+    runtimeBrowserVersion: browserRuntimeEvidence.version,
+    runtimeBrowserUserAgent: browserRuntimeEvidence.userAgent,
     baseUrl,
     serverLifecycle: ownedServer ? "owned" : "external",
-    plotAudit,
+    plotAudit: portablePlotAudit,
     cameras: Object.keys(displayAudit.cameraStates),
-    projections: Object.keys(displayAudit.projectionStates),
-    viewports: responsiveAudit.results,
-    fullscreen: responsiveAudit.fullscreenBox,
-    downloads: Object.fromEntries(
-      Object.entries(downloads).map(([kind, path]) => [kind, {
-        file: basename(path),
-        bytes: statSync(path).size,
-        sha256: sha256(readFileSync(path)),
-      }]),
+    cameraStates: displayAudit.cameraStates,
+    cameraLabels: displayAudit.cameraLabels,
+    cameraInteraction: {
+      beforeDrag: displayAudit.beforeDrag,
+      afterDrag: displayAudit.afterDrag,
+      restoredAfterDrag: displayAudit.restoredAfterDrag,
+      dragVerified: displayAudit.dragVerified,
+      dragAttempts: displayAudit.dragAttempts,
+    },
+    cameraScreenshots: Object.fromEntries(
+      Object.entries(displayAudit.cameraScreenshots)
+        .map(([preset, path]) => [preset, artifactEvidence(path)]),
     ),
+    projections: Object.keys(displayAudit.projectionStates),
+    viewports: portableViewports,
+    fullscreen: {
+      box: responsiveAudit.fullscreenBox,
+      viewport: responsiveAudit.fullscreenViewport,
+      plotAudit: responsiveAudit.fullscreenPlotAudit,
+      screenshot: artifactEvidence(responsiveAudit.fullscreenPath),
+    },
+    downloads: downloadEvidence,
     aggregate: {
       resultHash: aggregate.manifest.resultHash,
       contentSetHash: aggregate.manifest.contentSetHash,
@@ -1038,16 +1544,23 @@ try {
       contentSetHash: participant.manifest.contentSetHash,
       zipSha256: participant.zipSha256,
     },
-    browserErrors: { consoleErrors: 0, consoleWarnings: 0, pageErrors: 0 },
-    artifacts: artifactDirectory,
+    browserErrors: {
+      consoleErrors: 0,
+      consoleWarnings: 0,
+      pageErrors: 0,
+      platformDiagnostics: browserErrors.platformDiagnostics,
+    },
+    artifacts: ".",
   };
-  writeFileSync(join(artifactDirectory, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
-  process.stdout.write(JSON.stringify(summary, null, 2) + "\n");
 } catch (caught) {
   primaryFailure = caught;
   if (browserOpened) {
     try {
-      runCli(["screenshot"], "capture failure screenshot", 30_000);
+      runCli(
+        ["screenshot", "--filename", failureScreenshotPath],
+        "capture failure screenshot",
+        30_000,
+      );
     } catch {
       // Preserve the primary failure.
     }
@@ -1069,3 +1582,20 @@ try {
 }
 
 if (primaryFailure) throw primaryFailure;
+assert.ok(completedSummary, "the browser smoke did not produce a completed evidence summary");
+const sourceEvidenceAfter = readGitEvidence();
+assert.equal(sourceEvidenceAfter.gitHead, sourceEvidenceBefore.gitHead, "Git HEAD changed during browser evidence capture");
+assert.equal(sourceEvidenceAfter.gitTree, sourceEvidenceBefore.gitTree, "Git tree changed during browser evidence capture");
+assert.equal(sourceEvidenceAfter.clean, true, "source worktree is dirty after browser evidence cleanup");
+completedSummary.source = {
+  gitHead: sourceEvidenceBefore.gitHead,
+  gitTree: sourceEvidenceBefore.gitTree,
+  worktreeCleanBefore: sourceEvidenceBefore.clean,
+  worktreeCleanAfter: sourceEvidenceAfter.clean,
+  smokeSourceSha256,
+};
+writeFileSync(
+  join(artifactDirectory, "summary.json"),
+  JSON.stringify(completedSummary, null, 2) + "\n",
+);
+process.stdout.write(JSON.stringify(completedSummary, null, 2) + "\n");

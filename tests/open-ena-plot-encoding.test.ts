@@ -29,7 +29,7 @@ function sixGroupTrajectoryResult() {
   });
 }
 
-test("six comparison groups retain unique non-color plot encodings and accessible mappings", async () => {
+test("generic 2D ENA plots retain network encodings but fail closed on legacy trajectory flags", async () => {
   const plotModule = await import("../components/open-ena/OpenEnaPlot") as typeof import("../components/open-ena/OpenEnaPlot") & {
     GROUP_VISUAL_ENCODINGS?: ReadonlyArray<{
       key: string;
@@ -49,7 +49,7 @@ test("six comparison groups retain unique non-color plot encodings and accessibl
 
   const result = sixGroupTrajectoryResult();
   assert.equal(result.groups.length, 6);
-  const markup = renderToStaticMarkup(createElement(plotModule.default, {
+  const render = (showTrajectories: boolean) => renderToStaticMarkup(createElement(plotModule.default, {
     result,
     groupColumn: "group",
     view: "2d",
@@ -62,7 +62,7 @@ test("six comparison groups retain unique non-color plot encodings and accessibl
     showLabels: true,
     showUnitLabels: false,
     showVariance: true,
-    showTrajectories: true,
+    showTrajectories,
     edgeScale: 1,
     edgeThreshold: 0,
     pointScale: 1,
@@ -71,21 +71,19 @@ test("six comparison groups retain unique non-color plot encodings and accessibl
     flipY: false,
     copy: getOpenEnaCopy("en"),
   }));
-  assert.doesNotMatch(markup, /class="ena-trajectory-path"[^>]*stroke-opacity="0\./);
-  assert.match(markup, /class="ena-trajectory-path"[^>]*stroke="#000000"/);
-  assert.doesNotMatch(markup, /class="ena-trajectory-path"[^>]*marker-end=/);
-  assert.match(markup, /class="ena-trajectory-direction-arrow"[^>]*data-ena-direction-progress="0\.5"/);
-  assert.match(markup, /class="ena-trajectory-direction-arrow"[^>]*marker-end="url\(#ena-trajectory-arrow-0\)"/);
-  assert.match(markup, /id="ena-trajectory-arrow-0"[\s\S]*?<path[^>]*fill="#000000"/);
+  const markup = render(true);
+  assert.equal(markup, render(false), "the read-compatible trajectory flag must be a presenter no-op");
+  assert.doesNotMatch(markup, /ena-trajectory-(?:path|direction-arrow|arrow-)/);
+  assert.doesNotMatch(markup, /data-ena-trajectory-style|directed trajectory segment|trajectory line/i);
+  assert.match(markup, /Solid network edge/);
 
   for (const [index, encoding] of encodings.entries()) {
     const group = `g${index + 1}`;
     const markerOccurrences = markup.match(new RegExp(`data-ena-group-shape="${encoding.markerShape}"`, "g")) ?? [];
     assert.ok(markerOccurrences.length >= 2, `${group} should use ${encoding.markerShape} for units and the unit legend`);
-    assert.match(markup, new RegExp(`data-ena-trajectory-style="${encoding.key}"`));
     assert.ok(
-      markup.includes(`${group}: ${encoding.markerLabel} marker, ${encoding.trajectoryLabel} trajectory line`),
-      `${group} should expose its non-color mapping to assistive technology`,
+      markup.includes(`${group}: ${encoding.markerLabel} marker`),
+      `${group} should expose its ENA marker mapping to assistive technology`,
     );
     assert.ok(markup.includes(`${group} mean: square centroid marker`), `${group} mean should use the ENA centroid square`);
   }

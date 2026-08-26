@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   compileTrajectoryPlotlySpec,
   createExportBundle,
@@ -12,6 +12,8 @@ import {
 import type { Locale } from "@/lib/i18n";
 import {
   buildOpenEnaLongitudinalExecutionRequestV3,
+  advanceOpenEnaLongitudinalScientificRevisionV3,
+  bindOpenEnaLongitudinalScientificRunV3,
   changeOpenEnaLongitudinalTimeColumnV3,
   clearOpenEnaLongitudinalIdentityConfirmationV3,
   cloneOpenEnaLongitudinalSettingsV3,
@@ -19,11 +21,18 @@ import {
   createExpectedOpenEnaLongitudinalPeriodV3,
   createOpenEnaLongitudinalSettingsV3,
   isOpenEnaLongitudinalBundleStaleV3,
+  isOpenEnaLongitudinalScientificRunCurrentV3,
+  openEnaLongitudinalHeaderDimensionsV3,
   openEnaLongitudinalDisplayInventoryV3,
   openEnaTrajectoryDisplaySpecV3,
   profileOpenEnaLongitudinalMappingV3,
+  snapshotOpenEnaLongitudinalSettingsV3,
+  snapshotOpenEnaPreparedLongitudinalExecutionV3,
+  withoutOpenEnaLongitudinalInferencePreparedV3,
+  withoutOpenEnaLongitudinalInferenceSettingsV3,
   type OpenEnaLongitudinalBindingV3,
   type OpenEnaLongitudinalMappingProfileV3,
+  type OpenEnaLongitudinalScientificRunIdentityV3,
   type OpenEnaLongitudinalSettingsV3,
 } from "@/lib/open-ena/longitudinal-v3";
 import {
@@ -49,7 +58,7 @@ type PlotlyImageApi = PlotlyApi & {
 type PlotRoot = HTMLDivElement & {
   _fullLayout?: { scene?: { camera?: OpenEna3dCamera } };
 };
-type WorkbenchStatus = "initializing" | "ready" | "preparing" | "running" | "remote-confirmation" | "complete" | "error";
+type WorkbenchStatus = "initializing" | "ready" | "preparing" | "running" | "remote-confirmation" | "remote-recovery" | "complete" | "error";
 
 interface DisplayStateV3 {
   projection: TrajectoryDisplaySpecV2["projection"];
@@ -66,6 +75,16 @@ interface OpenEnaLongitudinalWorkbenchV3Props {
   dataset: ParsedDataset;
   datasetHash: string;
   modelResultStale: boolean;
+  analysisControls: ReactNode | null;
+  analysisControlsMode: string;
+}
+
+type PreparedLongitudinalRunV3 = Awaited<ReturnType<typeof buildOpenEnaLongitudinalExecutionRequestV3>>;
+
+interface PendingLongitudinalRunV3 {
+  prepared: PreparedLongitudinalRunV3;
+  identity: Readonly<OpenEnaLongitudinalScientificRunIdentityV3>;
+  settingsSnapshot: OpenEnaLongitudinalSettingsV3;
 }
 
 const english = {
@@ -106,16 +125,13 @@ const english = {
   centroids: "Group centroid paths",
   arrows: "Direction arrows",
   labels: "Labels",
-  network: "Mean network overlay",
-  networkEdges: "Mean network edges",
-  codeNodesHint: "ENA code reference nodes are always shown from the fitted jENA geometry; this display-only switch adds or hides mean-network edges.",
-  overlayPeriod: "Overlay time",
-  overlayScope: "Overlay scope",
+  codeNodesHint: "ENA code reference nodes are always shown from the fitted jENA geometry. Trajectory analysis does not draw ENA mean-network edges.",
   overall: "Overall",
   run: "Run trajectory analysis",
   recompute: "Recompute trajectory analysis",
   cancel: "Cancel",
   retry: "Retry",
+  retryRemote: "Retry remote",
   continueLocal: "Continue locally",
   confirmRemote: "Confirm persistent compute",
   disableHeavy: "Run without inference",
@@ -123,6 +139,8 @@ const english = {
   modelStale: "The fitted ENA model is stale relative to pending model controls. This workbench remains bound to the last successful fit.",
   remoteTitle: "Persistent compute confirmation required",
   remoteText: "Only preprojected coordinates, opaque participant tokens, group/time, required weights, and task parameters will be sent. Raw coded rows are excluded.",
+  remoteRecoveryTitle: "Persistent compute did not complete",
+  remoteRecoveryText: "The same immutable task can be retried remotely or continued locally. Inference is removed only if you explicitly choose that option.",
   downloads: "Downloads",
   bundleZip: "Analysis bundle ZIP",
   pathCsv: "Path CSV",
@@ -193,16 +211,13 @@ const zhHans: typeof english = {
   centroids: "组质心路径",
   arrows: "方向箭头",
   labels: "标签",
-  network: "平均网络叠加",
-  networkEdges: "平均网络连线",
-  codeNodesHint: "ENA code 参考节点始终显示，并直接使用拟合后的 jENA 几何坐标；此纯显示开关只添加或隐藏平均网络连线。",
-  overlayPeriod: "叠加时期",
-  overlayScope: "叠加范围",
+  codeNodesHint: "ENA code 参考节点始终显示，并直接使用拟合后的 jENA 几何坐标。轨迹分析不绘制 ENA 平均网络连线。",
   overall: "全部",
   run: "运行轨迹分析",
   recompute: "重新计算轨迹分析",
   cancel: "取消",
   retry: "重试",
+  retryRemote: "重试远端计算",
   continueLocal: "继续本地运行",
   confirmRemote: "确认持久计算",
   disableHeavy: "关闭推断后运行",
@@ -210,6 +225,8 @@ const zhHans: typeof english = {
   modelStale: "待应用的模型控件与上次成功拟合不同；本工作台仍绑定上次成功结果。",
   remoteTitle: "需要确认持久计算",
   remoteText: "只发送预投影坐标、不透明参与者 token、组别／时间、必要权重以及任务参数；不发送原始编码行。",
+  remoteRecoveryTitle: "持久计算未能完成",
+  remoteRecoveryText: "可以用同一个不可变任务重试远端计算或继续本地运行；只有您明确选择时才会移除推断任务。",
   downloads: "下载",
   bundleZip: "分析 bundle ZIP",
   pathCsv: "路径 CSV",
@@ -252,9 +269,11 @@ const zhHant: typeof english = {
   downloads: "下載",
   fullscreen: "全螢幕",
   disableHeavy: "關閉推斷後運行",
+  retryRemote: "重試遠端計算",
+  remoteRecoveryTitle: "持久計算未能完成",
+  remoteRecoveryText: "可以用同一個不可變任務重試遠端計算或繼續本地運行；只有您明確選擇時才會移除推斷任務。",
   remoteText: "只發送預投影坐標、不透明參與者 token、組別／時間、必要權重以及任務參數；不發送原始編碼行。",
-  networkEdges: "平均網絡連線",
-  codeNodesHint: "ENA code 參考節點始終顯示，並直接使用擬合後的 jENA 幾何坐標；此純顯示開關只添加或隱藏平均網絡連線。",
+  codeNodesHint: "ENA code 參考節點始終顯示，並直接使用擬合後的 jENA 幾何坐標。軌跡分析不繪製 ENA 平均網絡連線。",
   mappingAudit: "映射與實體審計",
   provenance: "來源與版本",
 };
@@ -563,6 +582,8 @@ export default function OpenEnaLongitudinalWorkbenchV3({
   dataset,
   datasetHash,
   modelResultStale,
+  analysisControls,
+  analysisControlsMode,
 }: OpenEnaLongitudinalWorkbenchV3Props) {
   const copy = copyFor(locale);
   const [settings, setSettings] = useState<OpenEnaLongitudinalSettingsV3 | null>(null);
@@ -580,20 +601,27 @@ export default function OpenEnaLongitudinalWorkbenchV3({
   const [error, setError] = useState<string | null>(null);
   const [scientificDirty, setScientificDirty] = useState(false);
   const [routeDecision, setRouteDecision] = useState<OpenEnaLongitudinalRouteDecisionV3 | null>(null);
-  const [pendingRequest, setPendingRequest] = useState<Awaited<ReturnType<typeof buildOpenEnaLongitudinalExecutionRequestV3>> | null>(null);
+  const [remoteFailure, setRemoteFailure] = useState<OpenEnaLongitudinalExecutionClientErrorV3 | null>(null);
+  const [pendingRun, setPendingRun] = useState<PendingLongitudinalRunV3 | null>(null);
   const [cacheHit, setCacheHit] = useState(false);
   const [expectedPeriodLabel, setExpectedPeriodLabel] = useState("");
   const abortRef = useRef<AbortController | null>(null);
+  const scientificRevisionRef = useRef(0);
   const initializationKey = `${datasetHash}\u001f${result.analyzedAt}\u001f${config.model}\u001f${config.unitColumns.join("\u001e")}\u001f${config.conversationColumns.join("\u001e")}`;
 
   useEffect(() => {
     let active = true;
     abortRef.current?.abort();
+    scientificRevisionRef.current = advanceOpenEnaLongitudinalScientificRevisionV3(scientificRevisionRef.current);
     setStatus("initializing");
     setBundle(null);
     setBinding(null);
     setScientificDirty(false);
     setError(null);
+    setRemoteFailure(null);
+    setPendingRun(null);
+    setRouteDecision(null);
+    setCacheHit(false);
     void createOpenEnaLongitudinalSettingsV3({ result, config, dataset, datasetHash }).then((next) => {
       if (!active) return;
       const inventory = openEnaLongitudinalDisplayInventoryV3(dataset, config, next);
@@ -631,9 +659,16 @@ export default function OpenEnaLongitudinalWorkbenchV3({
     : null, [bundle, displaySpec]);
 
   function commitScientific(next: OpenEnaLongitudinalSettingsV3, clearIdentity = false) {
+    abortRef.current?.abort();
+    scientificRevisionRef.current = advanceOpenEnaLongitudinalScientificRevisionV3(scientificRevisionRef.current);
     setSettings(clearIdentity ? clearOpenEnaLongitudinalIdentityConfirmationV3(next) : next);
     if (bundle) setScientificDirty(true);
+    setPendingRun(null);
+    setRouteDecision(null);
+    setRemoteFailure(null);
+    setStatus("ready");
     setError(null);
+    setCacheHit(false);
   }
 
   function updateInferenceGroups(next: OpenEnaLongitudinalSettingsV3, role: 0 | 1, canonical: string) {
@@ -661,29 +696,42 @@ export default function OpenEnaLongitudinalWorkbenchV3({
   }
 
   const runPrepared = async (
-    prepared: Awaited<ReturnType<typeof buildOpenEnaLongitudinalExecutionRequestV3>>,
+    pending: PendingLongitudinalRunV3,
     options: { allowRemote?: boolean; forceLocal?: boolean } = {},
   ) => {
+    const { prepared, identity } = pending;
+    const runIsCurrent = () => isOpenEnaLongitudinalScientificRunCurrentV3(
+      identity,
+      scientificRevisionRef.current,
+      prepared.binding,
+    );
+    if (!runIsCurrent()) return;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-    setPendingRequest(prepared);
+    const ownsExecution = () => abortRef.current === controller && runIsCurrent();
+    setPendingRun(pending);
     setRouteDecision(estimateOpenEnaLongitudinalExecutionV3(prepared.request));
     setStatus("running");
     setProgress({ progress: 0, stage: "validate-binding" });
     setError(null);
+    setRemoteFailure(null);
     try {
       const receipt = await executeOpenEnaLongitudinalPreparedV3(prepared.request, {
         signal: controller.signal,
-        onProgress: setProgress,
+        onProgress: (nextProgress) => { if (ownsExecution()) setProgress(nextProgress); },
         allowRemote: options.allowRemote,
         forceLocal: options.forceLocal,
         remoteEndpoint: "/api/open-ena/longitudinal",
       });
+      if (!runIsCurrent()) return;
+      if (!ownsExecution()) return;
       setBundle(receipt.bundle);
       setBinding(prepared.binding);
       setCacheHit(receipt.cacheHit);
       setScientificDirty(false);
+      setPendingRun(null);
+      setRouteDecision(null);
       setStatus("complete");
       const knownGroups = receipt.bundle.paths.map((path) => path.group.canonical);
       setDisplay((current) => ({
@@ -693,13 +741,24 @@ export default function OpenEnaLongitudinalWorkbenchV3({
           : knownGroups,
       }));
     } catch (caught) {
+      if (!runIsCurrent()) return;
+      if (!ownsExecution()) return;
       if (caught instanceof DOMException && caught.name === "AbortError") {
+        setPendingRun(null);
+        setRouteDecision(null);
         setStatus("ready");
         return;
       }
       if (caught instanceof OpenEnaLongitudinalExecutionClientErrorV3 && caught.code === "REMOTE_CONFIRMATION_REQUIRED") {
         setRouteDecision(caught.decision);
         setStatus("remote-confirmation");
+        return;
+      }
+      if (caught instanceof OpenEnaLongitudinalExecutionClientErrorV3) {
+        setRouteDecision(caught.decision);
+        setRemoteFailure(caught);
+        setError(caught.message);
+        setStatus("remote-recovery");
         return;
       }
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -711,6 +770,8 @@ export default function OpenEnaLongitudinalWorkbenchV3({
 
   const run = async (override = settings) => {
     if (!override) return;
+    const scientificRevision = scientificRevisionRef.current;
+    const settingsSnapshot = snapshotOpenEnaLongitudinalSettingsV3(override);
     setStatus("preparing");
     setError(null);
     try {
@@ -719,23 +780,66 @@ export default function OpenEnaLongitudinalWorkbenchV3({
         config,
         dataset,
         datasetHash,
-        settings: override,
+        settings: settingsSnapshot,
         runId: `open-ena-longitudinal-${datasetHash.slice(0, 12)}-${result.analyzedAt}`,
         executionTarget: "browser-worker",
       });
-      await runPrepared(prepared);
+      const preparedSnapshot = snapshotOpenEnaPreparedLongitudinalExecutionV3(prepared);
+      const pending: PendingLongitudinalRunV3 = {
+        prepared: preparedSnapshot,
+        identity: bindOpenEnaLongitudinalScientificRunV3(scientificRevision, preparedSnapshot.binding),
+        settingsSnapshot,
+      };
+      if (!isOpenEnaLongitudinalScientificRunCurrentV3(
+        pending.identity,
+        scientificRevisionRef.current,
+        pending.prepared.binding,
+      )) return;
+      await runPrepared(pending);
     } catch (caught) {
+      if (scientificRevisionRef.current !== scientificRevision) return;
+      setError(caught instanceof Error ? caught.message : String(caught));
+      setStatus("error");
+    }
+  };
+
+  const runWithoutInference = async () => {
+    if (!pendingRun || !isOpenEnaLongitudinalScientificRunCurrentV3(
+      pendingRun.identity,
+      scientificRevisionRef.current,
+      pendingRun.prepared.binding,
+    )) return;
+    const sourcePending = pendingRun;
+    const nextSettings = withoutOpenEnaLongitudinalInferenceSettingsV3(sourcePending.settingsSnapshot);
+    commitScientific(nextSettings);
+    const scientificRevision = scientificRevisionRef.current;
+    setStatus("preparing");
+    try {
+      const prepared = await withoutOpenEnaLongitudinalInferencePreparedV3(sourcePending.prepared);
+      const nextPending: PendingLongitudinalRunV3 = {
+        prepared,
+        identity: bindOpenEnaLongitudinalScientificRunV3(scientificRevision, prepared.binding),
+        settingsSnapshot: snapshotOpenEnaLongitudinalSettingsV3(nextSettings),
+      };
+      if (!isOpenEnaLongitudinalScientificRunCurrentV3(
+        nextPending.identity,
+        scientificRevisionRef.current,
+        nextPending.prepared.binding,
+      )) return;
+      await runPrepared(nextPending);
+    } catch (caught) {
+      if (scientificRevisionRef.current !== scientificRevision) return;
       setError(caught instanceof Error ? caught.message : String(caught));
       setStatus("error");
     }
   };
 
   const download = async (kind: "bundle" | "participant" | "path" | "metadata" | "inference" | "analysis" | "plotly") => {
-    if (!bundle || !plotlySpec || !settings || !profile) return;
+    if (!bundle || !plotlySpec || !displaySpec || !settings || !profile) return;
     const prefix = `open-ena-${bundle.identity.resultHash.slice(0, 12)}-trajectory`;
     if (kind === "bundle" || kind === "participant") {
       if (kind === "participant" && !window.confirm(copy.privacyConfirm)) return;
-      const exported = await createExportBundle(bundle, { plotlySpec, includeParticipantLevel: kind === "participant" });
+      const exported = await createExportBundle(bundle, { displaySpec, includeParticipantLevel: kind === "participant" });
       downloadBlob(exported.fileName, exported.bytes, "application/zip");
       return;
     }
@@ -747,7 +851,7 @@ export default function OpenEnaLongitudinalWorkbenchV3({
       inference: ["trajectory-inference.csv", "inference.csv"],
     } as const;
     const [packagePath, downloadSuffix] = packageFiles[kind];
-    const exported = await createExportBundle(bundle, { plotlySpec });
+    const exported = await createExportBundle(bundle, { displaySpec });
     const file = exported.files.find((candidate) => candidate.path === packagePath);
     if (!file) throw new Error(`The 3DENA export bundle omitted ${packagePath}.`);
     downloadBlob(`${prefix}-${downloadSuffix}`, file.bytes, file.mediaType);
@@ -762,11 +866,21 @@ export default function OpenEnaLongitudinalWorkbenchV3({
   const timeOptions = config.conversationColumns.filter((column) => !config.unitColumns.includes(column) && column !== config.groupColumn);
   const compareGroups = settings.inference.independentPeriod?.groups ?? settings.inference.pathComparison?.groups ?? null;
   const observedPeriods = inventory.periods.filter((period) => period.observed);
+  const headerDimensions = openEnaLongitudinalHeaderDimensionsV3(bundle, settings);
 
   return (
     <section className="ena-longitudinal-v3-workbench" data-testid="open-ena-longitudinal-v3-workbench" aria-label={copy.title} aria-busy={status === "preparing" || status === "running"}>
       <div className="ena-longitudinal-v3-layout">
         <aside className="ena-longitudinal-v3-controls">
+          {analysisControls ? (
+            <div
+              data-testid="open-ena-longitudinal-v3-analysis-controls"
+              data-controls-mode={analysisControlsMode}
+            >
+              {analysisControls}
+            </div>
+          ) : (
+            <>
           <header><p>{copy.kicker}</p><h2>{copy.title}</h2><span>{copy.subtitle}</span></header>
 
           <section data-trajectory-step="1"><h3><b>1</b>{copy.time}</h3><label><span>{copy.time}</span><select value={settings.timeColumn} onChange={(event) => commitScientific(changeOpenEnaLongitudinalTimeColumnV3(settings, dataset, config, event.target.value), true)}>{timeOptions.map((column) => <option key={column}>{column}</option>)}</select></label></section>
@@ -812,17 +926,17 @@ export default function OpenEnaLongitudinalWorkbenchV3({
 
           <section data-trajectory-step="8"><h3><b>8</b>{copy.projection}</h3><label><span>{copy.projection}</span><select value={display.projection} onChange={(event) => setDisplay((current) => ({ ...current, projection: event.target.value as DisplayStateV3["projection"] }))}>{["3d", "xy", "xz", "yz", "yx", "zx", "zy"].map((projection) => <option key={projection} value={projection}>{projection.toUpperCase()}</option>)}</select></label><fieldset><legend>Axis flips (display only)</legend>{([0, 1, 2] as const).map((axis) => <label key={axis} className="ena-longitudinal-v3-check"><input type="checkbox" checked={display.axisFlips[axis]} onChange={(event) => setDisplay((current) => { const flips: [boolean, boolean, boolean] = [...current.axisFlips]; flips[axis] = event.target.checked; return { ...current, axisFlips: flips }; })} /><span>Flip {["X", "Y", "Z"][axis]}</span></label>)}</fieldset></section>
 
-          <section data-trajectory-step="9"><h3><b>9</b>{copy.paths}</h3>{([['participants', copy.participantPoints], ['individualPaths', copy.individualPaths], ['paths', copy.centroids], ['directionArrows', copy.arrows], ['labels', copy.labels]] as const).map(([field, label]) => <label key={field} className="ena-longitudinal-v3-check"><input type="checkbox" checked={field === "paths" ? display.traces.paths && display.traces.centroids : display.traces[field]} onChange={(event) => setDisplay((current) => ({ ...current, traces: field === "paths" ? { ...current.traces, paths: event.target.checked, centroids: event.target.checked } : { ...current.traces, [field]: event.target.checked } }))} /><span>{label}</span></label>)}</section>
+          <section data-trajectory-step="9"><h3><b>9</b>{copy.paths}</h3><p>{copy.codeNodesHint}</p>{([['participants', copy.participantPoints], ['individualPaths', copy.individualPaths], ['paths', copy.centroids], ['directionArrows', copy.arrows], ['labels', copy.labels]] as const).map(([field, label]) => <label key={field} className="ena-longitudinal-v3-check"><input type="checkbox" checked={field === "paths" ? display.traces.paths && display.traces.centroids : display.traces[field]} onChange={(event) => setDisplay((current) => ({ ...current, traces: field === "paths" ? { ...current.traces, paths: event.target.checked, centroids: event.target.checked } : { ...current.traces, [field]: event.target.checked } }))} /><span>{label}</span></label>)}</section>
 
-          <section data-trajectory-step="10"><h3><b>10</b>{copy.network}</h3><p>{copy.codeNodesHint}</p><label className="ena-longitudinal-v3-check"><input type="checkbox" checked={display.traces.networkOverlay} onChange={(event) => setDisplay((current) => ({ ...current, traces: { ...current.traces, networkOverlay: event.target.checked } }))} /><span>{copy.networkEdges}</span></label><label><span>{copy.overlayPeriod}</span><select value={settings.networkOverlay.periodCanonical ?? ""} onChange={(event) => { const next = cloneOpenEnaLongitudinalSettingsV3(settings); next.networkOverlay.periodCanonical = event.target.value; commitScientific(next); }}>{observedPeriods.map((period) => <option key={period.canonical} value={period.canonical}>{period.display}</option>)}</select></label><label><span>{copy.overlayScope}</span><select value={settings.networkOverlay.groupCanonical ?? ""} onChange={(event) => { const next = cloneOpenEnaLongitudinalSettingsV3(settings); next.networkOverlay.groupCanonical = event.target.value || null; commitScientific(next); }}><option value="">{copy.overall}</option>{inventory.groups.map((group) => <option key={group.canonical} value={group.canonical}>{group.display}</option>)}</select></label></section>
+          <section data-trajectory-step="10"><h3><b>10</b>{copy.status}</h3>{modelResultStale ? <p className="ena-longitudinal-v3-banner" role="status">{copy.modelStale}</p> : null}{stale ? <p className="ena-longitudinal-v3-banner" role="status">{copy.stale}</p> : null}{status === "remote-confirmation" && routeDecision ? <div className="ena-longitudinal-v3-remote" role="alert"><strong>{copy.remoteTitle}</strong><p>{copy.remoteText}</p><dl><div><dt>Predicted time</dt><dd>{routeDecision.predictedMilliseconds} ms</dd></div><div><dt>Predicted memory</dt><dd>{(routeDecision.predictedMemoryBytes / 1024 / 1024).toFixed(1)} MB</dd></div><div><dt>Hard deadline</dt><dd>60 s</dd></div></dl><button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { allowRemote: true })}>{copy.confirmRemote}</button><button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { forceLocal: true })}>{copy.continueLocal}</button><button type="button" onClick={() => void runWithoutInference()}>{copy.disableHeavy}</button></div> : null}{status === "remote-recovery" && routeDecision && remoteFailure ? <div className="ena-longitudinal-v3-remote" role="alert"><strong>{copy.remoteRecoveryTitle}</strong><p>{copy.remoteRecoveryText}</p><p>{remoteFailure.message}</p><button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { allowRemote: true })}>{copy.retryRemote}</button>{remoteFailure.canContinueLocally ? <button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { forceLocal: true })}>{copy.continueLocal}</button> : null}{remoteFailure.canDisableInference ? <button type="button" onClick={() => void runWithoutInference()}>{copy.disableHeavy}</button> : null}</div> : null}<div className="ena-longitudinal-v3-run-status" role="status" aria-live="polite"><span data-state={status} /><strong>{status === "ready" ? copy.ready : status}</strong>{status === "running" || status === "preparing" ? <progress max="1" value={progress.progress}>{Math.round(progress.progress * 100)}%</progress> : null}{cacheHit ? <small>{copy.cacheHit}</small> : null}</div>{error && status !== "remote-recovery" ? <p className="ena-longitudinal-v3-error" role="alert">{error}</p> : null}<div className="ena-longitudinal-v3-run-actions"><button type="button" className="ena-longitudinal-v3-primary" onClick={() => void run()} disabled={status === "running" || status === "preparing" || settings.participantColumns.length === 0}>{bundle ? copy.recompute : copy.run}</button>{status === "running" || status === "preparing" ? <button type="button" onClick={() => abortRef.current?.abort()}>{copy.cancel}</button> : null}{status === "error" ? <button type="button" onClick={() => void run()}>{copy.retry}</button> : null}</div></section>
 
-          <section data-trajectory-step="11"><h3><b>11</b>{copy.status}</h3>{modelResultStale ? <p className="ena-longitudinal-v3-banner" role="status">{copy.modelStale}</p> : null}{stale ? <p className="ena-longitudinal-v3-banner" role="status">{copy.stale}</p> : null}{status === "remote-confirmation" && routeDecision ? <div className="ena-longitudinal-v3-remote" role="alert"><strong>{copy.remoteTitle}</strong><p>{copy.remoteText}</p><dl><div><dt>Predicted time</dt><dd>{routeDecision.predictedMilliseconds} ms</dd></div><div><dt>Predicted memory</dt><dd>{(routeDecision.predictedMemoryBytes / 1024 / 1024).toFixed(1)} MB</dd></div><div><dt>Hard deadline</dt><dd>60 s</dd></div></dl><button type="button" onClick={() => pendingRequest && void runPrepared(pendingRequest, { allowRemote: true })}>{copy.confirmRemote}</button><button type="button" onClick={() => pendingRequest && void runPrepared(pendingRequest, { forceLocal: true })}>{copy.continueLocal}</button><button type="button" onClick={() => { const next = cloneOpenEnaLongitudinalSettingsV3(settings); next.inference = { independentPeriod: null, pairedPeriods: null, repeatedPeriods: null, pathComparison: null }; commitScientific(next); void run(next); }}>{copy.disableHeavy}</button></div> : null}<div className="ena-longitudinal-v3-run-status" role="status" aria-live="polite"><span data-state={status} /><strong>{status === "ready" ? copy.ready : status}</strong>{status === "running" || status === "preparing" ? <progress max="1" value={progress.progress}>{Math.round(progress.progress * 100)}%</progress> : null}{cacheHit ? <small>{copy.cacheHit}</small> : null}</div>{error ? <p className="ena-longitudinal-v3-error" role="alert">{error}</p> : null}<div className="ena-longitudinal-v3-run-actions"><button type="button" className="ena-longitudinal-v3-primary" onClick={() => void run()} disabled={status === "running" || status === "preparing" || settings.participantColumns.length === 0}>{bundle ? copy.recompute : copy.run}</button>{status === "running" || status === "preparing" ? <button type="button" onClick={() => abortRef.current?.abort()}>{copy.cancel}</button> : null}{status === "error" ? <button type="button" onClick={() => void run()}>{copy.retry}</button> : null}</div></section>
-
-          <section data-trajectory-step="12"><h3><b>12</b>{copy.downloads}</h3><div className="ena-longitudinal-v3-downloads">{([['bundle', copy.bundleZip], ['path', copy.pathCsv], ['metadata', copy.metadataCsv], ['inference', copy.inferenceCsv], ['analysis', copy.analysisJson], ['plotly', copy.plotlyJson], ['participant', copy.participantZip]] as const).map(([kind, label]) => <button type="button" key={kind} disabled={!bundle || stale} onClick={() => void download(kind)}>{label}</button>)}</div></section>
+          <section data-trajectory-step="11"><h3><b>11</b>{copy.downloads}</h3><div className="ena-longitudinal-v3-downloads">{([['bundle', copy.bundleZip], ['path', copy.pathCsv], ['metadata', copy.metadataCsv], ['inference', copy.inferenceCsv], ['analysis', copy.analysisJson], ['plotly', copy.plotlyJson], ['participant', copy.participantZip]] as const).map(([kind, label]) => <button type="button" key={kind} disabled={!bundle || stale} onClick={() => void download(kind)}>{label}</button>)}</div></section>
+            </>
+          )}
         </aside>
 
         <main className="ena-longitudinal-v3-output">
-          <header className="ena-longitudinal-v3-output-header"><div><p>{copy.kicker}</p><h2>{copy.plotTitle}</h2><span>{settings.selectedDimensions.join(" × ")} · {bundle?.identity.resultHash.slice(0, 12) ?? "not run"}</span></div><div><label><span>{copy.camera}</span><select value={display.cameraPreset} disabled={display.projection !== "3d"} onChange={(event) => setDisplay((current) => ({ ...current, cameraPreset: event.target.value as CameraPreset }))}>{(["isometric", "xy", "xz", "yz", "yx", "zx", "zy"] as CameraPreset[]).map((preset) => <option key={preset} value={preset}>{preset.toUpperCase()}</option>)}</select></label></div></header>
+          <header className="ena-longitudinal-v3-output-header"><div><p>{copy.kicker}</p><h2>{copy.plotTitle}</h2><span>{headerDimensions.join(" × ")} · {bundle?.identity.resultHash.slice(0, 12) ?? "not run"}</span></div><div><label><span>{copy.camera}</span><select value={display.cameraPreset} disabled={display.projection !== "3d"} onChange={(event) => setDisplay((current) => ({ ...current, cameraPreset: event.target.value as CameraPreset }))}>{(["isometric", "xy", "xz", "yz", "yx", "zx", "zy"] as CameraPreset[]).map((preset) => <option key={preset} value={preset}>{preset.toUpperCase()}</option>)}</select></label></div></header>
           {!bundle || !plotlySpec ? <div className="ena-longitudinal-v3-empty"><strong>{status === "initializing" ? copy.initializing : copy.noResult}</strong><p>jENA {result.set.modelType} · {result.set.rotation.rotationColumns.length} fitted dimensions · {dataset.rows.length} source rows</p></div> : <><div data-stale={stale ? "true" : "false"} className="ena-longitudinal-v3-presenter"><TrajectoryPlotlyPresenterV3 spec={plotlySpec} cameraPreset={display.cameraPreset} labels={copy} />{stale ? <p className="ena-longitudinal-v3-stale-overlay">STALE · RECOMPUTE REQUIRED</p> : null}</div><AuditCards profile={profile} settings={settings} bundle={bundle} copy={copy} /><ResultsTablesV3 bundle={bundle} copy={copy} /></>}
         </main>
       </div>

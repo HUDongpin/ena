@@ -1,4 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "npm ci"
+  "installCommand": "node scripts/verify-j3dena-vendor.mjs && npm ci && node scripts/verify-j3dena-vendor.mjs --require-installed"
 }

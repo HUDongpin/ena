@@ -8,9 +8,10 @@ import {
 interface OpenEnaLoginProps {
   locale: Locale;
   error: boolean;
+  configurationReady: boolean;
 }
 
-export default function OpenEnaLogin({ locale, error }: OpenEnaLoginProps) {
+export default function OpenEnaLogin({ locale, error, configurationReady }: OpenEnaLoginProps) {
   const copy = getOpenEnaAuthCopy(locale);
   const [noticeBeforeEmail, noticeAfterEmail = ""] = copy.collaborationNotice.split(
     OPEN_ENA_CONTACT_EMAIL,
@@ -21,7 +22,7 @@ export default function OpenEnaLogin({ locale, error }: OpenEnaLoginProps) {
       <section className="open-ena-login-shell" aria-labelledby="open-ena-login-title">
         <div className="open-ena-login-context">
           <div className="open-ena-login-brand" dir="ltr">
-            <Image src="/ena-mark.svg" width={54} height={54} alt="" priority />
+            <Image src="/ena-mark.svg" width={54} height={54} alt="" />
             <div>
               <strong>OPEN ENA</strong>
               <span>ENA.HK</span>
@@ -66,7 +67,8 @@ export default function OpenEnaLogin({ locale, error }: OpenEnaLoginProps) {
             <p>{copy.intro}</p>
           </div>
 
-          <form action="/api/open-ena/login" method="post" className="open-ena-login-form">
+          {configurationReady ? (
+            <form action="/api/open-ena/login" method="post" className="open-ena-login-form">
             <input type="hidden" name="locale" value={locale} />
             <label htmlFor="open-ena-username">{copy.username}</label>
             <input
@@ -103,7 +105,12 @@ export default function OpenEnaLogin({ locale, error }: OpenEnaLoginProps) {
               {copy.signIn}
               <span aria-hidden="true">→</span>
             </button>
-          </form>
+            </form>
+          ) : (
+            <p className="open-ena-login-error" role="alert">
+              {copy.unavailable}
+            </p>
+          )}
 
           <div className="open-ena-login-notes">
             <p className="open-ena-login-collaboration">

@@ -61,6 +61,123 @@ async function fakeBundle(request: LongitudinalExecutionRequestV2): Promise<Long
   };
 }
 
+function remoteCapability(jobId: string) {
+  const jobUrl = `https://compute.example/v1/jobs/${jobId}`;
+  return {
+    jobUrl,
+    value: {
+      schemaVersion: "3dena.longitudinal-compute-capability.v2",
+      jobId,
+      capabilityToken: `capability-token-not-secret-${jobId}`,
+      urls: {
+        schemaVersion: "3dena.longitudinal-compute-status-urls.v2",
+        statusUrl: jobUrl,
+        eventsUrl: `${jobUrl}/events`,
+        resultUrl: `${jobUrl}/result`,
+        artifactUrl: `${jobUrl}/artifact`,
+        cancelUrl: jobUrl,
+        deleteUrl: jobUrl,
+      },
+      expiresAt: "2026-08-25T00:00:00.000Z",
+    },
+  };
+}
+
+function remoteStatus(
+  capability: ReturnType<typeof remoteCapability>["value"],
+  state: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "EXPIRED",
+  errorCode: string | null = null,
+) {
+  return {
+    schemaVersion: "3dena.job-status.v1",
+    jobId: capability.jobId,
+    state,
+    owner: null,
+    progress: { phase: state.toLowerCase(), completed: state === "SUCCEEDED" ? 1 : 0, total: 1 },
+    createdAt: "2026-08-24T12:00:00.000Z",
+    updatedAt: "2026-08-24T12:00:01.000Z",
+    expiresAt: capability.expiresAt,
+    resultAvailable: state === "SUCCEEDED",
+    errorCode,
+  };
+}
+
+function remoteDeletionReceipt(jobId: string) {
+  return {
+    schemaVersion: "3dena.job-deletion-receipt.v2",
+    jobId,
+    cancelled: false,
+    inputDeleted: true,
+    resultDeleted: true,
+    deletedAt: "2026-08-24T12:00:02.000Z",
+    intentAccepted: true,
+    termination: "observed",
+    capacity: "released",
+    objects: "deleted",
+  };
+}
+
+function isRecoverableRemoteFailure(error: unknown, code: string): boolean {
+  return error instanceof OpenEnaLongitudinalExecutionClientErrorV3
+    && error.code === code
+    && error.decision.target === "persistent-compute-service"
+    && error.canContinueLocally
+    && error.canDisableInference;
+}
+
+async function successfulRemoteTransport(
+  request: LongitudinalExecutionRequestV2,
+  jobId: string,
+): Promise<{ fetchMock: typeof fetch; deletionCount: () => number }> {
+  const { value: capability, jobUrl } = remoteCapability(jobId);
+  const persistentRequest = {
+    ...request,
+    execution: { ...request.execution, target: "persistent-compute-service" as const },
+  };
+  const bundle = await fakeBundle(persistentRequest);
+  const artifact = {
+    version: "3dena.compute-scientific-longitudinal-result-artifact.v2",
+    owner: {
+      contractVersion: "3dena.compute-task-owner.v1",
+      datasetHash: request.pathTask.datasetHash,
+      specHash: request.pathTask.specHash,
+      runId: request.pathTask.runId,
+      taskId: jobId,
+    },
+    taskKind: "longitudinal-analysis-v2",
+    requestHash: bundle.identity.requestHash,
+    bundle,
+  };
+  const artifactBytes = new TextEncoder().encode(JSON.stringify(artifact));
+  const artifactSha = createHash("sha256").update(artifactBytes).digest("hex");
+  let deletionCalls = 0;
+  const fetchMock: typeof fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (url === "/api/open-ena/longitudinal" && method === "POST") return Response.json(capability, { status: 202 });
+    if (url === jobUrl && method === "GET") return Response.json(remoteStatus(capability, "SUCCEEDED"));
+    if (url === `${jobUrl}/result` && method === "GET") return Response.json({
+      schemaVersion: "3dena.job-result-reference.v1",
+      jobId,
+      sha256: artifactSha,
+      byteLength: artifactBytes.byteLength,
+      resultUrl: "https://blob.example/result.json",
+      exportUrl: null,
+      expiresAt: capability.expiresAt,
+    });
+    if (url === `${jobUrl}/artifact` && method === "GET") return new Response(artifactBytes, {
+      status: 200,
+      headers: { "x-3dena-result-sha256": artifactSha, "content-type": "application/json" },
+    });
+    if (url === jobUrl && method === "DELETE") {
+      deletionCalls += 1;
+      return Response.json(remoteDeletionReceipt(jobId));
+    }
+    return new Response(null, { status: 404 });
+  };
+  return { fetchMock, deletionCount: () => deletionCalls };
+}
+
 test("Worker V3 posts ordered progress and exactly one result for one immutable request", async () => {
   const listeners: Array<(event: { data: OpenEnaLongitudinalWorkerRequestV3 }) => void> = [];
   const responses: OpenEnaLongitudinalWorkerResponseV3[] = [];
@@ -337,4 +454,222 @@ test("remote cancellation sends one durable DELETE intent with a stable operatio
     (error: unknown) => error instanceof DOMException && error.name === "AbortError",
   );
   assert.deepEqual(deletionKeys, ["open-ena-delete-job-cancel-1"]);
+});
+
+test("remote POST 503 is a typed recoverable submission failure", async () => {
+  clearOpenEnaLongitudinalExecutionCacheV3();
+  const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+  let deleteCalls = 0;
+  const fetchMock: typeof fetch = async (_input, init) => {
+    if ((init?.method ?? "GET") === "DELETE") deleteCalls += 1;
+    return new Response("temporarily unavailable", { status: 503 });
+  };
+
+  await assert.rejects(
+    executeOpenEnaLongitudinalPreparedV3(request, {
+      allowRemote: true,
+      remoteEndpoint: "/api/open-ena/longitudinal",
+      fetchImpl: fetchMock,
+      resultVerifier: async () => {},
+    }),
+    (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_SUBMISSION_FAILED")
+      && /HTTP 503/u.test((error as Error).message),
+  );
+  assert.equal(deleteCalls, 0, "no durable job exists before a capability is issued");
+});
+
+test("remote poll network failure is typed and still closes durable deletion", async () => {
+  clearOpenEnaLongitudinalExecutionCacheV3();
+  const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+  const { value: capability, jobUrl } = remoteCapability("job-poll-network-1");
+  let deleteCalls = 0;
+  const fetchMock: typeof fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (url === "/api/open-ena/longitudinal" && method === "POST") return Response.json(capability, { status: 202 });
+    if (url === jobUrl && method === "GET") throw new TypeError("fetch failed");
+    if (url === jobUrl && method === "DELETE") {
+      deleteCalls += 1;
+      return Response.json(remoteDeletionReceipt(capability.jobId));
+    }
+    return new Response(null, { status: 404 });
+  };
+
+  await assert.rejects(
+    executeOpenEnaLongitudinalPreparedV3(request, {
+      allowRemote: true,
+      remoteEndpoint: "/api/open-ena/longitudinal",
+      fetchImpl: fetchMock,
+      remotePollIntervalMilliseconds: 1,
+      resultVerifier: async () => {},
+    }),
+    (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_POLL_FAILED")
+      && /fetch failed/u.test((error as Error).message),
+  );
+  assert.equal(deleteCalls, 1);
+});
+
+for (const [state, code] of [
+  ["FAILED", "REMOTE_TERMINAL_FAILED"],
+  ["EXPIRED", "REMOTE_TERMINAL_EXPIRED"],
+] as const) {
+  test(`remote terminal ${state} is typed and still closes durable deletion`, async () => {
+    clearOpenEnaLongitudinalExecutionCacheV3();
+    const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+    const { value: capability, jobUrl } = remoteCapability(`job-terminal-${state.toLowerCase()}-1`);
+    let deleteCalls = 0;
+    const fetchMock: typeof fetch = async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/api/open-ena/longitudinal" && method === "POST") return Response.json(capability, { status: 202 });
+      if (url === jobUrl && method === "GET") {
+        return Response.json(remoteStatus(capability, state, `${state}_FIXTURE`));
+      }
+      if (url === jobUrl && method === "DELETE") {
+        deleteCalls += 1;
+        return Response.json(remoteDeletionReceipt(capability.jobId));
+      }
+      return new Response(null, { status: 404 });
+    };
+
+    await assert.rejects(
+      executeOpenEnaLongitudinalPreparedV3(request, {
+        allowRemote: true,
+        remoteEndpoint: "/api/open-ena/longitudinal",
+        fetchImpl: fetchMock,
+        remotePollIntervalMilliseconds: 1,
+        resultVerifier: async () => {},
+      }),
+      (error: unknown) => isRecoverableRemoteFailure(error, code)
+        && (error as Error).message.includes(`${state}_FIXTURE`),
+    );
+    assert.equal(deleteCalls, 1);
+  });
+}
+
+test("remote result-reference failure is typed and still closes durable deletion", async () => {
+  clearOpenEnaLongitudinalExecutionCacheV3();
+  const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+  const { value: capability, jobUrl } = remoteCapability("job-result-failure-1");
+  let deleteCalls = 0;
+  const fetchMock: typeof fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (url === "/api/open-ena/longitudinal" && method === "POST") return Response.json(capability, { status: 202 });
+    if (url === jobUrl && method === "GET") return Response.json(remoteStatus(capability, "SUCCEEDED"));
+    if (url === `${jobUrl}/result` && method === "GET") return new Response("upstream failed", { status: 503 });
+    if (url === jobUrl && method === "DELETE") {
+      deleteCalls += 1;
+      return Response.json(remoteDeletionReceipt(capability.jobId));
+    }
+    return new Response(null, { status: 404 });
+  };
+
+  await assert.rejects(
+    executeOpenEnaLongitudinalPreparedV3(request, {
+      allowRemote: true,
+      remoteEndpoint: "/api/open-ena/longitudinal",
+      fetchImpl: fetchMock,
+      resultVerifier: async () => {},
+    }),
+    (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_RESULT_FAILED")
+      && /HTTP 503/u.test((error as Error).message),
+  );
+  assert.equal(deleteCalls, 1);
+});
+
+test("remote bundle verifier failure is typed after the durable job is deleted", async () => {
+  clearOpenEnaLongitudinalExecutionCacheV3();
+  const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+  const transport = await successfulRemoteTransport(request, "job-result-verifier-1");
+  await assert.rejects(
+    executeOpenEnaLongitudinalPreparedV3(request, {
+      allowRemote: true,
+      remoteEndpoint: "/api/open-ena/longitudinal",
+      fetchImpl: transport.fetchMock,
+      resultVerifier: async () => { throw new Error("bundle schema rejected"); },
+    }),
+    (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_RESULT_FAILED")
+      && /bundle schema rejected/u.test((error as Error).message),
+  );
+  assert.equal(transport.deletionCount(), 1);
+});
+
+test("remote hard deadline uses the controllable seam, is typed, and still deletes", async () => {
+  clearOpenEnaLongitudinalExecutionCacheV3();
+  const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+  const { value: capability, jobUrl } = remoteCapability("job-deadline-1");
+  let deleteCalls = 0;
+  const fetchMock: typeof fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    if (url === "/api/open-ena/longitudinal" && method === "POST") return Response.json(capability, { status: 202 });
+    if (url === jobUrl && method === "GET") {
+      return await new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (signal?.aborted) reject(new DOMException("aborted", "AbortError"));
+        else signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+      });
+    }
+    if (url === jobUrl && method === "DELETE") {
+      deleteCalls += 1;
+      return Response.json(remoteDeletionReceipt(capability.jobId));
+    }
+    return new Response(null, { status: 404 });
+  };
+
+  await assert.rejects(
+    executeOpenEnaLongitudinalPreparedV3(request, {
+      allowRemote: true,
+      remoteEndpoint: "/api/open-ena/longitudinal",
+      fetchImpl: fetchMock,
+      remoteDeadlineMilliseconds: 5,
+      remoteCleanupDeadlineMilliseconds: 100,
+      resultVerifier: async () => {},
+    }),
+    (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_DEADLINE_EXCEEDED"),
+  );
+  assert.equal(deleteCalls, 1);
+});
+
+test("force-local recovery preserves the failed immutable request except execution target", async () => {
+  clearOpenEnaLongitudinalExecutionCacheV3();
+  const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+  const submittedRequests: LongitudinalExecutionRequestV2[] = [];
+  const fetchMock: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as { request: LongitudinalExecutionRequestV2 };
+    submittedRequests.push(body.request);
+    return new Response("temporarily unavailable", { status: 503 });
+  };
+  await assert.rejects(
+    executeOpenEnaLongitudinalPreparedV3(request, {
+      allowRemote: true,
+      remoteEndpoint: "/api/open-ena/longitudinal",
+      fetchImpl: fetchMock,
+      resultVerifier: async () => {},
+    }),
+    (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_SUBMISSION_FAILED"),
+  );
+
+  const localRequests: LongitudinalExecutionRequestV2[] = [];
+  await executeOpenEnaLongitudinalPreparedV3(request, {
+    forceLocal: true,
+    nodeExecutor: async (input) => {
+      localRequests.push(structuredClone(input));
+      return fakeBundle(input);
+    },
+    resultVerifier: async () => {},
+  });
+  const submittedRequest = submittedRequests[0];
+  const localRequest = localRequests[0];
+  assert.ok(submittedRequest);
+  assert.ok(localRequest);
+  const remoteComparable = structuredClone(submittedRequest);
+  const localComparable = structuredClone(localRequest);
+  remoteComparable.execution.target = "browser-worker";
+  localComparable.execution.target = "browser-worker";
+  assert.deepEqual(remoteComparable, localComparable);
+  assert.equal(submittedRequest.execution.seed, localRequest.execution.seed);
+  assert.deepEqual(submittedRequest.inferenceTask, localRequest.inferenceTask);
+  assert.equal(submittedRequest.pathTask.specHash, localRequest.pathTask.specHash);
 });

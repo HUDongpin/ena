@@ -4,11 +4,13 @@ import test from "node:test";
 
 const component = readFileSync(new URL("../components/open-ena/OpenEnaLongitudinalWorkbenchV3.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/open-ena/OpenEnaWorkspace.tsx", import.meta.url), "utf8");
+const groupContrast2d = readFileSync(new URL("../components/open-ena/OpenEnaGroupContrast.tsx", import.meta.url), "utf8");
+const groupContrast3d = readFileSync(new URL("../components/open-ena/OpenEna3DGroupContrast.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("V3 trajectory controls follow the 3DENA scientific workflow order", () => {
   const order = [...component.matchAll(/data-trajectory-step="(\d+)"/gu)].map((match) => Number(match[1]));
-  assert.deepEqual(order, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  assert.deepEqual(order, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   for (const phrase of [
     "Time / order variable",
     "Entity ID",
@@ -19,7 +21,6 @@ test("V3 trajectory controls follow the 3DENA scientific workflow order", () => 
     "Full rotation distance",
     "3D / 2D projection",
     "Direction arrows",
-    "Mean network overlay",
     "Run trajectory analysis",
     "Analysis bundle ZIP",
   ]) assert.match(component, new RegExp(phrase, "i"));
@@ -29,6 +30,10 @@ test("V3 trajectory controls follow the 3DENA scientific workflow order", () => 
     "Confidence level",
     "Resampling design",
     "Bootstrap CSV",
+    "Mean network overlay",
+    "Mean network edges",
+    "Overlay time",
+    "Overlay scope",
   ]) assert.doesNotMatch(component, new RegExp(removed, "i"));
 });
 
@@ -55,6 +60,61 @@ test("successful trajectory results use the V3 workbench instead of the legacy r
   assert.match(workspace, /<OpenEnaLongitudinalWorkbenchV3/);
   assert.match(component, /data-testid="open-ena-longitudinal-v3-workbench"/);
   assert.match(workspace, /trajectory results are executed by the V3 task workbench/i);
+  assert.match(
+    workspace,
+    /setMode\(nextResult\.set\.modelType === "EndPoint" \? "model" : "plot"\)/,
+    "a successful trajectory fit must open its dedicated workbench on the first analysis screen",
+  );
+  assert.doesNotMatch(
+    workspace,
+    /setResult\(nextResult\)[\s\S]{0,600}setMode\("model"\)[\s\S]{0,300}setShowTrajectories\(true\)/,
+    "the trajectory completion route must not fall through the generic ENA presenter",
+  );
+});
+
+test("successful trajectory results keep the trajectory presenter mounted across rail modes", () => {
+  const trajectoryRoute = workspace.match(/const longitudinalV3Context =[\s\S]*?: null;/)?.[0] ?? "";
+
+  assert.match(trajectoryRoute, /result\.set\.modelType !== "EndPoint"/);
+  assert.doesNotMatch(
+    trajectoryRoute,
+    /mode === "plot"/,
+    "Model, Data, Stats, and AI rail modes must not route a trajectory result back to generic ENA plots",
+  );
+});
+
+test("non-Plot rail panels occupy the trajectory controls slot without unmounting its presenter", () => {
+  const trajectoryPresenter = workspace.match(
+    /<OpenEnaLongitudinalWorkbenchV3[\s\S]*?\/>/,
+  )?.[0] ?? "";
+
+  assert.match(
+    trajectoryPresenter,
+    /analysisControls=\{mode === "plot" \? null : panel\}/,
+    "Data, Model, Stats, and AI must be passed into the mounted trajectory workbench as controls, not replace it",
+  );
+  assert.match(trajectoryPresenter, /analysisControlsMode=\{mode\}/);
+  assert.match(component, /data-testid="open-ena-longitudinal-v3-analysis-controls"/);
+  assert.match(component, /data-controls-mode=\{analysisControlsMode\}/);
+  assert.match(
+    component,
+    /analysisControls \? \([\s\S]*?\{analysisControls\}[\s\S]*?\) : \([\s\S]*?data-trajectory-step="1"/,
+    "Plot mode must retain trajectory controls while non-Plot modes render their actual panel in the same left slot",
+  );
+});
+
+test("official Primary, Comparison, and Secondary presenters expose ENA marks only", () => {
+  assert.doesNotMatch(groupContrast2d, /trajectory|showTrajectories/i);
+  assert.match(groupContrast3d, /showTrajectories:\s*false/);
+  assert.doesNotMatch(groupContrast3d, /showTrajectories:\s*true/);
+  assert.doesNotMatch(
+    workspace.match(/<OpenEnaGroupContrast[\s\S]*?\/>/)?.[0] ?? "",
+    /trajectory|showTrajectories/i,
+  );
+  assert.doesNotMatch(
+    workspace.match(/<OpenEna3DGroupContrast[\s\S]*?\/>/)?.[0] ?? "",
+    /trajectory|showTrajectories/i,
+  );
 });
 
 test("V3 desktop and narrow layouts preserve controls-status-plot-table order without horizontal overflow", () => {
@@ -94,12 +154,82 @@ test("trajectory analysis exposes no CI or bootstrap controls, results, or stand
   assert.doesNotMatch(component, /BOOTSTRAP_NOT_ESTIMABLE/);
 });
 
-test("fitted ENA code nodes are always visible while mean-network edges remain display-only", () => {
+test("typed remote failures preserve one immutable request and expose three explicit recovery choices", () => {
+  const recovery = component.match(
+    /status === "remote-recovery"[\s\S]*?remoteFailure\.canDisableInference[\s\S]*?<\/div> : null/,
+  )?.[0] ?? "";
+  const withoutInference = component.match(
+    /const runWithoutInference = async \(\) => \{[\s\S]*?(?=\n  const download = async)/,
+  )?.[0] ?? "";
+  assert.match(component, /type WorkbenchStatus =[^;]*"remote-recovery"/);
+  assert.match(component, /retryRemote:\s*"Retry remote"/);
+  assert.match(component, /remoteRecoveryTitle:\s*"Persistent compute did not complete"/);
+  assert.match(recovery, /status === "remote-recovery"/);
+  assert.match(
+    component,
+    /caught instanceof OpenEnaLongitudinalExecutionClientErrorV3[\s\S]*?setStatus\("remote-recovery"\)/,
+  );
+  assert.match(
+    recovery,
+    /pendingRun[\s\S]*?runPrepared\(pendingRun, \{ allowRemote: true \}\)[\s\S]*?copy\.retryRemote/,
+  );
+  assert.match(
+    recovery,
+    /pendingRun[\s\S]*?runPrepared\(pendingRun, \{ forceLocal: true \}\)[\s\S]*?copy\.continueLocal/,
+  );
+  assert.match(
+    withoutInference,
+    /const sourcePending = pendingRun;[\s\S]*?withoutOpenEnaLongitudinalInferenceSettingsV3\(sourcePending\.settingsSnapshot\)[\s\S]*?withoutOpenEnaLongitudinalInferencePreparedV3\(sourcePending\.prepared\)/,
+  );
+  assert.match(recovery, /onClick=\{\(\) => void runWithoutInference\(\)\}>\{copy\.disableHeavy\}/);
+});
+
+test("scientific edits invalidate pending confirmation and recovery before an old completion can become current", () => {
+  const commitBlock = component.match(
+    /function commitScientific\([\s\S]*?(?=\n  function updateInferenceGroups)/,
+  )?.[0] ?? "";
+  const runPreparedBlock = component.match(
+    /const runPrepared = async \([\s\S]*?(?=\n  const run = async)/,
+  )?.[0] ?? "";
+
+  assert.match(commitBlock, /advanceOpenEnaLongitudinalScientificRevisionV3/);
+  assert.match(commitBlock, /abortRef\.current\?\.abort\(\)/);
+  assert.match(commitBlock, /setPendingRun\(null\)/);
+  assert.match(commitBlock, /setRouteDecision\(null\)/);
+  assert.match(commitBlock, /setRemoteFailure\(null\)/);
+  assert.match(runPreparedBlock, /isOpenEnaLongitudinalScientificRunCurrentV3/);
+  assert.match(
+    runPreparedBlock,
+    /if \(!runIsCurrent\(\)\) return;[\s\S]*?setBundle\(receipt\.bundle\)[\s\S]*?setScientificDirty\(false\)/,
+    "only the exact still-current prepared run may publish a bundle and clear its stale marker",
+  );
+  assert.match(
+    component,
+    /pendingRun[\s\S]*?runPrepared\(pendingRun, \{ allowRemote: true \}\)/,
+  );
+  assert.match(
+    component,
+    /pendingRun[\s\S]*?runPrepared\(pendingRun, \{ forceLocal: true \}\)/,
+  );
+});
+
+test("visible dimensions come from the immutable bundle whenever a result exists", () => {
+  assert.match(component, /openEnaLongitudinalHeaderDimensionsV3\(bundle, settings\)/);
+  assert.match(component, /headerDimensions\.join\(" × "\)/);
+  assert.doesNotMatch(
+    component.match(/ena-longitudinal-v3-output-header[\s\S]*?<\/header>/)?.[0] ?? "",
+    /settings\.selectedDimensions\.join/,
+  );
+});
+
+test("fitted ENA code references stay visible while all mean-network overlay controls are absent", () => {
   assert.match(component, /codeNodes:\s*true/);
   assert.match(component, /ENA code reference nodes are always shown/);
   assert.match(component, /ENA code 参考节点始终显示/);
-  assert.match(component, /checked=\{display\.traces\.networkOverlay\}/);
+  assert.doesNotMatch(component, /checked=\{display\.traces\.networkOverlay\}/);
   assert.doesNotMatch(component, /checked=\{settings\.networkOverlay\.enabled\}/);
+  assert.doesNotMatch(component, /settings\.networkOverlay\.(?:periodCanonical|groupCanonical)/);
+  assert.doesNotMatch(component, /copy\.(?:network|networkEdges|overlayPeriod|overlayScope)/);
 });
 
 test("fullscreen gives the Plotly canvas the remaining dynamic viewport instead of retaining its 560px page height", () => {

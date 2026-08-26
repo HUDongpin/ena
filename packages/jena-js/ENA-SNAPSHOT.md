@@ -26,10 +26,12 @@ snapshot anchor.
 Every tracked file from the exact reviewed source commit was copied mechanically
 except the explicit exclusions below. The complete `src/` tree and `NUMERICS.md`
 were byte-compared with canonical runtime commit `90790856f00bdef63dbd27fc3a5b502e8cffe65f`;
-they are identical. Open ENA adds only this note and
-`private: true` to the snapshot package manifest. The `private` difference
-prevents an accidental npm publication from the ENA workspace; it does not
-change jENA runtime behavior or the upstream prerelease version.
+they are identical. Open ENA adds this note and two manifest-only integration
+differences: `private: true` prevents accidental npm publication from the ENA
+workspace, and `--no-config` on the build script is deterministic build hardening
+that disables unreviewed `tsup` configuration discovery. These differences do
+not change the scientific TypeScript source, numerical contract, runtime
+behavior, or upstream prerelease version.
 
 ## Exclusions
 
@@ -41,11 +43,12 @@ generated from the included TypeScript source and is never the source of truth.
 
 To refresh this workspace, start from a separately reviewed exact jENA commit,
 record its full SHA and canonical inclusion proof here, and mechanically replace
-the tracked snapshot files using the same exclusions. Reapply only the ENA-owned
-`private: true` manifest difference and this note. Then regenerate the root npm
-lockfile, prove that `node_modules/jena-js` links to `packages/jena-js`, and rerun
-both the complete jENA verification suite and every Open ENA application gate.
-Do not hand-copy individual runtime source files or silently move the source SHA.
+the tracked snapshot files using the same exclusions. Mechanically reapply only
+the ENA-owned `private: true` manifest difference, the build-script
+`--no-config` hardening, and this note. Then regenerate the root npm lockfile,
+prove that `node_modules/jena-js` links to `packages/jena-js`, and rerun both the
+complete jENA verification suite and every Open ENA application gate. Do not
+hand-copy individual runtime source files or silently move the source SHA.
 
 ## Ordered product boundary
 

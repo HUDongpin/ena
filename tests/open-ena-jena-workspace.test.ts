@@ -13,9 +13,18 @@ const expectedSourceSha = "90790856f00bdef63dbd27fc3a5b502e8cffe65f";
 const expectedCanonicalMergeSha = "90790856f00bdef63dbd27fc3a5b502e8cffe65f";
 const expectedSourceUrl = `https://github.com/HUDongpin/jENA/tree/${expectedSourceSha}`;
 const expectedLicenseSha256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986";
-const trajectoryPackagePath = "vendor/j-3dena/j-3dena-0.2.0-implemented-unverified.1.tgz";
-const trajectoryPackageSha256 = "0ff236bf66b64bf254826336ff9e8ffc988f0a2166d63cedd1456c10ea07891c";
-const trajectoryPackageIntegrity = "sha512-y/FQ2fRU3tyWn7SBOePMsY6r7dcDbPc0LS/dtG3pqTO+MnypGLf+RNvsL6nxizKmcdaoSNbzDEiWVpyOpx42PA==";
+const trajectoryVersion = "0.2.0-implemented-unverified.11";
+const trajectorySourceHead = "9ce41017d3d17dd24beac7c7d08f74d7e92d2a1c";
+const trajectoryPackagePath = `vendor/j-3dena/j-3dena-${trajectoryVersion}.tgz`;
+const trajectoryReceiptPath = `${trajectoryPackagePath}.artifact-receipt.json`;
+const trajectoryCustodyPath = `${trajectoryPackagePath}.ci-custody.json`;
+const trajectoryPackageSha256 = "c70700a003261ac8a4e44458f13ec89bb7f337c2dd96fa8ccd772bb74b20a74c";
+const trajectoryReceiptSha256 = "47d2fa8e0c80baccbfaf31a4fe0ffa6e8c223526c0b2a9cc03bb51e64ae3db7a";
+const trajectoryCustodySha256 = "f3df77fdbd4ed62751c84da9ecf1e6b79f9b94e5e474b6ea8af7447a65665a8a";
+const trajectoryPackageIntegrity = "sha512-RjTnX2ydPZ0wTaQcuGXMhShSHbHCIkugv+2Lh0XYyQ/PS9e/0xEweYZoeHs/RgPwgRDBJbtBHhrhQ3tSMmcdyw==";
+const vendorVerifyCommand = "node scripts/verify-j3dena-vendor.mjs";
+const installedVendorVerifyCommand = `${vendorVerifyCommand} --require-installed`;
+const runtimeVendorVerifyCommand = `${vendorVerifyCommand} --require-runtime`;
 
 function json(relativePath: string) {
   return JSON.parse(readFileSync(join(projectRoot, relativePath), "utf8")) as Record<string, unknown>;
@@ -32,6 +41,7 @@ test("Open ENA consumes the reviewed jENA source snapshot as an exact-version np
     version?: string;
     private?: boolean;
     license?: string;
+    scripts?: Record<string, string>;
   };
 
   assert.deepEqual(rootPackage.workspaces, ["packages/jena-js"]);
@@ -41,21 +51,34 @@ test("Open ENA consumes the reviewed jENA source snapshot as an exact-version np
   assert.equal(snapshotPackage.private, true, "the vendored workspace must be non-publishable from Open ENA");
   assert.equal(snapshotPackage.license, "GPL-3.0-only");
 
-  assert.equal(rootPackage.scripts?.["jena:build"], "npm run build --workspace=jena-js");
+  assert.equal(
+    rootPackage.scripts?.["jena:build"],
+    "npm run build --workspace=jena-js -- --no-config",
+  );
   assert.match(rootPackage.scripts?.["jena:verify"] ?? "", /lint --workspace=jena-js/);
   assert.match(rootPackage.scripts?.["jena:verify"] ?? "", /test:pack-contract --workspace=jena-js/);
   assert.match(rootPackage.scripts?.["jena:verify"] ?? "", /pack:check --workspace=jena-js/);
+  assert.match(rootPackage.scripts?.["jena:verify"] ?? "", /npm run jena:build/);
+  assert.doesNotMatch(
+    rootPackage.scripts?.["jena:verify"] ?? "",
+    /npm run build --workspace=jena-js(?! -- --no-config)/,
+  );
+  assert.match(snapshotPackage.scripts?.build ?? "", /(?:^|\s)--no-config(?:\s|$)/);
   assert.equal(rootPackage.scripts?.["test:app"], "node --import tsx --test tests/*.test.ts");
   assert.equal(rootPackage.scripts?.["typecheck:app"], "tsc --noEmit");
   assert.equal(rootPackage.scripts?.["build:app"], "next build");
   assert.equal(rootPackage.scripts?.dev, "npm run jena:build && next dev");
   assert.equal(rootPackage.scripts?.test, "npm run jena:build && npm run test:app");
   assert.equal(rootPackage.scripts?.typecheck, "npm run jena:build && npm run typecheck:app");
-  assert.equal(rootPackage.scripts?.build, "npm run jena:build && npm run build:app");
+  assert.equal(
+    rootPackage.scripts?.build,
+    `npm run jena:build && ${runtimeVendorVerifyCommand} && npm run build:app`,
+  );
   assert.equal(
     rootPackage.scripts?.verify,
-    "npm run jena:verify && npm run test:app && npm run typecheck:app && npm run build:app",
+    `npm run verify:j3dena-vendor -- --require-installed && npm run jena:verify && ${runtimeVendorVerifyCommand} && npm run test:app && npm run typecheck:app && npm run build:app`,
   );
+  assert.equal(rootPackage.scripts?.["verify:j3dena-vendor"], vendorVerifyCommand);
 });
 
 test("the snapshot records its historical anchor, exact canonical source, exclusions, and release gates", () => {
@@ -70,6 +93,14 @@ test("the snapshot records its historical anchor, exact canonical source, exclus
   assert.match(provenance, new RegExp(expectedVersion.replaceAll(".", "\\.")));
   assert.match(provenance, /2026-08-23/);
   assert.match(provenance, /private/i);
+  assert.match(provenance, /--no-config/);
+  assert.match(provenance, /deterministic build hardening/i);
+  assert.match(provenance, /do(?:es)?\s+not change[\s\S]*scientific[^\n]*source[\s\S]*version/i);
+  assert.match(
+    provenance,
+    /mechanically reapply[\s\S]*private: true[\s\S]*--no-config/i,
+  );
+  assert.doesNotMatch(provenance, /adds only this note and\s*`private: true`/i);
   assert.match(provenance, /\.git[\s\S]*node_modules[\s\S]*dist[\s\S]*\.github/);
   assert.match(provenance, /refresh/i);
   assert.match(provenance, /npm publication status:\s*unpublished/i);
@@ -187,26 +218,120 @@ test("the root lockfile and installed package resolve jENA only through the loca
 });
 
 test("Vercel performs a frozen install of the exact vendored trajectory package", () => {
-  const rootPackage = json("package.json") as { dependencies?: Record<string, string> };
+  const rootPackage = json("package.json") as {
+    dependencies?: Record<string, string>;
+    scripts?: Record<string, string>;
+  };
   const lock = json("package-lock.json") as {
-    packages?: Record<string, { resolved?: string; integrity?: string; dependencies?: Record<string, string> }>;
+    packages?: Record<string, { version?: string; resolved?: string; integrity?: string; dependencies?: Record<string, string> }>;
   };
   const vercel = json("vercel.json") as { installCommand?: string };
   const localDependency = `file:${trajectoryPackagePath}`;
 
   assert.equal(
     vercel.installCommand,
-    "npm ci",
-    "Vercel must discard version-only dependency caches and honor the vendored tarball integrity",
+    `${vendorVerifyCommand} && npm ci && ${installedVendorVerifyCommand}`,
+    "Vercel must verify custody before install and the installed package identity afterward",
   );
+  assert.equal(rootPackage.scripts?.["verify:j3dena-vendor"], vendorVerifyCommand);
   assert.equal(rootPackage.dependencies?.["j-3dena"], localDependency);
   assert.equal(lock.packages?.[""]?.dependencies?.["j-3dena"], localDependency);
   assert.equal(lock.packages?.["node_modules/j-3dena"]?.resolved, localDependency);
   assert.equal(lock.packages?.["node_modules/j-3dena"]?.integrity, trajectoryPackageIntegrity);
+  assert.equal(lock.packages?.["node_modules/j-3dena"]?.version, trajectoryVersion);
   assert.equal(
     createHash("sha256").update(readFileSync(join(projectRoot, trajectoryPackagePath))).digest("hex"),
     trajectoryPackageSha256,
   );
+
+  const receiptBytes = readFileSync(join(projectRoot, trajectoryReceiptPath));
+  const custodyBytes = readFileSync(join(projectRoot, trajectoryCustodyPath));
+  assert.equal(createHash("sha256").update(receiptBytes).digest("hex"), trajectoryReceiptSha256);
+  assert.equal(createHash("sha256").update(custodyBytes).digest("hex"), trajectoryCustodySha256);
+
+  const receipt = JSON.parse(receiptBytes.toString("utf8")) as {
+    source?: { repositoryHead?: string };
+    package?: { name?: string; version?: string; buildId?: string };
+    tarball?: { sha256?: string; integrity?: string };
+  };
+  const custody = JSON.parse(custodyBytes.toString("utf8")) as {
+    repository?: string;
+    workflowPath?: string;
+    sourceHead?: string;
+    producerRunAttempt?: number;
+    tarball?: { sha256?: string };
+    receipt?: { sha256?: string };
+  };
+  assert.deepEqual(receipt.package, {
+    name: "j-3dena",
+    version: trajectoryVersion,
+    buildId: trajectorySourceHead,
+  });
+  assert.equal(receipt.source?.repositoryHead, trajectorySourceHead);
+  assert.equal(receipt.tarball?.sha256, trajectoryPackageSha256);
+  assert.equal(receipt.tarball?.integrity, trajectoryPackageIntegrity);
+  assert.equal(custody.repository, "HUDongpin/j-3dENA");
+  assert.equal(custody.workflowPath, ".github/workflows/ci.yml");
+  assert.equal(custody.sourceHead, trajectorySourceHead);
+  assert.equal(custody.producerRunAttempt, 1);
+  assert.equal(custody.tarball?.sha256, trajectoryPackageSha256);
+  assert.equal(custody.receipt?.sha256, trajectoryReceiptSha256);
+
+  const attributes = readFileSync(join(projectRoot, ".gitattributes"), "utf8");
+  assert.match(attributes, /^vendor\/j-3dena\/\*\.tgz -text$/mu);
+  assert.match(attributes, /^vendor\/j-3dena\/\*\.tgz\.\*\.json -text$/mu);
+  for (const canonicalTextPath of [
+    "packages/jena-js/src/**",
+    "packages/jena-js/package.json",
+    "packages/jena-js/package-lock.json",
+    "packages/jena-js/tsconfig.json",
+    "packages/jena-js/PROVENANCE.md",
+    "packages/jena-js/NUMERICS.md",
+    "packages/jena-js/LICENSE",
+    "packages/jena-js/ENA-SNAPSHOT.md",
+  ]) {
+    assert.match(
+      attributes,
+      new RegExp(`^${canonicalTextPath.replaceAll("/", "\\/").replace("**", "\\*\\*")} text eol=lf$`, "mu"),
+      `${canonicalTextPath} must keep canonical LF bytes across checkouts`,
+    );
+  }
+
+  const ci = readFileSync(join(projectRoot, ".github", "workflows", "open-ena-ci.yml"), "utf8");
+  const verifyJob = ci.match(/\n  verify:\n([\s\S]*?)(?=\n  browser:\n)/u)?.[1] ?? "";
+  const browserJob = ci.match(/\n  browser:\n([\s\S]*)$/u)?.[1] ?? "";
+  for (const [jobName, job] of [["verify", verifyJob], ["browser", browserJob]] as const) {
+    assert.notEqual(job, "", `${jobName} CI job must exist`);
+    const preinstallIndex = job.indexOf(`run: ${vendorVerifyCommand}`);
+    const installIndex = job.indexOf("run: npm ci", preinstallIndex);
+    const postinstallIndex = job.indexOf(`run: ${installedVendorVerifyCommand}`, installIndex);
+    assert.ok(preinstallIndex >= 0, `${jobName} CI must verify vendored bytes before npm ci`);
+    assert.ok(installIndex > preinstallIndex, `${jobName} CI npm ci must follow custody gate`);
+    assert.ok(
+      postinstallIndex > installIndex,
+      `${jobName} CI must verify the complete installed tree after npm ci`,
+    );
+  }
+  const browserBuildIndex = browserJob.indexOf("run: npm run jena:build");
+  const browserRuntimeIndex = browserJob.indexOf(
+    `run: ${runtimeVendorVerifyCommand}`,
+    browserBuildIndex,
+  );
+  assert.ok(browserBuildIndex >= 0, "browser CI must build the local jena-js workspace");
+  assert.ok(
+    browserRuntimeIndex > browserBuildIndex,
+    "browser CI must verify the package-name runtime after jena-js build",
+  );
+});
+
+test("the vendor boundary documents inlined SheetJS outside npm audit coverage", () => {
+  const boundary = readFileSync(join(projectRoot, "vendor", "j-3dena", "README.md"), "utf8");
+  assert.match(boundary, /SheetJS/i);
+  assert.match(boundary, /0\.20\.3/);
+  assert.match(boundary, /inlined|bundled/i);
+  assert.match(boundary, /npm audit[^\n]*does not|not[^\n]*covered by[^\n]*npm audit/i);
+  assert.match(boundary, /PROVENANCE\.json/);
+  assert.match(boundary, /THIRD_PARTY\/SheetJS-LICENSE\.txt/);
 });
 
 test("the built package entrypoint exposes the reviewed ordered-network helper", async () => {

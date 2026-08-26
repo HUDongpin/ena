@@ -13,7 +13,6 @@ import {
   type TrajectoryDisplaySpecV2,
   type TrajectoryInferenceRequestV2,
   type TrajectoryInferenceTaskV2,
-  type TrajectoryNetworkOverlayTaskV2,
   type TrajectoryPathTaskV2,
   type TrajectoryRunSpecV2,
 } from "j-3dena";
@@ -157,6 +156,10 @@ export interface OpenEnaLongitudinalBindingV3 {
   runId: string;
 }
 
+export interface OpenEnaLongitudinalScientificRunIdentityV3 extends OpenEnaLongitudinalBindingV3 {
+  scientificRevision: number;
+}
+
 export interface OpenEnaPreparedLongitudinalExecutionV3 {
   request: LongitudinalExecutionRequestV2;
   binding: OpenEnaLongitudinalBindingV3;
@@ -193,6 +196,90 @@ export class OpenEnaLongitudinalV3Error extends Error {
 
 function reject(code: string, path: string, message: string): never {
   throw new OpenEnaLongitudinalV3Error(code, path, message);
+}
+
+export function advanceOpenEnaLongitudinalScientificRevisionV3(current: number): number {
+  if (!Number.isSafeInteger(current) || current < 0) {
+    throw new TypeError("The longitudinal scientific revision must be a non-negative safe integer.");
+  }
+  if (current === Number.MAX_SAFE_INTEGER) {
+    throw new RangeError("The longitudinal scientific revision capacity has been exhausted.");
+  }
+  return current + 1;
+}
+
+export function bindOpenEnaLongitudinalScientificRunV3(
+  scientificRevision: number,
+  binding: OpenEnaLongitudinalBindingV3,
+): Readonly<OpenEnaLongitudinalScientificRunIdentityV3> {
+  if (!Number.isSafeInteger(scientificRevision) || scientificRevision < 0) {
+    throw new TypeError("The longitudinal scientific revision must be a non-negative safe integer.");
+  }
+  return Object.freeze({ scientificRevision, ...binding });
+}
+
+export function isOpenEnaLongitudinalScientificRunCurrentV3(
+  identity: OpenEnaLongitudinalScientificRunIdentityV3,
+  scientificRevision: number,
+  binding: OpenEnaLongitudinalBindingV3,
+): boolean {
+  return identity.scientificRevision === scientificRevision
+    && identity.datasetHash === binding.datasetHash
+    && identity.specHash === binding.specHash
+    && identity.sourceResultHash === binding.sourceResultHash
+    && identity.requestHash === binding.requestHash
+    && identity.runId === binding.runId;
+}
+
+function deepFreezeLongitudinalSnapshot<T>(value: T): T {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) deepFreezeLongitudinalSnapshot(child);
+  return Object.freeze(value);
+}
+
+export function snapshotOpenEnaLongitudinalSettingsV3(
+  settings: OpenEnaLongitudinalSettingsV3,
+): OpenEnaLongitudinalSettingsV3 {
+  return deepFreezeLongitudinalSnapshot(structuredClone(settings));
+}
+
+export function withoutOpenEnaLongitudinalInferenceSettingsV3(
+  settingsSnapshot: OpenEnaLongitudinalSettingsV3,
+): OpenEnaLongitudinalSettingsV3 {
+  const next = structuredClone(settingsSnapshot);
+  next.inference = {
+    independentPeriod: null,
+    pairedPeriods: null,
+    repeatedPeriods: null,
+    pathComparison: null,
+  };
+  return next;
+}
+
+export function snapshotOpenEnaPreparedLongitudinalExecutionV3(
+  prepared: OpenEnaPreparedLongitudinalExecutionV3,
+): OpenEnaPreparedLongitudinalExecutionV3 {
+  return deepFreezeLongitudinalSnapshot(structuredClone(prepared));
+}
+
+export async function withoutOpenEnaLongitudinalInferencePreparedV3(
+  preparedSnapshot: OpenEnaPreparedLongitudinalExecutionV3,
+): Promise<OpenEnaPreparedLongitudinalExecutionV3> {
+  const request = structuredClone(preparedSnapshot.request);
+  delete request.inferenceTask;
+  const requestHash = await hashLongitudinalExecutionRequestV2(request);
+  return snapshotOpenEnaPreparedLongitudinalExecutionV3({
+    request,
+    binding: { ...preparedSnapshot.binding, requestHash },
+    privacy: structuredClone(preparedSnapshot.privacy),
+  });
+}
+
+export function openEnaLongitudinalHeaderDimensionsV3(
+  bundle: Pick<LongitudinalAnalysisBundleV2, "model"> | null,
+  settings: Pick<OpenEnaLongitudinalSettingsV3, "selectedDimensions">,
+): [string, string, string] {
+  return [...(bundle?.model.selectedDimensions ?? settings.selectedDimensions)];
 }
 
 function scalar(value: unknown, path: string): RawScalar {
@@ -439,7 +526,9 @@ export async function createOpenEnaLongitudinalSettingsV3(input: {
       explicitStrataField: null,
     },
     networkOverlay: {
-      enabled: true,
+      // Persist the former shape for read compatibility, but trajectory
+      // presenters and new tasks never request an ENA mean-network overlay.
+      enabled: false,
       periodCanonical: periods[0]?.sourceTimeCanonical ?? null,
       groupCanonical: null,
     },
@@ -656,6 +745,11 @@ export async function migrateOpenEnaLongitudinalSettingsV3(
     candidate.bootstrap.enabled = false;
     candidate.bootstrap.resamplingDesign = "auto";
     candidate.bootstrap.explicitStrataField = null;
+    candidate.networkOverlay = {
+      enabled: false,
+      periodCanonical: candidate.networkOverlay?.periodCanonical ?? candidate.orderedPeriods[0]?.sourceTimeCanonical ?? null,
+      groupCanonical: candidate.networkOverlay?.groupCanonical ?? null,
+    };
     if (candidate.inference.pairedPeriods) candidate.inference.pairedPeriods.samePhysicalEntityConfirmed = false;
     if (candidate.inference.repeatedPeriods) candidate.inference.repeatedPeriods.samePhysicalEntityConfirmed = false;
     if (candidate.inference.pathComparison) candidate.inference.pathComparison.samePhysicalEntityConfirmed = false;
@@ -990,24 +1084,10 @@ export async function buildOpenEnaLongitudinalExecutionRequestV3(input: {
     requests: inferenceRequests,
     adjustment: "holm",
   } : undefined;
-  const networkOverlayTask: TrajectoryNetworkOverlayTaskV2 | undefined = input.settings.networkOverlay.enabled
-    && input.settings.networkOverlay.periodCanonical ? {
-      schemaVersion: "3dena.trajectory-network-overlay-task.v2",
-      kind: "trajectory-network-overlay-v2",
-      datasetHash: input.datasetHash,
-      specHash,
-      sourceResultHash,
-      runId: input.runId,
-      requests: [{
-        periodCanonical: input.settings.networkOverlay.periodCanonical,
-        groupCanonical: input.settings.networkOverlay.groupCanonical,
-      }],
-    } : undefined;
   const request: LongitudinalExecutionRequestV2 = {
     dataset: executionDataset,
     pathTask,
     ...(inferenceTask ? { inferenceTask } : {}),
-    ...(networkOverlayTask ? { networkOverlayTask } : {}),
     execution: {
       target: input.executionTarget,
       jenaVersion: build.jenaVersion,
@@ -1058,12 +1138,15 @@ export function openEnaTrajectoryDisplaySpecV3(
       centroids: true,
       paths: true,
       directionArrows: true,
-      networkOverlay: false,
       labels: true,
       ...options.traces,
       // Trajectory presenters intentionally never draw confidence intervals.
       // Static 3D ENA group-comparison plots own the visual CI grammar.
       uncertainty: false,
+      // A trajectory plot includes fitted code reference geometry but never
+      // the ENA mean-network edges, including when old display settings ask
+      // for them.
+      networkOverlay: false,
       // Fitted ENA codes are reference geometry, not a mean-network edge
       // overlay. Keep them visible whenever the immutable jENA bundle contains
       // their canonical coordinates.

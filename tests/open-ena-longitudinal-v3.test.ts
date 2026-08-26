@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   compileTrajectoryPlotlySpec,
+  createExportBundle,
   executeLongitudinalAnalysisV2,
   verifyLongitudinalAnalysisBundleV2,
 } from "j-3dena";
@@ -77,7 +78,7 @@ test("V3 defaults mirror the fitted mapping, choose three real dimensions, and k
   assert.equal(settings.bootstrap.repetitions, 500);
   assert.equal(settings.bootstrap.confidenceLevel, 0.95);
   assert.equal(settings.bootstrap.seed, 2026);
-  assert.equal(settings.networkOverlay.enabled, true);
+  assert.equal(settings.networkOverlay.enabled, false);
   assert.deepEqual(settings.orderedPeriods.map((period) => period.displayLabel), ["1", "2", "3"]);
   assert.ok(settings.inference.pairedPeriods);
   assert.equal(settings.inference.pairedPeriods?.samePhysicalEntityConfirmed, false);
@@ -135,6 +136,7 @@ test("the Open ENA adapter binds, pseudonymizes, and executes one immutable jENA
   assert.doesNotThrow(() => assertOpenEnaLongitudinalRemotePrivacyV3(remoteRequest));
   assert.equal(prepared.request.pathTask.specHash, prepared.request.dataset.specHash);
   assert.equal(Object.hasOwn(prepared.request, "bootstrapTask"), false);
+  assert.equal(Object.hasOwn(prepared.request, "networkOverlayTask"), false);
   assert.deepEqual(
     prepared.request.dataset.receipt.schema.columns.find((column) => column.name === "stratum")?.roles,
     ["unmapped"],
@@ -205,9 +207,50 @@ test("the Open ENA adapter binds, pseudonymizes, and executes one immutable jENA
   assert.equal(bundle.inference.some((item) => item.request.kind === "repeated-periods"), true);
   assert.equal(bundle.pathComparisons.length, 1);
   assert.equal(bundle.bootstrap.length, 0);
-  assert.equal(bundle.networkOverlays.length, 1);
+  assert.equal(bundle.networkOverlays.length, 0);
   assert.deepEqual(bundle.codeGeometry.nodes.map((node) => node.code), config.codes);
   assert.equal(bundle.execution.target, "node-service");
+});
+
+test("disable-inference recovery removes only the inference task from the failed immutable request", async () => {
+  const longitudinal = await import("../lib/open-ena/longitudinal-v3") as Record<string, unknown>;
+  assert.equal(typeof longitudinal.snapshotOpenEnaLongitudinalSettingsV3, "function");
+  assert.equal(typeof longitudinal.withoutOpenEnaLongitudinalInferencePreparedV3, "function");
+  const result = fitted();
+  const settings = await createOpenEnaLongitudinalSettingsV3({ result, config, dataset, datasetHash: HASH });
+  assert.ok(settings.inference.pathComparison);
+  settings.inference.pathComparison.seed = 991;
+  const snapshot = (
+    longitudinal.snapshotOpenEnaLongitudinalSettingsV3 as (value: typeof settings) => typeof settings
+  )(settings);
+  const prepared = await buildOpenEnaLongitudinalExecutionRequestV3({
+    result,
+    config,
+    dataset,
+    datasetHash: HASH,
+    settings: snapshot,
+    runId: "disable-inference-snapshot",
+    executionTarget: "browser-worker",
+  });
+  assert.ok(prepared.request.inferenceTask);
+  const recovered = await (
+    longitudinal.withoutOpenEnaLongitudinalInferencePreparedV3 as (
+      value: typeof prepared,
+    ) => Promise<typeof prepared>
+  )(prepared);
+  const expectedRequest = structuredClone(prepared.request);
+  delete expectedRequest.inferenceTask;
+
+  assert.deepEqual(recovered.request, expectedRequest);
+  assert.deepEqual(recovered.privacy, prepared.privacy);
+  assert.deepEqual(
+    { ...recovered.binding, requestHash: prepared.binding.requestHash },
+    prepared.binding,
+    "dataset/spec/source/run identity must remain exact",
+  );
+  assert.notEqual(recovered.binding.requestHash, prepared.binding.requestHash);
+  assert.equal(recovered.request.execution.seed, 991, "the failed request's non-inference execution fields must not be rebuilt from current settings");
+  assert.ok(prepared.request.inferenceTask, "deriving the recovery request must not mutate the failed request");
 });
 
 test("2D and 3D compile from the same bundle and never change the result hash", async () => {
@@ -260,8 +303,18 @@ test("2D and 3D compile from the same bundle and never change the result hash", 
     traces: { ...threeDisplay.traces, networkOverlay: true },
   });
   const networkEdgePlot = compileTrajectoryPlotlySpec(bundle, networkEdgeDisplay);
-  assert.ok(networkEdgePlot.data.some((trace) => trace.meta.role === "network-edge"));
+  assert.equal(networkEdgeDisplay.traces.networkOverlay, false);
+  assert.equal(networkEdgePlot.data.filter((trace) => trace.meta.role === "network-edge").length, 0);
+  assert.equal(networkEdgePlot.data.filter((trace) => trace.meta.role === "network-node").length, 1);
   assert.equal(networkEdgePlot.resultHash, bundle.identity.resultHash);
+  const resultHashBeforeExport = bundle.identity.resultHash;
+  const exported = await createExportBundle(bundle, { displaySpec: networkEdgeDisplay });
+  const exportedPlot = exported.files.find((file) => file.path === "plotly-spec.json");
+  assert.ok(exportedPlot);
+  const exportedSpec = JSON.parse(new TextDecoder().decode(exportedPlot.bytes)) as typeof networkEdgePlot;
+  assert.equal(exportedSpec.data.filter((trace) => trace.meta.role === "network-edge").length, 0);
+  assert.equal(exportedSpec.data.filter((trace) => trace.meta.role === "network-node").length, 1);
+  assert.equal(bundle.identity.resultHash, resultHashBeforeExport, "display/export must not mutate the scientific identity");
   const individualDisplay = openEnaTrajectoryDisplaySpecV3(bundle, {
     projection: "3d",
     traces: { ...threeDisplay.traces, individualPaths: true },
@@ -331,6 +384,67 @@ test("2D and 3D compile from the same bundle and never change the result hash", 
   assert.equal(isOpenEnaLongitudinalBundleStaleV3(bundle, { ...prepared.binding, specHash: "f".repeat(64) }), true);
 });
 
+test("legacy trajectory envelopes remain readable but their ENA network overlays are never presented", async () => {
+  const result = fitted();
+  const settings = await createOpenEnaLongitudinalSettingsV3({ result, config, dataset, datasetHash: HASH });
+  const prepared = await buildOpenEnaLongitudinalExecutionRequestV3({
+    result,
+    config,
+    dataset,
+    datasetHash: HASH,
+    settings,
+    runId: "legacy-overlay-readback",
+    executionTarget: "node-service",
+  });
+  const legacyRequest = structuredClone(prepared.request);
+  legacyRequest.networkOverlayTask = {
+    schemaVersion: "3dena.trajectory-network-overlay-task.v2",
+    kind: "trajectory-network-overlay-v2",
+    datasetHash: legacyRequest.pathTask.datasetHash,
+    specHash: legacyRequest.pathTask.specHash,
+    sourceResultHash: legacyRequest.pathTask.runSpec.sourceResultHash,
+    runId: legacyRequest.pathTask.runId,
+    requests: [{
+      periodCanonical: settings.orderedPeriods[0]!.sourceTimeCanonical,
+      groupCanonical: null,
+    }],
+  };
+  const legacyBundle = await executeLongitudinalAnalysisV2(legacyRequest);
+  assert.ok(legacyBundle.networkOverlays.length > 0, "fixture must retain historical overlay evidence");
+  const resultHashBeforeDisplay = legacyBundle.identity.resultHash;
+  const display = openEnaTrajectoryDisplaySpecV3(legacyBundle, {
+    projection: "3d",
+    traces: {
+      participants: true,
+      individualPaths: false,
+      centroids: true,
+      paths: true,
+      directionArrows: true,
+      uncertainty: false,
+      networkOverlay: true,
+      codeNodes: true,
+      labels: true,
+    },
+  });
+  assert.equal(display.traces.networkOverlay, false);
+  const plot = compileTrajectoryPlotlySpec(legacyBundle, display);
+  assert.equal(plot.data.filter((trace) => trace.meta.role === "network-edge").length, 0);
+  assert.equal(plot.data.filter((trace) => trace.meta.role === "network-node").length, 1);
+  assert.equal(legacyBundle.identity.resultHash, resultHashBeforeDisplay);
+  const exported = await createExportBundle(legacyBundle, { displaySpec: display });
+  const exportedAnalysis = exported.files.find((file) => file.path === "analysis.json");
+  const exportedPlot = exported.files.find((file) => file.path === "plotly-spec.json");
+  assert.ok(exportedAnalysis);
+  assert.ok(exportedPlot);
+  const analysisReadback = JSON.parse(new TextDecoder().decode(exportedAnalysis.bytes)) as typeof legacyBundle;
+  const plotReadback = JSON.parse(new TextDecoder().decode(exportedPlot.bytes)) as typeof plot;
+  assert.equal(analysisReadback.networkOverlays.length, legacyBundle.networkOverlays.length);
+  assert.equal(analysisReadback.identity.resultHash, resultHashBeforeDisplay);
+  assert.equal(plotReadback.data.filter((trace) => trace.meta.role === "network-edge").length, 0);
+  assert.equal(plotReadback.data.filter((trace) => trace.meta.role === "network-node").length, 1);
+  assert.equal(legacyBundle.identity.resultHash, resultHashBeforeDisplay, "read/export must not mutate legacy evidence");
+});
+
 test("V1/V2 settings migrate read-only to V3, add a real third dimension, and clear identity confirmation", async () => {
   const result = fitted();
   const migrated = await migrateOpenEnaLongitudinalSettingsV3({
@@ -353,6 +467,7 @@ test("V1/V2 settings migrate read-only to V3, add a real third dimension, and cl
   formerV3.bootstrap.enabled = true;
   formerV3.bootstrap.resamplingDesign = "explicit-strata";
   formerV3.bootstrap.explicitStrataField = "stratum";
+  formerV3.networkOverlay.enabled = true;
   const migratedFormerV3 = await migrateOpenEnaLongitudinalSettingsV3(
     formerV3,
     { result, config, dataset, datasetHash: HASH },
@@ -360,4 +475,5 @@ test("V1/V2 settings migrate read-only to V3, add a real third dimension, and cl
   assert.equal(migratedFormerV3.bootstrap.enabled, false);
   assert.equal(migratedFormerV3.bootstrap.resamplingDesign, "auto");
   assert.equal(migratedFormerV3.bootstrap.explicitStrataField, null);
+  assert.equal(migratedFormerV3.networkOverlay.enabled, false);
 });

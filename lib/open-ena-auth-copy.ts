@@ -13,6 +13,7 @@ export interface OpenEnaAuthCopy {
   signIn: string;
   signOut: string;
   invalidCredentials: string;
+  unavailable: string;
   collaborationNotice: string;
   privacyNote: string;
   workspaceLabel: string;
@@ -30,6 +31,8 @@ const en: OpenEnaAuthCopy = {
   signIn: "Sign in",
   signOut: "Sign out",
   invalidCredentials: "The account name or password is incorrect. Please try again.",
+  unavailable:
+    "Open ENA is unavailable because secure authentication is not configured for this deployment.",
   collaborationNotice:
     "Registration will be available in the future. For academic collaboration, please contact Professor Sandy TU Yun-Fang (sandy0692@gmail.com).",
   privacyNote: "Your source data remains in this browser workspace unless you intentionally export it.",
@@ -48,6 +51,7 @@ const zhHant: OpenEnaAuthCopy = {
   signIn: "登入",
   signOut: "登出",
   invalidCredentials: "帳戶名稱或密碼不正確，請重試。",
+  unavailable: "此部署尚未設定安全驗證，因此 Open ENA 目前無法使用。",
   collaborationNotice:
     "未來會開放註冊。學術合作請聯絡Professor Sandy TU Yun-Fang(sandy0692@gmail.com)",
   privacyNote: "除非您主動匯出，來源資料只會保留在此瀏覽器工作區。",
@@ -66,6 +70,7 @@ const zhHans: OpenEnaAuthCopy = {
   signIn: "登录",
   signOut: "退出登录",
   invalidCredentials: "账户名称或密码不正确，请重试。",
+  unavailable: "此部署尚未配置安全验证，因此 Open ENA 当前不可用。",
   collaborationNotice:
     "未来会开放注册。学术合作请联系Professor Sandy TU Yun-Fang(sandy0692@gmail.com)",
   privacyNote: "除非您主动导出，源数据只会保留在此浏览器工作区。",

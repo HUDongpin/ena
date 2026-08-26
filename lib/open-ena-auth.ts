@@ -3,25 +3,28 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 export const OPEN_ENA_SESSION_COOKIE = "open-ena-session";
 export const OPEN_ENA_SESSION_MAX_AGE_SECONDS = 12 * 60 * 60;
 
-const DEFAULT_USERNAME = "sandytu";
-const DEFAULT_PASSWORD = "12345";
 const SESSION_VERSION = "v1";
 
 export type OpenEnaAuthEnvironment = Readonly<Record<string, string | undefined>>;
 
-function configuredValue(
-  environment: OpenEnaAuthEnvironment,
-  name: string,
-  fallback: string,
+export function openEnaAuthConfigurationReady(
+  environment: OpenEnaAuthEnvironment = process.env,
 ) {
-  const value = environment[name];
-  return typeof value === "string" && value.length > 0 ? value : fallback;
+  return Boolean(
+    environment.OPEN_ENA_USERNAME?.trim()
+      && environment.OPEN_ENA_PASSWORD
+      && environment.OPEN_ENA_PASSWORD.length >= 12
+      && environment.OPEN_ENA_SESSION_SECRET
+      && environment.OPEN_ENA_SESSION_SECRET.length >= 32,
+  );
 }
 
 function credentials(environment: OpenEnaAuthEnvironment) {
+  if (!openEnaAuthConfigurationReady(environment)) return null;
   return {
-    username: configuredValue(environment, "OPEN_ENA_USERNAME", DEFAULT_USERNAME),
-    password: configuredValue(environment, "OPEN_ENA_PASSWORD", DEFAULT_PASSWORD),
+    username: environment.OPEN_ENA_USERNAME!.trim(),
+    password: environment.OPEN_ENA_PASSWORD!,
+    sessionSecret: environment.OPEN_ENA_SESSION_SECRET!,
   };
 }
 
@@ -31,21 +34,8 @@ function constantTimeEqual(left: string, right: string) {
   return timingSafeEqual(leftDigest, rightDigest);
 }
 
-function sessionSecret(environment: OpenEnaAuthEnvironment) {
-  const explicitSecret = environment.OPEN_ENA_SESSION_SECRET;
-  if (typeof explicitSecret === "string" && explicitSecret.length > 0) return explicitSecret;
-
-  const configuredCredentials = credentials(environment);
-  return createHash("sha256")
-    .update("ena-hk-open-ena-session-v1\0", "utf8")
-    .update(configuredCredentials.username, "utf8")
-    .update("\0", "utf8")
-    .update(configuredCredentials.password, "utf8")
-    .digest("hex");
-}
-
-function signature(payload: string, environment: OpenEnaAuthEnvironment) {
-  return createHmac("sha256", sessionSecret(environment)).update(payload, "utf8").digest("base64url");
+function signature(payload: string, secret: string) {
+  return createHmac("sha256", secret).update(payload, "utf8").digest("base64url");
 }
 
 export function verifyOpenEnaCredentials(
@@ -54,6 +44,7 @@ export function verifyOpenEnaCredentials(
   environment: OpenEnaAuthEnvironment = process.env,
 ) {
   const expected = credentials(environment);
+  if (!expected) return false;
   const usernameMatches = constantTimeEqual(username, expected.username);
   const passwordMatches = constantTimeEqual(password, expected.password);
   return usernameMatches && passwordMatches;
@@ -63,9 +54,13 @@ export function createOpenEnaSessionToken(
   issuedAtMilliseconds = Date.now(),
   environment: OpenEnaAuthEnvironment = process.env,
 ) {
+  const configuredCredentials = credentials(environment);
+  if (!configuredCredentials) {
+    throw new TypeError("Open ENA authentication is not configured.");
+  }
   const issuedAtSeconds = Math.floor(issuedAtMilliseconds / 1_000);
   const payload = `${SESSION_VERSION}.${issuedAtSeconds}`;
-  return `${payload}.${signature(payload, environment)}`;
+  return `${payload}.${signature(payload, configuredCredentials.sessionSecret)}`;
 }
 
 export function verifyOpenEnaSessionToken(
@@ -73,6 +68,8 @@ export function verifyOpenEnaSessionToken(
   nowMilliseconds = Date.now(),
   environment: OpenEnaAuthEnvironment = process.env,
 ) {
+  const configuredCredentials = credentials(environment);
+  if (!configuredCredentials) return false;
   if (!token) return false;
 
   const segments = token.split(".");
@@ -88,5 +85,8 @@ export function verifyOpenEnaSessionToken(
   if (nowSeconds - issuedAtSeconds >= OPEN_ENA_SESSION_MAX_AGE_SECONDS) return false;
 
   const payload = `${version}.${issuedAtText}`;
-  return constantTimeEqual(suppliedSignature, signature(payload, environment));
+  return constantTimeEqual(
+    suppliedSignature,
+    signature(payload, configuredCredentials.sessionSecret),
+  );
 }
