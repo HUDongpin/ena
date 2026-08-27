@@ -49,7 +49,7 @@ function mutateCandidate(
 }
 
 test("the fixed offline suite contains exactly the four role/index-only research designs", () => {
-  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v5");
+  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v6");
   assert.equal(OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1, OPEN_ENA_AI_MAX_RESPONSE_BYTES);
   assert.deepEqual(
     OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1.map((evaluationCase) => evaluationCase.designKind),
@@ -495,15 +495,15 @@ test("numeric statements match the authoritative statistic field in specifically
   }
 
   const baselineCase = OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1[0];
-  const nonStatisticSuffix = candidateWithStatement(
+  const unboundDescriptiveNumber = candidateWithStatement(
     baselineCase.caseId,
     "It is 1 descriptive pattern, not a supplied T statistic.",
     "comparison-axis-1",
   );
   assert.equal(evaluateOpenEnaAiOfflineCandidateV1(
     baselineCase,
-    nonStatisticSuffix,
-  ).issueCodes.includes("invented-or-recomputed-statistic"), false);
+    unboundDescriptiveNumber,
+  ).issueCodes.includes("invented-or-recomputed-statistic"), true);
 
   const explicitlyRecomputed = mutateCandidate(baselineCase.caseId, (candidate) => {
     const patterns = candidate.observedPatterns as Array<Record<string, unknown>>;
@@ -577,6 +577,9 @@ test("protected numeric and method claims bind to every cited inference identity
     ],
     [paired, "On the first latent dimension, the supplied pHolm is 0.4.", ["comparison-axis-2-period-1-period-2"]],
     [paired, "For axis-1 period-1 to period-3, the supplied WPositive is 5.", ["comparison-axis-1-period-1-period-2"]],
+    [paired, "For axis-1 at period-1, the supplied pHolm is 0.4.", ["comparison-axis-1-period-1-period-2"]],
+    [endpoint, "For axes 1 and 2, the supplied pRaw is 0.1.", ["comparison-axis-1"]],
+    [endpoint, "For both axes, the supplied pRaw is 0.1.", ["comparison-axis-1"]],
     [endpoint, "The supplied primary sample size is 999.", ["comparison-axis-1"]],
     [endpoint, "The supplied nPrimary is 999.", ["comparison-axis-1"]],
     [endpoint, "所提供的主要樣本數為 999。", ["comparison-axis-1"]],
@@ -587,6 +590,7 @@ test("protected numeric and method claims bind to every cited inference identity
     [endpoint, "The supplied method is an independent-samples t-test.", ["comparison-axis-1"]],
     [endpoint, "The supplied resolvedPMethod is independent-samples-t-test.", ["comparison-axis-1"]],
     [endpoint, "The analysis used an independent-samples t-test.", ["comparison-axis-1"]],
+    [endpoint, "We used asymptotic-rank-normal.", ["comparison-axis-1"]],
     [paired, "The supplied difference direction is earlier-minus-later.", ["comparison-axis-1-period-1-period-2"]],
     [paired, "The supplied differenceDirection is earlier-minus-later.", ["comparison-axis-1-period-1-period-2"]],
     [paired, "Differences were computed as earlier minus later.", ["comparison-axis-1-period-1-period-2"]],
@@ -595,6 +599,10 @@ test("protected numeric and method claims bind to every cited inference identity
     [paired, "The supplied cohort policy is available.", ["comparison-axis-1-period-1-period-2"]],
     [repeated, "The supplied selected period index is 999.", ["omnibus-axis-1"]],
     [repeated, "The supplied selectedPeriodIndices are [0, 1, 999].", ["omnibus-axis-1"]],
+    [repeated, "The supplied selectedPeriodIndices contain 0, 1, 2, and 999.", ["omnibus-axis-1"]],
+    [repeated, "The supplied selectedPeriodIndices include 0, 1, 2, and 999.", ["omnibus-axis-1"]],
+    [repeated, "The supplied selectedPeriodIndices consist of 0, 1, 2, and 999.", ["omnibus-axis-1"]],
+    [repeated, "The supplied selected period index is 1.", ["omnibus-axis-1"]],
     [
       caseById("trajectory-selected-period-mann-whitney"),
       "The supplied nUsed is 999.",
@@ -602,9 +610,41 @@ test("protected numeric and method claims bind to every cited inference identity
     ],
     [
       caseById("trajectory-selected-period-mann-whitney"),
+      "The supplied nUsed values are 4 and 999.",
+      ["trajectory-primary-period-2"],
+    ],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "The supplied nUsed is 4 and 999.",
+      ["trajectory-primary-period-2"],
+    ],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "The supplied nExcluded is 1 and 999.",
+      ["trajectory-primary-period-2"],
+    ],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
       "The supplied nExcluded is 999.",
       ["trajectory-primary-period-2"],
     ],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "The supplied periodIndex is 1 and 999.",
+      ["trajectory-primary-period-2"],
+    ],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "The descriptive group n is 999.",
+      ["trajectory-primary-period-2"],
+    ],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "The available entity count is 999.",
+      ["trajectory-primary-period-2"],
+    ],
+    [paired, "We computed differences as earlier minus later.", ["comparison-axis-1-period-1-period-2"]],
+    [paired, "The analytic cohort was available.", ["comparison-axis-1-period-1-period-2"]],
     [
       caseById("trajectory-selected-period-mann-whitney"),
       "The supplied periodIndex is 999.",
@@ -633,9 +673,14 @@ test("protected numeric and method claims bind to every cited inference identity
     [repeated, "The supplied degreesFreedom is 2.", ["omnibus-axis-1"]],
     [endpoint, "The supplied method is exact-conditional-rank-permutation.", ["comparison-axis-1"]],
     [endpoint, "The supplied resolvedPMethod is exact-conditional-rank-permutation.", ["comparison-axis-1"]],
+    [endpoint, "We used exact-conditional-rank-permutation.", ["comparison-axis-1"]],
     [paired, "The supplied difference direction is later-minus-earlier.", ["comparison-axis-1-period-1-period-2"]],
+    [paired, "We computed differences as later minus earlier.", ["comparison-axis-1-period-1-period-2"]],
     [repeated, "The supplied cohort policy is all-period-complete.", ["omnibus-axis-1"]],
+    [paired, "The analytic cohort was pairwise complete.", ["comparison-axis-1-period-1-period-2"]],
     [repeated, "The supplied selectedPeriodIndices are [0, 1, 2].", ["omnibus-axis-1"]],
+    [repeated, "The supplied selectedPeriodIndices contain 0, 1, 2.", ["omnibus-axis-1"]],
+    [paired, "For axis-1 at period-1 and period-2, the supplied pHolm is 0.4.", ["comparison-axis-1-period-1-period-2"]],
     [
       caseById("trajectory-selected-period-mann-whitney"),
       "The supplied nUsed is 4.",
@@ -744,6 +789,21 @@ test("offline reports and exact V1 receipts are deterministic, deeply frozen, an
     "invented-descriptive-n-used",
     "invented-descriptive-n-excluded",
     "invented-descriptive-period-index",
+    "plural-axes-claim-borrow",
+    "both-axes-claim-borrow",
+    "selected-period-indices-extra-rhs",
+    "selected-period-indices-include-extra-rhs",
+    "singular-selected-period-index",
+    "unbound-descriptive-group-count",
+    "unbound-available-entity-count",
+    "active-natural-language-reversed-direction",
+    "active-natural-language-invented-method",
+    "natural-language-wrong-cohort-policy",
+    "period-subset-contrast-borrow",
+    "n-used-extra-rhs-number",
+    "n-used-values-extra-rhs-number",
+    "n-excluded-extra-rhs-number",
+    "period-index-extra-rhs-number",
     "missing-one-visible-inference-ref",
     "missing-all-visible-inference-refs",
     "treatment-improved-learning",
@@ -874,7 +934,7 @@ test("approval eligibility requires zero failures and both independent human rev
   );
   const staleSuite = parseEnaPromptEvalReceiptV1({
     ...matchingPassFields,
-    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v4",
+    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v5",
   });
   assert.throws(
     () => assertOpenEnaAiPromptEligibleForApproval(staleSuite, draft.contentSha256),

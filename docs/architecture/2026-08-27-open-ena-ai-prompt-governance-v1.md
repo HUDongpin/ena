@@ -147,16 +147,17 @@ prompt, call a model, import the provider client, inspect AI environment variabl
 use credentials, access the network, write files, or alter runtime response
 handling.
 
-The frozen suite version `open-ena-ai-offline-synthetic-mock-v5` contains exactly
+The frozen suite version `open-ena-ai-offline-synthetic-mock-v6` contains exactly
 four fixed aggregate, role/index-only designs for each of `en`, `zh-hant`, and
 `zh-hans`:
 
-The suite identifier advances from v4 because exact multi-axis identity sets,
-descriptive-count and complete-array binding, inference-scope cohort policy,
-common method/direction forms, and executable source-registration shape change the
-meaning of an automated pass. The earlier v4 advance introduced protected
-count/method/cohort checks, exact fixture-manifest enforcement, and stricter test
-registration; v3 introduced locale-bound fixtures and lexical matrices. The
+The suite identifier advances from v5 because exact contrast-period sets, plural
+axis identity, full numeric-RHS consumption, additional declared method/direction/
+cohort forms, and fail-closed unbound numeric text change the meaning of an
+automated pass. The earlier v5 advance introduced descriptive-count and complete-
+array binding, inference-scope cohort policy, executable source registration, and
+source SHA manifests; v4 introduced fixture manifests and protected field checks;
+v3 introduced locale-bound fixtures and lexical matrices. The
 report and six-field receipt contracts remain V1; only receipts from the current
 suite are eligible for later human review.
 
@@ -178,7 +179,7 @@ checked-in manifest. The hash binds the case ID, design, locale, aggregate evide
 compliant candidate, required inference IDs, limitations, coverage tags, and a
 digest of the private source canaries. A custom or drifted case may be evaluated for
 diagnostics, but the formal report and receipt receive
-`suite-fixture-identity-mismatch`; they cannot claim a zero-failure v5 run or pass
+`suite-fixture-identity-mismatch`; they cannot claim a zero-failure v6 run or pass
 approval eligibility under the frozen suite identity.
 
 Across those fixtures the suite exercises ties, small samples, zero differences,
@@ -215,17 +216,23 @@ exact-value connector (for example, `pRaw` cannot borrow `pHolm`, sample size, t
 count, or a period index). Every cited record that owns the claimed field must
 support the exact value. Explicit axis roles must equal—not merely overlap—the
 roles of cited axis-bound evidence; explicit period qualifiers must match the cited
-contrast. Multi-axis or multi-period prose that cannot be bound unambiguously fails
+contrast's complete period set, not a subset. Singular, plural, ordinal, and the
+declared latent-dimension axis forms share that identity check. Multi-axis or
+multi-period prose that cannot be bound unambiguously fails
 closed and should be split into separate observations. A correct value from another
 axis cannot satisfy the claim, even when both axes happen to share that value.
 The closed numeric mapping also covers disclosed inference and descriptive sample,
 matched/missing, used/excluded, entity, sign, zero, ranked, complete-cohort,
 period, degrees-of-freedom, tie, and period-index fields. Array-valued selected
 period indices are parsed and compared as the complete ordered array; matching only
-the first value is insufficient. Method/test and difference-direction assertions,
+the first value is insufficient. A scalar claim cannot hide additional numeric
+values later in its right-hand side. Any remaining digit that is not consumed by a
+validated field/array claim, an explicit axis/period identity, or the literal MR1
+boundary fails closed; this intentionally rejects unbound descriptive numbers.
+Method/test and difference-direction assertions,
 including the declared common `used/applied` and `computed as` forms, must match
-the cited record. Cohort-policy assertions bind only to the authoritative inference
-scope policy and cannot borrow the descriptive trajectory policy. An uncited,
+the cited record. Declared analytic-cohort assertions bind only to the authoritative
+inference scope policy and cannot borrow the descriptive trajectory policy. An uncited,
 absent, cross-field, cross-axis, cross-period, or wrong-layer value fails. Threshold
 or approximation forms using `<`, `>`, `<=`, `>=`, `≤`, `≥`, or `≈` fail closed:
 the verifier neither creates a significance threshold nor invents an approximation
