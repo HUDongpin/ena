@@ -53,7 +53,7 @@ function mutateCandidate(
 }
 
 test("the fixed offline suite contains exactly the four role/index-only research designs", () => {
-  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v10");
+  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v11");
   assert.equal(OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1, OPEN_ENA_AI_MAX_RESPONSE_BYTES);
   assert.equal(OPEN_ENA_AI_OFFLINE_EXPECTED_PROBE_COUNT_V1, 118);
   assertDeepFrozen(OPEN_ENA_AI_OFFLINE_PROBE_CONTENT_SHA256_BY_LOCALE_V1);
@@ -1069,6 +1069,40 @@ test("artifact and fixture drift fail automated gates without gaining registry a
   assert.ok(changedCandidateResult.receipt.hardGateFailures.includes("suite-fixture-identity-mismatch"));
   assert.ok(changedCandidateResult.report.hardGateFailures.includes("suite-probe-content-mismatch"));
   assert.ok(changedCandidateResult.receipt.hardGateFailures.includes("suite-probe-content-mismatch"));
+
+  const malformedCandidateCases: OpenEnaAiOfflineEvaluationCaseV1[] =
+    OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1.map((evaluationCase) => (
+      structuredClone(evaluationCase)
+    ));
+  malformedCandidateCases[0] = {
+    ...malformedCandidateCases[0],
+    compliantCandidateJson: "{bad",
+  };
+  const malformedCandidateResult = evaluateOpenEnaAiPromptArtifactOfflineV1(
+    baseline,
+    "en",
+    { cases: malformedCandidateCases },
+  );
+  for (const expectedFailure of [
+    "suite-fixture-identity-mismatch",
+    "suite-probe-construction-failed",
+    "suite-probe-count-mismatch",
+    "suite-probe-content-mismatch",
+  ]) {
+    assert.ok(malformedCandidateResult.report.hardGateFailures.includes(expectedFailure));
+    assert.ok(malformedCandidateResult.receipt.hardGateFailures.includes(expectedFailure));
+  }
+  assert.deepEqual(Object.keys(malformedCandidateResult.receipt).sort(), [
+    "artifactSha256",
+    "evaluationSuiteVersion",
+    "hardGateFailures",
+    "privacySecurityReview",
+    "receiptSchemaVersion",
+    "scientificReview",
+  ]);
+  assert.equal(malformedCandidateResult.report.authorizationEffect, "none");
+  assert.equal(malformedCandidateResult.receipt.scientificReview, "pending");
+  assert.equal(malformedCandidateResult.receipt.privacySecurityReview, "pending");
 });
 
 test("approval eligibility requires zero failures and both independent human reviews but never promotes", () => {
@@ -1097,7 +1131,7 @@ test("approval eligibility requires zero failures and both independent human rev
   );
   const staleSuite = parseEnaPromptEvalReceiptV1({
     ...matchingPassFields,
-    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v9",
+    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v10",
   });
   assert.throws(
     () => assertOpenEnaAiPromptEligibleForApproval(staleSuite, draft.contentSha256),

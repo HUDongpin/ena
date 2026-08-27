@@ -147,12 +147,15 @@ prompt, call a model, import the provider client, inspect AI environment variabl
 use credentials, access the network, write files, or alter runtime response
 handling.
 
-The frozen suite version `open-ena-ai-offline-synthetic-mock-v10` contains exactly
+The frozen suite version `open-ena-ai-offline-synthetic-mock-v11` contains exactly
 four fixed aggregate, role/index-only designs for each of `en`, `zh-hant`, and
 `zh-hans`:
 
-The suite identifier advances from v9 because the adversarial manifest now binds
-the complete probe content rather than only the probe identity triple. The v9
+The suite identifier advances from v10 because malformed custom fixture candidates
+now produce a controlled `suite-probe-construction-failed` hard gate, report, and
+pending receipt instead of escaping diagnostics through an exception. The v10
+advance made the adversarial manifest bind the complete probe content rather than
+only the probe identity triple. The v9
 advance made asserted nonfinite tokens fail
 closed through punctuation, quote, bracket, and symbol wrappers, including
 whitespace between a sign and infinity. A compatibility-normalized view is used
@@ -193,16 +196,18 @@ checked-in manifest. The hash binds the case ID, design, locale, aggregate evide
 compliant candidate, required inference IDs, limitations, coverage tags, and a
 digest of the private source canaries. A custom or drifted case may be evaluated for
 diagnostics, but the formal report and receipt receive
-`suite-fixture-identity-mismatch`; they cannot claim a zero-failure v10 run or pass
-approval eligibility under the frozen suite identity.
+`suite-fixture-identity-mismatch`; they cannot claim a zero-failure v11 run or pass
+approval eligibility under the frozen suite identity. If malformed candidate JSON
+prevents adversarial probe construction, `suite-probe-construction-failed` and the
+applicable probe count/content failures are recorded in the same report and receipt.
 
 The suite also freezes exactly 118 unique adversarial probes per locale. For a
 candidate probe, the literal SHA-256 manifest binds its order, ID, kind, expected
 issue code, case ID, and the SHA-256 of the exact candidate JSON bytes. For an
 artifact probe, it binds the order, ID, kind, expected issue code, explicit mutation
 descriptor, and SHA-256 of the canonical mutated artifact's compiler-owned content;
-independent approval status remains excluded from behavior identity. The evaluator itself,
-not only its tests, adds `suite-probe-count-mismatch` for a wrong total,
+independent approval status remains excluded from behavior identity. The evaluator
+itself, not only its tests, adds `suite-probe-count-mismatch` for a wrong total,
 `suite-probe-id-duplicate` for duplicate IDs, and
 `suite-probe-content-mismatch` for any ordered content-manifest drift. Removing,
 duplicating, renaming, reordering, rebinding, or repurposing a probe therefore
