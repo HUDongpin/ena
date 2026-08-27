@@ -120,6 +120,18 @@ test("official Primary, Comparison, and Secondary presenters expose ENA marks on
 test("V3 desktop and narrow layouts preserve controls-status-plot-table order without horizontal overflow", () => {
   assert.match(css, /\.ena-longitudinal-v3-workbench\s*\{[^}]*grid-column:\s*2\s*\/\s*4[^}]*overflow:\s*hidden/);
   assert.match(css, /\.ena-longitudinal-v3-layout\s*\{[^}]*grid-template-columns:\s*minmax\(300px,\s*380px\)\s+minmax\(0,\s*1fr\)/);
+  assert.match(
+    css,
+    /@media\s*\(max-width:\s*1260px\)\s*and\s*\(min-width:\s*901px\)[\s\S]*?\.ena-workbench-grid:has\(\.ena-longitudinal-v3-workbench\)\s*\{[^}]*grid-template-columns:\s*65px\s+minmax\(0,\s*1fr\)[^}]*overflow-x:\s*hidden/,
+  );
+  assert.match(
+    css,
+    /@media\s*\(max-width:\s*1260px\)\s*and\s*\(min-width:\s*901px\)[\s\S]*?\.ena-longitudinal-v3-workbench\s*\{[^}]*grid-column:\s*2[^}]*overflow-x:\s*hidden/,
+  );
+  assert.match(
+    css,
+    /@media\s*\(max-width:\s*1260px\)\s*and\s*\(min-width:\s*901px\)[\s\S]*?\.ena-longitudinal-v3-layout\s*\{[^}]*grid-template-columns:\s*minmax\(280px,\s*340px\)\s+minmax\(0,\s*1fr\)/,
+  );
   assert.match(css, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.ena-longitudinal-v3-layout\s*\{[^}]*grid-template-columns:\s*1fr/);
   assert.match(css, /\.ena-longitudinal-v3-table-wrap\s*\{[^}]*overflow-x:\s*auto/);
   assert.match(css, /@media\s*\(max-width:\s*560px\)[\s\S]*?\.ena-longitudinal-v3-plot-shell\s*\{[^}]*height:\s*535px/);

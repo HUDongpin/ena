@@ -12372,12 +12372,18 @@ body:has(.open-ena-page) #main-content {
 }
 
 @media (max-width: 1260px) and (min-width: 901px) {
-  .ena-longitudinal-v3-layout {
-    grid-template-columns: minmax(300px, 340px) minmax(720px, 1fr);
+  .ena-workbench-grid:has(.ena-longitudinal-v3-workbench) {
+    grid-template-columns: 65px minmax(0, 1fr);
+    overflow-x: hidden;
   }
 
   .ena-longitudinal-v3-workbench {
-    overflow-x: auto;
+    grid-column: 2;
+    overflow-x: hidden;
+  }
+
+  .ena-longitudinal-v3-layout {
+    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
   }
 }
 
