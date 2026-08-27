@@ -22,7 +22,7 @@ import {
 } from "./open-ena-ai-prompt-governance";
 
 export const OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1 =
-  "open-ena-ai-offline-synthetic-mock-v7" as const;
+  "open-ena-ai-offline-synthetic-mock-v8" as const;
 export const OPEN_ENA_AI_OFFLINE_EVALUATION_REPORT_SCHEMA_VERSION_V1 =
   "open-ena-ai-offline-evaluation-report-v1" as const;
 export const OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1 = 64 * 1024;
@@ -1032,7 +1032,7 @@ const STATISTIC_NUMERIC_CLAIM = /((?:原始\s*p(?:\s*值)?|p\s*值|holm\s*校正
 const PROTECTED_NUMERIC_CLAIM = /((?:primary\s+sample\s+size|secondary\s+sample\s+size|matched\s+(?:cohort|sample)(?:\s+size)?|missing\s+pairs?(?:\s+count)?|positive\s+count|negative\s+count|zero\s+count|nonzero\s+count|ranked\s+count|complete\s+cohort(?:\s+size)?|missing\s+complete\s+blocks?|number\s+of\s+periods|period\s+count|(?:friedman\s+)?degrees?\s+of\s+freedom|df|tie\s+group\s+count|tied\s+observation\s+count|selected\s+period\s+index|earlier\s+period\s+index|later\s+period\s+index|主要(?:樣本|样本)數|主要(?:樣本|样本)数|次要(?:樣本|样本)數|次要(?:樣本|样本)数|配對(?:隊列|队列|樣本|样本)(?:數|数)?|匹配(?:隊列|队列|樣本|样本)(?:數|数)?|缺失配對(?:數|数)?|缺失匹配(?:數|数)?|完整(?:隊列|队列)(?:數|数)?|缺失完整區塊(?:數|数)?|缺失完整区块(?:數|数)?|時段數|时段数|自由度|結值組數|结值组数|並列觀察數|并列观察数|選定時段索引|选定时段索引|較早時段索引|较早时段索引|較晚時段索引|较晚时段索引))\s*(=|:|：|<=|>=|<|>|≤|≥|≈|equals?|is|was|as|contains?|等於|等于|為|为|是|包含|約為|约为)\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?)/giu;
 const PROTECTED_FIELD_NUMERIC_CLAIM = /(?<![\p{L}\p{N}_])((?:nPrimary|nSecondary|nMatched|nMissing|nPositive|nNegative|nZero|nNonzero|nRanked|nComplete|nMissingCompleteBlocks|nPeriods|nUsed|nExcluded|periodCount|periodIndex|availableEntityCount|completeEntityCount|includedEntityCount|degreesFreedom|tieGroupCount|tiedObservationCount|selectedPeriodIndex|earlierPeriodIndex|laterPeriodIndex))\s*(=|:|：|<=|>=|<|>|≤|≥|≈|equals?|is|was|as|contains?|等於|等于|為|为|是|包含|約為|约为)\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?)/giu;
 const PROTECTED_NUMERIC_ARRAY_CLAIM = /(?<![\p{L}\p{N}_])((?:selectedPeriodIndices|selected\s+period\s+indices|選定時段索引|选定时段索引))\s*(?:=|:|：|are|is|were|contains?|includes?|consists?\s+of|等於|等于|為|为|是|包含)\s*([^.!?;。！？；\n]{1,160})/giu;
-const PROTECTED_NONFINITE_CLAIM = /(?<![\p{L}\p{N}_])(?:p(?:Raw|Holm)?|p[-\s]?value|u(?:Primary|Secondary)?|w(?:Positive|Negative)?|t|q|kendallsW|rankBiserial(?:PrimaryVsSecondary|LaterVsEarlier)?|n(?:Primary|Secondary|Matched|Missing|Positive|Negative|Zero|Nonzero|Ranked|Complete|MissingCompleteBlocks|Periods|Used|Excluded)|period(?:Count|Index)|availableEntityCount|completeEntityCount|includedEntityCount|degreesFreedom|tieGroupCount|tiedObservationCount|selectedPeriodIndices?)\s*(?:=|:|：|equals?|is|was|as|等於|等于|為|为|是)\s*(?:nan|[-+]?infinity|[-+]?inf|null|undefined)\b/iu;
+const ASSERTED_NONFINITE_VALUE = /(?:=|:|：|equals?|is|are|was|were|as|contains?|includes?|consists?\s+of|等於|等于|為|为|是|包含|包括)\s*(?:nan|(?:[-+\u2212]|positive\s+|negative\s+)?(?:infinity|inf|∞)|null|undefined)(?![\p{L}\p{N}_])/iu;
 const PROTECTED_STRING_CLAIM = /(?:\b(?:the\s+supplied\s+)?(method|test|difference\s+direction|cohort\s+policy)\s*(?:=|:|equals?|is|was)\s*((?:an?|the)\s+)?([^.!?;\n]{1,96})|(?:所提供的)?(方法|檢定|检验|差值方向|隊列政策|队列政策)\s*(?:=|:|：|等於|等于|為|为|是)\s*([^。！？；\n]{1,96}))/giu;
 const PROTECTED_FIELD_STRING_CLAIM = /(?<![\p{L}\p{N}_])(resolvedPMethod|test|differenceDirection|cohortPolicy)\s*(?:=|:|：|equals?|is|was|等於|等于|為|为|是)\s*((?:an?|the)\s+)?([^.!?;。！？；\n]{1,96})/giu;
 const METHOD_USAGE_CLAIM = /\b(?:(?:the\s+)?(?:analysis|comparison|procedure)\s+(?:used|uses|applied|employed)\s+(?:an?\s+)?|method\s+(?:used|applied|employed)\s+(?:was|is)\s+(?:an?\s+)?)([^.!?;\n]{1,96})/giu;
@@ -1422,11 +1422,11 @@ function extractDeclaredIdentity(text: string): DeclaredIdentityV1 {
     if (range) numericRanges.push(range);
   };
 
-  for (const match of text.matchAll(/\b(?:axis|axes)\s*[-_]?\s*([0-9]+)\s*(?:and|&|,|\/)\s*(?:(?:axis|axes)\s*)?[-_]?\s*([0-9]+)\b/giu)) {
+  for (const match of text.matchAll(/\b(?:axis|axes)(?:[-_]\s*|\s+)([0-9]+)\s*(?:and|&|,|\/)\s*(?:(?:axis|axes)(?:[-_]\s*|\s+))?([0-9]+)\b/giu)) {
     addAxisNumber(match[1], captureRange(match, 1));
     addAxisNumber(match[2], captureRange(match, 2));
   }
-  for (const match of text.matchAll(/\b(?:axis|axes)\s*[-_]?\s*([0-9]+)\b/giu)) {
+  for (const match of text.matchAll(/\b(?:axis|axes)(?:[-_]\s*|\s+)([0-9]+)\b/giu)) {
     addAxisNumber(match[1], captureRange(match, 1));
   }
   for (const match of text.matchAll(/\b(first|second)\s+(?:axis|latent\s+dimension)\b/giu)) {
@@ -1462,11 +1462,11 @@ function extractDeclaredIdentity(text: string): DeclaredIdentityV1 {
     }
   }
 
-  for (const match of text.matchAll(/\b(?:period|periods)\s*[-_]?\s*([0-9]+)\s*(?:and|to|through|&|,|\/)\s*(?:period\s*)?[-_]?\s*([0-9]+)\b/giu)) {
+  for (const match of text.matchAll(/\b(?:period|periods)(?:[-_]\s*|\s+)([0-9]+)\s*(?:and|to|through|&|,|\/)\s*(?:period(?:[-_]\s*|\s+))?([0-9]+)\b/giu)) {
     addPeriodNumber(match[1], captureRange(match, 1));
     addPeriodNumber(match[2], captureRange(match, 2));
   }
-  for (const match of text.matchAll(/\b(?:period|periods)\s*[-_]?\s*([0-9]+)\b/giu)) {
+  for (const match of text.matchAll(/\b(?:period|periods)(?:[-_]\s*|\s+)([0-9]+)\b/giu)) {
     addPeriodNumber(match[1], captureRange(match, 1));
   }
   for (const match of text.matchAll(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)\s+period\b/giu)) {
@@ -1501,19 +1501,16 @@ function extractDeclaredIdentity(text: string): DeclaredIdentityV1 {
   return { axisRoles, periods, numericRanges };
 }
 
-function numericIdentityRanges(text: string): readonly TextRangeV1[] {
-  return extractDeclaredIdentity(text).numericRanges;
-}
-
 function hasUnclaimedNumericToken(
   text: string,
   claims: readonly StatisticClaimV1[],
   arrayClaims: readonly NumericArrayClaimV1[],
+  identity: DeclaredIdentityV1,
 ): boolean {
   const allowedRanges: readonly TextRangeV1[] = [
     ...claims,
     ...arrayClaims,
-    ...numericIdentityRanges(text),
+    ...identity.numericRanges,
   ];
   return [...text.matchAll(NUMERIC_TOKEN)].some((match) => {
     const start = match.index ?? -1;
@@ -1576,14 +1573,6 @@ function statisticClaimMatches(supplied: number, claim: StatisticClaimV1): boole
   }
 }
 
-function declaredAxisRoles(text: string): ReadonlySet<string> {
-  return extractDeclaredIdentity(text).axisRoles;
-}
-
-function declaredPeriodNumbers(text: string): ReadonlySet<number> {
-  return extractDeclaredIdentity(text).periods;
-}
-
 function ownStringField(evidence: unknown, field: string): string | undefined {
   if (evidence === null || typeof evidence !== "object") return undefined;
   const descriptor = Object.getOwnPropertyDescriptor(evidence, field);
@@ -1592,8 +1581,11 @@ function ownStringField(evidence: unknown, field: string): string | undefined {
     : undefined;
 }
 
-function referencedIdentityMatchesStatement(text: string, referencedEvidence: readonly unknown[]): boolean {
-  const axes = declaredAxisRoles(text);
+function referencedIdentityMatchesStatement(
+  identity: DeclaredIdentityV1,
+  referencedEvidence: readonly unknown[],
+): boolean {
+  const axes = identity.axisRoles;
   if (axes.size > 0) {
     const axisBoundEvidence = referencedEvidence.filter((entry) => ownStringField(entry, "axisRole"));
     const referencedAxes = new Set(axisBoundEvidence.map((entry) => (
@@ -1604,7 +1596,7 @@ function referencedIdentityMatchesStatement(text: string, referencedEvidence: re
       return false;
     }
   }
-  const periods = declaredPeriodNumbers(text);
+  const periods = identity.periods;
   if (periods.size > 0) {
     const periodBoundEvidence = referencedEvidence.filter((entry) => {
       const id = ownStringField(entry, "id");
@@ -1750,13 +1742,14 @@ function hasUnsupportedNumericClaim(
 ): boolean {
   const indexedEvidence = evidenceById(evaluationCase.request.evidence);
   for (const observation of interpretation.observedPatterns) {
-    if (PROTECTED_NONFINITE_CLAIM.test(observation.statement)) return true;
+    if (ASSERTED_NONFINITE_VALUE.test(observation.statement)) return true;
+    const identity = extractDeclaredIdentity(observation.statement);
     const claims = claimedStatistics(observation.statement);
     const arrayClaims = claimedNumericArrays(observation.statement);
     const structuredClaims = claimedStructuredStrings(observation.statement);
     const referencedEvidence = observation.evidenceRefs.map((reference) => indexedEvidence.get(reference));
-    if (hasUnclaimedNumericToken(observation.statement, claims, arrayClaims)) return true;
-    if (!referencedIdentityMatchesStatement(observation.statement, referencedEvidence)) return true;
+    if (hasUnclaimedNumericToken(observation.statement, claims, arrayClaims, identity)) return true;
+    if (!referencedIdentityMatchesStatement(identity, referencedEvidence)) return true;
     if (claims.some((claim) => {
       const relevantEvidence = referencedEvidence.filter((evidence) => (
         claim.authoritativeFields.some((field) => ownFiniteStatisticValues(evidence, field).length > 0)
@@ -1785,12 +1778,13 @@ function hasUnsupportedNumericClaim(
   }
   return [...interpretation.contextualQuestions, ...interpretation.limitations]
     .some((value) => {
-      if (PROTECTED_NONFINITE_CLAIM.test(value)) return true;
+      if (ASSERTED_NONFINITE_VALUE.test(value)) return true;
+      const identity = extractDeclaredIdentity(value);
       const claims = claimedStatistics(value);
       const arrayClaims = claimedNumericArrays(value);
       return claims.length > 0
         || arrayClaims.length > 0
-        || hasUnclaimedNumericToken(value, claims, arrayClaims)
+        || hasUnclaimedNumericToken(value, claims, arrayClaims, identity)
         || claimedStructuredStrings(value).length > 0;
     });
 }
@@ -2317,6 +2311,86 @@ function candidateProbes(
       candidateJson: statisticStatementMutation(
         selectedPeriod,
         "The supplied nUsed is infinity.",
+        "trajectory-primary-period-2",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-primary-sample-size",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "The supplied primary sample size is NaN.",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-friedman-degrees-freedom",
+      evaluationCase: repeated,
+      candidateJson: statisticStatementMutation(
+        repeated,
+        "The supplied Friedman degrees of freedom is infinity.",
+        "omnibus-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-traditional-chinese-p-value",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "所提供的 p 值為 NaN。",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-traditional-chinese-sample-size-symbol",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "所提供的主要樣本數為 ∞。",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-selected-period-index",
+      evaluationCase: repeated,
+      candidateJson: statisticStatementMutation(
+        repeated,
+        "The supplied selectedPeriodIndex is undefined.",
+        "omnibus-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "negative-axis-identity",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "Axis -1 shows the supplied aggregate pattern.",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "negative-axis-list-identity",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "Axes 1 and -2 show the supplied aggregate patterns.",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "negative-period-identity",
+      evaluationCase: selectedPeriod,
+      candidateJson: statisticStatementMutation(
+        selectedPeriod,
+        "At period -2, the supplied nUsed is 4.",
         "trajectory-primary-period-2",
       ),
       expectedIssueCode: "invented-or-recomputed-statistic",

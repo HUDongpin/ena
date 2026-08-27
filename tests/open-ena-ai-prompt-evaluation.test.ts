@@ -49,7 +49,7 @@ function mutateCandidate(
 }
 
 test("the fixed offline suite contains exactly the four role/index-only research designs", () => {
-  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v7");
+  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v8");
   assert.equal(OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1, OPEN_ENA_AI_MAX_RESPONSE_BYTES);
   assert.deepEqual(
     OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1.map((evaluationCase) => evaluationCase.designKind),
@@ -208,6 +208,9 @@ test("every locale artifact kills its own frozen numeric, scientific, privacy, a
 
     const artifact = compileOpenEnaAiPromptArtifactV1(OPEN_ENA_AI_PROMPT_SPEC_V1, locale);
     const report = evaluateOpenEnaAiPromptArtifactOfflineV1(artifact, locale).report;
+    const reportProbeIds = report.adversarialResults.map((entry) => entry.probeId);
+    assert.equal(reportProbeIds.length, 102, locale);
+    assert.equal(new Set(reportProbeIds).size, reportProbeIds.length, locale);
     for (const probe of probes) {
       const reportProbe = report.adversarialResults.find((entry) => entry.probeId === probe.probeId);
       assert.equal(reportProbe?.killed, true, `${locale}/${probe.probeId}`);
@@ -659,9 +662,35 @@ test("protected numeric and method claims bind to every cited inference identity
       ["trajectory-primary-period-2"],
     ],
     [endpoint, "The supplied pRaw is NaN.", ["comparison-axis-1"]],
+    [endpoint, "The supplied pRaw is ∞.", ["comparison-axis-1"]],
+    [endpoint, "The supplied effect size is NaN.", ["comparison-axis-1"]],
+    [endpoint, "The supplied primary sample size is NaN.", ["comparison-axis-1"]],
+    [endpoint, "The supplied sample sizes are NaN.", ["comparison-axis-1"]],
+    [repeated, "The supplied Friedman degrees of freedom is infinity.", ["omnibus-axis-1"]],
+    [endpoint, "所提供的 p 值為 NaN。", ["comparison-axis-1"]],
+    [endpoint, "所提供的主要樣本數為 ∞。", ["comparison-axis-1"]],
+    [endpoint, "所提供的主要样本数为 infinity。", ["comparison-axis-1"]],
+    [repeated, "The supplied selectedPeriodIndex is undefined.", ["omnibus-axis-1"]],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "The supplied selectedPeriodIndex is NaN.",
+      ["trajectory-primary-period-2"],
+    ],
+    [
+      paired,
+      "The supplied earlierPeriodIndex is Infinity.",
+      ["comparison-axis-1-period-1-period-2"],
+    ],
     [
       caseById("trajectory-selected-period-mann-whitney"),
       "The supplied nUsed is infinity.",
+      ["trajectory-primary-period-2"],
+    ],
+    [endpoint, "Axis -1 shows the supplied aggregate pattern.", ["comparison-axis-1"]],
+    [endpoint, "Axes 1 and -2 show the supplied aggregate patterns.", ["comparison-axis-1"]],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "At period -2, the supplied nUsed is 4.",
       ["trajectory-primary-period-2"],
     ],
     [
@@ -830,6 +859,14 @@ test("offline reports and exact V1 receipts are deterministic, deeply frozen, an
     "pure-period-identity-mismatch",
     "nonfinite-p-raw",
     "nonfinite-n-used",
+    "nonfinite-primary-sample-size",
+    "nonfinite-friedman-degrees-freedom",
+    "nonfinite-traditional-chinese-p-value",
+    "nonfinite-traditional-chinese-sample-size-symbol",
+    "nonfinite-selected-period-index",
+    "negative-axis-identity",
+    "negative-axis-list-identity",
+    "negative-period-identity",
     "missing-one-visible-inference-ref",
     "missing-all-visible-inference-refs",
     "treatment-improved-learning",
@@ -960,7 +997,7 @@ test("approval eligibility requires zero failures and both independent human rev
   );
   const staleSuite = parseEnaPromptEvalReceiptV1({
     ...matchingPassFields,
-    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v6",
+    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v7",
   });
   assert.throws(
     () => assertOpenEnaAiPromptEligibleForApproval(staleSuite, draft.contentSha256),

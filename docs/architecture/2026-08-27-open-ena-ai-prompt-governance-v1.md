@@ -147,11 +147,16 @@ prompt, call a model, import the provider client, inspect AI environment variabl
 use credentials, access the network, write files, or alter runtime response
 handling.
 
-The frozen suite version `open-ena-ai-offline-synthetic-mock-v7` contains exactly
+The frozen suite version `open-ena-ai-offline-synthetic-mock-v8` contains exactly
 four fixed aggregate, role/index-only designs for each of `en`, `zh-hant`, and
 `zh-hans`:
 
-The suite identifier advances from v6 because one shared identity parser now
+The suite identifier advances from v7 because asserted `NaN`, infinity, infinity-
+symbol, null, and undefined values now fail closed regardless of whether the field
+uses a machine name or supported natural-language label. Identity parsing also
+distinguishes adjacent label delimiters such as `axis-1` and `period-2` from signed
+numbers such as `axis -1` and `period -2`; the latter cannot borrow a valid evidence
+identity. The v7 advance introduced one shared identity parser that now
 produces both the complete axis/period set and the only numeric identity spans that
 may be exempted, identity checks apply to every observation, and protected
 `NaN`/`Infinity` claims fail closed. The earlier v6 advance introduced exact
@@ -180,7 +185,7 @@ checked-in manifest. The hash binds the case ID, design, locale, aggregate evide
 compliant candidate, required inference IDs, limitations, coverage tags, and a
 digest of the private source canaries. A custom or drifted case may be evaluated for
 diagnostics, but the formal report and receipt receive
-`suite-fixture-identity-mismatch`; they cannot claim a zero-failure v7 run or pass
+`suite-fixture-identity-mismatch`; they cannot claim a zero-failure v8 run or pass
 approval eligibility under the frozen suite identity.
 
 Across those fixtures the suite exercises ties, small samples, zero differences,
@@ -233,8 +238,11 @@ the first value is insufficient. A scalar claim cannot hide additional numeric
 values later in its right-hand side. Any remaining digit that is not consumed by a
 validated field/array claim, an explicit axis/period identity, or the literal MR1
 boundary fails closed; this intentionally rejects unbound descriptive numbers.
-Protected numeric fields paired with `NaN`, infinity, null, or undefined also fail
-closed because every supplied numeric value is finite.
+Any asserted value paired with `NaN`, signed or unsigned infinity (including the
+infinity symbol), null, or undefined fails closed before field-name parsing. This
+prevents unsupported natural-language aliases from bypassing the finite-value gate;
+every supplied numeric value is finite. Adjacent identity delimiters remain valid,
+but whitespace-separated negative axis or period numbers are not treated as labels.
 Method/test and difference-direction assertions,
 including the declared common `used/applied` and `computed as` forms, must match
 the cited record. Declared analytic-cohort assertions bind only to the authoritative
