@@ -119,19 +119,167 @@ function rgbaPng(width, height, leftColor, rightColor, filterType = 0) {
   ]);
 }
 
-function nativePng(width, height, seed = 1, filterType = 0) {
-  const base = (seed * 29) % 180 + 20;
-  return rgbaPng(
-    width,
-    height,
-    [base, (base + 47) % 256, (base + 91) % 256, 255],
-    [(base + 109) % 256, (base + 157) % 256, (base + 203) % 256, 255],
-    filterType,
-  );
+function colorBlockPng(width, height, blockOrBlocks) {
+  const blocks = Array.isArray(blockOrBlocks) ? blockOrBlocks : [blockOrBlocks];
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  const rowBytes = width * 4;
+  const rows = Buffer.alloc((rowBytes + 1) * height, 255);
+  for (let row = 0; row < height; row += 1) {
+    const rowOffset = row * (rowBytes + 1);
+    rows[rowOffset] = 0;
+    for (const block of blocks) {
+      if (row < block.y || row >= block.y + block.height) continue;
+      for (let column = block.x; column < block.x + block.width; column += 1) {
+        const offset = rowOffset + 1 + column * 4;
+        rows[offset] = block.color[0];
+        rows[offset + 1] = block.color[1];
+        rows[offset + 2] = block.color[2];
+        rows[offset + 3] = 255;
+      }
+    }
+  }
+  return Buffer.concat([
+    Buffer.from("89504e470d0a1a0a", "hex"),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", deflateSync(rows)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+function nativePng(
+  width,
+  height,
+  seed = 1,
+  filterType = 0,
+  includeBlackTrajectory = true,
+  trajectoryColor = [12, 12, 12, 255],
+) {
+  assert.ok(filterType === 0 || filterType === 1);
+  const rowBytes = width * 4;
+  const pixels = Buffer.alloc(rowBytes * height, 255);
+  const setPixel = (x, y, color) => {
+    if (x < 0 || x >= width || y < 0 || y >= height) return;
+    const offset = y * rowBytes + x * 4;
+    pixels[offset] = color[0];
+    pixels[offset + 1] = color[1];
+    pixels[offset + 2] = color[2];
+    pixels[offset + 3] = color[3];
+  };
+  const line = (x0, y0, x1, y1, color, thickness = 2) => {
+    const steps = Math.max(1, Math.abs(x1 - x0), Math.abs(y1 - y0));
+    for (let step = 0; step <= steps; step += 1) {
+      const x = Math.round(x0 + (x1 - x0) * step / steps);
+      const y = Math.round(y0 + (y1 - y0) * step / steps);
+      for (let dx = -thickness; dx <= thickness; dx += 1) {
+        for (let dy = -thickness; dy <= thickness; dy += 1) setPixel(x + dx, y + dy, color);
+      }
+    }
+  };
+  const grid = [230, 234, 236, 255];
+  for (let index = 1; index < 8; index += 1) {
+    line(0, Math.round(height * index / 8), width - 1, Math.round(height * index / 8), grid, 0);
+    line(Math.round(width * index / 8), 0, Math.round(width * index / 8), height - 1, grid, 0);
+  }
+  const shift = Math.round(((seed * 17) % 9 - 4) * Math.max(1, width * 0.004));
+  line(Math.round(width * 0.1), Math.round(height * 0.72), Math.round(width * 0.6) + shift, Math.round(height * 0.42), [220, 38, 38, 255]);
+  line(Math.round(width * 0.32), Math.round(height * 0.55), Math.round(width * 0.74), Math.round(height * 0.7), [35, 96, 220, 255]);
+  line(Math.round(width * 0.45), Math.round(height * 0.78), Math.round(width * 0.48) + shift, Math.round(height * 0.18), [26, 156, 82, 255]);
+  if (includeBlackTrajectory) {
+    line(
+      Math.round(width * 0.16),
+      Math.round(height * 0.78),
+      Math.round(width * 0.68) + shift,
+      Math.round(height * 0.34),
+      trajectoryColor,
+      2,
+    );
+    line(
+      Math.round(width * 0.43) + shift,
+      Math.round(height * 0.55),
+      Math.round(width * 0.39) + shift,
+      Math.round(height * 0.54),
+      trajectoryColor,
+      2,
+    );
+    line(
+      Math.round(width * 0.43) + shift,
+      Math.round(height * 0.55),
+      Math.round(width * 0.42) + shift,
+      Math.round(height * 0.59),
+      trajectoryColor,
+      2,
+    );
+  }
+  for (const [x, y, color] of [
+    [0.31, 0.56, [114, 51, 234, 255]],
+    [0.45, 0.49, [171, 73, 13, 255]],
+    [0.58, 0.43, [114, 51, 234, 255]],
+  ]) {
+    const centerX = Math.round(width * x) + shift;
+    const centerY = Math.round(height * y);
+    for (let dx = -4; dx <= 4; dx += 1) {
+      for (let dy = -4; dy <= 4; dy += 1) setPixel(centerX + dx, centerY + dy, color);
+    }
+  }
+  const rows = Buffer.alloc((rowBytes + 1) * height);
+  for (let y = 0; y < height; y += 1) {
+    const outputOffset = y * (rowBytes + 1);
+    rows[outputOffset] = filterType;
+    const source = pixels.subarray(y * rowBytes, (y + 1) * rowBytes);
+    if (filterType === 0) source.copy(rows, outputOffset + 1);
+    else {
+      for (let offset = 0; offset < source.length; offset += 1) {
+        rows[outputOffset + 1 + offset] = (
+          source[offset] - (offset >= 4 ? source[offset - 4] : 0)
+        ) & 0xff;
+      }
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  return Buffer.concat([
+    Buffer.from("89504e470d0a1a0a", "hex"),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", deflateSync(rows)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
 function solidPng(width, height, color) {
   return rgbaPng(width, height, color, color);
+}
+
+function solidRgba16Png(width, height, color = [4096, 8192, 12288, 65535]) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 16;
+  ihdr[9] = 6;
+  const row = Buffer.alloc(width * 8 + 1);
+  row[0] = 0;
+  for (let column = 0; column < width; column += 1) {
+    const offset = 1 + column * 8;
+    for (let channel = 0; channel < 4; channel += 1) {
+      row.writeUInt16BE(color[channel], offset + channel * 2);
+    }
+  }
+  const rows = Buffer.alloc(row.length * height);
+  for (let rowIndex = 0; rowIndex < height; rowIndex += 1) {
+    row.copy(rows, rowIndex * row.length);
+  }
+  return Buffer.concat([
+    Buffer.from("89504e470d0a1a0a", "hex"),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", deflateSync(rows)),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
 function sparseVisiblePng(width, height) {
@@ -1192,6 +1340,21 @@ function cameraState(center, eye, up, projectionType) {
   return { center, eye, up, projection: { type: projectionType } };
 }
 
+function runtimeTraceAudit() {
+  return {
+    resultHashes: [RESULT_HASH],
+    workerRunCount: 1,
+    trajectoryPathCount: 2,
+    blackTrajectoryPathCount: 2,
+    directionArrowCount: 4,
+    blackDirectionArrowCount: 4,
+    trajectoryCoordinatesFinite: true,
+    directionArrowCoordinatesFinite: true,
+    allTrajectoryTracesVisible: true,
+    allDirectionArrowTracesVisible: true,
+  };
+}
+
 async function createFixture(options = {}) {
   const root = await realpath(
     await mkdtemp(join(projectRoot, ".tmp-open-ena-production-browser-run-")),
@@ -1255,6 +1418,7 @@ async function createFixture(options = {}) {
       },
       resultHash: RESULT_HASH,
       scientificTaskCount: 1,
+      runtimeTraceAudit: runtimeTraceAudit(),
       pageScreenshot: screenshot(pageArtifact, spec.observedWidth, spec.observedHeight, {
         target: "viewport",
         requestedViewport: { width: spec.requestedWidth, height: spec.requestedHeight },
@@ -1336,6 +1500,7 @@ async function createFixture(options = {}) {
       runtimeCamera,
       resultHash: RESULT_HASH,
       scientificTaskCount: 1,
+      runtimeTraceAudit: runtimeTraceAudit(),
       screenshot: screenshot(artifact, 800, 600),
     });
   }
@@ -1358,6 +1523,7 @@ async function createFixture(options = {}) {
       yTitle: dimensionLabels[projection[1]],
       resultHash: RESULT_HASH,
       scientificTaskCount: 1,
+      runtimeTraceAudit: runtimeTraceAudit(),
       screenshot: screenshot(artifact, 800, 600),
     });
   }
@@ -1386,12 +1552,24 @@ async function createFixture(options = {}) {
   const downloadItems = [];
   for (const [kind, buttonLabel, file, bytes, mediaType] of downloadDefinitions) {
     const artifact = await writeArtifact(root, artifacts, file, bytes, mediaType);
+    const suggestedFilename = kind === "bundle" || kind === "participant"
+      ? "3dena-longitudinal-analysis.zip"
+      : "open-ena-" + RESULT_HASH.slice(0, 12) + "-trajectory-" + ({
+        path: "path.csv",
+        metadata: "metadata.csv",
+        inference: "inference.csv",
+        analysis: "analysis.json",
+        plotly: "plotly-spec.json",
+      })[kind];
     downloadItems.push({
       kind,
       buttonLabel,
       triggerPageUrl: PRODUCTION_ROUTE,
       downloadObserved: true,
-      suggestedFilename: file.split("/").at(-1),
+      suggestedFilename,
+      downloadGuid: `browser-download-${kind}-guid`,
+      downloadUrl: `blob:https://ena.hk/browser-download-${kind}`,
+      receivedBytes: artifact.bytes,
       artifact,
     });
   }
@@ -1411,7 +1589,7 @@ async function createFixture(options = {}) {
       canonicalPayloadSha256: sha256(Buffer.from(canonicalJson(raw), "utf8")),
     });
   };
-  const screenshotGeometryObservation = (contextKind, contextValue, capture) => {
+  const screenshotGeometryObservation = (contextKind, contextValue, capture, traceAudit) => {
     event("app-dom-observation", "screenshot-geometry-observation", {
       contextKind,
       contextValue,
@@ -1420,6 +1598,7 @@ async function createFixture(options = {}) {
       boundingClientRect: capture.capture.elementRect,
       observedViewport: capture.capture.observedViewport,
       rawPngRaster: capture.capture.rawPngRaster,
+      runtimeTraceAudit: traceAudit,
     });
   };
   event("app-dom-observation", "worker-event", {
@@ -1429,6 +1608,14 @@ async function createFixture(options = {}) {
     scientificTaskCountBefore: 0,
     workerDispatchCount: 1,
   });
+  const phaseCheckpointEvent = (phase, traceAudit = runtimeTraceAudit()) => {
+    event("app-dom-observation", "phase-checkpoint-observation", {
+      phase,
+      resultHash: RESULT_HASH,
+      scientificTaskCount: 1,
+      runtimeTraceAudit: traceAudit,
+    });
+  };
   event("app-dom-observation", "worker-event", {
     kind: "complete",
     dispatchId: "open-ena-worker-dispatch-1",
@@ -1436,13 +1623,22 @@ async function createFixture(options = {}) {
     scientificTaskCountAfter: 1,
     workerDispatchCount: 1,
   });
-  event("app-dom-observation", "remote-post-observation", {
-    requestCount: 0,
-    requests: [],
-  });
+  phaseCheckpointEvent("initial-run");
   for (const viewport of viewports) {
-    screenshotGeometryObservation("viewport-plot", viewport.name, viewport.plotScreenshot);
+    screenshotGeometryObservation(
+      "viewport-plot",
+      viewport.name,
+      viewport.plotScreenshot,
+      viewport.runtimeTraceAudit,
+    );
   }
+  const fullscreenTraceAudit = runtimeTraceAudit();
+  screenshotGeometryObservation(
+    "fullscreen",
+    "fullscreen",
+    screenshot(fullscreenArtifact, 1440, 1000, { target: "viewport" }),
+    fullscreenTraceAudit,
+  );
   for (const camera of cameras) {
     const preset = camera.preset;
     event("automation-command", "automation-command-receipt", {
@@ -1452,15 +1648,23 @@ async function createFixture(options = {}) {
         resultHash: RESULT_HASH,
         scientificTaskCount: 1,
         workerDispatchCount: 1,
+        runtimeTraceAudit: camera.runtimeTraceAudit,
       },
       after: {
         resultHash: RESULT_HASH,
         scientificTaskCount: 1,
         workerDispatchCount: 1,
+        runtimeTraceAudit: camera.runtimeTraceAudit,
       },
     });
-    screenshotGeometryObservation("camera", preset, camera.screenshot);
+    screenshotGeometryObservation(
+      "camera",
+      preset,
+      camera.screenshot,
+      camera.runtimeTraceAudit,
+    );
   }
+  phaseCheckpointEvent("after-cameras");
   for (const projectionEvidence of projections) {
     const projection = projectionEvidence.projection;
     event("automation-command", "automation-command-receipt", {
@@ -1470,25 +1674,38 @@ async function createFixture(options = {}) {
         resultHash: RESULT_HASH,
         scientificTaskCount: 1,
         workerDispatchCount: 1,
+        runtimeTraceAudit: projectionEvidence.runtimeTraceAudit,
       },
       after: {
         resultHash: RESULT_HASH,
         scientificTaskCount: 1,
         workerDispatchCount: 1,
+        runtimeTraceAudit: projectionEvidence.runtimeTraceAudit,
       },
     });
     screenshotGeometryObservation(
       "projection",
       projection,
       projectionEvidence.screenshot,
+      projectionEvidence.runtimeTraceAudit,
     );
   }
+  phaseCheckpointEvent("after-projections");
   for (const item of downloadItems.filter(({ kind }) => kind !== "participant")) {
+    event("cdp", "cdp-event", {
+      method: "Page.downloadWillBegin",
+      params: {
+        guid: item.downloadGuid,
+        url: item.downloadUrl,
+        suggestedFilename: item.suggestedFilename,
+      },
+    });
     event("download-event", "download-event", {
       phase: "start",
       kind: item.kind,
       file: item.artifact.file,
       resultHash: RESULT_HASH,
+      downloadGuid: item.downloadGuid,
       suggestedFilename: item.suggestedFilename,
     });
     event("download-event", "download-event", {
@@ -1496,6 +1713,7 @@ async function createFixture(options = {}) {
       kind: item.kind,
       file: item.artifact.file,
       resultHash: RESULT_HASH,
+      downloadGuid: item.downloadGuid,
       byteLength: item.artifact.bytes,
       sha256: item.artifact.sha256,
     });
@@ -1514,11 +1732,20 @@ async function createFixture(options = {}) {
     params: { result: true, userInput: "" },
   });
   const participantItem = downloadItems.find(({ kind }) => kind === "participant");
+  event("cdp", "cdp-event", {
+    method: "Page.downloadWillBegin",
+    params: {
+      guid: participantItem.downloadGuid,
+      url: participantItem.downloadUrl,
+      suggestedFilename: participantItem.suggestedFilename,
+    },
+  });
   event("download-event", "download-event", {
     phase: "start",
     kind: participantItem.kind,
     file: participantItem.artifact.file,
     resultHash: RESULT_HASH,
+    downloadGuid: participantItem.downloadGuid,
     suggestedFilename: participantItem.suggestedFilename,
   });
   event("download-event", "download-event", {
@@ -1526,8 +1753,14 @@ async function createFixture(options = {}) {
     kind: participantItem.kind,
     file: participantItem.artifact.file,
     resultHash: RESULT_HASH,
+    downloadGuid: participantItem.downloadGuid,
     byteLength: participantItem.artifact.bytes,
     sha256: participantItem.artifact.sha256,
+  });
+  phaseCheckpointEvent("after-downloads");
+  event("app-dom-observation", "remote-post-observation", {
+    requestCount: 0,
+    requests: [],
   });
   const rawEventLedgerArtifact = await writeArtifact(
     root,
@@ -1583,6 +1816,7 @@ async function createFixture(options = {}) {
         aggregateBundle.files.get("plotly-spec.json").toString("utf8"),
       ).data.length,
       dimensionLabels,
+      runtimeTraceAudit: runtimeTraceAudit(),
       taskCounts: {
         scientificTotal: 1,
         workerRuns: 1,
@@ -1595,7 +1829,12 @@ async function createFixture(options = {}) {
         "after-cameras",
         "after-projections",
         "after-downloads",
-      ].map((phase) => ({ phase, resultHash: RESULT_HASH, scientificTaskCount: 1 })),
+      ].map((phase) => ({
+        phase,
+        resultHash: RESULT_HASH,
+        scientificTaskCount: 1,
+        runtimeTraceAudit: runtimeTraceAudit(),
+      })),
     },
     viewports,
     fullscreen: {
@@ -1606,6 +1845,7 @@ async function createFixture(options = {}) {
       sceneDomain: { x: [0, 1], y: [0, 1] },
       resultHash: RESULT_HASH,
       scientificTaskCount: 1,
+      runtimeTraceAudit: fullscreenTraceAudit,
       screenshot: screenshot(fullscreenArtifact, 1440, 1000, { target: "viewport" }),
     },
     cameras,
@@ -1751,6 +1991,12 @@ async function replaceArtifactBytes(fixture, file, bytes) {
   };
   await writeFile(join(fixture.root, ...file.split("/")), bytes);
   updateArtifactReferences(fixture.manifest, file, replacement);
+  const downloadItem = fixture.manifest.downloads?.items?.find(
+    (item) => item.artifact?.file === file,
+  );
+  if (downloadItem) {
+    downloadItem.receivedBytes = replacement.bytes;
+  }
   fixture.manifest.contentSetHash = hashCanonical(fixture.manifest.artifacts);
   await persistManifest(fixture);
 }
@@ -2091,6 +2337,33 @@ test("rejects control-plane deployment binding drift after bytes are rehashed", 
   });
 });
 
+test("accepts a freshly resolved production binding immediately before diagnostics begin", async () => {
+  await withFixture(async (fixture) => {
+    const file = fixture.manifest.deployment.controlPlaneReceipt.file;
+    const payload = JSON.parse(await readFile(join(fixture.root, ...file.split("/")), "utf8"));
+    payload.observedAt = "2026-08-27T07:59:30.000Z";
+    await replaceArtifactBytes(fixture, file, Buffer.from(JSON.stringify(payload), "utf8"));
+    const result = runVerifier(fixture);
+    assert.equal(result.status, 0, result.stderr);
+  });
+});
+
+test("rejects a stale, future, or post-run production binding", async (t) => {
+  for (const [label, observedAt] of [
+    ["stale", "2026-08-27T07:58:59.999Z"],
+    ["future", "2026-08-27T08:00:00.001Z"],
+    ["post-run", "2026-08-27T08:05:00.001Z"],
+  ]) {
+    await t.test(label, async () => withFixture(async (fixture) => {
+      const file = fixture.manifest.deployment.controlPlaneReceipt.file;
+      const payload = JSON.parse(await readFile(join(fixture.root, ...file.split("/")), "utf8"));
+      payload.observedAt = observedAt;
+      await replaceArtifactBytes(fixture, file, Buffer.from(JSON.stringify(payload), "utf8"));
+      await rejectFixture(fixture, /control-plane\.observedAt|fresh|run window/iu);
+    }));
+  }
+});
+
 test("rejects browser runtime identity drift", async () => {
   await withFixture(async (fixture) => {
     fixture.manifest.browser.automationSurface = "playwright-cli";
@@ -2225,6 +2498,19 @@ test("rejects structurally incomplete or corrupted PNG screenshots", async (t) =
 });
 
 test("rejects viewport observation drift and horizontal overflow", async (t) => {
+  await t.test("accepts an exact 390x844 Chrome surface with a bounded classic vertical scrollbar", async () => {
+    await withFixture(async (fixture) => {
+      const mobile = fixture.manifest.viewports.find(({ name }) => name === "mobile");
+      mobile.observed.visualViewportWidth = 375;
+      mobile.overflow.documentClientWidth = 375;
+      mobile.overflow.documentScrollWidth = 375;
+      mobile.overflow.bodyClientWidth = 375;
+      mobile.overflow.bodyScrollWidth = 375;
+      await persistManifest(fixture);
+      const result = runVerifier(fixture);
+      assert.equal(result.status, 0, result.stderr);
+    });
+  });
   await t.test("observed viewport", async () => withFixture(async (fixture) => {
     fixture.manifest.viewports.find(({ name }) => name === "mobile").observed.innerHeight = 843;
     await persistManifest(fixture);
@@ -2234,6 +2520,18 @@ test("rejects viewport observation drift and horizontal overflow", async (t) => 
     fixture.manifest.viewports[0].overflow.documentScrollWidth = 1441;
     await persistManifest(fixture);
     await rejectFixture(fixture, /overflow|documentScrollWidth/iu);
+  }));
+  await t.test("oversized native-scrollbar claim", async () => withFixture(async (fixture) => {
+    const mobile = fixture.manifest.viewports.find(({ name }) => name === "mobile");
+    mobile.observed.visualViewportWidth = 350;
+    for (const field of [
+      "documentClientWidth",
+      "documentScrollWidth",
+      "bodyClientWidth",
+      "bodyScrollWidth",
+    ]) mobile.overflow[field] = 350;
+    await persistManifest(fixture);
+    await rejectFixture(fixture, /scrollbar|visual viewport|gutter/iu);
   }));
   await t.test("mobile requested viewport must be exactly 390x844", async () => {
     await withFixture(async (fixture) => {
@@ -2332,6 +2630,16 @@ test("rejects result-hash and scientific-task drift", async (t) => {
     await persistManifest(fixture);
     await rejectFixture(fixture, /scientificTaskCount|task count.*drift/iu);
   }));
+  await t.test("runtime black trajectory trace drift", async () => withFixture(async (fixture) => {
+    fixture.manifest.cameras[0].runtimeTraceAudit.blackTrajectoryPathCount = 1;
+    await persistManifest(fixture);
+    await rejectFixture(fixture, /runtimeTraceAudit|black.*trajectory|live Plotly/iu);
+  }));
+  await t.test("phase runtime worker count drift", async () => withFixture(async (fixture) => {
+    fixture.manifest.analysis.phaseCheckpoints[2].runtimeTraceAudit.workerRunCount = 2;
+    await persistManifest(fixture);
+    await rejectFixture(fixture, /runtimeTraceAudit|workerRunCount|single observed Worker/iu);
+  }));
 });
 
 test("rejects missing required phase checkpoints", async () => {
@@ -2340,6 +2648,36 @@ test("rejects missing required phase checkpoints", async () => {
     await persistManifest(fixture);
     await rejectFixture(fixture, /phaseCheckpoints|after-downloads/iu);
   });
+});
+
+test("accepts a fullscreen WebGL canvas that visibly covers at least 94% of the full plot", async () => {
+  await withFixture(async (fixture) => {
+    fixture.manifest.fullscreen.canvas = { width: 1408, height: 897 };
+    await persistManifest(fixture);
+    const result = runVerifier(fixture);
+    assert.equal(result.status, 0, result.stderr);
+  });
+});
+
+test("rejects a fullscreen WebGL canvas that leaves a material unused plot area", async () => {
+  await withFixture(async (fixture) => {
+    fixture.manifest.fullscreen.canvas = { width: 1300, height: 800 };
+    await persistManifest(fixture);
+    await rejectFixture(fixture, /fullscreen.*canvas|cover.*plot|94%/iu);
+  });
+});
+
+test("rejects a fullscreen WebGL canvas that exceeds the fullscreen plot shell", async (t) => {
+  await t.test("width", async () => withFixture(async (fixture) => {
+    fixture.manifest.fullscreen.canvas = { width: 1441, height: 945 };
+    await persistManifest(fixture);
+    await rejectFixture(fixture, /fullscreen.*canvas|cover.*plot|94%/iu);
+  }));
+  await t.test("height", async () => withFixture(async (fixture) => {
+    fixture.manifest.fullscreen.canvas = { width: 1440, height: 946 };
+    await persistManifest(fixture);
+    await rejectFixture(fixture, /fullscreen.*canvas|cover.*plot|94%/iu);
+  }));
 });
 
 test("rejects fullscreen scene-domain drift", async () => {
@@ -2427,6 +2765,34 @@ test("rejects raw browser event ledger omissions, drift, and ordering fraud", as
     });
     await rejectFixture(fixture, /raw event ledger.*(?:download|type\/order)/iu);
   }));
+  await t.test("CDP suggested filename drift", async () => withFixture(async (fixture) => {
+    await mutateRawBrowserEventLedger(fixture, (events) => {
+      const observed = events.find(
+        ({ raw }) => raw.method === "Page.downloadWillBegin"
+          && raw.params?.suggestedFilename === "3dena-longitudinal-analysis.zip",
+      );
+      assert.ok(observed, "fixture must carry the browser-observed CDP download filename");
+      observed.raw.params.suggestedFilename = "unexpected-browser-name.zip";
+    });
+    await rejectFixture(fixture, /downloadWillBegin|suggestedFilename|download receipt/iu);
+  }));
+  await t.test("CDP download GUID drift", async () => withFixture(async (fixture) => {
+    await mutateRawBrowserEventLedger(fixture, (events) => {
+      const observed = events.find(
+        ({ raw }) => raw.phase === "complete" && raw.kind === "bundle",
+      );
+      observed.raw.downloadGuid = "different-browser-download-guid";
+    });
+    await rejectFixture(fixture, /downloadGuid|download receipt|raw does not bind/iu);
+  }));
+  await t.test("missing browser download completion", async () => withFixture(async (fixture) => {
+    await mutateRawBrowserEventLedger(fixture, (events) => {
+      events.splice(events.findIndex(
+        ({ raw }) => raw.phase === "complete" && raw.kind === "bundle",
+      ), 1);
+    });
+    await rejectFixture(fixture, /raw event ledger.*(?:sequence|download|exact ordered)/iu);
+  }));
   await t.test("fake Page.javascriptDialogAccepted event", async () => withFixture(async (fixture) => {
     await mutateRawBrowserEventLedger(fixture, (events) => {
       const closed = events.find(({ raw }) => raw.method === "Page.javascriptDialogClosed");
@@ -2461,6 +2827,26 @@ test("rejects raw browser event ledger omissions, drift, and ordering fraud", as
       geometry.raw.boundingClientRect.width -= 1;
     });
     await rejectFixture(fixture, /raw event ledger.*(?:geometry|boundingClientRect|raw does not bind)/iu);
+  }));
+  await t.test("DOM runtime trace observation drift", async () => withFixture(async (fixture) => {
+    await mutateRawBrowserEventLedger(fixture, (events) => {
+      const geometry = events.find(
+        ({ type, raw }) => type === "screenshot-geometry-observation"
+          && raw.contextKind === "camera",
+      );
+      geometry.raw.runtimeTraceAudit.directionArrowCoordinatesFinite = false;
+    });
+    await rejectFixture(fixture, /raw event ledger.*(?:runtimeTraceAudit|raw does not bind)/iu);
+  }));
+  await t.test("phase checkpoint observation drift", async () => withFixture(async (fixture) => {
+    await mutateRawBrowserEventLedger(fixture, (events) => {
+      const checkpoint = events.find(
+        ({ type, raw }) => type === "phase-checkpoint-observation"
+          && raw.phase === "after-cameras",
+      );
+      checkpoint.raw.runtimeTraceAudit.workerRunCount = 2;
+    });
+    await rejectFixture(fixture, /raw event ledger.*(?:phase|runtimeTraceAudit|raw does not bind)/iu);
   }));
   await t.test("synthetic command cannot masquerade as DOM geometry", async () => withFixture(async (fixture) => {
     await mutateRawBrowserEventLedger(fixture, (events) => {
@@ -2499,6 +2885,34 @@ test("rejects a missing participant opt-in download", async () => {
     await persistManifest(fixture);
     await rejectFixture(fixture, /downloads.*exact set|participant/iu);
   });
+});
+
+test("rejects an evidence archive basename masquerading as the browser suggested filename", async () => {
+  await withFixture(async (fixture) => {
+    fixture.manifest.downloads.items.find(({ kind }) => kind === "bundle").suggestedFilename = "aggregate.zip";
+    await persistManifest(fixture);
+    await rejectFixture(fixture, /suggestedFilename|link\.download|browser.*filename/iu);
+  });
+});
+
+test("rejects browser download lifecycle and byte-binding drift", async (t) => {
+  await t.test("foreign URL", async () => withFixture(async (fixture) => {
+    fixture.manifest.downloads.items.find(({ kind }) => kind === "path").downloadUrl =
+      "https://attacker.example/path.csv";
+    await persistManifest(fixture);
+    await rejectFixture(fixture, /downloadUrl|ena\.hk/iu);
+  }));
+  await t.test("received bytes", async () => withFixture(async (fixture) => {
+    fixture.manifest.downloads.items.find(({ kind }) => kind === "path").receivedBytes += 1;
+    await persistManifest(fixture);
+    await rejectFixture(fixture, /receivedBytes|artifact byte length/iu);
+  }));
+  await t.test("unsafe GUID", async () => withFixture(async (fixture) => {
+    fixture.manifest.downloads.items.find(({ kind }) => kind === "path").downloadGuid =
+      "../not-a-guid";
+    await persistManifest(fixture);
+    await rejectFixture(fixture, /downloadGuid|bounded browser download GUID/iu);
+  }));
 });
 
 test("rejects artifact byte/SHA and content-set hash tampering", async (t) => {
@@ -3711,6 +4125,33 @@ test("rejects artifact aggregate budgets and screenshot evidence without visual 
     });
   });
 
+  await t.test("16-bit PNG scanlines count their full decoded aggregate memory", async () => {
+    await withFixture(async (fixture) => {
+      const oversized = solidRgba16Png(2000, 2000);
+      for (const camera of fixture.manifest.cameras) {
+        await replaceArtifactBytes(fixture, camera.screenshot.artifact.file, oversized);
+        camera.screenshot.capture.requestedViewport = { width: 2000, height: 2000 };
+        camera.screenshot.capture.observedViewport = {
+          width: 2000,
+          height: 2000,
+          devicePixelRatio: 1,
+        };
+        camera.screenshot.capture.rawPngRaster = { width: 2000, height: 2000 };
+        camera.screenshot.capture.elementRect = {
+          x: 0,
+          y: 0,
+          width: 2000,
+          height: 2000,
+        };
+      }
+      await persistManifest(fixture);
+      await rejectFixture(
+        fixture,
+        /total PNG.*decoded-byte budget exceeded before PNG decode/iu,
+      );
+    });
+  });
+
   await t.test("full-size opaque solid-color screenshot is not visual evidence", async () => {
     await withFixture(async (fixture) => {
       await replaceArtifactBytes(
@@ -3719,6 +4160,116 @@ test("rejects artifact aggregate budgets and screenshot evidence without visual 
         solidPng(800, 600, [17, 34, 51, 255]),
       );
       await rejectFixture(fixture, /PNG.*(?:solid|variance|visual evidence)/iu);
+    });
+  });
+
+  await t.test("a grayscale grid cannot masquerade as visible trajectory geometry", async () => {
+    await withFixture(async (fixture) => {
+      await replaceArtifactBytes(
+        fixture,
+        "screenshots/camera-isometric.png",
+        rgbaPng(800, 600, [248, 248, 248, 255], [176, 176, 176, 255]),
+      );
+      await rejectFixture(fixture, /camera.*(?:chromatic|colored|trajectory geometry)/iu);
+    });
+  });
+
+  await t.test("a grayscale projection cannot masquerade as visible trajectory geometry", async () => {
+    await withFixture(async (fixture) => {
+      await replaceArtifactBytes(
+        fixture,
+        "screenshots/projection-xy.png",
+        rgbaPng(800, 600, [248, 248, 248, 255], [176, 176, 176, 255]),
+      );
+      await rejectFixture(fixture, /projection.*(?:chromatic|colored|trajectory geometry)/iu);
+    });
+  });
+
+  await t.test("saturated color blocks cannot masquerade as rendered trajectory lines", async () => {
+    await withFixture(async (fixture) => {
+      await replaceArtifactBytes(
+        fixture,
+        "screenshots/camera-isometric.png",
+        rgbaPng(800, 600, [210, 30, 60, 255], [30, 90, 220, 255]),
+      );
+      await rejectFixture(fixture, /camera.*(?:plot ROI|trajectory line|geometry density)/iu);
+    });
+  });
+
+  await t.test("a compact saturated rectangle inside the plot ROI is not trajectory geometry", async () => {
+    await withFixture(async (fixture) => {
+      await replaceArtifactBytes(
+        fixture,
+        "screenshots/camera-isometric.png",
+        colorBlockPng(800, 600, {
+          x: 120,
+          y: 120,
+          width: 80,
+          height: 60,
+          color: [210, 30, 60, 255],
+        }),
+      );
+      await rejectFixture(fixture, /camera.*(?:line-like|boundary|filled rectangle|trajectory geometry)/iu);
+    });
+  });
+
+  await t.test("distributed legend-like color swatches are not trajectory geometry", async () => {
+    await withFixture(async (fixture) => {
+      await replaceArtifactBytes(
+        fixture,
+        "screenshots/camera-isometric.png",
+        colorBlockPng(800, 600, [
+          { x: 100, y: 100, width: 20, height: 12, color: [210, 30, 60, 255] },
+          { x: 180, y: 125, width: 20, height: 12, color: [30, 90, 220, 255] },
+          { x: 260, y: 150, width: 20, height: 12, color: [20, 150, 80, 255] },
+          { x: 340, y: 175, width: 20, height: 12, color: [114, 51, 234, 255] },
+        ]),
+      );
+      await rejectFixture(fixture, /camera.*(?:line-like|distributed|swatch|trajectory geometry)/iu);
+    });
+  });
+
+  await t.test("colored axes and centroids without a black path or arrow are not trajectory evidence", async () => {
+    await withFixture(async (fixture) => {
+      await replaceArtifactBytes(
+        fixture,
+        "screenshots/camera-isometric.png",
+        nativePng(800, 600, 91, 0, false),
+      );
+      await rejectFixture(fixture, /camera.*(?:black|dark|path|arrow|trajectory geometry)/iu);
+    });
+  });
+
+  await t.test("a deep red path cannot masquerade as a neutral black trajectory", async () => {
+    await withFixture(async (fixture) => {
+      await replaceArtifactBytes(
+        fixture,
+        "screenshots/camera-isometric.png",
+        nativePng(800, 600, 92, 0, true, [64, 0, 0, 255]),
+      );
+      await rejectFixture(fixture, /camera.*(?:neutral|black|dark|path|trajectory geometry)/iu);
+    });
+  });
+
+  await t.test("a grayscale desktop plot cannot masquerade as visible trajectory geometry", async () => {
+    await withFixture(async (fixture) => {
+      await replaceArtifactBytes(
+        fixture,
+        "screenshots/desktop-plot.png",
+        rgbaPng(1000, 620, [248, 248, 248, 255], [176, 176, 176, 255]),
+      );
+      await rejectFixture(fixture, /desktop.*plot.*(?:chromatic|colored|trajectory geometry)/iu);
+    });
+  });
+
+  await t.test("a grayscale fullscreen capture cannot masquerade as visible trajectory geometry", async () => {
+    await withFixture(async (fixture) => {
+      await replaceArtifactBytes(
+        fixture,
+        "screenshots/fullscreen.png",
+        rgbaPng(1440, 1000, [248, 248, 248, 255], [176, 176, 176, 255]),
+      );
+      await rejectFixture(fixture, /fullscreen.*(?:chromatic|colored|trajectory geometry)/iu);
     });
   });
 

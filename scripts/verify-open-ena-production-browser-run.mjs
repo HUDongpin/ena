@@ -44,6 +44,9 @@ const MAX_TOTAL_ARTIFACT_BYTES = 128 * 1024 * 1024;
 const MAX_TOTAL_PNG_PIXELS = 64 * 1024 * 1024;
 const MAX_TOTAL_PNG_DECODED_BYTES = 256 * 1024 * 1024;
 const MAX_VENDORED_ARCHIVE_BYTES = 4 * 1024 * 1024;
+const MAX_CONTROL_PLANE_PRE_RUN_AGE_MS = 60_000;
+const PLOT_ROI_GRID_COLUMNS = 12;
+const PLOT_ROI_GRID_ROWS = 10;
 const EXPECTED_ARTIFACT_COUNT = 29;
 const VENDORED_JENA_VERSION = "0.7.0-ona.0";
 const VENDORED_JENA_COMMIT = "90790856f00bdef63dbd27fc3a5b502e8cffe65f";
@@ -1252,7 +1255,7 @@ function preflightPngAggregateBudget(artifactMap, artifactBytes) {
     count += 1;
     const bytes = artifactBytes.get(file);
     if (
-      bytes.length < 24
+      bytes.length < 29
       || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)
       || bytes.readUInt32BE(8) !== 13
       || bytes.subarray(12, 16).toString("ascii") !== "IHDR"
@@ -1264,12 +1267,33 @@ function preflightPngAggregateBudget(artifactMap, artifactBytes) {
     }
     const width = bytes.readUInt32BE(16);
     const height = bytes.readUInt32BE(20);
+    const bitDepth = bytes[24];
+    const colorType = bytes[25];
+    const channels = new Map([
+      [0, 1],
+      [2, 3],
+      [3, 1],
+      [4, 2],
+      [6, 4],
+    ]).get(colorType);
     const imagePixels = width * height;
-    const imageDecodedBytes = imagePixels * 4 + height;
+    const rowBytes = channels === undefined
+      ? Number.NaN
+      : Math.ceil(width * bitDepth * channels / 8);
+    const inflatedBytes = height * (rowBytes + 1);
+    const unfilteredBytes = height * rowBytes;
+    const normalizedBytes = imagePixels * 4;
+    const imageDecodedBytes = inflatedBytes + unfilteredBytes + normalizedBytes;
     if (
       width === 0
       || height === 0
+      || channels === undefined
+      || ![1, 2, 4, 8, 16].includes(bitDepth)
       || !Number.isSafeInteger(imagePixels)
+      || !Number.isSafeInteger(rowBytes)
+      || !Number.isSafeInteger(inflatedBytes)
+      || !Number.isSafeInteger(unfilteredBytes)
+      || !Number.isSafeInteger(normalizedBytes)
       || !Number.isSafeInteger(imageDecodedBytes)
     ) {
       fail("artifact " + file + " has unsafe PNG dimensions during budget preflight");
@@ -3327,6 +3351,29 @@ function normalizePngPixels(
   let greenSquareSum = 0;
   let blueSum = 0;
   let blueSquareSum = 0;
+  let chromaticPixels = 0;
+  let plotRoiChromaticPixels = 0;
+  let plotRoiMinimumColumn = ihdr.width;
+  let plotRoiMaximumColumn = -1;
+  let plotRoiMinimumRow = ihdr.height;
+  let plotRoiMaximumRow = -1;
+  let plotRoiDarkPixels = 0;
+  let plotRoiDarkMinimumColumn = ihdr.width;
+  let plotRoiDarkMaximumColumn = -1;
+  let plotRoiDarkMinimumRow = ihdr.height;
+  let plotRoiDarkMaximumRow = -1;
+  const plotRoiLeft = Math.floor(ihdr.width * 0.05);
+  const plotRoiRight = Math.max(plotRoiLeft + 1, Math.ceil(ihdr.width * 0.78));
+  const plotRoiTop = Math.floor(ihdr.height * 0.08);
+  const plotRoiBottom = Math.max(plotRoiTop + 1, Math.ceil(ihdr.height * 0.92));
+  const plotRoiWidth = plotRoiRight - plotRoiLeft;
+  const plotRoiHeight = plotRoiBottom - plotRoiTop;
+  const plotRoiChromaticCellCounts = new Uint32Array(
+    PLOT_ROI_GRID_COLUMNS * PLOT_ROI_GRID_ROWS,
+  );
+  const plotRoiDarkCellCounts = new Uint32Array(
+    PLOT_ROI_GRID_COLUMNS * PLOT_ROI_GRID_ROWS,
+  );
   let pixelIndex = 0;
   for (let rowIndex = 0; rowIndex < ihdr.height; rowIndex += 1) {
     const row = unfiltered.subarray(rowIndex * rowBytes, (rowIndex + 1) * rowBytes);
@@ -3400,6 +3447,65 @@ function normalizePngPixels(
           255 - compositeBlue,
         ) >= 8
       ) visiblePixels += 1;
+      const chromatic = (
+        alpha >= 16
+        && Math.max(compositeRed, compositeGreen, compositeBlue)
+          - Math.min(compositeRed, compositeGreen, compositeBlue) >= 48
+      );
+      if (chromatic) {
+        chromaticPixels += 1;
+        if (
+          column >= plotRoiLeft
+          && column < plotRoiRight
+          && rowIndex >= plotRoiTop
+          && rowIndex < plotRoiBottom
+        ) {
+          plotRoiChromaticPixels += 1;
+          plotRoiMinimumColumn = Math.min(plotRoiMinimumColumn, column);
+          plotRoiMaximumColumn = Math.max(plotRoiMaximumColumn, column);
+          plotRoiMinimumRow = Math.min(plotRoiMinimumRow, rowIndex);
+          plotRoiMaximumRow = Math.max(plotRoiMaximumRow, rowIndex);
+          const gridColumn = Math.min(
+            PLOT_ROI_GRID_COLUMNS - 1,
+            Math.floor((column - plotRoiLeft) * PLOT_ROI_GRID_COLUMNS / plotRoiWidth),
+          );
+          const gridRow = Math.min(
+            PLOT_ROI_GRID_ROWS - 1,
+            Math.floor((rowIndex - plotRoiTop) * PLOT_ROI_GRID_ROWS / plotRoiHeight),
+          );
+          plotRoiChromaticCellCounts[
+            gridRow * PLOT_ROI_GRID_COLUMNS + gridColumn
+          ] += 1;
+        }
+      }
+      const dark = (
+        alpha >= 16
+        && Math.max(compositeRed, compositeGreen, compositeBlue) <= 64
+        && Math.max(compositeRed, compositeGreen, compositeBlue)
+          - Math.min(compositeRed, compositeGreen, compositeBlue) <= 16
+      );
+      if (
+        dark
+        && column >= plotRoiLeft
+        && column < plotRoiRight
+        && rowIndex >= plotRoiTop
+        && rowIndex < plotRoiBottom
+      ) {
+        plotRoiDarkPixels += 1;
+        plotRoiDarkMinimumColumn = Math.min(plotRoiDarkMinimumColumn, column);
+        plotRoiDarkMaximumColumn = Math.max(plotRoiDarkMaximumColumn, column);
+        plotRoiDarkMinimumRow = Math.min(plotRoiDarkMinimumRow, rowIndex);
+        plotRoiDarkMaximumRow = Math.max(plotRoiDarkMaximumRow, rowIndex);
+        const gridColumn = Math.min(
+          PLOT_ROI_GRID_COLUMNS - 1,
+          Math.floor((column - plotRoiLeft) * PLOT_ROI_GRID_COLUMNS / plotRoiWidth),
+        );
+        const gridRow = Math.min(
+          PLOT_ROI_GRID_ROWS - 1,
+          Math.floor((rowIndex - plotRoiTop) * PLOT_ROI_GRID_ROWS / plotRoiHeight),
+        );
+        plotRoiDarkCellCounts[gridRow * PLOT_ROI_GRID_COLUMNS + gridColumn] += 1;
+      }
       const luminance = 0.2126 * compositeRed
         + 0.7152 * compositeGreen
         + 0.0722 * compositeBlue;
@@ -3433,13 +3539,55 @@ function normalizePngPixels(
   const hashHeader = Buffer.alloc(8);
   hashHeader.writeUInt32BE(ihdr.width, 0);
   hashHeader.writeUInt32BE(ihdr.height, 4);
+  const summarizeRoiCells = (counts) => {
+    let occupiedCells = 0;
+    let maximumCellFillRatio = 0;
+    for (let gridRow = 0; gridRow < PLOT_ROI_GRID_ROWS; gridRow += 1) {
+      const cellTop = Math.ceil(gridRow * plotRoiHeight / PLOT_ROI_GRID_ROWS);
+      const cellBottom = Math.ceil((gridRow + 1) * plotRoiHeight / PLOT_ROI_GRID_ROWS);
+      for (let gridColumn = 0; gridColumn < PLOT_ROI_GRID_COLUMNS; gridColumn += 1) {
+        const cellLeft = Math.ceil(gridColumn * plotRoiWidth / PLOT_ROI_GRID_COLUMNS);
+        const cellRight = Math.ceil((gridColumn + 1) * plotRoiWidth / PLOT_ROI_GRID_COLUMNS);
+        const count = counts[gridRow * PLOT_ROI_GRID_COLUMNS + gridColumn];
+        if (count > 0) occupiedCells += 1;
+        const cellPixels = (cellRight - cellLeft) * (cellBottom - cellTop);
+        maximumCellFillRatio = Math.max(
+          maximumCellFillRatio,
+          cellPixels === 0 ? 0 : count / cellPixels,
+        );
+      }
+    }
+    return { maximumCellFillRatio, occupiedCells };
+  };
+  const chromaticCellSummary = summarizeRoiCells(plotRoiChromaticCellCounts);
+  const darkCellSummary = summarizeRoiCells(plotRoiDarkCellCounts);
   return {
+    chromaticPixels,
     colorVariance,
     decodedVisualSha256: createHash("sha256")
       .update(hashHeader)
       .update(normalized)
       .digest("hex"),
     luminanceVariance,
+    plotRoiChromaticColumnSpan: plotRoiMaximumColumn < plotRoiMinimumColumn
+      ? 0
+      : plotRoiMaximumColumn - plotRoiMinimumColumn + 1,
+    plotRoiChromaticOccupiedCells: chromaticCellSummary.occupiedCells,
+    plotRoiChromaticPixels,
+    plotRoiChromaticRowSpan: plotRoiMaximumRow < plotRoiMinimumRow
+      ? 0
+      : plotRoiMaximumRow - plotRoiMinimumRow + 1,
+    plotRoiDarkColumnSpan: plotRoiDarkMaximumColumn < plotRoiDarkMinimumColumn
+      ? 0
+      : plotRoiDarkMaximumColumn - plotRoiDarkMinimumColumn + 1,
+    plotRoiDarkOccupiedCells: darkCellSummary.occupiedCells,
+    plotRoiDarkPixels,
+    plotRoiDarkRowSpan: plotRoiDarkMaximumRow < plotRoiDarkMinimumRow
+      ? 0
+      : plotRoiDarkMaximumRow - plotRoiDarkMinimumRow + 1,
+    plotRoiMaximumCellFillRatio: chromaticCellSummary.maximumCellFillRatio,
+    plotRoiMaximumDarkCellFillRatio: darkCellSummary.maximumCellFillRatio,
+    plotRoiPixels: plotRoiWidth * plotRoiHeight,
     visiblePixels,
   };
 }
@@ -3619,11 +3767,23 @@ function readPngIhdr(bytes, path) {
     path,
   );
   return {
+    chromaticPixels: visual.chromaticPixels,
     decodedBytes,
     decodedVisualSha256: visual.decodedVisualSha256,
     height: ihdr.height,
     luminanceVariance: visual.luminanceVariance,
     pixels: ihdr.width * ihdr.height,
+    plotRoiChromaticColumnSpan: visual.plotRoiChromaticColumnSpan,
+    plotRoiChromaticOccupiedCells: visual.plotRoiChromaticOccupiedCells,
+    plotRoiChromaticPixels: visual.plotRoiChromaticPixels,
+    plotRoiChromaticRowSpan: visual.plotRoiChromaticRowSpan,
+    plotRoiDarkColumnSpan: visual.plotRoiDarkColumnSpan,
+    plotRoiDarkOccupiedCells: visual.plotRoiDarkOccupiedCells,
+    plotRoiDarkPixels: visual.plotRoiDarkPixels,
+    plotRoiDarkRowSpan: visual.plotRoiDarkRowSpan,
+    plotRoiMaximumCellFillRatio: visual.plotRoiMaximumCellFillRatio,
+    plotRoiMaximumDarkCellFillRatio: visual.plotRoiMaximumDarkCellFillRatio,
+    plotRoiPixels: visual.plotRoiPixels,
     visiblePixels: visual.visiblePixels,
     width: ihdr.width,
   };
@@ -3787,6 +3947,77 @@ function validateScreenshot(
   return dimensions;
 }
 
+function requireChromaticTrajectoryGeometry(screenshot, path) {
+  const minimum = Math.max(128, Math.ceil(screenshot.plotRoiPixels * 0.0003));
+  const maximum = Math.floor(screenshot.plotRoiPixels * 0.12);
+  if (screenshot.plotRoiChromaticPixels < minimum) {
+    fail(
+      path + " must contain visible chromatic trajectory geometry in the scientific plot ROI "
+      + "(observed " + screenshot.plotRoiChromaticPixels + ", required " + minimum + ")",
+    );
+  }
+  if (screenshot.plotRoiChromaticPixels > maximum) {
+    fail(path + " scientific plot ROI has implausible trajectory geometry density");
+  }
+  const minimumColumnSpan = Math.max(24, Math.ceil(screenshot.width * 0.08));
+  const minimumRowSpan = Math.max(24, Math.ceil(screenshot.height * 0.08));
+  if (
+    screenshot.plotRoiChromaticColumnSpan < minimumColumnSpan
+    || screenshot.plotRoiChromaticRowSpan < minimumRowSpan
+  ) {
+    fail(path + " must contain spatially extended colored trajectory line geometry");
+  }
+  const chromaticBoundingBoxPixels = (
+    screenshot.plotRoiChromaticColumnSpan * screenshot.plotRoiChromaticRowSpan
+  );
+  if (
+    chromaticBoundingBoxPixels === 0
+    || screenshot.plotRoiChromaticPixels / chromaticBoundingBoxPixels > 0.45
+  ) {
+    fail(path + " chromatic plot geometry is a filled rectangle rather than a line-like path");
+  }
+  if (
+    screenshot.plotRoiChromaticOccupiedCells < 8
+    || screenshot.plotRoiMaximumCellFillRatio > 0.7
+  ) {
+    fail(
+      path + " must contain sparse line-like trajectory geometry distributed across the plot ROI",
+    );
+  }
+}
+
+function requireDarkTrajectoryGeometry(screenshot, path) {
+  const minimum = Math.max(96, Math.ceil(screenshot.plotRoiPixels * 0.0002));
+  if (screenshot.plotRoiDarkPixels < minimum) {
+    fail(
+      path + " must contain a visible black trajectory path and direction-arrow geometry "
+      + "in the scientific plot ROI",
+    );
+  }
+  const minimumColumnSpan = Math.max(24, Math.ceil(screenshot.width * 0.08));
+  const minimumRowSpan = Math.max(24, Math.ceil(screenshot.height * 0.08));
+  if (
+    screenshot.plotRoiDarkColumnSpan < minimumColumnSpan
+    || screenshot.plotRoiDarkRowSpan < minimumRowSpan
+    || screenshot.plotRoiDarkOccupiedCells < 6
+  ) {
+    fail(path + " must contain spatially distributed black path/arrow geometry");
+  }
+  const boundingBoxPixels = screenshot.plotRoiDarkColumnSpan * screenshot.plotRoiDarkRowSpan;
+  if (
+    boundingBoxPixels === 0
+    || screenshot.plotRoiDarkPixels / boundingBoxPixels > 0.45
+    || screenshot.plotRoiMaximumDarkCellFillRatio > 0.7
+  ) {
+    fail(path + " black plot evidence is filled text/block geometry rather than a thin path/arrow");
+  }
+}
+
+function requireRenderedTrajectoryGeometry(screenshot, path) {
+  requireChromaticTrajectoryGeometry(screenshot, path);
+  requireDarkTrajectoryGeometry(screenshot, path);
+}
+
 function mapExactSet(items, key, expectedValues, label) {
   expectArray(items, label);
   if (items.length !== expectedValues.length) {
@@ -3947,6 +4178,44 @@ function validateBrowser(value) {
   }
 }
 
+function validateRuntimeTraceAudit(value, resultHash, path) {
+  exactKeys(
+    value,
+    [
+      "resultHashes",
+      "workerRunCount",
+      "trajectoryPathCount",
+      "blackTrajectoryPathCount",
+      "directionArrowCount",
+      "blackDirectionArrowCount",
+      "trajectoryCoordinatesFinite",
+      "directionArrowCoordinatesFinite",
+      "allTrajectoryTracesVisible",
+      "allDirectionArrowTracesVisible",
+    ],
+    path,
+  );
+  expectDeep(
+    value,
+    {
+      resultHashes: [resultHash],
+      workerRunCount: 1,
+      trajectoryPathCount: 2,
+      blackTrajectoryPathCount: 2,
+      directionArrowCount: 4,
+      blackDirectionArrowCount: 4,
+      trajectoryCoordinatesFinite: true,
+      directionArrowCoordinatesFinite: true,
+      allTrajectoryTracesVisible: true,
+      allDirectionArrowTracesVisible: true,
+    },
+    path,
+    "must bind the live Plotly path/arrow roles, black styling, finite coordinates, "
+      + "visibility, result hash, and the single observed Worker run",
+  );
+  return value;
+}
+
 function validateAnalysis(value) {
   exactKeys(
     value,
@@ -3955,6 +4224,7 @@ function validateAnalysis(value) {
       "executionTarget",
       "traceCount",
       "dimensionLabels",
+      "runtimeTraceAudit",
       "taskCounts",
       "phaseCheckpoints",
     ],
@@ -3973,6 +4243,11 @@ function validateAnalysis(value) {
     { x: "SVD1", y: "SVD2", z: "SVD3" },
     "manifest.analysis.dimensionLabels",
     "must preserve the frozen SVD1/SVD2/SVD3 axes",
+  );
+  const runtimeTraceAudit = validateRuntimeTraceAudit(
+    value.runtimeTraceAudit,
+    resultHash,
+    "manifest.analysis.runtimeTraceAudit",
   );
   exactKeys(
     value.taskCounts,
@@ -4016,7 +4291,11 @@ function validateAnalysis(value) {
   for (let index = 0; index < phases.length; index += 1) {
     const checkpoint = checkpoints[index];
     const path = "manifest.analysis.phaseCheckpoints[" + index + "]";
-    exactKeys(checkpoint, ["phase", "resultHash", "scientificTaskCount"], path);
+    exactKeys(
+      checkpoint,
+      ["phase", "resultHash", "scientificTaskCount", "runtimeTraceAudit"],
+      path,
+    );
     expectLiteral(checkpoint.phase, phases[index], path + ".phase");
     if (checkpoint.resultHash !== resultHash) {
       fail(path + ".resultHash has result hash drift");
@@ -4024,10 +4303,16 @@ function validateAnalysis(value) {
     expectInteger(checkpoint.scientificTaskCount, path + ".scientificTaskCount", {
       exact: 1,
     });
+    validateRuntimeTraceAudit(
+      checkpoint.runtimeTraceAudit,
+      resultHash,
+      path + ".runtimeTraceAudit",
+    );
   }
   return {
     dimensionLabels: value.dimensionLabels,
     resultHash,
+    runtimeTraceAudit,
     traceCount: value.traceCount,
   };
 }
@@ -4069,6 +4354,7 @@ function validateViewports(
         "overflow",
         "resultHash",
         "scientificTaskCount",
+        "runtimeTraceAudit",
         "pageScreenshot",
         "plotScreenshot",
       ],
@@ -4114,16 +4400,21 @@ function validateViewports(
       viewport.observed.visualViewportHeight,
       path + ".observed.visualViewportHeight",
     );
-    expectLiteral(
-      viewport.observed.visualViewportWidth,
-      viewport.observed.innerWidth,
-      path + ".observed.visualViewportWidth",
-    );
-    expectLiteral(
-      viewport.observed.visualViewportHeight,
-      viewport.observed.innerHeight,
-      path + ".observed.visualViewportHeight",
-    );
+    const visualViewportWidth = viewport.observed.visualViewportWidth;
+    const visualViewportHeight = viewport.observed.visualViewportHeight;
+    const verticalScrollbarWidth = viewport.observed.innerWidth - visualViewportWidth;
+    const horizontalScrollbarHeight = viewport.observed.innerHeight - visualViewportHeight;
+    if (
+      verticalScrollbarWidth < 0
+      || verticalScrollbarWidth > 32
+      || horizontalScrollbarHeight < 0
+      || horizontalScrollbarHeight > 32
+    ) {
+      fail(
+        path
+        + ".observed visual viewport must fit the exact browser surface with only bounded native scrollbar gutters",
+      );
+    }
     if (
       name === "mobile"
       && (viewport.observed.innerWidth !== 390 || viewport.observed.innerHeight !== 844)
@@ -4161,8 +4452,19 @@ function validateViewports(
       "bodyScrollWidth",
     ]) {
       expectInteger(viewport.overflow[field], path + ".overflow." + field, {
-        exact: viewport.observed.innerWidth,
+        minimum: 1,
       });
+    }
+    if (
+      viewport.overflow.documentClientWidth !== visualViewportWidth
+      || viewport.overflow.documentScrollWidth !== viewport.overflow.documentClientWidth
+      || viewport.overflow.bodyClientWidth !== viewport.overflow.documentClientWidth
+      || viewport.overflow.bodyScrollWidth !== viewport.overflow.bodyClientWidth
+    ) {
+      fail(
+        path
+        + ".overflow must match the visible content viewport and prove zero horizontal document/body overflow",
+      );
     }
     const clipped = expectArray(
       viewport.overflow.clippedInteractiveControls,
@@ -4177,6 +4479,11 @@ function validateViewports(
     expectInteger(viewport.scientificTaskCount, path + ".scientificTaskCount", {
       exact: 1,
     });
+    validateRuntimeTraceAudit(
+      viewport.runtimeTraceAudit,
+      resultHash,
+      path + ".runtimeTraceAudit",
+    );
     validateScreenshot(
       viewport.pageScreenshot,
       path + " page screenshot",
@@ -4194,7 +4501,7 @@ function validateViewports(
       artifactBytes,
       referencedArtifacts,
     );
-    validateScreenshot(
+    const plotScreenshot = validateScreenshot(
       viewport.plotScreenshot,
       path + " plot screenshot",
       "screenshots/" + name + "-plot.png",
@@ -4211,6 +4518,7 @@ function validateViewports(
       artifactBytes,
       referencedArtifacts,
     );
+    requireRenderedTrajectoryGeometry(plotScreenshot, path + " plot screenshot");
   }
 }
 
@@ -4231,6 +4539,7 @@ function validateFullscreen(
       "sceneDomain",
       "resultHash",
       "scientificTaskCount",
+      "runtimeTraceAudit",
       "screenshot",
     ],
     "manifest.fullscreen",
@@ -4238,7 +4547,17 @@ function validateFullscreen(
   validateViewportDimensions(value.viewport, 1440, 1000, "manifest.fullscreen.viewport");
   validateViewportDimensions(value.shell, 1440, 1000, "manifest.fullscreen.shell");
   validateViewportDimensions(value.plot, 1440, 945, "manifest.fullscreen.plot");
-  validateViewportDimensions(value.canvas, 1440, 945, "manifest.fullscreen.canvas");
+  exactKeys(value.canvas, ["width", "height"], "manifest.fullscreen.canvas");
+  expectInteger(value.canvas.width, "manifest.fullscreen.canvas.width", { minimum: 1 });
+  expectInteger(value.canvas.height, "manifest.fullscreen.canvas.height", { minimum: 1 });
+  if (
+    value.canvas.width > value.plot.width
+    || value.canvas.height > value.plot.height
+    || value.canvas.width / value.plot.width < 0.94
+    || value.canvas.height / value.plot.height < 0.94
+  ) {
+    fail("manifest.fullscreen.canvas must visibly cover at least 94% of the full plot in each dimension");
+  }
   exactKeys(value.sceneDomain, ["x", "y"], "manifest.fullscreen.sceneDomain");
   expectDeep(
     value.sceneDomain,
@@ -4254,7 +4573,12 @@ function validateFullscreen(
     "manifest.fullscreen.scientificTaskCount",
     { exact: 1 },
   );
-  validateScreenshot(
+  validateRuntimeTraceAudit(
+    value.runtimeTraceAudit,
+    resultHash,
+    "manifest.fullscreen.runtimeTraceAudit",
+  );
+  const fullscreenScreenshot = validateScreenshot(
     value.screenshot,
     "manifest.fullscreen screenshot",
     "screenshots/fullscreen.png",
@@ -4270,6 +4594,10 @@ function validateFullscreen(
     artifactMap,
     artifactBytes,
     referencedArtifacts,
+  );
+  requireRenderedTrajectoryGeometry(
+    fullscreenScreenshot,
+    "manifest.fullscreen screenshot",
   );
 }
 
@@ -4363,6 +4691,7 @@ function validateCameras(
         "runtimeCamera",
         "resultHash",
         "scientificTaskCount",
+        "runtimeTraceAudit",
         "screenshot",
       ],
       path,
@@ -4377,6 +4706,11 @@ function validateCameras(
     expectInteger(camera.scientificTaskCount, path + ".scientificTaskCount", {
       exact: 1,
     });
+    validateRuntimeTraceAudit(
+      camera.runtimeTraceAudit,
+      resultHash,
+      path + ".runtimeTraceAudit",
+    );
     const decodedScreenshot = validateScreenshot(
       camera.screenshot,
       path + " screenshot",
@@ -4386,6 +4720,7 @@ function validateCameras(
       artifactBytes,
       referencedArtifacts,
     );
+    requireRenderedTrajectoryGeometry(decodedScreenshot, path + " screenshot");
     visualHashes.add(decodedScreenshot.decodedVisualSha256);
   }
   if (visualHashes.size !== presets.length) {
@@ -4422,6 +4757,7 @@ function validateProjections(
         "yTitle",
         "resultHash",
         "scientificTaskCount",
+        "runtimeTraceAudit",
         "screenshot",
       ],
       path,
@@ -4450,6 +4786,11 @@ function validateProjections(
     expectInteger(projection.scientificTaskCount, path + ".scientificTaskCount", {
       exact: 1,
     });
+    validateRuntimeTraceAudit(
+      projection.runtimeTraceAudit,
+      resultHash,
+      path + ".runtimeTraceAudit",
+    );
     const decodedScreenshot = validateScreenshot(
       projection.screenshot,
       path + " screenshot",
@@ -4459,6 +4800,7 @@ function validateProjections(
       artifactBytes,
       referencedArtifacts,
     );
+    requireRenderedTrajectoryGeometry(decodedScreenshot, path + " screenshot");
     visualHashes.add(decodedScreenshot.decodedVisualSha256);
   }
   if (visualHashes.size !== planes.length) {
@@ -4611,7 +4953,7 @@ function validateBrowserDiagnostics(
   return events;
 }
 
-function expectedScreenshotGeometry(contextKind, contextValue, screenshot) {
+function expectedScreenshotGeometry(contextKind, contextValue, screenshot, runtimeTraceAudit) {
   return {
     source: "app-dom-observation",
     type: "screenshot-geometry-observation",
@@ -4623,6 +4965,7 @@ function expectedScreenshotGeometry(contextKind, contextValue, screenshot) {
       boundingClientRect: screenshot.capture.elementRect,
       observedViewport: screenshot.capture.observedViewport,
       rawPngRaster: screenshot.capture.rawPngRaster,
+      runtimeTraceAudit,
     },
   };
 }
@@ -4652,19 +4995,38 @@ function expectedRawBrowserEvents(manifest) {
         workerDispatchCount: 1,
       },
     },
-    {
-      source: "app-dom-observation",
-      type: "remote-post-observation",
-      raw: { requestCount: 0, requests: [] },
-    },
   ];
+  const phaseCheckpoints = new Map(
+    manifest.analysis.phaseCheckpoints.map((checkpoint) => [checkpoint.phase, checkpoint]),
+  );
+  const appendPhaseCheckpoint = (phase) => {
+    const checkpoint = phaseCheckpoints.get(phase);
+    expected.push({
+      source: "app-dom-observation",
+      type: "phase-checkpoint-observation",
+      raw: {
+        phase,
+        resultHash,
+        scientificTaskCount: 1,
+        runtimeTraceAudit: checkpoint.runtimeTraceAudit,
+      },
+    });
+  };
+  appendPhaseCheckpoint("initial-run");
   for (const viewport of manifest.viewports) {
     expected.push(expectedScreenshotGeometry(
       "viewport-plot",
       viewport.name,
       viewport.plotScreenshot,
+      viewport.runtimeTraceAudit,
     ));
   }
+  expected.push(expectedScreenshotGeometry(
+    "fullscreen",
+    "fullscreen",
+    manifest.fullscreen.screenshot,
+    manifest.fullscreen.runtimeTraceAudit,
+  ));
   for (const camera of manifest.cameras) {
     const preset = camera.preset;
     expected.push({
@@ -4673,12 +5035,28 @@ function expectedRawBrowserEvents(manifest) {
       raw: {
         command: "select-camera",
         value: preset,
-        before: { resultHash, scientificTaskCount: 1, workerDispatchCount: 1 },
-        after: { resultHash, scientificTaskCount: 1, workerDispatchCount: 1 },
+        before: {
+          resultHash,
+          scientificTaskCount: 1,
+          workerDispatchCount: 1,
+          runtimeTraceAudit: camera.runtimeTraceAudit,
+        },
+        after: {
+          resultHash,
+          scientificTaskCount: 1,
+          workerDispatchCount: 1,
+          runtimeTraceAudit: camera.runtimeTraceAudit,
+        },
       },
     });
-    expected.push(expectedScreenshotGeometry("camera", preset, camera.screenshot));
+    expected.push(expectedScreenshotGeometry(
+      "camera",
+      preset,
+      camera.screenshot,
+      camera.runtimeTraceAudit,
+    ));
   }
+  appendPhaseCheckpoint("after-cameras");
   for (const projectionEvidence of manifest.projections) {
     const projection = projectionEvidence.projection;
     expected.push({
@@ -4687,19 +5065,43 @@ function expectedRawBrowserEvents(manifest) {
       raw: {
         command: "select-projection",
         value: projection,
-        before: { resultHash, scientificTaskCount: 1, workerDispatchCount: 1 },
-        after: { resultHash, scientificTaskCount: 1, workerDispatchCount: 1 },
+        before: {
+          resultHash,
+          scientificTaskCount: 1,
+          workerDispatchCount: 1,
+          runtimeTraceAudit: projectionEvidence.runtimeTraceAudit,
+        },
+        after: {
+          resultHash,
+          scientificTaskCount: 1,
+          workerDispatchCount: 1,
+          runtimeTraceAudit: projectionEvidence.runtimeTraceAudit,
+        },
       },
     });
     expected.push(expectedScreenshotGeometry(
       "projection",
       projection,
       projectionEvidence.screenshot,
+      projectionEvidence.runtimeTraceAudit,
     ));
   }
+  appendPhaseCheckpoint("after-projections");
   const items = new Map(manifest.downloads.items.map((item) => [item.kind, item]));
   const appendDownload = (kind) => {
     const item = items.get(kind);
+    expected.push({
+      source: "cdp",
+      type: "cdp-event",
+      raw: {
+        method: "Page.downloadWillBegin",
+        params: {
+          guid: item.downloadGuid,
+          url: item.downloadUrl,
+          suggestedFilename: item.suggestedFilename,
+        },
+      },
+    });
     expected.push({
       source: "download-event",
       type: "download-event",
@@ -4708,6 +5110,7 @@ function expectedRawBrowserEvents(manifest) {
         kind,
         file: item.artifact.file,
         resultHash,
+        downloadGuid: item.downloadGuid,
         suggestedFilename: item.suggestedFilename,
       },
     });
@@ -4719,6 +5122,7 @@ function expectedRawBrowserEvents(manifest) {
         kind,
         file: item.artifact.file,
         resultHash,
+        downloadGuid: item.downloadGuid,
         byteLength: item.artifact.bytes,
         sha256: item.artifact.sha256,
       },
@@ -4750,6 +5154,12 @@ function expectedRawBrowserEvents(manifest) {
     },
   });
   appendDownload("participant");
+  appendPhaseCheckpoint("after-downloads");
+  expected.push({
+    source: "app-dom-observation",
+    type: "remote-post-observation",
+    raw: { requestCount: 0, requests: [] },
+  });
   return expected;
 }
 
@@ -4758,7 +5168,8 @@ function validateRawBrowserEventSemantics(events, manifest) {
   if (events.length !== expected.length) {
     fail(
       "browser raw event ledger must contain the exact ordered worker, remote, "
-      + "camera, projection, screenshot geometry, dialog, and download event set",
+      + "camera, projection, screenshot geometry, dialog, CDP downloadWillBegin, "
+      + "and download event set",
     );
   }
   events.forEach((event, index) => {
@@ -4769,7 +5180,7 @@ function validateRawBrowserEventSemantics(events, manifest) {
       fail(
         path + ".raw does not bind the expected result hash, scientific task count, "
         + "worker dispatch count, remote POST ledger, screenshot geometry, dialog, "
-        + "or download receipt",
+        + "browser-observed suggestedFilename, or download receipt",
       );
     }
   });
@@ -4812,6 +5223,20 @@ const DOWNLOAD_SPECS = {
     mediaType: "application/zip",
   },
 };
+
+function expectedBrowserSuggestedFilename(kind, resultHash) {
+  if (kind === "bundle" || kind === "participant") {
+    return "3dena-longitudinal-analysis.zip";
+  }
+  const prefix = "open-ena-" + resultHash.slice(0, 12) + "-trajectory-";
+  return prefix + ({
+    path: "path.csv",
+    metadata: "metadata.csv",
+    inference: "inference.csv",
+    analysis: "analysis.json",
+    plotly: "plotly-spec.json",
+  })[kind];
+}
 
 function validateZipMagic(bytes, path) {
   if (
@@ -4867,6 +5292,9 @@ function validateDownloads(
         "triggerPageUrl",
         "downloadObserved",
         "suggestedFilename",
+        "downloadGuid",
+        "downloadUrl",
+        "receivedBytes",
         "artifact",
       ],
       path,
@@ -4877,9 +5305,35 @@ function validateDownloads(
     expectBoolean(item.downloadObserved, true, path + ".downloadObserved");
     expectLiteral(
       item.suggestedFilename,
-      basename(spec.file),
-      path + ".suggestedFilename",
+      expectedBrowserSuggestedFilename(kind, resultHash),
+      path + ".suggestedFilename (must preserve the browser link.download value before local evidence renaming)",
     );
+    const downloadGuid = expectString(item.downloadGuid, path + ".downloadGuid", {
+      nonEmpty: true,
+    });
+    if (!/^[A-Za-z0-9_-]{1,128}$/u.test(downloadGuid)) {
+      fail(path + ".downloadGuid must be a bounded browser download GUID");
+    }
+    const downloadUrl = expectString(item.downloadUrl, path + ".downloadUrl", {
+      nonEmpty: true,
+    });
+    let parsedDownloadUrl;
+    try {
+      parsedDownloadUrl = new URL(downloadUrl);
+    } catch {
+      fail(path + ".downloadUrl must be an absolute browser-observed URL");
+    }
+    if (
+      (!downloadUrl.startsWith("blob:https://ena.hk/")
+        && !downloadUrl.startsWith("https://ena.hk/"))
+      || parsedDownloadUrl.username !== ""
+      || parsedDownloadUrl.password !== ""
+      || parsedDownloadUrl.search !== ""
+      || parsedDownloadUrl.hash !== ""
+    ) {
+      fail(path + ".downloadUrl must be a credential-free ena.hk download URL");
+    }
+    expectInteger(item.receivedBytes, path + ".receivedBytes", { minimum: 1 });
     const artifact = validateArtifactReference(
       item.artifact,
       path + ".artifact",
@@ -4888,6 +5342,9 @@ function validateDownloads(
     );
     expectLiteral(artifact.file, spec.file, path + ".artifact.file");
     expectLiteral(artifact.mediaType, spec.mediaType, path + ".artifact.mediaType");
+    if (item.receivedBytes !== artifact.bytes) {
+      fail(path + ".receivedBytes must equal the verified artifact byte length");
+    }
     itemArtifacts.set(kind, artifact);
     if (spec.mediaType === "application/zip") {
       validateZipMagic(artifactBytes.get(artifact.file), path + ".artifact");
@@ -5213,8 +5670,14 @@ function validateControlPlaneBinding(
     fail("control-plane gitSha must match manifest deployment gitSha");
   }
   const observedAt = expectIsoTimestamp(payload.observedAt, "control-plane.observedAt");
-  if (observedAt < run.startedAt || observedAt > run.completedAt) {
-    fail("control-plane.observedAt must fall within the production browser run window");
+  if (
+    observedAt < run.startedAt - MAX_CONTROL_PLANE_PRE_RUN_AGE_MS
+    || observedAt > run.startedAt
+  ) {
+    fail(
+      "control-plane.observedAt must be freshly resolved no more than 60 seconds "
+      + "before diagnostics begin and must not claim a future provider observation",
+    );
   }
 }
 
