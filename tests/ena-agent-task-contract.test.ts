@@ -76,6 +76,35 @@ test("the V1 parser rejects unknown properties at every object layer", () => {
   );
 });
 
+test("unknown-property diagnostics are single-line, bounded, and report the full unknown count", () => {
+  const polluted = validContract();
+  const unsafeName = "\nline\rseparator\u2028\u{e0020}";
+  const oversizedName = `!${"x".repeat(5_000)}`;
+  Object.assign(polluted, {
+    [unsafeName]: true,
+    [oversizedName]: true,
+    ...Object.fromEntries(
+      Array.from({ length: 18 }, (_, index) => [`unknown-${String(index).padStart(2, "0")}`, true]),
+    ),
+  });
+
+  let thrown: unknown;
+  try {
+    parseEnaAgentTaskContractV1(polluted);
+  } catch (error) {
+    thrown = error;
+  }
+
+  assert.ok(thrown instanceof Error);
+  assert.match(thrown.message, /unknown properties.*20 total/i);
+  assert.match(thrown.message, /showing (?:the first )?8/i);
+  assert.match(thrown.message, /\(\+12 more\)/i);
+  assert.match(thrown.message, /\\nline\\rseparator\\u2028\\u\{e0020\}/i);
+  assert.doesNotMatch(thrown.message, /[\n\r\u2028\u2029]/u);
+  assert.equal(thrown.message.length < 1_024, true);
+  assert.doesNotMatch(thrown.message, /x{100}/u);
+});
+
 test("the V1 parser accepts only plain JSON objects and never invokes accessors", () => {
   const inherited = Object.assign(Object.create({ inherited: true }), validContract());
   assert.throws(
@@ -254,6 +283,41 @@ test("the V1 parser rejects missing fields, wrong types, wrong enums, blank goal
   );
 });
 
+test("headSha parsing matches the Schema and never trims boundary whitespace", () => {
+  const sha40 = "ABCDEF0123456789ABCDEF0123456789ABCDEF01";
+  const sha64 = `${sha40}ABCDEF0123456789ABCDEF01`;
+  const shaPattern = new RegExp(
+    ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA.properties.currentRepositoryState.properties.headSha.pattern,
+    "u",
+  );
+
+  for (const sha of [sha40, sha64]) {
+    assert.equal(shaPattern.test(sha), true);
+    assert.equal(
+      parseEnaAgentTaskContractV1(validContract({
+        currentRepositoryState: {
+          ...validContract().currentRepositoryState,
+          headSha: sha,
+        },
+      })).currentRepositoryState.headSha,
+      sha.toLowerCase(),
+    );
+
+    for (const boundaryWhitespace of [` ${sha}`, `${sha} `]) {
+      assert.equal(shaPattern.test(boundaryWhitespace), false);
+      assert.throws(
+        () => parseEnaAgentTaskContractV1(validContract({
+          currentRepositoryState: {
+            ...validContract().currentRepositoryState,
+            headSha: boundaryWhitespace,
+          },
+        })),
+        /headSha.*40.*64.*Git SHA/i,
+      );
+    }
+  }
+});
+
 test("the V1 parser rejects an action that is both allowed and forbidden", () => {
   assert.throws(
     () => parseEnaAgentTaskContractV1(validContract({
@@ -333,6 +397,49 @@ test("the V1 parser and JSON Schema reject raw unsafe code points before normali
       .explicitGoal,
     "Goal with ordinary spaces",
   );
+});
+
+test("the V1 parser and JSON Schema reject every task-contract TAG and stealth-format character", () => {
+  const explicitGoalPattern = new RegExp(
+    ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA.properties.explicitGoal.pattern,
+    "u",
+  );
+  const listEntryPattern = new RegExp(
+    ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA.properties.assumptions.items.pattern,
+    "u",
+  );
+  const unsafeCodePoints = [
+    0x00ad,
+    0x180e,
+    0xe0001,
+    ...Array.from({ length: 0xe007f - 0xe0020 + 1 }, (_, index) => 0xe0020 + index),
+  ];
+
+  for (const codePoint of unsafeCodePoints) {
+    const unsafe = String.fromCodePoint(codePoint);
+    for (const unsafeValue of [`${unsafe}Goal`, `Go${unsafe}al`, `Goal${unsafe}`]) {
+      assert.equal(explicitGoalPattern.test(unsafeValue), false, `U+${codePoint.toString(16)}`);
+      assert.equal(listEntryPattern.test(unsafeValue), false, `U+${codePoint.toString(16)}`);
+      assert.throws(
+        () => parseEnaAgentTaskContractV1(validContract({ explicitGoal: unsafeValue })),
+        /explicitGoal.*unsafe control or formatting characters/i,
+      );
+      assert.throws(
+        () => parseEnaAgentTaskContractV1(validContract({ assumptions: [unsafeValue] })),
+        /assumptions\[0\].*unsafe control or formatting characters/i,
+      );
+    }
+  }
+
+  for (const validVariationSequence of ["Travel ✈\ufe0f plan", "Ideograph 漢\u{e0100} review"]) {
+    assert.equal(explicitGoalPattern.test(validVariationSequence), true);
+    assert.equal(listEntryPattern.test(validVariationSequence), true);
+    assert.equal(
+      parseEnaAgentTaskContractV1(validContract({ explicitGoal: validVariationSequence }))
+        .explicitGoal,
+      validVariationSequence,
+    );
+  }
 });
 
 test("the V1 parser enforces schema string limits by Unicode code points", () => {

@@ -249,7 +249,9 @@ const REPOSITORY_STATE_KEYS = [
   "concurrentWritersKnown",
 ] as const;
 
-const SAFE_SINGLE_LINE_PATTERN = "^(?=.*\\S)[^\\u0000-\\u001f\\u061c\\u007f-\\u009f\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ufeff]+$";
+const UNSAFE_TEXT_CODE_POINT_CLASS_SOURCE = "\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ufeff\\u{e0001}\\u{e0020}-\\u{e007f}";
+const SAFE_SINGLE_LINE_PATTERN = `^(?=.*\\S)[^${UNSAFE_TEXT_CODE_POINT_CLASS_SOURCE}]+$`;
+const GIT_SHA_PATTERN_SOURCE = "^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$";
 const BOUNDED_TEXT_LIST_SCHEMA = {
   type: "array",
   maxItems: 64,
@@ -317,7 +319,7 @@ export const ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA = deepFreeze({
         },
         headSha: {
           type: "string",
-          pattern: "^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$",
+          pattern: GIT_SHA_PATTERN_SOURCE,
         },
         dirtyPathsPresent: {
           type: "boolean",
@@ -370,8 +372,56 @@ function rejectUnknownProperties(
   const allowed = new Set(allowedKeys);
   const unknown = Object.getOwnPropertyNames(value).filter((key) => !allowed.has(key)).sort();
   if (unknown.length > 0) {
-    throw new Error(`${label} has unknown properties: ${unknown.join(", ")}.`);
+    const maximumDisplayedProperties = 8;
+    const displayed = unknown
+      .slice(0, maximumDisplayedProperties)
+      .map(diagnosticPropertyName)
+      .join(", ");
+    const plural = unknown.length === 1 ? "property" : "properties";
+    const count = unknown.length > maximumDisplayedProperties
+      ? `${unknown.length} total; showing the first ${maximumDisplayedProperties}`
+      : `${unknown.length} total`;
+    const omitted = unknown.length > maximumDisplayedProperties
+      ? ` (+${unknown.length - maximumDisplayedProperties} more)`
+      : "";
+    throw new Error(`${label} has unknown ${plural} (${count}): ${displayed}${omitted}.`);
   }
+}
+
+const MAX_DIAGNOSTIC_PROPERTY_NAME_LENGTH = 96;
+
+function diagnosticPropertyCharacter(character: string): string {
+  switch (character) {
+    case "\b": return "\\b";
+    case "\t": return "\\t";
+    case "\n": return "\\n";
+    case "\f": return "\\f";
+    case "\r": return "\\r";
+    case "\"": return "\\\"";
+    case "\\": return "\\\\";
+    default: {
+      if (!/[\p{C}\p{Zl}\p{Zp}]/u.test(character)) return character;
+      const codePoint = character.codePointAt(0);
+      if (codePoint === undefined) return "";
+      const hexadecimal = codePoint.toString(16).padStart(codePoint <= 0xffff ? 4 : 1, "0");
+      return codePoint <= 0xffff ? `\\u${hexadecimal}` : `\\u{${hexadecimal}}`;
+    }
+  }
+}
+
+function diagnosticPropertyName(value: string): string {
+  let rendered = "\"";
+  let truncated = false;
+  for (const character of value) {
+    const escaped = diagnosticPropertyCharacter(character);
+    if (rendered.length + escaped.length + 2 > MAX_DIAGNOSTIC_PROPERTY_NAME_LENGTH) {
+      truncated = true;
+      break;
+    }
+    rendered += escaped;
+  }
+  if (truncated) rendered += "…";
+  return `${rendered}\"`;
 }
 
 function requireOwnEnumerableDataProperties(
@@ -387,7 +437,8 @@ function requireOwnEnumerableDataProperties(
   }
 }
 
-const UNSAFE_TEXT = /[\u0000-\u001f\u061c\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/u;
+const UNSAFE_TEXT = new RegExp(`[${UNSAFE_TEXT_CODE_POINT_CLASS_SOURCE}]`, "u");
+const GIT_SHA_PATTERN = new RegExp(GIT_SHA_PATTERN_SOURCE, "u");
 const MAX_LIST_ITEMS = 64;
 const MAX_LIST_ENTRY_LENGTH = 1_024;
 
@@ -412,6 +463,13 @@ function text(value: unknown, label: string, maximumLength = MAX_LIST_ENTRY_LENG
     throw new Error(`${label} contains unsafe control or formatting characters.`);
   }
   return normalized;
+}
+
+function gitSha(value: unknown): string {
+  if (typeof value !== "string" || !GIT_SHA_PATTERN.test(value)) {
+    throw new Error("currentRepositoryState.headSha must be a 40- or 64-character Git SHA.");
+  }
+  return value.toLowerCase();
 }
 
 function assertDensePlainJsonArray(value: unknown[], label: string): void {
@@ -544,10 +602,7 @@ export function parseEnaAgentTaskContractV1(value: unknown): EnaAgentTaskContrac
     REPOSITORY_STATE_KEYS,
     "currentRepositoryState",
   );
-  const headSha = text(repositoryState.headSha, "currentRepositoryState.headSha", 64).toLowerCase();
-  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(headSha)) {
-    throw new Error("currentRepositoryState.headSha must be a 40- or 64-character Git SHA.");
-  }
+  const headSha = gitSha(repositoryState.headSha);
   const allowedActions = allowedActionList(input.allowedActions);
   const forbiddenActions = textList(input.forbiddenActions, "forbiddenActions");
   rejectConflictingActions(allowedActions, forbiddenActions);
