@@ -22,7 +22,7 @@ import {
 } from "./open-ena-ai-prompt-governance";
 
 export const OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1 =
-  "open-ena-ai-offline-synthetic-mock-v9" as const;
+  "open-ena-ai-offline-synthetic-mock-v10" as const;
 export const OPEN_ENA_AI_OFFLINE_EVALUATION_REPORT_SCHEMA_VERSION_V1 =
   "open-ena-ai-offline-evaluation-report-v1" as const;
 export const OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1 = 64 * 1024;
@@ -106,6 +106,16 @@ export interface OpenEnaAiOfflineAdversarialResultV1 {
   readonly observedIssueCodes: readonly string[];
   readonly killed: boolean;
 }
+
+export interface OpenEnaAiOfflineProbeManifestEntryV1 {
+  readonly probeId: string;
+  readonly probeKind: "candidate" | "artifact";
+  readonly expectedIssueCode: string;
+  readonly bindingId: string;
+  readonly payloadSha256: string;
+}
+
+export const OPEN_ENA_AI_OFFLINE_EXPECTED_PROBE_COUNT_V1 = 118 as const;
 
 export interface OpenEnaAiOfflineEvaluationReportV1 {
   readonly reportSchemaVersion: typeof OPEN_ENA_AI_OFFLINE_EVALUATION_REPORT_SCHEMA_VERSION_V1;
@@ -1937,20 +1947,76 @@ export const OPEN_ENA_AI_OFFLINE_FIXTURE_SHA256_BY_LOCALE_V1 = deepFreeze({
   ],
 } as const satisfies Readonly<Record<OpenEnaAiPromptLocaleV2, readonly string[]>>);
 
-export const OPEN_ENA_AI_OFFLINE_PROBE_IDENTITY_SHA256_BY_LOCALE_V1 = deepFreeze({
-  en: "54443a198a8d2d84fa19de2ab1c27b22f741bc4469a85fa061366476b5e753fe",
-  "zh-hant": "771a59266885db9d284369be48f366161e2443c76d68661295e9ef7cccbfe274",
-  "zh-hans": "7eccd3a7b300ef5027eac9cf7a550803842b93b3667d8d7d8e7439e702aedac6",
+export const OPEN_ENA_AI_OFFLINE_PROBE_CONTENT_SHA256_BY_LOCALE_V1 = deepFreeze({
+  en: "1be18351524c2edfef01a17ac8bbc3ca4e5fcc290d7ff3900292281d0cdf068e",
+  "zh-hant": "d392913a40dbc1a1136da9f97f43fc6cf621318ce230f4f6a18019d399091f69",
+  "zh-hans": "97a4a7fd43068afa8acab92fec02a93d05eb0251f7666421fe0657341215b8b0",
 } as const satisfies Readonly<Record<OpenEnaAiPromptLocaleV2, string>>);
 
-function adversarialProbeIdentitySha256(
-  results: readonly OpenEnaAiOfflineAdversarialResultV1[],
+function adversarialProbeContentSha256(
+  entries: readonly OpenEnaAiOfflineProbeManifestEntryV1[],
 ): string {
-  return createHash("sha256").update(stableCanonicalJson(results.map((entry) => ({
-    probeId: entry.probeId,
-    probeKind: entry.probeKind,
-    expectedIssueCode: entry.expectedIssueCode,
-  }))), "utf8").digest("hex");
+  return createHash("sha256").update(stableCanonicalJson(entries), "utf8").digest("hex");
+}
+
+export function auditOpenEnaAiOfflineProbeManifestV1(
+  entriesValue: unknown,
+  locale: OpenEnaAiPromptLocaleV2,
+): readonly string[] {
+  let entries: OpenEnaAiOfflineProbeManifestEntryV1[];
+  try {
+    const parsed = JSON.parse(stableCanonicalJson(entriesValue)) as unknown;
+    if (!Array.isArray(parsed)) throw new Error("Probe manifest must be an array.");
+    entries = parsed.map((entry) => {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+        throw new Error("Probe manifest entry must be an object.");
+      }
+      const record = entry as Record<string, unknown>;
+      if (stableCanonicalJson(Object.keys(record).sort()) !== stableCanonicalJson([
+        "bindingId",
+        "expectedIssueCode",
+        "payloadSha256",
+        "probeId",
+        "probeKind",
+      ])) {
+        throw new Error("Probe manifest entry fields do not match V1.");
+      }
+      if (typeof record.probeId !== "string"
+        || !/^[a-z0-9][a-z0-9-]{0,127}$/u.test(record.probeId)
+        || (record.probeKind !== "candidate" && record.probeKind !== "artifact")
+        || typeof record.expectedIssueCode !== "string"
+        || !/^[a-z0-9][a-z0-9-]{0,127}$/u.test(record.expectedIssueCode)
+        || typeof record.bindingId !== "string"
+        || record.bindingId.length < 1
+        || record.bindingId.length > 160
+        || typeof record.payloadSha256 !== "string"
+        || !/^[0-9a-f]{64}$/u.test(record.payloadSha256)) {
+        throw new Error("Probe manifest entry value is invalid.");
+      }
+      return {
+        probeId: record.probeId,
+        probeKind: record.probeKind,
+        expectedIssueCode: record.expectedIssueCode,
+        bindingId: record.bindingId,
+        payloadSha256: record.payloadSha256,
+      };
+    });
+  } catch {
+    return deepFreeze(["suite-probe-manifest-malformed"]);
+  }
+
+  const failures: string[] = [];
+  if (entries.length !== OPEN_ENA_AI_OFFLINE_EXPECTED_PROBE_COUNT_V1) {
+    failures.push("suite-probe-count-mismatch");
+  }
+  if (new Set(entries.map((entry) => entry.probeId)).size !== entries.length) {
+    failures.push("suite-probe-id-duplicate");
+  }
+  if (adversarialProbeContentSha256(entries)
+    !== OPEN_ENA_AI_OFFLINE_PROBE_CONTENT_SHA256_BY_LOCALE_V1[locale]) {
+    failures.push("suite-probe-content-mismatch");
+  }
+  return deepFreeze(uniqueSorted(failures));
 }
 
 function fixtureIssues(
@@ -2015,6 +2081,13 @@ interface CandidateProbe {
   readonly evaluationCase: OpenEnaAiOfflineEvaluationCaseV1;
   readonly candidateJson: string;
   readonly expectedIssueCode: OpenEnaAiOfflineCandidateIssueCodeV1;
+}
+
+interface ArtifactProbe {
+  readonly probeId: string;
+  readonly mutationDescriptor: string;
+  readonly candidate: unknown;
+  readonly expectedIssueCode: string;
 }
 
 function mutateCandidate(
@@ -2709,10 +2782,10 @@ function safeArtifactSha256(value: unknown): string {
   return "0".repeat(64);
 }
 
-function artifactAdversarialResults(
+function artifactProbes(
   artifact: unknown,
   locale: OpenEnaAiPromptLocaleV2,
-): OpenEnaAiOfflineAdversarialResultV1[] {
+): ArtifactProbe[] {
   const baselineIssues = lintEnaPromptArtifactV1(OPEN_ENA_AI_PROMPT_SPEC_V1, artifact, locale);
   if (baselineIssues.some((issue) => issue.code === "malformed-artifact")) return [];
   const clone = () => structuredClone(artifact) as Record<string, unknown>;
@@ -2735,17 +2808,29 @@ function artifactAdversarialResults(
   const schemaDrift = clone();
   Object.assign(schemaDrift.responseJsonSchema as object, { description: "drift" });
   const probes = [
-    ["stale-prompt-byte", promptDrift, "system-prompt-mismatch"],
-    ["leading-system-prompt-space", leadingPromptSpace, "system-prompt-mismatch"],
-    ["trailing-system-prompt-space", trailingPromptSpace, "system-prompt-mismatch"],
-    ["leading-system-prompt-newline", leadingPromptNewline, "system-prompt-mismatch"],
-    ["trailing-system-prompt-newline", trailingPromptNewline, "system-prompt-mismatch"],
-    ["non-nfc-system-prompt", nonNfcPrompt, "system-prompt-mismatch"],
-    ["stale-content-hash", hashDrift, "content-hash-mismatch"],
-    ["stale-prompt-version", versionDrift, "prompt-version-incompatible"],
-    ["stale-response-schema", schemaDrift, "malformed-artifact"],
+    ["stale-prompt-byte", "system-prompt-append-period", promptDrift, "system-prompt-mismatch"],
+    ["leading-system-prompt-space", "system-prompt-leading-space", leadingPromptSpace, "system-prompt-mismatch"],
+    ["trailing-system-prompt-space", "system-prompt-trailing-space", trailingPromptSpace, "system-prompt-mismatch"],
+    ["leading-system-prompt-newline", "system-prompt-leading-newline", leadingPromptNewline, "system-prompt-mismatch"],
+    ["trailing-system-prompt-newline", "system-prompt-trailing-newline", trailingPromptNewline, "system-prompt-mismatch"],
+    ["non-nfc-system-prompt", "system-prompt-append-decomposed-e-acute", nonNfcPrompt, "system-prompt-mismatch"],
+    ["stale-content-hash", "content-sha256-all-zero", hashDrift, "content-hash-mismatch"],
+    ["stale-prompt-version", "prompt-version-v3", versionDrift, "prompt-version-incompatible"],
+    ["stale-response-schema", "response-schema-description-drift", schemaDrift, "malformed-artifact"],
   ] as const;
-  return probes.map(([probeId, candidate, expectedIssueCode]) => {
+  return probes.map(([probeId, mutationDescriptor, candidate, expectedIssueCode]) => ({
+    probeId,
+    mutationDescriptor,
+    candidate,
+    expectedIssueCode,
+  }));
+}
+
+function artifactAdversarialResults(
+  probes: readonly ArtifactProbe[],
+  locale: OpenEnaAiPromptLocaleV2,
+): OpenEnaAiOfflineAdversarialResultV1[] {
+  return probes.map(({ probeId, candidate, expectedIssueCode }) => {
     const observedIssueCodes = uniqueSorted(lintEnaPromptArtifactV1(
       OPEN_ENA_AI_PROMPT_SPEC_V1,
       candidate,
@@ -2756,9 +2841,53 @@ function artifactAdversarialResults(
       probeKind: "artifact" as const,
       expectedIssueCode,
       observedIssueCodes,
-      killed: observedIssueCodes.includes(expectedIssueCode),
+      killed: observedIssueCodes.some((issueCode) => issueCode === expectedIssueCode),
     });
   });
+}
+
+function sha256Utf8(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function artifactProbePayloadSha256(candidate: unknown): string {
+  const normalized = JSON.parse(stableCanonicalJson(candidate)) as Record<string, unknown>;
+  delete normalized.approvalStatus;
+  return sha256Utf8(stableCanonicalJson(normalized));
+}
+
+function probeManifestEntries(
+  candidateProbeDefinitions: readonly CandidateProbe[],
+  artifactProbeDefinitions: readonly ArtifactProbe[],
+): OpenEnaAiOfflineProbeManifestEntryV1[] {
+  return [
+    ...candidateProbeDefinitions.map((probe) => ({
+      probeId: probe.probeId,
+      probeKind: "candidate" as const,
+      expectedIssueCode: probe.expectedIssueCode,
+      bindingId: probe.evaluationCase.caseId,
+      payloadSha256: sha256Utf8(probe.candidateJson),
+    })),
+    ...artifactProbeDefinitions.map((probe) => ({
+      probeId: probe.probeId,
+      probeKind: "artifact" as const,
+      expectedIssueCode: probe.expectedIssueCode,
+      bindingId: `artifact:${probe.mutationDescriptor}`,
+      payloadSha256: artifactProbePayloadSha256(probe.candidate),
+    })),
+  ];
+}
+
+export function buildOpenEnaAiOfflineProbeManifestV1(
+  artifact: unknown,
+  locale: OpenEnaAiPromptLocaleV2,
+  options: { readonly cases?: readonly OpenEnaAiOfflineEvaluationCaseV1[] } = {},
+): readonly OpenEnaAiOfflineProbeManifestEntryV1[] {
+  const cases = options.cases ?? OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_BY_LOCALE_V1[locale];
+  return deepFreeze(probeManifestEntries(
+    candidateProbes(cases),
+    artifactProbes(artifact, locale),
+  ));
 }
 
 export function evaluateOpenEnaAiPromptArtifactOfflineV1(
@@ -2802,7 +2931,8 @@ export function evaluateOpenEnaAiPromptArtifactOfflineV1(
       issueCodes,
     });
   });
-  const candidateAdversarialResults = candidateProbes(cases).map(
+  const candidateProbeDefinitions = candidateProbes(cases);
+  const candidateAdversarialResults = candidateProbeDefinitions.map(
     (probe): OpenEnaAiOfflineAdversarialResultV1 => {
       const result = evaluateOpenEnaAiOfflineCandidateV1(
         probe.evaluationCase,
@@ -2819,15 +2949,16 @@ export function evaluateOpenEnaAiPromptArtifactOfflineV1(
       });
     },
   );
-  const artifactResults = artifactAdversarialResults(artifact, locale);
+  const artifactProbeDefinitions = artifactProbes(artifact, locale);
+  const artifactResults = artifactAdversarialResults(artifactProbeDefinitions, locale);
   for (const result of artifactResults) {
     if (!result.killed) hardGateFailures.push(`adversarial-probe-${result.probeId}-survived`);
   }
   const adversarialResults = [...candidateAdversarialResults, ...artifactResults];
-  if (adversarialProbeIdentitySha256(adversarialResults)
-    !== OPEN_ENA_AI_OFFLINE_PROBE_IDENTITY_SHA256_BY_LOCALE_V1[locale]) {
-    hardGateFailures.push("suite-probe-identity-mismatch");
-  }
+  hardGateFailures.push(...auditOpenEnaAiOfflineProbeManifestV1(
+    probeManifestEntries(candidateProbeDefinitions, artifactProbeDefinitions),
+    locale,
+  ));
   const normalizedFailures = uniqueSorted(hardGateFailures);
   const artifactSha256 = safeArtifactSha256(artifact);
   const report: OpenEnaAiOfflineEvaluationReportV1 = deepFreeze({

@@ -13,9 +13,12 @@ import {
   OPEN_ENA_AI_OFFLINE_LOCALE_ADVERSARIAL_STATEMENTS_V1,
   OPEN_ENA_AI_OFFLINE_EVALUATION_REPORT_SCHEMA_VERSION_V1,
   OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1,
+  OPEN_ENA_AI_OFFLINE_EXPECTED_PROBE_COUNT_V1,
   OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1,
-  OPEN_ENA_AI_OFFLINE_PROBE_IDENTITY_SHA256_BY_LOCALE_V1,
+  OPEN_ENA_AI_OFFLINE_PROBE_CONTENT_SHA256_BY_LOCALE_V1,
+  auditOpenEnaAiOfflineProbeManifestV1,
   assertOpenEnaAiPromptEligibleForApproval,
+  buildOpenEnaAiOfflineProbeManifestV1,
   evaluateOpenEnaAiOfflineCandidateV1,
   evaluateOpenEnaAiPromptArtifactOfflineV1,
   type OpenEnaAiOfflineEvaluationCaseV1,
@@ -50,9 +53,10 @@ function mutateCandidate(
 }
 
 test("the fixed offline suite contains exactly the four role/index-only research designs", () => {
-  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v9");
+  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v10");
   assert.equal(OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1, OPEN_ENA_AI_MAX_RESPONSE_BYTES);
-  assertDeepFrozen(OPEN_ENA_AI_OFFLINE_PROBE_IDENTITY_SHA256_BY_LOCALE_V1);
+  assert.equal(OPEN_ENA_AI_OFFLINE_EXPECTED_PROBE_COUNT_V1, 118);
+  assertDeepFrozen(OPEN_ENA_AI_OFFLINE_PROBE_CONTENT_SHA256_BY_LOCALE_V1);
   assert.deepEqual(
     OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1.map((evaluationCase) => evaluationCase.designKind),
     [
@@ -218,6 +222,57 @@ test("every locale artifact kills its own frozen numeric, scientific, privacy, a
       assert.equal(reportProbe?.killed, true, `${locale}/${probe.probeId}`);
     }
   }
+});
+
+test("the probe-content manifest hard-fails deletion, duplication, reordering, rebinding, and payload drift", () => {
+  const artifact = compileOpenEnaAiPromptArtifactV1(OPEN_ENA_AI_PROMPT_SPEC_V1, "en");
+  const baseline = buildOpenEnaAiOfflineProbeManifestV1(artifact, "en");
+  assert.equal(baseline.length, OPEN_ENA_AI_OFFLINE_EXPECTED_PROBE_COUNT_V1);
+  assert.equal(new Set(baseline.map((entry) => entry.probeId)).size, baseline.length);
+  assert.deepEqual(auditOpenEnaAiOfflineProbeManifestV1(baseline, "en"), []);
+  assertDeepFrozen(baseline);
+  const cloneManifest = () => baseline.map((entry) => ({ ...entry }));
+
+  const deleted = cloneManifest().slice(0, -1);
+  assert.deepEqual(auditOpenEnaAiOfflineProbeManifestV1(deleted, "en"), [
+    "suite-probe-content-mismatch",
+    "suite-probe-count-mismatch",
+  ]);
+
+  const duplicated = cloneManifest();
+  duplicated[duplicated.length - 1] = { ...duplicated[0] };
+  assert.deepEqual(auditOpenEnaAiOfflineProbeManifestV1(duplicated, "en"), [
+    "suite-probe-content-mismatch",
+    "suite-probe-id-duplicate",
+  ]);
+
+  const reordered = cloneManifest();
+  [reordered[0], reordered[1]] = [reordered[1], reordered[0]];
+  assert.deepEqual(auditOpenEnaAiOfflineProbeManifestV1(reordered, "en"), [
+    "suite-probe-content-mismatch",
+  ]);
+
+  const rebound = cloneManifest();
+  rebound[0].bindingId = "different-synthetic-case";
+  assert.deepEqual(auditOpenEnaAiOfflineProbeManifestV1(rebound, "en"), [
+    "suite-probe-content-mismatch",
+  ]);
+
+  const candidatePayloadDrift = cloneManifest();
+  const candidateIndex = candidatePayloadDrift.findIndex((entry) => entry.probeKind === "candidate");
+  assert.notEqual(candidateIndex, -1);
+  candidatePayloadDrift[candidateIndex].payloadSha256 = "f".repeat(64);
+  assert.deepEqual(auditOpenEnaAiOfflineProbeManifestV1(candidatePayloadDrift, "en"), [
+    "suite-probe-content-mismatch",
+  ]);
+
+  const artifactPayloadDrift = cloneManifest();
+  const artifactIndex = artifactPayloadDrift.findIndex((entry) => entry.probeKind === "artifact");
+  assert.notEqual(artifactIndex, -1);
+  artifactPayloadDrift[artifactIndex].payloadSha256 = "f".repeat(64);
+  assert.deepEqual(auditOpenEnaAiOfflineProbeManifestV1(artifactPayloadDrift, "en"), [
+    "suite-probe-content-mismatch",
+  ]);
 });
 
 test("all four compliant canned interpretations pass the strict response parser and semantic linter", () => {
@@ -1012,6 +1067,8 @@ test("artifact and fixture drift fail automated gates without gaining registry a
   );
   assert.ok(changedCandidateResult.report.hardGateFailures.includes("suite-fixture-identity-mismatch"));
   assert.ok(changedCandidateResult.receipt.hardGateFailures.includes("suite-fixture-identity-mismatch"));
+  assert.ok(changedCandidateResult.report.hardGateFailures.includes("suite-probe-content-mismatch"));
+  assert.ok(changedCandidateResult.receipt.hardGateFailures.includes("suite-probe-content-mismatch"));
 });
 
 test("approval eligibility requires zero failures and both independent human reviews but never promotes", () => {
@@ -1040,7 +1097,7 @@ test("approval eligibility requires zero failures and both independent human rev
   );
   const staleSuite = parseEnaPromptEvalReceiptV1({
     ...matchingPassFields,
-    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v8",
+    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v9",
   });
   assert.throws(
     () => assertOpenEnaAiPromptEligibleForApproval(staleSuite, draft.contentSha256),
