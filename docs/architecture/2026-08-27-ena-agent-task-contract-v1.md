@@ -60,23 +60,29 @@ A lower-precedence source cannot broaden an authorization, waive an invariant, o
 
 ## Operation-mode governance
 
-V1 provides first-class templates for four modes and applies only their restrictive requirements during compilation. Template processing may add prohibitions, scientific guardrails, evidence requirements, and stop conditions. It never adds to caller-supplied `allowedActions`, so defaults cannot silently expand authority.
+`allowedActions` remains a JSON string array, but V1 does not accept permission prose. Every item must be one exact machine-action ID from the exported `ENA_AGENT_ALLOWED_ACTIONS_V1` set:
 
-- `diagnose` is read-only, prohibits repository mutation, and requires the explicit `PLANNED` ceiling.
-- `implement` permits only caller-authorized scoped work and local verification. Its template prohibits automatic push, merge, deployment, and publication.
-- `independent-review` keeps the review candidate immutable, prohibits self-approval, push, merge, deployment, and publication, and reports unresolved findings instead of waiving them.
-- `release-verify` keeps local implementation, local tests, CI, GitHub state, deployment state, and live behavior as six separate evidence requirements. Evidence from one plane cannot stand in for another.
+- repository and source inspection: `inspect-repository-state`, `inspect-authoritative-sources`, and `run-read-only-diagnostics`;
+- authorized local implementation: `edit-authorized-scope`, `run-local-verification`, and `create-local-commit`;
+- independent review: `inspect-review-candidate` and `run-independent-verification`;
+- release evidence inspection: `inspect-local-implementation-evidence`, `inspect-local-test-evidence`, `inspect-ci-evidence`, `inspect-github-evidence`, `inspect-deployment-evidence`, and `inspect-live-behavior-evidence`;
+- reporting: `report-findings-and-gaps`.
 
-`plan` remains a valid operation mode. It receives no implicit mutation authority and no mode-template promotion.
+The vocabulary is closed because an English denylist cannot reliably recognize synonyms, euphemisms, negation, new verbs, or cross-plane claims. V1 therefore does not pretend to understand permission prose. Unknown strings—including create/delete, push, merge, deploy/redeploy, publish, approval, provider-configuration, and evidence-substitution language—fail in the parser before mode governance. Whitespace-wrapped variants also fail; an accepted ID is preserved byte-for-byte.
 
-Before adding template restrictions, compilation checks every caller-supplied allowed action against a deliberately bounded English grammar. The check is deterministic code, not free-form semantic or model inference. It Unicode-normalizes and case-folds the action, recognizes an explicit action at the beginning of a clause (including after punctuation, `and`, or `then`) with a small set of optional permission words, and applies these guards:
+Compilation then applies the exported `ENA_AGENT_OPERATION_ALLOWED_ACTIONS_V1` matrix:
 
-- `diagnose` rejects explicit mutate, modify, edit, write, change, update, commit, push, merge, deploy, and publish verbs.
-- `implement` rejects explicit push, merge, deploy, and publish verbs.
-- `independent-review` rejects explicit candidate-mutation phrases, self-approval phrases, and push, merge, deploy, or publish verbs.
-- `release-verify` rejects the mutation verbs above, including provider-configuration changes. It also rejects explicit proof/substitution phrases when they name at least two distinct planes from local implementation, local tests, CI, GitHub state, deployment, and live behavior. Explicitly negated proof/substitution phrases are not treated as permissions.
+| Operation mode | Permitted V1 capabilities | Additional rule |
+| --- | --- | --- |
+| `diagnose` | `inspect-repository-state`, `inspect-authoritative-sources`, `run-read-only-diagnostics`, `report-findings-and-gaps` | Maximum completion state must be `PLANNED` |
+| `plan` | `inspect-repository-state`, `inspect-authoritative-sources`, `report-findings-and-gaps` | No mutation capability exists |
+| `implement` | `inspect-repository-state`, `inspect-authoritative-sources`, `edit-authorized-scope`, `run-local-verification`, `create-local-commit`, `report-findings-and-gaps` | Local commit is the highest repository-state mutation; no push, merge, deployment, or publication capability exists |
+| `independent-review` | `inspect-authoritative-sources`, `inspect-review-candidate`, `run-independent-verification`, `report-findings-and-gaps` | No candidate mutation or approval capability exists |
+| `release-verify` | The six separate evidence-inspection capabilities plus `report-findings-and-gaps` | No mutation, remote promotion, provider-configuration, approval, or cross-plane proof capability exists |
 
-Read-only phrases such as inspecting deployment or live evidence remain valid. A valid action is preserved byte-for-byte after parser normalization. A prohibited permission throws a mode-and-index-specific error; it is never silently deleted or rewritten. More complex policy language must be made explicit in the versioned grammar rather than guessed dynamically.
+A token may be globally valid but invalid for the selected operation mode; compilation rejects it with the mode and array index. Valid caller tokens remain unchanged and are never removed or expanded. First-class templates for `diagnose`, `implement`, `independent-review`, and `release-verify` reference the same matrix and may add only explanatory prohibitions, scientific guardrails, evidence requirements, and stop conditions.
+
+`forbiddenActions` deliberately remains bounded explanatory text. It can constrain a task further, but it cannot grant a capability, override the matrix, or compensate for an unknown `allowedActions` token. Adding a new positive capability requires an explicit V1 schema/type/matrix change and review rather than a new prose interpretation.
 
 ## No scientific or release authority
 

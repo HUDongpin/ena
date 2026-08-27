@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   compileEnaAgentTaskContractV1,
+  ENA_AGENT_ALLOWED_ACTIONS_V1,
+  ENA_AGENT_OPERATION_ALLOWED_ACTIONS_V1,
   ENA_AGENT_OPERATION_MODE_TEMPLATES_V1,
   ENA_AGENT_TASK_CONTRACT_SCHEMA_VERSION,
   ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA,
   parseEnaAgentTaskContractV1,
   renderEnaAgentTaskContractMarkdownV1,
+  type EnaAgentAllowedActionV1,
 } from "../lib/prompt-governance/agent-task-contract";
 
 function validContract(overrides: Record<string, unknown> = {}) {
@@ -27,7 +30,7 @@ function validContract(overrides: Record<string, unknown> = {}) {
     authoritativeSources: ["Approved implementation plan"],
     assumptions: [],
     unresolvedDecisions: [],
-    allowedActions: ["Edit files in the isolated worktree."],
+    allowedActions: ["edit-authorized-scope"],
     forbiddenActions: ["Deploy the application."],
     scientificInvariants: ["Do not alter ENA scientific calculations."],
     acceptanceCriteria: ["Focused public-interface tests pass."],
@@ -172,10 +175,10 @@ test("the V1 parser rejects missing fields, wrong types, wrong enums, blank goal
 test("the V1 parser rejects an action that is both allowed and forbidden", () => {
   assert.throws(
     () => parseEnaAgentTaskContractV1(validContract({
-      allowedActions: ["  Deploy the application.  "],
-      forbiddenActions: ["deploy the application."],
+      allowedActions: ["edit-authorized-scope"],
+      forbiddenActions: ["edit-authorized-scope"],
     })),
-    /allowedActions.*forbiddenActions.*Deploy the application/i,
+    /allowedActions.*forbiddenActions.*edit-authorized-scope/i,
   );
 });
 
@@ -243,6 +246,59 @@ test("the exported JSON Schema is strict at every object layer", () => {
     "dirtyPathsPresent",
     "concurrentWritersKnown",
   ]);
+});
+
+test("allowedActions uses one closed V1 capability vocabulary in TypeScript, parsing, and schema", () => {
+  const expected = [
+    "inspect-repository-state",
+    "inspect-authoritative-sources",
+    "run-read-only-diagnostics",
+    "edit-authorized-scope",
+    "run-local-verification",
+    "create-local-commit",
+    "inspect-review-candidate",
+    "run-independent-verification",
+    "inspect-local-implementation-evidence",
+    "inspect-local-test-evidence",
+    "inspect-ci-evidence",
+    "inspect-github-evidence",
+    "inspect-deployment-evidence",
+    "inspect-live-behavior-evidence",
+    "report-findings-and-gaps",
+  ] as const;
+  const typedAction: EnaAgentAllowedActionV1 = "inspect-repository-state";
+
+  assert.equal(typedAction, expected[0]);
+  assert.deepEqual(ENA_AGENT_ALLOWED_ACTIONS_V1, expected);
+  assert.deepEqual(
+    ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA.properties.allowedActions.items.enum,
+    expected,
+  );
+  assert.deepEqual(
+    parseEnaAgentTaskContractV1(validContract({ allowedActions: [...expected] })).allowedActions,
+    expected,
+  );
+
+  for (const bypass of [
+    "Delete files.",
+    "Create files.",
+    "Automatically deploy.",
+    "Redeploy the application.",
+    "Approve own candidate.",
+    "Configure provider.",
+    "CI evidence proves live behavior.",
+    "Push",
+    "Merge",
+    "Deploy",
+    "Publish",
+    " edit-authorized-scope ",
+  ]) {
+    assert.throws(
+      () => parseEnaAgentTaskContractV1(validContract({ allowedActions: [bypass] })),
+      /allowedActions\[0\].*must be one of/i,
+      `closed action vocabulary must reject: ${bypass}`,
+    );
+  }
 });
 
 test("the V1 compiler renders deterministic plain Markdown in stable section order", () => {
@@ -348,6 +404,90 @@ test("the four V1 mode templates encode conservative default governance", () => 
   })).operationMode, "plan");
 });
 
+test("the V1 compiler enforces the complete operation-mode capability matrix", () => {
+  const expectedMatrix = {
+    diagnose: [
+      "inspect-repository-state",
+      "inspect-authoritative-sources",
+      "run-read-only-diagnostics",
+      "report-findings-and-gaps",
+    ],
+    plan: [
+      "inspect-repository-state",
+      "inspect-authoritative-sources",
+      "report-findings-and-gaps",
+    ],
+    implement: [
+      "inspect-repository-state",
+      "inspect-authoritative-sources",
+      "edit-authorized-scope",
+      "run-local-verification",
+      "create-local-commit",
+      "report-findings-and-gaps",
+    ],
+    "independent-review": [
+      "inspect-authoritative-sources",
+      "inspect-review-candidate",
+      "run-independent-verification",
+      "report-findings-and-gaps",
+    ],
+    "release-verify": [
+      "inspect-local-implementation-evidence",
+      "inspect-local-test-evidence",
+      "inspect-ci-evidence",
+      "inspect-github-evidence",
+      "inspect-deployment-evidence",
+      "inspect-live-behavior-evidence",
+      "report-findings-and-gaps",
+    ],
+  } as const;
+  const ceilings = {
+    diagnose: "PLANNED",
+    plan: "PLANNED",
+    implement: "IMPLEMENTED_UNVERIFIED",
+    "independent-review": "PARITY_CANDIDATE",
+    "release-verify": "PRODUCTION_CANDIDATE",
+  } as const;
+  const modes = [
+    "diagnose",
+    "plan",
+    "implement",
+    "independent-review",
+    "release-verify",
+  ] as const;
+
+  assert.deepEqual(ENA_AGENT_OPERATION_ALLOWED_ACTIONS_V1, expectedMatrix);
+  for (const mode of [
+    "diagnose",
+    "implement",
+    "independent-review",
+    "release-verify",
+  ] as const) {
+    assert.deepEqual(ENA_AGENT_OPERATION_MODE_TEMPLATES_V1[mode].allowedActions, expectedMatrix[mode]);
+  }
+
+  for (const operationMode of modes) {
+    const permitted = new Set<string>(expectedMatrix[operationMode]);
+    for (const action of ENA_AGENT_ALLOWED_ACTIONS_V1) {
+      const compile = () => compileEnaAgentTaskContractV1(validContract({
+        operationMode,
+        maximumCompletionState: ceilings[operationMode],
+        allowedActions: [action],
+        forbiddenActions: [],
+      }));
+      if (permitted.has(action)) {
+        assert.deepEqual(compile().contract.allowedActions, [action]);
+      } else {
+        assert.throws(
+          compile,
+          new RegExp(`${operationMode}.*allowedActions\\[0\\].*not permitted`, "i"),
+          `${operationMode} must reject globally valid capability: ${action}`,
+        );
+      }
+    }
+  }
+});
+
 test("the V1 compiler applies restrictive mode governance without expanding allowed actions", () => {
   const base = {
     allowedActions: [],
@@ -398,93 +538,11 @@ test("the V1 compiler applies restrictive mode governance without expanding allo
   );
 });
 
-test("the V1 compiler fails closed on explicit mode-prohibited allowed actions", () => {
-  const prohibited = [
-    {
-      operationMode: "diagnose",
-      maximumCompletionState: "PLANNED",
-      actions: [
-        "Mutate repository state.",
-        "Edit an implementation file.",
-        "Write a new file.",
-        "Commit the diagnosis.",
-        "Push the branch.",
-        "Merge the pull request.",
-        "Deploy the application.",
-        "Publish the package.",
-      ],
-    },
-    {
-      operationMode: "implement",
-      maximumCompletionState: "IMPLEMENTED_UNVERIFIED",
-      actions: [
-        "Push the branch.",
-        "Merge the pull request.",
-        "Deploy the application.",
-        "Publish the package.",
-      ],
-    },
-    {
-      operationMode: "independent-review",
-      maximumCompletionState: "PARITY_CANDIDATE",
-      actions: [
-        "Modify the review candidate.",
-        "Self-approve the review candidate.",
-        "Merge the review candidate.",
-        "Deploy the review candidate.",
-        "Publish the review candidate.",
-      ],
-    },
-    {
-      operationMode: "release-verify",
-      maximumCompletionState: "PRODUCTION_CANDIDATE",
-      actions: [
-        "Edit the release manifest.",
-        "Push the release branch.",
-        "Merge the release pull request.",
-        "Deploy the application.",
-        "Publish the package.",
-        "Change provider configuration.",
-        "CI evidence proves live behavior.",
-        "Use deployment evidence as a substitute for GitHub state evidence.",
-      ],
-    },
-  ] as const;
-
-  for (const mode of prohibited) {
-    for (const action of mode.actions) {
-      assert.throws(
-        () => compileEnaAgentTaskContractV1(validContract({
-          operationMode: mode.operationMode,
-          maximumCompletionState: mode.maximumCompletionState,
-          allowedActions: [action],
-          forbiddenActions: [],
-        })),
-        new RegExp(`${mode.operationMode}.*allowedActions\\[0\\].*prohibited`, "i"),
-        `${mode.operationMode} must reject: ${action}`,
-      );
-    }
-  }
-
-  const harmless = [
-    "Inspect deployment evidence.",
-    "Inspect live behavior evidence.",
-    "Report gaps between CI and live behavior evidence.",
-  ];
-  const compiled = compileEnaAgentTaskContractV1(validContract({
-    operationMode: "release-verify",
-    maximumCompletionState: "PRODUCTION_CANDIDATE",
-    allowedActions: harmless,
-    forbiddenActions: [],
-  }));
-  assert.deepEqual(compiled.contract.allowedActions, harmless);
-});
-
 test("the V1 compiler never infers scientific or release decisions from supplied evidence", () => {
   const compilation = compileEnaAgentTaskContractV1(validContract({
     operationMode: "release-verify",
     maximumCompletionState: "PLANNED",
-    allowedActions: ["Inspect release evidence."],
+    allowedActions: ["inspect-ci-evidence"],
     unresolvedDecisions: ["An authorized reviewer must decide scientific parity."],
     requiredEvidence: [
       "Local implementation evidence",

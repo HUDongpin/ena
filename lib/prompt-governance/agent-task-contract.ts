@@ -24,9 +24,28 @@ export const ENA_AGENT_MAXIMUM_COMPLETION_STATES = [
   "PRODUCTION_READY",
 ] as const;
 
+export const ENA_AGENT_ALLOWED_ACTIONS_V1 = [
+  "inspect-repository-state",
+  "inspect-authoritative-sources",
+  "run-read-only-diagnostics",
+  "edit-authorized-scope",
+  "run-local-verification",
+  "create-local-commit",
+  "inspect-review-candidate",
+  "run-independent-verification",
+  "inspect-local-implementation-evidence",
+  "inspect-local-test-evidence",
+  "inspect-ci-evidence",
+  "inspect-github-evidence",
+  "inspect-deployment-evidence",
+  "inspect-live-behavior-evidence",
+  "report-findings-and-gaps",
+] as const;
+
 export type EnaAgentProjectSurfaceV1 = typeof ENA_AGENT_PROJECT_SURFACES[number];
 export type EnaAgentOperationModeV1 = typeof ENA_AGENT_OPERATION_MODES[number];
 export type EnaAgentMaximumCompletionStateV1 = typeof ENA_AGENT_MAXIMUM_COMPLETION_STATES[number];
+export type EnaAgentAllowedActionV1 = typeof ENA_AGENT_ALLOWED_ACTIONS_V1[number];
 
 export interface EnaAgentCurrentRepositoryStateV1 {
   readonly worktree: string;
@@ -47,7 +66,7 @@ export interface EnaAgentTaskContractV1 {
   readonly authoritativeSources: readonly string[];
   readonly assumptions: readonly string[];
   readonly unresolvedDecisions: readonly string[];
-  readonly allowedActions: readonly string[];
+  readonly allowedActions: readonly EnaAgentAllowedActionV1[];
   readonly forbiddenActions: readonly string[];
   readonly scientificInvariants: readonly string[];
   readonly acceptanceCriteria: readonly string[];
@@ -65,10 +84,47 @@ export interface EnaAgentTaskCompilationV1 {
 
 export type EnaAgentGovernedOperationModeV1 = Exclude<EnaAgentOperationModeV1, "plan">;
 
+export const ENA_AGENT_OPERATION_ALLOWED_ACTIONS_V1 = deepFreeze({
+  diagnose: [
+    "inspect-repository-state",
+    "inspect-authoritative-sources",
+    "run-read-only-diagnostics",
+    "report-findings-and-gaps",
+  ],
+  plan: [
+    "inspect-repository-state",
+    "inspect-authoritative-sources",
+    "report-findings-and-gaps",
+  ],
+  implement: [
+    "inspect-repository-state",
+    "inspect-authoritative-sources",
+    "edit-authorized-scope",
+    "run-local-verification",
+    "create-local-commit",
+    "report-findings-and-gaps",
+  ],
+  "independent-review": [
+    "inspect-authoritative-sources",
+    "inspect-review-candidate",
+    "run-independent-verification",
+    "report-findings-and-gaps",
+  ],
+  "release-verify": [
+    "inspect-local-implementation-evidence",
+    "inspect-local-test-evidence",
+    "inspect-ci-evidence",
+    "inspect-github-evidence",
+    "inspect-deployment-evidence",
+    "inspect-live-behavior-evidence",
+    "report-findings-and-gaps",
+  ],
+} as const satisfies Record<EnaAgentOperationModeV1, readonly EnaAgentAllowedActionV1[]>);
+
 export interface EnaAgentOperationModeTemplateV1 {
   readonly operationMode: EnaAgentGovernedOperationModeV1;
   readonly defaultMaximumCompletionState: EnaAgentMaximumCompletionStateV1;
-  readonly allowedActions: readonly string[];
+  readonly allowedActions: readonly EnaAgentAllowedActionV1[];
   readonly forbiddenActions: readonly string[];
   readonly scientificInvariants: readonly string[];
   readonly requiredEvidence: readonly string[];
@@ -79,11 +135,7 @@ export const ENA_AGENT_OPERATION_MODE_TEMPLATES_V1 = deepFreeze({
   diagnose: {
     operationMode: "diagnose",
     defaultMaximumCompletionState: "PLANNED",
-    allowedActions: [
-      "Inspect repository state and supplied evidence read-only.",
-      "Run non-mutating diagnostic commands.",
-      "Report evidence-backed findings, uncertainty, and the next decision required.",
-    ],
+    allowedActions: ENA_AGENT_OPERATION_ALLOWED_ACTIONS_V1.diagnose,
     forbiddenActions: [
       "Modify files or repository state.",
       "Perform any repository mutation.",
@@ -103,11 +155,7 @@ export const ENA_AGENT_OPERATION_MODE_TEMPLATES_V1 = deepFreeze({
   implement: {
     operationMode: "implement",
     defaultMaximumCompletionState: "IMPLEMENTED_UNVERIFIED",
-    allowedActions: [
-      "Modify only files inside the explicitly authorized implementation scope.",
-      "Run local verification commands for the implemented scope.",
-      "Create a local commit only when the task explicitly authorizes it.",
-    ],
+    allowedActions: ENA_AGENT_OPERATION_ALLOWED_ACTIONS_V1.implement,
     forbiddenActions: [
       "Do not push commits or branches.",
       "Do not merge branches or pull requests.",
@@ -127,11 +175,7 @@ export const ENA_AGENT_OPERATION_MODE_TEMPLATES_V1 = deepFreeze({
   "independent-review": {
     operationMode: "independent-review",
     defaultMaximumCompletionState: "PARITY_CANDIDATE",
-    allowedActions: [
-      "Inspect the review candidate read-only.",
-      "Run independent verification without changing the candidate.",
-      "Report findings and unresolved evidence gaps.",
-    ],
+    allowedActions: ENA_AGENT_OPERATION_ALLOWED_ACTIONS_V1["independent-review"],
     forbiddenActions: [
       "Do not modify the review candidate.",
       "Do not self-approve the review candidate or waive unresolved findings.",
@@ -152,10 +196,7 @@ export const ENA_AGENT_OPERATION_MODE_TEMPLATES_V1 = deepFreeze({
   "release-verify": {
     operationMode: "release-verify",
     defaultMaximumCompletionState: "PRODUCTION_CANDIDATE",
-    allowedActions: [
-      "Inspect each release evidence plane independently.",
-      "Report the highest completion state directly supported by current evidence.",
-    ],
+    allowedActions: ENA_AGENT_OPERATION_ALLOWED_ACTIONS_V1["release-verify"],
     forbiddenActions: [
       "Do not treat evidence from one plane as proof of another plane.",
       "Do not push, merge, deploy, publish, or change provider configuration while verifying.",
@@ -220,6 +261,15 @@ const BOUNDED_TEXT_LIST_SCHEMA = {
     pattern: SAFE_SINGLE_LINE_PATTERN,
   },
 } as const;
+const ALLOWED_ACTIONS_SCHEMA = {
+  type: "array",
+  maxItems: ENA_AGENT_ALLOWED_ACTIONS_V1.length,
+  uniqueItems: true,
+  items: {
+    type: "string",
+    enum: ENA_AGENT_ALLOWED_ACTIONS_V1,
+  },
+} as const;
 
 export const ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA = deepFreeze({
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -280,7 +330,7 @@ export const ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA = deepFreeze({
     authoritativeSources: BOUNDED_TEXT_LIST_SCHEMA,
     assumptions: BOUNDED_TEXT_LIST_SCHEMA,
     unresolvedDecisions: BOUNDED_TEXT_LIST_SCHEMA,
-    allowedActions: BOUNDED_TEXT_LIST_SCHEMA,
+    allowedActions: ALLOWED_ACTIONS_SCHEMA,
     forbiddenActions: BOUNDED_TEXT_LIST_SCHEMA,
     scientificInvariants: BOUNDED_TEXT_LIST_SCHEMA,
     acceptanceCriteria: BOUNDED_TEXT_LIST_SCHEMA,
@@ -390,6 +440,16 @@ function enumValue<const Values extends readonly string[]>(
   return value as Values[number];
 }
 
+function allowedActionList(value: unknown): EnaAgentAllowedActionV1[] {
+  const validated = textList(value, "allowedActions");
+  const raw = value as unknown[];
+  return validated.map((_action, index) => enumValue(
+    raw[index],
+    ENA_AGENT_ALLOWED_ACTIONS_V1,
+    `allowedActions[${index}]`,
+  ));
+}
+
 function canonicalAction(value: string): string {
   return value.normalize("NFKC").toLocaleLowerCase("en-US").replace(/\s+/gu, " ").trim();
 }
@@ -416,86 +476,14 @@ function mergeGovernanceItems(required: readonly string[], supplied: readonly st
   return merged;
 }
 
-const ACTION_CLAUSE_START = String.raw`(?:^|[.;:]\s*|\b(?:and|then)\s+)`;
-const ACTION_PERMISSION_PREFIX = String.raw`(?:(?:please|then)\s+|(?:the agent\s+)?(?:may|can|must|should|will)\s+|(?:the agent\s+)?(?:is\s+)?(?:allowed|permitted)\s+to\s+)*`;
-const MUTATION_ACTION_VERBS = String.raw`(?:mutat(?:e|es|ed|ing)|modif(?:y|ies|ied|ying)|edit(?:s|ed|ing)?|writ(?:e|es|ing|ten)|chang(?:e|es|ed|ing)|updat(?:e|es|ed|ing)|commit(?:s|ted|ting)?|push(?:es|ed|ing)?|merg(?:e|es|ed|ing)|deploy(?:s|ed|ing)?|publish(?:es|ed|ing)?)`;
-const REMOTE_ACTION_VERBS = String.raw`(?:push(?:es|ed|ing)?|merg(?:e|es|ed|ing)|deploy(?:s|ed|ing)?|publish(?:es|ed|ing)?)`;
-const REVIEW_CANDIDATE_MUTATION_VERBS = String.raw`(?:mutat(?:e|es|ed|ing)|modif(?:y|ies|ied|ying)|edit(?:s|ed|ing)?|writ(?:e|es|ing|ten)|chang(?:e|es|ed|ing)|updat(?:e|es|ed|ing))`;
-const SELF_APPROVAL_VERBS = String.raw`(?:self(?:-|\s)?approv(?:e|es|ed|ing))`;
-
-function explicitActionPattern(verbs: string): RegExp {
-  return new RegExp(`${ACTION_CLAUSE_START}${ACTION_PERMISSION_PREFIX}${verbs}\\b`, "u");
-}
-
-const MUTATION_ACTION_PATTERN = explicitActionPattern(MUTATION_ACTION_VERBS);
-const REMOTE_ACTION_PATTERN = explicitActionPattern(REMOTE_ACTION_VERBS);
-const SELF_APPROVAL_ACTION_PATTERN = explicitActionPattern(SELF_APPROVAL_VERBS);
-const REVIEW_CANDIDATE_MUTATION_PATTERN = new RegExp(
-  `${ACTION_CLAUSE_START}${ACTION_PERMISSION_PREFIX}${REVIEW_CANDIDATE_MUTATION_VERBS}\\b[^.;:]{0,160}\\b(?:review\\s+)?candidate\\b`,
-  "u",
-);
-
-const RELEASE_EVIDENCE_PLANES = [
-  ["local-implementation", /\blocal implementation(?: evidence)?\b/u],
-  ["local-test", /\blocal tests?(?: evidence)?\b/u],
-  ["ci", /\bci(?: evidence)?\b/u],
-  ["github", /\bgithub(?: state)?(?: evidence)?\b/u],
-  ["deployment", /\bdeployment(?: state)?(?: evidence)?\b/u],
-  ["live", /\blive(?: behavior)?(?: evidence)?\b/u],
-] as const;
-const EVIDENCE_SUBSTITUTION_PHRASE = /\b(?:proves?|(?:is|as)\s+(?:a\s+)?proof\s+of|substitut(?:e|es|ed|ing)\s+for|(?:is|as)\s+(?:a\s+)?substitute\s+for|stands?\s+in\s+for)\b/u;
-const NEGATED_EVIDENCE_SUBSTITUTION = /\b(?:do(?:es)?|is|are|can|must|should|will)\s+not\b|\bnever\b/u;
-
-function treatsOneReleasePlaneAsAnother(action: string): boolean {
-  if (NEGATED_EVIDENCE_SUBSTITUTION.test(action)
-    || !EVIDENCE_SUBSTITUTION_PHRASE.test(action)) return false;
-  const planes = RELEASE_EVIDENCE_PLANES
-    .filter(([, pattern]) => pattern.test(action))
-    .map(([plane]) => plane);
-  return new Set(planes).size >= 2;
-}
-
-function prohibitedAllowedActionReason(
-  operationMode: EnaAgentGovernedOperationModeV1,
-  action: string,
-): string | null {
-  const normalized = canonicalAction(action);
-  if (operationMode === "diagnose" && MUTATION_ACTION_PATTERN.test(normalized)) {
-    return "diagnose is read-only";
-  }
-  if (operationMode === "implement" && REMOTE_ACTION_PATTERN.test(normalized)) {
-    return "implement cannot push, merge, deploy, or publish";
-  }
-  if (operationMode === "independent-review") {
-    if (REVIEW_CANDIDATE_MUTATION_PATTERN.test(normalized)) {
-      return "independent-review cannot modify its candidate";
-    }
-    if (SELF_APPROVAL_ACTION_PATTERN.test(normalized)) {
-      return "independent-review cannot self-approve";
-    }
-    if (REMOTE_ACTION_PATTERN.test(normalized)) {
-      return "independent-review cannot push, merge, deploy, or publish";
-    }
-  }
-  if (operationMode === "release-verify") {
-    if (MUTATION_ACTION_PATTERN.test(normalized)) {
-      return "release-verify is non-mutating";
-    }
-    if (treatsOneReleasePlaneAsAnother(normalized)) {
-      return "release-verify keeps evidence planes separate";
-    }
-  }
-  return null;
-}
-
-function rejectModeProhibitedAllowedActions(contract: EnaAgentTaskContractV1): void {
-  const operationMode = contract.operationMode;
-  if (operationMode === "plan") return;
+function rejectActionsOutsideOperationMode(contract: EnaAgentTaskContractV1): void {
+  const permitted = new Set<EnaAgentAllowedActionV1>(
+    ENA_AGENT_OPERATION_ALLOWED_ACTIONS_V1[contract.operationMode],
+  );
   contract.allowedActions.forEach((action, index) => {
-    const reason = prohibitedAllowedActionReason(operationMode, action);
-    if (reason) {
+    if (!permitted.has(action)) {
       throw new Error(
-        `${operationMode} mode allowedActions[${index}] is prohibited by V1 governance: ${reason}.`,
+        `${contract.operationMode} mode allowedActions[${index}] is not permitted by the V1 capability matrix.`,
       );
     }
   });
@@ -517,7 +505,7 @@ export function parseEnaAgentTaskContractV1(value: unknown): EnaAgentTaskContrac
   if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(headSha)) {
     throw new Error("currentRepositoryState.headSha must be a 40- or 64-character Git SHA.");
   }
-  const allowedActions = textList(input.allowedActions, "allowedActions");
+  const allowedActions = allowedActionList(input.allowedActions);
   const forbiddenActions = textList(input.forbiddenActions, "forbiddenActions");
   rejectConflictingActions(allowedActions, forbiddenActions);
 
@@ -566,13 +554,13 @@ export function parseEnaAgentTaskContractV1(value: unknown): EnaAgentTaskContrac
 
 export function applyEnaAgentOperationModeGovernanceV1(value: unknown): EnaAgentTaskContractV1 {
   const contract = parseEnaAgentTaskContractV1(value);
+  rejectActionsOutsideOperationMode(contract);
   if (contract.operationMode === "plan") return contract;
 
   const template = ENA_AGENT_OPERATION_MODE_TEMPLATES_V1[contract.operationMode];
   if (contract.operationMode === "diagnose" && contract.maximumCompletionState !== "PLANNED") {
     throw new Error("diagnose mode requires a PLANNED maximumCompletionState ceiling.");
   }
-  rejectModeProhibitedAllowedActions(contract);
 
   return parseEnaAgentTaskContractV1({
     ...contract,
