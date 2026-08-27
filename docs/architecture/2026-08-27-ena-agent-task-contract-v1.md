@@ -43,7 +43,7 @@ The exact maximum-completion-state literals are `PLANNED`, `IMPLEMENTED_UNVERIFI
 
 The exported JSON Schema and parser reject additional object properties. The parser also rejects non-plain/accessor-bearing objects, missing fields, wrong scalar or collection types, unknown enum values, blank strings, malformed Git SHAs, duplicate normalized list entries, conflicting identical allowed/forbidden actions, oversized arrays or strings, and unsafe control or bidirectional-formatting characters. It returns a new deeply frozen object in a fixed key order. It does not infer omitted values.
 
-The Markdown renderer uses a fixed section order, escapes caller text, and emits neither an XML wrapper nor a ceremonial completion marker. The Markdown is a task receipt, not proof of execution or completion.
+The Markdown renderer uses a fixed section order, escapes caller text, and emits neither an XML wrapper nor a ceremonial completion marker. Backtick and tilde fence characters are escaped along with HTML-like, heading, emphasis, and link punctuation so valid untrusted text cannot absorb later sections into a CommonMark fence or introduce a new heading or wrapper. The Markdown is a task receipt, not proof of execution or completion.
 
 ## Source precedence
 
@@ -64,10 +64,19 @@ V1 provides first-class templates for four modes and applies only their restrict
 
 - `diagnose` is read-only, prohibits repository mutation, and requires the explicit `PLANNED` ceiling.
 - `implement` permits only caller-authorized scoped work and local verification. Its template prohibits automatic push, merge, deployment, and publication.
-- `independent-review` keeps the review candidate immutable, prohibits self-approval, and reports unresolved findings instead of waiving them.
+- `independent-review` keeps the review candidate immutable, prohibits self-approval, push, merge, deployment, and publication, and reports unresolved findings instead of waiving them.
 - `release-verify` keeps local implementation, local tests, CI, GitHub state, deployment state, and live behavior as six separate evidence requirements. Evidence from one plane cannot stand in for another.
 
 `plan` remains a valid operation mode. It receives no implicit mutation authority and no mode-template promotion.
+
+Before adding template restrictions, compilation checks every caller-supplied allowed action against a deliberately bounded English grammar. The check is deterministic code, not free-form semantic or model inference. It Unicode-normalizes and case-folds the action, recognizes an explicit action at the beginning of a clause (including after punctuation, `and`, or `then`) with a small set of optional permission words, and applies these guards:
+
+- `diagnose` rejects explicit mutate, modify, edit, write, change, update, commit, push, merge, deploy, and publish verbs.
+- `implement` rejects explicit push, merge, deploy, and publish verbs.
+- `independent-review` rejects explicit candidate-mutation phrases, self-approval phrases, and push, merge, deploy, or publish verbs.
+- `release-verify` rejects the mutation verbs above, including provider-configuration changes. It also rejects explicit proof/substitution phrases when they name at least two distinct planes from local implementation, local tests, CI, GitHub state, deployment, and live behavior. Explicitly negated proof/substitution phrases are not treated as permissions.
+
+Read-only phrases such as inspecting deployment or live evidence remain valid. A valid action is preserved byte-for-byte after parser normalization. A prohibited permission throws a mode-and-index-specific error; it is never silently deleted or rewritten. More complex policy language must be made explicit in the versioned grammar rather than guessed dynamically.
 
 ## No scientific or release authority
 

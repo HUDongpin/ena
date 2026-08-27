@@ -416,6 +416,91 @@ function mergeGovernanceItems(required: readonly string[], supplied: readonly st
   return merged;
 }
 
+const ACTION_CLAUSE_START = String.raw`(?:^|[.;:]\s*|\b(?:and|then)\s+)`;
+const ACTION_PERMISSION_PREFIX = String.raw`(?:(?:please|then)\s+|(?:the agent\s+)?(?:may|can|must|should|will)\s+|(?:the agent\s+)?(?:is\s+)?(?:allowed|permitted)\s+to\s+)*`;
+const MUTATION_ACTION_VERBS = String.raw`(?:mutat(?:e|es|ed|ing)|modif(?:y|ies|ied|ying)|edit(?:s|ed|ing)?|writ(?:e|es|ing|ten)|chang(?:e|es|ed|ing)|updat(?:e|es|ed|ing)|commit(?:s|ted|ting)?|push(?:es|ed|ing)?|merg(?:e|es|ed|ing)|deploy(?:s|ed|ing)?|publish(?:es|ed|ing)?)`;
+const REMOTE_ACTION_VERBS = String.raw`(?:push(?:es|ed|ing)?|merg(?:e|es|ed|ing)|deploy(?:s|ed|ing)?|publish(?:es|ed|ing)?)`;
+const REVIEW_CANDIDATE_MUTATION_VERBS = String.raw`(?:mutat(?:e|es|ed|ing)|modif(?:y|ies|ied|ying)|edit(?:s|ed|ing)?|writ(?:e|es|ing|ten)|chang(?:e|es|ed|ing)|updat(?:e|es|ed|ing))`;
+const SELF_APPROVAL_VERBS = String.raw`(?:self(?:-|\s)?approv(?:e|es|ed|ing))`;
+
+function explicitActionPattern(verbs: string): RegExp {
+  return new RegExp(`${ACTION_CLAUSE_START}${ACTION_PERMISSION_PREFIX}${verbs}\\b`, "u");
+}
+
+const MUTATION_ACTION_PATTERN = explicitActionPattern(MUTATION_ACTION_VERBS);
+const REMOTE_ACTION_PATTERN = explicitActionPattern(REMOTE_ACTION_VERBS);
+const SELF_APPROVAL_ACTION_PATTERN = explicitActionPattern(SELF_APPROVAL_VERBS);
+const REVIEW_CANDIDATE_MUTATION_PATTERN = new RegExp(
+  `${ACTION_CLAUSE_START}${ACTION_PERMISSION_PREFIX}${REVIEW_CANDIDATE_MUTATION_VERBS}\\b[^.;:]{0,160}\\b(?:review\\s+)?candidate\\b`,
+  "u",
+);
+
+const RELEASE_EVIDENCE_PLANES = [
+  ["local-implementation", /\blocal implementation(?: evidence)?\b/u],
+  ["local-test", /\blocal tests?(?: evidence)?\b/u],
+  ["ci", /\bci(?: evidence)?\b/u],
+  ["github", /\bgithub(?: state)?(?: evidence)?\b/u],
+  ["deployment", /\bdeployment(?: state)?(?: evidence)?\b/u],
+  ["live", /\blive(?: behavior)?(?: evidence)?\b/u],
+] as const;
+const EVIDENCE_SUBSTITUTION_PHRASE = /\b(?:proves?|(?:is|as)\s+(?:a\s+)?proof\s+of|substitut(?:e|es|ed|ing)\s+for|(?:is|as)\s+(?:a\s+)?substitute\s+for|stands?\s+in\s+for)\b/u;
+const NEGATED_EVIDENCE_SUBSTITUTION = /\b(?:do(?:es)?|is|are|can|must|should|will)\s+not\b|\bnever\b/u;
+
+function treatsOneReleasePlaneAsAnother(action: string): boolean {
+  if (NEGATED_EVIDENCE_SUBSTITUTION.test(action)
+    || !EVIDENCE_SUBSTITUTION_PHRASE.test(action)) return false;
+  const planes = RELEASE_EVIDENCE_PLANES
+    .filter(([, pattern]) => pattern.test(action))
+    .map(([plane]) => plane);
+  return new Set(planes).size >= 2;
+}
+
+function prohibitedAllowedActionReason(
+  operationMode: EnaAgentGovernedOperationModeV1,
+  action: string,
+): string | null {
+  const normalized = canonicalAction(action);
+  if (operationMode === "diagnose" && MUTATION_ACTION_PATTERN.test(normalized)) {
+    return "diagnose is read-only";
+  }
+  if (operationMode === "implement" && REMOTE_ACTION_PATTERN.test(normalized)) {
+    return "implement cannot push, merge, deploy, or publish";
+  }
+  if (operationMode === "independent-review") {
+    if (REVIEW_CANDIDATE_MUTATION_PATTERN.test(normalized)) {
+      return "independent-review cannot modify its candidate";
+    }
+    if (SELF_APPROVAL_ACTION_PATTERN.test(normalized)) {
+      return "independent-review cannot self-approve";
+    }
+    if (REMOTE_ACTION_PATTERN.test(normalized)) {
+      return "independent-review cannot push, merge, deploy, or publish";
+    }
+  }
+  if (operationMode === "release-verify") {
+    if (MUTATION_ACTION_PATTERN.test(normalized)) {
+      return "release-verify is non-mutating";
+    }
+    if (treatsOneReleasePlaneAsAnother(normalized)) {
+      return "release-verify keeps evidence planes separate";
+    }
+  }
+  return null;
+}
+
+function rejectModeProhibitedAllowedActions(contract: EnaAgentTaskContractV1): void {
+  const operationMode = contract.operationMode;
+  if (operationMode === "plan") return;
+  contract.allowedActions.forEach((action, index) => {
+    const reason = prohibitedAllowedActionReason(operationMode, action);
+    if (reason) {
+      throw new Error(
+        `${operationMode} mode allowedActions[${index}] is prohibited by V1 governance: ${reason}.`,
+      );
+    }
+  });
+}
+
 function deepFreeze<T>(value: T, seen = new Set<unknown>()): T {
   if (value === null || typeof value !== "object" || seen.has(value)) return value;
   seen.add(value);
@@ -487,6 +572,7 @@ export function applyEnaAgentOperationModeGovernanceV1(value: unknown): EnaAgent
   if (contract.operationMode === "diagnose" && contract.maximumCompletionState !== "PLANNED") {
     throw new Error("diagnose mode requires a PLANNED maximumCompletionState ceiling.");
   }
+  rejectModeProhibitedAllowedActions(contract);
 
   return parseEnaAgentTaskContractV1({
     ...contract,
@@ -505,7 +591,7 @@ function markdownText(value: string): string {
     .replace(/\\/gu, "\\\\")
     .replace(/</gu, "&lt;")
     .replace(/>/gu, "&gt;")
-    .replace(/([`*_{}\[\]()#+.!|])/gu, "\\$1");
+    .replace(/([`~*_{}\[\]()#+.!|])/gu, "\\$1");
 }
 
 function markdownList(values: readonly string[]): string {
