@@ -147,16 +147,17 @@ prompt, call a model, import the provider client, inspect AI environment variabl
 use credentials, access the network, write files, or alter runtime response
 handling.
 
-The frozen suite version `open-ena-ai-offline-synthetic-mock-v6` contains exactly
+The frozen suite version `open-ena-ai-offline-synthetic-mock-v7` contains exactly
 four fixed aggregate, role/index-only designs for each of `en`, `zh-hant`, and
 `zh-hans`:
 
-The suite identifier advances from v5 because exact contrast-period sets, plural
-axis identity, full numeric-RHS consumption, additional declared method/direction/
-cohort forms, and fail-closed unbound numeric text change the meaning of an
-automated pass. The earlier v5 advance introduced descriptive-count and complete-
-array binding, inference-scope cohort policy, executable source registration, and
-source SHA manifests; v4 introduced fixture manifests and protected field checks;
+The suite identifier advances from v6 because one shared identity parser now
+produces both the complete axis/period set and the only numeric identity spans that
+may be exempted, identity checks apply to every observation, and protected
+`NaN`/`Infinity` claims fail closed. The earlier v6 advance introduced exact
+contrast-period sets, plural axes, numeric-RHS exhaustion, and unbound-number
+failure; v5 introduced complete arrays, inference-scope cohort policy, executable
+source registration, and source SHA manifests; v4 introduced fixture manifests;
 v3 introduced locale-bound fixtures and lexical matrices. The
 report and six-field receipt contracts remain V1; only receipts from the current
 suite are eligible for later human review.
@@ -179,7 +180,7 @@ checked-in manifest. The hash binds the case ID, design, locale, aggregate evide
 compliant candidate, required inference IDs, limitations, coverage tags, and a
 digest of the private source canaries. A custom or drifted case may be evaluated for
 diagnostics, but the formal report and receipt receive
-`suite-fixture-identity-mismatch`; they cannot claim a zero-failure v6 run or pass
+`suite-fixture-identity-mismatch`; they cannot claim a zero-failure v7 run or pass
 approval eligibility under the frozen suite identity.
 
 Across those fixtures the suite exercises ties, small samples, zero differences,
@@ -217,7 +218,10 @@ count, or a period index). Every cited record that owns the claimed field must
 support the exact value. Explicit axis roles must equal—not merely overlap—the
 roles of cited axis-bound evidence; explicit period qualifiers must match the cited
 contrast's complete period set, not a subset. Singular, plural, ordinal, and the
-declared latent-dimension axis forms share that identity check. Multi-axis or
+declared latent-dimension axis forms are parsed once into both the identity set and
+the exact digit spans allowed by numeric exhaustion, preventing one parser from
+silently consuming a number omitted by another. Every observation with an explicit
+identity is checked, even when it contains no statistic or protected field. Multi-axis or
 multi-period prose that cannot be bound unambiguously fails
 closed and should be split into separate observations. A correct value from another
 axis cannot satisfy the claim, even when both axes happen to share that value.
@@ -229,6 +233,8 @@ the first value is insufficient. A scalar claim cannot hide additional numeric
 values later in its right-hand side. Any remaining digit that is not consumed by a
 validated field/array claim, an explicit axis/period identity, or the literal MR1
 boundary fails closed; this intentionally rejects unbound descriptive numbers.
+Protected numeric fields paired with `NaN`, infinity, null, or undefined also fail
+closed because every supplied numeric value is finite.
 Method/test and difference-direction assertions,
 including the declared common `used/applied` and `computed as` forms, must match
 the cited record. Declared analytic-cohort assertions bind only to the authoritative

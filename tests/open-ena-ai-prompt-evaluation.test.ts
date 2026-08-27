@@ -49,7 +49,7 @@ function mutateCandidate(
 }
 
 test("the fixed offline suite contains exactly the four role/index-only research designs", () => {
-  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v6");
+  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v7");
   assert.equal(OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1, OPEN_ENA_AI_MAX_RESPONSE_BYTES);
   assert.deepEqual(
     OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1.map((evaluationCase) => evaluationCase.designKind),
@@ -580,6 +580,8 @@ test("protected numeric and method claims bind to every cited inference identity
     [paired, "For axis-1 at period-1, the supplied pHolm is 0.4.", ["comparison-axis-1-period-1-period-2"]],
     [endpoint, "For axes 1 and 2, the supplied pRaw is 0.1.", ["comparison-axis-1"]],
     [endpoint, "For both axes, the supplied pRaw is 0.1.", ["comparison-axis-1"]],
+    [endpoint, "For axis 1 and 2, the supplied pRaw is 0.1.", ["comparison-axis-1"]],
+    [endpoint, "For axes 1 and axis 2, the supplied pRaw is 0.3.", ["comparison-axis-2"]],
     [endpoint, "The supplied primary sample size is 999.", ["comparison-axis-1"]],
     [endpoint, "The supplied nPrimary is 999.", ["comparison-axis-1"]],
     [endpoint, "所提供的主要樣本數為 999。", ["comparison-axis-1"]],
@@ -606,6 +608,11 @@ test("protected numeric and method claims bind to every cited inference identity
     [
       caseById("trajectory-selected-period-mann-whitney"),
       "The supplied nUsed is 999.",
+      ["trajectory-primary-period-2"],
+    ],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "At period 2 and 999, the supplied nUsed is 4.",
       ["trajectory-primary-period-2"],
     ],
     [
@@ -645,6 +652,18 @@ test("protected numeric and method claims bind to every cited inference identity
     ],
     [paired, "We computed differences as earlier minus later.", ["comparison-axis-1-period-1-period-2"]],
     [paired, "The analytic cohort was available.", ["comparison-axis-1-period-1-period-2"]],
+    [endpoint, "Axis 1 shows the supplied aggregate pattern.", ["comparison-axis-2"]],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "Period 999 shows the supplied aggregate pattern.",
+      ["trajectory-primary-period-2"],
+    ],
+    [endpoint, "The supplied pRaw is NaN.", ["comparison-axis-1"]],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "The supplied nUsed is infinity.",
+      ["trajectory-primary-period-2"],
+    ],
     [
       caseById("trajectory-selected-period-mann-whitney"),
       "The supplied periodIndex is 999.",
@@ -804,6 +823,13 @@ test("offline reports and exact V1 receipts are deterministic, deeply frozen, an
     "n-used-values-extra-rhs-number",
     "n-excluded-extra-rhs-number",
     "period-index-extra-rhs-number",
+    "axis-singular-list-identity-borrow",
+    "mixed-axis-list-identity-borrow",
+    "period-extra-identity-number",
+    "pure-axis-identity-mismatch",
+    "pure-period-identity-mismatch",
+    "nonfinite-p-raw",
+    "nonfinite-n-used",
     "missing-one-visible-inference-ref",
     "missing-all-visible-inference-refs",
     "treatment-improved-learning",
@@ -934,7 +960,7 @@ test("approval eligibility requires zero failures and both independent human rev
   );
   const staleSuite = parseEnaPromptEvalReceiptV1({
     ...matchingPassFields,
-    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v5",
+    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v6",
   });
   assert.throws(
     () => assertOpenEnaAiPromptEligibleForApproval(staleSuite, draft.contentSha256),

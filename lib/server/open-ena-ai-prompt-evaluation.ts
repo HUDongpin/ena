@@ -22,7 +22,7 @@ import {
 } from "./open-ena-ai-prompt-governance";
 
 export const OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1 =
-  "open-ena-ai-offline-synthetic-mock-v6" as const;
+  "open-ena-ai-offline-synthetic-mock-v7" as const;
 export const OPEN_ENA_AI_OFFLINE_EVALUATION_REPORT_SCHEMA_VERSION_V1 =
   "open-ena-ai-offline-evaluation-report-v1" as const;
 export const OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1 = 64 * 1024;
@@ -1032,6 +1032,7 @@ const STATISTIC_NUMERIC_CLAIM = /((?:原始\s*p(?:\s*值)?|p\s*值|holm\s*校正
 const PROTECTED_NUMERIC_CLAIM = /((?:primary\s+sample\s+size|secondary\s+sample\s+size|matched\s+(?:cohort|sample)(?:\s+size)?|missing\s+pairs?(?:\s+count)?|positive\s+count|negative\s+count|zero\s+count|nonzero\s+count|ranked\s+count|complete\s+cohort(?:\s+size)?|missing\s+complete\s+blocks?|number\s+of\s+periods|period\s+count|(?:friedman\s+)?degrees?\s+of\s+freedom|df|tie\s+group\s+count|tied\s+observation\s+count|selected\s+period\s+index|earlier\s+period\s+index|later\s+period\s+index|主要(?:樣本|样本)數|主要(?:樣本|样本)数|次要(?:樣本|样本)數|次要(?:樣本|样本)数|配對(?:隊列|队列|樣本|样本)(?:數|数)?|匹配(?:隊列|队列|樣本|样本)(?:數|数)?|缺失配對(?:數|数)?|缺失匹配(?:數|数)?|完整(?:隊列|队列)(?:數|数)?|缺失完整區塊(?:數|数)?|缺失完整区块(?:數|数)?|時段數|时段数|自由度|結值組數|结值组数|並列觀察數|并列观察数|選定時段索引|选定时段索引|較早時段索引|较早时段索引|較晚時段索引|较晚时段索引))\s*(=|:|：|<=|>=|<|>|≤|≥|≈|equals?|is|was|as|contains?|等於|等于|為|为|是|包含|約為|约为)\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?)/giu;
 const PROTECTED_FIELD_NUMERIC_CLAIM = /(?<![\p{L}\p{N}_])((?:nPrimary|nSecondary|nMatched|nMissing|nPositive|nNegative|nZero|nNonzero|nRanked|nComplete|nMissingCompleteBlocks|nPeriods|nUsed|nExcluded|periodCount|periodIndex|availableEntityCount|completeEntityCount|includedEntityCount|degreesFreedom|tieGroupCount|tiedObservationCount|selectedPeriodIndex|earlierPeriodIndex|laterPeriodIndex))\s*(=|:|：|<=|>=|<|>|≤|≥|≈|equals?|is|was|as|contains?|等於|等于|為|为|是|包含|約為|约为)\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?)/giu;
 const PROTECTED_NUMERIC_ARRAY_CLAIM = /(?<![\p{L}\p{N}_])((?:selectedPeriodIndices|selected\s+period\s+indices|選定時段索引|选定时段索引))\s*(?:=|:|：|are|is|were|contains?|includes?|consists?\s+of|等於|等于|為|为|是|包含)\s*([^.!?;。！？；\n]{1,160})/giu;
+const PROTECTED_NONFINITE_CLAIM = /(?<![\p{L}\p{N}_])(?:p(?:Raw|Holm)?|p[-\s]?value|u(?:Primary|Secondary)?|w(?:Positive|Negative)?|t|q|kendallsW|rankBiserial(?:PrimaryVsSecondary|LaterVsEarlier)?|n(?:Primary|Secondary|Matched|Missing|Positive|Negative|Zero|Nonzero|Ranked|Complete|MissingCompleteBlocks|Periods|Used|Excluded)|period(?:Count|Index)|availableEntityCount|completeEntityCount|includedEntityCount|degreesFreedom|tieGroupCount|tiedObservationCount|selectedPeriodIndices?)\s*(?:=|:|：|equals?|is|was|as|等於|等于|為|为|是)\s*(?:nan|[-+]?infinity|[-+]?inf|null|undefined)\b/iu;
 const PROTECTED_STRING_CLAIM = /(?:\b(?:the\s+supplied\s+)?(method|test|difference\s+direction|cohort\s+policy)\s*(?:=|:|equals?|is|was)\s*((?:an?|the)\s+)?([^.!?;\n]{1,96})|(?:所提供的)?(方法|檢定|检验|差值方向|隊列政策|队列政策)\s*(?:=|:|：|等於|等于|為|为|是)\s*([^。！？；\n]{1,96}))/giu;
 const PROTECTED_FIELD_STRING_CLAIM = /(?<![\p{L}\p{N}_])(resolvedPMethod|test|differenceDirection|cohortPolicy)\s*(?:=|:|：|equals?|is|was|等於|等于|為|为|是)\s*((?:an?|the)\s+)?([^.!?;。！？；\n]{1,96})/giu;
 const METHOD_USAGE_CLAIM = /\b(?:(?:the\s+)?(?:analysis|comparison|procedure)\s+(?:used|uses|applied|employed)\s+(?:an?\s+)?|method\s+(?:used|applied|employed)\s+(?:was|is)\s+(?:an?\s+)?)([^.!?;\n]{1,96})/giu;
@@ -1376,22 +1377,132 @@ interface TextRangeV1 {
   readonly end: number;
 }
 
-const NUMERIC_IDENTITY_PATTERNS = [
-  /\b(?:axis|axes)\s*[-_]?\s*[12](?:\s*(?:and|&|,|\/)\s*(?:axis\s*)?[-_]?\s*[12])?/giu,
-  /\b(?:period|periods)\s*[-_]?\s*[1-9][0-9]*(?:\s*(?:and|to|through|&|,|\/)\s*(?:period\s*)?[-_]?\s*[1-9][0-9]*)?/giu,
-  /(?:第\s*)?[一二三四五六七八九12]\s*(?:號|号)?\s*(?:軸|轴)/gu,
-  /第\s*(?:[一二三四五六七八九]|[1-9][0-9]*)\s*(?:個|个)?\s*(?:時段|时段|期)/gu,
-  /\bmr1\b/giu,
-] as const;
 const NUMERIC_TOKEN = /[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?/giu;
 
-function numericIdentityRanges(text: string): TextRangeV1[] {
-  return NUMERIC_IDENTITY_PATTERNS.flatMap((pattern) => (
-    [...text.matchAll(pattern)].map((match) => ({
-      start: match.index ?? -1,
-      end: (match.index ?? -1) + match[0].length,
-    })).filter((range) => range.start >= 0)
-  ));
+interface DeclaredIdentityV1 {
+  readonly axisRoles: ReadonlySet<string>;
+  readonly periods: ReadonlySet<number>;
+  readonly numericRanges: readonly TextRangeV1[];
+}
+
+function captureRange(match: RegExpMatchArray, captureIndex: number): TextRangeV1 | undefined {
+  const capture = match[captureIndex];
+  const matchStart = match.index;
+  if (!capture || matchStart === undefined) return undefined;
+  let searchFrom = 0;
+  for (let index = 1; index <= captureIndex; index += 1) {
+    const part = match[index];
+    if (!part) continue;
+    const relativeStart = match[0].indexOf(part, searchFrom);
+    if (relativeStart < 0) return undefined;
+    if (index === captureIndex) {
+      return {
+        start: matchStart + relativeStart,
+        end: matchStart + relativeStart + part.length,
+      };
+    }
+    searchFrom = relativeStart + part.length;
+  }
+  return undefined;
+}
+
+function extractDeclaredIdentity(text: string): DeclaredIdentityV1 {
+  const axisRoles = new Set<string>();
+  const periods = new Set<number>();
+  const numericRanges: TextRangeV1[] = [];
+  const addAxisNumber = (value: string, range: TextRangeV1 | undefined): void => {
+    if (value !== "1" && value !== "2") return;
+    axisRoles.add(`axis-${value}`);
+    if (range) numericRanges.push(range);
+  };
+  const addPeriodNumber = (value: string, range: TextRangeV1 | undefined): void => {
+    const period = Number(value);
+    if (!Number.isSafeInteger(period) || period < 1) return;
+    periods.add(period);
+    if (range) numericRanges.push(range);
+  };
+
+  for (const match of text.matchAll(/\b(?:axis|axes)\s*[-_]?\s*([0-9]+)\s*(?:and|&|,|\/)\s*(?:(?:axis|axes)\s*)?[-_]?\s*([0-9]+)\b/giu)) {
+    addAxisNumber(match[1], captureRange(match, 1));
+    addAxisNumber(match[2], captureRange(match, 2));
+  }
+  for (const match of text.matchAll(/\b(?:axis|axes)\s*[-_]?\s*([0-9]+)\b/giu)) {
+    addAxisNumber(match[1], captureRange(match, 1));
+  }
+  for (const match of text.matchAll(/\b(first|second)\s+(?:axis|latent\s+dimension)\b/giu)) {
+    axisRoles.add(match[1].toLocaleLowerCase("en-US") === "first" ? "axis-1" : "axis-2");
+  }
+  for (const match of text.matchAll(/\baxis\s+(one|two)\b/giu)) {
+    axisRoles.add(match[1].toLocaleLowerCase("en-US") === "one" ? "axis-1" : "axis-2");
+  }
+  if (/\bboth\s+axes\b/iu.test(text)) {
+    axisRoles.add("axis-1");
+    axisRoles.add("axis-2");
+  }
+
+  const chineseAxis = (value: string): string | undefined => ({
+    "1": "axis-1",
+    "2": "axis-2",
+    一: "axis-1",
+    二: "axis-2",
+  } as const)[value as "1" | "2" | "一" | "二"];
+  for (const pattern of [
+    /(?:第\s*)?([一二]|[0-9]+)\s*(?:號|号)?\s*(?:軸|轴)/gu,
+    /(?:軸|轴)\s*(?:第\s*)?([一二]|[0-9]+)/gu,
+  ]) {
+    for (const match of text.matchAll(pattern)) {
+      const role = chineseAxis(match[1]);
+      if (role) {
+        axisRoles.add(role);
+        if (/^[0-9]+$/u.test(match[1])) {
+          const range = captureRange(match, 1);
+          if (range) numericRanges.push(range);
+        }
+      }
+    }
+  }
+
+  for (const match of text.matchAll(/\b(?:period|periods)\s*[-_]?\s*([0-9]+)\s*(?:and|to|through|&|,|\/)\s*(?:period\s*)?[-_]?\s*([0-9]+)\b/giu)) {
+    addPeriodNumber(match[1], captureRange(match, 1));
+    addPeriodNumber(match[2], captureRange(match, 2));
+  }
+  for (const match of text.matchAll(/\b(?:period|periods)\s*[-_]?\s*([0-9]+)\b/giu)) {
+    addPeriodNumber(match[1], captureRange(match, 1));
+  }
+  for (const match of text.matchAll(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)\s+period\b/giu)) {
+    const words = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth"];
+    periods.add(words.indexOf(match[1].toLocaleLowerCase("en-US")) + 1);
+  }
+  const chinesePeriod = (value: string): number | undefined => ({
+    一: 1,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+  } as const)[value as "一" | "二" | "三" | "四" | "五" | "六" | "七" | "八" | "九"];
+  for (const match of text.matchAll(/第\s*([一二三四五六七八九]|[0-9]+)\s*(?:個|个)?\s*(?:時段|时段|期)/gu)) {
+    const period = /^[0-9]+$/u.test(match[1]) ? Number(match[1]) : chinesePeriod(match[1]);
+    if (period !== undefined && Number.isSafeInteger(period) && period >= 1) {
+      periods.add(period);
+      if (/^[0-9]+$/u.test(match[1])) {
+        const range = captureRange(match, 1);
+        if (range) numericRanges.push(range);
+      }
+    }
+  }
+  for (const match of text.matchAll(/\bmr(1)\b/giu)) {
+    const range = captureRange(match, 1);
+    if (range) numericRanges.push(range);
+  }
+  return { axisRoles, periods, numericRanges };
+}
+
+function numericIdentityRanges(text: string): readonly TextRangeV1[] {
+  return extractDeclaredIdentity(text).numericRanges;
 }
 
 function hasUnclaimedNumericToken(
@@ -1406,8 +1517,11 @@ function hasUnclaimedNumericToken(
   ];
   return [...text.matchAll(NUMERIC_TOKEN)].some((match) => {
     const start = match.index ?? -1;
+    const unsignedStart = /^[+-]/u.test(match[0]) ? start + 1 : start;
     const end = start + match[0].length;
-    return start < 0 || !allowedRanges.some((range) => start >= range.start && end <= range.end);
+    return start < 0 || !allowedRanges.some((range) => (
+      unsignedStart >= range.start && end <= range.end
+    ));
   });
 }
 
@@ -1463,71 +1577,11 @@ function statisticClaimMatches(supplied: number, claim: StatisticClaimV1): boole
 }
 
 function declaredAxisRoles(text: string): ReadonlySet<string> {
-  const roles = new Set<string>();
-  for (const match of text.matchAll(/\baxes\s*[-_]?\s*([12])\s*(?:and|&|,|\/)\s*([12])\b/giu)) {
-    roles.add(`axis-${match[1]}`);
-    roles.add(`axis-${match[2]}`);
-  }
-  if (/\bboth\s+axes\b/iu.test(text)) {
-    roles.add("axis-1");
-    roles.add("axis-2");
-  }
-  for (const match of text.matchAll(/\baxis\s*[-_]?\s*([12])\b/giu)) roles.add(`axis-${match[1]}`);
-  for (const match of text.matchAll(/\b(first|second)\s+axis\b/giu)) {
-    roles.add(match[1].toLocaleLowerCase("en-US") === "first" ? "axis-1" : "axis-2");
-  }
-  for (const match of text.matchAll(/\b(first|second)\s+latent\s+dimension\b/giu)) {
-    roles.add(match[1].toLocaleLowerCase("en-US") === "first" ? "axis-1" : "axis-2");
-  }
-  for (const match of text.matchAll(/\baxis\s+(one|two)\b/giu)) {
-    roles.add(match[1].toLocaleLowerCase("en-US") === "one" ? "axis-1" : "axis-2");
-  }
-  const chineseAxis = (value: string): string | undefined => ({
-    "1": "axis-1",
-    "2": "axis-2",
-    一: "axis-1",
-    二: "axis-2",
-  } as const)[value as "1" | "2" | "一" | "二"];
-  for (const match of text.matchAll(/(?:第\s*)?([一二12])\s*(?:號|号)?\s*(?:軸|轴)/gu)) {
-    const role = chineseAxis(match[1]);
-    if (role) roles.add(role);
-  }
-  for (const match of text.matchAll(/(?:軸|轴)\s*(?:第\s*)?([一二12])/gu)) {
-    const role = chineseAxis(match[1]);
-    if (role) roles.add(role);
-  }
-  return roles;
+  return extractDeclaredIdentity(text).axisRoles;
 }
 
 function declaredPeriodNumbers(text: string): ReadonlySet<number> {
-  const periods = new Set<number>();
-  for (const match of text.matchAll(/\bperiods\s*[-_]?\s*([1-9][0-9]*)\s*(?:and|to|through|&|,|\/)\s*([1-9][0-9]*)\b/giu)) {
-    periods.add(Number(match[1]));
-    periods.add(Number(match[2]));
-  }
-  for (const match of text.matchAll(/\bperiod\s*[-_]?\s*([1-9][0-9]*)\b/giu)) {
-    periods.add(Number(match[1]));
-  }
-  for (const match of text.matchAll(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)\s+period\b/giu)) {
-    const words = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth"];
-    periods.add(words.indexOf(match[1].toLocaleLowerCase("en-US")) + 1);
-  }
-  const chineseNumber = (value: string): number | undefined => ({
-    一: 1,
-    二: 2,
-    三: 3,
-    四: 4,
-    五: 5,
-    六: 6,
-    七: 7,
-    八: 8,
-    九: 9,
-  } as const)[value as "一" | "二" | "三" | "四" | "五" | "六" | "七" | "八" | "九"];
-  for (const match of text.matchAll(/第\s*([一二三四五六七八九]|[1-9][0-9]*)\s*(?:個|个)?\s*(?:時段|时段|期)/gu)) {
-    const period = /^[0-9]+$/u.test(match[1]) ? Number(match[1]) : chineseNumber(match[1]);
-    if (period !== undefined) periods.add(period);
-  }
-  return periods;
+  return extractDeclaredIdentity(text).periods;
 }
 
 function ownStringField(evidence: unknown, field: string): string | undefined {
@@ -1696,13 +1750,13 @@ function hasUnsupportedNumericClaim(
 ): boolean {
   const indexedEvidence = evidenceById(evaluationCase.request.evidence);
   for (const observation of interpretation.observedPatterns) {
+    if (PROTECTED_NONFINITE_CLAIM.test(observation.statement)) return true;
     const claims = claimedStatistics(observation.statement);
     const arrayClaims = claimedNumericArrays(observation.statement);
     const structuredClaims = claimedStructuredStrings(observation.statement);
     const referencedEvidence = observation.evidenceRefs.map((reference) => indexedEvidence.get(reference));
     if (hasUnclaimedNumericToken(observation.statement, claims, arrayClaims)) return true;
-    if ((claims.length > 0 || arrayClaims.length > 0 || structuredClaims.length > 0)
-      && !referencedIdentityMatchesStatement(observation.statement, referencedEvidence)) return true;
+    if (!referencedIdentityMatchesStatement(observation.statement, referencedEvidence)) return true;
     if (claims.some((claim) => {
       const relevantEvidence = referencedEvidence.filter((evidence) => (
         claim.authoritativeFields.some((field) => ownFiniteStatisticValues(evidence, field).length > 0)
@@ -1731,6 +1785,7 @@ function hasUnsupportedNumericClaim(
   }
   return [...interpretation.contextualQuestions, ...interpretation.limitations]
     .some((value) => {
+      if (PROTECTED_NONFINITE_CLAIM.test(value)) return true;
       const claims = claimedStatistics(value);
       const arrayClaims = claimedNumericArrays(value);
       return claims.length > 0
@@ -2192,6 +2247,76 @@ function candidateProbes(
       candidateJson: statisticStatementMutation(
         selectedPeriod,
         "The supplied periodIndex is 1 and 999.",
+        "trajectory-primary-period-2",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "axis-singular-list-identity-borrow",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "For axis 1 and 2, the supplied pRaw is 0.1.",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "mixed-axis-list-identity-borrow",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "For axes 1 and axis 2, the supplied pRaw is 0.3.",
+        "comparison-axis-2",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "period-extra-identity-number",
+      evaluationCase: selectedPeriod,
+      candidateJson: statisticStatementMutation(
+        selectedPeriod,
+        "At period 2 and 999, the supplied nUsed is 4.",
+        "trajectory-primary-period-2",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "pure-axis-identity-mismatch",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "Axis 1 shows the supplied aggregate pattern.",
+        "comparison-axis-2",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "pure-period-identity-mismatch",
+      evaluationCase: selectedPeriod,
+      candidateJson: statisticStatementMutation(
+        selectedPeriod,
+        "Period 999 shows the supplied aggregate pattern.",
+        "trajectory-primary-period-2",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-p-raw",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "The supplied pRaw is NaN.",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-n-used",
+      evaluationCase: selectedPeriod,
+      candidateJson: statisticStatementMutation(
+        selectedPeriod,
+        "The supplied nUsed is infinity.",
         "trajectory-primary-period-2",
       ),
       expectedIssueCode: "invented-or-recomputed-statistic",
