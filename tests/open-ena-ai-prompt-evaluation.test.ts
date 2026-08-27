@@ -14,6 +14,7 @@ import {
   OPEN_ENA_AI_OFFLINE_EVALUATION_REPORT_SCHEMA_VERSION_V1,
   OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1,
   OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1,
+  OPEN_ENA_AI_OFFLINE_PROBE_IDENTITY_SHA256_BY_LOCALE_V1,
   assertOpenEnaAiPromptEligibleForApproval,
   evaluateOpenEnaAiOfflineCandidateV1,
   evaluateOpenEnaAiPromptArtifactOfflineV1,
@@ -49,8 +50,9 @@ function mutateCandidate(
 }
 
 test("the fixed offline suite contains exactly the four role/index-only research designs", () => {
-  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v8");
+  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v9");
   assert.equal(OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1, OPEN_ENA_AI_MAX_RESPONSE_BYTES);
+  assertDeepFrozen(OPEN_ENA_AI_OFFLINE_PROBE_IDENTITY_SHA256_BY_LOCALE_V1);
   assert.deepEqual(
     OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1.map((evaluationCase) => evaluationCase.designKind),
     [
@@ -209,7 +211,7 @@ test("every locale artifact kills its own frozen numeric, scientific, privacy, a
     const artifact = compileOpenEnaAiPromptArtifactV1(OPEN_ENA_AI_PROMPT_SPEC_V1, locale);
     const report = evaluateOpenEnaAiPromptArtifactOfflineV1(artifact, locale).report;
     const reportProbeIds = report.adversarialResults.map((entry) => entry.probeId);
-    assert.equal(reportProbeIds.length, 102, locale);
+    assert.equal(reportProbeIds.length, 118, locale);
     assert.equal(new Set(reportProbeIds).size, reportProbeIds.length, locale);
     for (const probe of probes) {
       const reportProbe = report.adversarialResults.find((entry) => entry.probeId === probe.probeId);
@@ -663,12 +665,22 @@ test("protected numeric and method claims bind to every cited inference identity
     ],
     [endpoint, "The supplied pRaw is NaN.", ["comparison-axis-1"]],
     [endpoint, "The supplied pRaw is ∞.", ["comparison-axis-1"]],
+    [endpoint, "The supplied pRaw is + Infinity.", ["comparison-axis-1"]],
+    [endpoint, "The supplied pRaw is - Infinity.", ["comparison-axis-1"]],
+    [endpoint, "The supplied pRaw is + ∞.", ["comparison-axis-1"]],
+    [endpoint, "The supplied pRaw is ＮａＮ.", ["comparison-axis-1"]],
     [endpoint, "The supplied effect size is NaN.", ["comparison-axis-1"]],
     [endpoint, "The supplied primary sample size is NaN.", ["comparison-axis-1"]],
+    [endpoint, "The supplied primary sample size is (NaN).", ["comparison-axis-1"]],
+    [endpoint, "The supplied primary sample size is [NaN].", ["comparison-axis-1"]],
+    [endpoint, "The supplied primary sample size is “NaN”.", ["comparison-axis-1"]],
+    [endpoint, "The supplied primary sample size is `NaN`.", ["comparison-axis-1"]],
     [endpoint, "The supplied sample sizes are NaN.", ["comparison-axis-1"]],
     [repeated, "The supplied Friedman degrees of freedom is infinity.", ["omnibus-axis-1"]],
     [endpoint, "所提供的 p 值為 NaN。", ["comparison-axis-1"]],
+    [endpoint, "所提供的 p 值為「NaN」。", ["comparison-axis-1"]],
     [endpoint, "所提供的主要樣本數為 ∞。", ["comparison-axis-1"]],
+    [endpoint, "所提供的主要樣本數為（∞）。", ["comparison-axis-1"]],
     [endpoint, "所提供的主要样本数为 infinity。", ["comparison-axis-1"]],
     [repeated, "The supplied selectedPeriodIndex is undefined.", ["omnibus-axis-1"]],
     [
@@ -687,10 +699,24 @@ test("protected numeric and method claims bind to every cited inference identity
       ["trajectory-primary-period-2"],
     ],
     [endpoint, "Axis -1 shows the supplied aggregate pattern.", ["comparison-axis-1"]],
+    [endpoint, "Axis -１ shows the supplied aggregate pattern.", ["comparison-axis-1"]],
+    [endpoint, "Axis −１ shows the supplied aggregate pattern.", ["comparison-axis-1"]],
+    [endpoint, "Axis －１ shows the supplied aggregate pattern.", ["comparison-axis-1"]],
+    [endpoint, "For axis-１, the supplied pRaw is 0.1.", ["comparison-axis-1"]],
     [endpoint, "Axes 1 and -2 show the supplied aggregate patterns.", ["comparison-axis-1"]],
     [
       caseById("trajectory-selected-period-mann-whitney"),
       "At period -2, the supplied nUsed is 4.",
+      ["trajectory-primary-period-2"],
+    ],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "At period -２, the supplied nUsed is 4.",
+      ["trajectory-primary-period-2"],
+    ],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "At period −２, the supplied nUsed is 4.",
       ["trajectory-primary-period-2"],
     ],
     [
@@ -712,6 +738,7 @@ test("protected numeric and method claims bind to every cited inference identity
     string,
     readonly string[],
   ]> = [
+    [endpoint, "The null hypothesis remains a design-level framing question.", ["comparison-axis-1"]],
     [endpoint, "The supplied primary sample size is 4.", ["comparison-axis-1"]],
     [endpoint, "The supplied nPrimary is 4.", ["comparison-axis-1"]],
     [endpoint, "所提供的主要樣本數為 4。", ["comparison-axis-1"]],
@@ -867,6 +894,22 @@ test("offline reports and exact V1 receipts are deterministic, deeply frozen, an
     "negative-axis-identity",
     "negative-axis-list-identity",
     "negative-period-identity",
+    "nonfinite-parenthesized-natural-field",
+    "nonfinite-bracketed-natural-field",
+    "nonfinite-curly-quoted-natural-field",
+    "nonfinite-backtick-natural-field",
+    "nonfinite-spaced-positive-infinity",
+    "nonfinite-spaced-negative-infinity",
+    "nonfinite-spaced-positive-infinity-symbol",
+    "nonfinite-traditional-chinese-quoted",
+    "nonfinite-traditional-chinese-fullwidth-parentheses",
+    "nonfinite-fullwidth-latin-token",
+    "unsupported-fullwidth-axis-digit",
+    "unsupported-unicode-minus-fullwidth-axis-digit",
+    "unsupported-fullwidth-minus-axis-digit",
+    "unsupported-adjacent-fullwidth-axis-digit",
+    "unsupported-fullwidth-period-digit",
+    "unsupported-unicode-minus-fullwidth-period-digit",
     "missing-one-visible-inference-ref",
     "missing-all-visible-inference-refs",
     "treatment-improved-learning",
@@ -997,7 +1040,7 @@ test("approval eligibility requires zero failures and both independent human rev
   );
   const staleSuite = parseEnaPromptEvalReceiptV1({
     ...matchingPassFields,
-    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v7",
+    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v8",
   });
   assert.throws(
     () => assertOpenEnaAiPromptEligibleForApproval(staleSuite, draft.contentSha256),

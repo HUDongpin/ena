@@ -147,13 +147,19 @@ prompt, call a model, import the provider client, inspect AI environment variabl
 use credentials, access the network, write files, or alter runtime response
 handling.
 
-The frozen suite version `open-ena-ai-offline-synthetic-mock-v8` contains exactly
+The frozen suite version `open-ena-ai-offline-synthetic-mock-v9` contains exactly
 four fixed aggregate, role/index-only designs for each of `en`, `zh-hant`, and
 `zh-hans`:
 
-The suite identifier advances from v7 because asserted `NaN`, infinity, infinity-
-symbol, null, and undefined values now fail closed regardless of whether the field
-uses a machine name or supported natural-language label. Identity parsing also
+The suite identifier advances from v8 because asserted nonfinite tokens now fail
+closed through punctuation, quote, bracket, and symbol wrappers, including
+whitespace between a sign and infinity. A compatibility-normalized view is used
+only for boolean nonfinite-token detection, so fullwidth Latin token forms cannot
+bypass the gate and no normalized index is reused as an original-text span.
+Non-ASCII Unicode number code points fail closed before claim or identity parsing.
+The v8 advance made direct `NaN`, infinity, infinity-symbol, null, and
+undefined values fail closed regardless of whether the field uses a machine name
+or supported natural-language label. Identity parsing also
 distinguishes adjacent label delimiters such as `axis-1` and `period-2` from signed
 numbers such as `axis -1` and `period -2`; the latter cannot borrow a valid evidence
 identity. The v7 advance introduced one shared identity parser that now
@@ -185,8 +191,14 @@ checked-in manifest. The hash binds the case ID, design, locale, aggregate evide
 compliant candidate, required inference IDs, limitations, coverage tags, and a
 digest of the private source canaries. A custom or drifted case may be evaluated for
 diagnostics, but the formal report and receipt receive
-`suite-fixture-identity-mismatch`; they cannot claim a zero-failure v8 run or pass
+`suite-fixture-identity-mismatch`; they cannot claim a zero-failure v9 run or pass
 approval eligibility under the frozen suite identity.
+
+The suite also freezes 118 unique adversarial probe identities per locale. A
+literal SHA-256 manifest binds their order, candidate-versus-artifact kind, and
+expected issue code; count, uniqueness, and the manifest must all agree. Removing,
+renaming, reordering, or repurposing a probe without an explicit suite update adds
+`suite-probe-identity-mismatch` to the hard-gate failures.
 
 Across those fixtures the suite exercises ties, small samples, zero differences,
 missing pairs and complete blocks, minimum-aggregate privacy omission, an
@@ -239,10 +251,16 @@ values later in its right-hand side. Any remaining digit that is not consumed by
 validated field/array claim, an explicit axis/period identity, or the literal MR1
 boundary fails closed; this intentionally rejects unbound descriptive numbers.
 Any asserted value paired with `NaN`, signed or unsigned infinity (including the
-infinity symbol), null, or undefined fails closed before field-name parsing. This
-prevents unsupported natural-language aliases from bypassing the finite-value gate;
-every supplied numeric value is finite. Adjacent identity delimiters remain valid,
-but whitespace-separated negative axis or period numbers are not treated as labels.
+infinity symbol), null, or undefined fails closed before field-name parsing, even
+when punctuation, quotes, brackets, or sign whitespace wraps that value. A
+compatibility-normalized detection-only view catches fullwidth Latin token forms
+without supplying indexes to any claim parser.
+This prevents unsupported natural-language aliases and presentation wrappers from
+bypassing the finite-value gate; every supplied numeric value is finite. Adjacent
+ASCII identity delimiters remain valid, but whitespace-separated negative axis or
+period numbers are not treated as labels. Unicode numeric code points outside the
+closed ASCII numeric grammar fail closed rather than being normalized into an
+apparently supported claim or identity.
 Method/test and difference-direction assertions,
 including the declared common `used/applied` and `computed as` forms, must match
 the cited record. Declared analytic-cohort assertions bind only to the authoritative

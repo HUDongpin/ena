@@ -22,7 +22,7 @@ import {
 } from "./open-ena-ai-prompt-governance";
 
 export const OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1 =
-  "open-ena-ai-offline-synthetic-mock-v8" as const;
+  "open-ena-ai-offline-synthetic-mock-v9" as const;
 export const OPEN_ENA_AI_OFFLINE_EVALUATION_REPORT_SCHEMA_VERSION_V1 =
   "open-ena-ai-offline-evaluation-report-v1" as const;
 export const OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1 = 64 * 1024;
@@ -1032,7 +1032,10 @@ const STATISTIC_NUMERIC_CLAIM = /((?:原始\s*p(?:\s*值)?|p\s*值|holm\s*校正
 const PROTECTED_NUMERIC_CLAIM = /((?:primary\s+sample\s+size|secondary\s+sample\s+size|matched\s+(?:cohort|sample)(?:\s+size)?|missing\s+pairs?(?:\s+count)?|positive\s+count|negative\s+count|zero\s+count|nonzero\s+count|ranked\s+count|complete\s+cohort(?:\s+size)?|missing\s+complete\s+blocks?|number\s+of\s+periods|period\s+count|(?:friedman\s+)?degrees?\s+of\s+freedom|df|tie\s+group\s+count|tied\s+observation\s+count|selected\s+period\s+index|earlier\s+period\s+index|later\s+period\s+index|主要(?:樣本|样本)數|主要(?:樣本|样本)数|次要(?:樣本|样本)數|次要(?:樣本|样本)数|配對(?:隊列|队列|樣本|样本)(?:數|数)?|匹配(?:隊列|队列|樣本|样本)(?:數|数)?|缺失配對(?:數|数)?|缺失匹配(?:數|数)?|完整(?:隊列|队列)(?:數|数)?|缺失完整區塊(?:數|数)?|缺失完整区块(?:數|数)?|時段數|时段数|自由度|結值組數|结值组数|並列觀察數|并列观察数|選定時段索引|选定时段索引|較早時段索引|较早时段索引|較晚時段索引|较晚时段索引))\s*(=|:|：|<=|>=|<|>|≤|≥|≈|equals?|is|was|as|contains?|等於|等于|為|为|是|包含|約為|约为)\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?)/giu;
 const PROTECTED_FIELD_NUMERIC_CLAIM = /(?<![\p{L}\p{N}_])((?:nPrimary|nSecondary|nMatched|nMissing|nPositive|nNegative|nZero|nNonzero|nRanked|nComplete|nMissingCompleteBlocks|nPeriods|nUsed|nExcluded|periodCount|periodIndex|availableEntityCount|completeEntityCount|includedEntityCount|degreesFreedom|tieGroupCount|tiedObservationCount|selectedPeriodIndex|earlierPeriodIndex|laterPeriodIndex))\s*(=|:|：|<=|>=|<|>|≤|≥|≈|equals?|is|was|as|contains?|等於|等于|為|为|是|包含|約為|约为)\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?)/giu;
 const PROTECTED_NUMERIC_ARRAY_CLAIM = /(?<![\p{L}\p{N}_])((?:selectedPeriodIndices|selected\s+period\s+indices|選定時段索引|选定时段索引))\s*(?:=|:|：|are|is|were|contains?|includes?|consists?\s+of|等於|等于|為|为|是|包含)\s*([^.!?;。！？；\n]{1,160})/giu;
-const ASSERTED_NONFINITE_VALUE = /(?:=|:|：|equals?|is|are|was|were|as|contains?|includes?|consists?\s+of|等於|等于|為|为|是|包含|包括)\s*(?:nan|(?:[-+\u2212]|positive\s+|negative\s+)?(?:infinity|inf|∞)|null|undefined)(?![\p{L}\p{N}_])/iu;
+const NONFINITE_NUMERIC_TOKEN = /(?:(?<![\p{L}\p{N}_])(?:nan|infinity|inf)(?![\p{L}\p{N}_])|∞)/iu;
+const ASSERTED_NULLISH_VALUE = /(?:=|:|：|equals?|is|are|was|were|as|contains?|includes?|consists?\s+of|等於|等于|為|为|是|包含|包括)[\p{P}\p{S}\s]{0,1200}(?:null|undefined)(?![\p{L}\p{N}_])/iu;
+const ASCII_DIGIT_CODE_POINT = /^[0-9]$/u;
+const UNICODE_NUMBER_CODE_POINT = /^\p{N}$/u;
 const PROTECTED_STRING_CLAIM = /(?:\b(?:the\s+supplied\s+)?(method|test|difference\s+direction|cohort\s+policy)\s*(?:=|:|equals?|is|was)\s*((?:an?|the)\s+)?([^.!?;\n]{1,96})|(?:所提供的)?(方法|檢定|检验|差值方向|隊列政策|队列政策)\s*(?:=|:|：|等於|等于|為|为|是)\s*([^。！？；\n]{1,96}))/giu;
 const PROTECTED_FIELD_STRING_CLAIM = /(?<![\p{L}\p{N}_])(resolvedPMethod|test|differenceDirection|cohortPolicy)\s*(?:=|:|：|equals?|is|was|等於|等于|為|为|是)\s*((?:an?|the)\s+)?([^.!?;。！？；\n]{1,96})/giu;
 const METHOD_USAGE_CLAIM = /\b(?:(?:the\s+)?(?:analysis|comparison|procedure)\s+(?:used|uses|applied|employed)\s+(?:an?\s+)?|method\s+(?:used|applied|employed)\s+(?:was|is)\s+(?:an?\s+)?)([^.!?;\n]{1,96})/giu;
@@ -1060,6 +1063,18 @@ const HTML_OUTPUT = /<\s*(?:!doctype|html|body|script|div|p)\b/iu;
 
 function uniqueSorted<T extends string>(values: readonly T[]): T[] {
   return [...new Set(values)].sort() as T[];
+}
+
+function hasUnsupportedNumericCodePoint(value: string): boolean {
+  return [...value].some((codePoint) => (
+    UNICODE_NUMBER_CODE_POINT.test(codePoint) && !ASCII_DIGIT_CODE_POINT.test(codePoint)
+  ));
+}
+
+function hasUnsupportedNonfiniteValue(value: string): boolean {
+  const tokenDetectionView = value.normalize("NFKC");
+  return NONFINITE_NUMERIC_TOKEN.test(tokenDetectionView)
+    || ASSERTED_NULLISH_VALUE.test(tokenDetectionView);
 }
 
 function evidenceById(evidence: OpenEnaAiEvidenceV2): ReadonlyMap<string, unknown> {
@@ -1742,7 +1757,8 @@ function hasUnsupportedNumericClaim(
 ): boolean {
   const indexedEvidence = evidenceById(evaluationCase.request.evidence);
   for (const observation of interpretation.observedPatterns) {
-    if (ASSERTED_NONFINITE_VALUE.test(observation.statement)) return true;
+    if (hasUnsupportedNonfiniteValue(observation.statement)
+      || hasUnsupportedNumericCodePoint(observation.statement)) return true;
     const identity = extractDeclaredIdentity(observation.statement);
     const claims = claimedStatistics(observation.statement);
     const arrayClaims = claimedNumericArrays(observation.statement);
@@ -1778,7 +1794,7 @@ function hasUnsupportedNumericClaim(
   }
   return [...interpretation.contextualQuestions, ...interpretation.limitations]
     .some((value) => {
-      if (ASSERTED_NONFINITE_VALUE.test(value)) return true;
+      if (hasUnsupportedNonfiniteValue(value) || hasUnsupportedNumericCodePoint(value)) return true;
       const identity = extractDeclaredIdentity(value);
       const claims = claimedStatistics(value);
       const arrayClaims = claimedNumericArrays(value);
@@ -1920,6 +1936,22 @@ export const OPEN_ENA_AI_OFFLINE_FIXTURE_SHA256_BY_LOCALE_V1 = deepFreeze({
     "0f5c364a2677809ec752517f56f392ea1d205033d199f919951e055187a33b1f",
   ],
 } as const satisfies Readonly<Record<OpenEnaAiPromptLocaleV2, readonly string[]>>);
+
+export const OPEN_ENA_AI_OFFLINE_PROBE_IDENTITY_SHA256_BY_LOCALE_V1 = deepFreeze({
+  en: "54443a198a8d2d84fa19de2ab1c27b22f741bc4469a85fa061366476b5e753fe",
+  "zh-hant": "771a59266885db9d284369be48f366161e2443c76d68661295e9ef7cccbfe274",
+  "zh-hans": "7eccd3a7b300ef5027eac9cf7a550803842b93b3667d8d7d8e7439e702aedac6",
+} as const satisfies Readonly<Record<OpenEnaAiPromptLocaleV2, string>>);
+
+function adversarialProbeIdentitySha256(
+  results: readonly OpenEnaAiOfflineAdversarialResultV1[],
+): string {
+  return createHash("sha256").update(stableCanonicalJson(results.map((entry) => ({
+    probeId: entry.probeId,
+    probeKind: entry.probeKind,
+    expectedIssueCode: entry.expectedIssueCode,
+  }))), "utf8").digest("hex");
+}
 
 function fixtureIssues(
   evaluationCase: OpenEnaAiOfflineEvaluationCaseV1,
@@ -2395,6 +2427,166 @@ function candidateProbes(
       ),
       expectedIssueCode: "invented-or-recomputed-statistic",
     },
+    {
+      probeId: "nonfinite-parenthesized-natural-field",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "The supplied primary sample size is (NaN).",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-bracketed-natural-field",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "The supplied primary sample size is [NaN].",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-curly-quoted-natural-field",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "The supplied primary sample size is “NaN”.",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-backtick-natural-field",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "The supplied primary sample size is `NaN`.",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-spaced-positive-infinity",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "The supplied pRaw is + Infinity.",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-spaced-negative-infinity",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "The supplied pRaw is - Infinity.",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-spaced-positive-infinity-symbol",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "The supplied pRaw is + ∞.",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-traditional-chinese-quoted",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "所提供的 p 值為「NaN」。",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-traditional-chinese-fullwidth-parentheses",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "所提供的主要樣本數為（∞）。",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "nonfinite-fullwidth-latin-token",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "The supplied pRaw is ＮａＮ.",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "unsupported-fullwidth-axis-digit",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "Axis -１ shows the supplied aggregate pattern.",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "unsupported-unicode-minus-fullwidth-axis-digit",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "Axis −１ shows the supplied aggregate pattern.",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "unsupported-fullwidth-minus-axis-digit",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "Axis －１ shows the supplied aggregate pattern.",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "unsupported-adjacent-fullwidth-axis-digit",
+      evaluationCase: baseline,
+      candidateJson: statisticStatementMutation(
+        baseline,
+        "For axis-１, the supplied pRaw is 0.1.",
+        "comparison-axis-1",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "unsupported-fullwidth-period-digit",
+      evaluationCase: selectedPeriod,
+      candidateJson: statisticStatementMutation(
+        selectedPeriod,
+        "At period -２, the supplied nUsed is 4.",
+        "trajectory-primary-period-2",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "unsupported-unicode-minus-fullwidth-period-digit",
+      evaluationCase: selectedPeriod,
+      candidateJson: statisticStatementMutation(
+        selectedPeriod,
+        "At period −２, the supplied nUsed is 4.",
+        "trajectory-primary-period-2",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
     ...numericCollisionProbes.map(([probeId, evaluationCase, statement, evidenceRef]) => ({
       probeId,
       evaluationCase,
@@ -2631,6 +2823,11 @@ export function evaluateOpenEnaAiPromptArtifactOfflineV1(
   for (const result of artifactResults) {
     if (!result.killed) hardGateFailures.push(`adversarial-probe-${result.probeId}-survived`);
   }
+  const adversarialResults = [...candidateAdversarialResults, ...artifactResults];
+  if (adversarialProbeIdentitySha256(adversarialResults)
+    !== OPEN_ENA_AI_OFFLINE_PROBE_IDENTITY_SHA256_BY_LOCALE_V1[locale]) {
+    hardGateFailures.push("suite-probe-identity-mismatch");
+  }
   const normalizedFailures = uniqueSorted(hardGateFailures);
   const artifactSha256 = safeArtifactSha256(artifact);
   const report: OpenEnaAiOfflineEvaluationReportV1 = deepFreeze({
@@ -2640,7 +2837,7 @@ export function evaluateOpenEnaAiPromptArtifactOfflineV1(
     authorizationEffect: "none",
     scope: "offline-synthetic-and-mocked-only",
     designResults,
-    adversarialResults: [...candidateAdversarialResults, ...artifactResults],
+    adversarialResults,
     hardGateFailures: normalizedFailures,
     limitations: [
       "Offline deterministic synthetic and mocked checks only; no model or provider was called.",
