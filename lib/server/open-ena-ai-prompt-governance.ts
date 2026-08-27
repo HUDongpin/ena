@@ -433,6 +433,19 @@ function text(
   return normalized;
 }
 
+function byteExactText(
+  value: unknown,
+  label: string,
+  maximumLength = 256,
+  allowNewlines = false,
+): string {
+  const normalized = text(value, label, maximumLength, allowNewlines);
+  if (value !== normalized) {
+    throw new Error(`${label} must already be byte-exact, trimmed, and NFC-normalized.`);
+  }
+  return normalized;
+}
+
 function enumText<const Values extends readonly string[]>(
   value: unknown,
   values: Values,
@@ -628,7 +641,7 @@ export function parseEnaPromptArtifactV1(value: unknown): EnaPromptArtifactV1 {
     compilerVersion: text(input.compilerVersion, "compilerVersion"),
     sourceSpecVersion: text(input.sourceSpecVersion, "sourceSpecVersion"),
     contentSha256: sha256(input.contentSha256, "contentSha256"),
-    systemPrompt: text(input.systemPrompt, "systemPrompt", 32_768, true),
+    systemPrompt: byteExactText(input.systemPrompt, "systemPrompt", 32_768, true),
     responseJsonSchema: exactResponseJsonSchema(input.responseJsonSchema),
     approvalStatus: enumText(
       input.approvalStatus,
@@ -898,23 +911,48 @@ function inspectEnaPromptSpecV1(value: unknown): EnaPromptSpecInspectionV1 {
 }
 
 function inspectEnaPromptArtifactV1(value: unknown): EnaPromptArtifactInspectionV1 {
+  const systemPromptDescriptor = value !== null && typeof value === "object"
+    ? Object.getOwnPropertyDescriptor(value, "systemPrompt")
+    : undefined;
+  let rawSystemPromptMismatch = false;
+  if (systemPromptDescriptor && "value" in systemPromptDescriptor
+    && typeof systemPromptDescriptor.value === "string") {
+    try {
+      byteExactText(systemPromptDescriptor.value, "systemPrompt", 32_768, true);
+    } catch {
+      rawSystemPromptMismatch = true;
+    }
+  }
+  const rawSystemPromptIssues = rawSystemPromptMismatch
+    ? [hardGateIssue(
+        "system-prompt-mismatch",
+        "systemPrompt",
+        "The artifact system prompt must preserve the byte-exact compiler-owned text.",
+      )]
+    : [];
   const safe = safeClosedRecordSnapshot(
     value,
     ARTIFACT_KEYS,
     "ENA prompt artifact",
     "malformed-artifact",
   );
-  if (safe.snapshot === null) return safe as EnaPromptArtifactInspectionV1;
+  if (safe.snapshot === null) {
+    return deepFreeze({
+      snapshot: null,
+      issues: [...safe.issues, ...rawSystemPromptIssues],
+    });
+  }
   try {
     return deepFreeze({
       snapshot: parseEnaPromptArtifactV1(safe.snapshot),
-      issues: safe.issues,
+      issues: [...safe.issues, ...rawSystemPromptIssues],
     });
   } catch {
     return deepFreeze({
       snapshot: safe.snapshot as unknown as EnaPromptArtifactV1,
       issues: [
         ...safe.issues,
+        ...rawSystemPromptIssues,
         hardGateIssue(
           "malformed-artifact",
           "$",
@@ -954,7 +992,7 @@ export function computeEnaPromptArtifactContentSha256V1(
     compilerVersion: text(artifact.compilerVersion, "compilerVersion"),
     sourceSpecVersion: text(artifact.sourceSpecVersion, "sourceSpecVersion"),
     sourceSpec: normalizedSpec,
-    systemPrompt: text(artifact.systemPrompt, "systemPrompt", 32_768, true),
+    systemPrompt: byteExactText(artifact.systemPrompt, "systemPrompt", 32_768, true),
     responseJsonSchema: cloneStrictJson(artifact.responseJsonSchema, "responseJsonSchema"),
   };
   return createHash("sha256").update(stableCanonicalJson(behaviorPayload), "utf8").digest("hex");

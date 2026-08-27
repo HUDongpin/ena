@@ -388,6 +388,46 @@ test("the content hash binds canonical behavior but excludes independent approva
   );
 });
 
+test("artifact parsing, hashing, and linting reject raw prompt byte normalization or boundary whitespace drift", () => {
+  const baseline = compileOpenEnaAiPromptArtifactV1(OPEN_ENA_AI_PROMPT_SPEC_V1, "en");
+  const promptDrifts: Array<[string, string]> = [
+    ["leading-space", ` ${baseline.systemPrompt}`],
+    ["trailing-space", `${baseline.systemPrompt} `],
+    ["leading-newline", `\n${baseline.systemPrompt}`],
+    ["trailing-newline", `${baseline.systemPrompt}\n`],
+    ["non-nfc", `${baseline.systemPrompt}\ne\u0301`],
+  ];
+
+  for (const [driftId, systemPrompt] of promptDrifts) {
+    const artifact = { ...baseline, systemPrompt };
+    assert.throws(
+      () => parseEnaPromptArtifactV1(artifact),
+      /systemPrompt.*(?:byte-exact|trimmed|NFC)/i,
+      driftId,
+    );
+    assert.throws(
+      () => computeEnaPromptArtifactContentSha256V1(
+        OPEN_ENA_AI_PROMPT_SPEC_V1,
+        artifact,
+      ),
+      /systemPrompt.*(?:byte-exact|trimmed|NFC)/i,
+      driftId,
+    );
+    const issues = lintEnaPromptArtifactV1(OPEN_ENA_AI_PROMPT_SPEC_V1, artifact, "en");
+    assert.ok(issues.some((issue) => issue.code === "system-prompt-mismatch"), driftId);
+    assert.throws(
+      () => assertEnaPromptArtifactV1(OPEN_ENA_AI_PROMPT_SPEC_V1, artifact, "en"),
+      /system-prompt-mismatch/i,
+      driftId,
+    );
+  }
+
+  assert.equal(
+    compileOpenEnaAiPromptArtifactV1(OPEN_ENA_AI_PROMPT_SPEC_V1, "en").contentSha256,
+    OPEN_ENA_AI_APPROVED_ARTIFACT_SHA256_BY_LOCALE_V2.en,
+  );
+});
+
 test("the spec linter fails every unsupported P1 compatibility or capability mutation", () => {
   const mutations: Array<[Record<string, unknown>, string]> = [
     [{ compatibleRequestSchemaVersions: ["open-ena-ai-interpretation-request-v1"] }, "request-schema-incompatible"],

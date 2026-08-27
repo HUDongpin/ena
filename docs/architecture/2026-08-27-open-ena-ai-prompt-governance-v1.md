@@ -74,6 +74,12 @@ after parser normalization. The behavior payload contains:
 - the byte-exact system prompt; and
 - the strict base response JSON Schema.
 
+The artifact parser and hash boundary require the system-prompt string to arrive
+already NFC-normalized and without added leading or trailing whitespace. They do
+not trim or normalize prompt drift into the approved value. Consequently a leading
+or trailing space/newline, decomposed Unicode sequence, or any other prompt-byte
+change is rejected and cannot inherit the baseline behavior identity.
+
 Approval status is deliberately excluded. Moving an artifact between draft,
 evaluated, approved, or revoked does not change its behavior identity. Any prompt,
 schema, compatibility, policy, or token-budget change does change the hash.
@@ -141,14 +147,26 @@ prompt, call a model, import the provider client, inspect AI environment variabl
 use credentials, access the network, write files, or alter runtime response
 handling.
 
-The frozen suite version `open-ena-ai-offline-synthetic-mock-v1` contains exactly
+The frozen suite version `open-ena-ai-offline-synthetic-mock-v2` contains exactly
 four fixed aggregate, role/index-only designs:
+
+The suite identifier advances from v1 because typed numeric fidelity, complete
+visible-inference coverage, lexical probes, and byte-boundary probes change the
+meaning of an automated pass. The report and six-field receipt contracts remain
+V1; only receipts from the current suite are eligible for later human review.
 
 1. endpoint independent Mann-Whitney comparison;
 2. trajectory selected-period independent Mann-Whitney comparison;
 3. paired two-period Wilcoxon comparison with `later-minus-earlier` direction; and
 4. repeated-period Friedman comparison with every planned Holm-Wilcoxon follow-up
    represented either as visible aggregate evidence or an explicit omission.
+
+Each fixture freezes the exact IDs of its visible inferential members. A compliant
+offline candidate must represent every one of those IDs through
+`observedPatterns[*].evidenceRefs`; an empty pattern list or a partial repeated-
+measures family fails. Privacy-redacted or unavailable family members are cited
+only through their supplied omission records, which carry no hidden statistic,
+p-value, or effect.
 
 Across those fixtures the suite exercises ties, small samples, zero differences,
 missing pairs and complete blocks, minimum-aggregate privacy omission, an
@@ -159,24 +177,30 @@ and request-local ID fields: they contain no hidden p-value, effect, rank sum, o
 statistic. Its compliant response must state that the complete Holm vector cannot
 be reconstructed after privacy redaction.
 
-Each compliant canned interpretation first passes the production v2 response
-parser, including strict object shape, nonempty limitations, and request-local
-evidence references. Adversarial canned outputs cover forged evidence IDs, missing
-limitations, extra or invalid fields, HTML, invalid JSON, excessive size,
-overlong strings and arrays, recomputation language, invented or altered
-statistics, causal/outcome claims, sensitive-data requests or echoes, and
-prompt-injection following or echo. Artifact probes separately cover a one-byte
-prompt change, stale hash, stale prompt version, and response-schema drift.
+Each compliant canned interpretation is an explicitly offline test fixture; no
+canned answer exists in the production prompt or any model run. Every such fixture
+first passes the production v2 response parser, including strict object shape,
+nonempty limitations, and request-local evidence references. Adversarial canned
+outputs cover forged evidence IDs, missing limitations, extra or invalid fields,
+HTML, invalid JSON, excessive size, overlong strings and arrays, recomputation
+language, invented or altered statistics, incomplete visible-inference coverage,
+causal/outcome claims, sensitive-data requests or echoes, and prompt-injection
+following or echo. Artifact probes separately cover a one-byte prompt change,
+leading/trailing spaces and newlines, non-NFC prompt text, stale hash, stale prompt
+version, and response-schema drift.
 
 The follow-on semantic check is intentionally conservative and English-only. An
 explicit claim to have recomputed a statistic fails even when the stated value was
-supplied. A numerical statistical restatement is accepted only when its finite
-value occurs in the specifically cited evidence object; an uncited or absent value
-fails. The checker also uses bounded lexical patterns for causal, learning-gain,
-improvement, treatment-effect, practical-importance, sensitive-data, and injection
-claims, plus explicit limitation-concept checks. This is a deterministic guardrail,
-not semantic understanding: paraphrases can evade it, benign prose can trigger it,
-and a pass does not demonstrate live-model obedience, scientific correctness, or
+supplied. A numerical statistical restatement is accepted only when its statistic
+label maps to the matching authoritative field in specifically cited evidence
+(for example, `pRaw` cannot borrow `pHolm`, sample size, tie count, or a period
+index). An uncited, absent, or cross-field value fails. The checker also uses
+bounded sentence-level lexical patterns for causal, learning-gain, improvement,
+treatment-effect, practical-importance, sensitive-data, and injection claims,
+plus narrow negation handling and explicit limitation-concept checks. This is a
+deterministic guardrail, not semantic understanding: paraphrases can evade it,
+more complex negation can be misclassified, benign prose can trigger it, and a
+pass does not demonstrate live-model obedience, scientific correctness, or
 natural-response quality. It is deliberately not installed in production response
 handling in P2.
 
@@ -200,10 +224,15 @@ canonical JSON.
 empty `hardGateFailures` array, but its receipts always set `scientificReview` and
 `privacySecurityReview` to `pending`; automated execution has no authority to fill
 human review evidence. `assertOpenEnaAiPromptEligibleForApproval` is a separate
-validate-or-throw helper requiring zero automated failures and both independent
-reviews to be `pass`. It accepts no registry and performs no mutation, promotion,
-or approval write. Eligibility is necessary evidence for a future approval
-decision, never the decision itself.
+validate-or-throw helper requiring the receipt to match an explicitly expected
+artifact SHA-256, the current frozen offline suite version, zero automated
+failures, and both independent reviews to be `pass`. It accepts no registry and
+performs no mutation, promotion, or approval write. A stale-suite receipt or a
+receipt for another artifact is ineligible. This helper checks receipt fields; it
+does not authenticate who performed a review or establish receipt provenance, so
+a matching pass/pass object remains only candidate evidence for an independently
+authorized approval process. Eligibility is necessary evidence for a future
+approval decision, never the decision itself.
 
 Draft and approved artifacts with the same behavior hash evaluate identically.
 Evaluation metadata is excluded from content identity, and evaluation never grants
@@ -250,7 +279,7 @@ and is normative for this implementation.
 | Acceptance criteria, allowed action, failure recovery, and stop boundaries | ENA-specific rewrite | Encode deterministic checks and fail-closed tests. Provider dispatch stops on unknown versions/locales, malformed artifacts, non-approved status, or hash drift. |
 | External branding, named personas, or ornamental template identity | Delete / default off | No third-party brand or persona becomes part of the ENA artifact, registry, evaluation receipt, or provider request. |
 | XML wrappers, Markdown fences, and ceremonial completion markers | Delete / default off | Strict JSON is the only runtime output format; the linter rejects wrapper and completion-marker instructions. |
-| Fixed candidate answers, model self-scoring, or simulated review/run claims | Delete / default off | Evaluation must produce separately inspectable evidence. It cannot embed a predetermined answer, claim a run that did not occur, or approve its own output. |
+| Fixed candidate answers, model self-scoring, or simulated review/run claims | Delete / default off | The production prompt and model-run path contain no predetermined or canned answer. Deterministic compliant and adversarial answers exist only as labeled offline fixtures; they cannot be presented as model output, claim a run that did not occur, or approve themselves. |
 | Implicit scientific authority or review-as-approval | Delete / default off | Scientific and privacy/security review remain human-controlled evidence states, and explicit artifact approval remains a separate registry decision. |
 
 Licensing and provenance are preserve-first boundaries: no wording, branded
