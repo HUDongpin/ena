@@ -22,7 +22,7 @@ import {
 } from "./open-ena-ai-prompt-governance";
 
 export const OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1 =
-  "open-ena-ai-offline-synthetic-mock-v3" as const;
+  "open-ena-ai-offline-synthetic-mock-v4" as const;
 export const OPEN_ENA_AI_OFFLINE_EVALUATION_REPORT_SCHEMA_VERSION_V1 =
   "open-ena-ai-offline-evaluation-report-v1" as const;
 export const OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1 = 64 * 1024;
@@ -1029,6 +1029,10 @@ const LIMITATION_MATCHERS: Readonly<Record<OpenEnaAiOfflineLimitationCodeV1, (te
 
 const EXPLICIT_RECOMPUTATION = /(?:\b(?:i|we|the assistant)\s+(?:recomputed?|recalculated?|calculated|computed|derived)\b[^.]{0,120}\b(?:statistic|p-value|p value|effect|rank-biserial|u|w|t|q|kendall)\b|(?:我|我們|我们|助手)[^。！？\n]{0,20}(?:重新計算|重新计算|重算|計算|计算|推導|推导)[^。！？\n]{0,120}(?:統計量|统计量|p\s*值|效應量|效应量|秩二列|肯德爾|肯德尔|[uwtq]\s*值?))/iu;
 const STATISTIC_NUMERIC_CLAIM = /((?:原始\s*p(?:\s*值)?|p\s*值|holm\s*校正\s*p(?:\s*值)?|[uwtq]\s*值|肯德[爾尔]\s*w|秩(?:二|雙|双)列(?:相關|相关)?|效[應应]量)|(?<![\p{L}\p{N}_])(?:p(?:\s*-?\s*value|\s*raw|\s*holm)?|raw\s*p(?:\s*-?\s*value)?|holm(?:\s*adjusted)?\s*p(?:\s*-?\s*value)?|u(?:\s*(?:primary|secondary))?|w(?:\s*(?:positive|negative))?|[tq]|kendall(?:['’]s)?\s*w|rank[-\s]?biserial|effect(?:\s+size)?))\s*(=|:|：|<=|>=|<|>|≤|≥|≈|equals?|is|was|as|等於|等于|為|为|是|約為|约为)\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?)/giu;
+const PROTECTED_NUMERIC_CLAIM = /((?:primary\s+sample\s+size|secondary\s+sample\s+size|matched\s+(?:cohort|sample)(?:\s+size)?|missing\s+pairs?(?:\s+count)?|positive\s+count|negative\s+count|zero\s+count|nonzero\s+count|ranked\s+count|complete\s+cohort(?:\s+size)?|missing\s+complete\s+blocks?|number\s+of\s+periods|period\s+count|(?:friedman\s+)?degrees?\s+of\s+freedom|df|tie\s+group\s+count|tied\s+observation\s+count|selected\s+period\s+index|earlier\s+period\s+index|later\s+period\s+index|主要(?:樣本|样本)數|主要(?:樣本|样本)数|次要(?:樣本|样本)數|次要(?:樣本|样本)数|配對(?:隊列|队列|樣本|样本)(?:數|数)?|匹配(?:隊列|队列|樣本|样本)(?:數|数)?|缺失配對(?:數|数)?|缺失匹配(?:數|数)?|完整(?:隊列|队列)(?:數|数)?|缺失完整區塊(?:數|数)?|缺失完整区块(?:數|数)?|時段數|时段数|自由度|結值組數|结值组数|並列觀察數|并列观察数|選定時段索引|选定时段索引|較早時段索引|较早时段索引|較晚時段索引|较晚时段索引))\s*(=|:|：|<=|>=|<|>|≤|≥|≈|equals?|is|was|as|contains?|等於|等于|為|为|是|包含|約為|约为)\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?)/giu;
+const PROTECTED_FIELD_NUMERIC_CLAIM = /(?<![\p{L}\p{N}_])((?:nPrimary|nSecondary|nMatched|nMissing|nPositive|nNegative|nZero|nNonzero|nRanked|nComplete|nMissingCompleteBlocks|nPeriods|degreesFreedom|tieGroupCount|tiedObservationCount|selectedPeriodIndices?|earlierPeriodIndex|laterPeriodIndex))\s*(=|:|：|<=|>=|<|>|≤|≥|≈|equals?|is|was|as|contains?|等於|等于|為|为|是|包含|約為|约为)\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?)/giu;
+const PROTECTED_STRING_CLAIM = /(?:\b(?:the\s+supplied\s+)?(method|test|difference\s+direction|cohort\s+policy)\s*(?:=|:|equals?|is|was)\s*((?:an?|the)\s+)?([^.!?;\n]{1,96})|(?:所提供的)?(方法|檢定|检验|差值方向|隊列政策|队列政策)\s*(?:=|:|：|等於|等于|為|为|是)\s*([^。！？；\n]{1,96}))/giu;
+const PROTECTED_FIELD_STRING_CLAIM = /(?<![\p{L}\p{N}_])(resolvedPMethod|test|differenceDirection|cohortPolicy)\s*(?:=|:|：|equals?|is|was|等於|等于|為|为|是)\s*((?:an?|the)\s+)?([^.!?;。！？；\n]{1,96})/giu;
 const PROHIBITED_SCIENTIFIC_PATTERNS = [
   /\bcaus(?:ed|es|ing)\b/giu,
   /\bcausal effect\b/giu,
@@ -1063,7 +1067,7 @@ function evidenceById(evidence: OpenEnaAiEvidenceV2): ReadonlyMap<string, unknow
   return new Map(entries.map((entry) => [entry.id, entry]));
 }
 
-type SupportedStatisticFieldV1 =
+type SupportedNumericFieldV1 =
   | "pRaw"
   | "pHolm"
   | "uPrimary"
@@ -1074,15 +1078,33 @@ type SupportedStatisticFieldV1 =
   | "q"
   | "kendallsW"
   | "rankBiserialPrimaryVsSecondary"
-  | "rankBiserialLaterVsEarlier";
+  | "rankBiserialLaterVsEarlier"
+  | "nPrimary"
+  | "nSecondary"
+  | "nMatched"
+  | "nMissing"
+  | "nPositive"
+  | "nNegative"
+  | "nZero"
+  | "nNonzero"
+  | "nRanked"
+  | "nComplete"
+  | "nMissingCompleteBlocks"
+  | "nPeriods"
+  | "degreesFreedom"
+  | "tieGroupCount"
+  | "tiedObservationCount"
+  | "selectedPeriodIndices"
+  | "earlierPeriodIndex"
+  | "laterPeriodIndex";
 
 interface StatisticClaimV1 {
-  readonly authoritativeFields: readonly SupportedStatisticFieldV1[];
+  readonly authoritativeFields: readonly SupportedNumericFieldV1[];
   readonly relation: "equal" | "less-than" | "less-than-or-equal" | "greater-than" | "greater-than-or-equal" | "approximately";
   readonly value: number;
 }
 
-function authoritativeStatisticFields(label: string): readonly SupportedStatisticFieldV1[] {
+function authoritativeStatisticFields(label: string): readonly SupportedNumericFieldV1[] {
   switch (label.toLowerCase().replaceAll(/[\s'’_-]/gu, "")) {
     case "p":
     case "pvalue":
@@ -1143,6 +1165,114 @@ function authoritativeStatisticFields(label: string): readonly SupportedStatisti
         "rankBiserialLaterVsEarlier",
         "kendallsW",
       ];
+    case "primarysamplesize":
+    case "nprimary":
+    case "主要樣本數":
+    case "主要样本數":
+    case "主要樣本数":
+    case "主要样本数":
+      return ["nPrimary"];
+    case "secondarysamplesize":
+    case "nsecondary":
+    case "次要樣本數":
+    case "次要样本數":
+    case "次要樣本数":
+    case "次要样本数":
+      return ["nSecondary"];
+    case "matchedcohort":
+    case "matchedcohortsize":
+    case "matchedsample":
+    case "matchedsamplesize":
+    case "nmatched":
+    case "配對隊列":
+    case "配對隊列數":
+    case "配对队列":
+    case "配对队列数":
+    case "配對樣本":
+    case "配對樣本數":
+    case "配对样本":
+    case "配对样本数":
+    case "匹配隊列":
+    case "匹配隊列數":
+    case "匹配队列":
+    case "匹配队列数":
+    case "匹配樣本":
+    case "匹配樣本數":
+    case "匹配样本":
+    case "匹配样本数":
+      return ["nMatched"];
+    case "missingpair":
+    case "missingpairs":
+    case "missingpaircount":
+    case "nmissing":
+    case "缺失配對":
+    case "缺失配對數":
+    case "缺失配对":
+    case "缺失配对数":
+    case "缺失匹配":
+    case "缺失匹配數":
+    case "缺失匹配数":
+      return ["nMissing"];
+    case "positivecount":
+    case "npositive": return ["nPositive"];
+    case "negativecount":
+    case "nnegative": return ["nNegative"];
+    case "zerocount":
+    case "nzero": return ["nZero"];
+    case "nonzerocount":
+    case "nnonzero": return ["nNonzero"];
+    case "rankedcount":
+    case "nranked": return ["nRanked"];
+    case "completecohort":
+    case "completecohortsize":
+    case "ncomplete":
+    case "完整隊列":
+    case "完整隊列數":
+    case "完整队列":
+    case "完整队列数":
+      return ["nComplete"];
+    case "missingcompleteblock":
+    case "missingcompleteblocks":
+    case "nmissingcompleteblocks":
+    case "缺失完整區塊":
+    case "缺失完整區塊數":
+    case "缺失完整区块":
+    case "缺失完整区块数":
+      return ["nMissingCompleteBlocks"];
+    case "numberofperiods":
+    case "periodcount":
+    case "nperiods":
+    case "時段數":
+    case "时段数":
+      return ["nPeriods"];
+    case "friedmandegreesoffreedom":
+    case "degreeoffreedom":
+    case "degreesoffreedom":
+    case "degreesfreedom":
+    case "df":
+    case "自由度":
+      return ["degreesFreedom"];
+    case "tiegroupcount":
+    case "結值組數":
+    case "结值组数":
+      return ["tieGroupCount"];
+    case "tiedobservationcount":
+    case "並列觀察數":
+    case "并列观察数":
+      return ["tiedObservationCount"];
+    case "selectedperiodindex":
+    case "selectedperiodindices":
+    case "選定時段索引":
+    case "选定时段索引":
+      return ["selectedPeriodIndices"];
+    case "earlierperiodindex":
+    case "較早時段索引":
+    case "较早时段索引":
+      return ["earlierPeriodIndex"];
+    case "laterperiodindex":
+    case "較晚時段索引":
+    case "较晚时段索引":
+      return ["laterPeriodIndex"];
     default:
       return [];
   }
@@ -1170,7 +1300,11 @@ function statisticRelation(value: string): StatisticClaimV1["relation"] {
 }
 
 function claimedStatistics(text: string): StatisticClaimV1[] {
-  return [...text.matchAll(STATISTIC_NUMERIC_CLAIM)]
+  return [
+    ...text.matchAll(STATISTIC_NUMERIC_CLAIM),
+    ...text.matchAll(PROTECTED_NUMERIC_CLAIM),
+    ...text.matchAll(PROTECTED_FIELD_NUMERIC_CLAIM),
+  ]
     .map((match) => ({
       authoritativeFields: authoritativeStatisticFields(match[1]),
       relation: statisticRelation(match[2]),
@@ -1179,16 +1313,22 @@ function claimedStatistics(text: string): StatisticClaimV1[] {
     .filter((claim) => claim.authoritativeFields.length > 0 && Number.isFinite(claim.value));
 }
 
-function ownFiniteStatistic(
+function ownFiniteStatisticValues(
   evidence: unknown,
-  field: SupportedStatisticFieldV1,
-): number | undefined {
-  if (evidence === null || typeof evidence !== "object") return undefined;
+  field: SupportedNumericFieldV1,
+): readonly number[] {
+  if (evidence === null || typeof evidence !== "object") return [];
   const descriptor = Object.getOwnPropertyDescriptor(evidence, field);
-  return descriptor && "value" in descriptor
-    && typeof descriptor.value === "number" && Number.isFinite(descriptor.value)
-    ? descriptor.value
-    : undefined;
+  if (!descriptor || !("value" in descriptor)) return [];
+  if (typeof descriptor.value === "number" && Number.isFinite(descriptor.value)) {
+    return [descriptor.value];
+  }
+  if (field === "selectedPeriodIndices"
+    && Array.isArray(descriptor.value)
+    && descriptor.value.every((entry) => typeof entry === "number" && Number.isFinite(entry))) {
+    return descriptor.value;
+  }
+  return [];
 }
 
 function numbersExactlyEqual(left: number, right: number): boolean {
@@ -1209,6 +1349,180 @@ function statisticClaimMatches(supplied: number, claim: StatisticClaimV1): boole
       // threshold or tolerance, so these forms fail closed even when numerically true.
       return false;
   }
+}
+
+function declaredAxisRoles(text: string): ReadonlySet<string> {
+  const roles = new Set<string>();
+  for (const match of text.matchAll(/\baxis\s*[-_]?\s*([12])\b/giu)) roles.add(`axis-${match[1]}`);
+  for (const match of text.matchAll(/\b(first|second)\s+axis\b/giu)) {
+    roles.add(match[1].toLocaleLowerCase("en-US") === "first" ? "axis-1" : "axis-2");
+  }
+  for (const match of text.matchAll(/\baxis\s+(one|two)\b/giu)) {
+    roles.add(match[1].toLocaleLowerCase("en-US") === "one" ? "axis-1" : "axis-2");
+  }
+  const chineseAxis = (value: string): string | undefined => ({
+    "1": "axis-1",
+    "2": "axis-2",
+    一: "axis-1",
+    二: "axis-2",
+  } as const)[value as "1" | "2" | "一" | "二"];
+  for (const match of text.matchAll(/(?:第\s*)?([一二12])\s*(?:號|号)?\s*(?:軸|轴)/gu)) {
+    const role = chineseAxis(match[1]);
+    if (role) roles.add(role);
+  }
+  for (const match of text.matchAll(/(?:軸|轴)\s*(?:第\s*)?([一二12])/gu)) {
+    const role = chineseAxis(match[1]);
+    if (role) roles.add(role);
+  }
+  return roles;
+}
+
+function declaredPeriodNumbers(text: string): ReadonlySet<number> {
+  const periods = new Set<number>();
+  for (const match of text.matchAll(/\bperiod\s*[-_]?\s*([1-9][0-9]*)\b/giu)) {
+    periods.add(Number(match[1]));
+  }
+  for (const match of text.matchAll(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)\s+period\b/giu)) {
+    const words = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth"];
+    periods.add(words.indexOf(match[1].toLocaleLowerCase("en-US")) + 1);
+  }
+  const chineseNumber = (value: string): number | undefined => ({
+    一: 1,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+  } as const)[value as "一" | "二" | "三" | "四" | "五" | "六" | "七" | "八" | "九"];
+  for (const match of text.matchAll(/第\s*([一二三四五六七八九]|[1-9][0-9]*)\s*(?:個|个)?\s*(?:時段|时段|期)/gu)) {
+    const period = /^[0-9]+$/u.test(match[1]) ? Number(match[1]) : chineseNumber(match[1]);
+    if (period !== undefined) periods.add(period);
+  }
+  return periods;
+}
+
+function ownStringField(evidence: unknown, field: string): string | undefined {
+  if (evidence === null || typeof evidence !== "object") return undefined;
+  const descriptor = Object.getOwnPropertyDescriptor(evidence, field);
+  return descriptor && "value" in descriptor && typeof descriptor.value === "string"
+    ? descriptor.value
+    : undefined;
+}
+
+function referencedIdentityMatchesStatement(text: string, referencedEvidence: readonly unknown[]): boolean {
+  const axes = declaredAxisRoles(text);
+  if (axes.size > 0) {
+    const axisBoundEvidence = referencedEvidence.filter((entry) => ownStringField(entry, "axisRole"));
+    if (axisBoundEvidence.length === 0
+      || axisBoundEvidence.some((entry) => !axes.has(ownStringField(entry, "axisRole") ?? ""))) {
+      return false;
+    }
+  }
+  const periods = declaredPeriodNumbers(text);
+  if (periods.size > 0) {
+    const periodBoundEvidence = referencedEvidence.filter((entry) => {
+      const id = ownStringField(entry, "id");
+      return id !== undefined && /(?:^|-)period-[1-9][0-9]*(?:-|$)/u.test(id);
+    });
+    if (periodBoundEvidence.length === 0 || periodBoundEvidence.some((entry) => {
+      const id = ownStringField(entry, "id") ?? "";
+      return [...periods].some((period) => !id.includes(`period-${period}`));
+    })) return false;
+  }
+  return true;
+}
+
+function canonicalStructuredValue(value: string): string {
+  return value.normalize("NFKC").toLocaleLowerCase("en-US")
+    .trim()
+    .replace(/^(?:an?|the)\s+/u, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/gu, "");
+}
+
+interface StructuredStringClaimV1 {
+  readonly kind: "method" | "test" | "difference-direction" | "cohort-policy";
+  readonly value: string;
+}
+
+function claimedStructuredStrings(text: string): StructuredStringClaimV1[] {
+  const proseClaims = [...text.matchAll(PROTECTED_STRING_CLAIM)].map((match) => {
+    const rawLabel = (match[1] ?? match[4] ?? "").toLocaleLowerCase("en-US");
+    const rawValue = match[3] ?? match[5] ?? "";
+    const kind: StructuredStringClaimV1["kind"] = /difference|差值/iu.test(rawLabel)
+      ? "difference-direction"
+      : /cohort|隊列|队列/iu.test(rawLabel)
+        ? "cohort-policy"
+        : /test|檢定|检验/iu.test(rawLabel)
+          ? "test"
+          : "method";
+    return { kind, value: canonicalStructuredValue(rawValue) };
+  });
+  const fieldClaims = [...text.matchAll(PROTECTED_FIELD_STRING_CLAIM)].map((match) => {
+    const label = match[1].toLocaleLowerCase("en-US");
+    const kind: StructuredStringClaimV1["kind"] = label === "differencedirection"
+      ? "difference-direction"
+      : label === "cohortpolicy"
+        ? "cohort-policy"
+        : label === "test"
+          ? "test"
+          : "method";
+    return { kind, value: canonicalStructuredValue(match[3]) };
+  });
+  return [...proseClaims, ...fieldClaims].filter((claim) => claim.value.length > 0);
+}
+
+function collectCanonicalStringFieldValues(
+  value: unknown,
+  field: string,
+  seen = new Set<unknown>(),
+): ReadonlySet<string> {
+  const collected = new Set<string>();
+  const visit = (candidate: unknown): void => {
+    if (candidate === null || typeof candidate !== "object" || seen.has(candidate)) return;
+    seen.add(candidate);
+    const descriptor = Object.getOwnPropertyDescriptor(candidate, field);
+    if (descriptor && "value" in descriptor && typeof descriptor.value === "string") {
+      collected.add(canonicalStructuredValue(descriptor.value));
+    }
+    for (const key of Reflect.ownKeys(candidate)) {
+      if (typeof key !== "string") continue;
+      const nested = Object.getOwnPropertyDescriptor(candidate, key);
+      if (nested && "value" in nested) visit(nested.value);
+    }
+  };
+  visit(value);
+  return collected;
+}
+
+function structuredClaimMatches(
+  evaluationCase: OpenEnaAiOfflineEvaluationCaseV1,
+  referencedEvidence: readonly unknown[],
+  claim: StructuredStringClaimV1,
+): boolean {
+  if (claim.kind === "cohort-policy") {
+    return collectCanonicalStringFieldValues(
+      evaluationCase.request.evidence,
+      "cohortPolicy",
+    ).has(claim.value);
+  }
+  const fields = claim.kind === "method"
+    ? ["resolvedPMethod", "test"]
+    : claim.kind === "test"
+      ? ["test"]
+      : ["differenceDirection"];
+  const relevantEvidence = referencedEvidence.filter((entry) => (
+    fields.some((field) => ownStringField(entry, field) !== undefined)
+  ));
+  return relevantEvidence.length > 0 && relevantEvidence.every((entry) => (
+    fields.some((field) => {
+      const supplied = ownStringField(entry, field);
+      return supplied !== undefined && canonicalStructuredValue(supplied) === claim.value;
+    })
+  ));
 }
 
 function isNegatedAssertion(text: string, assertionIndex: number): boolean {
@@ -1247,16 +1561,28 @@ function hasUnsupportedNumericClaim(
   const indexedEvidence = evidenceById(evaluationCase.request.evidence);
   for (const observation of interpretation.observedPatterns) {
     const claims = claimedStatistics(observation.statement);
-    if (claims.some((claim) => !observation.evidenceRefs.some((reference) => {
-      const evidence = indexedEvidence.get(reference);
-      return claim.authoritativeFields.some((field) => {
-        const supplied = ownFiniteStatistic(evidence, field);
-        return supplied !== undefined && statisticClaimMatches(supplied, claim);
-      });
-    }))) return true;
+    const referencedEvidence = observation.evidenceRefs.map((reference) => indexedEvidence.get(reference));
+    if ((claims.length > 0 || claimedStructuredStrings(observation.statement).length > 0)
+      && !referencedIdentityMatchesStatement(observation.statement, referencedEvidence)) return true;
+    if (claims.some((claim) => {
+      const relevantEvidence = referencedEvidence.filter((evidence) => (
+        claim.authoritativeFields.some((field) => ownFiniteStatisticValues(evidence, field).length > 0)
+      ));
+      return relevantEvidence.length === 0 || relevantEvidence.some((evidence) => (
+        !claim.authoritativeFields.some((field) => (
+          ownFiniteStatisticValues(evidence, field).some((supplied) => (
+            statisticClaimMatches(supplied, claim)
+          ))
+        ))
+      ));
+    })) return true;
+    if (claimedStructuredStrings(observation.statement).some((claim) => (
+      !structuredClaimMatches(evaluationCase, referencedEvidence, claim)
+    ))) return true;
   }
   return [...interpretation.contextualQuestions, ...interpretation.limitations]
-    .some((value) => claimedStatistics(value).length > 0);
+    .some((value) => claimedStatistics(value).length > 0
+      || claimedStructuredStrings(value).length > 0);
 }
 
 function hasMissingVisibleInferenceEvidence(
@@ -1369,6 +1695,27 @@ function fixtureSha256(evaluationCase: OpenEnaAiOfflineEvaluationCaseV1): string
     ).digest("hex"),
   }), "utf8").digest("hex");
 }
+
+export const OPEN_ENA_AI_OFFLINE_FIXTURE_SHA256_BY_LOCALE_V1 = deepFreeze({
+  en: [
+    "8903a65d4d5c10cc5747175e5f87ff6f3a94f70b5a86f484a2131d75ef420165",
+    "994d40379ad71609c2b3d2a24b1d381a130aaa89a18b4363dd13a770bb4b3596",
+    "f879a692082cafd20434be9e2e5159d31bf27988d5474b7c2b1333ea06a97323",
+    "65094863474e1570cd6832c1acc293e21caeceba936046d33f911555b7a8f21d",
+  ],
+  "zh-hant": [
+    "a4476687ef4761bb027caf6ed63be43b461149017541711eb8119f3263f6f7a2",
+    "2428cad60e6c62730c9767056b1d82eb1193ef41fc5548432b6120f79326d201",
+    "996f2b17b4a96f655b0fb4ea960602f7a92e887117a43175393444384d59b488",
+    "c8ca012809445fbae1292572aa3e198e5397813725a10552962132060c4f0d05",
+  ],
+  "zh-hans": [
+    "8da69ec56667634f6cde1fcf5941b0f45046546205e9c4f9a17bfb9d4f207b95",
+    "d70c3cf86e84753fd01a31c2bf0d048f9c5137360b1c8df62bcdbdf863e4930b",
+    "6935dc7b9cbc7e653525d47db53208dbf2c4c8bad433d3cd563a790a88f4d342",
+    "0f5c364a2677809ec752517f56f392ea1d205033d199f919951e055187a33b1f",
+  ],
+} as const satisfies Readonly<Record<OpenEnaAiPromptLocaleV2, readonly string[]>>);
 
 function fixtureIssues(
   evaluationCase: OpenEnaAiOfflineEvaluationCaseV1,
@@ -1507,6 +1854,20 @@ function candidateProbes(
       "comparison-axis-1-period-1-period-2",
     ],
   ];
+  const protectedFieldProbes: ReadonlyArray<readonly [
+    string,
+    OpenEnaAiOfflineEvaluationCaseV1,
+    string,
+  ]> = [
+    ["cross-axis-statistic-borrow", baseline, "For axis-1, the supplied pRaw is 0.3."],
+    ["invented-primary-sample-size", baseline, "The supplied primary sample size is 999."],
+    ["invented-matched-cohort-size", paired, "The supplied matched cohort contains 999 entities."],
+    ["invented-friedman-degrees-freedom", repeated, "The supplied Friedman degrees of freedom is 999."],
+    ["invented-method", baseline, "The supplied method is an independent-samples t-test."],
+    ["reversed-difference-direction", paired, "The supplied difference direction is earlier-minus-later."],
+    ["invented-cohort-policy", repeated, "The supplied cohort policy is pairwise complete."],
+    ["invented-selected-period-index", repeated, "The supplied selected period index is 999."],
+  ];
   return [
     {
       probeId: "external-evidence-id",
@@ -1572,6 +1933,12 @@ function candidateProbes(
       ),
       expectedIssueCode: "invented-or-recomputed-statistic",
     },
+    ...protectedFieldProbes.map(([probeId, evaluationCase, statement]) => ({
+      probeId,
+      evaluationCase,
+      candidateJson: statementMutation(evaluationCase, statement),
+      expectedIssueCode: "invented-or-recomputed-statistic" as const,
+    })),
     ...numericCollisionProbes.map(([probeId, evaluationCase, statement, evidenceRef]) => ({
       probeId,
       evaluationCase,
@@ -1769,6 +2136,10 @@ export function evaluateOpenEnaAiPromptArtifactOfflineV1(
   }
   if (cases.some((evaluationCase) => evaluationCase.request.locale !== locale)) {
     hardGateFailures.push("suite-locale-coverage-invalid");
+  }
+  if (stableCanonicalJson(cases.map(fixtureSha256))
+    !== stableCanonicalJson(OPEN_ENA_AI_OFFLINE_FIXTURE_SHA256_BY_LOCALE_V1[locale])) {
+    hardGateFailures.push("suite-fixture-identity-mismatch");
   }
   const designResults = cases.map((evaluationCase): OpenEnaAiOfflineDesignResultV1 => {
     const issueCodes = fixtureIssues(evaluationCase, locale);

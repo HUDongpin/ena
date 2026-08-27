@@ -147,13 +147,15 @@ prompt, call a model, import the provider client, inspect AI environment variabl
 use credentials, access the network, write files, or alter runtime response
 handling.
 
-The frozen suite version `open-ena-ai-offline-synthetic-mock-v3` contains exactly
+The frozen suite version `open-ena-ai-offline-synthetic-mock-v4` contains exactly
 four fixed aggregate, role/index-only designs for each of `en`, `zh-hant`, and
 `zh-hans`:
 
-The suite identifier advances from v2 because locale-bound compliant fixtures,
-locale-specific adversarial probes, broader statistic connectors, and the
-three-language lexical guardrails change the meaning of an automated pass. The
+The suite identifier advances from v3 because evidence-identity binding, protected
+count/method/cohort checks, exact fixture-manifest enforcement, and runnable-test
+source registration change the meaning of an automated pass. The earlier v3
+advance introduced locale-bound compliant fixtures, locale-specific adversarial
+probes, broader statistic connectors, and the three-language lexical guardrails. The
 report and six-field receipt contracts remain V1; only receipts from the current
 suite are eligible for later human review.
 
@@ -169,6 +171,14 @@ offline candidate must represent every one of those IDs through
 measures family fails. Privacy-redacted or unavailable family members are cited
 only through their supplied omission records, which carry no hidden statistic,
 p-value, or effect.
+
+The module also checks each locale's ordered fixture SHA-256 list against a literal
+checked-in manifest. The hash binds the case ID, design, locale, aggregate evidence,
+compliant candidate, required inference IDs, limitations, coverage tags, and a
+digest of the private source canaries. A custom or drifted case may be evaluated for
+diagnostics, but the formal report and receipt receive
+`suite-fixture-identity-mismatch`; they cannot claim a zero-failure v4 run or pass
+approval eligibility under the frozen suite identity.
 
 Across those fixtures the suite exercises ties, small samples, zero differences,
 missing pairs and complete blocks, minimum-aggregate privacy omission, an
@@ -201,7 +211,14 @@ claim to have recomputed a statistic fails even when the stated value was suppli
 A numerical statistical restatement is accepted only when its statistic label maps
 to the matching authoritative field in specifically cited evidence and uses an
 exact-value connector (for example, `pRaw` cannot borrow `pHolm`, sample size, tie
-count, or a period index). An uncited, absent, or cross-field value fails. Threshold
+count, or a period index). Every cited inferential record that owns the claimed
+field must support the exact value, and explicit axis/period qualifiers must match
+the cited evidence identity; a correct value from another axis cannot satisfy the
+claim. The closed numeric mapping also covers disclosed sample, matched/missing,
+sign, zero, ranked, complete-cohort, period, degrees-of-freedom, tie, and period-
+index fields. Method/test, difference-direction, and cohort-policy assertions must
+match the corresponding supplied string field. An uncited, absent, cross-field,
+cross-axis, or cross-period value fails. Threshold
 or approximation forms using `<`, `>`, `<=`, `>=`, `≤`, `≥`, or `≈` fail closed:
 the verifier neither creates a significance threshold nor invents an approximation
 tolerance. The checker also uses bounded sentence-level patterns for causal,
@@ -271,7 +288,11 @@ projection into role/index-only provider evidence. Their status is reported
 only as `bound` or `missing`: source binding does not claim that a provider was
 called, a deployment was exercised, or the named test ran inside the verifier.
 Binding recognizes only active top-level calls imported from `node:test`, using a
-TypeScript syntax tree; comments and inert string literals cannot satisfy it.
+TypeScript syntax tree; comments and inert string literals cannot satisfy it. A
+registration must have a nonempty inline function or arrow callback. Bare calls,
+empty callbacks, non-literal options, spread/computed options, and explicit `skip`
+or `todo` options remain `missing`. This is still source-registration evidence, not
+an execution receipt; the root test command supplies the separate execution plane.
 Invalid JSON, forged evidence references, and missing limitations are additionally
 executed directly by the fixed offline evaluation suite.
 

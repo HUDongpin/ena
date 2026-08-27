@@ -49,7 +49,7 @@ function mutateCandidate(
 }
 
 test("the fixed offline suite contains exactly the four role/index-only research designs", () => {
-  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v3");
+  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v4");
   assert.equal(OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1, OPEN_ENA_AI_MAX_RESPONSE_BYTES);
   assert.deepEqual(
     OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1.map((evaluationCase) => evaluationCase.designKind),
@@ -516,6 +516,108 @@ test("numeric statements match the authoritative statistic field in specifically
   ).issueCodes.includes("invented-or-recomputed-statistic"));
 });
 
+test("protected numeric and method claims bind to every cited inference identity and supplied cohort policy", () => {
+  const caseById = (caseId: string) => {
+    const evaluationCase = OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1.find(
+      (candidate) => candidate.caseId === caseId,
+    );
+    assert.ok(evaluationCase);
+    return evaluationCase;
+  };
+  const candidateWithProtectedClaim = (
+    evaluationCase: OpenEnaAiOfflineEvaluationCaseV1,
+    statement: string,
+    evidenceRefs: readonly string[],
+  ) => {
+    const candidate = JSON.parse(evaluationCase.compliantCandidateJson) as Record<string, unknown>;
+    const patterns = candidate.observedPatterns as Array<Record<string, unknown>>;
+    patterns[0].statement = statement;
+    patterns[0].evidenceRefs = [...evidenceRefs];
+    const remaining = evaluationCase.requiredVisibleInferenceEvidenceIds.filter(
+      (id) => !evidenceRefs.includes(id),
+    );
+    if (remaining.length > 0) {
+      patterns.push({
+        statement: "The other supplied visible inferential members are cited for completeness.",
+        evidenceRefs: remaining,
+      });
+    }
+    return JSON.stringify(candidate);
+  };
+  const endpoint = caseById("endpoint-independent-mann-whitney");
+  const paired = caseById("trajectory-paired-wilcoxon");
+  const repeated = caseById("trajectory-repeated-friedman-holm-wilcoxon");
+  const rejected: ReadonlyArray<readonly [
+    OpenEnaAiOfflineEvaluationCaseV1,
+    string,
+    readonly string[],
+  ]> = [
+    [
+      endpoint,
+      "For axis-1, the supplied pRaw is 0.3.",
+      ["comparison-axis-1", "comparison-axis-2"],
+    ],
+    [
+      endpoint,
+      "For axis-1, the supplied UPrimary is 6.",
+      ["comparison-axis-1", "comparison-axis-2"],
+    ],
+    [endpoint, "For axis-1, the supplied pRaw is 0.3.", ["comparison-axis-2"]],
+    [endpoint, "For axis-1, the supplied primary sample size is 4.", ["comparison-axis-2"]],
+    [paired, "For axis-1, the supplied pHolm is 0.4.", ["comparison-axis-2-period-1-period-2"]],
+    [paired, "For axis-1 period-1 to period-3, the supplied WPositive is 5.", ["comparison-axis-1-period-1-period-2"]],
+    [endpoint, "The supplied primary sample size is 999.", ["comparison-axis-1"]],
+    [endpoint, "The supplied nPrimary is 999.", ["comparison-axis-1"]],
+    [endpoint, "所提供的主要樣本數為 999。", ["comparison-axis-1"]],
+    [paired, "The supplied matched cohort contains 999 entities.", ["comparison-axis-1-period-1-period-2"]],
+    [paired, "所提供的配對隊列數為 999。", ["comparison-axis-1-period-1-period-2"]],
+    [repeated, "The supplied Friedman degrees of freedom is 999.", ["omnibus-axis-1"]],
+    [repeated, "The supplied degreesFreedom is 999.", ["omnibus-axis-1"]],
+    [endpoint, "The supplied method is an independent-samples t-test.", ["comparison-axis-1"]],
+    [endpoint, "The supplied resolvedPMethod is independent-samples-t-test.", ["comparison-axis-1"]],
+    [paired, "The supplied difference direction is earlier-minus-later.", ["comparison-axis-1-period-1-period-2"]],
+    [paired, "The supplied differenceDirection is earlier-minus-later.", ["comparison-axis-1-period-1-period-2"]],
+    [repeated, "The supplied cohort policy is pairwise complete.", ["omnibus-axis-1"]],
+    [repeated, "The supplied cohortPolicy is pairwise-complete.", ["omnibus-axis-1"]],
+    [repeated, "The supplied selected period index is 999.", ["omnibus-axis-1"]],
+  ];
+  for (const [evaluationCase, statement, evidenceRefs] of rejected) {
+    const result = evaluateOpenEnaAiOfflineCandidateV1(
+      evaluationCase,
+      candidateWithProtectedClaim(evaluationCase, statement, evidenceRefs),
+    );
+    assert.ok(result.issueCodes.includes("invented-or-recomputed-statistic"), statement);
+  }
+
+  const faithful: ReadonlyArray<readonly [
+    OpenEnaAiOfflineEvaluationCaseV1,
+    string,
+    readonly string[],
+  ]> = [
+    [endpoint, "The supplied primary sample size is 4.", ["comparison-axis-1"]],
+    [endpoint, "The supplied nPrimary is 4.", ["comparison-axis-1"]],
+    [endpoint, "所提供的主要樣本數為 4。", ["comparison-axis-1"]],
+    [paired, "The supplied matched cohort contains 4 entities.", ["comparison-axis-1-period-1-period-2"]],
+    [paired, "所提供的配對隊列數為 4。", ["comparison-axis-1-period-1-period-2"]],
+    [repeated, "The supplied Friedman degrees of freedom is 2.", ["omnibus-axis-1"]],
+    [repeated, "The supplied degreesFreedom is 2.", ["omnibus-axis-1"]],
+    [endpoint, "The supplied method is exact-conditional-rank-permutation.", ["comparison-axis-1"]],
+    [endpoint, "The supplied resolvedPMethod is exact-conditional-rank-permutation.", ["comparison-axis-1"]],
+    [paired, "The supplied difference direction is later-minus-earlier.", ["comparison-axis-1-period-1-period-2"]],
+    [repeated, "The supplied cohort policy is all-period-complete.", ["omnibus-axis-1"]],
+  ];
+  for (const [evaluationCase, statement, evidenceRefs] of faithful) {
+    assert.deepEqual(
+      evaluateOpenEnaAiOfflineCandidateV1(
+        evaluationCase,
+        candidateWithProtectedClaim(evaluationCase, statement, evidenceRefs),
+      ).issueCodes,
+      [],
+      statement,
+    );
+  }
+});
+
 test("every visible inference member must be represented while supplied omissions remain value-free evidence", () => {
   const repeated = OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1[3];
   const compliant = JSON.parse(repeated.compliantCandidateJson) as {
@@ -579,6 +681,14 @@ test("offline reports and exact V1 receipts are deterministic, deeply frozen, an
     "numeric-collision-u-primary",
     "numeric-collision-tie-count",
     "numeric-collision-period-index",
+    "cross-axis-statistic-borrow",
+    "invented-primary-sample-size",
+    "invented-matched-cohort-size",
+    "invented-friedman-degrees-freedom",
+    "invented-method",
+    "reversed-difference-direction",
+    "invented-cohort-policy",
+    "invented-selected-period-index",
     "missing-one-visible-inference-ref",
     "missing-all-visible-inference-refs",
     "treatment-improved-learning",
@@ -654,9 +764,33 @@ test("artifact and fixture drift fail automated gates without gaining registry a
     baseline,
     "en",
     { cases: changedCanaryCases },
-  ).report.designResults[0].fixtureSha256;
-  assert.notEqual(changedFixtureHash, baselineFixtureHash);
-  assert.equal(JSON.stringify(changedFixtureHash).includes(changedCanaryCases[0].sourceCanaries[0]), false);
+  );
+  const changedFixtureDigest = changedFixtureHash.report.designResults[0].fixtureSha256;
+  assert.notEqual(changedFixtureDigest, baselineFixtureHash);
+  assert.ok(changedFixtureHash.report.hardGateFailures.includes("suite-fixture-identity-mismatch"));
+  assert.ok(changedFixtureHash.receipt.hardGateFailures.includes("suite-fixture-identity-mismatch"));
+  assert.notDeepEqual(
+    changedFixtureHash.receipt,
+    evaluateOpenEnaAiPromptArtifactOfflineV1(baseline, "en").receipt,
+  );
+  assert.equal(JSON.stringify(changedFixtureDigest).includes(changedCanaryCases[0].sourceCanaries[0]), false);
+
+  const changedCandidateCases: OpenEnaAiOfflineEvaluationCaseV1[] = [
+    ...structuredClone(OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1),
+  ];
+  const changedCandidate = JSON.parse(changedCandidateCases[0].compliantCandidateJson) as Record<string, unknown>;
+  changedCandidate.contextualQuestions = ["What benign follow-up context should be collected?"];
+  changedCandidateCases[0] = {
+    ...changedCandidateCases[0],
+    compliantCandidateJson: JSON.stringify(changedCandidate),
+  };
+  const changedCandidateResult = evaluateOpenEnaAiPromptArtifactOfflineV1(
+    baseline,
+    "en",
+    { cases: changedCandidateCases },
+  );
+  assert.ok(changedCandidateResult.report.hardGateFailures.includes("suite-fixture-identity-mismatch"));
+  assert.ok(changedCandidateResult.receipt.hardGateFailures.includes("suite-fixture-identity-mismatch"));
 });
 
 test("approval eligibility requires zero failures and both independent human reviews but never promotes", () => {

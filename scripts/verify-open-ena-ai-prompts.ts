@@ -111,7 +111,7 @@ export interface OpenEnaAiPromptVerificationArtifactV1 {
 
 export interface OpenEnaAiPromptMockCoverageV1 {
   readonly coverageId: typeof MOCK_CLIENT_COVERAGE_BINDINGS[number]["coverageId"];
-  readonly evidenceKind: "existing-offline-test-contract";
+  readonly evidenceKind: "existing-offline-test-source-registration";
   readonly sourceFile: typeof MOCK_CLIENT_COVERAGE_BINDINGS[number]["sourceFile"];
   readonly testName: typeof MOCK_CLIENT_COVERAGE_BINDINGS[number]["testName"];
   readonly status: "bound" | "missing";
@@ -199,7 +199,7 @@ function mockClientCoverage(
     }
     return deepFreeze({
       coverageId: binding.coverageId,
-      evidenceKind: "existing-offline-test-contract" as const,
+      evidenceKind: "existing-offline-test-source-registration" as const,
       sourceFile: binding.sourceFile,
       testName: binding.testName,
       status: registeredNames.has(binding.testName) ? "bound" as const : "missing" as const,
@@ -231,12 +231,41 @@ function registeredTopLevelNodeTestNames(source: string, sourceFile: string): Re
     }
   }
   const registeredNames = new Set<string>();
+  const hasRunnableCallback = (value: ts.Expression | undefined): boolean => {
+    if (!value || (!ts.isArrowFunction(value) && !ts.isFunctionExpression(value))) return false;
+    if (ts.isBlock(value.body)) return value.body.statements.length > 0;
+    return !ts.isIdentifier(value.body)
+      && !ts.isLiteralExpression(value.body)
+      && value.body.kind !== ts.SyntaxKind.TrueKeyword
+      && value.body.kind !== ts.SyntaxKind.FalseKeyword
+      && value.body.kind !== ts.SyntaxKind.NullKeyword;
+  };
+  const hasRunnableOptions = (value: ts.Expression): boolean => {
+    if (!ts.isObjectLiteralExpression(value)) return false;
+    return value.properties.every((property) => {
+      if (ts.isSpreadAssignment(property) || !property.name || ts.isComputedPropertyName(property.name)) {
+        return false;
+      }
+      const name = ts.isIdentifier(property.name)
+        || ts.isStringLiteralLike(property.name)
+        || ts.isNumericLiteral(property.name)
+        ? property.name.text
+        : undefined;
+      return name !== undefined && name !== "skip" && name !== "todo" && name !== "only";
+    });
+  };
   for (const statement of syntaxTree.statements) {
     if (!ts.isExpressionStatement(statement) || !ts.isCallExpression(statement.expression)) continue;
     const call = statement.expression;
     if (!ts.isIdentifier(call.expression) || !testBindings.has(call.expression.text)) continue;
     const name = call.arguments[0];
-    if (name && ts.isStringLiteralLike(name)) registeredNames.add(name.text);
+    if (!name || !ts.isStringLiteralLike(name)) continue;
+    const callback = call.arguments.length === 2
+      ? call.arguments[1]
+      : call.arguments.length === 3 && hasRunnableOptions(call.arguments[1])
+        ? call.arguments[2]
+        : undefined;
+    if (hasRunnableCallback(callback)) registeredNames.add(name.text);
   }
   return registeredNames;
 }
@@ -359,7 +388,7 @@ export function buildOpenEnaAiPromptVerificationV1(
     hardGateFailures: normalizedFailures,
     limitations: [
       "This verifier executes deterministic offline synthetic and mocked contracts only.",
-      "Bound client tests are offline mocks, not live provider, deployment, or production evidence.",
+      "Bound client entries are runnable source registrations; this verifier does not execute those tests, call a live provider, deploy, or inspect production.",
       "Automated status has no approval effect; scientific and privacy/security reviews remain independent.",
     ],
   });

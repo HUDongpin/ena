@@ -39,6 +39,7 @@ async function loadVerifier() {
       }>;
       mockClientCoverage: ReadonlyArray<{
         coverageId: string;
+        evidenceKind: string;
         status: "bound" | "missing";
       }>;
     };
@@ -89,6 +90,9 @@ test("the verifier returns one deterministic, authorization-neutral result for a
     ["workspace-binding-change-revokes-output", "bound"],
     ["workspace-stale-generation-cannot-settle", "bound"],
   ]);
+  assert.ok(first.mockClientCoverage.every(
+    (entry) => entry.evidenceKind === "existing-offline-test-source-registration",
+  ));
   assert.equal(stableCanonicalJson(first), stableCanonicalJson(second));
   const canonicalResult = stableCanonicalJson(first);
   for (const forbiddenText of [
@@ -147,6 +151,24 @@ test("the verification function fails controlled prompt-byte, hash, schema, fixt
   assert.ok(commentOnlyBinding.mockClientCoverage
     .filter((entry) => entry.coverageId.startsWith("mock-"))
     .every((entry) => entry.status === "missing"));
+
+  const timeoutTestName = "Luna interpretation aborts at the injected timeout and redacts the fetch error";
+  const invalidRegistrations = [
+    `import test from "node:test";\ntest(${JSON.stringify(timeoutTestName)});`,
+    `import test from "node:test";\ntest(${JSON.stringify(timeoutTestName)}, () => {});`,
+    `import test from "node:test";\ntest(${JSON.stringify(timeoutTestName)}, { skip: true }, () => { throw new Error("not run"); });`,
+    `import test from "node:test";\ntest(${JSON.stringify(timeoutTestName)}, { todo: "later" }, () => { throw new Error("not run"); });`,
+    `import test from "node:test";\ntest(${JSON.stringify(timeoutTestName)}, { only: true }, () => { throw new Error("not run"); });`,
+  ];
+  for (const mockClientTestSource of invalidRegistrations) {
+    const result = verifier.buildOpenEnaAiPromptVerificationV1({ mockClientTestSource });
+    assert.equal(result.automatedStatus, "fail", mockClientTestSource);
+    assert.equal(
+      result.mockClientCoverage.find((entry) => entry.coverageId === "mock-timeout")?.status,
+      "missing",
+      mockClientTestSource,
+    );
+  }
 });
 
 test("the CLI is cwd- and AI-environment-independent and emits only canonical deterministic JSON", () => {
