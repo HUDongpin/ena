@@ -2,7 +2,8 @@
 
 - Status: Implemented locally; not a scientific, privacy/security, or release approval
 - Date: 2026-08-27
-- Scope: build-time/static prompt governance and server-side runtime dispatch
+- Scope: build-time/static prompt governance, deterministic offline evaluation,
+  and server-side runtime dispatch
 
 ## Context
 
@@ -131,6 +132,111 @@ permits no tools, the static artifact has no tool configuration, the linter reje
 instructions that introduce those capabilities, and the provider client performs
 one bounded completion request exactly as before.
 
+## Deterministic offline evaluation
+
+The P2 evaluation plane is server-only and offline. It reuses the V1 specification,
+compiler, canonical hash, artifact linter, approved registry, request-local schema
+instantiator, and existing strict v2 response parser. It does not compile a new
+prompt, call a model, import the provider client, inspect AI environment variables,
+use credentials, access the network, write files, or alter runtime response
+handling.
+
+The frozen suite version `open-ena-ai-offline-synthetic-mock-v1` contains exactly
+four fixed aggregate, role/index-only designs:
+
+1. endpoint independent Mann-Whitney comparison;
+2. trajectory selected-period independent Mann-Whitney comparison;
+3. paired two-period Wilcoxon comparison with `later-minus-earlier` direction; and
+4. repeated-period Friedman comparison with every planned Holm-Wilcoxon follow-up
+   represented either as visible aggregate evidence or an explicit omission.
+
+Across those fixtures the suite exercises ties, small samples, zero differences,
+missing pairs and complete blocks, minimum-aggregate privacy omission, an
+unavailable/not-estimable Holm member, accumulated-trajectory path dependence,
+MR1 circularity, arbitrary axis signs, and unverified independence/clustering.
+The repeated fixture's omission objects contain only role, test, period, reason,
+and request-local ID fields: they contain no hidden p-value, effect, rank sum, or
+statistic. Its compliant response must state that the complete Holm vector cannot
+be reconstructed after privacy redaction.
+
+Each compliant canned interpretation first passes the production v2 response
+parser, including strict object shape, nonempty limitations, and request-local
+evidence references. Adversarial canned outputs cover forged evidence IDs, missing
+limitations, extra or invalid fields, HTML, invalid JSON, excessive size,
+overlong strings and arrays, recomputation language, invented or altered
+statistics, causal/outcome claims, sensitive-data requests or echoes, and
+prompt-injection following or echo. Artifact probes separately cover a one-byte
+prompt change, stale hash, stale prompt version, and response-schema drift.
+
+The follow-on semantic check is intentionally conservative and English-only. An
+explicit claim to have recomputed a statistic fails even when the stated value was
+supplied. A numerical statistical restatement is accepted only when its finite
+value occurs in the specifically cited evidence object; an uncited or absent value
+fails. The checker also uses bounded lexical patterns for causal, learning-gain,
+improvement, treatment-effect, practical-importance, sensitive-data, and injection
+claims, plus explicit limitation-concept checks. This is a deterministic guardrail,
+not semantic understanding: paraphrases can evade it, benign prose can trigger it,
+and a pass does not demonstrate live-model obedience, scientific correctness, or
+natural-response quality. It is deliberately not installed in production response
+handling in P2.
+
+Private synthetic source canaries verify that hostile labels do not enter provider
+evidence and that echoes are rejected. Canary text is absent from reports and
+receipts; a SHA-256 digest binds the canaries into each fixture hash so their
+behavior cannot drift invisibly under the suite version. Fixtures contain no raw
+study rows or real identifiers, hashes, bindings, credentials, or provider output.
+
+## Offline report, receipt, and approval eligibility
+
+Detailed P2 evidence lives in a separate deeply frozen
+`OpenEnaAiOfflineEvaluationReportV1`. It records the artifact content hash,
+four-design results, fixture hashes, adversarial kill results, automated failures,
+scope limitations, and the literal `authorizationEffect: "none"`. It contains no
+timestamp, host path, random identifier, environment/model/provider state, canary
+text, or approval status, so repeated runs over the same inputs have identical
+canonical JSON.
+
+`EnaPromptEvalReceiptV1` remains exactly the six-field V1 contract. P2 may emit an
+empty `hardGateFailures` array, but its receipts always set `scientificReview` and
+`privacySecurityReview` to `pending`; automated execution has no authority to fill
+human review evidence. `assertOpenEnaAiPromptEligibleForApproval` is a separate
+validate-or-throw helper requiring zero automated failures and both independent
+reviews to be `pass`. It accepts no registry and performs no mutation, promotion,
+or approval write. Eligibility is necessary evidence for a future approval
+decision, never the decision itself.
+
+Draft and approved artifacts with the same behavior hash evaluate identically.
+Evaluation metadata is excluded from content identity, and evaluation never grants
+the private object identity required by runtime registry dispatch.
+
+## Read-only verifier and CI visibility
+
+`npm run prompt:verify` runs first in the root `verify` chain. Its ESM entry point
+resolves checked-in sources from `import.meta.url`, so direct execution is
+independent of the caller's working directory. It verifies all three locale hash
+bindings, approved registry authority, deterministic recompilation, specification
+and schema linting, request-local evidence enum instantiation, the four-design
+suite, and every declared adversarial kill. Each locale instantiates and compares
+the enum for all four fixture-specific evidence-ID sets, not a shared representative
+set. It prints canonical deterministic JSON containing reports and exact pending
+receipts and returns nonzero on any automated hard-gate failure.
+
+The verifier also binds, by repository-relative source file and exact test name,
+existing offline tests for timeout, cancellation, HTTP 429, HTTP 402, network
+failure, oversize and malformed completions, reviewed-aggregate consent, binding
+change/revocation, stale asynchronous generation, and prompt-like source-label
+projection into role/index-only provider evidence. Their status is reported
+only as `bound` or `missing`: source binding does not claim that a provider was
+called, a deployment was exercised, or the named test ran inside the verifier.
+Binding recognizes only active top-level calls imported from `node:test`, using a
+TypeScript syntax tree; comments and inert string literals cannot satisfy it.
+Invalid JSON, forged evidence references, and missing limitations are additionally
+executed directly by the fixed offline evaluation suite.
+
+The existing CI workflow still executes the root `verify` command once; its final
+step is named to make prompt-governance coverage visible. No secret, provider
+configuration, duplicate workflow execution, or deployment action was added.
+
 ## Source-idea disposition
 
 The attached external prompt material was treated only as a set of design ideas,
@@ -188,9 +294,9 @@ v2.
 | Evidence plane | Current bounded status |
 | --- | --- |
 | Existing v2 behavior | Already supplies the aggregate-only evidence boundary, browser-confirmed inference/no-recomputation rule, causal and practical-importance limits, required statistical limitations, untrusted-string treatment, sensitive-data exclusions, request-local evidence citations, and strict JSON response contract. |
-| Governance added here | Adds strict versioned contracts/parsers, deterministic compilation, canonical content hashes, exact per-locale approval bindings, typed static hard gates, approved-only dispatch, immutable request-local schema instantiation, byte-exact characterization tests, and an explicit evaluation-versus-approval separation. |
+| Governance added here | Adds strict versioned contracts/parsers, deterministic compilation, canonical content hashes, exact per-locale approval bindings, typed static hard gates, approved-only dispatch, immutable request-local schema instantiation, byte-exact characterization tests, the deterministic four-design offline suite and adversarial verifier, exact pending receipts, and explicit evaluation-versus-approval separation. |
 | Live-provider behavior evaluation | Not performed. This task makes no real provider call and does not establish natural-response quality, robustness, or parity. |
-| Human authority | No human scientific review or privacy/security approval receipt is created by this commit. Automated lint/test success is not approval. |
+| Human authority | No authorized human scientific or privacy/security review is performed. Generated receipts retain both review fields as `pending`; automated lint/evaluation success and approval eligibility are not approval. |
 | Future prompt candidate | No v3 artifact or candidate behavior exists. A future candidate must be separately versioned, evaluated, shadowed, reviewed, and explicitly approved. |
 | Release evidence | No deployment, provider-configuration change, production request, or live-browser proof is included. Local tests and typecheck establish only local implementation evidence. |
 | Public request/response API | Intentionally unchanged. The v2 request and response schemas, consent/auth boundaries, provider body, and user-facing behavior remain the compatibility baseline. |
@@ -200,6 +306,8 @@ v2.
 The existing provider-visible behavior is byte-compatible while prompt changes
 become reviewable, content-addressed changes. Runtime failure is conservative:
 registry or hash drift blocks provider dispatch instead of falling back to an
-unapproved prompt. The cost is intentional duplication between the human-readable
-approved baseline tests and the compiler-owned static prompt registry, which makes
-unreviewed drift visible.
+unapproved prompt. Offline verification makes static contracts and declared canned
+mutations repeatable, but it deliberately leaves live-model behavior and human
+scientific/privacy judgment unresolved. The cost is intentional duplication
+between human-readable baseline tests, fixed offline fixtures, and compiler-owned
+registry bindings, which makes unreviewed drift visible.

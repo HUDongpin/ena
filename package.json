@@ -19,8 +19,9 @@
     "test": "npm run jena:build && npm run test:app",
     "test:app": "node --import tsx --test tests/*.test.ts",
     "test:browser:longitudinal-v3": "node tests/open-ena-longitudinal-v3-browser-smoke.mjs",
+    "prompt:verify": "node --import tsx scripts/verify-open-ena-ai-prompts.ts",
     "verify:j3dena-vendor": "node scripts/verify-j3dena-vendor.mjs",
-    "verify": "npm run verify:j3dena-vendor -- --require-installed && npm run jena:verify && node scripts/verify-j3dena-vendor.mjs --require-runtime && npm run test:app && npm run typecheck:app && npm run build:app"
+    "verify": "npm run prompt:verify && npm run verify:j3dena-vendor -- --require-installed && npm run jena:verify && node scripts/verify-j3dena-vendor.mjs --require-runtime && npm run test:app && npm run typecheck:app && npm run build:app"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",

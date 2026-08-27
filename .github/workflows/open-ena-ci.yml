@@ -34,7 +34,8 @@ jobs:
         run: npm audit --omit=dev
       - name: Reject high or critical development-tool advisories
         run: npm audit --audit-level=high
-      - run: npm run verify
+      - name: Verify prompt governance and complete application
+        run: npm run verify
 
   browser:
     name: Browser (Chromium)
