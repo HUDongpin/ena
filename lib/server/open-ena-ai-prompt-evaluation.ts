@@ -22,7 +22,7 @@ import {
 } from "./open-ena-ai-prompt-governance";
 
 export const OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1 =
-  "open-ena-ai-offline-synthetic-mock-v4" as const;
+  "open-ena-ai-offline-synthetic-mock-v5" as const;
 export const OPEN_ENA_AI_OFFLINE_EVALUATION_REPORT_SCHEMA_VERSION_V1 =
   "open-ena-ai-offline-evaluation-report-v1" as const;
 export const OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1 = 64 * 1024;
@@ -1030,9 +1030,12 @@ const LIMITATION_MATCHERS: Readonly<Record<OpenEnaAiOfflineLimitationCodeV1, (te
 const EXPLICIT_RECOMPUTATION = /(?:\b(?:i|we|the assistant)\s+(?:recomputed?|recalculated?|calculated|computed|derived)\b[^.]{0,120}\b(?:statistic|p-value|p value|effect|rank-biserial|u|w|t|q|kendall)\b|(?:我|我們|我们|助手)[^。！？\n]{0,20}(?:重新計算|重新计算|重算|計算|计算|推導|推导)[^。！？\n]{0,120}(?:統計量|统计量|p\s*值|效應量|效应量|秩二列|肯德爾|肯德尔|[uwtq]\s*值?))/iu;
 const STATISTIC_NUMERIC_CLAIM = /((?:原始\s*p(?:\s*值)?|p\s*值|holm\s*校正\s*p(?:\s*值)?|[uwtq]\s*值|肯德[爾尔]\s*w|秩(?:二|雙|双)列(?:相關|相关)?|效[應应]量)|(?<![\p{L}\p{N}_])(?:p(?:\s*-?\s*value|\s*raw|\s*holm)?|raw\s*p(?:\s*-?\s*value)?|holm(?:\s*adjusted)?\s*p(?:\s*-?\s*value)?|u(?:\s*(?:primary|secondary))?|w(?:\s*(?:positive|negative))?|[tq]|kendall(?:['’]s)?\s*w|rank[-\s]?biserial|effect(?:\s+size)?))\s*(=|:|：|<=|>=|<|>|≤|≥|≈|equals?|is|was|as|等於|等于|為|为|是|約為|约为)\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?)/giu;
 const PROTECTED_NUMERIC_CLAIM = /((?:primary\s+sample\s+size|secondary\s+sample\s+size|matched\s+(?:cohort|sample)(?:\s+size)?|missing\s+pairs?(?:\s+count)?|positive\s+count|negative\s+count|zero\s+count|nonzero\s+count|ranked\s+count|complete\s+cohort(?:\s+size)?|missing\s+complete\s+blocks?|number\s+of\s+periods|period\s+count|(?:friedman\s+)?degrees?\s+of\s+freedom|df|tie\s+group\s+count|tied\s+observation\s+count|selected\s+period\s+index|earlier\s+period\s+index|later\s+period\s+index|主要(?:樣本|样本)數|主要(?:樣本|样本)数|次要(?:樣本|样本)數|次要(?:樣本|样本)数|配對(?:隊列|队列|樣本|样本)(?:數|数)?|匹配(?:隊列|队列|樣本|样本)(?:數|数)?|缺失配對(?:數|数)?|缺失匹配(?:數|数)?|完整(?:隊列|队列)(?:數|数)?|缺失完整區塊(?:數|数)?|缺失完整区块(?:數|数)?|時段數|时段数|自由度|結值組數|结值组数|並列觀察數|并列观察数|選定時段索引|选定时段索引|較早時段索引|较早时段索引|較晚時段索引|较晚时段索引))\s*(=|:|：|<=|>=|<|>|≤|≥|≈|equals?|is|was|as|contains?|等於|等于|為|为|是|包含|約為|约为)\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?)/giu;
-const PROTECTED_FIELD_NUMERIC_CLAIM = /(?<![\p{L}\p{N}_])((?:nPrimary|nSecondary|nMatched|nMissing|nPositive|nNegative|nZero|nNonzero|nRanked|nComplete|nMissingCompleteBlocks|nPeriods|degreesFreedom|tieGroupCount|tiedObservationCount|selectedPeriodIndices?|earlierPeriodIndex|laterPeriodIndex))\s*(=|:|：|<=|>=|<|>|≤|≥|≈|equals?|is|was|as|contains?|等於|等于|為|为|是|包含|約為|约为)\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?)/giu;
+const PROTECTED_FIELD_NUMERIC_CLAIM = /(?<![\p{L}\p{N}_])((?:nPrimary|nSecondary|nMatched|nMissing|nPositive|nNegative|nZero|nNonzero|nRanked|nComplete|nMissingCompleteBlocks|nPeriods|nUsed|nExcluded|periodCount|periodIndex|availableEntityCount|completeEntityCount|includedEntityCount|degreesFreedom|tieGroupCount|tiedObservationCount|selectedPeriodIndex|earlierPeriodIndex|laterPeriodIndex))\s*(=|:|：|<=|>=|<|>|≤|≥|≈|equals?|is|was|as|contains?|等於|等于|為|为|是|包含|約為|约为)\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[-+]?\d+)?)/giu;
+const PROTECTED_NUMERIC_ARRAY_CLAIM = /(?<![\p{L}\p{N}_])((?:selectedPeriodIndices|selected\s+period\s+indices|選定時段索引|选定时段索引))\s*(?:=|:|：|are|is|were|等於|等于|為|为|是)\s*([^.!?;。！？；\n]{1,160})/giu;
 const PROTECTED_STRING_CLAIM = /(?:\b(?:the\s+supplied\s+)?(method|test|difference\s+direction|cohort\s+policy)\s*(?:=|:|equals?|is|was)\s*((?:an?|the)\s+)?([^.!?;\n]{1,96})|(?:所提供的)?(方法|檢定|检验|差值方向|隊列政策|队列政策)\s*(?:=|:|：|等於|等于|為|为|是)\s*([^。！？；\n]{1,96}))/giu;
 const PROTECTED_FIELD_STRING_CLAIM = /(?<![\p{L}\p{N}_])(resolvedPMethod|test|differenceDirection|cohortPolicy)\s*(?:=|:|：|equals?|is|was|等於|等于|為|为|是)\s*((?:an?|the)\s+)?([^.!?;。！？；\n]{1,96})/giu;
+const METHOD_USAGE_CLAIM = /\b(?:(?:the\s+)?(?:analysis|comparison|procedure)\s+(?:used|uses|applied|employed)\s+(?:an?\s+)?|method\s+(?:used|applied|employed)\s+(?:was|is)\s+(?:an?\s+)?)([^.!?;\n]{1,96})/giu;
+const DIFFERENCE_DIRECTION_USAGE_CLAIM = /\bdifferences?\s+(?:(?:were|was|are|is)\s+)?(?:computed|calculated|defined|taken)\s+as\s+([^.!?;\n]{1,96})/giu;
 const PROHIBITED_SCIENTIFIC_PATTERNS = [
   /\bcaus(?:ed|es|ing)\b/giu,
   /\bcausal effect\b/giu,
@@ -1091,6 +1094,13 @@ type SupportedNumericFieldV1 =
   | "nComplete"
   | "nMissingCompleteBlocks"
   | "nPeriods"
+  | "nUsed"
+  | "nExcluded"
+  | "periodCount"
+  | "periodIndex"
+  | "availableEntityCount"
+  | "completeEntityCount"
+  | "includedEntityCount"
   | "degreesFreedom"
   | "tieGroupCount"
   | "tiedObservationCount"
@@ -1102,6 +1112,11 @@ interface StatisticClaimV1 {
   readonly authoritativeFields: readonly SupportedNumericFieldV1[];
   readonly relation: "equal" | "less-than" | "less-than-or-equal" | "greater-than" | "greater-than-or-equal" | "approximately";
   readonly value: number;
+}
+
+interface NumericArrayClaimV1 {
+  readonly authoritativeField: "selectedPeriodIndices";
+  readonly values: readonly number[] | null;
 }
 
 function authoritativeStatisticFields(label: string): readonly SupportedNumericFieldV1[] {
@@ -1244,7 +1259,13 @@ function authoritativeStatisticFields(label: string): readonly SupportedNumericF
     case "nperiods":
     case "時段數":
     case "时段数":
-      return ["nPeriods"];
+      return ["nPeriods", "periodCount"];
+    case "nused": return ["nUsed"];
+    case "nexcluded": return ["nExcluded"];
+    case "periodindex": return ["periodIndex"];
+    case "availableentitycount": return ["availableEntityCount"];
+    case "completeentitycount": return ["completeEntityCount"];
+    case "includedentitycount": return ["includedEntityCount"];
     case "friedmandegreesoffreedom":
     case "degreeoffreedom":
     case "degreesoffreedom":
@@ -1313,6 +1334,23 @@ function claimedStatistics(text: string): StatisticClaimV1[] {
     .filter((claim) => claim.authoritativeFields.length > 0 && Number.isFinite(claim.value));
 }
 
+function claimedNumericArrays(text: string): NumericArrayClaimV1[] {
+  return [...text.matchAll(PROTECTED_NUMERIC_ARRAY_CLAIM)].map((match) => {
+    const normalized = match[2]
+      .replace(/[\[\]]/gu, "")
+      .replace(/\band\b/giu, "")
+      .trim();
+    if (!/^[-+]?\d+(?:\s*,\s*[-+]?\d+)+$/u.test(normalized)) {
+      return { authoritativeField: "selectedPeriodIndices", values: null };
+    }
+    const values = normalized.split(",").map((entry) => Number(entry.trim()));
+    if (values.some((entry) => !Number.isSafeInteger(entry))) {
+      return { authoritativeField: "selectedPeriodIndices", values: null };
+    }
+    return { authoritativeField: "selectedPeriodIndices", values };
+  });
+}
+
 function ownFiniteStatisticValues(
   evidence: unknown,
   field: SupportedNumericFieldV1,
@@ -1329,6 +1367,19 @@ function ownFiniteStatisticValues(
     return descriptor.value;
   }
   return [];
+}
+
+function ownFiniteNumericArray(
+  evidence: unknown,
+  field: NumericArrayClaimV1["authoritativeField"],
+): readonly number[] | undefined {
+  if (evidence === null || typeof evidence !== "object") return undefined;
+  const descriptor = Object.getOwnPropertyDescriptor(evidence, field);
+  return descriptor && "value" in descriptor
+    && Array.isArray(descriptor.value)
+    && descriptor.value.every((entry) => typeof entry === "number" && Number.isFinite(entry))
+    ? descriptor.value
+    : undefined;
 }
 
 function numbersExactlyEqual(left: number, right: number): boolean {
@@ -1355,6 +1406,9 @@ function declaredAxisRoles(text: string): ReadonlySet<string> {
   const roles = new Set<string>();
   for (const match of text.matchAll(/\baxis\s*[-_]?\s*([12])\b/giu)) roles.add(`axis-${match[1]}`);
   for (const match of text.matchAll(/\b(first|second)\s+axis\b/giu)) {
+    roles.add(match[1].toLocaleLowerCase("en-US") === "first" ? "axis-1" : "axis-2");
+  }
+  for (const match of text.matchAll(/\b(first|second)\s+latent\s+dimension\b/giu)) {
     roles.add(match[1].toLocaleLowerCase("en-US") === "first" ? "axis-1" : "axis-2");
   }
   for (const match of text.matchAll(/\baxis\s+(one|two)\b/giu)) {
@@ -1416,8 +1470,11 @@ function referencedIdentityMatchesStatement(text: string, referencedEvidence: re
   const axes = declaredAxisRoles(text);
   if (axes.size > 0) {
     const axisBoundEvidence = referencedEvidence.filter((entry) => ownStringField(entry, "axisRole"));
+    const referencedAxes = new Set(axisBoundEvidence.map((entry) => (
+      ownStringField(entry, "axisRole") ?? ""
+    )));
     if (axisBoundEvidence.length === 0
-      || axisBoundEvidence.some((entry) => !axes.has(ownStringField(entry, "axisRole") ?? ""))) {
+      || stableCanonicalJson([...referencedAxes].sort()) !== stableCanonicalJson([...axes].sort())) {
       return false;
     }
   }
@@ -1472,30 +1529,20 @@ function claimedStructuredStrings(text: string): StructuredStringClaimV1[] {
           : "method";
     return { kind, value: canonicalStructuredValue(match[3]) };
   });
-  return [...proseClaims, ...fieldClaims].filter((claim) => claim.value.length > 0);
-}
-
-function collectCanonicalStringFieldValues(
-  value: unknown,
-  field: string,
-  seen = new Set<unknown>(),
-): ReadonlySet<string> {
-  const collected = new Set<string>();
-  const visit = (candidate: unknown): void => {
-    if (candidate === null || typeof candidate !== "object" || seen.has(candidate)) return;
-    seen.add(candidate);
-    const descriptor = Object.getOwnPropertyDescriptor(candidate, field);
-    if (descriptor && "value" in descriptor && typeof descriptor.value === "string") {
-      collected.add(canonicalStructuredValue(descriptor.value));
-    }
-    for (const key of Reflect.ownKeys(candidate)) {
-      if (typeof key !== "string") continue;
-      const nested = Object.getOwnPropertyDescriptor(candidate, key);
-      if (nested && "value" in nested) visit(nested.value);
-    }
-  };
-  visit(value);
-  return collected;
+  const methodUsageClaims = [...text.matchAll(METHOD_USAGE_CLAIM)].map((match) => ({
+    kind: "method" as const,
+    value: canonicalStructuredValue(match[1]),
+  }));
+  const differenceUsageClaims = [...text.matchAll(DIFFERENCE_DIRECTION_USAGE_CLAIM)].map((match) => ({
+    kind: "difference-direction" as const,
+    value: canonicalStructuredValue(match[1]),
+  }));
+  return [
+    ...proseClaims,
+    ...fieldClaims,
+    ...methodUsageClaims,
+    ...differenceUsageClaims,
+  ].filter((claim) => claim.value.length > 0);
 }
 
 function structuredClaimMatches(
@@ -1504,10 +1551,8 @@ function structuredClaimMatches(
   claim: StructuredStringClaimV1,
 ): boolean {
   if (claim.kind === "cohort-policy") {
-    return collectCanonicalStringFieldValues(
-      evaluationCase.request.evidence,
-      "cohortPolicy",
-    ).has(claim.value);
+    const supplied = ownStringField(evaluationCase.request.evidence.scope, "cohortPolicy");
+    return supplied !== undefined && canonicalStructuredValue(supplied) === claim.value;
   }
   const fields = claim.kind === "method"
     ? ["resolvedPMethod", "test"]
@@ -1561,8 +1606,10 @@ function hasUnsupportedNumericClaim(
   const indexedEvidence = evidenceById(evaluationCase.request.evidence);
   for (const observation of interpretation.observedPatterns) {
     const claims = claimedStatistics(observation.statement);
+    const arrayClaims = claimedNumericArrays(observation.statement);
+    const structuredClaims = claimedStructuredStrings(observation.statement);
     const referencedEvidence = observation.evidenceRefs.map((reference) => indexedEvidence.get(reference));
-    if ((claims.length > 0 || claimedStructuredStrings(observation.statement).length > 0)
+    if ((claims.length > 0 || arrayClaims.length > 0 || structuredClaims.length > 0)
       && !referencedIdentityMatchesStatement(observation.statement, referencedEvidence)) return true;
     if (claims.some((claim) => {
       const relevantEvidence = referencedEvidence.filter((evidence) => (
@@ -1576,12 +1623,23 @@ function hasUnsupportedNumericClaim(
         ))
       ));
     })) return true;
-    if (claimedStructuredStrings(observation.statement).some((claim) => (
+    if (arrayClaims.some((claim) => {
+      if (claim.values === null) return true;
+      const relevantEvidence = referencedEvidence.filter((evidence) => (
+        ownFiniteNumericArray(evidence, claim.authoritativeField) !== undefined
+      ));
+      return relevantEvidence.length === 0 || relevantEvidence.some((evidence) => (
+        stableCanonicalJson(ownFiniteNumericArray(evidence, claim.authoritativeField))
+          !== stableCanonicalJson(claim.values)
+      ));
+    })) return true;
+    if (structuredClaims.some((claim) => (
       !structuredClaimMatches(evaluationCase, referencedEvidence, claim)
     ))) return true;
   }
   return [...interpretation.contextualQuestions, ...interpretation.limitations]
     .some((value) => claimedStatistics(value).length > 0
+      || claimedNumericArrays(value).length > 0
       || claimedStructuredStrings(value).length > 0);
 }
 
@@ -1830,6 +1888,8 @@ function candidateProbes(
   ];
   const paired = cases.find((entry) => entry.designKind === "trajectory-paired-periods")
     ?? OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1[2];
+  const selectedPeriod = cases.find((entry) => entry.designKind === "trajectory-independent-period")
+    ?? OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1[1];
   const repeated = cases.find((entry) => entry.designKind === "trajectory-repeated-periods")
     ?? OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1[3];
   const numericCollisionProbes: ReadonlyArray<readonly [
@@ -1867,6 +1927,16 @@ function candidateProbes(
     ["reversed-difference-direction", paired, "The supplied difference direction is earlier-minus-later."],
     ["invented-cohort-policy", repeated, "The supplied cohort policy is pairwise complete."],
     ["invented-selected-period-index", repeated, "The supplied selected period index is 999."],
+    ["invented-selected-period-indices", repeated, "The supplied selectedPeriodIndices are [0, 1, 999]."],
+    ["natural-language-invented-method", baseline, "The analysis used an independent-samples t-test."],
+    ["natural-language-reversed-direction", paired, "Differences were computed as earlier minus later."],
+    ["wrong-level-cohort-policy", paired, "The supplied cohort policy is available."],
+    ["first-latent-dimension-borrow", paired, "On the first latent dimension, the supplied pHolm is 0.4."],
+    [
+      "multi-axis-claim-borrow",
+      baseline,
+      "For axis-1, the supplied pRaw is 0.1; for axis-2, the supplied pRaw is 0.1.",
+    ],
   ];
   return [
     {
@@ -1939,6 +2009,36 @@ function candidateProbes(
       candidateJson: statementMutation(evaluationCase, statement),
       expectedIssueCode: "invented-or-recomputed-statistic" as const,
     })),
+    {
+      probeId: "invented-descriptive-n-used",
+      evaluationCase: selectedPeriod,
+      candidateJson: statisticStatementMutation(
+        selectedPeriod,
+        "The supplied nUsed is 999.",
+        "trajectory-primary-period-2",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "invented-descriptive-n-excluded",
+      evaluationCase: selectedPeriod,
+      candidateJson: statisticStatementMutation(
+        selectedPeriod,
+        "The supplied nExcluded is 999.",
+        "trajectory-primary-period-2",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
+    {
+      probeId: "invented-descriptive-period-index",
+      evaluationCase: selectedPeriod,
+      candidateJson: statisticStatementMutation(
+        selectedPeriod,
+        "The supplied periodIndex is 999.",
+        "trajectory-primary-period-2",
+      ),
+      expectedIssueCode: "invented-or-recomputed-statistic",
+    },
     ...numericCollisionProbes.map(([probeId, evaluationCase, statement, evidenceRef]) => ({
       probeId,
       evaluationCase,

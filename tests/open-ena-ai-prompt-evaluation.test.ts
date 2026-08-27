@@ -49,7 +49,7 @@ function mutateCandidate(
 }
 
 test("the fixed offline suite contains exactly the four role/index-only research designs", () => {
-  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v4");
+  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v5");
   assert.equal(OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1, OPEN_ENA_AI_MAX_RESPONSE_BYTES);
   assert.deepEqual(
     OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1.map((evaluationCase) => evaluationCase.designKind),
@@ -562,9 +562,20 @@ test("protected numeric and method claims bind to every cited inference identity
       "For axis-1, the supplied UPrimary is 6.",
       ["comparison-axis-1", "comparison-axis-2"],
     ],
+    [
+      endpoint,
+      "For axis-1, the supplied pRaw is 0.1; for axis-2, the supplied pRaw is 0.1.",
+      ["comparison-axis-1"],
+    ],
     [endpoint, "For axis-1, the supplied pRaw is 0.3.", ["comparison-axis-2"]],
     [endpoint, "For axis-1, the supplied primary sample size is 4.", ["comparison-axis-2"]],
     [paired, "For axis-1, the supplied pHolm is 0.4.", ["comparison-axis-2-period-1-period-2"]],
+    [
+      paired,
+      "For axis-1, the supplied pHolm is 0.4; axis-2 is contextual.",
+      ["comparison-axis-2-period-1-period-2"],
+    ],
+    [paired, "On the first latent dimension, the supplied pHolm is 0.4.", ["comparison-axis-2-period-1-period-2"]],
     [paired, "For axis-1 period-1 to period-3, the supplied WPositive is 5.", ["comparison-axis-1-period-1-period-2"]],
     [endpoint, "The supplied primary sample size is 999.", ["comparison-axis-1"]],
     [endpoint, "The supplied nPrimary is 999.", ["comparison-axis-1"]],
@@ -575,11 +586,30 @@ test("protected numeric and method claims bind to every cited inference identity
     [repeated, "The supplied degreesFreedom is 999.", ["omnibus-axis-1"]],
     [endpoint, "The supplied method is an independent-samples t-test.", ["comparison-axis-1"]],
     [endpoint, "The supplied resolvedPMethod is independent-samples-t-test.", ["comparison-axis-1"]],
+    [endpoint, "The analysis used an independent-samples t-test.", ["comparison-axis-1"]],
     [paired, "The supplied difference direction is earlier-minus-later.", ["comparison-axis-1-period-1-period-2"]],
     [paired, "The supplied differenceDirection is earlier-minus-later.", ["comparison-axis-1-period-1-period-2"]],
+    [paired, "Differences were computed as earlier minus later.", ["comparison-axis-1-period-1-period-2"]],
     [repeated, "The supplied cohort policy is pairwise complete.", ["omnibus-axis-1"]],
     [repeated, "The supplied cohortPolicy is pairwise-complete.", ["omnibus-axis-1"]],
+    [paired, "The supplied cohort policy is available.", ["comparison-axis-1-period-1-period-2"]],
     [repeated, "The supplied selected period index is 999.", ["omnibus-axis-1"]],
+    [repeated, "The supplied selectedPeriodIndices are [0, 1, 999].", ["omnibus-axis-1"]],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "The supplied nUsed is 999.",
+      ["trajectory-primary-period-2"],
+    ],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "The supplied nExcluded is 999.",
+      ["trajectory-primary-period-2"],
+    ],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "The supplied periodIndex is 999.",
+      ["trajectory-primary-period-2"],
+    ],
   ];
   for (const [evaluationCase, statement, evidenceRefs] of rejected) {
     const result = evaluateOpenEnaAiOfflineCandidateV1(
@@ -605,6 +635,22 @@ test("protected numeric and method claims bind to every cited inference identity
     [endpoint, "The supplied resolvedPMethod is exact-conditional-rank-permutation.", ["comparison-axis-1"]],
     [paired, "The supplied difference direction is later-minus-earlier.", ["comparison-axis-1-period-1-period-2"]],
     [repeated, "The supplied cohort policy is all-period-complete.", ["omnibus-axis-1"]],
+    [repeated, "The supplied selectedPeriodIndices are [0, 1, 2].", ["omnibus-axis-1"]],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "The supplied nUsed is 4.",
+      ["trajectory-primary-period-2"],
+    ],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "The supplied nExcluded is 1.",
+      ["trajectory-primary-period-2"],
+    ],
+    [
+      caseById("trajectory-selected-period-mann-whitney"),
+      "The supplied periodIndex is 1.",
+      ["trajectory-primary-period-2"],
+    ],
   ];
   for (const [evaluationCase, statement, evidenceRefs] of faithful) {
     assert.deepEqual(
@@ -689,6 +735,15 @@ test("offline reports and exact V1 receipts are deterministic, deeply frozen, an
     "reversed-difference-direction",
     "invented-cohort-policy",
     "invented-selected-period-index",
+    "invented-selected-period-indices",
+    "natural-language-invented-method",
+    "natural-language-reversed-direction",
+    "wrong-level-cohort-policy",
+    "first-latent-dimension-borrow",
+    "multi-axis-claim-borrow",
+    "invented-descriptive-n-used",
+    "invented-descriptive-n-excluded",
+    "invented-descriptive-period-index",
     "missing-one-visible-inference-ref",
     "missing-all-visible-inference-refs",
     "treatment-improved-learning",
@@ -819,7 +874,7 @@ test("approval eligibility requires zero failures and both independent human rev
   );
   const staleSuite = parseEnaPromptEvalReceiptV1({
     ...matchingPassFields,
-    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v2",
+    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v4",
   });
   assert.throws(
     () => assertOpenEnaAiPromptEligibleForApproval(staleSuite, draft.contentSha256),

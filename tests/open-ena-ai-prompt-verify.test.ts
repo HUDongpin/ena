@@ -40,6 +40,7 @@ async function loadVerifier() {
       mockClientCoverage: ReadonlyArray<{
         coverageId: string;
         evidenceKind: string;
+        sourceSha256Verified: boolean;
         status: "bound" | "missing";
       }>;
     };
@@ -93,6 +94,7 @@ test("the verifier returns one deterministic, authorization-neutral result for a
   assert.ok(first.mockClientCoverage.every(
     (entry) => entry.evidenceKind === "existing-offline-test-source-registration",
   ));
+  assert.ok(first.mockClientCoverage.every((entry) => entry.sourceSha256Verified));
   assert.equal(stableCanonicalJson(first), stableCanonicalJson(second));
   const canonicalResult = stableCanonicalJson(first);
   for (const forbiddenText of [
@@ -159,6 +161,9 @@ test("the verification function fails controlled prompt-byte, hash, schema, fixt
     `import test from "node:test";\ntest(${JSON.stringify(timeoutTestName)}, { skip: true }, () => { throw new Error("not run"); });`,
     `import test from "node:test";\ntest(${JSON.stringify(timeoutTestName)}, { todo: "later" }, () => { throw new Error("not run"); });`,
     `import test from "node:test";\ntest(${JSON.stringify(timeoutTestName)}, { only: true }, () => { throw new Error("not run"); });`,
+    `import test from "node:test";\ntest(${JSON.stringify(timeoutTestName)}, () => { return; });`,
+    `import test from "node:test";\ntest(${JSON.stringify(timeoutTestName)}, () => void 0);`,
+    `import test from "node:test";\ntest(${JSON.stringify(timeoutTestName)}, () => (() => { throw new Error("not invoked"); }));`,
   ];
   for (const mockClientTestSource of invalidRegistrations) {
     const result = verifier.buildOpenEnaAiPromptVerificationV1({ mockClientTestSource });
@@ -169,6 +174,38 @@ test("the verification function fails controlled prompt-byte, hash, schema, fixt
       mockClientTestSource,
     );
   }
+
+  const exactClientTestNames = [
+    "Luna interpretation aborts at the injected timeout and redacts the fetch error",
+    "Luna interpretation propagates caller cancellation to the provider request",
+    "Luna interpretation maps OpenRouter 429 to a fail-closed rate-limit error",
+    "Luna interpretation identifies OpenRouter 402 without exposing billing details or keys",
+    "Luna interpretation redacts non-timeout fetch failures",
+    "Luna interpretation rejects an oversized provider response before schema parsing",
+    "Luna interpretation rejects malformed completion JSON without echoing provider content",
+  ];
+  const allNoOpClientRegistrations = [
+    `import test from "node:test";`,
+    ...exactClientTestNames.map((name) => `test(${JSON.stringify(name)}, () => { return; });`),
+  ].join("\n");
+  const allNoOpResult = verifier.buildOpenEnaAiPromptVerificationV1({
+    mockClientTestSource: allNoOpClientRegistrations,
+  });
+  assert.equal(allNoOpResult.automatedStatus, "fail");
+  assert.ok(allNoOpResult.mockClientCoverage
+    .filter((entry) => entry.coverageId.startsWith("mock-"))
+    .every((entry) => entry.status === "missing"));
+
+  const sourceDrift = verifier.buildOpenEnaAiPromptVerificationV1({
+    mockClientTestSource: `${readFileSync(
+      join(projectRoot, "tests/open-ena-ai-interpretation-client.test.ts"),
+      "utf8",
+    )}\n// source-manifest-drift`,
+  });
+  assert.equal(sourceDrift.automatedStatus, "fail");
+  assert.ok(sourceDrift.mockClientCoverage
+    .filter((entry) => entry.coverageId.startsWith("mock-"))
+    .every((entry) => !entry.sourceSha256Verified && entry.status === "missing"));
 });
 
 test("the CLI is cwd- and AI-environment-independent and emits only canonical deterministic JSON", () => {

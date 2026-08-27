@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +28,13 @@ export const OPEN_ENA_AI_PROMPT_VERIFICATION_SCHEMA_VERSION_V1 =
   "open-ena-ai-prompt-verification-v1" as const;
 
 const LOCALES = ["en", "zh-hant", "zh-hans"] as const;
+
+const CONTRACT_TEST_SOURCE_SHA256 = deepFreeze({
+  client: "80548dbfeed11c68d95ce05ccd0776dc8f4fb1fff24c9cc64b888a19144dc2a6",
+  payload: "4e46712d5a086885b4bef1650368c3b74978899821c08efe3b06ed2e3c3426ad",
+  route: "9c37ec81a3b82043f3e16c97091d2aabe3b1639f0c10f9f35c3f6972a1ae32c2",
+  workspace: "a37072e40df9cf562691200630ff72b75c28d91e24892209391fbde5a6e7f342",
+} as const satisfies Readonly<Record<ContractTestSourceKey, string>>);
 
 const MOCK_CLIENT_COVERAGE_BINDINGS = [
   {
@@ -114,6 +122,7 @@ export interface OpenEnaAiPromptMockCoverageV1 {
   readonly evidenceKind: "existing-offline-test-source-registration";
   readonly sourceFile: typeof MOCK_CLIENT_COVERAGE_BINDINGS[number]["sourceFile"];
   readonly testName: typeof MOCK_CLIENT_COVERAGE_BINDINGS[number]["testName"];
+  readonly sourceSha256Verified: boolean;
   readonly status: "bound" | "missing";
 }
 
@@ -188,6 +197,7 @@ function mockClientCoverage(
   sources: Readonly<Record<ContractTestSourceKey, string>>,
 ): OpenEnaAiPromptMockCoverageV1[] {
   const registrations = new Map<ContractTestSourceKey, ReadonlySet<string>>();
+  const sourceHashBindings = new Map<ContractTestSourceKey, boolean>();
   return MOCK_CLIENT_COVERAGE_BINDINGS.map((binding) => {
     let registeredNames = registrations.get(binding.sourceKey);
     if (registeredNames === undefined) {
@@ -197,12 +207,22 @@ function mockClientCoverage(
       );
       registrations.set(binding.sourceKey, registeredNames);
     }
+    let sourceSha256Verified = sourceHashBindings.get(binding.sourceKey);
+    if (sourceSha256Verified === undefined) {
+      sourceSha256Verified = createHash("sha256")
+        .update(sources[binding.sourceKey], "utf8")
+        .digest("hex") === CONTRACT_TEST_SOURCE_SHA256[binding.sourceKey];
+      sourceHashBindings.set(binding.sourceKey, sourceSha256Verified);
+    }
     return deepFreeze({
       coverageId: binding.coverageId,
       evidenceKind: "existing-offline-test-source-registration" as const,
       sourceFile: binding.sourceFile,
       testName: binding.testName,
-      status: registeredNames.has(binding.testName) ? "bound" as const : "missing" as const,
+      sourceSha256Verified,
+      status: sourceSha256Verified && registeredNames.has(binding.testName)
+        ? "bound" as const
+        : "missing" as const,
     });
   });
 }
@@ -233,12 +253,25 @@ function registeredTopLevelNodeTestNames(source: string, sourceFile: string): Re
   const registeredNames = new Set<string>();
   const hasRunnableCallback = (value: ts.Expression | undefined): boolean => {
     if (!value || (!ts.isArrowFunction(value) && !ts.isFunctionExpression(value))) return false;
-    if (ts.isBlock(value.body)) return value.body.statements.length > 0;
-    return !ts.isIdentifier(value.body)
-      && !ts.isLiteralExpression(value.body)
-      && value.body.kind !== ts.SyntaxKind.TrueKeyword
-      && value.body.kind !== ts.SyntaxKind.FalseKeyword
-      && value.body.kind !== ts.SyntaxKind.NullKeyword;
+    let executableNodeFound = false;
+    let explicitRuntimeSkipFound = false;
+    const visit = (node: ts.Node): void => {
+      if (executableNodeFound && explicitRuntimeSkipFound) return;
+      if (node !== value && ts.isFunctionLike(node)) return;
+      if (ts.isCallExpression(node)) {
+        if (ts.isPropertyAccessExpression(node.expression)
+          && ["skip", "todo"].includes(node.expression.name.text)) {
+          explicitRuntimeSkipFound = true;
+        } else {
+          executableNodeFound = true;
+        }
+      } else if (ts.isNewExpression(node) || ts.isThrowStatement(node)) {
+        executableNodeFound = true;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(value.body);
+    return executableNodeFound && !explicitRuntimeSkipFound;
   };
   const hasRunnableOptions = (value: ts.Expression): boolean => {
     if (!ts.isObjectLiteralExpression(value)) return false;

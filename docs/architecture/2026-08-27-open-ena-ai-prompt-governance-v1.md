@@ -147,15 +147,16 @@ prompt, call a model, import the provider client, inspect AI environment variabl
 use credentials, access the network, write files, or alter runtime response
 handling.
 
-The frozen suite version `open-ena-ai-offline-synthetic-mock-v4` contains exactly
+The frozen suite version `open-ena-ai-offline-synthetic-mock-v5` contains exactly
 four fixed aggregate, role/index-only designs for each of `en`, `zh-hant`, and
 `zh-hans`:
 
-The suite identifier advances from v3 because evidence-identity binding, protected
-count/method/cohort checks, exact fixture-manifest enforcement, and runnable-test
-source registration change the meaning of an automated pass. The earlier v3
-advance introduced locale-bound compliant fixtures, locale-specific adversarial
-probes, broader statistic connectors, and the three-language lexical guardrails. The
+The suite identifier advances from v4 because exact multi-axis identity sets,
+descriptive-count and complete-array binding, inference-scope cohort policy,
+common method/direction forms, and executable source-registration shape change the
+meaning of an automated pass. The earlier v4 advance introduced protected
+count/method/cohort checks, exact fixture-manifest enforcement, and stricter test
+registration; v3 introduced locale-bound fixtures and lexical matrices. The
 report and six-field receipt contracts remain V1; only receipts from the current
 suite are eligible for later human review.
 
@@ -177,7 +178,7 @@ checked-in manifest. The hash binds the case ID, design, locale, aggregate evide
 compliant candidate, required inference IDs, limitations, coverage tags, and a
 digest of the private source canaries. A custom or drifted case may be evaluated for
 diagnostics, but the formal report and receipt receive
-`suite-fixture-identity-mismatch`; they cannot claim a zero-failure v4 run or pass
+`suite-fixture-identity-mismatch`; they cannot claim a zero-failure v5 run or pass
 approval eligibility under the frozen suite identity.
 
 Across those fixtures the suite exercises ties, small samples, zero differences,
@@ -211,14 +212,21 @@ claim to have recomputed a statistic fails even when the stated value was suppli
 A numerical statistical restatement is accepted only when its statistic label maps
 to the matching authoritative field in specifically cited evidence and uses an
 exact-value connector (for example, `pRaw` cannot borrow `pHolm`, sample size, tie
-count, or a period index). Every cited inferential record that owns the claimed
-field must support the exact value, and explicit axis/period qualifiers must match
-the cited evidence identity; a correct value from another axis cannot satisfy the
-claim. The closed numeric mapping also covers disclosed sample, matched/missing,
-sign, zero, ranked, complete-cohort, period, degrees-of-freedom, tie, and period-
-index fields. Method/test, difference-direction, and cohort-policy assertions must
-match the corresponding supplied string field. An uncited, absent, cross-field,
-cross-axis, or cross-period value fails. Threshold
+count, or a period index). Every cited record that owns the claimed field must
+support the exact value. Explicit axis roles must equal—not merely overlap—the
+roles of cited axis-bound evidence; explicit period qualifiers must match the cited
+contrast. Multi-axis or multi-period prose that cannot be bound unambiguously fails
+closed and should be split into separate observations. A correct value from another
+axis cannot satisfy the claim, even when both axes happen to share that value.
+The closed numeric mapping also covers disclosed inference and descriptive sample,
+matched/missing, used/excluded, entity, sign, zero, ranked, complete-cohort,
+period, degrees-of-freedom, tie, and period-index fields. Array-valued selected
+period indices are parsed and compared as the complete ordered array; matching only
+the first value is insufficient. Method/test and difference-direction assertions,
+including the declared common `used/applied` and `computed as` forms, must match
+the cited record. Cohort-policy assertions bind only to the authoritative inference
+scope policy and cannot borrow the descriptive trajectory policy. An uncited,
+absent, cross-field, cross-axis, cross-period, or wrong-layer value fails. Threshold
 or approximation forms using `<`, `>`, `<=`, `>=`, `≤`, `≥`, or `≈` fail closed:
 the verifier neither creates a significance threshold nor invents an approximation
 tolerance. The checker also uses bounded sentence-level patterns for causal,
@@ -289,10 +297,20 @@ only as `bound` or `missing`: source binding does not claim that a provider was
 called, a deployment was exercised, or the named test ran inside the verifier.
 Binding recognizes only active top-level calls imported from `node:test`, using a
 TypeScript syntax tree; comments and inert string literals cannot satisfy it. A
-registration must have a nonempty inline function or arrow callback. Bare calls,
-empty callbacks, non-literal options, spread/computed options, and explicit `skip`
-or `todo` options remain `missing`. This is still source-registration evidence, not
-an execution receipt; the root test command supplies the separate execution plane.
+registration must have an inline function or arrow callback containing an eagerly
+executed call, construction, or throw outside any nested uninvoked function. Bare
+calls, empty/no-op callbacks, callbacks that only return a function, non-literal
+options, spread/computed options, explicit `skip`/`todo`/`only` options, and runtime
+`skip`/`todo` calls remain `missing`. This deliberately rejects obvious placeholders
+but does not prove assertion quality or behavior coverage; it remains source-
+registration inventory, not an execution receipt. The root test command supplies
+the separate execution plane.
+The four bound contract-test source files are additionally pinned by literal
+SHA-256 values. Any source edit—including replacing assertions with a syntactically
+executable no-op—changes every affected entry to `missing` until the manifest and
+evaluation-suite version are explicitly reviewed and advanced. This source hash is
+an integrity/versioning control; it still does not turn static inspection into test
+execution evidence.
 Invalid JSON, forged evidence references, and missing limitations are additionally
 executed directly by the fixed offline evaluation suite.
 
