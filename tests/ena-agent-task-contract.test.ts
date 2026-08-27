@@ -99,6 +99,88 @@ test("the V1 parser accepts only plain JSON objects and never invokes accessors"
   assert.equal(invoked, false);
 });
 
+test("the V1 parser requires every root and repository-state field to be an own data property", () => {
+  const exerciseInheritedField = (
+    field: string,
+    descriptor: PropertyDescriptor,
+    contract: Record<string, unknown>,
+    expectedLabel: RegExp,
+  ) => {
+    assert.equal(Object.getOwnPropertyDescriptor(Object.prototype, field), undefined);
+    Object.defineProperty(Object.prototype, field, {
+      configurable: true,
+      enumerable: true,
+      ...descriptor,
+    });
+    try {
+      assert.throws(
+        () => parseEnaAgentTaskContractV1(contract),
+        expectedLabel,
+      );
+    } finally {
+      Reflect.deleteProperty(Object.prototype, field);
+    }
+  };
+
+  const { requiredEvidence: _rootInheritedValue, ...rootWithInheritedValue } = validContract();
+  exerciseInheritedField(
+    "requiredEvidence",
+    { value: ["Inherited evidence"] },
+    rootWithInheritedValue,
+    /requiredEvidence.*own enumerable data property/i,
+  );
+
+  let rootGetterInvocations = 0;
+  const { explicitGoal: _rootInheritedGetter, ...rootWithInheritedGetter } = validContract();
+  exerciseInheritedField(
+    "explicitGoal",
+    {
+      get() {
+        rootGetterInvocations += 1;
+        return "Inherited goal";
+      },
+    },
+    rootWithInheritedGetter,
+    /explicitGoal.*own enumerable data property/i,
+  );
+  assert.equal(rootGetterInvocations, 0);
+
+  const {
+    worktree: _nestedInheritedValue,
+    ...repositoryStateWithInheritedValue
+  } = validContract().currentRepositoryState;
+  const nestedWithInheritedValue = validContract({
+    currentRepositoryState: repositoryStateWithInheritedValue,
+  });
+  exerciseInheritedField(
+    "worktree",
+    { value: "/inherited/worktree" },
+    nestedWithInheritedValue,
+    /currentRepositoryState\.worktree.*own enumerable data property/i,
+  );
+
+  let nestedGetterInvocations = 0;
+  const {
+    branch: _nestedInheritedGetter,
+    ...repositoryStateWithInheritedGetter
+  } = validContract().currentRepositoryState;
+  const nestedWithInheritedGetter = validContract({
+    currentRepositoryState: repositoryStateWithInheritedGetter,
+  });
+  exerciseInheritedField(
+    "branch",
+    {
+      get() {
+        nestedGetterInvocations += 1;
+        return "inherited/branch";
+      },
+    },
+    nestedWithInheritedGetter,
+    /currentRepositoryState\.branch.*own enumerable data property/i,
+  );
+  assert.equal(nestedGetterInvocations, 0);
+});
+
 test("the V1 parser accepts only dense plain JSON arrays and never invokes array accessors", () => {
   const sparse = new Array<string>(1);
   assert.throws(
@@ -126,7 +208,7 @@ test("the V1 parser rejects missing fields, wrong types, wrong enums, blank goal
   const { requiredEvidence: _removed, ...missingRequiredEvidence } = validContract();
   assert.throws(
     () => parseEnaAgentTaskContractV1(missingRequiredEvidence),
-    /requiredEvidence.*array/i,
+    /requiredEvidence.*own enumerable data property/i,
   );
   assert.throws(
     () => parseEnaAgentTaskContractV1(validContract({ schemaVersion: "v2" })),
@@ -207,6 +289,86 @@ test("the V1 parser rejects unbounded and unsafe text input", () => {
   assert.throws(
     () => parseEnaAgentTaskContractV1(validContract({ explicitGoal: "Review\u202ethe contract" })),
     /explicitGoal.*unsafe/i,
+  );
+});
+
+test("the V1 parser and JSON Schema reject raw unsafe code points before normalization", () => {
+  const explicitGoalPattern = new RegExp(
+    ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA.properties.explicitGoal.pattern,
+    "u",
+  );
+  const listEntryPattern = new RegExp(
+    ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA.properties.assumptions.items.pattern,
+    "u",
+  );
+  const unsafeValues = [
+    "\tGoal",
+    "Goal\t",
+    "\nGoal",
+    "Goal\n",
+    "\u2028Goal",
+    "Goal\u2028",
+    "\ufeffGoal",
+    "Goal\ufeff",
+    "\u061cGoal",
+    "Goal\u061c",
+  ];
+
+  for (const unsafeValue of unsafeValues) {
+    assert.equal(explicitGoalPattern.test(unsafeValue), false);
+    assert.equal(listEntryPattern.test(unsafeValue), false);
+    assert.throws(
+      () => parseEnaAgentTaskContractV1(validContract({ explicitGoal: unsafeValue })),
+      /explicitGoal.*unsafe control or formatting characters/i,
+    );
+    assert.throws(
+      () => parseEnaAgentTaskContractV1(validContract({ assumptions: [unsafeValue] })),
+      /assumptions\[0\].*unsafe control or formatting characters/i,
+    );
+  }
+
+  assert.equal(explicitGoalPattern.test("  Goal with ordinary spaces  "), true);
+  assert.equal(
+    parseEnaAgentTaskContractV1(validContract({ explicitGoal: "  Goal with ordinary spaces  " }))
+      .explicitGoal,
+    "Goal with ordinary spaces",
+  );
+});
+
+test("the V1 parser enforces schema string limits by Unicode code points", () => {
+  const astralEmoji = "😀";
+  const listBoundary = astralEmoji.repeat(1_024);
+  const goalBoundary = astralEmoji.repeat(4_096);
+
+  assert.equal(Array.from(listBoundary).length, 1_024);
+  assert.equal(Array.from(goalBoundary).length, 4_096);
+  assert.equal(
+    parseEnaAgentTaskContractV1(validContract({ assumptions: [listBoundary] })).assumptions[0],
+    listBoundary,
+  );
+  assert.equal(
+    parseEnaAgentTaskContractV1(validContract({ explicitGoal: goalBoundary })).explicitGoal,
+    goalBoundary,
+  );
+  assert.throws(
+    () => parseEnaAgentTaskContractV1(validContract({
+      assumptions: [astralEmoji.repeat(1_025)],
+    })),
+    /assumptions\[0\].*1,?024/i,
+  );
+  assert.throws(
+    () => parseEnaAgentTaskContractV1(validContract({
+      explicitGoal: astralEmoji.repeat(4_097),
+    })),
+    /explicitGoal.*4,?096/i,
+  );
+  assert.equal(
+    ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA.properties.assumptions.items.maxLength,
+    1_024,
+  );
+  assert.equal(
+    ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA.properties.explicitGoal.maxLength,
+    4_096,
   );
 });
 
@@ -366,6 +528,28 @@ test("the V1 renderer preserves section structure around fence, HTML, heading, a
     "## Non-goals",
     "## Current repository state",
     "## Required evidence",
+    "## Maximum completion state",
+  ]) {
+    assert.equal(lines.filter((line) => line === section).length, 1);
+  }
+});
+
+test("the V1 renderer escapes caller hyphens that could create Markdown block structure", () => {
+  const compilation = compileEnaAgentTaskContractV1(validContract({
+    explicitGoal: "---",
+    nonGoals: ["- nested", "---"],
+  }));
+  const lines = compilation.markdown.split("\n");
+
+  assert.match(compilation.markdown, /## Explicit goal\n\\---/u);
+  assert.match(compilation.markdown, /## Non-goals\n- \\- nested\n- \\---/u);
+  assert.equal(lines.some((line) => /^ {0,3}(?:-\s*){3,}$/u.test(line)), false);
+  assert.equal(lines.some((line) => /^ {0,3}-\s+-\s+/u.test(line)), false);
+  for (const section of [
+    "## Current repository state",
+    "## Required evidence",
+    "## Failure recovery",
+    "## Stop conditions",
     "## Maximum completion state",
   ]) {
     assert.equal(lines.filter((line) => line === section).length, 1);
@@ -535,6 +719,49 @@ test("the V1 compiler applies restrictive mode governance without expanding allo
   assert.deepEqual(
     releaseVerify.requiredEvidence,
     ENA_AGENT_OPERATION_MODE_TEMPLATES_V1["release-verify"].requiredEvidence,
+  );
+});
+
+test("the V1 compiler reserves schema capacity for required mode governance", () => {
+  const releaseContract = (requiredEvidence: string[]) => validContract({
+    operationMode: "release-verify",
+    maximumCompletionState: "PRODUCTION_CANDIDATE",
+    allowedActions: ["inspect-ci-evidence"],
+    forbiddenActions: [],
+    scientificInvariants: [],
+    requiredEvidence,
+    stopConditions: [],
+  });
+  const sixtyFourCallerItems = Array.from(
+    { length: 64 },
+    (_, index) => `Caller evidence ${index + 1}`,
+  );
+
+  assert.equal(
+    ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA.properties.requiredEvidence.maxItems,
+    64,
+  );
+  assert.equal(
+    parseEnaAgentTaskContractV1(releaseContract(sixtyFourCallerItems)).requiredEvidence.length,
+    64,
+  );
+  assert.throws(
+    () => compileEnaAgentTaskContractV1(releaseContract(sixtyFourCallerItems)),
+    /release-verify.*requiredEvidence.*capacity.*required governance.*70 items.*64-item schema maximum/i,
+  );
+
+  const fiftyEightCallerItems = sixtyFourCallerItems.slice(0, 58);
+  const compiledAtBoundary = compileEnaAgentTaskContractV1(
+    releaseContract(fiftyEightCallerItems),
+  ).contract;
+  assert.equal(compiledAtBoundary.requiredEvidence.length, 64);
+  assert.deepEqual(
+    compiledAtBoundary.requiredEvidence.slice(0, 6),
+    ENA_AGENT_OPERATION_MODE_TEMPLATES_V1["release-verify"].requiredEvidence,
+  );
+  assert.deepEqual(
+    parseEnaAgentTaskContractV1(compiledAtBoundary),
+    compiledAtBoundary,
   );
 });
 

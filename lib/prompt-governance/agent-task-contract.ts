@@ -249,7 +249,7 @@ const REPOSITORY_STATE_KEYS = [
   "concurrentWritersKnown",
 ] as const;
 
-const SAFE_SINGLE_LINE_PATTERN = "^(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ufeff]+$";
+const SAFE_SINGLE_LINE_PATTERN = "^(?=.*\\S)[^\\u0000-\\u001f\\u061c\\u007f-\\u009f\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ufeff]+$";
 const BOUNDED_TEXT_LIST_SCHEMA = {
   type: "array",
   maxItems: 64,
@@ -374,18 +374,38 @@ function rejectUnknownProperties(
   }
 }
 
-const UNSAFE_TEXT = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/u;
+function requireOwnEnumerableDataProperties(
+  value: Record<string, unknown>,
+  requiredKeys: readonly string[],
+  label: string,
+): void {
+  for (const key of requiredKeys) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+      throw new Error(`${label}.${key} must be an own enumerable data property.`);
+    }
+  }
+}
+
+const UNSAFE_TEXT = /[\u0000-\u001f\u061c\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/u;
 const MAX_LIST_ITEMS = 64;
 const MAX_LIST_ENTRY_LENGTH = 1_024;
 
+function unicodeCodePointLength(value: string): number {
+  return Array.from(value).length;
+}
+
 function text(value: unknown, label: string, maximumLength = MAX_LIST_ENTRY_LENGTH): string {
   if (typeof value !== "string") throw new Error(`${label} must be a string.`);
-  if (value.length > maximumLength) {
+  if (UNSAFE_TEXT.test(value)) {
+    throw new Error(`${label} contains unsafe control or formatting characters.`);
+  }
+  if (unicodeCodePointLength(value) > maximumLength) {
     throw new Error(`${label} must be ${maximumLength.toLocaleString("en-US")} characters or fewer.`);
   }
   const normalized = value.normalize("NFC").trim();
   if (!normalized) throw new Error(`${label} must be nonblank.`);
-  if (normalized.length > maximumLength) {
+  if (unicodeCodePointLength(normalized) > maximumLength) {
     throw new Error(`${label} must be ${maximumLength.toLocaleString("en-US")} characters or fewer.`);
   }
   if (UNSAFE_TEXT.test(normalized)) {
@@ -476,6 +496,23 @@ function mergeGovernanceItems(required: readonly string[], supplied: readonly st
   return merged;
 }
 
+function mergeGovernanceItemsWithinSchemaCapacity(
+  operationMode: EnaAgentGovernedOperationModeV1,
+  field: "forbiddenActions" | "scientificInvariants" | "requiredEvidence" | "stopConditions",
+  required: readonly string[],
+  supplied: readonly string[],
+): string[] {
+  const merged = mergeGovernanceItems(required, supplied);
+  if (merged.length > MAX_LIST_ITEMS) {
+    throw new Error(
+      `${operationMode} mode ${field} lacks capacity for required governance: `
+      + `merged output would contain ${merged.length} items, exceeding the `
+      + `${MAX_LIST_ITEMS}-item schema maximum.`,
+    );
+  }
+  return merged;
+}
+
 function rejectActionsOutsideOperationMode(contract: EnaAgentTaskContractV1): void {
   const permitted = new Set<EnaAgentAllowedActionV1>(
     ENA_AGENT_OPERATION_ALLOWED_ACTIONS_V1[contract.operationMode],
@@ -499,8 +536,14 @@ function deepFreeze<T>(value: T, seen = new Set<unknown>()): T {
 export function parseEnaAgentTaskContractV1(value: unknown): EnaAgentTaskContractV1 {
   const input = record(value, "ENA agent task contract");
   rejectUnknownProperties(input, CONTRACT_KEYS, "ENA agent task contract");
+  requireOwnEnumerableDataProperties(input, CONTRACT_KEYS, "ENA agent task contract");
   const repositoryState = record(input.currentRepositoryState, "currentRepositoryState");
   rejectUnknownProperties(repositoryState, REPOSITORY_STATE_KEYS, "currentRepositoryState");
+  requireOwnEnumerableDataProperties(
+    repositoryState,
+    REPOSITORY_STATE_KEYS,
+    "currentRepositoryState",
+  );
   const headSha = text(repositoryState.headSha, "currentRepositoryState.headSha", 64).toLowerCase();
   if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(headSha)) {
     throw new Error("currentRepositoryState.headSha must be a 40- or 64-character Git SHA.");
@@ -564,13 +607,30 @@ export function applyEnaAgentOperationModeGovernanceV1(value: unknown): EnaAgent
 
   return parseEnaAgentTaskContractV1({
     ...contract,
-    forbiddenActions: mergeGovernanceItems(template.forbiddenActions, contract.forbiddenActions),
-    scientificInvariants: mergeGovernanceItems(
+    forbiddenActions: mergeGovernanceItemsWithinSchemaCapacity(
+      contract.operationMode,
+      "forbiddenActions",
+      template.forbiddenActions,
+      contract.forbiddenActions,
+    ),
+    scientificInvariants: mergeGovernanceItemsWithinSchemaCapacity(
+      contract.operationMode,
+      "scientificInvariants",
       template.scientificInvariants,
       contract.scientificInvariants,
     ),
-    requiredEvidence: mergeGovernanceItems(template.requiredEvidence, contract.requiredEvidence),
-    stopConditions: mergeGovernanceItems(template.stopConditions, contract.stopConditions),
+    requiredEvidence: mergeGovernanceItemsWithinSchemaCapacity(
+      contract.operationMode,
+      "requiredEvidence",
+      template.requiredEvidence,
+      contract.requiredEvidence,
+    ),
+    stopConditions: mergeGovernanceItemsWithinSchemaCapacity(
+      contract.operationMode,
+      "stopConditions",
+      template.stopConditions,
+      contract.stopConditions,
+    ),
   });
 }
 
@@ -579,7 +639,8 @@ function markdownText(value: string): string {
     .replace(/\\/gu, "\\\\")
     .replace(/</gu, "&lt;")
     .replace(/>/gu, "&gt;")
-    .replace(/([`~*_{}\[\]()#+.!|])/gu, "\\$1");
+    .replace(/([`~*_{}\[\]()#+.!|])/gu, "\\$1")
+    .replace(/^-/u, "\\-");
 }
 
 function markdownList(values: readonly string[]): string {
