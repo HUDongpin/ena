@@ -29,7 +29,7 @@ test("the version-controlled longitudinal V3 smoke owns its server and covers th
   assert.match(source, /\["isometric",\s*"xy",\s*"xz",\s*"yz",\s*"yx",\s*"zx",\s*"zy"\]/u);
   assert.match(source, /\["xy",\s*"xz",\s*"yz",\s*"yx",\s*"zx",\s*"zy"\]/u);
   assert.match(source, /\{\s*width:\s*1440,\s*height:\s*1000/u);
-  assert.match(source, /\{\s*width:\s*820,\s*height:\s*1180/u);
+  assert.match(source, /\{\s*width:\s*1024,\s*height:\s*768/u);
   assert.match(source, /\{\s*width:\s*390,\s*height:\s*844/u);
   assert.match(source, /page\.on\("console"/u);
   assert.match(source, /page\.on\("pageerror"/u);
@@ -48,6 +48,8 @@ test("the version-controlled longitudinal V3 smoke owns its server and covers th
   assert.match(source, /page\.mouse\.move\([^)]*steps:/u);
   assert.match(source, /projection\?\.type/u);
   assert.match(source, /taskRequestCount/u);
+  assert.match(source, /clippedInteractiveControls/u);
+  assert.match(source, /getBoundingClientRect\(\)/u);
   assert.match(source, /codesPresent/u);
   assert.match(source, /centroidSquares/u);
   assert.match(source, /lineOnlyTrajectories/u);

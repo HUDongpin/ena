@@ -98,7 +98,7 @@ const expectedCameraStates = {
 const twoDimensionalProjections = ["xy", "xz", "yz", "yx", "zx", "zy"];
 const viewportMatrix = [
   { width: 1440, height: 1000, name: "desktop" },
-  { width: 820, height: 1180, name: "tablet" },
+  { width: 1024, height: 768, name: "tablet" },
   { width: 390, height: 844, name: "mobile" },
 ];
 const expectedCodeLabels = ["TE", "EX", "IN", "RE", "SP", "TP"];
@@ -997,12 +997,37 @@ async function captureResponsiveEvidence(page, args) {
   for (const viewport of args.viewports) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.waitForTimeout(250);
-    const overflow = await page.evaluate(() => ({
-      documentClientWidth: document.documentElement.clientWidth,
-      documentScrollWidth: document.documentElement.scrollWidth,
-      bodyClientWidth: document.body.clientWidth,
-      bodyScrollWidth: document.body.scrollWidth,
-    }));
+    const overflow = await page.evaluate(() => {
+      const clippedInteractiveControls = [...document.querySelectorAll(
+        '[data-testid="open-ena-longitudinal-v3-workbench"] button, '
+          + '[data-testid="open-ena-longitudinal-v3-workbench"] input, '
+          + '[data-testid="open-ena-longitudinal-v3-workbench"] select',
+      )].flatMap((element) => {
+        const style = getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        if (
+          style.display === "none"
+          || style.visibility === "hidden"
+          || rect.width <= 0
+          || rect.height <= 0
+          || rect.bottom <= 0
+          || rect.top >= window.innerHeight
+        ) return [];
+        if (rect.left >= -1 && rect.right <= window.innerWidth + 1) return [];
+        return [{
+          label: element.getAttribute("aria-label") || element.textContent?.trim() || element.tagName,
+          left: rect.left,
+          right: rect.right,
+        }];
+      });
+      return {
+        documentClientWidth: document.documentElement.clientWidth,
+        documentScrollWidth: document.documentElement.scrollWidth,
+        bodyClientWidth: document.body.clientWidth,
+        bodyScrollWidth: document.body.scrollWidth,
+        clippedInteractiveControls,
+      };
+    });
     assertBrowser(
       overflow.documentScrollWidth <= overflow.documentClientWidth + 1,
       "document overflow at " + viewport.width + "x" + viewport.height,
@@ -1010,6 +1035,12 @@ async function captureResponsiveEvidence(page, args) {
     assertBrowser(
       overflow.bodyScrollWidth <= overflow.bodyClientWidth + 1,
       "body overflow at " + viewport.width + "x" + viewport.height,
+    );
+    assertBrowser(
+      overflow.clippedInteractiveControls.length === 0,
+      "interactive controls are horizontally clipped at "
+        + viewport.width + "x" + viewport.height + ": "
+        + JSON.stringify(overflow.clippedInteractiveControls),
     );
     const pagePath = args.artifactDirectory + "/" + viewport.name + "-"
       + viewport.width + "x" + viewport.height + ".png";
