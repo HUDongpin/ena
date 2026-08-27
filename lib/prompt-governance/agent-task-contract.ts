@@ -607,7 +607,7 @@ function rejectActionsOutsideOperationMode(contract: EnaAgentTaskContractV1): vo
 
 const SHELL_EXECUTION_FEATURES = /[\n\r;&|<>`$\\"']/u;
 const REQUIRED_COMMAND_TOKEN = /^[A-Za-z0-9_./:@%+=,-]+$/u;
-const SAFE_TEST_PATH = /^tests\/(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9_./-]+\.(?:test|spec)\.(?:ts|js)$/u;
+const SAFE_TEST_PATH = /^tests\/[A-Za-z0-9_./-]+\.(?:test|spec)\.(?:ts|js)$/u;
 const SAFE_NPM_VERIFICATION_COMMANDS = new Set([
   "npm test",
   "npm run test",
@@ -809,7 +809,8 @@ function classifyRequiredCommand(command: string, label: string): RequiredComman
     && tokens[1] === "--import"
     && tokens[2] === "tsx"
     && tokens[3] === "--test"
-    && tokens.slice(4).every((path) => SAFE_TEST_PATH.test(path))) {
+    && tokens.slice(4).every((path) => SAFE_TEST_PATH.test(path)
+      && !path.split("/").includes(".."))) {
     effect = "local-verification";
   } else if (tokens[0] === "npm" && SAFE_NPM_VERIFICATION_COMMANDS.has(command)) {
     effect = "local-verification";

@@ -469,6 +469,8 @@ test("required commands reject shell execution features and mutation families in
     "rg -n pattern /etc/passwd",
     "rg --files ../../outside",
     "node --eval console.log",
+    "node --import tsx --test tests/../outside.test.ts",
+    "node --import tsx --test tests/nested/../../outside.test.ts",
   ];
 
   for (const mode of modes) {
