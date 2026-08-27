@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import {
-  OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1,
+  OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_BY_LOCALE_V1,
   OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1,
   collectOpenEnaAiOfflineFixtureEvidenceIdsV1,
   evaluateOpenEnaAiPromptArtifactOfflineV1,
@@ -263,17 +263,17 @@ function instantiatedEvidenceEnum(schema: unknown): readonly string[] | null {
 export function buildOpenEnaAiPromptVerificationV1(
   options: OpenEnaAiPromptVerificationOptionsV1 = {},
 ): OpenEnaAiPromptVerificationV1 {
-  const cases = options.cases ?? OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1;
-  const fixtureSchemaInputs = cases.map((evaluationCase) => ({
-    caseId: evaluationCase.caseId,
-    evidenceIds: collectOpenEnaAiOfflineFixtureEvidenceIdsV1(evaluationCase),
-  }));
   const artifacts: OpenEnaAiPromptVerificationArtifactV1[] = [];
   const evaluationReports: OpenEnaAiOfflineEvaluationReportV1[] = [];
   const evaluationReceipts: EnaPromptEvalReceiptV1[] = [];
   const hardGateFailures: string[] = [];
 
   for (const locale of LOCALES) {
+    const cases = options.cases ?? OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_BY_LOCALE_V1[locale];
+    const fixtureSchemaInputs = cases.map((evaluationCase) => ({
+      caseId: evaluationCase.caseId,
+      evidenceIds: collectOpenEnaAiOfflineFixtureEvidenceIdsV1(evaluationCase),
+    }));
     const registryArtifact = getApprovedOpenEnaAiPromptArtifact(
       OPEN_ENA_AI_PROMPT_VERSION_V2,
       locale,

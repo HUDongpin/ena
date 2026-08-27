@@ -147,13 +147,15 @@ prompt, call a model, import the provider client, inspect AI environment variabl
 use credentials, access the network, write files, or alter runtime response
 handling.
 
-The frozen suite version `open-ena-ai-offline-synthetic-mock-v2` contains exactly
-four fixed aggregate, role/index-only designs:
+The frozen suite version `open-ena-ai-offline-synthetic-mock-v3` contains exactly
+four fixed aggregate, role/index-only designs for each of `en`, `zh-hant`, and
+`zh-hans`:
 
-The suite identifier advances from v1 because typed numeric fidelity, complete
-visible-inference coverage, lexical probes, and byte-boundary probes change the
-meaning of an automated pass. The report and six-field receipt contracts remain
-V1; only receipts from the current suite are eligible for later human review.
+The suite identifier advances from v2 because locale-bound compliant fixtures,
+locale-specific adversarial probes, broader statistic connectors, and the
+three-language lexical guardrails change the meaning of an automated pass. The
+report and six-field receipt contracts remain V1; only receipts from the current
+suite are eligible for later human review.
 
 1. endpoint independent Mann-Whitney comparison;
 2. trajectory selected-period independent Mann-Whitney comparison;
@@ -178,31 +180,40 @@ statistic. Its compliant response must state that the complete Holm vector canno
 be reconstructed after privacy redaction.
 
 Each compliant canned interpretation is an explicitly offline test fixture; no
-canned answer exists in the production prompt or any model run. Every such fixture
-first passes the production v2 response parser, including strict object shape,
-nonempty limitations, and request-local evidence references. Adversarial canned
-outputs cover forged evidence IDs, missing limitations, extra or invalid fields,
-HTML, invalid JSON, excessive size, overlong strings and arrays, recomputation
-language, invented or altered statistics, incomplete visible-inference coverage,
-causal/outcome claims, sensitive-data requests or echoes, and prompt-injection
-following or echo. Artifact probes separately cover a one-byte prompt change,
-leading/trailing spaces and newlines, non-NFC prompt text, stale hash, stale prompt
-version, and response-schema drift.
+canned answer exists in the production prompt or any model run. Each locale has
+distinct, deeply frozen compliant copy and its request carries that exact locale;
+a locale/case mismatch fails the suite. Every fixture first passes the production
+v2 response parser, including strict object shape, nonempty limitations, and
+request-local evidence references. Each locale also has a frozen adversarial
+statement matrix covering numeric rewrites, causal/learning-gain, treatment-effect
+and practical-importance claims, sensitive student identifiers, and injection
+compliance in that locale. Common structural adversarial outputs additionally
+cover forged evidence IDs, missing limitations, extra or invalid fields, HTML,
+invalid JSON, excessive size, overlong strings and arrays, recomputation language,
+invented or altered statistics, incomplete visible-inference coverage, sensitive-
+data echoes, and prompt-injection echoes. Artifact probes separately cover a one-
+byte prompt change, leading/trailing spaces and newlines, non-NFC prompt text,
+stale hash, stale prompt version, and response-schema drift.
 
-The follow-on semantic check is intentionally conservative and English-only. An
-explicit claim to have recomputed a statistic fails even when the stated value was
-supplied. A numerical statistical restatement is accepted only when its statistic
-label maps to the matching authoritative field in specifically cited evidence
-(for example, `pRaw` cannot borrow `pHolm`, sample size, tie count, or a period
-index). An uncited, absent, or cross-field value fails. The checker also uses
-bounded sentence-level lexical patterns for causal, learning-gain, improvement,
-treatment-effect, practical-importance, sensitive-data, and injection claims,
-plus narrow negation handling and explicit limitation-concept checks. This is a
-deterministic guardrail, not semantic understanding: paraphrases can evade it,
-more complex negation can be misclassified, benign prose can trigger it, and a
-pass does not demonstrate live-model obedience, scientific correctness, or
-natural-response quality. It is deliberately not installed in production response
-handling in P2.
+The follow-on semantic check is intentionally conservative and covers declared
+English, Traditional Chinese, and Simplified Chinese patterns only. An explicit
+claim to have recomputed a statistic fails even when the stated value was supplied.
+A numerical statistical restatement is accepted only when its statistic label maps
+to the matching authoritative field in specifically cited evidence and uses an
+exact-value connector (for example, `pRaw` cannot borrow `pHolm`, sample size, tie
+count, or a period index). An uncited, absent, or cross-field value fails. Threshold
+or approximation forms using `<`, `>`, `<=`, `>=`, `≤`, `≥`, or `≈` fail closed:
+the verifier neither creates a significance threshold nor invents an approximation
+tolerance. The checker also uses bounded sentence-level patterns for causal,
+learning-gain, improvement, treatment-effect, practical-importance, sensitive-
+data, and injection claims, plus narrow negation handling and localized limitation-
+concept checks. This is a deterministic guardrail, not semantic understanding:
+unlisted paraphrases, mixed-language text, and languages outside the three declared
+locales remain outside lexical coverage; more complex negation can be misclassified;
+and benign prose can trigger it. A pass therefore reports only zero violations in
+the frozen declared matrix, not zero semantic violations generally, live-model
+obedience, scientific correctness, or natural-response quality. It is deliberately
+not installed in production response handling in P2.
 
 Private synthetic source canaries verify that hostile labels do not enter provider
 evidence and that echoes are rejected. Canary text is absent from reports and
@@ -245,10 +256,12 @@ resolves checked-in sources from `import.meta.url`, so direct execution is
 independent of the caller's working directory. It verifies all three locale hash
 bindings, approved registry authority, deterministic recompilation, specification
 and schema linting, request-local evidence enum instantiation, the four-design
-suite, and every declared adversarial kill. Each locale instantiates and compares
-the enum for all four fixture-specific evidence-ID sets, not a shared representative
-set. It prints canonical deterministic JSON containing reports and exact pending
-receipts and returns nonzero on any automated hard-gate failure.
+suite, and every declared adversarial kill. Each locale selects its own four
+locale-bound cases and adversarial statement matrix, then instantiates and compares
+the enum for all four fixture-specific evidence-ID sets, not a shared English case
+set or a representative evidence set. It prints canonical deterministic JSON
+containing reports and exact pending receipts and returns nonzero on any automated
+hard-gate failure.
 
 The verifier also binds, by repository-relative source file and exact test name,
 existing offline tests for timeout, cancellation, HTTP 429, HTTP 402, network
