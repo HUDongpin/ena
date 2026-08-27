@@ -30,7 +30,7 @@ function validContract(overrides: Record<string, unknown> = {}) {
     authoritativeSources: ["Approved implementation plan"],
     assumptions: [],
     unresolvedDecisions: [],
-    allowedActions: ["edit-authorized-scope"],
+    allowedActions: ["edit-authorized-scope", "run-local-verification"],
     forbiddenActions: ["Deploy the application."],
     scientificInvariants: ["Do not alter ENA scientific calculations."],
     acceptanceCriteria: ["Focused public-interface tests pass."],
@@ -126,6 +126,97 @@ test("the V1 parser accepts only plain JSON objects and never invokes accessors"
     /plain JSON object.*accessor/i,
   );
   assert.equal(invoked, false);
+});
+
+test("the V1 parser rejects live and revoked Proxies before any trap can run", () => {
+  const trapCounts = {
+    get: 0,
+    getOwnPropertyDescriptor: 0,
+    getPrototypeOf: 0,
+    ownKeys: 0,
+  };
+  const handler: ProxyHandler<Record<string, unknown>> = {
+    get(target, property, receiver) {
+      trapCounts.get += 1;
+      return Reflect.get(target, property, receiver);
+    },
+    getOwnPropertyDescriptor(target, property) {
+      trapCounts.getOwnPropertyDescriptor += 1;
+      return Reflect.getOwnPropertyDescriptor(target, property);
+    },
+    getPrototypeOf(target) {
+      trapCounts.getPrototypeOf += 1;
+      return Reflect.getPrototypeOf(target);
+    },
+    ownKeys(target) {
+      trapCounts.ownKeys += 1;
+      return Reflect.ownKeys(target);
+    },
+  };
+
+  assert.throws(
+    () => parseEnaAgentTaskContractV1(new Proxy(validContract(), handler)),
+    /Proxy.*not permitted|plain JSON.*Proxy/i,
+  );
+  assert.deepEqual(trapCounts, {
+    get: 0,
+    getOwnPropertyDescriptor: 0,
+    getPrototypeOf: 0,
+    ownKeys: 0,
+  });
+
+  const nestedTrapCounts = { get: 0, getPrototypeOf: 0, ownKeys: 0 };
+  const nestedProxy = new Proxy(validContract().currentRepositoryState, {
+    get(target, property, receiver) {
+      nestedTrapCounts.get += 1;
+      return Reflect.get(target, property, receiver);
+    },
+    getPrototypeOf(target) {
+      nestedTrapCounts.getPrototypeOf += 1;
+      return Reflect.getPrototypeOf(target);
+    },
+    ownKeys(target) {
+      nestedTrapCounts.ownKeys += 1;
+      return Reflect.ownKeys(target);
+    },
+  });
+  assert.throws(
+    () => parseEnaAgentTaskContractV1(validContract({ currentRepositoryState: nestedProxy })),
+    /currentRepositoryState.*Proxy/i,
+  );
+  assert.deepEqual(nestedTrapCounts, { get: 0, getPrototypeOf: 0, ownKeys: 0 });
+
+  let arrayTraps = 0;
+  const proxiedList = new Proxy(["Approved plan"], {
+    get(target, property, receiver) {
+      arrayTraps += 1;
+      return Reflect.get(target, property, receiver);
+    },
+    getOwnPropertyDescriptor(target, property) {
+      arrayTraps += 1;
+      return Reflect.getOwnPropertyDescriptor(target, property);
+    },
+    getPrototypeOf(target) {
+      arrayTraps += 1;
+      return Reflect.getPrototypeOf(target);
+    },
+    ownKeys(target) {
+      arrayTraps += 1;
+      return Reflect.ownKeys(target);
+    },
+  });
+  assert.throws(
+    () => parseEnaAgentTaskContractV1(validContract({ assumptions: proxiedList })),
+    /assumptions.*Proxy/i,
+  );
+  assert.equal(arrayTraps, 0);
+
+  const revoked = Proxy.revocable(validContract(), {});
+  revoked.revoke();
+  assert.throws(
+    () => parseEnaAgentTaskContractV1(revoked.proxy),
+    /Proxy.*not permitted|plain JSON.*Proxy/i,
+  );
 });
 
 test("the V1 parser requires every root and repository-state field to be an own data property", () => {
@@ -328,6 +419,177 @@ test("the V1 parser rejects an action that is both allowed and forbidden", () =>
   );
 });
 
+test("required commands never grant verification authority", () => {
+  assert.throws(
+    () => parseEnaAgentTaskContractV1(validContract({
+      allowedActions: ["edit-authorized-scope"],
+      requiredCommands: ["node --import tsx --test tests/ena-agent-task-contract.test.ts"],
+    })),
+    /requiredCommands\[0\].*run-local-verification.*explicit allowedActions/i,
+  );
+});
+
+test("required commands reject shell execution features and mutation families in every governed mode", () => {
+  const modes = [
+    {
+      operationMode: "diagnose",
+      maximumCompletionState: "PLANNED",
+      allowedActions: ["inspect-repository-state"],
+    },
+    {
+      operationMode: "plan",
+      maximumCompletionState: "PLANNED",
+      allowedActions: ["inspect-repository-state"],
+    },
+    {
+      operationMode: "independent-review",
+      maximumCompletionState: "PARITY_CANDIDATE",
+      allowedActions: ["inspect-review-candidate"],
+    },
+    {
+      operationMode: "release-verify",
+      maximumCompletionState: "PRODUCTION_CANDIDATE",
+      allowedActions: ["inspect-local-implementation-evidence"],
+    },
+  ] as const;
+  const rejectedCommands = [
+    "git add lib/prompt-governance/agent-task-contract.ts",
+    "git commit -m review",
+    "git push origin main",
+    "git merge main",
+    "git restore lib/prompt-governance/agent-task-contract.ts",
+    "npm run deploy",
+    "git status && git push origin main",
+    "git status; git push origin main",
+    "git status | tee status.txt",
+    "git status > status.txt",
+    "$(git status)",
+    "`git status`",
+    "rg --pre processor pattern .",
+    "rg -n pattern /etc/passwd",
+    "rg --files ../../outside",
+    "node --eval console.log",
+  ];
+
+  for (const mode of modes) {
+    for (const command of rejectedCommands) {
+      assert.throws(
+        () => compileEnaAgentTaskContractV1(validContract({
+          ...mode,
+          requiredCommands: [command],
+          forbiddenActions: [],
+        })),
+        /requiredCommands\[0\].*(?:unsupported|not permitted|shell)/i,
+        `${mode.operationMode} must reject: ${command}`,
+      );
+    }
+  }
+});
+
+test("required commands accept only closed read-only and verification families with explicit capabilities", () => {
+  const accepted = [
+    {
+      operationMode: "diagnose",
+      maximumCompletionState: "PLANNED",
+      allowedActions: ["inspect-repository-state"],
+      command: "git status --short",
+    },
+    {
+      operationMode: "diagnose",
+      maximumCompletionState: "PLANNED",
+      allowedActions: ["inspect-authoritative-sources"],
+      command: "rg -n requiredCommands lib/prompt-governance/agent-task-contract.ts",
+    },
+    {
+      operationMode: "diagnose",
+      maximumCompletionState: "PLANNED",
+      allowedActions: ["run-read-only-diagnostics"],
+      command: "node --import tsx --test tests/ena-agent-task-contract.test.ts",
+    },
+    {
+      operationMode: "plan",
+      maximumCompletionState: "PLANNED",
+      allowedActions: ["inspect-repository-state"],
+      command: "git rev-parse --short HEAD",
+    },
+    {
+      operationMode: "implement",
+      maximumCompletionState: "IMPLEMENTED_UNVERIFIED",
+      allowedActions: ["inspect-repository-state"],
+      command: "git diff --check",
+    },
+    ...[
+      "npm test",
+      "npm run test",
+      "npm run test:app",
+      "npm run typecheck",
+      "npm run typecheck:app",
+      "npm run build",
+      "npm run build:app",
+      "npm run verify",
+      "npm run prompt:verify",
+      "npm run test:browser:longitudinal-v3",
+      "npm run test:browser --workspace=jena-js",
+    ].map(
+      (command) => ({
+        operationMode: "implement" as const,
+        maximumCompletionState: "IMPLEMENTED_UNVERIFIED" as const,
+        allowedActions: ["run-local-verification"] as const,
+        command,
+      }),
+    ),
+    {
+      operationMode: "independent-review",
+      maximumCompletionState: "PARITY_CANDIDATE",
+      allowedActions: ["inspect-review-candidate"],
+      command: "git show --stat HEAD",
+    },
+    {
+      operationMode: "independent-review",
+      maximumCompletionState: "PARITY_CANDIDATE",
+      allowedActions: ["run-independent-verification"],
+      command: "node --import tsx --test tests/ena-agent-task-contract.test.ts",
+    },
+    {
+      operationMode: "release-verify",
+      maximumCompletionState: "PRODUCTION_CANDIDATE",
+      allowedActions: ["inspect-local-implementation-evidence"],
+      command: "git log --oneline --max-count=5",
+    },
+    {
+      operationMode: "release-verify",
+      maximumCompletionState: "PRODUCTION_CANDIDATE",
+      allowedActions: ["run-independent-verification"],
+      command: "npm run verify",
+    },
+  ] as const;
+
+  for (const testCase of accepted) {
+    const { command, ...contractOverrides } = testCase;
+    const compiled = compileEnaAgentTaskContractV1(validContract({
+      ...contractOverrides,
+      requiredCommands: [command],
+      forbiddenActions: [],
+    }));
+    assert.deepEqual(compiled.contract.requiredCommands, [command]);
+  }
+
+  for (const command of [
+    "git status --short",
+    "rg -n requiredCommands lib/prompt-governance/agent-task-contract.ts",
+    "npm run verify",
+  ]) {
+    assert.throws(
+      () => parseEnaAgentTaskContractV1(validContract({
+        allowedActions: ["report-findings-and-gaps"],
+        requiredCommands: [command],
+      })),
+      /requiredCommands\[0\].*explicit allowedActions.*never grant authority/i,
+      `missing capability must reject: ${command}`,
+    );
+  }
+});
+
 test("the V1 parser rejects duplicate normalized list entries", () => {
   assert.throws(
     () => parseEnaAgentTaskContractV1(validContract({
@@ -353,6 +615,19 @@ test("the V1 parser rejects unbounded and unsafe text input", () => {
   assert.throws(
     () => parseEnaAgentTaskContractV1(validContract({ explicitGoal: "Review\u202ethe contract" })),
     /explicitGoal.*unsafe/i,
+  );
+
+  assert.throws(
+    () => parseEnaAgentTaskContractV1(validContract({
+      explicitGoal: `${"x".repeat(8_193)}\u202e`,
+    })),
+    /explicitGoal.*4,?096/i,
+  );
+  assert.throws(
+    () => parseEnaAgentTaskContractV1(validContract({
+      assumptions: [`${"x".repeat(2_049)}\u202e`],
+    })),
+    /assumptions\[0\].*1,?024/i,
   );
 });
 
@@ -439,6 +714,94 @@ test("the V1 parser and JSON Schema reject every task-contract TAG and stealth-f
         .explicitGoal,
       validVariationSequence,
     );
+  }
+});
+
+test("the V1 parser and JSON Schema reject every tested control category and lone surrogate", () => {
+  const explicitGoalPattern = new RegExp(
+    ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA.properties.explicitGoal.pattern,
+    "u",
+  );
+  const listEntryPattern = new RegExp(
+    ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA.properties.assumptions.items.pattern,
+    "u",
+  );
+  const unsafeCodeUnitsOrPoints = [
+    0x034f,
+    0x0600,
+    0x070f,
+    0x115f,
+    0x1160,
+    0x17b4,
+    0x17b5,
+    0x1bca0,
+    0x3164,
+    0x13430,
+    0xffa0,
+    0xfff9,
+    0x110bd,
+    0xd800,
+    0xdbff,
+    0xdc00,
+    0xdfff,
+  ];
+
+  for (const codePoint of unsafeCodeUnitsOrPoints) {
+    const unsafe = codePoint >= 0xd800 && codePoint <= 0xdfff
+      ? String.fromCharCode(codePoint)
+      : String.fromCodePoint(codePoint);
+    for (const unsafeValue of [`${unsafe}Goal`, `Go${unsafe}al`, `Goal${unsafe}`]) {
+      const label = `U+${codePoint.toString(16).toUpperCase()}`;
+      assert.equal(explicitGoalPattern.test(unsafeValue), false, label);
+      assert.equal(listEntryPattern.test(unsafeValue), false, label);
+      assert.throws(
+        () => parseEnaAgentTaskContractV1(validContract({ explicitGoal: unsafeValue })),
+        /explicitGoal.*unsafe control or formatting characters/i,
+      );
+      assert.throws(
+        () => parseEnaAgentTaskContractV1(validContract({ assumptions: [unsafeValue] })),
+        /assumptions\[0\].*unsafe control or formatting characters/i,
+      );
+    }
+  }
+
+  for (const surrogate of ["\ud800", "\udbff", "\udc00", "\udfff"]) {
+    assert.throws(
+      () => parseEnaAgentTaskContractV1(validContract({
+        currentRepositoryState: {
+          ...validContract().currentRepositoryState,
+          worktree: `/repo/${surrogate}/worktree`,
+        },
+      })),
+      /currentRepositoryState\.worktree.*unsafe/i,
+    );
+    assert.throws(
+      () => parseEnaAgentTaskContractV1(validContract({
+        currentRepositoryState: {
+          ...validContract().currentRepositoryState,
+          branch: `codex/${surrogate}/branch`,
+        },
+      })),
+      /currentRepositoryState\.branch.*unsafe/i,
+    );
+  }
+
+  const loneSurrogate: string = ["A", "\ud800", "B"].join("");
+  const replacementCharacter: string = ["A", "\ufffd", "B"].join("");
+  assert.equal(loneSurrogate === replacementCharacter, false);
+  assert.deepEqual(Buffer.from(loneSurrogate), Buffer.from(replacementCharacter));
+  assert.throws(
+    () => parseEnaAgentTaskContractV1(validContract({ explicitGoal: loneSurrogate })),
+    /explicitGoal.*unsafe/i,
+  );
+  assert.equal(
+    parseEnaAgentTaskContractV1(validContract({ explicitGoal: replacementCharacter })).explicitGoal,
+    replacementCharacter,
+  );
+
+  for (const validText of ["Astral 😀 input", "Travel ✈\ufe0f plan", "Ideograph 漢\u{e0100} review"]) {
+    assert.equal(explicitGoalPattern.test(validText), true);
+    assert.equal(parseEnaAgentTaskContractV1(validContract({ explicitGoal: validText })).explicitGoal, validText);
   }
 });
 
@@ -723,6 +1086,7 @@ test("the V1 compiler enforces the complete operation-mode capability matrix", (
       "report-findings-and-gaps",
     ],
     "release-verify": [
+      "run-independent-verification",
       "inspect-local-implementation-evidence",
       "inspect-local-test-evidence",
       "inspect-ci-evidence",
@@ -765,6 +1129,7 @@ test("the V1 compiler enforces the complete operation-mode capability matrix", (
         maximumCompletionState: ceilings[operationMode],
         allowedActions: [action],
         forbiddenActions: [],
+        requiredCommands: [],
       }));
       if (permitted.has(action)) {
         assert.deepEqual(compile().contract.allowedActions, [action]);
@@ -784,6 +1149,7 @@ test("the V1 compiler applies restrictive mode governance without expanding allo
     allowedActions: [],
     forbiddenActions: [],
     scientificInvariants: [],
+    requiredCommands: [],
     requiredEvidence: [],
     stopConditions: [],
   };
@@ -836,6 +1202,7 @@ test("the V1 compiler reserves schema capacity for required mode governance", ()
     allowedActions: ["inspect-ci-evidence"],
     forbiddenActions: [],
     scientificInvariants: [],
+    requiredCommands: [],
     requiredEvidence,
     stopConditions: [],
   });
@@ -877,6 +1244,7 @@ test("the V1 compiler never infers scientific or release decisions from supplied
     operationMode: "release-verify",
     maximumCompletionState: "PLANNED",
     allowedActions: ["inspect-ci-evidence"],
+    requiredCommands: [],
     unresolvedDecisions: ["An authorized reviewer must decide scientific parity."],
     requiredEvidence: [
       "Local implementation evidence",

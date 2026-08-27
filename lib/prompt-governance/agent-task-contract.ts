@@ -1,3 +1,5 @@
+import { isProxy } from "node:util/types";
+
 export const ENA_AGENT_TASK_CONTRACT_SCHEMA_VERSION = "ena-agent-task-contract-v1" as const;
 
 export const ENA_AGENT_PROJECT_SURFACES = [
@@ -111,6 +113,7 @@ export const ENA_AGENT_OPERATION_ALLOWED_ACTIONS_V1 = deepFreeze({
     "report-findings-and-gaps",
   ],
   "release-verify": [
+    "run-independent-verification",
     "inspect-local-implementation-evidence",
     "inspect-local-test-evidence",
     "inspect-ci-evidence",
@@ -249,7 +252,7 @@ const REPOSITORY_STATE_KEYS = [
   "concurrentWritersKnown",
 ] as const;
 
-const UNSAFE_TEXT_CODE_POINT_CLASS_SOURCE = "\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u206f\\ufeff\\u{e0001}\\u{e0020}-\\u{e007f}";
+const UNSAFE_TEXT_CODE_POINT_CLASS_SOURCE = "\\p{C}\\p{Zl}\\p{Zp}\\u034f\\u115f-\\u1160\\u17b4-\\u17b5\\u3164\\uffa0";
 const SAFE_SINGLE_LINE_PATTERN = `^(?=.*\\S)[^${UNSAFE_TEXT_CODE_POINT_CLASS_SOURCE}]+$`;
 const GIT_SHA_PATTERN_SOURCE = "^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$";
 const BOUNDED_TEXT_LIST_SCHEMA = {
@@ -348,9 +351,13 @@ export const ENA_AGENT_TASK_CONTRACT_V1_JSON_SCHEMA = deepFreeze({
 } as const);
 
 function record(value: unknown, label: string): Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+  if (value === null || typeof value !== "object") {
     throw new Error(`${label} must be an object.`);
   }
+  if (isProxy(value)) {
+    throw new Error(`${label} must be a plain JSON object; Proxy values are not permitted.`);
+  }
+  if (Array.isArray(value)) throw new Error(`${label} must be an object.`);
   const prototype = Object.getPrototypeOf(value);
   const keys = Reflect.ownKeys(value);
   const hasUnsafeProperty = keys.some((key) => {
@@ -370,19 +377,24 @@ function rejectUnknownProperties(
   label: string,
 ): void {
   const allowed = new Set(allowedKeys);
-  const unknown = Object.getOwnPropertyNames(value).filter((key) => !allowed.has(key)).sort();
-  if (unknown.length > 0) {
-    const maximumDisplayedProperties = 8;
-    const displayed = unknown
-      .slice(0, maximumDisplayedProperties)
-      .map(diagnosticPropertyName)
-      .join(", ");
-    const plural = unknown.length === 1 ? "property" : "properties";
-    const count = unknown.length > maximumDisplayedProperties
-      ? `${unknown.length} total; showing the first ${maximumDisplayedProperties}`
-      : `${unknown.length} total`;
-    const omitted = unknown.length > maximumDisplayedProperties
-      ? ` (+${unknown.length - maximumDisplayedProperties} more)`
+  const maximumDisplayedProperties = 8;
+  const displayedProperties: string[] = [];
+  let unknownPropertyCount = 0;
+  for (const key in value) {
+    if (!Object.hasOwn(value, key) || allowed.has(key)) continue;
+    unknownPropertyCount += 1;
+    if (displayedProperties.length < maximumDisplayedProperties) {
+      displayedProperties.push(diagnosticPropertyName(key));
+    }
+  }
+  if (unknownPropertyCount > 0) {
+    const displayed = displayedProperties.join(", ");
+    const plural = unknownPropertyCount === 1 ? "property" : "properties";
+    const count = unknownPropertyCount > maximumDisplayedProperties
+      ? `${unknownPropertyCount} total; showing the first ${maximumDisplayedProperties}`
+      : `${unknownPropertyCount} total`;
+    const omitted = unknownPropertyCount > maximumDisplayedProperties
+      ? ` (+${unknownPropertyCount - maximumDisplayedProperties} more)`
       : "";
     throw new Error(`${label} has unknown ${plural} (${count}): ${displayed}${omitted}.`);
   }
@@ -437,31 +449,34 @@ function requireOwnEnumerableDataProperties(
   }
 }
 
-const UNSAFE_TEXT = new RegExp(`[${UNSAFE_TEXT_CODE_POINT_CLASS_SOURCE}]`, "u");
+const UNSAFE_TEXT_CHARACTER = new RegExp(`[${UNSAFE_TEXT_CODE_POINT_CLASS_SOURCE}]`, "u");
 const GIT_SHA_PATTERN = new RegExp(GIT_SHA_PATTERN_SOURCE, "u");
 const MAX_LIST_ITEMS = 64;
 const MAX_LIST_ENTRY_LENGTH = 1_024;
 
-function unicodeCodePointLength(value: string): number {
-  return Array.from(value).length;
+function validateTextCharactersAndLength(value: string, label: string, maximumLength: number): void {
+  const maximumCodeUnits = maximumLength * 2;
+  if (value.length > maximumCodeUnits) {
+    throw new Error(`${label} must be ${maximumLength.toLocaleString("en-US")} characters or fewer.`);
+  }
+  let codePointCount = 0;
+  for (const character of value) {
+    codePointCount += 1;
+    if (codePointCount > maximumLength) {
+      throw new Error(`${label} must be ${maximumLength.toLocaleString("en-US")} characters or fewer.`);
+    }
+    if (UNSAFE_TEXT_CHARACTER.test(character)) {
+      throw new Error(`${label} contains unsafe control or formatting characters.`);
+    }
+  }
 }
 
 function text(value: unknown, label: string, maximumLength = MAX_LIST_ENTRY_LENGTH): string {
   if (typeof value !== "string") throw new Error(`${label} must be a string.`);
-  if (UNSAFE_TEXT.test(value)) {
-    throw new Error(`${label} contains unsafe control or formatting characters.`);
-  }
-  if (unicodeCodePointLength(value) > maximumLength) {
-    throw new Error(`${label} must be ${maximumLength.toLocaleString("en-US")} characters or fewer.`);
-  }
+  validateTextCharactersAndLength(value, label, maximumLength);
   const normalized = value.normalize("NFC").trim();
   if (!normalized) throw new Error(`${label} must be nonblank.`);
-  if (unicodeCodePointLength(normalized) > maximumLength) {
-    throw new Error(`${label} must be ${maximumLength.toLocaleString("en-US")} characters or fewer.`);
-  }
-  if (UNSAFE_TEXT.test(normalized)) {
-    throw new Error(`${label} contains unsafe control or formatting characters.`);
-  }
+  validateTextCharactersAndLength(normalized, label, maximumLength);
   return normalized;
 }
 
@@ -473,6 +488,9 @@ function gitSha(value: unknown): string {
 }
 
 function assertDensePlainJsonArray(value: unknown[], label: string): void {
+  if (isProxy(value)) {
+    throw new Error(`${label} must be a dense plain JSON array; Proxy values are not permitted.`);
+  }
   const ownKeys = Reflect.ownKeys(value);
   const itemKeys = ownKeys.filter((key) => key !== "length");
   const hasUnsafeItem = itemKeys.some((key, index) => {
@@ -488,6 +506,9 @@ function assertDensePlainJsonArray(value: unknown[], label: string): void {
 }
 
 function textList(value: unknown, label: string): string[] {
+  if (value !== null && typeof value === "object" && isProxy(value)) {
+    throw new Error(`${label} must be a dense plain JSON array; Proxy values are not permitted.`);
+  }
   if (!Array.isArray(value)) throw new Error(`${label} must be an array.`);
   if (value.length > MAX_LIST_ITEMS) {
     throw new Error(`${label} must contain ${MAX_LIST_ITEMS} items or fewer.`);
@@ -584,6 +605,242 @@ function rejectActionsOutsideOperationMode(contract: EnaAgentTaskContractV1): vo
   });
 }
 
+const SHELL_EXECUTION_FEATURES = /[\n\r;&|<>`$\\"']/u;
+const REQUIRED_COMMAND_TOKEN = /^[A-Za-z0-9_./:@%+=,-]+$/u;
+const SAFE_TEST_PATH = /^tests\/(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9_./-]+\.(?:test|spec)\.(?:ts|js)$/u;
+const SAFE_NPM_VERIFICATION_COMMANDS = new Set([
+  "npm test",
+  "npm run test",
+  "npm run test:app",
+  "npm run test:browser:longitudinal-v3",
+  "npm run typecheck",
+  "npm run typecheck:app",
+  "npm run build",
+  "npm run build:app",
+  "npm run verify",
+  "npm run prompt:verify",
+  "npm run verify:j3dena-vendor",
+  "npm run verify:j3dena-vendor -- --require-installed",
+  "npm run jena:verify",
+  "npm run test:browser --workspace=jena-js",
+]);
+const SAFE_GIT_STATUS_ARGUMENTS = new Set([
+  "--short",
+  "--branch",
+  "--porcelain",
+  "--porcelain=v1",
+  "--porcelain=v2",
+  "--untracked-files=no",
+  "--untracked-files=normal",
+  "--untracked-files=all",
+]);
+const SAFE_GIT_DIFF_ARGUMENTS = new Set([
+  "--check",
+  "--stat",
+  "--name-only",
+  "--name-status",
+  "--cached",
+  "--staged",
+  "--no-ext-diff",
+  "--no-textconv",
+  "--exit-code",
+  "--quiet",
+]);
+const SAFE_GIT_HISTORY_ARGUMENTS = new Set([
+  "--oneline",
+  "--decorate",
+  "--stat",
+  "--name-only",
+  "--name-status",
+  "--no-patch",
+  "--no-show-signature",
+]);
+const SAFE_RG_ARGUMENTS = new Set([
+  "-n",
+  "--line-number",
+  "-F",
+  "--fixed-strings",
+  "-i",
+  "--ignore-case",
+  "--case-sensitive",
+  "-l",
+  "--files",
+  "--files-with-matches",
+  "--count",
+  "--count-matches",
+  "--no-heading",
+  "--with-filename",
+]);
+
+type RequiredCommandEffect = "repository-inspection" | "source-inspection" | "local-verification";
+
+const REQUIRED_COMMAND_EFFECT_ACTIONS = {
+  "repository-inspection": [
+    "inspect-repository-state",
+    "inspect-review-candidate",
+    "inspect-local-implementation-evidence",
+  ],
+  "source-inspection": [
+    "inspect-authoritative-sources",
+    "inspect-review-candidate",
+    "inspect-local-implementation-evidence",
+  ],
+  "local-verification": [
+    "run-local-verification",
+    "run-read-only-diagnostics",
+    "run-independent-verification",
+  ],
+} as const satisfies Record<RequiredCommandEffect, readonly EnaAgentAllowedActionV1[]>;
+
+function requiredCommandTokens(command: string, label: string): string[] {
+  if (SHELL_EXECUTION_FEATURES.test(command)) {
+    throw new Error(`${label} uses shell execution features that are not permitted by V1.`);
+  }
+  const tokens = command.split(" ");
+  if (tokens.length === 0
+    || tokens.length > 32
+    || tokens.join(" ") !== command
+    || tokens.some((token) => !REQUIRED_COMMAND_TOKEN.test(token))) {
+    throw new Error(`${label} is unsupported by the closed V1 required-command classifier.`);
+  }
+  return tokens;
+}
+
+function isSafeGitRevision(value: string): boolean {
+  return value === "HEAD"
+    || /^HEAD~[0-9]{1,4}$/u.test(value)
+    || /^[0-9a-fA-F]{7,64}$/u.test(value);
+}
+
+function areSafeGitDiffArguments(args: readonly string[]): boolean {
+  let pathsFollow = false;
+  for (const argument of args) {
+    if (argument === "--") {
+      if (pathsFollow) return false;
+      pathsFollow = true;
+      continue;
+    }
+    if (pathsFollow) {
+      if (argument.startsWith("/")
+        || argument.split("/").includes("..")
+        || !/^[A-Za-z0-9_./-]+$/u.test(argument)) return false;
+      continue;
+    }
+    if (!SAFE_GIT_DIFF_ARGUMENTS.has(argument) && !isSafeGitRevision(argument)) return false;
+  }
+  return true;
+}
+
+function areSafeGitHistoryArguments(args: readonly string[]): boolean {
+  return args.every((argument) => SAFE_GIT_HISTORY_ARGUMENTS.has(argument)
+    || /^--max-count=[1-9][0-9]{0,3}$/u.test(argument)
+    || /^-n[1-9][0-9]{0,3}$/u.test(argument)
+    || isSafeGitRevision(argument));
+}
+
+function classifyGitCommand(tokens: readonly string[]): RequiredCommandEffect | undefined {
+  const [, subcommand, ...args] = tokens;
+  switch (subcommand) {
+    case "status":
+      return args.every((argument) => SAFE_GIT_STATUS_ARGUMENTS.has(argument))
+        ? "repository-inspection"
+        : undefined;
+    case "diff":
+      return areSafeGitDiffArguments(args) ? "repository-inspection" : undefined;
+    case "show":
+    case "log":
+      return areSafeGitHistoryArguments(args) ? "repository-inspection" : undefined;
+    case "rev-parse":
+      return args.length > 0 && args.every((argument) => [
+        "--short",
+        "--verify",
+        "--abbrev-ref",
+        "--show-toplevel",
+        "--git-dir",
+        "--is-inside-work-tree",
+      ].includes(argument) || isSafeGitRevision(argument))
+        ? "repository-inspection"
+        : undefined;
+    case "branch":
+      return args.length === 1 && ["--show-current", "--list"].includes(args[0])
+        ? "repository-inspection"
+        : undefined;
+    case "worktree":
+      return args.length >= 1
+        && args[0] === "list"
+        && args.slice(1).every((argument) => argument === "--porcelain")
+        ? "repository-inspection"
+        : undefined;
+    case "ls-files":
+      return args.every((argument) => ["--cached", "--deleted", "--modified", "--others", "--exclude-standard"].includes(argument))
+        ? "repository-inspection"
+        : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function classifyRipgrepCommand(tokens: readonly string[]): RequiredCommandEffect | undefined {
+  const args = tokens.slice(1);
+  if (args.length === 0) return undefined;
+  const operands: string[] = [];
+  for (const argument of args) {
+    if (argument.startsWith("-")) {
+      if (!SAFE_RG_ARGUMENTS.has(argument)
+        && !/^--max-count=[1-9][0-9]{0,6}$/u.test(argument)
+        && !/^--max-filesize=[1-9][0-9]{0,6}(?:K|M|G)?$/u.test(argument)) return undefined;
+    } else {
+      operands.push(argument);
+    }
+  }
+  const filesOnly = args.includes("--files");
+  const repositoryRelativePaths = filesOnly ? operands : operands.slice(1);
+  const pathsAreSafe = repositoryRelativePaths.every((operand) => !operand.startsWith("/")
+    && !operand.split("/").includes("..")
+    && /^[A-Za-z0-9_./-]+$/u.test(operand));
+  return pathsAreSafe && (filesOnly || operands.length > 0) ? "source-inspection" : undefined;
+}
+
+function classifyRequiredCommand(command: string, label: string): RequiredCommandEffect {
+  const tokens = requiredCommandTokens(command, label);
+  let effect: RequiredCommandEffect | undefined;
+  if (tokens[0] === "node"
+    && tokens.length >= 5
+    && tokens[1] === "--import"
+    && tokens[2] === "tsx"
+    && tokens[3] === "--test"
+    && tokens.slice(4).every((path) => SAFE_TEST_PATH.test(path))) {
+    effect = "local-verification";
+  } else if (tokens[0] === "npm" && SAFE_NPM_VERIFICATION_COMMANDS.has(command)) {
+    effect = "local-verification";
+  } else if (tokens[0] === "git") {
+    effect = classifyGitCommand(tokens);
+  } else if (tokens[0] === "rg") {
+    effect = classifyRipgrepCommand(tokens);
+  }
+  if (effect === undefined) {
+    throw new Error(`${label} is unsupported by the closed V1 required-command classifier.`);
+  }
+  return effect;
+}
+
+function validateRequiredCommands(
+  requiredCommands: readonly string[],
+  allowedActions: readonly EnaAgentAllowedActionV1[],
+): void {
+  const explicitlyAllowed = new Set(allowedActions);
+  requiredCommands.forEach((command, index) => {
+    const effect = classifyRequiredCommand(command, `requiredCommands[${index}]`);
+    const requiredActions = REQUIRED_COMMAND_EFFECT_ACTIONS[effect];
+    if (!requiredActions.some((action) => explicitlyAllowed.has(action))) {
+      throw new Error(
+        `requiredCommands[${index}] requires ${requiredActions.join(" or ")} in explicit `
+        + "allowedActions; required commands never grant authority.",
+      );
+    }
+  });
+}
+
 function deepFreeze<T>(value: T, seen = new Set<unknown>()): T {
   if (value === null || typeof value !== "object" || seen.has(value)) return value;
   seen.add(value);
@@ -605,7 +862,9 @@ export function parseEnaAgentTaskContractV1(value: unknown): EnaAgentTaskContrac
   const headSha = gitSha(repositoryState.headSha);
   const allowedActions = allowedActionList(input.allowedActions);
   const forbiddenActions = textList(input.forbiddenActions, "forbiddenActions");
+  const requiredCommands = textList(input.requiredCommands, "requiredCommands");
   rejectConflictingActions(allowedActions, forbiddenActions);
+  validateRequiredCommands(requiredCommands, allowedActions);
 
   return deepFreeze({
     schemaVersion: enumValue(
@@ -638,7 +897,7 @@ export function parseEnaAgentTaskContractV1(value: unknown): EnaAgentTaskContrac
     forbiddenActions,
     scientificInvariants: textList(input.scientificInvariants, "scientificInvariants"),
     acceptanceCriteria: textList(input.acceptanceCriteria, "acceptanceCriteria"),
-    requiredCommands: textList(input.requiredCommands, "requiredCommands"),
+    requiredCommands,
     requiredEvidence: textList(input.requiredEvidence, "requiredEvidence"),
     failureRecovery: textList(input.failureRecovery, "failureRecovery"),
     stopConditions: textList(input.stopConditions, "stopConditions"),
