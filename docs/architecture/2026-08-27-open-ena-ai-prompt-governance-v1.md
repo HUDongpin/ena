@@ -52,7 +52,12 @@ and strict parsers:
 Every parser rejects unknown, inherited, accessor, symbol, sparse-array, unsafe
 control/bidirectional-text, duplicate, unbounded, enum/type, and malformed-hash
 inputs. Parsed values are normalized and deeply frozen. The approved base response
-schema is closed at every response object layer.
+schema is closed at every response object layer. JSON object keys must already be
+trimmed and NFC-normalized; normalized-key collisions are rejected independent of
+insertion order, and special keys such as `__proto__` are copied with own-data
+property descriptors so they cannot alter a clone's prototype. Public lint and
+assert boundaries first take an accessor-free descriptor snapshot and report a
+malformed-input hard gate without invoking getters.
 
 ## Canonical behavior hash
 
@@ -95,7 +100,10 @@ Runtime dispatch requires all of the following independently:
 
 Draft, evaluated, revoked, malformed, unknown-version, unknown-locale, or
 hash-mismatched artifacts fail closed. Receipt status is not consulted by the
-dispatcher and cannot create approval.
+dispatcher and cannot create approval. Approval metadata is not authority: a
+caller-created clone of a valid draft still fails even if the caller changes its
+unhashed status field to `approved`. The public approval assertion recognizes only
+the exact immutable object held by the private registry for that locale.
 
 ## Static linter boundaries
 
@@ -147,8 +155,10 @@ documented source, license basis, and independent review before inclusion.
 ## Request-local response schema
 
 The approved artifact stores a static strict base schema. At runtime, the schema
-instantiator validates and sorts the already-sanitized request-local evidence IDs,
-clones the relevant schema path, and adds only the `enum` for
+instantiator accepts only a prompt-version key, locale key, and evidence IDs. It
+resolves private registry authority internally; callers cannot pass an artifact or
+approval metadata. It then validates and sorts the already-sanitized request-local
+evidence IDs, clones the relevant schema path, and adds only the `enum` for
 `observedPatterns[*].evidenceRefs[*]`. It neither mutates the artifact nor includes
 request labels, study context, raw data, bindings, or other user text.
 

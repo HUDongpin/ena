@@ -128,7 +128,8 @@ export async function generateLunaInterpretation(
   try {
     promptArtifact = getApprovedOpenEnaAiPromptArtifact(request.promptVersion, request.locale);
     responseJsonSchema = instantiateOpenEnaAiResponseSchema(
-      promptArtifact,
+      request.promptVersion,
+      request.locale,
       [...collectOpenEnaAiEvidenceIds(request.evidence)],
     );
   } catch {

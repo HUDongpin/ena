@@ -490,21 +490,48 @@ function deepFreeze<T>(value: T, seen = new Set<unknown>()): T {
   return Object.freeze(value);
 }
 
-function cloneStrictJson(value: unknown, label: string): unknown {
+function cloneStrictJson(value: unknown, label: string, allowStringNewlines = false): unknown {
   if (value === null || typeof value === "boolean") return value;
-  if (typeof value === "string") return text(value, label, 32_768);
+  if (typeof value === "string") return text(value, label, 32_768, allowStringNewlines);
   if (typeof value === "number") {
     if (!Number.isFinite(value)) throw new Error(`${label} contains a non-finite number.`);
     return value;
   }
   if (Array.isArray(value)) {
-    return strictArray(value, label).map((item, index) => cloneStrictJson(item, `${label}[${index}]`));
+    return strictArray(value, label).map(
+      (item, index) => cloneStrictJson(item, `${label}[${index}]`, allowStringNewlines),
+    );
   }
   const input = strictRecord(value, label);
   const output: Record<string, unknown> = {};
-  for (const key of Object.keys(input)) {
-    const safeKey = text(key, `${label} property name`, 256);
-    output[safeKey] = cloneStrictJson(input[key], `${label}.${safeKey}`);
+  const keys = Object.keys(input);
+  const normalizedKeys = keys.map((key) => text(key, `${label} property name`, 256));
+  const rawKeyByNormalizedKey = new Map<string, string>();
+  for (let index = 0; index < keys.length; index += 1) {
+    const rawKey = keys[index];
+    const normalizedKey = normalizedKeys[index];
+    const existingRawKey = rawKeyByNormalizedKey.get(normalizedKey);
+    if (existingRawKey !== undefined && existingRawKey !== rawKey) {
+      throw new Error(
+        `${label} has a normalized property name collision: ${existingRawKey}, ${rawKey}.`,
+      );
+    }
+    rawKeyByNormalizedKey.set(normalizedKey, rawKey);
+  }
+  for (let index = 0; index < keys.length; index += 1) {
+    const rawKey = keys[index];
+    const normalizedKey = normalizedKeys[index];
+    if (normalizedKey !== rawKey) {
+      throw new Error(
+        `${label} property name must already be trimmed and NFC-normalized: ${rawKey}.`,
+      );
+    }
+    Object.defineProperty(output, rawKey, {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: cloneStrictJson(input[rawKey], `${label}.${rawKey}`, allowStringNewlines),
+    });
   }
   return output;
 }
@@ -692,6 +719,8 @@ export const OPEN_ENA_AI_PROMPT_SPEC_V1 = parseEnaPromptSpecV1({
 });
 
 export type EnaPromptHardGateIssueCodeV1 =
+  | "malformed-spec"
+  | "malformed-artifact"
   | "request-schema-incompatible"
   | "response-schema-incompatible"
   | "allowed-data-class-incompatible"
@@ -717,7 +746,8 @@ export type EnaPromptHardGateIssueCodeV1 =
   | "system-prompt-mismatch"
   | "content-hash-mismatch"
   | "approved-hash-binding-mismatch"
-  | "approval-status-not-approved";
+  | "approval-status-not-approved"
+  | "registry-authority-mismatch";
 
 export interface EnaPromptHardGateIssueV1 {
   readonly code: EnaPromptHardGateIssueCodeV1;
@@ -743,8 +773,47 @@ function hardGateIssue(
   return deepFreeze({ code, path, message });
 }
 
-export function lintEnaPromptSpecV1(spec: EnaPromptSpecV1): readonly EnaPromptHardGateIssueV1[] {
-  const issues: EnaPromptHardGateIssueV1[] = [];
+interface EnaPromptSpecInspectionV1 {
+  readonly snapshot: EnaPromptSpecV1 | null;
+  readonly issues: readonly EnaPromptHardGateIssueV1[];
+}
+
+interface EnaPromptArtifactInspectionV1 {
+  readonly snapshot: EnaPromptArtifactV1 | null;
+  readonly issues: readonly EnaPromptHardGateIssueV1[];
+}
+
+function safeClosedRecordSnapshot(
+  value: unknown,
+  keys: readonly string[],
+  label: string,
+  malformedCode: "malformed-spec" | "malformed-artifact",
+): { snapshot: Record<string, unknown> | null; issues: readonly EnaPromptHardGateIssueV1[] } {
+  try {
+    const snapshot = strictRecord(
+      cloneStrictJson(value, label, malformedCode === "malformed-artifact"),
+      label,
+    );
+    rejectUnknownProperties(snapshot, keys, label);
+    requireOwnDataProperties(snapshot, keys, label);
+    return { snapshot, issues: [] };
+  } catch {
+    return {
+      snapshot: null,
+      issues: [hardGateIssue(
+        malformedCode,
+        "$",
+        `${label} is not a closed accessor-free V1 contract.`,
+      )],
+    };
+  }
+}
+
+function inspectEnaPromptSpecV1(value: unknown): EnaPromptSpecInspectionV1 {
+  const safe = safeClosedRecordSnapshot(value, SPEC_KEYS, "ENA prompt spec", "malformed-spec");
+  if (safe.snapshot === null) return safe as EnaPromptSpecInspectionV1;
+  const spec = safe.snapshot as unknown as EnaPromptSpecV1;
+  const issues: EnaPromptHardGateIssueV1[] = [...safe.issues];
   if (!Array.isArray(spec.compatibleRequestSchemaVersions)
     || spec.compatibleRequestSchemaVersions.length !== 1
     || spec.compatibleRequestSchemaVersions[0] !== OPEN_ENA_AI_REQUEST_SCHEMA_VERSION_V2) {
@@ -813,11 +882,55 @@ export function lintEnaPromptSpecV1(spec: EnaPromptSpecV1): readonly EnaPromptHa
       "P1 requires the existing 1800-token budget.",
     ));
   }
-  return deepFreeze(issues);
+  let normalizedSpec: EnaPromptSpecV1 | null = null;
+  try {
+    normalizedSpec = parseEnaPromptSpecV1(safe.snapshot);
+  } catch {
+    if (!issues.some((issue) => issue.code === "malformed-spec")) {
+      issues.push(hardGateIssue(
+        "malformed-spec",
+        "$",
+        "ENA prompt spec fails its strict V1 parser.",
+      ));
+    }
+  }
+  return deepFreeze({ snapshot: normalizedSpec ?? spec, issues });
 }
 
-export function assertEnaPromptSpecV1(spec: EnaPromptSpecV1): void {
-  const issues = lintEnaPromptSpecV1(spec);
+function inspectEnaPromptArtifactV1(value: unknown): EnaPromptArtifactInspectionV1 {
+  const safe = safeClosedRecordSnapshot(
+    value,
+    ARTIFACT_KEYS,
+    "ENA prompt artifact",
+    "malformed-artifact",
+  );
+  if (safe.snapshot === null) return safe as EnaPromptArtifactInspectionV1;
+  try {
+    return deepFreeze({
+      snapshot: parseEnaPromptArtifactV1(safe.snapshot),
+      issues: safe.issues,
+    });
+  } catch {
+    return deepFreeze({
+      snapshot: safe.snapshot as unknown as EnaPromptArtifactV1,
+      issues: [
+        ...safe.issues,
+        hardGateIssue(
+          "malformed-artifact",
+          "$",
+          "ENA prompt artifact fails its strict V1 parser.",
+        ),
+      ],
+    });
+  }
+}
+
+export function lintEnaPromptSpecV1(value: unknown): readonly EnaPromptHardGateIssueV1[] {
+  return inspectEnaPromptSpecV1(value).issues;
+}
+
+export function assertEnaPromptSpecV1(value: unknown): void {
+  const issues = lintEnaPromptSpecV1(value);
   if (issues.length > 0) throw new EnaPromptGovernanceError("ENA prompt spec failed hard gates", issues);
 }
 
@@ -929,12 +1042,16 @@ const UNSAFE_OUTPUT_DIRECTIVE = /(?:```|\bxml\b|\bmarkdown\b|task[_ -]?complete|
 const UNSAFE_ORCHESTRATION_DIRECTIVE = /(?:\buse (?:external )?tools?\b|\bpersistent memory\b|\bautonomous loops?\b|\barbitrary network(?: access)?\b)/iu;
 
 export function lintEnaPromptArtifactV1(
-  spec: EnaPromptSpecV1,
-  artifact: EnaPromptArtifactV1,
+  specValue: unknown,
+  artifactValue: unknown,
   locale: OpenEnaAiPromptLocaleV2,
 ): readonly EnaPromptHardGateIssueV1[] {
   const normalizedLocale = localeValue(locale);
-  const issues = [...lintEnaPromptSpecV1(spec)];
+  const specInspection = inspectEnaPromptSpecV1(specValue);
+  const artifactInspection = inspectEnaPromptArtifactV1(artifactValue);
+  const issues = [...specInspection.issues, ...artifactInspection.issues];
+  const artifact = artifactInspection.snapshot;
+  if (artifact === null) return deepFreeze(issues);
   if (artifact.promptVersion !== OPEN_ENA_AI_PROMPT_VERSION_V2) {
     issues.push(hardGateIssue(
       "prompt-version-incompatible",
@@ -1004,22 +1121,27 @@ export function lintEnaPromptArtifactV1(
       "The artifact response schema is not strict canonical JSON.",
     ));
   }
-  try {
-    const computedHash = computeEnaPromptArtifactContentSha256V1(spec, artifact);
-    if (artifact.contentSha256 !== computedHash) {
-      issues.push(hardGateIssue(
-        "content-hash-mismatch",
-        "contentSha256",
-        "The artifact content hash does not match its canonical behavior payload.",
-      ));
-    }
-  } catch {
-    if (!issues.some((issue) => issue.code === "content-hash-mismatch")) {
-      issues.push(hardGateIssue(
-        "content-hash-mismatch",
-        "contentSha256",
-        "The artifact canonical behavior payload cannot be hashed safely.",
-      ));
+  if (specInspection.snapshot !== null) {
+    try {
+      const computedHash = computeEnaPromptArtifactContentSha256V1(
+        specInspection.snapshot,
+        artifact,
+      );
+      if (artifact.contentSha256 !== computedHash) {
+        issues.push(hardGateIssue(
+          "content-hash-mismatch",
+          "contentSha256",
+          "The artifact content hash does not match its canonical behavior payload.",
+        ));
+      }
+    } catch {
+      if (!issues.some((issue) => issue.code === "content-hash-mismatch")) {
+        issues.push(hardGateIssue(
+          "content-hash-mismatch",
+          "contentSha256",
+          "The artifact canonical behavior payload cannot be hashed safely.",
+        ));
+      }
     }
   }
   if (artifact.promptVersion === OPEN_ENA_AI_PROMPT_VERSION_V2
@@ -1034,8 +1156,8 @@ export function lintEnaPromptArtifactV1(
 }
 
 export function assertEnaPromptArtifactV1(
-  spec: EnaPromptSpecV1,
-  artifact: EnaPromptArtifactV1,
+  spec: unknown,
+  artifact: unknown,
   locale: OpenEnaAiPromptLocaleV2,
 ): void {
   const issues = lintEnaPromptArtifactV1(spec, artifact, locale);
@@ -1044,13 +1166,14 @@ export function assertEnaPromptArtifactV1(
   }
 }
 
-export function lintApprovedOpenEnaAiPromptArtifactV1(
-  spec: EnaPromptSpecV1,
-  artifact: EnaPromptArtifactV1,
+function lintStaticApprovedRegistryArtifactV1(
+  spec: unknown,
+  artifact: unknown,
   locale: OpenEnaAiPromptLocaleV2,
 ): readonly EnaPromptHardGateIssueV1[] {
   const issues = [...lintEnaPromptArtifactV1(spec, artifact, locale)];
-  if (artifact.approvalStatus !== "approved") {
+  const snapshot = inspectEnaPromptArtifactV1(artifact).snapshot;
+  if (snapshot !== null && snapshot.approvalStatus !== "approved") {
     issues.push(hardGateIssue(
       "approval-status-not-approved",
       "approvalStatus",
@@ -1060,12 +1183,12 @@ export function lintApprovedOpenEnaAiPromptArtifactV1(
   return deepFreeze(issues);
 }
 
-export function assertApprovedOpenEnaAiPromptArtifactV1(
-  spec: EnaPromptSpecV1,
-  artifact: EnaPromptArtifactV1,
+function assertStaticApprovedRegistryArtifactV1(
+  spec: unknown,
+  artifact: unknown,
   locale: OpenEnaAiPromptLocaleV2,
 ): void {
-  const issues = lintApprovedOpenEnaAiPromptArtifactV1(spec, artifact, locale);
+  const issues = lintStaticApprovedRegistryArtifactV1(spec, artifact, locale);
   if (issues.length > 0) {
     throw new EnaPromptGovernanceError("Approved ENA prompt artifact failed hard gates", issues);
   }
@@ -1082,7 +1205,7 @@ function buildApprovedRegistryArtifact(locale: OpenEnaAiPromptLocaleV2): EnaProm
     responseJsonSchema: OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2,
     approvalStatus: "approved",
   });
-  assertApprovedOpenEnaAiPromptArtifactV1(OPEN_ENA_AI_PROMPT_SPEC_V1, approved, locale);
+  assertStaticApprovedRegistryArtifactV1(OPEN_ENA_AI_PROMPT_SPEC_V1, approved, locale);
   return approved;
 }
 
@@ -1091,6 +1214,42 @@ const OPEN_ENA_AI_APPROVED_ARTIFACT_REGISTRY_V2 = deepFreeze({
   "zh-hant": buildApprovedRegistryArtifact("zh-hant"),
   "zh-hans": buildApprovedRegistryArtifact("zh-hans"),
 } as const satisfies Readonly<Record<OpenEnaAiPromptLocaleV2, EnaPromptArtifactV1>>);
+
+export function lintApprovedOpenEnaAiPromptArtifactV1(
+  spec: unknown,
+  artifact: unknown,
+  locale: OpenEnaAiPromptLocaleV2,
+): readonly EnaPromptHardGateIssueV1[] {
+  const normalizedLocale = localeValue(locale);
+  const issues = [...lintEnaPromptArtifactV1(spec, artifact, normalizedLocale)];
+  const snapshot = inspectEnaPromptArtifactV1(artifact).snapshot;
+  if (snapshot !== null && snapshot.approvalStatus !== "approved") {
+    issues.push(hardGateIssue(
+      "approval-status-not-approved",
+      "approvalStatus",
+      "Only an explicitly approved artifact may enter the runtime registry.",
+    ));
+  }
+  if (artifact !== OPEN_ENA_AI_APPROVED_ARTIFACT_REGISTRY_V2[normalizedLocale]) {
+    issues.push(hardGateIssue(
+      "registry-authority-mismatch",
+      "$",
+      "Approval metadata cannot substitute for exact private registry authority.",
+    ));
+  }
+  return deepFreeze(issues);
+}
+
+export function assertApprovedOpenEnaAiPromptArtifactV1(
+  spec: unknown,
+  artifact: unknown,
+  locale: OpenEnaAiPromptLocaleV2,
+): void {
+  const issues = lintApprovedOpenEnaAiPromptArtifactV1(spec, artifact, locale);
+  if (issues.length > 0) {
+    throw new EnaPromptGovernanceError("Approved ENA prompt artifact failed hard gates", issues);
+  }
+}
 
 export function getApprovedOpenEnaAiPromptArtifact(
   promptVersion: string,
@@ -1111,32 +1270,17 @@ export function getApprovedOpenEnaAiPromptArtifact(
   return artifact;
 }
 
-function localeForApprovedArtifactHash(contentSha256: string): OpenEnaAiPromptLocaleV2 | null {
-  return OPEN_ENA_AI_PROMPT_LOCALES_V2.find(
-    (locale) => OPEN_ENA_AI_APPROVED_ARTIFACT_SHA256_BY_LOCALE_V2[locale] === contentSha256,
-  ) ?? null;
-}
-
 export type OpenEnaAiInstantiatedResponseSchemaV2 = ReturnType<
   typeof instantiateOpenEnaAiResponseSchema
 >;
 
 export function instantiateOpenEnaAiResponseSchema(
-  artifact: EnaPromptArtifactV1,
+  promptVersion: string,
+  locale: OpenEnaAiPromptLocaleV2,
   evidenceIds: readonly string[],
 ) {
-  const parsedArtifact = parseEnaPromptArtifactV1(artifact);
-  const locale = localeForApprovedArtifactHash(parsedArtifact.contentSha256);
-  if (locale === null) {
-    throw new EnaPromptGovernanceError("Approved ENA prompt artifact failed hard gates", [
-      hardGateIssue(
-        "approved-hash-binding-mismatch",
-        "contentSha256",
-        "The artifact hash is absent from the explicit approved locale registry.",
-      ),
-    ]);
-  }
-  assertApprovedOpenEnaAiPromptArtifactV1(OPEN_ENA_AI_PROMPT_SPEC_V1, parsedArtifact, locale);
+  const artifact = getApprovedOpenEnaAiPromptArtifact(promptVersion, locale);
+  const baseSchema = artifact.responseJsonSchema as typeof OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2;
   const rawIds = strictArray(evidenceIds, "evidenceIds");
   if (rawIds.length === 0) throw new Error("evidenceIds must contain at least one request-local ID.");
   if (rawIds.length > 20_000) throw new Error("evidenceIds must contain 20,000 items or fewer.");
@@ -1154,17 +1298,17 @@ export function instantiateOpenEnaAiResponseSchema(
   }
   normalizedIds.sort();
   return deepFreeze({
-    ...OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2,
+    ...baseSchema,
     properties: {
-      ...OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2.properties,
+      ...baseSchema.properties,
       observedPatterns: {
-        ...OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2.properties.observedPatterns,
+        ...baseSchema.properties.observedPatterns,
         items: {
-          ...OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2.properties.observedPatterns.items,
+          ...baseSchema.properties.observedPatterns.items,
           properties: {
-            ...OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2.properties.observedPatterns.items.properties,
+            ...baseSchema.properties.observedPatterns.items.properties,
             evidenceRefs: {
-              ...OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2.properties.observedPatterns.items.properties.evidenceRefs,
+              ...baseSchema.properties.observedPatterns.items.properties.evidenceRefs,
               items: { type: "string", enum: normalizedIds },
             },
           },

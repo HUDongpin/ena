@@ -19,6 +19,7 @@ import {
   assertApprovedOpenEnaAiPromptArtifactV1,
   getApprovedOpenEnaAiPromptArtifact,
   instantiateOpenEnaAiResponseSchema,
+  lintApprovedOpenEnaAiPromptArtifactV1,
   lintEnaPromptArtifactV1,
   lintEnaPromptSpecV1,
   parseEnaPromptArtifactV1,
@@ -160,6 +161,55 @@ test("prompt governance parsers reject unknown, inherited, accessor, and symbol 
   const symbolProperty = validReceipt();
   Object.defineProperty(symbolProperty, Symbol("unsafe"), { enumerable: true, value: true });
   assert.throws(() => parseEnaPromptEvalReceiptV1(symbolProperty), /symbol/i);
+});
+
+test("artifact schema cloning rejects normalized-key ambiguity and handles __proto__ as data", () => {
+  const schemaWithProperty = (key: string, value: unknown) => {
+    const schema = structuredClone(OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2);
+    Object.defineProperty(schema, key, {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value,
+    });
+    return schema;
+  };
+
+  for (const hostileKey of [" type", "type "]) {
+    assert.throws(
+      () => parseEnaPromptArtifactV1(validArtifact({
+        responseJsonSchema: schemaWithProperty(hostileKey, "object"),
+      })),
+      /responseJsonSchema.*property name.*normalized|responseJsonSchema.*collision/i,
+    );
+  }
+
+  for (const keys of [
+    ["\u00e9", "e\u0301"],
+    ["e\u0301", "\u00e9"],
+  ]) {
+    const schema = structuredClone(OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2);
+    for (const key of keys) {
+      Object.defineProperty(schema, key, {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value: true,
+      });
+    }
+    assert.throws(
+      () => parseEnaPromptArtifactV1(validArtifact({ responseJsonSchema: schema })),
+      /normalized property name collision/i,
+    );
+  }
+
+  const protoSchema = schemaWithProperty("__proto__", { polluted: true });
+  assert.equal(Object.getPrototypeOf(protoSchema), Object.prototype);
+  assert.throws(
+    () => parseEnaPromptArtifactV1(validArtifact({ responseJsonSchema: protoSchema })),
+    /responseJsonSchema.*supported strict.*base schema/i,
+  );
+  assert.equal(({} as { polluted?: boolean }).polluted, undefined);
 });
 
 test("prompt governance parsers reject missing fields, wrong types and enums, malformed hashes, and unsafe text", () => {
@@ -359,6 +409,64 @@ test("the spec linter fails every unsupported P1 compatibility or capability mut
   }
 });
 
+test("public prompt lint and assert boundaries never invoke spec or artifact accessors", () => {
+  const accessorSpec = validSpec();
+  let specGetterInvocations = 0;
+  Object.defineProperty(accessorSpec, "compatibleRequestSchemaVersions", {
+    enumerable: true,
+    get() {
+      specGetterInvocations += 1;
+      return ["open-ena-ai-interpretation-request-v2"];
+    },
+  });
+  assert.ok(lintEnaPromptSpecV1(accessorSpec as never).some(
+    (issue) => issue.code === "malformed-spec",
+  ));
+  assert.equal(specGetterInvocations, 0);
+  assert.throws(() => assertEnaPromptSpecV1(accessorSpec as never), /malformed-spec/i);
+  assert.equal(specGetterInvocations, 0);
+
+  const accessorArtifact = validArtifact();
+  let artifactGetterInvocations = 0;
+  Object.defineProperty(accessorArtifact, "systemPrompt", {
+    enumerable: true,
+    get() {
+      artifactGetterInvocations += 1;
+      return OPEN_ENA_AI_SYSTEM_PROMPT_BY_LOCALE_V2.en;
+    },
+  });
+  assert.ok(lintEnaPromptArtifactV1(
+    OPEN_ENA_AI_PROMPT_SPEC_V1,
+    accessorArtifact as never,
+    "en",
+  ).some((issue) => issue.code === "malformed-artifact"));
+  assert.equal(artifactGetterInvocations, 0);
+  assert.throws(
+    () => assertEnaPromptArtifactV1(
+      OPEN_ENA_AI_PROMPT_SPEC_V1,
+      accessorArtifact as never,
+      "en",
+    ),
+    /malformed-artifact/i,
+  );
+  assert.equal(artifactGetterInvocations, 0);
+  assert.ok(lintApprovedOpenEnaAiPromptArtifactV1(
+    OPEN_ENA_AI_PROMPT_SPEC_V1,
+    accessorArtifact as never,
+    "en",
+  ).some((issue) => issue.code === "malformed-artifact"));
+  assert.equal(artifactGetterInvocations, 0);
+  assert.throws(
+    () => assertApprovedOpenEnaAiPromptArtifactV1(
+      OPEN_ENA_AI_PROMPT_SPEC_V1,
+      accessorArtifact as never,
+      "en",
+    ),
+    /malformed-artifact/i,
+  );
+  assert.equal(artifactGetterInvocations, 0);
+});
+
 test("the artifact linter detects every compiler-owned scientific, privacy, output, and orchestration hard gate", () => {
   const baseline = compileOpenEnaAiPromptArtifactV1(OPEN_ENA_AI_PROMPT_SPEC_V1, "en");
   const cases: Array<[string, string, string]> = [
@@ -530,16 +638,30 @@ test("evaluation and approval remain separate state machines", () => {
       /approval-status-not-approved/i,
     );
   }
+
+  const forgedApproval = { ...compiled, approvalStatus: "approved" as const };
+  assert.throws(
+    () => assertApprovedOpenEnaAiPromptArtifactV1(
+      OPEN_ENA_AI_PROMPT_SPEC_V1,
+      forgedApproval,
+      "en",
+    ),
+    /registry-authority-mismatch/i,
+  );
 });
 
-test("response-schema instantiation adds only a sorted request-local evidence enum without mutation", () => {
+test("response-schema instantiation resolves private registry authority and adds only a request-local enum", () => {
   const artifact = getApprovedOpenEnaAiPromptArtifact(
     "open-ena-aggregate-inference-review-v2",
     "en",
   );
   const baseBefore = JSON.stringify(artifact.responseJsonSchema);
   const evidenceIds = ["inference-axis-1", "axis-2", "axis-1"];
-  const instantiated = instantiateOpenEnaAiResponseSchema(artifact, evidenceIds);
+  const instantiated = instantiateOpenEnaAiResponseSchema(
+    "open-ena-aggregate-inference-review-v2",
+    "en",
+    evidenceIds,
+  );
 
   assert.equal(JSON.stringify(artifact.responseJsonSchema), baseBefore);
   assert.deepEqual(evidenceIds, ["inference-axis-1", "axis-2", "axis-1"]);
@@ -568,26 +690,41 @@ test("response-schema instantiation adds only a sorted request-local evidence en
   ), true);
 });
 
-test("response-schema instantiation fails closed for non-approved artifacts and hostile evidence IDs", () => {
-  const draft = compileOpenEnaAiPromptArtifactV1(OPEN_ENA_AI_PROMPT_SPEC_V1, "en");
-  const approved = getApprovedOpenEnaAiPromptArtifact(
-    "open-ena-aggregate-inference-review-v2",
-    "en",
+test("response-schema instantiation fails closed for unknown registry keys and hostile evidence IDs", () => {
+  assert.throws(
+    () => instantiateOpenEnaAiResponseSchema("unknown-prompt", "en", ["axis-1"]),
+    /no approved.*prompt artifact/i,
   );
   assert.throws(
-    () => instantiateOpenEnaAiResponseSchema(draft, ["axis-1"]),
-    /approval-status-not-approved/i,
+    () => instantiateOpenEnaAiResponseSchema(
+      "open-ena-aggregate-inference-review-v2",
+      "fr" as never,
+      ["axis-1"],
+    ),
+    /locale.*one of/i,
   );
   assert.throws(
-    () => instantiateOpenEnaAiResponseSchema(approved, ["axis-1", "axis-1"]),
+    () => instantiateOpenEnaAiResponseSchema(
+      "open-ena-aggregate-inference-review-v2",
+      "en",
+      ["axis-1", "axis-1"],
+    ),
     /duplicate.*axis-1/i,
   );
   assert.throws(
-    () => instantiateOpenEnaAiResponseSchema(approved, ["axis-1\u202ehostile"]),
+    () => instantiateOpenEnaAiResponseSchema(
+      "open-ena-aggregate-inference-review-v2",
+      "en",
+      ["axis-1\u202ehostile"],
+    ),
     /evidenceIds\[0\].*unsafe|evidenceIds\[0\].*invalid/i,
   );
   assert.throws(
-    () => instantiateOpenEnaAiResponseSchema(approved, []),
+    () => instantiateOpenEnaAiResponseSchema(
+      "open-ena-aggregate-inference-review-v2",
+      "en",
+      [],
+    ),
     /at least one/i,
   );
 });
