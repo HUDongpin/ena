@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createElement } from "react";
+import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import OpenEna3DGroupContrast from "../components/open-ena/OpenEna3DGroupContrast";
 import {
@@ -47,6 +47,45 @@ function threeDimensionalResult() {
     { name: "three-dimensional-contract.csv", source: "upload" },
   );
   return analyzeDataset(dataset, THREE_DIMENSIONAL_CONFIG);
+}
+
+function renderThreeDimensionalGroupContrast(
+  centerMode: "plot" | "data",
+  dataView?: ReactNode,
+) {
+  const result = threeDimensionalResult();
+  const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
+  const contrast = buildPairwiseGroupContrast(
+    result,
+    THREE_DIMENSIONAL_CONFIG,
+    "first",
+    "second",
+    [xDimension, yDimension],
+    "2026-08-29T00:00:00.000Z",
+  );
+  return renderToStaticMarkup(createElement(OpenEna3DGroupContrast, {
+    result,
+    contrast,
+    groupColumn: "group",
+    xDimension,
+    yDimension,
+    zDimension,
+    camera: "isometric",
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    edgeScale: 1,
+    edgeThreshold: 0,
+    pointScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+    centerMode,
+    dataView,
+    copy: getOpenEnaCopy("en"),
+  }));
 }
 
 function confidenceReadyThreeDimensionalResult() {
@@ -465,6 +504,7 @@ test("3D confidence wireframes have an exact non-visual interval table", () => {
     plotZoom: 1,
     flipX: false,
     flipY: false,
+    centerMode: "plot",
     copy: getOpenEnaCopy("en"),
   }));
 
@@ -636,6 +676,9 @@ test("camera presets are explicit display-only orientations and the client plot 
   assert.match(groupContrast3d, /plotKind="primary"/);
   assert.match(groupContrast3d, /plotKind="secondary"/);
   assert.match(groupContrast3d, /displayModeBar=\{false\}/);
+  assert.match(groupContrast3d, /centerMode: "plot" \| "data";/);
+  assert.match(groupContrast3d, /dataView\?: ReactNode;/);
+  assert.match(groupContrast3d, /data-testid="open-ena-3d-center-surface"/);
 
   const workspace = readFileSync(
     join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
@@ -669,6 +712,63 @@ test("camera presets are explicit display-only orientations and the client plot 
   assert.match(styles, /\.open-ena-3d-triptych-layout[\s\S]*?grid-template-columns: minmax\(0, 2fr\) minmax\(290px, 1fr\)/);
   assert.match(styles, /\.open-ena-3d-triptych-sides[\s\S]*?grid-template-rows: repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(styles, /@media \(max-width: 640px\)[\s\S]*?\.open-ena-3d-triptych-sides[\s\S]*?grid-template-columns: 1fr/);
+});
+
+test("3D plot mode keeps Comparison, Primary, and Secondary inside one stable center layout", () => {
+  const markup = renderThreeDimensionalGroupContrast("plot");
+
+  assert.match(markup, /data-testid="open-ena-3d-center-surface"[^>]*data-ena-center-mode="plot"/);
+  assert.match(markup, /data-testid="open-ena-3d-comparison-plot"/);
+  assert.match(markup, /data-testid="open-ena-3d-primary-plot"/);
+  assert.match(markup, /data-testid="open-ena-3d-secondary-plot"/);
+  assert.doesNotMatch(markup, /data-testid="open-ena-3d-data-view"/);
+});
+
+test("3D data mode replaces only Comparison with the provided semantic Data View", () => {
+  const markup = renderThreeDimensionalGroupContrast(
+    "data",
+    createElement(
+      "section",
+      { "data-testid": "fixture-3d-data-view", "aria-label": "Fixture Data View" },
+      createElement("table", null,
+        createElement("tbody", null,
+          createElement("tr", null, createElement("td", null, "Data record")))),
+    ),
+  );
+
+  assert.match(markup, /data-testid="open-ena-3d-center-surface"[^>]*data-ena-center-mode="data"/);
+  assert.match(markup, /data-testid="open-ena-3d-data-view"[^>]*role="region"[^>]*aria-label="Data View"/);
+  assert.match(markup, /data-testid="fixture-3d-data-view"/);
+  assert.doesNotMatch(markup, /data-testid="open-ena-3d-comparison-plot"/);
+  assert.match(markup, /data-testid="open-ena-3d-primary-plot"/);
+  assert.match(markup, /data-testid="open-ena-3d-secondary-plot"/);
+});
+
+test("Workspace enables Data View only for supported 3D comparison state and wires the existing data surface", () => {
+  const workspace = readFileSync(
+    join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
+    "utf8",
+  );
+  const toggle = workspace.match(/data-testid="open-ena-data-view-toggle"[\s\S]*?<\/button>/)?.[0] ?? "";
+  const presenter = workspace.match(/<OpenEna3DGroupContrast[\s\S]*?\/>/)?.[0] ?? "";
+  const selectView = workspace.match(/function selectVisualizationView[\s\S]*?\n  }/)?.[0] ?? "";
+
+  assert.match(toggle, /disabled=\{!activeGroupContrast && completedResultKind !== "ona"\}/);
+  assert.doesNotMatch(toggle, /disabled=\{view === "3d"/);
+  assert.match(
+    toggle,
+    /title=\{view === "3d" && !activeGroupContrast && completedResultKind !== "ona"[\s\S]*?"Data View requires an active 3D group comparison\."/,
+  );
+  assert.match(
+    toggle,
+    /aria-label=\{view === "3d" && !activeGroupContrast && completedResultKind !== "ona"[\s\S]*?"Data View unavailable\. Select two groups for a 3D comparison first\."/,
+  );
+  assert.match(presenter, /centerMode=\{centerSurface\}/);
+  assert.match(
+    presenter,
+    /dataView=\{centerSurface === "data" \? \([\s\S]*?data-testid="open-ena-center-data-view"[\s\S]*?renderResultData\(\)/,
+  );
+  assert.match(selectView, /setView\(nextView\);[\s\S]*?setCenterSurface\("plot"\);/);
 });
 
 test("each 3D paper replaces the Plotly modebar with the same four unframed plot-action logos", () => {
@@ -773,6 +873,7 @@ test("the four-button 3D triptych renders on every paper and zooms the linked ca
     plotZoom: 1,
     flipX: false,
     flipY: false,
+    centerMode: "plot",
     copy: getOpenEnaCopy("en"),
   }));
 

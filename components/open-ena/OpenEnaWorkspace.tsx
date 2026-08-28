@@ -4021,11 +4021,17 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   className="ena-compact-toolbar-button"
                   data-testid="open-ena-data-view-toggle"
                   aria-pressed={centerSurface === "data"}
-                  disabled={view === "3d" || (!activeGroupContrast && completedResultKind !== "ona")}
+                  disabled={!activeGroupContrast && completedResultKind !== "ona"}
                   onClick={() => {
                     setDataViewContext("comparison");
                     setCenterSurface((current) => current === "data" ? "plot" : "data");
                   }}
+                  title={view === "3d" && !activeGroupContrast && completedResultKind !== "ona"
+                    ? "Data View requires an active 3D group comparison."
+                    : undefined}
+                  aria-label={view === "3d" && !activeGroupContrast && completedResultKind !== "ona"
+                    ? "Data View unavailable. Select two groups for a 3D comparison first."
+                    : undefined}
                 >
                   <span aria-hidden="true">▦</span>{centerSurface === "data"
                     ? completedResultKind === "ona" ? copy.ona.layout.overallPlot : "Comparison Plot"
@@ -4350,6 +4356,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     onAspectRatioChange={setInteractive3dAspectRatio}
                     flipX={flipX}
                     flipY={flipY}
+                    centerMode={centerSurface}
+                    dataView={centerSurface === "data" ? (
+                      <div data-testid="open-ena-center-data-view">
+                        {renderResultData()}
+                      </div>
+                    ) : null}
                     copy={copy}
                   />
                 ) : view === "3d" && threeDDimensions ? (

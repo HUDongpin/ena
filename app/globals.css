@@ -4838,6 +4838,32 @@ body:has(.open-ena-login-page) .back-to-top {
   gap: 10px;
 }
 
+.open-ena-3d-triptych-center {
+  min-width: 0;
+}
+
+.open-ena-3d-triptych-data-view {
+  display: flex;
+  height: min(590px, 68vh);
+  min-height: 0;
+  flex-direction: column;
+}
+
+.open-ena-3d-triptych-data-view > [data-testid="open-ena-center-data-view"],
+.open-ena-3d-triptych-data-view .ena-data-view {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.open-ena-3d-triptych-data-view .ena-data-view-scroll {
+  min-height: 0;
+  max-height: none !important;
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
 .open-ena-3d-triptych-sides {
   display: grid;
   min-width: 0;
@@ -5030,6 +5056,11 @@ body:has(.open-ena-login-page) .back-to-top {
   .open-ena-3d-triptych-main .open-ena-interactive-3d-canvas {
     min-height: 410px;
     height: min(500px, 64vh);
+  }
+
+  .open-ena-3d-triptych-data-view {
+    height: min(500px, 64vh);
+    min-height: 410px;
   }
 
   .open-ena-3d-triptych-side .open-ena-interactive-3d-canvas {
