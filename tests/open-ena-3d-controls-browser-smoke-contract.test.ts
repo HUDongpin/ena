@@ -76,6 +76,59 @@ test("the smoke sanitizes CLI failures and emits portable SHA-256 evidence", () 
   assert.match(source, /failure\.png/u);
 });
 
+test("each run removes only its explicit stale evidence allowlist before producing new evidence", () => {
+  const source = readFileSync(smokePath, "utf8");
+  const cleanup = source.match(
+    /function removeOwnedEvidenceFiles\(\) \{[\s\S]*?\n\}/u,
+  )?.[0] ?? "";
+
+  assert.notEqual(cleanup, "", "the smoke lacks an owned evidence pre-run cleanup");
+  for (const file of [
+    "summary.json",
+    "failure.png",
+    "next-server.log",
+    "data-view-desktop.png",
+    "fullscreen-comparison.png",
+    "fullscreen-primary.png",
+    "fullscreen-secondary-fallback.png",
+    "mobile-390x844.png",
+  ]) {
+    assert.ok(source.includes(file), `the stale-evidence allowlist omits ${file}`);
+  }
+  assert.match(cleanup, /assert\.equal\(dirname\(evidencePath\), artifactDirectory\)/u);
+  assert.match(cleanup, /rmSync\(evidencePath, \{ force: true \}\)/u);
+  assert.doesNotMatch(cleanup, /recursive/u);
+  assert.doesNotMatch(source, /rmSync\(artifactDirectory/u);
+  assert.ok(
+    source.indexOf("removeOwnedEvidenceFiles();") < source.indexOf("const sourceEvidenceBefore"),
+    "stale evidence must be removed before source/run validation can abort",
+  );
+  assert.match(source, /existsSync\(failureScreenshotPath\),\s*false/u);
+  assert.ok(
+    source.indexOf("existsSync(failureScreenshotPath), false")
+      < source.indexOf("writeFileSync(\n  summaryPath"),
+    "failure.png must be rejected before a PASS summary is written",
+  );
+});
+
+test("initial navigation is captured only after the Worker audit init script is installed", () => {
+  const source = readFileSync(smokePath, "utf8");
+  const authenticate = source.match(
+    /async function authenticateBuildAndOpen3d\(page, args\) \{[\s\S]*?\n\}/u,
+  )?.[0] ?? "";
+
+  assert.match(source, /runCli\(\["open", "about:blank", "--browser", smokeBrowser\]/u);
+  assert.match(source, /entryUrl:\s*baseUrl \+ "\/en\/open-ena"/u);
+  assert.doesNotMatch(source, /page\.evaluate\(installAnalysisAudit\)/u);
+  const capture = authenticate.indexOf("beginBrowserMessageCapture(page)");
+  const init = authenticate.indexOf("page.addInitScript(installAnalysisAudit)");
+  const navigate = authenticate.indexOf("page.goto(args.entryUrl");
+  const login = authenticate.indexOf('name: "Account name"');
+  assert.ok(capture >= 0 && capture < init, "initial diagnostics must begin before init-script setup");
+  assert.ok(init < navigate, "Worker audit must be installed before initial app navigation");
+  assert.ok(navigate < login, "login interaction must wait for the captured initial app load");
+});
+
 test("the smoke proves 3D Data View mouse and keyboard lifecycle without analysis reruns", () => {
   const source = readFileSync(smokePath, "utf8");
 
@@ -93,6 +146,18 @@ test("the smoke proves 3D Data View mouse and keyboard lifecycle without analysi
   assert.match(source, /cameraState/u);
   assert.match(source, /axisState/u);
   assert.match(source, /aspectRatioState/u);
+  assert.match(source, /data-smoke-mount-token/u);
+  assert.match(source, /elementHandle\(\)/u);
+  assert.match(source, /node === currentNode/u);
+  for (const checkpoint of [
+    "during mouse Data View",
+    "after mouse restore",
+    "during keyboard Data View",
+    "after keyboard restore",
+  ]) {
+    assert.ok(source.includes(checkpoint), `side-panel identity is not checked ${checkpoint}`);
+  }
+  assert.match(source, /sidePanelsPreserved:\s*true/u);
 });
 
 test("the smoke exercises each card's native-or-fallback fullscreen and forced rejection fallback", () => {
@@ -126,6 +191,14 @@ test("the smoke exercises each card's native-or-fallback fullscreen and forced r
     /name:\s*"Secondary",[\s\S]{0,220}exitMethod:\s*"escape",[\s\S]{0,220}forceFallback:\s*true/u,
     "the forced fallback card must prove its DOM Escape handler",
   );
+  assert.match(source, /Native fullscreen could not close\. Press Escape to exit\./u);
+  assert.match(source, /Promise\.reject\(new Error\("forced native exit rejection"\)\)/u);
+  assert.match(source, /document\.fullscreenElement === target/u);
+  assert.match(source, /not-applicable-native-unavailable/u);
+  assert.doesNotMatch(source, /Primary rejected-exit guidance requires native fullscreen/u);
+  assert.match(source, /rejected native exit moved focus away from the Exit button/u);
+  assert.match(source, /rejectedExitGuidanceVerified = true/u);
+  assert.match(source, /rejectedExitGuidanceVerified,/u);
 });
 
 test("the smoke verifies 390px hit testing and keeps screenshots in its evidence summary", () => {

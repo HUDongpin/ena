@@ -27,6 +27,7 @@ const artifactDirectory = resolve(
   process.env.OPEN_ENA_3D_CONTROLS_SMOKE_ARTIFACT_DIR
     || join(projectRoot, "output", "playwright", "open-ena-3d-controls-smoke"),
 );
+const summaryPath = join(artifactDirectory, "summary.json");
 const serverLogPath = join(artifactDirectory, "next-server.log");
 const failureScreenshotPath = join(artifactDirectory, "failure.png");
 const dataViewScreenshotPath = join(artifactDirectory, "data-view-desktop.png");
@@ -34,6 +35,16 @@ const comparisonFullscreenScreenshotPath = join(artifactDirectory, "fullscreen-c
 const primaryFullscreenScreenshotPath = join(artifactDirectory, "fullscreen-primary.png");
 const secondaryFullscreenScreenshotPath = join(artifactDirectory, "fullscreen-secondary-fallback.png");
 const mobileScreenshotPath = join(artifactDirectory, "mobile-390x844.png");
+const ownedEvidencePaths = Object.freeze([
+  summaryPath,
+  failureScreenshotPath,
+  serverLogPath,
+  dataViewScreenshotPath,
+  comparisonFullscreenScreenshotPath,
+  primaryFullscreenScreenshotPath,
+  secondaryFullscreenScreenshotPath,
+  mobileScreenshotPath,
+]);
 const username = process.env.OPEN_ENA_3D_CONTROLS_SMOKE_USERNAME
   || "open_ena_3d_controls_smoke_researcher";
 const password = process.env.OPEN_ENA_3D_CONTROLS_SMOKE_PASSWORD
@@ -72,6 +83,26 @@ const playwrightCli = existsSync(bundledPlaywrightWrapper)
     };
 
 mkdirSync(artifactDirectory, { recursive: true });
+
+function removeOwnedEvidenceFiles() {
+  const allowedNames = new Set([
+    "summary.json",
+    "failure.png",
+    "next-server.log",
+    "data-view-desktop.png",
+    "fullscreen-comparison.png",
+    "fullscreen-primary.png",
+    "fullscreen-secondary-fallback.png",
+    "mobile-390x844.png",
+  ]);
+  for (const evidencePath of ownedEvidencePaths) {
+    assert.equal(dirname(evidencePath), artifactDirectory);
+    assert.equal(allowedNames.has(basename(evidencePath)), true);
+    rmSync(evidencePath, { force: true });
+  }
+}
+
+removeOwnedEvidenceFiles();
 
 function redact(value) {
   return String(value ?? "")
@@ -528,7 +559,7 @@ async function authenticateBuildAndOpen3d(page, args) {
     };
   };
   await page.addInitScript(installAnalysisAudit);
-  await page.evaluate(installAnalysisAudit);
+  await page.goto(args.entryUrl, { waitUntil: "domcontentloaded" });
 
   await page.getByRole("textbox", { name: "Account name" }).fill(args.username);
   await page.getByRole("textbox", { name: "Password" }).fill(args.password);
@@ -609,6 +640,42 @@ async function exerciseDataView(page, args) {
   const toggle = page.getByTestId("open-ena-data-view-toggle");
   assertBrowser(await toggle.isEnabled(), "Data View is disabled in the active 3D group comparison");
   assertBrowser(await toggle.getAttribute("aria-pressed") === "false", "Data View starts pressed");
+  const primaryPanel = page.getByTestId("open-ena-3d-primary-plot");
+  const secondaryPanel = page.getByTestId("open-ena-3d-secondary-plot");
+  const primaryMountNode = await primaryPanel.elementHandle();
+  const secondaryMountNode = await secondaryPanel.elementHandle();
+  assertBrowser(Boolean(primaryMountNode && secondaryMountNode), "side-panel mount nodes are unavailable");
+  const mountTokens = {
+    primary: "smoke-primary-" + Date.now() + "-" + Math.random().toString(36).slice(2),
+    secondary: "smoke-secondary-" + Date.now() + "-" + Math.random().toString(36).slice(2),
+  };
+  await primaryMountNode.evaluate((node, token) => {
+    node.setAttribute("data-smoke-mount-token", token);
+  }, mountTokens.primary);
+  await secondaryMountNode.evaluate((node, token) => {
+    node.setAttribute("data-smoke-mount-token", token);
+  }, mountTokens.secondary);
+  const assertSidePanelsPreserved = async (checkpoint) => {
+    const currentPrimaryNode = await primaryPanel.elementHandle();
+    const currentSecondaryNode = await secondaryPanel.elementHandle();
+    assertBrowser(Boolean(currentPrimaryNode && currentSecondaryNode), checkpoint + " lost a side panel");
+    const primarySameNode = await primaryMountNode.evaluate(
+      (node, currentNode) => node === currentNode,
+      currentPrimaryNode,
+    );
+    const secondarySameNode = await secondaryMountNode.evaluate(
+      (node, currentNode) => node === currentNode,
+      currentSecondaryNode,
+    );
+    assertBrowser(primarySameNode && secondarySameNode, checkpoint + " remounted a side panel");
+    assertBrowser(
+      await currentPrimaryNode.getAttribute("data-smoke-mount-token") === mountTokens.primary
+        && await currentSecondaryNode.getAttribute("data-smoke-mount-token") === mountTokens.secondary,
+      checkpoint + " replaced a smoke mount token",
+    );
+    await currentPrimaryNode.dispose();
+    await currentSecondaryNode.dispose();
+  };
   const sideStateBefore = await page.evaluate(() => ({
     analysisRunCount: window.__openEna3dControlsAudit?.analysisRunCount ?? -1,
     axisState: ["x", "y", "z"].map((axis) => document
@@ -629,6 +696,7 @@ async function exerciseDataView(page, args) {
   assertBrowser(await page.getByTestId("open-ena-3d-comparison-plot").count() === 0, "Comparison plot remained mounted behind Data View");
   assertBrowser(await page.getByTestId("open-ena-3d-primary-plot").count() === 1, "Primary plot disappeared in Data View");
   assertBrowser(await page.getByTestId("open-ena-3d-secondary-plot").count() === 1, "Secondary plot disappeared in Data View");
+  await assertSidePanelsPreserved("during mouse Data View");
   assertBrowser(
     await page.getByRole("group", { name: "ENA visualization options" })
       .getByRole("button", { name: /3D ENA/ }).getAttribute("aria-pressed") === "true",
@@ -658,6 +726,7 @@ async function exerciseDataView(page, args) {
   await toggle.click();
   await waitForThreePlots(page);
   await page.waitForTimeout(250);
+  await assertSidePanelsPreserved("after mouse restore");
   const mouseRestored = await readScientificState(page);
   assertScientificState(mouseRestored, args.baseline, "mouse Data View lifecycle");
 
@@ -665,14 +734,21 @@ async function exerciseDataView(page, args) {
   await toggle.press("Enter");
   await dataView.waitFor({ state: "visible", timeout: 30_000 });
   assertBrowser(await toggle.evaluate((element) => document.activeElement === element), "keyboard Data View lost toggle focus");
+  await assertSidePanelsPreserved("during keyboard Data View");
   await toggle.press("Enter");
   await waitForThreePlots(page);
   await page.waitForTimeout(250);
+  await assertSidePanelsPreserved("after keyboard restore");
   const keyboardRestored = await readScientificState(page);
   assertScientificState(keyboardRestored, args.baseline, "keyboard Data View lifecycle");
+  await primaryMountNode.evaluate((node) => node.removeAttribute("data-smoke-mount-token"));
+  await secondaryMountNode.evaluate((node) => node.removeAttribute("data-smoke-mount-token"));
+  await primaryMountNode.dispose();
+  await secondaryMountNode.dispose();
   return {
     dataViewMouseLifecycle: "PASS",
     dataViewKeyboardLifecycle: "PASS",
+    sidePanelsPreserved: true,
     rows: dataViewRowCount,
     browserMessages: browserMessageCapture.finish(),
   };
@@ -707,6 +783,9 @@ async function exerciseFullscreenCards(page, args) {
   let fallbackAudit = null;
 
   for (const specification of specifications) {
+    let rejectedExitGuidanceVerified = specification.name === "Primary"
+      ? "not-applicable-native-unavailable"
+      : null;
     const panel = page.getByTestId(specification.testId);
     const enterButton = panel.getByRole("button", {
       name: specification.name + " Plot: Enter Fullscreen",
@@ -803,6 +882,64 @@ async function exerciseFullscreenCards(page, args) {
     );
     await panel.screenshot({ path: specification.screenshotPath });
 
+    if (specification.name === "Primary" && mode === "native") {
+      const originalExitFullscreen = await page.evaluateHandle(() => document.exitFullscreen);
+      const originalExitDescriptor = await page.evaluate(() => {
+        const descriptor = Object.getOwnPropertyDescriptor(document, "exitFullscreen");
+        return descriptor
+          ? {
+              hadOwn: true,
+              configurable: descriptor.configurable,
+              enumerable: descriptor.enumerable,
+              writable: descriptor.writable,
+            }
+          : { hadOwn: false };
+      });
+      await page.evaluate(() => {
+        Object.defineProperty(document, "exitFullscreen", {
+          configurable: true,
+          value: () => Promise.reject(new Error("forced native exit rejection")),
+        });
+      });
+      await exitButton.click();
+      const exitFailureMessage = "Native fullscreen could not close. Press Escape to exit.";
+      await page.waitForFunction(({ id, message }) => {
+        const target = document.getElementById(id);
+        return document.fullscreenElement === target
+          && target?.querySelector(".ena-plot-copy-status")?.textContent === message;
+      }, { id: targetId, message: exitFailureMessage }, { timeout: 30_000 });
+      assertBrowser(
+        await exitButton.getAttribute("aria-pressed") === "true",
+        "rejected native exit cleared Primary aria-pressed",
+      );
+      assertBrowser(
+        await panel.locator(".ena-plot-copy-status").textContent() === exitFailureMessage,
+        "rejected native exit did not expose exact Escape guidance",
+      );
+      assertBrowser(
+        await exitButton.evaluate((element) => document.activeElement === element),
+        "rejected native exit moved focus away from the Exit button",
+      );
+      await page.evaluate(([original, descriptor]) => {
+        if (descriptor.hadOwn) {
+          Object.defineProperty(document, "exitFullscreen", {
+            configurable: descriptor.configurable,
+            enumerable: descriptor.enumerable,
+            writable: descriptor.writable,
+            value: original,
+          });
+        } else {
+          delete document.exitFullscreen;
+        }
+      }, [originalExitFullscreen, originalExitDescriptor]);
+      assertBrowser(
+        await page.evaluate((original) => document.exitFullscreen === original, originalExitFullscreen),
+        "native exitFullscreen was not restored after rejection audit",
+      );
+      await originalExitFullscreen.dispose();
+      rejectedExitGuidanceVerified = true;
+    }
+
     if (specification.exitMethod === "button") await exitButton.click();
     else await page.keyboard.press("Escape");
     await page.waitForFunction((id) => {
@@ -847,6 +984,7 @@ async function exerciseFullscreenCards(page, args) {
       restored,
       focusRestored: true,
       resizeVerified: true,
+      rejectedExitGuidanceVerified,
     };
   }
   return { fullscreenAudits, fallbackAudit, browserMessages: browserMessageCapture.finish() };
@@ -981,7 +1119,7 @@ try {
   await waitForServer(baseUrl + "/en/open-ena");
 
   browserSessionAttempted = true;
-  runCli(["open", baseUrl + "/en/open-ena", "--browser", smokeBrowser], "open browser", 120_000);
+  runCli(["open", "about:blank", "--browser", smokeBrowser], "open browser", 120_000);
   browserOpened = true;
   const browserRuntimeEvidence = runBrowserPhase(
     "record browser runtime identity",
@@ -992,6 +1130,7 @@ try {
     "authenticate, build the synthetic 5-code Endpoint, and open linked 3D",
     authenticateBuildAndOpen3d,
     {
+      entryUrl: baseUrl + "/en/open-ena",
       username,
       password,
       fixtureCsv,
@@ -1159,8 +1298,9 @@ completedSummary.source = {
   worktreeCleanAfter: sourceEvidenceAfter.clean,
   smokeSourceSha256,
 };
+assert.equal(existsSync(failureScreenshotPath), false, "successful smoke retained failure.png");
 writeFileSync(
-  join(artifactDirectory, "summary.json"),
+  summaryPath,
   JSON.stringify(completedSummary, null, 2) + "\n",
 );
 process.stdout.write(JSON.stringify(completedSummary, null, 2) + "\n");
