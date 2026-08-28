@@ -4,6 +4,7 @@ import {
   getOpenEnaAuthCopy,
   OPEN_ENA_CONTACT_EMAIL,
 } from "@/lib/open-ena-auth-copy";
+import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
 
 interface OpenEnaLoginProps {
   locale: Locale;
@@ -19,6 +20,7 @@ export default function OpenEnaLogin({ locale, error, configurationReady }: Open
 
   return (
     <div className="open-ena-login-page">
+      <OpenEnaFallbackNotice locale={locale} />
       <section className="open-ena-login-shell" aria-labelledby="open-ena-login-title">
         <div className="open-ena-login-context">
           <div className="open-ena-login-brand" dir="ltr">

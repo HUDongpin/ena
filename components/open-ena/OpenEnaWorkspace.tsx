@@ -93,6 +93,7 @@ import {
   buildSetComparisonExport,
   compareAnalysisSets,
   haveCompatibleSetGeometry,
+  nextAnalysisSetRemovalFocusId,
   removeAnalysisSet,
   repairSetSelection,
   setComparisonEdgesToCsv,
@@ -137,6 +138,7 @@ import OpenEnaLongitudinalWorkbenchV3 from "./OpenEnaLongitudinalWorkbenchV3";
 import OpenEnaPersistentPlotTools from "./OpenEnaPersistentPlotTools";
 import OpenEnaSetComparison from "./OpenEnaSetComparison";
 import OpenEnaAiInterpretation from "./OpenEnaAiInterpretation";
+import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
 import OpenEnaInferencePanel, {
   type OpenEnaInferenceDesignChoice,
   type OpenEnaInferencePreview,
@@ -291,6 +293,35 @@ export function OpenEnaResultTablesView({
   );
 }
 
+export function OpenEnaPersistentRailPanels({
+  mode,
+  analysisPanel,
+  aiPanel,
+}: {
+  mode: OpenEnaMode;
+  analysisPanel: React.ReactNode;
+  aiPanel: React.ReactNode;
+}) {
+  return (
+    <>
+      <div
+        className="ena-persistent-analysis-panel"
+        data-testid="open-ena-persistent-analysis-panel"
+        hidden={mode === "ai"}
+      >
+        {analysisPanel}
+      </div>
+      <div
+        className="ena-persistent-ai-lifecycle"
+        data-testid="open-ena-persistent-ai-lifecycle"
+        hidden={mode !== "ai"}
+      >
+        {aiPanel}
+      </div>
+    </>
+  );
+}
+
 const modeIcons: Record<OpenEnaMode, React.ReactNode> = {
   sets: (
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v5H4zm0 8h16v5H4z" /><path d="M7 8h.01M7 16h.01" /></svg>
@@ -429,6 +460,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const [result, setResult] = useState<OpenEnaResult | null>(null);
   const [rotationReference, setRotationReference] = useState<OpenEnaRotationReference | null>(null);
   const [analysisSets, setAnalysisSets] = useState<OpenEnaAnalysisSet[]>([]);
+  const analysisSetRemoveButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const captureSetButtonRef = useRef<HTMLButtonElement>(null);
+  const setsHeadingRef = useRef<HTMLHeadingElement>(null);
   const [primarySetId, setPrimarySetId] = useState<string | null>(null);
   const [secondarySetId, setSecondarySetId] = useState<string | null>(null);
   const [primaryGroupName, setPrimaryGroupName] = useState("");
@@ -1425,12 +1459,23 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     }
   }
 
-  function removeCapturedAnalysisSet(analysisSet: OpenEnaAnalysisSet) {
+  function removeCapturedAnalysisSet(analysisSet: OpenEnaAnalysisSet, captureEnabled: boolean) {
+    const focusTargetId = nextAnalysisSetRemovalFocusId(
+      analysisSets.map((candidate) => candidate.id),
+      analysisSet.id,
+      captureEnabled,
+    );
     const remaining = removeAnalysisSet(analysisSets, analysisSet.id);
     const repaired = repairSetSelection(remaining, { primarySetId, secondarySetId });
     setAnalysisSets(remaining);
     setPrimarySetId(repaired.primarySetId);
     setSecondarySetId(repaired.secondarySetId);
+    window.requestAnimationFrame(() => {
+      const focusTarget = analysisSetRemoveButtonRefs.current.get(focusTargetId)
+        ?? (focusTargetId === "open-ena-capture-set" ? captureSetButtonRef.current : null)
+        ?? setsHeadingRef.current;
+      focusTarget?.focus();
+    });
   }
 
   async function runAnalysis(
@@ -1915,7 +1960,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       <div className="ena-control-content ena-sets-panel">
         <div className="ena-panel-heading">
           <p className="ena-panel-kicker">00 · Sets</p>
-          <h2>{copy.sets.title}</h2>
+          <h2 id="open-ena-sets-heading" ref={setsHeadingRef} tabIndex={-1}>{copy.sets.title}</h2>
           <p>{copy.sets.description}</p>
         </div>
 
@@ -1940,6 +1985,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
 
         <div className="ena-sets-capture">
           <button
+            id="open-ena-capture-set"
+            ref={captureSetButtonRef}
             type="button"
             className="ena-action-button ena-action-primary"
             disabled={!canCaptureCurrent}
@@ -1969,10 +2016,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                       <span className="ena-sets-role">{analysisSet.role === "fitted" ? copy.sets.fitted : copy.sets.projected}</span>
                     </div>
                     <button
+                      id={`open-ena-set-remove-${analysisSet.id}`}
+                      ref={(node) => {
+                        const buttonId = `open-ena-set-remove-${analysisSet.id}`;
+                        if (node) analysisSetRemoveButtonRefs.current.set(buttonId, node);
+                        else analysisSetRemoveButtonRefs.current.delete(buttonId);
+                      }}
                       type="button"
                       className="ena-sets-remove"
                       aria-label={`Remove ${analysisSet.name}`}
-                      onClick={() => removeCapturedAnalysisSet(analysisSet)}
+                      onClick={() => removeCapturedAnalysisSet(analysisSet, canCaptureCurrent)}
                     >
                       {copy.sets.remove}
                     </button>
@@ -3763,7 +3816,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     );
   }
 
-  const panel = mode === "sets"
+  const analysisPanel = mode === "sets"
     ? renderSetsPanel()
     : mode === "data"
       ? renderDataPanel()
@@ -3773,7 +3826,14 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           ? renderPlotPanel()
           : mode === "stats"
             ? renderStatsPanel()
-            : renderAiPanel();
+            : null;
+  const persistentRailPanels = (
+    <OpenEnaPersistentRailPanels
+      mode={mode}
+      analysisPanel={analysisPanel}
+      aiPanel={renderAiPanel()}
+    />
+  );
   const persistentPlotTools = (
     <OpenEnaPersistentPlotTools
       analysisKind={completedResultKind ?? "ena"}
@@ -3824,6 +3884,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       lang={workspaceIsLocalized ? undefined : "en"}
       dir={workspaceIsLocalized ? undefined : "ltr"}
     >
+      <OpenEnaFallbackNotice locale={locale} />
       <section className="open-ena-workbench" aria-label="Open ENA analysis workspace" aria-busy={loading || sourceBusy || referenceBusy}>
         <div className="ena-workbench-grid">
           <nav className="ena-tool-rail" aria-label="Analysis modes" data-ena-workbench-region="rail">
@@ -3910,13 +3971,13 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               dataset={longitudinalV3Context.dataset}
               datasetHash={longitudinalV3Context.datasetHash}
               modelResultStale={resultIsStale}
-              analysisControls={mode === "plot" ? null : panel}
+              analysisControls={persistentRailPanels}
               analysisControlsMode={mode}
             />
           ) : (
             <>
               <aside className="ena-control-panel" data-ena-workbench-region="controls">
-                {panel}
+                {persistentRailPanels}
               </aside>
 
           <div className="ena-visual-workspace"

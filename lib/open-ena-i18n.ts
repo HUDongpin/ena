@@ -2693,6 +2693,11 @@ export function isOpenEnaLocalizedLocale(
   return (openEnaLocalizedLocales as readonly Locale[]).includes(locale);
 }
 
+export function getOpenEnaFallbackNotice(locale: Locale) {
+  if (isOpenEnaLocalizedLocale(locale)) return null;
+  return `Open ENA is not yet localized for the ${locale} route. The English interface is shown while this route and locale are retained.`;
+}
+
 export function getOpenEnaCopy(locale: Locale): OpenEnaCopy {
   if (locale === "zh-hant") return zhHant;
   if (locale === "zh-hans") return zhHans;

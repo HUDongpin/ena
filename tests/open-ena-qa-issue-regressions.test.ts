@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { createElement } from "react";
+import { createElement, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { locales } from "../lib/i18n";
 import {
   createOpenEnaWorkspaceAxes,
   resetOpenEnaWorkspaceAxisSurface,
@@ -17,20 +18,114 @@ import {
   type OpenEnaResultTableKey,
 } from "../lib/open-ena/export";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
+import * as openEnaI18nModule from "../lib/open-ena-i18n";
 import {
   OpenEnaResultTables,
   OpenEnaResultTablesView,
 } from "../components/open-ena/OpenEnaWorkspace";
+import * as workspaceModule from "../components/open-ena/OpenEnaWorkspace";
+import * as longitudinalV3Module from "../components/open-ena/OpenEnaLongitudinalWorkbenchV3";
 
 const workspace = readFileSync(
   new URL("../components/open-ena/OpenEnaWorkspace.tsx", import.meta.url),
   "utf8",
 );
+const styles = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
 type WorkspaceAxes = {
   twoD: readonly [string, string] | null;
   threeD: readonly [string, string, string] | null;
 };
+
+test("Open ENA fallback disclosure is absent for localized routes and explicit for every other locale", () => {
+  const getFallbackNotice = Reflect.get(openEnaI18nModule, "getOpenEnaFallbackNotice");
+  assert.equal(typeof getFallbackNotice, "function", "the shared pure fallback helper must be exported");
+  for (const locale of locales) {
+    const notice = getFallbackNotice(locale);
+    if (["en", "zh-hant", "zh-hans"].includes(locale)) assert.equal(notice, null);
+    else {
+      assert.ok(notice);
+      assert.match(notice, /English interface/i);
+      assert.match(notice, new RegExp(`\\b${locale}\\b`, "i"));
+    }
+  }
+});
+
+test("workspace lifecycle, fallback, unavailable tabs, and mobile trajectory CSS remain bounded", () => {
+  const inlineProgressRule = styles.match(/\.ena-inline-progress\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*(\d+);[^}]*\}/u);
+  assert.ok(inlineProgressRule, "inline progress must establish its own stacking context");
+  assert.ok(Number(inlineProgressRule[1]) > 7, "inline progress must stay above group plot actions");
+
+  assert.match(workspace, /className="ena-persistent-ai-lifecycle"/);
+  assert.match(styles, /\.ena-persistent-ai-lifecycle\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/u);
+  assert.match(styles, /\.ena-result-tabs button\[aria-disabled="true"\]\s*\{[^}]*cursor:\s*not-allowed;/u);
+  assert.match(styles, /\.ena-result-table-unavailable-notes\s*\{[^}]*border:/u);
+  assert.match(styles, /\.ena-result-table-not-applicable\s*\{[^}]*border:/u);
+
+  assert.match(styles, /\.open-ena-fallback-notice\s*\{[^}]*max-width:/u);
+  assert.match(styles, /\.open-ena-page:has\(> \.open-ena-fallback-notice\)\s*\{[^}]*display:\s*grid;[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/u);
+  assert.match(styles, /\.open-ena-page:has\(> \.open-ena-fallback-notice\) > \.open-ena-workbench\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/u);
+  assert.match(
+    styles,
+    /@media \(max-width:\s*900px\)\s*\{[\s\S]*?\.open-ena-page:has\(> \.open-ena-fallback-notice\)\s*\{[^}]*grid-template-rows:\s*auto auto;[^}]*\}[\s\S]*?\.open-ena-page:has\(> \.open-ena-fallback-notice\) > \.open-ena-workbench\s*\{[^}]*height:\s*auto;[^}]*min-height:\s*100dvh;/u,
+    "the higher-specificity fallback layout must preserve the existing mobile auto-height contract",
+  );
+  assert.match(
+    styles,
+    /@media \(max-width:\s*640px\)\s*\{[\s\S]*?\.open-ena-longitudinal-trajectory\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*100%;[^}]*overflow-x:\s*auto;/u,
+  );
+});
+
+test("persistent rail and V3 control seams retain hidden lifecycle children across modes", () => {
+  const PersistentRailPanels = Reflect.get(workspaceModule, "OpenEnaPersistentRailPanels");
+  const LongitudinalControlsSlot = Reflect.get(longitudinalV3Module, "OpenEnaLongitudinalV3ControlsSlot");
+  assert.equal(typeof PersistentRailPanels, "function", "the persistent rail lifecycle seam must be exported");
+  assert.equal(typeof LongitudinalControlsSlot, "function", "the V3 dual-controls seam must be exported");
+  const renderRail = (mode: "plot" | "ai" | "model") => renderToStaticMarkup(createElement(
+    PersistentRailPanels as ComponentType<Record<string, unknown>>,
+    {
+      mode,
+      analysisPanel: createElement("span", { "data-marker": `${mode}-analysis` }),
+      aiPanel: createElement("span", { "data-marker": "persistent-ai-response" }),
+    },
+  ));
+  const railShapes = [renderRail("plot"), renderRail("ai"), renderRail("model")];
+  for (const html of railShapes) {
+    assert.equal((html.match(/data-marker="persistent-ai-response"/gu) ?? []).length, 1);
+    assert.ok(html.indexOf("open-ena-persistent-analysis-panel") < html.indexOf("open-ena-persistent-ai-lifecycle"));
+  }
+  assert.match(railShapes[0], /data-testid="open-ena-persistent-ai-lifecycle"[^>]*hidden/);
+  assert.match(railShapes[1], /data-testid="open-ena-persistent-analysis-panel"[^>]*hidden/);
+  assert.doesNotMatch(
+    railShapes[1].match(/data-testid="open-ena-persistent-ai-lifecycle"[^>]*>/u)?.[0] ?? "",
+    /hidden/u,
+  );
+
+  const trajectoryControls = createElement(
+    "div",
+    { "data-marker": "trajectory-controls" },
+    ...Array.from({ length: 11 }, (_, index) => createElement("span", {
+      key: index,
+      "data-trajectory-step": index + 1,
+    })),
+  );
+  const renderV3Slot = (analysisControlsMode: "plot" | "model") => renderToStaticMarkup(createElement(
+    LongitudinalControlsSlot as ComponentType<Record<string, unknown>>,
+    {
+      analysisControlsMode,
+      analysisControls: createElement("div", { "data-marker": "analysis-controls" }),
+      trajectoryControls,
+    },
+  ));
+  const plotSlot = renderV3Slot("plot");
+  const modelSlot = renderV3Slot("model");
+  for (const html of [plotSlot, modelSlot]) {
+    assert.equal((html.match(/data-trajectory-step=/gu) ?? []).length, 11);
+    assert.equal((html.match(/data-marker="analysis-controls"/gu) ?? []).length, 1);
+  }
+  assert.match(plotSlot, /data-testid="open-ena-longitudinal-v3-analysis-controls"[^>]*hidden/);
+  assert.match(modelSlot, /data-testid="open-ena-longitudinal-v3-trajectory-controls"[^>]*hidden/);
+});
 
 test("axis initialization never fabricates result dimensions and requires three distinct axes for 3D", () => {
   assert.deepEqual(createOpenEnaWorkspaceAxes([]), { twoD: null, threeD: null });

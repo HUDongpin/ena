@@ -190,6 +190,36 @@ interface OpenEnaLongitudinalWorkbenchV3Props {
   analysisControlsMode: string;
 }
 
+export function OpenEnaLongitudinalV3ControlsSlot({
+  analysisControlsMode,
+  analysisControls,
+  trajectoryControls,
+}: {
+  analysisControlsMode: string;
+  analysisControls: ReactNode | null;
+  trajectoryControls: ReactNode;
+}) {
+  return (
+    <>
+      <div
+        className="ena-longitudinal-v3-analysis-controls"
+        data-testid="open-ena-longitudinal-v3-analysis-controls"
+        data-controls-mode={analysisControlsMode}
+        hidden={analysisControlsMode === "plot"}
+      >
+        {analysisControls}
+      </div>
+      <div
+        className="ena-longitudinal-v3-trajectory-controls"
+        data-testid="open-ena-longitudinal-v3-trajectory-controls"
+        hidden={analysisControlsMode !== "plot"}
+      >
+        {trajectoryControls}
+      </div>
+    </>
+  );
+}
+
 type PreparedLongitudinalRunV3 = Awaited<ReturnType<typeof buildOpenEnaLongitudinalExecutionRequestV3>>;
 
 interface PendingLongitudinalRunV3 {
@@ -1092,15 +1122,11 @@ export default function OpenEnaLongitudinalWorkbenchV3({
     <section className="ena-longitudinal-v3-workbench" data-testid="open-ena-longitudinal-v3-workbench" aria-label={copy.title} aria-busy={status === "preparing" || status === "running"}>
       <div className="ena-longitudinal-v3-layout">
         <aside className="ena-longitudinal-v3-controls">
-          {analysisControls ? (
-            <div
-              data-testid="open-ena-longitudinal-v3-analysis-controls"
-              data-controls-mode={analysisControlsMode}
-            >
-              {analysisControls}
-            </div>
-          ) : (
-            <>
+          <OpenEnaLongitudinalV3ControlsSlot
+            analysisControlsMode={analysisControlsMode}
+            analysisControls={analysisControls}
+            trajectoryControls={(
+              <>
           <header><p>{copy.kicker}</p><h2>{copy.title}</h2><span>{copy.subtitle}</span></header>
 
           <section data-trajectory-step="1"><h3><b>1</b>{copy.time}</h3><label><span>{copy.time}</span><select value={settings.timeColumn} onChange={(event) => commitScientific(changeOpenEnaLongitudinalTimeColumnV3(settings, dataset, config, event.target.value), true)}>{timeOptions.map((column) => <option key={column}>{column}</option>)}</select></label></section>
@@ -1151,8 +1177,9 @@ export default function OpenEnaLongitudinalWorkbenchV3({
           <section data-trajectory-step="10"><h3><b>10</b>{copy.status}</h3>{modelResultStale ? <p className="ena-longitudinal-v3-banner" role="status">{copy.modelStale}</p> : null}{stale ? <p className="ena-longitudinal-v3-banner" role="status">{copy.stale}</p> : null}{status === "remote-confirmation" && routeDecision ? <div className="ena-longitudinal-v3-remote" role="alert"><strong>{copy.remoteTitle}</strong><p>{copy.remoteText}</p><dl><div><dt>Predicted time</dt><dd>{routeDecision.predictedMilliseconds} ms</dd></div><div><dt>Predicted memory</dt><dd>{(routeDecision.predictedMemoryBytes / 1024 / 1024).toFixed(1)} MB</dd></div><div><dt>Hard deadline</dt><dd>60 s</dd></div></dl><button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { allowRemote: true })}>{copy.confirmRemote}</button><button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { forceLocal: true })}>{copy.continueLocal}</button><button type="button" onClick={() => void runWithoutInference()}>{copy.disableHeavy}</button></div> : null}{status === "remote-recovery" && routeDecision && remoteFailure ? <div className="ena-longitudinal-v3-remote" role="alert"><strong>{copy.remoteRecoveryTitle}</strong><p>{copy.remoteRecoveryText}</p><p>{remoteFailure.message}</p><button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { allowRemote: true })}>{copy.retryRemote}</button>{remoteFailure.canContinueLocally ? <button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { forceLocal: true })}>{copy.continueLocal}</button> : null}{remoteFailure.canDisableInference ? <button type="button" onClick={() => void runWithoutInference()}>{copy.disableHeavy}</button> : null}</div> : null}<div className="ena-longitudinal-v3-run-status" role="status" aria-live="polite"><span data-state={status} /><strong>{status === "ready" ? copy.ready : status}</strong>{status === "running" || status === "preparing" ? <progress max="1" value={progress.progress}>{Math.round(progress.progress * 100)}%</progress> : null}{cacheHit ? <small>{copy.cacheHit}</small> : null}</div>{error && status !== "remote-recovery" ? <p className="ena-longitudinal-v3-error" role="alert">{error}</p> : null}<div className="ena-longitudinal-v3-run-actions"><button type="button" className="ena-longitudinal-v3-primary" onClick={() => void run()} disabled={status === "running" || status === "preparing" || settings.participantColumns.length === 0}>{bundle ? copy.recompute : copy.run}</button>{status === "running" || status === "preparing" ? <button type="button" onClick={() => abortRef.current?.abort()}>{copy.cancel}</button> : null}{status === "error" ? <button type="button" onClick={() => void run()}>{copy.retry}</button> : null}</div></section>
 
           <section data-trajectory-step="11"><h3><b>11</b>{copy.downloads}</h3><div className="ena-longitudinal-v3-downloads">{([['bundle', copy.bundleZip], ['path', copy.pathCsv], ['metadata', copy.metadataCsv], ['inference', copy.inferenceCsv], ['analysis', copy.analysisJson], ['plotly', copy.plotlyJson], ['participant', copy.participantZip]] as const).map(([kind, label]) => <button type="button" key={kind} disabled={!bundle || stale} onClick={() => void download(kind)}>{label}</button>)}</div></section>
-            </>
-          )}
+              </>
+            )}
+          />
         </aside>
 
         <main className="ena-longitudinal-v3-output">

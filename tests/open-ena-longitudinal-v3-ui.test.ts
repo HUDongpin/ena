@@ -581,16 +581,18 @@ test("non-Plot rail panels occupy the trajectory controls slot without unmountin
 
   assert.match(
     trajectoryPresenter,
-    /analysisControls=\{mode === "plot" \? null : panel\}/,
+    /analysisControls=\{persistentRailPanels\}/,
     "Data, Model, Stats, and AI must be passed into the mounted trajectory workbench as controls, not replace it",
   );
   assert.match(trajectoryPresenter, /analysisControlsMode=\{mode\}/);
+  assert.match(component, /OpenEnaLongitudinalV3ControlsSlot/);
   assert.match(component, /data-testid="open-ena-longitudinal-v3-analysis-controls"/);
+  assert.match(component, /data-testid="open-ena-longitudinal-v3-trajectory-controls"/);
   assert.match(component, /data-controls-mode=\{analysisControlsMode\}/);
   assert.match(
     component,
-    /analysisControls \? \([\s\S]*?\{analysisControls\}[\s\S]*?\) : \([\s\S]*?data-trajectory-step="1"/,
-    "Plot mode must retain trajectory controls while non-Plot modes render their actual panel in the same left slot",
+    /hidden=\{analysisControlsMode === "plot"\}[\s\S]*?hidden=\{analysisControlsMode !== "plot"\}/,
+    "analysis and trajectory controls must stay mounted in separate wrappers while visibility follows the rail mode",
   );
 });
 

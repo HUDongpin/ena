@@ -6,6 +6,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import OpenEnaDataView from "../components/open-ena/OpenEnaDataView";
 import OpenEnaPersistentPlotTools from "../components/open-ena/OpenEnaPersistentPlotTools";
+import * as persistentPlotToolsModule from "../components/open-ena/OpenEnaPersistentPlotTools";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 import { moveHorizontalScrollableRegion } from "../lib/open-ena/horizontal-scroll";
 
@@ -16,6 +17,29 @@ function source(relativePath: string) {
 }
 
 const noOp = () => undefined;
+
+test("Plot Settings closes restore the trigger after commit and Escape is fully handled", () => {
+  const scheduleFocusRestore = Reflect.get(persistentPlotToolsModule, "scheduleOpenEnaFocusRestore");
+  assert.equal(typeof scheduleFocusRestore, "function", "a hook-free focus scheduler must be exported");
+
+  const scheduled: Array<() => void> = [];
+  let focusCount = 0;
+  scheduleFocusRestore(
+    { isConnected: true, disabled: false, focus: () => { focusCount += 1; } },
+    (callback: () => void) => { scheduled.push(callback); },
+  );
+  assert.equal(focusCount, 0, "focus must wait until the close has committed");
+  assert.equal(scheduled.length, 1);
+  scheduled[0]!();
+  assert.equal(focusCount, 1);
+
+  const plotTools = source("components/open-ena/OpenEnaPersistentPlotTools.tsx");
+  assert.match(plotTools, /const settingsTriggerRef = useRef<HTMLButtonElement>\(null\)/);
+  assert.match(plotTools, /ref=\{settingsTriggerRef\}/);
+  assert.match(plotTools, /event\.preventDefault\(\);\s*event\.stopPropagation\(\);\s*requestSettingsClose\(\)/);
+  assert.match(plotTools, /aria-label=\{copy\.closePlotSettings\}[\s\S]{0,160}onClick=\{requestSettingsClose\}/);
+  assert.match(plotTools, /scheduleOpenEnaFocusRestore\(\s*settingsTriggerRef\.current/);
+});
 
 test("persistent Plot Tools expose every controlled visual setting with accessible state", () => {
   const markup = renderToStaticMarkup(createElement(OpenEnaPersistentPlotTools, {

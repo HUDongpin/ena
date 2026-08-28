@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { locales } from "../lib/i18n";
 
 const projectRoot = process.cwd();
 
@@ -111,6 +114,34 @@ test("the localized Open ENA page renders a server-side login gate before the wo
   assert.match(page, /isAuthenticated[\s\S]*?<OpenEnaWorkspace locale=\{typedLocale\}/);
   assert.match(page, /!isAuthenticated[\s\S]*?<OpenEnaLogin[\s\S]*configurationReady=\{authConfigurationReady\}/);
   assert.match(page, /export const dynamic = "force-dynamic"/);
+});
+
+test("one semantic fallback notice remains visible before and after sign-in", async () => {
+  const noticeModule = await loadModule("../components/open-ena/OpenEnaFallbackNotice");
+  assert.ok(noticeModule, "the shared fallback notice component must exist");
+  const FallbackNotice = noticeModule.default;
+
+  for (const locale of locales) {
+    const markup = renderToStaticMarkup(createElement(FallbackNotice, { locale }));
+    if (["en", "zh-hant", "zh-hans"].includes(locale)) {
+      assert.equal(markup, "");
+    } else {
+      assert.match(markup, /role="note"/);
+      assert.match(markup, /lang="en"/);
+      assert.match(markup, /dir="ltr"/);
+      assert.match(markup, /English interface/i);
+      assert.match(markup, new RegExp(`\\b${locale}\\b`, "i"));
+    }
+  }
+
+  const login = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaLogin.tsx"), "utf8");
+  const workspace = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8");
+  for (const surface of [login, workspace]) {
+    assert.match(surface, /import OpenEnaFallbackNotice from "\.\/OpenEnaFallbackNotice"/);
+    assert.match(surface, /<OpenEnaFallbackNotice locale=\{locale\} \/>/);
+  }
+  assert.match(login, /\{configurationReady \? \([\s\S]*?<form action="\/api\/open-ena\/login"/);
+  assert.match(login, /name="locale" value=\{locale\}/, "the original route locale must be retained");
 });
 
 test("the login form is accessible and never exposes the default account or password", () => {
