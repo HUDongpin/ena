@@ -651,7 +651,9 @@ test("camera presets are explicit display-only orientations and the client plot 
   assert.match(workspace, /sharedAspectRatio=\{interactive3dAspectRatio\}/);
   assert.match(workspace, /function selectCameraPreset/);
   assert.match(workspace, /function selectAxisDimension/);
-  assert.match(workspace, /setters\[occupiedAxis\]\(previousDimension\)/);
+  assert.match(workspace, /updateOpenEnaWorkspace3dAxis\(\{/);
+  assert.match(workspace, /threeD: \[threeDXDimension, threeDYDimension, threeDZDimension\]/);
+  assert.match(workspace, /setThreeDZDimension\(next\.threeD\[2\]\)/);
   assert.match(workspace, /data-testid="open-ena-3d-display-controls"/);
   assert.match(workspace, /data-testid="open-ena-3d-camera-position"/);
   assert.match(workspace, /open-ena-3d-axis-\$\{axis\}/);

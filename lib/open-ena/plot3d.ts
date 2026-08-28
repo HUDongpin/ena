@@ -96,6 +96,50 @@ export interface OpenEna3dAspectRatio {
   z: number;
 }
 
+export interface OpenEnaWorkspaceAxes {
+  twoD: readonly [string, string];
+  threeD: readonly [string, string, string];
+}
+
+export function createOpenEnaWorkspaceAxes(
+  dimensions: readonly string[],
+): OpenEnaWorkspaceAxes {
+  const x = dimensions[0] ?? "SVD1";
+  const y = dimensions.find((dimension) => dimension !== x) ?? "SVD2";
+  const z = dimensions.find((dimension) => dimension !== x && dimension !== y) ?? y;
+  return { twoD: [x, y], threeD: [x, y, z] };
+}
+
+export function updateOpenEnaWorkspace3dAxis(
+  axes: OpenEnaWorkspaceAxes,
+  axis: "x" | "y" | "z",
+  dimension: string,
+): OpenEnaWorkspaceAxes {
+  const twoD: [string, string] = [...axes.twoD];
+  const threeD: [string, string, string] = [...axes.threeD];
+  const axisIndex = { x: 0, y: 1, z: 2 }[axis];
+  const previousDimension = threeD[axisIndex];
+  if (previousDimension !== dimension) {
+    const occupiedIndex = threeD.findIndex((candidate, index) => (
+      index !== axisIndex && candidate === dimension
+    ));
+    threeD[axisIndex] = dimension;
+    if (occupiedIndex >= 0) threeD[occupiedIndex] = previousDimension;
+  }
+  return { twoD, threeD };
+}
+
+export function resetOpenEnaWorkspaceAxisSurface(
+  axes: OpenEnaWorkspaceAxes,
+  surface: "2d" | "3d",
+  dimensions: readonly string[],
+): OpenEnaWorkspaceAxes {
+  const defaults = createOpenEnaWorkspaceAxes(dimensions);
+  return surface === "3d"
+    ? { twoD: [...axes.twoD], threeD: [...defaults.threeD] }
+    : { twoD: [...defaults.twoD], threeD: [...axes.threeD] };
+}
+
 export interface OpenEna3dSceneAxis {
   title: { text: string };
   color: string;

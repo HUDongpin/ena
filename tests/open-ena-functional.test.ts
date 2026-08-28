@@ -453,7 +453,9 @@ test("the researcher interface exposes the implemented model controls, data tabl
   assert.match(workspace, /Not estimable/);
   assert.match(workspace, /Number\.isFinite/);
   assert.match(workspace, /function selectAxisDimension/);
-  assert.match(workspace, /setters\[occupiedAxis\]\(previousDimension\)/);
+  assert.match(workspace, /updateOpenEnaWorkspace3dAxis\(\{/);
+  assert.match(workspace, /threeD: \[threeDXDimension, threeDYDimension, threeDZDimension\]/);
+  assert.match(workspace, /setThreeDXDimension\(next\.threeD\[0\]\)/);
   assert.doesNotMatch(workspace, /disabled=\{oppositeDimensions\.includes\(dimension\)\}/);
   assert.match(workspace, /Export SVG/);
   assert.match(workspace, /Export PNG/);

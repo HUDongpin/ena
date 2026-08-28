@@ -62,10 +62,20 @@ import {
 } from "@/lib/open-ena/inference-v2";
 import { buildMethodsReport, referenceMeanRotationInterpretation } from "@/lib/open-ena/methods";
 import { buildOpenEnaAiInterpretationRequest } from "@/lib/open-ena/ai-interpretation";
-import { buildAnalysisBundle, buildResultTables, rowsToCsv } from "@/lib/open-ena/export";
+import {
+  buildAnalysisBundle,
+  buildResultTables,
+  OPEN_ENA_RESULT_TABLE_KEYS,
+  openEnaResultTableAvailability,
+  rowsToCsv,
+  type OpenEnaResultTableKey,
+} from "@/lib/open-ena/export";
 import { codeColorFor, updateCodeColor } from "@/lib/open-ena/plot-style";
 import {
   cameraForPreset,
+  createOpenEnaWorkspaceAxes,
+  resetOpenEnaWorkspaceAxisSurface,
+  updateOpenEnaWorkspace3dAxis,
   type OpenEna3dAspectRatio,
   type OpenEna3dCamera,
 } from "@/lib/open-ena/plot3d";
@@ -304,7 +314,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const [progressStage, setProgressStage] = useState<"accumulate" | "model">("accumulate");
   const [xDimension, setXDimension] = useState("SVD1");
   const [yDimension, setYDimension] = useState("SVD2");
-  const [zDimension, setZDimension] = useState("SVD3");
+  const [threeDXDimension, setThreeDXDimension] = useState("SVD1");
+  const [threeDYDimension, setThreeDYDimension] = useState("SVD2");
+  const [threeDZDimension, setThreeDZDimension] = useState("SVD3");
   const [camera, setCamera] = useState<CameraPreset>("isometric");
   const [interactive3dCamera, setInteractive3dCamera] = useState<OpenEna3dCamera | null>(null);
   const [interactive3dAspectRatio, setInteractive3dAspectRatio] = useState<OpenEna3dAspectRatio | null>(null);
@@ -347,7 +359,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const [activeCodesOnly, setActiveCodesOnly] = useState(false);
   const [sourcePage, setSourcePage] = useState(0);
   const [methodsCopyStatus, setMethodsCopyStatus] = useState("");
-  const [resultTable, setResultTable] = useState<"coordinates" | "lineWeights" | "connectionCounts" | "trajectories" | "centroids" | "nodePositions" | "adjacencyKey">("coordinates");
+  const [resultTable, setResultTable] = useState<OpenEnaResultTableKey>("coordinates");
   const [dataViewContext, setDataViewContext] = useState<OpenEnaDataViewContext>("comparison");
   const [onaStatsContext, setOnaStatsContext] = useState<OpenEnaDataViewContext>("comparison");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1331,10 +1343,14 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       if (controller.signal.aborted || datasetGenerationRef.current !== analysisGeneration) return;
       setResult(nextResult);
       setResultConfig(cloneOpenEnaConfig(nextResult.provenanceBinding!.configuration));
-      const [x = "SVD1", y = "SVD2", z = y] = nextResult.dimensions;
+      const initialAxes = createOpenEnaWorkspaceAxes(nextResult.dimensions);
+      const [x, y] = initialAxes.twoD;
+      const [, , z] = initialAxes.threeD;
       setXDimension(x);
       setYDimension(y);
-      setZDimension(z);
+      setThreeDXDimension(x);
+      setThreeDYDimension(y);
+      setThreeDZDimension(z);
       setInteractive3dCamera(null);
       setInteractive3dAspectRatio(null);
       setView("2d");
@@ -1578,21 +1594,28 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     setPlotResetRevision((current) => current + 1);
   }
 
-  function selectAxisDimension(axis: "x" | "y" | "z", nextDimension: string) {
-    const currentDimensions = { x: xDimension, y: yDimension, z: zDimension };
-    const previousDimension = currentDimensions[axis];
-    if (previousDimension === nextDimension) return;
+  function selectTwoDAxisDimension(axis: "x" | "y", nextDimension: string) {
+    if (axis === "x") {
+      if (nextDimension === xDimension) return;
+      const previous = xDimension;
+      setXDimension(nextDimension);
+      if (nextDimension === yDimension) setYDimension(previous);
+      return;
+    }
+    if (nextDimension === yDimension) return;
+    const previous = yDimension;
+    setYDimension(nextDimension);
+    if (nextDimension === xDimension) setXDimension(previous);
+  }
 
-    const setters = {
-      x: setXDimension,
-      y: setYDimension,
-      z: setZDimension,
-    };
-    setters[axis](nextDimension);
-    const occupiedAxis = (["x", "y", "z"] as const).find(
-      (candidate) => candidate !== axis && currentDimensions[candidate] === nextDimension,
-    );
-    if (occupiedAxis) setters[occupiedAxis](previousDimension);
+  function selectAxisDimension(axis: "x" | "y" | "z", nextDimension: string) {
+    const next = updateOpenEnaWorkspace3dAxis({
+      twoD: [xDimension, yDimension],
+      threeD: [threeDXDimension, threeDYDimension, threeDZDimension],
+    }, axis, nextDimension);
+    setThreeDXDimension(next.threeD[0]);
+    setThreeDYDimension(next.threeD[1]);
+    setThreeDZDimension(next.threeD[2]);
   }
 
   function resetPlot() {
@@ -1602,10 +1625,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       ? primarySet?.geometry.dimensions ?? result?.dimensions
       : result?.dimensions ?? primarySet?.geometry.dimensions;
     if (activeDimensions) {
-      const [x = "SVD1", y = "SVD2", z = y] = activeDimensions;
-      setXDimension(x);
-      setYDimension(y);
-      setZDimension(z);
+      const activeAxisSurface = view === "3d" ? "3d" : "2d";
+      const resetAxes = resetOpenEnaWorkspaceAxisSurface({
+        twoD: [xDimension, yDimension],
+        threeD: [threeDXDimension, threeDYDimension, threeDZDimension],
+      }, activeAxisSurface, activeDimensions);
+      setXDimension(resetAxes.twoD[0]);
+      setYDimension(resetAxes.twoD[1]);
+      setThreeDXDimension(resetAxes.threeD[0]);
+      setThreeDYDimension(resetAxes.threeD[1]);
+      setThreeDZDimension(resetAxes.threeD[2]);
     }
     setCamera("isometric");
     setInteractive3dCamera(null);
@@ -2809,14 +2838,20 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               </label>
             ))}
           </div>
-          {([
+          {((view === "3d" ? [
+            [copy.plot.axisX, threeDXDimension, "x"],
+            [copy.plot.axisY, threeDYDimension, "y"],
+            [copy.plot.axisZ, threeDZDimension, "z"],
+          ] : [
             [copy.plot.axisX, xDimension, "x"],
             [copy.plot.axisY, yDimension, "y"],
-            ...(view === "3d" ? [[copy.plot.axisZ, zDimension, "z"] as const] : []),
-          ] as Array<[string, string, "x" | "y" | "z"]>).map(([label, value, axis]) => (
+          ]) as Array<[string, string, "x" | "y" | "z"]>).map(([label, value, axis]) => (
             <label key={label} className="ena-field">
               <span>{label}</span>
-              <select value={value} onChange={(event) => selectAxisDimension(axis, event.target.value)}>
+              <select value={value} onChange={(event) => {
+                if (view === "3d") selectAxisDimension(axis, event.target.value);
+                else selectTwoDAxisDimension(axis as "x" | "y", event.target.value);
+              }}>
                 {dimensions.map((dimension) => <option key={dimension} value={dimension}>{dimension}</option>)}
               </select>
             </label>
@@ -3496,10 +3531,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   }
 
   function renderResultTables() {
-    if (!resultTables) return null;
+    if (!resultTables || !result) return null;
     const tableMap = resultTables;
     const rows = tableMap[resultTable] as Row[];
-    const headers = tableHeaders(rows);
+    const availability = openEnaResultTableAvailability({
+      modelType: result.set.modelType,
+      projectionReference: Boolean(result.projectionReference),
+    });
+    const selectedAvailability = availability[resultTable];
+    const headers = selectedAvailability.available ? tableHeaders(rows) : [];
+    const canExportResultTable = selectedAvailability.available && rows.length > 0;
     const labels = {
       coordinates: "Coordinates",
       lineWeights: "Line weights",
@@ -3527,37 +3568,50 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         </summary>
         <div className="ena-result-data-tools">
           <div className="ena-result-tabs" role="tablist" aria-label="Result tables">
-            {(Object.keys(labels) as Array<keyof typeof labels>)
-              .filter((key) => !(result?.projectionReference && key === "centroids"))
-              .map((key) => (
+            {OPEN_ENA_RESULT_TABLE_KEYS.map((key) => (
               <button
                 key={key}
                 type="button"
                 role="tab"
                 aria-selected={resultTable === key}
+                disabled={!availability[key].available}
+                title={availability[key].reason ?? undefined}
                 onClick={() => setResultTable(key)}
               >
-                {labels[key]} <span>{tableMap[key].length}</span>
+                {labels[key]} <span>{availability[key].available ? tableMap[key].length : "N/A"}</span>
+                {!availability[key].available ? <small>{availability[key].reason}</small> : null}
               </button>
-              ))}
+            ))}
           </div>
           <button
             type="button"
             className="ena-action-button ena-action-secondary ena-table-export"
-            onClick={() => downloadText(`open-ena-${resultTable}.csv`, rowsToCsv(rows), "text/csv;charset=utf-8")}
+            disabled={!canExportResultTable}
+            onClick={() => {
+              if (!canExportResultTable) return;
+              downloadText(`open-ena-${resultTable}.csv`, rowsToCsv(rows), "text/csv;charset=utf-8");
+            }}
           >
             {fileLabels[resultTable]} ↓
           </button>
         </div>
-        <div className="ena-result-table-wrap" role="region" aria-label={`${labels[resultTable]} table`} tabIndex={0}>
-          <table>
-            <thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead>
-            <tbody>{rows.slice(0, 100).map((row, rowIndex) => (
-              <tr key={rowIndex}>{headers.map((header) => <td key={header}>{String(row[header] ?? "")}</td>)}</tr>
-            ))}</tbody>
-          </table>
-        </div>
-        <p>{rows.length > 100 ? `Showing 100 of ${rows.length.toLocaleString()} rows. The CSV export contains all rows.` : `Showing all ${rows.length.toLocaleString()} rows.`}</p>
+        {!selectedAvailability.available ? (
+          <p className="ena-result-table-not-applicable" role="status">
+            {labels[resultTable]} — {selectedAvailability.reason ?? "Not applicable."}
+          </p>
+        ) : (
+          <>
+            <div className="ena-result-table-wrap" role="region" aria-label={`${labels[resultTable]} table`} tabIndex={0}>
+              <table>
+                <thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead>
+                <tbody>{rows.slice(0, 100).map((row, rowIndex) => (
+                  <tr key={rowIndex}>{headers.map((header) => <td key={header}>{String(row[header] ?? "")}</td>)}</tr>
+                ))}</tbody>
+              </table>
+            </div>
+            <p>{rows.length > 100 ? `Showing 100 of ${rows.length.toLocaleString()} rows. The CSV export contains all rows.` : `Showing all ${rows.length.toLocaleString()} rows.`}</p>
+          </>
+        )}
       </details>
     );
   }
@@ -3815,8 +3869,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   ? `${resultUnitCount} ${copy.workspace.units.toLowerCase()} · ${result?.set.codes.length ?? 0} ${copy.workspace.codes.toLowerCase()} · ${copy.ona.workspace.directedSpace}`
                   : view === "3d" && result
                   ? activeGroupContrast
-                    ? `${activeGroupContrast.primary.name} − ${activeGroupContrast.secondary.name} · ${xDimension} × ${yDimension} × ${zDimension} · linked camera`
-                    : `${xDimension} × ${yDimension} × ${zDimension} · ${copy.plot.sameFittedSpace}`
+                    ? `${activeGroupContrast.primary.name} − ${activeGroupContrast.secondary.name} · ${threeDXDimension} × ${threeDYDimension} × ${threeDZDimension} · linked camera`
+                    : `${threeDXDimension} × ${threeDYDimension} × ${threeDZDimension} · ${copy.plot.sameFittedSpace}`
                   : activeSetComparison
                   ? `${activeSetComparison.primary.name} − ${activeSetComparison.secondary.name} · shared ${activeSetComparison.axes[0]} × ${activeSetComparison.axes[1]}`
                   : activeGroupContrast
@@ -3948,9 +4002,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   aria-label={`${copy.plot.axisX}, ${copy.plot.axisY}, ${copy.plot.axisZ}`}
                 >
                   {([
-                    [copy.plot.axisX, xDimension, "x"],
-                    [copy.plot.axisY, yDimension, "y"],
-                    [copy.plot.axisZ, zDimension, "z"],
+                    [copy.plot.axisX, threeDXDimension, "x"],
+                    [copy.plot.axisY, threeDYDimension, "y"],
+                    [copy.plot.axisZ, threeDZDimension, "z"],
                   ] as Array<[string, string, "x" | "y" | "z"]>).map(([label, value, axis]) => (
                     <label key={axis} className="ena-three-d-axis-field">
                       <span>{label}</span>
@@ -4128,9 +4182,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     result={result}
                     contrast={activeGroupContrast}
                     groupColumn={resultConfig.groupColumn}
-                    xDimension={xDimension}
-                    yDimension={yDimension}
-                    zDimension={zDimension}
+                    xDimension={threeDXDimension}
+                    yDimension={threeDYDimension}
+                    zDimension={threeDZDimension}
                     camera={camera}
                     showPoints={showPoints}
                     showNetworks={showNetworks}
@@ -4155,9 +4209,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     codeColors={codeColors}
                     result={result}
                     groupColumn={resultConfig?.groupColumn ?? null}
-                    xDimension={xDimension}
-                    yDimension={yDimension}
-                    zDimension={zDimension}
+                    xDimension={threeDXDimension}
+                    yDimension={threeDYDimension}
+                    zDimension={threeDZDimension}
                     camera={camera}
                     showPoints={showPoints}
                     showNetworks={showNetworks}
@@ -4186,7 +4240,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     view={view}
                     xDimension={xDimension}
                     yDimension={yDimension}
-                    zDimension={zDimension}
+                    zDimension={result.dimensions[2] ?? yDimension}
                     camera={camera}
                     showPoints={showPoints}
                     showNetworks={showNetworks}

@@ -32,6 +32,46 @@ import {
 
 export const OPEN_ENA_POINT_INDEX = "OPEN_ENA_POINT_INDEX";
 
+export const OPEN_ENA_RESULT_TABLE_KEYS = [
+  "coordinates",
+  "lineWeights",
+  "connectionCounts",
+  "trajectories",
+  "centroids",
+  "nodePositions",
+  "adjacencyKey",
+] as const;
+
+export type OpenEnaResultTableKey = (typeof OPEN_ENA_RESULT_TABLE_KEYS)[number];
+
+export interface OpenEnaResultTableAvailability {
+  available: boolean;
+  reason: string | null;
+}
+
+export function openEnaResultTableAvailability(context: {
+  modelType: OpenEnaResult["set"]["modelType"];
+  projectionReference: boolean;
+}): Record<OpenEnaResultTableKey, OpenEnaResultTableAvailability> {
+  const availability = Object.fromEntries(OPEN_ENA_RESULT_TABLE_KEYS.map((key) => [
+    key,
+    { available: true, reason: null },
+  ])) as Record<OpenEnaResultTableKey, OpenEnaResultTableAvailability>;
+  if (context.modelType === "EndPoint") {
+    availability.trajectories = {
+      available: false,
+      reason: "Not applicable to endpoint models.",
+    };
+  }
+  if (context.projectionReference) {
+    availability.centroids = {
+      available: false,
+      reason: "Not applicable to projection-reference results.",
+    };
+  }
+  return availability;
+}
+
 export interface BuildAnalysisBundleOptions extends OpenEnaPresentationOptions {
   methodsDimensions?: readonly string[];
   methodsFlipX?: boolean;
