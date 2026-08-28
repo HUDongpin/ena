@@ -112,6 +112,28 @@ test("the browser smoke proves every non-Plot rail panel is visible inside one i
   assert.match(source, /taskRequestCount === args\.expectedTaskRequestCount/u);
 });
 
+test("the browser smoke preserves one stateful AI subtree across Plot, AI, Model, AI, and Plot", () => {
+  const source = readFileSync(smokePath, "utf8");
+
+  assert.match(source, /aiPostCount:\s*0/u);
+  assert.match(source, /__openEnaAiLifecycleAudit/u);
+  assert.match(source, /open-ena-persistent-ai-lifecycle/u);
+  assert.match(source, /\.ena-ai-interpretation/u);
+  assert.match(source, /data-ena-ai-consent="explicit"/u);
+  assert.match(source, /currentAiRoot === audit\.aiRoot/u);
+  assert.match(source, /currentConsent === audit\.consent/u);
+  assert.match(source, /aiPostCount === audit\.baselineAiPostCount/u);
+  assert.match(source, /name: "Model", exact: true/u);
+  assert.match(source, /name: "AI-assisted interpretation", exact: true/u);
+  assert.match(source, /analysisSlot\.waitFor\(\{ state: "hidden"/u);
+  assert.match(source, /trajectorySlot\.waitFor\(\{ state: "visible"/u);
+  assert.doesNotMatch(
+    source,
+    /getByTestId\("open-ena-longitudinal-v3-analysis-controls"\)\.count\(\) === 0/u,
+    "Plot mode must hide, not unmount, the persistent analysis subtree",
+  );
+});
+
 test("the browser smoke locates the AI rail control by its full accessible name", () => {
   const source = readFileSync(smokePath, "utf8");
 

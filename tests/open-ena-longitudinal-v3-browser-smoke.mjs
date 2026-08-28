@@ -498,6 +498,7 @@ async function authenticateAndRunTrajectory(page, args) {
       taskRequestCount: 0,
       workerRunCount: 0,
       remotePostCount: 0,
+      aiPostCount: 0,
       bootstrapTaskCount: 0,
       networkOverlayTaskCount: 0,
     };
@@ -521,7 +522,11 @@ async function authenticateAndRunTrajectory(page, args) {
       const method = String(init?.method || (typeof input === "object" && input && "method" in input
         ? input.method
         : "GET")).toUpperCase();
-      if (method === "POST" && new URL(url, window.location.href).pathname === "/api/open-ena/longitudinal") {
+      const pathname = new URL(url, window.location.href).pathname;
+      if (method === "POST" && pathname === "/api/open-ena/ai-interpretation") {
+        audit.aiPostCount += 1;
+      }
+      if (method === "POST" && pathname === "/api/open-ena/longitudinal") {
         audit.remotePostCount += 1;
         audit.taskRequestCount += 1;
         try {
@@ -685,6 +690,116 @@ async function exerciseNonPlotRailPanels(page, args) {
   };
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
   const workbench = page.getByTestId("open-ena-longitudinal-v3-workbench");
+  const analysisSlot = page.getByTestId("open-ena-longitudinal-v3-analysis-controls");
+  const trajectorySlot = page.getByTestId("open-ena-longitudinal-v3-trajectory-controls");
+  await analysisSlot.waitFor({ state: "hidden", timeout: 15_000 });
+  await trajectorySlot.waitFor({ state: "visible", timeout: 15_000 });
+  assertBrowser(await analysisSlot.count() === 1, "Plot mode unmounted the persistent analysis controls");
+  assertBrowser(await trajectorySlot.count() === 1, "Plot mode unmounted the trajectory controls");
+
+  await page.evaluate(() => {
+    const mountedWorkbench = document.querySelector('[data-testid="open-ena-longitudinal-v3-workbench"]');
+    const plot = document.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]');
+    const aiLifecycle = document.querySelector('[data-testid="open-ena-persistent-ai-lifecycle"]');
+    const aiRoot = aiLifecycle?.querySelector(".ena-ai-interpretation");
+    const consent = aiLifecycle?.querySelector('[data-ena-ai-consent="explicit"] input[type="checkbox"]');
+    if (!mountedWorkbench || !plot || !aiLifecycle || !aiRoot || !consent) {
+      throw new Error("AI lifecycle baseline is incomplete");
+    }
+    const token = "ai-lifecycle-" + crypto.randomUUID();
+    for (const node of [mountedWorkbench, plot, aiRoot, consent]) {
+      node.__openEnaLifecycleToken = token;
+    }
+    window.__openEnaAiLifecycleAudit = {
+      token,
+      workbench: mountedWorkbench,
+      plot,
+      aiRoot,
+      consent,
+      baselineAiPostCount: window.__openEnaLongitudinalSmokeTaskAudit?.aiPostCount ?? 0,
+    };
+  });
+
+  const readAiLifecycle = async (transition) => await page.evaluate((label) => {
+    const audit = window.__openEnaAiLifecycleAudit;
+    const currentWorkbench = document.querySelector('[data-testid="open-ena-longitudinal-v3-workbench"]');
+    const currentPlot = document.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]');
+    const currentAiLifecycle = document.querySelector('[data-testid="open-ena-persistent-ai-lifecycle"]');
+    const currentAiRoot = currentAiLifecycle?.querySelector(".ena-ai-interpretation");
+    const currentConsent = currentAiLifecycle?.querySelector('[data-ena-ai-consent="explicit"] input[type="checkbox"]');
+    const aiPostCount = window.__openEnaLongitudinalSmokeTaskAudit?.aiPostCount ?? -1;
+    return {
+      transition: label,
+      token: audit?.token ?? null,
+      workbenchSame: currentWorkbench === audit.workbench,
+      plotSame: currentPlot === audit.plot,
+      aiRootSame: currentAiRoot === audit.aiRoot,
+      consentSame: currentConsent === audit.consent,
+      workbenchToken: currentWorkbench?.__openEnaLifecycleToken ?? null,
+      plotToken: currentPlot?.__openEnaLifecycleToken ?? null,
+      aiRootToken: currentAiRoot?.__openEnaLifecycleToken ?? null,
+      consentToken: currentConsent?.__openEnaLifecycleToken ?? null,
+      aiLifecycleCount: document.querySelectorAll('[data-testid="open-ena-persistent-ai-lifecycle"]').length,
+      aiRootCount: document.querySelectorAll(".ena-ai-interpretation").length,
+      consentCount: document.querySelectorAll('[data-ena-ai-consent="explicit"] input[type="checkbox"]').length,
+      consentEnabled: currentConsent ? !currentConsent.disabled : false,
+      consentChecked: currentConsent?.checked ?? false,
+      aiPostCount,
+      baselineAiPostCount: audit?.baselineAiPostCount ?? -1,
+      aiPostCountMatches: aiPostCount === audit.baselineAiPostCount,
+      taskRequestCount: window.__openEnaLongitudinalSmokeTaskAudit?.taskRequestCount ?? -1,
+    };
+  }, transition);
+
+  const assertAiLifecycle = (audit, transition, expectedConsentChecked) => {
+    assertBrowser(audit.workbenchSame, transition + " remounted the V3 workbench");
+    assertBrowser(audit.plotSame, transition + " replaced the Plotly presenter root");
+    assertBrowser(audit.aiRootSame, transition + " remounted the AI interpretation root");
+    assertBrowser(audit.consentSame, transition + " replaced the AI consent control");
+    assertBrowser(audit.aiLifecycleCount === 1, transition + " duplicated the AI lifecycle wrapper");
+    assertBrowser(audit.aiRootCount === 1, transition + " duplicated the AI interpretation root");
+    assertBrowser(audit.consentCount === 1, transition + " duplicated the AI consent control");
+    assertBrowser([
+      audit.workbenchToken,
+      audit.plotToken,
+      audit.aiRootToken,
+      audit.consentToken,
+    ].every((token) => token === audit.token), transition + " changed a lifecycle mount token");
+    assertBrowser(audit.consentChecked === expectedConsentChecked, transition + " lost AI consent state");
+    assertBrowser(audit.aiPostCountMatches, transition + " submitted an automatic AI generation request");
+    assertBrowser(audit.taskRequestCount === args.expectedTaskRequestCount, transition + " submitted a scientific task");
+  };
+
+  const aiLifecycleAudits = {};
+  aiLifecycleAudits.plotBaseline = await readAiLifecycle("Plot baseline");
+  assertAiLifecycle(aiLifecycleAudits.plotBaseline, "Plot baseline", false);
+
+  await rail.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
+  const aiLifecycle = page.getByTestId("open-ena-persistent-ai-lifecycle");
+  await aiLifecycle.waitFor({ state: "visible", timeout: 15_000 });
+  const consentControl = page.locator('[data-ena-ai-consent="explicit"] input[type="checkbox"]');
+  const consentEnabled = await consentControl.isEnabled();
+  if (consentEnabled) await consentControl.check();
+  const expectedConsentChecked = consentEnabled;
+  aiLifecycleAudits.plotToAi = await readAiLifecycle("Plot to AI");
+  assertAiLifecycle(aiLifecycleAudits.plotToAi, "Plot to AI", expectedConsentChecked);
+
+  await rail.getByRole("button", { name: "Model", exact: true }).click();
+  await aiLifecycle.waitFor({ state: "hidden", timeout: 15_000 });
+  aiLifecycleAudits.aiToModel = await readAiLifecycle("AI to Model");
+  assertAiLifecycle(aiLifecycleAudits.aiToModel, "AI to Model", expectedConsentChecked);
+
+  await rail.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
+  await aiLifecycle.waitFor({ state: "visible", timeout: 15_000 });
+  aiLifecycleAudits.modelToAi = await readAiLifecycle("Model to AI");
+  assertAiLifecycle(aiLifecycleAudits.modelToAi, "Model to AI", expectedConsentChecked);
+
+  await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
+  await analysisSlot.waitFor({ state: "hidden", timeout: 15_000 });
+  await trajectorySlot.waitFor({ state: "visible", timeout: 15_000 });
+  aiLifecycleAudits.aiToPlot = await readAiLifecycle("AI to Plot");
+  assertAiLifecycle(aiLifecycleAudits.aiToPlot, "AI to Plot", expectedConsentChecked);
+
   const nonPlotPanelExpectations = [
     { railLabel: "Data", accessibleName: "Data", mode: "data", heading: "Start with coded data" },
     { railLabel: "Model", accessibleName: "Model", mode: "model", heading: "Define the ENA model" },
@@ -695,8 +810,7 @@ async function exerciseNonPlotRailPanels(page, args) {
   let trajectoryPresenterScreenshotPath = null;
   for (const expectation of nonPlotPanelExpectations) {
     await rail.getByRole("button", { name: expectation.accessibleName, exact: true }).click();
-    const slot = page.getByTestId("open-ena-longitudinal-v3-analysis-controls");
-    await slot.waitFor({ state: "visible", timeout: 15_000 });
+    await analysisSlot.waitFor({ state: "visible", timeout: 15_000 });
     const audit = await page.evaluate((expected) => {
       const controls = document.querySelector('[data-testid="open-ena-longitudinal-v3-analysis-controls"]');
       const plot = document.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]');
@@ -735,10 +849,12 @@ async function exerciseNonPlotRailPanels(page, args) {
 
   await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
   await workbench.locator('[data-trajectory-step="1"]').waitFor({ state: "visible", timeout: 15_000 });
-  assertBrowser(
-    await page.getByTestId("open-ena-longitudinal-v3-analysis-controls").count() === 0,
-    "Plot Tools did not restore trajectory controls",
-  );
+  await analysisSlot.waitFor({ state: "hidden", timeout: 15_000 });
+  await trajectorySlot.waitFor({ state: "visible", timeout: 15_000 });
+  assertBrowser(await analysisSlot.count() === 1, "Plot Tools unmounted the persistent analysis controls");
+  assertBrowser(await trajectorySlot.count() === 1, "Plot Tools unmounted the trajectory controls");
+  aiLifecycleAudits.finalPlot = await readAiLifecycle("Final Plot");
+  assertAiLifecycle(aiLifecycleAudits.finalPlot, "Final Plot", expectedConsentChecked);
   const trajectoryBoundaryAudit = await page.evaluate(() => {
     const plot = document.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]');
     const traces = Array.isArray(plot?.data) ? plot.data : [];
@@ -763,7 +879,19 @@ async function exerciseNonPlotRailPanels(page, args) {
   assertBrowser(trajectoryBoundaryAudit.bundleResultHash === args.expectedResultHash, "Plot Tools changed the trajectory result hash");
   assertBrowser(trajectoryBoundaryAudit.taskRequestCount === args.expectedTaskRequestCount, "Plot Tools submitted a scientific task");
   assertBrowser(Boolean(trajectoryPresenterScreenshotPath), "Model panel screenshot was not captured");
-  return { ...trajectoryBoundaryAudit, panelAudits, trajectoryPresenterScreenshotPath };
+  return {
+    ...trajectoryBoundaryAudit,
+    panelAudits,
+    trajectoryPresenterScreenshotPath,
+    aiLifecycleAudit: {
+      token: aiLifecycleAudits.plotBaseline.token,
+      consentEnabled,
+      expectedConsentChecked,
+      baselineAiPostCount: aiLifecycleAudits.plotBaseline.baselineAiPostCount,
+      finalAiPostCount: aiLifecycleAudits.finalPlot.aiPostCount,
+      transitions: aiLifecycleAudits,
+    },
+  };
 }
 
 async function exerciseCamerasAndProjections(page, args) {

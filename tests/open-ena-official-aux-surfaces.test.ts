@@ -24,21 +24,72 @@ test("Plot Settings closes restore the trigger after commit and Escape is fully 
 
   const scheduled: Array<() => void> = [];
   let focusCount = 0;
+  const cancelFocus = scheduleFocusRestore(
+    { isConnected: true, disabled: false, focus: () => { focusCount += 1; } },
+    (callback: () => void) => { scheduled.push(callback); },
+    () => {},
+  );
+  assert.equal(typeof cancelFocus, "function", "the scheduled focus move must be cancellable");
+  assert.equal(focusCount, 0, "focus must wait until the close has committed");
+  assert.equal(scheduled.length, 1);
+  cancelFocus();
+  scheduled[0]!();
+  assert.equal(focusCount, 0, "a stale open/close focus move must not run after cancellation");
+
   scheduleFocusRestore(
     { isConnected: true, disabled: false, focus: () => { focusCount += 1; } },
     (callback: () => void) => { scheduled.push(callback); },
+    () => {},
   );
-  assert.equal(focusCount, 0, "focus must wait until the close has committed");
-  assert.equal(scheduled.length, 1);
-  scheduled[0]!();
+  scheduled[1]!();
   assert.equal(focusCount, 1);
 
   const plotTools = source("components/open-ena/OpenEnaPersistentPlotTools.tsx");
   assert.match(plotTools, /const settingsTriggerRef = useRef<HTMLButtonElement>\(null\)/);
+  assert.match(plotTools, /const settingsCloseButtonRef = useRef<HTMLButtonElement>\(null\)/);
+  assert.match(plotTools, /const pendingFocusCancelRef = useRef/);
   assert.match(plotTools, /ref=\{settingsTriggerRef\}/);
+  assert.match(plotTools, /ref=\{settingsCloseButtonRef\}/);
   assert.match(plotTools, /event\.preventDefault\(\);\s*event\.stopPropagation\(\);\s*requestSettingsClose\(\)/);
   assert.match(plotTools, /aria-label=\{copy\.closePlotSettings\}[\s\S]{0,160}onClick=\{requestSettingsClose\}/);
-  assert.match(plotTools, /scheduleOpenEnaFocusRestore\(\s*settingsTriggerRef\.current/);
+  assert.match(plotTools, /settingsOpen\s*\?\s*settingsCloseButtonRef\.current\s*:\s*wasOpen\s*\?\s*settingsTriggerRef\.current/);
+  assert.match(plotTools, /return \(\) => \{[\s\S]*?pendingFocusCancelRef\.current\(\)/);
+
+  const openMarkup = renderToStaticMarkup(createElement(OpenEnaPersistentPlotTools, {
+    edgeScale: 1,
+    edgeThreshold: 0.25,
+    pointScale: 1,
+    textScale: 1,
+    showLabels: true,
+    showGroupLabels: true,
+    showUnitLabels: false,
+    showPoints: true,
+    unitCircle: false,
+    flipX: false,
+    flipY: false,
+    plotZoom: 1,
+    onEdgeScaleChange: noOp,
+    onEdgeThresholdChange: noOp,
+    onPointScaleChange: noOp,
+    onTextScaleChange: noOp,
+    onShowLabelsChange: noOp,
+    onShowGroupLabelsChange: noOp,
+    onShowUnitLabelsChange: noOp,
+    onShowPointsChange: noOp,
+    onUnitCircleChange: noOp,
+    onFlipXChange: noOp,
+    onFlipYChange: noOp,
+    onPlotZoomChange: noOp,
+    onReset: noOp,
+    settingsOpen: true,
+    onSettingsOpenChange: noOp,
+  }));
+  assert.match(
+    openMarkup,
+    /data-ena-plot-tools-surface="frequent"[^>]*inert=""[^>]*aria-hidden="true"/,
+    "frequent controls must leave the focus and accessibility trees while the sheet is open",
+  );
+  assert.match(openMarkup, /aria-label="Plot Settings"[^>]*aria-expanded="true"/);
 });
 
 test("persistent Plot Tools expose every controlled visual setting with accessible state", () => {

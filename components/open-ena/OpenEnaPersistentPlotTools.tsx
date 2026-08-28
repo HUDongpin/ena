@@ -85,14 +85,24 @@ const rangeProgressStyle = (value: number, minimum: number, maximum: number) => 
   "--ena-range-progress": `${clamp(((value - minimum) / (maximum - minimum)) * 100, 0, 100)}%`,
 } as CSSProperties);
 
-export function scheduleOpenEnaFocusRestore(
-  target: Pick<HTMLButtonElement, "disabled" | "focus" | "isConnected"> | null,
-  schedule: (callback: () => void) => unknown,
+export function scheduleOpenEnaFocusRestore<Handle>(
+  target: Pick<HTMLElement, "focus" | "isConnected"> & { disabled?: boolean } | null,
+  schedule: (callback: () => void) => Handle,
+  cancelSchedule: (handle: Handle) => void,
 ) {
-  if (!target) return;
-  schedule(() => {
-    if (target.isConnected && !target.disabled) target.focus();
+  if (!target) return () => {};
+  let cancelled = false;
+  let settled = false;
+  const handle = schedule(() => {
+    if (cancelled) return;
+    settled = true;
+    if (target.isConnected && target.disabled !== true) target.focus();
   });
+  return () => {
+    if (cancelled || settled) return;
+    cancelled = true;
+    cancelSchedule(handle);
+  };
 }
 
 function OfficialBinaryToggle({
@@ -181,16 +191,25 @@ export default function OpenEnaPersistentPlotTools({
   const textSize = Math.round(12 * textScale + 1);
   const ordered = analysisKind === "ona";
   const settingsTriggerRef = useRef<HTMLButtonElement>(null);
+  const settingsCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const pendingFocusCancelRef = useRef<() => void>(() => {});
   const wasSettingsOpenRef = useRef(settingsOpen);
   useEffect(() => {
     const wasOpen = wasSettingsOpenRef.current;
     wasSettingsOpenRef.current = settingsOpen;
-    if (wasOpen && !settingsOpen) {
-      scheduleOpenEnaFocusRestore(
-        settingsTriggerRef.current,
-        (callback) => window.requestAnimationFrame(callback),
-      );
-    }
+    pendingFocusCancelRef.current();
+    const focusTarget = settingsOpen
+      ? settingsCloseButtonRef.current
+      : wasOpen ? settingsTriggerRef.current : null;
+    pendingFocusCancelRef.current = scheduleOpenEnaFocusRestore(
+      focusTarget,
+      (callback) => window.requestAnimationFrame(callback),
+      (handle) => window.cancelAnimationFrame(handle),
+    );
+    return () => {
+      pendingFocusCancelRef.current();
+      pendingFocusCancelRef.current = () => {};
+    };
   }, [settingsOpen]);
 
   const requestSettingsClose = () => onSettingsOpenChange(false);
@@ -231,7 +250,12 @@ export default function OpenEnaPersistentPlotTools({
         </button>
       </header>
 
-      <div className="ena-persistent-plot-tools-scroll" data-ena-plot-tools-surface="frequent">
+      <div
+        className="ena-persistent-plot-tools-scroll"
+        data-ena-plot-tools-surface="frequent"
+        inert={settingsOpen}
+        aria-hidden={settingsOpen ? true : undefined}
+      >
         <div className="ena-official-tool-row" data-ena-plot-tool="edge-scale">
           <span>{copy.scaleEdgeWeights}:</span>
           <div className="ena-official-tool-control">
@@ -334,7 +358,7 @@ export default function OpenEnaPersistentPlotTools({
         >
           <header>
             <strong>{copy.plotSettings}</strong>
-            <button type="button" aria-label={copy.closePlotSettings} title={copy.close} onClick={requestSettingsClose}>×</button>
+            <button ref={settingsCloseButtonRef} type="button" aria-label={copy.closePlotSettings} title={copy.close} onClick={requestSettingsClose}>×</button>
           </header>
           <div className="ena-official-plot-settings-scroll">
             <section aria-labelledby="ena-plot-settings-network">

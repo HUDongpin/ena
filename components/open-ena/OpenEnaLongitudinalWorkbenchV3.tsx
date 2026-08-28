@@ -55,7 +55,13 @@ import {
   type OpenEna3dAspectRatio,
   type OpenEna3dCamera,
 } from "@/lib/open-ena/plot3d";
-import type { CameraPreset, OpenEnaConfig, OpenEnaResult, ParsedDataset } from "@/lib/open-ena/types";
+import type {
+  CameraPreset,
+  OpenEnaConfig,
+  OpenEnaMode,
+  OpenEnaResult,
+  ParsedDataset,
+} from "@/lib/open-ena/types";
 import {
   resetOpenEna3dCameraDistance,
   zoomOpenEna3dAspectRatio,
@@ -187,7 +193,7 @@ interface OpenEnaLongitudinalWorkbenchV3Props {
   datasetHash: string;
   modelResultStale: boolean;
   analysisControls: ReactNode | null;
-  analysisControlsMode: string;
+  analysisControlsMode: OpenEnaMode;
 }
 
 export function OpenEnaLongitudinalV3ControlsSlot({
@@ -195,7 +201,7 @@ export function OpenEnaLongitudinalV3ControlsSlot({
   analysisControls,
   trajectoryControls,
 }: {
-  analysisControlsMode: string;
+  analysisControlsMode: OpenEnaMode;
   analysisControls: ReactNode | null;
   trajectoryControls: ReactNode;
 }) {

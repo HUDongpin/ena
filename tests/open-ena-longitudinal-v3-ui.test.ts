@@ -585,6 +585,8 @@ test("non-Plot rail panels occupy the trajectory controls slot without unmountin
     "Data, Model, Stats, and AI must be passed into the mounted trajectory workbench as controls, not replace it",
   );
   assert.match(trajectoryPresenter, /analysisControlsMode=\{mode\}/);
+  assert.match(component, /analysisControlsMode:\s*OpenEnaMode;/);
+  assert.doesNotMatch(component, /analysisControlsMode:\s*string;/);
   assert.match(component, /OpenEnaLongitudinalV3ControlsSlot/);
   assert.match(component, /data-testid="open-ena-longitudinal-v3-analysis-controls"/);
   assert.match(component, /data-testid="open-ena-longitudinal-v3-trajectory-controls"/);
