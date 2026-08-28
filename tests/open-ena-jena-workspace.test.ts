@@ -80,7 +80,7 @@ test("Open ENA consumes the reviewed jENA source snapshot as an exact-version np
   );
   assert.equal(
     rootPackage.scripts?.verify,
-    `npm run verify:j3dena-vendor -- --require-installed && npm run jena:verify && ${runtimeVendorVerifyCommand} && npm run verify:production-browser-receipt && npm run test:app && npm run typecheck:app && npm run build:app`,
+    `npm run prompt:verify && npm run verify:j3dena-vendor -- --require-installed && npm run jena:verify && ${runtimeVendorVerifyCommand} && npm run verify:production-browser-receipt && npm run test:app && npm run typecheck:app && npm run build:app`,
   );
   assert.equal(rootPackage.scripts?.["verify:j3dena-vendor"], vendorVerifyCommand);
 });
