@@ -8,6 +8,119 @@ const groupContrast2d = readFileSync(new URL("../components/open-ena/OpenEnaGrou
 const groupContrast3d = readFileSync(new URL("../components/open-ena/OpenEna3DGroupContrast.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
+type HarnessCamera = {
+  eye: { x: number; y: number; z: number };
+  center: { x: number; y: number; z: number };
+  up: { x: number; y: number; z: number };
+  projection: { type: "perspective" | "orthographic" };
+};
+type HarnessRanges = { x: readonly [number, number]; y: readonly [number, number] };
+type HarnessAspect = { x: number; y: number; z: number };
+
+function createFakeTrajectoryPlotlyHarness() {
+  const root: {
+    _fullLayout?: {
+      xaxis?: { range?: readonly [number, number] };
+      yaxis?: { range?: readonly [number, number] };
+      scene?: {
+        camera?: HarnessCamera;
+        aspectratio?: HarnessAspect;
+        _scene?: {
+          getCamera: () => HarnessCamera | undefined;
+          glplot: { getAspectratio: () => HarnessAspect | undefined };
+        };
+      };
+    };
+  } = {};
+  const events: string[] = [];
+  const relayoutPayloads: Array<Record<string, unknown>> = [];
+  const imageOptions: Array<Record<string, unknown>> = [];
+  let nextRanges: HarnessRanges | null = null;
+  let nextAspect: HarnessAspect | null = null;
+  let nextCamera: HarnessCamera | null = null;
+  let blockedRelayout: { started: () => void; wait: Promise<void> } | null = null;
+
+  const applyRelayout = (payload: Record<string, unknown>) => {
+    const layout = root._fullLayout;
+    if (!layout) return;
+    if (payload["xaxis.range"] && layout.xaxis) layout.xaxis.range = payload["xaxis.range"] as [number, number];
+    if (payload["yaxis.range"] && layout.yaxis) layout.yaxis.range = payload["yaxis.range"] as [number, number];
+    if (payload["scene.camera"] && layout.scene) layout.scene.camera = structuredClone(payload["scene.camera"] as HarnessCamera);
+    if (payload["scene.aspectratio"] && layout.scene) layout.scene.aspectratio = structuredClone(payload["scene.aspectratio"] as HarnessAspect);
+  };
+
+  return {
+    root,
+    events,
+    relayoutPayloads,
+    imageOptions,
+    setNextRuntime(value: { ranges?: HarnessRanges; aspect?: HarnessAspect; camera?: HarnessCamera }) {
+      nextRanges = value.ranges ?? null;
+      nextAspect = value.aspect ?? null;
+      nextCamera = value.camera ?? null;
+    },
+    blockNextRelayout() {
+      let release!: () => void;
+      let started!: () => void;
+      const wait = new Promise<void>((resolve) => { release = resolve; });
+      const didStart = new Promise<void>((resolve) => { started = resolve; });
+      blockedRelayout = { started, wait };
+      return { release, didStart };
+    },
+    async react(input: { layout: Record<string, unknown> }) {
+      const renderId = String((input.layout.meta as { renderId?: string } | undefined)?.renderId ?? "render");
+      events.push(`react:${renderId}`);
+      if (nextRanges) {
+        root._fullLayout = {
+          xaxis: { range: [...nextRanges.x] },
+          yaxis: { range: [...nextRanges.y] },
+        };
+      } else {
+        root._fullLayout = {
+          scene: {
+            camera: nextCamera ? structuredClone(nextCamera) : undefined,
+            aspectratio: nextAspect ? { ...nextAspect } : undefined,
+            _scene: {
+              getCamera: () => root._fullLayout?.scene?.camera,
+              glplot: { getAspectratio: () => root._fullLayout?.scene?.aspectratio },
+            },
+          },
+        };
+      }
+    },
+    async relayout(payload: Record<string, unknown>) {
+      const payloadCopy = structuredClone(payload);
+      relayoutPayloads.push(payloadCopy);
+      events.push(`relayout:${JSON.stringify(payloadCopy)}`);
+      if (blockedRelayout) {
+        const blocker = blockedRelayout;
+        blockedRelayout = null;
+        blocker.started();
+        await blocker.wait;
+      }
+      applyRelayout(payloadCopy);
+      events.push("relayout:complete");
+    },
+    async toImage(options: Record<string, unknown>) {
+      imageOptions.push(structuredClone(options));
+      events.push("toImage");
+      return "data:image/png;base64,CONTROLLER";
+    },
+    readRanges: (): HarnessRanges | null => {
+      const x = root._fullLayout?.xaxis?.range;
+      const y = root._fullLayout?.yaxis?.range;
+      return x && y ? { x: [...x], y: [...y] } : null;
+    },
+    readAspectRatio: (): HarnessAspect | null => {
+      const value = root._fullLayout?.scene?._scene?.glplot.getAspectratio();
+      return value ? { ...value } : null;
+    },
+    readCamera: (fallback: HarnessCamera): HarnessCamera => (
+      structuredClone(root._fullLayout?.scene?._scene?.getCamera() ?? fallback)
+    ),
+  };
+}
+
 test("V3 2D Plotly range actions preserve centers and reset exact immutable spec ranges", async () => {
   type PlotRanges = {
     x: readonly [number, number];
@@ -66,6 +179,20 @@ test("V3 2D Plotly range actions preserve centers and reset exact immutable spec
     { x: [100, 200], y: [300, 400] },
   );
   assert.deepEqual(afterCompactRender, firstRendered, "a later render must not replace the immutable first baseline");
+
+  for (const huge of [
+    { x: [1.2e308, 1.6e308] as const, y: [1.6e308, 1.2e308] as const },
+    { x: [1.6e308, 1.2e308] as const, y: [1.2e308, 1.6e308] as const },
+  ]) {
+    const zoomed = display.zoomTrajectoryPlotlyRangesV3(huge, "in");
+    assert.ok([...zoomed.x, ...zoomed.y].every(Number.isFinite));
+    assert.equal(zoomed.x[0] / 2 + zoomed.x[1] / 2, huge.x[0] / 2 + huge.x[1] / 2);
+    assert.equal(zoomed.y[0] / 2 + zoomed.y[1] / 2, huge.y[0] / 2 + huge.y[1] / 2);
+  }
+  assert.throws(
+    () => display.zoomTrajectoryPlotlyRangesV3({ x: [0, Number.POSITIVE_INFINITY], y: [0, 1] }, "in"),
+    /finite/u,
+  );
 });
 
 test("V3 captures the first rendered 3D aspect ratio as an immutable zoom and reset baseline", async () => {
@@ -151,44 +278,193 @@ test("V3 plot action gate rejects a concurrent operation until the active one se
   assert.deepEqual(relayoutPayloads, [1, 2], "the next accepted action must compute from the updated root state");
 });
 
+test("V3 Plotly controller captures rendered baselines and dispatches every reachable action", async () => {
+  type Result<T> = { status: "completed"; value: T } | { status: "stale" };
+  type RenderRequest = {
+    specKey: object;
+    input: { data: Array<Record<string, unknown>>; layout: Record<string, unknown>; config: Record<string, unknown> };
+    hasScene: boolean;
+    defaultCamera: HarnessCamera;
+  };
+  const [display, interactive] = await Promise.all([
+    import("../lib/open-ena/longitudinal-v3-display"),
+    import("../components/open-ena/OpenEnaInteractive3DPlot"),
+  ]) as unknown as [
+    {
+      createTrajectoryPlotlyControllerV3: (dependencies: Record<string, unknown>) => {
+        render: (request: RenderRequest) => Promise<Result<null>>;
+        zoom: (direction: "in" | "out") => Promise<Result<Record<string, unknown>>>;
+        recenter: () => Promise<Result<Record<string, unknown>>>;
+        copy: (
+          options: Record<string, unknown>,
+          consume?: (image: string) => Promise<string>,
+        ) => Promise<Result<string>>;
+      };
+      zoomTrajectoryPlotlyRangesV3: (ranges: HarnessRanges, direction: "in" | "out") => HarnessRanges;
+    },
+    {
+      zoomOpenEna3dCamera: (camera: HarnessCamera, reference: HarnessCamera, direction: "in" | "out") => HarnessCamera;
+      resetOpenEna3dCameraDistance: (camera: HarnessCamera, reference: HarnessCamera) => HarnessCamera;
+      zoomOpenEna3dAspectRatio: (aspect: HarnessAspect, reference: HarnessAspect, direction: "in" | "out") => HarnessAspect;
+    },
+  ];
+  assert.equal(typeof display.createTrajectoryPlotlyControllerV3, "function");
+
+  const harness = createFakeTrajectoryPlotlyHarness();
+  const controller = display.createTrajectoryPlotlyControllerV3({
+    react: harness.react,
+    relayout: harness.relayout,
+    toImage: harness.toImage,
+    readRanges: harness.readRanges,
+    readAspectRatio: harness.readAspectRatio,
+    readCamera: harness.readCamera,
+    zoomCamera: interactive.zoomOpenEna3dCamera,
+    resetCamera: interactive.resetOpenEna3dCameraDistance,
+    zoomAspectRatio: interactive.zoomOpenEna3dAspectRatio,
+  });
+  const defaultPerspective: HarnessCamera = {
+    eye: { x: 2, y: 2, z: 2 },
+    center: { x: 0, y: 0, z: 0 },
+    up: { x: 0, y: 0, z: 1 },
+    projection: { type: "perspective" },
+  };
+  const defaultOrthographic: HarnessCamera = {
+    eye: { x: 0, y: 0, z: 2.5 },
+    center: { x: 0, y: 0, z: 0 },
+    up: { x: 0, y: 1, z: 0 },
+    projection: { type: "orthographic" },
+  };
+  const input = (renderId: string) => ({ data: [], layout: { meta: { renderId } }, config: {} });
+
+  const twoDimensionalSpec = {};
+  const initial2d: HarnessRanges = { x: [-12, 6], y: [9, -3] };
+  harness.setNextRuntime({ ranges: initial2d });
+  assert.equal((await controller.render({ specKey: twoDimensionalSpec, input: input("2d"), hasScene: false, defaultCamera: defaultPerspective })).status, "completed");
+  const zoomed2d = display.zoomTrajectoryPlotlyRangesV3(initial2d, "in");
+  assert.deepEqual(await controller.zoom("in"), { status: "completed", value: {
+    "xaxis.autorange": false,
+    "yaxis.autorange": false,
+    "xaxis.range": zoomed2d.x,
+    "yaxis.range": zoomed2d.y,
+  } });
+  assert.deepEqual(await controller.recenter(), { status: "completed", value: {
+    "xaxis.autorange": false,
+    "yaxis.autorange": false,
+    "xaxis.range": initial2d.x,
+    "yaxis.range": initial2d.y,
+  } });
+
+  harness.setNextRuntime({ ranges: { x: [100, 200], y: [300, 400] } });
+  await controller.render({ specKey: twoDimensionalSpec, input: input("2d-compact"), hasScene: false, defaultCamera: defaultPerspective });
+  assert.deepEqual((await controller.recenter() as { status: "completed"; value: Record<string, unknown> }).value["xaxis.range"], initial2d.x);
+  const replacement2d = {};
+  const replacementRanges: HarnessRanges = { x: [20, 40], y: [-2, 8] };
+  harness.setNextRuntime({ ranges: replacementRanges });
+  await controller.render({ specKey: replacement2d, input: input("2d-new-spec"), hasScene: false, defaultCamera: defaultPerspective });
+  assert.deepEqual((await controller.recenter() as { status: "completed"; value: Record<string, unknown> }).value["xaxis.range"], replacementRanges.x);
+
+  const orthographicSpec = {};
+  const initialAspect = { x: 2, y: 1.25, z: 0.75 };
+  harness.setNextRuntime({ aspect: initialAspect, camera: defaultOrthographic });
+  await controller.render({ specKey: orthographicSpec, input: input("orthographic"), hasScene: true, defaultCamera: defaultOrthographic });
+  const expectedOrthographicZoom = interactive.zoomOpenEna3dAspectRatio(initialAspect, initialAspect, "in");
+  assert.deepEqual(await controller.zoom("in"), { status: "completed", value: {
+    "scene.aspectmode": "manual",
+    "scene.aspectratio": expectedOrthographicZoom,
+  } });
+  harness.setNextRuntime({ aspect: { x: 9, y: 8, z: 7 }, camera: defaultOrthographic });
+  await controller.render({ specKey: orthographicSpec, input: input("orthographic-fullscreen"), hasScene: true, defaultCamera: defaultOrthographic });
+  assert.deepEqual(await controller.recenter(), { status: "completed", value: {
+    "scene.aspectmode": "manual",
+    "scene.aspectratio": initialAspect,
+  } });
+
+  const perspectiveSpec = {};
+  const rotatedCamera: HarnessCamera = {
+    eye: { x: -3, y: 4, z: 2 },
+    center: { x: 0.2, y: -0.3, z: 0.1 },
+    up: { x: 0, y: 0, z: 1 },
+    projection: { type: "perspective" },
+  };
+  harness.setNextRuntime({ aspect: { x: 1, y: 1, z: 1 }, camera: rotatedCamera });
+  await controller.render({ specKey: perspectiveSpec, input: input("perspective"), hasScene: true, defaultCamera: defaultPerspective });
+  assert.deepEqual(await controller.zoom("in"), { status: "completed", value: {
+    "scene.camera": interactive.zoomOpenEna3dCamera(rotatedCamera, defaultPerspective, "in"),
+  } });
+  const cameraAfterZoom = harness.readCamera(defaultPerspective);
+  assert.deepEqual(await controller.recenter(), { status: "completed", value: {
+    "scene.camera": interactive.resetOpenEna3dCameraDistance(cameraAfterZoom, defaultPerspective),
+  } });
+  const copyOptions = { format: "png", width: 1600, height: 1000, scale: 1 };
+  assert.deepEqual(await controller.copy(copyOptions, async (image) => `consumed:${image}`), {
+    status: "completed",
+    value: "consumed:data:image/png;base64,CONTROLLER",
+  });
+  assert.deepEqual(harness.imageOptions, [copyOptions]);
+});
+
+test("V3 Plotly controller makes a requested new spec final after an old action", async () => {
+  type Result<T> = { status: "completed"; value: T } | { status: "stale" };
+  const [display, interactive] = await Promise.all([
+    import("../lib/open-ena/longitudinal-v3-display"),
+    import("../components/open-ena/OpenEnaInteractive3DPlot"),
+  ]) as unknown as [any, any];
+  assert.equal(typeof display.createTrajectoryPlotlyControllerV3, "function");
+  const harness = createFakeTrajectoryPlotlyHarness();
+  const controller = display.createTrajectoryPlotlyControllerV3({
+    react: harness.react,
+    relayout: harness.relayout,
+    toImage: harness.toImage,
+    readRanges: harness.readRanges,
+    readAspectRatio: harness.readAspectRatio,
+    readCamera: harness.readCamera,
+    zoomCamera: interactive.zoomOpenEna3dCamera,
+    resetCamera: interactive.resetOpenEna3dCameraDistance,
+    zoomAspectRatio: interactive.zoomOpenEna3dAspectRatio,
+  });
+  const camera: HarnessCamera = {
+    eye: { x: 2, y: 2, z: 2 }, center: { x: 0, y: 0, z: 0 }, up: { x: 0, y: 0, z: 1 }, projection: { type: "perspective" },
+  };
+  const oldSpec = {};
+  harness.setNextRuntime({ camera, aspect: { x: 1, y: 1, z: 1 } });
+  await controller.render({ specKey: oldSpec, input: { data: [], layout: { meta: { renderId: "old" } }, config: {} }, hasScene: true, defaultCamera: camera });
+  harness.events.length = 0;
+  harness.relayoutPayloads.length = 0;
+
+  const blocker = harness.blockNextRelayout();
+  const oldAction = controller.zoom("in") as Promise<Result<Record<string, unknown>>>;
+  await blocker.didStart;
+  const queuedOldAction = controller.recenter() as Promise<Result<Record<string, unknown>>>;
+  const newSpec = {};
+  const newCamera: HarnessCamera = { ...camera, eye: { x: -4, y: 1, z: 3 } };
+  harness.setNextRuntime({ camera: newCamera, aspect: { x: 1.5, y: 1, z: 0.8 } });
+  const newRender = controller.render({ specKey: newSpec, input: { data: [], layout: { meta: { renderId: "new" } }, config: {} }, hasScene: true, defaultCamera: newCamera });
+  const newAction = controller.zoom("out") as Promise<Result<Record<string, unknown>>>;
+  blocker.release();
+
+  assert.deepEqual(await oldAction, { status: "stale" });
+  assert.deepEqual(await queuedOldAction, { status: "stale" });
+  assert.equal((await newRender).status, "completed");
+  assert.equal((await newAction).status, "completed");
+  assert.equal(harness.relayoutPayloads.length, 2, "the queued stale old action must never call relayout");
+  assert.ok(harness.events.indexOf("relayout:complete") < harness.events.indexOf("react:new"));
+  assert.ok(harness.events.indexOf("react:new") < harness.events.lastIndexOf("relayout:complete"));
+  assert.deepEqual(harness.readCamera(newCamera), interactive.zoomOpenEna3dCamera(newCamera, newCamera, "out"));
+});
+
 test("the reachable V3 presenter wires accessible Plotly actions for 3D and 2D projections", () => {
   const presenter = component.match(
     /function TrajectoryPlotlyPresenterV3[\s\S]*?(?=\nfunction AuditCards)/,
   )?.[0] ?? "";
 
-  assert.match(presenter, /zoomOpenEna3dCamera\(/);
-  assert.match(presenter, /resetOpenEna3dCameraDistance\(/);
-  assert.match(presenter, /zoomOpenEna3dAspectRatio\(/);
-  assert.match(presenter, /zoomTrajectoryPlotlyRangesV3\(/);
-  assert.match(presenter, /resetTrajectoryPlotlyRangesV3\(initialRanges\)/);
-  assert.match(presenter, /projection\.type === "orthographic"/);
-  assert.match(presenter, /trajectoryPlotlyCamera\(scene\.camera, cameraForPreset\(cameraPreset\)\)/);
-  assert.match(presenter, /zoomOpenEna3dCamera\(activeCamera, defaultCamera, direction\)/);
-  assert.match(presenter, /const initialRangesRef = useRef<TrajectoryPlotlyRangesV3 \| null>\(null\)/);
-  assert.match(presenter, /const initialAspectRatioRef = useRef<OpenEna3dAspectRatio \| null>\(null\)/);
-  assert.match(
-    presenter,
-    /useEffect\(\(\) => \{\s*initialRangesRef\.current = null;\s*initialAspectRatioRef\.current = null;\s*\}, \[spec\]\)/,
-    "only an immutable spec change may invalidate the first rendered 2D and 3D baselines",
-  );
-  assert.match(
-    presenter,
-    /Plotly\.react\([\s\S]*?\.then\(\(\) => \{[\s\S]*?trajectoryPlotlyRuntimeRanges\(root\)[\s\S]*?captureInitialTrajectoryPlotlyRangesV3\(/,
-    "the 2D baseline must be captured only after Plotly has resolved its initial autorange",
-  );
-  assert.match(
-    presenter,
-    /Plotly\.react\([\s\S]*?\.then\(\(\) => \{[\s\S]*?trajectoryPlotlyRuntimeAspectRatio\(root\)[\s\S]*?captureInitialTrajectoryPlotlyAspectRatioV3\(/,
-    "the aspect baseline must be captured from the first successful Plotly render, not the unrendered spec fallback",
-  );
-  assert.match(
-    presenter,
-    /zoomOpenEna3dAspectRatio\(\s*currentAspectRatio\(\),\s*defaultAspectRatio\(\),\s*direction,/,
-  );
-  assert.match(presenter, /"scene\.aspectratio": defaultAspectRatio\(\)/);
-  assert.match(presenter, /const actionPendingRef = useRef\(false\)/);
+  assert.match(presenter, /const controllerRef = useRef<TrajectoryPlotlyControllerV3 \| null>\(null\)/);
+  assert.match(presenter, /createTrajectoryPlotlyControllerV3\(/);
+  assert.match(presenter, /controller\.render\(\{[\s\S]*?specKey:\s*spec/);
+  assert.match(presenter, /controller\.zoom\(direction\)/);
+  assert.match(presenter, /controller\.recenter\(\)/);
+  assert.match(presenter, /controller\.copy\(/);
+  assert.match(presenter, /result\.status === "completed"[\s\S]*?announceAction/);
   assert.match(presenter, /const \[actionPending, setActionPending\] = useState\(false\)/);
-  assert.match(presenter, /runTrajectoryPlotlyActionV3\(actionPendingRef,/);
   assert.ok(
     [...presenter.matchAll(/disabled=\{status !== "ready" \|\| actionPending\}/gu)].length >= 4,
     "all four plot actions must disable while an earlier relayout/toImage operation is pending",
@@ -204,13 +480,6 @@ test("the reachable V3 presenter wires accessible Plotly actions for 3D and 2D p
     /useEffect\(\(\) => \(\) => \{[\s\S]*?actionStatusTimerRef\.current[\s\S]*?window\.clearTimeout/,
     "the live-announcement timer must be cleared when the presenter unmounts",
   );
-  for (const relayoutKey of [
-    "scene.camera",
-    "scene.aspectratio",
-    "xaxis.range",
-    "yaxis.range",
-  ]) assert.match(presenter, new RegExp(`"${relayoutKey.replace(".", "\\.")}"`));
-
   for (const action of ["zoom-in", "zoom-out", "recenter", "copy-image"]) {
     assert.match(presenter, new RegExp(`data-ena-plot-action="${action}"`));
   }

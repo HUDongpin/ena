@@ -45,12 +45,9 @@ import {
 import {
   applyCompactTrajectoryPlotlyLayoutV3,
   applyFullscreenTrajectoryPlotlyLayoutV3,
-  captureInitialTrajectoryPlotlyAspectRatioV3,
-  captureInitialTrajectoryPlotlyRangesV3,
   cloneTrajectoryPlotlyInputV3,
-  resetTrajectoryPlotlyRangesV3,
-  runTrajectoryPlotlyActionV3,
-  zoomTrajectoryPlotlyRangesV3,
+  createTrajectoryPlotlyControllerV3,
+  type TrajectoryPlotlyControllerV3,
   type TrajectoryPlotlyRangesV3,
 } from "@/lib/open-ena/longitudinal-v3-display";
 import {
@@ -482,9 +479,7 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
 }) {
   const rootRef = useRef<PlotRoot>(null);
   const shellRef = useRef<HTMLDivElement>(null);
-  const initialRangesRef = useRef<TrajectoryPlotlyRangesV3 | null>(null);
-  const initialAspectRatioRef = useRef<OpenEna3dAspectRatio | null>(null);
-  const actionPendingRef = useRef(false);
+  const controllerRef = useRef<TrajectoryPlotlyControllerV3 | null>(null);
   const actionStatusTimerRef = useRef<number | null>(null);
   const [Plotly, setPlotly] = useState<PlotlyImageApi | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -500,11 +495,6 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
     const scene = plotlyRecord(spec.layout.scene);
     return trajectoryPlotlyCamera(scene.camera, cameraForPreset(cameraPreset));
   }, [spec, cameraPreset]);
-
-  useEffect(() => {
-    initialRangesRef.current = null;
-    initialAspectRatioRef.current = null;
-  }, [spec]);
 
   useEffect(() => {
     let active = true;
@@ -528,6 +518,10 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
   }, []);
 
   useEffect(() => {
+    controllerRef.current = null;
+  }, [Plotly]);
+
+  useEffect(() => {
     if (!Plotly || !rootRef.current) return;
     let active = true;
     const root = rootRef.current;
@@ -538,25 +532,42 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
       ),
       fullscreenLayout,
     );
+    const controller = controllerRef.current ?? createTrajectoryPlotlyControllerV3({
+      react: (input) => Plotly.react(
+        root,
+        input.data as never[],
+        input.layout as never,
+        input.config as never,
+      ),
+      relayout: (payload) => Plotly.relayout(root, payload as never),
+      toImage: (options) => Plotly.toImage(root, options as {
+        format: "png";
+        width: number;
+        height: number;
+        scale: number;
+      }),
+      readRanges: () => trajectoryPlotlyRuntimeRanges(root),
+      readAspectRatio: () => trajectoryPlotlyRuntimeAspectRatio(root),
+      readCamera: (fallback) => {
+        const scene = root._fullLayout?.scene;
+        const runtimeCamera = scene?._scene?.getCamera?.() ?? scene?.camera;
+        return trajectoryPlotlyCamera(runtimeCamera, fallback);
+      },
+      zoomCamera: zoomOpenEna3dCamera,
+      resetCamera: resetOpenEna3dCameraDistance,
+      zoomAspectRatio: zoomOpenEna3dAspectRatio,
+      onPendingChange: setActionPending,
+    });
+    controllerRef.current = controller;
     setStatus("loading");
-    void Plotly.react(root, mutableSpec.data as never[], mutableSpec.layout as never, mutableSpec.config as never)
-      .then(() => {
-        if (!active) return;
-        const renderedRanges = trajectoryPlotlyRuntimeRanges(root);
-        if (renderedRanges) {
-          initialRangesRef.current = captureInitialTrajectoryPlotlyRangesV3(
-            initialRangesRef.current,
-            renderedRanges,
-          );
-        }
-        const renderedAspectRatio = trajectoryPlotlyRuntimeAspectRatio(root);
-        if (renderedAspectRatio) {
-          initialAspectRatioRef.current = captureInitialTrajectoryPlotlyAspectRatioV3(
-            initialAspectRatioRef.current,
-            renderedAspectRatio,
-          );
-        }
-        setStatus("ready");
+    void controller.render({
+      specKey: spec,
+      input: mutableSpec,
+      hasScene: spec.layout.scene !== undefined,
+      defaultCamera,
+    })
+      .then((result) => {
+        if (active && result.status === "completed") setStatus("ready");
       })
       .catch(() => active && setStatus("error"));
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
@@ -567,7 +578,7 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
       active = false;
       observer?.disconnect();
     };
-  }, [Plotly, spec, compactLayout, fullscreenLayout]);
+  }, [Plotly, spec, compactLayout, fullscreenLayout, defaultCamera]);
 
   useEffect(() => {
     if (!Plotly) return;
@@ -611,22 +622,6 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
     }
   }, []);
 
-  const currentCamera = () => {
-    const scene = rootRef.current?._fullLayout?.scene;
-    const runtimeCamera = scene?._scene?.getCamera?.() ?? scene?.camera;
-    return trajectoryPlotlyCamera(runtimeCamera, defaultCamera);
-  };
-
-  const defaultAspectRatio = () => ({
-    ...(initialAspectRatioRef.current ?? { x: 1, y: 1, z: 1 }),
-  });
-
-  const currentAspectRatio = () => {
-    const scene = rootRef.current?._fullLayout?.scene;
-    const runtimeRatio = scene?._scene?.glplot?.getAspectratio?.() ?? scene?.aspectratio;
-    return trajectoryPlotlyAspectRatio(runtimeRatio, defaultAspectRatio());
-  };
-
   const announceAction = (message: string) => {
     setActionStatus("");
     if (actionStatusTimerRef.current !== null) {
@@ -638,109 +633,50 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
     }, 0);
   };
 
-  const runPlotAction = async (action: () => Promise<string>) => {
+  const copyImage = async () => {
+    const controller = controllerRef.current;
+    if (!controller || status !== "ready") return;
     try {
-      const result = await runTrajectoryPlotlyActionV3(actionPendingRef, async () => {
-        setActionPending(true);
-        try {
-          return await action();
-        } finally {
-          setActionPending(false);
-        }
-      });
+      const result = await controller.copy(
+        { format: "png", width: 1600, height: 1000, scale: 1 },
+        async (image) => {
+          const blob = await (await fetch(image)).blob();
+          if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
+            await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+            return labels.imageCopied;
+          }
+          downloadBlob("3dena-longitudinal-trajectory.png", blob, "image/png");
+          return labels.imageDownloaded;
+        },
+      );
       if (result.status === "completed") announceAction(result.value);
     } catch {
       announceAction(labels.actionUnavailable);
     }
   };
 
-  const currentRanges = () => {
-    const initialRanges = initialRangesRef.current;
-    if (!initialRanges) return null;
-    return {
-      x: trajectoryPlotlyRange(rootRef.current?._fullLayout?.xaxis?.range, initialRanges.x)!,
-      y: trajectoryPlotlyRange(rootRef.current?._fullLayout?.yaxis?.range, initialRanges.y)!,
-    } satisfies TrajectoryPlotlyRangesV3;
-  };
-
-  const relayoutRanges = async (ranges: TrajectoryPlotlyRangesV3) => {
-    if (!Plotly || !rootRef.current) return;
-    await Plotly.relayout(rootRef.current, {
-      "xaxis.autorange": false,
-      "yaxis.autorange": false,
-      "xaxis.range": ranges.x,
-      "yaxis.range": ranges.y,
-    } as never);
-  };
-
-  const copyImage = async () => {
-    const root = rootRef.current;
-    if (!Plotly || status !== "ready" || !root) return;
-    await runPlotAction(async () => {
-      const image = await Plotly.toImage(root, { format: "png", width: 1600, height: 1000, scale: 1 });
-      const blob = await (await fetch(image)).blob();
-      if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
-        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-        return labels.imageCopied;
-      }
-      downloadBlob("3dena-longitudinal-trajectory.png", blob, "image/png");
-      return labels.imageDownloaded;
-    });
-  };
-
   const changePlotZoom = async (direction: "in" | "out") => {
-    const plotly = Plotly;
-    const root = rootRef.current;
-    if (!plotly || status !== "ready" || !root) return;
-    await runPlotAction(async () => {
-      if (spec.layout.scene === undefined) {
-        const ranges = currentRanges();
-        if (!ranges) throw new Error("Plotly 2D ranges are unavailable.");
-        await relayoutRanges(zoomTrajectoryPlotlyRangesV3(ranges, direction));
-      } else {
-        const activeCamera = currentCamera();
-        if (activeCamera.projection.type === "orthographic") {
-          const nextRatio = zoomOpenEna3dAspectRatio(
-            currentAspectRatio(),
-            defaultAspectRatio(),
-            direction,
-          );
-          await plotly.relayout(root, {
-            "scene.aspectmode": "manual",
-            "scene.aspectratio": nextRatio,
-          } as never);
-        } else {
-          const nextCamera = zoomOpenEna3dCamera(activeCamera, defaultCamera, direction);
-          await plotly.relayout(root, { "scene.camera": nextCamera } as never);
-        }
+    const controller = controllerRef.current;
+    if (!controller || status !== "ready") return;
+    try {
+      const result = await controller.zoom(direction);
+      if (result.status === "completed") {
+        announceAction(direction === "in" ? labels.zoomIn : labels.zoomOut);
       }
-      return direction === "in" ? labels.zoomIn : labels.zoomOut;
-    });
+    } catch {
+      announceAction(labels.actionUnavailable);
+    }
   };
 
   const recenterPlot = async () => {
-    const plotly = Plotly;
-    const root = rootRef.current;
-    if (!plotly || status !== "ready" || !root) return;
-    await runPlotAction(async () => {
-      if (spec.layout.scene === undefined) {
-        const initialRanges = initialRangesRef.current;
-        if (!initialRanges) throw new Error("Plotly 2D reset ranges are unavailable.");
-        await relayoutRanges(resetTrajectoryPlotlyRangesV3(initialRanges));
-      } else {
-        const activeCamera = currentCamera();
-        if (activeCamera.projection.type === "orthographic") {
-          await plotly.relayout(root, {
-            "scene.aspectmode": "manual",
-            "scene.aspectratio": defaultAspectRatio(),
-          } as never);
-        } else {
-          const resetCamera = resetOpenEna3dCameraDistance(activeCamera, defaultCamera);
-          await plotly.relayout(root, { "scene.camera": resetCamera } as never);
-        }
-      }
-      return labels.recenter;
-    });
+    const controller = controllerRef.current;
+    if (!controller || status !== "ready") return;
+    try {
+      const result = await controller.recenter();
+      if (result.status === "completed") announceAction(labels.recenter);
+    } catch {
+      announceAction(labels.actionUnavailable);
+    }
   };
 
   const toggleFullscreen = async () => {
