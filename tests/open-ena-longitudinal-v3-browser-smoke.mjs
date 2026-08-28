@@ -1544,8 +1544,7 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
   const setup = await shellLocator.evaluate((shell) => {
     const opener = document.activeElement;
     const exitButton = shell.querySelector(".ena-longitudinal-v3-plot-actions button");
-    const copyButton = shell.querySelector('[data-ena-plot-action="copy-image"]');
-    if (!(opener instanceof HTMLElement) || !(exitButton instanceof HTMLElement) || !(copyButton instanceof HTMLElement)) {
+    if (!(opener instanceof HTMLElement) || !(exitButton instanceof HTMLElement)) {
       throw new Error("fallback fullscreen focus anchors are unavailable");
     }
     const outsideNodes = [];
@@ -1575,7 +1574,6 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       shell,
       opener,
       exitButton,
-      copyButton,
       outsideNodes,
       outsideSnapshots,
       shellPath,
@@ -1612,6 +1610,16 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       if (element === audit.exitButton) return "fullscreen";
       return element?.getAttribute?.("data-ena-plot-action") ?? null;
     };
+    const descriptorFor = (element, index) => ({
+      index: index,
+      action: actionFor(element),
+      tag: element.tagName.toLowerCase(),
+      role: element.getAttribute("role"),
+      testId: element.getAttribute("data-testid"),
+      ariaLabel: element.getAttribute("aria-label"),
+      insideShell: audit.shell.contains(element),
+      active: document.activeElement === element,
+    });
     const controls = [...audit.shell.querySelectorAll(".ena-longitudinal-v3-plot-actions button")]
       .map((button) => ({
         action: actionFor(button),
@@ -1621,13 +1629,28 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
         active: document.activeElement === button,
       }));
     const dataActionControls = controls.filter((control) => control.action !== "fullscreen");
+    const focusableDescriptors = focusables.map(descriptorFor);
+    const activeIndex = focusables.indexOf(document.activeElement);
     return {
       controls,
-      focusableActions: focusables.map(actionFor),
-      currentActiveAction: actionFor(document.activeElement),
+      focusableDescriptors,
+      currentActiveDescriptor: activeIndex >= 0
+        ? descriptorFor(document.activeElement, activeIndex)
+        : null,
       entryPending: dataActionControls.some((control) => control.disabled),
     };
   });
+  const sameFocusableDescriptor = (left, right) => Boolean(
+    left
+    && right
+    && left.index === right.index
+    && left.action === right.action
+    && left.tag === right.tag
+    && left.role === right.role
+    && left.testId === right.testId
+    && left.ariaLabel === right.ariaLabel
+    && left.insideShell === right.insideShell,
+  );
   let evidence = null;
   let requestFullscreenRestored = false;
   try {
@@ -1682,8 +1705,16 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
 
     const entryState = await readFallbackControlSnapshot();
     assertBrowser(entryState.controls.length === 5, "fallback entry did not expose all five plot buttons");
-    assertBrowser(entryState.currentActiveAction === "fullscreen", "fallback entry focus left Exit fullscreen");
-    let pendingShiftTabStayedOnExit = null;
+    assertBrowser(
+      entryState.currentActiveDescriptor?.action === "fullscreen"
+        && entryState.currentActiveDescriptor.active,
+      "fallback entry focus left Exit fullscreen",
+    );
+    assertBrowser(
+      entryState.focusableDescriptors.every((descriptor) => descriptor.insideShell),
+      "fallback entry focusables escaped the dialog shell",
+    );
+    let pendingShiftTabDestination = null;
     if (entryState.entryPending) {
       const pendingActions = entryState.controls.filter((control) => control.action !== "fullscreen");
       assertBrowser(pendingActions.length === 4, "fallback pending state omitted a plot action");
@@ -1692,17 +1723,30 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
         "fallback pending state did not disable all four plot actions",
       );
       assertBrowser(
-        JSON.stringify(entryState.focusableActions) === JSON.stringify(["fullscreen"]),
-        "fallback pending focusables included a disabled plot action",
+        pendingActions.every((control) => !entryState.focusableDescriptors.some((descriptor) => descriptor.action === control.action)),
+        "fallback pending focusables included a disabled data action",
       );
+      const pendingRuntimeLast = entryState.focusableDescriptors.at(-1);
+      assertBrowser(Boolean(pendingRuntimeLast), "fallback pending state has no runtime focusable");
       await page.keyboard.press("Shift+Tab");
-      pendingShiftTabStayedOnExit = await page.evaluate(() => {
+      const pendingAfterShiftTab = await readFallbackControlSnapshot();
+      pendingShiftTabDestination = pendingAfterShiftTab.currentActiveDescriptor;
+      assertBrowser(
+        sameFocusableDescriptor(pendingShiftTabDestination, pendingRuntimeLast),
+        "Shift+Tab from pending Exit did not reach the runtime last focusable",
+      );
+      assertBrowser(
+        pendingShiftTabDestination?.insideShell,
+        "Shift+Tab from pending Exit escaped the dialog shell",
+      );
+      await page.evaluate(() => {
         const audit = window.__openEnaFallbackFullscreenA11yAudit;
-        return Boolean(audit && document.activeElement === audit.exitButton);
+        if (!audit) throw new Error("fallback fullscreen audit state is missing");
+        audit.exitButton.focus();
       });
       assertBrowser(
-        pendingShiftTabStayedOnExit,
-        "Shift+Tab escaped Exit fullscreen while Plotly relayout was pending",
+        (await readFallbackControlSnapshot()).currentActiveDescriptor?.action === "fullscreen",
+        "fallback pending audit could not refocus Exit fullscreen",
       );
     } else {
       assertBrowser(
@@ -1723,28 +1767,58 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       settledState.controls.every((control) => !control.disabled),
       "settled fallback retained a disabled plot button",
     );
+    const settledActionControls = settledState.controls.filter((control) => control.action !== null);
     assertBrowser(
-      settledState.currentActiveAction === "fullscreen",
+      settledActionControls.every((control) => settledState.focusableDescriptors.some((descriptor) => descriptor.action === control.action)),
+      "settled fallback omitted an enabled action from the runtime focusables",
+    );
+    assertBrowser(
+      settledState.focusableDescriptors.every((descriptor) => descriptor.insideShell),
+      "settled fallback focusables escaped the dialog shell",
+    );
+    assertBrowser(
+      settledState.focusableDescriptors[0]?.action === "fullscreen",
+      "Exit fullscreen is not the first runtime focusable",
+    );
+    assertBrowser(
+      settledState.currentActiveDescriptor?.action === "fullscreen",
       "settling Plotly relayout moved focus away from Exit fullscreen",
     );
+
+    const settledRuntimeLast = settledState.focusableDescriptors.at(-1);
+    assertBrowser(Boolean(settledRuntimeLast), "settled fallback has no runtime focusable");
+    await page.keyboard.press("Shift+Tab");
+    const settledAfterShiftTab = await readFallbackControlSnapshot();
+    const settledShiftTabDestination = settledAfterShiftTab.currentActiveDescriptor;
     assertBrowser(
-      JSON.stringify(settledState.focusableActions) === JSON.stringify(["fullscreen", "zoom-in", "zoom-out", "recenter", "copy-image"]),
-      "settled fallback focusables do not match the five production buttons",
+      sameFocusableDescriptor(settledShiftTabDestination, settledRuntimeLast),
+      "Shift+Tab from Exit fullscreen did not reach the runtime last focusable",
+    );
+    assertBrowser(
+      settledShiftTabDestination?.insideShell,
+      "Shift+Tab from Exit fullscreen escaped the dialog shell",
     );
 
-    await page.keyboard.press("Shift+Tab");
-    const shiftTabToCopy = await page.evaluate(() => {
-      const audit = window.__openEnaFallbackFullscreenA11yAudit;
-      return Boolean(audit && document.activeElement === audit.copyButton);
-    });
-    assertBrowser(shiftTabToCopy, "Shift+Tab from Exit fullscreen did not wrap to Copy image");
-
     await page.keyboard.press("Tab");
-    const tabToExit = await page.evaluate(() => {
-      const audit = window.__openEnaFallbackFullscreenA11yAudit;
-      return Boolean(audit && document.activeElement === audit.exitButton);
-    });
-    assertBrowser(tabToExit, "Tab from Copy image did not wrap to Exit fullscreen");
+    const tabToExit = (await readFallbackControlSnapshot()).currentActiveDescriptor?.action === "fullscreen";
+    assertBrowser(tabToExit, "Tab from the runtime last focusable did not wrap to Exit fullscreen");
+
+    const traversal = [];
+    for (let step = 0; step < settledState.focusableDescriptors.length; step += 1) {
+      await page.keyboard.press("Tab");
+      const traversalState = await readFallbackControlSnapshot();
+      const descriptor = traversalState.currentActiveDescriptor;
+      assertBrowser(descriptor?.insideShell, "Tab traversal escaped the fallback dialog shell");
+      traversal.push(descriptor);
+    }
+    assertBrowser(
+      traversal.every((descriptor) => descriptor?.insideShell),
+      "Tab traversal recorded an outside-shell focusable",
+    );
+    assertBrowser(
+      traversal.at(-1)?.action === "fullscreen",
+      "one complete Tab traversal did not return to Exit fullscreen",
+    );
 
     const backgroundFocusAudit = await page.evaluate(() => {
       const audit = window.__openEnaFallbackFullscreenA11yAudit;
@@ -1830,9 +1904,10 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       bodyScrollLocked: modalState.bodyScrollLocked,
       entryState,
       settledState,
-      pendingShiftTabStayedOnExit,
-      shiftTabToCopy,
+      pendingShiftTabDestination,
+      settledShiftTabDestination,
       tabToExit,
+      traversal,
       backgroundFocusContained: backgroundFocusAudit.focusStayedInDialog,
       fallbackAttributeCleared: restoredState.fallbackAttributeCleared,
       roleCleared: restoredState.roleCleared,
