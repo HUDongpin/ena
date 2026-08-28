@@ -427,6 +427,13 @@ const zhHant: typeof english = {
   complete: "完整隊列",
   downloads: "下載",
   fullscreen: "全螢幕",
+  zoomIn: "放大",
+  zoomOut: "縮小",
+  recenter: "回正／預設距離",
+  copyImage: "複製圖片",
+  imageCopied: "圖片已複製",
+  imageDownloaded: "圖片已下載",
+  actionUnavailable: "繪圖操作暫時無法使用",
   disableHeavy: "關閉推斷後運行",
   retryRemote: "重試遠端計算",
   remoteRecoveryTitle: "持久計算未能完成",
@@ -437,7 +444,7 @@ const zhHant: typeof english = {
   provenance: "來源與版本",
 };
 
-function copyFor(locale: Locale): typeof english {
+export function getOpenEnaLongitudinalV3Copy(locale: Locale): typeof english {
   return locale === "zh-hans" ? zhHans : locale === "zh-hant" ? zhHant : english;
 }
 
@@ -918,7 +925,7 @@ export default function OpenEnaLongitudinalWorkbenchV3({
   analysisControls,
   analysisControlsMode,
 }: OpenEnaLongitudinalWorkbenchV3Props) {
-  const copy = copyFor(locale);
+  const copy = getOpenEnaLongitudinalV3Copy(locale);
   const [settings, setSettings] = useState<OpenEnaLongitudinalSettingsV3 | null>(null);
   const [bundle, setBundle] = useState<LongitudinalAnalysisBundleV2 | null>(null);
   const [binding, setBinding] = useState<OpenEnaLongitudinalBindingV3 | null>(null);

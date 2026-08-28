@@ -264,6 +264,32 @@ test("fallback fullscreen is a labelled modal session while native fullscreen st
   assert.match(presenter, /await shell\.requestFullscreen\(\);[\s\S]*?catch \{[\s\S]*?fallbackFullscreenOpenerRef\.current = document\.activeElement[\s\S]*?setFallbackFullscreen\(true\)/);
 });
 
+test("zh-Hant V3 plot actions use explicit Traditional Chinese copy", async () => {
+  const presenterModule = await import("../components/open-ena/OpenEnaLongitudinalWorkbenchV3") as unknown as Record<string, unknown>;
+  const getCopy = Reflect.get(presenterModule, "getOpenEnaLongitudinalV3Copy");
+  assert.equal(typeof getCopy, "function", "the V3 locale copy seam must be publicly testable");
+  const copy = (getCopy as (locale: "zh-hant") => Record<string, string>)("zh-hant");
+  const plotActions = {
+    zoomIn: copy.zoomIn,
+    zoomOut: copy.zoomOut,
+    recenter: copy.recenter,
+    copyImage: copy.copyImage,
+    imageCopied: copy.imageCopied,
+    imageDownloaded: copy.imageDownloaded,
+    actionUnavailable: copy.actionUnavailable,
+  };
+  assert.deepEqual(plotActions, {
+    zoomIn: "放大",
+    zoomOut: "縮小",
+    recenter: "回正／預設距離",
+    copyImage: "複製圖片",
+    imageCopied: "圖片已複製",
+    imageDownloaded: "圖片已下載",
+    actionUnavailable: "繪圖操作暫時無法使用",
+  });
+  assert.doesNotMatch(Object.values(plotActions).join("\n"), /缩|默认|复制|图片已|图形/u);
+});
+
 test("V3 2D Plotly range actions preserve centers and reset exact immutable spec ranges", async () => {
   type PlotRanges = {
     x: readonly [number, number];
