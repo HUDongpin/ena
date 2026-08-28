@@ -6,6 +6,7 @@ import { execFileSync, spawn } from "node:child_process";
 import {
   closeSync,
   existsSync,
+  mkdtempSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -15,7 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSafePlaywrightCliError } from "./support/safe-playwright-cli-error.mjs";
@@ -131,13 +132,30 @@ function classifyChromiumAngleReadPixelsDiagnostic(input) {
   };
 }
 
+let playwrightWorkingDirectory = null;
+
+function ensurePlaywrightWorkingDirectory() {
+  if (!playwrightWorkingDirectory) {
+    playwrightWorkingDirectory = mkdtempSync(join(tmpdir(), "open-ena-3d-controls-playwright-"));
+  }
+  return playwrightWorkingDirectory;
+}
+
+function removePlaywrightWorkingDirectory() {
+  if (!playwrightWorkingDirectory) return;
+  assert.equal(dirname(playwrightWorkingDirectory), tmpdir());
+  assert.equal(basename(playwrightWorkingDirectory).startsWith("open-ena-3d-controls-playwright-"), true);
+  rmSync(playwrightWorkingDirectory, { recursive: true, force: true });
+  playwrightWorkingDirectory = null;
+}
+
 function runCli(args, label, timeout = 120_000) {
   try {
     return execFileSync(
       playwrightCli.command,
       [...playwrightCli.prefix, "--session", sessionName, ...args],
       {
-        cwd: artifactDirectory,
+        cwd: ensurePlaywrightWorkingDirectory(),
         encoding: "utf8",
         env: process.env,
         maxBuffer: 32 * 1024 * 1024,
@@ -440,6 +458,11 @@ function cleanupOwnedResources() {
         } catch (caught) {
           cleanupErrors.push(caught);
         }
+      }
+      try {
+        removePlaywrightWorkingDirectory();
+      } catch (caught) {
+        cleanupErrors.push(caught);
       }
     }
     if (cleanupErrors.length > 0) {

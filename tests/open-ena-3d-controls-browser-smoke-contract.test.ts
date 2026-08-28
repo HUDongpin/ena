@@ -200,6 +200,24 @@ test("PASS fails closed on unknown artifact inventory and declares the final sev
   assert.doesNotMatch(source, /rmSync\([^\n]*unknown/iu);
 });
 
+test("Playwright CLI state lives in an owned temporary working directory outside evidence", () => {
+  const source = readFileSync(smokePath, "utf8");
+  const remover = source.match(
+    /function removePlaywrightWorkingDirectory\(\) \{[\s\S]*?\n\}/u,
+  )?.[0] ?? "";
+
+  assert.match(source, /mkdtempSync\(join\(tmpdir\(\), "open-ena-3d-controls-playwright-"\)\)/u);
+  assert.match(source, /cwd:\s*ensurePlaywrightWorkingDirectory\(\)/u);
+  assert.doesNotMatch(source, /cwd:\s*artifactDirectory/u);
+  assert.match(remover, /assert\.equal\(dirname\(playwrightWorkingDirectory\), tmpdir\(\)\)/u);
+  assert.match(remover, /startsWith\("open-ena-3d-controls-playwright-"\)/u);
+  assert.match(remover, /recursive:\s*true/u);
+  const cleanup = source.match(
+    /function cleanupOwnedResources\(\) \{[\s\S]*?\n\}/u,
+  )?.[0] ?? "";
+  assert.match(cleanup, /removePlaywrightWorkingDirectory\(\)/u);
+});
+
 test("initial navigation is captured only after the Worker audit init script is installed", () => {
   const source = readFileSync(smokePath, "utf8");
   const authenticate = source.match(
