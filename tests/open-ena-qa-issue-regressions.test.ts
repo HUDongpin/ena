@@ -57,7 +57,16 @@ test("workspace lifecycle, fallback, unavailable tabs, and mobile trajectory CSS
   assert.ok(Number(inlineProgressRule[1]) > 7, "inline progress must stay above group plot actions");
 
   assert.match(workspace, /className="ena-persistent-ai-lifecycle"/);
-  assert.match(styles, /\.ena-persistent-ai-lifecycle\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/u);
+  assert.match(
+    styles,
+    /\.ena-persistent-analysis-panel,\s*\.ena-persistent-ai-lifecycle\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/u,
+    "both persistent wrappers must preserve the control-panel height and scroll contract",
+  );
+  assert.match(
+    styles,
+    /\.ena-longitudinal-v3-analysis-controls > \.ena-persistent-analysis-panel > \.ena-control-content,\s*\.ena-longitudinal-v3-analysis-controls > \.ena-persistent-ai-lifecycle > \.ena-control-content\s*\{/u,
+    "V3 normalization must match the actual persistent-wrapper DOM depth",
+  );
   assert.match(styles, /\.ena-result-tabs button\[aria-disabled="true"\]\s*\{[^}]*cursor:\s*not-allowed;/u);
   assert.match(styles, /\.ena-result-table-unavailable-notes\s*\{[^}]*border:/u);
   assert.match(styles, /\.ena-result-table-not-applicable\s*\{[^}]*border:/u);
@@ -125,6 +134,27 @@ test("persistent rail and V3 control seams retain hidden lifecycle children acro
   }
   assert.match(plotSlot, /data-testid="open-ena-longitudinal-v3-analysis-controls"[^>]*hidden/);
   assert.match(modelSlot, /data-testid="open-ena-longitudinal-v3-trajectory-controls"[^>]*hidden/);
+
+  const nestedSlot = renderToStaticMarkup(createElement(
+    LongitudinalControlsSlot as ComponentType<Record<string, unknown>>,
+    {
+      analysisControlsMode: "model",
+      analysisControls: createElement(
+        PersistentRailPanels as ComponentType<Record<string, unknown>>,
+        {
+          mode: "model",
+          analysisPanel: createElement("div", { className: "ena-control-content" }),
+          aiPanel: createElement("div", { className: "ena-control-content" }),
+        },
+      ),
+      trajectoryControls,
+    },
+  ));
+  assert.match(
+    nestedSlot,
+    /ena-longitudinal-v3-analysis-controls[\s\S]*?ena-persistent-analysis-panel[\s\S]*?ena-control-content[\s\S]*?ena-persistent-ai-lifecycle[\s\S]*?ena-control-content/,
+    "SSR must expose the two persistent wrapper layers that the V3 CSS targets",
+  );
 });
 
 test("axis initialization never fabricates result dimensions and requires three distinct axes for 3D", () => {

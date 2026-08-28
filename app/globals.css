@@ -9144,9 +9144,6 @@ body:has(.open-ena-page) #main-content {
 .ena-persistent-analysis-panel,
 .ena-persistent-ai-lifecycle {
   min-width: 0;
-}
-
-.ena-persistent-ai-lifecycle {
   height: 100%;
   min-height: 0;
 }
@@ -11878,7 +11875,8 @@ body:has(.open-ena-page) #main-content {
   min-height: 0;
 }
 
-.ena-longitudinal-v3-analysis-controls > .ena-control-content {
+.ena-longitudinal-v3-analysis-controls > .ena-persistent-analysis-panel > .ena-control-content,
+.ena-longitudinal-v3-analysis-controls > .ena-persistent-ai-lifecycle > .ena-control-content {
   height: auto;
   max-height: none;
   overflow: visible;

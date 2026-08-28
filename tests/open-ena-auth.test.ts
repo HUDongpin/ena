@@ -5,6 +5,7 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { locales } from "../lib/i18n";
+import * as openEnaLoginModule from "../components/open-ena/OpenEnaLogin";
 
 const projectRoot = process.cwd();
 
@@ -142,6 +143,18 @@ test("one semantic fallback notice remains visible before and after sign-in", as
   }
   assert.match(login, /\{configurationReady \? \([\s\S]*?<form action="\/api\/open-ena\/login"/);
   assert.match(login, /name="locale" value=\{locale\}/, "the original route locale must be retained");
+
+  const LoginFrame = Reflect.get(openEnaLoginModule, "OpenEnaLoginFrame");
+  assert.equal(typeof LoginFrame, "function", "a hook-free Login root seam must be exported");
+  const unsupportedLogin = renderToStaticMarkup(createElement(LoginFrame, {
+    locale: "ar",
+    children: "login",
+  }));
+  assert.match(
+    unsupportedLogin,
+    /<div class="open-ena-login-page"[^>]*lang="en"[^>]*dir="ltr"/,
+    "the full English login interface must override unsupported route language and direction semantics",
+  );
 });
 
 test("the login form is accessible and never exposes the default account or password", () => {
