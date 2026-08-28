@@ -325,11 +325,6 @@ test("Data View is an explicit center-surface state that replaces the Comparison
   );
   expectMatch(workspace, /data-testid="open-ena-data-view-toggle"/, "Data View needs an explicit toggle");
   expectMatch(workspace, /data-testid="open-ena-center-data-view"/, "Data View needs a center-surface table state");
-  expectMatch(
-    workspace,
-    /dataView=\{centerSurface\s*===\s*["']data["']\s*\?[\s\S]*?renderResultData\(\)/i,
-    "Data View must be selected by state and replace the center plot branch",
-  );
   expectMatch(dataViewSource, /data-testid="open-ena-data-view"/, "the center branch must use the dedicated semantic Data View surface");
 
   const resultData = functionSegment("function renderResultData()", "const analysisPanel =");

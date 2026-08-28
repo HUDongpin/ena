@@ -12,7 +12,10 @@ import {
   zoomOpenEna3dCamera,
 } from "../components/open-ena/OpenEnaInteractive3DPlot";
 import { analyzeDataset } from "../lib/open-ena/analyze";
-import { openEnaDataViewAvailability } from "../lib/open-ena/capabilities";
+import {
+  openEnaDataViewAvailability,
+  openEnaDataViewCenterSurface,
+} from "../lib/open-ena/capabilities";
 import { parseCsv } from "../lib/open-ena/csv";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 import {
@@ -794,16 +797,24 @@ test("Data View availability follows the executable analysis/view state matrix",
   }
 });
 
-test("Workspace passes the selected center mode and existing Data View node to the 3D presenter", () => {
-  const workspace = readFileSync(
-    join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  const presenter = workspace.match(/<OpenEna3DGroupContrast[\s\S]*?\/>/)?.[0] ?? "";
+test("available Data View keeps the requested data center selected and pressed", () => {
+  assert.deepEqual(openEnaDataViewCenterSurface({
+    requestedCenterSurface: "data",
+    dataViewEnabled: true,
+  }), {
+    effectiveCenterSurface: "data",
+    dataViewPressed: true,
+  });
+});
 
-  assert.match(presenter, /centerMode\s*=\s*\{\s*centerSurface\s*\}/);
-  assert.match(presenter, /dataView\s*=\s*\{\s*centerSurface\s*===\s*"data"/);
-  assert.match(presenter, /renderResultData\s*\(\s*\)/);
+test("unavailable Data View resolves a stale data request to plot and unpressed", () => {
+  assert.deepEqual(openEnaDataViewCenterSurface({
+    requestedCenterSurface: "data",
+    dataViewEnabled: false,
+  }), {
+    effectiveCenterSurface: "plot",
+    dataViewPressed: false,
+  });
 });
 
 test("each 3D paper replaces the Plotly modebar with the same four unframed plot-action logos", () => {

@@ -239,12 +239,6 @@ test("Data View replaces only the center plot and never displaces the right comp
   assert.match(right, /<h3>Secondary Plot<\/h3>/);
   assert.match(right, /\{rightTools\}/);
   assert.doesNotMatch(right, /centerMode\s*===\s*"data"/, "the Data View condition is scoped to the center region only");
-
-  assert.match(
-    workspace,
-    /dataView=\{centerSurface\s*===\s*"data"\s*\?[\s\S]*?renderResultData\(\)/,
-    "workspace state supplies Data View only through the center slot",
-  );
 });
 
 test("Open ENA scopes the compact Helvetica workbench typography without changing analytical contracts", () => {

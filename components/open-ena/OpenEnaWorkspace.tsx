@@ -17,6 +17,8 @@ import {
 import {
   openEnaAnalysisKindFromResult,
   openEnaDataViewAvailability,
+  openEnaDataViewCenterSurface,
+  type OpenEnaCenterSurface,
 } from "@/lib/open-ena/capabilities";
 import {
   analysisKindFor,
@@ -152,7 +154,6 @@ interface OpenEnaWorkspaceProps {
 }
 
 type OpenEnaModelPanelTab = "units" | "horizons" | "windows" | "codes";
-type OpenEnaCenterSurface = "plot" | "data";
 type OpenEnaStatsTab = "comparison" | "goodness" | "variance";
 
 const MODEL_TAB_ORDER = ["units", "horizons", "windows", "codes"] as const;
@@ -1212,6 +1213,14 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     completedResultKind,
     hasActiveGroupContrast: Boolean(activeGroupContrast),
   });
+  const dataViewCenterSurface = openEnaDataViewCenterSurface({
+    requestedCenterSurface: centerSurface,
+    dataViewEnabled: dataViewAvailability.enabled,
+  });
+  const effectiveCenterSurface = dataViewCenterSurface.effectiveCenterSurface;
+  useEffect(() => {
+    if (centerSurface !== effectiveCenterSurface) setCenterSurface(effectiveCenterSurface);
+  }, [centerSurface, effectiveCenterSurface]);
   const dataViewModel = useMemo(() => {
     const empty = {
       columns: [] as OpenEnaDataViewColumn[],
@@ -4028,11 +4037,11 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   type="button"
                   className="ena-compact-toolbar-button"
                   data-testid="open-ena-data-view-toggle"
-                  aria-pressed={centerSurface === "data"}
+                  aria-pressed={dataViewCenterSurface.dataViewPressed}
                   disabled={!dataViewAvailability.enabled}
                   onClick={() => {
                     setDataViewContext("comparison");
-                    setCenterSurface((current) => current === "data" ? "plot" : "data");
+                    setCenterSurface(dataViewCenterSurface.dataViewPressed ? "plot" : "data");
                   }}
                   title={dataViewAvailability.reason === "active-3d-group-contrast-required"
                     ? "Data View requires an active 3D group comparison."
@@ -4041,7 +4050,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     ? "Data View unavailable. Select two groups for a 3D comparison first."
                     : undefined}
                 >
-                  <span aria-hidden="true">▦</span>{centerSurface === "data"
+                  <span aria-hidden="true">▦</span>{effectiveCenterSurface === "data"
                     ? completedResultKind === "ona" ? copy.ona.layout.overallPlot : "Comparison Plot"
                     : completedResultKind === "ona" ? copy.ona.dataView.title : "Data View"}
                 </button>
@@ -4209,8 +4218,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 config={resultConfig}
                 primaryGroupName={primaryGroupName || null}
                 secondaryGroupName={secondaryGroupName || null}
-                centerMode={centerSurface}
-                dataView={centerSurface === "data" ? (
+                centerMode={effectiveCenterSurface}
+                dataView={effectiveCenterSurface === "data" ? (
                   <div data-testid="open-ena-center-data-view">
                     {renderResultData()}
                   </div>
@@ -4325,8 +4334,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     plotResetRevision={plotResetRevision}
                     flipX={flipX}
                     flipY={flipY}
-                    centerMode={centerSurface}
-                    dataView={centerSurface === "data" ? (
+                    centerMode={effectiveCenterSurface}
+                    dataView={effectiveCenterSurface === "data" ? (
                       <div data-testid="open-ena-center-data-view">
                         {renderResultData()}
                       </div>
@@ -4364,8 +4373,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     onAspectRatioChange={setInteractive3dAspectRatio}
                     flipX={flipX}
                     flipY={flipY}
-                    centerMode={centerSurface}
-                    dataView={centerSurface === "data" ? (
+                    centerMode={effectiveCenterSurface}
+                    dataView={effectiveCenterSurface === "data" ? (
                       <div data-testid="open-ena-center-data-view">
                         {renderResultData()}
                       </div>

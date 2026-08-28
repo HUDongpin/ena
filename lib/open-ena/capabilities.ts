@@ -58,6 +58,13 @@ export interface OpenEnaDataViewAvailability {
   reason: OpenEnaDataViewUnavailableReason | null;
 }
 
+export type OpenEnaCenterSurface = "plot" | "data";
+
+export interface OpenEnaDataViewCenterSurface {
+  effectiveCenterSurface: OpenEnaCenterSurface;
+  dataViewPressed: boolean;
+}
+
 export function openEnaDataViewAvailability(input: {
   view: OpenEnaView;
   completedResultKind: AnalysisKind | null;
@@ -74,6 +81,19 @@ export function openEnaDataViewAvailability(input: {
   return input.view === "3d"
     ? { enabled: false, reason: "active-3d-group-contrast-required" }
     : { enabled: false, reason: "active-group-contrast-required" };
+}
+
+export function openEnaDataViewCenterSurface(input: {
+  requestedCenterSurface: OpenEnaCenterSurface;
+  dataViewEnabled: boolean;
+}): OpenEnaDataViewCenterSurface {
+  const effectiveCenterSurface = input.requestedCenterSurface === "data" && input.dataViewEnabled
+    ? "data"
+    : "plot";
+  return {
+    effectiveCenterSurface,
+    dataViewPressed: effectiveCenterSurface === "data",
+  };
 }
 
 function mismatch(message: string): never {
