@@ -9,6 +9,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -45,10 +46,8 @@ const ownedEvidencePaths = Object.freeze([
   secondaryFullscreenScreenshotPath,
   mobileScreenshotPath,
 ]);
-const username = process.env.OPEN_ENA_3D_CONTROLS_SMOKE_USERNAME
-  || "open_ena_3d_controls_smoke_researcher";
-const password = process.env.OPEN_ENA_3D_CONTROLS_SMOKE_PASSWORD
-  || "open_ena_3d_controls_smoke_password_2026";
+const username = "open_ena_3d_controls_smoke_researcher";
+const password = "open_ena_3d_controls_smoke_password_2026";
 const sessionSecret = "open_ena_3d_controls_smoke_session_secret_0123456789abcdef";
 const sessionName = "open-ena-3d-controls-smoke-" + process.pid;
 const smokeBrowser = process.env.OPEN_ENA_3D_CONTROLS_SMOKE_BROWSER || "chromium";
@@ -204,6 +203,23 @@ function readServerLogTail() {
   return redact(readFileSync(serverLogPath, "utf8")).slice(-12_000);
 }
 
+function sanitizeFinalServerLog() {
+  assert.equal(dirname(serverLogPath), artifactDirectory);
+  if (!existsSync(serverLogPath)) return false;
+  const sanitizedBytes = redact(readFileSync(serverLogPath, "utf8"));
+  writeFileSync(serverLogPath, sanitizedBytes, "utf8");
+  const finalBytes = readFileSync(serverLogPath, "utf8");
+  assert.equal(finalBytes.includes(username), false);
+  assert.equal(finalBytes.includes(password), false);
+  assert.equal(finalBytes.includes(sessionSecret), false);
+  return true;
+}
+
+function removeUnsafeServerLog() {
+  assert.equal(dirname(serverLogPath), artifactDirectory);
+  rmSync(serverLogPath, { force: true });
+}
+
 async function stopOwnedServer(server) {
   if (!server || server.exitCode !== null || server.signalCode !== null) return;
   const waitForExit = (timeout) => new Promise((resolveExit) => {
@@ -263,6 +279,25 @@ function artifactEvidence(path) {
     file: relativePath.split(sep).join("/"),
     bytes: statSync(absolutePath).size,
     sha256: sha256(readFileSync(absolutePath)),
+  };
+}
+
+function assertArtifactInventoryBeforeSummary() {
+  const expectedFiles = [
+    "data-view-desktop.png",
+    "fullscreen-comparison.png",
+    "fullscreen-primary.png",
+    "fullscreen-secondary-fallback.png",
+    "mobile-390x844.png",
+    "next-server.log",
+  ].sort();
+  const actualFiles = readdirSync(artifactDirectory, { withFileTypes: true })
+    .map((entry) => entry.name)
+    .sort();
+  assert.deepEqual(actualFiles, expectedFiles, "artifact directory contains an unknown or missing pre-summary entry");
+  return {
+    beforeSummaryFiles: actualFiles,
+    finalExpectedFiles: [...expectedFiles, "summary.json"].sort(),
   };
 }
 
@@ -361,7 +396,16 @@ function classifyBrowserMessages(phaseMessages, context) {
       },
     });
   }
-  return { consoleErrors, pageErrors, unknownWarnings, platformDiagnostics };
+  return {
+    consoleErrors,
+    pageErrors,
+    unknownWarnings,
+    consoleWarningsTotal: warnings.length,
+    unknownConsoleWarnings: unknownWarnings.length,
+    classifiedPlatformWarnings:
+      platformDiagnostics.canvas2dReadback.length + platformDiagnostics.angleReadPixels.length,
+    platformDiagnostics,
+  };
 }
 
 let ownedServer = null;
@@ -372,31 +416,76 @@ let cleanupPromise = null;
 function cleanupOwnedResources() {
   if (cleanupPromise) return cleanupPromise;
   cleanupPromise = (async () => {
-    let browserCleanupError = null;
+    const cleanupErrors = [];
     if (browserSessionAttempted) {
       try {
         runCli(["close"], "close browser session", 30_000);
       } catch (caught) {
-        browserCleanupError = caught;
+        cleanupErrors.push(caught);
       }
     }
-    await stopOwnedServer(ownedServer);
-    if (ownsDistDirectory) {
-      writeFileSync(tsconfigPath, originalTsconfig, "utf8");
-      removeOwnedDistDirectory();
+    try {
+      await stopOwnedServer(ownedServer);
+    } catch (caught) {
+      cleanupErrors.push(caught);
+    } finally {
+      if (ownsDistDirectory) {
+        try {
+          writeFileSync(tsconfigPath, originalTsconfig, "utf8");
+        } catch (caught) {
+          cleanupErrors.push(caught);
+        }
+        try {
+          removeOwnedDistDirectory();
+        } catch (caught) {
+          cleanupErrors.push(caught);
+        }
+      }
     }
-    if (browserCleanupError) throw browserCleanupError;
+    if (cleanupErrors.length > 0) {
+      throw new Error(
+        "3D controls cleanup failed: "
+          + cleanupErrors.map((error) => redact(error instanceof Error ? error.message : error)).join(" | "),
+      );
+    }
   })();
   return cleanupPromise;
 }
 
 async function handleSignal(signal) {
   const exitCode = signal === "SIGINT" ? 130 : 143;
+  let cleanupFailure = null;
   try {
     await cleanupOwnedResources();
   } catch (caught) {
+    cleanupFailure = caught;
+  }
+  let sanitizationFailure = null;
+  if (cleanupFailure) {
+    try {
+      removeUnsafeServerLog();
+    } catch {
+      // The signal exit remains non-zero; never print raw log bytes.
+    }
+  } else {
+    try {
+      sanitizeFinalServerLog();
+    } catch (sanitizationError) {
+      try {
+        removeUnsafeServerLog();
+      } catch {
+        // The signal exit remains non-zero; never print raw log bytes.
+      }
+      sanitizationFailure = sanitizationError;
+    }
+  }
+  if (cleanupFailure) {
     process.stderr.write("[3D controls smoke] cleanup after " + signal + " failed: "
-      + redact(caught) + "\n");
+      + redact(cleanupFailure) + "\n");
+  }
+  if (sanitizationFailure) {
+    process.stderr.write("[3D controls smoke] server log sanitization after " + signal + " failed: "
+      + redact(sanitizationFailure) + "\n");
   }
   process.exit(exitCode);
 }
@@ -453,6 +542,27 @@ async function readScientificState(page) {
       "open-ena-3d-primary-plot",
       "open-ena-3d-secondary-plot",
     ];
+    const canonicalNumber = (value) => {
+      if (typeof value !== "number" || !Number.isFinite(value)) return null;
+      return Math.round(value * 1e12) / 1e12;
+    };
+    const canonicalVector = (value) => ({
+      x: canonicalNumber(value?.x),
+      y: canonicalNumber(value?.y),
+      z: canonicalNumber(value?.z),
+    });
+    const canonicalCamera = (value) => ({
+      center: canonicalVector(value?.center),
+      eye: canonicalVector(value?.eye),
+      up: canonicalVector(value?.up),
+      projection: { type: value?.projection?.type ?? null },
+    });
+    const canonicalAspectRatio = (value) => {
+      const candidate = Array.isArray(value)
+        ? { x: value[0], y: value[1], z: value[2] }
+        : value;
+      return canonicalVector(candidate);
+    };
     const plotPayload = plotTestIds.map((testId) => {
       const panel = document.querySelector('[data-testid="' + testId + '"]');
       const region = panel?.querySelector('[data-ena-interactive-camera="true"]');
@@ -492,12 +602,50 @@ async function readScientificState(page) {
     const aspectRatioState = plotTestIds.map((testId) => document
       .querySelector('[data-testid="' + testId + '"] [data-ena-interactive-camera="true"]')
       ?.getAttribute("data-ena-aspect-ratio-state") ?? null);
+    const rangeState = plotPayload.map((plot) => plot.ranges);
+    const runtimeCameraState = plotTestIds.map((testId) => {
+      const root = document.querySelector(
+        '[data-testid="' + testId + '"] [data-ena-plotly-root="true"]',
+      );
+      const scene = root?._fullLayout?.scene?._scene;
+      if (typeof scene?.getCamera !== "function") {
+        throw new Error("Plotly live camera is unavailable for " + testId);
+      }
+      return canonicalCamera(scene.getCamera());
+    });
+    const runtimeAspectRatioState = plotTestIds.map((testId) => {
+      const root = document.querySelector(
+        '[data-testid="' + testId + '"] [data-ena-plotly-root="true"]',
+      );
+      const glplot = root?._fullLayout?.scene?._scene?.glplot;
+      if (typeof glplot?.getAspectratio !== "function") {
+        throw new Error("Plotly live aspect ratio is unavailable for " + testId);
+      }
+      return canonicalAspectRatio(glplot.getAspectratio());
+    });
+    const vectorIsFinite = (vector) => [vector.x, vector.y, vector.z].every((value) => value !== null);
+    for (const camera of runtimeCameraState) {
+      if (![camera.center, camera.eye, camera.up].every(vectorIsFinite)) {
+        throw new Error("runtime camera contains a non-finite vector");
+      }
+      if (!["perspective", "orthographic"].includes(camera.projection.type)) {
+        throw new Error("runtime camera projection is invalid");
+      }
+    }
+    for (const aspectRatio of runtimeAspectRatioState) {
+      if (!vectorIsFinite(aspectRatio)) {
+        throw new Error("runtime aspect ratio contains a non-finite vector");
+      }
+    }
     return {
       analysisRunCount: window.__openEna3dControlsAudit?.analysisRunCount ?? -1,
       resultIdentity,
       axisState,
       cameraState,
       aspectRatioState,
+      rangeState,
+      runtimeCameraState,
+      runtimeAspectRatioState,
     };
   });
 }
@@ -509,6 +657,9 @@ function assertScientificState(actual, expected, label) {
     "axisState",
     "cameraState",
     "aspectRatioState",
+    "rangeState",
+    "runtimeCameraState",
+    "runtimeAspectRatioState",
   ]) {
     assertBrowser(
       JSON.stringify(actual[key]) === JSON.stringify(expected[key]),
@@ -1041,6 +1192,7 @@ async function exerciseMobileHitTesting(page, args) {
     mobileAudit: "PASS",
     viewport: { width: 390, height: 844, ...viewportAudit },
     hitTest: controls,
+    finalScientificState: stateAfter,
     browserMessages: browserMessageCapture.finish(),
   };
 }
@@ -1057,6 +1209,7 @@ let primaryFailure = null;
 let browserOpened = false;
 let completedSummary = null;
 let baseUrl = null;
+let cleanupSucceeded = false;
 
 try {
   execFileSync("npx", ["--version"], { encoding: "utf8", timeout: 30_000 });
@@ -1203,6 +1356,8 @@ try {
   });
   assert.deepEqual(browserErrors.consoleErrors, [], "browser console contains errors");
   assert.deepEqual(browserErrors.unknownWarnings, [], "browser console contains unclassified warnings");
+  assert.equal(browserErrors.unknownConsoleWarnings, 0);
+  assert.equal(browserErrors.consoleWarningsTotal, browserErrors.classifiedPlatformWarnings);
   assert.deepEqual(browserErrors.pageErrors, [], "browser emitted page errors");
   const cliConsole = runCli(["console", "error"], "read Playwright console summary");
   assert.match(cliConsole, /Errors:\s*0/u, "Playwright reported browser console errors");
@@ -1213,11 +1368,6 @@ try {
       + browserErrors.platformDiagnostics.angleReadPixels.length,
     "Playwright reported a warning outside the exact Canvas2D/ANGLE diagnostics",
   );
-
-  const serverLog = readServerLogTail();
-  assert.doesNotMatch(serverLog, /open_ena_3d_controls_smoke_password/u);
-  assert.doesNotMatch(serverLog, /open_ena_3d_controls_smoke_session_secret/u);
-  assert.doesNotMatch(serverLog, /open_ena_3d_controls_smoke_researcher/u);
 
   const { browserMessages: _dataViewBrowserMessages, ...portableDataViewAudit } = dataViewAudit;
   const { browserMessages: _fullscreenBrowserMessages, ...portableFullscreenAudit } = fullscreenAudit;
@@ -1244,7 +1394,9 @@ try {
     mobile: portableMobileAudit,
     browserMessages: {
       consoleErrors: 0,
-      consoleWarnings: 0,
+      consoleWarningsTotal: browserErrors.consoleWarningsTotal,
+      unknownConsoleWarnings: browserErrors.unknownConsoleWarnings,
+      classifiedPlatformWarnings: browserErrors.classifiedPlatformWarnings,
       pageErrors: 0,
       platformDiagnostics: browserErrors.platformDiagnostics,
     },
@@ -1255,7 +1407,6 @@ try {
       secondaryFullscreen: artifactEvidence(secondaryFullscreenScreenshotPath),
       mobile: artifactEvidence(mobileScreenshotPath),
     },
-    serverLog: artifactEvidence(serverLogPath),
     artifacts: ".",
   };
 } catch (caught) {
@@ -1276,7 +1427,14 @@ try {
 } finally {
   try {
     await cleanupOwnedResources();
+    cleanupSucceeded = true;
   } catch (cleanupError) {
+    try {
+      removeUnsafeServerLog();
+    } catch (removalError) {
+      process.stderr.write("[3D controls smoke] unsafe server log removal after cleanup failure also failed: "
+        + redact(removalError) + "\n");
+    }
     if (primaryFailure) {
       process.stderr.write("[3D controls smoke] cleanup failure: " + redact(cleanupError) + "\n");
     } else {
@@ -1285,8 +1443,35 @@ try {
   }
 }
 
+let serverLogReceipt = null;
+if (cleanupSucceeded) {
+  try {
+    const finalServerLogExists = sanitizeFinalServerLog();
+    if (finalServerLogExists) serverLogReceipt = artifactEvidence(serverLogPath);
+  } catch (sanitizationError) {
+    let removalError = null;
+    try {
+      removeUnsafeServerLog();
+    } catch (caught) {
+      removalError = caught;
+    }
+    const custodyFailure = new Error(
+      "Final server log sanitization failed"
+        + (removalError ? " and the unsafe log could not be removed." : "; the unsafe log was removed.")
+        + " " + redact(sanitizationError instanceof Error ? sanitizationError.message : sanitizationError),
+    );
+    if (primaryFailure) {
+      process.stderr.write("[3D controls smoke] " + custodyFailure.message + "\n");
+    } else {
+      primaryFailure = custodyFailure;
+    }
+  }
+}
+
 if (primaryFailure) throw primaryFailure;
 assert.ok(completedSummary, "the 3D controls smoke did not produce a completed evidence summary");
+assert.ok(serverLogReceipt, "the completed smoke omitted its sanitized final server log receipt");
+completedSummary.serverLog = serverLogReceipt;
 const sourceEvidenceAfter = readGitEvidence();
 assert.equal(sourceEvidenceAfter.gitHead, sourceEvidenceBefore.gitHead, "Git HEAD changed during browser evidence capture");
 assert.equal(sourceEvidenceAfter.gitTree, sourceEvidenceBefore.gitTree, "Git tree changed during browser evidence capture");
@@ -1299,8 +1484,19 @@ completedSummary.source = {
   smokeSourceSha256,
 };
 assert.equal(existsSync(failureScreenshotPath), false, "successful smoke retained failure.png");
+const artifactInventory = assertArtifactInventoryBeforeSummary();
+completedSummary.artifactInventory = artifactInventory;
 writeFileSync(
   summaryPath,
   JSON.stringify(completedSummary, null, 2) + "\n",
 );
+const finalFiles = readdirSync(artifactDirectory, { withFileTypes: true })
+  .map((entry) => entry.name)
+  .sort();
+try {
+  assert.deepEqual(finalFiles, artifactInventory.finalExpectedFiles, "final artifact inventory is not the declared seven files");
+} catch (inventoryError) {
+  rmSync(summaryPath, { force: true });
+  throw inventoryError;
+}
 process.stdout.write(JSON.stringify(completedSummary, null, 2) + "\n");

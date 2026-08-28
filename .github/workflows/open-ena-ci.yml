@@ -67,6 +67,14 @@ jobs:
           OPEN_ENA_3D_CONTROLS_SMOKE_ARTIFACT_DIR: output/playwright/open-ena-3d-controls-${{ github.sha }}-chromium
           PWTEST_DAEMON_SESSION_DIR: ${{ runner.temp }}/open-ena-playwright-daemon-3d-controls
         run: npm run test:browser:open-ena-3d-controls
+      - name: Upload Open ENA 3D controls browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: open-ena-3d-controls-evidence-${{ github.sha }}-chromium
+          path: output/playwright/open-ena-3d-controls-${{ github.sha }}-chromium
+          if-no-files-found: error
+          retention-days: 14
       - name: Run the full Open ENA longitudinal application smoke
         env:
           NEXT_TELEMETRY_DISABLED: "1"
@@ -80,13 +88,5 @@ jobs:
         with:
           name: open-ena-longitudinal-v3-evidence-${{ github.sha }}-chromium
           path: output/playwright/open-ena-longitudinal-v3-${{ github.sha }}-chromium
-          if-no-files-found: error
-          retention-days: 14
-      - name: Upload Open ENA 3D controls browser evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: open-ena-3d-controls-evidence-${{ github.sha }}-chromium
-          path: output/playwright/open-ena-3d-controls-${{ github.sha }}-chromium
           if-no-files-found: error
           retention-days: 14

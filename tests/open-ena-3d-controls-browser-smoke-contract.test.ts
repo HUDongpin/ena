@@ -43,6 +43,17 @@ test("the 3D controls smoke owns a production build, synthetic Endpoint fixture,
   );
 });
 
+test("the browser harness credentials are unconditional synthetic literals", () => {
+  const source = readFileSync(smokePath, "utf8");
+
+  assert.doesNotMatch(source, /OPEN_ENA_3D_CONTROLS_SMOKE_USERNAME/u);
+  assert.doesNotMatch(source, /OPEN_ENA_3D_CONTROLS_SMOKE_PASSWORD/u);
+  assert.match(source, /const username = "open_ena_3d_controls_smoke_researcher";/u);
+  assert.match(source, /const password = "open_ena_3d_controls_smoke_password_2026";/u);
+  assert.match(source, /OPEN_ENA_3D_CONTROLS_SMOKE_ARTIFACT_DIR/u);
+  assert.match(source, /OPEN_ENA_3D_CONTROLS_SMOKE_BROWSER/u);
+});
+
 test("the Endpoint fixture reads Units before selecting Model type from the Windows tab", () => {
   const source = readFileSync(smokePath, "utf8");
   const unitIdentity = source.indexOf('name: /Unit identity/');
@@ -74,6 +85,10 @@ test("the smoke sanitizes CLI failures and emits portable SHA-256 evidence", () 
   assert.match(source, /Canvas2D: Multiple readback operations/u);
   assert.match(source, /GPU stall due to ReadPixels/u);
   assert.match(source, /failure\.png/u);
+  assert.doesNotMatch(source, /consoleWarnings:\s*0/u);
+  assert.match(source, /consoleWarningsTotal/u);
+  assert.match(source, /unknownConsoleWarnings/u);
+  assert.match(source, /classifiedPlatformWarnings/u);
 });
 
 test("each run removes only its explicit stale evidence allowlist before producing new evidence", () => {
@@ -111,6 +126,80 @@ test("each run removes only its explicit stale evidence allowlist before produci
   );
 });
 
+test("final server log custody follows cleanup, on-disk sanitization, receipt, then summary write", () => {
+  const source = readFileSync(smokePath, "utf8");
+  const sanitizer = source.match(
+    /function sanitizeFinalServerLog\(\) \{[\s\S]*?\n\}/u,
+  )?.[0] ?? "";
+  const remover = source.match(
+    /function removeUnsafeServerLog\(\) \{[\s\S]*?\n\}/u,
+  )?.[0] ?? "";
+
+  assert.notEqual(sanitizer, "", "the final server-log sanitizer is missing");
+  assert.match(sanitizer, /readFileSync\(serverLogPath, "utf8"\)/u);
+  assert.match(sanitizer, /redact\(/u);
+  assert.match(sanitizer, /writeFileSync\(serverLogPath,/u);
+  assert.match(sanitizer, /finalBytes/u);
+  for (const secret of ["username", "password", "sessionSecret"]) {
+    assert.ok(sanitizer.includes(`finalBytes.includes(${secret})`), `final log does not reject ${secret}`);
+  }
+  assert.match(remover, /assert\.equal\(dirname\(serverLogPath\), artifactDirectory\)/u);
+  assert.match(remover, /rmSync\(serverLogPath, \{ force: true \}\)/u);
+  assert.doesNotMatch(remover, /recursive/u);
+  assert.doesNotMatch(source, /serverLog:\s*artifactEvidence\(serverLogPath\)/u);
+
+  const cleanup = source.lastIndexOf("await cleanupOwnedResources()");
+  const sanitize = source.lastIndexOf("sanitizeFinalServerLog()");
+  const receipt = source.lastIndexOf("artifactEvidence(serverLogPath)");
+  const summaryWrite = source.lastIndexOf("writeFileSync(\n  summaryPath");
+  assert.ok(cleanup >= 0 && cleanup < sanitize, "log sanitization precedes process cleanup");
+  assert.ok(sanitize < receipt, "server-log receipt precedes final on-disk sanitization");
+  assert.ok(receipt < summaryWrite, "summary is written before the final server-log receipt");
+  assert.match(source, /catch \(sanitizationError\)[\s\S]{0,500}removeUnsafeServerLog\(\)/u);
+
+  const signalHandler = source.match(
+    /async function handleSignal\(signal\) \{[\s\S]*?\n\}/u,
+  )?.[0] ?? "";
+  assert.match(signalHandler, /await cleanupOwnedResources\(\)/u);
+  assert.match(signalHandler, /sanitizeFinalServerLog\(\)/u);
+  assert.match(signalHandler, /if \(cleanupFailure\)[\s\S]{0,500}removeUnsafeServerLog\(\)/u);
+  assert.match(source, /let cleanupSucceeded = false/u);
+  assert.match(source, /cleanupSucceeded = true/u);
+  assert.match(source, /catch \(cleanupError\)[\s\S]{0,500}removeUnsafeServerLog\(\)/u);
+  assert.match(
+    source,
+    /catch \(cleanupError\)[\s\S]{0,700}if \(primaryFailure\)[\s\S]{0,350}else \{\s*primaryFailure = cleanupError;/u,
+    "cleanup failure must not overwrite an earlier product failure",
+  );
+  assert.match(source, /if \(cleanupSucceeded\) \{/u);
+  assert.doesNotMatch(source, /assert\.doesNotMatch\(serverLog/u);
+});
+
+test("cleanup restores source configuration and removes its dist even when server shutdown fails", () => {
+  const source = readFileSync(smokePath, "utf8");
+  const cleanup = source.match(
+    /function cleanupOwnedResources\(\) \{[\s\S]*?\n\}/u,
+  )?.[0] ?? "";
+
+  assert.match(cleanup, /await stopOwnedServer\(ownedServer\)/u);
+  assert.match(cleanup, /finally \{/u);
+  assert.match(cleanup, /writeFileSync\(tsconfigPath, originalTsconfig/u);
+  assert.match(cleanup, /removeOwnedDistDirectory\(\)/u);
+  assert.match(cleanup, /cleanupErrors/u);
+});
+
+test("PASS fails closed on unknown artifact inventory and declares the final seven files", () => {
+  const source = readFileSync(smokePath, "utf8");
+
+  assert.match(source, /readdirSync\(artifactDirectory/u);
+  assert.match(source, /function assertArtifactInventoryBeforeSummary\(\)/u);
+  assert.match(source, /finalExpectedFiles/u);
+  assert.match(source, /artifactInventory/u);
+  assert.match(source, /assert\.deepEqual\(actualFiles, expectedFiles/u);
+  assert.match(source, /assert\.deepEqual\(finalFiles, artifactInventory\.finalExpectedFiles/u);
+  assert.doesNotMatch(source, /rmSync\([^\n]*unknown/iu);
+});
+
 test("initial navigation is captured only after the Worker audit init script is installed", () => {
   const source = readFileSync(smokePath, "utf8");
   const authenticate = source.match(
@@ -146,6 +235,16 @@ test("the smoke proves 3D Data View mouse and keyboard lifecycle without analysi
   assert.match(source, /cameraState/u);
   assert.match(source, /axisState/u);
   assert.match(source, /aspectRatioState/u);
+  assert.match(source, /rangeState/u);
+  assert.match(source, /runtimeCameraState/u);
+  assert.match(source, /runtimeAspectRatioState/u);
+  assert.match(source, /getCamera\(\)/u);
+  assert.match(source, /getAspectratio\(\)/u);
+  assert.match(source, /canonicalNumber/u);
+  assert.match(source, /runtime camera contains a non-finite vector/u);
+  assert.match(source, /runtime camera projection is invalid/u);
+  assert.match(source, /runtime aspect ratio contains a non-finite vector/u);
+  assert.match(source, /finalScientificState:\s*stateAfter/u);
   assert.match(source, /data-smoke-mount-token/u);
   assert.match(source, /elementHandle\(\)/u);
   assert.match(source, /node === currentNode/u);
@@ -243,8 +342,10 @@ test("package and Open ENA CI expose the bounded 3D controls browser gate", () =
   assert.match(workflow, /open-ena-playwright-daemon-3d-controls/u);
   assert.ok(
     workflow.indexOf("npm run test:browser:open-ena-3d-controls")
-      < workflow.indexOf("npm run test:browser:longitudinal-v3"),
-    "the focused 3D controls gate must run before the broader longitudinal smoke",
+      < workflow.indexOf("name: open-ena-3d-controls-evidence-")
+      && workflow.indexOf("name: open-ena-3d-controls-evidence-")
+        < workflow.indexOf("npm run test:browser:longitudinal-v3"),
+    "3D evidence must upload before the broader longitudinal smoke can time out",
   );
   assert.match(workflow, /if-no-files-found:\s*error/u);
   assert.match(workflow, /retention-days:\s*14/u);
