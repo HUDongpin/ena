@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import {
   compileTrajectoryPlotlySpec,
   createExportBundle,
@@ -47,6 +47,8 @@ import {
   applyFullscreenTrajectoryPlotlyLayoutV3,
   cloneTrajectoryPlotlyInputV3,
   createTrajectoryPlotlyControllerV3,
+  isolateOpenEnaFallbackFullscreenOutsideTreeV3,
+  nextOpenEnaFallbackFullscreenFocusV3,
   type TrajectoryPlotlyControllerV3,
   type TrajectoryPlotlyRangesV3,
 } from "@/lib/open-ena/longitudinal-v3-display";
@@ -425,6 +427,13 @@ const zhHant: typeof english = {
   complete: "完整隊列",
   downloads: "下載",
   fullscreen: "全螢幕",
+  zoomIn: "放大",
+  zoomOut: "縮小",
+  recenter: "回正／預設距離",
+  copyImage: "複製圖片",
+  imageCopied: "圖片已複製",
+  imageDownloaded: "圖片已下載",
+  actionUnavailable: "繪圖操作暫時無法使用",
   disableHeavy: "關閉推斷後運行",
   retryRemote: "重試遠端計算",
   remoteRecoveryTitle: "持久計算未能完成",
@@ -435,7 +444,7 @@ const zhHant: typeof english = {
   provenance: "來源與版本",
 };
 
-function copyFor(locale: Locale): typeof english {
+export function getOpenEnaLongitudinalV3Copy(locale: Locale): typeof english {
   return locale === "zh-hans" ? zhHans : locale === "zh-hant" ? zhHant : english;
 }
 
@@ -508,6 +517,31 @@ export function cameraForDisplay(preset: CameraPreset) {
   };
 }
 
+export function OpenEnaTrajectoryPlotShellV3({
+  fallbackFullscreen,
+  label,
+  shellRef,
+  children,
+}: {
+  fallbackFullscreen: boolean;
+  label: string;
+  shellRef?: Ref<HTMLDivElement>;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      ref={shellRef}
+      className="ena-longitudinal-v3-plot-shell"
+      data-fallback-fullscreen={fallbackFullscreen ? "true" : undefined}
+      role={fallbackFullscreen ? "dialog" : undefined}
+      aria-modal={fallbackFullscreen ? true : undefined}
+      aria-label={fallbackFullscreen ? label : undefined}
+    >
+      {children}
+    </div>
+  );
+}
+
 function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
   spec: TrajectoryPlotlySpecV2;
   cameraPreset: CameraPreset;
@@ -515,6 +549,8 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
 }) {
   const rootRef = useRef<PlotRoot>(null);
   const shellRef = useRef<HTMLDivElement>(null);
+  const fallbackFullscreenOpenerRef = useRef<HTMLElement | null>(null);
+  const fallbackFullscreenExitRef = useRef<HTMLButtonElement>(null);
   const controllerRef = useRef<TrajectoryPlotlyControllerV3 | null>(null);
   const actionStatusTimerRef = useRef<number | null>(null);
   const [Plotly, setPlotly] = useState<PlotlyImageApi | null>(null);
@@ -641,11 +677,51 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
 
   useEffect(() => {
     if (!fallbackFullscreen) return;
-    const exitOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setFallbackFullscreen(false);
+    const shell = shellRef.current;
+    if (!shell) return;
+    const restoreOutsideTree = isolateOpenEnaFallbackFullscreenOutsideTreeV3(
+      shell,
+      document.body,
+    );
+    let focusFrame: number | null = window.requestAnimationFrame(() => {
+      focusFrame = null;
+      fallbackFullscreenExitRef.current?.focus();
+    });
+    const focusSelector = [
+      "button:not([disabled])",
+      "a[href]",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(",");
+    const handleFallbackFullscreenKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setFallbackFullscreen(false);
+        return;
+      }
+      if (event.key === "Tab") {
+        const focusables = Array.from(shell.querySelectorAll<HTMLElement>(focusSelector))
+          .filter((element) => !element.hasAttribute("hidden") && element.getAttribute("aria-hidden") !== "true");
+        const nextFocus = nextOpenEnaFallbackFullscreenFocusV3(
+          focusables,
+          document.activeElement instanceof HTMLElement ? document.activeElement : null,
+          event.shiftKey,
+        );
+        if (!nextFocus) return;
+        event.preventDefault();
+        nextFocus.focus();
+      }
     };
-    document.addEventListener("keydown", exitOnEscape);
-    return () => document.removeEventListener("keydown", exitOnEscape);
+    document.addEventListener("keydown", handleFallbackFullscreenKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleFallbackFullscreenKeyDown);
+      if (focusFrame !== null) window.cancelAnimationFrame(focusFrame);
+      restoreOutsideTree();
+      fallbackFullscreenOpenerRef.current?.focus();
+    };
   }, [fallbackFullscreen]);
 
   useEffect(() => () => {
@@ -675,8 +751,9 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
     try {
       const result = await controller.copy(
         { format: "png", width: 1600, height: 1000, scale: 1 },
-        async (image) => {
+        async (image, isCurrent) => {
           const blob = await (await fetch(image)).blob();
+          if (!isCurrent()) return "";
           if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
             await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
             return labels.imageCopied;
@@ -731,14 +808,21 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
     } catch {
       // Extension-controlled and embedded browsers can deny the native API.
       // Keep the interaction useful with an equivalent viewport-filling layer.
+      fallbackFullscreenOpenerRef.current = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
       setFallbackFullscreen(true);
     }
   };
 
   return (
-    <div ref={shellRef} className="ena-longitudinal-v3-plot-shell" data-fallback-fullscreen={fallbackFullscreen ? "true" : undefined}>
+    <OpenEnaTrajectoryPlotShellV3
+      shellRef={shellRef}
+      fallbackFullscreen={fallbackFullscreen}
+      label={labels.plotTitle}
+    >
       <div className="ena-longitudinal-v3-plot-actions" role="toolbar" aria-label={labels.plotTitle}>
-        <button type="button" aria-controls={canvasId} aria-pressed={fullscreenLayout} onClick={() => void toggleFullscreen()}>{fullscreenLayout ? labels.exitFullscreen : labels.fullscreen}</button>
+        <button ref={fallbackFullscreenExitRef} type="button" aria-controls={canvasId} aria-pressed={fullscreenLayout} onClick={() => void toggleFullscreen()}>{fullscreenLayout ? labels.exitFullscreen : labels.fullscreen}</button>
         <button type="button" data-ena-plot-action="zoom-in" aria-controls={canvasId} onClick={() => void changePlotZoom("in")} disabled={status !== "ready" || actionPending}>{labels.zoomIn}</button>
         <button type="button" data-ena-plot-action="zoom-out" aria-controls={canvasId} onClick={() => void changePlotZoom("out")} disabled={status !== "ready" || actionPending}>{labels.zoomOut}</button>
         <button type="button" data-ena-plot-action="recenter" data-ena-recenter-behavior="default-distance" aria-controls={canvasId} onClick={() => void recenterPlot()} disabled={status !== "ready" || actionPending}>{labels.recenter}</button>
@@ -754,7 +838,7 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
         aria-label={`${labels.plotTitle}. ${spec.data.length} Plotly traces. Result ${spec.resultHash.slice(0, 12)}.`}
       />
       <p className="sr-only" aria-live="polite">{status === "ready" ? `${labels.summary}: ${spec.data.length} traces.` : status}</p>
-    </div>
+    </OpenEnaTrajectoryPlotShellV3>
   );
 }
 
@@ -841,7 +925,7 @@ export default function OpenEnaLongitudinalWorkbenchV3({
   analysisControls,
   analysisControlsMode,
 }: OpenEnaLongitudinalWorkbenchV3Props) {
-  const copy = copyFor(locale);
+  const copy = getOpenEnaLongitudinalV3Copy(locale);
   const [settings, setSettings] = useState<OpenEnaLongitudinalSettingsV3 | null>(null);
   const [bundle, setBundle] = useState<LongitudinalAnalysisBundleV2 | null>(null);
   const [binding, setBinding] = useState<OpenEnaLongitudinalBindingV3 | null>(null);

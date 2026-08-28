@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { createElement, type ComponentType } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 const component = readFileSync(new URL("../components/open-ena/OpenEnaLongitudinalWorkbenchV3.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/open-ena/OpenEnaWorkspace.tsx", import.meta.url), "utf8");
@@ -16,6 +18,40 @@ type HarnessCamera = {
 };
 type HarnessRanges = { x: readonly [number, number]; y: readonly [number, number] };
 type HarnessAspect = { x: number; y: number; z: number };
+
+type FakeIsolationNode = {
+  name: string;
+  parentElement: FakeIsolationNode | null;
+  children: FakeIsolationNode[];
+  inert: boolean;
+  style: { overflow: string };
+  attributes: Map<string, string>;
+  hasAttribute: (name: string) => boolean;
+  getAttribute: (name: string) => string | null;
+  setAttribute: (name: string, value: string) => void;
+  removeAttribute: (name: string) => void;
+};
+
+function fakeIsolationNode(name: string, attributes: Record<string, string> = {}): FakeIsolationNode {
+  const node: FakeIsolationNode = {
+    name,
+    parentElement: null,
+    children: [],
+    inert: Object.hasOwn(attributes, "inert"),
+    style: { overflow: "" },
+    attributes: new Map(Object.entries(attributes)),
+    hasAttribute(attribute) { return node.attributes.has(attribute); },
+    getAttribute(attribute) { return node.attributes.get(attribute) ?? null; },
+    setAttribute(attribute, value) { node.attributes.set(attribute, value); },
+    removeAttribute(attribute) { node.attributes.delete(attribute); },
+  };
+  return node;
+}
+
+function appendIsolationChildren(parent: FakeIsolationNode, ...children: FakeIsolationNode[]) {
+  parent.children.push(...children);
+  for (const child of children) child.parentElement = parent;
+}
 
 function createFakeTrajectoryPlotlyHarness() {
   const root: {
@@ -120,6 +156,139 @@ function createFakeTrajectoryPlotlyHarness() {
     ),
   };
 }
+
+test("fallback fullscreen isolates only outside-tree siblings and loops focus deterministically", async () => {
+  const display = await import("../lib/open-ena/longitudinal-v3-display") as unknown as {
+    isolateOpenEnaFallbackFullscreenOutsideTreeV3: (
+      shell: FakeIsolationNode,
+      body: FakeIsolationNode,
+    ) => () => void;
+    nextOpenEnaFallbackFullscreenFocusV3: <T>(
+      focusables: readonly T[],
+      active: T | null,
+      reverse: boolean,
+    ) => T | null;
+  };
+  const isolateOutsideTree = display.isolateOpenEnaFallbackFullscreenOutsideTreeV3;
+  const nextFocus = display.nextOpenEnaFallbackFullscreenFocusV3;
+  assert.equal(typeof isolateOutsideTree, "function", "the hook-free outside-tree isolation helper must be exported");
+  assert.equal(typeof nextFocus, "function", "the pure fallback focus-loop helper must be exported");
+
+  const body = fakeIsolationNode("body");
+  body.style.overflow = "clip";
+  const beforeApp = fakeIsolationNode("before-app", { inert: "legacy", "aria-hidden": "false" });
+  beforeApp.inert = true;
+  const app = fakeIsolationNode("app");
+  const afterApp = fakeIsolationNode("after-app");
+  appendIsolationChildren(body, beforeApp, app, afterApp);
+  const navigation = fakeIsolationNode("navigation", { inert: "", "aria-hidden": "mixed" });
+  navigation.inert = true;
+  const main = fakeIsolationNode("main");
+  appendIsolationChildren(app, navigation, main);
+  const beforeShell = fakeIsolationNode("before-shell");
+  const shell = fakeIsolationNode("shell");
+  const afterShell = fakeIsolationNode("after-shell", { "aria-hidden": "false" });
+  appendIsolationChildren(main, beforeShell, shell, afterShell);
+
+  const restore = isolateOutsideTree(shell, body);
+  assert.equal(typeof restore, "function");
+  assert.equal(body.style.overflow, "hidden");
+  for (const isolated of [beforeApp, afterApp, navigation, beforeShell, afterShell]) {
+    assert.equal(isolated.inert, true, `${isolated.name} must be inert while fallback fullscreen is active`);
+    assert.equal(isolated.getAttribute("inert"), "");
+    assert.equal(isolated.getAttribute("aria-hidden"), "true");
+  }
+  for (const retained of [app, main, shell]) {
+    assert.equal(retained.hasAttribute("inert"), false, `${retained.name} lies on the dialog path and must stay interactive`);
+    assert.equal(retained.getAttribute("aria-hidden"), null);
+  }
+
+  restore();
+  assert.equal(body.style.overflow, "clip", "body inline overflow must restore byte-for-byte");
+  assert.equal(beforeApp.getAttribute("inert"), "legacy");
+  assert.equal(beforeApp.inert, true);
+  assert.equal(beforeApp.getAttribute("aria-hidden"), "false");
+  assert.equal(afterApp.hasAttribute("inert"), false);
+  assert.equal(afterApp.inert, false);
+  assert.equal(afterApp.getAttribute("aria-hidden"), null);
+  assert.equal(navigation.getAttribute("inert"), "");
+  assert.equal(navigation.inert, true);
+  assert.equal(navigation.getAttribute("aria-hidden"), "mixed");
+  assert.equal(beforeShell.hasAttribute("inert"), false);
+  assert.equal(afterShell.getAttribute("aria-hidden"), "false");
+  restore();
+
+  const exit = { id: "exit" };
+  const zoom = { id: "zoom" };
+  const copy = { id: "copy" };
+  const focusables = [exit, zoom, copy];
+  assert.equal(nextFocus(focusables, exit, true), copy);
+  assert.equal(nextFocus(focusables, copy, false), exit);
+  assert.equal(nextFocus(focusables, zoom, false), copy);
+  assert.equal(nextFocus(focusables, { id: "outside" }, false), exit);
+  assert.equal(nextFocus(focusables, { id: "outside" }, true), copy);
+  assert.equal(nextFocus([], null, false), null);
+});
+
+test("fallback fullscreen is a labelled modal session while native fullscreen stays native", async () => {
+  const presenterModule = await import("../components/open-ena/OpenEnaLongitudinalWorkbenchV3") as unknown as Record<string, unknown>;
+  const PlotShell = Reflect.get(presenterModule, "OpenEnaTrajectoryPlotShellV3");
+  assert.equal(typeof PlotShell, "function", "the hook-free Plot shell seam must be exported");
+
+  const renderShell = (fallbackFullscreen: boolean) => renderToStaticMarkup(createElement(
+    PlotShell as ComponentType<Record<string, unknown>>,
+    {
+      fallbackFullscreen,
+      label: "Trajectory plot fullscreen",
+      children: createElement("button", { type: "button" }, "Exit fullscreen"),
+    },
+  ));
+  const fallbackMarkup = renderShell(true);
+  assert.match(fallbackMarkup, /role="dialog"/);
+  assert.match(fallbackMarkup, /aria-modal="true"/);
+  assert.match(fallbackMarkup, /aria-label="Trajectory plot fullscreen"/);
+  assert.match(fallbackMarkup, /data-fallback-fullscreen="true"/);
+  const nativeMarkup = renderShell(false);
+  assert.doesNotMatch(nativeMarkup, /role="dialog"|aria-modal=|data-fallback-fullscreen=/);
+
+  const presenter = component.match(
+    /function TrajectoryPlotlyPresenterV3[\s\S]*?(?=\nfunction AuditCards)/,
+  )?.[0] ?? "";
+  assert.match(presenter, /const fallbackFullscreenOpenerRef = useRef<HTMLElement \| null>\(null\)/);
+  assert.match(presenter, /const fallbackFullscreenExitRef = useRef<HTMLButtonElement>\(null\)/);
+  assert.match(presenter, /if \(!fallbackFullscreen\) return;[\s\S]*?isolateOpenEnaFallbackFullscreenOutsideTreeV3\(\s*shell,\s*document\.body/);
+  assert.match(presenter, /requestAnimationFrame\([\s\S]*?fallbackFullscreenExitRef\.current\?\.focus\(\)/);
+  assert.match(presenter, /event\.key === "Tab"[\s\S]*?nextOpenEnaFallbackFullscreenFocusV3\([\s\S]*?event\.shiftKey[\s\S]*?event\.preventDefault\(\)[\s\S]*?focus\(\)/);
+  assert.match(presenter, /event\.key === "Escape"[\s\S]*?event\.preventDefault\(\)[\s\S]*?event\.stopPropagation\(\)[\s\S]*?setFallbackFullscreen\(false\)/);
+  assert.match(presenter, /return \(\) => \{[\s\S]*?cancelAnimationFrame\([\s\S]*?restoreOutsideTree\(\)[\s\S]*?fallbackFullscreenOpenerRef\.current\?\.focus\(\)/);
+  assert.match(presenter, /await shell\.requestFullscreen\(\);[\s\S]*?catch \{[\s\S]*?fallbackFullscreenOpenerRef\.current = document\.activeElement[\s\S]*?setFallbackFullscreen\(true\)/);
+});
+
+test("zh-Hant V3 plot actions use explicit Traditional Chinese copy", async () => {
+  const presenterModule = await import("../components/open-ena/OpenEnaLongitudinalWorkbenchV3") as unknown as Record<string, unknown>;
+  const getCopy = Reflect.get(presenterModule, "getOpenEnaLongitudinalV3Copy");
+  assert.equal(typeof getCopy, "function", "the V3 locale copy seam must be publicly testable");
+  const copy = (getCopy as (locale: "zh-hant") => Record<string, string>)("zh-hant");
+  const plotActions = {
+    zoomIn: copy.zoomIn,
+    zoomOut: copy.zoomOut,
+    recenter: copy.recenter,
+    copyImage: copy.copyImage,
+    imageCopied: copy.imageCopied,
+    imageDownloaded: copy.imageDownloaded,
+    actionUnavailable: copy.actionUnavailable,
+  };
+  assert.deepEqual(plotActions, {
+    zoomIn: "放大",
+    zoomOut: "縮小",
+    recenter: "回正／預設距離",
+    copyImage: "複製圖片",
+    imageCopied: "圖片已複製",
+    imageDownloaded: "圖片已下載",
+    actionUnavailable: "繪圖操作暫時無法使用",
+  });
+  assert.doesNotMatch(Object.values(plotActions).join("\n"), /缩|默认|复制|图片已|图形/u);
+});
 
 test("V3 2D Plotly range actions preserve centers and reset exact immutable spec ranges", async () => {
   type PlotRanges = {
@@ -452,6 +621,125 @@ test("V3 Plotly controller makes a requested new spec final after an old action"
   assert.deepEqual(harness.readCamera(newCamera), interactive.zoomOpenEna3dCamera(newCamera, newCamera, "out"));
 });
 
+test("V3 Copy never publishes an old image after a new spec render is requested", async () => {
+  type Result<T> = { status: "completed"; value: T } | { status: "stale" };
+  const [display, interactive] = await Promise.all([
+    import("../lib/open-ena/longitudinal-v3-display"),
+    import("../components/open-ena/OpenEnaInteractive3DPlot"),
+  ]) as unknown as [any, any];
+  const harness = createFakeTrajectoryPlotlyHarness();
+  let releaseImage!: () => void;
+  let signalImageStarted!: () => void;
+  const imageStarted = new Promise<void>((resolve) => { signalImageStarted = resolve; });
+  const imageBlocked = new Promise<void>((resolve) => { releaseImage = resolve; });
+  const copyEvents: string[] = [];
+  const consumedImages: string[] = [];
+  const controller = display.createTrajectoryPlotlyControllerV3({
+    react: harness.react,
+    relayout: harness.relayout,
+    toImage: async () => {
+      copyEvents.push("toImage:start");
+      signalImageStarted();
+      await imageBlocked;
+      copyEvents.push("toImage:complete");
+      return "data:image/png;base64,OLD-SPEC";
+    },
+    readRanges: harness.readRanges,
+    readAspectRatio: harness.readAspectRatio,
+    readCamera: harness.readCamera,
+    zoomCamera: interactive.zoomOpenEna3dCamera,
+    resetCamera: interactive.resetOpenEna3dCameraDistance,
+    zoomAspectRatio: interactive.zoomOpenEna3dAspectRatio,
+  });
+  const oldCamera: HarnessCamera = {
+    eye: { x: 2, y: 2, z: 2 }, center: { x: 0, y: 0, z: 0 }, up: { x: 0, y: 0, z: 1 }, projection: { type: "perspective" },
+  };
+  const oldSpec = {};
+  harness.setNextRuntime({ camera: oldCamera, aspect: { x: 1, y: 1, z: 1 } });
+  await controller.render({ specKey: oldSpec, input: { data: [], layout: { meta: { renderId: "copy-old" } }, config: {} }, hasScene: true, defaultCamera: oldCamera });
+
+  const copy = controller.copy({}, async (image: string) => {
+    copyEvents.push("consumer");
+    consumedImages.push(image);
+    return "published-old-image";
+  }) as Promise<Result<string>>;
+  await imageStarted;
+
+  const newSpec = {};
+  const newCamera: HarnessCamera = { ...oldCamera, eye: { x: -3, y: 1, z: 4 } };
+  harness.setNextRuntime({ camera: newCamera, aspect: { x: 1.4, y: 1, z: 0.8 } });
+  const newRender = controller.render({ specKey: newSpec, input: { data: [], layout: { meta: { renderId: "copy-new" } }, config: {} }, hasScene: true, defaultCamera: newCamera }) as Promise<Result<null>>;
+  releaseImage();
+
+  assert.deepEqual(await copy, { status: "stale" });
+  assert.deepEqual(consumedImages, [], "a stale image must never reach clipboard/download consumers");
+  assert.doesNotMatch(copyEvents.join(","), /consumer/u);
+  assert.deepEqual(await newRender, { status: "completed", value: null });
+  assert.ok(harness.events.includes("react:copy-new"), "the requested new spec must still become the final render");
+});
+
+test("V3 Copy rechecks generation after async consumer preparation before publishing", async () => {
+  type Result<T> = { status: "completed"; value: T } | { status: "stale" };
+  const [display, interactive] = await Promise.all([
+    import("../lib/open-ena/longitudinal-v3-display"),
+    import("../components/open-ena/OpenEnaInteractive3DPlot"),
+  ]) as unknown as [any, any];
+  const harness = createFakeTrajectoryPlotlyHarness();
+  const publishedImages: string[] = [];
+  let releasePreparation!: () => void;
+  let signalPreparationStarted!: () => void;
+  const preparationStarted = new Promise<void>((resolve) => { signalPreparationStarted = resolve; });
+  const preparationBlocked = new Promise<void>((resolve) => { releasePreparation = resolve; });
+  const controller = display.createTrajectoryPlotlyControllerV3({
+    react: harness.react,
+    relayout: harness.relayout,
+    toImage: harness.toImage,
+    readRanges: harness.readRanges,
+    readAspectRatio: harness.readAspectRatio,
+    readCamera: harness.readCamera,
+    zoomCamera: interactive.zoomOpenEna3dCamera,
+    resetCamera: interactive.resetOpenEna3dCameraDistance,
+    zoomAspectRatio: interactive.zoomOpenEna3dAspectRatio,
+  });
+  const oldCamera: HarnessCamera = {
+    eye: { x: 2, y: 2, z: 2 }, center: { x: 0, y: 0, z: 0 }, up: { x: 0, y: 0, z: 1 }, projection: { type: "perspective" },
+  };
+  const oldSpec = {};
+  harness.setNextRuntime({ camera: oldCamera, aspect: { x: 1, y: 1, z: 1 } });
+  await controller.render({ specKey: oldSpec, input: { data: [], layout: { meta: { renderId: "prepare-old" } }, config: {} }, hasScene: true, defaultCamera: oldCamera });
+
+  const copy = controller.copy(
+    {},
+    async (image: string, isCurrent: () => boolean) => {
+      signalPreparationStarted();
+      await preparationBlocked;
+      if (!isCurrent()) return "stale-preparation";
+      publishedImages.push(image);
+      return "published-current-image";
+    },
+  ) as Promise<Result<string>>;
+  await preparationStarted;
+
+  const newSpec = {};
+  const newCamera: HarnessCamera = { ...oldCamera, eye: { x: -5, y: 2, z: 3 } };
+  harness.setNextRuntime({ camera: newCamera, aspect: { x: 1.2, y: 1, z: 0.9 } });
+  const newRender = controller.render({ specKey: newSpec, input: { data: [], layout: { meta: { renderId: "prepare-new" } }, config: {} }, hasScene: true, defaultCamera: newCamera }) as Promise<Result<null>>;
+  releasePreparation();
+
+  assert.deepEqual(await copy, { status: "stale" });
+  assert.deepEqual(publishedImages, [], "stale async preparation must not reach clipboard/download publication");
+  assert.deepEqual(await newRender, { status: "completed", value: null });
+
+  await assert.rejects(
+    controller.copy({}, async (_image: string, isCurrent: () => boolean) => {
+      assert.equal(isCurrent(), true, "the current-generation consumer receives a live guard");
+      throw new Error("consumer preparation failed");
+    }),
+    /consumer preparation failed/u,
+    "current-generation consumer errors must propagate without becoming completed copy results",
+  );
+});
+
 test("the reachable V3 presenter wires accessible Plotly actions for 3D and 2D projections", () => {
   const presenter = component.match(
     /function TrajectoryPlotlyPresenterV3[\s\S]*?(?=\nfunction AuditCards)/,
@@ -463,6 +751,11 @@ test("the reachable V3 presenter wires accessible Plotly actions for 3D and 2D p
   assert.match(presenter, /controller\.zoom\(direction\)/);
   assert.match(presenter, /controller\.recenter\(\)/);
   assert.match(presenter, /controller\.copy\(/);
+  assert.match(
+    presenter,
+    /async \(image, isCurrent\)[\s\S]*?\.blob\(\);[\s\S]*?if \(!isCurrent\(\)\) return "";[\s\S]*?(?:navigator\.clipboard\.write|downloadBlob)/,
+    "clipboard/download publication must recheck generation after blob preparation without another preceding await",
+  );
   assert.match(presenter, /result\.status === "completed"[\s\S]*?announceAction/);
   assert.match(presenter, /const \[actionPending, setActionPending\] = useState\(false\)/);
   assert.ok(
@@ -629,8 +922,16 @@ test("V3 desktop and narrow layouts preserve controls-status-plot-table order wi
   );
   assert.match(css, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.ena-longitudinal-v3-layout\s*\{[^}]*grid-template-columns:\s*1fr/);
   assert.match(css, /\.ena-longitudinal-v3-table-wrap\s*\{[^}]*overflow-x:\s*auto/);
-  assert.match(css, /@media\s*\(max-width:\s*560px\)[\s\S]*?\.ena-longitudinal-v3-plot-shell\s*\{[^}]*height:\s*535px/);
-  assert.match(css, /@media\s*\(max-width:\s*560px\)[\s\S]*?\.ena-longitudinal-v3-plot\s*\{[^}]*height:\s*480px/);
+  assert.match(
+    css,
+    /@media\s*\(max-width:\s*560px\)[\s\S]*?\.ena-longitudinal-v3-plot-shell\s*\{[^}]*display:\s*grid[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)[^}]*height:\s*535px[^}]*overflow:\s*hidden/,
+  );
+  assert.match(
+    css,
+    /@media\s*\(max-width:\s*560px\)[\s\S]*?\.ena-longitudinal-v3-plot\s*\{[^}]*height:\s*100%[^}]*min-height:\s*0/,
+  );
+  const narrowCss = css.match(/@media\s*\(max-width:\s*560px\)\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.doesNotMatch(narrowCss, /\.ena-longitudinal-v3-plot\s*\{[^}]*height:\s*480px/);
 });
 
 test("the plot action toolbar occupies its own row instead of covering the 3D legend", () => {

@@ -81,6 +81,85 @@ export function captureInitialTrajectoryPlotlyAspectRatioV3(
   return { ...(initial ?? rendered) };
 }
 
+export interface OpenEnaFallbackFullscreenIsolationNodeV3 {
+  parentElement: OpenEnaFallbackFullscreenIsolationNodeV3 | null;
+  readonly children: ArrayLike<OpenEnaFallbackFullscreenIsolationNodeV3>;
+  inert?: boolean;
+  hasAttribute(name: string): boolean;
+  getAttribute(name: string): string | null;
+  setAttribute(name: string, value: string): void;
+  removeAttribute(name: string): void;
+}
+
+interface OpenEnaFallbackFullscreenIsolationSnapshotV3 {
+  node: OpenEnaFallbackFullscreenIsolationNodeV3;
+  hadInertAttribute: boolean;
+  inertAttributeValue: string | null;
+  inertPropertyValue: boolean | undefined;
+  ariaHiddenValue: string | null;
+}
+
+export function isolateOpenEnaFallbackFullscreenOutsideTreeV3(
+  shell: OpenEnaFallbackFullscreenIsolationNodeV3,
+  body: OpenEnaFallbackFullscreenIsolationNodeV3 & { style: { overflow: string } },
+) {
+  const outsideNodes: OpenEnaFallbackFullscreenIsolationNodeV3[] = [];
+  let current: OpenEnaFallbackFullscreenIsolationNodeV3 = shell;
+  while (current !== body) {
+    const parent = current.parentElement;
+    if (!parent) throw new Error("Fallback fullscreen shell must be contained by the supplied body.");
+    for (const sibling of Array.from(parent.children)) {
+      if (sibling !== current) outsideNodes.push(sibling);
+    }
+    current = parent;
+  }
+
+  const snapshots: OpenEnaFallbackFullscreenIsolationSnapshotV3[] = outsideNodes.map((node) => ({
+    node,
+    hadInertAttribute: node.hasAttribute("inert"),
+    inertAttributeValue: node.getAttribute("inert"),
+    inertPropertyValue: node.inert,
+    ariaHiddenValue: node.getAttribute("aria-hidden"),
+  }));
+  const bodyOverflow = body.style.overflow;
+  body.style.overflow = "hidden";
+  for (const snapshot of snapshots) {
+    snapshot.node.setAttribute("inert", "");
+    snapshot.node.inert = true;
+    snapshot.node.setAttribute("aria-hidden", "true");
+  }
+
+  let restored = false;
+  return () => {
+    if (restored) return;
+    restored = true;
+    body.style.overflow = bodyOverflow;
+    for (const snapshot of snapshots.reverse()) {
+      if (snapshot.inertPropertyValue === undefined) delete snapshot.node.inert;
+      else snapshot.node.inert = snapshot.inertPropertyValue;
+      if (snapshot.hadInertAttribute) {
+        snapshot.node.setAttribute("inert", snapshot.inertAttributeValue ?? "");
+      } else {
+        snapshot.node.removeAttribute("inert");
+      }
+      if (snapshot.ariaHiddenValue === null) snapshot.node.removeAttribute("aria-hidden");
+      else snapshot.node.setAttribute("aria-hidden", snapshot.ariaHiddenValue);
+    }
+  };
+}
+
+export function nextOpenEnaFallbackFullscreenFocusV3<T>(
+  focusables: readonly T[],
+  active: T | null,
+  reverse: boolean,
+): T | null {
+  if (focusables.length === 0) return null;
+  const activeIndex = focusables.indexOf(active as T);
+  if (activeIndex < 0) return reverse ? focusables[focusables.length - 1]! : focusables[0]!;
+  const offset = reverse ? -1 : 1;
+  return focusables[(activeIndex + offset + focusables.length) % focusables.length]!;
+}
+
 export async function runTrajectoryPlotlyActionV3<T>(
   gate: { current: boolean },
   action: () => Promise<T>,
@@ -136,7 +215,7 @@ export interface TrajectoryPlotlyControllerV3 {
   recenter: () => Promise<TrajectoryPlotlyControllerResultV3<Record<string, unknown>>>;
   copy: (
     options: Record<string, unknown>,
-    consume?: (image: string) => Promise<string>,
+    consume?: (image: string, isCurrent: () => boolean) => Promise<string>,
   ) => Promise<TrajectoryPlotlyControllerResultV3<string>>;
 }
 
@@ -271,7 +350,12 @@ export function createTrajectoryPlotlyControllerV3(
     },
     copy(options, consume = async (image) => image) {
       const requestedGeneration = generation;
-      return enqueue(requestedGeneration, async () => consume(await dependencies.toImage(options)));
+      return enqueue(requestedGeneration, async () => {
+        const isCurrent = () => requestedGeneration === generation;
+        const image = await dependencies.toImage(options);
+        if (!isCurrent()) return image;
+        return consume(image, isCurrent);
+      });
     },
   };
 }
