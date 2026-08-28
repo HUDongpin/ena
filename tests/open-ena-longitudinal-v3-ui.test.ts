@@ -68,6 +68,89 @@ test("V3 2D Plotly range actions preserve centers and reset exact immutable spec
   assert.deepEqual(afterCompactRender, firstRendered, "a later render must not replace the immutable first baseline");
 });
 
+test("V3 captures the first rendered 3D aspect ratio as an immutable zoom and reset baseline", async () => {
+  type AspectRatio = { x: number; y: number; z: number };
+  const display = await import("../lib/open-ena/longitudinal-v3-display") as unknown as {
+    captureInitialTrajectoryPlotlyAspectRatioV3: (
+      initial: AspectRatio | null,
+      rendered: AspectRatio,
+    ) => AspectRatio;
+  };
+
+  assert.equal(typeof display.captureInitialTrajectoryPlotlyAspectRatioV3, "function");
+
+  const firstRendered = { x: 1.8, y: 1.2, z: 0.65 };
+  const captured = display.captureInitialTrajectoryPlotlyAspectRatioV3(null, firstRendered);
+  assert.deepEqual(captured, firstRendered);
+  assert.notStrictEqual(captured, firstRendered);
+
+  const afterFullscreenRender = display.captureInitialTrajectoryPlotlyAspectRatioV3(
+    captured,
+    { x: 9, y: 8, z: 7 },
+  );
+  assert.deepEqual(
+    afterFullscreenRender,
+    firstRendered,
+    "compact/fullscreen Plotly.react calls must not replace the first runtime aspect baseline",
+  );
+  assert.notStrictEqual(afterFullscreenRender, captured);
+});
+
+test("V3 plot action gate rejects a concurrent operation until the active one settles", async () => {
+  type ActionResult<T> =
+    | { status: "completed"; value: T }
+    | { status: "rejected" };
+  const display = await import("../lib/open-ena/longitudinal-v3-display") as unknown as {
+    runTrajectoryPlotlyActionV3: <T>(
+      gate: { current: boolean },
+      action: () => Promise<T>,
+    ) => Promise<ActionResult<T>>;
+  };
+
+  assert.equal(typeof display.runTrajectoryPlotlyActionV3, "function");
+
+  const gate = { current: false };
+  const fakeRoot = { zoomLevel: 0 };
+  const relayoutPayloads: number[] = [];
+  let releaseFirst!: () => void;
+  let signalFirstStarted!: () => void;
+  const firstStarted = new Promise<void>((resolve) => { signalFirstStarted = resolve; });
+  const firstBlocked = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  let blockNextRelayout = true;
+  const fakePlotly = {
+    async relayout(root: typeof fakeRoot, payload: { zoomLevel: number }) {
+      relayoutPayloads.push(payload.zoomLevel);
+      if (blockNextRelayout) {
+        blockNextRelayout = false;
+        signalFirstStarted();
+        await firstBlocked;
+      }
+      root.zoomLevel = payload.zoomLevel;
+    },
+  };
+  const zoom = () => display.runTrajectoryPlotlyActionV3(gate, async () => {
+    const nextZoomLevel = fakeRoot.zoomLevel + 1;
+    await fakePlotly.relayout(fakeRoot, { zoomLevel: nextZoomLevel });
+    return nextZoomLevel;
+  });
+  const first = zoom();
+
+  await firstStarted;
+  assert.equal(gate.current, true, "the synchronous gate must close before the first await yields");
+  const concurrent = await zoom();
+  assert.deepEqual(concurrent, { status: "rejected" });
+  assert.deepEqual(relayoutPayloads, [1], "the rejected action must not reuse the first pre-update root state");
+
+  releaseFirst();
+  assert.deepEqual(await first, { status: "completed", value: 1 });
+  assert.equal(gate.current, false);
+  assert.equal(fakeRoot.zoomLevel, 1);
+
+  assert.deepEqual(await zoom(), { status: "completed", value: 2 });
+  assert.equal(fakeRoot.zoomLevel, 2);
+  assert.deepEqual(relayoutPayloads, [1, 2], "the next accepted action must compute from the updated root state");
+});
+
 test("the reachable V3 presenter wires accessible Plotly actions for 3D and 2D projections", () => {
   const presenter = component.match(
     /function TrajectoryPlotlyPresenterV3[\s\S]*?(?=\nfunction AuditCards)/,
@@ -81,17 +164,45 @@ test("the reachable V3 presenter wires accessible Plotly actions for 3D and 2D p
   assert.match(presenter, /projection\.type === "orthographic"/);
   assert.match(presenter, /trajectoryPlotlyCamera\(scene\.camera, cameraForPreset\(cameraPreset\)\)/);
   assert.match(presenter, /zoomOpenEna3dCamera\(activeCamera, defaultCamera, direction\)/);
-  assert.match(presenter, /"scene\.aspectratio": \{ \.\.\.initialAspectRatio \}/);
   assert.match(presenter, /const initialRangesRef = useRef<TrajectoryPlotlyRangesV3 \| null>\(null\)/);
+  assert.match(presenter, /const initialAspectRatioRef = useRef<OpenEna3dAspectRatio \| null>\(null\)/);
   assert.match(
     presenter,
-    /useEffect\(\(\) => \{\s*initialRangesRef\.current = null;\s*\}, \[spec\]\)/,
-    "only an immutable spec change may invalidate the first rendered 2D baseline",
+    /useEffect\(\(\) => \{\s*initialRangesRef\.current = null;\s*initialAspectRatioRef\.current = null;\s*\}, \[spec\]\)/,
+    "only an immutable spec change may invalidate the first rendered 2D and 3D baselines",
   );
   assert.match(
     presenter,
     /Plotly\.react\([\s\S]*?\.then\(\(\) => \{[\s\S]*?trajectoryPlotlyRuntimeRanges\(root\)[\s\S]*?captureInitialTrajectoryPlotlyRangesV3\(/,
     "the 2D baseline must be captured only after Plotly has resolved its initial autorange",
+  );
+  assert.match(
+    presenter,
+    /Plotly\.react\([\s\S]*?\.then\(\(\) => \{[\s\S]*?trajectoryPlotlyRuntimeAspectRatio\(root\)[\s\S]*?captureInitialTrajectoryPlotlyAspectRatioV3\(/,
+    "the aspect baseline must be captured from the first successful Plotly render, not the unrendered spec fallback",
+  );
+  assert.match(
+    presenter,
+    /zoomOpenEna3dAspectRatio\(\s*currentAspectRatio\(\),\s*defaultAspectRatio\(\),\s*direction,/,
+  );
+  assert.match(presenter, /"scene\.aspectratio": defaultAspectRatio\(\)/);
+  assert.match(presenter, /const actionPendingRef = useRef\(false\)/);
+  assert.match(presenter, /const \[actionPending, setActionPending\] = useState\(false\)/);
+  assert.match(presenter, /runTrajectoryPlotlyActionV3\(actionPendingRef,/);
+  assert.ok(
+    [...presenter.matchAll(/disabled=\{status !== "ready" \|\| actionPending\}/gu)].length >= 4,
+    "all four plot actions must disable while an earlier relayout/toImage operation is pending",
+  );
+  assert.match(
+    presenter,
+    /const announceAction = \(message: string\) => \{[\s\S]*?setActionStatus\(""\)[\s\S]*?window\.setTimeout/,
+    "repeating the same action must still mutate and reannounce the live status",
+  );
+  assert.match(presenter, /const actionStatusTimerRef = useRef<number \| null>\(null\)/);
+  assert.match(
+    presenter,
+    /useEffect\(\(\) => \(\) => \{[\s\S]*?actionStatusTimerRef\.current[\s\S]*?window\.clearTimeout/,
+    "the live-announcement timer must be cleared when the presenter unmounts",
   );
   for (const relayoutKey of [
     "scene.camera",

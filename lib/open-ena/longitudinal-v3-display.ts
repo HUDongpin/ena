@@ -15,6 +15,16 @@ export interface TrajectoryPlotlyRangesV3 {
   y: readonly [number, number];
 }
 
+export interface TrajectoryPlotlyAspectRatioV3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export type TrajectoryPlotlyActionResultV3<T> =
+  | { status: "completed"; value: T }
+  | { status: "rejected" };
+
 const TRAJECTORY_PLOTLY_RANGE_ZOOM_STEP_V3 = 1.2;
 
 function zoomTrajectoryPlotlyRangeV3(
@@ -53,6 +63,26 @@ export function captureInitialTrajectoryPlotlyRangesV3(
   rendered: TrajectoryPlotlyRangesV3,
 ): TrajectoryPlotlyRangesV3 {
   return resetTrajectoryPlotlyRangesV3(initial ?? rendered);
+}
+
+export function captureInitialTrajectoryPlotlyAspectRatioV3(
+  initial: TrajectoryPlotlyAspectRatioV3 | null,
+  rendered: TrajectoryPlotlyAspectRatioV3,
+): TrajectoryPlotlyAspectRatioV3 {
+  return { ...(initial ?? rendered) };
+}
+
+export async function runTrajectoryPlotlyActionV3<T>(
+  gate: { current: boolean },
+  action: () => Promise<T>,
+): Promise<TrajectoryPlotlyActionResultV3<T>> {
+  if (gate.current) return { status: "rejected" };
+  gate.current = true;
+  try {
+    return { status: "completed", value: await action() };
+  } finally {
+    gate.current = false;
+  }
 }
 
 /**
