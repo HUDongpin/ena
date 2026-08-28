@@ -332,11 +332,21 @@ test("Data View is an explicit center-surface state that replaces the Comparison
   );
   expectMatch(dataViewSource, /data-testid="open-ena-data-view"/, "the center branch must use the dedicated semantic Data View surface");
 
-  const resultData = functionSegment("function renderResultData()", "const panel =");
+  const resultData = functionSegment("function renderResultData()", "const analysisPanel =");
   assert.doesNotMatch(
     resultData,
     /return\s*\(\s*<details\b/,
     "Data View must not remain a collapsible details table appended below the plots",
+  );
+  assert.equal(
+    (workspace.match(/aiPanel=\{renderAiPanel\(\)\}/g) ?? []).length,
+    1,
+    "one persistent AI child must remain mounted beside the mode-selected analysis panel",
+  );
+  expectMatch(
+    workspace,
+    /data-testid="open-ena-persistent-ai-lifecycle"[\s\S]{0,160}hidden=\{mode !== "ai"\}/,
+    "the persistent AI child must switch visibility by mode without conditional unmounting",
   );
 });
 

@@ -19,7 +19,7 @@ function sourceSegment(value: string, startMarker: string, endMarker: string) {
 
 function firstCssRuleBody(value: string, selector: string) {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const body = value.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+  const body = value.match(new RegExp(`(?:^|\\n)[\\t ]*${escapedSelector}\\s*\\{([^}]*)\\}`, "u"))?.[1] ?? "";
   assert.ok(body, `styles must define ${selector}`);
   return body;
 }
@@ -67,6 +67,16 @@ test("v2.0.7-inspired desktop shell gives the research workbench the full vertic
     workbenchRule,
     /grid-template-rows:[^;]*(?:54px|31px)/,
     "legacy top-brand and status tracks must not reduce the research surface",
+  );
+  assert.match(
+    styles,
+    /\.open-ena-page:has\(> \.open-ena-fallback-notice\) > \.open-ena-workbench\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/u,
+    "desktop fallback notice layout must leave the workbench in the remaining grid track",
+  );
+  assert.match(
+    styles,
+    /@media \(max-width:\s*900px\)\s*\{[\s\S]*?\.open-ena-page:has\(> \.open-ena-fallback-notice\) > \.open-ena-workbench\s*\{[^}]*height:\s*auto;[^}]*min-height:\s*100dvh;/u,
+    "mobile fallback notice layout must retain the auto-height workbench contract",
   );
 });
 
@@ -284,7 +294,7 @@ test("the plot toolbar contains view and export actions, not a model-type launch
   const toolbarActions = sourceSegment(
     workspace,
     '<div className="ena-visual-toolbar-actions">',
-    '{view === "3d" && result ? (',
+    '{view === "3d" && result && threeDDimensions ? (',
   );
 
   assert.doesNotMatch(toolbarActions, /trajectory-analysis-button|launchTrajectoryAnalysis|copy\.longitudinal\.launch/);
@@ -295,6 +305,11 @@ test("the plot toolbar contains view and export actions, not a model-type launch
   );
   assert.doesNotMatch(styles, /\.ena-trajectory-analysis-button/);
   assert.doesNotMatch(workspace, /className="ena-workbench-topbar"|className="ena-workbench-statusbar"/);
+  assert.equal(
+    (workspace.match(/showTrajectories=\{false\}/g) ?? []).length,
+    2,
+    "generic 3D presenters must remain endpoint-only and never inherit V3 trajectory rendering",
+  );
 });
 
 test("the trajectory configuration shortcut stays in the responsive Model heading flow", () => {
@@ -553,7 +568,7 @@ test("the local 2D and in-place 3D controls sit immediately before Download Mode
   const toolbar = sourceSegment(
     workspace,
     '<div className={`ena-visual-toolbar${view === "2d" && activeGroupContrast ? " ena-visual-toolbar-group-contrast" : ""}`}>',
-    '{view === "3d" && result ? (',
+    '{view === "3d" && result && threeDDimensions ? (',
   );
 
   assert.doesNotMatch(controls, /className="ena-view-toggle"/, "the view switch no longer belongs to the Model control panel");
