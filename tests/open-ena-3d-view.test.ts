@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import OpenEna3DGroupContrast from "../components/open-ena/OpenEna3DGroupContrast";
 import OpenEnaInteractive3DPlot, {
   OPEN_ENA_3D_CAMERA_ZOOM_STEP,
+  openEna3dFullscreenMode,
   resetOpenEna3dCameraDistance,
   zoomOpenEna3dAspectRatio,
   zoomOpenEna3dCamera,
@@ -57,6 +58,16 @@ function renderThreeDimensionalGroupContrast(
   centerMode: "plot" | "data",
   dataView?: ReactNode,
 ) {
+  return renderToStaticMarkup(createElement(
+    OpenEna3DGroupContrast,
+    threeDimensionalGroupContrastProps(centerMode, dataView),
+  ));
+}
+
+function threeDimensionalGroupContrastProps(
+  centerMode: "plot" | "data",
+  dataView?: ReactNode,
+) {
   const result = threeDimensionalResult();
   const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
   const contrast = buildPairwiseGroupContrast(
@@ -67,14 +78,14 @@ function renderThreeDimensionalGroupContrast(
     [xDimension, yDimension],
     "2026-08-29T00:00:00.000Z",
   );
-  return renderToStaticMarkup(createElement(OpenEna3DGroupContrast, {
+  return {
     result,
     contrast,
     groupColumn: "group",
     xDimension,
     yDimension,
     zDimension,
-    camera: "isometric",
+    camera: "isometric" as const,
     showPoints: true,
     showNetworks: true,
     showLabels: true,
@@ -89,7 +100,34 @@ function renderThreeDimensionalGroupContrast(
     centerMode,
     dataView,
     copy: getOpenEnaCopy("en"),
-  }));
+  };
+}
+
+function genericThreeDimensionalPlotProps(testId = "open-ena-generic-3d") {
+  const result = threeDimensionalResult();
+  const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
+  return {
+    result,
+    groupColumn: "group",
+    xDimension,
+    yDimension,
+    zDimension,
+    camera: "isometric" as const,
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    showTrajectories: false,
+    edgeScale: 1,
+    edgeThreshold: 0,
+    pointScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+    testId,
+    copy: getOpenEnaCopy("en"),
+  };
 }
 
 function confidenceReadyThreeDimensionalResult() {
@@ -972,36 +1010,64 @@ test("each 3D fullscreen action owns its complete card while a generic plot owns
 
   assert.equal(new Set(cardIds).size, 3, "the triptych must not share one fullscreen target");
 
-  const result = threeDimensionalResult();
-  const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
-  const genericMarkup = renderToStaticMarkup(createElement(OpenEnaInteractive3DPlot, {
-    result,
-    groupColumn: "group",
-    xDimension,
-    yDimension,
-    zDimension,
-    camera: "isometric",
-    showPoints: true,
-    showNetworks: true,
-    showLabels: true,
-    showUnitLabels: false,
-    showVariance: true,
-    showTrajectories: false,
-    edgeScale: 1,
-    edgeThreshold: 0,
-    pointScale: 1,
-    plotZoom: 1,
-    flipX: false,
-    flipY: false,
-    testId: "open-ena-generic-3d",
-    copy: getOpenEnaCopy("en"),
-  }));
+  const genericMarkup = renderToStaticMarkup(createElement(
+    OpenEnaInteractive3DPlot,
+    genericThreeDimensionalPlotProps(),
+  ));
   const genericTargetId = /<figure\b[^>]*\bid="([^"]+)"/u.exec(genericMarkup)?.[1];
-  assert.equal(genericTargetId, "open-ena-generic-3d-fullscreen-target");
+  assert.ok(genericTargetId);
   assert.match(
     genericMarkup,
-    /data-ena-plot-action="fullscreen"[\s\S]*?aria-controls="open-ena-generic-3d-fullscreen-target"/u,
+    new RegExp(`data-ena-plot-action="fullscreen"[\\s\\S]*?aria-controls="${genericTargetId}"`, "u"),
   );
+});
+
+test("two SSR triptychs have unique IDs and unambiguous fullscreen card ownership", () => {
+  const props = threeDimensionalGroupContrastProps("plot");
+  const markup = renderToStaticMarkup(createElement(
+    "div",
+    null,
+    createElement(OpenEna3DGroupContrast, { ...props, key: "first" }),
+    createElement(OpenEna3DGroupContrast, { ...props, key: "second" }),
+  ));
+  const ids = [...markup.matchAll(/\sid="([^"]+)"/gu)].map((match) => match[1] ?? "");
+  const controlledIds = [...markup.matchAll(/\saria-controls="([^"]+)"/gu)].map((match) => match[1] ?? "");
+  const fullscreenControlledIds = [...markup.matchAll(
+    /<button\b(?=[^>]*data-ena-plot-action="fullscreen")(?=[^>]*aria-controls="([^"]+)")[^>]*>/gu,
+  )].map((match) => match[1] ?? "");
+
+  assert.equal(ids.length, new Set(ids).size, "two triptychs must not duplicate any DOM id");
+  assert.ok(controlledIds.every((id) => ids.includes(id)), "every triptych aria-controls must resolve in the same tree");
+  assert.equal(fullscreenControlledIds.length, 6);
+  assert.equal(new Set(fullscreenControlledIds).size, 6, "each card must own one distinct fullscreen target");
+});
+
+test("two SSR generic 3D plots remain unique even when callers reuse the same test id", () => {
+  const props = genericThreeDimensionalPlotProps("shared-generic-3d-test-id");
+  const markup = renderToStaticMarkup(createElement(
+    "div",
+    null,
+    createElement(OpenEnaInteractive3DPlot, { ...props, key: "first" }),
+    createElement(OpenEnaInteractive3DPlot, { ...props, key: "second" }),
+  ));
+  const ids = [...markup.matchAll(/\sid="([^"]+)"/gu)].map((match) => match[1] ?? "");
+  const controlledIds = [...markup.matchAll(/\saria-controls="([^"]+)"/gu)].map((match) => match[1] ?? "");
+  const fullscreenControlledIds = [...markup.matchAll(
+    /<button\b(?=[^>]*data-ena-plot-action="fullscreen")(?=[^>]*aria-controls="([^"]+)")[^>]*>/gu,
+  )].map((match) => match[1] ?? "");
+
+  assert.equal(ids.length, new Set(ids).size, "generic target and canvas ids must be instance-unique");
+  assert.ok(controlledIds.every((id) => ids.includes(id)), "every generic aria-controls must resolve in the same tree");
+  assert.equal(fullscreenControlledIds.length, 2);
+  assert.equal(new Set(fullscreenControlledIds).size, 2);
+});
+
+test("native fullscreen mode requires callable request and exit APIs", () => {
+  const callable = () => Promise.resolve();
+
+  assert.equal(openEna3dFullscreenMode({ requestFullscreen: callable, exitFullscreen: callable }), "native");
+  assert.equal(openEna3dFullscreenMode({ requestFullscreen: undefined, exitFullscreen: callable }), "fallback");
+  assert.equal(openEna3dFullscreenMode({ requestFullscreen: callable, exitFullscreen: undefined }), "fallback");
 });
 
 test("3D fullscreen is native-first with a safe single-owner fallback, lifecycle cleanup, focus return, and explicit resize", () => {

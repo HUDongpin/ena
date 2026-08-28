@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type CSSProperties, type ReactNode } from "react";
+import { useId, useRef, type CSSProperties, type ReactNode } from "react";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
@@ -67,9 +67,14 @@ export default function OpenEna3DGroupContrast({
   dataView,
   copy,
 }: OpenEna3DGroupContrastProps) {
+  const instanceId = useId();
   const comparisonFullscreenRef = useRef<HTMLElement>(null);
   const primaryFullscreenRef = useRef<HTMLElement>(null);
   const secondaryFullscreenRef = useRef<HTMLElement>(null);
+  const titleId = `open-ena-3d-group-contrast-title-${instanceId}`;
+  const comparisonFullscreenTargetId = `open-ena-3d-comparison-fullscreen-target-${instanceId}`;
+  const primaryFullscreenTargetId = `open-ena-3d-primary-fullscreen-target-${instanceId}`;
+  const secondaryFullscreenTargetId = `open-ena-3d-secondary-fullscreen-target-${instanceId}`;
   const sharedPlotProps = {
     result,
     contrast,
@@ -109,12 +114,12 @@ export default function OpenEna3DGroupContrast({
       data-ena-center-mode={centerMode}
       data-ena-difference-edge-scale-definition={contrast.edgeScaleDenominators.differenceDefinition}
       data-ena-shared-mean-edge-scale-definition={contrast.edgeScaleDenominators.sharedMeanDefinition}
-      aria-labelledby="open-ena-3d-group-contrast-title"
+      aria-labelledby={titleId}
     >
       <header className="open-ena-3d-triptych-header">
         <div>
           <span>LINKED 3D GROUP COMPARISON</span>
-          <h2 id="open-ena-3d-group-contrast-title">
+          <h2 id={titleId}>
             {contrast.primary.name} − {contrast.secondary.name}
           </h2>
         </div>
@@ -140,7 +145,7 @@ export default function OpenEna3DGroupContrast({
             </div>
           ) : (
             <article
-              id="open-ena-3d-comparison-fullscreen-target"
+              id={comparisonFullscreenTargetId}
               ref={comparisonFullscreenRef}
               className="open-ena-3d-triptych-panel open-ena-3d-triptych-main"
               data-testid="open-ena-3d-comparison-plot"
@@ -158,7 +163,7 @@ export default function OpenEna3DGroupContrast({
                 {...sharedPlotProps}
                 plotKind="comparison"
                 fullscreenTarget={{
-                  id: "open-ena-3d-comparison-fullscreen-target",
+                  id: comparisonFullscreenTargetId,
                   ref: comparisonFullscreenRef,
                 }}
                 displayModeBar={false}
@@ -171,7 +176,7 @@ export default function OpenEna3DGroupContrast({
 
         <div className="open-ena-3d-triptych-sides">
           <article
-            id="open-ena-3d-primary-fullscreen-target"
+            id={primaryFullscreenTargetId}
             ref={primaryFullscreenRef}
             className="open-ena-3d-triptych-panel open-ena-3d-triptych-side"
             data-testid="open-ena-3d-primary-plot"
@@ -189,7 +194,7 @@ export default function OpenEna3DGroupContrast({
               {...sharedPlotProps}
               plotKind="primary"
               fullscreenTarget={{
-                id: "open-ena-3d-primary-fullscreen-target",
+                id: primaryFullscreenTargetId,
                 ref: primaryFullscreenRef,
               }}
               compact
@@ -204,7 +209,7 @@ export default function OpenEna3DGroupContrast({
           </article>
 
           <article
-            id="open-ena-3d-secondary-fullscreen-target"
+            id={secondaryFullscreenTargetId}
             ref={secondaryFullscreenRef}
             className="open-ena-3d-triptych-panel open-ena-3d-triptych-side"
             data-testid="open-ena-3d-secondary-plot"
@@ -222,7 +227,7 @@ export default function OpenEna3DGroupContrast({
               {...sharedPlotProps}
               plotKind="secondary"
               fullscreenTarget={{
-                id: "open-ena-3d-secondary-fullscreen-target",
+                id: secondaryFullscreenTargetId,
                 ref: secondaryFullscreenRef,
               }}
               compact

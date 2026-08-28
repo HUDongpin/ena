@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
@@ -24,6 +24,16 @@ type PlotlyImageApi = PlotlyApi & {
   ) => Promise<string>;
 };
 type RenderStatus = "loading" | "ready" | "error";
+
+export function openEna3dFullscreenMode(capabilities: {
+  requestFullscreen: unknown;
+  exitFullscreen: unknown;
+}): "native" | "fallback" {
+  return typeof capabilities.requestFullscreen === "function"
+    && typeof capabilities.exitFullscreen === "function"
+    ? "native"
+    : "fallback";
+}
 
 export interface OpenEnaInteractive3DPlotProps {
   result: OpenEnaResult;
@@ -258,6 +268,7 @@ export default function OpenEnaInteractive3DPlot({
   onAspectRatioChange,
   copy,
 }: OpenEnaInteractive3DPlotProps) {
+  const instanceId = useId();
   const figureRef = useRef<HTMLElement>(null);
   const plotRootRef = useRef<HTMLDivElement>(null);
   const lastAppliedCameraKeyRef = useRef<string | null>(null);
@@ -280,8 +291,10 @@ export default function OpenEnaInteractive3DPlot({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionStatus, setActionStatus] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const fullscreenTargetId = fullscreenTarget?.id ?? `${testId}-fullscreen-target`;
+  const generatedFullscreenTargetId = `open-ena-interactive-3d-fullscreen-target-${instanceId}`;
+  const fullscreenTargetId = fullscreenTarget?.id ?? generatedFullscreenTargetId;
   const fullscreenTargetRef = fullscreenTarget?.ref ?? figureRef;
+  const canvasId = `open-ena-interactive-3d-canvas-${instanceId}`;
   initialCameraRef.current = initialCamera;
   initialAspectRatioRef.current = initialAspectRatio;
   plotlyRef.current = Plotly;
@@ -590,8 +603,6 @@ export default function OpenEnaInteractive3DPlot({
     : [];
   const resolvedAriaLabel = ariaLabel ?? `${copy.workspace.comparison}, ${copy.views.threeD}`;
   const plotName = plotKind === "comparison" ? "Comparison" : plotKind === "primary" ? "Primary" : "Secondary";
-  const canvasId = `${testId}-canvas`;
-
   function announceAction(message: string) {
     setActionStatus(message);
     if (actionStatusTimerRef.current !== null) window.clearTimeout(actionStatusTimerRef.current);
@@ -772,7 +783,10 @@ export default function OpenEnaInteractive3DPlot({
 
   async function enterFullscreen(target: HTMLElement) {
     fullscreenInitiatorRef.current = fullscreenButtonRef.current;
-    if (typeof target.requestFullscreen !== "function") {
+    if (openEna3dFullscreenMode({
+      requestFullscreen: target.requestFullscreen,
+      exitFullscreen: document.exitFullscreen,
+    }) === "fallback") {
       enterFallbackFullscreen(target);
       return;
     }
