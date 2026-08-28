@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { createElement, type ComponentType } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 const component = readFileSync(new URL("../components/open-ena/OpenEnaLongitudinalWorkbenchV3.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/open-ena/OpenEnaWorkspace.tsx", import.meta.url), "utf8");
@@ -16,6 +18,40 @@ type HarnessCamera = {
 };
 type HarnessRanges = { x: readonly [number, number]; y: readonly [number, number] };
 type HarnessAspect = { x: number; y: number; z: number };
+
+type FakeIsolationNode = {
+  name: string;
+  parentElement: FakeIsolationNode | null;
+  children: FakeIsolationNode[];
+  inert: boolean;
+  style: { overflow: string };
+  attributes: Map<string, string>;
+  hasAttribute: (name: string) => boolean;
+  getAttribute: (name: string) => string | null;
+  setAttribute: (name: string, value: string) => void;
+  removeAttribute: (name: string) => void;
+};
+
+function fakeIsolationNode(name: string, attributes: Record<string, string> = {}): FakeIsolationNode {
+  const node: FakeIsolationNode = {
+    name,
+    parentElement: null,
+    children: [],
+    inert: Object.hasOwn(attributes, "inert"),
+    style: { overflow: "" },
+    attributes: new Map(Object.entries(attributes)),
+    hasAttribute(attribute) { return node.attributes.has(attribute); },
+    getAttribute(attribute) { return node.attributes.get(attribute) ?? null; },
+    setAttribute(attribute, value) { node.attributes.set(attribute, value); },
+    removeAttribute(attribute) { node.attributes.delete(attribute); },
+  };
+  return node;
+}
+
+function appendIsolationChildren(parent: FakeIsolationNode, ...children: FakeIsolationNode[]) {
+  parent.children.push(...children);
+  for (const child of children) child.parentElement = parent;
+}
 
 function createFakeTrajectoryPlotlyHarness() {
   const root: {
@@ -120,6 +156,113 @@ function createFakeTrajectoryPlotlyHarness() {
     ),
   };
 }
+
+test("fallback fullscreen isolates only outside-tree siblings and loops focus deterministically", async () => {
+  const display = await import("../lib/open-ena/longitudinal-v3-display") as unknown as {
+    isolateOpenEnaFallbackFullscreenOutsideTreeV3: (
+      shell: FakeIsolationNode,
+      body: FakeIsolationNode,
+    ) => () => void;
+    nextOpenEnaFallbackFullscreenFocusV3: <T>(
+      focusables: readonly T[],
+      active: T | null,
+      reverse: boolean,
+    ) => T | null;
+  };
+  const isolateOutsideTree = display.isolateOpenEnaFallbackFullscreenOutsideTreeV3;
+  const nextFocus = display.nextOpenEnaFallbackFullscreenFocusV3;
+  assert.equal(typeof isolateOutsideTree, "function", "the hook-free outside-tree isolation helper must be exported");
+  assert.equal(typeof nextFocus, "function", "the pure fallback focus-loop helper must be exported");
+
+  const body = fakeIsolationNode("body");
+  body.style.overflow = "clip";
+  const beforeApp = fakeIsolationNode("before-app", { inert: "legacy", "aria-hidden": "false" });
+  beforeApp.inert = true;
+  const app = fakeIsolationNode("app");
+  const afterApp = fakeIsolationNode("after-app");
+  appendIsolationChildren(body, beforeApp, app, afterApp);
+  const navigation = fakeIsolationNode("navigation", { inert: "", "aria-hidden": "mixed" });
+  navigation.inert = true;
+  const main = fakeIsolationNode("main");
+  appendIsolationChildren(app, navigation, main);
+  const beforeShell = fakeIsolationNode("before-shell");
+  const shell = fakeIsolationNode("shell");
+  const afterShell = fakeIsolationNode("after-shell", { "aria-hidden": "false" });
+  appendIsolationChildren(main, beforeShell, shell, afterShell);
+
+  const restore = isolateOutsideTree(shell, body);
+  assert.equal(typeof restore, "function");
+  assert.equal(body.style.overflow, "hidden");
+  for (const isolated of [beforeApp, afterApp, navigation, beforeShell, afterShell]) {
+    assert.equal(isolated.inert, true, `${isolated.name} must be inert while fallback fullscreen is active`);
+    assert.equal(isolated.getAttribute("inert"), "");
+    assert.equal(isolated.getAttribute("aria-hidden"), "true");
+  }
+  for (const retained of [app, main, shell]) {
+    assert.equal(retained.hasAttribute("inert"), false, `${retained.name} lies on the dialog path and must stay interactive`);
+    assert.equal(retained.getAttribute("aria-hidden"), null);
+  }
+
+  restore();
+  assert.equal(body.style.overflow, "clip", "body inline overflow must restore byte-for-byte");
+  assert.equal(beforeApp.getAttribute("inert"), "legacy");
+  assert.equal(beforeApp.inert, true);
+  assert.equal(beforeApp.getAttribute("aria-hidden"), "false");
+  assert.equal(afterApp.hasAttribute("inert"), false);
+  assert.equal(afterApp.inert, false);
+  assert.equal(afterApp.getAttribute("aria-hidden"), null);
+  assert.equal(navigation.getAttribute("inert"), "");
+  assert.equal(navigation.inert, true);
+  assert.equal(navigation.getAttribute("aria-hidden"), "mixed");
+  assert.equal(beforeShell.hasAttribute("inert"), false);
+  assert.equal(afterShell.getAttribute("aria-hidden"), "false");
+  restore();
+
+  const exit = { id: "exit" };
+  const zoom = { id: "zoom" };
+  const copy = { id: "copy" };
+  const focusables = [exit, zoom, copy];
+  assert.equal(nextFocus(focusables, exit, true), copy);
+  assert.equal(nextFocus(focusables, copy, false), exit);
+  assert.equal(nextFocus(focusables, zoom, false), copy);
+  assert.equal(nextFocus(focusables, { id: "outside" }, false), exit);
+  assert.equal(nextFocus(focusables, { id: "outside" }, true), copy);
+  assert.equal(nextFocus([], null, false), null);
+});
+
+test("fallback fullscreen is a labelled modal session while native fullscreen stays native", async () => {
+  const presenterModule = await import("../components/open-ena/OpenEnaLongitudinalWorkbenchV3") as unknown as Record<string, unknown>;
+  const PlotShell = Reflect.get(presenterModule, "OpenEnaTrajectoryPlotShellV3");
+  assert.equal(typeof PlotShell, "function", "the hook-free Plot shell seam must be exported");
+
+  const renderShell = (fallbackFullscreen: boolean) => renderToStaticMarkup(createElement(
+    PlotShell as ComponentType<Record<string, unknown>>,
+    {
+      fallbackFullscreen,
+      label: "Trajectory plot fullscreen",
+      children: createElement("button", { type: "button" }, "Exit fullscreen"),
+    },
+  ));
+  const fallbackMarkup = renderShell(true);
+  assert.match(fallbackMarkup, /role="dialog"/);
+  assert.match(fallbackMarkup, /aria-modal="true"/);
+  assert.match(fallbackMarkup, /aria-label="Trajectory plot fullscreen"/);
+  assert.match(fallbackMarkup, /data-fallback-fullscreen="true"/);
+  const nativeMarkup = renderShell(false);
+  assert.doesNotMatch(nativeMarkup, /role="dialog"|aria-modal=|data-fallback-fullscreen=/);
+
+  const presenter = component.match(
+    /function TrajectoryPlotlyPresenterV3[\s\S]*?(?=\nfunction AuditCards)/,
+  )?.[0] ?? "";
+  assert.match(presenter, /const fallbackFullscreenOpenerRef = useRef<HTMLElement \| null>\(null\)/);
+  assert.match(presenter, /const fallbackFullscreenExitRef = useRef<HTMLButtonElement>\(null\)/);
+  assert.match(presenter, /if \(!fallbackFullscreen\) return;[\s\S]*?isolateOpenEnaFallbackFullscreenOutsideTreeV3\(\s*shell,\s*document\.body/);
+  assert.match(presenter, /requestAnimationFrame\([\s\S]*?fallbackFullscreenExitRef\.current\?\.focus\(\)/);
+  assert.match(presenter, /event\.key === "Tab"[\s\S]*?nextOpenEnaFallbackFullscreenFocusV3\([\s\S]*?event\.shiftKey[\s\S]*?event\.preventDefault\(\)[\s\S]*?focus\(\)/);
+  assert.match(presenter, /event\.key === "Escape"[\s\S]*?event\.preventDefault\(\)[\s\S]*?event\.stopPropagation\(\)[\s\S]*?setFallbackFullscreen\(false\)/);
+  assert.match(presenter, /return \(\) => \{[\s\S]*?cancelAnimationFrame\([\s\S]*?restoreOutsideTree\(\)[\s\S]*?fallbackFullscreenOpenerRef\.current\?\.focus\(\)/);
+  assert.match(presenter, /await shell\.requestFullscreen\(\);[\s\S]*?catch \{[\s\S]*?fallbackFullscreenOpenerRef\.current = document\.activeElement[\s\S]*?setFallbackFullscreen\(true\)/);
+});
 
 test("V3 2D Plotly range actions preserve centers and reset exact immutable spec ranges", async () => {
   type PlotRanges = {
