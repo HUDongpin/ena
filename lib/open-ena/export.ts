@@ -44,9 +44,69 @@ export const OPEN_ENA_RESULT_TABLE_KEYS = [
 
 export type OpenEnaResultTableKey = (typeof OPEN_ENA_RESULT_TABLE_KEYS)[number];
 
+export type OpenEnaResultTableUnavailableReason =
+  | "endpoint-model"
+  | "projection-reference";
+
 export interface OpenEnaResultTableAvailability {
   available: boolean;
+  reason: OpenEnaResultTableUnavailableReason | null;
+}
+
+export interface OpenEnaResultTablesCopy {
+  summaryTitle: string;
+  summaryDescription: string;
+  tabsAriaLabel: string;
+  labels: Readonly<Record<OpenEnaResultTableKey, string>>;
+  exportLabels: Readonly<Record<OpenEnaResultTableKey, string>>;
+  notApplicableShort: string;
+  unavailableReasons: Readonly<Record<OpenEnaResultTableUnavailableReason, string>>;
+  notApplicableNote: (table: string, reason: string) => string;
+  tableAriaLabel: (table: string) => string;
+  exportAriaLabel: (table: string) => string;
+  showingAllRows: (count: number) => string;
+  showingPreviewRows: (shown: number, total: number) => string;
+  emptyRows: string;
+}
+
+export interface OpenEnaResultTableTabView {
+  key: OpenEnaResultTableKey;
+  id: string;
+  controls: string;
+  label: string;
+  badge: string;
+  selected: boolean;
+  disabled: boolean;
+  tabIndex: 0 | -1;
   reason: string | null;
+  describedBy: string | null;
+}
+
+export interface OpenEnaResultTableViewModel {
+  summaryTitle: string;
+  summaryDescription: string;
+  tabsAriaLabel: string;
+  tabs: readonly OpenEnaResultTableTabView[];
+  unavailableNotes: ReadonlyArray<{
+    id: string;
+    label: string;
+    reason: string;
+  }>;
+  panel: {
+    id: string;
+    labelledBy: string;
+    available: boolean;
+    note: string | null;
+    tableAriaLabel: string;
+    headers: readonly string[];
+    rows: readonly Row[];
+    rowSummary: string;
+  };
+  export: {
+    disabled: boolean;
+    label: string;
+    ariaLabel: string;
+  };
 }
 
 export function openEnaResultTableAvailability(context: {
@@ -60,16 +120,99 @@ export function openEnaResultTableAvailability(context: {
   if (context.modelType === "EndPoint") {
     availability.trajectories = {
       available: false,
-      reason: "Not applicable to endpoint models.",
+      reason: "endpoint-model",
     };
   }
   if (context.projectionReference) {
     availability.centroids = {
       available: false,
-      reason: "Not applicable to projection-reference results.",
+      reason: "projection-reference",
     };
   }
   return availability;
+}
+
+function openEnaResultTableHeaders(rows: readonly Row[]) {
+  const headers: string[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    for (const header of Object.keys(row)) {
+      if (!seen.has(header)) {
+        seen.add(header);
+        headers.push(header);
+      }
+    }
+  }
+  return headers;
+}
+
+export function buildOpenEnaResultTableViewModel(input: {
+  selectedKey: OpenEnaResultTableKey;
+  tables: Readonly<Record<OpenEnaResultTableKey, readonly Row[]>>;
+  availability: Readonly<Record<OpenEnaResultTableKey, OpenEnaResultTableAvailability>>;
+  copy: OpenEnaResultTablesCopy;
+  idPrefix?: string;
+  previewLimit?: number;
+}): OpenEnaResultTableViewModel {
+  const idPrefix = input.idPrefix ?? "open-ena-result-table";
+  const panelId = `${idPrefix}-panel`;
+  const previewLimit = input.previewLimit ?? 100;
+  const selectedAvailability = input.availability[input.selectedKey];
+  const selectedRows = input.tables[input.selectedKey];
+  const selectedLabel = input.copy.labels[input.selectedKey];
+  const selectedReason = selectedAvailability.reason
+    ? input.copy.unavailableReasons[selectedAvailability.reason]
+    : null;
+  const tabs = OPEN_ENA_RESULT_TABLE_KEYS.map((key): OpenEnaResultTableTabView => {
+    const availability = input.availability[key];
+    const reason = availability.reason ? input.copy.unavailableReasons[availability.reason] : null;
+    return {
+      key,
+      id: `${idPrefix}-tab-${key}`,
+      controls: panelId,
+      label: input.copy.labels[key],
+      badge: availability.available ? String(input.tables[key].length) : input.copy.notApplicableShort,
+      selected: input.selectedKey === key,
+      disabled: !availability.available,
+      tabIndex: availability.available ? 0 : -1,
+      reason,
+      describedBy: reason ? `${idPrefix}-reason-${key}` : null,
+    };
+  });
+  const previewRows = selectedAvailability.available
+    ? selectedRows.slice(0, previewLimit)
+    : [];
+  const rowSummary = !selectedAvailability.available
+    ? ""
+    : selectedRows.length === 0
+      ? input.copy.emptyRows
+      : selectedRows.length > previewLimit
+        ? input.copy.showingPreviewRows(previewRows.length, selectedRows.length)
+        : input.copy.showingAllRows(selectedRows.length);
+  return {
+    summaryTitle: input.copy.summaryTitle,
+    summaryDescription: input.copy.summaryDescription,
+    tabsAriaLabel: input.copy.tabsAriaLabel,
+    tabs,
+    unavailableNotes: tabs.flatMap((tab) => tab.reason && tab.describedBy
+      ? [{ id: tab.describedBy, label: tab.label, reason: tab.reason }]
+      : []),
+    panel: {
+      id: panelId,
+      labelledBy: `${idPrefix}-tab-${input.selectedKey}`,
+      available: selectedAvailability.available,
+      note: selectedReason ? input.copy.notApplicableNote(selectedLabel, selectedReason) : null,
+      tableAriaLabel: input.copy.tableAriaLabel(selectedLabel),
+      headers: selectedAvailability.available ? openEnaResultTableHeaders(selectedRows) : [],
+      rows: previewRows,
+      rowSummary,
+    },
+    export: {
+      disabled: !selectedAvailability.available || selectedRows.length === 0,
+      label: input.copy.exportLabels[input.selectedKey],
+      ariaLabel: input.copy.exportAriaLabel(selectedLabel),
+    },
+  };
 }
 
 export interface BuildAnalysisBundleOptions extends OpenEnaPresentationOptions {

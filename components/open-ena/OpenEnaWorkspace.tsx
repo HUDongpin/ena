@@ -64,11 +64,12 @@ import { buildMethodsReport, referenceMeanRotationInterpretation } from "@/lib/o
 import { buildOpenEnaAiInterpretationRequest } from "@/lib/open-ena/ai-interpretation";
 import {
   buildAnalysisBundle,
+  buildOpenEnaResultTableViewModel,
   buildResultTables,
-  OPEN_ENA_RESULT_TABLE_KEYS,
   openEnaResultTableAvailability,
   rowsToCsv,
   type OpenEnaResultTableKey,
+  type OpenEnaResultTableViewModel,
 } from "@/lib/open-ena/export";
 import { codeColorFor, updateCodeColor } from "@/lib/open-ena/plot-style";
 import {
@@ -78,6 +79,7 @@ import {
   updateOpenEnaWorkspace3dAxis,
   type OpenEna3dAspectRatio,
   type OpenEna3dCamera,
+  type OpenEnaWorkspaceAxes,
 } from "@/lib/open-ena/plot3d";
 import {
   buildReferenceRotationPackage,
@@ -149,6 +151,100 @@ type OpenEnaStatsTab = "comparison" | "goodness" | "variance";
 const MODEL_TAB_ORDER = ["units", "horizons", "windows", "codes"] as const;
 const STATS_TAB_ORDER = ["comparison", "goodness", "variance"] as const;
 
+export function OpenEnaResultTables({
+  model,
+  onSelect,
+  onExport,
+}: {
+  model: OpenEnaResultTableViewModel;
+  onSelect: (key: OpenEnaResultTableKey) => void;
+  onExport: () => void;
+}) {
+  return (
+    <details className="ena-result-data">
+      <summary>
+        <span>{model.summaryTitle}</span>
+        <small>{model.summaryDescription}</small>
+      </summary>
+      <div className="ena-result-data-tools">
+        <div className="ena-result-tabs" role="tablist" aria-label={model.tabsAriaLabel}>
+          {model.tabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              id={tab.id}
+              aria-controls={tab.controls}
+              aria-selected={tab.selected}
+              aria-disabled={tab.disabled}
+              aria-describedby={tab.describedBy ?? undefined}
+              disabled={tab.disabled}
+              tabIndex={tab.tabIndex}
+              title={tab.reason ?? undefined}
+              onClick={() => {
+                if (!tab.disabled) onSelect(tab.key);
+              }}
+            >
+              {tab.label} <span>{tab.badge}</span>
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="ena-action-button ena-action-secondary ena-table-export"
+          aria-label={model.export.ariaLabel}
+          disabled={model.export.disabled}
+          onClick={() => {
+            if (!model.export.disabled) onExport();
+          }}
+        >
+          {model.export.label} ↓
+        </button>
+      </div>
+      {model.unavailableNotes.length ? (
+        <div className="ena-result-table-unavailable-notes">
+          {model.unavailableNotes.map((note) => (
+            <p key={note.id} id={note.id}>
+              <strong>{note.label}</strong> — {note.reason}
+            </p>
+          ))}
+        </div>
+      ) : null}
+      <div
+        id={model.panel.id}
+        role="tabpanel"
+        aria-labelledby={model.panel.labelledBy}
+        tabIndex={0}
+      >
+        {!model.panel.available ? (
+          <p className="ena-result-table-not-applicable" role="status">
+            {model.panel.note}
+          </p>
+        ) : (
+          <>
+            <div
+              className="ena-result-table-wrap"
+              role="region"
+              aria-label={model.panel.tableAriaLabel}
+              tabIndex={0}
+            >
+              <table>
+                <thead><tr>{model.panel.headers.map((header) => <th key={header}>{header}</th>)}</tr></thead>
+                <tbody>{model.panel.rows.map((row, rowIndex) => (
+                  <tr key={rowIndex}>{model.panel.headers.map((header) => (
+                    <td key={header}>{String(row[header] ?? "")}</td>
+                  ))}</tr>
+                ))}</tbody>
+              </table>
+            </div>
+            <p>{model.panel.rowSummary}</p>
+          </>
+        )}
+      </div>
+    </details>
+  );
+}
+
 const modeIcons: Record<OpenEnaMode, React.ReactNode> = {
   sets: (
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v5H4zm0 8h16v5H4z" /><path d="M7 8h.01M7 16h.01" /></svg>
@@ -197,20 +293,6 @@ function downloadText(filename: string, contents: string, type: string) {
 
 function downloadJson(filename: string, data: unknown, compact = false) {
   downloadText(filename, `${JSON.stringify(data, null, compact ? undefined : 2)}\n`, "application/json;charset=utf-8");
-}
-
-function tableHeaders(rows: Row[]) {
-  const headers: string[] = [];
-  const seen = new Set<string>();
-  for (const row of rows) {
-    for (const header of Object.keys(row)) {
-      if (!seen.has(header)) {
-        seen.add(header);
-        headers.push(header);
-      }
-    }
-  }
-  return headers;
 }
 
 function formatStatistic(value: number | undefined, digits = 3, notEstimable = "Not estimable") {
@@ -314,9 +396,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const [progressStage, setProgressStage] = useState<"accumulate" | "model">("accumulate");
   const [xDimension, setXDimension] = useState("SVD1");
   const [yDimension, setYDimension] = useState("SVD2");
-  const [threeDXDimension, setThreeDXDimension] = useState("SVD1");
-  const [threeDYDimension, setThreeDYDimension] = useState("SVD2");
-  const [threeDZDimension, setThreeDZDimension] = useState("SVD3");
+  const [threeDDimensions, setThreeDDimensions] = useState<OpenEnaWorkspaceAxes["threeD"]>(null);
+  const genericThreeDAvailable = result !== null && threeDDimensions !== null;
   const [camera, setCamera] = useState<CameraPreset>("isometric");
   const [interactive3dCamera, setInteractive3dCamera] = useState<OpenEna3dCamera | null>(null);
   const [interactive3dAspectRatio, setInteractive3dAspectRatio] = useState<OpenEna3dAspectRatio | null>(null);
@@ -1344,13 +1425,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       setResult(nextResult);
       setResultConfig(cloneOpenEnaConfig(nextResult.provenanceBinding!.configuration));
       const initialAxes = createOpenEnaWorkspaceAxes(nextResult.dimensions);
-      const [x, y] = initialAxes.twoD;
-      const [, , z] = initialAxes.threeD;
+      const [x, y] = initialAxes.twoD ?? ["", ""];
       setXDimension(x);
       setYDimension(y);
-      setThreeDXDimension(x);
-      setThreeDYDimension(y);
-      setThreeDZDimension(z);
+      setThreeDDimensions(initialAxes.threeD);
       setInteractive3dCamera(null);
       setInteractive3dAspectRatio(null);
       setView("2d");
@@ -1370,6 +1448,13 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         abortRef.current = null;
       }
     }
+  }
+
+  function clearCompletedResult() {
+    setResult(null);
+    setResultConfig(null);
+    setThreeDDimensions(null);
+    setView("2d");
   }
 
   async function loadSample() {
@@ -1400,8 +1485,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       setDatasetHash(nextHash);
       installAnalysisConfig(SAMPLE_CONFIG);
       setCodeColors({});
-      setResult(null);
-      setResultConfig(null);
+      clearCompletedResult();
       setSourceQuery("");
       setActiveCodesOnly(false);
       setSourcePage(0);
@@ -1447,8 +1531,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       setDatasetHash(nextHash);
       installAnalysisConfig(TRAJECTORY_SAMPLE_CONFIG);
       setCodeColors({});
-      setResult(null);
-      setResultConfig(null);
+      clearCompletedResult();
       setSourceQuery("");
       setActiveCodesOnly(false);
       setSourcePage(0);
@@ -1501,8 +1584,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       setDatasetHash(nextHash);
       installAnalysisConfig(inferConfig(nextDataset));
       setCodeColors({});
-      setResult(null);
-      setResultConfig(null);
+      clearCompletedResult();
       setSourceQuery("");
       setActiveCodesOnly(false);
       setSourcePage(0);
@@ -1558,9 +1640,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           referenceRotationId: reference.referenceId,
         };
       });
-      setResult(null);
-      setResultConfig(null);
-      setView("2d");
+      clearCompletedResult();
       setMode("model");
     } catch (caught) {
       if (referenceImportRef.current !== importToken) return;
@@ -1581,6 +1661,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   function selectVisualizationView(nextView: OpenEnaView) {
     if (nextView === "3d" && completedResultKind === "ona") {
       setError(copy.ona.unavailable.threeD);
+      return;
+    }
+    if (nextView === "3d" && !genericThreeDAvailable) {
+      setError(copy.plot.threeDRequiresThreeDimensions);
       return;
     }
     setView(nextView);
@@ -1609,13 +1693,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   }
 
   function selectAxisDimension(axis: "x" | "y" | "z", nextDimension: string) {
+    if (!threeDDimensions || !result) return;
     const next = updateOpenEnaWorkspace3dAxis({
       twoD: [xDimension, yDimension],
-      threeD: [threeDXDimension, threeDYDimension, threeDZDimension],
-    }, axis, nextDimension);
-    setThreeDXDimension(next.threeD[0]);
-    setThreeDYDimension(next.threeD[1]);
-    setThreeDZDimension(next.threeD[2]);
+      threeD: threeDDimensions,
+    }, axis, nextDimension, result.dimensions);
+    setThreeDDimensions(next.threeD);
   }
 
   function resetPlot() {
@@ -1628,13 +1711,13 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
       const activeAxisSurface = view === "3d" ? "3d" : "2d";
       const resetAxes = resetOpenEnaWorkspaceAxisSurface({
         twoD: [xDimension, yDimension],
-        threeD: [threeDXDimension, threeDYDimension, threeDZDimension],
+        threeD: threeDDimensions,
       }, activeAxisSurface, activeDimensions);
-      setXDimension(resetAxes.twoD[0]);
-      setYDimension(resetAxes.twoD[1]);
-      setThreeDXDimension(resetAxes.threeD[0]);
-      setThreeDYDimension(resetAxes.threeD[1]);
-      setThreeDZDimension(resetAxes.threeD[2]);
+      if (resetAxes.twoD) {
+        setXDimension(resetAxes.twoD[0]);
+        setYDimension(resetAxes.twoD[1]);
+      }
+      setThreeDDimensions(resetAxes.threeD);
     }
     setCamera("isometric");
     setInteractive3dCamera(null);
@@ -2838,10 +2921,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               </label>
             ))}
           </div>
-          {((view === "3d" ? [
-            [copy.plot.axisX, threeDXDimension, "x"],
-            [copy.plot.axisY, threeDYDimension, "y"],
-            [copy.plot.axisZ, threeDZDimension, "z"],
+          {((view === "3d" && threeDDimensions ? [
+            [copy.plot.axisX, threeDDimensions[0], "x"],
+            [copy.plot.axisY, threeDDimensions[1], "y"],
+            [copy.plot.axisZ, threeDDimensions[2], "z"],
           ] : [
             [copy.plot.axisX, xDimension, "x"],
             [copy.plot.axisY, yDimension, "y"],
@@ -3533,86 +3616,30 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   function renderResultTables() {
     if (!resultTables || !result) return null;
     const tableMap = resultTables;
-    const rows = tableMap[resultTable] as Row[];
     const availability = openEnaResultTableAvailability({
       modelType: result.set.modelType,
       projectionReference: Boolean(result.projectionReference),
     });
-    const selectedAvailability = availability[resultTable];
-    const headers = selectedAvailability.available ? tableHeaders(rows) : [];
-    const canExportResultTable = selectedAvailability.available && rows.length > 0;
-    const labels = {
-      coordinates: "Coordinates",
-      lineWeights: "Line weights",
-      connectionCounts: "Connection counts",
-      trajectories: "Trajectory steps",
-      centroids: "Centroids",
-      nodePositions: "Node positions",
-      adjacencyKey: "Adjacency key",
-    } as const;
-    const fileLabels = {
-      coordinates: "Coordinates CSV",
-      lineWeights: "Line weights CSV",
-      connectionCounts: "Connection counts CSV",
-      trajectories: "Trajectory steps CSV",
-      centroids: "Centroids CSV",
-      nodePositions: "Nodes CSV",
-      adjacencyKey: "Adjacency CSV",
-    } as const;
-
+    const resultTableViewModel = buildOpenEnaResultTableViewModel({
+      selectedKey: resultTable,
+      tables: tableMap,
+      availability,
+      copy: copy.resultTables,
+    });
     return (
-      <details className="ena-result-data">
-        <summary>
-          <span>Result data</span>
-          <small>Inspect and export jENA model tables</small>
-        </summary>
-        <div className="ena-result-data-tools">
-          <div className="ena-result-tabs" role="tablist" aria-label="Result tables">
-            {OPEN_ENA_RESULT_TABLE_KEYS.map((key) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={resultTable === key}
-                disabled={!availability[key].available}
-                title={availability[key].reason ?? undefined}
-                onClick={() => setResultTable(key)}
-              >
-                {labels[key]} <span>{availability[key].available ? tableMap[key].length : "N/A"}</span>
-                {!availability[key].available ? <small>{availability[key].reason}</small> : null}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            className="ena-action-button ena-action-secondary ena-table-export"
-            disabled={!canExportResultTable}
-            onClick={() => {
-              if (!canExportResultTable) return;
-              downloadText(`open-ena-${resultTable}.csv`, rowsToCsv(rows), "text/csv;charset=utf-8");
-            }}
-          >
-            {fileLabels[resultTable]} ↓
-          </button>
-        </div>
-        {!selectedAvailability.available ? (
-          <p className="ena-result-table-not-applicable" role="status">
-            {labels[resultTable]} — {selectedAvailability.reason ?? "Not applicable."}
-          </p>
-        ) : (
-          <>
-            <div className="ena-result-table-wrap" role="region" aria-label={`${labels[resultTable]} table`} tabIndex={0}>
-              <table>
-                <thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead>
-                <tbody>{rows.slice(0, 100).map((row, rowIndex) => (
-                  <tr key={rowIndex}>{headers.map((header) => <td key={header}>{String(row[header] ?? "")}</td>)}</tr>
-                ))}</tbody>
-              </table>
-            </div>
-            <p>{rows.length > 100 ? `Showing 100 of ${rows.length.toLocaleString()} rows. The CSV export contains all rows.` : `Showing all ${rows.length.toLocaleString()} rows.`}</p>
-          </>
-        )}
-      </details>
+      <OpenEnaResultTables
+        model={resultTableViewModel}
+        onSelect={setResultTable}
+        onExport={() => {
+          if (!resultTableViewModel.export.disabled) {
+            downloadText(
+              `open-ena-${resultTable}.csv`,
+              rowsToCsv(tableMap[resultTable] as Row[]),
+              "text/csv;charset=utf-8",
+            );
+          }
+        }}
+      />
     );
   }
 
@@ -3854,7 +3881,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               <div>
                 <p>{completedResultKind === "ona"
                   ? copy.ona.layout.overallPlot
-                  : view === "3d" && result
+                  : view === "3d" && result && threeDDimensions
                   ? activeGroupContrast
                     ? `${copy.workspace.comparison} · ${copy.views.threeD}`
                     : copy.views.threeD
@@ -3867,10 +3894,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                       : copy.workspace.comparison}</p>
                 <span>{completedResultKind === "ona"
                   ? `${resultUnitCount} ${copy.workspace.units.toLowerCase()} · ${result?.set.codes.length ?? 0} ${copy.workspace.codes.toLowerCase()} · ${copy.ona.workspace.directedSpace}`
-                  : view === "3d" && result
+                  : view === "3d" && result && threeDDimensions
                   ? activeGroupContrast
-                    ? `${activeGroupContrast.primary.name} − ${activeGroupContrast.secondary.name} · ${threeDXDimension} × ${threeDYDimension} × ${threeDZDimension} · linked camera`
-                    : `${threeDXDimension} × ${threeDYDimension} × ${threeDZDimension} · ${copy.plot.sameFittedSpace}`
+                    ? `${activeGroupContrast.primary.name} − ${activeGroupContrast.secondary.name} · ${threeDDimensions[0]} × ${threeDDimensions[1]} × ${threeDDimensions[2]} · linked camera`
+                    : `${threeDDimensions[0]} × ${threeDDimensions[1]} × ${threeDDimensions[2]} · ${copy.plot.sameFittedSpace}`
                   : activeSetComparison
                   ? `${activeSetComparison.primary.name} − ${activeSetComparison.secondary.name} · shared ${activeSetComparison.axes[0]} × ${activeSetComparison.axes[1]}`
                   : activeGroupContrast
@@ -3906,15 +3933,29 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                       type="button"
                       aria-pressed={view === "3d"}
                       onClick={() => selectVisualizationView("3d")}
-                      disabled={completedResultKind === "ona"}
-                      title={completedResultKind === "ona" ? copy.ona.unavailable.threeD : undefined}
+                      disabled={completedResultKind === "ona" || !genericThreeDAvailable}
+                      aria-describedby={result && completedResultKind !== "ona" && !genericThreeDAvailable
+                        ? "open-ena-three-d-unavailable-reason"
+                        : undefined}
+                      title={completedResultKind === "ona"
+                        ? copy.ona.unavailable.threeD
+                        : !genericThreeDAvailable
+                          ? copy.plot.threeDRequiresThreeDimensions
+                          : undefined}
                       aria-label={completedResultKind === "ona"
                         ? copy.ona.unavailable.threeD
+                        : !genericThreeDAvailable
+                          ? `${copy.views.threeD}. ${copy.plot.threeDRequiresThreeDimensions}`
                         : `${copy.views.threeD}. ${copy.plot.threeDInteractionHint}`}
                     >
                       <strong>{copy.views.threeD}</strong>
                     </button>
                   </div>
+                  {completedResultKind !== "ona" && result && !genericThreeDAvailable ? (
+                    <p id="open-ena-three-d-unavailable-reason" className="ena-three-d-unavailable-note">
+                      {copy.plot.threeDRequiresThreeDimensions}
+                    </p>
+                  ) : null}
                   <button
                     type="button"
                     className="ena-compact-toolbar-button ena-download-model-button"
@@ -3961,7 +4002,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
               </div>
             </div>
 
-            {view === "3d" && result ? (
+            {view === "3d" && result && threeDDimensions ? (
               <section
                 className="ena-three-d-display-controls"
                 data-testid="open-ena-3d-display-controls"
@@ -4002,9 +4043,9 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   aria-label={`${copy.plot.axisX}, ${copy.plot.axisY}, ${copy.plot.axisZ}`}
                 >
                   {([
-                    [copy.plot.axisX, threeDXDimension, "x"],
-                    [copy.plot.axisY, threeDYDimension, "y"],
-                    [copy.plot.axisZ, threeDZDimension, "z"],
+                    [copy.plot.axisX, threeDDimensions[0], "x"],
+                    [copy.plot.axisY, threeDDimensions[1], "y"],
+                    [copy.plot.axisZ, threeDDimensions[2], "z"],
                   ] as Array<[string, string, "x" | "y" | "z"]>).map(([label, value, axis]) => (
                     <label key={axis} className="ena-three-d-axis-field">
                       <span>{label}</span>
@@ -4176,15 +4217,15 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                       setSecondaryGroupName(primaryGroupName);
                     }}
                   />
-                ) : view === "3d" && activeGroupContrast && resultConfig?.groupColumn ? (
+                ) : view === "3d" && threeDDimensions && activeGroupContrast && resultConfig?.groupColumn ? (
                   <OpenEna3DGroupContrast
                     codeColors={codeColors}
                     result={result}
                     contrast={activeGroupContrast}
                     groupColumn={resultConfig.groupColumn}
-                    xDimension={threeDXDimension}
-                    yDimension={threeDYDimension}
-                    zDimension={threeDZDimension}
+                    xDimension={threeDDimensions[0]}
+                    yDimension={threeDDimensions[1]}
+                    zDimension={threeDDimensions[2]}
                     camera={camera}
                     showPoints={showPoints}
                     showNetworks={showNetworks}
@@ -4204,14 +4245,14 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     flipY={flipY}
                     copy={copy}
                   />
-                ) : view === "3d" ? (
+                ) : view === "3d" && threeDDimensions ? (
                   <OpenEnaInteractive3DPlot
                     codeColors={codeColors}
                     result={result}
                     groupColumn={resultConfig?.groupColumn ?? null}
-                    xDimension={threeDXDimension}
-                    yDimension={threeDYDimension}
-                    zDimension={threeDZDimension}
+                    xDimension={threeDDimensions[0]}
+                    yDimension={threeDDimensions[1]}
+                    zDimension={threeDDimensions[2]}
                     camera={camera}
                     showPoints={showPoints}
                     showNetworks={showNetworks}
@@ -4232,6 +4273,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     flipY={flipY}
                     copy={copy}
                   />
+                ) : view === "3d" ? (
+                  <p className="ena-three-d-unavailable-note" role="status">
+                    {copy.plot.threeDRequiresThreeDimensions}
+                  </p>
                 ) : (
                   <OpenEnaPlot
                     codeColors={codeColors}

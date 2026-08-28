@@ -645,15 +645,15 @@ test("camera presets are explicit display-only orientations and the client plot 
   assert.match(workspace, /onCameraChange=\{setInteractive3dCamera\}/);
   assert.match(workspace, /initialAspectRatio=\{interactive3dAspectRatio\}/);
   assert.match(workspace, /onAspectRatioChange=\{setInteractive3dAspectRatio\}/);
-  assert.match(workspace, /view === "3d" && activeGroupContrast && resultConfig\?\.groupColumn/);
+  assert.match(workspace, /view === "3d" && threeDDimensions && activeGroupContrast && resultConfig\?\.groupColumn/);
   assert.match(workspace, /<OpenEna3DGroupContrast/);
   assert.match(workspace, /sharedCamera=\{interactive3dCamera\}/);
   assert.match(workspace, /sharedAspectRatio=\{interactive3dAspectRatio\}/);
   assert.match(workspace, /function selectCameraPreset/);
   assert.match(workspace, /function selectAxisDimension/);
   assert.match(workspace, /updateOpenEnaWorkspace3dAxis\(\{/);
-  assert.match(workspace, /threeD: \[threeDXDimension, threeDYDimension, threeDZDimension\]/);
-  assert.match(workspace, /setThreeDZDimension\(next\.threeD\[2\]\)/);
+  assert.match(workspace, /threeD: threeDDimensions/);
+  assert.match(workspace, /setThreeDDimensions\(next\.threeD\)/);
   assert.match(workspace, /data-testid="open-ena-3d-display-controls"/);
   assert.match(workspace, /data-testid="open-ena-3d-camera-position"/);
   assert.match(workspace, /open-ena-3d-axis-\$\{axis\}/);
