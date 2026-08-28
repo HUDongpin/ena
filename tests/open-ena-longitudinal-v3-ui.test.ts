@@ -8,6 +8,117 @@ const groupContrast2d = readFileSync(new URL("../components/open-ena/OpenEnaGrou
 const groupContrast3d = readFileSync(new URL("../components/open-ena/OpenEna3DGroupContrast.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
+test("V3 2D Plotly range actions preserve centers and reset exact immutable spec ranges", async () => {
+  type PlotRanges = {
+    x: readonly [number, number];
+    y: readonly [number, number];
+  };
+  const display = await import("../lib/open-ena/longitudinal-v3-display") as unknown as {
+    zoomTrajectoryPlotlyRangesV3: (
+      current: PlotRanges,
+      direction: "in" | "out",
+    ) => PlotRanges;
+    resetTrajectoryPlotlyRangesV3: (initial: PlotRanges) => PlotRanges;
+    captureInitialTrajectoryPlotlyRangesV3: (
+      initial: PlotRanges | null,
+      rendered: PlotRanges,
+    ) => PlotRanges;
+  };
+
+  assert.equal(typeof display.zoomTrajectoryPlotlyRangesV3, "function");
+  assert.equal(typeof display.resetTrajectoryPlotlyRangesV3, "function");
+  assert.equal(typeof display.captureInitialTrajectoryPlotlyRangesV3, "function");
+
+  const immutableInitial = {
+    x: [-6, 6] as const,
+    y: [9, -3] as const,
+  };
+  const current = {
+    x: [2, 8] as const,
+    y: [8, -4] as const,
+  };
+  const zoomedIn = display.zoomTrajectoryPlotlyRangesV3(current, "in");
+
+  assert.equal((zoomedIn.x[0] + zoomedIn.x[1]) / 2, 5);
+  assert.equal((zoomedIn.y[0] + zoomedIn.y[1]) / 2, 2);
+  assert.ok(Math.abs((current.x[1] - current.x[0]) / (zoomedIn.x[1] - zoomedIn.x[0]) - 1.2) < 1e-12);
+  assert.ok(Math.abs((current.y[1] - current.y[0]) / (zoomedIn.y[1] - zoomedIn.y[0]) - 1.2) < 1e-12);
+  assert.ok(zoomedIn.y[0] > zoomedIn.y[1], "zoom must preserve a reversed Plotly axis");
+
+  const roundTrip = display.zoomTrajectoryPlotlyRangesV3(zoomedIn, "out");
+  for (const axis of ["x", "y"] as const) {
+    assert.ok(Math.abs(roundTrip[axis][0] - current[axis][0]) < 1e-12);
+    assert.ok(Math.abs(roundTrip[axis][1] - current[axis][1]) < 1e-12);
+  }
+
+  const reset = display.resetTrajectoryPlotlyRangesV3(immutableInitial);
+  assert.deepEqual(reset, immutableInitial);
+  assert.notStrictEqual(reset.x, immutableInitial.x);
+  assert.notStrictEqual(reset.y, immutableInitial.y);
+
+  const firstRendered = { x: [-4, 10] as const, y: [-8, 2] as const };
+  const captured = display.captureInitialTrajectoryPlotlyRangesV3(null, firstRendered);
+  assert.deepEqual(captured, firstRendered);
+  assert.notStrictEqual(captured.x, firstRendered.x);
+  assert.notStrictEqual(captured.y, firstRendered.y);
+  const afterCompactRender = display.captureInitialTrajectoryPlotlyRangesV3(
+    captured,
+    { x: [100, 200], y: [300, 400] },
+  );
+  assert.deepEqual(afterCompactRender, firstRendered, "a later render must not replace the immutable first baseline");
+});
+
+test("the reachable V3 presenter wires accessible Plotly actions for 3D and 2D projections", () => {
+  const presenter = component.match(
+    /function TrajectoryPlotlyPresenterV3[\s\S]*?(?=\nfunction AuditCards)/,
+  )?.[0] ?? "";
+
+  assert.match(presenter, /zoomOpenEna3dCamera\(/);
+  assert.match(presenter, /resetOpenEna3dCameraDistance\(/);
+  assert.match(presenter, /zoomOpenEna3dAspectRatio\(/);
+  assert.match(presenter, /zoomTrajectoryPlotlyRangesV3\(/);
+  assert.match(presenter, /resetTrajectoryPlotlyRangesV3\(initialRanges\)/);
+  assert.match(presenter, /projection\.type === "orthographic"/);
+  assert.match(presenter, /trajectoryPlotlyCamera\(scene\.camera, cameraForPreset\(cameraPreset\)\)/);
+  assert.match(presenter, /zoomOpenEna3dCamera\(activeCamera, defaultCamera, direction\)/);
+  assert.match(presenter, /"scene\.aspectratio": \{ \.\.\.initialAspectRatio \}/);
+  assert.match(presenter, /const initialRangesRef = useRef<TrajectoryPlotlyRangesV3 \| null>\(null\)/);
+  assert.match(
+    presenter,
+    /useEffect\(\(\) => \{\s*initialRangesRef\.current = null;\s*\}, \[spec\]\)/,
+    "only an immutable spec change may invalidate the first rendered 2D baseline",
+  );
+  assert.match(
+    presenter,
+    /Plotly\.react\([\s\S]*?\.then\(\(\) => \{[\s\S]*?trajectoryPlotlyRuntimeRanges\(root\)[\s\S]*?captureInitialTrajectoryPlotlyRangesV3\(/,
+    "the 2D baseline must be captured only after Plotly has resolved its initial autorange",
+  );
+  for (const relayoutKey of [
+    "scene.camera",
+    "scene.aspectratio",
+    "xaxis.range",
+    "yaxis.range",
+  ]) assert.match(presenter, new RegExp(`"${relayoutKey.replace(".", "\\.")}"`));
+
+  for (const action of ["zoom-in", "zoom-out", "recenter", "copy-image"]) {
+    assert.match(presenter, new RegExp(`data-ena-plot-action="${action}"`));
+  }
+  assert.match(presenter, /const canvasId =/);
+  assert.match(presenter, /id=\{canvasId\}/);
+  assert.ok(
+    [...presenter.matchAll(/aria-controls=\{canvasId\}/gu)].length >= 5,
+    "fullscreen and all four plot actions must identify the Plotly canvas they control",
+  );
+  assert.match(presenter, /<button\s+[\s\S]*?type="button"[\s\S]*?data-ena-plot-action="zoom-in"/);
+  assert.match(presenter, /role="status"\s+aria-live="polite">\{actionStatus\}/);
+  assert.match(presenter, /Plotly\.toImage\(/);
+
+  assert.match(presenter, /new ResizeObserver/);
+  assert.match(presenter, /Plotly\.purge\(/);
+  assert.match(presenter, /requestFullscreen\(/);
+  assert.match(presenter, /fallbackFullscreen/);
+});
+
 test("V3 trajectory controls follow the 3DENA scientific workflow order", () => {
   const order = [...component.matchAll(/data-trajectory-step="(\d+)"/gu)].map((match) => Number(match[1]));
   assert.deepEqual(order, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);

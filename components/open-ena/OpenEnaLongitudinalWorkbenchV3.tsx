@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   compileTrajectoryPlotlySpec,
   createExportBundle,
@@ -45,20 +45,118 @@ import {
 import {
   applyCompactTrajectoryPlotlyLayoutV3,
   applyFullscreenTrajectoryPlotlyLayoutV3,
+  captureInitialTrajectoryPlotlyRangesV3,
   cloneTrajectoryPlotlyInputV3,
+  resetTrajectoryPlotlyRangesV3,
+  zoomTrajectoryPlotlyRangesV3,
+  type TrajectoryPlotlyRangesV3,
 } from "@/lib/open-ena/longitudinal-v3-display";
-import { cameraForPreset, type OpenEna3dCamera } from "@/lib/open-ena/plot3d";
+import {
+  cameraForPreset,
+  type OpenEna3dAspectRatio,
+  type OpenEna3dCamera,
+} from "@/lib/open-ena/plot3d";
 import type { CameraPreset, OpenEnaConfig, OpenEnaResult, ParsedDataset } from "@/lib/open-ena/types";
-import { resetOpenEna3dCameraDistance } from "./OpenEnaInteractive3DPlot";
+import {
+  resetOpenEna3dCameraDistance,
+  zoomOpenEna3dAspectRatio,
+  zoomOpenEna3dCamera,
+} from "./OpenEnaInteractive3DPlot";
 
 type PlotlyApi = (typeof import("plotly.js-dist-min"))["default"];
 type PlotlyImageApi = PlotlyApi & {
   toImage(root: HTMLDivElement, options: { format: "png"; width: number; height: number; scale: number }): Promise<string>;
 };
 type PlotRoot = HTMLDivElement & {
-  _fullLayout?: { scene?: { camera?: OpenEna3dCamera } };
+  _fullLayout?: {
+    scene?: {
+      camera?: unknown;
+      aspectratio?: unknown;
+      _scene?: {
+        getCamera?: () => unknown;
+        glplot?: { getAspectratio?: () => unknown };
+      };
+    };
+    xaxis?: { range?: unknown };
+    yaxis?: { range?: unknown };
+  };
 };
 type WorkbenchStatus = "initializing" | "ready" | "preparing" | "running" | "remote-confirmation" | "remote-recovery" | "complete" | "error";
+
+function plotlyRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function plotlyVector(
+  value: unknown,
+  fallback: OpenEna3dCamera["eye"],
+): OpenEna3dCamera["eye"] {
+  const vector = plotlyRecord(value);
+  return {
+    x: typeof vector.x === "number" && Number.isFinite(vector.x) ? vector.x : fallback.x,
+    y: typeof vector.y === "number" && Number.isFinite(vector.y) ? vector.y : fallback.y,
+    z: typeof vector.z === "number" && Number.isFinite(vector.z) ? vector.z : fallback.z,
+  };
+}
+
+function trajectoryPlotlyCamera(
+  value: unknown,
+  fallback: OpenEna3dCamera,
+): OpenEna3dCamera {
+  const camera = plotlyRecord(value);
+  const projection = plotlyRecord(camera.projection);
+  const projectionType = projection.type === "orthographic" || projection.type === "perspective"
+    ? projection.type
+    : fallback.projection.type;
+  return {
+    eye: plotlyVector(camera.eye, fallback.eye),
+    center: plotlyVector(camera.center, fallback.center),
+    up: plotlyVector(camera.up, fallback.up),
+    projection: { type: projectionType },
+  };
+}
+
+function trajectoryPlotlyAspectRatio(
+  value: unknown,
+  fallback: OpenEna3dAspectRatio,
+): OpenEna3dAspectRatio {
+  const ratio = plotlyRecord(value);
+  const axis = (candidate: unknown, fallbackValue: number) => (
+    typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0
+      ? candidate
+      : fallbackValue
+  );
+  return {
+    x: axis(ratio.x, fallback.x),
+    y: axis(ratio.y, fallback.y),
+    z: axis(ratio.z, fallback.z),
+  };
+}
+
+function trajectoryPlotlyRange(
+  value: unknown,
+  fallback?: readonly [number, number],
+): [number, number] | null {
+  if (
+    Array.isArray(value)
+    && value.length === 2
+    && typeof value[0] === "number"
+    && Number.isFinite(value[0])
+    && typeof value[1] === "number"
+    && Number.isFinite(value[1])
+  ) return [value[0], value[1]];
+  return fallback ? [...fallback] : null;
+}
+
+function trajectoryPlotlyRuntimeRanges(
+  root: PlotRoot,
+): TrajectoryPlotlyRangesV3 | null {
+  const x = trajectoryPlotlyRange(root._fullLayout?.xaxis?.range);
+  const y = trajectoryPlotlyRange(root._fullLayout?.yaxis?.range);
+  return x && y ? { x, y } : null;
+}
 
 interface DisplayStateV3 {
   projection: TrajectoryDisplaySpecV2["projection"];
@@ -153,8 +251,13 @@ const english = {
   plotTitle: "Longitudinal trajectory presenter",
   fullscreen: "Fullscreen",
   exitFullscreen: "Exit fullscreen",
+  zoomIn: "Zoom in",
+  zoomOut: "Zoom out",
+  recenter: "Recenter / default distance",
   copyImage: "Copy image",
-  resetDistance: "Reset distance",
+  imageCopied: "Image copied",
+  imageDownloaded: "Image downloaded",
+  actionUnavailable: "Plot action unavailable",
   camera: "3D camera preset",
   summary: "Accessible plot summary",
   mappingAudit: "Mapping and identity audit",
@@ -239,8 +342,13 @@ const zhHans: typeof english = {
   plotTitle: "纵向轨迹呈现器",
   fullscreen: "全屏",
   exitFullscreen: "退出全屏",
+  zoomIn: "放大",
+  zoomOut: "缩小",
+  recenter: "重新居中／默认距离",
   copyImage: "复制图片",
-  resetDistance: "重置距离",
+  imageCopied: "图片已复制",
+  imageDownloaded: "图片已下载",
+  actionUnavailable: "图形操作暂不可用",
   camera: "三维相机预设",
   summary: "无障碍图形摘要",
   mappingAudit: "映射与实体审计",
@@ -358,12 +466,28 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
 }) {
   const rootRef = useRef<PlotRoot>(null);
   const shellRef = useRef<HTMLDivElement>(null);
+  const initialRangesRef = useRef<TrajectoryPlotlyRangesV3 | null>(null);
   const [Plotly, setPlotly] = useState<PlotlyImageApi | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [compactLayout, setCompactLayout] = useState(false);
   const [nativeFullscreenLayout, setNativeFullscreenLayout] = useState(false);
   const [fallbackFullscreen, setFallbackFullscreen] = useState(false);
+  const [actionStatus, setActionStatus] = useState("");
   const fullscreenLayout = nativeFullscreenLayout || fallbackFullscreen;
+  const plotId = useId();
+  const canvasId = `open-ena-longitudinal-v3-plot-${plotId.replace(/:/gu, "")}`;
+  const defaultCamera = useMemo(() => {
+    const scene = plotlyRecord(spec.layout.scene);
+    return trajectoryPlotlyCamera(scene.camera, cameraForPreset(cameraPreset));
+  }, [spec, cameraPreset]);
+  const initialAspectRatio = useMemo(() => {
+    const scene = plotlyRecord(spec.layout.scene);
+    return trajectoryPlotlyAspectRatio(scene.aspectratio, { x: 1, y: 1, z: 1 });
+  }, [spec]);
+
+  useEffect(() => {
+    initialRangesRef.current = null;
+  }, [spec]);
 
   useEffect(() => {
     let active = true;
@@ -399,7 +523,17 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
     );
     setStatus("loading");
     void Plotly.react(root, mutableSpec.data as never[], mutableSpec.layout as never, mutableSpec.config as never)
-      .then(() => active && setStatus("ready"))
+      .then(() => {
+        if (!active) return;
+        const renderedRanges = trajectoryPlotlyRuntimeRanges(root);
+        if (renderedRanges) {
+          initialRangesRef.current = captureInitialTrajectoryPlotlyRangesV3(
+            initialRangesRef.current,
+            renderedRanges,
+          );
+        }
+        setStatus("ready");
+      })
       .catch(() => active && setStatus("error"));
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
       try { void Promise.resolve(Plotly.Plots.resize(root)).catch(() => {}); } catch { /* detached */ }
@@ -447,20 +581,113 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
     if (Plotly && rootRef.current) Plotly.purge(rootRef.current);
   }, [Plotly]);
 
-  const copyImage = async () => {
-    if (!Plotly || !rootRef.current) return;
-    const image = await Plotly.toImage(rootRef.current, { format: "png", width: 1600, height: 1000, scale: 1 });
-    const blob = await (await fetch(image)).blob();
-    if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-    } else downloadBlob("3dena-longitudinal-trajectory.png", blob, "image/png");
+  const currentCamera = () => {
+    const scene = rootRef.current?._fullLayout?.scene;
+    const runtimeCamera = scene?._scene?.getCamera?.() ?? scene?.camera;
+    return trajectoryPlotlyCamera(runtimeCamera, defaultCamera);
   };
 
-  const resetDistance = async () => {
-    if (!Plotly || !rootRef.current || spec.layout.scene === undefined) return;
-    const current = rootRef.current._fullLayout?.scene?.camera ?? cameraForPreset(cameraPreset);
-    const reset = resetOpenEna3dCameraDistance(current, cameraForPreset(cameraPreset));
-    await Plotly.relayout(rootRef.current, { "scene.camera": reset } as never);
+  const currentAspectRatio = () => {
+    const scene = rootRef.current?._fullLayout?.scene;
+    const runtimeRatio = scene?._scene?.glplot?.getAspectratio?.() ?? scene?.aspectratio;
+    return trajectoryPlotlyAspectRatio(runtimeRatio, initialAspectRatio);
+  };
+
+  const currentRanges = () => {
+    const initialRanges = initialRangesRef.current;
+    if (!initialRanges) return null;
+    return {
+      x: trajectoryPlotlyRange(rootRef.current?._fullLayout?.xaxis?.range, initialRanges.x)!,
+      y: trajectoryPlotlyRange(rootRef.current?._fullLayout?.yaxis?.range, initialRanges.y)!,
+    } satisfies TrajectoryPlotlyRangesV3;
+  };
+
+  const relayoutRanges = async (ranges: TrajectoryPlotlyRangesV3) => {
+    if (!Plotly || !rootRef.current) return;
+    await Plotly.relayout(rootRef.current, {
+      "xaxis.autorange": false,
+      "yaxis.autorange": false,
+      "xaxis.range": ranges.x,
+      "yaxis.range": ranges.y,
+    } as never);
+  };
+
+  const copyImage = async () => {
+    if (!Plotly || status !== "ready" || !rootRef.current) return;
+    try {
+      const image = await Plotly.toImage(rootRef.current, { format: "png", width: 1600, height: 1000, scale: 1 });
+      const blob = await (await fetch(image)).blob();
+      if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        setActionStatus(labels.imageCopied);
+      } else {
+        downloadBlob("3dena-longitudinal-trajectory.png", blob, "image/png");
+        setActionStatus(labels.imageDownloaded);
+      }
+    } catch {
+      setActionStatus(labels.actionUnavailable);
+    }
+  };
+
+  const changePlotZoom = async (direction: "in" | "out") => {
+    if (!Plotly || status !== "ready" || !rootRef.current) return;
+    try {
+      if (spec.layout.scene === undefined) {
+        const ranges = currentRanges();
+        if (!ranges) {
+          setActionStatus(labels.actionUnavailable);
+          return;
+        }
+        await relayoutRanges(zoomTrajectoryPlotlyRangesV3(ranges, direction));
+      } else {
+        const activeCamera = currentCamera();
+        if (activeCamera.projection.type === "orthographic") {
+          const nextRatio = zoomOpenEna3dAspectRatio(
+            currentAspectRatio(),
+            initialAspectRatio,
+            direction,
+          );
+          await Plotly.relayout(rootRef.current, {
+            "scene.aspectmode": "manual",
+            "scene.aspectratio": nextRatio,
+          } as never);
+        } else {
+          const nextCamera = zoomOpenEna3dCamera(activeCamera, defaultCamera, direction);
+          await Plotly.relayout(rootRef.current, { "scene.camera": nextCamera } as never);
+        }
+      }
+      setActionStatus(direction === "in" ? labels.zoomIn : labels.zoomOut);
+    } catch {
+      setActionStatus(labels.actionUnavailable);
+    }
+  };
+
+  const recenterPlot = async () => {
+    if (!Plotly || status !== "ready" || !rootRef.current) return;
+    try {
+      if (spec.layout.scene === undefined) {
+        const initialRanges = initialRangesRef.current;
+        if (!initialRanges) {
+          setActionStatus(labels.actionUnavailable);
+          return;
+        }
+        await relayoutRanges(resetTrajectoryPlotlyRangesV3(initialRanges));
+      } else {
+        const activeCamera = currentCamera();
+        if (activeCamera.projection.type === "orthographic") {
+          await Plotly.relayout(rootRef.current, {
+            "scene.aspectmode": "manual",
+            "scene.aspectratio": { ...initialAspectRatio },
+          } as never);
+        } else {
+          const resetCamera = resetOpenEna3dCameraDistance(activeCamera, defaultCamera);
+          await Plotly.relayout(rootRef.current, { "scene.camera": resetCamera } as never);
+        }
+      }
+      setActionStatus(labels.recenter);
+    } catch {
+      setActionStatus(labels.actionUnavailable);
+    }
   };
 
   const toggleFullscreen = async () => {
@@ -486,11 +713,15 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
   return (
     <div ref={shellRef} className="ena-longitudinal-v3-plot-shell" data-fallback-fullscreen={fallbackFullscreen ? "true" : undefined}>
       <div className="ena-longitudinal-v3-plot-actions" role="toolbar" aria-label={labels.plotTitle}>
-        <button type="button" aria-pressed={fullscreenLayout} onClick={() => void toggleFullscreen()}>{fullscreenLayout ? labels.exitFullscreen : labels.fullscreen}</button>
-        <button type="button" onClick={() => void copyImage()}>{labels.copyImage}</button>
-        <button type="button" onClick={() => void resetDistance()} disabled={spec.layout.scene === undefined}>{labels.resetDistance}</button>
+        <button type="button" aria-controls={canvasId} aria-pressed={fullscreenLayout} onClick={() => void toggleFullscreen()}>{fullscreenLayout ? labels.exitFullscreen : labels.fullscreen}</button>
+        <button type="button" data-ena-plot-action="zoom-in" aria-controls={canvasId} onClick={() => void changePlotZoom("in")} disabled={status !== "ready"}>{labels.zoomIn}</button>
+        <button type="button" data-ena-plot-action="zoom-out" aria-controls={canvasId} onClick={() => void changePlotZoom("out")} disabled={status !== "ready"}>{labels.zoomOut}</button>
+        <button type="button" data-ena-plot-action="recenter" data-ena-recenter-behavior="default-distance" aria-controls={canvasId} onClick={() => void recenterPlot()} disabled={status !== "ready"}>{labels.recenter}</button>
+        <button type="button" data-ena-plot-action="copy-image" aria-controls={canvasId} onClick={() => void copyImage()} disabled={status !== "ready"}>{labels.copyImage}</button>
+        <span className="sr-only" role="status" aria-live="polite">{actionStatus}</span>
       </div>
       <div
+        id={canvasId}
         ref={rootRef}
         className="ena-longitudinal-v3-plot"
         data-testid="open-ena-longitudinal-v3-plot"

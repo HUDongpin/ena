@@ -10,6 +10,51 @@ export interface MutableTrajectoryPlotlyInputV3 {
   config: Record<string, unknown>;
 }
 
+export interface TrajectoryPlotlyRangesV3 {
+  x: readonly [number, number];
+  y: readonly [number, number];
+}
+
+const TRAJECTORY_PLOTLY_RANGE_ZOOM_STEP_V3 = 1.2;
+
+function zoomTrajectoryPlotlyRangeV3(
+  [start, end]: readonly [number, number],
+  direction: "in" | "out",
+): [number, number] {
+  const center = (start + end) / 2;
+  const scale = direction === "in"
+    ? 1 / TRAJECTORY_PLOTLY_RANGE_ZOOM_STEP_V3
+    : TRAJECTORY_PLOTLY_RANGE_ZOOM_STEP_V3;
+  const scaledHalfSpan = ((end - start) / 2) * scale;
+  return [center - scaledHalfSpan, center + scaledHalfSpan];
+}
+
+export function zoomTrajectoryPlotlyRangesV3(
+  current: TrajectoryPlotlyRangesV3,
+  direction: "in" | "out",
+): TrajectoryPlotlyRangesV3 {
+  return {
+    x: zoomTrajectoryPlotlyRangeV3(current.x, direction),
+    y: zoomTrajectoryPlotlyRangeV3(current.y, direction),
+  };
+}
+
+export function resetTrajectoryPlotlyRangesV3(
+  initial: TrajectoryPlotlyRangesV3,
+): TrajectoryPlotlyRangesV3 {
+  return {
+    x: [...initial.x],
+    y: [...initial.y],
+  };
+}
+
+export function captureInitialTrajectoryPlotlyRangesV3(
+  initial: TrajectoryPlotlyRangesV3 | null,
+  rendered: TrajectoryPlotlyRangesV3,
+): TrajectoryPlotlyRangesV3 {
+  return resetTrajectoryPlotlyRangesV3(initial ?? rendered);
+}
+
 /**
  * Plotly normalizes traces and layouts in place. The package compiler returns
  * an immutable, hash-bound display spec, so the browser presenter must never
