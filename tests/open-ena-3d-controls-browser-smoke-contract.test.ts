@@ -116,6 +116,16 @@ test("the smoke exercises each card's native-or-fallback fullscreen and forced r
   assert.match(source, /resize/u);
   assert.match(source, /fullscreenAudits/u);
   assert.match(source, /fallbackAudit/u);
+  assert.match(
+    source,
+    /name:\s*"Primary",[\s\S]{0,220}exitMethod:\s*"button",[\s\S]{0,220}forceFallback:\s*false/u,
+    "native-capable Primary must use the product exit button in page-level automation",
+  );
+  assert.match(
+    source,
+    /name:\s*"Secondary",[\s\S]{0,220}exitMethod:\s*"escape",[\s\S]{0,220}forceFallback:\s*true/u,
+    "the forced fallback card must prove its DOM Escape handler",
+  );
 });
 
 test("the smoke verifies 390px hit testing and keeps screenshots in its evidence summary", () => {

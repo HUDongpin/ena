@@ -692,7 +692,7 @@ async function exerciseFullscreenCards(page, args) {
       name: "Primary",
       testId: "open-ena-3d-primary-plot",
       screenshotPath: args.primaryFullscreenScreenshotPath,
-      exitMethod: "escape",
+      exitMethod: "button",
       forceFallback: false,
     },
     {
