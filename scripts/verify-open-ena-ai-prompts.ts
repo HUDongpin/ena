@@ -30,7 +30,7 @@ export const OPEN_ENA_AI_PROMPT_VERIFICATION_SCHEMA_VERSION_V1 =
 const LOCALES = ["en", "zh-hant", "zh-hans"] as const;
 
 const CONTRACT_TEST_SOURCE_SHA256 = deepFreeze({
-  client: "80548dbfeed11c68d95ce05ccd0776dc8f4fb1fff24c9cc64b888a19144dc2a6",
+  client: "6e3ef13bf6d83ad7386627212920de88d8117e70cad8fd183599d366c8f8c708",
   payload: "4e46712d5a086885b4bef1650368c3b74978899821c08efe3b06ed2e3c3426ad",
   route: "9c37ec81a3b82043f3e16c97091d2aabe3b1639f0c10f9f35c3f6972a1ae32c2",
   workspace: "a37072e40df9cf562691200630ff72b75c28d91e24892209391fbde5a6e7f342",
@@ -78,6 +78,18 @@ const MOCK_CLIENT_COVERAGE_BINDINGS = [
     sourceKey: "client",
     sourceFile: "tests/open-ena-ai-interpretation-client.test.ts",
     testName: "Luna interpretation rejects malformed completion JSON without echoing provider content",
+  },
+  {
+    coverageId: "runtime-unknown-schema-fail-closed",
+    sourceKey: "client",
+    sourceFile: "tests/open-ena-ai-interpretation-client.test.ts",
+    testName: "Luna runtime rejects an unknown request schema before configuration or fetch",
+  },
+  {
+    coverageId: "runtime-extra-sensitive-field-fail-closed",
+    sourceKey: "client",
+    sourceFile: "tests/open-ena-ai-interpretation-client.test.ts",
+    testName: "Luna runtime rejects extra sensitive evidence fields before fetch",
   },
   {
     coverageId: "payload-hostile-label-projection",

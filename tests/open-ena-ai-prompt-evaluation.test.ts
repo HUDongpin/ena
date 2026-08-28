@@ -53,7 +53,7 @@ function mutateCandidate(
 }
 
 test("the fixed offline suite contains exactly the four role/index-only research designs", () => {
-  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v11");
+  assert.equal(OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1, "open-ena-ai-offline-synthetic-mock-v12");
   assert.equal(OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1, OPEN_ENA_AI_MAX_RESPONSE_BYTES);
   assert.equal(OPEN_ENA_AI_OFFLINE_EXPECTED_PROBE_COUNT_V1, 118);
   assertDeepFrozen(OPEN_ENA_AI_OFFLINE_PROBE_CONTENT_SHA256_BY_LOCALE_V1);
@@ -1131,7 +1131,7 @@ test("approval eligibility requires zero failures and both independent human rev
   );
   const staleSuite = parseEnaPromptEvalReceiptV1({
     ...matchingPassFields,
-    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v10",
+    evaluationSuiteVersion: "open-ena-ai-offline-synthetic-mock-v11",
   });
   assert.throws(
     () => assertOpenEnaAiPromptEligibleForApproval(staleSuite, draft.contentSha256),

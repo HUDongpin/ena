@@ -6,6 +6,7 @@ import {
   collectOpenEnaAiEvidenceIds,
   OPEN_ENA_AI_REQUEST_SCHEMA_VERSION_V1,
   OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2,
+  parseOpenEnaAiInterpretationRequestV2,
   parseOpenEnaAiInterpretationResponse,
 } from "../open-ena/ai-interpretation";
 import {
@@ -123,14 +124,26 @@ export async function generateLunaInterpretation(
       "Historical AI requests cannot be sent to the provider. Build and review a current v2 inference request.",
     );
   }
+  let normalizedRequest: ReturnType<typeof parseOpenEnaAiInterpretationRequestV2>;
+  try {
+    normalizedRequest = parseOpenEnaAiInterpretationRequestV2(request);
+  } catch {
+    throw new LunaClientError(
+      "invalid-configuration",
+      "AI interpretation prompt governance rejected the request.",
+    );
+  }
   let promptArtifact: ReturnType<typeof getApprovedOpenEnaAiPromptArtifact>;
   let responseJsonSchema: ReturnType<typeof instantiateOpenEnaAiResponseSchema>;
   try {
-    promptArtifact = getApprovedOpenEnaAiPromptArtifact(request.promptVersion, request.locale);
+    promptArtifact = getApprovedOpenEnaAiPromptArtifact(
+      normalizedRequest.promptVersion,
+      normalizedRequest.locale,
+    );
     responseJsonSchema = instantiateOpenEnaAiResponseSchema(
-      request.promptVersion,
-      request.locale,
-      [...collectOpenEnaAiEvidenceIds(request.evidence)],
+      normalizedRequest.promptVersion,
+      normalizedRequest.locale,
+      [...collectOpenEnaAiEvidenceIds(normalizedRequest.evidence)],
     );
   } catch {
     throw new LunaClientError(
@@ -172,7 +185,7 @@ export async function generateLunaInterpretation(
           max_tokens: OPEN_ENA_AI_MAX_COMPLETION_TOKENS,
           messages: [
             { role: "system", content: promptArtifact.systemPrompt },
-            { role: "user", content: JSON.stringify(request.evidence) },
+            { role: "user", content: JSON.stringify(normalizedRequest.evidence) },
           ],
           response_format: {
             type: "json_schema",
@@ -233,13 +246,13 @@ export async function generateLunaInterpretation(
       const interpretation = JSON.parse(content) as unknown;
       return parseOpenEnaAiInterpretationResponse({
         schemaVersion: OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2,
-        promptVersion: request.promptVersion,
-        binding: request.binding,
+        promptVersion: normalizedRequest.promptVersion,
+        binding: normalizedRequest.binding,
         provider: "openrouter",
         model,
         generatedAt,
         interpretation,
-      }, request);
+      }, normalizedRequest);
     } catch {
       throw new LunaClientError("upstream-malformed", "AI interpretation returned an invalid response.");
     }

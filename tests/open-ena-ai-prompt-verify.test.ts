@@ -57,6 +57,10 @@ function assertDeepFrozen(value: unknown, seen = new Set<unknown>()): void {
   for (const nested of Object.values(value as Record<string, unknown>)) assertDeepFrozen(nested, seen);
 }
 
+function isClientCoverageEntry(entry: { readonly coverageId: string }) {
+  return /^(?:mock|runtime)-/u.test(entry.coverageId);
+}
+
 test("the verifier returns one deterministic, authorization-neutral result for all approved locales", async () => {
   const verifier = await loadVerifier();
   const first = verifier.buildOpenEnaAiPromptVerificationV1();
@@ -86,6 +90,8 @@ test("the verifier returns one deterministic, authorization-neutral result for a
     ["mock-network-failure", "bound"],
     ["mock-oversize-response", "bound"],
     ["mock-malformed-completion", "bound"],
+    ["runtime-unknown-schema-fail-closed", "bound"],
+    ["runtime-extra-sensitive-field-fail-closed", "bound"],
     ["payload-hostile-label-projection", "bound"],
     ["route-reviewed-aggregate-consent", "bound"],
     ["workspace-binding-change-revokes-output", "bound"],
@@ -151,7 +157,7 @@ test("the verification function fails controlled prompt-byte, hash, schema, fixt
   assert.equal(commentOnlyBinding.automatedStatus, "fail");
   assert.equal(verifier.openEnaAiPromptVerificationExitCodeV1(commentOnlyBinding), 1);
   assert.ok(commentOnlyBinding.mockClientCoverage
-    .filter((entry) => entry.coverageId.startsWith("mock-"))
+    .filter(isClientCoverageEntry)
     .every((entry) => entry.status === "missing"));
 
   const timeoutTestName = "Luna interpretation aborts at the injected timeout and redacts the fetch error";
@@ -183,6 +189,8 @@ test("the verification function fails controlled prompt-byte, hash, schema, fixt
     "Luna interpretation redacts non-timeout fetch failures",
     "Luna interpretation rejects an oversized provider response before schema parsing",
     "Luna interpretation rejects malformed completion JSON without echoing provider content",
+    "Luna runtime rejects an unknown request schema before configuration or fetch",
+    "Luna runtime rejects extra sensitive evidence fields before fetch",
   ];
   const allNoOpClientRegistrations = [
     `import test from "node:test";`,
@@ -193,7 +201,7 @@ test("the verification function fails controlled prompt-byte, hash, schema, fixt
   });
   assert.equal(allNoOpResult.automatedStatus, "fail");
   assert.ok(allNoOpResult.mockClientCoverage
-    .filter((entry) => entry.coverageId.startsWith("mock-"))
+    .filter(isClientCoverageEntry)
     .every((entry) => entry.status === "missing"));
 
   const sourceDrift = verifier.buildOpenEnaAiPromptVerificationV1({
@@ -204,7 +212,7 @@ test("the verification function fails controlled prompt-byte, hash, schema, fixt
   });
   assert.equal(sourceDrift.automatedStatus, "fail");
   assert.ok(sourceDrift.mockClientCoverage
-    .filter((entry) => entry.coverageId.startsWith("mock-"))
+    .filter(isClientCoverageEntry)
     .every((entry) => !entry.sourceSha256Verified && entry.status === "missing"));
 });
 

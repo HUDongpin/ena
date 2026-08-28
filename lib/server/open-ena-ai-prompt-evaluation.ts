@@ -22,7 +22,7 @@ import {
 } from "./open-ena-ai-prompt-governance";
 
 export const OPEN_ENA_AI_OFFLINE_EVALUATION_SUITE_VERSION_V1 =
-  "open-ena-ai-offline-synthetic-mock-v11" as const;
+  "open-ena-ai-offline-synthetic-mock-v12" as const;
 export const OPEN_ENA_AI_OFFLINE_EVALUATION_REPORT_SCHEMA_VERSION_V1 =
   "open-ena-ai-offline-evaluation-report-v1" as const;
 export const OPEN_ENA_AI_OFFLINE_MAX_CANDIDATE_BYTES_V1 = 64 * 1024;

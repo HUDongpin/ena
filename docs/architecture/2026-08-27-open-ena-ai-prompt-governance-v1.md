@@ -147,12 +147,17 @@ prompt, call a model, import the provider client, inspect AI environment variabl
 use credentials, access the network, write files, or alter runtime response
 handling.
 
-The frozen suite version `open-ena-ai-offline-synthetic-mock-v11` contains exactly
+The frozen suite version `open-ena-ai-offline-synthetic-mock-v12` contains exactly
 four fixed aggregate, role/index-only designs for each of `en`, `zh-hant`, and
 `zh-hans`:
 
-The suite identifier advances from v10 because malformed custom fixture candidates
-now produce a controlled `suite-probe-construction-failed` hard gate, report, and
+The suite identifier advances to v12 because the executable client source
+registration now binds runtime tests proving that an unknown request schema and
+an extra sensitive evidence field both fail closed before provider configuration
+or fetch. The client source hash is refreshed with those registrations, while the
+118-probe adversarial content and count remain unchanged. The v11 advance changed
+malformed custom fixture handling so candidates produce a controlled
+`suite-probe-construction-failed` hard gate, report, and
 pending receipt instead of escaping diagnostics through an exception. The v10
 advance made the adversarial manifest bind the complete probe content rather than
 only the probe identity triple. The v9

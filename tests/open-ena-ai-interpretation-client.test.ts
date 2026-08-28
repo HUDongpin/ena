@@ -97,7 +97,7 @@ function legacyInterpretationRequest(): OpenEnaAiInterpretationRequestV1 {
 function interpretationRequest(
   locale: OpenEnaAiInterpretationRequestV2["locale"] = "en",
 ): OpenEnaAiInterpretationRequestV2 {
-  return {
+  const request: OpenEnaAiInterpretationRequestV2 = {
     schemaVersion: OPEN_ENA_AI_REQUEST_SCHEMA_VERSION_V2,
     promptVersion: OPEN_ENA_AI_PROMPT_VERSION_V2,
     locale,
@@ -107,7 +107,7 @@ function interpretationRequest(
       datasetHashKind: "normalized-utf8-csv-text-sha256",
       modelType: "EndPoint",
       axes: ["Confidential axis one", "Confidential axis two"],
-      evidenceKey: "fnv1a32-abcdef12",
+      evidenceKey: "fnv1a32-00000000",
     },
     evidence: {
       kind: "endpoint-independent",
@@ -146,7 +146,7 @@ function interpretationRequest(
         trajectory: null,
       },
       inference: [{
-        id: "inference-comparison-axis-1",
+        id: "comparison-axis-1",
         axisRole: "axis-1",
         familyRole: "comparison-family",
         status: "available",
@@ -163,6 +163,25 @@ function interpretationRequest(
         nSecondary: 8,
         uPrimary: 12,
         uSecondary: 44,
+        rankBiserialPrimaryVsSecondary: -0.5714285714285714,
+      }, {
+        id: "comparison-axis-2",
+        axisRole: "axis-2",
+        familyRole: "comparison-family",
+        status: "available",
+        pRaw: 0.3,
+        pHolm: 0.3,
+        resolvedPMethod: "exact-classic",
+        continuityCorrectionApplied: false,
+        tieGroupCount: 0,
+        tiedObservationCount: 0,
+        warnings: [],
+        test: "mann-whitney-u",
+        groupRoles: ["primary", "secondary"],
+        nPrimary: 7,
+        nSecondary: 8,
+        uPrimary: 44,
+        uSecondary: 12,
         rankBiserialPrimaryVsSecondary: 0.5714285714285714,
       }],
       inferenceOmissions: [],
@@ -180,6 +199,13 @@ function interpretationRequest(
       ],
     },
   };
+  return parseOpenEnaAiInterpretationRequest({
+    ...request,
+    binding: {
+      ...request.binding,
+      evidenceKey: stableEvidenceKey(request.evidence),
+    },
+  }) as OpenEnaAiInterpretationRequestV2;
 }
 
 const EXPECTED_V2_SYSTEM_PROMPT_BY_LOCALE = {
@@ -366,6 +392,69 @@ test("historical v1 provider dispatch always returns the fixed upgrade error bef
   }
 });
 
+test("Luna runtime rejects an unknown request schema before configuration or fetch", async () => {
+  let fetchCalls = 0;
+  const request = {
+    ...interpretationRequest(),
+    schemaVersion: "open-ena-ai-request-v999",
+  } as unknown as OpenEnaAiInterpretationRequestV2;
+
+  const error = await generateLunaInterpretation(request, {
+    environment: {
+      OPEN_ENA_AI_ENABLED: "true",
+      OPENROUTER_API_KEY: "provider-key-must-stay-server-side",
+    },
+    fetch: async () => {
+      fetchCalls += 1;
+      return new Response("provider must not receive this request", { status: 503 });
+    },
+  }).then(
+    () => null,
+    (caught: unknown) => caught,
+  );
+
+  assert.equal(fetchCalls, 0);
+  assert.ok(error instanceof LunaClientError);
+  assert.equal(error.code, "invalid-configuration");
+  assert.equal(error.message, "AI interpretation prompt governance rejected the request.");
+});
+
+test("Luna runtime rejects extra sensitive evidence fields before fetch", async () => {
+  const canary = "SECRET-CANARY-DO-NOT-SEND";
+  const baseRequest = interpretationRequest();
+  const request = {
+    ...baseRequest,
+    evidence: {
+      ...baseRequest.evidence,
+      privateRawRows: [{ studentName: canary }],
+    },
+  } as unknown as OpenEnaAiInterpretationRequestV2;
+  let fetchCalls = 0;
+  let providerBody = "";
+
+  const error = await generateLunaInterpretation(request, {
+    environment: {
+      OPEN_ENA_AI_ENABLED: "true",
+      OPENROUTER_API_KEY: "provider-key-must-stay-server-side",
+    },
+    fetch: async (_input, init) => {
+      fetchCalls += 1;
+      providerBody = String(init?.body);
+      return new Response("provider must not receive this request", { status: 503 });
+    },
+  }).then(
+    () => null,
+    (caught: unknown) => caught,
+  );
+
+  assert.equal(fetchCalls, 0);
+  assert.doesNotMatch(providerBody, new RegExp(canary));
+  assert.ok(error instanceof LunaClientError);
+  assert.equal(error.code, "invalid-configuration");
+  assert.equal(error.message, "AI interpretation prompt governance rejected the request.");
+  assert.doesNotMatch(error.message, new RegExp(canary));
+});
+
 test("Luna v2 fails closed before configuration or fetch for an unregistered prompt version or locale", async () => {
   for (const request of [
     { ...interpretationRequest(), promptVersion: "unregistered-prompt-version" },
@@ -435,10 +524,11 @@ test("Luna v2 preserves the byte-exact approved system prompt and provider body 
                   enum: [
                     "axis-1",
                     "axis-2",
+                    "comparison-axis-1",
+                    "comparison-axis-2",
                     "descriptive-primary",
                     "descriptive-secondary",
                     "edge-difference-1",
-                    "inference-comparison-axis-1",
                   ],
                 },
               },
@@ -456,7 +546,7 @@ test("Luna v2 sends only the sanitized role/index projection and applies the con
   const upstreamInterpretation = {
     observedPatterns: [{
       statement: "The supplied independent-group rank comparison has a positive role-oriented effect.",
-      evidenceRefs: ["inference-comparison-axis-1"],
+      evidenceRefs: ["comparison-axis-1"],
     }],
     contextualQuestions: ["How was the independent-group design justified?"],
     limitations: ["The supplied p-value does not establish causality or practical importance."],
@@ -513,10 +603,11 @@ test("Luna v2 sends only the sanitized role/index projection and applies the con
     [
       "axis-1",
       "axis-2",
+      "comparison-axis-1",
+      "comparison-axis-2",
       "descriptive-primary",
       "descriptive-secondary",
       "edge-difference-1",
-      "inference-comparison-axis-1",
     ],
   );
   assert.deepEqual(response, {
