@@ -1532,6 +1532,269 @@ async function exerciseTrajectoryPlotActions(page, args) {
   };
 }
 
+async function exerciseFallbackFullscreenAccessibility(page, args) {
+  const assertBrowser = (condition, message) => {
+    if (!condition) throw new Error(message);
+  };
+  const shellLocator = page.locator(".ena-longitudinal-v3-plot-shell");
+  const fullscreenButton = shellLocator.getByRole("button", { name: "Fullscreen", exact: true });
+  await page.setViewportSize(args.viewport);
+  await fullscreenButton.focus();
+
+  const setup = await shellLocator.evaluate((shell) => {
+    const opener = document.activeElement;
+    const exitButton = shell.querySelector(".ena-longitudinal-v3-plot-actions button");
+    const copyButton = shell.querySelector('[data-ena-plot-action="copy-image"]');
+    if (!(opener instanceof HTMLElement) || !(exitButton instanceof HTMLElement) || !(copyButton instanceof HTMLElement)) {
+      throw new Error("fallback fullscreen focus anchors are unavailable");
+    }
+    const outsideNodes = [];
+    const shellPath = [];
+    let current = shell;
+    while (current !== document.body) {
+      shellPath.push(current);
+      const parent = current.parentElement;
+      if (!parent) throw new Error("fallback fullscreen shell is outside document.body");
+      for (const sibling of parent.children) {
+        if (sibling !== current) outsideNodes.push(sibling);
+      }
+      current = parent;
+    }
+    shellPath.push(document.body);
+    const outsideSnapshots = outsideNodes.map((node) => ({
+      node,
+      inertProperty: node.inert,
+      hadInertAttribute: node.hasAttribute("inert"),
+      inertAttribute: node.getAttribute("inert"),
+      ariaHidden: node.getAttribute("aria-hidden"),
+    }));
+    const hadOwnRequestFullscreen = Object.prototype.hasOwnProperty.call(shell, "requestFullscreen");
+    const requestFullscreenDescriptor = Object.getOwnPropertyDescriptor(shell, "requestFullscreen");
+    const bodyOverflow = document.body.style.overflow;
+    window.__openEnaFallbackFullscreenA11yAudit = {
+      shell,
+      opener,
+      exitButton,
+      copyButton,
+      outsideNodes,
+      outsideSnapshots,
+      shellPath,
+      bodyOverflow,
+      hadOwnRequestFullscreen,
+      requestFullscreenDescriptor,
+    };
+    Object.defineProperty(shell, "requestFullscreen", {
+      configurable: true,
+      writable: true,
+      value: async () => {
+        throw new Error("forced fallback fullscreen for accessibility audit");
+      },
+    });
+    return {
+      openerWasFullscreenButton: opener === exitButton,
+      outsideNodeCount: outsideNodes.length,
+    };
+  });
+  let evidence = null;
+  let requestFullscreenRestored = false;
+  try {
+    assertBrowser(setup.openerWasFullscreenButton, "Fullscreen trigger was not the saved opener");
+    assertBrowser(setup.outsideNodeCount > 0, "fallback fullscreen has no outside-tree siblings to isolate");
+    await fullscreenButton.click();
+    await page.waitForFunction(() => {
+      const audit = window.__openEnaFallbackFullscreenA11yAudit;
+      return Boolean(
+        audit
+        && audit.shell.getAttribute("data-fallback-fullscreen") === "true"
+        && audit.shell.getAttribute("role") === "dialog"
+        && audit.shell.getAttribute("aria-modal") === "true"
+        && audit.shell.getAttribute("aria-label")?.trim().length > 0
+        && document.activeElement === audit.exitButton
+        && document.fullscreenElement !== audit.shell
+      );
+    }, null, { timeout: 15_000 });
+
+    const modalState = await page.evaluate(() => {
+      const audit = window.__openEnaFallbackFullscreenA11yAudit;
+      if (!audit) throw new Error("fallback fullscreen audit state is missing");
+      const shellPath = audit.shellPath;
+      const shellPathNonInert = shellPath.every((node) => !node.inert && !node.hasAttribute("inert"));
+      const outsideTreeIsolated = audit.outsideSnapshots.every((snapshot) => (
+        snapshot.node.inert === true
+        && snapshot.node.hasAttribute("inert")
+        && snapshot.node.getAttribute("aria-hidden") === "true"
+      ));
+      return {
+        fallbackAttribute: audit.shell.getAttribute("data-fallback-fullscreen") === "true",
+        dialogRole: audit.shell.getAttribute("role") === "dialog",
+        ariaModal: audit.shell.getAttribute("aria-modal") === "true",
+        labelled: audit.shell.getAttribute("aria-label")?.trim().length > 0,
+        exitFocused: document.activeElement === audit.exitButton,
+        nativeFullscreenInactive: document.fullscreenElement !== audit.shell,
+        shellPathNonInert,
+        outsideTreeIsolated,
+        outsideNodeCount: audit.outsideSnapshots.length,
+        bodyScrollLocked: document.body.style.overflow === "hidden",
+      };
+    });
+    assertBrowser(modalState.fallbackAttribute, "fallback fullscreen attribute is absent");
+    assertBrowser(modalState.dialogRole, "fallback fullscreen is not a dialog");
+    assertBrowser(modalState.ariaModal, "fallback fullscreen is not aria-modal");
+    assertBrowser(modalState.labelled, "fallback fullscreen dialog has no accessible label");
+    assertBrowser(modalState.exitFocused, "fallback fullscreen did not focus Exit fullscreen");
+    assertBrowser(modalState.nativeFullscreenInactive, "fallback audit entered native fullscreen");
+    assertBrowser(modalState.shellPathNonInert, "fallback fullscreen inerted its own ancestor path");
+    assertBrowser(modalState.outsideTreeIsolated, "fallback fullscreen did not isolate every outside-tree sibling");
+    assertBrowser(modalState.bodyScrollLocked, "fallback fullscreen did not lock body scroll");
+
+    await page.keyboard.press("Shift+Tab");
+    const shiftTabToCopy = await page.evaluate(() => {
+      const audit = window.__openEnaFallbackFullscreenA11yAudit;
+      return Boolean(audit && document.activeElement === audit.copyButton);
+    });
+    assertBrowser(shiftTabToCopy, "Shift+Tab from Exit fullscreen did not wrap to Copy image");
+
+    await page.keyboard.press("Tab");
+    const tabToExit = await page.evaluate(() => {
+      const audit = window.__openEnaFallbackFullscreenA11yAudit;
+      return Boolean(audit && document.activeElement === audit.exitButton);
+    });
+    assertBrowser(tabToExit, "Tab from Copy image did not wrap to Exit fullscreen");
+
+    const backgroundFocusAudit = await page.evaluate(() => {
+      const audit = window.__openEnaFallbackFullscreenA11yAudit;
+      if (!audit) throw new Error("fallback fullscreen audit state is missing");
+      const focusableSelector = [
+        "button:not([disabled])",
+        "a[href]",
+        "input:not([disabled])",
+        "select:not([disabled])",
+        "textarea:not([disabled])",
+        '[tabindex]:not([tabindex="-1"])',
+      ].join(",");
+      const backgroundCandidate = audit.outsideNodes
+        .flatMap((node) => [node, ...node.querySelectorAll(focusableSelector)])
+        .find((element) => {
+          if (!(element instanceof HTMLElement) || !element.matches(focusableSelector)) return false;
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+        });
+      if (!(backgroundCandidate instanceof HTMLElement)) {
+        throw new Error("no visible focusable background candidate exists");
+      }
+      backgroundCandidate.focus();
+      return {
+        candidateFound: true,
+        focusStayedInDialog: audit.shell.contains(document.activeElement),
+      };
+    });
+    assertBrowser(backgroundFocusAudit.candidateFound, "fallback fullscreen background focus probe is missing");
+    assertBrowser(backgroundFocusAudit.focusStayedInDialog, "programmatic focus escaped the fallback dialog");
+
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => {
+      const audit = window.__openEnaFallbackFullscreenA11yAudit;
+      return Boolean(
+        audit
+        && audit.shell.getAttribute("data-fallback-fullscreen") === null
+        && audit.shell.getAttribute("role") === null
+        && audit.shell.getAttribute("aria-modal") === null
+        && document.activeElement === audit.opener
+        && document.body.style.overflow === audit.bodyOverflow
+      );
+    }, null, { timeout: 15_000 });
+
+    const restoredState = await page.evaluate(() => {
+      const audit = window.__openEnaFallbackFullscreenA11yAudit;
+      if (!audit) throw new Error("fallback fullscreen audit state is missing");
+      const outsideTreeRestored = audit.outsideSnapshots.every((snapshot) => {
+        const inertAttributeRestored = snapshot.hadInertAttribute
+          ? snapshot.node.getAttribute("inert") === snapshot.inertAttribute
+          : !snapshot.node.hasAttribute("inert");
+        return snapshot.node.inert === snapshot.inertProperty
+          && inertAttributeRestored
+          && snapshot.node.getAttribute("aria-hidden") === snapshot.ariaHidden;
+      });
+      return {
+        fallbackAttributeCleared: audit.shell.getAttribute("data-fallback-fullscreen") === null,
+        roleCleared: audit.shell.getAttribute("role") === null,
+        ariaModalCleared: audit.shell.getAttribute("aria-modal") === null,
+        openerFocused: document.activeElement === audit.opener,
+        bodyOverflowRestored: document.body.style.overflow === audit.bodyOverflow,
+        outsideTreeRestored,
+      };
+    });
+    assertBrowser(restoredState.fallbackAttributeCleared, "fallback attribute remained after Escape");
+    assertBrowser(restoredState.roleCleared, "fallback dialog role remained after Escape");
+    assertBrowser(restoredState.ariaModalCleared, "fallback aria-modal remained after Escape");
+    assertBrowser(restoredState.openerFocused, "Escape did not restore focus to the Fullscreen opener");
+    assertBrowser(restoredState.bodyOverflowRestored, "Escape did not restore body inline overflow exactly");
+    assertBrowser(restoredState.outsideTreeRestored, "Escape did not restore outside-tree inert and aria-hidden state");
+
+    evidence = {
+      outsideNodeCount: modalState.outsideNodeCount,
+      fallbackAttribute: modalState.fallbackAttribute,
+      dialogRole: modalState.dialogRole,
+      ariaModal: modalState.ariaModal,
+      labelled: modalState.labelled,
+      exitFocused: modalState.exitFocused,
+      nativeFullscreenInactive: modalState.nativeFullscreenInactive,
+      shellPathNonInert: modalState.shellPathNonInert,
+      outsideTreeIsolated: modalState.outsideTreeIsolated,
+      bodyScrollLocked: modalState.bodyScrollLocked,
+      shiftTabToCopy,
+      tabToExit,
+      backgroundFocusContained: backgroundFocusAudit.focusStayedInDialog,
+      fallbackAttributeCleared: restoredState.fallbackAttributeCleared,
+      roleCleared: restoredState.roleCleared,
+      ariaModalCleared: restoredState.ariaModalCleared,
+      openerFocused: restoredState.openerFocused,
+      bodyOverflowRestored: restoredState.bodyOverflowRestored,
+      outsideTreeRestored: restoredState.outsideTreeRestored,
+    };
+  } finally {
+    try {
+      if (await shellLocator.getAttribute("data-fallback-fullscreen") === "true") {
+        await page.keyboard.press("Escape");
+        await page.waitForFunction(() => (
+          document.querySelector(".ena-longitudinal-v3-plot-shell")
+            ?.getAttribute("data-fallback-fullscreen") === null
+        ), null, { timeout: 15_000 });
+      }
+    } finally {
+      requestFullscreenRestored = await page.evaluate(() => {
+        const audit = window.__openEnaFallbackFullscreenA11yAudit;
+        if (!audit) return false;
+        const shell = audit.shell;
+        if (audit.hadOwnRequestFullscreen && audit.requestFullscreenDescriptor) {
+          Object.defineProperty(shell, "requestFullscreen", audit.requestFullscreenDescriptor);
+        } else {
+          delete shell.requestFullscreen;
+        }
+        const restoredDescriptor = Object.getOwnPropertyDescriptor(shell, "requestFullscreen");
+        const restored = audit.hadOwnRequestFullscreen
+          ? restoredDescriptor?.value === audit.requestFullscreenDescriptor?.value
+            && restoredDescriptor?.get === audit.requestFullscreenDescriptor?.get
+            && restoredDescriptor?.set === audit.requestFullscreenDescriptor?.set
+            && restoredDescriptor?.configurable === audit.requestFullscreenDescriptor?.configurable
+            && restoredDescriptor?.enumerable === audit.requestFullscreenDescriptor?.enumerable
+            && restoredDescriptor?.writable === audit.requestFullscreenDescriptor?.writable
+          : !Object.prototype.hasOwnProperty.call(shell, "requestFullscreen");
+        delete window.__openEnaFallbackFullscreenA11yAudit;
+        return restored;
+      });
+    }
+  }
+  assertBrowser(requestFullscreenRestored, "fallback audit did not restore shell.requestFullscreen exactly");
+  assertBrowser(Boolean(evidence), "fallback fullscreen accessibility evidence is missing");
+  return {
+    ...evidence,
+    requestFullscreenRestored,
+    requestedViewport: args.viewport,
+  };
+}
+
 async function captureResponsiveEvidence(page, args) {
   const assertBrowser = (condition, message) => {
     if (!condition) throw new Error(message);
@@ -2018,6 +2281,11 @@ try {
     },
     240_000,
   );
+  const fallbackA11yAudit = runBrowserPhase(
+    "exercise reversible fallback fullscreen keyboard-modal behavior",
+    exerciseFallbackFullscreenAccessibility,
+    { viewport: { width: 1440, height: 1000 } },
+  );
   const responsiveAudit = runBrowserPhase(
     "capture desktop, tablet, mobile, and fullscreen overflow evidence",
     captureResponsiveEvidence,
@@ -2180,6 +2448,7 @@ try {
         receipt: artifactEvidence(copyPath),
       },
     },
+    fallbackA11yAudit,
     viewports: portableViewports,
     fullscreen: {
       box: responsiveAudit.fullscreenBox,

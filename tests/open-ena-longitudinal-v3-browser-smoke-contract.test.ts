@@ -263,6 +263,45 @@ test("the 390px responsive audit proves the wrapped toolbar and Plotly canvas st
   assert.match(source, /overflow\.bodyScrollWidth <= overflow\.bodyClientWidth \+ 1/u);
 });
 
+test("the browser smoke proves fallback fullscreen is one reversible keyboard-modal session", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /async function exerciseFallbackFullscreenAccessibility\(page, args\)/u);
+  assert.match(source, /page\.setViewportSize\(args\.viewport\)/u);
+  assert.match(source, /Object\.getOwnPropertyDescriptor\(shell, "requestFullscreen"\)/u);
+  assert.match(source, /Object\.defineProperty\(shell, "requestFullscreen"[\s\S]*?throw new Error/u);
+  assert.match(source, /outsideNodes/u);
+  assert.match(source, /bodyOverflow/u);
+  assert.match(source, /data-fallback-fullscreen/u);
+  assert.match(source, /getAttribute\("role"\) === "dialog"/u);
+  assert.match(source, /getAttribute\("aria-modal"\) === "true"/u);
+  assert.match(source, /getAttribute\("aria-label"\)\?\.trim\(\)\.length > 0/u);
+  assert.match(source, /document\.activeElement === audit\.exitButton/u);
+  assert.match(source, /document\.fullscreenElement !== audit\.shell/u);
+  assert.match(source, /shellPath\.every\(\(node\) => !node\.inert && !node\.hasAttribute\("inert"\)\)/u);
+  assert.match(source, /snapshot\.node\.inert === true/u);
+  assert.match(source, /snapshot\.node\.hasAttribute\("inert"\)/u);
+  assert.match(source, /snapshot\.node\.getAttribute\("aria-hidden"\) === "true"/u);
+  assert.match(source, /page\.keyboard\.press\("Shift\+Tab"\)/u);
+  assert.match(source, /document\.activeElement === audit\.copyButton/u);
+  assert.match(source, /page\.keyboard\.press\("Tab"\)/u);
+  assert.match(source, /backgroundCandidate\.focus\(\)/u);
+  assert.match(source, /audit\.shell\.contains\(document\.activeElement\)/u);
+  assert.match(source, /page\.keyboard\.press\("Escape"\)/u);
+  assert.match(source, /getAttribute\("data-fallback-fullscreen"\) === null/u);
+  assert.match(source, /getAttribute\("role"\) === null/u);
+  assert.match(source, /getAttribute\("aria-modal"\) === null/u);
+  assert.match(source, /document\.activeElement === audit\.opener/u);
+  assert.match(source, /document\.body\.style\.overflow === audit\.bodyOverflow/u);
+  assert.match(source, /snapshot\.node\.inert === snapshot\.inertProperty/u);
+  assert.match(source, /snapshot\.node\.getAttribute\("aria-hidden"\) === snapshot\.ariaHidden/u);
+  assert.match(source, /let evidence = null;[\s\S]*?try\s*\{\s*assertBrowser\(setup\.openerWasFullscreenButton/u);
+  assert.match(source, /finally\s*\{/u);
+  assert.match(source, /finally\s*\{\s*try\s*\{[\s\S]*?\}\s*finally\s*\{[\s\S]*?Object\.defineProperty\(shell, "requestFullscreen"/u);
+  assert.match(source, /Object\.defineProperty\(shell, "requestFullscreen", audit\.requestFullscreenDescriptor\)/u);
+  assert.match(source, /delete shell\.requestFullscreen/u);
+  assert.match(source, /fallbackA11yAudit,/u);
+});
+
 test("the browser smoke drives every real V3 plot action across perspective, orthographic, and 2D runtimes", () => {
   const source = readFileSync(smokePath, "utf8");
   assert.match(source, /async function exerciseTrajectoryPlotActions\(page, args\)/u);
