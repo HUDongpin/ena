@@ -246,6 +246,67 @@ test("the summary converts every screenshot path into a portable integrity recei
   assert.match(source, /screenshot:\s*artifactEvidence\(responsiveAudit\.fullscreenPath\)/u);
 });
 
+test("the 390px responsive audit proves the wrapped toolbar and Plotly canvas stay inside one shell", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /const boxFor = \(element\) =>/u);
+  assert.match(source, /shellBox:\s*boxFor\(shell\)/u);
+  assert.match(source, /toolbarBox:\s*boxFor\(toolbar\)/u);
+  assert.match(source, /plotBox:\s*boxFor\(plot\)/u);
+  assert.match(source, /toolbarRowCount/u);
+  assert.match(source, /viewport\.width === 390/u);
+  assert.match(source, /overflow\.toolbarRowCount >= 2/u);
+  assert.match(source, /overflow\.toolbarBox\.bottom <= overflow\.plotBox\.top \+ 1/u);
+  assert.match(source, /overflow\.plotBox\.bottom <= overflow\.shellBox\.bottom \+ 1/u);
+  assert.match(source, /page\.locator\("\.ena-longitudinal-v3-plot-shell"\)\.screenshot\(\{ path: shellPath \}\)/u);
+  assert.match(source, /shellScreenshot:\s*artifactEvidence\(shellPath\)/u);
+  assert.match(source, /overflow\.documentScrollWidth <= overflow\.documentClientWidth \+ 1/u);
+  assert.match(source, /overflow\.bodyScrollWidth <= overflow\.bodyClientWidth \+ 1/u);
+});
+
+test("the browser smoke drives every real V3 plot action across perspective, orthographic, and 2D runtimes", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /async function exerciseTrajectoryPlotActions\(page, args\)/u);
+  for (const action of ["zoom-in", "zoom-out", "recenter", "copy-image"]) {
+    assert.ok(source.includes(`[data-ena-plot-action="${action}"]`), `missing real ${action} button locator`);
+  }
+  assert.match(source, /cameraDistance/u);
+  assert.match(source, /scene\?\._scene\?\.glplot\?\.getAspectratio/u);
+  assert.match(source, /root\?\._fullLayout\?\.xaxis\?\.range/u);
+  assert.match(source, /perspectiveZoomInDistance < perspectiveBaselineDistance/u);
+  assert.match(source, /perspectiveZoomOutDistance > perspectiveZoomInDistance/u);
+  assert.match(source, /cameraOrientationApproximatelyEqual\(perspectiveZoomIn, perspectiveBaseline\)/u);
+  assert.match(source, /cameraApproximatelyEqual\(perspectiveZoomOut, perspectiveBaseline\)/u);
+  assert.match(source, /cameraApproximatelyEqual\(perspectiveRecenter, perspectiveBaseline\)/u);
+  assert.match(source, /approximatelyEqual\(perspectiveRecenterDistance, perspectiveBaselineDistance\)/u);
+  assert.match(source, /orthographicZoomIn\.x > orthographicBaseline\.x/u);
+  assert.match(source, /orthographicZoomOut\.x < orthographicZoomIn\.x/u);
+  assert.match(source, /aspectApproximatelyEqual\(orthographicZoomOut, orthographicBaseline\)/u);
+  assert.match(source, /aspectApproximatelyEqual\(orthographicRecenter, orthographicBaseline\)/u);
+  assert.match(source, /twoDZoomIn\.x\[1\] - twoDZoomIn\.x\[0\]/u);
+  assert.match(source, /twoDZoomOutSpan > twoDZoomInSpan/u);
+  assert.match(source, /rangesApproximatelyEqual\(twoDZoomOut, twoDBaseline\)/u);
+  assert.match(source, /rangesApproximatelyEqual\(twoDRecenter, twoDBaseline\)/u);
+  assert.match(source, /await assertScientificInvariants\("perspective zoom in"\)/u);
+  assert.match(source, /await assertScientificInvariants\("orthographic recenter"\)/u);
+  assert.match(source, /await assertScientificInvariants\("2D recenter"\)/u);
+  assert.match(source, /current\.taskRequestCount === args\.expectedTaskRequestCount/u);
+  assert.match(source, /current\.resultHashes\[0\] === args\.expectedResultHash/u);
+  assert.match(source, /Object\.defineProperty\(navigator, "clipboard"/u);
+  assert.match(source, /data:image\/png/u);
+  assert.match(source, /page\.waitForEvent\("download"\)/u);
+  assert.match(source, /download\.suggestedFilename\(\)/u);
+  assert.match(source, /3dena-longitudinal-trajectory\.png/u);
+  assert.match(source, /pngSignature/u);
+  assert.match(source, /pngByteLength/u);
+  assert.match(source, /new Uint8Array\(chunk\)/u);
+  assert.doesNotMatch(source, /chunks\.push\(Buffer\.from\(chunk\)\)|Buffer\.concat\(chunks\)/u);
+  assert.match(source, /Image downloaded/u);
+  assert.match(source, /toImageDataUrlFetchCount === 1/u);
+  assert.match(source, /receipt:\s*artifactEvidence\(copyPath\)/u);
+  assert.match(source, /projectionSelect\.selectOption\("3d"\)[\s\S]*?cameraSelect\.selectOption\("isometric"\)/u);
+  assert.doesNotMatch(source, /createTrajectoryPlotlyControllerV3/u);
+});
+
 test("download receipts resolve beneath the portable artifact root and retain integrity metadata", () => {
   const source = readFileSync(smokePath, "utf8");
   assert.match(source, /const downloadDirectory = join\(artifactDirectory, "downloads"\)/u);

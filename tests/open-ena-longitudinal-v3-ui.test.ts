@@ -922,8 +922,16 @@ test("V3 desktop and narrow layouts preserve controls-status-plot-table order wi
   );
   assert.match(css, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.ena-longitudinal-v3-layout\s*\{[^}]*grid-template-columns:\s*1fr/);
   assert.match(css, /\.ena-longitudinal-v3-table-wrap\s*\{[^}]*overflow-x:\s*auto/);
-  assert.match(css, /@media\s*\(max-width:\s*560px\)[\s\S]*?\.ena-longitudinal-v3-plot-shell\s*\{[^}]*height:\s*535px/);
-  assert.match(css, /@media\s*\(max-width:\s*560px\)[\s\S]*?\.ena-longitudinal-v3-plot\s*\{[^}]*height:\s*480px/);
+  assert.match(
+    css,
+    /@media\s*\(max-width:\s*560px\)[\s\S]*?\.ena-longitudinal-v3-plot-shell\s*\{[^}]*display:\s*grid[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)[^}]*height:\s*535px[^}]*overflow:\s*hidden/,
+  );
+  assert.match(
+    css,
+    /@media\s*\(max-width:\s*560px\)[\s\S]*?\.ena-longitudinal-v3-plot\s*\{[^}]*height:\s*100%[^}]*min-height:\s*0/,
+  );
+  const narrowCss = css.match(/@media\s*\(max-width:\s*560px\)\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.doesNotMatch(narrowCss, /\.ena-longitudinal-v3-plot\s*\{[^}]*height:\s*480px/);
 });
 
 test("the plot action toolbar occupies its own row instead of covering the 3D legend", () => {

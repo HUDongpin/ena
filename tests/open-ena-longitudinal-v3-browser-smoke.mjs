@@ -1117,6 +1117,421 @@ async function exerciseCamerasAndProjections(page, args) {
   };
 }
 
+async function exerciseTrajectoryPlotActions(page, args) {
+  const assertBrowser = (condition, message) => {
+    if (!condition) throw new Error(message);
+  };
+  const plot = page.getByTestId("open-ena-longitudinal-v3-plot");
+  const cameraSelect = page.getByLabel("3D camera preset");
+  const projectionSelect = page.getByLabel("3D / 2D projection");
+  const zoomIn = page.locator('[data-ena-plot-action="zoom-in"]');
+  const zoomOut = page.locator('[data-ena-plot-action="zoom-out"]');
+  const recenter = page.locator('[data-ena-plot-action="recenter"]');
+  const copyImage = page.locator('[data-ena-plot-action="copy-image"]');
+  const approximatelyEqual = (left, right, epsilon = 1e-6) => (
+    Number.isFinite(left)
+    && Number.isFinite(right)
+    && Math.abs(left - right) <= epsilon * Math.max(1, Math.abs(left), Math.abs(right))
+  );
+  const vectorApproximatelyEqual = (left, right) => ["x", "y", "z"].every(
+    (axis) => approximatelyEqual(Number(left?.[axis]), Number(right?.[axis])),
+  );
+  const cameraApproximatelyEqual = (left, right) => (
+    vectorApproximatelyEqual(left?.eye, right?.eye)
+    && vectorApproximatelyEqual(left?.center, right?.center)
+    && vectorApproximatelyEqual(left?.up, right?.up)
+    && left?.projection?.type === right?.projection?.type
+  );
+  const cameraDirection = (camera) => {
+    const direction = {
+      x: Number(camera?.eye?.x) - Number(camera?.center?.x),
+      y: Number(camera?.eye?.y) - Number(camera?.center?.y),
+      z: Number(camera?.eye?.z) - Number(camera?.center?.z),
+    };
+    const length = Math.hypot(direction.x, direction.y, direction.z);
+    return {
+      x: direction.x / length,
+      y: direction.y / length,
+      z: direction.z / length,
+    };
+  };
+  const cameraOrientationApproximatelyEqual = (left, right) => (
+    vectorApproximatelyEqual(cameraDirection(left), cameraDirection(right))
+    && vectorApproximatelyEqual(left?.center, right?.center)
+    && vectorApproximatelyEqual(left?.up, right?.up)
+    && left?.projection?.type === right?.projection?.type
+  );
+  const aspectApproximatelyEqual = (left, right) => vectorApproximatelyEqual(left, right);
+  const rangesApproximatelyEqual = (left, right) => ["x", "y"].every(
+    (axis) => approximatelyEqual(Number(left?.[axis]?.[0]), Number(right?.[axis]?.[0]))
+      && approximatelyEqual(Number(left?.[axis]?.[1]), Number(right?.[axis]?.[1])),
+  );
+  const waitForValue = async (reader, predicate, label, timeout = 15_000) => {
+    const deadline = Date.now() + timeout;
+    let current = null;
+    while (Date.now() <= deadline) {
+      current = await reader();
+      if (predicate(current)) return current;
+      await page.waitForTimeout(50);
+    }
+    throw new Error(label + " did not reach its expected runtime state: " + JSON.stringify(current));
+  };
+  const waitForActionsReady = async () => {
+    await page.waitForFunction(() => [...document.querySelectorAll(
+      '.ena-longitudinal-v3-plot-actions [data-ena-plot-action]',
+    )].every((button) => !button.disabled), null, { timeout: 15_000 });
+  };
+  const readCamera = async () => await plot.evaluate((root) => {
+    const scene = root?._fullLayout?.scene;
+    const camera = typeof scene?._scene?.getCamera === "function"
+      ? scene._scene.getCamera()
+      : scene?.camera;
+    return camera ? structuredClone(camera) : null;
+  });
+  const cameraDistance = (camera) => Math.hypot(
+    Number(camera?.eye?.x) - Number(camera?.center?.x),
+    Number(camera?.eye?.y) - Number(camera?.center?.y),
+    Number(camera?.eye?.z) - Number(camera?.center?.z),
+  );
+  const readAspectRatio = async () => await plot.evaluate((root) => {
+    const scene = root?._fullLayout?.scene;
+    const aspect = scene?._scene?.glplot?.getAspectratio?.() ?? scene?.aspectratio;
+    return aspect ? { x: Number(aspect.x), y: Number(aspect.y), z: Number(aspect.z) } : null;
+  });
+  const readRanges = async () => await plot.evaluate((root) => {
+    const x = root?._fullLayout?.xaxis?.range;
+    const y = root?._fullLayout?.yaxis?.range;
+    return Array.isArray(x) && Array.isArray(y)
+      ? { x: [Number(x[0]), Number(x[1])], y: [Number(y[0]), Number(y[1])] }
+      : null;
+  });
+  const readScientificInvariants = async () => await plot.evaluate((root) => ({
+    resultHashes: [...new Set(
+      (Array.isArray(root.data) ? root.data : [])
+        .map((trace) => trace.meta?.resultHash)
+        .filter(Boolean),
+    )],
+    taskRequestCount: window.__openEnaLongitudinalSmokeTaskAudit?.taskRequestCount ?? -1,
+  }));
+  const assertScientificInvariants = async (label) => {
+    const current = await readScientificInvariants();
+    assertBrowser(
+      current.resultHashes.length === 1 && current.resultHashes[0] === args.expectedResultHash,
+      label + " changed the immutable result hash",
+    );
+    assertBrowser(
+      current.taskRequestCount === args.expectedTaskRequestCount,
+      label + " changed the scientific task request count",
+    );
+  };
+
+  await projectionSelect.selectOption("3d");
+  await cameraSelect.selectOption("isometric");
+  const perspectiveBaseline = await waitForValue(
+    readCamera,
+    (camera) => camera?.projection?.type === "perspective",
+    "isometric perspective baseline",
+  );
+  await waitForActionsReady();
+  const perspectiveBaselineDistance = cameraDistance(perspectiveBaseline);
+  await zoomIn.click();
+  const perspectiveZoomIn = await waitForValue(
+    readCamera,
+    (camera) => cameraDistance(camera) < perspectiveBaselineDistance - 1e-6,
+    "perspective Zoom In",
+  );
+  const perspectiveZoomInDistance = cameraDistance(perspectiveZoomIn);
+  assertBrowser(
+    perspectiveZoomInDistance < perspectiveBaselineDistance,
+    "perspective Zoom In did not reduce camera distance",
+  );
+  assertBrowser(
+    cameraOrientationApproximatelyEqual(perspectiveZoomIn, perspectiveBaseline),
+    "perspective Zoom In changed orientation, center, up, or projection",
+  );
+  await assertScientificInvariants("perspective zoom in");
+  await zoomOut.click();
+  const perspectiveZoomOut = await waitForValue(
+    readCamera,
+    (camera) => cameraDistance(camera) > perspectiveZoomInDistance + 1e-6,
+    "perspective Zoom Out",
+  );
+  const perspectiveZoomOutDistance = cameraDistance(perspectiveZoomOut);
+  assertBrowser(
+    perspectiveZoomOutDistance > perspectiveZoomInDistance,
+    "perspective Zoom Out did not increase camera distance",
+  );
+  assertBrowser(
+    cameraApproximatelyEqual(perspectiveZoomOut, perspectiveBaseline),
+    "perspective Zoom In then Zoom Out did not restore the exact baseline camera",
+  );
+  await assertScientificInvariants("perspective zoom out");
+  await zoomIn.click();
+  const perspectiveBeforeRecenter = await waitForValue(
+    readCamera,
+    (camera) => cameraDistance(camera) < perspectiveZoomOutDistance - 1e-6,
+    "perspective pre-Recenter offset",
+  );
+  assertBrowser(
+    cameraOrientationApproximatelyEqual(perspectiveBeforeRecenter, perspectiveBaseline),
+    "perspective pre-Recenter zoom changed orientation, center, up, or projection",
+  );
+  await assertScientificInvariants("perspective pre-recenter zoom in");
+  await recenter.click();
+  const perspectiveRecenter = await waitForValue(
+    readCamera,
+    (camera) => approximatelyEqual(cameraDistance(camera), perspectiveBaselineDistance),
+    "perspective Recenter",
+  );
+  const perspectiveRecenterDistance = cameraDistance(perspectiveRecenter);
+  assertBrowser(
+    approximatelyEqual(perspectiveRecenterDistance, perspectiveBaselineDistance),
+    "perspective Recenter did not restore the default distance",
+  );
+  assertBrowser(
+    cameraApproximatelyEqual(perspectiveRecenter, perspectiveBaseline),
+    "perspective Recenter did not restore the complete baseline camera",
+  );
+  await assertScientificInvariants("perspective recenter");
+
+  await cameraSelect.selectOption("xy");
+  await waitForValue(
+    readCamera,
+    (camera) => camera?.projection?.type === "orthographic",
+    "XY orthographic baseline",
+  );
+  await waitForActionsReady();
+  const orthographicBaseline = await waitForValue(
+    readAspectRatio,
+    (aspect) => aspect && [aspect.x, aspect.y, aspect.z].every(Number.isFinite),
+    "orthographic aspect baseline",
+  );
+  await zoomIn.click();
+  const orthographicZoomIn = await waitForValue(
+    readAspectRatio,
+    (aspect) => aspect?.x > orthographicBaseline.x + 1e-6,
+    "orthographic Zoom In",
+  );
+  assertBrowser(
+    orthographicZoomIn.x > orthographicBaseline.x,
+    "orthographic Zoom In did not expand the runtime aspect ratio",
+  );
+  await assertScientificInvariants("orthographic zoom in");
+  await zoomOut.click();
+  const orthographicZoomOut = await waitForValue(
+    readAspectRatio,
+    (aspect) => aspect?.x < orthographicZoomIn.x - 1e-6,
+    "orthographic Zoom Out",
+  );
+  assertBrowser(
+    orthographicZoomOut.x < orthographicZoomIn.x,
+    "orthographic Zoom Out did not contract the runtime aspect ratio",
+  );
+  assertBrowser(
+    aspectApproximatelyEqual(orthographicZoomOut, orthographicBaseline),
+    "orthographic Zoom In then Zoom Out did not restore the baseline aspect ratio",
+  );
+  await assertScientificInvariants("orthographic zoom out");
+  await zoomIn.click();
+  const orthographicBeforeRecenter = await waitForValue(
+    readAspectRatio,
+    (aspect) => aspect?.x > orthographicZoomOut.x + 1e-6,
+    "orthographic pre-Recenter offset",
+  );
+  await assertScientificInvariants("orthographic pre-recenter zoom in");
+  await recenter.click();
+  const orthographicRecenter = await waitForValue(
+    readAspectRatio,
+    (aspect) => aspectApproximatelyEqual(aspect, orthographicBaseline),
+    "orthographic Recenter",
+  );
+  assertBrowser(
+    aspectApproximatelyEqual(orthographicRecenter, orthographicBaseline),
+    "orthographic Recenter did not restore the first rendered aspect ratio",
+  );
+  await assertScientificInvariants("orthographic recenter");
+
+  await projectionSelect.selectOption("xy");
+  await waitForValue(readRanges, (ranges) => Boolean(ranges), "2D XY range baseline");
+  await waitForActionsReady();
+  const twoDBaseline = await readRanges();
+  assertBrowser(Boolean(twoDBaseline), "2D XY ranges are unavailable");
+  const twoDBaselineSpan = Math.abs(twoDBaseline.x[1] - twoDBaseline.x[0]);
+  await zoomIn.click();
+  const twoDZoomIn = await waitForValue(
+    readRanges,
+    (ranges) => ranges && Math.abs(ranges.x[1] - ranges.x[0]) < twoDBaselineSpan - 1e-6,
+    "2D Zoom In",
+  );
+  const twoDZoomInSpan = Math.abs(twoDZoomIn.x[1] - twoDZoomIn.x[0]);
+  await assertScientificInvariants("2D zoom in");
+  await zoomOut.click();
+  const twoDZoomOut = await waitForValue(
+    readRanges,
+    (ranges) => ranges && Math.abs(ranges.x[1] - ranges.x[0]) > twoDZoomInSpan + 1e-6,
+    "2D Zoom Out",
+  );
+  const twoDZoomOutSpan = Math.abs(twoDZoomOut.x[1] - twoDZoomOut.x[0]);
+  assertBrowser(twoDZoomOutSpan > twoDZoomInSpan, "2D Zoom Out did not expand the visible range");
+  assertBrowser(
+    rangesApproximatelyEqual(twoDZoomOut, twoDBaseline),
+    "2D Zoom In then Zoom Out did not restore the baseline ranges",
+  );
+  await assertScientificInvariants("2D zoom out");
+  await zoomIn.click();
+  const twoDBeforeRecenter = await waitForValue(
+    readRanges,
+    (ranges) => ranges && Math.abs(ranges.x[1] - ranges.x[0]) < twoDZoomOutSpan - 1e-6,
+    "2D pre-Recenter offset",
+  );
+  await assertScientificInvariants("2D pre-recenter zoom in");
+  await recenter.click();
+  const twoDRecenter = await waitForValue(
+    readRanges,
+    (ranges) => rangesApproximatelyEqual(ranges, twoDBaseline),
+    "2D Recenter",
+  );
+  assertBrowser(
+    rangesApproximatelyEqual(twoDRecenter, twoDBaseline),
+    "2D Recenter did not restore the immutable initial ranges",
+  );
+  await assertScientificInvariants("2D recenter");
+
+  const copyPath = args.artifactDirectory + "/trajectory-plot-copy.png";
+  let copyEvidence = null;
+  await page.evaluate(() => {
+    const originalFetch = window.fetch;
+    window.__openEnaTrajectoryCopyAudit = {
+      originalFetch,
+      hadOwnClipboard: Object.prototype.hasOwnProperty.call(navigator, "clipboard"),
+      clipboardDescriptor: Object.getOwnPropertyDescriptor(navigator, "clipboard"),
+      hadOwnClipboardItem: Object.prototype.hasOwnProperty.call(window, "ClipboardItem"),
+      clipboardItemDescriptor: Object.getOwnPropertyDescriptor(window, "ClipboardItem"),
+      toImageDataUrlFetchCount: 0,
+    };
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+    Object.defineProperty(window, "ClipboardItem", { configurable: true, value: undefined });
+    window.fetch = async (...fetchArgs) => {
+      const input = fetchArgs[0];
+      const url = typeof input === "string" ? input : input?.url;
+      if (typeof url === "string" && url.startsWith("data:image/png")) {
+        window.__openEnaTrajectoryCopyAudit.toImageDataUrlFetchCount += 1;
+      }
+      return await originalFetch.apply(window, fetchArgs);
+    };
+  });
+  try {
+    const downloadPromise = page.waitForEvent("download");
+    await copyImage.click();
+    const download = await downloadPromise;
+    assertBrowser(await download.failure() === null, "trajectory Copy download failed");
+    const suggestedFilename = download.suggestedFilename();
+    assertBrowser(
+      suggestedFilename === "3dena-longitudinal-trajectory.png",
+      "trajectory Copy suggested the wrong filename: " + suggestedFilename,
+    );
+    await download.saveAs(copyPath);
+    const downloadStream = await download.createReadStream();
+    assertBrowser(Boolean(downloadStream), "trajectory Copy did not expose PNG bytes");
+    let pngByteLength = 0;
+    const pngSignature = [];
+    for await (const chunk of downloadStream) {
+      const bytes = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk);
+      pngByteLength += bytes.byteLength;
+      const signatureBytesRemaining = Math.max(0, 8 - pngSignature.length);
+      if (signatureBytesRemaining > 0) {
+        pngSignature.push(...bytes.subarray(0, signatureBytesRemaining));
+      }
+    }
+    assertBrowser(
+      pngByteLength > 8
+        && JSON.stringify(pngSignature) === JSON.stringify([137, 80, 78, 71, 13, 10, 26, 10]),
+      "trajectory Copy download is not a non-empty PNG",
+    );
+    await page.waitForFunction(() => (
+      document.querySelector('.ena-longitudinal-v3-plot-shell [role="status"]')?.textContent?.trim()
+        === "Image downloaded"
+    ), null, { timeout: 15_000 });
+    const status = await page.locator('.ena-longitudinal-v3-plot-shell [role="status"]').textContent();
+    const copyRuntimeAudit = await page.evaluate(() => ({
+      toImageDataUrlFetchCount:
+        window.__openEnaTrajectoryCopyAudit?.toImageDataUrlFetchCount ?? -1,
+      realPlotlyRoot: Boolean(
+        document.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]')?._fullLayout,
+      ),
+    }));
+    assertBrowser(
+      copyRuntimeAudit.toImageDataUrlFetchCount === 1,
+      "trajectory Copy did not consume exactly one Plotly PNG data URL",
+    );
+    assertBrowser(copyRuntimeAudit.realPlotlyRoot, "trajectory Copy did not use the mounted Plotly root");
+    copyEvidence = {
+      copyPath,
+      suggestedFilename,
+      bytes: pngByteLength,
+      pngSignature,
+      status: status?.trim() ?? "",
+      toImageDataUrlFetchCount: copyRuntimeAudit.toImageDataUrlFetchCount,
+      realPlotlyRoot: copyRuntimeAudit.realPlotlyRoot,
+    };
+    await assertScientificInvariants("Copy image download");
+  } finally {
+    await page.evaluate(() => {
+      const audit = window.__openEnaTrajectoryCopyAudit;
+      if (!audit) return;
+      window.fetch = audit.originalFetch;
+      if (audit.hadOwnClipboard && audit.clipboardDescriptor) {
+        Object.defineProperty(navigator, "clipboard", audit.clipboardDescriptor);
+      } else {
+        delete navigator.clipboard;
+      }
+      if (audit.hadOwnClipboardItem && audit.clipboardItemDescriptor) {
+        Object.defineProperty(window, "ClipboardItem", audit.clipboardItemDescriptor);
+      } else {
+        delete window.ClipboardItem;
+      }
+      delete window.__openEnaTrajectoryCopyAudit;
+    });
+  }
+  assertBrowser(Boolean(copyEvidence), "trajectory Copy did not produce evidence");
+
+  await projectionSelect.selectOption("3d");
+  await cameraSelect.selectOption("isometric");
+  const restoredIsometric = await waitForValue(
+    readCamera,
+    (camera) => cameraApproximatelyEqual(camera, args.expectedCameraState),
+    "restored 3D isometric after plot actions",
+  );
+  await waitForActionsReady();
+  await assertScientificInvariants("restored 3D isometric after plot actions");
+
+  return {
+    perspective: {
+      baseline: perspectiveBaseline,
+      zoomIn: perspectiveZoomIn,
+      zoomOut: perspectiveZoomOut,
+      beforeRecenter: perspectiveBeforeRecenter,
+      recenter: perspectiveRecenter,
+    },
+    orthographic: {
+      baseline: orthographicBaseline,
+      zoomIn: orthographicZoomIn,
+      zoomOut: orthographicZoomOut,
+      beforeRecenter: orthographicBeforeRecenter,
+      recenter: orthographicRecenter,
+    },
+    twoD: {
+      baseline: twoDBaseline,
+      zoomIn: twoDZoomIn,
+      zoomOut: twoDZoomOut,
+      beforeRecenter: twoDBeforeRecenter,
+      recenter: twoDRecenter,
+    },
+    copy: copyEvidence,
+    restoredIsometric,
+  };
+}
+
 async function captureResponsiveEvidence(page, args) {
   const assertBrowser = (condition, message) => {
     if (!condition) throw new Error(message);
@@ -1126,6 +1541,29 @@ async function captureResponsiveEvidence(page, args) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.waitForTimeout(250);
     const overflow = await page.evaluate(() => {
+      const shell = document.querySelector(".ena-longitudinal-v3-plot-shell");
+      const toolbar = shell?.querySelector(".ena-longitudinal-v3-plot-actions") ?? null;
+      const plot = shell?.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]') ?? null;
+      const boxFor = (element) => {
+        if (!element) return null;
+        const rect = element.getBoundingClientRect();
+        return {
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+        };
+      };
+      const toolbarRowCount = toolbar
+        ? new Set([...toolbar.querySelectorAll("button")]
+          .filter((button) => {
+            const rect = button.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          })
+          .map((button) => Math.round(button.getBoundingClientRect().top))).size
+        : 0;
       const clippedInteractiveControls = [...document.querySelectorAll(
         '[data-testid="open-ena-longitudinal-v3-workbench"] button, '
           + '[data-testid="open-ena-longitudinal-v3-workbench"] input, '
@@ -1154,6 +1592,10 @@ async function captureResponsiveEvidence(page, args) {
         bodyClientWidth: document.body.clientWidth,
         bodyScrollWidth: document.body.scrollWidth,
         clippedInteractiveControls,
+        shellBox: boxFor(shell),
+        toolbarBox: boxFor(toolbar),
+        plotBox: boxFor(plot),
+        toolbarRowCount,
       };
     });
     assertBrowser(
@@ -1170,13 +1612,34 @@ async function captureResponsiveEvidence(page, args) {
         + viewport.width + "x" + viewport.height + ": "
         + JSON.stringify(overflow.clippedInteractiveControls),
     );
+    if (viewport.width === 390) {
+      assertBrowser(
+        overflow.shellBox && overflow.toolbarBox && overflow.plotBox,
+        "mobile trajectory shell geometry is incomplete",
+      );
+      assertBrowser(
+        overflow.toolbarRowCount >= 2,
+        "the 390px trajectory toolbar did not wrap to at least two rows",
+      );
+      assertBrowser(
+        overflow.toolbarBox.bottom <= overflow.plotBox.top + 1,
+        "the 390px trajectory toolbar overlaps or follows the Plotly canvas",
+      );
+      assertBrowser(
+        overflow.plotBox.bottom <= overflow.shellBox.bottom + 1,
+        "the 390px Plotly canvas escapes its fixed-height shell",
+      );
+    }
     const pagePath = args.artifactDirectory + "/" + viewport.name + "-"
       + viewport.width + "x" + viewport.height + ".png";
     const plotPath = args.artifactDirectory + "/" + viewport.name + "-plot-"
       + viewport.width + "x" + viewport.height + ".png";
+    const shellPath = args.artifactDirectory + "/" + viewport.name + "-shell-"
+      + viewport.width + "x" + viewport.height + ".png";
     await page.screenshot({ path: pagePath, fullPage: false });
     await page.getByTestId("open-ena-longitudinal-v3-plot").screenshot({ path: plotPath });
-    results[viewport.name] = { ...viewport, ...overflow, pagePath, plotPath };
+    await page.locator(".ena-longitudinal-v3-plot-shell").screenshot({ path: shellPath });
+    results[viewport.name] = { ...viewport, ...overflow, pagePath, plotPath, shellPath };
   }
 
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -1544,6 +2007,17 @@ try {
       artifactDirectory,
     },
   );
+  const plotActionAudit = runBrowserPhase(
+    "exercise perspective, orthographic, 2D, and Copy plot actions",
+    exerciseTrajectoryPlotActions,
+    {
+      expectedResultHash: plotAudit.resultHashes[0],
+      expectedTaskRequestCount: plotAudit.taskRequestCount,
+      expectedCameraState: expectedCameraStates.isometric,
+      artifactDirectory,
+    },
+    240_000,
+  );
   const responsiveAudit = runBrowserPhase(
     "capture desktop, tablet, mobile, and fullscreen overflow evidence",
     captureResponsiveEvidence,
@@ -1656,14 +2130,23 @@ try {
   };
   const portableViewports = Object.fromEntries(
     Object.entries(responsiveAudit.results).map(([name, evidence]) => {
-      const { pagePath, plotPath, ...viewportEvidence } = evidence;
+      const { pagePath, plotPath, shellPath, ...viewportEvidence } = evidence;
       return [name, {
         ...viewportEvidence,
         pageScreenshot: artifactEvidence(pagePath),
         plotScreenshot: artifactEvidence(plotPath),
+        shellScreenshot: artifactEvidence(shellPath),
       }];
     }),
   );
+  const {
+    copy: plotActionCopy,
+    ...portablePlotActionAudit
+  } = plotActionAudit;
+  const {
+    copyPath,
+    ...portablePlotActionCopy
+  } = plotActionCopy;
 
   completedSummary = {
     status: "PASS",
@@ -1690,6 +2173,13 @@ try {
         .map(([preset, path]) => [preset, artifactEvidence(path)]),
     ),
     projections: Object.keys(displayAudit.projectionStates),
+    plotActions: {
+      ...portablePlotActionAudit,
+      copy: {
+        ...portablePlotActionCopy,
+        receipt: artifactEvidence(copyPath),
+      },
+    },
     viewports: portableViewports,
     fullscreen: {
       box: responsiveAudit.fullscreenBox,
