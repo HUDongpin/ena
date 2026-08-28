@@ -556,9 +556,6 @@ async function authenticateBuildAndOpen3d(page, args) {
   }, args.fixtureCsv);
   await page.getByRole("heading", { name: "Define the ENA model" }).waitFor({ timeout: 30_000 });
 
-  const modelType = page.getByRole("combobox", { name: "Model type" });
-  if (await modelType.count()) await modelType.selectOption(args.modelType);
-  assertBrowser(await modelType.inputValue() === args.modelType, "the fixture was not configured as Endpoint");
   const unitFields = await page.getByRole("group", { name: /Unit identity/ })
     .getByRole("checkbox")
     .evaluateAll((nodes) => nodes.filter((node) => node.checked).map((node) => (
@@ -568,6 +565,10 @@ async function authenticateBuildAndOpen3d(page, args) {
     JSON.stringify(unitFields) === JSON.stringify(["Group", "Name"]),
     "the synthetic Endpoint unit identity is not ordered Group + Name",
   );
+  await page.getByRole("tab", { name: "Windows" }).click();
+  const modelType = page.getByRole("combobox", { name: "Model type" });
+  await modelType.selectOption(args.modelType);
+  assertBrowser(await modelType.inputValue() === args.modelType, "the fixture was not configured as Endpoint");
   const build = page.getByRole("button", { name: /Build ENA model/ });
   assertBrowser(await build.isEnabled(), "the synthetic Endpoint build is disabled");
   await build.click();

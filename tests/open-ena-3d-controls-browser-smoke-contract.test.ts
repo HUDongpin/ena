@@ -43,6 +43,17 @@ test("the 3D controls smoke owns a production build, synthetic Endpoint fixture,
   );
 });
 
+test("the Endpoint fixture reads Units before selecting Model type from the Windows tab", () => {
+  const source = readFileSync(smokePath, "utf8");
+  const unitIdentity = source.indexOf('name: /Unit identity/');
+  const windowsTab = source.indexOf('getByRole("tab", { name: "Windows" })');
+  const modelType = source.indexOf('getByRole("combobox", { name: "Model type" })');
+
+  assert.ok(unitIdentity >= 0, "the smoke does not verify inferred Unit identity");
+  assert.ok(windowsTab > unitIdentity, "the smoke must inspect Units before leaving that tab");
+  assert.ok(modelType > windowsTab, "Model type must be located only after selecting Windows");
+});
+
 test("the smoke sanitizes CLI failures and emits portable SHA-256 evidence", () => {
   const source = readFileSync(smokePath, "utf8");
 
