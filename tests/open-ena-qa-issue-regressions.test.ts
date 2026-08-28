@@ -13,9 +13,14 @@ import {
   OPEN_ENA_RESULT_TABLE_KEYS,
   openEnaResultTableAvailability,
   openEnaResultTableFocusTarget,
+  resolveOpenEnaResultTableRovingKey,
+  type OpenEnaResultTableKey,
 } from "../lib/open-ena/export";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
-import { OpenEnaResultTables } from "../components/open-ena/OpenEnaWorkspace";
+import {
+  OpenEnaResultTables,
+  OpenEnaResultTablesView,
+} from "../components/open-ena/OpenEnaWorkspace";
 
 const workspace = readFileSync(
   new URL("../components/open-ena/OpenEnaWorkspace.tsx", import.meta.url),
@@ -147,6 +152,96 @@ test("result-table focus navigation wraps across available and unavailable tabs"
   assert.equal(openEnaResultTableFocusTarget(keys, "trajectories", "ArrowLeft"), "connectionCounts");
   assert.equal(openEnaResultTableFocusTarget(keys, "coordinates", "Enter"), null);
   assert.equal(openEnaResultTableFocusTarget(keys, "coordinates", " "), null);
+});
+
+test("result-table roving state preserves unavailable focus and falls back only when the key disappears", () => {
+  const tables = {
+    coordinates: [{ unit: "u1", x: 1 }],
+    lineWeights: [],
+    connectionCounts: [],
+    trajectories: [],
+    centroids: [],
+    nodePositions: [],
+    adjacencyKey: [],
+  };
+  const availability = openEnaResultTableAvailability({
+    modelType: "EndPoint",
+    projectionReference: false,
+  });
+  const selectedAvailable = buildOpenEnaResultTableViewModel({
+    selectedKey: "coordinates",
+    tables,
+    availability,
+    copy: getOpenEnaCopy("en").resultTables,
+  });
+  const selectedUnavailable = buildOpenEnaResultTableViewModel({
+    selectedKey: "trajectories",
+    tables,
+    availability,
+    copy: getOpenEnaCopy("en").resultTables,
+  });
+
+  assert.equal(resolveOpenEnaResultTableRovingKey(selectedAvailable.tabs, null), "coordinates");
+  assert.equal(resolveOpenEnaResultTableRovingKey(selectedAvailable.tabs, "trajectories"), "trajectories");
+  assert.equal(
+    resolveOpenEnaResultTableRovingKey(
+      selectedAvailable.tabs.filter((tab) => tab.key !== "trajectories"),
+      "trajectories",
+    ),
+    "coordinates",
+  );
+  assert.equal(resolveOpenEnaResultTableRovingKey(selectedUnavailable.tabs, null), "coordinates");
+});
+
+test("controlled result-table view keeps selection stable while unavailable roving focus survives rerender", () => {
+  const tables = {
+    coordinates: [{ unit: "u1", x: 1 }],
+    lineWeights: [],
+    connectionCounts: [],
+    trajectories: [],
+    centroids: [],
+    nodePositions: [],
+    adjacencyKey: [],
+  };
+  const availability = openEnaResultTableAvailability({
+    modelType: "EndPoint",
+    projectionReference: false,
+  });
+  const buildModel = () => buildOpenEnaResultTableViewModel({
+    selectedKey: "coordinates",
+    tables,
+    availability,
+    copy: getOpenEnaCopy("en").resultTables,
+  });
+  const modelA = buildModel();
+  const rovingA = resolveOpenEnaResultTableRovingKey(modelA.tabs, null);
+  const rovingB = resolveOpenEnaResultTableRovingKey(modelA.tabs, "trajectories");
+  const modelRerender = buildModel();
+  const rovingAfterRerender = resolveOpenEnaResultTableRovingKey(modelRerender.tabs, rovingB);
+  const renderView = (model: typeof modelA, rovingKey: OpenEnaResultTableKey | null) => renderToStaticMarkup(createElement(
+    OpenEnaResultTablesView,
+    {
+      model,
+      rovingKey,
+      onRovingKeyChange: () => {},
+      onSelect: () => {},
+      onExport: () => {},
+    },
+  ));
+  const htmlA = renderView(modelA, rovingA);
+  const htmlB = renderView(modelA, rovingB);
+  const htmlRerender = renderView(modelRerender, rovingAfterRerender);
+  const rovingTabId = (html: string) => (
+    (html.match(/<button[^>]*role="tab"[^>]*tabindex="0"[^>]*>/u)?.[0] ?? "")
+      .match(/id="([^"]+)"/u)?.[1] ?? null
+  );
+
+  assert.equal(rovingTabId(htmlA), "open-ena-result-table-tab-coordinates");
+  assert.equal(rovingTabId(htmlB), "open-ena-result-table-tab-trajectories");
+  assert.equal(rovingTabId(htmlRerender), "open-ena-result-table-tab-trajectories");
+  assert.ok(htmlB.includes('aria-labelledby="open-ena-result-table-tab-coordinates"'));
+  assert.ok(htmlB.includes('aria-describedby="open-ena-result-table-reason-trajectories"'));
+  assert.ok(htmlB.includes("Not applicable to endpoint models."));
 });
 
 test("result-table view model and static markup keep localized unavailable tabs explicit and linked", () => {
@@ -298,11 +393,20 @@ test("Workspace keeps unavailable result tabs visible and guards CSV export", ()
   assert.match(resultTables, /if \(!resultTableViewModel\.export\.disabled\)/);
   assert.doesNotMatch(resultTables, /rowsToCsv\(tableMap\[resultTable\] as Row\[\]\)/);
 
-  const presenter = workspace.match(
-    /export function OpenEnaResultTables\([\s\S]*?(?=\nconst modeIcons)/,
+  const wrapper = workspace.match(
+    /export function OpenEnaResultTables\([\s\S]*?(?=\nexport function OpenEnaResultTablesView)/,
   )?.[0] ?? "";
+  const presenter = workspace.match(
+    /export function OpenEnaResultTablesView\([\s\S]*?(?=\nconst modeIcons)/,
+  )?.[0] ?? "";
+  assert.match(wrapper, /useState/);
+  assert.match(wrapper, /useEffect/);
+  assert.match(wrapper, /resolveOpenEnaResultTableRovingKey\(/);
+  assert.match(wrapper, /rovingKey=\{resolvedRovingKey\}/);
+  assert.match(presenter, /onFocus=\{\(\) => onRovingKeyChange\(tab\.key\)\}/);
   assert.match(presenter, /onKeyDown=/);
   assert.match(presenter, /openEnaResultTableFocusTarget\(/);
+  assert.match(presenter, /onRovingKeyChange\(targetKey\)[\s\S]*?\.focus\(\)/);
   assert.match(presenter, /ownerDocument\.getElementById\([^)]*\)\?\.focus\(\)/);
   assert.doesNotMatch(presenter, /\n\s+disabled=\{tab\.disabled\}/);
   assert.match(presenter, /if \(!tab\.disabled\) onSelect\(tab\.key\)/);

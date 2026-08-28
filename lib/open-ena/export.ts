@@ -127,6 +127,17 @@ export function openEnaResultTableFocusTarget(
   return keys[(normalizedIndex + direction + keys.length) % keys.length] ?? null;
 }
 
+export function resolveOpenEnaResultTableRovingKey(
+  tabs: readonly OpenEnaResultTableTabView[],
+  rovingKey: OpenEnaResultTableKey | null,
+): OpenEnaResultTableKey | null {
+  if (rovingKey && tabs.some((tab) => tab.key === rovingKey)) return rovingKey;
+  return tabs.find((tab) => tab.selected && !tab.disabled)?.key
+    ?? tabs.find((tab) => tab.tabIndex === 0)?.key
+    ?? tabs[0]?.key
+    ?? null;
+}
+
 export function openEnaResultTableAvailability(context: {
   modelType: OpenEnaResult["set"]["modelType"];
   projectionReference: boolean;

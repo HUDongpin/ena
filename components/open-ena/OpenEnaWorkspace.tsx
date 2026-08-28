@@ -68,6 +68,7 @@ import {
   buildResultTables,
   openEnaResultTableFocusTarget,
   openEnaResultTableAvailability,
+  resolveOpenEnaResultTableRovingKey,
   rowsToCsv,
   type OpenEnaResultTableKey,
   type OpenEnaResultTableViewModel,
@@ -161,6 +162,38 @@ export function OpenEnaResultTables({
   onSelect: (key: OpenEnaResultTableKey) => void;
   onExport: () => void;
 }) {
+  const [rovingKey, setRovingKey] = useState<OpenEnaResultTableKey | null>(() => (
+    resolveOpenEnaResultTableRovingKey(model.tabs, null)
+  ));
+  const resolvedRovingKey = resolveOpenEnaResultTableRovingKey(model.tabs, rovingKey);
+  useEffect(() => {
+    if (rovingKey !== resolvedRovingKey) setRovingKey(resolvedRovingKey);
+  }, [resolvedRovingKey, rovingKey]);
+
+  return (
+    <OpenEnaResultTablesView
+      model={model}
+      rovingKey={resolvedRovingKey}
+      onRovingKeyChange={setRovingKey}
+      onSelect={onSelect}
+      onExport={onExport}
+    />
+  );
+}
+
+export function OpenEnaResultTablesView({
+  model,
+  rovingKey,
+  onRovingKeyChange,
+  onSelect,
+  onExport,
+}: {
+  model: OpenEnaResultTableViewModel;
+  rovingKey: OpenEnaResultTableKey | null;
+  onRovingKeyChange: (key: OpenEnaResultTableKey) => void;
+  onSelect: (key: OpenEnaResultTableKey) => void;
+  onExport: () => void;
+}) {
   return (
     <details className="ena-result-data">
       <summary>
@@ -179,8 +212,9 @@ export function OpenEnaResultTables({
               aria-selected={tab.selected}
               aria-disabled={tab.disabled}
               aria-describedby={tab.describedBy ?? undefined}
-              tabIndex={tab.tabIndex}
+              tabIndex={tab.key === rovingKey ? 0 : -1}
               title={tab.reason ?? undefined}
+              onFocus={() => onRovingKeyChange(tab.key)}
               onClick={() => {
                 if (!tab.disabled) onSelect(tab.key);
               }}
@@ -192,6 +226,7 @@ export function OpenEnaResultTables({
                 );
                 if (!targetKey) return;
                 event.preventDefault();
+                onRovingKeyChange(targetKey);
                 const targetTab = model.tabs.find((candidate) => candidate.key === targetKey);
                 if (targetTab) event.currentTarget.ownerDocument.getElementById(targetTab.id)?.focus();
               }}
