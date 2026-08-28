@@ -48,10 +48,9 @@ export type OpenEnaResultTableUnavailableReason =
   | "endpoint-model"
   | "projection-reference";
 
-export interface OpenEnaResultTableAvailability {
-  available: boolean;
-  reason: OpenEnaResultTableUnavailableReason | null;
-}
+export type OpenEnaResultTableAvailability =
+  | { available: true; reason: null }
+  | { available: false; reason: OpenEnaResultTableUnavailableReason };
 
 export interface OpenEnaResultTablesCopy {
   summaryTitle: string;
@@ -109,6 +108,25 @@ export interface OpenEnaResultTableViewModel {
   };
 }
 
+export function openEnaResultTableFocusTarget(
+  keys: readonly OpenEnaResultTableKey[],
+  currentKey: OpenEnaResultTableKey,
+  key: string,
+): OpenEnaResultTableKey | null {
+  if (keys.length === 0) return null;
+  if (key === "Home") return keys[0] ?? null;
+  if (key === "End") return keys.at(-1) ?? null;
+  const direction = key === "ArrowLeft" || key === "ArrowUp"
+    ? -1
+    : key === "ArrowRight" || key === "ArrowDown"
+      ? 1
+      : 0;
+  if (direction === 0) return null;
+  const currentIndex = keys.indexOf(currentKey);
+  const normalizedIndex = currentIndex >= 0 ? currentIndex : 0;
+  return keys[(normalizedIndex + direction + keys.length) % keys.length] ?? null;
+}
+
 export function openEnaResultTableAvailability(context: {
   modelType: OpenEnaResult["set"]["modelType"];
   projectionReference: boolean;
@@ -163,6 +181,10 @@ export function buildOpenEnaResultTableViewModel(input: {
   const selectedReason = selectedAvailability.reason
     ? input.copy.unavailableReasons[selectedAvailability.reason]
     : null;
+  const rovingKey = selectedAvailability.available
+    ? input.selectedKey
+    : OPEN_ENA_RESULT_TABLE_KEYS.find((key) => input.availability[key].available)
+      ?? input.selectedKey;
   const tabs = OPEN_ENA_RESULT_TABLE_KEYS.map((key): OpenEnaResultTableTabView => {
     const availability = input.availability[key];
     const reason = availability.reason ? input.copy.unavailableReasons[availability.reason] : null;
@@ -174,7 +196,7 @@ export function buildOpenEnaResultTableViewModel(input: {
       badge: availability.available ? String(input.tables[key].length) : input.copy.notApplicableShort,
       selected: input.selectedKey === key,
       disabled: !availability.available,
-      tabIndex: availability.available ? 0 : -1,
+      tabIndex: key === rovingKey ? 0 : -1,
       reason,
       describedBy: reason ? `${idPrefix}-reason-${key}` : null,
     };
@@ -253,7 +275,7 @@ function csvValue(value: Scalar | undefined) {
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-export function rowsToCsv(rows: Row[]): string {
+export function rowsToCsv(rows: readonly Row[]): string {
   if (rows.length === 0) return "";
   const headers: string[] = [];
   const seen = new Set<string>();

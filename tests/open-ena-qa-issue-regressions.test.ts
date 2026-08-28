@@ -12,6 +12,7 @@ import {
   buildOpenEnaResultTableViewModel,
   OPEN_ENA_RESULT_TABLE_KEYS,
   openEnaResultTableAvailability,
+  openEnaResultTableFocusTarget,
 } from "../lib/open-ena/export";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 import { OpenEnaResultTables } from "../components/open-ena/OpenEnaWorkspace";
@@ -122,6 +123,30 @@ test("result-table availability exposes typed reasons for endpoint, trajectory, 
     "nodePositions",
     "adjacencyKey",
   ] as const) assert.equal(projected[key].available, true, `${key} must remain available`);
+  for (const tableAvailability of Object.values(projected)) {
+    if (tableAvailability.available) assert.equal(tableAvailability.reason, null);
+    else assert.ok(tableAvailability.reason);
+  }
+});
+
+test("result-table focus navigation wraps across available and unavailable tabs", () => {
+  const keys = [...OPEN_ENA_RESULT_TABLE_KEYS];
+
+  assert.equal(openEnaResultTableFocusTarget(keys, "coordinates", "ArrowRight"), "lineWeights");
+  assert.equal(openEnaResultTableFocusTarget(keys, "adjacencyKey", "ArrowRight"), "coordinates");
+  assert.equal(openEnaResultTableFocusTarget(keys, "coordinates", "ArrowLeft"), "adjacencyKey");
+  assert.equal(openEnaResultTableFocusTarget(keys, "coordinates", "ArrowDown"), "lineWeights");
+  assert.equal(openEnaResultTableFocusTarget(keys, "coordinates", "ArrowUp"), "adjacencyKey");
+  assert.equal(openEnaResultTableFocusTarget(keys, "centroids", "Home"), "coordinates");
+  assert.equal(openEnaResultTableFocusTarget(keys, "centroids", "End"), "adjacencyKey");
+  assert.equal(
+    openEnaResultTableFocusTarget(keys, "trajectories", "ArrowRight"),
+    "centroids",
+    "unavailable tabs remain focus-navigation stops",
+  );
+  assert.equal(openEnaResultTableFocusTarget(keys, "trajectories", "ArrowLeft"), "connectionCounts");
+  assert.equal(openEnaResultTableFocusTarget(keys, "coordinates", "Enter"), null);
+  assert.equal(openEnaResultTableFocusTarget(keys, "coordinates", " "), null);
 });
 
 test("result-table view model and static markup keep localized unavailable tabs explicit and linked", () => {
@@ -169,8 +194,9 @@ test("result-table view model and static markup keep localized unavailable tabs 
   });
   assert.equal(model.tabs.length, 7);
   assert.equal(model.tabs.find((tab: { key: string }) => tab.key === "trajectories")?.disabled, true);
-  assert.ok(model.tabs.filter((tab) => !tab.disabled).every((tab) => tab.tabIndex === 0));
-  assert.ok(model.tabs.filter((tab) => tab.disabled).every((tab) => tab.tabIndex === -1));
+  assert.equal(model.tabs.filter((tab) => tab.tabIndex === 0).length, 1);
+  assert.equal(model.tabs.find((tab) => tab.key === "coordinates")?.tabIndex, 0);
+  assert.equal(model.tabs.find((tab) => tab.key === "trajectories")?.tabIndex, -1);
   assert.equal(model.panel.id, "open-ena-result-table-panel");
   assert.equal(model.panel.labelledBy, "open-ena-result-table-tab-trajectories");
   assert.equal(model.panel.available, false);
@@ -180,7 +206,9 @@ test("result-table view model and static markup keep localized unavailable tabs 
     OpenEnaResultTables,
     { model, onSelect: () => {}, onExport: () => {} },
   ));
-  assert.equal((html.match(/role="tab"/gu) ?? []).length, 7);
+  const renderedTabs = html.match(/<button[^>]*role="tab"[^>]*>/gu) ?? [];
+  assert.equal(renderedTabs.length, 7);
+  assert.equal(renderedTabs.filter((tag) => tag.includes('tabindex="0"')).length, 1);
   assert.ok(html.includes('id="open-ena-result-table-tab-trajectories"'));
   assert.ok(html.includes('aria-controls="open-ena-result-table-panel"'));
   assert.ok(html.includes('role="tabpanel"'));
@@ -190,6 +218,11 @@ test("result-table view model and static markup keep localized unavailable tabs 
   assert.ok(html.includes('id="open-ena-result-table-reason-trajectories"'));
   assert.ok(html.includes("不適用於端點模型。"));
   assert.ok(html.includes("不適用"));
+  const unavailableTab = html.match(/<button[^>]*id="open-ena-result-table-tab-trajectories"[^>]*>/u)?.[0] ?? "";
+  assert.ok(unavailableTab.includes('aria-disabled="true"'));
+  assert.ok(unavailableTab.includes('aria-describedby="open-ena-result-table-reason-trajectories"'));
+  assert.ok(unavailableTab.includes('tabindex="-1"'));
+  assert.doesNotMatch(unavailableTab, /\sdisabled(?:=|\s|>)/u);
 });
 
 test("Workspace isolates generic 3D axes from inference, 2D, and AI evidence consumers", () => {
@@ -263,4 +296,14 @@ test("Workspace keeps unavailable result tabs visible and guards CSV export", ()
   assert.match(resultTables, /buildOpenEnaResultTableViewModel\(/);
   assert.match(resultTables, /<OpenEnaResultTables/);
   assert.match(resultTables, /if \(!resultTableViewModel\.export\.disabled\)/);
+  assert.doesNotMatch(resultTables, /rowsToCsv\(tableMap\[resultTable\] as Row\[\]\)/);
+
+  const presenter = workspace.match(
+    /export function OpenEnaResultTables\([\s\S]*?(?=\nconst modeIcons)/,
+  )?.[0] ?? "";
+  assert.match(presenter, /onKeyDown=/);
+  assert.match(presenter, /openEnaResultTableFocusTarget\(/);
+  assert.match(presenter, /ownerDocument\.getElementById\([^)]*\)\?\.focus\(\)/);
+  assert.doesNotMatch(presenter, /\n\s+disabled=\{tab\.disabled\}/);
+  assert.match(presenter, /if \(!tab\.disabled\) onSelect\(tab\.key\)/);
 });

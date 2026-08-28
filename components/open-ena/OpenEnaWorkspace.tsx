@@ -66,6 +66,7 @@ import {
   buildAnalysisBundle,
   buildOpenEnaResultTableViewModel,
   buildResultTables,
+  openEnaResultTableFocusTarget,
   openEnaResultTableAvailability,
   rowsToCsv,
   type OpenEnaResultTableKey,
@@ -178,11 +179,21 @@ export function OpenEnaResultTables({
               aria-selected={tab.selected}
               aria-disabled={tab.disabled}
               aria-describedby={tab.describedBy ?? undefined}
-              disabled={tab.disabled}
               tabIndex={tab.tabIndex}
               title={tab.reason ?? undefined}
               onClick={() => {
                 if (!tab.disabled) onSelect(tab.key);
+              }}
+              onKeyDown={(event) => {
+                const targetKey = openEnaResultTableFocusTarget(
+                  model.tabs.map((candidate) => candidate.key),
+                  tab.key,
+                  event.key,
+                );
+                if (!targetKey) return;
+                event.preventDefault();
+                const targetTab = model.tabs.find((candidate) => candidate.key === targetKey);
+                if (targetTab) event.currentTarget.ownerDocument.getElementById(targetTab.id)?.focus();
               }}
             >
               {tab.label} <span>{tab.badge}</span>
@@ -3634,7 +3645,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           if (!resultTableViewModel.export.disabled) {
             downloadText(
               `open-ena-${resultTable}.csv`,
-              rowsToCsv(tableMap[resultTable] as Row[]),
+              rowsToCsv(tableMap[resultTable]),
               "text/csv;charset=utf-8",
             );
           }
