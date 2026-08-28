@@ -1,5 +1,5 @@
 import { canonicalizeOpenEnaConfig } from "./network-config";
-import type { AnalysisKind, OpenEnaConfig, OpenEnaResult } from "./types";
+import type { AnalysisKind, OpenEnaConfig, OpenEnaResult, OpenEnaView } from "./types";
 
 export type OpenEnaCapability =
   | "analysis-sets"
@@ -47,6 +47,34 @@ export const OPEN_ENA_CAPABILITIES = {
     aiInterpretation: false,
   },
 } as const;
+
+export type OpenEnaDataViewUnavailableReason =
+  | "active-group-contrast-required"
+  | "active-3d-group-contrast-required"
+  | "ona-three-dimensional-unavailable";
+
+export interface OpenEnaDataViewAvailability {
+  enabled: boolean;
+  reason: OpenEnaDataViewUnavailableReason | null;
+}
+
+export function openEnaDataViewAvailability(input: {
+  view: OpenEnaView;
+  completedResultKind: AnalysisKind | null;
+  hasActiveGroupContrast: boolean;
+}): OpenEnaDataViewAvailability {
+  if (input.completedResultKind === "ona") {
+    return input.view === "2d"
+      ? { enabled: true, reason: null }
+      : { enabled: false, reason: "ona-three-dimensional-unavailable" };
+  }
+  if (input.completedResultKind === "ena" && input.hasActiveGroupContrast) {
+    return { enabled: true, reason: null };
+  }
+  return input.view === "3d"
+    ? { enabled: false, reason: "active-3d-group-contrast-required" }
+    : { enabled: false, reason: "active-group-contrast-required" };
+}
 
 function mismatch(message: string): never {
   throw new OpenEnaCapabilityError("analysis-network-mismatch", "analysis", message);

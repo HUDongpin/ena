@@ -125,18 +125,16 @@ export default function OpenEna3DGroupContrast({
           data-ena-center-mode={centerMode}
         >
           {centerMode === "data" ? (
-            <article
+            <div
               className="open-ena-3d-triptych-panel open-ena-3d-triptych-main open-ena-3d-triptych-data-view"
               data-testid="open-ena-3d-data-view"
-              role="region"
-              aria-label="Data View"
             >
               {dataView ?? (
                 <p className="ena-sets-compatibility-note" role="status">
                   Data View is not available for this 3D comparison result.
                 </p>
               )}
-            </article>
+            </div>
           ) : (
             <article
               className="open-ena-3d-triptych-panel open-ena-3d-triptych-main"

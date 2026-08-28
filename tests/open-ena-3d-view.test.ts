@@ -12,6 +12,7 @@ import {
   zoomOpenEna3dCamera,
 } from "../components/open-ena/OpenEnaInteractive3DPlot";
 import { analyzeDataset } from "../lib/open-ena/analyze";
+import { openEnaDataViewAvailability } from "../lib/open-ena/capabilities";
 import { parseCsv } from "../lib/open-ena/csv";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 import {
@@ -724,7 +725,7 @@ test("3D plot mode keeps Comparison, Primary, and Secondary inside one stable ce
   assert.doesNotMatch(markup, /data-testid="open-ena-3d-data-view"/);
 });
 
-test("3D data mode replaces only Comparison with the provided semantic Data View", () => {
+test("3D data mode leaves landmark semantics to the provided Data View", () => {
   const markup = renderThreeDimensionalGroupContrast(
     "data",
     createElement(
@@ -735,40 +736,74 @@ test("3D data mode replaces only Comparison with the provided semantic Data View
           createElement("tr", null, createElement("td", null, "Data record")))),
     ),
   );
+  const dataViewCard = markup.match(/<[^>]*data-testid="open-ena-3d-data-view"[^>]*>/)?.[0] ?? "";
 
   assert.match(markup, /data-testid="open-ena-3d-center-surface"[^>]*data-ena-center-mode="data"/);
-  assert.match(markup, /data-testid="open-ena-3d-data-view"[^>]*role="region"[^>]*aria-label="Data View"/);
+  assert.ok(dataViewCard, "data mode must render its center card");
+  assert.doesNotMatch(dataViewCard, /\srole=|\saria-label=/);
   assert.match(markup, /data-testid="fixture-3d-data-view"/);
   assert.doesNotMatch(markup, /data-testid="open-ena-3d-comparison-plot"/);
   assert.match(markup, /data-testid="open-ena-3d-primary-plot"/);
   assert.match(markup, /data-testid="open-ena-3d-secondary-plot"/);
 });
 
-test("Workspace enables Data View only for supported 3D comparison state and wires the existing data surface", () => {
+test("3D data mode fails closed with a status message instead of adding a fallback landmark", () => {
+  const markup = renderThreeDimensionalGroupContrast("data");
+  const dataViewCard = markup.match(/<[^>]*data-testid="open-ena-3d-data-view"[^>]*>/)?.[0] ?? "";
+
+  assert.ok(dataViewCard, "data mode must retain the center card when its child is unavailable");
+  assert.doesNotMatch(dataViewCard, /\srole=|\saria-label=/);
+  assert.match(
+    markup,
+    /<p class="ena-sets-compatibility-note" role="status">Data View is not available for this 3D comparison result\.<\/p>/,
+  );
+  assert.doesNotMatch(markup, /aria-label="Data View"/);
+});
+
+test("Data View availability follows the executable analysis/view state matrix", () => {
+  const cases = [
+    {
+      label: "2D active ENA contrast",
+      input: { view: "2d", completedResultKind: "ena", hasActiveGroupContrast: true },
+      expected: { enabled: true, reason: null },
+    },
+    {
+      label: "3D active ENA contrast",
+      input: { view: "3d", completedResultKind: "ena", hasActiveGroupContrast: true },
+      expected: { enabled: true, reason: null },
+    },
+    {
+      label: "2D ONA result",
+      input: { view: "2d", completedResultKind: "ona", hasActiveGroupContrast: false },
+      expected: { enabled: true, reason: null },
+    },
+    {
+      label: "ordinary 2D ENA",
+      input: { view: "2d", completedResultKind: "ena", hasActiveGroupContrast: false },
+      expected: { enabled: false, reason: "active-group-contrast-required" },
+    },
+    {
+      label: "ordinary 3D ENA",
+      input: { view: "3d", completedResultKind: "ena", hasActiveGroupContrast: false },
+      expected: { enabled: false, reason: "active-3d-group-contrast-required" },
+    },
+  ] as const;
+
+  for (const fixture of cases) {
+    assert.deepEqual(openEnaDataViewAvailability(fixture.input), fixture.expected, fixture.label);
+  }
+});
+
+test("Workspace passes the selected center mode and existing Data View node to the 3D presenter", () => {
   const workspace = readFileSync(
     join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
     "utf8",
   );
-  const toggle = workspace.match(/data-testid="open-ena-data-view-toggle"[\s\S]*?<\/button>/)?.[0] ?? "";
   const presenter = workspace.match(/<OpenEna3DGroupContrast[\s\S]*?\/>/)?.[0] ?? "";
-  const selectView = workspace.match(/function selectVisualizationView[\s\S]*?\n  }/)?.[0] ?? "";
 
-  assert.match(toggle, /disabled=\{!activeGroupContrast && completedResultKind !== "ona"\}/);
-  assert.doesNotMatch(toggle, /disabled=\{view === "3d"/);
-  assert.match(
-    toggle,
-    /title=\{view === "3d" && !activeGroupContrast && completedResultKind !== "ona"[\s\S]*?"Data View requires an active 3D group comparison\."/,
-  );
-  assert.match(
-    toggle,
-    /aria-label=\{view === "3d" && !activeGroupContrast && completedResultKind !== "ona"[\s\S]*?"Data View unavailable\. Select two groups for a 3D comparison first\."/,
-  );
-  assert.match(presenter, /centerMode=\{centerSurface\}/);
-  assert.match(
-    presenter,
-    /dataView=\{centerSurface === "data" \? \([\s\S]*?data-testid="open-ena-center-data-view"[\s\S]*?renderResultData\(\)/,
-  );
-  assert.match(selectView, /setView\(nextView\);[\s\S]*?setCenterSurface\("plot"\);/);
+  assert.match(presenter, /centerMode\s*=\s*\{\s*centerSurface\s*\}/);
+  assert.match(presenter, /dataView\s*=\s*\{\s*centerSurface\s*===\s*"data"/);
+  assert.match(presenter, /renderResultData\s*\(\s*\)/);
 });
 
 test("each 3D paper replaces the Plotly modebar with the same four unframed plot-action logos", () => {

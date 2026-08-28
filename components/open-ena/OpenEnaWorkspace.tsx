@@ -14,7 +14,10 @@ import {
   transitionOpenEnaOrderPanelValue,
   type OpenEnaAnalysisFamilyDrafts,
 } from "@/lib/open-ena/analysis-family";
-import { openEnaAnalysisKindFromResult } from "@/lib/open-ena/capabilities";
+import {
+  openEnaAnalysisKindFromResult,
+  openEnaDataViewAvailability,
+} from "@/lib/open-ena/capabilities";
 import {
   analysisKindFor,
   cloneOpenEnaConfig,
@@ -1204,6 +1207,11 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         : "model";
   const activeSetComparison = completedResultKind !== "ona" && displayedComparisonSurface === "sets" ? setComparison : null;
   const activeGroupContrast = completedResultKind !== "ona" && displayedComparisonSurface === "groups" ? groupContrast : null;
+  const dataViewAvailability = openEnaDataViewAvailability({
+    view,
+    completedResultKind,
+    hasActiveGroupContrast: Boolean(activeGroupContrast),
+  });
   const dataViewModel = useMemo(() => {
     const empty = {
       columns: [] as OpenEnaDataViewColumn[],
@@ -4021,15 +4029,15 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   className="ena-compact-toolbar-button"
                   data-testid="open-ena-data-view-toggle"
                   aria-pressed={centerSurface === "data"}
-                  disabled={!activeGroupContrast && completedResultKind !== "ona"}
+                  disabled={!dataViewAvailability.enabled}
                   onClick={() => {
                     setDataViewContext("comparison");
                     setCenterSurface((current) => current === "data" ? "plot" : "data");
                   }}
-                  title={view === "3d" && !activeGroupContrast && completedResultKind !== "ona"
+                  title={dataViewAvailability.reason === "active-3d-group-contrast-required"
                     ? "Data View requires an active 3D group comparison."
                     : undefined}
-                  aria-label={view === "3d" && !activeGroupContrast && completedResultKind !== "ona"
+                  aria-label={dataViewAvailability.reason === "active-3d-group-contrast-required"
                     ? "Data View unavailable. Select two groups for a 3D comparison first."
                     : undefined}
                 >
