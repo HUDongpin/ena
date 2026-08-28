@@ -16,6 +16,7 @@ import { analyzeDataset } from "../lib/open-ena/analyze";
 import {
   openEnaDataViewAvailability,
   openEnaDataViewCenterSurface,
+  openEnaDataViewUnavailableCopy,
 } from "../lib/open-ena/capabilities";
 import { parseCsv } from "../lib/open-ena/csv";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
@@ -835,6 +836,59 @@ test("Data View availability follows the executable analysis/view state matrix",
   }
 });
 
+test("ONA 3D Data View is disabled with explicit supported-view guidance", () => {
+  const availability = openEnaDataViewAvailability({
+    view: "3d",
+    completedResultKind: "ona",
+    hasActiveGroupContrast: false,
+  });
+  assert.deepEqual(availability, {
+    enabled: false,
+    reason: "ona-three-dimensional-unavailable",
+  });
+
+  assert.deepEqual(openEnaDataViewUnavailableCopy(availability.reason), {
+    title: "Data View is unavailable in 3D ONA.",
+    ariaLabel: "Data View unavailable in 3D ONA. Switch to the supported 2D ONA view.",
+  });
+});
+
+test("every disabled Data View reason has distinct guidance while enabled state keeps its visible name", () => {
+  assert.deepEqual(openEnaDataViewUnavailableCopy("active-group-contrast-required"), {
+    title: "Data View requires an active group comparison.",
+    ariaLabel: "Data View unavailable. Select two groups for a comparison first.",
+  });
+  assert.deepEqual(openEnaDataViewUnavailableCopy("active-3d-group-contrast-required"), {
+    title: "Data View requires an active 3D group comparison.",
+    ariaLabel: "Data View unavailable. Select two groups for a 3D comparison first.",
+  });
+  assert.equal(openEnaDataViewUnavailableCopy(null), null, "enabled Data View must retain its visible button name");
+});
+
+test("all authoritative 3D interaction hints describe five actions including fullscreen", () => {
+  const hints = {
+    en: getOpenEnaCopy("en").plot.threeDInteractionHint,
+    zhHant: getOpenEnaCopy("zh-hant").plot.threeDInteractionHint,
+    zhHans: getOpenEnaCopy("zh-hans").plot.threeDInteractionHint,
+  };
+
+  assert.equal(
+    hints.en,
+    "Drag to rotate; scroll or use the five plot actions to zoom in, zoom out, recenter, copy the image, or enter fullscreen. The geometry is descriptive, not inferential.",
+  );
+  assert.equal(
+    hints.zhHant,
+    "拖曳以旋轉；滾動或使用五個繪圖操作來放大、縮小、回正、複製圖片或進入全螢幕。此幾何只作描述，不屬推論證據。",
+  );
+  assert.equal(
+    hints.zhHans,
+    "拖动以旋转；滚动或使用五个绘图操作来放大、缩小、回正、复制图片或进入全屏。此几何仅作描述，不属于推断证据。",
+  );
+  Object.values(hints).forEach((hint) => {
+    assert.doesNotMatch(hint, /four plot buttons|四個繪圖按鈕|四个绘图按钮/u);
+  });
+});
+
 test("available Data View keeps the requested data center selected and pressed", () => {
   assert.deepEqual(openEnaDataViewCenterSurface({
     requestedCenterSurface: "data",
@@ -1068,6 +1122,33 @@ test("native fullscreen mode requires callable request and exit APIs", () => {
   assert.equal(openEna3dFullscreenMode({ requestFullscreen: callable, exitFullscreen: callable }), "native");
   assert.equal(openEna3dFullscreenMode({ requestFullscreen: undefined, exitFullscreen: callable }), "fallback");
   assert.equal(openEna3dFullscreenMode({ requestFullscreen: callable, exitFullscreen: undefined }), "fallback");
+});
+
+test("the interactive 3D component uses one combined React import", () => {
+  const interactive = readFileSync(
+    join(projectRoot, "components", "open-ena", "OpenEnaInteractive3DPlot.tsx"),
+    "utf8",
+  );
+  const reactImports = interactive.match(/^import .* from "react";$/gmu) ?? [];
+
+  assert.equal(reactImports.length, 1);
+});
+
+test("native fullscreen exit rejection gives actionable Escape guidance without claiming exit", () => {
+  const interactive = readFileSync(
+    join(projectRoot, "components", "open-ena", "OpenEnaInteractive3DPlot.tsx"),
+    "utf8",
+  );
+  const exitBranchStart = interactive.indexOf("if (document.fullscreenElement === target)");
+  const exitBranchEnd = interactive.indexOf("void enterFullscreen(target)", exitBranchStart);
+  const exitBranch = interactive.slice(exitBranchStart, exitBranchEnd);
+
+  assert.match(exitBranch, /Native fullscreen could not close\. Press Escape to exit\./u);
+  assert.doesNotMatch(exitBranch, /Fullscreen exit unavailable/u);
+  assert.doesNotMatch(
+    exitBranch,
+    /enterFallbackFullscreen|setIsFullscreen\(false\)|fullscreenStateRef\.current\s*=\s*false/u,
+  );
 });
 
 test("3D fullscreen is native-first with a safe single-owner fallback, lifecycle cleanup, focus return, and explicit resize", () => {

@@ -58,6 +58,29 @@ export interface OpenEnaDataViewAvailability {
   reason: OpenEnaDataViewUnavailableReason | null;
 }
 
+export interface OpenEnaDataViewUnavailableCopy {
+  title: string;
+  ariaLabel: string;
+}
+
+const OPEN_ENA_DATA_VIEW_UNAVAILABLE_COPY: Readonly<Record<
+  OpenEnaDataViewUnavailableReason,
+  Readonly<OpenEnaDataViewUnavailableCopy>
+>> = {
+  "active-group-contrast-required": {
+    title: "Data View requires an active group comparison.",
+    ariaLabel: "Data View unavailable. Select two groups for a comparison first.",
+  },
+  "active-3d-group-contrast-required": {
+    title: "Data View requires an active 3D group comparison.",
+    ariaLabel: "Data View unavailable. Select two groups for a 3D comparison first.",
+  },
+  "ona-three-dimensional-unavailable": {
+    title: "Data View is unavailable in 3D ONA.",
+    ariaLabel: "Data View unavailable in 3D ONA. Switch to the supported 2D ONA view.",
+  },
+};
+
 export type OpenEnaCenterSurface = "plot" | "data";
 
 export interface OpenEnaDataViewCenterSurface {
@@ -81,6 +104,12 @@ export function openEnaDataViewAvailability(input: {
   return input.view === "3d"
     ? { enabled: false, reason: "active-3d-group-contrast-required" }
     : { enabled: false, reason: "active-group-contrast-required" };
+}
+
+export function openEnaDataViewUnavailableCopy(
+  reason: OpenEnaDataViewUnavailableReason | null,
+): Readonly<OpenEnaDataViewUnavailableCopy> | null {
+  return reason === null ? null : OPEN_ENA_DATA_VIEW_UNAVAILABLE_COPY[reason];
 }
 
 export function openEnaDataViewCenterSurface(input: {

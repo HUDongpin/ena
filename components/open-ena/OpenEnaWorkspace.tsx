@@ -18,6 +18,7 @@ import {
   openEnaAnalysisKindFromResult,
   openEnaDataViewAvailability,
   openEnaDataViewCenterSurface,
+  openEnaDataViewUnavailableCopy,
   type OpenEnaCenterSurface,
 } from "@/lib/open-ena/capabilities";
 import {
@@ -1213,6 +1214,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     completedResultKind,
     hasActiveGroupContrast: Boolean(activeGroupContrast),
   });
+  const dataViewUnavailableCopy = openEnaDataViewUnavailableCopy(dataViewAvailability.reason);
   const dataViewCenterSurface = openEnaDataViewCenterSurface({
     requestedCenterSurface: centerSurface,
     dataViewEnabled: dataViewAvailability.enabled,
@@ -4043,12 +4045,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     setDataViewContext("comparison");
                     setCenterSurface(dataViewCenterSurface.dataViewPressed ? "plot" : "data");
                   }}
-                  title={dataViewAvailability.reason === "active-3d-group-contrast-required"
-                    ? "Data View requires an active 3D group comparison."
-                    : undefined}
-                  aria-label={dataViewAvailability.reason === "active-3d-group-contrast-required"
-                    ? "Data View unavailable. Select two groups for a 3D comparison first."
-                    : undefined}
+                  title={dataViewUnavailableCopy?.title}
+                  aria-label={dataViewUnavailableCopy?.ariaLabel}
                 >
                   <span aria-hidden="true">▦</span>{effectiveCenterSurface === "data"
                     ? completedResultKind === "ona" ? copy.ona.layout.overallPlot : "Comparison Plot"

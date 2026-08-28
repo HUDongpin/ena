@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { RefObject } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
@@ -811,10 +810,11 @@ export default function OpenEnaInteractive3DPlot({
       return;
     }
     if (document.fullscreenElement === target) {
+      const exitFailureMessage = "Native fullscreen could not close. Press Escape to exit.";
       if (typeof document.exitFullscreen === "function") {
-        void document.exitFullscreen().catch(() => announceAction("Fullscreen exit unavailable"));
+        void document.exitFullscreen().catch(() => announceAction(exitFailureMessage));
       } else {
-        announceAction("Fullscreen exit unavailable");
+        announceAction(exitFailureMessage);
       }
       return;
     }
