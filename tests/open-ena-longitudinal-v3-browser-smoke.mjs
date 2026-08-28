@@ -1595,6 +1595,39 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       outsideNodeCount: outsideNodes.length,
     };
   });
+  const readFallbackControlSnapshot = async () => await page.evaluate(() => {
+    const audit = window.__openEnaFallbackFullscreenA11yAudit;
+    if (!audit) throw new Error("fallback fullscreen audit state is missing");
+    const focusableSelector = [
+      "button:not([disabled])",
+      "a[href]",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(",");
+    const focusables = [...audit.shell.querySelectorAll(focusableSelector)]
+      .filter((element) => !element.hasAttribute("hidden") && element.getAttribute("aria-hidden") !== "true");
+    const actionFor = (element) => {
+      if (element === audit.exitButton) return "fullscreen";
+      return element?.getAttribute?.("data-ena-plot-action") ?? null;
+    };
+    const controls = [...audit.shell.querySelectorAll(".ena-longitudinal-v3-plot-actions button")]
+      .map((button) => ({
+        action: actionFor(button),
+        label: button.getAttribute("aria-label") || button.textContent?.trim() || "",
+        disabled: button.disabled,
+        ariaDisabled: button.getAttribute("aria-disabled"),
+        active: document.activeElement === button,
+      }));
+    const dataActionControls = controls.filter((control) => control.action !== "fullscreen");
+    return {
+      controls,
+      focusableActions: focusables.map(actionFor),
+      currentActiveAction: actionFor(document.activeElement),
+      entryPending: dataActionControls.some((control) => control.disabled),
+    };
+  });
   let evidence = null;
   let requestFullscreenRestored = false;
   try {
@@ -1646,6 +1679,58 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
     assertBrowser(modalState.shellPathNonInert, "fallback fullscreen inerted its own ancestor path");
     assertBrowser(modalState.outsideTreeIsolated, "fallback fullscreen did not isolate every outside-tree sibling");
     assertBrowser(modalState.bodyScrollLocked, "fallback fullscreen did not lock body scroll");
+
+    const entryState = await readFallbackControlSnapshot();
+    assertBrowser(entryState.controls.length === 5, "fallback entry did not expose all five plot buttons");
+    assertBrowser(entryState.currentActiveAction === "fullscreen", "fallback entry focus left Exit fullscreen");
+    let pendingShiftTabStayedOnExit = null;
+    if (entryState.entryPending) {
+      const pendingActions = entryState.controls.filter((control) => control.action !== "fullscreen");
+      assertBrowser(pendingActions.length === 4, "fallback pending state omitted a plot action");
+      assertBrowser(
+        pendingActions.every((control) => control.disabled),
+        "fallback pending state did not disable all four plot actions",
+      );
+      assertBrowser(
+        JSON.stringify(entryState.focusableActions) === JSON.stringify(["fullscreen"]),
+        "fallback pending focusables included a disabled plot action",
+      );
+      await page.keyboard.press("Shift+Tab");
+      pendingShiftTabStayedOnExit = await page.evaluate(() => {
+        const audit = window.__openEnaFallbackFullscreenA11yAudit;
+        return Boolean(audit && document.activeElement === audit.exitButton);
+      });
+      assertBrowser(
+        pendingShiftTabStayedOnExit,
+        "Shift+Tab escaped Exit fullscreen while Plotly relayout was pending",
+      );
+    } else {
+      assertBrowser(
+        entryState.controls.every((control) => !control.disabled),
+        "settled fallback entry exposed a disabled plot action",
+      );
+    }
+
+    await page.waitForFunction(() => {
+      const dataActionButtons = [...document.querySelectorAll(
+        '.ena-longitudinal-v3-plot-shell [data-ena-plot-action]',
+      )];
+      return dataActionButtons.length === 4 && dataActionButtons.every((button) => !button.disabled);
+    }, null, { timeout: 15_000 });
+    const settledState = await readFallbackControlSnapshot();
+    assertBrowser(settledState.controls.length === 5, "settled fallback omitted a plot button");
+    assertBrowser(
+      settledState.controls.every((control) => !control.disabled),
+      "settled fallback retained a disabled plot button",
+    );
+    assertBrowser(
+      settledState.currentActiveAction === "fullscreen",
+      "settling Plotly relayout moved focus away from Exit fullscreen",
+    );
+    assertBrowser(
+      JSON.stringify(settledState.focusableActions) === JSON.stringify(["fullscreen", "zoom-in", "zoom-out", "recenter", "copy-image"]),
+      "settled fallback focusables do not match the five production buttons",
+    );
 
     await page.keyboard.press("Shift+Tab");
     const shiftTabToCopy = await page.evaluate(() => {
@@ -1743,6 +1828,9 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       shellPathNonInert: modalState.shellPathNonInert,
       outsideTreeIsolated: modalState.outsideTreeIsolated,
       bodyScrollLocked: modalState.bodyScrollLocked,
+      entryState,
+      settledState,
+      pendingShiftTabStayedOnExit,
       shiftTabToCopy,
       tabToExit,
       backgroundFocusContained: backgroundFocusAudit.focusStayedInDialog,
