@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import OpenEna3DGroupContrast from "../components/open-ena/OpenEna3DGroupContrast";
-import {
+import OpenEnaInteractive3DPlot, {
   OPEN_ENA_3D_CAMERA_ZOOM_STEP,
   resetOpenEna3dCameraDistance,
   zoomOpenEna3dAspectRatio,
@@ -817,7 +817,7 @@ test("unavailable Data View resolves a stale data request to plot and unpressed"
   });
 });
 
-test("each 3D paper replaces the Plotly modebar with the same four unframed plot-action logos", () => {
+test("each 3D paper replaces the Plotly modebar with the same five unframed plot-action logos", () => {
   const interactive = readFileSync(
     join(projectRoot, "components", "open-ena", "OpenEnaInteractive3DPlot.tsx"),
     "utf8",
@@ -838,10 +838,10 @@ test("each 3D paper replaces the Plotly modebar with the same four unframed plot
 
   assert.deepEqual(
     [...interactive.matchAll(/data-ena-plot-action="([^"]+)"/gu)].map((match) => match[1]),
-    ["zoom-in", "zoom-out", "recenter", "copy-image"],
-    "the custom 3D rail must expose exactly the four requested actions in the reference order",
+    ["zoom-in", "zoom-out", "recenter", "copy-image", "fullscreen"],
+    "the custom 3D rail must expose exactly the five requested actions in the reference order",
   );
-  assert.match(interactive, /data-ena-toolbar-design="unframed-four-button"/);
+  assert.match(interactive, /data-ena-toolbar-design="unframed-plot-actions"/);
   assert.match(interactive, /displayModeBar = false/);
   assert.match(interactive, /activeCamera\.projection\.type === "orthographic"/);
   assert.match(interactive, /zoomOpenEna3dAspectRatio\(currentAspectRatio\(\), resetAspectRatio\(\), direction\)/);
@@ -862,7 +862,7 @@ test("each 3D paper replaces the Plotly modebar with the same four unframed plot
   assert.equal(
     [...groupContrast3d.matchAll(/<OpenEnaInteractive3DPlot/gu)].length,
     3,
-    "Comparison, Primary, and Secondary must each own the shared four-button plot component",
+    "Comparison, Primary, and Secondary must each own the shared five-button plot component",
   );
   assert.match(
     groupContrast3d,
@@ -872,7 +872,7 @@ test("each 3D paper replaces the Plotly modebar with the same four unframed plot
   assert.match(groupContrast3d, /plotKind="comparison"[\s\S]*?displayModeBar=\{false\}/);
   assert.match(groupContrast2d, /import OpenEnaPlotActionIcon from "\.\/OpenEnaPlotActionIcon"/);
   assert.match(interactive, /import OpenEnaPlotActionIcon from "\.\/OpenEnaPlotActionIcon"/);
-  for (const icon of ["zoom-in", "zoom-out", "recenter", "copy"] as const) {
+  for (const icon of ["zoom-in", "zoom-out", "recenter", "copy", "fullscreen", "exit-fullscreen"] as const) {
     assert.match(icons, new RegExp(`(?:"${icon}"|${icon}): <path d=`));
   }
 
@@ -889,7 +889,7 @@ test("each 3D paper replaces the Plotly modebar with the same four unframed plot
   );
 });
 
-test("the four-button 3D triptych renders on every paper and zooms the linked camera without changing orientation", () => {
+test("the five-action 3D triptych renders on every paper and zooms the linked camera without changing orientation", () => {
   const result = threeDimensionalResult();
   const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
   const contrast = buildPairwiseGroupContrast(
@@ -923,7 +923,7 @@ test("the four-button 3D triptych renders on every paper and zooms the linked ca
     copy: getOpenEnaCopy("en"),
   }));
 
-  assert.equal([...markup.matchAll(/data-ena-toolbar-design="unframed-four-button"/gu)].length, 3);
+  assert.equal([...markup.matchAll(/data-ena-toolbar-design="unframed-plot-actions"/gu)].length, 3);
   assert.deepEqual(
     [...markup.matchAll(/data-ena-plot-toolbar="([^"]+)"/gu)].map((match) => match[1]),
     ["comparison", "primary", "secondary"],
@@ -931,9 +931,9 @@ test("the four-button 3D triptych renders on every paper and zooms the linked ca
   assert.deepEqual(
     [...markup.matchAll(/data-ena-plot-action="([^"]+)"/gu)].map((match) => match[1]),
     [
-      "zoom-in", "zoom-out", "recenter", "copy-image",
-      "zoom-in", "zoom-out", "recenter", "copy-image",
-      "zoom-in", "zoom-out", "recenter", "copy-image",
+      "zoom-in", "zoom-out", "recenter", "copy-image", "fullscreen",
+      "zoom-in", "zoom-out", "recenter", "copy-image", "fullscreen",
+      "zoom-in", "zoom-out", "recenter", "copy-image", "fullscreen",
     ],
   );
 
@@ -950,6 +950,98 @@ test("the four-button 3D triptych renders on every paper and zooms the linked ca
   assert.deepEqual(zoomedOut.center, camera.center);
   assert.deepEqual(zoomedOut.up, camera.up);
   assert.deepEqual(zoomedOut.projection, camera.projection);
+});
+
+test("each 3D fullscreen action owns its complete card while a generic plot owns its figure", () => {
+  const markup = renderThreeDimensionalGroupContrast("plot");
+  const cardIds: string[] = [];
+
+  for (const role of ["comparison", "primary", "secondary"] as const) {
+    const card = new RegExp(
+      `<article\\b([^>]*data-testid="open-ena-3d-${role}-plot"[^>]*)>([\\s\\S]*?)<\\/article>`,
+      "u",
+    ).exec(markup);
+    assert.ok(card, `${role} must render as one complete fullscreen card`);
+    const targetId = /\bid="([^"]+)"/u.exec(card[1] ?? "")?.[1];
+    assert.ok(targetId, `${role} must expose a fullscreen target id on its article`);
+    cardIds.push(targetId);
+    const cardMarkup = card[0];
+    assert.equal([...cardMarkup.matchAll(/data-ena-plot-action="fullscreen"/gu)].length, 1);
+    assert.match(cardMarkup, new RegExp(`data-ena-plot-action="fullscreen"[\\s\\S]*?aria-controls="${targetId}"`, "u"));
+  }
+
+  assert.equal(new Set(cardIds).size, 3, "the triptych must not share one fullscreen target");
+
+  const result = threeDimensionalResult();
+  const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
+  const genericMarkup = renderToStaticMarkup(createElement(OpenEnaInteractive3DPlot, {
+    result,
+    groupColumn: "group",
+    xDimension,
+    yDimension,
+    zDimension,
+    camera: "isometric",
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    showTrajectories: false,
+    edgeScale: 1,
+    edgeThreshold: 0,
+    pointScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+    testId: "open-ena-generic-3d",
+    copy: getOpenEnaCopy("en"),
+  }));
+  const genericTargetId = /<figure\b[^>]*\bid="([^"]+)"/u.exec(genericMarkup)?.[1];
+  assert.equal(genericTargetId, "open-ena-generic-3d-fullscreen-target");
+  assert.match(
+    genericMarkup,
+    /data-ena-plot-action="fullscreen"[\s\S]*?aria-controls="open-ena-generic-3d-fullscreen-target"/u,
+  );
+});
+
+test("3D fullscreen is native-first with a safe single-owner fallback, lifecycle cleanup, focus return, and explicit resize", () => {
+  const interactive = readFileSync(
+    join(projectRoot, "components", "open-ena", "OpenEnaInteractive3DPlot.tsx"),
+    "utf8",
+  );
+  const styles = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
+
+  assert.match(interactive, /fullscreenTarget\?:\s*\{[\s\S]*?id:\s*string;[\s\S]*?ref:\s*RefObject<HTMLElement \| null>/u);
+  assert.match(interactive, /target\.requestFullscreen\(\)/u);
+  assert.match(interactive, /document\.exitFullscreen\(\)/u);
+  assert.match(interactive, /data-fallback-fullscreen/u);
+  assert.match(interactive, /querySelectorAll<HTMLElement>/u);
+  assert.match(interactive, /event\.key === "Escape"/u);
+  assert.match(interactive, /fullscreenInitiatorRef\.current\?\.focus\(\)/u);
+  assert.match(interactive, /requestAnimationFrame\(/u);
+  assert.match(interactive, /Plotly\.Plots\.resize\(plotRoot\)/u);
+  assert.match(interactive, /cancelAnimationFrame\(/u);
+  assert.match(interactive, /removeAttribute\("data-fallback-fullscreen"\)/u);
+  for (const eventName of ["fullscreenchange", "fullscreenerror", "keydown"] as const) {
+    assert.match(interactive, new RegExp(`addEventListener\\("${eventName}"`, "u"));
+    assert.match(interactive, new RegExp(`removeEventListener\\("${eventName}"`, "u"));
+  }
+  assert.match(interactive, /aria-pressed=\{isFullscreen\}/u);
+  assert.match(interactive, /isFullscreen \? "Exit Fullscreen" : "Enter Fullscreen"/u);
+  const fullscreenLogicStart = interactive.indexOf("function scheduleFullscreenResize");
+  const fullscreenLogicEnd = interactive.indexOf("return (", fullscreenLogicStart);
+  assert.ok(fullscreenLogicStart >= 0 && fullscreenLogicEnd > fullscreenLogicStart);
+  assert.doesNotMatch(
+    interactive.slice(fullscreenLogicStart, fullscreenLogicEnd),
+    /Plotly\.(?:react|relayout)/u,
+    "fullscreen changes may resize the existing plot but must not recompute or refit its spec",
+  );
+
+  assert.match(styles, /\.open-ena-3d-triptych-panel:fullscreen[\s\S]*?width:\s*100vw;[\s\S]*?height:\s*100dvh;/u);
+  assert.match(styles, /data-fallback-fullscreen="true"[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*0;[\s\S]*?z-index:/u);
+  assert.match(styles, /grid-template-rows:\s*auto minmax\(0,\s*1fr\);/u);
+  assert.match(styles, /data-fallback-fullscreen="true"[\s\S]*?\.open-ena-interactive-3d-summary[\s\S]*?display:\s*none;/u);
+  assert.match(styles, /\.open-ena-3d-plot-actions[\s\S]*?flex-direction:\s*column;[\s\S]*?overflow-y:\s*auto;/u);
 });
 
 test("orthographic plane zoom changes the visible Plotly aspect ratio and remains bounded around its reset frame", () => {

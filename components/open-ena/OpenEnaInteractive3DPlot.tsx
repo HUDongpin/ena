@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
@@ -34,6 +35,10 @@ export interface OpenEnaInteractive3DPlotProps {
   showCaption?: boolean;
   testId?: string;
   ariaLabel?: string;
+  fullscreenTarget?: {
+    id: string;
+    ref: RefObject<HTMLElement | null>;
+  };
   codeColors?: OpenEnaCodeColors;
   groupColumn: string | null;
   xDimension: string;
@@ -227,6 +232,7 @@ export default function OpenEnaInteractive3DPlot({
     ? "open-ena-interactive-3d-plot"
     : `open-ena-3d-${plotKind}-plot`,
   ariaLabel,
+  fullscreenTarget,
   codeColors,
   groupColumn,
   xDimension,
@@ -252,6 +258,7 @@ export default function OpenEnaInteractive3DPlot({
   onAspectRatioChange,
   copy,
 }: OpenEnaInteractive3DPlotProps) {
+  const figureRef = useRef<HTMLElement>(null);
   const plotRootRef = useRef<HTMLDivElement>(null);
   const lastAppliedCameraKeyRef = useRef<string | null>(null);
   const initialCameraRef = useRef(initialCamera);
@@ -260,12 +267,25 @@ export default function OpenEnaInteractive3DPlot({
   const lastAspectRatioRef = useRef(initialAspectRatio);
   const relayoutListenerRef = useRef<((update: Record<string, unknown>) => void) | null>(null);
   const actionStatusTimerRef = useRef<number | null>(null);
+  const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
+  const fullscreenInitiatorRef = useRef<HTMLButtonElement | null>(null);
+  const fullscreenResizeFrameRef = useRef<number | null>(null);
+  const fullscreenFocusFrameRef = useRef<number | null>(null);
+  const fullscreenRequestPendingRef = useRef(false);
+  const fullscreenStateRef = useRef(false);
+  const plotlyRef = useRef<PlotlyApi | null>(null);
+  const renderStatusRef = useRef<RenderStatus>("loading");
   const [Plotly, setPlotly] = useState<PlotlyApi | null>(null);
   const [status, setStatus] = useState<RenderStatus>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionStatus, setActionStatus] = useState("");
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const fullscreenTargetId = fullscreenTarget?.id ?? `${testId}-fullscreen-target`;
+  const fullscreenTargetRef = fullscreenTarget?.ref ?? figureRef;
   initialCameraRef.current = initialCamera;
   initialAspectRatioRef.current = initialAspectRatio;
+  plotlyRef.current = Plotly;
+  renderStatusRef.current = status;
 
   const spec = useMemo<OpenEna3dPlotSpec>(() => compileOpenEna3dPlotSpec({
     result,
@@ -394,6 +414,51 @@ export default function OpenEnaInteractive3DPlot({
     resizeObserver.observe(plotRoot);
     return () => resizeObserver.disconnect();
   }, [Plotly]);
+
+  useEffect(() => {
+    const target = fullscreenTargetRef.current;
+    if (!target) return;
+
+    const handleFullscreenChange = () => syncFullscreenState(true);
+    const handleFallbackFullscreenChange = () => syncFullscreenState(false);
+    const handleFullscreenError = () => {
+      if (!fullscreenRequestPendingRef.current || document.fullscreenElement === target) return;
+      fullscreenRequestPendingRef.current = false;
+      enterFallbackFullscreen(target);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && target.getAttribute("data-fallback-fullscreen") === "true") {
+        exitFallbackFullscreen(target, true);
+      }
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("fullscreenerror", handleFullscreenError);
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("openena3dfallbackfullscreenchange", handleFallbackFullscreenChange);
+    syncFullscreenState(false);
+
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("fullscreenerror", handleFullscreenError);
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("openena3dfallbackfullscreenchange", handleFallbackFullscreenChange);
+      const ownedFallback = target.getAttribute("data-fallback-fullscreen") === "true";
+      target.removeAttribute("data-fallback-fullscreen");
+      if (ownedFallback) document.dispatchEvent(new Event("openena3dfallbackfullscreenchange"));
+      if (fullscreenResizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(fullscreenResizeFrameRef.current);
+        fullscreenResizeFrameRef.current = null;
+      }
+      if (fullscreenFocusFrameRef.current !== null) {
+        window.cancelAnimationFrame(fullscreenFocusFrameRef.current);
+        fullscreenFocusFrameRef.current = null;
+      }
+      fullscreenRequestPendingRef.current = false;
+      fullscreenStateRef.current = false;
+      fullscreenInitiatorRef.current = null;
+    };
+  }, [fullscreenTargetId, fullscreenTargetRef]);
 
   useEffect(() => {
     if (!Plotly || !plotRootRef.current) return;
@@ -641,8 +706,113 @@ export default function OpenEnaInteractive3DPlot({
     })().catch(() => announceAction("Copy unavailable"));
   }
 
+  function scheduleFullscreenResize() {
+    if (fullscreenResizeFrameRef.current !== null) {
+      window.cancelAnimationFrame(fullscreenResizeFrameRef.current);
+    }
+    fullscreenResizeFrameRef.current = window.requestAnimationFrame(() => {
+      fullscreenResizeFrameRef.current = null;
+      const Plotly = plotlyRef.current;
+      const plotRoot = plotRootRef.current;
+      if (!Plotly || renderStatusRef.current !== "ready" || !plotRoot) return;
+      try {
+        void Promise.resolve(Plotly.Plots.resize(plotRoot)).catch(() => {
+          // The plot can unmount while the fullscreen resize frame is pending.
+        });
+      } catch {
+        // A detached plot can reject a final synchronous fullscreen resize.
+      }
+    });
+  }
+
+  function restoreFullscreenFocus() {
+    if (fullscreenFocusFrameRef.current !== null) {
+      window.cancelAnimationFrame(fullscreenFocusFrameRef.current);
+    }
+    fullscreenFocusFrameRef.current = window.requestAnimationFrame(() => {
+      fullscreenFocusFrameRef.current = null;
+      fullscreenInitiatorRef.current?.focus();
+    });
+  }
+
+  function syncFullscreenState(restoreFocusOnExit: boolean) {
+    const target = fullscreenTargetRef.current;
+    if (!target) return;
+    const nextFullscreen = document.fullscreenElement === target
+      || target.getAttribute("data-fallback-fullscreen") === "true";
+    const previousFullscreen = fullscreenStateRef.current;
+    if (nextFullscreen === previousFullscreen) return;
+    fullscreenStateRef.current = nextFullscreen;
+    setIsFullscreen(nextFullscreen);
+    scheduleFullscreenResize();
+    if (previousFullscreen && !nextFullscreen && restoreFocusOnExit) {
+      announceAction("Fullscreen closed");
+      restoreFullscreenFocus();
+    }
+  }
+
+  function enterFallbackFullscreen(target: HTMLElement) {
+    document.querySelectorAll<HTMLElement>(
+      '.open-ena-3d-triptych-panel[data-fallback-fullscreen="true"], '
+      + '.open-ena-interactive-3d-figure[data-fallback-fullscreen="true"]',
+    ).forEach((activeTarget) => {
+      if (activeTarget !== target) activeTarget.removeAttribute("data-fallback-fullscreen");
+    });
+    target.setAttribute("data-fallback-fullscreen", "true");
+    document.dispatchEvent(new Event("openena3dfallbackfullscreenchange"));
+    announceAction("Fullscreen fallback enabled");
+  }
+
+  function exitFallbackFullscreen(target: HTMLElement, restoreFocus: boolean) {
+    target.removeAttribute("data-fallback-fullscreen");
+    document.dispatchEvent(new Event("openena3dfallbackfullscreenchange"));
+    announceAction("Fullscreen closed");
+    if (restoreFocus) restoreFullscreenFocus();
+  }
+
+  async function enterFullscreen(target: HTMLElement) {
+    fullscreenInitiatorRef.current = fullscreenButtonRef.current;
+    if (typeof target.requestFullscreen !== "function") {
+      enterFallbackFullscreen(target);
+      return;
+    }
+    fullscreenRequestPendingRef.current = true;
+    announceAction("Opening fullscreen");
+    try {
+      await target.requestFullscreen();
+      fullscreenRequestPendingRef.current = false;
+      syncFullscreenState(false);
+    } catch {
+      fullscreenRequestPendingRef.current = false;
+      if (target.isConnected) enterFallbackFullscreen(target);
+    }
+  }
+
+  function toggleFullscreen() {
+    const target = fullscreenTargetRef.current;
+    if (!target || status !== "ready" || fullscreenRequestPendingRef.current) return;
+    fullscreenInitiatorRef.current = fullscreenButtonRef.current;
+    if (target.getAttribute("data-fallback-fullscreen") === "true") {
+      exitFallbackFullscreen(target, true);
+      return;
+    }
+    if (document.fullscreenElement === target) {
+      if (typeof document.exitFullscreen === "function") {
+        void document.exitFullscreen().catch(() => announceAction("Fullscreen exit unavailable"));
+      } else {
+        announceAction("Fullscreen exit unavailable");
+      }
+      return;
+    }
+    void enterFullscreen(target).catch(() => announceAction("Fullscreen unavailable"));
+  }
+
+  const fullscreenActionLabel = isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen";
+
   return (
     <figure
+      id={fullscreenTarget ? undefined : fullscreenTargetId}
+      ref={figureRef}
       className="open-ena-plot-figure open-ena-interactive-3d-figure"
       data-ena-plot-kind={plotKind}
       data-ena-plot-size={compact ? "compact" : "main"}
@@ -691,7 +861,7 @@ export default function OpenEnaInteractive3DPlot({
           role="group"
           aria-label={`${plotName} Plot actions`}
           data-ena-plot-toolbar={plotKind}
-          data-ena-toolbar-design="unframed-four-button"
+          data-ena-toolbar-design="unframed-plot-actions"
         >
           <button
             type="button"
@@ -737,6 +907,19 @@ export default function OpenEnaInteractive3DPlot({
             onClick={copyPlotImage}
           >
             <OpenEnaPlotActionIcon name="copy" />
+          </button>
+          <button
+            ref={fullscreenButtonRef}
+            type="button"
+            data-ena-plot-action="fullscreen"
+            aria-label={`${plotName} Plot: ${fullscreenActionLabel}`}
+            aria-controls={fullscreenTargetId}
+            aria-pressed={isFullscreen}
+            title={fullscreenActionLabel}
+            disabled={status !== "ready"}
+            onClick={toggleFullscreen}
+          >
+            <OpenEnaPlotActionIcon name={isFullscreen ? "exit-fullscreen" : "fullscreen"} />
           </button>
           <span className="ena-plot-copy-status" role="status" aria-live="polite">{actionStatus}</span>
         </div>

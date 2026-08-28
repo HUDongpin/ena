@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { useRef, type CSSProperties, type ReactNode } from "react";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
@@ -67,6 +67,9 @@ export default function OpenEna3DGroupContrast({
   dataView,
   copy,
 }: OpenEna3DGroupContrastProps) {
+  const comparisonFullscreenRef = useRef<HTMLElement>(null);
+  const primaryFullscreenRef = useRef<HTMLElement>(null);
+  const secondaryFullscreenRef = useRef<HTMLElement>(null);
   const sharedPlotProps = {
     result,
     contrast,
@@ -137,6 +140,8 @@ export default function OpenEna3DGroupContrast({
             </div>
           ) : (
             <article
+              id="open-ena-3d-comparison-fullscreen-target"
+              ref={comparisonFullscreenRef}
               className="open-ena-3d-triptych-panel open-ena-3d-triptych-main"
               data-testid="open-ena-3d-comparison-plot"
               data-ena-plot-role="comparison"
@@ -152,6 +157,10 @@ export default function OpenEna3DGroupContrast({
               <OpenEnaInteractive3DPlot
                 {...sharedPlotProps}
                 plotKind="comparison"
+                fullscreenTarget={{
+                  id: "open-ena-3d-comparison-fullscreen-target",
+                  ref: comparisonFullscreenRef,
+                }}
                 displayModeBar={false}
                 testId="open-ena-interactive-3d-plot"
                 ariaLabel={`Comparison 3D plot: ${contrast.primary.name} minus ${contrast.secondary.name}.`}
@@ -162,6 +171,8 @@ export default function OpenEna3DGroupContrast({
 
         <div className="open-ena-3d-triptych-sides">
           <article
+            id="open-ena-3d-primary-fullscreen-target"
+            ref={primaryFullscreenRef}
             className="open-ena-3d-triptych-panel open-ena-3d-triptych-side"
             data-testid="open-ena-3d-primary-plot"
             data-ena-plot-role="primary"
@@ -177,6 +188,10 @@ export default function OpenEna3DGroupContrast({
             <OpenEnaInteractive3DPlot
               {...sharedPlotProps}
               plotKind="primary"
+              fullscreenTarget={{
+                id: "open-ena-3d-primary-fullscreen-target",
+                ref: primaryFullscreenRef,
+              }}
               compact
               displayModeBar={false}
               showAccessibleSummary={false}
@@ -189,6 +204,8 @@ export default function OpenEna3DGroupContrast({
           </article>
 
           <article
+            id="open-ena-3d-secondary-fullscreen-target"
+            ref={secondaryFullscreenRef}
             className="open-ena-3d-triptych-panel open-ena-3d-triptych-side"
             data-testid="open-ena-3d-secondary-plot"
             data-ena-plot-role="secondary"
@@ -204,6 +221,10 @@ export default function OpenEna3DGroupContrast({
             <OpenEnaInteractive3DPlot
               {...sharedPlotProps}
               plotKind="secondary"
+              fullscreenTarget={{
+                id: "open-ena-3d-secondary-fullscreen-target",
+                ref: secondaryFullscreenRef,
+              }}
               compact
               displayModeBar={false}
               showAccessibleSummary={false}
