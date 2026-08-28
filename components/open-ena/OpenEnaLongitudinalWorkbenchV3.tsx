@@ -675,8 +675,9 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
     try {
       const result = await controller.copy(
         { format: "png", width: 1600, height: 1000, scale: 1 },
-        async (image) => {
+        async (image, isCurrent) => {
           const blob = await (await fetch(image)).blob();
+          if (!isCurrent()) return "";
           if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
             await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
             return labels.imageCopied;

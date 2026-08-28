@@ -136,7 +136,7 @@ export interface TrajectoryPlotlyControllerV3 {
   recenter: () => Promise<TrajectoryPlotlyControllerResultV3<Record<string, unknown>>>;
   copy: (
     options: Record<string, unknown>,
-    consume?: (image: string) => Promise<string>,
+    consume?: (image: string, isCurrent: () => boolean) => Promise<string>,
   ) => Promise<TrajectoryPlotlyControllerResultV3<string>>;
 }
 
@@ -271,7 +271,12 @@ export function createTrajectoryPlotlyControllerV3(
     },
     copy(options, consume = async (image) => image) {
       const requestedGeneration = generation;
-      return enqueue(requestedGeneration, async () => consume(await dependencies.toImage(options)));
+      return enqueue(requestedGeneration, async () => {
+        const isCurrent = () => requestedGeneration === generation;
+        const image = await dependencies.toImage(options);
+        if (!isCurrent()) return image;
+        return consume(image, isCurrent);
+      });
     },
   };
 }

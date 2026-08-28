@@ -452,6 +452,125 @@ test("V3 Plotly controller makes a requested new spec final after an old action"
   assert.deepEqual(harness.readCamera(newCamera), interactive.zoomOpenEna3dCamera(newCamera, newCamera, "out"));
 });
 
+test("V3 Copy never publishes an old image after a new spec render is requested", async () => {
+  type Result<T> = { status: "completed"; value: T } | { status: "stale" };
+  const [display, interactive] = await Promise.all([
+    import("../lib/open-ena/longitudinal-v3-display"),
+    import("../components/open-ena/OpenEnaInteractive3DPlot"),
+  ]) as unknown as [any, any];
+  const harness = createFakeTrajectoryPlotlyHarness();
+  let releaseImage!: () => void;
+  let signalImageStarted!: () => void;
+  const imageStarted = new Promise<void>((resolve) => { signalImageStarted = resolve; });
+  const imageBlocked = new Promise<void>((resolve) => { releaseImage = resolve; });
+  const copyEvents: string[] = [];
+  const consumedImages: string[] = [];
+  const controller = display.createTrajectoryPlotlyControllerV3({
+    react: harness.react,
+    relayout: harness.relayout,
+    toImage: async () => {
+      copyEvents.push("toImage:start");
+      signalImageStarted();
+      await imageBlocked;
+      copyEvents.push("toImage:complete");
+      return "data:image/png;base64,OLD-SPEC";
+    },
+    readRanges: harness.readRanges,
+    readAspectRatio: harness.readAspectRatio,
+    readCamera: harness.readCamera,
+    zoomCamera: interactive.zoomOpenEna3dCamera,
+    resetCamera: interactive.resetOpenEna3dCameraDistance,
+    zoomAspectRatio: interactive.zoomOpenEna3dAspectRatio,
+  });
+  const oldCamera: HarnessCamera = {
+    eye: { x: 2, y: 2, z: 2 }, center: { x: 0, y: 0, z: 0 }, up: { x: 0, y: 0, z: 1 }, projection: { type: "perspective" },
+  };
+  const oldSpec = {};
+  harness.setNextRuntime({ camera: oldCamera, aspect: { x: 1, y: 1, z: 1 } });
+  await controller.render({ specKey: oldSpec, input: { data: [], layout: { meta: { renderId: "copy-old" } }, config: {} }, hasScene: true, defaultCamera: oldCamera });
+
+  const copy = controller.copy({}, async (image: string) => {
+    copyEvents.push("consumer");
+    consumedImages.push(image);
+    return "published-old-image";
+  }) as Promise<Result<string>>;
+  await imageStarted;
+
+  const newSpec = {};
+  const newCamera: HarnessCamera = { ...oldCamera, eye: { x: -3, y: 1, z: 4 } };
+  harness.setNextRuntime({ camera: newCamera, aspect: { x: 1.4, y: 1, z: 0.8 } });
+  const newRender = controller.render({ specKey: newSpec, input: { data: [], layout: { meta: { renderId: "copy-new" } }, config: {} }, hasScene: true, defaultCamera: newCamera }) as Promise<Result<null>>;
+  releaseImage();
+
+  assert.deepEqual(await copy, { status: "stale" });
+  assert.deepEqual(consumedImages, [], "a stale image must never reach clipboard/download consumers");
+  assert.doesNotMatch(copyEvents.join(","), /consumer/u);
+  assert.deepEqual(await newRender, { status: "completed", value: null });
+  assert.ok(harness.events.includes("react:copy-new"), "the requested new spec must still become the final render");
+});
+
+test("V3 Copy rechecks generation after async consumer preparation before publishing", async () => {
+  type Result<T> = { status: "completed"; value: T } | { status: "stale" };
+  const [display, interactive] = await Promise.all([
+    import("../lib/open-ena/longitudinal-v3-display"),
+    import("../components/open-ena/OpenEnaInteractive3DPlot"),
+  ]) as unknown as [any, any];
+  const harness = createFakeTrajectoryPlotlyHarness();
+  const publishedImages: string[] = [];
+  let releasePreparation!: () => void;
+  let signalPreparationStarted!: () => void;
+  const preparationStarted = new Promise<void>((resolve) => { signalPreparationStarted = resolve; });
+  const preparationBlocked = new Promise<void>((resolve) => { releasePreparation = resolve; });
+  const controller = display.createTrajectoryPlotlyControllerV3({
+    react: harness.react,
+    relayout: harness.relayout,
+    toImage: harness.toImage,
+    readRanges: harness.readRanges,
+    readAspectRatio: harness.readAspectRatio,
+    readCamera: harness.readCamera,
+    zoomCamera: interactive.zoomOpenEna3dCamera,
+    resetCamera: interactive.resetOpenEna3dCameraDistance,
+    zoomAspectRatio: interactive.zoomOpenEna3dAspectRatio,
+  });
+  const oldCamera: HarnessCamera = {
+    eye: { x: 2, y: 2, z: 2 }, center: { x: 0, y: 0, z: 0 }, up: { x: 0, y: 0, z: 1 }, projection: { type: "perspective" },
+  };
+  const oldSpec = {};
+  harness.setNextRuntime({ camera: oldCamera, aspect: { x: 1, y: 1, z: 1 } });
+  await controller.render({ specKey: oldSpec, input: { data: [], layout: { meta: { renderId: "prepare-old" } }, config: {} }, hasScene: true, defaultCamera: oldCamera });
+
+  const copy = controller.copy(
+    {},
+    async (image: string, isCurrent: () => boolean) => {
+      signalPreparationStarted();
+      await preparationBlocked;
+      if (!isCurrent()) return "stale-preparation";
+      publishedImages.push(image);
+      return "published-current-image";
+    },
+  ) as Promise<Result<string>>;
+  await preparationStarted;
+
+  const newSpec = {};
+  const newCamera: HarnessCamera = { ...oldCamera, eye: { x: -5, y: 2, z: 3 } };
+  harness.setNextRuntime({ camera: newCamera, aspect: { x: 1.2, y: 1, z: 0.9 } });
+  const newRender = controller.render({ specKey: newSpec, input: { data: [], layout: { meta: { renderId: "prepare-new" } }, config: {} }, hasScene: true, defaultCamera: newCamera }) as Promise<Result<null>>;
+  releasePreparation();
+
+  assert.deepEqual(await copy, { status: "stale" });
+  assert.deepEqual(publishedImages, [], "stale async preparation must not reach clipboard/download publication");
+  assert.deepEqual(await newRender, { status: "completed", value: null });
+
+  await assert.rejects(
+    controller.copy({}, async (_image: string, isCurrent: () => boolean) => {
+      assert.equal(isCurrent(), true, "the current-generation consumer receives a live guard");
+      throw new Error("consumer preparation failed");
+    }),
+    /consumer preparation failed/u,
+    "current-generation consumer errors must propagate without becoming completed copy results",
+  );
+});
+
 test("the reachable V3 presenter wires accessible Plotly actions for 3D and 2D projections", () => {
   const presenter = component.match(
     /function TrajectoryPlotlyPresenterV3[\s\S]*?(?=\nfunction AuditCards)/,
@@ -463,6 +582,11 @@ test("the reachable V3 presenter wires accessible Plotly actions for 3D and 2D p
   assert.match(presenter, /controller\.zoom\(direction\)/);
   assert.match(presenter, /controller\.recenter\(\)/);
   assert.match(presenter, /controller\.copy\(/);
+  assert.match(
+    presenter,
+    /async \(image, isCurrent\)[\s\S]*?\.blob\(\);[\s\S]*?if \(!isCurrent\(\)\) return "";[\s\S]*?(?:navigator\.clipboard\.write|downloadBlob)/,
+    "clipboard/download publication must recheck generation after blob preparation without another preceding await",
+  );
   assert.match(presenter, /result\.status === "completed"[\s\S]*?announceAction/);
   assert.match(presenter, /const \[actionPending, setActionPending\] = useState\(false\)/);
   assert.ok(
