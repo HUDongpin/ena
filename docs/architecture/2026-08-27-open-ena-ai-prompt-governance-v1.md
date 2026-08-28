@@ -201,7 +201,7 @@ checked-in manifest. The hash binds the case ID, design, locale, aggregate evide
 compliant candidate, required inference IDs, limitations, coverage tags, and a
 digest of the private source canaries. A custom or drifted case may be evaluated for
 diagnostics, but the formal report and receipt receive
-`suite-fixture-identity-mismatch`; they cannot claim a zero-failure v11 run or pass
+`suite-fixture-identity-mismatch`; they cannot claim a zero-failure v12 run or pass
 approval eligibility under the frozen suite identity. If malformed candidate JSON
 prevents adversarial probe construction, `suite-probe-construction-failed` and the
 applicable probe count/content failures are recorded in the same report and receipt.
