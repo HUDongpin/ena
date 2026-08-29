@@ -1561,7 +1561,7 @@ async function readFullscreenPlotLayout(page) {
         }))
         .filter((box) => box.width > 0 && box.height > 0)
       : [];
-    const webglCanvases = [...root.querySelectorAll("canvas")].flatMap((canvas) => {
+    const webglCanvases = [...root.querySelectorAll("canvas.gl-canvas-context")].flatMap((canvas) => {
       let contextName = null;
       try {
         if (canvas.getContext("webgl2")) contextName = "webgl2";
@@ -1603,6 +1603,7 @@ async function readFullscreenPlotLayout(page) {
     const rangeLow = zRange ? Math.min(...zRange) : Number.NaN;
     const rangeHigh = zRange ? Math.max(...zRange) : Number.NaN;
     const rangeSpan = rangeHigh - rangeLow;
+    const plotGlPixelRatio = Number(root._context?.plotGlPixelRatio);
     return {
       mode: document.fullscreenElement === shell
         ? "native"
@@ -1622,6 +1623,7 @@ async function readFullscreenPlotLayout(page) {
       buttonBoxes,
       canvas: canvasBox,
       devicePixelRatio: window.devicePixelRatio,
+      plotGlPixelRatio,
       webglRuntimeReady: typeof scene?._scene?.glplot?.getAspectratio === "function",
       legend: boxFor(root.querySelector(".legend")),
       modebar: boxFor(root.querySelector(".modebar")),
@@ -1723,10 +1725,12 @@ function assertFullscreenPlotLayout(audit, label, expectedMode) {
       && audit.canvas.height >= audit.plot.height * 0.9
       && audit.devicePixelRatio > 0
       && audit.devicePixelRatio <= 8
-      && audit.canvas.pixelWidth >= audit.canvas.width * audit.devicePixelRatio * 0.9
-      && audit.canvas.pixelWidth <= audit.canvas.width * audit.devicePixelRatio * 1.1
-      && audit.canvas.pixelHeight >= audit.canvas.height * audit.devicePixelRatio * 0.9
-      && audit.canvas.pixelHeight <= audit.canvas.height * audit.devicePixelRatio * 1.1,
+      && audit.plotGlPixelRatio >= audit.devicePixelRatio
+      && audit.plotGlPixelRatio <= 8
+      && audit.canvas.pixelWidth >= audit.canvas.width * audit.plotGlPixelRatio * 0.9
+      && audit.canvas.pixelWidth <= audit.canvas.width * audit.plotGlPixelRatio * 1.1
+      && audit.canvas.pixelHeight >= audit.canvas.height * audit.plotGlPixelRatio * 0.9
+      && audit.canvas.pixelHeight <= audit.canvas.height * audit.plotGlPixelRatio * 1.1,
     "the live Plotly WebGL backing store does not match the reclaimed canvas",
   );
   assertLayout(
@@ -2308,9 +2312,9 @@ async function captureResponsiveEvidence(page, args) {
       const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
       if (!root) return false;
       const plotBox = root.getBoundingClientRect();
-      const dpr = window.devicePixelRatio;
+      const plotGlPixelRatio = Number(root._context?.plotGlPixelRatio);
       const glplot = root._fullLayout?.scene?._scene?.glplot;
-      const webglCanvases = [...root.querySelectorAll("canvas")].filter((canvas) => {
+      const webglCanvases = [...root.querySelectorAll("canvas.gl-canvas-context")].filter((canvas) => {
         try {
           return Boolean(
             canvas.getContext("webgl2")
@@ -2321,12 +2325,14 @@ async function captureResponsiveEvidence(page, args) {
           return false;
         }
       });
-      return typeof glplot?.getAspectratio === "function" && webglCanvases.some((canvas) => {
+      return typeof glplot?.getAspectratio === "function"
+        && Number.isFinite(plotGlPixelRatio)
+        && webglCanvases.some((canvas) => {
         const canvasBox = canvas.getBoundingClientRect();
         return canvasBox.width >= plotBox.width * 0.9
           && canvasBox.height >= plotBox.height * 0.9
-          && canvas.width >= canvasBox.width * dpr * 0.9
-          && canvas.height >= canvasBox.height * dpr * 0.9;
+          && canvas.width >= canvasBox.width * plotGlPixelRatio * 0.9
+          && canvas.height >= canvasBox.height * plotGlPixelRatio * 0.9;
       });
     }, null, { timeout: 15_000 });
   const fullscreenPlotAudit = await readFullscreenPlotLayout(page);

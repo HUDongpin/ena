@@ -263,11 +263,13 @@ test("fullscreen geometry proves five right-middle actions overlay a full-height
   assert.match(source, /!boxesOverlap\(audit\.toolbar, audit\.legend\)/u);
   assert.match(source, /!boxesOverlap\(audit\.toolbar, audit\.modebar\)/u);
   assert.match(source, /canvas\.getContext\("webgl2"\)/u);
+  assert.match(source, /querySelectorAll\("canvas\.gl-canvas-context"\)/u);
   assert.match(source, /pixelWidth:\s*canvas\.width/u);
   assert.match(source, /pixelHeight:\s*canvas\.height/u);
   assert.match(source, /webglRuntimeReady/u);
-  assert.match(source, /audit\.canvas\.pixelWidth >= audit\.canvas\.width \* audit\.devicePixelRatio \* 0\.9/u);
-  assert.match(source, /audit\.canvas\.pixelHeight >= audit\.canvas\.height \* audit\.devicePixelRatio \* 0\.9/u);
+  assert.match(source, /const plotGlPixelRatio = Number\(root\._context\?\.plotGlPixelRatio\)/u);
+  assert.match(source, /audit\.canvas\.pixelWidth >= audit\.canvas\.width \* audit\.plotGlPixelRatio \* 0\.9/u);
+  assert.match(source, /audit\.canvas\.pixelHeight >= audit\.canvas\.height \* audit\.plotGlPixelRatio \* 0\.9/u);
   assert.match(source, /trace\.meta\?\.role === "axis-shaft"/u);
   assert.match(source, /trace\.meta\?\.role === "axis-arrowhead"/u);
   assert.match(source, /svd3Axis\.shaftPresent && audit\.svd3Axis\.arrowheadPresent && audit\.svd3Axis\.labelPresent/u);
