@@ -1561,25 +1561,6 @@ async function readFullscreenPlotLayout(page) {
         }))
         .filter((box) => box.width > 0 && box.height > 0)
       : [];
-    const webglCanvases = [...root.querySelectorAll("canvas.gl-canvas-context")].flatMap((canvas) => {
-      let contextName = null;
-      try {
-        if (canvas.getContext("webgl2")) contextName = "webgl2";
-        else if (canvas.getContext("webgl")) contextName = "webgl";
-        else if (canvas.getContext("experimental-webgl")) contextName = "experimental-webgl";
-      } catch {
-        return [];
-      }
-      const box = boxFor(canvas);
-      return contextName && box ? [{
-        ...box,
-        pixelWidth: canvas.width,
-        pixelHeight: canvas.height,
-        contextName,
-      }] : [];
-    });
-    const canvasBox = webglCanvases
-      .sort((left, right) => right.width * right.height - left.width * left.height)[0] ?? null;
     const traces = Array.isArray(root.data) ? root.data : [];
     const svd3Shaft = traces.find((trace) => (
       trace.meta?.role === "axis-shaft"
@@ -1590,6 +1571,28 @@ async function readFullscreenPlotLayout(page) {
       && (trace.meta?.axis === "SVD3" || trace.name === "SVD3 axis arrowhead")
     ));
     const scene = root._fullLayout?.scene;
+    const glplot = scene?._scene?.glplot;
+    const runtimeCanvas = glplot?.canvas instanceof HTMLCanvasElement
+      && root.contains(glplot.canvas)
+      ? glplot.canvas
+      : null;
+    let contextName = null;
+    if (runtimeCanvas) {
+      try {
+        if (runtimeCanvas.getContext("webgl2")) contextName = "webgl2";
+        else if (runtimeCanvas.getContext("webgl")) contextName = "webgl";
+        else if (runtimeCanvas.getContext("experimental-webgl")) contextName = "experimental-webgl";
+      } catch {
+        contextName = null;
+      }
+    }
+    const runtimeCanvasBox = boxFor(runtimeCanvas);
+    const canvasBox = runtimeCanvas && runtimeCanvasBox && contextName ? {
+      ...runtimeCanvasBox,
+      pixelWidth: runtimeCanvas.width,
+      pixelHeight: runtimeCanvas.height,
+      contextName,
+    } : null;
     const domain = scene?.domain;
     const zRange = Array.isArray(scene?.zaxis?.range)
       && scene.zaxis.range.length === 2
@@ -1603,7 +1606,7 @@ async function readFullscreenPlotLayout(page) {
     const rangeLow = zRange ? Math.min(...zRange) : Number.NaN;
     const rangeHigh = zRange ? Math.max(...zRange) : Number.NaN;
     const rangeSpan = rangeHigh - rangeLow;
-    const plotGlPixelRatio = Number(root._context?.plotGlPixelRatio);
+    const plotGlPixelRatio = Number(glplot?.pixelRatio);
     return {
       mode: document.fullscreenElement === shell
         ? "native"
@@ -1624,7 +1627,8 @@ async function readFullscreenPlotLayout(page) {
       canvas: canvasBox,
       devicePixelRatio: window.devicePixelRatio,
       plotGlPixelRatio,
-      webglRuntimeReady: typeof scene?._scene?.glplot?.getAspectratio === "function",
+      webglRuntimeReady: typeof glplot?.getAspectratio === "function"
+        && glplot.gl?.canvas === runtimeCanvas,
       legend: boxFor(root.querySelector(".legend")),
       modebar: boxFor(root.querySelector(".modebar")),
       sceneDomain: domain ? { x: [...domain.x], y: [...domain.y] } : null,
@@ -2318,28 +2322,21 @@ async function captureResponsiveEvidence(page, args) {
       const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
       if (!root) return false;
       const plotBox = root.getBoundingClientRect();
-      const plotGlPixelRatio = Number(root._context?.plotGlPixelRatio);
       const glplot = root._fullLayout?.scene?._scene?.glplot;
-      const webglCanvases = [...root.querySelectorAll("canvas.gl-canvas-context")].filter((canvas) => {
-        try {
-          return Boolean(
-            canvas.getContext("webgl2")
-            || canvas.getContext("webgl")
-            || canvas.getContext("experimental-webgl")
-          );
-        } catch {
-          return false;
-        }
-      });
+      const canvas = glplot?.canvas;
+      const plotGlPixelRatio = Number(glplot?.pixelRatio);
       return typeof glplot?.getAspectratio === "function"
+        && glplot.gl?.canvas === canvas
+        && canvas instanceof HTMLCanvasElement
+        && root.contains(canvas)
         && Number.isFinite(plotGlPixelRatio)
-        && webglCanvases.some((canvas) => {
+        && (() => {
         const canvasBox = canvas.getBoundingClientRect();
         return canvasBox.width >= plotBox.width * 0.9
           && canvasBox.height >= plotBox.height * 0.9
           && canvas.width >= canvasBox.width * plotGlPixelRatio * 0.9
           && canvas.height >= canvasBox.height * plotGlPixelRatio * 0.9;
-      });
+      })();
     }, null, { timeout: 15_000 });
   const fullscreenPlotAudit = await readFullscreenPlotLayout(page);
   assertFullscreenPlotLayout(fullscreenPlotAudit, "fullscreen layout", "native");

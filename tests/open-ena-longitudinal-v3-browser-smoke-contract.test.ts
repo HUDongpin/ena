@@ -262,12 +262,13 @@ test("fullscreen geometry proves five right-middle actions overlay a full-height
   assert.match(source, /audit\.toolbar\.scrollHeight <= audit\.toolbar\.clientHeight \+ 1/u);
   assert.match(source, /!boxesOverlap\(audit\.toolbar, audit\.legend\)/u);
   assert.match(source, /!boxesOverlap\(audit\.toolbar, audit\.modebar\)/u);
-  assert.match(source, /canvas\.getContext\("webgl2"\)/u);
-  assert.match(source, /querySelectorAll\("canvas\.gl-canvas-context"\)/u);
-  assert.match(source, /pixelWidth:\s*canvas\.width/u);
-  assert.match(source, /pixelHeight:\s*canvas\.height/u);
+  assert.match(source, /runtimeCanvas\.getContext\("webgl2"\)/u);
+  assert.match(source, /const runtimeCanvas = glplot\?\.canvas instanceof HTMLCanvasElement/u);
+  assert.match(source, /glplot\.gl\?\.canvas === runtimeCanvas/u);
+  assert.match(source, /pixelWidth:\s*runtimeCanvas\.width/u);
+  assert.match(source, /pixelHeight:\s*runtimeCanvas\.height/u);
   assert.match(source, /webglRuntimeReady/u);
-  assert.match(source, /const plotGlPixelRatio = Number\(root\._context\?\.plotGlPixelRatio\)/u);
+  assert.match(source, /const plotGlPixelRatio = Number\(glplot\?\.pixelRatio\)/u);
   assert.match(source, /audit\.canvas\.pixelWidth >= audit\.canvas\.width \* audit\.plotGlPixelRatio \* 0\.9/u);
   assert.match(source, /audit\.canvas\.pixelHeight >= audit\.canvas\.height \* audit\.plotGlPixelRatio \* 0\.9/u);
   assert.match(source, /trace\.meta\?\.role === "axis-shaft"/u);
