@@ -249,7 +249,7 @@ test("the summary converts every screenshot path into a portable integrity recei
 test("fullscreen geometry proves five right-middle actions overlay a full-height SVD3 canvas", () => {
   const source = readFileSync(smokePath, "utf8");
   assert.match(source, /async function readFullscreenPlotLayout\(page\)/u);
-  assert.match(source, /function assertFullscreenPlotLayout\(audit, label\)/u);
+  assert.match(source, /function assertFullscreenPlotLayout\(audit, label, expectedMode\)/u);
   assert.match(source, /audit\.buttonBoxes\.length === 5/u);
   assert.match(source, /audit\.toolbar\.position === "absolute"/u);
   assert.match(source, /audit\.toolbar\.flexDirection === "column"/u);
@@ -262,11 +262,25 @@ test("fullscreen geometry proves five right-middle actions overlay a full-height
   assert.match(source, /audit\.toolbar\.scrollHeight <= audit\.toolbar\.clientHeight \+ 1/u);
   assert.match(source, /!boxesOverlap\(audit\.toolbar, audit\.legend\)/u);
   assert.match(source, /!boxesOverlap\(audit\.toolbar, audit\.modebar\)/u);
+  assert.match(source, /canvas\.getContext\("webgl2"\)/u);
+  assert.match(source, /pixelWidth:\s*canvas\.width/u);
+  assert.match(source, /pixelHeight:\s*canvas\.height/u);
+  assert.match(source, /webglRuntimeReady/u);
+  assert.match(source, /audit\.canvas\.pixelWidth >= audit\.canvas\.width \* audit\.devicePixelRatio \* 0\.9/u);
+  assert.match(source, /audit\.canvas\.pixelHeight >= audit\.canvas\.height \* audit\.devicePixelRatio \* 0\.9/u);
   assert.match(source, /trace\.meta\?\.role === "axis-shaft"/u);
   assert.match(source, /trace\.meta\?\.role === "axis-arrowhead"/u);
   assert.match(source, /svd3Axis\.shaftPresent && audit\.svd3Axis\.arrowheadPresent && audit\.svd3Axis\.labelPresent/u);
-  assert.match(source, /assertFullscreenPlotLayout\(fallbackLayoutAudit, "fallback fullscreen layout"\)/u);
-  assert.match(source, /assertFullscreenPlotLayout\(fullscreenPlotAudit, "fullscreen layout"\)/u);
+  assert.match(source, /audit\.svd3Axis\.finiteNonDegenerate/u);
+  assert.match(source, /audit\.svd3Axis\.arrowTipMatchesShaft/u);
+  assert.match(source, /audit\.svd3Axis\.rangeHeadroomRatio >= 0\.01/u);
+  assert.match(source, /assertFullscreenPlotLayout\(fallbackLayoutAudit, "fallback fullscreen layout", "fallback"\)/u);
+  assert.match(source, /assertFullscreenPlotLayout\(fullscreenPlotAudit, "fullscreen layout", "native"\)/u);
+  assert.match(source, /audit\.mode === expectedMode/u);
+  assert.match(
+    source,
+    /const fullscreen = page\.getByRole[\s\S]*?await fullscreen\.click\(\);[\s\S]*?return document\.fullscreenElement === shell;[\s\S]*?timeout: 15_000/,
+  );
   assert.match(
     source,
     /\[readFullscreenPlotLayout, assertFullscreenPlotLayout\]/u,

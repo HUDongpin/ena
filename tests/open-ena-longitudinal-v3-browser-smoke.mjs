@@ -1561,9 +1561,24 @@ async function readFullscreenPlotLayout(page) {
         }))
         .filter((box) => box.width > 0 && box.height > 0)
       : [];
-    const canvasBox = [...root.querySelectorAll("canvas")]
-      .map((canvas) => boxFor(canvas))
-      .filter(Boolean)
+    const webglCanvases = [...root.querySelectorAll("canvas")].flatMap((canvas) => {
+      let contextName = null;
+      try {
+        if (canvas.getContext("webgl2")) contextName = "webgl2";
+        else if (canvas.getContext("webgl")) contextName = "webgl";
+        else if (canvas.getContext("experimental-webgl")) contextName = "experimental-webgl";
+      } catch {
+        return [];
+      }
+      const box = boxFor(canvas);
+      return contextName && box ? [{
+        ...box,
+        pixelWidth: canvas.width,
+        pixelHeight: canvas.height,
+        contextName,
+      }] : [];
+    });
+    const canvasBox = webglCanvases
       .sort((left, right) => right.width * right.height - left.width * left.height)[0] ?? null;
     const traces = Array.isArray(root.data) ? root.data : [];
     const svd3Shaft = traces.find((trace) => (
@@ -1574,8 +1589,26 @@ async function readFullscreenPlotLayout(page) {
       trace.meta?.role === "axis-arrowhead"
       && (trace.meta?.axis === "SVD3" || trace.name === "SVD3 axis arrowhead")
     ));
-    const domain = root._fullLayout?.scene?.domain;
+    const scene = root._fullLayout?.scene;
+    const domain = scene?.domain;
+    const zRange = Array.isArray(scene?.zaxis?.range)
+      && scene.zaxis.range.length === 2
+      && scene.zaxis.range.every(Number.isFinite)
+      ? scene.zaxis.range.map(Number)
+      : null;
+    const shaftCoordinates = [svd3Shaft?.x, svd3Shaft?.y, svd3Shaft?.z];
+    const shaftStart = Number(Array.isArray(svd3Shaft?.z) ? svd3Shaft.z[0] : Number.NaN);
+    const shaftTip = Number(Array.isArray(svd3Shaft?.z) ? svd3Shaft.z.at(-1) : Number.NaN);
+    const arrowTip = Number(Array.isArray(svd3Arrowhead?.z) ? svd3Arrowhead.z[0] : Number.NaN);
+    const rangeLow = zRange ? Math.min(...zRange) : Number.NaN;
+    const rangeHigh = zRange ? Math.max(...zRange) : Number.NaN;
+    const rangeSpan = rangeHigh - rangeLow;
     return {
+      mode: document.fullscreenElement === shell
+        ? "native"
+        : shell?.getAttribute("data-fallback-fullscreen") === "true"
+          ? "fallback"
+          : "none",
       shell: shellBox,
       plot: plotBox,
       toolbar: toolbarBox ? {
@@ -1588,23 +1621,46 @@ async function readFullscreenPlotLayout(page) {
       } : null,
       buttonBoxes,
       canvas: canvasBox,
+      devicePixelRatio: window.devicePixelRatio,
+      webglRuntimeReady: typeof scene?._scene?.glplot?.getAspectratio === "function",
       legend: boxFor(root.querySelector(".legend")),
       modebar: boxFor(root.querySelector(".modebar")),
       sceneDomain: domain ? { x: [...domain.x], y: [...domain.y] } : null,
       svd3Axis: {
         shaftPresent: Boolean(svd3Shaft),
         arrowheadPresent: Boolean(svd3Arrowhead),
-        labelPresent: Array.isArray(svd3Shaft?.text) && svd3Shaft.text.includes("SVD3"),
+        labelPresent: Array.isArray(svd3Shaft?.text) && svd3Shaft.text.at(-1) === "SVD3",
+        finiteNonDegenerate: svd3Shaft?.type === "scatter3d"
+          && svd3Shaft?.mode === "lines+text"
+          && svd3Shaft?.visible !== false
+          && svd3Arrowhead?.type === "cone"
+          && svd3Arrowhead?.visible !== false
+          && shaftCoordinates.every((coordinates) => (
+            Array.isArray(coordinates)
+            && coordinates.length >= 2
+            && coordinates.every(Number.isFinite)
+          ))
+          && Number.isFinite(shaftStart)
+          && Number.isFinite(shaftTip)
+          && Math.abs(shaftTip - shaftStart) > 0,
+        arrowTipMatchesShaft: Number.isFinite(shaftTip)
+          && Number.isFinite(arrowTip)
+          && Math.abs(shaftTip - arrowTip) <= Math.max(1, Math.abs(shaftTip)) * 1e-9,
+        range: zRange,
+        rangeHeadroomRatio: Number.isFinite(arrowTip) && rangeSpan > 0
+          ? Math.min(arrowTip - rangeLow, rangeHigh - arrowTip) / rangeSpan
+          : -1,
       },
     };
   });
 }
 
-function assertFullscreenPlotLayout(audit, label) {
+function assertFullscreenPlotLayout(audit, label, expectedMode) {
   const assertLayout = (condition, message) => {
     if (!condition) throw new Error(label + ": " + message);
   };
   assertLayout(audit.shell && audit.plot && audit.toolbar, "fullscreen geometry is incomplete");
+  assertLayout(audit.mode === expectedMode, "entered " + audit.mode + " instead of " + expectedMode);
   assertLayout(audit.buttonBoxes.length === 5, "fullscreen does not expose exactly five plot actions");
   assertLayout(audit.toolbar.position === "absolute", "the action toolbar still consumes a layout row");
   assertLayout(audit.toolbar.flexDirection === "column", "the five actions are not vertically stacked");
@@ -1650,13 +1706,28 @@ function assertFullscreenPlotLayout(audit, label) {
       && left.top < right.bottom
       && left.bottom > right.top
   );
+  assertLayout(
+    audit.legend && audit.legend.width > 0 && audit.legend.height > 0,
+    "the Plotly legend is missing from the fullscreen geometry audit",
+  );
+  assertLayout(
+    audit.modebar && audit.modebar.width > 0 && audit.modebar.height > 0,
+    "the Plotly modebar is missing from the fullscreen geometry audit",
+  );
   assertLayout(!boxesOverlap(audit.toolbar, audit.legend), "the toolbar covers the Plotly legend");
   assertLayout(!boxesOverlap(audit.toolbar, audit.modebar), "the toolbar covers the Plotly modebar");
   assertLayout(
-    audit.canvas
+    audit.webglRuntimeReady
+      && audit.canvas
       && audit.canvas.width >= audit.plot.width * 0.9
-      && audit.canvas.height >= audit.plot.height * 0.9,
-    "the WebGL canvas remains materially smaller than the reclaimed Plotly root",
+      && audit.canvas.height >= audit.plot.height * 0.9
+      && audit.devicePixelRatio > 0
+      && audit.devicePixelRatio <= 8
+      && audit.canvas.pixelWidth >= audit.canvas.width * audit.devicePixelRatio * 0.9
+      && audit.canvas.pixelWidth <= audit.canvas.width * audit.devicePixelRatio * 1.1
+      && audit.canvas.pixelHeight >= audit.canvas.height * audit.devicePixelRatio * 0.9
+      && audit.canvas.pixelHeight <= audit.canvas.height * audit.devicePixelRatio * 1.1,
+    "the live Plotly WebGL backing store does not match the reclaimed canvas",
   );
   assertLayout(
     JSON.stringify(audit.sceneDomain) === JSON.stringify({ x: [0, 1], y: [0, 1] }),
@@ -1665,6 +1736,12 @@ function assertFullscreenPlotLayout(audit, label) {
   assertLayout(
     audit.svd3Axis.shaftPresent && audit.svd3Axis.arrowheadPresent && audit.svd3Axis.labelPresent,
     "the complete SVD3 shaft, arrowhead, and public label are not present",
+  );
+  assertLayout(
+    audit.svd3Axis.finiteNonDegenerate
+      && audit.svd3Axis.arrowTipMatchesShaft
+      && audit.svd3Axis.rangeHeadroomRatio >= 0.01,
+    "the SVD3 axis is degenerate, disconnected, or lacks visible range headroom",
   );
 }
 
@@ -1921,7 +1998,7 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       "settling Plotly relayout moved focus away from Exit fullscreen",
     );
     const fallbackLayoutAudit = await readFullscreenPlotLayout(page);
-    assertFullscreenPlotLayout(fallbackLayoutAudit, "fallback fullscreen layout");
+    assertFullscreenPlotLayout(fallbackLayoutAudit, "fallback fullscreen layout", "fallback");
 
     const settledRuntimeLast = settledState.focusableDescriptors.at(-1);
     assertBrowser(Boolean(settledRuntimeLast), "settled fallback has no runtime focusable");
@@ -2212,11 +2289,8 @@ async function captureResponsiveEvidence(page, args) {
   await fullscreen.click();
   await page.waitForFunction(() => {
     const shell = document.querySelector(".ena-longitudinal-v3-plot-shell");
-    return Boolean(
-      document.fullscreenElement === shell
-      || shell?.getAttribute("data-fallback-fullscreen") === "true",
-    );
-    }, null, { timeout: 15_000 });
+    return document.fullscreenElement === shell;
+  }, null, { timeout: 15_000 });
     const fullscreenBox = await page.locator(".ena-longitudinal-v3-plot-shell").boundingBox();
     const fullscreenViewport = await page.evaluate(() => ({
       width: window.innerWidth,
@@ -2234,15 +2308,29 @@ async function captureResponsiveEvidence(page, args) {
       const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
       if (!root) return false;
       const plotBox = root.getBoundingClientRect();
-      const canvasBoxes = [...root.querySelectorAll("canvas")]
-        .map((canvas) => canvas.getBoundingClientRect());
-      return canvasBoxes.some((canvasBox) => (
-        canvasBox.width >= plotBox.width * 0.9
-        && canvasBox.height >= plotBox.height * 0.9
-      ));
+      const dpr = window.devicePixelRatio;
+      const glplot = root._fullLayout?.scene?._scene?.glplot;
+      const webglCanvases = [...root.querySelectorAll("canvas")].filter((canvas) => {
+        try {
+          return Boolean(
+            canvas.getContext("webgl2")
+            || canvas.getContext("webgl")
+            || canvas.getContext("experimental-webgl")
+          );
+        } catch {
+          return false;
+        }
+      });
+      return typeof glplot?.getAspectratio === "function" && webglCanvases.some((canvas) => {
+        const canvasBox = canvas.getBoundingClientRect();
+        return canvasBox.width >= plotBox.width * 0.9
+          && canvasBox.height >= plotBox.height * 0.9
+          && canvas.width >= canvasBox.width * dpr * 0.9
+          && canvas.height >= canvasBox.height * dpr * 0.9;
+      });
     }, null, { timeout: 15_000 });
   const fullscreenPlotAudit = await readFullscreenPlotLayout(page);
-  assertFullscreenPlotLayout(fullscreenPlotAudit, "fullscreen layout");
+  assertFullscreenPlotLayout(fullscreenPlotAudit, "fullscreen layout", "native");
   const fullscreenPath = args.artifactDirectory + "/desktop-fullscreen-1440x1000.png";
   await page.locator(".ena-longitudinal-v3-plot-shell").screenshot({ path: fullscreenPath });
   const exitFullscreen = page.getByRole("button", { name: "Exit fullscreen", exact: true });
