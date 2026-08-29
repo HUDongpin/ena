@@ -3,33 +3,59 @@
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
 
-const baseUrl = (process.env.OPEN_ENA_BROWSER_BASE_URL ?? "http://127.0.0.1:3000").replace(/\/$/u, "");
-const username = process.env.OPEN_ENA_BROWSER_USERNAME;
-const password = process.env.OPEN_ENA_BROWSER_PASSWORD;
-const artifactDirectory = resolve(
-  process.env.OPEN_ENA_LOGIN_BROWSER_ARTIFACTS
-    ?? "output/browser/open-ena-login-brand-refresh",
-);
-assert.ok(username, "OPEN_ENA_BROWSER_USERNAME is required for the local login gate");
-assert.ok(password, "OPEN_ENA_BROWSER_PASSWORD is required for the local login gate");
-await mkdir(artifactDirectory, { recursive: true });
-
-const loginUrl = `${baseUrl}/en/open-ena`;
 const viewportAudits = [
   { name: "desktop", viewport: { width: 1440, height: 1000 } },
   { name: "breakpoint", viewport: { width: 820, height: 1000 } },
   { name: "mobile", viewport: { width: 390, height: 844 } },
 ];
 
-function redact(value) {
-  return String(value ?? "")
-    .replaceAll(username, "[redacted-username]")
-    .replaceAll(password, "[redacted-password]");
+const unsafeBaseUrlMessage = "OPEN_ENA_BROWSER_BASE_URL must be an http loopback origin without credentials, path, query, or fragment";
+
+export function validateOpenEnaLoopbackBaseUrl(rawValue) {
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(rawValue);
+  } catch {
+    throw new Error(unsafeBaseUrlMessage);
+  }
+
+  const isLoopbackHostname = parsedUrl.hostname === "127.0.0.1"
+    || parsedUrl.hostname === "[::1]"
+    || parsedUrl.hostname === "::1";
+  if (
+    parsedUrl.protocol !== "http:"
+    || !isLoopbackHostname
+    || parsedUrl.username !== ""
+    || parsedUrl.password !== ""
+    || parsedUrl.pathname !== "/"
+    || parsedUrl.search !== ""
+    || parsedUrl.hash !== ""
+  ) {
+    throw new Error(unsafeBaseUrlMessage);
+  }
+
+  return parsedUrl.origin;
 }
 
-function collectBrowserMessages(page) {
+export function createSensitiveValueRedactor(values) {
+  const variants = new Set();
+  for (const value of values ?? []) {
+    if (typeof value !== "string" || value.length === 0) continue;
+    variants.add(value);
+    variants.add(encodeURIComponent(value));
+  }
+  const orderedVariants = [...variants].sort((left, right) => right.length - left.length || left.localeCompare(right));
+
+  return (input) => orderedVariants.reduce(
+    (redacted, sensitiveValue) => redacted.replaceAll(sensitiveValue, "[redacted]"),
+    String(input ?? ""),
+  );
+}
+
+function collectBrowserMessages(page, redact) {
   const errors = [];
   const warnings = [];
 
@@ -146,10 +172,10 @@ async function waitForLoginBrand(page) {
   return { brandPanel, formPanel, logo, hero };
 }
 
-async function auditBrandAtViewport(browser, name, viewport) {
+async function auditBrandAtViewport(browser, name, viewport, { artifactDirectory, loginUrl, redact }) {
   const context = await browser.newContext({ viewport });
   const page = await context.newPage();
-  const messages = collectBrowserMessages(page);
+  const messages = collectBrowserMessages(page, redact);
 
   try {
     await page.goto(loginUrl, { waitUntil: "networkidle" });
@@ -269,10 +295,10 @@ async function auditBrandAtViewport(browser, name, viewport) {
   }
 }
 
-async function auditAuthentication(browser) {
+async function auditAuthentication(browser, { loginUrl, password, redact, username }) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
-  const messages = collectBrowserMessages(page);
+  const messages = collectBrowserMessages(page, redact);
 
   try {
     await page.goto(loginUrl, { waitUntil: "networkidle" });
@@ -293,24 +319,48 @@ async function auditAuthentication(browser) {
   }
 }
 
-const browser = await chromium.launch({ headless: true });
-try {
-  const warningCounts = [];
-  for (const { name, viewport } of viewportAudits) {
-    const result = await auditBrandAtViewport(browser, name, viewport);
-    warningCounts.push(result.warningCount);
-  }
-  const authenticationResult = await auditAuthentication(browser);
-  warningCounts.push(authenticationResult.warningCount);
-  const warningCount = warningCounts.reduce((total, count) => total + count, 0);
+export async function runOpenEnaLoginBrowserSmoke(environment = process.env) {
+  const baseUrl = validateOpenEnaLoopbackBaseUrl(
+    environment.OPEN_ENA_BROWSER_BASE_URL ?? "http://127.0.0.1:3000",
+  );
+  const loginUrl = new URL("/en/open-ena", `${baseUrl}/`).href;
+  const username = environment.OPEN_ENA_BROWSER_USERNAME;
+  const password = environment.OPEN_ENA_BROWSER_PASSWORD;
+  assert.ok(username, "OPEN_ENA_BROWSER_USERNAME is required for the local login gate");
+  assert.ok(password, "OPEN_ENA_BROWSER_PASSWORD is required for the local login gate");
+  const redact = createSensitiveValueRedactor([username, password]);
+  const artifactDirectory = resolve(
+    environment.OPEN_ENA_LOGIN_BROWSER_ARTIFACTS
+      ?? "output/browser/open-ena-login-brand-refresh",
+  );
+  await mkdir(artifactDirectory, { recursive: true });
 
-  process.stdout.write(`${JSON.stringify({
-    status: "PASS",
-    URL: loginUrl,
-    viewports: ["1440x1000", "820x1000", "390x844"],
-    artifactDirectory,
-    ...(warningCount > 0 ? { warnings: { categories: ["browser-warning"], count: warningCount } } : {}),
-  })}\n`);
-} finally {
-  await browser.close();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const warningCounts = [];
+    const config = { artifactDirectory, loginUrl, password, redact, username };
+    for (const { name, viewport } of viewportAudits) {
+      const result = await auditBrandAtViewport(browser, name, viewport, config);
+      warningCounts.push(result.warningCount);
+    }
+    const authenticationResult = await auditAuthentication(browser, config);
+    warningCounts.push(authenticationResult.warningCount);
+    const warningCount = warningCounts.reduce((total, count) => total + count, 0);
+    const summary = {
+      status: "PASS",
+      URL: loginUrl,
+      viewports: ["1440x1000", "820x1000", "390x844"],
+      artifactDirectory,
+      ...(warningCount > 0 ? { warnings: { categories: ["browser-warning"], count: warningCount } } : {}),
+    };
+
+    process.stdout.write(`${JSON.stringify(summary)}\n`);
+    return summary;
+  } finally {
+    await browser.close();
+  }
+}
+
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+  await runOpenEnaLoginBrowserSmoke();
 }

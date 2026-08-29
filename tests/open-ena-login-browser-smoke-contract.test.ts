@@ -4,6 +4,11 @@ import { join } from "node:path";
 import test from "node:test";
 
 const projectRoot = process.cwd();
+const smokeModuleUrl = new URL("./open-ena-login-browser-smoke.mjs", import.meta.url).href;
+
+async function loadSmokeModule() {
+  return import(smokeModuleUrl);
+}
 
 test("package scripts expose a bounded Open ENA login brand browser gate", () => {
   const packageJson = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf8"));
@@ -47,8 +52,14 @@ test("the login browser gate covers responsive branding and authentication witho
   assert.match(source, /open-ena-workbench/u);
   assert.match(source, /OPEN_ENA_BROWSER_USERNAME/u);
   assert.match(source, /OPEN_ENA_BROWSER_PASSWORD/u);
-  assert.match(source, /const username = process\.env\.OPEN_ENA_BROWSER_USERNAME/u);
-  assert.match(source, /const password = process\.env\.OPEN_ENA_BROWSER_PASSWORD/u);
+  assert.match(source, /export function validateOpenEnaLoopbackBaseUrl/u);
+  assert.match(source, /export function createSensitiveValueRedactor/u);
+  assert.match(source, /export async function runOpenEnaLoginBrowserSmoke\(environment = process\.env\)/u);
+  assert.match(source, /const username = environment\.OPEN_ENA_BROWSER_USERNAME/u);
+  assert.match(source, /const password = environment\.OPEN_ENA_BROWSER_PASSWORD/u);
+  assert.doesNotMatch(source, /const username = ["'`]/u);
+  assert.doesNotMatch(source, /const password = ["'`]/u);
+  assert.match(source, /pathToFileURL\(resolve\(process\.argv\[1\]\)\)\.href === import\.meta\.url/u);
   assert.match(source, /assertRectanglesDoNotOverlap\(researchFlowBoxes, "mobile research-flow items"\)/u);
   assert.match(source, /brandAudit\.scrollWidth <= brandAudit\.clientWidth \+ 1/u);
   assert.match(source, /formBox\.y >= brandBox\.y \+ brandBox\.height - 1/u);
@@ -71,6 +82,83 @@ test("the login browser gate covers responsive branding and authentication witho
   assert.match(source, /message\.type\(\) === "error"/u);
   assert.match(source, /assert\.deepEqual\(messages\.errors, \[\],/u);
   assert.match(source, /finally \{\n    await context\.close\(\);/u);
-  assert.match(source, /finally \{\n  await browser\.close\(\);/u);
-  assert.doesNotMatch(source, /sandytu|12345-openena/u);
+  assert.match(source, /finally \{\n    await browser\.close\(\);/u);
+});
+
+test("the loopback URL validator returns only safe local origins", async () => {
+  const { validateOpenEnaLoopbackBaseUrl } = await loadSmokeModule();
+
+  assert.equal(
+    validateOpenEnaLoopbackBaseUrl("http://127.0.0.1:3000"),
+    "http://127.0.0.1:3000",
+  );
+  assert.equal(
+    validateOpenEnaLoopbackBaseUrl("http://[::1]:3000"),
+    "http://[::1]:3000",
+  );
+});
+
+test("the loopback URL validator rejects unsafe values without echoing them", async () => {
+  const { validateOpenEnaLoopbackBaseUrl } = await loadSmokeModule();
+  const safeMessage = "OPEN_ENA_BROWSER_BASE_URL must be an http loopback origin without credentials, path, query, or fragment";
+  const rejectedValues = [
+    "not a url",
+    "https://127.0.0.1:3000",
+    "http://localhost:3000",
+    "https://synthetic-external.invalid",
+    "http://synthetic-user:synthetic-pass@127.0.0.1:3000",
+    "http://127.0.0.1:3000/?syntheticToken=value",
+    "http://127.0.0.1:3000/#synthetic-fragment",
+    "http://127.0.0.1:3000/synthetic-prefix",
+  ];
+
+  for (const rawValue of rejectedValues) {
+    assert.throws(
+      () => validateOpenEnaLoopbackBaseUrl(rawValue),
+      (error) => {
+        assert.ok(error instanceof Error);
+        assert.equal(error.message, safeMessage);
+        assert.equal(error.message.includes(rawValue), false);
+        return true;
+      },
+    );
+  }
+});
+
+test("the sensitive-value redactor replaces exact and encoded synthetic values longest-first", async () => {
+  const { createSensitiveValueRedactor } = await loadSmokeModule();
+
+  const passwordContainsUsername = createSensitiveValueRedactor([
+    "synthetic-user",
+    "synthetic-user--password",
+  ]);
+  assert.equal(
+    passwordContainsUsername("synthetic-user--password / synthetic-user"),
+    "[redacted] / [redacted]",
+  );
+
+  const usernameContainsPassword = createSensitiveValueRedactor([
+    "short-secret",
+    "short-secret--username",
+  ]);
+  assert.equal(
+    usernameContainsPassword("short-secret--username / short-secret"),
+    "[redacted] / [redacted]",
+  );
+
+  const identicalValues = createSensitiveValueRedactor(["same-synthetic", "same-synthetic"]);
+  assert.equal(identicalValues("same-synthetic + same-synthetic"), "[redacted] + [redacted]");
+
+  const ignoresEmptyValues = createSensitiveValueRedactor(["", undefined, null]);
+  assert.equal(ignoresEmptyValues("unchanged synthetic text"), "unchanged synthetic text");
+
+  const specialCharacters = createSensitiveValueRedactor(["a.$^*+?()"]);
+  assert.equal(specialCharacters("a.$^*+?() then a.$^*+?()"), "[redacted] then [redacted]");
+
+  const encodedValue = "synthetic user/+";
+  const encodedVariants = createSensitiveValueRedactor([encodedValue]);
+  assert.equal(
+    encodedVariants(`plain=${encodedValue}; encoded=${encodeURIComponent(encodedValue)}`),
+    "plain=[redacted]; encoded=[redacted]",
+  );
 });
