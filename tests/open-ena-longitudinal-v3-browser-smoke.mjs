@@ -1731,7 +1731,13 @@ function assertFullscreenPlotLayout(audit, label, expectedMode) {
       && audit.canvas.pixelWidth <= audit.canvas.width * audit.plotGlPixelRatio * 1.1
       && audit.canvas.pixelHeight >= audit.canvas.height * audit.plotGlPixelRatio * 0.9
       && audit.canvas.pixelHeight <= audit.canvas.height * audit.plotGlPixelRatio * 1.1,
-    "the live Plotly WebGL backing store does not match the reclaimed canvas",
+    "the live Plotly WebGL backing store does not match the reclaimed canvas: "
+      + JSON.stringify({
+        webglRuntimeReady: audit.webglRuntimeReady,
+        canvas: audit.canvas,
+        devicePixelRatio: audit.devicePixelRatio,
+        plotGlPixelRatio: audit.plotGlPixelRatio,
+      }),
   );
   assertLayout(
     JSON.stringify(audit.sceneDomain) === JSON.stringify({ x: [0, 1], y: [0, 1] }),
