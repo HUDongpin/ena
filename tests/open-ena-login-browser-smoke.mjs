@@ -173,6 +173,8 @@ async function auditBrandAtViewport(browser, name, viewport) {
       if (!(network instanceof HTMLImageElement)) throw new Error("The Open ENA hero image is missing");
       if (!(panel instanceof HTMLElement)) throw new Error("The Open ENA brand panel is missing");
       if (!(shell instanceof HTMLElement)) throw new Error("The Open ENA login shell is missing");
+      const logoCurrentSrc = new URL(lockup.currentSrc);
+      const heroCurrentSrc = new URL(network.currentSrc);
       const heroResources = performance.getEntriesByType("resource")
         .filter((entry) => entry.name.includes("open-ena-network-hero.svg"));
 
@@ -181,8 +183,11 @@ async function auditBrandAtViewport(browser, name, viewport) {
         logoHeightAttribute: lockup.getAttribute("height"),
         heroWidthAttribute: network.getAttribute("width"),
         heroHeightAttribute: network.getAttribute("height"),
-        logoCurrentSrc: lockup.currentSrc,
-        heroCurrentSrc: network.currentSrc,
+        pageOrigin: window.location.origin,
+        logoCurrentSrcOrigin: logoCurrentSrc.origin,
+        logoCurrentSrcPathname: logoCurrentSrc.pathname,
+        heroCurrentSrcOrigin: heroCurrentSrc.origin,
+        heroCurrentSrcPathname: heroCurrentSrc.pathname,
         brandBackgroundColor: getComputedStyle(panel).backgroundColor,
         brandBackgroundImage: getComputedStyle(panel).backgroundImage,
         clientWidth: document.documentElement.clientWidth,
@@ -198,8 +203,10 @@ async function auditBrandAtViewport(browser, name, viewport) {
     assert.equal(brandAudit.logoHeightAttribute, "80");
     assert.equal(brandAudit.heroWidthAttribute, "620");
     assert.equal(brandAudit.heroHeightAttribute, "520");
-    assert.ok(brandAudit.logoCurrentSrc.endsWith("/logo-open-ena.svg"));
-    assert.ok(brandAudit.heroCurrentSrc.endsWith("/open-ena-network-hero.svg"));
+    assert.equal(brandAudit.logoCurrentSrcOrigin, brandAudit.pageOrigin);
+    assert.equal(brandAudit.heroCurrentSrcOrigin, brandAudit.pageOrigin);
+    assert.equal(brandAudit.logoCurrentSrcPathname, "/logo-open-ena.svg");
+    assert.equal(brandAudit.heroCurrentSrcPathname, "/open-ena-network-hero.svg");
     assert.equal(brandAudit.brandBackgroundColor, "rgb(247, 251, 254)");
     assert.match(brandAudit.brandBackgroundImage, /radial-gradient/u);
     assert.ok(brandAudit.scrollWidth <= brandAudit.clientWidth + 1, "login page must not overflow horizontally");
