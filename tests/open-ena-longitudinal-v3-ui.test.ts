@@ -934,9 +934,14 @@ test("V3 desktop and narrow layouts preserve controls-status-plot-table order wi
   assert.doesNotMatch(narrowCss, /\.ena-longitudinal-v3-plot\s*\{[^}]*height:\s*480px/);
 });
 
-test("the plot action toolbar occupies its own row instead of covering the 3D legend", () => {
+test("the page toolbar keeps its row while fullscreen actions become a right-middle vertical overlay", () => {
   assert.match(css, /\.ena-longitudinal-v3-plot-shell\s*\{[^}]*min-height:\s*615px/);
   assert.match(css, /\.ena-longitudinal-v3-plot-actions\s*\{[^}]*position:\s*static[^}]*border-bottom:/);
+  assert.match(
+    css,
+    /\.ena-longitudinal-v3-plot-shell:fullscreen\s+\.ena-longitudinal-v3-plot-actions,\s*\.ena-longitudinal-v3-plot-shell\[data-fallback-fullscreen="true"\]\s+\.ena-longitudinal-v3-plot-actions\s*\{[^}]*position:\s*absolute[^}]*top:\s*50%[^}]*right:\s*clamp\([^}]*transform:\s*translateY\(-50%\)[^}]*flex-direction:\s*column[^}]*flex-wrap:\s*nowrap[^}]*border:\s*0/,
+    "fullscreen actions must leave the Plotly flow and stack at the far-right vertical midpoint",
+  );
   assert.match(css, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.ena-longitudinal-v3-plot-shell\s*\{[^}]*height:\s*485px/);
 });
 
@@ -1040,8 +1045,12 @@ test("fitted ENA code references stay visible while all mean-network overlay con
   assert.doesNotMatch(component, /copy\.(?:network|networkEdges|overlayPeriod|overlayScope)/);
 });
 
-test("fullscreen gives the Plotly canvas the remaining dynamic viewport instead of retaining its 560px page height", () => {
-  assert.match(css, /\.ena-longitudinal-v3-plot-shell:fullscreen,\s*\.ena-longitudinal-v3-plot-shell\[data-fallback-fullscreen="true"\]\s*\{[^}]*display:\s*grid[^}]*grid-template-rows:\s*auto\s+minmax\(0,\s*1fr\)[^}]*height:\s*100dvh[^}]*overflow:\s*hidden/);
+test("fullscreen gives the Plotly canvas the complete dynamic viewport instead of reserving a toolbar row", () => {
+  assert.match(css, /\.ena-longitudinal-v3-plot-shell:fullscreen,\s*\.ena-longitudinal-v3-plot-shell\[data-fallback-fullscreen="true"\]\s*\{[^}]*display:\s*block[^}]*height:\s*100dvh[^}]*overflow:\s*hidden/);
+  const fullscreenShellRule = css.match(
+    /\.ena-longitudinal-v3-plot-shell:fullscreen,\s*\.ena-longitudinal-v3-plot-shell\[data-fallback-fullscreen="true"\]\s*\{[^}]*\}/,
+  )?.[0] ?? "";
+  assert.doesNotMatch(fullscreenShellRule, /grid-template-rows|\bauto\s+minmax\(0,\s*1fr\)/);
   assert.match(css, /\.ena-longitudinal-v3-plot-shell:fullscreen\s+\.ena-longitudinal-v3-plot,\s*\.ena-longitudinal-v3-plot-shell\[data-fallback-fullscreen="true"\]\s+\.ena-longitudinal-v3-plot\s*\{[^}]*height:\s*100%[^}]*min-height:\s*0/);
   assert.match(css, /data-fallback-fullscreen="true"/);
   assert.match(component, /setFallbackFullscreen\(true\)/);

@@ -57,7 +57,7 @@ test("the version-controlled longitudinal V3 smoke owns its server and covers th
   assert.match(source, /unknownTraceRoles\.length === 0/u);
   assert.match(source, /fullscreenPlotAudit/u);
   assert.match(source, /sceneDomain/u);
-  assert.match(source, /canvas\.width >= fullscreenPlotAudit\.plot\.width/u);
+  assert.match(source, /audit\.canvas\.width >= audit\.plot\.width/u);
   assert.match(source, /current\.taskRequestCount === args\.expectedTaskRequestCount/u);
   assert.match(source, /assertScientificInvariants\("camera preset " \+ preset\)/u);
   assert.match(source, /execFileSync\(\s*"npm",\s*\["run",\s*"build"\]/u);
@@ -244,6 +244,35 @@ test("the summary converts every screenshot path into a portable integrity recei
   assert.match(source, /pageScreenshot:\s*artifactEvidence\(pagePath\)/u);
   assert.match(source, /plotScreenshot:\s*artifactEvidence\(plotPath\)/u);
   assert.match(source, /screenshot:\s*artifactEvidence\(responsiveAudit\.fullscreenPath\)/u);
+});
+
+test("fullscreen geometry proves five right-middle actions overlay a full-height SVD3 canvas", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /async function readFullscreenPlotLayout\(page\)/u);
+  assert.match(source, /function assertFullscreenPlotLayout\(audit, label\)/u);
+  assert.match(source, /audit\.buttonBoxes\.length === 5/u);
+  assert.match(source, /audit\.toolbar\.position === "absolute"/u);
+  assert.match(source, /audit\.toolbar\.flexDirection === "column"/u);
+  assert.match(source, /rightInset >= 6 && rightInset <= 22/u);
+  assert.match(source, /Math\.abs\(toolbarCenter - shellCenter\) <= 2/u);
+  assert.match(source, /button\.top >= audit\.toolbar\.top - 1/u);
+  assert.match(source, /button\.top >= buttons\[index - 1\]\.bottom - 1/u);
+  assert.match(source, /Math\.abs\(audit\.plot\.top - audit\.shell\.top\) <= 2/u);
+  assert.match(source, /audit\.plot\.height >= audit\.shell\.height \* 0\.96/u);
+  assert.match(source, /audit\.toolbar\.scrollHeight <= audit\.toolbar\.clientHeight \+ 1/u);
+  assert.match(source, /!boxesOverlap\(audit\.toolbar, audit\.legend\)/u);
+  assert.match(source, /!boxesOverlap\(audit\.toolbar, audit\.modebar\)/u);
+  assert.match(source, /trace\.meta\?\.role === "axis-shaft"/u);
+  assert.match(source, /trace\.meta\?\.role === "axis-arrowhead"/u);
+  assert.match(source, /svd3Axis\.shaftPresent && audit\.svd3Axis\.arrowheadPresent && audit\.svd3Axis\.labelPresent/u);
+  assert.match(source, /assertFullscreenPlotLayout\(fallbackLayoutAudit, "fallback fullscreen layout"\)/u);
+  assert.match(source, /assertFullscreenPlotLayout\(fullscreenPlotAudit, "fullscreen layout"\)/u);
+  assert.match(
+    source,
+    /\[readFullscreenPlotLayout, assertFullscreenPlotLayout\]/u,
+    "the serialized browser phases must receive both shared layout helpers",
+  );
+  assert.doesNotMatch(source, /plot\.height >= fullscreenPlotAudit\.shell\.height - fullscreenPlotAudit\.toolbarHeight/u);
 });
 
 test("the 390px responsive audit proves the wrapped toolbar and Plotly canvas stay inside one shell", () => {

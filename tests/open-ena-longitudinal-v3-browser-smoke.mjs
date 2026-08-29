@@ -1532,6 +1532,142 @@ async function exerciseTrajectoryPlotActions(page, args) {
   };
 }
 
+async function readFullscreenPlotLayout(page) {
+  return await page.getByTestId("open-ena-longitudinal-v3-plot").evaluate((root) => {
+    const shell = root.closest(".ena-longitudinal-v3-plot-shell");
+    const toolbar = shell?.querySelector(".ena-longitudinal-v3-plot-actions") ?? null;
+    const boxFor = (element) => {
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return {
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+      };
+    };
+    const shellBox = boxFor(shell);
+    const plotBox = boxFor(root);
+    const toolbarBox = boxFor(toolbar);
+    const toolbarStyle = toolbar ? getComputedStyle(toolbar) : null;
+    const buttonBoxes = toolbar
+      ? [...toolbar.querySelectorAll("button")]
+        .map((button) => ({
+          label: button.getAttribute("aria-label") || button.textContent?.trim() || "",
+          disabled: button.disabled,
+          ...boxFor(button),
+        }))
+        .filter((box) => box.width > 0 && box.height > 0)
+      : [];
+    const canvasBox = [...root.querySelectorAll("canvas")]
+      .map((canvas) => boxFor(canvas))
+      .filter(Boolean)
+      .sort((left, right) => right.width * right.height - left.width * left.height)[0] ?? null;
+    const traces = Array.isArray(root.data) ? root.data : [];
+    const svd3Shaft = traces.find((trace) => (
+      trace.meta?.role === "axis-shaft"
+      && (trace.meta?.axis === "SVD3" || trace.text?.includes?.("SVD3"))
+    ));
+    const svd3Arrowhead = traces.find((trace) => (
+      trace.meta?.role === "axis-arrowhead"
+      && (trace.meta?.axis === "SVD3" || trace.name === "SVD3 axis arrowhead")
+    ));
+    const domain = root._fullLayout?.scene?.domain;
+    return {
+      shell: shellBox,
+      plot: plotBox,
+      toolbar: toolbarBox ? {
+        ...toolbarBox,
+        position: toolbarStyle?.position ?? null,
+        flexDirection: toolbarStyle?.flexDirection ?? null,
+        zIndex: toolbarStyle?.zIndex ?? null,
+        clientHeight: toolbar.clientHeight,
+        scrollHeight: toolbar.scrollHeight,
+      } : null,
+      buttonBoxes,
+      canvas: canvasBox,
+      legend: boxFor(root.querySelector(".legend")),
+      modebar: boxFor(root.querySelector(".modebar")),
+      sceneDomain: domain ? { x: [...domain.x], y: [...domain.y] } : null,
+      svd3Axis: {
+        shaftPresent: Boolean(svd3Shaft),
+        arrowheadPresent: Boolean(svd3Arrowhead),
+        labelPresent: Array.isArray(svd3Shaft?.text) && svd3Shaft.text.includes("SVD3"),
+      },
+    };
+  });
+}
+
+function assertFullscreenPlotLayout(audit, label) {
+  const assertLayout = (condition, message) => {
+    if (!condition) throw new Error(label + ": " + message);
+  };
+  assertLayout(audit.shell && audit.plot && audit.toolbar, "fullscreen geometry is incomplete");
+  assertLayout(audit.buttonBoxes.length === 5, "fullscreen does not expose exactly five plot actions");
+  assertLayout(audit.toolbar.position === "absolute", "the action toolbar still consumes a layout row");
+  assertLayout(audit.toolbar.flexDirection === "column", "the five actions are not vertically stacked");
+  const rightInset = audit.shell.right - audit.toolbar.right;
+  const toolbarCenter = (audit.toolbar.top + audit.toolbar.bottom) / 2;
+  const shellCenter = (audit.shell.top + audit.shell.bottom) / 2;
+  assertLayout(rightInset >= 6 && rightInset <= 22, "the action toolbar is not at the far-right edge");
+  assertLayout(Math.abs(toolbarCenter - shellCenter) <= 2, "the action toolbar is not vertically centered");
+  assertLayout(
+    audit.toolbar.top >= audit.shell.top - 1
+      && audit.toolbar.bottom <= audit.shell.bottom + 1
+      && audit.toolbar.scrollHeight <= audit.toolbar.clientHeight + 1,
+    "the right-middle toolbar is clipped or unexpectedly scrolls at the desktop gate",
+  );
+  assertLayout(
+    audit.buttonBoxes.every((button, index, buttons) => (
+      button.left >= audit.shell.left - 1
+      && button.right <= audit.shell.right + 1
+      && button.top >= audit.toolbar.top - 1
+      && button.bottom <= audit.toolbar.bottom + 1
+      && button.height >= 43
+      && (index === 0 || button.top >= buttons[index - 1].bottom - 1)
+      && Math.abs(button.left - buttons[0].left) <= 1
+      && Math.abs(button.right - buttons[0].right) <= 1
+    )),
+    "the five actions are clipped, overlapping, or split across columns",
+  );
+  assertLayout(
+    Math.abs(audit.plot.top - audit.shell.top) <= 2
+      && Math.abs(audit.plot.bottom - audit.shell.bottom) <= 2
+      && audit.plot.width >= audit.shell.width * 0.96
+      && audit.plot.height >= audit.shell.height * 0.96,
+    "the Plotly root does not reclaim the former toolbar row",
+  );
+  assertLayout(
+    audit.toolbar.top > audit.plot.top && audit.toolbar.bottom < audit.plot.bottom,
+    "the toolbar is not an in-canvas overlay",
+  );
+  const boxesOverlap = (left, right) => Boolean(
+    left && right
+      && left.left < right.right
+      && left.right > right.left
+      && left.top < right.bottom
+      && left.bottom > right.top
+  );
+  assertLayout(!boxesOverlap(audit.toolbar, audit.legend), "the toolbar covers the Plotly legend");
+  assertLayout(!boxesOverlap(audit.toolbar, audit.modebar), "the toolbar covers the Plotly modebar");
+  assertLayout(
+    audit.canvas
+      && audit.canvas.width >= audit.plot.width * 0.9
+      && audit.canvas.height >= audit.plot.height * 0.9,
+    "the WebGL canvas remains materially smaller than the reclaimed Plotly root",
+  );
+  assertLayout(
+    JSON.stringify(audit.sceneDomain) === JSON.stringify({ x: [0, 1], y: [0, 1] }),
+    "the fullscreen 3D scene does not use the complete Plotly domain",
+  );
+  assertLayout(
+    audit.svd3Axis.shaftPresent && audit.svd3Axis.arrowheadPresent && audit.svd3Axis.labelPresent,
+    "the complete SVD3 shaft, arrowhead, and public label are not present",
+  );
+}
+
 async function exerciseFallbackFullscreenAccessibility(page, args) {
   const assertBrowser = (condition, message) => {
     if (!condition) throw new Error(message);
@@ -1784,6 +1920,8 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       settledState.currentActiveDescriptor?.action === "fullscreen",
       "settling Plotly relayout moved focus away from Exit fullscreen",
     );
+    const fallbackLayoutAudit = await readFullscreenPlotLayout(page);
+    assertFullscreenPlotLayout(fallbackLayoutAudit, "fallback fullscreen layout");
 
     const settledRuntimeLast = settledState.focusableDescriptors.at(-1);
     assertBrowser(Boolean(settledRuntimeLast), "settled fallback has no runtime focusable");
@@ -1902,6 +2040,7 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       shellPathNonInert: modalState.shellPathNonInert,
       outsideTreeIsolated: modalState.outsideTreeIsolated,
       bodyScrollLocked: modalState.bodyScrollLocked,
+      layoutAudit: fallbackLayoutAudit,
       entryState,
       settledState,
       pendingShiftTabDestination,
@@ -2102,39 +2241,8 @@ async function captureResponsiveEvidence(page, args) {
         && canvasBox.height >= plotBox.height * 0.9
       ));
     }, null, { timeout: 15_000 });
-    const fullscreenPlotAudit = await page.getByTestId("open-ena-longitudinal-v3-plot").evaluate((root) => {
-    const plotBox = root.getBoundingClientRect();
-    const shellBox = root.closest(".ena-longitudinal-v3-plot-shell")?.getBoundingClientRect();
-    const toolbarBox = root.closest(".ena-longitudinal-v3-plot-shell")
-      ?.querySelector(".ena-longitudinal-v3-plot-actions")?.getBoundingClientRect();
-      const canvasBox = [...root.querySelectorAll("canvas")]
-        .map((canvas) => canvas.getBoundingClientRect())
-        .sort((left, right) => right.width * right.height - left.width * left.height)[0];
-    const domain = root._fullLayout?.scene?.domain;
-    return {
-      plot: { width: plotBox.width, height: plotBox.height },
-      shell: shellBox ? { width: shellBox.width, height: shellBox.height } : null,
-      toolbarHeight: toolbarBox?.height ?? 0,
-      canvas: canvasBox ? { width: canvasBox.width, height: canvasBox.height } : null,
-      sceneDomain: domain ? { x: [...domain.x], y: [...domain.y] } : null,
-    };
-  });
-  assertBrowser(
-    fullscreenPlotAudit.shell
-      && fullscreenPlotAudit.plot.width >= fullscreenPlotAudit.shell.width * 0.96
-      && fullscreenPlotAudit.plot.height >= fullscreenPlotAudit.shell.height - fullscreenPlotAudit.toolbarHeight - 24,
-    "fullscreen Plotly root does not use the available viewport",
-  );
-  assertBrowser(
-    fullscreenPlotAudit.canvas
-      && fullscreenPlotAudit.canvas.width >= fullscreenPlotAudit.plot.width * 0.9
-      && fullscreenPlotAudit.canvas.height >= fullscreenPlotAudit.plot.height * 0.9,
-    "fullscreen WebGL canvas remains materially smaller than the Plotly root",
-  );
-  assertBrowser(
-    JSON.stringify(fullscreenPlotAudit.sceneDomain) === JSON.stringify({ x: [0, 1], y: [0, 1] }),
-    "fullscreen 3D scene does not use the complete Plotly domain",
-  );
+  const fullscreenPlotAudit = await readFullscreenPlotLayout(page);
+  assertFullscreenPlotLayout(fullscreenPlotAudit, "fullscreen layout");
   const fullscreenPath = args.artifactDirectory + "/desktop-fullscreen-1440x1000.png";
   await page.locator(".ena-longitudinal-v3-plot-shell").screenshot({ path: fullscreenPath });
   const exitFullscreen = page.getByRole("button", { name: "Exit fullscreen", exact: true });
@@ -2448,11 +2556,15 @@ try {
     "exercise reversible fallback fullscreen keyboard-modal behavior",
     exerciseFallbackFullscreenAccessibility,
     { viewport: { width: 1440, height: 1000 } },
+    180_000,
+    [readFullscreenPlotLayout, assertFullscreenPlotLayout],
   );
   const responsiveAudit = runBrowserPhase(
     "capture desktop, tablet, mobile, and fullscreen overflow evidence",
     captureResponsiveEvidence,
     { viewports: viewportMatrix, artifactDirectory },
+    180_000,
+    [readFullscreenPlotLayout, assertFullscreenPlotLayout],
   );
   runBrowserPhase(
     "click all seven trajectory downloads",
