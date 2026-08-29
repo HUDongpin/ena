@@ -38,7 +38,7 @@ export default function OpenEnaLogin({ locale, error, configurationReady }: Open
       <OpenEnaFallbackNotice locale={locale} />
       <section className="open-ena-login-shell" aria-labelledby="open-ena-login-title">
         <div className="open-ena-login-context">
-          <div className="open-ena-login-brand" dir="ltr">
+          <div className="open-ena-login-brand" dir="ltr" lang="en">
             <Image
               className="open-ena-login-brand-lockup"
               src="/logo-open-ena.svg"
@@ -54,6 +54,7 @@ export default function OpenEnaLogin({ locale, error, configurationReady }: Open
               src="/open-ena-network-hero.svg"
               width={620}
               height={520}
+              loading="eager"
               alt=""
             />
           </div>
