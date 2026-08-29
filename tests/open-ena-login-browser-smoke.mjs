@@ -91,6 +91,32 @@ function assertNoBrowserErrors(messages, phase) {
   assert.deepEqual(messages.errors, [], `${phase} emitted page or console errors`);
 }
 
+async function preparePageForFullPageCapture(page) {
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  });
+  await page.waitForFunction(() => window.scrollY === 0 && window.scrollX === 0);
+
+  const captureState = await page.evaluate(() => {
+    const skipLink = document.querySelector(".skip-link");
+    const header = document.querySelector(".site-header");
+    if (!(skipLink instanceof HTMLElement)) throw new Error("The skip link is required for capture preparation");
+    if (!(header instanceof HTMLElement)) throw new Error("The site header is required for capture preparation");
+    const skipLinkRect = skipLink.getBoundingClientRect();
+    const headerRect = header.getBoundingClientRect();
+    return {
+      skipLinkBottom: skipLinkRect.bottom,
+      headerTop: headerRect.top,
+      headerY: headerRect.y,
+    };
+  });
+
+  assert.ok(captureState.skipLinkBottom <= 0, "the skip link must be hidden before full-page capture");
+  assert.ok(Math.abs(captureState.headerTop) <= 1, "the site header must be at the top before full-page capture");
+  assert.ok(Math.abs(captureState.headerY) <= 1, "the site header y position must be at the top before full-page capture");
+}
+
 async function waitForLoginBrand(page) {
   const brandPanel = page.locator(".open-ena-login-context");
   const formPanel = page.locator(".open-ena-login-panel");
@@ -224,6 +250,7 @@ async function auditBrandAtViewport(browser, name, viewport) {
       assertRectanglesDoNotOverlap(researchFlowBoxes, "mobile research-flow items");
     }
 
+    await preparePageForFullPageCapture(page);
     await page.screenshot({
       path: resolve(artifactDirectory, `${name}-${viewport.width}x${viewport.height}.png`),
       fullPage: true,

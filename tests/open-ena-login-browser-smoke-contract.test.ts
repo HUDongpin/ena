@@ -37,6 +37,11 @@ test("the login browser gate covers responsive branding and authentication witho
   assert.match(source, /open-ena-workbench/u);
   assert.match(source, /OPEN_ENA_BROWSER_USERNAME/u);
   assert.match(source, /OPEN_ENA_BROWSER_PASSWORD/u);
+  assert.match(source, /document\.activeElement/u);
+  assert.match(source, /\.blur\(\)/u);
+  assert.match(source, /window\.scrollTo/u);
+  assert.match(source, /window\.scrollY === 0/u);
+  assert.match(source, /window\.scrollX === 0/u);
   assert.match(source, /pageerror/u);
   assert.match(source, /console/u);
   assert.doesNotMatch(source, /sandytu|12345-openena/u);
