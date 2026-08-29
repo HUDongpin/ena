@@ -202,6 +202,28 @@ test("the public back-to-top control cannot cover the login form", () => {
   );
 });
 
+test("the login owns local official Open ENA lockup and open-ring network assets", () => {
+  const lockupPath = join(projectRoot, "public", "logo-open-ena.svg");
+  const networkPath = join(projectRoot, "public", "open-ena-network-hero.svg");
+
+  assert.equal(existsSync(lockupPath), true, "the official horizontal Open ENA lockup must be local");
+  assert.equal(existsSync(networkPath), true, "the official open-ring network must be local");
+
+  const lockup = readFileSync(lockupPath, "utf8");
+  assert.match(lockup, /viewBox="0 0 250 80"/u);
+  assert.match(lockup, /<title[^>]*>Open ENA<\/title>/u);
+  assert.match(lockup, /Epistemic Network Analysis/u);
+  assert.match(lockup, /#89CFF0/iu);
+
+  const network = readFileSync(networkPath, "utf8");
+  assert.match(network, /viewBox="0 0 620 520"/u);
+  for (const label of ["EVIDENCE", "IDEAS", "CONTEXT", "LINKS", "OPEN"]) {
+    assert.match(network, new RegExp(`>${label}<`, "u"));
+  }
+  assert.match(network, /stroke-dasharray="12 12"/u);
+  assert.match(network, /#89CFF0/iu);
+});
+
 test("the login action and contact email use the site baby-blue accent", () => {
   const css = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
 
