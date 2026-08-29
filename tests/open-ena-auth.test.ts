@@ -210,18 +210,49 @@ test("the login owns local official Open ENA lockup and open-ring network assets
   assert.equal(existsSync(networkPath), true, "the official open-ring network must be local");
 
   const lockup = readFileSync(lockupPath, "utf8");
+  assert.match(lockup, /^<svg\b[^>]*role="img"[^>]*aria-labelledby="title desc"[^>]*>/u);
   assert.match(lockup, /viewBox="0 0 250 80"/u);
   assert.match(lockup, /<title[^>]*>Open ENA<\/title>/u);
-  assert.match(lockup, /Epistemic Network Analysis/u);
+  assert.match(
+    lockup,
+    /<desc[^>]*>Open ENA wordmark with ENA placed beneath Open and an open network-ring symbol\. Epistemic Network Analysis\.<\/desc>/u,
+  );
+  for (const label of ["OPEN", "ENA", "EPISTEMIC", "NETWORK", "ANALYSIS"]) {
+    assert.match(lockup, new RegExp(`<text\\b[^>]*>\\s*${label}\\s*<\\/text>`, "u"));
+  }
   assert.match(lockup, /#89CFF0/iu);
 
   const network = readFileSync(networkPath, "utf8");
+  assert.match(network, /^<svg\b[^>]*role="img"[^>]*aria-labelledby="title desc"[^>]*>/u);
   assert.match(network, /viewBox="0 0 620 520"/u);
+  assert.match(network, /<title[^>]*>Open epistemic network<\/title>/u);
+  assert.match(
+    network,
+    /<desc[^>]*>Connected evidence, ideas, context, and links extend through an open circular boundary\.<\/desc>/u,
+  );
   for (const label of ["EVIDENCE", "IDEAS", "CONTEXT", "LINKS", "OPEN"]) {
     assert.match(network, new RegExp(`>${label}<`, "u"));
   }
+  for (const [path, color, width, dash] of [
+    ["M189 290 270 185", "#1A2B3F", "4", ""],
+    ["M270 185 377 222", "#89CFF0", "11", ""],
+    ["M189 290 333 340", "#89CFF0", "7", ""],
+    ["M333 340 377 222", "#1A2B3F", "3", ""],
+    ["M270 185 333 340", "#1A2B3F", "5", ""],
+    ["M377 222 493 112", "#89CFF0", "6", ' stroke-dasharray="12 12"'],
+  ]) {
+    assert.match(network, new RegExp(`<path\\b[^>]*d="${path}"[^>]*stroke="${color}"[^>]*stroke-width="${width}"${dash}[^>]*/>`, "u"));
+  }
   assert.match(network, /stroke-dasharray="12 12"/u);
   assert.match(network, /#89CFF0/iu);
+
+  for (const asset of [lockup, network]) {
+    assert.doesNotMatch(asset, /<(?:script|foreignObject|animate|animateTransform|set)\b/iu);
+    assert.doesNotMatch(asset, /\son[a-z]+\s*=/iu);
+    assert.doesNotMatch(asset, /(?:xlink:)?href\s*=/iu);
+    assert.doesNotMatch(asset, /(?:javascript:|data:)/iu);
+    assert.doesNotMatch(asset, /#(?:72c7bd|66bfb5|eef9f7|d7eeea|56b09d|418476)\b/iu);
+  }
 });
 
 test("the login action and contact email use the site baby-blue accent", () => {
