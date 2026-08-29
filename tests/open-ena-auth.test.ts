@@ -306,6 +306,34 @@ test("the login owns local official Open ENA lockup and open-ring network assets
   assert.throws(() => assertValidOpenEnaSvg(lockup.replace("<title id=\"title\">", "<g id=\"title\"/><title id=\"title\">").replace("<desc id=\"desc\">", "<desc id=\"desc\">").replace("</svg>", "</svg>"), lockupContract), /title ID|exactly one title/u);
 });
 
+test("the login presents the official light Open ENA brand panel without changing its research flow", () => {
+  const login = readFileSync(
+    join(projectRoot, "components", "open-ena", "OpenEnaLogin.tsx"),
+    "utf8",
+  );
+  const css = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
+
+  assert.match(login, /src="\/logo-open-ena\.svg"/u);
+  assert.match(login, /alt="Open ENA — Epistemic Network Analysis"/u);
+  assert.match(login, /src="\/open-ena-network-hero\.svg"/u);
+  assert.match(login, /className="open-ena-login-network-hero"[\s\S]*?alt=""/u);
+  assert.doesNotMatch(login, /src="\/ena-mark\.svg"/u);
+  assert.doesNotMatch(login, /<strong>OPEN ENA<\/strong>/u);
+  assert.doesNotMatch(login, /<span>ENA\.HK<\/span>/u);
+  assert.doesNotMatch(login, /viewBox="0 0 420 270"/u);
+  assert.match(login, /<p>\{copy\.workspaceLabel\}<\/p>[\s\S]*?<ol aria-label=\{copy\.workspaceLabel\}>/u);
+  assert.match(login, /copy\.researchFlow\.map/u);
+
+  const pageRule = css.match(/\.open-ena-login-page\s*\{([^}]*)\}/u)?.[1] ?? "";
+  const contextRule = css.match(/\.open-ena-login-context\s*\{([^}]*)\}/u)?.[1] ?? "";
+  assert.match(pageRule, /background:[\s\S]*?var\(--page\);/u);
+  assert.match(contextRule, /background:[\s\S]*?var\(--surface\);/u);
+  assert.doesNotMatch(contextRule, /#1d2b3a/iu);
+  assert.match(css, /\.open-ena-login-context-copy > p\s*\{[\s\S]*?color:\s*var\(--muted\);/u);
+  assert.match(css, /\.open-ena-login-context-copy li\s*\{[\s\S]*?color:\s*var\(--ink\);/u);
+  assert.match(css, /@media \(max-width: 820px\)[\s\S]*?\.open-ena-login-network\s*\{[\s\S]*?display:\s*grid;/u);
+});
+
 test("the login action and contact email use the site baby-blue accent", () => {
   const css = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
 

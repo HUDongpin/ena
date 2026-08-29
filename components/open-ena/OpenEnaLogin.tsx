@@ -39,29 +39,23 @@ export default function OpenEnaLogin({ locale, error, configurationReady }: Open
       <section className="open-ena-login-shell" aria-labelledby="open-ena-login-title">
         <div className="open-ena-login-context">
           <div className="open-ena-login-brand" dir="ltr">
-            <Image src="/ena-mark.svg" width={54} height={54} alt="" />
-            <div>
-              <strong>OPEN ENA</strong>
-              <span>ENA.HK</span>
-            </div>
+            <Image
+              className="open-ena-login-brand-lockup"
+              src="/logo-open-ena.svg"
+              width={250}
+              height={80}
+              alt="Open ENA — Epistemic Network Analysis"
+            />
           </div>
 
           <div className="open-ena-login-network" aria-hidden="true">
-            <svg viewBox="0 0 420 270" role="img">
-              <g className="open-ena-login-edges">
-                <path d="M76 164 172 78 260 122 346 58" />
-                <path d="M76 164 192 214 260 122 350 204" />
-                <path d="M172 78 192 214M260 122 346 58M260 122 350 204" />
-              </g>
-              <g className="open-ena-login-nodes">
-                <circle cx="76" cy="164" r="17" />
-                <circle cx="172" cy="78" r="15" />
-                <circle cx="192" cy="214" r="14" />
-                <circle cx="260" cy="122" r="20" />
-                <circle cx="346" cy="58" r="13" />
-                <circle cx="350" cy="204" r="16" />
-              </g>
-            </svg>
+            <Image
+              className="open-ena-login-network-hero"
+              src="/open-ena-network-hero.svg"
+              width={620}
+              height={520}
+              alt=""
+            />
           </div>
 
           <div className="open-ena-login-context-copy">
