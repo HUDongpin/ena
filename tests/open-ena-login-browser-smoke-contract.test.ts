@@ -162,3 +162,15 @@ test("the sensitive-value redactor replaces exact and encoded synthetic values l
     "plain=[redacted]; encoded=[redacted]",
   );
 });
+
+test("the sensitive-value redactor replaces native form-encoded synthetic values", async () => {
+  const { createSensitiveValueRedactor } = await loadSmokeModule();
+  const sensitiveValue = "synthetic value/+";
+  const formEncodedValue = new URLSearchParams({ value: sensitiveValue }).toString().slice("value=".length);
+  const redact = createSensitiveValueRedactor([sensitiveValue]);
+
+  assert.equal(
+    redact(`native-form=${formEncodedValue}; native-form=${formEncodedValue}`),
+    "native-form=[redacted]; native-form=[redacted]",
+  );
+});

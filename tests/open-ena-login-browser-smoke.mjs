@@ -46,6 +46,7 @@ export function createSensitiveValueRedactor(values) {
     if (typeof value !== "string" || value.length === 0) continue;
     variants.add(value);
     variants.add(encodeURIComponent(value));
+    variants.add(new URLSearchParams({ value }).toString().slice("value=".length));
   }
   const orderedVariants = [...variants].sort((left, right) => right.length - left.length || left.localeCompare(right));
 
