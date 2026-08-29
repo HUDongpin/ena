@@ -54,7 +54,7 @@ export default function OpenEnaLogin({ locale, error, configurationReady }: Open
               src="/open-ena-network-hero.svg"
               width={620}
               height={520}
-              loading="eager"
+              loading="lazy"
               alt=""
             />
           </div>

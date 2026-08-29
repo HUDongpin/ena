@@ -317,7 +317,7 @@ test("the login presents the official light Open ENA brand panel without changin
   assert.match(login, /src="\/logo-open-ena\.svg"/u);
   assert.match(login, /alt="Open ENA — Epistemic Network Analysis"/u);
   assert.match(login, /src="\/open-ena-network-hero\.svg"/u);
-  assert.match(login, /className="open-ena-login-network-hero"[\s\S]*?loading="eager"[\s\S]*?alt=""/u);
+  assert.match(login, /className="open-ena-login-network-hero"[\s\S]*?loading="lazy"[\s\S]*?alt=""/u);
   assert.doesNotMatch(login, /src="\/ena-mark\.svg"/u);
   assert.doesNotMatch(login, /<strong>OPEN ENA<\/strong>/u);
   assert.doesNotMatch(login, /<span>ENA\.HK<\/span>/u);
