@@ -222,12 +222,15 @@ function assertValidOpenEnaSvg(source: string, contract: OpenEnaAssetContract) {
   assert.equal(readAttribute(rootAttributes, "aria-labelledby"), "title desc");
   assert.equal(readAttribute(rootAttributes, "viewBox"), contract.viewBox);
 
-  const titles = [...source.matchAll(/<title\s+id="title">([\s\S]*?)<\/title>/gu)];
-  const descriptions = [...source.matchAll(/<desc\s+id="desc">([\s\S]*?)<\/desc>/gu)];
+  const ids = [...source.matchAll(/\bid\s*=\s*(["'])(.*?)\1/gu)].map((match) => match[2]);
+  assert.equal(ids.filter((id) => id === "title").length, 1, "title ID must occur exactly once globally");
+  assert.equal(ids.filter((id) => id === "desc").length, 1, "desc ID must occur exactly once globally");
+  const titles = [...source.matchAll(/<title\b[^>]*\bid\s*=\s*(["'])title\1[^>]*>([\s\S]*?)<\/title>/gu)];
+  const descriptions = [...source.matchAll(/<desc\b[^>]*\bid\s*=\s*(["'])desc\1[^>]*>([\s\S]*?)<\/desc>/gu)];
   assert.equal(titles.length, 1, "SVG must contain exactly one title with id=title");
   assert.equal(descriptions.length, 1, "SVG must contain exactly one desc with id=desc");
-  assert.equal(titles[0][1], contract.title);
-  assert.equal(descriptions[0][1], contract.description);
+  assert.equal(titles[0][2], contract.title);
+  assert.equal(descriptions[0][2], contract.description);
   assert.doesNotMatch(
     source,
     /#(?:72c7bd|66bfb5|56b09d|397e73|4db6ac|49a892|418476|72a69e|f4fbf9|eef9f7|d7eeea)\b|rgba\(\s*(?:114\s*,\s*199\s*,\s*189|86\s*,\s*176\s*,\s*157)/iu,
@@ -249,7 +252,7 @@ function assertValidOpenEnaSvg(source: string, contract: OpenEnaAssetContract) {
   for (const assetElement of ["script", "style", "foreignObject", "animate", "animateColor", "animateMotion", "animateTransform", "set", "discard", "audio", "video", "image", "use", "a"]) {
     assert.doesNotMatch(source, new RegExp(`<${assetElement}\\b`, "iu"), `SVG must not contain <${assetElement}>`);
   }
-  assert.doesNotMatch(source, /(?:^|\s)on[a-z][a-z0-9-]*\s*=\s*"/iu, "SVG must not contain event handlers");
+  assert.doesNotMatch(source, /(?:^|\s)on[a-z][a-z0-9_.:-]*\s*=/iu, "SVG must not contain event handlers");
   assert.doesNotMatch(source, /(?:^|\s)(?:xlink:)?href\s*=/iu, "SVG must not contain href attributes");
   assert.doesNotMatch(source, /(?:javascript:|data:|@import)/iu, "SVG must not contain active URLs");
   const withoutInternalPaintRefs = source.replace(/url\(#[a-z][\w.-]*\)/giu, "");
@@ -295,10 +298,12 @@ test("the login owns local official Open ENA lockup and open-ring network assets
   assert.match(lockup, /#89CFF0/iu);
   assert.match(network, /#89CFF0/iu);
 
-  assert.throws(() => assertValidOpenEnaSvg(lockup.replace('id="title"', ""), lockupContract), /exactly one title/u);
+  assert.throws(() => assertValidOpenEnaSvg(lockup.replace('id="title"', ""), lockupContract), /title ID|exactly one title/u);
   assert.throws(() => assertValidOpenEnaSvg(network.replace("</g>", '<animateMotion dur="1s"/></g>'), networkContract), /animateMotion/u);
   assert.throws(() => assertValidOpenEnaSvg(network.replace("</defs>", '<style>@import url(https://attacker.example/a.css);</style></defs>'), networkContract), /<style>|active URLs|paint-server/u);
   assert.throws(() => assertValidOpenEnaSvg(network.replace("#89CFF0", "#4DB6AC"), networkContract), /legacy palette/u);
+  assert.throws(() => assertValidOpenEnaSvg(network.replace("</svg>", "<circle onload='alert(1)'/></svg>"), networkContract), /event handlers/u);
+  assert.throws(() => assertValidOpenEnaSvg(lockup.replace("<title id=\"title\">", "<g id=\"title\"/><title id=\"title\">").replace("<desc id=\"desc\">", "<desc id=\"desc\">").replace("</svg>", "</svg>"), lockupContract), /title ID|exactly one title/u);
 });
 
 test("the login action and contact email use the site baby-blue accent", () => {
