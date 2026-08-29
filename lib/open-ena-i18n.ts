@@ -51,6 +51,36 @@ export interface OpenEnaPersistentPlotToolsCopy {
   fitPlotValue: (zoom: string) => string;
 }
 
+export interface OpenEnaGroupDisplayCopy {
+  title: string;
+  description: string;
+  showAllHiddenLabel: string;
+  showAll: (count: number) => string;
+  visibleCount: (group: string, visible: number, total: number) => string;
+  displaySettings: (group: string) => string;
+  showUnitPoints: string;
+  showMean: string;
+  showConfidenceIntervals: string;
+  showOutlierIntervals: string;
+  includeHiddenPoints: string;
+  settingLabel: (setting: string, group: string) => string;
+  outlierTwoDBoundary: string;
+  outlierThreeDBoundary: string;
+  meanRequiredBoundary: string;
+  intervalRequiresTwoUnits: string;
+  searchUnits: string;
+  searchUnitsLabel: (group: string) => string;
+  unitListWindow: (shown: number, matching: number, total: number) => string;
+  unitVisibility: (visible: number, total: number) => string;
+  unitAction: (visible: boolean, unitId: string, group: string) => string;
+  hide: string;
+  show: string;
+  keepOneVisible: string;
+  derivationError: string;
+  hiddenStatus: (count: number) => string;
+  shortcut: string;
+}
+
 export interface OpenEnaInferenceCopy {
   designLegend: string;
   designIndependent: string;
@@ -442,6 +472,7 @@ export interface OpenEnaCopy {
   navLabel: string;
   modes: { sets: string; data: string; model: string; plot: string; stats: string; ai: string };
   views: { twoD: string; threeD: string };
+  groupDisplay: OpenEnaGroupDisplayCopy;
   ona: OpenEnaOnaCopy;
   sets: {
     title: string;
@@ -1408,6 +1439,35 @@ const en: OpenEnaCopy = {
   navLabel: "Open ENA",
   modes: { sets: "Sets", data: "Data", model: "Model", plot: "Plot Tools", stats: "Stats & Export", ai: "AI" },
   views: { twoD: "2D ENA", threeD: "3D ENA" },
+  groupDisplay: {
+    title: "Plotted groups and units",
+    description: "Visibility and group summaries are display-only; the fitted jENA result and Stats remain unchanged.",
+    showAllHiddenLabel: "Show all hidden unit points",
+    showAll: (count) => `Show all (${count})`,
+    visibleCount: (group, visible, total) => `${group} · ${visible} of ${total} unit points visible`,
+    displaySettings: (group) => `Display settings for ${group}`,
+    showUnitPoints: "Show unit points",
+    showMean: "Show mean",
+    showConfidenceIntervals: "Show confidence intervals",
+    showOutlierIntervals: "Show outlier intervals",
+    includeHiddenPoints: "Include hidden points",
+    settingLabel: (setting, group) => `${setting} for ${group}`,
+    outlierTwoDBoundary: "Outlier guides use rENA-compatible mean ± 1.5 × IQR on each displayed axis; they do not remove points.",
+    outlierThreeDBoundary: "Outlier intervals are currently available in 2D only.",
+    meanRequiredBoundary: "Enable Show mean to display its confidence or outlier interval.",
+    intervalRequiresTwoUnits: "Confidence and outlier intervals require at least two units in the displayed summary population.",
+    searchUnits: "Search units",
+    searchUnitsLabel: (group) => `Search units in ${group}`,
+    unitListWindow: (shown, matching, total) => `Showing ${shown} of ${matching} matching units (${total} total).`,
+    unitVisibility: (visible, total) => `Unit visibility · ${visible}/${total}`,
+    unitAction: (visible, unitId, group) => `${visible ? "Hide" : "Show"} unit ${unitId} in ${group}`,
+    hide: "Hide",
+    show: "Show",
+    keepOneVisible: "Keep one visible unit for summaries, or enable Include hidden points first.",
+    derivationError: "Group display could not be derived safely. Restore hidden units or rebuild the current result before continuing.",
+    hiddenStatus: (count) => `${count} unit point${count === 1 ? " is" : "s are"} hidden.`,
+    shortcut: "Manage group/unit visibility and Mean, CI, or outlier guides →",
+  },
   resultTables: resultTablesEn,
   ona: {
     family: {
@@ -1970,6 +2030,35 @@ const zhHant: OpenEnaCopy = {
   navLabel: "開放 ENA",
   modes: { sets: "分析集", data: "資料", model: "模型", plot: "繪圖工具", stats: "統計與匯出", ai: "AI 解讀" },
   views: { twoD: "2D ENA", threeD: "3D ENA" },
+  groupDisplay: {
+    title: "已繪製群組與分析單位",
+    description: "可見性與群組摘要只影響呈現；已擬合的 jENA 結果與統計維持不變。",
+    showAllHiddenLabel: "顯示所有隱藏的分析單位點",
+    showAll: (count) => `全部顯示（${count}）`,
+    visibleCount: (group, visible, total) => `${group} · 顯示 ${visible}/${total} 個分析單位點`,
+    displaySettings: (group) => `${group} 的顯示設定`,
+    showUnitPoints: "顯示分析單位點",
+    showMean: "顯示平均值",
+    showConfidenceIntervals: "顯示信賴區間",
+    showOutlierIntervals: "顯示離群範圍",
+    includeHiddenPoints: "摘要包含隱藏點",
+    settingLabel: (setting, group) => `${group}：${setting}`,
+    outlierTwoDBoundary: "離群範圍依照 rENA，在每個顯示軸使用平均值 ± 1.5 × IQR；不會移除資料點。",
+    outlierThreeDBoundary: "離群範圍目前只適用於 2D。",
+    meanRequiredBoundary: "請啟用「顯示平均值」，以顯示其信賴區間或離群範圍。",
+    intervalRequiresTwoUnits: "信賴區間與離群範圍需要顯示摘要母體中至少兩個分析單位。",
+    searchUnits: "搜尋分析單位",
+    searchUnitsLabel: (group) => `搜尋 ${group} 的分析單位`,
+    unitListWindow: (shown, matching, total) => `顯示 ${shown}/${matching} 個相符分析單位（共 ${total} 個）。`,
+    unitVisibility: (visible, total) => `分析單位可見性 · ${visible}/${total}`,
+    unitAction: (visible, unitId, group) => `${visible ? "隱藏" : "顯示"} ${group} 的分析單位 ${unitId}`,
+    hide: "隱藏",
+    show: "顯示",
+    keepOneVisible: "請保留一個可見分析單位供摘要使用，或先啟用「摘要包含隱藏點」。",
+    derivationError: "無法安全建立群組顯示。請恢復隱藏的分析單位，或重新建立目前結果後再繼續。",
+    hiddenStatus: (count) => `已隱藏 ${count} 個分析單位點。`,
+    shortcut: "管理群組／分析單位可見性及平均值、CI 或離群範圍 →",
+  },
   resultTables: resultTablesZhHant,
   ona: {
     ...en.ona,
@@ -2305,6 +2394,35 @@ const zhHans: OpenEnaCopy = {
   navLabel: "开放 ENA",
   modes: { sets: "分析集", data: "数据", model: "模型", plot: "绘图工具", stats: "统计与导出", ai: "AI 解读" },
   views: { twoD: "2D ENA", threeD: "3D ENA" },
+  groupDisplay: {
+    title: "已绘制组与分析单位",
+    description: "可见性和组摘要只影响呈现；已拟合的 jENA 结果与统计保持不变。",
+    showAllHiddenLabel: "显示所有隐藏的分析单位点",
+    showAll: (count) => `全部显示（${count}）`,
+    visibleCount: (group, visible, total) => `${group} · 显示 ${visible}/${total} 个分析单位点`,
+    displaySettings: (group) => `${group} 的显示设置`,
+    showUnitPoints: "显示分析单位点",
+    showMean: "显示均值",
+    showConfidenceIntervals: "显示置信区间",
+    showOutlierIntervals: "显示离群范围",
+    includeHiddenPoints: "摘要包含隐藏点",
+    settingLabel: (setting, group) => `${group}：${setting}`,
+    outlierTwoDBoundary: "离群范围遵循 rENA，在每个显示轴使用均值 ± 1.5 × IQR；不会删除数据点。",
+    outlierThreeDBoundary: "离群范围目前仅适用于 2D。",
+    meanRequiredBoundary: "请启用“显示均值”，以显示其置信区间或离群范围。",
+    intervalRequiresTwoUnits: "置信区间和离群范围需要显示摘要总体中至少两个分析单位。",
+    searchUnits: "搜索分析单位",
+    searchUnitsLabel: (group) => `搜索 ${group} 的分析单位`,
+    unitListWindow: (shown, matching, total) => `显示 ${shown}/${matching} 个匹配分析单位（共 ${total} 个）。`,
+    unitVisibility: (visible, total) => `分析单位可见性 · ${visible}/${total}`,
+    unitAction: (visible, unitId, group) => `${visible ? "隐藏" : "显示"} ${group} 的分析单位 ${unitId}`,
+    hide: "隐藏",
+    show: "显示",
+    keepOneVisible: "请保留一个可见分析单位用于摘要，或先启用“摘要包含隐藏点”。",
+    derivationError: "无法安全生成组显示。请恢复隐藏的分析单位，或重新生成当前结果后再继续。",
+    hiddenStatus: (count) => `已隐藏 ${count} 个分析单位点。`,
+    shortcut: "管理组／分析单位可见性及均值、CI 或离群范围 →",
+  },
   resultTables: resultTablesZhHans,
   ona: {
     ...zhHant.ona,

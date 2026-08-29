@@ -1,5 +1,39 @@
 export const MARGINAL_STUDENT_T_95_METHOD = "marginal-student-t-95" as const;
 export const MARGINAL_STUDENT_T_95_CONFIDENCE_LEVEL = 0.95 as const;
+export const RENA_MEAN_CENTERED_IQR_OUTLIER_METHOD = "rena-mean-centered-1.5-iqr" as const;
+
+export type OpenEnaMeanCenteredIqrOutlierInterval =
+  | {
+      status: "estimable";
+      method: typeof RENA_MEAN_CENTERED_IQR_OUTLIER_METHOD;
+      sampleSize: number;
+      mean: number;
+      firstQuartile: number;
+      thirdQuartile: number;
+      interquartileRange: number;
+      halfWidth: number;
+      lower: number;
+      upper: number;
+    }
+  | {
+      status: "not-estimable";
+      method: typeof RENA_MEAN_CENTERED_IQR_OUTLIER_METHOD;
+      sampleSize: number;
+      reason: "insufficient-n" | "non-finite-sample" | "non-finite-summary";
+    };
+
+export interface OpenEnaMeanCenteredIqrOutlierIntervalPair {
+  method: typeof RENA_MEAN_CENTERED_IQR_OUTLIER_METHOD;
+  estimand: "arithmetic-group-mean";
+  observationUnit: "endpoint-analytic-unit";
+  interpretation: "two-separate-mean-centered-outlier-display-intervals";
+  confidenceInterval: false;
+  significanceTest: false;
+  xAxis: string;
+  yAxis: string;
+  x: OpenEnaMeanCenteredIqrOutlierInterval;
+  y: OpenEnaMeanCenteredIqrOutlierInterval;
+}
 
 export type OpenEnaMarginalMeanInterval =
   | {
@@ -117,6 +151,84 @@ function studentTCdf(value: number, degreesFreedom: number): number {
 }
 
 const criticalValueCache = new Map<number, number>();
+
+function quantileType7(sortedValues: readonly number[], probability: number) {
+  const index = (sortedValues.length - 1) * probability;
+  const lowerIndex = Math.floor(index);
+  const upperIndex = Math.ceil(index);
+  const lower = sortedValues[lowerIndex]!;
+  const upper = sortedValues[upperIndex]!;
+  return lower + (upper - lower) * (index - lowerIndex);
+}
+
+/**
+ * rENA's group outlier display guide: arithmetic mean ± 1.5 × per-axis IQR.
+ * This is a plotting interval, not Tukey fences and not automatic exclusion.
+ */
+export function meanCenteredIqrOutlierInterval(
+  values: readonly number[],
+): OpenEnaMeanCenteredIqrOutlierInterval {
+  if (values.length < 2) {
+    return {
+      status: "not-estimable",
+      method: RENA_MEAN_CENTERED_IQR_OUTLIER_METHOD,
+      sampleSize: values.length,
+      reason: "insufficient-n",
+    };
+  }
+  if (values.some((value) => !Number.isFinite(value))) {
+    return {
+      status: "not-estimable",
+      method: RENA_MEAN_CENTERED_IQR_OUTLIER_METHOD,
+      sampleSize: values.filter((value) => Number.isFinite(value)).length,
+      reason: "non-finite-sample",
+    };
+  }
+  const sorted = [...values].sort((left, right) => left - right);
+  const mean = sorted.reduce((sum, value) => sum + value, 0) / sorted.length;
+  const firstQuartile = quantileType7(sorted, 0.25);
+  const thirdQuartile = quantileType7(sorted, 0.75);
+  const interquartileRange = thirdQuartile - firstQuartile;
+  const halfWidth = interquartileRange * 1.5;
+  if (!Number.isFinite(mean) || !Number.isFinite(halfWidth) || halfWidth < 0) {
+    return {
+      status: "not-estimable",
+      method: RENA_MEAN_CENTERED_IQR_OUTLIER_METHOD,
+      sampleSize: sorted.length,
+      reason: "non-finite-summary",
+    };
+  }
+  return {
+    status: "estimable",
+    method: RENA_MEAN_CENTERED_IQR_OUTLIER_METHOD,
+    sampleSize: sorted.length,
+    mean,
+    firstQuartile,
+    thirdQuartile,
+    interquartileRange,
+    halfWidth,
+    lower: mean - halfWidth,
+    upper: mean + halfWidth,
+  };
+}
+
+export function meanCenteredIqrOutlierIntervalPair(
+  points: ReadonlyArray<{ x: number; y: number }>,
+  axes: readonly [string, string],
+): OpenEnaMeanCenteredIqrOutlierIntervalPair {
+  return {
+    method: RENA_MEAN_CENTERED_IQR_OUTLIER_METHOD,
+    estimand: "arithmetic-group-mean",
+    observationUnit: "endpoint-analytic-unit",
+    interpretation: "two-separate-mean-centered-outlier-display-intervals",
+    confidenceInterval: false,
+    significanceTest: false,
+    xAxis: axes[0],
+    yAxis: axes[1],
+    x: meanCenteredIqrOutlierInterval(points.map(({ x }) => x)),
+    y: meanCenteredIqrOutlierInterval(points.map(({ y }) => y)),
+  };
+}
 
 /** Two-sided 95% Student-t critical value, matching q_t(.975, df). */
 export function studentTCritical975(degreesFreedom: number): number {

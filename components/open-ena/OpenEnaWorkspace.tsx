@@ -49,6 +49,13 @@ import {
   pairwiseGroupContrastEdgesToCsv,
 } from "@/lib/open-ena/contrasts";
 import {
+  deriveOpenEnaGroupDisplay,
+  openEnaGroupUnitKey,
+  resolveOpenEnaGroupDisplayOptions,
+  type OpenEnaGroupDisplayOptions,
+  type OpenEnaGroupDisplaySettingsByGroup,
+} from "@/lib/open-ena/group-display";
+import {
   buildLongitudinalGroupCentroidExport,
   inferLongitudinalMappingDefaults,
   longitudinalInferenceRowsToCsv,
@@ -139,6 +146,7 @@ import OpenEnaOrderedResultLayout from "./OpenEnaOrderedResultLayout";
 import OpenEnaOnaStats from "./OpenEnaOnaStats";
 import { OpenEnaOrderPanel } from "./OpenEnaOrderPanel";
 import OpenEnaGroupContrast from "./OpenEnaGroupContrast";
+import OpenEnaGroupDisplayControls from "./OpenEnaGroupDisplayControls";
 import OpenEnaLongitudinalTrajectory from "./OpenEnaLongitudinalTrajectory";
 import OpenEnaLongitudinalWorkbenchV3 from "./OpenEnaLongitudinalWorkbenchV3";
 import OpenEnaPersistentPlotTools from "./OpenEnaPersistentPlotTools";
@@ -472,6 +480,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   const [secondarySetId, setSecondarySetId] = useState<string | null>(null);
   const [primaryGroupName, setPrimaryGroupName] = useState("");
   const [secondaryGroupName, setSecondaryGroupName] = useState("");
+  const [groupDisplaySettingsByGroup, setGroupDisplaySettingsByGroup] = useState<OpenEnaGroupDisplaySettingsByGroup>({});
+  const [hiddenUnitKeys, setHiddenUnitKeys] = useState<string[]>([]);
   const [activeComparisonSurface, setActiveComparisonSurface] = useState<"groups" | "sets">("groups");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -593,6 +603,54 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     [result],
   );
   const currentResultGroupKey = currentResultGroupNames.join("\u001f");
+  const groupDisplayResultKey = result && resultConfig?.groupColumn && result.set.modelType === "EndPoint"
+    ? `${result.analyzedAt}\u001f${datasetHash ?? "unbound"}\u001f${resultConfig.groupColumn}`
+    : "";
+  const groupDisplayControlGroups = useMemo(() => {
+    if (!result || !resultConfig?.groupColumn || result.set.modelType !== "EndPoint") return [];
+    const groupColumn = resultConfig.groupColumn;
+    const unitIdsByGroup = new Map(result.groups.map((group) => [group.name, [] as string[]]));
+    const seenUnitIdsByGroup = new Map(result.groups.map((group) => [group.name, new Set<string>()]));
+    for (const row of result.set.points) {
+      const groupName = String(row[groupColumn] ?? "");
+      const unitId = String(row.ENA_UNIT ?? "");
+      const unitIds = unitIdsByGroup.get(groupName);
+      const seenUnitIds = seenUnitIdsByGroup.get(groupName);
+      if (!unitId || !unitIds || !seenUnitIds || seenUnitIds.has(unitId)) continue;
+      seenUnitIds.add(unitId);
+      unitIds.push(unitId);
+    }
+    return result.groups.map((group) => ({
+      name: group.name,
+      color: group.color,
+      unitIds: unitIdsByGroup.get(group.name) ?? [],
+    }));
+  }, [result, resultConfig]);
+
+  useEffect(() => {
+    setGroupDisplaySettingsByGroup({});
+    setHiddenUnitKeys([]);
+  }, [groupDisplayResultKey]);
+
+  function updateGroupDisplaySettings(groupName: string, patch: Partial<OpenEnaGroupDisplayOptions>) {
+    setGroupDisplaySettingsByGroup((current) => ({
+      ...current,
+      [groupName]: {
+        ...resolveOpenEnaGroupDisplayOptions(current, groupName),
+        ...patch,
+      },
+    }));
+  }
+
+  function updateUnitPointVisibility(groupName: string, unitId: string, visible: boolean) {
+    const key = openEnaGroupUnitKey(groupName, unitId);
+    setHiddenUnitKeys((current) => {
+      const next = new Set(current);
+      if (visible) next.delete(key);
+      else next.add(key);
+      return [...next];
+    });
+  }
 
   useEffect(() => {
     const endpointGroupsAvailable = Boolean(
@@ -1099,6 +1157,46 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     }
   }, [contrastUnavailable, groupContrastAxes, primaryGroupName, result, resultConfig, secondaryGroupName]);
   const groupContrast = groupContrastState.contrast;
+  const groupDisplayPresentation = useMemo(() => {
+    if (!groupContrast) {
+      return {
+        settingsByGroup: {} as OpenEnaGroupDisplaySettingsByGroup,
+        hiddenUnitKeys: [] as string[],
+      };
+    }
+    const selectedSides = [groupContrast.primary, groupContrast.secondary];
+    const allowedHiddenUnitKeys = new Set(selectedSides.flatMap((side) => (
+      side.unitIds.map((unitId) => openEnaGroupUnitKey(side.name, unitId))
+    )));
+    return {
+      settingsByGroup: Object.fromEntries(selectedSides.map((side) => [
+        side.name,
+        resolveOpenEnaGroupDisplayOptions(groupDisplaySettingsByGroup, side.name),
+      ])),
+      hiddenUnitKeys: hiddenUnitKeys.filter((key) => allowedHiddenUnitKeys.has(key)),
+    };
+  }, [groupContrast, groupDisplaySettingsByGroup, hiddenUnitKeys]);
+  const groupDisplayDerivation = useMemo(() => {
+    if (!result || !groupContrast) return { display: null, error: "" };
+    try {
+      return {
+        display: deriveOpenEnaGroupDisplay({
+          result,
+          contrast: groupContrast,
+          settingsByGroup: groupDisplaySettingsByGroup,
+          hiddenUnitKeys,
+        }),
+        error: "",
+      };
+    } catch {
+      return { display: null, error: copy.groupDisplay.derivationError };
+    }
+  }, [copy.groupDisplay.derivationError, groupContrast, groupDisplaySettingsByGroup, hiddenUnitKeys, result]);
+  const derivedGroupDisplay = groupDisplayDerivation.display;
+  const groupDisplayError = groupDisplayDerivation.error;
+  const groupDisplayExportContrast = groupDisplayError
+    ? null
+    : derivedGroupDisplay?.contrast ?? groupContrast;
   const selectedPresentationGroupOrder = useMemo<readonly [string, string] | undefined>(() => {
     if (completedResultKind !== "ona") return groupContrast?.groupOrder;
     if (!result || !primaryGroupName || !secondaryGroupName || primaryGroupName === secondaryGroupName) {
@@ -1209,6 +1307,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         : "model";
   const activeSetComparison = completedResultKind !== "ona" && displayedComparisonSurface === "sets" ? setComparison : null;
   const activeGroupContrast = completedResultKind !== "ona" && displayedComparisonSurface === "groups" ? groupContrast : null;
+  const activeGroupDisplay = activeGroupContrast ? derivedGroupDisplay : null;
   const dataViewAvailability = openEnaDataViewAvailability({
     view,
     completedResultKind,
@@ -1837,6 +1936,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     setShowLabels(true);
     setShowGroupLabels(true);
     setShowUnitLabels(false);
+    setGroupDisplaySettingsByGroup({});
+    setHiddenUnitKeys([]);
     setUnitCircle(false);
     setShowVariance(true);
     setShowTrajectories(true);
@@ -2411,6 +2512,21 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                       {identityOptions.map((header) => <option key={header} value={header}>{header}</option>)}
                     </select>
                   </label>
+                  {activeGroupContrast && groupDisplayControlGroups.length > 0 ? (
+                    <div data-ena-group-display-result-key={groupDisplayResultKey}>
+                      <OpenEnaGroupDisplayControls
+                        groups={groupDisplayControlGroups}
+                        settingsByGroup={groupDisplaySettingsByGroup}
+                        hiddenUnitKeys={hiddenUnitKeys}
+                        view={view}
+                        copy={copy.groupDisplay}
+                        disabled={loading || resultIsStale}
+                        onSettingsChange={updateGroupDisplaySettings}
+                        onUnitVisibilityChange={updateUnitPointVisibility}
+                        onRevealAllHidden={() => setHiddenUnitKeys([])}
+                      />
+                    </div>
+                  ) : null}
                 </>
               ) : null}
 
@@ -2975,10 +3091,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   <button
                     type="button"
                     className="ena-action-button ena-action-secondary"
-                    disabled={!groupContrast}
-                    onClick={() => groupContrast && downloadJson(
+                    disabled={!groupDisplayExportContrast}
+                    onClick={() => groupDisplayExportContrast && downloadJson(
                       `open-ena-${Date.now()}-group-contrast.json`,
-                      buildPairwiseGroupContrastExport(groupContrast, {
+                      buildPairwiseGroupContrastExport(groupDisplayExportContrast, {
                         flipX,
                         flipY,
                         edgeThreshold,
@@ -2991,6 +3107,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                         edgeScale,
                         pointScale,
                         plotZoom,
+                        groupDisplaySettingsByGroup: groupDisplayPresentation.settingsByGroup,
+                        hiddenUnitKeys: groupDisplayPresentation.hiddenUnitKeys,
                       }),
                       true,
                     )}
@@ -3000,10 +3118,10 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   <button
                     type="button"
                     className="ena-action-button ena-action-secondary"
-                    disabled={!groupContrast}
-                    onClick={() => groupContrast && downloadText(
+                    disabled={!groupDisplayExportContrast}
+                    onClick={() => groupDisplayExportContrast && downloadText(
                       `open-ena-${Date.now()}-group-contrast-edges.csv`,
-                      pairwiseGroupContrastEdgesToCsv(groupContrast),
+                      pairwiseGroupContrastEdgesToCsv(groupDisplayExportContrast),
                       "text/csv;charset=utf-8",
                     )}
                   >
@@ -3011,6 +3129,17 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   </button>
                 </div>
                 <p className="ena-export-identifier-note">Derived contrast files retain analytic-unit and group identifiers; pseudonymize them before sharing when needed.</p>
+                <button
+                  type="button"
+                  className="ena-inline-link ena-group-display-shortcut"
+                  onClick={() => {
+                    setActiveComparisonSurface("groups");
+                    setModelTab("units");
+                    setMode("model");
+                  }}
+                >
+                  {copy.groupDisplay.shortcut}
+                </button>
               </>
             ) : (
               <p className="ena-sets-compatibility-note">{groupContrastState.error}</p>
@@ -4297,7 +4426,15 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     <span>{result.projectionReference.name}</span>
                   </div>
                 ) : null}
-                {view === "2d" && activeLongitudinalView ? (
+                {activeGroupContrast && groupDisplayError ? (
+                  <div
+                    className="ena-sets-compatibility-note"
+                    role="alert"
+                    data-ena-group-display-error="true"
+                  >
+                    {groupDisplayError}
+                  </div>
+                ) : view === "2d" && activeLongitudinalView ? (
                   <OpenEnaLongitudinalTrajectory
                     codeColors={codeColors}
                     trajectory={activeLongitudinalView}
@@ -4313,10 +4450,11 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     copy={copy.longitudinal}
                     svgRef={plotSvgRef}
                   />
-                ) : view === "2d" && activeGroupContrast ? (
+                ) : view === "2d" && activeGroupContrast && activeGroupDisplay ? (
                   <OpenEnaGroupContrast
                     codeColors={codeColors}
-                    contrast={activeGroupContrast}
+                    contrast={activeGroupDisplay.contrast}
+                    groupDisplay={activeGroupDisplay}
                     edgeThreshold={edgeThreshold}
                     showPoints={showPoints}
                     showNetworks={showNetworks}
@@ -4345,11 +4483,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                       setSecondaryGroupName(primaryGroupName);
                     }}
                   />
-                ) : view === "3d" && threeDDimensions && activeGroupContrast && resultConfig?.groupColumn ? (
+                ) : view === "3d" && threeDDimensions && activeGroupContrast && activeGroupDisplay && resultConfig?.groupColumn ? (
                   <OpenEna3DGroupContrast
                     codeColors={codeColors}
                     result={result}
-                    contrast={activeGroupContrast}
+                    contrast={activeGroupDisplay.contrast}
+                    groupDisplay={activeGroupDisplay}
                     groupColumn={resultConfig.groupColumn}
                     xDimension={threeDDimensions[0]}
                     yDimension={threeDDimensions[1]}

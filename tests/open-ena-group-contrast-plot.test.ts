@@ -6,6 +6,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { OpenEnaGroupContrastProps } from "../components/open-ena/OpenEnaGroupContrast";
 import type { OpenEnaPairwiseContrast } from "../lib/open-ena/contrasts";
+import { DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS } from "../lib/open-ena/group-display";
 
 const componentPath = join(process.cwd(), "components", "open-ena", "OpenEnaGroupContrast.tsx");
 
@@ -200,6 +201,40 @@ function codeNodePosition(svg: string, code: string) {
     `<g\\b(?=[^>]*transform="translate\\(([^ ]+) ([^)]+)\\)")(?=[^>]*aria-label="${escaped} code node")[^>]*>`,
   ));
   return transform ? { x: Number(transform[1]), y: Number(transform[2]) } : null;
+}
+
+function groupDisplay({
+  primary = {},
+  secondary = {},
+  primaryVisibleUnitIds = contrast.primary.unitIds,
+  secondaryVisibleUnitIds = contrast.secondary.unitIds,
+}: {
+  primary?: Partial<typeof DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS>;
+  secondary?: Partial<typeof DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS>;
+  primaryVisibleUnitIds?: string[];
+  secondaryVisibleUnitIds?: string[];
+} = {}) {
+  return {
+    primary: {
+      name: contrast.primary.name,
+      settings: { ...DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS, ...primary },
+      totalUnitCount: contrast.primary.unitIds.length,
+      validUnitCount: contrast.primary.points.filter(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)).length,
+      hiddenUnitCount: contrast.primary.unitIds.length - primaryVisibleUnitIds.length,
+      visibleUnitIds: primaryVisibleUnitIds,
+      summaryUnitIds: primary.includeHiddenPoints ? contrast.primary.unitIds : primaryVisibleUnitIds,
+    },
+    secondary: {
+      name: contrast.secondary.name,
+      settings: { ...DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS, ...secondary },
+      totalUnitCount: contrast.secondary.unitIds.length,
+      validUnitCount: contrast.secondary.points.filter(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)).length,
+      hiddenUnitCount: contrast.secondary.unitIds.length - secondaryVisibleUnitIds.length,
+      visibleUnitIds: secondaryVisibleUnitIds,
+      summaryUnitIds: secondary.includeHiddenPoints ? contrast.secondary.unitIds : secondaryVisibleUnitIds,
+    },
+    hiddenUnitKeys: [],
+  };
 }
 
 test("pairwise contrast renders stable Comparison, Primary, and Secondary 2D panels", async () => {
@@ -445,7 +480,7 @@ test("large persistent point layers disclose deterministic sampling without reve
   assert.equal(unitPointTags(comparison).length, 2_002);
   assert.match(comparison, /data-ena-points-valid="2502"/);
   assert.match(comparison, /data-ena-points-shown="2002"/);
-  assert.match(comparison, /Rendering 2002 sampled unit marks from 2502 valid analytic-unit points\./);
+  assert.match(comparison, /Rendering 2002 sampled unit marks from 2502 visible analytic-unit points\./);
   assert.doesNotMatch(markup, /reveal|overlap-count|concentric/i);
 });
 
@@ -551,7 +586,32 @@ test("unit rendering is capped, rejects non-finite points, and hides source iden
     x: Number.NaN,
     y: Number.POSITIVE_INFINITY,
   });
-  const markup = await render({ contrast: largeContrast });
+  largeContrast.secondary.unitIds.push("private-nonfinite");
+  largeContrast.secondary.unitCount = largeContrast.secondary.unitIds.length;
+  const markup = await render({
+    contrast: largeContrast,
+    groupDisplay: {
+      primary: {
+        name: largeContrast.primary.name,
+        settings: { ...DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS },
+        totalUnitCount: largeContrast.primary.unitIds.length,
+        validUnitCount: largeContrast.primary.points.filter(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)).length,
+        hiddenUnitCount: 0,
+        visibleUnitIds: [...largeContrast.primary.unitIds],
+        summaryUnitIds: [...largeContrast.primary.unitIds],
+      },
+      secondary: {
+        name: largeContrast.secondary.name,
+        settings: { ...DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS },
+        totalUnitCount: largeContrast.secondary.unitIds.length,
+        validUnitCount: largeContrast.secondary.points.filter(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)).length,
+        hiddenUnitCount: 0,
+        visibleUnitIds: [...largeContrast.secondary.unitIds],
+        summaryUnitIds: [...largeContrast.secondary.unitIds],
+      },
+      hiddenUnitKeys: [],
+    },
+  });
   const comparisonSvg = markup.match(/<svg[^>]*data-testid="open-ena-group-comparison-plot"[\s\S]*?<\/svg>/)?.[0] ?? "";
   const primarySvg = markup.match(/<svg[^>]*data-testid="open-ena-group-primary-plot"[\s\S]*?<\/svg>/)?.[0] ?? "";
   const secondarySvg = markup.match(/<svg[^>]*data-testid="open-ena-group-secondary-plot"[\s\S]*?<\/svg>/)?.[0] ?? "";
@@ -596,6 +656,73 @@ test("visibility and scale props control plot output", async () => {
   assert.doesNotMatch(hiddenMarkup, />Evidence<|>Reflection<|>Revision</);
   assert.equal((hiddenMarkup.match(/data-ena-edge-scale-factor="1.7"/g) ?? []).length, 3);
   assert.equal((hiddenMarkup.match(/data-ena-point-scale-factor="1.8"/g) ?? []).length, 3);
+});
+
+test("per-group and per-unit display settings independently filter unit circles, means, and confidence guides", async () => {
+  const markup = await render({
+    groupDisplay: groupDisplay({
+      primary: { showMean: false },
+      primaryVisibleUnitIds: ["private-studio-02"],
+    }),
+  } as unknown as Partial<OpenEnaGroupContrastProps>);
+  const comparison = plotSvg(markup, "open-ena-group-comparison-plot");
+
+  assert.equal(unitPointTags(comparison).length, 3, "one hidden Studio unit must not remain in the SVG point layer");
+  assert.match(comparison, /data-ena-points-valid="4"/);
+  assert.match(comparison, /data-ena-points-hidden="1"/);
+  assert.match(comparison, /data-ena-points-dropped="0"/);
+  assert.match(comparison, /1 analytic-unit mark is hidden by group or unit display controls\./);
+  assert.doesNotMatch(comparison, /Rendering 3 sampled unit marks from 4 valid/u);
+  assert.equal(
+    unitPointTags(comparison).filter((tag) => tag.includes('data-ena-group-role="primary"')).length,
+    1,
+  );
+  assert.doesNotMatch(comparison, /data-ena-mean-marker="primary-square"/);
+  assert.match(comparison, /data-ena-mean-marker="secondary-square"/);
+  assert.doesNotMatch(comparison, /data-ena-uncertainty-guide="marginal-student-t-95"[^>]*data-ena-group-role="primary"/);
+  assert.match(comparison, /data-ena-uncertainty-guide="marginal-student-t-95"[^>]*data-ena-group-role="secondary"/);
+  assert.doesNotMatch(comparison, /data-ena-outlier-guide=/);
+});
+
+test("2D outlier guides are independent from CI but remain dependent on the group mean", async () => {
+  const shown = plotSvg(await render({
+    groupDisplay: groupDisplay({
+      primary: { showConfidenceIntervals: false, showOutlierIntervals: true },
+      secondary: { showOutlierIntervals: true },
+    }),
+  } as unknown as Partial<OpenEnaGroupContrastProps>), "open-ena-group-comparison-plot");
+
+  assert.match(shown, /data-ena-mean-marker="primary-square"/);
+  assert.doesNotMatch(shown, /data-ena-uncertainty-guide="marginal-student-t-95"[^>]*data-ena-group-role="primary"/);
+  assert.match(shown, /data-ena-uncertainty-guide="marginal-student-t-95"[^>]*data-ena-group-role="secondary"/);
+  assert.match(shown, /data-ena-outlier-guide="rena-mean-centered-1\.5-iqr"[^>]*data-ena-group-role="primary"/);
+  assert.match(shown, /data-ena-outlier-guide="rena-mean-centered-1\.5-iqr"[^>]*data-ena-group-role="secondary"/);
+
+  const withoutPrimaryMean = plotSvg(await render({
+    groupDisplay: groupDisplay({
+      primary: { showMean: false, showOutlierIntervals: true },
+    }),
+  } as unknown as Partial<OpenEnaGroupContrastProps>), "open-ena-group-comparison-plot");
+  assert.doesNotMatch(withoutPrimaryMean, /data-ena-outlier-guide="rena-mean-centered-1\.5-iqr"[^>]*data-ena-group-role="primary"/);
+
+  const degenerate = structuredClone(contrast);
+  degenerate.primary.points = degenerate.primary.points.map((point, index) => ({
+    ...point,
+    x: 0,
+    y: index === 0 ? -2 : 2,
+  }));
+  delete degenerate.primary.outlierIntervals;
+  const degenerateMarkup = plotSvg(await render({
+    contrast: degenerate,
+    groupDisplay: groupDisplay({
+      primary: { showConfidenceIntervals: false, showOutlierIntervals: true },
+    }),
+  } as unknown as Partial<OpenEnaGroupContrastProps>), "open-ena-group-comparison-plot");
+  assert.match(
+    degenerateMarkup,
+    /<line\b[^>]*data-ena-outlier-degenerate-axis="x"[^>]*>/u,
+    "a zero-IQR x axis must render a visible vertical interval line instead of a zero-width SVG rectangle",
+  );
 });
 
 test("Unit circle is a model-independent node-layout mode and never hides analytic-unit points", async () => {

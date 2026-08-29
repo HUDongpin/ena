@@ -27,6 +27,11 @@ import {
   type OpenEna3dPlotKind,
 } from "../lib/open-ena/plot3d";
 import { buildPairwiseGroupContrast } from "../lib/open-ena/contrasts";
+import {
+  DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS,
+  deriveOpenEnaGroupDisplay,
+  openEnaGroupUnitKey,
+} from "../lib/open-ena/group-display";
 import { SAMPLE_CONFIG, type OpenEnaConfig } from "../lib/open-ena/types";
 
 const projectRoot = process.cwd();
@@ -391,7 +396,7 @@ test("3D pairwise compilation gives Comparison, Primary, and Secondary distinct 
   assert.equal(primary.layout.scene.dragmode, false);
 });
 
-test("3D group means always use square centroid markers regardless of unit-point shape", () => {
+test("3D unit observations stay circular while group means use square summary markers", () => {
   const result = threeDimensionalResult();
   const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
   const contrast = buildPairwiseGroupContrast(
@@ -432,8 +437,8 @@ test("3D group means always use square centroid markers regardless of unit-point
   assert.ok(means.every((trace) => trace.name.endsWith("mean · square")));
   assert.deepEqual(
     spec.data.filter((trace) => trace.meta.role === "unit-points").map((trace) => trace.marker?.symbol),
-    ["circle", "square"],
-    "unit points keep their non-color group encoding while both centroids use squares",
+    ["circle", "circle"],
+    "group identity is encoded by color while every analytic-unit observation remains a circle",
   );
 });
 
@@ -456,6 +461,8 @@ test("pairwise contrast freezes marginal Student-t intervals for every fitted di
     meanConfidenceIntervalsByDimension?: IntervalRecord;
   }).meanConfidenceIntervalsByDimension;
 
+  assert.deepEqual(Object.keys(contrast.primary.meanPoint), result.dimensions);
+  assert.deepEqual(Object.keys(contrast.secondary.meanPoint), result.dimensions);
   assert.deepEqual(Object.keys(primaryIntervals ?? {}), result.dimensions);
   assert.deepEqual(Object.keys(secondaryIntervals ?? {}), result.dimensions);
   for (const dimension of result.dimensions) {
@@ -514,6 +521,114 @@ test("3D comparison renders dashed three-axis marginal CI wireframes while compa
     primary.data.filter((trace) => (trace.meta.role as string) === "confidence-interval").length,
     0,
     "compact group-network side plots stay visually focused on their mean networks",
+  );
+});
+
+test("3D comparison shares per-unit hiding and independent Mean/CI settings with the 2D presenter", () => {
+  const result = confidenceReadyThreeDimensionalResult();
+  const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
+  const contrast = buildPairwiseGroupContrast(
+    result,
+    THREE_DIMENSIONAL_CONFIG,
+    "first",
+    "second",
+    [xDimension, yDimension],
+    "2026-08-29T04:30:00.000Z",
+  );
+  const settingsByGroup = {
+    first: {
+      ...DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS,
+      showConfidenceIntervals: false,
+    },
+    second: { ...DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS },
+  };
+  const groupDisplay = deriveOpenEnaGroupDisplay({
+    result,
+    contrast,
+    settingsByGroup,
+    hiddenUnitKeys: [openEnaGroupUnitKey("first", "first-1")],
+  });
+  const compile = (display: typeof groupDisplay) => compileOpenEna3dPlotSpec({
+    result,
+    contrast: display.contrast,
+    groupDisplay: display,
+    plotKind: "comparison",
+    groupColumn: "group",
+    xDimension,
+    yDimension,
+    zDimension,
+    camera: "isometric",
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    showTrajectories: false,
+    edgeScale: 1,
+    edgeThreshold: 0,
+    pointScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+  } as Parameters<typeof compileOpenEna3dPlotSpec>[0]);
+  const ciOff = compile(groupDisplay);
+  const fullPopulation = compile(deriveOpenEnaGroupDisplay({
+    result,
+    contrast,
+    settingsByGroup,
+    hiddenUnitKeys: [],
+  }));
+  const pointTraces = ciOff.data.filter((trace) => trace.meta.role === "unit-points");
+
+  assert.deepEqual(pointTraces.map((trace) => trace.x.length), [3, 4]);
+  assert.deepEqual(ciOff.layout.scene.xaxis.range, fullPopulation.layout.scene.xaxis.range);
+  assert.deepEqual(ciOff.layout.scene.yaxis.range, fullPopulation.layout.scene.yaxis.range);
+  assert.deepEqual(ciOff.layout.scene.zaxis.range, fullPopulation.layout.scene.zaxis.range);
+  assert.ok(pointTraces.every((trace) => trace.marker?.symbol === "circle"));
+  assert.deepEqual(
+    ciOff.data.filter((trace) => trace.meta.role === "confidence-interval").map((trace) => trace.meta.groupName),
+    Array.from({ length: 6 }, () => "second"),
+    "the first group CI is hidden while the second group keeps its six-edge 3D wireframe",
+  );
+  assert.deepEqual(
+    ciOff.data.filter((trace) => trace.meta.role === "group-mean").map((trace) => trace.meta.groupName),
+    ["first", "second"],
+  );
+
+  const meanOff = compile(deriveOpenEnaGroupDisplay({
+    result,
+    contrast,
+    settingsByGroup: {
+      ...settingsByGroup,
+      first: { ...settingsByGroup.first, showMean: false, showConfidenceIntervals: true },
+    },
+    hiddenUnitKeys: [openEnaGroupUnitKey("first", "first-1")],
+  }));
+  assert.deepEqual(
+    meanOff.data.filter((trace) => trace.meta.role === "group-mean").map((trace) => trace.meta.groupName),
+    ["second"],
+  );
+  assert.ok(meanOff.data
+    .filter((trace) => trace.meta.role === "confidence-interval")
+    .every((trace) => trace.meta.groupName === "second"));
+  assert.ok(meanOff.data.every((trace) => String(trace.meta.role) !== "outlier-interval"));
+
+  const primaryPointsOff = compile(deriveOpenEnaGroupDisplay({
+    result,
+    contrast,
+    settingsByGroup: {
+      ...settingsByGroup,
+      first: { ...settingsByGroup.first, showUnitPoints: false },
+    },
+    hiddenUnitKeys: [],
+  }));
+  assert.ok(primaryPointsOff.data
+    .filter((trace) => trace.meta.role === "unit-points")
+    .every((trace) => trace.meta.groupName === "second"));
+  assert.equal(
+    primaryPointsOff.data.find((trace) => trace.meta.role === "group-mean" && trace.meta.groupName === "first")?.showlegend,
+    true,
+    "a group mean must carry the legend when that group's unit trace is not plotted",
   );
 });
 
@@ -651,7 +766,11 @@ test("generic 3D ENA plots retain networks and points but fail closed on legacy 
 
   assert.deepEqual(spec, compile(false), "the read-compatible trajectory flag must be a 3D presenter no-op");
   assert.equal(pointTraces.length, 6);
-  assert.equal(new Set(pointTraces.map((trace) => trace.marker?.symbol)).size, 6);
+  assert.deepEqual(
+    pointTraces.map((trace) => trace.marker?.symbol),
+    ["circle", "square", "diamond", "cross", "x", "circle-open"],
+    "generic multi-group 3D keeps a redundant non-color group encoding while pairwise comparison units stay circular",
+  );
   assert.equal(new Set(pointTraces.map((trace) => trace.meta.groupName)).size, 6);
   assert.equal(trajectoryTraces.length, 0);
   assert.ok(spec.data.some((trace) => trace.meta.role === "network-edge"));
@@ -731,7 +850,7 @@ test("camera presets are explicit display-only orientations and the client plot 
   assert.match(workspace, /onCameraChange=\{setInteractive3dCamera\}/);
   assert.match(workspace, /initialAspectRatio=\{interactive3dAspectRatio\}/);
   assert.match(workspace, /onAspectRatioChange=\{setInteractive3dAspectRatio\}/);
-  assert.match(workspace, /view === "3d" && threeDDimensions && activeGroupContrast && resultConfig\?\.groupColumn/);
+  assert.match(workspace, /view === "3d" && threeDDimensions && activeGroupContrast && activeGroupDisplay && resultConfig\?\.groupColumn/);
   assert.match(workspace, /<OpenEna3DGroupContrast/);
   assert.match(workspace, /sharedCamera=\{interactive3dCamera\}/);
   assert.match(workspace, /sharedAspectRatio=\{interactive3dAspectRatio\}/);

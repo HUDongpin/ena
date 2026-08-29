@@ -11,9 +11,16 @@ import type {
   OpenEnaPairwiseContrast,
   OpenEnaPairwiseContrastSide,
 } from "@/lib/open-ena/contrasts";
+import {
+  DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS,
+  type OpenEnaDerivedGroupDisplay,
+  type OpenEnaResolvedGroupDisplaySide,
+} from "@/lib/open-ena/group-display";
 import { codeColorFor, type OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
 import {
   marginalMeanIntervalPair,
+  meanCenteredIqrOutlierIntervalPair,
+  type OpenEnaMeanCenteredIqrOutlierIntervalPair,
   type OpenEnaMarginalMeanIntervalPair,
 } from "@/lib/open-ena/uncertainty";
 import OpenEnaPlotActionIcon from "./OpenEnaPlotActionIcon";
@@ -41,6 +48,7 @@ export interface OpenEnaGroupContrastProps {
   dataView?: ReactNode;
   rightTools?: ReactNode;
   onSwitchPlots?: () => void;
+  groupDisplay?: Pick<OpenEnaDerivedGroupDisplay, "primary" | "secondary" | "hiddenUnitKeys">;
 }
 
 type ContrastEdge = OpenEnaPairwiseContrast["edges"][number];
@@ -397,6 +405,25 @@ function groupColor(
     ?? (role === "primary" ? PRIMARY_COLOR : SECONDARY_COLOR);
 }
 
+function groupDisplaySide(
+  groupDisplay: OpenEnaGroupContrastProps["groupDisplay"],
+  role: GroupRole,
+  side: OpenEnaPairwiseContrastSide,
+): OpenEnaResolvedGroupDisplaySide {
+  const candidate = groupDisplay?.[role];
+  if (candidate?.name === side.name) return candidate;
+  const pointUnitIds = side.points.map(({ unitId }) => unitId);
+  return {
+    name: side.name,
+    settings: { ...DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS },
+    totalUnitCount: side.points.length,
+    validUnitCount: validPoints(side).length,
+    hiddenUnitCount: 0,
+    visibleUnitIds: pointUnitIds,
+    summaryUnitIds: pointUnitIds,
+  };
+}
+
 function confidenceIntervals(
   side: OpenEnaPairwiseContrastSide,
   axes: readonly [string, string],
@@ -405,6 +432,32 @@ function confidenceIntervals(
   return stored && stored.xAxis === axes[0] && stored.yAxis === axes[1]
     ? stored
     : marginalMeanIntervalPair(side.points, axes);
+}
+
+function outlierIntervals(
+  side: OpenEnaPairwiseContrastSide,
+  axes: readonly [string, string],
+): OpenEnaMeanCenteredIqrOutlierIntervalPair {
+  const stored = side.outlierIntervals;
+  return stored && stored.xAxis === axes[0] && stored.yAxis === axes[1]
+    ? stored
+    : meanCenteredIqrOutlierIntervalPair(side.points, axes);
+}
+
+function confidenceGuideIsEstimable(
+  side: OpenEnaPairwiseContrastSide,
+  axes: readonly [string, string],
+) {
+  const interval = confidenceIntervals(side, axes);
+  return interval.x.status === "estimable" && interval.y.status === "estimable";
+}
+
+function outlierGuideIsEstimable(
+  side: OpenEnaPairwiseContrastSide,
+  axes: readonly [string, string],
+) {
+  const interval = outlierIntervals(side, axes);
+  return interval.x.status === "estimable" && interval.y.status === "estimable";
 }
 
 interface GroupMeanMarkerProps {
@@ -610,6 +663,126 @@ function ConfidenceGuide({ side, role, axes, project, color }: ConfidenceGuidePr
   );
 }
 
+function OutlierGuide({ side, role, axes, project, color }: ConfidenceGuideProps) {
+  const intervals = outlierIntervals(side, axes);
+  const x = intervals.x;
+  const y = intervals.y;
+  if (x.status !== "estimable" || y.status !== "estimable") {
+    const reason = x.status === "not-estimable" ? x.reason : y.status === "not-estimable" ? y.reason : "not-estimable";
+    return (
+      <desc
+        data-ena-outlier-status="not-estimable"
+        data-ena-group-role={role}
+        data-ena-outlier-reason={reason}
+      >
+        {`${side.name} mean-centered 1.5 × IQR display intervals are not estimable (${reason}).`}
+      </desc>
+    );
+  }
+
+  const corners = [
+    project(x.lower, y.lower),
+    project(x.lower, y.upper),
+    project(x.upper, y.lower),
+    project(x.upper, y.upper),
+  ];
+  const left = Math.min(...corners.map(({ x: screenX }) => screenX));
+  const right = Math.max(...corners.map(({ x: screenX }) => screenX));
+  const top = Math.min(...corners.map(({ y: screenY }) => screenY));
+  const bottom = Math.max(...corners.map(({ y: screenY }) => screenY));
+  const boxWidth = Math.max(0, right - left);
+  const boxHeight = Math.max(0, bottom - top);
+  const xDegenerate = boxWidth <= 1e-9;
+  const yDegenerate = boxHeight <= 1e-9;
+  const label = `${side.name}: rENA-compatible mean-centered 1.5 × IQR display intervals on each axis; not Tukey fences, automatic exclusion, a confidence interval, or a significance test.`;
+  return (
+    <g
+      role="img"
+      aria-label={label}
+      data-ena-outlier-guide="rena-mean-centered-1.5-iqr"
+      data-ena-outlier-status="estimable"
+      data-ena-group-role={role}
+      data-ena-estimand="arithmetic-group-mean"
+      data-ena-observation-unit="endpoint-analytic-unit"
+      data-ena-interval-interpretation="two-separate-mean-centered-outlier-display-intervals"
+      data-ena-confidence-interval="false"
+      data-ena-significance-test="false"
+      data-ena-sample-size={x.sampleSize}
+      data-ena-x-mean={dataNumber(x.mean)}
+      data-ena-y-mean={dataNumber(y.mean)}
+      data-ena-x-iqr={dataNumber(x.interquartileRange)}
+      data-ena-y-iqr={dataNumber(y.interquartileRange)}
+      data-ena-x-lower={dataNumber(x.lower)}
+      data-ena-x-upper={dataNumber(x.upper)}
+      data-ena-y-lower={dataNumber(y.lower)}
+      data-ena-y-upper={dataNumber(y.upper)}
+    >
+      <title>{label}</title>
+      {!xDegenerate && !yDegenerate ? (
+        <rect
+          x={left}
+          y={top}
+          width={boxWidth}
+          height={boxHeight}
+          fill="none"
+          stroke={color}
+          strokeWidth="1.25"
+          strokeDasharray="5,1"
+          data-ena-outlier-box="mean-centered-iqr"
+          aria-hidden="true"
+        />
+      ) : xDegenerate && !yDegenerate ? (
+        <line
+          x1={left}
+          y1={top}
+          x2={left}
+          y2={bottom}
+          stroke={color}
+          strokeWidth="1.25"
+          strokeDasharray="5,1"
+          data-ena-outlier-degenerate-axis="x"
+          aria-hidden="true"
+        />
+      ) : !xDegenerate && yDegenerate ? (
+        <line
+          x1={left}
+          y1={top}
+          x2={right}
+          y2={top}
+          stroke={color}
+          strokeWidth="1.25"
+          strokeDasharray="5,1"
+          data-ena-outlier-degenerate-axis="y"
+          aria-hidden="true"
+        />
+      ) : (
+        <circle
+          cx={left}
+          cy={top}
+          r="2.5"
+          fill="none"
+          stroke={color}
+          strokeWidth="1.25"
+          data-ena-outlier-degenerate-axis="both"
+          aria-hidden="true"
+        />
+      )}
+      {corners.map((corner, index) => (
+        <rect
+          key={index}
+          x={corner.x - 1.75}
+          y={corner.y - 1.75}
+          width="3.5"
+          height="3.5"
+          fill={color}
+          data-ena-outlier-handle={index + 1}
+          aria-hidden="true"
+        />
+      ))}
+    </g>
+  );
+}
+
 interface PlotActionToolbarProps {
   kind: PlotKind;
   zoom: number;
@@ -752,6 +925,7 @@ function ContrastSvg({
   flipX,
   flipY,
   svgRef,
+  groupDisplay,
   comparisonScale,
   groupMeanScale,
   networkRoles,
@@ -819,9 +993,13 @@ function ContrastSvg({
     meanCoordinate(contrast.secondary, yAxis),
   );
   const threshold = bounded(edgeThreshold, 0, 1, 0);
-  const comparisonGroups: Array<{ role: GroupRole; side: OpenEnaPairwiseContrastSide }> = [
-    { role: "primary", side: contrast.primary },
-    { role: "secondary", side: contrast.secondary },
+  const comparisonGroups: Array<{
+    role: GroupRole;
+    side: OpenEnaPairwiseContrastSide;
+    display: OpenEnaResolvedGroupDisplaySide;
+  }> = [
+    { role: "primary", side: contrast.primary, display: groupDisplaySide(groupDisplay, "primary", contrast.primary) },
+    { role: "secondary", side: contrast.secondary, display: groupDisplaySide(groupDisplay, "secondary", contrast.secondary) },
   ];
   const roleEntry = (role: GroupRole) => role === "primary" ? comparisonGroups[0] : comparisonGroups[1];
   const activeNetworkRoles = kind === "comparison"
@@ -831,33 +1009,70 @@ function ContrastSvg({
   const signedComparison = kind === "comparison" && activeNetworkRoles.length === 2;
   const edgeDenominator = signedComparison ? comparisonScale : groupMeanScale;
   const safeDenominator = Math.max(edgeDenominator, ZERO_TOLERANCE);
-  const sourcePointGroups = (kind === "comparison" ? comparisonGroups : plottedGroups).map(({ role, side }) => {
+  const sourcePointGroups = (kind === "comparison" ? comparisonGroups : plottedGroups).map(({ role, side, display }) => {
     const valid = validPoints(side);
-    return { role, side, valid, sampled: sampledPoints(valid) };
+    const visibleUnitIds = new Set(display.visibleUnitIds);
+    const visible = display.settings.showUnitPoints
+      ? valid.filter((point) => visibleUnitIds.has(point.unitId))
+      : [];
+    return {
+      role,
+      side,
+      display,
+      valid,
+      visible,
+      totalCount: groupDisplay ? display.totalUnitCount : side.points.length,
+      validCount: groupDisplay ? display.validUnitCount : valid.length,
+      sampled: sampledPoints(visible),
+    };
   });
   // webENA's side cards isolate each mean network. Analytic-unit observations
   // and group-summary squares belong to the central Comparison figure only.
   const pointGroups = kind === "comparison" ? sourcePointGroups : [];
-  const pointsTotal = (kind === "comparison" ? comparisonGroups : plottedGroups)
-    .reduce((sum, entry) => sum + entry.side.points.length, 0);
-  const pointsValid = sourcePointGroups.reduce((sum, entry) => sum + entry.valid.length, 0);
-  const pointsShown = pointGroups.reduce((sum, entry) => sum + entry.sampled.length, 0);
+  const pointsTotal = sourcePointGroups.reduce((sum, entry) => sum + entry.totalCount, 0);
+  const pointsValid = sourcePointGroups.reduce((sum, entry) => sum + entry.validCount, 0);
+  const pointsHidden = sourcePointGroups.reduce((sum, entry) => (
+    sum + Math.max(0, entry.validCount - entry.visible.length)
+  ), 0);
+  const pointsEligible = showPoints && kind === "comparison"
+    ? pointGroups.reduce((sum, entry) => sum + entry.visible.length, 0)
+    : 0;
+  const pointsShown = showPoints
+    ? pointGroups.reduce((sum, entry) => sum + entry.sampled.length, 0)
+    : 0;
   const scaleFactor = bounded(edgeScale, 0.1, 4, 1);
   const markerScale = bounded(pointScale, 0.5, 2, 1);
   const labelScale = bounded(textScale, 8 / 12, 20 / 12, 1);
   const zoom = bounded(plotZoom, 0.6, 2.4, 1);
   const activeNames = plottedGroups.map(({ side }) => side.name);
+  const shownConfidenceGroups = comparisonGroups.filter(({ side, display }) => (
+    display.settings.showMean
+      && display.settings.showConfidenceIntervals
+      && confidenceGuideIsEstimable(side, contrast.axes)
+  ));
+  const shownOutlierGroups = comparisonGroups.filter(({ side, display }) => (
+    display.settings.showMean
+      && display.settings.showOutlierIntervals
+      && outlierGuideIsEstimable(side, contrast.axes)
+  ));
   const title = signedComparison
     ? `Signed group-network difference, ${activeNames[0]} minus ${activeNames[1]}`
     : activeNames.length === 1
       ? `${activeNames[0]} group network`
       : "No group network selected";
   const description = signedComparison
-    ? `Two-dimensional signed group comparison on ${xAxisLabel} and ${yAxisLabel}. Each connection is drawn once in the stable color of the stronger selected group; width encodes the absolute Primary-minus-Secondary difference. Dashed guides show separate marginal 95% Student-t confidence intervals for each arithmetic group mean, not a joint region or significance test.`
+    ? `Two-dimensional signed group comparison on ${xAxisLabel} and ${yAxisLabel}. Each connection is drawn once in the stable color of the stronger selected group; width encodes the absolute Primary-minus-Secondary difference.${shownConfidenceGroups.length ? " Dashed guides show separate marginal 95% Student-t confidence intervals for each displayed arithmetic group mean, not a joint region or significance test." : ""}${shownOutlierGroups.length ? " Short-dashed boxes show rENA-compatible mean-centered 1.5 × IQR display intervals; they are not Tukey fences, confidence intervals, automatic exclusions, or tests." : ""}`
     : `Two-dimensional selected group mean network in the fixed full-result coordinate extent and shared group-mean edge scale.`;
-  const pointSamplingDescription = pointsShown < pointsValid
-    ? ` Rendering ${pointsShown} sampled unit marks from ${pointsValid} valid analytic-unit points.`
+  const pointSamplingDescription = pointsShown < pointsEligible
+    ? ` Rendering ${pointsShown} sampled unit marks from ${pointsEligible} visible analytic-unit points.`
     : "";
+  const pointVisibilityDescription = kind !== "comparison"
+    ? ""
+    : !showPoints && pointsValid > 0
+      ? " Unit point marks are hidden by the global Plot Tools setting."
+      : pointsHidden > 0
+        ? ` ${pointsHidden} analytic-unit mark${pointsHidden === 1 ? " is" : "s are"} hidden by group or unit display controls.`
+        : "";
   const reference = contrast.resultProvenance.projectionReference;
   const referenceId = reference ? safeFigureLabel(reference.referenceId, 30) : null;
   const referenceName = reference ? safeFigureLabel(reference.name, 72) : null;
@@ -941,6 +1156,7 @@ function ContrastSvg({
       data-ena-coordinate-extent={`${dataNumber(extent.minX)} ${dataNumber(extent.maxX)} ${dataNumber(extent.minY)} ${dataNumber(extent.maxY)}`}
       data-ena-points-total={pointsTotal}
       data-ena-points-valid={pointsValid}
+      data-ena-points-hidden={pointsHidden}
       data-ena-points-shown={pointsShown}
       data-ena-points-dropped={pointsTotal - pointsValid}
       data-ena-plot-zoom={dataNumber(zoom)}
@@ -949,7 +1165,7 @@ function ContrastSvg({
       } as CSSProperties}
     >
       <title id={titleId}>{`${title}${referenceDescription}`}</title>
-      <desc id={descriptionId}>{`${description}${pointSamplingDescription}${referenceDescription}`}</desc>
+      <desc id={descriptionId}>{`${description}${pointVisibilityDescription}${pointSamplingDescription}${referenceDescription}`}</desc>
       <defs>
         <clipPath id={viewportClipId} clipPathUnits="userSpaceOnUse">
           <rect x={0} y={0} width={width} height={height} />
@@ -1082,15 +1298,29 @@ function ContrastSvg({
           ))}
         </g>
       ) : null}
-      {kind === "comparison" ? comparisonGroups.map(({ role, side }) => (
-        <ConfidenceGuide
-          key={`confidence:${side.name}`}
-          side={side}
-          role={role}
-          axes={contrast.axes}
-          project={projectEvidence}
-          color={groupColor(contrast, side, role)}
-        />
+      {kind === "comparison" ? comparisonGroups.map(({ role, side, display }) => (
+        display.settings.showMean && display.settings.showConfidenceIntervals ? (
+          <ConfidenceGuide
+            key={`confidence:${side.name}`}
+            side={side}
+            role={role}
+            axes={contrast.axes}
+            project={projectEvidence}
+            color={groupColor(contrast, side, role)}
+          />
+        ) : null
+      )) : null}
+      {kind === "comparison" ? comparisonGroups.map(({ role, side, display }) => (
+        display.settings.showMean && display.settings.showOutlierIntervals ? (
+          <OutlierGuide
+            key={`outlier:${side.name}`}
+            side={side}
+            role={role}
+            axes={contrast.axes}
+            project={projectEvidence}
+            color={groupColor(contrast, side, role)}
+          />
+        ) : null
       )) : null}
       {showPoints && kind === "comparison" ? (
         <g className="ena-set-unit-points" data-ena-point-layer="standard">
@@ -1176,7 +1406,8 @@ function ContrastSvg({
           );
         })}
       </g>
-      {kind === "comparison" ? comparisonGroups.map(({ role, side }) => {
+      {kind === "comparison" ? comparisonGroups.map(({ role, side, display }) => {
+        if (!display.settings.showMean) return null;
         const restore = kind === "comparison" ? restorePanelForRole?.[role] : undefined;
         return (
           <GroupMeanMarker
@@ -1374,6 +1605,24 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
     : comparisonNames.length === 1
       ? `${comparisonNames[0]}, scaled ${formatOfficialMultiplier(props.edgeScale)} times`
       : `No selected group network, scaled ${formatOfficialMultiplier(props.edgeScale)} times`;
+  const primaryGroupDisplay = groupDisplaySide(props.groupDisplay, "primary", contrast.primary);
+  const secondaryGroupDisplay = groupDisplaySide(props.groupDisplay, "secondary", contrast.secondary);
+  const displaySides = [
+    { side: contrast.primary, display: primaryGroupDisplay },
+    { side: contrast.secondary, display: secondaryGroupDisplay },
+  ];
+  const confidenceGuideNames = displaySides.filter(({ side, display }) => (
+    display.settings.showMean
+      && display.settings.showConfidenceIntervals
+      && confidenceGuideIsEstimable(side, contrast.axes)
+  )).map(({ side }) => side.name);
+  const outlierGuideNames = displaySides.filter(({ side, display }) => (
+    display.settings.showMean
+      && display.settings.showOutlierIntervals
+      && outlierGuideIsEstimable(side, contrast.axes)
+  )).map(({ side }) => side.name);
+  const anyConfidenceGuideShown = confidenceGuideNames.length > 0;
+  const anyOutlierGuideShown = outlierGuideNames.length > 0;
 
   return (
     <section
@@ -1471,7 +1720,9 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
               ) : null}
               <figcaption>
                 <span className="sr-only ena-set-method-boundary">
-                  Each connection is drawn once as Primary minus Secondary in the stable color of the stronger selected group; line width is the absolute edge difference. The two side plots retain the complete group-mean networks on their shared mean scale. Dashed guides are separate marginal 95% Student-t confidence intervals for the two displayed-axis group means; they are not a joint confidence region or a significance test.
+                  Each connection is drawn once as Primary minus Secondary in the stable color of the stronger selected group; line width is the absolute edge difference. The two side plots retain the displayed group-mean networks on their shared mean scale.
+                  {anyConfidenceGuideShown ? " Dashed guides are separate marginal 95% Student-t confidence intervals for the enabled displayed-axis group means; they are not a joint confidence region or a significance test." : ""}
+                  {anyOutlierGuideShown ? " Short-dashed guides are rENA-compatible mean-centered 1.5 × IQR display intervals; they are not Tukey fences, automatic exclusions, confidence intervals, or tests." : ""}
                 </span>
                 <span className="ena-set-plot-definitions">
                   <span><strong>Units:</strong> {contrast.configuration.unitColumns.join(" › ")}</span>
@@ -1619,6 +1870,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
         data-ena-legend-order="primary-secondary"
         style={{ listStyle: "none", margin: 0, paddingInlineStart: 4 }}
       >
+        {primaryGroupDisplay.settings.showMean ? (
         <li data-ena-group-role="primary" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
           <i
             className="ena-set-key-primary-mean"
@@ -1627,6 +1879,8 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
           />
           <span><strong>Square summary</strong> · Primary: {contrast.primary.name}</span>
         </li>
+        ) : null}
+        {secondaryGroupDisplay.settings.showMean ? (
         <li data-ena-group-role="secondary" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
           <i
             className="ena-set-key-secondary-mean"
@@ -1635,6 +1889,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
           />
           <span><strong>Square summary</strong> · Secondary: {contrast.secondary.name}</span>
         </li>
+        ) : null}
         <li data-ena-sign="positive" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
           <i
             className="ena-set-key-positive"
@@ -1655,14 +1910,25 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
           <i className="ena-set-key-equal" aria-hidden="true" />
           <span>Equal mean weight: no difference line drawn</span>
         </li>
+        {anyConfidenceGuideShown ? (
         <li data-ena-interval-legend="marginal-student-t-95" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
           <i
             className="ena-set-key-confidence"
             aria-hidden="true"
             style={{ borderColor: groupColor(contrast, contrast.primary, "primary") }}
           />
-          <span>Dashed guides: separate marginal 95% Student-t intervals for each group mean; not a joint region or test</span>
+          <span>Dashed guides: separate marginal 95% Student-t intervals for {confidenceGuideNames.join(" and ")}; not a joint region or test</span>
         </li>
+        ) : null}
+        {anyOutlierGuideShown ? (
+        <li data-ena-interval-legend="rena-mean-centered-1.5-iqr" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+          <i
+            className="ena-set-key-outlier"
+            aria-hidden="true"
+          />
+          <span>Short-dashed guides: rENA-compatible mean-centered 1.5 × IQR display intervals for {outlierGuideNames.join(" and ")}; not automatic exclusion or a test</span>
+        </li>
+        ) : null}
       </ol>
 
       <p className="ena-set-reference-id" style={{ maxWidth: "100%", textAlign: "start", paddingBlock: 4 }}>

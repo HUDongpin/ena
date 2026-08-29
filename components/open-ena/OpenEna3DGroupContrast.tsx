@@ -3,6 +3,7 @@
 import { useId, useRef, type CSSProperties, type ReactNode } from "react";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
+import type { OpenEnaDerivedGroupDisplay } from "@/lib/open-ena/group-display";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
 import type { OpenEna3dAspectRatio, OpenEna3dCamera } from "@/lib/open-ena/plot3d";
 import type { CameraPreset, OpenEnaResult } from "@/lib/open-ena/types";
@@ -11,6 +12,7 @@ import OpenEnaInteractive3DPlot from "./OpenEnaInteractive3DPlot";
 export interface OpenEna3DGroupContrastProps {
   result: OpenEnaResult;
   contrast: OpenEnaPairwiseContrast;
+  groupDisplay?: Pick<OpenEnaDerivedGroupDisplay, "primary" | "secondary" | "hiddenUnitKeys">;
   codeColors?: OpenEnaCodeColors;
   groupColumn: string;
   xDimension: string;
@@ -41,6 +43,7 @@ export interface OpenEna3DGroupContrastProps {
 export default function OpenEna3DGroupContrast({
   result,
   contrast,
+  groupDisplay,
   codeColors,
   groupColumn,
   xDimension,
@@ -78,6 +81,7 @@ export default function OpenEna3DGroupContrast({
   const sharedPlotProps = {
     result,
     contrast,
+    groupDisplay,
     codeColors,
     groupColumn,
     xDimension,

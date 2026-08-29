@@ -16,6 +16,9 @@ import {
 import {
   marginalMeanIntervalPair,
   marginalMeanStudentT95,
+  meanCenteredIqrOutlierInterval,
+  meanCenteredIqrOutlierIntervalPair,
+  type OpenEnaMeanCenteredIqrOutlierIntervalPair,
   type OpenEnaMarginalMeanInterval,
   type OpenEnaMarginalMeanIntervalPair,
 } from "./uncertainty";
@@ -32,6 +35,7 @@ export const PAIRWISE_CONTRAST_BOUNDARIES = [
   "This plot-oriented contrast does not calculate inferential statistics. Researcher-confirmed inference is available only through the explicit Stats workflow.",
   "Endpoint analytic units are the equal-weight observations used by the descriptive group means.",
   "The plotted uncertainty guides are two separate marginal 95% Student-t confidence intervals for arithmetic mean endpoint-unit coordinates on the displayed axes; they are not a joint two-dimensional confidence region or a significance test.",
+  "The optional 2D outlier display guides follow rENA by centering a 1.5 × IQR half-width on each arithmetic group-mean axis; they are not Tukey fences, automatic outlier exclusion, confidence intervals, or significance tests.",
   "Raw source rows and row-level co-occurrence records are excluded; preserve the exact source coded-data file, its codebook, and the enclosing ENA manifest with its analyzed-table hash and hashKind for reproducibility.",
   "An absent analyzed-table SHA-256 means the result did not carry an immutable browser provenance binding; it is not evidence that two results came from the same analyzed table.",
   "Imported reference names, analyzed-table hashes, timestamps, and fit descriptors are declared provenance and are not independently authenticated by this comparison.",
@@ -52,6 +56,7 @@ export interface OpenEnaPairwiseContrastSide {
   meanPoint: Record<string, number>;
   meanWeights: Record<string, number>;
   meanConfidenceIntervals?: OpenEnaMarginalMeanIntervalPair;
+  outlierIntervals?: OpenEnaMeanCenteredIqrOutlierIntervalPair;
   /**
    * Frozen marginal intervals for every retained fitted dimension. The 2D
    * presenter consumes `meanConfidenceIntervals`; the 3D presenter selects
@@ -150,6 +155,14 @@ export interface OpenEnaPairwiseContrastPresentationOptions {
   edgeScale?: number;
   pointScale?: number;
   plotZoom?: number;
+  groupDisplaySettingsByGroup?: Record<string, {
+    showUnitPoints: boolean;
+    showMean: boolean;
+    showConfidenceIntervals: boolean;
+    showOutlierIntervals: boolean;
+    includeHiddenPoints: boolean;
+  }>;
+  hiddenUnitKeys?: string[];
 }
 
 function cloneJson<T>(value: T): T {
@@ -316,7 +329,7 @@ function fullRotatedPointMaximum(
   ), 0);
 }
 
-function fullRotatedGroupConfidenceMaximum(
+function fullRotatedGroupCoordinates(
   result: OpenEnaResult,
   groupColumn: string,
   fullCoordinates: number[][] | null,
@@ -350,10 +363,37 @@ function fullRotatedGroupConfidenceMaximum(
       perDimension[dimension].push(coordinateRows[index]?.[dimension] ?? Number.NaN);
     }
   }
+  return groupCoordinates;
+}
+
+function fullRotatedGroupConfidenceMaximum(
+  result: OpenEnaResult,
+  groupColumn: string,
+  fullCoordinates: number[][] | null,
+) {
+  const groupCoordinates = fullRotatedGroupCoordinates(result, groupColumn, fullCoordinates);
   let maximum = 0;
   for (const perDimension of groupCoordinates.values()) {
     for (const values of perDimension) {
       const interval = marginalMeanStudentT95(values);
+      if (interval.status === "estimable") {
+        maximum = Math.max(maximum, Math.abs(interval.lower), Math.abs(interval.upper));
+      }
+    }
+  }
+  return maximum;
+}
+
+function fullRotatedGroupOutlierMaximum(
+  result: OpenEnaResult,
+  groupColumn: string,
+  fullCoordinates: number[][] | null,
+) {
+  const groupCoordinates = fullRotatedGroupCoordinates(result, groupColumn, fullCoordinates);
+  let maximum = 0;
+  for (const perDimension of groupCoordinates.values()) {
+    for (const values of perDimension) {
+      const interval = meanCenteredIqrOutlierInterval(values);
       if (interval.status === "estimable") {
         maximum = Math.max(maximum, Math.abs(interval.lower), Math.abs(interval.upper));
       }
@@ -375,7 +415,12 @@ function officialWebEnaPlotFrame(
     groupColumn,
     fullCoordinates,
   ) * pointScaleFactor;
-  const rawMaximum = Math.max(scaledPointMaximum, confidenceMaximum);
+  const outlierMaximum = fullRotatedGroupOutlierMaximum(
+    result,
+    groupColumn,
+    fullCoordinates,
+  ) * pointScaleFactor;
+  const rawMaximum = Math.max(scaledPointMaximum, confidenceMaximum, outlierMaximum);
   const fallbackNodeMaximum = (result.set.rotation.nodes ?? []).reduce((maximum, node) => Math.max(
     maximum,
     ...defaultAxes.map((axis) => {
@@ -427,7 +472,7 @@ function buildSide(
     unitCount: pointUnits.size,
     unitIds: [...pointUnits],
     points,
-    meanPoint: Object.fromEntries(axes.map((axis) => [
+    meanPoint: Object.fromEntries(result.dimensions.map((axis) => [
       axis,
       equalUnitMean(pointRows, axis, `${groupName} endpoint coordinates`),
     ])),
@@ -436,6 +481,7 @@ function buildSide(
       equalUnitMean(lineRows, edge.name, `${groupName} endpoint network`),
     ])),
     meanConfidenceIntervals: marginalMeanIntervalPair(points, axes),
+    outlierIntervals: meanCenteredIqrOutlierIntervalPair(points, axes),
     meanConfidenceIntervalsByDimension: Object.fromEntries(result.dimensions.map((dimension) => [
       dimension,
       marginalMeanStudentT95(pointRows.map((row) => (
@@ -672,6 +718,15 @@ export function buildPairwiseGroupContrastExport(
           sideNetworks: "edgeThreshold is relative to the shared maximum absolute Primary or Secondary mean edge weight",
         },
         edgeScaleDenominators: { ...contrast.edgeScaleDenominators },
+        ...(presentationOptions.groupDisplaySettingsByGroup || presentationOptions.hiddenUnitKeys
+          ? { groupDisplay: {
+              settingsByGroup: cloneJson(presentationOptions.groupDisplaySettingsByGroup ?? {}),
+              hiddenUnitKeys: [...(presentationOptions.hiddenUnitKeys ?? [])],
+              summaryPopulationPolicy: "include hidden units per group only when Include Hidden Points is enabled" as const,
+              fittedResultMutation: false as const,
+              inferenceMutation: false as const,
+            } }
+          : {}),
       }
     : null;
   return {
