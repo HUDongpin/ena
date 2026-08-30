@@ -468,7 +468,11 @@ try {
     assert(await rebuild.isEnabled(), "Trajectory rebuild is disabled");
     await rebuild.click();
     await page.locator(".ena-stale-banner").waitFor({ state: "hidden", timeout: 30000 });
-    await page.getByRole("button", { name: "Download Model" }).click({ trial: true, timeout: 30000 });
+    const downloadModel = page.getByRole("button", { name: "Download Model" });
+    await downloadModel.waitFor({ state: "visible", timeout: 30000 });
+    const downloadModelReady = page.locator(".ena-download-model-button:not([disabled])");
+    await downloadModelReady.waitFor({ state: "visible", timeout: 30000 });
+    await downloadModel.click({ trial: true, timeout: 30000 });
     return { modelType: await modelType.inputValue() };
   }`);
 
