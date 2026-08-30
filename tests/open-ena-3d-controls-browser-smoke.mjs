@@ -20,6 +20,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSafePlaywrightCliError } from "./support/safe-playwright-cli-error.mjs";
+import { classifyChromiumCanvasReadbackDiagnostic } from "./support/open-ena-browser-warning-classifier.mjs";
 
 const smokeSourcePath = fileURLToPath(import.meta.url);
 const projectRoot = join(dirname(smokeSourcePath), "..");
@@ -371,8 +372,8 @@ function classifyBrowserMessages(phaseMessages, context) {
   const consoleErrors = phaseMessages.flatMap((phase) => phase.consoleErrors ?? []);
   const pageErrors = phaseMessages.flatMap((phase) => phase.pageErrors ?? []);
   const warnings = phaseMessages.flatMap((phase) => phase.consoleWarnings ?? []);
-  const canvasPattern = /^Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true\. See: https:\/\/html\.spec\.whatwg\.org\/multipage\/canvas\.html#concept-canvas-will-read-frequently$/u;
-  const chunkPathPattern = /^\/_next\/static\/(?:chunks\/[a-z0-9]{2,}-[a-z0-9]{3,}-[a-z0-9]{3,}|immutable\/chunks\/[a-z0-9]{8,})\.js$/u;
+  // The pure helper accepts only Chromium's exact
+  // Canvas2D: Multiple readback operations ... willReadFrequently advisory.
   const platformDiagnostics = { canvas2dReadback: [], angleReadPixels: [] };
   const unknownWarnings = [];
   for (const warning of warnings) {
@@ -380,22 +381,13 @@ function classifyBrowserMessages(phaseMessages, context) {
     const sourcePath = sourceUrl.startsWith(context.currentOrigin + "/")
       ? sourceUrl.slice(context.currentOrigin.length).split(/[?#]/u)[0]
       : null;
-    if (
-      ["chromium", "chrome", "msedge"].includes(context.browser)
-      && canvasPattern.test(warning.text)
-      && sourcePath
-      && chunkPathPattern.test(sourcePath)
-      && Number.isInteger(warning.location?.lineNumber)
-      && warning.location.lineNumber >= 0
-      && Number.isInteger(warning.location?.columnNumber)
-      && warning.location.columnNumber >= 0
-    ) {
-      platformDiagnostics.canvas2dReadback.push({
-        normalizedPattern: "Canvas2D exact willReadFrequently advisory",
-        sourcePath,
-        reportedLineNumber: warning.location.lineNumber,
-        reportedColumnNumber: warning.location.columnNumber,
-      });
+    const canvas = classifyChromiumCanvasReadbackDiagnostic({
+      browser: context.browser,
+      currentOrigin: context.currentOrigin,
+      warning,
+    });
+    if (canvas) {
+      platformDiagnostics.canvas2dReadback.push(canvas);
       continue;
     }
     const angle = classifyChromiumAngleReadPixelsDiagnostic({
