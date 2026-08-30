@@ -460,10 +460,15 @@ try {
     const assert = (condition, message) => { if (!condition) throw new Error(message); };
     const rail = page.getByRole("navigation", { name: "Analysis modes" });
     await rail.getByRole("button", { name: "Model", exact: true }).click();
-    await page.getByRole("tab", { name: "Windows" }).click();
+    await page.getByRole("heading", { name: "Define the ENA model", exact: true }).waitFor({ state: "visible", timeout: 30000 });
+    const windowsTab = page.getByRole("tab", { name: "Windows", exact: true });
+    await windowsTab.waitFor({ state: "visible", timeout: 30000 });
+    await windowsTab.click();
     const modelType = page.getByRole("combobox", { name: "Model type" });
+    await modelType.waitFor({ state: "visible", timeout: 30000 });
     await modelType.selectOption("SeparateTrajectory");
-    assert(await modelType.inputValue() === "SeparateTrajectory", "Separate trajectory selection did not bind");
+    const selectedModelType = await modelType.inputValue();
+    assert(selectedModelType === "SeparateTrajectory", "Separate trajectory selection did not bind");
     const rebuild = page.getByRole("button", { name: /Rebuild model/ });
     assert(await rebuild.isEnabled(), "Trajectory rebuild is disabled");
     await rebuild.click();
@@ -473,7 +478,7 @@ try {
     await trajectoryWorkbench
       .locator('section[data-trajectory-step="10"] .ena-longitudinal-v3-run-status [data-state="ready"]')
       .waitFor({ state: "visible", timeout: 30000 });
-    return { modelType: await modelType.inputValue() };
+    return { modelType: selectedModelType };
   }`);
 
   const trajectoryIndependent = runBrowserPhase("run selected-period trajectory Mann-Whitney", `async (page) => {
