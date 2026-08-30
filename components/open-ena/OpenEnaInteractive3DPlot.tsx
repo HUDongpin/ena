@@ -19,15 +19,17 @@ import {
 } from "@/lib/open-ena/plot3d";
 import type { CameraPreset, OpenEnaResult } from "@/lib/open-ena/types";
 import OpenEnaPlotActionIcon from "./OpenEnaPlotActionIcon";
+import { getPlotlyGl3d, schedulePlotlyGl3dRole, type PlotlyGl3dApi } from "./plotly-gl3d-loader";
 
-type PlotlyApi = (typeof import("plotly.js-dist-min"))["default"];
+type PlotlyApi = PlotlyGl3dApi;
 type PlotlyImageApi = PlotlyApi & {
   toImage: (
     root: HTMLDivElement,
     options: { format: "png"; filename: string; width: number; height: number; scale: number },
   ) => Promise<string>;
 };
-type RenderStatus = "loading" | "ready" | "error";
+export type OpenEna3dRenderStatus = "loading" | "ready" | "error";
+type RenderStatus = OpenEna3dRenderStatus;
 
 export function openEna3dFullscreenMode(capabilities: {
   requestFullscreen: unknown;
@@ -77,6 +79,9 @@ export interface OpenEnaInteractive3DPlotProps {
   onCameraChange?: (camera: OpenEna3dCamera) => void;
   initialAspectRatio?: OpenEna3dAspectRatio | null;
   onAspectRatioChange?: (aspectRatio: OpenEna3dAspectRatio | null) => void;
+  onReady?: () => void;
+  onError?: () => void;
+  onStatusChange?: (status: OpenEna3dRenderStatus) => void;
   copy: OpenEnaCopy;
 }
 
@@ -288,6 +293,9 @@ export default function OpenEnaInteractive3DPlot({
   onCameraChange,
   initialAspectRatio = null,
   onAspectRatioChange,
+  onReady,
+  onError,
+  onStatusChange,
   copy,
 }: OpenEnaInteractive3DPlotProps) {
   const instanceId = useId();
@@ -309,6 +317,8 @@ export default function OpenEnaInteractive3DPlot({
   const fallbackFullscreenCleanupRef = useRef<(() => void) | null>(null);
   const plotlyRef = useRef<PlotlyApi | null>(null);
   const renderStatusRef = useRef<RenderStatus>("loading");
+  const readyNotifiedRef = useRef(false);
+  const errorNotifiedRef = useRef(false);
   const [Plotly, setPlotly] = useState<PlotlyApi | null>(null);
   const [status, setStatus] = useState<RenderStatus>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -328,6 +338,10 @@ export default function OpenEnaInteractive3DPlot({
   initialAspectRatioRef.current = initialAspectRatio;
   plotlyRef.current = Plotly;
   renderStatusRef.current = status;
+
+  useEffect(() => {
+    onStatusChange?.(status);
+  }, [onStatusChange, status]);
 
   const spec = useMemo<OpenEna3dPlotSpec>(() => compileOpenEna3dPlotSpec({
     result,
@@ -398,15 +412,22 @@ export default function OpenEnaInteractive3DPlot({
     let loadedPlotly: PlotlyApi | null = null;
     const plotRoot = plotRootRef.current;
 
-    void import("plotly.js-dist-min")
-      .then(({ default: module }) => {
+    void getPlotlyGl3d()
+      .then((module) => {
         loadedPlotly = module;
-        if (active) setPlotly(module);
+        if (!active) return;
+        return schedulePlotlyGl3dRole(plotKind, () => {
+          if (active) setPlotly(module);
+        });
       })
       .catch((error: unknown) => {
         if (!active) return;
         setErrorMessage(error instanceof Error ? error.message : "Plotly could not be loaded.");
         setStatus("error");
+        if (!errorNotifiedRef.current) {
+          errorNotifiedRef.current = true;
+          onError?.();
+        }
       });
 
     return () => {
@@ -528,6 +549,8 @@ export default function OpenEnaInteractive3DPlot({
     let active = true;
     const plotRoot = plotRootRef.current;
     setStatus("loading");
+    readyNotifiedRef.current = false;
+    errorNotifiedRef.current = false;
     setErrorMessage(null);
 
     void (async () => {
@@ -595,17 +618,25 @@ export default function OpenEnaInteractive3DPlot({
           eventRoot.on("plotly_relayout", listener);
         }
         setStatus("ready");
+        if (!readyNotifiedRef.current) {
+          readyNotifiedRef.current = true;
+          onReady?.();
+        }
       } catch (error: unknown) {
         if (!active) return;
         setErrorMessage(error instanceof Error ? error.message : "The interactive 3D plot could not be rendered.");
         setStatus("error");
+        if (!errorNotifiedRef.current) {
+          errorNotifiedRef.current = true;
+          onError?.();
+        }
       }
     })();
 
     return () => {
       active = false;
     };
-  }, [Plotly, spec, cameraResetKey, onCameraChange, onAspectRatioChange]);
+  }, [Plotly, spec, cameraResetKey, onCameraChange, onAspectRatioChange, onReady, onError]);
 
   useEffect(() => {
     if (!Plotly || status !== "ready" || !plotRootRef.current || !initialCamera) return;
@@ -935,6 +966,8 @@ export default function OpenEnaInteractive3DPlot({
         data-ena-camera-sync={contrast ? "shared" : "single"}
         data-ena-scene-frame="full-result"
         data-ena-plot-role={plotKind}
+        data-ena-plot-ready={status === "ready" ? "true" : "false"}
+        data-ena-plot-status={status}
         data-ena-camera-state={controlledCameraKey ?? cameraKey(spec.layout.scene.camera) ?? undefined}
         data-ena-aspect-ratio-state={controlledAspectRatioKey ?? aspectRatioKey(spec.layout.scene.aspectratio) ?? "cube"}
         data-ena-x-range={spec.layout.scene.xaxis.range.join(",")}

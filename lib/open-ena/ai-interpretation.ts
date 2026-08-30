@@ -47,6 +47,8 @@ export const OPEN_ENA_AI_MAX_REQUEST_BYTES = 48 * 1024;
 export const OPEN_ENA_AI_MIN_AGGREGATE_N = 3;
 export const OPEN_ENA_AI_CONSENT_HEADER = "x-open-ena-ai-consent";
 export const OPEN_ENA_AI_CONSENT_VALUE = "reviewed-aggregate-v2";
+export const OPEN_ENA_AI_OPERATION_HEADER = "x-open-ena-ai-operation-id";
+export const OPEN_ENA_AI_OPERATION_ID = /^aiop-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 export type OpenEnaAiLocale = "en" | "zh-hant" | "zh-hans";
 

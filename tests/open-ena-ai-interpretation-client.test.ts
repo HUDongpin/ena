@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   LunaClientError,
+  type OpenEnaAiGenerationResult,
   OPEN_ENA_AI_MAX_RESPONSE_BYTES,
   generateLunaInterpretation,
 } from "../lib/server/luna-client";
@@ -610,7 +611,7 @@ test("Luna v2 sends only the sanitized role/index projection and applies the con
       "edge-difference-1",
     ],
   );
-  assert.deepEqual(response, {
+  assert.deepEqual(response.response, {
     schemaVersion: "open-ena-ai-interpretation-response-v2",
     promptVersion: request.promptVersion,
     binding: request.binding,
@@ -618,6 +619,109 @@ test("Luna v2 sends only the sanitized role/index projection and applies the con
     model: "openai/gpt-5.6-luna",
     generatedAt: "2026-08-21T12:34:56.000Z",
     interpretation: upstreamInterpretation,
+  });
+});
+
+test("Luna verifies the monthly provider budget before chat and returns strictly parsed provider usage", async () => {
+  const calls: string[] = [];
+  const result = await generateLunaInterpretation(interpretationRequest(), {
+    environment: { OPEN_ENA_AI_ENABLED: "true", OPENROUTER_API_KEY: "server-only-key" },
+    providerMonthlyMicroUsd: 2_000_000,
+    globalMonthlyMicroUsd: 3_000_000,
+    reservationMicroUsd: 10_000,
+    fetch: async (input) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.endsWith("/key")) {
+        return Response.json({ data: { limit_reset: "monthly", limit: 1.5, limit_remaining: 1.25 } });
+      }
+      return Response.json({
+        choices: [{ message: { content: JSON.stringify({
+          observedPatterns: [{ statement: "Aggregate pattern.", evidenceRefs: ["axis-1"] }],
+          contextualQuestions: [], limitations: ["Aggregate evidence only."],
+        }) } }],
+        usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18, cost: 0.0000011 },
+      });
+    },
+  }) as OpenEnaAiGenerationResult;
+
+  assert.deepEqual(calls, ["https://openrouter.ai/api/v1/key", "https://openrouter.ai/api/v1/chat/completions"]);
+  assert.deepEqual(result.usage, { promptTokens: 11, completionTokens: 7, totalTokens: 18, costMicroUsd: 2 });
+  assert.equal(result.providerDispatched, true);
+  assert.equal("usage" in result.response, false);
+});
+
+test("Luna does not dispatch chat when the provider hard budget is missing, not monthly, over ceiling, or lacks this reservation's allowance", async () => {
+  for (const [index, data] of [
+    { limit: 1, limit_remaining: 1 },
+    { limit_reset: "daily", limit: 1, limit_remaining: 1 },
+    { limit_reset: "monthly", limit: 3, limit_remaining: 3 },
+    { limit_reset: "monthly", limit: 1, limit_remaining: 0.001 },
+  ].entries()) {
+    const calls: string[] = [];
+    await assert.rejects(
+      generateLunaInterpretation(interpretationRequest(), {
+        environment: { OPEN_ENA_AI_ENABLED: "true", OPENROUTER_API_KEY: `server-only-key-${index}` },
+        providerMonthlyMicroUsd: 2_000_000,
+        globalMonthlyMicroUsd: 3_000_000,
+        reservationMicroUsd: 10_000,
+        fetch: async (input) => { calls.push(String(input)); return Response.json({ data }); },
+      }),
+      (error: unknown) => error instanceof LunaClientError && error.providerDispatched === false,
+    );
+    assert.deepEqual(calls, ["https://openrouter.ai/api/v1/key"]);
+  }
+});
+
+test("Luna treats an injected false hard-budget verdict as pre-dispatch denial", async () => {
+  let chatCalls = 0;
+  await assert.rejects(
+    generateLunaInterpretation(interpretationRequest(), {
+      environment: { OPEN_ENA_AI_ENABLED: "true", OPENROUTER_API_KEY: "server-only-key" },
+      providerMonthlyMicroUsd: 2_000_000,
+      globalMonthlyMicroUsd: 3_000_000,
+      reservationMicroUsd: 10_000,
+      verifyHardBudget: async () => false,
+      fetch: async () => {
+        chatCalls += 1;
+        return new Response(null, { status: 500 });
+      },
+    }),
+    (error: unknown) => error instanceof LunaClientError && error.providerDispatched === false,
+  );
+  assert.equal(chatCalls, 0);
+});
+
+test("Luna timeout and caller cancellation abort the provider budget preflight before chat dispatch", async (t) => {
+  const options = (signal?: AbortSignal) => ({
+    environment: { OPEN_ENA_AI_ENABLED: "true", OPENROUTER_API_KEY: "server-only-key" },
+    providerMonthlyMicroUsd: 2_000_000,
+    globalMonthlyMicroUsd: 3_000_000,
+    reservationMicroUsd: 10_000,
+    timeoutMs: 5,
+    signal,
+    fetch: async (_input: URL | RequestInfo, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+    }),
+  });
+  await t.test("timeout", async () => {
+    await assert.rejects(
+      generateLunaInterpretation(interpretationRequest(), options()),
+      (error: unknown) => error instanceof LunaClientError
+        && error.code === "upstream-timeout"
+        && error.providerDispatched === false,
+    );
+  });
+  await t.test("caller cancellation", async () => {
+    const controller = new AbortController();
+    const pending = generateLunaInterpretation(interpretationRequest(), options(controller.signal));
+    controller.abort();
+    await assert.rejects(
+      pending,
+      (error: unknown) => error instanceof LunaClientError
+        && error.code === "upstream-cancelled"
+        && error.providerDispatched === false,
+    );
   });
 });
 
@@ -872,7 +976,7 @@ test("Luna interpretation allows an explicit OpenRouter base URL and configurabl
 
   assert.equal(capturedUrl, "https://openrouter.ai/api/v1/chat/completions");
   assert.equal(capturedModel, "research/custom-luna");
-  assert.equal(response.model, "research/custom-luna");
+  assert.equal(response.response.model, "research/custom-luna");
 });
 
 for (const unsafeBaseUrl of [

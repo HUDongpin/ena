@@ -32,13 +32,15 @@
     "j-3dena": "file:vendor/j-3dena/j-3dena-0.2.0-implemented-unverified.12.tgz",
     "jena-js": "0.7.0-ona.0",
     "next": "16.3.0",
-    "plotly.js-dist-min": "3.7.0",
+    "pg": "8.22.0",
+    "plotly.js-gl3d-dist-min": "3.7.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "read-excel-file": "9.3.5"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
+    "@types/pg": "8.21.0",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "tsx": "^4.22.4",

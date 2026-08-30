@@ -6,10 +6,13 @@ import OpenEnaLogin from "@/components/open-ena/OpenEnaLogin";
 import OpenEnaWorkspace from "@/components/open-ena/OpenEnaWorkspace";
 import { getLocaleMeta, isLocale, type Locale } from "@/lib/i18n";
 import {
-  openEnaAuthConfigurationReady,
   OPEN_ENA_SESSION_COOKIE,
-  verifyOpenEnaSessionToken,
 } from "@/lib/open-ena-auth";
+import {
+  openEnaAuthSecurityConfigurationReady,
+  verifyProductionOpenEnaSessionTokenV2,
+} from "@/lib/server/open-ena-auth-security-store";
+import { OPEN_ENA_AI_DEFAULT_MODEL } from "@/lib/server/luna-client";
 import {
   getOpenEnaCopy,
   isOpenEnaLocalizedLocale,
@@ -24,6 +27,7 @@ interface OpenEnaPageProps {
 }
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function generateMetadata({ params }: OpenEnaPageProps): Promise<Metadata> {
   const { locale } = await params;
@@ -62,9 +66,10 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
   const typedLocale = locale as Locale;
-  const authConfigurationReady = openEnaAuthConfigurationReady();
+  const authConfigurationReady = openEnaAuthSecurityConfigurationReady();
   const sessionCookie = (await cookies()).get(OPEN_ENA_SESSION_COOKIE)?.value;
-  const isAuthenticated = authConfigurationReady && verifyOpenEnaSessionToken(sessionCookie);
+  const isAuthenticated = authConfigurationReady
+    && Boolean(await verifyProductionOpenEnaSessionTokenV2(sessionCookie));
   const query = await searchParams;
 
   if (!isAuthenticated) {
@@ -78,6 +83,15 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
   }
 
   const copy = getOpenEnaCopy(typedLocale);
+  const configuredAiModel = process.env.OPEN_ENA_AI_MODEL?.trim();
+  const providerDescriptor = {
+    provider: "OpenRouter",
+    model: configuredAiModel && configuredAiModel.length <= 160
+      && !/[\u0000-\u001f\u007f]/u.test(configuredAiModel)
+      && /^[A-Za-z0-9._:/@-]+$/u.test(configuredAiModel)
+      ? configuredAiModel
+      : OPEN_ENA_AI_DEFAULT_MODEL,
+  };
   const canonicalLocale = isOpenEnaLocalizedLocale(typedLocale) ? typedLocale : "en";
   const structuredData = {
     "@context": "https://schema.org",
@@ -107,7 +121,7 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
   return (
     <>
       <JsonLd data={structuredData} />
-      <OpenEnaWorkspace locale={typedLocale} />
+      <OpenEnaWorkspace locale={typedLocale} providerDescriptor={providerDescriptor} />
     </>
   );
 }

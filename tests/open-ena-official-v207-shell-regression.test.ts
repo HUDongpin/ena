@@ -139,7 +139,7 @@ test("desktop grid uses a compact rail, an approximately 380px control panel, an
   const tracks = topLevelCssTracks(columns);
 
   assert.equal(tracks.length, 3, "rail, left controls, and the remaining research surface are the three top-level tracks");
-  assert.equal(tracks[0], "65px", "the desktop reference rail remains compact");
+  assert.equal(tracks[0], "var(--ena-rail-width)", "the desktop reference rail remains compact via the shared variable");
 
   const controlWidth = Number(tracks[1]?.match(/^(\d+(?:\.\d+)?)px$/)?.[1]);
   assert.ok(
@@ -450,7 +450,7 @@ test("official plot papers, model download, and group-label settings keep the ob
   assert.match(styles, /\.open-ena-group-contrast\s+\.open-ena-set-comparison-svg\s*\{[\s\S]*?box-shadow:\s*0\s+2px\s+5px\s+rgba\(36,\s*55,\s*60,\s*0\.2\);/);
   assert.match(
     styles,
-    /\.ena-download-model-button\s*\{[\s\S]*?width:\s*138px;[\s\S]*?min-width:\s*138px;[\s\S]*?font-size:\s*calc\(0\.7rem \+ var\(--ena-font-step, 1px\)\);[\s\S]*?color:\s*var\(--nav-deep\);[\s\S]*?background:\s*var\(--ena-accent\);/,
+    /\.ena-download-model-button\s*\{[\s\S]*?color:\s*var\(--nav-deep\);[\s\S]*?background:\s*var\(--ena-accent\);/,
     "Download Model must use the filled Baby Blue action with readable dark text",
   );
   assert.match(workspace, /className="ena-download-model-button-icon"/);
@@ -593,8 +593,8 @@ test("the local 2D and in-place 3D controls sit immediately before Download Mode
   );
   assert.match(
     styles,
-    /@media \(min-width:\s*1400px\)[\s\S]*?\.ena-analysis-toolbar-cluster\s*\{[^}]*position:\s*absolute;[^}]*top:\s*16px;[^}]*right:\s*calc\(35% \+ 19px\);/,
-    "the desktop group must retain Download Model's measured anchor while placing the view switch on its left",
+    /@media \(min-width:\s*1400px\)[\s\S]*?\.ena-analysis-toolbar-cluster\s*\{[^}]*position:\s*static;[^}]*height:\s*auto;[^}]*flex-wrap:\s*wrap;/,
+    "the desktop group stays in semantic normal flow and wraps enlarged actions",
   );
 });
 

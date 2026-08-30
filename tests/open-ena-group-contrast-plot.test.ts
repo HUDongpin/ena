@@ -6,6 +6,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { OpenEnaGroupContrastProps } from "../components/open-ena/OpenEnaGroupContrast";
 import type { OpenEnaPairwiseContrast } from "../lib/open-ena/contrasts";
+import { readableOpenEnaTextColor } from "../lib/open-ena/color-contrast";
 import { DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS } from "../lib/open-ena/group-display";
 
 const componentPath = join(process.cwd(), "components", "open-ena", "OpenEnaGroupContrast.tsx");
@@ -1065,6 +1066,12 @@ test("official Yu 0712 colors follow Experimental and Control identities across 
     Experimental: "#cc423a",
     Control: "#218ebf",
   };
+  const expectedCaptionColors: Record<string, string> = Object.fromEntries(
+    Object.entries(expectedColors).map(([name, color]) => [
+      name,
+      readableOpenEnaTextColor(color, "#edf1f2"),
+    ]),
+  );
   const forwardComparison = plotSvg(forward, "open-ena-group-comparison-plot");
   const forwardPrimary = plotSvg(forward, "open-ena-group-primary-plot");
   const forwardSecondary = plotSvg(forward, "open-ena-group-secondary-plot");
@@ -1072,13 +1079,13 @@ test("official Yu 0712 colors follow Experimental and Control identities across 
   assert.equal(groupSummaryColor(forward, "Control"), expectedColors.Control);
   assert.match(
     figureForHeading(forward, "Primary Plot"),
-    /class="ena-set-series-primary" style="color:#cc423a">Experimental<\/span>/,
-    "the Experimental side caption must match its red figure layers",
+    new RegExp(`class="ena-set-series-primary" data-ena-series-color="${expectedColors.Experimental}" style="color:${expectedCaptionColors.Experimental}">Experimental<\\/span>`),
+    "the Experimental caption must retain its red identity while using a readable text shade",
   );
   assert.match(
     figureForHeading(forward, "Secondary Plot"),
-    /class="ena-set-series-secondary" style="color:#218ebf">Control<\/span>/,
-    "the Control side caption must match its blue figure layers",
+    new RegExp(`class="ena-set-series-secondary" data-ena-series-color="${expectedColors.Control}" style="color:${expectedCaptionColors.Control}">Control<\\/span>`),
+    "the Control caption must retain its blue identity while using a readable text shade",
   );
 
   for (const [role, color] of [["primary", expectedColors.Experimental], ["secondary", expectedColors.Control]] as const) {
@@ -1136,11 +1143,11 @@ test("official Yu 0712 colors follow Experimental and Control identities across 
   }
   assert.match(
     figureForHeading(swapped, "Primary Plot"),
-    /class="ena-set-series-primary" style="color:#218ebf">Control<\/span>/,
+    new RegExp(`class="ena-set-series-primary" data-ena-series-color="${expectedColors.Control}" style="color:${expectedCaptionColors.Control}">Control<\\/span>`),
   );
   assert.match(
     figureForHeading(swapped, "Secondary Plot"),
-    /class="ena-set-series-secondary" style="color:#cc423a">Experimental<\/span>/,
+    new RegExp(`class="ena-set-series-secondary" data-ena-series-color="${expectedColors.Experimental}" style="color:${expectedCaptionColors.Experimental}">Experimental<\\/span>`),
   );
 });
 

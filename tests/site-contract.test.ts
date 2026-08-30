@@ -215,14 +215,19 @@ test("sitemap publishes News and Academy detail routes", () => {
   assert.match(sitemapSource, /academyRoutes/);
 });
 
-test("the root layout mounts Vercel Analytics exactly once for every route", () => {
+test("the root layout exposes opt-in Vercel Analytics through the consent gate", () => {
   const layoutSource = readFileSync(join(projectRoot, "app", "layout.tsx"), "utf8");
+  const analyticsSource = readFileSync(join(projectRoot, "components", "AnalyticsConsent.tsx"), "utf8");
   const packageJson = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf8")) as {
     dependencies?: Record<string, string>;
   };
 
   assert.ok(packageJson.dependencies?.["@vercel/analytics"]);
-  assert.match(layoutSource, /import\s+\{\s*Analytics\s*\}\s+from\s+"@vercel\/analytics\/next"/);
-  assert.equal((layoutSource.match(/<Analytics\s*\/>/g) ?? []).length, 1);
-  assert.match(layoutSource, /<body[^>]*>[\s\S]*?\{children\}[\s\S]*?<Analytics\s*\/>[\s\S]*?<\/body>/);
+  assert.match(layoutSource, /AnalyticsConsent/u);
+  assert.match(layoutSource, /OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS/u);
+  assert.match(layoutSource, /<body[^>]*>[\s\S]*?\{children\}[\s\S]*?<AnalyticsConsent[^>]*\/>[\s\S]*?<\/body>/u);
+  assert.match(analyticsSource, /@vercel\/analytics\/next/u);
+  assert.match(analyticsSource, /OPEN_ENA_ANALYTICS_CONSENT_STORAGE_KEY/u);
+  assert.match(analyticsSource, /beforeSend/u);
+  assert.match(analyticsSource, /return null/u);
 });

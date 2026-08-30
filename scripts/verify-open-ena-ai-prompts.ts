@@ -30,10 +30,10 @@ export const OPEN_ENA_AI_PROMPT_VERIFICATION_SCHEMA_VERSION_V1 =
 const LOCALES = ["en", "zh-hant", "zh-hans"] as const;
 
 const CONTRACT_TEST_SOURCE_SHA256 = deepFreeze({
-  client: "6e3ef13bf6d83ad7386627212920de88d8117e70cad8fd183599d366c8f8c708",
+  client: "ad2e980beab0256b465f9da9d395c6c48ca6004225bededcf2eb8083dc2c5000",
   payload: "4e46712d5a086885b4bef1650368c3b74978899821c08efe3b06ed2e3c3426ad",
-  route: "9c37ec81a3b82043f3e16c97091d2aabe3b1639f0c10f9f35c3f6972a1ae32c2",
-  workspace: "a37072e40df9cf562691200630ff72b75c28d91e24892209391fbde5a6e7f342",
+  route: "597e6f16a1f05f9aced8783bb6e4e28e0114b8e9a8ef748714e9935021d6451e",
+  workspace: "eb0b33fd6e9d8f9531a2f8ffba5a27074d0da272c1a36abe3ceac6651f24545c",
 } as const satisfies Readonly<Record<ContractTestSourceKey, string>>);
 
 const MOCK_CLIENT_COVERAGE_BINDINGS = [

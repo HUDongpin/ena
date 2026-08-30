@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type { ModelType, Row, WindowType } from "jena-js";
 import type { Locale } from "@/lib/i18n";
 import { getOpenEnaAuthCopy } from "@/lib/open-ena-auth-copy";
@@ -160,6 +160,7 @@ import OpenEnaInferencePanel, {
 
 interface OpenEnaWorkspaceProps {
   locale: Locale;
+  providerDescriptor?: { provider: string; model: string };
 }
 
 type OpenEnaModelPanelTab = "units" | "horizons" | "windows" | "codes";
@@ -167,6 +168,23 @@ type OpenEnaStatsTab = "comparison" | "goodness" | "variance";
 
 const MODEL_TAB_ORDER = ["units", "horizons", "windows", "codes"] as const;
 const STATS_TAB_ORDER = ["comparison", "goodness", "variance"] as const;
+const IDENTITY_BEARING_RESULT_TABLES = new Set<OpenEnaResultTableKey>([
+  "coordinates",
+  "lineWeights",
+  "connectionCounts",
+  "trajectories",
+  "centroids",
+]);
+
+export function confirmOpenEnaIdentityBearingExport(
+  confirmExport: (message: string) => boolean,
+  message: string,
+  publish: () => void,
+) {
+  if (!confirmExport(message)) return false;
+  publish();
+  return true;
+}
 
 export function OpenEnaResultTables({
   model,
@@ -193,6 +211,41 @@ export function OpenEnaResultTables({
       onSelect={onSelect}
       onExport={onExport}
     />
+  );
+}
+
+export function OpenEnaRangeField({
+  id,
+  label,
+  value,
+  formattedValue,
+  accessibleValueText,
+  idPrefix,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  formattedValue: string;
+  accessibleValueText: string;
+  idPrefix?: string;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+}) {
+  const fieldId = idPrefix ? `${idPrefix}-${id}` : id;
+  return (
+    <div className="ena-field ena-range-field">
+      <span>
+        <label htmlFor={fieldId}>{label}</label>
+        <output id={`${fieldId}-value`} htmlFor={fieldId}>{formattedValue}</output>
+      </span>
+      <input id={fieldId} aria-valuetext={accessibleValueText || formattedValue} type="range" min={min} max={max} step={step} value={value} onChange={onChange} />
+    </div>
   );
 }
 
@@ -439,7 +492,8 @@ function orderPanelValueFromConfig(config: OpenEnaConfig): OpenEnaOrderPanelValu
   };
 }
 
-export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
+export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEnaWorkspaceProps) {
+  const workspaceId = useId();
   const copy = getOpenEnaCopy(locale);
   const authCopy = getOpenEnaAuthCopy(locale);
   const workspaceIsLocalized = isOpenEnaLocalizedLocale(locale);
@@ -572,6 +626,13 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
     () => result ? openEnaAnalysisKindFromResult(result) : null,
     [result],
   );
+  function confirmCurrentIdentityBearingExport() {
+    return window.confirm(
+      completedResultKind === "ona"
+        ? copy.ona.exports.bundleConfirmation
+        : copy.stats.identityExportConfirmation,
+    );
+  }
   const capabilityAnalysisKind = completedResultKind ?? currentAnalysisKind;
   const onaCapabilityDisabled = capabilityAnalysisKind === "ona";
   const resultIsStale = Boolean(result && resultConfig && !sameOpenEnaConfig(config, resultConfig));
@@ -2005,11 +2066,13 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
   }
 
   function exportPlotSvg() {
+    if (!confirmCurrentIdentityBearingExport()) return;
     const svg = serializedPlotSvg();
     if (svg) downloadText(`open-ena-${Date.now()}-plot.svg`, svg, "image/svg+xml;charset=utf-8");
   }
 
   function exportPlotPng() {
+    if (!confirmCurrentIdentityBearingExport()) return;
     const svg = serializedPlotSvg();
     if (!svg) return;
     const sourceUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
@@ -2051,6 +2114,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
 
   async function copyMethodsReport() {
     if (!methodsReport) return;
+    if (!confirmCurrentIdentityBearingExport()) return;
     try {
       await navigator.clipboard.writeText(methodsReport);
       setMethodsCopyStatus("Copied");
@@ -2212,6 +2276,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             </label>
             <p>{copy.sets.comparisonHint}</p>
             {primarySet && compatibleSecondarySets.length === 0 ? <p className="ena-sets-compatibility-note">{copy.sets.noCompatibleSecondary}</p> : null}
+            <p className="ena-export-identifier-note">{copy.stats.identityExportWarning}</p>
             <div className="ena-sets-export-actions">
               <button
                 type="button"
@@ -2219,9 +2284,13 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 disabled={!setComparison || !primarySet || !secondarySet}
                 onClick={() => {
                   if (setComparison && primarySet && secondarySet) {
-                    downloadJson(
-                      `open-ena-${Date.now()}-set-comparison.json`,
-                      buildSetComparisonExport(setComparison),
+                    confirmOpenEnaIdentityBearingExport(
+                      (message) => window.confirm(message),
+                      copy.stats.identityExportConfirmation,
+                      () => downloadJson(
+                        `open-ena-${Date.now()}-set-comparison.json`,
+                        buildSetComparisonExport(setComparison),
+                      ),
                     );
                   }
                 }}
@@ -2234,10 +2303,14 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 disabled={!setComparison}
                 onClick={() => {
                   if (setComparison) {
-                    downloadText(
-                      `open-ena-${Date.now()}-comparison-edges.csv`,
-                      setComparisonEdgesToCsv(setComparison),
-                      "text/csv;charset=utf-8",
+                    confirmOpenEnaIdentityBearingExport(
+                      (message) => window.confirm(message),
+                      copy.stats.identityExportConfirmation,
+                      () => downloadText(
+                        `open-ena-${Date.now()}-comparison-edges.csv`,
+                        setComparisonEdgesToCsv(setComparison),
+                        "text/csv;charset=utf-8",
+                      ),
                     );
                   }
                 }}
@@ -2582,14 +2655,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   </label>
                   {config.window === "MovingStanzaWindow" ? (
                     <div className="ena-two-fields ena-window-fields">
-                      <label className="ena-field ena-range-field">
-                        <span>{copy.model.back}<output>{config.windowSizeBack}</output></span>
-                        <input type="range" min="1" max="21" step="1" value={config.windowSizeBack} onChange={(event) => updateConfig((current) => ({ ...current, windowSizeBack: Number(event.target.value) }))} />
-                      </label>
-                      <label className="ena-field ena-range-field">
-                        <span>{copy.model.forward}<output>{config.windowSizeForward}</output></span>
-                        <input type="range" min="0" max="20" step="1" value={config.windowSizeForward} onChange={(event) => updateConfig((current) => ({ ...current, windowSizeForward: Number(event.target.value) }))} />
-                      </label>
+                      <OpenEnaRangeField id="open-ena-window-back" idPrefix={workspaceId} label={copy.model.back} value={config.windowSizeBack} formattedValue={String(config.windowSizeBack)} accessibleValueText={String(config.windowSizeBack)} min={1} max={21} step={1} onChange={(event) => updateConfig((current) => ({ ...current, windowSizeBack: Number(event.target.value) }))} />
+                      <OpenEnaRangeField id="open-ena-window-forward" idPrefix={workspaceId} label={copy.model.forward} value={config.windowSizeForward} formattedValue={String(config.windowSizeForward)} accessibleValueText={String(config.windowSizeForward)} min={0} max={20} step={1} onChange={(event) => updateConfig((current) => ({ ...current, windowSizeForward: Number(event.target.value) }))} />
                     </div>
                   ) : null}
                   <div className="ena-two-fields">
@@ -2890,20 +2957,24 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   <button
                     type="button"
                     className="ena-action-button ena-action-secondary"
-                    onClick={() => downloadJson(
-                      `open-ena-${Date.now()}-longitudinal-group-centroids.json`,
-                      buildLongitudinalGroupCentroidExport(longitudinalView, {
-                        flipX,
-                        flipY,
-                        showIndividualPaths: showTrajectories,
-                        showGroupCentroidPaths,
-                        showPoints,
-                        showLabels,
-                        showVariance,
-                        pointScale,
-                        plotZoom,
-                      }, currentInference),
-                      true,
+                    onClick={() => confirmOpenEnaIdentityBearingExport(
+                      (message) => window.confirm(message),
+                      copy.stats.identityExportConfirmation,
+                      () => downloadJson(
+                        `open-ena-${Date.now()}-longitudinal-group-centroids.json`,
+                        buildLongitudinalGroupCentroidExport(longitudinalView, {
+                          flipX,
+                          flipY,
+                          showIndividualPaths: showTrajectories,
+                          showGroupCentroidPaths,
+                          showPoints,
+                          showLabels,
+                          showVariance,
+                          pointScale,
+                          plotZoom,
+                        }, currentInference),
+                        true,
+                      ),
                     )}
                   >
                     {copy.longitudinal.exportJson} ↓
@@ -2911,10 +2982,14 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   <button
                     type="button"
                     className="ena-action-button ena-action-secondary"
-                    onClick={() => downloadText(
-                      `open-ena-${Date.now()}-longitudinal-group-centroids.csv`,
-                      longitudinalPeriodRowsToCsv(longitudinalView),
-                      "text/csv;charset=utf-8",
+                    onClick={() => confirmOpenEnaIdentityBearingExport(
+                      (message) => window.confirm(message),
+                      copy.stats.identityExportConfirmation,
+                      () => downloadText(
+                        `open-ena-${Date.now()}-longitudinal-group-centroids.csv`,
+                        longitudinalPeriodRowsToCsv(longitudinalView),
+                        "text/csv;charset=utf-8",
+                      ),
                     )}
                   >
                     {copy.longitudinal.exportCsv} ↓
@@ -2931,10 +3006,14 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 disabled={!currentInference || !longitudinalView}
                 onClick={() => {
                   if (currentInference && longitudinalView) {
-                    downloadText(
-                      `open-ena-${Date.now()}-longitudinal-inference.csv`,
-                      longitudinalInferenceRowsToCsv(longitudinalView, currentInference),
-                      "text/csv;charset=utf-8",
+                    confirmOpenEnaIdentityBearingExport(
+                      (message) => window.confirm(message),
+                      copy.stats.identityExportConfirmation,
+                      () => downloadText(
+                        `open-ena-${Date.now()}-longitudinal-inference.csv`,
+                        longitudinalInferenceRowsToCsv(longitudinalView, currentInference),
+                        "text/csv;charset=utf-8",
+                      ),
                     );
                   }
                 }}
@@ -3087,30 +3166,35 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 <p className="ena-group-contrast-order">
                   {copy.contrast.selectedOrder}: <strong>{primaryGroupName} → {secondaryGroupName}</strong>. {copy.contrast.multiplicity}
                 </p>
+                <p className="ena-export-identifier-note">{copy.stats.identityExportWarning}</p>
                 <div className="ena-two-fields ena-group-contrast-export-actions">
                   <button
                     type="button"
                     className="ena-action-button ena-action-secondary"
                     disabled={!groupDisplayExportContrast}
-                    onClick={() => groupDisplayExportContrast && downloadJson(
-                      `open-ena-${Date.now()}-group-contrast.json`,
-                      buildPairwiseGroupContrastExport(groupDisplayExportContrast, {
-                        flipX,
-                        flipY,
-                        edgeThreshold,
-                        showNetworks,
-                        showPoints,
-                        showLabels,
-                        showGroupLabels,
-                        showUnitLabels,
-                        showVariance,
-                        edgeScale,
-                        pointScale,
-                        plotZoom,
-                        groupDisplaySettingsByGroup: groupDisplayPresentation.settingsByGroup,
-                        hiddenUnitKeys: groupDisplayPresentation.hiddenUnitKeys,
-                      }),
-                      true,
+                    onClick={() => groupDisplayExportContrast && confirmOpenEnaIdentityBearingExport(
+                      (message) => window.confirm(message),
+                      copy.stats.identityExportConfirmation,
+                      () => downloadJson(
+                        `open-ena-${Date.now()}-group-contrast.json`,
+                        buildPairwiseGroupContrastExport(groupDisplayExportContrast, {
+                          flipX,
+                          flipY,
+                          edgeThreshold,
+                          showNetworks,
+                          showPoints,
+                          showLabels,
+                          showGroupLabels,
+                          showUnitLabels,
+                          showVariance,
+                          edgeScale,
+                          pointScale,
+                          plotZoom,
+                          groupDisplaySettingsByGroup: groupDisplayPresentation.settingsByGroup,
+                          hiddenUnitKeys: groupDisplayPresentation.hiddenUnitKeys,
+                        }),
+                        true,
+                      ),
                     )}
                   >
                     {copy.contrast.exportJson} ↓
@@ -3119,10 +3203,14 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     type="button"
                     className="ena-action-button ena-action-secondary"
                     disabled={!groupDisplayExportContrast}
-                    onClick={() => groupDisplayExportContrast && downloadText(
-                      `open-ena-${Date.now()}-group-contrast-edges.csv`,
-                      pairwiseGroupContrastEdgesToCsv(groupDisplayExportContrast),
-                      "text/csv;charset=utf-8",
+                    onClick={() => groupDisplayExportContrast && confirmOpenEnaIdentityBearingExport(
+                      (message) => window.confirm(message),
+                      copy.stats.identityExportConfirmation,
+                      () => downloadText(
+                        `open-ena-${Date.now()}-group-contrast-edges.csv`,
+                        pairwiseGroupContrastEdgesToCsv(groupDisplayExportContrast),
+                        "text/csv;charset=utf-8",
+                      ),
                     )}
                   >
                     {copy.contrast.exportEdges} ↓
@@ -3188,20 +3276,11 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           ))}
           {!activeLongitudinalView ? (
             <>
-              <label className="ena-field ena-range-field">
-                <span>{copy.plot.edgeScale}<output>{edgeScale.toFixed(1)}×</output></span>
-                <input type="range" min="0.1" max="4" step="0.1" value={edgeScale} onChange={(event) => setEdgeScale(Number(event.target.value))} />
-              </label>
-              <label className="ena-field ena-range-field">
-                <span>{copy.plot.edgeThreshold}<output>{Math.round(edgeThreshold * 100)}%</output></span>
-                <input type="range" min="0" max="0.95" step="0.05" value={edgeThreshold} onChange={(event) => setEdgeThreshold(Number(event.target.value))} />
-              </label>
+              <OpenEnaRangeField id="open-ena-edge-scale" idPrefix={workspaceId} label={copy.plot.edgeScale} value={edgeScale} formattedValue={`${edgeScale.toFixed(1)}×`} accessibleValueText={`${edgeScale.toFixed(1)}×`} min={0.1} max={4} step={0.1} onChange={(event) => setEdgeScale(Number(event.target.value))} />
+              <OpenEnaRangeField id="open-ena-edge-threshold" idPrefix={workspaceId} label={copy.plot.edgeThreshold} value={edgeThreshold} formattedValue={`${Math.round(edgeThreshold * 100)}%`} accessibleValueText={`${Math.round(edgeThreshold * 100)}%`} min={0} max={0.95} step={0.05} onChange={(event) => setEdgeThreshold(Number(event.target.value))} />
             </>
           ) : null}
-          <label className="ena-field ena-range-field">
-            <span>{copy.plot.pointScale}<output>{pointScale.toFixed(1)}×</output></span>
-            <input type="range" min="0.5" max="2" step="0.1" value={pointScale} onChange={(event) => setPointScale(Number(event.target.value))} />
-          </label>
+          <OpenEnaRangeField id="open-ena-point-scale" idPrefix={workspaceId} label={copy.plot.pointScale} value={pointScale} formattedValue={`${pointScale.toFixed(1)}×`} accessibleValueText={`${pointScale.toFixed(1)}×`} min={0.5} max={2} step={0.1} onChange={(event) => setPointScale(Number(event.target.value))} />
           <div className="ena-plot-actions" role="group" aria-label="Plot position and scale">
             <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => setPlotZoom((value) => Math.max(0.6, Number((value - 0.2).toFixed(1))))}>−</button>
             <button type="button" aria-label="Fit plot" title="Fit plot" onClick={() => setPlotZoom(1)}>Fit plot · {plotZoom.toFixed(1)}×</button>
@@ -3224,6 +3303,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             <button type="button" className="ena-action-button ena-action-secondary" disabled={view === "3d" || (!result && !activeSetComparison)} onClick={exportPlotSvg}>Export SVG ↓</button>
             <button type="button" className="ena-action-button ena-action-secondary" disabled={view === "3d" || (!result && !activeSetComparison)} onClick={exportPlotPng}>Export PNG ↓</button>
           </div>
+          <p className="ena-export-identifier-note">{copy.stats.identityExportWarning}</p>
           {view === "3d" ? <p className="ena-plot-export-note">{copy.plot.threeDExportHint}</p> : null}
         </div>
       </div>
@@ -3296,6 +3376,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           disabled={!result || resultIsStale || !aiInterpretationRequest || !currentInference}
           disabledReason={disabledReason}
           copy={copy.aiInterpretation}
+          providerDescriptor={providerDescriptor}
           showHeading={false}
         />
       </div>
@@ -3698,8 +3779,18 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 </div>
                 <div><dt>{copy.sets.hashScope}</dt><dd>{dataset?.hashKind ?? copy.stats.ui.legacyHashScope}</dd></div>
               </dl>
+              <p className="ena-export-identifier-note">{copy.stats.identityExportWarning}</p>
               <div className="ena-export-stack">
-                <button type="button" className="ena-action-button ena-action-primary" disabled={!manifest} onClick={() => manifest && downloadJson(`open-ena-${Date.now()}-manifest.json`, manifest)}>
+                <button
+                  type="button"
+                  className="ena-action-button ena-action-primary"
+                  disabled={!manifest}
+                  onClick={() => {
+                    if (manifest && confirmCurrentIdentityBearingExport()) {
+                      downloadJson(`open-ena-${Date.now()}-manifest.json`, manifest);
+                    }
+                  }}
+                >
                   {copy.stats.export} <span aria-hidden="true">↓</span>
                 </button>
                 <button
@@ -3708,29 +3799,33 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   disabled={!dataset || !result || !resultConfig}
                   onClick={() => {
                     if (dataset && result && resultConfig) {
-                      downloadJson(
-                        `open-ena-${Date.now()}-results.json`,
-                        buildAnalysisBundle(dataset, resultConfig, result, datasetHash, {
-                          codeColors,
-                          methodsDimensions: [xDimension, yDimension],
-                          methodsFlipX: flipX,
-                          methodsFlipY: flipY,
-                          edgeThreshold,
-                          showNetworks,
-                          showPoints,
-                          showTrajectories: false,
-                          showLabels,
-                          showUnitLabels,
-                          showVariance,
-                          edgeScale,
-                          pointScale,
-                          plotZoom,
-                          selectedGroupOrder: selectedPresentationGroupOrder,
-                          groupContrast,
-                          inference: currentInference,
-                          inferenceContext: inferenceProducerContext ?? undefined,
-                        }),
-                        true,
+                      confirmOpenEnaIdentityBearingExport(
+                        (message) => window.confirm(message),
+                        copy.stats.identityExportConfirmation,
+                        () => downloadJson(
+                          `open-ena-${Date.now()}-results.json`,
+                          buildAnalysisBundle(dataset, resultConfig, result, datasetHash, {
+                            codeColors,
+                            methodsDimensions: [xDimension, yDimension],
+                            methodsFlipX: flipX,
+                            methodsFlipY: flipY,
+                            edgeThreshold,
+                            showNetworks,
+                            showPoints,
+                            showTrajectories: false,
+                            showLabels,
+                            showUnitLabels,
+                            showVariance,
+                            edgeScale,
+                            pointScale,
+                            plotZoom,
+                            selectedGroupOrder: selectedPresentationGroupOrder,
+                            groupContrast,
+                            inference: currentInference,
+                            inferenceContext: inferenceProducerContext ?? undefined,
+                          }),
+                          true,
+                        ),
                       );
                     }
                   }}
@@ -3743,10 +3838,14 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   disabled={!dataset || !result || !resultConfig || result.set.modelType !== "EndPoint"}
                   onClick={() => {
                     if (dataset && result && resultConfig && result.set.modelType === "EndPoint") {
-                      downloadJson(
-                        `open-ena-${Date.now()}-reference-rotation.json`,
-                        buildReferenceRotationPackage(dataset, resultConfig, result, datasetHash),
-                        true,
+                      confirmOpenEnaIdentityBearingExport(
+                        (message) => window.confirm(message),
+                        copy.stats.identityExportConfirmation,
+                        () => downloadJson(
+                          `open-ena-${Date.now()}-reference-rotation.json`,
+                          buildReferenceRotationPackage(dataset, resultConfig, result, datasetHash),
+                          true,
+                        ),
                       );
                     }
                   }}
@@ -3758,6 +3857,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
             <section className="ena-methods-section" aria-label={copy.stats.ui.methodsTitle}>
               <h3>{copy.stats.ui.methodsTitle}</h3>
               <p>{copy.stats.ui.methodsDescription}</p>
+              <p className="ena-export-identifier-note">{copy.stats.identityExportWarning}</p>
               <div className="ena-two-fields">
                 <button
                   type="button"
@@ -3771,11 +3871,15 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   type="button"
                   className="ena-action-button ena-action-secondary"
                   disabled={!methodsReport}
-                  onClick={() => methodsReport && downloadText(
-                    `open-ena-${Date.now()}-methods-report.md`,
-                    methodsReport,
-                    "text/markdown;charset=utf-8",
-                  )}
+                  onClick={() => {
+                    if (methodsReport && confirmCurrentIdentityBearingExport()) {
+                      downloadText(
+                        `open-ena-${Date.now()}-methods-report.md`,
+                        methodsReport,
+                        "text/markdown;charset=utf-8",
+                      );
+                    }
+                  }}
                 >
                   {copy.stats.ui.methodsReport} ↓
                 </button>
@@ -3879,11 +3983,18 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         onSelect={setResultTable}
         onExport={() => {
           if (!resultTableViewModel.export.disabled) {
-            downloadText(
+            const publish = () => downloadText(
               `open-ena-${resultTable}.csv`,
               rowsToCsv(tableMap[resultTable]),
               "text/csv;charset=utf-8",
             );
+            if (IDENTITY_BEARING_RESULT_TABLES.has(resultTable)) {
+              confirmOpenEnaIdentityBearingExport(
+                (message) => window.confirm(message),
+                copy.stats.identityExportConfirmation,
+                publish,
+              );
+            } else publish();
           }
         }}
       />
@@ -3912,7 +4023,11 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         onContextChange={setDataViewContext}
         onReturnToComparison={() => setCenterSurface("plot")}
         onExportCsv={() => {
-          if (ordered && !window.confirm(copy.ona.dataView.exportConfirmation)) return;
+          if (ordered) {
+            if (!window.confirm(copy.ona.dataView.exportConfirmation)) return;
+          } else if (!confirmCurrentIdentityBearingExport()) {
+            return;
+          }
           const exportRows = ordered
             ? buildOpenEnaDataViewExportRows({
                 columns: dataViewModel.columns,
@@ -3932,7 +4047,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           );
         }}
         contextOptions={contextOptions}
-        notice={ordered ? copy.ona.dataView.localIdentityWarning : undefined}
+        notice={ordered ? copy.ona.dataView.localIdentityWarning : copy.stats.identityExportWarning}
         copy={ordered ? {
           ariaLabel: copy.ona.dataView.ariaLabel,
           title: copy.ona.dataView.title,
@@ -3957,7 +4072,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
           yes: copy.ona.dataView.yes,
           no: copy.ona.dataView.no,
         } : undefined}
-        exportClassification={ordered ? "local-identity-bearing-view" : "derived"}
+        exportClassification={ordered ? "local-identity-bearing-view" : "identity-bearing-derived"}
         emptyMessage={dataViewModel.error
           ?? (ordered ? copy.ona.dataView.empty : "No derived Data View records are available for this plot context.")}
       />
@@ -4219,8 +4334,11 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     disabled={!dataset || !result || !resultConfig}
                     onClick={() => {
                       if (dataset && result && resultConfig) {
-                        if (completedResultKind === "ona"
-                          && !window.confirm(copy.ona.exports.bundleConfirmation)) return;
+                        if (completedResultKind === "ona") {
+                          if (!window.confirm(copy.ona.exports.bundleConfirmation)) return;
+                        } else if (!confirmCurrentIdentityBearingExport()) {
+                          return;
+                        }
                         downloadJson(
                           `open-ena-${Date.now()}-results.json`,
                           buildAnalysisBundle(dataset, resultConfig, result, datasetHash, {
@@ -4485,6 +4603,7 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   />
                 ) : view === "3d" && threeDDimensions && activeGroupContrast && activeGroupDisplay && resultConfig?.groupColumn ? (
                   <OpenEna3DGroupContrast
+                    key={`open-ena-3d-group-${result.analyzedAt}`}
                     codeColors={codeColors}
                     result={result}
                     contrast={activeGroupDisplay.contrast}

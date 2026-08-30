@@ -6,6 +6,7 @@ import {
   createOpenEnaLongitudinalPostHandlerV3,
   OPEN_ENA_LONGITUDINAL_RATE_LIMIT_REQUESTS,
 } from "../lib/server/open-ena-longitudinal-route";
+import { MemoryBillableStore } from "../lib/server/open-ena-billable";
 
 const DATASET_HASH = "1".repeat(64);
 const SPEC_HASH = "2".repeat(64);
@@ -14,6 +15,17 @@ const ROUTE_URL = "http://localhost:3000/api/open-ena/longitudinal";
 const COMPUTE_URL = "https://compute.example/";
 const VALID_SESSION = "test-open-ena-session-not-real";
 const COMPUTE_TOKEN = "test-only-open-ena-to-compute-token-with-32-bytes";
+const BILLABLE_LIMITS = {
+  minuteRequests: OPEN_ENA_LONGITUDINAL_RATE_LIMIT_REQUESTS,
+  dailyMicroUsd: 1_000_000,
+  monthlyMicroUsd: 1_000_000,
+  globalMonthlyMicroUsd: 1_000_000,
+  providerMonthlyMicroUsd: 1_000_000,
+  maxConcurrency: 1,
+  maxReservationMicroUsd: 10_000,
+  longitudinalMaxReservationMicroUsd: 20_000,
+  alertThresholds: [50, 80, 100],
+} as const;
 
 function derivedRequest(): LongitudinalExecutionRequestV2 {
   const participantToken = "participant-1-0123456789abcdef0123456789abcdef";
@@ -91,6 +103,7 @@ function post(
     processingPolicyConfirmed?: boolean;
     executionAttemptId?: string;
     extra?: Record<string, unknown>;
+    signal?: AbortSignal;
   } = {},
 ): Request {
   const headers = new Headers({ "content-type": "application/json" });
@@ -105,6 +118,7 @@ function post(
   return new Request(ROUTE_URL, {
     method: "POST",
     headers,
+    signal: options.signal,
     body: JSON.stringify({
       schemaVersion: "3dena.open-ena-longitudinal-remote-submit.v3",
       executionAttemptId: options.executionAttemptId ?? "attempt-0123456789abcdef0123456789abcdef",
@@ -187,6 +201,37 @@ test("persistent route idempotency binds the complete canonical scientific submi
   assert.equal(idempotencyKeys[0], idempotencyKeys[1]);
   assert.notEqual(idempotencyKeys[1], idempotencyKeys[2]);
   assert.notEqual(idempotencyKeys[0], idempotencyKeys[3]);
+});
+
+test("persistent route rejects a durable idempotency replay without alerting or redispatching", async () => {
+  const durableStore = new MemoryBillableStore();
+  let upstreamCalls = 0;
+  const handler = createOpenEnaLongitudinalPostHandlerV3({
+    ...securityDependencies(),
+    verifyPrincipal: () => ({ principalRef: "stable-idempotency-principal" }),
+    billableStore: durableStore,
+    limits: BILLABLE_LIMITS,
+    upstreamFetch: async () => {
+      upstreamCalls += 1;
+      return Response.json(capability(), { status: 202 });
+    },
+  });
+  const executionAttemptId = "attempt-33333333333333333333333333333333";
+
+  const firstResponse = await handler(post(derivedRequest(), { executionAttemptId }));
+  const replayResponse = await handler(post(structuredClone(derivedRequest()), { executionAttemptId }));
+
+  assert.equal(firstResponse.status, 202);
+  assert.equal(replayResponse.status, 409);
+  assert.deepEqual(await replayResponse.json(), {
+    error: {
+      code: "REMOTE_ATTEMPT_CONFLICT",
+      message: "This compute attempt can no longer be replayed. Start a new Retry attempt.",
+    },
+  });
+  assert.equal(replayResponse.headers.get("cache-control"), "no-store");
+  assert.equal(upstreamCalls, 1);
+  assert.equal(durableStore.alerts.some((event) => event.code === "billable-denied"), false);
 });
 
 test("persistent route rejects raw identities and trajectory CI before any upstream request", async (t) => {
@@ -304,7 +349,7 @@ test("persistent route authenticates and verifies same-origin before parsing der
   }
 });
 
-test("persistent route rate limits before parsing and preserves its fixed session quota", async () => {
+test("persistent route rate limits before parsing and a new login token keeps the same durable principal quota", async () => {
   let submitted = 0;
   const denied = createOpenEnaLongitudinalPostHandlerV3({
     ...securityDependencies(),
@@ -316,20 +361,112 @@ test("persistent route rate limits before parsing and preserves its fixed sessio
   assert.equal(submitted, 0);
 
   const session = `rate-session-${Date.now()}-${Math.random()}`;
+  const reloggedSession = `${session}-new-login`;
+  const durableStore = new MemoryBillableStore();
   const limited = createOpenEnaLongitudinalPostHandlerV3({
     environment: {
       OPEN_ENA_LONGITUDINAL_COMPUTE_URL: COMPUTE_URL,
       OPEN_ENA_LONGITUDINAL_COMPUTE_TOKEN: COMPUTE_TOKEN,
     },
-    verifySessionToken: (token) => token === session,
+    verifyPrincipal: (token) => token === session || token === reloggedSession
+      ? { principalRef: "stable-rate-test-principal" }
+      : null,
+    billableStore: durableStore,
+    limits: BILLABLE_LIMITS,
     validateRequest: () => {},
     upstreamFetch: async () => { submitted += 1; return Response.json(capability(), { status: 202 }); },
   });
   for (let index = 0; index < OPEN_ENA_LONGITUDINAL_RATE_LIMIT_REQUESTS; index += 1) {
-    assert.equal((await limited(post(derivedRequest(), { session }))).status, 202);
+    const executionAttemptId = `attempt-${(index + 1).toString(16).padStart(32, "0")}`;
+    assert.equal((await limited(post(derivedRequest(), { session, executionAttemptId }))).status, 202);
   }
-  assert.equal((await limited(post(derivedRequest(), { session }))).status, 429);
+  assert.equal((await limited(post(derivedRequest(), {
+    session: reloggedSession,
+    executionAttemptId: `attempt-${"f".repeat(32)}`,
+  }))).status, 429);
   assert.equal(submitted, OPEN_ENA_LONGITUDINAL_RATE_LIMIT_REQUESTS);
+});
+
+test("persistent route conservatively settles and alerts every dispatched upstream rejection", async () => {
+  const events: Array<[string, ...unknown[]]> = [];
+  const reservation = {
+    id: "longitudinal-reservation",
+    principalRef: "stable-compute-principal",
+    resource: "longitudinal",
+    reservedMicroUsd: 20_000,
+    cents: 20_000,
+    dispatched: false,
+  };
+  const store = {
+    consumeQuota: async (...args: unknown[]) => { events.push(["quota", ...args]); return true; },
+    reserve: async () => { events.push(["reserve"]); return reservation; },
+    settle: async (_reservation: unknown, actual: unknown, wasDispatched: unknown) => {
+      events.push(["settle", actual, wasDispatched]);
+    },
+    release: async () => { events.push(["release"]); },
+    alert: async (event: { code: string }) => { events.push(["alert", event.code]); },
+  };
+  const handler = createOpenEnaLongitudinalPostHandlerV3({
+    ...securityDependencies(),
+    consumeQuota: undefined,
+    verifyPrincipal: () => ({ principalRef: "stable-compute-principal" }),
+    billableStore: store,
+    limits: BILLABLE_LIMITS,
+    upstreamFetch: async () => new Response("private upstream failure", { status: 503 }),
+  });
+  const response = await handler(post(derivedRequest()));
+  assert.equal(response.status, 503);
+  assert.deepEqual(events[0], [
+    "quota",
+    "stable-compute-principal",
+    "longitudinal",
+    OPEN_ENA_LONGITUDINAL_RATE_LIMIT_REQUESTS,
+  ]);
+  assert.equal(events.some(([kind]) => kind === "reserve"), true);
+  assert.equal(events.some(([kind, actual, wasDispatched]) => (
+    kind === "settle" && actual === null && wasDispatched === true
+  )), true);
+  assert.equal(events.some(([kind, code]) => (
+    kind === "alert" && code === "persistent-compute-dispatch-failed"
+  )), true);
+  assert.equal(events.some(([kind]) => kind === "release"), false);
+});
+
+test("an already-aborted request releases its reservation without submitting or charging compute", async () => {
+  const events: string[] = [];
+  const reservation = {
+    id: "pre-abort-reservation",
+    principalRef: "pre-abort-principal",
+    resource: "longitudinal",
+    reservedMicroUsd: 20_000,
+    cents: 20_000,
+    dispatched: false,
+  };
+  const store = {
+    consumeQuota: async () => true,
+    reserve: async () => reservation,
+    settle: async () => { events.push("settle"); },
+    release: async () => { events.push("release"); },
+    alert: async () => { events.push("alert"); },
+  };
+  let upstreamCalls = 0;
+  const handler = createOpenEnaLongitudinalPostHandlerV3({
+    ...securityDependencies(),
+    consumeQuota: undefined,
+    verifyPrincipal: () => ({ principalRef: "pre-abort-principal" }),
+    billableStore: store,
+    limits: BILLABLE_LIMITS,
+    upstreamFetch: async () => {
+      upstreamCalls += 1;
+      return Response.json(capability(), { status: 202 });
+    },
+  });
+  const controller = new AbortController();
+  controller.abort();
+  const response = await handler(post(derivedRequest(), { signal: controller.signal }));
+  assert.equal(response.status, 499);
+  assert.equal(upstreamCalls, 0);
+  assert.deepEqual(events, ["release"]);
 });
 
 test("persistent route fails safely for missing service, timeout, rejection, and unsafe capability URLs", async (t) => {

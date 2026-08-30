@@ -203,6 +203,24 @@ username, a password of at least 12 characters, and an independent session secre
 of at least 32 characters; the source-code fallback login is not accepted by the AI
 route.
 
+Before opt-in, the workspace identifies the actual OpenRouter gateway and model,
+the aggregate-only payload boundary, the endpoint-specific Zero Data Retention
+(ZDR) caveat, downstream model-provider/subprocessor retention and training
+policies, the non-fixed processing region, and the minimal hash-bound consent
+receipt. OpenRouter and downstream endpoint policies are external configuration
+facts; the interface deliberately does not promise a region or retention period
+that the deployment cannot prove.
+
+Vercel Web Analytics is an optional, aggregate-only service in the site shell.
+It is disabled until the visitor explicitly enables it in the footer disclosure,
+and the same control can disable future events. The disclosure names the Vercel
+provider and documented page-view fields, notes the documented 24-hour disposal
+of the visitor-session hash, and states that event retention, processing region,
+and a provider-issued per-event audit receipt are not established by this
+repository. The authenticated Open ENA workspace keeps analytics disabled even
+when a public-site preference is granted. The local preference contains no
+account or dataset identifier.
+
 The core ENA model and raw source rows remain in the browser. The AI request is not
 automatic: Stats & Export first shows the exact versioned aggregate JSON, and the
 researcher must review it, explicitly consent, and press Generate. The server route
@@ -212,11 +230,26 @@ coordinates. AI output is descriptive, evidence-referenced, and must not be trea
 as statistical inference or a substitute for the codebook, coded evidence, research
 design, or researcher review. To prevent aggregate centroids from degenerating into
 individual records, every exported AI group and non-missing trajectory group-period
-must contain at least three entities. The route limits each session to six requests
-per minute, caps provider output at 1,800 tokens, propagates browser cancellation,
+must contain at least three entities. The route uses the configured durable
+per-account request limit, caps provider output at 1,800 tokens, propagates browser cancellation,
 and bounds both request and response bodies. Configure a provider-side OpenRouter
-budget as the durable production cost ceiling; the in-process limiter is only a
-local abuse-control layer and is not a distributed deployment quota.
+monthly budget and the versioned billable policy, including
+`OPEN_ENA_BILLABLE_REQUESTS_PER_MINUTE`,
+`OPEN_ENA_AI_MAX_RESERVATION_MICRO_USD`, and
+`OPEN_ENA_LONGITUDINAL_MAX_RESERVATION_MICRO_USD`, as durable production limits.
+Before each provider request, the server verifies the key's monthly limit and
+remaining allowance, reserves the configured maximum, and settles strictly
+reported provider cost in micro-USD. Production quota and spend decisions come
+only from the PostgreSQL-backed stable account principal; a new login token or a
+different application instance does not create a fresh quota bucket.
+Each explicit AI generation also carries a browser-created operation ID. A failed
+transport retry reuses that ID (including after a login-token rotation), so an
+already-accounted provider operation is rejected instead of dispatched twice;
+a later deliberate generation receives a new operation ID.
+Operators must set each maximum reservation to a conservative worst-case cost for
+the configured model, bounded request, and output-token cap. Any provider-reported
+cost above that reservation is still accounted, blocks later work above the local
+ceiling, and emits a deduplicated `reservation-overrun` review alert.
 
 ## Open-source distribution gate
 
@@ -233,6 +266,38 @@ Simplified Chinese, Spanish, French, Portuguese, German, Arabic, Korean, Japanes
 Hindi, Russian, Indonesian, and Bengali.
 
 ## Local development
+
+### SEC-01 operator and migration notes
+
+The billable AI and longitudinal routes require the versioned v2 session principal and a configured billing policy. They fail closed when the account ID, database/policy values, or provider hard-cap check is absent or malformed. Apply `migrations/001_open_ena_billable.sql` with a PostgreSQL operator before enabling a durable deployment; the migration uses server UTC time and idempotent reservation keys. Configure the OpenRouter `/key` monthly hard limit at or below both the provider and global ceilings. Security alerts are redacted and written to the outbox; an HTTPS webhook delivery worker may consume that outbox.
+
+Open ENA authentication also requires the shared PostgreSQL security migration
+(`migrations/002_open_ena_auth_security.sql`) and `OPEN_ENA_AUTH_DATABASE_URL`.
+Every login attempt is bounded to 16 KiB before URL-encoded parsing and consumes
+durable source/account attempt windows; a database outage fails closed. Login
+uses a five-attempt per attributed source ceiling and a ten-attempt fallback
+account ceiling within a 15-minute window.
+Set `OPEN_ENA_TRUSTED_CLIENT_IP_HEADER` only to a header that an operator-owned
+edge proxy forcibly rewrites or strips; an arbitrary client-supplied IP header is
+not a trust boundary. If that guarantee is unavailable, leave it blank so every
+request uses the shared account ceiling.
+Login issues a randomly identified v2 session. Logout records that session's `jti` in
+the shared revocation table before clearing the cookie, and page, AI, and
+longitudinal requests reject revoked tokens. Set `OPEN_ENA_PUBLIC_ORIGIN` (and,
+when needed, the comma-separated `OPEN_ENA_ALLOWED_ORIGINS`) to operator-owned
+`http`/`https` origins in production. The request validator never trusts
+`Host`, `X-Forwarded-Host`, `X-Forwarded-Proto`, or `Forwarded` as an origin or
+redirect authority; a production deployment without an explicit origin list
+fails closed.
+
+AI consent receipts additionally require
+`migrations/003_open_ena_ai_consent.sql`. The durable receipt stores only a
+hash-bound principal reference, operation ID, canonical request SHA-256,
+consent-policy version, provider/model, timestamp, and terminal status; it does
+not store prompts, completions, raw rows, or dataset labels. Apply all three
+migrations with the same operator-controlled PostgreSQL deployment before
+enabling production AI. These settings are examples only and are not deployed
+by this repository.
 
 ```bash
 npm install

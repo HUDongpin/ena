@@ -116,7 +116,14 @@ function runCli(args, label, timeout = 120_000) {
 
 function runBrowserPhase(label, source, timeout = 120_000) {
   process.stdout.write(`[open-ena browser smoke] ${label} ... `);
-  const output = runCli(["--raw", "run-code", source], label, timeout).trim();
+  // Standard ENA identity-bearing downloads now have an explicit confirmation
+  // gate. The smoke is an approved test actor, so accept that dialog before
+  // waiting for the download event instead of letting Playwright auto-dismiss it.
+  const instrumentedSource = source.replace(
+    /^async \(page\) => \{/u,
+    'async (page) => { page.on("dialog", (dialog) => void dialog.accept());',
+  );
+  const output = runCli(["--raw", "run-code", instrumentedSource], label, timeout).trim();
   const result = output ? JSON.parse(output) : null;
   process.stdout.write("PASS\n");
   return result;

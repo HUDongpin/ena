@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { OPEN_ENA_SESSION_COOKIE, verifyOpenEnaSessionToken } from "@/lib/open-ena-auth";
+import { OPEN_ENA_SESSION_COOKIE } from "@/lib/open-ena-auth";
+import { verifyProductionOpenEnaSessionTokenV2 } from "@/lib/server/open-ena-auth-security-store";
+import {
+  createProductionBillableStore,
+  parseBillablePolicy,
+  type BillableStore,
+  type BillableLimits,
+  type Reservation,
+} from "./open-ena-billable";
 import { resolveOpenEnaRequestOrigin } from "@/lib/open-ena-auth-request";
 import {
   assertAnalysisExecutionDatasetV2,
@@ -17,7 +25,6 @@ const COMPUTE_STATUS_URLS_VERSION = "3dena.longitudinal-compute-status-urls.v2";
 const EXECUTION_ATTEMPT_ID = /^attempt-[a-f0-9]{32}$/u;
 export const OPEN_ENA_LONGITUDINAL_RATE_LIMIT_WINDOW_MS = 60_000;
 export const OPEN_ENA_LONGITUDINAL_RATE_LIMIT_REQUESTS = 6;
-const quotaBySession = new Map<string, { count: number; windowStartedAt: number }>();
 
 type RequestValidatorV3 = (request: LongitudinalExecutionRequestV2) => void;
 
@@ -45,8 +52,15 @@ export interface OpenEnaLongitudinalRouteDependenciesV3 {
   validateRequest?: RequestValidatorV3;
   submissionDeadlineMilliseconds?: number;
   maximumDerivedPayloadBytes?: number;
+  /** Legacy unit-test seam. Production always supplies verifyPrincipal and accepts v2 only. */
   verifySessionToken?: (token: string | undefined) => boolean;
-  consumeQuota?: (sessionToken: string) => boolean;
+  verifyPrincipal?: (token: string | undefined) => { principalRef: string } | null | Promise<{ principalRef: string } | null>;
+  /** Unit-test seam only. Production uses the durable BillableStore implementation. */
+  consumeQuota?: (principalRef: string) => boolean | Promise<boolean>;
+  billableStore?: BillableStore;
+  limits?: BillableLimits;
+  requireBillable?: boolean;
+  billableStoreFactory?: () => Promise<BillableStore | null>;
 }
 
 export class OpenEnaLongitudinalRouteErrorV3 extends Error {
@@ -80,22 +94,6 @@ function cookieValue(headers: Headers, name: string): string | undefined {
     }
   }
   return undefined;
-}
-
-function consumeOpenEnaLongitudinalQuota(sessionToken: string, now = Date.now()): boolean {
-  const key = createHash("sha256").update(sessionToken, "utf8").digest("hex");
-  const current = quotaBySession.get(key);
-  if (!current || now - current.windowStartedAt >= OPEN_ENA_LONGITUDINAL_RATE_LIMIT_WINDOW_MS) {
-    if (quotaBySession.size >= 1_024) {
-      const oldest = quotaBySession.keys().next().value as string | undefined;
-      if (oldest) quotaBySession.delete(oldest);
-    }
-    quotaBySession.set(key, { count: 1, windowStartedAt: now });
-    return true;
-  }
-  if (current.count >= OPEN_ENA_LONGITUDINAL_RATE_LIMIT_REQUESTS) return false;
-  current.count += 1;
-  return true;
 }
 
 async function readTextBodyWithLimit(incoming: Request, maximumBytes: number): Promise<string> {
@@ -142,15 +140,14 @@ async function readTextBodyWithLimit(incoming: Request, maximumBytes: number): P
   }
 }
 
-function assertSameOriginRequest(incoming: Request): string {
+function assertSameOriginRequest(
+  incoming: Request,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): string {
   if (!incoming.headers.get("origin")) fail("INVALID_REQUEST_ORIGIN", 403, "Invalid request origin.");
   const requestUrl = new URL(incoming.url);
-  const requestOrigin = resolveOpenEnaRequestOrigin(incoming.headers, requestUrl.origin);
+  const requestOrigin = resolveOpenEnaRequestOrigin(incoming.headers, requestUrl.origin, environment);
   if (!requestOrigin) fail("INVALID_REQUEST_ORIGIN", 403, "Invalid request origin.");
-  const submittedProtocol = new URL(requestOrigin).protocol.replace(":", "");
-  const publicProtocol = incoming.headers.get("x-forwarded-proto")?.split(",", 1)[0]?.trim()
-    || requestUrl.protocol.replace(":", "");
-  if (submittedProtocol !== publicProtocol) fail("INVALID_REQUEST_ORIGIN", 403, "Invalid request origin.");
   return requestOrigin;
 }
 
@@ -386,22 +383,57 @@ export function createOpenEnaLongitudinalPostHandlerV3(
   const validate = dependencies.validateRequest ?? validateScientificRequest;
   const deadlineMilliseconds = dependencies.submissionDeadlineMilliseconds ?? UPSTREAM_SUBMISSION_DEADLINE_MS;
   const maximumDerivedPayloadBytes = dependencies.maximumDerivedPayloadBytes ?? MAX_DERIVED_PAYLOAD_BYTES;
-  const verifySessionToken = dependencies.verifySessionToken ?? verifyOpenEnaSessionToken;
-  const consumeQuota = dependencies.consumeQuota ?? consumeOpenEnaLongitudinalQuota;
+  const verifyPrincipal = dependencies.verifyPrincipal
+    ?? (dependencies.verifySessionToken
+      ? (token: string | undefined) => dependencies.verifySessionToken!(token)
+        ? { principalRef: "explicit-unit-test-principal" }
+        : null
+      : (token: string | undefined) => verifyProductionOpenEnaSessionTokenV2(token));
   return async (incoming: Request) => {
+    let store: BillableStore | null = dependencies.billableStore ?? null;
+    let reservation: Reservation | null = null;
+    let dispatched = false;
+    let accounted = false;
+    let principalRef = "";
     try {
       const sessionToken = cookieValue(incoming.headers, OPEN_ENA_SESSION_COOKIE);
-      if (!verifySessionToken(sessionToken)) fail("AUTHENTICATION_REQUIRED", 401, "Authentication required.");
-      const requestOrigin = assertSameOriginRequest(incoming);
-      if (!sessionToken || !consumeQuota(sessionToken)) {
+      const principal = await verifyPrincipal(sessionToken);
+      if (!principal) fail("AUTHENTICATION_REQUIRED", 401, "Authentication required.");
+      principalRef = principal.principalRef;
+      const requestOrigin = assertSameOriginRequest(incoming, environment);
+      // Resolve all server-only configuration and durable controls before reading
+      // a potentially large derived payload. Production fails closed here.
+      const base = computeBaseUrl(environment);
+      const serviceToken = computeServiceToken(environment);
+      try {
+        if (!store && dependencies.billableStoreFactory) {
+          store = await dependencies.billableStoreFactory();
+        }
+      } catch {
+        fail("BILLING_UNAVAILABLE", 503, "Longitudinal compute is temporarily unavailable.");
+      }
+      if (dependencies.requireBillable && !store) {
+        fail("BILLING_UNAVAILABLE", 503, "Longitudinal compute is temporarily unavailable.");
+      }
+      const limits = dependencies.limits ?? (store ? parseBillablePolicy(environment) : null);
+      if (store && !limits) {
+        fail("BILLING_UNAVAILABLE", 503, "Longitudinal compute is temporarily unavailable.");
+      }
+      let quotaAllowed: boolean;
+      try {
+        quotaAllowed = dependencies.consumeQuota
+          ? await dependencies.consumeQuota(principalRef)
+          : store && limits
+            ? await store.consumeQuota(principalRef, "longitudinal", limits.minuteRequests)
+            : true;
+      } catch {
+        fail("BILLING_UNAVAILABLE", 503, "Longitudinal compute is temporarily unavailable.");
+      }
+      if (!quotaAllowed) {
         fail("RATE_LIMITED", 429, "Too many longitudinal compute requests. Please try again later.", {
           "retry-after": String(Math.ceil(OPEN_ENA_LONGITUDINAL_RATE_LIMIT_WINDOW_MS / 1_000)),
         });
       }
-      // Resolve the complete server-only upstream configuration before reading
-      // any derived research payload. Misconfigured deployments fail closed.
-      const base = computeBaseUrl(environment);
-      const serviceToken = computeServiceToken(environment);
       const text = await readTextBodyWithLimit(incoming, maximumDerivedPayloadBytes);
       let decoded: unknown;
       try {
@@ -440,14 +472,56 @@ export function createOpenEnaLongitudinalPostHandlerV3(
       };
       const submissionHash = await hashAnalysisValueV1(submission);
       const operationHash = createHash("sha256")
-        .update(sessionToken).update("\0")
+        .update(principalRef).update("\0")
         .update(body.executionAttemptId).update("\0")
         .update(submissionHash).digest("hex");
+      if (store && limits) {
+        const reservationInput = {
+          principalRef,
+          resource: "longitudinal",
+          microUsd: limits.longitudinalMaxReservationMicroUsd,
+          idempotencyKey: operationHash,
+          limits,
+        };
+        let result;
+        try {
+          result = store.reserveDetailed
+            ? await store.reserveDetailed(reservationInput)
+            : { ok: true as const, reservation: await store.reserve(reservationInput) };
+        } catch {
+          fail("BILLING_UNAVAILABLE", 503, "Longitudinal compute is temporarily unavailable.");
+        }
+        if (!result.ok || !result.reservation) {
+          if (!result.ok && result.reason === "idempotency-replayed") {
+            fail("REMOTE_ATTEMPT_CONFLICT", 409, "This compute attempt can no longer be replayed. Start a new Retry attempt.");
+          }
+          try {
+            await store.alert({
+              code: "billable-denied",
+              principalRef,
+              metadata: {
+                reason: result.ok ? "store-failure" : result.reason,
+                resource: "longitudinal",
+              },
+            });
+          } catch {
+            // Denial is already final; never dispatch because alert delivery failed.
+          }
+          fail("BILLING_UNAVAILABLE", 503, "Longitudinal compute is temporarily unavailable.");
+        }
+        reservation = result.reservation;
+      }
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), deadlineMilliseconds);
-      incoming.signal.addEventListener("abort", () => controller.abort(), { once: true });
+      const abortFromCaller = () => controller.abort();
+      incoming.signal.addEventListener("abort", abortFromCaller, { once: true });
       let upstream: Response;
       try {
+        if (incoming.signal.aborted) {
+          controller.abort();
+          fail("REQUEST_CANCELLED", 499, "The longitudinal compute request was cancelled before submission.");
+        }
+        dispatched = true;
         upstream = await upstreamFetch(new URL("v2/longitudinal-jobs", base), {
           method: "POST",
           headers: {
@@ -461,13 +535,18 @@ export function createOpenEnaLongitudinalPostHandlerV3(
           body: JSON.stringify(submission),
           signal: controller.signal,
         });
-      } catch {
+      } catch (error) {
+        if (error instanceof OpenEnaLongitudinalRouteErrorV3) throw error;
+        if (incoming.signal.aborted) {
+          fail("REQUEST_CANCELLED", 499, "The longitudinal compute request was cancelled.");
+        }
         if (controller.signal.aborted) {
           fail("REMOTE_SUBMISSION_DEADLINE_EXCEEDED", 504, "Persistent trajectory submission timed out; no repetition plan was reduced.");
         }
         fail("REMOTE_SERVICE_UNAVAILABLE", 503, "Persistent trajectory compute is unavailable.");
       } finally {
         clearTimeout(timeout);
+        incoming.signal.removeEventListener("abort", abortFromCaller);
       }
       if (!upstream.ok) {
         const safeStatus = [400, 409, 413, 429, 503, 504].includes(upstream.status)
@@ -514,14 +593,53 @@ export function createOpenEnaLongitudinalPostHandlerV3(
       } catch {
         fail("INVALID_UPSTREAM_RESPONSE", 502, "Persistent compute returned an invalid capability.");
       }
-      return Response.json(parseCapability(capabilityValue, base), {
+      const capability = parseCapability(capabilityValue, base);
+      if (reservation) {
+        try {
+          await store!.settle(reservation, null, true);
+          accounted = true;
+        } catch {
+          fail("BILLING_UNAVAILABLE", 503, "Longitudinal compute accounting is temporarily unavailable.");
+        }
+      }
+      return Response.json(capability, {
         status: 202,
         headers: { "cache-control": "no-store", "x-open-ena-compute": "persistent-queued-v2" },
       });
     } catch (error) {
+      if (reservation && !accounted && store) {
+        try {
+          if (dispatched) {
+            await store.settle(reservation, null, true);
+            accounted = true;
+            try {
+              await store.alert({
+                code: "persistent-compute-dispatch-failed",
+                principalRef,
+                metadata: { resource: "longitudinal" },
+              });
+            } catch {
+              // Accounting is final; do not encourage a duplicate compute dispatch.
+            }
+          } else {
+            await store.release(reservation);
+            accounted = true;
+          }
+        } catch {
+          return errorResponse(new OpenEnaLongitudinalRouteErrorV3(
+            "BILLING_UNAVAILABLE",
+            503,
+            "Longitudinal compute accounting is temporarily unavailable.",
+          ));
+        }
+      }
       return errorResponse(error);
     }
   };
 }
 
-export const handleOpenEnaLongitudinalPostV3 = createOpenEnaLongitudinalPostHandlerV3();
+export const handleOpenEnaLongitudinalPostV3 = createOpenEnaLongitudinalPostHandlerV3({
+  verifyPrincipal: (token) => verifyProductionOpenEnaSessionTokenV2(token),
+  requireBillable: true,
+  billableStoreFactory: () => createProductionBillableStore(),
+});

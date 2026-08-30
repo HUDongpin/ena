@@ -35,7 +35,7 @@ export interface OpenEnaDataViewProps {
   emptyMessage?: ReactNode;
   notice?: ReactNode;
   copy?: Partial<OpenEnaDataViewCopy>;
-  exportClassification?: "derived" | "local-identity-bearing-view";
+  exportClassification?: "identity-bearing-derived" | "local-identity-bearing-view";
 }
 
 export interface OpenEnaDataViewCopy {
@@ -123,7 +123,7 @@ export default function OpenEnaDataView({
   emptyMessage = "No Data View records match this context.",
   notice,
   copy: copyOverrides,
-  exportClassification = "derived",
+  exportClassification = "identity-bearing-derived",
 }: OpenEnaDataViewProps) {
   const copy = { ...DEFAULT_COPY, ...copyOverrides };
   const [rowPage, setRowPage] = useState(0);

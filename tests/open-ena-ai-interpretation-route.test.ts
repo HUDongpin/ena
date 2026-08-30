@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   OPEN_ENA_AI_CONSENT_VALUE,
+  OPEN_ENA_AI_OPERATION_HEADER,
   type OpenEnaAiInterpretationRequest,
   type OpenEnaAiInterpretationResponse,
 } from "../lib/open-ena/ai-interpretation";
@@ -12,11 +13,30 @@ import {
   openEnaAiAuthConfigurationReady,
   OPEN_ENA_AI_MAX_REQUEST_BYTES,
 } from "../lib/server/open-ena-ai-interpretation-route";
+import type { OpenEnaAiGenerationResult } from "../lib/server/luna-client";
+import { MemoryBillableStore } from "../lib/server/open-ena-billable";
 
 const WORKSPACE_URL = "http://localhost:3000/api/open-ena/ai-interpretation";
 const VALID_SESSION = "test-session-token-not-real";
+const VALID_OPERATION_ID = "aiop-01234567-89ab-4cde-8f01-23456789abcd";
 const parsedRequest = { marker: "strictly-parsed-request" } as unknown as OpenEnaAiInterpretationRequest;
 const generatedResponse = { marker: "generated-interpretation" } as unknown as OpenEnaAiInterpretationResponse;
+const generatedResult: OpenEnaAiGenerationResult = {
+  response: generatedResponse,
+  usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3, costMicroUsd: 4 },
+  providerDispatched: true,
+};
+const BILLABLE_LIMITS = {
+  minuteRequests: 6,
+  dailyMicroUsd: 1_000,
+  monthlyMicroUsd: 1_000,
+  globalMonthlyMicroUsd: 1_000,
+  providerMonthlyMicroUsd: 1_000,
+  maxConcurrency: 1,
+  maxReservationMicroUsd: 99,
+  longitudinalMaxReservationMicroUsd: 99,
+  alertThresholds: [50, 80, 100],
+} as const;
 
 test("the Next AI route exports only supported route fields and handlers", () => {
   const routeSource = readFileSync(
@@ -38,6 +58,7 @@ function request(
     origin?: string | null;
     contentLength?: string | null;
     consent?: string | null;
+    operationId?: string | null;
   } = {},
 ) {
   const headers = new Headers({ "content-type": "application/json" });
@@ -47,6 +68,8 @@ function request(
   if (origin !== null) headers.set("origin", origin);
   const consent = options.consent === undefined ? OPEN_ENA_AI_CONSENT_VALUE : options.consent;
   if (consent !== null) headers.set("x-open-ena-ai-consent", consent);
+  const operationId = options.operationId === undefined ? VALID_OPERATION_ID : options.operationId;
+  if (operationId !== null) headers.set(OPEN_ENA_AI_OPERATION_HEADER, operationId);
   if (options.contentLength !== undefined && options.contentLength !== null) {
     headers.set("content-length", options.contentLength);
   }
@@ -60,7 +83,7 @@ function dependencies(overrides: Partial<Parameters<typeof createOpenEnaAiInterp
     generatedSignals: [] as AbortSignal[],
   };
   const handler = createOpenEnaAiInterpretationPostHandler({
-    verifySessionToken: (token) => token === VALID_SESSION,
+    verifyPrincipal: (token) => token === VALID_SESSION ? { principalRef: "stable-test-principal" } : null,
     parseRequest: (value) => {
       calls.parsedValues.push(value);
       return parsedRequest;
@@ -70,7 +93,7 @@ function dependencies(overrides: Partial<Parameters<typeof createOpenEnaAiInterp
     generate: async (value, signal) => {
       calls.generatedRequests.push(value);
       calls.generatedSignals.push(signal);
-      return generatedResponse;
+      return generatedResult;
     },
     ...overrides,
   });
@@ -134,6 +157,12 @@ test("AI interpretation production auth requires explicit credentials and a high
     OPEN_ENA_USERNAME: "researcher",
     OPEN_ENA_PASSWORD: "strong-password-for-open-ena",
     OPEN_ENA_SESSION_SECRET: "s".repeat(32),
+  }), false);
+  assert.equal(openEnaAiAuthConfigurationReady({
+    OPEN_ENA_USERNAME: "researcher",
+    OPEN_ENA_PASSWORD: "strong-password-for-open-ena",
+    OPEN_ENA_SESSION_SECRET: "s".repeat(32),
+    OPEN_ENA_ACCOUNT_ID: "account-fixture-stable-id",
   }), true);
 });
 
@@ -156,6 +185,64 @@ test("AI interpretation enforces the application request quota before parsing or
   assertNoStore(response);
   assert.deepEqual(calls.parsedValues, []);
   assert.deepEqual(calls.generatedRequests, []);
+});
+
+test("AI durable quota remains exhausted after a new login token for the same principal", async () => {
+  const store = new MemoryBillableStore();
+  let providerCalls = 0;
+  const handler = createOpenEnaAiInterpretationPostHandler({
+    verifyPrincipal: (token) => token === "first-login" || token === "second-login"
+      ? { principalRef: "stable-account-principal" }
+      : null,
+    authConfigurationReady: () => true,
+    billableStore: store,
+    limits: { ...BILLABLE_LIMITS, minuteRequests: 2 },
+    parseRequest: () => { throw new Error("invalid schema fixture"); },
+    generate: async () => {
+      providerCalls += 1;
+      return generatedResult;
+    },
+  });
+  assert.equal((await handler(request("{}", { session: "first-login" }))).status, 400);
+  assert.equal((await handler(request("{}", { session: "first-login" }))).status, 400);
+  assert.equal((await handler(request("{}", { session: "second-login" }))).status, 429);
+  assert.equal(providerCalls, 0);
+});
+
+test("AI generation operation IDs are stable across login rotation and prevent a paid replay", async () => {
+  const store = new MemoryBillableStore();
+  let providerCalls = 0;
+  const handler = createOpenEnaAiInterpretationPostHandler({
+    verifyPrincipal: (token) => token === "first-login" || token === "second-login"
+      ? { principalRef: "stable-operation-principal" }
+      : null,
+    authConfigurationReady: () => true,
+    billableStore: store,
+    limits: BILLABLE_LIMITS,
+    parseRequest: () => parsedRequest,
+    generate: async () => {
+      providerCalls += 1;
+      return generatedResult;
+    },
+  });
+  assert.equal((await handler(request(undefined, { session: "first-login" }))).status, 200);
+  assert.equal((await handler(request(undefined, { session: "second-login" }))).status, 409);
+  assert.equal(providerCalls, 1);
+  assert.equal((await handler(request(undefined, {
+    session: "second-login",
+    operationId: "aiop-fedcba98-7654-4321-8fed-cba987654321",
+  }))).status, 200);
+  assert.equal(providerCalls, 2);
+});
+
+test("AI operation IDs are required and strictly bounded before parsing or provider use", async () => {
+  for (const operationId of [null, "not-an-operation", "aiop-00000000-0000-0000-0000-000000000000"]) {
+    const { handler, calls } = dependencies();
+    const response = await handler(request(undefined, { operationId }));
+    assert.equal(response.status, 400);
+    assert.deepEqual(calls.parsedValues, []);
+    assert.deepEqual(calls.generatedRequests, []);
+  }
 });
 
 test("AI interpretation rejects a declared request larger than 48 KiB without parsing it", async () => {
@@ -230,6 +317,53 @@ test("AI interpretation passes only the parsed request to the provider and retur
   assert.deepEqual(calls.generatedRequests, [parsedRequest]);
   assert.equal(calls.generatedSignals.length, 1);
   assert.equal(calls.generatedSignals[0] instanceof AbortSignal, true);
+});
+
+test("AI interpretation settles the actual provider cost without returning usage", async () => {
+  const events: Array<[string, unknown, unknown?]> = [];
+  const reservation = { id: "r", principalRef: "p", resource: "ai-interpretation", reservedMicroUsd: 99, cents: 99, dispatched: false };
+  const store = {
+    consumeQuota: async () => true,
+    reserve: async () => reservation,
+    settle: async (_reservation: unknown, actual: unknown, dispatched: unknown) => { events.push(["settle", actual, dispatched]); },
+    release: async () => { events.push(["release", null]); },
+    alert: async (event: unknown) => { events.push(["alert", event]); },
+  };
+  const { handler } = dependencies({ billableStore: store as never, limits: BILLABLE_LIMITS });
+  const response = await handler(request());
+  assert.equal(response.status, 200);
+  assert.deepEqual(await json(response), generatedResponse);
+  assert.deepEqual(events, [["settle", 4, true]]);
+});
+
+test("AI interpretation conservatively settles and alerts when a successful provider response omits usage", async () => {
+  const events: Array<[string, unknown, unknown?]> = [];
+  const reservation = { id: "missing-usage", principalRef: "p", resource: "ai-interpretation", reservedMicroUsd: 99, cents: 99, dispatched: false };
+  const store = { consumeQuota: async () => true, reserve: async () => reservation, settle: async (_r: unknown, actual: unknown, dispatched: unknown) => { events.push(["settle", actual, dispatched]); }, release: async () => { events.push(["release", null]); }, alert: async (event: { code: string }) => { events.push(["alert", event.code]); } };
+  const { handler } = dependencies({
+    billableStore: store as never,
+    limits: BILLABLE_LIMITS,
+    generate: async () => ({ response: generatedResponse, usage: null, providerDispatched: true }),
+  });
+  const response = await handler(request());
+  assert.equal(response.status, 200);
+  assert.deepEqual(events, [["settle", null, true], ["alert", "provider-usage-missing"]]);
+  assert.equal("usage" in await json(response), false);
+});
+
+test("AI interpretation conservatively settles and alerts after dispatched failures, but releases before dispatch", async () => {
+  for (const [name, error, expected] of [
+    ["post-dispatch", Object.assign(new Error("private"), { providerDispatched: true }), ["settle", null, true]],
+    ["pre-dispatch", Object.assign(new Error("private"), { providerDispatched: false }), ["release", null]],
+  ] as const) {
+    const events: Array<[string, unknown, unknown?]> = [];
+    const reservation = { id: name, principalRef: "p", resource: "ai-interpretation", reservedMicroUsd: 99, cents: 99, dispatched: false };
+    const store = { consumeQuota: async () => true, reserve: async () => reservation, settle: async (_r: unknown, actual: unknown, dispatched: unknown) => { events.push(["settle", actual, dispatched]); }, release: async () => { events.push(["release", null]); }, alert: async (event: { code: string }) => { events.push(["alert", event.code]); } };
+    const { handler } = dependencies({ billableStore: store as never, limits: BILLABLE_LIMITS, generate: async () => { throw error; } });
+    await handler(request());
+    assert.deepEqual(events[0], expected);
+    assert.equal(events.some(([kind]) => kind === "alert"), name === "post-dispatch");
+  }
 });
 
 for (const [providerStatus, expectedStatus, expectedMessage] of [

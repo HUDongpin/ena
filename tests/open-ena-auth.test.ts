@@ -75,6 +75,30 @@ test("Open ENA session tokens are signed, expire, and reject tampering", async (
   assert.equal(auth.verifyOpenEnaSessionToken("not-a-session", issuedAt + 1_000, environment), false);
 });
 
+test("v2 sessions rotate their jti while preserving one account-derived principal", async () => {
+  const auth = await loadModule("../lib/open-ena-auth");
+  assert.ok(auth);
+  const environment = {
+    OPEN_ENA_USERNAME: "researcher",
+    OPEN_ENA_PASSWORD: "a-different-strong-passphrase",
+    OPEN_ENA_SESSION_SECRET: "s".repeat(32),
+    OPEN_ENA_ACCOUNT_ID: "stable-deployment-account-id",
+  };
+  const first = auth.createOpenEnaSessionTokenV2(1_800_000_000_000, environment);
+  const second = auth.createOpenEnaSessionTokenV2(1_800_000_001_000, environment);
+  assert.notEqual(first, second);
+  const firstPrincipal = auth.verifyOpenEnaSessionTokenV2(first, 1_800_000_002_000, environment);
+  const secondPrincipal = auth.verifyOpenEnaSessionTokenV2(second, 1_800_000_002_000, environment);
+  assert.ok(firstPrincipal);
+  assert.ok(secondPrincipal);
+  assert.equal(firstPrincipal.principalRef, secondPrincipal.principalRef);
+  assert.notEqual(firstPrincipal.jti, secondPrincipal.jti);
+  assert.equal(auth.verifyOpenEnaSessionTokenV2(first, 1_800_000_002_000, {
+    ...environment,
+    OPEN_ENA_ACCOUNT_ID: "another-account-id",
+  }), null);
+});
+
 test("the login copy is English, Traditional Chinese, and Simplified Chinese", async () => {
   const copyModule = await loadModule("../lib/open-ena-auth-copy");
   assert.ok(copyModule, "lib/open-ena-auth-copy.ts must provide locale-specific login copy");
@@ -110,8 +134,9 @@ test("the localized Open ENA page renders a server-side login gate before the wo
 
   assert.equal(existsSync(loginPath), true, "the localized login interface must exist");
   assert.match(page, /await cookies\(\)/);
-  assert.match(page, /verifyOpenEnaSessionToken/);
-  assert.match(page, /openEnaAuthConfigurationReady/);
+  assert.match(page, /verifyProductionOpenEnaSessionTokenV2/);
+  assert.match(page, /openEnaAuthSecurityConfigurationReady/);
+  assert.doesNotMatch(page, /verifyOpenEnaSessionToken\(sessionCookie\)/);
   assert.match(page, /isAuthenticated[\s\S]*?<OpenEnaWorkspace locale=\{typedLocale\}/);
   assert.match(page, /!isAuthenticated[\s\S]*?<OpenEnaLogin[\s\S]*configurationReady=\{authConfigurationReady\}/);
   assert.match(page, /export const dynamic = "force-dynamic"/);
@@ -348,7 +373,7 @@ test("the login action and contact email use the site baby-blue accent", () => {
   );
   assert.match(
     css,
-    /\.open-ena-login-collaboration a\s*\{[\s\S]*?color:\s*var\(--accent\);/,
+    /\.open-ena-login-collaboration a\s*\{[\s\S]*?color:\s*var\(--accent-strong\);/,
   );
 });
 
@@ -361,27 +386,27 @@ test("login and logout handlers use a hardened HttpOnly session cookie", () => {
   const loginRoute = readFileSync(loginRoutePath, "utf8");
   const logoutRoute = readFileSync(logoutRoutePath, "utf8");
   assert.match(loginRoute, /verifyOpenEnaCredentials/);
-  assert.match(loginRoute, /openEnaAuthConfigurationReady/);
-  assert.match(loginRoute, /status:\s*503/);
+  assert.match(loginRoute, /openEnaAuthSecurityConfigurationReady/);
+  assert.match(loginRoute, /(?:status:\s*503|,\s*503\))/u);
   assert.match(loginRoute, /createOpenEnaSessionToken/);
   assert.match(loginRoute, /httpOnly:\s*true/);
   assert.match(loginRoute, /sameSite:\s*"lax"/);
-  assert.match(loginRoute, /secure:\s*process\.env\.NODE_ENV === "production"/);
+  assert.match(loginRoute, /secure:\s*(?:process\.env|environment)\.NODE_ENV === "production"/);
   assert.match(logoutRoute, /maxAge:\s*0/);
   assert.match(logoutRoute, /OPEN_ENA_SESSION_COOKIE/);
 });
 
-test("same-origin form posts follow the public Host even when Next uses an internal origin", async () => {
+test("same-origin form posts require an operator-owned origin list when Next uses an internal origin", async () => {
   const requestModule = await loadModule("../lib/open-ena-auth-request");
   assert.ok(requestModule, "the login routes need a proxy-safe public-origin validator");
 
   const localHeaders = new Headers({
-    host: "127.0.0.1:3077",
-    origin: "http://127.0.0.1:3077",
+    host: "localhost:3077",
+    origin: "http://localhost:3077",
   });
   assert.equal(
-    requestModule.resolveOpenEnaRequestOrigin(localHeaders, "http://localhost:3077"),
-    "http://127.0.0.1:3077",
+    requestModule.resolveOpenEnaRequestOrigin(localHeaders, "http://localhost:3077", { NODE_ENV: "development" }),
+    "http://localhost:3077",
   );
 
   const proxiedHeaders = new Headers({
@@ -390,8 +415,21 @@ test("same-origin form posts follow the public Host even when Next uses an inter
     origin: "https://www.ena.hk",
   });
   assert.equal(
-    requestModule.resolveOpenEnaRequestOrigin(proxiedHeaders, "http://internal-runtime:3000"),
+    requestModule.resolveOpenEnaRequestOrigin(
+      proxiedHeaders,
+      "http://internal-runtime:3000",
+      { NODE_ENV: "production", OPEN_ENA_PUBLIC_ORIGIN: "https://www.ena.hk" },
+    ),
     "https://www.ena.hk",
+  );
+  assert.equal(
+    requestModule.resolveOpenEnaRequestOrigin(
+      proxiedHeaders,
+      "http://internal-runtime:3000",
+      { NODE_ENV: "production" },
+    ),
+    null,
+    "production must not infer a public origin from a client-controlled Host or forwarded header",
   );
 
   const crossSiteHeaders = new Headers({

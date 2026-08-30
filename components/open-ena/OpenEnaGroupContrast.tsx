@@ -11,6 +11,7 @@ import type {
   OpenEnaPairwiseContrast,
   OpenEnaPairwiseContrastSide,
 } from "@/lib/open-ena/contrasts";
+import { readableOpenEnaTextColor } from "@/lib/open-ena/color-contrast";
 import {
   DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS,
   type OpenEnaDerivedGroupDisplay,
@@ -145,6 +146,7 @@ const WEB_ENA_GROUP_COLORS = [
 const PRIMARY_COLOR = WEB_ENA_GROUP_COLORS[0];
 const SECONDARY_COLOR = WEB_ENA_GROUP_COLORS[1];
 const ZERO_TOLERANCE = 1e-12;
+const GROUP_CAPTION_BACKGROUND = "#edf1f2";
 
 type PlotZoomState = Record<PlotKind, number>;
 
@@ -403,6 +405,14 @@ function groupColor(
   return (declaredIndex >= 0 ? WEB_ENA_GROUP_COLORS[declaredIndex % WEB_ENA_GROUP_COLORS.length] : undefined)
     ?? side.color
     ?? (role === "primary" ? PRIMARY_COLOR : SECONDARY_COLOR);
+}
+
+function groupCaptionColor(
+  contrast: OpenEnaPairwiseContrast,
+  side: OpenEnaPairwiseContrastSide,
+  role: GroupRole,
+) {
+  return readableOpenEnaTextColor(groupColor(contrast, side, role), GROUP_CAPTION_BACKGROUND);
 }
 
 function groupDisplaySide(
@@ -1679,7 +1689,8 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                         <span
                           key={`series:${role}`}
                           className={index === 0 ? "ena-set-series-primary" : "ena-set-series-secondary"}
-                          style={{ color: groupColor(contrast, side, role) }}
+                          data-ena-series-color={groupColor(contrast, side, role)}
+                          style={{ color: groupCaptionColor(contrast, side, role) }}
                         >
                           {side.name}
                         </span>,
@@ -1754,7 +1765,8 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                   >
                     <span
                       className="ena-set-series-primary"
-                      style={{ color: groupColor(contrast, primaryPanelSide, panelRoles.primary) }}
+                      data-ena-series-color={groupColor(contrast, primaryPanelSide, panelRoles.primary)}
+                      style={{ color: groupCaptionColor(contrast, primaryPanelSide, panelRoles.primary) }}
                     >
                       {primaryPanelSide.name}
                     </span>
@@ -1810,7 +1822,8 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                   >
                     <span
                       className="ena-set-series-secondary"
-                      style={{ color: groupColor(contrast, secondaryPanelSide, panelRoles.secondary) }}
+                      data-ena-series-color={groupColor(contrast, secondaryPanelSide, panelRoles.secondary)}
+                      style={{ color: groupCaptionColor(contrast, secondaryPanelSide, panelRoles.secondary) }}
                     >
                       {secondaryPanelSide.name}
                     </span>

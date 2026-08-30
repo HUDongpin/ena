@@ -1950,6 +1950,53 @@ button:focus-visible {
   text-align: center;
 }
 
+.footer-privacy-disclosure {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 16px 22px;
+  color: var(--nav-muted);
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+
+.footer-privacy-disclosure summary {
+  width: fit-content;
+  color: var(--nav-text);
+  cursor: pointer;
+  font-weight: 760;
+}
+
+.footer-privacy-disclosure p {
+  max-width: 980px;
+  margin: 10px 0 0;
+}
+
+.footer-analytics-consent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 13px;
+  color: var(--nav-text);
+}
+
+.footer-analytics-consent button {
+  min-height: 36px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 6px 11px;
+  color: var(--nav-deep);
+  background: var(--accent);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 760;
+}
+
+.footer-analytics-consent button:hover,
+.footer-analytics-consent button:focus-visible {
+  background: var(--accent-hover);
+}
+
 .back-to-top {
   position: fixed;
   right: 22px;
@@ -2276,7 +2323,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .open-ena-login-collaboration a {
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 700;
   text-decoration: underline;
   text-decoration-thickness: 1px;
@@ -2436,6 +2483,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .open-ena-workbench {
+  --ena-rail-width: clamp(65px, 4.0625rem, 130px);
   --ena-accent: var(--accent);
   --ena-accent-hover: var(--accent-hover);
   --ena-accent-strong: var(--accent-strong);
@@ -2627,8 +2675,8 @@ body:has(.open-ena-login-page) .back-to-top {
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: 65px 380px minmax(0, 1fr);
-  overflow: hidden;
+  grid-template-columns: var(--ena-rail-width) 380px minmax(0, 1fr);
+  overflow-x: auto;
 }
 
 .ena-tool-rail {
@@ -2736,7 +2784,8 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-rail-button span {
-  max-width: 62px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   font-size: calc(0.62rem + var(--ena-font-step, 1px));
   font-weight: 720;
   line-height: 1.15;
@@ -2799,7 +2848,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-rail-privacy {
-  color: #718987;
+  color: #7b9391;
   font-size: calc(0.46rem + var(--ena-font-step, 1px));
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -4303,7 +4352,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-view-toggle button[aria-pressed="true"] {
-  color: var(--ena-accent-strong);
+  color: #172234;
   background: var(--accent);
   box-shadow: inset 0 -3px var(--accent-strong);
 }
@@ -4316,7 +4365,7 @@ body:has(.open-ena-login-page) .back-to-top {
 .ena-view-toggle button:focus-visible {
   position: relative;
   z-index: 1;
-  outline: 3px solid color-mix(in srgb, var(--ena-accent-strong) 65%, white);
+  outline: 3px solid var(--ena-accent-strong);
   outline-offset: 2px;
 }
 
@@ -9329,7 +9378,7 @@ body:has(.open-ena-page) #main-content {
 
 .ena-model-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.25rem), 1fr));
   margin: 0 -4px 12px;
   padding: 0 4px;
   border-bottom: 1px solid #cbd7d5;
@@ -9605,6 +9654,49 @@ body:has(.open-ena-page) #main-content {
   padding: 9px 10px;
   background: #eef8f6;
   font-size: calc(0.68rem + var(--ena-font-step, 1px));
+}
+
+.ena-ai-provider-disclosure {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #cbd8d6;
+  border-radius: 3px;
+  padding: 9px 10px;
+  color: #34484e;
+  background: #f7f9f9;
+  font-size: calc(0.66rem + var(--ena-font-step, 1px));
+  line-height: 1.5;
+}
+
+.ena-ai-provider-disclosure p,
+.ena-ai-provider-disclosure strong {
+  margin: 0;
+}
+
+.ena-ai-provider-disclosure dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.ena-ai-provider-disclosure dl > div {
+  min-width: 0;
+  border: 1px solid #d9e3e1;
+  padding: 5px 7px;
+  background: #fff;
+}
+
+.ena-ai-provider-disclosure dt {
+  color: #596b70;
+  font-size: 0.62rem;
+}
+
+.ena-ai-provider-disclosure dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  color: #263f43;
+  font-weight: 700;
 }
 
 .ena-ai-disabled-reason {
@@ -9944,7 +10036,7 @@ body:has(.open-ena-page) #main-content {
 }
 
 .open-ena-group-contrast .ena-set-scale-caption {
-  color: #818b8c;
+  color: #59686e;
   font-style: italic;
   font-weight: 400;
 }
@@ -10728,16 +10820,15 @@ body:has(.open-ena-page) #main-content {
 @media (min-width: 1400px) {
   .ena-visual-toolbar {
     position: static;
-    min-height: 44px;
-    height: 44px;
+    z-index: 20;
+    height: auto;
+    flex-wrap: wrap;
     padding: 0 24px;
     overflow: visible;
   }
 
   .ena-visual-toolbar > div:first-child {
-    position: absolute;
-    top: 16px;
-    left: 30px;
+    position: static;
     gap: 0;
     padding-inline-start: 9px;
   }
@@ -10765,13 +10856,13 @@ body:has(.open-ena-page) #main-content {
 
   .ena-visual-toolbar-actions {
     position: static;
+    flex-wrap: wrap;
   }
 
   .ena-analysis-toolbar-cluster {
-    position: absolute;
-    top: 16px;
-    right: calc(35% + 19px);
-    height: 24px;
+    position: static;
+    height: auto;
+    flex-wrap: wrap;
   }
 
   .ena-analysis-toolbar-cluster .ena-view-toggle {
@@ -10781,10 +10872,11 @@ body:has(.open-ena-page) #main-content {
 
   .ena-download-model-button {
     position: static;
-    width: 138px;
-    min-width: 138px;
-    max-width: 138px;
-    min-height: 24px;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    min-height: 44px;
+    white-space: normal;
     padding: 2px 9px;
     gap: 6px;
     font-size: calc(0.7rem + var(--ena-font-step, 1px));
@@ -10802,7 +10894,7 @@ body:has(.open-ena-page) #main-content {
 
   .ena-view-toggle button {
     min-width: 72px;
-    min-height: 24px;
+    min-height: 44px;
     padding: 2px 6px;
   }
 

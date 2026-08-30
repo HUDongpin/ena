@@ -69,11 +69,10 @@ import {
   zoomOpenEna3dAspectRatio,
   zoomOpenEna3dCamera,
 } from "./OpenEnaInteractive3DPlot";
+import { getPlotlyGl3d, type PlotlyGl3dApi } from "./plotly-gl3d-loader";
 
-type PlotlyApi = (typeof import("plotly.js-dist-min"))["default"];
-type PlotlyImageApi = PlotlyApi & {
-  toImage(root: HTMLDivElement, options: { format: "png"; width: number; height: number; scale: number }): Promise<string>;
-};
+type PlotlyApi = PlotlyGl3dApi;
+type PlotlyImageApi = PlotlyApi;
 type PlotRoot = HTMLDivElement & {
   _fullLayout?: {
     scene?: {
@@ -570,8 +569,8 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
 
   useEffect(() => {
     let active = true;
-    void import("plotly.js-dist-min").then((module) => {
-      if (active) setPlotly(() => module.default as PlotlyImageApi);
+    void getPlotlyGl3d().then((module) => {
+      if (active) setPlotly(() => module);
     }).catch(() => active && setStatus("error"));
     return () => { active = false; };
   }, []);

@@ -192,6 +192,10 @@ test("the only AI network request is a POST inside the explicit Generate handler
     "the browser must call only the owned server route, never an external provider directly",
   );
   assert.match(aiComponent, /\[OPEN_ENA_AI_CONSENT_HEADER\]:\s*OPEN_ENA_AI_CONSENT_VALUE/);
+  assert.match(aiComponent, /\[OPEN_ENA_AI_OPERATION_HEADER\]:\s*operationId/);
+  assert.match(aiComponent, /operationId\s*=\s*`aiop-\$\{crypto\.randomUUID\(\)\}`/);
+  assert.match(aiComponent, /sessionStorage\.setItem\(requestedOperationStorageKey,\s*operationId\)/);
+  assert.match(aiComponent, /if\s*\(response\.status\s*===\s*409\)\s*clearOperation\(\)/);
 });
 
 test("generation is disabled when there is no current result or the fitted evidence is stale", () => {
@@ -273,7 +277,7 @@ test("changing the evidence binding aborts work, revokes consent, and makes old 
     "response validity must be bound to the complete reviewed request, including its exact sanitized evidence",
   );
   const invalidationEffect = aiComponent.match(
-    /useEffect\(\(\)\s*=>\s*\{([\s\S]*?)\},\s*\[requestIdentity\]\);/,
+    /useEffect\(\(\)\s*=>\s*\{([\s\S]*?)\},\s*\[[^\]]*requestIdentity[^\]]*\]\);/,
   );
   assert.ok(invalidationEffect, "a complete request-identity change must have one explicit invalidation effect");
   assert.match(invalidationEffect[1], /\.abort\(\)/, "changing evidence must cancel an in-flight request");

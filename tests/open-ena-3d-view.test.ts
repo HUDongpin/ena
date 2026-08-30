@@ -866,7 +866,8 @@ test("camera presets are explicit display-only orientations and the client plot 
     join(projectRoot, "components", "open-ena", "OpenEnaInteractive3DPlot.tsx"),
     "utf8",
   );
-  assert.match(source, /import\("plotly\.js-dist-min"\)/);
+  assert.match(source, /getPlotlyGl3d/);
+  assert.match(source, /schedulePlotlyGl3dRole/);
   assert.match(source, /Plotly\.react\(/);
   assert.match(source, /Plotly\.purge\(/);
   assert.match(source, /"plotly_relayout"/);
@@ -883,6 +884,7 @@ test("camera presets are explicit display-only orientations and the client plot 
   assert.match(source, /tabIndex=\{0\}/);
   assert.match(source, /Plotly\.relayout\(/);
   assert.match(source, /controlledCameraKey/);
+  assert.match(source, /data-ena-plot-ready/);
 
   const groupContrast3d = readFileSync(
     join(projectRoot, "components", "open-ena", "OpenEna3DGroupContrast.tsx"),
@@ -1305,18 +1307,16 @@ test("the five-action 3D triptych renders on every paper and zooms the linked ca
     copy: getOpenEnaCopy("en"),
   }));
 
-  assert.equal([...markup.matchAll(/data-ena-toolbar-design="unframed-plot-actions"/gu)].length, 3);
+  assert.equal([...markup.matchAll(/data-ena-toolbar-design="unframed-plot-actions"/gu)].length, 1);
+  assert.match(markup, /data-testid="open-ena-3d-primary-loading"/);
+  assert.match(markup, /data-testid="open-ena-3d-secondary-loading"/);
   assert.deepEqual(
     [...markup.matchAll(/data-ena-plot-toolbar="([^"]+)"/gu)].map((match) => match[1]),
-    ["comparison", "primary", "secondary"],
+    ["comparison"],
   );
   assert.deepEqual(
     [...markup.matchAll(/data-ena-plot-action="([^"]+)"/gu)].map((match) => match[1]),
-    [
-      "zoom-in", "zoom-out", "recenter", "copy-image", "fullscreen",
-      "zoom-in", "zoom-out", "recenter", "copy-image", "fullscreen",
-      "zoom-in", "zoom-out", "recenter", "copy-image", "fullscreen",
-    ],
+    ["zoom-in", "zoom-out", "recenter", "copy-image", "fullscreen"],
   );
 
   const camera = cameraForPreset("isometric");
@@ -1344,6 +1344,10 @@ test("each 3D fullscreen action owns its complete card while a generic plot owns
       "u",
     ).exec(markup);
     assert.ok(card, `${role} must render as one complete fullscreen card`);
+    if (role !== "comparison") {
+      assert.match(card[0], new RegExp(`data-testid="open-ena-3d-${role}-loading"`));
+      continue;
+    }
     const targetId = /\bid="([^"]+)"/u.exec(card[1] ?? "")?.[1];
     assert.ok(targetId, `${role} must expose a fullscreen target id on its article`);
     cardIds.push(targetId);
@@ -1352,7 +1356,7 @@ test("each 3D fullscreen action owns its complete card while a generic plot owns
     assert.match(cardMarkup, new RegExp(`data-ena-plot-action="fullscreen"[\\s\\S]*?aria-controls="${targetId}"`, "u"));
   }
 
-  assert.equal(new Set(cardIds).size, 3, "the triptych must not share one fullscreen target");
+  assert.equal(new Set(cardIds).size, 1, "the initially staged triptych exposes only the comparison fullscreen target");
 
   const genericMarkup = renderToStaticMarkup(createElement(
     OpenEnaInteractive3DPlot,
@@ -1382,8 +1386,8 @@ test("two SSR triptychs have unique IDs and unambiguous fullscreen card ownershi
 
   assert.equal(ids.length, new Set(ids).size, "two triptychs must not duplicate any DOM id");
   assert.ok(controlledIds.every((id) => ids.includes(id)), "every triptych aria-controls must resolve in the same tree");
-  assert.equal(fullscreenControlledIds.length, 6);
-  assert.equal(new Set(fullscreenControlledIds).size, 6, "each card must own one distinct fullscreen target");
+  assert.equal(fullscreenControlledIds.length, 2);
+  assert.equal(new Set(fullscreenControlledIds).size, 2, "each initially rendered comparison card must own a distinct fullscreen target");
 });
 
 test("two SSR generic 3D plots remain unique even when callers reuse the same test id", () => {
