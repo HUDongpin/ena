@@ -674,12 +674,28 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
           : [];
       }))
     : [];
+  const displayedConfidenceMagnitudes = contrast && plotKind === "comparison"
+    ? ([
+        ["primary", contrast.primary],
+        ["secondary", contrast.secondary],
+      ] as const).flatMap(([role, side]) => {
+        const display = resolveGroupDisplay(role, side);
+        if (!display.settings.showMean || !display.settings.showConfidenceIntervals) return [];
+        return dimensions.flatMap((dimension) => {
+          const interval = side.meanConfidenceIntervalsByDimension?.[dimension];
+          return interval?.status === "estimable"
+            ? [Math.abs(interval.lower), Math.abs(interval.upper)]
+            : [];
+        });
+      })
+    : [];
 
   const coordinateMagnitudes = [
     ...nodeRows.flatMap((row) => dimensions.map((dimension) => Math.abs(coordinate(row, dimension)))),
     ...points.flatMap((row) => dimensions.map((dimension) => Math.abs(coordinate(row, dimension)))),
     ...result.groups.flatMap((group) => dimensions.map((dimension) => Math.abs(finiteNumber(group.meanPoint[dimension])))),
     ...canonicalConfidenceMagnitudes,
+    ...displayedConfidenceMagnitudes,
   ];
   const axisExtent = Math.max(0.5, ...coordinateMagnitudes) * 1.15;
 

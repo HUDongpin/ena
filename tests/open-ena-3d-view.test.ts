@@ -632,6 +632,67 @@ test("3D comparison shares per-unit hiding and independent Mean/CI settings with
   );
 });
 
+test("3D display-derived confidence wireframes expand the canonical frame instead of clipping a two-unit summary", () => {
+  const result = confidenceReadyThreeDimensionalResult();
+  const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
+  const contrast = buildPairwiseGroupContrast(
+    result,
+    THREE_DIMENSIONAL_CONFIG,
+    "first",
+    "second",
+    [xDimension, yDimension],
+    "2026-08-30T03:30:00.000Z",
+  );
+  const hiddenUnitKeys = contrast.primary.unitIds
+    .filter((unitId) => !["first-1", "first-4"].includes(unitId))
+    .map((unitId) => openEnaGroupUnitKey("first", unitId));
+  const display = deriveOpenEnaGroupDisplay({
+    result,
+    contrast,
+    settingsByGroup: {},
+    hiddenUnitKeys,
+  });
+  const spec = compileOpenEna3dPlotSpec({
+    result,
+    contrast: display.contrast,
+    groupDisplay: display,
+    plotKind: "comparison",
+    groupColumn: "group",
+    xDimension,
+    yDimension,
+    zDimension,
+    camera: "isometric",
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    showTrajectories: false,
+    edgeScale: 1,
+    edgeThreshold: 0,
+    pointScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+  });
+  const primaryWireframe = spec.data.filter((trace) => (
+    trace.meta.role === "confidence-interval" && trace.meta.groupName === "first"
+  ));
+  assert.equal(primaryWireframe.length, 6, "the two-unit display summary must retain its complete CI wireframe");
+
+  const axes = [
+    { values: primaryWireframe.flatMap((trace) => trace.x), range: spec.layout.scene.xaxis.range },
+    { values: primaryWireframe.flatMap((trace) => trace.y), range: spec.layout.scene.yaxis.range },
+    { values: primaryWireframe.flatMap((trace) => trace.z), range: spec.layout.scene.zaxis.range },
+  ];
+  axes.forEach(({ values, range }) => {
+    const minimum = Math.min(...values);
+    const maximum = Math.max(...values);
+    assert.ok(range[0] <= minimum, `scene lower bound ${range[0]} clips CI coordinate ${minimum}`);
+    assert.ok(range[1] >= maximum, `scene upper bound ${range[1]} clips CI coordinate ${maximum}`);
+  });
+});
+
 test("3D confidence wireframes have an exact non-visual interval table", () => {
   const result = confidenceReadyThreeDimensionalResult();
   const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
