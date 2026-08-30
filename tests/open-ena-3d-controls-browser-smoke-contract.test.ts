@@ -316,6 +316,19 @@ test("the smoke exercises each card's native-or-fallback fullscreen and forced r
   assert.match(source, /rejected native exit moved focus away from the Exit button/u);
   assert.match(source, /rejectedExitGuidanceVerified = true/u);
   assert.match(source, /rejectedExitGuidanceVerified,/u);
+  assert.match(source, /fallbackModalAudit/u);
+  assert.match(source, /getAttribute\("role"\) === "dialog"/u);
+  assert.match(source, /getAttribute\("aria-modal"\) === "true"/u);
+  assert.match(source, /getAttribute\("aria-label"\)/u);
+  assert.match(source, /document\.body\.style\.overflow === "hidden"/u);
+  assert.match(source, /getAttribute\("inert"\)/u);
+  assert.match(source, /getAttribute\("aria-hidden"\) === "true"/u);
+  assert.match(source, /page\.keyboard\.press\("Shift\+Tab"\)/u);
+  assert.match(source, /page\.keyboard\.press\("Tab"\)/u);
+  assert.match(source, /programmaticFocusContained/u);
+  assert.match(source, /fallbackRestorationAudit/u);
+  assert.match(source, /bodyOverflowRestored/u);
+  assert.match(source, /outsideAttributesRestored/u);
 });
 
 test("the smoke verifies 390px hit testing and keeps screenshots in its evidence summary", () => {

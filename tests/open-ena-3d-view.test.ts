@@ -889,6 +889,116 @@ test("all authoritative 3D interaction hints describe five actions including ful
   });
 });
 
+test("3D plot controls and action status copy are explicit in English, Traditional Chinese, and Simplified Chinese", () => {
+  const en = getOpenEnaCopy("en").plot;
+  const zhHant = getOpenEnaCopy("zh-hant").plot;
+  const zhHans = getOpenEnaCopy("zh-hans").plot;
+
+  assert.deepEqual({
+    comparison: en.threeDComparisonPlot,
+    primary: en.threeDPrimaryPlot,
+    secondary: en.threeDSecondaryPlot,
+    actions: en.threeDPlotActions,
+    zoomIn: en.zoomIn,
+    zoomOut: en.zoomOut,
+    recenter: en.recenter,
+    copyImage: en.copyImage,
+    fullscreenEnter: en.fullscreenEnter,
+    fullscreenExit: en.fullscreenExit,
+    fullscreenDialog: en.fullscreenDialog,
+    actionUnavailable: en.actionUnavailable,
+    copyingImage: en.copyingImage,
+    imageCopied: en.imageCopied,
+    imageDataCopied: en.imageDataCopied,
+    copyUnavailable: en.copyUnavailable,
+    fullscreenOpening: en.fullscreenOpening,
+    fullscreenFallbackEnabled: en.fullscreenFallbackEnabled,
+    fullscreenClosed: en.fullscreenClosed,
+    fullscreenExitFailed: en.fullscreenExitFailed,
+    fullscreenUnavailable: en.fullscreenUnavailable,
+  }, {
+    comparison: "Comparison Plot",
+    primary: "Primary Plot",
+    secondary: "Secondary Plot",
+    actions: "3D plot actions",
+    zoomIn: "Zoom In",
+    zoomOut: "Zoom Out",
+    recenter: "Recenter",
+    copyImage: "Copy image",
+    fullscreenEnter: "Enter Fullscreen",
+    fullscreenExit: "Exit Fullscreen",
+    fullscreenDialog: "Fullscreen 3D plot",
+    actionUnavailable: "3D view action unavailable",
+    copyingImage: "Copying image",
+    imageCopied: "Image copied",
+    imageDataCopied: "Image data copied",
+    copyUnavailable: "Copy unavailable",
+    fullscreenOpening: "Opening fullscreen",
+    fullscreenFallbackEnabled: "Fullscreen fallback enabled",
+    fullscreenClosed: "Fullscreen closed",
+    fullscreenExitFailed: "Native fullscreen could not close. Press Escape to exit.",
+    fullscreenUnavailable: "Fullscreen unavailable",
+  });
+
+  assert.deepEqual({
+    comparison: zhHant.threeDComparisonPlot,
+    primary: zhHant.threeDPrimaryPlot,
+    secondary: zhHant.threeDSecondaryPlot,
+    actions: zhHant.threeDPlotActions,
+    copyImage: zhHant.copyImage,
+    fullscreenEnter: zhHant.fullscreenEnter,
+    fullscreenExit: zhHant.fullscreenExit,
+    fullscreenDialog: zhHant.fullscreenDialog,
+    copyingImage: zhHant.copyingImage,
+    imageCopied: zhHant.imageCopied,
+    fullscreenFallbackEnabled: zhHant.fullscreenFallbackEnabled,
+    fullscreenExitFailed: zhHant.fullscreenExitFailed,
+  }, {
+    comparison: "比較圖",
+    primary: "主要圖",
+    secondary: "次要圖",
+    actions: "3D 繪圖操作",
+    copyImage: "複製圖片",
+    fullscreenEnter: "進入全螢幕",
+    fullscreenExit: "離開全螢幕",
+    fullscreenDialog: "全螢幕 3D 圖",
+    copyingImage: "正在複製圖片",
+    imageCopied: "圖片已複製",
+    fullscreenFallbackEnabled: "已啟用全螢幕備用模式",
+    fullscreenExitFailed: "原生全螢幕無法關閉。請按 Escape 離開。",
+  });
+
+  assert.deepEqual({
+    comparison: zhHans.threeDComparisonPlot,
+    primary: zhHans.threeDPrimaryPlot,
+    secondary: zhHans.threeDSecondaryPlot,
+    actions: zhHans.threeDPlotActions,
+    copyImage: zhHans.copyImage,
+    fullscreenEnter: zhHans.fullscreenEnter,
+    fullscreenExit: zhHans.fullscreenExit,
+    fullscreenDialog: zhHans.fullscreenDialog,
+    copyingImage: zhHans.copyingImage,
+    imageCopied: zhHans.imageCopied,
+    fullscreenFallbackEnabled: zhHans.fullscreenFallbackEnabled,
+    fullscreenExitFailed: zhHans.fullscreenExitFailed,
+  }, {
+    comparison: "比较图",
+    primary: "主要图",
+    secondary: "次要图",
+    actions: "3D 绘图操作",
+    copyImage: "复制图片",
+    fullscreenEnter: "进入全屏",
+    fullscreenExit: "退出全屏",
+    fullscreenDialog: "全屏 3D 图",
+    copyingImage: "正在复制图片",
+    imageCopied: "图片已复制",
+    fullscreenFallbackEnabled: "已启用全屏备用模式",
+    fullscreenExitFailed: "原生全屏无法关闭。请按 Escape 退出。",
+  });
+  assert.notEqual(zhHant.fullscreenEnter, zhHans.fullscreenEnter);
+  assert.notEqual(zhHant.copyImage, zhHans.copyImage);
+});
+
 test("available Data View keeps the requested data center selected and pressed", () => {
   assert.deepEqual(openEnaDataViewCenterSurface({
     requestedCenterSurface: "data",
@@ -1134,7 +1244,7 @@ test("the interactive 3D component uses one combined React import", () => {
   assert.equal(reactImports.length, 1);
 });
 
-test("native fullscreen exit rejection gives actionable Escape guidance without claiming exit", () => {
+test("native fullscreen exit rejection uses localized actionable Escape guidance without claiming exit", () => {
   const interactive = readFileSync(
     join(projectRoot, "components", "open-ena", "OpenEnaInteractive3DPlot.tsx"),
     "utf8",
@@ -1143,7 +1253,7 @@ test("native fullscreen exit rejection gives actionable Escape guidance without 
   const exitBranchEnd = interactive.indexOf("void enterFullscreen(target)", exitBranchStart);
   const exitBranch = interactive.slice(exitBranchStart, exitBranchEnd);
 
-  assert.match(exitBranch, /Native fullscreen could not close\. Press Escape to exit\./u);
+  assert.match(exitBranch, /copy\.plot\.fullscreenExitFailed/u);
   assert.doesNotMatch(exitBranch, /Fullscreen exit unavailable/u);
   assert.doesNotMatch(
     exitBranch,
@@ -1161,9 +1271,18 @@ test("3D fullscreen is native-first with a safe single-owner fallback, lifecycle
   assert.match(interactive, /fullscreenTarget\?:\s*\{[\s\S]*?id:\s*string;[\s\S]*?ref:\s*RefObject<HTMLElement \| null>/u);
   assert.match(interactive, /target\.requestFullscreen\(\)/u);
   assert.match(interactive, /document\.exitFullscreen\(\)/u);
+  assert.match(interactive, /isolateOpenEnaFallbackFullscreenOutsideTreeV3/u);
+  assert.match(interactive, /nextOpenEnaFallbackFullscreenFocusV3/u);
   assert.match(interactive, /data-fallback-fullscreen/u);
   assert.match(interactive, /querySelectorAll<HTMLElement>/u);
   assert.match(interactive, /event\.key === "Escape"/u);
+  assert.match(interactive, /event\.key === "Tab"/u);
+  assert.match(interactive, /addEventListener\("focusin"/u);
+  assert.match(interactive, /removeEventListener\("focusin"/u);
+  assert.match(interactive, /setAttribute\("role", "dialog"\)/u);
+  assert.match(interactive, /setAttribute\("aria-modal", "true"\)/u);
+  assert.match(interactive, /setAttribute\("aria-label", fallbackFullscreenLabel\)/u);
+  assert.match(interactive, /copy\.plot\.fullscreenDialog/u);
   assert.match(interactive, /fullscreenInitiatorRef\.current\?\.focus\(\)/u);
   assert.match(interactive, /requestAnimationFrame\(/u);
   assert.match(interactive, /Plotly\.Plots\.resize\(plotRoot\)/u);
@@ -1174,7 +1293,24 @@ test("3D fullscreen is native-first with a safe single-owner fallback, lifecycle
     assert.match(interactive, new RegExp(`removeEventListener\\("${eventName}"`, "u"));
   }
   assert.match(interactive, /aria-pressed=\{isFullscreen\}/u);
-  assert.match(interactive, /isFullscreen \? "Exit Fullscreen" : "Enter Fullscreen"/u);
+  assert.match(interactive, /isFullscreen \? copy\.plot\.fullscreenExit : copy\.plot\.fullscreenEnter/u);
+  for (const hardcodedActionCopy of [
+    "3D view action unavailable",
+    "Copying image",
+    "Image copied",
+    "Image data copied",
+    "Copy unavailable",
+    "Opening fullscreen",
+    "Fullscreen fallback enabled",
+    "Fullscreen closed",
+    "Fullscreen unavailable",
+  ]) {
+    assert.equal(
+      interactive.includes(`announceAction("${hardcodedActionCopy}")`),
+      false,
+      `interactive 3D action copy remains hardcoded: ${hardcodedActionCopy}`,
+    );
+  }
   const fullscreenLogicStart = interactive.indexOf("function scheduleFullscreenResize");
   const fullscreenLogicEnd = interactive.indexOf("return (", fullscreenLogicStart);
   assert.ok(fullscreenLogicStart >= 0 && fullscreenLogicEnd > fullscreenLogicStart);

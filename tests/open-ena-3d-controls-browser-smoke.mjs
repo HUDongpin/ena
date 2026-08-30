@@ -955,6 +955,8 @@ async function exerciseFullscreenCards(page, args) {
   ];
   const fullscreenAudits = {};
   let fallbackAudit = null;
+  let fallbackModalAudit = null;
+  let fallbackRestorationAudit = null;
 
   for (const specification of specifications) {
     let rejectedExitGuidanceVerified = specification.name === "Primary"
@@ -976,6 +978,29 @@ async function exerciseFullscreenCards(page, args) {
 
     if (specification.forceFallback) {
       await panel.evaluate((target) => {
+        const outside = [];
+        let current = target;
+        while (current !== document.body) {
+          const parent = current.parentElement;
+          if (!parent) throw new Error("forced fallback target is outside document.body");
+          for (const sibling of parent.children) {
+            if (sibling !== current) outside.push(sibling);
+          }
+          current = parent;
+        }
+        window.__openEnaFallbackSmokeSnapshot = {
+          target,
+          targetRole: target.getAttribute("role"),
+          targetAriaModal: target.getAttribute("aria-modal"),
+          targetAriaLabel: target.getAttribute("aria-label"),
+          bodyOverflow: document.body.style.overflow,
+          outside: outside.map((node) => ({
+            node,
+            inertAttribute: node.getAttribute("inert"),
+            inertProperty: node.inert,
+            ariaHidden: node.getAttribute("aria-hidden"),
+          })),
+        };
         window.__openEnaForcedFullscreenRequestCount = 0;
         Object.defineProperty(target, "requestFullscreen", {
           configurable: true,
@@ -1008,6 +1033,74 @@ async function exerciseFullscreenCards(page, args) {
         await page.evaluate(() => window.__openEnaForcedFullscreenRequestCount) === 1,
         "the forced requestFullscreen rejection path was not exercised exactly once",
       );
+      fallbackModalAudit = await panel.evaluate((target) => {
+        const snapshot = window.__openEnaFallbackSmokeSnapshot;
+        const outsideIsolated = snapshot.outside.every(({ node }) => (
+          node.getAttribute("inert") !== null
+          && node.inert === true
+          && node.getAttribute("aria-hidden") === "true"
+        ));
+        return {
+          roleDialog: target.getAttribute("role") === "dialog",
+          ariaModal: target.getAttribute("aria-modal") === "true",
+          ariaLabel: target.getAttribute("aria-label"),
+          bodyScrollLocked: document.body.style.overflow === "hidden",
+          outsideNodeCount: snapshot.outside.length,
+          outsideIsolated,
+          focusInside: target.contains(document.activeElement),
+        };
+      });
+      assertBrowser(fallbackModalAudit.roleDialog, "forced fallback target is not a dialog");
+      assertBrowser(fallbackModalAudit.ariaModal, "forced fallback target is not aria-modal");
+      assertBrowser(Boolean(fallbackModalAudit.ariaLabel), "forced fallback target lacks an accessible name");
+      assertBrowser(fallbackModalAudit.bodyScrollLocked, "forced fallback did not lock body scroll");
+      assertBrowser(fallbackModalAudit.outsideNodeCount > 0, "forced fallback found no outside DOM to isolate");
+      assertBrowser(fallbackModalAudit.outsideIsolated, "forced fallback did not inert and hide all outside branches");
+      assertBrowser(fallbackModalAudit.focusInside, "forced fallback focus did not remain inside its dialog");
+
+      const focusCycle = await panel.evaluate((target) => {
+        const focusables = [...target.querySelectorAll(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), '
+          + 'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        )].filter((element) => (
+          element.getAttribute("aria-hidden") !== "true"
+          && !element.hasAttribute("hidden")
+          && element.getClientRects().length > 0
+        ));
+        if (focusables.length < 2) throw new Error("forced fallback exposes fewer than two focusable controls");
+        focusables[0].focus();
+        window.__openEnaFallbackFocusCycle = { target, first: focusables[0], last: focusables.at(-1) };
+        return { count: focusables.length };
+      });
+      await page.keyboard.press("Shift+Tab");
+      assertBrowser(
+        await page.evaluate(() => document.activeElement === window.__openEnaFallbackFocusCycle.last),
+        "Shift+Tab did not wrap fallback focus from first to last",
+      );
+      await panel.evaluate(() => window.__openEnaFallbackFocusCycle.last.focus());
+      await page.keyboard.press("Tab");
+      assertBrowser(
+        await page.evaluate(() => document.activeElement === window.__openEnaFallbackFocusCycle.first),
+        "Tab did not wrap fallback focus from last to first",
+      );
+      const programmaticFocusContained = await page.evaluate(() => {
+        const probe = document.createElement("button");
+        probe.type = "button";
+        probe.textContent = "outside fallback focus probe";
+        document.body.append(probe);
+        probe.focus();
+        const contained = window.__openEnaFallbackFocusCycle.target.contains(document.activeElement);
+        probe.remove();
+        return contained;
+      });
+      assertBrowser(programmaticFocusContained, "programmatic outside focus escaped the fallback dialog");
+      fallbackModalAudit = {
+        ...fallbackModalAudit,
+        focusableCount: focusCycle.count,
+        shiftTabWrapped: true,
+        tabWrapped: true,
+        programmaticFocusContained,
+      };
     }
     const exitButton = panel.getByRole("button", {
       name: specification.name + " Plot: Exit Fullscreen",
@@ -1137,6 +1230,24 @@ async function exerciseFullscreenCards(page, args) {
       specification.name + " Plotly region did not resize back after fullscreen",
     );
     if (specification.forceFallback) {
+      fallbackRestorationAudit = await page.evaluate(() => {
+        const snapshot = window.__openEnaFallbackSmokeSnapshot;
+        const bodyOverflowRestored = document.body.style.overflow === snapshot.bodyOverflow;
+        const outsideAttributesRestored = snapshot.outside.every((entry) => (
+          entry.node.getAttribute("inert") === entry.inertAttribute
+          && entry.node.inert === entry.inertProperty
+          && entry.node.getAttribute("aria-hidden") === entry.ariaHidden
+        ));
+        const targetAttributesRestored = snapshot.target.getAttribute("role") === snapshot.targetRole
+          && snapshot.target.getAttribute("aria-modal") === snapshot.targetAriaModal
+          && snapshot.target.getAttribute("aria-label") === snapshot.targetAriaLabel;
+        delete window.__openEnaFallbackSmokeSnapshot;
+        delete window.__openEnaFallbackFocusCycle;
+        return { bodyOverflowRestored, outsideAttributesRestored, targetAttributesRestored };
+      });
+      assertBrowser(fallbackRestorationAudit.bodyOverflowRestored, "fallback exit did not restore body overflow");
+      assertBrowser(fallbackRestorationAudit.outsideAttributesRestored, "fallback exit did not restore outside attributes exactly");
+      assertBrowser(fallbackRestorationAudit.targetAttributesRestored, "fallback exit did not restore target dialog attributes exactly");
       await panel.evaluate((target) => {
         delete target.requestFullscreen;
         if (document.documentElement.getAttribute("data-smoke-patched-exit-fullscreen") === "true") {
@@ -1145,7 +1256,13 @@ async function exerciseFullscreenCards(page, args) {
         }
         delete window.__openEnaForcedFullscreenRequestCount;
       });
-      fallbackAudit = { card: specification.name, mode, forcedRequestRejection: true };
+      fallbackAudit = {
+        card: specification.name,
+        mode,
+        forcedRequestRejection: true,
+        fallbackModalAudit,
+        fallbackRestorationAudit,
+      };
     }
     const stateAfter = await readScientificState(page);
     assertScientificState(stateAfter, args.baseline, specification.name + " fullscreen lifecycle");
@@ -1161,7 +1278,13 @@ async function exerciseFullscreenCards(page, args) {
       rejectedExitGuidanceVerified,
     };
   }
-  return { fullscreenAudits, fallbackAudit, browserMessages: browserMessageCapture.finish() };
+  return {
+    fullscreenAudits,
+    fallbackAudit,
+    fallbackModalAudit,
+    fallbackRestorationAudit,
+    browserMessages: browserMessageCapture.finish(),
+  };
 }
 
 async function exerciseMobileHitTesting(page, args) {
