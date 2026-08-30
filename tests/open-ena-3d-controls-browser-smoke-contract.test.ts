@@ -277,6 +277,41 @@ test("the smoke proves 3D Data View mouse and keyboard lifecycle without analysi
   assert.match(source, /sidePanelsPreserved:\s*true/u);
 });
 
+test("the smoke proves group display controls across 2D and 3D without changing the fitted result", () => {
+  const source = readFileSync(smokePath, "utf8");
+
+  assert.match(source, /async function exerciseGroupDisplayControls\(page, args\)/u);
+  assert.match(source, /async function readThreeDGroupDisplayState\(page\)/u);
+  assert.match(source, /async function readTwoDGroupDisplayState\(page\)/u);
+  assert.match(source, /data-ena-group-display-result-key/u);
+  assert.match(source, /filter\(\(trace\) => trace\.meta\?\.role === role\)/u);
+  assert.match(source, /unitTraces:\s*byGroup\("unit-points"\)/u);
+  assert.match(source, /trace\.marker\?\.symbol/u);
+  assert.match(source, /every\(\(trace\) => trace\.markerSymbol === "circle"\)/u);
+  assert.match(source, /Hide unit " \+ targetUnitId \+ " in " \+ baselineGroup/u);
+  assert.match(source, /Show unit " \+ targetUnitId \+ " in " \+ baselineGroup/u);
+  assert.match(source, /Show mean for " \+ groupName/u);
+  assert.match(source, /Show confidence intervals for " \+ groupName/u);
+  assert.match(source, /Show outlier intervals for " \+ groupName/u);
+  assert.match(source, /Include hidden points for " \+ groupName/u);
+  assert.match(source, /7 of 8 unit points visible/u);
+  assert.match(source, /8 of 8 unit points visible/u);
+  assert.match(source, /open-ena-group-comparison-plot/u);
+  assert.match(source, /data-ena-outlier-guide/u);
+  assert.match(source, /data-ena-confidence-interval/u);
+  assert.match(source, /groupDisplayPersistence2d/u);
+  assert.match(source, /groupDisplayPersistence3d/u);
+  assert.match(source, /analysisRunCount/u);
+  assert.match(source, /resultIdentity/u);
+  assert.match(source, /groupDisplayAudit/u);
+  assert.match(source, /groupDisplay:\s*portableGroupDisplayAudit/u);
+  assert.match(
+    source,
+    /modelAudit\.browserMessages,\s*groupDisplayAudit\.browserMessages,\s*dataViewAudit\.browserMessages/u,
+    "group-display browser errors must be included in the fail-closed diagnostic classification",
+  );
+});
+
 test("the smoke exercises each card's native-or-fallback fullscreen and forced rejection fallback", () => {
   const source = readFileSync(smokePath, "utf8");
 

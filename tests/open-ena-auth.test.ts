@@ -202,6 +202,139 @@ test("the public back-to-top control cannot cover the login form", () => {
   );
 });
 
+type OpenEnaAssetContract = {
+  viewBox: string;
+  title: string;
+  description: string;
+  visibleLabels: string[];
+  edges?: Array<{ path: string; stroke: string; width: string; dash?: string }>;
+};
+
+function assertValidOpenEnaSvg(source: string, contract: OpenEnaAssetContract) {
+  const rootMatch = source.match(/^<svg\b([^>]*)>/u);
+  assert.ok(rootMatch, "SVG must have a root element");
+  const rootAttributes = rootMatch[1];
+  const readAttribute = (attributes: string, name: string) => {
+    const match = attributes.match(new RegExp(`(?:^|\\s)${name}="([^"]*)"`, "u"));
+    return match?.[1];
+  };
+  assert.equal(readAttribute(rootAttributes, "role"), "img");
+  assert.equal(readAttribute(rootAttributes, "aria-labelledby"), "title desc");
+  assert.equal(readAttribute(rootAttributes, "viewBox"), contract.viewBox);
+
+  const ids = [...source.matchAll(/\bid\s*=\s*(["'])(.*?)\1/gu)].map((match) => match[2]);
+  assert.equal(ids.filter((id) => id === "title").length, 1, "title ID must occur exactly once globally");
+  assert.equal(ids.filter((id) => id === "desc").length, 1, "desc ID must occur exactly once globally");
+  const titles = [...source.matchAll(/<title\b[^>]*\bid\s*=\s*(["'])title\1[^>]*>([\s\S]*?)<\/title>/gu)];
+  const descriptions = [...source.matchAll(/<desc\b[^>]*\bid\s*=\s*(["'])desc\1[^>]*>([\s\S]*?)<\/desc>/gu)];
+  assert.equal(titles.length, 1, "SVG must contain exactly one title with id=title");
+  assert.equal(descriptions.length, 1, "SVG must contain exactly one desc with id=desc");
+  assert.equal(titles[0][2], contract.title);
+  assert.equal(descriptions[0][2], contract.description);
+  assert.doesNotMatch(
+    source,
+    /#(?:72c7bd|66bfb5|56b09d|397e73|4db6ac|49a892|418476|72a69e|f4fbf9|eef9f7|d7eeea)\b|rgba\(\s*(?:114\s*,\s*199\s*,\s*189|86\s*,\s*176\s*,\s*157)/iu,
+    "SVG must not contain the legacy palette",
+  );
+  for (const label of contract.visibleLabels) {
+    assert.match(source, new RegExp(`<text\\b[^>]*>\\s*${label}\\s*<\\/text>`, "u"));
+  }
+
+  const pathElements = [...source.matchAll(/<path\b([^>]*)\/>/gu)].map((match) => match[1]);
+  for (const edge of contract.edges ?? []) {
+    const pathAttributes = pathElements.find((attributes) => readAttribute(attributes, "d") === edge.path);
+    assert.ok(pathAttributes, `missing path ${edge.path}`);
+    assert.equal(readAttribute(pathAttributes, "stroke"), edge.stroke);
+    assert.equal(readAttribute(pathAttributes, "stroke-width"), edge.width);
+    if (edge.dash) assert.equal(readAttribute(pathAttributes, "stroke-dasharray"), edge.dash);
+  }
+
+  for (const assetElement of ["script", "style", "foreignObject", "animate", "animateColor", "animateMotion", "animateTransform", "set", "discard", "audio", "video", "image", "use", "a"]) {
+    assert.doesNotMatch(source, new RegExp(`<${assetElement}\\b`, "iu"), `SVG must not contain <${assetElement}>`);
+  }
+  assert.doesNotMatch(source, /(?:^|\s)on[a-z][a-z0-9_.:-]*\s*=/iu, "SVG must not contain event handlers");
+  assert.doesNotMatch(source, /(?:^|\s)(?:xlink:)?href\s*=/iu, "SVG must not contain href attributes");
+  assert.doesNotMatch(source, /(?:javascript:|data:|@import)/iu, "SVG must not contain active URLs");
+  const withoutInternalPaintRefs = source.replace(/url\(#[a-z][\w.-]*\)/giu, "");
+  assert.doesNotMatch(withoutInternalPaintRefs, /url\(/iu, "SVG may only use internal paint-server URLs");
+  const withoutNamespace = source.replace(/xmlns="http:\/\/www\.w3\.org\/2000\/svg"/giu, "");
+  assert.doesNotMatch(withoutNamespace, /(?:https?:)?\/\//iu, "SVG must not contain external URLs");
+  assert.match(source, /#89CFF0/iu, "SVG must retain Baby Blue");
+}
+
+const lockupContract: OpenEnaAssetContract = {
+  viewBox: "0 0 250 80",
+  title: "Open ENA",
+  description: "Open ENA wordmark with ENA placed beneath Open and an open network-ring symbol. Epistemic Network Analysis.",
+  visibleLabels: ["OPEN", "ENA", "EPISTEMIC", "NETWORK", "ANALYSIS"],
+};
+const networkContract: OpenEnaAssetContract = {
+  viewBox: "0 0 620 520",
+  title: "Open epistemic network",
+  description: "Connected evidence, ideas, context, and links extend through an open circular boundary.",
+  visibleLabels: ["EVIDENCE", "IDEAS", "CONTEXT", "LINKS", "OPEN"],
+  edges: [
+    { path: "M189 290 270 185", stroke: "#1A2B3F", width: "4" },
+    { path: "M270 185 377 222", stroke: "#89CFF0", width: "11" },
+    { path: "M189 290 333 340", stroke: "#89CFF0", width: "7" },
+    { path: "M333 340 377 222", stroke: "#1A2B3F", width: "3" },
+    { path: "M270 185 333 340", stroke: "#1A2B3F", width: "5" },
+    { path: "M377 222 493 112", stroke: "#89CFF0", width: "6", dash: "12 12" },
+  ],
+};
+
+test("the login owns local official Open ENA lockup and open-ring network assets", () => {
+  const lockupPath = join(projectRoot, "public", "logo-open-ena.svg");
+  const networkPath = join(projectRoot, "public", "open-ena-network-hero.svg");
+
+  assert.equal(existsSync(lockupPath), true, "the official horizontal Open ENA lockup must be local");
+  assert.equal(existsSync(networkPath), true, "the official open-ring network must be local");
+
+  const lockup = readFileSync(lockupPath, "utf8");
+  const network = readFileSync(networkPath, "utf8");
+  assertValidOpenEnaSvg(lockup, lockupContract);
+  assertValidOpenEnaSvg(network, networkContract);
+  assert.match(network, /stroke-dasharray="12 12"/u);
+  assert.match(lockup, /#89CFF0/iu);
+  assert.match(network, /#89CFF0/iu);
+
+  assert.throws(() => assertValidOpenEnaSvg(lockup.replace('id="title"', ""), lockupContract), /title ID|exactly one title/u);
+  assert.throws(() => assertValidOpenEnaSvg(network.replace("</g>", '<animateMotion dur="1s"/></g>'), networkContract), /animateMotion/u);
+  assert.throws(() => assertValidOpenEnaSvg(network.replace("</defs>", '<style>@import url(https://attacker.example/a.css);</style></defs>'), networkContract), /<style>|active URLs|paint-server/u);
+  assert.throws(() => assertValidOpenEnaSvg(network.replace("#89CFF0", "#4DB6AC"), networkContract), /legacy palette/u);
+  assert.throws(() => assertValidOpenEnaSvg(network.replace("</svg>", "<circle onload='alert(1)'/></svg>"), networkContract), /event handlers/u);
+  assert.throws(() => assertValidOpenEnaSvg(lockup.replace("<title id=\"title\">", "<g id=\"title\"/><title id=\"title\">").replace("<desc id=\"desc\">", "<desc id=\"desc\">").replace("</svg>", "</svg>"), lockupContract), /title ID|exactly one title/u);
+});
+
+test("the login presents the official light Open ENA brand panel without changing its research flow", () => {
+  const login = readFileSync(
+    join(projectRoot, "components", "open-ena", "OpenEnaLogin.tsx"),
+    "utf8",
+  );
+  const css = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
+
+  assert.match(login, /<div className="open-ena-login-brand" dir="ltr" lang="en">/u);
+  assert.match(login, /src="\/logo-open-ena\.svg"/u);
+  assert.match(login, /alt="Open ENA — Epistemic Network Analysis"/u);
+  assert.match(login, /src="\/open-ena-network-hero\.svg"/u);
+  assert.match(login, /className="open-ena-login-network-hero"[\s\S]*?loading="lazy"[\s\S]*?alt=""/u);
+  assert.doesNotMatch(login, /src="\/ena-mark\.svg"/u);
+  assert.doesNotMatch(login, /<strong>OPEN ENA<\/strong>/u);
+  assert.doesNotMatch(login, /<span>ENA\.HK<\/span>/u);
+  assert.doesNotMatch(login, /viewBox="0 0 420 270"/u);
+  assert.match(login, /<p>\{copy\.workspaceLabel\}<\/p>[\s\S]*?<ol aria-label=\{copy\.workspaceLabel\}>/u);
+  assert.match(login, /copy\.researchFlow\.map/u);
+
+  const pageRule = css.match(/\.open-ena-login-page\s*\{([^}]*)\}/u)?.[1] ?? "";
+  const contextRule = css.match(/\.open-ena-login-context\s*\{([^}]*)\}/u)?.[1] ?? "";
+  assert.match(pageRule, /background:[\s\S]*?var\(--page\);/u);
+  assert.match(contextRule, /background:[\s\S]*?var\(--surface\);/u);
+  assert.doesNotMatch(contextRule, /#1d2b3a/iu);
+  assert.match(css, /\.open-ena-login-context-copy > p\s*\{[\s\S]*?color:\s*var\(--muted\);/u);
+  assert.match(css, /\.open-ena-login-context-copy li\s*\{[\s\S]*?color:\s*var\(--ink\);/u);
+  assert.match(css, /@media \(max-width: 820px\)[\s\S]*?\.open-ena-login-network\s*\{[\s\S]*?display:\s*grid;/u);
+});
+
 test("the login action and contact email use the site baby-blue accent", () => {
   const css = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
 

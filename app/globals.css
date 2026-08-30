@@ -2013,7 +2013,10 @@ button:focus-visible {
   min-height: calc(100dvh - 80px);
   place-items: center;
   padding: 52px 24px 68px;
-  background: #eef4f4;
+  background:
+    radial-gradient(circle at 8% 2%, rgba(137, 207, 240, 0.13), transparent 31rem),
+    radial-gradient(circle at 92% 16%, rgba(137, 207, 240, 0.08), transparent 27rem),
+    var(--page);
 }
 
 .open-ena-login-page:has(> .open-ena-fallback-notice) {
@@ -2045,10 +2048,10 @@ body:has(.open-ena-login-page) .back-to-top {
   min-height: 610px;
   grid-template-columns: minmax(330px, 0.88fr) minmax(440px, 1.12fr);
   overflow: hidden;
-  border: 1px solid #cad9d7;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: #fff;
-  box-shadow: 0 20px 54px rgba(23, 49, 56, 0.12);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
 }
 
 .open-ena-login-context {
@@ -2056,38 +2059,22 @@ body:has(.open-ena-login-page) .back-to-top {
   min-width: 0;
   flex-direction: column;
   padding: 38px 40px 34px;
-  color: #edf7f5;
-  background: #1d2b3a;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 8% 2%, rgba(137, 207, 240, 0.13), transparent 24rem),
+    radial-gradient(circle at 92% 16%, rgba(137, 207, 240, 0.08), transparent 22rem),
+    var(--surface);
 }
 
 .open-ena-login-brand {
   display: flex;
-  align-items: center;
-  gap: 13px;
+  align-items: flex-start;
 }
 
-.open-ena-login-brand img {
-  width: 54px;
-  height: 54px;
-}
-
-.open-ena-login-brand div {
-  display: grid;
-  gap: 3px;
-}
-
-.open-ena-login-brand strong {
-  color: #f4fbfa;
-  font-size: 0.96rem;
-  font-weight: 780;
-  letter-spacing: 0.11em;
-}
-
-.open-ena-login-brand span {
-  color: #8faaa6;
-  font-size: 0.66rem;
-  font-weight: 650;
-  letter-spacing: 0.12em;
+.open-ena-login-brand-lockup {
+  display: block;
+  width: min(100%, 250px);
+  height: auto;
 }
 
 .open-ena-login-network {
@@ -2095,36 +2082,14 @@ body:has(.open-ena-login-page) .back-to-top {
   min-height: 0;
   flex: 1 1 auto;
   place-items: center;
-  padding-block: 26px 18px;
+  padding-block: 12px 6px;
 }
 
-.open-ena-login-network svg {
+.open-ena-login-network-hero {
   display: block;
   width: min(100%, 410px);
   height: auto;
-}
-
-.open-ena-login-edges path {
-  fill: none;
-  stroke: #65817e;
-  stroke-linecap: round;
-  stroke-width: 2;
-}
-
-.open-ena-login-edges path:first-child {
-  stroke: var(--accent);
-  stroke-width: 3;
-}
-
-.open-ena-login-nodes circle {
-  fill: #233849;
-  stroke: #9bc7c1;
-  stroke-width: 2;
-}
-
-.open-ena-login-nodes circle:nth-child(4) {
-  fill: var(--accent);
-  stroke: #e8f8f5;
+  filter: drop-shadow(0 14px 24px rgba(31, 111, 158, 0.06));
 }
 
 .open-ena-login-context-copy {
@@ -2134,9 +2099,11 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .open-ena-login-context-copy > p {
   margin: 0;
-  color: #c8d8d5;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+  color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 560;
+  font-weight: 600;
   line-height: 1.55;
 }
 
@@ -2151,9 +2118,9 @@ body:has(.open-ena-login-page) .back-to-top {
 .open-ena-login-context-copy li {
   display: grid;
   gap: 5px;
-  border-top: 1px solid #55706e;
+  border-top: 1px solid var(--line-strong);
   padding-top: 9px;
-  color: #edf7f5;
+  color: var(--ink);
   font-size: 0.7rem;
   font-weight: 660;
 }
@@ -2163,7 +2130,7 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .open-ena-login-context-copy li span {
-  color: var(--accent);
+  color: var(--accent-strong);
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.56rem;
   letter-spacing: 0.08em;
@@ -2338,16 +2305,21 @@ body:has(.open-ena-login-page) .back-to-top {
   }
 
   .open-ena-login-context {
-    min-height: 250px;
+    min-height: 560px;
     padding: 28px 30px 24px;
   }
 
   .open-ena-login-network {
-    display: none;
+    display: grid;
+    padding-block: 8px 2px;
+  }
+
+  .open-ena-login-network-hero {
+    width: min(100%, 440px);
   }
 
   .open-ena-login-context-copy {
-    margin-top: 34px;
+    margin-top: 10px;
   }
 
   .open-ena-login-panel {
@@ -2365,8 +2337,20 @@ body:has(.open-ena-login-page) .back-to-top {
     padding-inline: 22px;
   }
 
+  .open-ena-login-context {
+    min-height: 520px;
+  }
+
+  .open-ena-login-brand-lockup {
+    width: min(100%, 220px);
+  }
+
+  .open-ena-login-network-hero {
+    width: min(100%, 360px);
+  }
+
   .open-ena-login-context-copy ol {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
   }
 
@@ -6286,6 +6270,230 @@ body:has(.open-ena-login-page) .back-to-top {
   }
 }
 
+.ena-group-display-controls {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #c9d8d6;
+}
+
+.ena-group-display-controls-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ena-group-display-controls-heading > div {
+  min-width: 0;
+}
+
+.ena-group-display-controls-heading h3 {
+  margin: 0;
+  color: #263740;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.ena-group-display-controls-heading p {
+  margin: 4px 0 0;
+  color: #53666d;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.ena-group-display-controls-heading .ena-inline-link {
+  flex: 0 0 auto;
+  padding: 2px 0;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.ena-group-display-list {
+  display: grid;
+  gap: 7px;
+}
+
+.ena-group-display-group {
+  overflow: clip;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: #fff;
+}
+
+.ena-group-display-group > summary,
+.ena-group-display-units > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 7px 9px;
+  color: #263740;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  cursor: pointer;
+  list-style: none;
+}
+
+.ena-group-display-unit-search {
+  display: grid;
+  gap: 4px;
+  padding: 7px 9px 4px;
+  color: #334b52;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ena-group-display-unit-search input {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  padding: 4px 7px;
+  color: var(--ink);
+  background: #fff;
+}
+
+.ena-group-display-unit-window {
+  margin: 2px 9px 4px;
+  color: #53666d;
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.ena-group-display-group > summary::-webkit-details-marker,
+.ena-group-display-units > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ena-group-display-group > summary::after,
+.ena-group-display-units > summary::after {
+  content: "⌄";
+  margin-left: auto;
+  color: #58706f;
+  font-size: 12px;
+}
+
+.ena-group-display-group[open] > summary::after,
+.ena-group-display-units[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.ena-group-display-swatch {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  border: 1px solid #263740;
+  border-radius: 50%;
+  background: var(--ena-group-display-color, var(--accent));
+}
+
+.ena-group-display-settings {
+  display: grid;
+  gap: 1px;
+  padding: 7px 9px;
+  border-top: 1px solid #d8e2e1;
+  background: var(--surface-soft);
+}
+
+.ena-group-display-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
+  color: #334b52;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.ena-group-display-switch input[type="checkbox"] {
+  width: 30px;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: var(--accent-strong);
+  cursor: pointer;
+}
+
+.ena-group-display-switch input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.ena-group-display-boundary {
+  margin: 5px 0 2px;
+  padding: 7px 8px;
+  border-left: 3px solid #c58d2d;
+  background: #fff8e9;
+  color: #69532e;
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.ena-group-display-units {
+  border-top: 1px solid #d8e2e1;
+}
+
+.ena-group-display-units > summary {
+  min-height: 30px;
+  padding-block: 5px;
+  background: #fff;
+  font-weight: 600;
+}
+
+.ena-group-display-units ul {
+  max-height: 190px;
+  margin: 0;
+  padding: 4px 7px 7px;
+  overflow: auto;
+  list-style: none;
+  scrollbar-gutter: stable;
+}
+
+.ena-group-display-units li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 3px 2px 3px 7px;
+  border-bottom: 1px solid #edf1f1;
+  color: #334b52;
+  font-size: 11px;
+}
+
+.ena-group-display-units li > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ena-group-display-units li > button {
+  min-width: 48px;
+  min-height: 23px;
+  padding: 2px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: #fff;
+  color: var(--accent-strong);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ena-group-display-units li > button:hover:not(:disabled),
+.ena-group-display-units li > button:focus-visible {
+  border-color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.ena-group-display-units li > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .site-header {
     background: #fff;
@@ -8131,6 +8339,18 @@ body:has(.open-ena-login-page) .back-to-top {
   height: 12px;
   border: 1px dashed #3366cc;
   background: transparent;
+}
+
+.ena-set-key-outlier {
+  width: 18px;
+  height: 12px;
+  border: 1px dashed #3366cc;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 4px,
+    currentColor 4px 5px
+  );
+  opacity: 0.8;
 }
 
 .ena-set-difference-table {
@@ -12411,8 +12631,7 @@ body:has(.open-ena-page) #main-content {
 
 .ena-longitudinal-v3-plot-shell:fullscreen,
 .ena-longitudinal-v3-plot-shell[data-fallback-fullscreen="true"] {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: block;
   width: 100vw;
   min-height: 100vh;
   height: 100vh;
@@ -12449,6 +12668,35 @@ body:has(.open-ena-page) #main-content {
   padding: 6px 9px;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 4px 14px rgba(30, 52, 58, 0.08);
+}
+
+.ena-longitudinal-v3-plot-shell:fullscreen .ena-longitudinal-v3-plot-actions,
+.ena-longitudinal-v3-plot-shell[data-fallback-fullscreen="true"] .ena-longitudinal-v3-plot-actions {
+  position: absolute;
+  z-index: 9;
+  top: 50%;
+  right: clamp(4px, 0.75vw, 10px);
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  width: min(190px, calc(100vw - 8px));
+  max-height: calc(100dvh - 16px);
+  justify-content: flex-start;
+  gap: 7px;
+  padding: 8px;
+  border: 0;
+  overflow-y: auto;
+  background: transparent;
+  overscroll-behavior: contain;
+}
+
+.ena-longitudinal-v3-plot-shell:fullscreen .ena-longitudinal-v3-plot-actions button,
+.ena-longitudinal-v3-plot-shell[data-fallback-fullscreen="true"] .ena-longitudinal-v3-plot-actions button {
+  width: 100%;
+  min-height: 44px;
+  white-space: normal;
 }
 
 .ena-longitudinal-v3-plot {

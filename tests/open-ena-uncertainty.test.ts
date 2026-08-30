@@ -5,6 +5,7 @@ import {
   marginalMeanStudentT95,
   studentTCritical975,
 } from "../lib/open-ena/uncertainty";
+import * as uncertaintyModule from "../lib/open-ena/uncertainty";
 
 function close(actual: number, expected: number, tolerance = 1e-10) {
   assert.ok(
@@ -77,4 +78,104 @@ test("too-small, constant, and non-finite samples fail closed without NaN bounds
   const nonFinite = marginalMeanStudentT95([1, Number.POSITIVE_INFINITY, 3]);
   assert.equal(nonFinite.status, "not-estimable");
   assert.doesNotMatch(JSON.stringify(nonFinite), /NaN|Infinity/);
+});
+
+test("rENA-compatible outlier display intervals use Type-7 IQR half-width around the arithmetic mean", () => {
+  const intervalFunction = (uncertaintyModule as unknown as {
+    meanCenteredIqrOutlierInterval?: (values: readonly number[]) => {
+      status: string;
+      method: string;
+      sampleSize: number;
+      mean: number;
+      firstQuartile: number;
+      thirdQuartile: number;
+      interquartileRange: number;
+      halfWidth: number;
+      lower: number;
+      upper: number;
+    };
+  }).meanCenteredIqrOutlierInterval;
+
+  assert.equal(typeof intervalFunction, "function", "the outlier display interval needs an explicit numerical contract");
+  const interval = intervalFunction!([-2, 0, 2, 4]);
+  assert.equal(interval.status, "estimable");
+  assert.equal(interval.method, "rena-mean-centered-1.5-iqr");
+  assert.equal(interval.sampleSize, 4);
+  close(interval.mean, 1);
+  close(interval.firstQuartile, -0.5);
+  close(interval.thirdQuartile, 2.5);
+  close(interval.interquartileRange, 3);
+  close(interval.halfWidth, 4.5);
+  close(interval.lower, -3.5);
+  close(interval.upper, 5.5);
+});
+
+test("outlier display intervals change with the visible-unit population and fail closed for invalid samples", () => {
+  const intervalFunction = (uncertaintyModule as unknown as {
+    meanCenteredIqrOutlierInterval?: (values: readonly number[]) => {
+      status: string;
+      sampleSize: number;
+      reason?: string;
+      mean?: number;
+      lower?: number;
+      upper?: number;
+    };
+  }).meanCenteredIqrOutlierInterval;
+
+  assert.equal(typeof intervalFunction, "function");
+  const visibleOnly = intervalFunction!([0, 2, 4]);
+  assert.equal(visibleOnly.status, "estimable");
+  assert.equal(visibleOnly.sampleSize, 3);
+  close(visibleOnly.mean!, 2);
+  close(visibleOnly.lower!, -1);
+  close(visibleOnly.upper!, 5);
+
+  const zeroIqr = intervalFunction!([7, 7, 7]);
+  assert.equal(zeroIqr.status, "estimable", "rENA keeps a zero-width display interval on a constant axis");
+  close(zeroIqr.mean!, 7);
+  close(zeroIqr.lower!, 7);
+  close(zeroIqr.upper!, 7);
+
+  assert.deepEqual(intervalFunction!([7]), {
+    status: "not-estimable",
+    method: "rena-mean-centered-1.5-iqr",
+    sampleSize: 1,
+    reason: "insufficient-n",
+  });
+  const nonFinite = intervalFunction!([1, Number.POSITIVE_INFINITY, 3]);
+  assert.equal(nonFinite.status, "not-estimable");
+  assert.doesNotMatch(JSON.stringify(nonFinite), /NaN|Infinity/);
+});
+
+test("outlier interval pairs identify a descriptive mean-centered display box rather than a confidence interval", () => {
+  const pairFunction = (uncertaintyModule as unknown as {
+    meanCenteredIqrOutlierIntervalPair?: (
+      points: ReadonlyArray<{ x: number; y: number }>,
+      axes: readonly [string, string],
+    ) => Record<string, unknown> & {
+      method: string;
+      estimand: string;
+      observationUnit: string;
+      interpretation: string;
+      confidenceInterval: boolean;
+      significanceTest: boolean;
+      xAxis: string;
+      yAxis: string;
+    };
+  }).meanCenteredIqrOutlierIntervalPair;
+  assert.equal(typeof pairFunction, "function");
+  const pair = pairFunction!([
+    { x: -2, y: 10 },
+    { x: 0, y: 12 },
+    { x: 2, y: 14 },
+    { x: 4, y: 16 },
+  ], ["MR1", "SVD2"]);
+  assert.equal(pair.method, "rena-mean-centered-1.5-iqr");
+  assert.equal(pair.estimand, "arithmetic-group-mean");
+  assert.equal(pair.observationUnit, "endpoint-analytic-unit");
+  assert.equal(pair.interpretation, "two-separate-mean-centered-outlier-display-intervals");
+  assert.equal(pair.confidenceInterval, false);
+  assert.equal(pair.significanceTest, false);
+  assert.equal(pair.xAxis, "MR1");
+  assert.equal(pair.yAxis, "SVD2");
 });

@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
+import type { OpenEnaDerivedGroupDisplay } from "@/lib/open-ena/group-display";
 import {
   isolateOpenEnaFallbackFullscreenOutsideTreeV3,
   nextOpenEnaFallbackFullscreenFocusV3,
@@ -41,6 +42,7 @@ export function openEna3dFullscreenMode(capabilities: {
 export interface OpenEnaInteractive3DPlotProps {
   result: OpenEnaResult;
   contrast?: OpenEnaPairwiseContrast | null;
+  groupDisplay?: Pick<OpenEnaDerivedGroupDisplay, "primary" | "secondary" | "hiddenUnitKeys">;
   plotKind?: OpenEna3dPlotKind;
   compact?: boolean;
   displayModeBar?: boolean;
@@ -252,6 +254,7 @@ export function zoomOpenEna3dAspectRatio(
 export default function OpenEnaInteractive3DPlot({
   result,
   contrast = null,
+  groupDisplay,
   plotKind = "comparison",
   compact = false,
   displayModeBar = false,
@@ -329,6 +332,7 @@ export default function OpenEnaInteractive3DPlot({
   const spec = useMemo<OpenEna3dPlotSpec>(() => compileOpenEna3dPlotSpec({
     result,
     contrast,
+    groupDisplay,
     plotKind,
     compact,
     displayModeBar,
@@ -353,6 +357,7 @@ export default function OpenEnaInteractive3DPlot({
   }), [
     result,
     contrast,
+    groupDisplay,
     plotKind,
     compact,
     displayModeBar,
@@ -629,17 +634,27 @@ export default function OpenEnaInteractive3DPlot({
   }, [Plotly, controlledAspectRatioKey, initialAspectRatio, status]);
 
   const fittedSpaceStatement = `${copy.plot.sameFittedSpace} ${copy.plot.threeDInteractionHint}`;
-  const summaryGroups = contrast
-    ? result.groups.filter((group) => (
-        plotKind === "primary"
-          ? group.name === contrast.primary.name
-          : plotKind === "secondary"
-            ? group.name === contrast.secondary.name
-            : group.name === contrast.primary.name || group.name === contrast.secondary.name
-      ))
+  const summaryGroups = contrast && plotKind === "comparison"
+    ? [
+        { side: contrast.primary, display: groupDisplay?.primary },
+        { side: contrast.secondary, display: groupDisplay?.secondary },
+      ]
+        .filter(({ display }) => display?.settings.showMean ?? true)
+        .map(({ side }) => ({ name: side.name, count: side.unitCount, meanPoint: side.meanPoint }))
+    : contrast
+      ? result.groups.filter((group) => (
+          plotKind === "primary"
+            ? group.name === contrast.primary.name
+            : group.name === contrast.secondary.name
+        ))
     : result.groups;
   const confidenceIntervalRows = contrast && plotKind === "comparison"
-    ? [contrast.primary, contrast.secondary].flatMap((side) => (
+    ? [
+        { side: contrast.primary, display: groupDisplay?.primary },
+        { side: contrast.secondary, display: groupDisplay?.secondary },
+      ].filter(({ display }) => (
+        (display?.settings.showMean ?? true) && (display?.settings.showConfidenceIntervals ?? true)
+      )).flatMap(({ side }) => (
         [xDimension, yDimension, zDimension].flatMap((dimension) => {
           const interval = side.meanConfidenceIntervalsByDimension?.[dimension];
           return interval ? [{ side, dimension, interval }] : [];

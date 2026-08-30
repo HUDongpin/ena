@@ -673,6 +673,74 @@ async function readScientificState(page) {
   });
 }
 
+async function readThreeDGroupDisplayState(page) {
+  return await page.evaluate(() => {
+    const root = document.querySelector(
+      '[data-testid="open-ena-3d-comparison-plot"] [data-ena-plotly-root="true"]',
+    );
+    const traces = Array.isArray(root?.data) ? root.data : [];
+    if (traces.length === 0) throw new Error("3D group-display traces are unavailable");
+    const byGroup = (role) => traces
+      .filter((trace) => trace.meta?.role === role)
+      .map((trace) => ({
+        groupName: trace.meta?.groupName ?? null,
+        markerSymbol: trace.marker?.symbol ?? trace.meta?.markerSymbol ?? null,
+        pointCount: Array.isArray(trace.x) ? trace.x.length : 0,
+        sampleSize: Number.isFinite(trace.meta?.sampleSize) ? trace.meta.sampleSize : null,
+      }))
+      .sort((left, right) => String(left.groupName).localeCompare(String(right.groupName)));
+    return {
+      unitTraces: byGroup("unit-points"),
+      meanTraces: byGroup("group-mean"),
+      confidenceTraces: byGroup("confidence-interval"),
+      outlierTraceCount: traces.filter((trace) => String(trace.meta?.role ?? "").includes("outlier")).length,
+    };
+  });
+}
+
+async function readTwoDGroupDisplayState(page) {
+  return await page.evaluate(() => {
+    const plot = document.querySelector('[data-testid="open-ena-group-comparison-plot"]');
+    if (!plot) throw new Error("2D group-display plot is unavailable");
+    const count = (selector) => plot.querySelectorAll(selector).length;
+    const guide = (selector) => {
+      const element = plot.querySelector(selector);
+      return {
+        count: count(selector),
+        sampleSize: element ? Number(element.getAttribute("data-ena-sample-size")) : null,
+      };
+    };
+    const primaryOutlier = guide('[data-ena-outlier-guide][data-ena-group-role="primary"]');
+    const secondaryOutlier = guide('[data-ena-outlier-guide][data-ena-group-role="secondary"]');
+    return {
+      points: {
+        total: Number(plot.getAttribute("data-ena-points-total")),
+        hidden: Number(plot.getAttribute("data-ena-points-hidden")),
+        shown: Number(plot.getAttribute("data-ena-points-shown")),
+        primary: count('[data-ena-unit-point="true"][data-ena-group-role="primary"]'),
+        secondary: count('[data-ena-unit-point="true"][data-ena-group-role="secondary"]'),
+      },
+      means: {
+        primary: count('[data-ena-mean-marker][data-ena-group-role="primary"]'),
+        secondary: count('[data-ena-mean-marker][data-ena-group-role="secondary"]'),
+      },
+      confidence: {
+        primary: guide('[data-ena-uncertainty-guide][data-ena-confidence-level="0.95"][data-ena-group-role="primary"]'),
+        secondary: guide('[data-ena-uncertainty-guide][data-ena-confidence-level="0.95"][data-ena-group-role="secondary"]'),
+      },
+      outlier: {
+        primary: {
+          ...primaryOutlier,
+          confidenceInterval: plot.querySelector(
+            '[data-ena-outlier-guide][data-ena-group-role="primary"]',
+          )?.getAttribute("data-ena-confidence-interval") ?? null,
+        },
+        secondary: secondaryOutlier,
+      },
+    };
+  });
+}
+
 function assertScientificState(actual, expected, label) {
   for (const key of [
     "analysisRunCount",
@@ -805,6 +873,248 @@ async function authenticateBuildAndOpen3d(page, args) {
     modelType: await modelType.inputValue(),
     unitFields,
     baseline: await readScientificState(page),
+    browserMessages: browserMessageCapture.finish(),
+  };
+}
+
+async function exerciseGroupDisplayControls(page, args) {
+  const browserMessageCapture = beginBrowserMessageCapture(page);
+  const baselineGroup = args.groups[0];
+  const secondaryGroup = args.groups[1];
+  const targetUnitId = baselineGroup + "::SYNTHETIC_UNIT_1";
+  const rail = page.getByRole("navigation", { name: "Analysis modes" });
+
+  const analysisRunCount = async () => await page.evaluate(() => (
+    window.__openEna3dControlsAudit?.analysisRunCount ?? -1
+  ));
+  const assertNoRerun = async (checkpoint) => {
+    assertBrowser(await analysisRunCount() === args.baseline.analysisRunCount, checkpoint + " reran jENA");
+  };
+  const openModelUnits = async () => {
+    await rail.getByRole("button", { name: "Model", exact: true }).click();
+    const unitsTab = page.getByRole("tab", { name: "Units", exact: true });
+    await unitsTab.waitFor({ state: "visible", timeout: 30_000 });
+    await unitsTab.click();
+    const controls = page.getByTestId("open-ena-group-display-controls");
+    await controls.waitFor({ state: "visible", timeout: 30_000 });
+    return controls;
+  };
+  const openPlotTools = async () => {
+    await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
+    await page.getByRole("group", { name: "ENA visualization options" })
+      .waitFor({ state: "visible", timeout: 30_000 });
+  };
+  const selectView = async (view) => {
+    await openPlotTools();
+    const visualization = page.getByRole("group", { name: "ENA visualization options" });
+    await visualization.getByRole("button", { name: view === "2d" ? /2D ENA/ : /3D ENA/ }).click();
+    if (view === "3d") {
+      await page.getByTestId("open-ena-3d-group-contrast").waitFor({ state: "visible", timeout: 60_000 });
+      await waitForThreePlots(page);
+      await page.waitForTimeout(250);
+    } else {
+      await page.getByTestId("open-ena-group-comparison-plot")
+        .waitFor({ state: "visible", timeout: 60_000 });
+    }
+  };
+  const openGroupCard = async (controls, groupName) => {
+    const card = controls.locator(".ena-group-display-group").filter({ hasText: groupName }).first();
+    assertBrowser(await card.count() === 1, "group-display card is missing for " + groupName);
+    if (!await card.evaluate((element) => element.open)) await card.locator("summary").first().click();
+    return card;
+  };
+  const readControls = async (groupName) => {
+    const controls = await openModelUnits();
+    const card = await openGroupCard(controls, groupName);
+    const settings = card.getByRole("group", { name: "Display settings for " + groupName });
+    const switchState = async (name) => {
+      const control = settings.getByRole("switch", { name });
+      return { checked: await control.isChecked(), disabled: await control.isDisabled() };
+    };
+    const units = card.locator(".ena-group-display-units");
+    if (!await units.evaluate((element) => element.open)) await units.locator("summary").click();
+    const resultIdentity = await controls.evaluate((element) => (
+      element.parentElement?.getAttribute("data-ena-group-display-result-key") ?? ""
+    ));
+    return {
+      controls,
+      card,
+      settings,
+      units,
+      resultIdentity,
+      summary: (await card.locator("summary").first().textContent())?.trim() ?? "",
+      showUnitPoints: await switchState("Show unit points for " + groupName),
+      showMean: await switchState("Show mean for " + groupName),
+      showConfidenceIntervals: await switchState("Show confidence intervals for " + groupName),
+      showOutlierIntervals: await switchState("Show outlier intervals for " + groupName),
+      includeHiddenPoints: await switchState("Include hidden points for " + groupName),
+    };
+  };
+  const clickSetting = async (state, label) => {
+    await state.settings.getByRole("switch", { name: label }).click();
+  };
+  const assertIdentity = (state, expected, checkpoint) => {
+    assertBrowser(Boolean(state.resultIdentity), checkpoint + " did not expose a result identity");
+    assertBrowser(state.resultIdentity === expected, checkpoint + " changed resultIdentity");
+  };
+  const traceByGroup = (state, groupName) => state.unitTraces.find((trace) => trace.groupName === groupName);
+  const confidenceSamples = (state, groupName) => [...new Set(state.confidenceTraces
+    .filter((trace) => trace.groupName === groupName)
+    .map((trace) => trace.sampleSize))];
+
+  const initial3d = await readThreeDGroupDisplayState(page);
+  assertBrowser(initial3d.unitTraces.length === 2, "linked 3D did not expose both group unit traces");
+  assertBrowser(
+    initial3d.unitTraces.every((trace) => trace.markerSymbol === "circle"),
+    "both group unit traces must use circle markers",
+  );
+  assertBrowser(traceByGroup(initial3d, baselineGroup)?.pointCount === 8, "baseline 3D unit count is not 8");
+  assertBrowser(traceByGroup(initial3d, secondaryGroup)?.pointCount === 8, "secondary 3D unit count is not 8");
+  assertBrowser(initial3d.meanTraces.length === 2, "3D defaults do not show both means");
+
+  const initialControls = await readControls(baselineGroup);
+  const resultIdentity = initialControls.resultIdentity;
+  assertBrowser(initialControls.summary.includes("8 of 8 unit points visible"), "default group visibility is not 8 of 8");
+  assertBrowser(initialControls.showUnitPoints.checked, "Show unit points is off by default");
+  assertBrowser(initialControls.showMean.checked, "Show mean is off by default");
+  assertBrowser(initialControls.showConfidenceIntervals.checked, "Show confidence intervals is off by default");
+  assertBrowser(!initialControls.showOutlierIntervals.checked, "Show outlier intervals is on by default");
+  assertBrowser(initialControls.showOutlierIntervals.disabled, "3D outlier control is not disabled");
+  assertBrowser(!initialControls.includeHiddenPoints.checked, "Include hidden points is on by default");
+  const hideAction = "Hide unit " + targetUnitId + " in " + baselineGroup;
+  const showAction = "Show unit " + targetUnitId + " in " + baselineGroup;
+  await initialControls.units.getByRole("button", { name: hideAction }).click();
+  await initialControls.units.getByRole("button", { name: showAction })
+    .waitFor({ state: "visible", timeout: 30_000 });
+
+  const hiddenControls3d = await readControls(baselineGroup);
+  assertIdentity(hiddenControls3d, resultIdentity, "hiding a 3D unit");
+  assertBrowser(hiddenControls3d.summary.includes("7 of 8 unit points visible"), "hidden group visibility is not 7 of 8");
+  await assertNoRerun("hiding a 3D unit");
+  await openPlotTools();
+  await waitForThreePlots(page);
+  const hidden3d = await readThreeDGroupDisplayState(page);
+  assertBrowser(hidden3d.unitTraces.every((trace) => trace.markerSymbol === "circle"), "hiding changed a 3D marker shape");
+  assertBrowser(traceByGroup(hidden3d, baselineGroup)?.pointCount === 7, "3D did not hide one baseline unit");
+  assertBrowser(traceByGroup(hidden3d, secondaryGroup)?.pointCount === 8, "3D hid a secondary unit by mistake");
+  assertBrowser(
+    JSON.stringify(confidenceSamples(hidden3d, baselineGroup)) === JSON.stringify([7]),
+    "Include hidden off did not use seven visible baseline units for 3D CI",
+  );
+
+  await selectView("2d");
+  const hidden2d = await readTwoDGroupDisplayState(page);
+  assertBrowser(hidden2d.points.total === 16 && hidden2d.points.hidden === 1 && hidden2d.points.shown === 15,
+    "2D did not preserve the one hidden unit");
+  assertBrowser(hidden2d.points.primary === 7 && hidden2d.points.secondary === 8,
+    "2D unit visibility did not persist by group");
+  assertBrowser(hidden2d.confidence.primary.sampleSize === 7, "2D CI did not use visible-only baseline units");
+  const groupDisplayPersistence2d = { hidden2d, persisted: true };
+
+  const controls2d = await readControls(baselineGroup);
+  assertIdentity(controls2d, resultIdentity, "switching to 2D");
+  assertBrowser(!controls2d.showOutlierIntervals.disabled, "2D outlier control remained disabled");
+  assertBrowser(await controls2d.units.getByRole("button", { name: showAction }).count() === 1,
+    "2D controls forgot the hidden unit");
+  await clickSetting(controls2d, "Show mean for " + baselineGroup);
+  const meanOffControls = await readControls(baselineGroup);
+  assertBrowser(!meanOffControls.showMean.checked, "Show mean did not turn off");
+  assertBrowser(meanOffControls.showConfidenceIntervals.disabled, "Mean off did not disable CI");
+  assertBrowser(meanOffControls.showOutlierIntervals.disabled, "Mean off did not disable outlier intervals");
+  await openPlotTools();
+  const meanOff2d = await readTwoDGroupDisplayState(page);
+  assertBrowser(meanOff2d.means.primary === 0 && meanOff2d.means.secondary === 1,
+    "Mean off did not suppress only the baseline mean");
+  assertBrowser(meanOff2d.confidence.primary.count === 0 && meanOff2d.confidence.secondary.count === 1,
+    "Mean off did not suppress only the dependent baseline CI");
+
+  const displayControls2d = await readControls(baselineGroup);
+  await clickSetting(displayControls2d, "Show mean for " + baselineGroup);
+  await clickSetting(displayControls2d, "Show confidence intervals for " + baselineGroup);
+  await clickSetting(displayControls2d, "Show outlier intervals for " + baselineGroup);
+  await clickSetting(displayControls2d, "Include hidden points for " + baselineGroup);
+  const configured2dControls = await readControls(baselineGroup);
+  assertIdentity(configured2dControls, resultIdentity, "configuring 2D group summaries");
+  assertBrowser(configured2dControls.showMean.checked, "Show mean did not restore");
+  assertBrowser(!configured2dControls.showConfidenceIntervals.checked, "Show confidence intervals did not turn off");
+  assertBrowser(configured2dControls.showOutlierIntervals.checked, "Show outlier intervals did not turn on");
+  assertBrowser(configured2dControls.includeHiddenPoints.checked, "Include hidden points did not turn on");
+  await openPlotTools();
+  const configured2d = await readTwoDGroupDisplayState(page);
+  assertBrowser(configured2d.points.hidden === 1 && configured2d.points.shown === 15,
+    "Include hidden points revealed the hidden unit mark");
+  assertBrowser(configured2d.means.primary === 1, "restored baseline mean is missing");
+  assertBrowser(configured2d.confidence.primary.count === 0 && configured2d.confidence.secondary.count === 1,
+    "per-group CI state was not honored");
+  assertBrowser(configured2d.outlier.primary.count === 1 && configured2d.outlier.secondary.count === 0,
+    "per-group outlier state was not honored");
+  assertBrowser(configured2d.outlier.primary.sampleSize === 8,
+    "Include hidden points did not restore the hidden unit to the outlier summary population");
+  assertBrowser(configured2d.outlier.primary.confidenceInterval === "false",
+    "outlier display was mislabeled as a confidence interval");
+
+  await selectView("3d");
+  const configured3d = await readThreeDGroupDisplayState(page);
+  assertBrowser(configured3d.unitTraces.every((trace) => trace.markerSymbol === "circle"),
+    "2D to 3D persistence changed a group marker shape");
+  assertBrowser(traceByGroup(configured3d, baselineGroup)?.pointCount === 7,
+    "3D did not preserve the hidden baseline unit");
+  assertBrowser(configured3d.meanTraces.some((trace) => trace.groupName === baselineGroup),
+    "3D did not preserve the restored baseline mean");
+  assertBrowser(configured3d.confidenceTraces.filter((trace) => trace.groupName === baselineGroup).length === 0,
+    "3D did not preserve the baseline CI-off state");
+  assertBrowser(configured3d.confidenceTraces.filter((trace) => trace.groupName === secondaryGroup).length === 6,
+    "3D removed the secondary CI wireframe");
+  assertBrowser(configured3d.outlierTraceCount === 0, "3D invented an outlier volume");
+  const persistedControls3d = await readControls(baselineGroup);
+  assertIdentity(persistedControls3d, resultIdentity, "switching configured controls to 3D");
+  assertBrowser(persistedControls3d.showMean.checked, "3D forgot the mean state");
+  assertBrowser(!persistedControls3d.showConfidenceIntervals.checked, "3D forgot the CI state");
+  assertBrowser(persistedControls3d.showOutlierIntervals.checked && persistedControls3d.showOutlierIntervals.disabled,
+    "3D did not preserve and disable the 2D-only outlier state");
+  assertBrowser(persistedControls3d.includeHiddenPoints.checked, "3D forgot Include hidden points");
+  assertBrowser(await persistedControls3d.units.getByRole("button", { name: showAction }).count() === 1,
+    "3D controls forgot the hidden unit");
+  const groupDisplayPersistence3d = { configured3d, persisted: true };
+
+  await clickSetting(persistedControls3d, "Show confidence intervals for " + baselineGroup);
+  await clickSetting(persistedControls3d, "Include hidden points for " + baselineGroup);
+  await persistedControls3d.controls.getByRole("button", { name: "Show all hidden unit points" }).click();
+  const revealedControls3d = await readControls(baselineGroup);
+  assertBrowser(revealedControls3d.summary.includes("8 of 8 unit points visible"), "Show all did not restore 8 of 8 units");
+  assertBrowser(await revealedControls3d.units.getByRole("button", { name: hideAction }).count() === 1,
+    "restored unit did not expose its Hide action");
+  await selectView("2d");
+  const restore2dControls = await readControls(baselineGroup);
+  await clickSetting(restore2dControls, "Show outlier intervals for " + baselineGroup);
+  const restoredControls = await readControls(baselineGroup);
+  assertIdentity(restoredControls, resultIdentity, "restoring default group display");
+  assertBrowser(restoredControls.showMean.checked && restoredControls.showConfidenceIntervals.checked,
+    "restored Mean/CI defaults are incorrect");
+  assertBrowser(!restoredControls.showOutlierIntervals.checked && !restoredControls.includeHiddenPoints.checked,
+    "restored Outlier/Include Hidden defaults are incorrect");
+  await selectView("3d");
+  const restored3d = await readThreeDGroupDisplayState(page);
+  assertBrowser(restored3d.unitTraces.every((trace) => trace.markerSymbol === "circle"),
+    "restored 3D group traces are not circles");
+  assertBrowser(traceByGroup(restored3d, baselineGroup)?.pointCount === 8
+    && traceByGroup(restored3d, secondaryGroup)?.pointCount === 8,
+    "restored 3D unit counts are not 8 + 8");
+  const finalScientificState = await readScientificState(page);
+  assertScientificState(finalScientificState, args.baseline, "group-display restoration");
+  await assertNoRerun("group-display lifecycle");
+
+  return {
+    analysisRunCount: await analysisRunCount(),
+    resultIdentity,
+    initialUnitTraces: initial3d.unitTraces,
+    hidden3d,
+    groupDisplayPersistence2d,
+    meanOff2d,
+    configured2d,
+    groupDisplayPersistence3d,
+    restored3d,
+    finalScientificState,
     browserMessages: browserMessageCapture.finish(),
   };
 }
@@ -1441,6 +1751,27 @@ try {
   assert.equal(modelAudit.baseline.analysisRunCount, 1);
   assert.match(modelAudit.baseline.resultIdentity, /^[a-f0-9]{64}$/u);
 
+  const groupDisplayAudit = runBrowserPhase(
+    "exercise group/unit visibility and Mean, CI, Outlier, and Include Hidden across 2D/3D",
+    exerciseGroupDisplayControls,
+    {
+      baseline: modelAudit.baseline,
+      groups: fixtureContract.groups,
+    },
+    240_000,
+    [
+      assertBrowser,
+      beginBrowserMessageCapture,
+      waitForThreePlots,
+      readScientificState,
+      readThreeDGroupDisplayState,
+      readTwoDGroupDisplayState,
+      assertScientificState,
+    ],
+  );
+  assert.equal(groupDisplayAudit.analysisRunCount, 1);
+  assert.equal(groupDisplayAudit.finalScientificState.resultIdentity, modelAudit.baseline.resultIdentity);
+
   const dataViewAudit = runBrowserPhase(
     "exercise 3D Data View by mouse and keyboard without rerunning",
     exerciseDataView,
@@ -1492,6 +1823,7 @@ try {
   );
   const browserErrors = classifyBrowserMessages([
     modelAudit.browserMessages,
+    groupDisplayAudit.browserMessages,
     dataViewAudit.browserMessages,
     fullscreenAudit.browserMessages,
     mobileAudit.browserMessages,
@@ -1515,6 +1847,7 @@ try {
     "Playwright reported a warning outside the exact Canvas2D/ANGLE diagnostics",
   );
 
+  const { browserMessages: _groupDisplayBrowserMessages, ...portableGroupDisplayAudit } = groupDisplayAudit;
   const { browserMessages: _dataViewBrowserMessages, ...portableDataViewAudit } = dataViewAudit;
   const { browserMessages: _fullscreenBrowserMessages, ...portableFullscreenAudit } = fullscreenAudit;
   const { browserMessages: _mobileBrowserMessages, ...portableMobileAudit } = mobileAudit;
@@ -1535,6 +1868,7 @@ try {
       rawRowCount: fixtureCsv.trim().split("\n").length - 1,
     },
     baseline: modelAudit.baseline,
+    groupDisplay: portableGroupDisplayAudit,
     dataView: portableDataViewAudit,
     fullscreen: portableFullscreenAudit,
     mobile: portableMobileAudit,

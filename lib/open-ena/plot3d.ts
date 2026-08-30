@@ -1,8 +1,14 @@
 import type { Row } from "jena-js";
 import { assertOpenEnaCapabilityForResult } from "./capabilities";
 import type { OpenEnaPairwiseContrast, OpenEnaPairwiseContrastSide } from "./contrasts";
+import {
+  DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS,
+  type OpenEnaDerivedGroupDisplay,
+  type OpenEnaResolvedGroupDisplaySide,
+} from "./group-display";
 import { codeColorFor, JENA_GROUP_COLORS, type OpenEnaCodeColors } from "./plot-style";
 import type { CameraPreset, GroupNetwork, OpenEnaResult } from "./types";
+import { marginalMeanStudentT95 } from "./uncertainty";
 
 export const OPEN_ENA_3D_UI_REVISION = "open-ena-3d-camera-v2";
 export const OPEN_ENA_3D_DEFAULT_CAMERA_ZOOM = 1.5;
@@ -219,6 +225,7 @@ export interface CompileOpenEna3dPlotInput {
   result: OpenEnaResult;
   /** Selected endpoint contrast used to compile the linked three-plot 3D workbench. */
   contrast?: OpenEnaPairwiseContrast | null;
+  groupDisplay?: Pick<OpenEnaDerivedGroupDisplay, "primary" | "secondary" | "hiddenUnitKeys">;
   /** Defaults to comparison so existing single-plot callers keep their behavior. */
   plotKind?: OpenEna3dPlotKind;
   compact?: boolean;
@@ -578,6 +585,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
   const {
     result,
     contrast = null,
+    groupDisplay,
     plotKind = "comparison",
     compact = false,
     displayModeBar = true,
@@ -605,6 +613,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
   void _legacyShowTrajectories;
   const dimensions = [xDimension, yDimension, zDimension] as const;
   const traces: OpenEna3dTrace[] = [];
+  const unitLegendGroupIndices = new Set<number>();
   const nodeRows = result.set.rotation.nodes ?? [];
   const points = result.set.points;
   const safePointScale = clamp(pointScale, 0.2, 5, 1);
@@ -622,23 +631,71 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
   const selectedComparisonGroupIndices = contrast
     ? new Set([primaryGroupIndex, secondaryGroupIndex])
     : null;
+  const resolveGroupDisplay = (
+    role: "primary" | "secondary",
+    side: OpenEnaPairwiseContrastSide,
+  ): OpenEnaResolvedGroupDisplaySide => {
+    const candidate = groupDisplay?.[role];
+    if (candidate?.name === side.name) return candidate;
+    return {
+      name: side.name,
+      settings: { ...DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS },
+      totalUnitCount: side.unitIds.length,
+      validUnitCount: side.points.filter(({ x, y }) => Number.isFinite(x) && Number.isFinite(y)).length,
+      hiddenUnitCount: 0,
+      visibleUnitIds: [...side.unitIds],
+      summaryUnitIds: [...side.unitIds],
+    };
+  };
   const displayGroupEntries = contrast
-    ? [primaryGroupIndex, secondaryGroupIndex].map((groupIndex) => ({
-        group: result.groups[groupIndex] as GroupNetwork,
-        groupIndex,
+    ? ([
+        {
+          group: result.groups[primaryGroupIndex] as GroupNetwork,
+          groupIndex: primaryGroupIndex,
+          side: contrast.primary,
+          display: resolveGroupDisplay("primary", contrast.primary),
+        },
+        {
+          group: result.groups[secondaryGroupIndex] as GroupNetwork,
+          groupIndex: secondaryGroupIndex,
+          side: contrast.secondary,
+          display: resolveGroupDisplay("secondary", contrast.secondary),
+        },
+      ])
+    : result.groups.map((group, groupIndex) => ({ group, groupIndex, side: null, display: null }));
+  const canonicalConfidenceMagnitudes = contrast
+    ? result.groups.flatMap((_group, groupIndex) => dimensions.flatMap((dimension) => {
+        const values = points
+          .filter((row) => groupIndexForRow(result, groupColumn, row) === groupIndex)
+          .map((row) => coordinate(row, dimension));
+        const interval = marginalMeanStudentT95(values);
+        return interval.status === "estimable"
+          ? [Math.abs(interval.lower), Math.abs(interval.upper)]
+          : [];
       }))
-    : result.groups.map((group, groupIndex) => ({ group, groupIndex }));
+    : [];
+  const displayedConfidenceMagnitudes = contrast && plotKind === "comparison"
+    ? ([
+        ["primary", contrast.primary],
+        ["secondary", contrast.secondary],
+      ] as const).flatMap(([role, side]) => {
+        const display = resolveGroupDisplay(role, side);
+        if (!display.settings.showMean || !display.settings.showConfidenceIntervals) return [];
+        return dimensions.flatMap((dimension) => {
+          const interval = side.meanConfidenceIntervalsByDimension?.[dimension];
+          return interval?.status === "estimable"
+            ? [Math.abs(interval.lower), Math.abs(interval.upper)]
+            : [];
+        });
+      })
+    : [];
 
   const coordinateMagnitudes = [
     ...nodeRows.flatMap((row) => dimensions.map((dimension) => Math.abs(coordinate(row, dimension)))),
     ...points.flatMap((row) => dimensions.map((dimension) => Math.abs(coordinate(row, dimension)))),
     ...result.groups.flatMap((group) => dimensions.map((dimension) => Math.abs(finiteNumber(group.meanPoint[dimension])))),
-    ...(contrast ? [contrast.primary, contrast.secondary].flatMap((side) => dimensions.flatMap((dimension) => {
-      const interval = side.meanConfidenceIntervalsByDimension?.[dimension];
-      return interval?.status === "estimable"
-        ? [Math.abs(interval.lower), Math.abs(interval.upper)]
-        : [];
-    })) : []),
+    ...canonicalConfidenceMagnitudes,
+    ...displayedConfidenceMagnitudes,
   ];
   const axisExtent = Math.max(0.5, ...coordinateMagnitudes) * 1.15;
 
@@ -721,18 +778,29 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
   }
 
   if (showPoints) {
-    displayGroupEntries.forEach(({ group, groupIndex }) => {
+    displayGroupEntries.forEach(({ group, groupIndex, display }) => {
       if (selectedComparisonGroupIndices && (
         plotKind !== "comparison" || !selectedComparisonGroupIndices.has(groupIndex)
       )) return;
-      const selected = points.filter((row) => groupIndexForRow(result, groupColumn, row) === groupIndex);
+      if (display && !display.settings.showUnitPoints) return;
+      const visibleUnitIds = display ? new Set(display.visibleUnitIds) : null;
+      const selected = points.filter((row) => (
+        groupIndexForRow(result, groupColumn, row) === groupIndex
+          && (!visibleUnitIds || visibleUnitIds.has(String(row.ENA_UNIT ?? "")))
+      ));
       if (selected.length === 0) return;
       const color = groupColor(group, groupIndex);
-      const markerSymbol = GROUP_MARKER_SYMBOLS[groupIndex % GROUP_MARKER_SYMBOLS.length];
+      const markerSymbol = contrast
+        ? "circle"
+        : GROUP_MARKER_SYMBOLS[groupIndex % GROUP_MARKER_SYMBOLS.length];
+      const markerLabel = contrast
+        ? "circle"
+        : GROUP_MARKER_LABELS[groupIndex % GROUP_MARKER_LABELS.length];
+      unitLegendGroupIndices.add(groupIndex);
       traces.push({
         type: "scatter3d",
         mode: showUnitLabels ? "markers+text" : "markers",
-        name: `${group.name} units · ${GROUP_MARKER_LABELS[groupIndex % GROUP_MARKER_LABELS.length]}`,
+        name: `${group.name} units · ${markerLabel}`,
         x: selected.map((row) => coordinate(row, xDimension)),
         y: selected.map((row) => coordinate(row, yDimension)),
         z: selected.map((row) => coordinate(row, zDimension)),
@@ -759,27 +827,35 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
   }
 
   if (contrast && plotKind === "comparison") {
-    traces.push(...confidenceIntervalBoxTraces(
-      contrast.primary,
-      primaryGroupIndex,
-      dimensions,
-      groupColor(result.groups[primaryGroupIndex] as GroupNetwork, primaryGroupIndex),
-    ));
-    traces.push(...confidenceIntervalBoxTraces(
-      contrast.secondary,
-      secondaryGroupIndex,
-      dimensions,
-      groupColor(result.groups[secondaryGroupIndex] as GroupNetwork, secondaryGroupIndex),
-    ));
+    const primaryDisplay = resolveGroupDisplay("primary", contrast.primary);
+    const secondaryDisplay = resolveGroupDisplay("secondary", contrast.secondary);
+    if (primaryDisplay.settings.showMean && primaryDisplay.settings.showConfidenceIntervals) {
+      traces.push(...confidenceIntervalBoxTraces(
+        contrast.primary,
+        primaryGroupIndex,
+        dimensions,
+        groupColor(result.groups[primaryGroupIndex] as GroupNetwork, primaryGroupIndex),
+      ));
+    }
+    if (secondaryDisplay.settings.showMean && secondaryDisplay.settings.showConfidenceIntervals) {
+      traces.push(...confidenceIntervalBoxTraces(
+        contrast.secondary,
+        secondaryGroupIndex,
+        dimensions,
+        groupColor(result.groups[secondaryGroupIndex] as GroupNetwork, secondaryGroupIndex),
+      ));
+    }
   }
 
-  displayGroupEntries.forEach(({ group, groupIndex }) => {
+  displayGroupEntries.forEach(({ group, groupIndex, side, display }) => {
     if (selectedComparisonGroupIndices && (
       plotKind !== "comparison" || !selectedComparisonGroupIndices.has(groupIndex)
     )) return;
+    if (display && !display.settings.showMean) return;
     const color = groupColor(group, groupIndex);
     const markerSymbol = "square";
-    const mean = dimensions.map((dimension) => finiteNumber(group.meanPoint[dimension])) as [number, number, number];
+    const meanSource = side?.meanPoint ?? group.meanPoint;
+    const mean = dimensions.map((dimension) => finiteNumber(meanSource[dimension])) as [number, number, number];
     traces.push({
       type: "scatter3d",
       mode: "markers",
@@ -797,7 +873,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       },
       hovertemplate: "%{customdata}<extra></extra>",
       legendgroup: `open-ena-group-${groupIndex}`,
-      showlegend: !showPoints,
+      showlegend: !unitLegendGroupIndices.has(groupIndex),
       meta: { role: "group-mean", groupName: group.name, groupIndex, markerSymbol },
     });
   });

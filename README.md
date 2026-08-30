@@ -160,15 +160,21 @@ The current-result group contrast keeps one coordinate domain from the full endp
 result while the selected pair changes. The Comparison panel draws each nonzero
 Primary-minus-Secondary edge difference once, using blue for Primary-stronger edges,
 red for Secondary-stronger edges, and the maximum absolute difference as its denominator.
-The Primary and Secondary panels retain their complete group-mean networks on one shared
-mean denominator. Whenever Unit circles are enabled, every selected group's analytic-unit
-projection is shown persistently as a small group-colored circle in the Comparison panel
-and its matching side panel; larger group-colored squares mark the two group means. Plotting
+The Primary and Secondary panels retain their displayed group-summary networks on one
+shared mean denominator. By default, every selected group's analytic-unit projection is a
+small group-colored circle in the Comparison panel; the side panels remain mean-network
+views, and larger group-colored squares mark enabled group means. Model → Units can hide
+one group or individual unit marks and independently show each group's mean and marginal
+95% Student-t confidence guides. The optional rENA-compatible mean-centered 1.5 × IQR
+outlier guide is available in 2D only and does not remove points. Hidden unit marks remain
+hidden: Include Hidden Points only chooses whether display-derived means, intervals, and
+group-summary networks include those units. These controls are display-only and do not
+change the fitted jENA result, Stats, inference, rotation, or result identity. Plotting
 retains the jENA coordinates and deterministically samples only when a group exceeds 2,000
 valid points. The ranked evidence table and exports retain the ordered signed differences.
-Dedicated contrast JSON records both denominators, the active figure controls, the
-unflipped statistical coordinate system, the ordered pair, and the original rotation-fit
-provenance. It excludes raw rows but retains analytic-unit and group identifiers.
+Dedicated contrast JSON records both denominators, the active figure and group-display
+controls, the unflipped statistical coordinate system, the ordered pair, and the original
+rotation-fit provenance. It excludes raw rows but retains analytic-unit and group identifiers.
 
 The pairwise point-centroid correlation helper scales quadratically, so Open ENA runs
 the complete jENA statistics helper automatically only through 500 units. Larger

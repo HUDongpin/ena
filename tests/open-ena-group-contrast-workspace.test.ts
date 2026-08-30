@@ -154,8 +154,10 @@ test("a stable current-result contrast surface shows Comparison, Primary, and Se
   );
   assert.match(
     workspace,
-    /<OpenEnaGroupContrast[\s\S]{0,300}contrast=\{activeGroupContrast\}/,
+    /<OpenEnaGroupContrast[\s\S]{0,300}contrast=\{activeGroupDisplay\.contrast\}/,
+    "the presenter consumes the successfully derived display contrast without replacing canonical result state",
   );
+  assert.match(workspace, /<OpenEnaGroupContrast[\s\S]{0,400}groupDisplay=\{activeGroupDisplay\}/);
   assert.match(groupContrastSurface, /contrast\.primary/);
   assert.match(groupContrastSurface, /contrast\.secondary/);
   assert.match(workspace, /activeGroupContrast\.groupOrder/);
@@ -219,8 +221,8 @@ test("research exports record the selected group pair and selected X/Y axes", ()
   );
   assert.match(
     workspace,
-    /group-contrast\.json[\s\S]{0,900}buildPairwiseGroupContrastExport\(groupContrast,[\s\S]{0,700}(?:flipX|edgeThreshold|showNetworks)/,
-    "a dedicated contrast export must preserve the same selected pair and axes",
+    /group-contrast\.json[\s\S]{0,900}buildPairwiseGroupContrastExport\(groupDisplayExportContrast,[\s\S]{0,700}(?:flipX|edgeThreshold|showNetworks)/,
+    "a dedicated contrast export must preserve the selected pair, axes, and current display-derived summaries",
   );
 });
 

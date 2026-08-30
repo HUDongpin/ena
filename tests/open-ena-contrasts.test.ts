@@ -8,7 +8,10 @@ import {
 } from "../lib/open-ena/contrasts";
 import { parseCsv } from "../lib/open-ena/csv";
 import { SAMPLE_CONFIG, type OpenEnaConfig, type OpenEnaResult } from "../lib/open-ena/types";
-import { marginalMeanStudentT95 } from "../lib/open-ena/uncertainty";
+import {
+  marginalMeanStudentT95,
+  meanCenteredIqrOutlierInterval,
+} from "../lib/open-ena/uncertainty";
 
 function threeGroupEndpoint(): { result: OpenEnaResult; config: OpenEnaConfig } {
   const dataset = parseCsv(
@@ -214,6 +217,44 @@ test("official plot framing includes every declared group's confidence bounds ac
 
   assert.deepEqual(contrast.coordinateExtent, baseline.coordinateExtent);
   assert.deepEqual(contrast.inference, baseline.inference);
+});
+
+test("official plot framing includes rENA outlier bounds without changing when the selected pair changes", () => {
+  const { result, config } = threeGroupEndpoint();
+  const axes = result.dimensions.slice(0, 2) as [string, string];
+  const outlierDominant = structuredClone(result);
+  const edgeColumns = outlierDominant.set.codeColumns;
+  assert.equal(edgeColumns.length, 3);
+  outlierDominant.set.rotation.rotationMatrix = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ];
+  for (const row of outlierDominant.set.pointsForProjection) {
+    for (const column of edgeColumns) row[column] = 0;
+  }
+  const gammaRows = outlierDominant.set.pointsForProjection.filter((row) => row.group === "Gamma");
+  assert.equal(gammaRows.length, 2);
+  outlierDominant.set.pointsForProjection.push(
+    { ...gammaRows[0], ENA_UNIT: "g3" },
+    { ...gammaRows[1], ENA_UNIT: "g4" },
+  );
+  outlierDominant.set.pointsForProjection
+    .filter((row) => row.group === "Gamma")
+    .forEach((row, index) => {
+      row[edgeColumns[2]] = [-2, 0, 2, 4][index];
+    });
+
+  const alphaBeta = buildPairwiseGroupContrast(outlierDominant, config, "Alpha", "Beta", axes);
+  const betaAlpha = buildPairwiseGroupContrast(outlierDominant, config, "Beta", "Alpha", axes);
+  const frame = alphaBeta.officialPlotFrame;
+  assert.ok(frame);
+  const interval = meanCenteredIqrOutlierInterval([-2, 0, 2, 4]);
+  assert.equal(interval.status, "estimable");
+  const expectedOutlierMaximum = Math.max(Math.abs(interval.lower), Math.abs(interval.upper))
+    * frame.pointScaleFactor;
+  assert.ok(Math.abs(frame.maxPosition - expectedOutlierMaximum) < 1e-12);
+  assert.deepEqual(betaAlpha.officialPlotFrame, frame);
 });
 
 test("pairwise contrasts fail closed for unsupported models, ambiguous groups, empty groups, and invalid axes", () => {
