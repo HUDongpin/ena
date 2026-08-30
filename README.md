@@ -269,7 +269,7 @@ Hindi, Russian, Indonesian, and Bengali.
 
 ### SEC-01 operator and migration notes
 
-The billable AI and longitudinal routes require the versioned v2 session principal and a configured billing policy. They fail closed when the account ID, database/policy values, or provider hard-cap check is absent or malformed. Apply `migrations/001_open_ena_billable.sql` with a PostgreSQL operator before enabling a durable deployment; the migration uses server UTC time and idempotent reservation keys. Configure the OpenRouter `/key` monthly hard limit at or below both the provider and global ceilings. Security alerts are redacted and written to the outbox; an HTTPS webhook delivery worker may consume that outbox.
+The billable AI and longitudinal routes require a verified durable v2 or v3 session principal and a configured billing policy. They fail closed when the account ID, database/policy values, or provider hard-cap check is absent or malformed. Apply `migrations/001_open_ena_billable.sql` with a PostgreSQL operator before enabling a durable deployment; the migration uses server UTC time and idempotent reservation keys. Configure the OpenRouter `/key` monthly hard limit at or below both the provider and global ceilings. Security alerts are redacted and written to the outbox; an HTTPS webhook delivery worker may consume that outbox.
 
 Open ENA authentication also requires the shared PostgreSQL security migration
 (`migrations/002_open_ena_auth_security.sql`) and `OPEN_ENA_AUTH_DATABASE_URL`.
@@ -281,20 +281,52 @@ Set `OPEN_ENA_TRUSTED_CLIENT_IP_HEADER` only to a header that an operator-owned
 edge proxy forcibly rewrites or strips; an arbitrary client-supplied IP header is
 not a trust boundary. If that guarantee is unavailable, leave it blank so every
 request uses the shared account ceiling.
-Login issues a randomly identified v2 session. Logout records that session's `jti` in
-the shared revocation table before clearing the cookie, and page, AI, and
-longitudinal requests reject revoked tokens. Set `OPEN_ENA_PUBLIC_ORIGIN` (and,
+The static account issues a randomly identified v2 session. Logout records that
+session's `jti` in the shared revocation table before clearing the cookie, and
+page, AI, and longitudinal requests reject revoked tokens. Set
+`OPEN_ENA_PUBLIC_ORIGIN` (and,
 when needed, the comma-separated `OPEN_ENA_ALLOWED_ORIGINS`) to operator-owned
 `http`/`https` origins in production. The request validator never trusts
 `Host`, `X-Forwarded-Host`, `X-Forwarded-Proto`, or `Forwarded` as an origin or
 redirect authority; a production deployment without an explicit origin list
 fails closed.
 
+Operator-created, one-time release test accounts additionally require
+`migrations/004_open_ena_disposable_accounts.sql`. The application sends only a
+domain-separated HMAC username reference to PostgreSQL and verifies a fixed-parameter
+scrypt password derivation; raw usernames, raw passwords, cookies, and session tokens
+are not stored. A successful conditional database update consumes the account exactly
+once across serverless instances. The resulting disposable principal uses a separate
+15-minute v3 session while the static account retains its existing 12-hour v2 semantics.
+Provision these rows only through a controlled operator process; this migration does
+not create a public registration or provisioning endpoint.
+
+Run the operator in two phases so migration 004 is committed on the target database
+before deploying the auth code that reads it. `vercel env run` injects Production
+variables into the child process without creating a local environment file:
+
+```bash
+vercel env run --environment=production -- \
+  node scripts/run-open-ena-production-auth-operator.mjs --mode=migration
+
+# Run only after the exact Git SHA is deployed and Production is READY.
+vercel env run --environment=production -- \
+  node scripts/run-open-ena-production-auth-operator.mjs \
+  --mode=proof \
+  --expected-final-git-sha=<40-hex-git-sha> \
+  --deployment-id=<dpl-id>
+```
+
+Each command emits one redacted JSON receipt. The proof receipt deliberately marks
+its supplied SHA and deployment ID as `EXTERNAL_CROSS_CHECK_REQUIRED`; bind them to
+independent Vercel control-plane, GitHub CI, remote Git, and public-source evidence
+before treating the HTTP observation as an exact-release fact.
+
 AI consent receipts additionally require
 `migrations/003_open_ena_ai_consent.sql`. The durable receipt stores only a
 hash-bound principal reference, operation ID, canonical request SHA-256,
 consent-policy version, provider/model, timestamp, and terminal status; it does
-not store prompts, completions, raw rows, or dataset labels. Apply all three
+not store prompts, completions, raw rows, or dataset labels. Apply all four
 migrations with the same operator-controlled PostgreSQL deployment before
 enabling production AI. These settings are examples only and are not deployed
 by this repository.

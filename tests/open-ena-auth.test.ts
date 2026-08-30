@@ -134,7 +134,7 @@ test("the localized Open ENA page renders a server-side login gate before the wo
 
   assert.equal(existsSync(loginPath), true, "the localized login interface must exist");
   assert.match(page, /await cookies\(\)/);
-  assert.match(page, /verifyProductionOpenEnaSessionTokenV2/);
+  assert.match(page, /verifyProductionOpenEnaSessionTokenAny/);
   assert.match(page, /openEnaAuthSecurityConfigurationReady/);
   assert.doesNotMatch(page, /verifyOpenEnaSessionToken\(sessionCookie\)/);
   assert.match(page, /isAuthenticated[\s\S]*?<OpenEnaWorkspace locale=\{typedLocale\}/);

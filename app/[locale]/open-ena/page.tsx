@@ -10,7 +10,7 @@ import {
 } from "@/lib/open-ena-auth";
 import {
   openEnaAuthSecurityConfigurationReady,
-  verifyProductionOpenEnaSessionTokenV2,
+  verifyProductionOpenEnaSessionTokenAny,
 } from "@/lib/server/open-ena-auth-security-store";
 import { OPEN_ENA_AI_DEFAULT_MODEL } from "@/lib/server/luna-client";
 import {
@@ -69,7 +69,7 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
   const authConfigurationReady = openEnaAuthSecurityConfigurationReady();
   const sessionCookie = (await cookies()).get(OPEN_ENA_SESSION_COOKIE)?.value;
   const isAuthenticated = authConfigurationReady
-    && Boolean(await verifyProductionOpenEnaSessionTokenV2(sessionCookie));
+    && Boolean(await verifyProductionOpenEnaSessionTokenAny(sessionCookie));
   const query = await searchParams;
 
   if (!isAuthenticated) {

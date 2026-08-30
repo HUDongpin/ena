@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isLocale, type Locale } from "@/lib/i18n";
 import {
   OPEN_ENA_SESSION_COOKIE,
-  verifyOpenEnaSessionTokenV2,
+  verifyOpenEnaSessionTokenAny,
   type OpenEnaAuthEnvironment,
 } from "@/lib/open-ena-auth";
 import { resolveOpenEnaRequestOrigin } from "@/lib/open-ena-auth-request";
@@ -117,7 +117,7 @@ export function createOpenEnaLogoutPostHandler(dependencies: LogoutRouteDependen
     }
     if (!securityStore) return noStore("Open ENA secure authentication is unavailable.", 503);
 
-    const principal = verifyOpenEnaSessionTokenV2(
+    const principal = verifyOpenEnaSessionTokenAny(
       cookieValue(request.headers, OPEN_ENA_SESSION_COOKIE),
       now(),
       environment,

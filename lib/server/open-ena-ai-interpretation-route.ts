@@ -3,7 +3,7 @@ import {
   openEnaV2AuthConfigurationReady,
   OPEN_ENA_SESSION_COOKIE,
 } from "@/lib/open-ena-auth";
-import { verifyProductionOpenEnaSessionTokenV2 } from "@/lib/server/open-ena-auth-security-store";
+import { verifyProductionOpenEnaSessionTokenAny } from "@/lib/server/open-ena-auth-security-store";
 import { createProductionBillableStore, parseBillablePolicy, type BillableStore, type BillableLimits } from "./open-ena-billable";
 import { resolveOpenEnaRequestOrigin } from "@/lib/open-ena-auth-request";
 import {
@@ -529,7 +529,7 @@ export function createOpenEnaAiInterpretationPostHandler(
 }
 
 const productionPostHandler = createOpenEnaAiInterpretationPostHandler({
-  verifyPrincipal: (token) => verifyProductionOpenEnaSessionTokenV2(token),
+  verifyPrincipal: (token) => verifyProductionOpenEnaSessionTokenAny(token),
   authConfigurationReady: openEnaAiAuthConfigurationReady,
   environment: process.env,
   requireBillable: true,

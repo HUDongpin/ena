@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { OPEN_ENA_SESSION_COOKIE } from "@/lib/open-ena-auth";
-import { verifyProductionOpenEnaSessionTokenV2 } from "@/lib/server/open-ena-auth-security-store";
+import { verifyProductionOpenEnaSessionTokenAny } from "@/lib/server/open-ena-auth-security-store";
 import {
   createProductionBillableStore,
   parseBillablePolicy,
@@ -52,7 +52,7 @@ export interface OpenEnaLongitudinalRouteDependenciesV3 {
   validateRequest?: RequestValidatorV3;
   submissionDeadlineMilliseconds?: number;
   maximumDerivedPayloadBytes?: number;
-  /** Legacy unit-test seam. Production always supplies verifyPrincipal and accepts v2 only. */
+  /** Legacy unit-test seam. Production supplies verifyPrincipal and accepts durable v2/v3 sessions. */
   verifySessionToken?: (token: string | undefined) => boolean;
   verifyPrincipal?: (token: string | undefined) => { principalRef: string } | null | Promise<{ principalRef: string } | null>;
   /** Unit-test seam only. Production uses the durable BillableStore implementation. */
@@ -388,7 +388,7 @@ export function createOpenEnaLongitudinalPostHandlerV3(
       ? (token: string | undefined) => dependencies.verifySessionToken!(token)
         ? { principalRef: "explicit-unit-test-principal" }
         : null
-      : (token: string | undefined) => verifyProductionOpenEnaSessionTokenV2(token));
+      : (token: string | undefined) => verifyProductionOpenEnaSessionTokenAny(token));
   return async (incoming: Request) => {
     let store: BillableStore | null = dependencies.billableStore ?? null;
     let reservation: Reservation | null = null;
@@ -639,7 +639,7 @@ export function createOpenEnaLongitudinalPostHandlerV3(
 }
 
 export const handleOpenEnaLongitudinalPostV3 = createOpenEnaLongitudinalPostHandlerV3({
-  verifyPrincipal: (token) => verifyProductionOpenEnaSessionTokenV2(token),
+  verifyPrincipal: (token) => verifyProductionOpenEnaSessionTokenAny(token),
   requireBillable: true,
   billableStoreFactory: () => createProductionBillableStore(),
 });

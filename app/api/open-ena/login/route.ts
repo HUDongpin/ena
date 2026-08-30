@@ -4,6 +4,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { isLocale, type Locale } from "@/lib/i18n";
 import {
   createOpenEnaSessionTokenV2,
+  createOpenEnaSessionTokenV3,
+  openEnaDisposableUsernameRef,
+  OPEN_ENA_DISPOSABLE_SESSION_MAX_AGE_SECONDS,
   OPEN_ENA_SESSION_COOKIE,
   OPEN_ENA_SESSION_MAX_AGE_SECONDS,
   type OpenEnaAuthEnvironment,
@@ -28,6 +31,7 @@ type LoginRouteDependencies = {
   securityStoreFactory?: () => Promise<OpenEnaAuthSecurityStore | null>;
   verifyCredentials?: (username: string, password: string) => boolean;
   createSessionToken?: () => string;
+  createDisposableSessionToken?: (principalRef: string) => string;
 };
 
 class LoginBodyTooLargeError extends Error {}
@@ -138,6 +142,8 @@ export function createOpenEnaLoginPostHandler(
     ?? ((username: string, password: string) => verifyOpenEnaCredentials(username, password, environment));
   const createSessionToken = dependencies.createSessionToken
     ?? (() => createOpenEnaSessionTokenV2(Date.now(), environment));
+  const createDisposableSessionToken = dependencies.createDisposableSessionToken
+    ?? ((principalRef: string) => createOpenEnaSessionTokenV3(Date.now(), environment, principalRef));
 
   return async function handleOpenEnaLoginPost(request: Request) {
     const requestOrigin = resolveOpenEnaRequestOrigin(
@@ -203,21 +209,43 @@ export function createOpenEnaLoginPostHandler(
       });
     }
 
-    if (!verifyCredentials(username, password)) {
-      const response = redirectToWorkspace(requestOrigin, locale, true);
-      response.headers.set("Cache-Control", "no-store");
-      return response;
+    let sessionToken: string;
+    let sessionMaxAgeSeconds = OPEN_ENA_SESSION_MAX_AGE_SECONDS;
+    if (verifyCredentials(username, password)) {
+      sessionToken = createSessionToken();
+    } else {
+      const usernameRef = openEnaDisposableUsernameRef(username, environment);
+      let principalRef: string | null = null;
+      try {
+        principalRef = usernameRef
+          ? await securityStore.consumeDisposableCredential({ usernameRef, password })
+          : null;
+      } catch {
+        return noStoreResponse("Open ENA secure authentication is unavailable.", 503);
+      }
+      if (principalRef) {
+        try {
+          sessionToken = createDisposableSessionToken(principalRef);
+          sessionMaxAgeSeconds = OPEN_ENA_DISPOSABLE_SESSION_MAX_AGE_SECONDS;
+        } catch {
+          return noStoreResponse("Open ENA secure authentication is unavailable.", 503);
+        }
+      } else {
+        const response = redirectToWorkspace(requestOrigin, locale, true);
+        response.headers.set("Cache-Control", "no-store");
+        return response;
+      }
     }
 
     const response = redirectToWorkspace(requestOrigin, locale);
     response.cookies.set({
       name: OPEN_ENA_SESSION_COOKIE,
-      value: createSessionToken(),
+      value: sessionToken,
       httpOnly: true,
       sameSite: "lax",
       secure: environment.NODE_ENV === "production",
       path: "/",
-      maxAge: OPEN_ENA_SESSION_MAX_AGE_SECONDS,
+      maxAge: sessionMaxAgeSeconds,
     });
     response.headers.set("Cache-Control", "no-store");
     return response;

@@ -145,10 +145,15 @@ test("login throttles repeated attempts in the shared store before another passw
 
   let attempts = 0;
   let credentialChecks = 0;
+  let disposableChecks = 0;
   const store = {
     consumeLoginAttempt: async () => {
       attempts += 1;
       return attempts <= 2;
+    },
+    consumeDisposableCredential: async () => {
+      disposableChecks += 1;
+      return null;
     },
     isSessionRevoked: async () => false,
     revokeSession: async () => undefined,
@@ -170,6 +175,7 @@ test("login throttles repeated attempts in the shared store before another passw
   assert.deepEqual([first.status, second.status, denied.status], [303, 303, 429]);
   assert.equal(denied.headers.get("retry-after"), "900");
   assert.equal(credentialChecks, 2);
+  assert.equal(disposableChecks, 2);
 });
 
 test("logout revokes exactly one jti and another instance rejects its replay", async () => {

@@ -13,7 +13,7 @@ test("Browser CI provisions an isolated PostgreSQL database and applies Open ENA
   assert.match(workflow, /--health-cmd\s+"pg_isready -U open_ena_ci -d open_ena_ci"/u);
   assert.match(
     workflow,
-    /for migration in migrations\/001_open_ena_billable\.sql migrations\/002_open_ena_auth_security\.sql migrations\/003_open_ena_ai_consent\.sql/u,
+    /for migration in migrations\/001_open_ena_billable\.sql migrations\/002_open_ena_auth_security\.sql migrations\/003_open_ena_ai_consent\.sql migrations\/004_open_ena_disposable_accounts\.sql/u,
   );
   assert.match(workflow, /psql .*OPEN_ENA_CI_DATABASE_URL.*ON_ERROR_STOP/u);
 });

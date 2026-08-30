@@ -87,7 +87,7 @@ jobs:
       - name: Initialize isolated Open ENA PostgreSQL schema in migration order
         run: |
           set -euo pipefail
-          for migration in migrations/001_open_ena_billable.sql migrations/002_open_ena_auth_security.sql migrations/003_open_ena_ai_consent.sql; do
+          for migration in migrations/001_open_ena_billable.sql migrations/002_open_ena_auth_security.sql migrations/003_open_ena_ai_consent.sql migrations/004_open_ena_disposable_accounts.sql; do
             echo "Applying ${migration}"
             psql "${OPEN_ENA_CI_DATABASE_URL}" --set ON_ERROR_STOP=1 --file "${migration}"
           done
