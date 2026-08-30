@@ -2427,7 +2427,10 @@ async function readBrowserErrors(page, args) {
     if (
       !sourceLine
       || !sourceLine.includes("vectorize-text: Unrecognized textAlign:")
-      || !sourceLine.includes('getContext("2d")')
+      || !(
+        sourceLine.includes('getContext("2d")')
+        || sourceLine.includes('getContext("2d",')
+      )
       || !sourceLine.includes(".getImageData(0,0,")
     ) return null;
     const digestHex = async (bytes) => [...new Uint8Array(

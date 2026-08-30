@@ -477,6 +477,7 @@ test("the Chromium Plotly Canvas2D advisory remains a strict auditable platform 
   assert.match(source, /fetch\(input\.sourcePath/u);
   assert.match(source, /vectorize-text: Unrecognized textAlign:/u);
   assert.ok(source.includes('sourceLine.includes(\'getContext("2d")\')'));
+  assert.ok(source.includes('sourceLine.includes(\'getContext("2d",\')'));
   assert.ok(source.includes('sourceLine.includes(".getImageData(0,0,")'));
   assert.match(source, /crypto\.subtle\.digest\("SHA-256"/u);
   assert.match(source, /chunkSha256/u);
