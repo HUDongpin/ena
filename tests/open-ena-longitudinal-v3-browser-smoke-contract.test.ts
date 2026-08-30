@@ -66,6 +66,19 @@ test("the version-controlled longitudinal V3 smoke owns its server and covers th
   assert.match(source, /OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS/u);
 });
 
+test("the V3 smoke verifies every current trajectory inference family in aggregate exports", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /const inferenceRequestKinds = analysis\.inference/u);
+  for (const family of [
+    "independent-period",
+    "paired-periods",
+    "repeated-periods",
+    "path-comparison",
+  ]) assert.match(source, new RegExp(family, "u"));
+  assert.match(source, /trajectory-inference\.csv/u);
+  assert.match(source, /participantLevelIncluded, false/u);
+});
+
 test("the Production smoke waits for the trajectory sample panel instead of racing post-login mode initialization", () => {
   const source = readFileSync(smokePath, "utf8");
 

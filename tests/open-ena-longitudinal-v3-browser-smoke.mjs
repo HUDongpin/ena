@@ -398,6 +398,36 @@ function extractAndVerifyBundle(zipPath, kind, participantLevelIncluded) {
   assert.equal(analysis.identity.resultHash, manifest.resultHash);
   assert.equal(plotly.resultHash, manifest.resultHash);
   assert.equal(analysis.privacy.participantLevelIncluded, false);
+  const inferenceRequestKinds = analysis.inference
+    .map((family) => family.request?.kind)
+    .filter(Boolean)
+    .sort();
+  assert.deepEqual(inferenceRequestKinds, [
+    "independent-period",
+    "paired-periods",
+    "repeated-periods",
+  ]);
+  assert.ok(
+    Array.isArray(analysis.pathComparisons) && analysis.pathComparisons.length > 0,
+    kind + " trajectory analysis omitted the whole-path comparison family",
+  );
+  for (const comparison of analysis.pathComparisons) {
+    assert.ok(comparison.result.tests.length > 0, kind + " whole-path comparison has no tests");
+    for (const test of comparison.result.tests) {
+      assert.equal(test.permutationCount, 500, kind + " whole-path permutation count");
+      assert.ok(Number.isFinite(test.pValue), kind + " whole-path p value");
+      assert.ok(Number.isFinite(test.holmAdjustedPValue), kind + " whole-path Holm p value");
+    }
+  }
+  const inferenceCsv = readFileSync(join(extracted, "trajectory-inference.csv"), "utf8");
+  for (const requestKind of [
+    "independent-period",
+    "paired-periods",
+    "repeated-periods",
+    "path-comparison",
+  ]) {
+    assert.match(inferenceCsv, new RegExp(`"${requestKind}"`, "u"));
+  }
   assert.equal(
     plotly.data.filter((trace) => trace.meta?.role === "network-edge").length,
     0,
@@ -619,6 +649,26 @@ async function authenticateAndRunTrajectory(page, args) {
   assertBrowser(postRunCiUiCount === 0, "trajectory CI/bootstrap UI is still visible after execution");
   const plot = page.getByTestId("open-ena-longitudinal-v3-plot");
   await plot.waitFor({ timeout: 30_000 });
+  const inferenceRows = workbench
+    .getByTestId("open-ena-longitudinal-v3-inference")
+    .locator("tbody tr");
+  await inferenceRows.first().waitFor({ timeout: 30_000 });
+  const inferenceAudit = await inferenceRows.evaluateAll((rows) => ({
+    rowCount: rows.length,
+    requestKinds: [...new Set(rows.map((row) => row.cells[0]?.textContent?.trim()).filter(Boolean))].sort(),
+    tests: [...new Set(rows.map((row) => row.cells[1]?.textContent?.trim()).filter(Boolean))].sort(),
+  }));
+  for (const requestKind of [
+    "independent-period",
+    "paired-periods",
+    "repeated-periods",
+    "path-comparison",
+  ]) {
+    assertBrowser(inferenceAudit.requestKinds.includes(requestKind), "trajectory UI omitted " + requestKind);
+  }
+  for (const testName of ["mann-whitney", "wilcoxon-signed-rank", "friedman"]) {
+    assertBrowser(inferenceAudit.tests.includes(testName), "trajectory UI omitted " + testName);
+  }
   await page.waitForFunction(() => {
     const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
     return Boolean(root && root._fullLayout && Array.isArray(root.data) && root.data.length > 0);
@@ -682,6 +732,7 @@ async function authenticateAndRunTrajectory(page, args) {
   ));
   assertBrowser(networkOverlayTaskCount === 0, "trajectory scientific request still contains networkOverlayTask");
   plotAudit.networkOverlayTaskCount = networkOverlayTaskCount;
+  plotAudit.inferenceAudit = inferenceAudit;
   return plotAudit;
 }
 
