@@ -1692,6 +1692,10 @@ try {
     OPEN_ENA_USERNAME: username,
     OPEN_ENA_PASSWORD: password,
     OPEN_ENA_SESSION_SECRET: sessionSecret,
+    // The smoke owns a random loopback port; bind production Origin checks to
+    // that exact origin instead of inheriting a stale CI or deployment host.
+    OPEN_ENA_PUBLIC_ORIGIN: baseUrl,
+    OPEN_ENA_ALLOWED_ORIGINS: baseUrl,
     OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1",
   };
   const logFd = openSync(serverLogPath, "w");

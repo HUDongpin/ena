@@ -11,11 +11,14 @@ import {
 } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const artifactDirectory = join(projectRoot, "output", "playwright", "open-ena-inference-smoke");
+const artifactDirectory = resolve(
+  process.env.OPEN_ENA_SMOKE_ARTIFACT_DIR
+    || join(projectRoot, "output", "playwright", "open-ena-inference-smoke"),
+);
 const serverLogPath = join(artifactDirectory, "next-server.log");
 const username = "open_ena_smoke_researcher";
 const password = "open_ena_smoke_password_2026";
@@ -31,7 +34,7 @@ const fixtureEntityPrefix = "PRIVATE_ENTITY_";
 const fixtureCodePrefix = "PRIVATE_CODE_";
 const smokeBrowser = process.env.OPEN_ENA_SMOKE_BROWSER || "chrome";
 assert.ok(
-  ["chrome", "firefox", "webkit", "msedge"].includes(smokeBrowser),
+  ["chromium", "chrome", "firefox", "webkit", "msedge"].includes(smokeBrowser),
   "OPEN_ENA_SMOKE_BROWSER must name a supported Playwright browser.",
 );
 const bundledPlaywrightWrapper = join(
@@ -315,6 +318,10 @@ try {
         OPEN_ENA_USERNAME: username,
         OPEN_ENA_PASSWORD: password,
         OPEN_ENA_SESSION_SECRET: sessionSecret,
+        // The smoke owns a random loopback port; bind production Origin checks
+        // to that exact origin for authenticated API requests.
+        OPEN_ENA_PUBLIC_ORIGIN: baseUrl,
+        OPEN_ENA_ALLOWED_ORIGINS: baseUrl,
       },
       stdio: ["ignore", logFd, logFd],
     },

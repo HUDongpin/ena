@@ -74,15 +74,23 @@ async function waitForServer(url, timeout = 90_000) {
 }
 
 function startServer(port) {
+  const loopbackOrigin = `http://127.0.0.1:${port}`;
+  const serverEnvironment = {
+    ...env,
+    // The smoke owns a random loopback port; bind production Origin checks
+    // to that exact origin for the login and authenticated workbench calls.
+    OPEN_ENA_PUBLIC_ORIGIN: loopbackOrigin,
+    OPEN_ENA_ALLOWED_ORIGINS: loopbackOrigin,
+  };
   execFileSync("npm", ["run", "build"], {
     cwd: projectRoot,
-    env,
+    env: serverEnvironment,
     stdio: "inherit",
     timeout: 600_000,
   });
   return spawn("npm", ["run", "start", "--", "--hostname", "127.0.0.1", "--port", String(port)], {
     cwd: projectRoot,
-    env,
+    env: serverEnvironment,
     detached: process.platform !== "win32",
     stdio: "ignore",
   });
