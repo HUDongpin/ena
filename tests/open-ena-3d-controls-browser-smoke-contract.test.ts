@@ -403,7 +403,12 @@ test("package and Open ENA CI expose the bounded 3D controls browser gate", () =
   assert.match(workflow, /OPEN_ENA_3D_CONTROLS_SMOKE_ARTIFACT_DIR:/u);
   assert.match(workflow, /npm run test:browser:open-ena-3d-controls/u);
   assert.match(workflow, /timeout-minutes:\s*45/u);
-  assert.match(workflow, /if:\s*always\(\)/u);
+  assert.match(workflow, /id:\s*open_ena_3d_smoke/u);
+  assert.match(
+    workflow,
+    /if:\s*\$\{\{\s*always\(\)\s*&&\s*!cancelled\(\)\s*&&\s*steps\.open_ena_3d_smoke\.outcome\s*!=\s*'skipped'\s*\}\}/u,
+    "3D evidence upload must not turn a skipped smoke into a second failure",
+  );
   assert.match(workflow, /open-ena-3d-controls-evidence-/u);
   assert.match(workflow, /open-ena-playwright-daemon-3d-controls/u);
   assert.ok(

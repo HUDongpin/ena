@@ -56,6 +56,17 @@ test("Browser CI runs every durable-auth production smoke and retains each evide
   }
 });
 
+test("Browser CI does not let skipped downstream evidence uploads mask the first smoke failure", () => {
+  assert.match(
+    workflow,
+    /id:\s*open_ena_3d_smoke[\s\S]*?if:\s*\$\{\{\s*always\(\)\s*&&\s*!cancelled\(\)\s*&&\s*steps\.open_ena_3d_smoke\.outcome\s*!=\s*'skipped'/u,
+  );
+  assert.match(
+    workflow,
+    /id:\s*open_ena_longitudinal_smoke[\s\S]*?if:\s*\$\{\{\s*always\(\)\s*&&\s*!cancelled\(\)\s*&&\s*steps\.open_ena_longitudinal_smoke\.outcome\s*!=\s*'skipped'/u,
+  );
+});
+
 test("random-port production smokes bind the Origin allowlist to their owned loopback server", () => {
   for (const [file, marker] of [
     ["open-ena-3d-controls-browser-smoke.mjs", "OPEN_ENA_3D_CONTROLS_SMOKE_ARTIFACT_DIR"],

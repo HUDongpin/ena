@@ -103,6 +103,7 @@ jobs:
       - name: Install Chromium for the pinned Playwright CLI
         run: npx --yes --package @playwright/cli@0.1.18 playwright-cli install-browser chromium
       - name: Run the Open ENA 3D Data View and fullscreen smoke
+        id: open_ena_3d_smoke
         env:
           NEXT_TELEMETRY_DISABLED: "1"
           OPEN_ENA_3D_CONTROLS_SMOKE_BROWSER: chromium
@@ -110,7 +111,7 @@ jobs:
           PWTEST_DAEMON_SESSION_DIR: ${{ runner.temp }}/open-ena-playwright-daemon-3d-controls
         run: npm run test:browser:open-ena-3d-controls
       - name: Upload Open ENA 3D controls browser evidence
-        if: always()
+        if: ${{ always() && !cancelled() && steps.open_ena_3d_smoke.outcome != 'skipped' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: open-ena-3d-controls-evidence-${{ github.sha }}-chromium
@@ -118,6 +119,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Run the full Open ENA longitudinal application smoke
+        id: open_ena_longitudinal_smoke
         env:
           NEXT_TELEMETRY_DISABLED: "1"
           OPEN_ENA_LONGITUDINAL_SMOKE_BROWSER: chromium
@@ -125,7 +127,7 @@ jobs:
           PWTEST_DAEMON_SESSION_DIR: ${{ runner.temp }}/open-ena-playwright-daemon
         run: npm run test:browser:longitudinal-v3
       - name: Upload Open ENA longitudinal browser evidence
-        if: always()
+        if: ${{ always() && !cancelled() && steps.open_ena_longitudinal_smoke.outcome != 'skipped' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: open-ena-longitudinal-v3-evidence-${{ github.sha }}-chromium

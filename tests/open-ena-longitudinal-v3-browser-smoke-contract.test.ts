@@ -156,8 +156,14 @@ test("GitHub CI runs the complete longitudinal application smoke in bundled Chro
   );
   assert.match(workflow, /OPEN_ENA_LONGITUDINAL_SMOKE_BROWSER:\s*chromium/u);
   assert.match(workflow, /npm run test:browser:longitudinal-v3/u);
+  assert.match(workflow, /id:\s*open_ena_longitudinal_smoke/u);
   assert.match(workflow, /actions\/upload-artifact@/u);
   assert.match(workflow, /open-ena-longitudinal-v3-evidence/u);
+  assert.match(
+    workflow,
+    /if:\s*\$\{\{\s*always\(\)\s*&&\s*!cancelled\(\)\s*&&\s*steps\.open_ena_longitudinal_smoke\.outcome\s*!=\s*'skipped'\s*\}\}/u,
+    "longitudinal evidence upload must not turn a skipped smoke into a second failure",
+  );
   assert.match(workflow, /if-no-files-found:\s*error/u);
 });
 
