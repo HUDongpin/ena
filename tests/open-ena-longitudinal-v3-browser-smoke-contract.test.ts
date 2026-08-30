@@ -464,21 +464,13 @@ test("the summary records the invoked Playwright CLI and actual browser runtime 
 
 test("the Chromium Plotly Canvas2D advisory remains a strict auditable platform diagnostic", () => {
   const source = readFileSync(smokePath, "utf8");
-  assert.match(source, /message\.location\(\)/u);
-  assert.match(source, /strictChromiumCanvasReadbackWarning/u);
-  const chunkPathLiteral = source.match(
-    /const strictChromiumChunkPath = (\/\^[^\n]+\$\/u);/u,
-  )?.[1];
-  assert.ok(chunkPathLiteral, "the strict Chromium chunk path pattern is missing");
-  const strictChromiumChunkPath = new Function(`return ${chunkPathLiteral}`)() as RegExp;
-  assert.equal(strictChromiumChunkPath.test("/_next/static/chunks/1234-abcd-efgh.js"), true);
-  assert.equal(
-    strictChromiumChunkPath.test("/_next/static/immutable/chunks/2532syt7n1xoc.js"),
-    true,
+  assert.match(source, /open-ena-browser-warning-classifier\.mjs/u);
+  assert.match(source, /classifyChromiumCanvasReadbackDiagnostic/u);
+  assert.match(
+    source,
+    /readBrowserErrors,[\s\S]*?\[classifyChromiumAngleReadPixelsDiagnostic,\s*classifyChromiumCanvasReadbackDiagnostic\]/u,
+    "the strict shared Canvas2D classifier must be injected into the serialized browser audit",
   );
-  assert.equal(strictChromiumChunkPath.test("/_next/static/immutable/chunks/evil.js"), false);
-  assert.equal(strictChromiumChunkPath.test("/_next/static/media/2532syt7n1xoc.js"), false);
-  assert.match(source, /!sourceUrl\.startsWith\(currentOrigin \+ "\/"\)/u);
   assert.match(source, /sourceUrl\.slice\(currentOrigin\.length\)/u);
   assert.doesNotMatch(source, /new URL\(warning\.location/u);
   assert.match(source, /verifyChromiumCanvasReadbackSource/u);
@@ -489,7 +481,6 @@ test("the Chromium Plotly Canvas2D advisory remains a strict auditable platform 
   assert.match(source, /crypto\.subtle\.digest\("SHA-256"/u);
   assert.match(source, /chunkSha256/u);
   assert.match(source, /sourceLineSha256/u);
-  assert.match(source, /warningText:\s*warning\.text/u);
   assert.match(source, /canvas2dReadbackDiagnostics/u);
   assert.match(source, /canvas2dReadbackDiagnostics\.length <= 1/u);
   assert.match(source, /cliWarningCount/u);
@@ -566,7 +557,7 @@ test("only the exact Chromium ANGLE ReadPixels driver diagnostic is classified",
   assert.match(source, /helpers\.map\(\(helper\) => helper\.toString\(\)\)/u);
   assert.match(
     source,
-    /readBrowserErrors,[\s\S]*?\[classifyChromiumAngleReadPixelsDiagnostic\]/u,
+    /readBrowserErrors,[\s\S]*?\[classifyChromiumAngleReadPixelsDiagnostic,\s*classifyChromiumCanvasReadbackDiagnostic\]/u,
     "the exact tested classifier must be injected into the serialized browser audit",
   );
   assert.match(

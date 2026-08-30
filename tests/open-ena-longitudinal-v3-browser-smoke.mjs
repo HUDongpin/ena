@@ -19,6 +19,7 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSafePlaywrightCliError } from "./support/safe-playwright-cli-error.mjs";
+import { classifyChromiumCanvasReadbackDiagnostic } from "./support/open-ena-browser-warning-classifier.mjs";
 
 const smokeSourcePath = fileURLToPath(import.meta.url);
 const projectRoot = join(dirname(smokeSourcePath), "..");
@@ -2400,8 +2401,6 @@ async function readBrowserErrors(page, args) {
       .map((link) => link.href)));
   const strictNextFontPath = /^\/_next\/static\/media\/[a-f0-9]+-s\.p\.[a-z0-9]+\.woff2$/u;
   const strictFirefoxPreloadWarning = /^\[JavaScript Warning: "The resource at “([^”]+)” preloaded with link preload was not used within a few seconds\. Make sure all attributes of the preload tag are set correctly\." \{file: "([^"]+)" line: 0\}\]$/u;
-  const strictChromiumCanvasReadbackWarning = /^Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true\. See: https:\/\/html\.spec\.whatwg\.org\/multipage\/canvas\.html#concept-canvas-will-read-frequently$/u;
-  const strictChromiumChunkPath = /^\/_next\/static\/(?:chunks\/[a-z0-9]{2,}-[a-z0-9]{3,}-[a-z0-9]{3,}|immutable\/chunks\/[a-z0-9]{8,})\.js$/u;
   const classifyNextFontPreloadDiagnostic = (warning) => {
     const match = warning.match(strictFirefoxPreloadWarning);
     if (!match) return null;
@@ -2413,22 +2412,6 @@ async function readBrowserErrors(page, args) {
     if (!strictNextFontPath.test(resourcePath)) return null;
     if (!declaredFontPreloads.has(resourceHref)) return null;
     return resourceHref;
-  };
-  const classifyChromiumCanvasReadbackDiagnostic = (warning) => {
-    if (!["chromium", "chrome", "msedge"].includes(args.browser)) return null;
-    if (!strictChromiumCanvasReadbackWarning.test(warning.text)) return null;
-    const sourceUrl = typeof warning.location?.url === "string" ? warning.location.url : "";
-    if (!sourceUrl.startsWith(currentOrigin + "/")) return null;
-    const sourcePath = sourceUrl.slice(currentOrigin.length);
-    if (!strictChromiumChunkPath.test(sourcePath)) return null;
-    if (!Number.isInteger(warning.location?.lineNumber) || warning.location.lineNumber < 0) return null;
-    if (!Number.isInteger(warning.location?.columnNumber) || warning.location.columnNumber < 0) return null;
-    return {
-      warningText: warning.text,
-      sourcePath,
-      reportedLineNumber: warning.location.lineNumber,
-      reportedColumnNumber: warning.location.columnNumber,
-    };
   };
   const verifyChromiumCanvasReadbackSource = async (candidate) => await page.evaluate(async (input) => {
     const response = await fetch(input.sourcePath, {
@@ -2490,7 +2473,11 @@ async function readBrowserErrors(page, args) {
       ? classifyNextFontPreloadDiagnostic(warningText)
       : null;
     const canvasReadbackDiagnostic = typeof warning === "object" && warning !== null
-      ? classifyChromiumCanvasReadbackDiagnostic(warning)
+      ? classifyChromiumCanvasReadbackDiagnostic({
+        browser: args.browser,
+        currentOrigin,
+        warning,
+      })
       : null;
     const angleReadPixelsDiagnostic = classifyChromiumAngleReadPixelsDiagnostic({
       browser: args.browser,
@@ -2694,7 +2681,7 @@ try {
     readBrowserErrors,
     { browser: smokeBrowser },
     180_000,
-    [classifyChromiumAngleReadPixelsDiagnostic],
+    [classifyChromiumAngleReadPixelsDiagnostic, classifyChromiumCanvasReadbackDiagnostic],
   );
   assert.deepEqual(browserErrors.consoleErrors, [], "browser console contains errors");
   assert.deepEqual(browserErrors.consoleWarnings, [], "browser console contains warnings");
