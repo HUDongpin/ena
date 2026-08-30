@@ -418,7 +418,9 @@ test("the browser smoke drives every real V3 plot action across perspective, ort
   assert.match(source, /current\.taskRequestCount === args\.expectedTaskRequestCount/u);
   assert.match(source, /current\.resultHashes\[0\] === args\.expectedResultHash/u);
   assert.match(source, /Object\.defineProperty\(navigator, "clipboard"/u);
-  assert.match(source, /data:image\/png/u);
+  assert.match(source, /HTMLAnchorElement\.prototype\.click/u);
+  assert.match(source, /copyAnchorClickCount === 1/u);
+  assert.match(source, /copyAnchorHref\?\.startsWith\("blob:"\)/u);
   assert.match(source, /page\.waitForEvent\("download"\)/u);
   assert.match(source, /download\.suggestedFilename\(\)/u);
   assert.match(source, /3dena-longitudinal-trajectory\.png/u);
@@ -427,7 +429,7 @@ test("the browser smoke drives every real V3 plot action across perspective, ort
   assert.match(source, /new Uint8Array\(chunk\)/u);
   assert.doesNotMatch(source, /chunks\.push\(Buffer\.from\(chunk\)\)|Buffer\.concat\(chunks\)/u);
   assert.match(source, /Image downloaded/u);
-  assert.match(source, /toImageDataUrlFetchCount === 1/u);
+  assert.doesNotMatch(source, /toImageDataUrlFetchCount/u);
   assert.match(source, /receipt:\s*artifactEvidence\(copyPath\)/u);
   assert.match(source, /projectionSelect\.selectOption\("3d"\)[\s\S]*?cameraSelect\.selectOption\("isometric"\)/u);
   assert.doesNotMatch(source, /createTrajectoryPlotlyControllerV3/u);

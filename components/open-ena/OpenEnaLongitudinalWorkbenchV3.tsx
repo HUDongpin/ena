@@ -506,6 +506,21 @@ function downloadBlob(name: string, value: BlobPart, type: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+/** Decode Plotly's data URL locally so CSP connect-src never blocks export. */
+export function imageDataUrlToBlob(image: string): Blob {
+  const separator = image.indexOf(",");
+  if (!image.startsWith("data:") || separator < 0) throw new TypeError("Plotly returned an invalid image data URL.");
+  const header = image.slice(5, separator);
+  const payload = image.slice(separator + 1);
+  const [mediaType = "application/octet-stream", ...parameters] = header.split(";");
+  if (parameters.includes("base64")) {
+    const binary = atob(payload);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    return new Blob([bytes], { type: mediaType });
+  }
+  return new Blob([decodeURIComponent(payload)], { type: mediaType });
+}
+
 export function cameraForDisplay(preset: CameraPreset) {
   const camera = cameraForPreset(preset);
   return {
@@ -751,7 +766,7 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
       const result = await controller.copy(
         { format: "png", width: 1600, height: 1000, scale: 1 },
         async (image, isCurrent) => {
-          const blob = await (await fetch(image)).blob();
+          const blob = imageDataUrlToBlob(image);
           if (!isCurrent()) return "";
           if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
             await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);

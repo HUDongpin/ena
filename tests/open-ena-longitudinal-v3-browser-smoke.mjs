@@ -1400,24 +1400,24 @@ async function exerciseTrajectoryPlotActions(page, args) {
   const copyPath = args.artifactDirectory + "/trajectory-plot-copy.png";
   let copyEvidence = null;
   await page.evaluate(() => {
-    const originalFetch = window.fetch;
+    const originalAnchorClick = HTMLAnchorElement.prototype.click;
     window.__openEnaTrajectoryCopyAudit = {
-      originalFetch,
+      originalAnchorClick,
       hadOwnClipboard: Object.prototype.hasOwnProperty.call(navigator, "clipboard"),
       clipboardDescriptor: Object.getOwnPropertyDescriptor(navigator, "clipboard"),
       hadOwnClipboardItem: Object.prototype.hasOwnProperty.call(window, "ClipboardItem"),
       clipboardItemDescriptor: Object.getOwnPropertyDescriptor(window, "ClipboardItem"),
-      toImageDataUrlFetchCount: 0,
+      copyAnchorClickCount: 0,
+      copyAnchorHref: null,
     };
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
     Object.defineProperty(window, "ClipboardItem", { configurable: true, value: undefined });
-    window.fetch = async (...fetchArgs) => {
-      const input = fetchArgs[0];
-      const url = typeof input === "string" ? input : input?.url;
-      if (typeof url === "string" && url.startsWith("data:image/png")) {
-        window.__openEnaTrajectoryCopyAudit.toImageDataUrlFetchCount += 1;
+    HTMLAnchorElement.prototype.click = function copyAnchorClick() {
+      if (this.download === "3dena-longitudinal-trajectory.png") {
+        window.__openEnaTrajectoryCopyAudit.copyAnchorClickCount += 1;
+        window.__openEnaTrajectoryCopyAudit.copyAnchorHref = this.href;
       }
-      return await originalFetch.apply(window, fetchArgs);
+      return originalAnchorClick.call(this);
     };
   });
   try {
@@ -1457,16 +1457,19 @@ async function exerciseTrajectoryPlotActions(page, args) {
     ), null, { timeout: 15_000 });
     const status = await page.locator('.ena-longitudinal-v3-plot-shell [role="status"]').textContent();
     const copyRuntimeAudit = await page.evaluate(() => ({
-      toImageDataUrlFetchCount:
-        window.__openEnaTrajectoryCopyAudit?.toImageDataUrlFetchCount ?? -1,
+      copyAnchorClickCount:
+        window.__openEnaTrajectoryCopyAudit?.copyAnchorClickCount ?? -1,
+      copyAnchorHref:
+        window.__openEnaTrajectoryCopyAudit?.copyAnchorHref ?? null,
       realPlotlyRoot: Boolean(
         document.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]')?._fullLayout,
       ),
     }));
     assertBrowser(
-      copyRuntimeAudit.toImageDataUrlFetchCount === 1,
-      "trajectory Copy did not consume exactly one Plotly PNG data URL",
+      copyRuntimeAudit.copyAnchorClickCount === 1,
+      "trajectory Copy did not click exactly one PNG download anchor",
     );
+    assertBrowser(copyRuntimeAudit.copyAnchorHref?.startsWith("blob:") === true, "trajectory Copy did not publish a Blob URL");
     assertBrowser(copyRuntimeAudit.realPlotlyRoot, "trajectory Copy did not use the mounted Plotly root");
     copyEvidence = {
       copyPath,
@@ -1474,7 +1477,8 @@ async function exerciseTrajectoryPlotActions(page, args) {
       bytes: pngByteLength,
       pngSignature,
       status: status?.trim() ?? "",
-      toImageDataUrlFetchCount: copyRuntimeAudit.toImageDataUrlFetchCount,
+      copyAnchorClickCount: copyRuntimeAudit.copyAnchorClickCount,
+      copyAnchorHrefScheme: copyRuntimeAudit.copyAnchorHref?.split(":", 1)[0] ?? null,
       realPlotlyRoot: copyRuntimeAudit.realPlotlyRoot,
     };
     await assertScientificInvariants("Copy image download");
@@ -1482,7 +1486,7 @@ async function exerciseTrajectoryPlotActions(page, args) {
     await page.evaluate(() => {
       const audit = window.__openEnaTrajectoryCopyAudit;
       if (!audit) return;
-      window.fetch = audit.originalFetch;
+      HTMLAnchorElement.prototype.click = audit.originalAnchorClick;
       if (audit.hadOwnClipboard && audit.clipboardDescriptor) {
         Object.defineProperty(navigator, "clipboard", audit.clipboardDescriptor);
       } else {

@@ -264,6 +264,17 @@ test("fallback fullscreen is a labelled modal session while native fullscreen st
   assert.match(presenter, /await shell\.requestFullscreen\(\);[\s\S]*?catch \{[\s\S]*?fallbackFullscreenOpenerRef\.current = document\.activeElement[\s\S]*?setFallbackFullscreen\(true\)/);
 });
 
+test("Copy image data URLs decode to PNG Blobs without a network fetch", async () => {
+  const presenterModule = await import("../components/open-ena/OpenEnaLongitudinalWorkbenchV3") as unknown as Record<string, unknown>;
+  const decode = Reflect.get(presenterModule, "imageDataUrlToBlob");
+  assert.equal(typeof decode, "function", "the image data URL decoder must be publicly testable");
+  const blob = (decode as (image: string) => Blob)("data:image/png;base64,iVBORw0KGgo=");
+  assert.equal(blob.type, "image/png");
+  assert.equal(blob.size, 8);
+  assert.deepEqual([...new Uint8Array(await blob.arrayBuffer())], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.throws(() => (decode as (image: string) => Blob)("not-a-data-url"), /invalid image data URL/u);
+});
+
 test("zh-Hant V3 plot actions use explicit Traditional Chinese copy", async () => {
   const presenterModule = await import("../components/open-ena/OpenEnaLongitudinalWorkbenchV3") as unknown as Record<string, unknown>;
   const getCopy = Reflect.get(presenterModule, "getOpenEnaLongitudinalV3Copy");
@@ -752,8 +763,18 @@ test("the reachable V3 presenter wires accessible Plotly actions for 3D and 2D p
   assert.match(presenter, /controller\.recenter\(\)/);
   assert.match(presenter, /controller\.copy\(/);
   assert.match(
+    component,
+    /function imageDataUrlToBlob\(image: string\): Blob[\s\S]*?atob\(payload\)/u,
+    "Copy fallback must decode Plotly's data URL locally instead of issuing a CSP-blocked fetch",
+  );
+  assert.doesNotMatch(
     presenter,
-    /async \(image, isCurrent\)[\s\S]*?\.blob\(\);[\s\S]*?if \(!isCurrent\(\)\) return "";[\s\S]*?(?:navigator\.clipboard\.write|downloadBlob)/,
+    /fetch\(image\)/u,
+    "Copy fallback must not fetch a data:image URL through connect-src",
+  );
+  assert.match(
+    presenter,
+    /async \(image, isCurrent\)[\s\S]*?const blob = imageDataUrlToBlob\(image\);[\s\S]*?if \(!isCurrent\(\)\) return "";[\s\S]*?(?:navigator\.clipboard\.write|downloadBlob)/,
     "clipboard/download publication must recheck generation after blob preparation without another preceding await",
   );
   assert.match(presenter, /result\.status === "completed"[\s\S]*?announceAction/);
