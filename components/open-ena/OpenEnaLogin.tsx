@@ -1,14 +1,30 @@
 import Image from "next/image";
+import type { ReactNode } from "react";
 import type { Locale } from "@/lib/i18n";
 import {
   getOpenEnaAuthCopy,
   OPEN_ENA_CONTACT_EMAIL,
 } from "@/lib/open-ena-auth-copy";
+import { isOpenEnaLocalizedLocale } from "@/lib/open-ena-i18n";
+import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
 
 interface OpenEnaLoginProps {
   locale: Locale;
   error: boolean;
   configurationReady: boolean;
+}
+
+export function OpenEnaLoginFrame({ locale, children }: { locale: Locale; children: ReactNode }) {
+  const localized = isOpenEnaLocalizedLocale(locale);
+  return (
+    <div
+      className="open-ena-login-page"
+      lang={localized ? undefined : "en"}
+      dir={localized ? undefined : "ltr"}
+    >
+      {children}
+    </div>
+  );
 }
 
 export default function OpenEnaLogin({ locale, error, configurationReady }: OpenEnaLoginProps) {
@@ -18,7 +34,8 @@ export default function OpenEnaLogin({ locale, error, configurationReady }: Open
   );
 
   return (
-    <div className="open-ena-login-page">
+    <OpenEnaLoginFrame locale={locale}>
+      <OpenEnaFallbackNotice locale={locale} />
       <section className="open-ena-login-shell" aria-labelledby="open-ena-login-title">
         <div className="open-ena-login-context">
           <div className="open-ena-login-brand" dir="ltr">
@@ -125,6 +142,6 @@ export default function OpenEnaLogin({ locale, error, configurationReady }: Open
           </div>
         </div>
       </section>
-    </div>
+    </OpenEnaLoginFrame>
   );
 }

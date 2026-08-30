@@ -96,6 +96,68 @@ export interface OpenEna3dAspectRatio {
   z: number;
 }
 
+export interface OpenEnaWorkspaceAxes {
+  twoD: readonly [string, string] | null;
+  threeD: readonly [string, string, string] | null;
+}
+
+export function createOpenEnaWorkspaceAxes(
+  dimensions: readonly string[],
+): OpenEnaWorkspaceAxes {
+  const uniqueDimensions = dimensions.filter((dimension, index) => (
+    dimension.trim().length > 0 && dimensions.indexOf(dimension) === index
+  ));
+  const x = uniqueDimensions[0];
+  if (!x) return { twoD: null, threeD: null };
+  const y = uniqueDimensions[1] ?? x;
+  return {
+    twoD: [x, y],
+    threeD: uniqueDimensions.length >= 3
+      ? [x, uniqueDimensions[1]!, uniqueDimensions[2]!]
+      : null,
+  };
+}
+
+export function updateOpenEnaWorkspace3dAxis(
+  axes: OpenEnaWorkspaceAxes,
+  axis: "x" | "y" | "z",
+  dimension: string,
+  dimensions: readonly string[],
+): OpenEnaWorkspaceAxes {
+  const twoD: [string, string] | null = axes.twoD ? [...axes.twoD] : null;
+  const threeD: [string, string, string] | null = axes.threeD ? [...axes.threeD] : null;
+  if (!threeD || !dimension.trim() || !dimensions.includes(dimension)) {
+    return { twoD, threeD };
+  }
+  const axisIndex = { x: 0, y: 1, z: 2 }[axis];
+  const previousDimension = threeD[axisIndex];
+  if (previousDimension !== dimension) {
+    const occupiedIndex = threeD.findIndex((candidate, index) => (
+      index !== axisIndex && candidate === dimension
+    ));
+    threeD[axisIndex] = dimension;
+    if (occupiedIndex >= 0) threeD[occupiedIndex] = previousDimension;
+  }
+  return { twoD, threeD };
+}
+
+export function resetOpenEnaWorkspaceAxisSurface(
+  axes: OpenEnaWorkspaceAxes,
+  surface: "2d" | "3d",
+  dimensions: readonly string[],
+): OpenEnaWorkspaceAxes {
+  const defaults = createOpenEnaWorkspaceAxes(dimensions);
+  return surface === "3d"
+    ? {
+        twoD: axes.twoD ? [...axes.twoD] : null,
+        threeD: defaults.threeD ? [...defaults.threeD] : null,
+      }
+    : {
+        twoD: defaults.twoD ? [...defaults.twoD] : null,
+        threeD: axes.threeD ? [...axes.threeD] : null,
+      };
+}
+
 export interface OpenEna3dSceneAxis {
   title: { text: string };
   color: string;

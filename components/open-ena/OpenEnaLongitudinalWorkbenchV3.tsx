@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import {
   compileTrajectoryPlotlySpec,
   createExportBundle,
@@ -46,19 +46,138 @@ import {
   applyCompactTrajectoryPlotlyLayoutV3,
   applyFullscreenTrajectoryPlotlyLayoutV3,
   cloneTrajectoryPlotlyInputV3,
+  createTrajectoryPlotlyControllerV3,
+  isolateOpenEnaFallbackFullscreenOutsideTreeV3,
+  nextOpenEnaFallbackFullscreenFocusV3,
+  type TrajectoryPlotlyControllerV3,
+  type TrajectoryPlotlyRangesV3,
 } from "@/lib/open-ena/longitudinal-v3-display";
-import { cameraForPreset, type OpenEna3dCamera } from "@/lib/open-ena/plot3d";
-import type { CameraPreset, OpenEnaConfig, OpenEnaResult, ParsedDataset } from "@/lib/open-ena/types";
-import { resetOpenEna3dCameraDistance } from "./OpenEnaInteractive3DPlot";
+import {
+  cameraForPreset,
+  type OpenEna3dAspectRatio,
+  type OpenEna3dCamera,
+} from "@/lib/open-ena/plot3d";
+import type {
+  CameraPreset,
+  OpenEnaConfig,
+  OpenEnaMode,
+  OpenEnaResult,
+  ParsedDataset,
+} from "@/lib/open-ena/types";
+import {
+  resetOpenEna3dCameraDistance,
+  zoomOpenEna3dAspectRatio,
+  zoomOpenEna3dCamera,
+} from "./OpenEnaInteractive3DPlot";
 
 type PlotlyApi = (typeof import("plotly.js-dist-min"))["default"];
 type PlotlyImageApi = PlotlyApi & {
   toImage(root: HTMLDivElement, options: { format: "png"; width: number; height: number; scale: number }): Promise<string>;
 };
 type PlotRoot = HTMLDivElement & {
-  _fullLayout?: { scene?: { camera?: OpenEna3dCamera } };
+  _fullLayout?: {
+    scene?: {
+      camera?: unknown;
+      aspectratio?: unknown;
+      _scene?: {
+        getCamera?: () => unknown;
+        glplot?: { getAspectratio?: () => unknown };
+      };
+    };
+    xaxis?: { range?: unknown };
+    yaxis?: { range?: unknown };
+  };
 };
 type WorkbenchStatus = "initializing" | "ready" | "preparing" | "running" | "remote-confirmation" | "remote-recovery" | "complete" | "error";
+
+function plotlyRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function plotlyVector(
+  value: unknown,
+  fallback: OpenEna3dCamera["eye"],
+): OpenEna3dCamera["eye"] {
+  const vector = plotlyRecord(value);
+  return {
+    x: typeof vector.x === "number" && Number.isFinite(vector.x) ? vector.x : fallback.x,
+    y: typeof vector.y === "number" && Number.isFinite(vector.y) ? vector.y : fallback.y,
+    z: typeof vector.z === "number" && Number.isFinite(vector.z) ? vector.z : fallback.z,
+  };
+}
+
+function trajectoryPlotlyCamera(
+  value: unknown,
+  fallback: OpenEna3dCamera,
+): OpenEna3dCamera {
+  const camera = plotlyRecord(value);
+  const projection = plotlyRecord(camera.projection);
+  const projectionType = projection.type === "orthographic" || projection.type === "perspective"
+    ? projection.type
+    : fallback.projection.type;
+  return {
+    eye: plotlyVector(camera.eye, fallback.eye),
+    center: plotlyVector(camera.center, fallback.center),
+    up: plotlyVector(camera.up, fallback.up),
+    projection: { type: projectionType },
+  };
+}
+
+function trajectoryPlotlyAspectRatio(
+  value: unknown,
+  fallback: OpenEna3dAspectRatio,
+): OpenEna3dAspectRatio {
+  const ratio = plotlyRecord(value);
+  const axis = (candidate: unknown, fallbackValue: number) => (
+    typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0
+      ? candidate
+      : fallbackValue
+  );
+  return {
+    x: axis(ratio.x, fallback.x),
+    y: axis(ratio.y, fallback.y),
+    z: axis(ratio.z, fallback.z),
+  };
+}
+
+function trajectoryPlotlyRange(
+  value: unknown,
+  fallback?: readonly [number, number],
+): [number, number] | null {
+  if (
+    Array.isArray(value)
+    && value.length === 2
+    && typeof value[0] === "number"
+    && Number.isFinite(value[0])
+    && typeof value[1] === "number"
+    && Number.isFinite(value[1])
+  ) return [value[0], value[1]];
+  return fallback ? [...fallback] : null;
+}
+
+function trajectoryPlotlyRuntimeRanges(
+  root: PlotRoot,
+): TrajectoryPlotlyRangesV3 | null {
+  const x = trajectoryPlotlyRange(root._fullLayout?.xaxis?.range);
+  const y = trajectoryPlotlyRange(root._fullLayout?.yaxis?.range);
+  return x && y ? { x, y } : null;
+}
+
+function trajectoryPlotlyRuntimeAspectRatio(
+  root: PlotRoot,
+): OpenEna3dAspectRatio | null {
+  const scene = root._fullLayout?.scene;
+  const runtimeRatio = scene?._scene?.glplot?.getAspectratio?.() ?? scene?.aspectratio;
+  const ratio = plotlyRecord(runtimeRatio);
+  if (
+    typeof ratio.x !== "number" || !Number.isFinite(ratio.x) || ratio.x <= 0
+    || typeof ratio.y !== "number" || !Number.isFinite(ratio.y) || ratio.y <= 0
+    || typeof ratio.z !== "number" || !Number.isFinite(ratio.z) || ratio.z <= 0
+  ) return null;
+  return { x: ratio.x, y: ratio.y, z: ratio.z };
+}
 
 interface DisplayStateV3 {
   projection: TrajectoryDisplaySpecV2["projection"];
@@ -76,7 +195,37 @@ interface OpenEnaLongitudinalWorkbenchV3Props {
   datasetHash: string;
   modelResultStale: boolean;
   analysisControls: ReactNode | null;
-  analysisControlsMode: string;
+  analysisControlsMode: OpenEnaMode;
+}
+
+export function OpenEnaLongitudinalV3ControlsSlot({
+  analysisControlsMode,
+  analysisControls,
+  trajectoryControls,
+}: {
+  analysisControlsMode: OpenEnaMode;
+  analysisControls: ReactNode | null;
+  trajectoryControls: ReactNode;
+}) {
+  return (
+    <>
+      <div
+        className="ena-longitudinal-v3-analysis-controls"
+        data-testid="open-ena-longitudinal-v3-analysis-controls"
+        data-controls-mode={analysisControlsMode}
+        hidden={analysisControlsMode === "plot"}
+      >
+        {analysisControls}
+      </div>
+      <div
+        className="ena-longitudinal-v3-trajectory-controls"
+        data-testid="open-ena-longitudinal-v3-trajectory-controls"
+        hidden={analysisControlsMode !== "plot"}
+      >
+        {trajectoryControls}
+      </div>
+    </>
+  );
 }
 
 type PreparedLongitudinalRunV3 = Awaited<ReturnType<typeof buildOpenEnaLongitudinalExecutionRequestV3>>;
@@ -153,8 +302,13 @@ const english = {
   plotTitle: "Longitudinal trajectory presenter",
   fullscreen: "Fullscreen",
   exitFullscreen: "Exit fullscreen",
+  zoomIn: "Zoom in",
+  zoomOut: "Zoom out",
+  recenter: "Recenter / default distance",
   copyImage: "Copy image",
-  resetDistance: "Reset distance",
+  imageCopied: "Image copied",
+  imageDownloaded: "Image downloaded",
+  actionUnavailable: "Plot action unavailable",
   camera: "3D camera preset",
   summary: "Accessible plot summary",
   mappingAudit: "Mapping and identity audit",
@@ -239,8 +393,13 @@ const zhHans: typeof english = {
   plotTitle: "纵向轨迹呈现器",
   fullscreen: "全屏",
   exitFullscreen: "退出全屏",
+  zoomIn: "放大",
+  zoomOut: "缩小",
+  recenter: "重新居中／默认距离",
   copyImage: "复制图片",
-  resetDistance: "重置距离",
+  imageCopied: "图片已复制",
+  imageDownloaded: "图片已下载",
+  actionUnavailable: "图形操作暂不可用",
   camera: "三维相机预设",
   summary: "无障碍图形摘要",
   mappingAudit: "映射与实体审计",
@@ -268,6 +427,13 @@ const zhHant: typeof english = {
   complete: "完整隊列",
   downloads: "下載",
   fullscreen: "全螢幕",
+  zoomIn: "放大",
+  zoomOut: "縮小",
+  recenter: "回正／預設距離",
+  copyImage: "複製圖片",
+  imageCopied: "圖片已複製",
+  imageDownloaded: "圖片已下載",
+  actionUnavailable: "繪圖操作暫時無法使用",
   disableHeavy: "關閉推斷後運行",
   retryRemote: "重試遠端計算",
   remoteRecoveryTitle: "持久計算未能完成",
@@ -278,7 +444,7 @@ const zhHant: typeof english = {
   provenance: "來源與版本",
 };
 
-function copyFor(locale: Locale): typeof english {
+export function getOpenEnaLongitudinalV3Copy(locale: Locale): typeof english {
   return locale === "zh-hans" ? zhHans : locale === "zh-hant" ? zhHant : english;
 }
 
@@ -351,6 +517,31 @@ export function cameraForDisplay(preset: CameraPreset) {
   };
 }
 
+export function OpenEnaTrajectoryPlotShellV3({
+  fallbackFullscreen,
+  label,
+  shellRef,
+  children,
+}: {
+  fallbackFullscreen: boolean;
+  label: string;
+  shellRef?: Ref<HTMLDivElement>;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      ref={shellRef}
+      className="ena-longitudinal-v3-plot-shell"
+      data-fallback-fullscreen={fallbackFullscreen ? "true" : undefined}
+      role={fallbackFullscreen ? "dialog" : undefined}
+      aria-modal={fallbackFullscreen ? true : undefined}
+      aria-label={fallbackFullscreen ? label : undefined}
+    >
+      {children}
+    </div>
+  );
+}
+
 function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
   spec: TrajectoryPlotlySpecV2;
   cameraPreset: CameraPreset;
@@ -358,12 +549,24 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
 }) {
   const rootRef = useRef<PlotRoot>(null);
   const shellRef = useRef<HTMLDivElement>(null);
+  const fallbackFullscreenOpenerRef = useRef<HTMLElement | null>(null);
+  const fallbackFullscreenExitRef = useRef<HTMLButtonElement>(null);
+  const controllerRef = useRef<TrajectoryPlotlyControllerV3 | null>(null);
+  const actionStatusTimerRef = useRef<number | null>(null);
   const [Plotly, setPlotly] = useState<PlotlyImageApi | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [compactLayout, setCompactLayout] = useState(false);
   const [nativeFullscreenLayout, setNativeFullscreenLayout] = useState(false);
   const [fallbackFullscreen, setFallbackFullscreen] = useState(false);
+  const [actionPending, setActionPending] = useState(false);
+  const [actionStatus, setActionStatus] = useState("");
   const fullscreenLayout = nativeFullscreenLayout || fallbackFullscreen;
+  const plotId = useId();
+  const canvasId = `open-ena-longitudinal-v3-plot-${plotId.replace(/:/gu, "")}`;
+  const defaultCamera = useMemo(() => {
+    const scene = plotlyRecord(spec.layout.scene);
+    return trajectoryPlotlyCamera(scene.camera, cameraForPreset(cameraPreset));
+  }, [spec, cameraPreset]);
 
   useEffect(() => {
     let active = true;
@@ -387,6 +590,10 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
   }, []);
 
   useEffect(() => {
+    controllerRef.current = null;
+  }, [Plotly]);
+
+  useEffect(() => {
     if (!Plotly || !rootRef.current) return;
     let active = true;
     const root = rootRef.current;
@@ -397,9 +604,43 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
       ),
       fullscreenLayout,
     );
+    const controller = controllerRef.current ?? createTrajectoryPlotlyControllerV3({
+      react: (input) => Plotly.react(
+        root,
+        input.data as never[],
+        input.layout as never,
+        input.config as never,
+      ),
+      relayout: (payload) => Plotly.relayout(root, payload as never),
+      toImage: (options) => Plotly.toImage(root, options as {
+        format: "png";
+        width: number;
+        height: number;
+        scale: number;
+      }),
+      readRanges: () => trajectoryPlotlyRuntimeRanges(root),
+      readAspectRatio: () => trajectoryPlotlyRuntimeAspectRatio(root),
+      readCamera: (fallback) => {
+        const scene = root._fullLayout?.scene;
+        const runtimeCamera = scene?._scene?.getCamera?.() ?? scene?.camera;
+        return trajectoryPlotlyCamera(runtimeCamera, fallback);
+      },
+      zoomCamera: zoomOpenEna3dCamera,
+      resetCamera: resetOpenEna3dCameraDistance,
+      zoomAspectRatio: zoomOpenEna3dAspectRatio,
+      onPendingChange: setActionPending,
+    });
+    controllerRef.current = controller;
     setStatus("loading");
-    void Plotly.react(root, mutableSpec.data as never[], mutableSpec.layout as never, mutableSpec.config as never)
-      .then(() => active && setStatus("ready"))
+    void controller.render({
+      specKey: spec,
+      input: mutableSpec,
+      hasScene: spec.layout.scene !== undefined,
+      defaultCamera,
+    })
+      .then((result) => {
+        if (active && result.status === "completed") setStatus("ready");
+      })
       .catch(() => active && setStatus("error"));
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
       try { void Promise.resolve(Plotly.Plots.resize(root)).catch(() => {}); } catch { /* detached */ }
@@ -409,7 +650,7 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
       active = false;
       observer?.disconnect();
     };
-  }, [Plotly, spec, compactLayout, fullscreenLayout]);
+  }, [Plotly, spec, compactLayout, fullscreenLayout, defaultCamera]);
 
   useEffect(() => {
     if (!Plotly) return;
@@ -436,31 +677,119 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
 
   useEffect(() => {
     if (!fallbackFullscreen) return;
-    const exitOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setFallbackFullscreen(false);
+    const shell = shellRef.current;
+    if (!shell) return;
+    const restoreOutsideTree = isolateOpenEnaFallbackFullscreenOutsideTreeV3(
+      shell,
+      document.body,
+    );
+    let focusFrame: number | null = window.requestAnimationFrame(() => {
+      focusFrame = null;
+      fallbackFullscreenExitRef.current?.focus();
+    });
+    const focusSelector = [
+      "button:not([disabled])",
+      "a[href]",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(",");
+    const handleFallbackFullscreenKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setFallbackFullscreen(false);
+        return;
+      }
+      if (event.key === "Tab") {
+        const focusables = Array.from(shell.querySelectorAll<HTMLElement>(focusSelector))
+          .filter((element) => !element.hasAttribute("hidden") && element.getAttribute("aria-hidden") !== "true");
+        const nextFocus = nextOpenEnaFallbackFullscreenFocusV3(
+          focusables,
+          document.activeElement instanceof HTMLElement ? document.activeElement : null,
+          event.shiftKey,
+        );
+        if (!nextFocus) return;
+        event.preventDefault();
+        nextFocus.focus();
+      }
     };
-    document.addEventListener("keydown", exitOnEscape);
-    return () => document.removeEventListener("keydown", exitOnEscape);
+    document.addEventListener("keydown", handleFallbackFullscreenKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleFallbackFullscreenKeyDown);
+      if (focusFrame !== null) window.cancelAnimationFrame(focusFrame);
+      restoreOutsideTree();
+      fallbackFullscreenOpenerRef.current?.focus();
+    };
   }, [fallbackFullscreen]);
 
   useEffect(() => () => {
     if (Plotly && rootRef.current) Plotly.purge(rootRef.current);
   }, [Plotly]);
 
-  const copyImage = async () => {
-    if (!Plotly || !rootRef.current) return;
-    const image = await Plotly.toImage(rootRef.current, { format: "png", width: 1600, height: 1000, scale: 1 });
-    const blob = await (await fetch(image)).blob();
-    if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-    } else downloadBlob("3dena-longitudinal-trajectory.png", blob, "image/png");
+  useEffect(() => () => {
+    if (actionStatusTimerRef.current !== null) {
+      window.clearTimeout(actionStatusTimerRef.current);
+    }
+  }, []);
+
+  const announceAction = (message: string) => {
+    setActionStatus("");
+    if (actionStatusTimerRef.current !== null) {
+      window.clearTimeout(actionStatusTimerRef.current);
+    }
+    actionStatusTimerRef.current = window.setTimeout(() => {
+      setActionStatus(message);
+      actionStatusTimerRef.current = null;
+    }, 0);
   };
 
-  const resetDistance = async () => {
-    if (!Plotly || !rootRef.current || spec.layout.scene === undefined) return;
-    const current = rootRef.current._fullLayout?.scene?.camera ?? cameraForPreset(cameraPreset);
-    const reset = resetOpenEna3dCameraDistance(current, cameraForPreset(cameraPreset));
-    await Plotly.relayout(rootRef.current, { "scene.camera": reset } as never);
+  const copyImage = async () => {
+    const controller = controllerRef.current;
+    if (!controller || status !== "ready") return;
+    try {
+      const result = await controller.copy(
+        { format: "png", width: 1600, height: 1000, scale: 1 },
+        async (image, isCurrent) => {
+          const blob = await (await fetch(image)).blob();
+          if (!isCurrent()) return "";
+          if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
+            await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+            return labels.imageCopied;
+          }
+          downloadBlob("3dena-longitudinal-trajectory.png", blob, "image/png");
+          return labels.imageDownloaded;
+        },
+      );
+      if (result.status === "completed") announceAction(result.value);
+    } catch {
+      announceAction(labels.actionUnavailable);
+    }
+  };
+
+  const changePlotZoom = async (direction: "in" | "out") => {
+    const controller = controllerRef.current;
+    if (!controller || status !== "ready") return;
+    try {
+      const result = await controller.zoom(direction);
+      if (result.status === "completed") {
+        announceAction(direction === "in" ? labels.zoomIn : labels.zoomOut);
+      }
+    } catch {
+      announceAction(labels.actionUnavailable);
+    }
+  };
+
+  const recenterPlot = async () => {
+    const controller = controllerRef.current;
+    if (!controller || status !== "ready") return;
+    try {
+      const result = await controller.recenter();
+      if (result.status === "completed") announceAction(labels.recenter);
+    } catch {
+      announceAction(labels.actionUnavailable);
+    }
   };
 
   const toggleFullscreen = async () => {
@@ -479,18 +808,29 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
     } catch {
       // Extension-controlled and embedded browsers can deny the native API.
       // Keep the interaction useful with an equivalent viewport-filling layer.
+      fallbackFullscreenOpenerRef.current = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
       setFallbackFullscreen(true);
     }
   };
 
   return (
-    <div ref={shellRef} className="ena-longitudinal-v3-plot-shell" data-fallback-fullscreen={fallbackFullscreen ? "true" : undefined}>
+    <OpenEnaTrajectoryPlotShellV3
+      shellRef={shellRef}
+      fallbackFullscreen={fallbackFullscreen}
+      label={labels.plotTitle}
+    >
       <div className="ena-longitudinal-v3-plot-actions" role="toolbar" aria-label={labels.plotTitle}>
-        <button type="button" aria-pressed={fullscreenLayout} onClick={() => void toggleFullscreen()}>{fullscreenLayout ? labels.exitFullscreen : labels.fullscreen}</button>
-        <button type="button" onClick={() => void copyImage()}>{labels.copyImage}</button>
-        <button type="button" onClick={() => void resetDistance()} disabled={spec.layout.scene === undefined}>{labels.resetDistance}</button>
+        <button ref={fallbackFullscreenExitRef} type="button" aria-controls={canvasId} aria-pressed={fullscreenLayout} onClick={() => void toggleFullscreen()}>{fullscreenLayout ? labels.exitFullscreen : labels.fullscreen}</button>
+        <button type="button" data-ena-plot-action="zoom-in" aria-controls={canvasId} onClick={() => void changePlotZoom("in")} disabled={status !== "ready" || actionPending}>{labels.zoomIn}</button>
+        <button type="button" data-ena-plot-action="zoom-out" aria-controls={canvasId} onClick={() => void changePlotZoom("out")} disabled={status !== "ready" || actionPending}>{labels.zoomOut}</button>
+        <button type="button" data-ena-plot-action="recenter" data-ena-recenter-behavior="default-distance" aria-controls={canvasId} onClick={() => void recenterPlot()} disabled={status !== "ready" || actionPending}>{labels.recenter}</button>
+        <button type="button" data-ena-plot-action="copy-image" aria-controls={canvasId} onClick={() => void copyImage()} disabled={status !== "ready" || actionPending}>{labels.copyImage}</button>
+        <span className="sr-only" role="status" aria-live="polite">{actionStatus}</span>
       </div>
       <div
+        id={canvasId}
         ref={rootRef}
         className="ena-longitudinal-v3-plot"
         data-testid="open-ena-longitudinal-v3-plot"
@@ -498,7 +838,7 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
         aria-label={`${labels.plotTitle}. ${spec.data.length} Plotly traces. Result ${spec.resultHash.slice(0, 12)}.`}
       />
       <p className="sr-only" aria-live="polite">{status === "ready" ? `${labels.summary}: ${spec.data.length} traces.` : status}</p>
-    </div>
+    </OpenEnaTrajectoryPlotShellV3>
   );
 }
 
@@ -585,7 +925,7 @@ export default function OpenEnaLongitudinalWorkbenchV3({
   analysisControls,
   analysisControlsMode,
 }: OpenEnaLongitudinalWorkbenchV3Props) {
-  const copy = copyFor(locale);
+  const copy = getOpenEnaLongitudinalV3Copy(locale);
   const [settings, setSettings] = useState<OpenEnaLongitudinalSettingsV3 | null>(null);
   const [bundle, setBundle] = useState<LongitudinalAnalysisBundleV2 | null>(null);
   const [binding, setBinding] = useState<OpenEnaLongitudinalBindingV3 | null>(null);
@@ -872,15 +1212,11 @@ export default function OpenEnaLongitudinalWorkbenchV3({
     <section className="ena-longitudinal-v3-workbench" data-testid="open-ena-longitudinal-v3-workbench" aria-label={copy.title} aria-busy={status === "preparing" || status === "running"}>
       <div className="ena-longitudinal-v3-layout">
         <aside className="ena-longitudinal-v3-controls">
-          {analysisControls ? (
-            <div
-              data-testid="open-ena-longitudinal-v3-analysis-controls"
-              data-controls-mode={analysisControlsMode}
-            >
-              {analysisControls}
-            </div>
-          ) : (
-            <>
+          <OpenEnaLongitudinalV3ControlsSlot
+            analysisControlsMode={analysisControlsMode}
+            analysisControls={analysisControls}
+            trajectoryControls={(
+              <>
           <header><p>{copy.kicker}</p><h2>{copy.title}</h2><span>{copy.subtitle}</span></header>
 
           <section data-trajectory-step="1"><h3><b>1</b>{copy.time}</h3><label><span>{copy.time}</span><select value={settings.timeColumn} onChange={(event) => commitScientific(changeOpenEnaLongitudinalTimeColumnV3(settings, dataset, config, event.target.value), true)}>{timeOptions.map((column) => <option key={column}>{column}</option>)}</select></label></section>
@@ -931,8 +1267,9 @@ export default function OpenEnaLongitudinalWorkbenchV3({
           <section data-trajectory-step="10"><h3><b>10</b>{copy.status}</h3>{modelResultStale ? <p className="ena-longitudinal-v3-banner" role="status">{copy.modelStale}</p> : null}{stale ? <p className="ena-longitudinal-v3-banner" role="status">{copy.stale}</p> : null}{status === "remote-confirmation" && routeDecision ? <div className="ena-longitudinal-v3-remote" role="alert"><strong>{copy.remoteTitle}</strong><p>{copy.remoteText}</p><dl><div><dt>Predicted time</dt><dd>{routeDecision.predictedMilliseconds} ms</dd></div><div><dt>Predicted memory</dt><dd>{(routeDecision.predictedMemoryBytes / 1024 / 1024).toFixed(1)} MB</dd></div><div><dt>Hard deadline</dt><dd>60 s</dd></div></dl><button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { allowRemote: true })}>{copy.confirmRemote}</button><button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { forceLocal: true })}>{copy.continueLocal}</button><button type="button" onClick={() => void runWithoutInference()}>{copy.disableHeavy}</button></div> : null}{status === "remote-recovery" && routeDecision && remoteFailure ? <div className="ena-longitudinal-v3-remote" role="alert"><strong>{copy.remoteRecoveryTitle}</strong><p>{copy.remoteRecoveryText}</p><p>{remoteFailure.message}</p><button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { allowRemote: true })}>{copy.retryRemote}</button>{remoteFailure.canContinueLocally ? <button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { forceLocal: true })}>{copy.continueLocal}</button> : null}{remoteFailure.canDisableInference ? <button type="button" onClick={() => void runWithoutInference()}>{copy.disableHeavy}</button> : null}</div> : null}<div className="ena-longitudinal-v3-run-status" role="status" aria-live="polite"><span data-state={status} /><strong>{status === "ready" ? copy.ready : status}</strong>{status === "running" || status === "preparing" ? <progress max="1" value={progress.progress}>{Math.round(progress.progress * 100)}%</progress> : null}{cacheHit ? <small>{copy.cacheHit}</small> : null}</div>{error && status !== "remote-recovery" ? <p className="ena-longitudinal-v3-error" role="alert">{error}</p> : null}<div className="ena-longitudinal-v3-run-actions"><button type="button" className="ena-longitudinal-v3-primary" onClick={() => void run()} disabled={status === "running" || status === "preparing" || settings.participantColumns.length === 0}>{bundle ? copy.recompute : copy.run}</button>{status === "running" || status === "preparing" ? <button type="button" onClick={() => abortRef.current?.abort()}>{copy.cancel}</button> : null}{status === "error" ? <button type="button" onClick={() => void run()}>{copy.retry}</button> : null}</div></section>
 
           <section data-trajectory-step="11"><h3><b>11</b>{copy.downloads}</h3><div className="ena-longitudinal-v3-downloads">{([['bundle', copy.bundleZip], ['path', copy.pathCsv], ['metadata', copy.metadataCsv], ['inference', copy.inferenceCsv], ['analysis', copy.analysisJson], ['plotly', copy.plotlyJson], ['participant', copy.participantZip]] as const).map(([kind, label]) => <button type="button" key={kind} disabled={!bundle || stale} onClick={() => void download(kind)}>{label}</button>)}</div></section>
-            </>
-          )}
+              </>
+            )}
+          />
         </aside>
 
         <main className="ena-longitudinal-v3-output">

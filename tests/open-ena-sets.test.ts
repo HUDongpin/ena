@@ -15,6 +15,7 @@ import {
   setComparisonEdgesToCsv,
   upsertAnalysisSet,
 } from "../lib/open-ena/sets";
+import * as setsModule from "../lib/open-ena/sets";
 import { SAMPLE_CONFIG, type OpenEnaConfig } from "../lib/open-ena/types";
 
 const sampleText = readFileSync(
@@ -177,6 +178,19 @@ test("set collection helpers upsert, remove, and repair distinct selectors", () 
     primarySetId: "p",
     secondarySetId: "s",
   }), { primarySetId: "s", secondarySetId: null });
+});
+
+test("set removal focus chooses successor, predecessor, capture, or heading deterministically", () => {
+  const nextFocusId = Reflect.get(setsModule, "nextAnalysisSetRemovalFocusId");
+  assert.equal(typeof nextFocusId, "function", "the pure set-removal focus helper must be exported");
+  const ids = ["first", "middle", "last"];
+  assert.equal(nextFocusId(ids, "first", true), "open-ena-set-remove-middle");
+  assert.equal(nextFocusId(ids, "middle", true), "open-ena-set-remove-last");
+  assert.equal(nextFocusId(ids, "last", true), "open-ena-set-remove-middle");
+  assert.equal(nextFocusId(["only"], "only", true), "open-ena-capture-set");
+  assert.equal(nextFocusId(["only"], "only", false), "open-ena-sets-heading");
+  assert.equal(nextFocusId(ids, "missing", true), "open-ena-capture-set");
+  assert.equal(nextFocusId(ids, "missing", false), "open-ena-sets-heading");
 });
 
 test("capture rejects a dataset or configuration that does not reproduce the supplied result", () => {

@@ -112,6 +112,28 @@ test("the browser smoke proves every non-Plot rail panel is visible inside one i
   assert.match(source, /taskRequestCount === args\.expectedTaskRequestCount/u);
 });
 
+test("the browser smoke preserves one stateful AI subtree across Plot, AI, Model, AI, and Plot", () => {
+  const source = readFileSync(smokePath, "utf8");
+
+  assert.match(source, /aiPostCount:\s*0/u);
+  assert.match(source, /__openEnaAiLifecycleAudit/u);
+  assert.match(source, /open-ena-persistent-ai-lifecycle/u);
+  assert.match(source, /\.ena-ai-interpretation/u);
+  assert.match(source, /data-ena-ai-consent="explicit"/u);
+  assert.match(source, /currentAiRoot === audit\.aiRoot/u);
+  assert.match(source, /currentConsent === audit\.consent/u);
+  assert.match(source, /aiPostCount === audit\.baselineAiPostCount/u);
+  assert.match(source, /name: "Model", exact: true/u);
+  assert.match(source, /name: "AI-assisted interpretation", exact: true/u);
+  assert.match(source, /analysisSlot\.waitFor\(\{ state: "hidden"/u);
+  assert.match(source, /trajectorySlot\.waitFor\(\{ state: "visible"/u);
+  assert.doesNotMatch(
+    source,
+    /getByTestId\("open-ena-longitudinal-v3-analysis-controls"\)\.count\(\) === 0/u,
+    "Plot mode must hide, not unmount, the persistent analysis subtree",
+  );
+});
+
 test("the browser smoke locates the AI rail control by its full accessible name", () => {
   const source = readFileSync(smokePath, "utf8");
 
@@ -222,6 +244,141 @@ test("the summary converts every screenshot path into a portable integrity recei
   assert.match(source, /pageScreenshot:\s*artifactEvidence\(pagePath\)/u);
   assert.match(source, /plotScreenshot:\s*artifactEvidence\(plotPath\)/u);
   assert.match(source, /screenshot:\s*artifactEvidence\(responsiveAudit\.fullscreenPath\)/u);
+});
+
+test("the 390px responsive audit proves the wrapped toolbar and Plotly canvas stay inside one shell", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /const boxFor = \(element\) =>/u);
+  assert.match(source, /shellBox:\s*boxFor\(shell\)/u);
+  assert.match(source, /toolbarBox:\s*boxFor\(toolbar\)/u);
+  assert.match(source, /plotBox:\s*boxFor\(plot\)/u);
+  assert.match(source, /toolbarRowCount/u);
+  assert.match(source, /viewport\.width === 390/u);
+  assert.match(source, /overflow\.toolbarRowCount >= 2/u);
+  assert.match(source, /overflow\.toolbarBox\.bottom <= overflow\.plotBox\.top \+ 1/u);
+  assert.match(source, /overflow\.plotBox\.bottom <= overflow\.shellBox\.bottom \+ 1/u);
+  assert.match(source, /page\.locator\("\.ena-longitudinal-v3-plot-shell"\)\.screenshot\(\{ path: shellPath \}\)/u);
+  assert.match(source, /shellScreenshot:\s*artifactEvidence\(shellPath\)/u);
+  assert.match(source, /overflow\.documentScrollWidth <= overflow\.documentClientWidth \+ 1/u);
+  assert.match(source, /overflow\.bodyScrollWidth <= overflow\.bodyClientWidth \+ 1/u);
+});
+
+test("the browser smoke proves fallback fullscreen is one reversible keyboard-modal session", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /async function exerciseFallbackFullscreenAccessibility\(page, args\)/u);
+  assert.match(source, /page\.setViewportSize\(args\.viewport\)/u);
+  assert.match(source, /Object\.getOwnPropertyDescriptor\(shell, "requestFullscreen"\)/u);
+  assert.match(source, /Object\.defineProperty\(shell, "requestFullscreen"[\s\S]*?throw new Error/u);
+  assert.match(source, /outsideNodes/u);
+  assert.match(source, /bodyOverflow/u);
+  assert.match(source, /data-fallback-fullscreen/u);
+  assert.match(source, /getAttribute\("role"\) === "dialog"/u);
+  assert.match(source, /getAttribute\("aria-modal"\) === "true"/u);
+  assert.match(source, /getAttribute\("aria-label"\)\?\.trim\(\)\.length > 0/u);
+  assert.match(source, /document\.activeElement === audit\.exitButton/u);
+  assert.match(source, /document\.fullscreenElement !== audit\.shell/u);
+  assert.match(source, /shellPath\.every\(\(node\) => !node\.inert && !node\.hasAttribute\("inert"\)\)/u);
+  assert.match(source, /snapshot\.node\.inert === true/u);
+  assert.match(source, /snapshot\.node\.hasAttribute\("inert"\)/u);
+  assert.match(source, /snapshot\.node\.getAttribute\("aria-hidden"\) === "true"/u);
+  assert.match(source, /const readFallbackControlSnapshot = async \(\) => await page\.evaluate/u);
+  assert.match(source, /action:/u);
+  assert.match(source, /index:/u);
+  assert.match(source, /tag:/u);
+  assert.match(source, /role:/u);
+  assert.match(source, /testId:/u);
+  assert.match(source, /ariaLabel:/u);
+  assert.match(source, /insideShell:/u);
+  assert.match(source, /active:/u);
+  assert.match(source, /focusableDescriptors/u);
+  assert.match(source, /currentActiveDescriptor/u);
+  assert.match(source, /entryPending/u);
+  assert.match(source, /entryState\.controls\.length === 5/u);
+  assert.match(source, /if \(entryState\.entryPending\)/u);
+  assert.match(source, /pendingActions\.length === 4/u);
+  assert.match(source, /pendingActions\.every\(\(control\) => control\.disabled\)/u);
+  assert.match(source, /entryState\.focusableDescriptors\.every\(\(descriptor\) => descriptor\.insideShell\)/u);
+  assert.match(source, /pendingActions\.every\(\(control\) => !entryState\.focusableDescriptors\.some\(\(descriptor\) => descriptor\.action === control\.action\)\)/u);
+  assert.match(source, /entryState\.currentActiveDescriptor\?\.action === "fullscreen"/u);
+  assert.match(source, /pendingShiftTabDestination/u);
+  assert.match(source, /sameFocusableDescriptor\(pendingShiftTabDestination, pendingRuntimeLast\)/u);
+  assert.match(source, /pendingShiftTabDestination\?\.insideShell/u);
+  assert.match(source, /audit\.exitButton\.focus\(\)/u);
+  assert.match(source, /dataActionButtons\.length === 4 && dataActionButtons\.every\(\(button\) => !button\.disabled\)/u);
+  assert.match(source, /const settledState = await readFallbackControlSnapshot\(\)/u);
+  assert.match(source, /settledState\.controls\.length === 5/u);
+  assert.match(source, /settledState\.controls\.every\(\(control\) => !control\.disabled\)/u);
+  assert.match(source, /settledActionControls\.every\(\(control\) => settledState\.focusableDescriptors\.some\(\(descriptor\) => descriptor\.action === control\.action\)\)/u);
+  assert.match(source, /settledState\.focusableDescriptors\.every\(\(descriptor\) => descriptor\.insideShell\)/u);
+  assert.match(source, /settledState\.focusableDescriptors\[0\]\?\.action === "fullscreen"/u);
+  assert.match(source, /page\.keyboard\.press\("Shift\+Tab"\)/u);
+  assert.match(source, /sameFocusableDescriptor\(settledShiftTabDestination, settledRuntimeLast\)/u);
+  assert.match(source, /settledShiftTabDestination\?\.insideShell/u);
+  assert.match(source, /page\.keyboard\.press\("Tab"\)/u);
+  assert.match(source, /for \(let step = 0; step < settledState\.focusableDescriptors\.length; step \+= 1\)/u);
+  assert.match(source, /traversal\.every\(\(descriptor\) => descriptor\?\.insideShell\)/u);
+  assert.match(source, /traversal\.at\(-1\)\?\.action === "fullscreen"/u);
+  assert.doesNotMatch(source, /document\.activeElement === audit\.copyButton/u);
+  assert.match(source, /backgroundCandidate\.focus\(\)/u);
+  assert.match(source, /audit\.shell\.contains\(document\.activeElement\)/u);
+  assert.match(source, /page\.keyboard\.press\("Escape"\)/u);
+  assert.match(source, /getAttribute\("data-fallback-fullscreen"\) === null/u);
+  assert.match(source, /getAttribute\("role"\) === null/u);
+  assert.match(source, /getAttribute\("aria-modal"\) === null/u);
+  assert.match(source, /document\.activeElement === audit\.opener/u);
+  assert.match(source, /document\.body\.style\.overflow === audit\.bodyOverflow/u);
+  assert.match(source, /snapshot\.node\.inert === snapshot\.inertProperty/u);
+  assert.match(source, /snapshot\.node\.getAttribute\("aria-hidden"\) === snapshot\.ariaHidden/u);
+  assert.match(source, /let evidence = null;[\s\S]*?try\s*\{\s*assertBrowser\(setup\.openerWasFullscreenButton/u);
+  assert.match(source, /finally\s*\{/u);
+  assert.match(source, /finally\s*\{\s*try\s*\{[\s\S]*?\}\s*finally\s*\{[\s\S]*?Object\.defineProperty\(shell, "requestFullscreen"/u);
+  assert.match(source, /Object\.defineProperty\(shell, "requestFullscreen", audit\.requestFullscreenDescriptor\)/u);
+  assert.match(source, /delete shell\.requestFullscreen/u);
+  assert.match(source, /fallbackA11yAudit,/u);
+});
+
+test("the browser smoke drives every real V3 plot action across perspective, orthographic, and 2D runtimes", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /async function exerciseTrajectoryPlotActions\(page, args\)/u);
+  for (const action of ["zoom-in", "zoom-out", "recenter", "copy-image"]) {
+    assert.ok(source.includes(`[data-ena-plot-action="${action}"]`), `missing real ${action} button locator`);
+  }
+  assert.match(source, /cameraDistance/u);
+  assert.match(source, /scene\?\._scene\?\.glplot\?\.getAspectratio/u);
+  assert.match(source, /root\?\._fullLayout\?\.xaxis\?\.range/u);
+  assert.match(source, /perspectiveZoomInDistance < perspectiveBaselineDistance/u);
+  assert.match(source, /perspectiveZoomOutDistance > perspectiveZoomInDistance/u);
+  assert.match(source, /cameraOrientationApproximatelyEqual\(perspectiveZoomIn, perspectiveBaseline\)/u);
+  assert.match(source, /cameraApproximatelyEqual\(perspectiveZoomOut, perspectiveBaseline\)/u);
+  assert.match(source, /cameraApproximatelyEqual\(perspectiveRecenter, perspectiveBaseline\)/u);
+  assert.match(source, /approximatelyEqual\(perspectiveRecenterDistance, perspectiveBaselineDistance\)/u);
+  assert.match(source, /orthographicZoomIn\.x > orthographicBaseline\.x/u);
+  assert.match(source, /orthographicZoomOut\.x < orthographicZoomIn\.x/u);
+  assert.match(source, /aspectApproximatelyEqual\(orthographicZoomOut, orthographicBaseline\)/u);
+  assert.match(source, /aspectApproximatelyEqual\(orthographicRecenter, orthographicBaseline\)/u);
+  assert.match(source, /twoDZoomIn\.x\[1\] - twoDZoomIn\.x\[0\]/u);
+  assert.match(source, /twoDZoomOutSpan > twoDZoomInSpan/u);
+  assert.match(source, /rangesApproximatelyEqual\(twoDZoomOut, twoDBaseline\)/u);
+  assert.match(source, /rangesApproximatelyEqual\(twoDRecenter, twoDBaseline\)/u);
+  assert.match(source, /await assertScientificInvariants\("perspective zoom in"\)/u);
+  assert.match(source, /await assertScientificInvariants\("orthographic recenter"\)/u);
+  assert.match(source, /await assertScientificInvariants\("2D recenter"\)/u);
+  assert.match(source, /current\.taskRequestCount === args\.expectedTaskRequestCount/u);
+  assert.match(source, /current\.resultHashes\[0\] === args\.expectedResultHash/u);
+  assert.match(source, /Object\.defineProperty\(navigator, "clipboard"/u);
+  assert.match(source, /data:image\/png/u);
+  assert.match(source, /page\.waitForEvent\("download"\)/u);
+  assert.match(source, /download\.suggestedFilename\(\)/u);
+  assert.match(source, /3dena-longitudinal-trajectory\.png/u);
+  assert.match(source, /pngSignature/u);
+  assert.match(source, /pngByteLength/u);
+  assert.match(source, /new Uint8Array\(chunk\)/u);
+  assert.doesNotMatch(source, /chunks\.push\(Buffer\.from\(chunk\)\)|Buffer\.concat\(chunks\)/u);
+  assert.match(source, /Image downloaded/u);
+  assert.match(source, /toImageDataUrlFetchCount === 1/u);
+  assert.match(source, /receipt:\s*artifactEvidence\(copyPath\)/u);
+  assert.match(source, /projectionSelect\.selectOption\("3d"\)[\s\S]*?cameraSelect\.selectOption\("isometric"\)/u);
+  assert.doesNotMatch(source, /createTrajectoryPlotlyControllerV3/u);
 });
 
 test("download receipts resolve beneath the portable artifact root and retain integrity metadata", () => {

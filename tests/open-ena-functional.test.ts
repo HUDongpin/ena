@@ -440,11 +440,16 @@ test("the researcher interface exposes the implemented model controls, data tabl
   assert.match(workspace, /result\.stats\.tests/);
   assert.match(workspace, /buildAnalysisBundle/);
   assert.match(workspace, /rowsToCsv/);
-  assert.match(workspace, /Result data/);
-  assert.match(workspace, /Coordinates CSV/);
-  assert.match(workspace, /Line weights CSV/);
-  assert.match(workspace, /Connection counts CSV/);
-  assert.match(workspace, /Centroids CSV/);
+  assert.match(workspace, /copy\.resultTables/);
+  assert.deepEqual(getOpenEnaCopy("en").resultTables.exportLabels, {
+    coordinates: "Coordinates CSV",
+    lineWeights: "Line weights CSV",
+    connectionCounts: "Connection counts CSV",
+    trajectories: "Trajectory steps CSV",
+    centroids: "Centroids CSV",
+    nodePositions: "Node positions CSV",
+    adjacencyKey: "Adjacency key CSV",
+  });
   assert.match(workspace, /copy\.stats\.effect/);
   assert.deepEqual(
     (["en", "zh-hant", "zh-hans"] as const).map((locale) => getOpenEnaCopy(locale).stats.effect),
@@ -453,7 +458,9 @@ test("the researcher interface exposes the implemented model controls, data tabl
   assert.match(workspace, /Not estimable/);
   assert.match(workspace, /Number\.isFinite/);
   assert.match(workspace, /function selectAxisDimension/);
-  assert.match(workspace, /setters\[occupiedAxis\]\(previousDimension\)/);
+  assert.match(workspace, /updateOpenEnaWorkspace3dAxis\(\{/);
+  assert.match(workspace, /threeD: threeDDimensions/);
+  assert.match(workspace, /setThreeDDimensions\(next\.threeD\)/);
   assert.doesNotMatch(workspace, /disabled=\{oppositeDimensions\.includes\(dimension\)\}/);
   assert.match(workspace, /Export SVG/);
   assert.match(workspace, /Export PNG/);
@@ -683,7 +690,7 @@ test("the researcher interface routes verified trajectory models to the dedicate
   assert.match(workspace, /SeparateTrajectory/);
   assert.match(workspace, /AccumulatedTrajectory/);
   assert.match(workspace, /showTrajectories/);
-  assert.match(workspace, /Trajectory steps CSV/);
+  assert.equal(getOpenEnaCopy("en").resultTables.exportLabels.trajectories, "Trajectory steps CSV");
   assert.doesNotMatch(plot, /ena-trajectory-path|result\.set\.trajectories/);
   assert.match(trajectoryWorkbench, /compileTrajectoryPlotlySpec/);
   assert.match(trajectoryWorkbench, /data-testid="open-ena-longitudinal-v3-workbench"/);

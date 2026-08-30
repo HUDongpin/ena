@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import type { OpenEnaPersistentPlotToolsCopy } from "@/lib/open-ena-i18n";
 
 export interface OpenEnaPersistentPlotToolsProps {
@@ -85,6 +85,26 @@ const rangeProgressStyle = (value: number, minimum: number, maximum: number) => 
   "--ena-range-progress": `${clamp(((value - minimum) / (maximum - minimum)) * 100, 0, 100)}%`,
 } as CSSProperties);
 
+export function scheduleOpenEnaFocusRestore<Handle>(
+  target: Pick<HTMLElement, "focus" | "isConnected"> & { disabled?: boolean } | null,
+  schedule: (callback: () => void) => Handle,
+  cancelSchedule: (handle: Handle) => void,
+) {
+  if (!target) return () => {};
+  let cancelled = false;
+  let settled = false;
+  const handle = schedule(() => {
+    if (cancelled) return;
+    settled = true;
+    if (target.isConnected && target.disabled !== true) target.focus();
+  });
+  return () => {
+    if (cancelled || settled) return;
+    cancelled = true;
+    cancelSchedule(handle);
+  };
+}
+
 function OfficialBinaryToggle({
   label,
   copy,
@@ -170,6 +190,29 @@ export default function OpenEnaPersistentPlotTools({
 }: OpenEnaPersistentPlotToolsProps) {
   const textSize = Math.round(12 * textScale + 1);
   const ordered = analysisKind === "ona";
+  const settingsTriggerRef = useRef<HTMLButtonElement>(null);
+  const settingsCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const pendingFocusCancelRef = useRef<() => void>(() => {});
+  const wasSettingsOpenRef = useRef(settingsOpen);
+  useEffect(() => {
+    const wasOpen = wasSettingsOpenRef.current;
+    wasSettingsOpenRef.current = settingsOpen;
+    pendingFocusCancelRef.current();
+    const focusTarget = settingsOpen
+      ? settingsCloseButtonRef.current
+      : wasOpen ? settingsTriggerRef.current : null;
+    pendingFocusCancelRef.current = scheduleOpenEnaFocusRestore(
+      focusTarget,
+      (callback) => window.requestAnimationFrame(callback),
+      (handle) => window.cancelAnimationFrame(handle),
+    );
+    return () => {
+      pendingFocusCancelRef.current();
+      pendingFocusCancelRef.current = () => {};
+    };
+  }, [settingsOpen]);
+
+  const requestSettingsClose = () => onSettingsOpenChange(false);
 
   return (
     <section
@@ -180,13 +223,15 @@ export default function OpenEnaPersistentPlotTools({
       onKeyDown={(event) => {
         if (settingsOpen && event.key === "Escape") {
           event.preventDefault();
-          onSettingsOpenChange(false);
+          event.stopPropagation();
+          requestSettingsClose();
         }
       }}
     >
       <header className="ena-persistent-plot-tools-header">
         <strong>{title}</strong>
         <button
+          ref={settingsTriggerRef}
           type="button"
           className="ena-plot-settings-trigger"
           aria-label={copy.plotSettings}
@@ -194,7 +239,10 @@ export default function OpenEnaPersistentPlotTools({
           aria-controls="ena-official-plot-settings"
           title={copy.plotSettings}
           disabled={disabled}
-          onClick={() => onSettingsOpenChange(!settingsOpen)}
+          onClick={() => {
+            if (settingsOpen) requestSettingsClose();
+            else onSettingsOpenChange(true);
+          }}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M19.43 12.98c.04-.32.07-.65.07-.98s-.03-.66-.08-.98l2.11-1.65-2-3.46-2.49 1a7.2 7.2 0 0 0-1.69-.98L15 3.25h-4l-.4 2.68c-.61.25-1.17.58-1.69.98l-2.49-1-2 3.46 2.11 1.65c-.05.32-.08.66-.08.98s.03.66.08.98l-2.11 1.65 2 3.46 2.49-1c.52.4 1.08.73 1.69.98l.4 2.68h4l.4-2.68c.61-.25 1.17-.58 1.69-.98l2.49 1 2-3.46-2.15-1.65ZM13 15.5A3.5 3.5 0 1 1 13 8a3.5 3.5 0 0 1 0 7.5Z" />
@@ -202,7 +250,12 @@ export default function OpenEnaPersistentPlotTools({
         </button>
       </header>
 
-      <div className="ena-persistent-plot-tools-scroll" data-ena-plot-tools-surface="frequent">
+      <div
+        className="ena-persistent-plot-tools-scroll"
+        data-ena-plot-tools-surface="frequent"
+        inert={settingsOpen}
+        aria-hidden={settingsOpen ? true : undefined}
+      >
         <div className="ena-official-tool-row" data-ena-plot-tool="edge-scale">
           <span>{copy.scaleEdgeWeights}:</span>
           <div className="ena-official-tool-control">
@@ -305,7 +358,7 @@ export default function OpenEnaPersistentPlotTools({
         >
           <header>
             <strong>{copy.plotSettings}</strong>
-            <button type="button" aria-label={copy.closePlotSettings} title={copy.close} onClick={() => onSettingsOpenChange(false)}>×</button>
+            <button ref={settingsCloseButtonRef} type="button" aria-label={copy.closePlotSettings} title={copy.close} onClick={requestSettingsClose}>×</button>
           </header>
           <div className="ena-official-plot-settings-scroll">
             <section aria-labelledby="ena-plot-settings-network">

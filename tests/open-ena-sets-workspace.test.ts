@@ -63,6 +63,24 @@ test("Sets cards expose identity, role, reference state, removal, and repaired s
   assert.match(workspace, /repairSetSelection\([\s\S]*?primarySetId[\s\S]*?secondarySetId/);
 });
 
+test("removing a captured set restores focus after commit and cleans stable button refs", () => {
+  assert.match(workspace, /nextAnalysisSetRemovalFocusId/);
+  assert.match(workspace, /const analysisSetRemoveButtonRefs = useRef\(new Map<string, HTMLButtonElement>\(\)\)/);
+  assert.match(workspace, /id="open-ena-capture-set"[\s\S]{0,180}ref=\{captureSetButtonRef\}/);
+  assert.match(workspace, /id="open-ena-sets-heading"[\s\S]{0,180}ref=\{setsHeadingRef\}[\s\S]{0,80}tabIndex=\{-1\}/);
+  assert.match(workspace, /id=\{`open-ena-set-remove-\$\{analysisSet\.id\}`\}/);
+  assert.match(
+    workspace,
+    /ref=\{\(node\) => \{[\s\S]*?analysisSetRemoveButtonRefs\.current\.set\([\s\S]*?analysisSetRemoveButtonRefs\.current\.delete\(/,
+    "removed set buttons must be deleted from the ref registry",
+  );
+  assert.match(
+    workspace,
+    /const focusTargetId = nextAnalysisSetRemovalFocusId\([\s\S]*?window\.requestAnimationFrame\(\(\) => \{[\s\S]*?\.focus\(\)/,
+    "focus must be chosen before mutation and applied only after React commits the shortened list",
+  );
+});
+
 test("Primary and Secondary selectors exclude self-comparison and require one shared geometry", () => {
   assert.match(sets, /export function haveCompatibleSetGeometry\(/);
   assert.match(sets, /referenceId|geometryId/);
