@@ -14,7 +14,13 @@ import {
   transitionOpenEnaOrderPanelValue,
   type OpenEnaAnalysisFamilyDrafts,
 } from "@/lib/open-ena/analysis-family";
-import { openEnaAnalysisKindFromResult } from "@/lib/open-ena/capabilities";
+import {
+  openEnaAnalysisKindFromResult,
+  openEnaDataViewAvailability,
+  openEnaDataViewCenterSurface,
+  openEnaDataViewUnavailableCopy,
+  type OpenEnaCenterSurface,
+} from "@/lib/open-ena/capabilities";
 import {
   analysisKindFor,
   cloneOpenEnaConfig,
@@ -149,7 +155,6 @@ interface OpenEnaWorkspaceProps {
 }
 
 type OpenEnaModelPanelTab = "units" | "horizons" | "windows" | "codes";
-type OpenEnaCenterSurface = "plot" | "data";
 type OpenEnaStatsTab = "comparison" | "goodness" | "variance";
 
 const MODEL_TAB_ORDER = ["units", "horizons", "windows", "codes"] as const;
@@ -1204,6 +1209,20 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
         : "model";
   const activeSetComparison = completedResultKind !== "ona" && displayedComparisonSurface === "sets" ? setComparison : null;
   const activeGroupContrast = completedResultKind !== "ona" && displayedComparisonSurface === "groups" ? groupContrast : null;
+  const dataViewAvailability = openEnaDataViewAvailability({
+    view,
+    completedResultKind,
+    hasActiveGroupContrast: Boolean(activeGroupContrast),
+  });
+  const dataViewUnavailableCopy = openEnaDataViewUnavailableCopy(dataViewAvailability.reason);
+  const dataViewCenterSurface = openEnaDataViewCenterSurface({
+    requestedCenterSurface: centerSurface,
+    dataViewEnabled: dataViewAvailability.enabled,
+  });
+  const effectiveCenterSurface = dataViewCenterSurface.effectiveCenterSurface;
+  useEffect(() => {
+    if (centerSurface !== effectiveCenterSurface) setCenterSurface(effectiveCenterSurface);
+  }, [centerSurface, effectiveCenterSurface]);
   const dataViewModel = useMemo(() => {
     const empty = {
       columns: [] as OpenEnaDataViewColumn[],
@@ -4020,14 +4039,16 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                   type="button"
                   className="ena-compact-toolbar-button"
                   data-testid="open-ena-data-view-toggle"
-                  aria-pressed={centerSurface === "data"}
-                  disabled={view === "3d" || (!activeGroupContrast && completedResultKind !== "ona")}
+                  aria-pressed={dataViewCenterSurface.dataViewPressed}
+                  disabled={!dataViewAvailability.enabled}
                   onClick={() => {
                     setDataViewContext("comparison");
-                    setCenterSurface((current) => current === "data" ? "plot" : "data");
+                    setCenterSurface(dataViewCenterSurface.dataViewPressed ? "plot" : "data");
                   }}
+                  title={dataViewUnavailableCopy?.title}
+                  aria-label={dataViewUnavailableCopy?.ariaLabel}
                 >
-                  <span aria-hidden="true">▦</span>{centerSurface === "data"
+                  <span aria-hidden="true">▦</span>{effectiveCenterSurface === "data"
                     ? completedResultKind === "ona" ? copy.ona.layout.overallPlot : "Comparison Plot"
                     : completedResultKind === "ona" ? copy.ona.dataView.title : "Data View"}
                 </button>
@@ -4195,8 +4216,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                 config={resultConfig}
                 primaryGroupName={primaryGroupName || null}
                 secondaryGroupName={secondaryGroupName || null}
-                centerMode={centerSurface}
-                dataView={centerSurface === "data" ? (
+                centerMode={effectiveCenterSurface}
+                dataView={effectiveCenterSurface === "data" ? (
                   <div data-testid="open-ena-center-data-view">
                     {renderResultData()}
                   </div>
@@ -4311,8 +4332,8 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     plotResetRevision={plotResetRevision}
                     flipX={flipX}
                     flipY={flipY}
-                    centerMode={centerSurface}
-                    dataView={centerSurface === "data" ? (
+                    centerMode={effectiveCenterSurface}
+                    dataView={effectiveCenterSurface === "data" ? (
                       <div data-testid="open-ena-center-data-view">
                         {renderResultData()}
                       </div>
@@ -4350,6 +4371,12 @@ export default function OpenEnaWorkspace({ locale }: OpenEnaWorkspaceProps) {
                     onAspectRatioChange={setInteractive3dAspectRatio}
                     flipX={flipX}
                     flipY={flipY}
+                    centerMode={effectiveCenterSurface}
+                    dataView={effectiveCenterSurface === "data" ? (
+                      <div data-testid="open-ena-center-data-view">
+                        {renderResultData()}
+                      </div>
+                    ) : null}
                     copy={copy}
                   />
                 ) : view === "3d" && threeDDimensions ? (

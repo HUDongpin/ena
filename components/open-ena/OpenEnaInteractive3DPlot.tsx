@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
+import {
+  isolateOpenEnaFallbackFullscreenOutsideTreeV3,
+  nextOpenEnaFallbackFullscreenFocusV3,
+} from "@/lib/open-ena/longitudinal-v3-display";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
 import {
   cameraForPreset,
@@ -24,6 +28,16 @@ type PlotlyImageApi = PlotlyApi & {
 };
 type RenderStatus = "loading" | "ready" | "error";
 
+export function openEna3dFullscreenMode(capabilities: {
+  requestFullscreen: unknown;
+  exitFullscreen: unknown;
+}): "native" | "fallback" {
+  return typeof capabilities.requestFullscreen === "function"
+    && typeof capabilities.exitFullscreen === "function"
+    ? "native"
+    : "fallback";
+}
+
 export interface OpenEnaInteractive3DPlotProps {
   result: OpenEnaResult;
   contrast?: OpenEnaPairwiseContrast | null;
@@ -34,6 +48,10 @@ export interface OpenEnaInteractive3DPlotProps {
   showCaption?: boolean;
   testId?: string;
   ariaLabel?: string;
+  fullscreenTarget?: {
+    id: string;
+    ref: RefObject<HTMLElement | null>;
+  };
   codeColors?: OpenEnaCodeColors;
   groupColumn: string | null;
   xDimension: string;
@@ -140,6 +158,22 @@ function pngBlobFromDataUrl(dataUrl: string) {
   return new Blob([bytes], { type: "image/png" });
 }
 
+function fallbackFullscreenFocusables(target: HTMLElement) {
+  return [...target.querySelectorAll<HTMLElement>(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), '
+    + 'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  )].filter((element) => (
+    element.getAttribute("aria-hidden") !== "true"
+    && !element.hasAttribute("hidden")
+    && element.getClientRects().length > 0
+  ));
+}
+
+function restoreAttribute(target: HTMLElement, name: string, value: string | null) {
+  if (value === null) target.removeAttribute(name);
+  else target.setAttribute(name, value);
+}
+
 export const OPEN_ENA_3D_CAMERA_ZOOM_STEP = 1.2;
 const MIN_CAMERA_DISTANCE_FACTOR = 0.35;
 const MAX_CAMERA_DISTANCE_FACTOR = 3;
@@ -227,6 +261,7 @@ export default function OpenEnaInteractive3DPlot({
     ? "open-ena-interactive-3d-plot"
     : `open-ena-3d-${plotKind}-plot`,
   ariaLabel,
+  fullscreenTarget,
   codeColors,
   groupColumn,
   xDimension,
@@ -252,6 +287,8 @@ export default function OpenEnaInteractive3DPlot({
   onAspectRatioChange,
   copy,
 }: OpenEnaInteractive3DPlotProps) {
+  const instanceId = useId();
+  const figureRef = useRef<HTMLElement>(null);
   const plotRootRef = useRef<HTMLDivElement>(null);
   const lastAppliedCameraKeyRef = useRef<string | null>(null);
   const initialCameraRef = useRef(initialCamera);
@@ -260,12 +297,34 @@ export default function OpenEnaInteractive3DPlot({
   const lastAspectRatioRef = useRef(initialAspectRatio);
   const relayoutListenerRef = useRef<((update: Record<string, unknown>) => void) | null>(null);
   const actionStatusTimerRef = useRef<number | null>(null);
+  const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
+  const fullscreenInitiatorRef = useRef<HTMLButtonElement | null>(null);
+  const fullscreenResizeFrameRef = useRef<number | null>(null);
+  const fullscreenFocusFrameRef = useRef<number | null>(null);
+  const fullscreenRequestPendingRef = useRef(false);
+  const fullscreenStateRef = useRef(false);
+  const fallbackFullscreenCleanupRef = useRef<(() => void) | null>(null);
+  const plotlyRef = useRef<PlotlyApi | null>(null);
+  const renderStatusRef = useRef<RenderStatus>("loading");
   const [Plotly, setPlotly] = useState<PlotlyApi | null>(null);
   const [status, setStatus] = useState<RenderStatus>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionStatus, setActionStatus] = useState("");
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const generatedFullscreenTargetId = `open-ena-interactive-3d-fullscreen-target-${instanceId}`;
+  const fullscreenTargetId = fullscreenTarget?.id ?? generatedFullscreenTargetId;
+  const fullscreenTargetRef = fullscreenTarget?.ref ?? figureRef;
+  const plotLabel = plotKind === "comparison"
+    ? copy.plot.threeDComparisonPlot
+    : plotKind === "primary"
+      ? copy.plot.threeDPrimaryPlot
+      : copy.plot.threeDSecondaryPlot;
+  const fallbackFullscreenLabel = `${plotLabel}: ${copy.plot.fullscreenDialog}`;
+  const canvasId = `open-ena-interactive-3d-canvas-${instanceId}`;
   initialCameraRef.current = initialCamera;
   initialAspectRatioRef.current = initialAspectRatio;
+  plotlyRef.current = Plotly;
+  renderStatusRef.current = status;
 
   const spec = useMemo<OpenEna3dPlotSpec>(() => compileOpenEna3dPlotSpec({
     result,
@@ -396,6 +455,70 @@ export default function OpenEnaInteractive3DPlot({
   }, [Plotly]);
 
   useEffect(() => {
+    const target = fullscreenTargetRef.current;
+    if (!target) return;
+
+    const handleFullscreenChange = () => syncFullscreenState(true);
+    const handleFallbackFullscreenChange = () => syncFullscreenState(false);
+    const handleFullscreenError = () => {
+      if (!fullscreenRequestPendingRef.current || document.fullscreenElement === target) return;
+      fullscreenRequestPendingRef.current = false;
+      enterFallbackFullscreen(target);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (target.getAttribute("data-fallback-fullscreen") !== "true") return;
+      if (event.key === "Escape") {
+        exitFallbackFullscreen(target, true);
+        return;
+      }
+      if (event.key === "Tab") {
+        const focusables = fallbackFullscreenFocusables(target);
+        const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const next = nextOpenEnaFallbackFullscreenFocusV3(focusables, active, event.shiftKey);
+        if (next) {
+          event.preventDefault();
+          next.focus();
+        }
+      }
+    };
+    const handleFocusIn = (event: FocusEvent) => {
+      if (target.getAttribute("data-fallback-fullscreen") !== "true") return;
+      if (event.target instanceof Node && target.contains(event.target)) return;
+      (fallbackFullscreenFocusables(target)[0] ?? fullscreenButtonRef.current)?.focus();
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("fullscreenerror", handleFullscreenError);
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("openena3dfallbackfullscreenchange", handleFallbackFullscreenChange);
+    syncFullscreenState(false);
+
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      document.removeEventListener("fullscreenerror", handleFullscreenError);
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("openena3dfallbackfullscreenchange", handleFallbackFullscreenChange);
+      const ownedFallback = target.getAttribute("data-fallback-fullscreen") === "true";
+      target.removeAttribute("data-fallback-fullscreen");
+      restoreFallbackFullscreenAccessibility();
+      if (ownedFallback) document.dispatchEvent(new Event("openena3dfallbackfullscreenchange"));
+      if (fullscreenResizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(fullscreenResizeFrameRef.current);
+        fullscreenResizeFrameRef.current = null;
+      }
+      if (fullscreenFocusFrameRef.current !== null) {
+        window.cancelAnimationFrame(fullscreenFocusFrameRef.current);
+        fullscreenFocusFrameRef.current = null;
+      }
+      fullscreenRequestPendingRef.current = false;
+      fullscreenStateRef.current = false;
+      fullscreenInitiatorRef.current = null;
+    };
+  }, [fullscreenTargetId, fullscreenTargetRef]);
+
+  useEffect(() => {
     if (!Plotly || !plotRootRef.current) return;
     let active = true;
     const plotRoot = plotRootRef.current;
@@ -524,9 +647,6 @@ export default function OpenEnaInteractive3DPlot({
       ))
     : [];
   const resolvedAriaLabel = ariaLabel ?? `${copy.workspace.comparison}, ${copy.views.threeD}`;
-  const plotName = plotKind === "comparison" ? "Comparison" : plotKind === "primary" ? "Primary" : "Secondary";
-  const canvasId = `${testId}-canvas`;
-
   function announceAction(message: string) {
     setActionStatus(message);
     if (actionStatusTimerRef.current !== null) window.clearTimeout(actionStatusTimerRef.current);
@@ -606,20 +726,20 @@ export default function OpenEnaInteractive3DPlot({
       ? applyDisplayAspectRatio(zoomOpenEna3dAspectRatio(currentAspectRatio(), resetAspectRatio(), direction))
       : applyDisplayCamera(zoomOpenEna3dCamera(activeCamera, cameraForPreset(camera), direction));
     void action.catch(() => {
-      announceAction("3D view action unavailable");
+      announceAction(copy.plot.actionUnavailable);
     });
   }
 
   function recenterCamera() {
     void applyDefaultDisplayDistance().catch(() => {
-      announceAction("3D view action unavailable");
+      announceAction(copy.plot.actionUnavailable);
     });
   }
 
   function copyPlotImage() {
     if (!Plotly || status !== "ready" || !plotRootRef.current) return;
     const plotRoot = plotRootRef.current;
-    announceAction("Copying image");
+    announceAction(copy.plot.copyingImage);
     void (async () => {
       const dataUrl = await (Plotly as PlotlyImageApi).toImage(plotRoot, {
         format: "png",
@@ -631,18 +751,159 @@ export default function OpenEnaInteractive3DPlot({
       const png = pngBlobFromDataUrl(dataUrl);
       if (typeof ClipboardItem === "function" && navigator.clipboard?.write) {
         await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
-        announceAction("Image copied");
+        announceAction(copy.plot.imageCopied);
       } else if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(dataUrl);
-        announceAction("Image data copied");
+        announceAction(copy.plot.imageDataCopied);
       } else {
         throw new Error("Clipboard access is unavailable.");
       }
-    })().catch(() => announceAction("Copy unavailable"));
+    })().catch(() => announceAction(copy.plot.copyUnavailable));
   }
+
+  function scheduleFullscreenResize() {
+    if (fullscreenResizeFrameRef.current !== null) {
+      window.cancelAnimationFrame(fullscreenResizeFrameRef.current);
+    }
+    fullscreenResizeFrameRef.current = window.requestAnimationFrame(() => {
+      fullscreenResizeFrameRef.current = null;
+      const Plotly = plotlyRef.current;
+      const plotRoot = plotRootRef.current;
+      if (!Plotly || renderStatusRef.current !== "ready" || !plotRoot) return;
+      try {
+        void Promise.resolve(Plotly.Plots.resize(plotRoot)).catch(() => {
+          // The plot can unmount while the fullscreen resize frame is pending.
+        });
+      } catch {
+        // A detached plot can reject a final synchronous fullscreen resize.
+      }
+    });
+  }
+
+  function restoreFullscreenFocus() {
+    if (fullscreenFocusFrameRef.current !== null) {
+      window.cancelAnimationFrame(fullscreenFocusFrameRef.current);
+    }
+    fullscreenFocusFrameRef.current = window.requestAnimationFrame(() => {
+      fullscreenFocusFrameRef.current = null;
+      fullscreenInitiatorRef.current?.focus();
+    });
+  }
+
+  function restoreFallbackFullscreenAccessibility() {
+    fallbackFullscreenCleanupRef.current?.();
+    fallbackFullscreenCleanupRef.current = null;
+  }
+
+  function activateFallbackFullscreenAccessibility(target: HTMLElement) {
+    restoreFallbackFullscreenAccessibility();
+    const previousRole = target.getAttribute("role");
+    const previousAriaModal = target.getAttribute("aria-modal");
+    const previousAriaLabel = target.getAttribute("aria-label");
+    const restoreOutsideTree = isolateOpenEnaFallbackFullscreenOutsideTreeV3(target, document.body);
+    target.setAttribute("role", "dialog");
+    target.setAttribute("aria-modal", "true");
+    target.setAttribute("aria-label", fallbackFullscreenLabel);
+    fallbackFullscreenCleanupRef.current = () => {
+      restoreAttribute(target, "role", previousRole);
+      restoreAttribute(target, "aria-modal", previousAriaModal);
+      restoreAttribute(target, "aria-label", previousAriaLabel);
+      restoreOutsideTree();
+    };
+  }
+
+  function syncFullscreenState(restoreFocusOnExit: boolean) {
+    const target = fullscreenTargetRef.current;
+    if (!target) return;
+    const nextFullscreen = document.fullscreenElement === target
+      || target.getAttribute("data-fallback-fullscreen") === "true";
+    const previousFullscreen = fullscreenStateRef.current;
+    if (nextFullscreen === previousFullscreen) return;
+    fullscreenStateRef.current = nextFullscreen;
+    setIsFullscreen(nextFullscreen);
+    scheduleFullscreenResize();
+    if (previousFullscreen && !nextFullscreen) {
+      restoreFallbackFullscreenAccessibility();
+      if (restoreFocusOnExit) {
+        announceAction(copy.plot.fullscreenClosed);
+        restoreFullscreenFocus();
+      }
+    }
+  }
+
+  function enterFallbackFullscreen(target: HTMLElement) {
+    let replacedAnotherTarget = false;
+    document.querySelectorAll<HTMLElement>(
+      '.open-ena-3d-triptych-panel[data-fallback-fullscreen="true"], '
+      + '.open-ena-interactive-3d-figure[data-fallback-fullscreen="true"]',
+    ).forEach((activeTarget) => {
+      if (activeTarget !== target) {
+        activeTarget.removeAttribute("data-fallback-fullscreen");
+        replacedAnotherTarget = true;
+      }
+    });
+    if (replacedAnotherTarget) {
+      document.dispatchEvent(new Event("openena3dfallbackfullscreenchange"));
+    }
+    target.setAttribute("data-fallback-fullscreen", "true");
+    activateFallbackFullscreenAccessibility(target);
+    document.dispatchEvent(new Event("openena3dfallbackfullscreenchange"));
+    announceAction(copy.plot.fullscreenFallbackEnabled);
+  }
+
+  function exitFallbackFullscreen(target: HTMLElement, restoreFocus: boolean) {
+    target.removeAttribute("data-fallback-fullscreen");
+    syncFullscreenState(restoreFocus);
+    document.dispatchEvent(new Event("openena3dfallbackfullscreenchange"));
+  }
+
+  async function enterFullscreen(target: HTMLElement) {
+    fullscreenInitiatorRef.current = fullscreenButtonRef.current;
+    if (openEna3dFullscreenMode({
+      requestFullscreen: target.requestFullscreen,
+      exitFullscreen: document.exitFullscreen,
+    }) === "fallback") {
+      enterFallbackFullscreen(target);
+      return;
+    }
+    fullscreenRequestPendingRef.current = true;
+    announceAction(copy.plot.fullscreenOpening);
+    try {
+      await target.requestFullscreen();
+      fullscreenRequestPendingRef.current = false;
+      syncFullscreenState(false);
+    } catch {
+      fullscreenRequestPendingRef.current = false;
+      if (target.isConnected) enterFallbackFullscreen(target);
+    }
+  }
+
+  function toggleFullscreen() {
+    const target = fullscreenTargetRef.current;
+    if (!target || status !== "ready" || fullscreenRequestPendingRef.current) return;
+    fullscreenInitiatorRef.current = fullscreenButtonRef.current;
+    if (target.getAttribute("data-fallback-fullscreen") === "true") {
+      exitFallbackFullscreen(target, true);
+      return;
+    }
+    if (document.fullscreenElement === target) {
+      const exitFailureMessage = copy.plot.fullscreenExitFailed;
+      if (typeof document.exitFullscreen === "function") {
+        void document.exitFullscreen().catch(() => announceAction(exitFailureMessage));
+      } else {
+        announceAction(exitFailureMessage);
+      }
+      return;
+    }
+    void enterFullscreen(target).catch(() => announceAction(copy.plot.fullscreenUnavailable));
+  }
+
+  const fullscreenActionLabel = isFullscreen ? copy.plot.fullscreenExit : copy.plot.fullscreenEnter;
 
   return (
     <figure
+      id={fullscreenTarget ? undefined : fullscreenTargetId}
+      ref={figureRef}
       className="open-ena-plot-figure open-ena-interactive-3d-figure"
       data-ena-plot-kind={plotKind}
       data-ena-plot-size={compact ? "compact" : "main"}
@@ -689,16 +950,16 @@ export default function OpenEnaInteractive3DPlot({
         <div
           className="ena-official-plot-actions open-ena-3d-plot-actions"
           role="group"
-          aria-label={`${plotName} Plot actions`}
+          aria-label={`${plotLabel}: ${copy.plot.threeDPlotActions}`}
           data-ena-plot-toolbar={plotKind}
-          data-ena-toolbar-design="unframed-four-button"
+          data-ena-toolbar-design="unframed-plot-actions"
         >
           <button
             type="button"
             data-ena-plot-action="zoom-in"
-            aria-label={`${plotName} Plot: Zoom In`}
+            aria-label={`${plotLabel}: ${copy.plot.zoomIn}`}
             aria-controls={canvasId}
-            title="Zoom In"
+            title={copy.plot.zoomIn}
             disabled={status !== "ready"}
             onClick={() => changeCameraZoom("in")}
           >
@@ -707,9 +968,9 @@ export default function OpenEnaInteractive3DPlot({
           <button
             type="button"
             data-ena-plot-action="zoom-out"
-            aria-label={`${plotName} Plot: Zoom Out`}
+            aria-label={`${plotLabel}: ${copy.plot.zoomOut}`}
             aria-controls={canvasId}
-            title="Zoom Out"
+            title={copy.plot.zoomOut}
             disabled={status !== "ready"}
             onClick={() => changeCameraZoom("out")}
           >
@@ -719,9 +980,9 @@ export default function OpenEnaInteractive3DPlot({
             type="button"
             data-ena-plot-action="recenter"
             data-ena-recenter-behavior="default-distance"
-            aria-label={`${plotName} Plot: Recenter`}
+            aria-label={`${plotLabel}: ${copy.plot.recenter}`}
             aria-controls={canvasId}
-            title="Recenter Plot"
+            title={copy.plot.recenter}
             disabled={status !== "ready"}
             onClick={recenterCamera}
           >
@@ -730,13 +991,26 @@ export default function OpenEnaInteractive3DPlot({
           <button
             type="button"
             data-ena-plot-action="copy-image"
-            aria-label={`${plotName} Plot: Copy image`}
+            aria-label={`${plotLabel}: ${copy.plot.copyImage}`}
             aria-controls={canvasId}
-            title="Copy plot image to clipboard"
+            title={copy.plot.copyImageTitle}
             disabled={status !== "ready"}
             onClick={copyPlotImage}
           >
             <OpenEnaPlotActionIcon name="copy" />
+          </button>
+          <button
+            ref={fullscreenButtonRef}
+            type="button"
+            data-ena-plot-action="fullscreen"
+            aria-label={`${plotLabel}: ${fullscreenActionLabel}`}
+            aria-controls={fullscreenTargetId}
+            aria-pressed={isFullscreen}
+            title={fullscreenActionLabel}
+            disabled={status !== "ready"}
+            onClick={toggleFullscreen}
+          >
+            <OpenEnaPlotActionIcon name={isFullscreen ? "exit-fullscreen" : "fullscreen"} />
           </button>
           <span className="ena-plot-copy-status" role="status" aria-live="polite">{actionStatus}</span>
         </div>

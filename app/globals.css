@@ -4740,8 +4740,13 @@ body:has(.open-ena-login-page) .back-to-top {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-height: calc(100% - 16px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 0;
   background: transparent;
+  scrollbar-width: thin;
 }
 
 .open-ena-interactive-3d-region .open-ena-3d-plot-actions button {
@@ -4777,6 +4782,75 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .open-ena-interactive-3d-region .open-ena-3d-plot-actions button:disabled {
   opacity: 0.34;
+}
+
+.open-ena-3d-triptych-panel:fullscreen,
+.open-ena-3d-triptych-panel[data-fallback-fullscreen="true"],
+.open-ena-interactive-3d-figure:fullscreen,
+.open-ena-interactive-3d-figure[data-fallback-fullscreen="true"] {
+  width: 100vw;
+  height: 100dvh;
+  min-width: 0;
+  max-width: none;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 0;
+  background: #fff;
+}
+
+.open-ena-3d-triptych-panel[data-fallback-fullscreen="true"],
+.open-ena-interactive-3d-figure[data-fallback-fullscreen="true"] {
+  position: fixed;
+  z-index: 2147483000;
+  inset: 0;
+}
+
+.open-ena-3d-triptych-panel:fullscreen,
+.open-ena-3d-triptych-panel[data-fallback-fullscreen="true"] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.open-ena-interactive-3d-figure:fullscreen,
+.open-ena-interactive-3d-figure[data-fallback-fullscreen="true"],
+.open-ena-3d-triptych-panel:fullscreen > .open-ena-interactive-3d-figure,
+.open-ena-3d-triptych-panel[data-fallback-fullscreen="true"] > .open-ena-interactive-3d-figure {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.open-ena-3d-triptych-panel:fullscreen .open-ena-interactive-3d-region,
+.open-ena-3d-triptych-panel[data-fallback-fullscreen="true"] .open-ena-interactive-3d-region,
+.open-ena-interactive-3d-figure:fullscreen .open-ena-interactive-3d-region,
+.open-ena-interactive-3d-figure[data-fallback-fullscreen="true"] .open-ena-interactive-3d-region,
+.open-ena-3d-triptych-panel:fullscreen .open-ena-interactive-3d-canvas,
+.open-ena-3d-triptych-panel[data-fallback-fullscreen="true"] .open-ena-interactive-3d-canvas,
+.open-ena-interactive-3d-figure:fullscreen .open-ena-interactive-3d-canvas,
+.open-ena-interactive-3d-figure[data-fallback-fullscreen="true"] .open-ena-interactive-3d-canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.open-ena-3d-triptych-panel:fullscreen .open-ena-interactive-3d-summary,
+.open-ena-3d-triptych-panel[data-fallback-fullscreen="true"] .open-ena-interactive-3d-summary,
+.open-ena-interactive-3d-figure:fullscreen .open-ena-interactive-3d-summary,
+.open-ena-interactive-3d-figure[data-fallback-fullscreen="true"] .open-ena-interactive-3d-summary,
+.open-ena-3d-triptych-panel:fullscreen figcaption,
+.open-ena-3d-triptych-panel[data-fallback-fullscreen="true"] figcaption,
+.open-ena-interactive-3d-figure:fullscreen figcaption,
+.open-ena-interactive-3d-figure[data-fallback-fullscreen="true"] figcaption {
+  display: none;
+}
+
+.open-ena-3d-triptych-panel:fullscreen .open-ena-3d-plot-actions,
+.open-ena-3d-triptych-panel[data-fallback-fullscreen="true"] .open-ena-3d-plot-actions,
+.open-ena-interactive-3d-figure:fullscreen .open-ena-3d-plot-actions,
+.open-ena-interactive-3d-figure[data-fallback-fullscreen="true"] .open-ena-3d-plot-actions {
+  display: flex;
 }
 
 .open-ena-interactive-3d-summary {
@@ -4836,6 +4910,32 @@ body:has(.open-ena-login-page) .back-to-top {
   grid-template-columns: minmax(0, 2fr) minmax(290px, 1fr);
   align-items: start;
   gap: 10px;
+}
+
+.open-ena-3d-triptych-center {
+  min-width: 0;
+}
+
+.open-ena-3d-triptych-data-view {
+  display: flex;
+  height: min(590px, 68vh);
+  min-height: 0;
+  flex-direction: column;
+}
+
+.open-ena-3d-triptych-data-view > [data-testid="open-ena-center-data-view"],
+.open-ena-3d-triptych-data-view .ena-data-view {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.open-ena-3d-triptych-data-view .ena-data-view-scroll {
+  min-height: 0;
+  max-height: none !important;
+  flex: 1 1 auto;
+  overflow: auto;
 }
 
 .open-ena-3d-triptych-sides {
@@ -5030,6 +5130,11 @@ body:has(.open-ena-login-page) .back-to-top {
   .open-ena-3d-triptych-main .open-ena-interactive-3d-canvas {
     min-height: 410px;
     height: min(500px, 64vh);
+  }
+
+  .open-ena-3d-triptych-data-view {
+    height: min(500px, 64vh);
+    min-height: 410px;
   }
 
   .open-ena-3d-triptych-side .open-ena-interactive-3d-canvas {
