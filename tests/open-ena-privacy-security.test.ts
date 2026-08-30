@@ -13,7 +13,7 @@ import { createOpenEnaAiInterpretationPostHandler } from "../lib/server/open-ena
 import { OPEN_ENA_SESSION_COOKIE } from "../lib/open-ena-auth";
 import {
   isOpenEnaAnalyticsDisabledPath,
-  resolveOpenEnaAnalyticsPathname,
+  sanitizeOpenEnaAnalyticsUrl,
 } from "../lib/analytics-consent";
 import type {
   OpenEnaAiInterpretationRequest,
@@ -382,15 +382,31 @@ test("Vercel Analytics disclosure names provider, data scope, bounded defaults, 
   assert.match(analyticsConsent, /beforeSend/u);
   assert.match(analyticsConsent, /localStorage/u);
   assert.match(analyticsConsent, /query strings and fragments|Query strings.*identifiers/iu);
-  assert.match(analyticsConsent, /url\.pathname/u);
+  assert.match(analyticsConsent, /sanitizeOpenEnaAnalyticsUrl/u);
+  assert.doesNotMatch(analyticsConsent, /url:\s*url\.pathname/u);
   assert.match(analyticsControl, /data-ena-analytics-consent="explicit"/u);
 });
 
-test("Vercel Analytics resolves a nullable router path after hydration without enabling the Open ENA workspace", () => {
-  assert.equal(resolveOpenEnaAnalyticsPathname(null, null), null);
-  assert.equal(resolveOpenEnaAnalyticsPathname(null, "/en"), "/en");
-  assert.equal(resolveOpenEnaAnalyticsPathname(null, "/en/open-ena"), "/en/open-ena");
-  assert.equal(resolveOpenEnaAnalyticsPathname("/zh-hant", "/en/open-ena"), "/zh-hant");
+test("Vercel Analytics keeps an absolute same-origin URL while removing query strings and fragments", () => {
+  assert.equal(
+    sanitizeOpenEnaAnalyticsUrl(
+      "https://www.ena.hk/en?researcher=private#section",
+      "https://www.ena.hk",
+    ),
+    "https://www.ena.hk/en",
+  );
+  assert.equal(
+    sanitizeOpenEnaAnalyticsUrl("/zh-hant/news?label=private", "https://www.ena.hk"),
+    "https://www.ena.hk/zh-hant/news",
+  );
+  assert.equal(
+    sanitizeOpenEnaAnalyticsUrl("https://attacker.invalid/en", "https://www.ena.hk"),
+    null,
+  );
+  assert.equal(
+    sanitizeOpenEnaAnalyticsUrl("http://[invalid", "https://www.ena.hk"),
+    null,
+  );
 
   assert.equal(isOpenEnaAnalyticsDisabledPath(null), true);
   assert.equal(isOpenEnaAnalyticsDisabledPath("/en"), false);

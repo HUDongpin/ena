@@ -8,7 +8,7 @@ import {
   isOpenEnaAnalyticsDisabledPath,
   OPEN_ENA_ANALYTICS_CONSENT_EVENT,
   OPEN_ENA_ANALYTICS_CONSENT_STORAGE_KEY,
-  resolveOpenEnaAnalyticsPathname,
+  sanitizeOpenEnaAnalyticsUrl,
   type OpenEnaAnalyticsConsent,
 } from "@/lib/analytics-consent";
 
@@ -23,17 +23,11 @@ interface AnalyticsConsentProps {
  */
 export default function AnalyticsConsent({ disabled = false }: AnalyticsConsentProps) {
   const [consent, setConsent] = useState<OpenEnaAnalyticsConsent | "unknown">("unknown");
-  const [browserPathname, setBrowserPathname] = useState<string | null>(null);
-  const routerPathname = usePathname();
-  const pathname = resolveOpenEnaAnalyticsPathname(routerPathname, browserPathname);
+  const pathname = usePathname();
   // If the router has not exposed a pathname during hydration, fail closed
   // until it is known whether this is the authenticated workspace.
   const isOpenEnaWorkspace = isOpenEnaAnalyticsDisabledPath(pathname);
   const analyticsDisabled = disabled || isOpenEnaWorkspace;
-
-  useEffect(() => {
-    setBrowserPathname(window.location.pathname);
-  }, [routerPathname]);
 
   useEffect(() => {
     if (analyticsDisabled) {
@@ -79,11 +73,12 @@ export default function AnalyticsConsent({ disabled = false }: AnalyticsConsentP
   const beforeSend = useCallback((event: BeforeSendEvent) => {
     try {
       if (window.localStorage.getItem(OPEN_ENA_ANALYTICS_CONSENT_STORAGE_KEY) !== "granted") return null;
+      if (isOpenEnaAnalyticsDisabledPath(window.location.pathname)) return null;
       // Query strings can contain researcher-provided labels or identifiers.
-      // Keep only the same-origin path before handing the event to Vercel.
-      const url = new URL(event.url, window.location.origin);
-      if (url.origin !== window.location.origin) return null;
-      return { ...event, url: url.pathname };
+      // Vercel requires an absolute http(s) URL, so retain the same-origin URL
+      // while removing its query string and fragment before dispatch.
+      const url = sanitizeOpenEnaAnalyticsUrl(event.url, window.location.origin);
+      return url ? { ...event, url } : null;
     } catch {
       return null;
     }

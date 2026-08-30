@@ -12,16 +12,17 @@ export function isOpenEnaAnalyticsConsent(value: string | null): value is OpenEn
   return value === "granted" || value === "denied";
 }
 
-/**
- * Next can temporarily expose a null pathname during compatibility-mode
- * hydration. Keep the server render closed, then use the browser's same-origin
- * pathname once mounted so public pages do not remain disabled indefinitely.
- */
-export function resolveOpenEnaAnalyticsPathname(
-  routerPathname: string | null,
-  browserPathname: string | null,
-) {
-  return routerPathname ?? browserPathname;
+export function sanitizeOpenEnaAnalyticsUrl(eventUrl: string, expectedOrigin: string) {
+  try {
+    const origin = new URL(expectedOrigin).origin;
+    const url = new URL(eventUrl, origin);
+    if (url.origin !== origin) return null;
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 export function isOpenEnaAnalyticsDisabledPath(pathname: string | null) {

@@ -228,9 +228,9 @@ test("the root layout exposes opt-in Vercel Analytics through the consent gate",
   assert.match(layoutSource, /<body[^>]*>[\s\S]*?\{children\}[\s\S]*?<AnalyticsConsent[^>]*\/>[\s\S]*?<\/body>/u);
   assert.match(analyticsSource, /@vercel\/analytics\/next/u);
   assert.match(analyticsSource, /OPEN_ENA_ANALYTICS_CONSENT_STORAGE_KEY/u);
-  assert.match(analyticsSource, /resolveOpenEnaAnalyticsPathname/u);
-  assert.match(analyticsSource, /window\.location\.pathname/u);
-  assert.match(analyticsSource, /isOpenEnaAnalyticsDisabledPath/u);
+  assert.match(analyticsSource, /sanitizeOpenEnaAnalyticsUrl/u);
+  assert.match(analyticsSource, /isOpenEnaAnalyticsDisabledPath\(window\.location\.pathname\)/u);
+  assert.doesNotMatch(analyticsSource, /url:\s*url\.pathname/u);
   assert.match(analyticsSource, /beforeSend/u);
   assert.match(analyticsSource, /return null/u);
 });
