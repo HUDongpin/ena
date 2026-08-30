@@ -69,6 +69,15 @@ test("accepts only same-origin Next static JavaScript chunk paths", async () => 
       sourcePath,
     );
   }
+
+  assert.equal(
+    classifyChromiumCanvasReadbackDiagnostic({
+      browser: "chromium",
+      currentOrigin,
+      warning: warningFor("/_next/static/chunks/32s-eijjk505p.js?cache=1#fragment"),
+    })?.sourcePath,
+    "/_next/static/chunks/32s-eijjk505p.js",
+  );
 });
 
 test("rejects unknown warnings and unsafe or malformed diagnostic locations", async () => {
@@ -123,22 +132,27 @@ test("rejects unknown warnings and unsafe or malformed diagnostic locations", as
     {
       browser: "chromium",
       currentOrigin,
-      warning: warningFor("/_next/static/chunks/32s-eijjk505p.js?external=1"),
-    },
-    {
-      browser: "chromium",
-      currentOrigin,
       warning: warningFor("/_next/static/chunks/32s-eijjk505p.JS"),
     },
     {
       browser: "chromium",
       currentOrigin,
-      warning: warningFor("/_next/static/chunks/32s-eijjk505p.js" , { lineNumber: -1 }),
+      warning: warningFor("/_next/static/chunks/32s-eijjk505p.js", { lineNumber: -1 }),
     },
     {
       browser: "chromium",
       currentOrigin,
       warning: "not a structured warning",
+    },
+    {
+      browser: "chromium",
+      currentOrigin: "https://synthetic-user:synthetic-password@example.test",
+      warning: validWarning,
+    },
+    {
+      browser: "chromium",
+      currentOrigin: "https://example.test?redirect=1",
+      warning: validWarning,
     },
   ];
 

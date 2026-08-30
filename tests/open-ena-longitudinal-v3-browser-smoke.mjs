@@ -1421,9 +1421,12 @@ async function exerciseTrajectoryPlotActions(page, args) {
     };
   });
   try {
-    const downloadPromise = page.waitForEvent("download");
+    // Plotly.toImage performs an asynchronous WebGL readback before the
+    // fallback anchor click. CI Chromium can legitimately take >30s on a
+    // cold GPU/runner, so do not let Playwright's default timeout race it.
+    const copyDownloadPromise = page.waitForEvent("download", { timeout: 120_000 });
     await copyImage.click();
-    const download = await downloadPromise;
+    const download = await copyDownloadPromise;
     assertBrowser(await download.failure() === null, "trajectory Copy download failed");
     const suggestedFilename = download.suggestedFilename();
     assertBrowser(

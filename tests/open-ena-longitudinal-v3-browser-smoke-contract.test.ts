@@ -626,3 +626,12 @@ test("the longitudinal V3 smoke exercises all seven trajectory downloads and ver
     "node tests/open-ena-longitudinal-v3-browser-smoke.mjs",
   );
 });
+
+test("the Copy plot download allows slow Chromium GL readback before declaring a timeout", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(
+    source,
+    /const copyDownloadPromise = page\.waitForEvent\("download", \{ timeout: 120_000 \}\)/u,
+    "Copy plot must use an explicit 120-second download timeout for CI GPU readback",
+  );
+});
