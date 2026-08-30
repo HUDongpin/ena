@@ -11,6 +11,10 @@ import {
 } from "../lib/server/open-ena-billable";
 import { createOpenEnaAiInterpretationPostHandler } from "../lib/server/open-ena-ai-interpretation-route";
 import { OPEN_ENA_SESSION_COOKIE } from "../lib/open-ena-auth";
+import {
+  isOpenEnaAnalyticsDisabledPath,
+  resolveOpenEnaAnalyticsPathname,
+} from "../lib/analytics-consent";
 import type {
   OpenEnaAiInterpretationRequest,
   OpenEnaAiInterpretationResponse,
@@ -380,6 +384,19 @@ test("Vercel Analytics disclosure names provider, data scope, bounded defaults, 
   assert.match(analyticsConsent, /query strings and fragments|Query strings.*identifiers/iu);
   assert.match(analyticsConsent, /url\.pathname/u);
   assert.match(analyticsControl, /data-ena-analytics-consent="explicit"/u);
+});
+
+test("Vercel Analytics resolves a nullable router path after hydration without enabling the Open ENA workspace", () => {
+  assert.equal(resolveOpenEnaAnalyticsPathname(null, null), null);
+  assert.equal(resolveOpenEnaAnalyticsPathname(null, "/en"), "/en");
+  assert.equal(resolveOpenEnaAnalyticsPathname(null, "/en/open-ena"), "/en/open-ena");
+  assert.equal(resolveOpenEnaAnalyticsPathname("/zh-hant", "/en/open-ena"), "/zh-hant");
+
+  assert.equal(isOpenEnaAnalyticsDisabledPath(null), true);
+  assert.equal(isOpenEnaAnalyticsDisabledPath("/en"), false);
+  assert.equal(isOpenEnaAnalyticsDisabledPath("/en/open-ena"), true);
+  assert.equal(isOpenEnaAnalyticsDisabledPath("/en/open-ena/results"), true);
+  assert.equal(isOpenEnaAnalyticsDisabledPath("/en/news/open-ena-methods"), false);
 });
 
 test("Next applies strict security headers and keeps unsafe-eval development-only", async () => {

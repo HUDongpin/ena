@@ -5,8 +5,10 @@ import { usePathname } from "next/navigation";
 import { Analytics, type BeforeSendEvent } from "@vercel/analytics/next";
 import {
   isOpenEnaAnalyticsConsent,
+  isOpenEnaAnalyticsDisabledPath,
   OPEN_ENA_ANALYTICS_CONSENT_EVENT,
   OPEN_ENA_ANALYTICS_CONSENT_STORAGE_KEY,
+  resolveOpenEnaAnalyticsPathname,
   type OpenEnaAnalyticsConsent,
 } from "@/lib/analytics-consent";
 
@@ -21,11 +23,17 @@ interface AnalyticsConsentProps {
  */
 export default function AnalyticsConsent({ disabled = false }: AnalyticsConsentProps) {
   const [consent, setConsent] = useState<OpenEnaAnalyticsConsent | "unknown">("unknown");
-  const pathname = usePathname();
+  const [browserPathname, setBrowserPathname] = useState<string | null>(null);
+  const routerPathname = usePathname();
+  const pathname = resolveOpenEnaAnalyticsPathname(routerPathname, browserPathname);
   // If the router has not exposed a pathname during hydration, fail closed
   // until it is known whether this is the authenticated workspace.
-  const isOpenEnaWorkspace = pathname === null || /\/open-ena(?:\/|$)/u.test(pathname);
+  const isOpenEnaWorkspace = isOpenEnaAnalyticsDisabledPath(pathname);
   const analyticsDisabled = disabled || isOpenEnaWorkspace;
+
+  useEffect(() => {
+    setBrowserPathname(window.location.pathname);
+  }, [routerPathname]);
 
   useEffect(() => {
     if (analyticsDisabled) {
