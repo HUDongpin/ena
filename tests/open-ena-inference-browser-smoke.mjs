@@ -468,11 +468,11 @@ try {
     assert(await rebuild.isEnabled(), "Trajectory rebuild is disabled");
     await rebuild.click();
     await page.locator(".ena-stale-banner").waitFor({ state: "hidden", timeout: 30000 });
-    const downloadModel = page.getByRole("button", { name: "Download Model" });
-    await downloadModel.waitFor({ state: "visible", timeout: 30000 });
-    const downloadModelReady = page.locator(".ena-download-model-button:not([disabled])");
-    await downloadModelReady.waitFor({ state: "visible", timeout: 30000 });
-    await downloadModel.click({ trial: true, timeout: 30000 });
+    const trajectoryWorkbench = page.locator('[data-testid="open-ena-longitudinal-v3-workbench"]');
+    await trajectoryWorkbench.waitFor({ state: "visible", timeout: 30000 });
+    await trajectoryWorkbench
+      .locator('section[data-trajectory-step="10"] .ena-longitudinal-v3-run-status [data-state="ready"]')
+      .waitFor({ state: "visible", timeout: 30000 });
     return { modelType: await modelType.inputValue() };
   }`);
 
