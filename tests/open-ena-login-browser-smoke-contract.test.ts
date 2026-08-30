@@ -68,7 +68,12 @@ test("the login browser gate covers responsive branding and authentication witho
   assert.match(source, /brandAudit\.heroResourceInitiatorTypes\.length > 0/u);
   assert.match(source, /\.every\(\(initiatorType\) => initiatorType === "img"\)/u);
   assert.match(source, /invalid-local-password/u);
-  assert.match(source, /getByRole\("alert"\)\.waitFor\(\{ state: "visible" \}\)/u);
+  assert.match(source, /locator\("#open-ena-login-error"\)\.waitFor\(\{ state: "visible" \}\)/u);
+  assert.doesNotMatch(
+    source,
+    /getByRole\("alert"\)/u,
+    "Next also owns a route-announcer alert, so the login gate must target the application alert exactly",
+  );
   assert.match(source, /getByLabel\("Account name"\)\.fill\(username\)/u);
   assert.match(source, /getByLabel\("Password"\)\.fill\(password\)/u);
   assert.match(source, /locator\("\.open-ena-workbench"\)\.waitFor\(\{ state: "visible", timeout: 30_000 \}\)/u);

@@ -306,7 +306,7 @@ async function auditAuthentication(browser, { loginUrl, password, redact, userna
     await page.getByLabel("Account name").fill("invalid-local-account");
     await page.getByLabel("Password").fill("invalid-local-password");
     await page.getByRole("button", { name: "Sign in" }).click();
-    await page.getByRole("alert").waitFor({ state: "visible" });
+    await page.locator("#open-ena-login-error").waitFor({ state: "visible" });
 
     await page.getByLabel("Account name").fill(username);
     await page.getByLabel("Password").fill(password);
