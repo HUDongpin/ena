@@ -9,6 +9,21 @@ function source(...segments: string[]) {
   return readFileSync(join(projectRoot, ...segments), "utf8");
 }
 
+function fontSizesForSelector(css: string, selector: string) {
+  const sizes: string[] = [];
+  const rulePattern = /([^{}]+)\{([^{}]*)\}/g;
+
+  for (const match of css.matchAll(rulePattern)) {
+    const selectors = match[1].split(",").map((entry) => entry.trim());
+    if (!selectors.includes(selector)) continue;
+
+    const declaration = match[2].match(/(?:^|;)\s*font-size\s*:\s*([^;]+);/);
+    if (declaration) sizes.push(declaration[1].trim());
+  }
+
+  return sizes;
+}
+
 test("the premium public design is mounted only on the requested page families", () => {
   const premiumRoutes = [
     ["app", "[locale]", "page.tsx"],
@@ -36,6 +51,16 @@ test("the premium layer is isolated in a separately imported stylesheet", () => 
   assert.equal(existsSync(cssPath), true);
   assert.match(layout, /import "\.\/globals\.css";\s*import "\.\/premium-public\.css";/);
   assert.match(source("app", "premium-public.css"), /\.premium-public-page\s*\{/);
+});
+
+test("Home and Mission primary titles use only the About responsive font-size scale", () => {
+  const globalCss = source("app", "globals.css");
+  const premiumCss = source("app", "premium-public.css");
+  const aboutScale = "clamp(2.65rem, 5.3vw, 4.7rem)";
+
+  assert.deepEqual(fontSizesForSelector(globalCss, ".about-profile-hero h1"), [aboutScale]);
+  assert.deepEqual(fontSizesForSelector(premiumCss, ".premium-home .hero-copy h1"), [aboutScale]);
+  assert.deepEqual(fontSizesForSelector(premiumCss, ".premium-mission .page-hero h1"), [aboutScale]);
 });
 
 test("the screenshot-selected public sections are absent", () => {

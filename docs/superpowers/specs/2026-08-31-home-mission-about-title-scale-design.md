@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-31
 
-**Status:** User-approved design; implementation not yet started
+**Status:** User-approved design; implementation completed 2026-09-01
 
 **Scope:** Public Home and Mission primary heading font size only
 

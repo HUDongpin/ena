@@ -149,7 +149,7 @@ main:has(> .premium-public-page) + .site-footer .footer-links a {
 .premium-home .hero-copy h1 {
   max-width: 820px;
   margin-top: 24px;
-  font-size: clamp(4.2rem, 7.6vw, 7.7rem);
+  font-size: clamp(2.65rem, 5.3vw, 4.7rem);
   font-weight: 560;
   letter-spacing: -0.078em;
   line-height: 0.86;
@@ -502,7 +502,7 @@ main:has(> .premium-public-page) + .site-footer .footer-links a {
 .premium-mission .page-hero h1 {
   max-width: 1050px;
   margin-top: 32px;
-  font-size: clamp(4rem, 7.6vw, 7.8rem);
+  font-size: clamp(2.65rem, 5.3vw, 4.7rem);
   font-weight: 540;
   letter-spacing: -0.07em;
   line-height: 0.88;
@@ -1151,8 +1151,6 @@ main:has(> .premium-public-page) + .site-footer .footer-links a {
     top: 24px;
   }
 
-  .premium-home .hero-copy h1,
-  .premium-mission .page-hero h1,
   .premium-detail-page .news-detail-heading h1 {
     font-size: clamp(3.35rem, 13vw, 5rem);
   }
@@ -1231,7 +1229,10 @@ main:has(> .premium-public-page) + .site-footer .footer-links a {
   }
 
   .premium-home .hero-copy h1,
-  .premium-mission .page-hero h1,
+  .premium-mission .page-hero h1 {
+    line-height: 0.92;
+  }
+
   .premium-detail-page .news-detail-heading h1 {
     font-size: clamp(3.05rem, 15vw, 4.5rem);
     line-height: 0.92;
