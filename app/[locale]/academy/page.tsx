@@ -66,14 +66,6 @@ export default async function AcademyPage({ params, searchParams }: AcademyPageP
             <h1>{copy.title}</h1>
             <p>{copy.intro}</p>
           </div>
-          <aside className="news-selection-panel academy-pathway-panel">
-            <p className="eyebrow">{copy.pathwayEyebrow}</p>
-            <h2>{copy.pathwayTitle}</h2>
-            <p>{copy.pathwayText}</p>
-            <div className="selection-network" aria-hidden="true">
-              <span /><span /><span /><span />
-            </div>
-          </aside>
         </div>
       </section>
 

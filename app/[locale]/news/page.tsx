@@ -60,14 +60,6 @@ export default async function NewsPage({ params, searchParams }: NewsPageProps) 
             <h1>{copy.title}</h1>
             <p>{copy.intro}</p>
           </div>
-          <aside className="news-selection-panel">
-            <p className="eyebrow">{copy.selectionEyebrow}</p>
-            <h2>{copy.selectionTitle}</h2>
-            <p>{copy.selectionText}</p>
-            <div className="selection-network" aria-hidden="true">
-              <span /><span /><span /><span />
-            </div>
-          </aside>
         </div>
       </section>
 

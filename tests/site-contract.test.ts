@@ -97,18 +97,26 @@ test("Open ENA uses the same neutral navigation treatment as the other destinati
   assert.match(headerSource, /mission[\s\S]*?open-ena[\s\S]*?news/);
 });
 
-test("the home and Mission pages share the standard ENA figure and disclose its origin", () => {
+test("the home page retains the standard ENA figure and source credit while Mission omits the removed definition region", () => {
   const homeSource = readFileSync(join(projectRoot, "app", "[locale]", "page.tsx"), "utf8");
   const missionSource = readFileSync(join(projectRoot, "app", "[locale]", "mission", "page.tsx"), "utf8");
   const figureSource = readFileSync(join(projectRoot, "components", "NetworkFigure.tsx"), "utf8");
   const css = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
 
-  assert.match(missionSource, /<NetworkFigure/);
+  assert.match(homeSource, /<NetworkFigure/);
+  assert.doesNotMatch(
+    missionSource,
+    /<NetworkFigure|definition-section|definition-copy|dictionary\.mission\.definition(?:Title|Text)/,
+  );
   assert.doesNotMatch(missionSource, /definition-(?:visual|node|edge)/);
   assert.doesNotMatch(css, /\.definition-(?:visual|node|edge)/);
   assert.doesNotMatch(figureSource, /plot-key|key-line/);
   assert.match(homeSource, /dictionary\.home\.originCredit/);
   assert.match(homeSource, /<strong><bdi>Wisconsin Center for Education Research\.<\/bdi><\/strong>/);
+  assert.match(
+    homeSource,
+    /<strong><bdi>Wisconsin Center for Education Research\.<\/bdi><\/strong>[\s\S]*?typedLocale === "en"[\s\S]*?<strong><bdi>Dr\. Peter Hu Dongpin is the Initiator of the open access ENA Hub of Knowledge\.<\/bdi><\/strong>/,
+  );
   assert.equal(
     getDictionary("en").home.originCredit,
     "ENA was proposed and developed by researchers and developers from",

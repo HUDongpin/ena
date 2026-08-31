@@ -38,6 +38,52 @@ test("the premium layer is isolated in a separately imported stylesheet", () => 
   assert.match(source("app", "premium-public.css"), /\.premium-public-page\s*\{/);
 });
 
+test("the screenshot-selected public sections are absent", () => {
+  const home = source("app", "[locale]", "page.tsx");
+  const mission = source("app", "[locale]", "mission", "page.tsx");
+  const news = source("app", "[locale]", "news", "page.tsx");
+  const academy = source("app", "[locale]", "academy", "page.tsx");
+
+  assert.doesNotMatch(home, /principle-band|principle-grid|dictionary\.home\.principle(?:Title|Text)/);
+  assert.doesNotMatch(mission, /<NetworkFigure|definition-section|definition-copy|dictionary\.mission\.definition(?:Title|Text)/);
+  assert.doesNotMatch(news, /news-selection-panel|selection-network|copy\.selection(?:Eyebrow|Title|Text)/);
+  assert.doesNotMatch(academy, /news-selection-panel|selection-network|copy\.pathway(?:Eyebrow|Title|Text)/);
+});
+
+test("collection heroes leave no empty side column or divider", () => {
+  const css = source("app", "premium-public.css");
+
+  assert.match(
+    css,
+    /\.premium-collection-page \.news-hero-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+  );
+  assert.doesNotMatch(css, /\.premium-collection-page \.news-hero::before/);
+});
+
+test("News and Academy collection cards share one uniform geometry without a featured first item", () => {
+  const css = source("app", "premium-public.css");
+
+  assert.doesNotMatch(css, /\.premium-collection-page \.news-card:(?:first|last|nth|only)-child/);
+  assert.match(
+    css,
+    /\.premium-collection-page \.news-card-list\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[^}]*grid-auto-rows:\s*1fr;/,
+  );
+  assert.match(
+    css,
+    /\.premium-collection-page \.news-card\s*\{[^}]*grid-column:\s*auto;[^}]*height:\s*100%;/,
+  );
+  assert.match(
+    css,
+    /\.premium-collection-page \.news-card-link\s*\{[^}]*grid-template-columns:\s*1fr;[^}]*height:\s*100%;/,
+  );
+  assert.match(css, /\.premium-collection-page \.news-card-media\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9;/);
+  assert.match(css, /\.premium-collection-page \.news-card-copy\s*\{[^}]*min-height:\s*430px;[^}]*padding:/);
+  assert.match(
+    css,
+    /\.premium-collection-page \.news-card-copy h2\s*\{[^}]*font-size:\s*clamp\(1\.8rem,\s*2\.5vw,\s*2\.6rem\);[^}]*line-height:\s*1\.04;/,
+  );
+});
+
 test("the premium interaction contract preserves touch, focus, contrast, and reduced motion", () => {
   const css = source("app", "premium-public.css");
 

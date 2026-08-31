@@ -26,6 +26,12 @@ export default async function HomePage({ params }: HomePageProps) {
             {dictionary.home.heroText}{" "}
             {dictionary.home.originCredit}{" "}
             <strong><bdi>Wisconsin Center for Education Research.</bdi></strong>
+            {typedLocale === "en" ? (
+              <>
+                {" "}
+                <strong><bdi>Dr. Peter Hu Dongpin is the Initiator of the open access ENA Hub of Knowledge.</bdi></strong>
+              </>
+            ) : null}
           </p>
           <div className="button-row">
             <CTA href={`/${typedLocale}/mission`}>{dictionary.common.exploreMethod}</CTA>
@@ -39,13 +45,6 @@ export default async function HomePage({ params }: HomePageProps) {
           caption={dictionary.home.graphCaption}
           labels={dictionary.home.networkLabels}
         />
-      </section>
-
-      <section className="principle-band">
-        <div className="container principle-grid">
-          <h2>{dictionary.home.principleTitle}</h2>
-          <p>{dictionary.home.principleText}</p>
-        </div>
       </section>
 
       <OpenEnaHomeFeature
