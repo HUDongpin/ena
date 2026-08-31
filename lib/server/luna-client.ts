@@ -302,6 +302,10 @@ export async function generateLunaInterpretation(
         body: JSON.stringify({
           model,
           max_tokens: OPEN_ENA_AI_MAX_COMPLETION_TOKENS,
+          provider: {
+            zdr: true,
+            data_collection: "deny",
+          },
           messages: [
             { role: "system", content: promptArtifact.systemPrompt },
             { role: "user", content: JSON.stringify(normalizedRequest.evidence) },

@@ -541,6 +541,34 @@ test("Luna v2 preserves the byte-exact approved system prompt and provider body 
   }
 });
 
+test("Luna sends ZDR-only and data-collection-deny routing constraints on every chat dispatch", async () => {
+  let capturedBody = "";
+  await generateLunaInterpretation(interpretationRequest(), {
+    environment: {
+      OPEN_ENA_AI_ENABLED: "true",
+      OPENROUTER_API_KEY: "provider-key-must-stay-server-side",
+    },
+    fetch: async (_input, init) => {
+      capturedBody = String(init?.body);
+      return Response.json({
+        choices: [{ message: { content: JSON.stringify({
+          observedPatterns: [{ statement: "Aggregate pattern.", evidenceRefs: ["axis-1"] }],
+          contextualQuestions: [],
+          limitations: ["Aggregate evidence only."],
+        }) } }],
+      });
+    },
+  });
+
+  const providerBody = JSON.parse(capturedBody) as {
+    provider?: { zdr?: boolean; data_collection?: string };
+  };
+  assert.deepEqual(providerBody.provider, {
+    zdr: true,
+    data_collection: "deny",
+  });
+});
+
 test("Luna v2 sends only the sanitized role/index projection and applies the confirmed-inference prompt", async () => {
   const request = interpretationRequest();
   let capturedBody = "";

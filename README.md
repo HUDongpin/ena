@@ -207,9 +207,13 @@ Before opt-in, the workspace identifies the actual OpenRouter gateway and model,
 the aggregate-only payload boundary, the endpoint-specific Zero Data Retention
 (ZDR) caveat, downstream model-provider/subprocessor retention and training
 policies, the non-fixed processing region, and the minimal hash-bound consent
-receipt. OpenRouter and downstream endpoint policies are external configuration
-facts; the interface deliberately does not promise a region or retention period
-that the deployment cannot prove.
+receipt. Every generation sends the request-level routing constraints
+`provider.zdr=true` and `provider.data_collection="deny"`; when no endpoint
+satisfies both controls, the request fails closed rather than falling back to a
+non-ZDR or data-collecting endpoint. These fields record the application's routing
+requirements, not a downstream-provider attestation. OpenRouter and downstream
+endpoint policies are external configuration facts; the interface deliberately
+does not promise a region or retention period that the deployment cannot prove.
 
 Vercel Web Analytics is an optional, aggregate-only service in the site shell.
 It is disabled until the visitor explicitly enables it in the footer disclosure,

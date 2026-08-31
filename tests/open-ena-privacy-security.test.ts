@@ -30,6 +30,7 @@ const aiComponent = readFileSync(
   "utf8",
 );
 const i18n = readFileSync(new URL("../lib/open-ena-i18n.ts", import.meta.url), "utf8");
+const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
 const footer = readFileSync(new URL("../components/Footer.tsx", import.meta.url), "utf8");
 const analyticsConsent = readFileSync(new URL("../components/AnalyticsConsent.tsx", import.meta.url), "utf8");
 const analyticsControl = readFileSync(new URL("../components/AnalyticsConsentControl.tsx", import.meta.url), "utf8");
@@ -162,6 +163,15 @@ test("AI consent discloses the actual gateway/model and bounded retention, regio
   assert.match(i18n, /processing region/iu);
   assert.match(i18n, /durable/iu);
   assert.match(i18n, /provider, data, retention, region, and receipt disclosures/iu);
+  assert.match(i18n, /Every AI generation requests ZDR-only routing and denies provider data collection/u);
+  assert.match(i18n, /fails instead of falling back to a non-ZDR provider/u);
+  assert.match(i18n, /每次 AI 生成都要求僅使用 ZDR 端點並拒絕供應商資料收集/u);
+  assert.match(i18n, /不會降級至非 ZDR 供應商/u);
+  assert.match(i18n, /每次 AI 生成都要求仅使用 ZDR 端点并拒绝供应商数据收集/u);
+  assert.match(i18n, /不会降级到非 ZDR 供应商/u);
+  assert.match(readme, /provider\.zdr=true/u);
+  assert.match(readme, /provider\.data_collection="deny"/u);
+  assert.match(readme, /fails closed rather than falling back to a\s+non-ZDR or data-collecting endpoint/u);
 });
 
 test("successful AI responses expose a minimal consent receipt and the UI renders its durable provenance", async () => {
