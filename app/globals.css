@@ -617,24 +617,9 @@ button:focus-visible {
   line-height: 1.55;
 }
 
-.principle-band {
-  border-block: 1px solid var(--line);
-  background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface));
-}
-
-.principle-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-  gap: clamp(32px, 7vw, 110px);
-  align-items: center;
-  padding-block: clamp(42px, 6vw, 72px);
-}
-
-.principle-grid h2,
 .section-heading h2,
 .questions-intro h2,
 .closing-panel h2,
-.definition-copy h2,
 .purpose-copy h2,
 .scope-inner h2 {
   margin: 0;
@@ -645,11 +630,9 @@ button:focus-visible {
   text-wrap: balance;
 }
 
-.principle-grid p,
 .section-heading > p:last-child,
 .questions-intro p,
 .closing-panel p,
-.definition-copy > p,
 .purpose-copy > p,
 .scope-inner > p {
   margin: 0;
@@ -1287,19 +1270,6 @@ button:focus-visible {
   color: var(--muted);
   font-size: clamp(1.04rem, 1.4vw, 1.2rem);
   line-height: 1.72;
-}
-
-.definition-section {
-  display: grid;
-  grid-template-columns: minmax(300px, 0.8fr) minmax(0, 1.2fr);
-  gap: clamp(44px, 8vw, 120px);
-  align-items: center;
-  padding-block: clamp(80px, 11vw, 142px);
-}
-
-.definition-copy {
-  display: grid;
-  gap: 24px;
 }
 
 .model-section {
@@ -1950,25 +1920,10 @@ button:focus-visible {
   text-align: center;
 }
 
-.footer-privacy-disclosure {
+.footer-analytics-preference {
   max-width: 1180px;
   margin: 0 auto;
   padding: 0 16px 22px;
-  color: var(--nav-muted);
-  font-size: 0.78rem;
-  line-height: 1.6;
-}
-
-.footer-privacy-disclosure summary {
-  width: fit-content;
-  color: var(--nav-text);
-  cursor: pointer;
-  font-weight: 760;
-}
-
-.footer-privacy-disclosure p {
-  max-width: 980px;
-  margin: 10px 0 0;
 }
 
 .footer-analytics-consent {
@@ -1976,7 +1931,7 @@ button:focus-visible {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
-  margin-top: 13px;
+  margin-top: 0;
   color: var(--nav-text);
 }
 
@@ -6083,8 +6038,6 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 @media (max-width: 760px) {
-  .principle-grid,
-  .definition-section,
   .empty-section,
   .scope-inner {
     grid-template-columns: 1fr;
@@ -6132,10 +6085,6 @@ body:has(.open-ena-login-page) .back-to-top {
     grid-column: auto;
     grid-row: auto;
     min-height: 190px;
-  }
-
-  .definition-copy {
-    order: -1;
   }
 
   .empty-visual {
@@ -7183,125 +7132,6 @@ body:has(.open-ena-login-page) .back-to-top {
   }
 }
 
-.news-hero {
-  border-bottom: 1px solid var(--line);
-  background: rgba(246, 251, 250, 0.76);
-}
-
-.news-hero-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 0.98fr) minmax(360px, 0.72fr);
-  gap: clamp(40px, 7vw, 104px);
-  align-items: end;
-  min-height: 520px;
-  padding-block: clamp(64px, 8vw, 96px);
-}
-
-.news-hero-copy h1 {
-  max-width: 780px;
-  margin: 18px 0 0;
-  font-size: clamp(3rem, 5.4vw, 5.25rem);
-  font-weight: 840;
-  letter-spacing: -0.062em;
-  line-height: 0.98;
-  text-wrap: balance;
-}
-
-.news-hero-copy > p:last-child {
-  max-width: 760px;
-  margin: 26px 0 0;
-  color: var(--muted);
-  font-size: clamp(1rem, 1.4vw, 1.17rem);
-  line-height: 1.72;
-}
-
-.news-selection-panel {
-  position: relative;
-  min-height: 312px;
-  overflow: hidden;
-  border: 1px solid rgba(137, 207, 240, 0.34);
-  border-radius: 30px;
-  padding: clamp(28px, 4vw, 40px);
-  color: var(--nav-text);
-  background:
-    radial-gradient(circle at 88% 10%, rgba(137, 207, 240, 0.22), transparent 12rem),
-    var(--nav-deep);
-  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18);
-}
-
-.news-selection-panel .eyebrow {
-  color: var(--accent);
-}
-
-.news-selection-panel h2 {
-  position: relative;
-  z-index: 1;
-  max-width: 420px;
-  margin: 18px 0 0;
-  font-size: clamp(1.75rem, 2.6vw, 2.5rem);
-  line-height: 1.08;
-  letter-spacing: -0.045em;
-  text-wrap: balance;
-}
-
-.news-selection-panel > p:last-of-type {
-  position: relative;
-  z-index: 1;
-  max-width: 500px;
-  margin: 18px 0 0;
-  color: var(--nav-muted);
-  line-height: 1.68;
-  padding-bottom: 68px;
-}
-
-.selection-network {
-  position: absolute;
-  inset-inline-end: 22px;
-  bottom: 20px;
-  width: 150px;
-  height: 86px;
-  opacity: 0.7;
-}
-
-.selection-network::before,
-.selection-network::after {
-  position: absolute;
-  content: "";
-  height: 3px;
-  transform-origin: 0 50%;
-  border-radius: 999px;
-  background: var(--accent);
-}
-
-.selection-network::before {
-  left: 22px;
-  bottom: 20px;
-  width: 105px;
-  transform: rotate(-24deg);
-}
-
-.selection-network::after {
-  left: 22px;
-  top: 18px;
-  width: 118px;
-  transform: rotate(22deg);
-}
-
-.selection-network span {
-  position: absolute;
-  z-index: 1;
-  width: 16px;
-  height: 16px;
-  border: 4px solid var(--accent);
-  border-radius: 50%;
-  background: var(--nav-deep);
-}
-
-.selection-network span:nth-child(1) { left: 12px; bottom: 12px; }
-.selection-network span:nth-child(2) { left: 12px; top: 10px; }
-.selection-network span:nth-child(3) { right: 16px; top: 36px; }
-.selection-network span:nth-child(4) { right: 8px; bottom: 4px; }
-
 .news-index {
   padding-block: clamp(54px, 7vw, 92px) clamp(84px, 10vw, 132px);
 }
@@ -7962,15 +7792,6 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 @media (max-width: 1040px) {
-  .news-hero-grid {
-    grid-template-columns: 1fr;
-    align-items: start;
-  }
-
-  .news-selection-panel {
-    min-height: 0;
-  }
-
   .news-filter-form {
     grid-template-columns: minmax(240px, 1fr) repeat(2, minmax(150px, 0.35fr));
   }
@@ -8025,34 +7846,12 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 @media (max-width: 560px) {
-  .news-hero-grid {
-    min-height: 0;
-    padding-block: 56px;
-  }
-
-  .news-hero-copy h1 {
-    font-size: clamp(2.7rem, 14vw, 3.65rem);
-  }
-
-  .news-selection-panel,
   .news-filter-panel,
   .news-card,
   .news-summary-card,
   .news-detail-sidebar > section,
   .news-detail-image {
     border-radius: 24px;
-  }
-
-  .news-selection-panel {
-    padding: 25px;
-  }
-
-  .news-selection-panel > p:last-of-type {
-    padding-bottom: 0;
-  }
-
-  .selection-network {
-    display: none;
   }
 
   .news-filter-form {

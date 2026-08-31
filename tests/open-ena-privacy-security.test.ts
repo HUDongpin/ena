@@ -369,25 +369,17 @@ test("migration 003 stores only the bounded durable AI consent receipt fields", 
   assert.match(migration, /clock_timestamp\(\)/u);
 });
 
-test("Vercel Analytics disclosure names provider, data scope, bounded defaults, and unknown deployment facts", () => {
-  assert.match(footer, /Vercel Web Analytics/u);
-  assert.match(footer, /third-party cookies/iu);
-  assert.match(footer, /24 hours/iu);
-  for (const fact of [
-    /timestamp/iu,
-    /URL/iu,
-    /filtered query/iu,
-    /referrer/iu,
-    /approximate location/iu,
-    /operating system/iu,
-    /browser/iu,
-    /device/iu,
-    /retention/iu,
-    /processing region/iu,
-    /audit receipt/iu,
-  ]) assert.match(footer, fact);
-  assert.match(footer, /deployment|provider configuration/iu);
-  assert.match(footer, /explicit choice|explicit.*opt/iu);
+test("the footer omits analytics disclosure and status copy while preserving explicit consent controls", () => {
+  for (const removedCopy of [
+    /Analytics and data boundaries/iu,
+    /Provider and purpose:/iu,
+    /Data scope:/iu,
+    /Retention, region, and receipt boundary:/iu,
+    /Aggregate analytics is (?:enabled|disabled) for this browser\./iu,
+    /Aggregate analytics is not enabled\./iu,
+    /分析服務與資料界線/u,
+    /分析服务与数据边界/u,
+  ]) assert.doesNotMatch(footer, removedCopy);
   assert.match(footer, /AnalyticsConsentControl/u);
   assert.match(analyticsConsent, /beforeSend/u);
   assert.match(analyticsConsent, /localStorage/u);
@@ -395,6 +387,9 @@ test("Vercel Analytics disclosure names provider, data scope, bounded defaults, 
   assert.match(analyticsConsent, /sanitizeOpenEnaAnalyticsUrl/u);
   assert.doesNotMatch(analyticsConsent, /url:\s*url\.pathname/u);
   assert.match(analyticsControl, /data-ena-analytics-consent="explicit"/u);
+  assert.doesNotMatch(analyticsControl, /role="status"|copy\.(?:enabled|disabled|undecided)/u);
+  assert.match(analyticsControl, /onClick=\{\(\) => update\("denied"\)\}>\{copy\.disable\}<\/button>/u);
+  assert.match(analyticsControl, /onClick=\{\(\) => update\("granted"\)\}>\{copy\.enable\}<\/button>/u);
 });
 
 test("Vercel Analytics keeps an absolute same-origin URL while removing query strings and fragments", () => {

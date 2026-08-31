@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import CTA from "@/components/CTA";
-import NetworkFigure from "@/components/NetworkFigure";
 import PageHero from "@/components/PageHero";
 import { getDictionary, isLocale, type Locale } from "@/lib/i18n";
 import { pageMetadata } from "@/lib/metadata";
@@ -37,18 +36,6 @@ export default async function MissionPage({ params }: MissionPageProps) {
         title={dictionary.mission.title}
         intro={dictionary.mission.intro}
       />
-
-      <section className="container definition-section">
-        <NetworkFigure
-          title={dictionary.home.graphTitle}
-          caption={dictionary.home.graphCaption}
-          labels={dictionary.home.networkLabels}
-        />
-        <div className="definition-copy">
-          <h2>{dictionary.mission.definitionTitle}</h2>
-          <p>{dictionary.mission.definitionText}</p>
-        </div>
-      </section>
 
       <section className="model-section">
         <div className="container">

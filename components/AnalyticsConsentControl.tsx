@@ -11,9 +11,6 @@ import {
 type AnalyticsConsentControlCopy = {
   enable: string;
   disable: string;
-  enabled: string;
-  disabled: string;
-  undecided: string;
 };
 
 interface AnalyticsConsentControlProps {
@@ -44,9 +41,6 @@ export default function AnalyticsConsentControl({ copy }: AnalyticsConsentContro
 
   return (
     <div className="footer-analytics-consent" data-ena-analytics-consent="explicit">
-      <span role="status" aria-live="polite">
-        {consent === "granted" ? copy.enabled : consent === "denied" ? copy.disabled : copy.undecided}
-      </span>
       {consent === "granted" ? (
         <button type="button" onClick={() => update("denied")}>{copy.disable}</button>
       ) : (

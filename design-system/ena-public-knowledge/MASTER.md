@@ -96,7 +96,8 @@ paragraph copy must not use forced uppercase or tight tracking.
 ### Home
 
 - Oversized editorial proposition paired with a tilted research plate.
-- Warm-paper principle statement as the first strong rhythm change.
+- Move directly from the hero into the dark OPEN ENA gateway; do not insert a
+  separate principle statement band between them.
 - Dark OPEN ENA gateway is a product proof section, not another generic card.
 - Workflow reads as a numbered research sequence.
 - Questions use an asymmetric editorial grid with one dominant card.
@@ -104,15 +105,17 @@ paragraph copy must not use forced uppercase or tight tracking.
 ### Mission
 
 - Full-bleed navy manifesto hero.
-- Definition pairs the network figure with a large editorial explanation.
+- Move directly from the manifesto hero into the model section; the former
+  network-figure definition spread is intentionally omitted.
 - Model and principles use numbered rules, not repeated soft cards.
 
 ### News and Academy collections
 
-- Hero combines a dominant editorial title with a compact evidence/learning panel.
+- Collection pages begin directly with the filter and result surface; the
+  former title-and-intro hero blocks are intentionally omitted.
 - Filter controls remain reachable but never dominate the first viewport.
-- The first result is visibly featured; subsequent results form a two-column
-  editorial grid, then collapse to one column on small screens.
+- Every result uses the same card geometry in a two-column editorial grid,
+  which collapses to one column on small screens.
 - Search, select, reset, pagination, and cards have 44px-or-larger targets.
 
 ### Long-form detail
