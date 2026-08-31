@@ -50,14 +50,18 @@ test("the screenshot-selected public sections are absent", () => {
   assert.doesNotMatch(academy, /news-selection-panel|selection-network|copy\.pathway(?:Eyebrow|Title|Text)/);
 });
 
-test("collection heroes leave no empty side column or divider", () => {
-  const css = source("app", "premium-public.css");
+test("News and Academy collections omit their hero blocks while preserving filters and results", () => {
+  const news = source("app", "[locale]", "news", "page.tsx");
+  const academy = source("app", "[locale]", "academy", "page.tsx");
+  const css = `${source("app", "globals.css")}\n${source("app", "premium-public.css")}`;
 
-  assert.match(
-    css,
-    /\.premium-collection-page \.news-hero-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
-  );
-  assert.doesNotMatch(css, /\.premium-collection-page \.news-hero::before/);
+  assert.doesNotMatch(news, /news-hero|news-hero-grid|news-hero-copy|academy-hero/);
+  assert.doesNotMatch(academy, /news-hero|news-hero-grid|news-hero-copy|academy-hero/);
+  assert.match(news, /<h1 className="sr-only">\{copy\.title\}<\/h1>[\s\S]*?<NewsFilters\b/);
+  assert.match(academy, /<h1 className="sr-only">\{copy\.title\}<\/h1>[\s\S]*?<AcademyFilters\b/);
+  assert.match(news, /className="news-card-list"[\s\S]*?<NewsCard\b/);
+  assert.match(academy, /className="news-card-list academy-card-list"[\s\S]*?<AcademyCard\b/);
+  assert.doesNotMatch(css, /\.(?:news-hero|news-hero-grid|news-hero-copy|academy-hero)\b/);
 });
 
 test("News and Academy collection cards share one uniform geometry without a featured first item", () => {

@@ -630,41 +630,8 @@ main:has(> .premium-public-page) + .site-footer .footer-links a {
     var(--page);
 }
 
-.premium-collection-page .news-hero {
-  position: relative;
-  overflow: hidden;
-  border-bottom: 0;
-  background: var(--premium-paper);
-}
-
-.premium-collection-page .news-hero-grid {
-  grid-template-columns: minmax(0, 1fr);
-  align-items: center;
-  min-height: min(700px, calc(100svh - 80px));
-  padding-block: clamp(88px, 11vw, 142px);
-}
-
-.premium-collection-page .news-hero-copy h1 {
-  max-width: 840px;
-  margin-top: 30px;
-  font-size: clamp(4.1rem, 7vw, 7.2rem);
-  font-weight: 550;
-  letter-spacing: -0.07em;
-  line-height: 0.88;
-}
-
-.premium-collection-page .news-hero-copy > p:last-child {
-  max-width: 680px;
-  margin-top: 34px;
-  padding-inline-start: 24px;
-  border-inline-start: 2px solid var(--accent-strong);
-  color: var(--muted);
-  font-size: clamp(1.02rem, 1.35vw, 1.18rem);
-  line-height: 1.78;
-}
-
 .premium-collection-page .news-index {
-  padding-block: clamp(76px, 9vw, 120px) clamp(108px, 13vw, 176px);
+  padding-block: clamp(32px, 4vw, 56px) clamp(108px, 13vw, 176px);
 }
 
 .premium-collection-page .news-filter-panel {
@@ -1109,7 +1076,6 @@ main:has(> .premium-public-page) + .site-footer .footer-links a {
 
 .premium-home .hero-copy,
 .premium-mission .page-hero-inner,
-.premium-collection-page .news-hero-copy,
 .premium-detail-page .news-detail-heading,
 .premium-topic-page .news-topic-inner header {
   animation: premium-enter 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -1158,8 +1124,7 @@ main:has(> .premium-public-page) + .site-footer .footer-links a {
     display: none;
   }
 
-  .premium-mission .page-hero-inner,
-  .premium-collection-page .news-hero-grid {
+  .premium-mission .page-hero-inner {
     min-height: auto;
   }
 
@@ -1188,7 +1153,6 @@ main:has(> .premium-public-page) + .site-footer .footer-links a {
 
   .premium-home .hero-copy h1,
   .premium-mission .page-hero h1,
-  .premium-collection-page .news-hero-copy h1,
   .premium-detail-page .news-detail-heading h1 {
     font-size: clamp(3.35rem, 13vw, 5rem);
   }
@@ -1268,7 +1232,6 @@ main:has(> .premium-public-page) + .site-footer .footer-links a {
 
   .premium-home .hero-copy h1,
   .premium-mission .page-hero h1,
-  .premium-collection-page .news-hero-copy h1,
   .premium-detail-page .news-detail-heading h1 {
     font-size: clamp(3.05rem, 15vw, 4.5rem);
     line-height: 0.92;
@@ -1276,7 +1239,6 @@ main:has(> .premium-public-page) + .site-footer .footer-links a {
 
   .premium-home .hero-text,
   .premium-mission .page-intro,
-  .premium-collection-page .news-hero-copy > p:last-child,
   .premium-detail-page .academy-detail-summary {
     padding-inline-start: 16px;
   }
@@ -1324,10 +1286,6 @@ main:has(> .premium-public-page) + .site-footer .footer-links a {
   .premium-home .closing-panel,
   .premium-mission .closing-panel {
     padding: 26px;
-  }
-
-  .premium-collection-page .news-hero-grid {
-    padding-block: 76px 92px;
   }
 
   .premium-collection-page .news-card-copy {

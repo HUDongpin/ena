@@ -59,17 +59,8 @@ export default async function AcademyPage({ params, searchParams }: AcademyPageP
 
   return (
     <div className="interior-page collection-page academy-page premium-public-page premium-collection-page">
-      <section className="news-hero academy-hero">
-        <div className="container news-hero-grid">
-          <div className="news-hero-copy">
-            <p className="eyebrow">{copy.eyebrow}</p>
-            <h1>{copy.title}</h1>
-            <p>{copy.intro}</p>
-          </div>
-        </div>
-      </section>
-
       <section className="container news-index academy-index" aria-label={copy.title}>
+        <h1 className="sr-only">{copy.title}</h1>
         <AcademyFilters locale={typedLocale} copy={copy} current={current} />
 
         <div className="news-result-heading">

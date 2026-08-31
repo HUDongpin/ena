@@ -111,8 +111,8 @@ paragraph copy must not use forced uppercase or tight tracking.
 
 ### News and Academy collections
 
-- Hero uses one full-width editorial title-and-intro column, without a side
-  evidence/learning panel or vertical divider.
+- Collection pages begin directly with the filter and result surface; the
+  former title-and-intro hero blocks are intentionally omitted.
 - Filter controls remain reachable but never dominate the first viewport.
 - Every result uses the same card geometry in a two-column editorial grid,
   which collapses to one column on small screens.

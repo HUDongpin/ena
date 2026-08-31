@@ -53,17 +53,8 @@ export default async function NewsPage({ params, searchParams }: NewsPageProps) 
 
   return (
     <div className="interior-page collection-page news-page premium-public-page premium-collection-page">
-      <section className="news-hero">
-        <div className="container news-hero-grid">
-          <div className="news-hero-copy">
-            <p className="eyebrow">{copy.eyebrow}</p>
-            <h1>{copy.title}</h1>
-            <p>{copy.intro}</p>
-          </div>
-        </div>
-      </section>
-
       <section className="container news-index" aria-label={copy.title}>
+        <h1 className="sr-only">{copy.title}</h1>
         <NewsFilters locale={typedLocale} copy={copy} years={newsYears} current={current} />
 
         <div className="news-result-heading">
