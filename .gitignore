@@ -23,6 +23,7 @@ pnpm-debug.log*
 # Local browser QA artifacts
 /.playwright-cli/
 /output/
+/.worktrees/
 
 # Editors and macOS
 .DS_Store
