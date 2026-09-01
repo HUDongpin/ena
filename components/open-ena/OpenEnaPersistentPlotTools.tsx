@@ -17,6 +17,8 @@ export interface OpenEnaPersistentPlotToolsProps {
   flipX: boolean;
   flipY: boolean;
   plotZoom: number;
+  nodeLayoutOverrideCount?: number;
+  resetNodeLayoutLabel?: string;
   onEdgeScaleChange: (value: number) => void;
   onEdgeThresholdChange: (value: number) => void;
   onPointScaleChange: (value: number) => void;
@@ -29,6 +31,7 @@ export interface OpenEnaPersistentPlotToolsProps {
   onFlipXChange: (flipped: boolean) => void;
   onFlipYChange: (flipped: boolean) => void;
   onPlotZoomChange: (value: number) => void;
+  onResetNodeLayout?: () => void;
   onReset: () => void;
   settingsOpen?: boolean;
   onSettingsOpenChange?: (open: boolean) => void;
@@ -171,6 +174,8 @@ export default function OpenEnaPersistentPlotTools({
   flipX,
   flipY,
   plotZoom,
+  nodeLayoutOverrideCount = 0,
+  resetNodeLayoutLabel = "Reset node layout",
   onEdgeScaleChange,
   onEdgeThresholdChange,
   onPointScaleChange,
@@ -183,6 +188,7 @@ export default function OpenEnaPersistentPlotTools({
   onFlipXChange,
   onFlipYChange,
   onPlotZoomChange,
+  onResetNodeLayout = () => {},
   onReset,
   settingsOpen = false,
   onSettingsOpenChange = () => {},
@@ -346,6 +352,18 @@ export default function OpenEnaPersistentPlotTools({
             {copy.flipYAxis}
           </button>
         </div>
+        <button
+          type="button"
+          className="ena-reset-node-layout"
+          data-ena-plot-action="reset-node-layout"
+          data-ena-node-layout-overrides={nodeLayoutOverrideCount}
+          aria-label={resetNodeLayoutLabel}
+          title={resetNodeLayoutLabel}
+          disabled={disabled || nodeLayoutOverrideCount === 0}
+          onClick={onResetNodeLayout}
+        >
+          {resetNodeLayoutLabel}
+        </button>
       </div>
 
       {settingsOpen ? (

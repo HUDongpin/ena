@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type { ModelType, Row, WindowType } from "jena-js";
 import type { Locale } from "@/lib/i18n";
 import { getOpenEnaAuthCopy } from "@/lib/open-ena-auth-copy";
@@ -89,6 +89,14 @@ import {
   type OpenEnaResultTableViewModel,
 } from "@/lib/open-ena/export";
 import { codeColorFor, updateCodeColor } from "@/lib/open-ena/plot-style";
+import {
+  createOpenEnaNodeLayoutFingerprint,
+  createOpenEnaNodeLayoutState,
+  moveOpenEnaNode,
+  openEnaNodeLayoutOverrideCount,
+  resetOpenEnaNodeLayout,
+  type OpenEnaNodeDimensionPosition,
+} from "@/lib/open-ena/node-layout";
 import {
   cameraForPreset,
   createOpenEnaWorkspaceAxes,
@@ -584,6 +592,40 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
     () => result ? openEnaAnalysisKindFromResult(result) : null,
     [result],
   );
+  const nodeLayoutFingerprint = useMemo(() => {
+    if (!result || !completedResultKind) return "open-ena-node-layout:empty";
+    return createOpenEnaNodeLayoutFingerprint({
+      analysisKind: completedResultKind,
+      analyzedAt: result.analyzedAt,
+      sourceDatasetNormalizedUtf8TextSha256: result.provenanceBinding?.datasetNormalizedUtf8TextSha256
+        ?? result.projectionReference?.source.normalizedUtf8TextSha256
+        ?? null,
+      referenceId: result.projectionReference?.referenceId ?? null,
+      codes: result.executionProvenance?.configuration.codes ?? resultConfig?.codes ?? [],
+      dimensions: result.dimensions,
+      nodePositionMethod: result.executionProvenance?.nodePositionMethod
+        ?? (completedResultKind === "ona" ? "directed" : "undirected"),
+    });
+  }, [completedResultKind, result, resultConfig]);
+  const [nodeLayout, setNodeLayout] = useState(() => (
+    createOpenEnaNodeLayoutState("open-ena-node-layout:empty")
+  ));
+  useEffect(() => {
+    setNodeLayout((current) => current.fingerprint === nodeLayoutFingerprint
+      ? current
+      : createOpenEnaNodeLayoutState(nodeLayoutFingerprint));
+  }, [nodeLayoutFingerprint]);
+  const activeNodeLayout = nodeLayout.fingerprint === nodeLayoutFingerprint
+    ? nodeLayout
+    : createOpenEnaNodeLayoutState(nodeLayoutFingerprint);
+  const moveNode = useCallback((code: string, dimensions: OpenEnaNodeDimensionPosition) => {
+    setNodeLayout((current) => moveOpenEnaNode(current, nodeLayoutFingerprint, code, dimensions));
+  }, [nodeLayoutFingerprint]);
+  const resetNodeLayout = useCallback(() => {
+    setNodeLayout((current) => current.fingerprint === nodeLayoutFingerprint
+      ? resetOpenEnaNodeLayout(current)
+      : createOpenEnaNodeLayoutState(nodeLayoutFingerprint));
+  }, [nodeLayoutFingerprint]);
   function confirmCurrentIdentityBearingExport() {
     return window.confirm(
       completedResultKind === "ona"
@@ -3580,6 +3622,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
       flipX={flipX}
       flipY={flipY}
       plotZoom={plotZoom}
+      nodeLayoutOverrideCount={openEnaNodeLayoutOverrideCount(activeNodeLayout)}
+      resetNodeLayoutLabel={copy.plot.resetNodeLayout}
       onEdgeScaleChange={setEdgeScale}
       onEdgeThresholdChange={setEdgeThreshold}
       onPointScaleChange={setPointScale}
@@ -3592,6 +3636,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
       onFlipXChange={setFlipX}
       onFlipYChange={setFlipY}
       onPlotZoomChange={setPlotZoom}
+      onResetNodeLayout={resetNodeLayout}
       onReset={resetPlot}
       settingsOpen={plotSettingsOpen}
       onSettingsOpenChange={setPlotSettingsOpen}
