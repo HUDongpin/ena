@@ -21,7 +21,7 @@ function functionSegment(startMarker: string, endMarker: string) {
   return workspace.slice(start, end);
 }
 
-const componentState = workspace.slice(0, workspace.indexOf("function renderSetsPanel()"));
+const componentState = workspace.slice(0, workspace.indexOf("function renderDataPanel()"));
 const statsPanel = functionSegment("function renderStatsPanel()", "function renderSourceEvidence()");
 
 function markerPosition(marker: string) {

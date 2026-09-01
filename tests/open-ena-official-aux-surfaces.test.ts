@@ -404,7 +404,7 @@ test("ONA workspace routes locale copy for directed-space chrome and plot tools"
   assert.match(workspace, /copy\.ona\.unavailable\.inference/);
   assert.match(workspace, /copy\.ona\.unavailable\.groupContrast/);
   assert.match(workspace, /copy\.ona\.dataView\.missingDatasetBinding/);
-  assert.match(workspace, /copy\.ona\.unavailable\.reference/);
+  assert.doesNotMatch(workspace, /copy\.ona\.unavailable\.reference/);
 
   for (const englishLiteral of [
     "p² directed space",

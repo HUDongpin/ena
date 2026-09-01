@@ -9,7 +9,7 @@ test("the version-controlled longitudinal V3 smoke owns its server and covers th
   assert.equal(existsSync(smokePath), true, "the dedicated longitudinal V3 browser smoke is missing");
   const source = readFileSync(smokePath, "utf8");
 
-  assert.match(source, /Load 2D trajectory sample/u);
+  assert.match(source, /Load 3D trajectory sample/u);
   assert.match(source, /findOpenPort/u);
   assert.match(source, /stopOwnedServer/u);
   assert.match(source, /originalTsconfig/u);

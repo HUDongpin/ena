@@ -226,6 +226,17 @@ test("the 3D compiler selects retained x/y/z coordinates without refitting or mu
     [[0], [1], [0]],
     [[0], [0], [1]],
   ]);
+  assert.deepEqual(axisShafts.map((trace) => trace.line?.color), ["#e00000", "#0000d0", "#15803d"]);
+  const groupLineColors = [...new Set(spec.data
+    .filter((trace) => trace.meta.role === "network-edge")
+    .map((trace) => trace.line?.color))].sort();
+  assert.deepEqual(
+    groupLineColors,
+    ["#3366cc", "#dc3912"].sort(),
+    "3D group lines must retain the stable jENA blue/red identity palette",
+  );
+  assert.notEqual(axisShafts[0]?.line?.color, "#dc3912", "SVD1 red must remain distinct from the red group line");
+  assert.notEqual(axisShafts[1]?.line?.color, "#3366cc", "SVD2 blue must remain distinct from the blue group line");
   axisArrowheads.forEach((arrowhead, index) => {
     const shaft = axisShafts[index];
     const label = axisLabels[index];
@@ -240,8 +251,8 @@ test("the 3D compiler selects retained x/y/z coordinates without refitting or mu
     assert.equal(arrowhead.sizemode, "absolute");
     assert.equal(arrowhead.sizeref, tip * 0.1);
     assert.deepEqual(arrowhead.colorscale, [
-      [0, ["#b91c1c", "#1d4ed8", "#15803d"][index]],
-      [1, ["#b91c1c", "#1d4ed8", "#15803d"][index]],
+      [0, ["#e00000", "#0000d0", "#15803d"][index]],
+      [1, ["#e00000", "#0000d0", "#15803d"][index]],
     ]);
     assert.equal(arrowhead.showscale, false);
     assert.equal(arrowhead.hoverinfo, "skip");
@@ -251,8 +262,8 @@ test("the 3D compiler selects retained x/y/z coordinates without refitting or mu
   assert.equal(spec.layout.scene.xaxis.title.text, xDimension);
   assert.equal(spec.layout.scene.yaxis.title.text, yDimension);
   assert.equal(spec.layout.scene.zaxis.title.text, zDimension);
-  assert.equal(spec.layout.scene.xaxis.color, "#b91c1c");
-  assert.equal(spec.layout.scene.yaxis.color, "#1d4ed8");
+  assert.equal(spec.layout.scene.xaxis.color, "#e00000");
+  assert.equal(spec.layout.scene.yaxis.color, "#0000d0");
   assert.equal(spec.layout.scene.zaxis.color, "#15803d");
   assert.equal(spec.layout.paper_bgcolor, "#ffffff");
   assert.equal(spec.layout.plot_bgcolor, "#ffffff");

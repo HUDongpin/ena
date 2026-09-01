@@ -417,10 +417,13 @@ export default function OpenEnaInferencePanel({
   }
 
   return (
-    <section className="ena-inference-panel" aria-labelledby="open-ena-inference-heading">
-      <h3 id="open-ena-inference-heading">{copy.designLegend}</h3>
-      <fieldset className="ena-inference-designs" data-ena-inference-design="true">
-        <legend>{copy.designLegend}</legend>
+    <section className="ena-inference-panel" aria-label={copy.designLegend}>
+      <div
+        className="ena-inference-designs"
+        role="radiogroup"
+        aria-label={copy.designLegend}
+        data-ena-inference-design="true"
+      >
         {DESIGN_ORDER.map((choice) => {
           const availability = designAvailability[choice];
           const reasonId = `open-ena-inference-${choice}-reason`;
@@ -440,7 +443,7 @@ export default function OpenEnaInferencePanel({
             </label>
           );
         })}
-      </fieldset>
+      </div>
 
       {trajectory && design ? (
         <fieldset className="ena-inference-identity">
