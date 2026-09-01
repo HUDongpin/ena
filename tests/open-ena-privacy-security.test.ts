@@ -32,6 +32,7 @@ const aiComponent = readFileSync(
 const i18n = readFileSync(new URL("../lib/open-ena-i18n.ts", import.meta.url), "utf8");
 const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
 const footer = readFileSync(new URL("../components/Footer.tsx", import.meta.url), "utf8");
+const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const analyticsConsent = readFileSync(new URL("../components/AnalyticsConsent.tsx", import.meta.url), "utf8");
 const analyticsControl = readFileSync(new URL("../components/AnalyticsConsentControl.tsx", import.meta.url), "utf8");
 
@@ -369,7 +370,7 @@ test("migration 003 stores only the bounded durable AI consent receipt fields", 
   assert.match(migration, /clock_timestamp\(\)/u);
 });
 
-test("the footer omits analytics disclosure and status copy while preserving explicit consent controls", () => {
+test("the footer omits the analytics preference entry point while consent protections remain", () => {
   for (const removedCopy of [
     /Analytics and data boundaries/iu,
     /Provider and purpose:/iu,
@@ -380,16 +381,19 @@ test("the footer omits analytics disclosure and status copy while preserving exp
     /分析服務與資料界線/u,
     /分析服务与数据边界/u,
   ]) assert.doesNotMatch(footer, removedCopy);
-  assert.match(footer, /AnalyticsConsentControl/u);
+  assert.doesNotMatch(
+    footer,
+    /AnalyticsConsentControl|analyticsConsentCopy|footer-analytics-preference/u,
+  );
+  assert.doesNotMatch(globalCss, /\.footer-analytics-(?:preference|consent)/u);
   assert.match(analyticsConsent, /beforeSend/u);
   assert.match(analyticsConsent, /localStorage/u);
   assert.match(analyticsConsent, /query strings and fragments|Query strings.*identifiers/iu);
   assert.match(analyticsConsent, /sanitizeOpenEnaAnalyticsUrl/u);
   assert.doesNotMatch(analyticsConsent, /url:\s*url\.pathname/u);
   assert.match(analyticsControl, /data-ena-analytics-consent="explicit"/u);
-  assert.doesNotMatch(analyticsControl, /role="status"|copy\.(?:enabled|disabled|undecided)/u);
-  assert.match(analyticsControl, /onClick=\{\(\) => update\("denied"\)\}>\{copy\.disable\}<\/button>/u);
-  assert.match(analyticsControl, /onClick=\{\(\) => update\("granted"\)\}>\{copy\.enable\}<\/button>/u);
+  assert.match(analyticsControl, /OPEN_ENA_ANALYTICS_CONSENT_STORAGE_KEY/u);
+  assert.match(analyticsControl, /OPEN_ENA_ANALYTICS_CONSENT_EVENT/u);
 });
 
 test("Vercel Analytics keeps an absolute same-origin URL while removing query strings and fragments", () => {

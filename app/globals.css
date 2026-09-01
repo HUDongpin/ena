@@ -1920,38 +1920,6 @@ button:focus-visible {
   text-align: center;
 }
 
-.footer-analytics-preference {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 0 16px 22px;
-}
-
-.footer-analytics-consent {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 0;
-  color: var(--nav-text);
-}
-
-.footer-analytics-consent button {
-  min-height: 36px;
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  padding: 6px 11px;
-  color: var(--nav-deep);
-  background: var(--accent);
-  cursor: pointer;
-  font-size: 0.76rem;
-  font-weight: 760;
-}
-
-.footer-analytics-consent button:hover,
-.footer-analytics-consent button:focus-visible {
-  background: var(--accent-hover);
-}
-
 .back-to-top {
   position: fixed;
   right: 22px;
