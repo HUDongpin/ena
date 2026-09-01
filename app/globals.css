@@ -21,6 +21,33 @@
   --shadow-soft: 0 8px 24px rgba(31, 111, 158, 0.08);
 }
 
+.ena-svg-draggable-node {
+  cursor: grab;
+}
+
+.ena-svg-draggable-node[data-ena-node-dragging="true"] {
+  cursor: grabbing;
+}
+
+.ena-node-drag-hit-target {
+  fill: transparent;
+  stroke: transparent;
+  pointer-events: all;
+  touch-action: none;
+}
+
+.ena-svg-draggable-node[data-ena-node-dragging="true"] .ena-node-drag-hit-target {
+  stroke: rgba(86, 176, 157, 0.58);
+  stroke-width: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ena-svg-draggable-node,
+  .ena-svg-draggable-node * {
+    transition: none !important;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
