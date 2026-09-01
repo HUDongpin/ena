@@ -488,6 +488,9 @@ export interface OpenEnaCopy {
   navLabel: string;
   modes: { sets: string; data: string; model: string; plot: string; stats: string; ai: string };
   views: { twoD: string; threeD: string };
+  plotExport: {
+    identityOmittedPoint: (index: number) => string;
+  };
   groupDisplay: OpenEnaGroupDisplayCopy;
   ona: OpenEnaOnaCopy;
   sets: {
@@ -1488,6 +1491,9 @@ const en: OpenEnaCopy = {
   eyebrow: "Browser-based research workspace",
   title: "Open ENA",
   intro: "Build, inspect, and compare epistemic network models with jENA in one workspace with linked 2D and interactive 3D views.",
+  plotExport: {
+    identityOmittedPoint: (index) => `Analytic unit point ${index}; identifier omitted from this SVG export.`,
+  },
   navLabel: "Open ENA",
   modes: { sets: "Sets", data: "Data", model: "Model", plot: "Plot Tools", stats: "Stats & Export", ai: "AI" },
   views: { twoD: "2D ENA", threeD: "3D ENA" },
@@ -2130,6 +2136,9 @@ const zhHant: OpenEnaCopy = {
   title: "開放 ENA",
   intro: "在同一工作區中使用 jENA 建構、檢視和比較認知網絡模型，並在相連的 2D 與互動式 3D 視圖之間切換。",
   navLabel: "開放 ENA",
+  plotExport: {
+    identityOmittedPoint: (index) => `分析單位點 ${index}；此 SVG 匯出已省略識別碼。`,
+  },
   modes: { sets: "分析集", data: "資料", model: "模型", plot: "繪圖工具", stats: "統計與匯出", ai: "AI 解讀" },
   views: { twoD: "2D ENA", threeD: "3D ENA" },
   groupDisplay: {
@@ -2519,6 +2528,9 @@ const zhHans: OpenEnaCopy = {
   title: "开放 ENA",
   intro: "在同一工作区中使用 jENA 构建、查看和比较认知网络模型，并在相连的 2D 与交互式 3D 视图之间切换。",
   navLabel: "开放 ENA",
+  plotExport: {
+    identityOmittedPoint: (index) => `分析单位点 ${index}；此 SVG 导出已省略标识符。`,
+  },
   modes: { sets: "分析集", data: "数据", model: "模型", plot: "绘图工具", stats: "统计与导出", ai: "AI 解读" },
   views: { twoD: "2D ENA", threeD: "3D ENA" },
   groupDisplay: {

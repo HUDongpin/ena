@@ -33,15 +33,30 @@ import {
 export const OPEN_ENA_POINT_INDEX = "OPEN_ENA_POINT_INDEX";
 
 export interface OpenEnaPlotExportDimensions {
+  status: "native" | "scaled" | "fallback";
   width: number;
   height: number;
+  sourceWidth: number | null;
+  sourceHeight: number | null;
 }
 
 const DEFAULT_PLOT_EXPORT_DIMENSIONS: OpenEnaPlotExportDimensions = {
+  status: "fallback",
   width: 920,
   height: 590,
+  sourceWidth: null,
+  sourceHeight: null,
 };
 const MAX_PLOT_EXPORT_DIMENSION = 4_096;
+export const OPEN_ENA_PLOT_RASTER_MAX_SIDE = 8_192;
+export const OPEN_ENA_PLOT_RASTER_MAX_PIXELS = 16_000_000;
+
+export interface OpenEnaPlotRasterDimensions {
+  width: number;
+  height: number;
+  effectiveScale: number;
+  status: "requested" | "constrained";
+}
 
 export function resolveOpenEnaPlotExportDimensions(
   viewBox: string | null | undefined,
@@ -53,12 +68,38 @@ export function resolveOpenEnaPlotExportDimensions(
   const [, , width, height] = values;
   if (!values.every(Number.isFinite)
     || width <= 0
-    || height <= 0
-    || width > MAX_PLOT_EXPORT_DIMENSION
-    || height > MAX_PLOT_EXPORT_DIMENSION) {
+    || height <= 0) {
     return { ...DEFAULT_PLOT_EXPORT_DIMENSIONS };
   }
-  return { width, height };
+  const viewportScale = Math.min(1, MAX_PLOT_EXPORT_DIMENSION / width, MAX_PLOT_EXPORT_DIMENSION / height);
+  return {
+    status: viewportScale < 1 ? "scaled" : "native",
+    width: width * viewportScale,
+    height: height * viewportScale,
+    sourceWidth: width,
+    sourceHeight: height,
+  };
+}
+
+export function resolveOpenEnaPlotRasterDimensions(
+  dimensions: Pick<OpenEnaPlotExportDimensions, "width" | "height">,
+  requestedScale: number,
+): OpenEnaPlotRasterDimensions {
+  const safeRequestedScale = Number.isFinite(requestedScale) && requestedScale > 0
+    ? requestedScale
+    : 1;
+  const effectiveScale = Math.min(
+    safeRequestedScale,
+    OPEN_ENA_PLOT_RASTER_MAX_SIDE / dimensions.width,
+    OPEN_ENA_PLOT_RASTER_MAX_SIDE / dimensions.height,
+    Math.sqrt(OPEN_ENA_PLOT_RASTER_MAX_PIXELS / (dimensions.width * dimensions.height)),
+  );
+  return {
+    width: Math.max(1, Math.floor(dimensions.width * effectiveScale + Number.EPSILON)),
+    height: Math.max(1, Math.floor(dimensions.height * effectiveScale + Number.EPSILON)),
+    effectiveScale,
+    status: effectiveScale < safeRequestedScale - 1e-12 ? "constrained" : "requested",
+  };
 }
 
 export const OPEN_ENA_RESULT_TABLE_KEYS = [

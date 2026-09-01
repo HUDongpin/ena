@@ -23,10 +23,12 @@ const LEGEND_COLUMNS = 3;
 const LEGEND_MIN_ROW_HEIGHT = 30;
 const LEGEND_LINE_HEIGHT = 16;
 const LEGEND_ROW_PADDING = 8;
-const LEGEND_MAX_DISPLAY_UNITS = 36;
 const LEGEND_TOP_PADDING = 22;
 const LEGEND_BOTTOM_PADDING = 10;
 const LEGEND_SIDE_PADDING = 22;
+const LEGEND_TEXT_X = 20;
+const LEGEND_TEXT_RIGHT_PADDING = 12;
+const LEGEND_GRAPHEME_SEGMENTER = new Intl.Segmenter("en", { granularity: "grapheme" });
 
 export interface OpenEnaOrderedPlotCopy {
   overallTitle: string;
@@ -161,29 +163,36 @@ function displayNumber(value: number) {
   return Number(value.toPrecision(6)).toString();
 }
 
-function legendCharacterWidth(character: string) {
-  const codePoint = character.codePointAt(0) ?? 0;
-  return /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/u.test(character)
-    || codePoint >= 0x1f300
-    ? 2
-    : 1;
+function legendGraphemeAdvance(grapheme: string) {
+  if (/^\s+$/u.test(grapheme)) return 3.6;
+  if (/\p{Extended_Pictographic}/u.test(grapheme)
+    || /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/u.test(grapheme)) {
+    return 13;
+  }
+  const base = grapheme.normalize("NFD").replace(/\p{Mark}/gu, "");
+  if (/^[WM@#%]$/u.test(base)) return 12.4;
+  if (/^[A-Z]$/u.test(base)) return 8.6;
+  if ("ilIjtfr1|.,;:'!()[]".includes(base)) return 4;
+  if (/^\p{Punctuation}$/u.test(base)) return 6;
+  return 7.2;
 }
 
-function wrapLegendLabel(label: string, maximumWidth = LEGEND_MAX_DISPLAY_UNITS) {
-  const lines: string[] = [];
+function wrapLegendLabel(label: string, maximumWidth: number) {
+  const lines: Array<{ text: string; width: number }> = [];
   let line = "";
   let width = 0;
-  for (const character of label) {
-    const characterWidth = legendCharacterWidth(character);
-    if (line && width + characterWidth > maximumWidth) {
-      lines.push(line);
+  const graphemes = [...LEGEND_GRAPHEME_SEGMENTER.segment(label)].map(({ segment }) => segment);
+  for (const grapheme of graphemes) {
+    const advance = legendGraphemeAdvance(grapheme);
+    if (line && width + advance > maximumWidth) {
+      lines.push({ text: line, width });
       line = "";
       width = 0;
     }
-    line += character;
-    width += characterWidth;
+    line += grapheme;
+    width += advance;
   }
-  if (line || lines.length === 0) lines.push(line);
+  if (line || lines.length === 0) lines.push({ text: line, width: Math.max(1, width) });
   return lines;
 }
 
@@ -289,7 +298,6 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
           color,
           style: copy.pointStyleNames[style],
         }),
-        labelLines: wrapLegendLabel(`${number}. ${name}`),
       };
     });
   const showPointLegend = props.showPoints && pointGroups.length > 1;
@@ -297,8 +305,16 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
   const legendRowCount = showPointLegend
     ? Math.ceil(pointGroups.length / legendColumnCount)
     : 0;
+  const legendColumnWidth = showPointLegend
+    ? (WIDTH - LEGEND_SIDE_PADDING * 2) / legendColumnCount
+    : 0;
+  const legendTextWidth = Math.max(1, legendColumnWidth - LEGEND_TEXT_X - LEGEND_TEXT_RIGHT_PADDING);
+  const legendGroups = pointGroups.map((group) => ({
+    ...group,
+    labelLines: wrapLegendLabel(`${group.number}. ${group.name}`, legendTextWidth),
+  }));
   const legendRowLineCounts = Array.from({ length: legendRowCount }, (_, row) => (
-    Math.max(...pointGroups
+    Math.max(...legendGroups
       .filter((_, index) => Math.floor(index / legendColumnCount) === row)
       .map((group) => group.labelLines.length))
   ));
@@ -309,9 +325,6 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
     ? LEGEND_TOP_PADDING + legendRowHeights.reduce((sum, rowHeight) => sum + rowHeight, 0) + LEGEND_BOTTOM_PADDING
     : 0;
   const svgHeight = height + legendHeight;
-  const legendColumnWidth = showPointLegend
-    ? (WIDTH - LEGEND_SIDE_PADDING * 2) / legendColumnCount
-    : 0;
   const title = props.scope.kind === "overall" ? copy.overallTitle : `${props.scope.name} · ${copy.groupTitle}`;
   const figureLabel = `${title}. ${copy.directedNetworkDescription}`;
 
@@ -507,7 +520,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
               stroke="#e0e7e6"
               strokeWidth={1}
             />
-            {pointGroups.map((group, index) => {
+            {legendGroups.map((group, index) => {
               const column = index % legendColumnCount;
               const row = Math.floor(index / legendColumnCount);
               const x = LEGEND_SIDE_PADDING + column * legendColumnWidth;
@@ -527,9 +540,24 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
                 >
                   <desc>{group.description}</desc>
                   <UnitPointMarker style={group.style} x={7} y={0} size={6.2} fill={group.color} />
-                  <text data-ona-legend-label={group.name} x={20} y={4} fill="#344f53" fontSize={13}>
+                  <text
+                    data-ona-legend-label={group.name}
+                    data-ona-legend-max-width={legendTextWidth}
+                    x={LEGEND_TEXT_X}
+                    y={4}
+                    fill="#344f53"
+                    fontSize={13}
+                  >
                     {group.labelLines.map((line, lineIndex) => (
-                      <tspan key={`${group.name}:${lineIndex}`} x={20} dy={lineIndex === 0 ? 0 : LEGEND_LINE_HEIGHT}>{line}</tspan>
+                      <tspan
+                        key={`${group.name}:${lineIndex}`}
+                        x={LEGEND_TEXT_X}
+                        dy={lineIndex === 0 ? 0 : LEGEND_LINE_HEIGHT}
+                        textLength={Math.min(legendTextWidth, Math.max(1, Number(line.width.toFixed(2))))}
+                        lengthAdjust="spacingAndGlyphs"
+                      >
+                        {line.text}
+                      </tspan>
                     ))}
                   </text>
                 </g>

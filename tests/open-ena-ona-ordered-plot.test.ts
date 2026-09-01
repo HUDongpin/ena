@@ -522,22 +522,22 @@ test("unit point inner glyph colors remain contrast-safe on default, white, near
   assert.match(fallback.halo ?? "", /^#[0-9a-f]{6}$/i, "unparseable fills need a dual-contrast fallback");
 });
 
-test("twelve long English and Chinese group names wrap completely below the plot with dynamic export height", async () => {
+test("SSR legend contract preserves graphemes and declares bounded SVG widths and dynamic rows for twelve diverse group names", async () => {
   const { result, config } = orderedFixture();
   const { default: OpenEnaOrderedPlot } = await import("../components/open-ena/OpenEnaOrderedPlot");
   const names = [
+    "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW",
+    "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM",
+    "Latin中文Mixed文本WWMM研究群組",
+    "Emoji🙂🚀🧠📊repeated🙂🚀group",
+    "Punctuation.,;:!?—()[]group",
+    "Combining café résumé cöoperate group",
     "Advanced collaborative epistemic reasoning cohort alpha",
     "以協作知識建構為核心的第一研究群組",
     "面向人工智能协作学习的第二研究组",
-    "Evidence-centered discussion and reflection community",
-    "跨學科問題解決與反思實踐共同體",
-    "跨学科问题解决与反思实践共同体",
-    "Knowledge building regulation and synthesis cohort",
     "多語言協作探究與論證學習群組",
-    "多语言协作探究与论证学习群组",
-    "Sustained inquiry and collective improvement cohort",
+    "多语言协作探究与论证学习组",
     "資料驅動的共同調節學習研究群組",
-    "数据驱动的共同调节学习研究组",
   ];
   const manyGroups = structuredClone(result);
   manyGroups.groups = names.map((name, index) => ({
@@ -582,17 +582,18 @@ test("twelve long English and Chinese group names wrap completely below the plot
   for (const [group, row, lineCount, x, y, body] of entries.map((entry) => entry.slice(1))) {
     assert.ok(Number(x) >= 0 && Number(x) < 920, `${group} must stay within the SVG width`);
     assert.ok(Number(y) > 590, `${group} row ${row} must remain below the plotting area`);
-    const text = body.match(new RegExp(`<text[^>]*data-ona-legend-label="${group}"[^>]*>([\\s\\S]*?)<\\/text>`))?.[1] ?? "";
-    const lines = [...text.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)].map((match) => match[1]);
+    const textMatch = body.match(/<text[^>]*data-ona-legend-label="[^"]+"[^>]*data-ona-legend-max-width="([0-9.]+)"[^>]*>([\s\S]*?)<\/text>/);
+    assert.ok(textMatch, `${group} must declare its available SVG text width`);
+    const maximumWidth = Number(textMatch[1]);
+    const lines = [...textMatch[2].matchAll(/<tspan[^>]*textLength="([0-9.]+)"[^>]*lengthAdjust="spacingAndGlyphs"[^>]*>([^<]*)<\/tspan>/g)]
+      .map((match) => ({ declaredWidth: Number(match[1]), text: match[2] }));
     assert.equal(lines.length, Number(lineCount));
     for (const line of lines) {
-      const displayWidth = [...line].reduce((sum, character) => (
-        sum + (/[^\u0000-\u00ff]/u.test(character) ? 2 : 1)
-      ), 0);
-      assert.ok(displayWidth <= 36, `${group} line must fit its deterministic SVG column without clipping`);
+      assert.ok(line.declaredWidth > 0 && line.declaredWidth <= maximumWidth, `${group} tspan must declare a hard SVG width within its column`);
+      assert.doesNotMatch(line.text, /^\p{Mark}/u, `${group} must not split a combining mark from its grapheme`);
     }
     const number = [...names].sort((left, right) => left < right ? -1 : left > right ? 1 : 0).indexOf(group) + 1;
-    assert.equal(lines.join(""), `${number}. ${group}`, "wrapped tspans must preserve the complete visible numbered group name without truncation");
+    assert.equal(lines.map((line) => line.text).join(""), `${number}. ${group}`, "wrapped tspans must preserve every grapheme in the complete visible numbered group name");
     const rowIndex = Number(row);
     const current = rows.get(rowIndex);
     rows.set(rowIndex, {

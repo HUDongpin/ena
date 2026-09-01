@@ -82,6 +82,7 @@ import {
   openEnaResultTableFocusTarget,
   openEnaResultTableAvailability,
   resolveOpenEnaPlotExportDimensions,
+  resolveOpenEnaPlotRasterDimensions,
   resolveOpenEnaResultTableRovingKey,
   rowsToCsv,
   type OpenEnaResultTableKey,
@@ -2021,9 +2022,10 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
     const clone = source.cloneNode(true) as SVGSVGElement;
     if (completedResultKind === "ona" || !showUnitLabels) {
       clone.querySelectorAll<SVGGElement>("[data-ena-unit-point='true'], [data-ona-unit-point='true']").forEach((unitPoint, index) => {
-        unitPoint.setAttribute("aria-label", `Analytic unit point ${index + 1}; identifier omitted from this SVG export.`);
+        const sanitizedLabel = copy.plotExport.identityOmittedPoint(index + 1);
+        unitPoint.setAttribute("aria-label", sanitizedLabel);
         unitPoint.querySelectorAll("title").forEach((title) => {
-          title.textContent = `Analytic unit point ${index + 1}; identifier omitted from this SVG export.`;
+          title.textContent = sanitizedLabel;
         });
         unitPoint.querySelectorAll(".ena-set-unit-label").forEach((label) => label.remove());
       });
@@ -2084,9 +2086,10 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
     const image = new Image();
     image.onload = () => {
       const scale = 3;
+      const rasterDimensions = resolveOpenEnaPlotRasterDimensions(serialized.dimensions, scale);
       const canvas = document.createElement("canvas");
-      canvas.width = serialized.dimensions.width * scale;
-      canvas.height = serialized.dimensions.height * scale;
+      canvas.width = rasterDimensions.width;
+      canvas.height = rasterDimensions.height;
       const context = canvas.getContext("2d");
       if (!context) {
         URL.revokeObjectURL(sourceUrl);
