@@ -20,7 +20,12 @@ const ZERO_TOLERANCE = 1e-12;
 
 export type OpenEnaOrderedNetworkScope =
   | { kind: "overall" }
-  | { kind: "group"; name: string };
+  | {
+      kind: "group";
+      name: string;
+      /** Display-only ordering supplied by linked presenters; shared science ignores it. */
+      presentationRole?: "primary" | "secondary";
+    };
 
 export type OpenEnaOrderedNetworkNodeTotals = OpenEnaOrderedResponseNodeSummary;
 
@@ -519,7 +524,9 @@ export function buildOpenEnaOrderedNetworkModel(input: {
   });
 
   return {
-    scope,
+    scope: scope.kind === "overall"
+      ? { kind: "overall" }
+      : { kind: "group", name: scope.name },
     codes: [...config.codes],
     nodes,
     edges,
