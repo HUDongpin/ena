@@ -112,11 +112,13 @@ test("the home page retains the standard ENA figure and source credit while Miss
   assert.doesNotMatch(css, /\.definition-(?:visual|node|edge)/);
   assert.doesNotMatch(figureSource, /plot-key|key-line/);
   assert.match(homeSource, /dictionary\.home\.originCredit/);
-  assert.match(homeSource, /<strong><bdi>Wisconsin Center for Education Research\.<\/bdi><\/strong>/);
+  assert.match(
+    homeSource,
+    /<strong><bdi>Wisconsin Center for Education Research\.<\/bdi><\/strong>\s*\{" "\}\s*<strong><bdi dir=\{localeMeta\[typedLocale\]\.dir\}>\{dictionary\.home\.initiatorCredit\}<\/bdi><\/strong>/u,
+  );
   const englishInitiatorCredit =
     "Dr. Peter Hu Dongpin is the Initiator of the open access ENA Hub of Knowledge.";
 
-  assert.match(homeSource, /dictionary\.home\.initiatorCredit/u);
   assert.doesNotMatch(homeSource, /typedLocale === "en"/u);
   assert.doesNotMatch(
     homeSource,
