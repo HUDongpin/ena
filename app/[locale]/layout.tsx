@@ -77,7 +77,10 @@ export default async function LocaleLayout({ children, params }: LocaleLayoutPro
       <Header locale={typedLocale} dictionary={dictionary} />
       <main id="main-content">{children}</main>
       <Footer locale={typedLocale} dictionary={dictionary} />
-      <BackToTop label={dictionary.common.backToTop} />
+      <BackToTop
+        label={dictionary.common.backToTop}
+        progressLabel={dictionary.common.pageScrollProgress}
+      />
     </div>
   );
 }
