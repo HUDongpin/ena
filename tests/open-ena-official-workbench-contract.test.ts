@@ -31,21 +31,21 @@ test("the compact workbench rail retains the existing ENA mark and Open ENA iden
   assert.match(brand, /data-ena-rail-brand="true"/, "the rail brand needs one stable semantic owner");
   assert.match(brand, /src="\/ena-mark\.svg"/, "the existing ENA network mark remains unchanged");
   assert.match(brand, />OPEN ENA<\//, "Open ENA remains the visible product name");
-  assert.match(brand, /data-ena-rail-version="true"[\s\S]*?JENA_RUNTIME_VERSION/, "the visible version stays bound to the runtime constant");
+  assert.match(brand, /data-ena-rail-version="true"[\s\S]*?JENA_RAIL_DISPLAY_VERSION/, "the visible version stays derived from the runtime constant");
   assert.doesNotMatch(workspace, /ENA Hong Kong/i);
 });
 
 test("the existing ENA.HK rail drawings remain and AI is a dedicated downstream mode", () => {
   const iconBlock = workspace.match(/const modeIcons:\s*Record<OpenEnaMode, React\.ReactNode>\s*=\s*\{[\s\S]*?\n\};/)?.[0] ?? "";
 
-  assert.equal((iconBlock.match(/<svg\b/g) ?? []).length, 6, "the rail has five existing icons plus the AI logo");
-  assert.match(iconBlock, /M4 5\.5h16v5H4zm0 8h16v5H4z/, "preserve the current Sets icon artwork");
+  assert.equal((iconBlock.match(/<svg\b/g) ?? []).length, 5, "the rail has four analysis icons plus the AI logo");
+  assert.doesNotMatch(iconBlock, /M4 5\.5h16v5H4zm0 8h16v5H4z/, "the Sets icon artwork must be removed");
   assert.match(iconBlock, /M4 5\.5h16v13H4zM4 10h16M9 5\.5v13/, "preserve the current Data icon artwork");
   assert.match(iconBlock, /<circle cx="6" cy="7" r="2\.2"[\s\S]*?<circle cx="18" cy="6" r="2\.2"[\s\S]*?<circle cx="12" cy="18" r="2\.2"/, "preserve the current Model icon artwork");
   assert.match(iconBlock, /M4 19\.5V4\.5M4 19\.5h16[\s\S]*?m6\.5 15 4-4 3 2 5-6/, "preserve the current Plot Tools icon artwork");
   assert.match(iconBlock, /M5 19V11h3v8zm6 0V5h3v14zm6 0V8h3v11z/, "preserve the current Stats & Export icon artwork");
   assert.match(iconBlock, /<rect x="3\.5" y="4" width="17" height="16" rx="4"[\s\S]*?m7\.5 15 2\.2-6 2\.2 6M8\.2 13h3M15 9v6/, "AI uses a distinct logo after Stats");
-  assert.match(copy, /modes:\s*\{\s*sets:\s*"Sets",\s*data:\s*"Data",\s*model:\s*"Model",\s*plot:\s*"Plot Tools",\s*stats:\s*"Stats & Export",\s*ai:\s*"AI"\s*\}/);
+  assert.match(copy, /modes:\s*\{\s*data:\s*"Data",\s*model:\s*"Model",\s*plot:\s*"Plot Tools",\s*stats:\s*"Stats & Export",\s*ai:\s*"AI"\s*\}/);
   assert.match(workspace, /\{modeIcons\[item\]\}[\s\S]*?<span>\{copy\.modes\[item\]\}<\/span>/);
 });
 

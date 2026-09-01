@@ -65,15 +65,9 @@ test("endpoint results expose dedicated Primary group and Secondary group select
   );
 });
 
-test("current-result group selectors are not the captured Analysis Sets selectors", () => {
-  const setsPanel = workspace.match(/function renderSetsPanel\(\)[\s\S]*?function renderDataPanel\(\)/)?.[0] ?? "";
-  assert.doesNotMatch(
-    setsPanel,
-    /primaryGroup(?:Name)?|secondaryGroup(?:Name)?/,
-    "Primary/Secondary group controls belong to the current endpoint result, not the retained Sets workflow",
-  );
-  assert.match(setsPanel, /primarySetId/);
-  assert.match(setsPanel, /secondarySetId/);
+test("current-result group selectors remain after the Analysis Sets interface is removed", () => {
+  assert.doesNotMatch(workspace, /function renderSetsPanel\(\)/);
+  assert.doesNotMatch(workspace, /primarySetId|secondarySetId/);
   assert.match(
     workspace,
     /(?:group contrast|contrast groups)[\s\S]{0,800}primaryGroup(?:Name)?[\s\S]{0,800}secondaryGroup(?:Name)?/i,
@@ -109,7 +103,7 @@ test("group contrast defaults to the first two groups in stable result order", (
 });
 
 test("one top-level selected pair persists across Plot while Stats requires an explicit inference run", () => {
-  const componentState = workspace.slice(0, workspace.indexOf("function renderSetsPanel"));
+  const componentState = workspace.slice(0, workspace.indexOf("function renderDataPanel"));
   assert.match(componentState, /const\s*\[[^\n]*(?:primaryGroup|groupPrimary)[^\n]*useState/i);
   assert.match(componentState, /const\s*\[[^\n]*(?:secondaryGroup|groupSecondary)[^\n]*useState/i);
   assert.match(

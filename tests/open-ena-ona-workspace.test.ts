@@ -97,7 +97,7 @@ test("ONA Data View and capability controls are wired before unsupported actions
   assert.match(workspace, /onaCapabilityDisabled/);
   assert.match(workspace, /disabled=\{[^}]*onaCapabilityDisabled/);
   assert.match(workspace, /disabled=\{[^}]*completedResultKind\s*===\s*["']ona["']/);
-  assert.match(workspace, /completedResultKind\s*===\s*["']ona["'][\s\S]*copy\.ona\.unavailable\.sets/);
+  assert.doesNotMatch(workspace, /setMode\(["']sets["']\)/);
   assert.match(workspace, /capabilityAnalysisKind\s*===\s*["']ona["']/);
 });
 

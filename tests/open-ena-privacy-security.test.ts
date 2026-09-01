@@ -121,7 +121,7 @@ test("standard ENA identity-bearing exports require one explicit confirmation wh
   assert.equal(confirmExport(() => { confirmationCount += 1; return true; }, "warning", () => { downloadCount += 1; }), true);
   assert.deepEqual({ confirmationCount, downloadCount }, { confirmationCount: 2, downloadCount: 1 });
 
-  assert.match(workspace, /copy\.stats\.identityExportWarning/u);
+  assert.doesNotMatch(workspace, /copy\.stats\.identityExportWarning/u);
   assert.match(workspace, /copy\.stats\.identityExportConfirmation/u);
   const dataView = readFileSync(
     new URL("../components/open-ena/OpenEnaDataView.tsx", import.meta.url),
@@ -129,7 +129,6 @@ test("standard ENA identity-bearing exports require one explicit confirmation wh
   );
   assert.match(workspace, /exportClassification=\{ordered\s*\?\s*"local-identity-bearing-view"\s*:\s*"identity-bearing-derived"\}/u);
   assert.match(dataView, /data-export-classification=\{exportClassification\}/u);
-  assert.match(workspace, /buildSetComparisonExport[\s\S]{0,900}confirmOpenEnaIdentityBearingExport/u);
   assert.match(workspace, /buildPairwiseGroupContrastExport[\s\S]{0,1500}confirmOpenEnaIdentityBearingExport/u);
   assert.match(workspace, /buildAnalysisBundle[\s\S]{0,1700}confirmOpenEnaIdentityBearingExport/u);
   assert.match(workspace, /function exportPlotSvg\(\)[\s\S]{0,220}confirmCurrentIdentityBearingExport/u);
@@ -146,17 +145,21 @@ test("standard ENA identity-bearing exports require one explicit confirmation wh
   assert.match(i18n, /identityExportConfirmation/u);
 });
 
-test("AI consent discloses the actual gateway/model and bounded retention, region, and receipt facts before opt-in", () => {
-  assert.match(aiComponent, /data-ena-ai-provider-disclosure="pre-consent"/u);
-  assert.match(aiComponent, /providerDescriptor\.provider/u);
-  assert.match(aiComponent, /providerDescriptor\.model/u);
+test("AI removes the screenshot-selected disclosure cards while preserving explicit consent and privacy controls", () => {
+  assert.doesNotMatch(aiComponent, /ena-ai-privacy/u);
+  assert.doesNotMatch(aiComponent, /data-ena-ai-provider-disclosure="pre-consent"/u);
   for (const field of [
+    "privacyLocal",
+    "privacyExternal",
     "providerDisclosure",
     "dataScopeDisclosure",
     "retentionDisclosure",
     "regionDisclosure",
     "auditReceiptDisclosure",
-  ]) assert.match(aiComponent, new RegExp(`copy\\.${field}`, "u"));
+  ]) assert.doesNotMatch(aiComponent, new RegExp(`copy\\.${field}`, "u"));
+  assert.match(aiComponent, /data-ena-ai-payload-preview="reviewed-aggregate"/u);
+  assert.match(aiComponent, /data-ena-ai-consent="explicit"/u);
+  assert.match(aiComponent, /OPEN_ENA_AI_CONSENT_HEADER/u);
   assert.match(i18n, /OpenRouter/u);
   assert.match(i18n, /metadata/iu);
   assert.match(i18n, /zero.data.retention|ZDR/iu);

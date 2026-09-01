@@ -470,7 +470,7 @@ export interface OpenEnaCopy {
   title: string;
   intro: string;
   navLabel: string;
-  modes: { sets: string; data: string; model: string; plot: string; stats: string; ai: string };
+  modes: { data: string; model: string; plot: string; stats: string; ai: string };
   views: { twoD: string; threeD: string };
   groupDisplay: OpenEnaGroupDisplayCopy;
   ona: OpenEnaOnaCopy;
@@ -1473,7 +1473,7 @@ const en: OpenEnaCopy = {
   title: "Open ENA",
   intro: "Build, inspect, and compare epistemic network models with jENA in one workspace with linked 2D and interactive 3D views.",
   navLabel: "Open ENA",
-  modes: { sets: "Sets", data: "Data", model: "Model", plot: "Plot Tools", stats: "Stats & Export", ai: "AI" },
+  modes: { data: "Data", model: "Model", plot: "Plot Tools", stats: "Stats & Export", ai: "AI" },
   views: { twoD: "2D ENA", threeD: "3D ENA" },
   groupDisplay: {
     title: "Plotted groups and units",
@@ -1821,7 +1821,7 @@ const en: OpenEnaCopy = {
     uploadHint: "CSV or XLSX, up to 5 MB and 20,000 rows; XLSX uses the first worksheet",
     sample: "Load teaching sample",
     sampleHint: "48 synthetic rows, 8 teams, 5 codes",
-    trajectorySample: "Load 2D trajectory sample",
+    trajectorySample: "Load 3D trajectory sample",
     trajectorySampleHint: "54 synthetic rows · 6 learners · TP1–TP3 · 6 codes",
     noFile: "No dataset loaded",
     active: "Active dataset",
@@ -2100,7 +2100,7 @@ const zhHant: OpenEnaCopy = {
   title: "開放 ENA",
   intro: "在同一工作區中使用 jENA 建構、檢視和比較認知網絡模型，並在相連的 2D 與互動式 3D 視圖之間切換。",
   navLabel: "開放 ENA",
-  modes: { sets: "分析集", data: "資料", model: "模型", plot: "繪圖工具", stats: "統計與匯出", ai: "AI 解讀" },
+  modes: { data: "資料", model: "模型", plot: "繪圖工具", stats: "統計與匯出", ai: "AI 解讀" },
   views: { twoD: "2D ENA", threeD: "3D ENA" },
   groupDisplay: {
     title: "已繪製群組與分析單位",
@@ -2415,7 +2415,7 @@ const zhHant: OpenEnaCopy = {
     },
   },
   sets: { ...en.sets, title: "分析集", description: "將端點模型保留在瀏覽器記憶體中，並比較共享同一參照幾何的擬合或投影網絡。", capture: "擷取目前模型", captureHint: "只擷取衍生座標與等權單位網絡平均值，不保留原始來源資料列；分析單位識別碼仍會保留，必要時請先假名化。", emptyTitle: "尚未擷取分析集", emptyText: "先建立端點模型，再在這裡擷取。擬合模型會安裝其可重用參照，使之後的 CSV 或 XLSX 檔案可投影到完全相同的 ENA 空間。", fitted: "擬合", projected: "投影", generatedReference: "可重用擬合參照", projectionReference: "已投影至參照", sourceHash: "分析資料表 SHA-256", hashScope: "雜湊範圍", primary: "主要分析集", secondary: "次要分析集", choosePrimary: "選擇主要分析集", chooseSecondary: "選擇相容的次要分析集", comparisonHint: "帶符號連線差異為共享固定幾何中的「主要減次要」。JSON 會保留分析單位識別碼；需要分享時請先假名化。", noCompatibleSecondary: "沒有可用的相容次要分析集。請在同一參照幾何中擷取或投影另一個端點模型。", remove: "移除", exportJson: "匯出比較 JSON", exportEdges: "匯出連線差異 CSV" },
-  data: { ...en.data, title: "從編碼資料開始", description: "在此瀏覽器開啟 CSV 或 XLSX 檔案，或載入已記錄的學院範例以查看完整流程。", upload: "開啟 CSV 或 XLSX", uploadHint: "CSV 或 XLSX，最多 5 MB、20,000 列；XLSX 使用第一個工作表", sample: "載入教學範例", trajectorySample: "載入 2D 軌跡範例", trajectorySampleHint: "54 筆合成資料 · 6 位學習者 · TP1–TP3 · 6 個編碼", noFile: "尚未載入資料", active: "使用中的資料集", rows: "資料列", columns: "欄位", source: "來源", local: "核心 ENA 運算保留在此瀏覽器；原始來源資料列不會傳送至可選的 AI 解讀服務。" },
+  data: { ...en.data, title: "從編碼資料開始", description: "在此瀏覽器開啟 CSV 或 XLSX 檔案，或載入已記錄的學院範例以查看完整流程。", upload: "開啟 CSV 或 XLSX", uploadHint: "CSV 或 XLSX，最多 5 MB、20,000 列；XLSX 使用第一個工作表", sample: "載入教學範例", trajectorySample: "載入 3D 軌跡範例", trajectorySampleHint: "54 筆合成資料 · 6 位學習者 · TP1–TP3 · 6 個編碼", noFile: "尚未載入資料", active: "使用中的資料集", rows: "資料列", columns: "欄位", source: "來源", local: "核心 ENA 運算保留在此瀏覽器；原始來源資料列不會傳送至可選的 AI 解讀服務。" },
   model: { ...en.model, title: "定義 ENA 模型", description: "對應賦予網絡分析意義的欄位，然後執行已驗證的 jENA 流程。", sequenceNote: "CSV 或 XLSX 資料列順序定義每段對話中的序列；若順序重要，請在分析前先排序來源檔案。", unit: "分析單位", conversation: "對話", group: "比較群組", identityHint: "可選一個或多個欄位；順序會定義複合識別。", noGroup: "不設比較群組（全部分析單位）", codes: "編碼", window: "窗口", movingWindow: "移動段落窗口", conversationWindow: "完整對話", back: "向後跨度（包括目前列）", forward: "向前資料列", configureTrajectory: "設定軌跡模型", modelType: "模型類型", endpoint: "端點（每個分析單位一個網絡）", separateTrajectory: "分離軌跡（每一步一個點）", accumulatedTrajectory: "累積軌跡（每一步為累積網絡）", trajectoryHint: "軌跡步驟依每個分析單位首次出現的對話順序排列；統計面板不會將重複步驟視為獨立分析單位。", rotation: "旋轉", svd: "SVD（資料變異）", means: "廣義均值旋轉（GMR）", center: "將零網絡分析單位置於原點", weighting: "加權", binary: "二元", run: "建立 ENA 模型", rerun: "重新建立模型", valid: "模型輸入有效" },
   plot: { ...en.plot, title: "調整研究視圖", description: "這些控制只改變呈現方式，不會在未提示下重新建立模型。", showPoints: "分析單位點", showNetworks: "群組網絡", showLabels: "編碼標籤", showTrajectories: "軌跡路徑", edgeScale: "連線寬度", axisX: "X 軸", axisY: "Y 軸", axisZ: "Z 軸", camera: "相機", cameraPosition: "相機位置", default3dCamera: "預設 3D 相機", isometric: "等距", xy: "X-Y 平面", xz: "X-Z 平面", yz: "Y-Z 平面", yx: "Y-X 平面", zx: "Z-X 平面", zy: "Z-Y 平面", reset: "重設視圖", threeDComparisonPlot: "比較圖", threeDPrimaryPlot: "主要圖", threeDSecondaryPlot: "次要圖", threeDPlotActions: "3D 繪圖操作", zoomIn: "放大", zoomOut: "縮小", recenter: "回正", copyImage: "複製圖片", copyImageTitle: "複製繪圖圖片到剪貼簿", fullscreenEnter: "進入全螢幕", fullscreenExit: "離開全螢幕", fullscreenDialog: "全螢幕 3D 圖", actionUnavailable: "3D 視圖操作無法使用", copyingImage: "正在複製圖片", imageCopied: "圖片已複製", imageDataCopied: "圖片資料已複製", copyUnavailable: "無法複製", fullscreenOpening: "正在開啟全螢幕", fullscreenFallbackEnabled: "已啟用全螢幕備用模式", fullscreenClosed: "全螢幕已關閉", fullscreenExitFailed: "原生全螢幕無法關閉。請按 Escape 離開。", fullscreenUnavailable: "全螢幕無法使用", threeDInteractionHint: "拖曳以旋轉；滾動或使用五個繪圖操作來放大、縮小、回正、複製圖片或進入全螢幕。此幾何只作描述，不屬推論證據。", sameFittedSpace: "沿用同一個已擬合 jENA 空間；切換 2D 與 3D 不會重新執行或重新擬合分析。", threeDExportHint: "使用 3D 繪圖工具列的複製圖片按鈕，把 PNG 放到剪貼簿。SVG 與高解析度 PNG 研究圖匯出只適用於 2D 視圖。", threeDLoading: "正在載入 3D 繪圖", threeDUnavailable: "互動式 3D 暫時無法使用。已擬合結果仍保持完整；請切回 2D 或重新載入此視圖。", threeDRequiresThreeDimensions: "3D ENA 需要已完成結果具有三個不同維度；2D 結果仍可使用。" },
   contrast: { ...en.contrast, title: "端點群組對比", description: "依序選擇主要與次要群組。中央圖以同一比例尺疊加兩個平均網絡；帶符號的「主要減次要」差異保留在證據表與匯出中。", primary: "主要群組", secondary: "次要群組", swap: "交換主要與次要群組", selectedOrder: "所選群組順序", selectedAxes: "所選座標軸", multiplicity: "此網絡對比只作描述；已確認的統計推論工作流程會在明確執行後套用固定 Holm 檢定族。", exportJson: "匯出群組對比 JSON", exportEdges: "匯出群組對比連線 CSV", requiresGroup: "無法使用群組對比：端點模型需要群組變項。", requiresTwoGroups: "無法使用群組對比：端點模型需要至少兩個不同群組。", endpointOnly: "無法使用群組對比：此功能只適用於端點模型。" },
@@ -2475,7 +2475,7 @@ const zhHans: OpenEnaCopy = {
   title: "开放 ENA",
   intro: "在同一工作区中使用 jENA 构建、查看和比较认知网络模型，并在相连的 2D 与交互式 3D 视图之间切换。",
   navLabel: "开放 ENA",
-  modes: { sets: "分析集", data: "数据", model: "模型", plot: "绘图工具", stats: "统计与导出", ai: "AI 解读" },
+  modes: { data: "数据", model: "模型", plot: "绘图工具", stats: "统计与导出", ai: "AI 解读" },
   views: { twoD: "2D ENA", threeD: "3D ENA" },
   groupDisplay: {
     title: "已绘制组与分析单位",
@@ -2790,7 +2790,7 @@ const zhHans: OpenEnaCopy = {
     },
   },
   sets: { ...zhHant.sets, title: "分析集", description: "将端点模型保留在浏览器内存中，并比较共享同一参考几何的拟合或投影网络。", capture: "捕获当前模型", captureHint: "只捕获派生坐标与等权单位网络均值，不保留原始来源数据行；分析单位标识符仍会保留，必要时请先假名化。", emptyTitle: "尚未捕获分析集", emptyText: "先构建端点模型，再在此捕获。拟合模型会安装其可复用参考，使之后的 CSV 或 XLSX 文件可投影到完全相同的 ENA 空间。", fitted: "拟合", projected: "投影", generatedReference: "可复用拟合参考", projectionReference: "已投影至参考", sourceHash: "分析数据表 SHA-256", hashScope: "哈希范围", primary: "主要分析集", secondary: "次要分析集", choosePrimary: "选择主要分析集", chooseSecondary: "选择兼容的次要分析集", comparisonHint: "带符号连线差异为共享固定几何中的“主要减次要”。JSON 会保留分析单位标识符；需要分享时请先假名化。", noCompatibleSecondary: "没有可用的兼容次要分析集。请在同一参考几何中捕获或投影另一个端点模型。", remove: "移除", exportJson: "导出比较 JSON", exportEdges: "导出连线差异 CSV" },
-  data: { ...zhHant.data, title: "从编码数据开始", description: "在此浏览器打开 CSV 或 XLSX 文件，或加载已有说明的学院示例以查看完整流程。", upload: "打开 CSV 或 XLSX", uploadHint: "CSV 或 XLSX，最多 5 MB、20,000 行；XLSX 使用第一个工作表", sample: "加载教学示例", trajectorySample: "加载 2D 轨迹示例", trajectorySampleHint: "54 条合成数据 · 6 位学习者 · TP1–TP3 · 6 个编码", noFile: "尚未加载数据", active: "当前数据集", rows: "数据行", columns: "字段", source: "来源", local: "核心 ENA 计算保留在此浏览器；原始来源数据行不会发送到可选的 AI 解读服务。" },
+  data: { ...zhHant.data, title: "从编码数据开始", description: "在此浏览器打开 CSV 或 XLSX 文件，或加载已有说明的学院示例以查看完整流程。", upload: "打开 CSV 或 XLSX", uploadHint: "CSV 或 XLSX，最多 5 MB、20,000 行；XLSX 使用第一个工作表", sample: "加载教学示例", trajectorySample: "加载 3D 轨迹示例", trajectorySampleHint: "54 条合成数据 · 6 位学习者 · TP1–TP3 · 6 个编码", noFile: "尚未加载数据", active: "当前数据集", rows: "数据行", columns: "字段", source: "来源", local: "核心 ENA 计算保留在此浏览器；原始来源数据行不会发送到可选的 AI 解读服务。" },
   model: { ...zhHant.model, title: "定义 ENA 模型", description: "映射赋予网络分析意义的字段，然后运行已验证的 jENA 流程。", sequenceNote: "CSV 或 XLSX 数据行顺序定义每段对话中的序列；若顺序重要，请在分析前先排序源文件。", unit: "分析单位", conversation: "对话", group: "比较组", identityHint: "可选一个或多个字段；顺序会定义复合标识。", noGroup: "不设比较组（全部分析单位）", codes: "编码", window: "窗口", movingWindow: "移动段落窗口", conversationWindow: "完整对话", back: "向后跨度（包括当前行）", forward: "向前数据行", configureTrajectory: "配置轨迹模型", modelType: "模型类型", endpoint: "端点（每个分析单位一个网络）", separateTrajectory: "分离轨迹（每一步一个点）", accumulatedTrajectory: "累积轨迹（每一步为累积网络）", trajectoryHint: "轨迹步骤按每个分析单位首次出现的对话顺序排列；统计面板不会将重复步骤视为独立分析单位。", rotation: "旋转", svd: "SVD（数据方差）", means: "广义均值旋转（GMR）", center: "将零网络分析单位置于原点", weighting: "加权", binary: "二元", run: "构建 ENA 模型", rerun: "重新构建模型", valid: "模型输入有效" },
   plot: { ...zhHant.plot, title: "调整研究视图", description: "这些控件只改变呈现方式，不会在未提示下重新构建模型。", showPoints: "分析单位点", showNetworks: "组网络", showLabels: "编码标签", showTrajectories: "轨迹路径", edgeScale: "连线宽度", axisX: "X 轴", axisY: "Y 轴", axisZ: "Z 轴", camera: "相机", cameraPosition: "相机位置", default3dCamera: "默认 3D 相机", isometric: "等距", xy: "X-Y 平面", xz: "X-Z 平面", yz: "Y-Z 平面", yx: "Y-X 平面", zx: "Z-X 平面", zy: "Z-Y 平面", reset: "重置视图", threeDComparisonPlot: "比较图", threeDPrimaryPlot: "主要图", threeDSecondaryPlot: "次要图", threeDPlotActions: "3D 绘图操作", zoomIn: "放大", zoomOut: "缩小", recenter: "回正", copyImage: "复制图片", copyImageTitle: "复制绘图图片到剪贴板", fullscreenEnter: "进入全屏", fullscreenExit: "退出全屏", fullscreenDialog: "全屏 3D 图", actionUnavailable: "3D 视图操作不可用", copyingImage: "正在复制图片", imageCopied: "图片已复制", imageDataCopied: "图片数据已复制", copyUnavailable: "无法复制", fullscreenOpening: "正在打开全屏", fullscreenFallbackEnabled: "已启用全屏备用模式", fullscreenClosed: "全屏已关闭", fullscreenExitFailed: "原生全屏无法关闭。请按 Escape 退出。", fullscreenUnavailable: "全屏不可用", threeDInteractionHint: "拖动以旋转；滚动或使用五个绘图操作来放大、缩小、回正、复制图片或进入全屏。此几何仅作描述，不属于推断证据。", sameFittedSpace: "沿用同一个已拟合 jENA 空间；切换 2D 与 3D 不会重新运行或重新拟合分析。", threeDExportHint: "使用 3D 绘图工具栏的复制图片按钮，把 PNG 放到剪贴板。SVG 与高分辨率 PNG 研究图导出仅适用于 2D 视图。", threeDLoading: "正在加载 3D 绘图", threeDUnavailable: "交互式 3D 暂时不可用。已拟合结果仍保持完整；请切回 2D 或重新加载此视图。", threeDRequiresThreeDimensions: "3D ENA 需要已完成结果具有三个不同维度；2D 结果仍可使用。" },
   contrast: { ...en.contrast, title: "端点组对比", description: "依次选择主要组和次要组。中央图以同一比例尺叠加两个平均网络；带符号的“主要减次要”差异保留在证据表与导出中。", primary: "主要组", secondary: "次要组", swap: "交换主要组和次要组", selectedOrder: "所选组顺序", selectedAxes: "所选坐标轴", multiplicity: "此网络对比仅作描述；已确认的统计推断工作流程会在明确运行后应用固定 Holm 检验族。", exportJson: "导出组对比 JSON", exportEdges: "导出组对比连线 CSV", requiresGroup: "无法使用组对比：端点模型需要分组变量。", requiresTwoGroups: "无法使用组对比：端点模型需要至少两个不同组。", endpointOnly: "无法使用组对比：此功能仅适用于端点模型。" },

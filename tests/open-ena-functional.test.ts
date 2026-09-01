@@ -304,7 +304,7 @@ test("source ingestion owns dataset generation and blocks analysis until the sou
   assert.match(workspace, /datasetGenerationRef\.current \+= 1/);
   assert.match(workspace, /const analysisGeneration = datasetGenerationRef\.current/);
   assert.match(workspace, /datasetGenerationRef\.current !== analysisGeneration/);
-  assert.match(workspace, /aria-busy=\{loading \|\| sourceBusy \|\| referenceBusy\}/);
+  assert.match(workspace, /aria-busy=\{loading \|\| sourceBusy\}/);
 });
 
 test("composite identities preserve declared order while codes remain in visible CSV-header order", () => {

@@ -96,22 +96,7 @@ import {
   type OpenEna3dCamera,
   type OpenEnaWorkspaceAxes,
 } from "@/lib/open-ena/plot3d";
-import {
-  buildReferenceRotationPackage,
-  parseRotationReference,
-  validateReferenceCompatibility,
-} from "@/lib/open-ena/reference";
-import {
-  buildAnalysisSet,
-  buildSetComparisonExport,
-  compareAnalysisSets,
-  haveCompatibleSetGeometry,
-  nextAnalysisSetRemovalFocusId,
-  removeAnalysisSet,
-  repairSetSelection,
-  setComparisonEdgesToCsv,
-  upsertAnalysisSet,
-} from "@/lib/open-ena/sets";
+import { buildReferenceRotationPackage } from "@/lib/open-ena/reference";
 import {
   JENA_RUNTIME_VERSION,
   JENA_SOURCE_COMMIT,
@@ -124,11 +109,9 @@ import {
   sameOpenEnaConfig,
   type AnalysisKind,
   type CameraPreset,
-  type OpenEnaAnalysisSet,
   type OpenEnaConfig,
   type OpenEnaMode,
   type OpenEnaResult,
-  type OpenEnaRotationReference,
   type OpenEnaView,
   type ParsedDataset,
 } from "@/lib/open-ena/types";
@@ -150,7 +133,6 @@ import OpenEnaGroupDisplayControls from "./OpenEnaGroupDisplayControls";
 import OpenEnaLongitudinalTrajectory from "./OpenEnaLongitudinalTrajectory";
 import OpenEnaLongitudinalWorkbenchV3 from "./OpenEnaLongitudinalWorkbenchV3";
 import OpenEnaPersistentPlotTools from "./OpenEnaPersistentPlotTools";
-import OpenEnaSetComparison from "./OpenEnaSetComparison";
 import OpenEnaAiInterpretation from "./OpenEnaAiInterpretation";
 import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
 import OpenEnaInferencePanel, {
@@ -168,6 +150,7 @@ type OpenEnaStatsTab = "comparison" | "goodness" | "variance";
 
 const MODEL_TAB_ORDER = ["units", "horizons", "windows", "codes"] as const;
 const STATS_TAB_ORDER = ["comparison", "goodness", "variance"] as const;
+const JENA_RAIL_DISPLAY_VERSION = JENA_RUNTIME_VERSION.split("-", 1)[0];
 const IDENTITY_BEARING_RESULT_TABLES = new Set<OpenEnaResultTableKey>([
   "coordinates",
   "lineWeights",
@@ -389,9 +372,6 @@ export function OpenEnaPersistentRailPanels({
 }
 
 const modeIcons: Record<OpenEnaMode, React.ReactNode> = {
-  sets: (
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v5H4zm0 8h16v5H4z" /><path d="M7 8h.01M7 16h.01" /></svg>
-  ),
   data: (
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v13H4zM4 10h16M9 5.5v13" /></svg>
   ),
@@ -413,12 +393,6 @@ async function sha256Hex(text: string) {
   const bytes = new TextEncoder().encode(text.replace(/^\uFEFF/, ""));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function fileSize(size: number) {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function downloadText(filename: string, contents: string, type: string) {
@@ -471,14 +445,8 @@ function toggleInHeaderOrder(headers: readonly string[], selected: readonly stri
 function validateWorkspaceConfig(
   dataset: ParsedDataset,
   config: OpenEnaConfig,
-  reference: OpenEnaRotationReference | null,
 ) {
-  const errors = validateConfig(dataset, config);
-  if (config.rotation === "reference") {
-    if (!reference) errors.push("The imported reference rotation is not available in this browser session.");
-    else errors.push(...validateReferenceCompatibility(config, reference));
-  }
-  return [...new Set(errors)];
+  return [...new Set(validateConfig(dataset, config))];
 }
 
 function orderPanelValueFromConfig(config: OpenEnaConfig): OpenEnaOrderPanelValue {
@@ -506,7 +474,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
     ["zx", copy.plot.zx],
     ["zy", copy.plot.zy],
   ];
-  const [mode, setMode] = useState<OpenEnaMode>("sets");
+  const [mode, setMode] = useState<OpenEnaMode>("data");
   const [modelTab, setModelTab] = useState<OpenEnaModelPanelTab>("units");
   const [trajectoryModelFocusRequest, setTrajectoryModelFocusRequest] = useState(0);
   const [statsTab, setStatsTab] = useState<OpenEnaStatsTab>("comparison");
@@ -525,22 +493,13 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
   const [resultConfig, setResultConfig] = useState<OpenEnaConfig | null>(null);
   const [datasetHash, setDatasetHash] = useState<string | null>(null);
   const [result, setResult] = useState<OpenEnaResult | null>(null);
-  const [rotationReference, setRotationReference] = useState<OpenEnaRotationReference | null>(null);
-  const [analysisSets, setAnalysisSets] = useState<OpenEnaAnalysisSet[]>([]);
-  const analysisSetRemoveButtonRefs = useRef(new Map<string, HTMLButtonElement>());
-  const captureSetButtonRef = useRef<HTMLButtonElement>(null);
-  const setsHeadingRef = useRef<HTMLHeadingElement>(null);
-  const [primarySetId, setPrimarySetId] = useState<string | null>(null);
-  const [secondarySetId, setSecondarySetId] = useState<string | null>(null);
   const [primaryGroupName, setPrimaryGroupName] = useState("");
   const [secondaryGroupName, setSecondaryGroupName] = useState("");
   const [groupDisplaySettingsByGroup, setGroupDisplaySettingsByGroup] = useState<OpenEnaGroupDisplaySettingsByGroup>({});
   const [hiddenUnitKeys, setHiddenUnitKeys] = useState<string[]>([]);
-  const [activeComparisonSurface, setActiveComparisonSurface] = useState<"groups" | "sets">("groups");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [sourceBusy, setSourceBusy] = useState(false);
-  const [referenceBusy, setReferenceBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressStage, setProgressStage] = useState<"accumulate" | "model">("accumulate");
   const [xDimension, setXDimension] = useState("SVD1");
@@ -593,11 +552,9 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
   const [dataViewContext, setDataViewContext] = useState<OpenEnaDataViewContext>("comparison");
   const [onaStatsContext, setOnaStatsContext] = useState<OpenEnaDataViewContext>("comparison");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const referenceInputRef = useRef<HTMLInputElement>(null);
   const plotSvgRef = useRef<SVGSVGElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const sourceAbortRef = useRef<AbortController | null>(null);
-  const referenceImportRef = useRef<object | null>(null);
   const datasetGenerationRef = useRef(0);
   const groupSelectionColumnRef = useRef<string | null>(null);
   const inferenceGenerationRef = useRef(0);
@@ -608,7 +565,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
   useEffect(() => () => {
     abortRef.current?.abort();
     sourceAbortRef.current?.abort();
-    referenceImportRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -618,8 +574,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
   }, [modelTab, trajectoryModelFocusRequest]);
 
   const configErrors = useMemo(
-    () => dataset ? validateWorkspaceConfig(dataset, config, rotationReference) : [],
-    [dataset, config, rotationReference],
+    () => dataset ? validateWorkspaceConfig(dataset, config) : [],
+    [dataset, config],
   );
   const currentAnalysisKind = analysisKindFor(config);
   const completedResultKind = useMemo(
@@ -636,7 +592,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
   const capabilityAnalysisKind = completedResultKind ?? currentAnalysisKind;
   const onaCapabilityDisabled = capabilityAnalysisKind === "ona";
   const resultIsStale = Boolean(result && resultConfig && !sameOpenEnaConfig(config, resultConfig));
-  const canRun = Boolean(dataset && configErrors.length === 0 && !sourceBusy && !referenceBusy && !loading);
+  const canRun = Boolean(dataset && configErrors.length === 0 && !sourceBusy && !loading);
   const manifest = useMemo(
     () => dataset && result && resultConfig
       ? buildManifest(dataset, resultConfig, result, datasetHash)
@@ -1322,52 +1278,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
     ],
   );
   const referenceMeanNotice = result ? referenceMeanRotationInterpretation(result, datasetHash) : null;
-  const primarySet = useMemo(
-    () => analysisSets.find((analysisSet) => analysisSet.id === primarySetId) ?? null,
-    [analysisSets, primarySetId],
-  );
-  const secondarySet = useMemo(
-    () => analysisSets.find((analysisSet) => analysisSet.id === secondarySetId) ?? null,
-    [analysisSets, secondarySetId],
-  );
-  const comparisonAxes = useMemo((): [string, string] => {
-    const dimensions = primarySet?.geometry.dimensions ?? [];
-    const x = dimensions.includes(xDimension) ? xDimension : dimensions[0] ?? "SVD1";
-    const y = dimensions.includes(yDimension) && yDimension !== x
-      ? yDimension
-      : dimensions.find((dimension) => dimension !== x) ?? "SVD2";
-    return [x, y];
-  }, [primarySet, xDimension, yDimension]);
-  const compatibleSecondarySets = useMemo(
-    () => primarySet
-      ? analysisSets.filter((analysisSet) => (
-          analysisSet.id !== primarySet.id
-          && haveCompatibleSetGeometry(primarySet, analysisSet)
-        ))
-      : [],
-    [analysisSets, primarySet],
-  );
-  const setComparison = useMemo(() => {
-    if (!primarySet || !secondarySet || !haveCompatibleSetGeometry(primarySet, secondarySet)) return null;
-    try {
-      return compareAnalysisSets(primarySet, secondarySet, comparisonAxes);
-    } catch {
-      return null;
-    }
-  }, [comparisonAxes, primarySet, secondarySet]);
-  const displayedComparisonSurface = completedResultKind === "ona"
-    ? "model"
-    : activeComparisonSurface === "sets" && setComparison
-    ? "sets"
-    : groupContrast
-      ? "groups"
-      : result
-        ? "model"
-      : setComparison
-        ? "sets"
-        : "model";
-  const activeSetComparison = completedResultKind !== "ona" && displayedComparisonSurface === "sets" ? setComparison : null;
-  const activeGroupContrast = completedResultKind !== "ona" && displayedComparisonSurface === "groups" ? groupContrast : null;
+  const activeGroupContrast = completedResultKind !== "ona" ? groupContrast : null;
   const activeGroupDisplay = activeGroupContrast ? derivedGroupDisplay : null;
   const dataViewAvailability = openEnaDataViewAvailability({
     view,
@@ -1495,8 +1406,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
     resultConfig,
     secondaryGroupName,
   ]);
-  const activeLongitudinalView = !activeSetComparison
-    && !activeGroupContrast
+  const activeLongitudinalView = !activeGroupContrast
     && result?.set.modelType !== "EndPoint"
     ? longitudinalView
     : null;
@@ -1516,16 +1426,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
       return null;
     }
   }, [aiLongitudinalView, currentInference, datasetHash, groupContrast, locale, result, resultConfig, resultIsStale]);
-  const currentProjectedResult = Boolean(
-    result
-    && resultConfig
-    && !resultIsStale
-    && result.set.modelType === "EndPoint"
-    && result.projectionReference
-    && rotationReference
-    && result.projectionReference.referenceId === rotationReference.referenceId,
-  );
-
   function installAnalysisConfig(nextConfig: OpenEnaConfig) {
     const next = cloneOpenEnaConfig(nextConfig);
     const nextFamilyDrafts = createAnalysisFamilyDrafts(next);
@@ -1597,78 +1497,18 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
     setTrajectoryModelFocusRequest((request) => request + 1);
   }
 
-  function captureCurrentAnalysisSet() {
-    if (completedResultKind === "ona") {
-      setError(copy.ona.unavailable.sets);
-      setMode("model");
-      return;
-    }
-    if (!dataset || !resultConfig || !result) {
-      setError("Build an endpoint model before capturing an analysis set.");
-      setMode("sets");
-      return;
-    }
-    if (result.set.modelType !== "EndPoint") {
-      setError("Trajectory models cannot be captured as comparison sets. Build an endpoint model, then capture it here.");
-      setMode("sets");
-      return;
-    }
-
-    try {
-      const captured = buildAnalysisSet(dataset, datasetHash, resultConfig, result);
-      const nextSets = upsertAnalysisSet(analysisSets, captured);
-      setAnalysisSets(nextSets);
-      if (captured.generatedReference) {
-        setRotationReference(captured.generatedReference);
-      }
-      if (!primarySetId || primarySetId === captured.id) {
-        setPrimarySetId(captured.id);
-      } else {
-        const selectedPrimary = analysisSets.find((analysisSet) => analysisSet.id === primarySetId);
-        if (!secondarySetId && selectedPrimary && haveCompatibleSetGeometry(selectedPrimary, captured)) {
-          setSecondarySetId(captured.id);
-          setActiveComparisonSurface("sets");
-        }
-      }
-      setError("");
-      setMode("sets");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-      setMode("sets");
-    }
-  }
-
-  function removeCapturedAnalysisSet(analysisSet: OpenEnaAnalysisSet, captureEnabled: boolean) {
-    const focusTargetId = nextAnalysisSetRemovalFocusId(
-      analysisSets.map((candidate) => candidate.id),
-      analysisSet.id,
-      captureEnabled,
-    );
-    const remaining = removeAnalysisSet(analysisSets, analysisSet.id);
-    const repaired = repairSetSelection(remaining, { primarySetId, secondarySetId });
-    setAnalysisSets(remaining);
-    setPrimarySetId(repaired.primarySetId);
-    setSecondarySetId(repaired.secondarySetId);
-    window.requestAnimationFrame(() => {
-      const focusTarget = analysisSetRemoveButtonRefs.current.get(focusTargetId)
-        ?? (focusTargetId === "open-ena-capture-set" ? captureSetButtonRef.current : null)
-        ?? setsHeadingRef.current;
-      focusTarget?.focus();
-    });
-  }
-
   async function runAnalysis(
     nextDataset = dataset,
     nextConfig = config,
     nextDatasetHash = datasetHash,
   ) {
-    if (!nextDataset || sourceAbortRef.current || referenceImportRef.current) return;
+    if (!nextDataset || sourceAbortRef.current) return;
     if (!nextDatasetHash) {
       setError("Commit the imported source and its SHA-256 binding before analysis.");
       return;
     }
     const analysisGeneration = datasetGenerationRef.current;
-    const errors = validateWorkspaceConfig(nextDataset, nextConfig, rotationReference);
+    const errors = validateWorkspaceConfig(nextDataset, nextConfig);
     if (errors.length) {
       setError(errors.join(" "));
       setMode("model");
@@ -1685,7 +1525,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
       const nextResult = await analyzeDatasetInWorker(nextDataset, nextConfig, {
         signal: controller.signal,
         datasetSha256: nextDatasetHash,
-        reference: nextConfig.rotation === "reference" ? rotationReference : null,
+        reference: null,
         onProgress: ({ progress: nextProgress, stage }) => {
           setProgress(Math.round(nextProgress * 100));
           setProgressStage(stage);
@@ -1703,7 +1543,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
       setInteractive3dAspectRatio(null);
       setView("2d");
       setMode(nextResult.set.modelType === "EndPoint" ? "model" : "plot");
-      setActiveComparisonSurface("groups");
       setCenterSurface("plot");
       setResultTable("coordinates");
       setShowTrajectories(true);
@@ -1728,8 +1567,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
   }
 
   async function loadSample() {
-    referenceImportRef.current = null;
-    setReferenceBusy(false);
     sourceAbortRef.current?.abort();
     const sourceController = new AbortController();
     sourceAbortRef.current = sourceController;
@@ -1774,8 +1611,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
   }
 
   async function loadTrajectorySample() {
-    referenceImportRef.current = null;
-    setReferenceBusy(false);
     sourceAbortRef.current?.abort();
     const sourceController = new AbortController();
     sourceAbortRef.current = sourceController;
@@ -1785,7 +1620,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
     setError("");
     try {
       const response = await fetch(TRAJECTORY_SAMPLE_DATASET_URL, { cache: "no-store", signal: sourceController.signal });
-      if (!response.ok) throw new Error(`The 2D trajectory sample could not be opened (${response.status}).`);
+      if (!response.ok) throw new Error(`The 3D trajectory sample could not be opened (${response.status}).`);
       const text = await response.text();
       if (sourceController.signal.aborted || sourceAbortRef.current !== sourceController || datasetGenerationRef.current !== sourceGeneration) return;
       const nextDataset = parseCsv(text, {
@@ -1820,8 +1655,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
   }
 
   async function openCodedData(file: File) {
-    referenceImportRef.current = null;
-    setReferenceBusy(false);
     sourceAbortRef.current?.abort();
     const sourceController = new AbortController();
     sourceAbortRef.current = sourceController;
@@ -1868,58 +1701,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
       if (sourceAbortRef.current === sourceController && datasetGenerationRef.current === sourceGeneration) {
         sourceAbortRef.current = null;
         setSourceBusy(false);
-      }
-    }
-  }
-
-  async function openReferenceRotation(file: File) {
-    if (sourceAbortRef.current) return;
-    if (currentAnalysisKind === "ona") {
-      setError(copy.ona.unavailable.reference);
-      setMode("model");
-      return;
-    }
-    const importToken = {};
-    referenceImportRef.current = importToken;
-    setReferenceBusy(true);
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setLoading(false);
-    setError("");
-    try {
-      if (file.size > 64 * 1024 * 1024) throw new Error("This browser can inspect reference or result-bundle JSON only when the file is 64 MB or smaller. Valid result bundles can be larger; use the dedicated compact Reference rotation JSON for dependable projection interchange.");
-      const text = await file.text();
-      if (referenceImportRef.current !== importToken) return;
-      const reference = parseRotationReference(text, file.name);
-      if (referenceImportRef.current !== importToken) return;
-      setRotationReference(reference);
-      updateConfig((current) => {
-        const hasReferenceCodes = reference.compatibility.codes.every((code) => dataset?.headers.includes(code));
-        return {
-          ...current,
-          model: "EndPoint",
-          codes: hasReferenceCodes ? [...reference.compatibility.codes] : current.codes,
-          window: reference.compatibility.window,
-          windowSizeBack: reference.compatibility.windowSizeBack === "Infinity"
-            ? current.windowSizeBack
-            : reference.compatibility.windowSizeBack,
-          windowSizeForward: reference.compatibility.windowSizeForward,
-          weightBy: reference.compatibility.weightBy,
-          centerAlignToOrigin: reference.compatibility.centerAlignToOrigin,
-          rotation: "reference",
-          referenceRotationId: reference.referenceId,
-        };
-      });
-      clearCompletedResult();
-      setMode("model");
-    } catch (caught) {
-      if (referenceImportRef.current !== importToken) return;
-      setError(caught instanceof Error ? caught.message : String(caught));
-      setMode("model");
-    } finally {
-      if (referenceImportRef.current === importToken) {
-        referenceImportRef.current = null;
-        setReferenceBusy(false);
       }
     }
   }
@@ -1972,11 +1753,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
   }
 
   function resetPlot() {
-    const activeDimensions = view === "3d"
-      ? result?.dimensions
-      : displayedComparisonSurface === "sets"
-      ? primarySet?.geometry.dimensions ?? result?.dimensions
-      : result?.dimensions ?? primarySet?.geometry.dimensions;
+    const activeDimensions = result?.dimensions;
     if (activeDimensions) {
       const activeAxisSurface = view === "3d" ? "3d" : "2d";
       const resetAxes = resetOpenEnaWorkspaceAxisSurface({
@@ -2124,206 +1901,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
     }
   }
 
-  function renderSetsPanel() {
-    const canCaptureCurrent = Boolean(
-      dataset
-      && datasetHash
-      && result
-      && resultConfig
-      && result.set.modelType === "EndPoint"
-      && completedResultKind !== "ona"
-      && !resultIsStale
-      && !loading
-      && !sourceBusy
-      && !referenceBusy,
-    );
-    const projectedSetCount = analysisSets.filter((analysisSet) => analysisSet.role === "projected").length;
-    const fittedSetCount = analysisSets.length - projectedSetCount;
-
-    return (
-      <div className="ena-control-content ena-sets-panel">
-        <div className="ena-panel-heading">
-          <p className="ena-panel-kicker">00 · Sets</p>
-          <h2 id="open-ena-sets-heading" ref={setsHeadingRef} tabIndex={-1}>{copy.sets.title}</h2>
-          <p>{copy.sets.description}</p>
-        </div>
-
-        <ol className="ena-sets-workflow" aria-label="Shared-space comparison workflow">
-          <li data-done={fittedSetCount > 0 ? "true" : "false"}>
-            <strong>Capture a fitted endpoint</strong>
-            <span>Its generated reference is installed for reuse.</span>
-          </li>
-          <li data-done={currentProjectedResult ? "true" : "false"}>
-            <strong>Build a target in that reference</strong>
-            <span>Open another CSV or XLSX file, choose the installed reference rotation, and rebuild.</span>
-          </li>
-          <li data-done={projectedSetCount > 0 ? "true" : "false"}>
-            <strong>Capture the projected endpoint</strong>
-            <span>The snapshot retains its reference lineage without raw rows.</span>
-          </li>
-          <li data-done={setComparison ? "true" : "false"}>
-            <strong>Choose Primary and Secondary</strong>
-            <span>Only compatible sets from one fixed geometry can be compared.</span>
-          </li>
-        </ol>
-
-        <div className="ena-sets-capture">
-          <button
-            id="open-ena-capture-set"
-            ref={captureSetButtonRef}
-            type="button"
-            className="ena-action-button ena-action-primary"
-            disabled={!canCaptureCurrent}
-            onClick={captureCurrentAnalysisSet}
-          >
-            {copy.sets.capture}
-          </button>
-          <p>{copy.sets.captureHint}</p>
-          {result && result.set.modelType !== "EndPoint" ? (
-            <p className="ena-sets-compatibility-note">Trajectory results cannot be captured. Rebuild an endpoint model to create a comparison set.</p>
-          ) : resultIsStale ? (
-            <p className="ena-sets-compatibility-note">The current result no longer matches the pending configuration. Rebuild it before capture.</p>
-          ) : result && !datasetHash ? (
-            <p className="ena-sets-compatibility-note">A verified dataset SHA-256 is required before capture.</p>
-          ) : null}
-        </div>
-
-        {analysisSets.length ? (
-          <div className="ena-sets-list" aria-label="Captured analysis sets">
-            {analysisSets.map((analysisSet) => {
-              const reference = analysisSet.generatedReference ?? analysisSet.projectionReference;
-              return (
-                <article className="ena-sets-card" data-role={analysisSet.role} key={analysisSet.id}>
-                  <div className="ena-sets-card-heading">
-                    <div>
-                      <strong>{analysisSet.name}</strong>
-                      <span className="ena-sets-role">{analysisSet.role === "fitted" ? copy.sets.fitted : copy.sets.projected}</span>
-                    </div>
-                    <button
-                      id={`open-ena-set-remove-${analysisSet.id}`}
-                      ref={(node) => {
-                        const buttonId = `open-ena-set-remove-${analysisSet.id}`;
-                        if (node) analysisSetRemoveButtonRefs.current.set(buttonId, node);
-                        else analysisSetRemoveButtonRefs.current.delete(buttonId);
-                      }}
-                      type="button"
-                      className="ena-sets-remove"
-                      aria-label={`Remove ${analysisSet.name}`}
-                      onClick={() => removeCapturedAnalysisSet(analysisSet, canCaptureCurrent)}
-                    >
-                      {copy.sets.remove}
-                    </button>
-                  </div>
-                  <dl>
-                    <div><dt>Dataset</dt><dd>{analysisSet.dataset.name}</dd></div>
-                    <div><dt>{copy.sets.sourceHash}</dt><dd title={analysisSet.dataset.normalizedUtf8TextSha256 ?? "Unavailable"}>{analysisSet.dataset.normalizedUtf8TextSha256 ?? "Unavailable"}</dd></div>
-                    <div><dt>{copy.sets.hashScope}</dt><dd>{analysisSet.dataset.hashKind ?? "legacy normalized UTF-8 text"}</dd></div>
-                    <div><dt>Role</dt><dd>{analysisSet.role}</dd></div>
-                    <div>
-                      <dt>{analysisSet.generatedReference ? copy.sets.generatedReference : copy.sets.projectionReference}</dt>
-                      <dd>{reference ? `${reference.name} · ${reference.referenceId}` : "Unavailable"}</dd>
-                    </div>
-                  </dl>
-                </article>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="ena-sets-empty">
-            <strong>{copy.sets.emptyTitle}</strong>
-            <p>{copy.sets.emptyText}</p>
-          </div>
-        )}
-
-        {analysisSets.length ? (
-          <section className="ena-sets-comparison-controls" aria-labelledby="ena-sets-compare-heading">
-            <h3 id="ena-sets-compare-heading">Compare captured sets</h3>
-            <label className="ena-field">
-              <span>{copy.sets.primary}</span>
-              <select
-                value={primarySetId ?? ""}
-                onChange={(event) => {
-                  const nextPrimaryId = event.target.value || null;
-                  const nextPrimary = analysisSets.find((analysisSet) => analysisSet.id === nextPrimaryId) ?? null;
-                  setPrimarySetId(nextPrimaryId);
-                  setActiveComparisonSurface("sets");
-                  if (!nextPrimary || !secondarySet || !haveCompatibleSetGeometry(nextPrimary, secondarySet)) {
-                    setSecondarySetId(null);
-                  }
-                }}
-              >
-                <option value="">{copy.sets.choosePrimary}</option>
-                {analysisSets
-                  .filter((analysisSet) => analysisSet.id !== secondarySetId)
-                  .map((analysisSet) => <option key={analysisSet.id} value={analysisSet.id}>{analysisSet.name}</option>)}
-              </select>
-            </label>
-            <label className="ena-field">
-              <span>{copy.sets.secondary}</span>
-              <select
-                value={secondarySetId ?? ""}
-                disabled={!primarySet}
-                onChange={(event) => {
-                  setSecondarySetId(event.target.value || null);
-                  setActiveComparisonSurface("sets");
-                }}
-              >
-                <option value="">{copy.sets.chooseSecondary}</option>
-                {compatibleSecondarySets
-                  .filter((analysisSet) => analysisSet.id !== primarySetId)
-                  .map((analysisSet) => <option key={analysisSet.id} value={analysisSet.id}>{analysisSet.name}</option>)}
-              </select>
-            </label>
-            <p>{copy.sets.comparisonHint}</p>
-            {primarySet && compatibleSecondarySets.length === 0 ? <p className="ena-sets-compatibility-note">{copy.sets.noCompatibleSecondary}</p> : null}
-            <p className="ena-export-identifier-note">{copy.stats.identityExportWarning}</p>
-            <div className="ena-sets-export-actions">
-              <button
-                type="button"
-                className="ena-action-button ena-action-secondary"
-                disabled={!setComparison || !primarySet || !secondarySet}
-                onClick={() => {
-                  if (setComparison && primarySet && secondarySet) {
-                    confirmOpenEnaIdentityBearingExport(
-                      (message) => window.confirm(message),
-                      copy.stats.identityExportConfirmation,
-                      () => downloadJson(
-                        `open-ena-${Date.now()}-set-comparison.json`,
-                        buildSetComparisonExport(setComparison),
-                      ),
-                    );
-                  }
-                }}
-              >
-                {copy.sets.exportJson} ↓
-              </button>
-              <button
-                type="button"
-                className="ena-action-button ena-action-secondary"
-                disabled={!setComparison}
-                onClick={() => {
-                  if (setComparison) {
-                    confirmOpenEnaIdentityBearingExport(
-                      (message) => window.confirm(message),
-                      copy.stats.identityExportConfirmation,
-                      () => downloadText(
-                        `open-ena-${Date.now()}-comparison-edges.csv`,
-                        setComparisonEdgesToCsv(setComparison),
-                        "text/csv;charset=utf-8",
-                      ),
-                    );
-                  }
-                }}
-              >
-                {copy.sets.exportEdges} ↓
-              </button>
-            </div>
-          </section>
-        ) : null}
-      </div>
-    );
-  }
-
   function renderDataPanel() {
     return (
       <div className="ena-control-content">
@@ -2346,87 +1923,20 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
               event.currentTarget.value = "";
             }}
           />
-          <input
-            ref={referenceInputRef}
-            type="file"
-            accept=".json,application/json"
-            hidden
-            tabIndex={-1}
-            aria-hidden="true"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void openReferenceRotation(file);
-              event.currentTarget.value = "";
-            }}
-          />
-          <button type="button" className="ena-action-button ena-action-primary" onClick={() => fileInputRef.current?.click()} disabled={referenceBusy}>
+          <button type="button" className="ena-action-button ena-action-primary" onClick={() => fileInputRef.current?.click()} disabled={sourceBusy || loading}>
             <span aria-hidden="true">＋</span> {copy.data.upload}
           </button>
           <p>{copy.data.uploadHint}</p>
-          <button type="button" className="ena-action-button ena-action-secondary" onClick={() => void loadSample()} disabled={sourceBusy || referenceBusy || loading}>
+          <button type="button" className="ena-action-button ena-action-secondary" onClick={() => void loadSample()} disabled={sourceBusy || loading}>
             <span aria-hidden="true">◇</span> {copy.data.sample}
           </button>
           <p>{copy.data.sampleHint}</p>
-          <button type="button" className="ena-action-button ena-action-secondary" onClick={() => void loadTrajectorySample()} disabled={sourceBusy || referenceBusy || loading}>
+          <button type="button" className="ena-action-button ena-action-secondary" onClick={() => void loadTrajectorySample()} disabled={sourceBusy || loading}>
             <span aria-hidden="true">↗</span> {copy.data.trajectorySample}
           </button>
           <p>{copy.data.trajectorySampleHint}</p>
         </div>
-        <div className="ena-local-note"><span aria-hidden="true">◉</span>{copy.data.local}</div>
-        <div className="ena-reference-card">
-          <div>
-            <strong>Shared ENA geometry</strong>
-            <span>Import a Reference rotation JSON to project endpoint data into the same fitted space. As a size-bounded convenience, this browser can also inspect compact raw-row-excluding result bundles up to 64 MB; valid bundles may be larger.</span>
-          </div>
-          <button
-            type="button"
-            className="ena-action-button ena-action-secondary"
-            onClick={() => referenceInputRef.current?.click()}
-            disabled={currentAnalysisKind === "ona" || sourceBusy || referenceBusy || loading}
-            title={currentAnalysisKind === "ona" ? copy.ona.unavailable.reference : undefined}
-          >
-            Import reference rotation
-          </button>
-          {rotationReference ? (
-            <div className="ena-reference-active" role="status">
-              <span><i />{rotationReference.name}</span>
-              <small>{rotationReference.compatibility.codes.length} codes · {rotationReference.compatibility.window}</small>
-              <small>Declared source metadata; structure is validated, but authorship and source identity are not independently verified.</small>
-              <button
-                type="button"
-                onClick={() => {
-                  setRotationReference(null);
-                  updateConfig((current) => ({ ...current, rotation: "svd", referenceRotationId: null }));
-                }}
-              >
-                Remove
-              </button>
-            </div>
-          ) : null}
-        </div>
-        {dataset ? (
-          <div className="ena-dataset-card" aria-live="polite">
-            <div className="ena-dataset-card-title">
-              <span>{copy.data.active}</span>
-              <strong>{dataset.name}</strong>
-            </div>
-            <dl>
-              <div><dt>{copy.data.rows}</dt><dd>{dataset.rows.length.toLocaleString()}</dd></div>
-              <div><dt>{copy.data.columns}</dt><dd>{dataset.headers.length}</dd></div>
-              <div><dt>{copy.data.source}</dt><dd>{dataset.source === "sample" ? "Academy sample" : fileSize(dataset.sizeBytes)}</dd></div>
-            </dl>
-            <div className="ena-data-preview" tabIndex={0} aria-label="Dataset preview">
-              <table>
-                <thead><tr>{dataset.headers.slice(0, 5).map((header) => <th key={header}>{header}</th>)}</tr></thead>
-                <tbody>
-                  {dataset.rows.slice(0, 4).map((row, index) => (
-                    <tr key={index}>{dataset.headers.slice(0, 5).map((header) => <td key={header}>{String(row[header] ?? "")}</td>)}</tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ) : <div className="ena-no-dataset">{copy.data.noFile}</div>}
+        {!dataset ? <div className="ena-no-dataset">{copy.data.noFile}</div> : null}
       </div>
     );
   }
@@ -2511,7 +2021,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
           value={currentAnalysisKind}
           onChange={selectAnalysisFamily}
           copy={copy.ona.family}
-          disabled={!dataset || loading || sourceBusy || referenceBusy}
+          disabled={!dataset || loading || sourceBusy}
         />
         <div className="ena-model-tabs" role="tablist" aria-label="Model configuration">
           {modelTabs.map((tab) => (
@@ -2640,7 +2150,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                       .filter((header) => !config.codes.includes(header))
                       .map((header) => ({ value: header, label: header }))}
                     copy={copy.ona.order}
-                    disabled={loading || sourceBusy || referenceBusy}
+                    disabled={loading || sourceBusy}
                     finiteWindowFallback={Number.isSafeInteger(config.windowSizeBack)
                       ? config.windowSizeBack
                       : 2}
@@ -2688,22 +2198,15 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                         return {
                           ...current,
                           rotation,
-                          referenceRotationId: rotation === "reference" ? rotationReference?.referenceId ?? null : null,
+                          referenceRotationId: null,
                         };
                       })}>
                         <option value="svd">{copy.model.svd}</option>
                         <option value="mean" disabled={config.model !== "EndPoint"}>{copy.model.means}</option>
-                        <option value="reference" disabled={config.model !== "EndPoint" || !rotationReference}>Project into reference rotation</option>
                       </select>
                     </label>
                   </div>
                   {config.model !== "EndPoint" ? <p className="ena-sequence-note">{copy.model.trajectoryHint}</p> : null}
-                  {config.rotation === "reference" && rotationReference ? (
-                    <div className="ena-reference-model-note" role="status">
-                      <strong>Reference space: {rotationReference.name}</strong>
-                      <span>Axes, center, and node positions remain fixed. Variance reports this dataset’s distribution in the reference basis.</span>
-                    </div>
-                  ) : null}
                   <div className="ena-two-fields ena-model-options">
                     <label className="ena-field">
                       <span>{copy.model.weighting}</span>
@@ -2768,7 +2271,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                       directionalMask: nextMask,
                     }))}
                     copy={copy.ona.mask}
-                    disabled={loading || sourceBusy || referenceBusy}
+                    disabled={loading || sourceBusy}
                   />
                 ) : null}
                 </>
@@ -3030,9 +2533,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
   function renderPlotPanel() {
     const dimensions = view === "3d"
       ? result?.dimensions ?? ["SVD1", "SVD2", "SVD3"]
-      : displayedComparisonSurface === "sets"
-      ? primarySet?.geometry.dimensions ?? result?.dimensions ?? ["SVD1", "SVD2", "SVD3"]
-      : result?.dimensions ?? primarySet?.geometry.dimensions ?? ["SVD1", "SVD2", "SVD3"];
+      : result?.dimensions ?? ["SVD1", "SVD2", "SVD3"];
     return (
       <div className="ena-control-content">
         <div className="ena-panel-heading">
@@ -3124,7 +2625,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                         if (secondaryGroupName === nextPrimary) {
                           setSecondaryGroupName(result.groups.find((group) => group.name !== nextPrimary)?.name ?? "");
                         }
-                        setActiveComparisonSurface("groups");
                       }}
                     >
                       {result.groups.map((group) => (
@@ -3142,7 +2642,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                         if (primaryGroupName === nextSecondary) {
                           setPrimaryGroupName(result.groups.find((group) => group.name !== nextSecondary)?.name ?? "");
                         }
-                        setActiveComparisonSurface("groups");
                       }}
                     >
                       {result.groups.map((group) => (
@@ -3158,7 +2657,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                   onClick={() => {
                     setPrimaryGroupName(secondaryGroupName);
                     setSecondaryGroupName(primaryGroupName);
-                    setActiveComparisonSurface("groups");
                   }}
                 >
                   {copy.contrast.swap} ↔
@@ -3166,7 +2664,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                 <p className="ena-group-contrast-order">
                   {copy.contrast.selectedOrder}: <strong>{primaryGroupName} → {secondaryGroupName}</strong>. {copy.contrast.multiplicity}
                 </p>
-                <p className="ena-export-identifier-note">{copy.stats.identityExportWarning}</p>
                 <div className="ena-two-fields ena-group-contrast-export-actions">
                   <button
                     type="button"
@@ -3221,7 +2718,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                   type="button"
                   className="ena-inline-link ena-group-display-shortcut"
                   onClick={() => {
-                    setActiveComparisonSurface("groups");
                     setModelTab("units");
                     setMode("model");
                   }}
@@ -3233,14 +2729,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
               <p className="ena-sets-compatibility-note">{groupContrastState.error}</p>
             )}
           </section>
-          {setComparison && result ? (
-            <div className="ena-surface-choice" role="group" aria-label="Active comparison surface">
-              <button type="button" aria-pressed={displayedComparisonSurface !== "sets"} onClick={() => setActiveComparisonSurface("groups")}>
-                {groupContrast ? "Current groups" : "Current model"}
-              </button>
-              <button type="button" aria-pressed={displayedComparisonSurface === "sets"} onClick={() => setActiveComparisonSurface("sets")}>Captured sets</button>
-            </div>
-          ) : null}
           </>}
           <div className="ena-switch-stack">
             {([
@@ -3300,10 +2788,9 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
           ) : null}
           <button type="button" className="ena-action-button ena-action-secondary" onClick={resetPlot}>{copy.plot.reset}</button>
           <div className="ena-two-fields ena-figure-exports">
-            <button type="button" className="ena-action-button ena-action-secondary" disabled={view === "3d" || (!result && !activeSetComparison)} onClick={exportPlotSvg}>Export SVG ↓</button>
-            <button type="button" className="ena-action-button ena-action-secondary" disabled={view === "3d" || (!result && !activeSetComparison)} onClick={exportPlotPng}>Export PNG ↓</button>
+            <button type="button" className="ena-action-button ena-action-secondary" disabled={view === "3d" || !result} onClick={exportPlotSvg}>Export SVG ↓</button>
+            <button type="button" className="ena-action-button ena-action-secondary" disabled={view === "3d" || !result} onClick={exportPlotPng}>Export PNG ↓</button>
           </div>
-          <p className="ena-export-identifier-note">{copy.stats.identityExportWarning}</p>
           {view === "3d" ? <p className="ena-plot-export-note">{copy.plot.threeDExportHint}</p> : null}
         </div>
       </div>
@@ -3695,12 +3182,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                     <p>{copy.stats.ui.allGroupDescription}</p>
                     {renderJenaTestContent()}
                   </section>
-                ) : (
-                  <section data-ena-stats-scope="fitted-model">
-                    <h3>{copy.stats.verifiedTests}</h3>
-                    {renderJenaTestContent()}
-                  </section>
-                )}
+                ) : null}
               </div>
               <div data-ena-stats-panel="goodness" hidden={statsTab !== "goodness"}>
                 <section>
@@ -3762,24 +3244,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
               </div>
             </div>
             <div className="ena-stats-export-region" data-ena-stats-export="true">
-              <section className="ena-manifest-section">
-              <h3>{copy.stats.manifest}</h3>
-              <dl>
-                <div><dt>jENA</dt><dd>v{JENA_RUNTIME_VERSION}</dd></div>
-                <div><dt>{copy.model.unit}</dt><dd>{manifestConfig.unitColumns.join(" + ")}</dd></div>
-                <div><dt>{copy.model.conversation}</dt><dd>{manifestConfig.conversationColumns.join(" + ")}</dd></div>
-                <div><dt>{copy.model.modelType}</dt><dd>{manifestConfig.model}</dd></div>
-                <div><dt>{copy.model.window}</dt><dd>{manifestConfig.window}</dd></div>
-                <div><dt>{copy.model.rotation}</dt><dd>{manifestConfig.rotation}</dd></div>
-                {result.projectionReference ? <div><dt>{copy.stats.ui.referenceSpace}</dt><dd>{result.projectionReference.name}</dd></div> : null}
-                <div><dt>{copy.model.forward}</dt><dd>{manifestConfig.windowSizeForward}</dd></div>
-                <div>
-                  <dt>{copy.sets.sourceHash}</dt>
-                  <dd title={datasetHash ?? copy.stats.ui.notRecorded}>{datasetHash ? `${datasetHash.slice(0, 12)}…` : "—"}</dd>
-                </div>
-                <div><dt>{copy.sets.hashScope}</dt><dd>{dataset?.hashKind ?? copy.stats.ui.legacyHashScope}</dd></div>
-              </dl>
-              <p className="ena-export-identifier-note">{copy.stats.identityExportWarning}</p>
               <div className="ena-export-stack">
                 <button
                   type="button"
@@ -3853,11 +3317,9 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                   {copy.stats.ui.referenceRotationJson} <span aria-hidden="true">↓</span>
                 </button>
               </div>
-            </section>
             <section className="ena-methods-section" aria-label={copy.stats.ui.methodsTitle}>
               <h3>{copy.stats.ui.methodsTitle}</h3>
               <p>{copy.stats.ui.methodsDescription}</p>
-              <p className="ena-export-identifier-note">{copy.stats.identityExportWarning}</p>
               <div className="ena-two-fields">
                 <button
                   type="button"
@@ -3891,8 +3353,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                 </details>
               ) : null}
               </section>
-              {renderResultTables()}
-              {renderSourceEvidence()}
             </div>
           </div>
         )}
@@ -4047,7 +3507,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
           );
         }}
         contextOptions={contextOptions}
-        notice={ordered ? copy.ona.dataView.localIdentityWarning : copy.stats.identityExportWarning}
+        notice={ordered ? copy.ona.dataView.localIdentityWarning : undefined}
         copy={ordered ? {
           ariaLabel: copy.ona.dataView.ariaLabel,
           title: copy.ona.dataView.title,
@@ -4079,9 +3539,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
     );
   }
 
-  const analysisPanel = mode === "sets"
-    ? renderSetsPanel()
-    : mode === "data"
+  const analysisPanel = mode === "data"
       ? renderDataPanel()
       : mode === "model"
         ? renderModelPanel()
@@ -4148,7 +3606,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
       dir={workspaceIsLocalized ? undefined : "ltr"}
     >
       <OpenEnaFallbackNotice locale={locale} />
-      <section className="open-ena-workbench" aria-label="Open ENA analysis workspace" aria-busy={loading || sourceBusy || referenceBusy}>
+      <section className="open-ena-workbench" aria-label="Open ENA analysis workspace" aria-busy={loading || sourceBusy}>
         <div className="ena-workbench-grid">
           <nav className="ena-tool-rail" aria-label="Analysis modes" data-ena-workbench-region="rail">
             <div className="ena-rail-brand" data-ena-rail-brand="true" aria-label="ENA.HK Open ENA">
@@ -4162,7 +3620,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                 rel="noopener noreferrer"
                 aria-label={copy.workspace.jenaSourceAriaLabel(JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT.slice(0, 7))}
                 title={copy.workspace.jenaSourceAriaLabel(JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT.slice(0, 7))}
-              >jENA {JENA_RUNTIME_VERSION} · {copy.workspace.jenaSourceLabel}</a>
+              >jENA {JENA_RAIL_DISPLAY_VERSION}</a>
             </div>
             <div className="ena-rail-modes">
               {(Object.keys(copy.modes) as OpenEnaMode[]).map((item) => (
@@ -4172,10 +3630,10 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                   className="ena-rail-button"
                   aria-current={mode === item ? "step" : undefined}
                   aria-label={item === "ai" ? copy.aiInterpretation.title : copy.modes[item]}
-                  title={onaCapabilityDisabled && (item === "sets" || item === "ai")
-                    ? item === "sets" ? copy.ona.unavailable.sets : copy.ona.unavailable.ai
+                  title={onaCapabilityDisabled && item === "ai"
+                    ? copy.ona.unavailable.ai
                     : item === "ai" ? copy.aiInterpretation.title : copy.modes[item]}
-                  disabled={onaCapabilityDisabled && (item === "sets" || item === "ai")}
+                  disabled={onaCapabilityDisabled && item === "ai"}
                   onClick={() => setMode(item)}
                 >
                   {modeIcons[item]}
@@ -4196,7 +3654,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
             <div className="ena-rail-meta">
               <div
                 className="ena-run-status"
-                data-state={loading || sourceBusy || referenceBusy ? "running" : result ? "result" : "ready"}
+                data-state={loading || sourceBusy ? "running" : result ? "result" : "ready"}
                 role="status"
                 aria-live="polite"
                 aria-atomic="true"
@@ -4209,8 +3667,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                 <span aria-hidden="true" />
                 <span className="ena-rail-status-label">{sourceBusy
                   ? "Preparing"
-                  : referenceBusy
-                    ? "Reference"
                   : loading
                     ? `${progress}%`
                   : resultIsStale
@@ -4255,8 +3711,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                   ? activeGroupContrast
                     ? `${copy.workspace.comparison} · ${copy.views.threeD}`
                     : copy.views.threeD
-                  : activeSetComparison
-                  ? copy.workspace.comparison
                   : activeGroupContrast
                     ? copy.workspace.comparison
                     : activeLongitudinalView
@@ -4268,8 +3722,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                   ? activeGroupContrast
                     ? `${activeGroupContrast.primary.name} − ${activeGroupContrast.secondary.name} · ${threeDDimensions[0]} × ${threeDDimensions[1]} × ${threeDDimensions[2]} · linked camera`
                     : `${threeDDimensions[0]} × ${threeDDimensions[1]} × ${threeDDimensions[2]} · ${copy.plot.sameFittedSpace}`
-                  : activeSetComparison
-                  ? `${activeSetComparison.primary.name} − ${activeSetComparison.secondary.name} · shared ${activeSetComparison.axes[0]} × ${activeSetComparison.axes[1]}`
                   : activeGroupContrast
                     ? `${activeGroupContrast.groupOrder[0]} − ${activeGroupContrast.groupOrder[1]} · fixed ${officialPlotAxisLabel(activeGroupContrast.axes[0])} × ${officialPlotAxisLabel(activeGroupContrast.axes[1])}`
                   : activeLongitudinalView
@@ -4491,22 +3943,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                 svgRef={plotSvgRef}
               />
               </>
-            ) : activeSetComparison && view === "2d" ? (
-              <OpenEnaSetComparison
-                codeColors={codeColors}
-                comparison={activeSetComparison}
-                edgeThreshold={edgeThreshold}
-                showPoints={showPoints}
-                showNetworks={showNetworks}
-                showLabels={showLabels}
-                showUnitLabels={showUnitLabels}
-                edgeScale={edgeScale}
-                pointScale={pointScale}
-                plotZoom={plotZoom}
-                flipX={flipX}
-                flipY={flipY}
-                svgRef={plotSvgRef}
-              />
             ) : loading && !result ? (
               <div className="ena-loading-surface" aria-live="polite">
                 <div className="ena-loading-network" aria-hidden="true"><i /><i /><i /><i /><span /><span /><span /></div>
@@ -4771,7 +4207,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                           </li>
                           <li data-done="false"><span className="sr-only">Not complete: </span>Build the model with jENA</li>
                         </ol>
-                        <button type="button" className="ena-action-button ena-action-primary" onClick={() => void loadSample()} disabled={sourceBusy || referenceBusy || loading}>{copy.data.sample}</button>
+                        <button type="button" className="ena-action-button ena-action-primary" onClick={() => void loadSample()} disabled={sourceBusy || loading}>{copy.data.sample}</button>
                       </div>
                     </div>
                   </figure>

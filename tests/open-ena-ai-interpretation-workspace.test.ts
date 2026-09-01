@@ -58,7 +58,7 @@ function workspaceAiPanel() {
   return sourceBlock(workspace, /function renderAiPanel\(\)/, "renderAiPanel");
 }
 
-test("AI interpretation is a dedicated sixth rail mode sourced from Stats results", () => {
+test("AI interpretation is a dedicated fifth rail mode sourced from Stats results", () => {
   assert.equal(
     existsSync(aiComponentPath),
     true,
@@ -83,27 +83,26 @@ test("AI interpretation is a dedicated sixth rail mode sourced from Stats result
 
   assert.match(
     types,
-    /export type OpenEnaMode\s*=\s*"sets"\s*\|\s*"data"\s*\|\s*"model"\s*\|\s*"plot"\s*\|\s*"stats"\s*\|\s*"ai"\s*;/,
+    /export type OpenEnaMode\s*=\s*"data"\s*\|\s*"model"\s*\|\s*"plot"\s*\|\s*"stats"\s*\|\s*"ai"\s*;/,
     "AI interpretation must be an explicit mode after Stats",
   );
   const iconStart = workspace.indexOf("const modeIcons:");
   const iconEnd = workspace.indexOf("async function sha256Hex", iconStart);
-  assert.ok(iconStart >= 0 && iconEnd > iconStart, "all six rail icons must remain explicit");
+  assert.ok(iconStart >= 0 && iconEnd > iconStart, "all five rail icons must remain explicit");
   const iconBlock = workspace.slice(iconStart, iconEnd);
   assert.deepEqual(
-    [...iconBlock.matchAll(/^\s{2}(sets|data|model|plot|stats|ai):\s*\(/gm)].map((match) => match[1]),
-    ["sets", "data", "model", "plot", "stats", "ai"],
-    "AI must follow the five existing workbench modes",
+    [...iconBlock.matchAll(/^\s{2}(data|model|plot|stats|ai):\s*\(/gm)].map((match) => match[1]),
+    ["data", "model", "plot", "stats", "ai"],
+    "AI must follow the four remaining analysis modes",
   );
-  assert.equal((iconBlock.match(/<svg\b/g) ?? []).length, 6, "the rail must contain one icon for every mode");
+  assert.equal((iconBlock.match(/<svg\b/g) ?? []).length, 5, "the rail must contain one icon for every mode");
   for (const svgContract of [
-    /sets:\s*\([\s\S]*?M4 5\.5h16v5H4zm0 8h16v5H4z[\s\S]*?M7 8h\.01M7 16h\.01/,
     /data:\s*\([\s\S]*?M4 5\.5h16v13H4zM4 10h16M9 5\.5v13/,
     /model:\s*\([\s\S]*?cx="6" cy="7" r="2\.2"[\s\S]*?cx="18" cy="6" r="2\.2"[\s\S]*?cx="12" cy="18" r="2\.2"[\s\S]*?m8 7 7\.8-\.8M7\.4 8\.7l3\.5 7\.4m5\.6-8\.2-3\.4 8\.2/,
     /plot:\s*\([\s\S]*?M4 19\.5V4\.5M4 19\.5h16[\s\S]*?m6\.5 15 4-4 3 2 5-6/,
     /stats:\s*\([\s\S]*?M5 19V11h3v8zm6 0V5h3v14zm6 0V8h3v11z/,
   ]) {
-    assert.match(iconBlock, svgContract, "each of the five existing rail SVG designs must remain unchanged");
+    assert.match(iconBlock, svgContract, "each of the four remaining rail SVG designs must remain unchanged");
   }
   assert.match(iconBlock, /ai:\s*\([\s\S]*?<rect x="3\.5" y="4" width="17" height="16" rx="4"[\s\S]*?m7\.5 15 2\.2-6 2\.2 6M8\.2 13h3M15 9v6/);
 });
@@ -123,10 +122,8 @@ test("AI panel uses a provider-neutral kicker and enlarges the requested review 
     globalStyles,
     /\.ena-ai-disclosure\s*\{[\s\S]*?font-size:\s*calc\(0\.66rem \+ var\(--ena-font-step, 1px\)\);/,
   );
-  assert.match(
-    globalStyles,
-    /\.ena-ai-privacy\s*\{[\s\S]*?font-size:\s*calc\(0\.68rem \+ var\(--ena-font-step, 1px\)\);/,
-  );
+  assert.doesNotMatch(globalStyles, /\.ena-ai-privacy\b/);
+  assert.doesNotMatch(globalStyles, /\.ena-ai-provider-disclosure\b/);
   assert.match(
     globalStyles,
     /\.ena-ai-disabled-reason\s*\{[\s\S]*?font-size:\s*calc\(0\.68rem \+ var\(--ena-font-step, 1px\)\);/,
@@ -514,10 +511,9 @@ test("en, zh-Hant, and zh-Hans provide complete AI UI, disclosure, and truthful 
 
   for (const locale of ["en", "zh-hant", "zh-hans"] as const) {
     const modeKeys = Object.keys(getOpenEnaCopy(locale).modes);
-    assert.deepEqual(modeKeys, ["sets", "data", "model", "plot", "stats", "ai"], `${locale} must expose AI after Stats`);
+    assert.deepEqual(modeKeys, ["data", "model", "plot", "stats", "ai"], `${locale} must expose AI after Stats`);
   }
   assert.deepEqual(getOpenEnaCopy("en").modes, {
-    sets: "Sets",
     data: "Data",
     model: "Model",
     plot: "Plot Tools",
@@ -525,7 +521,6 @@ test("en, zh-Hant, and zh-Hans provide complete AI UI, disclosure, and truthful 
     ai: "AI",
   });
   assert.deepEqual(getOpenEnaCopy("zh-hant").modes, {
-    sets: "分析集",
     data: "資料",
     model: "模型",
     plot: "繪圖工具",
@@ -533,7 +528,6 @@ test("en, zh-Hant, and zh-Hans provide complete AI UI, disclosure, and truthful 
     ai: "AI 解讀",
   });
   assert.deepEqual(getOpenEnaCopy("zh-hans").modes, {
-    sets: "分析集",
     data: "数据",
     model: "模型",
     plot: "绘图工具",

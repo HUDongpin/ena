@@ -20,8 +20,9 @@ const source = existsSync(componentPath) ? readFileSync(componentPath, "utf8") :
 
 test("Comparison exposes three native research-design radios without another tablist or method picker", () => {
   assert.ok(source, "the controlled inference panel must exist");
-  assert.match(source, /<fieldset[^>]*data-ena-inference-design/);
-  assert.match(source, /<legend>\{copy\.designLegend\}<\/legend>/);
+  assert.match(source, /<div[^>]*role="radiogroup"[^>]*data-ena-inference-design/);
+  assert.match(source, /aria-label=\{copy\.designLegend\}/);
+  assert.doesNotMatch(source, /<legend>\{copy\.designLegend\}<\/legend>/);
   assert.match(source, /type="radio"/);
   assert.match(source, /designIndependent/);
   assert.match(source, /designPaired/);
@@ -578,7 +579,7 @@ function availableRepeatedInference(): OpenEnaInferenceResultV2 {
 
 test("server-rendered endpoint UI is pre-run by default and keeps unavailable longitudinal designs visible with reasons", () => {
   const markup = renderToStaticMarkup(createElement(OpenEnaInferencePanel, panelProps()));
-  assert.match(markup, /<fieldset[^>]*data-ena-inference-design="true"/);
+  assert.match(markup, /<div[^>]*role="radiogroup"[^>]*data-ena-inference-design="true"/);
   assert.equal((markup.match(/type="radio"/g) ?? []).length, 3);
   assert.match(markup, /Paired-period inference requires a successful trajectory model/);
   assert.match(markup, /Repeated-period inference requires a successful trajectory model/);
@@ -609,9 +610,9 @@ test("trajectory one-period independent UI exposes composite identity, time, per
     design: "independent",
     inference: availableTrajectoryIndependentInference(),
   }));
-  const designFieldset = markup.match(/<fieldset[^>]*data-ena-inference-design="true"[\s\S]*?<\/fieldset>/)?.[0] ?? "";
-  assert.equal((designFieldset.match(/type="radio"/g) ?? []).length, 3);
-  assert.doesNotMatch(designFieldset, /disabled=""/);
+  const designGroup = markup.match(/<div[^>]*data-ena-inference-design="true"[\s\S]*?<\/div>/)?.[0] ?? "";
+  assert.equal((designGroup.match(/type="radio"/g) ?? []).length, 3);
+  assert.doesNotMatch(designGroup, /disabled=""/);
   assert.match(markup, /Composite repeated-entity identity/);
   assert.match(markup, />Group<|>Name</);
   assert.match(markup, /I confirm this composite identity/);

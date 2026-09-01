@@ -17,7 +17,7 @@ import {
 
 const projectRoot = process.cwd();
 
-test("the bundled 2D trajectory sample produces complete TP1 to TP3 group and individual paths", async () => {
+test("the bundled 3D trajectory sample produces complete TP1 to TP3 group and individual paths", async () => {
   assert.equal(TRAJECTORY_SAMPLE_DATASET_URL, "/data/academy/ena-2d-trajectory-teaching-sample.csv");
   const text = readFileSync(join(projectRoot, "public", TRAJECTORY_SAMPLE_DATASET_URL), "utf8");
   const dataset = parseCsv(text, { name: "ena-2d-trajectory-teaching-sample.csv", source: "sample" });
@@ -113,7 +113,9 @@ test("the Data panel exposes the synthetic TP1 to TP3 sample without enabling na
 
   assert.match(workspace, /loadTrajectorySample/);
   assert.match(workspace, /copy\.data\.trajectorySample/);
-  assert.match(copy, /trajectorySample:\s*"Load 2D trajectory sample"/);
+  assert.match(copy, /trajectorySample:\s*"Load 3D trajectory sample"/);
+  assert.match(copy, /trajectorySample:\s*"載入 3D 軌跡範例"/);
+  assert.match(copy, /trajectorySample:\s*"加载 3D 轨迹示例"/);
   assert.match(copy, /TP1(?:–|-)TP3/);
   assert.doesNotMatch(workspace, /accept="[^"]*\.RData/i);
 });

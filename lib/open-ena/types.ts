@@ -1,7 +1,7 @@
 import type { ENASet, ENAStatsResult, ModelType, RotationSet, Row, WindowType } from "jena-js";
 import type { ENAWorkerOptions } from "jena-js/browser";
 
-export type OpenEnaMode = "sets" | "data" | "model" | "plot" | "stats" | "ai";
+export type OpenEnaMode = "data" | "model" | "plot" | "stats" | "ai";
 export type OpenEnaView = "2d" | "3d";
 export type CameraPreset = "isometric" | "xy" | "xz" | "yz" | "yx" | "zx" | "zy";
 export type AnalysisKind = "ena" | "ona";

@@ -79,7 +79,6 @@ test("the selected code-color map is passed to every Open ENA network renderer a
   const workspace = source("components/open-ena/OpenEnaWorkspace.tsx");
 
   for (const component of [
-    "OpenEnaSetComparison",
     "OpenEnaLongitudinalTrajectory",
     "OpenEnaGroupContrast",
     "OpenEnaPlot",
