@@ -27,13 +27,15 @@ function fontSizesForSelector(css: string, selector: string) {
 function ruleBodyForSelector(css: string, selector: string) {
   css = css.replace(/\/\*[\s\S]*?\*\//gu, "");
   const rulePattern = /([^{}]+)\{([^{}]*)\}/g;
+  const bodies: string[] = [];
 
   for (const match of css.matchAll(rulePattern)) {
     const selectors = match[1].split(",").map((entry) => entry.trim());
-    if (selectors.includes(selector)) return match[2];
+    if (selectors.length === 1 && selectors[0] === selector) bodies.push(match[2]);
   }
 
-  assert.fail("Missing CSS selector: " + selector);
+  assert.equal(bodies.length, 1, `Expected exactly one CSS rule for selector ${selector}; found ${bodies.length}`);
+  return bodies[0];
 }
 
 test("the premium public design is mounted only on the requested page families", () => {
@@ -67,12 +69,13 @@ test("the premium layer is isolated in a separately imported stylesheet", () => 
 
 test("the Home page uses a plain paper background without removing purposeful lines", () => {
   const premiumCss = source("app", "premium-public.css");
+  const basePremiumCss = premiumCss.split("@media", 1)[0];
   const globalCss = source("app", "globals.css");
   const homeBackground = ruleBodyForSelector(premiumCss, ".premium-home");
   const premiumRoot = ruleBodyForSelector(premiumCss, ".premium-public-page");
-  const networkFigure = ruleBodyForSelector(premiumCss, ".premium-home .network-figure");
-  const openEnaFrame = ruleBodyForSelector(premiumCss, ".premium-home .open-ena-home-section::after");
-  const workflowConnector = ruleBodyForSelector(premiumCss, ".premium-home .workflow-grid::before");
+  const networkFigure = ruleBodyForSelector(basePremiumCss, ".premium-home .network-figure");
+  const openEnaFrame = ruleBodyForSelector(basePremiumCss, ".premium-home .open-ena-home-section::after");
+  const workflowConnector = ruleBodyForSelector(basePremiumCss, ".premium-home .workflow-grid::before");
 
   assert.equal(homeBackground.replace(/\s+/gu, " ").trim(), "background: var(--page);");
   assert.doesNotMatch(homeBackground, /linear-gradient|120px/u);
