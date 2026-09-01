@@ -1,7 +1,9 @@
 # Home Initiator Credit, Footer Cleanup, and Scroll Progress Ring Design
 
-**Date:** 2026-09-01  
-**Status:** Approved for specification review  
+**Date:** 2026-09-01
+
+**Status:** Approved for specification review
+
 **Scope:** ENA.HK public locale routes
 
 ## Objective
