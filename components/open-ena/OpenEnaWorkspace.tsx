@@ -128,6 +128,7 @@ import {
 import OpenEnaPlot, { MiniNetwork } from "./OpenEnaPlot";
 import OpenEnaInteractive3DPlot from "./OpenEnaInteractive3DPlot";
 import OpenEna3DGroupContrast from "./OpenEna3DGroupContrast";
+import OpenEna3DOrderedResultLayout from "./OpenEna3DOrderedResultLayout";
 import OpenEnaDataView, {
   type OpenEnaDataViewColumn,
   type OpenEnaDataViewContext,
@@ -1754,10 +1755,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
   }
 
   function selectVisualizationView(nextView: OpenEnaView) {
-    if (nextView === "3d" && completedResultKind === "ona") {
-      setError(copy.ona.unavailable.threeD);
-      return;
-    }
     if (nextView === "3d" && !genericThreeDAvailable) {
       setError(copy.plot.threeDRequiresThreeDimensions);
       return;
@@ -3810,25 +3807,21 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                       type="button"
                       aria-pressed={view === "3d"}
                       onClick={() => selectVisualizationView("3d")}
-                      disabled={completedResultKind === "ona" || !genericThreeDAvailable}
-                      aria-describedby={result && completedResultKind !== "ona" && !genericThreeDAvailable
+                      disabled={!genericThreeDAvailable}
+                      aria-describedby={result && !genericThreeDAvailable
                         ? "open-ena-three-d-unavailable-reason"
                         : undefined}
-                      title={completedResultKind === "ona"
-                        ? copy.ona.unavailable.threeD
-                        : !genericThreeDAvailable
+                      title={!genericThreeDAvailable
                           ? copy.plot.threeDRequiresThreeDimensions
                           : undefined}
-                      aria-label={completedResultKind === "ona"
-                        ? copy.ona.unavailable.threeD
-                        : !genericThreeDAvailable
+                      aria-label={!genericThreeDAvailable
                           ? `${copy.views.threeD}. ${copy.plot.threeDRequiresThreeDimensions}`
                         : `${copy.views.threeD}. ${copy.plot.threeDInteractionHint}`}
                     >
                       <strong>{copy.views.threeD}</strong>
                     </button>
                   </div>
-                  {completedResultKind !== "ona" && result && !genericThreeDAvailable ? (
+                  {result && !genericThreeDAvailable ? (
                     <p id="open-ena-three-d-unavailable-reason" className="ena-three-d-unavailable-note">
                       {copy.plot.threeDRequiresThreeDimensions}
                     </p>
@@ -3963,40 +3956,75 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                   <button type="button" onClick={() => abortRef.current?.abort()}>{copy.ona.workspace.cancel}</button>
                 </div>
               ) : null}
-              <OpenEnaOrderedResultLayout
-                result={result}
-                config={resultConfig}
-                primaryGroupName={primaryGroupName || null}
-                secondaryGroupName={secondaryGroupName || null}
-                centerMode={effectiveCenterSurface}
-                dataView={effectiveCenterSurface === "data" ? (
-                  <div data-testid="open-ena-center-data-view">
-                    {renderResultData()}
-                  </div>
-                ) : null}
-                rightTools={persistentPlotTools}
-                xDimension={xDimension}
-                yDimension={yDimension}
-                edgeThreshold={edgeThreshold}
-                edgeScale={edgeScale}
-                pointScale={pointScale}
-                textScale={textScale}
-                plotZoom={plotZoom}
-                flipX={flipX}
-                flipY={flipY}
-                showPoints={showPoints}
-                showNetworks={showNetworks}
-                showLabels={showLabels}
-                showUnitLabels={showUnitLabels}
-                showVariance={showVariance}
-                codeColors={codeColors}
-                nodeTotals={result.orderedResponseNodeSummary}
-                nodeLayout={activeNodeLayout.positions}
-                onNodeMove={moveNode}
-                copy={copy.ona.layout}
-                plotCopy={copy.ona.plot}
-                svgRef={plotSvgRef}
-              />
+              {view === "3d" && threeDDimensions ? (
+                <OpenEna3DOrderedResultLayout
+                  result={result}
+                  config={resultConfig}
+                  primaryGroupName={primaryGroupName || null}
+                  secondaryGroupName={secondaryGroupName || null}
+                  rightTools={persistentPlotTools}
+                  xDimension={threeDDimensions[0]}
+                  yDimension={threeDDimensions[1]}
+                  zDimension={threeDDimensions[2]}
+                  camera={camera}
+                  edgeThreshold={edgeThreshold}
+                  edgeScale={edgeScale}
+                  pointScale={pointScale}
+                  plotZoom={plotZoom}
+                  plotResetRevision={plotResetRevision}
+                  flipX={flipX}
+                  flipY={flipY}
+                  showPoints={showPoints}
+                  showNetworks={showNetworks}
+                  showLabels={showLabels}
+                  showUnitLabels={showUnitLabels}
+                  showVariance={showVariance}
+                  codeColors={codeColors}
+                  nodeTotals={result.orderedResponseNodeSummary}
+                  nodeLayout={activeNodeLayout.positions}
+                  onNodeMove={moveNode}
+                  sharedCamera={interactive3dCamera}
+                  onCameraChange={setInteractive3dCamera}
+                  sharedAspectRatio={interactive3dAspectRatio}
+                  onAspectRatioChange={setInteractive3dAspectRatio}
+                  copy={copy}
+                />
+              ) : (
+                <OpenEnaOrderedResultLayout
+                  result={result}
+                  config={resultConfig}
+                  primaryGroupName={primaryGroupName || null}
+                  secondaryGroupName={secondaryGroupName || null}
+                  centerMode={effectiveCenterSurface}
+                  dataView={effectiveCenterSurface === "data" ? (
+                    <div data-testid="open-ena-center-data-view">
+                      {renderResultData()}
+                    </div>
+                  ) : null}
+                  rightTools={persistentPlotTools}
+                  xDimension={xDimension}
+                  yDimension={yDimension}
+                  edgeThreshold={edgeThreshold}
+                  edgeScale={edgeScale}
+                  pointScale={pointScale}
+                  textScale={textScale}
+                  plotZoom={plotZoom}
+                  flipX={flipX}
+                  flipY={flipY}
+                  showPoints={showPoints}
+                  showNetworks={showNetworks}
+                  showLabels={showLabels}
+                  showUnitLabels={showUnitLabels}
+                  showVariance={showVariance}
+                  codeColors={codeColors}
+                  nodeTotals={result.orderedResponseNodeSummary}
+                  nodeLayout={activeNodeLayout.positions}
+                  onNodeMove={moveNode}
+                  copy={copy.ona.layout}
+                  plotCopy={copy.ona.plot}
+                  svgRef={plotSvgRef}
+                />
+              )}
               </>
             ) : loading && !result ? (
               <div className="ena-loading-surface" aria-live="polite">
@@ -4122,6 +4150,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                     onAspectRatioChange={setInteractive3dAspectRatio}
                     flipX={flipX}
                     flipY={flipY}
+                    nodeLayout={activeNodeLayout.positions}
+                    onNodeMove={moveNode}
                     centerMode={effectiveCenterSurface}
                     dataView={effectiveCenterSurface === "data" ? (
                       <div data-testid="open-ena-center-data-view">
@@ -4156,6 +4186,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                     onAspectRatioChange={setInteractive3dAspectRatio}
                     flipX={flipX}
                     flipY={flipY}
+                    nodeLayout={activeNodeLayout.positions}
+                    onNodeMove={moveNode}
                     copy={copy}
                   />
                 ) : view === "3d" ? (

@@ -473,7 +473,7 @@ test("Workspace isolates generic 3D axes from inference, 2D, and AI evidence con
   assert.match(workspace, /disabled=\{[^}]*!genericThreeDAvailable[^}]*\}/);
   assert.match(
     workspace,
-    /aria-describedby=\{result && completedResultKind !== "ona" && !genericThreeDAvailable/,
+    /aria-describedby=\{result && !genericThreeDAvailable/,
   );
   assert.match(workspace, /copy\.plot\.threeDRequiresThreeDimensions/);
   assert.match(

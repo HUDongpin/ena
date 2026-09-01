@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
 import type { OpenEnaDerivedGroupDisplay } from "@/lib/open-ena/group-display";
@@ -9,6 +9,16 @@ import {
   nextOpenEnaFallbackFullscreenFocusV3,
 } from "@/lib/open-ena/longitudinal-v3-display";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
+import { dragOpenEnaNodeIn3d, type OpenEnaNodePosition3d } from "@/lib/open-ena/node-drag-3d";
+import type {
+  OpenEnaNodeDimensionPosition,
+  OpenEnaNodeLayoutPositions,
+} from "@/lib/open-ena/node-layout";
+import { compileOpenEnaOrdered3dPlotSpec } from "@/lib/open-ena/ordered-plot3d";
+import type {
+  OpenEnaOrderedNodeTotals,
+  OpenEnaOrderedPlotScope,
+} from "@/lib/open-ena/ordered-plot";
 import {
   cameraForPreset,
   compileOpenEna3dPlotSpec,
@@ -17,9 +27,14 @@ import {
   type OpenEna3dPlotKind,
   type OpenEna3dPlotSpec,
 } from "@/lib/open-ena/plot3d";
-import type { CameraPreset, OpenEnaResult } from "@/lib/open-ena/types";
+import type { CameraPreset, OpenEnaConfig, OpenEnaResult } from "@/lib/open-ena/types";
 import OpenEnaPlotActionIcon from "./OpenEnaPlotActionIcon";
-import { getPlotlyGl3d, schedulePlotlyGl3dRole, type PlotlyGl3dApi } from "./plotly-gl3d-loader";
+import {
+  getPlotlyGl3d,
+  schedulePlotlyGl3dRole,
+  type PlotlyGl3dApi,
+  type PlotlyGl3dPointEvent,
+} from "./plotly-gl3d-loader";
 
 type PlotlyApi = PlotlyGl3dApi;
 type PlotlyImageApi = PlotlyApi & {
@@ -42,7 +57,11 @@ export function openEna3dFullscreenMode(capabilities: {
 }
 
 export interface OpenEnaInteractive3DPlotProps {
+  analysisKind?: "ena" | "ona";
   result: OpenEnaResult;
+  orderedConfig?: OpenEnaConfig;
+  orderedScope?: OpenEnaOrderedPlotScope;
+  orderedNodeTotals?: OpenEnaOrderedNodeTotals;
   contrast?: OpenEnaPairwiseContrast | null;
   groupDisplay?: Pick<OpenEnaDerivedGroupDisplay, "primary" | "secondary" | "hiddenUnitKeys">;
   plotKind?: OpenEna3dPlotKind;
@@ -74,6 +93,8 @@ export interface OpenEnaInteractive3DPlotProps {
   plotZoom: number;
   flipX: boolean;
   flipY: boolean;
+  nodeLayout?: OpenEnaNodeLayoutPositions;
+  onNodeMove?: (code: string, dimensions: OpenEnaNodeDimensionPosition) => void;
   plotResetRevision?: number;
   initialCamera?: OpenEna3dCamera | null;
   onCameraChange?: (camera: OpenEna3dCamera) => void;
@@ -86,8 +107,14 @@ export interface OpenEnaInteractive3DPlotProps {
 }
 
 interface PlotlyEventRoot extends HTMLDivElement {
-  on?: (event: "plotly_relayout", listener: (update: Record<string, unknown>) => void) => void;
-  removeListener?: (event: "plotly_relayout", listener: (update: Record<string, unknown>) => void) => void;
+  on?: {
+    (event: "plotly_relayout", listener: (update: Record<string, unknown>) => void): void;
+    (event: "plotly_hover" | "plotly_unhover", listener: (event: PlotlyGl3dPointEvent) => void): void;
+  };
+  removeListener?: {
+    (event: "plotly_relayout", listener: (update: Record<string, unknown>) => void): void;
+    (event: "plotly_hover" | "plotly_unhover", listener: (event: PlotlyGl3dPointEvent) => void): void;
+  };
   _fullLayout?: {
     scene?: {
       _scene?: {
@@ -257,7 +284,11 @@ export function zoomOpenEna3dAspectRatio(
 }
 
 export default function OpenEnaInteractive3DPlot({
+  analysisKind = "ena",
   result,
+  orderedConfig,
+  orderedScope,
+  orderedNodeTotals,
   contrast = null,
   groupDisplay,
   plotKind = "comparison",
@@ -288,6 +319,8 @@ export default function OpenEnaInteractive3DPlot({
   plotZoom,
   flipX,
   flipY,
+  nodeLayout,
+  onNodeMove,
   plotResetRevision = 0,
   initialCamera = null,
   onCameraChange,
@@ -307,6 +340,18 @@ export default function OpenEnaInteractive3DPlot({
   const initialAspectRatioRef = useRef(initialAspectRatio);
   const lastAspectRatioRef = useRef(initialAspectRatio);
   const relayoutListenerRef = useRef<((update: Record<string, unknown>) => void) | null>(null);
+  const hoverListenerRef = useRef<((event: PlotlyGl3dPointEvent) => void) | null>(null);
+  const unhoverListenerRef = useRef<((event: PlotlyGl3dPointEvent) => void) | null>(null);
+  const hoveredCodeRef = useRef<{ code: string; pointNumber: number } | null>(null);
+  const activeNodeDragRef = useRef<{
+    pointerId: number;
+    code: string;
+    startClientX: number;
+    startClientY: number;
+    startPosition: OpenEnaNodePosition3d;
+  } | null>(null);
+  const pendingNodeMoveRef = useRef<{ code: string; next: OpenEnaNodePosition3d } | null>(null);
+  const nodeMoveFrameRef = useRef<number | null>(null);
   const actionStatusTimerRef = useRef<number | null>(null);
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
   const fullscreenInitiatorRef = useRef<HTMLButtonElement | null>(null);
@@ -324,6 +369,8 @@ export default function OpenEnaInteractive3DPlot({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionStatus, setActionStatus] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [hoveredCode, setHoveredCode] = useState<string | null>(null);
+  const [nodeDragging, setNodeDragging] = useState<string | null>(null);
   const generatedFullscreenTargetId = `open-ena-interactive-3d-fullscreen-target-${instanceId}`;
   const fullscreenTargetId = fullscreenTarget?.id ?? generatedFullscreenTargetId;
   const fullscreenTargetRef = fullscreenTarget?.ref ?? figureRef;
@@ -343,8 +390,69 @@ export default function OpenEnaInteractive3DPlot({
     onStatusChange?.(status);
   }, [onStatusChange, status]);
 
-  const spec = useMemo<OpenEna3dPlotSpec>(() => compileOpenEna3dPlotSpec({
+  const spec = useMemo<OpenEna3dPlotSpec>(() => {
+    if (analysisKind === "ona") {
+      if (!orderedConfig || !orderedScope) {
+        throw new Error("ONA 3D requires an ordered configuration and plot scope.");
+      }
+      return compileOpenEnaOrdered3dPlotSpec({
+        result,
+        config: orderedConfig,
+        scope: orderedScope,
+        xDimension,
+        yDimension,
+        zDimension,
+        camera,
+        showPoints,
+        showNetworks,
+        showLabels,
+        showUnitLabels,
+        showVariance,
+        edgeScale,
+        edgeThreshold,
+        pointScale,
+        plotZoom,
+        flipX,
+        flipY,
+        compact,
+        codeColors,
+        nodeTotals: orderedNodeTotals,
+        nodeLayout,
+      });
+    }
+    return compileOpenEna3dPlotSpec({
+      result,
+      contrast,
+      groupDisplay,
+      plotKind,
+      compact,
+      displayModeBar,
+      codeColors,
+      groupColumn,
+      xDimension,
+      yDimension,
+      zDimension,
+      camera,
+      showPoints,
+      showNetworks,
+      showLabels,
+      showUnitLabels,
+      showVariance,
+      showTrajectories,
+      edgeScale,
+      edgeThreshold,
+      pointScale,
+      plotZoom,
+      flipX,
+      flipY,
+      nodeLayout,
+    });
+  }, [
+    analysisKind,
     result,
+    orderedConfig,
+    orderedScope,
+    orderedNodeTotals,
     contrast,
     groupDisplay,
     plotKind,
@@ -368,31 +476,7 @@ export default function OpenEnaInteractive3DPlot({
     plotZoom,
     flipX,
     flipY,
-  }), [
-    result,
-    contrast,
-    groupDisplay,
-    plotKind,
-    compact,
-    displayModeBar,
-    codeColors,
-    groupColumn,
-    xDimension,
-    yDimension,
-    zDimension,
-    camera,
-    showPoints,
-    showNetworks,
-    showLabels,
-    showUnitLabels,
-    showVariance,
-    showTrajectories,
-    edgeScale,
-    edgeThreshold,
-    pointScale,
-    plotZoom,
-    flipX,
-    flipY,
+    nodeLayout,
   ]);
   const cameraResetKey = `${camera}:${plotZoom}:${plotResetRevision}`;
   const controlledCameraKey = cameraKey(initialCamera);
@@ -458,6 +542,18 @@ export default function OpenEnaInteractive3DPlot({
       if (eventRoot && relayoutListenerRef.current) {
         eventRoot.removeListener?.("plotly_relayout", relayoutListenerRef.current);
         relayoutListenerRef.current = null;
+      }
+      if (eventRoot && hoverListenerRef.current) {
+        eventRoot.removeListener?.("plotly_hover", hoverListenerRef.current);
+        hoverListenerRef.current = null;
+      }
+      if (eventRoot && unhoverListenerRef.current) {
+        eventRoot.removeListener?.("plotly_unhover", unhoverListenerRef.current);
+        unhoverListenerRef.current = null;
+      }
+      if (nodeMoveFrameRef.current !== null) {
+        window.cancelAnimationFrame(nodeMoveFrameRef.current);
+        nodeMoveFrameRef.current = null;
       }
       if (actionStatusTimerRef.current !== null) window.clearTimeout(actionStatusTimerRef.current);
       if (Plotly && plotRoot) Plotly.purge(plotRoot);
@@ -617,6 +713,34 @@ export default function OpenEnaInteractive3DPlot({
           relayoutListenerRef.current = listener;
           eventRoot.on("plotly_relayout", listener);
         }
+        if (!hoverListenerRef.current && eventRoot.on) {
+          const listener = (event: PlotlyGl3dPointEvent) => {
+            if (activeNodeDragRef.current) return;
+            const point = event.points?.[0];
+            const meta = point?.fullData?.meta ?? point?.data?.meta;
+            if (!point || !meta || meta.role !== "code-node") {
+              hoveredCodeRef.current = null;
+              setHoveredCode(null);
+              return;
+            }
+            const code = point.fullData?.text?.[point.pointNumber]
+              ?? point.data?.text?.[point.pointNumber];
+            if (typeof code !== "string" || !code.trim()) return;
+            hoveredCodeRef.current = { code, pointNumber: point.pointNumber };
+            setHoveredCode(code);
+          };
+          hoverListenerRef.current = listener;
+          eventRoot.on("plotly_hover", listener);
+        }
+        if (!unhoverListenerRef.current && eventRoot.on) {
+          const listener = () => {
+            if (activeNodeDragRef.current) return;
+            hoveredCodeRef.current = null;
+            setHoveredCode(null);
+          };
+          unhoverListenerRef.current = listener;
+          eventRoot.on("plotly_unhover", listener);
+        }
         setStatus("ready");
         if (!readyNotifiedRef.current) {
           readyNotifiedRef.current = true;
@@ -719,6 +843,92 @@ export default function OpenEnaInteractive3DPlot({
       eventRoot?._fullLayout?.scene?._scene?.glplot?.getAspectratio?.(),
       fallback,
     ) ?? fallback;
+  }
+
+  function flushNodeMove() {
+    nodeMoveFrameRef.current = null;
+    const pending = pendingNodeMoveRef.current;
+    pendingNodeMoveRef.current = null;
+    if (!pending || !onNodeMove) return;
+    const { code, next } = pending;
+    onNodeMove(code, new Map([[xDimension, next.x], [yDimension, next.y], [zDimension, next.z]]));
+  }
+
+  function beginNodeDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || status !== "ready" || !onNodeMove || activeNodeDragRef.current) return;
+    const hovered = hoveredCodeRef.current;
+    if (!hovered) return;
+    const codeTrace = spec.data.find((trace) => trace.meta.role === "code-node");
+    const x = codeTrace?.x[hovered.pointNumber];
+    const y = codeTrace?.y[hovered.pointNumber];
+    const z = codeTrace?.z[hovered.pointNumber];
+    if (typeof x !== "number" || typeof y !== "number" || typeof z !== "number") return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    activeNodeDragRef.current = {
+      pointerId: event.pointerId,
+      code: hovered.code,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startPosition: { x, y, z },
+    };
+    setNodeDragging(hovered.code);
+  }
+
+  function moveDraggedNode(event: ReactPointerEvent<HTMLDivElement>) {
+    const active = activeNodeDragRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const next = dragOpenEnaNodeIn3d({
+      position: active.startPosition,
+      deltaPixels: {
+        x: event.clientX - active.startClientX,
+        y: event.clientY - active.startClientY,
+      },
+      viewport: { width: bounds.width, height: bounds.height },
+      ranges: {
+        x: spec.layout.scene.xaxis.range,
+        y: spec.layout.scene.yaxis.range,
+        z: spec.layout.scene.zaxis.range,
+      },
+      camera: currentCamera(),
+      aspectRatio: currentAspectRatio(),
+    });
+    pendingNodeMoveRef.current = { code: active.code, next };
+    if (nodeMoveFrameRef.current === null) {
+      nodeMoveFrameRef.current = window.requestAnimationFrame(flushNodeMove);
+    }
+  }
+
+  function completeNodeDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const active = activeNodeDragRef.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (nodeMoveFrameRef.current !== null) {
+      window.cancelAnimationFrame(nodeMoveFrameRef.current);
+      flushNodeMove();
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    activeNodeDragRef.current = null;
+    hoveredCodeRef.current = null;
+    setHoveredCode(null);
+    setNodeDragging(null);
+  }
+
+  function finishNodeDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    completeNodeDrag(event);
+  }
+
+  function cancelNodeDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    pendingNodeMoveRef.current = null;
+    completeNodeDrag(event);
   }
 
   async function applyDisplayCamera(nextCamera: OpenEna3dCamera) {
@@ -994,6 +1204,12 @@ export default function OpenEnaInteractive3DPlot({
           ref={plotRootRef}
           className="open-ena-interactive-3d-canvas"
           data-ena-plotly-root="true"
+          data-ena-node-hovered={hoveredCode}
+          data-ena-node-dragging={nodeDragging}
+          onPointerDownCapture={beginNodeDrag}
+          onPointerMoveCapture={moveDraggedNode}
+          onPointerUpCapture={finishNodeDrag}
+          onPointerCancelCapture={cancelNodeDrag}
         />
         <div
           className="ena-official-plot-actions open-ena-3d-plot-actions"

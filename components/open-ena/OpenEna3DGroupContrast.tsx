@@ -5,6 +5,10 @@ import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
 import type { OpenEnaDerivedGroupDisplay } from "@/lib/open-ena/group-display";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
+import type {
+  OpenEnaNodeDimensionPosition,
+  OpenEnaNodeLayoutPositions,
+} from "@/lib/open-ena/node-layout";
 import type { OpenEna3dAspectRatio, OpenEna3dCamera } from "@/lib/open-ena/plot3d";
 import type { CameraPreset, OpenEnaResult } from "@/lib/open-ena/types";
 import OpenEnaInteractive3DPlot, {
@@ -32,6 +36,8 @@ export interface OpenEna3DGroupContrastProps {
   plotZoom: number;
   flipX: boolean;
   flipY: boolean;
+  nodeLayout?: OpenEnaNodeLayoutPositions;
+  onNodeMove?: (code: string, dimensions: OpenEnaNodeDimensionPosition) => void;
   plotResetRevision?: number;
   sharedCamera?: OpenEna3dCamera | null;
   onCameraChange?: (camera: OpenEna3dCamera) => void;
@@ -63,6 +69,8 @@ export default function OpenEna3DGroupContrast({
   plotZoom,
   flipX,
   flipY,
+  nodeLayout,
+  onNodeMove,
   plotResetRevision = 0,
   sharedCamera = null,
   onCameraChange,
@@ -109,6 +117,8 @@ export default function OpenEna3DGroupContrast({
     plotZoom,
     flipX,
     flipY,
+    nodeLayout,
+    onNodeMove,
     plotResetRevision,
     initialCamera: sharedCamera,
     onCameraChange,

@@ -14,6 +14,25 @@ export interface PlotlyGl3dApi {
   Plots: { resize(root: HTMLDivElement): Promise<unknown> | unknown };
 }
 
+export type PlotlyGl3dEventName = "plotly_relayout" | "plotly_hover" | "plotly_unhover";
+
+export interface PlotlyGl3dPointEventData {
+  curveNumber: number;
+  pointNumber: number;
+  data?: {
+    meta?: { role?: string };
+    text?: string[];
+  };
+  fullData?: {
+    meta?: { role?: string };
+    text?: string[];
+  };
+}
+
+export interface PlotlyGl3dPointEvent {
+  points?: PlotlyGl3dPointEventData[];
+}
+
 let plotlyPromise: Promise<PlotlyGl3dApi> | null = null;
 
 type PlotlyLoader = () => Promise<{ default: PlotlyGl3dApi }>;
