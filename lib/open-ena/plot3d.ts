@@ -13,7 +13,7 @@ import { marginalMeanStudentT95 } from "./uncertainty";
 export const OPEN_ENA_3D_UI_REVISION = "open-ena-3d-camera-v2";
 export const OPEN_ENA_3D_DEFAULT_CAMERA_ZOOM = 1.5;
 
-const AXIS_COLORS = ["#b91c1c", "#1d4ed8", "#15803d"] as const;
+const AXIS_COLORS = ["#e00000", "#0000d0", "#15803d"] as const;
 const GROUP_MARKER_SYMBOLS = ["circle", "square", "diamond", "cross", "x", "circle-open"] as const;
 const GROUP_MARKER_LABELS = ["circle", "square", "diamond", "cross", "x", "open circle"] as const;
 const GROUP_LINE_DASHES = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"] as const;
