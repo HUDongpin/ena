@@ -6,6 +6,7 @@ import {
   type OpenEnaOrderedNetworkNodeTotals,
   type OpenEnaOrderedNetworkScope,
 } from "./ordered-network-model";
+import { canonicalizeOpenEnaConfig } from "./network-config";
 import type { OpenEnaConfig, OpenEnaResult } from "./types";
 
 export { buildOpenEnaOrderedNetworkModel } from "./ordered-network-model";
@@ -72,6 +73,28 @@ function rowBelongsToScope(
   return Boolean(groupColumn) && String(row[groupColumn as string] ?? "") === scope.name;
 }
 
+function isDenseArray(value: unknown): value is unknown[] {
+  if (!Array.isArray(value)) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.hasOwn(value, index)) return false;
+  }
+  return true;
+}
+
+function isRowObject(value: unknown): value is Row {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function directedNodeIntegrityFailure(): never {
+  throw new Error(
+    "ONA directed node geometry integrity requires one node for every configured code, with dense object rows and unique exact string-code coverage.",
+  );
+}
+
+function projectedPointIntegrityFailure(): never {
+  throw new Error("ONA projected point integrity requires one dense array of non-null object rows.");
+}
+
 export function buildOpenEnaOrderedPlotModel(input: {
   result: OpenEnaResult;
   config: OpenEnaConfig;
@@ -82,22 +105,44 @@ export function buildOpenEnaOrderedPlotModel(input: {
   nodeTotals?: OpenEnaOrderedNodeTotals;
 }): OpenEnaOrderedPlotModel {
   const { result, scope, xDimension, yDimension } = input;
+  const config = canonicalizeOpenEnaConfig(input.config);
   const networkModel = buildOpenEnaOrderedNetworkModel({
     result,
-    config: input.config,
+    config,
     scope,
     edgeThreshold: input.edgeThreshold,
     ...(input.nodeTotals ? { nodeTotals: input.nodeTotals } : {}),
   });
-  const groupColumn = input.config.groupColumn;
+  const groupColumn = config.groupColumn;
   const selectedGroup = scope.kind === "group"
     ? result.groups.find((group) => group.name === scope.name)
     : null;
-  const rotationNodes = result.set.rotation.nodes ?? [];
-  if (rotationNodes.length !== networkModel.codes.length) {
-    throw new Error("ONA directed node geometry must contain one node for every configured code.");
+  const ungroupedSingleGroupScope = scope.kind === "group"
+    && groupColumn === null
+    && result.groups.length === 1
+    && selectedGroup?.name === scope.name;
+  const pointScope: OpenEnaOrderedPlotScope = ungroupedSingleGroupScope
+    ? { kind: "overall" }
+    : scope;
+  const rotationNodes = result.set.rotation.nodes;
+  if (!isDenseArray(rotationNodes) || rotationNodes.length !== networkModel.codes.length) {
+    directedNodeIntegrityFailure();
   }
-  const nodeCoordinates = new Map(rotationNodes.map((row) => [String(row.code), row]));
+  const nodeCoordinates = new Map<string, Row>();
+  for (const candidate of rotationNodes) {
+    if (!isRowObject(candidate)
+      || typeof candidate.code !== "string"
+      || candidate.code.length === 0
+      || !networkModel.codes.includes(candidate.code)
+      || nodeCoordinates.has(candidate.code)) {
+      directedNodeIntegrityFailure();
+    }
+    nodeCoordinates.set(candidate.code, candidate);
+  }
+  if (nodeCoordinates.size !== networkModel.codes.length
+    || networkModel.codes.some((code) => !nodeCoordinates.has(code))) {
+    directedNodeIntegrityFailure();
+  }
   const nodes = networkModel.nodes.map((networkNode) => {
     const row = nodeCoordinates.get(networkNode.code);
     if (!row) throw new Error(`ONA directed node geometry is missing code “${networkNode.code}”.`);
@@ -111,8 +156,12 @@ export function buildOpenEnaOrderedPlotModel(input: {
     };
   });
 
-  const points = result.set.points.flatMap((row, index) => {
-    if (!rowBelongsToScope(row, scope, groupColumn)) return [];
+  const pointRows = result.set.points;
+  if (!isDenseArray(pointRows) || pointRows.some((row) => !isRowObject(row))) {
+    projectedPointIntegrityFailure();
+  }
+  const points = (pointRows as Row[]).flatMap((row, index) => {
+    if (!rowBelongsToScope(row, pointScope, groupColumn)) return [];
     const unit = String(row.ENA_UNIT ?? `unit-${index + 1}`);
     return [{
       key: `${unit}:${index}`,

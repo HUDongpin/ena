@@ -7,6 +7,7 @@ import {
 } from "./network-config";
 import type {
   CanonicalOpenEnaConfig,
+  GroupNetwork,
   OpenEnaConfig,
   OpenEnaDirectionalMask,
   OpenEnaOrderedResponseNodeSummary,
@@ -91,6 +92,17 @@ function isDenseZeroBasedPermutation(value: unknown): value is number[] {
   return seen.size === value.length;
 }
 
+function isNonArrayObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactStringKeys(value: unknown, expectedKeys: readonly string[]) {
+  if (!isNonArrayObject(value)) return false;
+  const actualKeys = Object.keys(value);
+  return actualKeys.length === expectedKeys.length
+    && actualKeys.every((key) => expectedKeys.includes(key));
+}
+
 function sameMask(left: OpenEnaDirectionalMask, right: OpenEnaDirectionalMask) {
   return sameStrings(left.codeOrder, right.codeOrder)
     && left.enabled.length === right.enabled.length
@@ -108,6 +120,8 @@ function sameOrderPolicy(left: OpenEnaOrderPolicy, right: OpenEnaOrderPolicy) {
   return left.kind === "columns"
     && right.kind === "columns"
     && sameStrings(left.columns, right.columns)
+    && hasExactStringKeys(left.comparators, left.columns)
+    && hasExactStringKeys(right.comparators, right.columns)
     && left.columns.every((column) => left.comparators[column] === right.comparators[column]);
 }
 
@@ -122,6 +136,8 @@ function resolvedOrderMatches(
   }
   return resolved.kind === "columns"
     && sameStrings(resolved.columns, requested.columns)
+    && hasExactStringKeys(requested.comparators, requested.columns)
+    && hasExactStringKeys(resolved.comparators, resolved.columns)
     && requested.columns.every((column) => resolved.comparators[column] === requested.comparators[column])
     && resolved.direction === "ascending"
     && resolved.missing === "reject"
@@ -217,6 +233,77 @@ function rowBelongsToScope(
   return Boolean(groupColumn) && String(row[groupColumn as string] ?? "") === scope.name;
 }
 
+function assertOptionalProvenanceBinding(
+  result: OpenEnaResult,
+  config: CanonicalOpenEnaConfig,
+) {
+  if (!Object.hasOwn(result, "provenanceBinding")) return;
+  const binding = Reflect.get(result, "provenanceBinding") as unknown;
+  if (!isNonArrayObject(binding)
+    || !Object.hasOwn(binding, "configuration")
+    || !sameOpenEnaConfig(binding.configuration as OpenEnaConfig, config)) {
+    throw new Error("The completed ONA provenance binding configuration must match the canonical plot configuration.");
+  }
+}
+
+function invalidOrderedAuditIntegrity(): never {
+  throw new Error("The completed ONA ordered audit integrity requires aligned dense response-major p² arrays.");
+}
+
+function optionalOrderedAuditResponseRowCount(
+  result: OpenEnaResult,
+  codes: readonly string[],
+) {
+  if (!Object.hasOwn(result, "orderedAudit")) return null;
+  const audit = Reflect.get(result, "orderedAudit") as unknown;
+  if (!isNonArrayObject(audit)
+    || audit.schemaVersion !== 1
+    || audit.edgeOrder !== "response-major-ground-minor"
+    || !isDenseArray(audit.codeOrder, codes.length)
+    || !sameStrings(audit.codeOrder as string[], codes)
+    || !isDenseArray(audit.edgeValues)) {
+    invalidOrderedAuditIntegrity();
+  }
+  const responseRowCount = audit.edgeValues.length;
+  const responseRowIndices = audit.responseRowIndices;
+  if (!isDenseArray(responseRowIndices, responseRowCount)
+    || !isDenseArray(audit.previousResponseRowIndices, responseRowCount)
+    || !isDenseArray(audit.priorRowCounts, responseRowCount)
+    || !isDenseArray(audit.horizonOrdinals, responseRowCount)
+    || !isDenseZeroBasedPermutation(responseRowIndices)) {
+    invalidOrderedAuditIntegrity();
+  }
+  const edgeCount = codes.length * codes.length;
+  for (const edgeRow of audit.edgeValues) {
+    if (!isDenseArray(edgeRow, edgeCount)) invalidOrderedAuditIntegrity();
+  }
+  return responseRowCount;
+}
+
+function validateCompletedResultGroups(value: unknown): GroupNetwork[] {
+  const invalid = (): never => {
+    throw new Error(
+      "ONA completed result groups integrity requires nonempty groups with unique nonempty names, positive safe unit counts, and object mean-weight maps.",
+    );
+  };
+  const groups = isDenseArray(value) ? value : invalid();
+  if (groups.length === 0) invalid();
+  const names = new Set<string>();
+  for (const candidate of groups) {
+    const group = isNonArrayObject(candidate) ? candidate : invalid();
+    const name = typeof group.name === "string" ? group.name : invalid();
+    if (name.length === 0
+      || names.has(name)
+      || !Number.isSafeInteger(group.count)
+      || (group.count as number) < 1
+      || !isNonArrayObject(group.meanWeights)) {
+      invalid();
+    }
+    names.add(name);
+  }
+  return groups as unknown as GroupNetwork[];
+}
+
 function assertExecutionProvenance(
   result: OpenEnaResult,
   config: CanonicalOpenEnaConfig,
@@ -254,6 +341,11 @@ function assertExecutionProvenance(
     || !isDenseZeroBasedPermutation(execution.ordering.responseRowSourceIndices)) {
     throw new Error("The completed ONA execution provenance has a stale configuration, directional mask, or order contract.");
   }
+  const auditResponseRowCount = optionalOrderedAuditResponseRowCount(result, config.codes);
+  if (auditResponseRowCount !== null
+    && execution.ordering.responseRowSourceIndices.length !== auditResponseRowCount) {
+    throw new Error("The ONA source-index mapping must cover all ordered audit response rows.");
+  }
 }
 
 export function buildOpenEnaOrderedNetworkModel(input: {
@@ -265,6 +357,7 @@ export function buildOpenEnaOrderedNetworkModel(input: {
 }): OpenEnaOrderedNetworkModel {
   const { result, scope } = input;
   const config = canonicalizeOpenEnaConfig(input.config);
+  assertOptionalProvenanceBinding(result, config);
   if (config.analysisKind !== "ona"
     || openEnaAnalysisKindFromResult(result) !== "ona"
     || result.set.networkType !== "ordered") {
@@ -301,10 +394,7 @@ export function buildOpenEnaOrderedNetworkModel(input: {
     }
   }
 
-  const groups = result.groups;
-  if (groups.length === 0 || groups.some((group) => !Number.isSafeInteger(group.count) || group.count < 1)) {
-    throw new Error("ONA plotting requires nonempty groups with positive safe unit counts.");
-  }
+  const groups = validateCompletedResultGroups(result.groups);
   const selectedGroup = scope.kind === "group"
     ? groups.find((group) => group.name === scope.name)
     : null;

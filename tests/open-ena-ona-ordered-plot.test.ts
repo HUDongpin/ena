@@ -14,7 +14,12 @@ import {
 import * as unitPointStyleContract from "../lib/open-ena/unit-point-style";
 import type { OpenEnaUnitPointStyle } from "../lib/open-ena/unit-point-style";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
-import type { CanonicalOpenEnaConfig, OpenEnaConfig, OpenEnaResult } from "../lib/open-ena/types";
+import type {
+  CanonicalOpenEnaConfig,
+  OpenEnaConfig,
+  OpenEnaOrderedAudit,
+  OpenEnaResult,
+} from "../lib/open-ena/types";
 
 const codes = ["A", "B", "C"];
 const adjacencyKey = codes.flatMap((response, responseIndex) => (
@@ -147,6 +152,26 @@ function orderedFixture(): { result: OpenEnaResult; config: OpenEnaConfig } {
     },
   } as unknown as OpenEnaResult;
   return { result, config };
+}
+
+function minimalOrderedAudit(rowCount = 4): OpenEnaOrderedAudit {
+  return {
+    schemaVersion: 1,
+    codeOrder: [...codes],
+    edgeOrder: "response-major-ground-minor",
+    responseRowIndices: Array.from({ length: rowCount }, (_, index) => index),
+    previousResponseRowIndices: Array.from({ length: rowCount }, () => null),
+    priorRowCounts: Array.from({ length: rowCount }, () => 0),
+    horizonOrdinals: Array.from({ length: rowCount }, () => 0),
+    edgeValues: Array.from({ length: rowCount }, () => Array.from({ length: codes.length ** 2 }, () => 0)),
+  };
+}
+
+function attachMatchingBinding(result: OpenEnaResult, config: OpenEnaConfig) {
+  result.provenanceBinding = {
+    datasetNormalizedUtf8TextSha256: "a".repeat(64),
+    configuration: structuredClone(config),
+  };
 }
 
 function buildSharedFixture(input: {
@@ -426,6 +451,21 @@ test("one synthetic all-units group remains a valid group scope without a group 
     raw: 20,
     definition: "group equal-unit normalized mean",
   });
+
+  const plot = buildOpenEnaOrderedPlotModel({
+    result: ungroupedResult,
+    config: ungroupedConfig,
+    scope: { kind: "group", name: "all-units" },
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    edgeThreshold: 0,
+  });
+  assert.deepEqual(plot.points, [
+    { key: "u1:0", unit: "u1", group: null, x: -0.6, y: 0.2 },
+    { key: "u2:1", unit: "u2", group: null, x: 0.2, y: -0.1 },
+    { key: "u3:2", unit: "u3", group: null, x: 0.4, y: 0.3 },
+    { key: "u4:3", unit: "u4", group: null, x: 0.7, y: -0.2 },
+  ]);
 });
 
 test("threshold visibility is inclusive, tolerance-bounded, and never removes scientific p² edges", () => {
@@ -533,6 +573,87 @@ test("UI-side mask canonicalization remains compatible while stale execution pro
   }), /execution provenance/i);
 });
 
+test("optional provenance binding is absent-compatible but present bindings must match the canonical config", () => {
+  const fixture = orderedFixture();
+  const invoke = (result: OpenEnaResult) => buildOpenEnaOrderedNetworkModel({
+    result,
+    config: fixture.config,
+    scope: { kind: "overall" },
+    edgeThreshold: 0,
+  });
+  assert.doesNotThrow(() => invoke(fixture.result), "an absent optional binding remains supported");
+
+  const matching = structuredClone(fixture.result);
+  attachMatchingBinding(matching, fixture.config);
+  assert.doesNotThrow(() => invoke(matching));
+
+  const drifts: Array<[string, (configuration: OpenEnaConfig) => void]> = [
+    ["window", (configuration) => { configuration.windowSizeBack = 99; }],
+    ["group", (configuration) => { configuration.groupColumn = null; }],
+    ["codes", (configuration) => { configuration.codes = ["C", "B", "A"]; }],
+    ["order", (configuration) => {
+      if (configuration.orderPolicy?.kind === "columns") configuration.orderPolicy.comparators.turn = "string";
+    }],
+    ["mask", (configuration) => { configuration.directionalMask!.enabled[2][0] = true; }],
+  ];
+  for (const [label, mutate] of drifts) {
+    const candidate = structuredClone(matching);
+    mutate(candidate.provenanceBinding!.configuration);
+    assert.throws(() => invoke(candidate), /provenance binding.*configuration/i, label);
+  }
+
+  for (const [label, binding] of [
+    ["null binding", null],
+    ["array binding", []],
+    ["missing configuration", {}],
+    ["invalid configuration", { configuration: null }],
+  ] as Array<[string, unknown]>) {
+    const candidate = structuredClone(fixture.result);
+    Reflect.set(candidate, "provenanceBinding", binding);
+    assert.throws(() => invoke(candidate), /provenance binding.*configuration/i, label);
+  }
+});
+
+test("an optional ordered audit anchors source mapping coverage without requiring identity order", () => {
+  const fixture = orderedFixture();
+  const invoke = (result: OpenEnaResult) => buildOpenEnaOrderedNetworkModel({
+    result,
+    config: fixture.config,
+    scope: { kind: "overall" },
+    edgeThreshold: 0,
+  });
+
+  const structurallyBoundOnly = structuredClone(fixture.result);
+  structurallyBoundOnly.executionProvenance!.ordering!.responseRowSourceIndices = [0];
+  assert.doesNotThrow(() => invoke(structurallyBoundOnly), "without an audit only structural permutation validity is knowable");
+
+  const coveredNonidentity = structuredClone(fixture.result);
+  coveredNonidentity.executionProvenance!.ordering!.responseRowSourceIndices = [1, 3, 2, 0];
+  coveredNonidentity.orderedAudit = minimalOrderedAudit(4);
+  assert.doesNotThrow(() => invoke(coveredNonidentity), "valid source order need not be identity order");
+
+  const shortSourceMapping = structuredClone(fixture.result);
+  shortSourceMapping.executionProvenance!.ordering!.responseRowSourceIndices = [0];
+  shortSourceMapping.orderedAudit = minimalOrderedAudit(4);
+  assert.throws(() => invoke(shortSourceMapping), /source-index mapping.*ordered audit.*response rows/i);
+
+  const malformedAudits: Array<[string, (audit: OpenEnaOrderedAudit) => void]> = [
+    ["schema", (audit) => { (audit as { schemaVersion: number }).schemaVersion = 2; }],
+    ["code order", (audit) => { audit.codeOrder = ["C", "B", "A"]; }],
+    ["edge order", (audit) => { Reflect.set(audit, "edgeOrder", "ground-major-response-minor"); }],
+    ["parallel length", (audit) => { audit.priorRowCounts.pop(); }],
+    ["sparse parallel array", (audit) => { audit.horizonOrdinals = new Array(4); }],
+    ["duplicate response mapping", (audit) => { audit.responseRowIndices = [0, 0, 2, 3]; }],
+    ["short edge row", (audit) => { audit.edgeValues[0].pop(); }],
+    ["sparse edge row", (audit) => { audit.edgeValues[0] = new Array(codes.length ** 2); }],
+  ];
+  for (const [label, mutate] of malformedAudits) {
+    const candidate = structuredClone(coveredNonidentity);
+    mutate(candidate.orderedAudit!);
+    assert.throws(() => invoke(candidate), /ordered audit.*integrity/i, label);
+  }
+});
+
 test("shared provenance requires canonical ONA, ordered directed execution, aligned mask, and aligned order", () => {
   const fixture = orderedFixture();
   const invoke = (result: OpenEnaResult, config: OpenEnaConfig = fixture.config) => buildOpenEnaOrderedNetworkModel({
@@ -564,6 +685,14 @@ test("shared provenance requires canonical ONA, ordered directed execution, alig
     ["stale resolved order", (candidate) => {
       const resolved = candidate.executionProvenance!.ordering!.resolvedPolicy;
       if (resolved.kind === "columns") resolved.columns = ["stale-turn"];
+    }],
+    ["extra requested comparator", (candidate) => {
+      const requested = candidate.executionProvenance!.ordering!.requestedPolicy;
+      if (requested.kind === "columns") Reflect.set(requested.comparators, "stale", "string");
+    }],
+    ["extra resolved comparator", (candidate) => {
+      const resolved = candidate.executionProvenance!.ordering!.resolvedPolicy;
+      if (resolved.kind === "columns") Reflect.set(resolved.comparators, "stale", "string");
     }],
     ["empty source-index permutation", (candidate) => {
       candidate.executionProvenance!.ordering!.responseRowSourceIndices = [];
@@ -650,6 +779,12 @@ test("shared groups, normalized means, raw counts, and fallback additions fail c
   ) => buildOpenEnaOrderedNetworkModel({ result, config, scope, edgeThreshold: 0 });
   const cases: Array<[string, (candidate: OpenEnaResult) => void, RegExp]> = [
     ["empty groups", (candidate) => { candidate.groups = []; }, /nonempty groups/],
+    ["sparse groups", (candidate) => { candidate.groups = new Array(2); }, /completed result groups.*integrity/i],
+    ["null group", (candidate) => { Reflect.set(candidate.groups, 0, null); }, /completed result groups.*integrity/i],
+    ["duplicate group name", (candidate) => { candidate.groups[1].name = "first"; }, /completed result groups.*integrity/i],
+    ["empty group name", (candidate) => { candidate.groups[0].name = ""; }, /completed result groups.*integrity/i],
+    ["null mean map", (candidate) => { Reflect.set(candidate.groups[0], "meanWeights", null); }, /completed result groups.*integrity/i],
+    ["array mean map", (candidate) => { Reflect.set(candidate.groups[0], "meanWeights", []); }, /completed result groups.*integrity/i],
     ["zero count", (candidate) => { candidate.groups[0].count = 0; }, /positive safe unit counts/],
     ["fractional count", (candidate) => { candidate.groups[0].count = 1.5; }, /positive safe unit counts/],
     ["unsafe count", (candidate) => { candidate.groups[0].count = Number.MAX_SAFE_INTEGER + 1; }, /positive safe unit counts/],
@@ -688,6 +823,25 @@ test("shared groups, normalized means, raw counts, and fallback additions fail c
   const groupWithoutColumnResult = structuredClone(fixture.result);
   groupWithoutColumnResult.executionProvenance!.configuration.groupColumn = null;
   assert.throws(() => invoke(groupWithoutColumnResult, groupWithoutColumnConfig, { kind: "group", name: "first" }), /group column|scope/i);
+
+  const duplicateWithNodeTotals = structuredClone(fixture.result);
+  duplicateWithNodeTotals.groups[1].name = "first";
+  const nodeTotals: OpenEnaOrderedNodeTotals = {
+    schemaVersion: 1,
+    codeOrder: codes,
+    overallResponseCodeTotals: [100, 4, 1],
+    groups: [
+      { name: "first", unitCount: 1, responseCodeTotals: [8, 2, 1] },
+      { name: "second", unitCount: 3, responseCodeTotals: [92, 2, 0] },
+    ],
+  };
+  assert.throws(() => buildOpenEnaOrderedNetworkModel({
+    result: duplicateWithNodeTotals,
+    config: fixture.config,
+    scope: { kind: "overall" },
+    edgeThreshold: 0,
+    nodeTotals,
+  }), /completed result groups.*integrity/i);
 });
 
 test("ordered response-node summaries reject schema, code, group, unit-count, value, and sum corruption", () => {
@@ -765,6 +919,59 @@ test("builders do not mutate result or config and the 2D wrapper still rejects b
     yDimension: "SVD2",
     edgeThreshold: 0,
   }), /point 1 SVD2 must be finite/i);
+});
+
+test("the 2D adapter requires dense object node rows with unique exact code coverage", () => {
+  const fixture = orderedFixture();
+  const invoke = (result: OpenEnaResult) => buildOpenEnaOrderedPlotModel({
+    result,
+    config: fixture.config,
+    scope: { kind: "overall" },
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    edgeThreshold: 0,
+  });
+
+  const reordered = structuredClone(fixture.result);
+  reordered.set.rotation.nodes!.reverse();
+  assert.deepEqual(invoke(reordered).nodes.map((node) => node.code), codes, "valid coverage need not use rotation-row order");
+
+  const cases: Array<[string, (candidate: OpenEnaResult) => void]> = [
+    ["sparse", (candidate) => { candidate.set.rotation.nodes = new Array(codes.length); }],
+    ["null row", (candidate) => { Reflect.set(candidate.set.rotation.nodes!, 0, null); }],
+    ["duplicate code", (candidate) => { candidate.set.rotation.nodes![1].code = "A"; }],
+    ["extra row", (candidate) => { candidate.set.rotation.nodes!.push({ code: "D", SVD1: 0, SVD2: 0 }); }],
+    ["missing row", (candidate) => { candidate.set.rotation.nodes!.pop(); }],
+    ["non-string code", (candidate) => { Reflect.set(candidate.set.rotation.nodes![0], "code", 1); }],
+    ["unknown code", (candidate) => { candidate.set.rotation.nodes![0].code = "D"; }],
+  ];
+  for (const [label, mutate] of cases) {
+    const candidate = structuredClone(fixture.result);
+    mutate(candidate);
+    assert.throws(() => invoke(candidate), /ONA directed node geometry integrity/i, label);
+  }
+});
+
+test("the 2D adapter requires dense object projected-point rows", () => {
+  const fixture = orderedFixture();
+  const invoke = (result: OpenEnaResult) => buildOpenEnaOrderedPlotModel({
+    result,
+    config: fixture.config,
+    scope: { kind: "overall" },
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    edgeThreshold: 0,
+  });
+  const cases: Array<[string, (candidate: OpenEnaResult) => void]> = [
+    ["sparse", (candidate) => { candidate.set.points = new Array(4); }],
+    ["null row", (candidate) => { Reflect.set(candidate.set.points, 0, null); }],
+    ["array row", (candidate) => { Reflect.set(candidate.set.points, 0, []); }],
+  ];
+  for (const [label, mutate] of cases) {
+    const candidate = structuredClone(fixture.result);
+    mutate(candidate);
+    assert.throws(() => invoke(candidate), /ONA projected point integrity/i, label);
+  }
 });
 
 test("overall ordered plot uses the equal-unit weighted mean and never a two-group subtraction", () => {
