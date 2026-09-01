@@ -82,6 +82,26 @@ function createFrameQueue() {
   };
 }
 
+function createZeroStartingFrameQueue() {
+  let nextFrame = 0;
+  const pending = new Map<number, Listener>();
+  const cancelled: number[] = [];
+
+  return {
+    pending,
+    cancelled,
+    requestAnimationFrame(callback: Listener) {
+      const frame = nextFrame++;
+      pending.set(frame, callback);
+      return frame;
+    },
+    cancelAnimationFrame(frame: number) {
+      cancelled.push(frame);
+      pending.delete(frame);
+    },
+  };
+}
+
 function requireController() {
   assert.equal(typeof createScrollProgressController, "function", "missing executable scroll-progress controller");
   return createScrollProgressController as ScrollProgressController;
@@ -128,6 +148,18 @@ function getMediaBlocks(stylesheet: string, query: string) {
     blocks.push(stylesheet.slice(start, end + 1));
     searchStart = end + 1;
   }
+}
+
+function getProgressCircleMarkup(html: string, track: "page-progress-outline" | "page-progress-arc") {
+  const circle = html.match(new RegExp(`<circle(?=[^>]*data-track="${track}")[^>]*>`));
+  assert.ok(circle, `missing ${track} circle`);
+  return circle[0];
+}
+
+function getMarkupAttribute(markup: string, attribute: string) {
+  const value = markup.match(new RegExp(`${attribute}="([^"]*)"`));
+  assert.ok(value, `missing ${attribute} attribute`);
+  return value[1];
 }
 
 function relativeLuminance(hex: string) {
@@ -187,6 +219,39 @@ test("back-to-top renders the approved ENA progress-ring artwork and contrast ou
     "the deep-blue outline must render beneath the cyan arc",
   );
   assert.doesNotMatch(html, />↑</u);
+});
+
+test("progress-ring outline and arc share their complete geometry", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(BackToTop, {
+      label: "Back to top",
+      progressLabel: "Page scroll progress",
+    }),
+  );
+  const outline = getProgressCircleMarkup(html, "page-progress-outline");
+  const arc = getProgressCircleMarkup(html, "page-progress-arc");
+
+  for (const attribute of [
+    "cx",
+    "cy",
+    "r",
+    "fill",
+    "stroke-linecap",
+    "stroke-dasharray",
+    "stroke-dashoffset",
+    "transform",
+  ]) {
+    assert.equal(getMarkupAttribute(outline, attribute), getMarkupAttribute(arc, attribute), attribute);
+  }
+
+  assert.equal(getMarkupAttribute(outline, "stroke-width"), "5.2");
+  assert.equal(getMarkupAttribute(outline, "stroke"), "var(--accent-strong)");
+  assert.equal(getMarkupAttribute(arc, "stroke-width"), "2.6");
+  assert.equal(getMarkupAttribute(arc, "stroke"), "#48d5e8");
+  assert.ok(
+    html.indexOf('data-track="page-progress-outline"') < html.indexOf('data-track="page-progress-arc"'),
+    "the deep-blue outline must render beneath the cyan arc",
+  );
 });
 
 test("the approved deep-blue outline has a 3:1 boundary contrast without rounding", () => {
@@ -262,6 +327,39 @@ test("scroll-progress controller cancels a pending frame and unregisters every l
   visualViewportTarget.dispatch("resize");
   assert.equal(frames.pending.size, 0);
   assert.deepEqual(progress, [0]);
+});
+
+test("scroll-progress controller treats animation frame ID zero as pending", () => {
+  const controller = requireController();
+  const windowTarget = new FakeEventTarget();
+  const visualViewportTarget = new FakeEventTarget();
+  const frames = createZeroStartingFrameQueue();
+
+  const cleanup = controller({
+    windowTarget,
+    visualViewportTarget,
+    requestAnimationFrame: frames.requestAnimationFrame,
+    cancelAnimationFrame: frames.cancelAnimationFrame,
+    getMetrics: () => ({ scrollTop: 0, scrollHeight: 1000, clientHeight: 600 }),
+    publishProgress: () => undefined,
+  });
+
+  assert.deepEqual([...frames.pending.keys()], [0]);
+  windowTarget.dispatch("scroll");
+  windowTarget.dispatch("resize");
+  visualViewportTarget.dispatch("resize");
+  assert.deepEqual([...frames.pending.keys()], [0]);
+
+  cleanup();
+  assert.deepEqual(frames.cancelled, [0]);
+  assert.equal(frames.pending.size, 0);
+  assert.deepEqual(windowTarget.removeCalls, ["scroll", "resize"]);
+  assert.deepEqual(visualViewportTarget.removeCalls, ["resize"]);
+
+  windowTarget.dispatch("scroll");
+  windowTarget.dispatch("resize");
+  visualViewportTarget.dispatch("resize");
+  assert.equal(frames.pending.size, 0);
 });
 
 test("return-to-top helper respects the reduced-motion choice", () => {

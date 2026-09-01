@@ -3,13 +3,74 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { academyLessons, newsItems } from "../lib/content";
-import { getDictionary, localeMeta, locales } from "../lib/i18n";
+import { getDictionary, localeMeta, locales, type Locale } from "../lib/i18n";
 import { buildLocalePath } from "../lib/locale-path";
 import { getOpenEnaNavLabel } from "../lib/open-ena-i18n";
 import { siteConfig } from "../lib/site";
 
 const projectRoot = process.cwd();
 const publicRoutes = ["", "mission", "open-ena", "news", "academy", "about"];
+const expectedLocalizedHomeCopy = {
+  en: {
+    initiatorCredit: "Dr. Peter Hu Dongpin is the Initiator of the open access ENA Hub of Knowledge.",
+    pageScrollProgress: "Page scroll progress",
+  },
+  "zh-hant": {
+    initiatorCredit: "Dr. Peter Hu Dongpin 是開放取用 ENA 知識樞紐的發起人。",
+    pageScrollProgress: "頁面捲動進度",
+  },
+  "zh-hans": {
+    initiatorCredit: "Dr. Peter Hu Dongpin 是开放获取 ENA 知识枢纽的发起人。",
+    pageScrollProgress: "页面滚动进度",
+  },
+  es: {
+    initiatorCredit: "Dr. Peter Hu Dongpin es el impulsor del Centro de Conocimiento ENA de acceso abierto.",
+    pageScrollProgress: "Progreso de desplazamiento de la página",
+  },
+  fr: {
+    initiatorCredit: "Dr. Peter Hu Dongpin est l'initiateur du pôle de connaissances ENA en libre accès.",
+    pageScrollProgress: "Progression du défilement de la page",
+  },
+  pt: {
+    initiatorCredit: "O Dr. Peter Hu Dongpin é o iniciador do Centro de Conhecimento ENA de acesso aberto.",
+    pageScrollProgress: "Progresso de deslocamento da página",
+  },
+  de: {
+    initiatorCredit: "Dr. Peter Hu Dongpin ist der Initiator des frei zugänglichen ENA-Wissenszentrums.",
+    pageScrollProgress: "Scrollfortschritt der Seite",
+  },
+  ar: {
+    initiatorCredit: "Dr. Peter Hu Dongpin هو مبادر مركز ENA المعرفي مفتوح الوصول.",
+    pageScrollProgress: "تقدم التمرير في الصفحة",
+  },
+  ko: {
+    initiatorCredit: "Dr. Peter Hu Dongpin은 오픈 액세스 ENA 지식 허브의 발기인입니다.",
+    pageScrollProgress: "페이지 스크롤 진행률",
+  },
+  ja: {
+    initiatorCredit: "Dr. Peter Hu Dongpinは、オープンアクセスのENAナレッジハブの発起人です。",
+    pageScrollProgress: "ページのスクロール進捗",
+  },
+  hi: {
+    initiatorCredit: "Dr. Peter Hu Dongpin ओपन-एक्सेस ENA ज्ञान केंद्र के प्रवर्तक हैं।",
+    pageScrollProgress: "पृष्ठ स्क्रॉल प्रगति",
+  },
+  ru: {
+    initiatorCredit: "Dr. Peter Hu Dongpin является инициатором центра знаний ENA с открытым доступом.",
+    pageScrollProgress: "Прогресс прокрутки страницы",
+  },
+  id: {
+    initiatorCredit: "Dr. Peter Hu Dongpin adalah penggagas Pusat Pengetahuan ENA dengan akses terbuka.",
+    pageScrollProgress: "Progres gulir halaman",
+  },
+  bn: {
+    initiatorCredit: "Dr. Peter Hu Dongpin উন্মুক্ত প্রবেশাধিকারভিত্তিক ENA জ্ঞানকেন্দ্রের প্রবর্তক।",
+    pageScrollProgress: "পৃষ্ঠা স্ক্রলের অগ্রগতি",
+  },
+} satisfies Record<Locale, {
+  initiatorCredit: string;
+  pageScrollProgress: string;
+}>;
 
 test("the canonical ENA identity is consistent", () => {
   assert.equal(siteConfig.name, "ENA");
@@ -116,15 +177,11 @@ test("the home page retains the standard ENA figure and source credit while Miss
     homeSource,
     /<strong><bdi>Wisconsin Center for Education Research\.<\/bdi><\/strong>\s*\{" "\}\s*<strong><bdi dir=\{localeMeta\[typedLocale\]\.dir\}>\{dictionary\.home\.initiatorCredit\}<\/bdi><\/strong>/u,
   );
-  const englishInitiatorCredit =
-    "Dr. Peter Hu Dongpin is the Initiator of the open access ENA Hub of Knowledge.";
-
   assert.doesNotMatch(homeSource, /typedLocale === "en"/u);
   assert.doesNotMatch(
     homeSource,
     /Dr\. Peter Hu Dongpin is the Initiator of the open access ENA Hub of Knowledge\./u,
   );
-  assert.equal(getDictionary("en").home.initiatorCredit, englishInitiatorCredit);
   assert.equal(
     getDictionary("en").home.originCredit,
     "ENA was proposed and developed by researchers and developers from",
@@ -136,8 +193,15 @@ test("the home page retains the standard ENA figure and source credit while Miss
     assert.ok(dictionary.common.pageScrollProgress.trim().length > 0);
     assert.match(dictionary.home.initiatorCredit, /Dr\. Peter Hu Dongpin/u);
     assert.match(dictionary.home.initiatorCredit, /ENA/u);
+    assert.deepEqual(
+      {
+        initiatorCredit: dictionary.home.initiatorCredit,
+        pageScrollProgress: dictionary.common.pageScrollProgress,
+      },
+      expectedLocalizedHomeCopy[locale],
+    );
     if (locale !== "en") {
-      assert.notEqual(dictionary.home.initiatorCredit, englishInitiatorCredit);
+      assert.notEqual(dictionary.home.initiatorCredit, expectedLocalizedHomeCopy.en.initiatorCredit);
     }
   }
 });

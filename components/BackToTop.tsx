@@ -54,15 +54,15 @@ export function createScrollProgressController({
   getMetrics,
   publishProgress,
 }: ScrollProgressControllerOptions) {
-  let animationFrame = 0;
+  let animationFrame: number | null = null;
 
   function updateProgress() {
-    animationFrame = 0;
+    animationFrame = null;
     publishProgress(getScrollProgress(getMetrics()));
   }
 
   function requestProgressUpdate() {
-    if (animationFrame !== 0) return;
+    if (animationFrame !== null) return;
     animationFrame = requestAnimationFrame(updateProgress);
   }
 
@@ -72,7 +72,7 @@ export function createScrollProgressController({
   visualViewportTarget?.addEventListener("resize", requestProgressUpdate);
 
   return () => {
-    if (animationFrame !== 0) cancelAnimationFrame(animationFrame);
+    if (animationFrame !== null) cancelAnimationFrame(animationFrame);
     windowTarget.removeEventListener("scroll", requestProgressUpdate);
     windowTarget.removeEventListener("resize", requestProgressUpdate);
     visualViewportTarget?.removeEventListener("resize", requestProgressUpdate);
