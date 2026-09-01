@@ -301,14 +301,10 @@ test("a successful trajectory run returns the visible surface to the current res
 
   assert.match(
     successBlock,
-    /const nextResult = await analyzeDatasetInWorker[\s\S]*?setResult\(nextResult\)[\s\S]*?setActiveComparisonSurface\("groups"\)/,
-    "the successful worker protocol result must become current before the view returns to groups",
+    /const nextResult = await analyzeDatasetInWorker[\s\S]*?setResult\(nextResult\)[\s\S]*?setMode\(nextResult\.set\.modelType === "EndPoint" \? "model" : "plot"\)[\s\S]*?setCenterSurface\("plot"\)/,
+    "the successful worker protocol result must become current before the trajectory plot is shown",
   );
-  assert.match(
-    workspace,
-    /activeComparisonSurface === "sets" && setComparison[\s\S]{0,400}result[\s\S]{0,160}"model"/,
-    "a retained set comparison must not permanently hide a newly built current trajectory result",
-  );
+  assert.doesNotMatch(workspace, /activeComparisonSurface|setComparison/);
 });
 
 test("the V3 bundle and exports are bound to successful-result provenance", () => {
@@ -433,8 +429,8 @@ test("standalone longitudinal SVG and PNG exports embed the complete plot visual
   );
   assert.match(
     workspace,
-    /function exportPlotPng\(\)[\s\S]{0,180}const svg = serializedPlotSvg\(\)/,
-    "PNG rendering must consume the same self-contained SVG serializer",
+    /function exportPlotPng\(\)[\s\S]{0,220}const serialized = serializedPlotSvg\(\)[\s\S]{0,220}new Blob\(\[serialized\.svg\]/,
+    "PNG rendering must consume the same self-contained SVG and dimensions serializer",
   );
 });
 

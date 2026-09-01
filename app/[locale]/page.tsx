@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import CTA from "@/components/CTA";
 import NetworkFigure from "@/components/NetworkFigure";
 import OpenEnaHomeFeature from "@/components/OpenEnaHomeFeature";
-import { getDictionary, isLocale, type Locale } from "@/lib/i18n";
+import { getDictionary, isLocale, localeMeta, type Locale } from "@/lib/i18n";
 import { siteConfig } from "@/lib/site";
 
 interface HomePageProps {
@@ -25,13 +25,8 @@ export default async function HomePage({ params }: HomePageProps) {
           <p className="hero-text">
             {dictionary.home.heroText}{" "}
             {dictionary.home.originCredit}{" "}
-            <strong><bdi>Wisconsin Center for Education Research.</bdi></strong>
-            {typedLocale === "en" ? (
-              <>
-                {" "}
-                <strong><bdi>Dr. Peter Hu Dongpin is the Initiator of the open access ENA Hub of Knowledge.</bdi></strong>
-              </>
-            ) : null}
+            <strong><bdi>Wisconsin Center for Education Research.</bdi></strong>{" "}
+            <strong><bdi dir={localeMeta[typedLocale].dir}>{dictionary.home.initiatorCredit}</bdi></strong>
           </p>
           <div className="button-row">
             <CTA href={`/${typedLocale}/mission`}>{dictionary.common.exploreMethod}</CTA>

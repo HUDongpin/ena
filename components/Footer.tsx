@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { Dictionary, Locale } from "@/lib/i18n";
 import { getOpenEnaNavLabel } from "@/lib/open-ena-i18n";
 import { siteConfig } from "@/lib/site";
-import AnalyticsConsentControl from "./AnalyticsConsentControl";
 import Logo from "./Logo";
 
 interface FooterProps {
@@ -10,25 +9,7 @@ interface FooterProps {
   dictionary: Dictionary;
 }
 
-const analyticsConsentCopy = {
-  en: {
-    enable: "Allow aggregate analytics",
-    disable: "Disable analytics",
-  },
-  "zh-hant": {
-    enable: "允許彙總分析",
-    disable: "停用分析",
-  },
-  "zh-hans": {
-    enable: "允许聚合分析",
-    disable: "停用分析",
-  },
-} as const;
-
 export default function Footer({ locale, dictionary }: FooterProps) {
-  const analyticsCopy = locale === "zh-hant" || locale === "zh-hans"
-    ? analyticsConsentCopy[locale]
-    : analyticsConsentCopy.en;
   const navItems = [
     { href: `/${locale}`, label: dictionary.nav.home },
     { href: `/${locale}/mission`, label: dictionary.nav.mission },
@@ -71,9 +52,6 @@ export default function Footer({ locale, dictionary }: FooterProps) {
             ))}
           </div>
         </div>
-      </div>
-      <div className="footer-analytics-preference">
-        <AnalyticsConsentControl copy={analyticsCopy} />
       </div>
       <div className="footer-bottom">{dictionary.footer.copyright}</div>
     </footer>

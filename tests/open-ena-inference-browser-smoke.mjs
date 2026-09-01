@@ -646,7 +646,8 @@ try {
       },
     ]) {
       await page.goto(${JSON.stringify(baseUrl)} + "/" + locale.path + "/open-ena");
-      await page.getByRole("button", { name: locale.sample, exact: true }).click();
+      const localizedDataPanel = page.getByTestId("open-ena-persistent-analysis-panel");
+      await localizedDataPanel.getByRole("button", { name: locale.sample, exact: true }).click();
       await page.getByRole("button", { name: "Download Model" }).click({ trial: true, timeout: 30000 });
       const rail = page.getByRole("navigation", { name: "Analysis modes" });
       await rail.getByRole("button", { name: locale.stats, exact: true }).click();

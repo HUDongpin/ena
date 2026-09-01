@@ -115,10 +115,7 @@ main:has(> .premium-public-page) + .site-footer .footer-links a {
 /* Home ------------------------------------------------------------------- */
 
 .premium-home {
-  background:
-    linear-gradient(90deg, rgba(10, 23, 40, 0.035) 1px, transparent 1px) 50% 0 / 120px 100%,
-    linear-gradient(rgba(10, 23, 40, 0.025) 1px, transparent 1px) 0 0 / 100% 120px,
-    var(--page);
+  background: var(--page);
 }
 
 .premium-home .home-hero {

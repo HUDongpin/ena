@@ -32,6 +32,7 @@ const aiComponent = readFileSync(
 const i18n = readFileSync(new URL("../lib/open-ena-i18n.ts", import.meta.url), "utf8");
 const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
 const footer = readFileSync(new URL("../components/Footer.tsx", import.meta.url), "utf8");
+const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const analyticsConsent = readFileSync(new URL("../components/AnalyticsConsent.tsx", import.meta.url), "utf8");
 const analyticsControl = readFileSync(new URL("../components/AnalyticsConsentControl.tsx", import.meta.url), "utf8");
 
@@ -121,7 +122,7 @@ test("standard ENA identity-bearing exports require one explicit confirmation wh
   assert.equal(confirmExport(() => { confirmationCount += 1; return true; }, "warning", () => { downloadCount += 1; }), true);
   assert.deepEqual({ confirmationCount, downloadCount }, { confirmationCount: 2, downloadCount: 1 });
 
-  assert.match(workspace, /copy\.stats\.identityExportWarning/u);
+  assert.doesNotMatch(workspace, /copy\.stats\.identityExportWarning/u);
   assert.match(workspace, /copy\.stats\.identityExportConfirmation/u);
   const dataView = readFileSync(
     new URL("../components/open-ena/OpenEnaDataView.tsx", import.meta.url),
@@ -129,7 +130,6 @@ test("standard ENA identity-bearing exports require one explicit confirmation wh
   );
   assert.match(workspace, /exportClassification=\{ordered\s*\?\s*"local-identity-bearing-view"\s*:\s*"identity-bearing-derived"\}/u);
   assert.match(dataView, /data-export-classification=\{exportClassification\}/u);
-  assert.match(workspace, /buildSetComparisonExport[\s\S]{0,900}confirmOpenEnaIdentityBearingExport/u);
   assert.match(workspace, /buildPairwiseGroupContrastExport[\s\S]{0,1500}confirmOpenEnaIdentityBearingExport/u);
   assert.match(workspace, /buildAnalysisBundle[\s\S]{0,1700}confirmOpenEnaIdentityBearingExport/u);
   assert.match(workspace, /function exportPlotSvg\(\)[\s\S]{0,220}confirmCurrentIdentityBearingExport/u);
@@ -146,17 +146,21 @@ test("standard ENA identity-bearing exports require one explicit confirmation wh
   assert.match(i18n, /identityExportConfirmation/u);
 });
 
-test("AI consent discloses the actual gateway/model and bounded retention, region, and receipt facts before opt-in", () => {
-  assert.match(aiComponent, /data-ena-ai-provider-disclosure="pre-consent"/u);
-  assert.match(aiComponent, /providerDescriptor\.provider/u);
-  assert.match(aiComponent, /providerDescriptor\.model/u);
+test("AI removes the screenshot-selected disclosure cards while preserving explicit consent and privacy controls", () => {
+  assert.doesNotMatch(aiComponent, /ena-ai-privacy/u);
+  assert.doesNotMatch(aiComponent, /data-ena-ai-provider-disclosure="pre-consent"/u);
   for (const field of [
+    "privacyLocal",
+    "privacyExternal",
     "providerDisclosure",
     "dataScopeDisclosure",
     "retentionDisclosure",
     "regionDisclosure",
     "auditReceiptDisclosure",
-  ]) assert.match(aiComponent, new RegExp(`copy\\.${field}`, "u"));
+  ]) assert.doesNotMatch(aiComponent, new RegExp(`copy\\.${field}`, "u"));
+  assert.match(aiComponent, /data-ena-ai-payload-preview="reviewed-aggregate"/u);
+  assert.match(aiComponent, /data-ena-ai-consent="explicit"/u);
+  assert.match(aiComponent, /OPEN_ENA_AI_CONSENT_HEADER/u);
   assert.match(i18n, /OpenRouter/u);
   assert.match(i18n, /metadata/iu);
   assert.match(i18n, /zero.data.retention|ZDR/iu);
@@ -369,7 +373,7 @@ test("migration 003 stores only the bounded durable AI consent receipt fields", 
   assert.match(migration, /clock_timestamp\(\)/u);
 });
 
-test("the footer omits analytics disclosure and status copy while preserving explicit consent controls", () => {
+test("the footer omits the analytics preference entry point while consent protections remain", () => {
   for (const removedCopy of [
     /Analytics and data boundaries/iu,
     /Provider and purpose:/iu,
@@ -380,16 +384,19 @@ test("the footer omits analytics disclosure and status copy while preserving exp
     /分析服務與資料界線/u,
     /分析服务与数据边界/u,
   ]) assert.doesNotMatch(footer, removedCopy);
-  assert.match(footer, /AnalyticsConsentControl/u);
+  assert.doesNotMatch(
+    footer,
+    /AnalyticsConsentControl|analyticsConsentCopy|footer-analytics-preference/u,
+  );
+  assert.doesNotMatch(globalCss, /\.footer-analytics-(?:preference|consent)/u);
   assert.match(analyticsConsent, /beforeSend/u);
   assert.match(analyticsConsent, /localStorage/u);
   assert.match(analyticsConsent, /query strings and fragments|Query strings.*identifiers/iu);
   assert.match(analyticsConsent, /sanitizeOpenEnaAnalyticsUrl/u);
   assert.doesNotMatch(analyticsConsent, /url:\s*url\.pathname/u);
   assert.match(analyticsControl, /data-ena-analytics-consent="explicit"/u);
-  assert.doesNotMatch(analyticsControl, /role="status"|copy\.(?:enabled|disabled|undecided)/u);
-  assert.match(analyticsControl, /onClick=\{\(\) => update\("denied"\)\}>\{copy\.disable\}<\/button>/u);
-  assert.match(analyticsControl, /onClick=\{\(\) => update\("granted"\)\}>\{copy\.enable\}<\/button>/u);
+  assert.match(analyticsControl, /OPEN_ENA_ANALYTICS_CONSENT_STORAGE_KEY/u);
+  assert.match(analyticsControl, /OPEN_ENA_ANALYTICS_CONSENT_EVENT/u);
 });
 
 test("Vercel Analytics keeps an absolute same-origin URL while removing query strings and fragments", () => {

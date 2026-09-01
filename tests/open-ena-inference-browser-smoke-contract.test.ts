@@ -24,6 +24,15 @@ test("inference smoke follows endpoint inference and the current V3 trajectory w
 
   assert.match(source, /run explicit Endpoint Mann-Whitney and inspect consumers/u);
   assert.match(source, /run current V3 trajectory inference envelope/u);
+  assert.match(
+    source,
+    /const localizedDataPanel = page\.getByTestId\("open-ena-persistent-analysis-panel"\);[\s\S]*?localizedDataPanel\.getByRole\("button", \{ name: locale\.sample, exact: true \}\)\.click\(\)/u,
+    "localized sample loading must target the persistent Data panel instead of an ambiguous page-wide button",
+  );
+  assert.doesNotMatch(
+    source,
+    /await page\.getByRole\("button", \{ name: locale\.sample, exact: true \}\)\.click\(\)/u,
+  );
   assert.match(source, /open-ena-longitudinal-v3-workbench/u);
   assert.match(source, /open-ena-longitudinal-v3-inference/u);
   assert.match(source, /Analysis JSON/u);

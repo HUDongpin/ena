@@ -19,6 +19,7 @@ const es: Dictionary = {
   common: {
     skipToContent: "Saltar al contenido",
     backToTop: "Volver arriba",
+    pageScrollProgress: "Progreso de desplazamiento de la página",
     exploreMethod: "Explorar el método",
     openWebtool: "Abrir la herramienta web ENA",
     browseResources: "Consultar los recursos oficiales",
@@ -31,6 +32,7 @@ const es: Dictionary = {
     heroText:
       "ENA modela cómo se conectan los conceptos en el discurso y la práctica, haciendo visibles y comparables los patrones de pensamiento.",
     originCredit: "ENA fue propuesto y desarrollado por investigadores y desarrolladores del",
+    initiatorCredit: "Dr. Peter Hu Dongpin es el impulsor del Centro de Conocimiento ENA de acceso abierto.",
     graphTitle: "Modelo de red conceptual",
     graphCaption:
       "Un gráfico ENA ilustrativo. Los nodos representan conceptos codificados y el grosor de las líneas representa la intensidad relativa de las conexiones.",
@@ -214,6 +216,7 @@ const fr: Dictionary = {
   common: {
     skipToContent: "Aller au contenu",
     backToTop: "Retour en haut",
+    pageScrollProgress: "Progression du défilement de la page",
     exploreMethod: "Explorer la méthode",
     openWebtool: "Ouvrir l'outil web ENA",
     browseResources: "Consulter les ressources officielles",
@@ -226,6 +229,7 @@ const fr: Dictionary = {
     heroText:
       "ENA modélise les liens entre les concepts dans le discours et la pratique afin de rendre les modes de pensée visibles et comparables.",
     originCredit: "ENA a été proposé et développé par des chercheurs et des développeurs du",
+    initiatorCredit: "Dr. Peter Hu Dongpin est l'initiateur du pôle de connaissances ENA en libre accès.",
     graphTitle: "Modèle de réseau conceptuel",
     graphCaption:
       "Un graphe ENA illustratif. Les noeuds représentent des concepts codés et l'épaisseur des lignes représente la force relative des connexions.",
@@ -409,6 +413,7 @@ const pt: Dictionary = {
   common: {
     skipToContent: "Saltar para o conteúdo",
     backToTop: "Voltar ao topo",
+    pageScrollProgress: "Progresso de deslocamento da página",
     exploreMethod: "Explorar o método",
     openWebtool: "Abrir a ferramenta web ENA",
     browseResources: "Consultar os recursos oficiais",
@@ -421,6 +426,7 @@ const pt: Dictionary = {
     heroText:
       "ENA modela a forma como os conceitos se ligam no discurso e na prática, tornando os padrões de pensamento visíveis e comparáveis.",
     originCredit: "A ENA foi proposta e desenvolvida por investigadores e programadores do",
+    initiatorCredit: "O Dr. Peter Hu Dongpin é o iniciador do Centro de Conhecimento ENA de acesso aberto.",
     graphTitle: "Modelo de rede conceptual",
     graphCaption:
       "Um gráfico ENA ilustrativo. Os nós representam conceitos codificados e a espessura das linhas representa a força relativa das ligações.",
@@ -604,6 +610,7 @@ const de: Dictionary = {
   common: {
     skipToContent: "Zum Inhalt springen",
     backToTop: "Nach oben",
+    pageScrollProgress: "Scrollfortschritt der Seite",
     exploreMethod: "Methode erkunden",
     openWebtool: "ENA-Webtool öffnen",
     browseResources: "Offizielle Ressourcen ansehen",
@@ -616,6 +623,7 @@ const de: Dictionary = {
     heroText:
       "ENA modelliert, wie Konzepte in Diskurs und Praxis miteinander verbunden sind, und macht Denkmuster sichtbar und vergleichbar.",
     originCredit: "ENA wurde von Forschenden und Entwickelnden des",
+    initiatorCredit: "Dr. Peter Hu Dongpin ist der Initiator des frei zugänglichen ENA-Wissenszentrums.",
     graphTitle: "Konzeptionelles Netzwerkmodell",
     graphCaption:
       "Eine illustrative ENA-Grafik. Knoten stehen für codierte Konzepte, und die Linienstärke zeigt die relative Stärke der Verbindungen.",

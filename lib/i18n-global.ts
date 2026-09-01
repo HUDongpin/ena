@@ -18,6 +18,7 @@ const ar: Dictionary = {
   common: {
     skipToContent: "الانتقال إلى المحتوى",
     backToTop: "العودة إلى الأعلى",
+    pageScrollProgress: "تقدم التمرير في الصفحة",
     exploreMethod: "استكشاف المنهج",
     openWebtool: "فتح أداة ENA على الويب",
     browseResources: "تصفح الموارد الرسمية",
@@ -30,6 +31,7 @@ const ar: Dictionary = {
     heroText:
       "ينمذج ENA كيفية ترابط المفاهيم في الخطاب والممارسة، فيجعل أنماط التفكير مرئية وقابلة للمقارنة.",
     originCredit: "اقترح ENA وطوره باحثون ومطورون من",
+    initiatorCredit: "Dr. Peter Hu Dongpin هو مبادر مركز ENA المعرفي مفتوح الوصول.",
     graphTitle: "نموذج شبكة مفاهيمية",
     graphCaption:
       "رسم توضيحي لشبكة ENA. تمثل العقد المفاهيم المرمزة، ويمثل سمك الخط القوة النسبية للاتصال.",
@@ -212,6 +214,7 @@ const ru: Dictionary = {
   common: {
     skipToContent: "Перейти к содержанию",
     backToTop: "Наверх",
+    pageScrollProgress: "Прогресс прокрутки страницы",
     exploreMethod: "Изучить метод",
     openWebtool: "Открыть веб-инструмент ENA",
     browseResources: "Посмотреть официальные материалы",
@@ -224,6 +227,7 @@ const ru: Dictionary = {
     heroText:
       "ENA моделирует связи между понятиями в дискурсе и практике, делая структуры мышления видимыми и сопоставимыми.",
     originCredit: "ENA был предложен и разработан исследователями и разработчиками из",
+    initiatorCredit: "Dr. Peter Hu Dongpin является инициатором центра знаний ENA с открытым доступом.",
     graphTitle: "Концептуальная сетевая модель",
     graphCaption:
       "Иллюстративный граф ENA. Узлы обозначают закодированные понятия, а толщина линий отражает относительную силу связи.",
@@ -407,6 +411,7 @@ const id: Dictionary = {
   common: {
     skipToContent: "Langsung ke konten",
     backToTop: "Kembali ke atas",
+    pageScrollProgress: "Progres gulir halaman",
     exploreMethod: "Pelajari metodenya",
     openWebtool: "Buka alat web ENA",
     browseResources: "Jelajahi sumber resmi",
@@ -419,6 +424,7 @@ const id: Dictionary = {
     heroText:
       "ENA memodelkan hubungan antarkonsep dalam wacana dan praktik sehingga pola berpikir dapat terlihat dan dibandingkan.",
     originCredit: "ENA diusulkan dan dikembangkan oleh para peneliti dan pengembang dari",
+    initiatorCredit: "Dr. Peter Hu Dongpin adalah penggagas Pusat Pengetahuan ENA dengan akses terbuka.",
     graphTitle: "Model jaringan konseptual",
     graphCaption:
       "Ilustrasi graf ENA. Simpul mewakili konsep yang dikodekan dan ketebalan garis menunjukkan kekuatan hubungan relatif.",
@@ -602,6 +608,7 @@ const bn: Dictionary = {
   common: {
     skipToContent: "মূল বিষয়বস্তুতে যান",
     backToTop: "উপরে ফিরে যান",
+    pageScrollProgress: "পৃষ্ঠা স্ক্রলের অগ্রগতি",
     exploreMethod: "পদ্ধতিটি জানুন",
     openWebtool: "ENA ওয়েবটুল খুলুন",
     browseResources: "আনুষ্ঠানিক সম্পদ দেখুন",
@@ -614,6 +621,7 @@ const bn: Dictionary = {
     heroText:
       "ENA কথোপকথন ও চর্চায় ধারণাগুলোর পারস্পরিক সংযোগের মডেল তৈরি করে, ফলে চিন্তার ধরন দৃশ্যমান ও তুলনাযোগ্য হয়।",
     originCredit: "ENA প্রস্তাব ও উন্নয়ন করেছেন এই প্রতিষ্ঠানের গবেষক ও ডেভেলপাররা:",
+    initiatorCredit: "Dr. Peter Hu Dongpin উন্মুক্ত প্রবেশাধিকারভিত্তিক ENA জ্ঞানকেন্দ্রের প্রবর্তক।",
     graphTitle: "ধারণাভিত্তিক নেটওয়ার্ক মডেল",
     graphCaption:
       "একটি উদাহরণমূলক ENA গ্রাফ। নোডগুলো কোড করা ধারণা বোঝায় এবং রেখার পুরুত্ব আপেক্ষিক সংযোগের শক্তি বোঝায়।",

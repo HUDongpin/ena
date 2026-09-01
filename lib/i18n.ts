@@ -67,6 +67,7 @@ export interface Dictionary {
   common: {
     skipToContent: string;
     backToTop: string;
+    pageScrollProgress: string;
     exploreMethod: string;
     openWebtool: string;
     browseResources: string;
@@ -78,6 +79,7 @@ export interface Dictionary {
     heroTitle: string;
     heroText: string;
     originCredit: string;
+    initiatorCredit: string;
     graphTitle: string;
     graphCaption: string;
     networkLabels: [string, string, string, string, string];
@@ -167,6 +169,7 @@ const en: Dictionary = {
   common: {
     skipToContent: "Skip to content",
     backToTop: "Back to top",
+    pageScrollProgress: "Page scroll progress",
     exploreMethod: "Explore the method",
     openWebtool: "Open ENA webtool",
     browseResources: "Browse official resources",
@@ -179,6 +182,7 @@ const en: Dictionary = {
     heroText:
       "ENA models how concepts connect in discourse and practice, making patterns of thinking visible and comparable.",
     originCredit: "ENA was proposed and developed by researchers and developers from",
+    initiatorCredit: "Dr. Peter Hu Dongpin is the Initiator of the open access ENA Hub of Knowledge.",
     graphTitle: "Conceptual network model",
     graphCaption:
       "An illustrative ENA graph. Nodes represent coded concepts and line weight represents relative connection strength.",
@@ -361,6 +365,7 @@ const zhHant: Dictionary = {
   common: {
     skipToContent: "跳至主要內容",
     backToTop: "返回頂部",
+    pageScrollProgress: "頁面捲動進度",
     exploreMethod: "探索分析方法",
     openWebtool: "開啟 ENA 網頁工具",
     browseResources: "瀏覽官方資源",
@@ -372,6 +377,7 @@ const zhHant: Dictionary = {
     heroTitle: "看見觀念如何連結。",
     heroText: "ENA 建模話語與實踐中的概念連結，讓思考模式可以被看見和比較。",
     originCredit: "ENA 由以下機構的研究人員與開發人員提出並發展：",
+    initiatorCredit: "Dr. Peter Hu Dongpin 是開放取用 ENA 知識樞紐的發起人。",
     graphTitle: "概念網絡模型",
     graphCaption: "示意 ENA 圖。節點代表編碼概念，線條粗細代表相對連結強度。",
     networkLabels: ["證據", "設計", "身份", "實踐", "反思"],
@@ -486,6 +492,7 @@ const zhHans: Dictionary = {
   common: {
     skipToContent: "跳至主要内容",
     backToTop: "返回顶部",
+    pageScrollProgress: "页面滚动进度",
     exploreMethod: "探索分析方法",
     openWebtool: "打开 ENA 网页工具",
     browseResources: "浏览官方资源",
@@ -497,6 +504,7 @@ const zhHans: Dictionary = {
     heroTitle: "看见观念如何连接。",
     heroText: "ENA 建模话语与实践中的概念连接，让思考模式可以被看见和比较。",
     originCredit: "ENA 由以下机构的研究人员与开发人员提出并发展：",
+    initiatorCredit: "Dr. Peter Hu Dongpin 是开放获取 ENA 知识枢纽的发起人。",
     graphTitle: "概念网络模型",
     graphCaption: "示意 ENA 图。节点代表编码概念，线条粗细代表相对连接强度。",
     networkLabels: ["证据", "设计", "身份", "实践", "反思"],

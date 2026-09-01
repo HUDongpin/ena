@@ -265,7 +265,7 @@ test("Open ENA exposes honest locale, SEO, and accessible-result contracts", () 
   assert.match(workspace, /lang=\{workspaceIsLocalized \? undefined : "en"\}/);
   assert.match(workspace, /dir=\{workspaceIsLocalized \? undefined : "ltr"\}/);
   assert.match(workspace, /role="status"[\s\S]*?aria-live="polite"/);
-  assert.match(workspace, /aria-busy=\{loading \|\| sourceBusy \|\| referenceBusy\}/);
+  assert.match(workspace, /aria-busy=\{loading \|\| sourceBusy\}/);
   assert.match(workspace, /tabIndex=\{-1\}[\s\S]*?aria-hidden="true"/);
   assert.match(plot, /Strongest edges:/);
   assert.match(plot, /GROUP_VISUAL_ENCODINGS/);

@@ -240,24 +240,6 @@ export default function OpenEnaAiInterpretation({
         <span>{copy.notStatisticalInference}</span>
       </aside>
 
-      <div className="ena-ai-privacy">
-        <p>{copy.privacyLocal}</p>
-        <p>{copy.privacyExternal}</p>
-      </div>
-
-      <aside className="ena-ai-provider-disclosure" data-ena-ai-provider-disclosure="pre-consent">
-        <strong>{copy.disclosureSummary}</strong>
-        <p>{copy.providerDisclosure}</p>
-        <dl>
-          <div><dt>{copy.provider}</dt><dd>{providerDescriptor.provider}</dd></div>
-          <div><dt>{copy.model}</dt><dd>{providerDescriptor.model}</dd></div>
-        </dl>
-        <p>{copy.dataScopeDisclosure}</p>
-        <p>{copy.retentionDisclosure}</p>
-        <p>{copy.regionDisclosure}</p>
-        <p>{copy.auditReceiptDisclosure}</p>
-      </aside>
-
       {request ? (
         <details className="ena-ai-payload-preview" data-ena-ai-payload-preview="reviewed-aggregate">
           <summary>{copy.previewTitle}</summary>

@@ -600,7 +600,7 @@ async function authenticateAndRunTrajectory(page, args) {
   await rail.waitFor({ timeout: 30_000 });
   const dataButton = rail.getByRole("button", { name: "Data", exact: true });
   const trajectorySampleButton = page.getByRole("button", {
-    name: "Load 2D trajectory sample",
+    name: "Load 3D trajectory sample",
     exact: true,
   });
   let dataPanelVisible = false;

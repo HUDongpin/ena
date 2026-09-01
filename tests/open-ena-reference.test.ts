@@ -328,28 +328,16 @@ test("a projected result bundle preserves the original fitted-reference lineage"
   );
 });
 
-test("the reference-space workflow is visible, local, and explicitly endpoint-only", () => {
+test("reference-package export and projected-result provenance remain after browser import removal", () => {
   const workspace = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8");
   const plot = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaPlot.tsx"), "utf8");
-  assert.match(workspace, /Import reference rotation/);
-  assert.match(workspace, /Project into reference rotation/);
-  assert.match(workspace, /Projected into reference/);
+  assert.doesNotMatch(workspace, /Import reference rotation/);
+  assert.doesNotMatch(workspace, /Project into reference rotation/);
+  assert.doesNotMatch(workspace, /openReferenceRotation|referenceInputRef|referenceImportRef/);
   assert.match(workspace, /buildReferenceRotationPackage/);
-  assert.match(workspace, /parseRotationReference/);
-  assert.match(workspace, /validateReferenceCompatibility/);
-  assert.match(workspace, /Reference rotation JSON/);
-  assert.match(workspace, /const \[referenceBusy, setReferenceBusy\] = useState\(false\)/);
-  assert.match(workspace, /referenceImportRef\.current !== importToken/);
-  assert.match(workspace, /async function loadSample\(\) \{[\s\S]{0,140}referenceImportRef\.current = null;[\s\S]{0,80}setReferenceBusy\(false\)/);
-  assert.match(workspace, /async function openCodedData\(file: File\) \{[\s\S]{0,140}referenceImportRef\.current = null;[\s\S]{0,80}setReferenceBusy\(false\)/);
-  assert.match(workspace, /async function openReferenceRotation\(file: File\) \{[\s\S]{0,100}if \(sourceAbortRef\.current\) return/);
+  assert.match(workspace, /copy\.stats\.ui\.referenceRotationJson/);
   assert.match(workspace, /setResult\(null\)[\s\S]{0,80}setResultConfig\(null\)/);
-  assert.match(workspace, /size-bounded convenience/);
-  assert.match(workspace, /valid bundles may be larger/);
-  assert.match(workspace, /source identity are not independently verified/);
   assert.match(workspace, /not-applicable-reference/);
-  assert.match(workspace, /Valid result bundles can be larger/);
-  assert.match(workspace, /dedicated compact Reference rotation JSON for dependable projection interchange/);
   assert.match(workspace, /buildAnalysisBundle\([\s\S]{0,1600}true,/);
   assert.match(workspace, /buildReferenceRotationPackage\([\s\S]{0,180}true,/);
   assert.match(plot, /Projected into fixed reference:/);
