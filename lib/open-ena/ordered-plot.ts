@@ -1,30 +1,24 @@
 import type { Row } from "jena-js";
-import { openEnaAnalysisKindFromResult } from "./capabilities";
 import {
-  canonicalizeOpenEnaConfig,
-  validateDirectionalMask,
-} from "./network-config";
-import type {
-  OpenEnaConfig,
-  OpenEnaOrderedResponseNodeSummary,
-  OpenEnaResult,
-} from "./types";
+  buildOpenEnaOrderedNetworkModel,
+  type OpenEnaOrderedNetworkEdge,
+  type OpenEnaOrderedNetworkNode,
+  type OpenEnaOrderedNetworkNodeTotals,
+  type OpenEnaOrderedNetworkScope,
+} from "./ordered-network-model";
+import type { OpenEnaConfig, OpenEnaResult } from "./types";
+
+export { buildOpenEnaOrderedNetworkModel } from "./ordered-network-model";
 
 const ZERO_TOLERANCE = 1e-12;
 
-export type OpenEnaOrderedPlotScope =
-  | { kind: "overall" }
-  | { kind: "group"; name: string };
+export type OpenEnaOrderedPlotScope = OpenEnaOrderedNetworkScope;
 
-export type OpenEnaOrderedNodeTotals = OpenEnaOrderedResponseNodeSummary;
+export type OpenEnaOrderedNodeTotals = OpenEnaOrderedNetworkNodeTotals;
 
-export interface OpenEnaOrderedPlotNode {
-  code: string;
-  codeIndex: number;
+export interface OpenEnaOrderedPlotNode extends OpenEnaOrderedNetworkNode {
   x: number;
   y: number;
-  responseTotal: number;
-  radius: number;
 }
 
 export interface OpenEnaOrderedPlotPoint {
@@ -35,21 +29,7 @@ export interface OpenEnaOrderedPlotPoint {
   y: number;
 }
 
-export interface OpenEnaOrderedPlotEdge {
-  name: string;
-  ground: string;
-  response: string;
-  groundIndex: number;
-  responseIndex: number;
-  normalizedMeanWeight: number;
-  rawAggregateCount: number;
-  reverseNormalizedMeanWeight: number;
-  relativeMagnitude: number;
-  maskEnabled: boolean;
-  selfConnection: boolean;
-  chevron: boolean;
-  visible: boolean;
-}
+export type OpenEnaOrderedPlotEdge = OpenEnaOrderedNetworkEdge;
 
 export interface OpenEnaOrderedPlotModel {
   scope: OpenEnaOrderedPlotScope;
@@ -69,17 +49,6 @@ export interface OpenEnaOrderedPlotModel {
   yVariance: number;
 }
 
-function sameStrings(left: readonly string[], right: readonly string[]) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-function finiteNonnegative(value: unknown, label: string) {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-    throw new Error(`${label} must be finite nonnegative.`);
-  }
-  return value;
-}
-
 function finiteCoordinate(value: unknown, label: string) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`${label} must be finite.`);
@@ -87,59 +56,11 @@ function finiteCoordinate(value: unknown, label: string) {
   return value;
 }
 
-function validateNodeTotals(
-  totals: OpenEnaOrderedNodeTotals,
-  codes: readonly string[],
-  scope: OpenEnaOrderedPlotScope,
-  result: OpenEnaResult,
-) {
-  if (totals.schemaVersion !== 1 || !sameStrings(totals.codeOrder, codes)) {
-    throw new Error("ONA ordered node totals must exactly match the configured code order.");
+function finiteNonnegative(value: unknown, label: string) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    throw new Error(`${label} must be finite nonnegative.`);
   }
-  const values = scope.kind === "overall"
-    ? totals.overallResponseCodeTotals
-    : totals.groups.find((group) => group.name === scope.name)?.responseCodeTotals;
-  if (!values || values.length !== codes.length) {
-    throw new Error("ONA ordered node totals are missing the requested plot scope.");
-  }
-  const groupNames = totals.groups.map((group) => group.name);
-  if (new Set(groupNames).size !== groupNames.length
-    || totals.groups.length !== result.groups.length
-    || result.groups.some((group) => {
-      const summary = totals.groups.find((candidate) => candidate.name === group.name);
-      return !summary
-        || !Number.isSafeInteger(summary.unitCount)
-        || summary.unitCount !== group.count
-        || summary.responseCodeTotals.length !== codes.length;
-    })) {
-    throw new Error("ONA ordered node totals must match every completed result group and unit count.");
-  }
-  for (const group of totals.groups) {
-    group.responseCodeTotals.forEach((value, index) => {
-      finiteNonnegative(value, `ONA group “${group.name}” response total ${index + 1}`);
-    });
-  }
-  const overall = totals.overallResponseCodeTotals.map((value, index) => (
-    finiteNonnegative(value, `ONA overall response total ${index + 1}`)
-  ));
-  for (let codeIndex = 0; codeIndex < codes.length; codeIndex += 1) {
-    let groupedTotal = 0;
-    let groupedMagnitude = 0;
-    for (const group of totals.groups) {
-      groupedTotal += group.responseCodeTotals[codeIndex];
-      groupedMagnitude += Math.abs(group.responseCodeTotals[codeIndex]);
-      if (!Number.isFinite(groupedTotal) || !Number.isFinite(groupedMagnitude)) {
-        throw new Error(`ONA grouped response total ${codeIndex + 1} exceeds finite arithmetic range.`);
-      }
-    }
-    const roundoffTolerance = Number.EPSILON * groupedMagnitude * Math.max(8, totals.groups.length * 2);
-    if (Math.abs(groupedTotal - overall[codeIndex]) > roundoffTolerance) {
-      throw new Error("ONA ordered node overall totals must numerically agree with their de-identified group totals.");
-    }
-  }
-  return scope.kind === "overall"
-    ? overall
-    : values.map((value, index) => finiteNonnegative(value, `ONA response total ${index + 1}`));
+  return value;
 }
 
 function rowBelongsToScope(
@@ -161,157 +82,42 @@ export function buildOpenEnaOrderedPlotModel(input: {
   nodeTotals?: OpenEnaOrderedNodeTotals;
 }): OpenEnaOrderedPlotModel {
   const { result, scope, xDimension, yDimension } = input;
-  const config = canonicalizeOpenEnaConfig(input.config);
-  if (config.analysisKind !== "ona"
-    || openEnaAnalysisKindFromResult(result) !== "ona"
-    || result.set.networkType !== "ordered"
-    || result.executionProvenance?.networkType !== "ordered"
-    || result.executionProvenance.nodePositionMethod !== "directed") {
-    throw new Error("The ONA renderer requires one completed directed ordered-network result.");
-  }
-  if (!sameStrings(result.set.codes, config.codes)) {
-    throw new Error("The ONA renderer code order disagrees with the completed configuration.");
-  }
-  const maskErrors = validateDirectionalMask(config.directionalMask, config.codes);
-  if (!config.directionalMask || maskErrors.length > 0) {
-    throw new Error(`The ONA renderer requires one valid label-bound p² directional mask. ${maskErrors.join(" ")}`.trim());
-  }
-  if (!Number.isFinite(input.edgeThreshold) || input.edgeThreshold < 0 || input.edgeThreshold > 1) {
-    throw new Error("ONA edge threshold must be finite from zero to one.");
-  }
-  const size = config.codes.length;
-  const edgeCount = size * size;
-  if (result.set.adjacencyKey.length !== edgeCount || result.set.codeColumns.length !== edgeCount) {
-    throw new Error("ONA adjacency must contain the complete p² response-major, ground-minor edge order.");
-  }
-  for (let edgeIndex = 0; edgeIndex < edgeCount; edgeIndex += 1) {
-    const groundIndex = edgeIndex % size;
-    const responseIndex = Math.floor(edgeIndex / size);
-    const edge = result.set.adjacencyKey[edgeIndex];
-    if (!edge
-      || edge.sourceIndex !== groundIndex
-      || edge.targetIndex !== responseIndex
-      || edge.source !== config.codes[groundIndex]
-      || edge.target !== config.codes[responseIndex]
-      || edge.name !== `${edge.source} & ${edge.target}`
-      || result.set.codeColumns[edgeIndex] !== edge.name) {
-      throw new Error("ONA adjacency must use the complete response-major, ground-minor source/target contract.");
-    }
-  }
-
-  const groups = result.groups;
-  if (groups.length === 0 || groups.some((group) => !Number.isSafeInteger(group.count) || group.count < 1)) {
-    throw new Error("ONA plotting requires nonempty groups with positive safe unit counts.");
-  }
-  const selectedGroup = scope.kind === "group"
-    ? groups.find((group) => group.name === scope.name)
-    : null;
-  if (scope.kind === "group" && !selectedGroup) {
-    throw new Error(`ONA group plot scope “${scope.name}” is not present in the completed result.`);
-  }
-  const totalUnits = groups.reduce((sum, group) => sum + group.count, 0);
-  const meanWeight = (edgeName: string) => {
-    if (selectedGroup) {
-      return finiteNonnegative(selectedGroup.meanWeights[edgeName], `ONA group mean edge “${edgeName}”`);
-    }
-    let weighted = 0;
-    for (const group of groups) {
-      const value = finiteNonnegative(group.meanWeights[edgeName], `ONA group mean edge “${edgeName}”`);
-      const contribution = value * group.count;
-      if (!Number.isFinite(contribution) || !Number.isFinite(weighted + contribution)) {
-        throw new Error(`ONA overall mean edge “${edgeName}” exceeds finite arithmetic range.`);
-      }
-      weighted += contribution;
-    }
-    return weighted / totalUnits;
-  };
-
-  const rawAggregateCount = (edgeName: string) => {
-    let total = 0;
-    for (const row of result.set.connectionCounts) {
-      if (!rowBelongsToScope(row, scope, config.groupColumn)) continue;
-      const value = finiteNonnegative(row[edgeName], `ONA raw connection “${edgeName}”`);
-      if (!Number.isFinite(total + value)) {
-        throw new Error(`ONA raw connection aggregate “${edgeName}” exceeds finite arithmetic range.`);
-      }
-      total += value;
-    }
-    return total;
-  };
-
-  const weightedEdges = result.set.adjacencyKey.map((edge) => ({
-    edge,
-    normalizedMeanWeight: meanWeight(edge.name),
-    rawAggregateCount: rawAggregateCount(edge.name),
-  }));
-  const maximumNormalizedMeanWeight = Math.max(
-    ZERO_TOLERANCE,
-    ...weightedEdges.map(({ normalizedMeanWeight }) => normalizedMeanWeight),
-  );
-  const byDirection = new Map(weightedEdges.map((entry) => [
-    `${entry.edge.sourceIndex}:${entry.edge.targetIndex}`,
-    entry.normalizedMeanWeight,
-  ]));
-  const edges: OpenEnaOrderedPlotEdge[] = weightedEdges.map(({ edge, normalizedMeanWeight, rawAggregateCount }) => {
-    const reverseNormalizedMeanWeight = byDirection.get(`${edge.targetIndex}:${edge.sourceIndex}`) ?? 0;
-    const maskEnabled = config.directionalMask!.enabled[edge.sourceIndex][edge.targetIndex];
-    const selfConnection = edge.sourceIndex === edge.targetIndex;
-    const relativeMagnitude = normalizedMeanWeight / maximumNormalizedMeanWeight;
-    const chevron = !selfConnection
-      && normalizedMeanWeight > ZERO_TOLERANCE
-      && normalizedMeanWeight >= reverseNormalizedMeanWeight;
-    const visible = maskEnabled
-      && normalizedMeanWeight > ZERO_TOLERANCE
-      && relativeMagnitude >= input.edgeThreshold;
-    return {
-      name: edge.name,
-      ground: edge.source,
-      response: edge.target,
-      groundIndex: edge.sourceIndex,
-      responseIndex: edge.targetIndex,
-      normalizedMeanWeight,
-      rawAggregateCount,
-      reverseNormalizedMeanWeight,
-      relativeMagnitude,
-      maskEnabled,
-      selfConnection,
-      chevron,
-      visible,
-    };
+  const networkModel = buildOpenEnaOrderedNetworkModel({
+    result,
+    config: input.config,
+    scope,
+    edgeThreshold: input.edgeThreshold,
+    ...(input.nodeTotals ? { nodeTotals: input.nodeTotals } : {}),
   });
-
+  const groupColumn = input.config.groupColumn;
+  const selectedGroup = scope.kind === "group"
+    ? result.groups.find((group) => group.name === scope.name)
+    : null;
   const rotationNodes = result.set.rotation.nodes ?? [];
-  if (rotationNodes.length !== size) {
+  if (rotationNodes.length !== networkModel.codes.length) {
     throw new Error("ONA directed node geometry must contain one node for every configured code.");
   }
   const nodeCoordinates = new Map(rotationNodes.map((row) => [String(row.code), row]));
-  const responseTotals = input.nodeTotals
-    ? validateNodeTotals(input.nodeTotals, config.codes, scope, result)
-    : config.codes.map((_, responseIndex) => edges
-        .filter((edge) => edge.responseIndex === responseIndex && edge.maskEnabled)
-        .reduce((sum, edge) => sum + edge.normalizedMeanWeight, 0));
-  const maximumResponseTotal = Math.max(ZERO_TOLERANCE, ...responseTotals);
-  const nodes = config.codes.map((code, codeIndex) => {
-    const row = nodeCoordinates.get(code);
-    if (!row) throw new Error(`ONA directed node geometry is missing code “${code}”.`);
-    const responseTotal = responseTotals[codeIndex];
+  const nodes = networkModel.nodes.map((networkNode) => {
+    const row = nodeCoordinates.get(networkNode.code);
+    if (!row) throw new Error(`ONA directed node geometry is missing code “${networkNode.code}”.`);
     return {
-      code,
-      codeIndex,
-      x: finiteCoordinate(row[xDimension], `ONA node “${code}” ${xDimension}`),
-      y: finiteCoordinate(row[yDimension], `ONA node “${code}” ${yDimension}`),
-      responseTotal,
-      radius: 10 + Math.sqrt(responseTotal / maximumResponseTotal) * 12,
+      code: networkNode.code,
+      codeIndex: networkNode.codeIndex,
+      x: finiteCoordinate(row[xDimension], `ONA node “${networkNode.code}” ${xDimension}`),
+      y: finiteCoordinate(row[yDimension], `ONA node “${networkNode.code}” ${yDimension}`),
+      responseTotal: networkNode.responseTotal,
+      radius: networkNode.radius,
     };
   });
 
   const points = result.set.points.flatMap((row, index) => {
-    if (!rowBelongsToScope(row, scope, config.groupColumn)) return [];
+    if (!rowBelongsToScope(row, scope, groupColumn)) return [];
     const unit = String(row.ENA_UNIT ?? `unit-${index + 1}`);
     return [{
       key: `${unit}:${index}`,
       unit,
-      group: config.groupColumn ? String(row[config.groupColumn] ?? "") : null,
+      group: groupColumn ? String(row[groupColumn] ?? "") : null,
       x: finiteCoordinate(row[xDimension], `ONA point ${index + 1} ${xDimension}`),
       y: finiteCoordinate(row[yDimension], `ONA point ${index + 1} ${yDimension}`),
     }];
@@ -320,19 +126,17 @@ export function buildOpenEnaOrderedPlotModel(input: {
   const yVariance = finiteNonnegative(result.set.variance[yDimension] ?? 0, `ONA variance ${yDimension}`);
 
   return {
-    scope,
+    scope: networkModel.scope,
     scopeLabel: scope.kind === "overall" ? "Overall ordered network" : `${scope.name} ordered mean network`,
     scopeColor: selectedGroup?.color ?? "#39736e",
-    codes: [...config.codes],
+    codes: networkModel.codes,
     nodes,
     points,
-    edges,
-    visibleEdges: edges.filter((edge) => edge.visible),
-    maximumNormalizedMeanWeight,
-    weightDefinition: scope.kind === "overall" ? "equal-unit normalized mean" : "group equal-unit normalized mean",
-    nodeSizeDefinition: input.nodeTotals
-      ? "raw response-code total"
-      : "incoming normalized directed mass (response-total fallback)",
+    edges: networkModel.edges,
+    visibleEdges: networkModel.visibleEdges,
+    maximumNormalizedMeanWeight: networkModel.maximumNormalizedMeanWeight,
+    weightDefinition: networkModel.weightDefinition,
+    nodeSizeDefinition: networkModel.nodeSizeDefinition,
     xDimension,
     yDimension,
     xVariance,

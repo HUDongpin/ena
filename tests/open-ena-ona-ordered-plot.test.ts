@@ -7,10 +7,14 @@ import {
   buildOrderedEdgeGlyph,
   type OpenEnaOrderedNodeTotals,
 } from "../lib/open-ena/ordered-plot";
+import {
+  buildOpenEnaOrderedNetworkModel,
+  type OpenEnaOrderedNetworkModel,
+} from "../lib/open-ena/ordered-network-model";
 import * as unitPointStyleContract from "../lib/open-ena/unit-point-style";
 import type { OpenEnaUnitPointStyle } from "../lib/open-ena/unit-point-style";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
-import type { OpenEnaConfig, OpenEnaResult } from "../lib/open-ena/types";
+import type { CanonicalOpenEnaConfig, OpenEnaConfig, OpenEnaResult } from "../lib/open-ena/types";
 
 const codes = ["A", "B", "C"];
 const adjacencyKey = codes.flatMap((response, responseIndex) => (
@@ -144,6 +148,624 @@ function orderedFixture(): { result: OpenEnaResult; config: OpenEnaConfig } {
   } as unknown as OpenEnaResult;
   return { result, config };
 }
+
+function buildSharedFixture(input: {
+  result?: OpenEnaResult;
+  config?: OpenEnaConfig;
+  scope?: { kind: "overall" } | { kind: "group"; name: string };
+  edgeThreshold?: number;
+  nodeTotals?: OpenEnaOrderedNodeTotals;
+} = {}) {
+  const fixture = orderedFixture();
+  return buildOpenEnaOrderedNetworkModel({
+    result: input.result ?? fixture.result,
+    config: input.config ?? fixture.config,
+    scope: input.scope ?? { kind: "overall" },
+    edgeThreshold: input.edgeThreshold ?? 0,
+    ...(input.nodeTotals ? { nodeTotals: input.nodeTotals } : {}),
+  });
+}
+
+function coordinateStrip(model: ReturnType<typeof buildOpenEnaOrderedPlotModel>): OpenEnaOrderedNetworkModel {
+  return {
+    scope: model.scope,
+    codes: model.codes,
+    nodes: model.nodes.map((node) => ({
+      code: node.code,
+      codeIndex: node.codeIndex,
+      responseTotal: node.responseTotal,
+      radius: node.radius,
+    })),
+    edges: model.edges,
+    visibleEdges: model.visibleEdges,
+    maximumNormalizedMeanWeight: model.maximumNormalizedMeanWeight,
+    weightDefinition: model.weightDefinition,
+    nodeSizeDefinition: model.nodeSizeDefinition,
+  };
+}
+
+test("the pre-extraction 2D ordered plot model is fully characterized", () => {
+  const { result, config } = orderedFixture();
+  const model = buildOpenEnaOrderedPlotModel({
+    result,
+    config,
+    scope: { kind: "overall" },
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    edgeThreshold: 0,
+  });
+  const mean = {
+    aa: (0.1 * 1 + 0.5 * 3) / 4,
+    ba: (0.2 * 1 + 0.4 * 3) / 4,
+    ca: (0.4 * 1 + 0.2 * 3) / 4,
+    ab: (0.8 * 1 + 0.4 * 3) / 4,
+    bb: (0.3 * 1 + 0.7 * 3) / 4,
+    cb: 0,
+    ac: (0.4 * 1 + 0.2 * 3) / 4,
+    bc: 0,
+    cc: 0,
+  };
+  const maximum = mean.bb;
+  const expectedEdges = [
+    { name: "A & A", ground: "A", response: "A", groundIndex: 0, responseIndex: 0, normalizedMeanWeight: mean.aa, rawAggregateCount: 10, reverseNormalizedMeanWeight: mean.aa, relativeMagnitude: mean.aa / maximum, maskEnabled: true, selfConnection: true, chevron: false, visible: true },
+    { name: "B & A", ground: "B", response: "A", groundIndex: 1, responseIndex: 0, normalizedMeanWeight: mean.ba, rawAggregateCount: 16, reverseNormalizedMeanWeight: mean.ab, relativeMagnitude: mean.ba / maximum, maskEnabled: true, selfConnection: false, chevron: false, visible: true },
+    { name: "C & A", ground: "C", response: "A", groundIndex: 2, responseIndex: 0, normalizedMeanWeight: mean.ca, rawAggregateCount: 0, reverseNormalizedMeanWeight: mean.ac, relativeMagnitude: mean.ca / maximum, maskEnabled: false, selfConnection: false, chevron: true, visible: false },
+    { name: "A & B", ground: "A", response: "B", groundIndex: 0, responseIndex: 1, normalizedMeanWeight: mean.ab, rawAggregateCount: 20, reverseNormalizedMeanWeight: mean.ba, relativeMagnitude: mean.ab / maximum, maskEnabled: true, selfConnection: false, chevron: true, visible: true },
+    { name: "B & B", ground: "B", response: "B", groundIndex: 1, responseIndex: 1, normalizedMeanWeight: mean.bb, rawAggregateCount: 0, reverseNormalizedMeanWeight: mean.bb, relativeMagnitude: 1, maskEnabled: true, selfConnection: true, chevron: false, visible: true },
+    { name: "C & B", ground: "C", response: "B", groundIndex: 2, responseIndex: 1, normalizedMeanWeight: mean.cb, rawAggregateCount: 0, reverseNormalizedMeanWeight: mean.bc, relativeMagnitude: 0, maskEnabled: true, selfConnection: false, chevron: false, visible: false },
+    { name: "A & C", ground: "A", response: "C", groundIndex: 0, responseIndex: 2, normalizedMeanWeight: mean.ac, rawAggregateCount: 0, reverseNormalizedMeanWeight: mean.ca, relativeMagnitude: mean.ac / maximum, maskEnabled: true, selfConnection: false, chevron: true, visible: true },
+    { name: "B & C", ground: "B", response: "C", groundIndex: 1, responseIndex: 2, normalizedMeanWeight: mean.bc, rawAggregateCount: 0, reverseNormalizedMeanWeight: mean.cb, relativeMagnitude: 0, maskEnabled: true, selfConnection: false, chevron: false, visible: false },
+    { name: "C & C", ground: "C", response: "C", groundIndex: 2, responseIndex: 2, normalizedMeanWeight: mean.cc, rawAggregateCount: 0, reverseNormalizedMeanWeight: mean.cc, relativeMagnitude: 0, maskEnabled: true, selfConnection: true, chevron: false, visible: false },
+  ];
+  const responseTotals = [mean.aa + mean.ba, mean.ab + mean.bb + mean.cb, mean.ac + mean.bc + mean.cc];
+  const maximumResponseTotal = Math.max(...responseTotals);
+
+  assert.deepEqual(model, {
+    scope: { kind: "overall" },
+    scopeLabel: "Overall ordered network",
+    scopeColor: "#39736e",
+    codes,
+    nodes: [
+      { code: "A", codeIndex: 0, x: -0.8, y: 0.5, responseTotal: responseTotals[0], radius: 10 + Math.sqrt(responseTotals[0] / maximumResponseTotal) * 12 },
+      { code: "B", codeIndex: 1, x: 0.8, y: 0.5, responseTotal: responseTotals[1], radius: 10 + Math.sqrt(responseTotals[1] / maximumResponseTotal) * 12 },
+      { code: "C", codeIndex: 2, x: 0, y: -0.8, responseTotal: responseTotals[2], radius: 10 + Math.sqrt(responseTotals[2] / maximumResponseTotal) * 12 },
+    ],
+    points: [
+      { key: "u1:0", unit: "u1", group: "first", x: -0.6, y: 0.2 },
+      { key: "u2:1", unit: "u2", group: "second", x: 0.2, y: -0.1 },
+      { key: "u3:2", unit: "u3", group: "second", x: 0.4, y: 0.3 },
+      { key: "u4:3", unit: "u4", group: "second", x: 0.7, y: -0.2 },
+    ],
+    edges: expectedEdges,
+    visibleEdges: expectedEdges.filter((edge) => edge.visible),
+    maximumNormalizedMeanWeight: maximum,
+    weightDefinition: "equal-unit normalized mean",
+    nodeSizeDefinition: "incoming normalized directed mass (response-total fallback)",
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    xVariance: 0.6,
+    yVariance: 0.3,
+  });
+  assert.deepEqual(model.visibleEdges.map((edge) => model.edges.indexOf(edge)), [0, 1, 3, 4, 6]);
+  for (const edge of model.visibleEdges) assert.strictEqual(edge, model.edges[model.edges.indexOf(edge)]);
+});
+
+test("the shared ordered-network model has exact dimension-free keys and 2D coordinate-stripped parity", () => {
+  const { result, config } = orderedFixture();
+  const shared = buildOpenEnaOrderedNetworkModel({
+    result,
+    config,
+    scope: { kind: "overall" },
+    edgeThreshold: 0,
+  });
+  const plot = buildOpenEnaOrderedPlotModel({
+    result,
+    config,
+    scope: { kind: "overall" },
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    edgeThreshold: 0,
+  });
+
+  assert.deepEqual(shared, coordinateStrip(plot));
+  assert.deepEqual(Object.keys(shared).sort(), [
+    "codes",
+    "edges",
+    "maximumNormalizedMeanWeight",
+    "nodeSizeDefinition",
+    "nodes",
+    "scope",
+    "visibleEdges",
+    "weightDefinition",
+  ]);
+  assert.deepEqual(Object.keys(shared.nodes[0]).sort(), ["code", "codeIndex", "radius", "responseTotal"]);
+  assert.deepEqual(Object.keys(shared.edges[0]).sort(), [
+    "chevron",
+    "ground",
+    "groundIndex",
+    "maskEnabled",
+    "name",
+    "normalizedMeanWeight",
+    "rawAggregateCount",
+    "relativeMagnitude",
+    "response",
+    "responseIndex",
+    "reverseNormalizedMeanWeight",
+    "selfConnection",
+    "visible",
+  ]);
+  assert.deepEqual(shared.visibleEdges.map((edge) => shared.edges.indexOf(edge)), [0, 1, 3, 4, 6]);
+  const forbiddenKeys = new Set(["x", "y", "z", "points", "dimensions", "dimension", "variance", "xDimension", "yDimension", "zDimension"]);
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== "object") return;
+    for (const [key, nested] of Object.entries(value)) {
+      assert.equal(forbiddenKeys.has(key), false, `shared model leaked dimension-dependent key ${key}`);
+      visit(nested);
+    }
+  };
+  visit(shared);
+});
+
+test("the shared model is invariant to rotation nodes, unit points, dimensions, and variance", () => {
+  const { result, config } = orderedFixture();
+  const expected = buildOpenEnaOrderedNetworkModel({
+    result,
+    config,
+    scope: { kind: "overall" },
+    edgeThreshold: 0.25,
+  });
+  const dimensionCorrupted = structuredClone(result);
+  dimensionCorrupted.set.rotation.nodes = [{ code: "not-a-configured-code", SVD1: Number.NaN }];
+  dimensionCorrupted.set.points = [{ ENA_UNIT: "changed", group: "missing", arbitrary: Number.POSITIVE_INFINITY }];
+  dimensionCorrupted.set.variance = { SVD1: Number.NEGATIVE_INFINITY };
+  dimensionCorrupted.dimensions = ["totally", "different", "axes"];
+
+  assert.deepEqual(buildOpenEnaOrderedNetworkModel({
+    result: dimensionCorrupted,
+    config,
+    scope: { kind: "overall" },
+    edgeThreshold: 0.25,
+  }), expected);
+});
+
+test("shared directed edges preserve response-major indexing, asymmetric masks, reciprocal ties, and self cells", () => {
+  const model = buildSharedFixture({ scope: { kind: "group", name: "first" } });
+  assert.deepEqual(model.edges.map((edge) => `${edge.ground}->${edge.response}`), [
+    "A->A", "B->A", "C->A",
+    "A->B", "B->B", "C->B",
+    "A->C", "B->C", "C->C",
+  ]);
+  const cToA = model.edges[2];
+  const aToC = model.edges[6];
+  assert.deepEqual({
+    ground: cToA.ground,
+    response: cToA.response,
+    groundIndex: cToA.groundIndex,
+    responseIndex: cToA.responseIndex,
+    weight: cToA.normalizedMeanWeight,
+    reverse: cToA.reverseNormalizedMeanWeight,
+    maskEnabled: cToA.maskEnabled,
+    chevron: cToA.chevron,
+    visible: cToA.visible,
+  }, {
+    ground: "C",
+    response: "A",
+    groundIndex: 2,
+    responseIndex: 0,
+    weight: 0.4,
+    reverse: 0.4,
+    maskEnabled: false,
+    chevron: true,
+    visible: false,
+  });
+  assert.deepEqual({
+    ground: aToC.ground,
+    response: aToC.response,
+    groundIndex: aToC.groundIndex,
+    responseIndex: aToC.responseIndex,
+    weight: aToC.normalizedMeanWeight,
+    reverse: aToC.reverseNormalizedMeanWeight,
+    maskEnabled: aToC.maskEnabled,
+    chevron: aToC.chevron,
+    visible: aToC.visible,
+  }, {
+    ground: "A",
+    response: "C",
+    groundIndex: 0,
+    responseIndex: 2,
+    weight: 0.4,
+    reverse: 0.4,
+    maskEnabled: true,
+    chevron: true,
+    visible: true,
+  });
+  assert.deepEqual(model.edges.filter((edge) => edge.selfConnection).map((edge) => edge.name), ["A & A", "B & B", "C & C"]);
+  assert.ok(model.edges.filter((edge) => edge.selfConnection).every((edge) => !edge.chevron));
+});
+
+test("shared overall and group scopes keep normalized means separate from authoritative raw aggregates", () => {
+  const overall = buildSharedFixture();
+  const first = buildSharedFixture({ scope: { kind: "group", name: "first" } });
+  const second = buildSharedFixture({ scope: { kind: "group", name: "second" } });
+  const edge = (model: OpenEnaOrderedNetworkModel) => model.edges.find((candidate) => candidate.name === "A & B");
+
+  assert.deepEqual({ mean: edge(overall)?.normalizedMeanWeight, raw: edge(overall)?.rawAggregateCount }, { mean: 0.5, raw: 20 });
+  assert.deepEqual({ mean: edge(first)?.normalizedMeanWeight, raw: edge(first)?.rawAggregateCount }, { mean: 0.8, raw: 4 });
+  assert.deepEqual({ mean: edge(second)?.normalizedMeanWeight, raw: edge(second)?.rawAggregateCount }, { mean: 0.4, raw: 16 });
+  assert.equal(overall.weightDefinition, "equal-unit normalized mean");
+  assert.equal(first.weightDefinition, "group equal-unit normalized mean");
+});
+
+test("one synthetic all-units group remains a valid group scope without a group column", () => {
+  const { result, config } = orderedFixture();
+  const ungroupedConfig = structuredClone(config);
+  ungroupedConfig.groupColumn = null;
+  const ungroupedResult = structuredClone(result);
+  ungroupedResult.groups = [{
+    ...ungroupedResult.groups[0],
+    name: "all-units",
+    count: 4,
+    pointCount: 4,
+    meanWeights: weights({ "A & B": 0.25 }),
+  }];
+  ungroupedResult.executionProvenance!.configuration.groupColumn = null;
+
+  const model = buildOpenEnaOrderedNetworkModel({
+    result: ungroupedResult,
+    config: ungroupedConfig,
+    scope: { kind: "group", name: "all-units" },
+    edgeThreshold: 0,
+  });
+  const aToB = model.edges.find((edge) => edge.name === "A & B");
+  assert.deepEqual({
+    mean: aToB?.normalizedMeanWeight,
+    raw: aToB?.rawAggregateCount,
+    definition: model.weightDefinition,
+  }, {
+    mean: 0.25,
+    raw: 20,
+    definition: "group equal-unit normalized mean",
+  });
+});
+
+test("threshold visibility is inclusive, tolerance-bounded, and never removes scientific p² edges", () => {
+  const equalBoundary = buildSharedFixture({ scope: { kind: "group", name: "first" }, edgeThreshold: 0.5 });
+  assert.equal(equalBoundary.edges.length, 9);
+  assert.deepEqual(equalBoundary.visibleEdges.map((edge) => edge.name), ["A & B", "A & C"]);
+  assert.equal(equalBoundary.edges.find((edge) => edge.name === "A & C")?.relativeMagnitude, 0.5);
+
+  const justAboveBoundary = buildSharedFixture({ scope: { kind: "group", name: "first" }, edgeThreshold: 0.5000000000000001 });
+  assert.deepEqual(justAboveBoundary.visibleEdges.map((edge) => edge.name), ["A & B"]);
+  const thresholdOne = buildSharedFixture({ scope: { kind: "group", name: "first" }, edgeThreshold: 1 });
+  assert.deepEqual(thresholdOne.visibleEdges.map((edge) => edge.name), ["A & B"]);
+  assert.equal(thresholdOne.edges.length, 9);
+
+  const { result, config } = orderedFixture();
+  const tolerance = structuredClone(result);
+  tolerance.groups[0].meanWeights = weights({ "A & A": 1e-12, "A & B": 1e-12 + Number.EPSILON });
+  const toleranceModel = buildOpenEnaOrderedNetworkModel({
+    result: tolerance,
+    config,
+    scope: { kind: "group", name: "first" },
+    edgeThreshold: 0,
+  });
+  assert.equal(toleranceModel.edges.find((edge) => edge.name === "A & A")?.visible, false, "ZERO_TOLERANCE itself is not visible");
+  assert.equal(toleranceModel.edges.find((edge) => edge.name === "A & B")?.visible, true, "a finite weight just above ZERO_TOLERANCE is visible");
+
+  const allZero = structuredClone(result);
+  allZero.groups[0].meanWeights = weights({});
+  const zeroModel = buildOpenEnaOrderedNetworkModel({
+    result: allZero,
+    config,
+    scope: { kind: "group", name: "first" },
+    edgeThreshold: 0,
+  });
+  assert.equal(zeroModel.maximumNormalizedMeanWeight, 1e-12);
+  assert.equal(zeroModel.edges.length, 9);
+  assert.equal(zeroModel.visibleEdges.length, 0);
+  assert.ok(zeroModel.edges.every((edge) => edge.relativeMagnitude === 0));
+
+  for (const edgeThreshold of [Number.NaN, Number.NEGATIVE_INFINITY, -Number.EPSILON, 1 + Number.EPSILON, Number.POSITIVE_INFINITY]) {
+    assert.throws(() => buildSharedFixture({ edgeThreshold }), /threshold must be finite from zero to one/);
+  }
+});
+
+test("fallback node mass ignores display threshold, excludes masked incoming edges, and supplied totals override it", () => {
+  const thresholdZero = buildSharedFixture({ edgeThreshold: 0 });
+  const thresholdOne = buildSharedFixture({ edgeThreshold: 1 });
+  assert.deepEqual(thresholdOne.nodes, thresholdZero.nodes);
+  assert.equal(thresholdZero.nodes[0].responseTotal, 0.75, "masked C→A is excluded from A incoming fallback mass");
+
+  const { result, config } = orderedFixture();
+  const unmaskedConfig = structuredClone(config);
+  unmaskedConfig.directionalMask!.enabled[2][0] = true;
+  const unmaskedResult = structuredClone(result);
+  unmaskedResult.executionProvenance!.configuration = structuredClone(unmaskedConfig) as CanonicalOpenEnaConfig;
+  unmaskedResult.executionProvenance!.directionalMask = structuredClone(unmaskedConfig.directionalMask!);
+  const unmasked = buildOpenEnaOrderedNetworkModel({
+    result: unmaskedResult,
+    config: unmaskedConfig,
+    scope: { kind: "overall" },
+    edgeThreshold: 1,
+  });
+  assert.equal(unmasked.nodes[0].responseTotal, 1);
+
+  const supplied: OpenEnaOrderedNodeTotals = {
+    schemaVersion: 1,
+    codeOrder: codes,
+    overallResponseCodeTotals: [100, 4, 1],
+    groups: [
+      { name: "first", unitCount: 1, responseCodeTotals: [8, 2, 1] },
+      { name: "second", unitCount: 3, responseCodeTotals: [92, 2, 0] },
+    ],
+  };
+  const exact = buildSharedFixture({ edgeThreshold: 1, nodeTotals: supplied });
+  assert.deepEqual(exact.nodes.map((node) => node.responseTotal), [100, 4, 1]);
+  assert.equal(exact.nodes[0].radius, 22);
+  assert.equal(exact.nodeSizeDefinition, "raw response-code total");
+});
+
+test("UI-side mask canonicalization remains compatible while stale execution provenance fails closed", () => {
+  const { result, config } = orderedFixture();
+  const reorderedUiConfig = structuredClone(config);
+  reorderedUiConfig.directionalMask = {
+    schemaVersion: 1,
+    codeOrder: ["C", "A", "B"],
+    enabled: [
+      [true, false, true],
+      [true, true, true],
+      [true, true, true],
+    ],
+  };
+  assert.deepEqual(
+    buildOpenEnaOrderedNetworkModel({ result, config: reorderedUiConfig, scope: { kind: "overall" }, edgeThreshold: 0 }),
+    buildOpenEnaOrderedNetworkModel({ result, config, scope: { kind: "overall" }, edgeThreshold: 0 }),
+  );
+
+  const staleProvenance = structuredClone(result);
+  staleProvenance.executionProvenance!.directionalMask = structuredClone(reorderedUiConfig.directionalMask);
+  staleProvenance.executionProvenance!.configuration.directionalMask = structuredClone(reorderedUiConfig.directionalMask);
+  assert.throws(() => buildOpenEnaOrderedNetworkModel({
+    result: staleProvenance,
+    config: reorderedUiConfig,
+    scope: { kind: "overall" },
+    edgeThreshold: 0,
+  }), /execution provenance/i);
+});
+
+test("shared provenance requires canonical ONA, ordered directed execution, aligned mask, and aligned order", () => {
+  const fixture = orderedFixture();
+  const invoke = (result: OpenEnaResult, config: OpenEnaConfig = fixture.config) => buildOpenEnaOrderedNetworkModel({
+    result,
+    config,
+    scope: { kind: "overall" },
+    edgeThreshold: 0,
+  });
+
+  const standardConfig = structuredClone(fixture.config);
+  standardConfig.analysisKind = "ena";
+  standardConfig.orderPolicy = null;
+  standardConfig.directionalMask = null;
+  assert.throws(() => invoke(fixture.result, standardConfig), /ordered-network|directed ordered-network/i);
+  const malformedMaskConfig = structuredClone(fixture.config);
+  malformedMaskConfig.directionalMask!.enabled[0].pop();
+  assert.throws(() => invoke(fixture.result, malformedMaskConfig), /directional mask/i);
+
+  const cases: Array<[string, (candidate: OpenEnaResult) => void]> = [
+    ["missing execution provenance", (candidate) => { delete candidate.executionProvenance; }],
+    ["wrong analysis kind", (candidate) => { candidate.executionProvenance!.analysisKind = "ena"; }],
+    ["wrong network type", (candidate) => { candidate.executionProvenance!.networkType = "standard"; }],
+    ["wrong node method", (candidate) => { candidate.executionProvenance!.nodePositionMethod = "undirected"; }],
+    ["wrong configuration", (candidate) => { candidate.executionProvenance!.configuration.windowSizeBack = 99; }],
+    ["missing ordering", (candidate) => { candidate.executionProvenance!.ordering = null; }],
+    ["stale requested order", (candidate) => {
+      candidate.executionProvenance!.ordering!.requestedPolicy = { kind: "source-row", confirmed: true };
+    }],
+    ["stale resolved order", (candidate) => {
+      const resolved = candidate.executionProvenance!.ordering!.resolvedPolicy;
+      if (resolved.kind === "columns") resolved.columns = ["stale-turn"];
+    }],
+    ["empty source-index permutation", (candidate) => {
+      candidate.executionProvenance!.ordering!.responseRowSourceIndices = [];
+    }],
+    ["sparse source-index permutation", (candidate) => {
+      candidate.executionProvenance!.ordering!.responseRowSourceIndices = new Array(4);
+    }],
+    ["duplicate source-index permutation", (candidate) => {
+      candidate.executionProvenance!.ordering!.responseRowSourceIndices = [0, 0, 2, 3];
+    }],
+    ["out-of-range source-index permutation", (candidate) => {
+      candidate.executionProvenance!.ordering!.responseRowSourceIndices = [0, 1, 2, 4];
+    }],
+    ["missing execution mask", (candidate) => { candidate.executionProvenance!.directionalMask = null; }],
+    ["stale execution mask cell", (candidate) => {
+      candidate.executionProvenance!.directionalMask!.enabled[2][0] = true;
+    }],
+    ["stale configuration mask cell", (candidate) => {
+      candidate.executionProvenance!.configuration.directionalMask!.enabled[2][0] = true;
+    }],
+  ];
+  for (const [label, mutate] of cases) {
+    const candidate = structuredClone(fixture.result);
+    mutate(candidate);
+    assert.throws(() => invoke(candidate), /execution provenance|directed ordered-network/i, label);
+  }
+
+  const runtimeKind = structuredClone(fixture.result);
+  runtimeKind.set.networkType = "standard";
+  runtimeKind.set.functionParams.networkType = "standard";
+  assert.throws(() => invoke(runtimeKind), /ordered-network|runtime network|provenance/i);
+});
+
+test("shared adjacency rejects incomplete, transposed, mislabeled, and stale code-column p² contracts", () => {
+  const fixture = orderedFixture();
+  const invoke = (result: OpenEnaResult) => buildOpenEnaOrderedNetworkModel({
+    result,
+    config: fixture.config,
+    scope: { kind: "overall" },
+    edgeThreshold: 0,
+  });
+  const cases: Array<[string, (candidate: OpenEnaResult) => void]> = [
+    ["missing adjacency cell", (candidate) => { candidate.set.adjacencyKey.pop(); }],
+    ["missing code column", (candidate) => { candidate.set.codeColumns.pop(); }],
+    ["swapped response-major cells", (candidate) => {
+      [candidate.set.adjacencyKey[2], candidate.set.adjacencyKey[6]] = [candidate.set.adjacencyKey[6], candidate.set.adjacencyKey[2]];
+    }],
+    ["transposed source and target", (candidate) => {
+      candidate.set.adjacencyKey[2] = {
+        ...candidate.set.adjacencyKey[2],
+        source: "A",
+        target: "C",
+        sourceIndex: 0,
+        targetIndex: 2,
+        name: "A & C",
+      };
+      candidate.set.codeColumns[2] = "A & C";
+    }],
+    ["wrong source label", (candidate) => { candidate.set.adjacencyKey[2].source = "X"; }],
+    ["wrong edge name", (candidate) => { candidate.set.adjacencyKey[2].name = "C -> A"; }],
+    ["wrong code column", (candidate) => { candidate.set.codeColumns[2] = "A & C"; }],
+    ["missing reciprocal disguised as duplicate", (candidate) => {
+      candidate.set.adjacencyKey[2] = { ...candidate.set.adjacencyKey[6] };
+      candidate.set.codeColumns[2] = candidate.set.adjacencyKey[2].name;
+    }],
+  ];
+  for (const [label, mutate] of cases) {
+    const candidate = structuredClone(fixture.result);
+    mutate(candidate);
+    assert.throws(() => invoke(candidate), /p²|response-major, ground-minor|source\/target contract/i, label);
+  }
+
+  const staleCodeOrder = structuredClone(fixture.result);
+  staleCodeOrder.set.codes = ["C", "B", "A"];
+  assert.throws(() => invoke(staleCodeOrder), /code order/i);
+});
+
+test("shared groups, normalized means, raw counts, and fallback additions fail closed on invalid arithmetic", () => {
+  const fixture = orderedFixture();
+  const invoke = (
+    result: OpenEnaResult,
+    config: OpenEnaConfig = fixture.config,
+    scope: { kind: "overall" } | { kind: "group"; name: string } = { kind: "overall" },
+  ) => buildOpenEnaOrderedNetworkModel({ result, config, scope, edgeThreshold: 0 });
+  const cases: Array<[string, (candidate: OpenEnaResult) => void, RegExp]> = [
+    ["empty groups", (candidate) => { candidate.groups = []; }, /nonempty groups/],
+    ["zero count", (candidate) => { candidate.groups[0].count = 0; }, /positive safe unit counts/],
+    ["fractional count", (candidate) => { candidate.groups[0].count = 1.5; }, /positive safe unit counts/],
+    ["unsafe count", (candidate) => { candidate.groups[0].count = Number.MAX_SAFE_INTEGER + 1; }, /positive safe unit counts/],
+    ["unsafe total count", (candidate) => {
+      candidate.groups[0].count = Number.MAX_SAFE_INTEGER;
+      candidate.groups[1].count = Number.MAX_SAFE_INTEGER;
+    }, /unit count total|arithmetic range/],
+    ["nonfinite mean", (candidate) => { candidate.groups[0].meanWeights["A & B"] = Number.POSITIVE_INFINITY; }, /finite nonnegative/],
+    ["negative mean", (candidate) => { candidate.groups[0].meanWeights["A & B"] = -1; }, /finite nonnegative/],
+    ["nonfinite raw", (candidate) => { candidate.set.connectionCounts[0]["A & B"] = Number.NaN; }, /finite nonnegative/],
+    ["negative raw", (candidate) => { candidate.set.connectionCounts[0]["A & B"] = -1; }, /finite nonnegative/],
+    ["raw overflow", (candidate) => {
+      candidate.set.connectionCounts[0]["A & B"] = Number.MAX_VALUE;
+      candidate.set.connectionCounts[1]["A & B"] = Number.MAX_VALUE;
+    }, /exceeds finite arithmetic range/],
+  ];
+  for (const [label, mutate, expected] of cases) {
+    const candidate = structuredClone(fixture.result);
+    mutate(candidate);
+    assert.throws(() => invoke(candidate), expected, label);
+  }
+
+  const fallbackOverflow = structuredClone(fixture.result);
+  fallbackOverflow.groups[0].meanWeights = weights({
+    "A & A": Number.MAX_VALUE,
+    "B & A": Number.MAX_VALUE,
+  });
+  assert.throws(
+    () => invoke(fallbackOverflow, fixture.config, { kind: "group", name: "first" }),
+    /incoming normalized directed mass.*finite arithmetic range/i,
+  );
+
+  assert.throws(() => invoke(fixture.result, fixture.config, { kind: "group", name: "missing" }), /not present/);
+  const groupWithoutColumnConfig = structuredClone(fixture.config);
+  groupWithoutColumnConfig.groupColumn = null;
+  const groupWithoutColumnResult = structuredClone(fixture.result);
+  groupWithoutColumnResult.executionProvenance!.configuration.groupColumn = null;
+  assert.throws(() => invoke(groupWithoutColumnResult, groupWithoutColumnConfig, { kind: "group", name: "first" }), /group column|scope/i);
+});
+
+test("ordered response-node summaries reject schema, code, group, unit-count, value, and sum corruption", () => {
+  const valid: OpenEnaOrderedNodeTotals = {
+    schemaVersion: 1,
+    codeOrder: codes,
+    overallResponseCodeTotals: [100, 4, 1],
+    groups: [
+      { name: "first", unitCount: 1, responseCodeTotals: [8, 2, 1] },
+      { name: "second", unitCount: 3, responseCodeTotals: [92, 2, 0] },
+    ],
+  };
+  const cases: Array<[string, (candidate: OpenEnaOrderedNodeTotals) => void]> = [
+    ["schema", (candidate) => { (candidate as { schemaVersion: number }).schemaVersion = 2; }],
+    ["code order", (candidate) => { candidate.codeOrder = ["C", "B", "A"]; }],
+    ["missing group", (candidate) => { candidate.groups.pop(); }],
+    ["duplicate group", (candidate) => { candidate.groups[1].name = "first"; }],
+    ["unit count", (candidate) => { candidate.groups[0].unitCount = 2; }],
+    ["group length", (candidate) => { candidate.groups[0].responseCodeTotals.pop(); }],
+    ["nonfinite group total", (candidate) => { candidate.groups[0].responseCodeTotals[0] = Number.NaN; }],
+    ["negative overall", (candidate) => { candidate.overallResponseCodeTotals[0] = -1; }],
+    ["sparse overall", (candidate) => { candidate.overallResponseCodeTotals = new Array(codes.length); }],
+    ["sum mismatch", (candidate) => { candidate.overallResponseCodeTotals[0] = 101; }],
+  ];
+  for (const [label, mutate] of cases) {
+    const candidate = structuredClone(valid);
+    mutate(candidate);
+    assert.throws(() => buildSharedFixture({ nodeTotals: candidate }), /node totals|response total|grouped response total|ordered node overall totals/i, label);
+  }
+});
+
+test("builders do not mutate result or config and the 2D wrapper still rejects bad selected coordinates", () => {
+  const { result, config } = orderedFixture();
+  const resultBefore = structuredClone(result);
+  const configBefore = structuredClone(config);
+  buildOpenEnaOrderedNetworkModel({ result, config, scope: { kind: "overall" }, edgeThreshold: 0.25 });
+  buildOpenEnaOrderedPlotModel({
+    result,
+    config,
+    scope: { kind: "overall" },
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    edgeThreshold: 0.25,
+  });
+  assert.deepEqual(result, resultBefore);
+  assert.deepEqual(config, configBefore);
+
+  const missingNode = structuredClone(result);
+  missingNode.set.rotation.nodes!.pop();
+  assert.throws(() => buildOpenEnaOrderedPlotModel({
+    result: missingNode,
+    config,
+    scope: { kind: "overall" },
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    edgeThreshold: 0,
+  }), /one node|missing code/);
+  const nonfiniteNode = structuredClone(result);
+  nonfiniteNode.set.rotation.nodes![0].SVD1 = Number.NaN;
+  assert.throws(() => buildOpenEnaOrderedPlotModel({
+    result: nonfiniteNode,
+    config,
+    scope: { kind: "overall" },
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    edgeThreshold: 0,
+  }), /node.*SVD1.*finite/i);
+  const missingPoint = structuredClone(result);
+  delete missingPoint.set.points[0].SVD2;
+  assert.throws(() => buildOpenEnaOrderedPlotModel({
+    result: missingPoint,
+    config,
+    scope: { kind: "overall" },
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    edgeThreshold: 0,
+  }), /point 1 SVD2 must be finite/i);
+});
 
 test("overall ordered plot uses the equal-unit weighted mean and never a two-group subtraction", () => {
   const { result, config } = orderedFixture();
