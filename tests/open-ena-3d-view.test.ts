@@ -697,8 +697,10 @@ test("3D display-derived confidence wireframes expand the canonical frame instea
     { values: primaryWireframe.flatMap((trace) => trace.z), range: spec.layout.scene.zaxis.range },
   ];
   axes.forEach(({ values, range }) => {
-    const minimum = Math.min(...values);
-    const maximum = Math.max(...values);
+    const finiteValues = values.filter((value): value is number => typeof value === "number");
+    assert.equal(finiteValues.length, values.length, "CI wireframes must not contain Plotly gap separators");
+    const minimum = Math.min(...finiteValues);
+    const maximum = Math.max(...finiteValues);
     assert.ok(range[0] <= minimum, `scene lower bound ${range[0]} clips CI coordinate ${minimum}`);
     assert.ok(range[1] >= maximum, `scene upper bound ${range[1]} clips CI coordinate ${maximum}`);
   });

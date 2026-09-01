@@ -280,6 +280,12 @@ function numberAt(values: Array<number | null> | undefined, index: number) {
   return value as number;
 }
 
+function requiredRotationNodes(result: OpenEnaResult) {
+  const nodes = result.set.rotation.nodes;
+  assert.ok(nodes, "the ONA fixture requires fitted rotation nodes");
+  return nodes;
+}
+
 function pointAt(trace: OpenEna3dTrace, index: number): [number, number, number] {
   return [numberAt(trace.x, index), numberAt(trace.y, index), numberAt(trace.z, index)];
 }
@@ -347,7 +353,7 @@ function offDiagonalGeometry(spec: OpenEna3dPlotSpec, edgeIndex: number) {
 }
 
 function parseScientificHover(value: string | null | undefined) {
-  assert.equal(typeof value, "string");
+  if (typeof value !== "string") assert.fail("scientific hover text must be present");
   const normalized = value.match(/Normalized mean: ([^<]+)/u)?.[1];
   const raw = value.match(/Raw aggregate: ([^<]+)/u)?.[1];
   assert.ok(normalized);
@@ -450,7 +456,7 @@ test("unit and code-node traces retain exact fitted XYZ while six stable point s
 
   const nodeTrace = spec.data.find((trace) => trace.meta.role === "code-node");
   assert.ok(nodeTrace);
-  const nodes = fixture.result.set.rotation.nodes;
+  const nodes = requiredRotationNodes(fixture.result);
   assert.deepEqual(nodeTrace.text, fixture.config.codes);
   assert.deepEqual(nodeTrace.x, nodes.map((row) => row.SVD1));
   assert.deepEqual(nodeTrace.y, nodes.map((row) => row.SVD2));
@@ -531,7 +537,7 @@ test("off-diagonal cones point ground-to-response with target insets and stable 
   const bToAIndex = model.edges.findIndex((edge) => edge.ground === "B" && edge.response === "A");
   const aToB = offDiagonalGeometry(spec, aToBIndex);
   const bToA = offDiagonalGeometry(spec, bToAIndex);
-  const nodeByCode = new Map(fixture.result.set.rotation.nodes.map((row) => [String(row.code), [row.SVD1, row.SVD2, row.SVD3] as number[]]));
+  const nodeByCode = new Map(requiredRotationNodes(fixture.result).map((row) => [String(row.code), [row.SVD1, row.SVD2, row.SVD3] as number[]]));
   const a = nodeByCode.get("A")!;
   const b = nodeByCode.get("B")!;
   const aToBVector = vectorSubtract(b, a);
@@ -670,12 +676,12 @@ test("malformed axes, fitted coordinates, node coverage, variance, scientific or
   assert.throws(() => compile(base, { xDimension: "" }), /nonempty|dimension/i);
 
   const malformed: Array<[string, (fixture: Fixture) => void, RegExp]> = [
-    ["missing node coordinate", (fixture) => { delete fixture.result.set.rotation.nodes[0]!.SVD3; }, /node.*SVD3|coordinate/i],
-    ["nonfinite node coordinate", (fixture) => { fixture.result.set.rotation.nodes[0]!.SVD3 = Number.NaN; }, /node.*SVD3|finite/i],
+    ["missing node coordinate", (fixture) => { delete requiredRotationNodes(fixture.result)[0]!.SVD3; }, /node.*SVD3|coordinate/i],
+    ["nonfinite node coordinate", (fixture) => { requiredRotationNodes(fixture.result)[0]!.SVD3 = Number.NaN; }, /node.*SVD3|finite/i],
     ["missing point coordinate", (fixture) => { delete fixture.result.set.points[0]!.SVD2; }, /point.*SVD2|coordinate/i],
     ["nonfinite point coordinate", (fixture) => { fixture.result.set.points[0]!.SVD2 = Number.POSITIVE_INFINITY; }, /point.*SVD2|finite/i],
-    ["duplicate node code", (fixture) => { fixture.result.set.rotation.nodes[1]!.code = "A"; }, /node.*coverage|geometry integrity|unique/i],
-    ["missing node row", (fixture) => { fixture.result.set.rotation.nodes.pop(); }, /node.*coverage|geometry integrity/i],
+    ["duplicate node code", (fixture) => { requiredRotationNodes(fixture.result)[1]!.code = "A"; }, /node.*coverage|geometry integrity|unique/i],
+    ["missing node row", (fixture) => { requiredRotationNodes(fixture.result).pop(); }, /node.*coverage|geometry integrity/i],
     ["missing variance", (fixture) => { delete fixture.result.set.variance.SVD3; }, /variance.*SVD3|variance/i],
     ["nonfinite variance", (fixture) => { fixture.result.set.variance.SVD3 = Number.NaN; }, /variance.*SVD3|finite/i],
     ["wrong completed code order", (fixture) => { fixture.result.set.codes.reverse(); }, /code order|configuration|provenance/i],
@@ -683,13 +689,14 @@ test("malformed axes, fitted coordinates, node coverage, variance, scientific or
     ["stale provenance", (fixture) => { fixture.result.executionProvenance!.nodePositionMethod = "undirected"; }, /provenance|ordered-network run/i],
     ["invalid mask", (fixture) => { fixture.config.directionalMask!.enabled.pop(); }, /mask|directional/i],
     ["coincident visible off-diagonal nodes", (fixture) => {
-      const source = fixture.result.set.rotation.nodes[0]!;
-      const target = fixture.result.set.rotation.nodes[1]!;
+      const nodes = requiredRotationNodes(fixture.result);
+      const source = nodes[0]!;
+      const target = nodes[1]!;
       target.SVD1 = source.SVD1;
       target.SVD2 = source.SVD2;
       target.SVD3 = source.SVD3;
     }, /coincident|nonzero|direction/i],
-    ["sparse node rows", (fixture) => { delete fixture.result.set.rotation.nodes[1]; }, /dense|node.*integrity|coverage/i],
+    ["sparse node rows", (fixture) => { delete requiredRotationNodes(fixture.result)[1]; }, /dense|node.*integrity|coverage/i],
     ["sparse point rows", (fixture) => { delete fixture.result.set.points[1]; }, /dense|point.*integrity/i],
   ];
   for (const [label, mutate, pattern] of malformed) {
@@ -705,7 +712,7 @@ test("malformed axes, fitted coordinates, node coverage, variance, scientific or
 
 test("a zero-variance third dimension preserves exact planar coordinates and emits structured diagnostics plus an English annotation", () => {
   const fixture = orderedFixture();
-  for (const row of fixture.result.set.rotation.nodes) row.SVD3 = 0;
+  for (const row of requiredRotationNodes(fixture.result)) row.SVD3 = 0;
   for (const row of fixture.result.set.points) row.SVD3 = 0;
   fixture.result.set.variance.SVD3 = 0;
   const spec = compileOpenEnaOrdered3dPlotSpec(compileInput(fixture, { showVariance: false }));
