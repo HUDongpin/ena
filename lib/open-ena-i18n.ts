@@ -246,6 +246,7 @@ export interface OpenEnaOnaCopy {
   workspace: {
     directedSpace: string;
     twoD: string;
+    threeD: string;
     downloadBundle: string;
     staleTitle: string;
     staleDescription: string;
@@ -1550,6 +1551,7 @@ const en: OpenEnaCopy = {
     workspace: {
       directedSpace: "p² directed space",
       twoD: "2D ONA",
+      threeD: "3D ONA",
       downloadBundle: "Download ONA bundle",
       staleTitle: "Configuration changed",
       staleDescription: "The directed ONA view remains bound to the last successful ordered model. Rebuild to apply the pending controls.",
@@ -2196,6 +2198,7 @@ const zhHant: OpenEnaCopy = {
     workspace: {
       directedSpace: "p² 有方向空間",
       twoD: "2D ONA",
+      threeD: "3D ONA",
       downloadBundle: "下載 ONA 結果套件",
       staleTitle: "設定已變更",
       staleDescription: "有方向 ONA 視圖仍綁定上一次成功建立的順序模型。請重新建立，以套用待處理的控制項。",
@@ -2588,6 +2591,7 @@ const zhHans: OpenEnaCopy = {
     workspace: {
       directedSpace: "p² 有向空间",
       twoD: "2D ONA",
+      threeD: "3D ONA",
       downloadBundle: "下载 ONA 结果包",
       staleTitle: "配置已更改",
       staleDescription: "有向 ONA 视图仍绑定上一次成功构建的顺序模型。请重新构建，以应用待处理的控件。",

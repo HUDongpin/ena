@@ -91,12 +91,17 @@ test("ONA bundle presentation records the two descriptive groups selected in Pre
   );
 });
 
-test("ONA Data View and capability controls are wired before unsupported actions can run", () => {
+test("ONA Data View, 3D routing, and unsupported capability controls are explicit", () => {
   assert.match(dataView, /"provenance"/);
   assert.match(dataView, /"directed-edge"/);
   assert.match(workspace, /onaCapabilityDisabled/);
   assert.match(workspace, /disabled=\{[^}]*onaCapabilityDisabled/);
-  assert.match(workspace, /disabled=\{[^}]*completedResultKind\s*===\s*["']ona["']/);
+  assert.match(workspace, /disabled=\{!genericThreeDAvailable\}/);
+  assert.match(workspace, /view === "3d" && threeDDimensions[\s\S]*OpenEna3DOrderedResultLayout/);
+  assert.doesNotMatch(
+    workspace,
+    /nextView === "3d" && completedResultKind === "ona"[\s\S]{0,160}setError/,
+  );
   assert.doesNotMatch(workspace, /setMode\(["']sets["']\)/);
   assert.match(workspace, /capabilityAnalysisKind\s*===\s*["']ona["']/);
 });

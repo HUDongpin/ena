@@ -59,4 +59,6 @@ test("ONA 3D is a reachable overall, Primary, and Secondary workspace", () => {
   assert.match(workspace, /import OpenEna3DOrderedResultLayout/);
   assert.match(workspace, /completedResultKind === "ona"[\s\S]*view === "3d"[\s\S]*<OpenEna3DOrderedResultLayout/);
   assert.match(workspace, /<OpenEna3DOrderedResultLayout[\s\S]*nodeLayout=\{activeNodeLayout\.positions\}[\s\S]*onNodeMove=\{moveNode\}/);
+  assert.match(workspace, /data-ena-plot-action="reset-node-layout"[\s\S]*onClick=\{resetNodeLayout\}/);
+  assert.match(workspace, /completedResultKind === "ona" \? copy\.ona\.workspace\.threeD : copy\.views\.threeD/);
 });

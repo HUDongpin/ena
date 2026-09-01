@@ -2834,6 +2834,18 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
             </fieldset>
           ) : null}
           <button type="button" className="ena-action-button ena-action-secondary" onClick={resetPlot}>{copy.plot.reset}</button>
+          <button
+            type="button"
+            className="ena-action-button ena-action-secondary ena-reset-node-layout"
+            data-ena-plot-action="reset-node-layout"
+            data-ena-node-layout-overrides={openEnaNodeLayoutOverrideCount(activeNodeLayout)}
+            aria-label={copy.plot.resetNodeLayout}
+            title={copy.plot.resetNodeLayout}
+            disabled={!result || loading || openEnaNodeLayoutOverrideCount(activeNodeLayout) === 0}
+            onClick={resetNodeLayout}
+          >
+            {copy.plot.resetNodeLayout}
+          </button>
           <div className="ena-two-fields ena-figure-exports">
             <button type="button" className="ena-action-button ena-action-secondary" disabled={view === "3d" || !result} onClick={exportPlotSvg}>Export SVG ↓</button>
             <button type="button" className="ena-action-button ena-action-secondary" disabled={view === "3d" || !result} onClick={exportPlotPng}>Export PNG ↓</button>
@@ -3818,7 +3830,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                           ? `${copy.views.threeD}. ${copy.plot.threeDRequiresThreeDimensions}`
                         : `${copy.views.threeD}. ${copy.plot.threeDInteractionHint}`}
                     >
-                      <strong>{copy.views.threeD}</strong>
+                      <strong>{completedResultKind === "ona" ? copy.ona.workspace.threeD : copy.views.threeD}</strong>
                     </button>
                   </div>
                   {result && !genericThreeDAvailable ? (
