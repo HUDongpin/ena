@@ -352,7 +352,7 @@ test("the ordered SVG renders scaled triangles, pair chevrons, self inner discs,
   assert.match(compactMarkup, /<details[^>]*class="ona-visible-edge-summary"/);
 });
 
-test("six ONA groups keep stable non-color point shapes and expose the mapping in the accessible legend", async () => {
+test("six ONA groups use circle markers with stable non-color inner styles and an accessible numbered legend", async () => {
   const { result, config } = orderedFixture();
   const { default: OpenEnaOrderedPlot } = await import("../components/open-ena/OpenEnaOrderedPlot");
   const groupNames = ["zeta", "alpha", "echo", "bravo", "delta", "charlie"];
@@ -391,8 +391,8 @@ test("six ONA groups keep stable non-color point shapes and expose the mapping i
     showVariance: true,
     compact: false,
   }));
-  const shapeMap = (markup: string) => new Map(
-    [...markup.matchAll(/data-ona-unit-point="true"[^>]*data-ona-group="([^"]+)"[^>]*data-ona-point-shape="([^"]+)"/g)]
+  const styleMap = (markup: string) => new Map(
+    [...markup.matchAll(/data-ona-unit-point="true"[^>]*data-ona-group="([^"]+)"[^>]*data-ona-point-shape="circle"[^>]*data-ona-point-style="([^"]+)"/g)]
       .map((match) => [match[1], match[2]]),
   );
 
@@ -400,15 +400,64 @@ test("six ONA groups keep stable non-color point shapes and expose the mapping i
   const reordered = structuredClone(sixGroupResult);
   reordered.groups.reverse();
   const reorderedMarkup = render(reordered);
-  const mapping = shapeMap(markup);
+  const mapping = styleMap(markup);
 
   assert.equal(mapping.size, 6);
   assert.equal(new Set(mapping.values()).size, 6, "six groups must remain distinguishable without color");
-  assert.deepEqual(shapeMap(reorderedMarkup), mapping, "group-name-to-shape mapping must ignore result group order");
+  assert.deepEqual(styleMap(reorderedMarkup), mapping, "group-name-to-style mapping must ignore result group order");
+  const pointGroups = [...markup.matchAll(/<g[^>]*data-ona-unit-point="true"[^>]*>([\s\S]*?)<\/g>/g)];
+  assert.equal(pointGroups.length, 6);
+  for (const pointGroup of pointGroups) {
+    const wrapper = pointGroup[0].match(/^<g[^>]*>/)?.[0] ?? "";
+    assert.match(wrapper, /data-ona-point-shape="circle"/);
+    assert.match(wrapper, /data-ona-point-style="(?:solid|inner-ring|center-dot|horizontal-bar|plus|cross)"/);
+    assert.match(wrapper, /role="img"/);
+    assert.match(wrapper, /aria-label="[^"]*unit-[1-6][^"]*group[^"]*[^"]*X[^"]*Y[^"]*"/i);
+    assert.match(pointGroup[1], /^<circle\b/, "the analytic-unit outer marker must be a circle");
+    assert.match(pointGroup[1], /<title>[^<]+<\/title>/);
+    assert.doesNotMatch(pointGroup[1], /<(?:rect|polygon)\b/, "unit marker glyphs may not use rect or polygon");
+  }
   assert.match(markup, /role="list"[^>]*class="ona-unit-shape-legend"[^>]*aria-label="units"/);
-  for (const [group, shape] of mapping) {
-    assert.match(markup, new RegExp(`data-ona-group-legend="${group}"[^>]*data-ona-point-shape="${shape}"`));
-    assert.match(markup, new RegExp(`<desc>[^<]*${group}`, "s"));
+  const sortedGroupNames = [...groupNames].sort((left, right) => left.localeCompare(right));
+  for (const [index, group] of sortedGroupNames.entries()) {
+    const style = mapping.get(group);
+    assert.ok(style);
+    assert.match(markup, new RegExp(`data-ona-group-legend="${group}"[^>]*data-ona-point-shape="circle"[^>]*data-ona-point-style="${style}"`));
+    assert.match(markup, new RegExp(`<desc>[^<]*${group}[^<]*${style}`, "s"));
+    assert.match(markup, new RegExp(`>${index + 1}\\. ${group}<`), "legend must visibly number the stable group order");
+  }
+});
+
+test("the existing two-group ONA fixture renders both analytic-unit groups as circles", async () => {
+  const { result, config } = orderedFixture();
+  const { default: OpenEnaOrderedPlot } = await import("../components/open-ena/OpenEnaOrderedPlot");
+  const markup = renderToStaticMarkup(createElement(OpenEnaOrderedPlot, {
+    result,
+    config,
+    scope: { kind: "overall" },
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    edgeThreshold: 0,
+    edgeScale: 1,
+    pointScale: 1,
+    textScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    compact: false,
+  }));
+
+  const pointWrappers = [...markup.matchAll(/<g[^>]*data-ona-unit-point="true"[^>]*>/g)].map((match) => match[0]);
+  assert.equal(pointWrappers.length, 4);
+  assert.deepEqual(new Set(pointWrappers.map((wrapper) => wrapper.match(/data-ona-group="([^"]+)"/)?.[1])), new Set(["first", "second"]));
+  for (const wrapper of pointWrappers) {
+    assert.match(wrapper, /data-ona-point-shape="circle"/);
+    assert.match(wrapper, /data-ona-point-style="(?:solid|inner-ring|center-dot|horizontal-bar|plus|cross)"/);
   }
 });
 

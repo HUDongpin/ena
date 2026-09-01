@@ -7,6 +7,10 @@ import {
   type OpenEnaOrderedPlotModel,
   type OpenEnaOrderedPlotScope,
 } from "@/lib/open-ena/ordered-plot";
+import {
+  openEnaUnitPointStyleAssignments,
+  type OpenEnaUnitPointStyle,
+} from "@/lib/open-ena/unit-point-style";
 import type { OpenEnaConfig, OpenEnaResult } from "@/lib/open-ena/types";
 
 const WIDTH = 920;
@@ -86,17 +90,6 @@ export interface OpenEnaOrderedPlotProps {
 
 type ScreenPoint = { x: number; y: number };
 
-type OrderedPointShape = "circle" | "square" | "diamond" | "triangle-up" | "triangle-down" | "cross";
-
-const ORDERED_POINT_SHAPES: readonly OrderedPointShape[] = [
-  "circle",
-  "square",
-  "diamond",
-  "triangle-up",
-  "triangle-down",
-  "cross",
-];
-
 function bounded(value: number, minimum: number, maximum: number, fallback: number) {
   return Number.isFinite(value) ? Math.min(maximum, Math.max(minimum, value)) : fallback;
 }
@@ -143,47 +136,64 @@ function edgeDescription(
   ].join(" · ");
 }
 
-function pointShapeAssignments(result: OpenEnaResult) {
-  const names = [...new Set(result.groups.map((group) => group.name))].sort();
-  return new Map(names.map((name, index) => [
-    name,
-    ORDERED_POINT_SHAPES[index % ORDERED_POINT_SHAPES.length],
-  ]));
-}
-
 function UnitPointMarker({
-  shape,
+  style,
   x,
   y,
   size,
   fill,
 }: {
-  shape: OrderedPointShape;
+  style: OpenEnaUnitPointStyle;
   x: number;
   y: number;
   size: number;
   fill: string;
 }) {
-  const markerProps = { fill, stroke: "#263740", strokeWidth: 1.2 };
-  if (shape === "circle") return <circle cx={x} cy={y} r={size} {...markerProps} />;
-  if (shape === "square") {
-    return <rect x={x - size} y={y - size} width={size * 2} height={size * 2} rx={1.5} {...markerProps} />;
-  }
-  if (shape === "diamond") {
-    return <polygon points={`${x},${y - size * 1.25} ${x + size * 1.25},${y} ${x},${y + size * 1.25} ${x - size * 1.25},${y}`} {...markerProps} />;
-  }
-  if (shape === "triangle-up") {
-    return <polygon points={`${x},${y - size * 1.3} ${x + size * 1.18},${y + size} ${x - size * 1.18},${y + size}`} {...markerProps} />;
-  }
-  if (shape === "triangle-down") {
-    return <polygon points={`${x - size * 1.18},${y - size} ${x + size * 1.18},${y - size} ${x},${y + size * 1.3}`} {...markerProps} />;
-  }
-  const arm = size * 0.38;
+  const glyphStroke = "#ffffff";
+  const glyphWidth = Math.max(1.15, size * 0.22);
+  const innerRadius = size * 0.52;
+  const arm = size * 0.55;
   return (
-    <path
-      d={`M ${x - arm} ${y - size} H ${x + arm} V ${y - arm} H ${x + size} V ${y + arm} H ${x + arm} V ${y + size} H ${x - arm} V ${y + arm} H ${x - size} V ${y - arm} H ${x - arm} Z`}
-      {...markerProps}
-    />
+    <>
+      <circle cx={x} cy={y} r={size} fill={fill} stroke="#263740" strokeWidth={1.2} />
+      {style === "inner-ring" ? (
+        <circle cx={x} cy={y} r={innerRadius} fill="none" stroke={glyphStroke} strokeWidth={glyphWidth} />
+      ) : null}
+      {style === "center-dot" ? (
+        <circle cx={x} cy={y} r={size * 0.22} fill={glyphStroke} />
+      ) : null}
+      {style === "horizontal-bar" || style === "plus" ? (
+        <line
+          x1={x - arm}
+          y1={y}
+          x2={x + arm}
+          y2={y}
+          stroke={glyphStroke}
+          strokeWidth={glyphWidth}
+          strokeLinecap="round"
+        />
+      ) : null}
+      {style === "plus" ? (
+        <line
+          x1={x}
+          y1={y - arm}
+          x2={x}
+          y2={y + arm}
+          stroke={glyphStroke}
+          strokeWidth={glyphWidth}
+          strokeLinecap="round"
+        />
+      ) : null}
+      {style === "cross" ? (
+        <path
+          d={`M ${x - arm} ${y - arm} L ${x + arm} ${y + arm} M ${x + arm} ${y - arm} L ${x - arm} ${y + arm}`}
+          fill="none"
+          stroke={glyphStroke}
+          strokeWidth={glyphWidth}
+          strokeLinecap="round"
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -207,7 +217,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
   const selfEdges = new Map(model.visibleEdges
     .filter((edge) => edge.selfConnection)
     .map((edge) => [edge.ground, edge]));
-  const pointShapes = pointShapeAssignments(props.result);
+  const pointStyles = openEnaUnitPointStyleAssignments(props.result.groups.map((group) => group.name));
   const pointGroups = [...new Set(model.points
     .map((point) => point.group)
     .filter((group): group is string => group !== null))]
@@ -215,7 +225,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
     .map((name, index) => ({
       name,
       number: index + 1,
-      shape: pointShapes.get(name) ?? ORDERED_POINT_SHAPES[0],
+      style: pointStyles.get(name) ?? "solid",
       color: props.result.groups.find((group) => group.name === name)?.color ?? "#52636a",
     }));
   const title = props.scope.kind === "overall" ? copy.overallTitle : `${props.scope.name} · ${copy.groupTitle}`;
@@ -240,7 +250,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
         <title>{title}</title>
         <desc>
           {copy.directedNetworkDescription} {model.points.length} {copy.unitsLabel}; {model.visibleEdges.length} {copy.visibleCellsLabel}. {copy.nodeSizeLabel}: {model.nodeSizeDefinition}.
-          {props.showPoints && pointGroups.length > 1 ? ` ${copy.unitsLabel}: ${pointGroups.map((group) => `${group.number}: ${group.name}`).join("; ")}.` : ""}
+          {props.showPoints && pointGroups.length > 1 ? ` ${copy.unitsLabel}: ${pointGroups.map((group) => `${group.number}: ${group.name}; color ${group.color}; point style ${group.style}; circle marker`).join("; ")}.` : ""}
         </desc>
         <rect width={WIDTH} height={height} className="ena-set-plot-background ona-plot-background" />
         <g className="ona-zero-axes" aria-hidden="true">
@@ -328,15 +338,23 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
           const group = point.group === null
             ? null
             : props.result.groups.find((candidate) => candidate.name === point.group) ?? null;
-          const shape = point.group === null
-            ? ORDERED_POINT_SHAPES[0]
-            : pointShapes.get(point.group) ?? ORDERED_POINT_SHAPES[0];
+          const style = point.group === null
+            ? "solid"
+            : pointStyles.get(point.group) ?? "solid";
           const size = 6.5 * pointScale;
-          const label = `${point.unit}${point.group ? ` · ${point.group}` : ""}: ${props.xDimension} ${displayNumber(point.x)}, ${props.yDimension} ${displayNumber(point.y)}`;
+          const label = `Unit ${point.unit} · Group ${point.group ?? "ungrouped"} · X ${props.xDimension} ${displayNumber(point.x)} · Y ${props.yDimension} ${displayNumber(point.y)}`;
           return (
-            <g key={point.key} data-ona-unit-point="true" data-ona-group={point.group ?? ""} data-ona-point-shape={shape}>
+            <g
+              key={point.key}
+              data-ona-unit-point="true"
+              data-ona-group={point.group ?? ""}
+              data-ona-point-shape="circle"
+              data-ona-point-style={style}
+              role="img"
+              aria-label={label}
+            >
+              <UnitPointMarker style={style} x={screen.x} y={screen.y} size={size} fill={group?.color ?? "#52636a"} />
               <title>{label}</title>
-              <UnitPointMarker shape={shape} x={screen.x} y={screen.y} size={size} fill={group?.color ?? "#52636a"} />
               {props.showUnitLabels ? <text x={screen.x + size + 3} y={screen.y - size - 2} className="ena-set-unit-label">{point.unit}</text> : null}
             </g>
           );
@@ -397,13 +415,15 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
               key={group.name}
               role="listitem"
               data-ona-group-legend={group.name}
-              data-ona-point-shape={group.shape}
-              aria-label={`${group.number}: ${group.name}`}
+              data-ona-point-shape="circle"
+              data-ona-point-style={group.style}
+              aria-label={`${group.number}. ${group.name}; color ${group.color}; point style ${group.style}; circle marker`}
             >
-              <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                <UnitPointMarker shape={group.shape} x={10} y={10} size={6.2} fill={group.color} />
+              <svg viewBox="0 0 20 20" role="img" aria-label={`${group.name}: ${group.style} circle marker, color ${group.color}`} focusable="false">
+                <desc>{`${group.number}. ${group.name}; color ${group.color}; point style ${group.style}; circle marker`}</desc>
+                <UnitPointMarker style={group.style} x={10} y={10} size={6.2} fill={group.color} />
               </svg>
-              <span aria-hidden="true">{group.number} · </span>{group.name}
+              <span>{`${group.number}. ${group.name}`}</span>
             </span>
           ))}
         </div>
