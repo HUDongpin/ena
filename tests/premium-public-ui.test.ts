@@ -24,6 +24,18 @@ function fontSizesForSelector(css: string, selector: string) {
   return sizes;
 }
 
+function ruleBodyForSelector(css: string, selector: string) {
+  css = css.replace(/\/\*[\s\S]*?\*\//gu, "");
+  const rulePattern = /([^{}]+)\{([^{}]*)\}/g;
+
+  for (const match of css.matchAll(rulePattern)) {
+    const selectors = match[1].split(",").map((entry) => entry.trim());
+    if (selectors.includes(selector)) return match[2];
+  }
+
+  assert.fail("Missing CSS selector: " + selector);
+}
+
 test("the premium public design is mounted only on the requested page families", () => {
   const premiumRoutes = [
     ["app", "[locale]", "page.tsx"],
@@ -51,6 +63,26 @@ test("the premium layer is isolated in a separately imported stylesheet", () => 
   assert.equal(existsSync(cssPath), true);
   assert.match(layout, /import "\.\/globals\.css";\s*import "\.\/premium-public\.css";/);
   assert.match(source("app", "premium-public.css"), /\.premium-public-page\s*\{/);
+});
+
+test("the Home page uses a plain paper background without removing purposeful lines", () => {
+  const premiumCss = source("app", "premium-public.css");
+  const globalCss = source("app", "globals.css");
+  const homeBackground = ruleBodyForSelector(premiumCss, ".premium-home");
+  const premiumRoot = ruleBodyForSelector(premiumCss, ".premium-public-page");
+  const networkFigure = ruleBodyForSelector(premiumCss, ".premium-home .network-figure");
+  const openEnaFrame = ruleBodyForSelector(premiumCss, ".premium-home .open-ena-home-section::after");
+  const workflowConnector = ruleBodyForSelector(premiumCss, ".premium-home .workflow-grid::before");
+
+  assert.equal(homeBackground.replace(/\s+/gu, " ").trim(), "background: var(--page);");
+  assert.doesNotMatch(homeBackground, /linear-gradient|120px/u);
+  assert.match(premiumRoot, /background:\s*var\(--page\);/u);
+  assert.match(networkFigure, /border:\s*1px solid #b8c7cf;/u);
+  assert.match(openEnaFrame, /border:\s*1px solid rgba\(137, 207, 240, 0\.16\);/u);
+  assert.match(workflowConnector, /height:\s*1px;/u);
+  assert.match(workflowConnector, /background:\s*#afc1ca;/u);
+  assert.match(globalCss, /data-track="page-progress-outline"/u);
+  assert.match(globalCss, /data-track="page-progress-arc"/u);
 });
 
 test("Home and Mission primary titles use only the About responsive font-size scale", () => {
