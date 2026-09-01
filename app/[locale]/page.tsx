@@ -25,13 +25,8 @@ export default async function HomePage({ params }: HomePageProps) {
           <p className="hero-text">
             {dictionary.home.heroText}{" "}
             {dictionary.home.originCredit}{" "}
-            <strong><bdi>Wisconsin Center for Education Research.</bdi></strong>
-            {typedLocale === "en" ? (
-              <>
-                {" "}
-                <strong><bdi>Dr. Peter Hu Dongpin is the Initiator of the open access ENA Hub of Knowledge.</bdi></strong>
-              </>
-            ) : null}
+            <strong><bdi>Wisconsin Center for Education Research.</bdi></strong>{" "}
+            <strong><bdi>{dictionary.home.initiatorCredit}</bdi></strong>
           </p>
           <div className="button-row">
             <CTA href={`/${typedLocale}/mission`}>{dictionary.common.exploreMethod}</CTA>

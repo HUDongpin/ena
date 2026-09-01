@@ -113,16 +113,30 @@ test("the home page retains the standard ENA figure and source credit while Miss
   assert.doesNotMatch(figureSource, /plot-key|key-line/);
   assert.match(homeSource, /dictionary\.home\.originCredit/);
   assert.match(homeSource, /<strong><bdi>Wisconsin Center for Education Research\.<\/bdi><\/strong>/);
-  assert.match(
+  const englishInitiatorCredit =
+    "Dr. Peter Hu Dongpin is the Initiator of the open access ENA Hub of Knowledge.";
+
+  assert.match(homeSource, /dictionary\.home\.initiatorCredit/u);
+  assert.doesNotMatch(homeSource, /typedLocale === "en"/u);
+  assert.doesNotMatch(
     homeSource,
-    /<strong><bdi>Wisconsin Center for Education Research\.<\/bdi><\/strong>[\s\S]*?typedLocale === "en"[\s\S]*?<strong><bdi>Dr\. Peter Hu Dongpin is the Initiator of the open access ENA Hub of Knowledge\.<\/bdi><\/strong>/,
+    /Dr\. Peter Hu Dongpin is the Initiator of the open access ENA Hub of Knowledge\./u,
   );
+  assert.equal(getDictionary("en").home.initiatorCredit, englishInitiatorCredit);
   assert.equal(
     getDictionary("en").home.originCredit,
     "ENA was proposed and developed by researchers and developers from",
   );
   for (const locale of locales) {
-    assert.ok(getDictionary(locale).home.originCredit.trim().length > 0);
+    const dictionary = getDictionary(locale);
+    assert.ok(dictionary.home.originCredit.trim().length > 0);
+    assert.ok(dictionary.home.initiatorCredit.trim().length > 0);
+    assert.ok(dictionary.common.pageScrollProgress.trim().length > 0);
+    assert.match(dictionary.home.initiatorCredit, /Dr\. Peter Hu Dongpin/u);
+    assert.match(dictionary.home.initiatorCredit, /ENA/u);
+    if (locale !== "en") {
+      assert.notEqual(dictionary.home.initiatorCredit, englishInitiatorCredit);
+    }
   }
 });
 

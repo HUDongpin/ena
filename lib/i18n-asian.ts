@@ -19,6 +19,7 @@ const ko: Dictionary = {
   common: {
     skipToContent: "본문으로 건너뛰기",
     backToTop: "맨 위로",
+    pageScrollProgress: "페이지 스크롤 진행률",
     exploreMethod: "분석 방법 살펴보기",
     openWebtool: "ENA 웹 도구 열기",
     browseResources: "공식 자료 둘러보기",
@@ -31,6 +32,7 @@ const ko: Dictionary = {
     heroText:
       "ENA는 담화와 실천에서 개념이 연결되는 방식을 모델링하여 사고의 패턴을 눈에 보이고 비교할 수 있게 합니다.",
     originCredit: "ENA는 다음 기관의 연구자와 개발자들이 제안하고 개발했습니다:",
+    initiatorCredit: "Dr. Peter Hu Dongpin은 오픈 액세스 ENA 지식 허브의 발기인입니다.",
     graphTitle: "개념적 네트워크 모델",
     graphCaption:
       "설명을 위한 ENA 그래프입니다. 노드는 코딩된 개념을 나타내고, 선의 굵기는 상대적인 연결 강도를 나타냅니다.",
@@ -214,6 +216,7 @@ const ja: Dictionary = {
   common: {
     skipToContent: "本文へ移動",
     backToTop: "ページ上部へ戻る",
+    pageScrollProgress: "ページのスクロール進捗",
     exploreMethod: "分析手法を見る",
     openWebtool: "ENAウェブツールを開く",
     browseResources: "公式リソースを見る",
@@ -226,6 +229,7 @@ const ja: Dictionary = {
     heroText:
       "ENAは、言説や実践の中で概念がどのようにつながるかをモデル化し、思考のパターンを可視化して比較できるようにします。",
     originCredit: "ENAは、次の機関の研究者と開発者によって提案・開発されました：",
+    initiatorCredit: "Dr. Peter Hu Dongpinは、オープンアクセスのENAナレッジハブの発起人です。",
     graphTitle: "概念ネットワークモデル",
     graphCaption:
       "説明用のENAグラフです。ノードはコード化された概念を表し、線の太さは相対的なつながりの強さを表します。",
@@ -409,6 +413,7 @@ const hi: Dictionary = {
   common: {
     skipToContent: "मुख्य सामग्री पर जाएँ",
     backToTop: "ऊपर जाएँ",
+    pageScrollProgress: "पृष्ठ स्क्रॉल प्रगति",
     exploreMethod: "विश्लेषण पद्धति जानें",
     openWebtool: "ENA वेबटूल खोलें",
     browseResources: "आधिकारिक संसाधन देखें",
@@ -421,6 +426,7 @@ const hi: Dictionary = {
     heroText:
       "ENA विमर्श और व्यवहार में अवधारणाओं के संबंधों का मॉडल बनाता है, जिससे चिंतन के प्रतिरूप दिखाई देते हैं और उनकी तुलना की जा सकती है।",
     originCredit: "ENA का प्रस्ताव और विकास इस संस्थान के शोधकर्ताओं और विकासकर्ताओं ने किया:",
+    initiatorCredit: "Dr. Peter Hu Dongpin ओपन-एक्सेस ENA ज्ञान केंद्र के प्रवर्तक हैं।",
     graphTitle: "अवधारणात्मक नेटवर्क मॉडल",
     graphCaption:
       "यह एक उदाहरणात्मक ENA ग्राफ है। नोड कोडित अवधारणाओं को दर्शाते हैं और रेखा की मोटाई संबंध की सापेक्ष शक्ति को दर्शाती है।",
