@@ -18,6 +18,11 @@ const MAIN_HEIGHT = 590;
 const COMPACT_HEIGHT = 430;
 const PAD_X = 62;
 const PAD_Y = 52;
+const LEGEND_COLUMNS = 3;
+const LEGEND_ROW_HEIGHT = 30;
+const LEGEND_TOP_PADDING = 22;
+const LEGEND_BOTTOM_PADDING = 10;
+const LEGEND_SIDE_PADDING = 22;
 
 export interface OpenEnaOrderedPlotCopy {
   overallTitle: string;
@@ -228,6 +233,18 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
       style: pointStyles.get(name) ?? "solid",
       color: props.result.groups.find((group) => group.name === name)?.color ?? "#52636a",
     }));
+  const showPointLegend = props.showPoints && pointGroups.length > 1;
+  const legendColumnCount = Math.min(LEGEND_COLUMNS, pointGroups.length);
+  const legendRowCount = showPointLegend
+    ? Math.ceil(pointGroups.length / legendColumnCount)
+    : 0;
+  const legendHeight = showPointLegend
+    ? LEGEND_TOP_PADDING + legendRowCount * LEGEND_ROW_HEIGHT + LEGEND_BOTTOM_PADDING
+    : 0;
+  const svgHeight = height + legendHeight;
+  const legendColumnWidth = showPointLegend
+    ? (WIDTH - LEGEND_SIDE_PADDING * 2) / legendColumnCount
+    : 0;
   const title = props.scope.kind === "overall" ? copy.overallTitle : `${props.scope.name} · ${copy.groupTitle}`;
   const figureLabel = `${title}. ${copy.directedNetworkDescription}`;
 
@@ -241,7 +258,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
     >
       <svg
         ref={props.svgRef}
-        viewBox={`0 0 ${WIDTH} ${height}`}
+        viewBox={`0 0 ${WIDTH} ${svgHeight}`}
         role="img"
         aria-label={figureLabel}
         className="open-ena-ordered-svg"
@@ -252,7 +269,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
           {copy.directedNetworkDescription} {model.points.length} {copy.unitsLabel}; {model.visibleEdges.length} {copy.visibleCellsLabel}. {copy.nodeSizeLabel}: {model.nodeSizeDefinition}.
           {props.showPoints && pointGroups.length > 1 ? ` ${copy.unitsLabel}: ${pointGroups.map((group) => `${group.number}: ${group.name}; color ${group.color}; point style ${group.style}; circle marker`).join("; ")}.` : ""}
         </desc>
-        <rect width={WIDTH} height={height} className="ena-set-plot-background ona-plot-background" />
+        <rect width={WIDTH} height={svgHeight} className="ena-set-plot-background ona-plot-background" />
         <g className="ona-zero-axes" aria-hidden="true">
           <line x1={WIDTH / 2} y1={PAD_Y / 2} x2={WIDTH / 2} y2={height - PAD_Y / 2} />
           <line x1={PAD_X / 2} y1={height / 2} x2={WIDTH - PAD_X / 2} y2={height / 2} />
@@ -400,6 +417,46 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
             </g>
           );
         })}
+
+        {showPointLegend ? (
+          <g
+            role="list"
+            className="ona-unit-shape-legend-svg"
+            data-ona-unit-shape-legend="true"
+            aria-label={copy.unitsLabel}
+          >
+            <line
+              x1={0}
+              y1={height}
+              x2={WIDTH}
+              y2={height}
+              stroke="#e0e7e6"
+              strokeWidth={1}
+            />
+            {pointGroups.map((group, index) => {
+              const column = index % legendColumnCount;
+              const row = Math.floor(index / legendColumnCount);
+              const x = LEGEND_SIDE_PADDING + column * legendColumnWidth;
+              const y = height + LEGEND_TOP_PADDING + row * LEGEND_ROW_HEIGHT;
+              const description = `${group.number}. ${group.name}; color ${group.color}; point style ${group.style}; circle marker`;
+              return (
+                <g
+                  key={group.name}
+                  role="listitem"
+                  data-ona-group-legend={group.name}
+                  data-ona-point-shape="circle"
+                  data-ona-point-style={group.style}
+                  aria-label={description}
+                  transform={`translate(${x} ${y})`}
+                >
+                  <desc>{description}</desc>
+                  <UnitPointMarker style={group.style} x={7} y={0} size={6.2} fill={group.color} />
+                  <text x={20} y={4} fill="#344f53" fontSize={13}>{`${group.number}. ${group.name}`}</text>
+                </g>
+              );
+            })}
+          </g>
+        ) : null}
       </svg>
 
       <div className="ona-direction-legend" aria-label={copy.directionLegendLabel}>
@@ -408,26 +465,6 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
         <span>{copy.selfDiscLegend}</span>
         <span>{copy.nodeSizeLabel}: {model.nodeSizeDefinition}</span>
       </div>
-      {props.showPoints && pointGroups.length > 1 ? (
-        <div role="list" className="ona-unit-shape-legend" aria-label={copy.unitsLabel}>
-          {pointGroups.map((group) => (
-            <span
-              key={group.name}
-              role="listitem"
-              data-ona-group-legend={group.name}
-              data-ona-point-shape="circle"
-              data-ona-point-style={group.style}
-              aria-label={`${group.number}. ${group.name}; color ${group.color}; point style ${group.style}; circle marker`}
-            >
-              <svg viewBox="0 0 20 20" role="img" aria-label={`${group.name}: ${group.style} circle marker, color ${group.color}`} focusable="false">
-                <desc>{`${group.number}. ${group.name}; color ${group.color}; point style ${group.style}; circle marker`}</desc>
-                <UnitPointMarker style={group.style} x={10} y={10} size={6.2} fill={group.color} />
-              </svg>
-              <span>{`${group.number}. ${group.name}`}</span>
-            </span>
-          ))}
-        </div>
-      ) : null}
       <details className="ona-visible-edge-summary">
         <summary>{copy.visibleConnections}</summary>
         {model.visibleEdges.length > 0 ? (

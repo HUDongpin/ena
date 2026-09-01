@@ -349,6 +349,8 @@ test("the ordered SVG renders scaled triangles, pair chevrons, self inner discs,
   assert.match(compactMarkup, /aria-label="順序網絡方向圖例"/);
   assert.match(compactMarkup, /A 來源 → B 回應/);
   assert.match(compactMarkup, /SVD1 · 已翻轉/);
+  assert.match(compactMarkup, /<svg[^>]*viewBox="0 0 920 430"/);
+  assert.doesNotMatch(compactMarkup, /data-ona-unit-shape-legend="true"/);
   assert.match(compactMarkup, /<details[^>]*class="ona-visible-edge-summary"/);
 });
 
@@ -401,6 +403,7 @@ test("six ONA groups use circle markers with stable non-color inner styles and a
   reordered.groups.reverse();
   const reorderedMarkup = render(reordered);
   const mapping = styleMap(markup);
+  const exportTarget = markup.match(/<svg[^>]*class="open-ena-ordered-svg"[^>]*>[\s\S]*?<\/svg>/)?.[0];
 
   assert.equal(mapping.size, 6);
   assert.equal(new Set(mapping.values()).size, 6, "six groups must remain distinguishable without color");
@@ -417,15 +420,20 @@ test("six ONA groups use circle markers with stable non-color inner styles and a
     assert.match(pointGroup[1], /<title>[^<]+<\/title>/);
     assert.doesNotMatch(pointGroup[1], /<(?:rect|polygon)\b/, "unit marker glyphs may not use rect or polygon");
   }
-  assert.match(markup, /role="list"[^>]*class="ona-unit-shape-legend"[^>]*aria-label="units"/);
+  assert.ok(exportTarget, "the plot must expose its main SVG export target");
+  assert.match(exportTarget, /^<svg[^>]*viewBox="0 0 920 682"/);
+  assert.match(exportTarget, /role="list"[^>]*class="ona-unit-shape-legend-svg"[^>]*data-ona-unit-shape-legend="true"[^>]*aria-label="units"/);
   const sortedGroupNames = [...groupNames].sort((left, right) => left.localeCompare(right));
   for (const [index, group] of sortedGroupNames.entries()) {
     const style = mapping.get(group);
     assert.ok(style);
-    assert.match(markup, new RegExp(`data-ona-group-legend="${group}"[^>]*data-ona-point-shape="circle"[^>]*data-ona-point-style="${style}"`));
-    assert.match(markup, new RegExp(`<desc>[^<]*${group}[^<]*${style}`, "s"));
-    assert.match(markup, new RegExp(`>${index + 1}\\. ${group}<`), "legend must visibly number the stable group order");
+    const legendEntry = exportTarget.match(new RegExp(`<g[^>]*data-ona-group-legend="${group}"[^>]*data-ona-point-shape="circle"[^>]*data-ona-point-style="${style}"[^>]*>[\\s\\S]*?<\\/g>`))?.[0];
+    assert.ok(legendEntry, `${group} legend entry must be nested in the exported SVG`);
+    assert.match(legendEntry, /<circle\b[^>]*fill="#52636a"/, "each exported legend entry must include its marker example and color");
+    assert.match(legendEntry, new RegExp(`<desc>[^<]*${group}[^<]*color #52636a[^<]*${style}[^<]*<\\/desc>`));
+    assert.match(legendEntry, new RegExp(`<text[^>]*>${index + 1}\\. ${group}<\\/text>`), "legend must visibly number the stable group order");
   }
+  assert.equal((markup.match(/data-ona-unit-shape-legend="true"/g) ?? []).length, 1, "the exported SVG legend must be authoritative, not duplicated externally");
 });
 
 test("the existing two-group ONA fixture renders both analytic-unit groups as circles", async () => {
