@@ -1,4 +1,8 @@
 import type { Ref } from "react";
+import type {
+  OpenEnaNodeDimensionPosition,
+  OpenEnaNodeLayoutPositions,
+} from "@/lib/open-ena/node-layout";
 import { codeColorFor, type OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
 import {
   buildOpenEnaOrderedPlotModel,
@@ -13,6 +17,7 @@ import {
   type OpenEnaUnitPointStyle,
 } from "@/lib/open-ena/unit-point-style";
 import type { OpenEnaConfig, OpenEnaResult } from "@/lib/open-ena/types";
+import OpenEnaSvgDraggableNode from "./OpenEnaSvgDraggableNode";
 
 const WIDTH = 920;
 const MAIN_HEIGHT = 590;
@@ -124,6 +129,8 @@ export interface OpenEnaOrderedPlotProps {
   compact: boolean;
   codeColors?: OpenEnaCodeColors;
   nodeTotals?: OpenEnaOrderedNodeTotals;
+  nodeLayout?: OpenEnaNodeLayoutPositions;
+  onNodeMove?: (code: string, dimensions: OpenEnaNodeDimensionPosition) => void;
   copy?: Partial<OpenEnaOrderedPlotCopy>;
   svgRef?: Ref<SVGSVGElement>;
 }
@@ -140,21 +147,57 @@ function screenPositions(
   zoom: number,
   flipX: boolean,
   flipY: boolean,
+  xDimension: string,
+  yDimension: string,
+  nodeLayout?: OpenEnaNodeLayoutPositions,
 ) {
+  const canonicalNodes = model.nodes.map((node) => ({ key: `node:${node.code}`, x: node.x, y: node.y }));
+  const displayedNodes = model.nodes.map((node) => {
+    const override = nodeLayout?.get(node.code);
+    return {
+      key: `node:${node.code}`,
+      x: override?.get(xDimension) ?? node.x,
+      y: override?.get(yDimension) ?? node.y,
+    };
+  });
+  const points = model.points.map((point) => ({ key: `point:${point.key}`, x: point.x, y: point.y }));
   const values = [
-    ...model.nodes.map((node) => ({ key: `node:${node.code}`, x: node.x, y: node.y })),
-    ...model.points.map((point) => ({ key: `point:${point.key}`, x: point.x, y: point.y })),
+    ...displayedNodes,
+    ...points,
   ];
-  const maximumX = Math.max(1e-9, ...values.map((value) => Math.abs(value.x)));
-  const maximumY = Math.max(1e-9, ...values.map((value) => Math.abs(value.y)));
+  const frameValues = [
+    ...canonicalNodes,
+    ...points,
+  ];
+  const maximumX = Math.max(1e-9, ...frameValues.map((value) => Math.abs(value.x)));
+  const maximumY = Math.max(1e-9, ...frameValues.map((value) => Math.abs(value.y)));
   const scale = Math.min(
     (WIDTH - PAD_X * 2) / (maximumX * 2),
     (height - PAD_Y * 2) / (maximumY * 2),
   ) * bounded(zoom, 0.6, 2.4, 1);
-  return new Map<string, ScreenPoint>(values.map((value) => [value.key, {
+  return {
+    positions: new Map<string, ScreenPoint>(values.map((value) => [value.key, {
     x: WIDTH / 2 + value.x * scale * (flipX ? -1 : 1),
     y: height / 2 - value.y * scale * (flipY ? -1 : 1),
-  }]));
+    }])),
+    invert: (x: number, y: number) => ({
+      x: (x - WIDTH / 2) / (scale * (flipX ? -1 : 1)),
+      y: -(y - height / 2) / (scale * (flipY ? -1 : 1)),
+    }),
+  };
+}
+
+function clientPointInOrderedSvg(target: SVGGElement, clientX: number, clientY: number) {
+  const svg = target.ownerSVGElement;
+  const matrix = svg?.getScreenCTM();
+  if (!svg || !matrix) return null;
+  const point = svg.createSVGPoint();
+  point.x = clientX;
+  point.y = clientY;
+  const resolved = point.matrixTransform(matrix.inverse());
+  return Number.isFinite(resolved.x) && Number.isFinite(resolved.y)
+    ? { x: resolved.x, y: resolved.y }
+    : null;
 }
 
 function displayNumber(value: number) {
@@ -270,7 +313,17 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
     nodeTotals: props.nodeTotals,
   });
   const height = props.compact ? COMPACT_HEIGHT : MAIN_HEIGHT;
-  const positions = screenPositions(model, height, props.plotZoom, props.flipX, props.flipY);
+  const projection = screenPositions(
+    model,
+    height,
+    props.plotZoom,
+    props.flipX,
+    props.flipY,
+    props.xDimension,
+    props.yDimension,
+    props.nodeLayout,
+  );
+  const positions = projection.positions;
   const edgeScale = bounded(props.edgeScale, 0.1, 4, 1);
   const pointScale = bounded(props.pointScale, 0.5, 2, 1);
   const textScale = bounded(props.textScale, 0.5, 2, 1);
@@ -476,31 +529,50 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
             )
             : 0;
           const selfLabel = self ? edgeDescription(self, copy) : null;
+          const toDimensions = (clientX: number, clientY: number, target: SVGGElement) => {
+            const screenPoint = clientPointInOrderedSvg(target, clientX, clientY);
+            if (!screenPoint) return null;
+            const fitted = projection.invert(screenPoint.x, screenPoint.y);
+            return new Map([[props.xDimension, fitted.x], [props.yDimension, fitted.y]]);
+          };
           return (
-            <g key={node.code} transform={`translate(${screen.x} ${screen.y})`} className="ona-code-node">
-              <circle
-                r={node.radius}
-                data-ena-code={node.code}
-                data-ona-response-total={node.responseTotal}
-                fill="#ffffff"
-                stroke={nodeColor}
-                strokeWidth={5}
+            <g
+              key={node.code}
+              transform={`translate(${screen.x} ${screen.y})`}
+              className="ona-code-node"
+              data-ona-code-node-position={node.code}
+            >
+              <OpenEnaSvgDraggableNode
+                code={node.code}
+                radius={node.radius}
+                disabled={!props.onNodeMove}
+                toDimensions={toDimensions}
+                onNodeMove={props.onNodeMove ?? (() => {})}
               >
-                <title>{`${node.code} · ${copy.nodeSizeLabel}: ${displayNumber(node.responseTotal)} (${model.nodeSizeDefinition})`}</title>
-              </circle>
-              {props.showNetworks && self && selfLabel ? (
                 <circle
-                  r={selfRadius}
-                  data-ona-self-loop={node.code}
-                  fill={model.scopeColor}
-                  fillOpacity={0.35 + self.relativeMagnitude * 0.6}
-                  stroke="#17313a"
-                  strokeWidth={1}
+                  r={node.radius}
+                  data-ena-code={node.code}
+                  data-ona-response-total={node.responseTotal}
+                  fill="#ffffff"
+                  stroke={nodeColor}
+                  strokeWidth={5}
                 >
-                  <title>{`${node.code} ↻ ${node.code} · ${selfLabel}`}</title>
+                  <title>{`${node.code} · ${copy.nodeSizeLabel}: ${displayNumber(node.responseTotal)} (${model.nodeSizeDefinition})`}</title>
                 </circle>
-              ) : null}
-              {props.showLabels ? <text y={-node.radius - 9} textAnchor="middle" className="ena-set-result-label">{node.code}</text> : null}
+                {props.showNetworks && self && selfLabel ? (
+                  <circle
+                    r={selfRadius}
+                    data-ona-self-loop={node.code}
+                    fill={model.scopeColor}
+                    fillOpacity={0.35 + self.relativeMagnitude * 0.6}
+                    stroke="#17313a"
+                    strokeWidth={1}
+                  >
+                    <title>{`${node.code} ↻ ${node.code} · ${selfLabel}`}</title>
+                  </circle>
+                ) : null}
+                {props.showLabels ? <text y={-node.radius - 9} textAnchor="middle" className="ena-set-result-label">{node.code}</text> : null}
+              </OpenEnaSvgDraggableNode>
             </g>
           );
         })}

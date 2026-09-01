@@ -1,5 +1,9 @@
 import type { ReactNode, Ref } from "react";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
+import type {
+  OpenEnaNodeDimensionPosition,
+  OpenEnaNodeLayoutPositions,
+} from "@/lib/open-ena/node-layout";
 import type { OpenEnaOrderedNodeTotals } from "@/lib/open-ena/ordered-plot";
 import type { OpenEnaConfig, OpenEnaResult } from "@/lib/open-ena/types";
 import OpenEnaOrderedPlot, { type OpenEnaOrderedPlotCopy } from "./OpenEnaOrderedPlot";
@@ -56,6 +60,8 @@ export interface OpenEnaOrderedResultLayoutProps {
   showVariance: boolean;
   codeColors?: OpenEnaCodeColors;
   nodeTotals?: OpenEnaOrderedNodeTotals;
+  nodeLayout?: OpenEnaNodeLayoutPositions;
+  onNodeMove?: (code: string, dimensions: OpenEnaNodeDimensionPosition) => void;
   copy?: Partial<OpenEnaOrderedResultLayoutCopy>;
   plotCopy?: Partial<OpenEnaOrderedPlotCopy>;
   svgRef?: Ref<SVGSVGElement>;
@@ -97,6 +103,8 @@ export default function OpenEnaOrderedResultLayout(props: OpenEnaOrderedResultLa
     showVariance: props.showVariance,
     codeColors: props.codeColors,
     nodeTotals: props.nodeTotals,
+    nodeLayout: props.nodeLayout,
+    onNodeMove: props.onNodeMove,
     copy: props.plotCopy,
   };
 

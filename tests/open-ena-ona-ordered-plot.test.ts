@@ -1187,6 +1187,76 @@ test("the ordered SVG renders scaled triangles, pair chevrons, self inner discs,
   assert.match(compactMarkup, /<details[^>]*class="ona-visible-edge-summary"/);
 });
 
+test("ONA 2D node overrides move directed glyphs, self-connections, and all three descriptive plots", async () => {
+  const { result, config } = orderedFixture();
+  const original = structuredClone(result);
+  const { default: OpenEnaOrderedPlot } = await import("../components/open-ena/OpenEnaOrderedPlot");
+  const { default: OpenEnaOrderedResultLayout } = await import("../components/open-ena/OpenEnaOrderedResultLayout");
+  const common = {
+    result,
+    config,
+    scope: { kind: "overall" as const },
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    edgeThreshold: 0,
+    edgeScale: 1,
+    pointScale: 1,
+    textScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    compact: false,
+  };
+  const nodeLayout = new Map([["A", new Map([["SVD1", 3], ["SVD2", -2]])]]);
+  const baseline = renderToStaticMarkup(createElement(OpenEnaOrderedPlot, common));
+  const moved = renderToStaticMarkup(createElement(OpenEnaOrderedPlot, { ...common, nodeLayout } as never));
+  const path = (markup: string, attribute: string, value: string) => markup.match(new RegExp(
+    `<path(?=[^>]*${attribute}="${value}")(?=[^>]*\\sd="([^"]+)")[^>]*>`,
+  ))?.[1] ?? "";
+  const node = (markup: string, code: string) => markup.match(new RegExp(
+    `<g(?=[^>]*data-ona-code-node-position="${code}")(?=[^>]*transform="translate\\(([^ ]+) ([^)]+)\\)")[^>]*>`,
+  ))?.slice(1, 3).map(Number) ?? [];
+
+  assert.notDeepEqual(node(moved, "A"), node(baseline, "A"));
+  assert.deepEqual(node(moved, "B"), node(baseline, "B"));
+  assert.notEqual(path(moved, "data-ona-edge-glyph", "broadcast-triangle"), path(baseline, "data-ona-edge-glyph", "broadcast-triangle"));
+  assert.notEqual(path(moved, "data-ona-edge-hit-target", "true"), path(baseline, "data-ona-edge-hit-target", "true"));
+  assert.notEqual(path(moved, "data-ona-chevron", "A-to-B"), path(baseline, "data-ona-chevron", "A-to-B"));
+  assert.equal(path(moved, "data-ona-chevron", "B-to-C"), path(baseline, "data-ona-chevron", "B-to-C"));
+  assert.match(moved, /data-ona-code-node-position="A"[\s\S]*?data-ona-self-loop="A"/);
+  assert.match(moved, /data-ena-drag-code="A"/);
+
+  const layoutMarkup = renderToStaticMarkup(createElement(OpenEnaOrderedResultLayout, {
+    result,
+    config,
+    primaryGroupName: "first",
+    secondaryGroupName: "second",
+    centerMode: "plot",
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    edgeThreshold: 0,
+    edgeScale: 1,
+    pointScale: 1,
+    textScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    nodeLayout,
+  } as never));
+  assert.equal((layoutMarkup.match(/data-ena-drag-code="A"/g) ?? []).length, 3);
+  assert.deepEqual(result, original, "ONA presentation overrides must not mutate the ordered result");
+});
+
 test("six ONA groups use circle markers with stable non-color inner styles and an accessible numbered legend", async () => {
   const { result, config } = orderedFixture();
   const { default: OpenEnaOrderedPlot } = await import("../components/open-ena/OpenEnaOrderedPlot");

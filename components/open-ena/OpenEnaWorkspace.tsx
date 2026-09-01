@@ -3991,6 +3991,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                 showVariance={showVariance}
                 codeColors={codeColors}
                 nodeTotals={result.orderedResponseNodeSummary}
+                nodeLayout={activeNodeLayout.positions}
+                onNodeMove={moveNode}
                 copy={copy.ona.layout}
                 plotCopy={copy.ona.plot}
                 svgRef={plotSvgRef}
