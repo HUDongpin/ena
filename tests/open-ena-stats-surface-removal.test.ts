@@ -19,13 +19,15 @@ test("two-group Comparison omits the redundant jENA fitted-model block", () => {
   assert.doesNotMatch(statsPanel, /copy\.stats\.verifiedTests/);
 });
 
-test("Stats omits the visible analysis manifest summary while retaining export actions", () => {
+test("Open ENA omits the visible analysis manifest summary everywhere while retaining export actions", () => {
   const exportStart = statsPanel.indexOf('data-ena-stats-export="true"');
   const methodsStart = statsPanel.indexOf('className="ena-methods-section"', exportStart);
   assert.notEqual(exportStart, -1, "Stats must retain its export region");
   assert.notEqual(methodsStart, -1, "Stats must retain Methods & Reproducibility");
   const exportActions = statsPanel.slice(exportStart, methodsStart);
 
+  assert.doesNotMatch(workspace, /ena-manifest-section/);
+  assert.doesNotMatch(workspace, /copy\.stats\.manifest/);
   assert.doesNotMatch(exportActions, /ena-manifest-section/);
   assert.doesNotMatch(exportActions, /copy\.stats\.manifest/);
   assert.doesNotMatch(exportActions, /<dl>/);
