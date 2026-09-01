@@ -18,6 +18,10 @@ import {
   type OpenEnaResolvedGroupDisplaySide,
 } from "@/lib/open-ena/group-display";
 import { codeColorFor, type OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
+import type {
+  OpenEnaNodeDimensionPosition,
+  OpenEnaNodeLayoutPositions,
+} from "@/lib/open-ena/node-layout";
 import {
   marginalMeanIntervalPair,
   meanCenteredIqrOutlierIntervalPair,
@@ -25,6 +29,7 @@ import {
   type OpenEnaMarginalMeanIntervalPair,
 } from "@/lib/open-ena/uncertainty";
 import OpenEnaPlotActionIcon from "./OpenEnaPlotActionIcon";
+import OpenEnaSvgDraggableNode from "./OpenEnaSvgDraggableNode";
 
 export interface OpenEnaGroupContrastProps {
   contrast: OpenEnaPairwiseContrast;
@@ -49,6 +54,8 @@ export interface OpenEnaGroupContrastProps {
   dataView?: ReactNode;
   rightTools?: ReactNode;
   onSwitchPlots?: () => void;
+  nodeLayout?: OpenEnaNodeLayoutPositions;
+  onNodeMove?: (code: string, dimensions: OpenEnaNodeDimensionPosition) => void;
   groupDisplay?: Pick<OpenEnaDerivedGroupDisplay, "primary" | "secondary" | "hiddenUnitKeys">;
 }
 
@@ -353,7 +360,7 @@ function buildProjector(
   const extreme = Math.max(Math.abs(extremePosition), ZERO_TOLERANCE);
   const scale = Math.min(width - padding, height - padding) / (extreme * 2);
 
-  return (xValue: unknown, yValue: unknown): ProjectedPoint => {
+  const project = (xValue: unknown, yValue: unknown): ProjectedPoint => {
     const x = finiteNumber(xValue) ?? 0;
     const y = finiteNumber(yValue) ?? 0;
     return {
@@ -361,6 +368,24 @@ function buildProjector(
       y: height / 2 + centerOffsetY - y * scale * (flipY ? -1 : 1),
     };
   };
+  const invert = (point: ProjectedPoint): ProjectedPoint => ({
+    x: (point.x - width / 2 - centerOffsetX) / (scale * (flipX ? -1 : 1)),
+    y: -(point.y - height / 2 - centerOffsetY) / (scale * (flipY ? -1 : 1)),
+  });
+  return { project, invert };
+}
+
+function clientPointInContrastSvg(target: SVGGElement, clientX: number, clientY: number) {
+  const svg = target.ownerSVGElement;
+  const matrix = svg?.getScreenCTM();
+  if (!svg || !matrix) return null;
+  const point = svg.createSVGPoint();
+  point.x = clientX;
+  point.y = clientY;
+  const resolved = point.matrixTransform(matrix.inverse());
+  return Number.isFinite(resolved.x) && Number.isFinite(resolved.y)
+    ? { x: resolved.x, y: resolved.y }
+    : null;
 }
 
 function validPoints(side: OpenEnaPairwiseContrastSide) {
@@ -936,6 +961,8 @@ function ContrastSvg({
   flipY,
   svgRef,
   groupDisplay,
+  nodeLayout,
+  onNodeMove,
   comparisonScale,
   groupMeanScale,
   networkRoles,
@@ -959,7 +986,7 @@ function ContrastSvg({
   const padding = compact ? MINI_PADDING : MAIN_PADDING;
   const { extent, source: extentSource } = resolveExtent(contrast);
   const officialFrame = resolveOfficialPlotFrame(contrast, extent);
-  const project = buildProjector(
+  const projector = buildProjector(
     officialFrame.extremePosition,
     width,
     height,
@@ -969,6 +996,7 @@ function ContrastSvg({
     compact ? -0.75 : -0.25,
     compact ? -0.5 : -1,
   );
+  const project = projector.project;
   const projectEvidence = (xValue: number, yValue: number) => project(
     xValue * officialFrame.pointScaleFactor,
     yValue * officialFrame.pointScaleFactor,
@@ -978,16 +1006,23 @@ function ContrastSvg({
   const horizontalEnd = project(officialFrame.extremePosition, 0);
   const verticalStart = project(0, officialFrame.extremePosition);
   const verticalEnd = project(0, -officialFrame.extremePosition);
+  const [xAxis, yAxis] = contrast.axes;
   const nodePoints = new Map<string, ProjectedPoint>();
-  const modelNodePoints = unitCircle
+  const baseModelNodePoints = unitCircle
     ? officialEquiUnitCircleNodePositions(contrast.nodes)
     : new Map(contrast.nodes.flatMap((node) => (
       finiteNumber(node.x) !== null && finiteNumber(node.y) !== null
         ? [[node.code, { x: node.x, y: node.y }] as const]
         : []
     )));
+  const modelNodePoints = new Map([...baseModelNodePoints].map(([code, point]) => {
+    const override = nodeLayout?.get(code);
+    return [code, {
+      x: override?.get(xAxis) ?? point.x,
+      y: override?.get(yAxis) ?? point.y,
+    }] as const;
+  }));
   modelNodePoints.forEach((point, code) => nodePoints.set(code, project(point.x, point.y)));
-  const [xAxis, yAxis] = contrast.axes;
   const xAxisLabel = officialAxisLabel(xAxis);
   const yAxisLabel = officialAxisLabel(yAxis);
   const xVarianceShare = finiteOrZero(contrast.geometry.variance[xAxis]);
@@ -1054,6 +1089,16 @@ function ContrastSvg({
   const markerScale = bounded(pointScale, 0.5, 2, 1);
   const labelScale = bounded(textScale, 8 / 12, 20 / 12, 1);
   const zoom = bounded(plotZoom, 0.6, 2.4, 1);
+  const toNodeDimensions = (clientX: number, clientY: number, target: SVGGElement) => {
+    const screen = clientPointInContrastSvg(target, clientX, clientY);
+    if (!screen) return null;
+    const unzoomed = {
+      x: width / 2 + (screen.x - width / 2) / zoom,
+      y: height / 2 + (screen.y - height / 2) / zoom,
+    };
+    const fitted = projector.invert(unzoomed);
+    return new Map([[xAxis, fitted.x], [yAxis, fitted.y]]);
+  };
   const activeNames = plottedGroups.map(({ side }) => side.name);
   const shownConfidenceGroups = comparisonGroups.filter(({ side, display }) => (
     display.settings.showMean
@@ -1396,22 +1441,30 @@ function ContrastSvg({
               role="img"
               aria-label={`${codeLabel} code node`}
             >
-              <title>{`${codeLabel} code node`}</title>
-              <circle
-                r={nodeSize}
-                className="ena-set-result-node"
-                data-ena-code-node="neutral"
-                data-ena-code-node-size={dataNumber(nodeSize)}
-                data-ena-code={node.code}
-                fill={nodeColor}
-                stroke={nodeColor}
-                style={{ fill: nodeColor, stroke: nodeColor }}
-              />
-              {showLabels ? (
-                <text x={nodeSize + 3} y="3" textAnchor="start" className="ena-set-result-label">
-                  {codeLabel}
-                </text>
-              ) : null}
+              <OpenEnaSvgDraggableNode
+                code={node.code}
+                radius={nodeSize}
+                disabled={!onNodeMove}
+                toDimensions={toNodeDimensions}
+                onNodeMove={onNodeMove ?? (() => {})}
+              >
+                <title>{`${codeLabel} code node`}</title>
+                <circle
+                  r={nodeSize}
+                  className="ena-set-result-node"
+                  data-ena-code-node="neutral"
+                  data-ena-code-node-size={dataNumber(nodeSize)}
+                  data-ena-code={node.code}
+                  fill={nodeColor}
+                  stroke={nodeColor}
+                  style={{ fill: nodeColor, stroke: nodeColor }}
+                />
+                {showLabels ? (
+                  <text x={nodeSize + 3} y="3" textAnchor="start" className="ena-set-result-label">
+                    {codeLabel}
+                  </text>
+                ) : null}
+              </OpenEnaSvgDraggableNode>
             </g>
           );
         })}

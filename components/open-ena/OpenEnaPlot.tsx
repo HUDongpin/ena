@@ -1,7 +1,12 @@
 import type { Row } from "jena-js";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
+import type {
+  OpenEnaNodeDimensionPosition,
+  OpenEnaNodeLayoutPositions,
+} from "@/lib/open-ena/node-layout";
 import { codeColorFor, type OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
 import type { CameraPreset, GroupNetwork, OpenEnaResult, OpenEnaView } from "@/lib/open-ena/types";
+import OpenEnaSvgDraggableNode from "./OpenEnaSvgDraggableNode";
 
 interface OpenEnaPlotProps {
   result: OpenEnaResult;
@@ -24,6 +29,8 @@ interface OpenEnaPlotProps {
   plotZoom: number;
   flipX: boolean;
   flipY: boolean;
+  nodeLayout?: OpenEnaNodeLayoutPositions;
+  onNodeMove?: (code: string, dimensions: OpenEnaNodeDimensionPosition) => void;
   copy: OpenEnaCopy;
   svgRef?: React.Ref<SVGSVGElement>;
 }
@@ -131,10 +138,14 @@ function screenProjector(
   plotZoom = 1,
   flipX = false,
   flipY = false,
+  frameItems: Positioned[] = items,
 ) {
   const projected = items.map((item) => (view === "3d" ? project3d(item, camera) : { u: item.x, v: item.y, depth: 0 }));
-  const uMax = Math.max(1e-9, ...projected.map((item) => Math.abs(item.u)));
-  const vMax = Math.max(1e-9, ...projected.map((item) => Math.abs(item.v)));
+  const projectedFrame = frameItems.map((item) => (
+    view === "3d" ? project3d(item, camera) : { u: item.x, v: item.y, depth: 0 }
+  ));
+  const uMax = Math.max(1e-9, ...projectedFrame.map((item) => Math.abs(item.u)));
+  const vMax = Math.max(1e-9, ...projectedFrame.map((item) => Math.abs(item.v)));
   const scale = Math.min((WIDTH - PAD_X * 2) / (uMax * 2), (HEIGHT - PAD_Y * 2) / (vMax * 2)) * plotZoom;
   const depthMax = Math.max(1e-9, ...projected.map((item) => Math.abs(item.depth)));
   const lookup = new Map<string, ScreenPoint>();
@@ -146,7 +157,26 @@ function screenProjector(
       depth: point.depth / depthMax,
     });
   });
-  return lookup;
+  return {
+    positions: lookup,
+    inverse2d: (x: number, y: number) => view === "2d" ? {
+      x: (x - WIDTH / 2) / (scale * (flipX ? -1 : 1)),
+      y: -(y - HEIGHT / 2) / (scale * (flipY ? -1 : 1)),
+    } : null,
+  };
+}
+
+function clientPointInSvg(target: SVGGElement, clientX: number, clientY: number) {
+  const svg = target.ownerSVGElement;
+  const matrix = svg?.getScreenCTM();
+  if (!svg || !matrix) return null;
+  const point = svg.createSVGPoint();
+  point.x = clientX;
+  point.y = clientY;
+  const resolved = point.matrixTransform(matrix.inverse());
+  return Number.isFinite(resolved.x) && Number.isFinite(resolved.y)
+    ? { x: resolved.x, y: resolved.y }
+    : null;
 }
 
 export function passesEdgeThreshold(value: number, maximum: number, threshold: number) {
@@ -197,7 +227,7 @@ export function MiniNetwork({
     key: `node-${String(row.code)}`,
     label: String(row.code),
   }));
-  const positions = screenProjector(nodes, "2d", "xy");
+  const positions = screenProjector(nodes, "2d", "xy").positions;
   const strongestEdges = result.set.adjacencyKey
     .map((edge) => ({ name: edge.name, value: Math.abs(group.meanWeights[edge.name] ?? 0) }))
     .filter((edge) => passesEdgeThreshold(edge.value, maxNetworkWeight, edgeThreshold))
@@ -272,10 +302,12 @@ export default function OpenEnaPlot({
   plotZoom,
   flipX,
   flipY,
+  nodeLayout,
+  onNodeMove,
   copy,
   svgRef,
 }: OpenEnaPlotProps) {
-  const nodes = (result.set.rotation.nodes ?? []).map((row) => ({
+  const canonicalNodes = (result.set.rotation.nodes ?? []).map((row) => ({
     x: numberValue(row, xDimension),
     y: numberValue(row, yDimension),
     z: numberValue(row, zDimension),
@@ -283,6 +315,15 @@ export default function OpenEnaPlot({
     label: String(row.code),
     row,
   }));
+  const nodes = canonicalNodes.map((node) => {
+    const override = nodeLayout?.get(node.label);
+    return {
+      ...node,
+      x: override?.get(xDimension) ?? node.x,
+      y: override?.get(yDimension) ?? node.y,
+      z: override?.get(zDimension) ?? node.z,
+    };
+  });
   const unitPoints = result.set.points.map((row, index) => ({
     x: numberValue(row, xDimension),
     y: numberValue(row, yDimension),
@@ -298,14 +339,16 @@ export default function OpenEnaPlot({
     key: `mean-${index}`,
     label: `mean-${index}`,
   }));
-  const positions = screenProjector(
+  const projection = screenProjector(
     [...nodes, ...unitPoints, ...meanPoints],
     view,
     camera,
     plotZoom,
     flipX,
     flipY,
+    [...canonicalNodes, ...unitPoints, ...meanPoints],
   );
+  const positions = projection.positions;
   // Kept in the public prop shape so historical settings can still be read.
   // Generic ENA presenters never render longitudinal paths; those belong only
   // to the versioned trajectory workbench.
@@ -430,8 +473,9 @@ export default function OpenEnaPlot({
               stroke={weighted.group.color}
               strokeWidth={(1.5 + relative * 10) * edgeScale}
               strokeOpacity={0.86 + relative * 0.14}
-              strokeLinecap="round"
-              aria-label={`${edgeLabel}. Solid network edge.`}
+            strokeLinecap="round"
+            data-ena-edge={edge.name}
+            aria-label={`${edgeLabel}. Solid network edge.`}
             >
               <title>{`${edgeLabel}. Solid network edge.`}</title>
             </line>
@@ -519,17 +563,38 @@ export default function OpenEnaPlot({
           const point = positions.get(node.key);
           if (!point) return null;
           const nodeColor = codeColorFor(codeColors, node.label);
+          const toDimensions = (clientX: number, clientY: number, target: SVGGElement) => {
+            const screen = clientPointInSvg(target, clientX, clientY);
+            const fitted = screen ? projection.inverse2d(screen.x, screen.y) : null;
+            return fitted ? new Map([
+              [xDimension, fitted.x],
+              [yDimension, fitted.y],
+            ]) : null;
+          };
           return (
-            <g key={node.label} transform={`translate(${point.x} ${point.y})`} filter="url(#ena-node-shadow)">
-              <circle
-                r={view === "3d" ? Math.max(11, 14 + point.depth * 2) : 14}
-                className="ena-result-node"
-                data-ena-code={node.label}
-                fill={nodeColor}
-                stroke={nodeColor}
-                style={{ fill: nodeColor, stroke: nodeColor }}
-              />
-              {showLabels ? <text y="-23" textAnchor="middle" className="ena-result-label">{node.label}</text> : null}
+            <g
+              key={node.label}
+              transform={`translate(${point.x} ${point.y})`}
+              filter="url(#ena-node-shadow)"
+              data-ena-code-node-position={node.label}
+            >
+              <OpenEnaSvgDraggableNode
+                code={node.label}
+                radius={view === "3d" ? Math.max(11, 14 + point.depth * 2) : 14}
+                disabled={view !== "2d" || !onNodeMove}
+                toDimensions={toDimensions}
+                onNodeMove={onNodeMove ?? (() => {})}
+              >
+                <circle
+                  r={view === "3d" ? Math.max(11, 14 + point.depth * 2) : 14}
+                  className="ena-result-node"
+                  data-ena-code={node.label}
+                  fill={nodeColor}
+                  stroke={nodeColor}
+                  style={{ fill: nodeColor, stroke: nodeColor }}
+                />
+                {showLabels ? <text y="-23" textAnchor="middle" className="ena-result-label">{node.label}</text> : null}
+              </OpenEnaSvgDraggableNode>
             </g>
           );
         })}

@@ -4084,6 +4084,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                       </div>
                     ) : null}
                     rightTools={persistentPlotTools}
+                    nodeLayout={activeNodeLayout.positions}
+                    onNodeMove={moveNode}
                     svgRef={plotSvgRef}
                     onSwitchPlots={() => {
                       setPrimaryGroupName(secondaryGroupName);
@@ -4180,6 +4182,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                     plotZoom={plotZoom}
                     flipX={flipX}
                     flipY={flipY}
+                    nodeLayout={activeNodeLayout.positions}
+                    onNodeMove={moveNode}
                     copy={copy}
                     svgRef={plotSvgRef}
                   />

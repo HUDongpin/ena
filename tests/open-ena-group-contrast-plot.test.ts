@@ -294,6 +294,29 @@ test("official webENA frame scales analytic-unit evidence but preserves raw netw
   );
 });
 
+test("one fitted-dimension node override synchronizes the 2D triptych and incident edges", async () => {
+  const original = structuredClone(contrast);
+  const nodeLayout = new Map([
+    ["Evidence", new Map([["SVD1", 2], ["SVD2", -1]])],
+  ]);
+  const markup = await render({ nodeLayout } as Partial<OpenEnaGroupContrastProps>);
+  const comparison = plotSvg(markup, "open-ena-group-comparison-plot");
+  const primary = plotSvg(markup, "open-ena-group-primary-plot");
+  const secondary = plotSvg(markup, "open-ena-group-secondary-plot");
+
+  assert.deepEqual(codeNodePosition(comparison, "Evidence"), { x: 602.25, y: 431.75 });
+  assert.deepEqual(codeNodePosition(primary, "Evidence"), { x: 259.0416666666667, y: 130.89583333333334 });
+  assert.deepEqual(codeNodePosition(secondary, "Evidence"), { x: 259.0416666666667, y: 130.89583333333334 });
+  assert.equal((markup.match(/data-ena-drag-code="Evidence"/g) ?? []).length, 3);
+
+  for (const svg of [comparison, primary, secondary]) {
+    const evidenceReflection = edgeLineTags(svg).find((line) => line.includes("Evidence &amp; Reflection")) ?? "";
+    assert.equal(Number(tagAttribute(evidenceReflection, "x1")), codeNodePosition(svg, "Evidence")?.x);
+    assert.equal(Number(tagAttribute(evidenceReflection, "y1")), codeNodePosition(svg, "Evidence")?.y);
+  }
+  assert.deepEqual(contrast, original, "triptych layout overrides must not mutate contrast science");
+});
+
 test("unit, group-summary, and code-node encodings follow the official plot grammar", async () => {
   const markup = await render();
   const comparisonSvg = markup.match(/<svg[^>]*data-testid="open-ena-group-comparison-plot"[\s\S]*?<\/svg>/)?.[0] ?? "";

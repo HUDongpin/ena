@@ -135,3 +135,52 @@ test("standalone and mini-network code nodes share the selected palette", async 
   assert.match(miniMarkup, /<circle[^>]*data-ena-code="A"[^>]*fill="#c2185b"/);
   assert.match(miniMarkup, /<circle[^>]*data-ena-code="B"[^>]*fill="#000000"/);
 });
+
+test("generic 2D ENA applies a dimension layout to one node and every incident edge without reframing", async () => {
+  const { default: OpenEnaPlot } = await import("../components/open-ena/OpenEnaPlot");
+  const result = sixGroupTrajectoryResult();
+  const before = structuredClone(result);
+  const xDimension = result.dimensions[0]!;
+  const yDimension = result.dimensions[1]!;
+  const zDimension = result.dimensions[2]!;
+  const common = {
+    result,
+    groupColumn: "group",
+    view: "2d" as const,
+    xDimension,
+    yDimension,
+    zDimension,
+    camera: "xy" as const,
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    showTrajectories: false,
+    edgeScale: 1,
+    edgeThreshold: 0,
+    pointScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+    copy: getOpenEnaCopy("en"),
+  };
+  const render = (nodeLayout?: ReadonlyMap<string, ReadonlyMap<string, number>>) => (
+    renderToStaticMarkup(createElement(OpenEnaPlot, { ...common, nodeLayout } as never))
+  );
+  const baseline = render();
+  const moved = render(new Map([["A", new Map([[xDimension, 4], [yDimension, -3]])]]));
+  const nodeTransform = (markup: string, code: string) => markup.match(new RegExp(
+    `<g(?=[^>]*transform="translate\\(([^ ]+) ([^)]+)\\)")(?=[^>]*data-ena-code-node-position="${code}")[^>]*>`,
+  ))?.slice(1, 3).map(Number) ?? [];
+  const edgeTag = (markup: string, edge: string) => markup.match(new RegExp(
+    `<line[^>]*data-ena-edge="${edge.replace(" & ", " &amp; ")}"[^>]*>`,
+  ))?.[0] ?? "";
+
+  assert.notDeepEqual(nodeTransform(moved, "A"), nodeTransform(baseline, "A"));
+  assert.deepEqual(nodeTransform(moved, "B"), nodeTransform(baseline, "B"));
+  assert.notEqual(edgeTag(moved, "A & B"), edgeTag(baseline, "A & B"));
+  assert.equal(edgeTag(moved, "B & C"), edgeTag(baseline, "B & C"));
+  assert.match(moved, /data-ena-drag-code="A"/);
+  assert.deepEqual(result, before, "display-only node movement cannot mutate the fitted result");
+});
