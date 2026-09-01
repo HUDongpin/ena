@@ -1949,6 +1949,7 @@ button:focus-visible {
   transition: filter 300ms ease;
 }
 
+.back-to-top [data-track="page-progress-outline"],
 .back-to-top [data-track="page-progress-arc"] {
   transition: stroke-dashoffset 140ms linear;
 }
@@ -6288,6 +6289,7 @@ body:has(.open-ena-login-page) .back-to-top {
   .back-to-top,
   .back-to-top-progress,
   .back-to-top-tooltip,
+  .back-to-top [data-track="page-progress-outline"],
   .back-to-top [data-track="page-progress-arc"] {
     transition: none;
   }

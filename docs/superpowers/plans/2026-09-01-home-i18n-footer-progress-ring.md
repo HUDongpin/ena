@@ -10,6 +10,14 @@
 
 ---
 
+## Task 3 Review Amendment (approved 2026-09-01)
+
+This amendment supersedes the initial Task 3 exact-markup and lifecycle-test portions while preserving the original plan as execution history. Keep the approved 2.6-pixel cyan `#48d5e8` progress arc unchanged, and render an additional 5.2-pixel `var(--accent-strong)` deep-blue outline beneath it with identical radius, dash geometry, rotation, and rounded cap. The outline provides a greater-than-or-equal-to 3:1 progress boundary contrast against the track, ENA Baby Blue inner face, cyan arc, and white page without obscuring the cyan state.
+
+Replace lifecycle source-spelling assertions with executable, dependency-injected controller tests covering initial scheduling, passive and resize subscriptions, request coalescing, flush-time metric reads, exact pending-frame cancellation, symmetric cleanup, and no post-cleanup dispatch effect. Extract and execute-test the return-to-top helper for both smooth and reduced-motion automatic behavior while retaining activation-time `matchMedia` use. Add focused CSS contracts for desktop/mobile placement, shared outline/arc transitions, reduced-motion disabling, tooltip interaction, and Open ENA/login exclusions, plus an unrounded WCAG contrast assertion.
+
+---
+
 ## File Responsibility Map
 
 - `lib/i18n.ts`: Locale registry, `Dictionary` contract, and English, Traditional Chinese, and Simplified Chinese strings.

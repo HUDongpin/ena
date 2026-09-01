@@ -13,6 +13,24 @@ interface ScrollProgressMetrics {
   clientHeight: number;
 }
 
+interface ScrollProgressEventTarget {
+  addEventListener(type: string, listener: EventListener, options?: AddEventListenerOptions): void;
+  removeEventListener(type: string, listener: EventListener): void;
+}
+
+interface ScrollProgressControllerOptions {
+  windowTarget: ScrollProgressEventTarget;
+  visualViewportTarget?: ScrollProgressEventTarget;
+  requestAnimationFrame(callback: () => void): number;
+  cancelAnimationFrame(frame: number): void;
+  getMetrics(): ScrollProgressMetrics;
+  publishProgress(progress: number): void;
+}
+
+interface ScrollToTopTarget {
+  scrollTo(options: { top: number; behavior: "auto" | "smooth" }): void;
+}
+
 const progressCircleRadius = 22.5;
 const progressCircleCircumference = 2 * Math.PI * progressCircleRadius;
 
@@ -28,52 +46,76 @@ export function getScrollProgress({
   return Math.round(Math.min(100, Math.max(0, progress)));
 }
 
+export function createScrollProgressController({
+  windowTarget,
+  visualViewportTarget,
+  requestAnimationFrame,
+  cancelAnimationFrame,
+  getMetrics,
+  publishProgress,
+}: ScrollProgressControllerOptions) {
+  let animationFrame = 0;
+
+  function updateProgress() {
+    animationFrame = 0;
+    publishProgress(getScrollProgress(getMetrics()));
+  }
+
+  function requestProgressUpdate() {
+    if (animationFrame !== 0) return;
+    animationFrame = requestAnimationFrame(updateProgress);
+  }
+
+  requestProgressUpdate();
+  windowTarget.addEventListener("scroll", requestProgressUpdate, { passive: true });
+  windowTarget.addEventListener("resize", requestProgressUpdate);
+  visualViewportTarget?.addEventListener("resize", requestProgressUpdate);
+
+  return () => {
+    if (animationFrame !== 0) cancelAnimationFrame(animationFrame);
+    windowTarget.removeEventListener("scroll", requestProgressUpdate);
+    windowTarget.removeEventListener("resize", requestProgressUpdate);
+    visualViewportTarget?.removeEventListener("resize", requestProgressUpdate);
+  };
+}
+
+export function scrollToTop(target: ScrollToTopTarget, reduceMotion: boolean) {
+  target.scrollTo({
+    top: 0,
+    behavior: reduceMotion ? "auto" : "smooth",
+  });
+}
+
 export default function BackToTop({ label, progressLabel }: BackToTopProps) {
   const [scrollProgress, setScrollProgress] = useState(0);
   const progressOffset = progressCircleCircumference * (1 - scrollProgress / 100);
 
   useEffect(() => {
-    let animationFrame = 0;
+    const visualViewport = window.visualViewport;
 
-    function updateProgress() {
-      animationFrame = 0;
-      const root = document.documentElement;
-      const body = document.body;
+    return createScrollProgressController({
+      windowTarget: window,
+      visualViewportTarget: visualViewport ?? undefined,
+      requestAnimationFrame: (callback) => window.requestAnimationFrame(callback),
+      cancelAnimationFrame: (animationFrame) => window.cancelAnimationFrame(animationFrame),
+      getMetrics: () => {
+        const root = document.documentElement;
+        const body = document.body;
 
-      setScrollProgress(
-        getScrollProgress({
+        return {
           scrollTop: window.scrollY || root.scrollTop || body?.scrollTop || 0,
           scrollHeight: Math.max(root.scrollHeight, body?.scrollHeight ?? 0),
           clientHeight: window.innerHeight || root.clientHeight,
-        }),
-      );
-    }
-
-    function requestProgressUpdate() {
-      if (animationFrame !== 0) return;
-      animationFrame = window.requestAnimationFrame(updateProgress);
-    }
-
-    requestProgressUpdate();
-    window.addEventListener("scroll", requestProgressUpdate, { passive: true });
-    window.addEventListener("resize", requestProgressUpdate);
-    window.visualViewport?.addEventListener("resize", requestProgressUpdate);
-
-    return () => {
-      if (animationFrame !== 0) window.cancelAnimationFrame(animationFrame);
-      window.removeEventListener("scroll", requestProgressUpdate);
-      window.removeEventListener("resize", requestProgressUpdate);
-      window.visualViewport?.removeEventListener("resize", requestProgressUpdate);
-    };
+        };
+      },
+      publishProgress: setScrollProgress,
+    });
   }, []);
 
   function handleClick() {
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    window.scrollTo({
-      top: 0,
-      behavior: reduceMotion ? "auto" : "smooth",
-    });
+    scrollToTop(window, reduceMotion);
   }
 
   return (
@@ -108,6 +150,19 @@ export default function BackToTop({ label, progressLabel }: BackToTopProps) {
             strokeLinejoin="round"
           />
         </g>
+        <circle
+          cx="28"
+          cy="28"
+          r={progressCircleRadius}
+          fill="none"
+          stroke="var(--accent-strong)"
+          strokeWidth="5.2"
+          strokeLinecap="round"
+          data-track="page-progress-outline"
+          strokeDasharray={progressCircleCircumference}
+          strokeDashoffset={progressOffset}
+          transform="rotate(-90 28 28)"
+        />
         <circle
           cx="28"
           cy="28"

@@ -113,6 +113,7 @@ Use the AIED.HK reference geometry:
 - inner face circle: center `(28, 28)`, radius `21.3`
 - track: `#dfe6ee`
 - progress arc: `#48d5e8`
+- progress outline: `var(--accent-strong)` (`#1f6f9e`), 5.2 pixels, with the same radius, dash geometry, top-start rotation, and rounded cap as the cyan progress arc; render this outline beneath the 2.6-pixel cyan arc so the approved cyan progress state remains visible while its deep-blue boundary has at least 3:1 contrast against the track, Baby Blue inner face, cyan arc, and white page
 - arrow: `#172033`, 3.5-pixel rounded stroke
 - arrow path: `M28 37.5V20.5M19.5 29 28 20.5 36.5 29`
 
