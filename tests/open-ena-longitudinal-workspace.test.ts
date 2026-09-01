@@ -429,8 +429,8 @@ test("standalone longitudinal SVG and PNG exports embed the complete plot visual
   );
   assert.match(
     workspace,
-    /function exportPlotPng\(\)[\s\S]{0,180}const svg = serializedPlotSvg\(\)/,
-    "PNG rendering must consume the same self-contained SVG serializer",
+    /function exportPlotPng\(\)[\s\S]{0,220}const serialized = serializedPlotSvg\(\)[\s\S]{0,220}new Blob\(\[serialized\.svg\]/,
+    "PNG rendering must consume the same self-contained SVG and dimensions serializer",
   );
 });
 

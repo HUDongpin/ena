@@ -8,12 +8,14 @@ import {
 } from "./group-display";
 import { codeColorFor, JENA_GROUP_COLORS, type OpenEnaCodeColors } from "./plot-style";
 import type { CameraPreset, GroupNetwork, OpenEnaResult } from "./types";
+import type { OpenEnaUnitPointStyle } from "./unit-point-style";
 import { marginalMeanStudentT95 } from "./uncertainty";
 
 export const OPEN_ENA_3D_UI_REVISION = "open-ena-3d-camera-v2";
 export const OPEN_ENA_3D_DEFAULT_CAMERA_ZOOM = 1.5;
 
-const AXIS_COLORS = ["#e00000", "#0000d0", "#15803d"] as const;
+export const OPEN_ENA_3D_AXIS_COLORS = ["#e00000", "#0000d0", "#15803d"] as const;
+const AXIS_COLORS = OPEN_ENA_3D_AXIS_COLORS;
 const GROUP_MARKER_SYMBOLS = ["circle", "square", "diamond", "cross", "x", "circle-open"] as const;
 const GROUP_MARKER_LABELS = ["circle", "square", "diamond", "cross", "x", "open circle"] as const;
 const GROUP_LINE_DASHES = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"] as const;
@@ -27,12 +29,19 @@ export type OpenEna3dTraceRole =
   | "trajectory-path"
   | "axis"
   | "axis-arrowhead"
-  | "axis-label";
+  | "axis-label"
+  | "ordered-edge-shaft"
+  | "ordered-edge-arrowhead"
+  | "ordered-self-loop-shaft"
+  | "ordered-self-loop-arrowhead"
+  | "ordered-unit-point-overlay";
 
 export type OpenEna3dPlotKind = "comparison" | "primary" | "secondary";
 
 export interface OpenEna3dTraceMeta {
   role: OpenEna3dTraceRole;
+  analysisKind?: "ona";
+  scope?: "overall" | "primary" | "secondary";
   plotKind?: OpenEna3dPlotKind;
   groupName?: string;
   groupIndex?: number;
@@ -50,11 +59,24 @@ export interface OpenEna3dTraceMeta {
   sampleSize?: number;
   degreesFreedom?: number;
   intervalEdge?: string;
+  pointStyle?: OpenEnaUnitPointStyle;
+  groupColor?: string;
+  ground?: string;
+  response?: string;
+  groundIndex?: number;
+  responseIndex?: number;
+  selfConnection?: boolean;
+  normalizedMeanWeight?: number;
+  rawAggregateCount?: number;
+  relativeMagnitude?: number;
+  edgeCount?: number;
+  orderedEdgeIndices?: number[];
+  widthBucket?: number;
 }
 
 export interface OpenEna3dMarker {
   color: string | string[];
-  size: number;
+  size: number | number[];
   symbol?: string;
   opacity?: number;
   line?: { color: string; width: number };
@@ -64,9 +86,9 @@ export interface OpenEna3dTrace {
   type: "scatter3d" | "cone";
   mode?: string;
   name: string;
-  x: number[];
-  y: number[];
-  z: number[];
+  x: Array<number | null>;
+  y: Array<number | null>;
+  z: Array<number | null>;
   u?: number[];
   v?: number[];
   w?: number[];
@@ -76,7 +98,7 @@ export interface OpenEna3dTrace {
   colorscale?: Array<[number, string]>;
   showscale?: boolean;
   text?: string[];
-  customdata?: string[];
+  customdata?: Array<string | null>;
   textposition?: string;
   textfont?: { color?: string; size?: number };
   marker?: OpenEna3dMarker;
@@ -219,6 +241,7 @@ export interface OpenEna3dPlotSpec {
   data: OpenEna3dTrace[];
   layout: OpenEna3dPlotLayout;
   config: OpenEna3dPlotConfig;
+  diagnostics?: { degenerateDimensions: string[] };
 }
 
 export interface CompileOpenEna3dPlotInput {
@@ -399,7 +422,7 @@ function edgeWeight(result: OpenEnaResult, edgeName: string) {
   return { value, groupIndex, comparison: false };
 }
 
-function scaledCamera(preset: CameraPreset, plotZoom: number) {
+export function scaledCamera(preset: CameraPreset, plotZoom: number) {
   const camera = cameraForPreset(preset);
   if (camera.projection.type === "orthographic") return camera;
   const distanceScale = 1 / clamp(plotZoom, 0.35, 3, 1);
@@ -413,13 +436,13 @@ function scaledCamera(preset: CameraPreset, plotZoom: number) {
   };
 }
 
-function displayAspectRatio(preset: CameraPreset, plotZoom: number) {
+export function displayAspectRatio(preset: CameraPreset, plotZoom: number) {
   if (cameraForPreset(preset).projection.type !== "orthographic") return undefined;
   const scale = clamp(plotZoom, 0.35, 3, 1);
   return { x: scale, y: scale, z: scale } satisfies OpenEna3dAspectRatio;
 }
 
-function axisTraces(
+export function axisTraces(
   extent: number,
   dimensions: readonly [string, string, string],
 ): OpenEna3dTrace[] {
@@ -582,8 +605,11 @@ function confidenceIntervalBoxTraces(
  */
 export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): OpenEna3dPlotSpec {
   assertOpenEnaCapabilityForResult(input.result, "3d");
+  const result = input.result;
+  if ((result.set.networkType ?? "standard") !== "standard") {
+    throw new Error("The generic 3D compiler requires one completed Standard ENA result.");
+  }
   const {
-    result,
     contrast = null,
     groupDisplay,
     plotKind = "comparison",

@@ -8,6 +8,7 @@ import type {
   OpenEnaResolvedRankPMethod,
 } from "./open-ena/rank-inference";
 import type { OpenEnaResultTablesCopy } from "./open-ena/export";
+import type { OpenEnaUnitPointStyle } from "./open-ena/unit-point-style";
 
 export interface OpenEnaPersistentPlotToolsCopy {
   plotSettings: string;
@@ -365,6 +366,21 @@ export interface OpenEnaOnaCopy {
     directionLegendLabel: string;
     flippedLabel: string;
     visibleCellsLabel: string;
+    pointStyleNames: Readonly<Record<OpenEnaUnitPointStyle, string>>;
+    unitPointDescription: (input: {
+      unit: string;
+      group: string;
+      xDimension: string;
+      xValue: string;
+      yDimension: string;
+      yValue: string;
+    }) => string;
+    groupPointDescription: (input: {
+      number: number;
+      group: string;
+      color: string;
+      style: string;
+    }) => string;
   };
   dataView: {
     ariaLabel: string;
@@ -472,6 +488,9 @@ export interface OpenEnaCopy {
   navLabel: string;
   modes: { data: string; model: string; plot: string; stats: string; ai: string };
   views: { twoD: string; threeD: string };
+  plotExport: {
+    identityOmittedPoint: (index: number) => string;
+  };
   groupDisplay: OpenEnaGroupDisplayCopy;
   ona: OpenEnaOnaCopy;
   sets: {
@@ -1472,6 +1491,9 @@ const en: OpenEnaCopy = {
   eyebrow: "Browser-based research workspace",
   title: "Open ENA",
   intro: "Build, inspect, and compare epistemic network models with jENA in one workspace with linked 2D and interactive 3D views.",
+  plotExport: {
+    identityOmittedPoint: (index) => `Analytic unit point ${index}; identifier omitted from this SVG export.`,
+  },
   navLabel: "Open ENA",
   modes: { data: "Data", model: "Model", plot: "Plot Tools", stats: "Stats & Export", ai: "AI" },
   views: { twoD: "2D ENA", threeD: "3D ENA" },
@@ -1692,6 +1714,20 @@ const en: OpenEnaCopy = {
       directionLegendLabel: "Ordered network direction legend",
       flippedLabel: "flipped",
       visibleCellsLabel: "visible directed cells",
+      pointStyleNames: {
+        solid: "solid",
+        "inner-ring": "inner ring",
+        "center-dot": "center dot",
+        "horizontal-bar": "horizontal bar",
+        plus: "plus sign",
+        cross: "diagonal cross",
+      },
+      unitPointDescription: ({ unit, group, xDimension, xValue, yDimension, yValue }) => (
+        `Analytic unit ${unit} · Group ${group} · horizontal axis ${xDimension} ${xValue} · vertical axis ${yDimension} ${yValue}`
+      ),
+      groupPointDescription: ({ number, group, color, style }) => (
+        `${number}. ${group}; color ${color}; ${style} circle marker`
+      ),
     },
     dataView: {
       ariaLabel: "Ordered Data View center surface",
@@ -2100,6 +2136,9 @@ const zhHant: OpenEnaCopy = {
   title: "開放 ENA",
   intro: "在同一工作區中使用 jENA 建構、檢視和比較認知網絡模型，並在相連的 2D 與互動式 3D 視圖之間切換。",
   navLabel: "開放 ENA",
+  plotExport: {
+    identityOmittedPoint: (index) => `分析單位點 ${index}；此 SVG 匯出已省略識別碼。`,
+  },
   modes: { data: "資料", model: "模型", plot: "繪圖工具", stats: "統計與匯出", ai: "AI 解讀" },
   views: { twoD: "2D ENA", threeD: "3D ENA" },
   groupDisplay: {
@@ -2315,6 +2354,20 @@ const zhHant: OpenEnaCopy = {
       directionLegendLabel: "順序網絡方向圖例",
       flippedLabel: "已翻轉",
       visibleCellsLabel: "個可見有方向儲存格",
+      pointStyleNames: {
+        solid: "實心",
+        "inner-ring": "內環",
+        "center-dot": "中心點",
+        "horizontal-bar": "水平線",
+        plus: "加號",
+        cross: "斜十字",
+      },
+      unitPointDescription: ({ unit, group, xDimension, xValue, yDimension, yValue }) => (
+        `分析單位 ${unit} · 群組 ${group} · 橫軸 ${xDimension} ${xValue} · 縱軸 ${yDimension} ${yValue}`
+      ),
+      groupPointDescription: ({ number, group, color, style }) => (
+        `第 ${number} 組：${group}；顏色 ${color}；${style}圓形標記`
+      ),
     },
     dataView: {
       ariaLabel: "順序資料檢視中央區域",
@@ -2475,6 +2528,9 @@ const zhHans: OpenEnaCopy = {
   title: "开放 ENA",
   intro: "在同一工作区中使用 jENA 构建、查看和比较认知网络模型，并在相连的 2D 与交互式 3D 视图之间切换。",
   navLabel: "开放 ENA",
+  plotExport: {
+    identityOmittedPoint: (index) => `分析单位点 ${index}；此 SVG 导出已省略标识符。`,
+  },
   modes: { data: "数据", model: "模型", plot: "绘图工具", stats: "统计与导出", ai: "AI 解读" },
   views: { twoD: "2D ENA", threeD: "3D ENA" },
   groupDisplay: {
@@ -2690,6 +2746,20 @@ const zhHans: OpenEnaCopy = {
       directionLegendLabel: "顺序网络方向图例",
       flippedLabel: "已翻转",
       visibleCellsLabel: "个可见有向单元格",
+      pointStyleNames: {
+        solid: "实心",
+        "inner-ring": "内环",
+        "center-dot": "中心点",
+        "horizontal-bar": "水平线",
+        plus: "加号",
+        cross: "斜十字",
+      },
+      unitPointDescription: ({ unit, group, xDimension, xValue, yDimension, yValue }) => (
+        `分析单位 ${unit} · 组 ${group} · 横轴 ${xDimension} ${xValue} · 纵轴 ${yDimension} ${yValue}`
+      ),
+      groupPointDescription: ({ number, group, color, style }) => (
+        `第 ${number} 组：${group}；颜色 ${color}；${style}圆形标记`
+      ),
     },
     dataView: {
       ariaLabel: "顺序数据视图中央区域",

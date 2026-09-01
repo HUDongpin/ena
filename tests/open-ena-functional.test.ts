@@ -5,6 +5,7 @@ import test from "node:test";
 import { analyzeDataset, buildJenaOptions } from "../lib/open-ena/analyze";
 import { inferConfig, parseCsv, validateConfig } from "../lib/open-ena/csv";
 import { buildAnalysisBundle } from "../lib/open-ena/export";
+import * as openEnaExportContract from "../lib/open-ena/export";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 import { SAMPLE_CONFIG } from "../lib/open-ena/types";
 
@@ -850,5 +851,97 @@ test("de-labeled ENA and every ONA SVG export scrub analytic-unit identities fro
   assert.match(workspace, /if \(completedResultKind === "ona" \|\| !showUnitLabels\)/);
   assert.match(workspace, /\[data-ena-unit-point='true'\], \[data-ona-unit-point='true'\]/);
   assert.match(workspace, /querySelectorAll\("\.ena-set-unit-label"\).*\.remove\(\)/);
-  assert.match(workspace, /identifier omitted from this SVG export/);
+  assert.match(workspace, /copy\.plotExport\.identityOmittedPoint\(index \+ 1\)/);
+  assert.doesNotMatch(workspace, /`Analytic unit point \$\{index \+ 1\}; identifier omitted from this SVG export\.`/);
+  const localized = [
+    { locale: "en" as const, expected: /Analytic unit point 2; identifier omitted from this SVG export\./ },
+    { locale: "zh-hant" as const, expected: /分析單位點 2；此 SVG 匯出已省略識別碼。/ },
+    { locale: "zh-hans" as const, expected: /分析单位点 2；此 SVG 导出已省略标识符。/ },
+  ];
+  for (const { locale, expected } of localized) {
+    const plotExport = Reflect.get(getOpenEnaCopy(locale), "plotExport") as { identityOmittedPoint?: (index: number) => string } | undefined;
+    assert.equal(typeof plotExport?.identityOmittedPoint, "function");
+    const label = plotExport?.identityOmittedPoint?.(2) ?? "";
+    assert.match(label, expected);
+    assert.doesNotMatch(label, /u1|unit-1|participant|student/i, "localized sanitizer text must not reintroduce a unit identifier");
+  }
+});
+
+test("export dimension contract preserves valid vector aspect and bounds requested PNG raster memory", () => {
+  const resolveDimensions = Reflect.get(openEnaExportContract, "resolveOpenEnaPlotExportDimensions") as unknown;
+  assert.equal(typeof resolveDimensions, "function", "the export layer must expose a testable live-viewBox dimension resolver");
+  if (typeof resolveDimensions !== "function") return;
+  const standard = resolveDimensions("0 0 920 590") as Record<string, unknown>;
+  assert.deepEqual(standard, { status: "native", width: 920, height: 590, sourceWidth: 920, sourceHeight: 590 });
+  assert.deepEqual(resolveDimensions("0 0 920 682"), { status: "native", width: 920, height: 682, sourceWidth: 920, sourceHeight: 682 });
+  const exactCap = resolveDimensions("0 0 4096 4096") as { status: string; width: number; height: number; sourceWidth: number; sourceHeight: number };
+  assert.equal(exactCap.status, "native");
+  assert.equal(exactCap.width, 4096);
+  const justOver = resolveDimensions("0 0 4096.1 4096") as typeof exactCap;
+  assert.equal(justOver.status, "scaled");
+  assert.ok(justOver.width <= 4096 && justOver.height <= 4096);
+  assert.ok(Math.abs(justOver.width / justOver.height - justOver.sourceWidth / justOver.sourceHeight) < 1e-12);
+  const tall = resolveDimensions("0 0 920 4096") as typeof exactCap;
+  assert.equal(tall.status, "native");
+  const oversized = resolveDimensions("0 0 9200 5900") as typeof exactCap;
+  assert.equal(oversized.status, "scaled");
+  assert.equal(Math.max(oversized.width, oversized.height), 4096);
+  assert.ok(Math.abs(oversized.width / oversized.height - 9200 / 5900) < 1e-12);
+  assert.deepEqual(resolveDimensions("0 0 920.5 590.25"), { status: "native", width: 920.5, height: 590.25, sourceWidth: 920.5, sourceHeight: 590.25 });
+  for (const invalid of [null, "", "0 0 0 682", "0 0 -920 682", "Infinity 0 920 682", "0 0 920 Infinity", "not-a-viewbox"]) {
+    assert.deepEqual(
+      resolveDimensions(invalid),
+      { status: "fallback", width: 920, height: 590, sourceWidth: null, sourceHeight: null },
+      `malformed viewBox ${String(invalid)} must use the explicit fallback state`,
+    );
+  }
+
+  const resolveRaster = Reflect.get(openEnaExportContract, "resolveOpenEnaPlotRasterDimensions") as unknown;
+  assert.equal(typeof resolveRaster, "function", "PNG export must have an independently testable raster budget resolver");
+  if (typeof resolveRaster !== "function") return;
+  const maxSide = Reflect.get(openEnaExportContract, "OPEN_ENA_PLOT_RASTER_MAX_SIDE");
+  const maxPixels = Reflect.get(openEnaExportContract, "OPEN_ENA_PLOT_RASTER_MAX_PIXELS");
+  assert.equal(maxSide, 8192);
+  assert.equal(maxPixels, 16_000_000);
+  const standardRaster = resolveRaster(standard, 3) as { width: number; height: number; effectiveScale: number; status: string };
+  assert.deepEqual(standardRaster, { width: 2760, height: 1770, effectiveScale: 3, status: "requested" });
+  const rasterInputs = [
+    exactCap,
+    justOver,
+    tall,
+    oversized,
+    resolveDimensions("0 0 920.5 590.25"),
+    { width: 8192 / 3, height: 1000 },
+    { width: 8192 / 3 + 0.01, height: 1000 },
+  ] as Array<{ width: number; height: number }>;
+  for (const input of rasterInputs) {
+    const raster = resolveRaster(input, 3) as { width: number; height: number; effectiveScale: number; status: string };
+    assert.ok(Number.isInteger(raster.width) && Number.isInteger(raster.height));
+    assert.ok(raster.width > 0 && raster.height > 0);
+    assert.ok(raster.width <= 8192 && raster.height <= 8192);
+    assert.ok(raster.width * raster.height <= 16_000_000);
+    assert.ok(raster.effectiveScale > 0 && raster.effectiveScale <= 3);
+    assert.ok(
+      Math.abs(raster.width / raster.height - input.width / input.height) <= 1 / Math.min(raster.width, raster.height),
+      "integer raster rounding must preserve aspect within one pixel",
+    );
+  }
+  const tallRaster = resolveRaster(tall, 3) as typeof standardRaster;
+  assert.deepEqual(tallRaster, { width: 1840, height: 8192, effectiveScale: 2, status: "constrained" });
+  const squareRaster = resolveRaster(exactCap, 3) as typeof standardRaster;
+  assert.deepEqual(squareRaster, { width: 4000, height: 4000, effectiveScale: 0.9765625, status: "constrained" });
+
+  const workspace = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8");
+  const serializer = workspace.match(/function serializedPlotSvg\(\)[\s\S]*?(?=\n  function exportPlotSvg\(\))/)?.[0] ?? "";
+  const pngExporter = workspace.match(/function exportPlotPng\(\)[\s\S]*?(?=\n  function |\n  async function )/)?.[0] ?? "";
+  assert.match(serializer, /resolveOpenEnaPlotExportDimensions\(source\.getAttribute\("viewBox"\)\)/);
+  assert.match(serializer, /clone\.setAttribute\("width", String\(dimensions\.width\)\)/);
+  assert.match(serializer, /clone\.setAttribute\("height", String\(dimensions\.height\)\)/);
+  assert.match(serializer, /return \{[\s\S]*?svg:[\s\S]*?dimensions[\s\S]*?\}/);
+  assert.match(pngExporter, /resolveOpenEnaPlotRasterDimensions\(serialized\.dimensions, scale\)/);
+  assert.match(pngExporter, /canvas\.width = rasterDimensions\.width/);
+  assert.match(pngExporter, /canvas\.height = rasterDimensions\.height/);
+  assert.match(pngExporter, /new Blob\(\[serialized\.svg\]/);
+  assert.doesNotMatch(pngExporter, /canvas\.(?:width|height) = serialized\.dimensions\.(?:width|height) \* scale/);
+  assert.match(workspace, /copy\.plotExport\.identityOmittedPoint/, "dimension changes must preserve the localized export identity sanitizer");
 });

@@ -73,6 +73,7 @@ test("generic 2D ENA plots retain network encodings but fail closed on legacy tr
   }));
   const markup = render(true);
   assert.equal(markup, render(false), "the read-compatible trajectory flag must be a presenter no-op");
+  assert.match(markup, /<svg[^>]*viewBox="0 0 920 590"/, "standard 2D ENA must retain the 920 by 590 live export viewBox");
   assert.doesNotMatch(markup, /ena-trajectory-(?:path|direction-arrow|arrow-)/);
   assert.doesNotMatch(markup, /data-ena-trajectory-style|directed trajectory segment|trajectory line/i);
   assert.match(markup, /Solid network edge/);
