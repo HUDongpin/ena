@@ -69,7 +69,10 @@ test("the screenshot-selected public sections are absent", () => {
   const news = source("app", "[locale]", "news", "page.tsx");
   const academy = source("app", "[locale]", "academy", "page.tsx");
 
-  assert.doesNotMatch(home, /principle-band|principle-grid|dictionary\.home\.principle(?:Title|Text)/);
+  assert.doesNotMatch(
+    home,
+    /principle-band|principle-grid|dictionary\.home\.principle(?:Title|Text)|questions-section|question-grid|dictionary\.home\.questions(?:Title|Text|\.map)/,
+  );
   assert.doesNotMatch(mission, /<NetworkFigure|definition-section|definition-copy|dictionary\.mission\.definition(?:Title|Text)/);
   assert.doesNotMatch(news, /news-selection-panel|selection-network|copy\.selection(?:Eyebrow|Title|Text)/);
   assert.doesNotMatch(academy, /news-selection-panel|selection-network|copy\.pathway(?:Eyebrow|Title|Text)/);

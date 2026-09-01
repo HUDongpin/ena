@@ -69,21 +69,6 @@ export default async function HomePage({ params }: HomePageProps) {
         </div>
       </section>
 
-      <section className="container questions-section">
-        <div className="questions-intro">
-          <h2>{dictionary.home.questionsTitle}</h2>
-          <p>{dictionary.home.questionsText}</p>
-        </div>
-        <div className="question-grid">
-          {dictionary.home.questions.map((item, index) => (
-            <article key={item.title} className={`question-item question-item-${index + 1}`}>
-              <h3>{item.title}</h3>
-              <p>{item.text}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
       <section className="container closing-panel">
         <div>
           <h2>{dictionary.home.ctaTitle}</h2>
