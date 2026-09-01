@@ -8,6 +8,7 @@ import type {
   OpenEnaResolvedRankPMethod,
 } from "./open-ena/rank-inference";
 import type { OpenEnaResultTablesCopy } from "./open-ena/export";
+import type { OpenEnaUnitPointStyle } from "./open-ena/unit-point-style";
 
 export interface OpenEnaPersistentPlotToolsCopy {
   plotSettings: string;
@@ -365,6 +366,21 @@ export interface OpenEnaOnaCopy {
     directionLegendLabel: string;
     flippedLabel: string;
     visibleCellsLabel: string;
+    pointStyleNames: Readonly<Record<OpenEnaUnitPointStyle, string>>;
+    unitPointDescription: (input: {
+      unit: string;
+      group: string;
+      xDimension: string;
+      xValue: string;
+      yDimension: string;
+      yValue: string;
+    }) => string;
+    groupPointDescription: (input: {
+      number: number;
+      group: string;
+      color: string;
+      style: string;
+    }) => string;
   };
   dataView: {
     ariaLabel: string;
@@ -1692,6 +1708,20 @@ const en: OpenEnaCopy = {
       directionLegendLabel: "Ordered network direction legend",
       flippedLabel: "flipped",
       visibleCellsLabel: "visible directed cells",
+      pointStyleNames: {
+        solid: "solid",
+        "inner-ring": "inner ring",
+        "center-dot": "center dot",
+        "horizontal-bar": "horizontal bar",
+        plus: "plus sign",
+        cross: "diagonal cross",
+      },
+      unitPointDescription: ({ unit, group, xDimension, xValue, yDimension, yValue }) => (
+        `Analytic unit ${unit} · Group ${group} · horizontal axis ${xDimension} ${xValue} · vertical axis ${yDimension} ${yValue}`
+      ),
+      groupPointDescription: ({ number, group, color, style }) => (
+        `${number}. ${group}; color ${color}; ${style} circle marker`
+      ),
     },
     dataView: {
       ariaLabel: "Ordered Data View center surface",
@@ -2315,6 +2345,20 @@ const zhHant: OpenEnaCopy = {
       directionLegendLabel: "順序網絡方向圖例",
       flippedLabel: "已翻轉",
       visibleCellsLabel: "個可見有方向儲存格",
+      pointStyleNames: {
+        solid: "實心",
+        "inner-ring": "內環",
+        "center-dot": "中心點",
+        "horizontal-bar": "水平線",
+        plus: "加號",
+        cross: "斜十字",
+      },
+      unitPointDescription: ({ unit, group, xDimension, xValue, yDimension, yValue }) => (
+        `分析單位 ${unit} · 群組 ${group} · 橫軸 ${xDimension} ${xValue} · 縱軸 ${yDimension} ${yValue}`
+      ),
+      groupPointDescription: ({ number, group, color, style }) => (
+        `第 ${number} 組：${group}；顏色 ${color}；${style}圓形標記`
+      ),
     },
     dataView: {
       ariaLabel: "順序資料檢視中央區域",
@@ -2690,6 +2734,20 @@ const zhHans: OpenEnaCopy = {
       directionLegendLabel: "顺序网络方向图例",
       flippedLabel: "已翻转",
       visibleCellsLabel: "个可见有向单元格",
+      pointStyleNames: {
+        solid: "实心",
+        "inner-ring": "内环",
+        "center-dot": "中心点",
+        "horizontal-bar": "水平线",
+        plus: "加号",
+        cross: "斜十字",
+      },
+      unitPointDescription: ({ unit, group, xDimension, xValue, yDimension, yValue }) => (
+        `分析单位 ${unit} · 组 ${group} · 横轴 ${xDimension} ${xValue} · 纵轴 ${yDimension} ${yValue}`
+      ),
+      groupPointDescription: ({ number, group, color, style }) => (
+        `第 ${number} 组：${group}；颜色 ${color}；${style}圆形标记`
+      ),
     },
     dataView: {
       ariaLabel: "顺序数据视图中央区域",

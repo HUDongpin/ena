@@ -81,6 +81,7 @@ import {
   buildResultTables,
   openEnaResultTableFocusTarget,
   openEnaResultTableAvailability,
+  resolveOpenEnaPlotExportDimensions,
   resolveOpenEnaResultTableRovingKey,
   rowsToCsv,
   type OpenEnaResultTableKey,
@@ -2016,6 +2017,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
   function serializedPlotSvg() {
     const source = plotSvgRef.current;
     if (!source) return null;
+    const dimensions = resolveOpenEnaPlotExportDimensions(source.getAttribute("viewBox"));
     const clone = source.cloneNode(true) as SVGSVGElement;
     if (completedResultKind === "ona" || !showUnitLabels) {
       clone.querySelectorAll<SVGGElement>("[data-ena-unit-point='true'], [data-ona-unit-point='true']").forEach((unitPoint, index) => {
@@ -2027,8 +2029,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
       });
     }
     clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-    clone.setAttribute("width", "920");
-    clone.setAttribute("height", "590");
+    clone.setAttribute("width", String(dimensions.width));
+    clone.setAttribute("height", String(dimensions.height));
     const styles = document.createElementNS("http://www.w3.org/2000/svg", "style");
     styles.textContent = `
       text { font-family: Arial, Helvetica, sans-serif; }
@@ -2062,26 +2064,29 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
       .ona-directed-edge path[data-ona-edge-hit-target='true'] { stroke: transparent; }
     `;
     clone.insertBefore(styles, clone.firstChild);
-    return `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(clone)}\n`;
+    return {
+      svg: `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(clone)}\n`,
+      dimensions,
+    };
   }
 
   function exportPlotSvg() {
     if (!confirmCurrentIdentityBearingExport()) return;
-    const svg = serializedPlotSvg();
-    if (svg) downloadText(`open-ena-${Date.now()}-plot.svg`, svg, "image/svg+xml;charset=utf-8");
+    const serialized = serializedPlotSvg();
+    if (serialized) downloadText(`open-ena-${Date.now()}-plot.svg`, serialized.svg, "image/svg+xml;charset=utf-8");
   }
 
   function exportPlotPng() {
     if (!confirmCurrentIdentityBearingExport()) return;
-    const svg = serializedPlotSvg();
-    if (!svg) return;
-    const sourceUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+    const serialized = serializedPlotSvg();
+    if (!serialized) return;
+    const sourceUrl = URL.createObjectURL(new Blob([serialized.svg], { type: "image/svg+xml;charset=utf-8" }));
     const image = new Image();
     image.onload = () => {
       const scale = 3;
       const canvas = document.createElement("canvas");
-      canvas.width = 920 * scale;
-      canvas.height = 590 * scale;
+      canvas.width = serialized.dimensions.width * scale;
+      canvas.height = serialized.dimensions.height * scale;
       const context = canvas.getContext("2d");
       if (!context) {
         URL.revokeObjectURL(sourceUrl);

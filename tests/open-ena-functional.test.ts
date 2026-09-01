@@ -5,6 +5,7 @@ import test from "node:test";
 import { analyzeDataset, buildJenaOptions } from "../lib/open-ena/analyze";
 import { inferConfig, parseCsv, validateConfig } from "../lib/open-ena/csv";
 import { buildAnalysisBundle } from "../lib/open-ena/export";
+import * as openEnaExportContract from "../lib/open-ena/export";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 import { SAMPLE_CONFIG } from "../lib/open-ena/types";
 
@@ -851,4 +852,28 @@ test("de-labeled ENA and every ONA SVG export scrub analytic-unit identities fro
   assert.match(workspace, /\[data-ena-unit-point='true'\], \[data-ona-unit-point='true'\]/);
   assert.match(workspace, /querySelectorAll\("\.ena-set-unit-label"\).*\.remove\(\)/);
   assert.match(workspace, /identifier omitted from this SVG export/);
+});
+
+test("SVG and PNG plot exports share bounded live-viewBox dimensions while standard ENA remains 920 by 590", () => {
+  const resolveDimensions = Reflect.get(openEnaExportContract, "resolveOpenEnaPlotExportDimensions") as unknown;
+  assert.equal(typeof resolveDimensions, "function", "the export layer must expose a testable live-viewBox dimension resolver");
+  if (typeof resolveDimensions !== "function") return;
+  assert.deepEqual(resolveDimensions("0 0 920 682"), { width: 920, height: 682 });
+  assert.deepEqual(resolveDimensions("0 0 920 590"), { width: 920, height: 590 }, "standard ENA dimensions must not change");
+  for (const invalid of [null, "", "0 0 0 682", "0 0 -920 682", "Infinity 0 920 682", "0 0 920 Infinity", "0 0 920 99999", "not-a-viewbox"]) {
+    assert.deepEqual(resolveDimensions(invalid), { width: 920, height: 590 }, `invalid or unsafe viewBox ${String(invalid)} must fail safe`);
+  }
+
+  const workspace = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8");
+  const serializer = workspace.match(/function serializedPlotSvg\(\)[\s\S]*?(?=\n  function exportPlotSvg\(\))/)?.[0] ?? "";
+  const pngExporter = workspace.match(/function exportPlotPng\(\)[\s\S]*?(?=\n  function |\n  async function )/)?.[0] ?? "";
+  assert.match(serializer, /resolveOpenEnaPlotExportDimensions\(source\.getAttribute\("viewBox"\)\)/);
+  assert.match(serializer, /clone\.setAttribute\("width", String\(dimensions\.width\)\)/);
+  assert.match(serializer, /clone\.setAttribute\("height", String\(dimensions\.height\)\)/);
+  assert.match(serializer, /return \{[\s\S]*?svg:[\s\S]*?dimensions[\s\S]*?\}/);
+  assert.match(pngExporter, /canvas\.width = serialized\.dimensions\.width \* scale/);
+  assert.match(pngExporter, /canvas\.height = serialized\.dimensions\.height \* scale/);
+  assert.match(pngExporter, /new Blob\(\[serialized\.svg\]/);
+  assert.doesNotMatch(pngExporter, /canvas\.(?:width|height) = (?:920|590) \* scale/);
+  assert.match(workspace, /identifier omitted from this SVG export/, "dimension changes must preserve the export identity sanitizer");
 });

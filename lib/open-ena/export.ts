@@ -32,6 +32,35 @@ import {
 
 export const OPEN_ENA_POINT_INDEX = "OPEN_ENA_POINT_INDEX";
 
+export interface OpenEnaPlotExportDimensions {
+  width: number;
+  height: number;
+}
+
+const DEFAULT_PLOT_EXPORT_DIMENSIONS: OpenEnaPlotExportDimensions = {
+  width: 920,
+  height: 590,
+};
+const MAX_PLOT_EXPORT_DIMENSION = 4_096;
+
+export function resolveOpenEnaPlotExportDimensions(
+  viewBox: string | null | undefined,
+): OpenEnaPlotExportDimensions {
+  const values = typeof viewBox === "string"
+    ? viewBox.trim().split(/[\s,]+/u).map(Number)
+    : [];
+  if (values.length !== 4) return { ...DEFAULT_PLOT_EXPORT_DIMENSIONS };
+  const [, , width, height] = values;
+  if (!values.every(Number.isFinite)
+    || width <= 0
+    || height <= 0
+    || width > MAX_PLOT_EXPORT_DIMENSION
+    || height > MAX_PLOT_EXPORT_DIMENSION) {
+    return { ...DEFAULT_PLOT_EXPORT_DIMENSIONS };
+  }
+  return { width, height };
+}
+
 export const OPEN_ENA_RESULT_TABLE_KEYS = [
   "coordinates",
   "lineWeights",

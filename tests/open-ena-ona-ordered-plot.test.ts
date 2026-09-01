@@ -7,6 +7,9 @@ import {
   buildOrderedEdgeGlyph,
   type OpenEnaOrderedNodeTotals,
 } from "../lib/open-ena/ordered-plot";
+import * as unitPointStyleContract from "../lib/open-ena/unit-point-style";
+import type { OpenEnaUnitPointStyle } from "../lib/open-ena/unit-point-style";
+import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 import type { OpenEnaConfig, OpenEnaResult } from "../lib/open-ena/types";
 
 const codes = ["A", "B", "C"];
@@ -307,6 +310,7 @@ test("the ordered SVG renders scaled triangles, pair chevrons, self inner discs,
   }));
 
   assert.match(markup, /data-testid="open-ena-ordered-plot"/);
+  assert.match(markup, /<svg[^>]*role="group"[^>]*class="open-ena-ordered-svg"/);
   assert.match(markup, /data-ona-edge-glyph="broadcast-triangle"/);
   assert.match(markup, /data-ona-ground="A"[^>]*data-ona-response="B"/);
   assert.match(markup, /data-ona-chevron="A-to-B"/);
@@ -415,23 +419,24 @@ test("six ONA groups use circle markers with stable non-color inner styles and a
     assert.match(wrapper, /data-ona-point-shape="circle"/);
     assert.match(wrapper, /data-ona-point-style="(?:solid|inner-ring|center-dot|horizontal-bar|plus|cross)"/);
     assert.match(wrapper, /role="img"/);
-    assert.match(wrapper, /aria-label="[^"]*unit-[1-6][^"]*group[^"]*[^"]*X[^"]*Y[^"]*"/i);
-    assert.match(pointGroup[1], /^<circle\b/, "the analytic-unit outer marker must be a circle");
-    assert.match(pointGroup[1], /<title>[^<]+<\/title>/);
+    assert.match(wrapper, /aria-label="[^"]*unit-[1-6][^"]*group[^"]*horizontal axis[^"]*vertical axis[^"]*"/i);
+    assert.match(pointGroup[1], /^<title>[^<]+<\/title>/, "the wrapper title must be its first accessible description child");
+    assert.equal(pointGroup[1].match(/<(circle|line|path|rect|polygon)\b/)?.[1], "circle", "the first graphic element must be the analytic-unit outer circle");
     assert.doesNotMatch(pointGroup[1], /<(?:rect|polygon)\b/, "unit marker glyphs may not use rect or polygon");
   }
   assert.ok(exportTarget, "the plot must expose its main SVG export target");
   assert.match(exportTarget, /^<svg[^>]*viewBox="0 0 920 682"/);
   assert.match(exportTarget, /role="list"[^>]*class="ona-unit-shape-legend-svg"[^>]*data-ona-unit-shape-legend="true"[^>]*aria-label="units"/);
   const sortedGroupNames = [...groupNames].sort((left, right) => left.localeCompare(right));
+  const englishStyleNames = getOpenEnaCopy("en").ona.plot.pointStyleNames;
   for (const [index, group] of sortedGroupNames.entries()) {
-    const style = mapping.get(group);
+    const style = mapping.get(group) as OpenEnaUnitPointStyle | undefined;
     assert.ok(style);
     const legendEntry = exportTarget.match(new RegExp(`<g[^>]*data-ona-group-legend="${group}"[^>]*data-ona-point-shape="circle"[^>]*data-ona-point-style="${style}"[^>]*>[\\s\\S]*?<\\/g>`))?.[0];
     assert.ok(legendEntry, `${group} legend entry must be nested in the exported SVG`);
     assert.match(legendEntry, /<circle\b[^>]*fill="#52636a"/, "each exported legend entry must include its marker example and color");
-    assert.match(legendEntry, new RegExp(`<desc>[^<]*${group}[^<]*color #52636a[^<]*${style}[^<]*<\\/desc>`));
-    assert.match(legendEntry, new RegExp(`<text[^>]*>${index + 1}\\. ${group}<\\/text>`), "legend must visibly number the stable group order");
+    assert.match(legendEntry, new RegExp(`<desc>[^<]*${group}[^<]*color #52636a[^<]*${englishStyleNames[style]}[^<]*<\\/desc>`));
+    assert.match(legendEntry, new RegExp(`<text[^>]*>[\\s\\S]*?<tspan[^>]*>${index + 1}\\. ${group}<\\/tspan>[\\s\\S]*?<\\/text>`), "legend must visibly number the stable group order");
   }
   assert.equal((markup.match(/data-ona-unit-shape-legend="true"/g) ?? []).length, 1, "the exported SVG legend must be authoritative, not duplicated externally");
 });
@@ -466,6 +471,184 @@ test("the existing two-group ONA fixture renders both analytic-unit groups as ci
   for (const wrapper of pointWrappers) {
     assert.match(wrapper, /data-ona-point-shape="circle"/);
     assert.match(wrapper, /data-ona-point-style="(?:solid|inner-ring|center-dot|horizontal-bar|plus|cross)"/);
+  }
+  const pointGroups = [...markup.matchAll(/<g[^>]*data-ona-unit-point="true"[^>]*>([\s\S]*?)<\/g>/g)];
+  assert.equal(pointGroups.length, 4);
+  for (const pointGroup of pointGroups) {
+    assert.match(pointGroup[1], /^<title>[^<]+<\/title>/);
+    assert.equal(pointGroup[1].match(/<(circle|line|path|rect|polygon)\b/)?.[1], "circle");
+  }
+});
+
+test("unit point style assignments are deterministic for empty, duplicate, reordered, cycling, case, and Unicode names", () => {
+  const assignments = unitPointStyleContract.openEnaUnitPointStyleAssignments;
+  assert.deepEqual([...assignments([])], []);
+  const names = ["中文", "alpha", "Alpha", "éclair", "zeta", "bravo", "charlie", "delta", "echo", "foxtrot", "alpha"];
+  const expected = [...assignments(names)];
+  assert.equal(expected.length, 10, "duplicate group names must be removed");
+  assert.deepEqual([...assignments([...names].reverse())], expected, "input order must not affect assignments");
+  assert.deepEqual(expected.map(([name]) => name), ["Alpha", "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "zeta", "éclair", "中文"]);
+  assert.equal(expected[0]?.[1], "solid");
+  assert.equal(expected[6]?.[1], "solid", "the seventh sorted group must cycle to the first style");
+});
+
+function relativeLuminance(hex: string) {
+  const normalized = hex.slice(1);
+  const channels = [0, 2, 4].map((offset) => Number.parseInt(normalized.slice(offset, offset + 2), 16) / 255);
+  return channels.map((channel) => (
+    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  )).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+}
+
+function contrastRatio(left: string, right: string) {
+  const [lighter, darker] = [relativeLuminance(left), relativeLuminance(right)].sort((a, b) => b - a);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+test("unit point inner glyph colors remain contrast-safe on default, white, near-white, dark, and shorthand fills", () => {
+  const glyphColors = Reflect.get(unitPointStyleContract, "openEnaUnitPointGlyphColors") as unknown;
+  assert.equal(typeof glyphColors, "function", "the shared style module must export a contrast-safe glyph-color resolver");
+  if (typeof glyphColors !== "function") return;
+  for (const fill of ["#d27448", "#39736e", "#ffffff", "#f8f9fa", "#111827", "#ABC"]) {
+    const colors = glyphColors(fill) as { foreground: string; halo: string | null };
+    assert.match(colors.foreground, /^#[0-9a-f]{6}$/i);
+    const normalizedFill = fill.length === 4
+      ? `#${[...fill.slice(1)].map((value) => value.repeat(2)).join("")}`
+      : fill;
+    assert.ok(contrastRatio(normalizedFill, colors.foreground) >= 4.5, `${fill} must have high-contrast inner glyphs`);
+  }
+  const fallback = glyphColors("var(--unknown-color)") as { foreground: string; halo: string | null };
+  assert.match(fallback.foreground, /^#[0-9a-f]{6}$/i);
+  assert.match(fallback.halo ?? "", /^#[0-9a-f]{6}$/i, "unparseable fills need a dual-contrast fallback");
+});
+
+test("twelve long English and Chinese group names wrap completely below the plot with dynamic export height", async () => {
+  const { result, config } = orderedFixture();
+  const { default: OpenEnaOrderedPlot } = await import("../components/open-ena/OpenEnaOrderedPlot");
+  const names = [
+    "Advanced collaborative epistemic reasoning cohort alpha",
+    "以協作知識建構為核心的第一研究群組",
+    "面向人工智能协作学习的第二研究组",
+    "Evidence-centered discussion and reflection community",
+    "跨學科問題解決與反思實踐共同體",
+    "跨学科问题解决与反思实践共同体",
+    "Knowledge building regulation and synthesis cohort",
+    "多語言協作探究與論證學習群組",
+    "多语言协作探究与论证学习群组",
+    "Sustained inquiry and collective improvement cohort",
+    "資料驅動的共同調節學習研究群組",
+    "数据驱动的共同调节学习研究组",
+  ];
+  const manyGroups = structuredClone(result);
+  manyGroups.groups = names.map((name, index) => ({
+    ...manyGroups.groups[index % manyGroups.groups.length],
+    name,
+    count: 1,
+    pointCount: 1,
+  }));
+  manyGroups.set.points = names.map((group, index) => ({
+    ENA_UNIT: `long-unit-${index + 1}`,
+    group,
+    SVD1: -0.8 + (index % 6) * 0.3,
+    SVD2: -0.45 + Math.floor(index / 6) * 0.9,
+  }));
+  const markup = renderToStaticMarkup(createElement(OpenEnaOrderedPlot, {
+    result: manyGroups,
+    config,
+    scope: { kind: "overall" },
+    xDimension: "SVD1",
+    yDimension: "SVD2",
+    edgeThreshold: 0,
+    edgeScale: 1,
+    pointScale: 1,
+    textScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    compact: false,
+  }));
+  const exportTarget = markup.match(/<svg[^>]*class="open-ena-ordered-svg"[^>]*>[\s\S]*?<\/svg>/)?.[0] ?? "";
+  const exportHeight = Number(exportTarget.match(/viewBox="0 0 920 ([0-9.]+)"/)?.[1]);
+  assert.ok(exportHeight > 742, "wrapped rows must grow beyond the old fixed four-row legend height");
+  const entries = [...exportTarget.matchAll(/<g[^>]*data-ona-group-legend="([^"]+)"[^>]*data-ona-legend-row="([0-9]+)"[^>]*data-ona-legend-line-count="([0-9]+)"[^>]*transform="translate\(([0-9.]+) ([0-9.]+)\)"[^>]*>([\s\S]*?)<\/g>/g)];
+  assert.equal(entries.length, 12);
+  assert.deepEqual(new Set(entries.map((entry) => Number(entry[2]))), new Set([0, 1, 2, 3]));
+  const rows = new Map<number, { y: number; maximumLines: number }>();
+  for (const [group, row, lineCount, x, y, body] of entries.map((entry) => entry.slice(1))) {
+    assert.ok(Number(x) >= 0 && Number(x) < 920, `${group} must stay within the SVG width`);
+    assert.ok(Number(y) > 590, `${group} row ${row} must remain below the plotting area`);
+    const text = body.match(new RegExp(`<text[^>]*data-ona-legend-label="${group}"[^>]*>([\\s\\S]*?)<\\/text>`))?.[1] ?? "";
+    const lines = [...text.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)].map((match) => match[1]);
+    assert.equal(lines.length, Number(lineCount));
+    for (const line of lines) {
+      const displayWidth = [...line].reduce((sum, character) => (
+        sum + (/[^\u0000-\u00ff]/u.test(character) ? 2 : 1)
+      ), 0);
+      assert.ok(displayWidth <= 36, `${group} line must fit its deterministic SVG column without clipping`);
+    }
+    const number = [...names].sort((left, right) => left < right ? -1 : left > right ? 1 : 0).indexOf(group) + 1;
+    assert.equal(lines.join(""), `${number}. ${group}`, "wrapped tspans must preserve the complete visible numbered group name without truncation");
+    const rowIndex = Number(row);
+    const current = rows.get(rowIndex);
+    rows.set(rowIndex, {
+      y: Number(y),
+      maximumLines: Math.max(current?.maximumLines ?? 0, Number(lineCount)),
+    });
+  }
+  const orderedRows = [...rows.entries()].sort(([left], [right]) => left - right);
+  for (let index = 1; index < orderedRows.length; index += 1) {
+    const previous = orderedRows[index - 1][1];
+    const current = orderedRows[index][1];
+    assert.ok(current.y - previous.y >= Math.max(30, previous.maximumLines * 16 + 8), "legend rows must use the preceding row's maximum wrapped-line height");
+  }
+});
+
+test("ordered point and legend metadata use human-readable localized copy without implementation slugs", async () => {
+  const { result, config } = orderedFixture();
+  const { default: OpenEnaOrderedPlot } = await import("../components/open-ena/OpenEnaOrderedPlot");
+  const locales = [
+    { locale: "en" as const, expected: /Analytic unit|Group|horizontal axis|vertical axis/ },
+    { locale: "zh-hant" as const, expected: /分析單位|群組|橫軸|縱軸/ },
+    { locale: "zh-hans" as const, expected: /分析单位|组|横轴|纵轴/ },
+  ];
+  for (const { locale, expected } of locales) {
+    const copy = getOpenEnaCopy(locale).ona.plot;
+    const localizedStyles = Object.values(copy.pointStyleNames);
+    assert.equal(localizedStyles.length, 6);
+    assert.equal(new Set(localizedStyles).size, 6);
+    assert.doesNotMatch(localizedStyles.join(" "), /inner-ring|center-dot|horizontal-bar/);
+    const markup = renderToStaticMarkup(createElement(OpenEnaOrderedPlot, {
+      result,
+      config,
+      scope: { kind: "overall" },
+      xDimension: "SVD1",
+      yDimension: "SVD2",
+      edgeThreshold: 0,
+      edgeScale: 1,
+      pointScale: 1,
+      textScale: 1,
+      plotZoom: 1,
+      flipX: false,
+      flipY: false,
+      showPoints: true,
+      showNetworks: true,
+      showLabels: true,
+      showUnitLabels: false,
+      showVariance: true,
+      compact: false,
+      copy,
+    }));
+    const metadata = [...markup.matchAll(/aria-label="([^"]*)"|<(?:title|desc)>([^<]*)<\/(?:title|desc)>/g)]
+      .map((match) => match[1] ?? match[2] ?? "")
+      .join("\n");
+    assert.match(metadata, expected);
+    assert.doesNotMatch(metadata, /inner-ring|center-dot|horizontal-bar/);
+    if (locale !== "en") assert.doesNotMatch(metadata, /\b(?:Unit|Group|color|point style|circle marker)\b/i);
   }
 });
 

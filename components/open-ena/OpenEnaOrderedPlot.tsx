@@ -8,6 +8,7 @@ import {
   type OpenEnaOrderedPlotScope,
 } from "@/lib/open-ena/ordered-plot";
 import {
+  openEnaUnitPointGlyphColors,
   openEnaUnitPointStyleAssignments,
   type OpenEnaUnitPointStyle,
 } from "@/lib/open-ena/unit-point-style";
@@ -19,7 +20,10 @@ const COMPACT_HEIGHT = 430;
 const PAD_X = 62;
 const PAD_Y = 52;
 const LEGEND_COLUMNS = 3;
-const LEGEND_ROW_HEIGHT = 30;
+const LEGEND_MIN_ROW_HEIGHT = 30;
+const LEGEND_LINE_HEIGHT = 16;
+const LEGEND_ROW_PADDING = 8;
+const LEGEND_MAX_DISPLAY_UNITS = 36;
 const LEGEND_TOP_PADDING = 22;
 const LEGEND_BOTTOM_PADDING = 10;
 const LEGEND_SIDE_PADDING = 22;
@@ -44,6 +48,21 @@ export interface OpenEnaOrderedPlotCopy {
   directionLegendLabel: string;
   flippedLabel: string;
   visibleCellsLabel: string;
+  pointStyleNames: Readonly<Record<OpenEnaUnitPointStyle, string>>;
+  unitPointDescription: (input: {
+    unit: string;
+    group: string;
+    xDimension: string;
+    xValue: string;
+    yDimension: string;
+    yValue: string;
+  }) => string;
+  groupPointDescription: (input: {
+    number: number;
+    group: string;
+    color: string;
+    style: string;
+  }) => string;
 }
 
 const DEFAULT_COPY: OpenEnaOrderedPlotCopy = {
@@ -66,6 +85,20 @@ const DEFAULT_COPY: OpenEnaOrderedPlotCopy = {
   directionLegendLabel: "Ordered network direction legend",
   flippedLabel: "flipped",
   visibleCellsLabel: "visible directed cells",
+  pointStyleNames: {
+    solid: "solid",
+    "inner-ring": "inner ring",
+    "center-dot": "center dot",
+    "horizontal-bar": "horizontal bar",
+    plus: "plus sign",
+    cross: "diagonal cross",
+  },
+  unitPointDescription: ({ unit, group, xDimension, xValue, yDimension, yValue }) => (
+    `Analytic unit ${unit} · Group ${group} · horizontal axis ${xDimension} ${xValue} · vertical axis ${yDimension} ${yValue}`
+  ),
+  groupPointDescription: ({ number, group, color, style }) => (
+    `${number}. ${group}; color ${color}; ${style} circle marker`
+  ),
 };
 
 export interface OpenEnaOrderedPlotProps {
@@ -128,6 +161,32 @@ function displayNumber(value: number) {
   return Number(value.toPrecision(6)).toString();
 }
 
+function legendCharacterWidth(character: string) {
+  const codePoint = character.codePointAt(0) ?? 0;
+  return /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/u.test(character)
+    || codePoint >= 0x1f300
+    ? 2
+    : 1;
+}
+
+function wrapLegendLabel(label: string, maximumWidth = LEGEND_MAX_DISPLAY_UNITS) {
+  const lines: string[] = [];
+  let line = "";
+  let width = 0;
+  for (const character of label) {
+    const characterWidth = legendCharacterWidth(character);
+    if (line && width + characterWidth > maximumWidth) {
+      lines.push(line);
+      line = "";
+      width = 0;
+    }
+    line += character;
+    width += characterWidth;
+  }
+  if (line || lines.length === 0) lines.push(line);
+  return lines;
+}
+
 function edgeDescription(
   edge: OpenEnaOrderedPlotModel["edges"][number],
   copy: OpenEnaOrderedPlotCopy,
@@ -154,49 +213,37 @@ function UnitPointMarker({
   size: number;
   fill: string;
 }) {
-  const glyphStroke = "#ffffff";
+  const glyphColors = openEnaUnitPointGlyphColors(fill);
   const glyphWidth = Math.max(1.15, size * 0.22);
   const innerRadius = size * 0.52;
   const arm = size * 0.55;
+  const strokePath = style === "horizontal-bar"
+    ? `M ${x - arm} ${y} L ${x + arm} ${y}`
+    : style === "plus"
+      ? `M ${x - arm} ${y} L ${x + arm} ${y} M ${x} ${y - arm} L ${x} ${y + arm}`
+      : style === "cross"
+        ? `M ${x - arm} ${y - arm} L ${x + arm} ${y + arm} M ${x + arm} ${y - arm} L ${x - arm} ${y + arm}`
+        : null;
   return (
     <>
       <circle cx={x} cy={y} r={size} fill={fill} stroke="#263740" strokeWidth={1.2} />
       {style === "inner-ring" ? (
-        <circle cx={x} cy={y} r={innerRadius} fill="none" stroke={glyphStroke} strokeWidth={glyphWidth} />
+        <>
+          {glyphColors.halo ? <circle cx={x} cy={y} r={innerRadius} fill="none" stroke={glyphColors.halo} strokeWidth={glyphWidth + 2} /> : null}
+          <circle cx={x} cy={y} r={innerRadius} fill="none" stroke={glyphColors.foreground} strokeWidth={glyphWidth} />
+        </>
       ) : null}
       {style === "center-dot" ? (
-        <circle cx={x} cy={y} r={size * 0.22} fill={glyphStroke} />
+        <>
+          {glyphColors.halo ? <circle cx={x} cy={y} r={size * 0.22 + 1.2} fill={glyphColors.halo} /> : null}
+          <circle cx={x} cy={y} r={size * 0.22} fill={glyphColors.foreground} />
+        </>
       ) : null}
-      {style === "horizontal-bar" || style === "plus" ? (
-        <line
-          x1={x - arm}
-          y1={y}
-          x2={x + arm}
-          y2={y}
-          stroke={glyphStroke}
-          strokeWidth={glyphWidth}
-          strokeLinecap="round"
-        />
+      {strokePath && glyphColors.halo ? (
+        <path d={strokePath} fill="none" stroke={glyphColors.halo} strokeWidth={glyphWidth + 2} strokeLinecap="round" />
       ) : null}
-      {style === "plus" ? (
-        <line
-          x1={x}
-          y1={y - arm}
-          x2={x}
-          y2={y + arm}
-          stroke={glyphStroke}
-          strokeWidth={glyphWidth}
-          strokeLinecap="round"
-        />
-      ) : null}
-      {style === "cross" ? (
-        <path
-          d={`M ${x - arm} ${y - arm} L ${x + arm} ${y + arm} M ${x + arm} ${y - arm} L ${x - arm} ${y + arm}`}
-          fill="none"
-          stroke={glyphStroke}
-          strokeWidth={glyphWidth}
-          strokeLinecap="round"
-        />
+      {strokePath ? (
+        <path d={strokePath} fill="none" stroke={glyphColors.foreground} strokeWidth={glyphWidth} strokeLinecap="round" />
       ) : null}
     </>
   );
@@ -227,19 +274,39 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
     .map((point) => point.group)
     .filter((group): group is string => group !== null))]
     .sort()
-    .map((name, index) => ({
-      name,
-      number: index + 1,
-      style: pointStyles.get(name) ?? "solid",
-      color: props.result.groups.find((group) => group.name === name)?.color ?? "#52636a",
-    }));
+    .map((name, index) => {
+      const style = pointStyles.get(name) ?? "solid";
+      const color = props.result.groups.find((group) => group.name === name)?.color ?? "#52636a";
+      const number = index + 1;
+      return {
+        name,
+        number,
+        style,
+        color,
+        description: copy.groupPointDescription({
+          number,
+          group: name,
+          color,
+          style: copy.pointStyleNames[style],
+        }),
+        labelLines: wrapLegendLabel(`${number}. ${name}`),
+      };
+    });
   const showPointLegend = props.showPoints && pointGroups.length > 1;
   const legendColumnCount = Math.min(LEGEND_COLUMNS, pointGroups.length);
   const legendRowCount = showPointLegend
     ? Math.ceil(pointGroups.length / legendColumnCount)
     : 0;
+  const legendRowLineCounts = Array.from({ length: legendRowCount }, (_, row) => (
+    Math.max(...pointGroups
+      .filter((_, index) => Math.floor(index / legendColumnCount) === row)
+      .map((group) => group.labelLines.length))
+  ));
+  const legendRowHeights = legendRowLineCounts.map((lineCount) => (
+    Math.max(LEGEND_MIN_ROW_HEIGHT, lineCount * LEGEND_LINE_HEIGHT + LEGEND_ROW_PADDING)
+  ));
   const legendHeight = showPointLegend
-    ? LEGEND_TOP_PADDING + legendRowCount * LEGEND_ROW_HEIGHT + LEGEND_BOTTOM_PADDING
+    ? LEGEND_TOP_PADDING + legendRowHeights.reduce((sum, rowHeight) => sum + rowHeight, 0) + LEGEND_BOTTOM_PADDING
     : 0;
   const svgHeight = height + legendHeight;
   const legendColumnWidth = showPointLegend
@@ -259,7 +326,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
       <svg
         ref={props.svgRef}
         viewBox={`0 0 ${WIDTH} ${svgHeight}`}
-        role="img"
+        role="group"
         aria-label={figureLabel}
         className="open-ena-ordered-svg"
         style={{ "--ona-text-scale": textScale } as React.CSSProperties}
@@ -267,7 +334,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
         <title>{title}</title>
         <desc>
           {copy.directedNetworkDescription} {model.points.length} {copy.unitsLabel}; {model.visibleEdges.length} {copy.visibleCellsLabel}. {copy.nodeSizeLabel}: {model.nodeSizeDefinition}.
-          {props.showPoints && pointGroups.length > 1 ? ` ${copy.unitsLabel}: ${pointGroups.map((group) => `${group.number}: ${group.name}; color ${group.color}; point style ${group.style}; circle marker`).join("; ")}.` : ""}
+          {props.showPoints && pointGroups.length > 1 ? ` ${copy.unitsLabel}: ${pointGroups.map((group) => group.description).join("; ")}.` : ""}
         </desc>
         <rect width={WIDTH} height={svgHeight} className="ena-set-plot-background ona-plot-background" />
         <g className="ona-zero-axes" aria-hidden="true">
@@ -359,7 +426,14 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
             ? "solid"
             : pointStyles.get(point.group) ?? "solid";
           const size = 6.5 * pointScale;
-          const label = `Unit ${point.unit} · Group ${point.group ?? "ungrouped"} · X ${props.xDimension} ${displayNumber(point.x)} · Y ${props.yDimension} ${displayNumber(point.y)}`;
+          const label = copy.unitPointDescription({
+            unit: point.unit,
+            group: point.group ?? "—",
+            xDimension: props.xDimension,
+            xValue: displayNumber(point.x),
+            yDimension: props.yDimension,
+            yValue: displayNumber(point.y),
+          });
           return (
             <g
               key={point.key}
@@ -370,8 +444,8 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
               role="img"
               aria-label={label}
             >
-              <UnitPointMarker style={style} x={screen.x} y={screen.y} size={size} fill={group?.color ?? "#52636a"} />
               <title>{label}</title>
+              <UnitPointMarker style={style} x={screen.x} y={screen.y} size={size} fill={group?.color ?? "#52636a"} />
               {props.showUnitLabels ? <text x={screen.x + size + 3} y={screen.y - size - 2} className="ena-set-unit-label">{point.unit}</text> : null}
             </g>
           );
@@ -437,21 +511,27 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
               const column = index % legendColumnCount;
               const row = Math.floor(index / legendColumnCount);
               const x = LEGEND_SIDE_PADDING + column * legendColumnWidth;
-              const y = height + LEGEND_TOP_PADDING + row * LEGEND_ROW_HEIGHT;
-              const description = `${group.number}. ${group.name}; color ${group.color}; point style ${group.style}; circle marker`;
+              const y = height + LEGEND_TOP_PADDING
+                + legendRowHeights.slice(0, row).reduce((sum, rowHeight) => sum + rowHeight, 0);
               return (
                 <g
                   key={group.name}
                   role="listitem"
                   data-ona-group-legend={group.name}
+                  data-ona-legend-row={row}
+                  data-ona-legend-line-count={group.labelLines.length}
                   data-ona-point-shape="circle"
                   data-ona-point-style={group.style}
-                  aria-label={description}
+                  aria-label={group.description}
                   transform={`translate(${x} ${y})`}
                 >
-                  <desc>{description}</desc>
+                  <desc>{group.description}</desc>
                   <UnitPointMarker style={group.style} x={7} y={0} size={6.2} fill={group.color} />
-                  <text x={20} y={4} fill="#344f53" fontSize={13}>{`${group.number}. ${group.name}`}</text>
+                  <text data-ona-legend-label={group.name} x={20} y={4} fill="#344f53" fontSize={13}>
+                    {group.labelLines.map((line, lineIndex) => (
+                      <tspan key={`${group.name}:${lineIndex}`} x={20} dy={lineIndex === 0 ? 0 : LEGEND_LINE_HEIGHT}>{line}</tspan>
+                    ))}
+                  </text>
                 </g>
               );
             })}
