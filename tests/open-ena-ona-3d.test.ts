@@ -420,6 +420,46 @@ test("deep-frozen fitted inputs compile without mutation and repeated calls are 
   assert.ok(first.data.every((trace) => trace.meta.analysisKind === "ona" && trace.meta.scope === "overall"));
 });
 
+test("ONA 3D node overrides rebuild directed, reciprocal, and self-loop traces without mutation", () => {
+  const fixture = orderedFixture();
+  const resultBefore = structuredClone(fixture.result);
+  const baseline = compileOpenEnaOrdered3dPlotSpec(compileInput(fixture));
+  const nodeLayout = new Map([["A", new Map([["SVD1", 3], ["SVD2", -2], ["SVD3", 1]])]]);
+  const moved = compileOpenEnaOrdered3dPlotSpec(compileInput(fixture, { nodeLayout }));
+  const nodeTrace = (spec: typeof baseline) => spec.data.find((trace) => trace.meta.role === "code-node")!;
+  const codeIndex = nodeTrace(baseline).text!.indexOf("A");
+  const orderedGeometry = (spec: typeof baseline, predicate: (trace: typeof baseline.data[number]) => boolean) => (
+    spec.data.filter((trace) => predicate(trace)).map((trace) => ({
+      role: trace.meta.role,
+      ground: trace.meta.ground,
+      response: trace.meta.response,
+      x: trace.x,
+      y: trace.y,
+      z: trace.z,
+      u: trace.u,
+      v: trace.v,
+      w: trace.w,
+    }))
+  );
+  const incident = (trace: typeof baseline.data[number]) => (
+    trace.meta.ground === "A" || trace.meta.response === "A"
+  );
+  const unrelated = (trace: typeof baseline.data[number]) => (
+    trace.meta.ground === "B" && trace.meta.response === "C"
+  );
+
+  assert.deepEqual([
+    nodeTrace(moved).x[codeIndex],
+    nodeTrace(moved).y[codeIndex],
+    nodeTrace(moved).z[codeIndex],
+  ], [3, -2, 1]);
+  assert.notDeepEqual(orderedGeometry(moved, incident), orderedGeometry(baseline, incident));
+  assert.deepEqual(orderedGeometry(moved, unrelated), orderedGeometry(baseline, unrelated));
+  assert.ok(orderedGeometry(moved, incident).some(({ role }) => role === "ordered-self-loop-shaft"));
+  assert.ok(orderedGeometry(moved, incident).some(({ role }) => role === "ordered-self-loop-arrowhead"));
+  assert.deepEqual(fixture.result, resultBefore);
+});
+
 test("unit and code-node traces retain exact fitted XYZ while six stable point styles use circular bases and noninteractive overlays", () => {
   const groupNames = ["zeta", "alpha", "mu", "beta", "omega", "delta"];
   const fixture = orderedFixture({ groupNames });

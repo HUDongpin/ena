@@ -15,6 +15,7 @@ import {
   type OpenEna3dTraceMeta,
 } from "./plot3d";
 import { codeColorFor, JENA_GROUP_COLORS, type OpenEnaCodeColors } from "./plot-style";
+import type { OpenEnaNodeLayoutPositions } from "./node-layout";
 import type {
   OpenEnaOrderedNodeTotals,
   OpenEnaOrderedPlotScope,
@@ -86,6 +87,7 @@ export interface CompileOpenEnaOrdered3dPlotInput {
   compact?: boolean;
   codeColors?: OpenEnaCodeColors;
   nodeTotals?: OpenEnaOrderedNodeTotals;
+  nodeLayout?: OpenEnaNodeLayoutPositions;
 }
 
 function isDenseArray(value: unknown, expectedLength?: number): value is unknown[] {
@@ -739,6 +741,7 @@ export function compileOpenEnaOrdered3dPlotSpec(
     compact = false,
     codeColors,
     nodeTotals,
+    nodeLayout,
   } = input;
   const dimensions = [xDimension, yDimension, zDimension] as const;
   validateSelectedDimensions(result, dimensions);
@@ -751,6 +754,13 @@ export function compileOpenEnaOrdered3dPlotSpec(
     ...(nodeTotals ? { nodeTotals } : {}),
   });
   const fitted = validateFittedRows(result, model.codes, dimensions);
+  const displayNodeCoordinates = fitted.nodeCoordinates.map((point, nodeIndex) => {
+    const override = nodeLayout?.get(model.nodes[nodeIndex]!.code);
+    return dimensions.map((dimension, axis) => {
+      const candidate = override?.get(dimension);
+      return typeof candidate === "number" && Number.isFinite(candidate) ? candidate : point[axis]!;
+    }) as MutablePoint3;
+  });
   const coordinateMagnitudes = [
     ...fitted.nodeCoordinates.flatMap((point) => point.map((coordinate) => Math.abs(coordinate))),
     ...fitted.pointCoordinates.flatMap((point) => point.map((coordinate) => Math.abs(coordinate))),
@@ -762,8 +772,8 @@ export function compileOpenEnaOrdered3dPlotSpec(
   const resolvedScope = presentationScope(result, scope);
   const resolvedScopeColor = scopeColor(result, scope);
   const centroid = [0, 1, 2].map((axis) => (
-    fitted.nodeCoordinates.reduce((sum, point) => sum + point[axis]!, 0)
-      / fitted.nodeCoordinates.length
+    displayNodeCoordinates.reduce((sum, point) => sum + point[axis]!, 0)
+      / displayNodeCoordinates.length
   )) as MutablePoint3;
   const visibleDirections = new Set(model.visibleEdges.map((edge) => (
     `${edge.groundIndex}:${edge.responseIndex}`
@@ -779,10 +789,10 @@ export function compileOpenEnaOrdered3dPlotSpec(
   }
   const offDiagonal = positioned
     .filter((entry) => !entry.edge.selfConnection)
-    .map((entry) => offDiagonalPosition(entry, fitted.nodeCoordinates, visibleDirections, sceneExtent));
+    .map((entry) => offDiagonalPosition(entry, displayNodeCoordinates, visibleDirections, sceneExtent));
   const selfLoops = positioned
     .filter((entry) => entry.edge.selfConnection)
-    .map((entry) => selfLoopPosition(entry, fitted.nodeCoordinates, centroid, sceneExtent));
+    .map((entry) => selfLoopPosition(entry, displayNodeCoordinates, centroid, sceneExtent));
 
   const traces: OpenEna3dTrace[] = [];
   if (showNetworks) {
@@ -812,12 +822,12 @@ export function compileOpenEnaOrdered3dPlotSpec(
     type: "scatter3d",
     mode: showLabels ? "markers+text" : "markers",
     name: "Codes",
-    x: fitted.nodeCoordinates.map((point) => point[0]),
-    y: fitted.nodeCoordinates.map((point) => point[1]),
-    z: fitted.nodeCoordinates.map((point) => point[2]),
+    x: displayNodeCoordinates.map((point) => point[0]),
+    y: displayNodeCoordinates.map((point) => point[1]),
+    z: displayNodeCoordinates.map((point) => point[2]),
     text: model.nodes.map((node) => node.code),
     customdata: model.nodes.map((node, nodeIndex) => (
-      codeHover(node.code, fitted.nodeCoordinates[nodeIndex]!, node.responseTotal, dimensions)
+      codeHover(node.code, displayNodeCoordinates[nodeIndex]!, node.responseTotal, dimensions)
     )),
     textposition: "top center",
     textfont: { color: "#263740", size: 12 },

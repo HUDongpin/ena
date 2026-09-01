@@ -453,6 +453,56 @@ test("3D unit observations stay circular while group means use square summary ma
   );
 });
 
+test("standard 3D node overrides rebuild code and incident-edge traces without changing the fitted frame", () => {
+  const result = threeDimensionalResult();
+  const before = structuredClone(result);
+  const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
+  const common = {
+    result,
+    groupColumn: "group",
+    xDimension,
+    yDimension,
+    zDimension,
+    camera: "isometric" as const,
+    showPoints: true,
+    showNetworks: true,
+    showLabels: true,
+    showUnitLabels: false,
+    showVariance: true,
+    showTrajectories: false,
+    edgeScale: 1,
+    edgeThreshold: 0,
+    pointScale: 1,
+    plotZoom: 1,
+    flipX: false,
+    flipY: false,
+  };
+  const baseline = compileOpenEna3dPlotSpec(common);
+  const nodeLayout = new Map([["A", new Map([[xDimension, 3], [yDimension, -2], [zDimension, 1]])]]);
+  const moved = compileOpenEna3dPlotSpec({ ...common, nodeLayout });
+  const nodeTrace = (spec: typeof baseline) => spec.data.find((trace) => trace.meta.role === "code-node")!;
+  const codeIndex = nodeTrace(baseline).text!.indexOf("A");
+  const edge = (spec: typeof baseline, name: string) => spec.data.find((trace) => (
+    trace.meta.role === "network-edge" && trace.meta.edgeName === name
+  ));
+  const incidentName = result.set.adjacencyKey.find((candidate) => candidate.source === "A" || candidate.target === "A")!.name;
+  const unrelatedName = result.set.adjacencyKey.find((candidate) => candidate.source !== "A" && candidate.target !== "A")!.name;
+
+  assert.deepEqual([
+    nodeTrace(moved).x[codeIndex],
+    nodeTrace(moved).y[codeIndex],
+    nodeTrace(moved).z[codeIndex],
+  ], [3, -2, 1]);
+  assert.notDeepEqual(edge(moved, incidentName), edge(baseline, incidentName));
+  assert.deepEqual(edge(moved, unrelatedName), edge(baseline, unrelatedName));
+  assert.deepEqual(
+    moved.data.filter((trace) => trace.meta.role === "unit-points" || trace.meta.role === "group-mean"),
+    baseline.data.filter((trace) => trace.meta.role === "unit-points" || trace.meta.role === "group-mean"),
+  );
+  assert.deepEqual(moved.layout.scene.xaxis.range, baseline.layout.scene.xaxis.range);
+  assert.deepEqual(result, before);
+});
+
 test("pairwise contrast freezes marginal Student-t intervals for every fitted dimension", () => {
   const result = confidenceReadyThreeDimensionalResult();
   const [xDimension = "SVD1", yDimension = "SVD2"] = result.dimensions;
