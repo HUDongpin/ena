@@ -64,13 +64,12 @@ let ephemeralPostgresData = null;
 let ephemeralPostgresRunning = false;
 
 async function startEphemeralPostgres() {
-  // Keep the prefix intentionally short: PostgreSQL's Unix socket path has a
-  // small platform limit, and macOS tmpdir paths are already deeply nested.
+  // TCP is the only connection path used by the smoke. Disable the Unix socket
+  // so a deliberately isolated, deeply nested TMPDIR cannot exceed its small
+  // platform path limit.
   ephemeralPostgresRoot = mkdtempSync(join(tmpdir(), "oeapg-"));
   ephemeralPostgresData = join(ephemeralPostgresRoot, "data");
-  const socketDirectory = join(ephemeralPostgresRoot, "socket");
   const postgresLog = join(ephemeralPostgresRoot, "postgres.log");
-  mkdirSync(socketDirectory, { recursive: true });
   execFileSync("initdb", [
     "--pgdata", ephemeralPostgresData,
     "--auth", "trust",
@@ -82,7 +81,7 @@ async function startEphemeralPostgres() {
   execFileSync("pg_ctl", [
     "--pgdata", ephemeralPostgresData,
     "--log", postgresLog,
-    "--options", `-h 127.0.0.1 -p ${port} -k ${socketDirectory}`,
+    "--options", `-h 127.0.0.1 -p ${port} -c unix_socket_directories=`,
     "--wait",
     "start",
   ], { stdio: "ignore", timeout: 60_000 });
@@ -319,6 +318,514 @@ async function captureSliderScreen(page, screen, names) {
   return { screen, sliders: values };
 }
 
+async function auditCodeColorPresets(page, codes) {
+  const desktopViewport = page.viewportSize();
+  assert.deepEqual(desktopViewport, { width: 1440, height: 900 }, "color-preset audit requires the explicit desktop viewport");
+
+  const triggers = codes.getByRole("button", { name: /^Choose color for / });
+  const triggerCount = await triggers.count();
+  assert.ok(triggerCount >= 2, "Codes must expose a distinct alternate Choose color for control");
+  const trigger = triggers.first();
+  const code = await trigger.getAttribute("data-ena-code-color-trigger");
+  const originalPrimary = await trigger.getAttribute("data-ena-code-color-primary");
+  assert.ok(code, "the first code-color trigger has no code identity");
+  assert.match(originalPrimary ?? "", /^#[0-9a-f]{6}$/u, "the first code-color trigger has no valid primary color");
+
+  const readNodeColors = async () => await page.locator("[data-ena-code]").evaluateAll((nodes, expectedCode) => (
+    nodes
+      .filter((node) => node.getAttribute("data-ena-code") === expectedCode)
+      .map((node) => ({
+        fill: node.getAttribute("fill"),
+        computedFill: getComputedStyle(node).fill,
+      }))
+  ), code);
+  const originalNodeColors = await readNodeColors();
+  assert.ok(originalNodeColors.length > 0, `no rendered code node was found for ${code}`);
+
+  const dialogName = `Code color for ${code}`;
+  const dialog = page.getByRole("dialog", { name: dialogName, exact: true });
+  const preset1Name = "Preset 1: Primary #cc423a, Complementary #56bd7c";
+  const preset2Name = "Preset 2: Primary #218ebf, Complementary #ef691b";
+  const committedPrimary = "#218ebf";
+  const committedComplementary = "#ef691b";
+  const repairMessage = "Enter a six-digit hexadecimal color such as #cc423a.";
+  let desktopGeometry = null;
+  let mobileGeometry = null;
+  let workerPosts = null;
+  let alternateTriggerBlocked = false;
+  const continuity = {};
+  const fallback = {
+    forced: false,
+    modal: null,
+    position: null,
+    viewportCovered: false,
+    forwardWrap: false,
+    reverseWrap: false,
+    escape: {
+      draftPrimary: null,
+      draftComplementary: null,
+      primaryRollback: false,
+      complementaryRollback: null,
+      nodesRollback: false,
+      bodyOverflowRestored: false,
+      focusReturned: false,
+    },
+    backdrop: {
+      draftPrimary: null,
+      draftComplementary: null,
+      primaryRollback: false,
+      complementaryRollback: null,
+      nodesRollback: false,
+      bodyOverflowRestored: false,
+      focusReturned: false,
+    },
+    commit: {
+      primary: null,
+      complementary: null,
+      nodesUpdated: false,
+      bodyOverflowRestored: false,
+      focusReturned: false,
+    },
+    restore: {
+      primary: null,
+      complementary: null,
+      nodesRestored: false,
+      bodyOverflowRestored: false,
+      focusReturned: false,
+      workerPosts: null,
+      showModal: false,
+    },
+  };
+
+  const assertSingleDialog = async () => {
+    await dialog.waitFor({ state: "visible", timeout: 10_000 });
+    assert.equal(await page.getByRole("dialog").count(), 1, "exactly one runtime dialog must be mounted");
+    assert.equal(await dialog.count(), 1, `${dialogName} must be the only runtime dialog`);
+  };
+  const openDialog = async () => {
+    await trigger.click();
+    await assertSingleDialog();
+  };
+  const waitForDialogClosed = async () => {
+    await dialog.waitFor({ state: "detached", timeout: 10_000 });
+    assert.equal(await page.getByRole("dialog").count(), 0, "the code-color dialog did not unmount");
+  };
+
+  try {
+    await page.evaluate(() => {
+      if (window.__openEnaCodeColorPresetSmoke) throw new Error("code-color worker audit was already installed");
+      const originalPostMessage = Worker.prototype.postMessage;
+      window.__openEnaCodeColorPresetSmoke = { originalPostMessage, workerPosts: 0 };
+      Worker.prototype.postMessage = function codeColorPresetSmokePostMessage(...args) {
+        window.__openEnaCodeColorPresetSmoke.workerPosts += 1;
+        return originalPostMessage.apply(this, args);
+      };
+    });
+    await trigger.focus();
+    assert.equal(await trigger.evaluate((element) => document.activeElement === element), true,
+      "the code-color trigger could not receive focus before opening");
+    await openDialog();
+    assert.equal(await dialog.getAttribute("aria-modal"), "true");
+
+    const presets = dialog.locator("[data-ena-code-color-preset]");
+    assert.equal(await presets.count(), 6, "the dialog must expose six paired Color Presets");
+    const sheet = dialog.locator(".ena-code-color-sheet");
+    const preset1Circles = presets.first().locator("span");
+    desktopGeometry = await page.evaluate(([sheetElement, firstCircle, secondCircle]) => {
+      const rectangle = (element) => {
+        const box = element.getBoundingClientRect();
+        return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width, height: box.height };
+      };
+      return {
+        viewport: { width: innerWidth, height: innerHeight },
+        sheet: rectangle(sheetElement),
+        preset1Circles: [rectangle(firstCircle), rectangle(secondCircle)],
+      };
+    }, [await sheet.elementHandle(), await preset1Circles.nth(0).elementHandle(), await preset1Circles.nth(1).elementHandle()]);
+    assert.ok(desktopGeometry.sheet.width >= 347 && desktopGeometry.sheet.width <= 349,
+      `desktop color sheet width was ${desktopGeometry.sheet.width}px`);
+    assert.deepEqual(
+      desktopGeometry.preset1Circles.map(({ width, height }) => ({ width, height })),
+      [{ width: 40, height: 40 }, { width: 34, height: 34 }],
+      "Preset 1 circles lost their exact 40px/34px geometry",
+    );
+
+    const alternate = triggers.nth(1);
+    const alternateCode = await alternate.getAttribute("data-ena-code-color-trigger");
+    assert.ok(alternateCode && alternateCode !== code, "the alternate trigger must identify a distinct code");
+    await alternate.click({ timeout: 500 }).catch(() => {});
+    assert.equal(await page.getByRole("dialog", { name: dialogName, exact: true }).count(), 1,
+      "an attempted second code trigger replaced the original exact dialog");
+    assert.equal(await page.getByRole("dialog", { name: `Code color for ${alternateCode}`, exact: true }).count(), 0,
+      "the native modal switched to another code target");
+    assert.equal(await trigger.getAttribute("data-ena-code-color-trigger"), code,
+      "the original trigger changed its code identity while its dialog was open");
+    assert.equal(await trigger.getAttribute("aria-expanded"), "true",
+      "the original trigger stopped owning the open dialog");
+    alternateTriggerBlocked = true;
+
+    await dialog.getByRole("button", { name: preset2Name, exact: true }).click();
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await waitForDialogClosed();
+    assert.equal(await trigger.getAttribute("data-ena-code-color-primary"), originalPrimary,
+      "Cancel changed the trigger's committed primary color");
+    assert.deepEqual(await readNodeColors(), originalNodeColors, "Cancel changed rendered node colors");
+
+    await openDialog();
+    await dialog.getByRole("button", { name: preset2Name, exact: true }).click();
+    await dialog.getByRole("button", { name: "OK", exact: true }).click();
+    await waitForDialogClosed();
+    await page.waitForFunction(
+      ([expectedCode, expectedColor]) => document.querySelector(`[data-ena-code-color-trigger="${CSS.escape(expectedCode)}"]`)
+        ?.getAttribute("data-ena-code-color-primary") === expectedColor,
+      [code, committedPrimary],
+      { timeout: 10_000 },
+    );
+    assert.equal(await trigger.getAttribute("data-ena-code-color-primary"), committedPrimary);
+    const committedNodeColors = await readNodeColors();
+    assert.ok(committedNodeColors.length > 0, `the committed color has no rendered ${code} node`);
+    assert.ok(committedNodeColors.every(({ fill, computedFill }) => (
+      fill?.toLowerCase() === committedPrimary && computedFill === "rgb(33, 142, 191)"
+    )), "the committed Preset 2 color did not reach every matching node fill");
+    workerPosts = await page.evaluate(() => window.__openEnaCodeColorPresetSmoke.workerPosts);
+    assert.equal(workerPosts, 0, "changing a display color posted analytic work to a Worker");
+
+    await openDialog();
+    const primaryHex = dialog.locator('[data-ena-code-color-hex="primary"]');
+    const complementaryHex = dialog.locator('[data-ena-code-color-hex="complementary"]');
+    const plane = dialog.locator('[data-ena-code-color-plane="true"]');
+    const hue = dialog.locator('[data-ena-code-color-hue="true"]');
+    const saturationAxis = dialog.locator('[data-ena-code-color-axis="saturation"]');
+    const brightnessAxis = dialog.locator('[data-ena-code-color-axis="brightness"]');
+    const planeBox = await plane.boundingBox();
+    assert.ok(planeBox, "the saturation/brightness plane has no browser geometry");
+    await hue.fill("180");
+    await page.mouse.click(planeBox.x + planeBox.width * 0.72, planeBox.y + planeBox.height * 0.25);
+    await saturationAxis.focus();
+    await saturationAxis.press("ArrowLeft");
+    await brightnessAxis.focus();
+    await brightnessAxis.press("ArrowDown");
+    continuity.planeKeyboardHex = await primaryHex.inputValue();
+    assert.match(continuity.planeKeyboardHex, /^#[0-9a-f]{6}$/u,
+      "hue, plane, and S/V keyboard edits did not retain a strict primary hex color");
+
+    await primaryHex.fill("#0000ff");
+    assert.equal(await saturationAxis.getAttribute("aria-valuenow"), "100");
+    assert.equal(await brightnessAxis.getAttribute("aria-valuenow"), "100");
+    await brightnessAxis.focus();
+    await brightnessAxis.press("Home");
+    continuity.blackHex = await primaryHex.inputValue();
+    continuity.blackSaturation = await saturationAxis.getAttribute("aria-valuenow");
+    continuity.blackBrightness = await brightnessAxis.getAttribute("aria-valuenow");
+    continuity.blackMarkerLeft = await plane.locator(".ena-code-color-plane-picker").evaluate((marker) => marker.style.left);
+    assert.equal(continuity.blackHex, "#000000");
+    assert.equal(continuity.blackSaturation, "100", "black discarded the remembered saturation");
+    assert.equal(continuity.blackBrightness, "0");
+    assert.equal(continuity.blackMarkerLeft, "100%", "the saturation marker left the right edge at black");
+    await brightnessAxis.press("ArrowUp");
+    await page.waitForFunction((input) => input.value !== "#000000", await primaryHex.elementHandle());
+    continuity.blueAfterBlack = await primaryHex.evaluate((input) => {
+      const value = input.value;
+      return {
+        value,
+        rgb: [1, 3, 5].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16)),
+      };
+    });
+    assert.match(continuity.blueAfterBlack.value, /^#[0-9a-f]{6}$/u);
+    assert.ok(
+      continuity.blueAfterBlack.rgb[2] > continuity.blueAfterBlack.rgb[0]
+        && continuity.blueAfterBlack.rgb[2] > continuity.blueAfterBlack.rgb[1],
+      "ArrowUp from black produced an achromatic color instead of remembered blue",
+    );
+
+    await hue.focus();
+    await hue.press("End");
+    await page.waitForFunction((input) => input.value === "360", await hue.elementHandle());
+    continuity.hueEndValue = await hue.inputValue();
+    assert.equal(continuity.hueEndValue, "360", "the hue End value wrapped during rerender");
+
+    const primaryBeforeComplementary = await primaryHex.inputValue();
+    await dialog.getByRole("button", { name: `Choose color for ${code}: Complementary`, exact: true }).click();
+    continuity.primaryAfterComplementaryActivation = await primaryHex.inputValue();
+    assert.equal(continuity.primaryAfterComplementaryActivation, primaryBeforeComplementary,
+      "activating Complementary changed the Primary draft");
+    await complementaryHex.fill("#abcdef");
+    continuity.primaryAfterComplementaryEdit = await primaryHex.inputValue();
+    assert.equal(continuity.primaryAfterComplementaryEdit, primaryBeforeComplementary,
+      "editing Complementary changed the Primary draft");
+    await primaryHex.fill("#123");
+    const confirm = dialog.getByRole("button", { name: "OK", exact: true });
+    assert.equal(await confirm.isDisabled(), true, "OK remained enabled for an invalid Primary hex value");
+    await dialog.getByText(repairMessage, { exact: true }).waitFor({ state: "visible" });
+    continuity.invalidDescription = await primaryHex.evaluate((input) => (
+      (input.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/u)
+        .filter(Boolean)
+        .map((id) => document.getElementById(id)?.textContent?.trim() ?? "")
+        .join(" ")
+    ));
+    assert.equal(await primaryHex.getAttribute("aria-invalid"), "true");
+    assert.ok(continuity.invalidDescription.includes(repairMessage),
+      "the invalid Primary input is not accessibly described by its repair message");
+
+    await page.keyboard.press("Escape");
+    await waitForDialogClosed();
+    assert.equal(await trigger.evaluate((element) => document.activeElement === element), true,
+      "Escape did not return focus to the original code-color trigger");
+    assert.equal(await trigger.getAttribute("data-ena-code-color-primary"), committedPrimary,
+      "Escape changed the committed Primary color");
+    assert.deepEqual(await readNodeColors(), committedNodeColors,
+      "Escape changed the rendered committed node colors");
+    continuity.escapeNodeColorsPreserved = true;
+
+    await openDialog();
+    continuity.complementaryAfterEscape = await complementaryHex.inputValue();
+    assert.equal(continuity.complementaryAfterEscape, committedComplementary,
+      "Escape retained the uncommitted Complementary draft");
+    assert.notEqual(continuity.complementaryAfterEscape, "#abcdef");
+    await dialog.getByRole("button", { name: preset1Name, exact: true }).click();
+    continuity.backdropDraftPrimary = await primaryHex.inputValue();
+    continuity.backdropDraftComplementary = await complementaryHex.inputValue();
+    assert.equal(continuity.backdropDraftPrimary, "#cc423a",
+      "the backdrop audit did not create a different valid Primary draft");
+    assert.equal(continuity.backdropDraftComplementary, "#56bd7c",
+      "the backdrop audit did not create a different valid Complementary draft");
+    await page.mouse.click(2, 2);
+    await waitForDialogClosed();
+    assert.equal(await trigger.getAttribute("data-ena-code-color-primary"), committedPrimary,
+      "backdrop dismissal changed the committed Primary color");
+    assert.deepEqual(await readNodeColors(), committedNodeColors,
+      "backdrop dismissal changed the rendered committed node colors");
+    continuity.backdropNodeColorsPreserved = true;
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openDialog();
+    continuity.complementaryAfterBackdrop = await complementaryHex.inputValue();
+    assert.equal(continuity.complementaryAfterBackdrop, committedComplementary,
+      "backdrop dismissal committed the draft Complementary color");
+    assert.notEqual(continuity.complementaryAfterBackdrop, "#56bd7c");
+    mobileGeometry = await dialog.locator(".ena-code-color-sheet").evaluate((sheetElement) => {
+      const grid = sheetElement.querySelector(".ena-code-color-dialog-grid");
+      if (!grid) throw new Error("the mobile code-color grid is unavailable");
+      const box = sheetElement.getBoundingClientRect();
+      const gridColumns = getComputedStyle(grid).gridTemplateColumns.trim().split(/\s+/u).filter(Boolean);
+      return {
+        viewport: { width: innerWidth, height: innerHeight },
+        sheet: { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width, height: box.height },
+        gridColumns,
+        document: {
+          scrollWidth: document.documentElement.scrollWidth,
+          clientWidth: document.documentElement.clientWidth,
+          noHorizontalOverflow: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        },
+      };
+    });
+    assert.equal(mobileGeometry.gridColumns.length, 1, "mobile Color Presets did not collapse to one grid column");
+    assert.ok(
+      mobileGeometry.sheet.left >= 0 && mobileGeometry.sheet.right <= 390
+        && mobileGeometry.sheet.top >= 0 && mobileGeometry.sheet.bottom <= 844,
+      "mobile Color Presets sheet escaped the viewport",
+    );
+    assert.equal(mobileGeometry.document.noHorizontalOverflow, true, "mobile Color Presets caused document overflow");
+    await page.keyboard.press("Escape");
+    await waitForDialogClosed();
+    workerPosts = await page.evaluate(() => window.__openEnaCodeColorPresetSmoke.workerPosts);
+    assert.equal(workerPosts, 0, "the complete color transaction posted analytic work to a Worker");
+    assert.equal(alternateTriggerBlocked, true,
+      "the alternate trigger was not proven blocked by the original modal target");
+
+    await page.setViewportSize(desktopViewport);
+    const bodyOverflowBeforeFallback = await page.evaluate(() => document.body.style.overflow);
+    try {
+      await page.evaluate(() => {
+        const audit = window.__openEnaCodeColorPresetSmoke;
+        if (!audit) throw new Error("the code-color audit state is unavailable");
+        audit.originalShowModal = HTMLDialogElement.prototype.showModal;
+        HTMLDialogElement.prototype.showModal = function forceOpenEnaCodeColorFallback() {
+          throw new Error("forced code-color dialog fallback");
+        };
+      });
+
+      await openDialog();
+      assert.equal(await dialog.getAttribute("data-ena-dialog-fallback"), "true");
+      assert.equal(await dialog.evaluate((element) => element.open), true);
+      assert.equal(await page.evaluate(() => document.body.style.overflow), "hidden");
+      fallback.forced = true;
+      fallback.modal = await dialog.getAttribute("aria-modal");
+      assert.equal(fallback.modal, "true", "forced fallback dialog lost aria-modal=true");
+      const fallbackViewport = await dialog.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          position: getComputedStyle(element).position,
+          viewportCovered: Math.abs(rect.left) <= 1
+            && Math.abs(rect.top) <= 1
+            && Math.abs(rect.width - innerWidth) <= 1
+            && Math.abs(rect.height - innerHeight) <= 1
+            && Math.abs(rect.right - innerWidth) <= 1
+            && Math.abs(rect.bottom - innerHeight) <= 1,
+        };
+      });
+      fallback.position = fallbackViewport.position;
+      fallback.viewportCovered = fallbackViewport.viewportCovered;
+      assert.equal(fallback.position, "fixed", "forced fallback dialog is not fixed to the viewport");
+      assert.equal(fallback.viewportCovered, true, "forced fallback dialog does not cover the viewport");
+
+      const fallbackConfirm = dialog.getByRole("button", { name: "OK", exact: true });
+      assert.equal(await fallbackConfirm.isDisabled(), false, "fallback OK must be enabled for a valid committed pair");
+      const fallbackFocusable = dialog.locator([
+        "button:not([disabled])",
+        "input:not([disabled])",
+        '[tabindex]:not([tabindex="-1"])',
+      ].join(","));
+      assert.ok(await fallbackFocusable.count() >= 4, "fallback dialog has too few enabled focus targets");
+      const firstFallbackFocusable = fallbackFocusable.first();
+      const lastFallbackFocusable = fallbackFocusable.last();
+
+      await lastFallbackFocusable.focus();
+      assert.equal(await lastFallbackFocusable.evaluate((last) => document.activeElement === last), true);
+      await lastFallbackFocusable.press("Tab");
+      fallback.forwardWrap = await firstFallbackFocusable.evaluate((first) => document.activeElement === first);
+      assert.equal(fallback.forwardWrap, true, "fallback Tab did not wrap last focusable to first");
+
+      await firstFallbackFocusable.focus();
+      assert.equal(await firstFallbackFocusable.evaluate((first) => document.activeElement === first), true);
+      await firstFallbackFocusable.press("Shift+Tab");
+      fallback.reverseWrap = await lastFallbackFocusable.evaluate((last) => document.activeElement === last);
+      assert.equal(fallback.reverseWrap, true, "fallback Shift+Tab did not wrap first focusable to last");
+
+      await dialog.getByRole("button", { name: preset1Name, exact: true }).click();
+      fallback.escape.draftPrimary = await primaryHex.inputValue();
+      fallback.escape.draftComplementary = await complementaryHex.inputValue();
+      assert.deepEqual(
+        [fallback.escape.draftPrimary, fallback.escape.draftComplementary],
+        ["#cc423a", "#56bd7c"],
+        "fallback Escape audit did not create a changed valid draft",
+      );
+      await page.keyboard.press("Escape");
+      await waitForDialogClosed();
+      fallback.escape.primaryRollback = await trigger.getAttribute("data-ena-code-color-primary") === committedPrimary;
+      assert.equal(fallback.escape.primaryRollback, true, "fallback Escape committed the Primary draft");
+      assert.deepEqual(await readNodeColors(), committedNodeColors,
+        "fallback Escape changed rendered committed node colors");
+      fallback.escape.nodesRollback = true;
+      fallback.escape.bodyOverflowRestored = await page.evaluate((expected) => document.body.style.overflow === expected, bodyOverflowBeforeFallback);
+      fallback.escape.focusReturned = await trigger.evaluate((element) => document.activeElement === element);
+      assert.equal(fallback.escape.bodyOverflowRestored, true, "fallback Escape did not restore body overflow");
+      assert.equal(fallback.escape.focusReturned, true, "fallback Escape did not return focus to the trigger");
+
+      await openDialog();
+      assert.equal(await dialog.getAttribute("data-ena-dialog-fallback"), "true");
+      fallback.escape.complementaryRollback = await complementaryHex.inputValue();
+      assert.equal(fallback.escape.complementaryRollback, committedComplementary,
+        "fallback Escape committed the Complementary draft");
+      await dialog.getByRole("button", { name: preset1Name, exact: true }).click();
+      fallback.backdrop.draftPrimary = await primaryHex.inputValue();
+      fallback.backdrop.draftComplementary = await complementaryHex.inputValue();
+      assert.deepEqual(
+        [fallback.backdrop.draftPrimary, fallback.backdrop.draftComplementary],
+        ["#cc423a", "#56bd7c"],
+        "fallback backdrop audit did not create a changed valid draft",
+      );
+      await page.mouse.click(2, 2);
+      await waitForDialogClosed();
+      fallback.backdrop.primaryRollback = await trigger.getAttribute("data-ena-code-color-primary") === committedPrimary;
+      assert.equal(fallback.backdrop.primaryRollback, true, "fallback backdrop committed the Primary draft");
+      assert.deepEqual(await readNodeColors(), committedNodeColors,
+        "fallback backdrop changed rendered committed node colors");
+      fallback.backdrop.nodesRollback = true;
+      fallback.backdrop.bodyOverflowRestored = await page.evaluate((expected) => document.body.style.overflow === expected, bodyOverflowBeforeFallback);
+      fallback.backdrop.focusReturned = await trigger.evaluate((element) => document.activeElement === element);
+      assert.equal(fallback.backdrop.bodyOverflowRestored, true, "fallback backdrop did not restore body overflow");
+      assert.equal(fallback.backdrop.focusReturned, true, "fallback backdrop did not return focus to the trigger");
+
+      await openDialog();
+      fallback.backdrop.complementaryRollback = await complementaryHex.inputValue();
+      assert.equal(fallback.backdrop.complementaryRollback, committedComplementary,
+        "fallback backdrop committed the Complementary draft");
+      await dialog.getByRole("button", { name: preset1Name, exact: true }).click();
+      await fallbackConfirm.click();
+      await waitForDialogClosed();
+      fallback.commit.primary = await trigger.getAttribute("data-ena-code-color-primary");
+      assert.equal(fallback.commit.primary, "#cc423a", "fallback OK did not commit Preset 1 Primary");
+      const fallbackPreset1NodeColors = await readNodeColors();
+      assert.ok(fallbackPreset1NodeColors.length > 0 && fallbackPreset1NodeColors.every(({ fill, computedFill }) => (
+        fill?.toLowerCase() === "#cc423a" && computedFill === "rgb(204, 66, 58)"
+      )), "fallback OK did not update every matching node to Preset 1");
+      fallback.commit.nodesUpdated = true;
+      fallback.commit.bodyOverflowRestored = await page.evaluate((expected) => document.body.style.overflow === expected, bodyOverflowBeforeFallback);
+      fallback.commit.focusReturned = await trigger.evaluate((element) => document.activeElement === element);
+      assert.equal(fallback.commit.bodyOverflowRestored, true, "fallback OK did not restore body overflow");
+      assert.equal(fallback.commit.focusReturned, true, "fallback OK did not return focus to the trigger");
+
+      await openDialog();
+      fallback.commit.complementary = await complementaryHex.inputValue();
+      assert.equal(fallback.commit.complementary, "#56bd7c", "fallback OK did not persist Preset 1 Complementary");
+      await dialog.getByRole("button", { name: preset2Name, exact: true }).click();
+      await fallbackConfirm.click();
+      await waitForDialogClosed();
+      fallback.restore.primary = await trigger.getAttribute("data-ena-code-color-primary");
+      assert.equal(fallback.restore.primary, committedPrimary, "fallback restore did not recommit Preset 2 Primary");
+      assert.deepEqual(await readNodeColors(), committedNodeColors,
+        "fallback restore did not restore every matching node to Preset 2");
+      fallback.restore.nodesRestored = true;
+
+      await openDialog();
+      fallback.restore.complementary = await complementaryHex.inputValue();
+      assert.equal(fallback.restore.complementary, committedComplementary,
+        "fallback restore did not persist Preset 2 Complementary");
+      await page.keyboard.press("Escape");
+      await waitForDialogClosed();
+      fallback.restore.bodyOverflowRestored = await page.evaluate((expected) => document.body.style.overflow === expected, bodyOverflowBeforeFallback);
+      fallback.restore.focusReturned = await trigger.evaluate((element) => document.activeElement === element);
+      fallback.restore.workerPosts = await page.evaluate(() => window.__openEnaCodeColorPresetSmoke.workerPosts);
+      assert.equal(fallback.restore.bodyOverflowRestored, true, "fallback restore left body scrolling locked");
+      assert.equal(fallback.restore.focusReturned, true, "fallback restore did not return focus to the trigger");
+      assert.equal(fallback.restore.workerPosts, 0, "fallback transactions posted analytic work to a Worker");
+    } finally {
+      fallback.restore.showModal = await page.evaluate(() => {
+        const audit = window.__openEnaCodeColorPresetSmoke;
+        if (!audit?.originalShowModal) return false;
+        HTMLDialogElement.prototype.showModal = audit.originalShowModal;
+        const restored = HTMLDialogElement.prototype.showModal === audit.originalShowModal;
+        delete audit.originalShowModal;
+        return restored;
+      });
+    }
+    assert.equal(fallback.restore.showModal, true, "fallback audit did not restore HTMLDialogElement.showModal");
+
+    return {
+      code,
+      triggerCount,
+      original: { primary: originalPrimary, nodeColors: originalNodeColors },
+      committed: { primary: committedPrimary, nodeColors: committedNodeColors },
+      desktopGeometry,
+      mobileGeometry,
+      workerPosts,
+      alternateTriggerBlocked,
+      continuity,
+      fallback,
+    };
+  } finally {
+    try {
+      await page.evaluate(() => {
+        const audit = window.__openEnaCodeColorPresetSmoke;
+        if (audit?.originalShowModal) HTMLDialogElement.prototype.showModal = audit.originalShowModal;
+        if (audit?.originalPostMessage) Worker.prototype.postMessage = audit.originalPostMessage;
+        delete window.__openEnaCodeColorPresetSmoke;
+      });
+    } finally {
+      try {
+        if (await page.getByRole("dialog").count()) {
+          await page.keyboard.press("Escape").catch(() => {});
+          await page.getByRole("dialog").waitFor({ state: "detached", timeout: 2_000 }).catch(() => {});
+        }
+      } finally {
+        await page.setViewportSize(desktopViewport);
+      }
+    }
+  }
+}
+
 async function auditOfficialModelTabs(page, rail) {
   await rail.getByRole("button", { name: "Model", exact: true }).click();
   const tablist = page.getByRole("tablist", { name: "Model configuration" });
@@ -444,10 +951,7 @@ async function auditOfficialModelTabs(page, rail) {
   const codeCheckboxes = codes.locator(".ena-official-manage-codes").getByRole("checkbox");
   assert.ok(await codeCheckboxes.count() > 0);
   await manageCodes.click();
-  const colorValues = await codes.locator('input[type="color"]').evaluateAll((inputs) => (
-    inputs.map((input) => input.value)
-  ));
-  assert.ok(colorValues.length > 0 && colorValues.every((value) => /^#[0-9a-f]{6}$/iu.test(value)));
+  const codeColorPresets = await auditCodeColorPresets(page, codes);
   const codesGeometry = await panelGeometry(codes);
 
   const panels = {
@@ -458,7 +962,16 @@ async function auditOfficialModelTabs(page, rail) {
   };
   assert.ok(Object.values(panels).every((panel) => panel.overflowContained),
     "an official Model panel expanded the workbench horizontally");
-  return { headingBottomBorderWidthPx, tabMetrics, unitGeometry, removedField, initialGroup, alternateGroup, panels };
+  return {
+    headingBottomBorderWidthPx,
+    tabMetrics,
+    unitGeometry,
+    removedField,
+    initialGroup,
+    alternateGroup,
+    panels,
+    codeColorPresets,
+  };
 }
 
 async function readGeometry(page) {
@@ -558,6 +1071,192 @@ async function readGeometry(page) {
   });
 }
 
+async function auditTrajectoryCodeColorCascade(page, rail) {
+  const endpointDownload = page.getByRole("button", { name: "Download Model", exact: true });
+  await endpointDownload.waitFor({ state: "visible", timeout: 30_000 });
+  await page.waitForFunction((button) => button && !button.disabled, await endpointDownload.elementHandle(), { timeout: 30_000 });
+  await rail.getByRole("button", { name: "Data", exact: true }).click();
+  const loadTrajectorySample = page.getByRole("button", { name: "Load 3D trajectory sample", exact: true });
+  await loadTrajectorySample.waitFor({ state: "visible", timeout: 30_000 });
+  await loadTrajectorySample.click();
+
+  const longitudinalControls = page.locator(".ena-longitudinal-v3-controls");
+  await longitudinalControls.waitFor({ state: "visible", timeout: 60_000 });
+  const runStatus = rail.locator('.ena-run-status[data-state="result"]');
+  await runStatus.waitFor({ state: "visible", timeout: 60_000 });
+
+  await rail.getByRole("button", { name: "Model", exact: true }).click();
+  const tablist = longitudinalControls.getByRole("tablist", { name: "Model configuration" });
+  await tablist.waitFor({ state: "visible", timeout: 30_000 });
+  await tablist.getByRole("tab", { name: "Codes", exact: true }).click();
+  const codes = longitudinalControls.locator('[data-ena-official-panel="codes"]');
+  await codes.waitFor({ state: "visible", timeout: 30_000 });
+  assert.equal(await codes.evaluate((element) => element.closest(".ena-longitudinal-v3-controls") !== null), true,
+    "trajectory Model / Codes panel escaped the longitudinal-v3 controls cascade");
+
+  const trigger = codes.locator('[data-ena-code-color-trigger]').first();
+  await trigger.waitFor({ state: "visible", timeout: 30_000 });
+  const code = await trigger.getAttribute("data-ena-code-color-trigger");
+  const originalPrimary = await trigger.getAttribute("data-ena-code-color-primary");
+  assert.ok(code, "trajectory code-color trigger has no code identity");
+  assert.match(originalPrimary ?? "", /^#[0-9a-f]{6}$/u);
+  assert.equal(await trigger.evaluate((element) => element.closest(".ena-longitudinal-v3-controls") !== null), true,
+    "trajectory code-color trigger escaped the longitudinal-v3 controls cascade");
+
+  const triggerStyle = await trigger.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return {
+      width: box.width,
+      height: box.height,
+      minHeight: style.minHeight,
+      borderTopWidth: style.borderTopWidth,
+      borderRightWidth: style.borderRightWidth,
+      borderBottomWidth: style.borderBottomWidth,
+      borderLeftWidth: style.borderLeftWidth,
+      backgroundColor: style.backgroundColor,
+      paddingTop: style.paddingTop,
+      paddingRight: style.paddingRight,
+      paddingBottom: style.paddingBottom,
+      paddingLeft: style.paddingLeft,
+    };
+  });
+  assert.deepEqual({ width: triggerStyle.width, height: triggerStyle.height }, { width: 28, height: 28 });
+  assert.equal(triggerStyle.minHeight, "28px");
+  assert.deepEqual(
+    [triggerStyle.borderTopWidth, triggerStyle.borderRightWidth, triggerStyle.borderBottomWidth, triggerStyle.borderLeftWidth],
+    ["0px", "0px", "0px", "0px"],
+  );
+  assert.equal(triggerStyle.backgroundColor, "rgba(0, 0, 0, 0)");
+  assert.deepEqual(
+    [triggerStyle.paddingTop, triggerStyle.paddingRight, triggerStyle.paddingBottom, triggerStyle.paddingLeft],
+    ["0px", "0px", "0px", "0px"],
+  );
+
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: `Code color for ${code}`, exact: true });
+  await dialog.waitFor({ state: "visible", timeout: 10_000 });
+  assert.equal(await dialog.evaluate((element) => element.closest(".ena-longitudinal-v3-controls") !== null), true,
+    "trajectory code-color dialog escaped the longitudinal-v3 controls cascade");
+  const preset2 = dialog.locator('[data-ena-code-color-preset="2"]');
+  await preset2.click();
+  assert.equal(await preset2.getAttribute("aria-pressed"), "true");
+
+  const dialogStyle = await dialog.evaluate((root) => {
+    const preset = root.querySelector('[data-ena-code-color-preset="2"]');
+    const hex = root.querySelector('[data-ena-code-color-hex="primary"]');
+    const hue = root.querySelector('[data-ena-code-color-hue="true"]');
+    const confirm = root.querySelector(".ena-code-color-confirm");
+    const heading = root.querySelector("h3");
+    if (!preset || !hex || !hue || !confirm || !heading) throw new Error("trajectory code-color dialog is incomplete");
+    const metrics = (element) => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        width: box.width,
+        height: box.height,
+        minWidth: style.minWidth,
+        minHeight: style.minHeight,
+        borderTopWidth: style.borderTopWidth,
+        borderRightWidth: style.borderRightWidth,
+        borderBottomWidth: style.borderBottomWidth,
+        borderLeftWidth: style.borderLeftWidth,
+        borderRadius: style.borderRadius,
+        paddingTop: style.paddingTop,
+        paddingRight: style.paddingRight,
+        paddingBottom: style.paddingBottom,
+        paddingLeft: style.paddingLeft,
+        backgroundColor: style.backgroundColor,
+        backgroundImage: style.backgroundImage,
+        fontSize: style.fontSize,
+        lineHeight: style.lineHeight,
+        fontWeight: style.fontWeight,
+        display: style.display,
+        gap: style.gap,
+      };
+    };
+    return {
+      preset: metrics(preset),
+      hex: metrics(hex),
+      hue: metrics(hue),
+      confirm: metrics(confirm),
+      heading: metrics(heading),
+    };
+  });
+
+  assert.deepEqual({ width: dialogStyle.preset.width, height: dialogStyle.preset.height }, { width: 75, height: 45 });
+  assert.deepEqual(
+    [dialogStyle.preset.borderTopWidth, dialogStyle.preset.borderRightWidth, dialogStyle.preset.borderBottomWidth, dialogStyle.preset.borderLeftWidth],
+    ["0px", "0px", "0px", "0px"],
+  );
+  assert.equal(dialogStyle.preset.borderRadius, "35px");
+  assert.deepEqual(
+    [dialogStyle.preset.paddingTop, dialogStyle.preset.paddingRight, dialogStyle.preset.paddingBottom, dialogStyle.preset.paddingLeft],
+    ["0px", "0px", "0px", "0px"],
+  );
+  assert.equal(dialogStyle.preset.backgroundColor, "rgb(219, 219, 219)");
+
+  assert.equal(dialogStyle.hex.minHeight, "25px");
+  assert.equal(dialogStyle.hex.height, 25);
+  assert.deepEqual(
+    [dialogStyle.hex.paddingTop, dialogStyle.hex.paddingRight, dialogStyle.hex.paddingBottom, dialogStyle.hex.paddingLeft],
+    ["3px", "5px", "3px", "5px"],
+  );
+  assert.equal(dialogStyle.hex.fontSize, "12px");
+  assert.equal(dialogStyle.hex.lineHeight, "12px");
+
+  assert.deepEqual({ width: dialogStyle.hue.width, height: dialogStyle.hue.height }, { width: 20, height: 150 });
+  assert.deepEqual(
+    [dialogStyle.hue.borderTopWidth, dialogStyle.hue.borderRightWidth, dialogStyle.hue.borderBottomWidth, dialogStyle.hue.borderLeftWidth],
+    ["0px", "0px", "0px", "0px"],
+  );
+  assert.deepEqual(
+    [dialogStyle.hue.paddingTop, dialogStyle.hue.paddingRight, dialogStyle.hue.paddingBottom, dialogStyle.hue.paddingLeft],
+    ["0px", "0px", "0px", "0px"],
+  );
+  assert.notEqual(dialogStyle.hue.backgroundImage, "none");
+
+  assert.ok(dialogStyle.confirm.width >= 88);
+  assert.equal(dialogStyle.confirm.minWidth, "88px");
+  assert.equal(dialogStyle.confirm.height, 36);
+  assert.deepEqual(
+    [dialogStyle.confirm.borderTopWidth, dialogStyle.confirm.borderRightWidth, dialogStyle.confirm.borderBottomWidth, dialogStyle.confirm.borderLeftWidth],
+    ["0px", "0px", "0px", "0px"],
+  );
+  assert.equal(dialogStyle.confirm.borderRadius, "2px");
+  assert.equal(dialogStyle.confirm.backgroundColor, "rgb(137, 207, 240)");
+  assert.equal(dialogStyle.confirm.fontWeight, "800");
+  assert.equal(dialogStyle.heading.display, "block");
+  assert.ok(["normal", "0px"].includes(dialogStyle.heading.gap), "trajectory dialog h3 inherited an 8px control gap");
+
+  const primaryHex = dialog.locator('[data-ena-code-color-hex="primary"]');
+  await primaryHex.fill("#123");
+  const error = dialog.getByText("Enter a six-digit hexadecimal color such as #cc423a.", { exact: true });
+  await error.waitFor({ state: "visible" });
+  const errorStyle = await error.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { color: style.color, fontSize: style.fontSize, lineHeight: style.lineHeight };
+  });
+  assert.equal(errorStyle.color, "rgb(163, 38, 38)");
+  assert.equal(errorStyle.fontSize, "11px");
+  assert.ok(Math.abs(Number.parseFloat(errorStyle.lineHeight) - 14.3) <= 0.2,
+    `trajectory dialog error line-height was ${errorStyle.lineHeight}`);
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "detached", timeout: 10_000 });
+  assert.equal(await trigger.getAttribute("data-ena-code-color-primary"), originalPrimary,
+    "trajectory cascade audit committed its invalid draft");
+
+  return {
+    code,
+    endpointDownloadEnabled: true,
+    resultCompleted: true,
+    longitudinalAncestor: { panel: true, trigger: true, dialog: true },
+    trigger: triggerStyle,
+    dialog: dialogStyle,
+    error: errorStyle,
+  };
+}
+
 async function runA11y(page, baseUrl) {
   const consoleErrors = [];
   const pageErrors = [];
@@ -583,10 +1282,11 @@ async function runA11y(page, baseUrl) {
   await rail.getByRole("button", { name: "Model", exact: true }).click();
   await page.getByRole("tab", { name: "Windows", exact: true }).waitFor({ state: "visible" });
   await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
+  let geometry;
   try {
     await page.waitForTimeout(100);
     await page.getByRole("tablist", { name: "Model configuration" }).scrollIntoViewIfNeeded();
-    const geometry = await readGeometry(page);
+    geometry = await readGeometry(page);
     assert.deepEqual(geometry.tabOverlaps, [], "Horizons/Windows tab text overlaps another tab");
     assert.ok(geometry.tabs.every((tab) => tab.text.every((rect) => rect.left >= geometry.tabContainer.left - 1 && rect.right <= geometry.tabContainer.right + 1)), "model tab text escapes its container");
     assert.ok(geometry.tabContainer.top >= 0 && geometry.tabContainer.bottom <= geometry.viewport.height, "model tabs are not recoverable inside the viewport");
@@ -596,12 +1296,13 @@ async function runA11y(page, baseUrl) {
     assert.ok(geometry.regions.toolbar.bottom <= geometry.regions.plotSurface.top + 1, "toolbar overlaps the 3D result surface");
     assert.ok(geometry.railLabels.every((item) => item.containedByButton && item.visibleInRail), "an enlarged rail label was lost");
     assert.deepEqual(await readScientificIdentity(page), scientificIdentity, "font-size change altered scientific identity");
-    assert.deepEqual(consoleErrors, [], "official Model parity emitted console errors");
-    assert.deepEqual(pageErrors, [], "official Model parity emitted page errors");
-    return { modelParity, modelSliders, plotSliders, geometry, scientificIdentity, consoleErrors, pageErrors };
   } finally {
     await page.evaluate(() => { document.documentElement.style.fontSize = ""; });
   }
+  const trajectoryCodeColorCascade = await auditTrajectoryCodeColorCascade(page, rail);
+  assert.deepEqual(consoleErrors, [], "A11Y color-preset audits emitted console errors");
+  assert.deepEqual(pageErrors, [], "A11Y color-preset audits emitted page errors");
+  return { modelParity, modelSliders, plotSliders, geometry, scientificIdentity, trajectoryCodeColorCascade, consoleErrors, pageErrors };
 }
 
 async function runPerformance(page, baseUrl, viewport, plotlyChunkNames) {

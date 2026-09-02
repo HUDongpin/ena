@@ -9,6 +9,7 @@ import type {
 } from "./open-ena/rank-inference";
 import type { OpenEnaResultTablesCopy } from "./open-ena/export";
 import type { OpenEnaUnitPointStyle } from "./open-ena/unit-point-style";
+import type { OpenEnaCodeColorPickerCopy } from "./open-ena/code-color-presets";
 
 export interface OpenEnaPersistentPlotToolsCopy {
   plotSettings: string;
@@ -554,6 +555,7 @@ export interface OpenEnaCopy {
     noGroup: string;
     codes: string;
     codeColor: string;
+    codeColorPicker: Readonly<OpenEnaCodeColorPickerCopy>;
     window: string;
     movingWindow: string;
     conversationWindow: string;
@@ -765,6 +767,60 @@ export interface OpenEnaCopy {
     meanWeight: string;
   };
 }
+
+const codeColorPickerEn: Readonly<OpenEnaCodeColorPickerCopy> = Object.freeze<OpenEnaCodeColorPickerCopy>({
+  chooseColor: (code) => `Choose color for ${code}`,
+  dialogTitle: (code) => `Code color for ${code}`,
+  colorPresets: "Color Presets:",
+  customColor: "Custom Color:",
+  primary: "Primary",
+  complementary: "Complementary",
+  cancel: "Cancel",
+  confirm: "OK",
+  saturationValue: "Saturation and brightness",
+  saturation: "Saturation",
+  brightness: "Brightness",
+  saturationBrightnessValue: (saturation, brightness) => `Saturation ${saturation}%, brightness ${brightness}%`,
+  hue: "Hue",
+  invalidHex: "Enter a six-digit hexadecimal color such as #cc423a.",
+  presetLabel: (index, primary, complementary) => `Preset ${index}: Primary ${primary}, Complementary ${complementary}`,
+});
+
+const codeColorPickerZhHant: Readonly<OpenEnaCodeColorPickerCopy> = Object.freeze<OpenEnaCodeColorPickerCopy>({
+  chooseColor: (code) => `選擇 ${code} 的顏色`,
+  dialogTitle: (code) => `${code} 的編碼顏色`,
+  colorPresets: "顏色預設：",
+  customColor: "自訂顏色：",
+  primary: "主色",
+  complementary: "互補色",
+  cancel: "取消",
+  confirm: "確定",
+  saturationValue: "飽和度與亮度",
+  saturation: "飽和度",
+  brightness: "亮度",
+  saturationBrightnessValue: (saturation, brightness) => `飽和度 ${saturation}%，亮度 ${brightness}%`,
+  hue: "色相",
+  invalidHex: "請輸入六位十六進位顏色，例如 #cc423a。",
+  presetLabel: (index, primary, complementary) => `預設 ${index}：主色 ${primary}，互補色 ${complementary}`,
+});
+
+const codeColorPickerZhHans: Readonly<OpenEnaCodeColorPickerCopy> = Object.freeze<OpenEnaCodeColorPickerCopy>({
+  chooseColor: (code) => `选择 ${code} 的颜色`,
+  dialogTitle: (code) => `${code} 的编码颜色`,
+  colorPresets: "颜色预设：",
+  customColor: "自定义颜色：",
+  primary: "主色",
+  complementary: "互补色",
+  cancel: "取消",
+  confirm: "确定",
+  saturationValue: "饱和度与亮度",
+  saturation: "饱和度",
+  brightness: "亮度",
+  saturationBrightnessValue: (saturation, brightness) => `饱和度 ${saturation}%，亮度 ${brightness}%`,
+  hue: "色相",
+  invalidHex: "请输入六位十六进制颜色，例如 #cc423a。",
+  presetLabel: (index, primary, complementary) => `预设 ${index}：主色 ${primary}，互补色 ${complementary}`,
+});
 
 export interface OpenEnaAiInterpretationCopy {
   title: string;
@@ -1900,6 +1956,7 @@ const en: OpenEnaCopy = {
     noGroup: "No comparison group (all units)",
     codes: "Codes",
     codeColor: "Code color",
+    codeColorPicker: codeColorPickerEn,
     window: "Window",
     movingWindow: "Moving stanza window",
     conversationWindow: "Whole conversation",
@@ -2971,6 +3028,7 @@ Object.assign(zhHant.longitudinal, {
 
 Object.assign(zhHant.model, {
   codeColor: "編碼顏色",
+  codeColorPicker: codeColorPickerZhHant,
 });
 
 Object.assign(zhHans.longitudinal, {
@@ -2994,6 +3052,7 @@ Object.assign(zhHans.stats, {
 
 Object.assign(zhHans.model, {
   codeColor: "编码颜色",
+  codeColorPicker: codeColorPickerZhHans,
 });
 
 const navLabels: Record<Locale, string> = {
