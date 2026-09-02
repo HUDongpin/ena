@@ -1,14 +1,19 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import {
   OPEN_ENA_CODE_COLOR_PRESETS,
   matchOpenEnaCodeColorPreset,
   normalizeOpenEnaCodeColorPair,
   normalizeOpenEnaHexColor,
+  openEnaCodeColorFromPlane,
   openEnaCodeColorPair,
+  openEnaHexToHsv,
+  openEnaHsvToHex,
+  shiftOpenEnaHsv,
   type OpenEnaCodeColorPair,
   type OpenEnaCodeColorPickerCopy,
+  type OpenEnaHsvColor,
 } from "@/lib/open-ena/code-color-presets";
 
 const FOCUSABLE_SELECTOR = [
@@ -16,6 +21,10 @@ const FOCUSABLE_SELECTOR = [
   "input:not([disabled])",
   '[tabindex]:not([tabindex="-1"])',
 ].join(",");
+
+function openEnaPickerHsv(value: string): OpenEnaHsvColor {
+  return openEnaHexToHsv(value) ?? { h: 0, s: 0, v: 0 };
+}
 
 interface OpenEnaCodeColorPickerProps {
   code: string;
@@ -39,9 +48,40 @@ export default function OpenEnaCodeColorPicker({
   const primaryHexRef = useRef<HTMLInputElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const [draft, setDraft] = useState(() => openEnaCodeColorPair(value.primary, value.complementary));
+  const [editorHsv, setEditorHsv] = useState(() => {
+    const pair = openEnaCodeColorPair(value.primary, value.complementary);
+    return {
+      primary: openEnaPickerHsv(pair.primary),
+      complementary: openEnaPickerHsv(pair.complementary),
+    };
+  });
   const [activeTarget, setActiveTarget] = useState<keyof OpenEnaCodeColorPair>("primary");
   const normalized = normalizeOpenEnaCodeColorPair(draft);
   const selectedPreset = matchOpenEnaCodeColorPreset(normalized ?? draft);
+  const activeHex = normalizeOpenEnaHexColor(draft[activeTarget])
+    ?? normalizeOpenEnaHexColor(value[activeTarget])
+    ?? "#000000";
+  const fallbackHsv = openEnaPickerHsv(activeHex);
+  const activeHsv = normalizeOpenEnaHexColor(draft[activeTarget]) ? editorHsv[activeTarget] : fallbackHsv;
+
+  const setActiveHsv = (next: OpenEnaHsvColor, hex = openEnaHsvToHex(next)) => {
+    if (!openEnaHsvToHex(next) || !hex) return;
+    setEditorHsv((current) => ({ ...current, [activeTarget]: next }));
+    setDraft((current) => ({ ...current, [activeTarget]: hex }));
+  };
+
+  const updatePlane = (element: HTMLElement, clientX: number, clientY: number) => {
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const xRatio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const yRatio = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+    const next = { h: activeHsv.h, s: xRatio * 100, v: (1 - yRatio) * 100 };
+    setActiveHsv(next, openEnaCodeColorFromPlane(
+      activeHsv.h,
+      xRatio,
+      yRatio,
+    ));
+  };
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -76,6 +116,25 @@ export default function OpenEnaCodeColorPicker({
 
   const updateField = (field: keyof OpenEnaCodeColorPair, next: string) => {
     setDraft((current) => ({ ...current, [field]: next }));
+    const hsv = openEnaHexToHsv(next);
+    if (!hsv) return;
+    setEditorHsv((current) => {
+      if (hsv.v === 0) {
+        return { ...current, [field]: { h: current[field].h, s: current[field].s, v: 0 } };
+      }
+      if (hsv.s === 0) {
+        return { ...current, [field]: { h: current[field].h, s: 0, v: hsv.v } };
+      }
+      return { ...current, [field]: hsv };
+    });
+  };
+
+  const selectPreset = (preset: Readonly<OpenEnaCodeColorPair>) => {
+    setDraft({ ...preset });
+    setEditorHsv({
+      primary: openEnaPickerHsv(preset.primary),
+      complementary: openEnaPickerHsv(preset.complementary),
+    });
   };
 
   const confirm = () => {
@@ -112,6 +171,19 @@ export default function OpenEnaCodeColorPicker({
       event.preventDefault();
       first.focus();
     }
+  };
+
+  const handleAxisKeyDown = (axis: "s" | "v", event: KeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 10 : 1;
+    const delta = event.key === "Home" ? -activeHsv[axis]
+      : event.key === "End" ? 100 - activeHsv[axis]
+        : event.key === "ArrowLeft" || event.key === "ArrowDown" ? -step
+          : event.key === "ArrowRight" || event.key === "ArrowUp" ? step
+            : null;
+    if (delta === null) return;
+    event.preventDefault();
+    const next = shiftOpenEnaHsv(activeHsv, axis === "s" ? { s: delta } : { v: delta });
+    if (next) setActiveHsv(next);
   };
 
   return (
@@ -155,7 +227,7 @@ export default function OpenEnaCodeColorPicker({
                   data-ena-code-color-preset={index + 1}
                   aria-label={copy.presetLabel(index + 1, preset.primary, preset.complementary)}
                   aria-pressed={selectedPreset === index}
-                  onClick={() => setDraft({ ...preset })}
+                  onClick={() => selectPreset(preset)}
                 >
                   <span aria-hidden="true" style={{ backgroundColor: preset.primary }} />
                   <span aria-hidden="true" style={{ backgroundColor: preset.complementary }} />
@@ -166,6 +238,72 @@ export default function OpenEnaCodeColorPicker({
 
           <section className="ena-code-color-custom" aria-labelledby={`${titleId}-custom`}>
             <h3 id={`${titleId}-custom`}>{copy.customColor}</h3>
+            <div className="ena-code-color-editor" data-active-target={activeTarget}>
+              <div
+                className="ena-code-color-plane"
+                data-ena-code-color-plane="true"
+                role="group"
+                aria-label={`${copy[activeTarget]} ${copy.saturationValue}`}
+                style={{
+                  "--ena-picker-hue": openEnaHsvToHex({ h: activeHsv.h, s: 100, v: 100 }) ?? "#ff0000",
+                } as CSSProperties}
+                onPointerDown={(event) => {
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  updatePlane(event.currentTarget, event.clientX, event.clientY);
+                }}
+                onPointerMove={(event) => {
+                  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                    updatePlane(event.currentTarget, event.clientX, event.clientY);
+                  }
+                }}
+              >
+                <span
+                  className="ena-code-color-plane-picker"
+                  aria-hidden="true"
+                  style={{ left: `${activeHsv.s}%`, top: `${100 - activeHsv.v}%` }}
+                />
+                <div
+                  className="ena-code-color-plane-axis"
+                  data-ena-code-color-axis="saturation"
+                  role="slider"
+                  tabIndex={0}
+                  aria-label={`${copy[activeTarget]} ${copy.saturation}`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(activeHsv.s)}
+                  aria-valuetext={copy.saturationBrightnessValue(Math.round(activeHsv.s), Math.round(activeHsv.v))}
+                  onKeyDown={(event) => handleAxisKeyDown("s", event)}
+                />
+                <div
+                  className="ena-code-color-plane-axis"
+                  data-ena-code-color-axis="brightness"
+                  role="slider"
+                  tabIndex={0}
+                  aria-label={`${copy[activeTarget]} ${copy.brightness}`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(activeHsv.v)}
+                  aria-valuetext={copy.saturationBrightnessValue(Math.round(activeHsv.s), Math.round(activeHsv.v))}
+                  aria-orientation="vertical"
+                  onKeyDown={(event) => handleAxisKeyDown("v", event)}
+                />
+              </div>
+              <input
+                className="ena-code-color-hue"
+                data-ena-code-color-hue="true"
+                type="range"
+                min={0}
+                max={360}
+                step={1}
+                value={Math.round(activeHsv.h)}
+                aria-label={`${copy[activeTarget]} ${copy.hue}`}
+                aria-orientation="vertical"
+                onChange={(event) => {
+                  const hue = Number(event.target.value);
+                  setActiveHsv({ ...activeHsv, h: hue });
+                }}
+              />
+            </div>
             {(["primary", "complementary"] as const).map((field) => {
               const fieldId = `${titleId}-${field}`;
               const valid = normalizeOpenEnaHexColor(draft[field]) !== null;
