@@ -88,6 +88,7 @@ import {
   type OpenEnaResultTableKey,
   type OpenEnaResultTableViewModel,
 } from "@/lib/open-ena/export";
+import { openEnaCodeColorPair } from "@/lib/open-ena/code-color-presets";
 import { codeColorFor, updateCodeColor } from "@/lib/open-ena/plot-style";
 import {
   createOpenEnaNodeLayoutFingerprint,
@@ -149,6 +150,7 @@ import OpenEnaLongitudinalTrajectory from "./OpenEnaLongitudinalTrajectory";
 import OpenEnaLongitudinalWorkbenchV3 from "./OpenEnaLongitudinalWorkbenchV3";
 import OpenEnaPersistentPlotTools from "./OpenEnaPersistentPlotTools";
 import OpenEnaAiInterpretation from "./OpenEnaAiInterpretation";
+import OpenEnaCodeColorPicker from "./OpenEnaCodeColorPicker";
 import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
 import OpenEnaInferencePanel, {
   type OpenEnaInferenceDesignChoice,
@@ -499,6 +501,11 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
   );
   const [directionalMaskOpen, setDirectionalMaskOpen] = useState(false);
   const [codeColors, setCodeColors] = useState<Record<string, string>>({});
+  const [codeColorCompanions, setCodeColorCompanions] = useState<Record<string, string>>({});
+  const [activeCodeColor, setActiveCodeColor] = useState<string | null>(null);
+  const openCodeColorPicker = (header: string) => {
+    setActiveCodeColor((current) => current === null ? header : current);
+  };
   const [resultConfig, setResultConfig] = useState<OpenEnaConfig | null>(null);
   const [datasetHash, setDatasetHash] = useState<string | null>(null);
   const [result, setResult] = useState<OpenEnaResult | null>(null);
@@ -575,6 +582,11 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
     abortRef.current?.abort();
     sourceAbortRef.current?.abort();
   }, []);
+
+  useEffect(() => {
+    if (activeCodeColor === null || config.codes.includes(activeCodeColor)) return;
+    setActiveCodeColor(null);
+  }, [activeCodeColor, config.codes]);
 
   useEffect(() => {
     if (trajectoryModelFocusRequest === trajectoryModelFocusHandledRef.current || modelTab !== "windows") return;
@@ -1638,6 +1650,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
       setDatasetHash(nextHash);
       installAnalysisConfig(SAMPLE_CONFIG);
       setCodeColors({});
+      setCodeColorCompanions({});
+      setActiveCodeColor(null);
       clearCompletedResult();
       setSourceQuery("");
       setActiveCodesOnly(false);
@@ -1682,6 +1696,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
       setDatasetHash(nextHash);
       installAnalysisConfig(TRAJECTORY_SAMPLE_CONFIG);
       setCodeColors({});
+      setCodeColorCompanions({});
+      setActiveCodeColor(null);
       clearCompletedResult();
       setSourceQuery("");
       setActiveCodesOnly(false);
@@ -1733,6 +1749,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
       setDatasetHash(nextHash);
       installAnalysisConfig(inferConfig(nextDataset));
       setCodeColors({});
+      setCodeColorCompanions({});
+      setActiveCodeColor(null);
       clearCompletedResult();
       setSourceQuery("");
       setActiveCodesOnly(false);
@@ -2343,19 +2361,45 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                     <div className="ena-official-code-row" key={header}>
                       <span className="ena-official-drag-dots" aria-hidden="true"><i /><i /><i /></span>
                       <strong>{header}</strong>
-                      <label className="ena-code-color-control" title={`${copy.model.codeColor}: ${header}`}>
-                        <input
-                          className="ena-code-color-input"
-                          type="color"
-                          aria-label={`${copy.model.codeColor}: ${header}`}
-                          data-ena-code-color={header}
-                          value={codeColorFor(codeColors, header)}
-                          onChange={(event) => setCodeColors((current) => updateCodeColor(current, header, event.target.value))}
+                      <button
+                        className="ena-code-color-control"
+                        type="button"
+                        aria-label={copy.model.codeColorPicker.chooseColor(header)}
+                        title={copy.model.codeColorPicker.chooseColor(header)}
+                        aria-haspopup="dialog"
+                        aria-expanded={activeCodeColor === header}
+                        data-ena-code-color-trigger={header}
+                        data-ena-code-color-primary={codeColorFor(codeColors, header)}
+                        disabled={loading || sourceBusy}
+                        onClick={() => openCodeColorPicker(header)}
+                      >
+                        <span
+                          className="ena-code-color-swatch"
+                          style={{ backgroundColor: codeColorFor(codeColors, header) }}
+                          aria-hidden="true"
                         />
-                      </label>
+                      </button>
                     </div>
                   ))}
                 </div>
+                {activeCodeColor !== null ? (
+                  <OpenEnaCodeColorPicker
+                    code={activeCodeColor}
+                    value={openEnaCodeColorPair(codeColorFor(codeColors, activeCodeColor), codeColorCompanions[activeCodeColor])}
+                    copy={copy.model.codeColorPicker}
+                    onCancel={() => setActiveCodeColor(null)}
+                    onConfirm={(pair) => {
+                      const confirmedCode = activeCodeColor;
+                      if (!config.codes.includes(confirmedCode)) {
+                        setActiveCodeColor(null);
+                        return;
+                      }
+                      setCodeColors((current) => updateCodeColor(current, confirmedCode, pair.primary));
+                      setCodeColorCompanions((current) => ({ ...current, [confirmedCode]: pair.complementary }));
+                      setActiveCodeColor(null);
+                    }}
+                  />
+                ) : null}
                 <details className="ena-official-manage-codes">
                   <summary>Manage Codes</summary>
                   <div className="ena-official-code-picker">

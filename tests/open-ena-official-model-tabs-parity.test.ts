@@ -57,6 +57,16 @@ test("the compact parity CSS uses official geometry with Open ENA Baby Blue toke
   const modelParityCss = css.slice(start, end);
 
   assert.doesNotMatch(css, /--ena-model-tab-stage-height:\s*380px/u);
+  assert.match(
+    modelParityCss,
+    /\.ena-model-tabs\s*\{[^}]*border-top:\s*0;/u,
+    "the Model tabs must not leave a gray inset above their active indicator",
+  );
+  assert.match(
+    modelParityCss,
+    /\.ena-model-control-content \.ena-panel-heading\s*\{[^}]*border-bottom:\s*0;/u,
+    "the Model heading must not leave a gray separator above the active indicator",
+  );
   assert.match(modelParityCss, /\.ena-model-tabs button\s*\{[^}]*min-height:\s*34px;/u);
   assert.match(
     modelParityCss,
@@ -68,7 +78,12 @@ test("the compact parity CSS uses official geometry with Open ENA Baby Blue toke
   );
   assert.match(
     modelParityCss,
-    /\.ena-official-field-path-add\s*\{[^}]*height:\s*30px;[^}]*background:\s*var\(--ena-accent\);/u,
+    /\.ena-official-field-path\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*40px;[^}]*gap:\s*0;[^}]*padding:\s*0\s+0\s+0\s+4px;/u,
+    "the add control must own the complete 40px trailing surface without gray gutters",
+  );
+  assert.match(
+    modelParityCss,
+    /\.ena-official-field-path-add\s*\{[^}]*width:\s*40px;[^}]*height:\s*30px;[^}]*background:\s*var\(--ena-accent\);/u,
   );
   assert.doesNotMatch(modelParityCss, /#56b09d|rgb\(86,\s*176,\s*157\)/iu);
   assert.match(modelParityCss, /\.ena-official-code-row\s*\{[^}]*min-height:\s*34px;/u);
