@@ -54,13 +54,35 @@ test("the browser harness credentials are unconditional synthetic literals", () 
   assert.match(source, /OPEN_ENA_3D_CONTROLS_SMOKE_BROWSER/u);
 });
 
+test("the 3D controls smoke provisions and cleans up durable authentication state", () => {
+  const source = readFileSync(smokePath, "utf8");
+
+  assert.match(source, /const accountId = "open-ena-3d-controls-smoke-account";/u);
+  assert.match(source, /async function startEphemeralPostgres\(\)/u);
+  assert.match(source, /function stopEphemeralPostgres\(\)/u);
+  assert.match(source, /mkdtempSync\(join\(tmpdir\(\), "oe3dpg-"\)\)/u);
+  assert.match(source, /ephemeralPostgresStartAttempted = true;/u);
+  assert.match(source, /cleanupOwnedEphemeralPostgres/u);
+  assert.match(source, /await stopEphemeralPostgres\(\)/u);
+  assert.match(source, /migrations", "002_open_ena_auth_security\.sql"/u);
+  assert.match(source, /OPEN_ENA_ACCOUNT_ID:\s*accountId/u);
+  assert.match(source, /OPEN_ENA_AUTH_DATABASE_URL:\s*authDatabaseUrl/u);
+  assert.ok(
+    source.indexOf("const authDatabaseUrl = await startEphemeralPostgres();")
+      < source.indexOf('process.stdout.write("[3D controls smoke] build production application'),
+    "the durable authentication database must exist before the production build",
+  );
+  assert.match(source, /stopEphemeralPostgres\(\)/u);
+});
+
 test("the Endpoint fixture reads Units before selecting Model type from the Windows tab", () => {
   const source = readFileSync(smokePath, "utf8");
-  const unitIdentity = source.indexOf('name: /Unit identity/');
+  const unitIdentity = source.indexOf('[aria-label="Unit identity"]');
   const windowsTab = source.indexOf('getByRole("tab", { name: "Windows" })');
   const modelType = source.indexOf('getByRole("combobox", { name: "Model type" })');
 
   assert.ok(unitIdentity >= 0, "the smoke does not verify inferred Unit identity");
+  assert.match(source, /locator\("\.ena-official-field-name"\)\s*\.allTextContents\(\)/u);
   assert.ok(windowsTab > unitIdentity, "the smoke must inspect Units before leaving that tab");
   assert.ok(modelType > windowsTab, "Model type must be located only after selecting Windows");
 });

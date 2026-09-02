@@ -21,6 +21,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import { fileURLToPath } from "node:url";
 import { createSafePlaywrightCliError } from "./support/safe-playwright-cli-error.mjs";
 import { classifyChromiumCanvasReadbackDiagnostic } from "./support/open-ena-browser-warning-classifier.mjs";
+import { cleanupOwnedEphemeralPostgres } from "./support/owned-ephemeral-postgres.mjs";
 
 const smokeSourcePath = fileURLToPath(import.meta.url);
 const projectRoot = join(dirname(smokeSourcePath), "..");
@@ -51,6 +52,7 @@ const ownedEvidencePaths = Object.freeze([
 const username = "open_ena_3d_controls_smoke_researcher";
 const password = "open_ena_3d_controls_smoke_password_2026";
 const sessionSecret = "open_ena_3d_controls_smoke_session_secret_0123456789abcdef";
+const accountId = "open-ena-3d-controls-smoke-account";
 const sessionName = "open-ena-3d-controls-smoke-" + process.pid;
 const smokeBrowser = process.env.OPEN_ENA_3D_CONTROLS_SMOKE_BROWSER || "chromium";
 const ownedDistDirName = ".next-3d-controls-smoke-" + process.pid;
@@ -109,7 +111,8 @@ function redact(value) {
   return String(value ?? "")
     .replaceAll(username, "[redacted-username]")
     .replaceAll(password, "[redacted-password]")
-    .replaceAll(sessionSecret, "[redacted-session-secret]");
+    .replaceAll(sessionSecret, "[redacted-session-secret]")
+    .replaceAll(accountId, "[redacted-account-id]");
 }
 
 function classifyChromiumAngleReadPixelsDiagnostic(input) {
@@ -200,6 +203,59 @@ async function findOpenPort() {
       });
     });
   });
+}
+
+let ephemeralPostgresRoot = null;
+let ephemeralPostgresData = null;
+let ephemeralPostgresStartAttempted = false;
+
+async function startEphemeralPostgres() {
+  // Keep this prefix short because PostgreSQL Unix socket paths have a small
+  // platform limit and the macOS temporary directory is already deeply nested.
+  ephemeralPostgresRoot = mkdtempSync(join(tmpdir(), "oe3dpg-"));
+  ephemeralPostgresData = join(ephemeralPostgresRoot, "data");
+  const socketDirectory = join(ephemeralPostgresRoot, "socket");
+  const postgresLog = join(ephemeralPostgresRoot, "postgres.log");
+  mkdirSync(socketDirectory, { recursive: true });
+  execFileSync("initdb", [
+    "--pgdata", ephemeralPostgresData,
+    "--auth", "trust",
+    "--username", "postgres",
+    "--encoding", "UTF8",
+    "--no-locale",
+  ], { stdio: "ignore", timeout: 60_000 });
+  const port = await findOpenPort();
+  ephemeralPostgresStartAttempted = true;
+  execFileSync("pg_ctl", [
+    "--pgdata", ephemeralPostgresData,
+    "--log", postgresLog,
+    "--options", `-h 127.0.0.1 -p ${port} -k ${socketDirectory}`,
+    "--wait",
+    "start",
+  ], { stdio: "ignore", timeout: 60_000 });
+  execFileSync("psql", [
+    "--no-psqlrc",
+    "--set", "ON_ERROR_STOP=1",
+    "--host", "127.0.0.1",
+    "--port", String(port),
+    "--username", "postgres",
+    "--dbname", "postgres",
+    "--file", join(projectRoot, "migrations", "002_open_ena_auth_security.sql"),
+  ], { stdio: "ignore", timeout: 60_000 });
+  return `postgresql://postgres@127.0.0.1:${port}/postgres`;
+}
+
+async function stopEphemeralPostgres() {
+  if (!ephemeralPostgresRoot || !ephemeralPostgresData) return;
+  await cleanupOwnedEphemeralPostgres({
+    rootDirectory: ephemeralPostgresRoot,
+    dataDirectory: ephemeralPostgresData,
+    rootPrefix: "oe3dpg-",
+    startAttempted: ephemeralPostgresStartAttempted,
+  });
+  ephemeralPostgresRoot = null;
+  ephemeralPostgresData = null;
+  ephemeralPostgresStartAttempted = false;
 }
 
 async function waitForServer(url, timeout = 90_000) {
@@ -439,6 +495,11 @@ function cleanupOwnedResources() {
     } catch (caught) {
       cleanupErrors.push(caught);
     } finally {
+      try {
+        await stopEphemeralPostgres();
+      } catch (caught) {
+        cleanupErrors.push(caught);
+      }
       if (ownsDistDirectory) {
         try {
           writeFileSync(tsconfigPath, originalTsconfig, "utf8");
@@ -821,11 +882,10 @@ async function authenticateBuildAndOpen3d(page, args) {
   }, args.fixtureCsv);
   await page.getByRole("heading", { name: "Define the ENA model" }).waitFor({ timeout: 30_000 });
 
-  const unitFields = await page.getByRole("group", { name: /Unit identity/ })
-    .getByRole("checkbox")
-    .evaluateAll((nodes) => nodes.filter((node) => node.checked).map((node) => (
-      node.parentElement.textContent.trim()
-    )));
+  const unitFields = await page
+    .locator('[data-ena-official-field-path="true"][aria-label="Unit identity"]')
+    .locator(".ena-official-field-name")
+    .allTextContents();
   assertBrowser(
     JSON.stringify(unitFields) === JSON.stringify(["Group", "Name"]),
     "the synthetic Endpoint unit identity is not ordered Group + Name",
@@ -1667,6 +1727,7 @@ try {
   ownsDistDirectory = true;
   const port = await findOpenPort();
   baseUrl = "http://127.0.0.1:" + port;
+  const authDatabaseUrl = await startEphemeralPostgres();
   removeOwnedDistDirectory();
   const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => (
     !key.startsWith("OPEN_ENA_3D_CONTROLS_SMOKE_")
@@ -1675,6 +1736,8 @@ try {
         "OPEN_ENA_USERNAME",
         "OPEN_ENA_PASSWORD",
         "OPEN_ENA_SESSION_SECRET",
+        "OPEN_ENA_ACCOUNT_ID",
+        "OPEN_ENA_AUTH_DATABASE_URL",
       ].includes(key)
   )));
   const ownedEnvironment = {
@@ -1684,6 +1747,8 @@ try {
     OPEN_ENA_USERNAME: username,
     OPEN_ENA_PASSWORD: password,
     OPEN_ENA_SESSION_SECRET: sessionSecret,
+    OPEN_ENA_ACCOUNT_ID: accountId,
+    OPEN_ENA_AUTH_DATABASE_URL: authDatabaseUrl,
     // The smoke owns a random loopback port; bind production Origin checks to
     // that exact origin instead of inheriting a stale CI or deployment host.
     OPEN_ENA_PUBLIC_ORIGIN: baseUrl,
