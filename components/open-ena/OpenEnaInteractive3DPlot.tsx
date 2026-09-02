@@ -21,12 +21,15 @@ import type {
 } from "@/lib/open-ena/ordered-plot";
 import {
   cameraForPreset,
-  compileOpenEna3dPlotSpec,
   type OpenEna3dAspectRatio,
   type OpenEna3dCamera,
   type OpenEna3dPlotKind,
   type OpenEna3dPlotSpec,
 } from "@/lib/open-ena/plot3d";
+import { createOpenEnaPluginContextV1 } from "@/lib/open-ena/plugins/runtime-context";
+import { compileOpenEnaTrusted3dPlugin } from "@/lib/open-ena/plugins/runtime-registry";
+import { OPEN_ENA_PLUGIN_CATALOG } from "@/lib/open-ena/plugins/catalog";
+import { createOpenEnaPluginRunReceiptV1, type OpenEnaPluginRunReceiptV1 } from "@/lib/open-ena/plugins/run-receipt";
 import type { CameraPreset, OpenEnaConfig, OpenEnaResult } from "@/lib/open-ena/types";
 import OpenEnaPlotActionIcon from "./OpenEnaPlotActionIcon";
 import {
@@ -45,6 +48,11 @@ type PlotlyImageApi = PlotlyApi & {
 };
 export type OpenEna3dRenderStatus = "loading" | "ready" | "error";
 type RenderStatus = OpenEna3dRenderStatus;
+const THREE_D_ENA_PLUGIN = (() => {
+  const manifest = OPEN_ENA_PLUGIN_CATALOG.find((entry) => entry.pluginId === "ena-hk/3d-ena");
+  if (!manifest) throw new TypeError("The 3D ENA plugin manifest is unavailable.");
+  return manifest;
+})();
 
 export function openEna3dFullscreenMode(capabilities: {
   requestFullscreen: unknown;
@@ -103,6 +111,8 @@ export interface OpenEnaInteractive3DPlotProps {
   onReady?: () => void;
   onError?: () => void;
   onStatusChange?: (status: OpenEna3dRenderStatus) => void;
+  runtimeDisabledPluginIds?: readonly string[];
+  resultIsStale?: boolean;
   copy: OpenEnaCopy;
 }
 
@@ -329,6 +339,8 @@ export default function OpenEnaInteractive3DPlot({
   onReady,
   onError,
   onStatusChange,
+  runtimeDisabledPluginIds = [],
+  resultIsStale = false,
   copy,
 }: OpenEnaInteractive3DPlotProps) {
   const instanceId = useId();
@@ -371,6 +383,7 @@ export default function OpenEnaInteractive3DPlot({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hoveredCode, setHoveredCode] = useState<string | null>(null);
   const [nodeDragging, setNodeDragging] = useState<string | null>(null);
+  const [pluginReceipt, setPluginReceipt] = useState<OpenEnaPluginRunReceiptV1 | null>(null);
   const generatedFullscreenTargetId = `open-ena-interactive-3d-fullscreen-target-${instanceId}`;
   const fullscreenTargetId = fullscreenTarget?.id ?? generatedFullscreenTargetId;
   const fullscreenTargetRef = fullscreenTarget?.ref ?? figureRef;
@@ -389,6 +402,14 @@ export default function OpenEnaInteractive3DPlot({
   useEffect(() => {
     onStatusChange?.(status);
   }, [onStatusChange, status]);
+
+  const standardPluginContext = useMemo(() => analysisKind === "ena"
+    ? createOpenEnaPluginContextV1({
+        result,
+        selectedDimensions: [xDimension, yDimension, zDimension],
+        stale: resultIsStale,
+      })
+    : null, [analysisKind, result, resultIsStale, xDimension, yDimension, zDimension]);
 
   const spec = useMemo<OpenEna3dPlotSpec>(() => {
     if (analysisKind === "ona") {
@@ -420,7 +441,7 @@ export default function OpenEnaInteractive3DPlot({
         nodeLayout,
       });
     }
-    return compileOpenEna3dPlotSpec({
+    const pluginInput = {
       result,
       contrast,
       groupDisplay,
@@ -446,7 +467,14 @@ export default function OpenEnaInteractive3DPlot({
       flipX,
       flipY,
       nodeLayout,
-    });
+    };
+    if (!standardPluginContext) throw new Error("Standard 3D ENA requires its trusted plugin context.");
+    return compileOpenEnaTrusted3dPlugin(
+      "ena-hk/3d-ena",
+      standardPluginContext,
+      pluginInput,
+      runtimeDisabledPluginIds,
+    );
   }, [
     analysisKind,
     result,
@@ -477,7 +505,26 @@ export default function OpenEnaInteractive3DPlot({
     flipX,
     flipY,
     nodeLayout,
+    runtimeDisabledPluginIds,
+    standardPluginContext,
   ]);
+
+  useEffect(() => {
+    if (!standardPluginContext || compact || plotKind !== "comparison") {
+      setPluginReceipt(null);
+      return;
+    }
+    let active = true;
+    void createOpenEnaPluginRunReceiptV1({
+      manifest: THREE_D_ENA_PLUGIN,
+      parentScientificResult: standardPluginContext.scientificResult,
+      currentScientificResult: standardPluginContext.scientificResult,
+      output: spec,
+      settings: { axes: [xDimension, yDimension, zDimension], camera, flipX, flipY },
+    }).then((receipt) => { if (active) setPluginReceipt(receipt); })
+      .catch(() => { if (active) setPluginReceipt(null); });
+    return () => { active = false; };
+  }, [camera, compact, flipX, flipY, plotKind, spec, standardPluginContext, xDimension, yDimension, zDimension]);
   const cameraResetKey = `${camera}:${plotZoom}:${plotResetRevision}`;
   const controlledCameraKey = cameraKey(initialCamera);
   const controlledAspectRatioKey = aspectRatioKey(initialAspectRatio);
@@ -1017,6 +1064,16 @@ export default function OpenEnaInteractive3DPlot({
     })().catch(() => announceAction(copy.plot.copyUnavailable));
   }
 
+  function downloadPluginReceipt() {
+    if (!pluginReceipt) return;
+    const url = URL.createObjectURL(new Blob([`${JSON.stringify(pluginReceipt, null, 2)}\n`], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `open-ena-${pluginReceipt.pluginId.replaceAll("/", "-")}-${pluginReceipt.runId}.receipt.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   function scheduleFullscreenResize() {
     if (fullscreenResizeFrameRef.current !== null) {
       window.cancelAnimationFrame(fullscreenResizeFrameRef.current);
@@ -1158,6 +1215,8 @@ export default function OpenEnaInteractive3DPlot({
 
   return (
     <figure
+      data-ena-plugin-id={analysisKind === "ona" ? undefined : "ena-hk/3d-ena"}
+      data-ena-plugin-contract={analysisKind === "ona" ? undefined : "ena.hk/plugin-context/v1"}
       id={fullscreenTarget ? undefined : fullscreenTargetId}
       ref={figureRef}
       className="open-ena-plot-figure open-ena-interactive-3d-figure"
@@ -1357,6 +1416,11 @@ export default function OpenEnaInteractive3DPlot({
       {showCaption ? (
         <figcaption>
           {copy.workspace.methodNote} {fittedSpaceStatement}
+          {analysisKind === "ena" && pluginReceipt ? (
+            <button type="button" className="ena-inline-link ena-plugin-receipt-download" onClick={downloadPluginReceipt}>
+              Plugin receipt ↓
+            </button>
+          ) : null}
         </figcaption>
       ) : null}
     </figure>

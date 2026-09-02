@@ -4,6 +4,7 @@ import { siteConfig } from "@/lib/site";
 import AnalyticsConsent from "@/components/AnalyticsConsent";
 import "./globals.css";
 import "./premium-public.css";
+import "./plugin-lab.css";
 
 const geist = Geist({
   subsets: ["latin"],

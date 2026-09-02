@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import type { Locale } from "@/lib/i18n";
 import {
@@ -7,6 +8,7 @@ import {
 } from "@/lib/open-ena-auth-copy";
 import { isOpenEnaLocalizedLocale } from "@/lib/open-ena-i18n";
 import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
+import { getPluginLabCopy } from "@/lib/plugin-lab/i18n";
 
 interface OpenEnaLoginProps {
   locale: Locale;
@@ -29,6 +31,7 @@ export function OpenEnaLoginFrame({ locale, children }: { locale: Locale; childr
 
 export default function OpenEnaLogin({ locale, error, configurationReady }: OpenEnaLoginProps) {
   const copy = getOpenEnaAuthCopy(locale);
+  const pluginCopy = getPluginLabCopy(locale);
   const [noticeBeforeEmail, noticeAfterEmail = ""] = copy.collaborationNotice.split(
     OPEN_ENA_CONTACT_EMAIL,
   );
@@ -129,6 +132,10 @@ export default function OpenEnaLogin({ locale, error, configurationReady }: Open
               {noticeBeforeEmail}
               <a href="mailto:sandy0692@gmail.com">{OPEN_ENA_CONTACT_EMAIL}</a>
               {noticeAfterEmail}
+            </p>
+            <p className="open-ena-login-collaboration" lang={pluginCopy.contentFallback ? "en" : undefined}>
+              {pluginCopy.loginInvitation}{" "}
+              <Link href={`/${locale}/plugins/propose`}>{pluginCopy.loginProposalLink}</Link>.
             </p>
             <p className="open-ena-login-privacy">
               <span aria-hidden="true">●</span>

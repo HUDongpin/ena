@@ -2,6 +2,50 @@
 
 The [Epistemic Network Analysis Hub of Knowledge](https://www.ena.hk).
 
+## ENA Plugin Lab
+
+ENA Plugin Lab provides a public catalog and a governed path for researchers to
+co-design new ENA methods, visualizations, workflows, diagnostics, and exports
+with Dr. Peter Hu. `Plugin` is the product unit; every catalog entry separately
+states whether it changes the analysis, its scientific evidence maturity, its
+engineering assurance, exact compatibility, permissions, limitations, source,
+licenses, and citation.
+
+V1 is a compile-time allowlist, not a marketplace. It never installs a submitted
+package, loads a repository or executable URL, or executes third-party code.
+The first runtime reference plugin is `ena-hk/3d-ena`, a presentation-only
+adapter over the existing fitted jENA result. It does not reconstruct networks,
+refit rotations, run inference, or change the scientific result identity.
+
+The proposal workflow is text-only, uses a dedicated PostgreSQL boundary,
+application-layer AES-256-GCM encryption for proposal/contact data with
+purpose-and-proposal-bound authentication, HMAC-only
+access-code storage, short-lived path-scoped status sessions, append-only state
+events, and static-account-v2-only operator actions. A public summary needs an
+operator-recorded reply from the submitted email address, operator moderation,
+and a second consent from the proposer; private details are never projected
+into the public catalog. The operator surface also provides a read-only,
+bounded retention preview for old terminal proposals; v1 exposes no deletion
+endpoint. Private review is not an NDA, and Plugin Lab review does not replace
+research ethics approval.
+
+Moderation, confirmation, consent withdrawal, and proposal-withdrawal cleanup
+append immutable publication events in the same PostgreSQL statement as their
+state change. Each event binds the exact public projection SHA-256 and a
+non-reversible operator or status-session actor reference.
+
+Private proposal data and the publishable title/summary use separate encrypted
+columns. Public pages decrypt only the latter after all publication gates pass,
+and are rendered dynamically so consent withdrawal takes effect on the next
+request. Non-loopback Production PostgreSQL configuration must explicitly
+require or verify TLS.
+
+Apply `migrations/005_ena_plugin_lab.sql` with a least-privilege Plugin Lab role.
+Keep `ENA_PLUGIN_LAB_PROPOSALS_ENABLED=false` until licensing/privacy approval,
+the migration, encryption-key custody, retention operations, and authenticated
+operator/browser acceptance have all been independently evidenced. Catalog and
+runtime deployment do not automatically enable proposal intake.
+
 ## Structure
 
 The site follows the public information architecture of AIEDHK while using an original ENA identity and content model:
@@ -9,6 +53,7 @@ The site follows the public information architecture of AIEDHK while using an or
 - Home
 - Mission
 - Open ENA
+- Plugin Lab
 - News
 - Academy
 - About

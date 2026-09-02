@@ -107,6 +107,8 @@ import {
   type OpenEnaWorkspaceAxes,
 } from "@/lib/open-ena/plot3d";
 import { buildReferenceRotationPackage } from "@/lib/open-ena/reference";
+import { createOpenEnaPluginContextV1 } from "@/lib/open-ena/plugins/runtime-context";
+import { openEnaRuntimePluginAvailability } from "@/lib/open-ena/plugins/runtime-registry";
 import {
   JENA_RUNTIME_VERSION,
   JENA_SOURCE_COMMIT,
@@ -158,6 +160,7 @@ import OpenEnaInferencePanel, {
 interface OpenEnaWorkspaceProps {
   locale: Locale;
   providerDescriptor?: { provider: string; model: string };
+  runtimeDisabledPluginIds?: readonly string[];
 }
 
 type OpenEnaModelPanelTab = "units" | "horizons" | "windows" | "codes";
@@ -469,7 +472,7 @@ function orderPanelValueFromConfig(config: OpenEnaConfig): OpenEnaOrderPanelValu
   };
 }
 
-export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEnaWorkspaceProps) {
+export default function OpenEnaWorkspace({ locale, providerDescriptor, runtimeDisabledPluginIds = [] }: OpenEnaWorkspaceProps) {
   const workspaceId = useId();
   const copy = getOpenEnaCopy(locale);
   const authCopy = getOpenEnaAuthCopy(locale);
@@ -514,7 +517,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
   const [xDimension, setXDimension] = useState("SVD1");
   const [yDimension, setYDimension] = useState("SVD2");
   const [threeDDimensions, setThreeDDimensions] = useState<OpenEnaWorkspaceAxes["threeD"]>(null);
-  const genericThreeDAvailable = result !== null && threeDDimensions !== null;
   const [camera, setCamera] = useState<CameraPreset>("isometric");
   const [interactive3dCamera, setInteractive3dCamera] = useState<OpenEna3dCamera | null>(null);
   const [interactive3dAspectRatio, setInteractive3dAspectRatio] = useState<OpenEna3dAspectRatio | null>(null);
@@ -638,6 +640,21 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
   const capabilityAnalysisKind = completedResultKind ?? currentAnalysisKind;
   const onaCapabilityDisabled = capabilityAnalysisKind === "ona";
   const resultIsStale = Boolean(result && resultConfig && !sameOpenEnaConfig(config, resultConfig));
+  const standardThreeDPluginContext = useMemo(() => {
+    if (!result || !resultConfig || !threeDDimensions || completedResultKind !== "ena") return null;
+    return createOpenEnaPluginContextV1({
+      result,
+      config: resultConfig,
+      selectedDimensions: threeDDimensions,
+      stale: resultIsStale,
+    });
+  }, [completedResultKind, result, resultConfig, resultIsStale, threeDDimensions]);
+  const standardThreeDPluginAvailability = standardThreeDPluginContext
+    ? openEnaRuntimePluginAvailability("ena-hk/3d-ena", standardThreeDPluginContext, runtimeDisabledPluginIds)
+    : null;
+  const genericThreeDAvailable = result !== null
+    && threeDDimensions !== null
+    && (completedResultKind === "ona" || standardThreeDPluginAvailability?.enabled === true);
   const canRun = Boolean(dataset && configErrors.length === 0 && !sourceBusy && !loading);
   const manifest = useMemo(
     () => dataset && result && resultConfig
@@ -1757,7 +1774,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
 
   function selectVisualizationView(nextView: OpenEnaView) {
     if (nextView === "3d" && !genericThreeDAvailable) {
-      setError(copy.plot.threeDRequiresThreeDimensions);
+      setError(threeDDimensions ? copy.plot.threeDUnavailable : copy.plot.threeDRequiresThreeDimensions);
       return;
     }
     setView(nextView);
@@ -4211,7 +4228,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                       setSecondaryGroupName(primaryGroupName);
                     }}
                   />
-                ) : view === "3d" && threeDDimensions && activeGroupContrast && activeGroupDisplay && resultConfig?.groupColumn ? (
+                ) : view === "3d" && threeDDimensions && activeGroupContrast && activeGroupDisplay && resultConfig?.groupColumn && genericThreeDAvailable ? (
                   <OpenEna3DGroupContrast
                     key={`open-ena-3d-group-${result.analyzedAt}`}
                     codeColors={codeColors}
@@ -4248,8 +4265,10 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                       </div>
                     ) : null}
                     copy={copy}
+                    runtimeDisabledPluginIds={runtimeDisabledPluginIds}
+                    resultIsStale={resultIsStale}
                   />
-                ) : view === "3d" && threeDDimensions ? (
+                ) : view === "3d" && genericThreeDAvailable && threeDDimensions ? (
                   <OpenEnaInteractive3DPlot
                     codeColors={codeColors}
                     result={result}
@@ -4278,6 +4297,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                     nodeLayout={activeNodeLayout.positions}
                     onNodeMove={moveNode}
                     copy={copy}
+                    runtimeDisabledPluginIds={runtimeDisabledPluginIds}
+                    resultIsStale={resultIsStale}
                   />
                 ) : view === "3d" ? (
                   <p className="ena-three-d-unavailable-note" role="status">

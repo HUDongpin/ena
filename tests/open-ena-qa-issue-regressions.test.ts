@@ -469,7 +469,14 @@ test("Workspace isolates generic 3D axes from inference, 2D, and AI evidence con
   }
   assert.match(runAnalysis, /setThreeDDimensions\(initialAxes\.threeD\)/);
   assert.match(resetPlot, /view === "3d"[\s\S]*?resetOpenEnaWorkspaceAxisSurface/);
-  assert.match(workspace, /const genericThreeDAvailable = result !== null && threeDDimensions !== null/);
+  assert.match(
+    workspace,
+    /const standardThreeDPluginAvailability = standardThreeDPluginContext[\s\S]*?openEnaRuntimePluginAvailability\("ena-hk\/3d-ena"/,
+  );
+  assert.match(
+    workspace,
+    /const genericThreeDAvailable = result !== null[\s\S]*?threeDDimensions !== null[\s\S]*?completedResultKind === "ona" \|\| standardThreeDPluginAvailability\?\.enabled === true/,
+  );
   assert.match(workspace, /disabled=\{[^}]*!genericThreeDAvailable[^}]*\}/);
   assert.match(
     workspace,

@@ -5,6 +5,8 @@ import JsonLd from "@/components/JsonLd";
 import { getDictionary, getLocaleMeta, isLocale, locales, type Locale } from "@/lib/i18n";
 import { siteConfig } from "@/lib/site";
 import { organizationJsonLd, personJsonLd } from "@/lib/structured-data";
+import { getPluginLabCopy } from "@/lib/plugin-lab/i18n";
+import CTA from "@/components/CTA";
 
 interface AboutPageProps {
   params: Promise<{ locale: string }>;
@@ -99,6 +101,7 @@ export default async function AboutPage({ params }: AboutPageProps) {
 
   const typedLocale = locale as Locale;
   const dictionary = getDictionary(typedLocale);
+  const pluginCopy = getPluginLabCopy(typedLocale);
   const structuredData = [
     personJsonLd({
       name: "Dr. Peter Hu Dongpin",
@@ -216,6 +219,19 @@ export default async function AboutPage({ params }: AboutPageProps) {
               <span className="sr-only">{dictionary.common.externalLink}</span>
             </a>
           ))}
+        </div>
+      </section>
+
+      <section className="container plugin-about-invitation" lang={pluginCopy.contentFallback ? "en" : undefined}>
+        {pluginCopy.contentFallback ? <p className="plugin-language-note">{pluginCopy.fallbackNotice}</p> : null}
+        <div>
+          <p className="eyebrow">{pluginCopy.coCreateEyebrow}</p>
+          <h2>{pluginCopy.coCreateTitle}</h2>
+          <p>{pluginCopy.coCreateText}</p>
+        </div>
+        <div className="button-row">
+          <CTA href={`/${typedLocale}/plugins`}>{pluginCopy.explore}</CTA>
+          <CTA href={`/${typedLocale}/plugins/propose`} variant="secondary">{pluginCopy.propose}</CTA>
         </div>
       </section>
     </div>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Dictionary, Locale } from "@/lib/i18n";
 import { getOpenEnaNavLabel } from "@/lib/open-ena-i18n";
+import { getPluginLabCopy } from "@/lib/plugin-lab/i18n";
 import { siteConfig } from "@/lib/site";
 import Logo from "./Logo";
 
@@ -14,6 +15,7 @@ export default function Footer({ locale, dictionary }: FooterProps) {
     { href: `/${locale}`, label: dictionary.nav.home },
     { href: `/${locale}/mission`, label: dictionary.nav.mission },
     { href: `/${locale}/open-ena`, label: getOpenEnaNavLabel(locale) },
+    { href: `/${locale}/plugins`, label: getPluginLabCopy(locale).navLabel },
     { href: `/${locale}/news`, label: dictionary.nav.news },
     { href: `/${locale}/academy`, label: dictionary.nav.academy },
     { href: `/${locale}/about`, label: dictionary.nav.about },

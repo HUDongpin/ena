@@ -37,7 +37,7 @@ test("one 3D layout and movement callback flow through standard and ordered comp
   assert.match(interactive, /nodeLayout\?: OpenEnaNodeLayoutPositions/);
   assert.match(interactive, /onNodeMove\?: \(code: string, dimensions: OpenEnaNodeDimensionPosition\) => void/);
   assert.match(interactive, /analysisKind === "ona"[\s\S]*compileOpenEnaOrdered3dPlotSpec/);
-  assert.match(interactive, /compileOpenEna3dPlotSpec\([\s\S]*nodeLayout/);
+  assert.match(interactive, /compileOpenEnaTrusted3dPlugin\([\s\S]*pluginInput[\s\S]*nodeLayout/);
   assert.match(triptych, /nodeLayout\?: OpenEnaNodeLayoutPositions/);
   assert.match(triptych, /onNodeMove\?: \(code: string, dimensions: OpenEnaNodeDimensionPosition\) => void/);
   assert.match(triptych, /const sharedPlotProps = \{[\s\S]*nodeLayout,[\s\S]*onNodeMove,/);

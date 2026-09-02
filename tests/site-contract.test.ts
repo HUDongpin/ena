@@ -6,10 +6,11 @@ import { academyLessons, newsItems } from "../lib/content";
 import { getDictionary, localeMeta, locales, type Locale } from "../lib/i18n";
 import { buildLocalePath } from "../lib/locale-path";
 import { getOpenEnaNavLabel } from "../lib/open-ena-i18n";
+import { getPluginLabCopy } from "../lib/plugin-lab/i18n";
 import { siteConfig } from "../lib/site";
 
 const projectRoot = process.cwd();
-const publicRoutes = ["", "mission", "open-ena", "news", "academy", "about"];
+const publicRoutes = ["", "mission", "open-ena", "plugins", "news", "academy", "about"];
 const expectedLocalizedHomeCopy = {
   en: {
     initiatorCredit: "Dr. Peter Hu Dongpin is the Initiator of the open access ENA Hub of Knowledge.",
@@ -128,20 +129,21 @@ test("News and Academy expose continuous reviewed collections that can grow", ()
   assert.deepEqual(academyLessons.map((lesson) => lesson.sequence), Array.from({ length: academyLessons.length }, (_, index) => index + 1));
 });
 
-test("every locale exposes the six requested navigation destinations", () => {
+test("every locale exposes the seven requested navigation destinations", () => {
   for (const locale of locales) {
     const dictionary = getDictionary(locale);
     const labels = [
       dictionary.nav.home,
       dictionary.nav.mission,
       getOpenEnaNavLabel(locale),
+      getPluginLabCopy(locale).navLabel,
       dictionary.nav.news,
       dictionary.nav.academy,
       dictionary.nav.about,
     ];
 
-    assert.equal(labels.length, 6);
-    assert.equal(new Set(labels).size, 6);
+    assert.equal(labels.length, 7);
+    assert.equal(new Set(labels).size, 7);
     assert.ok(labels.every((label) => label.trim().length > 0));
     assert.equal(dictionary.about.focusItems.length, 4);
     assert.deepEqual(dictionary.about.products.map((product) => product.name), ["MAIS", "CAIS", "UAIS"]);
@@ -294,6 +296,7 @@ test("sitemap publishes News and Academy detail routes", () => {
   const sitemapSource = readFileSync(join(projectRoot, "app", "sitemap.ts"), "utf8");
   assert.match(sitemapSource, /mission/);
   assert.match(sitemapSource, /open-ena/);
+  assert.match(sitemapSource, /plugins/);
   assert.match(sitemapSource, /news/);
   assert.match(sitemapSource, /academy/);
   assert.match(sitemapSource, /about/);
@@ -301,6 +304,7 @@ test("sitemap publishes News and Academy detail routes", () => {
   assert.match(sitemapSource, /getNewsTopics/);
   assert.match(sitemapSource, /academyLessons/);
   assert.match(sitemapSource, /academyRoutes/);
+  assert.match(sitemapSource, /pluginRoutes/);
 });
 
 test("the root layout exposes opt-in Vercel Analytics through the consent gate", () => {

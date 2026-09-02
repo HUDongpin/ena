@@ -48,12 +48,21 @@ const nextConfig: NextConfig = {
           value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()",
         },
       ],
+    }, {
+      source: "/:locale/plugins/:privatePath(propose|status|operator)/:rest*",
+      headers: [
+        { key: "Cache-Control", value: "private, no-store, max-age=0" },
+        { key: "Referrer-Policy", value: "no-referrer" },
+        { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+      ],
     }];
   },
   async redirects() {
     return [
       { source: "/mission", destination: "/en/mission", permanent: false },
       { source: "/open-ena", destination: "/en/open-ena", permanent: false },
+      { source: "/plugins", destination: "/en/plugins", permanent: false },
+      { source: "/plugins/:slug*", destination: "/en/plugins/:slug*", permanent: false },
       { source: "/news", destination: "/en/news", permanent: false },
       { source: "/academy", destination: "/en/academy", permanent: false },
       { source: "/academy/:slug*", destination: "/en/academy/:slug*", permanent: false },

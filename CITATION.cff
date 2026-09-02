@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "Please cite the exact ENA.HK or Open ENA plugin version used in your analysis."
+title: "ENA.HK and Open ENA"
+type: software
+authors:
+  - family-names: "Hu"
+    given-names: "Dongpin Peter"
+repository-code: "https://github.com/HUDongpin/ena"
+url: "https://www.ena.hk"
+license: GPL-3.0-only
+version: 0.1.0
+keywords:
+  - epistemic network analysis
+  - ENA
+  - research software
+  - plugins

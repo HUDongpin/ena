@@ -43,6 +43,8 @@ export interface OpenEna3DGroupContrastProps {
   onCameraChange?: (camera: OpenEna3dCamera) => void;
   sharedAspectRatio?: OpenEna3dAspectRatio | null;
   onAspectRatioChange?: (aspectRatio: OpenEna3dAspectRatio | null) => void;
+  runtimeDisabledPluginIds?: readonly string[];
+  resultIsStale?: boolean;
   centerMode: "plot" | "data";
   dataView?: ReactNode;
   copy: OpenEnaCopy;
@@ -76,6 +78,8 @@ export default function OpenEna3DGroupContrast({
   onCameraChange,
   sharedAspectRatio = null,
   onAspectRatioChange,
+  runtimeDisabledPluginIds = [],
+  resultIsStale = false,
   centerMode,
   dataView,
   copy,
@@ -125,6 +129,8 @@ export default function OpenEna3DGroupContrast({
     initialAspectRatio: sharedAspectRatio,
     onAspectRatioChange,
     copy,
+    runtimeDisabledPluginIds,
+    resultIsStale,
   } as const;
   const comparisonReady = useCallback(
     () => {

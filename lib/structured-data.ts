@@ -126,3 +126,44 @@ export function learningResourceJsonLd(input: {
     url: input.url,
   };
 }
+
+export function pluginSoftwareApplicationJsonLd(input: {
+  plugin: OpenEnaPluginManifestV1;
+  locale: string;
+  name: string;
+  description: string;
+}) {
+  const { plugin } = input;
+  const contentLocale = input.locale === "zh-hant" || input.locale === "zh-hans" ? input.locale : "en";
+  const url = `https://www.ena.hk/${encodeURIComponent(input.locale)}/plugins/${plugin.slug}`;
+  return {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: input.name,
+    description: input.description,
+    url,
+    mainEntityOfPage: { "@type": "WebPage", "@id": url },
+    applicationCategory: "ResearchApplication",
+    applicationSubCategory: plugin.contributionKinds,
+    operatingSystem: "Web",
+    softwareVersion: plugin.version,
+    releaseNotes: plugin.changelog[0]?.summary[contentLocale],
+    dateModified: plugin.engineeringAssurance.lastReviewed,
+    inLanguage: input.locale,
+    isAccessibleForFree: true,
+    codeRepository: plugin.source.repository,
+    license: plugin.licenses.code === "GPL-3.0-only"
+      ? "https://spdx.org/licenses/GPL-3.0-only.html"
+      : plugin.licenses.code,
+    author: plugin.authors.map((author) => ({ "@type": "Person", name: author.name })),
+    maintainer: { "@type": "Person", name: plugin.maintainer.name },
+    featureList: plugin.scientificBoundary.claims,
+    softwareRequirements: [
+      `Open ENA Core API ${plugin.compatibility.coreApi}`,
+      `jENA ${plugin.compatibility.jenaVersions.join(", ")}`,
+      `${plugin.compatibility.minimumDimensions} fitted dimensions minimum`,
+    ],
+    citation: plugin.citation,
+  };
+}
+import type { OpenEnaPluginManifestV1 } from "@/lib/open-ena/plugins/types";

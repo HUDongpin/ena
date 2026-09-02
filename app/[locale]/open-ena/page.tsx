@@ -20,6 +20,7 @@ import {
 } from "@/lib/open-ena-i18n";
 import { pageMetadata } from "@/lib/metadata";
 import { siteConfig } from "@/lib/site";
+import { parseOpenEnaDisabledPluginIds } from "@/lib/open-ena/plugins/runtime-registry";
 
 interface OpenEnaPageProps {
   params: Promise<{ locale: string }>;
@@ -121,7 +122,10 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
   return (
     <>
       <JsonLd data={structuredData} />
-      <OpenEnaWorkspace locale={typedLocale} providerDescriptor={providerDescriptor} />
+      <OpenEnaWorkspace locale={typedLocale}
+        providerDescriptor={providerDescriptor}
+        runtimeDisabledPluginIds={parseOpenEnaDisabledPluginIds(process.env.ENA_PLUGIN_LAB_DISABLED_PLUGIN_IDS)}
+      />
     </>
   );
 }

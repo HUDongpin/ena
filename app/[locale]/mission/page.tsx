@@ -5,6 +5,7 @@ import PageHero from "@/components/PageHero";
 import { getDictionary, isLocale, type Locale } from "@/lib/i18n";
 import { pageMetadata } from "@/lib/metadata";
 import { siteConfig } from "@/lib/site";
+import { getPluginLabCopy } from "@/lib/plugin-lab/i18n";
 
 interface MissionPageProps {
   params: Promise<{ locale: string }>;
@@ -28,6 +29,7 @@ export default async function MissionPage({ params }: MissionPageProps) {
 
   const typedLocale = locale as Locale;
   const dictionary = getDictionary(typedLocale);
+  const pluginCopy = getPluginLabCopy(typedLocale);
 
   return (
     <div className="interior-page premium-public-page premium-mission">
@@ -70,6 +72,19 @@ export default async function MissionPage({ params }: MissionPageProps) {
             </article>
           ))}
         </div>
+      </section>
+
+      <section className="container plugin-mission-principle" lang={pluginCopy.contentFallback ? "en" : undefined}>
+        {pluginCopy.contentFallback ? <p className="plugin-language-note">{pluginCopy.fallbackNotice}</p> : null}
+        <div className="section-heading">
+          <p className="eyebrow">{pluginCopy.eyebrow}</p>
+          <h2>{pluginCopy.coCreateTitle}</h2>
+          <p>{pluginCopy.coCreateText}</p>
+        </div>
+        <div className="plugin-mission-rules">
+          {pluginCopy.missionPrinciples.map((principle) => <article key={principle.title}><h3>{principle.title}</h3><p>{principle.text}</p></article>)}
+        </div>
+        <CTA href={`/${typedLocale}/plugins`}>{pluginCopy.explore}</CTA>
       </section>
 
       <section className="container closing-panel">

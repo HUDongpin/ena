@@ -4,9 +4,10 @@ import { getLocaleMeta, locales, type Locale } from "@/lib/i18n";
 import { newsArticles } from "@/lib/news-data";
 import { getNewsTopics } from "@/lib/news-topics";
 import { openEnaLocalizedLocales } from "@/lib/open-ena-i18n";
+import { OPEN_ENA_PLUGIN_CATALOG } from "@/lib/open-ena/plugins/catalog";
 import { siteConfig } from "@/lib/site";
 
-const routes = ["", "/mission", "/open-ena", "/news", "/academy", "/about"] as const;
+const routes = ["", "/mission", "/open-ena", "/plugins", "/news", "/academy", "/about"] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const indexRoutes: MetadataRoute.Sitemap = routes.flatMap((route) => {
@@ -64,5 +65,18 @@ export default function sitemap(): MetadataRoute.Sitemap {
     }))
   );
 
-  return [...indexRoutes, ...articleRoutes, ...topicRoutes, ...academyRoutes];
+  const pluginRoutes = OPEN_ENA_PLUGIN_CATALOG.flatMap((plugin) =>
+    locales.map((locale) => ({
+      url: `${siteConfig.url}/${locale}/plugins/${plugin.slug}`,
+      changeFrequency: "monthly" as const,
+      priority: 0.75,
+      alternates: {
+        languages: Object.fromEntries(
+          locales.map((item) => [getLocaleMeta(item).htmlLang, `${siteConfig.url}/${item}/plugins/${plugin.slug}`])
+        ),
+      },
+    }))
+  );
+
+  return [...indexRoutes, ...pluginRoutes, ...articleRoutes, ...topicRoutes, ...academyRoutes];
 }
