@@ -57,8 +57,17 @@ test("official Model parity audits all four tabs, exact geometry, and reversible
   assert.match(source, /ena-official-field-path/u);
   assert.match(source, /ena-official-field-path-add/u);
   assert.match(source, /tabHeightPx/u);
+  assert.match(source, /topInsetPx/u);
+  assert.match(source, /gray inset above their active indicator/u);
+  assert.match(source, /headingBottomBorderWidthPx/u);
+  assert.match(source, /gray separator above the active indicator/u);
   assert.match(source, /fieldPathHeightPx/u);
+  assert.match(source, /addButtonWidthPx/u);
   assert.match(source, /addButtonHeightPx/u);
+  assert.match(source, /unpaintedBeforeAddPx/u);
+  assert.match(source, /unpaintedAfterAddPx/u);
+  assert.match(source, /assert\.equal\(unitGeometry\.unpaintedBeforeAddPx,\s*0\)/u);
+  assert.match(source, /assert\.equal\(unitGeometry\.unpaintedAfterAddPx,\s*0\)/u);
   assert.match(source, /rgb\(137, 207, 240\)/u);
   assert.match(source, /Remove .* from .* identity/u);
   assert.match(source, /Comparison group/u);

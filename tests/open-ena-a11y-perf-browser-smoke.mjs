@@ -324,9 +324,17 @@ async function auditOfficialModelTabs(page, rail) {
   const tablist = page.getByRole("tablist", { name: "Model configuration" });
   await tablist.waitFor({ state: "visible", timeout: 30_000 });
   const tabNames = ["Units", "Horizons", "Windows", "Codes"];
+  const headingBottomBorderWidthPx = await tablist.evaluate((element) => {
+    const heading = element.previousElementSibling;
+    if (!(heading instanceof HTMLElement) || !heading.classList.contains("ena-panel-heading")) {
+      throw new Error("Model heading is unavailable immediately before its tablist");
+    }
+    return Number.parseFloat(getComputedStyle(heading).borderBottomWidth);
+  });
   const tabMetrics = await tablist.getByRole("tab").evaluateAll((tabs) => tabs.map((tab) => ({
     name: tab.querySelector(":scope > span:first-child")?.textContent?.replace(/\s+/gu, " ").trim() ?? "",
     tabHeightPx: tab.getBoundingClientRect().height,
+    topInsetPx: tab.getBoundingClientRect().top - tab.parentElement.getBoundingClientRect().top,
     textColor: getComputedStyle(tab).color,
     activeRuleColor: getComputedStyle(tab, "::before").backgroundColor,
     selected: tab.getAttribute("aria-selected") === "true",
@@ -334,6 +342,10 @@ async function auditOfficialModelTabs(page, rail) {
   assert.deepEqual(tabMetrics.map((tab) => tab.name), tabNames);
   assert.ok(tabMetrics.every((tab) => tab.tabHeightPx >= 33 && tab.tabHeightPx <= 36),
     "official Model tabs do not retain the 34px cadence");
+  assert.ok(tabMetrics.every((tab) => Math.abs(tab.topInsetPx) < 0.1),
+    "official Model tabs retain a gray inset above their active indicator");
+  assert.equal(headingBottomBorderWidthPx, 0,
+    "the Model heading retains a gray separator above the active indicator");
   assert.equal(tabMetrics.find((tab) => tab.selected)?.activeRuleColor, "rgb(137, 207, 240)");
 
   const openPanel = async (name, panelName) => {
@@ -355,16 +367,26 @@ async function auditOfficialModelTabs(page, rail) {
   const unitGeometry = await unitEditor.evaluate((editor) => {
     const path = editor.querySelector(".ena-official-field-path");
     const add = editor.querySelector(".ena-official-field-path-add");
-    if (!path || !add) throw new Error("official unit field path is incomplete");
+    const segments = editor.querySelector(".ena-official-field-path-segments");
+    if (!path || !add || !segments) throw new Error("official unit field path is incomplete");
+    const pathRect = path.getBoundingClientRect();
+    const addRect = add.getBoundingClientRect();
+    const segmentsRect = segments.getBoundingClientRect();
     return {
-      fieldPathHeightPx: path.getBoundingClientRect().height,
-      addButtonHeightPx: add.getBoundingClientRect().height,
+      fieldPathHeightPx: pathRect.height,
+      addButtonWidthPx: addRect.width,
+      addButtonHeightPx: addRect.height,
       addButtonBackground: getComputedStyle(add).backgroundColor,
+      unpaintedBeforeAddPx: addRect.left - segmentsRect.right,
+      unpaintedAfterAddPx: pathRect.right - addRect.right,
     };
   });
   assert.ok(unitGeometry.fieldPathHeightPx >= 29 && unitGeometry.fieldPathHeightPx <= 31);
+  assert.ok(unitGeometry.addButtonWidthPx >= 39 && unitGeometry.addButtonWidthPx <= 41);
   assert.ok(unitGeometry.addButtonHeightPx >= 29 && unitGeometry.addButtonHeightPx <= 31);
   assert.equal(unitGeometry.addButtonBackground, "rgb(137, 207, 240)");
+  assert.equal(unitGeometry.unpaintedBeforeAddPx, 0);
+  assert.equal(unitGeometry.unpaintedAfterAddPx, 0);
   await unitPath.waitFor({ state: "visible" });
 
   const removeField = unitEditor.locator(".ena-official-field-remove").last();
@@ -436,7 +458,7 @@ async function auditOfficialModelTabs(page, rail) {
   };
   assert.ok(Object.values(panels).every((panel) => panel.overflowContained),
     "an official Model panel expanded the workbench horizontally");
-  return { tabMetrics, unitGeometry, removedField, initialGroup, alternateGroup, panels };
+  return { headingBottomBorderWidthPx, tabMetrics, unitGeometry, removedField, initialGroup, alternateGroup, panels };
 }
 
 async function readGeometry(page) {
