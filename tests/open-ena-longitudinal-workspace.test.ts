@@ -48,8 +48,8 @@ test("the Model heading shortcut opens and focuses Model type without choosing o
   assert.doesNotMatch(shortcut, /aria-pressed/);
   assert.match(
     modelPanel,
-    /<div className="ena-panel-heading">[\s\S]{0,1000}\{dataset && currentAnalysisKind === "ena" \? \([\s\S]{0,500}data-testid="open-ena-configure-trajectory-model"[\s\S]{0,500}<\/button>[\s\S]{0,120}: null\}[\s\S]{0,80}<\/div>\s*<OpenEnaAnalysisFamilyControl[\s\S]{0,900}<div className="ena-model-tabs"/,
-    "the shortcut must render only for a loaded standard ENA dataset, remain inside the Model heading, and precede the analysis-family control and tabs",
+    /<div className="ena-panel-heading">[\s\S]{0,1000}\{dataset && currentAnalysisKind === "ena" \? \([\s\S]{0,500}data-testid="open-ena-configure-trajectory-model"[\s\S]{0,500}<\/button>[\s\S]{0,120}: null\}[\s\S]{0,80}<\/div>\s*<div[\s\S]{0,180}className="ena-model-tabs"/,
+    "the shortcut must render only for a loaded standard ENA dataset, remain inside the Model heading, and precede the tabs",
   );
   assert.ok(
     modelPanel.indexOf('className="ena-panel-heading"')

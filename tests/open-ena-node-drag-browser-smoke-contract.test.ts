@@ -60,8 +60,11 @@ test("camera, reset, export, and analytical boundaries are acceptance gates", ()
   assert.match(source, /drag mutated analytical result/u);
   assert.match(source, /analysisRunCount/u);
   assert.match(source, /visualCopy/u);
-  assert.match(source, /Network type/u);
-  assert.ok(source.includes("Ordered Network Analysis \\(ONA\\)"));
+  assert.match(source, /getByRole\("switch", \{ name: "Network type", exact: true \}\)/u);
+  assert.doesNotMatch(source, /getByRole\("radio", \{ name: \/Ordered Network Analysis/u);
+  assert.match(source, /\^3D \(\?:ENA\|ONA\)/u);
+  assert.match(source, /maxRetries:\s*5/u);
+  assert.match(source, /retryDelay:\s*100/u);
 });
 
 test("package exposes the dedicated node-drag browser command", () => {

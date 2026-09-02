@@ -50,6 +50,32 @@ test("A11Y-02 checks enlarged tab, toolbar, and rail geometry plus stable scient
   assert.match(source, /deepEqual\(.*scientificIdentity/u);
 });
 
+test("official Model parity audits all four tabs, exact geometry, and reversible interactions", () => {
+  assert.match(source, /async function auditOfficialModelTabs/u);
+  assert.match(source, /const tabNames = \["Units", "Horizons", "Windows", "Codes"\]/u);
+  assert.match(source, /data-ena-official-panel/u);
+  assert.match(source, /ena-official-field-path/u);
+  assert.match(source, /ena-official-field-path-add/u);
+  assert.match(source, /tabHeightPx/u);
+  assert.match(source, /fieldPathHeightPx/u);
+  assert.match(source, /addButtonHeightPx/u);
+  assert.match(source, /rgb\(137, 207, 240\)/u);
+  assert.match(source, /Remove .* from .* identity/u);
+  assert.match(source, /Comparison group/u);
+  assert.match(source, /Horizon method/u);
+  assert.match(source, /Window horizon method/u);
+  assert.match(source, /Network type/u);
+  assert.match(source, /Manage Codes/u);
+  for (const panel of ["units", "horizons", "windows", "codes"]) {
+    assert.match(
+      source,
+      new RegExp(`const ${panel}Geometry = await panelGeometry\\(${panel}\\)`, "u"),
+      `${panel} geometry must be captured while that tab panel is mounted`,
+    );
+  }
+  assert.match(source, /modelParity/u);
+});
+
 test("PERF-01 installs longtask timing before the 3D click and verifies all three roots and budgets", () => {
   assert.match(source, /PerformanceObserver/u);
   assert.match(source, /longtask/u);
@@ -81,6 +107,10 @@ test("smoke owns an isolated production build, performs four runs, writes a summ
   assert.match(source, /npm", \["run", "start"/u);
   assert.match(source, /\.next-open-ena-a11y-perf-smoke-/u);
   assert.match(source, /OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS/u);
+  assert.match(source, /OPEN_ENA_AUTH_DATABASE_URL/u);
+  assert.match(source, /async function startEphemeralPostgres/u);
+  assert.match(source, /002_open_ena_auth_security\.sql/u);
+  assert.match(source, /stopEphemeralPostgres\(\)/u);
   assert.match(source, /redact\(/u);
   assert.match(source, /for \(let run = 0; run < 4; run \+= 1\)/u);
   assert.match(source, /newContext\(/u);

@@ -315,7 +315,7 @@ test("the trajectory configuration shortcut stays in the responsive Model headin
 
   assert.match(
     modelPanel,
-    /<div className="ena-panel-heading">[\s\S]{0,1600}data-testid="open-ena-configure-trajectory-model"[\s\S]{0,1000}<\/div>\s*<OpenEnaAnalysisFamilyControl[\s\S]{0,500}<div className="ena-model-tabs"/,
+    /<div className="ena-panel-heading">[\s\S]{0,1600}data-testid="open-ena-configure-trajectory-model"[\s\S]{0,1000}<\/div>\s*<div[\s\S]{0,180}className="ena-model-tabs"/,
     "the shortcut belongs after the Model description and before its tablist",
   );
   assert.match(shortcutRule, /max-width:\s*100%/);

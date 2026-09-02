@@ -169,13 +169,20 @@ export default function OpenEnaGroupDisplayControls({
             || (settings.includeHiddenPoints && individuallyVisibleCount === 0);
           return (
             <details key={group.name} className="ena-group-display-group">
-              <summary>
+              <summary aria-label={copy.visibleCount(group.name, plottedCount, group.unitIds.length)}>
                 <i
                   className="ena-group-display-swatch"
                   aria-hidden="true"
                   style={{ "--ena-group-display-color": group.color } as CSSProperties}
                 />
-                <span>{copy.visibleCount(group.name, plottedCount, group.unitIds.length)}</span>
+                <span className="ena-group-display-name">{group.name}</span>
+                <span className="sr-only">{copy.visibleCount(group.name, plottedCount, group.unitIds.length)}</span>
+                <span className="ena-group-display-mean-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M4 12h16M12 4v16" />
+                    <rect x="9" y="9" width="6" height="6" />
+                  </svg>
+                </span>
               </summary>
 
               <div className="ena-group-display-settings" role="group" aria-label={copy.displaySettings(group.name)}>

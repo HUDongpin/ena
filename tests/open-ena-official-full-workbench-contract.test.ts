@@ -262,31 +262,28 @@ test("Model mode is organized as accessible Units, Horizons, Windows, and Codes 
   expectMatch(modelPanel, /data-ena-model-panel=/, "the active tab must own a scoped model panel");
 });
 
-test("all four Model tabs share a taller stable content stage before validation and rebuild", () => {
+test("all four Model tabs use the compact official stage before validation and rebuild", () => {
+  assert.doesNotMatch(css, /--ena-model-tab-stage-height:\s*380px/u);
+  assert.doesNotMatch(css, /--ena-model-selection-stage-height:\s*300px/u);
   expectMatch(
     css,
-    /\.ena-model-tabbed-form\s*\{[^}]*--ena-model-tab-stage-height:\s*380px;[^}]*--ena-model-selection-stage-height:\s*300px;/,
-    "Model mode must define one deliberate vertical rhythm for every tab",
+    /\.ena-model-tabs button\s*\{[^}]*min-height:\s*34px;/u,
+    "the Model tabs must use the observed compact official height",
   );
   expectMatch(
     css,
-    /\.ena-model-tab-panel\s*\{[^}]*min-height:\s*var\(--ena-model-tab-stage-height\);[^}]*align-content:\s*start;/,
-    "the tabpanel stage keeps validation and Rebuild model aligned while switching Units, Horizons, Windows, and Codes",
+    /\.ena-model-tab-panel\s*\{[^}]*min-height:\s*0;[^}]*align-content:\s*start;/u,
+    "the active panel must follow natural compact content height",
   );
   expectMatch(
     css,
-    /\.ena-model-tab-panel\[data-ena-model-panel="units"\]\s+\.ena-identity-fieldset,[\s\S]*?\.ena-model-tab-panel\[data-ena-model-panel="horizons"\]\s+\.ena-identity-fieldset\s*\{[^}]*height:\s*var\(--ena-model-selection-stage-height\);[^}]*min-height:\s*var\(--ena-model-selection-stage-height\);/,
-    "Units and Horizons must expose the taller metadata-selection region requested by the researcher",
+    /\.ena-official-field-path\s*\{[^}]*min-height:\s*30px;/u,
+    "Units and Horizons must use the observed compact field-path height",
   );
   expectMatch(
     css,
-    /\.ena-model-tab-panel\[data-ena-model-panel="codes"\]\s+\.ena-code-fieldset\s*\{[^}]*height:\s*var\(--ena-model-tab-stage-height\);[^}]*min-height:\s*var\(--ena-model-tab-stage-height\);/,
-    "Codes must use the same tall selection-stage design",
-  );
-  expectMatch(
-    css,
-    /\.ena-model-tab-panel\[data-ena-model-panel="(?:units|horizons)"\][\s\S]*?\.ena-code-options[\s\S]*?max-height:\s*none;[^}]*flex:\s*1 1 auto;/,
-    "the taller fieldset must expand its scrollable options rather than leave decorative empty space",
+    /\.ena-model-tabbed-form\s*\{[^}]*overflow:\s*visible;/u,
+    "the compact tab form must not create a decorative fixed-height stage",
   );
 });
 

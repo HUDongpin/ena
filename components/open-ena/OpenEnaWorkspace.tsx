@@ -134,7 +134,11 @@ import OpenEnaDataView, {
   type OpenEnaDataViewContext,
   type OpenEnaDataViewRow,
 } from "./OpenEnaDataView";
-import { OpenEnaAnalysisFamilyControl } from "./OpenEnaAnalysisFamilyControl";
+import {
+  OpenEnaOfficialFieldPathEditor,
+  OpenEnaOfficialIconButton,
+  OpenEnaOfficialTwoEndedSwitch,
+} from "./OpenEnaOfficialModelControls";
 import { OpenEnaDirectionalMaskEditor } from "./OpenEnaDirectionalMaskEditor";
 import OpenEnaOrderedResultLayout from "./OpenEnaOrderedResultLayout";
 import OpenEnaOnaStats from "./OpenEnaOnaStats";
@@ -438,12 +442,6 @@ function formatCopyTemplate(
 
 function officialPlotAxisLabel(axis: string) {
   return axis === "MR1" ? "GMR1" : axis;
-}
-
-function toggleInSelectionOrder(selected: readonly string[], header: string, checked: boolean) {
-  return checked
-    ? selected.includes(header) ? [...selected] : [...selected, header]
-    : selected.filter((candidate) => candidate !== header);
 }
 
 function toggleInHeaderOrder(headers: readonly string[], selected: readonly string[], header: string, checked: boolean) {
@@ -2044,7 +2042,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
     }
 
     return (
-      <div className="ena-control-content">
+      <div className="ena-control-content ena-model-control-content">
         <div className="ena-panel-heading">
           <p className="ena-panel-kicker">02 · Model</p>
           <h2>{copy.model.title}</h2>
@@ -2067,13 +2065,12 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
             </button>
           ) : null}
         </div>
-        <OpenEnaAnalysisFamilyControl
-          value={currentAnalysisKind}
-          onChange={selectAnalysisFamily}
-          copy={copy.ona.family}
-          disabled={!dataset || loading || sourceBusy}
-        />
-        <div className="ena-model-tabs" role="tablist" aria-label="Model configuration">
+        <div
+          className="ena-model-tabs"
+          role="tablist"
+          aria-label="Model configuration"
+          data-ena-official-model-tabs="true"
+        >
           {modelTabs.map((tab) => (
             <button
               key={tab.id}
@@ -2088,7 +2085,10 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
               onClick={() => setModelTab(tab.id)}
               onKeyDown={(event) => handleModelTabKeyDown(event, tab.id)}
             >
-              {tab.label}
+              <span>{tab.label}</span>
+              {modelTab === tab.id ? (
+                <span className="ena-model-tab-help" aria-hidden="true">?</span>
+              ) : null}
             </button>
           ))}
         </div>
@@ -2102,49 +2102,50 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
               className="ena-model-tab-panel"
             >
               {modelTab === "units" ? (
-                <>
-                  <fieldset className="ena-code-fieldset ena-identity-fieldset">
-                    <legend>{copy.model.unit} identity <span>{config.unitColumns.length}</span></legend>
-                    <p>{copy.model.identityHint}</p>
-                    <div className="ena-code-options">
-                      {identityOptions.map((header) => (
-                        <label key={header}>
-                          <input
-                            type="checkbox"
-                            checked={config.unitColumns.includes(header)}
-                            onChange={(event) => updateConfig((current) => ({
-                              ...current,
-                              unitColumns: toggleInSelectionOrder(current.unitColumns, header, event.target.checked),
-                            }))}
-                          />
-                          <span>{header}</span>
-                        </label>
-                      ))}
+                <div className="ena-official-model-panel" data-ena-official-panel="units">
+                  <OpenEnaOfficialFieldPathEditor
+                    label={`${copy.model.unit} identity`}
+                    selectedFields={config.unitColumns}
+                    options={identityOptions}
+                    disabled={loading || sourceBusy}
+                    onChange={(unitColumns) => updateConfig((current) => ({ ...current, unitColumns }))}
+                  />
+                  <div className="ena-official-unit-toolbar">
+                    <label className="ena-official-create-sample">
+                      <span className="ena-official-create-sample-icon" aria-hidden="true">
+                        <i /><i /><i /><i />
+                      </span>
+                      <span>Create Sample</span>
+                      <select
+                        aria-label={copy.model.group}
+                        value={config.groupColumn ?? ""}
+                        disabled={loading || sourceBusy}
+                        onChange={(event) => updateConfig((current) => {
+                          const groupColumn = event.target.value || null;
+                          const rotation = officialComparisonRotation(dataset, {
+                            groupColumn,
+                            model: current.model,
+                            currentRotation: current.rotation,
+                          });
+                          return {
+                            ...current,
+                            groupColumn,
+                            rotation,
+                            referenceRotationId: rotation === "reference" ? current.referenceRotationId : null,
+                          };
+                        })}
+                      >
+                        <option value="">{copy.model.noGroup}</option>
+                        {identityOptions.map((header) => <option key={header} value={header}>{header}</option>)}
+                      </select>
+                    </label>
+                    <div className="ena-official-global-tools" role="toolbar" aria-label="Group display tools">
+                      <OpenEnaOfficialIconButton icon="collapse" ariaLabel="Collapse all groups" title="Collapse all groups" disabled={!activeGroupContrast} />
+                      <OpenEnaOfficialIconButton icon="mean" ariaLabel="Open mean options" title="Open mean options" disabled={!activeGroupContrast} />
+                      <OpenEnaOfficialIconButton icon="visibility" ariaLabel="Hide all groups" title="Hide all groups" disabled />
+                      <OpenEnaOfficialIconButton icon="exclude" ariaLabel="Exclude all groups" title="Exclude all groups" disabled />
                     </div>
-                  </fieldset>
-                  <label className="ena-field">
-                    <span>{copy.model.group}</span>
-                    <select
-                      value={config.groupColumn ?? ""}
-                      onChange={(event) => updateConfig((current) => {
-                        const groupColumn = event.target.value || null;
-                        const rotation = officialComparisonRotation(dataset, {
-                          groupColumn,
-                          model: current.model,
-                          currentRotation: current.rotation,
-                        });
-                        return {
-                          ...current,
-                          groupColumn,
-                          rotation,
-                          referenceRotationId: rotation === "reference" ? current.referenceRotationId : null,
-                        };
-                      })}
-                    >
-                      <option value="">{copy.model.noGroup}</option>
-                      {identityOptions.map((header) => <option key={header} value={header}>{header}</option>)}
-                    </select>
-                  </label>
+                  </div>
                   {activeGroupContrast && groupDisplayControlGroups.length > 0 ? (
                     <div data-ena-group-display-result-key={groupDisplayResultKey}>
                       <OpenEnaGroupDisplayControls
@@ -2160,36 +2161,81 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                       />
                     </div>
                   ) : null}
-                </>
+                </div>
               ) : null}
 
               {modelTab === "horizons" ? (
-                <>
-                  <fieldset className="ena-code-fieldset ena-identity-fieldset">
-                    <legend>Horizon identity <span>{config.conversationColumns.length}</span></legend>
-                    <p>Open ENA uses the selected conversation fields to define the analysis horizon.</p>
-                    <div className="ena-code-options">
-                      {identityOptions.map((header) => (
-                        <label key={header}>
-                          <input
-                            type="checkbox"
-                            checked={config.conversationColumns.includes(header)}
-                            onChange={(event) => updateConfig((current) => ({
-                              ...current,
-                              conversationColumns: toggleInSelectionOrder(current.conversationColumns, header, event.target.checked),
-                            }))}
-                          />
-                          <span>{header}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
-                  <p className="ena-sequence-note">{copy.model.sequenceNote}</p>
-                </>
+                <div className="ena-official-model-panel" data-ena-official-panel="horizons">
+                  <OpenEnaOfficialFieldPathEditor
+                    label="Horizon identity"
+                    selectedFields={config.conversationColumns}
+                    options={identityOptions}
+                    disabled={loading || sourceBusy}
+                    onChange={(conversationColumns) => updateConfig((current) => ({
+                      ...current,
+                      conversationColumns,
+                    }))}
+                  />
+                  <OpenEnaOfficialTwoEndedSwitch
+                    label="Horizon method"
+                    startLabel="Transmodal"
+                    endLabel="Standard"
+                    endSelected
+                    disabled
+                    boundary="Open ENA currently supports the Standard horizon method."
+                  />
+                  <div className="ena-official-horizon-columns" data-ena-official-horizon-columns="true">
+                    {config.conversationColumns.map((column) => {
+                      const values = [...new Set(dataset.rows
+                        .map((row) => String(row[column] ?? "").trim())
+                        .filter(Boolean))];
+                      const visibleValues = values.slice(0, 8);
+                      const remainingValues = values.slice(8);
+                      return (
+                        <section className="ena-official-horizon-column" key={column}>
+                          <header>
+                            <strong className="sr-only">{column}</strong>
+                            <span>
+                              <OpenEnaOfficialIconButton
+                                icon="visibility"
+                                ariaLabel={`Hide ${column} horizons`}
+                                title="Horizon-level hiding is not available in Open ENA"
+                                disabled
+                              />
+                              <OpenEnaOfficialIconButton
+                                icon="exclude"
+                                ariaLabel={`Exclude ${column} horizons`}
+                                title="Horizon-level exclusion is not available in Open ENA"
+                                disabled
+                              />
+                            </span>
+                          </header>
+                          <details>
+                            <summary>Load More</summary>
+                            <ul>
+                              {[...visibleValues, ...remainingValues].map((value) => <li key={value}>{value}</li>)}
+                            </ul>
+                          </details>
+                        </section>
+                      );
+                    })}
+                  </div>
+                  <p className="ena-sequence-note sr-only">{copy.model.sequenceNote}</p>
+                </div>
               ) : null}
 
               {modelTab === "windows" ? (
-                currentAnalysisKind === "ona" ? (
+                <div className="ena-official-model-panel" data-ena-official-panel="windows">
+                  <OpenEnaOfficialTwoEndedSwitch
+                    label="Window horizon method"
+                    startLabel="Transmodal"
+                    endLabel="Standard"
+                    endSelected
+                    disabled
+                    boundary="Open ENA currently supports the Standard horizon method."
+                  />
+                  <div className="ena-official-window-settings" data-ena-official-window-settings="true">
+                {currentAnalysisKind === "ona" ? (
                   <OpenEnaOrderPanel
                     value={onaOrderPanelDraft}
                     onChange={updateOnaOrderPanel}
@@ -2205,8 +2251,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                       ? config.windowSizeBack
                       : 2}
                   />
-                ) : <>
-                  <label className="ena-field">
+                ) : <div className="ena-official-setting-stack">
+                  <label className="ena-field ena-official-setting-row">
                     <span>{copy.model.window}</span>
                     <select value={config.window} onChange={(event) => updateConfig((current) => ({ ...current, window: event.target.value as WindowType }))}>
                       <option value="MovingStanzaWindow">{copy.model.movingWindow}</option>
@@ -2214,12 +2260,12 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                     </select>
                   </label>
                   {config.window === "MovingStanzaWindow" ? (
-                    <div className="ena-two-fields ena-window-fields">
+                    <div className="ena-two-fields ena-window-fields ena-official-window-ranges">
                       <OpenEnaRangeField id="open-ena-window-back" idPrefix={workspaceId} label={copy.model.back} value={config.windowSizeBack} formattedValue={String(config.windowSizeBack)} accessibleValueText={String(config.windowSizeBack)} min={1} max={21} step={1} onChange={(event) => updateConfig((current) => ({ ...current, windowSizeBack: Number(event.target.value) }))} />
                       <OpenEnaRangeField id="open-ena-window-forward" idPrefix={workspaceId} label={copy.model.forward} value={config.windowSizeForward} formattedValue={String(config.windowSizeForward)} accessibleValueText={String(config.windowSizeForward)} min={0} max={20} step={1} onChange={(event) => updateConfig((current) => ({ ...current, windowSizeForward: Number(event.target.value) }))} />
                     </div>
                   ) : null}
-                  <div className="ena-two-fields">
+                  <div className="ena-two-fields ena-official-setting-section">
                     <label className="ena-field">
                       <span>{copy.model.modelType}</span>
                       <select id="open-ena-model-type" ref={modelTypeSelectRef} value={config.model} onChange={(event) => updateConfig((current) => {
@@ -2257,7 +2303,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                     </label>
                   </div>
                   {config.model !== "EndPoint" ? <p className="ena-sequence-note">{copy.model.trajectoryHint}</p> : null}
-                  <div className="ena-two-fields ena-model-options">
+                  <div className="ena-two-fields ena-model-options ena-official-setting-section">
                     <label className="ena-field">
                       <span>{copy.model.weighting}</span>
                       <select value={config.weightBy} onChange={(event) => updateConfig((current) => ({ ...current, weightBy: event.target.value as "binary" | "sum" }))}>
@@ -2270,46 +2316,64 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                       <input type="checkbox" checked={config.centerAlignToOrigin} onChange={(event) => updateConfig((current) => ({ ...current, centerAlignToOrigin: event.target.checked }))} />
                     </label>
                   </div>
-                </>
+                </div>}
+                  </div>
+                </div>
               ) : null}
 
               {modelTab === "codes" ? (
-                <>
-                <fieldset className="ena-code-fieldset">
-                  <legend>{copy.model.codes} <span>{config.codes.length}</span></legend>
-                  <div className="ena-code-options">
-                    {codeOptions.map((header) => {
-                      const selected = config.codes.includes(header);
-                      return (
-                        <div className="ena-code-option-row" key={header}>
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={config.codes.includes(header)}
-                              onChange={(event) => updateConfig((current) => ({
-                                ...current,
-                                codes: toggleInHeaderOrder(headers, current.codes, header, event.target.checked),
-                              }))}
-                            />
-                            <span>{header}</span>
-                          </label>
-                          {selected ? (
-                            <label className="ena-code-color-control" title={`${copy.model.codeColor}: ${header}`}>
-                              <input
-                                className="ena-code-color-input"
-                                type="color"
-                                aria-label={`${copy.model.codeColor}: ${header}`}
-                                data-ena-code-color={header}
-                                value={codeColorFor(codeColors, header)}
-                                onChange={(event) => setCodeColors((current) => updateCodeColor(current, header, event.target.value))}
-                              />
-                            </label>
-                          ) : null}
-                        </div>
-                      );
-                    })}
+                <div className="ena-official-model-panel" data-ena-official-panel="codes">
+                <OpenEnaOfficialTwoEndedSwitch
+                  label="Network type"
+                  startLabel="Ordered Network"
+                  endLabel="Standard Network"
+                  endSelected={currentAnalysisKind === "ena"}
+                  disabled={loading || sourceBusy}
+                  onChange={(endSelected) => {
+                    selectAnalysisFamily(endSelected ? "ena" : "ona");
+                    setModelTab("codes");
+                  }}
+                />
+                <div className="ena-official-code-tools" role="toolbar" aria-label="Code display tools">
+                  <OpenEnaOfficialIconButton icon="visibility" ariaLabel="Hide all codes" title="Hide all codes" disabled />
+                  <OpenEnaOfficialIconButton icon="exclude" ariaLabel="Exclude all codes" title="Exclude all codes" disabled />
+                </div>
+                <div className="ena-official-code-list" data-ena-official-code-list="true">
+                  {config.codes.map((header) => (
+                    <div className="ena-official-code-row" key={header}>
+                      <span className="ena-official-drag-dots" aria-hidden="true"><i /><i /><i /></span>
+                      <strong>{header}</strong>
+                      <label className="ena-code-color-control" title={`${copy.model.codeColor}: ${header}`}>
+                        <input
+                          className="ena-code-color-input"
+                          type="color"
+                          aria-label={`${copy.model.codeColor}: ${header}`}
+                          data-ena-code-color={header}
+                          value={codeColorFor(codeColors, header)}
+                          onChange={(event) => setCodeColors((current) => updateCodeColor(current, header, event.target.value))}
+                        />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+                <details className="ena-official-manage-codes">
+                  <summary>Manage Codes</summary>
+                  <div className="ena-official-code-picker">
+                    {codeOptions.map((header) => (
+                      <label key={header}>
+                        <input
+                          type="checkbox"
+                          checked={config.codes.includes(header)}
+                          onChange={(event) => updateConfig((current) => ({
+                            ...current,
+                            codes: toggleInHeaderOrder(headers, current.codes, header, event.target.checked),
+                          }))}
+                        />
+                        <span>{header}</span>
+                      </label>
+                    ))}
                   </div>
-                </fieldset>
+                </details>
                 {directionalMask ? (
                   <OpenEnaDirectionalMaskEditor
                     id="open-ena-ona-directional-mask"
@@ -2324,7 +2388,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                     disabled={loading || sourceBusy}
                   />
                 ) : null}
-                </>
+                </div>
               ) : null}
             </section>
 

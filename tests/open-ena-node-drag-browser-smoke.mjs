@@ -184,7 +184,12 @@ async function stopOwnedServer(server) {
 function removeOwnedDistDirectory() {
   assert.equal(dirname(ownedDistDirectory), projectRoot);
   assert.ok(basename(ownedDistDirectory).startsWith(".next-node-drag-smoke-"));
-  rmSync(ownedDistDirectory, { recursive: true, force: true });
+  rmSync(ownedDistDirectory, {
+    recursive: true,
+    force: true,
+    maxRetries: 5,
+    retryDelay: 100,
+  });
 }
 
 async function cleanup() {
@@ -413,7 +418,9 @@ async function resetNodeLayout(page) {
 
 async function selectView(page, dimension) {
   const visualization = page.getByRole("group", { name: "ENA visualization options" });
-  const button = visualization.getByRole("button", { name: dimension === "3d" ? /3D ENA/ : /2D ENA/ });
+  const button = visualization.getByRole("button", {
+    name: dimension === "3d" ? /^3D (?:ENA|ONA)/ : /^2D (?:ENA|ONA)/,
+  });
   assertBrowser(await button.isEnabled(), `${dimension} view is disabled`);
   await button.click();
 }
@@ -540,18 +547,14 @@ async function recenterPreservesNode(page, testId, expectedNode) {
 async function switchToOnaAndBuild(page) {
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
   await rail.getByRole("button", { name: "Model", exact: true }).click();
-  const networkType = page.getByRole("switch", { name: "Network type" });
-  if (await networkType.count()) {
-    await page.getByRole("tab", { name: /^Codes/ }).click();
-    if (await networkType.getAttribute("aria-checked") === "true") await networkType.click();
-    assertBrowser(await networkType.getAttribute("aria-checked") === "false",
-      "ONA network family was not selected through the Codes switch");
-  } else {
-    const onaFamily = page.getByRole("radio", { name: /Ordered Network Analysis \(ONA\)/ });
-    await onaFamily.check();
-    assertBrowser(await onaFamily.isChecked(), "ONA network family was not selected through the analysis card");
-  }
-  await page.getByRole("tab", { name: /^Windows/ }).click();
+  const modelTabs = page.getByRole("tablist", { name: "Model configuration" });
+  await modelTabs.getByRole("tab", { name: "Codes", exact: true }).click();
+  const networkType = page.getByRole("switch", { name: "Network type", exact: true });
+  await networkType.waitFor({ state: "visible", timeout: 30_000 });
+  if (await networkType.getAttribute("aria-checked") === "true") await networkType.click();
+  assertBrowser(await networkType.getAttribute("aria-checked") === "false",
+    "ONA network family was not selected through the Codes switch");
+  await modelTabs.getByRole("tab", { name: "Windows", exact: true }).click();
   await page.getByRole("radio", { name: /Confirmed source-record order/ }).check();
   await page.getByRole("checkbox", { name: /I confirm that source-record order/ }).check();
   const build = page.getByRole("button", { name: /Build ONA model|Rebuild ONA model/ });

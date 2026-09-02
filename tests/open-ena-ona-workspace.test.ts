@@ -12,14 +12,18 @@ const dataView = readFileSync(
 );
 const i18n = readFileSync(new URL("../lib/open-ena-i18n.ts", import.meta.url), "utf8");
 
-test("Workspace integrates ONA as a complete analysis family rather than one switch", () => {
-  assert.match(workspace, /OpenEnaAnalysisFamilyControl/);
+test("Workspace keeps ONA as a complete analysis family behind the official Codes switch", () => {
+  assert.match(workspace, /OpenEnaOfficialTwoEndedSwitch/);
+  assert.match(
+    workspace,
+    /data-ena-official-panel="codes"[\s\S]*?startLabel="Ordered Network"[\s\S]*?endLabel="Standard Network"/u,
+  );
+  assert.match(workspace, /selectAnalysisFamily\(endSelected \? "ena" : "ona"\)/u);
   assert.match(workspace, /OpenEnaOrderPanel/);
   assert.match(workspace, /OpenEnaDirectionalMaskEditor/);
   assert.match(workspace, /createAnalysisFamilyDrafts/);
   assert.match(workspace, /beginAnalysisFamilyConfiguration/);
   assert.match(workspace, /switchAnalysisFamily/);
-  assert.doesNotMatch(workspace, /role=["']switch["'][^\n]*analysisKind/i);
 });
 
 test("incomplete order-column edits stay in the draft-safe family transition", () => {

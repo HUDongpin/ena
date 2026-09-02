@@ -37,7 +37,7 @@ test("the Codes panel places a native palette after every selected code without 
   assert.match(workspace, /const \[codeColors, setCodeColors\] = useState/);
   assert.match(
     workspace,
-    /className="ena-code-option-row"[\s\S]*?type="checkbox"[\s\S]*?config\.codes\.includes\(header\)[\s\S]*?type="color"/,
+    /className="ena-official-code-row"[\s\S]*?type="color"[\s\S]*?className="ena-official-manage-codes"[\s\S]*?type="checkbox"[\s\S]*?config\.codes\.includes\(header\)/,
   );
   assert.match(workspace, /aria-label=\{`\$\{copy\.model\.codeColor\}: \$\{header\}`\}/);
   assert.match(workspace, /value=\{codeColorFor\(codeColors, header\)\}/);
@@ -67,7 +67,7 @@ test("the code palette keeps a compact 20px swatch inside an easy 28px hit targe
   );
   assert.match(
     styles,
-    /\.ena-code-options \.ena-code-color-control\s*\{[^}]*display:\s*grid;[^}]*width:\s*28px;[^}]*height:\s*28px;[^}]*min-height:\s*28px;[^}]*place-items:\s*center;[^}]*padding:\s*0;[^}]*\}/,
+    /\.ena-official-code-row \.ena-code-color-control\s*\{[^}]*display:\s*grid;[^}]*width:\s*28px;[^}]*height:\s*28px;[^}]*min-height:\s*28px;[^}]*place-items:\s*center;[^}]*padding:\s*0;[^}]*\}/,
   );
   assert.match(
     styles,

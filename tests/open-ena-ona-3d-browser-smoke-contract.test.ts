@@ -47,6 +47,8 @@ test("the synthetic lane exercises directed ONA science, circular points, three 
   assert.match(source, /SYNTHETIC_SCAFFOLDED/u);
   assert.match(source, /rowsPerUnit:\s*3/u);
   assert.match(source, /Ordered Network Analysis \(ONA\)/u);
+  assert.match(source, /getByRole\("switch", \{ name: "Network type", exact: true \}\)/u);
+  assert.doesNotMatch(source, /getByRole\("radio", \{ name: \/Ordered Network Analysis/u);
   assert.match(source, /Confirmed source-record order/u);
   assert.match(source, /Edit p² directional mask/u);
   assert.match(source, /CODE_E ground\/source to CODE_A response\/target/u);
@@ -125,6 +127,9 @@ test("the Yu lane emits aggregate-only evidence without identity screenshots or 
   const source = readFileSync(smokePath, "utf8");
 
   assert.match(source, /Yu_ena_coded_data_0712\.xlsx/u);
+  assert.match(source, /data-ena-official-field-path="true"/u);
+  assert.match(source, /Add or remove Unit identity fields/u);
+  assert.match(source, /Add or remove Horizon identity fields/u);
   assert.match(source, /getByRole\("tab", \{ name: "Units" \}\)/u);
   assert.match(source, /getByLabel\("Comparison group"\)\.selectOption\("Group"\)/u);
   assert.match(source, /getByRole\("tab", \{ name: "Horizons" \}\)/u);
@@ -132,7 +137,7 @@ test("the Yu lane emits aggregate-only evidence without identity screenshots or 
   assert.match(source, /getByRole\("tab", \{ name: "Windows" \}\)/u);
   assert.match(
     source,
-    /async function runYuPrivateLane[\s\S]{0,2200}Total rows including the current response"\)\.fill\("2"\)/u,
+    /async function runYuPrivateLane[\s\S]{0,5000}Total rows including the current response"\)\.fill\("2"\)/u,
   );
   assert.match(source, /codeNodeCount:\s*7/u);
   assert.match(source, /aggregateOnly:\s*true/u);

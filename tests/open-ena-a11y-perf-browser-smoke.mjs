@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
-import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const artifactDirectory = resolve(
@@ -58,6 +59,68 @@ async function findOpenPort() {
   });
 }
 
+let ephemeralPostgresRoot = null;
+let ephemeralPostgresData = null;
+let ephemeralPostgresRunning = false;
+
+async function startEphemeralPostgres() {
+  // Keep the prefix intentionally short: PostgreSQL's Unix socket path has a
+  // small platform limit, and macOS tmpdir paths are already deeply nested.
+  ephemeralPostgresRoot = mkdtempSync(join(tmpdir(), "oeapg-"));
+  ephemeralPostgresData = join(ephemeralPostgresRoot, "data");
+  const socketDirectory = join(ephemeralPostgresRoot, "socket");
+  const postgresLog = join(ephemeralPostgresRoot, "postgres.log");
+  mkdirSync(socketDirectory, { recursive: true });
+  execFileSync("initdb", [
+    "--pgdata", ephemeralPostgresData,
+    "--auth", "trust",
+    "--username", "postgres",
+    "--encoding", "UTF8",
+    "--no-locale",
+  ], { stdio: "ignore", timeout: 60_000 });
+  const port = await findOpenPort();
+  execFileSync("pg_ctl", [
+    "--pgdata", ephemeralPostgresData,
+    "--log", postgresLog,
+    "--options", `-h 127.0.0.1 -p ${port} -k ${socketDirectory}`,
+    "--wait",
+    "start",
+  ], { stdio: "ignore", timeout: 60_000 });
+  ephemeralPostgresRunning = true;
+  execFileSync("psql", [
+    "--no-psqlrc",
+    "--set", "ON_ERROR_STOP=1",
+    "--host", "127.0.0.1",
+    "--port", String(port),
+    "--username", "postgres",
+    "--dbname", "postgres",
+    "--file", join(projectRoot, "migrations", "002_open_ena_auth_security.sql"),
+  ], { stdio: "ignore", timeout: 60_000 });
+  return `postgresql://postgres@127.0.0.1:${port}/postgres`;
+}
+
+function stopEphemeralPostgres() {
+  try {
+    if (ephemeralPostgresRunning && ephemeralPostgresData) {
+      execFileSync("pg_ctl", [
+        "--pgdata", ephemeralPostgresData,
+        "--wait",
+        "--mode", "fast",
+        "stop",
+      ], { stdio: "ignore", timeout: 60_000 });
+    }
+  } finally {
+    ephemeralPostgresRunning = false;
+    ephemeralPostgresData = null;
+    if (ephemeralPostgresRoot) {
+      assert.equal(dirname(ephemeralPostgresRoot), tmpdir());
+      assert.ok(basename(ephemeralPostgresRoot).startsWith("oeapg-"));
+      rmSync(ephemeralPostgresRoot, { recursive: true, force: true });
+      ephemeralPostgresRoot = null;
+    }
+  }
+}
+
 async function waitForServer(url, timeout = 90_000) {
   const deadline = Date.now() + timeout;
   let lastError = null;
@@ -73,7 +136,7 @@ async function waitForServer(url, timeout = 90_000) {
   throw new Error(`Open ENA did not become ready at ${url}.`, { cause: lastError });
 }
 
-function startServer(port) {
+function startServer(port, authDatabaseUrl) {
   const loopbackOrigin = `http://127.0.0.1:${port}`;
   const serverEnvironment = {
     ...env,
@@ -81,6 +144,7 @@ function startServer(port) {
     // to that exact origin for the login and authenticated workbench calls.
     OPEN_ENA_PUBLIC_ORIGIN: loopbackOrigin,
     OPEN_ENA_ALLOWED_ORIGINS: loopbackOrigin,
+    OPEN_ENA_AUTH_DATABASE_URL: authDatabaseUrl,
   };
   execFileSync("npm", ["run", "build"], {
     cwd: projectRoot,
@@ -255,6 +319,126 @@ async function captureSliderScreen(page, screen, names) {
   return { screen, sliders: values };
 }
 
+async function auditOfficialModelTabs(page, rail) {
+  await rail.getByRole("button", { name: "Model", exact: true }).click();
+  const tablist = page.getByRole("tablist", { name: "Model configuration" });
+  await tablist.waitFor({ state: "visible", timeout: 30_000 });
+  const tabNames = ["Units", "Horizons", "Windows", "Codes"];
+  const tabMetrics = await tablist.getByRole("tab").evaluateAll((tabs) => tabs.map((tab) => ({
+    name: tab.querySelector(":scope > span:first-child")?.textContent?.replace(/\s+/gu, " ").trim() ?? "",
+    tabHeightPx: tab.getBoundingClientRect().height,
+    textColor: getComputedStyle(tab).color,
+    activeRuleColor: getComputedStyle(tab, "::before").backgroundColor,
+    selected: tab.getAttribute("aria-selected") === "true",
+  })));
+  assert.deepEqual(tabMetrics.map((tab) => tab.name), tabNames);
+  assert.ok(tabMetrics.every((tab) => tab.tabHeightPx >= 33 && tab.tabHeightPx <= 36),
+    "official Model tabs do not retain the 34px cadence");
+  assert.equal(tabMetrics.find((tab) => tab.selected)?.activeRuleColor, "rgb(137, 207, 240)");
+
+  const openPanel = async (name, panelName) => {
+    await tablist.getByRole("tab", { name, exact: true }).click();
+    const panel = page.locator(`[data-ena-official-panel="${panelName}"]`);
+    await panel.waitFor({ state: "visible", timeout: 30_000 });
+    return panel;
+  };
+  const panelGeometry = async (panel) => await panel.evaluate((element) => ({
+    scrollWidth: element.scrollWidth,
+    clientWidth: element.clientWidth,
+    overflowContained: element.scrollWidth <= element.clientWidth + 1,
+  }));
+
+  const units = await openPanel("Units", "units");
+  const unitEditor = units.locator('[data-ena-official-field-path="true"]').first();
+  const unitPath = unitEditor.locator(".ena-official-field-path");
+  const unitAdd = unitEditor.locator(".ena-official-field-path-add");
+  const unitGeometry = await unitEditor.evaluate((editor) => {
+    const path = editor.querySelector(".ena-official-field-path");
+    const add = editor.querySelector(".ena-official-field-path-add");
+    if (!path || !add) throw new Error("official unit field path is incomplete");
+    return {
+      fieldPathHeightPx: path.getBoundingClientRect().height,
+      addButtonHeightPx: add.getBoundingClientRect().height,
+      addButtonBackground: getComputedStyle(add).backgroundColor,
+    };
+  });
+  assert.ok(unitGeometry.fieldPathHeightPx >= 29 && unitGeometry.fieldPathHeightPx <= 31);
+  assert.ok(unitGeometry.addButtonHeightPx >= 29 && unitGeometry.addButtonHeightPx <= 31);
+  assert.equal(unitGeometry.addButtonBackground, "rgb(137, 207, 240)");
+  await unitPath.waitFor({ state: "visible" });
+
+  const removeField = unitEditor.locator(".ena-official-field-remove").last();
+  const removeLabel = await removeField.evaluate((button) => button.ariaLabel);
+  const removeMatch = removeLabel?.match(/^Remove (.+) from (.+ identity)$/u);
+  assert.ok(removeMatch, "Remove .* from .* identity control is unavailable");
+  const removedField = removeMatch[1];
+  await removeField.click();
+  await unitAdd.click();
+  const removedFieldCheckbox = unitEditor.getByRole("checkbox", { name: removedField, exact: true });
+  assert.equal(await removedFieldCheckbox.isChecked(), false);
+  await removedFieldCheckbox.check();
+  assert.equal(await removedFieldCheckbox.isChecked(), true);
+  await unitAdd.click();
+
+  const createSample = units.getByRole("combobox", { name: "Comparison group", exact: true });
+  const initialGroup = await createSample.inputValue();
+  const alternateGroup = await createSample.locator("option").evaluateAll((options, current) => (
+    options.map((option) => option.value).find((value) => value && value !== current) ?? null
+  ), initialGroup);
+  assert.ok(alternateGroup, "Create Sample has no reversible Comparison group choice");
+  await createSample.selectOption(alternateGroup);
+  assert.equal(await createSample.inputValue(), alternateGroup);
+  await createSample.selectOption(initialGroup);
+  assert.equal(await createSample.inputValue(), initialGroup);
+  const unitsGeometry = await panelGeometry(units);
+
+  const horizons = await openPanel("Horizons", "horizons");
+  const horizonSwitch = horizons.getByRole("switch", { name: "Horizon method", exact: true });
+  assert.equal(await horizonSwitch.isDisabled(), true);
+  assert.equal(await horizonSwitch.getAttribute("aria-checked"), "true");
+  await horizons.getByText("Open ENA currently supports the Standard horizon method.", { exact: true })
+    .waitFor({ state: "visible" });
+  assert.ok(await horizons.locator(".ena-official-horizon-column").count() > 0);
+  assert.ok(await horizons.locator(".ena-official-icon-button:disabled").count() > 0);
+  const horizonsGeometry = await panelGeometry(horizons);
+
+  const windows = await openPanel("Windows", "windows");
+  const windowSwitch = windows.getByRole("switch", { name: "Window horizon method", exact: true });
+  assert.equal(await windowSwitch.isDisabled(), true);
+  assert.equal(await windowSwitch.getAttribute("aria-checked"), "true");
+  assert.ok(await windows.locator(".ena-official-setting-row").count() > 0);
+  assert.equal(await windows.getByRole("slider").count(), 2);
+  const windowsGeometry = await panelGeometry(windows);
+
+  const codes = await openPanel("Codes", "codes");
+  const networkSwitch = codes.getByRole("switch", { name: "Network type", exact: true });
+  assert.equal(await networkSwitch.getAttribute("aria-checked"), "true");
+  await networkSwitch.click();
+  assert.equal(await networkSwitch.getAttribute("aria-checked"), "false");
+  await networkSwitch.click();
+  assert.equal(await networkSwitch.getAttribute("aria-checked"), "true");
+  const manageCodes = codes.getByText("Manage Codes", { exact: true });
+  await manageCodes.click();
+  const codeCheckboxes = codes.locator(".ena-official-manage-codes").getByRole("checkbox");
+  assert.ok(await codeCheckboxes.count() > 0);
+  await manageCodes.click();
+  const colorValues = await codes.locator('input[type="color"]').evaluateAll((inputs) => (
+    inputs.map((input) => input.value)
+  ));
+  assert.ok(colorValues.length > 0 && colorValues.every((value) => /^#[0-9a-f]{6}$/iu.test(value)));
+  const codesGeometry = await panelGeometry(codes);
+
+  const panels = {
+    units: unitsGeometry,
+    horizons: horizonsGeometry,
+    windows: windowsGeometry,
+    codes: codesGeometry,
+  };
+  assert.ok(Object.values(panels).every((panel) => panel.overflowContained),
+    "an official Model panel expanded the workbench horizontally");
+  return { tabMetrics, unitGeometry, removedField, initialGroup, alternateGroup, panels };
+}
+
 async function readGeometry(page) {
   return page.evaluate(() => {
     const rectangle = (element) => {
@@ -353,7 +537,14 @@ async function readGeometry(page) {
 }
 
 async function runA11y(page, baseUrl) {
+  const consoleErrors = [];
+  const pageErrors = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
   const rail = await loginAndLoad(page, baseUrl);
+  const modelParity = await auditOfficialModelTabs(page, rail);
   await rail.getByRole("button", { name: "Model", exact: true }).click();
   await page.getByRole("tab", { name: "Horizons", exact: true }).click();
   await page.getByRole("tab", { name: "Windows", exact: true }).click();
@@ -383,7 +574,9 @@ async function runA11y(page, baseUrl) {
     assert.ok(geometry.regions.toolbar.bottom <= geometry.regions.plotSurface.top + 1, "toolbar overlaps the 3D result surface");
     assert.ok(geometry.railLabels.every((item) => item.containedByButton && item.visibleInRail), "an enlarged rail label was lost");
     assert.deepEqual(await readScientificIdentity(page), scientificIdentity, "font-size change altered scientific identity");
-    return { modelSliders, plotSliders, geometry, scientificIdentity };
+    assert.deepEqual(consoleErrors, [], "official Model parity emitted console errors");
+    assert.deepEqual(pageErrors, [], "official Model parity emitted page errors");
+    return { modelParity, modelSliders, plotSliders, geometry, scientificIdentity, consoleErrors, pageErrors };
   } finally {
     await page.evaluate(() => { document.documentElement.style.fontSize = ""; });
   }
@@ -464,6 +657,11 @@ async function interrupt(signalName) {
   shuttingDown = true;
   await browser?.close().catch(() => {});
   await stopServer(server).catch((error) => process.stderr.write(`[a11y/perf smoke] cleanup: ${redact(error.stack ?? error)}\n`));
+  try {
+    stopEphemeralPostgres();
+  } catch (error) {
+    process.stderr.write(`[a11y/perf smoke] database cleanup: ${redact(error.stack ?? error)}\n`);
+  }
   rmSync(distDirectory, { recursive: true, force: true });
   restoreOwnedTsconfigMutation();
   process.exit(signalName === "SIGINT" ? 130 : 143);
@@ -472,7 +670,8 @@ process.once("SIGINT", () => void interrupt("SIGINT"));
 process.once("SIGTERM", () => void interrupt("SIGTERM"));
 
 try {
-  server = startServer(port);
+  const authDatabaseUrl = await startEphemeralPostgres();
+  server = startServer(port, authDatabaseUrl);
   const plotlyChunkNames = findPlotlyChunkNames();
   const baseUrl = `http://127.0.0.1:${port}`;
   await waitForServer(baseUrl + "/en/open-ena");
@@ -522,6 +721,7 @@ try {
   shuttingDown = true;
   await browser?.close().catch(() => {});
   await stopServer(server).catch((error) => process.stderr.write(`[a11y/perf smoke] cleanup: ${redact(error.stack ?? error)}\n`));
+  stopEphemeralPostgres();
   rmSync(distDirectory, { recursive: true, force: true });
   restoreOwnedTsconfigMutation();
 }

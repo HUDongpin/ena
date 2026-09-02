@@ -508,11 +508,19 @@ async function runSyntheticLane(page, args) {
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }, args.fixtureCsv);
   await page.getByRole("heading", { name: "Define the ENA model" }).waitFor({ timeout: 30_000 });
-  await page.getByRole("radio", { name: /Ordered Network Analysis \(ONA\)/ }).click();
+  const modelTabs = page.getByRole("tablist", { name: "Model configuration" });
+  await modelTabs.getByRole("tab", { name: "Codes" }).click();
+  const networkSwitch = page.getByRole("switch", { name: "Network type", exact: true });
+  assertBrowser(await networkSwitch.getAttribute("aria-checked") === "true",
+    "the synthetic model did not start as Standard Network");
+  await networkSwitch.click();
+  assertBrowser(await networkSwitch.getAttribute("aria-checked") === "false",
+    "the synthetic model did not switch to Ordered Network");
+  await modelTabs.getByRole("tab", { name: "Windows" }).click();
   await page.getByRole("radio", { name: /Confirmed source-record order/ }).click();
   await page.getByRole("checkbox", { name: /I confirm that source-record order/ }).check();
   await page.getByLabel("Total rows including the current response").fill(String(args.rowsPerUnit));
-  await page.getByRole("tab", { name: "Codes" }).click();
+  await modelTabs.getByRole("tab", { name: "Codes" }).click();
   await page.getByRole("button", { name: "Edit p² directional mask" }).click();
   const maskCell = page.getByRole("checkbox", { name: args.maskedDirection });
   assertBrowser(await maskCell.isChecked(), "the synthetic masked direction did not start enabled");
@@ -751,19 +759,37 @@ async function runYuPrivateLane(page, args) {
   await rail.getByRole("button", { name: "Data", exact: true }).click();
   await page.locator('input[type=file][accept*=".xlsx"]').setInputFiles(args.workbookPath);
   await page.getByRole("heading", { name: "Define the ENA model" }).waitFor({ timeout: 30_000 });
-  await page.getByRole("radio", { name: /Ordered Network Analysis \(ONA\)/ }).click();
   const modelTabs = page.getByRole("tablist", { name: "Model configuration" });
+  await modelTabs.getByRole("tab", { name: "Codes" }).click();
+  const networkSwitch = page.getByRole("switch", { name: "Network type", exact: true });
+  assertBrowser(await networkSwitch.getAttribute("aria-checked") === "true",
+    "the Yu model did not start as Standard Network");
+  await networkSwitch.click();
+  assertBrowser(await networkSwitch.getAttribute("aria-checked") === "false",
+    "the Yu model did not switch to Ordered Network");
   await modelTabs.getByRole("tab", { name: "Units" }).click();
-  const unitIdentity = page.getByRole("group", { name: /Unit identity/ });
+  const unitIdentity = page.locator('[data-ena-official-field-path="true"][aria-label="Unit identity"]');
+  const unitIdentityPicker = unitIdentity.getByRole("button", {
+    name: "Add or remove Unit identity fields",
+    exact: true,
+  });
+  await unitIdentityPicker.click();
   await unitIdentity.getByRole("checkbox", { name: "Group", exact: true }).check();
   await unitIdentity.getByRole("checkbox", { name: "Name", exact: true }).check();
   await unitIdentity.getByRole("checkbox", { name: "Lesson", exact: true }).uncheck();
+  await unitIdentityPicker.click();
   await page.getByLabel("Comparison group").selectOption("Group");
   await modelTabs.getByRole("tab", { name: "Horizons" }).click();
-  const horizonIdentity = page.getByRole("group", { name: /Horizon identity/ });
+  const horizonIdentity = page.locator('[data-ena-official-field-path="true"][aria-label="Horizon identity"]');
+  const horizonIdentityPicker = horizonIdentity.getByRole("button", {
+    name: "Add or remove Horizon identity fields",
+    exact: true,
+  });
+  await horizonIdentityPicker.click();
   await horizonIdentity.getByRole("checkbox", { name: "Group", exact: true }).check();
   await horizonIdentity.getByRole("checkbox", { name: "Name", exact: true }).check();
   await horizonIdentity.getByRole("checkbox", { name: "Lesson", exact: true }).uncheck();
+  await horizonIdentityPicker.click();
   await modelTabs.getByRole("tab", { name: "Windows" }).click();
   const orderGroup = page.getByRole("group", { name: "Order columns and typed comparators" });
   await orderGroup.getByRole("checkbox", { name: "Lesson", exact: true }).check();

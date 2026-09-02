@@ -313,12 +313,18 @@ test("composite identities preserve declared order while codes remain in visible
     join(process.cwd(), "components", "open-ena", "OpenEnaWorkspace.tsx"),
     "utf8",
   );
-  assert.match(workspace, /function toggleInSelectionOrder/);
-  assert.match(workspace, /return checked[\s\S]*?selected\.includes\(header\)[\s\S]*?\[\.\.\.selected, header\][\s\S]*?: selected\.filter/);
+  const officialControls = readFileSync(
+    join(process.cwd(), "components", "open-ena", "OpenEnaOfficialModelControls.tsx"),
+    "utf8",
+  );
+  assert.match(officialControls, /if \(!selected\.has\(field\)\) onChange\(\[\.\.\.selectedFields, field\]\)/);
+  assert.match(officialControls, /onChange\(selectedFields\.filter\(\(candidate\) => candidate !== field\)\)/);
   assert.match(workspace, /function toggleInHeaderOrder/);
   assert.match(workspace, /return headers\.filter\(\(candidate\) => next\.has\(candidate\)\)/);
-  assert.match(workspace, /unitColumns: toggleInSelectionOrder\(current\.unitColumns, header, event\.target\.checked\)/);
-  assert.match(workspace, /conversationColumns: toggleInSelectionOrder\(current\.conversationColumns, header, event\.target\.checked\)/);
+  assert.match(workspace, /selectedFields=\{config\.unitColumns\}/);
+  assert.match(workspace, /onChange=\{\(unitColumns\) => updateConfig\(\(current\) => \(\{ \.\.\.current, unitColumns \}\)\)\}/);
+  assert.match(workspace, /selectedFields=\{config\.conversationColumns\}/);
+  assert.match(workspace, /onChange=\{\(conversationColumns\) => updateConfig/);
   assert.match(workspace, /codes: toggleInHeaderOrder\(headers, current\.codes, header, event\.target\.checked\)/);
 });
 

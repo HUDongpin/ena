@@ -9032,34 +9032,57 @@ body:has(.open-ena-page) #main-content {
   stroke-width: 1.7;
 }
 
+/* Open ENA official Model parity controls. */
+.ena-model-control-content {
+  padding: 0 10px 80px;
+  color: #333;
+  background: #fff;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.ena-model-control-content .ena-panel-heading {
+  padding: 10px 4px;
+}
+
 .ena-model-tabs {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.25rem), 1fr));
-  margin: 0 -4px 12px;
-  padding: 0 4px;
-  border-bottom: 1px solid #cbd7d5;
-  background: #f7f9f9;
+  overflow-x: auto;
+  margin: 0 -10px 8px;
+  border-top: 1px solid #e8e8e8;
+  border-bottom: 1px solid #d7d7d7;
+  background: #fff;
 }
 
 .ena-model-tabs button {
   position: relative;
+  display: flex;
   min-width: 0;
-  min-height: 42px;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   border: 0;
-  padding: 7px 3px;
-  color: #59686d;
-  background: transparent;
+  border-inline-end: 1px solid #e8e8e8;
+  padding: 4px 3px 2px;
+  color: #999;
+  background: #fff;
   cursor: pointer;
   font-size: calc(0.63rem + var(--ena-font-step, 1px));
-  font-weight: 720;
+  font-weight: 400;
+  line-height: 1;
 }
 
-.ena-model-tabs button::after {
+.ena-model-tabs button:last-child {
+  border-inline-end: 0;
+}
+
+.ena-model-tabs button::before {
   position: absolute;
-  right: 5px;
-  bottom: -1px;
-  left: 5px;
-  height: 3px;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 4px;
   background: transparent;
   content: "";
 }
@@ -9067,9 +9090,10 @@ body:has(.open-ena-page) #main-content {
 .ena-model-tabs button[aria-selected="true"] {
   color: var(--ena-accent-strong);
   background: #fff;
+  font-weight: 700;
 }
 
-.ena-model-tabs button[aria-selected="true"]::after {
+.ena-model-tabs button[aria-selected="true"]::before {
   background: var(--ena-accent);
 }
 
@@ -9079,47 +9103,583 @@ body:has(.open-ena-page) #main-content {
   outline-offset: -3px;
 }
 
+.ena-model-tab-help {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #858585;
+  font-size: 9px;
+  font-weight: 800;
+}
+
 .ena-model-tabbed-form {
-  --ena-model-tab-stage-height: 380px;
-  --ena-model-selection-stage-height: 300px;
   gap: 10px;
+  padding-top: 0;
+  overflow: visible;
 }
 
 .ena-model-tab-panel {
   display: grid;
-  gap: 10px;
   min-width: 0;
-  min-height: var(--ena-model-tab-stage-height);
+  min-height: 0;
   align-content: start;
 }
 
-.ena-model-tab-panel .ena-code-fieldset,
-.ena-model-tab-panel .ena-sequence-note {
-  margin: 0;
+.ena-official-model-panel {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 8px;
 }
 
-.ena-model-tab-panel[data-ena-model-panel="units"] .ena-identity-fieldset,
-.ena-model-tab-panel[data-ena-model-panel="horizons"] .ena-identity-fieldset {
+.ena-official-field-editor {
+  position: relative;
+  min-width: 0;
+}
+
+.ena-official-field-path {
+  display: grid;
+  min-width: 0;
+  min-height: 30px;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  gap: 6px;
+  padding: 0 4px;
+  background: #828b8e;
+}
+
+.ena-official-field-path-segments {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(var(--ena-official-field-count), minmax(78px, 1fr));
+  overflow-x: auto;
+  background: #fff;
+  scrollbar-width: thin;
+}
+
+.ena-official-field-path-segment,
+.ena-official-field-path-empty {
   display: flex;
-  height: var(--ena-model-selection-stage-height);
-  min-height: var(--ena-model-selection-stage-height);
-  flex-direction: column;
+  min-width: 0;
+  height: 30px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 5px;
+  color: #333;
+  background: #fff;
+  font-size: 12px;
 }
 
-.ena-model-tab-panel[data-ena-model-panel="codes"] .ena-code-fieldset {
-  display: flex;
-  height: var(--ena-model-tab-stage-height);
-  min-height: var(--ena-model-tab-stage-height);
-  flex-direction: column;
+.ena-official-field-path-segment + .ena-official-field-path-segment {
+  box-shadow: -5px 0 5px -2px #ccc;
 }
 
-.ena-model-tab-panel[data-ena-model-panel="units"] .ena-code-options,
-.ena-model-tab-panel[data-ena-model-panel="horizons"] .ena-code-options,
-.ena-model-tab-panel[data-ena-model-panel="codes"] .ena-code-options {
-  min-height: 0;
-  max-height: none;
+.ena-official-field-path-empty {
+  color: #777;
+}
+
+.ena-official-drag-dots {
+  display: inline-grid;
+  flex: 0 0 4px;
+  gap: 2px;
+}
+
+.ena-official-drag-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #d3d3d3;
+}
+
+.ena-official-field-name {
+  min-width: 0;
   flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
+.ena-official-field-remove {
+  display: grid;
+  width: 20px;
+  height: 24px;
+  flex: 0 0 20px;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  color: #777;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.ena-official-field-path-segment:hover .ena-official-field-remove,
+.ena-official-field-remove:focus-visible {
+  opacity: 1;
+}
+
+.ena-official-field-path-add {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  color: #0f172a;
+  background: var(--ena-accent);
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.ena-official-field-path-add:hover:not(:disabled) {
+  background: var(--ena-accent-hover);
+}
+
+.ena-official-field-picker,
+.ena-official-code-picker {
+  position: relative;
+  z-index: 5;
+  display: grid;
+  max-height: 196px;
+  overflow: auto;
+  gap: 1px;
+  margin: 4px 4px 0;
+  border: 1px solid #d4d4d4;
+  padding: 4px;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+}
+
+.ena-official-field-picker[hidden] {
+  display: none;
+}
+
+.ena-official-field-picker label,
+.ena-official-code-picker label {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 7px;
+  color: #3b3b3b;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ena-official-field-picker label:hover,
+.ena-official-code-picker label:hover {
+  background: var(--ena-accent-soft);
+}
+
+.ena-official-field-picker input,
+.ena-official-code-picker input {
+  accent-color: var(--ena-accent-strong);
+}
+
+.ena-official-two-ended-switch {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+}
+
+.ena-official-two-ended-switch-control {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 12px 4px;
+  font-size: 10px;
+}
+
+.ena-official-two-ended-switch-control > span {
+  color: #333;
+  font-weight: 400;
+}
+
+.ena-official-two-ended-switch-control > span[data-selected="true"] {
+  color: #111;
+  font-weight: 700;
+}
+
+.ena-official-switch-track {
+  position: relative;
+  width: 36px;
+  height: 17px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: #aaa;
+  cursor: pointer;
+}
+
+.ena-official-switch-track[aria-checked="true"] {
+  background: var(--ena-accent);
+}
+
+.ena-official-switch-track > span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.3);
+  transition: transform 120ms ease;
+}
+
+.ena-official-switch-track[aria-checked="true"] > span {
+  transform: translateX(19px);
+}
+
+.ena-official-switch-track:disabled {
+  cursor: not-allowed;
+  opacity: 0.74;
+}
+
+.ena-official-switch-boundary {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.ena-official-unit-toolbar {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid #ccc;
+  padding: 8px 4px;
+}
+
+.ena-official-create-sample {
+  position: relative;
+  display: inline-flex;
+  height: 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  color: #0f172a;
+  background: var(--ena-accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ena-official-create-sample:hover,
+.ena-official-create-sample:focus-within {
+  background: var(--ena-accent-hover);
+}
+
+.ena-official-create-sample:focus-within {
+  outline: 3px solid var(--ena-accent-strong);
+  outline-offset: 2px;
+}
+
+.ena-official-create-sample select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.ena-official-create-sample-icon {
+  display: grid;
+  width: 16px;
+  grid-template-columns: repeat(2, 6px);
+  gap: 2px;
+}
+
+.ena-official-create-sample-icon i {
+  width: 6px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.ena-official-global-tools,
+.ena-official-code-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.ena-official-icon-button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  color: #8e8e8e;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ena-official-icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.ena-official-icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.ena-official-horizon-columns {
+  display: grid;
+  min-height: 150px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  align-items: start;
+  border-top: 1px solid #eee;
+}
+
+.ena-official-horizon-column {
+  min-width: 0;
+  border-inline-end: 1px solid #e7e7e7;
+}
+
+.ena-official-horizon-column:last-child {
+  border-inline-end: 0;
+}
+
+.ena-official-horizon-column header {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 3px 4px 3px 8px;
+  color: #555;
+  background: #f3f3f3;
+  font-size: 11px;
+}
+
+.ena-official-horizon-column header > span {
+  display: flex;
+}
+
+.ena-official-horizon-column ul {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ena-official-horizon-column li {
+  min-height: 26px;
+  overflow: hidden;
+  border-bottom: 1px solid #eee;
+  padding: 6px 8px;
+  color: #555;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ena-official-horizon-column details summary,
+.ena-official-manage-codes > summary {
+  min-height: 30px;
+  padding: 7px 8px;
+  color: #333;
+  cursor: pointer;
+  font-size: 11px;
+  text-align: center;
+}
+
+.ena-official-window-settings,
+.ena-official-setting-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.ena-official-setting-stack > .ena-field,
+.ena-official-setting-section {
+  padding: 8px;
+  background: #f4f4f4;
+}
+
+.ena-official-setting-section {
+  gap: 8px;
+}
+
+.ena-official-setting-row {
+  grid-template-columns: minmax(86px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.ena-official-setting-row select,
+.ena-official-window-settings .ena-field select {
+  min-height: 30px;
+  height: 30px;
+  border-color: #d5d5d5;
+  padding-block: 3px;
+  font-size: 12px;
+}
+
+.ena-official-window-ranges {
+  gap: 8px;
+  padding: 8px;
+  background: #f4f4f4;
+}
+
+.ena-official-window-ranges .ena-range-field {
+  gap: 4px;
+  font-size: 11px;
+}
+
+.ena-official-code-tools {
+  min-height: 30px;
+  border-bottom: 1px solid #e5e5e5;
+  padding: 0 4px;
+}
+
+.ena-official-code-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ena-official-code-row {
+  display: grid;
+  min-height: 34px;
+  grid-template-columns: 10px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: #3b3b3b;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.28);
+}
+
+.ena-official-code-row strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.ena-official-code-row .ena-code-color-control {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  place-items: center;
+  padding: 0;
+}
+
+.ena-official-manage-codes {
+  border-top: 1px solid #ddd;
+}
+
+.ena-official-manage-codes .ena-official-code-picker {
+  box-shadow: none;
+}
+
+.ena-official-model-panel[data-ena-official-panel="units"] .ena-group-display-controls {
+  gap: 6px;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.ena-official-model-panel[data-ena-official-panel="units"] .ena-group-display-controls-heading p {
+  display: none;
+}
+
+.ena-official-model-panel[data-ena-official-panel="units"] .ena-group-display-controls-heading:has(.ena-inline-link:disabled) {
+  display: none;
+}
+
+.ena-official-model-panel[data-ena-official-panel="units"] .ena-group-display-group {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.ena-official-model-panel[data-ena-official-panel="units"] .ena-group-display-group > summary {
+  min-height: 27px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.ena-official-model-panel[data-ena-official-panel="units"] .ena-group-display-group > summary::before {
+  color: #8d8d8d;
+  content: "›";
+  font-size: 18px;
+  line-height: 1;
+  transform-origin: center;
+}
+
+.ena-official-model-panel[data-ena-official-panel="units"] .ena-group-display-group[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.ena-official-model-panel[data-ena-official-panel="units"] .ena-group-display-group > summary::after {
+  content: none;
+}
+
+.ena-official-model-panel[data-ena-official-panel="units"] .ena-group-display-swatch {
+  width: 12px;
+  height: 12px;
+  flex-basis: 12px;
+  border: 0;
+  border-radius: 0;
+}
+
+.ena-group-display-name {
+  color: #333;
+  font-weight: 700;
+}
+
+.ena-group-display-mean-icon {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  color: #999;
+}
+
+.ena-group-display-mean-icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+
+@media (max-width: 720px) {
+  .ena-model-tabs button {
+    font-size: 11px;
+  }
+
+  .ena-model-tab-help {
+    display: none;
+  }
+
+  .ena-official-horizon-columns,
+  .ena-official-setting-row {
+    grid-template-columns: 1fr;
+  }
+}
+/* End Open ENA official Model parity controls. */
 
 .ena-stats-tabs {
   display: grid;
