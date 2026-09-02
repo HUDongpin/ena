@@ -19,6 +19,7 @@
     "test": "npm run jena:build && npm run test:app",
     "test:app": "node --import tsx --test tests/*.test.ts",
     "test:browser:open-ena-3d-controls": "node tests/open-ena-3d-controls-browser-smoke.mjs",
+    "test:browser:open-ena-ona-3d": "node tests/open-ena-ona-3d-browser-smoke.mjs",
     "test:browser:open-ena-node-drag": "node tests/open-ena-node-drag-browser-smoke.mjs",
     "test:browser:open-ena-login": "node tests/open-ena-login-browser-smoke.mjs",
     "test:browser:longitudinal-v3": "node tests/open-ena-longitudinal-v3-browser-smoke.mjs",

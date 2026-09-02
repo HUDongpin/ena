@@ -728,6 +728,41 @@ test("ONA Methods records the resolved directed scientific contract and omits EN
   assert.doesNotMatch(report, /reference projection/i);
 });
 
+test("3D ONA Methods and bundle record the actual display axes from the same fitted ordered model", () => {
+  const { dataset, config, result } = orderedFixture();
+  const axes = result.dimensions.slice(0, 3);
+  assert.equal(axes.length, 3);
+  const report = buildMethodsReport(
+    dataset,
+    config,
+    result,
+    SOURCE_HASH,
+    axes,
+    { view: "3d", flipX: true, flipY: false } as never,
+  );
+
+  assert.match(report, new RegExp(`Displayed 3D axes: X .*${axes[0]}.*; Y .*${axes[1]}.*; Z .*${axes[2]}`));
+  assert.match(report, /same completed fitted ordered model|same fitted ordered model/i);
+  assert.match(report, /display-only/i);
+  assert.match(report, /PNG[\s\S]{0,120}view artifact/i);
+  assert.doesNotMatch(report, /three-dimensional plotting[\s\S]{0,80}not verified/i);
+
+  const bundle = buildAnalysisBundle(dataset, config, result, SOURCE_HASH, {
+    methodsDimensions: axes,
+    view: "3d",
+    methodsFlipX: true,
+    methodsFlipY: false,
+  } as never) as Record<string, any>;
+  assert.deepEqual(bundle.presentation.selectedAxes, axes);
+  assert.equal(bundle.presentation.view, "3d");
+  assert.match(bundle.methodsReportMarkdown, /Displayed 3D axes/i);
+  assert.match(bundle.manifest.boundaries.join(" "), /3D[\s\S]{0,180}display-only/i);
+  assert.doesNotMatch(bundle.manifest.boundaries.join(" "), /3D[\s\S]{0,80}(blocked|not verified)/i);
+  const parsed = parseOpenEnaAnalysisBundle(JSON.stringify(bundle)) as Record<string, any>;
+  assert.equal(parsed.presentation.view, "3d");
+  assert.deepEqual(parsed.presentation.selectedAxes, axes);
+});
+
 test("ONA Methods records cross-unit horizon context and response-unit attribution", () => {
   const codes = ["A", "B", "C"];
   const dataset: ParsedDataset = {

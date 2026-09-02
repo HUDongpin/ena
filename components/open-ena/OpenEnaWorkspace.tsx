@@ -593,6 +593,9 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
     () => result ? openEnaAnalysisKindFromResult(result) : null,
     [result],
   );
+  const threeDViewLabel = completedResultKind === "ona"
+    ? copy.ona.workspace.threeD
+    : copy.views.threeD;
   const nodeLayoutFingerprint = useMemo(() => {
     if (!result || !completedResultKind) return "open-ena-node-layout:empty";
     return createOpenEnaNodeLayoutFingerprint({
@@ -3330,6 +3333,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                           buildAnalysisBundle(dataset, resultConfig, result, datasetHash, {
                             codeColors,
                             methodsDimensions: [xDimension, yDimension],
+                            view,
                             methodsFlipX: flipX,
                             methodsFlipY: flipY,
                             edgeThreshold,
@@ -3827,10 +3831,10 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                           ? copy.plot.threeDRequiresThreeDimensions
                           : undefined}
                       aria-label={!genericThreeDAvailable
-                          ? `${copy.views.threeD}. ${copy.plot.threeDRequiresThreeDimensions}`
-                        : `${copy.views.threeD}. ${copy.plot.threeDInteractionHint}`}
+                          ? `${threeDViewLabel}. ${copy.plot.threeDRequiresThreeDimensions}`
+                        : `${threeDViewLabel}. ${copy.plot.threeDInteractionHint}`}
                     >
-                      <strong>{completedResultKind === "ona" ? copy.ona.workspace.threeD : copy.views.threeD}</strong>
+                      <strong>{threeDViewLabel}</strong>
                     </button>
                   </div>
                   {result && !genericThreeDAvailable ? (
@@ -3853,7 +3857,10 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                           `open-ena-${Date.now()}-results.json`,
                           buildAnalysisBundle(dataset, resultConfig, result, datasetHash, {
                             codeColors,
-                            methodsDimensions: [xDimension, yDimension],
+                            methodsDimensions: completedResultKind === "ona" && view === "3d" && threeDDimensions
+                              ? threeDDimensions
+                              : [xDimension, yDimension],
+                            view,
                             methodsFlipX: flipX,
                             methodsFlipY: flipY,
                             edgeThreshold,
@@ -3974,6 +3981,12 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor }: OpenEna
                   config={resultConfig}
                   primaryGroupName={primaryGroupName || null}
                   secondaryGroupName={secondaryGroupName || null}
+                  centerMode={effectiveCenterSurface}
+                  dataView={effectiveCenterSurface === "data" ? (
+                    <div data-testid="open-ena-center-data-view">
+                      {renderResultData()}
+                    </div>
+                  ) : null}
                   rightTools={persistentPlotTools}
                   xDimension={threeDDimensions[0]}
                   yDimension={threeDDimensions[1]}

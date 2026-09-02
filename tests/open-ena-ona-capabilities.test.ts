@@ -3,6 +3,7 @@ import test from "node:test";
 import type { Row } from "jena-js";
 import { analyzeDataset } from "../lib/open-ena/analyze";
 import {
+  OPEN_ENA_CAPABILITIES,
   OpenEnaCapabilityError,
   assertOpenEnaCapabilityForConfig,
   assertOpenEnaCapabilityForResult,
@@ -101,8 +102,20 @@ test("central capabilities classify ENA and ONA explicitly and reject unknown ru
     codes: ["A", "B", "C"],
   })), "ena");
 
-  expectBlocked(() => assertOpenEnaCapabilityForConfig(config, "inference"), "inference");
-  expectBlocked(() => assertOpenEnaCapabilityForResult(result, "3d"), "3d");
+  assert.equal(OPEN_ENA_CAPABILITIES.ona.threeDimensionalPlot, true);
+  assert.doesNotThrow(() => assertOpenEnaCapabilityForConfig(config, "3d"));
+  assert.doesNotThrow(() => assertOpenEnaCapabilityForResult(result, "3d"));
+  for (const feature of [
+    "analysis-sets",
+    "reference-rotation",
+    "group-contrast",
+    "trajectory",
+    "inference",
+    "ai-interpretation",
+  ] as const) {
+    expectBlocked(() => assertOpenEnaCapabilityForConfig(config, feature), feature);
+    expectBlocked(() => assertOpenEnaCapabilityForResult(result, feature), feature);
+  }
   assert.throws(
     () => openEnaAnalysisKindFromResult({
       ...result,
@@ -167,14 +180,20 @@ test("all unverified production entry points fail closed for ONA before legacy p
     "group-contrast",
   );
   expectBlocked(() => buildLongitudinalDerivation(result, config, dataset, {} as never), "trajectory");
-  expectBlocked(() => compileOpenEna3dPlotSpec({ result } as never), "3d");
+  assert.throws(
+    () => compileOpenEna3dPlotSpec({ result } as never),
+    /standard ENA|ordered ONA|dedicated ordered 3D compiler/i,
+  );
   const poisoned3dInput = new Proxy({ result }, {
     get(target, property, receiver) {
       if (property === "result") return Reflect.get(target, property, receiver);
       throw new Error(`3D input property ${String(property)} was read before the ONA capability guard`);
     },
   });
-  expectBlocked(() => compileOpenEna3dPlotSpec(poisoned3dInput as never), "3d");
+  assert.throws(
+    () => compileOpenEna3dPlotSpec(poisoned3dInput as never),
+    /standard ENA|ordered ONA|dedicated ordered 3D compiler/i,
+  );
   expectBlocked(() => buildEndpointMannWhitney(result, "group", result.dimensions), "inference");
   await assert.rejects(
     () => runOpenEnaInferenceV2({ result } as never),

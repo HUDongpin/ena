@@ -32,6 +32,7 @@ import {
 } from "./uncertainty";
 
 export interface OpenEnaPresentationOptions {
+  view?: "2d" | "3d";
   codeColors?: Readonly<Record<string, string>>;
   flipX?: boolean;
   flipY?: boolean;
@@ -228,7 +229,18 @@ function buildOnaMethodsReport(
   const dimensions = result.dimensions.map((dimension) => (
     `${inline(dimension)} ${((result.set.variance[dimension] ?? 0) * 100).toFixed(1)}%`
   )).join(", ");
-  const [displayedX = result.dimensions[0] ?? "X", displayedY = result.dimensions[1] ?? displayedX] = reportedDimensions;
+  const displayedView = presentation.view ?? (reportedDimensions.length === 3 ? "3d" : "2d");
+  const expectedDimensionCount = displayedView === "3d" ? 3 : 2;
+  if (reportedDimensions.length !== expectedDimensionCount
+    || new Set(reportedDimensions).size !== reportedDimensions.length
+    || reportedDimensions.some((dimension) => !result.dimensions.includes(dimension))) {
+    throw new Error(`ONA ${displayedView.toUpperCase()} Methods requires ${expectedDimensionCount} distinct completed-result axes.`);
+  }
+  const [
+    displayedX = result.dimensions[0] ?? "X",
+    displayedY = result.dimensions[1] ?? displayedX,
+    displayedZ = result.dimensions[2] ?? displayedY,
+  ] = reportedDimensions;
   const edgeThreshold = presentation.edgeThreshold ?? 0;
   const shown = (value: boolean | undefined, fallback = true) => (value ?? fallback) ? "shown" : "hidden";
   const sourceHashKind = datasetHashKindFor(dataset);
@@ -274,7 +286,9 @@ function buildOnaMethodsReport(
     `- ${unitCount.toLocaleString()} distinct analytic units and ${result.set.points.length.toLocaleString()} projected points`,
     `- ${result.groups.length} displayed group network(s) and ${result.set.codes.length} codes`,
     `- Rotated dimensions: ${dimensions}`,
-    `- Displayed 2D axes: X ${inline(displayedX)} (${presentation.flipX ? "flipped" : "unflipped"}); Y ${inline(displayedY)} (${presentation.flipY ? "flipped" : "unflipped"}).`,
+    displayedView === "3d"
+      ? `- Displayed 3D axes: X ${inline(displayedX)} (${presentation.flipX ? "flipped" : "unflipped"}); Y ${inline(displayedY)} (${presentation.flipY ? "flipped" : "unflipped"}); Z ${inline(displayedZ)} (unflipped). These axes come from the same completed fitted ordered model used by the 2D view.`
+      : `- Displayed 2D axes: X ${inline(displayedX)} (${presentation.flipX ? "flipped" : "unflipped"}); Y ${inline(displayedY)} (${presentation.flipY ? "flipped" : "unflipped"}).`,
     "- Axis flips are presentation-only. Coordinates and directed connection values remain in the unflipped model coordinate system.",
     `- Relative edge display threshold: ${(edgeThreshold * 100).toFixed(1)}% (${edgeThreshold}). This is a presentation-only filter; hidden directed cells remain in the computed model and exported tables.`,
     `- Group networks: ${shown(presentation.showNetworks)}; Unit points: ${shown(presentation.showPoints)}.`,
@@ -283,7 +297,8 @@ function buildOnaMethodsReport(
     "",
     "## Statistical scope",
     "",
-    "This ONA release is descriptive-only. Inferential comparison, group contrast, analysis sets, trajectory models, three-dimensional plotting, and AI interpretation were not run and are not verified for ordered networks.",
+    "This ONA release is descriptive-only. Inferential comparison, group subtraction, analysis sets, trajectory models, reference rotation, and AI interpretation were not run and are not verified for ordered networks.",
+    "The 3D ONA view is display-only: it uses the same fitted coordinates and ordered weights as 2D and does not create a new analysis result.",
     "No uncertainty guide or significance test was calculated for this ordered result. Visual separation, edge thickness, and direction must not be interpreted as statistical significance or causality.",
     "",
     "## Interpretation and reproducibility boundaries",
@@ -292,6 +307,7 @@ function buildOnaMethodsReport(
     "- A ground/source → response/target connection records ordered association under the declared horizon, order, window, weighting, and mask; it does not by itself establish a causal or temporal mechanism.",
     "- The exact source coded-data file, codebook, this report, analysis manifest, and derived result bundle should be preserved together.",
     "- Reproduction requires the recorded requested and resolved order policies; the private sorted-to-source mapping must be regenerated from the exact source table.",
+    "- Camera position, screen rotation, line-width buckets, circular point glyphs, and copied PNG images are presentation-only. A PNG is a view artifact, not a new scientific result; SVG and high-resolution PNG research exports remain 2D-only.",
     "",
   ].join("\n");
 }

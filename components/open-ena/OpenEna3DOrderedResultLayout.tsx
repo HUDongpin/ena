@@ -17,6 +17,8 @@ export interface OpenEna3DOrderedResultLayoutProps {
   config: OpenEnaConfig;
   primaryGroupName: string | null;
   secondaryGroupName: string | null;
+  centerMode: "plot" | "data";
+  dataView?: ReactNode;
   rightTools?: ReactNode;
   xDimension: string;
   yDimension: string;
@@ -51,6 +53,8 @@ export default function OpenEna3DOrderedResultLayout(props: OpenEna3DOrderedResu
     config,
     primaryGroupName,
     secondaryGroupName,
+    centerMode,
+    dataView,
     rightTools,
     copy,
   } = props;
@@ -112,6 +116,7 @@ export default function OpenEna3DOrderedResultLayout(props: OpenEna3DOrderedResu
       data-ena-dimensions="3"
       data-ena-camera-sync="shared"
       data-ena-scene-frame="full-result"
+      data-ena-center-mode={centerMode}
       aria-labelledby={titleId}
     >
       <header className="open-ena-3d-triptych-header">
@@ -124,31 +129,40 @@ export default function OpenEna3DOrderedResultLayout(props: OpenEna3DOrderedResu
 
       <div className="open-ena-3d-triptych-layout">
         <div className="open-ena-3d-triptych-center" data-testid="open-ena-ona-3d-center-surface">
-          <article
-            id={overallFullscreenTargetId}
-            ref={overallFullscreenRef}
-            className="open-ena-3d-triptych-panel open-ena-3d-triptych-main"
-            data-testid="open-ena-ona-3d-overall-plot"
-            data-ena-plot-role="comparison"
-            data-ena-network-role="descriptive-overall-directed"
-          >
-            <header className="open-ena-3d-triptych-heading">
-              <div>
-                <h3>{copy.ona.layout.overallPlot} <small>3D</small></h3>
-                <p>{copy.ona.layout.overallSubtitle}</p>
-              </div>
-              <span>{result.set.points.length} {copy.workspace.units.toLowerCase()}</span>
-            </header>
-            <OpenEnaInteractive3DPlot
-              {...sharedPlotProps}
-              analysisKind="ona"
-              orderedScope={{ kind: "overall" }}
-              plotKind="comparison"
-              fullscreenTarget={{ id: overallFullscreenTargetId, ref: overallFullscreenRef }}
-              testId="open-ena-ona-3d-overall-canvas"
-              ariaLabel={`${copy.ona.layout.overallPlot}, ${copy.views.threeD}`}
-            />
-          </article>
+          {centerMode === "data" ? (
+            <div
+              className="open-ena-3d-triptych-panel open-ena-3d-triptych-main open-ena-3d-triptych-data-view"
+              data-testid="open-ena-ona-3d-data-view"
+            >
+              {dataView ?? <p role="status">{copy.ona.dataView.empty}</p>}
+            </div>
+          ) : (
+            <article
+              id={overallFullscreenTargetId}
+              ref={overallFullscreenRef}
+              className="open-ena-3d-triptych-panel open-ena-3d-triptych-main"
+              data-testid="open-ena-ona-3d-overall-plot"
+              data-ena-plot-role="comparison"
+              data-ena-network-role="descriptive-overall-directed"
+            >
+              <header className="open-ena-3d-triptych-heading">
+                <div>
+                  <h3>{copy.ona.layout.overallPlot} <small>3D</small></h3>
+                  <p>{copy.ona.layout.overallSubtitle}</p>
+                </div>
+                <span>{result.set.points.length} {copy.workspace.units.toLowerCase()}</span>
+              </header>
+              <OpenEnaInteractive3DPlot
+                {...sharedPlotProps}
+                analysisKind="ona"
+                orderedScope={{ kind: "overall" }}
+                plotKind="comparison"
+                fullscreenTarget={{ id: overallFullscreenTargetId, ref: overallFullscreenRef }}
+                testId="open-ena-ona-3d-overall-canvas"
+                ariaLabel={`${copy.ona.layout.overallPlot}, ${copy.views.threeD}`}
+              />
+            </article>
+          )}
         </div>
 
         <div

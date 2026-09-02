@@ -346,6 +346,17 @@ export interface OpenEnaOnaCopy {
     descriptiveBoundary: string;
     directionGuide: string;
     rightToolsLabel: string;
+    threeDLinkedWorkspace: string;
+    threeDSameFittedModel: string;
+    threeDDirection: string;
+    threeDReciprocalLane: string;
+    threeDSelfLoop: string;
+    threeDDescriptiveOnly: string;
+    threeDDegenerateAxis: string;
+    threeDAccessibleSummary: string;
+    threeDOverall: string;
+    threeDPrimary: string;
+    threeDSecondary: string;
   };
   plot: {
     overallTitle: string;
@@ -469,7 +480,6 @@ export interface OpenEnaOnaCopy {
     reference: string;
     groupContrast: string;
     trajectory: string;
-    threeD: string;
     inference: string;
     ai: string;
   };
@@ -1551,7 +1561,7 @@ const en: OpenEnaCopy = {
     workspace: {
       directedSpace: "p² directed space",
       twoD: "2D ONA",
-      threeD: "3D ONA",
+      threeD: "3D ONA · descriptive ordered space",
       downloadBundle: "Download ONA bundle",
       staleTitle: "Configuration changed",
       staleDescription: "The directed ONA view remains bound to the last successful ordered model. Rebuild to apply the pending controls.",
@@ -1696,6 +1706,17 @@ const en: OpenEnaCopy = {
       descriptiveBoundary: "ONA is descriptive-only in this release; these panels do not calculate group differences, p-values, effect sizes, confidence intervals, or causal effects.",
       directionGuide: "Triangle apex is ground/source, triangle base is response/target; a chevron marks the stronger reciprocal direction and an inner disc marks a self-connection.",
       rightToolsLabel: "Ordered plot tools",
+      threeDLinkedWorkspace: "Linked 3D ONA workspace",
+      threeDSameFittedModel: "The 2D and 3D views use the same completed fitted ordered model, coordinates, directed weights, mask, and audit; switching views does not rerun or refit it.",
+      threeDDirection: "Arrowheads point from ground/source to response/target.",
+      threeDReciprocalLane: "Reciprocal directions use stable separate lanes so A → B and B → A remain distinguishable.",
+      threeDSelfLoop: "A closed three-dimensional ring with a tangent arrowhead represents a diagonal self-connection.",
+      threeDDescriptiveOnly: "Only the completed fitted ONA geometry and exact descriptive model values are shown.",
+      threeDDegenerateAxis: "The selected third axis has zero variance, so the fitted 3D result is faithfully displayed as a plane without invented depth.",
+      threeDAccessibleSummary: "Accessible summary of visible directed ONA cells",
+      threeDOverall: "Overall",
+      threeDPrimary: "Primary",
+      threeDSecondary: "Secondary",
     },
     plot: {
       overallTitle: "Overall ordered network",
@@ -1818,13 +1839,12 @@ const en: OpenEnaCopy = {
       reference: "Reference rotation is not available for ONA.",
       groupContrast: "ONA group panels show descriptive means only; pairwise subtraction is not available.",
       trajectory: "Trajectory models are not verified for ONA.",
-      threeD: "3D ONA is not verified in this release; use the directed 2D view.",
       inference: "Inferential tests are not verified for ONA; only descriptive diagnostics are shown.",
       ai: "AI interpretation is unavailable for ONA until an aggregate-only ordered evidence contract is independently verified.",
     },
     presenter: {
       title: "Tune the directed ONA view",
-      description: "These controls change only the directed 2D presentation; they do not rebuild the ordered model.",
+      description: "These controls change only the directed 2D or 3D presentation; they do not rebuild the ordered model.",
       directionBoundary: "Display thresholds never change the fitted p² matrix or the configured directional mask.",
       groupPanelsTitle: "Descriptive group panels",
       groupPanelsDescription: "Choose any two completed groups for independent mean-network panels. Selection never computes subtraction, contrast, or inference.",
@@ -2198,7 +2218,7 @@ const zhHant: OpenEnaCopy = {
     workspace: {
       directedSpace: "p² 有方向空間",
       twoD: "2D ONA",
-      threeD: "3D ONA",
+      threeD: "3D ONA · 描述性順序空間",
       downloadBundle: "下載 ONA 結果套件",
       staleTitle: "設定已變更",
       staleDescription: "有方向 ONA 視圖仍綁定上一次成功建立的順序模型。請重新建立，以套用待處理的控制項。",
@@ -2338,6 +2358,17 @@ const zhHant: OpenEnaCopy = {
       descriptiveBoundary: "此版本的 ONA 只作描述；這些面板不計算群組差異、p 值、效應量、信賴區間或因果效應。",
       directionGuide: "三角形頂點為來源碼／ground、底邊為回應碼／response；箭角標示互惠方向中較強者，內圓盤標示自連線。",
       rightToolsLabel: "順序網絡繪圖工具",
+      threeDLinkedWorkspace: "連動 3D ONA 工作台",
+      threeDSameFittedModel: "2D 與 3D 視圖使用同一個已完成擬合的順序模型、座標、有方向權重、遮罩與審計；切換視圖不會重新執行或重新擬合。",
+      threeDDirection: "箭頭由來源碼／ground 指向回應碼／response。",
+      threeDReciprocalLane: "互惠方向使用穩定的分離車道，讓 A → B 與 B → A 保持可區分。",
+      threeDSelfLoop: "帶切向箭頭的封閉三維環線代表對角自連線。",
+      threeDDescriptiveOnly: "只顯示已完成擬合的 ONA 幾何與精確描述性模型數值。",
+      threeDDegenerateAxis: "所選第三軸的變異為零，因此忠實地把已擬合 3D 結果顯示為平面，不製造虛假深度。",
+      threeDAccessibleSummary: "可見有方向 ONA 儲存格的無障礙摘要",
+      threeDOverall: "整體",
+      threeDPrimary: "主要",
+      threeDSecondary: "次要",
     },
     plot: {
       overallTitle: "整體順序網絡",
@@ -2460,13 +2491,12 @@ const zhHant: OpenEnaCopy = {
       reference: "ONA 不支援參照旋轉。",
       groupContrast: "ONA 群組面板只顯示描述性平均，不提供成對相減。",
       trajectory: "ONA 尚未驗證軌跡模型。",
-      threeD: "此版本尚未驗證 3D ONA；請使用有方向 2D 視圖。",
       inference: "ONA 尚未驗證推論檢定；只顯示描述性診斷。",
       ai: "在只含彙總的順序證據合約通過獨立驗證前，ONA 不提供 AI 解讀。",
     },
     presenter: {
       title: "調整有方向 ONA 視圖",
-      description: "這些控制只改變有方向 2D 呈現，不會重新建立順序模型。",
+      description: "這些控制只改變有方向 2D 或 3D 呈現，不會重新建立順序模型。",
       directionBoundary: "顯示門檻不會改變已擬合 p² 矩陣或已設定方向遮罩。",
       groupPanelsTitle: "描述性群組面板",
       groupPanelsDescription: "可從已完成結果選擇任意兩個群組，分別顯示平均網絡；此選擇不會計算相減、對比或推論。",
@@ -2591,7 +2621,7 @@ const zhHans: OpenEnaCopy = {
     workspace: {
       directedSpace: "p² 有向空间",
       twoD: "2D ONA",
-      threeD: "3D ONA",
+      threeD: "3D ONA · 描述性顺序空间",
       downloadBundle: "下载 ONA 结果包",
       staleTitle: "配置已更改",
       staleDescription: "有向 ONA 视图仍绑定上一次成功构建的顺序模型。请重新构建，以应用待处理的控件。",
@@ -2731,6 +2761,17 @@ const zhHans: OpenEnaCopy = {
       descriptiveBoundary: "此版本的 ONA 仅作描述；这些面板不计算组差异、p 值、效应量、置信区间或因果效应。",
       directionGuide: "三角形顶点为源码／ground、底边为响应码／response；箭角标示互惠方向中较强者，内圆盘标示自连线。",
       rightToolsLabel: "顺序网络绘图工具",
+      threeDLinkedWorkspace: "联动 3D ONA 工作台",
+      threeDSameFittedModel: "2D 与 3D 视图使用同一个已完成拟合的顺序模型、坐标、有向权重、遮罩与审计；切换视图不会重新运行或重新拟合。",
+      threeDDirection: "箭头由源码／ground 指向响应码／response。",
+      threeDReciprocalLane: "互惠方向使用稳定的分离车道，让 A → B 与 B → A 保持可区分。",
+      threeDSelfLoop: "带切向箭头的闭合三维环线代表对角自连线。",
+      threeDDescriptiveOnly: "仅显示已完成拟合的 ONA 几何与精确描述性模型数值。",
+      threeDDegenerateAxis: "所选第三轴的方差为零，因此忠实地把已拟合 3D 结果显示为平面，不制造虚假深度。",
+      threeDAccessibleSummary: "可见有向 ONA 单元格的无障碍摘要",
+      threeDOverall: "整体",
+      threeDPrimary: "主要",
+      threeDSecondary: "次要",
     },
     plot: {
       overallTitle: "整体顺序网络",
@@ -2853,13 +2894,12 @@ const zhHans: OpenEnaCopy = {
       reference: "ONA 不支持参考旋转。",
       groupContrast: "ONA 组面板只显示描述性均值，不提供成对相减。",
       trajectory: "ONA 尚未验证轨迹模型。",
-      threeD: "此版本尚未验证 3D ONA；请使用有向 2D 视图。",
       inference: "ONA 尚未验证推断检验；只显示描述性诊断。",
       ai: "在仅含汇总的顺序证据契约通过独立验证前，ONA 不提供 AI 解读。",
     },
     presenter: {
       title: "调整有向 ONA 视图",
-      description: "这些控件只改变有向 2D 呈现，不会重新构建顺序模型。",
+      description: "这些控件只改变有向 2D 或 3D 呈现，不会重新构建顺序模型。",
       directionBoundary: "显示阈值不会改变已拟合 p² 矩阵或已设置方向遮罩。",
       groupPanelsTitle: "描述性组面板",
       groupPanelsDescription: "可从已完成结果选择任意两个组，分别显示平均网络；此选择不会计算相减、对比或推断。",

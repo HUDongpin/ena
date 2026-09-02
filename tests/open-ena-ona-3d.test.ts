@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { Row } from "jena-js";
-import { OpenEnaCapabilityError } from "../lib/open-ena/capabilities";
 import { buildOpenEnaOrderedNetworkModel } from "../lib/open-ena/ordered-network-model";
 import {
   DIRECTED_EDGE_WIDTH_BUCKETS,
@@ -793,9 +792,7 @@ test("generic standard-ENA 3D compilation still rejects ONA before legacy input 
   const fixture = orderedFixture();
   assert.throws(
     () => compileOpenEna3dPlotSpec({ result: fixture.result } as never),
-    (error) => error instanceof OpenEnaCapabilityError
-      && error.code === "ona-feature-not-verified"
-      && error.feature === "3d",
+    /generic 3D compiler requires one completed Standard ENA result/i,
   );
 
   const source = readFileSync(new URL("../lib/open-ena/plot3d.ts", import.meta.url), "utf8");

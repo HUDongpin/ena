@@ -12,9 +12,9 @@ import { parseXlsx } from "../lib/open-ena/spreadsheet";
 import type { OpenEnaConfig } from "../lib/open-ena/types";
 
 export const DEFAULT_YU_ONA_WORKBOOK_PATH =
-  "/Volumes/Starship/ONA/Yu_ena_coded_data_0712.xlsx";
+  "/Volumes/Starship/ENA的衍生文件/ONA/Yu_ena_coded_data_0712.xlsx";
 export const DEFAULT_YU_ONA_GOLDEN_PATH =
-  "/Volumes/Starship/ONA/ona_output/yu_within_student/ona_connection_counts.csv";
+  "/Volumes/Starship/ENA的衍生文件/ONA/ona_output/yu_within_student/ona_connection_counts.csv";
 
 const EXPECTED_WORKBOOK_SHA256 =
   "f2132f8dc3e147609169472594a2031130be23eab4a2ac0fb9adcb6d9d667042";
@@ -149,7 +149,7 @@ function workbookArrayBuffer(buffer: Buffer) {
   ) as ArrayBuffer;
 }
 
-function yuOnaConfig(): OpenEnaConfig {
+export function buildYuOnaConfig(): OpenEnaConfig {
   const codes = [...CODES];
   return {
     analysisKind: "ona",
@@ -230,7 +230,7 @@ export async function verifyOpenEnaOnaYuGolden(
     "Yu ONA within-student horizons must contain exactly two ordered rows each.",
   );
 
-  const config = yuOnaConfig();
+  const config = buildYuOnaConfig();
   const validationErrors = validateConfig(dataset, config);
   requireContract(
     validationErrors.length === 0,

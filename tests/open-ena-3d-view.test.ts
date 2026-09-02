@@ -1081,21 +1081,17 @@ test("Data View availability follows the executable analysis/view state matrix",
   }
 });
 
-test("ONA 3D Data View is disabled with explicit supported-view guidance", () => {
+test("ONA 3D Data View remains enabled because it consumes the same completed ordered audit", () => {
   const availability = openEnaDataViewAvailability({
     view: "3d",
     completedResultKind: "ona",
     hasActiveGroupContrast: false,
   });
   assert.deepEqual(availability, {
-    enabled: false,
-    reason: "ona-three-dimensional-unavailable",
+    enabled: true,
+    reason: null,
   });
-
-  assert.deepEqual(openEnaDataViewUnavailableCopy(availability.reason), {
-    title: "Data View is unavailable in 3D ONA.",
-    ariaLabel: "Data View unavailable in 3D ONA. Switch to the supported 2D ONA view.",
-  });
+  assert.equal(openEnaDataViewUnavailableCopy(availability.reason), null);
 });
 
 test("every disabled Data View reason has distinct guidance while enabled state keeps its visible name", () => {

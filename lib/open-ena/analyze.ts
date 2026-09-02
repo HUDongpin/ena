@@ -885,7 +885,8 @@ export function buildManifest(
         ? [
             "ONA rows were deterministically ordered within each typed horizon using the requested and resolved policies recorded in analysis.ordering; the runtime-only sorted-to-source row mapping is intentionally excluded from this generic bundle.",
             "ONA directed cells use earlier ground/source codes as matrix rows and current response/target codes as matrix columns, including diagonal repeat connections and symmetric half-weight same-row contributions.",
-            "ONA output in this release is descriptive-only: inference, group contrast, analysis sets, reference projection, trajectory, 3D, and AI interpretation are not verified and are excluded or blocked.",
+            "ONA output in this release is descriptive-only: inference, group subtraction, analysis sets, reference projection, trajectory, and AI interpretation are not verified and are excluded or blocked.",
+            "3D ONA is display-only and consumes the same completed fitted coordinates, ordered weights, directional mask, and audit as the 2D view; camera and screen presentation do not create a new scientific result.",
           ]
         : ["Rows are analyzed in source order within each conversation; XLSX analysis uses the first worksheet. Reorder the source before analysis when sequence matters."]),
       "Dataset hash scope is recorded in dataset.hashKind: CSV uses BOM-normalized UTF-8 source text; XLSX uses the versioned canonical values of the analyzed first worksheet, excluding workbook styling and unselected worksheets.",
@@ -896,7 +897,7 @@ export function buildManifest(
       "For reference projections, the axes, center, and reference nodes remain fixed; variance describes the current dataset in that basis, not explained variance in the fitted reference sample.",
       "For reference projections, point-centroid correlations and target-fitted centroid tables are withheld because jENA 0.7.0-ona.0 does not compute them from the displayed fixed reference nodes.",
       "Imported reference names, analyzed-table hashes, hash kinds, timestamps, and fit descriptors are declared provenance: ENA.HK validates their structure but does not independently authenticate their origin.",
-      "The 3D ENA link opens a separate website; this workspace does not automatically transfer the dataset, configuration, or computed model.",
+      "Interactive 3D is an in-workspace display of the same completed fitted model; switching dimensions, camera, or view does not transfer, rerun, refit, or alter the computed result.",
       ordered
         ? "The generic ONA result bundle excludes raw source rows, row-level ordered connection counts, row-window provenance, and sorted-to-source row mappings. Preserve the exact source coded-data file and its codebook alongside the manifest and derived outputs for reproducibility."
         : "The result bundle excludes raw source rows. Preserve the exact source coded-data file and its codebook alongside the manifest and derived outputs for reproducibility.",

@@ -42,7 +42,7 @@ export const OPEN_ENA_CAPABILITIES = {
     referenceRotation: false,
     groupContrast: false,
     trajectory: false,
-    threeDimensionalPlot: false,
+    threeDimensionalPlot: true,
     inference: false,
     aiInterpretation: false,
   },
@@ -50,8 +50,7 @@ export const OPEN_ENA_CAPABILITIES = {
 
 export type OpenEnaDataViewUnavailableReason =
   | "active-group-contrast-required"
-  | "active-3d-group-contrast-required"
-  | "ona-three-dimensional-unavailable";
+  | "active-3d-group-contrast-required";
 
 export interface OpenEnaDataViewAvailability {
   enabled: boolean;
@@ -75,10 +74,6 @@ const OPEN_ENA_DATA_VIEW_UNAVAILABLE_COPY: Readonly<Record<
     title: "Data View requires an active 3D group comparison.",
     ariaLabel: "Data View unavailable. Select two groups for a 3D comparison first.",
   },
-  "ona-three-dimensional-unavailable": {
-    title: "Data View is unavailable in 3D ONA.",
-    ariaLabel: "Data View unavailable in 3D ONA. Switch to the supported 2D ONA view.",
-  },
 };
 
 export type OpenEnaCenterSurface = "plot" | "data";
@@ -94,9 +89,7 @@ export function openEnaDataViewAvailability(input: {
   hasActiveGroupContrast: boolean;
 }): OpenEnaDataViewAvailability {
   if (input.completedResultKind === "ona") {
-    return input.view === "2d"
-      ? { enabled: true, reason: null }
-      : { enabled: false, reason: "ona-three-dimensional-unavailable" };
+    return { enabled: true, reason: null };
   }
   if (input.completedResultKind === "ena" && input.hasActiveGroupContrast) {
     return { enabled: true, reason: null };
@@ -183,18 +176,34 @@ function blockOna(feature: OpenEnaCapability): never {
   );
 }
 
+function onaCapabilityEnabled(feature: OpenEnaCapability) {
+  switch (feature) {
+    case "analysis-sets": return OPEN_ENA_CAPABILITIES.ona.analysisSets;
+    case "reference-rotation": return OPEN_ENA_CAPABILITIES.ona.referenceRotation;
+    case "group-contrast": return OPEN_ENA_CAPABILITIES.ona.groupContrast;
+    case "trajectory": return OPEN_ENA_CAPABILITIES.ona.trajectory;
+    case "3d": return OPEN_ENA_CAPABILITIES.ona.threeDimensionalPlot;
+    case "inference": return OPEN_ENA_CAPABILITIES.ona.inference;
+    case "ai-interpretation": return OPEN_ENA_CAPABILITIES.ona.aiInterpretation;
+  }
+}
+
 export function assertOpenEnaCapabilityForConfig(
   config: OpenEnaConfig,
   feature: OpenEnaCapability,
 ) {
-  if (canonicalizeOpenEnaConfig(config).analysisKind === "ona") blockOna(feature);
+  if (canonicalizeOpenEnaConfig(config).analysisKind === "ona" && !onaCapabilityEnabled(feature)) {
+    blockOna(feature);
+  }
 }
 
 export function assertOpenEnaCapabilityForResult(
   result: OpenEnaResult,
   feature: OpenEnaCapability,
 ) {
-  if (openEnaAnalysisKindFromResult(result) === "ona") blockOna(feature);
+  if (openEnaAnalysisKindFromResult(result) === "ona" && !onaCapabilityEnabled(feature)) {
+    blockOna(feature);
+  }
 }
 
 export function assertOpenEnaCapabilityForContext(
@@ -207,5 +216,5 @@ export function assertOpenEnaCapabilityForContext(
   if (configKind !== resultKind) {
     mismatch("The supplied Open ENA configuration disagrees with the completed runtime result.");
   }
-  if (configKind === "ona") blockOna(feature);
+  if (configKind === "ona" && !onaCapabilityEnabled(feature)) blockOna(feature);
 }

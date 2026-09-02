@@ -432,8 +432,12 @@ export function buildAnalysisBundle(
   }
   const tables = buildResultTables(result);
   const selectedAxes = [...(options.methodsDimensions ?? result.dimensions.slice(0, 2))];
-  if (selectedAxes.length !== 2) {
-    throw new Error("Analysis bundle inference requires exactly two selected axes.");
+  const selectedView = options.view ?? "2d";
+  const requiredAxisCount = analysisKind === "ona" && selectedView === "3d" ? 3 : 2;
+  if (selectedAxes.length !== requiredAxisCount
+    || new Set(selectedAxes).size !== selectedAxes.length
+    || selectedAxes.some((dimension) => !result.dimensions.includes(dimension))) {
+    throw new Error(`Analysis bundle ${selectedView.toUpperCase()} presentation requires ${requiredAxisCount} distinct completed-result axes.`);
   }
   const inference = options.inference ?? null;
   let resolvedInferenceContext: OpenEnaInferenceProducerContextV2 | null = null;
@@ -466,6 +470,7 @@ export function buildAnalysisBundle(
   }
   const presentation = {
     selectedAxes,
+    ...(options.view ? { view: options.view } : {}),
     ...(options.codeColors
       ? {
           codeColors: Object.fromEntries(result.set.rotation.codes.map((code) => [
@@ -977,6 +982,7 @@ const ONA_MODEL_DATA_FIELDS = [
 
 const ONA_PRESENTATION_FIELDS = [
   "selectedAxes",
+  "view",
   "codeColors",
   "flipX",
   "flipY",
@@ -1809,8 +1815,14 @@ function assertOnaBundleContract(
     ],
     "Schema-v2 ONA presentation",
   );
+  const presentationView = presentation.view === undefined ? "2d" : presentation.view;
+  if (presentationView !== "2d" && presentationView !== "3d") {
+    throw new Error("Schema-v2 ONA presentation view must be 2d or 3d.");
+  }
+  const presentationAxisCount = presentationView === "3d" ? 3 : 2;
   if (!Array.isArray(presentation.selectedAxes)
-    || presentation.selectedAxes.length !== 2
+    || presentation.selectedAxes.length !== presentationAxisCount
+    || new Set(presentation.selectedAxes).size !== presentation.selectedAxes.length
     || presentation.selectedAxes.some((axis) => (
       typeof axis !== "string" || !displayedDimensions.includes(axis)
     ))) {
