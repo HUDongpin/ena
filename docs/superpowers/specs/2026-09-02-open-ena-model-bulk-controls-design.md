@@ -1,9 +1,18 @@
 # Open ENA Model Bulk Controls Design
 
-Date: 2026-09-02  
-Status: Approved behavior, pending written-spec review  
-Route: `/[locale]/open-ena`  
+Date: 2026-09-02
+Status: Superseded
+Route: `/[locale]/open-ena`
 Scope: Model tabs `Units`, `Horizons`, `Windows`, and `Codes`
+
+> Superseded by
+> [2026-09-02-open-ena-standard-model-parameters-design.md](./2026-09-02-open-ena-standard-model-parameters-design.md).
+> The newer specification retains the approved bulk-control behavior while
+> replacing the flat shared configuration assumptions with the approved
+> Standard ENA / ONA draft, canonical-configuration, validation, execution,
+> reference, provenance, migration, and verification contracts. Implement the
+> newer specification as one coherent change; do not implement this document
+> independently.
 
 ## Goal
 
