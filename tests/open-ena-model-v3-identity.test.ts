@@ -506,6 +506,58 @@ test("dictionary validation hashes each canonical identity once across all roles
   assert.equal(digestCalls, 1);
 });
 
+test("imported negative-zero identity scalars normalize to positive zero before freezing", async () => {
+  const dictionary = await buildExecutionIdentityDictionaryV3(
+    [{ unit: 0, horizon: 0, group: 0 }], ["unit"], ["horizon"], "group",
+  );
+  const imported = structuredClone(dictionary);
+  imported.units[0].fields[0].value.value = -0;
+  imported.horizons[0].fields[0].value.value = -0;
+  imported.groups[0].fields[0].value.value = -0;
+
+  const validated = await validateExecutionIdentityDictionaryV3(imported);
+  for (const entry of [...validated.units, ...validated.horizons, ...validated.groups]) {
+    assert.equal(entry.fields[0].value.value, 0);
+    assert.equal(Object.is(entry.fields[0].value.value, -0), false);
+  }
+
+  const resolver = await createExecutionIdentityResolverV3(imported);
+  const binding = await resolveExecutionIdentityForRowV3(
+    { unit: -0, horizon: -0, group: -0 }, ["unit"], ["horizon"], "group", resolver,
+  );
+  assert.equal(binding.unitToken, dictionary.units[0].token);
+  assert.equal(binding.horizonToken, dictionary.horizons[0].token);
+  assert.equal(binding.groupToken, dictionary.groups[0].token);
+});
+
+test("imported identity scalars preserve matching declared types and reject mismatches", async () => {
+  const dictionary = await buildExecutionIdentityDictionaryV3(
+    [{ unit: 1, horizon: "1", group: true }], ["unit"], ["horizon"], "group",
+  );
+  const validated = await validateExecutionIdentityDictionaryV3(dictionary);
+  assert.deepEqual([
+    validated.units[0].fields[0].value,
+    validated.horizons[0].fields[0].value,
+    validated.groups[0].fields[0].value,
+  ], [
+    { type: "number", value: 1 },
+    { type: "string", value: "1" },
+    { type: "boolean", value: true },
+  ]);
+
+  const mismatches = [
+    (copy: typeof dictionary) => { copy.units[0].fields[0].value.type = "string"; },
+    (copy: typeof dictionary) => { copy.horizons[0].fields[0].value.type = "number"; },
+    (copy: typeof dictionary) => { copy.groups[0].fields[0].value.type = "string"; },
+  ];
+  for (const mismatch of mismatches) {
+    const imported = structuredClone(dictionary);
+    mismatch(imported);
+    await assert.rejects(validateExecutionIdentityDictionaryV3(imported), /inconsistent|scalar|type/i);
+    await assert.rejects(createExecutionIdentityResolverV3(imported), /inconsistent|scalar|type/i);
+  }
+});
+
 test("pure digest binding assertion fails closed on forged collisions and allows exact duplicates", () => {
   const hash = "a".repeat(64);
   assert.throws(() => assertUniqueIdentityHashBindingsV3([

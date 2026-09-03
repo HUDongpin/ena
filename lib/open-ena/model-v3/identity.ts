@@ -382,7 +382,11 @@ export function snapshotExecutionIdentityDictionaryV3(input: unknown): Execution
         assertExactKeysV3(field, ["column", "value"], `${role} identity field`);
         const scalar = snapshotPlainJsonRecordV3(field.value, `${role} identity scalar`);
         assertExactKeysV3(scalar, ["type", "value"], `${role} identity scalar`);
-        return { column: field.column as string, value: { type: scalar.type, value: scalar.value } as ScalarIdentityV3 };
+        const normalizedScalar = scalarIdentityV3(scalar.value, `${role} identity scalar`);
+        if (scalar.type !== normalizedScalar.type) {
+          throw new TypeError(`${role} identity scalar has an inconsistent declared type.`);
+        }
+        return { column: field.column as string, value: normalizedScalar };
       });
       return {
         token: entry.token as string,
