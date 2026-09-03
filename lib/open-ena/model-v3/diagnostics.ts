@@ -6,6 +6,7 @@ import {
 } from "./canonical-json";
 import { scalarIdentityV3 } from "./identity";
 import { resolveRowOrderV3 } from "./ordering";
+import { datasetHashKindFor } from "../types";
 import type { ParsedDataset, DatasetHashKind } from "../types";
 import type {
   BackwardExtentV3,
@@ -142,7 +143,7 @@ interface DatasetSnapshotV3 {
   rows: Array<Record<string, unknown>>;
   sizeBytes: number;
   source: "sample" | "upload";
-  hashKind?: DatasetHashKind;
+  hashKind: DatasetHashKind;
 }
 
 interface DraftSnapshotV3 {
@@ -241,6 +242,10 @@ function snapshotDatasetAndBindingV3(
     if (!isHashKindV3(source.hashKind)) throw new TypeError("dataset.hashKind is unsupported.");
     hashKind = source.hashKind;
   }
+  const resolvedHashKind = datasetHashKindFor({
+    name: source.name,
+    ...(hashKind === undefined ? {} : { hashKind }),
+  });
 
   const bindingRecord = snapshotPlainJsonRecordV3(bindingValue, "dataset binding");
   assertExactKeysV3(
@@ -249,7 +254,7 @@ function snapshotDatasetAndBindingV3(
     "dataset binding",
   );
   if (!isHashKindV3(bindingRecord.hashKind)) throw new TypeError("dataset binding.hashKind is unsupported.");
-  if (hashKind !== undefined && hashKind !== bindingRecord.hashKind) {
+  if (resolvedHashKind !== bindingRecord.hashKind) {
     throw new TypeError("dataset binding.hashKind does not match dataset.hashKind.");
   }
   if (typeof bindingRecord.normalizedTableSha256 !== "string"
@@ -275,7 +280,7 @@ function snapshotDatasetAndBindingV3(
     rows,
     sizeBytes: Object.is(source.sizeBytes, -0) ? 0 : source.sizeBytes,
     source: source.source,
-    ...(hashKind === undefined ? {} : { hashKind }),
+    hashKind: resolvedHashKind,
   };
   return { dataset, binding };
 }
@@ -498,6 +503,8 @@ function analyzeCodeProfileV3(
   const magnitudes: number[] = [];
   const typedValues: Array<{ type: "number" | "boolean"; value: number | boolean }> = [];
   const binaryKinds = new Set<"number" | "boolean">();
+  const numericRows: number[] = [];
+  const booleanRows: number[] = [];
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
     const row = rows[rowIndex];
     if (!own.call(row, code)) {
@@ -509,10 +516,12 @@ function analyzeCodeProfileV3(
       if (typeof value === "number" && (value === 0 || value === 1)) {
         const normalized = Object.is(value, -0) ? 0 : value;
         binaryKinds.add("number");
+        numericRows.push(rowIndex);
         magnitudes.push(normalized);
         typedValues.push({ type: "number", value: normalized });
       } else if (typeof value === "boolean") {
         binaryKinds.add("boolean");
+        booleanRows.push(rowIndex);
         magnitudes.push(value ? 1 : 0);
         typedValues.push({ type: "boolean", value });
       } else {
@@ -526,8 +535,8 @@ function analyzeCodeProfileV3(
       invalidRows.push(rowIndex);
     }
   }
-  if (weighting === "binary" && invalidRows.length === 0 && binaryKinds.size > 1) {
-    invalidRows.push(...rows.map((_, index) => index));
+  if (weighting === "binary" && binaryKinds.size > 1) {
+    invalidRows.push(...numericRows, ...booleanRows);
   }
   if (invalidRows.length > 0) return { profile: null, invalidRows: [...new Set(invalidRows)].sort((a, b) => a - b) };
   return {
@@ -552,6 +561,31 @@ function typedHorizonKeyV3(
     return { column, value: scalarIdentityV3(row[column], `row ${rowIndex}.${column}`) };
   });
   return canonicalJsonV3({ fields });
+}
+
+function identityPrerequisitesValidV3(
+  rows: readonly Record<string, unknown>[],
+  unitColumns: readonly string[],
+  horizonColumns: readonly string[],
+): boolean {
+  if (unitColumns.length === 0 || horizonColumns.length === 0) return false;
+  try {
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+      const row = rows[rowIndex];
+      for (const [role, columns] of [
+        ["Unit", unitColumns],
+        ["Horizon", horizonColumns],
+      ] as const) {
+        for (const column of columns) {
+          if (!own.call(row, column)) return false;
+          scalarIdentityV3(row[column], `row ${rowIndex} ${role}.${column}`);
+        }
+      }
+    }
+  } catch {
+    return false;
+  }
+  return true;
 }
 
 function connectivityFromGroupsV3(
@@ -693,13 +727,13 @@ export function validateStandardDraftV3(
   }
 
   let moving: MovingWindowV3 | null = null;
-  let orderPrerequisitesValid = true;
+  let connectivityRowWindowPrerequisitesValid = true;
   const activeRowOrderColumns: string[] = [];
   if (modelDraft.windowType === "MovingStanzaWindow") {
     try {
       moving = snapshotMovingWindowV3(modelDraft.movingStanza);
       if (moving === null) {
-        orderPrerequisitesValid = false;
+        connectivityRowWindowPrerequisitesValid = false;
         output.push(diagnosticV3({
           id: "STANDARD_ROW_ORDER_REQUIRED",
           severity: "error",
@@ -713,7 +747,7 @@ export function validateStandardDraftV3(
         activeRowOrderColumns.push(...activeOrderColumnsV3(moving.rowOrder, "draft.movingStanza.rowOrder"));
       }
     } catch {
-      orderPrerequisitesValid = false;
+      connectivityRowWindowPrerequisitesValid = false;
       moving = null;
       output.push(diagnosticV3({
         id: "STANDARD_ROW_ORDER_INVALID",
@@ -730,7 +764,6 @@ export function validateStandardDraftV3(
   const activeHorizonOrderColumns: string[] = [];
   if (modelDraft.model !== "EndPoint") {
     if (modelDraft.horizonOrder === null) {
-      orderPrerequisitesValid = false;
       output.push(diagnosticV3({
         id: "STANDARD_HORIZON_ORDER_REQUIRED",
         severity: "error",
@@ -744,7 +777,6 @@ export function validateStandardDraftV3(
       try {
         activeHorizonOrderColumns.push(...activeOrderColumnsV3(modelDraft.horizonOrder, "draft.horizonOrder"));
       } catch {
-        orderPrerequisitesValid = false;
         output.push(diagnosticV3({
           id: "STANDARD_HORIZON_ORDER_INVALID",
           severity: "error",
@@ -852,12 +884,15 @@ export function validateStandardDraftV3(
     }
   }
 
-  const basicPrerequisitesValid = distinctNonblankCodes.length >= 3
+  const basicPrerequisitesValid = dataset.rows.length > 0
+    && distinctNonblankCodes.length >= 3
     && duplicateCodes.length === 0
     && missingCodes.size === 0
     && collidingCodes.size === 0
     && invalidCodes.size === 0
-    && profiles.length === uniqueCodes.length;
+    && profiles.length === uniqueCodes.length
+    && profiles.every((profile) => !profile.allZero)
+    && identityPrerequisitesValidV3(dataset.rows, modelDraft.unitColumns, modelDraft.horizonColumns);
 
   if (basicPrerequisitesValid) {
     const duplicateProfiles = new Map<string, string[]>();
@@ -891,7 +926,7 @@ export function validateStandardDraftV3(
   }
 
   let connectivity: ConnectivityV3 | null = null;
-  if (basicPrerequisitesValid && orderPrerequisitesValid) {
+  if (basicPrerequisitesValid && connectivityRowWindowPrerequisitesValid) {
     try {
       if (modelDraft.windowType === "Conversation") {
         connectivity = connectivityFromGroupsV3(

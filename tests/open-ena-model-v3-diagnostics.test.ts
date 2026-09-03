@@ -155,6 +155,12 @@ function hasDerivativeConnectivityNoise(output: readonly ModelDiagnosticV3[]): b
     || entry.id === "STANDARD_NO_GLOBAL_COOCCURRENCE");
 }
 
+function hasProfileOrConnectivityDerivative(output: readonly ModelDiagnosticV3[]): boolean {
+  return output.some((entry) => entry.id === "STANDARD_CODE_DUPLICATE_PROFILE"
+    || entry.id === "STANDARD_CODE_ISOLATED"
+    || entry.id === "STANDARD_NO_GLOBAL_COOCCURRENCE");
+}
+
 function ascendingNumber(column: string): CanonicalRowOrderV3 {
   return {
     kind: "columns",
@@ -331,6 +337,19 @@ test("Binary treats a missing own Code property as invalid", () => {
   assert.deepEqual(invalid.evidence?.samples.map((sample) => sample.rowIndex), [0]);
 });
 
+test("mixed Binary evidence is the exact union of representation and scalar-invalid rows", () => {
+  const input = dataset([
+    { unit: "u", horizon: "h", A: 0, B: 1, C: 1 },
+    { unit: "u", horizon: "h", A: true, B: 0, C: 1 },
+    { unit: "u", horizon: "h", A: "bad", B: 1, C: 0 },
+  ]);
+  const invalid = one(diagnosticsFor(input), "STANDARD_CODE_VALUE_INVALID");
+  assert.equal(invalid.fieldPath, "codes.A");
+  assert.equal(invalid.evidence?.totalCount, 3);
+  assert.deepEqual(invalid.evidence?.samples.map((sample) => sample.rowIndex), [0, 1, 2]);
+  assert.equal(invalid.evidence?.truncated, false);
+});
+
 test("Frequency accepts finite nonnegative decimals and negative zero", () => {
   const input = dataset([
     { unit: "u", horizon: "h", A: 0.25, B: -0, C: 2 },
@@ -381,6 +400,23 @@ test("all-zero Codes block building, offer confirmed exclusion, and are not also
   assert.deepEqual(action?.patch, { type: "exclude-code", code: "D" });
   assert.equal(action?.confirmationRequired, true);
   assert.ok((action?.confirmationText.length ?? 0) > 20);
+});
+
+test("all-zero Codes suppress duplicate, isolated, and no-global derivative diagnostics", () => {
+  const input = dataset([
+    { unit: "u1", horizon: "h1", A: 0, B: false, C: -0 },
+    { unit: "u2", horizon: "h2", A: -0, B: false, C: 0 },
+  ]);
+  const output = diagnosticsFor(input);
+  assert.deepEqual(ids(output), [
+    "STANDARD_CODE_ALL_ZERO",
+    "STANDARD_CODE_ALL_ZERO",
+    "STANDARD_CODE_ALL_ZERO",
+  ]);
+  assert.deepEqual(output.map((entry) => entry.fieldPath), ["codes.A", "codes.B", "codes.C"]);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_CODE_DUPLICATE_PROFILE"
+    || entry.id === "STANDARD_CODE_ISOLATED"
+    || entry.id === "STANDARD_NO_GLOBAL_COOCCURRENCE"), false);
 });
 
 test("isolated Codes remain selected, warn strongly, and offer only confirmed exclusion", () => {
@@ -454,6 +490,74 @@ test("Conversation aggregates across rows within a typed Horizon but never acros
   const acrossOutput = diagnosticsFor(across);
   assert.equal(one(acrossOutput, "STANDARD_CODE_ISOLATED").fieldPath, "codes.A");
   assert.equal(ids(acrossOutput).includes("STANDARD_NO_GLOBAL_COOCCURRENCE"), false);
+});
+
+test("Unit and Horizon identity failures suppress all profile and connectivity derivatives", () => {
+  const identityCases: Array<[string, ParsedDataset, StandardEnaDraftV3]> = [
+    ["missing Unit", dataset([
+      { horizon: "h1", A: 1, B: 1, C: 0 },
+      { horizon: "h2", A: 0, B: 0, C: 1 },
+    ]), draft(["A", "B", "C"])],
+    ["unsupported Unit", dataset([
+      { unit: { id: "u" }, horizon: "h1", A: 1, B: 0, C: 0 },
+      { unit: { id: "u" }, horizon: "h2", A: 0, B: 1, C: 1 },
+    ]), draft(["A", "B", "C"])],
+    ["missing Horizon", dataset([
+      { unit: "u1", A: 1, B: 0, C: 0 },
+      { unit: "u2", A: 0, B: 1, C: 1 },
+    ]), draft(["A", "B", "C"])],
+    ["unsupported Horizon", dataset([
+      { unit: "u1", horizon: null, A: 1, B: 0, C: 0 },
+      { unit: "u2", horizon: null, A: 0, B: 1, C: 1 },
+    ]), draft(["A", "B", "C"])],
+    ["empty Unit columns", healthyDataset(), draft(["A", "B", "C"], { unitColumns: [] })],
+    ["empty Horizon columns", healthyDataset(), draft(["A", "B", "C"], { horizonColumns: [] })],
+  ];
+  for (const [label, input, modelDraft] of identityCases) {
+    const output = diagnosticsFor(input, modelDraft);
+    assert.equal(hasProfileOrConnectivityDerivative(output), false, `${label}: ${ids(output).join(", ")}`);
+  }
+
+  const sharedHorizon = dataset([
+    { unit: "u1", horizon: "shared", A: 1, B: 0, C: 1 },
+    { unit: "u2", horizon: "shared", A: 0, B: 1, C: 1 },
+  ]);
+  assert.equal(hasProfileOrConnectivityDerivative(diagnosticsFor(sharedHorizon)), false);
+});
+
+test("a valid zero-row dataset never invents Code-profile or connectivity derivatives", () => {
+  const input = dataset([]);
+  const output = diagnosticsFor(input);
+  assert.equal(hasProfileOrConnectivityDerivative(output), false);
+  assert.equal(output.some((entry) => (entry.evidence?.samples ?? [])
+    .some((sample) => sample.identity?.startsWith("window-") === true)), false);
+});
+
+test("trajectory Horizon-order errors do not suppress independent Code connectivity diagnostics", () => {
+  const input = dataset([
+    { unit: "u1", horizon: "h1", week: 1, A: 1, B: 1, D: 0 },
+    { unit: "u1", horizon: "h1", week: 1, A: 0, B: 1, D: 0 },
+    { unit: "u2", horizon: "h2", week: 2, A: 0, B: 0, D: 1 },
+  ], ["unit", "horizon", "week", "A", "B", "D"]);
+  const required = diagnosticsFor(input, draft(["A", "B", "D"], {
+    model: "SeparateTrajectory",
+    windowType: "Conversation",
+    horizonOrder: null,
+  }));
+  one(required, "STANDARD_HORIZON_ORDER_REQUIRED");
+  assert.equal(one(required, "STANDARD_CODE_ISOLATED").fieldPath, "codes.D");
+
+  const malformed = {
+    kind: "columns",
+    keys: [{ column: "week", direction: "ascending", comparator: { type: "mystery" } }],
+  } as unknown as CanonicalHorizonOrderV3;
+  const invalid = diagnosticsFor(input, draft(["A", "B", "D"], {
+    model: "AccumulatedTrajectory",
+    windowType: "Conversation",
+    horizonOrder: malformed,
+  }));
+  one(invalid, "STANDARD_HORIZON_ORDER_INVALID");
+  assert.equal(one(invalid, "STANDARD_CODE_ISOLATED").fieldPath, "codes.D");
 });
 
 function movingDraft(
@@ -551,7 +655,6 @@ test("unresolved row order, invalid extents, and invalid identities suppress der
   const identityOutput = diagnosticsFor(missingIdentity, movingDraft(
     { kind: "finite", value: 2 }, { kind: "finite", value: 0 },
   ));
-  one(identityOutput, "STANDARD_ROW_ORDER_INVALID");
   assert.equal(hasDerivativeConnectivityNoise(identityOutput), false);
 });
 
@@ -573,6 +676,30 @@ test("dataset and binding trust failures emit one stable blocking diagnostic and
     assert.ok(invalid.blocks.includes("build-model"));
     assert.equal(hasDerivativeConnectivityNoise(output), false);
   }
+});
+
+test("dataset names authoritatively infer hash kind when explicit provenance is absent", () => {
+  const base = healthyDataset();
+  const xlsx = { ...base, name: "research.XLSX" };
+  assert.deepEqual(ids(diagnosticsFor(xlsx, draft(["A", "B", "C"]), binding(xlsx, {
+    hashKind: "normalized-utf8-csv-text-sha256",
+  }))), ["STANDARD_DATASET_BINDING_INVALID"]);
+  assert.deepEqual(diagnosticsFor(xlsx, draft(["A", "B", "C"]), binding(xlsx, {
+    hashKind: "canonical-first-xlsx-worksheet-v1-sha256",
+  })), []);
+
+  const csv = { ...base, name: "research.csv" };
+  assert.deepEqual(ids(diagnosticsFor(csv, draft(["A", "B", "C"]), binding(csv, {
+    hashKind: "canonical-first-xlsx-worksheet-v1-sha256",
+  }))), ["STANDARD_DATASET_BINDING_INVALID"]);
+  assert.deepEqual(diagnosticsFor(csv, draft(["A", "B", "C"]), binding(csv, {
+    hashKind: "normalized-utf8-csv-text-sha256",
+  })), []);
+
+  const explicit = { ...base, name: "research.bin", hashKind: "normalized-utf8-text-sha256" as const };
+  assert.deepEqual(diagnosticsFor(explicit, draft(["A", "B", "C"]), binding(explicit, {
+    hashKind: "normalized-utf8-text-sha256",
+  })), []);
 });
 
 test("dataset trust boundary avoids ordinary Proxy gets and accepts stable descriptor snapshots", () => {
