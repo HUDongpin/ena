@@ -21,6 +21,17 @@ const expected = {
   },
 };
 
+test("verify CI checkout fetches history for the frozen baseline", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/open-ena-ci.yml", import.meta.url), "utf8");
+  const verifyJob = workflow.match(/\n  verify:\n([\s\S]*?)\n  browser:/)?.[1];
+  assert.ok(verifyJob, "verify job must exist");
+  assert.match(
+    verifyJob,
+    /^\s+- uses: actions\/checkout@[^\n]+\n\s+with:\n\s+fetch-depth: 0(?:\s|$)/m,
+    "verify checkout must immediately configure fetch-depth: 0",
+  );
+});
+
 function parseManifest(value: unknown): typeof expected & { recordedAt: string } {
   assert.equal(typeof value, "object");
   assert.notEqual(value, null);
