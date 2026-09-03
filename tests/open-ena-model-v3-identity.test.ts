@@ -13,6 +13,7 @@ import {
   scalarIdentityV3,
   validateExecutionIdentityDictionaryV3,
 } from "../lib/open-ena/model-v3/identity";
+import * as identityModuleV3 from "../lib/open-ena/model-v3/identity";
 import { canonicalJsonV3, sha256TextV3 } from "../lib/open-ena/model-v3/canonical-json";
 
 const rows = [
@@ -479,6 +480,12 @@ test("dictionary validation rejects blank labels and labels colliding with any i
   reordered.horizons.reverse();
   reordered.units[0].displayLabel = reordered.horizons[0].token;
   await assert.rejects(validateExecutionIdentityDictionaryV3(reordered), /display|label|token|invalid/i);
+});
+
+test("the identity module does not export its unvalidated dictionary snapshot helper", () => {
+  assert.equal("snapshotExecutionIdentityDictionaryV3" in identityModuleV3, false);
+  const source = readFileSync(new URL("../lib/open-ena/model-v3/identity.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /export\s+function\s+snapshotExecutionIdentityDictionaryV3/u);
 });
 
 test("dictionary validation hashes each canonical identity once across all roles", async () => {

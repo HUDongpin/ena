@@ -352,6 +352,30 @@ export async function buildExecutionIdentityDictionaryV3(
 
 type IdentityRoleV3 = "Unit" | "Horizon" | "Group";
 
+interface UnvalidatedIdentityScalarSnapshotV3 {
+  type: unknown;
+  value: unknown;
+}
+
+interface UnvalidatedIdentityFieldSnapshotV3 {
+  column: unknown;
+  value: UnvalidatedIdentityScalarSnapshotV3;
+}
+
+interface UnvalidatedExecutionIdentityEntrySnapshotV3 {
+  token: unknown;
+  displayLabel: unknown;
+  fields: UnvalidatedIdentityFieldSnapshotV3[];
+  canonicalJson: unknown;
+  sha256: unknown;
+}
+
+interface UnvalidatedExecutionIdentityDictionarySnapshotV3 {
+  units: UnvalidatedExecutionIdentityEntrySnapshotV3[];
+  horizons: UnvalidatedExecutionIdentityEntrySnapshotV3[];
+  groups: UnvalidatedExecutionIdentityEntrySnapshotV3[];
+}
+
 function assertExactKeysV3(record: Record<string, unknown>, expected: readonly string[], label: string): void {
   const actual = Object.keys(record).sort();
   const wanted = [...expected].sort();
@@ -367,10 +391,10 @@ function validateNamespaceTokenV3(token: string, role: IdentityRoleV3): void {
   }
 }
 
-export function snapshotExecutionIdentityDictionaryV3(input: unknown): ExecutionIdentityDictionaryV3 {
+function snapshotExecutionIdentityDictionaryV3(input: unknown): UnvalidatedExecutionIdentityDictionarySnapshotV3 {
   const root = snapshotPlainJsonRecordV3(input, "identity dictionary");
   assertExactKeysV3(root, ["units", "horizons", "groups"], "identity dictionary");
-  const snapshotRole = (role: IdentityRoleV3): ExecutionIdentityEntryV3[] => {
+  const snapshotRole = (role: IdentityRoleV3): UnvalidatedExecutionIdentityEntrySnapshotV3[] => {
     const key = `${role.toLowerCase()}s`;
     const rawEntries = snapshotDenseJsonArrayV3(root[key], `${role} identities`);
     return rawEntries.map((rawEntry, entryIndex) => {
@@ -382,18 +406,14 @@ export function snapshotExecutionIdentityDictionaryV3(input: unknown): Execution
         assertExactKeysV3(field, ["column", "value"], `${role} identity field`);
         const scalar = snapshotPlainJsonRecordV3(field.value, `${role} identity scalar`);
         assertExactKeysV3(scalar, ["type", "value"], `${role} identity scalar`);
-        const normalizedScalar = scalarIdentityV3(scalar.value, `${role} identity scalar`);
-        if (scalar.type !== normalizedScalar.type) {
-          throw new TypeError(`${role} identity scalar has an inconsistent declared type.`);
-        }
-        return { column: field.column as string, value: normalizedScalar };
+        return { column: field.column, value: { type: scalar.type, value: scalar.value } };
       });
       return {
-        token: entry.token as string,
-        displayLabel: entry.displayLabel as string,
+        token: entry.token,
+        displayLabel: entry.displayLabel,
         fields,
-        canonicalJson: entry.canonicalJson as string,
-        sha256: entry.sha256 as string,
+        canonicalJson: entry.canonicalJson,
+        sha256: entry.sha256,
       };
     });
   };
@@ -401,54 +421,80 @@ export function snapshotExecutionIdentityDictionaryV3(input: unknown): Execution
 }
 
 async function validateExecutionIdentityDictionarySnapshotV3(
-  dictionarySnapshot: ExecutionIdentityDictionaryV3,
+  dictionarySnapshot: UnvalidatedExecutionIdentityDictionarySnapshotV3,
 ): Promise<ExecutionIdentityDictionaryV3> {
   const allBindings: Array<Pick<CompositeIdentityV3, "sha256" | "canonicalJson">> = [];
   const allTokens = new Set<string>();
   const allLabels = new Set<string>();
   const digestByCanonicalJson = new Map<string, string>();
-  for (const role of ["Unit", "Horizon", "Group"] as const) {
-    const key = `${role.toLowerCase()}s` as "units" | "horizons" | "groups";
-    const rawEntries = dictionarySnapshot[key];
+  const validateRole = async (
+    rawEntries: readonly UnvalidatedExecutionIdentityEntrySnapshotV3[],
+    role: IdentityRoleV3,
+  ): Promise<ExecutionIdentityEntryV3[]> => {
     const canonicalIdentities = new Set<string>();
-    for (const entry of rawEntries) {
-      if (typeof entry.token !== "string" || typeof entry.displayLabel !== "string"
-        || typeof entry.canonicalJson !== "string" || typeof entry.sha256 !== "string") {
+    const validatedEntries: ExecutionIdentityEntryV3[] = [];
+    for (const rawEntry of rawEntries) {
+      const { token, displayLabel, canonicalJson, sha256 } = rawEntry;
+      if (typeof token !== "string" || typeof displayLabel !== "string"
+        || typeof canonicalJson !== "string" || typeof sha256 !== "string") {
         throw new TypeError(`Malformed ${role} identity entry.`);
       }
-      if (entry.displayLabel.trim().length === 0) {
+      if (displayLabel.trim().length === 0) {
         throw new TypeError(`${role} identity display label must be nonblank.`);
       }
-      validateNamespaceTokenV3(entry.token, role);
-      if (entry.sha256 !== entry.sha256.toLowerCase()) throw new TypeError(`Malformed ${role} identity digest.`);
-      normalizeHashV3(entry.sha256, `${role} identity digest`);
-      if (canonicalFieldsV3(entry.fields, `${role} identity fields`) !== entry.canonicalJson) {
+      validateNamespaceTokenV3(token, role);
+      if (sha256 !== sha256.toLowerCase()) throw new TypeError(`Malformed ${role} identity digest.`);
+      normalizeHashV3(sha256, `${role} identity digest`);
+      const fields = rawEntry.fields.map((rawField, fieldIndex): IdentityFieldV3 => {
+        const column = rawField.column;
+        if (typeof column !== "string" || column.trim().length === 0) {
+          throw new TypeError(`${role} identity field ${fieldIndex} has an invalid column.`);
+        }
+        const scalar = scalarIdentityV3(rawField.value.value, `${role} identity field ${fieldIndex} value`);
+        if (rawField.value.type !== scalar.type) {
+          throw new TypeError(`${role} identity scalar has an inconsistent declared type.`);
+        }
+        return { column, value: scalar };
+      });
+      if (canonicalFieldsV3(fields, `${role} identity fields`) !== canonicalJson) {
         throw new TypeError(`Malformed ${role} identity canonical representation.`);
       }
-      if (allTokens.has(entry.token)) throw new Error("Identity dictionary contains duplicate tokens.");
-      allTokens.add(entry.token);
-      if (allLabels.has(entry.displayLabel)) throw new Error("Duplicate identity display labels.");
-      allLabels.add(entry.displayLabel);
-      if (canonicalIdentities.has(entry.canonicalJson)) throw new Error(`Duplicate ${role} identity canonical values.`);
-      canonicalIdentities.add(entry.canonicalJson);
-      allBindings.push(entry);
-      let expectedDigest = digestByCanonicalJson.get(entry.canonicalJson);
+      if (allTokens.has(token)) throw new Error("Identity dictionary contains duplicate tokens.");
+      allTokens.add(token);
+      if (allLabels.has(displayLabel)) throw new Error("Duplicate identity display labels.");
+      allLabels.add(displayLabel);
+      if (canonicalIdentities.has(canonicalJson)) throw new Error(`Duplicate ${role} identity canonical values.`);
+      canonicalIdentities.add(canonicalJson);
+      let expectedDigest = digestByCanonicalJson.get(canonicalJson);
       if (expectedDigest === undefined) {
-        expectedDigest = await sha256TextV3(entry.canonicalJson);
-        digestByCanonicalJson.set(entry.canonicalJson, expectedDigest);
+        expectedDigest = await sha256TextV3(canonicalJson);
+        digestByCanonicalJson.set(canonicalJson, expectedDigest);
       }
-      if (entry.sha256 !== expectedDigest) {
+      if (sha256 !== expectedDigest) {
         throw new Error(`Invalid ${role} identity digest.`);
       }
+      const entry: ExecutionIdentityEntryV3 = {
+        token,
+        displayLabel,
+        fields,
+        canonicalJson,
+        sha256,
+      };
+      allBindings.push(entry);
+      validatedEntries.push(entry);
     }
-  }
+    return validatedEntries;
+  };
+  const units = await validateRole(dictionarySnapshot.units, "Unit");
+  const horizons = await validateRole(dictionarySnapshot.horizons, "Horizon");
+  const groups = await validateRole(dictionarySnapshot.groups, "Group");
   for (const displayLabel of allLabels) {
     if (allTokens.has(displayLabel)) {
       throw new Error("Identity display labels must not equal internal identity tokens.");
     }
   }
   assertUniqueIdentityHashBindingsV3(allBindings);
-  return deepFreezeV3(dictionarySnapshot);
+  return deepFreezeV3({ units, horizons, groups });
 }
 
 export async function validateExecutionIdentityDictionaryV3(
