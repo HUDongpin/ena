@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -1889,4 +1890,119 @@ test("ONA directional mask rejects schema, exact-key, code-order, density, dimen
       pattern: /directionalMask\.enabled\[0\].*dense plain JSON array.*extra properties/i,
     },
   ]);
+});
+
+test("Standard decoding snapshots nested object and array Proxies without invoking get", () => {
+  const objectFixture = standardFixture();
+  let objectGets = 0;
+  objectFixture.units = new Proxy(objectFixture.units as Record<string, unknown>, {
+    get() {
+      objectGets += 1;
+      throw new Error("object Proxy get must not run");
+    },
+  });
+  const objectDecoded = decodeCanonicalStandardConfigV3(objectFixture);
+  assert.deepEqual(objectDecoded.units, {
+    columns: ["student", "team"],
+    group: { type: "stable-metadata", column: "condition" },
+  });
+  assert.equal(objectGets, 0);
+
+  const arrayFixture = standardFixture();
+  let arrayGets = 0;
+  arrayFixture.codes = new Proxy(arrayFixture.codes as unknown[], {
+    get() {
+      arrayGets += 1;
+      throw new Error("array Proxy get must not run");
+    },
+  });
+  const arrayDecoded = decodeCanonicalStandardConfigV3(arrayFixture);
+  assert.deepEqual(arrayDecoded.codes.map((code) => code.column), ["ask", "explain", "challenge"]);
+  assert.equal(arrayGets, 0);
+});
+
+test("ONA decoding snapshots nested array Proxies without invoking get", () => {
+  const fixture = onaFixture();
+  const mask = fixture.directionalMask as Record<string, unknown>;
+  let gets = 0;
+  mask.codeOrder = new Proxy(mask.codeOrder as string[], {
+    get() {
+      gets += 1;
+      throw new Error("ONA array Proxy get must not run");
+    },
+  });
+
+  const decoded = decodeCanonicalOnaConfigV3(fixture);
+  assert.deepEqual(decoded.directionalMask.codeOrder, ["ask", "explain", "challenge"]);
+  assert.equal(gets, 0);
+});
+
+test("decoder rejects descriptor/get TOCTOU disagreement using captured descriptors only", () => {
+  const target = standardFixture();
+  target.analysisFamily = "ona";
+  let gets = 0;
+  const misleading = new Proxy(target, {
+    get(original, key, receiver) {
+      gets += 1;
+      if (key === "analysisFamily") return "standard";
+      return Reflect.get(original, key, receiver);
+    },
+  });
+
+  assert.throws(
+    () => decodeCanonicalStandardConfigV3(misleading),
+    /analysisFamily.*standard/i,
+  );
+  assert.equal(gets, 0);
+});
+
+test("text comparator accepts only supplied locales already in canonical BCP-47 spelling", () => {
+  const valid = standardFixture();
+  comparatorAt(valid, 4).locale = "en-US";
+  const decoded = decodeCanonicalStandardConfigV3(valid);
+  assert.equal(decoded.window.type, "MovingStanzaWindow");
+  if (decoded.window.type === "MovingStanzaWindow" && decoded.window.rowOrder.kind === "columns") {
+    const comparator = decoded.window.rowOrder.keys[4].comparator;
+    assert.equal(comparator.type, "text");
+    if (comparator.type === "text") assert.equal(comparator.locale, "en-US");
+  }
+
+  for (const locale of ["EN-us", "iw", "en-US-u-kn-true-ca-gregory"]) {
+    const fixture = standardFixture();
+    comparatorAt(fixture, 4).locale = locale;
+    assert.throws(
+      () => decodeCanonicalStandardConfigV3(fixture),
+      /locale.*canonical BCP-47/i,
+      locale,
+    );
+  }
+});
+
+test("strict array validation remains descriptor-snapshot based and linear per array", () => {
+  const schemaSource = readFileSync(
+    new URL("../lib/open-ena/model-v3/schema.ts", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(schemaSource, /keys\.includes\s*\(/u);
+
+  const size = 128;
+  const fixture = onaFixture();
+  fixture.codes = Array.from({ length: size }, (_, index) => ({
+    column: `code-${index}`,
+    displayLabel: `Code ${index}`,
+  }));
+  fixture.directionalMask = {
+    schemaVersion: 1,
+    codeOrder: Array.from({ length: size }, (_, index) => `code-${index}`),
+    enabled: Array.from({ length: size }, (_, row) => (
+      Array.from({ length: size }, (_, column) => row === column)
+    )),
+  };
+
+  const decoded = decodeCanonicalOnaConfigV3(fixture);
+  assert.equal(decoded.directionalMask.codeOrder.length, size);
+  assert.equal(decoded.directionalMask.enabled.length, size);
+  assert.equal(decoded.directionalMask.enabled[0].length, size);
+  assert.equal(decoded.directionalMask.enabled[size - 1][size - 1], true);
+  assert.notEqual(decoded.directionalMask.enabled, (fixture.directionalMask as { enabled: boolean[][] }).enabled);
 });

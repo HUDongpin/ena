@@ -16,6 +16,10 @@ import type {
   StandardWindowV3,
   TrajectoryRotationV3,
 } from "./types";
+import {
+  OPEN_ENA_RUNTIME_POLICY_VERSION_V3,
+  OPEN_ENA_VALIDATION_CONTRACT_VERSION_V3,
+} from "./types";
 import type { OpenEnaDirectionalMask } from "../types";
 
 const LOWERCASE_SHA256 = /^[0-9a-f]{64}$/u;
@@ -29,20 +33,38 @@ function strictRecord(value: unknown, label: string): Record<string, unknown> {
   if (prototype !== Object.prototype && prototype !== null) {
     throw new TypeError(`${label} must be a plain JSON object.`);
   }
-  for (const key of Reflect.ownKeys(value)) {
+  // Proxy meta-traps cannot be avoided, but one own-key/descriptor capture keeps all
+  // subsequent decoding off the original container and never invokes its `get` trap.
+  const captured = Reflect.ownKeys(value).map((key) => ({
+    key,
+    descriptor: Object.getOwnPropertyDescriptor(value, key),
+  }));
+  for (const { key, descriptor } of captured) {
     if (typeof key !== "string") {
       throw new TypeError(`${label} must contain only string-named data properties.`);
     }
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
       throw new TypeError(`${label}.${key} must be an own enumerable data property, not an accessor.`);
     }
   }
-  return value as Record<string, unknown>;
+  const snapshot = Object.create(null) as Record<string, unknown>;
+  for (const { key, descriptor } of captured) {
+    if (typeof key !== "string" || descriptor === undefined || !("value" in descriptor)) continue;
+    Object.defineProperty(snapshot, key, {
+      value: descriptor.value,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  }
+  return snapshot;
 }
 
-function exactRecord(value: unknown, keys: readonly string[], label: string): Record<string, unknown> {
-  const record = strictRecord(value, label);
+function exactSnapshot(
+  record: Record<string, unknown>,
+  keys: readonly string[],
+  label: string,
+): Record<string, unknown> {
   const allowed = new Set(keys);
   const unknown = Object.keys(record).filter((key) => !allowed.has(key)).sort();
   if (unknown.length > 0) throw new TypeError(`${label} has unknown properties: ${unknown.join(", ")}.`);
@@ -52,28 +74,54 @@ function exactRecord(value: unknown, keys: readonly string[], label: string): Re
   return record;
 }
 
+function exactRecord(value: unknown, keys: readonly string[], label: string): Record<string, unknown> {
+  return exactSnapshot(strictRecord(value, label), keys, label);
+}
+
 function strictArray(value: unknown, label: string): unknown[] {
   if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
     throw new TypeError(`${label} must be a dense plain JSON array.`);
   }
-  const keys = Reflect.ownKeys(value).filter((key) => key !== "length");
-  if (keys.length !== value.length) {
+  // As with records, Proxy meta-traps are unavoidable; descriptor values form the
+  // single coherent snapshot, and the original array is never read with `get`.
+  const captured = Reflect.ownKeys(value).map((key) => ({
+    key,
+    descriptor: Object.getOwnPropertyDescriptor(value, key),
+  }));
+  const lengthCapture = captured.find(({ key }) => key === "length");
+  const lengthDescriptor = lengthCapture?.descriptor;
+  if (lengthDescriptor === undefined
+    || lengthDescriptor.enumerable
+    || !("value" in lengthDescriptor)
+    || typeof lengthDescriptor.value !== "number"
+    || !Number.isSafeInteger(lengthDescriptor.value)
+    || lengthDescriptor.value < 0) {
     throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
   }
-  for (let index = 0; index < value.length; index += 1) {
-    const key = String(index);
-    if (!keys.includes(key)) {
+  const length = lengthDescriptor.value;
+  if (captured.length !== length + 1) {
+    throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
+  }
+  const snapshot = new Array<unknown>(length);
+  let elementCount = 0;
+  for (const { key, descriptor } of captured) {
+    if (key === "length") continue;
+    if (typeof key !== "string"
+      || !/^(0|[1-9]\d*)$/u.test(key)
+      || !Number.isSafeInteger(Number(key))
+      || Number(key) >= length) {
       throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
     }
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
-      throw new TypeError(`${label}[${index}] must be an own enumerable data property, not an accessor.`);
+      throw new TypeError(`${label}[${key}] must be an own enumerable data property, not an accessor.`);
     }
+    snapshot[Number(key)] = descriptor.value;
+    elementCount += 1;
   }
-  if (keys.some((key) => typeof key !== "string" || !/^(0|[1-9]\d*)$/u.test(key))) {
+  if (elementCount !== length) {
     throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
   }
-  return value;
+  return snapshot;
 }
 
 function literal<T extends string | number | boolean>(
@@ -139,12 +187,12 @@ function decodeContracts(value: unknown): CanonicalModelContractsV3 {
   return {
     validationContractVersion: literal(
       record.validationContractVersion,
-      "open-ena-validation-v3.1",
+      OPEN_ENA_VALIDATION_CONTRACT_VERSION_V3,
       "contracts.validationContractVersion",
     ),
     runtimePolicyVersion: literal(
       record.runtimePolicyVersion,
-      "open-ena-runtime-policy-v3.1",
+      OPEN_ENA_RUNTIME_POLICY_VERSION_V3,
       "contracts.runtimePolicyVersion",
     ),
   };
@@ -155,10 +203,10 @@ function decodeUnits(value: unknown): CanonicalStandardConfigV3["units"] {
   const groupRecord = strictRecord(record.group, "units.group");
   let group: CanonicalStandardConfigV3["units"]["group"];
   if (groupRecord.type === "none") {
-    exactRecord(record.group, ["type"], "units.group none");
+    exactSnapshot(groupRecord, ["type"], "units.group none");
     group = { type: "none" };
   } else if (groupRecord.type === "stable-metadata") {
-    const exact = exactRecord(record.group, ["type", "column"], "units.group stable-metadata");
+    const exact = exactSnapshot(groupRecord, ["type", "column"], "units.group stable-metadata");
     group = {
       type: "stable-metadata",
       column: nonblankString(exact.column, "units.group.column"),
@@ -239,15 +287,15 @@ function decodeConfirmation(value: unknown, label: string): DatasetBoundConfirma
 function decodeComparator(value: unknown, label: string): OrderComparatorV3 {
   const record = strictRecord(value, label);
   if (record.type === "number") {
-    exactRecord(value, ["type"], `${label} number comparator`);
+    exactSnapshot(record, ["type"], `${label} number comparator`);
     return { type: "number" };
   }
   if (record.type === "date") {
-    const exact = exactRecord(value, ["type", "format"], `${label} date comparator`);
+    const exact = exactSnapshot(record, ["type", "format"], `${label} date comparator`);
     return { type: "date", format: literal(exact.format, "YYYY-MM-DD", `${label}.format`) };
   }
   if (record.type === "datetime") {
-    const exact = exactRecord(value, ["type", "format", "timeZone"], `${label} datetime comparator`);
+    const exact = exactSnapshot(record, ["type", "format", "timeZone"], `${label} datetime comparator`);
     return {
       type: "datetime",
       format: literal(exact.format, "ISO-8601", `${label}.format`),
@@ -255,7 +303,7 @@ function decodeComparator(value: unknown, label: string): OrderComparatorV3 {
     };
   }
   if (record.type === "ordered-category") {
-    const exact = exactRecord(value, ["type", "levels"], `${label} ordered-category comparator`);
+    const exact = exactSnapshot(record, ["type", "levels"], `${label} ordered-category comparator`);
     const input = strictArray(exact.levels, `${label}.levels`);
     if (input.length === 0) throw new TypeError(`${label}.levels must be nonempty.`);
     const levels = input.map((entry, index) => decodeScalarIdentity(entry, `${label}.levels[${index}]`));
@@ -266,12 +314,16 @@ function decodeComparator(value: unknown, label: string): OrderComparatorV3 {
     return { type: "ordered-category", levels };
   }
   if (record.type === "text") {
-    const exact = exactRecord(value, ["type", "locale", "sensitivity", "numeric"], `${label} text comparator`);
+    const exact = exactSnapshot(record, ["type", "locale", "sensitivity", "numeric"], `${label} text comparator`);
     const locale = nonblankString(exact.locale, `${label}.locale`);
+    let canonicalLocales: string[];
     try {
-      if (Intl.getCanonicalLocales(locale).length !== 1) throw new RangeError("invalid locale");
+      canonicalLocales = Intl.getCanonicalLocales(locale);
     } catch {
-      throw new TypeError(`${label}.locale must be a nonblank BCP-47 locale.`);
+      throw new TypeError(`${label}.locale must be a canonical BCP-47 locale.`);
+    }
+    if (canonicalLocales.length !== 1 || canonicalLocales[0] !== locale) {
+      throw new TypeError(`${label}.locale must use canonical BCP-47 spelling.`);
     }
     const sensitivity = exact.sensitivity;
     if (sensitivity !== "base" && sensitivity !== "accent" && sensitivity !== "case" && sensitivity !== "variant") {
@@ -303,7 +355,7 @@ function decodeOrderKey(value: unknown, label: string): OrderKeyV3 {
 function decodeOrder(value: unknown, label: string): CanonicalRowOrderV3 {
   const record = strictRecord(value, label);
   if (record.kind === "columns") {
-    const exact = exactRecord(value, ["kind", "keys"], `${label} columns order`);
+    const exact = exactSnapshot(record, ["kind", "keys"], `${label} columns order`);
     const input = strictArray(exact.keys, `${label}.keys`);
     if (input.length === 0) throw new TypeError(`${label}.keys must be nonempty.`);
     const keys = input.map((entry, index) => decodeOrderKey(entry, `${label}.keys[${index}]`));
@@ -315,7 +367,7 @@ function decodeOrder(value: unknown, label: string): CanonicalRowOrderV3 {
     return { kind: "columns", keys: [first, ...rest] };
   }
   if (record.kind === "source-order-confirmed") {
-    const exact = exactRecord(value, ["kind", "confirmation"], `${label} source-order-confirmed order`);
+    const exact = exactSnapshot(record, ["kind", "confirmation"], `${label} source-order-confirmed order`);
     return {
       kind: "source-order-confirmed",
       confirmation: decodeConfirmation(exact.confirmation, `${label}.confirmation`),
@@ -327,11 +379,11 @@ function decodeOrder(value: unknown, label: string): CanonicalRowOrderV3 {
 function decodeBackwardExtent(value: unknown, label: string): BackwardExtentV3 {
   const record = strictRecord(value, label);
   if (record.kind === "infinity") {
-    exactRecord(value, ["kind"], `${label} infinity extent`);
+    exactSnapshot(record, ["kind"], `${label} infinity extent`);
     return { kind: "infinity" };
   }
   if (record.kind === "finite") {
-    const exact = exactRecord(value, ["kind", "value"], `${label} finite extent`);
+    const exact = exactSnapshot(record, ["kind", "value"], `${label} finite extent`);
     if (typeof exact.value !== "number" || !Number.isSafeInteger(exact.value) || exact.value < 1) {
       throw new TypeError(`${label}.value must be a safe integer greater than or equal to 1.`);
     }
@@ -343,11 +395,11 @@ function decodeBackwardExtent(value: unknown, label: string): BackwardExtentV3 {
 function decodeForwardExtent(value: unknown, label: string): ForwardExtentV3 {
   const record = strictRecord(value, label);
   if (record.kind === "infinity") {
-    exactRecord(value, ["kind"], `${label} infinity extent`);
+    exactSnapshot(record, ["kind"], `${label} infinity extent`);
     return { kind: "infinity" };
   }
   if (record.kind === "finite") {
-    const exact = exactRecord(value, ["kind", "value"], `${label} finite extent`);
+    const exact = exactSnapshot(record, ["kind", "value"], `${label} finite extent`);
     if (typeof exact.value !== "number" || !Number.isSafeInteger(exact.value) || exact.value < 0) {
       throw new TypeError(`${label}.value must be a safe integer greater than or equal to 0.`);
     }
@@ -359,11 +411,11 @@ function decodeForwardExtent(value: unknown, label: string): ForwardExtentV3 {
 function decodeStandardWindow(value: unknown): StandardWindowV3 {
   const record = strictRecord(value, "window");
   if (record.type === "Conversation") {
-    exactRecord(value, ["type"], "Conversation window");
+    exactSnapshot(record, ["type"], "Conversation window");
     return { type: "Conversation" };
   }
   if (record.type === "MovingStanzaWindow") {
-    const exact = exactRecord(value, ["type", "backward", "forward", "rowOrder"], "MovingStanzaWindow window");
+    const exact = exactSnapshot(record, ["type", "backward", "forward", "rowOrder"], "MovingStanzaWindow window");
     return {
       type: "MovingStanzaWindow",
       backward: decodeBackwardExtent(exact.backward, "window.backward"),
@@ -374,29 +426,35 @@ function decodeStandardWindow(value: unknown): StandardWindowV3 {
   throw new TypeError("window.type must be \"MovingStanzaWindow\" or \"Conversation\".");
 }
 
-function decodeReferenceRotation(value: unknown, label: string): EndpointRotationV3 & TrajectoryRotationV3 {
-  const record = exactRecord(value, ["type", "referenceId", "expectedContentSha256"], `${label} reference rotation`);
+function decodeReferenceRotation(
+  record: Record<string, unknown>,
+  label: string,
+): EndpointRotationV3 & TrajectoryRotationV3 {
+  const exact = exactSnapshot(record, ["type", "referenceId", "expectedContentSha256"], `${label} reference rotation`);
   return {
     type: "reference",
-    referenceId: nonblankString(record.referenceId, `${label}.referenceId`),
-    expectedContentSha256: lowercaseSha256(record.expectedContentSha256, `${label}.expectedContentSha256`),
+    referenceId: nonblankString(exact.referenceId, `${label}.referenceId`),
+    expectedContentSha256: lowercaseSha256(exact.expectedContentSha256, `${label}.expectedContentSha256`),
   };
 }
 
-function decodeSvdRotation(value: unknown, label: string): EndpointRotationV3 & TrajectoryRotationV3 {
-  const record = exactRecord(value, ["type", "centerAlignToOrigin"], `${label} SVD rotation`);
+function decodeSvdRotation(
+  record: Record<string, unknown>,
+  label: string,
+): EndpointRotationV3 & TrajectoryRotationV3 {
+  const exact = exactSnapshot(record, ["type", "centerAlignToOrigin"], `${label} SVD rotation`);
   return {
     type: "svd",
-    centerAlignToOrigin: booleanValue(record.centerAlignToOrigin, `${label}.centerAlignToOrigin`),
+    centerAlignToOrigin: booleanValue(exact.centerAlignToOrigin, `${label}.centerAlignToOrigin`),
   };
 }
 
 function decodeEndpointRotation(value: unknown, label: string): EndpointRotationV3 {
   const record = strictRecord(value, label);
-  if (record.type === "svd") return decodeSvdRotation(value, label);
-  if (record.type === "reference") return decodeReferenceRotation(value, label);
+  if (record.type === "svd") return decodeSvdRotation(record, label);
+  if (record.type === "reference") return decodeReferenceRotation(record, label);
   if (record.type === "means") {
-    const exact = exactRecord(value, ["type", "centerAlignToOrigin", "contrast"], `${label} Means rotation`);
+    const exact = exactSnapshot(record, ["type", "centerAlignToOrigin", "contrast"], `${label} Means rotation`);
     const contrast = exactRecord(
       exact.contrast,
       ["groupColumn", "negativeLevel", "positiveLevel"],
@@ -420,8 +478,8 @@ function decodeTrajectoryRotation(value: unknown, label: string): TrajectoryRota
   if (record.type === "means") {
     throw new TypeError("Trajectory models cannot use Means rotation; Means is Endpoint-only.");
   }
-  if (record.type === "svd") return decodeSvdRotation(value, label);
-  if (record.type === "reference") return decodeReferenceRotation(value, label);
+  if (record.type === "svd") return decodeSvdRotation(record, label);
+  if (record.type === "reference") return decodeReferenceRotation(record, label);
   throw new TypeError(`${label}.type must be \"svd\" or \"reference\" for a trajectory model.`);
 }
 
@@ -429,14 +487,14 @@ function decodeAnalysis(value: unknown): CanonicalStandardAnalysisV3 {
   const record = exactRecord(value, ["model", "rotation"], "analysis");
   const model = strictRecord(record.model, "analysis.model");
   if (model.type === "EndPoint") {
-    exactRecord(record.model, ["type"], "EndPoint model");
+    exactSnapshot(model, ["type"], "EndPoint model");
     return {
       model: { type: "EndPoint" },
       rotation: decodeEndpointRotation(record.rotation, "analysis.rotation"),
     };
   }
   if (model.type === "SeparateTrajectory" || model.type === "AccumulatedTrajectory") {
-    const exact = exactRecord(record.model, ["type", "horizonOrder"], `${model.type} model`);
+    const exact = exactSnapshot(model, ["type", "horizonOrder"], `${model.type} model`);
     const horizonOrder: CanonicalHorizonOrderV3 = decodeOrder(exact.horizonOrder, "analysis.model.horizonOrder");
     const rotation = decodeTrajectoryRotation(record.rotation, "analysis.rotation");
     if (model.type === "SeparateTrajectory") {
@@ -527,22 +585,22 @@ export function decodeCanonicalOnaConfigV3(value: unknown): CanonicalOnaConfigV3
 
   const modelBranch = strictRecord(record.model, "ONA model");
   literal(modelBranch.type, "EndPoint", "ONA model.type");
-  exactRecord(record.model, ["type"], "ONA model");
+  exactSnapshot(modelBranch, ["type"], "ONA model");
   const weightingBranch = strictRecord(record.weighting, "ONA weighting");
   literal(weightingBranch.type, "frequency", "ONA weighting.type");
-  const weighting = exactRecord(record.weighting, ["type", "engineMethod"], "ONA weighting");
+  const weighting = exactSnapshot(weightingBranch, ["type", "engineMethod"], "ONA weighting");
   literal(weighting.engineMethod, "sum", "ONA weighting.engineMethod");
   const windowBranch = strictRecord(record.window, "ONA window");
   literal(windowBranch.type, "MovingStanzaWindow", "ONA window.type");
-  const window = exactRecord(
-    record.window,
+  const window = exactSnapshot(
+    windowBranch,
     ["type", "backward", "forward", "rowOrder"],
     "ONA window",
   );
   literal(window.forward, 0, "ONA window.forward");
   const rotationBranch = strictRecord(record.rotation, "ONA rotation");
   literal(rotationBranch.type, "svd", "ONA rotation.type");
-  const rotation = exactRecord(record.rotation, ["type", "centerAlignToOrigin"], "ONA rotation");
+  const rotation = exactSnapshot(rotationBranch, ["type", "centerAlignToOrigin"], "ONA rotation");
   literal(rotation.centerAlignToOrigin, true, "ONA rotation.centerAlignToOrigin");
 
   const codes = decodeCodes(record.codes);
