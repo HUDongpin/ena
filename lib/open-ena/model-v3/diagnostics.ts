@@ -105,10 +105,18 @@ export interface ModelEvidenceV3 {
   readonly truncated: boolean;
 }
 
+export type ModelDeepReadonlyV3<T> = T extends (...args: never[]) => unknown
+  ? T
+  : T extends readonly unknown[]
+    ? { readonly [Index in keyof T]: ModelDeepReadonlyV3<T[Index]> }
+    : T extends object
+      ? { readonly [Key in keyof T]: ModelDeepReadonlyV3<T[Key]> }
+      : T;
+
 export type ModelDraftPatchV3 =
   | { readonly type: "exclude-code"; readonly code: string }
-  | { readonly type: "replace-row-order"; readonly value: CanonicalRowOrderV3 }
-  | { readonly type: "replace-horizon-order"; readonly value: CanonicalHorizonOrderV3 }
+  | { readonly type: "replace-row-order"; readonly value: ModelDeepReadonlyV3<CanonicalRowOrderV3> }
+  | { readonly type: "replace-horizon-order"; readonly value: ModelDeepReadonlyV3<CanonicalHorizonOrderV3> }
   | { readonly type: "select-model"; readonly value: StandardModelTypeV3 }
   | { readonly type: "select-rotation"; readonly value: "svd" | "reference" }
   | { readonly type: "clear-group" };
@@ -601,27 +609,44 @@ function connectivityFromGroupsV3(
   const degreeByCode = new Map(codes.map((code) => [code, 0]));
   const edges = new Set<string>();
   let candidateWindowCount = 0;
-  const visitWindow = (indices: readonly number[]): void => {
-    candidateWindowCount += 1;
-    const present = codes.filter((code) => {
-      const values = profileByCode.get(code)!.magnitudes;
-      return indices.reduce((sum, rowIndex) => sum + values[rowIndex], 0) > 0;
-    });
-    for (let leftIndex = 0; leftIndex < present.length; leftIndex += 1) {
-      for (let rightIndex = leftIndex + 1; rightIndex < present.length; rightIndex += 1) {
-        const left = present[leftIndex];
-        const right = present[rightIndex];
-        const pair = codeUnitCompareV3(left, right) <= 0 ? `${JSON.stringify(left)}|${JSON.stringify(right)}` : `${JSON.stringify(right)}|${JSON.stringify(left)}`;
-        if (edges.has(pair)) continue;
-        edges.add(pair);
-        degreeByCode.set(left, degreeByCode.get(left)! + 1);
-        degreeByCode.set(right, degreeByCode.get(right)! + 1);
-      }
-    }
-  };
   for (const group of groups) {
+    // One prefix per Code turns arbitrary finite/Infinity range-presence checks
+    // into O(1), avoiding O(P*N^2) rescans for wide Moving Stanza windows.
+    const positivePrefixByCode = new Map<string, number[]>();
+    for (const code of codes) {
+      const values = profileByCode.get(code)!.magnitudes;
+      const prefix = new Array<number>(group.length + 1);
+      prefix[0] = 0;
+      for (let ordinal = 0; ordinal < group.length; ordinal += 1) {
+        prefix[ordinal + 1] = prefix[ordinal] + (values[group[ordinal]] > 0 ? 1 : 0);
+      }
+      positivePrefixByCode.set(code, prefix);
+    }
+    const visitedRanges = new Set<string>();
+    const visitRange = (start: number, end: number): void => {
+      candidateWindowCount += 1;
+      const rangeKey = `${start}:${end}`;
+      if (visitedRanges.has(rangeKey)) return;
+      visitedRanges.add(rangeKey);
+      for (let leftIndex = 0; leftIndex < codes.length; leftIndex += 1) {
+        const left = codes[leftIndex];
+        const leftPrefix = positivePrefixByCode.get(left)!;
+        if (leftPrefix[end + 1] - leftPrefix[start] === 0) continue;
+        for (let rightIndex = leftIndex + 1; rightIndex < codes.length; rightIndex += 1) {
+          const right = codes[rightIndex];
+          const rightPrefix = positivePrefixByCode.get(right)!;
+          if (rightPrefix[end + 1] - rightPrefix[start] === 0) continue;
+          const orderedPair = codeUnitCompareV3(left, right) <= 0 ? [left, right] : [right, left];
+          const pair = canonicalJsonV3(orderedPair);
+          if (edges.has(pair)) continue;
+          edges.add(pair);
+          degreeByCode.set(left, degreeByCode.get(left)! + 1);
+          degreeByCode.set(right, degreeByCode.get(right)! + 1);
+        }
+      }
+    };
     if (moving === null) {
-      visitWindow(group);
+      visitRange(0, group.length - 1);
       continue;
     }
     for (let ordinal = 0; ordinal < group.length; ordinal += 1) {
@@ -631,7 +656,7 @@ function connectivityFromGroupsV3(
       const end = moving.forward.kind === "infinity"
         ? group.length - 1
         : Math.min(group.length - 1, ordinal + moving.forward.value);
-      visitWindow(group.slice(start, end + 1));
+      visitRange(start, end);
     }
   }
   return { degreeByCode, edgeCount: edges.size, candidateWindowCount };
@@ -859,11 +884,13 @@ export function validateStandardDraftV3(
           ? "Binary values must use one consistent representation per Code: only numeric 0/1 or only Boolean false/true; values are never coerced."
           : "Frequency values must be finite, nonnegative numbers; values are never coerced.",
         blocks: ["build-model"],
-        evidence: evidenceV3(analyzed.invalidRows.length, analyzed.invalidRows.map((rowIndex) => ({
-          rowIndex,
-          identity: code,
-          detail: `Invalid ${modelDraft.weighting} Code value.`,
-        }))),
+        evidence: evidenceV3(analyzed.invalidRows.length, analyzed.invalidRows
+          .slice(0, SAMPLE_LIMIT)
+          .map((rowIndex) => ({
+            rowIndex,
+            identity: code,
+            detail: `Invalid ${modelDraft.weighting} Code value.`,
+          }))),
       }));
       continue;
     }
@@ -877,11 +904,13 @@ export function validateStandardDraftV3(
         summary: `Code “${code}” is all zero.`,
         detail: "An all-zero Code cannot form a scientific connection and blocks model construction.",
         blocks: ["build-model"],
-        evidence: evidenceV3(dataset.rows.length, dataset.rows.map((_, rowIndex) => ({
-          rowIndex,
-          identity: code,
-          detail: "Validated Code value has zero magnitude.",
-        }))),
+        evidence: evidenceV3(dataset.rows.length, dataset.rows
+          .slice(0, SAMPLE_LIMIT)
+          .map((_, rowIndex) => ({
+            rowIndex,
+            identity: code,
+            detail: "Validated Code value has zero magnitude.",
+          }))),
         suggestedActions: [excludeCodeActionV3(code)],
       }));
     }

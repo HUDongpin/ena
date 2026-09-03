@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -139,6 +140,32 @@ type IsMutableArray<T> = T extends unknown[] ? true : false;
 type AssertFalse<T extends false> = T;
 const readonlyDiagnosticsReturn: AssertFalse<IsMutableArray<ReturnType<typeof validateStandardDraftV3>>> = false;
 void readonlyDiagnosticsReturn;
+
+function assertScientificPatchValuesAreRecursivelyReadonly(
+  rowPatch: Extract<ModelDraftPatchV3, { type: "replace-row-order" }>,
+  horizonPatch: Extract<ModelDraftPatchV3, { type: "replace-horizon-order" }>,
+): void {
+  if (rowPatch.value.kind === "columns") {
+    // @ts-expect-error Scientific order-key arrays inside an action patch are readonly.
+    rowPatch.value.keys.push(rowPatch.value.keys[0]);
+    // @ts-expect-error Nested scientific order-key fields are readonly.
+    rowPatch.value.keys[0].column = "changed";
+    const comparator = rowPatch.value.keys[0].comparator;
+    if (comparator.type === "ordered-category") {
+      // @ts-expect-error Ordered-category levels inside an action patch are readonly.
+      comparator.levels.push(comparator.levels[0]);
+      // @ts-expect-error Nested typed level values inside an action patch are readonly.
+      comparator.levels[0].value = "changed";
+    }
+  }
+  if (horizonPatch.value.kind === "source-order-confirmed") {
+    // @ts-expect-error Confirmation fields inside an action patch are readonly.
+    horizonPatch.value.confirmation.rowCount = 99;
+    // @ts-expect-error Confirmation relevant-column arrays inside an action patch are readonly.
+    horizonPatch.value.confirmation.relevantColumns.push("changed");
+  }
+}
+void assertScientificPatchValuesAreRecursivelyReadonly;
 
 function ids(output: readonly ModelDiagnosticV3[]): string[] {
   return output.map((entry) => entry.id);
@@ -594,6 +621,104 @@ function orderedSingletonRows(): ParsedDataset {
   ], ["unit", "horizon", "turn", "A", "B", "C"]);
 }
 
+function directMovingConnectivityOracle(
+  inputRows: Array<Record<string, number | string>>,
+  backward: StandardEnaDraftV3["movingStanza"]["backward"],
+  forward: StandardEnaDraftV3["movingStanza"]["forward"],
+): { isolated: string[]; noGlobalEdge: boolean } {
+  const codes = ["A", "B", "C"];
+  const ordered = [...inputRows].sort((left, right) => Number(left.turn) - Number(right.turn));
+  const degree = new Map(codes.map((code) => [code, 0]));
+  const edges = new Set<string>();
+  for (let focal = 0; focal < ordered.length; focal += 1) {
+    const start = backward.kind === "infinity" ? 0 : Math.max(0, focal - (backward.value - 1));
+    const end = forward.kind === "infinity" ? ordered.length - 1 : Math.min(ordered.length - 1, focal + forward.value);
+    const present = codes.filter((code) => ordered.slice(start, end + 1).some((row) => Number(row[code]) > 0));
+    for (let left = 0; left < present.length; left += 1) {
+      for (let right = left + 1; right < present.length; right += 1) {
+        const pair = JSON.stringify([present[left], present[right]].sort());
+        if (edges.has(pair)) continue;
+        edges.add(pair);
+        degree.set(present[left], degree.get(present[left])! + 1);
+        degree.set(present[right], degree.get(present[right])! + 1);
+      }
+    }
+  }
+  return {
+    isolated: codes.filter((code) => degree.get(code) === 0),
+    noGlobalEdge: edges.size === 0,
+  };
+}
+
+test("Moving Stanza finite and Infinity ranges match an independent small direct oracle", () => {
+  const chronological = [
+    { unit: "u", horizon: "h", turn: 1, A: 1, B: 0, C: 0 },
+    { unit: "u", horizon: "h", turn: 2, A: 0, B: 1, C: 0 },
+    { unit: "u", horizon: "h", turn: 3, A: 0, B: 0, C: 1 },
+    { unit: "u", horizon: "h", turn: 4, A: 1, B: 1, C: 0 },
+  ];
+  const input = dataset(
+    [chronological[2], chronological[0], chronological[3], chronological[1]],
+    ["unit", "horizon", "turn", "A", "B", "C"],
+  );
+  const backwards = [
+    { kind: "finite", value: 1 },
+    { kind: "finite", value: 2 },
+    { kind: "infinity" },
+  ] as const;
+  const forwards = [
+    { kind: "finite", value: 0 },
+    { kind: "finite", value: 1 },
+    { kind: "infinity" },
+  ] as const;
+  for (const backward of backwards) {
+    for (const forward of forwards) {
+      const expected = directMovingConnectivityOracle(chronological, backward, forward);
+      const output = diagnosticsFor(input, movingDraft(backward, forward));
+      const actualIsolated = output
+        .filter((entry) => entry.id === "STANDARD_CODE_ISOLATED")
+        .map((entry) => entry.fieldPath!.slice("codes.".length))
+        .sort();
+      assert.deepEqual(actualIsolated, expected.isolated, `${backward.kind}/${forward.kind}`);
+      assert.equal(
+        output.some((entry) => entry.id === "STANDARD_NO_GLOBAL_COOCCURRENCE"),
+        expected.noGlobalEdge,
+        `${backward.kind}/${forward.kind}`,
+      );
+    }
+  }
+});
+
+test("connectivity uses bounded prefix ranges instead of rescanning each wide window", () => {
+  const source = readFileSync(
+    new URL("../lib/open-ena/model-v3/diagnostics.ts", import.meta.url),
+    "utf8",
+  );
+  const start = source.indexOf("function connectivityFromGroupsV3");
+  const end = source.indexOf("function conversationGroupsV3", start);
+  assert.ok(start >= 0 && end > start);
+  const implementation = source.slice(start, end);
+  assert.doesNotMatch(implementation, /group\.slice\s*\(/u);
+  assert.doesNotMatch(implementation, /indices\.reduce\s*\(/u);
+  assert.match(implementation, /prefix/iu);
+  assert.match(implementation, /canonicalJsonV3\s*\(\s*orderedPair\s*\)/u);
+});
+
+test("a 10k-row both-Infinity candidate preserves behavior without extent-width rescans", () => {
+  const count = 10_000;
+  const rows = Array.from({ length: count }, (_, turn) => ({
+    unit: "u",
+    horizon: "h",
+    turn,
+    A: turn % 2 === 0 ? 1 : 0,
+    B: turn % 3 === 0 ? 1 : 0,
+    C: turn % 5 === 0 ? 1 : 0,
+  }));
+  const input = dataset(rows, ["unit", "horizon", "turn", "A", "B", "C"]);
+  const output = diagnosticsFor(input, movingDraft({ kind: "infinity" }, { kind: "infinity" }));
+  assert.deepEqual(output, []);
+});
+
 test("Moving Stanza finite back one means current only; larger back and forward form candidate edges", () => {
   const input = orderedSingletonRows();
   const currentOnly = diagnosticsFor(input, movingDraft(
@@ -827,6 +952,28 @@ test("invalid-value evidence is exact, safely bounded, and never copies raw valu
   assert.equal(invalid.evidence?.truncated, true);
   assert.deepEqual(invalid.evidence?.samples.map((sample) => sample.rowIndex), [0, 1, 2, 3, 4]);
   assert.equal(JSON.stringify(invalid.evidence).includes(secret), false);
+});
+
+test("evidence samples are bounded before allocating per-row detail objects", () => {
+  const count = 10_000;
+  const input = dataset(Array.from({ length: count }, (_, rowIndex) => ({
+    unit: `u${rowIndex}`,
+    horizon: `h${rowIndex}`,
+    A: rowIndex % 2,
+    B: 1,
+    D: 0,
+  })), ["unit", "horizon", "A", "B", "D"]);
+  const allZero = one(diagnosticsFor(input, draft(["A", "B", "D"])), "STANDARD_CODE_ALL_ZERO");
+  assert.equal(allZero.evidence?.totalCount, count);
+  assert.equal(allZero.evidence?.samples.length, 5);
+  assert.equal(allZero.evidence?.truncated, true);
+
+  const source = readFileSync(
+    new URL("../lib/open-ena/model-v3/diagnostics.ts", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(source, /analyzed\.invalidRows\.map\s*\(/u);
+  assert.doesNotMatch(source, /dataset\.rows\.map\s*\(/u);
 });
 
 test("all emitted evidence and actions obey the total-count and scientific-confirmation contracts", () => {
