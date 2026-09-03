@@ -42,6 +42,22 @@ function sha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
+function gitBlobSha256(revision: string, path: string): string {
+  return createHash("sha256")
+    .update(execFileSync("git", ["cat-file", "blob", `${revision}:${path}`], { cwd: repoRoot }))
+    .digest("hex");
+}
+
+function assertTrackedAt(revision: string, path: string): void {
+  assert.equal(
+    execFileSync("git", ["ls-tree", "--name-only", revision, "--", path], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    }).trim(),
+    path,
+  );
+}
+
 test("Open ENA model-v3 baseline manifest is strict and matches tracked fixtures", () => {
   const manifest = parseManifest(JSON.parse(readFileSync(manifestPath, "utf8")));
 
@@ -52,7 +68,24 @@ test("Open ENA model-v3 baseline manifest is strict and matches tracked fixtures
   const recorded = new Date(manifest.recordedAt);
   assert.equal(Number.isNaN(recorded.valueOf()), false);
   assert.equal(recorded.toISOString(), manifest.recordedAt);
-  assert.equal(execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim(), manifest.preCutoverHead);
-  assert.equal(sha256(`${repoRoot}/${manifest.rEnaBaseline.fixturePath}`), manifest.rEnaBaseline.fixtureSha256);
-  assert.equal(sha256(`${repoRoot}/${manifest.ona.publicFixturePath}`), manifest.ona.publicFixtureSha256);
+  const resolvedPreCutoverHead = execFileSync(
+    "git",
+    ["rev-parse", "--verify", `${manifest.preCutoverHead}^{commit}`],
+    { cwd: repoRoot, encoding: "utf8" },
+  ).trim();
+  assert.equal(resolvedPreCutoverHead, manifest.preCutoverHead);
+  assert.doesNotThrow(() => {
+    execFileSync("git", ["merge-base", "--is-ancestor", manifest.preCutoverHead, "HEAD"], { cwd: repoRoot });
+  });
+
+  for (const [path, declaredSha256] of [
+    [manifest.rEnaBaseline.fixturePath, manifest.rEnaBaseline.fixtureSha256],
+    [manifest.ona.publicFixturePath, manifest.ona.publicFixtureSha256],
+  ] as const) {
+    assertTrackedAt("HEAD", path);
+    assertTrackedAt(manifest.preCutoverHead, path);
+    assert.equal(gitBlobSha256("HEAD", path), declaredSha256);
+    assert.equal(gitBlobSha256(manifest.preCutoverHead, path), declaredSha256);
+    assert.equal(sha256(`${repoRoot}/${path}`), declaredSha256);
+  }
 });
