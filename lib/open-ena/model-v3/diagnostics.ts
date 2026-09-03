@@ -210,6 +210,7 @@ interface IdentityValidationV3 {
 interface ScientificNetworksV3 {
   endpointByUnit: Map<string, number[]>;
   targetVectors: number[][];
+  rawJenaValuesFinite: boolean;
 }
 
 const own = Object.prototype.hasOwnProperty;
@@ -1169,22 +1170,35 @@ function scientificNetworksV3(
   };
   if (model === "EndPoint") {
     const accumulated = accumulateData({ ...common, model: "EndPoint" });
+    // jENA's connectionMatrix is a presentation matrix: its numeric() helper
+    // maps non-finite connectionCounts values to zero. Diagnostics must retain
+    // the exact raw accumulator values so the single finite-output gate below
+    // can fail closed instead of accepting that sanitization.
+    const rawVectors = accumulated.connectionCounts.map((row) => (
+      rawJenaConnectionVectorV3(row, accumulated.codeColumns)
+    ));
     const endpointByUnit = new Map<string, number[]>();
     accumulated.connectionCounts.forEach((row, index) => {
       const token = String(row[DIAGNOSTIC_UNIT_FIELD_V3] ?? "");
       const unitKey = synthetic.unitKeyByToken.get(token);
       if (unitKey === undefined) throw new Error("jENA diagnostic Unit token was not recognized.");
-      endpointByUnit.set(unitKey, [...(accumulated.connectionMatrix[index] ?? [])]);
+      endpointByUnit.set(unitKey, [...(rawVectors[index] ?? [])]);
     });
     return {
       endpointByUnit,
-      targetVectors: accumulated.connectionMatrix.map((vector) => [...vector]),
+      targetVectors: rawVectors.map((vector) => [...vector]),
+      rawJenaValuesFinite: accumulated.rowConnectionCounts.length > 0
+        && rawJenaConnectionRowsFiniteV3(accumulated.rowConnectionCounts, accumulated.codeColumns)
+        && rawVectors.every((vector) => vector.every(Number.isFinite)),
     };
   }
 
   const separated = accumulateData({ ...common, model: "SeparateTrajectory" });
+  const rawStepVectors = separated.connectionCounts.map((row) => (
+    rawJenaConnectionVectorV3(row, separated.codeColumns)
+  ));
   const stepByUnit = new Map<string, Map<string, number[]>>();
-  separated.connectionMatrix.forEach((vector, index) => {
+  rawStepVectors.forEach((vector, index) => {
     const trajectory = separated.trajectories?.[index];
     const unitToken = String(trajectory?.[DIAGNOSTIC_UNIT_FIELD_V3] ?? "");
     const horizonToken = String(trajectory?.[DIAGNOSTIC_HORIZON_FIELD_V3] ?? "");
@@ -1200,7 +1214,10 @@ function scientificNetworksV3(
   if (model === "SeparateTrajectory") {
     return {
       endpointByUnit: new Map(),
-      targetVectors: separated.connectionMatrix.map((vector) => [...vector]),
+      targetVectors: rawStepVectors.map((vector) => [...vector]),
+      rawJenaValuesFinite: separated.rowConnectionCounts.length > 0
+        && rawJenaConnectionRowsFiniteV3(separated.rowConnectionCounts, separated.codeColumns)
+        && rawStepVectors.every((vector) => vector.every(Number.isFinite)),
     };
   }
   const edgeWidth = profiles.length * (profiles.length - 1) / 2;
@@ -1212,7 +1229,36 @@ function scientificNetworksV3(
       targetVectors.push([...running]);
     }
   }
-  return { endpointByUnit: new Map(), targetVectors };
+  return {
+    endpointByUnit: new Map(),
+    targetVectors,
+    rawJenaValuesFinite: separated.rowConnectionCounts.length > 0
+      && rawJenaConnectionRowsFiniteV3(separated.rowConnectionCounts, separated.codeColumns)
+      && rawStepVectors.every((vector) => vector.every(Number.isFinite)),
+  };
+}
+
+function rawJenaConnectionVectorV3(row: Row | undefined, codeColumns: readonly string[]): number[] {
+  return codeColumns.map((column) => {
+    const descriptor = row === undefined ? undefined : Object.getOwnPropertyDescriptor(row, column);
+    if (descriptor === undefined || !("value" in descriptor) || typeof descriptor.value !== "number") {
+      return Number.NaN;
+    }
+    return descriptor.value;
+  });
+}
+
+function rawJenaConnectionRowsFiniteV3(rows: readonly Row[], codeColumns: readonly string[]): boolean {
+  for (const row of rows) {
+    for (const column of codeColumns) {
+      const descriptor = Object.getOwnPropertyDescriptor(row, column);
+      if (descriptor === undefined || !("value" in descriptor)
+        || typeof descriptor.value !== "number" || !Number.isFinite(descriptor.value)) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 function vectorHasSignalV3(vector: readonly number[]): boolean {
@@ -1220,6 +1266,7 @@ function vectorHasSignalV3(vector: readonly number[]): boolean {
 }
 
 function scientificNetworksFiniteV3(networks: ScientificNetworksV3): boolean {
+  if (!networks.rawJenaValuesFinite) return false;
   for (const vector of networks.endpointByUnit.values()) {
     if (!vector.every(Number.isFinite)) return false;
   }
@@ -1315,6 +1362,18 @@ function rankDiagnosticV3(
     { length: Math.min(targetCount, SAMPLE_LIMIT) },
     () => ({ detail: "Target observation participates in the centered-rank preflight." }),
   );
+  if (targetCount === 0) {
+    return diagnosticV3({
+      id: "STANDARD_TARGET_RANK_ZERO",
+      severity: "error",
+      scope: "rotation",
+      fieldPath: "rotation",
+      summary: "The target fitting population has no analytical observations.",
+      detail: "SVD, direct Means, and Reference projection require at least one real analytical observation; an empty target cannot be projected as a degenerate network.",
+      blocks: ["build-model"],
+      evidence: evidenceV3(0, []),
+    });
+  }
   if (rank === 0) {
     if (rotation.type === "reference") {
       return diagnosticV3({
@@ -2029,7 +2088,16 @@ export function validateStandardDraftV3(
   const rotationShapeReady = !trajectoryMeansInvalid && referenceInvalid === null
     && meansMembershipReady;
   let networks: ScientificNetworksV3 | null = null;
-  if (scientificFieldPrerequisitesValid && rowOrderReady && horizonOrderReady && rotationShapeReady) {
+  const emptyTargetReady = dataset.rows.length === 0
+    && scientificFieldPrerequisitesValid
+    && rowOrderReady
+    && horizonOrderReady
+    && !trajectoryMeansInvalid
+    && referenceInvalid === null;
+  if (emptyTargetReady) {
+    const rankDiagnostic = rankDiagnosticV3(0, modelDraft.rotation, 0);
+    if (rankDiagnostic !== null) output.push(rankDiagnostic);
+  } else if (scientificFieldPrerequisitesValid && rowOrderReady && horizonOrderReady && rotationShapeReady) {
     const distinctUnitKeys = new Set<string>();
     for (let rowIndex = 0; rowIndex < dataset.rows.length; rowIndex += 1) {
       distinctUnitKeys.add(identityKeyV3(
@@ -2040,13 +2108,17 @@ export function validateStandardDraftV3(
       ));
     }
     const distinctUnits = distinctUnitKeys.size;
-    const oneUnitMovingShortcut = modelDraft.model === "EndPoint"
+    // A Binary focal window contributes only 0/1 per row-edge, and a concrete
+    // JavaScript array cannot contain enough rows to overflow Number. Keeping
+    // this Binary-only shortcut bounds the 10k both-Infinity regression while
+    // Frequency must execute jENA so raw product/sum overflow remains visible.
+    const oneUnitBinaryMovingShortcut = modelDraft.model === "EndPoint"
       && modelDraft.windowType === "MovingStanzaWindow"
+      && modelDraft.weighting === "binary"
       && modelDraft.rotation.type !== "means"
       && distinctUnits === 1;
-    const emptyTargetShortcut = dataset.rows.length === 0;
-    if (oneUnitMovingShortcut || emptyTargetShortcut) {
-      const rankDiagnostic = rankDiagnosticV3(0, modelDraft.rotation, emptyTargetShortcut ? 0 : 1);
+    if (oneUnitBinaryMovingShortcut) {
+      const rankDiagnostic = rankDiagnosticV3(0, modelDraft.rotation, 1);
       if (rankDiagnostic !== null) output.push(rankDiagnostic);
     } else {
       networks = scientificNetworksV3(

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { accumulateData, sphereNorm } from "jena-js";
+import { accumulateData, sphereNorm, type Row } from "jena-js";
 
 import { validateStandardDraftV3 } from "../lib/open-ena/model-v3/diagnostics";
 import type { ModelDiagnosticV3 } from "../lib/open-ena/model-v3/diagnostics";
@@ -409,6 +409,41 @@ test("SVD blocks rank-zero targets while Reference permits them with the approve
   assert.equal(exactlyOne(reference, "STANDARD_REFERENCE_TARGET_DEGENERATE").severity, "warning");
 });
 
+function assertEmptyTargetBlocksBuild(result: readonly ModelDiagnosticV3[]): void {
+  const rankZero = exactlyOne(result, "STANDARD_TARGET_RANK_ZERO");
+  assert.equal(rankZero.severity, "error");
+  assert.equal(rankZero.blocks.includes("build-model"), true);
+  assert.equal(rankZero.evidence?.totalCount, 0);
+  assert.equal(has(result, "STANDARD_REFERENCE_TARGET_DEGENERATE"), false);
+  for (const derivative of [
+    "STANDARD_CODE_ALL_ZERO",
+    "STANDARD_CODE_ISOLATED",
+    "STANDARD_CODE_DUPLICATE_PROFILE",
+    "STANDARD_NO_GLOBAL_COOCCURRENCE",
+    "STANDARD_SVD_ONE_DIMENSIONAL",
+    "STANDARD_MEANS_IDENTICAL",
+  ] as const) {
+    assert.equal(has(result, derivative), false, derivative);
+  }
+}
+
+test("an empty EndPoint target blocks SVD without invented network derivatives", () => {
+  assertEmptyTargetBlocksBuild(output(dataset([])));
+});
+
+test("an empty EndPoint target blocks Reference instead of reporting projectable degeneracy", () => {
+  assertEmptyTargetBlocksBuild(output(dataset([]), referenceDraft()));
+});
+
+test("an empty EndPoint target blocks Means in addition to its empty-level prerequisites", () => {
+  const result = output(dataset([]), meansDraft(
+    { type: "string", value: "negative" },
+    { type: "string", value: "positive" },
+  ));
+  assertEmptyTargetBlocksBuild(result);
+  assert.equal(result.filter((entry) => entry.id === "STANDARD_MEANS_LEVEL_EMPTY" && entry.severity === "error").length, 2);
+});
+
 test("Reference selection requires a nonblank ID and exact lowercase content digest", () => {
   const input = dataset(healthyRows());
   for (const rotation of [
@@ -551,14 +586,130 @@ test("Task 6 evidence is bounded and the returned graph is recursively frozen", 
   assert.equal(Object.isFrozen(shared.evidence?.samples), true);
 });
 
-test("Frequency product overflow follows jENA zero-network materialization", () => {
-  const input = dataset([
-    { unit: "u1", horizon: "h1", group: "g1", turn: 1, phase: 1, A: 1e308, B: 1e308, C: 1e308 },
+function assertNonFiniteBlocksNumericalDerivatives(result: readonly ModelDiagnosticV3[]): void {
+  const nonFinite = exactlyOne(result, "STANDARD_OUTPUT_NONFINITE");
+  assert.equal(nonFinite.severity, "error");
+  assert.equal(nonFinite.blocks.includes("build-model"), true);
+  assert.equal(has(result, "STANDARD_TARGET_RANK_ZERO"), false);
+  assert.equal(has(result, "STANDARD_SVD_ONE_DIMENSIONAL"), false);
+  assert.equal(has(result, "STANDARD_REFERENCE_TARGET_DEGENERATE"), false);
+  assert.equal(has(result, "STANDARD_MEANS_IDENTICAL"), false);
+}
+
+function overflowingMovingRows(units: readonly string[]): Row[] {
+  return units.flatMap((unit, unitIndex) => [
+    {
+      unit,
+      horizon: "h1",
+      group: `g${unitIndex}`,
+      turn: unitIndex * 2 + 1,
+      phase: 1,
+      A: 1e154,
+      B: 1e154,
+      C: 1e154,
+    },
+    {
+      unit,
+      horizon: "h1",
+      group: `g${unitIndex}`,
+      turn: unitIndex * 2 + 2,
+      phase: 1,
+      A: 1e154,
+      B: 1e154,
+      C: 1e154,
+    },
   ]);
-  const result = output(input, draft({ weighting: "frequency" }));
-  assert.equal(has(result, "STANDARD_OUTPUT_NONFINITE"), false);
-  assert.equal(has(result, "STANDARD_TARGET_RANK_ZERO"), true);
+}
+
+const overflowingMovingDraft: DraftOverrides = {
+  weighting: "frequency",
+  windowType: "MovingStanzaWindow",
+  movingStanza: {
+    backward: { kind: "finite", value: 1 },
+    forward: { kind: "finite", value: 0 },
+  },
+};
+
+test("Moving Frequency rejects row-level product overflow before endpoint aggregation", () => {
+  const rows = [{
+    unit: "u1",
+    horizon: "h1",
+    group: "g0",
+    turn: 1,
+    phase: 1,
+    A: 1e308,
+    B: 1e308,
+    C: 1e308,
+  }];
+  const oracle = accumulateData({
+    rows,
+    units: ["unit"],
+    conversation: ["horizon"],
+    codes: ["A", "B", "C"],
+    model: "EndPoint",
+    window: "MovingStanzaWindow",
+    windowSizeBack: 1,
+    windowSizeForward: 0,
+    weightBy: "sum",
+  });
+  assert.deepEqual(
+    oracle.rowConnectionCounts.map((row) => oracle.codeColumns.map((column) => row[column])),
+    [[Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]],
+  );
+
+  assertNonFiniteBlocksNumericalDerivatives(output(dataset(rows), draft(overflowingMovingDraft)));
 });
+
+test("one-Unit Moving Frequency overflow blocks SVD before jENA matrix sanitization", () => {
+  const rows = overflowingMovingRows(["u1"]);
+  const oracle = accumulateData({
+    rows,
+    units: ["unit"],
+    conversation: ["horizon"],
+    codes: ["A", "B", "C"],
+    model: "EndPoint",
+    window: "MovingStanzaWindow",
+    windowSizeBack: 1,
+    windowSizeForward: 0,
+    weightBy: "sum",
+  });
+  assert.deepEqual(
+    oracle.rowConnectionCounts.map((row) => oracle.codeColumns.map((column) => row[column])),
+    [[1e308, 1e308, 1e308], [1e308, 1e308, 1e308]],
+  );
+  assert.deepEqual(
+    oracle.connectionCounts.map((row) => oracle.codeColumns.map((column) => row[column])),
+    [[Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]],
+  );
+
+  const result = output(dataset(rows), draft(overflowingMovingDraft));
+  assertNonFiniteBlocksNumericalDerivatives(result);
+});
+
+test("one-Unit Moving Frequency overflow blocks a valid Reference before degenerate projection", () => {
+  const result = output(dataset(overflowingMovingRows(["u1"])), referenceDraft(overflowingMovingDraft));
+  assertNonFiniteBlocksNumericalDerivatives(result);
+});
+
+test("multi-Unit Moving Frequency overflow is rejected without the one-Unit shortcut", () => {
+  const result = output(dataset(overflowingMovingRows(["u1", "u2"])), draft(overflowingMovingDraft));
+  assertNonFiniteBlocksNumericalDerivatives(result);
+});
+
+for (const model of ["SeparateTrajectory", "AccumulatedTrajectory"] as const) {
+  test(`${model} rejects a non-finite raw Frequency step before trajectory materialization`, () => {
+    const input = dataset([
+      ...overflowingMovingRows(["u1"]),
+      { unit: "u1", horizon: "h2", group: "g0", turn: 3, phase: 2, A: 1, B: 1, C: 1 },
+    ]);
+    const result = output(input, referenceDraft({
+      ...overflowingMovingDraft,
+      model,
+      horizonOrder,
+    }));
+    assertNonFiniteBlocksNumericalDerivatives(result);
+  });
+}
 
 test("Moving Frequency diagnostics match jENA when a small focal row follows huge values", () => {
   const rows = [
