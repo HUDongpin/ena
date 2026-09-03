@@ -6,19 +6,34 @@ import {
   resolveRowOrderV3,
 } from "../lib/open-ena/model-v3/ordering";
 import type {
+  OrderingResolutionContextV3,
+  ResolvedHorizonOrderingV3,
+  ResolvedRowOrderingV3,
+  TextCollationBindingV3,
+} from "../lib/open-ena/model-v3/ordering";
+import type {
   CanonicalHorizonOrderV3,
   CanonicalRowOrderV3,
+  DatasetBindingV3,
   OrderKeyV3,
 } from "../lib/open-ena/model-v3/types";
 
 const HASH = "a".repeat(64);
+const OTHER_HASH = "b".repeat(64);
+const HEADER_HASH = "c".repeat(64);
 
-function columnsPolicy(...keys: OrderKeyV3[]): CanonicalRowOrderV3 {
+function columnsPolicy(
+  ...keys: OrderKeyV3[]
+): Extract<CanonicalRowOrderV3, { kind: "columns" }> {
   assert.ok(keys.length > 0);
   return { kind: "columns", keys: keys as [OrderKeyV3, ...OrderKeyV3[]] };
 }
 
-function confirmedPolicy(rowCount: number, relevantColumns: string[]): CanonicalRowOrderV3 {
+function confirmedPolicy(
+  rowCount: number,
+  relevantColumns: string[],
+  datasetSha256 = HASH,
+): Extract<CanonicalRowOrderV3, { kind: "source-order-confirmed" }> {
   return {
     kind: "source-order-confirmed",
     confirmation: {
@@ -31,6 +46,94 @@ function confirmedPolicy(rowCount: number, relevantColumns: string[]): Canonical
     },
   };
 }
+
+function resolutionContext(
+  rowCount: number,
+  analysisFamily: "standard" | "ona" = "standard",
+  normalizedTableSha256 = HASH,
+): OrderingResolutionContextV3 {
+  return {
+    analysisFamily,
+    datasetBinding: {
+      hashKind: "normalized-utf8-csv-text-sha256",
+      normalizedTableSha256,
+      rowCount,
+      headerSha256: HEADER_HASH,
+    },
+  };
+}
+
+type IsMutableArray<T> = T extends unknown[] ? true : false;
+type AssertFalse<T extends false> = T;
+type RowMappingV3 = ResolvedRowOrderingV3["mappings"][number];
+type HorizonTupleV3 = ResolvedHorizonOrderingV3["horizonTuples"][number];
+type UnitSequenceV3 = ResolvedHorizonOrderingV3["unitSequences"][number];
+const readonlyArrayTypeProof: [
+  AssertFalse<IsMutableArray<ResolvedRowOrderingV3["mappings"]>>,
+  AssertFalse<IsMutableArray<RowMappingV3["orderTuple"]>>,
+  AssertFalse<IsMutableArray<ResolvedRowOrderingV3["orderedSourceRowIndices"]>>,
+  AssertFalse<IsMutableArray<ResolvedRowOrderingV3["textCollationBindings"]>>,
+  AssertFalse<IsMutableArray<ResolvedHorizonOrderingV3["horizonTuples"]>>,
+  AssertFalse<IsMutableArray<HorizonTupleV3["orderTuple"]>>,
+  AssertFalse<IsMutableArray<ResolvedHorizonOrderingV3["unitSequences"]>>,
+  AssertFalse<IsMutableArray<UnitSequenceV3["steps"]>>,
+  AssertFalse<IsMutableArray<ResolvedHorizonOrderingV3["implementationHorizonOrder"]>>,
+  AssertFalse<IsMutableArray<ResolvedHorizonOrderingV3["textCollationBindings"]>>,
+] = [false, false, false, false, false, false, false, false, false, false];
+void readonlyArrayTypeProof;
+const validCaseFirstType: TextCollationBindingV3["caseFirst"] = "false";
+// @ts-expect-error Arbitrary strings are not valid resolved ECMA-402 caseFirst values.
+const invalidCaseFirstType: TextCollationBindingV3["caseFirst"] = "arbitrary";
+void validCaseFirstType;
+void invalidCaseFirstType;
+
+function assertReadonlyCompileContract(
+  row: ResolvedRowOrderingV3,
+  horizon: ResolvedHorizonOrderingV3,
+): void {
+  // @ts-expect-error The resolved result discriminator is readonly.
+  row.type = "within-horizon-order";
+  // @ts-expect-error Resolved mappings are readonly at the public type boundary.
+  row.mappings.push(row.mappings[0]);
+  // @ts-expect-error Nested mapping scalars are readonly at the public type boundary.
+  row.mappings[0].sourceRowIndex = 9;
+  // @ts-expect-error Resolved tuple values are readonly at the public type boundary.
+  row.mappings[0].orderTuple[0] = 99;
+  if (row.requestedPolicy.kind === "source-order-confirmed") {
+    // @ts-expect-error Source confirmation fields are recursively readonly.
+    row.requestedPolicy.confirmation.rowCount = 9;
+  }
+  if (row.sourceOrderBinding !== null) {
+    // @ts-expect-error Resolved dataset binding fields are readonly.
+    row.sourceOrderBinding.datasetBinding.headerSha256 = "changed";
+  }
+  // @ts-expect-error The recursively readonly requested policy cannot be reassigned.
+  row.requestedPolicy.kind = "columns";
+  // @ts-expect-error Collation provenance fields are readonly.
+  row.textCollationBindings[0].resolvedLocale = "changed";
+  // @ts-expect-error Horizon sequences are readonly at the public type boundary.
+  horizon.unitSequences[0].steps.push(horizon.unitSequences[0].steps[0]);
+  // @ts-expect-error Nested trajectory ordinals are readonly.
+  horizon.unitSequences[0].steps[0].trajectoryOrdinal = 9;
+}
+void assertReadonlyCompileContract;
+
+function assertSourceContextCompileContract(
+  rows: readonly Record<string, unknown>[],
+  columns: Extract<CanonicalRowOrderV3, { kind: "columns" }>,
+  source: Extract<CanonicalRowOrderV3, { kind: "source-order-confirmed" }>,
+  context: OrderingResolutionContextV3,
+): void {
+  resolveRowOrderV3(rows, ["horizon"], columns);
+  resolveRowOrderV3(rows, ["horizon"], source, context);
+  // @ts-expect-error Source-confirmed row ordering requires trusted context.
+  resolveRowOrderV3(rows, ["horizon"], source);
+  resolveHorizonOrderV3(rows, ["unit"], ["horizon"], columns);
+  resolveHorizonOrderV3(rows, ["unit"], ["horizon"], source, context);
+  // @ts-expect-error Source-confirmed Horizon ordering requires trusted context.
+  resolveHorizonOrderV3(rows, ["unit"], ["horizon"], source);
+}
+void assertSourceContextCompileContract;
 
 const ascendingNumber = (column: string): OrderKeyV3 => ({
   column,
@@ -141,11 +244,80 @@ test("datetime ordering requires a valid explicit offset and compares absolute i
     "2024-01-01T00:60:00Z",
     "2024-01-01T00:00:60Z",
     "2024-01-01T00:00:00+14:01",
+    "2024-01-01T00:00:00-00:00",
     "2024-01-01 00:00:00Z",
   ]) {
     assert.throws(() => resolveRowOrderV3(
       [{ horizon: "h", at }], ["horizon"], policy,
     ), /datetime|ISO-8601|offset|calendar|time/i);
+  }
+});
+
+test("datetime ordering fails closed when a four-digit local time crosses the supported UTC year range", () => {
+  const policy = columnsPolicy({
+    column: "at",
+    direction: "ascending",
+    comparator: { type: "datetime", format: "ISO-8601", timeZone: "offset-in-value" },
+  });
+  for (const at of [
+    "0000-01-01T00:00:00+14:00",
+    "9999-12-31T23:59:59-14:00",
+  ]) {
+    assert.throws(() => resolveRowOrderV3(
+      [{ horizon: "h", at }], ["horizon"], policy,
+    ), /datetime|four-digit|range|supported/i);
+  }
+});
+
+test("every comparator honors descending direction", () => {
+  const cases: Array<{
+    values: [unknown, unknown];
+    key: OrderKeyV3;
+  }> = [
+    { values: [1, 2], key: { ...ascendingNumber("value"), direction: "descending" } },
+    {
+      values: ["2024-01-01", "2024-01-02"],
+      key: {
+        column: "value",
+        direction: "descending",
+        comparator: { type: "date", format: "YYYY-MM-DD" },
+      },
+    },
+    {
+      values: ["2024-01-01T00:00:00Z", "2024-01-02T00:00:00+00:00"],
+      key: {
+        column: "value",
+        direction: "descending",
+        comparator: { type: "datetime", format: "ISO-8601", timeZone: "offset-in-value" },
+      },
+    },
+    {
+      values: ["low", "high"],
+      key: {
+        column: "value",
+        direction: "descending",
+        comparator: {
+          type: "ordered-category",
+          levels: [{ type: "string", value: "low" }, { type: "string", value: "high" }],
+        },
+      },
+    },
+    {
+      values: ["a", "b"],
+      key: {
+        column: "value",
+        direction: "descending",
+        comparator: { type: "text", locale: "en", sensitivity: "variant", numeric: false },
+      },
+    },
+  ];
+  for (const { values, key } of cases) {
+    const resolved = resolveRowOrderV3(
+      values.map((value) => ({ horizon: "h", value })),
+      ["horizon"],
+      columnsPolicy(key),
+    );
+    assert.deepEqual(resolved.orderedSourceRowIndices, [1, 0]);
   }
 });
 
@@ -249,6 +421,69 @@ test("ordering policies reject noncanonical locale and malformed key structures"
   ), /distinct|duplicate|column/i);
 });
 
+test("text ordering rejects a canonical but unsupported locale instead of silently falling back", () => {
+  assert.deepEqual(Intl.Collator.supportedLocalesOf(["zz-ZZ"], { localeMatcher: "lookup" }), []);
+  assert.throws(() => resolveRowOrderV3(
+    [{ horizon: "h", label: "a" }],
+    ["horizon"],
+    columnsPolicy({
+      column: "label",
+      direction: "ascending",
+      comparator: { type: "text", locale: "zz-ZZ", sensitivity: "variant", numeric: false },
+    }),
+  ), /unsupported|locale/i);
+});
+
+test("resolved text collation options are serialized once per key as frozen deterministic provenance", () => {
+  const policy = columnsPolicy(
+    {
+      column: "label",
+      direction: "ascending",
+      comparator: { type: "text", locale: "en", sensitivity: "variant", numeric: true },
+    },
+    ascendingNumber("turn"),
+  );
+  const rows = [
+    { unit: "u", horizon: "h", label: "item10", turn: 2 },
+    { unit: "u", horizon: "h", label: "item2", turn: 1 },
+  ];
+  const rowResult = resolveRowOrderV3(rows, ["horizon"], policy);
+  const horizonRows = [
+    { unit: "u", horizon: "h1", label: "item2", turn: 1 },
+    { unit: "u", horizon: "h2", label: "item10", turn: 2 },
+  ];
+  const horizonResult = resolveHorizonOrderV3(horizonRows, ["unit"], ["horizon"], policy);
+  const options = new Intl.Collator("en", {
+    sensitivity: "variant",
+    numeric: true,
+    usage: "sort",
+  }).resolvedOptions();
+  const expected = [{
+    column: "label",
+    requestedLocale: "en",
+    resolvedLocale: options.locale,
+    collation: options.collation,
+    sensitivity: options.sensitivity,
+    numeric: options.numeric,
+    usage: options.usage,
+    ignorePunctuation: options.ignorePunctuation,
+    caseFirst: options.caseFirst,
+  }];
+  assert.deepEqual(rowResult.textCollationBindings, expected);
+  assert.deepEqual(horizonResult.textCollationBindings, expected);
+  assert.equal(rowResult.textCollationBindings[0].resolvedLocale, "en");
+  assert.ok(Object.isFrozen(rowResult.textCollationBindings));
+  assert.ok(Object.isFrozen(rowResult.textCollationBindings[0]));
+  assert.ok(Object.isFrozen(horizonResult.textCollationBindings));
+  assert.deepEqual(
+    resolveRowOrderV3([...rows].reverse(), ["horizon"], policy).textCollationBindings,
+    rowResult.textCollationBindings,
+  );
+  assert.deepEqual(resolveRowOrderV3(
+    [{ horizon: "h", turn: 1 }], ["horizon"], columnsPolicy(ascendingNumber("turn")),
+  ).textCollationBindings, []);
+});
+
 test("source-order confirmation preserves source order within each Horizon", () => {
   const rows = [
     { horizon: "h1", value: "first-h1" },
@@ -257,20 +492,187 @@ test("source-order confirmation preserves source order within each Horizon", () 
     { horizon: "h2", value: "second-h2" },
   ];
   const policy = confirmedPolicy(rows.length, ["horizon"]);
-  const resolved = resolveRowOrderV3(rows, ["horizon"], policy);
+  const context = resolutionContext(rows.length);
+  const resolved = resolveRowOrderV3(rows, ["horizon"], policy, context);
   assert.deepEqual(resolved.orderedSourceRowIndices, [0, 2, 1, 3]);
   assert.deepEqual(resolved.mappings.map((entry) => entry.orderTuple), [[0], [1], [0], [1]]);
   assert.deepEqual(resolved.requestedPolicy, policy);
+  assert.deepEqual(resolved.sourceOrderBinding, {
+    analysisFamily: "standard",
+    datasetBinding: context.datasetBinding,
+    confirmation: policy.kind === "source-order-confirmed" ? policy.confirmation : null,
+  });
 });
 
 test("source-order confirmation validates row count and relevant Horizon columns", () => {
   const rows = [{ horizon: "h", other: 1 }];
   assert.throws(() => resolveRowOrderV3(
-    rows, ["horizon"], confirmedPolicy(2, ["horizon"]),
+    rows, ["horizon"], confirmedPolicy(2, ["horizon"]), resolutionContext(rows.length),
   ), /rowCount|row count/i);
   assert.throws(() => resolveRowOrderV3(
-    rows, ["horizon"], confirmedPolicy(1, ["other"]),
+    rows, ["horizon"], confirmedPolicy(1, ["other"]), resolutionContext(rows.length),
   ), /relevantColumns|horizon/i);
+});
+
+test("source-order confirmation requires a trusted current binding and expires on hash changes", () => {
+  const rows = [{ horizon: "h1" }, { horizon: "h2" }];
+  const policy = confirmedPolicy(rows.length, ["horizon"]);
+  const callWithoutContext = resolveRowOrderV3 as unknown as (
+    inputRows: readonly Record<string, unknown>[],
+    horizonColumns: readonly string[],
+    sourcePolicy: CanonicalRowOrderV3,
+  ) => unknown;
+  assert.throws(() => callWithoutContext(rows, ["horizon"], policy), /context|binding|required/i);
+  const horizonRows = [{ unit: "u", horizon: "h1" }, { unit: "u", horizon: "h2" }];
+  const horizonPolicy = confirmedPolicy(horizonRows.length, ["unit", "horizon"]);
+  const callHorizonWithoutContext = resolveHorizonOrderV3 as unknown as (
+    inputRows: readonly Record<string, unknown>[],
+    unitColumns: readonly string[],
+    horizonColumns: readonly string[],
+    sourcePolicy: CanonicalHorizonOrderV3,
+  ) => unknown;
+  assert.throws(() => callHorizonWithoutContext(
+    horizonRows, ["unit"], ["horizon"], horizonPolicy,
+  ), /context|binding|required/i);
+  assert.throws(() => resolveRowOrderV3(
+    rows, ["horizon"], policy, resolutionContext(rows.length, "standard", OTHER_HASH),
+  ), /dataset|hash|expired|binding/i);
+
+  const reorderedRows = [...rows].reverse();
+  assert.throws(() => resolveRowOrderV3(
+    reorderedRows,
+    ["horizon"],
+    policy,
+    resolutionContext(reorderedRows.length, "standard", OTHER_HASH),
+  ), /dataset|hash|expired|binding/i);
+});
+
+test("resolution context is exact, descriptor-safe, and validates family plus complete dataset binding", () => {
+  const rows = [{ horizon: "h" }];
+  const policy = confirmedPolicy(rows.length, ["horizon"]);
+  type MutableContextProbe = {
+    analysisFamily: unknown;
+    datasetBinding: Record<string, unknown>;
+    extra?: unknown;
+  };
+  const malformed: Array<(context: MutableContextProbe) => void> = [
+    (context) => { context.analysisFamily = "other"; },
+    (context) => { context.datasetBinding.hashKind = "md5"; },
+    (context) => { context.datasetBinding.normalizedTableSha256 = "not-a-hash"; },
+    (context) => { context.datasetBinding.headerSha256 = "not-a-hash"; },
+    (context) => { context.datasetBinding.rowCount = 2; },
+    (context) => { context.extra = true; },
+  ];
+  for (const mutate of malformed) {
+    const context = structuredClone(resolutionContext(rows.length)) as unknown as MutableContextProbe;
+    mutate(context);
+    assert.throws(() => resolveRowOrderV3(
+      rows, ["horizon"], policy, context as unknown as OrderingResolutionContextV3,
+    ), /context|family|hash|rowCount|shape|binding/i);
+  }
+
+  let ordinaryGets = 0;
+  const noGet = () => {
+    ordinaryGets += 1;
+    throw new Error("ordinary context get must not execute");
+  };
+  const bindingTarget = {
+    hashKind: "normalized-utf8-csv-text-sha256" as const,
+    normalizedTableSha256: HASH,
+    rowCount: rows.length,
+    headerSha256: HEADER_HASH,
+  };
+  const context = new Proxy({
+    analysisFamily: "standard" as const,
+    datasetBinding: new Proxy(bindingTarget, { get: noGet }),
+  }, { get: noGet });
+  resolveRowOrderV3(rows, ["horizon"], policy, context);
+  assert.equal(ordinaryGets, 0);
+});
+
+test("source-order binding is detached and frozen, row ordering permits ONA, and Horizon ordering requires Standard", () => {
+  const rows = [{ unit: "u", horizon: "h" }];
+  const rowPolicy = confirmedPolicy(rows.length, ["horizon"]);
+  const rowContext = resolutionContext(rows.length, "ona");
+  const rowResolved = resolveRowOrderV3(rows, ["horizon"], rowPolicy, rowContext);
+  assert.equal(rowResolved.sourceOrderBinding?.analysisFamily, "ona");
+  assert.deepEqual(rowResolved.textCollationBindings, []);
+  assert.ok(Object.isFrozen(rowResolved.sourceOrderBinding));
+  assert.ok(Object.isFrozen(rowResolved.sourceOrderBinding?.datasetBinding));
+  assert.ok(Object.isFrozen(rowResolved.sourceOrderBinding?.confirmation));
+
+  const mutableContext = rowContext as unknown as {
+    analysisFamily: "standard" | "ona";
+    datasetBinding: DatasetBindingV3;
+  };
+  mutableContext.analysisFamily = "standard";
+  mutableContext.datasetBinding.normalizedTableSha256 = OTHER_HASH;
+  assert.equal(rowResolved.sourceOrderBinding?.analysisFamily, "ona");
+  assert.equal(rowResolved.sourceOrderBinding?.datasetBinding.normalizedTableSha256, HASH);
+
+  const horizonPolicy = confirmedPolicy(rows.length, ["unit", "horizon"]);
+  assert.throws(() => resolveHorizonOrderV3(
+    rows,
+    ["unit"],
+    ["horizon"],
+    horizonPolicy,
+    resolutionContext(rows.length, "ona"),
+  ), /standard|family/i);
+  const horizonResolved = resolveHorizonOrderV3(
+    rows,
+    ["unit"],
+    ["horizon"],
+    horizonPolicy,
+    resolutionContext(rows.length, "standard"),
+  );
+  assert.equal(horizonResolved.sourceOrderBinding?.analysisFamily, "standard");
+  assert.ok(Object.isFrozen(horizonResolved.sourceOrderBinding));
+});
+
+test("empty source-order confirmation normalizes negative-zero row counts to positive zero", () => {
+  const policy = confirmedPolicy(-0, ["horizon"]);
+  const context = resolutionContext(-0);
+  const resolved = resolveRowOrderV3([], ["horizon"], policy, context);
+  assert.deepEqual(resolved.mappings, []);
+  assert.deepEqual(resolved.orderedSourceRowIndices, []);
+  assert.equal(resolved.requestedPolicy.kind, "source-order-confirmed");
+  if (resolved.requestedPolicy.kind === "source-order-confirmed") {
+    assert.equal(Object.is(resolved.requestedPolicy.confirmation.rowCount, -0), false);
+  }
+  assert.equal(Object.is(resolved.sourceOrderBinding?.datasetBinding.rowCount, -0), false);
+  assert.equal(Object.is(resolved.sourceOrderBinding?.confirmation.rowCount, -0), false);
+});
+
+test("stateful descriptor Proxies are captured once before deriving identity and order values", () => {
+  const versions = [
+    { horizon: "h1", turn: 1 },
+    { horizon: "h2", turn: 2 },
+  ];
+  let descriptorCalls = 0;
+  let ordinaryGets = 0;
+  const row = new Proxy({ horizon: "unused", turn: 999 }, {
+    get() {
+      ordinaryGets += 1;
+      throw new Error("ordinary get must not execute");
+    },
+    getOwnPropertyDescriptor(_target, key) {
+      const version = versions[Math.floor(descriptorCalls / 2) % versions.length];
+      descriptorCalls += 1;
+      return {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value: version[key as keyof typeof version],
+      };
+    },
+  });
+  const resolved = resolveRowOrderV3(
+    [row], ["horizon"], columnsPolicy(ascendingNumber("turn")),
+  );
+  assert.equal(descriptorCalls, 2);
+  assert.equal(ordinaryGets, 0);
+  assert.deepEqual(resolved.mappings[0].orderTuple, [1]);
+  assert.match(resolved.mappings[0].horizonKey, /h1/u);
 });
 
 test("row results and requested policies are detached and deeply frozen", () => {
@@ -285,13 +687,17 @@ test("row results and requested policies are detached and deeply frozen", () => 
   assert.equal(resolved.mappings[0].orderTuple[0], 1);
   assert.equal(resolved.mappings[0].withinHorizonOrdinal, 0);
   assert.deepEqual(resolved.requestedPolicy, columnsPolicy(ascendingNumber("turn")));
+  assert.equal(resolved.sourceOrderBinding, null);
+  assert.deepEqual(resolved.textCollationBindings, []);
   assert.ok(Object.isFrozen(resolved));
   assert.ok(Object.isFrozen(resolved.requestedPolicy));
   assert.ok(Object.isFrozen(resolved.mappings));
   assert.ok(Object.isFrozen(resolved.mappings[0]));
   assert.ok(Object.isFrozen(resolved.mappings[0].orderTuple));
   assert.ok(Object.isFrozen(resolved.orderedSourceRowIndices));
-  assert.throws(() => resolved.orderedSourceRowIndices.push(99), TypeError);
+  assert.throws(() => {
+    (resolved.orderedSourceRowIndices as unknown as number[]).push(99);
+  }, TypeError);
 });
 
 test("ordering boundaries avoid ordinary Proxy gets and reject accessors, classes, sparse arrays, and exotic values", () => {
@@ -418,18 +824,27 @@ test("Horizon source confirmation uses first global appearance and validates con
     { unit: "u1", horizon: "h1" },
     { unit: "u2", horizon: "h2" },
   ];
-  const policy = confirmedPolicy(rows.length, ["horizon"]);
-  const resolved = resolveHorizonOrderV3(rows, ["unit"], ["horizon"], policy);
+  const policy = confirmedPolicy(rows.length, ["unit", "horizon"]);
+  const context = resolutionContext(rows.length);
+  const resolved = resolveHorizonOrderV3(rows, ["unit"], ["horizon"], policy, context);
   const tupleByHorizon = new Map(resolved.horizonTuples.map((entry) => [entry.horizonKey, entry.orderTuple]));
   for (const sequence of resolved.unitSequences) {
     assert.deepEqual(sequence.steps.map((step) => tupleByHorizon.get(step.horizonKey)), [[0], [1]]);
   }
 
   assert.throws(() => resolveHorizonOrderV3(
-    rows, ["unit"], ["horizon"], confirmedPolicy(rows.length + 1, ["horizon"]),
+    rows,
+    ["unit"],
+    ["horizon"],
+    confirmedPolicy(rows.length + 1, ["unit", "horizon"]),
+    context,
   ), /rowCount|row count/i);
   assert.throws(() => resolveHorizonOrderV3(
-    rows, ["unit"], ["horizon"], confirmedPolicy(rows.length, ["unit"]),
+    rows,
+    ["unit"],
+    ["horizon"],
+    confirmedPolicy(rows.length, ["horizon"]),
+    context,
   ), /relevantColumns|horizon/i);
 });
 
@@ -440,7 +855,7 @@ test("Horizon result uses canonical code-unit materialization order and is rever
     { unit: "u2", horizon: "h1", week: 1 },
     { unit: "u1", horizon: "h2", week: 2 },
   ];
-  const policy = columnsPolicy(ascendingNumber("week")) as CanonicalHorizonOrderV3;
+  const policy = columnsPolicy(ascendingNumber("week"));
   const forward = resolveHorizonOrderV3(rows, ["unit"], ["horizon"], policy);
   const reversed = resolveHorizonOrderV3([...rows].reverse(), ["unit"], ["horizon"], policy);
   assert.deepEqual(forward, reversed);

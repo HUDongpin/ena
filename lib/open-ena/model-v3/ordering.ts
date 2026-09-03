@@ -9,6 +9,7 @@ import type {
   CanonicalHorizonOrderV3,
   CanonicalRowOrderV3,
   DatasetBoundConfirmationV3,
+  DatasetBindingV3,
   OrderComparatorV3,
   OrderKeyV3,
   ScalarIdentityV3,
@@ -17,38 +18,73 @@ import type {
 type SourceRowV3 = Record<string, unknown>;
 type ResolvedOrderValueV3 = string | number;
 
+export type DeepReadonlyV3<T> = T extends object
+  ? { readonly [Key in keyof T]: DeepReadonlyV3<T[Key]> }
+  : T;
+
+type ColumnsOrderPolicyV3 = Extract<CanonicalRowOrderV3, { kind: "columns" }>;
+type SourceOrderPolicyV3 = Extract<CanonicalRowOrderV3, { kind: "source-order-confirmed" }>;
+
+export interface OrderingResolutionContextV3 {
+  readonly analysisFamily: "standard" | "ona";
+  readonly datasetBinding: DeepReadonlyV3<DatasetBindingV3>;
+}
+
+export interface ResolvedSourceOrderBindingV3 {
+  readonly analysisFamily: "standard" | "ona";
+  readonly datasetBinding: DeepReadonlyV3<DatasetBindingV3>;
+  readonly confirmation: DeepReadonlyV3<DatasetBoundConfirmationV3>;
+}
+
+export interface TextCollationBindingV3 {
+  readonly column: string;
+  readonly requestedLocale: string;
+  readonly resolvedLocale: string;
+  readonly collation: string;
+  readonly sensitivity: "base" | "accent" | "case" | "variant";
+  readonly numeric: boolean;
+  readonly usage: "sort";
+  readonly ignorePunctuation: boolean;
+  readonly caseFirst: "upper" | "lower" | "false";
+}
+
 export interface ResolvedRowOrderingV3 {
-  type: "within-horizon-order";
-  requestedPolicy: CanonicalRowOrderV3;
-  mappings: Array<{
-    sourceRowIndex: number;
-    horizonKey: string;
-    orderTuple: ResolvedOrderValueV3[];
-    withinHorizonOrdinal: number;
+  readonly type: "within-horizon-order";
+  readonly requestedPolicy: DeepReadonlyV3<CanonicalRowOrderV3>;
+  readonly mappings: ReadonlyArray<{
+    readonly sourceRowIndex: number;
+    readonly horizonKey: string;
+    readonly orderTuple: ReadonlyArray<ResolvedOrderValueV3>;
+    readonly withinHorizonOrdinal: number;
   }>;
-  orderedSourceRowIndices: number[];
+  readonly orderedSourceRowIndices: ReadonlyArray<number>;
+  readonly sourceOrderBinding: DeepReadonlyV3<ResolvedSourceOrderBindingV3> | null;
+  readonly textCollationBindings: ReadonlyArray<DeepReadonlyV3<TextCollationBindingV3>>;
 }
 
 export interface ResolvedHorizonOrderingV3 {
-  type: "trajectory-horizon-order";
-  horizonTuples: Array<{
-    horizonKey: string;
-    orderTuple: ResolvedOrderValueV3[];
+  readonly type: "trajectory-horizon-order";
+  readonly horizonTuples: ReadonlyArray<{
+    readonly horizonKey: string;
+    readonly orderTuple: ReadonlyArray<ResolvedOrderValueV3>;
   }>;
-  unitSequences: Array<{
-    unitKey: string;
-    steps: Array<{
-      horizonKey: string;
-      trajectoryOrdinal: number;
+  readonly unitSequences: ReadonlyArray<{
+    readonly unitKey: string;
+    readonly steps: ReadonlyArray<{
+      readonly horizonKey: string;
+      readonly trajectoryOrdinal: number;
     }>;
   }>;
-  implementationHorizonOrder: string[];
+  readonly implementationHorizonOrder: ReadonlyArray<string>;
+  readonly sourceOrderBinding: DeepReadonlyV3<ResolvedSourceOrderBindingV3> | null;
+  readonly textCollationBindings: ReadonlyArray<DeepReadonlyV3<TextCollationBindingV3>>;
 }
 
 interface CompiledOrderKeyV3 {
   key: OrderKeyV3;
   collator: Intl.Collator | null;
   categoryIndex: ReadonlyMap<string, number> | null;
+  textCollationBinding: TextCollationBindingV3 | null;
 }
 
 interface NormalizedOrderPolicyV3 {
@@ -143,12 +179,22 @@ function snapshotScalarIdentityV3(value: unknown, label: string): ScalarIdentity
 function snapshotComparatorV3(
   value: unknown,
   label: string,
-): { comparator: OrderComparatorV3; collator: Intl.Collator | null; categoryIndex: ReadonlyMap<string, number> | null } {
+): {
+  comparator: OrderComparatorV3;
+  collator: Intl.Collator | null;
+  categoryIndex: ReadonlyMap<string, number> | null;
+  textCollationBinding: Omit<TextCollationBindingV3, "column"> | null;
+} {
   const record = snapshotPlainJsonRecordV3(value, label);
   const type = record.type;
   if (type === "number") {
     assertExactKeysV3(record, ["type"], `${label} number comparator`);
-    return { comparator: { type: "number" }, collator: null, categoryIndex: null };
+    return {
+      comparator: { type: "number" },
+      collator: null,
+      categoryIndex: null,
+      textCollationBinding: null,
+    };
   }
   if (type === "date") {
     assertExactKeysV3(record, ["type", "format"], `${label} date comparator`);
@@ -159,6 +205,7 @@ function snapshotComparatorV3(
       comparator: { type: "date", format: "YYYY-MM-DD" },
       collator: null,
       categoryIndex: null,
+      textCollationBinding: null,
     };
   }
   if (type === "datetime") {
@@ -170,6 +217,7 @@ function snapshotComparatorV3(
       comparator: { type: "datetime", format: "ISO-8601", timeZone: "offset-in-value" },
       collator: null,
       categoryIndex: null,
+      textCollationBinding: null,
     };
   }
   if (type === "ordered-category") {
@@ -189,6 +237,7 @@ function snapshotComparatorV3(
       comparator: { type: "ordered-category", levels },
       collator: null,
       categoryIndex,
+      textCollationBinding: null,
     };
   }
   if (type === "text") {
@@ -205,6 +254,15 @@ function snapshotComparatorV3(
     if (canonicalLocales.length !== 1 || canonicalLocales[0] !== record.locale) {
       throw new TypeError(`${label}.locale must use canonical BCP-47 spelling.`);
     }
+    let supportedLocales: string[];
+    try {
+      supportedLocales = Intl.Collator.supportedLocalesOf([record.locale], { localeMatcher: "lookup" });
+    } catch {
+      throw new TypeError(`${label}.locale is not supported by this runtime.`);
+    }
+    if (supportedLocales.length !== 1 || supportedLocales[0] !== record.locale) {
+      throw new TypeError(`${label}.locale is not supported by this runtime.`);
+    }
     if (record.sensitivity !== "base" && record.sensitivity !== "accent"
       && record.sensitivity !== "case" && record.sensitivity !== "variant") {
       throw new TypeError(`${label}.sensitivity must be base, accent, case, or variant.`);
@@ -218,14 +276,37 @@ function snapshotComparatorV3(
       sensitivity: record.sensitivity,
       numeric: record.numeric,
     };
+    const collator = new Intl.Collator(comparator.locale, {
+      sensitivity: comparator.sensitivity,
+      numeric: comparator.numeric,
+      usage: "sort",
+    });
+    const resolved = collator.resolvedOptions();
+    if (resolved.usage !== "sort" || resolved.sensitivity !== comparator.sensitivity
+      || resolved.numeric !== comparator.numeric || typeof resolved.locale !== "string"
+      || resolved.locale.length === 0 || typeof resolved.collation !== "string"
+      || resolved.collation.length === 0 || typeof resolved.ignorePunctuation !== "boolean"
+      || (resolved.caseFirst !== "upper" && resolved.caseFirst !== "lower" && resolved.caseFirst !== "false")) {
+      throw new TypeError(`${label} could not resolve the requested collation behavior.`);
+    }
+    // This binds the resolved ECMA-402 options used here. Runtime/engine version
+    // belongs to later execution provenance; this browser-safe module must not
+    // read Node-only process.versions or a user-agent string.
+    const textCollationBinding: Omit<TextCollationBindingV3, "column"> = {
+      requestedLocale: comparator.locale,
+      resolvedLocale: resolved.locale,
+      collation: resolved.collation,
+      sensitivity: resolved.sensitivity,
+      numeric: resolved.numeric,
+      usage: resolved.usage,
+      ignorePunctuation: resolved.ignorePunctuation,
+      caseFirst: resolved.caseFirst,
+    };
     return {
       comparator,
-      collator: new Intl.Collator(comparator.locale, {
-        sensitivity: comparator.sensitivity,
-        numeric: comparator.numeric,
-        usage: "sort",
-      }),
+      collator,
       categoryIndex: null,
+      textCollationBinding,
     };
   }
   throw new TypeError(`${label}.type is not a supported order comparator.`);
@@ -250,6 +331,70 @@ function snapshotOrderKeyV3(value: unknown, index: number): CompiledOrderKeyV3 {
     },
     collator: compiled.collator,
     categoryIndex: compiled.categoryIndex,
+    textCollationBinding: compiled.textCollationBinding === null
+      ? null
+      : { column: record.column, ...compiled.textCollationBinding },
+  };
+}
+
+function normalizedRowCountV3(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`${label} must be a nonnegative safe integer.`);
+  }
+  return Object.is(value, -0) ? 0 : value;
+}
+
+function lowercaseSha256V3(value: unknown, label: string): string {
+  if (typeof value !== "string" || !/^[a-f0-9]{64}$/u.test(value)) {
+    throw new TypeError(`${label} must be a lowercase 64-hex SHA-256 string.`);
+  }
+  return value;
+}
+
+function snapshotResolutionContextV3(
+  value: unknown,
+  currentRowCount: number,
+): { analysisFamily: "standard" | "ona"; datasetBinding: DatasetBindingV3 } {
+  const context = snapshotPlainJsonRecordV3(value, "ordering resolution context");
+  assertExactKeysV3(context, ["analysisFamily", "datasetBinding"], "ordering resolution context");
+  if (context.analysisFamily !== "standard" && context.analysisFamily !== "ona") {
+    throw new TypeError("ordering resolution context.analysisFamily must be standard or ona.");
+  }
+  const binding = snapshotPlainJsonRecordV3(
+    context.datasetBinding,
+    "ordering resolution context.datasetBinding",
+  );
+  assertExactKeysV3(
+    binding,
+    ["hashKind", "normalizedTableSha256", "rowCount", "headerSha256"],
+    "ordering resolution context.datasetBinding",
+  );
+  if (binding.hashKind !== "normalized-utf8-text-sha256"
+    && binding.hashKind !== "normalized-utf8-csv-text-sha256"
+    && binding.hashKind !== "canonical-first-xlsx-worksheet-v1-sha256") {
+    throw new TypeError("ordering resolution context.datasetBinding.hashKind is unsupported.");
+  }
+  const rowCount = normalizedRowCountV3(
+    binding.rowCount,
+    "ordering resolution context.datasetBinding.rowCount",
+  );
+  if (rowCount !== currentRowCount) {
+    throw new TypeError("ordering resolution context.datasetBinding.rowCount must equal the current rows length.");
+  }
+  return {
+    analysisFamily: context.analysisFamily,
+    datasetBinding: {
+      hashKind: binding.hashKind,
+      normalizedTableSha256: lowercaseSha256V3(
+        binding.normalizedTableSha256,
+        "ordering resolution context.datasetBinding.normalizedTableSha256",
+      ),
+      rowCount,
+      headerSha256: lowercaseSha256V3(
+        binding.headerSha256,
+        "ordering resolution context.datasetBinding.headerSha256",
+      ),
+    },
   };
 }
 
@@ -271,11 +416,9 @@ function snapshotConfirmationV3(
   if (record.confirmationVersion !== 1) {
     throw new TypeError(`${label}.confirmationVersion must be 1.`);
   }
-  if (typeof record.datasetSha256 !== "string" || !/^[a-f0-9]{64}$/u.test(record.datasetSha256)) {
-    throw new TypeError(`${label}.datasetSha256 must be a lowercase 64-hex SHA-256 string.`);
-  }
-  if (typeof record.rowCount !== "number" || !Number.isSafeInteger(record.rowCount)
-    || record.rowCount < 0 || record.rowCount !== rowCount) {
+  const datasetSha256 = lowercaseSha256V3(record.datasetSha256, `${label}.datasetSha256`);
+  const confirmedRowCount = normalizedRowCountV3(record.rowCount, `${label}.rowCount`);
+  if (confirmedRowCount !== rowCount) {
     throw new TypeError(`${label}.rowCount must equal the current rows length.`);
   }
   const relevantColumns = snapshotColumnListV3(record.relevantColumns, `${label}.relevantColumns`);
@@ -290,8 +433,8 @@ function snapshotConfirmationV3(
   }
   return {
     kind: "explicit-researcher-confirmation",
-    datasetSha256: record.datasetSha256,
-    rowCount: record.rowCount,
+    datasetSha256,
+    rowCount: confirmedRowCount,
     relevantColumns,
     confirmedAt: record.confirmedAt,
     confirmationVersion: 1,
@@ -331,6 +474,64 @@ function snapshotOrderPolicyV3(
     };
   }
   throw new TypeError("order policy.kind must be columns or source-order-confirmed.");
+}
+
+function bindSourceOrderV3(
+  policy: CanonicalRowOrderV3,
+  context: { analysisFamily: "standard" | "ona"; datasetBinding: DatasetBindingV3 } | null,
+  requireStandardFamily: boolean,
+): ResolvedSourceOrderBindingV3 | null {
+  if (policy.kind === "columns") return null;
+  if (context === null) {
+    throw new TypeError("A trusted ordering resolution context is required for source-order-confirmed policy.");
+  }
+  if (requireStandardFamily && context.analysisFamily !== "standard") {
+    throw new TypeError("Trajectory Horizon source order requires the standard analysis family.");
+  }
+  if (policy.confirmation.datasetSha256 !== context.datasetBinding.normalizedTableSha256) {
+    throw new Error("Source-order confirmation does not match the current dataset hash binding.");
+  }
+  if (policy.confirmation.rowCount !== context.datasetBinding.rowCount) {
+    throw new Error("Source-order confirmation rowCount does not match the current dataset binding.");
+  }
+  return {
+    analysisFamily: context.analysisFamily,
+    datasetBinding: {
+      hashKind: context.datasetBinding.hashKind,
+      normalizedTableSha256: context.datasetBinding.normalizedTableSha256,
+      rowCount: context.datasetBinding.rowCount,
+      headerSha256: context.datasetBinding.headerSha256,
+    },
+    confirmation: {
+      kind: policy.confirmation.kind,
+      datasetSha256: policy.confirmation.datasetSha256,
+      rowCount: policy.confirmation.rowCount,
+      relevantColumns: [...policy.confirmation.relevantColumns],
+      confirmedAt: policy.confirmation.confirmedAt,
+      confirmationVersion: policy.confirmation.confirmationVersion,
+    },
+  };
+}
+
+function textCollationBindingsV3(keys: readonly CompiledOrderKeyV3[] | null): TextCollationBindingV3[] {
+  if (keys === null) return [];
+  const bindings: TextCollationBindingV3[] = [];
+  for (const key of keys) {
+    if (key.textCollationBinding !== null) {
+      bindings.push({
+        column: key.textCollationBinding.column,
+        requestedLocale: key.textCollationBinding.requestedLocale,
+        resolvedLocale: key.textCollationBinding.resolvedLocale,
+        collation: key.textCollationBinding.collation,
+        sensitivity: key.textCollationBinding.sensitivity,
+        numeric: key.textCollationBinding.numeric,
+        usage: key.textCollationBinding.usage,
+        ignorePunctuation: key.textCollationBinding.ignorePunctuation,
+        caseFirst: key.textCollationBinding.caseFirst,
+      });
+    }
+  }
+  return bindings;
 }
 
 function daysInMonthV3(year: number, month: number): number {
@@ -392,6 +593,9 @@ function parseDateTimeV3(value: ScalarIdentityV3, column: string): string {
     const offsetMinute = Number(match[11]);
     if (offsetHour > 14 || offsetMinute > 59 || (offsetHour === 14 && offsetMinute !== 0)) {
       throw new TypeError(`Order column ${JSON.stringify(column)} has an invalid datetime offset.`);
+    }
+    if (match[9] === "-" && offsetHour === 0 && offsetMinute === 0) {
+      throw new TypeError(`Order column ${JSON.stringify(column)} has an invalid datetime negative-zero offset.`);
     }
     const sign = match[9] === "+" ? 1 : -1;
     offsetMinutes = sign * (offsetHour * 60 + offsetMinute);
@@ -469,11 +673,35 @@ function resolvedTupleSignatureV3(tuple: readonly ResolvedOrderValueV3[]): strin
 export function resolveRowOrderV3(
   rows: readonly Record<string, unknown>[],
   horizonColumns: readonly string[],
+  policy: ColumnsOrderPolicyV3,
+  context?: OrderingResolutionContextV3,
+): ResolvedRowOrderingV3;
+export function resolveRowOrderV3(
+  rows: readonly Record<string, unknown>[],
+  horizonColumns: readonly string[],
+  policy: SourceOrderPolicyV3,
+  context: OrderingResolutionContextV3,
+): ResolvedRowOrderingV3;
+export function resolveRowOrderV3(
+  rows: readonly Record<string, unknown>[],
+  horizonColumns: readonly string[],
   policy: CanonicalRowOrderV3,
+  context: OrderingResolutionContextV3,
+): ResolvedRowOrderingV3;
+export function resolveRowOrderV3(
+  rows: readonly Record<string, unknown>[],
+  horizonColumns: readonly string[],
+  policy: CanonicalRowOrderV3,
+  context?: OrderingResolutionContextV3,
 ): ResolvedRowOrderingV3 {
   const rowRecords = snapshotRowsV3(rows);
   const normalizedHorizonColumns = snapshotColumnListV3(horizonColumns, "horizonColumns");
   const normalizedPolicy = snapshotOrderPolicyV3(policy, rowRecords.length, normalizedHorizonColumns);
+  const normalizedContext = context === undefined
+    ? null
+    : snapshotResolutionContextV3(context, rowRecords.length);
+  const sourceOrderBinding = bindSourceOrderV3(normalizedPolicy.policy, normalizedContext, false);
+  const textCollationBindings = textCollationBindingsV3(normalizedPolicy.keys);
   const groups = new Map<string, ResolvedRowV3[]>();
 
   for (let sourceRowIndex = 0; sourceRowIndex < rowRecords.length; sourceRowIndex += 1) {
@@ -487,7 +715,7 @@ export function resolveRowOrderV3(
     groups.set(horizonKey, group);
   }
 
-  const mappings: ResolvedRowOrderingV3["mappings"] = [];
+  const mappings: Array<ResolvedRowOrderingV3["mappings"][number]> = [];
   const horizonKeys = [...groups.keys()].sort(codeUnitCompareV3);
   for (const horizonKey of horizonKeys) {
     const group = groups.get(horizonKey)!;
@@ -515,6 +743,8 @@ export function resolveRowOrderV3(
     requestedPolicy: normalizedPolicy.policy,
     mappings,
     orderedSourceRowIndices: mappings.map((entry) => entry.sourceRowIndex),
+    sourceOrderBinding,
+    textCollationBindings,
   });
 }
 
@@ -522,12 +752,40 @@ export function resolveHorizonOrderV3(
   rows: readonly Record<string, unknown>[],
   unitColumns: readonly string[],
   horizonColumns: readonly string[],
+  policy: ColumnsOrderPolicyV3,
+  context?: OrderingResolutionContextV3,
+): ResolvedHorizonOrderingV3;
+export function resolveHorizonOrderV3(
+  rows: readonly Record<string, unknown>[],
+  unitColumns: readonly string[],
+  horizonColumns: readonly string[],
+  policy: SourceOrderPolicyV3,
+  context: OrderingResolutionContextV3,
+): ResolvedHorizonOrderingV3;
+export function resolveHorizonOrderV3(
+  rows: readonly Record<string, unknown>[],
+  unitColumns: readonly string[],
+  horizonColumns: readonly string[],
   policy: CanonicalHorizonOrderV3,
+  context: OrderingResolutionContextV3,
+): ResolvedHorizonOrderingV3;
+export function resolveHorizonOrderV3(
+  rows: readonly Record<string, unknown>[],
+  unitColumns: readonly string[],
+  horizonColumns: readonly string[],
+  policy: CanonicalHorizonOrderV3,
+  context?: OrderingResolutionContextV3,
 ): ResolvedHorizonOrderingV3 {
   const rowRecords = snapshotRowsV3(rows);
   const normalizedUnitColumns = snapshotColumnListV3(unitColumns, "unitColumns");
   const normalizedHorizonColumns = snapshotColumnListV3(horizonColumns, "horizonColumns");
-  const normalizedPolicy = snapshotOrderPolicyV3(policy, rowRecords.length, normalizedHorizonColumns);
+  const requiredRelevantColumns = [...new Set([...normalizedUnitColumns, ...normalizedHorizonColumns])];
+  const normalizedPolicy = snapshotOrderPolicyV3(policy, rowRecords.length, requiredRelevantColumns);
+  const normalizedContext = context === undefined
+    ? null
+    : snapshotResolutionContextV3(context, rowRecords.length);
+  const sourceOrderBinding = bindSourceOrderV3(normalizedPolicy.policy, normalizedContext, true);
+  const textCollationBindings = textCollationBindingsV3(normalizedPolicy.keys);
   const horizons = new Map<string, ResolvedHorizonV3>();
   const tupleSignatures = new Map<string, string>();
   const horizonsByUnit = new Map<string, Set<string>>();
@@ -562,7 +820,7 @@ export function resolveHorizonOrderV3(
     horizonsByUnit.set(unitKey, observed);
   }
 
-  const unitSequences: ResolvedHorizonOrderingV3["unitSequences"] = [];
+  const unitSequences: Array<ResolvedHorizonOrderingV3["unitSequences"][number]> = [];
   const unitKeys = [...horizonsByUnit.keys()].sort(codeUnitCompareV3);
   for (const unitKey of unitKeys) {
     const steps = [...horizonsByUnit.get(unitKey)!].map((horizonKey) => horizons.get(horizonKey)!);
@@ -594,5 +852,7 @@ export function resolveHorizonOrderV3(
     })),
     unitSequences,
     implementationHorizonOrder,
+    sourceOrderBinding,
+    textCollationBindings,
   });
 }
