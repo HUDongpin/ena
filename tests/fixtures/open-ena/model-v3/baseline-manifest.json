@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "preCutoverHead": "3aea9a934787fe44ade1082980dc6293e00f3d87",
+  "rEnaBaseline": {
+    "version": "0.3.1",
+    "fixturePath": "packages/jena-js/fixtures/goldens/sena-configs.generated.json",
+    "fixtureSha256": "a13517172cc8c87d79278649363aec3aac79ee624d0b22ce3c724650c6204192"
+  },
+  "ona": {
+    "publicFixturePath": "packages/jena-js/fixtures/goldens/ordered-window-tma.generated.json",
+    "publicFixtureSha256": "0f295ed72eb360e3792d441c5e034c858ed3c65ddbbc7e868a0abdcec6f70a0e"
+  },
+  "recordedAt": "2026-09-03T00:27:51.000Z"
+}
