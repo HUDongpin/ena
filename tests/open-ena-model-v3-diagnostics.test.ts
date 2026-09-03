@@ -525,6 +525,21 @@ test("Unit and Horizon identity failures suppress all profile and connectivity d
   assert.equal(hasProfileOrConnectivityDerivative(diagnosticsFor(sharedHorizon)), false);
 });
 
+test("configured Unit and Horizon identities must exist in the trusted current header", () => {
+  const staleRows = [
+    { unit: "u1", horizon: "h1", A: 1, B: 0, C: 0 },
+    { unit: "u2", horizon: "h2", A: 0, B: 1, C: 0 },
+    { unit: "u3", horizon: "h3", A: 0, B: 0, C: 1 },
+  ];
+  for (const [label, headers] of [
+    ["missing Unit header with stale row keys", ["horizon", "A", "B", "C"]],
+    ["missing Horizon header with stale row keys", ["unit", "A", "B", "C"]],
+  ] as const) {
+    const output = diagnosticsFor(dataset(staleRows, [...headers]));
+    assert.equal(hasProfileOrConnectivityDerivative(output), false, `${label}: ${ids(output).join(", ")}`);
+  }
+});
+
 test("a valid zero-row dataset never invents Code-profile or connectivity derivatives", () => {
   const input = dataset([]);
   const output = diagnosticsFor(input);

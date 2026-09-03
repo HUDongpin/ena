@@ -565,10 +565,13 @@ function typedHorizonKeyV3(
 
 function identityPrerequisitesValidV3(
   rows: readonly Record<string, unknown>[],
+  headers: ReadonlySet<string>,
   unitColumns: readonly string[],
   horizonColumns: readonly string[],
 ): boolean {
   if (unitColumns.length === 0 || horizonColumns.length === 0) return false;
+  if (unitColumns.some((column) => !headers.has(column))
+    || horizonColumns.some((column) => !headers.has(column))) return false;
   try {
     for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
       const row = rows[rowIndex];
@@ -892,7 +895,12 @@ export function validateStandardDraftV3(
     && invalidCodes.size === 0
     && profiles.length === uniqueCodes.length
     && profiles.every((profile) => !profile.allZero)
-    && identityPrerequisitesValidV3(dataset.rows, modelDraft.unitColumns, modelDraft.horizonColumns);
+    && identityPrerequisitesValidV3(
+      dataset.rows,
+      headerSet,
+      modelDraft.unitColumns,
+      modelDraft.horizonColumns,
+    );
 
   if (basicPrerequisitesValid) {
     const duplicateProfiles = new Map<string, string[]>();
