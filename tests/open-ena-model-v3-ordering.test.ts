@@ -434,6 +434,132 @@ test("text ordering rejects a canonical but unsupported locale instead of silent
   ), /unsupported|locale/i);
 });
 
+test("text ordering rejects Unicode collation extensions that the runtime silently drops", () => {
+  for (const locale of ["en-u-co-phonebk", "en-u-co-foobar"]) {
+    assert.deepEqual(
+      Intl.Collator.supportedLocalesOf([locale], { localeMatcher: "lookup" }),
+      [locale],
+    );
+    assert.notEqual(
+      new Intl.Collator(locale, {
+        sensitivity: "variant",
+        numeric: false,
+        usage: "sort",
+      }).resolvedOptions().collation,
+      new Intl.Locale(locale).collation,
+    );
+    assert.throws(() => resolveRowOrderV3(
+      [{ horizon: "h", label: "a" }],
+      ["horizon"],
+      columnsPolicy({
+        column: "label",
+        direction: "ascending",
+        comparator: { type: "text", locale, sensitivity: "variant", numeric: false },
+      }),
+    ), /collation|extension|locale|fallback/i);
+  }
+});
+
+test("supported Unicode collation and case-first extensions are accepted and bound", (context) => {
+  const phonebookLocale = "de-u-co-phonebk";
+  const phonebookOptions = new Intl.Collator(phonebookLocale, {
+    sensitivity: "variant",
+    numeric: false,
+    usage: "sort",
+  }).resolvedOptions();
+  const phonebookSupported = Intl.Collator.supportedLocalesOf(
+    [phonebookLocale],
+    { localeMatcher: "lookup" },
+  ).length === 1 && phonebookOptions.collation === "phonebk";
+  if (!phonebookSupported) {
+    context.skip("Current runtime does not expose the requested German phonebook collation.");
+    return;
+  }
+  const phonebook = resolveRowOrderV3(
+    [{ horizon: "h", label: "ä" }],
+    ["horizon"],
+    columnsPolicy({
+      column: "label",
+      direction: "ascending",
+      comparator: {
+        type: "text",
+        locale: phonebookLocale,
+        sensitivity: "variant",
+        numeric: false,
+      },
+    }),
+  );
+  assert.equal(phonebook.textCollationBindings[0].requestedLocale, phonebookLocale);
+  assert.equal(phonebook.textCollationBindings[0].collation, "phonebk");
+
+  const caseFirstLocale = "en-u-kf-upper";
+  const caseFirst = resolveRowOrderV3(
+    [{ horizon: "h", label: "a" }],
+    ["horizon"],
+    columnsPolicy({
+      column: "label",
+      direction: "ascending",
+      comparator: {
+        type: "text",
+        locale: caseFirstLocale,
+        sensitivity: "variant",
+        numeric: false,
+      },
+    }),
+  );
+  assert.equal(caseFirst.textCollationBindings[0].requestedLocale, caseFirstLocale);
+  assert.equal(caseFirst.textCollationBindings[0].caseFirst, "upper");
+});
+
+test("explicit Unicode numeric extension cannot contradict the comparator numeric option", () => {
+  const conflicts = [
+    { locale: "en-u-kn", numeric: false },
+    { locale: "en-u-kn-false", numeric: true },
+  ];
+  for (const { locale, numeric } of conflicts) {
+    assert.throws(() => resolveRowOrderV3(
+      [{ horizon: "h", label: "item2" }],
+      ["horizon"],
+      columnsPolicy({
+        column: "label",
+        direction: "ascending",
+        comparator: { type: "text", locale, sensitivity: "variant", numeric },
+      }),
+    ), /numeric|extension|conflict|locale/i);
+  }
+
+  for (const { locale, numeric } of [
+    { locale: "en-u-kn", numeric: true },
+    { locale: "en-u-kn-false", numeric: false },
+  ]) {
+    const resolved = resolveRowOrderV3(
+      [{ horizon: "h", label: "item2" }],
+      ["horizon"],
+      columnsPolicy({
+        column: "label",
+        direction: "ascending",
+        comparator: { type: "text", locale, sensitivity: "variant", numeric },
+      }),
+    );
+    assert.equal(resolved.textCollationBindings[0].numeric, numeric);
+  }
+});
+
+test("a private-use u subtag is not misread as a Unicode behavior extension", () => {
+  const locale = "en-x-u-co-phonebk";
+  const resolved = resolveRowOrderV3(
+    [{ horizon: "h", label: "a" }],
+    ["horizon"],
+    columnsPolicy({
+      column: "label",
+      direction: "ascending",
+      comparator: { type: "text", locale, sensitivity: "variant", numeric: false },
+    }),
+  );
+  assert.equal(resolved.textCollationBindings[0].requestedLocale, locale);
+  assert.equal(resolved.textCollationBindings[0].collation, "default");
+});
+
 test("resolved text collation options are serialized once per key as frozen deterministic provenance", () => {
   const policy = columnsPolicy(
     {

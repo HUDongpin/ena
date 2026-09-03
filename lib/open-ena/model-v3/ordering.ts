@@ -176,6 +176,34 @@ function snapshotScalarIdentityV3(value: unknown, label: string): ScalarIdentity
   return scalar;
 }
 
+function explicitUnicodeKeywordV3(locale: Intl.Locale, wantedKey: "co" | "kf" | "kn"): string | null {
+  const tokens = locale.toString().split("-");
+  let unicodeIndex = -1;
+  for (let index = 1; index < tokens.length; index += 1) {
+    if (tokens[index].length !== 1) continue;
+    if (tokens[index] === "x") return null;
+    if (tokens[index] === "u") {
+      unicodeIndex = index;
+      break;
+    }
+  }
+  if (unicodeIndex < 0) return null;
+  let index = unicodeIndex + 1;
+  while (index < tokens.length && tokens[index].length >= 3) index += 1;
+  while (index < tokens.length && tokens[index].length !== 1) {
+    const key = tokens[index];
+    if (key.length !== 2) return null;
+    index += 1;
+    const type: string[] = [];
+    while (index < tokens.length && tokens[index].length >= 3) {
+      type.push(tokens[index]);
+      index += 1;
+    }
+    if (key === wantedKey) return type.length === 0 ? "true" : type.join("-");
+  }
+  return null;
+}
+
 function snapshotComparatorV3(
   value: unknown,
   label: string,
@@ -254,6 +282,12 @@ function snapshotComparatorV3(
     if (canonicalLocales.length !== 1 || canonicalLocales[0] !== record.locale) {
       throw new TypeError(`${label}.locale must use canonical BCP-47 spelling.`);
     }
+    let requestedLocale: Intl.Locale;
+    try {
+      requestedLocale = new Intl.Locale(record.locale);
+    } catch {
+      throw new TypeError(`${label}.locale must be a canonical BCP-47 locale.`);
+    }
     let supportedLocales: string[];
     try {
       supportedLocales = Intl.Collator.supportedLocalesOf([record.locale], { localeMatcher: "lookup" });
@@ -269,6 +303,18 @@ function snapshotComparatorV3(
     }
     if (typeof record.numeric !== "boolean") {
       throw new TypeError(`${label}.numeric must be a boolean.`);
+    }
+    const requestedCollationKeyword = explicitUnicodeKeywordV3(requestedLocale, "co");
+    const requestedCaseFirstKeyword = explicitUnicodeKeywordV3(requestedLocale, "kf");
+    const requestedNumericKeyword = explicitUnicodeKeywordV3(requestedLocale, "kn");
+    if (requestedNumericKeyword !== null) {
+      if (requestedNumericKeyword !== "true" && requestedNumericKeyword !== "false") {
+        throw new TypeError(`${label}.locale contains an unsupported numeric Unicode extension.`);
+      }
+      const requestedNumeric = requestedNumericKeyword === "true";
+      if (requestedLocale.numeric !== requestedNumeric || requestedNumeric !== record.numeric) {
+        throw new TypeError(`${label}.locale numeric extension conflicts with comparator.numeric.`);
+      }
     }
     const comparator: OrderComparatorV3 = {
       type: "text",
@@ -288,6 +334,19 @@ function snapshotComparatorV3(
       || resolved.collation.length === 0 || typeof resolved.ignorePunctuation !== "boolean"
       || (resolved.caseFirst !== "upper" && resolved.caseFirst !== "lower" && resolved.caseFirst !== "false")) {
       throw new TypeError(`${label} could not resolve the requested collation behavior.`);
+    }
+    if (requestedCollationKeyword !== null) {
+      const requestedCollation = requestedLocale.collation;
+      if (requestedCollation === undefined || requestedCollation === "default"
+        || requestedCollation === "standard" || requestedCollation !== resolved.collation) {
+        throw new TypeError(`${label}.locale collation extension is not honored by this runtime.`);
+      }
+    }
+    if (requestedCaseFirstKeyword !== null) {
+      const requestedCaseFirst = requestedLocale.caseFirst;
+      if (requestedCaseFirst === undefined || requestedCaseFirst !== resolved.caseFirst) {
+        throw new TypeError(`${label}.locale case-first extension is not honored by this runtime.`);
+      }
     }
     // This binds the resolved ECMA-402 options used here. Runtime/engine version
     // belongs to later execution provenance; this browser-safe module must not
