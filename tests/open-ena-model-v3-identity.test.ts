@@ -112,6 +112,42 @@ test("display labels are unique across Unit, Horizon, and Group roles", async ()
   assert.equal(new Set(allLabels).size, allLabels.length);
 });
 
+test("every identity sharing a raw display label receives deterministic typed disambiguation", async () => {
+  const reservedLabels = [
+    "Unit id=1 [id:number(1)]",
+    "Unit id=1 [id:string(\"1\")]",
+  ];
+  const collisionRows = [
+    { id: 1, horizon: "h", unused: reservedLabels[0] },
+    { id: "1", horizon: "h", unused: reservedLabels[1] },
+  ];
+  const forward = await buildExecutionIdentityDictionaryV3(collisionRows, ["id"], ["horizon"], null);
+  const reversed = await buildExecutionIdentityDictionaryV3([...collisionRows].reverse(), ["id"], ["horizon"], null);
+  const tokens = new Set([...forward.units, ...forward.horizons, ...forward.groups].map((entry) => entry.token));
+  const labels = [...forward.units, ...forward.horizons, ...forward.groups].map((entry) => entry.displayLabel);
+
+  assert.deepEqual(forward, reversed);
+  assert.equal(new Set(labels).size, labels.length);
+  assert.ok(labels.every((label) => !tokens.has(label) && !reservedLabels.includes(label)));
+  assert.ok(forward.units.every((entry) => entry.displayLabel.includes(`[id:${entry.fields[0].value.type}(`)));
+});
+
+test("high-cardinality label allocation does not clone the complete raw-label set per identity", async () => {
+  const highCardinalityRows = Array.from({ length: 2_048 }, (_, index) => ({
+    id: index % 2 === 0 ? index : String(index),
+    horizon: "shared",
+  }));
+  const forward = await buildExecutionIdentityDictionaryV3(highCardinalityRows, ["id"], ["horizon"], null);
+  const reversed = await buildExecutionIdentityDictionaryV3(
+    [...highCardinalityRows].reverse(), ["id"], ["horizon"], null,
+  );
+  assert.deepEqual(forward.units, reversed.units);
+  assert.equal(new Set(forward.units.map((entry) => entry.displayLabel)).size, highCardinalityRows.length);
+
+  const source = readFileSync(new URL("../lib/open-ena/model-v3/identity.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /new Set\(rawLabels\)/);
+});
+
 test("reserved strings in unselected headers and values are excluded from every namespace token", async () => {
   const reserved = [
     "__open_ena_unit_v3_000000",
@@ -224,12 +260,32 @@ test("one-time resolver indexes dictionaries and batch resolution binds every so
   const dictionary = await buildExecutionIdentityDictionaryV3(highCardinalityRows, ["student"], ["turn"], "group");
   await validateExecutionIdentityDictionaryV3(dictionary);
   const resolver = await createExecutionIdentityResolverV3(dictionary);
+  const lookupCounts = { unit: 0, horizon: 0, group: 0 };
+  const countingResolver = Object.freeze({
+    resolveUnit(canonicalJson: string) {
+      lookupCounts.unit += 1;
+      return resolver.resolveUnit(canonicalJson);
+    },
+    resolveHorizon(canonicalJson: string) {
+      lookupCounts.horizon += 1;
+      return resolver.resolveHorizon(canonicalJson);
+    },
+    resolveGroup(canonicalJson: string) {
+      lookupCounts.group += 1;
+      return resolver.resolveGroup(canonicalJson);
+    },
+  });
   const resolved = await resolveExecutionIdentitiesForRowsV3(
-    highCardinalityRows, ["student"], ["turn"], "group", resolver,
+    highCardinalityRows, ["student"], ["turn"], "group", countingResolver,
   );
   assert.equal(resolved.length, highCardinalityRows.length);
   assert.deepEqual(resolved.map((binding) => binding.sourceRowIndex), highCardinalityRows.map((_, index) => index));
   assert.ok(resolved.every((binding) => binding.unitToken && binding.horizonToken && binding.groupToken));
+  assert.deepEqual(lookupCounts, {
+    unit: highCardinalityRows.length,
+    horizon: highCardinalityRows.length,
+    group: highCardinalityRows.length,
+  });
 
   const source = readFileSync(new URL("../lib/open-ena/model-v3/identity.ts", import.meta.url), "utf8");
   const resolverSource = resolveExecutionIdentityForRowV3.toString();
@@ -343,6 +399,48 @@ test("single-row resolution snapshots row and columns before its first await", a
   assert.equal(binding.groupToken, dictionary.groups[0].token);
 });
 
+test("single-row resolution derives every role from one coherent descriptor snapshot", async () => {
+  const versions = [
+    { unit: "u1", horizon: "h1", group: "g1" },
+    { unit: "u2", horizon: "h2", group: "g2" },
+    { unit: "u3", horizon: "h3", group: "g3" },
+  ];
+  const dictionary = await buildExecutionIdentityDictionaryV3(
+    versions, ["unit"], ["horizon"], "group",
+  );
+  const resolver = await createExecutionIdentityResolverV3(dictionary);
+  let descriptorCalls = 0;
+  let ordinaryGetCalls = 0;
+  const proxiedRow = new Proxy({ unit: "unused", horizon: "unused", group: "unused" }, {
+    get() {
+      ordinaryGetCalls += 1;
+      throw new Error("ordinary row get must not execute");
+    },
+    getOwnPropertyDescriptor(_target, key) {
+      const version = versions[Math.floor(descriptorCalls / 3) % versions.length];
+      descriptorCalls += 1;
+      return {
+        configurable: true,
+        enumerable: true,
+        writable: true,
+        value: version[key as keyof typeof version],
+      };
+    },
+  });
+
+  const binding = await resolveExecutionIdentityForRowV3(
+    proxiedRow, ["unit"], ["horizon"], "group", resolver,
+  );
+  const unit = dictionary.units.find((entry) => entry.token === binding.unitToken);
+  const horizon = dictionary.horizons.find((entry) => entry.token === binding.horizonToken);
+  const group = dictionary.groups.find((entry) => entry.token === binding.groupToken);
+  assert.equal(descriptorCalls, 3);
+  assert.equal(ordinaryGetCalls, 0);
+  assert.equal(unit?.fields[0].value.value, "u1");
+  assert.equal(horizon?.fields[0].value.value, "h1");
+  assert.equal(group?.fields[0].value.value, "g1");
+});
+
 test("tampered dictionaries are rejected before resolver creation", async () => {
   const dictionary = await buildExecutionIdentityDictionaryV3(rows, ["student"], ["turn"], "group");
   const tamperCases = [
@@ -359,6 +457,53 @@ test("tampered dictionaries are rejected before resolver creation", async () => 
     tamper(copy);
     await assert.rejects(createExecutionIdentityResolverV3(copy), /tamper|duplicate|canonical|hash|token|label|collision|invalid/i);
   }
+});
+
+test("dictionary validation rejects blank labels and labels colliding with any internal token", async () => {
+  const dictionary = await buildExecutionIdentityDictionaryV3(rows, ["student"], ["turn"], "group");
+  const tamperCases = [
+    (copy: typeof dictionary) => { copy.units[0].displayLabel = ""; },
+    (copy: typeof dictionary) => { copy.units[0].displayLabel = "   "; },
+    (copy: typeof dictionary) => { copy.units[0].displayLabel = copy.units[0].token; },
+    (copy: typeof dictionary) => { copy.units[0].displayLabel = copy.units[1].token; },
+    (copy: typeof dictionary) => { copy.units[0].displayLabel = copy.horizons[0].token; },
+  ];
+  for (const tamper of tamperCases) {
+    const copy = structuredClone(dictionary);
+    tamper(copy);
+    await assert.rejects(validateExecutionIdentityDictionaryV3(copy), /display|label|token|invalid/i);
+  }
+
+  const reordered = structuredClone(dictionary);
+  reordered.units.reverse();
+  reordered.horizons.reverse();
+  reordered.units[0].displayLabel = reordered.horizons[0].token;
+  await assert.rejects(validateExecutionIdentityDictionaryV3(reordered), /display|label|token|invalid/i);
+});
+
+test("dictionary validation hashes each canonical identity once across all roles", async () => {
+  const dictionary = await buildExecutionIdentityDictionaryV3([{ id: "shared" }], ["id"], ["id"], "id");
+  const subtle = globalThis.crypto.subtle;
+  const originalDigest = subtle.digest;
+  const originalOwnDigestDescriptor = Object.getOwnPropertyDescriptor(subtle, "digest");
+  let digestCalls = 0;
+  Object.defineProperty(subtle, "digest", {
+    configurable: true,
+    value: async (...args: Parameters<SubtleCrypto["digest"]>) => {
+      digestCalls += 1;
+      return originalDigest.apply(subtle, args);
+    },
+  });
+  try {
+    await validateExecutionIdentityDictionaryV3(dictionary);
+  } finally {
+    if (originalOwnDigestDescriptor === undefined) {
+      Reflect.deleteProperty(subtle, "digest");
+    } else {
+      Object.defineProperty(subtle, "digest", originalOwnDigestDescriptor);
+    }
+  }
+  assert.equal(digestCalls, 1);
 });
 
 test("pure digest binding assertion fails closed on forged collisions and allows exact duplicates", () => {

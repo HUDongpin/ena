@@ -62,13 +62,6 @@ function assertColumnsV3(columns: readonly string[], label: string): string[] {
   return copy;
 }
 
-function assertRowV3(row: unknown, rowIndex: number | string): Record<string, unknown> {
-  if (row === null || typeof row !== "object" || Array.isArray(row)) {
-    throw new TypeError(`row ${rowIndex} must be an object.`);
-  }
-  return row as Record<string, unknown>;
-}
-
 function readRowPropertyV3(row: Record<string, unknown>, column: string, rowLabel: string): unknown {
   if (!own.call(row, column)) {
     throw new TypeError(`${rowLabel} is missing required property ${JSON.stringify(column)}.`);
@@ -220,6 +213,11 @@ function indexIdentityCompositesV3(
   const roleLabel = namespace[0].toUpperCase() + namespace.slice(1);
   const baseLabels = unique.map((composite) => `${roleLabel} ${baseDisplayLabelV3(composite.fields)}`);
   const rawLabels = new Set(baseLabels);
+  const baseLabelCounts = new Map<string, number>();
+  for (const baseLabel of baseLabels) {
+    baseLabelCounts.set(baseLabel, (baseLabelCounts.get(baseLabel) ?? 0) + 1);
+  }
+  const nextSuffixByTypedLabel = new Map<string, number>();
 
   let tokenIndex = 0;
   return unique.map((composite, index) => {
@@ -230,18 +228,20 @@ function indexIdentityCompositesV3(
       token = `${prefix}${String(tokenIndex).padStart(6, "0")}`;
     }
     tokenIndex += 1;
-    const otherRawLabels = new Set(rawLabels);
-    otherRawLabels.delete(baseLabel);
     const typedLabel = `${baseLabel} [${typedDisplayDisambiguatorV3(composite.fields)}]`;
     let displayLabel = baseLabel;
-    if (otherRawLabels.has(displayLabel) || allocatedLabels.has(displayLabel) || reservedStrings.has(displayLabel) || displayLabel === token) {
+    if ((baseLabelCounts.get(baseLabel) ?? 0) > 1
+      || allocatedLabels.has(displayLabel)
+      || reservedStrings.has(displayLabel)
+      || displayLabel === token) {
       displayLabel = typedLabel;
-      let suffix = 2;
-      while (otherRawLabels.has(displayLabel) || rawLabels.has(displayLabel) || allocatedLabels.has(displayLabel)
+      let suffix = nextSuffixByTypedLabel.get(typedLabel) ?? 2;
+      while (rawLabels.has(displayLabel) || allocatedLabels.has(displayLabel)
         || reservedStrings.has(displayLabel) || displayLabel === token) {
         displayLabel = `${typedLabel} #${suffix}`;
         suffix += 1;
       }
+      nextSuffixByTypedLabel.set(typedLabel, suffix);
     }
     allocatedLabels.add(displayLabel);
     return {
@@ -402,6 +402,7 @@ async function validateExecutionIdentityDictionarySnapshotV3(
   const allBindings: Array<Pick<CompositeIdentityV3, "sha256" | "canonicalJson">> = [];
   const allTokens = new Set<string>();
   const allLabels = new Set<string>();
+  const digestByCanonicalJson = new Map<string, string>();
   for (const role of ["Unit", "Horizon", "Group"] as const) {
     const key = `${role.toLowerCase()}s` as "units" | "horizons" | "groups";
     const rawEntries = dictionarySnapshot[key];
@@ -410,6 +411,9 @@ async function validateExecutionIdentityDictionarySnapshotV3(
       if (typeof entry.token !== "string" || typeof entry.displayLabel !== "string"
         || typeof entry.canonicalJson !== "string" || typeof entry.sha256 !== "string") {
         throw new TypeError(`Malformed ${role} identity entry.`);
+      }
+      if (entry.displayLabel.trim().length === 0) {
+        throw new TypeError(`${role} identity display label must be nonblank.`);
       }
       validateNamespaceTokenV3(entry.token, role);
       if (entry.sha256 !== entry.sha256.toLowerCase()) throw new TypeError(`Malformed ${role} identity digest.`);
@@ -424,10 +428,19 @@ async function validateExecutionIdentityDictionarySnapshotV3(
       if (canonicalIdentities.has(entry.canonicalJson)) throw new Error(`Duplicate ${role} identity canonical values.`);
       canonicalIdentities.add(entry.canonicalJson);
       allBindings.push(entry);
-      if (entry.displayLabel === entry.token) throw new Error(`Invalid ${role} identity display label.`);
-      if (entry.sha256 !== await sha256TextV3(entry.canonicalJson)) {
+      let expectedDigest = digestByCanonicalJson.get(entry.canonicalJson);
+      if (expectedDigest === undefined) {
+        expectedDigest = await sha256TextV3(entry.canonicalJson);
+        digestByCanonicalJson.set(entry.canonicalJson, expectedDigest);
+      }
+      if (entry.sha256 !== expectedDigest) {
         throw new Error(`Invalid ${role} identity digest.`);
       }
+    }
+  }
+  for (const displayLabel of allLabels) {
+    if (allTokens.has(displayLabel)) {
+      throw new Error("Identity display labels must not equal internal identity tokens.");
     }
   }
   assertUniqueIdentityHashBindingsV3(allBindings);
@@ -441,16 +454,14 @@ export async function validateExecutionIdentityDictionaryV3(
   return validateExecutionIdentityDictionarySnapshotV3(snapshot);
 }
 
-function resolverMapsV3(
+function resolverMapV3(
   entries: readonly ExecutionIdentityEntryV3[],
-): { byCanonicalJson: Map<string, ExecutionIdentityEntryV3>; byToken: Map<string, ExecutionIdentityEntryV3> } {
+): Map<string, ExecutionIdentityEntryV3> {
   const byCanonicalJson = new Map<string, ExecutionIdentityEntryV3>();
-  const byToken = new Map<string, ExecutionIdentityEntryV3>();
   for (const entry of entries) {
     byCanonicalJson.set(entry.canonicalJson, entry);
-    byToken.set(entry.token, entry);
   }
-  return { byCanonicalJson, byToken };
+  return byCanonicalJson;
 }
 
 export async function createExecutionIdentityResolverV3(
@@ -458,18 +469,18 @@ export async function createExecutionIdentityResolverV3(
 ): Promise<ExecutionIdentityResolverV3> {
   const snapshot = snapshotExecutionIdentityDictionaryV3(dictionary);
   const validated = await validateExecutionIdentityDictionarySnapshotV3(snapshot);
-  const units = resolverMapsV3(validated.units);
-  const horizons = resolverMapsV3(validated.horizons);
-  const groups = resolverMapsV3(validated.groups);
+  const units = resolverMapV3(validated.units);
+  const horizons = resolverMapV3(validated.horizons);
+  const groups = resolverMapV3(validated.groups);
   const resolve = (map: ReadonlyMap<string, ExecutionIdentityEntryV3>, role: IdentityRoleV3) => (canonicalJson: string): string => {
     const entry = map.get(canonicalJson);
     if (entry === undefined) throw new Error(`Unknown ${role} identity.`);
     return entry.token;
   };
   return Object.freeze({
-    resolveUnit: resolve(units.byCanonicalJson, "Unit"),
-    resolveHorizon: resolve(horizons.byCanonicalJson, "Horizon"),
-    resolveGroup: resolve(groups.byCanonicalJson, "Group"),
+    resolveUnit: resolve(units, "Unit"),
+    resolveHorizon: resolve(horizons, "Horizon"),
+    resolveGroup: resolve(groups, "Group"),
   });
 }
 
@@ -544,11 +555,33 @@ export async function resolveExecutionIdentityForRowV3(
   groupColumn: string | null,
   resolver: ExecutionIdentityResolverV3,
 ): Promise<{ unitToken: string; horizonToken: string; groupToken: string | null }> {
-  const unit = buildCompositeIdentityMaterialV3(row, unitColumns, "row unit");
-  const horizon = buildCompositeIdentityMaterialV3(row, horizonColumns, "row horizon");
+  const record = snapshotPlainJsonRecordV3(row, "row");
+  const unitColumnSnapshot = snapshotDenseJsonArrayV3(unitColumns, "unitColumns");
+  const horizonColumnSnapshot = snapshotDenseJsonArrayV3(horizonColumns, "horizonColumns");
+  const normalizedUnitColumns = assertColumnsV3(unitColumnSnapshot as string[], "unitColumns");
+  const normalizedHorizonColumns = assertColumnsV3(horizonColumnSnapshot as string[], "horizonColumns");
+  const capturedGroupColumn = groupColumn;
+  if (capturedGroupColumn !== null
+    && (typeof capturedGroupColumn !== "string" || capturedGroupColumn.trim().length === 0)) {
+    throw new TypeError("groupColumn must be null or a nonblank string.");
+  }
+  return resolveExecutionIdentityFromSnapshotsV3(
+    record, normalizedUnitColumns, normalizedHorizonColumns, capturedGroupColumn, resolver,
+  );
+}
+
+function resolveExecutionIdentityFromSnapshotsV3(
+  record: Record<string, unknown>,
+  normalizedUnitColumns: readonly string[],
+  normalizedHorizonColumns: readonly string[],
+  groupColumn: string | null,
+  resolver: ExecutionIdentityResolverV3,
+): { unitToken: string; horizonToken: string; groupToken: string | null } {
+  const unit = buildCompositeIdentityMaterialFromSnapshotsV3(record, normalizedUnitColumns, "row unit");
+  const horizon = buildCompositeIdentityMaterialFromSnapshotsV3(record, normalizedHorizonColumns, "row horizon");
   const group = groupColumn === null
     ? null
-    : buildCompositeIdentityMaterialV3(row, [groupColumn], "row group");
+    : buildCompositeIdentityMaterialFromSnapshotsV3(record, [groupColumn], "row group");
   return {
     unitToken: resolveMaterialV3(unit, resolver.resolveUnit, "Unit"),
     horizonToken: resolveMaterialV3(horizon, resolver.resolveHorizon, "Horizon"),
@@ -572,13 +605,10 @@ export async function resolveExecutionIdentitiesForRowsV3(
     throw new TypeError("groupColumn must be null or a nonblank string.");
   }
   const rowRecords = rowSnapshot.map((row, rowIndex) => snapshotPlainJsonRecordV3(row, `row ${rowIndex}`));
-  const bindings: Array<{ sourceRowIndex: number; unitToken: string; horizonToken: string; groupToken: string | null }> = [];
-  const resolvedRows = rowRecords.map((row) => resolveExecutionIdentityForRowV3(
-    row, normalizedUnitColumns, normalizedHorizonColumns, groupColumn, resolver,
-  ));
-  const resolved = await Promise.all(resolvedRows);
-  for (let sourceRowIndex = 0; sourceRowIndex < resolved.length; sourceRowIndex += 1) {
-    bindings.push({ sourceRowIndex, ...resolved[sourceRowIndex] });
-  }
-  return bindings;
+  return rowRecords.map((row, sourceRowIndex) => ({
+    sourceRowIndex,
+    ...resolveExecutionIdentityFromSnapshotsV3(
+      row, normalizedUnitColumns, normalizedHorizonColumns, groupColumn, resolver,
+    ),
+  }));
 }
