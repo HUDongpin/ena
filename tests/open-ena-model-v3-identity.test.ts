@@ -103,6 +103,32 @@ test("display labels are globally unique and deterministic under adversarial col
   assert.ok(first.units.every((entry) => !first.units.some((other) => other !== entry && other.token === entry.displayLabel)));
 });
 
+test("display labels are unique across Unit, Horizon, and Group roles", async () => {
+  const dictionary = await buildExecutionIdentityDictionaryV3(
+    [{ id: "x" }, { id: 1 }, { id: "1" }, { id: "1 [id:number(1)]" }],
+    ["id"], ["id"], "id",
+  );
+  const allLabels = [...dictionary.units, ...dictionary.horizons, ...dictionary.groups].map((entry) => entry.displayLabel);
+  assert.equal(new Set(allLabels).size, allLabels.length);
+});
+
+test("reserved strings in unselected headers and values are excluded from every namespace token", async () => {
+  const reserved = [
+    "__open_ena_unit_v3_000000",
+    "__open_ena_horizon_v3_000000",
+    "__open_ena_group_v3_000000",
+  ];
+  const sourceRows = [
+    { id: "first", unusedHeader: reserved[0], unusedValue: reserved[1], another: reserved[2] },
+    { id: "second", unusedHeader: reserved[2], unusedValue: reserved[0], another: reserved[1] },
+  ];
+  const first = await buildExecutionIdentityDictionaryV3(sourceRows, ["id"], ["id"], null);
+  const second = await buildExecutionIdentityDictionaryV3([...sourceRows].reverse(), ["id"], ["id"], null);
+  const tokens = [...first.units, ...first.horizons, ...first.groups].map((entry) => entry.token);
+  assert.ok(tokens.every((token) => !reserved.includes(token)));
+  assert.deepEqual(first, second);
+});
+
 test("optional null group has no entries and typed group values resolve distinctly", async () => {
   const noGroup = await buildExecutionIdentityDictionaryV3(rows, ["student"], ["turn"], null);
   assert.deepEqual(noGroup.groups, []);
@@ -211,6 +237,55 @@ test("one-time resolver indexes dictionaries and batch resolution binds every so
   assert.equal(resolverSource.includes(".filter("), false);
   assert.equal(resolverSource.includes(".find("), false);
   assert.equal(source.includes("resolveExecutionIdentityForRowV3.toString"), false);
+  assert.match(source, /new Map<string, .*canonicalJson/);
+  assert.equal((source.match(/sha256TextV3\(material\.canonicalJson\)/g) ?? []).length, 1);
+});
+
+test("resolver snapshots synchronously before caller mutation and remains opaque", async () => {
+  const original = await buildExecutionIdentityDictionaryV3(rows, ["student"], ["turn"], "group");
+  const mutable = structuredClone(original);
+  const resolverPromise = createExecutionIdentityResolverV3(mutable);
+  mutable.units[0].token = "__open_ena_unit_v3_999999";
+  mutable.units[0].fields[0].value.value = "replaced";
+  mutable.units[0].canonicalJson = "{}";
+  mutable.units = [];
+  const resolver = await resolverPromise;
+  const binding = await resolveExecutionIdentityForRowV3(rows[0], ["student"], ["turn"], "group", resolver);
+  assert.equal(binding.unitToken, original.units.find((entry) => entry.fields[0].value.value === "s1")?.token);
+  assert.deepEqual(Object.keys(resolver).sort(), ["resolveGroup", "resolveHorizon", "resolveUnit"]);
+  assert.throws(() => { (resolver as unknown as { resolveUnit: unknown }).resolveUnit = () => "bad"; }, TypeError);
+  assert.equal(Object.getOwnPropertyNames(resolver).some((name) => name.includes("Map") || name.includes("entries")), false);
+});
+
+test("dictionary build and resolver accept proxied boundaries without ordinary gets", async () => {
+  let getCount = 0;
+  const noGet = () => {
+    getCount += 1;
+    throw new Error("ordinary get must not execute");
+  };
+  const sourceRow = new Proxy({ id: "x", turn: 1, group: true }, { get: noGet });
+  const rowsProxy = new Proxy([sourceRow], { get: noGet });
+  const unitColumns = new Proxy(["id"], { get: noGet });
+  const horizonColumns = new Proxy(["turn"], { get: noGet });
+  const dictionary = await buildExecutionIdentityDictionaryV3(rowsProxy, unitColumns, horizonColumns, "group");
+  assert.equal(getCount, 0);
+
+  const proxyEntry = (entry: (typeof dictionary.units)[number]) => new Proxy({
+    ...entry,
+    fields: new Proxy(entry.fields.map((field) => new Proxy({
+      ...field,
+      value: new Proxy({ ...field.value }, { get: noGet }),
+    }, { get: noGet })), { get: noGet }),
+  }, { get: noGet });
+  const proxiedDictionary = new Proxy({
+    units: new Proxy(dictionary.units.map(proxyEntry), { get: noGet }),
+    horizons: new Proxy(dictionary.horizons.map(proxyEntry), { get: noGet }),
+    groups: new Proxy(dictionary.groups.map(proxyEntry), { get: noGet }),
+  }, { get: noGet });
+  const resolver = await createExecutionIdentityResolverV3(proxiedDictionary);
+  assert.equal(getCount, 0);
+  const binding = await resolveExecutionIdentityForRowV3(sourceRow, ["id"], ["turn"], "group", resolver);
+  assert.equal(binding.groupToken, dictionary.groups[0].token);
 });
 
 test("tampered dictionaries are rejected before resolver creation", async () => {
