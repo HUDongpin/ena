@@ -8,7 +8,7 @@ import { accumulateData, sphereNorm } from "jena-js";
 import type { Row } from "jena-js";
 import { svdRotation } from "jena-js/rotation";
 import { scalarIdentityV3 } from "./identity";
-import { resolveHorizonOrderV3, resolveRowOrderV3 } from "./ordering";
+import { OrderingDomainErrorV3, resolveHorizonOrderV3, resolveRowOrderV3 } from "./ordering";
 import { datasetHashKindFor } from "../types";
 import type { ParsedDataset, DatasetHashKind } from "../types";
 import type {
@@ -215,11 +215,11 @@ interface ScientificNetworksV3 {
 
 const own = Object.prototype.hasOwnProperty;
 const SAMPLE_LIMIT = 5 as const;
-// A naive mean of N normalized IEEE-754 values can accumulate O(N * eps)
-// rounding error. Eight ulps per contributing term covers that bound while
-// keeping genuinely distinct structure above roughly 1e-13 for ordinary
-// small-group diagnostics.
-const NUMERICAL_ZERO_ULPS_PER_TERM_V3 = 8;
+// Means use compensated summation, so replication count is not a scientific
+// source of uncertainty. This fixed per-dimension allowance covers arithmetic
+// in centering and the subsequent SVD covariance while keeping a diagnosis
+// invariant when an observation population is repeated.
+const NUMERICAL_ZERO_ULPS_PER_DIMENSION_V3 = 8;
 const LOWERCASE_SHA256 = /^[a-f0-9]{64}$/u;
 const DIAGNOSTIC_RANK = new Map<ModelDiagnosticIdV3, number>(
   MODEL_DIAGNOSTIC_IDS_V3.map((id, index) => [id, index]),
@@ -1024,16 +1024,11 @@ function sharedHorizonDiagnosticV3(
   });
 }
 
-function errorTextV3(error: unknown): string {
-  return error instanceof Error ? error.message : "";
-}
-
 function orderFailureDiagnosticV3(
   kind: "row" | "horizon",
   error: unknown,
 ): ModelDiagnosticV3 {
-  const text = errorTextV3(error);
-  if (/source-order confirmation/iu.test(text)) {
+  if (error instanceof OrderingDomainErrorV3 && error.code === "SOURCE_CONFIRMATION_STALE") {
     return diagnosticV3({
       id: "STANDARD_SOURCE_ORDER_CONFIRMATION_STALE",
       severity: "error",
@@ -1044,7 +1039,7 @@ function orderFailureDiagnosticV3(
       blocks: ["build-model"],
     });
   }
-  if (kind === "horizon" && text.startsWith("STANDARD_HORIZON_ORDER_UNRESOLVED_TIE:")) {
+  if (kind === "horizon" && error instanceof OrderingDomainErrorV3 && error.code === "HORIZON_TIE") {
     return diagnosticV3({
       id: "STANDARD_HORIZON_ORDER_UNRESOLVED_TIE",
       severity: "error",
@@ -1276,15 +1271,25 @@ function scientificNetworksFiniteV3(networks: ScientificNetworksV3): boolean {
 function meanVectorV3(vectors: readonly (readonly number[])[]): number[] {
   const width = vectors[0]?.length ?? 0;
   if (vectors.length === 0) return zeroVectorV3(width);
-  return Array.from({ length: width }, (_, column) => (
-    vectors.reduce((sum, vector) => sum + (vector[column] ?? 0), 0) / vectors.length
-  ));
+  return Array.from({ length: width }, (_, column) => {
+    let sum = 0;
+    let compensation = 0;
+    for (const vector of vectors) {
+      const value = vector[column] ?? 0;
+      const next = sum + value;
+      compensation += Math.abs(sum) >= Math.abs(value)
+        ? (sum - next) + value
+        : (value - next) + sum;
+      sum = next;
+    }
+    return (sum + compensation) / vectors.length;
+  });
 }
 
-function numericalZeroToleranceV3(scale: number, termCount: number): number {
-  return NUMERICAL_ZERO_ULPS_PER_TERM_V3
+function numericalZeroToleranceV3(scale: number, dimension: number): number {
+  return NUMERICAL_ZERO_ULPS_PER_DIMENSION_V3
     * Number.EPSILON
-    * Math.max(1, termCount)
+    * Math.max(1, dimension)
     * Math.max(1, scale);
 }
 
@@ -1320,16 +1325,17 @@ function centeredRankV3(vectors: readonly number[][], centerAlignToOrigin: boole
   ));
   const inputScale = maximumAbsoluteValueV3(normalized);
   const centeredScale = maximumAbsoluteValueV3(centered);
+  const vectorDimension = normalized[0]?.length ?? 0;
   if (centeredScale <= numericalZeroToleranceV3(
     inputScale,
-    Math.max(centerPopulation.length, normalized[0]?.length ?? 0),
+    vectorDimension,
   )) return 0;
   const eigenvalues = svdRotation(centered).eigenvalues;
   const leading = eigenvalues[0] ?? 0;
   if (leading === 0) return 0;
   const roundingFloor = numericalZeroToleranceV3(
     inputScale,
-    Math.max(centerPopulation.length, normalized[0]?.length ?? 0),
+    vectorDimension,
   ) ** 2;
   const threshold = Math.max(Number.MIN_VALUE, leading * 1e-12, roundingFloor);
   return eigenvalues.filter((value) => value > threshold).length;
@@ -1581,7 +1587,7 @@ function meansDiagnosticsV3(
     || vectorNearZeroV3(
       direction,
       meanScale,
-      Math.max(direction.length, negativeUnits.length, positiveUnits.length),
+      direction.length,
     )) {
     const selectedUnitCount = negativeUnits.length + positiveUnits.length;
     output.push(diagnosticV3({
@@ -1791,7 +1797,8 @@ export function validateStandardDraftV3(
           });
         } catch (error) {
           if (unitValidation.valid && horizonValidation.valid
-            || /source-order confirmation/iu.test(errorTextV3(error))) throw error;
+            || (error instanceof OrderingDomainErrorV3
+              && error.code === "SOURCE_CONFIRMATION_STALE")) throw error;
         }
       }
     } catch (error) {
@@ -1839,7 +1846,8 @@ export function validateStandardDraftV3(
           );
         } catch (error) {
           if (unitValidation.valid && horizonValidation.valid
-            || /source-order confirmation/iu.test(errorTextV3(error))) throw error;
+            || (error instanceof OrderingDomainErrorV3
+              && error.code === "SOURCE_CONFIRMATION_STALE")) throw error;
         }
       } catch (error) {
         horizonOrderPrerequisitesValid = false;

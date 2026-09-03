@@ -790,6 +790,46 @@ test("exact-identical normalized targets remain rank zero and Means-identical un
   assert.equal(has(means, "STANDARD_MEANS_IDENTICAL"), true);
 });
 
+test("SVD and Means diagnostics are invariant when distinct Frequency observations are replicated equally", () => {
+  for (const repetitions of [1, 50, 500]) {
+    const rows = Array.from({ length: repetitions }, (_, index) => [
+      {
+        unit: `negative-${index}`,
+        horizon: `negative-horizon-${index}`,
+        group: "negative",
+        turn: index * 2 + 1,
+        phase: index * 2 + 1,
+        A: 1,
+        B: 2,
+        C: 3,
+      },
+      {
+        unit: `positive-${index}`,
+        horizon: `positive-horizon-${index}`,
+        group: "positive",
+        turn: index * 2 + 2,
+        phase: index * 2 + 2,
+        A: 1,
+        B: 2,
+        C: 3 + 1e-12,
+      },
+    ]).flat();
+    const input = dataset(rows);
+    const svd = output(input, draft({ weighting: "frequency" }));
+    assert.equal(has(svd, "STANDARD_TARGET_RANK_ZERO"), false, `SVD ${repetitions}x`);
+    assert.equal(has(svd, "STANDARD_SVD_ONE_DIMENSIONAL"), true, `SVD ${repetitions}x`);
+
+    const means = output(input, {
+      ...meansDraft(
+        { type: "string", value: "negative" },
+        { type: "string", value: "positive" },
+      ),
+      weighting: "frequency",
+    });
+    assert.equal(has(means, "STANDARD_MEANS_IDENTICAL"), false, `Means ${repetitions}x`);
+  }
+});
+
 test("scale-aware numerical tolerance preserves real small target structure", () => {
   const input = dataset([
     { unit: "u1", horizon: "h1", group: "negative", turn: 1, phase: 1, A: 1, B: 1, C: 1 },

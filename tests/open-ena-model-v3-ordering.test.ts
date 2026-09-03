@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  OrderingDomainErrorV3,
   resolveHorizonOrderV3,
   resolveRowOrderV3,
 } from "../lib/open-ena/model-v3/ordering";
@@ -722,6 +723,38 @@ test("source-order confirmation requires a trusted current binding and expires o
     policy,
     resolutionContext(reorderedRows.length, "standard", OTHER_HASH),
   ), /dataset|hash|expired|binding/i);
+});
+
+test("ordering domain failures expose stable codes without parsing English messages", () => {
+  const capture = (operation: () => unknown): unknown => {
+    try {
+      operation();
+    } catch (error) {
+      return error;
+    }
+    assert.fail("expected an ordering domain error");
+  };
+  const rows = [{ horizon: "h1" }, { horizon: "h2" }];
+  const stale = capture(() => resolveRowOrderV3(
+    rows,
+    ["horizon"],
+    confirmedPolicy(rows.length, ["horizon"]),
+    resolutionContext(rows.length, "standard", OTHER_HASH),
+  ));
+  assert.equal(stale instanceof OrderingDomainErrorV3, true);
+  assert.equal((stale as OrderingDomainErrorV3).code, "SOURCE_CONFIRMATION_STALE");
+
+  const tie = capture(() => resolveHorizonOrderV3(
+    [
+      { unit: "u1", horizon: "h1", order: 1 },
+      { unit: "u1", horizon: "h2", order: 1 },
+    ],
+    ["unit"],
+    ["horizon"],
+    columnsPolicy(ascendingNumber("order")),
+  ));
+  assert.equal(tie instanceof OrderingDomainErrorV3, true);
+  assert.equal((tie as OrderingDomainErrorV3).code, "HORIZON_TIE");
 });
 
 test("source-order confirmation expires when the current analysis family differs from its bound family", () => {

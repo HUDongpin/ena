@@ -18,6 +18,18 @@ import type {
 type SourceRowV3 = Record<string, unknown>;
 type ResolvedOrderValueV3 = string | number;
 
+export type OrderingDomainErrorCodeV3 = "SOURCE_CONFIRMATION_STALE" | "HORIZON_TIE";
+
+export class OrderingDomainErrorV3 extends Error {
+  readonly code: OrderingDomainErrorCodeV3;
+
+  constructor(code: OrderingDomainErrorCodeV3, message: string) {
+    super(message);
+    this.name = "OrderingDomainErrorV3";
+    this.code = code;
+  }
+}
+
 export type DeepReadonlyV3<T> = T extends object
   ? { readonly [Key in keyof T]: DeepReadonlyV3<T[Key]> }
   : T;
@@ -411,6 +423,14 @@ function lowercaseSha256V3(value: unknown, label: string): string {
   return value;
 }
 
+function sourceConfirmationErrorV3(error: unknown): OrderingDomainErrorV3 {
+  if (error instanceof OrderingDomainErrorV3) return error;
+  return new OrderingDomainErrorV3(
+    "SOURCE_CONFIRMATION_STALE",
+    error instanceof Error ? error.message : "Source-order confirmation is stale or invalid.",
+  );
+}
+
 function snapshotResolutionContextV3(
   value: unknown,
   currentRowCount: number,
@@ -543,14 +563,18 @@ function snapshotOrderPolicyV3(
     };
   }
   if (record.kind === "source-order-confirmed") {
-    assertExactKeysV3(record, ["kind", "confirmation"], "source-order-confirmed policy");
-    return {
-      policy: {
-        kind: "source-order-confirmed",
-        confirmation: snapshotConfirmationV3(record.confirmation, rowCount, requiredRelevantColumns),
-      },
-      keys: null,
-    };
+    try {
+      assertExactKeysV3(record, ["kind", "confirmation"], "source-order-confirmed policy");
+      return {
+        policy: {
+          kind: "source-order-confirmed",
+          confirmation: snapshotConfirmationV3(record.confirmation, rowCount, requiredRelevantColumns),
+        },
+        keys: null,
+      };
+    } catch (error) {
+      throw sourceConfirmationErrorV3(error);
+    }
   }
   throw new TypeError("order policy.kind must be columns or source-order-confirmed.");
 }
@@ -566,23 +590,41 @@ function bindSourceOrderV3(
 ): ResolvedSourceOrderBindingV3 | null {
   if (policy.kind === "columns") return null;
   if (context === null) {
-    throw new TypeError("A trusted ordering resolution context is required for source-order-confirmed policy.");
+    throw new OrderingDomainErrorV3(
+      "SOURCE_CONFIRMATION_STALE",
+      "A trusted ordering resolution context is required for source-order-confirmed policy.",
+    );
   }
   if (context.analysisFamily !== context.confirmationAnalysisFamily) {
-    throw new Error("Source-order confirmation has expired because the analysis family changed.");
+    throw new OrderingDomainErrorV3(
+      "SOURCE_CONFIRMATION_STALE",
+      "Source-order confirmation has expired because the analysis family changed.",
+    );
   }
   if (policy.confirmation.analysisFamily !== context.confirmationAnalysisFamily
     || policy.confirmation.analysisFamily !== context.analysisFamily) {
-    throw new Error("Source-order confirmation has expired because its persisted analysis family changed.");
+    throw new OrderingDomainErrorV3(
+      "SOURCE_CONFIRMATION_STALE",
+      "Source-order confirmation has expired because its persisted analysis family changed.",
+    );
   }
   if (requireStandardFamily && context.analysisFamily !== "standard") {
-    throw new TypeError("Trajectory Horizon source order requires the standard analysis family.");
+    throw new OrderingDomainErrorV3(
+      "SOURCE_CONFIRMATION_STALE",
+      "Trajectory Horizon source order requires the standard analysis family.",
+    );
   }
   if (policy.confirmation.datasetSha256 !== context.datasetBinding.normalizedTableSha256) {
-    throw new Error("Source-order confirmation does not match the current dataset hash binding.");
+    throw new OrderingDomainErrorV3(
+      "SOURCE_CONFIRMATION_STALE",
+      "Source-order confirmation does not match the current dataset hash binding.",
+    );
   }
   if (policy.confirmation.rowCount !== context.datasetBinding.rowCount) {
-    throw new Error("Source-order confirmation rowCount does not match the current dataset binding.");
+    throw new OrderingDomainErrorV3(
+      "SOURCE_CONFIRMATION_STALE",
+      "Source-order confirmation rowCount does not match the current dataset binding.",
+    );
   }
   return {
     analysisFamily: context.analysisFamily,
@@ -788,9 +830,15 @@ export function resolveRowOrderV3(
   const rowRecords = snapshotRowsV3(rows);
   const normalizedHorizonColumns = snapshotColumnListV3(horizonColumns, "horizonColumns");
   const normalizedPolicy = snapshotOrderPolicyV3(policy, rowRecords.length, normalizedHorizonColumns);
-  const normalizedContext = context === undefined
-    ? null
-    : snapshotResolutionContextV3(context, rowRecords.length);
+  let normalizedContext: ReturnType<typeof snapshotResolutionContextV3> | null = null;
+  try {
+    normalizedContext = context === undefined
+      ? null
+      : snapshotResolutionContextV3(context, rowRecords.length);
+  } catch (error) {
+    if (normalizedPolicy.policy.kind === "source-order-confirmed") throw sourceConfirmationErrorV3(error);
+    throw error;
+  }
   const sourceOrderBinding = bindSourceOrderV3(normalizedPolicy.policy, normalizedContext, false);
   const textCollationBindings = textCollationBindingsV3(normalizedPolicy.keys);
   const groups = new Map<string, ResolvedRowV3[]>();
@@ -872,9 +920,15 @@ export function resolveHorizonOrderV3(
   const normalizedHorizonColumns = snapshotColumnListV3(horizonColumns, "horizonColumns");
   const requiredRelevantColumns = [...new Set([...normalizedUnitColumns, ...normalizedHorizonColumns])];
   const normalizedPolicy = snapshotOrderPolicyV3(policy, rowRecords.length, requiredRelevantColumns);
-  const normalizedContext = context === undefined
-    ? null
-    : snapshotResolutionContextV3(context, rowRecords.length);
+  let normalizedContext: ReturnType<typeof snapshotResolutionContextV3> | null = null;
+  try {
+    normalizedContext = context === undefined
+      ? null
+      : snapshotResolutionContextV3(context, rowRecords.length);
+  } catch (error) {
+    if (normalizedPolicy.policy.kind === "source-order-confirmed") throw sourceConfirmationErrorV3(error);
+    throw error;
+  }
   const sourceOrderBinding = bindSourceOrderV3(normalizedPolicy.policy, normalizedContext, true);
   const textCollationBindings = textCollationBindingsV3(normalizedPolicy.keys);
   const horizons = new Map<string, ResolvedHorizonV3>();
@@ -921,7 +975,10 @@ export function resolveHorizonOrderV3(
       steps.sort((left, right) => compareResolvedTuplesV3(left.values, right.values, normalizedPolicy.keys!));
       for (let index = 1; index < steps.length; index += 1) {
         if (compareResolvedTuplesV3(steps[index - 1].values, steps[index].values, normalizedPolicy.keys) === 0) {
-          throw new Error(`STANDARD_HORIZON_ORDER_UNRESOLVED_TIE:${unitKey}`);
+          throw new OrderingDomainErrorV3(
+            "HORIZON_TIE",
+            `STANDARD_HORIZON_ORDER_UNRESOLVED_TIE:${unitKey}`,
+          );
         }
       }
     }
