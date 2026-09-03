@@ -711,19 +711,50 @@ test("connectivity uses bounded prefix ranges instead of rescanning each wide wi
   assert.match(implementation, /canonicalJsonV3\s*\(\s*orderedPair\s*\)/u);
 });
 
-test("a 10k-row both-Infinity candidate preserves behavior without extent-width rescans", () => {
-  const count = 10_000;
+test("a below-budget multi-Unit both-Infinity candidate reaches exact Frequency diagnostics", () => {
+  const count = 100;
   const rows = Array.from({ length: count }, (_, turn) => ({
-    unit: "u",
+    unit: `u${turn % 2}`,
     horizon: "h",
     turn,
-    A: turn % 2 === 0 ? 1 : 0,
-    B: turn % 3 === 0 ? 1 : 0,
-    C: turn % 5 === 0 ? 1 : 0,
+    A: turn % 2 === 0 ? 1 : 0.5,
+    B: turn % 3 === 0 ? 2 : 0.25,
+    C: turn % 5 === 0 ? 3 : 0.125,
   }));
   const input = dataset(rows, ["unit", "horizon", "turn", "A", "B", "C"]);
-  const output = diagnosticsFor(input, movingDraft({ kind: "infinity" }, { kind: "infinity" }));
-  assert.deepEqual(withoutTask6NumericalDiagnostics(output), []);
+  const modelDraft = {
+    ...movingDraft({ kind: "infinity" }, { kind: "infinity" }),
+    weighting: "frequency" as const,
+  };
+  const output = diagnosticsFor(input, modelDraft);
+  assert.equal(output.some((entry) => entry.id === "RESOURCE_BUDGET_EXCEEDED"), false);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_OUTPUT_NONFINITE"), false);
+});
+
+test("a 10k-row multi-Unit both-Infinity candidate blocks before non-finite jENA work", () => {
+  const count = 10_000;
+  const rows = Array.from({ length: count }, (_, turn) => ({
+    unit: `u${turn % 2}`,
+    horizon: "shared",
+    turn,
+    A: 1e308,
+    B: 1e308,
+    C: 1e308,
+  }));
+  const input = dataset(rows, ["unit", "horizon", "turn", "A", "B", "C"]);
+  const modelDraft = {
+    ...movingDraft({ kind: "infinity" }, { kind: "infinity" }),
+    weighting: "frequency" as const,
+  };
+  const output = diagnosticsFor(input, modelDraft);
+  const resource = one(output, "RESOURCE_BUDGET_EXCEEDED");
+  assert.equal(resource.severity, "error");
+  assert.deepEqual(resource.blocks, ["build-model", "export-current-model", "export-reference"]);
+  assert.equal(resource.evidence?.totalCount, 1);
+  assert.match(resource.evidence?.samples[0]?.detail ?? "", /199990000.*100000000/u);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_HORIZON_SHARED_BY_MULTIPLE_UNITS"), true);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_OUTPUT_NONFINITE"), false);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_TARGET_RANK_ZERO"), false);
 });
 
 test("Moving Stanza finite back one means current only; larger back and forward form candidate edges", () => {

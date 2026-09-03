@@ -9,6 +9,14 @@ import type { Row } from "jena-js";
 import { svdRotation } from "jena-js/rotation";
 import { scalarIdentityV3 } from "./identity";
 import { OrderingDomainErrorV3, resolveHorizonOrderV3, resolveRowOrderV3 } from "./ordering";
+import {
+  MAX_ESTIMATED_EXPORT_BYTES_V3,
+  MAX_ESTIMATED_NUMERIC_CELLS_V3,
+  MAX_ESTIMATED_PEAK_BYTES_V3,
+  MAX_ESTIMATED_WINDOW_VISITS_V3,
+  estimateStandardResourcesV3,
+} from "./resource-budget";
+import type { StandardResourceEstimateV3 } from "./resource-budget";
 import { datasetHashKindFor } from "../types";
 import type { ParsedDataset, DatasetHashKind } from "../types";
 import type {
@@ -1670,6 +1678,69 @@ function trajectoryShapeDiagnosticV3(
   });
 }
 
+function standardResourceShapeV3(
+  rows: readonly Record<string, unknown>[],
+  unitColumns: readonly string[],
+  horizonColumns: readonly string[],
+  model: StandardModelTypeV3,
+  resolvedHorizonOrder: ReturnType<typeof resolveHorizonOrderV3> | null,
+): { unitCount: number; horizonSizes: number[]; trajectorySteps: number } {
+  const unitKeys = new Set<string>();
+  const horizonSizesByKey = new Map<string, number>();
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    unitKeys.add(identityKeyV3(rows[rowIndex], unitColumns, rowIndex, "Unit"));
+    const horizonKey = identityKeyV3(rows[rowIndex], horizonColumns, rowIndex, "Horizon");
+    horizonSizesByKey.set(horizonKey, (horizonSizesByKey.get(horizonKey) ?? 0) + 1);
+  }
+  const horizonSizes = [...horizonSizesByKey.entries()]
+    .sort(([left], [right]) => codeUnitCompareV3(left, right))
+    .map(([, size]) => size);
+  const trajectorySteps = model === "EndPoint"
+    ? unitKeys.size
+    : resolvedHorizonOrder!.unitSequences.reduce((total, sequence) => total + sequence.steps.length, 0);
+  return { unitCount: unitKeys.size, horizonSizes, trajectorySteps };
+}
+
+function resourceBudgetDiagnosticV3(
+  estimate: StandardResourceEstimateV3 | null,
+): ModelDiagnosticV3 {
+  const metrics = estimate === null ? null : {
+    "numeric-cells": {
+      value: estimate.estimatedNumericCells,
+      limit: MAX_ESTIMATED_NUMERIC_CELLS_V3,
+    },
+    "window-visits": {
+      value: estimate.estimatedWindowVisits,
+      limit: MAX_ESTIMATED_WINDOW_VISITS_V3,
+    },
+    "peak-bytes": {
+      value: estimate.estimatedPeakBytes,
+      limit: MAX_ESTIMATED_PEAK_BYTES_V3,
+    },
+    "export-bytes": {
+      value: estimate.estimatedExportBytes,
+      limit: MAX_ESTIMATED_EXPORT_BYTES_V3,
+    },
+  } as const;
+  const reasons = estimate?.blockedReasons ?? [];
+  const samples: ModelEvidenceSampleV3[] = estimate === null
+    ? [{ identity: "unsafe-arithmetic", detail: "The resource estimate could not be represented as exact nonnegative safe integers." }]
+    : reasons.slice(0, SAMPLE_LIMIT).map((reason) => ({
+        identity: reason,
+        detail: `Estimated ${reason} ${metrics![reason].value} exceeds the fixed limit ${metrics![reason].limit}.`,
+      }));
+  return diagnosticV3({
+    id: "RESOURCE_BUDGET_EXCEEDED",
+    severity: "error",
+    scope: "resources",
+    fieldPath: "resources",
+    summary: "The exact model configuration exceeds the fixed resource budget.",
+    detail: "No rows, Codes, extents, or Horizons were reduced automatically; revise the configuration explicitly before model construction or export.",
+    blocks: ["build-model", "export-current-model", "export-reference"],
+    evidence: evidenceV3(estimate === null ? 1 : reasons.length, samples),
+  });
+}
+
 export function validateStandardDraftV3(
   datasetValue: ParsedDataset,
   bindingValue: DatasetBindingV3,
@@ -1967,6 +2038,43 @@ export function validateStandardDraftV3(
     .map((code) => profileByCode.get(code))
     .filter((profile): profile is NormalizedCodeProfileV3 => profile !== undefined);
   const basicPrerequisitesValid = dataset.rows.length > 0 && scientificFieldPrerequisitesValid;
+  const rowOrderReady = modelDraft.windowType === "Conversation" || resolvedRowOrder !== null;
+  const horizonOrderReady = modelDraft.model === "EndPoint" || resolvedHorizonOrder !== null;
+  let resourceBlocked = false;
+  if (scientificFieldPrerequisitesValid && rowOrderReady && horizonOrderReady) {
+    try {
+      const shape = standardResourceShapeV3(
+        dataset.rows,
+        modelDraft.unitColumns,
+        modelDraft.horizonColumns,
+        modelDraft.model,
+        resolvedHorizonOrder,
+      );
+      const estimate = estimateStandardResourcesV3({
+        rowCount: dataset.rows.length,
+        unitCount: shape.unitCount,
+        horizonCount: shape.horizonSizes.length,
+        codeCount: profilesInDraftOrder.length,
+        horizonSizes: shape.horizonSizes,
+        trajectorySteps: shape.trajectorySteps,
+        windowType: modelDraft.windowType,
+        backward: modelDraft.windowType === "MovingStanzaWindow"
+          ? moving!.backward
+          : { kind: "finite", value: 1 },
+        forward: modelDraft.windowType === "MovingStanzaWindow"
+          ? moving!.forward
+          : { kind: "finite", value: 0 },
+        referenceProjection: modelDraft.rotation.type === "reference",
+      });
+      if (estimate.blocked) {
+        resourceBlocked = true;
+        output.push(resourceBudgetDiagnosticV3(estimate));
+      }
+    } catch {
+      resourceBlocked = true;
+      output.push(resourceBudgetDiagnosticV3(null));
+    }
+  }
 
   if (basicPrerequisitesValid) {
     const duplicateProfiles = new Map<string, string[]>();
@@ -2000,7 +2108,7 @@ export function validateStandardDraftV3(
   }
 
   let connectivity: ConnectivityV3 | null = null;
-  if (basicPrerequisitesValid && connectivityRowWindowPrerequisitesValid) {
+  if (basicPrerequisitesValid && connectivityRowWindowPrerequisitesValid && !resourceBlocked) {
     try {
       if (modelDraft.windowType === "Conversation") {
         connectivity = connectivityFromGroupsV3(
@@ -2091,8 +2199,6 @@ export function validateStandardDraftV3(
     meansMembershipReady = membership.ready;
   }
 
-  const rowOrderReady = modelDraft.windowType === "Conversation" || resolvedRowOrder !== null;
-  const horizonOrderReady = modelDraft.model === "EndPoint" || resolvedHorizonOrder !== null;
   const rotationShapeReady = !trajectoryMeansInvalid && referenceInvalid === null
     && meansMembershipReady;
   let networks: ScientificNetworksV3 | null = null;
@@ -2105,43 +2211,20 @@ export function validateStandardDraftV3(
   if (emptyTargetReady) {
     const rankDiagnostic = rankDiagnosticV3(0, modelDraft.rotation, 0);
     if (rankDiagnostic !== null) output.push(rankDiagnostic);
-  } else if (scientificFieldPrerequisitesValid && rowOrderReady && horizonOrderReady && rotationShapeReady) {
-    const distinctUnitKeys = new Set<string>();
-    for (let rowIndex = 0; rowIndex < dataset.rows.length; rowIndex += 1) {
-      distinctUnitKeys.add(identityKeyV3(
-        dataset.rows[rowIndex],
-        modelDraft.unitColumns,
-        rowIndex,
-        "Unit",
-      ));
-    }
-    const distinctUnits = distinctUnitKeys.size;
-    // A Binary focal window contributes only 0/1 per row-edge, and a concrete
-    // JavaScript array cannot contain enough rows to overflow Number. Keeping
-    // this Binary-only shortcut bounds the 10k both-Infinity regression while
-    // Frequency must execute jENA so raw product/sum overflow remains visible.
-    const oneUnitBinaryMovingShortcut = modelDraft.model === "EndPoint"
-      && modelDraft.windowType === "MovingStanzaWindow"
-      && modelDraft.weighting === "binary"
-      && modelDraft.rotation.type !== "means"
-      && distinctUnits === 1;
-    if (oneUnitBinaryMovingShortcut) {
-      const rankDiagnostic = rankDiagnosticV3(0, modelDraft.rotation, 1);
-      if (rankDiagnostic !== null) output.push(rankDiagnostic);
-    } else {
-      networks = scientificNetworksV3(
-        dataset.rows,
-        modelDraft.unitColumns,
-        modelDraft.horizonColumns,
-        profilesInDraftOrder,
-        modelDraft.weighting,
-        modelDraft.windowType,
-        moving,
-        resolvedRowOrder,
-        modelDraft.model,
-        resolvedHorizonOrder,
-      );
-    }
+  } else if (scientificFieldPrerequisitesValid && rowOrderReady && horizonOrderReady
+    && rotationShapeReady && !resourceBlocked) {
+    networks = scientificNetworksV3(
+      dataset.rows,
+      modelDraft.unitColumns,
+      modelDraft.horizonColumns,
+      profilesInDraftOrder,
+      modelDraft.weighting,
+      modelDraft.windowType,
+      moving,
+      resolvedRowOrder,
+      modelDraft.model,
+      resolvedHorizonOrder,
+    );
     if (networks !== null && !scientificNetworksFiniteV3(networks)) {
       output.push(diagnosticV3({
         id: "STANDARD_OUTPUT_NONFINITE",
