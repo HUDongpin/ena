@@ -1,4 +1,10 @@
-import { canonicalJsonV3, sha256TextV3 } from "./canonical-json";
+import {
+  canonicalJsonV3,
+  deepFreezeV3,
+  sha256TextV3,
+  snapshotDenseJsonArrayV3,
+  snapshotPlainJsonRecordV3,
+} from "./canonical-json";
 import type { ScalarIdentityV3 } from "./types";
 
 export interface IdentityFieldV3 {
@@ -21,6 +27,15 @@ export interface ExecutionIdentityDictionaryV3 {
   units: ExecutionIdentityEntryV3[];
   horizons: ExecutionIdentityEntryV3[];
   groups: ExecutionIdentityEntryV3[];
+}
+
+export interface ExecutionIdentityResolverV3 {
+  readonly unitsByCanonicalJson: Map<string, ExecutionIdentityEntryV3>;
+  readonly horizonsByCanonicalJson: Map<string, ExecutionIdentityEntryV3>;
+  readonly groupsByCanonicalJson: Map<string, ExecutionIdentityEntryV3>;
+  readonly unitsByToken: Map<string, ExecutionIdentityEntryV3>;
+  readonly horizonsByToken: Map<string, ExecutionIdentityEntryV3>;
+  readonly groupsByToken: Map<string, ExecutionIdentityEntryV3>;
 }
 
 export type IdentityNamespaceV3 = "unit" | "horizon" | "group";
@@ -125,15 +140,25 @@ async function makeCompositeIdentityV3(
   columns: readonly string[],
   label: string,
 ): Promise<CompositeIdentityV3> {
-  const normalizedColumns = assertColumnsV3(columns, `${label} columns`);
-  const record = assertRowV3(row, label);
+  const material = buildCompositeIdentityMaterialV3(row, columns, label);
+  const canonicalJson = material.canonicalJson;
+  const sha256 = normalizeHashV3(await sha256TextV3(canonicalJson), `${label} hash`);
+  return { fields: material.fields, canonicalJson, sha256 };
+}
+
+function buildCompositeIdentityMaterialV3(
+  row: unknown,
+  columns: readonly string[],
+  label: string,
+): { fields: IdentityFieldV3[]; canonicalJson: string } {
+  const columnSnapshot = snapshotDenseJsonArrayV3(columns, `${label} columns`);
+  const normalizedColumns = assertColumnsV3(columnSnapshot as string[], `${label} columns`);
+  const record = snapshotPlainJsonRecordV3(row, label);
   const fields = normalizedColumns.map((column) => ({
     column,
     value: scalarIdentityV3(readRowPropertyV3(record, column, label), `${label}.${column}`),
   }));
-  const canonicalJson = canonicalFieldsV3(fields);
-  const sha256 = normalizeHashV3(await sha256TextV3(canonicalJson), `${label} hash`);
-  return { fields, canonicalJson, sha256 };
+  return { fields, canonicalJson: canonicalFieldsV3(fields) };
 }
 
 export async function buildCompositeIdentityV3(
@@ -187,21 +212,32 @@ function indexIdentityCompositesV3(
   });
   const prefix = namespacePrefixV3(namespace);
   const baseLabels = unique.map((composite) => baseDisplayLabelV3(composite.fields));
-  const labelCounts = new Map<string, number>();
-  for (const label of baseLabels) labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
+  const rawLabels = new Set(baseLabels);
+  const allocatedLabels = new Set<string>();
 
   let tokenIndex = 0;
   return unique.map((composite, index) => {
     const baseLabel = baseLabels[index];
-    const displayLabel = (labelCounts.get(baseLabel) ?? 0) > 1
-      ? `${baseLabel} [${typedDisplayDisambiguatorV3(composite.fields)}]`
-      : baseLabel;
     let token = `${prefix}${String(tokenIndex).padStart(6, "0")}`;
     while (reservedStrings.has(token)) {
       tokenIndex += 1;
       token = `${prefix}${String(tokenIndex).padStart(6, "0")}`;
     }
     tokenIndex += 1;
+    const otherRawLabels = new Set(rawLabels);
+    otherRawLabels.delete(baseLabel);
+    const typedLabel = `${baseLabel} [${typedDisplayDisambiguatorV3(composite.fields)}]`;
+    let displayLabel = baseLabel;
+    if (otherRawLabels.has(displayLabel) || allocatedLabels.has(displayLabel) || reservedStrings.has(displayLabel) || displayLabel === token) {
+      displayLabel = typedLabel;
+      let suffix = 2;
+      while (otherRawLabels.has(displayLabel) || rawLabels.has(displayLabel) || allocatedLabels.has(displayLabel)
+        || reservedStrings.has(displayLabel) || displayLabel === token) {
+        displayLabel = `${typedLabel} #${suffix}`;
+        suffix += 1;
+      }
+    }
+    allocatedLabels.add(displayLabel);
     return {
       token,
       fields: composite.fields.map((field) => ({
@@ -232,18 +268,17 @@ export function assertUniqueIdentityHashBindingsV3(
   }
 }
 
-function appendCompositeV3(
-  target: CompositeIdentityV3[],
-  composite: CompositeIdentityV3,
-): void {
-  target.push({
-    fields: composite.fields.map((field) => ({
+async function hashUniqueMaterialsV3(
+  materials: ReadonlyMap<string, { fields: IdentityFieldV3[]; canonicalJson: string }>,
+): Promise<CompositeIdentityV3[]> {
+  return Promise.all(Array.from(materials.values(), async (material) => ({
+    fields: material.fields.map((field) => ({
       column: field.column,
       value: { type: field.value.type, value: field.value.value } as ScalarIdentityV3,
     })),
-    canonicalJson: composite.canonicalJson,
-    sha256: composite.sha256,
-  });
+    canonicalJson: material.canonicalJson,
+    sha256: normalizeHashV3(await sha256TextV3(material.canonicalJson), "identity hash"),
+  })));
 }
 
 export async function buildExecutionIdentityDictionaryV3(
@@ -257,18 +292,27 @@ export async function buildExecutionIdentityDictionaryV3(
   if (groupColumn !== null && (typeof groupColumn !== "string" || groupColumn.trim().length === 0)) {
     throw new TypeError("groupColumn must be null or a nonblank string.");
   }
-  const units: CompositeIdentityV3[] = [];
-  const horizons: CompositeIdentityV3[] = [];
-  const groups: CompositeIdentityV3[] = [];
+  const unitMaterials = new Map<string, { fields: IdentityFieldV3[]; canonicalJson: string }>();
+  const horizonMaterials = new Map<string, { fields: IdentityFieldV3[]; canonicalJson: string }>();
+  const groupMaterials = new Map<string, { fields: IdentityFieldV3[]; canonicalJson: string }>();
 
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
     const row = assertRowV3(rows[rowIndex], `row ${rowIndex}`);
-    appendCompositeV3(units, await makeCompositeIdentityV3(row, normalizedUnitColumns, `row ${rowIndex} unit`));
-    appendCompositeV3(horizons, await makeCompositeIdentityV3(row, normalizedHorizonColumns, `row ${rowIndex} horizon`));
+    const unit = buildCompositeIdentityMaterialV3(row, normalizedUnitColumns, `row ${rowIndex} unit`);
+    const horizon = buildCompositeIdentityMaterialV3(row, normalizedHorizonColumns, `row ${rowIndex} horizon`);
+    unitMaterials.set(unit.canonicalJson, unit);
+    horizonMaterials.set(horizon.canonicalJson, horizon);
     if (groupColumn !== null) {
-      appendCompositeV3(groups, await makeCompositeIdentityV3(row, [groupColumn], `row ${rowIndex} group`));
+      const group = buildCompositeIdentityMaterialV3(row, [groupColumn], `row ${rowIndex} group`);
+      groupMaterials.set(group.canonicalJson, group);
     }
   }
+
+  const [units, horizons, groups] = await Promise.all([
+    hashUniqueMaterialsV3(unitMaterials),
+    hashUniqueMaterialsV3(horizonMaterials),
+    hashUniqueMaterialsV3(groupMaterials),
+  ]);
 
   const reservedStrings = new Set<string>([
     ...normalizedUnitColumns,
@@ -282,10 +326,120 @@ export async function buildExecutionIdentityDictionaryV3(
   }
   assertUniqueIdentityHashBindingsV3([...units, ...horizons, ...groups]);
 
-  return {
+  const dictionary: ExecutionIdentityDictionaryV3 = {
     units: indexIdentityCompositesV3(units, "unit", reservedStrings),
     horizons: indexIdentityCompositesV3(horizons, "horizon", reservedStrings),
     groups: indexIdentityCompositesV3(groups, "group", reservedStrings),
+  };
+  return deepFreezeV3(dictionary);
+}
+
+type IdentityRoleV3 = "Unit" | "Horizon" | "Group";
+
+function namespaceEntriesV3(
+  dictionary: unknown,
+  role: IdentityRoleV3,
+): unknown {
+  if (dictionary === null || typeof dictionary !== "object" || Array.isArray(dictionary)) {
+    throw new TypeError("Identity dictionary must be a plain object.");
+  }
+  const key = role.toLowerCase() as "unit" | "horizon" | "group";
+  return (dictionary as Record<string, unknown>)[`${key}s`];
+}
+
+function validateNamespaceTokenV3(token: string, role: IdentityRoleV3): void {
+  const prefix = namespacePrefixV3(role.toLowerCase() as IdentityNamespaceV3);
+  if (!new RegExp(`^${prefix}\\d{6,}$`, "u").test(token)) {
+    throw new TypeError(`Invalid ${role} identity token format.`);
+  }
+}
+
+function readIdentityEntryV3(value: unknown, role: IdentityRoleV3): ExecutionIdentityEntryV3 {
+  const snapshot = snapshotPlainJsonRecordV3(value, `${role} identity entry`);
+  if (typeof snapshot.token !== "string" || typeof snapshot.displayLabel !== "string"
+    || typeof snapshot.canonicalJson !== "string" || typeof snapshot.sha256 !== "string") {
+    throw new TypeError(`Malformed ${role} identity entry.`);
+  }
+  validateNamespaceTokenV3(snapshot.token, role);
+  if (snapshot.sha256 !== snapshot.sha256.toLowerCase()) {
+    throw new TypeError(`Malformed ${role} identity digest.`);
+  }
+  normalizeHashV3(snapshot.sha256, `${role} identity digest`);
+  const fields = snapshot.fields as IdentityFieldV3[];
+  if (canonicalFieldsV3(fields, `${role} identity fields`) !== snapshot.canonicalJson) {
+    throw new TypeError(`Malformed ${role} identity canonical representation.`);
+  }
+  return {
+    token: snapshot.token,
+    displayLabel: snapshot.displayLabel,
+    fields: fields.map((field) => ({
+      column: field.column,
+      value: { type: field.value.type, value: field.value.value } as ScalarIdentityV3,
+    })),
+    canonicalJson: snapshot.canonicalJson,
+    sha256: snapshot.sha256,
+  };
+}
+
+export async function validateExecutionIdentityDictionaryV3(
+  dictionary: unknown,
+): Promise<void> {
+  const dictionarySnapshot = snapshotPlainJsonRecordV3(dictionary, "identity dictionary");
+  const allowedKeys = new Set(["units", "horizons", "groups"]);
+  if (Object.keys(dictionarySnapshot).some((key) => !allowedKeys.has(key))) {
+    throw new TypeError("Identity dictionary has unexpected properties.");
+  }
+  const allBindings: Array<Pick<CompositeIdentityV3, "sha256" | "canonicalJson">> = [];
+  const allTokens = new Set<string>();
+  for (const role of ["Unit", "Horizon", "Group"] as const) {
+    const rawEntries = snapshotDenseJsonArrayV3(namespaceEntriesV3(dictionarySnapshot, role), `${role} identities`);
+    const labels = new Set<string>();
+    const canonicalIdentities = new Set<string>();
+    for (const rawEntry of rawEntries) {
+      const entry = readIdentityEntryV3(rawEntry, role);
+      if (allTokens.has(entry.token)) throw new Error("Identity dictionary contains duplicate tokens.");
+      allTokens.add(entry.token);
+      if (labels.has(entry.displayLabel)) throw new Error(`Duplicate ${role} identity display labels.`);
+      labels.add(entry.displayLabel);
+      if (canonicalIdentities.has(entry.canonicalJson)) throw new Error(`Duplicate ${role} identity canonical values.`);
+      canonicalIdentities.add(entry.canonicalJson);
+      allBindings.push(entry);
+      if (entry.displayLabel === entry.token) throw new Error(`Invalid ${role} identity display label.`);
+      if (entry.sha256 !== await sha256TextV3(entry.canonicalJson)) {
+        throw new Error(`Invalid ${role} identity digest.`);
+      }
+    }
+  }
+  assertUniqueIdentityHashBindingsV3(allBindings);
+}
+
+function resolverMapsV3(
+  entries: readonly ExecutionIdentityEntryV3[],
+): { byCanonicalJson: Map<string, ExecutionIdentityEntryV3>; byToken: Map<string, ExecutionIdentityEntryV3> } {
+  const byCanonicalJson = new Map<string, ExecutionIdentityEntryV3>();
+  const byToken = new Map<string, ExecutionIdentityEntryV3>();
+  for (const entry of entries) {
+    byCanonicalJson.set(entry.canonicalJson, entry);
+    byToken.set(entry.token, entry);
+  }
+  return { byCanonicalJson, byToken };
+}
+
+export async function createExecutionIdentityResolverV3(
+  dictionary: unknown,
+): Promise<ExecutionIdentityResolverV3> {
+  await validateExecutionIdentityDictionaryV3(dictionary);
+  const source = dictionary as ExecutionIdentityDictionaryV3;
+  const units = resolverMapsV3(source.units.map((entry) => readIdentityEntryV3(entry, "Unit")));
+  const horizons = resolverMapsV3(source.horizons.map((entry) => readIdentityEntryV3(entry, "Horizon")));
+  const groups = resolverMapsV3(source.groups.map((entry) => readIdentityEntryV3(entry, "Group")));
+  return {
+    unitsByCanonicalJson: units.byCanonicalJson,
+    horizonsByCanonicalJson: horizons.byCanonicalJson,
+    groupsByCanonicalJson: groups.byCanonicalJson,
+    unitsByToken: units.byToken,
+    horizonsByToken: horizons.byToken,
+    groupsByToken: groups.byToken,
   };
 }
 
@@ -305,13 +459,18 @@ export function resolveIdentityEntryV3(
   } else {
     lookupHash = normalizeHashV3(identity.sha256, "identity lookup sha256");
   }
-  const matches = entries.filter((entry) => candidate === null
-    ? entry.token === identity || entry.sha256 === lookupHash
-    : entry.sha256 === lookupHash);
-  if (matches.length !== 1) {
-    throw new Error(`Unknown identity token/hash ${JSON.stringify(identity)}.`);
+  let match: ExecutionIdentityEntryV3 | undefined;
+  let matchCount = 0;
+  for (const entry of entries) {
+    if (candidate === null ? entry.token === identity || entry.sha256 === lookupHash : entry.sha256 === lookupHash) {
+      match = entry;
+      matchCount += 1;
+    }
   }
-  const entry = matches[0];
+  if (matchCount !== 1 || match === undefined) {
+    throw new Error("Unknown identity token/hash.");
+  }
+  const entry = match;
   const entryCanonicalJson = canonicalFieldsV3(entry.fields, "dictionary entry fields");
   if (entryCanonicalJson !== entry.canonicalJson) {
     throw new Error(`Malformed identity dictionary entry ${entry.token}: typed fields do not match canonicalJson.`);
@@ -335,21 +494,48 @@ export function resolveIdentityTokenV3(
   return resolveIdentityEntryV3(entries, identity).token;
 }
 
+function resolveMaterialV3(
+  material: { canonicalJson: string },
+  map: ReadonlyMap<string, ExecutionIdentityEntryV3>,
+  role: IdentityRoleV3,
+): string {
+  const entry = map.get(material.canonicalJson);
+  if (entry === undefined) throw new Error(`Unknown ${role} identity.`);
+  return entry.token;
+}
+
 export async function resolveExecutionIdentityForRowV3(
   row: unknown,
-  dictionary: ExecutionIdentityDictionaryV3,
   unitColumns: readonly string[],
   horizonColumns: readonly string[],
   groupColumn: string | null,
-): Promise<{ unit: string; horizon: string; group: string | null }> {
-  const unit = await makeCompositeIdentityV3(row, unitColumns, "row unit");
-  const horizon = await makeCompositeIdentityV3(row, horizonColumns, "row horizon");
+  resolver: ExecutionIdentityResolverV3,
+): Promise<{ unitToken: string; horizonToken: string; groupToken: string | null }> {
+  const unit = buildCompositeIdentityMaterialV3(row, unitColumns, "row unit");
+  const horizon = buildCompositeIdentityMaterialV3(row, horizonColumns, "row horizon");
   const group = groupColumn === null
     ? null
-    : await makeCompositeIdentityV3(row, [groupColumn], "row group");
+    : buildCompositeIdentityMaterialV3(row, [groupColumn], "row group");
   return {
-    unit: resolveIdentityTokenV3(dictionary.units, unit),
-    horizon: resolveIdentityTokenV3(dictionary.horizons, horizon),
-    group: group === null ? null : resolveIdentityTokenV3(dictionary.groups, group),
+    unitToken: resolveMaterialV3(unit, resolver.unitsByCanonicalJson, "Unit"),
+    horizonToken: resolveMaterialV3(horizon, resolver.horizonsByCanonicalJson, "Horizon"),
+    groupToken: group === null ? null : resolveMaterialV3(group, resolver.groupsByCanonicalJson, "Group"),
   };
+}
+
+export async function resolveExecutionIdentitiesForRowsV3(
+  rows: readonly Record<string, unknown>[],
+  unitColumns: readonly string[],
+  horizonColumns: readonly string[],
+  groupColumn: string | null,
+  resolver: ExecutionIdentityResolverV3,
+): Promise<Array<{ sourceRowIndex: number; unitToken: string; horizonToken: string; groupToken: string | null }>> {
+  const bindings: Array<{ sourceRowIndex: number; unitToken: string; horizonToken: string; groupToken: string | null }> = [];
+  for (let sourceRowIndex = 0; sourceRowIndex < rows.length; sourceRowIndex += 1) {
+    const resolved = await resolveExecutionIdentityForRowV3(
+      rows[sourceRowIndex], unitColumns, horizonColumns, groupColumn, resolver,
+    );
+    bindings.push({ sourceRowIndex, ...resolved });
+  }
+  return bindings;
 }

@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
   assertUniqueIdentityHashBindingsV3,
   buildCompositeIdentityV3,
   buildExecutionIdentityDictionaryV3,
+  createExecutionIdentityResolverV3,
   resolveExecutionIdentityForRowV3,
+  resolveExecutionIdentitiesForRowsV3,
   resolveIdentityEntryV3,
   scalarIdentityV3,
+  validateExecutionIdentityDictionaryV3,
 } from "../lib/open-ena/model-v3/identity";
 import { canonicalJsonV3, sha256TextV3 } from "../lib/open-ena/model-v3/canonical-json";
 
@@ -82,6 +86,23 @@ test("dictionary deduplicates identities and is source-order independent", async
   }
 });
 
+test("display labels are globally unique and deterministic under adversarial collisions", async () => {
+  const collisionRows = [
+    { id: 1, turn: 1 },
+    { id: "1", turn: 1 },
+    { id: "1 [id:number(1)]", turn: 1 },
+    { id: "1 [id:string(1)]", turn: 1 },
+    { id: "x, y", turn: 1 },
+    { id: "x, y [id:string(x, y)]", turn: 1 },
+    { id: "line\nfeed\tcontrol", turn: 1 },
+  ];
+  const first = await buildExecutionIdentityDictionaryV3(collisionRows, ["id"], ["turn"], null);
+  const second = await buildExecutionIdentityDictionaryV3([...collisionRows].reverse(), ["id"], ["turn"], null);
+  assert.equal(new Set(first.units.map((entry) => entry.displayLabel)).size, first.units.length);
+  assert.deepEqual(first.units, second.units);
+  assert.ok(first.units.every((entry) => !first.units.some((other) => other !== entry && other.token === entry.displayLabel)));
+});
+
 test("optional null group has no entries and typed group values resolve distinctly", async () => {
   const noGroup = await buildExecutionIdentityDictionaryV3(rows, ["student"], ["turn"], null);
   assert.deepEqual(noGroup.groups, []);
@@ -113,6 +134,7 @@ test("reserved-looking source values and headers never become tokens or exact di
 
 test("row lookup resolves exact typed identities and rejects unknown values", async () => {
   const dictionary = await buildExecutionIdentityDictionaryV3(rows, ["student"], ["turn"], "group");
+  const resolver = await createExecutionIdentityResolverV3(dictionary);
   for (const row of rows) {
     const unitIdentity = await buildCompositeIdentityV3(row, ["student"]);
     const horizonIdentity = await buildCompositeIdentityV3(row, ["turn"]);
@@ -122,11 +144,11 @@ test("row lookup resolves exact typed identities and rejects unknown values", as
     const expectedGroup = dictionary.groups.find((entry) => entry.canonicalJson === groupIdentity.canonicalJson);
     assert.ok(expectedUnit && expectedHorizon && expectedGroup);
     const resolved = await resolveExecutionIdentityForRowV3(
-      row, dictionary, ["student"], ["turn"], "group",
+      row, ["student"], ["turn"], "group", resolver,
     );
-    assert.equal(resolved.unit, expectedUnit.token);
-    assert.equal(resolved.horizon, expectedHorizon.token);
-    assert.equal(resolved.group, expectedGroup?.token);
+    assert.equal(resolved.unitToken, expectedUnit.token);
+    assert.equal(resolved.horizonToken, expectedHorizon.token);
+    assert.equal(resolved.groupToken, expectedGroup?.token);
   }
   const knownUnit = await buildCompositeIdentityV3(rows[0], ["student"]);
   const knownHorizon = await buildCompositeIdentityV3(rows[0], ["turn"]);
@@ -136,13 +158,13 @@ test("row lookup resolves exact typed identities and rejects unknown values", as
   assert.doesNotThrow(() => resolveIdentityEntryV3(dictionary.groups, knownGroup));
 
   await assert.rejects(resolveExecutionIdentityForRowV3(
-    { student: "unknown", turn: 1, group: 1 }, dictionary, ["student"], ["turn"], "group",
+    { student: "unknown", turn: 1, group: 1 }, ["student"], ["turn"], "group", resolver,
   ), /unknown|resolve|identity/i);
   await assert.rejects(resolveExecutionIdentityForRowV3(
-    { student: "s1", turn: 999, group: 1 }, dictionary, ["student"], ["turn"], "group",
+    { student: "s1", turn: 999, group: 1 }, ["student"], ["turn"], "group", resolver,
   ), /unknown|resolve|identity/i);
   await assert.rejects(resolveExecutionIdentityForRowV3(
-    { student: "s1", turn: 1, group: "unknown" }, dictionary, ["student"], ["turn"], "group",
+    { student: "s1", turn: 1, group: "unknown" }, ["student"], ["turn"], "group", resolver,
   ), /unknown|resolve|identity/i);
   assert.throws(() => resolveIdentityEntryV3(dictionary.units, "not-a-token-or-hash"), /unknown|resolve|identity/i);
 });
@@ -152,18 +174,61 @@ test("row lookup with null group returns no group token", async () => {
   const dictionary = await buildExecutionIdentityDictionaryV3(
     [row], ["student"], ["turn"], null,
   );
+  const resolver = await createExecutionIdentityResolverV3(dictionary);
   const resolved = await resolveExecutionIdentityForRowV3(
-    row, dictionary, ["student"], ["turn"], null,
+    row, ["student"], ["turn"], null, resolver,
   );
   const unitIdentity = await buildCompositeIdentityV3(row, ["student"]);
   const horizonIdentity = await buildCompositeIdentityV3(row, ["turn"]);
   const expectedUnit = dictionary.units.find((entry) => entry.canonicalJson === unitIdentity.canonicalJson);
   const expectedHorizon = dictionary.horizons.find((entry) => entry.canonicalJson === horizonIdentity.canonicalJson);
   assert.ok(expectedUnit && expectedHorizon);
-  assert.equal(resolved.unit, expectedUnit.token);
-  assert.equal(resolved.horizon, expectedHorizon.token);
-  assert.equal(resolved.group, null);
+  assert.equal(resolved.unitToken, expectedUnit.token);
+  assert.equal(resolved.horizonToken, expectedHorizon.token);
+  assert.equal(resolved.groupToken, null);
   assert.deepEqual(dictionary.groups, []);
+});
+
+test("one-time resolver indexes dictionaries and batch resolution binds every source row", async () => {
+  const highCardinalityRows = Array.from({ length: 240 }, (_, index) => ({
+    student: `student-${index}`,
+    turn: index,
+    group: index % 3 === 0 ? index : index % 3 === 1 ? String(index) : Boolean(index % 2),
+  }));
+  const dictionary = await buildExecutionIdentityDictionaryV3(highCardinalityRows, ["student"], ["turn"], "group");
+  await validateExecutionIdentityDictionaryV3(dictionary);
+  const resolver = await createExecutionIdentityResolverV3(dictionary);
+  const resolved = await resolveExecutionIdentitiesForRowsV3(
+    highCardinalityRows, ["student"], ["turn"], "group", resolver,
+  );
+  assert.equal(resolved.length, highCardinalityRows.length);
+  assert.deepEqual(resolved.map((binding) => binding.sourceRowIndex), highCardinalityRows.map((_, index) => index));
+  assert.ok(resolved.every((binding) => binding.unitToken && binding.horizonToken && binding.groupToken));
+
+  const source = readFileSync(new URL("../lib/open-ena/model-v3/identity.ts", import.meta.url), "utf8");
+  const resolverSource = resolveExecutionIdentityForRowV3.toString();
+  assert.equal(resolverSource.includes("sha256TextV3"), false);
+  assert.equal(resolverSource.includes(".filter("), false);
+  assert.equal(resolverSource.includes(".find("), false);
+  assert.equal(source.includes("resolveExecutionIdentityForRowV3.toString"), false);
+});
+
+test("tampered dictionaries are rejected before resolver creation", async () => {
+  const dictionary = await buildExecutionIdentityDictionaryV3(rows, ["student"], ["turn"], "group");
+  const tamperCases = [
+    (copy: typeof dictionary) => { copy.units[0].sha256 = "0".repeat(64); },
+    (copy: typeof dictionary) => { copy.units[0].token = copy.horizons[0].token; },
+    (copy: typeof dictionary) => { copy.units[0].canonicalJson = "{}"; },
+    (copy: typeof dictionary) => { copy.units[0].fields[0].value = { type: "number", value: 999 }; },
+    (copy: typeof dictionary) => { copy.units.push({ ...copy.units[0] }); },
+    (copy: typeof dictionary) => { copy.units.push({ ...copy.units[0], token: `${copy.units[0].token}-other` }); },
+    (copy: typeof dictionary) => { copy.units[1].displayLabel = copy.units[0].displayLabel; },
+  ];
+  for (const tamper of tamperCases) {
+    const copy = structuredClone(dictionary);
+    tamper(copy);
+    await assert.rejects(createExecutionIdentityResolverV3(copy), /tamper|duplicate|canonical|hash|token|label|collision|invalid/i);
+  }
 });
 
 test("pure digest binding assertion fails closed on forged collisions and allows exact duplicates", () => {
@@ -209,9 +274,39 @@ test("deep-frozen inputs and returned nested mutation remain detached", async ()
   const horizonColumns = Object.freeze(["turn"]);
   const sourceSnapshot = JSON.stringify({ sourceRows, unitColumns, horizonColumns });
   const dictionary = await buildExecutionIdentityDictionaryV3(sourceRows, unitColumns, horizonColumns, "group");
-  dictionary.units[0].fields[0].value = { type: "string", value: "mutated" };
-  dictionary.units[0].fields.push({ column: "fake", value: { type: "boolean", value: true } });
-  dictionary.units[0].displayLabel = "mutated";
-  dictionary.units.push(dictionary.units[0]);
+  assert.throws(() => { dictionary.units[0].fields[0].value = { type: "string", value: "mutated" }; }, TypeError);
+  assert.throws(() => { dictionary.units[0].fields.push({ column: "fake", value: { type: "boolean", value: true } }); }, TypeError);
+  assert.throws(() => { dictionary.units[0].displayLabel = "mutated"; }, TypeError);
+  assert.throws(() => { dictionary.units.push(dictionary.units[0]); }, TypeError);
   assert.equal(JSON.stringify({ sourceRows, unitColumns, horizonColumns }), sourceSnapshot);
+});
+
+test("proxy, accessor, and class boundary inputs are rejected without ordinary property reads", async () => {
+  let ordinaryGetCount = 0;
+  const proxiedColumns = new Proxy(["student"], {
+    get() {
+      ordinaryGetCount += 1;
+      throw new Error("ordinary column get must not execute");
+    },
+  });
+  const identity = await buildCompositeIdentityV3({ student: "one" }, proxiedColumns);
+  assert.equal(identity.fields[0].value.value, "one");
+  assert.equal(ordinaryGetCount, 0);
+
+  let rowGetCount = 0;
+  const proxiedRow = new Proxy({ student: "one" }, {
+    get() {
+      rowGetCount += 1;
+      throw new Error("ordinary row get must not execute");
+    },
+  });
+  const proxiedRowIdentity = await buildCompositeIdentityV3(proxiedRow, ["student"]);
+  assert.equal(proxiedRowIdentity.fields[0].value.value, "one");
+  assert.equal(rowGetCount, 0);
+
+  const accessorRow = {} as Record<string, unknown>;
+  Object.defineProperty(accessorRow, "student", { enumerable: true, get: () => { throw new Error("row getter"); } });
+  await assert.rejects(buildCompositeIdentityV3(accessorRow, ["student"]), /accessor|data property/i);
+  class RowClass { student = "one"; }
+  await assert.rejects(buildCompositeIdentityV3(new RowClass(), ["student"]), /plain|object/i);
 });
