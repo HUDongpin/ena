@@ -114,29 +114,54 @@ test("reserved-looking source values and headers never become tokens or exact di
 test("row lookup resolves exact typed identities and rejects unknown values", async () => {
   const dictionary = await buildExecutionIdentityDictionaryV3(rows, ["student"], ["turn"], "group");
   for (const row of rows) {
+    const unitIdentity = await buildCompositeIdentityV3(row, ["student"]);
+    const horizonIdentity = await buildCompositeIdentityV3(row, ["turn"]);
+    const groupIdentity = await buildCompositeIdentityV3(row, ["group"]);
+    const expectedUnit = dictionary.units.find((entry) => entry.canonicalJson === unitIdentity.canonicalJson);
+    const expectedHorizon = dictionary.horizons.find((entry) => entry.canonicalJson === horizonIdentity.canonicalJson);
+    const expectedGroup = dictionary.groups.find((entry) => entry.canonicalJson === groupIdentity.canonicalJson);
+    assert.ok(expectedUnit && expectedHorizon && expectedGroup);
     const resolved = await resolveExecutionIdentityForRowV3(
       row, dictionary, ["student"], ["turn"], "group",
     );
-    const expectedGroup = dictionary.groups.find((entry) => canonicalJsonV3({ fields: entry.fields })
-      === canonicalJsonV3({ fields: [{ column: "group", value: {
-        type: typeof row.group === "number" ? "number" : typeof row.group === "boolean" ? "boolean" : "string",
-        value: row.group,
-      } }] }));
+    assert.equal(resolved.unit, expectedUnit.token);
+    assert.equal(resolved.horizon, expectedHorizon.token);
     assert.equal(resolved.group, expectedGroup?.token);
   }
+  const knownUnit = await buildCompositeIdentityV3(rows[0], ["student"]);
+  const knownHorizon = await buildCompositeIdentityV3(rows[0], ["turn"]);
+  const knownGroup = await buildCompositeIdentityV3(rows[0], ["group"]);
+  assert.doesNotThrow(() => resolveIdentityEntryV3(dictionary.units, knownUnit));
+  assert.doesNotThrow(() => resolveIdentityEntryV3(dictionary.horizons, knownHorizon));
+  assert.doesNotThrow(() => resolveIdentityEntryV3(dictionary.groups, knownGroup));
+
   await assert.rejects(resolveExecutionIdentityForRowV3(
     { student: "unknown", turn: 1, group: 1 }, dictionary, ["student"], ["turn"], "group",
+  ), /unknown|resolve|identity/i);
+  await assert.rejects(resolveExecutionIdentityForRowV3(
+    { student: "s1", turn: 999, group: 1 }, dictionary, ["student"], ["turn"], "group",
+  ), /unknown|resolve|identity/i);
+  await assert.rejects(resolveExecutionIdentityForRowV3(
+    { student: "s1", turn: 1, group: "unknown" }, dictionary, ["student"], ["turn"], "group",
   ), /unknown|resolve|identity/i);
   assert.throws(() => resolveIdentityEntryV3(dictionary.units, "not-a-token-or-hash"), /unknown|resolve|identity/i);
 });
 
 test("row lookup with null group returns no group token", async () => {
+  const row = { student: "one", turn: 1, group: true };
   const dictionary = await buildExecutionIdentityDictionaryV3(
-    [{ student: "one", turn: 1, group: true }], ["student"], ["turn"], null,
+    [row], ["student"], ["turn"], null,
   );
   const resolved = await resolveExecutionIdentityForRowV3(
-    { student: "one", turn: 1, group: true }, dictionary, ["student"], ["turn"], null,
+    row, dictionary, ["student"], ["turn"], null,
   );
+  const unitIdentity = await buildCompositeIdentityV3(row, ["student"]);
+  const horizonIdentity = await buildCompositeIdentityV3(row, ["turn"]);
+  const expectedUnit = dictionary.units.find((entry) => entry.canonicalJson === unitIdentity.canonicalJson);
+  const expectedHorizon = dictionary.horizons.find((entry) => entry.canonicalJson === horizonIdentity.canonicalJson);
+  assert.ok(expectedUnit && expectedHorizon);
+  assert.equal(resolved.unit, expectedUnit.token);
+  assert.equal(resolved.horizon, expectedHorizon.token);
   assert.equal(resolved.group, null);
   assert.deepEqual(dictionary.groups, []);
 });
