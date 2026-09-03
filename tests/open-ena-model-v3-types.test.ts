@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { STANDARD_MODEL_TYPES, STANDARD_WINDOW_TYPES, STANDARD_ROTATION_TYPES, OPEN_ENA_VALIDATION_CONTRACT_VERSION_V3, OPEN_ENA_RUNTIME_POLICY_VERSION_V3, OPEN_ENA_EXECUTION_CONTRACT_VERSION_V3 } from "../lib/open-ena/model-v3/types";
-import type { CanonicalOnaConfigV3, CanonicalRowOrderV3, CanonicalStandardAnalysisV3, CanonicalStandardConfigV3, DatasetBindingV3, ModelWorkspaceDraftsV3, OrderedNetworkDraftV3, StandardEnaDraftV3, BackwardExtentV3, ForwardExtentV3, CanonicalCodeV3 } from "../lib/open-ena/model-v3/types";
+import type { CanonicalOnaConfigV3, CanonicalRowOrderV3, CanonicalStandardAnalysisV3, CanonicalStandardConfigV3, DatasetBindingV3, ModelWorkspaceDraftsV3, OrderedNetworkDraftV3, StandardEnaDraftV3, BackwardExtentV3, ForwardExtentV3, CanonicalCodeV3, StandardWindowV3 } from "../lib/open-ena/model-v3/types";
 import type { OpenEnaDirectionalMask } from "../lib/open-ena/types";
 
 test("v3 runtime vocabulary and contract versions are exact", () => {
@@ -29,6 +29,15 @@ const standard: CanonicalStandardConfigV3 = {
   analysis: { model: { type: "EndPoint" }, rotation: { type: "svd", centerAlignToOrigin: true } },
 };
 
+const conversationWindow: StandardWindowV3 = { type: "Conversation" };
+const endpointSvd: CanonicalStandardAnalysisV3 = { model: { type: "EndPoint" }, rotation: { type: "svd", centerAlignToOrigin: true } };
+const endpointMeans: CanonicalStandardAnalysisV3 = { model: { type: "EndPoint" }, rotation: { type: "means", centerAlignToOrigin: true, contrast: { groupColumn: "class", negativeLevel: { type: "string", value: "n" }, positiveLevel: { type: "string", value: "p" } } } };
+const endpointReference: CanonicalStandardAnalysisV3 = { model: { type: "EndPoint" }, rotation: { type: "reference", referenceId: "r", expectedContentSha256: "d" } };
+const separateSvd: CanonicalStandardAnalysisV3 = { model: { type: "SeparateTrajectory", horizonOrder: rowOrder }, rotation: { type: "svd", centerAlignToOrigin: true } };
+const separateReference: CanonicalStandardAnalysisV3 = { model: { type: "SeparateTrajectory", horizonOrder: rowOrder }, rotation: { type: "reference", referenceId: "r", expectedContentSha256: "d" } };
+const accumulatedSvd: CanonicalStandardAnalysisV3 = { model: { type: "AccumulatedTrajectory", horizonOrder: rowOrder }, rotation: { type: "svd", centerAlignToOrigin: true } };
+const accumulatedReference: CanonicalStandardAnalysisV3 = { model: { type: "AccumulatedTrajectory", horizonOrder: rowOrder }, rotation: { type: "reference", referenceId: "r", expectedContentSha256: "d" } };
+
 const ona: CanonicalOnaConfigV3 = {
   schemaVersion: 3, analysisFamily: "ona", contracts,
   units: { columns: ["student"], group: { type: "stable-metadata", column: "class" } }, horizons: { columns: ["date"] }, codes,
@@ -51,10 +60,16 @@ test("v3 canonical, draft, workspace, and binding examples are constructible", (
 });
 
 // @ts-expect-error Direct trajectory Means rotation is impossible.
-const illegalTrajectoryMeans: CanonicalStandardAnalysisV3 = { model: { type: "SeparateTrajectory", horizonOrder: rowOrder }, rotation: { type: "means", centerAlignToOrigin: true, negativeLevel: { type: "string", value: "n" }, positiveLevel: { type: "string", value: "p" }, contrast: { groupColumn: "class", negativeLevel: { type: "string", value: "n" }, positiveLevel: { type: "string", value: "p" } } } };
+const illegalTrajectoryMeans: CanonicalStandardAnalysisV3 = { model: { type: "SeparateTrajectory", horizonOrder: rowOrder }, rotation: { type: "means", centerAlignToOrigin: true, contrast: { groupColumn: "class", negativeLevel: { type: "string", value: "n" }, positiveLevel: { type: "string", value: "p" } } } };
 // @ts-expect-error ONA forward is exactly zero.
 const illegalOnaForward = { ...ona, window: { ...ona.window, forward: 1 } } satisfies CanonicalOnaConfigV3;
 // @ts-expect-error ONA permits MovingStanzaWindow only.
 const illegalOnaConversation = { ...ona, window: { type: "Conversation" } } satisfies CanonicalOnaConfigV3;
 // @ts-expect-error ONA permits SVD only.
 const illegalOnaReference = { ...ona, rotation: { type: "reference", referenceId: "r", expectedContentSha256: "d" } } satisfies CanonicalOnaConfigV3;
+// @ts-expect-error A canonical Standard config requires at least three Codes.
+const illegalTwoCodes = { ...standard, codes: codes.slice(0, 2) } satisfies CanonicalStandardConfigV3;
+// @ts-expect-error directionalMask is ONA-only.
+const illegalStandardDirectionalMask = { ...standard, directionalMask: mask } satisfies CanonicalStandardConfigV3;
+// @ts-expect-error Binary weighting is Standard-only.
+const illegalOnaBinary = { ...ona, weighting: { type: "binary" } } satisfies CanonicalOnaConfigV3;
