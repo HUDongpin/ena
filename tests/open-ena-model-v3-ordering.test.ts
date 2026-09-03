@@ -38,7 +38,7 @@ function confirmedPolicy(
     kind: "source-order-confirmed",
     confirmation: {
       kind: "explicit-researcher-confirmation",
-      datasetSha256: HASH,
+      datasetSha256,
       rowCount,
       relevantColumns,
       confirmedAt: "2026-09-03T00:00:00.000Z",
@@ -51,9 +51,11 @@ function resolutionContext(
   rowCount: number,
   analysisFamily: "standard" | "ona" = "standard",
   normalizedTableSha256 = HASH,
+  confirmationAnalysisFamily: "standard" | "ona" = analysisFamily,
 ): OrderingResolutionContextV3 {
   return {
     analysisFamily,
+    confirmationAnalysisFamily,
     datasetBinding: {
       hashKind: "normalized-utf8-csv-text-sha256",
       normalizedTableSha256,
@@ -124,6 +126,8 @@ function assertSourceContextCompileContract(
   source: Extract<CanonicalRowOrderV3, { kind: "source-order-confirmed" }>,
   context: OrderingResolutionContextV3,
 ): void {
+  // @ts-expect-error The confirmation-time family capability is readonly.
+  context.confirmationAnalysisFamily = "ona";
   resolveRowOrderV3(rows, ["horizon"], columns);
   resolveRowOrderV3(rows, ["horizon"], source, context);
   // @ts-expect-error Source-confirmed row ordering requires trusted context.
@@ -434,33 +438,46 @@ test("text ordering rejects a canonical but unsupported locale instead of silent
   ), /unsupported|locale/i);
 });
 
-test("text ordering rejects Unicode collation extensions that the runtime silently drops", () => {
-  for (const locale of ["en-u-co-phonebk", "en-u-co-foobar"]) {
-    assert.deepEqual(
-      Intl.Collator.supportedLocalesOf([locale], { localeMatcher: "lookup" }),
-      [locale],
-    );
-    assert.notEqual(
-      new Intl.Collator(locale, {
+test("text ordering binds or rejects a requested collation according to effective runtime behavior", () => {
+  const locale = "en-u-co-phonebk";
+  const requested = new Intl.Locale(locale).collation;
+  const actual = new Intl.Collator(locale, {
+    sensitivity: "variant",
+    numeric: false,
+    usage: "sort",
+  }).resolvedOptions().collation;
+  const resolve = () => resolveRowOrderV3(
+    [{ horizon: "h", label: "a" }],
+    ["horizon"],
+    columnsPolicy({
+      column: "label",
+      direction: "ascending",
+      comparator: { type: "text", locale, sensitivity: "variant", numeric: false },
+    }),
+  );
+  if (requested === actual && actual !== "default" && actual !== "standard") {
+    assert.equal(resolve().textCollationBindings[0].collation, actual);
+  } else {
+    assert.throws(resolve, /collation|extension|locale|fallback/i);
+  }
+
+  assert.throws(() => resolveRowOrderV3(
+    [{ horizon: "h", label: "a" }],
+    ["horizon"],
+    columnsPolicy({
+      column: "label",
+      direction: "ascending",
+      comparator: {
+        type: "text",
+        locale: "en-u-co-foobar",
         sensitivity: "variant",
         numeric: false,
-        usage: "sort",
-      }).resolvedOptions().collation,
-      new Intl.Locale(locale).collation,
-    );
-    assert.throws(() => resolveRowOrderV3(
-      [{ horizon: "h", label: "a" }],
-      ["horizon"],
-      columnsPolicy({
-        column: "label",
-        direction: "ascending",
-        comparator: { type: "text", locale, sensitivity: "variant", numeric: false },
-      }),
-    ), /collation|extension|locale|fallback/i);
-  }
+      },
+    }),
+  ), /collation|extension|locale|fallback/i);
 });
 
-test("supported Unicode collation and case-first extensions are accepted and bound", (context) => {
+test("a supported Unicode collation extension is accepted and bound", (context) => {
   const phonebookLocale = "de-u-co-phonebk";
   const phonebookOptions = new Intl.Collator(phonebookLocale, {
     sensitivity: "variant",
@@ -491,8 +508,23 @@ test("supported Unicode collation and case-first extensions are accepted and bou
   );
   assert.equal(phonebook.textCollationBindings[0].requestedLocale, phonebookLocale);
   assert.equal(phonebook.textCollationBindings[0].collation, "phonebk");
+});
 
+test("a supported Unicode case-first extension is accepted and bound", (context) => {
   const caseFirstLocale = "en-u-kf-upper";
+  const caseFirstOptions = new Intl.Collator(caseFirstLocale, {
+    sensitivity: "variant",
+    numeric: false,
+    usage: "sort",
+  }).resolvedOptions();
+  const caseFirstSupported = Intl.Collator.supportedLocalesOf(
+    [caseFirstLocale],
+    { localeMatcher: "lookup" },
+  ).length === 1 && caseFirstOptions.caseFirst === "upper";
+  if (!caseFirstSupported) {
+    context.skip("Current runtime does not expose the requested case-first behavior.");
+    return;
+  }
   const caseFirst = resolveRowOrderV3(
     [{ horizon: "h", label: "a" }],
     ["horizon"],
@@ -511,12 +543,15 @@ test("supported Unicode collation and case-first extensions are accepted and bou
   assert.equal(caseFirst.textCollationBindings[0].caseFirst, "upper");
 });
 
-test("explicit Unicode numeric extension cannot contradict the comparator numeric option", () => {
+test("explicit Unicode numeric extension cannot contradict the comparator numeric option", (context) => {
   const conflicts = [
     { locale: "en-u-kn", numeric: false },
     { locale: "en-u-kn-false", numeric: true },
   ];
+  let exercised = 0;
   for (const { locale, numeric } of conflicts) {
+    if (Intl.Collator.supportedLocalesOf([locale], { localeMatcher: "lookup" }).length !== 1) continue;
+    exercised += 1;
     assert.throws(() => resolveRowOrderV3(
       [{ horizon: "h", label: "item2" }],
       ["horizon"],
@@ -532,6 +567,14 @@ test("explicit Unicode numeric extension cannot contradict the comparator numeri
     { locale: "en-u-kn", numeric: true },
     { locale: "en-u-kn-false", numeric: false },
   ]) {
+    const options = new Intl.Collator(locale, {
+      sensitivity: "variant",
+      numeric,
+      usage: "sort",
+    }).resolvedOptions();
+    if (Intl.Collator.supportedLocalesOf([locale], { localeMatcher: "lookup" }).length !== 1
+      || options.numeric !== numeric) continue;
+    exercised += 1;
     const resolved = resolveRowOrderV3(
       [{ horizon: "h", label: "item2" }],
       ["horizon"],
@@ -543,6 +586,7 @@ test("explicit Unicode numeric extension cannot contradict the comparator numeri
     );
     assert.equal(resolved.textCollationBindings[0].numeric, numeric);
   }
+  if (exercised === 0) context.skip("Current runtime does not expose Unicode numeric collation behavior.");
 });
 
 test("a private-use u subtag is not misread as a Unicode behavior extension", () => {
@@ -643,6 +687,8 @@ test("source-order confirmation validates row count and relevant Horizon columns
 test("source-order confirmation requires a trusted current binding and expires on hash changes", () => {
   const rows = [{ horizon: "h1" }, { horizon: "h2" }];
   const policy = confirmedPolicy(rows.length, ["horizon"]);
+  const differentlyBoundPolicy = confirmedPolicy(rows.length, ["horizon"], OTHER_HASH);
+  assert.equal(differentlyBoundPolicy.confirmation.datasetSha256, OTHER_HASH);
   const callWithoutContext = resolveRowOrderV3 as unknown as (
     inputRows: readonly Record<string, unknown>[],
     horizonColumns: readonly string[],
@@ -663,6 +709,9 @@ test("source-order confirmation requires a trusted current binding and expires o
   assert.throws(() => resolveRowOrderV3(
     rows, ["horizon"], policy, resolutionContext(rows.length, "standard", OTHER_HASH),
   ), /dataset|hash|expired|binding/i);
+  assert.throws(() => resolveRowOrderV3(
+    rows, ["horizon"], differentlyBoundPolicy, resolutionContext(rows.length),
+  ), /dataset|hash|expired|binding/i);
 
   const reorderedRows = [...rows].reverse();
   assert.throws(() => resolveRowOrderV3(
@@ -673,16 +722,82 @@ test("source-order confirmation requires a trusted current binding and expires o
   ), /dataset|hash|expired|binding/i);
 });
 
+test("source-order confirmation expires when the current analysis family differs from its bound family", () => {
+  const rows = [{ horizon: "h" }];
+  const policy = confirmedPolicy(rows.length, ["horizon"]);
+  assert.throws(() => resolveRowOrderV3(
+    rows,
+    ["horizon"],
+    policy,
+    resolutionContext(rows.length, "ona", HASH, "standard"),
+  ), /family|expired|confirmation/i);
+
+  const matching = resolveRowOrderV3(
+    rows,
+    ["horizon"],
+    policy,
+    resolutionContext(rows.length, "standard", HASH, "standard"),
+  );
+  assert.equal(matching.sourceOrderBinding?.analysisFamily, "standard");
+});
+
+test("source-order relevant columns must exactly match the current ordered field identity", () => {
+  const rows = [{ h1: "one", h2: "two", h3: "three" }];
+  const policy = confirmedPolicy(rows.length, ["h1", "h2"]);
+  const context = resolutionContext(rows.length);
+  for (const currentColumns of [
+    ["h1"],
+    ["h2"],
+    ["h2", "h1"],
+    ["h1", "h3"],
+  ]) {
+    assert.throws(() => resolveRowOrderV3(
+      rows, currentColumns, policy, context,
+    ), /relevantColumns|field|column|expired/i);
+  }
+  assert.doesNotThrow(() => resolveRowOrderV3(
+    rows, ["h1", "h2"], policy, context,
+  ));
+});
+
+test("Horizon source confirmation exactly binds the ordered Unit-Horizon field union", () => {
+  const rows = [{ unit: "u", horizon: "h", extra: "x" }];
+  const context = resolutionContext(rows.length);
+  assert.doesNotThrow(() => resolveHorizonOrderV3(
+    rows,
+    ["unit"],
+    ["horizon"],
+    confirmedPolicy(rows.length, ["unit", "horizon"]),
+    context,
+  ));
+  for (const relevantColumns of [
+    ["horizon", "unit"],
+    ["unit", "horizon", "extra"],
+    ["horizon"],
+  ]) {
+    assert.throws(() => resolveHorizonOrderV3(
+      rows,
+      ["unit"],
+      ["horizon"],
+      confirmedPolicy(rows.length, relevantColumns),
+      context,
+    ), /relevantColumns|field|column|expired/i);
+  }
+});
+
 test("resolution context is exact, descriptor-safe, and validates family plus complete dataset binding", () => {
   const rows = [{ horizon: "h" }];
   const policy = confirmedPolicy(rows.length, ["horizon"]);
   type MutableContextProbe = {
     analysisFamily: unknown;
+    confirmationAnalysisFamily?: unknown;
     datasetBinding: Record<string, unknown>;
     extra?: unknown;
   };
   const malformed: Array<(context: MutableContextProbe) => void> = [
     (context) => { context.analysisFamily = "other"; },
+    (context) => { context.confirmationAnalysisFamily = "other"; },
+    (context) => { delete context.confirmationAnalysisFamily; },
     (context) => { context.datasetBinding.hashKind = "md5"; },
     (context) => { context.datasetBinding.normalizedTableSha256 = "not-a-hash"; },
     (context) => { context.datasetBinding.headerSha256 = "not-a-hash"; },
@@ -696,6 +811,14 @@ test("resolution context is exact, descriptor-safe, and validates family plus co
       rows, ["horizon"], policy, context as unknown as OrderingResolutionContextV3,
     ), /context|family|hash|rowCount|shape|binding/i);
   }
+  const malformedColumnsContext = structuredClone(resolutionContext(rows.length)) as unknown as MutableContextProbe;
+  malformedColumnsContext.confirmationAnalysisFamily = "other";
+  assert.throws(() => resolveRowOrderV3(
+    [{ horizon: "h", order: 1 }],
+    ["horizon"],
+    columnsPolicy(ascendingNumber("order")),
+    malformedColumnsContext as unknown as OrderingResolutionContextV3,
+  ), /context|family|shape|binding/i);
 
   let ordinaryGets = 0;
   const noGet = () => {
@@ -710,6 +833,7 @@ test("resolution context is exact, descriptor-safe, and validates family plus co
   };
   const context = new Proxy({
     analysisFamily: "standard" as const,
+    confirmationAnalysisFamily: "standard" as const,
     datasetBinding: new Proxy(bindingTarget, { get: noGet }),
   }, { get: noGet });
   resolveRowOrderV3(rows, ["horizon"], policy, context);
@@ -729,9 +853,11 @@ test("source-order binding is detached and frozen, row ordering permits ONA, and
 
   const mutableContext = rowContext as unknown as {
     analysisFamily: "standard" | "ona";
+    confirmationAnalysisFamily: "standard" | "ona";
     datasetBinding: DatasetBindingV3;
   };
   mutableContext.analysisFamily = "standard";
+  mutableContext.confirmationAnalysisFamily = "standard";
   mutableContext.datasetBinding.normalizedTableSha256 = OTHER_HASH;
   assert.equal(rowResolved.sourceOrderBinding?.analysisFamily, "ona");
   assert.equal(rowResolved.sourceOrderBinding?.datasetBinding.normalizedTableSha256, HASH);

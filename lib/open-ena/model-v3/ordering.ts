@@ -27,6 +27,7 @@ type SourceOrderPolicyV3 = Extract<CanonicalRowOrderV3, { kind: "source-order-co
 
 export interface OrderingResolutionContextV3 {
   readonly analysisFamily: "standard" | "ona";
+  readonly confirmationAnalysisFamily: "standard" | "ona";
   readonly datasetBinding: DeepReadonlyV3<DatasetBindingV3>;
 }
 
@@ -413,11 +414,25 @@ function lowercaseSha256V3(value: unknown, label: string): string {
 function snapshotResolutionContextV3(
   value: unknown,
   currentRowCount: number,
-): { analysisFamily: "standard" | "ona"; datasetBinding: DatasetBindingV3 } {
+): {
+  analysisFamily: "standard" | "ona";
+  confirmationAnalysisFamily: "standard" | "ona";
+  datasetBinding: DatasetBindingV3;
+} {
   const context = snapshotPlainJsonRecordV3(value, "ordering resolution context");
-  assertExactKeysV3(context, ["analysisFamily", "datasetBinding"], "ordering resolution context");
+  assertExactKeysV3(
+    context,
+    ["analysisFamily", "confirmationAnalysisFamily", "datasetBinding"],
+    "ordering resolution context",
+  );
   if (context.analysisFamily !== "standard" && context.analysisFamily !== "ona") {
     throw new TypeError("ordering resolution context.analysisFamily must be standard or ona.");
+  }
+  if (context.confirmationAnalysisFamily !== "standard" && context.confirmationAnalysisFamily !== "ona") {
+    throw new TypeError("ordering resolution context.confirmationAnalysisFamily must be standard or ona.");
+  }
+  if (context.analysisFamily !== context.confirmationAnalysisFamily) {
+    throw new Error("Source-order confirmation has expired because the analysis family changed.");
   }
   const binding = snapshotPlainJsonRecordV3(
     context.datasetBinding,
@@ -442,6 +457,7 @@ function snapshotResolutionContextV3(
   }
   return {
     analysisFamily: context.analysisFamily,
+    confirmationAnalysisFamily: context.confirmationAnalysisFamily,
     datasetBinding: {
       hashKind: binding.hashKind,
       normalizedTableSha256: lowercaseSha256V3(
@@ -481,9 +497,9 @@ function snapshotConfirmationV3(
     throw new TypeError(`${label}.rowCount must equal the current rows length.`);
   }
   const relevantColumns = snapshotColumnListV3(record.relevantColumns, `${label}.relevantColumns`);
-  const relevant = new Set(relevantColumns);
-  if (requiredRelevantColumns.some((column) => !relevant.has(column))) {
-    throw new TypeError(`${label}.relevantColumns must cover every Horizon identity column.`);
+  if (relevantColumns.length !== requiredRelevantColumns.length
+    || relevantColumns.some((column, index) => column !== requiredRelevantColumns[index])) {
+    throw new TypeError(`${label}.relevantColumns must exactly match the current ordered identity columns.`);
   }
   if (typeof record.confirmedAt !== "string" || !CANONICAL_UTC_TIMESTAMP.test(record.confirmedAt)
     || !Number.isFinite(Date.parse(record.confirmedAt))
@@ -537,12 +553,19 @@ function snapshotOrderPolicyV3(
 
 function bindSourceOrderV3(
   policy: CanonicalRowOrderV3,
-  context: { analysisFamily: "standard" | "ona"; datasetBinding: DatasetBindingV3 } | null,
+  context: {
+    analysisFamily: "standard" | "ona";
+    confirmationAnalysisFamily: "standard" | "ona";
+    datasetBinding: DatasetBindingV3;
+  } | null,
   requireStandardFamily: boolean,
 ): ResolvedSourceOrderBindingV3 | null {
   if (policy.kind === "columns") return null;
   if (context === null) {
     throw new TypeError("A trusted ordering resolution context is required for source-order-confirmed policy.");
+  }
+  if (context.analysisFamily !== context.confirmationAnalysisFamily) {
+    throw new Error("Source-order confirmation has expired because the analysis family changed.");
   }
   if (requireStandardFamily && context.analysisFamily !== "standard") {
     throw new TypeError("Trajectory Horizon source order requires the standard analysis family.");
