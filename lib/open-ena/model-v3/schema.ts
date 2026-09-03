@@ -20,44 +20,17 @@ import {
   OPEN_ENA_RUNTIME_POLICY_VERSION_V3,
   OPEN_ENA_VALIDATION_CONTRACT_VERSION_V3,
 } from "./types";
+import {
+  snapshotDenseJsonArrayV3,
+  snapshotPlainJsonRecordV3,
+} from "./canonical-json";
 import type { OpenEnaDirectionalMask } from "../types";
 
 const LOWERCASE_SHA256 = /^[0-9a-f]{64}$/u;
 const CANONICAL_UTC_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 
 function strictRecord(value: unknown, label: string): Record<string, unknown> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new TypeError(`${label} must be a plain JSON object.`);
-  }
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
-    throw new TypeError(`${label} must be a plain JSON object.`);
-  }
-  // Proxy meta-traps cannot be avoided, but one own-key/descriptor capture keeps all
-  // subsequent decoding off the original container and never invokes its `get` trap.
-  const captured = Reflect.ownKeys(value).map((key) => ({
-    key,
-    descriptor: Object.getOwnPropertyDescriptor(value, key),
-  }));
-  for (const { key, descriptor } of captured) {
-    if (typeof key !== "string") {
-      throw new TypeError(`${label} must contain only string-named data properties.`);
-    }
-    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
-      throw new TypeError(`${label}.${key} must be an own enumerable data property, not an accessor.`);
-    }
-  }
-  const snapshot = Object.create(null) as Record<string, unknown>;
-  for (const { key, descriptor } of captured) {
-    if (typeof key !== "string" || descriptor === undefined || !("value" in descriptor)) continue;
-    Object.defineProperty(snapshot, key, {
-      value: descriptor.value,
-      enumerable: true,
-      configurable: true,
-      writable: true,
-    });
-  }
-  return snapshot;
+  return snapshotPlainJsonRecordV3(value, label);
 }
 
 function exactSnapshot(
@@ -79,49 +52,7 @@ function exactRecord(value: unknown, keys: readonly string[], label: string): Re
 }
 
 function strictArray(value: unknown, label: string): unknown[] {
-  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
-    throw new TypeError(`${label} must be a dense plain JSON array.`);
-  }
-  // As with records, Proxy meta-traps are unavoidable; descriptor values form the
-  // single coherent snapshot, and the original array is never read with `get`.
-  const captured = Reflect.ownKeys(value).map((key) => ({
-    key,
-    descriptor: Object.getOwnPropertyDescriptor(value, key),
-  }));
-  const lengthCapture = captured.find(({ key }) => key === "length");
-  const lengthDescriptor = lengthCapture?.descriptor;
-  if (lengthDescriptor === undefined
-    || lengthDescriptor.enumerable
-    || !("value" in lengthDescriptor)
-    || typeof lengthDescriptor.value !== "number"
-    || !Number.isSafeInteger(lengthDescriptor.value)
-    || lengthDescriptor.value < 0) {
-    throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
-  }
-  const length = lengthDescriptor.value;
-  if (captured.length !== length + 1) {
-    throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
-  }
-  const snapshot = new Array<unknown>(length);
-  let elementCount = 0;
-  for (const { key, descriptor } of captured) {
-    if (key === "length") continue;
-    if (typeof key !== "string"
-      || !/^(0|[1-9]\d*)$/u.test(key)
-      || !Number.isSafeInteger(Number(key))
-      || Number(key) >= length) {
-      throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
-    }
-    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
-      throw new TypeError(`${label}[${key}] must be an own enumerable data property, not an accessor.`);
-    }
-    snapshot[Number(key)] = descriptor.value;
-    elementCount += 1;
-  }
-  if (elementCount !== length) {
-    throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
-  }
-  return snapshot;
+  return snapshotDenseJsonArrayV3(value, label);
 }
 
 function literal<T extends string | number | boolean>(

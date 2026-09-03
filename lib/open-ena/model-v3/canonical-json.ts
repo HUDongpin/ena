@@ -1,3 +1,94 @@
+type CapturedOwnDescriptorV3 = {
+  key: PropertyKey;
+  descriptor: PropertyDescriptor | undefined;
+};
+
+function captureOwnDescriptorsV3(value: object): CapturedOwnDescriptorV3[] {
+  // Proxy meta-traps cannot be eliminated, but one own-key/descriptor capture
+  // prevents all subsequent inspection from invoking ordinary `get` behavior.
+  return Reflect.ownKeys(value).map((key) => ({
+    key,
+    descriptor: Object.getOwnPropertyDescriptor(value, key),
+  }));
+}
+
+export function snapshotPlainJsonRecordV3(
+  value: unknown,
+  label: string,
+): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError(`${label} must be a plain JSON object.`);
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new TypeError(`${label} must be a plain JSON object.`);
+  }
+  const captured = captureOwnDescriptorsV3(value);
+  const dataProperties = captured.map(({ key, descriptor }) => {
+    if (typeof key !== "string") {
+      throw new TypeError(`${label} must contain only string-named data properties.`);
+    }
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+      throw new TypeError(`${label}.${key} must be an own enumerable data property, not an accessor.`);
+    }
+    return { key, value: descriptor.value };
+  });
+  const snapshot = Object.create(null) as Record<string, unknown>;
+  for (const { key, value: propertyValue } of dataProperties) {
+    Object.defineProperty(snapshot, key, {
+      value: propertyValue,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+  }
+  return snapshot;
+}
+
+export function snapshotDenseJsonArrayV3(value: unknown, label: string): unknown[] {
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+    throw new TypeError(`${label} must be a dense plain JSON array.`);
+  }
+  const captured = captureOwnDescriptorsV3(value);
+  const lengthCapture = captured.find(({ key }) => key === "length");
+  const lengthDescriptor = lengthCapture?.descriptor;
+  if (lengthDescriptor === undefined
+    || lengthDescriptor.enumerable
+    || !("value" in lengthDescriptor)
+    || typeof lengthDescriptor.value !== "number"
+    || !Number.isSafeInteger(lengthDescriptor.value)
+    || lengthDescriptor.value < 0) {
+    throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
+  }
+  const length = lengthDescriptor.value;
+  if (captured.length !== length + 1) {
+    throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
+  }
+  const snapshot = new Array<unknown>(length);
+  let elementCount = 0;
+  for (const { key, descriptor } of captured) {
+    if (key === "length") continue;
+    if (typeof key !== "string"
+      || !/^(0|[1-9]\d*)$/u.test(key)
+      || !Number.isSafeInteger(Number(key))) {
+      throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
+    }
+    const index = Number(key);
+    if (index >= length) {
+      throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
+    }
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+      throw new TypeError(`${label}[${key}] must be an own enumerable data property, not an accessor.`);
+    }
+    snapshot[index] = descriptor.value;
+    elementCount += 1;
+  }
+  if (elementCount !== length) {
+    throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
+  }
+  return snapshot;
+}
+
 function canonicalize(value: unknown, active: WeakSet<object>, label: string): string {
   if (value === null) return "null";
 
@@ -23,50 +114,17 @@ function canonicalize(value: unknown, active: WeakSet<object>, label: string): s
   active.add(value);
   try {
     if (Array.isArray(value)) {
-      if (Object.getPrototypeOf(value) !== Array.prototype) {
-        throw new TypeError(`${label} must be a dense plain JSON array.`);
-      }
-      const keys = Reflect.ownKeys(value);
-      if (keys.length !== value.length + 1 || !keys.includes("length")) {
-        throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
-      }
+      const snapshot = snapshotDenseJsonArrayV3(value, label);
       const entries: string[] = [];
-      for (let index = 0; index < value.length; index += 1) {
-        const key = String(index);
-        if (keys[index] !== key) {
-          throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
-        }
-        const descriptor = Object.getOwnPropertyDescriptor(value, key);
-        if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
-          throw new TypeError(`${label}[${index}] must be an own enumerable data property, not an accessor.`);
-        }
-        entries.push(canonicalize(descriptor.value, active, `${label}[${index}]`));
+      for (let index = 0; index < snapshot.length; index += 1) {
+        entries.push(canonicalize(snapshot[index], active, `${label}[${index}]`));
       }
       return `[${entries.join(",")}]`;
     }
 
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      throw new TypeError(`${label} must contain only plain JSON objects.`);
-    }
-    const keys = Reflect.ownKeys(value);
-    const descriptors = new Map<string, PropertyDescriptor>();
-    for (const key of keys) {
-      if (typeof key !== "string") {
-        throw new TypeError(`${label} must not contain symbol properties.`);
-      }
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
-        throw new TypeError(`${label}.${key} must be an own enumerable data property, not an accessor.`);
-      }
-      descriptors.set(key, descriptor);
-    }
-    const entries = [...descriptors.keys()].sort().map((key) => {
-      const descriptor = descriptors.get(key);
-      if (descriptor === undefined || !("value" in descriptor)) {
-        throw new TypeError(`${label}.${key} must be an own enumerable data property.`);
-      }
-      return `${JSON.stringify(key)}:${canonicalize(descriptor.value, active, `${label}.${key}`)}`;
+    const snapshot = snapshotPlainJsonRecordV3(value, label);
+    const entries = Object.keys(snapshot).sort().map((key) => {
+      return `${JSON.stringify(key)}:${canonicalize(snapshot[key], active, `${label}.${key}`)}`;
     });
     return `{${entries.join(",")}}`;
   } finally {

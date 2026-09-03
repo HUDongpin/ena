@@ -332,6 +332,85 @@ test("canonical JSON rejects accessors without invoking them and does not mutate
   assert.deepEqual(input, before);
 });
 
+test("canonical JSON snapshots a transparent array Proxy without invoking get", async () => {
+  let gets = 0;
+  const proxied = new Proxy(["alpha", "beta"], {
+    get() {
+      gets += 1;
+      throw new Error("canonical array Proxy get must not run");
+    },
+  });
+
+  assert.equal(canonicalJsonV3(proxied), '["alpha","beta"]');
+  assert.equal(
+    await sha256CanonicalJsonV3(proxied),
+    await sha256CanonicalJsonV3(["alpha", "beta"]),
+  );
+  assert.equal(gets, 0);
+});
+
+test("canonical JSON ignores changing Proxy length gets and emits every descriptor element", async () => {
+  let gets = 0;
+  const proxied = new Proxy(["alpha", "beta", "gamma"], {
+    get(target, key, receiver) {
+      gets += 1;
+      if (key === "length") return gets % 2 === 0 ? 99 : 1;
+      return Reflect.get(target, key, receiver);
+    },
+  });
+
+  assert.equal(canonicalJsonV3(proxied), '["alpha","beta","gamma"]');
+  assert.equal(
+    await sha256CanonicalJsonV3(proxied),
+    await sha256CanonicalJsonV3(["alpha", "beta", "gamma"]),
+  );
+  assert.equal(gets, 0);
+});
+
+test("canonical JSON and hash use element descriptor truth instead of numeric-index get", async () => {
+  let gets = 0;
+  const descriptorTruth = ["descriptor-alpha", "descriptor-beta"];
+  const proxied = new Proxy(descriptorTruth, {
+    get(target, key, receiver) {
+      gets += 1;
+      if (key === "0") return "approved-but-false-alpha";
+      if (key === "1") return "approved-but-false-beta";
+      return Reflect.get(target, key, receiver);
+    },
+  });
+
+  assert.equal(canonicalJsonV3(proxied), '["descriptor-alpha","descriptor-beta"]');
+  assert.equal(
+    await sha256CanonicalJsonV3(proxied),
+    await sha256CanonicalJsonV3(descriptorTruth),
+  );
+  assert.equal(gets, 0);
+});
+
+test("lying Proxy length cannot hide a trailing descriptor element from canonical JSON or hash", async () => {
+  let firstGets = 0;
+  let secondGets = 0;
+  const first = new Proxy(["same", "prefix", "tail-one"], {
+    get(target, key, receiver) {
+      firstGets += 1;
+      if (key === "length") return 2;
+      return Reflect.get(target, key, receiver);
+    },
+  });
+  const second = new Proxy(["same", "prefix", "tail-two"], {
+    get(target, key, receiver) {
+      secondGets += 1;
+      if (key === "length") return 2;
+      return Reflect.get(target, key, receiver);
+    },
+  });
+
+  assert.notEqual(canonicalJsonV3(first), canonicalJsonV3(second));
+  assert.notEqual(await sha256CanonicalJsonV3(first), await sha256CanonicalJsonV3(second));
+  assert.equal(firstGets, 0);
+  assert.equal(secondGets, 0);
+});
+
 test("deepFreezeV3 recursively freezes nested arrays and objects and tolerates repeated references", () => {
   const shared = { answer: 42 };
   const value = { list: [shared], repeated: shared };
@@ -1983,7 +2062,17 @@ test("strict array validation remains descriptor-snapshot based and linear per a
     new URL("../lib/open-ena/model-v3/schema.ts", import.meta.url),
     "utf8",
   );
-  assert.doesNotMatch(schemaSource, /keys\.includes\s*\(/u);
+  const canonicalSource = readFileSync(
+    new URL("../lib/open-ena/model-v3/canonical-json.ts", import.meta.url),
+    "utf8",
+  );
+  const inspectorSource = canonicalSource
+    .split("export function snapshotDenseJsonArrayV3", 2)[1]
+    ?.split("\nfunction canonicalize", 1)[0];
+  assert.ok(inspectorSource, "shared dense-array descriptor inspector must exist");
+  assert.doesNotMatch(inspectorSource, /\.(?:includes|indexOf)\s*\(/u);
+  assert.doesNotMatch(inspectorSource, /for\s*\([^)]*\bindex\b[^)]*\)/u);
+  assert.doesNotMatch(schemaSource, /\.(?:includes|indexOf)\s*\(/u);
 
   const size = 128;
   const fixture = onaFixture();
