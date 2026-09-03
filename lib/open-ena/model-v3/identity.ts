@@ -564,12 +564,21 @@ export async function resolveExecutionIdentitiesForRowsV3(
   resolver: ExecutionIdentityResolverV3,
 ): Promise<Array<{ sourceRowIndex: number; unitToken: string; horizonToken: string; groupToken: string | null }>> {
   const rowSnapshot = snapshotDenseJsonArrayV3(rows, "rows");
+  const unitColumnSnapshot = snapshotDenseJsonArrayV3(unitColumns, "unitColumns");
+  const horizonColumnSnapshot = snapshotDenseJsonArrayV3(horizonColumns, "horizonColumns");
+  const normalizedUnitColumns = assertColumnsV3(unitColumnSnapshot as string[], "unitColumns");
+  const normalizedHorizonColumns = assertColumnsV3(horizonColumnSnapshot as string[], "horizonColumns");
+  if (groupColumn !== null && (typeof groupColumn !== "string" || groupColumn.trim().length === 0)) {
+    throw new TypeError("groupColumn must be null or a nonblank string.");
+  }
+  const rowRecords = rowSnapshot.map((row, rowIndex) => snapshotPlainJsonRecordV3(row, `row ${rowIndex}`));
   const bindings: Array<{ sourceRowIndex: number; unitToken: string; horizonToken: string; groupToken: string | null }> = [];
-  for (let sourceRowIndex = 0; sourceRowIndex < rowSnapshot.length; sourceRowIndex += 1) {
-    const resolved = await resolveExecutionIdentityForRowV3(
-      rowSnapshot[sourceRowIndex], unitColumns, horizonColumns, groupColumn, resolver,
-    );
-    bindings.push({ sourceRowIndex, ...resolved });
+  const resolvedRows = rowRecords.map((row) => resolveExecutionIdentityForRowV3(
+    row, normalizedUnitColumns, normalizedHorizonColumns, groupColumn, resolver,
+  ));
+  const resolved = await Promise.all(resolvedRows);
+  for (let sourceRowIndex = 0; sourceRowIndex < resolved.length; sourceRowIndex += 1) {
+    bindings.push({ sourceRowIndex, ...resolved[sourceRowIndex] });
   }
   return bindings;
 }

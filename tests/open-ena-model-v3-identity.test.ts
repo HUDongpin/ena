@@ -288,6 +288,61 @@ test("dictionary build and resolver accept proxied boundaries without ordinary g
   assert.equal(binding.groupToken, dictionary.groups[0].token);
 });
 
+test("batch resolution snapshots all nested rows and columns before its first await", async () => {
+  const sourceRows = [
+    { unit: "first", horizon: 1, group: "a" },
+    { unit: "second", horizon: 2, group: "b" },
+  ];
+  const unitColumns = ["unit"];
+  const horizonColumns = ["horizon"];
+  const dictionary = await buildExecutionIdentityDictionaryV3(sourceRows, unitColumns, horizonColumns, "group");
+  const resolver = await createExecutionIdentityResolverV3(dictionary);
+  const pending = resolveExecutionIdentitiesForRowsV3(
+    sourceRows, unitColumns, horizonColumns, "group", resolver,
+  );
+  sourceRows[1].unit = "mutated-unknown";
+  sourceRows[1].horizon = 999;
+  sourceRows[1].group = "mutated-group";
+  sourceRows[1] = { unit: "replacement-unknown", horizon: 888, group: "replacement" };
+  unitColumns[0] = "missing-unit-column";
+  horizonColumns[0] = "missing-horizon-column";
+  const bindings = await pending;
+  assert.deepEqual(bindings.map(({ sourceRowIndex, unitToken, horizonToken, groupToken }) => ({
+    sourceRowIndex, unitToken, horizonToken, groupToken,
+  })), [
+    {
+      sourceRowIndex: 0,
+      unitToken: dictionary.units.find((entry) => entry.fields[0].value.value === "first")?.token,
+      horizonToken: dictionary.horizons.find((entry) => entry.fields[0].value.value === 1)?.token,
+      groupToken: dictionary.groups.find((entry) => entry.fields[0].value.value === "a")?.token,
+    },
+    {
+      sourceRowIndex: 1,
+      unitToken: dictionary.units.find((entry) => entry.fields[0].value.value === "second")?.token,
+      horizonToken: dictionary.horizons.find((entry) => entry.fields[0].value.value === 2)?.token,
+      groupToken: dictionary.groups.find((entry) => entry.fields[0].value.value === "b")?.token,
+    },
+  ]);
+});
+
+test("single-row resolution snapshots row and columns before its first await", async () => {
+  const sourceRow = { unit: "single", horizon: 1, group: true };
+  const unitColumns = ["unit"];
+  const horizonColumns = ["horizon"];
+  const dictionary = await buildExecutionIdentityDictionaryV3([sourceRow], unitColumns, horizonColumns, "group");
+  const resolver = await createExecutionIdentityResolverV3(dictionary);
+  const pending = resolveExecutionIdentityForRowV3(sourceRow, unitColumns, horizonColumns, "group", resolver);
+  sourceRow.unit = "mutated-unknown";
+  sourceRow.horizon = 999;
+  sourceRow.group = false;
+  unitColumns[0] = "missing-unit-column";
+  horizonColumns[0] = "missing-horizon-column";
+  const binding = await pending;
+  assert.equal(binding.unitToken, dictionary.units[0].token);
+  assert.equal(binding.horizonToken, dictionary.horizons[0].token);
+  assert.equal(binding.groupToken, dictionary.groups[0].token);
+});
+
 test("tampered dictionaries are rejected before resolver creation", async () => {
   const dictionary = await buildExecutionIdentityDictionaryV3(rows, ["student"], ["turn"], "group");
   const tamperCases = [
