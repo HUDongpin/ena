@@ -641,47 +641,11 @@ test("Moving Frequency rejects row-level product overflow before endpoint aggreg
     B: 1e308,
     C: 1e308,
   }];
-  const oracle = accumulateData({
-    rows,
-    units: ["unit"],
-    conversation: ["horizon"],
-    codes: ["A", "B", "C"],
-    model: "EndPoint",
-    window: "MovingStanzaWindow",
-    windowSizeBack: 1,
-    windowSizeForward: 0,
-    weightBy: "sum",
-  });
-  assert.deepEqual(
-    oracle.rowConnectionCounts.map((row) => oracle.codeColumns.map((column) => row[column])),
-    [[Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]],
-  );
-
   assertNonFiniteBlocksNumericalDerivatives(output(dataset(rows), draft(overflowingMovingDraft)));
 });
 
-test("one-Unit Moving Frequency overflow blocks SVD before jENA matrix sanitization", () => {
+test("one-Unit Moving Frequency aggregate overflow blocks SVD", () => {
   const rows = overflowingMovingRows(["u1"]);
-  const oracle = accumulateData({
-    rows,
-    units: ["unit"],
-    conversation: ["horizon"],
-    codes: ["A", "B", "C"],
-    model: "EndPoint",
-    window: "MovingStanzaWindow",
-    windowSizeBack: 1,
-    windowSizeForward: 0,
-    weightBy: "sum",
-  });
-  assert.deepEqual(
-    oracle.rowConnectionCounts.map((row) => oracle.codeColumns.map((column) => row[column])),
-    [[1e308, 1e308, 1e308], [1e308, 1e308, 1e308]],
-  );
-  assert.deepEqual(
-    oracle.connectionCounts.map((row) => oracle.codeColumns.map((column) => row[column])),
-    [[Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]],
-  );
-
   const result = output(dataset(rows), draft(overflowingMovingDraft));
   assertNonFiniteBlocksNumericalDerivatives(result);
 });

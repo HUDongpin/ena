@@ -37,6 +37,38 @@ export interface NumericTable {
 
 export type StreamingMaterialization = 'full' | 'model';
 
+export type EnaNumericalErrorCode =
+  | 'STANDARD_CONNECTION_NONFINITE'
+  | 'STANDARD_ACCUMULATION_NONFINITE';
+
+export class EnaNumericalError extends Error {
+  readonly code: EnaNumericalErrorCode;
+  readonly edgeIndex: number;
+  readonly sourceCode: string;
+  readonly targetCode: string;
+
+  constructor(input: {
+    code: EnaNumericalErrorCode;
+    edgeIndex: number;
+    sourceCode: string;
+    targetCode: string;
+    value: number;
+  }) {
+    const stage = input.code === 'STANDARD_CONNECTION_NONFINITE'
+      ? 'derived connection'
+      : 'model accumulation';
+    super(
+      `Standard ENA ${stage} produced a non-finite value at edge index ${input.edgeIndex} ` +
+      `(${JSON.stringify(input.sourceCode)} -- ${JSON.stringify(input.targetCode)}); got ${String(input.value)}.`
+    );
+    this.name = 'EnaNumericalError';
+    this.code = input.code;
+    this.edgeIndex = input.edgeIndex;
+    this.sourceCode = input.sourceCode;
+    this.targetCode = input.targetCode;
+  }
+}
+
 export interface ChunkedAccumulateOptions extends AccumulateOptions {
   chunkSize?: number;
   onProgress?: (progress: number) => void;
@@ -594,6 +626,29 @@ function coOccurrenceFromSums(total: number[], subtract: number[] | undefined, b
   return binary ? co.map((value) => (value > 0 ? 1 : 0)) : co;
 }
 
+function standardEdgeCodes(internals: StreamingInternals, edgeIndex: number): [string, string] {
+  let cursor = 0;
+  for (let target = 1; target < internals.codes.length; target += 1) {
+    for (let source = 0; source < target; source += 1) {
+      if (cursor === edgeIndex) {
+        return [internals.codes[source] ?? String(source), internals.codes[target] ?? String(target)];
+      }
+      cursor += 1;
+    }
+  }
+  return [String(edgeIndex), String(edgeIndex)];
+}
+
+function throwStandardNumericalError(
+  code: EnaNumericalErrorCode,
+  edgeIndex: number,
+  value: number,
+  internals: StreamingInternals
+): never {
+  const [sourceCode, targetCode] = standardEdgeCodes(internals, edgeIndex);
+  throw new EnaNumericalError({ code, edgeIndex, sourceCode, targetCode, value });
+}
+
 function finalizeCoOccurrence(values: number[], internals: StreamingInternals): number[] {
   // Ordered edge construction applies its directional mask before returning
   // so a fractional mask can keep an otherwise overflowing sum representable.
@@ -614,6 +669,13 @@ function finalizeCoOccurrence(values: number[], internals: StreamingInternals): 
           `Ordered network analysis derived a non-finite connection at edge index ${edgeIndex} ` +
           `(${ground} -> ${response}); got ${String(value)}. Reduce raw code magnitudes so every connection product remains finite.`
         );
+      }
+    }
+  } else {
+    for (let edgeIndex = 0; edgeIndex < finalized.length; edgeIndex += 1) {
+      const value = finalized[edgeIndex] ?? Number.NaN;
+      if (!Number.isFinite(value)) {
+        throwStandardNumericalError('STANDARD_CONNECTION_NONFINITE', edgeIndex, value, internals);
       }
     }
   }
@@ -722,7 +784,11 @@ function addToAccumulator(
       }
       accumulator.sums[index] = total;
     } else {
-      accumulator.sums[index] = (accumulator.sums[index] ?? 0) + value;
+      const total = (accumulator.sums[index] ?? 0) + value;
+      if (!Number.isFinite(total)) {
+        throwStandardNumericalError('STANDARD_ACCUMULATION_NONFINITE', index, total, internals);
+      }
+      accumulator.sums[index] = total;
     }
   }
 }
@@ -1309,7 +1375,14 @@ function makeTrajectoryResult(internals: StreamingInternals): { connectionCounts
     for (const groupRows of rowsByUnit.values()) {
       const running = Object.fromEntries(internals.codeColumns.map((column) => [column, 0])) as Row;
       for (const row of groupRows) {
-        for (const column of internals.codeColumns) running[column] = numeric(running, column) + numeric(row, column);
+        for (let edgeIndex = 0; edgeIndex < internals.codeColumns.length; edgeIndex += 1) {
+          const column = internals.codeColumns[edgeIndex] ?? '';
+          const total = numeric(running, column) + numeric(row, column);
+          if (internals.networkType === 'standard' && !Number.isFinite(total)) {
+            throwStandardNumericalError('STANDARD_ACCUMULATION_NONFINITE', edgeIndex, total, internals);
+          }
+          running[column] = total;
+        }
         countRows.push({ ...row, ...running });
       }
     }

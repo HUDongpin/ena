@@ -187,6 +187,25 @@ test("resource estimates are deterministic safe-integer artifacts and accept fro
   }
 });
 
+test("the 4,500-row by 50-Code reviewer case remains inside the model-only budget", () => {
+  const estimate = estimateStandardResourcesV3({
+    rowCount: 4_500,
+    unitCount: 2,
+    horizonCount: 1,
+    codeCount: 50,
+    horizonSizes: [4_500],
+    trajectorySteps: 2,
+    windowType: "MovingStanzaWindow",
+    backward: { kind: "finite", value: 1 },
+    forward: { kind: "finite", value: 0 },
+    referenceProjection: false,
+  });
+  assert.equal(estimate.adjacencyDimensions, 1_225);
+  assert.equal(estimate.estimatedWindowVisits, 4_500);
+  assert.equal(estimate.estimatedNumericCells, 1_728_075);
+  assert.equal(estimate.blocked, false);
+});
+
 test("Standard inputs, extents, Horizon accounting, and arithmetic fail closed", () => {
   for (const mutate of [
     (input: Record<string, unknown>) => { input.rowCount = -1; },

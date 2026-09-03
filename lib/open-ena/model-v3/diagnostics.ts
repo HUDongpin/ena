@@ -4,7 +4,7 @@ import {
   snapshotDenseJsonArrayV3,
   snapshotPlainJsonRecordV3,
 } from "./canonical-json";
-import { accumulateData, sphereNorm } from "jena-js";
+import { EnaNumericalError, accumulateDataChunked, sphereNorm } from "jena-js";
 import type { Row } from "jena-js";
 import { svdRotation } from "jena-js/rotation";
 import { scalarIdentityV3 } from "./identity";
@@ -218,7 +218,6 @@ interface IdentityValidationV3 {
 interface ScientificNetworksV3 {
   endpointByUnit: Map<string, number[]>;
   targetVectors: number[][];
-  rawJenaValuesFinite: boolean;
 }
 
 const own = Object.prototype.hasOwnProperty;
@@ -1170,13 +1169,14 @@ function scientificNetworksV3(
     windowSizeForward: moving?.forward.kind === "infinity"
       ? Number.POSITIVE_INFINITY
       : moving?.forward.value ?? 0,
+    materialization: "model" as const,
+    chunkSize: 10_000,
   };
   if (model === "EndPoint") {
-    const accumulated = accumulateData({ ...common, model: "EndPoint" });
-    // jENA's connectionMatrix is a presentation matrix: its numeric() helper
-    // maps non-finite connectionCounts values to zero. Diagnostics must retain
-    // the exact raw accumulator values so the single finite-output gate below
-    // can fail closed instead of accepting that sanitization.
+    const accumulated = accumulateDataChunked({ ...common, model: "EndPoint" });
+    // The Standard runtime rejects non-finite row products and accumulator
+    // additions before model materialization. Reading connectionCounts here is
+    // retained as a second, descriptor-safe finite-output boundary.
     const rawVectors = accumulated.connectionCounts.map((row) => (
       rawJenaConnectionVectorV3(row, accumulated.codeColumns)
     ));
@@ -1190,13 +1190,10 @@ function scientificNetworksV3(
     return {
       endpointByUnit,
       targetVectors: rawVectors.map((vector) => [...vector]),
-      rawJenaValuesFinite: accumulated.rowConnectionCounts.length > 0
-        && rawJenaConnectionRowsFiniteV3(accumulated.rowConnectionCounts, accumulated.codeColumns)
-        && rawVectors.every((vector) => vector.every(Number.isFinite)),
     };
   }
 
-  const separated = accumulateData({ ...common, model: "SeparateTrajectory" });
+  const separated = accumulateDataChunked({ ...common, model: "SeparateTrajectory" });
   const rawStepVectors = separated.connectionCounts.map((row) => (
     rawJenaConnectionVectorV3(row, separated.codeColumns)
   ));
@@ -1218,9 +1215,6 @@ function scientificNetworksV3(
     return {
       endpointByUnit: new Map(),
       targetVectors: rawStepVectors.map((vector) => [...vector]),
-      rawJenaValuesFinite: separated.rowConnectionCounts.length > 0
-        && rawJenaConnectionRowsFiniteV3(separated.rowConnectionCounts, separated.codeColumns)
-        && rawStepVectors.every((vector) => vector.every(Number.isFinite)),
     };
   }
   const edgeWidth = profiles.length * (profiles.length - 1) / 2;
@@ -1235,9 +1229,6 @@ function scientificNetworksV3(
   return {
     endpointByUnit: new Map(),
     targetVectors,
-    rawJenaValuesFinite: separated.rowConnectionCounts.length > 0
-      && rawJenaConnectionRowsFiniteV3(separated.rowConnectionCounts, separated.codeColumns)
-      && rawStepVectors.every((vector) => vector.every(Number.isFinite)),
   };
 }
 
@@ -1251,29 +1242,33 @@ function rawJenaConnectionVectorV3(row: Row | undefined, codeColumns: readonly s
   });
 }
 
-function rawJenaConnectionRowsFiniteV3(rows: readonly Row[], codeColumns: readonly string[]): boolean {
-  for (const row of rows) {
-    for (const column of codeColumns) {
-      const descriptor = Object.getOwnPropertyDescriptor(row, column);
-      if (descriptor === undefined || !("value" in descriptor)
-        || typeof descriptor.value !== "number" || !Number.isFinite(descriptor.value)) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
 function vectorHasSignalV3(vector: readonly number[]): boolean {
   return vector.some((value) => value !== 0);
 }
 
 function scientificNetworksFiniteV3(networks: ScientificNetworksV3): boolean {
-  if (!networks.rawJenaValuesFinite) return false;
   for (const vector of networks.endpointByUnit.values()) {
     if (!vector.every(Number.isFinite)) return false;
   }
   return networks.targetVectors.every((vector) => vector.every(Number.isFinite));
+}
+
+function isStandardJenaNonfiniteV3(error: unknown): error is EnaNumericalError {
+  return error instanceof EnaNumericalError
+    && (error.code === "STANDARD_CONNECTION_NONFINITE"
+      || error.code === "STANDARD_ACCUMULATION_NONFINITE");
+}
+
+function outputNonfiniteDiagnosticV3(): ModelDiagnosticV3 {
+  return diagnosticV3({
+    id: "STANDARD_OUTPUT_NONFINITE",
+    severity: "error",
+    scope: "rotation",
+    fieldPath: "rotation",
+    summary: "Scientific network accumulation produced a non-finite value.",
+    detail: "Finite source values overflowed during exact window accumulation; model construction cannot continue safely.",
+    blocks: ["build-model"],
+  });
 }
 
 function meanVectorV3(vectors: readonly (readonly number[])[]): number[] {
@@ -2213,28 +2208,29 @@ export function validateStandardDraftV3(
     if (rankDiagnostic !== null) output.push(rankDiagnostic);
   } else if (scientificFieldPrerequisitesValid && rowOrderReady && horizonOrderReady
     && rotationShapeReady && !resourceBlocked) {
-    networks = scientificNetworksV3(
-      dataset.rows,
-      modelDraft.unitColumns,
-      modelDraft.horizonColumns,
-      profilesInDraftOrder,
-      modelDraft.weighting,
-      modelDraft.windowType,
-      moving,
-      resolvedRowOrder,
-      modelDraft.model,
-      resolvedHorizonOrder,
-    );
+    let jenaNonfinite = false;
+    try {
+      networks = scientificNetworksV3(
+        dataset.rows,
+        modelDraft.unitColumns,
+        modelDraft.horizonColumns,
+        profilesInDraftOrder,
+        modelDraft.weighting,
+        modelDraft.windowType,
+        moving,
+        resolvedRowOrder,
+        modelDraft.model,
+        resolvedHorizonOrder,
+      );
+    } catch (error) {
+      if (!isStandardJenaNonfiniteV3(error)) throw error;
+      jenaNonfinite = true;
+    }
+    if (jenaNonfinite) {
+      output.push(outputNonfiniteDiagnosticV3());
+    }
     if (networks !== null && !scientificNetworksFiniteV3(networks)) {
-      output.push(diagnosticV3({
-        id: "STANDARD_OUTPUT_NONFINITE",
-        severity: "error",
-        scope: "rotation",
-        fieldPath: "rotation",
-        summary: "Scientific network accumulation produced a non-finite value.",
-        detail: "Finite source values overflowed during exact window accumulation; model construction cannot continue safely.",
-        blocks: ["build-model"],
-      }));
+      output.push(outputNonfiniteDiagnosticV3());
       networks = null;
     } else if (networks !== null) {
       let numericalPrerequisitesReady = true;

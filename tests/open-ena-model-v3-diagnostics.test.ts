@@ -711,6 +711,21 @@ test("connectivity uses bounded prefix ranges instead of rescanning each wide wi
   assert.match(implementation, /canonicalJsonV3\s*\(\s*orderedPair\s*\)/u);
 });
 
+test("numerical preflight uses model-only jENA materialization without retained row-edge rows", () => {
+  const source = readFileSync(
+    new URL("../lib/open-ena/model-v3/diagnostics.ts", import.meta.url),
+    "utf8",
+  );
+  const start = source.indexOf("function scientificNetworksV3");
+  const end = source.indexOf("function vectorHasSignalV3", start);
+  assert.ok(start >= 0 && end > start);
+  const implementation = source.slice(start, end);
+  assert.match(implementation, /accumulateDataChunked\s*\(/u);
+  assert.match(implementation, /materialization:\s*"model"/u);
+  assert.doesNotMatch(implementation, /rowConnectionCounts/u);
+  assert.doesNotMatch(implementation, /\baccumulateData\s*\(/u);
+});
+
 test("a below-budget multi-Unit both-Infinity candidate reaches exact Frequency diagnostics", () => {
   const count = 100;
   const rows = Array.from({ length: count }, (_, turn) => ({
