@@ -171,6 +171,12 @@ function ids(output: readonly ModelDiagnosticV3[]): string[] {
   return output.map((entry) => entry.id);
 }
 
+function withoutTask6NumericalDiagnostics(output: readonly ModelDiagnosticV3[]): readonly ModelDiagnosticV3[] {
+  return output.filter((entry) => entry.id !== "STANDARD_TARGET_RANK_ZERO"
+    && entry.id !== "STANDARD_SVD_ONE_DIMENSIONAL"
+    && entry.id !== "STANDARD_REFERENCE_TARGET_DEGENERATE");
+}
+
 function one(output: readonly ModelDiagnosticV3[], id: ModelDiagnosticV3["id"]): ModelDiagnosticV3 {
   const matches = output.filter((entry) => entry.id === id);
   assert.equal(matches.length, 1, `expected exactly one ${id}, got ${ids(output).join(", ")}`);
@@ -235,7 +241,7 @@ test("diagnostic and suggested-action registries are exact, stable, and duplicat
 
 test("a valid Binary draft has no Task 5 diagnostics", () => {
   const input = healthyDataset();
-  assert.deepEqual(diagnosticsFor(input), []);
+  assert.deepEqual(withoutTask6NumericalDiagnostics(diagnosticsFor(input)), []);
 });
 
 test("minimum Codes use distinct nonblank selections and an empty configuration stays empty", () => {
@@ -716,7 +722,7 @@ test("a 10k-row both-Infinity candidate preserves behavior without extent-width 
   }));
   const input = dataset(rows, ["unit", "horizon", "turn", "A", "B", "C"]);
   const output = diagnosticsFor(input, movingDraft({ kind: "infinity" }, { kind: "infinity" }));
-  assert.deepEqual(output, []);
+  assert.deepEqual(withoutTask6NumericalDiagnostics(output), []);
 });
 
 test("Moving Stanza finite back one means current only; larger back and forward form candidate edges", () => {
@@ -824,22 +830,22 @@ test("dataset names authoritatively infer hash kind when explicit provenance is 
   assert.deepEqual(ids(diagnosticsFor(xlsx, draft(["A", "B", "C"]), binding(xlsx, {
     hashKind: "normalized-utf8-csv-text-sha256",
   }))), ["STANDARD_DATASET_BINDING_INVALID"]);
-  assert.deepEqual(diagnosticsFor(xlsx, draft(["A", "B", "C"]), binding(xlsx, {
+  assert.deepEqual(withoutTask6NumericalDiagnostics(diagnosticsFor(xlsx, draft(["A", "B", "C"]), binding(xlsx, {
     hashKind: "canonical-first-xlsx-worksheet-v1-sha256",
-  })), []);
+  }))), []);
 
   const csv = { ...base, name: "research.csv" };
   assert.deepEqual(ids(diagnosticsFor(csv, draft(["A", "B", "C"]), binding(csv, {
     hashKind: "canonical-first-xlsx-worksheet-v1-sha256",
   }))), ["STANDARD_DATASET_BINDING_INVALID"]);
-  assert.deepEqual(diagnosticsFor(csv, draft(["A", "B", "C"]), binding(csv, {
+  assert.deepEqual(withoutTask6NumericalDiagnostics(diagnosticsFor(csv, draft(["A", "B", "C"]), binding(csv, {
     hashKind: "normalized-utf8-csv-text-sha256",
-  })), []);
+  }))), []);
 
   const explicit = { ...base, name: "research.bin", hashKind: "normalized-utf8-text-sha256" as const };
-  assert.deepEqual(diagnosticsFor(explicit, draft(["A", "B", "C"]), binding(explicit, {
+  assert.deepEqual(withoutTask6NumericalDiagnostics(diagnosticsFor(explicit, draft(["A", "B", "C"]), binding(explicit, {
     hashKind: "normalized-utf8-text-sha256",
-  })), []);
+  }))), []);
 });
 
 test("dataset trust boundary avoids ordinary Proxy gets and accepts stable descriptor snapshots", () => {

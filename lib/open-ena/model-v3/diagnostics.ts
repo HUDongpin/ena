@@ -4,8 +4,10 @@ import {
   snapshotDenseJsonArrayV3,
   snapshotPlainJsonRecordV3,
 } from "./canonical-json";
+import { sphereNorm } from "jena-js";
+import { svdRotation } from "jena-js/rotation";
 import { scalarIdentityV3 } from "./identity";
-import { resolveRowOrderV3 } from "./ordering";
+import { resolveHorizonOrderV3, resolveRowOrderV3 } from "./ordering";
 import { datasetHashKindFor } from "../types";
 import type { ParsedDataset, DatasetHashKind } from "../types";
 import type {
@@ -14,6 +16,9 @@ import type {
   CanonicalRowOrderV3,
   DatasetBindingV3,
   ForwardExtentV3,
+  OrderComparatorV3,
+  OrderKeyV3,
+  ScalarIdentityV3,
   StandardEnaDraftV3,
   StandardModelTypeV3,
 } from "./types";
@@ -164,7 +169,18 @@ interface DraftSnapshotV3 {
   windowType: "MovingStanzaWindow" | "Conversation";
   movingStanza: unknown;
   horizonOrder: unknown;
+  rotation: RotationSnapshotV3;
 }
+
+type RotationSnapshotV3 =
+  | { type: "svd"; centerAlignToOrigin: boolean }
+  | {
+      type: "means";
+      centerAlignToOrigin: boolean;
+      negativeLevel: ScalarIdentityV3 | null;
+      positiveLevel: ScalarIdentityV3 | null;
+    }
+  | { type: "reference"; referenceId: unknown; expectedContentSha256: unknown };
 
 interface NormalizedCodeProfileV3 {
   code: string;
@@ -183,6 +199,16 @@ interface MovingWindowV3 {
   backward: BackwardExtentV3;
   forward: ForwardExtentV3;
   rowOrder: CanonicalRowOrderV3;
+}
+
+interface IdentityValidationV3 {
+  diagnostics: ModelDiagnosticV3[];
+  valid: boolean;
+}
+
+interface ScientificNetworksV3 {
+  endpointByUnit: Map<string, number[]>;
+  stepByUnit: Map<string, Map<string, number[]>>;
 }
 
 const own = Object.prototype.hasOwnProperty;
@@ -322,6 +348,7 @@ function snapshotDraftV3(value: unknown): DraftSnapshotV3 {
   if (record.windowType !== "MovingStanzaWindow" && record.windowType !== "Conversation") {
     throw new TypeError("draft.windowType is unsupported.");
   }
+  const rotation = snapshotRotationV3(record.rotation);
   return {
     unitColumns,
     horizonColumns,
@@ -332,7 +359,56 @@ function snapshotDraftV3(value: unknown): DraftSnapshotV3 {
     windowType: record.windowType,
     movingStanza: record.movingStanza,
     horizonOrder: record.horizonOrder,
+    rotation,
   };
+}
+
+function snapshotScalarIdentityInputV3(value: unknown, label: string): ScalarIdentityV3 {
+  const record = snapshotPlainJsonRecordV3(value, label);
+  assertExactKeysV3(record, ["type", "value"], label);
+  const scalar = scalarIdentityV3(record.value, `${label}.value`);
+  if (record.type !== scalar.type) throw new TypeError(`${label}.type is inconsistent with its value.`);
+  return scalar;
+}
+
+function snapshotRotationV3(value: unknown): RotationSnapshotV3 {
+  const record = snapshotPlainJsonRecordV3(value, "draft.rotation");
+  if (record.type === "svd") {
+    assertExactKeysV3(record, ["type", "centerAlignToOrigin"], "draft.rotation");
+    if (typeof record.centerAlignToOrigin !== "boolean") {
+      throw new TypeError("draft.rotation.centerAlignToOrigin must be Boolean.");
+    }
+    return { type: "svd", centerAlignToOrigin: record.centerAlignToOrigin };
+  }
+  if (record.type === "means") {
+    assertExactKeysV3(
+      record,
+      ["type", "centerAlignToOrigin", "negativeLevel", "positiveLevel"],
+      "draft.rotation",
+    );
+    if (typeof record.centerAlignToOrigin !== "boolean") {
+      throw new TypeError("draft.rotation.centerAlignToOrigin must be Boolean.");
+    }
+    return {
+      type: "means",
+      centerAlignToOrigin: record.centerAlignToOrigin,
+      negativeLevel: record.negativeLevel === null
+        ? null
+        : snapshotScalarIdentityInputV3(record.negativeLevel, "draft.rotation.negativeLevel"),
+      positiveLevel: record.positiveLevel === null
+        ? null
+        : snapshotScalarIdentityInputV3(record.positiveLevel, "draft.rotation.positiveLevel"),
+    };
+  }
+  if (record.type === "reference") {
+    assertExactKeysV3(record, ["type", "referenceId", "expectedContentSha256"], "draft.rotation");
+    return {
+      type: "reference",
+      referenceId: record.referenceId,
+      expectedContentSha256: record.expectedContentSha256,
+    };
+  }
+  throw new TypeError("draft.rotation.type is unsupported.");
 }
 
 function diagnosticV3(input: DiagnosticInputV3): ModelDiagnosticV3 {
@@ -400,37 +476,23 @@ function finalizeDiagnosticsV3(output: ModelDiagnosticV3[]): readonly ModelDiagn
   return deepFreezeV3(output);
 }
 
-function assertOrderComparatorShapeV3(value: unknown, label: string): void {
+function snapshotComparatorForResolverV3(value: unknown, label: string): OrderComparatorV3 {
   const comparator = snapshotPlainJsonRecordV3(value, label);
   if (comparator.type === "number") {
     assertExactKeysV3(comparator, ["type"], label);
-    return;
+    return { type: "number" };
   }
   if (comparator.type === "date") {
     assertExactKeysV3(comparator, ["type", "format"], label);
     if (comparator.format !== "YYYY-MM-DD") throw new TypeError(`${label}.format is invalid.`);
-    return;
+    return { type: "date", format: "YYYY-MM-DD" };
   }
   if (comparator.type === "datetime") {
     assertExactKeysV3(comparator, ["type", "format", "timeZone"], label);
     if (comparator.format !== "ISO-8601" || comparator.timeZone !== "offset-in-value") {
       throw new TypeError(`${label} datetime contract is invalid.`);
     }
-    return;
-  }
-  if (comparator.type === "ordered-category") {
-    assertExactKeysV3(comparator, ["type", "levels"], label);
-    const levels = snapshotDenseJsonArrayV3(comparator.levels, `${label}.levels`);
-    if (levels.length === 0) throw new TypeError(`${label}.levels must be nonempty.`);
-    const signatures = levels.map((level, index) => {
-      const scalar = snapshotPlainJsonRecordV3(level, `${label}.levels[${index}]`);
-      assertExactKeysV3(scalar, ["type", "value"], `${label}.levels[${index}]`);
-      const normalized = scalarIdentityV3(scalar.value, `${label}.levels[${index}].value`);
-      if (scalar.type !== normalized.type) throw new TypeError(`${label}.levels[${index}] type is inconsistent.`);
-      return canonicalJsonV3(normalized);
-    });
-    if (new Set(signatures).size !== signatures.length) throw new TypeError(`${label}.levels must be distinct.`);
-    return;
+    return { type: "datetime", format: "ISO-8601", timeZone: "offset-in-value" };
   }
   if (comparator.type === "text") {
     assertExactKeysV3(comparator, ["type", "locale", "sensitivity", "numeric"], label);
@@ -443,37 +505,91 @@ function assertOrderComparatorShapeV3(value: unknown, label: string): void {
       throw new TypeError(`${label}.sensitivity is invalid.`);
     }
     if (typeof comparator.numeric !== "boolean") throw new TypeError(`${label}.numeric must be Boolean.`);
-    return;
+    return {
+      type: "text",
+      locale: comparator.locale,
+      sensitivity: comparator.sensitivity,
+      numeric: comparator.numeric,
+    };
+  }
+  if (comparator.type === "ordered-category") {
+    assertExactKeysV3(comparator, ["type", "levels"], label);
+    const levels = snapshotDenseJsonArrayV3(comparator.levels, `${label}.levels`).map((level, index) => (
+      snapshotScalarIdentityInputV3(level, `${label}.levels[${index}]`)
+    ));
+    const [first, ...rest] = levels;
+    if (first === undefined) throw new TypeError(`${label}.levels must be nonempty.`);
+    if (new Set(levels.map((level) => canonicalJsonV3(level))).size !== levels.length) {
+      throw new TypeError(`${label}.levels must be distinct.`);
+    }
+    return { type: "ordered-category", levels: [first, ...rest] };
   }
   throw new TypeError(`${label}.type is unsupported.`);
 }
 
-function activeOrderColumnsV3(value: unknown, label: string): string[] {
-  if (value === null) return [];
+function snapshotOrderPolicyForResolverV3(value: unknown, label: string): CanonicalRowOrderV3 {
   const policy = snapshotPlainJsonRecordV3(value, label);
+  if (policy.kind === "columns") {
+    assertExactKeysV3(policy, ["kind", "keys"], label);
+    const rawKeys = snapshotDenseJsonArrayV3(policy.keys, `${label}.keys`);
+    if (rawKeys.length === 0) throw new TypeError(`${label}.keys must be nonempty.`);
+    const keys = rawKeys.map((key, index): OrderKeyV3 => {
+      const record = snapshotPlainJsonRecordV3(key, `${label}.keys[${index}]`);
+      assertExactKeysV3(record, ["column", "direction", "comparator"], `${label}.keys[${index}]`);
+      if (typeof record.column !== "string" || record.column.trim().length === 0) {
+        throw new TypeError(`${label}.keys[${index}].column must be nonblank.`);
+      }
+      if (record.direction !== "ascending" && record.direction !== "descending") {
+        throw new TypeError(`${label}.keys[${index}].direction is invalid.`);
+      }
+      return {
+        column: record.column,
+        direction: record.direction,
+        comparator: snapshotComparatorForResolverV3(
+          record.comparator,
+          `${label}.keys[${index}].comparator`,
+        ),
+      };
+    });
+    if (new Set(keys.map((key) => key.column)).size !== keys.length) {
+      throw new TypeError(`${label}.keys must use distinct columns.`);
+    }
+    const [first, ...rest] = keys;
+    return { kind: "columns", keys: [first!, ...rest] };
+  }
   if (policy.kind === "source-order-confirmed") {
     assertExactKeysV3(policy, ["kind", "confirmation"], label);
-    canonicalJsonV3(policy.confirmation);
-    return [];
+    const confirmation = snapshotPlainJsonRecordV3(policy.confirmation, "source-order confirmation");
+    assertExactKeysV3(
+      confirmation,
+      ["kind", "datasetSha256", "rowCount", "relevantColumns", "confirmedAt", "confirmationVersion"],
+      "source-order confirmation",
+    );
+    if (confirmation.kind !== "explicit-researcher-confirmation"
+      || typeof confirmation.datasetSha256 !== "string"
+      || typeof confirmation.rowCount !== "number"
+      || typeof confirmation.confirmedAt !== "string"
+      || confirmation.confirmationVersion !== 1) {
+      throw new TypeError("source-order confirmation has an invalid shape.");
+    }
+    const relevantColumns = snapshotStringArrayV3(
+      confirmation.relevantColumns,
+      "source-order confirmation.relevantColumns",
+      { nonblank: true, distinct: true },
+    );
+    return {
+      kind: "source-order-confirmed",
+      confirmation: {
+        kind: "explicit-researcher-confirmation",
+        datasetSha256: confirmation.datasetSha256,
+        rowCount: confirmation.rowCount,
+        relevantColumns,
+        confirmedAt: confirmation.confirmedAt,
+        confirmationVersion: 1,
+      },
+    };
   }
-  if (policy.kind !== "columns") throw new TypeError(`${label}.kind is unsupported.`);
-  assertExactKeysV3(policy, ["kind", "keys"], label);
-  const rawKeys = snapshotDenseJsonArrayV3(policy.keys, `${label}.keys`);
-  if (rawKeys.length === 0) throw new TypeError(`${label}.keys must be nonempty.`);
-  const columns = rawKeys.map((key, index) => {
-    const record = snapshotPlainJsonRecordV3(key, `${label}.keys[${index}]`);
-    assertExactKeysV3(record, ["column", "direction", "comparator"], `${label}.keys[${index}]`);
-    if (typeof record.column !== "string" || record.column.trim().length === 0) {
-      throw new TypeError(`${label}.keys[${index}].column must be nonblank.`);
-    }
-    if (record.direction !== "ascending" && record.direction !== "descending") {
-      throw new TypeError(`${label}.keys[${index}].direction is invalid.`);
-    }
-    assertOrderComparatorShapeV3(record.comparator, `${label}.keys[${index}].comparator`);
-    return record.column;
-  });
-  if (new Set(columns).size !== columns.length) throw new TypeError(`${label} columns must be distinct.`);
-  return columns;
+  throw new TypeError(`${label}.kind is unsupported.`);
 }
 
 function snapshotExtentV3(value: unknown, label: string, backward: boolean): BackwardExtentV3 | ForwardExtentV3 {
@@ -571,34 +687,6 @@ function typedHorizonKeyV3(
   return canonicalJsonV3({ fields });
 }
 
-function identityPrerequisitesValidV3(
-  rows: readonly Record<string, unknown>[],
-  headers: ReadonlySet<string>,
-  unitColumns: readonly string[],
-  horizonColumns: readonly string[],
-): boolean {
-  if (unitColumns.length === 0 || horizonColumns.length === 0) return false;
-  if (unitColumns.some((column) => !headers.has(column))
-    || horizonColumns.some((column) => !headers.has(column))) return false;
-  try {
-    for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
-      const row = rows[rowIndex];
-      for (const [role, columns] of [
-        ["Unit", unitColumns],
-        ["Horizon", horizonColumns],
-      ] as const) {
-        for (const column of columns) {
-          if (!own.call(row, column)) return false;
-          scalarIdentityV3(row[column], `row ${rowIndex} ${role}.${column}`);
-        }
-      }
-    }
-  } catch {
-    return false;
-  }
-  return true;
-}
-
 function connectivityFromGroupsV3(
   groups: readonly (readonly number[])[],
   profiles: readonly NormalizedCodeProfileV3[],
@@ -679,16 +767,8 @@ function conversationGroupsV3(
 }
 
 function movingGroupsV3(
-  rows: readonly Record<string, unknown>[],
-  horizonColumns: readonly string[],
-  binding: DatasetBindingV3,
-  moving: MovingWindowV3,
+  resolved: ReturnType<typeof resolveRowOrderV3>,
 ): number[][] {
-  const resolved = resolveRowOrderV3(rows, horizonColumns, moving.rowOrder, {
-    analysisFamily: "standard",
-    confirmationAnalysisFamily: "standard",
-    datasetBinding: binding,
-  });
   const byHorizon = new Map<string, number[]>();
   for (const mapping of resolved.mappings) {
     const group = byHorizon.get(mapping.horizonKey) ?? [];
@@ -698,6 +778,720 @@ function movingGroupsV3(
   return [...byHorizon.entries()]
     .sort(([left], [right]) => codeUnitCompareV3(left, right))
     .map(([, indices]) => indices);
+}
+
+function identityKeyV3(
+  row: Record<string, unknown>,
+  columns: readonly string[],
+  rowIndex: number,
+  role: "Unit" | "Horizon",
+): string {
+  const fields = columns.map((column) => ({
+    column,
+    value: scalarIdentityV3(row[column], `row ${rowIndex} ${role}.${column}`),
+  }));
+  return canonicalJsonV3({ fields });
+}
+
+function validateIdentityRoleV3(
+  rows: readonly Record<string, unknown>[],
+  headers: ReadonlySet<string>,
+  columns: readonly string[],
+  role: "Unit" | "Horizon",
+): IdentityValidationV3 {
+  const scope = role === "Unit" ? "units" as const : "horizons" as const;
+  const requiredId = role === "Unit" ? "STANDARD_UNITS_REQUIRED" as const : "STANDARD_HORIZONS_REQUIRED" as const;
+  if (columns.length === 0) {
+    return {
+      valid: false,
+      diagnostics: [diagnosticV3({
+        id: requiredId,
+        severity: "error",
+        scope,
+        fieldPath: role === "Unit" ? "unitColumns" : "horizonColumns",
+        summary: `${role} identity fields are required.`,
+        detail: `Select at least one ${role} identity field before model construction.`,
+        blocks: ["build-model"],
+      })],
+    };
+  }
+  const diagnostics: ModelDiagnosticV3[] = [];
+  let valid = true;
+  for (const column of columns) {
+    if (!headers.has(column)) {
+      valid = false;
+      diagnostics.push(diagnosticV3({
+        id: "STANDARD_IDENTITY_MISSING",
+        severity: "error",
+        scope,
+        fieldPath: `${role === "Unit" ? "unitColumns" : "horizonColumns"}.${column}`,
+        summary: `${role} identity field “${column}” is missing.`,
+        detail: `The selected ${role} identity field is absent from the current dataset header.`,
+        blocks: ["build-model"],
+        evidence: evidenceV3(1, [{ detail: `Selected ${role} identity field is absent from the header.` }]),
+      }));
+      continue;
+    }
+    const missingRows: number[] = [];
+    const unsupportedRows: number[] = [];
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+      const row = rows[rowIndex];
+      if (!own.call(row, column) || row[column] === null || row[column] === undefined || row[column] === "") {
+        missingRows.push(rowIndex);
+        continue;
+      }
+      try {
+        scalarIdentityV3(row[column], `row ${rowIndex} ${role}.${column}`);
+      } catch {
+        unsupportedRows.push(rowIndex);
+      }
+    }
+    if (missingRows.length > 0) {
+      valid = false;
+      diagnostics.push(diagnosticV3({
+        id: "STANDARD_IDENTITY_MISSING",
+        severity: "error",
+        scope,
+        fieldPath: `${role === "Unit" ? "unitColumns" : "horizonColumns"}.${column}`,
+        summary: `${role} identity values are missing.`,
+        detail: `Every row must have a typed value for the selected ${role} identity field.`,
+        blocks: ["build-model"],
+        evidence: evidenceV3(missingRows.length, missingRows.slice(0, SAMPLE_LIMIT).map((rowIndex) => ({
+          rowIndex,
+          detail: `Missing ${role} identity value.`,
+        }))),
+      }));
+    }
+    if (unsupportedRows.length > 0) {
+      valid = false;
+      diagnostics.push(diagnosticV3({
+        id: "STANDARD_IDENTITY_VALUE_UNSUPPORTED",
+        severity: "error",
+        scope,
+        fieldPath: `${role === "Unit" ? "unitColumns" : "horizonColumns"}.${column}`,
+        summary: `${role} identity values use an unsupported type.`,
+        detail: `${role} identities must be nonempty strings, finite numbers, or booleans; values are never coerced.`,
+        blocks: ["build-model"],
+        evidence: evidenceV3(unsupportedRows.length, unsupportedRows.slice(0, SAMPLE_LIMIT).map((rowIndex) => ({
+          rowIndex,
+          detail: `Unsupported ${role} identity value.`,
+        }))),
+      }));
+    }
+  }
+  return { diagnostics, valid };
+}
+
+function validateGroupV3(
+  rows: readonly Record<string, unknown>[],
+  headers: ReadonlySet<string>,
+  unitColumns: readonly string[],
+  groupColumn: string | null,
+  unitIdentityValid: boolean,
+): IdentityValidationV3 & { groupByUnit: Map<string, ScalarIdentityV3> } {
+  const diagnostics: ModelDiagnosticV3[] = [];
+  const groupByUnit = new Map<string, ScalarIdentityV3>();
+  if (groupColumn === null) return { diagnostics, valid: true, groupByUnit };
+  if (!headers.has(groupColumn)) {
+    diagnostics.push(diagnosticV3({
+      id: "STANDARD_GROUP_FIELD_MISSING",
+      severity: "error",
+      scope: "units",
+      fieldPath: `group.${groupColumn}`,
+      summary: `Group field “${groupColumn}” is missing.`,
+      detail: "The selected Group metadata field is absent from the current dataset header.",
+      blocks: ["build-model"],
+      evidence: evidenceV3(1, [{ detail: "Selected Group field is absent from the header." }]),
+    }));
+    return { diagnostics, valid: false, groupByUnit };
+  }
+  const missingRows: number[] = [];
+  const unsupportedRows: number[] = [];
+  const unstableRows: number[] = [];
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    if (!own.call(row, groupColumn) || row[groupColumn] === null
+      || row[groupColumn] === undefined || row[groupColumn] === "") {
+      missingRows.push(rowIndex);
+      continue;
+    }
+    let group: ScalarIdentityV3;
+    try {
+      group = scalarIdentityV3(row[groupColumn], `row ${rowIndex} Group.${groupColumn}`);
+    } catch {
+      unsupportedRows.push(rowIndex);
+      continue;
+    }
+    if (!unitIdentityValid) continue;
+    const unitKey = identityKeyV3(row, unitColumns, rowIndex, "Unit");
+    const prior = groupByUnit.get(unitKey);
+    if (prior !== undefined && canonicalJsonV3(prior) !== canonicalJsonV3(group)) unstableRows.push(rowIndex);
+    else groupByUnit.set(unitKey, group);
+  }
+  if (missingRows.length > 0) {
+    diagnostics.push(diagnosticV3({
+      id: "STANDARD_GROUP_FIELD_MISSING",
+      severity: "error",
+      scope: "units",
+      fieldPath: `group.${groupColumn}`,
+      summary: "Group values are missing.",
+      detail: "Every row must have a typed value for the selected Group field.",
+      blocks: ["build-model"],
+      evidence: evidenceV3(missingRows.length, missingRows.slice(0, SAMPLE_LIMIT).map((rowIndex) => ({
+        rowIndex,
+        detail: "Missing Group value.",
+      }))),
+    }));
+  }
+  if (unsupportedRows.length > 0) {
+    diagnostics.push(diagnosticV3({
+      id: "STANDARD_IDENTITY_VALUE_UNSUPPORTED",
+      severity: "error",
+      scope: "units",
+      fieldPath: `group.${groupColumn}`,
+      summary: "Group values use an unsupported type.",
+      detail: "Group values must be nonempty strings, finite numbers, or booleans; values are never coerced.",
+      blocks: ["build-model"],
+      evidence: evidenceV3(unsupportedRows.length, unsupportedRows.slice(0, SAMPLE_LIMIT).map((rowIndex) => ({
+        rowIndex,
+        detail: "Unsupported Group value.",
+      }))),
+    }));
+  }
+  if (unstableRows.length > 0 && missingRows.length === 0 && unsupportedRows.length === 0) {
+    diagnostics.push(diagnosticV3({
+      id: "STANDARD_GROUP_UNSTABLE_WITHIN_UNIT",
+      severity: "error",
+      scope: "units",
+      fieldPath: `group.${groupColumn}`,
+      summary: "Group membership is unstable within a Unit.",
+      detail: "Each typed Unit must map to exactly one typed Group value.",
+      blocks: ["build-model"],
+      evidence: evidenceV3(unstableRows.length, unstableRows.slice(0, SAMPLE_LIMIT).map((rowIndex) => ({
+        rowIndex,
+        detail: "This row changes its Unit's Group membership.",
+      }))),
+    }));
+  }
+  return {
+    diagnostics,
+    valid: missingRows.length === 0 && unsupportedRows.length === 0 && unstableRows.length === 0,
+    groupByUnit,
+  };
+}
+
+function sharedHorizonDiagnosticV3(
+  rows: readonly Record<string, unknown>[],
+  unitColumns: readonly string[],
+  horizonColumns: readonly string[],
+): ModelDiagnosticV3 | null {
+  const unitsByHorizon = new Map<string, Set<string>>();
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const horizonKey = identityKeyV3(rows[rowIndex], horizonColumns, rowIndex, "Horizon");
+    const unitKey = identityKeyV3(rows[rowIndex], unitColumns, rowIndex, "Unit");
+    const units = unitsByHorizon.get(horizonKey) ?? new Set<string>();
+    units.add(unitKey);
+    unitsByHorizon.set(horizonKey, units);
+  }
+  const sharedCounts = [...unitsByHorizon.values()]
+    .filter((units) => units.size > 1)
+    .map((units) => units.size)
+    .sort((left, right) => left - right);
+  if (sharedCounts.length === 0) return null;
+  return diagnosticV3({
+    id: "STANDARD_HORIZON_SHARED_BY_MULTIPLE_UNITS",
+    severity: "information",
+    scope: "horizons",
+    fieldPath: "horizonColumns",
+    summary: "Some Horizons are shared by multiple Units.",
+    detail: "Shared typed Horizon identities are legal and do not merge distinct Unit trajectories.",
+    blocks: [],
+    evidence: evidenceV3(sharedCounts.length, sharedCounts.slice(0, SAMPLE_LIMIT).map((unitCount) => ({
+      detail: `Shared Horizon observed for ${unitCount} typed Units.`,
+    }))),
+  });
+}
+
+function errorTextV3(error: unknown): string {
+  return error instanceof Error ? error.message : "";
+}
+
+function orderFailureDiagnosticV3(
+  kind: "row" | "horizon",
+  error: unknown,
+): ModelDiagnosticV3 {
+  const text = errorTextV3(error);
+  if (/source-order confirmation/iu.test(text)) {
+    return diagnosticV3({
+      id: "STANDARD_SOURCE_ORDER_CONFIRMATION_STALE",
+      severity: "error",
+      scope: kind === "row" ? "windows" : "horizons",
+      fieldPath: kind === "row" ? "movingStanza.rowOrder" : "horizonOrder",
+      summary: "Source-order confirmation is stale or invalid.",
+      detail: "The confirmation must exactly bind the current Standard analysis family, dataset, row count, and ordered active identity fields.",
+      blocks: ["build-model"],
+    });
+  }
+  if (kind === "horizon" && text.startsWith("STANDARD_HORIZON_ORDER_UNRESOLVED_TIE:")) {
+    return diagnosticV3({
+      id: "STANDARD_HORIZON_ORDER_UNRESOLVED_TIE",
+      severity: "error",
+      scope: "horizons",
+      fieldPath: "horizonOrder",
+      summary: "Trajectory Horizon order contains an unresolved tie.",
+      detail: "The configured comparator tuple must uniquely order every distinct Horizon observed by each Unit.",
+      blocks: ["build-model"],
+    });
+  }
+  return diagnosticV3({
+    id: kind === "row" ? "STANDARD_ROW_ORDER_INVALID" : "STANDARD_HORIZON_ORDER_INVALID",
+    severity: "error",
+    scope: kind === "row" ? "windows" : "horizons",
+    fieldPath: kind === "row" ? "movingStanza.rowOrder" : "horizonOrder",
+    summary: kind === "row" ? "Moving Stanza row order is invalid." : "Trajectory Horizon order is invalid.",
+    detail: kind === "row"
+      ? "The authoritative within-Horizon resolver rejected the active row-order policy or values."
+      : "The authoritative trajectory resolver rejected the active Horizon-order policy or values.",
+    blocks: ["build-model"],
+  });
+}
+
+function zeroVectorV3(width: number): number[] {
+  return Array.from({ length: width }, () => 0);
+}
+
+function addVectorV3(target: number[], source: readonly number[]): void {
+  for (let index = 0; index < target.length; index += 1) target[index] += source[index] ?? 0;
+}
+
+function upperTriangleV3(codeSums: readonly number[], binary: boolean): number[] {
+  const result: number[] = [];
+  for (let right = 1; right < codeSums.length; right += 1) {
+    for (let left = 0; left < right; left += 1) {
+      const value = (codeSums[left] ?? 0) * (codeSums[right] ?? 0);
+      result.push(binary ? (value > 0 ? 1 : 0) : value);
+    }
+  }
+  return result;
+}
+
+function movingCoOccurrencesV3(
+  matrix: readonly (readonly number[])[],
+  backward: number,
+  forward: number,
+  binary: boolean,
+): number[][] {
+  const codeCount = matrix[0]?.length ?? 0;
+  const prefix = Array.from({ length: codeCount }, () => new Array<number>(matrix.length + 1).fill(0));
+  for (let row = 0; row < matrix.length; row += 1) {
+    for (let code = 0; code < codeCount; code += 1) {
+      prefix[code][row + 1] = prefix[code][row] + (matrix[row][code] ?? 0);
+    }
+  }
+  const sums = (start: number, endExclusive: number): number[] => (
+    prefix.map((values) => values[endExclusive] - values[start])
+  );
+  const products = (start: number, endExclusive: number): number[] => upperTriangleV3(
+    sums(start, endExclusive),
+    false,
+  );
+  const result: number[][] = [];
+  for (let row = 0; row < matrix.length; row += 1) {
+    const start = Number.isFinite(backward) ? Math.max(0, row - (backward - 1)) : 0;
+    const end = Number.isFinite(forward) ? Math.min(matrix.length - 1, row + forward) : matrix.length - 1;
+    const current = products(start, end + 1);
+    const currentCount = end - start + 1;
+    if (currentCount > 0 && backward > 1 && row > 0) {
+      const headCount = Math.max(0, currentCount - 1 - forward);
+      if (headCount > 0) {
+        const head = products(start, start + headCount);
+        for (let edge = 0; edge < current.length; edge += 1) current[edge] -= head[edge] ?? 0;
+      }
+    }
+    if (currentCount > 0 && forward > 0) {
+      const tailCount = end - row;
+      if (tailCount > 0) {
+        const tail = products(end + 1 - tailCount, end + 1);
+        for (let edge = 0; edge < current.length; edge += 1) current[edge] -= tail[edge] ?? 0;
+      }
+    }
+    result.push(binary ? current.map((value) => (value > 0 ? 1 : 0)) : current);
+  }
+  return result;
+}
+
+function ensureStepVectorV3(
+  stepByUnit: Map<string, Map<string, number[]>>,
+  unitKey: string,
+  horizonKey: string,
+  width: number,
+): number[] {
+  const byHorizon = stepByUnit.get(unitKey) ?? new Map<string, number[]>();
+  const vector = byHorizon.get(horizonKey) ?? zeroVectorV3(width);
+  byHorizon.set(horizonKey, vector);
+  stepByUnit.set(unitKey, byHorizon);
+  return vector;
+}
+
+function endpointFromStepsV3(stepByUnit: Map<string, Map<string, number[]>>, width: number): Map<string, number[]> {
+  const endpointByUnit = new Map<string, number[]>();
+  for (const unitKey of [...stepByUnit.keys()].sort(codeUnitCompareV3)) {
+    const endpoint = zeroVectorV3(width);
+    for (const horizonKey of [...stepByUnit.get(unitKey)!.keys()].sort(codeUnitCompareV3)) {
+      addVectorV3(endpoint, stepByUnit.get(unitKey)!.get(horizonKey)!);
+    }
+    endpointByUnit.set(unitKey, endpoint);
+  }
+  return endpointByUnit;
+}
+
+function scientificNetworksV3(
+  rows: readonly Record<string, unknown>[],
+  unitColumns: readonly string[],
+  horizonColumns: readonly string[],
+  profiles: readonly NormalizedCodeProfileV3[],
+  weighting: "binary" | "frequency",
+  windowType: "MovingStanzaWindow" | "Conversation",
+  moving: MovingWindowV3 | null,
+  resolvedRowOrder: ReturnType<typeof resolveRowOrderV3> | null,
+): ScientificNetworksV3 {
+  const edgeWidth = profiles.length * (profiles.length - 1) / 2;
+  const stepByUnit = new Map<string, Map<string, number[]>>();
+  if (windowType === "Conversation") {
+    const rowsByStep = new Map<string, { unitKey: string; horizonKey: string; rowIndices: number[] }>();
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+      const unitKey = identityKeyV3(rows[rowIndex], unitColumns, rowIndex, "Unit");
+      const horizonKey = identityKeyV3(rows[rowIndex], horizonColumns, rowIndex, "Horizon");
+      const stepKey = canonicalJsonV3([unitKey, horizonKey]);
+      const step = rowsByStep.get(stepKey) ?? { unitKey, horizonKey, rowIndices: [] };
+      step.rowIndices.push(rowIndex);
+      rowsByStep.set(stepKey, step);
+    }
+    for (const stepKey of [...rowsByStep.keys()].sort(codeUnitCompareV3)) {
+      const step = rowsByStep.get(stepKey)!;
+      const sums = profiles.map((profile) => step.rowIndices.reduce(
+        (sum, rowIndex) => sum + (profile.magnitudes[rowIndex] ?? 0),
+        0,
+      ));
+      addVectorV3(
+        ensureStepVectorV3(stepByUnit, step.unitKey, step.horizonKey, edgeWidth),
+        upperTriangleV3(sums, weighting === "binary"),
+      );
+    }
+  } else {
+    if (moving === null || resolvedRowOrder === null) throw new TypeError("Resolved Moving Stanza order is required.");
+    const mappingsByHorizon = new Map<string, Array<ReturnType<typeof resolveRowOrderV3>["mappings"][number]>>();
+    for (const mapping of resolvedRowOrder.mappings) {
+      const group = mappingsByHorizon.get(mapping.horizonKey) ?? [];
+      group.push(mapping);
+      mappingsByHorizon.set(mapping.horizonKey, group);
+    }
+    const backward = moving.backward.kind === "infinity" ? Number.POSITIVE_INFINITY : moving.backward.value;
+    const forward = moving.forward.kind === "infinity" ? Number.POSITIVE_INFINITY : moving.forward.value;
+    for (const horizonKey of [...mappingsByHorizon.keys()].sort(codeUnitCompareV3)) {
+      const mappings = mappingsByHorizon.get(horizonKey)!;
+      const matrix = mappings.map((mapping) => profiles.map((profile) => profile.magnitudes[mapping.sourceRowIndex] ?? 0));
+      // Algebraically identical to jENA refWindowMatrix: prefix sums preserve
+      // its full-minus-predecessor-head-minus-forward-tail focal ownership in
+      // O(rows * (codes + edges)), including finite and Infinity extents.
+      const coOccurrences = movingCoOccurrencesV3(matrix, backward, forward, weighting === "binary");
+      for (let ordinal = 0; ordinal < mappings.length; ordinal += 1) {
+        const sourceRowIndex = mappings[ordinal].sourceRowIndex;
+        const unitKey = identityKeyV3(rows[sourceRowIndex], unitColumns, sourceRowIndex, "Unit");
+        addVectorV3(
+          ensureStepVectorV3(stepByUnit, unitKey, horizonKey, edgeWidth),
+          coOccurrences[ordinal] ?? zeroVectorV3(edgeWidth),
+        );
+      }
+    }
+  }
+  return { stepByUnit, endpointByUnit: endpointFromStepsV3(stepByUnit, edgeWidth) };
+}
+
+function vectorHasSignalV3(vector: readonly number[]): boolean {
+  return vector.some((value) => value !== 0);
+}
+
+function scientificNetworksFiniteV3(networks: ScientificNetworksV3): boolean {
+  for (const vector of networks.endpointByUnit.values()) {
+    if (!vector.every(Number.isFinite)) return false;
+  }
+  for (const steps of networks.stepByUnit.values()) {
+    for (const vector of steps.values()) if (!vector.every(Number.isFinite)) return false;
+  }
+  return true;
+}
+
+function meanVectorV3(vectors: readonly (readonly number[])[]): number[] {
+  const width = vectors[0]?.length ?? 0;
+  if (vectors.length === 0) return zeroVectorV3(width);
+  return Array.from({ length: width }, (_, column) => (
+    vectors.reduce((sum, vector) => sum + (vector[column] ?? 0), 0) / vectors.length
+  ));
+}
+
+function targetVectorsV3(
+  model: StandardModelTypeV3,
+  networks: ScientificNetworksV3,
+  horizonOrdering: ReturnType<typeof resolveHorizonOrderV3> | null,
+): number[][] {
+  if (model === "EndPoint") {
+    return [...networks.endpointByUnit.keys()].sort(codeUnitCompareV3)
+      .map((unitKey) => [...networks.endpointByUnit.get(unitKey)!]);
+  }
+  if (horizonOrdering === null) throw new TypeError("Resolved trajectory Horizon order is required.");
+  const result: number[][] = [];
+  for (const sequence of horizonOrdering.unitSequences) {
+    const width = networks.endpointByUnit.get(sequence.unitKey)?.length ?? 0;
+    const accumulated = zeroVectorV3(width);
+    for (const step of sequence.steps) {
+      const vector = networks.stepByUnit.get(sequence.unitKey)?.get(step.horizonKey) ?? zeroVectorV3(width);
+      if (model === "SeparateTrajectory") result.push([...vector]);
+      else {
+        addVectorV3(accumulated, vector);
+        result.push([...accumulated]);
+      }
+    }
+  }
+  return result;
+}
+
+function centeredRankV3(vectors: readonly number[][], centerAlignToOrigin: boolean): number {
+  if (vectors.length === 0) return 0;
+  const normalized = sphereNorm(vectors.map((vector) => [...vector]));
+  const centerPopulation = centerAlignToOrigin ? normalized.filter(vectorHasSignalV3) : normalized;
+  if (centerPopulation.length === 0) return 0;
+  const center = meanVectorV3(centerPopulation);
+  const centered = normalized.map((vector) => (
+    centerAlignToOrigin && !vectorHasSignalV3(vector)
+      ? vector.map(() => 0)
+      : vector.map((value, index) => value - (center[index] ?? 0))
+  ));
+  const eigenvalues = svdRotation(centered).eigenvalues;
+  const leading = eigenvalues[0] ?? 0;
+  if (leading === 0) return 0;
+  const threshold = Math.max(Number.MIN_VALUE, leading * 1e-12);
+  return eigenvalues.filter((value) => value > threshold).length;
+}
+
+function rankDiagnosticV3(
+  rank: number,
+  rotation: RotationSnapshotV3,
+  targetCount: number,
+): ModelDiagnosticV3 | null {
+  const targetSamples = Array.from(
+    { length: Math.min(targetCount, SAMPLE_LIMIT) },
+    () => ({ detail: "Target observation participates in the centered-rank preflight." }),
+  );
+  if (rank === 0) {
+    if (rotation.type === "reference") {
+      return diagnosticV3({
+        id: "STANDARD_REFERENCE_TARGET_DEGENERATE",
+        severity: "warning",
+        scope: "reference",
+        fieldPath: "rotation",
+        summary: "The Reference target is degenerate.",
+        detail: "The centered target has rank zero; fixed Reference axes may still project it, but no target variation is available.",
+        blocks: [],
+        evidence: evidenceV3(targetCount, targetSamples),
+      });
+    }
+    return diagnosticV3({
+      id: "STANDARD_TARGET_RANK_ZERO",
+      severity: "error",
+      scope: "rotation",
+      fieldPath: "rotation",
+      summary: "The target fitting population has rank zero.",
+      detail: "SVD and direct Means fitting require variation among sphere-normalized target networks.",
+      blocks: ["build-model"],
+      evidence: evidenceV3(targetCount, targetSamples),
+    });
+  }
+  if (rank === 1 && rotation.type === "svd") {
+    return diagnosticV3({
+      id: "STANDARD_SVD_ONE_DIMENSIONAL",
+      severity: "warning",
+      scope: "rotation",
+      fieldPath: "rotation",
+      summary: "The fitted SVD target is one-dimensional.",
+      detail: "SVD1 is estimable, but the application cannot invent a meaningful ENA2 axis.",
+      blocks: ["ai-interpretation"],
+      evidence: evidenceV3(targetCount, targetSamples),
+    });
+  }
+  return null;
+}
+
+function referenceFieldsDiagnosticV3(rotation: RotationSnapshotV3): ModelDiagnosticV3 | null {
+  if (rotation.type !== "reference") return null;
+  const referenceIdValid = typeof rotation.referenceId === "string" && rotation.referenceId.trim().length > 0;
+  const digestValid = typeof rotation.expectedContentSha256 === "string"
+    && LOWERCASE_SHA256.test(rotation.expectedContentSha256);
+  if (referenceIdValid && digestValid) return null;
+  return diagnosticV3({
+    id: "STANDARD_REFERENCE_MISSING",
+    severity: "error",
+    scope: "reference",
+    fieldPath: "rotation",
+    summary: "Reference rotation identity is incomplete or invalid.",
+    detail: "Select a nonblank Reference ID with its exact lowercase 64-hex content SHA-256 before projection.",
+    blocks: ["build-model"],
+    evidence: evidenceV3(1, [{ detail: "Reference ID or expected content digest is missing or malformed." }]),
+  });
+}
+
+function meansDiagnosticsV3(
+  rotation: Extract<RotationSnapshotV3, { type: "means" }>,
+  groupColumn: string | null,
+  groupByUnit: ReadonlyMap<string, ScalarIdentityV3>,
+  endpointByUnit: ReadonlyMap<string, number[]>,
+): ModelDiagnosticV3[] {
+  if (groupColumn === null) {
+    return [diagnosticV3({
+      id: "STANDARD_MEANS_GROUP_REQUIRED",
+      severity: "error",
+      scope: "rotation",
+      fieldPath: "groupColumn",
+      summary: "Direct Means rotation requires a Group field.",
+      detail: "Select a Unit-stable typed Group field and then choose an ordered negative-to-positive contrast.",
+      blocks: ["build-model"],
+    })];
+  }
+  const output: ModelDiagnosticV3[] = [];
+  if (rotation.negativeLevel === null || rotation.positiveLevel === null) {
+    output.push(diagnosticV3({
+      id: "STANDARD_MEANS_LEVEL_REQUIRED",
+      severity: "error",
+      scope: "rotation",
+      fieldPath: "rotation",
+      summary: "Direct Means rotation requires two selected Group levels.",
+      detail: "Choose explicit typed negative and positive levels; the MR1 direction is positive mean minus negative mean.",
+      blocks: ["build-model"],
+    }));
+    return output;
+  }
+  const negativeKey = canonicalJsonV3(rotation.negativeLevel);
+  const positiveKey = canonicalJsonV3(rotation.positiveLevel);
+  const unitsFor = (key: string): string[] => [...groupByUnit.entries()]
+    .filter(([, group]) => canonicalJsonV3(group) === key)
+    .map(([unitKey]) => unitKey)
+    .sort(codeUnitCompareV3);
+  const negativeUnits = unitsFor(negativeKey);
+  const positiveUnits = unitsFor(positiveKey);
+  const selected = [
+    { name: "negative", units: negativeUnits, fieldPath: "rotation.negativeLevel" },
+    { name: "positive", units: positiveUnits, fieldPath: "rotation.positiveLevel" },
+  ] as const;
+  let eligible = true;
+  for (const level of selected) {
+    const nonZeroCount = level.units.filter((unitKey) => vectorHasSignalV3(endpointByUnit.get(unitKey) ?? [])).length;
+    if (level.units.length === 0 || nonZeroCount === 0) {
+      eligible = false;
+      const evidenceTotal = Math.max(1, level.units.length);
+      output.push(diagnosticV3({
+        id: "STANDARD_MEANS_LEVEL_EMPTY",
+        severity: "error",
+        scope: "rotation",
+        fieldPath: level.fieldPath,
+        summary: `The selected ${level.name} Means level is not eligible.`,
+        detail: "Each selected typed Group level must contain at least one Unit with a non-zero Endpoint network.",
+        blocks: ["build-model"],
+        evidence: evidenceV3(evidenceTotal, Array.from(
+          { length: Math.min(evidenceTotal, SAMPLE_LIMIT) },
+          () => ({ detail: `${level.units.length} Unit(s) belong to this level; ${nonZeroCount} have a non-zero Endpoint network.` }),
+        )),
+      }));
+    }
+  }
+  if (!eligible) return output;
+
+  const normalizedByUnit = new Map<string, number[]>();
+  const unitKeys = [...endpointByUnit.keys()].sort(codeUnitCompareV3);
+  const normalized = sphereNorm(unitKeys.map((unitKey) => [...endpointByUnit.get(unitKey)!]));
+  unitKeys.forEach((unitKey, index) => normalizedByUnit.set(unitKey, normalized[index]));
+  const negativeMean = meanVectorV3(negativeUnits.map((unitKey) => normalizedByUnit.get(unitKey)!));
+  const positiveMean = meanVectorV3(positiveUnits.map((unitKey) => normalizedByUnit.get(unitKey)!));
+  if (negativeKey === positiveKey
+    || positiveMean.every((value, index) => value - (negativeMean[index] ?? 0) === 0)) {
+    const selectedUnitCount = negativeUnits.length + positiveUnits.length;
+    output.push(diagnosticV3({
+      id: "STANDARD_MEANS_IDENTICAL",
+      severity: "error",
+      scope: "rotation",
+      fieldPath: "rotation",
+      summary: "The selected Group means are identical.",
+      detail: "The positive-minus-negative mean direction has zero length, so MR1 cannot be fitted.",
+      blocks: ["build-model"],
+      evidence: evidenceV3(selectedUnitCount, Array.from(
+        { length: Math.min(selectedUnitCount, SAMPLE_LIMIT) },
+        () => ({ detail: "Selected typed groups have the same sphere-normalized Endpoint mean." }),
+      )),
+    }));
+    return output;
+  }
+
+  for (const level of selected) {
+    if (level.units.length !== 1) continue;
+    // The fixed registry has no separate small-Means-group ID. Here
+    // LEVEL_EMPTY refers precisely to the empty within-group variance sample
+    // (zero residual degrees of freedom), not to empty descriptive membership.
+    output.push(diagnosticV3({
+      id: "STANDARD_MEANS_LEVEL_EMPTY",
+      severity: "warning",
+      scope: "rotation",
+      fieldPath: level.fieldPath,
+      summary: `The selected ${level.name} Means level has no within-group variance sample.`,
+      detail: "Its one eligible Unit permits descriptive Means rotation, but group inference requiring within-group variance is not estimable.",
+      blocks: ["group-inference"],
+      evidence: evidenceV3(1, [{ detail: "One eligible Unit gives zero within-group variance degrees of freedom." }]),
+    }));
+  }
+  return output;
+}
+
+function trajectoryShapeDiagnosticV3(
+  rows: readonly Record<string, unknown>[],
+  unitColumns: readonly string[],
+  horizonColumns: readonly string[],
+): ModelDiagnosticV3 | null {
+  const horizonsByUnit = new Map<string, Set<string>>();
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const unitKey = identityKeyV3(rows[rowIndex], unitColumns, rowIndex, "Unit");
+    const horizonKey = identityKeyV3(rows[rowIndex], horizonColumns, rowIndex, "Horizon");
+    const horizons = horizonsByUnit.get(unitKey) ?? new Set<string>();
+    horizons.add(horizonKey);
+    horizonsByUnit.set(unitKey, horizons);
+  }
+  const stepCounts = [...horizonsByUnit.values()].map((horizons) => horizons.size).sort((left, right) => left - right);
+  if (!stepCounts.some((count) => count >= 2)) {
+    return diagnosticV3({
+      id: "STANDARD_TRAJECTORY_HAS_NO_PATH",
+      severity: "error",
+      scope: "horizons",
+      fieldPath: "horizonOrder",
+      summary: "The trajectory target has no path.",
+      detail: "At least one typed Unit must have two or more distinct observed Horizons; steps are never imputed.",
+      blocks: ["build-model"],
+      evidence: evidenceV3(stepCounts.length, stepCounts.slice(0, SAMPLE_LIMIT).map((count) => ({
+        detail: `Observed Unit has ${count} distinct Horizon step(s).`,
+      }))),
+    });
+  }
+  const singleCount = stepCounts.filter((count) => count === 1).length;
+  if (singleCount === 0) return null;
+  return diagnosticV3({
+    id: "STANDARD_TRAJECTORY_SINGLE_STEP_UNITS",
+    severity: "warning",
+    scope: "horizons",
+    fieldPath: "horizonOrder",
+    summary: "Some Units have only one observed trajectory step.",
+    detail: "These Units are retained without imputing a path; inference must account for the uneven observed step counts.",
+    blocks: [],
+    evidence: evidenceV3(singleCount, Array.from(
+      { length: Math.min(singleCount, SAMPLE_LIMIT) },
+      () => ({ detail: "Observed Unit has exactly one distinct Horizon step." }),
+    )),
+  });
 }
 
 export function validateStandardDraftV3(
@@ -715,6 +1509,39 @@ export function validateStandardDraftV3(
   const { dataset, binding } = trusted;
   const output: ModelDiagnosticV3[] = [];
   const headerSet = new Set(dataset.headers);
+
+  const unitValidation = validateIdentityRoleV3(
+    dataset.rows,
+    headerSet,
+    modelDraft.unitColumns,
+    "Unit",
+  );
+  const horizonValidation = validateIdentityRoleV3(
+    dataset.rows,
+    headerSet,
+    modelDraft.horizonColumns,
+    "Horizon",
+  );
+  output.push(...unitValidation.diagnostics, ...horizonValidation.diagnostics);
+  const groupValidation = validateGroupV3(
+    dataset.rows,
+    headerSet,
+    modelDraft.unitColumns,
+    modelDraft.groupColumn,
+    unitValidation.valid,
+  );
+  output.push(...groupValidation.diagnostics);
+  const identityAndGroupPrerequisitesValid = unitValidation.valid
+    && horizonValidation.valid
+    && groupValidation.valid;
+  if (unitValidation.valid && horizonValidation.valid) {
+    const shared = sharedHorizonDiagnosticV3(
+      dataset.rows,
+      modelDraft.unitColumns,
+      modelDraft.horizonColumns,
+    );
+    if (shared !== null) output.push(shared);
+  }
 
   const nonblankCodes = modelDraft.codes.filter((code) => code.trim().length > 0);
   const uniqueCodes = [...new Set(modelDraft.codes)].sort(codeUnitCompareV3);
@@ -755,6 +1582,7 @@ export function validateStandardDraftV3(
   }
 
   let moving: MovingWindowV3 | null = null;
+  let resolvedRowOrder: ReturnType<typeof resolveRowOrderV3> | null = null;
   let connectivityRowWindowPrerequisitesValid = true;
   const activeRowOrderColumns: string[] = [];
   if (modelDraft.windowType === "MovingStanzaWindow") {
@@ -772,26 +1600,40 @@ export function validateStandardDraftV3(
           blocks: ["build-model"],
         }));
       } else {
-        activeRowOrderColumns.push(...activeOrderColumnsV3(moving.rowOrder, "draft.movingStanza.rowOrder"));
+        moving = {
+          ...moving,
+          rowOrder: snapshotOrderPolicyForResolverV3(
+            moving.rowOrder,
+            "draft.movingStanza.rowOrder",
+          ),
+        };
+        if (moving.rowOrder.kind === "columns") {
+          activeRowOrderColumns.push(...moving.rowOrder.keys.map((key) => key.column));
+        }
+        try {
+          resolvedRowOrder = resolveRowOrderV3(dataset.rows, modelDraft.horizonColumns, moving.rowOrder, {
+            analysisFamily: "standard",
+            confirmationAnalysisFamily: "standard",
+            datasetBinding: binding,
+          });
+        } catch (error) {
+          if (unitValidation.valid && horizonValidation.valid
+            || /source-order confirmation/iu.test(errorTextV3(error))) throw error;
+        }
       }
-    } catch {
+    } catch (error) {
       connectivityRowWindowPrerequisitesValid = false;
       moving = null;
-      output.push(diagnosticV3({
-        id: "STANDARD_ROW_ORDER_INVALID",
-        severity: "error",
-        scope: "windows",
-        fieldPath: "movingStanza.rowOrder",
-        summary: "Moving Stanza ordering or extent is invalid.",
-        detail: "The candidate window cannot be resolved until its order and finite or Infinity extents are valid.",
-        blocks: ["build-model"],
-      }));
+      output.push(orderFailureDiagnosticV3("row", error));
     }
   }
 
+  let resolvedHorizonOrder: ReturnType<typeof resolveHorizonOrderV3> | null = null;
+  let horizonOrderPrerequisitesValid = true;
   const activeHorizonOrderColumns: string[] = [];
   if (modelDraft.model !== "EndPoint") {
     if (modelDraft.horizonOrder === null) {
+      horizonOrderPrerequisitesValid = false;
       output.push(diagnosticV3({
         id: "STANDARD_HORIZON_ORDER_REQUIRED",
         severity: "error",
@@ -803,17 +1645,29 @@ export function validateStandardDraftV3(
       }));
     } else {
       try {
-        activeHorizonOrderColumns.push(...activeOrderColumnsV3(modelDraft.horizonOrder, "draft.horizonOrder"));
-      } catch {
-        output.push(diagnosticV3({
-          id: "STANDARD_HORIZON_ORDER_INVALID",
-          severity: "error",
-          scope: "horizons",
-          fieldPath: "horizonOrder",
-          summary: "Trajectory Horizon order is invalid.",
-          detail: "The active trajectory order policy must have a valid exact structure.",
-          blocks: ["build-model"],
-        }));
+        const horizonPolicy = snapshotOrderPolicyForResolverV3(modelDraft.horizonOrder, "draft.horizonOrder");
+        if (horizonPolicy.kind === "columns") {
+          activeHorizonOrderColumns.push(...horizonPolicy.keys.map((key) => key.column));
+        }
+        try {
+          resolvedHorizonOrder = resolveHorizonOrderV3(
+            dataset.rows,
+            modelDraft.unitColumns,
+            modelDraft.horizonColumns,
+            horizonPolicy,
+            {
+              analysisFamily: "standard",
+              confirmationAnalysisFamily: "standard",
+              datasetBinding: binding,
+            },
+          );
+        } catch (error) {
+          if (unitValidation.valid && horizonValidation.valid
+            || /source-order confirmation/iu.test(errorTextV3(error))) throw error;
+        }
+      } catch (error) {
+        horizonOrderPrerequisitesValid = false;
+        output.push(orderFailureDiagnosticV3("horizon", error));
       }
     }
   }
@@ -916,20 +1770,15 @@ export function validateStandardDraftV3(
     }
   }
 
-  const basicPrerequisitesValid = dataset.rows.length > 0
-    && distinctNonblankCodes.length >= 3
+  const scientificFieldPrerequisitesValid = distinctNonblankCodes.length >= 3
     && duplicateCodes.length === 0
     && missingCodes.size === 0
     && collidingCodes.size === 0
     && invalidCodes.size === 0
     && profiles.length === uniqueCodes.length
     && profiles.every((profile) => !profile.allZero)
-    && identityPrerequisitesValidV3(
-      dataset.rows,
-      headerSet,
-      modelDraft.unitColumns,
-      modelDraft.horizonColumns,
-    );
+    && identityAndGroupPrerequisitesValid;
+  const basicPrerequisitesValid = dataset.rows.length > 0 && scientificFieldPrerequisitesValid;
 
   if (basicPrerequisitesValid) {
     const duplicateProfiles = new Map<string, string[]>();
@@ -971,9 +1820,9 @@ export function validateStandardDraftV3(
           profiles,
           null,
         );
-      } else if (moving !== null) {
+      } else if (moving !== null && resolvedRowOrder !== null) {
         connectivity = connectivityFromGroupsV3(
-          movingGroupsV3(dataset.rows, modelDraft.horizonColumns, binding, moving),
+          movingGroupsV3(resolvedRowOrder),
           profiles,
           moving,
         );
@@ -1026,6 +1875,82 @@ export function validateStandardDraftV3(
         )),
       }));
     }
+  }
+
+  const trajectoryMeansInvalid = modelDraft.model !== "EndPoint" && modelDraft.rotation.type === "means";
+  if (trajectoryMeansInvalid) {
+    output.push(diagnosticV3({
+      id: "STANDARD_MEANS_REQUIRES_ENDPOINT",
+      severity: "error",
+      scope: "rotation",
+      fieldPath: "rotation",
+      summary: "Direct Means rotation requires EndPoint.",
+      detail: "Keep the selected Means rotation visible and choose EndPoint, or explicitly choose a supported SVD or Reference rotation.",
+      blocks: ["build-model"],
+    }));
+  }
+  const referenceInvalid = referenceFieldsDiagnosticV3(modelDraft.rotation);
+  if (referenceInvalid !== null) output.push(referenceInvalid);
+  if (modelDraft.model === "EndPoint" && modelDraft.rotation.type === "means" && modelDraft.groupColumn === null) {
+    output.push(...meansDiagnosticsV3(modelDraft.rotation, null, groupValidation.groupByUnit, new Map()));
+  }
+
+  const rowOrderReady = modelDraft.windowType === "Conversation" || resolvedRowOrder !== null;
+  const horizonOrderReady = modelDraft.model === "EndPoint" || resolvedHorizonOrder !== null;
+  const rotationShapeReady = !trajectoryMeansInvalid && referenceInvalid === null
+    && !(modelDraft.rotation.type === "means" && modelDraft.groupColumn === null);
+  let networks: ScientificNetworksV3 | null = null;
+  if (scientificFieldPrerequisitesValid && rowOrderReady && horizonOrderReady && rotationShapeReady) {
+    networks = scientificNetworksV3(
+      dataset.rows,
+      modelDraft.unitColumns,
+      modelDraft.horizonColumns,
+      profiles,
+      modelDraft.weighting,
+      modelDraft.windowType,
+      moving,
+      resolvedRowOrder,
+    );
+    if (!scientificNetworksFiniteV3(networks)) {
+      output.push(diagnosticV3({
+        id: "STANDARD_OUTPUT_NONFINITE",
+        severity: "error",
+        scope: "rotation",
+        fieldPath: "rotation",
+        summary: "Scientific network accumulation produced a non-finite value.",
+        detail: "Finite source values overflowed during exact window accumulation; model construction cannot continue safely.",
+        blocks: ["build-model"],
+      }));
+      networks = null;
+    } else {
+      const targets = targetVectorsV3(modelDraft.model, networks, resolvedHorizonOrder);
+      const centerAlignToOrigin = modelDraft.rotation.type === "reference"
+        ? true
+        : modelDraft.rotation.centerAlignToOrigin;
+      const rank = centeredRankV3(targets, centerAlignToOrigin);
+      const rankDiagnostic = rankDiagnosticV3(rank, modelDraft.rotation, targets.length);
+      if (rankDiagnostic !== null) output.push(rankDiagnostic);
+      if (modelDraft.rotation.type === "means") {
+        output.push(...meansDiagnosticsV3(
+          modelDraft.rotation,
+          modelDraft.groupColumn,
+          groupValidation.groupByUnit,
+          networks.endpointByUnit,
+        ));
+      }
+    }
+  }
+
+  if (modelDraft.model !== "EndPoint"
+    && scientificFieldPrerequisitesValid
+    && horizonOrderPrerequisitesValid
+    && resolvedHorizonOrder !== null) {
+    const shape = trajectoryShapeDiagnosticV3(
+      dataset.rows,
+      modelDraft.unitColumns,
+      modelDraft.horizonColumns,
+    );
+    if (shape !== null) output.push(shape);
   }
 
   return finalizeDiagnosticsV3(output);
