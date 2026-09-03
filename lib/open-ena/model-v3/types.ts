@@ -23,6 +23,7 @@ export type ScalarIdentityV3 =
 
 export interface DatasetBoundConfirmationV3 {
   kind: "explicit-researcher-confirmation";
+  analysisFamily: AnalysisFamilyV3;
   datasetSha256: string;
   rowCount: number;
   relevantColumns: string[];

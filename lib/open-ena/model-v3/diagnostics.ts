@@ -4,7 +4,8 @@ import {
   snapshotDenseJsonArrayV3,
   snapshotPlainJsonRecordV3,
 } from "./canonical-json";
-import { sphereNorm } from "jena-js";
+import { accumulateData, sphereNorm } from "jena-js";
+import type { Row } from "jena-js";
 import { svdRotation } from "jena-js/rotation";
 import { scalarIdentityV3 } from "./identity";
 import { resolveHorizonOrderV3, resolveRowOrderV3 } from "./ordering";
@@ -208,11 +209,16 @@ interface IdentityValidationV3 {
 
 interface ScientificNetworksV3 {
   endpointByUnit: Map<string, number[]>;
-  stepByUnit: Map<string, Map<string, number[]>>;
+  targetVectors: number[][];
 }
 
 const own = Object.prototype.hasOwnProperty;
 const SAMPLE_LIMIT = 5 as const;
+// A naive mean of N normalized IEEE-754 values can accumulate O(N * eps)
+// rounding error. Eight ulps per contributing term covers that bound while
+// keeping genuinely distinct structure above roughly 1e-13 for ordinary
+// small-group diagnostics.
+const NUMERICAL_ZERO_ULPS_PER_TERM_V3 = 8;
 const LOWERCASE_SHA256 = /^[a-f0-9]{64}$/u;
 const DIAGNOSTIC_RANK = new Map<ModelDiagnosticIdV3, number>(
   MODEL_DIAGNOSTIC_IDS_V3.map((id, index) => [id, index]),
@@ -562,10 +568,11 @@ function snapshotOrderPolicyForResolverV3(value: unknown, label: string): Canoni
     const confirmation = snapshotPlainJsonRecordV3(policy.confirmation, "source-order confirmation");
     assertExactKeysV3(
       confirmation,
-      ["kind", "datasetSha256", "rowCount", "relevantColumns", "confirmedAt", "confirmationVersion"],
+      ["kind", "analysisFamily", "datasetSha256", "rowCount", "relevantColumns", "confirmedAt", "confirmationVersion"],
       "source-order confirmation",
     );
     if (confirmation.kind !== "explicit-researcher-confirmation"
+      || (confirmation.analysisFamily !== "standard" && confirmation.analysisFamily !== "ona")
       || typeof confirmation.datasetSha256 !== "string"
       || typeof confirmation.rowCount !== "number"
       || typeof confirmation.confirmedAt !== "string"
@@ -581,6 +588,7 @@ function snapshotOrderPolicyForResolverV3(value: unknown, label: string): Canoni
       kind: "source-order-confirmed",
       confirmation: {
         kind: "explicit-researcher-confirmation",
+        analysisFamily: confirmation.analysisFamily,
         datasetSha256: confirmation.datasetSha256,
         rowCount: confirmation.rowCount,
         relevantColumns,
@@ -752,16 +760,19 @@ function connectivityFromGroupsV3(
 
 function conversationGroupsV3(
   rows: readonly Record<string, unknown>[],
+  unitColumns: readonly string[],
   horizonColumns: readonly string[],
 ): number[][] {
-  const byHorizon = new Map<string, number[]>();
+  const byUnitHorizon = new Map<string, number[]>();
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
-    const key = typedHorizonKeyV3(rows[rowIndex], horizonColumns, rowIndex);
-    const indices = byHorizon.get(key) ?? [];
+    const unitKey = identityKeyV3(rows[rowIndex], unitColumns, rowIndex, "Unit");
+    const horizonKey = typedHorizonKeyV3(rows[rowIndex], horizonColumns, rowIndex);
+    const key = canonicalJsonV3([unitKey, horizonKey]);
+    const indices = byUnitHorizon.get(key) ?? [];
     indices.push(rowIndex);
-    byHorizon.set(key, indices);
+    byUnitHorizon.set(key, indices);
   }
-  return [...byHorizon.entries()]
+  return [...byUnitHorizon.entries()]
     .sort(([left], [right]) => codeUnitCompareV3(left, right))
     .map(([, indices]) => indices);
 }
@@ -1064,85 +1075,54 @@ function addVectorV3(target: number[], source: readonly number[]): void {
   for (let index = 0; index < target.length; index += 1) target[index] += source[index] ?? 0;
 }
 
-function upperTriangleV3(codeSums: readonly number[], binary: boolean): number[] {
-  const result: number[] = [];
-  for (let right = 1; right < codeSums.length; right += 1) {
-    for (let left = 0; left < right; left += 1) {
-      const value = (codeSums[left] ?? 0) * (codeSums[right] ?? 0);
-      result.push(binary ? (value > 0 ? 1 : 0) : value);
-    }
-  }
-  return result;
+const DIAGNOSTIC_UNIT_FIELD_V3 = "__open_ena_diagnostic_unit_v3";
+const DIAGNOSTIC_HORIZON_FIELD_V3 = "__open_ena_diagnostic_horizon_v3";
+
+function syntheticTokensV3(keys: readonly string[], prefix: string): {
+  tokenByKey: Map<string, string>;
+  keyByToken: Map<string, string>;
+} {
+  const distinct = [...new Set(keys)].sort(codeUnitCompareV3);
+  const tokenByKey = new Map<string, string>();
+  const keyByToken = new Map<string, string>();
+  distinct.forEach((key, index) => {
+    const token = `${prefix}${index.toString(36).padStart(8, "0")}`;
+    tokenByKey.set(key, token);
+    keyByToken.set(token, key);
+  });
+  return { tokenByKey, keyByToken };
 }
 
-function movingCoOccurrencesV3(
-  matrix: readonly (readonly number[])[],
-  backward: number,
-  forward: number,
-  binary: boolean,
-): number[][] {
-  const codeCount = matrix[0]?.length ?? 0;
-  const prefix = Array.from({ length: codeCount }, () => new Array<number>(matrix.length + 1).fill(0));
-  for (let row = 0; row < matrix.length; row += 1) {
-    for (let code = 0; code < codeCount; code += 1) {
-      prefix[code][row + 1] = prefix[code][row] + (matrix[row][code] ?? 0);
-    }
-  }
-  const sums = (start: number, endExclusive: number): number[] => (
-    prefix.map((values) => values[endExclusive] - values[start])
-  );
-  const products = (start: number, endExclusive: number): number[] => upperTriangleV3(
-    sums(start, endExclusive),
-    false,
-  );
-  const result: number[][] = [];
-  for (let row = 0; row < matrix.length; row += 1) {
-    const start = Number.isFinite(backward) ? Math.max(0, row - (backward - 1)) : 0;
-    const end = Number.isFinite(forward) ? Math.min(matrix.length - 1, row + forward) : matrix.length - 1;
-    const current = products(start, end + 1);
-    const currentCount = end - start + 1;
-    if (currentCount > 0 && backward > 1 && row > 0) {
-      const headCount = Math.max(0, currentCount - 1 - forward);
-      if (headCount > 0) {
-        const head = products(start, start + headCount);
-        for (let edge = 0; edge < current.length; edge += 1) current[edge] -= head[edge] ?? 0;
-      }
-    }
-    if (currentCount > 0 && forward > 0) {
-      const tailCount = end - row;
-      if (tailCount > 0) {
-        const tail = products(end + 1 - tailCount, end + 1);
-        for (let edge = 0; edge < current.length; edge += 1) current[edge] -= tail[edge] ?? 0;
-      }
-    }
-    result.push(binary ? current.map((value) => (value > 0 ? 1 : 0)) : current);
-  }
-  return result;
-}
-
-function ensureStepVectorV3(
-  stepByUnit: Map<string, Map<string, number[]>>,
-  unitKey: string,
-  horizonKey: string,
-  width: number,
-): number[] {
-  const byHorizon = stepByUnit.get(unitKey) ?? new Map<string, number[]>();
-  const vector = byHorizon.get(horizonKey) ?? zeroVectorV3(width);
-  byHorizon.set(horizonKey, vector);
-  stepByUnit.set(unitKey, byHorizon);
-  return vector;
-}
-
-function endpointFromStepsV3(stepByUnit: Map<string, Map<string, number[]>>, width: number): Map<string, number[]> {
-  const endpointByUnit = new Map<string, number[]>();
-  for (const unitKey of [...stepByUnit.keys()].sort(codeUnitCompareV3)) {
-    const endpoint = zeroVectorV3(width);
-    for (const horizonKey of [...stepByUnit.get(unitKey)!.keys()].sort(codeUnitCompareV3)) {
-      addVectorV3(endpoint, stepByUnit.get(unitKey)!.get(horizonKey)!);
-    }
-    endpointByUnit.set(unitKey, endpoint);
-  }
-  return endpointByUnit;
+function diagnosticRowsForJenaV3(
+  rows: readonly Record<string, unknown>[],
+  unitColumns: readonly string[],
+  horizonColumns: readonly string[],
+  profiles: readonly NormalizedCodeProfileV3[],
+  sourceOrder: readonly number[],
+): {
+  rows: Row[];
+  codeFields: string[];
+  unitKeyByToken: Map<string, string>;
+  horizonKeyByToken: Map<string, string>;
+} {
+  const unitKeys = rows.map((row, rowIndex) => identityKeyV3(row, unitColumns, rowIndex, "Unit"));
+  const horizonKeys = rows.map((row, rowIndex) => identityKeyV3(row, horizonColumns, rowIndex, "Horizon"));
+  const units = syntheticTokensV3(unitKeys, "u");
+  const horizons = syntheticTokensV3(horizonKeys, "h");
+  const codeFields = profiles.map((_profile, index) => `__open_ena_diagnostic_code_v3_${index.toString(36)}`);
+  const syntheticRows = sourceOrder.map((sourceRowIndex): Row => ({
+    [DIAGNOSTIC_UNIT_FIELD_V3]: units.tokenByKey.get(unitKeys[sourceRowIndex])!,
+    [DIAGNOSTIC_HORIZON_FIELD_V3]: horizons.tokenByKey.get(horizonKeys[sourceRowIndex])!,
+    ...Object.fromEntries(codeFields.map((field, codeIndex) => (
+      [field, profiles[codeIndex].magnitudes[sourceRowIndex] ?? 0]
+    ))),
+  }));
+  return {
+    rows: syntheticRows,
+    codeFields,
+    unitKeyByToken: units.keyByToken,
+    horizonKeyByToken: horizons.keyByToken,
+  };
 }
 
 function scientificNetworksV3(
@@ -1154,58 +1134,85 @@ function scientificNetworksV3(
   windowType: "MovingStanzaWindow" | "Conversation",
   moving: MovingWindowV3 | null,
   resolvedRowOrder: ReturnType<typeof resolveRowOrderV3> | null,
+  model: StandardModelTypeV3,
+  horizonOrdering: ReturnType<typeof resolveHorizonOrderV3> | null,
 ): ScientificNetworksV3 {
-  const edgeWidth = profiles.length * (profiles.length - 1) / 2;
+  if (windowType === "MovingStanzaWindow" && (moving === null || resolvedRowOrder === null)) {
+    throw new TypeError("Resolved Moving Stanza order is required.");
+  }
+  if (model !== "EndPoint" && horizonOrdering === null) {
+    throw new TypeError("Resolved trajectory Horizon order is required.");
+  }
+  const sourceOrder = windowType === "MovingStanzaWindow"
+    ? resolvedRowOrder!.orderedSourceRowIndices
+    : rows.map((_row, index) => index);
+  const synthetic = diagnosticRowsForJenaV3(
+    rows,
+    unitColumns,
+    horizonColumns,
+    profiles,
+    sourceOrder,
+  );
+  const common = {
+    rows: synthetic.rows,
+    units: [DIAGNOSTIC_UNIT_FIELD_V3],
+    conversation: [DIAGNOSTIC_HORIZON_FIELD_V3],
+    codes: synthetic.codeFields,
+    weightBy: weighting === "binary" ? "binary" as const : "sum" as const,
+    window: windowType,
+    windowSizeBack: moving?.backward.kind === "infinity"
+      ? Number.POSITIVE_INFINITY
+      : moving?.backward.value ?? 1,
+    windowSizeForward: moving?.forward.kind === "infinity"
+      ? Number.POSITIVE_INFINITY
+      : moving?.forward.value ?? 0,
+  };
+  if (model === "EndPoint") {
+    const accumulated = accumulateData({ ...common, model: "EndPoint" });
+    const endpointByUnit = new Map<string, number[]>();
+    accumulated.connectionCounts.forEach((row, index) => {
+      const token = String(row[DIAGNOSTIC_UNIT_FIELD_V3] ?? "");
+      const unitKey = synthetic.unitKeyByToken.get(token);
+      if (unitKey === undefined) throw new Error("jENA diagnostic Unit token was not recognized.");
+      endpointByUnit.set(unitKey, [...(accumulated.connectionMatrix[index] ?? [])]);
+    });
+    return {
+      endpointByUnit,
+      targetVectors: accumulated.connectionMatrix.map((vector) => [...vector]),
+    };
+  }
+
+  const separated = accumulateData({ ...common, model: "SeparateTrajectory" });
   const stepByUnit = new Map<string, Map<string, number[]>>();
-  if (windowType === "Conversation") {
-    const rowsByStep = new Map<string, { unitKey: string; horizonKey: string; rowIndices: number[] }>();
-    for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
-      const unitKey = identityKeyV3(rows[rowIndex], unitColumns, rowIndex, "Unit");
-      const horizonKey = identityKeyV3(rows[rowIndex], horizonColumns, rowIndex, "Horizon");
-      const stepKey = canonicalJsonV3([unitKey, horizonKey]);
-      const step = rowsByStep.get(stepKey) ?? { unitKey, horizonKey, rowIndices: [] };
-      step.rowIndices.push(rowIndex);
-      rowsByStep.set(stepKey, step);
+  separated.connectionMatrix.forEach((vector, index) => {
+    const trajectory = separated.trajectories?.[index];
+    const unitToken = String(trajectory?.[DIAGNOSTIC_UNIT_FIELD_V3] ?? "");
+    const horizonToken = String(trajectory?.[DIAGNOSTIC_HORIZON_FIELD_V3] ?? "");
+    const unitKey = synthetic.unitKeyByToken.get(unitToken);
+    const horizonKey = synthetic.horizonKeyByToken.get(horizonToken);
+    if (unitKey === undefined || horizonKey === undefined) {
+      throw new Error("jENA diagnostic trajectory token was not recognized.");
     }
-    for (const stepKey of [...rowsByStep.keys()].sort(codeUnitCompareV3)) {
-      const step = rowsByStep.get(stepKey)!;
-      const sums = profiles.map((profile) => step.rowIndices.reduce(
-        (sum, rowIndex) => sum + (profile.magnitudes[rowIndex] ?? 0),
-        0,
-      ));
-      addVectorV3(
-        ensureStepVectorV3(stepByUnit, step.unitKey, step.horizonKey, edgeWidth),
-        upperTriangleV3(sums, weighting === "binary"),
-      );
-    }
-  } else {
-    if (moving === null || resolvedRowOrder === null) throw new TypeError("Resolved Moving Stanza order is required.");
-    const mappingsByHorizon = new Map<string, Array<ReturnType<typeof resolveRowOrderV3>["mappings"][number]>>();
-    for (const mapping of resolvedRowOrder.mappings) {
-      const group = mappingsByHorizon.get(mapping.horizonKey) ?? [];
-      group.push(mapping);
-      mappingsByHorizon.set(mapping.horizonKey, group);
-    }
-    const backward = moving.backward.kind === "infinity" ? Number.POSITIVE_INFINITY : moving.backward.value;
-    const forward = moving.forward.kind === "infinity" ? Number.POSITIVE_INFINITY : moving.forward.value;
-    for (const horizonKey of [...mappingsByHorizon.keys()].sort(codeUnitCompareV3)) {
-      const mappings = mappingsByHorizon.get(horizonKey)!;
-      const matrix = mappings.map((mapping) => profiles.map((profile) => profile.magnitudes[mapping.sourceRowIndex] ?? 0));
-      // Algebraically identical to jENA refWindowMatrix: prefix sums preserve
-      // its full-minus-predecessor-head-minus-forward-tail focal ownership in
-      // O(rows * (codes + edges)), including finite and Infinity extents.
-      const coOccurrences = movingCoOccurrencesV3(matrix, backward, forward, weighting === "binary");
-      for (let ordinal = 0; ordinal < mappings.length; ordinal += 1) {
-        const sourceRowIndex = mappings[ordinal].sourceRowIndex;
-        const unitKey = identityKeyV3(rows[sourceRowIndex], unitColumns, sourceRowIndex, "Unit");
-        addVectorV3(
-          ensureStepVectorV3(stepByUnit, unitKey, horizonKey, edgeWidth),
-          coOccurrences[ordinal] ?? zeroVectorV3(edgeWidth),
-        );
-      }
+    const byHorizon = stepByUnit.get(unitKey) ?? new Map<string, number[]>();
+    byHorizon.set(horizonKey, [...vector]);
+    stepByUnit.set(unitKey, byHorizon);
+  });
+  if (model === "SeparateTrajectory") {
+    return {
+      endpointByUnit: new Map(),
+      targetVectors: separated.connectionMatrix.map((vector) => [...vector]),
+    };
+  }
+  const edgeWidth = profiles.length * (profiles.length - 1) / 2;
+  const targetVectors: number[][] = [];
+  for (const sequence of horizonOrdering!.unitSequences) {
+    const running = zeroVectorV3(edgeWidth);
+    for (const step of sequence.steps) {
+      addVectorV3(running, stepByUnit.get(sequence.unitKey)?.get(step.horizonKey) ?? zeroVectorV3(edgeWidth));
+      targetVectors.push([...running]);
     }
   }
-  return { stepByUnit, endpointByUnit: endpointFromStepsV3(stepByUnit, edgeWidth) };
+  return { endpointByUnit: new Map(), targetVectors };
 }
 
 function vectorHasSignalV3(vector: readonly number[]): boolean {
@@ -1216,10 +1223,7 @@ function scientificNetworksFiniteV3(networks: ScientificNetworksV3): boolean {
   for (const vector of networks.endpointByUnit.values()) {
     if (!vector.every(Number.isFinite)) return false;
   }
-  for (const steps of networks.stepByUnit.values()) {
-    for (const vector of steps.values()) if (!vector.every(Number.isFinite)) return false;
-  }
-  return true;
+  return networks.targetVectors.every((vector) => vector.every(Number.isFinite));
 }
 
 function meanVectorV3(vectors: readonly (readonly number[])[]): number[] {
@@ -1230,35 +1234,35 @@ function meanVectorV3(vectors: readonly (readonly number[])[]): number[] {
   ));
 }
 
-function targetVectorsV3(
-  model: StandardModelTypeV3,
-  networks: ScientificNetworksV3,
-  horizonOrdering: ReturnType<typeof resolveHorizonOrderV3> | null,
-): number[][] {
-  if (model === "EndPoint") {
-    return [...networks.endpointByUnit.keys()].sort(codeUnitCompareV3)
-      .map((unitKey) => [...networks.endpointByUnit.get(unitKey)!]);
+function numericalZeroToleranceV3(scale: number, termCount: number): number {
+  return NUMERICAL_ZERO_ULPS_PER_TERM_V3
+    * Number.EPSILON
+    * Math.max(1, termCount)
+    * Math.max(1, scale);
+}
+
+function vectorsExactlyEqualV3(left: readonly number[], right: readonly number[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function vectorNearZeroV3(vector: readonly number[], scale: number, termCount: number): boolean {
+  const tolerance = numericalZeroToleranceV3(scale, termCount);
+  return vector.every((value) => Math.abs(value) <= tolerance);
+}
+
+function maximumAbsoluteValueV3(vectors: readonly (readonly number[])[]): number {
+  let largest = 0;
+  for (const vector of vectors) {
+    for (const value of vector) largest = Math.max(largest, Math.abs(value));
   }
-  if (horizonOrdering === null) throw new TypeError("Resolved trajectory Horizon order is required.");
-  const result: number[][] = [];
-  for (const sequence of horizonOrdering.unitSequences) {
-    const width = networks.endpointByUnit.get(sequence.unitKey)?.length ?? 0;
-    const accumulated = zeroVectorV3(width);
-    for (const step of sequence.steps) {
-      const vector = networks.stepByUnit.get(sequence.unitKey)?.get(step.horizonKey) ?? zeroVectorV3(width);
-      if (model === "SeparateTrajectory") result.push([...vector]);
-      else {
-        addVectorV3(accumulated, vector);
-        result.push([...accumulated]);
-      }
-    }
-  }
-  return result;
+  return largest;
 }
 
 function centeredRankV3(vectors: readonly number[][], centerAlignToOrigin: boolean): number {
   if (vectors.length === 0) return 0;
   const normalized = sphereNorm(vectors.map((vector) => [...vector]));
+  const first = normalized[0];
+  if (first !== undefined && normalized.every((vector) => vectorsExactlyEqualV3(first, vector))) return 0;
   const centerPopulation = centerAlignToOrigin ? normalized.filter(vectorHasSignalV3) : normalized;
   if (centerPopulation.length === 0) return 0;
   const center = meanVectorV3(centerPopulation);
@@ -1267,11 +1271,39 @@ function centeredRankV3(vectors: readonly number[][], centerAlignToOrigin: boole
       ? vector.map(() => 0)
       : vector.map((value, index) => value - (center[index] ?? 0))
   ));
+  const inputScale = maximumAbsoluteValueV3(normalized);
+  const centeredScale = maximumAbsoluteValueV3(centered);
+  if (centeredScale <= numericalZeroToleranceV3(
+    inputScale,
+    Math.max(centerPopulation.length, normalized[0]?.length ?? 0),
+  )) return 0;
   const eigenvalues = svdRotation(centered).eigenvalues;
   const leading = eigenvalues[0] ?? 0;
   if (leading === 0) return 0;
-  const threshold = Math.max(Number.MIN_VALUE, leading * 1e-12);
+  const roundingFloor = numericalZeroToleranceV3(
+    inputScale,
+    Math.max(centerPopulation.length, normalized[0]?.length ?? 0),
+  ) ** 2;
+  const threshold = Math.max(Number.MIN_VALUE, leading * 1e-12, roundingFloor);
   return eigenvalues.filter((value) => value > threshold).length;
+}
+
+function zeroObservationDiagnosticV3(vectors: readonly number[][]): ModelDiagnosticV3 | null {
+  const zeroCount = vectors.filter((vector) => !vectorHasSignalV3(vector)).length;
+  if (zeroCount === 0) return null;
+  return diagnosticV3({
+    id: "STANDARD_TARGET_RANK_ZERO",
+    severity: "error",
+    scope: "rotation",
+    fieldPath: "rotation",
+    summary: "At least one analytical observation has a zero network.",
+    detail: "A zero analytical observation has rank zero and blocks target-fitted SVD or Means even when other observations vary.",
+    blocks: ["build-model"],
+    evidence: evidenceV3(zeroCount, Array.from(
+      { length: Math.min(zeroCount, SAMPLE_LIMIT) },
+      () => ({ detail: "Analytical observation has an all-zero scientific network." }),
+    )),
+  });
 }
 
 function rankDiagnosticV3(
@@ -1340,6 +1372,78 @@ function referenceFieldsDiagnosticV3(rotation: RotationSnapshotV3): ModelDiagnos
   });
 }
 
+function meansMembershipPrerequisitesV3(
+  rotation: Extract<RotationSnapshotV3, { type: "means" }>,
+  groupColumn: string | null,
+  groupByUnit: ReadonlyMap<string, ScalarIdentityV3>,
+): { diagnostics: ModelDiagnosticV3[]; ready: boolean } {
+  if (groupColumn === null) {
+    return {
+      ready: false,
+      diagnostics: [diagnosticV3({
+        id: "STANDARD_MEANS_GROUP_REQUIRED",
+        severity: "error",
+        scope: "rotation",
+        fieldPath: "groupColumn",
+        summary: "Direct Means rotation requires a Group field.",
+        detail: "Select a Unit-stable typed Group field and then choose an ordered negative-to-positive contrast.",
+        blocks: ["build-model"],
+      })],
+    };
+  }
+  if (rotation.negativeLevel === null || rotation.positiveLevel === null) {
+    return {
+      ready: false,
+      diagnostics: [diagnosticV3({
+        id: "STANDARD_MEANS_LEVEL_REQUIRED",
+        severity: "error",
+        scope: "rotation",
+        fieldPath: "rotation",
+        summary: "Direct Means rotation requires two selected Group levels.",
+        detail: "Choose explicit typed negative and positive levels; the MR1 direction is positive mean minus negative mean.",
+        blocks: ["build-model"],
+      })],
+    };
+  }
+  const negativeKey = canonicalJsonV3(rotation.negativeLevel);
+  const positiveKey = canonicalJsonV3(rotation.positiveLevel);
+  const observedKeys = new Set([...groupByUnit.values()].map((group) => canonicalJsonV3(group)));
+  const selected = [
+    { name: "negative", key: negativeKey, fieldPath: "rotation.negativeLevel" },
+    { name: "positive", key: positiveKey, fieldPath: "rotation.positiveLevel" },
+  ] as const;
+  const diagnostics: ModelDiagnosticV3[] = [];
+  for (const level of selected) {
+    if (observedKeys.has(level.key)) continue;
+    diagnostics.push(diagnosticV3({
+      id: "STANDARD_MEANS_LEVEL_EMPTY",
+      severity: "error",
+      scope: "rotation",
+      fieldPath: level.fieldPath,
+      summary: `The selected ${level.name} Means level is absent.`,
+      detail: "The selected typed Group level has zero observed Units in the current dataset.",
+      blocks: ["build-model"],
+      evidence: evidenceV3(0, []),
+    }));
+  }
+  if (diagnostics.length > 0) return { diagnostics, ready: false };
+  if (negativeKey === positiveKey) {
+    return {
+      ready: false,
+      diagnostics: [diagnosticV3({
+        id: "STANDARD_MEANS_IDENTICAL",
+        severity: "error",
+        scope: "rotation",
+        fieldPath: "rotation",
+        summary: "The selected Group levels are identical.",
+        detail: "Negative and positive must identify two distinct typed Group levels before MR1 can be fitted.",
+        blocks: ["build-model"],
+      })],
+    };
+  }
+  return { diagnostics: [], ready: true };
+}
+
 function meansDiagnosticsV3(
   rotation: Extract<RotationSnapshotV3, { type: "means" }>,
   groupColumn: string | null,
@@ -1372,10 +1476,11 @@ function meansDiagnosticsV3(
   }
   const negativeKey = canonicalJsonV3(rotation.negativeLevel);
   const positiveKey = canonicalJsonV3(rotation.positiveLevel);
-  const unitsFor = (key: string): string[] => [...groupByUnit.entries()]
-    .filter(([, group]) => canonicalJsonV3(group) === key)
-    .map(([unitKey]) => unitKey)
-    .sort(codeUnitCompareV3);
+  const unitsFor = (key: string): string[] => [...endpointByUnit.keys()]
+    .filter((unitKey) => {
+      const group = groupByUnit.get(unitKey);
+      return group !== undefined && canonicalJsonV3(group) === key;
+    });
   const negativeUnits = unitsFor(negativeKey);
   const positiveUnits = unitsFor(positiveKey);
   const selected = [
@@ -1387,7 +1492,7 @@ function meansDiagnosticsV3(
     const nonZeroCount = level.units.filter((unitKey) => vectorHasSignalV3(endpointByUnit.get(unitKey) ?? [])).length;
     if (level.units.length === 0 || nonZeroCount === 0) {
       eligible = false;
-      const evidenceTotal = Math.max(1, level.units.length);
+      const evidenceTotal = level.units.length;
       output.push(diagnosticV3({
         id: "STANDARD_MEANS_LEVEL_EMPTY",
         severity: "error",
@@ -1406,13 +1511,19 @@ function meansDiagnosticsV3(
   if (!eligible) return output;
 
   const normalizedByUnit = new Map<string, number[]>();
-  const unitKeys = [...endpointByUnit.keys()].sort(codeUnitCompareV3);
+  const unitKeys = [...endpointByUnit.keys()];
   const normalized = sphereNorm(unitKeys.map((unitKey) => [...endpointByUnit.get(unitKey)!]));
   unitKeys.forEach((unitKey, index) => normalizedByUnit.set(unitKey, normalized[index]));
   const negativeMean = meanVectorV3(negativeUnits.map((unitKey) => normalizedByUnit.get(unitKey)!));
   const positiveMean = meanVectorV3(positiveUnits.map((unitKey) => normalizedByUnit.get(unitKey)!));
+  const direction = positiveMean.map((value, index) => value - (negativeMean[index] ?? 0));
+  const meanScale = maximumAbsoluteValueV3([negativeMean, positiveMean]);
   if (negativeKey === positiveKey
-    || positiveMean.every((value, index) => value - (negativeMean[index] ?? 0) === 0)) {
+    || vectorNearZeroV3(
+      direction,
+      meanScale,
+      Math.max(direction.length, negativeUnits.length, positiveUnits.length),
+    )) {
     const selectedUnitCount = negativeUnits.length + positiveUnits.length;
     output.push(diagnosticV3({
       id: "STANDARD_MEANS_IDENTICAL",
@@ -1609,6 +1720,9 @@ export function validateStandardDraftV3(
         };
         if (moving.rowOrder.kind === "columns") {
           activeRowOrderColumns.push(...moving.rowOrder.keys.map((key) => key.column));
+          if (moving.rowOrder.keys.some((key) => !headerSet.has(key.column))) {
+            throw new TypeError("Moving Stanza row-order fields must exist in the current dataset header.");
+          }
         }
         try {
           resolvedRowOrder = resolveRowOrderV3(dataset.rows, modelDraft.horizonColumns, moving.rowOrder, {
@@ -1648,6 +1762,9 @@ export function validateStandardDraftV3(
         const horizonPolicy = snapshotOrderPolicyForResolverV3(modelDraft.horizonOrder, "draft.horizonOrder");
         if (horizonPolicy.kind === "columns") {
           activeHorizonOrderColumns.push(...horizonPolicy.keys.map((key) => key.column));
+          if (horizonPolicy.keys.some((key) => !headerSet.has(key.column))) {
+            throw new TypeError("Trajectory Horizon-order fields must exist in the current dataset header.");
+          }
         }
         try {
           resolvedHorizonOrder = resolveHorizonOrderV3(
@@ -1778,6 +1895,10 @@ export function validateStandardDraftV3(
     && profiles.length === uniqueCodes.length
     && profiles.every((profile) => !profile.allZero)
     && identityAndGroupPrerequisitesValid;
+  const profileByCode = new Map(profiles.map((profile) => [profile.code, profile]));
+  const profilesInDraftOrder = modelDraft.codes
+    .map((code) => profileByCode.get(code))
+    .filter((profile): profile is NormalizedCodeProfileV3 => profile !== undefined);
   const basicPrerequisitesValid = dataset.rows.length > 0 && scientificFieldPrerequisitesValid;
 
   if (basicPrerequisitesValid) {
@@ -1816,7 +1937,7 @@ export function validateStandardDraftV3(
     try {
       if (modelDraft.windowType === "Conversation") {
         connectivity = connectivityFromGroupsV3(
-          conversationGroupsV3(dataset.rows, modelDraft.horizonColumns),
+          conversationGroupsV3(dataset.rows, modelDraft.unitColumns, modelDraft.horizonColumns),
           profiles,
           null,
         );
@@ -1891,27 +2012,57 @@ export function validateStandardDraftV3(
   }
   const referenceInvalid = referenceFieldsDiagnosticV3(modelDraft.rotation);
   if (referenceInvalid !== null) output.push(referenceInvalid);
-  if (modelDraft.model === "EndPoint" && modelDraft.rotation.type === "means" && modelDraft.groupColumn === null) {
-    output.push(...meansDiagnosticsV3(modelDraft.rotation, null, groupValidation.groupByUnit, new Map()));
+  let meansMembershipReady = true;
+  if (modelDraft.model === "EndPoint" && modelDraft.rotation.type === "means"
+    && identityAndGroupPrerequisitesValid) {
+    const membership = meansMembershipPrerequisitesV3(
+      modelDraft.rotation,
+      modelDraft.groupColumn,
+      groupValidation.groupByUnit,
+    );
+    output.push(...membership.diagnostics);
+    meansMembershipReady = membership.ready;
   }
 
   const rowOrderReady = modelDraft.windowType === "Conversation" || resolvedRowOrder !== null;
   const horizonOrderReady = modelDraft.model === "EndPoint" || resolvedHorizonOrder !== null;
   const rotationShapeReady = !trajectoryMeansInvalid && referenceInvalid === null
-    && !(modelDraft.rotation.type === "means" && modelDraft.groupColumn === null);
+    && meansMembershipReady;
   let networks: ScientificNetworksV3 | null = null;
   if (scientificFieldPrerequisitesValid && rowOrderReady && horizonOrderReady && rotationShapeReady) {
-    networks = scientificNetworksV3(
-      dataset.rows,
-      modelDraft.unitColumns,
-      modelDraft.horizonColumns,
-      profiles,
-      modelDraft.weighting,
-      modelDraft.windowType,
-      moving,
-      resolvedRowOrder,
-    );
-    if (!scientificNetworksFiniteV3(networks)) {
+    const distinctUnitKeys = new Set<string>();
+    for (let rowIndex = 0; rowIndex < dataset.rows.length; rowIndex += 1) {
+      distinctUnitKeys.add(identityKeyV3(
+        dataset.rows[rowIndex],
+        modelDraft.unitColumns,
+        rowIndex,
+        "Unit",
+      ));
+    }
+    const distinctUnits = distinctUnitKeys.size;
+    const oneUnitMovingShortcut = modelDraft.model === "EndPoint"
+      && modelDraft.windowType === "MovingStanzaWindow"
+      && modelDraft.rotation.type !== "means"
+      && distinctUnits === 1;
+    const emptyTargetShortcut = dataset.rows.length === 0;
+    if (oneUnitMovingShortcut || emptyTargetShortcut) {
+      const rankDiagnostic = rankDiagnosticV3(0, modelDraft.rotation, emptyTargetShortcut ? 0 : 1);
+      if (rankDiagnostic !== null) output.push(rankDiagnostic);
+    } else {
+      networks = scientificNetworksV3(
+        dataset.rows,
+        modelDraft.unitColumns,
+        modelDraft.horizonColumns,
+        profilesInDraftOrder,
+        modelDraft.weighting,
+        modelDraft.windowType,
+        moving,
+        resolvedRowOrder,
+        modelDraft.model,
+        resolvedHorizonOrder,
+      );
+    }
+    if (networks !== null && !scientificNetworksFiniteV3(networks)) {
       output.push(diagnosticV3({
         id: "STANDARD_OUTPUT_NONFINITE",
         severity: "error",
@@ -1922,21 +2073,36 @@ export function validateStandardDraftV3(
         blocks: ["build-model"],
       }));
       networks = null;
-    } else {
-      const targets = targetVectorsV3(modelDraft.model, networks, resolvedHorizonOrder);
-      const centerAlignToOrigin = modelDraft.rotation.type === "reference"
-        ? true
-        : modelDraft.rotation.centerAlignToOrigin;
-      const rank = centeredRankV3(targets, centerAlignToOrigin);
-      const rankDiagnostic = rankDiagnosticV3(rank, modelDraft.rotation, targets.length);
-      if (rankDiagnostic !== null) output.push(rankDiagnostic);
+    } else if (networks !== null) {
+      let numericalPrerequisitesReady = true;
       if (modelDraft.rotation.type === "means") {
-        output.push(...meansDiagnosticsV3(
+        const meansDiagnostics = meansDiagnosticsV3(
           modelDraft.rotation,
           modelDraft.groupColumn,
           groupValidation.groupByUnit,
           networks.endpointByUnit,
-        ));
+        );
+        output.push(...meansDiagnostics);
+        numericalPrerequisitesReady = !meansDiagnostics.some((entry) => entry.severity === "error");
+      }
+      if (modelDraft.rotation.type !== "reference" && numericalPrerequisitesReady) {
+        const zeroObservation = zeroObservationDiagnosticV3(networks.targetVectors);
+        if (zeroObservation !== null) {
+          output.push(zeroObservation);
+          numericalPrerequisitesReady = false;
+        }
+      }
+      if (numericalPrerequisitesReady) {
+        const centerAlignToOrigin = modelDraft.rotation.type === "reference"
+          ? true
+          : modelDraft.rotation.centerAlignToOrigin;
+        const rank = centeredRankV3(networks.targetVectors, centerAlignToOrigin);
+        const rankDiagnostic = rankDiagnosticV3(
+          rank,
+          modelDraft.rotation,
+          networks.targetVectors.length,
+        );
+        if (rankDiagnostic !== null) output.push(rankDiagnostic);
       }
     }
   }

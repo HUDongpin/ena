@@ -482,7 +482,7 @@ function snapshotConfirmationV3(
   const record = snapshotPlainJsonRecordV3(value, label);
   assertExactKeysV3(
     record,
-    ["kind", "datasetSha256", "rowCount", "relevantColumns", "confirmedAt", "confirmationVersion"],
+    ["kind", "analysisFamily", "datasetSha256", "rowCount", "relevantColumns", "confirmedAt", "confirmationVersion"],
     label,
   );
   if (record.kind !== "explicit-researcher-confirmation") {
@@ -490,6 +490,9 @@ function snapshotConfirmationV3(
   }
   if (record.confirmationVersion !== 1) {
     throw new TypeError(`${label}.confirmationVersion must be 1.`);
+  }
+  if (record.analysisFamily !== "standard" && record.analysisFamily !== "ona") {
+    throw new TypeError(`${label}.analysisFamily must be standard or ona.`);
   }
   const datasetSha256 = lowercaseSha256V3(record.datasetSha256, `${label}.datasetSha256`);
   const confirmedRowCount = normalizedRowCountV3(record.rowCount, `${label}.rowCount`);
@@ -508,6 +511,7 @@ function snapshotConfirmationV3(
   }
   return {
     kind: "explicit-researcher-confirmation",
+    analysisFamily: record.analysisFamily,
     datasetSha256,
     rowCount: confirmedRowCount,
     relevantColumns,
@@ -567,6 +571,10 @@ function bindSourceOrderV3(
   if (context.analysisFamily !== context.confirmationAnalysisFamily) {
     throw new Error("Source-order confirmation has expired because the analysis family changed.");
   }
+  if (policy.confirmation.analysisFamily !== context.confirmationAnalysisFamily
+    || policy.confirmation.analysisFamily !== context.analysisFamily) {
+    throw new Error("Source-order confirmation has expired because its persisted analysis family changed.");
+  }
   if (requireStandardFamily && context.analysisFamily !== "standard") {
     throw new TypeError("Trajectory Horizon source order requires the standard analysis family.");
   }
@@ -586,6 +594,7 @@ function bindSourceOrderV3(
     },
     confirmation: {
       kind: policy.confirmation.kind,
+      analysisFamily: policy.confirmation.analysisFamily,
       datasetSha256: policy.confirmation.datasetSha256,
       rowCount: policy.confirmation.rowCount,
       relevantColumns: [...policy.confirmation.relevantColumns],

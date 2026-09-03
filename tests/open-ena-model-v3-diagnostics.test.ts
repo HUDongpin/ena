@@ -206,6 +206,7 @@ function confirmedSourceOrder(rowCount: number): CanonicalRowOrderV3 {
     kind: "source-order-confirmed",
     confirmation: {
       kind: "explicit-researcher-confirmation",
+      analysisFamily: "standard",
       datasetSha256: DATASET_HASH,
       rowCount,
       relevantColumns: ["horizon"],

@@ -71,11 +71,12 @@ function columnOrder(): Record<string, unknown> {
   };
 }
 
-function confirmationOrder(): Record<string, unknown> {
+function confirmationOrder(analysisFamily: "standard" | "ona" = "standard"): Record<string, unknown> {
   return {
     kind: "source-order-confirmed",
     confirmation: {
       kind: "explicit-researcher-confirmation",
+      analysisFamily,
       datasetSha256: HASH,
       rowCount: 42,
       relevantColumns: ["student", "conversation", "turn"],
@@ -685,6 +686,7 @@ test("confirmation structure is exact and freshness-shaped without checking data
   );
 
   const cases: Array<[string, (confirmation: Record<string, unknown>) => void, RegExp]> = [
+    ["analysis family", (c) => { c.analysisFamily = "legacy"; }, /analysisFamily.*standard.*ona/i],
     ["hash", (c) => { c.datasetSha256 = HASH.toUpperCase(); }, /datasetSha256.*lowercase/i],
     ["row count", (c) => { c.rowCount = -1; }, /rowCount.*nonnegative/i],
     ["duplicate columns", (c) => { c.relevantColumns = ["student", "student"]; }, /relevantColumns.*distinct/i],
@@ -699,6 +701,30 @@ test("confirmation structure is exact and freshness-shaped without checking data
     (fixture.window as Record<string, unknown>).rowOrder = order;
     assert.throws(() => decodeCanonicalStandardConfigV3(fixture), pattern, label);
   }
+});
+
+test("confirmation schema persists analysis-family provenance and never infers it", () => {
+  const fixture = standardFixture();
+  const order = confirmationOrder();
+  (order.confirmation as Record<string, unknown>).analysisFamily = "standard";
+  (fixture.window as Record<string, unknown>).rowOrder = order;
+  const decoded = decodeCanonicalStandardConfigV3(fixture);
+  assert.equal(
+    decoded.window.type === "MovingStanzaWindow"
+      && decoded.window.rowOrder.kind === "source-order-confirmed"
+      ? decoded.window.rowOrder.confirmation.analysisFamily
+      : null,
+    "standard",
+  );
+
+  const legacy = standardFixture();
+  const legacyOrder = confirmationOrder();
+  delete (legacyOrder.confirmation as Record<string, unknown>).analysisFamily;
+  (legacy.window as Record<string, unknown>).rowOrder = legacyOrder;
+  assert.throws(
+    () => decodeCanonicalStandardConfigV3(legacy),
+    /analysisFamily.*required|confirmation.*shape/iu,
+  );
 });
 
 test("comparators require exact fixed formats, time zones, sensitivity, and locale type", () => {
@@ -1705,7 +1731,7 @@ test("ONA valid matrix executes finite and infinite backward extents plus both r
   const infinityConfirmed = onaFixture();
   const window = infinityConfirmed.window as Record<string, unknown>;
   window.backward = { kind: "infinity" };
-  window.rowOrder = confirmationOrder();
+  window.rowOrder = confirmationOrder("ona");
   const decodedInfinity = decodeCanonicalOnaConfigV3(infinityConfirmed);
   assert.deepEqual(decodedInfinity.window.backward, { kind: "infinity" });
   assert.equal(decodedInfinity.window.rowOrder.kind, "source-order-confirmed");

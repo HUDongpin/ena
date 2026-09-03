@@ -33,11 +33,13 @@ function confirmedPolicy(
   rowCount: number,
   relevantColumns: string[],
   datasetSha256 = HASH,
+  analysisFamily: "standard" | "ona" = "standard",
 ): Extract<CanonicalRowOrderV3, { kind: "source-order-confirmed" }> {
   return {
     kind: "source-order-confirmed",
     confirmation: {
       kind: "explicit-researcher-confirmation",
+      analysisFamily,
       datasetSha256,
       rowCount,
       relevantColumns,
@@ -741,6 +743,42 @@ test("source-order confirmation expires when the current analysis family differs
   assert.equal(matching.sourceOrderBinding?.analysisFamily, "standard");
 });
 
+test("source-order confirmation persists its own analysis-family provenance", () => {
+  const rows = [{ unit: "u", horizon: "h", turn: 1 }];
+  const standardPolicy = {
+    ...confirmedPolicy(rows.length, ["horizon"]),
+    confirmation: {
+      ...confirmedPolicy(rows.length, ["horizon"]).confirmation,
+      analysisFamily: "standard",
+    },
+  } as unknown as Extract<CanonicalRowOrderV3, { kind: "source-order-confirmed" }>;
+  const standard = resolveRowOrderV3(rows, ["horizon"], standardPolicy, resolutionContext(rows.length));
+  assert.equal(standard.sourceOrderBinding?.confirmation.analysisFamily, "standard");
+
+  const onaPolicy = {
+    ...standardPolicy,
+    confirmation: { ...standardPolicy.confirmation, analysisFamily: "ona" },
+  } as unknown as Extract<CanonicalRowOrderV3, { kind: "source-order-confirmed" }>;
+  assert.throws(
+    () => resolveRowOrderV3(rows, ["horizon"], onaPolicy, resolutionContext(rows.length, "standard")),
+    /confirmation.*family|family.*changed|expired/iu,
+  );
+  const legacyPolicy = confirmedPolicy(rows.length, ["horizon"]) as unknown as {
+    kind: "source-order-confirmed";
+    confirmation: Record<string, unknown>;
+  };
+  delete legacyPolicy.confirmation.analysisFamily;
+  assert.throws(
+    () => resolveRowOrderV3(
+      rows,
+      ["horizon"],
+      legacyPolicy as unknown as CanonicalRowOrderV3,
+      resolutionContext(rows.length),
+    ),
+    /analysisFamily.*required|confirmation.*shape|unknown/iu,
+  );
+});
+
 test("source-order relevant columns must exactly match the current ordered field identity", () => {
   const rows = [{ h1: "one", h2: "two", h3: "three" }];
   const policy = confirmedPolicy(rows.length, ["h1", "h2"]);
@@ -842,7 +880,7 @@ test("resolution context is exact, descriptor-safe, and validates family plus co
 
 test("source-order binding is detached and frozen, row ordering permits ONA, and Horizon ordering requires Standard", () => {
   const rows = [{ unit: "u", horizon: "h" }];
-  const rowPolicy = confirmedPolicy(rows.length, ["horizon"]);
+  const rowPolicy = confirmedPolicy(rows.length, ["horizon"], HASH, "ona");
   const rowContext = resolutionContext(rows.length, "ona");
   const rowResolved = resolveRowOrderV3(rows, ["horizon"], rowPolicy, rowContext);
   assert.equal(rowResolved.sourceOrderBinding?.analysisFamily, "ona");

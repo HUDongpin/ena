@@ -191,10 +191,13 @@ function scalarIdentityKey(value: ScalarIdentityV3): string {
 function decodeConfirmation(value: unknown, label: string): DatasetBoundConfirmationV3 {
   const record = exactRecord(
     value,
-    ["kind", "datasetSha256", "rowCount", "relevantColumns", "confirmedAt", "confirmationVersion"],
+    ["kind", "analysisFamily", "datasetSha256", "rowCount", "relevantColumns", "confirmedAt", "confirmationVersion"],
     label,
   );
   literal(record.kind, "explicit-researcher-confirmation", `${label}.kind`);
+  if (record.analysisFamily !== "standard" && record.analysisFamily !== "ona") {
+    throw new TypeError(`${label}.analysisFamily must be "standard" or "ona".`);
+  }
   literal(record.confirmationVersion, 1, `${label}.confirmationVersion`);
   if (typeof record.rowCount !== "number" || !Number.isSafeInteger(record.rowCount) || record.rowCount < 0) {
     throw new TypeError(`${label}.rowCount must be a nonnegative safe integer.`);
@@ -207,6 +210,7 @@ function decodeConfirmation(value: unknown, label: string): DatasetBoundConfirma
   }
   return {
     kind: "explicit-researcher-confirmation",
+    analysisFamily: record.analysisFamily,
     datasetSha256: lowercaseSha256(record.datasetSha256, `${label}.datasetSha256`),
     rowCount: record.rowCount,
     relevantColumns: distinctNonblankStrings(record.relevantColumns, `${label}.relevantColumns`),

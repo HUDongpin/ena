@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { accumulateData, sphereNorm } from "jena-js";
 
 import { validateStandardDraftV3 } from "../lib/open-ena/model-v3/diagnostics";
 import type { ModelDiagnosticV3 } from "../lib/open-ena/model-v3/diagnostics";
@@ -87,6 +88,17 @@ function exactlyOne(result: readonly ModelDiagnosticV3[], id: ModelDiagnosticV3[
   const matches = result.filter((entry) => entry.id === id);
   assert.equal(matches.length, 1, `expected one ${id}, got ${result.map((entry) => entry.id).join(", ")}`);
   return matches[0];
+}
+
+function referenceDraft(overrides: DraftOverrides = {}): StandardEnaDraftV3 {
+  return draft({
+    rotation: {
+      type: "reference",
+      referenceId: "reference-1",
+      expectedContentSha256: "d".repeat(64),
+    },
+    ...overrides,
+  });
 }
 
 test("Unit and Horizon identities fail closed for absent fields and unsupported values", () => {
@@ -199,6 +211,7 @@ test("authoritative resolvers classify invalid/tied orders and stale source conf
     kind: "source-order-confirmed",
     confirmation: {
       kind: "explicit-researcher-confirmation",
+      analysisFamily: "standard",
       datasetSha256: "c".repeat(64),
       rowCount: input.rows.length,
       relevantColumns: ["horizon"],
@@ -224,6 +237,7 @@ test("authoritative resolvers classify invalid/tied orders and stale source conf
     kind: "source-order-confirmed",
     confirmation: {
       kind: "explicit-researcher-confirmation",
+      analysisFamily: "standard",
       datasetSha256: "c".repeat(64),
       rowCount: input.rows.length,
       relevantColumns: ["unit", "horizon"],
@@ -248,6 +262,35 @@ test("authoritative resolvers classify invalid/tied orders and stale source conf
     horizonOrder: { kind: "columns", keys: [{ column: "missing", direction: "ascending", comparator: { type: "number" } }] },
   }));
   assert.equal(has(missingOrderField, "STANDARD_HORIZON_ORDER_INVALID"), true);
+
+  const familyBound = {
+    kind: "source-order-confirmed",
+    confirmation: {
+      kind: "explicit-researcher-confirmation",
+      analysisFamily: "standard",
+      datasetSha256: DATASET_HASH,
+      rowCount: input.rows.length,
+      relevantColumns: ["horizon"],
+      confirmedAt: "2026-09-03T00:00:00.000Z",
+      confirmationVersion: 1,
+    },
+  } as unknown as Extract<CanonicalRowOrderV3, { kind: "source-order-confirmed" }>;
+  const familyCurrent = output(input, draft({
+    windowType: "MovingStanzaWindow",
+    movingStanza: { rowOrder: familyBound },
+  }));
+  assert.equal(has(familyCurrent, "STANDARD_SOURCE_ORDER_CONFIRMATION_STALE"), false);
+
+  const onaOrigin = {
+    ...familyBound,
+    confirmation: { ...familyBound.confirmation, analysisFamily: "ona" },
+  } as unknown as Extract<CanonicalRowOrderV3, { kind: "source-order-confirmed" }>;
+  const wrongFamily = output(input, draft({
+    windowType: "MovingStanzaWindow",
+    movingStanza: { rowOrder: onaOrigin },
+  }));
+  assert.equal(has(wrongFamily, "STANDARD_SOURCE_ORDER_CONFIRMATION_STALE"), true);
+  assert.equal(has(wrongFamily, "STANDARD_ROW_ORDER_INVALID"), false);
 });
 
 test("all six Standard model and window pairs remain supported", () => {
@@ -382,21 +425,28 @@ test("Reference selection requires a nonblank ID and exact lowercase content dig
   }
 });
 
-test("Moving Stanza Unit networks preserve jENA focal ownership after head/tail subtraction", () => {
+test("Moving Stanza diagnostics expose the exact jENA focal-owned Binary and Frequency vectors", () => {
   const input = dataset([
     { unit: "filler", horizon: "h1", group: "other", turn: 1, phase: 1, A: 1, B: 1, C: 0 },
     { unit: "p", horizon: "h1", group: "negative", turn: 2, phase: 1, A: 0, B: 0, C: 1 },
     { unit: "q", horizon: "h2", group: "positive", turn: 3, phase: 2, A: 1, B: 1, C: 1 },
   ]);
-  const result = output(input, meansDraft(
-    { type: "string", value: "negative" },
-    { type: "string", value: "positive" },
-  ));
+  const binaryOracle = accumulateData({
+    rows: input.rows,
+    units: ["unit"],
+    conversation: ["horizon"],
+    codes: ["A", "B", "C"],
+    model: "EndPoint",
+    window: "MovingStanzaWindow",
+    windowSizeBack: 2,
+    windowSizeForward: 0,
+    weightBy: "binary",
+  });
+  assert.deepEqual(binaryOracle.connectionMatrix, [[1, 0, 0], [0, 1, 1], [1, 1, 1]]);
   const movingResult = output(input, {
     ...meansDraft({ type: "string", value: "negative" }, { type: "string", value: "positive" }),
     windowType: "MovingStanzaWindow",
   });
-  assert.equal(has(result, "STANDARD_MEANS_IDENTICAL"), false);
   assert.equal(has(movingResult, "STANDARD_MEANS_IDENTICAL"), false,
     "p owns AC+BC, not predecessor-only AB; q owns AB+AC+BC");
 
@@ -410,8 +460,56 @@ test("Moving Stanza Unit networks preserve jENA focal ownership after head/tail 
     weighting: "frequency",
     windowType: "MovingStanzaWindow",
   });
+  const frequencyOracle = accumulateData({
+    rows: frequencyInput.rows,
+    units: ["unit"],
+    conversation: ["horizon"],
+    codes: ["A", "B", "C"],
+    model: "EndPoint",
+    window: "MovingStanzaWindow",
+    windowSizeBack: 2,
+    windowSizeForward: 0,
+    weightBy: "sum",
+  });
+  assert.deepEqual(frequencyOracle.connectionMatrix, [[6, 0, 0], [0, 10, 15], [6, 10, 15]]);
   assert.equal(has(frequencyResult, "STANDARD_MEANS_IDENTICAL"), false,
     "frequency p owns [AC=10, BC=15], not predecessor-only AB=6; q also owns AB=6");
+});
+
+test("finite and both-Infinity Moving diagnostics agree with exact jENA target geometry", () => {
+  const rows = [
+    { unit: "n", horizon: "h", group: "negative", turn: 1, phase: 1, A: 1, B: 1, C: 0 },
+    { unit: "o", horizon: "h", group: "other", turn: 2, phase: 1, A: 0, B: 1, C: 1 },
+    { unit: "p", horizon: "h", group: "positive", turn: 3, phase: 1, A: 1, B: 0, C: 1 },
+  ];
+  for (const [weightBy, weighting, expected, identical] of [
+    ["binary", "binary", [[1, 1, 1], [1, 1, 1], [1, 1, 1]], true],
+    ["sum", "frequency", [[3, 2, 2], [4, 3, 4], [4, 4, 4]], false],
+  ] as const) {
+    const oracle = accumulateData({
+      rows,
+      units: ["unit"],
+      conversation: ["horizon"],
+      codes: ["A", "B", "C"],
+      model: "EndPoint",
+      window: "MovingStanzaWindow",
+      windowSizeBack: Number.POSITIVE_INFINITY,
+      windowSizeForward: Number.POSITIVE_INFINITY,
+      weightBy,
+    });
+    assert.deepEqual(oracle.connectionMatrix, expected);
+    const result = output(dataset(rows), {
+      ...meansDraft({ type: "string", value: "negative" }, { type: "string", value: "positive" }),
+      weighting,
+      windowType: "MovingStanzaWindow",
+      movingStanza: {
+        backward: { kind: "infinity" },
+        forward: { kind: "infinity" },
+        rowOrder,
+      },
+    });
+    assert.equal(has(result, "STANDARD_MEANS_IDENTICAL"), identical);
+  }
 });
 
 test("active policy proxies are snapshotted once without ordinary get behavior", () => {
@@ -453,13 +551,180 @@ test("Task 6 evidence is bounded and the returned graph is recursively frozen", 
   assert.equal(Object.isFrozen(shared.evidence?.samples), true);
 });
 
-test("finite Frequency inputs that overflow exact accumulation fail closed before rank fitting", () => {
+test("Frequency product overflow follows jENA zero-network materialization", () => {
   const input = dataset([
     { unit: "u1", horizon: "h1", group: "g1", turn: 1, phase: 1, A: 1e308, B: 1e308, C: 1e308 },
   ]);
   const result = output(input, draft({ weighting: "frequency" }));
-  assert.equal(has(result, "STANDARD_OUTPUT_NONFINITE"), true);
+  assert.equal(has(result, "STANDARD_OUTPUT_NONFINITE"), false);
+  assert.equal(has(result, "STANDARD_TARGET_RANK_ZERO"), true);
+});
+
+test("Moving Frequency diagnostics match jENA when a small focal row follows huge values", () => {
+  const rows = [
+    { unit: "u1", horizon: "h", group: "g1", turn: 1, phase: 1, A: 1e16, B: 2e16, C: 3e16 },
+    { unit: "u2", horizon: "h", group: "g2", turn: 2, phase: 1, A: 1, B: 1, C: 1 },
+  ];
+  const oracle = accumulateData({
+    rows,
+    units: ["unit"],
+    conversation: ["horizon"],
+    codes: ["A", "B", "C"],
+    model: "EndPoint",
+    window: "MovingStanzaWindow",
+    windowSizeBack: 1,
+    windowSizeForward: 0,
+    weightBy: "sum",
+  });
+  assert.equal(oracle.connectionMatrix.every((vector) => vector.some((value) => value !== 0)), true);
+  assert.notDeepEqual(sphereNorm(oracle.connectionMatrix)[0], sphereNorm(oracle.connectionMatrix)[1]);
+
+  const result = output(dataset(rows), draft({
+    weighting: "frequency",
+    windowType: "MovingStanzaWindow",
+    movingStanza: { backward: { kind: "finite", value: 1 }, forward: { kind: "finite", value: 0 } },
+  }));
   assert.equal(has(result, "STANDARD_TARGET_RANK_ZERO"), false);
+  assert.equal(has(result, "STANDARD_SVD_ONE_DIMENSIONAL"), true);
+  assert.equal(has(result, "STANDARD_OUTPUT_NONFINITE"), false);
+});
+
+test("Moving Frequency diagnostics match finite jENA output instead of Infinity-minus-Infinity", () => {
+  const rows = [
+    { unit: "u1", horizon: "h", group: "g1", turn: 1, phase: 1, A: 1e308, B: 0, C: 0 },
+    { unit: "u2", horizon: "h", group: "g2", turn: 2, phase: 1, A: 1e308, B: 0, C: 0 },
+    { unit: "u3", horizon: "h", group: "g3", turn: 3, phase: 1, A: 0, B: 1, C: 1 },
+  ];
+  const oracle = accumulateData({
+    rows,
+    units: ["unit"],
+    conversation: ["horizon"],
+    codes: ["A", "B", "C"],
+    model: "EndPoint",
+    window: "MovingStanzaWindow",
+    windowSizeBack: 1,
+    windowSizeForward: 0,
+    weightBy: "sum",
+  });
+  assert.equal(oracle.connectionMatrix.flat().every(Number.isFinite), true);
+
+  const result = output(dataset(rows), referenceDraft({
+    weighting: "frequency",
+    windowType: "MovingStanzaWindow",
+    movingStanza: { backward: { kind: "finite", value: 1 }, forward: { kind: "finite", value: 0 } },
+  }));
+  assert.equal(has(result, "STANDARD_OUTPUT_NONFINITE"), false);
+});
+
+test("exact-identical normalized targets remain rank zero and Means-identical under unequal multiplicities", () => {
+  const rows = Array.from({ length: 11 }, (_, index) => ({
+    unit: `u${index}`,
+    horizon: `h${index}`,
+    group: index === 0 ? "negative" : "positive",
+    turn: index + 1,
+    phase: index + 1,
+    A: 1,
+    B: 1,
+    C: 1,
+  }));
+  const input = dataset(rows);
+  const svd = output(input);
+  assert.equal(has(svd, "STANDARD_TARGET_RANK_ZERO"), true);
+  assert.equal(has(svd, "STANDARD_SVD_ONE_DIMENSIONAL"), false);
+
+  const means = output(input, meansDraft(
+    { type: "string", value: "negative" },
+    { type: "string", value: "positive" },
+  ));
+  assert.equal(has(means, "STANDARD_MEANS_IDENTICAL"), true);
+});
+
+test("scale-aware numerical tolerance preserves real small target structure", () => {
+  const input = dataset([
+    { unit: "u1", horizon: "h1", group: "negative", turn: 1, phase: 1, A: 1, B: 1, C: 1 },
+    { unit: "u2", horizon: "h2", group: "positive", turn: 2, phase: 2, A: 1, B: 1, C: 1 + 1e-10 },
+  ]);
+  const svd = output(input, draft({ weighting: "frequency" }));
+  assert.equal(has(svd, "STANDARD_TARGET_RANK_ZERO"), false);
+  assert.equal(has(svd, "STANDARD_SVD_ONE_DIMENSIONAL"), true);
+  const means = output(input, {
+    ...meansDraft({ type: "string", value: "negative" }, { type: "string", value: "positive" }),
+    weighting: "frequency",
+  });
+  assert.equal(has(means, "STANDARD_MEANS_IDENTICAL"), false);
+});
+
+test("Conversation connectivity never creates cross-Unit edges inside a shared Horizon", () => {
+  const input = dataset([
+    { unit: "uA", horizon: "shared", group: "gA", turn: 1, phase: 1, A: 1, B: 0, C: 0 },
+    { unit: "uB", horizon: "shared", group: "gB", turn: 2, phase: 1, A: 0, B: 1, C: 0 },
+    { unit: "uC", horizon: "shared", group: "gC", turn: 3, phase: 1, A: 0, B: 0, C: 1 },
+  ]);
+  const result = output(input, referenceDraft());
+  assert.equal(result.filter((entry) => entry.id === "STANDARD_CODE_ISOLATED").length, 3);
+  assert.equal(has(result, "STANDARD_NO_GLOBAL_COOCCURRENCE"), true);
+  assert.equal(exactlyOne(result, "STANDARD_HORIZON_SHARED_BY_MULTIPLE_UNITS").severity, "information");
+});
+
+test("zero analytical observations block target-fitted rotations but remain projectable by Reference", () => {
+  const input = dataset([
+    { unit: "zero", horizon: "h0", group: "negative", turn: 1, phase: 1, A: 1, B: 0, C: 0 },
+    { unit: "ab", horizon: "h1", group: "negative", turn: 2, phase: 2, A: 1, B: 1, C: 0 },
+    { unit: "ac", horizon: "h2", group: "positive", turn: 3, phase: 3, A: 1, B: 0, C: 1 },
+    { unit: "bc", horizon: "h3", group: "positive", turn: 4, phase: 4, A: 0, B: 1, C: 1 },
+  ]);
+  const svd = exactlyOne(output(input), "STANDARD_TARGET_RANK_ZERO");
+  assert.match(svd.detail, /zero analytical observation|zero network/iu);
+
+  const means = output(input, meansDraft(
+    { type: "string", value: "negative" },
+    { type: "string", value: "positive" },
+  ));
+  assert.equal(has(means, "STANDARD_TARGET_RANK_ZERO"), true);
+
+  const reference = output(input, referenceDraft());
+  assert.equal(has(reference, "STANDARD_TARGET_RANK_ZERO"), false);
+  assert.equal(has(reference, "STANDARD_REFERENCE_TARGET_DEGENERATE"), false);
+});
+
+test("Means membership prerequisites suppress numerical and identical-mean derivatives", () => {
+  const input = dataset([
+    { unit: "u", horizon: "h", group: "present", turn: 1, phase: 1, A: 1, B: 1, C: 1 },
+  ]);
+  const result = output(input, meansDraft(
+    { type: "string", value: "absent" },
+    { type: "string", value: "present" },
+  ));
+  assert.equal(has(result, "STANDARD_MEANS_LEVEL_EMPTY"), true);
+  assert.equal(has(result, "STANDARD_TARGET_RANK_ZERO"), false);
+  assert.equal(has(result, "STANDARD_MEANS_IDENTICAL"), false);
+});
+
+test("explicit order columns must exist in the authoritative dataset header", () => {
+  const staleRowKeys = dataset(
+    healthyRows(),
+    ["unit", "horizon", "group", "phase", "A", "B", "C"],
+  );
+  assert.equal(has(output(staleRowKeys, draft({ windowType: "MovingStanzaWindow" })), "STANDARD_ROW_ORDER_INVALID"), true);
+
+  const staleHorizonKeys = dataset(
+    healthyRows(),
+    ["unit", "horizon", "group", "turn", "A", "B", "C"],
+  );
+  assert.equal(has(output(staleHorizonKeys, draft({ model: "SeparateTrajectory", horizonOrder })), "STANDARD_HORIZON_ORDER_INVALID"), true);
+});
+
+test("absent Means-level evidence reports zero observations without fabricated samples", () => {
+  const result = output(dataset(healthyRows()), meansDraft(
+    { type: "string", value: "absent" },
+    { type: "string", value: "positive" },
+  ));
+  const missing = result.find((entry) => entry.id === "STANDARD_MEANS_LEVEL_EMPTY"
+    && entry.fieldPath === "rotation.negativeLevel");
+  assert.ok(missing);
+  assert.equal(missing.evidence?.totalCount, 0);
+  assert.deepEqual(missing.evidence?.samples, []);
+  assert.equal(missing.evidence?.truncated, false);
 });
 
 test("trajectory shape distinguishes no paths from some single-step Units", () => {

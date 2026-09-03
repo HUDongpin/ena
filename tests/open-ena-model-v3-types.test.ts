@@ -17,6 +17,7 @@ import type {
   CanonicalStandardAnalysisV3,
   CanonicalStandardConfigV3,
   DatasetBindingV3,
+  DatasetBoundConfirmationV3,
   ForwardExtentV3,
   ModelWorkspaceDraftsV3,
   OrderedNetworkDraftV3,
@@ -185,6 +186,26 @@ const binding: DatasetBindingV3 = {
   rowCount: 2,
   headerSha256: "b".repeat(64),
 };
+const confirmation: DatasetBoundConfirmationV3 = {
+  kind: "explicit-researcher-confirmation",
+  analysisFamily: "standard",
+  datasetSha256: "a".repeat(64),
+  rowCount: 2,
+  relevantColumns: ["date"],
+  confirmedAt: "2026-09-03T00:00:00.000Z",
+  confirmationVersion: 1,
+};
+// @ts-expect-error Confirmation family provenance is required and cannot be inferred.
+const legacyConfirmation: DatasetBoundConfirmationV3 = {
+  kind: "explicit-researcher-confirmation",
+  datasetSha256: "a".repeat(64),
+  rowCount: 2,
+  relevantColumns: ["date"],
+  confirmedAt: "2026-09-03T00:00:00.000Z",
+  confirmationVersion: 1,
+};
+void confirmation;
+void legacyConfirmation;
 
 test("v3 canonical, draft, workspace, and binding examples are constructible", () => {
   assert.equal(standard.analysis.model.type, "EndPoint");
