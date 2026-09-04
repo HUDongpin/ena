@@ -305,6 +305,8 @@ test("the v3 barrel exposes curated APIs without internal snapshots or early-env
     "compilerDatasetEnvelopeV3",
     "datasetBindingV3",
     "snapshotCompilerDatasetV3",
+    "captureDatasetBindingV3",
+    "snapshotCompilerDatasetInputV3",
     "validateOnaDatasetV3",
     "runOnaScientificPreflightV3",
   ]) {
@@ -534,13 +536,96 @@ test("compiler captures draft, dataset root, and header-hash input before its fi
   const headerInput = dataset();
   const headerPromise = compileOnaDraftV3(headerInput, DATASET_SHA256, onaDraft());
   headerInput.headers[2] = "unused-renamed-time";
-  const detectedHeaderDrift = await headerPromise;
-  assert.equal(detectedHeaderDrift.status, "invalid");
-  assert.equal(detectedHeaderDrift.canonicalConfiguration, null);
-  assert.equal(
-    detectedHeaderDrift.diagnostics.some((entry) => entry.scope === "dataset"),
-    true,
+  const capturedHeader = await headerPromise;
+  assert.equal(capturedHeader.status, "ready");
+  if (capturedHeader.status !== "ready") return;
+  assert.equal(capturedHeader.resourceEstimate.units, 2);
+  assert.equal(capturedHeader.resourceEstimate.horizons, 4);
+});
+
+test("Standard compiler atomically captures existing row contents before its first await", async () => {
+  const original = dataset();
+  const invocationDraft = standardDraft({
+    windowType: "MovingStanzaWindow",
+    movingStanza: {
+      backward: { kind: "finite", value: 1 },
+      forward: { kind: "finite", value: 0 },
+      rowOrder: {
+        kind: "source-order-confirmed",
+        confirmation: {
+          kind: "explicit-researcher-confirmation",
+          analysisFamily: "standard",
+          datasetSha256: DATASET_SHA256,
+          rowCount: original.rows.length,
+          relevantColumns: ["horizon"],
+          confirmedAt: "2026-09-04T00:00:00.000Z",
+          confirmationVersion: 1,
+        },
+      },
+    },
+  });
+  const expected = await compileStandardDraftV3(
+    structuredClone(original),
+    DATASET_SHA256,
+    invocationDraft,
   );
+  assert.equal(expected.status, "ready");
+  if (expected.status !== "ready") return;
+
+  const pending = compileStandardDraftV3(original, DATASET_SHA256, invocationDraft);
+  for (const row of original.rows) {
+    Object.assign(row, {
+      unit: "collapsed-unit",
+      horizon: "collapsed-horizon",
+      group: "mutated-group",
+      time: 99,
+      turn: 99,
+      A: 1,
+      B: 1,
+      C: 1,
+    });
+  }
+  const actual = await pending;
+  assert.equal(actual.status, "ready");
+  if (actual.status !== "ready") return;
+  assert.equal(actual.draftFingerprint, expected.draftFingerprint);
+  assert.equal(actual.configurationSha256, expected.configurationSha256);
+  assert.deepEqual(actual.canonicalConfiguration, expected.canonicalConfiguration);
+  assert.deepEqual(actual.diagnostics, expected.diagnostics);
+  assert.deepEqual(actual.resourceEstimate, expected.resourceEstimate);
+  assert.equal(actual.resourceEstimate.units, 2);
+  assert.equal(actual.resourceEstimate.horizons, 4);
+});
+
+test("ONA compiler atomically captures existing row contents before its first await", async () => {
+  const original = dataset();
+  const expected = await compileOnaDraftV3(structuredClone(original), DATASET_SHA256, onaDraft());
+  assert.equal(expected.status, "ready");
+  if (expected.status !== "ready") return;
+
+  const pending = compileOnaDraftV3(original, DATASET_SHA256, onaDraft());
+  for (const row of original.rows) {
+    Object.assign(row, {
+      unit: "collapsed-unit",
+      horizon: "collapsed-horizon",
+      group: "mutated-group",
+      time: 99,
+      turn: 99,
+      A: 1,
+      B: 1,
+      C: 1,
+    });
+  }
+  const actual = await pending;
+  assert.equal(actual.status, "ready");
+  if (actual.status !== "ready") return;
+  assert.equal(actual.draftFingerprint, expected.draftFingerprint);
+  assert.equal(actual.configurationSha256, expected.configurationSha256);
+  assert.deepEqual(actual.canonicalConfiguration, expected.canonicalConfiguration);
+  assert.deepEqual(actual.diagnostics, expected.diagnostics);
+  assert.deepEqual(actual.resourceEstimate, expected.resourceEstimate);
+  assert.equal(actual.resourceEstimate.units, 2);
+  assert.equal(actual.resourceEstimate.horizons, 4);
 });
 
 test("ONA exact resources and scientific preflight share one coherent detached row snapshot", async () => {

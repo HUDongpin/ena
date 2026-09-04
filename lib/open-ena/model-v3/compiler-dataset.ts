@@ -26,6 +26,7 @@ import { datasetHashKindFor } from "../types";
 import type { ParsedDataset } from "../types";
 
 const LOWERCASE_SHA256 = /^[a-f0-9]{64}$/u;
+const PROVISIONAL_HEADER_SHA256_V3 = "0".repeat(64);
 const own = Object.prototype.hasOwnProperty;
 
 /** @internal Coherent shallow envelope captured before any async boundary. */
@@ -121,27 +122,49 @@ export function parsedEnvelopeV3(envelope: CompilerDatasetEnvelopeV3): ParsedDat
   };
 }
 
-/** @internal Exact binding construction before family validation. */
-export async function datasetBindingV3(
+export interface CompilerDatasetBindingCaptureV3 {
+  /**
+   * Synchronous seed used only while capturing Standard rows. The provisional
+   * header digest never leaves the compiler and is replaced after the
+   * invocation-time header hash promise resolves.
+   */
+  readonly provisionalBinding: DatasetBindingV3;
+  readonly bindingPromise: Promise<DatasetBindingV3>;
+}
+
+/** @internal Captures binding scalars and starts the header hash before the caller can mutate input. */
+export function captureDatasetBindingV3(
   envelope: CompilerDatasetEnvelopeV3,
   datasetSha256: string,
-): Promise<DatasetBindingV3> {
+): CompilerDatasetBindingCaptureV3 {
   if (!LOWERCASE_SHA256.test(datasetSha256)) {
     throw new TypeError("datasetSha256 must be a lowercase 64-hex SHA-256 digest.");
   }
-  return {
-    hashKind: datasetHashKindFor(envelope),
+  const hashKind = datasetHashKindFor(envelope);
+  const rowCount = shallowArrayLengthV3(envelope.rows, "dataset.rows").length;
+  const provisionalBinding: DatasetBindingV3 = {
+    hashKind,
     normalizedTableSha256: datasetSha256,
-    rowCount: shallowArrayLengthV3(envelope.rows, "dataset.rows").length,
-    headerSha256: await sha256CanonicalJsonV3(envelope.headers),
+    rowCount,
+    headerSha256: PROVISIONAL_HEADER_SHA256_V3,
+  };
+  const headerSha256Promise = sha256CanonicalJsonV3(envelope.headers);
+  return {
+    provisionalBinding,
+    bindingPromise: headerSha256Promise.then((headerSha256) => ({
+      hashKind,
+      normalizedTableSha256: datasetSha256,
+      rowCount,
+      headerSha256,
+    })),
   };
 }
 
-/** @internal Detached full snapshot for ONA validation, resources, and accumulation. */
-export async function snapshotCompilerDatasetV3(
+/** @internal Synchronous detached ONA snapshot; header hash verification follows on the snapshot. */
+export function snapshotCompilerDatasetInputV3(
   envelope: CompilerDatasetEnvelopeV3,
   binding: DatasetBindingV3,
-): Promise<ParsedDataset> {
+): ParsedDataset {
   const headers = snapshotDenseJsonArrayV3(envelope.headers, "dataset.headers");
   if (headers.some((header) => typeof header !== "string" || header.trim().length === 0)
     || new Set(headers).size !== headers.length) {
@@ -150,9 +173,6 @@ export async function snapshotCompilerDatasetV3(
   const rowValues = snapshotDenseJsonArrayV3(envelope.rows, "dataset.rows");
   if (rowValues.length !== binding.rowCount) throw new TypeError("dataset row count changed during intake.");
   const rows = rowValues.map((row, index) => snapshotPlainJsonRecordV3(row, `dataset.rows[${index}]`));
-  if (await sha256CanonicalJsonV3(headers) !== binding.headerSha256) {
-    throw new TypeError("dataset headers changed during intake.");
-  }
   return deepFreezeV3({
     name: envelope.name,
     headers: headers as string[],
