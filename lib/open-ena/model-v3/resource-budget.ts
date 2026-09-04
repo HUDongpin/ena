@@ -271,15 +271,20 @@ function blockedReasonsV3(values: {
   estimatedRotationMatrixBytesOna?: number;
   estimatedPeakBytes: number;
   estimatedExportBytes: number;
-}): ResourceBlockedReasonV3[] {
+}, options: { applyExactStructuralLimits?: boolean } = {}): ResourceBlockedReasonV3[] {
+  const applyExactStructuralLimits = options.applyExactStructuralLimits ?? true;
   // Stable admission/construction order: source and identity payloads,
   // structural state, numerical/window work, dense rotation work/storage,
   // then aggregate peak and export payload limits.
   return [
     ...(values.datasetSizeBytes > MAX_ESTIMATED_DATASET_BYTES_V3 ? ["dataset-bytes" as const] : []),
     ...(values.identityPayloadBytes > MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3 ? ["identity-bytes" as const] : []),
-    ...(values.estimatedStateCount > MAX_ESTIMATED_STATE_COUNT_V3 ? ["state-count" as const] : []),
-    ...(values.estimatedStructuralBytes > MAX_ESTIMATED_STRUCTURAL_BYTES_V3 ? ["structural-bytes" as const] : []),
+    ...(applyExactStructuralLimits && values.estimatedStateCount > MAX_ESTIMATED_STATE_COUNT_V3
+      ? ["state-count" as const]
+      : []),
+    ...(applyExactStructuralLimits && values.estimatedStructuralBytes > MAX_ESTIMATED_STRUCTURAL_BYTES_V3
+      ? ["structural-bytes" as const]
+      : []),
     ...(values.estimatedNumericCells > MAX_ESTIMATED_NUMERIC_CELLS_V3 ? ["numeric-cells" as const] : []),
     ...(values.estimatedWindowVisits > MAX_ESTIMATED_WINDOW_VISITS_V3 ? ["window-visits" as const] : []),
     ...((values.estimatedRotationWorkUnits ?? 0) > MAX_ESTIMATED_ROTATION_WORK_UNITS_V3
@@ -655,6 +660,11 @@ function estimateEarlyStandardResourcesInternalV3(
     estimatedWindowVisits: 0,
     estimatedPeakBytes,
     estimatedExportBytes: 0,
+  }, {
+    // These counts are deliberately worst-case envelope proxies, not exact
+    // typed identities or retained states. Apply them to the aggregate peak
+    // gate here; exact state and structural caps run after typed profiling.
+    applyExactStructuralLimits: false,
   });
   return deepFreezeV3({
     version: RESOURCE_BUDGET_VERSION_V3,

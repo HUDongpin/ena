@@ -485,7 +485,8 @@ function identityAdmissionColumnsV3(
 }
 
 const IDENTITY_FIXED_SCALAR_BYTES_V3 = 32;
-const UTF16_TO_UTF8_UPPER_BOUND_V3 = 3;
+const CANONICAL_JSON_BYTES_PER_UTF16_UNIT_V3 = 6;
+const CANONICAL_JSON_STRING_QUOTES_BYTES_V3 = 2;
 
 function addIdentityPayloadBytesV3(total: number, value: number): number {
   const next = total + value;
@@ -500,14 +501,14 @@ function addIdentityPayloadBytesV3(total: number, value: number): number {
 
 function identityValuePayloadBytesV3(value: unknown): number {
   if (typeof value !== "string") return IDENTITY_FIXED_SCALAR_BYTES_V3;
-  const bytes = value.length * UTF16_TO_UTF8_UPPER_BOUND_V3;
-  if (!Number.isSafeInteger(bytes)) {
+  const escapedBytes = value.length * CANONICAL_JSON_BYTES_PER_UTF16_UNIT_V3;
+  if (!Number.isSafeInteger(escapedBytes)) {
     throw new ResourceEstimateErrorV3(
       "UNSAFE_ARITHMETIC",
       "Selected identity string exceeds safe integer arithmetic.",
     );
   }
-  return bytes;
+  return addIdentityPayloadBytesV3(escapedBytes, CANONICAL_JSON_STRING_QUOTES_BYTES_V3);
 }
 
 function snapshotSelectedIdentityAdmissionV3(

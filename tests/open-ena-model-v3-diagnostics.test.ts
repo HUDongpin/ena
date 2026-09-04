@@ -824,8 +824,30 @@ test("50k rows fail the shallow resource envelope before any row snapshot or ana
   }, draft(["A", "B", "C"]));
   assert.deepEqual(ids(output), ["RESOURCE_BUDGET_EXCEEDED"]);
   const resource = one(output, "RESOURCE_BUDGET_EXCEEDED");
-  assert.equal(resource.evidence?.samples.some((sample) => sample.identity === "state-count"), true);
+  assert.deepEqual(resource.evidence?.samples.map((sample) => sample.identity), ["peak-bytes"]);
   assert.equal(deepRowInspection, 0);
+});
+
+test("16,667 low-cardinality Moving rows pass early admission and reach exact diagnostics", () => {
+  const rows = Array.from({ length: 16_667 }, (_, turn) => ({
+    unit: "u",
+    horizon: "h",
+    turn,
+    A: 1,
+    B: 1,
+    C: 1,
+  }));
+  const input = dataset(rows, [...DEFAULT_HEADERS, "turn"]);
+  const output = diagnosticsFor(input, draft(["A", "B", "C"], {
+    windowType: "MovingStanzaWindow",
+    movingStanza: {
+      backward: { kind: "finite", value: 1 },
+      forward: { kind: "finite", value: 0 },
+      rowOrder: ascendingNumber("turn"),
+    },
+  }));
+  assert.equal(output.some((entry) => entry.id === "RESOURCE_BUDGET_EXCEEDED"), false);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_TARGET_RANK_ZERO"), true);
 });
 
 test("huge selected identities defeat a lying tiny dataset size before canonicalization", () => {
@@ -849,6 +871,42 @@ test("huge selected identities defeat a lying tiny dataset size before canonical
   const resource = one(output, "RESOURCE_BUDGET_EXCEEDED");
   assert.equal(resource.evidence?.samples.some((sample) => sample.identity === "identity-bytes"), true);
   assert.equal(fullRowSnapshotEntered, 0);
+});
+
+test("canonical identity admission covers JSON escapes for controls and lone surrogates", () => {
+  for (const [name, codeUnit] of [
+    ["NUL", "\u0000"],
+    ["lone high surrogate", "\ud800"],
+    ["lone low surrogate", "\udc00"],
+  ] as const) {
+    const escapedIdentity = codeUnit.repeat(6_000_000);
+    let fullRowSnapshotEntered = 0;
+    const row = new Proxy({
+      unit: escapedIdentity,
+      horizon: escapedIdentity,
+      A: 1,
+      B: 1,
+      C: 1,
+    }, {
+      ownKeys() {
+        fullRowSnapshotEntered += 1;
+        throw new Error(`full row snapshot entered for ${name}`);
+      },
+    });
+    const input = dataset([row], DEFAULT_HEADERS, { name: "tiny.csv", sizeBytes: 1 });
+    const output = diagnosticsFor(input);
+    assert.deepEqual(ids(output), ["RESOURCE_BUDGET_EXCEEDED"], name);
+    const resource = one(output, "RESOURCE_BUDGET_EXCEEDED");
+    assert.equal(resource.evidence?.samples[0]?.identity, "identity-bytes", name);
+    assert.equal(fullRowSnapshotEntered, 0, name);
+  }
+});
+
+test("ordinary Unicode identities remain admitted under the conservative canonical bound", () => {
+  const identity = "研究🙂".repeat(1_000);
+  const input = dataset([{ unit: identity, horizon: identity, A: 1, B: 1, C: 1 }]);
+  const output = diagnosticsFor(input);
+  assert.equal(output.some((entry) => entry.id === "RESOURCE_BUDGET_EXCEEDED"), false);
 });
 
 test("oversized declared dataset payload blocks before the full row-array snapshot", () => {

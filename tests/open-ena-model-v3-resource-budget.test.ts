@@ -200,7 +200,9 @@ test("early admission uses the conservative six-state-per-row envelope and check
   assert.equal(below.estimatedStateCount, 99_996);
   assert.equal(below.blockedReasons.includes("state-count"), false);
   assert.equal(above.estimatedStateCount, 100_002);
-  assert.equal(above.blockedReasons.includes("state-count"), true);
+  assert.equal(above.blocked, false);
+  assert.equal(above.blockedReasons.includes("state-count"), false);
+  assert.equal(above.blockedReasons.includes("structural-bytes"), false);
   const reviewerProbe = estimateEarlyStandardResourcesV3({
     rowCount: 50_000,
     codeCount: 3,
@@ -209,7 +211,7 @@ test("early admission uses the conservative six-state-per-row envelope and check
   });
   assert.equal(reviewerProbe.estimatedStateCount, 300_000);
   assert.equal(reviewerProbe.estimatedStructuralBytes, 547_200_002);
-  assert.deepEqual(reviewerProbe.blockedReasons, ["state-count", "structural-bytes", "peak-bytes"]);
+  assert.deepEqual(reviewerProbe.blockedReasons, ["peak-bytes"]);
   assert.equal(Object.isFrozen(below), true);
   assert.deepEqual(input, {
     rowCount: 16_666,
