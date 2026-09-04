@@ -6,6 +6,15 @@ export type OpenEnaView = "2d" | "3d";
 export type CameraPreset = "isometric" | "xy" | "xz" | "yz" | "yx" | "zx" | "zy";
 export type AnalysisKind = "ena" | "ona";
 
+// Transitional type-only aliases keep the legacy Open ENA import path stable
+// while schema-v3 adoption remains staged. OpenEnaConfig is intentionally not
+// replaced until the later runtime/UI cutover plans.
+export type OpenEnaModelWorkspaceDraftsV3 = import("./model-v3/types").ModelWorkspaceDraftsV3;
+export type OpenEnaCanonicalStandardConfigV3 = import("./model-v3/types").CanonicalStandardConfigV3;
+export type OpenEnaCanonicalOnaConfigV3 = import("./model-v3/types").CanonicalOnaConfigV3;
+export type OpenEnaStandardCompileResultV3 = import("./model-v3/compiler").StandardCompileResultV3;
+export type OpenEnaOnaCompileResultV3 = import("./model-v3/compiler").OnaCompileResultV3;
+
 export type OpenEnaOrderComparator = "number" | "string" | "boolean" | "iso-datetime";
 
 export type OpenEnaOrderPolicy =
