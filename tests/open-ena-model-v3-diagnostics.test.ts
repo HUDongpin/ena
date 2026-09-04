@@ -541,14 +541,21 @@ test("Unit and Horizon identity failures suppress all profile and connectivity d
       { unit: "u2", A: 0, B: 1, C: 1 },
     ]), draft(["A", "B", "C"])],
     ["unsupported Horizon", dataset([
-      { unit: "u1", horizon: null, A: 1, B: 0, C: 0 },
-      { unit: "u2", horizon: null, A: 0, B: 1, C: 1 },
+      { unit: "u1", horizon: { id: "h" }, A: 1, B: 0, C: 0 },
+      { unit: "u2", horizon: { id: "h" }, A: 0, B: 1, C: 1 },
     ]), draft(["A", "B", "C"])],
     ["empty Unit columns", healthyDataset(), draft(["A", "B", "C"], { unitColumns: [] })],
     ["empty Horizon columns", healthyDataset(), draft(["A", "B", "C"], { horizonColumns: [] })],
   ];
   for (const [label, input, modelDraft] of identityCases) {
     const output = diagnosticsFor(input, modelDraft);
+    if (label.startsWith("missing ")) {
+      assert.equal(ids(output).includes("STANDARD_IDENTITY_MISSING"), true, label);
+    }
+    if (label.startsWith("unsupported ")) {
+      assert.equal(ids(output).includes("STANDARD_IDENTITY_VALUE_UNSUPPORTED"), true, label);
+    }
+    assert.equal(ids(output).includes("RESOURCE_BUDGET_EXCEEDED"), false, label);
     assert.equal(hasProfileOrConnectivityDerivative(output), false, `${label}: ${ids(output).join(", ")}`);
   }
 

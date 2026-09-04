@@ -21,6 +21,7 @@ import {
   MAX_ESTIMATED_STRUCTURAL_BYTES_V3,
   MAX_ESTIMATED_WINDOW_VISITS_V3,
   ResourceEstimateErrorV3,
+  estimateCanonicalIdentityAdmissionFieldPayloadBytesV3,
   estimateEarlyStandardResourcesV3,
   estimateStandardResourcesV3,
 } from "./resource-budget";
@@ -484,10 +485,6 @@ function identityAdmissionColumnsV3(
   return [...columns].sort(codeUnitCompareV3);
 }
 
-const IDENTITY_FIXED_SCALAR_BYTES_V3 = 32;
-const CANONICAL_JSON_BYTES_PER_UTF16_UNIT_V3 = 6;
-const CANONICAL_JSON_STRING_QUOTES_BYTES_V3 = 2;
-
 function addIdentityPayloadBytesV3(total: number, value: number): number {
   const next = total + value;
   if (!Number.isSafeInteger(next)) {
@@ -497,18 +494,6 @@ function addIdentityPayloadBytesV3(total: number, value: number): number {
     );
   }
   return next;
-}
-
-function identityValuePayloadBytesV3(value: unknown): number {
-  if (typeof value !== "string") return IDENTITY_FIXED_SCALAR_BYTES_V3;
-  const escapedBytes = value.length * CANONICAL_JSON_BYTES_PER_UTF16_UNIT_V3;
-  if (!Number.isSafeInteger(escapedBytes)) {
-    throw new ResourceEstimateErrorV3(
-      "UNSAFE_ARITHMETIC",
-      "Selected identity string exceeds safe integer arithmetic.",
-    );
-  }
-  return addIdentityPayloadBytesV3(escapedBytes, CANONICAL_JSON_STRING_QUOTES_BYTES_V3);
 }
 
 function snapshotSelectedIdentityAdmissionV3(
@@ -532,7 +517,6 @@ function snapshotSelectedIdentityAdmissionV3(
       rowIsInspectable = prototype === Object.prototype || prototype === null;
     }
     for (const column of columns) {
-      total = addIdentityPayloadBytesV3(total, identityValuePayloadBytesV3(column));
       const descriptor = rowIsInspectable
         ? Object.getOwnPropertyDescriptor(rowValue, column)
         : undefined;
@@ -540,7 +524,10 @@ function snapshotSelectedIdentityAdmissionV3(
       const value = hasDataProperty ? descriptor.value : undefined;
       selectedDataProperties.push(hasDataProperty);
       selectedValues.push(value);
-      total = addIdentityPayloadBytesV3(total, identityValuePayloadBytesV3(value));
+      total = addIdentityPayloadBytesV3(
+        total,
+        estimateCanonicalIdentityAdmissionFieldPayloadBytesV3(column, value),
+      );
       if (total > MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3) {
         return { payloadBytes: total, columns, rowValues, selectedDataProperties, selectedValues };
       }

@@ -36,6 +36,11 @@ export const MAX_ESTIMATED_STATE_COUNT_V3 = 100_000;
 export const MAX_ESTIMATED_STRUCTURAL_BYTES_V3 = 384 * 1024 * 1024;
 export const MAX_ESTIMATED_DATASET_BYTES_V3 = 128 * 1024 * 1024;
 export const MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3 = 64 * 1024 * 1024;
+export const CANONICAL_IDENTITY_FIELD_WRAPPER_BYTES_V3 = 64;
+
+const CANONICAL_IDENTITY_FIXED_SCALAR_BYTES_V3 = 32;
+const CANONICAL_IDENTITY_BYTES_PER_UTF16_UNIT_V3 = 6;
+const CANONICAL_IDENTITY_STRING_QUOTES_BYTES_V3 = 2;
 
 export type ResourceEstimateErrorCodeV3 = "INVALID_INPUT" | "UNSAFE_ARITHMETIC";
 
@@ -47,6 +52,52 @@ export class ResourceEstimateErrorV3 extends Error {
     this.name = "ResourceEstimateErrorV3";
     this.code = code;
   }
+}
+
+function addCanonicalIdentityPayloadBytesV3(left: number, right: number): number {
+  const result = left + right;
+  if (!Number.isSafeInteger(result)) {
+    throw new ResourceEstimateErrorV3(
+      "UNSAFE_ARITHMETIC",
+      "Canonical identity field payload exceeds safe integer arithmetic.",
+    );
+  }
+  return result;
+}
+
+function canonicalIdentityValuePayloadBytesV3(value: unknown): number {
+  if (typeof value !== "string") return CANONICAL_IDENTITY_FIXED_SCALAR_BYTES_V3;
+  const escapedBytes = value.length * CANONICAL_IDENTITY_BYTES_PER_UTF16_UNIT_V3;
+  if (!Number.isSafeInteger(escapedBytes)) {
+    throw new ResourceEstimateErrorV3(
+      "UNSAFE_ARITHMETIC",
+      "Canonical identity string exceeds safe integer arithmetic.",
+    );
+  }
+  return addCanonicalIdentityPayloadBytesV3(
+    escapedBytes,
+    CANONICAL_IDENTITY_STRING_QUOTES_BYTES_V3,
+  );
+}
+
+/**
+ * Conservative UTF-8 upper bound for one selected source field during
+ * identity admission, before scalar validation. Non-string source values use
+ * a fixed scalar slot; invalid or missing values remain subject to the later
+ * identity validator and are not represented as canonical identities here.
+ */
+export function estimateCanonicalIdentityAdmissionFieldPayloadBytesV3(
+  column: string,
+  value: unknown,
+): number {
+  if (typeof column !== "string") {
+    throw new ResourceEstimateErrorV3("INVALID_INPUT", "Canonical identity column must be a string.");
+  }
+  return [
+    CANONICAL_IDENTITY_FIELD_WRAPPER_BYTES_V3,
+    canonicalIdentityValuePayloadBytesV3(column),
+    canonicalIdentityValuePayloadBytesV3(value),
+  ].reduce(addCanonicalIdentityPayloadBytesV3, 0);
 }
 
 export type ResourceBlockedReasonV3 =

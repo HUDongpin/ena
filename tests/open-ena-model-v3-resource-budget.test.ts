@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  CANONICAL_IDENTITY_FIELD_WRAPPER_BYTES_V3,
   MAX_ESTIMATED_DATASET_BYTES_V3,
   MAX_ESTIMATED_EXPORT_BYTES_V3,
   MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3,
@@ -22,10 +23,13 @@ import {
   STRUCTURAL_ROW_CODE_BYTES_V3,
   STRUCTURAL_TARGET_BYTES_V3,
   STRUCTURAL_UNIT_BYTES_V3,
+  estimateCanonicalIdentityAdmissionFieldPayloadBytesV3,
   estimateEarlyStandardResourcesV3,
   estimateOnaResourcesV3,
   estimateStandardResourcesV3,
 } from "../lib/open-ena/model-v3/resource-budget";
+import { canonicalJsonV3 } from "../lib/open-ena/model-v3/canonical-json";
+import { scalarIdentityV3 } from "../lib/open-ena/model-v3/identity";
 import type {
   OnaResourceInputV3,
   StandardResourceInputV3,
@@ -450,6 +454,7 @@ test("resource constants, provenance, output detachment, and deep freezing are f
     STRUCTURAL_RETAINED_ROW_BYTES_V3,
     STRUCTURAL_ROW_CODE_BYTES_V3,
     STRUCTURAL_DATASET_MULTIPLIER_V3,
+    CANONICAL_IDENTITY_FIELD_WRAPPER_BYTES_V3,
   ], [
     "open-ena-resource-v3.3",
     25_000_000,
@@ -470,6 +475,7 @@ test("resource constants, provenance, output detachment, and deep freezing are f
     512,
     64,
     2,
+    64,
   ]);
   const horizonSizes = [3, 5];
   const estimate = estimateStandardResourcesV3({ ...standardBase, horizonSizes });
@@ -478,6 +484,72 @@ test("resource constants, provenance, output detachment, and deep freezing are f
   assert.equal(estimate.version, "open-ena-resource-v3.3");
   assert.equal(Object.isFrozen(estimate), true);
   assert.equal(Object.isFrozen(estimate.blockedReasons), true);
+});
+
+test("canonical identity field budget covers strings, wrappers, and every scalar representation", () => {
+  const stringFixtures = [
+    ...Array.from({ length: 32 }, (_, codePoint) => String.fromCharCode(codePoint)),
+    '"',
+    "\\",
+    "\ud800",
+    "\udc00",
+    "🙂",
+    "ASCII",
+    "研究",
+    "\u0000".repeat(1_000),
+  ];
+  for (const [index, value] of stringFixtures.entries()) {
+    const actualValueBytes = Buffer.byteLength(canonicalJsonV3({
+      fields: [{ column: "unit", value: scalarIdentityV3(value, `fixture ${index}`) }],
+    }), "utf8");
+    assert.equal(
+      estimateCanonicalIdentityAdmissionFieldPayloadBytesV3("unit", value) >= actualValueBytes,
+      true,
+      `string value fixture ${index}`,
+    );
+
+    const column = `field:${value}`;
+    const actualColumnBytes = Buffer.byteLength(canonicalJsonV3({
+      fields: [{ column, value: scalarIdentityV3(true, `column fixture ${index}`) }],
+    }), "utf8");
+    assert.equal(
+      estimateCanonicalIdentityAdmissionFieldPayloadBytesV3(column, true) >= actualColumnBytes,
+      true,
+      `column fixture ${index}`,
+    );
+  }
+
+  for (const value of [Number.MAX_VALUE, -Number.MAX_VALUE, Number.MIN_VALUE, true, false]) {
+    const actualBytes = Buffer.byteLength(canonicalJsonV3({
+      fields: [{ column: "unit", value: scalarIdentityV3(value, "scalar fixture") }],
+    }), "utf8");
+    assert.equal(estimateCanonicalIdentityAdmissionFieldPayloadBytesV3("unit", value) >= actualBytes, true);
+  }
+});
+
+test("summed field budgets cover a mixed multi-field canonical identity", () => {
+  const fields: Array<{ column: string; value: string | number | boolean }> = [
+    { column: "nul\u0000", value: "\u0000\u0001" },
+    { column: 'quote"', value: '"quoted"' },
+    { column: "backslash\\", value: "\\value\\" },
+    { column: "high-surrogate", value: "\ud800" },
+    { column: "low-surrogate\udc00", value: "low" },
+    { column: "astral🙂", value: "研究🙂" },
+    { column: "number", value: -Number.MAX_VALUE },
+    { column: "boolean", value: false },
+  ];
+  const actualBytes = Buffer.byteLength(canonicalJsonV3({
+    fields: fields.map((field, index) => ({
+      column: field.column,
+      value: scalarIdentityV3(field.value, `composite fixture ${index}`),
+    })),
+  }), "utf8");
+  const estimatedBytes = fields.reduce(
+    (total, field) => total
+      + estimateCanonicalIdentityAdmissionFieldPayloadBytesV3(field.column, field.value),
+    0,
+  );
+  assert.equal(estimatedBytes >= actualBytes, true);
 });
 
 test("each Standard hard-limit fixture reports the exact fixed reason set", () => {
