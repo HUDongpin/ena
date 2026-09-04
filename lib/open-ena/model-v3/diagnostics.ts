@@ -1504,7 +1504,11 @@ function maximumAbsoluteValueV3(vectors: readonly (readonly number[])[]): number
   return largest;
 }
 
-function centeredRankV3(vectors: readonly number[][], centerAlignToOrigin: boolean): number {
+/** @internal Shared compiler numerical preflight; intentionally absent from the public v3 barrel. */
+export function centeredNetworkRankV3(
+  vectors: readonly number[][],
+  centerAlignToOrigin: boolean,
+): number {
   if (vectors.length === 0) return 0;
   const normalized = sphereNorm(vectors.map((vector) => [...vector]));
   const first = normalized[0];
@@ -1870,21 +1874,36 @@ function standardResourceShapeV3(
   horizonColumns: readonly string[],
   model: StandardModelTypeV3,
   resolvedHorizonOrder: ReturnType<typeof resolveHorizonOrderV3> | null,
-): { unitCount: number; horizonSizes: number[]; trajectorySteps: number } {
+): {
+  unitCount: number;
+  horizonSizes: number[];
+  unitHorizonSizes: number[];
+  trajectorySteps: number;
+} {
   const unitKeys = new Set<string>();
   const horizonSizesByKey = new Map<string, number>();
+  const unitHorizonSizesByKey = new Map<string, number>();
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
-    unitKeys.add(identityKeyV3(rows[rowIndex], unitColumns, rowIndex, "Unit"));
+    const unitKey = identityKeyV3(rows[rowIndex], unitColumns, rowIndex, "Unit");
     const horizonKey = identityKeyV3(rows[rowIndex], horizonColumns, rowIndex, "Horizon");
+    unitKeys.add(unitKey);
     horizonSizesByKey.set(horizonKey, (horizonSizesByKey.get(horizonKey) ?? 0) + 1);
+    const partitionKey = canonicalJsonV3([unitKey, horizonKey]);
+    unitHorizonSizesByKey.set(
+      partitionKey,
+      (unitHorizonSizesByKey.get(partitionKey) ?? 0) + 1,
+    );
   }
   const horizonSizes = [...horizonSizesByKey.entries()]
+    .sort(([left], [right]) => codeUnitCompareV3(left, right))
+    .map(([, size]) => size);
+  const unitHorizonSizes = [...unitHorizonSizesByKey.entries()]
     .sort(([left], [right]) => codeUnitCompareV3(left, right))
     .map(([, size]) => size);
   const trajectorySteps = model === "EndPoint"
     ? unitKeys.size
     : resolvedHorizonOrder!.unitSequences.reduce((total, sequence) => total + sequence.steps.length, 0);
-  return { unitCount: unitKeys.size, horizonSizes, trajectorySteps };
+  return { unitCount: unitKeys.size, horizonSizes, unitHorizonSizes, trajectorySteps };
 }
 
 function resourceBudgetDiagnosticV3(
@@ -1956,17 +1975,38 @@ function resourceBudgetDiagnosticV3(
   });
 }
 
-export function validateStandardDraftV3(
+export interface PreparedStandardDraftValidationV3 {
+  /** Detached frozen snapshot shared by compiler resource derivation. */
+  readonly dataset: Readonly<{
+    name: string;
+    headers: readonly string[];
+    rows: readonly Readonly<Record<string, unknown>>[];
+    sizeBytes: number;
+    source: "sample" | "upload";
+    hashKind: DatasetHashKind;
+  }> | null;
+  readonly diagnostics: readonly ModelDiagnosticV3[];
+}
+
+function preparedValidationV3(
+  dataset: DatasetSnapshotV3 | null,
+  diagnostics: readonly ModelDiagnosticV3[],
+): PreparedStandardDraftValidationV3 {
+  return deepFreezeV3({ dataset, diagnostics });
+}
+
+/** @internal Compiler-only prepared boundary; intentionally absent from the public v3 barrel. */
+export function prepareStandardDraftValidationV3(
   datasetValue: ParsedDataset,
   bindingValue: DatasetBindingV3,
   draftValue: StandardEnaDraftV3,
-): readonly ModelDiagnosticV3[] {
+): PreparedStandardDraftValidationV3 {
   let trustedEnvelope: { envelope: DatasetEnvelopeV3; binding: DatasetBindingV3 };
   try {
     trustedEnvelope = snapshotDatasetEnvelopeAndBindingV3(datasetValue, bindingValue);
   } catch (error) {
     if (error instanceof TypeError) {
-      return finalizeDiagnosticsV3([datasetBindingInvalidDiagnosticV3()]);
+      return preparedValidationV3(null, finalizeDiagnosticsV3([datasetBindingInvalidDiagnosticV3()]));
     }
     throw error;
   }
@@ -1980,10 +2020,12 @@ export function validateStandardDraftV3(
   };
   try {
     const early = estimateEarlyStandardResourcesV3(earlyEstimateInput);
-    if (early.blocked) return finalizeDiagnosticsV3([resourceBudgetDiagnosticV3(early)]);
+    if (early.blocked) {
+      return preparedValidationV3(null, finalizeDiagnosticsV3([resourceBudgetDiagnosticV3(early)]));
+    }
   } catch (error) {
     if (error instanceof ResourceEstimateErrorV3) {
-      return finalizeDiagnosticsV3([resourceBudgetDiagnosticV3(null)]);
+      return preparedValidationV3(null, finalizeDiagnosticsV3([resourceBudgetDiagnosticV3(null)]));
     }
     throw error;
   }
@@ -2003,14 +2045,17 @@ export function validateStandardDraftV3(
       identityPayloadBytes,
     });
     if (identityEstimate.blocked) {
-      return finalizeDiagnosticsV3([resourceBudgetDiagnosticV3(identityEstimate)]);
+      return preparedValidationV3(
+        null,
+        finalizeDiagnosticsV3([resourceBudgetDiagnosticV3(identityEstimate)]),
+      );
     }
   } catch (error) {
     if (error instanceof ResourceEstimateErrorV3) {
-      return finalizeDiagnosticsV3([resourceBudgetDiagnosticV3(null)]);
+      return preparedValidationV3(null, finalizeDiagnosticsV3([resourceBudgetDiagnosticV3(null)]));
     }
     if (error instanceof TypeError) {
-      return finalizeDiagnosticsV3([datasetBindingInvalidDiagnosticV3()]);
+      return preparedValidationV3(null, finalizeDiagnosticsV3([datasetBindingInvalidDiagnosticV3()]));
     }
     throw error;
   }
@@ -2020,7 +2065,7 @@ export function validateStandardDraftV3(
     dataset = snapshotDatasetRowsV3(envelope, identityAdmission);
   } catch (error) {
     if (error instanceof TypeError) {
-      return finalizeDiagnosticsV3([datasetBindingInvalidDiagnosticV3()]);
+      return preparedValidationV3(null, finalizeDiagnosticsV3([datasetBindingInvalidDiagnosticV3()]));
     }
     throw error;
   }
@@ -2322,6 +2367,9 @@ export function validateStandardDraftV3(
         horizonCount: shape.horizonSizes.length,
         codeCount: profilesInDraftOrder.length,
         horizonSizes: shape.horizonSizes,
+        windowPartitionSizes: modelDraft.windowType === "Conversation"
+          ? shape.unitHorizonSizes
+          : shape.horizonSizes,
         trajectorySteps: shape.trajectorySteps,
         windowType: modelDraft.windowType,
         backward: modelDraft.windowType === "MovingStanzaWindow"
@@ -2529,7 +2577,7 @@ export function validateStandardDraftV3(
         const centerAlignToOrigin = modelDraft.rotation.type === "reference"
           ? true
           : modelDraft.rotation.centerAlignToOrigin;
-        const rank = centeredRankV3(networks.targetVectors, centerAlignToOrigin);
+        const rank = centeredNetworkRankV3(networks.targetVectors, centerAlignToOrigin);
         const rankDiagnostic = rankDiagnosticV3(
           rank,
           modelDraft.rotation,
@@ -2552,5 +2600,13 @@ export function validateStandardDraftV3(
     if (shape !== null) output.push(shape);
   }
 
-  return finalizeDiagnosticsV3(output);
+  return preparedValidationV3(dataset, finalizeDiagnosticsV3(output));
+}
+
+export function validateStandardDraftV3(
+  datasetValue: ParsedDataset,
+  bindingValue: DatasetBindingV3,
+  draftValue: StandardEnaDraftV3,
+): readonly ModelDiagnosticV3[] {
+  return prepareStandardDraftValidationV3(datasetValue, bindingValue, draftValue).diagnostics;
 }

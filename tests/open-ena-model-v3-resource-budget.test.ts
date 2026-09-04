@@ -107,7 +107,7 @@ test("Reference projection adds exactly one target-by-edge cell block", () => {
   assert.equal(withReference.estimatedNumericCells - withoutReference.estimatedNumericCells, 5 * 6);
 });
 
-test("Standard structural estimate uses the fixed v3.3 allocation proxies exactly", () => {
+test("Standard structural estimate uses the fixed v3.4 allocation proxies exactly", () => {
   const estimate = estimateStandardResourcesV3(standardBase);
   assert.equal(estimate.aggregateStateUpperBound, 2);
   assert.equal(estimate.estimatedStateCount, 19);
@@ -398,6 +398,70 @@ test("Conversation and ONA include per-Horizon state storage without pretending 
   assert.equal(ona.estimatedWorkerMaterializationBytes > 1_000 * 8 * 16, true);
 });
 
+test("Conversation distinguishes global Horizons from Unit-by-Horizon scientific window partitions", () => {
+  const rowCount = 10_001;
+  const estimate = estimateStandardResourcesV3({
+    rowCount,
+    unitCount: rowCount,
+    horizonCount: 1,
+    codeCount: 3,
+    horizonSizes: [rowCount],
+    windowPartitionSizes: Array.from({ length: rowCount }, () => 1),
+    trajectorySteps: rowCount,
+    windowType: "Conversation",
+    backward: { kind: "finite", value: 1 },
+    forward: { kind: "finite", value: 0 },
+    referenceProjection: true,
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 1,
+  });
+  assert.equal(estimate.horizons, 1);
+  assert.equal(estimate.windowPartitions, rowCount);
+  assert.equal(estimate.estimatedWindowVisits, rowCount);
+  assert.equal(estimate.estimatedForwardBufferRows, 1);
+  assert.equal(estimate.blockedReasons.includes("window-visits"), false);
+});
+
+test("scientific window partitions require positive exact row coverage independently of Horizon telemetry", () => {
+  const base = { ...standardBase, windowType: "Conversation" as const };
+  assert.throws(
+    () => estimateStandardResourcesV3({ ...base, windowPartitionSizes: [3, 4] }),
+    /partition.*sum|sum.*rowCount/i,
+  );
+  assert.throws(
+    () => estimateStandardResourcesV3({ ...base, windowPartitionSizes: [3, 0, 5] }),
+    /partition.*positive/i,
+  );
+});
+
+test("Conversation partition visits preserve the exact hard limit and block one unit visit over", () => {
+  const exact = estimateStandardResourcesV3({
+    ...standardBase,
+    rowCount: 10_000,
+    unitCount: 10_000,
+    horizonCount: 1,
+    horizonSizes: [10_000],
+    windowPartitionSizes: [10_000],
+    trajectorySteps: 10_000,
+    windowType: "Conversation",
+  });
+  assert.equal(exact.estimatedWindowVisits, MAX_ESTIMATED_WINDOW_VISITS_V3);
+  assert.equal(exact.blockedReasons.includes("window-visits"), false);
+
+  const oneOver = estimateStandardResourcesV3({
+    ...standardBase,
+    rowCount: 10_001,
+    unitCount: 10_001,
+    horizonCount: 1,
+    horizonSizes: [10_001],
+    windowPartitionSizes: [10_000, 1],
+    trajectorySteps: 10_001,
+    windowType: "Conversation",
+  });
+  assert.equal(oneOver.estimatedWindowVisits, MAX_ESTIMATED_WINDOW_VISITS_V3 + 1);
+  assert.equal(oneOver.blockedReasons.includes("window-visits"), true);
+});
+
 test("ONA finite backward history sums across Horizons and covers ordered runtime telemetry", async () => {
   const { createAccumulationStream } = await import("jena-js");
   const horizonCount = 1_000;
@@ -456,7 +520,7 @@ test("resource constants, provenance, output detachment, and deep freezing are f
     STRUCTURAL_DATASET_MULTIPLIER_V3,
     CANONICAL_IDENTITY_FIELD_WRAPPER_BYTES_V3,
   ], [
-    "open-ena-resource-v3.3",
+    "open-ena-resource-v3.4",
     25_000_000,
     100_000_000,
     512 * 1024 * 1024,
@@ -481,7 +545,7 @@ test("resource constants, provenance, output detachment, and deep freezing are f
   const estimate = estimateStandardResourcesV3({ ...standardBase, horizonSizes });
   horizonSizes[0] = 8;
   assert.equal(estimate.analysisFamily, "standard");
-  assert.equal(estimate.version, "open-ena-resource-v3.3");
+  assert.equal(estimate.version, "open-ena-resource-v3.4");
   assert.equal(Object.isFrozen(estimate), true);
   assert.equal(Object.isFrozen(estimate.blockedReasons), true);
 });

@@ -240,3 +240,101 @@ test("legacy migration rejects disguised Standard and ONA family fields instead 
     orderPolicy: { kind: "columns", columns: ["turn"], comparators: { turn: "number" } },
   })), /Standard.*ONA|family/i);
 });
+
+test("legacy migration rejects sparse and augmented scientific arrays before producing a draft", () => {
+  const sparseCodes = ["A", , "C"] as unknown as string[];
+  assert.throws(
+    () => migrateLegacyOpenEnaConfigToDraftV3(legacy({ codes: sparseCodes })),
+    /dense|array|Code/i,
+  );
+
+  const augmentedCodes = ["A", "B", "C"];
+  Object.defineProperty(augmentedCodes, "scientificMeaning", { value: true, enumerable: true });
+  assert.throws(
+    () => migrateLegacyOpenEnaConfigToDraftV3(legacy({ codes: augmentedCodes })),
+    /dense|array|extra/i,
+  );
+
+  const sparseMaskRows = [ONA_MASK.enabled[0], , ONA_MASK.enabled[2], ONA_MASK.enabled[3]] as unknown as boolean[][];
+  assert.throws(
+    () => migrateLegacyOpenEnaConfigToDraftV3(legacyOna({
+      directionalMask: { ...ONA_MASK, enabled: sparseMaskRows },
+    })),
+    /dense|mask|array/i,
+  );
+
+  const sparseCells = [true, , false, true] as unknown as boolean[];
+  assert.throws(
+    () => migrateLegacyOpenEnaConfigToDraftV3(legacyOna({
+      directionalMask: { ...ONA_MASK, enabled: [sparseCells, ...ONA_MASK.enabled.slice(1)] },
+    })),
+    /dense|mask|array/i,
+  );
+});
+
+test("legacy migration rejects inherited, accessor, and unknown root scientific fields without invoking getters", () => {
+  const inherited = Object.assign(Object.create({ analysisKind: "ona" }), legacyOna());
+  Reflect.deleteProperty(inherited, "analysisKind");
+  assert.throws(
+    () => migrateLegacyOpenEnaConfigToDraftV3(inherited as OpenEnaConfig),
+    /plain|prototype|analysisKind/i,
+  );
+
+  let getterCalls = 0;
+  const accessor = legacy();
+  Object.defineProperty(accessor, "analysisKind", {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return "ona";
+    },
+  });
+  assert.throws(
+    () => migrateLegacyOpenEnaConfigToDraftV3(accessor),
+    /data propert|accessor/i,
+  );
+  assert.equal(getterCalls, 0);
+
+  const unknown = {
+    ...legacy(),
+    futureScientificMeaning: "must-not-be-dropped",
+  } as unknown as OpenEnaConfig;
+  assert.throws(
+    () => migrateLegacyOpenEnaConfigToDraftV3(unknown),
+    /unknown|shape|futureScientificMeaning/i,
+  );
+});
+
+test("legacy migration snapshots nested order, comparator, and mask records without ordinary value reads", () => {
+  const target = legacyOna();
+  const guarded = new Proxy(target, {
+    get() {
+      throw new Error("ordinary legacy root get is forbidden");
+    },
+  });
+  const migrated = migrateLegacyOpenEnaConfigToDraftV3(guarded);
+  assert.equal(migrated.activeFamily, "ona");
+  assert.equal(migrated.autoRun, false);
+
+  let comparatorGetterCalls = 0;
+  const comparators = {} as Record<string, "number">;
+  Object.defineProperty(comparators, "turn", {
+    enumerable: true,
+    get() {
+      comparatorGetterCalls += 1;
+      return "number";
+    },
+  });
+  assert.throws(() => migrateLegacyOpenEnaConfigToDraftV3(legacyOna({
+    orderPolicy: { kind: "columns", columns: ["turn"], comparators },
+  })), /data propert|accessor/i);
+  assert.equal(comparatorGetterCalls, 0);
+});
+
+test("null-prototype legacy records remain accepted after strict descriptor-safe decoding", () => {
+  const plain = legacy();
+  const nullPrototype = Object.assign(Object.create(null), plain) as OpenEnaConfig;
+  const migrated = migrateLegacyOpenEnaConfigToDraftV3(nullPrototype);
+  assert.equal(migrated.activeFamily, "standard");
+  assert.equal(migrated.autoRun, false);
+});

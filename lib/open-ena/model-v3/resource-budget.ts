@@ -10,7 +10,7 @@ import type {
   StandardWindowTypeV3,
 } from "./types";
 
-export const RESOURCE_BUDGET_VERSION_V3 = "open-ena-resource-v3.3" as const;
+export const RESOURCE_BUDGET_VERSION_V3 = "open-ena-resource-v3.4" as const;
 export const MAX_ESTIMATED_NUMERIC_CELLS_V3 = 25_000_000;
 export const MAX_ESTIMATED_WINDOW_VISITS_V3 = 100_000_000;
 export const MAX_ESTIMATED_PEAK_BYTES_V3 = 512 * 1024 * 1024;
@@ -118,6 +118,13 @@ export interface StandardResourceInputV3 {
   readonly horizonCount: number;
   readonly codeCount: number;
   readonly horizonSizes: readonly number[];
+  /**
+   * Exact scientific window partitions. Conversation uses typed Unit by
+   * Horizon partitions; Moving Stanza uses the global typed Horizons. When
+   * omitted by a legacy direct caller, horizonSizes retain the pre-v3.4
+   * meaning for compatibility.
+   */
+  readonly windowPartitionSizes?: readonly number[];
   readonly trajectorySteps: number;
   readonly windowType: StandardWindowTypeV3;
   readonly backward: BackwardExtentV3;
@@ -151,6 +158,7 @@ interface ResourceEstimateBaseV3 {
   readonly rows: number;
   readonly units: number;
   readonly horizons: number;
+  readonly windowPartitions: number;
   readonly codes: number;
   readonly adjacencyDimensions: number;
   readonly datasetSizeBytes: number;
@@ -300,6 +308,21 @@ function snapshotHorizonSizesV3(value: unknown, horizonCount: number, rowCount: 
   return sizes;
 }
 
+function snapshotWindowPartitionSizesV3(value: unknown, rowCount: number): number[] {
+  const input = snapshotDenseJsonArrayV3(value, "resource input.windowPartitionSizes");
+  let total = 0;
+  const sizes = input.map((entry, index) => {
+    const size = nonnegativeSafeIntegerV3(entry, `resource input.windowPartitionSizes[${index}]`);
+    if (size === 0) throw new TypeError("Scientific window partition sizes must be positive.");
+    total = safeAddV3(total, size, "Scientific window partition row total");
+    return size;
+  });
+  if (total !== rowCount) {
+    throw new TypeError("Scientific window partition sizes must sum exactly to rowCount.");
+  }
+  return sizes;
+}
+
 function coveredExtentV3(
   value: BackwardExtentV3 | ForwardExtentV3,
   horizonSize: number,
@@ -351,7 +374,7 @@ function blockedReasonsV3(values: {
 
 function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3): StandardResourceEstimateV3 {
   const input = snapshotPlainJsonRecordV3(inputValue, "Standard resource input");
-  assertExactKeysV3(input, [
+  const standardKeys = [
     "rowCount",
     "unitCount",
     "horizonCount",
@@ -364,7 +387,13 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
     "referenceProjection",
     "datasetSizeBytes",
     "identityPayloadBytes",
-  ], "Standard resource input");
+  ];
+  const hasWindowPartitions = Object.hasOwn(input, "windowPartitionSizes");
+  assertExactKeysV3(
+    input,
+    hasWindowPartitions ? [...standardKeys, "windowPartitionSizes"] : standardKeys,
+    "Standard resource input",
+  );
   const rowCount = nonnegativeSafeIntegerV3(input.rowCount, "resource input.rowCount");
   const unitCount = nonnegativeSafeIntegerV3(input.unitCount, "resource input.unitCount");
   const horizonCount = nonnegativeSafeIntegerV3(input.horizonCount, "resource input.horizonCount");
@@ -384,13 +413,21 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
   if (typeof input.referenceProjection !== "boolean") {
     throw new TypeError("resource input.referenceProjection must be a boolean.");
   }
+  const windowPartitionSizes = hasWindowPartitions
+    ? snapshotWindowPartitionSizesV3(input.windowPartitionSizes, rowCount)
+    : horizonSizes;
+  if (input.windowType === "MovingStanzaWindow"
+    && (windowPartitionSizes.length !== horizonSizes.length
+      || windowPartitionSizes.some((size, index) => size !== horizonSizes[index]))) {
+    throw new TypeError("Moving Stanza scientific window partitions must exactly equal global Horizon sizes.");
+  }
 
   const edgeProduct = safeMultiplyV3(codeCount, Math.max(0, codeCount - 1), "Standard adjacency dimensions");
   const adjacencyDimensions = edgeProduct / 2;
   let estimatedWindowVisits = 0;
   let estimatedForwardBufferRows = 0;
   let estimatedRetainedWindowRows = 0;
-  for (const size of horizonSizes) {
+  for (const size of windowPartitionSizes) {
     const perRowVisits = input.windowType === "Conversation"
       ? size
       : safeAddV3(
@@ -427,7 +464,7 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
     }
   }
 
-  const aggregateStateUpperBound = input.windowType === "Conversation" ? rowCount : horizonCount;
+  const aggregateStateUpperBound = windowPartitionSizes.length;
   const structural = structuralEstimateV3({
     rowCount,
     unitCount,
@@ -461,7 +498,7 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
     "Conversation state cells",
   );
   const estimatedWindowStateCells = safeMultiplyV3(
-    input.windowType === "Conversation" ? rowCount : horizonCount,
+    windowPartitionSizes.length,
     input.windowType === "Conversation" ? conversationStateWidth : movingStateWidth,
     "Window state cells",
   );
@@ -509,6 +546,7 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
     rows: rowCount,
     units: unitCount,
     horizons: horizonCount,
+    windowPartitions: windowPartitionSizes.length,
     codes: codeCount,
     adjacencyDimensions,
     datasetSizeBytes,
@@ -650,6 +688,7 @@ function estimateOnaResourcesInternalV3(inputValue: OnaResourceInputV3): OnaReso
     rows: rowCount,
     units: unitCount,
     horizons: horizonCount,
+    windowPartitions: horizonCount,
     codes: codeCount,
     adjacencyDimensions,
     datasetSizeBytes,
@@ -724,6 +763,7 @@ function estimateEarlyStandardResourcesInternalV3(
     rows: rowCount,
     units: rowCount,
     horizons: rowCount,
+    windowPartitions: rowCount,
     codes: codeCount,
     adjacencyDimensions: 0,
     datasetSizeBytes,

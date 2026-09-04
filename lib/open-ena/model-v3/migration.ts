@@ -1,4 +1,8 @@
-import { deepFreezeV3 } from "./canonical-json";
+import {
+  deepFreezeV3,
+  snapshotDenseJsonArrayV3,
+  snapshotPlainJsonRecordV3,
+} from "./canonical-json";
 import type {
   BackwardExtentV3,
   CanonicalRowOrderV3,
@@ -29,12 +33,142 @@ export interface MigratedModelDraftV3 extends ModelWorkspaceDraftsV3 {
 }
 
 function stringListV3(value: readonly string[], label: string): string[] {
-  if (!Array.isArray(value)
-    || value.some((entry) => typeof entry !== "string" || entry.trim().length === 0)
-    || new Set(value).size !== value.length) {
+  const snapshot = snapshotDenseJsonArrayV3(value, label);
+  if (snapshot.some((entry) => typeof entry !== "string" || entry.trim().length === 0)
+    || new Set(snapshot).size !== snapshot.length) {
     throw new TypeError(`${label} must contain distinct nonblank strings.`);
   }
-  return [...value];
+  return snapshot as string[];
+}
+
+function exactRecordV3(
+  value: unknown,
+  keys: readonly string[],
+  label: string,
+): Record<string, unknown> {
+  const record = snapshotPlainJsonRecordV3(value, label);
+  const actual = Object.keys(record).sort();
+  const expected = [...keys].sort();
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
+    throw new TypeError(`${label} has an invalid shape or unknown fields.`);
+  }
+  return record;
+}
+
+function legacyOrderPolicyV3(value: unknown): OpenEnaConfig["orderPolicy"] {
+  if (value === null) return null;
+  const record = snapshotPlainJsonRecordV3(value, "Legacy ONA order policy");
+  if (record.kind === "source-row") {
+    const exact = exactRecordV3(record, ["kind", "confirmed"], "Legacy ONA source-row policy");
+    if (exact.confirmed !== true) throw new TypeError("Legacy ONA source-row policy must be confirmed.");
+    return { kind: "source-row", confirmed: true };
+  }
+  if (record.kind !== "columns") throw new TypeError("Legacy ONA order policy kind is invalid.");
+  const exact = exactRecordV3(
+    record,
+    ["kind", "columns", "comparators"],
+    "Legacy ONA columns policy",
+  );
+  const columns = stringListV3(exact.columns as string[], "Legacy ONA order columns");
+  if (columns.length === 0) throw new TypeError("Legacy ONA order columns must be nonempty.");
+  const comparatorRecord = exactRecordV3(
+    exact.comparators,
+    columns,
+    "Legacy ONA order comparators",
+  );
+  const comparators = Object.fromEntries(columns.map((column) => {
+    const comparator = comparatorRecord[column];
+    if (comparator !== "number"
+      && comparator !== "string"
+      && comparator !== "boolean"
+      && comparator !== "iso-datetime") {
+      throw new TypeError(`Legacy ONA comparator for ${JSON.stringify(column)} is invalid.`);
+    }
+    return [column, comparator];
+  })) as Record<string, OpenEnaOrderComparator>;
+  return { kind: "columns", columns, comparators };
+}
+
+function legacyDirectionalMaskV3(value: unknown): OpenEnaDirectionalMask | null {
+  if (value === null) return null;
+  const record = exactRecordV3(
+    value,
+    ["schemaVersion", "codeOrder", "enabled"],
+    "Legacy ONA directional mask",
+  );
+  if (record.schemaVersion !== 1) throw new TypeError("Legacy ONA directional mask schema is invalid.");
+  const codeOrder = stringListV3(record.codeOrder as string[], "Legacy ONA mask codeOrder");
+  const rowValues = snapshotDenseJsonArrayV3(record.enabled, "Legacy ONA mask rows");
+  const enabled = rowValues.map((row, rowIndex) => {
+    const cells = snapshotDenseJsonArrayV3(row, `Legacy ONA mask row ${rowIndex}`);
+    if (cells.length !== codeOrder.length || cells.some((cell) => typeof cell !== "boolean")) {
+      throw new TypeError("Legacy ONA directional mask must be a square Boolean matrix.");
+    }
+    return cells as boolean[];
+  });
+  if (enabled.length !== codeOrder.length) {
+    throw new TypeError("Legacy ONA directional mask must be square.");
+  }
+  return { schemaVersion: 1, codeOrder, enabled };
+}
+
+function decodeLegacyOpenEnaConfigV3(value: OpenEnaConfig): OpenEnaConfig {
+  const record = snapshotPlainJsonRecordV3(value, "Legacy Open ENA configuration");
+  const required = [
+    "unitColumns",
+    "conversationColumns",
+    "groupColumn",
+    "codes",
+    "model",
+    "window",
+    "windowSizeBack",
+    "windowSizeForward",
+    "weightBy",
+    "rotation",
+    "referenceRotationId",
+    "centerAlignToOrigin",
+  ];
+  const optional = ["analysisKind", "orderPolicy", "directionalMask"];
+  const actual = Object.keys(record);
+  const allowed = new Set([...required, ...optional]);
+  if (required.some((key) => !Object.hasOwn(record, key))
+    || actual.some((key) => !allowed.has(key))) {
+    throw new TypeError("Legacy Open ENA configuration has missing or unknown scientific fields.");
+  }
+  if (record.analysisKind !== undefined && record.analysisKind !== "ena" && record.analysisKind !== "ona") {
+    throw new TypeError("Legacy Open ENA analysisKind is invalid.");
+  }
+  if (record.groupColumn !== null
+    && (typeof record.groupColumn !== "string" || record.groupColumn.trim().length === 0)) {
+    throw new TypeError("Legacy Open ENA Group field is invalid.");
+  }
+  if (record.referenceRotationId !== null && typeof record.referenceRotationId !== "string") {
+    throw new TypeError("Legacy Open ENA Reference ID is invalid.");
+  }
+  if (typeof record.centerAlignToOrigin !== "boolean") {
+    throw new TypeError("Legacy Open ENA center policy is invalid.");
+  }
+  return {
+    ...(record.analysisKind === undefined ? {} : { analysisKind: record.analysisKind }),
+    unitColumns: stringListV3(record.unitColumns as string[], "Legacy Unit columns"),
+    conversationColumns: stringListV3(record.conversationColumns as string[], "Legacy Horizon columns"),
+    groupColumn: record.groupColumn,
+    codes: stringListV3(record.codes as string[], "Legacy Code columns"),
+    model: record.model as OpenEnaConfig["model"],
+    window: record.window as OpenEnaConfig["window"],
+    windowSizeBack: record.windowSizeBack as number,
+    windowSizeForward: record.windowSizeForward as number,
+    weightBy: record.weightBy as OpenEnaConfig["weightBy"],
+    rotation: record.rotation as OpenEnaConfig["rotation"],
+    referenceRotationId: record.referenceRotationId,
+    centerAlignToOrigin: record.centerAlignToOrigin,
+    ...(Object.hasOwn(record, "orderPolicy")
+      ? { orderPolicy: legacyOrderPolicyV3(record.orderPolicy) }
+      : {}),
+    ...(Object.hasOwn(record, "directionalMask")
+      ? { directionalMask: legacyDirectionalMaskV3(record.directionalMask) }
+      : {}),
+  };
 }
 
 function extentV3(value: number, backward: boolean): BackwardExtentV3 | ForwardExtentV3 {
@@ -253,10 +387,11 @@ function assertLegacyFamilyIsolationV3(config: OpenEnaConfig, family: "ena" | "o
 export function migrateLegacyOpenEnaConfigToDraftV3(
   config: OpenEnaConfig,
 ): MigratedModelDraftV3 {
-  const family = analysisKindFor(config);
-  assertLegacyFamilyIsolationV3(config, family);
+  const decoded = decodeLegacyOpenEnaConfigV3(config);
+  const family = analysisKindFor(decoded);
+  assertLegacyFamilyIsolationV3(decoded, family);
   if (family === "ona") {
-    const migrated = onaDraftV3(config);
+    const migrated = onaDraftV3(decoded);
     return deepFreezeV3({
       schemaVersion: 3,
       activeFamily: "ona",
@@ -267,15 +402,15 @@ export function migrateLegacyOpenEnaConfigToDraftV3(
     });
   }
   const requiresReview: MigrationReviewReasonV3[] = [
-    ...(config.window === "MovingStanzaWindow" ? ["row-order" as const] : []),
-    ...(config.model === "EndPoint" ? [] : ["horizon-order" as const]),
-    ...(config.rotation === "mean" ? ["means-direction" as const] : []),
-    ...(config.rotation === "reference" ? ["reference-content-hash" as const] : []),
+    ...(decoded.window === "MovingStanzaWindow" ? ["row-order" as const] : []),
+    ...(decoded.model === "EndPoint" ? [] : ["horizon-order" as const]),
+    ...(decoded.rotation === "mean" ? ["means-direction" as const] : []),
+    ...(decoded.rotation === "reference" ? ["reference-content-hash" as const] : []),
   ];
   return deepFreezeV3({
     schemaVersion: 3,
     activeFamily: "standard",
-    standard: standardDraftV3(config),
+    standard: standardDraftV3(decoded),
     ona: emptyOnaDraftV3(),
     requiresReview,
     autoRun: false,

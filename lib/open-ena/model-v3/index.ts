@@ -6,6 +6,7 @@ export {
 } from "./canonical-json";
 
 export {
+  ONA_COMPILER_DIAGNOSTIC_IDS_V3,
   compileOnaDraftV3,
   compileStandardDraftV3,
 } from "./compiler";
