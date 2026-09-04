@@ -9,7 +9,7 @@ import {
   runOnaScientificPreflightV3,
   validateOnaDatasetV3,
 } from "../lib/open-ena/model-v3/ona-compiler-preflight";
-import { accumulateDataChunked } from "jena-js";
+import { accumulateDataChunked, EnaNumericalError } from "jena-js";
 import * as publicV3 from "../lib/open-ena/model-v3/index";
 import {
   MAX_ESTIMATED_DATASET_BYTES_V3,
@@ -519,6 +519,30 @@ test("Standard exact resources use the same coherent row snapshot validated by d
   assert.equal(result.resourceEstimate.trajectorySteps, 2);
 });
 
+test("compiler captures draft, dataset root, and header-hash input before its first await", async () => {
+  const rootInput = dataset();
+  const rootDraft = standardDraft();
+  const rootPromise = compileStandardDraftV3(rootInput, DATASET_SHA256, rootDraft);
+  rootInput.name = "replacement.xlsx";
+  rootInput.headers = ["replacement"];
+  rootInput.rows = [];
+  rootInput.sizeBytes = MAX_ESTIMATED_DATASET_BYTES_V3 + 1;
+  rootDraft.codes = [];
+  const capturedRoot = await rootPromise;
+  assert.equal(capturedRoot.status, "ready");
+
+  const headerInput = dataset();
+  const headerPromise = compileOnaDraftV3(headerInput, DATASET_SHA256, onaDraft());
+  headerInput.headers[2] = "unused-renamed-time";
+  const detectedHeaderDrift = await headerPromise;
+  assert.equal(detectedHeaderDrift.status, "invalid");
+  assert.equal(detectedHeaderDrift.canonicalConfiguration, null);
+  assert.equal(
+    detectedHeaderDrift.diagnostics.some((entry) => entry.scope === "dataset"),
+    true,
+  );
+});
+
 test("ONA exact resources and scientific preflight share one coherent detached row snapshot", async () => {
   const result = await compileOnaDraftV3(
     descriptorChangingDataset(),
@@ -782,6 +806,131 @@ test("ONA capability status exactly preserves its descriptive-only family bounda
     "longitudinal-comparison": OPEN_ENA_CAPABILITIES.ona.trajectory ? "available" : "blocked",
     "ai-interpretation": OPEN_ENA_CAPABILITIES.ona.aiInterpretation ? "available" : "blocked",
   });
+});
+
+test("ONA compiler isolates reserved source headers, typed identity displays, and edge-like Code names", async () => {
+  const reservedCodes = ["ENA_UNIT", "TRAJ_UNIT", "A", "B", "A & B", "B & C", "C"];
+  const safeCodes = reservedCodes.map((_code, index) => `SAFE_${index}`);
+  const rowValues = [
+    [1, 1, 0, 0, 0, 1, 0],
+    [0, 1, 1, 0, 0, 0, 1],
+    [0, 0, 1, 1, 0, 1, 0],
+    [0, 0, 0, 1, 1, 0, 1],
+    [1, 0, 0, 0, 1, 1, 0],
+    [1, 0, 1, 0, 1, 0, 1],
+  ];
+  const unitParts = [
+    ["x::y", "z"],
+    ["x", "y::z"],
+    ["u2", "v2"],
+    ["u3", "v3"],
+    ["u4", "v4"],
+    ["u5", "v5"],
+  ];
+  const horizonParts = [
+    ["h::i", "j"],
+    ["h", "i::j"],
+    ["h2", "p2"],
+    ["h3", "p3"],
+    ["h4", "p4"],
+    ["h5", "p5"],
+  ];
+  const fixtureFor = (codes: readonly string[]): ParsedDataset => ({
+    name: "ona-plan-token-fixture.csv",
+    headers: ["Unit", "Unit part", "Horizon", "Horizon part", "Group", "turn", ...codes],
+    rows: rowValues.map((values, rowIndex) => ({
+      Unit: unitParts[rowIndex][0],
+      "Unit part": unitParts[rowIndex][1],
+      Horizon: horizonParts[rowIndex][0],
+      "Horizon part": horizonParts[rowIndex][1],
+      Group: rowIndex % 2 === 0 ? "g1" : "g2",
+      turn: rowIndex + 1,
+      ...Object.fromEntries(codes.map((code, codeIndex) => [code, values[codeIndex]])),
+    })) as ParsedDataset["rows"],
+    sizeBytes: 1_024,
+    source: "upload",
+  });
+  const draftFor = (codes: string[]): OrderedNetworkDraftV3 => ({
+    unitColumns: ["Unit", "Unit part"],
+    horizonColumns: ["Horizon", "Horizon part"],
+    groupColumn: "Group",
+    codes,
+    backward: { kind: "finite", value: 1 },
+    rowOrder: {
+      kind: "columns",
+      keys: [{ column: "turn", direction: "ascending", comparator: { type: "number" } }],
+    },
+    directionalMask: {
+      schemaVersion: 1,
+      codeOrder: codes,
+      enabled: codes.map(() => codes.map(() => true)),
+    },
+  });
+
+  const reservedDataset = fixtureFor(reservedCodes);
+  const safeDataset = fixtureFor(safeCodes);
+  const reserved = await compileOnaDraftV3(reservedDataset, DATASET_SHA256, draftFor(reservedCodes));
+  const safe = await compileOnaDraftV3(safeDataset, DATASET_SHA256, draftFor(safeCodes));
+  assert.equal(reserved.status, "ready", reserved.diagnostics.map((entry) => entry.id).join(", "));
+  assert.equal(safe.status, "ready", safe.diagnostics.map((entry) => entry.id).join(", "));
+  if (reserved.status !== "ready" || safe.status !== "ready") return;
+
+  const modelFor = async (input: ParsedDataset, draft: OrderedNetworkDraftV3) => {
+    const compiled = await compileOnaDraftV3(input, DATASET_SHA256, draft);
+    assert.equal(compiled.status, "ready");
+    if (compiled.status !== "ready") throw new Error("expected ready ONA compilation");
+    const binding = {
+      hashKind: "normalized-utf8-csv-text-sha256" as const,
+      normalizedTableSha256: DATASET_SHA256,
+      rowCount: input.rows.length,
+      headerSha256: await sha256CanonicalJsonV3(input.headers),
+    };
+    const prepared = validateOnaDatasetV3(input, binding, compiled.canonicalConfiguration);
+    assert.ok(prepared.ordering);
+    const scientific = runOnaScientificPreflightV3(input, compiled.canonicalConfiguration, prepared.ordering);
+    assert.ok(scientific.model);
+    return scientific.model;
+  };
+  const reservedModel = await modelFor(reservedDataset, draftFor(reservedCodes));
+  const safeModel = await modelFor(safeDataset, draftFor(safeCodes));
+  assert.deepEqual(reservedModel.connectionMatrix, safeModel.connectionMatrix);
+  assert.deepEqual(
+    reservedModel.adjacencyKey.map(({ sourceIndex, targetIndex }) => ({ sourceIndex, targetIndex })),
+    safeModel.adjacencyKey.map(({ sourceIndex, targetIndex }) => ({ sourceIndex, targetIndex })),
+  );
+  assert.deepEqual(
+    reservedModel.adjacencyKey.map(({ source, target }) => ({ source, target })),
+    reservedCodes.flatMap((target) => reservedCodes.map((source) => ({ source, target }))),
+  );
+  const restoredNames = reservedModel.adjacencyKey.map((entry) => entry.name);
+  assert.equal(new Set(restoredNames).size, restoredNames.length);
+  assert.deepEqual(
+    Object.keys(reservedModel.connectionCounts[0] ?? {}).sort(),
+    [...restoredNames].sort(),
+  );
+  assert.doesNotMatch(JSON.stringify(reservedModel), /__OPEN_ENA_V3_/u);
+});
+
+test("ONA numerical classification maps only ordered EnaNumericalError instances and rethrows unknown errors", async () => {
+  const internals = await import("../lib/open-ena/model-v3/ona-compiler-preflight");
+  assert.equal(typeof internals.onaNumericalDiagnosticV3, "function");
+  if (typeof internals.onaNumericalDiagnosticV3 !== "function") return;
+  const sentinel = new Error("programming failure");
+  assert.throws(
+    () => internals.onaNumericalDiagnosticV3(sentinel),
+    (error) => error === sentinel,
+  );
+  const standardError = new EnaNumericalError({
+    code: "STANDARD_CONNECTION_NONFINITE",
+    edgeIndex: 0,
+    sourceCode: "A",
+    targetCode: "B",
+    value: Number.POSITIVE_INFINITY,
+  });
+  assert.throws(
+    () => internals.onaNumericalDiagnosticV3(standardError),
+    (error) => error === standardError,
+  );
 });
 
 for (const [orderKind, backward] of [

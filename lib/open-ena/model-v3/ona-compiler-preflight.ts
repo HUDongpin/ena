@@ -1,5 +1,14 @@
-import { accumulateDataChunked } from "jena-js";
-import type { ENAData } from "jena-js";
+import {
+  EnaNumericalError,
+  accumulateDataChunked,
+  orderedAdjacencyKey,
+} from "jena-js";
+import type {
+  AdjacencyKeyEntry,
+  ENAData,
+  EnaNumericalErrorCode,
+  Row,
+} from "jena-js";
 import {
   canonicalJsonV3,
   deepFreezeV3,
@@ -24,6 +33,15 @@ import { datasetHashKindFor } from "../types";
 import type { ParsedDataset } from "../types";
 
 const LOWERCASE_SHA256 = /^[a-f0-9]{64}$/u;
+const ONA_UNIT_COLUMN_TOKEN_V3 = "__OPEN_ENA_V3_UNIT__";
+const ONA_HORIZON_COLUMN_TOKEN_V3 = "__OPEN_ENA_V3_HORIZON__";
+const ONA_GROUP_COLUMN_TOKEN_V3 = "__OPEN_ENA_V3_GROUP__";
+const ONA_ORDERED_NUMERICAL_CODES_V3 = new Set<EnaNumericalErrorCode>([
+  "ORDERED_CONNECTION_NONFINITE",
+  "ORDERED_PRODUCT_UNDERFLOW",
+  "ORDERED_MASK_UNDERFLOW",
+  "ORDERED_UNIT_AGGREGATION_NONFINITE",
+]);
 
 export const ONA_COMPILER_DIAGNOSTIC_IDS_V3 = Object.freeze([
   "ONA_DATASET_BINDING_INVALID",
@@ -77,6 +95,20 @@ export function onaDiagnosticV3(
     blocks: blocks ?? ["build-model", "export-current-model", "export-reference"],
     ...metadata,
   });
+}
+
+/** @internal Classifies only typed ordered-runtime numerical failures. */
+export function onaNumericalDiagnosticV3(error: unknown): OnaCompilerDiagnosticV3 {
+  if (!(error instanceof EnaNumericalError) || !ONA_ORDERED_NUMERICAL_CODES_V3.has(error.code)) {
+    throw error;
+  }
+  return onaDiagnosticV3(
+    "ONA_NUMERICAL_INVALID",
+    "windows",
+    "ONA ordered accumulation is not finite and representable.",
+    "The authoritative ordered accumulator rejected a product, mask application, running sum, or Unit aggregate before SVD.",
+    { fieldPath: "window" },
+  );
 }
 
 /** @internal Exact fixed-family ONA draft boundary. */
@@ -340,32 +372,137 @@ export interface OnaScientificPreflightV3 {
   readonly model: Readonly<Pick<ENAData, "connectionCounts" | "connectionMatrix" | "adjacencyKey">> | null;
 }
 
+interface OnaPlanLocalMaterializationV3 {
+  readonly rows: Row[];
+  readonly codeTokens: string[];
+  readonly metadataTokens: string[];
+}
+
+function planLocalTokenMapV3(keys: readonly string[], prefix: string): ReadonlyMap<string, string> {
+  return new Map([...new Set(keys)].sort().map((key, index) => [
+    key,
+    `${prefix}${index.toString(36).padStart(8, "0")}`,
+  ]));
+}
+
+function materializeOnaPlanLocalRowsV3(
+  dataset: ParsedDataset,
+  config: CanonicalOnaConfigV3,
+  ordering: ResolvedRowOrderingV3,
+): OnaPlanLocalMaterializationV3 {
+  const sourceRows = dataset.rows as Array<Record<string, unknown>>;
+  const unitIdentities = sourceRows.map((row, index) => typedIdentityKeyV3(
+    row,
+    config.units.columns,
+    `dataset.rows[${index}] Unit`,
+  ));
+  const horizonIdentities = sourceRows.map((row, index) => typedIdentityKeyV3(
+    row,
+    config.horizons.columns,
+    `dataset.rows[${index}] Horizon`,
+  ));
+  const groupColumn = config.units.group.type === "stable-metadata"
+    ? config.units.group.column
+    : null;
+  const groupIdentities = groupColumn !== null
+    ? sourceRows.map((row, index) => canonicalJsonV3(scalarIdentityV3(
+        row[groupColumn],
+        `dataset.rows[${index}] Group`,
+      )))
+    : [];
+  const unitTokens = planLocalTokenMapV3(unitIdentities, "__OPEN_ENA_V3_UNIT_VALUE_");
+  const horizonTokens = planLocalTokenMapV3(horizonIdentities, "__OPEN_ENA_V3_HORIZON_VALUE_");
+  const groupTokens = planLocalTokenMapV3(groupIdentities, "__OPEN_ENA_V3_GROUP_VALUE_");
+  const codeTokens = config.codes.map((_code, index) => (
+    `__OPEN_ENA_V3_CODE_${index.toString(36).padStart(8, "0")}`
+  ));
+  const rows = ordering.orderedSourceRowIndices.map((sourceRowIndex) => {
+    const source = sourceRows[sourceRowIndex];
+    const unitToken = unitTokens.get(unitIdentities[sourceRowIndex]);
+    const horizonToken = horizonTokens.get(horizonIdentities[sourceRowIndex]);
+    if (source === undefined || unitToken === undefined || horizonToken === undefined) {
+      throw new Error("ONA resolved order cannot be materialized into plan-local identities.");
+    }
+    const groupToken = groupColumn !== null
+      ? groupTokens.get(groupIdentities[sourceRowIndex])
+      : undefined;
+    if (groupColumn !== null && groupToken === undefined) {
+      throw new Error("ONA plan-local Group token materialization failed.");
+    }
+    return Object.fromEntries([
+      [ONA_UNIT_COLUMN_TOKEN_V3, unitToken],
+      [ONA_HORIZON_COLUMN_TOKEN_V3, horizonToken],
+      ...(groupToken === undefined ? [] : [[ONA_GROUP_COLUMN_TOKEN_V3, groupToken]]),
+      ...config.codes.map((code, codeIndex) => [codeTokens[codeIndex], source[code.column]]),
+    ]) as Row;
+  });
+  return {
+    rows,
+    codeTokens,
+    metadataTokens: groupColumn === null ? [] : [ONA_GROUP_COLUMN_TOKEN_V3],
+  };
+}
+
+function uniqueSourceAdjacencyV3(codes: readonly string[]): AdjacencyKeyEntry[] {
+  const adjacency = orderedAdjacencyKey([...codes]);
+  const counts = new Map<string, number>();
+  for (const entry of adjacency) counts.set(entry.name, (counts.get(entry.name) ?? 0) + 1);
+  const rawNames = new Set(adjacency.map((entry) => entry.name));
+  const assigned = new Set<string>();
+  return adjacency.map((entry) => {
+    let name = counts.get(entry.name) === 1
+      ? entry.name
+      : `${entry.name} [${entry.sourceIndex}->${entry.targetIndex}]`;
+    while (assigned.has(name) || (name !== entry.name && rawNames.has(name))) name += "#";
+    assigned.add(name);
+    return { ...entry, name };
+  });
+}
+
+function restoreOnaSourceModelV3(
+  accumulated: Pick<ENAData, "connectionCounts" | "connectionMatrix" | "adjacencyKey">,
+  config: CanonicalOnaConfigV3,
+): Pick<ENAData, "connectionCounts" | "connectionMatrix" | "adjacencyKey"> {
+  const sourceAdjacency = uniqueSourceAdjacencyV3(config.codes.map((code) => code.column));
+  if (sourceAdjacency.length !== accumulated.adjacencyKey.length) {
+    throw new Error("ONA plan-local adjacency cannot be restored to source Code identities.");
+  }
+  const connectionCounts = accumulated.connectionCounts.map((row) => {
+    return {
+      ...Object.fromEntries(sourceAdjacency.map((sourceEdge, edgeIndex) => {
+        const internalEdge = accumulated.adjacencyKey[edgeIndex];
+        if (internalEdge === undefined
+          || internalEdge.sourceIndex !== sourceEdge.sourceIndex
+          || internalEdge.targetIndex !== sourceEdge.targetIndex) {
+          throw new Error("ONA plan-local adjacency order drifted during source-label restoration.");
+        }
+        return [sourceEdge.name, row[internalEdge.name]];
+      })),
+    } as Row;
+  });
+  return {
+    connectionCounts,
+    connectionMatrix: accumulated.connectionMatrix.map((row) => [...row]),
+    adjacencyKey: sourceAdjacency,
+  };
+}
+
 /** @internal Authoritative ordered accumulation and SVD-identifiability preflight. */
 export function runOnaScientificPreflightV3(
   dataset: ParsedDataset,
   config: CanonicalOnaConfigV3,
   ordering: ResolvedRowOrderingV3,
 ): OnaScientificPreflightV3 {
-  const retainedColumns = [
-    ...config.units.columns,
-    ...config.horizons.columns,
-    ...(config.units.group.type === "stable-metadata" ? [config.units.group.column] : []),
-  ];
-  const orderedRows = ordering.orderedSourceRowIndices.map((sourceRowIndex) => {
-    const source = dataset.rows[sourceRowIndex] as Record<string, unknown>;
-    return Object.fromEntries([
-      ...retainedColumns.map((column) => [column, source[column]]),
-      ...config.codes.map((code) => [code.column, source[code.column]]),
-    ]);
-  });
+  const materialized = materializeOnaPlanLocalRowsV3(dataset, config, ordering);
   let connectionMatrix: number[][];
   let model: Pick<ENAData, "connectionCounts" | "connectionMatrix" | "adjacencyKey">;
   try {
     const accumulated = accumulateDataChunked({
-      rows: orderedRows,
-      units: [...config.units.columns],
-      conversation: [...config.horizons.columns],
-      codes: config.codes.map((code) => code.column),
+      rows: materialized.rows,
+      units: [ONA_UNIT_COLUMN_TOKEN_V3],
+      conversation: [ONA_HORIZON_COLUMN_TOKEN_V3],
+      codes: materialized.codeTokens,
+      metadata: materialized.metadataTokens,
       networkType: "ordered",
       model: "EndPoint",
       window: "MovingStanzaWindow",
@@ -377,23 +514,13 @@ export function runOnaScientificPreflightV3(
       mask: config.directionalMask.enabled.map((row) => row.map((enabled) => enabled ? 1 : 0)),
       includeMeta: false,
       materialization: "model",
-      chunkSize: Math.max(1, Math.min(orderedRows.length, 1_000)),
+      chunkSize: Math.max(1, Math.min(materialized.rows.length, 1_000)),
     });
-    model = {
-      connectionCounts: accumulated.connectionCounts.map((row) => ({ ...row })),
-      connectionMatrix: accumulated.connectionMatrix.map((row) => [...row]),
-      adjacencyKey: accumulated.adjacencyKey.map((entry) => ({ ...entry })),
-    };
+    model = restoreOnaSourceModelV3(accumulated, config);
     connectionMatrix = model.connectionMatrix;
-  } catch {
+  } catch (error) {
     return deepFreezeV3({
-      diagnostics: [onaDiagnosticV3(
-        "ONA_NUMERICAL_INVALID",
-        "windows",
-        "ONA ordered accumulation is not finite and representable.",
-        "The authoritative ordered accumulator rejected a product, mask application, running sum, or Unit aggregate before SVD.",
-        { fieldPath: "window" },
-      )],
+      diagnostics: [onaNumericalDiagnosticV3(error)],
       model: null,
     });
   }

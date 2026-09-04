@@ -39,7 +39,11 @@ export type StreamingMaterialization = 'full' | 'model';
 
 export type EnaNumericalErrorCode =
   | 'STANDARD_CONNECTION_NONFINITE'
-  | 'STANDARD_ACCUMULATION_NONFINITE';
+  | 'STANDARD_ACCUMULATION_NONFINITE'
+  | 'ORDERED_CONNECTION_NONFINITE'
+  | 'ORDERED_PRODUCT_UNDERFLOW'
+  | 'ORDERED_MASK_UNDERFLOW'
+  | 'ORDERED_UNIT_AGGREGATION_NONFINITE';
 
 export class EnaNumericalError extends Error {
   readonly code: EnaNumericalErrorCode;
@@ -53,14 +57,36 @@ export class EnaNumericalError extends Error {
     sourceCode: string;
     targetCode: string;
     value: number;
+    leftOperand?: number;
+    rightOperand?: number;
+    contribution?: 'lagged' | 'same-row';
+    maskWeight?: number;
   }) {
-    const stage = input.code === 'STANDARD_CONNECTION_NONFINITE'
-      ? 'derived connection'
-      : 'model accumulation';
-    super(
-      `Standard ENA ${stage} produced a non-finite value at edge index ${input.edgeIndex} ` +
-      `(${JSON.stringify(input.sourceCode)} -- ${JSON.stringify(input.targetCode)}); got ${String(input.value)}.`
-    );
+    let message: string;
+    if (input.code === 'STANDARD_CONNECTION_NONFINITE'
+      || input.code === 'STANDARD_ACCUMULATION_NONFINITE') {
+      const stage = input.code === 'STANDARD_CONNECTION_NONFINITE'
+        ? 'derived connection'
+        : 'model accumulation';
+      message = `Standard ENA ${stage} produced a non-finite value at edge index ${input.edgeIndex} ` +
+        `(${JSON.stringify(input.sourceCode)} -- ${JSON.stringify(input.targetCode)}); got ${String(input.value)}.`;
+    } else if (input.code === 'ORDERED_PRODUCT_UNDERFLOW') {
+      message = `Ordered network analysis numeric underflow at edge index ${input.edgeIndex} ` +
+        `(${input.sourceCode} -> ${input.targetCode}): positive ${input.contribution ?? 'ordered'} operands ` +
+        `${String(input.leftOperand)} and ${String(input.rightOperand)} produced 0.`;
+    } else if (input.code === 'ORDERED_MASK_UNDERFLOW') {
+      message = `Ordered network analysis mask underflow at edge index ${input.edgeIndex} ` +
+        `(${input.sourceCode} -> ${input.targetCode}): positive connection ${String(input.value)} and mask weight ` +
+        `${String(input.maskWeight)} produced 0.`;
+    } else if (input.code === 'ORDERED_UNIT_AGGREGATION_NONFINITE') {
+      message = `Ordered network analysis unit aggregation overflow at edge index ${input.edgeIndex} ` +
+        `(${input.sourceCode} -> ${input.targetCode}); got ${String(input.value)}. Reduce row count or raw code magnitudes.`;
+    } else {
+      message = `Ordered network analysis derived a non-finite connection at edge index ${input.edgeIndex} ` +
+        `(${input.sourceCode} -> ${input.targetCode}); got ${String(input.value)}. ` +
+        'Reduce raw code magnitudes so every connection product remains finite.';
+    }
+    super(message);
     this.name = 'EnaNumericalError';
     this.code = input.code;
     this.edgeIndex = input.edgeIndex;
@@ -678,16 +704,19 @@ function finalizeCoOccurrence(values: number[], internals: StreamingInternals): 
   if (internals.networkType === 'ordered') {
     const codeCount = internals.codes.length;
     for (let edgeIndex = 0; edgeIndex < finalized.length; edgeIndex += 1) {
-      const value = finalized[edgeIndex];
+      const value = finalized[edgeIndex] ?? Number.NaN;
       const groundIndex = edgeIndex % codeCount;
       const responseIndex = Math.floor(edgeIndex / codeCount);
       const ground = internals.codes[groundIndex] ?? String(groundIndex);
       const response = internals.codes[responseIndex] ?? String(responseIndex);
       if (!Number.isFinite(value)) {
-        throw new Error(
-          `Ordered network analysis derived a non-finite connection at edge index ${edgeIndex} ` +
-          `(${ground} -> ${response}); got ${String(value)}. Reduce raw code magnitudes so every connection product remains finite.`
-        );
+        throw new EnaNumericalError({
+          code: 'ORDERED_CONNECTION_NONFINITE',
+          edgeIndex,
+          sourceCode: ground,
+          targetCode: response,
+          value
+        });
       }
     }
   } else {
@@ -796,10 +825,13 @@ function addToAccumulator(
         const responseIndex = Math.floor(index / codeCount);
         const ground = internals.codes[groundIndex] ?? String(groundIndex);
         const response = internals.codes[responseIndex] ?? String(responseIndex);
-        throw new Error(
-          `Ordered network analysis unit aggregation overflow at edge index ${index} ` +
-          `(${ground} -> ${response}); got ${String(total)}. Reduce row count or raw code magnitudes.`
-        );
+        throw new EnaNumericalError({
+          code: 'ORDERED_UNIT_AGGREGATION_NONFINITE',
+          edgeIndex: index,
+          sourceCode: ground,
+          targetCode: response,
+          value: total
+        });
       }
       accumulator.sums[index] = total;
     } else {
@@ -862,10 +894,16 @@ function assertOrderedProductDidNotUnderflow(
   contribution: 'lagged' | 'same-row'
 ): void {
   if (left > 0 && right > 0 && product === 0) {
-    throw new Error(
-      `Ordered network analysis numeric underflow at edge index ${edgeIndex} (${ground} -> ${response}): ` +
-      `positive ${contribution} operands ${String(left)} and ${String(right)} produced 0.`
-    );
+    throw new EnaNumericalError({
+      code: 'ORDERED_PRODUCT_UNDERFLOW',
+      edgeIndex,
+      sourceCode: ground,
+      targetCode: response,
+      value: product,
+      leftOperand: left,
+      rightOperand: right,
+      contribution
+    });
   }
 }
 
@@ -992,10 +1030,14 @@ function orderedConnections(
         connection = orderedExpansionTotal(maskedPartials);
       }
       if ((lagged > 0 || sameRow > 0) && maskWeight > 0 && connection === 0) {
-        throw new Error(
-          `Ordered network analysis mask underflow at edge index ${edgeIndex} (${ground} -> ${responseCode}): ` +
-          `positive connection ${String(unmaskedConnection)} and mask weight ${String(maskWeight)} produced 0.`
-        );
+        throw new EnaNumericalError({
+          code: 'ORDERED_MASK_UNDERFLOW',
+          edgeIndex,
+          sourceCode: ground,
+          targetCode: responseCode,
+          value: unmaskedConnection,
+          maskWeight
+        });
       }
       connections[edgeIndex] = connection;
     }
@@ -1337,10 +1379,13 @@ function finalizedAccumulatorSums(accumulator: CountAccumulator | undefined, int
       const responseIndex = Math.floor(edgeIndex / codeCount);
       const ground = internals.codes[groundIndex] ?? String(groundIndex);
       const response = internals.codes[responseIndex] ?? String(responseIndex);
-      throw new Error(
-        `Ordered network analysis unit aggregation overflow at edge index ${edgeIndex} ` +
-        `(${ground} -> ${response}); got ${String(value)}. Reduce row count or raw code magnitudes.`
-      );
+      throw new EnaNumericalError({
+        code: 'ORDERED_UNIT_AGGREGATION_NONFINITE',
+        edgeIndex,
+        sourceCode: ground,
+        targetCode: response,
+        value
+      });
     }
     return value;
   });

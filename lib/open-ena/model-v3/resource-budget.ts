@@ -120,11 +120,9 @@ export interface StandardResourceInputV3 {
   readonly horizonSizes: readonly number[];
   /**
    * Exact scientific window partitions. Conversation uses typed Unit by
-   * Horizon partitions; Moving Stanza uses the global typed Horizons. When
-   * omitted by a legacy direct caller, horizonSizes retain the pre-v3.4
-   * meaning for compatibility.
+   * Horizon partitions; Moving Stanza uses the global typed Horizons.
    */
-  readonly windowPartitionSizes?: readonly number[];
+  readonly windowPartitionSizes: readonly number[];
   readonly trajectorySteps: number;
   readonly windowType: StandardWindowTypeV3;
   readonly backward: BackwardExtentV3;
@@ -388,10 +386,9 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
     "datasetSizeBytes",
     "identityPayloadBytes",
   ];
-  const hasWindowPartitions = Object.hasOwn(input, "windowPartitionSizes");
   assertExactKeysV3(
     input,
-    hasWindowPartitions ? [...standardKeys, "windowPartitionSizes"] : standardKeys,
+    [...standardKeys, "windowPartitionSizes"],
     "Standard resource input",
   );
   const rowCount = nonnegativeSafeIntegerV3(input.rowCount, "resource input.rowCount");
@@ -413,9 +410,7 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
   if (typeof input.referenceProjection !== "boolean") {
     throw new TypeError("resource input.referenceProjection must be a boolean.");
   }
-  const windowPartitionSizes = hasWindowPartitions
-    ? snapshotWindowPartitionSizesV3(input.windowPartitionSizes, rowCount)
-    : horizonSizes;
+  const windowPartitionSizes = snapshotWindowPartitionSizesV3(input.windowPartitionSizes, rowCount);
   if (input.windowType === "MovingStanzaWindow"
     && (windowPartitionSizes.length !== horizonSizes.length
       || windowPartitionSizes.some((size, index) => size !== horizonSizes[index]))) {
