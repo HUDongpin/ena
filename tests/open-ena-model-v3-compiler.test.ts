@@ -105,6 +105,59 @@ function onaDraft(overrides: Partial<OrderedNetworkDraftV3> = {}): OrderedNetwor
   };
 }
 
+async function assertHeaderDigestOperationalFailureV3(
+  compile: () => Promise<unknown>,
+  sentinel: TypeError,
+): Promise<void> {
+  const originalCrypto = globalThis.crypto;
+  const subtle = originalCrypto.subtle;
+  const originalDigest = subtle.digest;
+  const originalOwnDigestDescriptor = Object.getOwnPropertyDescriptor(subtle, "digest");
+  const orphanedRejections: unknown[] = [];
+  const captureOrphanedRejection = (reason: unknown): void => {
+    orphanedRejections.push(reason);
+  };
+  let digestCalls = 0;
+  process.on("unhandledRejection", captureOrphanedRejection);
+  Object.defineProperty(subtle, "digest", {
+    configurable: true,
+    value: (...args: Parameters<SubtleCrypto["digest"]>): ReturnType<SubtleCrypto["digest"]> => {
+      digestCalls += 1;
+      if (digestCalls === 2) return Promise.reject(sentinel);
+      return originalDigest.apply(subtle, args);
+    },
+  });
+  try {
+    await assert.rejects(compile(), (error) => error === sentinel);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(digestCalls, 2);
+    assert.deepEqual(orphanedRejections, []);
+  } finally {
+    process.off("unhandledRejection", captureOrphanedRejection);
+    if (originalOwnDigestDescriptor === undefined) {
+      Reflect.deleteProperty(subtle, "digest");
+    } else {
+      Object.defineProperty(subtle, "digest", originalOwnDigestDescriptor);
+    }
+    assert.equal(globalThis.crypto, originalCrypto);
+    assert.equal(globalThis.crypto.subtle, subtle);
+  }
+}
+
+function datasetWithHeaderAccessorV3(): { dataset: ParsedDataset; reads: () => number } {
+  const input = dataset();
+  let reads = 0;
+  Object.defineProperty(input.headers, 0, {
+    configurable: true,
+    enumerable: true,
+    get() {
+      reads += 1;
+      throw new TypeError("header accessor must not execute");
+    },
+  });
+  return { dataset: input, reads: () => reads };
+}
+
 function useLegacyAliases(
   workspace: OpenEnaModelWorkspaceDraftsV3,
   standard: OpenEnaCanonicalStandardConfigV3,
@@ -223,6 +276,20 @@ test("resource admission and malformed dataset bindings fail closed", async () =
   assert.equal(badHashKind.status, "invalid");
   assert.equal(badHashKind.canonicalConfiguration, null);
   assert.deepEqual(badHashKind.diagnostics.map((entry) => entry.id), ["STANDARD_DATASET_BINDING_INVALID"]);
+});
+
+test("Standard rethrows asynchronous header crypto TypeErrors but classifies synchronous binding TypeErrors", async () => {
+  const sentinel = new TypeError("simulated crypto operational failure");
+  await assertHeaderDigestOperationalFailureV3(
+    () => compileStandardDraftV3(dataset(), DATASET_SHA256, standardDraft()),
+    sentinel,
+  );
+
+  const accessor = datasetWithHeaderAccessorV3();
+  const result = await compileStandardDraftV3(accessor.dataset, DATASET_SHA256, standardDraft());
+  assert.equal(result.status, "invalid");
+  assert.deepEqual(result.diagnostics.map((entry) => entry.id), ["STANDARD_DATASET_BINDING_INVALID"]);
+  assert.equal(accessor.reads(), 0);
 });
 
 test("ready Standard results expose only exact resource counts and capability status", async () => {
@@ -477,6 +544,20 @@ test("ONA malformed normalized digests are classified as dataset binding diagnos
       scope: "dataset",
     }]);
   }
+});
+
+test("ONA rethrows asynchronous header crypto TypeErrors but classifies synchronous binding TypeErrors", async () => {
+  const sentinel = new TypeError("simulated crypto operational failure");
+  await assertHeaderDigestOperationalFailureV3(
+    () => compileOnaDraftV3(dataset(), DATASET_SHA256, onaDraft()),
+    sentinel,
+  );
+
+  const accessor = datasetWithHeaderAccessorV3();
+  const result = await compileOnaDraftV3(accessor.dataset, DATASET_SHA256, onaDraft());
+  assert.equal(result.status, "invalid");
+  assert.deepEqual(result.diagnostics.map((entry) => entry.id), ["ONA_DATASET_BINDING_INVALID"]);
+  assert.equal(accessor.reads(), 0);
 });
 
 function descriptorChangingDataset(): ParsedDataset {

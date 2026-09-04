@@ -272,15 +272,7 @@ export async function compileStandardDraftV3(
   );
   const draftFingerprint = compilerPromiseValueV3(await draftFingerprintOutcomePromise);
   const bindingOutcome = await bindingOutcomePromise;
-  if (!bindingOutcome.ok) {
-    if (!(bindingOutcome.error instanceof TypeError)) throw bindingOutcome.error;
-    return deepFreezeV3({
-      status: "invalid",
-      draftFingerprint,
-      diagnostics: [datasetBindingDiagnosticV3()],
-      canonicalConfiguration: null,
-    });
-  }
+  if (!bindingOutcome.ok) throw bindingOutcome.error;
   const binding: DatasetBindingV3 = bindingOutcome.value;
   if (prepared.dataset !== null
     && await sha256CanonicalJsonV3(prepared.dataset.headers) !== binding.headerSha256) {
@@ -403,15 +395,7 @@ export async function compileOnaDraftV3(
 
   const draftFingerprint = compilerPromiseValueV3(await draftFingerprintOutcomePromise);
   const bindingOutcome = await bindingOutcomePromise;
-  if (!bindingOutcome.ok) {
-    if (!(bindingOutcome.error instanceof TypeError)) throw bindingOutcome.error;
-    return invalidOnaResultV3(draftFingerprint, [onaDiagnosticV3(
-      "ONA_DATASET_BINDING_INVALID",
-      "dataset",
-      "The ONA dataset binding is invalid.",
-      "The hash kind, normalized-table SHA-256, row count, and canonical header SHA-256 must match the current dataset.",
-    )]);
-  }
+  if (!bindingOutcome.ok) throw bindingOutcome.error;
   const binding: DatasetBindingV3 = bindingOutcome.value;
   if (draftBoundaryError !== null || canonicalConfiguration === null) {
     return invalidOnaResultV3(draftFingerprint, [onaDiagnosticV3(
