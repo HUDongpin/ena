@@ -83,6 +83,8 @@ export interface InvalidStandardCompileResultV3 {
 export interface ReadyStandardCompileResultV3 {
   readonly status: "ready";
   readonly draftFingerprint: string;
+  /** Exact dataset binding captured by this compiler invocation. */
+  readonly datasetBinding: DatasetBindingV3;
   readonly canonicalConfiguration: CanonicalStandardConfigV3;
   readonly configurationSha256: string;
   readonly diagnostics: readonly ModelDiagnosticV3[];
@@ -322,6 +324,7 @@ export async function compileStandardDraftV3(
   return deepFreezeV3({
     status: "ready",
     draftFingerprint,
+    datasetBinding: binding,
     canonicalConfiguration,
     configurationSha256: await sha256CanonicalJsonV3(canonicalConfiguration),
     diagnostics,

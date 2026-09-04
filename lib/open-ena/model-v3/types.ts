@@ -1,3 +1,4 @@
+import type { RotationSet } from "jena-js";
 import type { DatasetHashKind, OpenEnaDirectionalMask } from "../types";
 
 export const STANDARD_MODEL_TYPES = [
@@ -187,4 +188,18 @@ export interface DatasetBindingV3 {
   normalizedTableSha256: string;
   rowCount: number;
   headerSha256: string;
+}
+
+/**
+ * Minimal execution-time view of a separately validated Standard Reference
+ * v2 artifact. Reference parsing, compatibility proof, and basis remapping
+ * remain owned by the Reference tasks; an execution plan only accepts their
+ * already-remapped, content-addressed output.
+ */
+export interface ValidatedReferenceExecutionBindingV3 {
+  readonly referenceId: string;
+  readonly contentSha256: string;
+  readonly basisPermutation: readonly number[];
+  readonly rotationSet: RotationSet;
+  readonly sourceFit: "svd" | "means";
 }
