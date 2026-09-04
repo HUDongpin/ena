@@ -13,6 +13,7 @@ import {
   MAX_ESTIMATED_EXPORT_BYTES_V3,
   MAX_ESTIMATED_NUMERIC_CELLS_V3,
   MAX_ESTIMATED_PEAK_BYTES_V3,
+  MAX_ESTIMATED_ROTATION_MATRIX_BYTES_ONA_V3,
   MAX_ESTIMATED_ROTATION_WORK_UNITS_V3,
   MAX_ESTIMATED_WINDOW_VISITS_V3,
   ResourceEstimateErrorV3,
@@ -1713,6 +1714,10 @@ function resourceBudgetDiagnosticV3(
     "rotation-work": {
       value: estimate.estimatedRotationWorkUnits,
       limit: MAX_ESTIMATED_ROTATION_WORK_UNITS_V3,
+    },
+    "rotation-matrix": {
+      value: estimate.estimatedRotationMatrixBytes,
+      limit: MAX_ESTIMATED_ROTATION_MATRIX_BYTES_ONA_V3,
     },
     "peak-bytes": {
       value: estimate.estimatedPeakBytes,

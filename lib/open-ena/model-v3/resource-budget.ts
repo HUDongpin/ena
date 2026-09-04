@@ -1,4 +1,5 @@
 import {
+  DENSE_SVD_MAX_MATRIX_BYTES,
   DENSE_SVD_MAX_WORK_UNITS,
   estimateDenseSvdBudget,
 } from "jena-js/core";
@@ -15,6 +16,7 @@ export const MAX_ESTIMATED_WINDOW_VISITS_V3 = 100_000_000;
 export const MAX_ESTIMATED_PEAK_BYTES_V3 = 512 * 1024 * 1024;
 export const MAX_ESTIMATED_EXPORT_BYTES_V3 = 256 * 1024 * 1024;
 export const MAX_ESTIMATED_ROTATION_WORK_UNITS_V3 = DENSE_SVD_MAX_WORK_UNITS;
+export const MAX_ESTIMATED_ROTATION_MATRIX_BYTES_ONA_V3 = DENSE_SVD_MAX_MATRIX_BYTES;
 
 export type ResourceEstimateErrorCodeV3 = "INVALID_INPUT" | "UNSAFE_ARITHMETIC";
 
@@ -32,6 +34,7 @@ export type ResourceBlockedReasonV3 =
   | "numeric-cells"
   | "window-visits"
   | "rotation-work"
+  | "rotation-matrix"
   | "peak-bytes"
   | "export-bytes";
 
@@ -90,6 +93,8 @@ export interface OnaResourceEstimateV3 extends ResourceEstimateBaseV3 {
   readonly analysisFamily: "ona";
   readonly endpointNetworks: number;
   readonly directionalMaskCells: number;
+  readonly estimatedRotationWorkUnits: number;
+  readonly estimatedRotationMatrixBytes: number;
 }
 
 export type ResourceEstimateV3 = StandardResourceEstimateV3 | OnaResourceEstimateV3;
@@ -166,14 +171,20 @@ function blockedReasonsV3(values: {
   estimatedNumericCells: number;
   estimatedWindowVisits: number;
   estimatedRotationWorkUnits?: number;
+  estimatedRotationMatrixBytesOna?: number;
   estimatedPeakBytes: number;
   estimatedExportBytes: number;
 }): ResourceBlockedReasonV3[] {
+  // Stable construction-stage order: payload size, window work, dense
+  // rotation work/storage, then aggregate peak and export payload limits.
   return [
     ...(values.estimatedNumericCells > MAX_ESTIMATED_NUMERIC_CELLS_V3 ? ["numeric-cells" as const] : []),
     ...(values.estimatedWindowVisits > MAX_ESTIMATED_WINDOW_VISITS_V3 ? ["window-visits" as const] : []),
     ...((values.estimatedRotationWorkUnits ?? 0) > MAX_ESTIMATED_ROTATION_WORK_UNITS_V3
       ? ["rotation-work" as const]
+      : []),
+    ...((values.estimatedRotationMatrixBytesOna ?? 0) > MAX_ESTIMATED_ROTATION_MATRIX_BYTES_ONA_V3
+      ? ["rotation-matrix" as const]
       : []),
     ...(values.estimatedPeakBytes > MAX_ESTIMATED_PEAK_BYTES_V3 ? ["peak-bytes" as const] : []),
     ...(values.estimatedExportBytes > MAX_ESTIMATED_EXPORT_BYTES_V3 ? ["export-bytes" as const] : []),
@@ -371,10 +382,10 @@ function estimateOnaResourcesInternalV3(inputValue: OnaResourceInputV3): OnaReso
   }
   const rawCodeCells = safeMultiplyV3(rowCount, codeCount, "ONA raw Code cells");
   const endpointCells = safeMultiplyV3(unitCount, adjacencyDimensions, "ONA Endpoint cells");
-  const covarianceCells = safeMultiplyV3(adjacencyDimensions, adjacencyDimensions, "ONA covariance cells");
+  const denseRotation = estimateDenseSvdBudget(unitCount, adjacencyDimensions);
   const estimatedNumericCells = safeAddV3(
     safeAddV3(rawCodeCells, endpointCells, "ONA numeric cells"),
-    safeAddV3(covarianceCells, directionalMaskCells, "ONA numeric cells"),
+    safeAddV3(denseRotation.matrixCells, directionalMaskCells, "ONA numeric cells"),
     "ONA numeric cells",
   );
   const workerColumns = safeAddV3(codeCount, 5, "ONA worker columns");
@@ -410,6 +421,8 @@ function estimateOnaResourcesInternalV3(inputValue: OnaResourceInputV3): OnaReso
   const blockedReasons = blockedReasonsV3({
     estimatedNumericCells,
     estimatedWindowVisits,
+    estimatedRotationWorkUnits: denseRotation.workUnits,
+    estimatedRotationMatrixBytesOna: denseRotation.matrixBytes,
     estimatedPeakBytes,
     estimatedExportBytes,
   });
@@ -423,6 +436,8 @@ function estimateOnaResourcesInternalV3(inputValue: OnaResourceInputV3): OnaReso
     adjacencyDimensions,
     endpointNetworks: unitCount,
     directionalMaskCells,
+    estimatedRotationWorkUnits: denseRotation.workUnits,
+    estimatedRotationMatrixBytes: denseRotation.matrixBytes,
     estimatedForwardBufferRows: 0,
     estimatedRetainedWindowRows,
     estimatedWindowStateCells,

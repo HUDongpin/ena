@@ -5,6 +5,7 @@ import {
   MAX_ESTIMATED_EXPORT_BYTES_V3,
   MAX_ESTIMATED_NUMERIC_CELLS_V3,
   MAX_ESTIMATED_PEAK_BYTES_V3,
+  MAX_ESTIMATED_ROTATION_MATRIX_BYTES_ONA_V3,
   MAX_ESTIMATED_ROTATION_WORK_UNITS_V3,
   MAX_ESTIMATED_WINDOW_VISITS_V3,
   RESOURCE_BUDGET_VERSION_V3,
@@ -276,6 +277,7 @@ test("resource constants, provenance, output detachment, and deep freezing are f
     MAX_ESTIMATED_PEAK_BYTES_V3,
     MAX_ESTIMATED_EXPORT_BYTES_V3,
     MAX_ESTIMATED_ROTATION_WORK_UNITS_V3,
+    MAX_ESTIMATED_ROTATION_MATRIX_BYTES_ONA_V3,
   ], [
     "open-ena-resource-v3.2",
     25_000_000,
@@ -283,6 +285,7 @@ test("resource constants, provenance, output detachment, and deep freezing are f
     512 * 1024 * 1024,
     256 * 1024 * 1024,
     8_000_000,
+    1024 * 1024,
   ]);
   const horizonSizes = [3, 5];
   const estimate = estimateStandardResourcesV3({ ...standardBase, horizonSizes });
@@ -473,11 +476,88 @@ test("ONA uses directed p-squared dimensions, stores its mask, and visits backwa
   assert.equal(estimate.endpointNetworks, 2);
   assert.equal(estimate.estimatedWindowVisits, 20);
   assert.equal(estimate.estimatedForwardBufferRows, 0);
-  assert.equal(estimate.estimatedNumericCells, 328);
+  assert.equal(estimate.estimatedRotationWorkUnits, 4_608);
+  assert.equal(estimate.estimatedRotationMatrixBytes, 6_656);
+  assert.equal(estimate.estimatedNumericCells, 904);
   assert.equal(estimate.blocked, false);
   assert.deepEqual(input, before);
   assert.equal(Object.isFrozen(estimate), true);
   assert.equal(Object.isFrozen(estimate.blockedReasons), true);
+});
+
+test("ONA preflight blocks the 12-Code 244-Unit case rejected by ordered runtime", () => {
+  const estimate = estimateOnaResourcesV3({
+    rowCount: 244,
+    unitCount: 244,
+    horizonCount: 1,
+    codeCount: 12,
+    horizonSizes: [244],
+    backward: { kind: "finite", value: 1 },
+  });
+  assert.equal(estimate.adjacencyDimensions, 144);
+  assert.equal(estimate.estimatedRotationWorkUnits, 8_045_568);
+  assert.equal(estimate.estimatedRotationMatrixBytes, 1_059_840);
+  assert.deepEqual(estimate.blockedReasons, ["rotation-work", "rotation-matrix"]);
+});
+
+test("ONA rotation-work boundary exactly matches the ordered dense runtime limit", () => {
+  const base: OnaResourceInputV3 = {
+    rowCount: 700,
+    unitCount: 700,
+    horizonCount: 1,
+    codeCount: 10,
+    horizonSizes: [700],
+    backward: { kind: "finite", value: 1 },
+  };
+  const atLimit = estimateOnaResourcesV3(base);
+  assert.equal(atLimit.estimatedRotationWorkUnits, MAX_ESTIMATED_ROTATION_WORK_UNITS_V3);
+  assert.equal(atLimit.blockedReasons.includes("rotation-work"), false);
+
+  const above = estimateOnaResourcesV3({
+    ...base,
+    rowCount: 701,
+    unitCount: 701,
+    horizonSizes: [701],
+  });
+  assert.equal(above.estimatedRotationWorkUnits, MAX_ESTIMATED_ROTATION_WORK_UNITS_V3 + 10_000);
+  assert.equal(above.blockedReasons.includes("rotation-work"), true);
+});
+
+test("ONA rotation-matrix boundary exactly matches the ordered 1 MiB runtime limit", () => {
+  const base: OnaResourceInputV3 = {
+    rowCount: 928,
+    unitCount: 928,
+    horizonCount: 1,
+    codeCount: 8,
+    horizonSizes: [928],
+    backward: { kind: "finite", value: 1 },
+  };
+  const atLimit = estimateOnaResourcesV3(base);
+  assert.equal(atLimit.estimatedRotationMatrixBytes, MAX_ESTIMATED_ROTATION_MATRIX_BYTES_ONA_V3);
+  assert.equal(atLimit.blockedReasons.includes("rotation-matrix"), false);
+
+  const above = estimateOnaResourcesV3({
+    ...base,
+    rowCount: 929,
+    unitCount: 929,
+    horizonSizes: [929],
+  });
+  assert.equal(above.estimatedRotationMatrixBytes, MAX_ESTIMATED_ROTATION_MATRIX_BYTES_ONA_V3 + 1_024);
+  assert.deepEqual(above.blockedReasons, ["rotation-matrix"]);
+});
+
+test("verified Yu-like ONA scale remains inside both shared dense rotation limits", () => {
+  const estimate = estimateOnaResourcesV3({
+    rowCount: 87,
+    unitCount: 87,
+    horizonCount: 1,
+    codeCount: 7,
+    horizonSizes: [87],
+    backward: { kind: "finite", value: 1 },
+  });
+  assert.equal(estimate.estimatedRotationWorkUnits, 326_536);
+  assert.equal(estimate.estimatedRotationMatrixBytes, 125_832);
+  assert.equal(estimate.blocked, false);
 });
 
 test("ONA validates backward-only inputs and fails closed on directed arithmetic overflow", () => {
