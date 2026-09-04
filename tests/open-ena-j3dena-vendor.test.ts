@@ -512,10 +512,10 @@ test("the verifier pins the CI-custodied j-3dENA .12 artifact", () => {
       sourceHead: "a8b63e853c28be665282eaa4e8010d4198319106",
       tarballSha256: "218faeb50147cff157e617cd43c7030ee38541de7e93b019510c4f75da684c28",
       treeSha256: "8b2f8657f3c4494d2e36bf2e0250be98aa67e56669fcc7766f9968d94db8c768",
-      jenaSourceTreeSha256: "940d44a1651d84972e14efbc8d8735778bf95553a969ce01730e52018147f18b",
+      jenaSourceTreeSha256: "783257128c69cd2db92a29e95a18f3f17328687c825be20a319ee3c2cc5471d9",
       jenaSourceTreeSerialization: TREE_SERIALIZATION,
       jenaSourceTreeFileCount: 36,
-      jenaSourceTreeByteLength: 437_841,
+      jenaSourceTreeByteLength: 439_428,
     },
   );
 });
