@@ -10,13 +10,32 @@ import type {
   StandardWindowTypeV3,
 } from "./types";
 
-export const RESOURCE_BUDGET_VERSION_V3 = "open-ena-resource-v3.2" as const;
+export const RESOURCE_BUDGET_VERSION_V3 = "open-ena-resource-v3.3" as const;
 export const MAX_ESTIMATED_NUMERIC_CELLS_V3 = 25_000_000;
 export const MAX_ESTIMATED_WINDOW_VISITS_V3 = 100_000_000;
 export const MAX_ESTIMATED_PEAK_BYTES_V3 = 512 * 1024 * 1024;
 export const MAX_ESTIMATED_EXPORT_BYTES_V3 = 256 * 1024 * 1024;
 export const MAX_ESTIMATED_ROTATION_WORK_UNITS_V3 = DENSE_SVD_MAX_WORK_UNITS;
 export const MAX_ESTIMATED_ROTATION_MATRIX_BYTES_ONA_V3 = DENSE_SVD_MAX_MATRIX_BYTES;
+
+/**
+ * Versioned allocation proxies calibrated from the 50k-row reviewer probe.
+ * These are deliberately conservative admission weights for JavaScript
+ * objects, Maps, arrays, and strings; they are not exact engine object sizes.
+ */
+export const STRUCTURAL_ROW_BYTES_V3 = 4_096;
+export const STRUCTURAL_UNIT_BYTES_V3 = 1_024;
+export const STRUCTURAL_HORIZON_BYTES_V3 = 2_048;
+export const STRUCTURAL_TARGET_BYTES_V3 = 1_024;
+export const STRUCTURAL_AGGREGATE_BYTES_V3 = 2_048;
+export const STRUCTURAL_RETAINED_ROW_BYTES_V3 = 512;
+export const STRUCTURAL_ROW_CODE_BYTES_V3 = 64;
+export const STRUCTURAL_DATASET_MULTIPLIER_V3 = 2;
+
+export const MAX_ESTIMATED_STATE_COUNT_V3 = 100_000;
+export const MAX_ESTIMATED_STRUCTURAL_BYTES_V3 = 384 * 1024 * 1024;
+export const MAX_ESTIMATED_DATASET_BYTES_V3 = 128 * 1024 * 1024;
+export const MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3 = 64 * 1024 * 1024;
 
 export type ResourceEstimateErrorCodeV3 = "INVALID_INPUT" | "UNSAFE_ARITHMETIC";
 
@@ -31,6 +50,10 @@ export class ResourceEstimateErrorV3 extends Error {
 }
 
 export type ResourceBlockedReasonV3 =
+  | "dataset-bytes"
+  | "identity-bytes"
+  | "state-count"
+  | "structural-bytes"
   | "numeric-cells"
   | "window-visits"
   | "rotation-work"
@@ -49,6 +72,8 @@ export interface StandardResourceInputV3 {
   readonly backward: BackwardExtentV3;
   readonly forward: ForwardExtentV3;
   readonly referenceProjection: boolean;
+  readonly datasetSizeBytes: number;
+  readonly identityPayloadBytes: number;
 }
 
 export interface OnaResourceInputV3 {
@@ -58,6 +83,15 @@ export interface OnaResourceInputV3 {
   readonly codeCount: number;
   readonly horizonSizes: readonly number[];
   readonly backward: BackwardExtentV3;
+  readonly datasetSizeBytes: number;
+  readonly identityPayloadBytes: number;
+}
+
+export interface EarlyStandardResourceInputV3 {
+  readonly rowCount: number;
+  readonly codeCount: number;
+  readonly datasetSizeBytes: number;
+  readonly identityPayloadBytes: number;
 }
 
 interface ResourceEstimateBaseV3 {
@@ -68,6 +102,11 @@ interface ResourceEstimateBaseV3 {
   readonly horizons: number;
   readonly codes: number;
   readonly adjacencyDimensions: number;
+  readonly datasetSizeBytes: number;
+  readonly identityPayloadBytes: number;
+  readonly aggregateStateUpperBound: number;
+  readonly estimatedStateCount: number;
+  readonly estimatedStructuralBytes: number;
   readonly estimatedForwardBufferRows: number;
   /** Exact raw moving-window rows retained across all observed Horizons. */
   readonly estimatedRetainedWindowRows: number;
@@ -80,24 +119,31 @@ interface ResourceEstimateBaseV3 {
   readonly estimatedPeakBytes: number;
   readonly blocked: boolean;
   readonly blockedReasons: readonly ResourceBlockedReasonV3[];
+  readonly estimatedRotationWorkUnits: number;
+  readonly estimatedRotationMatrixBytes: number;
 }
 
 export interface StandardResourceEstimateV3 extends ResourceEstimateBaseV3 {
   readonly analysisFamily: "standard";
   readonly trajectorySteps: number;
-  readonly estimatedRotationWorkUnits: number;
-  readonly estimatedRotationMatrixBytes: number;
 }
 
 export interface OnaResourceEstimateV3 extends ResourceEstimateBaseV3 {
   readonly analysisFamily: "ona";
   readonly endpointNetworks: number;
   readonly directionalMaskCells: number;
-  readonly estimatedRotationWorkUnits: number;
-  readonly estimatedRotationMatrixBytes: number;
 }
 
-export type ResourceEstimateV3 = StandardResourceEstimateV3 | OnaResourceEstimateV3;
+export interface EarlyStandardResourceEstimateV3 extends ResourceEstimateBaseV3 {
+  readonly analysisFamily: "standard";
+  readonly admissionStage: "early-envelope";
+  readonly trajectorySteps: number;
+}
+
+export type ResourceEstimateV3 =
+  | StandardResourceEstimateV3
+  | OnaResourceEstimateV3
+  | EarlyStandardResourceEstimateV3;
 
 function assertExactKeysV3(record: Record<string, unknown>, expected: readonly string[], label: string): void {
   const actual = Object.keys(record).sort();
@@ -140,6 +186,53 @@ function safeMultiplyV3(left: number, right: number, label: string): number {
   return result;
 }
 
+interface StructuralEstimateInputV3 {
+  rowCount: number;
+  unitCount: number;
+  horizonCount: number;
+  targetCount: number;
+  aggregateStateUpperBound: number;
+  retainedRowCount: number;
+  codeCount: number;
+  datasetSizeBytes: number;
+  identityPayloadBytes: number;
+}
+
+function structuralEstimateV3(input: StructuralEstimateInputV3): {
+  estimatedStateCount: number;
+  estimatedStructuralBytes: number;
+} {
+  const estimatedStateCount = [
+    input.rowCount,
+    input.unitCount,
+    input.horizonCount,
+    input.targetCount,
+    input.aggregateStateUpperBound,
+    input.retainedRowCount,
+  ].reduce((total, value) => safeAddV3(total, value, "Structural state count"), 0);
+  const rowCodeCells = safeMultiplyV3(input.rowCount, input.codeCount, "Structural row-by-Code cells");
+  const components = [
+    safeMultiplyV3(input.rowCount, STRUCTURAL_ROW_BYTES_V3, "Structural row bytes"),
+    safeMultiplyV3(input.unitCount, STRUCTURAL_UNIT_BYTES_V3, "Structural Unit bytes"),
+    safeMultiplyV3(input.horizonCount, STRUCTURAL_HORIZON_BYTES_V3, "Structural Horizon bytes"),
+    safeMultiplyV3(input.targetCount, STRUCTURAL_TARGET_BYTES_V3, "Structural target bytes"),
+    safeMultiplyV3(
+      input.aggregateStateUpperBound,
+      STRUCTURAL_AGGREGATE_BYTES_V3,
+      "Structural aggregate bytes",
+    ),
+    safeMultiplyV3(input.retainedRowCount, STRUCTURAL_RETAINED_ROW_BYTES_V3, "Structural retained-row bytes"),
+    safeMultiplyV3(rowCodeCells, STRUCTURAL_ROW_CODE_BYTES_V3, "Structural row-by-Code bytes"),
+    safeMultiplyV3(input.datasetSizeBytes, STRUCTURAL_DATASET_MULTIPLIER_V3, "Structural dataset bytes"),
+    input.identityPayloadBytes,
+  ];
+  const estimatedStructuralBytes = components.reduce(
+    (total, value) => safeAddV3(total, value, "Structural bytes"),
+    0,
+  );
+  return { estimatedStateCount, estimatedStructuralBytes };
+}
+
 function snapshotHorizonSizesV3(value: unknown, horizonCount: number, rowCount: number): number[] {
   const input = snapshotDenseJsonArrayV3(value, "resource input.horizonSizes");
   if (input.length !== horizonCount) {
@@ -168,6 +261,10 @@ function coveredExtentV3(
 }
 
 function blockedReasonsV3(values: {
+  datasetSizeBytes: number;
+  identityPayloadBytes: number;
+  estimatedStateCount: number;
+  estimatedStructuralBytes: number;
   estimatedNumericCells: number;
   estimatedWindowVisits: number;
   estimatedRotationWorkUnits?: number;
@@ -175,9 +272,14 @@ function blockedReasonsV3(values: {
   estimatedPeakBytes: number;
   estimatedExportBytes: number;
 }): ResourceBlockedReasonV3[] {
-  // Stable construction-stage order: payload size, window work, dense
-  // rotation work/storage, then aggregate peak and export payload limits.
+  // Stable admission/construction order: source and identity payloads,
+  // structural state, numerical/window work, dense rotation work/storage,
+  // then aggregate peak and export payload limits.
   return [
+    ...(values.datasetSizeBytes > MAX_ESTIMATED_DATASET_BYTES_V3 ? ["dataset-bytes" as const] : []),
+    ...(values.identityPayloadBytes > MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3 ? ["identity-bytes" as const] : []),
+    ...(values.estimatedStateCount > MAX_ESTIMATED_STATE_COUNT_V3 ? ["state-count" as const] : []),
+    ...(values.estimatedStructuralBytes > MAX_ESTIMATED_STRUCTURAL_BYTES_V3 ? ["structural-bytes" as const] : []),
     ...(values.estimatedNumericCells > MAX_ESTIMATED_NUMERIC_CELLS_V3 ? ["numeric-cells" as const] : []),
     ...(values.estimatedWindowVisits > MAX_ESTIMATED_WINDOW_VISITS_V3 ? ["window-visits" as const] : []),
     ...((values.estimatedRotationWorkUnits ?? 0) > MAX_ESTIMATED_ROTATION_WORK_UNITS_V3
@@ -204,12 +306,19 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
     "backward",
     "forward",
     "referenceProjection",
+    "datasetSizeBytes",
+    "identityPayloadBytes",
   ], "Standard resource input");
   const rowCount = nonnegativeSafeIntegerV3(input.rowCount, "resource input.rowCount");
   const unitCount = nonnegativeSafeIntegerV3(input.unitCount, "resource input.unitCount");
   const horizonCount = nonnegativeSafeIntegerV3(input.horizonCount, "resource input.horizonCount");
   const codeCount = nonnegativeSafeIntegerV3(input.codeCount, "resource input.codeCount");
   const trajectorySteps = nonnegativeSafeIntegerV3(input.trajectorySteps, "resource input.trajectorySteps");
+  const datasetSizeBytes = nonnegativeSafeIntegerV3(input.datasetSizeBytes, "resource input.datasetSizeBytes");
+  const identityPayloadBytes = nonnegativeSafeIntegerV3(
+    input.identityPayloadBytes,
+    "resource input.identityPayloadBytes",
+  );
   const horizonSizes = snapshotHorizonSizesV3(input.horizonSizes, horizonCount, rowCount);
   if (input.windowType !== "MovingStanzaWindow" && input.windowType !== "Conversation") {
     throw new TypeError("resource input.windowType is invalid.");
@@ -262,6 +371,19 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
     }
   }
 
+  const aggregateStateUpperBound = input.windowType === "Conversation" ? rowCount : horizonCount;
+  const structural = structuralEstimateV3({
+    rowCount,
+    unitCount,
+    horizonCount,
+    targetCount: trajectorySteps,
+    aggregateStateUpperBound,
+    retainedRowCount: estimatedRetainedWindowRows,
+    codeCount,
+    datasetSizeBytes,
+    identityPayloadBytes,
+  });
+
   const rawCodeCells = safeMultiplyV3(rowCount, codeCount, "Raw Code cells");
   const trajectoryCells = safeMultiplyV3(trajectorySteps, adjacencyDimensions, "Trajectory cells");
   const denseRotation = estimateDenseSvdBudget(trajectorySteps, adjacencyDimensions);
@@ -306,11 +428,19 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
     "Export bytes",
   );
   const estimatedPeakBytes = safeAddV3(
-    safeMultiplyV3(estimatedNumericCells, 8, "Numeric bytes"),
-    estimatedWorkerMaterializationBytes,
+    safeAddV3(
+      safeMultiplyV3(estimatedNumericCells, 8, "Numeric bytes"),
+      estimatedWorkerMaterializationBytes,
+      "Numeric and worker bytes",
+    ),
+    structural.estimatedStructuralBytes,
     "Peak bytes",
   );
   const blockedReasons = blockedReasonsV3({
+    datasetSizeBytes,
+    identityPayloadBytes,
+    estimatedStateCount: structural.estimatedStateCount,
+    estimatedStructuralBytes: structural.estimatedStructuralBytes,
     estimatedNumericCells,
     estimatedWindowVisits,
     estimatedRotationWorkUnits: denseRotation.workUnits,
@@ -325,6 +455,11 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
     horizons: horizonCount,
     codes: codeCount,
     adjacencyDimensions,
+    datasetSizeBytes,
+    identityPayloadBytes,
+    aggregateStateUpperBound,
+    estimatedStateCount: structural.estimatedStateCount,
+    estimatedStructuralBytes: structural.estimatedStructuralBytes,
     trajectorySteps,
     estimatedForwardBufferRows,
     estimatedRetainedWindowRows,
@@ -350,11 +485,18 @@ function estimateOnaResourcesInternalV3(inputValue: OnaResourceInputV3): OnaReso
     "codeCount",
     "horizonSizes",
     "backward",
+    "datasetSizeBytes",
+    "identityPayloadBytes",
   ], "ONA resource input");
   const rowCount = nonnegativeSafeIntegerV3(input.rowCount, "resource input.rowCount");
   const unitCount = nonnegativeSafeIntegerV3(input.unitCount, "resource input.unitCount");
   const horizonCount = nonnegativeSafeIntegerV3(input.horizonCount, "resource input.horizonCount");
   const codeCount = nonnegativeSafeIntegerV3(input.codeCount, "resource input.codeCount");
+  const datasetSizeBytes = nonnegativeSafeIntegerV3(input.datasetSizeBytes, "resource input.datasetSizeBytes");
+  const identityPayloadBytes = nonnegativeSafeIntegerV3(
+    input.identityPayloadBytes,
+    "resource input.identityPayloadBytes",
+  );
   const horizonSizes = snapshotHorizonSizesV3(input.horizonSizes, horizonCount, rowCount);
   const backward = extentV3(input.backward, "resource input.backward", true);
 
@@ -380,6 +522,18 @@ function estimateOnaResourcesInternalV3(inputValue: OnaResourceInputV3): OnaReso
       );
     }
   }
+  const aggregateStateUpperBound = horizonCount;
+  const structural = structuralEstimateV3({
+    rowCount,
+    unitCount,
+    horizonCount,
+    targetCount: unitCount,
+    aggregateStateUpperBound,
+    retainedRowCount: estimatedRetainedWindowRows,
+    codeCount,
+    datasetSizeBytes,
+    identityPayloadBytes,
+  });
   const rawCodeCells = safeMultiplyV3(rowCount, codeCount, "ONA raw Code cells");
   const endpointCells = safeMultiplyV3(unitCount, adjacencyDimensions, "ONA Endpoint cells");
   const denseRotation = estimateDenseSvdBudget(unitCount, adjacencyDimensions);
@@ -414,11 +568,19 @@ function estimateOnaResourcesInternalV3(inputValue: OnaResourceInputV3): OnaReso
     "ONA export bytes",
   );
   const estimatedPeakBytes = safeAddV3(
-    safeMultiplyV3(estimatedNumericCells, 8, "ONA numeric bytes"),
-    estimatedWorkerMaterializationBytes,
+    safeAddV3(
+      safeMultiplyV3(estimatedNumericCells, 8, "ONA numeric bytes"),
+      estimatedWorkerMaterializationBytes,
+      "ONA numeric and worker bytes",
+    ),
+    structural.estimatedStructuralBytes,
     "ONA peak bytes",
   );
   const blockedReasons = blockedReasonsV3({
+    datasetSizeBytes,
+    identityPayloadBytes,
+    estimatedStateCount: structural.estimatedStateCount,
+    estimatedStructuralBytes: structural.estimatedStructuralBytes,
     estimatedNumericCells,
     estimatedWindowVisits,
     estimatedRotationWorkUnits: denseRotation.workUnits,
@@ -434,6 +596,11 @@ function estimateOnaResourcesInternalV3(inputValue: OnaResourceInputV3): OnaReso
     horizons: horizonCount,
     codes: codeCount,
     adjacencyDimensions,
+    datasetSizeBytes,
+    identityPayloadBytes,
+    aggregateStateUpperBound,
+    estimatedStateCount: structural.estimatedStateCount,
+    estimatedStructuralBytes: structural.estimatedStructuralBytes,
     endpointNetworks: unitCount,
     directionalMaskCells,
     estimatedRotationWorkUnits: denseRotation.workUnits,
@@ -446,6 +613,74 @@ function estimateOnaResourcesInternalV3(inputValue: OnaResourceInputV3): OnaReso
     estimatedWorkerMaterializationBytes,
     estimatedExportBytes,
     estimatedPeakBytes,
+    blocked: blockedReasons.length > 0,
+    blockedReasons,
+  });
+}
+
+function estimateEarlyStandardResourcesInternalV3(
+  inputValue: EarlyStandardResourceInputV3,
+): EarlyStandardResourceEstimateV3 {
+  const input = snapshotPlainJsonRecordV3(inputValue, "Early Standard resource input");
+  assertExactKeysV3(
+    input,
+    ["rowCount", "codeCount", "datasetSizeBytes", "identityPayloadBytes"],
+    "Early Standard resource input",
+  );
+  const rowCount = nonnegativeSafeIntegerV3(input.rowCount, "resource input.rowCount");
+  const codeCount = nonnegativeSafeIntegerV3(input.codeCount, "resource input.codeCount");
+  const datasetSizeBytes = nonnegativeSafeIntegerV3(input.datasetSizeBytes, "resource input.datasetSizeBytes");
+  const identityPayloadBytes = nonnegativeSafeIntegerV3(
+    input.identityPayloadBytes,
+    "resource input.identityPayloadBytes",
+  );
+  const structural = structuralEstimateV3({
+    rowCount,
+    unitCount: rowCount,
+    horizonCount: rowCount,
+    targetCount: rowCount,
+    aggregateStateUpperBound: rowCount,
+    retainedRowCount: rowCount,
+    codeCount,
+    datasetSizeBytes,
+    identityPayloadBytes,
+  });
+  const estimatedPeakBytes = structural.estimatedStructuralBytes;
+  const blockedReasons = blockedReasonsV3({
+    datasetSizeBytes,
+    identityPayloadBytes,
+    estimatedStateCount: structural.estimatedStateCount,
+    estimatedStructuralBytes: structural.estimatedStructuralBytes,
+    estimatedNumericCells: 0,
+    estimatedWindowVisits: 0,
+    estimatedPeakBytes,
+    estimatedExportBytes: 0,
+  });
+  return deepFreezeV3({
+    version: RESOURCE_BUDGET_VERSION_V3,
+    analysisFamily: "standard" as const,
+    admissionStage: "early-envelope" as const,
+    rows: rowCount,
+    units: rowCount,
+    horizons: rowCount,
+    codes: codeCount,
+    adjacencyDimensions: 0,
+    datasetSizeBytes,
+    identityPayloadBytes,
+    aggregateStateUpperBound: rowCount,
+    estimatedStateCount: structural.estimatedStateCount,
+    estimatedStructuralBytes: structural.estimatedStructuralBytes,
+    trajectorySteps: rowCount,
+    estimatedForwardBufferRows: rowCount,
+    estimatedRetainedWindowRows: rowCount,
+    estimatedWindowStateCells: 0,
+    estimatedWindowVisits: 0,
+    estimatedNumericCells: 0,
+    estimatedWorkerMaterializationBytes: 0,
+    estimatedExportBytes: 0,
+    estimatedPeakBytes,
+    estimatedRotationWorkUnits: 0,
+    estimatedRotationMatrixBytes: 0,
     blocked: blockedReasons.length > 0,
     blockedReasons,
   });
@@ -473,6 +708,16 @@ export function estimateStandardResourcesV3(inputValue: StandardResourceInputV3)
 export function estimateOnaResourcesV3(inputValue: OnaResourceInputV3): OnaResourceEstimateV3 {
   try {
     return estimateOnaResourcesInternalV3(inputValue);
+  } catch (error) {
+    return wrapResourceEstimateErrorV3(error);
+  }
+}
+
+export function estimateEarlyStandardResourcesV3(
+  inputValue: EarlyStandardResourceInputV3,
+): EarlyStandardResourceEstimateV3 {
+  try {
+    return estimateEarlyStandardResourcesInternalV3(inputValue);
   } catch (error) {
     return wrapResourceEstimateErrorV3(error);
   }

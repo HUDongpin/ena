@@ -2,14 +2,27 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  MAX_ESTIMATED_DATASET_BYTES_V3,
   MAX_ESTIMATED_EXPORT_BYTES_V3,
+  MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3,
   MAX_ESTIMATED_NUMERIC_CELLS_V3,
   MAX_ESTIMATED_PEAK_BYTES_V3,
   MAX_ESTIMATED_ROTATION_MATRIX_BYTES_ONA_V3,
   MAX_ESTIMATED_ROTATION_WORK_UNITS_V3,
+  MAX_ESTIMATED_STATE_COUNT_V3,
+  MAX_ESTIMATED_STRUCTURAL_BYTES_V3,
   MAX_ESTIMATED_WINDOW_VISITS_V3,
   RESOURCE_BUDGET_VERSION_V3,
   ResourceEstimateErrorV3,
+  STRUCTURAL_AGGREGATE_BYTES_V3,
+  STRUCTURAL_DATASET_MULTIPLIER_V3,
+  STRUCTURAL_HORIZON_BYTES_V3,
+  STRUCTURAL_RETAINED_ROW_BYTES_V3,
+  STRUCTURAL_ROW_BYTES_V3,
+  STRUCTURAL_ROW_CODE_BYTES_V3,
+  STRUCTURAL_TARGET_BYTES_V3,
+  STRUCTURAL_UNIT_BYTES_V3,
+  estimateEarlyStandardResourcesV3,
   estimateOnaResourcesV3,
   estimateStandardResourcesV3,
 } from "../lib/open-ena/model-v3/resource-budget";
@@ -30,6 +43,8 @@ test("Standard resource estimates use undirected edges and actual Horizon sizes"
     backward: { kind: "infinity" },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 100,
   });
   assert.equal(estimate.adjacencyDimensions, 6);
   assert.equal(estimate.estimatedWindowVisits, 20);
@@ -50,6 +65,8 @@ const standardBase: StandardResourceInputV3 = {
   backward: { kind: "finite", value: 1 },
   forward: { kind: "finite", value: 0 },
   referenceProjection: false,
+  datasetSizeBytes: 1,
+  identityPayloadBytes: 100,
 };
 
 for (const testCase of [
@@ -86,6 +103,131 @@ test("Reference projection adds exactly one target-by-edge cell block", () => {
   assert.equal(withReference.estimatedNumericCells - withoutReference.estimatedNumericCells, 5 * 6);
 });
 
+test("Standard structural estimate uses the fixed v3.3 allocation proxies exactly", () => {
+  const estimate = estimateStandardResourcesV3(standardBase);
+  assert.equal(estimate.aggregateStateUpperBound, 2);
+  assert.equal(estimate.estimatedStateCount, 19);
+  assert.equal(estimate.datasetSizeBytes, 1);
+  assert.equal(estimate.identityPayloadBytes, 100);
+  assert.equal(estimate.estimatedStructuralBytes, 50_278);
+  assert.equal(estimate.estimatedPeakBytes, 53_686);
+});
+
+test("state-count admits just below and exactly at the limit, then blocks one state above", () => {
+  const base: StandardResourceInputV3 = {
+    rowCount: 33_332,
+    unitCount: 33_332,
+    horizonCount: 2,
+    codeCount: 0,
+    horizonSizes: [16_666, 16_666],
+    trajectorySteps: 33_332,
+    windowType: "MovingStanzaWindow",
+    backward: { kind: "finite", value: 1 },
+    forward: { kind: "finite", value: 0 },
+    referenceProjection: false,
+    datasetSizeBytes: 0,
+    identityPayloadBytes: 0,
+  };
+  const below = estimateStandardResourcesV3({ ...base, trajectorySteps: 33_331 });
+  const at = estimateStandardResourcesV3(base);
+  const above = estimateStandardResourcesV3({ ...base, trajectorySteps: 33_333 });
+  assert.equal(below.estimatedStateCount, MAX_ESTIMATED_STATE_COUNT_V3 - 1);
+  assert.equal(at.estimatedStateCount, MAX_ESTIMATED_STATE_COUNT_V3);
+  assert.equal(at.blockedReasons.includes("state-count"), false);
+  assert.equal(above.estimatedStateCount, MAX_ESTIMATED_STATE_COUNT_V3 + 1);
+  assert.deepEqual(above.blockedReasons, ["state-count"]);
+});
+
+test("structural, dataset, and identity byte limits have independent deterministic reasons", () => {
+  const structural = estimateStandardResourcesV3({
+    rowCount: 98_304,
+    unitCount: 0,
+    horizonCount: 1,
+    codeCount: 0,
+    horizonSizes: [98_304],
+    trajectorySteps: 0,
+    windowType: "MovingStanzaWindow",
+    backward: { kind: "finite", value: 1 },
+    forward: { kind: "finite", value: 0 },
+    referenceProjection: false,
+    datasetSizeBytes: 0,
+    identityPayloadBytes: 0,
+  });
+  assert.equal(structural.estimatedStateCount, 98_306);
+  assert.equal(structural.estimatedStructuralBytes, MAX_ESTIMATED_STRUCTURAL_BYTES_V3 + 4_096);
+  assert.deepEqual(structural.blockedReasons, ["structural-bytes"]);
+
+  const datasetAt = estimateEarlyStandardResourcesV3({
+    rowCount: 0,
+    codeCount: 0,
+    datasetSizeBytes: MAX_ESTIMATED_DATASET_BYTES_V3,
+    identityPayloadBytes: 0,
+  });
+  const datasetAbove = estimateEarlyStandardResourcesV3({
+    rowCount: 0,
+    codeCount: 0,
+    datasetSizeBytes: MAX_ESTIMATED_DATASET_BYTES_V3 + 1,
+    identityPayloadBytes: 0,
+  });
+  assert.equal(datasetAt.blocked, false);
+  assert.deepEqual(datasetAbove.blockedReasons, ["dataset-bytes"]);
+
+  const identityAt = estimateEarlyStandardResourcesV3({
+    rowCount: 0,
+    codeCount: 0,
+    datasetSizeBytes: 0,
+    identityPayloadBytes: MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3,
+  });
+  const identityAbove = estimateEarlyStandardResourcesV3({
+    rowCount: 0,
+    codeCount: 0,
+    datasetSizeBytes: 0,
+    identityPayloadBytes: MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3 + 1,
+  });
+  assert.equal(identityAt.blocked, false);
+  assert.deepEqual(identityAbove.blockedReasons, ["identity-bytes"]);
+});
+
+test("early admission uses the conservative six-state-per-row envelope and checked arithmetic", () => {
+  const input = Object.freeze({
+    rowCount: 16_666,
+    codeCount: 3,
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 0,
+  });
+  const below = estimateEarlyStandardResourcesV3(input);
+  const above = estimateEarlyStandardResourcesV3({ ...input, rowCount: 16_667 });
+  assert.equal(below.estimatedStateCount, 99_996);
+  assert.equal(below.blockedReasons.includes("state-count"), false);
+  assert.equal(above.estimatedStateCount, 100_002);
+  assert.equal(above.blockedReasons.includes("state-count"), true);
+  const reviewerProbe = estimateEarlyStandardResourcesV3({
+    rowCount: 50_000,
+    codeCount: 3,
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 0,
+  });
+  assert.equal(reviewerProbe.estimatedStateCount, 300_000);
+  assert.equal(reviewerProbe.estimatedStructuralBytes, 547_200_002);
+  assert.deepEqual(reviewerProbe.blockedReasons, ["state-count", "structural-bytes", "peak-bytes"]);
+  assert.equal(Object.isFrozen(below), true);
+  assert.deepEqual(input, {
+    rowCount: 16_666,
+    codeCount: 3,
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 0,
+  });
+  assert.throws(
+    () => estimateEarlyStandardResourcesV3({
+      rowCount: Number.MAX_SAFE_INTEGER,
+      codeCount: 3,
+      datasetSizeBytes: 0,
+      identityPayloadBytes: 0,
+    }),
+    (error) => error instanceof ResourceEstimateErrorV3 && error.code === "UNSAFE_ARITHMETIC",
+  );
+});
+
 test("Standard dense rotation estimates include three E-squared matrices and two N-by-E matrices", () => {
   const estimate = estimateStandardResourcesV3({
     rowCount: 2,
@@ -98,6 +240,8 @@ test("Standard dense rotation estimates include three E-squared matrices and two
     backward: { kind: "finite", value: 1 },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 100,
   });
   assert.equal(estimate.adjacencyDimensions, 4_950);
   assert.equal(estimate.estimatedRotationMatrixBytes, 588_218_400);
@@ -117,6 +261,8 @@ test("Standard rotation work boundary is fixed at the shared dense SVD limit", (
     backward: { kind: "finite", value: 1 },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 100,
   });
   assert.equal(atLimit.adjacencyDimensions, 10);
   assert.equal(atLimit.estimatedRotationWorkUnits, MAX_ESTIMATED_ROTATION_WORK_UNITS_V3);
@@ -133,9 +279,11 @@ test("Standard rotation work boundary is fixed at the shared dense SVD limit", (
     backward: { kind: "finite", value: 1 },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 100,
   });
   assert.equal(aboveLimit.estimatedRotationWorkUnits, MAX_ESTIMATED_ROTATION_WORK_UNITS_V3 + 100);
-  assert.deepEqual(aboveLimit.blockedReasons, ["rotation-work"]);
+  assert.equal(aboveLimit.blockedReasons.includes("rotation-work"), true);
 });
 
 test("Moving retained rows sum across all Horizons and cover streaming telemetry", async () => {
@@ -182,6 +330,8 @@ test("Moving retained rows sum across all Horizons and cover streaming telemetry
         ? { kind: "finite", value: testCase.forward }
         : { kind: "infinity" },
       referenceProjection: false,
+      datasetSizeBytes: 1,
+      identityPayloadBytes: 100,
     });
     assert.equal(estimate.estimatedRetainedWindowRows, 1_000, testCase.name);
     assert.equal(estimate.estimatedRetainedWindowRows, runtimePeak, testCase.name);
@@ -200,6 +350,8 @@ test("backward Infinity retains running state but no raw history across many Hor
     backward: { kind: "infinity" },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 100,
   });
   assert.equal(estimate.estimatedRetainedWindowRows, 0);
   assert.equal(estimate.estimatedWindowStateCells >= 3_000, true);
@@ -219,6 +371,8 @@ test("Conversation and ONA include per-Horizon state storage without pretending 
     backward: { kind: "finite", value: 1 },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 100,
   });
   assert.equal(conversation.estimatedRetainedWindowRows, 0);
   assert.equal(conversation.estimatedWindowStateCells >= 6_000, true);
@@ -230,6 +384,8 @@ test("Conversation and ONA include per-Horizon state storage without pretending 
     codeCount: 3,
     horizonSizes: sizes,
     backward: { kind: "infinity" },
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 100,
   });
   assert.equal(ona.estimatedRetainedWindowRows, 0);
   assert.equal(ona.estimatedWindowStateCells >= 3_000, true);
@@ -264,6 +420,8 @@ test("ONA finite backward history sums across Horizons and covers ordered runtim
     codeCount: 3,
     horizonSizes: Array.from({ length: horizonCount }, () => 1),
     backward: { kind: "finite", value: 5 },
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 100,
   });
   assert.equal(runtimePeak, 1_000);
   assert.equal(estimate.estimatedRetainedWindowRows, runtimePeak);
@@ -278,20 +436,44 @@ test("resource constants, provenance, output detachment, and deep freezing are f
     MAX_ESTIMATED_EXPORT_BYTES_V3,
     MAX_ESTIMATED_ROTATION_WORK_UNITS_V3,
     MAX_ESTIMATED_ROTATION_MATRIX_BYTES_ONA_V3,
+    MAX_ESTIMATED_STATE_COUNT_V3,
+    MAX_ESTIMATED_STRUCTURAL_BYTES_V3,
+    MAX_ESTIMATED_DATASET_BYTES_V3,
+    MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3,
+    STRUCTURAL_ROW_BYTES_V3,
+    STRUCTURAL_UNIT_BYTES_V3,
+    STRUCTURAL_HORIZON_BYTES_V3,
+    STRUCTURAL_TARGET_BYTES_V3,
+    STRUCTURAL_AGGREGATE_BYTES_V3,
+    STRUCTURAL_RETAINED_ROW_BYTES_V3,
+    STRUCTURAL_ROW_CODE_BYTES_V3,
+    STRUCTURAL_DATASET_MULTIPLIER_V3,
   ], [
-    "open-ena-resource-v3.2",
+    "open-ena-resource-v3.3",
     25_000_000,
     100_000_000,
     512 * 1024 * 1024,
     256 * 1024 * 1024,
     8_000_000,
     1024 * 1024,
+    100_000,
+    384 * 1024 * 1024,
+    128 * 1024 * 1024,
+    64 * 1024 * 1024,
+    4_096,
+    1_024,
+    2_048,
+    1_024,
+    2_048,
+    512,
+    64,
+    2,
   ]);
   const horizonSizes = [3, 5];
   const estimate = estimateStandardResourcesV3({ ...standardBase, horizonSizes });
   horizonSizes[0] = 8;
   assert.equal(estimate.analysisFamily, "standard");
-  assert.equal(estimate.version, "open-ena-resource-v3.2");
+  assert.equal(estimate.version, "open-ena-resource-v3.3");
   assert.equal(Object.isFrozen(estimate), true);
   assert.equal(Object.isFrozen(estimate.blockedReasons), true);
 });
@@ -317,7 +499,7 @@ test("each Standard hard-limit fixture reports the exact fixed reason set", () =
       trajectorySteps: 1,
       windowType: "Conversation",
     }],
-    [["peak-bytes"], {
+    [["state-count", "structural-bytes", "peak-bytes"], {
       ...standardBase,
       rowCount: 3_600_000,
       unitCount: 1,
@@ -326,7 +508,7 @@ test("each Standard hard-limit fixture reports the exact fixed reason set", () =
       codeCount: 3,
       trajectorySteps: 1,
     }],
-    [["export-bytes"], {
+    [["state-count", "structural-bytes", "peak-bytes", "export-bytes"], {
       ...standardBase,
       rowCount: 1_200_000,
       unitCount: 1,
@@ -400,6 +582,8 @@ test("the 4,500-row by 50-Code reviewer case is blocked by dense rotation work",
     backward: { kind: "finite", value: 1 },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 100,
   });
   assert.equal(estimate.adjacencyDimensions, 1_225);
   assert.equal(estimate.estimatedWindowVisits, 4_500);
@@ -419,6 +603,8 @@ test("Standard inputs, extents, Horizon accounting, and arithmetic fail closed",
     (input: Record<string, unknown>) => { input.backward = { kind: "finite", value: 0 }; },
     (input: Record<string, unknown>) => { input.forward = { kind: "finite", value: -1 }; },
     (input: Record<string, unknown>) => { input.referenceProjection = 1; },
+    (input: Record<string, unknown>) => { input.datasetSizeBytes = -1; },
+    (input: Record<string, unknown>) => { input.identityPayloadBytes = 1.5; },
     (input: Record<string, unknown>) => { input.extra = true; },
   ]) {
     const malformed = structuredClone(standardBase) as unknown as Record<string, unknown>;
@@ -467,6 +653,8 @@ test("ONA uses directed p-squared dimensions, stores its mask, and visits backwa
     codeCount: 4,
     horizonSizes: [2, 4],
     backward: { kind: "infinity" },
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 100,
   };
   const before = structuredClone(input);
   const estimate = estimateOnaResourcesV3(input);
@@ -479,6 +667,10 @@ test("ONA uses directed p-squared dimensions, stores its mask, and visits backwa
   assert.equal(estimate.estimatedRotationWorkUnits, 4_608);
   assert.equal(estimate.estimatedRotationMatrixBytes, 6_656);
   assert.equal(estimate.estimatedNumericCells, 904);
+  assert.equal(estimate.aggregateStateUpperBound, 2);
+  assert.equal(estimate.estimatedStateCount, 14);
+  assert.equal(estimate.estimatedStructuralBytes, 38_502);
+  assert.equal(estimate.estimatedPeakBytes, 47_014);
   assert.equal(estimate.blocked, false);
   assert.deepEqual(input, before);
   assert.equal(Object.isFrozen(estimate), true);
@@ -493,6 +685,8 @@ test("ONA preflight blocks the 12-Code 244-Unit case rejected by ordered runtime
     codeCount: 12,
     horizonSizes: [244],
     backward: { kind: "finite", value: 1 },
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 100,
   });
   assert.equal(estimate.adjacencyDimensions, 144);
   assert.equal(estimate.estimatedRotationWorkUnits, 8_045_568);
@@ -508,6 +702,8 @@ test("ONA rotation-work boundary exactly matches the ordered dense runtime limit
     codeCount: 10,
     horizonSizes: [700],
     backward: { kind: "finite", value: 1 },
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 100,
   };
   const atLimit = estimateOnaResourcesV3(base);
   assert.equal(atLimit.estimatedRotationWorkUnits, MAX_ESTIMATED_ROTATION_WORK_UNITS_V3);
@@ -531,6 +727,8 @@ test("ONA rotation-matrix boundary exactly matches the ordered 1 MiB runtime lim
     codeCount: 8,
     horizonSizes: [928],
     backward: { kind: "finite", value: 1 },
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 100,
   };
   const atLimit = estimateOnaResourcesV3(base);
   assert.equal(atLimit.estimatedRotationMatrixBytes, MAX_ESTIMATED_ROTATION_MATRIX_BYTES_ONA_V3);
@@ -554,6 +752,8 @@ test("verified Yu-like ONA scale remains inside both shared dense rotation limit
     codeCount: 7,
     horizonSizes: [87],
     backward: { kind: "finite", value: 1 },
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 100,
   });
   assert.equal(estimate.estimatedRotationWorkUnits, 326_536);
   assert.equal(estimate.estimatedRotationMatrixBytes, 125_832);
@@ -568,6 +768,8 @@ test("ONA validates backward-only inputs and fails closed on directed arithmetic
     codeCount: 4,
     horizonSizes: [2, 4],
     backward: { kind: "finite", value: 1 },
+    datasetSizeBytes: 1,
+    identityPayloadBytes: 100,
   };
   assert.equal(estimateOnaResourcesV3(valid).estimatedWindowVisits, 6);
   assert.throws(() => estimateOnaResourcesV3({
@@ -582,4 +784,8 @@ test("ONA validates backward-only inputs and fails closed on directed arithmetic
     horizonSizes: [],
     codeCount: Number.MAX_SAFE_INTEGER,
   }), /safe integer|arithmetic/i);
+  assert.throws(() => estimateOnaResourcesV3({
+    ...valid,
+    datasetSizeBytes: -1,
+  }), (error) => error instanceof ResourceEstimateErrorV3 && error.code === "INVALID_INPUT");
 });

@@ -792,6 +792,91 @@ test("a 100-Code two-target candidate blocks on dense rotation work before SVD",
   assert.equal(output.some((entry) => entry.id === "STANDARD_SVD_ONE_DIMENSIONAL"), false);
 });
 
+test("50k rows fail the shallow resource envelope before any row snapshot or analysis", () => {
+  let deepRowInspection = 0;
+  const rowArray = new Proxy(new Array<ParsedDataset["rows"][number]>(50_000), {
+    get() {
+      deepRowInspection += 1;
+      throw new Error("ordinary row-array access entered");
+    },
+    ownKeys() {
+      deepRowInspection += 1;
+      throw new Error("full row-array snapshot entered");
+    },
+    getOwnPropertyDescriptor(target, property) {
+      if (property === "length") return Reflect.getOwnPropertyDescriptor(target, property);
+      deepRowInspection += 1;
+      throw new Error("row element inspection entered");
+    },
+  });
+  const input: ParsedDataset = {
+    name: "large.csv",
+    headers: DEFAULT_HEADERS,
+    rows: rowArray,
+    sizeBytes: 1,
+    source: "upload",
+  };
+  const output = validateStandardDraftV3(input, {
+    hashKind: "normalized-utf8-csv-text-sha256",
+    normalizedTableSha256: DATASET_HASH,
+    rowCount: 50_000,
+    headerSha256: HEADER_HASH,
+  }, draft(["A", "B", "C"]));
+  assert.deepEqual(ids(output), ["RESOURCE_BUDGET_EXCEEDED"]);
+  const resource = one(output, "RESOURCE_BUDGET_EXCEEDED");
+  assert.equal(resource.evidence?.samples.some((sample) => sample.identity === "state-count"), true);
+  assert.equal(deepRowInspection, 0);
+});
+
+test("huge selected identities defeat a lying tiny dataset size before canonicalization", () => {
+  const hugeIdentity = "x".repeat(Math.floor((64 * 1024 * 1024) / 6) + 1);
+  let fullRowSnapshotEntered = 0;
+  const row = new Proxy({
+    unit: hugeIdentity,
+    horizon: hugeIdentity,
+    A: 1,
+    B: 1,
+    C: 1,
+  }, {
+    ownKeys() {
+      fullRowSnapshotEntered += 1;
+      throw new Error("full row snapshot entered before identity admission");
+    },
+  });
+  const input = dataset([row], DEFAULT_HEADERS, { name: "tiny.csv", sizeBytes: 1 });
+  const output = diagnosticsFor(input);
+  assert.deepEqual(ids(output), ["RESOURCE_BUDGET_EXCEEDED"]);
+  const resource = one(output, "RESOURCE_BUDGET_EXCEEDED");
+  assert.equal(resource.evidence?.samples.some((sample) => sample.identity === "identity-bytes"), true);
+  assert.equal(fullRowSnapshotEntered, 0);
+});
+
+test("oversized declared dataset payload blocks before the full row-array snapshot", () => {
+  let fullSnapshotEntered = 0;
+  const rowArray = new Proxy(new Array<ParsedDataset["rows"][number]>(), {
+    ownKeys() {
+      fullSnapshotEntered += 1;
+      throw new Error("full row-array snapshot entered");
+    },
+  });
+  const input: ParsedDataset = {
+    name: "oversized.csv",
+    headers: DEFAULT_HEADERS,
+    rows: rowArray,
+    sizeBytes: 128 * 1024 * 1024 + 1,
+    source: "upload",
+  };
+  const output = validateStandardDraftV3(input, {
+    hashKind: "normalized-utf8-csv-text-sha256",
+    normalizedTableSha256: DATASET_HASH,
+    rowCount: 0,
+    headerSha256: HEADER_HASH,
+  }, draft(["A", "B", "C"]));
+  assert.deepEqual(ids(output), ["RESOURCE_BUDGET_EXCEEDED"]);
+  assert.equal(one(output, "RESOURCE_BUDGET_EXCEEDED").evidence?.samples[0]?.identity, "dataset-bytes");
+  assert.equal(fullSnapshotEntered, 0);
+});
+
 test("Moving Stanza finite back one means current only; larger back and forward form candidate edges", () => {
   const input = orderedSingletonRows();
   const currentOnly = diagnosticsFor(input, movingDraft(
@@ -943,6 +1028,22 @@ test("dataset trust boundary avoids ordinary Proxy gets and accepts stable descr
   const output = validateStandardDraftV3(datasetProxy, bindingProxy, draft(["A", "B", "C"]));
   assert.equal(ordinaryGets, 0);
   assert.equal(ids(output).includes("STANDARD_DATASET_BINDING_INVALID"), false);
+});
+
+test("identity admission and full snapshot reject descriptor TOCTOU disagreement", () => {
+  let unitCaptures = 0;
+  const target = { unit: "u1", horizon: "h1", A: 1, B: 1, C: 1 };
+  const row = new Proxy(target, {
+    getOwnPropertyDescriptor(source, property) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(source, property);
+      if (property !== "unit" || descriptor === undefined || !("value" in descriptor)) return descriptor;
+      unitCaptures += 1;
+      return { ...descriptor, value: unitCaptures === 1 ? "u1" : "u2" };
+    },
+  });
+  const input = dataset([row]);
+  assert.deepEqual(ids(diagnosticsFor(input)), ["STANDARD_DATASET_BINDING_INVALID"]);
+  assert.equal(unitCaptures, 2);
 });
 
 test("accessor, class, sparse, and exotic dataset structures fail closed as binding diagnostics", () => {

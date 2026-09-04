@@ -10,16 +10,21 @@ import { svdRotation } from "jena-js/rotation";
 import { scalarIdentityV3 } from "./identity";
 import { OrderingDomainErrorV3, resolveHorizonOrderV3, resolveRowOrderV3 } from "./ordering";
 import {
+  MAX_ESTIMATED_DATASET_BYTES_V3,
   MAX_ESTIMATED_EXPORT_BYTES_V3,
+  MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3,
   MAX_ESTIMATED_NUMERIC_CELLS_V3,
   MAX_ESTIMATED_PEAK_BYTES_V3,
   MAX_ESTIMATED_ROTATION_MATRIX_BYTES_ONA_V3,
   MAX_ESTIMATED_ROTATION_WORK_UNITS_V3,
+  MAX_ESTIMATED_STATE_COUNT_V3,
+  MAX_ESTIMATED_STRUCTURAL_BYTES_V3,
   MAX_ESTIMATED_WINDOW_VISITS_V3,
   ResourceEstimateErrorV3,
+  estimateEarlyStandardResourcesV3,
   estimateStandardResourcesV3,
 } from "./resource-budget";
-import type { StandardResourceEstimateV3 } from "./resource-budget";
+import type { EarlyStandardResourceEstimateV3, StandardResourceEstimateV3 } from "./resource-budget";
 import { datasetHashKindFor } from "../types";
 import type { ParsedDataset, DatasetHashKind } from "../types";
 import type {
@@ -171,6 +176,13 @@ interface DatasetSnapshotV3 {
   hashKind: DatasetHashKind;
 }
 
+interface DatasetEnvelopeV3 extends Omit<DatasetSnapshotV3, "headers" | "rows"> {
+  headersValue: unknown[];
+  headerCount: number;
+  rowsValue: unknown[];
+  rowCount: number;
+}
+
 interface DraftSnapshotV3 {
   unitColumns: string[];
   horizonColumns: string[];
@@ -211,6 +223,13 @@ interface MovingWindowV3 {
   backward: BackwardExtentV3;
   forward: ForwardExtentV3;
   rowOrder: CanonicalRowOrderV3;
+}
+
+interface PreparedScientificOrdersV3 {
+  moving: MovingWindowV3 | null;
+  movingError: unknown | null;
+  horizonOrder: CanonicalHorizonOrderV3 | null;
+  horizonError: unknown | null;
 }
 
 interface IdentityValidationV3 {
@@ -267,10 +286,26 @@ function snapshotStringArrayV3(
   return result;
 }
 
-function snapshotDatasetAndBindingV3(
+function shallowDenseArrayLengthV3(value: unknown, label: string): { array: unknown[]; length: number } {
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+    throw new TypeError(`${label} must be a plain JSON array.`);
+  }
+  const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+  if (lengthDescriptor === undefined
+    || lengthDescriptor.enumerable
+    || !("value" in lengthDescriptor)
+    || typeof lengthDescriptor.value !== "number"
+    || !Number.isSafeInteger(lengthDescriptor.value)
+    || lengthDescriptor.value < 0) {
+    throw new TypeError(`${label} must expose a nonnegative safe integer length.`);
+  }
+  return { array: value, length: Object.is(lengthDescriptor.value, -0) ? 0 : lengthDescriptor.value };
+}
+
+function snapshotDatasetEnvelopeAndBindingV3(
   datasetValue: unknown,
   bindingValue: unknown,
-): { dataset: DatasetSnapshotV3; binding: DatasetBindingV3 } {
+): { envelope: DatasetEnvelopeV3; binding: DatasetBindingV3 } {
   const source = snapshotPlainJsonRecordV3(datasetValue, "dataset");
   const expectedDatasetKeys = own.call(source, "hashKind")
     ? ["name", "headers", "rows", "sizeBytes", "source", "hashKind"]
@@ -279,15 +314,14 @@ function snapshotDatasetAndBindingV3(
   if (typeof source.name !== "string" || source.name.trim().length === 0) {
     throw new TypeError("dataset.name must be a nonblank string.");
   }
-  if (typeof source.sizeBytes !== "number" || !Number.isFinite(source.sizeBytes) || source.sizeBytes < 0) {
-    throw new TypeError("dataset.sizeBytes must be a finite nonnegative number.");
+  if (typeof source.sizeBytes !== "number" || !Number.isSafeInteger(source.sizeBytes) || source.sizeBytes < 0) {
+    throw new TypeError("dataset.sizeBytes must be a nonnegative safe integer.");
   }
   if (source.source !== "sample" && source.source !== "upload") {
     throw new TypeError("dataset.source must be sample or upload.");
   }
-  const headers = snapshotStringArrayV3(source.headers, "dataset.headers", { nonblank: true, distinct: true });
-  const rawRows = snapshotDenseJsonArrayV3(source.rows, "dataset.rows");
-  const rows = rawRows.map((row, index) => snapshotPlainJsonRecordV3(row, `dataset.rows[${index}]`));
+  const headers = shallowDenseArrayLengthV3(source.headers, "dataset.headers");
+  const rows = shallowDenseArrayLengthV3(source.rows, "dataset.rows");
   let hashKind: DatasetHashKind | undefined;
   if (own.call(source, "hashKind")) {
     if (!isHashKindV3(source.hashKind)) throw new TypeError("dataset.hashKind is unsupported.");
@@ -325,15 +359,70 @@ function snapshotDatasetAndBindingV3(
     rowCount: Object.is(bindingRecord.rowCount, -0) ? 0 : bindingRecord.rowCount,
     headerSha256: bindingRecord.headerSha256,
   };
-  const dataset: DatasetSnapshotV3 = {
+  const envelope: DatasetEnvelopeV3 = {
     name: source.name,
-    headers,
-    rows,
+    headersValue: headers.array,
+    headerCount: headers.length,
+    rowsValue: rows.array,
+    rowCount: rows.length,
     sizeBytes: Object.is(source.sizeBytes, -0) ? 0 : source.sizeBytes,
     source: source.source,
     hashKind: resolvedHashKind,
   };
-  return { dataset, binding };
+  return { envelope, binding };
+}
+
+interface SelectedIdentityAdmissionSnapshotV3 {
+  payloadBytes: number;
+  columns: readonly string[];
+  rowValues: readonly unknown[];
+  selectedDataProperties: readonly boolean[];
+  selectedValues: readonly unknown[];
+}
+
+function snapshotDatasetRowsV3(
+  envelope: DatasetEnvelopeV3,
+  admission: SelectedIdentityAdmissionSnapshotV3,
+): DatasetSnapshotV3 {
+  const headers = snapshotStringArrayV3(
+    envelope.headersValue,
+    "dataset.headers",
+    { nonblank: true, distinct: true },
+  );
+  if (headers.length !== envelope.headerCount) {
+    throw new TypeError("dataset.headers length changed after shallow admission.");
+  }
+  const rawRows = snapshotDenseJsonArrayV3(envelope.rowsValue, "dataset.rows");
+  if (rawRows.length !== envelope.rowCount) {
+    throw new TypeError("dataset.rows length changed after shallow admission.");
+  }
+  for (let rowIndex = 0; rowIndex < rawRows.length; rowIndex += 1) {
+    if (!Object.is(rawRows[rowIndex], admission.rowValues[rowIndex])) {
+      throw new TypeError(`dataset.rows[${rowIndex}] changed after identity admission.`);
+    }
+  }
+  const rows = rawRows.map((row, index) => snapshotPlainJsonRecordV3(row, `dataset.rows[${index}]`));
+  let selectedIndex = 0;
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    for (const column of admission.columns) {
+      const actualPresent = own.call(row, column);
+      const capturedPresent = admission.selectedDataProperties[selectedIndex] ?? false;
+      if (actualPresent !== capturedPresent
+        || (actualPresent && !Object.is(row[column], admission.selectedValues[selectedIndex]))) {
+        throw new TypeError(`dataset.rows[${rowIndex}].${column} changed after identity admission.`);
+      }
+      selectedIndex += 1;
+    }
+  }
+  return {
+    name: envelope.name,
+    headers,
+    rows,
+    sizeBytes: envelope.sizeBytes,
+    source: envelope.source,
+    hashKind: envelope.hashKind,
+  };
 }
 
 function isHashKindV3(value: unknown): value is DatasetHashKind {
@@ -378,6 +467,85 @@ function snapshotDraftV3(value: unknown): DraftSnapshotV3 {
     horizonOrder: record.horizonOrder,
     rotation,
   };
+}
+
+function identityAdmissionColumnsV3(
+  draft: DraftSnapshotV3,
+  prepared: PreparedScientificOrdersV3,
+): string[] {
+  const columns = new Set<string>([...draft.unitColumns, ...draft.horizonColumns]);
+  if (draft.groupColumn !== null) columns.add(draft.groupColumn);
+  if (prepared.moving?.rowOrder.kind === "columns") {
+    for (const key of prepared.moving.rowOrder.keys) columns.add(key.column);
+  }
+  if (prepared.horizonOrder?.kind === "columns") {
+    for (const key of prepared.horizonOrder.keys) columns.add(key.column);
+  }
+  return [...columns].sort(codeUnitCompareV3);
+}
+
+const IDENTITY_FIXED_SCALAR_BYTES_V3 = 32;
+const UTF16_TO_UTF8_UPPER_BOUND_V3 = 3;
+
+function addIdentityPayloadBytesV3(total: number, value: number): number {
+  const next = total + value;
+  if (!Number.isSafeInteger(next)) {
+    throw new ResourceEstimateErrorV3(
+      "UNSAFE_ARITHMETIC",
+      "Selected identity payload exceeds safe integer arithmetic.",
+    );
+  }
+  return next;
+}
+
+function identityValuePayloadBytesV3(value: unknown): number {
+  if (typeof value !== "string") return IDENTITY_FIXED_SCALAR_BYTES_V3;
+  const bytes = value.length * UTF16_TO_UTF8_UPPER_BOUND_V3;
+  if (!Number.isSafeInteger(bytes)) {
+    throw new ResourceEstimateErrorV3(
+      "UNSAFE_ARITHMETIC",
+      "Selected identity string exceeds safe integer arithmetic.",
+    );
+  }
+  return bytes;
+}
+
+function snapshotSelectedIdentityAdmissionV3(
+  rowsValue: unknown[],
+  rowCount: number,
+  columns: readonly string[],
+): SelectedIdentityAdmissionSnapshotV3 {
+  let total = 0;
+  const rowValues: unknown[] = [];
+  const selectedDataProperties: boolean[] = [];
+  const selectedValues: unknown[] = [];
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    const rowDescriptor = Object.getOwnPropertyDescriptor(rowsValue, String(rowIndex));
+    const rowValue = rowDescriptor !== undefined && "value" in rowDescriptor
+      ? rowDescriptor.value
+      : null;
+    rowValues.push(rowValue);
+    let rowIsInspectable = false;
+    if (rowValue !== null && typeof rowValue === "object" && !Array.isArray(rowValue)) {
+      const prototype = Object.getPrototypeOf(rowValue);
+      rowIsInspectable = prototype === Object.prototype || prototype === null;
+    }
+    for (const column of columns) {
+      total = addIdentityPayloadBytesV3(total, identityValuePayloadBytesV3(column));
+      const descriptor = rowIsInspectable
+        ? Object.getOwnPropertyDescriptor(rowValue, column)
+        : undefined;
+      const hasDataProperty = descriptor !== undefined && "value" in descriptor;
+      const value = hasDataProperty ? descriptor.value : undefined;
+      selectedDataProperties.push(hasDataProperty);
+      selectedValues.push(value);
+      total = addIdentityPayloadBytesV3(total, identityValuePayloadBytesV3(value));
+      if (total > MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3) {
+        return { payloadBytes: total, columns, rowValues, selectedDataProperties, selectedValues };
+      }
+    }
+  }
+  return { payloadBytes: total, columns, rowValues, selectedDataProperties, selectedValues };
 }
 
 function snapshotScalarIdentityInputV3(value: unknown, label: string): ScalarIdentityV3 {
@@ -635,6 +803,38 @@ function snapshotMovingWindowV3(value: unknown): MovingWindowV3 | null {
   // The Task 4 resolver performs the authoritative semantic snapshot/validation.
   const policy = record.rowOrder as CanonicalRowOrderV3;
   return { backward, forward, rowOrder: policy };
+}
+
+function prepareScientificOrdersV3(draft: DraftSnapshotV3): PreparedScientificOrdersV3 {
+  let moving: MovingWindowV3 | null = null;
+  let movingError: unknown | null = null;
+  if (draft.windowType === "MovingStanzaWindow") {
+    try {
+      const candidate = snapshotMovingWindowV3(draft.movingStanza);
+      moving = candidate === null
+        ? null
+        : {
+            ...candidate,
+            rowOrder: snapshotOrderPolicyForResolverV3(
+              candidate.rowOrder,
+              "draft.movingStanza.rowOrder",
+            ),
+          };
+    } catch (error) {
+      movingError = error;
+    }
+  }
+
+  let horizonOrder: CanonicalHorizonOrderV3 | null = null;
+  let horizonError: unknown | null = null;
+  if (draft.model !== "EndPoint" && draft.horizonOrder !== null) {
+    try {
+      horizonOrder = snapshotOrderPolicyForResolverV3(draft.horizonOrder, "draft.horizonOrder");
+    } catch (error) {
+      horizonError = error;
+    }
+  }
+  return { moving, movingError, horizonOrder, horizonError };
 }
 
 function analyzeCodeProfileV3(
@@ -1700,9 +1900,26 @@ function standardResourceShapeV3(
 }
 
 function resourceBudgetDiagnosticV3(
-  estimate: StandardResourceEstimateV3 | null,
+  estimate: StandardResourceEstimateV3 | EarlyStandardResourceEstimateV3 | null,
 ): ModelDiagnosticV3 {
+  const earlyAdmission = estimate !== null && "admissionStage" in estimate;
   const metrics = estimate === null ? null : {
+    "dataset-bytes": {
+      value: estimate.datasetSizeBytes,
+      limit: MAX_ESTIMATED_DATASET_BYTES_V3,
+    },
+    "identity-bytes": {
+      value: estimate.identityPayloadBytes,
+      limit: MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3,
+    },
+    "state-count": {
+      value: estimate.estimatedStateCount,
+      limit: MAX_ESTIMATED_STATE_COUNT_V3,
+    },
+    "structural-bytes": {
+      value: estimate.estimatedStructuralBytes,
+      limit: MAX_ESTIMATED_STRUCTURAL_BYTES_V3,
+    },
     "numeric-cells": {
       value: estimate.estimatedNumericCells,
       limit: MAX_ESTIMATED_NUMERIC_CELLS_V3,
@@ -1740,8 +1957,12 @@ function resourceBudgetDiagnosticV3(
     severity: "error",
     scope: "resources",
     fieldPath: "resources",
-    summary: "The exact model configuration exceeds the fixed resource budget.",
-    detail: "No rows, Codes, extents, or Horizons were reduced automatically; revise the configuration explicitly before model construction or export.",
+    summary: earlyAdmission
+      ? "The candidate dataset exceeds the conservative early resource admission budget."
+      : "The exact model configuration exceeds the fixed resource budget.",
+    detail: earlyAdmission
+      ? "The descriptor-safe worst-case envelope was rejected before row snapshots or identity materialization; no data or model settings were reduced automatically."
+      : "No rows, Codes, extents, or Horizons were reduced automatically; revise the configuration explicitly before model construction or export.",
     blocks: ["build-model", "export-current-model", "export-reference"],
     evidence: evidenceV3(estimate === null ? 1 : reasons.length, samples),
   });
@@ -1752,14 +1973,69 @@ export function validateStandardDraftV3(
   bindingValue: DatasetBindingV3,
   draftValue: StandardEnaDraftV3,
 ): readonly ModelDiagnosticV3[] {
-  let trusted: { dataset: DatasetSnapshotV3; binding: DatasetBindingV3 };
+  let trustedEnvelope: { envelope: DatasetEnvelopeV3; binding: DatasetBindingV3 };
   try {
-    trusted = snapshotDatasetAndBindingV3(datasetValue, bindingValue);
-  } catch {
-    return finalizeDiagnosticsV3([datasetBindingInvalidDiagnosticV3()]);
+    trustedEnvelope = snapshotDatasetEnvelopeAndBindingV3(datasetValue, bindingValue);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      return finalizeDiagnosticsV3([datasetBindingInvalidDiagnosticV3()]);
+    }
+    throw error;
   }
   const modelDraft = snapshotDraftV3(draftValue);
-  const { dataset, binding } = trusted;
+  const { envelope, binding } = trustedEnvelope;
+  const earlyEstimateInput = {
+    rowCount: envelope.rowCount,
+    codeCount: modelDraft.codes.length,
+    datasetSizeBytes: envelope.sizeBytes,
+    identityPayloadBytes: 0,
+  };
+  try {
+    const early = estimateEarlyStandardResourcesV3(earlyEstimateInput);
+    if (early.blocked) return finalizeDiagnosticsV3([resourceBudgetDiagnosticV3(early)]);
+  } catch (error) {
+    if (error instanceof ResourceEstimateErrorV3) {
+      return finalizeDiagnosticsV3([resourceBudgetDiagnosticV3(null)]);
+    }
+    throw error;
+  }
+
+  const preparedOrders = prepareScientificOrdersV3(modelDraft);
+  let identityPayloadBytes: number;
+  let identityAdmission: SelectedIdentityAdmissionSnapshotV3;
+  try {
+    identityAdmission = snapshotSelectedIdentityAdmissionV3(
+      envelope.rowsValue,
+      envelope.rowCount,
+      identityAdmissionColumnsV3(modelDraft, preparedOrders),
+    );
+    identityPayloadBytes = identityAdmission.payloadBytes;
+    const identityEstimate = estimateEarlyStandardResourcesV3({
+      ...earlyEstimateInput,
+      identityPayloadBytes,
+    });
+    if (identityEstimate.blocked) {
+      return finalizeDiagnosticsV3([resourceBudgetDiagnosticV3(identityEstimate)]);
+    }
+  } catch (error) {
+    if (error instanceof ResourceEstimateErrorV3) {
+      return finalizeDiagnosticsV3([resourceBudgetDiagnosticV3(null)]);
+    }
+    if (error instanceof TypeError) {
+      return finalizeDiagnosticsV3([datasetBindingInvalidDiagnosticV3()]);
+    }
+    throw error;
+  }
+
+  let dataset: DatasetSnapshotV3;
+  try {
+    dataset = snapshotDatasetRowsV3(envelope, identityAdmission);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      return finalizeDiagnosticsV3([datasetBindingInvalidDiagnosticV3()]);
+    }
+    throw error;
+  }
   const output: ModelDiagnosticV3[] = [];
   const headerSet = new Set(dataset.headers);
 
@@ -1840,7 +2116,8 @@ export function validateStandardDraftV3(
   const activeRowOrderColumns: string[] = [];
   if (modelDraft.windowType === "MovingStanzaWindow") {
     try {
-      moving = snapshotMovingWindowV3(modelDraft.movingStanza);
+      if (preparedOrders.movingError !== null) throw preparedOrders.movingError;
+      moving = preparedOrders.moving;
       if (moving === null) {
         connectivityRowWindowPrerequisitesValid = false;
         output.push(diagnosticV3({
@@ -1853,13 +2130,6 @@ export function validateStandardDraftV3(
           blocks: ["build-model"],
         }));
       } else {
-        moving = {
-          ...moving,
-          rowOrder: snapshotOrderPolicyForResolverV3(
-            moving.rowOrder,
-            "draft.movingStanza.rowOrder",
-          ),
-        };
         if (moving.rowOrder.kind === "columns") {
           activeRowOrderColumns.push(...moving.rowOrder.keys.map((key) => key.column));
           if (moving.rowOrder.keys.some((key) => !headerSet.has(key.column))) {
@@ -1902,7 +2172,9 @@ export function validateStandardDraftV3(
       }));
     } else {
       try {
-        const horizonPolicy = snapshotOrderPolicyForResolverV3(modelDraft.horizonOrder, "draft.horizonOrder");
+        if (preparedOrders.horizonError !== null) throw preparedOrders.horizonError;
+        const horizonPolicy = preparedOrders.horizonOrder;
+        if (horizonPolicy === null) throw new TypeError("Trajectory Horizon order could not be snapshotted.");
         if (horizonPolicy.kind === "columns") {
           activeHorizonOrderColumns.push(...horizonPolicy.keys.map((key) => key.column));
           if (horizonPolicy.keys.some((key) => !headerSet.has(key.column))) {
@@ -2071,6 +2343,8 @@ export function validateStandardDraftV3(
           ? moving!.forward
           : { kind: "finite", value: 0 },
         referenceProjection: modelDraft.rotation.type === "reference",
+        datasetSizeBytes: dataset.sizeBytes,
+        identityPayloadBytes,
       });
       if (estimate.blocked) {
         resourceBlocked = true;
