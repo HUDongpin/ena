@@ -138,6 +138,7 @@ function sourceIndices(plan: StandardExecutionPlanV3): number[] {
 interface ShallowArrayTrapCounts {
   ownKeys: number;
   elementDescriptors: number;
+  lengthDescriptors?: number;
 }
 
 function guardedArray<T>(values: T[], counts: ShallowArrayTrapCounts): T[] {
@@ -174,7 +175,74 @@ function zeroTrapCounts(): ShallowArrayTrapCounts {
 }
 
 function assertNoDeepTraversal(counts: ShallowArrayTrapCounts, label: string): void {
-  assert.deepEqual(counts, { ownKeys: 0, elementDescriptors: 0 }, label);
+  assert.equal(counts.ownKeys, 0, `${label} ownKeys`);
+  assert.equal(counts.elementDescriptors, 0, `${label} element descriptors`);
+}
+
+function shiftingLengthArray<T>(
+  values: T[],
+  admittedLength: number,
+  counts: ShallowArrayTrapCounts,
+): T[] {
+  counts.lengthDescriptors = 0;
+  return new Proxy(values, {
+    ownKeys(target) {
+      counts.ownKeys += 1;
+      return Reflect.ownKeys(target);
+    },
+    getOwnPropertyDescriptor(target, key) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+      if (key === "length" && descriptor !== undefined && "value" in descriptor) {
+        counts.lengthDescriptors = (counts.lengthDescriptors ?? 0) + 1;
+        return (counts.lengthDescriptors ?? 0) === 1
+          ? { ...descriptor, value: admittedLength }
+          : descriptor;
+      }
+      counts.elementDescriptors += 1;
+      return descriptor;
+    },
+  });
+}
+
+function sequencedLengthArray<T>(
+  values: T[],
+  lengths: readonly number[],
+  counts: ShallowArrayTrapCounts,
+): T[] {
+  counts.lengthDescriptors = 0;
+  return new Proxy(values, {
+    ownKeys(target) {
+      counts.ownKeys += 1;
+      return Reflect.ownKeys(target);
+    },
+    getOwnPropertyDescriptor(target, key) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+      if (key === "length" && descriptor !== undefined && "value" in descriptor) {
+        counts.lengthDescriptors = (counts.lengthDescriptors ?? 0) + 1;
+        const index = Math.min((counts.lengthDescriptors ?? 1) - 1, lengths.length - 1);
+        return { ...descriptor, value: lengths[index] };
+      }
+      counts.elementDescriptors += 1;
+      return descriptor;
+    },
+  });
+}
+
+function shiftingRecordProperty(
+  value: Record<string, unknown>,
+  key: string,
+  admittedValue: unknown,
+  laterValue: unknown,
+): Record<string, unknown> {
+  let reads = 0;
+  return new Proxy(value, {
+    getOwnPropertyDescriptor(target, property) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(target, property);
+      if (property !== key || descriptor === undefined || !("value" in descriptor)) return descriptor;
+      reads += 1;
+      return { ...descriptor, value: reads === 1 ? admittedValue : laterValue };
+    },
+  });
 }
 
 function replacementResourceEstimate(
@@ -884,6 +952,160 @@ test("validator rejects unknown root keys without traversing their values", asyn
   candidate.unexpected = guardedRecord({ nested: { prompt: "untrusted" } }, extraValue);
   await assert.rejects(validateExecutionPlanV3(candidate), /invalid shape/);
   assertNoDeepTraversal(extraValue, "unknown root value");
+});
+
+test("validator rejects a staged 3-to-401 Code shift before any dense array traversal", async () => {
+  const candidate = mutablePlan(await planFor(draft(), unsharedDataset()));
+  const codeCount = 401;
+  const edgeCount = codeCount * (codeCount - 1) / 2;
+  const configCodes = zeroTrapCounts();
+  const dictionaryCodes = zeroTrapCounts();
+  const dictionaryEdges = zeroTrapCounts();
+  const representations = zeroTrapCounts();
+  const adapterTokens = zeroTrapCounts();
+  candidate.configuration.codes = shiftingLengthArray(
+    new Array(codeCount).fill(null),
+    3,
+    configCodes,
+  );
+  candidate.codeDictionary.codes = shiftingLengthArray(
+    new Array(codeCount).fill(null),
+    3,
+    dictionaryCodes,
+  );
+  candidate.codeDictionary.edges = shiftingLengthArray(
+    new Array(edgeCount).fill(null),
+    3,
+    dictionaryEdges,
+  );
+  candidate.codeRepresentations = shiftingLengthArray(
+    new Array(codeCount).fill(null),
+    3,
+    representations,
+  );
+  candidate.adapterParameters.codeTokens = shiftingLengthArray(
+    new Array(codeCount).fill("__open_ena_code_v3_000"),
+    3,
+    adapterTokens,
+  );
+
+  await assert.rejects(validateExecutionPlanV3(candidate));
+  assertNoDeepTraversal(configCodes, "shifted configuration Codes");
+  assertNoDeepTraversal(dictionaryCodes, "shifted Code dictionary");
+  assertNoDeepTraversal(dictionaryEdges, "shifted edge dictionary");
+  assertNoDeepTraversal(representations, "shifted Code representations");
+  assertNoDeepTraversal(adapterTokens, "shifted adapter tokens");
+});
+
+test("validator rejects a staged 4-to-50k row shift before row traversal", async () => {
+  const candidate = mutablePlan(await planFor(draft(), unsharedDataset()));
+  const rows = zeroTrapCounts();
+  candidate.rows = shiftingLengthArray(
+    Array.from({ length: 50_000 }, (_value, index) => candidate.rows[index] ?? null),
+    4,
+    rows,
+  );
+
+  await assert.rejects(validateExecutionPlanV3(candidate));
+  assertNoDeepTraversal(rows, "shifted execution rows");
+});
+
+test("validator rejects a staged dataset-byte shift before row traversal", async () => {
+  const candidate = mutablePlan(await planFor(draft(), unsharedDataset()));
+  candidate.sourceProof.dataset = shiftingRecordProperty(
+    candidate.sourceProof.dataset,
+    "sizeBytes",
+    candidate.sourceProof.dataset.sizeBytes,
+    MAX_ESTIMATED_DATASET_BYTES_V3 + 1,
+  );
+  const rows = zeroTrapCounts();
+  const proofRows = zeroTrapCounts();
+  candidate.rows = guardedArray(candidate.rows, rows);
+  candidate.sourceProof.rows = guardedArray(candidate.sourceProof.rows, proofRows);
+
+  await assert.rejects(validateExecutionPlanV3(candidate));
+  assertNoDeepTraversal(rows, "dataset-shift execution rows");
+  assertNoDeepTraversal(proofRows, "dataset-shift source-proof rows");
+});
+
+test("validator rejects a staged null-to-object Reference shift without traversing it", async () => {
+  const candidate = mutablePlan(await planFor(draft(), unsharedDataset()));
+  const reference = zeroTrapCounts();
+  const rows = zeroTrapCounts();
+  const referenceProxy = guardedRecord({ nested: "untrusted" }, reference);
+  candidate.rows = guardedArray(candidate.rows, rows);
+  const shiftingRoot = shiftingRecordProperty(candidate, "reference", null, referenceProxy);
+
+  await assert.rejects(validateExecutionPlanV3(shiftingRoot));
+  assertNoDeepTraversal(reference, "shifted Reference");
+  assertNoDeepTraversal(rows, "Reference-shift rows");
+});
+
+test("validator never rereads caller descriptors after the accepted capture", async () => {
+  const candidate = mutablePlan(await planFor(draft(), unsharedDataset()));
+  const codeLengths = zeroTrapCounts();
+  const rowLengths = zeroTrapCounts();
+  candidate.configuration.codes = sequencedLengthArray(
+    candidate.configuration.codes,
+    [3, 3, 401],
+    codeLengths,
+  );
+  candidate.rows = sequencedLengthArray(
+    candidate.rows,
+    [4, 4, 50_000],
+    rowLengths,
+  );
+  let sizeReads = 0;
+  candidate.sourceProof.dataset = new Proxy(candidate.sourceProof.dataset, {
+    getOwnPropertyDescriptor(target, property) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(target, property);
+      if (property !== "sizeBytes" || descriptor === undefined || !("value" in descriptor)) {
+        return descriptor;
+      }
+      sizeReads += 1;
+      return {
+        ...descriptor,
+        value: sizeReads <= 2 ? target.sizeBytes : MAX_ESTIMATED_DATASET_BYTES_V3 + 1,
+      };
+    },
+  });
+  const lateReference = zeroTrapCounts();
+  const lateReferenceProxy = guardedRecord({ nested: "must remain unread" }, lateReference);
+  let referenceReads = 0;
+  const guardedRoot = new Proxy(candidate, {
+    getOwnPropertyDescriptor(target, property) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(target, property);
+      if (property !== "reference" || descriptor === undefined || !("value" in descriptor)) {
+        return descriptor;
+      }
+      referenceReads += 1;
+      return { ...descriptor, value: referenceReads <= 2 ? null : lateReferenceProxy };
+    },
+  });
+
+  const validated = await validateExecutionPlanV3(guardedRoot);
+  assert.equal(validated.header.rowCount, 4);
+  assert.equal(codeLengths.lengthDescriptors, 2);
+  assert.equal(rowLengths.lengthDescriptors, 2);
+  assert.equal(sizeReads, 2);
+  assert.equal(referenceReads, 2);
+  assertNoDeepTraversal(lateReference, "post-capture Reference");
+});
+
+test("descriptor-coherent capture rejects cycles and permits repeated acyclic references", async () => {
+  const cyclic = mutablePlan(await planFor());
+  cyclic.weighting.self = cyclic.weighting;
+  await assert.rejects(validateExecutionPlanV3(cyclic), /cyclic/);
+
+  const repeated = mutablePlan(await planFor());
+  const sharedEmpty: unknown[] = [];
+  repeated.header.resourceEstimate.blockedReasons = sharedEmpty;
+  repeated.rowOrdering.textCollationBindings = sharedEmpty;
+  const validated = await validateExecutionPlanV3(repeated);
+  assert.equal(validated.header.resourceEstimate.blocked, false);
+  assert.deepEqual(validated.rowOrdering.type === "within-horizon-order"
+    ? validated.rowOrdering.textCollationBindings
+    : null, []);
 });
 
 test("resource estimates cannot choose their own dataset byte base", async () => {

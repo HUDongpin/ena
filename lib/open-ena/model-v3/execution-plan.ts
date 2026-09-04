@@ -375,10 +375,7 @@ function denseArrayV3(value: unknown, label: string): unknown[] {
   return snapshotDenseJsonArrayV3(value, label);
 }
 
-function shallowArrayLengthV3(value: unknown, label: string): number {
-  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
-    throw new TypeError(`${label} must be a plain array.`);
-  }
+function arrayLengthDescriptorV3(value: unknown[], label: string): number {
   const descriptor = Object.getOwnPropertyDescriptor(value, "length");
   if (descriptor === undefined
     || descriptor.enumerable
@@ -389,6 +386,207 @@ function shallowArrayLengthV3(value: unknown, label: string): number {
     throw new TypeError(`${label}.length is invalid.`);
   }
   return descriptor.value;
+}
+
+function shallowArrayLengthV3(value: unknown, label: string): number {
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+    throw new TypeError(`${label} must be a plain array.`);
+  }
+  return arrayLengthDescriptorV3(value, label);
+}
+
+interface StagedRecordGuardV3 {
+  readonly original: object;
+  readonly label: string;
+  readonly expectedKeys: readonly string[];
+  readonly admitted: Record<string, unknown>;
+}
+
+interface StagedArrayGuardV3 {
+  readonly original: unknown[];
+  readonly label: string;
+  readonly admittedLength: number;
+}
+
+interface ExecutionPlanAdmissionCaptureV3 {
+  readonly root: object;
+  readonly records: ReadonlyMap<object, StagedRecordGuardV3>;
+  readonly arrays: ReadonlyMap<object, StagedArrayGuardV3>;
+}
+
+interface MutableExecutionPlanAdmissionCaptureV3 {
+  readonly records: Map<object, StagedRecordGuardV3>;
+  readonly arrays: Map<object, StagedArrayGuardV3>;
+}
+
+function stageRecordV3(
+  capture: MutableExecutionPlanAdmissionCaptureV3,
+  value: unknown,
+  expectedKeys: readonly string[],
+  label: string,
+): Record<string, unknown> {
+  const original = value as object;
+  const existing = value !== null && typeof value === "object"
+    ? capture.records.get(original)
+    : undefined;
+  if (existing !== undefined) {
+    exactKeysV3(existing.admitted, expectedKeys, label);
+    return existing.admitted;
+  }
+  const admitted = snapshotPlainJsonRecordV3(value, label);
+  exactKeysV3(admitted, expectedKeys, label);
+  capture.records.set(original, { original, label, expectedKeys, admitted });
+  return admitted;
+}
+
+function stageRecordShapeV3(
+  capture: MutableExecutionPlanAdmissionCaptureV3,
+  value: unknown,
+  label: string,
+): Record<string, unknown> {
+  const original = value as object;
+  const existing = value !== null && typeof value === "object"
+    ? capture.records.get(original)
+    : undefined;
+  if (existing !== undefined) return existing.admitted;
+  const admitted = snapshotPlainJsonRecordV3(value, label);
+  capture.records.set(original, {
+    original,
+    label,
+    expectedKeys: Object.keys(admitted),
+    admitted,
+  });
+  return admitted;
+}
+
+function stageArrayLengthV3(
+  capture: MutableExecutionPlanAdmissionCaptureV3,
+  value: unknown,
+  label: string,
+): number {
+  const original = value as unknown[];
+  const existing = Array.isArray(value) ? capture.arrays.get(original) : undefined;
+  if (existing !== undefined) return existing.admittedLength;
+  const admittedLength = shallowArrayLengthV3(value, label);
+  capture.arrays.set(original, { original, label, admittedLength });
+  return admittedLength;
+}
+
+function sameDescriptorValuesV3(
+  admitted: Record<string, unknown>,
+  accepted: Record<string, unknown>,
+  expectedKeys: readonly string[],
+  label: string,
+): void {
+  for (const key of expectedKeys) {
+    if (!Object.is(admitted[key], accepted[key])) {
+      throw new TypeError(`${label}.${key} changed after staged admission.`);
+    }
+  }
+}
+
+function guardedDenseArrayElementsV3(
+  value: unknown[],
+  acceptedLength: number,
+  label: string,
+): unknown[] {
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== acceptedLength + 1 || !keys.includes("length")) {
+    throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
+  }
+  const elements = new Array<unknown>(acceptedLength);
+  let elementCount = 0;
+  for (const key of keys) {
+    if (key === "length") continue;
+    if (typeof key !== "string"
+      || !/^(0|[1-9]\d*)$/u.test(key)
+      || !Number.isSafeInteger(Number(key))) {
+      throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
+    }
+    const index = Number(key);
+    if (index >= acceptedLength) {
+      throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+      throw new TypeError(`${label}[${key}] must be an own enumerable data property, not an accessor.`);
+    }
+    elements[index] = descriptor.value;
+    elementCount += 1;
+  }
+  if (elementCount !== acceptedLength) {
+    throw new TypeError(`${label} must be a dense plain JSON array without extra properties.`);
+  }
+  return elements;
+}
+
+function captureAdmittedExecutionPlanV3(
+  admission: ExecutionPlanAdmissionCaptureV3,
+): unknown {
+  const acceptedRecords = new Map<object, Record<string, unknown>>();
+  for (const guard of admission.records.values()) {
+    const accepted = snapshotPlainJsonRecordV3(guard.original, guard.label);
+    exactKeysV3(accepted, guard.expectedKeys, guard.label);
+    sameDescriptorValuesV3(guard.admitted, accepted, guard.expectedKeys, guard.label);
+    acceptedRecords.set(guard.original, accepted);
+  }
+
+  const acceptedArrayLengths = new Map<object, number>();
+  for (const guard of admission.arrays.values()) {
+    const acceptedLength = shallowArrayLengthV3(guard.original, guard.label);
+    if (acceptedLength !== guard.admittedLength) {
+      throw new TypeError(`${guard.label}.length changed after staged admission.`);
+    }
+    acceptedArrayLengths.set(guard.original, acceptedLength);
+  }
+
+  const active = new WeakSet<object>();
+  const detached = new WeakMap<object, unknown>();
+  const visit = (value: unknown, label: string): unknown => {
+    if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) throw new TypeError(`${label} must contain only finite JSON numbers.`);
+      return Object.is(value, -0) ? 0 : value;
+    }
+    if (typeof value !== "object") {
+      throw new TypeError(`${label} contains a value that is not a JSON value.`);
+    }
+    if (active.has(value)) throw new TypeError(`${label} contains a cyclic reference.`);
+    const previous = detached.get(value);
+    if (previous !== undefined) return previous;
+    active.add(value);
+    try {
+      if (Array.isArray(value)) {
+        const guardedLength = acceptedArrayLengths.get(value);
+        if (guardedLength === undefined && Object.getPrototypeOf(value) !== Array.prototype) {
+          throw new TypeError(`${label} must be a dense plain JSON array.`);
+        }
+        const length = guardedLength ?? arrayLengthDescriptorV3(value, label);
+        const elements = guardedDenseArrayElementsV3(value, length, label);
+        const output = new Array<unknown>(length);
+        detached.set(value, output);
+        for (let index = 0; index < elements.length; index += 1) {
+          output[index] = visit(elements[index], `${label}[${index}]`);
+        }
+        return output;
+      }
+      const record = acceptedRecords.get(value) ?? snapshotPlainJsonRecordV3(value, label);
+      const output: Record<string, unknown> = {};
+      detached.set(value, output);
+      for (const key of Object.keys(record)) {
+        Object.defineProperty(output, key, {
+          value: visit(record[key], `${label}.${key}`),
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        });
+      }
+      return output;
+    } finally {
+      active.delete(value);
+    }
+  };
+  return visit(admission.root, "executionPlan");
 }
 
 function lowercaseSha256V3(value: unknown, label: string): string {
@@ -1695,24 +1893,38 @@ function undirectedEdgeCountV3(codeCount: number): number {
  * length descriptors only; scientific array elements remain untouched until
  * both source-envelope and dense-rotation lower bounds are admitted.
  */
-function admitExecutionPlanEnvelopeV3(value: unknown): void {
-  const plan = snapshotPlainJsonRecordV3(value, "executionPlan");
-  exactKeysV3(plan, EXECUTION_PLAN_ROOT_KEYS_V3, "executionPlan");
+function admitExecutionPlanEnvelopeV3(value: unknown): ExecutionPlanAdmissionCaptureV3 {
+  const capture: MutableExecutionPlanAdmissionCaptureV3 = {
+    records: new Map(),
+    arrays: new Map(),
+  };
+  const plan = stageRecordV3(
+    capture,
+    value,
+    EXECUTION_PLAN_ROOT_KEYS_V3,
+    "executionPlan",
+  );
   if (plan.reference !== null) {
     throw new TypeError("Standard execution plans cannot carry an unvalidated Reference binding.");
   }
 
-  const configuration = snapshotPlainJsonRecordV3(plan.configuration, "executionPlan.configuration");
-  exactKeysV3(configuration, STANDARD_CONFIGURATION_KEYS_V3, "executionPlan.configuration");
+  const configuration = stageRecordV3(
+    capture,
+    plan.configuration,
+    STANDARD_CONFIGURATION_KEYS_V3,
+    "executionPlan.configuration",
+  );
   if (configuration.schemaVersion !== 3 || configuration.analysisFamily !== "standard") {
     throw new TypeError("Execution plan configuration must be Standard schema v3.");
   }
-  const analysis = snapshotPlainJsonRecordV3(
+  const analysis = stageRecordV3(
+    capture,
     configuration.analysis,
+    ["model", "rotation"],
     "executionPlan.configuration.analysis",
   );
-  exactKeysV3(analysis, ["model", "rotation"], "executionPlan.configuration.analysis");
-  const rotation = snapshotPlainJsonRecordV3(
+  const rotation = stageRecordShapeV3(
+    capture,
     analysis.rotation,
     "executionPlan.configuration.analysis.rotation",
   );
@@ -1721,23 +1933,25 @@ function admitExecutionPlanEnvelopeV3(value: unknown): void {
       "Reference execution remains fail-closed until Task 13 supplies a complete content-addressed Reference v2 artifact.",
     );
   }
-  const codeCount = shallowArrayLengthV3(
+  const codeCount = stageArrayLengthV3(
+    capture,
     configuration.codes,
     "executionPlan.configuration.codes",
   );
 
-  const header = snapshotPlainJsonRecordV3(plan.header, "executionPlan.header");
-  exactKeysV3(header, EXECUTION_PLAN_HEADER_KEYS_V3, "executionPlan.header");
+  const header = stageRecordV3(
+    capture,
+    plan.header,
+    EXECUTION_PLAN_HEADER_KEYS_V3,
+    "executionPlan.header",
+  );
   if (header.schemaVersion !== 3 || header.analysisFamily !== "standard") {
     throw new TypeError("Execution plan header must be Standard schema v3.");
   }
   const rowCount = nonnegativeSafeIntegerV3(header.rowCount, "executionPlan.header.rowCount");
-  const binding = snapshotPlainJsonRecordV3(
+  const binding = stageRecordV3(
+    capture,
     header.datasetBinding,
-    "executionPlan.header.datasetBinding",
-  );
-  exactKeysV3(
-    binding,
     ["hashKind", "normalizedTableSha256", "rowCount", "headerSha256"],
     "executionPlan.header.datasetBinding",
   );
@@ -1745,11 +1959,12 @@ function admitExecutionPlanEnvelopeV3(value: unknown): void {
     binding.rowCount,
     "executionPlan.header.datasetBinding.rowCount",
   );
-  const resource = snapshotPlainJsonRecordV3(
+  const resource = stageRecordV3(
+    capture,
     header.resourceEstimate,
+    STANDARD_RESOURCE_KEYS_V3,
     "executionPlan.header.resourceEstimate",
   );
-  exactKeysV3(resource, STANDARD_RESOURCE_KEYS_V3, "executionPlan.header.resourceEstimate");
   if (resource.version !== RESOURCE_BUDGET_VERSION_V3 || resource.analysisFamily !== "standard") {
     throw new TypeError("Execution plan resource estimate has an unsupported contract.");
   }
@@ -1769,7 +1984,8 @@ function admitExecutionPlanEnvelopeV3(value: unknown): void {
     resource.adjacencyDimensions,
     "executionPlan.header.resourceEstimate.adjacencyDimensions",
   );
-  const blockedReasonCount = shallowArrayLengthV3(
+  const blockedReasonCount = stageArrayLengthV3(
+    capture,
     resource.blockedReasons,
     "executionPlan.header.resourceEstimate.blockedReasons",
   );
@@ -1777,17 +1993,18 @@ function admitExecutionPlanEnvelopeV3(value: unknown): void {
     throw new TypeError("Execution plan resource estimate must already be admitted.");
   }
 
-  const sourceProof = snapshotPlainJsonRecordV3(plan.sourceProof, "executionPlan.sourceProof");
-  exactKeysV3(sourceProof, SOURCE_PROOF_KEYS_V3, "executionPlan.sourceProof");
+  const sourceProof = stageRecordV3(
+    capture,
+    plan.sourceProof,
+    SOURCE_PROOF_KEYS_V3,
+    "executionPlan.sourceProof",
+  );
   if (sourceProof.schemaVersion !== 1) {
     throw new TypeError("executionPlan.sourceProof.schemaVersion must be 1.");
   }
-  const proofDataset = snapshotPlainJsonRecordV3(
+  const proofDataset = stageRecordV3(
+    capture,
     sourceProof.dataset,
-    "executionPlan.sourceProof.dataset",
-  );
-  exactKeysV3(
-    proofDataset,
     SOURCE_PROOF_DATASET_KEYS_V3,
     "executionPlan.sourceProof.dataset",
   );
@@ -1799,32 +2016,42 @@ function admitExecutionPlanEnvelopeV3(value: unknown): void {
     proofDataset.sizeBytes,
     "executionPlan.sourceProof.dataset.sizeBytes",
   );
-  const proofRows = shallowArrayLengthV3(sourceProof.rows, "executionPlan.sourceProof.rows");
-  const planRows = shallowArrayLengthV3(plan.rows, "executionPlan.rows");
+  const proofRows = stageArrayLengthV3(
+    capture,
+    sourceProof.rows,
+    "executionPlan.sourceProof.rows",
+  );
+  const planRows = stageArrayLengthV3(capture, plan.rows, "executionPlan.rows");
 
-  const codeDictionary = snapshotPlainJsonRecordV3(
+  const codeDictionary = stageRecordV3(
+    capture,
     plan.codeDictionary,
+    ["codes", "edges"],
     "executionPlan.codeDictionary",
   );
-  exactKeysV3(codeDictionary, ["codes", "edges"], "executionPlan.codeDictionary");
-  const dictionaryCodes = shallowArrayLengthV3(
+  const dictionaryCodes = stageArrayLengthV3(
+    capture,
     codeDictionary.codes,
     "executionPlan.codeDictionary.codes",
   );
-  const dictionaryEdges = shallowArrayLengthV3(
+  const dictionaryEdges = stageArrayLengthV3(
+    capture,
     codeDictionary.edges,
     "executionPlan.codeDictionary.edges",
   );
-  const representationCount = shallowArrayLengthV3(
+  const representationCount = stageArrayLengthV3(
+    capture,
     plan.codeRepresentations,
     "executionPlan.codeRepresentations",
   );
-  const adapter = snapshotPlainJsonRecordV3(
+  const adapter = stageRecordV3(
+    capture,
     plan.adapterParameters,
+    STANDARD_ADAPTER_PARAMETER_KEYS_V3,
     "executionPlan.adapterParameters",
   );
-  exactKeysV3(adapter, STANDARD_ADAPTER_PARAMETER_KEYS_V3, "executionPlan.adapterParameters");
-  const adapterCodeCount = shallowArrayLengthV3(
+  const adapterCodeCount = stageArrayLengthV3(
+    capture,
     adapter.codeTokens,
     "executionPlan.adapterParameters.codeTokens",
   );
@@ -1873,10 +2100,15 @@ function admitExecutionPlanEnvelopeV3(value: unknown): void {
   if (lowerBound.blocked) {
     throw new TypeError("Execution plan exceeds an unavoidable Standard resource lower bound.");
   }
+  return {
+    root: value as object,
+    records: capture.records,
+    arrays: capture.arrays,
+  };
 }
 
 function decodePlanShapeV3(value: unknown): StandardExecutionPlanV3 {
-  const plan = plainRecordV3(snapshotJsonValueV3(value), "executionPlan");
+  const plan = plainRecordV3(value, "executionPlan");
   exactKeysV3(plan, EXECUTION_PLAN_ROOT_KEYS_V3, "executionPlan");
   const headerRecord = plainRecordV3(plan.header, "executionPlan.header");
   exactKeysV3(headerRecord, EXECUTION_PLAN_HEADER_KEYS_V3, "executionPlan.header");
@@ -1967,10 +2199,11 @@ function decodePlanShapeV3(value: unknown): StandardExecutionPlanV3 {
 export async function validateExecutionPlanV3(input: unknown): Promise<OpenEnaExecutionPlanV3> {
   // Shallow admission precedes canonical capture so hostile or impossible
   // envelopes cannot force scientific-array traversal or dense dictionaries.
-  admitExecutionPlanEnvelopeV3(input);
-  // Strict canonical capture then runs before any await and before any property
-  // read that could execute a getter. The decoded plan is detached from input.
-  const plan = decodePlanShapeV3(input);
+  const admission = admitExecutionPlanEnvelopeV3(input);
+  const capturedInput = captureAdmittedExecutionPlanV3(admission);
+  // The accepted descriptor capture runs before any await. The deep decoder
+  // consumes only its detached graph and never reads caller-owned input again.
+  const plan = decodePlanShapeV3(capturedInput);
   const sourceProofPayload = sourceProofPayloadV3(plan.sourceProof);
   const proofDataset = parsedDatasetFromSourceProofV3(sourceProofPayload);
   const sourceProofHashOutcomePromise = settlePromiseV3(sha256CanonicalJsonV3(sourceProofPayload));
