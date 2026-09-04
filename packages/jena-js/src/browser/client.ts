@@ -316,6 +316,10 @@ export function createENAWorkerClient(initialWorker: ENAWorkerLike, options: ENA
       throw new TypeError('weightBy functions cannot cross the worker boundary; use "binary" or "sum".');
     }
     const runOptions = normalizeRunOptions(runOptionsInput);
+    if (runOptions.chunkSize !== undefined
+      && (!Number.isSafeInteger(runOptions.chunkSize) || runOptions.chunkSize <= 0)) {
+      throw new RangeError(`chunkSize must be a positive safe integer; got ${String(runOptions.chunkSize)}.`);
+    }
     const id = makeRequestId();
     const promise = new Promise<ENASet>((resolve, reject) => {
       if (runOptions.signal?.aborted) {

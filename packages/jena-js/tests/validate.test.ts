@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accumulateData, createAccumulationStream, ena } from "../src/index.js";
+import { accumulateData, accumulateDataChunked, createAccumulationStream, ena } from "../src/index.js";
 import type { ENAOptions, Row } from "../src/index.js";
 
 const rows: Row[] = [
@@ -73,6 +73,40 @@ describe("input validation (advisory F-011)", () => {
       .toThrow(/codes must list at least 2/);
     expect(() => createAccumulationStream({ units: ["unit"], conversation: ["conv"], codes: ["A", "B"], windowSizeBack: -1 }))
       .toThrow(/windowSizeBack/);
+  });
+
+  it("rejects misspelled materialization modes at every streaming entry point", () => {
+    expect(() => accumulateDataChunked({
+      ...good,
+      materialization: "modal" as never,
+    })).toThrow(/materialization.*full.*model/i);
+    expect(() => createAccumulationStream({
+      units: good.units,
+      conversation: good.conversation,
+      codes: good.codes,
+      materialization: "modal" as never,
+    })).toThrow(/materialization.*full.*model/i);
+  });
+
+  it("requires chunkSize to be a positive safe integer and accepts safe values", () => {
+    for (const chunkSize of [0.5, Number.MIN_VALUE, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => accumulateDataChunked({ ...good, chunkSize })).toThrow(/chunkSize.*positive safe integer/i);
+      expect(() => createAccumulationStream({
+        units: good.units,
+        conversation: good.conversation,
+        codes: good.codes,
+        chunkSize,
+      })).toThrow(/chunkSize.*positive safe integer/i);
+    }
+    expect(accumulateDataChunked({ ...good, chunkSize: 1 }).connectionMatrix.length).toBeGreaterThan(0);
+    const stream = createAccumulationStream({
+      units: good.units,
+      conversation: good.conversation,
+      codes: good.codes,
+      chunkSize: 1,
+    });
+    stream.push(rows);
+    expect(stream.finish().connectionMatrix.length).toBeGreaterThan(0);
   });
 
   it("keeps accumulateData's misleading co-occurrence error replaced by a named one", () => {

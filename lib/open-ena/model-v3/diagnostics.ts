@@ -13,7 +13,9 @@ import {
   MAX_ESTIMATED_EXPORT_BYTES_V3,
   MAX_ESTIMATED_NUMERIC_CELLS_V3,
   MAX_ESTIMATED_PEAK_BYTES_V3,
+  MAX_ESTIMATED_ROTATION_WORK_UNITS_V3,
   MAX_ESTIMATED_WINDOW_VISITS_V3,
+  ResourceEstimateErrorV3,
   estimateStandardResourcesV3,
 } from "./resource-budget";
 import type { StandardResourceEstimateV3 } from "./resource-budget";
@@ -1708,6 +1710,10 @@ function resourceBudgetDiagnosticV3(
       value: estimate.estimatedWindowVisits,
       limit: MAX_ESTIMATED_WINDOW_VISITS_V3,
     },
+    "rotation-work": {
+      value: estimate.estimatedRotationWorkUnits,
+      limit: MAX_ESTIMATED_ROTATION_WORK_UNITS_V3,
+    },
     "peak-bytes": {
       value: estimate.estimatedPeakBytes,
       limit: MAX_ESTIMATED_PEAK_BYTES_V3,
@@ -2065,7 +2071,8 @@ export function validateStandardDraftV3(
         resourceBlocked = true;
         output.push(resourceBudgetDiagnosticV3(estimate));
       }
-    } catch {
+    } catch (error) {
+      if (!(error instanceof ResourceEstimateErrorV3)) throw error;
       resourceBlocked = true;
       output.push(resourceBudgetDiagnosticV3(null));
     }

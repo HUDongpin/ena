@@ -1,3 +1,9 @@
+import {
+  DENSE_SVD_MAX_MATRIX_BYTES,
+  DENSE_SVD_MAX_WORK_UNITS,
+  estimateDenseSvdBudget
+} from './denseSvdBudget.js';
+
 const ORDERED_RESERVED_OUTPUT_COLUMNS = new Set(['ENA_UNIT', 'TRAJ_UNIT']);
 
 /** Canonical Yu ONA oracle size recorded by the verified descriptive contract. */
@@ -21,7 +27,7 @@ export const ORDERED_MAX_EDGE_COUNT = ORDERED_MAX_CODE_COUNT * ORDERED_MAX_CODE_
  * the measured 16- and 20-code probes had already exposed a steep runtime
  * curve. This is deliberately not caller-configurable.
  */
-export const ORDERED_MAX_SVD_WORK_UNITS = 8_000_000;
+export const ORDERED_MAX_SVD_WORK_UNITS = DENSE_SVD_MAX_WORK_UNITS;
 
 /**
  * Numeric-payload proxy for the dense matrices created by makeSet: two
@@ -32,9 +38,7 @@ export const ORDERED_MAX_SVD_WORK_UNITS = 8_000_000;
  * dense allocation. JavaScript array overhead makes the real heap cost higher,
  * so this threshold is a safety boundary rather than a heap-size promise.
  */
-export const ORDERED_MAX_SVD_MATRIX_BYTES = 1024 * 1024;
-
-const FLOAT64_BYTES = 8;
+export const ORDERED_MAX_SVD_MATRIX_BYTES = DENSE_SVD_MAX_MATRIX_BYTES;
 
 export function assertOrderedAdjacencyBudget(codeCount: number): number {
   const edgeCount = codeCount * codeCount;
@@ -49,20 +53,18 @@ export function assertOrderedAdjacencyBudget(codeCount: number): number {
 }
 
 export function assertOrderedSvdBudget(unitCount: number, edgeCount: number): void {
-  const edgeSquared = edgeCount * edgeCount;
-  const estimatedWork = unitCount * edgeSquared + edgeSquared * edgeCount;
-  if (estimatedWork > ORDERED_MAX_SVD_WORK_UNITS) {
+  const estimate = estimateDenseSvdBudget(unitCount, edgeCount);
+  if (estimate.workUnits > ORDERED_MAX_SVD_WORK_UNITS) {
     throw new Error(
       `Ordered descriptive SVD work budget exceeded: units=${unitCount}, edges=${edgeCount}, ` +
-      `estimated work=${estimatedWork} (units×E²+E³), limit=${ORDERED_MAX_SVD_WORK_UNITS}.`
+      `estimated work=${estimate.workUnits} (units×E²+E³), limit=${ORDERED_MAX_SVD_WORK_UNITS}.`
     );
   }
 
-  const estimatedMatrixBytes = FLOAT64_BYTES * (3 * edgeSquared + 2 * unitCount * edgeCount);
-  if (estimatedMatrixBytes > ORDERED_MAX_SVD_MATRIX_BYTES) {
+  if (estimate.matrixBytes > ORDERED_MAX_SVD_MATRIX_BYTES) {
     throw new Error(
       `Ordered descriptive SVD matrix budget exceeded: units=${unitCount}, edges=${edgeCount}, ` +
-      `estimated bytes=${estimatedMatrixBytes} (8×(3×E²+2×units×E)), ` +
+      `estimated bytes=${estimate.matrixBytes} (8×(3×E²+2×units×E)), ` +
       `limit=${ORDERED_MAX_SVD_MATRIX_BYTES}.`
     );
   }

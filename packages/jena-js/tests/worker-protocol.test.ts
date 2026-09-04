@@ -426,6 +426,38 @@ describe("worker protocol v1 (advisory F-008)", () => {
     }
   });
 
+  it.each([0.5, Number.MIN_VALUE, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects invalid client chunkSize %s before posting",
+    (chunkSize) => {
+      const controlled = createControlledWorker();
+      const client = createENAWorkerClient(controlled.workerLike);
+      try {
+        expect(() => client.start(
+          { ...baseOptions, rows: makeRows(4) },
+          { chunkSize },
+        )).toThrow(/chunkSize.*positive safe integer/i);
+        expect(controlled.messages).toHaveLength(0);
+      } finally {
+        client.terminate();
+      }
+    },
+  );
+
+  it("rejects an unsafe raw protocol chunkSize instead of silently substituting a default", async () => {
+    const { workerLike, responses } = createWorkerPair();
+    workerLike.postMessage({
+      v: 1,
+      kind: "run",
+      id: "bad-chunk",
+      options: { ...baseOptions, rows: makeRows(4) },
+      chunkSize: 0.5,
+    });
+    await waitFor(() => responses.some((response) => response.kind === "error"
+      && response.id === "bad-chunk"
+      && /chunkSize.*positive safe integer/i.test(response.message)));
+    expect(responses.some((response) => response.kind === "result" && response.id === "bad-chunk")).toBe(false);
+  });
+
   it("produces the same model as a direct ena() call", async () => {
     const { workerLike } = createWorkerPair();
     const client = createENAWorkerClient(workerLike);

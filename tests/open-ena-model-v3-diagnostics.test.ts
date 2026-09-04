@@ -772,6 +772,26 @@ test("a 10k-row multi-Unit both-Infinity candidate blocks before non-finite jENA
   assert.equal(output.some((entry) => entry.id === "STANDARD_TARGET_RANK_ZERO"), false);
 });
 
+test("a 100-Code two-target candidate blocks on dense rotation work before SVD", () => {
+  const codes = Array.from({ length: 100 }, (_, index) => `C${index}`);
+  const rows = [0, 1].map((rowIndex) => ({
+    unit: `u${rowIndex}`,
+    horizon: `h${rowIndex}`,
+    ...Object.fromEntries(codes.map((code, codeIndex) => [
+      code,
+      rowIndex === 0 || codeIndex % 2 === 0 ? 1 : 0,
+    ])),
+  }));
+  const input = dataset(rows, ["unit", "horizon", ...codes]);
+  const output = diagnosticsFor(input, draft(codes));
+  const resource = one(output, "RESOURCE_BUDGET_EXCEEDED");
+  assert.equal(resource.evidence?.samples.some((sample) => (
+    sample.identity === "rotation-work" && /121336380000.*8000000/u.test(sample.detail)
+  )), true);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_TARGET_RANK_ZERO"), false);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_SVD_ONE_DIMENSIONAL"), false);
+});
+
 test("Moving Stanza finite back one means current only; larger back and forward form candidate edges", () => {
   const input = orderedSingletonRows();
   const currentOnly = diagnosticsFor(input, movingDraft(

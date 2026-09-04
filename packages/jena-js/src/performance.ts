@@ -105,6 +105,25 @@ export interface AccumulationStream {
   reset(): void;
 }
 
+function validateStreamingControlOptions(options: {
+  chunkSize?: unknown;
+  materialization?: unknown;
+}): void {
+  if (options.chunkSize !== undefined
+    && (typeof options.chunkSize !== 'number'
+      || !Number.isSafeInteger(options.chunkSize)
+      || options.chunkSize <= 0)) {
+    throw new RangeError(`chunkSize must be a positive safe integer; got ${String(options.chunkSize)}.`);
+  }
+  if (options.materialization !== undefined
+    && options.materialization !== 'full'
+    && options.materialization !== 'model') {
+    throw new TypeError(
+      `materialization must be exactly "full" or "model"; got ${String(options.materialization)}.`
+    );
+  }
+}
+
 /**
  * Expands the exact prior rows represented by compact ordered-window
  * provenance. The result is ordered from the oldest prior row to the newest.
@@ -1540,8 +1559,8 @@ function ingestRow(internals: StreamingInternals, row: Row, globalIndex: number)
 }
 
 export function accumulateDataChunked(options: ChunkedAccumulateOptions): ENAData {
+  validateStreamingControlOptions(options);
   const chunkSize = options.chunkSize ?? 10_000;
-  if (chunkSize <= 0 || !Number.isFinite(chunkSize)) throw new Error('chunkSize must be a positive finite number.');
   const { rows, onProgress, ...streamOptions } = options;
   onProgress?.(0);
   const stream = createAccumulationStream({
@@ -1654,8 +1673,8 @@ function makeAccumulationStreamController(
 }
 
 export function createAccumulationStream(options: StreamingAccumulateOptions): AccumulationStream {
+  validateStreamingControlOptions(options);
   const { rows: initialRows, chunkSize = 10_000, expectedRows, onProgress } = options;
-  if (chunkSize <= 0 || !Number.isFinite(chunkSize)) throw new Error('chunkSize must be a positive finite number.');
   validateAccumulateOptions(options, { requireRows: false });
   const internals = makeInternals(options);
   const resources: AccumulationStreamResources = {
