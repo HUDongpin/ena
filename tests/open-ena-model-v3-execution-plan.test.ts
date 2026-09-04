@@ -8,6 +8,7 @@ import {
   buildStandardExecutionPlanV3,
   validateExecutionPlanV3,
 } from "../lib/open-ena/model-v3/execution-plan";
+import * as executionPlanModuleV3 from "../lib/open-ena/model-v3/execution-plan";
 import type {
   StandardExecutionPlanV3,
   ValidatedReferenceExecutionBindingV3,
@@ -22,6 +23,7 @@ import {
   JENA_SOURCE_COMMIT,
 } from "../lib/open-ena/types";
 import type { ParsedDataset } from "../lib/open-ena/types";
+import * as publicModelV3 from "../lib/open-ena/model-v3/index";
 
 const DATASET_SHA256 = "a".repeat(64);
 const REFERENCE_SHA256 = "b".repeat(64);
@@ -131,6 +133,48 @@ async function rehashPlan(plan: Record<string, any>): Promise<Record<string, any
 
 function sourceIndices(plan: StandardExecutionPlanV3): number[] {
   return plan.rows.map((row) => row.sourceRowIndex);
+}
+
+interface ShallowArrayTrapCounts {
+  ownKeys: number;
+  elementDescriptors: number;
+}
+
+function guardedArray<T>(values: T[], counts: ShallowArrayTrapCounts): T[] {
+  return new Proxy(values, {
+    ownKeys(target) {
+      counts.ownKeys += 1;
+      return Reflect.ownKeys(target);
+    },
+    getOwnPropertyDescriptor(target, key) {
+      if (key !== "length") counts.elementDescriptors += 1;
+      return Reflect.getOwnPropertyDescriptor(target, key);
+    },
+  });
+}
+
+function guardedRecord(
+  value: Record<string, unknown>,
+  counts: ShallowArrayTrapCounts,
+): Record<string, unknown> {
+  return new Proxy(value, {
+    ownKeys(target) {
+      counts.ownKeys += 1;
+      return Reflect.ownKeys(target);
+    },
+    getOwnPropertyDescriptor(target, key) {
+      counts.elementDescriptors += 1;
+      return Reflect.getOwnPropertyDescriptor(target, key);
+    },
+  });
+}
+
+function zeroTrapCounts(): ShallowArrayTrapCounts {
+  return { ownKeys: 0, elementDescriptors: 0 };
+}
+
+function assertNoDeepTraversal(counts: ShallowArrayTrapCounts, label: string): void {
+  assert.deepEqual(counts, { ownKeys: 0, elementDescriptors: 0 }, label);
 }
 
 function replacementResourceEstimate(
@@ -533,6 +577,116 @@ test("SVD and Means require null Reference while Reference remains fail-closed u
   assert.equal(means.configuration.analysis.rotation.type, "means");
 });
 
+test("build rejects every unavailable Reference branch before rows, Reference, or crypto work", async () => {
+  const inputDataset = unsharedDataset();
+  const svdCompile = await readyCompile(inputDataset, draft());
+  const referenceCompile = await readyCompile(inputDataset, draft({
+    rotation: {
+      type: "reference",
+      referenceId: "reference-v2:test",
+      expectedContentSha256: REFERENCE_SHA256,
+    },
+  }));
+  const subtle = globalThis.crypto.subtle;
+  const originalDescriptor = Object.getOwnPropertyDescriptor(subtle, "digest");
+  const originalDigest = subtle.digest;
+  let patched = false;
+  let digestCalls = 0;
+  try {
+    Object.defineProperty(subtle, "digest", {
+      configurable: true,
+      value: (...args: Parameters<SubtleCrypto["digest"]>) => {
+        digestCalls += 1;
+        return Reflect.apply(originalDigest, subtle, args);
+      },
+    });
+    patched = true;
+    for (const [name, compileResult, referenceValue] of [
+      ["SVD with Reference", svdCompile, {}],
+      ["Reference rotation without binding", referenceCompile, null],
+      ["Reference rotation with binding", referenceCompile, {}],
+    ] as const) {
+      const rows = zeroTrapCounts();
+      const reference = zeroTrapCounts();
+      digestCalls = 0;
+      await assert.rejects(buildStandardExecutionPlanV3({
+        dataset: {
+          ...inputDataset,
+          rows: guardedArray([...inputDataset.rows], rows),
+        },
+        datasetSha256: DATASET_SHA256,
+        compileResult,
+        reference: referenceValue === null
+          ? null
+          : guardedRecord(referenceValue, reference) as unknown as ValidatedReferenceExecutionBindingV3,
+      }), () => true, name);
+      assertNoDeepTraversal(rows, `${name} rows`);
+      assertNoDeepTraversal(reference, `${name} Reference`);
+      assert.equal(digestCalls, 0, `${name} crypto work`);
+    }
+  } finally {
+    if (patched) {
+      if (originalDescriptor === undefined) Reflect.deleteProperty(subtle, "digest");
+      else Object.defineProperty(subtle, "digest", originalDescriptor);
+    }
+  }
+});
+
+test("validator rejects every unavailable Reference branch before scientific traversal", async () => {
+  const basePlan = await planFor(draft(), unsharedDataset());
+  const subtle = globalThis.crypto.subtle;
+  const originalDescriptor = Object.getOwnPropertyDescriptor(subtle, "digest");
+  const originalDigest = subtle.digest;
+  let patched = false;
+  let digestCalls = 0;
+  try {
+    Object.defineProperty(subtle, "digest", {
+      configurable: true,
+      value: (...args: Parameters<SubtleCrypto["digest"]>) => {
+        digestCalls += 1;
+        return Reflect.apply(originalDigest, subtle, args);
+      },
+    });
+    patched = true;
+    for (const [name, rotation, referenceValue] of [
+      ["SVD with Reference", { type: "svd", centerAlignToOrigin: true }, {}],
+      ["Reference rotation without binding", {
+        type: "reference",
+        referenceId: "reference-v2:test",
+        expectedContentSha256: REFERENCE_SHA256,
+      }, null],
+      ["Reference rotation with binding", {
+        type: "reference",
+        referenceId: "reference-v2:test",
+        expectedContentSha256: REFERENCE_SHA256,
+      }, {}],
+    ] as const) {
+      const candidate = mutablePlan(basePlan);
+      candidate.configuration.analysis.rotation = rotation;
+      const rows = zeroTrapCounts();
+      const proofRows = zeroTrapCounts();
+      const dictionaryCodes = zeroTrapCounts();
+      const reference = zeroTrapCounts();
+      candidate.rows = guardedArray(candidate.rows, rows);
+      candidate.sourceProof.rows = guardedArray(candidate.sourceProof.rows, proofRows);
+      candidate.codeDictionary.codes = guardedArray(candidate.codeDictionary.codes, dictionaryCodes);
+      candidate.reference = referenceValue === null ? null : guardedRecord(referenceValue, reference);
+      digestCalls = 0;
+      await assert.rejects(validateExecutionPlanV3(candidate), () => true, name);
+      assertNoDeepTraversal(rows, `${name} rows`);
+      assertNoDeepTraversal(proofRows, `${name} source-proof rows`);
+      assertNoDeepTraversal(dictionaryCodes, `${name} Code dictionary`);
+      assertNoDeepTraversal(reference, `${name} Reference`);
+      assert.equal(digestCalls, 0, `${name} crypto work`);
+    }
+  } finally {
+    if (patched) {
+      if (originalDescriptor === undefined) Reflect.deleteProperty(subtle, "digest");
+      else Object.defineProperty(subtle, "digest", originalDescriptor);
+    }
+  }
+});
+
 test("validator rejects coordinated legal-domain scientific and identity forgeries", async () => {
   const valid = await planFor();
 
@@ -673,6 +827,65 @@ test("dataset envelopes exactly at the byte limit remain admissible", async () =
   assert.equal(plan.header.resourceEstimate.blocked, false);
 });
 
+test("validator rejects oversized source envelopes before traversing scientific arrays", async () => {
+  const candidate = mutablePlan(await planFor(draft(), unsharedDataset()));
+  candidate.sourceProof.dataset.sizeBytes = MAX_ESTIMATED_DATASET_BYTES_V3 + 1;
+  candidate.header.resourceEstimate.datasetSizeBytes = MAX_ESTIMATED_DATASET_BYTES_V3 + 1;
+  const rows = zeroTrapCounts();
+  const proofRows = zeroTrapCounts();
+  const dictionaryCodes = zeroTrapCounts();
+  const dictionaryEdges = zeroTrapCounts();
+  candidate.rows = guardedArray(candidate.rows, rows);
+  candidate.sourceProof.rows = guardedArray(candidate.sourceProof.rows, proofRows);
+  candidate.codeDictionary.codes = guardedArray(candidate.codeDictionary.codes, dictionaryCodes);
+  candidate.codeDictionary.edges = guardedArray(candidate.codeDictionary.edges, dictionaryEdges);
+
+  await assert.rejects(
+    validateExecutionPlanV3(candidate),
+    /fixed pre-materialization resource budget/,
+  );
+  assertNoDeepTraversal(rows, "execution rows");
+  assertNoDeepTraversal(proofRows, "source-proof rows");
+  assertNoDeepTraversal(dictionaryCodes, "Code dictionary entries");
+  assertNoDeepTraversal(dictionaryEdges, "edge dictionary entries");
+});
+
+test("validator rejects impossible dense Code counts from lengths before enumerating dictionaries", async () => {
+  const candidate = mutablePlan(await planFor(draft(), unsharedDataset()));
+  const codeCount = 401;
+  const edgeCount = codeCount * (codeCount - 1) / 2;
+  const configCodes = zeroTrapCounts();
+  const dictionaryCodes = zeroTrapCounts();
+  const dictionaryEdges = zeroTrapCounts();
+  const representations = zeroTrapCounts();
+  const adapterTokens = zeroTrapCounts();
+  candidate.configuration.codes = guardedArray(new Array(codeCount), configCodes);
+  candidate.header.resourceEstimate.codes = codeCount;
+  candidate.header.resourceEstimate.adjacencyDimensions = edgeCount;
+  candidate.codeDictionary.codes = guardedArray(new Array(codeCount), dictionaryCodes);
+  candidate.codeDictionary.edges = guardedArray(new Array(edgeCount), dictionaryEdges);
+  candidate.codeRepresentations = guardedArray(new Array(codeCount), representations);
+  candidate.adapterParameters.codeTokens = guardedArray(new Array(codeCount), adapterTokens);
+
+  await assert.rejects(
+    validateExecutionPlanV3(candidate),
+    /unavoidable Standard resource lower bound/,
+  );
+  assertNoDeepTraversal(configCodes, "configuration Codes");
+  assertNoDeepTraversal(dictionaryCodes, "Code dictionary entries");
+  assertNoDeepTraversal(dictionaryEdges, "edge dictionary entries");
+  assertNoDeepTraversal(representations, "Code representations");
+  assertNoDeepTraversal(adapterTokens, "adapter Code tokens");
+});
+
+test("validator rejects unknown root keys without traversing their values", async () => {
+  const candidate = mutablePlan(await planFor());
+  const extraValue = zeroTrapCounts();
+  candidate.unexpected = guardedRecord({ nested: { prompt: "untrusted" } }, extraValue);
+  await assert.rejects(validateExecutionPlanV3(candidate), /invalid shape/);
+  assertNoDeepTraversal(extraValue, "unknown root value");
+});
+
 test("resource estimates cannot choose their own dataset byte base", async () => {
   const valid = mutablePlan(await planFor());
   valid.header.resourceEstimate = replacementResourceEstimate(
@@ -792,6 +1005,46 @@ test("plans are deterministic detached deep-frozen clones without freezing calle
   assertDeepFrozen(validated);
 });
 
+test("implementation Horizon permutation uses the indexed 16k-token helper", () => {
+  const helper = (executionPlanModuleV3 as unknown as Record<string, unknown>)
+    .implementationHorizonPermutationV3;
+  assert.equal(typeof helper, "function");
+  const resolve = helper as (
+    horizonTokens: readonly string[],
+    implementationOrder: readonly string[],
+  ) => number[];
+  const horizonTokens = Array.from({ length: 16_000 }, (_value, index) => `h-${index}`);
+  const implementationOrder = [...horizonTokens].reverse();
+  const permutation = resolve(horizonTokens, implementationOrder);
+  assert.equal(permutation.length, horizonTokens.length);
+  assert.equal(permutation[0], 15_999);
+  assert.equal(permutation[15_999], 0);
+  assert.throws(() => resolve(horizonTokens, [...implementationOrder.slice(0, -1), "missing"]));
+});
+
+test("execution-plan internals stay absent from the public model-v3 barrel", () => {
+  const exports = Object.keys(publicModelV3);
+  for (const internal of [
+    "buildStandardSourceProofPayloadV3",
+    "executionPlanHashPayloadV3",
+    "buildStandardExecutionPlanV3",
+    "validateExecutionPlanV3",
+  ]) {
+    assert.equal(exports.includes(internal), false, `execution-plan internal leaked: ${internal}`);
+  }
+});
+
+test("public hashes provide internal integrity without claiming source authentication", async () => {
+  const plan = await planFor();
+  assert.equal(
+    plan.sourceProof.dataset.externalHashVerification,
+    "provenance-only-no-normalized-table-preimage",
+  );
+  assert.equal("signature" in plan.sourceProof, false);
+  assert.equal("authenticatedSource" in plan.sourceProof.dataset, false);
+  assert.equal(plan.header.datasetSha256, DATASET_SHA256);
+});
+
 test("operational crypto failures are rethrown exactly without orphaned rejections", async () => {
   const inputDataset = dataset();
   const compileResult = await readyCompile(inputDataset, draft());
@@ -801,12 +1054,21 @@ test("operational crypto failures are rethrown exactly without orphaned rejectio
   const sentinel = new TypeError("execution-plan crypto operational failure");
   const orphaned: unknown[] = [];
   const capture = (reason: unknown): void => { orphaned.push(reason); };
-  process.on("unhandledRejection", capture);
-  Object.defineProperty(subtle, "digest", {
-    configurable: true,
-    value: () => Promise.reject(sentinel),
-  });
+  let listenerInstalled = false;
+  let patched = false;
+  let digestCalls = 0;
   try {
+    process.on("unhandledRejection", capture);
+    listenerInstalled = true;
+    Object.defineProperty(subtle, "digest", {
+      configurable: true,
+      value: (...args: Parameters<SubtleCrypto["digest"]>) => {
+        digestCalls += 1;
+        if (digestCalls === 3) return Promise.reject(sentinel);
+        return Reflect.apply(originalDigest, subtle, args);
+      },
+    });
+    patched = true;
     await assert.rejects(buildStandardExecutionPlanV3({
       dataset: inputDataset,
       datasetSha256: DATASET_SHA256,
@@ -814,11 +1076,14 @@ test("operational crypto failures are rethrown exactly without orphaned rejectio
       reference: null,
     }), (error) => error === sentinel);
     await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(digestCalls > 3, true, "the first digest succeeds before a concurrent-batch failure");
     assert.deepEqual(orphaned, []);
   } finally {
-    process.off("unhandledRejection", capture);
-    if (originalDescriptor === undefined) Reflect.deleteProperty(subtle, "digest");
-    else Object.defineProperty(subtle, "digest", originalDescriptor);
-    assert.equal(globalThis.crypto.subtle.digest, originalDigest);
+    if (listenerInstalled) process.off("unhandledRejection", capture);
+    if (patched) {
+      if (originalDescriptor === undefined) Reflect.deleteProperty(subtle, "digest");
+      else Object.defineProperty(subtle, "digest", originalDescriptor);
+      assert.equal(globalThis.crypto.subtle.digest, originalDigest);
+    }
   }
 });

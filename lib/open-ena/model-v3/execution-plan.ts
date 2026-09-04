@@ -38,6 +38,7 @@ import type {
 import {
   RESOURCE_BUDGET_VERSION_V3,
   estimateEarlyStandardResourcesV3,
+  estimateStandardResourcesV3,
 } from "./resource-budget";
 import type { StandardResourceEstimateV3 } from "./resource-budget";
 import { decodeCanonicalStandardConfigV3 } from "./schema";
@@ -78,6 +79,81 @@ const UNIT_TOKEN_PATTERN_V3 = /^__open_ena_unit_v3_\d{6,}$/u;
 const HORIZON_TOKEN_PATTERN_V3 = /^__open_ena_horizon_v3_\d{6,}$/u;
 const GROUP_TOKEN_PATTERN_V3 = /^__open_ena_group_v3_\d{6,}$/u;
 const own = Object.prototype.hasOwnProperty;
+
+const EXECUTION_PLAN_ROOT_KEYS_V3 = [
+  "header",
+  "configuration",
+  "sourceProof",
+  "identityDictionary",
+  "codeDictionary",
+  "codeRepresentations",
+  "rows",
+  "rowOrdering",
+  "horizonOrdering",
+  "adapterParameters",
+  "weighting",
+  "reference",
+] as const;
+
+const EXECUTION_PLAN_HEADER_KEYS_V3 = [
+  "schemaVersion",
+  "validationContractVersion",
+  "runtimePolicyVersion",
+  "executionContractVersion",
+  "analysisFamily",
+  "datasetSha256",
+  "datasetHashKind",
+  "rowCount",
+  "headerSha256",
+  "datasetBinding",
+  "configurationSha256",
+  "executionPlanSha256",
+  "runtimeVersion",
+  "algorithmBuildSha",
+  "resourceEstimate",
+] as const;
+
+const STANDARD_CONFIGURATION_KEYS_V3 = [
+  "schemaVersion",
+  "analysisFamily",
+  "contracts",
+  "units",
+  "horizons",
+  "codes",
+  "weighting",
+  "window",
+  "analysis",
+] as const;
+
+const SOURCE_PROOF_KEYS_V3 = [
+  "schemaVersion",
+  "dataset",
+  "headers",
+  "selectedColumns",
+  "rows",
+  "sourceProofSha256",
+] as const;
+
+const SOURCE_PROOF_DATASET_KEYS_V3 = [
+  "name",
+  "source",
+  "hashKind",
+  "normalizedTableSha256",
+  "externalHashVerification",
+  "rowCount",
+  "sizeBytes",
+] as const;
+
+const STANDARD_ADAPTER_PARAMETER_KEYS_V3 = [
+  "networkType",
+  "unitTokenColumn",
+  "horizonTokenColumn",
+  "codeTokens",
+  "model",
+  "window",
+  "weightBy",
+  "displayDimensions",
+] as const;
 
 const MODEL_CAPABILITIES_V3: readonly ModelCapabilityV3[] = Object.freeze([
   "build-model",
@@ -299,6 +375,22 @@ function denseArrayV3(value: unknown, label: string): unknown[] {
   return snapshotDenseJsonArrayV3(value, label);
 }
 
+function shallowArrayLengthV3(value: unknown, label: string): number {
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) {
+    throw new TypeError(`${label} must be a plain array.`);
+  }
+  const descriptor = Object.getOwnPropertyDescriptor(value, "length");
+  if (descriptor === undefined
+    || descriptor.enumerable
+    || !("value" in descriptor)
+    || typeof descriptor.value !== "number"
+    || !Number.isSafeInteger(descriptor.value)
+    || descriptor.value < 0) {
+    throw new TypeError(`${label}.length is invalid.`);
+  }
+  return descriptor.value;
+}
+
 function lowercaseSha256V3(value: unknown, label: string): string {
   if (typeof value !== "string" || !LOWERCASE_SHA256_V3.test(value)) {
     throw new TypeError(`${label} must be a lowercase 64-hex SHA-256 digest.`);
@@ -469,25 +561,10 @@ function decodeStandardSourceProofV3(
   rowCount: number,
 ): StandardSourceProofV3 {
   const record = plainRecordV3(value, "executionPlan.sourceProof");
-  exactKeysV3(record, [
-    "schemaVersion",
-    "dataset",
-    "headers",
-    "selectedColumns",
-    "rows",
-    "sourceProofSha256",
-  ], "executionPlan.sourceProof");
+  exactKeysV3(record, SOURCE_PROOF_KEYS_V3, "executionPlan.sourceProof");
   if (record.schemaVersion !== 1) throw new TypeError("executionPlan.sourceProof.schemaVersion must be 1.");
   const dataset = plainRecordV3(record.dataset, "executionPlan.sourceProof.dataset");
-  exactKeysV3(dataset, [
-    "name",
-    "source",
-    "hashKind",
-    "normalizedTableSha256",
-    "externalHashVerification",
-    "rowCount",
-    "sizeBytes",
-  ], "executionPlan.sourceProof.dataset");
+  exactKeysV3(dataset, SOURCE_PROOF_DATASET_KEYS_V3, "executionPlan.sourceProof.dataset");
   const name = nonblankStringV3(dataset.name, "executionPlan.sourceProof.dataset.name");
   if (dataset.source !== "sample" && dataset.source !== "upload") {
     throw new TypeError("executionPlan.sourceProof.dataset.source is unsupported.");
@@ -1046,6 +1123,14 @@ export async function buildStandardExecutionPlanV3(input: {
   const inputRecord = snapshotPlainJsonRecordV3(input, "execution plan input");
   exactKeysV3(inputRecord, ["dataset", "datasetSha256", "compileResult", "reference"], "execution plan input");
   const compile = captureReadyCompileResultV3(inputRecord.compileResult);
+  if (compile.canonicalConfiguration.analysis.rotation.type === "reference") {
+    throw new TypeError(
+      "Reference execution remains fail-closed until Task 13 supplies a complete content-addressed Reference v2 artifact.",
+    );
+  }
+  if (inputRecord.reference !== null) {
+    throw new TypeError("SVD and Means execution plans must not carry a Reference binding.");
+  }
   const datasetSha256 = lowercaseSha256V3(inputRecord.datasetSha256, "datasetSha256");
   if (datasetSha256 !== compile.datasetBinding.normalizedTableSha256) {
     throw new TypeError("datasetSha256 does not match the ready compile invocation.");
@@ -1403,6 +1488,24 @@ function validateRowOrderingV3(
   };
 }
 
+/** @internal Linear implementation-order lookup; intentionally absent from the public v3 barrel. */
+export function implementationHorizonPermutationV3(
+  horizonTokens: readonly string[],
+  implementationOrder: readonly string[],
+): number[] {
+  const indexByToken = new Map<string, number>();
+  for (let index = 0; index < horizonTokens.length; index += 1) {
+    const token = horizonTokens[index];
+    if (indexByToken.has(token)) throw new TypeError("Resolved Horizon tuples must be unique.");
+    indexByToken.set(token, index);
+  }
+  return implementationOrder.map((token) => {
+    const index = indexByToken.get(token);
+    if (index === undefined) throw new TypeError("Implementation Horizon order contains an unknown Horizon token.");
+    return index;
+  });
+}
+
 function validateHorizonOrderingV3(
   value: unknown,
   config: CanonicalStandardConfigV3,
@@ -1481,7 +1584,10 @@ function validateHorizonOrderingV3(
     true,
   );
   arrayPermutationV3(
-    implementationHorizonOrder.map((token) => horizonTuples.findIndex((entry) => entry.horizonToken === token)),
+    implementationHorizonPermutationV3(
+      horizonTuples.map((entry) => entry.horizonToken),
+      implementationHorizonOrder,
+    ),
     horizonTuples.length,
     "implementation Horizon order",
   );
@@ -1576,40 +1682,204 @@ function assertIdentityMembershipV3(
   }
 }
 
+function undirectedEdgeCountV3(codeCount: number): number {
+  const product = codeCount * Math.max(0, codeCount - 1);
+  if (!Number.isSafeInteger(product)) {
+    throw new TypeError("Standard Code count exceeds safe undirected-edge arithmetic.");
+  }
+  return product / 2;
+}
+
+/**
+ * Descriptor-safe lower-bound admission. This reads fixed metadata and array
+ * length descriptors only; scientific array elements remain untouched until
+ * both source-envelope and dense-rotation lower bounds are admitted.
+ */
+function admitExecutionPlanEnvelopeV3(value: unknown): void {
+  const plan = snapshotPlainJsonRecordV3(value, "executionPlan");
+  exactKeysV3(plan, EXECUTION_PLAN_ROOT_KEYS_V3, "executionPlan");
+  if (plan.reference !== null) {
+    throw new TypeError("Standard execution plans cannot carry an unvalidated Reference binding.");
+  }
+
+  const configuration = snapshotPlainJsonRecordV3(plan.configuration, "executionPlan.configuration");
+  exactKeysV3(configuration, STANDARD_CONFIGURATION_KEYS_V3, "executionPlan.configuration");
+  if (configuration.schemaVersion !== 3 || configuration.analysisFamily !== "standard") {
+    throw new TypeError("Execution plan configuration must be Standard schema v3.");
+  }
+  const analysis = snapshotPlainJsonRecordV3(
+    configuration.analysis,
+    "executionPlan.configuration.analysis",
+  );
+  exactKeysV3(analysis, ["model", "rotation"], "executionPlan.configuration.analysis");
+  const rotation = snapshotPlainJsonRecordV3(
+    analysis.rotation,
+    "executionPlan.configuration.analysis.rotation",
+  );
+  if (rotation.type === "reference") {
+    throw new TypeError(
+      "Reference execution remains fail-closed until Task 13 supplies a complete content-addressed Reference v2 artifact.",
+    );
+  }
+  const codeCount = shallowArrayLengthV3(
+    configuration.codes,
+    "executionPlan.configuration.codes",
+  );
+
+  const header = snapshotPlainJsonRecordV3(plan.header, "executionPlan.header");
+  exactKeysV3(header, EXECUTION_PLAN_HEADER_KEYS_V3, "executionPlan.header");
+  if (header.schemaVersion !== 3 || header.analysisFamily !== "standard") {
+    throw new TypeError("Execution plan header must be Standard schema v3.");
+  }
+  const rowCount = nonnegativeSafeIntegerV3(header.rowCount, "executionPlan.header.rowCount");
+  const binding = snapshotPlainJsonRecordV3(
+    header.datasetBinding,
+    "executionPlan.header.datasetBinding",
+  );
+  exactKeysV3(
+    binding,
+    ["hashKind", "normalizedTableSha256", "rowCount", "headerSha256"],
+    "executionPlan.header.datasetBinding",
+  );
+  const bindingRows = nonnegativeSafeIntegerV3(
+    binding.rowCount,
+    "executionPlan.header.datasetBinding.rowCount",
+  );
+  const resource = snapshotPlainJsonRecordV3(
+    header.resourceEstimate,
+    "executionPlan.header.resourceEstimate",
+  );
+  exactKeysV3(resource, STANDARD_RESOURCE_KEYS_V3, "executionPlan.header.resourceEstimate");
+  if (resource.version !== RESOURCE_BUDGET_VERSION_V3 || resource.analysisFamily !== "standard") {
+    throw new TypeError("Execution plan resource estimate has an unsupported contract.");
+  }
+  const resourceRows = nonnegativeSafeIntegerV3(
+    resource.rows,
+    "executionPlan.header.resourceEstimate.rows",
+  );
+  const resourceCodes = nonnegativeSafeIntegerV3(
+    resource.codes,
+    "executionPlan.header.resourceEstimate.codes",
+  );
+  const resourceDatasetSizeBytes = nonnegativeSafeIntegerV3(
+    resource.datasetSizeBytes,
+    "executionPlan.header.resourceEstimate.datasetSizeBytes",
+  );
+  const resourceAdjacencyDimensions = nonnegativeSafeIntegerV3(
+    resource.adjacencyDimensions,
+    "executionPlan.header.resourceEstimate.adjacencyDimensions",
+  );
+  const blockedReasonCount = shallowArrayLengthV3(
+    resource.blockedReasons,
+    "executionPlan.header.resourceEstimate.blockedReasons",
+  );
+  if (resource.blocked !== false || blockedReasonCount !== 0) {
+    throw new TypeError("Execution plan resource estimate must already be admitted.");
+  }
+
+  const sourceProof = snapshotPlainJsonRecordV3(plan.sourceProof, "executionPlan.sourceProof");
+  exactKeysV3(sourceProof, SOURCE_PROOF_KEYS_V3, "executionPlan.sourceProof");
+  if (sourceProof.schemaVersion !== 1) {
+    throw new TypeError("executionPlan.sourceProof.schemaVersion must be 1.");
+  }
+  const proofDataset = snapshotPlainJsonRecordV3(
+    sourceProof.dataset,
+    "executionPlan.sourceProof.dataset",
+  );
+  exactKeysV3(
+    proofDataset,
+    SOURCE_PROOF_DATASET_KEYS_V3,
+    "executionPlan.sourceProof.dataset",
+  );
+  const proofRowCount = nonnegativeSafeIntegerV3(
+    proofDataset.rowCount,
+    "executionPlan.sourceProof.dataset.rowCount",
+  );
+  const datasetSizeBytes = nonnegativeSafeIntegerV3(
+    proofDataset.sizeBytes,
+    "executionPlan.sourceProof.dataset.sizeBytes",
+  );
+  const proofRows = shallowArrayLengthV3(sourceProof.rows, "executionPlan.sourceProof.rows");
+  const planRows = shallowArrayLengthV3(plan.rows, "executionPlan.rows");
+
+  const codeDictionary = snapshotPlainJsonRecordV3(
+    plan.codeDictionary,
+    "executionPlan.codeDictionary",
+  );
+  exactKeysV3(codeDictionary, ["codes", "edges"], "executionPlan.codeDictionary");
+  const dictionaryCodes = shallowArrayLengthV3(
+    codeDictionary.codes,
+    "executionPlan.codeDictionary.codes",
+  );
+  const dictionaryEdges = shallowArrayLengthV3(
+    codeDictionary.edges,
+    "executionPlan.codeDictionary.edges",
+  );
+  const representationCount = shallowArrayLengthV3(
+    plan.codeRepresentations,
+    "executionPlan.codeRepresentations",
+  );
+  const adapter = snapshotPlainJsonRecordV3(
+    plan.adapterParameters,
+    "executionPlan.adapterParameters",
+  );
+  exactKeysV3(adapter, STANDARD_ADAPTER_PARAMETER_KEYS_V3, "executionPlan.adapterParameters");
+  const adapterCodeCount = shallowArrayLengthV3(
+    adapter.codeTokens,
+    "executionPlan.adapterParameters.codeTokens",
+  );
+  const expectedEdges = undirectedEdgeCountV3(codeCount);
+
+  if (rowCount !== bindingRows
+    || rowCount !== resourceRows
+    || rowCount !== proofRowCount
+    || rowCount !== proofRows
+    || rowCount !== planRows
+    || codeCount !== resourceCodes
+    || codeCount !== dictionaryCodes
+    || codeCount !== representationCount
+    || codeCount !== adapterCodeCount
+    || expectedEdges !== dictionaryEdges
+    || expectedEdges !== resourceAdjacencyDimensions
+    || datasetSizeBytes !== resourceDatasetSizeBytes) {
+    throw new TypeError("Execution plan shallow envelope metadata is inconsistent.");
+  }
+
+  const early = estimateEarlyStandardResourcesV3({
+    rowCount,
+    codeCount,
+    datasetSizeBytes,
+    identityPayloadBytes: 0,
+  });
+  if (early.blocked) {
+    throw new TypeError("Execution plan exceeds the fixed pre-materialization resource budget.");
+  }
+  const occupiedSizes = rowCount === 0 ? [] : [rowCount];
+  const lowerBound = estimateStandardResourcesV3({
+    rowCount,
+    unitCount: rowCount === 0 ? 0 : 1,
+    horizonCount: rowCount === 0 ? 0 : 1,
+    codeCount,
+    horizonSizes: occupiedSizes,
+    windowPartitionSizes: occupiedSizes,
+    trajectorySteps: rowCount === 0 ? 0 : 1,
+    windowType: "MovingStanzaWindow",
+    backward: { kind: "finite", value: 1 },
+    forward: { kind: "finite", value: 0 },
+    referenceProjection: false,
+    datasetSizeBytes,
+    identityPayloadBytes: 0,
+  });
+  if (lowerBound.blocked) {
+    throw new TypeError("Execution plan exceeds an unavoidable Standard resource lower bound.");
+  }
+}
+
 function decodePlanShapeV3(value: unknown): StandardExecutionPlanV3 {
   const plan = plainRecordV3(snapshotJsonValueV3(value), "executionPlan");
-  exactKeysV3(plan, [
-    "header",
-    "configuration",
-    "sourceProof",
-    "identityDictionary",
-    "codeDictionary",
-    "codeRepresentations",
-    "rows",
-    "rowOrdering",
-    "horizonOrdering",
-    "adapterParameters",
-    "weighting",
-    "reference",
-  ], "executionPlan");
+  exactKeysV3(plan, EXECUTION_PLAN_ROOT_KEYS_V3, "executionPlan");
   const headerRecord = plainRecordV3(plan.header, "executionPlan.header");
-  exactKeysV3(headerRecord, [
-    "schemaVersion",
-    "validationContractVersion",
-    "runtimePolicyVersion",
-    "executionContractVersion",
-    "analysisFamily",
-    "datasetSha256",
-    "datasetHashKind",
-    "rowCount",
-    "headerSha256",
-    "datasetBinding",
-    "configurationSha256",
-    "executionPlanSha256",
-    "runtimeVersion",
-    "algorithmBuildSha",
-    "resourceEstimate",
-  ], "executionPlan.header");
+  exactKeysV3(headerRecord, EXECUTION_PLAN_HEADER_KEYS_V3, "executionPlan.header");
   if (headerRecord.schemaVersion !== 3
     || headerRecord.analysisFamily !== "standard"
     || headerRecord.validationContractVersion !== OPEN_ENA_VALIDATION_CONTRACT_VERSION_V3
@@ -1695,7 +1965,10 @@ function decodePlanShapeV3(value: unknown): StandardExecutionPlanV3 {
 }
 
 export async function validateExecutionPlanV3(input: unknown): Promise<OpenEnaExecutionPlanV3> {
-  // Strict canonical capture happens before any await and before any property
+  // Shallow admission precedes canonical capture so hostile or impossible
+  // envelopes cannot force scientific-array traversal or dense dictionaries.
+  admitExecutionPlanEnvelopeV3(input);
+  // Strict canonical capture then runs before any await and before any property
   // read that could execute a getter. The decoded plan is detached from input.
   const plan = decodePlanShapeV3(input);
   const sourceProofPayload = sourceProofPayloadV3(plan.sourceProof);
