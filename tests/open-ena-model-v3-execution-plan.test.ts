@@ -13,7 +13,10 @@ import type {
   ValidatedReferenceExecutionBindingV3,
 } from "../lib/open-ena/model-v3/execution-plan";
 import type { StandardEnaDraftV3 } from "../lib/open-ena/model-v3/types";
-import { estimateStandardResourcesV3 } from "../lib/open-ena/model-v3/resource-budget";
+import {
+  MAX_ESTIMATED_DATASET_BYTES_V3,
+  estimateStandardResourcesV3,
+} from "../lib/open-ena/model-v3/resource-budget";
 import {
   JENA_RUNTIME_VERSION,
   JENA_SOURCE_COMMIT,
@@ -619,6 +622,55 @@ test("forged 50k ready envelopes fail before any row element or ownKeys inspecti
     reference: null,
   }));
   assert.equal(ownKeysCalls, 0);
+});
+
+test("oversized dataset envelopes fail before any row element or ownKeys inspection", async () => {
+  const compiledDataset = unsharedDataset();
+  const compileResult = await readyCompile(compiledDataset, draft());
+  let rowOwnKeysCalls = 0;
+  let elementDescriptorReads = 0;
+  const guardedRows = new Proxy(
+    compiledDataset.rows.map((row) => new Proxy(row, {
+      getOwnPropertyDescriptor(target, key) {
+        elementDescriptorReads += 1;
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+    })),
+    {
+      ownKeys(target) {
+        rowOwnKeysCalls += 1;
+        return Reflect.ownKeys(target);
+      },
+    },
+  );
+
+  await assert.rejects(buildStandardExecutionPlanV3({
+    dataset: {
+      ...compiledDataset,
+      rows: guardedRows,
+      sizeBytes: MAX_ESTIMATED_DATASET_BYTES_V3 + 1,
+    },
+    datasetSha256: DATASET_SHA256,
+    compileResult,
+    reference: null,
+  }));
+  assert.equal(rowOwnKeysCalls, 0);
+  assert.equal(elementDescriptorReads, 0);
+});
+
+test("dataset envelopes exactly at the byte limit remain admissible", async () => {
+  const atLimitDataset = unsharedDataset({
+    sizeBytes: MAX_ESTIMATED_DATASET_BYTES_V3,
+  });
+  const compileResult = await readyCompile(atLimitDataset, draft());
+  const plan = await buildStandardExecutionPlanV3({
+    dataset: atLimitDataset,
+    datasetSha256: DATASET_SHA256,
+    compileResult,
+    reference: null,
+  });
+  assert.equal(plan.header.resourceEstimate.datasetSizeBytes, MAX_ESTIMATED_DATASET_BYTES_V3);
+  assert.equal(plan.header.resourceEstimate.blocked, false);
 });
 
 test("resource estimates cannot choose their own dataset byte base", async () => {

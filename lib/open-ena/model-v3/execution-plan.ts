@@ -1056,13 +1056,14 @@ export async function buildStandardExecutionPlanV3(input: {
     || !("value" in rowLengthDescriptor)
     || rowLengthDescriptor.value !== compile.datasetBinding.rowCount
     || compile.resourceEstimate.rows !== compile.datasetBinding.rowCount
-    || compile.resourceEstimate.codes !== compile.canonicalConfiguration.codes.length) {
+    || compile.resourceEstimate.codes !== compile.canonicalConfiguration.codes.length
+    || compile.resourceEstimate.datasetSizeBytes !== envelope.sizeBytes) {
     throw new TypeError("Ready compiler binding/resource envelope is inconsistent.");
   }
   const earlyAdmission = estimateEarlyStandardResourcesV3({
     rowCount: compile.datasetBinding.rowCount,
     codeCount: compile.canonicalConfiguration.codes.length,
-    datasetSizeBytes: 0,
+    datasetSizeBytes: envelope.sizeBytes,
     identityPayloadBytes: 0,
   });
   if (earlyAdmission.blocked) {
