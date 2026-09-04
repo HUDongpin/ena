@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { sha256CanonicalJsonV3 } from "../lib/open-ena/model-v3/canonical-json";
+import { sha256CanonicalJsonV3, sha256TextV3 } from "../lib/open-ena/model-v3/canonical-json";
 import { compileStandardDraftV3 } from "../lib/open-ena/model-v3/compiler";
 import type { ReadyStandardCompileResultV3 } from "../lib/open-ena/model-v3/compiler";
 import {
@@ -13,6 +13,7 @@ import type {
   ValidatedReferenceExecutionBindingV3,
 } from "../lib/open-ena/model-v3/execution-plan";
 import type { StandardEnaDraftV3 } from "../lib/open-ena/model-v3/types";
+import { estimateStandardResourcesV3 } from "../lib/open-ena/model-v3/resource-budget";
 import {
   JENA_RUNTIME_VERSION,
   JENA_SOURCE_COMMIT,
@@ -41,6 +42,18 @@ function dataset(overrides: Partial<ParsedDataset> = {}): ParsedDataset {
     source: "upload",
     ...overrides,
   };
+}
+
+function unsharedDataset(overrides: Partial<ParsedDataset> = {}): ParsedDataset {
+  return dataset({
+    rows: [
+      { unit: "u1", horizon: "u1-h1", time: 1, turn: 1, group: "g1", A: 1, B: 1, C: 0 },
+      { unit: "u2", horizon: "u2-h1", time: 1, turn: 2, group: "g2", A: 0, B: 1, C: 1 },
+      { unit: "u1", horizon: "u1-h2", time: 2, turn: 3, group: "g1", A: 1, B: 0, C: 1 },
+      { unit: "u2", horizon: "u2-h2", time: 2, turn: 4, group: "g2", A: 1, B: 1, C: 0 },
+    ],
+    ...overrides,
+  });
 }
 
 const rowOrder: NonNullable<StandardEnaDraftV3["movingStanza"]["rowOrder"]> = {
@@ -98,8 +111,12 @@ async function planFor(
   });
 }
 
+function mutableJson(value: unknown): Record<string, any> {
+  return JSON.parse(JSON.stringify(value)) as Record<string, any>;
+}
+
 function mutablePlan(plan: StandardExecutionPlanV3): Record<string, any> {
-  return JSON.parse(JSON.stringify(plan)) as Record<string, any>;
+  return mutableJson(plan);
 }
 
 async function rehashPlan(plan: Record<string, any>): Promise<Record<string, any>> {
@@ -111,6 +128,45 @@ async function rehashPlan(plan: Record<string, any>): Promise<Record<string, any
 
 function sourceIndices(plan: StandardExecutionPlanV3): number[] {
   return plan.rows.map((row) => row.sourceRowIndex);
+}
+
+function replacementResourceEstimate(
+  plan: Record<string, any>,
+  datasetSizeBytes: number,
+) {
+  const rows = plan.rows as Array<{ unitToken: string; horizonToken: string }>;
+  const horizons = new Map<string, number>();
+  const partitions = new Map<string, number>();
+  const units = new Map<string, Set<string>>();
+  for (const row of rows) {
+    horizons.set(row.horizonToken, (horizons.get(row.horizonToken) ?? 0) + 1);
+    const partition = JSON.stringify([row.unitToken, row.horizonToken]);
+    partitions.set(partition, (partitions.get(partition) ?? 0) + 1);
+    const observed = units.get(row.unitToken) ?? new Set<string>();
+    observed.add(row.horizonToken);
+    units.set(row.unitToken, observed);
+  }
+  const sorted = (map: ReadonlyMap<string, number>) => [...map.entries()]
+    .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+    .map(([, size]) => size);
+  const config = plan.configuration;
+  return estimateStandardResourcesV3({
+    rowCount: rows.length,
+    unitCount: units.size,
+    horizonCount: horizons.size,
+    codeCount: config.codes.length,
+    horizonSizes: sorted(horizons),
+    windowPartitionSizes: config.window.type === "Conversation" ? sorted(partitions) : sorted(horizons),
+    trajectorySteps: config.analysis.model.type === "EndPoint"
+      ? units.size
+      : [...units.values()].reduce((sum, values) => sum + values.size, 0),
+    windowType: config.window.type,
+    backward: config.window.type === "MovingStanzaWindow" ? config.window.backward : { kind: "finite", value: 1 },
+    forward: config.window.type === "MovingStanzaWindow" ? config.window.forward : { kind: "finite", value: 0 },
+    referenceProjection: plan.reference !== null,
+    datasetSizeBytes,
+    identityPayloadBytes: plan.header.resourceEstimate.identityPayloadBytes,
+  });
 }
 
 function identityMatrix(size: number): number[][] {
@@ -194,12 +250,7 @@ test("Conversation and EndPoint encode non-applicable ordering without fake tupl
     windowType: "Conversation",
     movingStanza: { backward: { kind: "finite", value: 1 }, forward: { kind: "finite", value: 0 }, rowOrder: null },
     horizonOrder: null,
-    rotation: {
-      type: "reference",
-      referenceId: "reference-v2:test",
-      expectedContentSha256: REFERENCE_SHA256,
-    },
-  }), dataset(), referenceBinding());
+  }), unsharedDataset());
   assert.deepEqual(endpoint.rowOrdering, { type: "not-applicable", reason: "conversation-window" });
   assert.deepEqual(endpoint.horizonOrdering, { type: "not-applicable", reason: "endpoint-model" });
   assert.equal(endpoint.rows.some((row) => "rowOrderTuple" in row || "horizonOrderTuple" in row), false);
@@ -209,12 +260,7 @@ test("Conversation and EndPoint encode non-applicable ordering without fake tupl
       model,
       windowType: "Conversation",
       movingStanza: { backward: { kind: "finite", value: 1 }, forward: { kind: "finite", value: 0 }, rowOrder: null },
-      rotation: {
-        type: "reference",
-        referenceId: "reference-v2:test",
-        expectedContentSha256: REFERENCE_SHA256,
-      },
-    }), dataset(), referenceBinding());
+    }), unsharedDataset());
     assert.deepEqual(trajectory.rowOrdering, { type: "not-applicable", reason: "conversation-window" });
     assert.equal(trajectory.horizonOrdering.type, "trajectory-horizon-order");
     assert.equal(trajectory.rows.every((row) => !("rowOrderTuple" in row) && "horizonOrderTuple" in row), true);
@@ -228,7 +274,7 @@ test("finite/Infinity extents and source-order confirmations remain exact plan i
       kind: "explicit-researcher-confirmation" as const,
       analysisFamily: "standard" as const,
       datasetSha256: DATASET_SHA256,
-      rowCount: 8,
+      rowCount: 4,
       relevantColumns: ["horizon"],
       confirmedAt: "2026-09-04T00:00:00.000Z",
       confirmationVersion: 1 as const,
@@ -242,13 +288,8 @@ test("finite/Infinity extents and source-order confirmations remain exact plan i
       forward: { kind: "infinity" },
       rowOrder: confirmation,
     },
-    rotation: {
-      type: "reference",
-      referenceId: "reference-v2:test",
-      expectedContentSha256: REFERENCE_SHA256,
-    },
   });
-  const plan = await planFor(inputDraft, dataset(), referenceBinding());
+  const plan = await planFor(inputDraft, unsharedDataset());
   assert.deepEqual(plan.adapterParameters.window, {
     type: "MovingStanzaWindow",
     backward: { kind: "infinity" },
@@ -299,7 +340,7 @@ test("Binary Boolean and Frequency Code representations retain scientific and ru
 
 test("a build is isolated from immediate caller mutation and stateful row descriptors", async () => {
   const original = dataset();
-  const compileResult = mutablePlan(await readyCompile(original, draft()) as unknown as StandardExecutionPlanV3) as unknown as ReadyStandardCompileResultV3;
+  const compileResult = mutableJson(await readyCompile(original, draft())) as unknown as ReadyStandardCompileResultV3;
   const input = structuredClone(original);
   let selectedCodeDescriptorReads = 0;
   input.rows[0] = new Proxy(input.rows[0], {
@@ -372,6 +413,23 @@ test("build rejects forged compile results and dataset/configuration/resource mi
   }));
 });
 
+test("build binds the ready compiler result to the exact selected source snapshot", async () => {
+  const compiledDataset = dataset();
+  const compileResult = await readyCompile(compiledDataset, draft());
+  const substitutedDataset = dataset({
+    rows: compiledDataset.rows.map((row, index) => (
+      index === 1 ? { ...row, A: row.A === 0 ? 1 : 0 } : { ...row }
+    )),
+  });
+
+  await assert.rejects(buildStandardExecutionPlanV3({
+    dataset: substitutedDataset,
+    datasetSha256: DATASET_SHA256,
+    compileResult,
+    reference: null,
+  }), /source proof|compile invocation|selected source/i);
+});
+
 test("build rejects accessors, sparse rows, and exotic rows without invoking getters", async () => {
   const compileResult = await readyCompile(dataset(), draft());
   let inputGetterCalls = 0;
@@ -428,7 +486,7 @@ test("build rejects accessors, sparse rows, and exotic rows without invoking get
   }));
 });
 
-test("SVD and Means require null Reference while Reference requires an exact remapped binding", async () => {
+test("SVD and Means require null Reference while Reference remains fail-closed until Task 13", async () => {
   await assert.rejects(planFor(draft(), dataset(), referenceBinding()));
   await assert.rejects(planFor(draft({
     model: "EndPoint",
@@ -448,11 +506,8 @@ test("SVD and Means require null Reference while Reference requires an exact rem
       expectedContentSha256: REFERENCE_SHA256,
     },
   });
-  const reference = await planFor(referenceDraft, dataset(), referenceBinding("means"));
-  assert.equal(reference.reference?.sourceFit, "means");
-  assert.equal(reference.reference?.contentSha256, REFERENCE_SHA256);
-
   await assert.rejects(planFor(referenceDraft, dataset(), null));
+  await assert.rejects(planFor(referenceDraft, dataset(), referenceBinding("means")));
   const badPermutation = referenceBinding();
   (badPermutation.basisPermutation as number[])[1] = 0;
   await assert.rejects(planFor(referenceDraft, dataset(), badPermutation));
@@ -461,6 +516,147 @@ test("SVD and Means require null Reference while Reference requires an exact rem
   const nonOrthonormal = referenceBinding();
   nonOrthonormal.rotationSet.rotationMatrix[0][0] = 2;
   await assert.rejects(planFor(referenceDraft, dataset(), nonOrthonormal));
+
+  const means = await planFor(draft({
+    model: "EndPoint",
+    horizonOrder: null,
+    rotation: {
+      type: "means",
+      centerAlignToOrigin: true,
+      negativeLevel: { type: "string", value: "g1" },
+      positiveLevel: { type: "string", value: "g2" },
+    },
+  }), unsharedDataset(), null);
+  assert.equal(means.configuration.analysis.rotation.type, "means");
+});
+
+test("validator rejects coordinated legal-domain scientific and identity forgeries", async () => {
+  const valid = await planFor();
+
+  const codeValue = mutablePlan(valid);
+  const zeroRow = codeValue.rows.find((row: any) => row.codeValues.__open_ena_code_v3_000 === 0);
+  assert.ok(zeroRow);
+  zeroRow.codeValues.__open_ena_code_v3_000 = 1;
+  await rehashPlan(codeValue);
+  await assert.rejects(validateExecutionPlanV3(codeValue), () => true, "source Code value forgery");
+
+  const representation = mutablePlan(valid);
+  representation.codeRepresentations[0].sourceRepresentation = "boolean-binary";
+  await rehashPlan(representation);
+  await assert.rejects(validateExecutionPlanV3(representation), () => true, "source representation forgery");
+
+  const coordinatedToken = mutablePlan(valid);
+  const oldToken = coordinatedToken.identityDictionary.units[0].token;
+  const newToken = "__open_ena_unit_v3_999998";
+  coordinatedToken.identityDictionary.units[0].token = newToken;
+  for (const row of coordinatedToken.rows) if (row.unitToken === oldToken) row.unitToken = newToken;
+  for (const sequence of coordinatedToken.horizonOrdering.unitSequences) {
+    if (sequence.unitToken === oldToken) sequence.unitToken = newToken;
+  }
+  await rehashPlan(coordinatedToken);
+  await assert.rejects(validateExecutionPlanV3(coordinatedToken), () => true, "coordinated runtime token forgery");
+
+  const typedIdentity = mutablePlan(valid);
+  const entry = typedIdentity.identityDictionary.units[0];
+  const originalIdentityValue = entry.fields[0].value.value;
+  entry.fields[0].value.value = `${String(originalIdentityValue)}-forged`;
+  entry.canonicalJson = JSON.stringify({ fields: entry.fields });
+  entry.sha256 = await sha256TextV3(entry.canonicalJson);
+  await rehashPlan(typedIdentity);
+  await assert.rejects(validateExecutionPlanV3(typedIdentity), () => true, "typed source identity forgery");
+});
+
+test("validator reruns authoritative row and Horizon ordering instead of accepting coordinated mirrors", async () => {
+  const valid = await planFor();
+
+  const rowReversal = mutablePlan(valid);
+  const byHorizon = new Map<string, any[]>();
+  for (const mapping of rowReversal.rowOrdering.mappings) {
+    const values = byHorizon.get(mapping.horizonToken) ?? [];
+    values.push(mapping);
+    byHorizon.set(mapping.horizonToken, values);
+  }
+  rowReversal.rowOrdering.mappings = [...byHorizon.values()].flatMap((values) => (
+    [...values].reverse().map((mapping, index) => ({ ...mapping, withinHorizonOrdinal: index }))
+  ));
+  rowReversal.rowOrdering.orderedSourceRowIndices = rowReversal.rowOrdering.mappings.map((mapping: any) => mapping.sourceRowIndex);
+  const rowBySource = new Map(rowReversal.rows.map((row: any) => [row.sourceRowIndex, row]));
+  rowReversal.rows = rowReversal.rowOrdering.orderedSourceRowIndices.map((index: number) => rowBySource.get(index));
+  await rehashPlan(rowReversal);
+  await assert.rejects(validateExecutionPlanV3(rowReversal), () => true, "coordinated row reversal");
+
+  const trajectoryReversal = mutablePlan(valid);
+  for (const sequence of trajectoryReversal.horizonOrdering.unitSequences) {
+    sequence.steps = [...sequence.steps].reverse().map((step, index) => ({ ...step, trajectoryOrdinal: index }));
+  }
+  await rehashPlan(trajectoryReversal);
+  await assert.rejects(validateExecutionPlanV3(trajectoryReversal), () => true, "coordinated trajectory reversal");
+
+  const tupleForgery = mutablePlan(valid);
+  for (const mapping of tupleForgery.rowOrdering.mappings) mapping.orderTuple = [999];
+  for (const row of tupleForgery.rows) row.rowOrderTuple = [999];
+  for (const tuple of tupleForgery.horizonOrdering.horizonTuples) tuple.orderTuple = [999];
+  for (const row of tupleForgery.rows) row.horizonOrderTuple = [999];
+  await rehashPlan(tupleForgery);
+  await assert.rejects(validateExecutionPlanV3(tupleForgery), () => true, "coordinated tuple forgery");
+});
+
+test("forged 50k ready envelopes fail before any row element or ownKeys inspection", async () => {
+  const genuine = JSON.parse(JSON.stringify(await readyCompile(dataset(), draft()))) as Record<string, any>;
+  genuine.datasetBinding.rowCount = 50_000;
+  genuine.resourceEstimate.rows = 50_000;
+  let ownKeysCalls = 0;
+  const rows = new Proxy(new Array(50_000), {
+    ownKeys(target) {
+      ownKeysCalls += 1;
+      return Reflect.ownKeys(target);
+    },
+  });
+  await assert.rejects(buildStandardExecutionPlanV3({
+    dataset: dataset({ rows: rows as ParsedDataset["rows"] }),
+    datasetSha256: DATASET_SHA256,
+    compileResult: genuine as ReadyStandardCompileResultV3,
+    reference: null,
+  }));
+  assert.equal(ownKeysCalls, 0);
+});
+
+test("resource estimates cannot choose their own dataset byte base", async () => {
+  const valid = mutablePlan(await planFor());
+  valid.header.resourceEstimate = replacementResourceEstimate(
+    valid,
+    valid.header.resourceEstimate.datasetSizeBytes + 1,
+  );
+  await rehashPlan(valid);
+  await assert.rejects(validateExecutionPlanV3(valid));
+});
+
+test("source proof discloses only selected scientific values and binds every derived field", async () => {
+  const secret = "PRIVATE-UNSELECTED-SOURCE-TEXT";
+  const inputDataset = dataset({
+    headers: [...HEADERS, "private_notes"],
+    rows: dataset().rows.map((row) => ({ ...row, private_notes: secret })),
+  });
+  const plan = await planFor(draft(), inputDataset);
+  assert.equal(plan.sourceProof.headers.includes("private_notes"), true, "complete headers remain hash-verifiable");
+  assert.equal(plan.sourceProof.selectedColumns.includes("private_notes"), false);
+  assert.equal(JSON.stringify(plan.sourceProof).includes(secret), false);
+  assert.equal(
+    plan.sourceProof.dataset.externalHashVerification,
+    "provenance-only-no-normalized-table-preimage",
+  );
+  assert.equal(plan.sourceProof.dataset.sizeBytes, inputDataset.sizeBytes);
+  assert.equal(plan.header.resourceEstimate.datasetSizeBytes, inputDataset.sizeBytes);
+
+  const forged = mutablePlan(plan);
+  const proofZero = forged.sourceProof.rows.find((row: any) => row.values.A === 0);
+  assert.ok(proofZero);
+  proofZero.values.A = 1;
+  const proofPayload = mutableJson(forged.sourceProof);
+  delete proofPayload.sourceProofSha256;
+  forged.sourceProof.sourceProofSha256 = await sha256CanonicalJsonV3(proofPayload);
+  await rehashPlan(forged);
+  await assert.rejects(validateExecutionPlanV3(forged));
 });
 
 test("validator rejects hash-preserving semantic tampering across every plan boundary", async () => {

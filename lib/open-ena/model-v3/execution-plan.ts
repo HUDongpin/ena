@@ -1,5 +1,3 @@
-import type { RotationSet } from "jena-js";
-
 import {
   canonicalJsonV3,
   deepFreezeV3,
@@ -23,7 +21,6 @@ import type {
 import {
   buildExecutionIdentityDictionaryV3,
   scalarIdentityV3,
-  validateExecutionIdentityDictionaryV3,
 } from "./identity";
 import type {
   ExecutionIdentityDictionaryV3,
@@ -40,7 +37,7 @@ import type {
 } from "./ordering";
 import {
   RESOURCE_BUDGET_VERSION_V3,
-  estimateStandardResourcesV3,
+  estimateEarlyStandardResourcesV3,
 } from "./resource-budget";
 import type { StandardResourceEstimateV3 } from "./resource-budget";
 import { decodeCanonicalStandardConfigV3 } from "./schema";
@@ -190,9 +187,42 @@ export interface ExecutionPlanHeaderV3 {
   readonly resourceEstimate: StandardResourceEstimateV3;
 }
 
+export interface StandardSourceProofRowV3 {
+  readonly sourceRowIndex: number;
+  readonly values: Readonly<Record<string, string | number | boolean>>;
+}
+
+export interface StandardSourceProofPayloadV3 {
+  readonly schemaVersion: 1;
+  readonly dataset: {
+    readonly name: string;
+    readonly source: "sample" | "upload";
+    readonly hashKind: DatasetHashKind;
+    readonly normalizedTableSha256: string;
+    /**
+     * ParsedDataset does not retain the normalized source-file preimage, so
+     * this digest is provenance rather than an independently authenticatable
+     * signature. Every scientific plan field is nevertheless rederived from
+     * the selected source values carried below.
+     */
+    readonly externalHashVerification: "provenance-only-no-normalized-table-preimage";
+    readonly rowCount: number;
+    /** Original imported-dataset byte count used by resource contract v3.4. */
+    readonly sizeBytes: number;
+  };
+  readonly headers: readonly string[];
+  readonly selectedColumns: readonly string[];
+  readonly rows: readonly StandardSourceProofRowV3[];
+}
+
+export interface StandardSourceProofV3 extends StandardSourceProofPayloadV3 {
+  readonly sourceProofSha256: string;
+}
+
 export interface StandardExecutionPlanV3 {
   readonly header: ExecutionPlanHeaderV3;
   readonly configuration: CanonicalStandardConfigV3;
+  readonly sourceProof: StandardSourceProofV3;
   readonly identityDictionary: ExecutionIdentityDictionaryV3;
   readonly codeDictionary: StandardCodeDictionaryV3;
   readonly codeRepresentations: readonly CodeRepresentationBindingV3[];
@@ -312,6 +342,232 @@ function datasetBindingV3(value: unknown, label: string): DatasetBindingV3 {
     normalizedTableSha256: lowercaseSha256V3(record.normalizedTableSha256, `${label}.normalizedTableSha256`),
     rowCount: nonnegativeSafeIntegerV3(record.rowCount, `${label}.rowCount`),
     headerSha256: lowercaseSha256V3(record.headerSha256, `${label}.headerSha256`),
+  };
+}
+
+function selectedSourceColumnsV3(config: CanonicalStandardConfigV3): string[] {
+  const selected = new Set<string>([
+    ...config.units.columns,
+    ...config.horizons.columns,
+    ...config.codes.map((code) => code.column),
+  ]);
+  if (config.units.group.type === "stable-metadata") selected.add(config.units.group.column);
+  if (config.window.type === "MovingStanzaWindow" && config.window.rowOrder.kind === "columns") {
+    for (const key of config.window.rowOrder.keys) selected.add(key.column);
+  }
+  if (config.analysis.model.type !== "EndPoint" && config.analysis.model.horizonOrder.kind === "columns") {
+    for (const key of config.analysis.model.horizonOrder.keys) selected.add(key.column);
+  }
+  return [...selected].sort(codeUnitCompareV3);
+}
+
+function selectedSourceValueV3(row: object, column: string, label: string): string | number | boolean {
+  const descriptor = Object.getOwnPropertyDescriptor(row, column);
+  if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+    throw new TypeError(`${label}.${column} must be an own enumerable data property.`);
+  }
+  const value = descriptor.value;
+  if (typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return Object.is(value, -0) ? 0 : value;
+  throw new TypeError(`${label}.${column} must be a finite JSON scalar selected by the Standard configuration.`);
+}
+
+/** @internal Shared by the compiler and plan builder after their coherent dataset snapshot. */
+export function buildStandardSourceProofPayloadV3(
+  datasetValue: ParsedDataset,
+  bindingValue: DatasetBindingV3,
+  config: CanonicalStandardConfigV3,
+): StandardSourceProofPayloadV3 {
+  const datasetRecord = snapshotPlainJsonRecordV3(datasetValue, "source proof dataset");
+  const expectedDatasetKeys = own.call(datasetRecord, "hashKind")
+    ? ["name", "headers", "rows", "sizeBytes", "source", "hashKind"]
+    : ["name", "headers", "rows", "sizeBytes", "source"];
+  exactKeysV3(datasetRecord, expectedDatasetKeys, "source proof dataset");
+  const name = nonblankStringV3(datasetRecord.name, "source proof dataset.name");
+  if (datasetRecord.source !== "sample" && datasetRecord.source !== "upload") {
+    throw new TypeError("source proof dataset.source is unsupported.");
+  }
+  const hashKind = datasetHashKindFor({
+    name,
+    ...(own.call(datasetRecord, "hashKind") ? { hashKind: datasetRecord.hashKind as DatasetHashKind } : {}),
+  });
+  const binding = datasetBindingV3(bindingValue, "source proof dataset binding");
+  const sizeBytes = nonnegativeSafeIntegerV3(
+    datasetRecord.sizeBytes,
+    "source proof dataset.sizeBytes",
+  );
+  const headers = stringArrayV3(datasetRecord.headers, "source proof headers", true);
+  const rowValues = denseArrayV3(datasetRecord.rows, "source proof rows");
+  if (hashKind !== binding.hashKind || rowValues.length !== binding.rowCount) {
+    throw new TypeError("Source proof dataset does not match its compiler binding.");
+  }
+  const selectedColumns = selectedSourceColumnsV3(config);
+  const headerSet = new Set(headers);
+  if (selectedColumns.some((column) => !headerSet.has(column))) {
+    throw new TypeError("Source proof selected columns must exist in the complete header list.");
+  }
+  const rows = rowValues.map((rowValue, sourceRowIndex): StandardSourceProofRowV3 => {
+    if (rowValue === null || typeof rowValue !== "object" || Array.isArray(rowValue)) {
+      throw new TypeError(`source proof row ${sourceRowIndex} must be a plain object.`);
+    }
+    const prototype = Object.getPrototypeOf(rowValue);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError(`source proof row ${sourceRowIndex} must be a plain object.`);
+    }
+    const values = Object.create(null) as Record<string, string | number | boolean>;
+    for (const column of selectedColumns) {
+      Object.defineProperty(values, column, {
+        value: selectedSourceValueV3(rowValue, column, `source proof row ${sourceRowIndex}`),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    }
+    return { sourceRowIndex, values };
+  });
+  return {
+    schemaVersion: 1,
+    dataset: {
+      name,
+      source: datasetRecord.source,
+      hashKind,
+      normalizedTableSha256: binding.normalizedTableSha256,
+      externalHashVerification: "provenance-only-no-normalized-table-preimage",
+      rowCount: binding.rowCount,
+      sizeBytes,
+    },
+    headers,
+    selectedColumns,
+    rows,
+  };
+}
+
+function sourceProofPayloadV3(proof: StandardSourceProofV3): StandardSourceProofPayloadV3 {
+  const snapshot = plainRecordV3(snapshotJsonValueV3(proof), "sourceProof");
+  delete snapshot.sourceProofSha256;
+  return snapshot as unknown as StandardSourceProofPayloadV3;
+}
+
+function parsedDatasetFromSourceProofV3(proof: StandardSourceProofPayloadV3): ParsedDataset {
+  const rows = [...proof.rows]
+    .sort((left, right) => left.sourceRowIndex - right.sourceRowIndex)
+    .map((row) => row.values);
+  return deepFreezeV3({
+    name: proof.dataset.name,
+    headers: [...proof.headers],
+    rows,
+    sizeBytes: proof.dataset.sizeBytes,
+    source: proof.dataset.source,
+    hashKind: proof.dataset.hashKind,
+  }) as unknown as ParsedDataset;
+}
+
+function decodeStandardSourceProofV3(
+  value: unknown,
+  config: CanonicalStandardConfigV3,
+  binding: DatasetBindingV3,
+  rowCount: number,
+): StandardSourceProofV3 {
+  const record = plainRecordV3(value, "executionPlan.sourceProof");
+  exactKeysV3(record, [
+    "schemaVersion",
+    "dataset",
+    "headers",
+    "selectedColumns",
+    "rows",
+    "sourceProofSha256",
+  ], "executionPlan.sourceProof");
+  if (record.schemaVersion !== 1) throw new TypeError("executionPlan.sourceProof.schemaVersion must be 1.");
+  const dataset = plainRecordV3(record.dataset, "executionPlan.sourceProof.dataset");
+  exactKeysV3(dataset, [
+    "name",
+    "source",
+    "hashKind",
+    "normalizedTableSha256",
+    "externalHashVerification",
+    "rowCount",
+    "sizeBytes",
+  ], "executionPlan.sourceProof.dataset");
+  const name = nonblankStringV3(dataset.name, "executionPlan.sourceProof.dataset.name");
+  if (dataset.source !== "sample" && dataset.source !== "upload") {
+    throw new TypeError("executionPlan.sourceProof.dataset.source is unsupported.");
+  }
+  const hashKind = datasetHashKindV3(dataset.hashKind, "executionPlan.sourceProof.dataset.hashKind");
+  const normalizedTableSha256 = lowercaseSha256V3(
+    dataset.normalizedTableSha256,
+    "executionPlan.sourceProof.dataset.normalizedTableSha256",
+  );
+  const proofRowCount = nonnegativeSafeIntegerV3(dataset.rowCount, "executionPlan.sourceProof.dataset.rowCount");
+  const sizeBytes = nonnegativeSafeIntegerV3(
+    dataset.sizeBytes,
+    "executionPlan.sourceProof.dataset.sizeBytes",
+  );
+  if (dataset.externalHashVerification !== "provenance-only-no-normalized-table-preimage"
+    || hashKind !== binding.hashKind
+    || normalizedTableSha256 !== binding.normalizedTableSha256
+    || proofRowCount !== binding.rowCount
+    || proofRowCount !== rowCount) {
+    throw new TypeError("Execution source proof provenance does not match its compiler dataset binding.");
+  }
+  const headers = stringArrayV3(record.headers, "executionPlan.sourceProof.headers", true);
+  const selectedColumns = stringArrayV3(
+    record.selectedColumns,
+    "executionPlan.sourceProof.selectedColumns",
+    true,
+  );
+  exactJsonEqualV3(selectedColumns, selectedSourceColumnsV3(config), "Execution source proof selected columns");
+  const headerSet = new Set(headers);
+  if (selectedColumns.some((column) => !headerSet.has(column))) {
+    throw new TypeError("Execution source proof selected columns must exist in its complete headers.");
+  }
+  const rows = denseArrayV3(record.rows, "executionPlan.sourceProof.rows").map((entry, index) => {
+    const row = plainRecordV3(entry, `executionPlan.sourceProof.rows[${index}]`);
+    exactKeysV3(row, ["sourceRowIndex", "values"], `executionPlan.sourceProof.rows[${index}]`);
+    const sourceRowIndex = nonnegativeSafeIntegerV3(
+      row.sourceRowIndex,
+      `executionPlan.sourceProof.rows[${index}].sourceRowIndex`,
+    );
+    const valuesRecord = plainRecordV3(row.values, `executionPlan.sourceProof.rows[${index}].values`);
+    exactKeysV3(valuesRecord, selectedColumns, `executionPlan.sourceProof.rows[${index}].values`);
+    const values = Object.create(null) as Record<string, string | number | boolean>;
+    for (const column of selectedColumns) {
+      const selected = valuesRecord[column];
+      if (typeof selected !== "string" && typeof selected !== "boolean"
+        && (typeof selected !== "number" || !Number.isFinite(selected))) {
+        throw new TypeError(`executionPlan.sourceProof.rows[${index}].values.${column} is not a finite JSON scalar.`);
+      }
+      Object.defineProperty(values, column, {
+        value: typeof selected === "number" && Object.is(selected, -0) ? 0 : selected,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    }
+    return { sourceRowIndex, values };
+  });
+  arrayPermutationV3(
+    rows.map((row) => row.sourceRowIndex),
+    rowCount,
+    "executionPlan.sourceProof sourceRowIndex values",
+  );
+  return {
+    schemaVersion: 1,
+    dataset: {
+      name,
+      source: dataset.source,
+      hashKind,
+      normalizedTableSha256,
+      externalHashVerification: "provenance-only-no-normalized-table-preimage",
+      rowCount,
+      sizeBytes,
+    },
+    headers,
+    selectedColumns,
+    rows,
+    sourceProofSha256: lowercaseSha256V3(
+      record.sourceProofSha256,
+      "executionPlan.sourceProof.sourceProofSha256",
+    ),
   };
 }
 
@@ -503,6 +759,7 @@ function capabilityStatusV3(
 interface CapturedReadyCompileV3 {
   readonly draftFingerprint: string;
   readonly datasetBinding: DatasetBindingV3;
+  readonly sourceProofSha256: string;
   readonly canonicalConfiguration: CanonicalStandardConfigV3;
   readonly configurationSha256: string;
   readonly diagnostics: readonly ModelDiagnosticV3[];
@@ -516,6 +773,7 @@ function captureReadyCompileResultV3(value: unknown): CapturedReadyCompileV3 {
     "status",
     "draftFingerprint",
     "datasetBinding",
+    "sourceProofSha256",
     "canonicalConfiguration",
     "configurationSha256",
     "diagnostics",
@@ -529,6 +787,10 @@ function captureReadyCompileResultV3(value: unknown): CapturedReadyCompileV3 {
   return {
     draftFingerprint: lowercaseSha256V3(snapshot.draftFingerprint, "compileResult.draftFingerprint"),
     datasetBinding: datasetBindingV3(snapshot.datasetBinding, "compileResult.datasetBinding"),
+    sourceProofSha256: lowercaseSha256V3(
+      snapshot.sourceProofSha256,
+      "compileResult.sourceProofSha256",
+    ),
     canonicalConfiguration,
     configurationSha256: lowercaseSha256V3(snapshot.configurationSha256, "compileResult.configurationSha256"),
     diagnostics,
@@ -682,127 +944,19 @@ function stringArrayV3(value: unknown, label: string, distinct = false): string[
   return array;
 }
 
-function numericArrayV3(value: unknown, label: string): number[] {
-  return denseArrayV3(value, label).map((entry, index) => finiteNumberV3(entry, `${label}[${index}]`));
-}
-
-function rotationSetV3(
-  value: unknown,
-  dictionary: StandardCodeDictionaryV3,
-  sourceFit: "svd" | "means",
-): RotationSet {
-  const record = plainRecordV3(value, "reference.rotationSet");
-  exactKeysV3(record, [
-    "codes", "adjacencyKey", "rotationMatrix", "rotationColumns", "eigenvalues", "centerVector", "nodes",
-  ], "reference.rotationSet");
-  const codes = stringArrayV3(record.codes, "reference.rotationSet.codes", true);
-  const expectedCodes = dictionary.codes.map((entry) => entry.token);
-  exactJsonEqualV3(codes, expectedCodes, "Reference runtime Code basis");
-  const expectedEdges = dictionary.edges.map((edge) => {
-    const sourceIndex = dictionary.codes.findIndex((code) => code.canonicalIdentity === edge.sourceCodeIdentity);
-    const targetIndex = dictionary.codes.findIndex((code) => code.canonicalIdentity === edge.targetCodeIdentity);
-    return {
-      source: codes[sourceIndex],
-      target: codes[targetIndex],
-      name: `${codes[sourceIndex]} & ${codes[targetIndex]}`,
-      sourceIndex,
-      targetIndex,
-    };
-  });
-  const adjacencyKey = denseArrayV3(record.adjacencyKey, "reference.rotationSet.adjacencyKey")
-    .map((entry, index) => {
-      const edge = plainRecordV3(entry, `reference.rotationSet.adjacencyKey[${index}]`);
-      exactKeysV3(edge, ["source", "target", "name", "sourceIndex", "targetIndex"], `reference.rotationSet.adjacencyKey[${index}]`);
-      return {
-        source: nonblankStringV3(edge.source, `reference.rotationSet.adjacencyKey[${index}].source`),
-        target: nonblankStringV3(edge.target, `reference.rotationSet.adjacencyKey[${index}].target`),
-        name: nonblankStringV3(edge.name, `reference.rotationSet.adjacencyKey[${index}].name`),
-        sourceIndex: nonnegativeSafeIntegerV3(edge.sourceIndex, `reference.rotationSet.adjacencyKey[${index}].sourceIndex`),
-        targetIndex: nonnegativeSafeIntegerV3(edge.targetIndex, `reference.rotationSet.adjacencyKey[${index}].targetIndex`),
-      };
-    });
-  exactJsonEqualV3(adjacencyKey, expectedEdges, "Reference runtime edge basis");
-  const edgeCount = expectedEdges.length;
-  const rotationColumns = stringArrayV3(record.rotationColumns, "reference.rotationSet.rotationColumns", true);
-  if (rotationColumns.length !== edgeCount) throw new TypeError("Reference full axis count must equal its edge count.");
-  const expectedColumns = Array.from({ length: edgeCount }, (_value, index) => (
-    sourceFit === "means" && index === 0 ? "MR1" : `SVD${index + 1}`
-  ));
-  exactJsonEqualV3(rotationColumns, expectedColumns, "Reference fit axis basis");
-  const rotationMatrix = denseArrayV3(record.rotationMatrix, "reference.rotationSet.rotationMatrix")
-    .map((row, rowIndex) => {
-      const values = numericArrayV3(row, `reference.rotationSet.rotationMatrix[${rowIndex}]`);
-      if (values.length !== edgeCount) throw new TypeError("Reference rotation matrix must be square over the complete edge basis.");
-      return values;
-    });
-  if (rotationMatrix.length !== edgeCount) throw new TypeError("Reference rotation matrix must cover every edge.");
-  for (let left = 0; left < edgeCount; left += 1) {
-    for (let right = left; right < edgeCount; right += 1) {
-      let dot = 0;
-      for (const row of rotationMatrix) dot += row[left] * row[right];
-      const expected = left === right ? 1 : 0;
-      if (!Number.isFinite(dot) || Math.abs(dot - expected) > 1e-8) {
-        throw new TypeError("Reference rotation matrix columns must be orthonormal.");
-      }
-    }
-  }
-  const eigenvalues = numericArrayV3(record.eigenvalues, "reference.rotationSet.eigenvalues");
-  if ((sourceFit === "svd" && eigenvalues.length !== edgeCount)
-    || (sourceFit === "means" && eigenvalues.length !== 0)
-    || eigenvalues.some((entry) => entry < 0)) {
-    throw new TypeError("Reference eigenvalues are inconsistent with sourceFit.");
-  }
-  const centerVector = numericArrayV3(record.centerVector, "reference.rotationSet.centerVector");
-  if (centerVector.length !== edgeCount) throw new TypeError("Reference center vector must cover every edge.");
-  const centerSquaredNorm = centerVector.reduce((sum, coordinate) => sum + coordinate * coordinate, 0);
-  if (!Number.isFinite(centerSquaredNorm)
-    || centerSquaredNorm > 1 + 1e-8
-    || centerVector.some((coordinate) => coordinate < -1e-12 || coordinate > 1 + 1e-12)) {
-    throw new TypeError("Reference center vector must be valid in the sphere-normalized edge domain.");
-  }
-  const nodes = denseArrayV3(record.nodes, "reference.rotationSet.nodes").map((value, index) => {
-    const node = plainRecordV3(value, `reference.rotationSet.nodes[${index}]`);
-    const displayed = rotationColumns.slice(0, Math.min(3, edgeCount));
-    exactKeysV3(node, ["code", ...displayed], `reference.rotationSet.nodes[${index}]`);
-    if (node.code !== codes[index]) throw new TypeError("Reference nodes must follow the runtime Code basis.");
-    return {
-      code: codes[index],
-      ...Object.fromEntries(displayed.map((axis) => [axis, finiteNumberV3(node[axis], `reference node ${axis}`)])),
-    };
-  });
-  if (nodes.length !== codes.length) throw new TypeError("Reference nodes must cover every Code.");
-  return { codes, adjacencyKey, rotationMatrix, rotationColumns, eigenvalues, centerVector, nodes };
-}
-
 function referenceBindingV3(
   value: unknown,
   config: CanonicalStandardConfigV3,
-  dictionary: StandardCodeDictionaryV3,
+  _dictionary: StandardCodeDictionaryV3,
 ): ValidatedReferenceExecutionBindingV3 | null {
   const rotation = config.analysis.rotation;
-  if (rotation.type !== "reference") {
-    if (value !== null) throw new TypeError("SVD and Means execution plans must not carry a Reference binding.");
-    return null;
+  if (rotation.type === "reference") {
+    throw new TypeError(
+      "Reference execution remains fail-closed until Task 13 supplies a complete content-addressed Reference v2 artifact.",
+    );
   }
-  if (value === null) throw new TypeError("Reference execution requires a validated Reference binding.");
-  const record = plainRecordV3(value, "reference");
-  exactKeysV3(record, ["referenceId", "contentSha256", "basisPermutation", "rotationSet", "sourceFit"], "reference");
-  const referenceId = nonblankStringV3(record.referenceId, "reference.referenceId");
-  const contentSha256 = lowercaseSha256V3(record.contentSha256, "reference.contentSha256");
-  if (referenceId !== rotation.referenceId || contentSha256 !== rotation.expectedContentSha256) {
-    throw new TypeError("Reference identity/content hash does not match the canonical configuration.");
-  }
-  if (record.sourceFit !== "svd" && record.sourceFit !== "means") {
-    throw new TypeError("reference.sourceFit must be svd or means.");
-  }
-  const edgeCount = dictionary.edges.length;
-  return {
-    referenceId,
-    contentSha256,
-    basisPermutation: arrayPermutationV3(record.basisPermutation, edgeCount, "reference.basisPermutation"),
-    sourceFit: record.sourceFit,
-    rotationSet: rotationSetV3(record.rotationSet, dictionary, record.sourceFit),
-  };
+  if (value !== null) throw new TypeError("SVD and Means execution plans must not carry a Reference binding.");
+  return null;
 }
 
 function sourceOrderContextV3(binding: DatasetBindingV3) {
@@ -897,23 +1051,50 @@ export async function buildStandardExecutionPlanV3(input: {
     throw new TypeError("datasetSha256 does not match the ready compile invocation.");
   }
   const envelope = compilerDatasetEnvelopeV3(inputRecord.dataset as ParsedDataset);
+  const rowLengthDescriptor = Object.getOwnPropertyDescriptor(envelope.rows, "length");
+  if (rowLengthDescriptor === undefined
+    || !("value" in rowLengthDescriptor)
+    || rowLengthDescriptor.value !== compile.datasetBinding.rowCount
+    || compile.resourceEstimate.rows !== compile.datasetBinding.rowCount
+    || compile.resourceEstimate.codes !== compile.canonicalConfiguration.codes.length) {
+    throw new TypeError("Ready compiler binding/resource envelope is inconsistent.");
+  }
+  const earlyAdmission = estimateEarlyStandardResourcesV3({
+    rowCount: compile.datasetBinding.rowCount,
+    codeCount: compile.canonicalConfiguration.codes.length,
+    datasetSizeBytes: 0,
+    identityPayloadBytes: 0,
+  });
+  if (earlyAdmission.blocked) {
+    throw new TypeError("Ready compiler envelope exceeds the fixed pre-snapshot resource budget.");
+  }
   const dataset = snapshotCompilerDatasetInputV3(envelope, compile.datasetBinding);
   if (datasetHashKindFor(dataset) !== compile.datasetBinding.hashKind) {
     throw new TypeError("The dataset hash kind does not match the ready compile invocation.");
   }
   const referenceSnapshot = inputRecord.reference === null ? null : snapshotJsonValueV3(inputRecord.reference);
-  const exactResourceEstimate = exactStandardResourceEstimateV3(dataset, compile.canonicalConfiguration);
+  const sourceProofPayload = buildStandardSourceProofPayloadV3(
+    dataset,
+    compile.datasetBinding,
+    compile.canonicalConfiguration,
+  );
+  const sourceProofSha256 = await sha256CanonicalJsonV3(sourceProofPayload);
+  if (sourceProofSha256 !== compile.sourceProofSha256) {
+    throw new TypeError("Selected source proof does not match the ready compile invocation.");
+  }
+  const proofDataset = parsedDatasetFromSourceProofV3(sourceProofPayload);
+  const exactResourceEstimate = exactStandardResourceEstimateV3(proofDataset, compile.canonicalConfiguration);
   exactJsonEqualV3(exactResourceEstimate, compile.resourceEstimate, "Ready compiler resource estimate");
   if (exactResourceEstimate.blocked) throw new TypeError("A blocked resource estimate cannot build a plan.");
 
   // Resource admission precedes the quadratic edge dictionary allocation.
   const codeDictionary = buildStandardCodeDictionaryV3(compile.canonicalConfiguration.codes);
   const codeRepresentations = buildCodeRepresentationBindingsV3(
-    dataset.rows,
+    proofDataset.rows,
     compile.canonicalConfiguration.weighting,
     codeDictionary,
   );
-  const codeValues = dataset.rows.map((row) => materializeStandardCodesV3(
+  const codeValues = proofDataset.rows.map((row) => materializeStandardCodesV3(
     row,
     compile.canonicalConfiguration.weighting,
     codeDictionary,
@@ -921,7 +1102,7 @@ export async function buildStandardExecutionPlanV3(input: {
   const context = sourceOrderContextV3(compile.datasetBinding);
   const sourceRowOrdering = compile.canonicalConfiguration.window.type === "MovingStanzaWindow"
     ? resolveRowOrderV3(
-        dataset.rows as Array<Record<string, unknown>>,
+        proofDataset.rows as Array<Record<string, unknown>>,
         compile.canonicalConfiguration.horizons.columns,
         compile.canonicalConfiguration.window.rowOrder,
         context,
@@ -930,7 +1111,7 @@ export async function buildStandardExecutionPlanV3(input: {
   const sourceHorizonOrdering = compile.canonicalConfiguration.analysis.model.type === "EndPoint"
     ? null
     : resolveHorizonOrderV3(
-        dataset.rows as Array<Record<string, unknown>>,
+        proofDataset.rows as Array<Record<string, unknown>>,
         compile.canonicalConfiguration.units.columns,
         compile.canonicalConfiguration.horizons.columns,
         compile.canonicalConfiguration.analysis.model.horizonOrder,
@@ -942,7 +1123,7 @@ export async function buildStandardExecutionPlanV3(input: {
     sha256CanonicalJsonV3(compile.canonicalConfiguration),
   );
   const identitiesOutcomePromise = settlePromiseV3(buildExecutionIdentityDictionaryV3(
-    dataset.rows as Array<Record<string, unknown>>,
+    proofDataset.rows as Array<Record<string, unknown>>,
     compile.canonicalConfiguration.units.columns,
     compile.canonicalConfiguration.horizons.columns,
     compile.canonicalConfiguration.units.group.type === "stable-metadata"
@@ -980,8 +1161,12 @@ export async function buildStandardExecutionPlanV3(input: {
         horizonTokens,
       );
   const reference = referenceBindingV3(referenceSnapshot, compile.canonicalConfiguration, codeDictionary);
+  const sourceProof: StandardSourceProofV3 = {
+    ...sourceProofPayload,
+    sourceProofSha256,
+  };
   const rows = materializedRowsV3({
-    dataset,
+    dataset: proofDataset,
     config: compile.canonicalConfiguration,
     identities,
     dictionary: codeDictionary,
@@ -1012,6 +1197,7 @@ export async function buildStandardExecutionPlanV3(input: {
       resourceEstimate: exactResourceEstimate,
     },
     configuration: compile.canonicalConfiguration,
+    sourceProof,
     identityDictionary: identities,
     codeDictionary,
     codeRepresentations,
@@ -1389,57 +1575,12 @@ function assertIdentityMembershipV3(
   }
 }
 
-function resourceInputFromPlanV3(
-  plan: Pick<StandardExecutionPlanV3, "configuration" | "rows" | "reference">,
-  estimate: StandardResourceEstimateV3,
-): Parameters<typeof estimateStandardResourcesV3>[0] {
-  const horizonSizes = new Map<string, number>();
-  const unitHorizonSizes = new Map<string, number>();
-  const horizonsByUnit = new Map<string, Set<string>>();
-  const unitTokens = new Set<string>();
-  for (const row of plan.rows) {
-    unitTokens.add(row.unitToken);
-    horizonSizes.set(row.horizonToken, (horizonSizes.get(row.horizonToken) ?? 0) + 1);
-    const partition = canonicalJsonV3([row.unitToken, row.horizonToken]);
-    unitHorizonSizes.set(partition, (unitHorizonSizes.get(partition) ?? 0) + 1);
-    const observed = horizonsByUnit.get(row.unitToken) ?? new Set<string>();
-    observed.add(row.horizonToken);
-    horizonsByUnit.set(row.unitToken, observed);
-  }
-  const sortedSizes = (sizes: ReadonlyMap<string, number>) => [...sizes.entries()]
-    .sort(([left], [right]) => codeUnitCompareV3(left, right))
-    .map(([, size]) => size);
-  const trajectorySteps = plan.configuration.analysis.model.type === "EndPoint"
-    ? unitTokens.size
-    : [...horizonsByUnit.values()].reduce((sum, values) => sum + values.size, 0);
-  return {
-    rowCount: plan.rows.length,
-    unitCount: unitTokens.size,
-    horizonCount: horizonSizes.size,
-    codeCount: plan.configuration.codes.length,
-    horizonSizes: sortedSizes(horizonSizes),
-    windowPartitionSizes: plan.configuration.window.type === "Conversation"
-      ? sortedSizes(unitHorizonSizes)
-      : sortedSizes(horizonSizes),
-    trajectorySteps,
-    windowType: plan.configuration.window.type,
-    backward: plan.configuration.window.type === "MovingStanzaWindow"
-      ? plan.configuration.window.backward
-      : { kind: "finite", value: 1 },
-    forward: plan.configuration.window.type === "MovingStanzaWindow"
-      ? plan.configuration.window.forward
-      : { kind: "finite", value: 0 },
-    referenceProjection: plan.reference !== null,
-    datasetSizeBytes: estimate.datasetSizeBytes,
-    identityPayloadBytes: estimate.identityPayloadBytes,
-  };
-}
-
 function decodePlanShapeV3(value: unknown): StandardExecutionPlanV3 {
   const plan = plainRecordV3(snapshotJsonValueV3(value), "executionPlan");
   exactKeysV3(plan, [
     "header",
     "configuration",
+    "sourceProof",
     "identityDictionary",
     "codeDictionary",
     "codeRepresentations",
@@ -1495,6 +1636,12 @@ function decodePlanShapeV3(value: unknown): StandardExecutionPlanV3 {
     throw new TypeError("Execution plan configuration contract versions disagree with its header.");
   }
   const codeDictionary = validateCodeDictionaryV3(plan.codeDictionary, configuration);
+  const sourceProof = decodeStandardSourceProofV3(
+    plan.sourceProof,
+    configuration,
+    binding,
+    rowCount,
+  );
   if (codeDictionary.codes.some((entry) => !CODE_TOKEN_PATTERN_V3.test(entry.token))) {
     throw new TypeError("Execution Code dictionary contains noncanonical runtime tokens.");
   }
@@ -1533,6 +1680,7 @@ function decodePlanShapeV3(value: unknown): StandardExecutionPlanV3 {
       resourceEstimate,
     },
     configuration,
+    sourceProof,
     identityDictionary: plan.identityDictionary as ExecutionIdentityDictionaryV3,
     codeDictionary,
     codeRepresentations,
@@ -1549,29 +1697,114 @@ export async function validateExecutionPlanV3(input: unknown): Promise<OpenEnaEx
   // Strict canonical capture happens before any await and before any property
   // read that could execute a getter. The decoded plan is detached from input.
   const plan = decodePlanShapeV3(input);
-  const identityOutcomePromise = settlePromiseV3(
-    validateExecutionIdentityDictionaryV3(plan.identityDictionary),
-  );
+  const sourceProofPayload = sourceProofPayloadV3(plan.sourceProof);
+  const proofDataset = parsedDatasetFromSourceProofV3(sourceProofPayload);
+  const sourceProofHashOutcomePromise = settlePromiseV3(sha256CanonicalJsonV3(sourceProofPayload));
+  const headerHashOutcomePromise = settlePromiseV3(sha256CanonicalJsonV3(sourceProofPayload.headers));
+  const identityOutcomePromise = settlePromiseV3(buildExecutionIdentityDictionaryV3(
+    proofDataset.rows as Array<Record<string, unknown>>,
+    plan.configuration.units.columns,
+    plan.configuration.horizons.columns,
+    plan.configuration.units.group.type === "stable-metadata"
+      ? plan.configuration.units.group.column
+      : null,
+  ));
   const configurationHashOutcomePromise = settlePromiseV3(sha256CanonicalJsonV3(plan.configuration));
   const planHashOutcomePromise = settlePromiseV3(sha256CanonicalJsonV3(executionPlanWithoutHashV3(plan)));
-  const [identityOutcome, configurationHashOutcome, planHashOutcome] = await Promise.all([
+  const [sourceProofHashOutcome, headerHashOutcome, identityOutcome, configurationHashOutcome, planHashOutcome] = await Promise.all([
+    sourceProofHashOutcomePromise,
+    headerHashOutcomePromise,
     identityOutcomePromise,
     configurationHashOutcomePromise,
     planHashOutcomePromise,
   ] as const);
+  const sourceProofSha256 = outcomeValueV3(sourceProofHashOutcome);
+  const headerSha256 = outcomeValueV3(headerHashOutcome);
   const identities = outcomeValueV3(identityOutcome);
   const configurationSha256 = outcomeValueV3(configurationHashOutcome);
   const executionPlanSha256 = outcomeValueV3(planHashOutcome);
+  if (sourceProofSha256 !== plan.sourceProof.sourceProofSha256) {
+    throw new TypeError("Execution source-proof SHA-256 does not match its selected source evidence.");
+  }
+  if (headerSha256 !== plan.header.headerSha256) {
+    throw new TypeError("Execution source-proof headers do not match the compiler header binding.");
+  }
   if (configurationSha256 !== plan.header.configurationSha256) {
     throw new TypeError("Execution-plan configuration SHA-256 does not match its canonical configuration.");
   }
   if (executionPlanSha256 !== plan.header.executionPlanSha256) {
     throw new TypeError("Execution-plan SHA-256 does not match its content.");
   }
-  assertIdentityMembershipV3(identities, plan.rows, plan.configuration);
-  const exactResourceEstimate = estimateStandardResourcesV3(
-    resourceInputFromPlanV3(plan, plan.header.resourceEstimate),
+  exactJsonEqualV3(plan.identityDictionary, identities, "Execution identity dictionary derived from source proof");
+
+  const expectedCodeRepresentations = buildCodeRepresentationBindingsV3(
+    proofDataset.rows,
+    plan.configuration.weighting,
+    plan.codeDictionary,
   );
+  exactJsonEqualV3(
+    plan.codeRepresentations,
+    expectedCodeRepresentations,
+    "Execution Code representations derived from source proof",
+  );
+  const context = sourceOrderContextV3(plan.header.datasetBinding);
+  const unitTokens = tokenByCanonicalJsonV3(identities.units, "Unit dictionary");
+  const horizonTokens = tokenByCanonicalJsonV3(identities.horizons, "Horizon dictionary");
+  const sourceRowOrdering = plan.configuration.window.type === "MovingStanzaWindow"
+    ? resolveRowOrderV3(
+        proofDataset.rows as Array<Record<string, unknown>>,
+        plan.configuration.horizons.columns,
+        plan.configuration.window.rowOrder,
+        context,
+      )
+    : null;
+  const expectedRowOrdering: ResolvedExecutionRowOrderingV3 | NotApplicableOrderingV3 = sourceRowOrdering === null
+    ? { type: "not-applicable", reason: "conversation-window" }
+    : mapRowOrderingV3(sourceRowOrdering, horizonTokens);
+  const sourceHorizonOrdering = plan.configuration.analysis.model.type === "EndPoint"
+    ? null
+    : resolveHorizonOrderV3(
+        proofDataset.rows as Array<Record<string, unknown>>,
+        plan.configuration.units.columns,
+        plan.configuration.horizons.columns,
+        plan.configuration.analysis.model.horizonOrder,
+        context,
+      );
+  const expectedHorizonOrdering: ResolvedExecutionHorizonOrderingV3 | NotApplicableOrderingV3 = sourceHorizonOrdering === null
+    ? { type: "not-applicable", reason: "endpoint-model" }
+    : mapHorizonOrderingV3(
+        sourceHorizonOrdering,
+        plan.configuration.analysis.model.type === "EndPoint"
+          ? (() => { throw new TypeError("Endpoint cannot carry trajectory ordering."); })()
+          : plan.configuration.analysis.model.horizonOrder,
+        unitTokens,
+        horizonTokens,
+      );
+  exactJsonEqualV3(plan.rowOrdering, expectedRowOrdering, "Authoritative resolved row ordering");
+  exactJsonEqualV3(plan.horizonOrdering, expectedHorizonOrdering, "Authoritative resolved Horizon ordering");
+  const codeValues = proofDataset.rows.map((row) => materializeStandardCodesV3(
+    row,
+    plan.configuration.weighting,
+    plan.codeDictionary,
+  ));
+  const expectedRows = materializedRowsV3({
+    dataset: proofDataset,
+    config: plan.configuration,
+    identities,
+    dictionary: plan.codeDictionary,
+    codeValues,
+    rowOrdering: expectedRowOrdering,
+    horizonOrdering: expectedHorizonOrdering,
+  });
+  exactJsonEqualV3(plan.rows, expectedRows, "Execution rows derived from source proof");
+  const expectedAdapterParameters = buildAdapterParametersV3(plan.configuration, plan.codeDictionary);
+  exactJsonEqualV3(plan.adapterParameters, expectedAdapterParameters, "Standard adapter parameters");
+  exactJsonEqualV3(plan.weighting, {
+    scientific: plan.configuration.weighting.type,
+    runtime: expectedAdapterParameters.weightBy,
+  }, "Execution weighting provenance");
+  assertIdentityMembershipV3(identities, plan.rows, plan.configuration);
+  const exactResourceEstimate = exactStandardResourceEstimateV3(proofDataset, plan.configuration);
   exactJsonEqualV3(exactResourceEstimate, plan.header.resourceEstimate, "Execution resource estimate");
   return deepFreezeV3({ ...plan, identityDictionary: identities });
 }

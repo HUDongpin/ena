@@ -52,6 +52,9 @@ import {
   validateOnaDatasetV3,
 } from "./ona-compiler-preflight";
 import type { OnaCompilerDiagnosticV3 } from "./ona-compiler-preflight";
+import {
+  buildStandardSourceProofPayloadV3,
+} from "./execution-plan";
 
 export { ONA_COMPILER_DIAGNOSTIC_IDS_V3 } from "./ona-compiler-preflight";
 export type {
@@ -85,6 +88,8 @@ export interface ReadyStandardCompileResultV3 {
   readonly draftFingerprint: string;
   /** Exact dataset binding captured by this compiler invocation. */
   readonly datasetBinding: DatasetBindingV3;
+  /** Selected scientific source evidence captured by this compiler invocation. */
+  readonly sourceProofSha256: string;
   readonly canonicalConfiguration: CanonicalStandardConfigV3;
   readonly configurationSha256: string;
   readonly diagnostics: readonly ModelDiagnosticV3[];
@@ -302,8 +307,17 @@ export async function compileStandardDraftV3(
     standardCanonicalFromDraftV3(capturedDraft.snapshot),
   ));
   let resourceEstimate: StandardResourceEstimateV3;
+  let sourceProofPayload: ReturnType<typeof buildStandardSourceProofPayloadV3>;
   try {
-    resourceEstimate = exactStandardResourceEstimateV3(validatedDataset, canonicalConfiguration);
+    sourceProofPayload = buildStandardSourceProofPayloadV3(
+      validatedDataset,
+      binding,
+      canonicalConfiguration,
+    );
+    resourceEstimate = exactStandardResourceEstimateV3(
+      validatedDataset,
+      canonicalConfiguration,
+    );
   } catch (error) {
     if (!(error instanceof ResourceEstimateErrorV3)) throw error;
     return deepFreezeV3({
@@ -325,6 +339,7 @@ export async function compileStandardDraftV3(
     status: "ready",
     draftFingerprint,
     datasetBinding: binding,
+    sourceProofSha256: await sha256CanonicalJsonV3(sourceProofPayload),
     canonicalConfiguration,
     configurationSha256: await sha256CanonicalJsonV3(canonicalConfiguration),
     diagnostics,
