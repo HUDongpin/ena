@@ -412,6 +412,26 @@ export interface PresentationArtifactV3 {
   nodeOverrides: NodeDisplayOverrideV3[];
   dimensions: string[];
   camera3d?: import("../plot3d").OpenEna3dCamera;
+  /** Optional additions preserve presence and hashes of known older v3 artifacts. */
+  groupColors?: { group: ScalarIdentityV3; color: string }[];
+  layerOptions?: Partial<{
+    showPoints: boolean;
+    showMeans: boolean;
+    showIntervals: boolean;
+    showNetworks: boolean;
+    showTrajectories: boolean;
+    showLabels: boolean;
+    showGroupLabels: boolean;
+    showUnitLabels: boolean;
+    showVariance: boolean;
+    endpointsOnly: boolean;
+    flipX: boolean;
+    flipY: boolean;
+    edgeThreshold: number;
+    edgeScale: number;
+    pointScale: number;
+    plotZoom: number;
+  }>;
 }
 
 export interface BundleComponentHashesV3 {

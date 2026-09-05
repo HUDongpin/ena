@@ -46,6 +46,7 @@ import type {
   ResultExecutionProvenanceV3,
   OnaResultExecutionProvenanceV3,
   PresentationArtifactV3,
+  ScalarIdentityV3,
 } from "./model-v3/types";
 import { buildMethodsReportV3 } from "./methods-v3";
 
@@ -1852,9 +1853,9 @@ function assertOnaEvidence(result: BoundOnaResultV3): void {
   }
 }
 
-function assertPresentation(
+export function assertPresentationArtifactContractV3(
   p: PresentationArtifactV3,
-  result: BoundResultV3,
+  result?: BoundResultV3,
 ): void {
   keys(
     p,
@@ -1866,50 +1867,97 @@ function assertPresentation(
       "nodeOverrides",
       "dimensions",
     ],
-    ["camera3d"],
+    ["camera3d", "groupColors", "layerOptions"],
   );
-  same(
-    p.boundResultSha256,
-    result.binding.scientificResultSha256,
-    "presentation exact result binding",
-  );
-  const codes = result.set.codes,
-    axes = result.set.rotation.rotationColumns;
+  hash(p.boundResultSha256);
+  if (result)
+    same(
+      p.boundResultSha256,
+      result.binding.scientificResultSha256,
+      "presentation exact result binding",
+    );
+  const codes = result?.set.codes,
+    axes = result?.set.rotation.rotationColumns;
   for (const [values, allowed] of [
     [p.hiddenCodes, codes],
     [p.dimensions, axes],
   ] as const) {
     unique(values, "presentation references");
-    if (values.some((v) => !allowed.includes(v)))
+    values.forEach(string);
+    if (allowed && values.some((v) => !allowed.includes(v)))
       fail("presentation Code/axis reference");
   }
   if (!p.dimensions.length) fail("presentation dimensions");
   unique(p.hiddenGroups, "presentation Groups");
-  p.hiddenGroups.forEach((group) => {
+  const groups = result
+    ? new Set(
+        result.executionProvenance.identityDictionary.groups.map((entry) =>
+          canonicalJsonV3(entry.fields[0].value),
+        ),
+      )
+    : null;
+  function groupIdentity(group: ScalarIdentityV3) {
     keys(group, ["type", "value"]);
     same(
       group,
       scalarIdentityV3(group.value, "presentation Group"),
       "presentation Group identity",
     );
-    if (
-      !result.executionProvenance.identityDictionary.groups.some(
-        (entry) =>
-          canonicalJsonV3(entry.fields[0].value) === canonicalJsonV3(group),
-      )
-    )
+    if (groups && !groups.has(canonicalJsonV3(group)))
       fail("presentation Group reference");
-  });
-  keys(p.codeColors, [], codes);
+  }
+  p.hiddenGroups.forEach(groupIdentity);
+  keys(p.codeColors, [], codes ?? Object.keys(p.codeColors));
   Object.values(p.codeColors).forEach(string);
+  if (Object.hasOwn(p, "groupColors")) {
+    if (!Array.isArray(p.groupColors)) fail("presentation Group colors");
+    unique(
+      p.groupColors.map((entry) => entry.group),
+      "presentation Group colors",
+    );
+    p.groupColors.forEach((entry) => {
+      keys(entry, ["group", "color"]);
+      groupIdentity(entry.group);
+      string(entry.color);
+    });
+  }
+  if (Object.hasOwn(p, "layerOptions")) {
+    if (!p.layerOptions) fail("presentation layers");
+    const bools = [
+      "showPoints",
+      "showMeans",
+      "showIntervals",
+      "showNetworks",
+      "showTrajectories",
+      "showLabels",
+      "showGroupLabels",
+      "showUnitLabels",
+      "showVariance",
+      "endpointsOnly",
+      "flipX",
+      "flipY",
+    ];
+    const numbers = ["edgeThreshold", "edgeScale", "pointScale", "plotZoom"];
+    keys(p.layerOptions, [], [...bools, ...numbers]);
+    for (const [key, value] of Object.entries(p.layerOptions)) {
+      if (bools.includes(key)) {
+        if (typeof value !== "boolean") fail("presentation layer boolean");
+      } else {
+        finite(value, true);
+        if (key !== "edgeThreshold" && value === 0)
+          fail("presentation positive scale");
+      }
+    }
+  }
   unique(
     p.nodeOverrides.map((node) => node.code),
     "presentation node overrides",
   );
   p.nodeOverrides.forEach((node) => {
     keys(node, ["code", "coordinates"]);
-    if (!codes.includes(node.code)) fail("presentation node Code");
-    keys(node.coordinates, [], axes);
+    string(node.code);
+    if (codes && !codes.includes(node.code)) fail("presentation node Code");
+    keys(node.coordinates, [], axes ?? Object.keys(node.coordinates));
     if (!Object.keys(node.coordinates).length) fail("presentation coordinates");
     Object.values(node.coordinates).forEach((v) => finite(v));
   });
@@ -2024,7 +2072,7 @@ export async function assertPortableBundleContractV3(
       fail("bound methods report");
     }
     if (Object.hasOwn(bundle, "presentation"))
-      assertPresentation(bundle.presentation!, result);
+      assertPresentationArtifactContractV3(bundle.presentation!, result);
   } catch (error) {
     throw new TypeError(
       `Bundle contract validation failed: ${error instanceof Error ? error.message : "invalid schema"}`,

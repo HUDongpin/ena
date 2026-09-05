@@ -566,3 +566,4 @@ export {
 export type { ExportFileDescriptorV3, ExportReferenceV2Options } from "./model-artifact-exports-v3";
 export { importOpenEnaArtifactV3 } from "./model-artifact-imports-v3";
 export type { OpenEnaImportResultV3 } from "./model-artifact-imports-v3";
+export { buildPresentationArtifactV3, applyPresentationV3 } from './presentation-artifact-v3';

@@ -555,3 +555,5 @@ export function repairOpenEnaSetSelection(
 ) {
   return repairSetSelection(sets, { primarySetId, secondarySetId });
 }
+export { captureAnalysisSetV3, compareAnalysisSetsV3, upsertAnalysisSetV3 } from './sets-bound-v3';
+export type { OpenEnaAnalysisSetV3 } from './sets-bound-v3';
