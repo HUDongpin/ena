@@ -24,7 +24,7 @@ import {
   stringVectorToUpperTriangle,
   sumColumns,
   vectorToUpperTriangle
-} from './core/index.js';
+} from './core/matrix.js';
 import { assertNonEmptyColumns, assertRowsHaveColumns } from './core/guards.js';
 import { mergeColumns, typedTupleIdentity } from './core/table.js';
 import { validateAccumulateOptions } from './core/validate.js';
@@ -1176,6 +1176,19 @@ function makeOrderedNoForwardConnections(
   return connections;
 }
 
+/** Inclusive bounds within one Horizon; backward includes the current row. */
+export function windowBoundsForRow(
+  current: number,
+  horizonLength: number,
+  backward: number,
+  forward: number
+): { first: number; last: number } {
+  return {
+    first: backward === Infinity ? 0 : Math.max(0, current - Math.max(0, backward - 1)),
+    last: forward === Infinity ? horizonLength - 1 : Math.min(horizonLength - 1, current + forward)
+  };
+}
+
 function rowsForLocalRange(state: MovingConversationState, earliest: number, last: number): number[][] {
   return state.buffer
     .filter((entry) => entry.localIndex >= earliest && entry.localIndex <= last)
@@ -1188,18 +1201,10 @@ function computeWindowCoOccurrence(state: MovingConversationState, rowIndex: num
   const back = internals.windowSizeBack;
   const forward = internals.windowSizeForward;
   const binary = internals.weightBy === 'binary';
-  const infiniteBack = !Number.isFinite(back);
   const infiniteForward = !Number.isFinite(forward);
   if (!final && (infiniteForward || rowIndex + forward >= rowCount)) return undefined;
 
-  let earliest = 0;
-  let last = rowIndex;
-  if (infiniteBack) earliest = 0;
-  else if (back === 0) earliest = rowIndex;
-  else if (rowIndex - (back - 1) >= 0) earliest = rowIndex - (back - 1);
-
-  if (infiniteForward || rowIndex + forward >= rowCount) last = rowCount - 1;
-  else if (forward > 0 && rowIndex + forward <= rowCount - 1) last = rowIndex + forward;
+  const { first: earliest, last } = windowBoundsForRow(rowIndex, rowCount, back, forward);
 
   const currRows = rowsForLocalRange(state, earliest, last);
   if (currRows.length !== last - earliest + 1) return undefined;

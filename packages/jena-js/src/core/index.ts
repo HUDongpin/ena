@@ -10,3 +10,4 @@ export {
   estimateDenseSvdBudget,
 } from "./denseSvdBudget.js";
 export type { DenseSvdBudgetEstimate } from "./denseSvdBudget.js";
+export { windowBoundsForRow } from "../performance.js";
