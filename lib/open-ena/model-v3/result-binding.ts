@@ -6,7 +6,7 @@ import type { ModelCapabilityStatusV3 } from "./compiler";
 import type { ModelCapabilityV3, ModelDiagnosticV3 } from "./diagnostics";
 import { captureExecutionPlanInputV3, validateExecutionPlanV3, type StandardExecutionPlanV3 } from "./execution-plan";
 import { buildMeansBindingV3, scheduleStandardExecutionRowsV3 } from "./standard-adapter";
-import { MAX_ESTIMATED_EXPORT_BYTES_V3, MAX_ESTIMATED_NUMERIC_CELLS_V3, MAX_ESTIMATED_PEAK_BYTES_V3 } from "./resource-budget";
+import { MAX_ESTIMATED_EXPORT_BYTES_V3, MAX_ESTIMATED_NUMERIC_CELLS_V3, MAX_ESTIMATED_PEAK_BYTES_V3, MAX_ESTIMATED_ROTATION_WORK_UNITS_V3 } from "./resource-budget";
 import type { BoundResultV3, InternalStandardRunResultV3, ResultBindingV3, ResultExecutionProvenanceV3, RuntimeResourceObservationV3, SerializableEnaSetV3 } from "./types";
 
 const CAPABILITIES: readonly ModelCapabilityV3[] = ["build-model", "export-current-model", "export-reference", "group-inference", "trajectory-inference", "longitudinal-comparison", "ai-interpretation"];
@@ -20,6 +20,30 @@ function integer(value: unknown, label: string): asserts value is number {
 function lookup(map: ReadonlyMap<string, string>, value: unknown, label: string): string {
   if (typeof value !== "string" || !map.has(value)) throw new TypeError(`Unknown ${label} identity token or label.`);
   return map.get(value)!;
+}
+
+function nonnegativeScientificValue(value: unknown): void {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) throw new TypeError("Raw Code/cooccurrence and normalized network values must be finite and nonnegative.");
+}
+
+function validateFunctionParameterShape(params: ENASet["functionParams"] | SerializableEnaSetV3["functionParams"]): void {
+  same(Object.keys(params).sort(), ["includeMeta", "model", "weightBy", "window", "windowSizeBack", "windowSizeForward"], "function parameters shape");
+  if (params.includeMeta !== true) throw new TypeError("Standard v3 function parameters require includeMeta=true.");
+}
+
+/** Separate validation work phase, not cumulative runtime work or an allocation.
+ * E³ bounds the upper-triangle column dot products. The finite square shape is
+ * checked first; only scalar scratch is retained, never a Gram matrix or refit.
+ */
+function validateOrthonormalBasis(plan: StandardExecutionPlanV3, set: ENASet): void {
+  const width = set.codeColumns.length;
+  const work = width * width * width;
+  if (!Number.isSafeInteger(work) || work > Math.min(plan.header.resourceEstimate.estimatedRotationWorkUnits, MAX_ESTIMATED_ROTATION_WORK_UNITS_V3)) throw new TypeError("Orthonormal basis validation exceeds admitted rotation work.");
+  for (let left = 0; left < width; left += 1) for (let right = left; right < width; right += 1) {
+    let product = 0;
+    for (let row = 0; row < width; row += 1) product += set.rotation.rotationMatrix[row][left] * set.rotation.rotationMatrix[row][right];
+    if (!Number.isFinite(product) || Math.abs(product - (left === right ? 1 : 0)) > 1e-8) throw new TypeError("Standard rotation columns must be orthonormal at tolerance 1e-8.");
+  }
 }
 
 function planBinding(plan: StandardExecutionPlanV3): Omit<ResultBindingV3, "scientificResultSha256"> {
@@ -132,6 +156,8 @@ function validateRuntime(plan: StandardExecutionPlanV3, runtime: InternalStandar
   same(set.adjacencyKey, edges, "edge basis"); same(set.rotation.adjacencyKey, edges, "rotation edge basis");
   same(Object.keys(set.rotation).sort(), ["adjacencyKey", "centerVector", "codes", "eigenvalues", "nodes", "rotationColumns", "rotationMatrix"], "rotation fields");
   for (const node of set.rotation.nodes ?? []) same(Object.keys(node).sort(), ["code", ...set.rotation.rotationColumns.slice(0, 3)].sort(), "node coordinate fields");
+  // Runtime and exported nodes follow the complete canonical Code basis order.
+  same(set.rotation.nodes?.map((node) => node.code), codes, "node Code order and coverage");
   same(set.units, [plan.adapterParameters.unitTokenColumn], "Unit columns");
   same(set.conversation, [plan.adapterParameters.horizonTokenColumn], "Horizon columns");
   const unitTokens = new Set(plan.identityDictionary.units.map((entry) => entry.token));
@@ -143,16 +169,21 @@ function validateRuntime(plan: StandardExecutionPlanV3, runtime: InternalStandar
         if (typeof value !== "string" || !unitTokens.has(value)) throw new TypeError("Unknown raw Unit identity token.");
       } else if (key === "__open_ena_horizon_token" || key === "TRAJ_UNIT") {
         if (typeof value !== "string" || !horizonTokens.has(value)) throw new TypeError("Unknown raw Horizon identity token.");
-      } else if (!scientificColumns.has(key) || typeof value !== "number" || !Number.isFinite(value)) throw new TypeError("Unknown/nonfinite raw scientific Code/edge field.");
+      } else {
+        if (!scientificColumns.has(key)) throw new TypeError("Unknown raw scientific Code/edge field.");
+        nonnegativeScientificValue(value);
+      }
     }
   }
   if ((set.networkType ?? "standard") !== "standard" || set.modelType !== plan.configuration.analysis.model.type) throw new TypeError("Bound result has an invalid family/model network shape.");
   const window = plan.configuration.window;
+  validateFunctionParameterShape(set.functionParams);
   const extent = (value: { kind: "infinity" } | { kind: "finite"; value: number }) => value.kind === "infinity" ? Infinity : value.value;
   if (set.functionParams.windowSizeBack !== (window.type === "Conversation" ? Infinity : extent(window.backward))
     || set.functionParams.windowSizeForward !== (window.type === "Conversation" ? 0 : extent(window.forward))
     || set.functionParams.window !== window.type || set.functionParams.model !== plan.configuration.analysis.model.type || set.functionParams.weightBy !== plan.weighting.runtime) throw new TypeError("Runtime window/weighting parameters differ from the plan.");
   assertStandardRotationOutputV3(set, plan.reference !== null);
+  if (!plan.reference) validateOrthonormalBasis(plan, set);
   const pairs = populationPairs(plan, runtime);
   if (set.connectionCounts.length !== pairs.length || set.connectionMatrix.length !== pairs.length) throw new TypeError("Runtime table population count differs from the plan.");
   const expectedLabels = pairs.map(([unit, horizon]) => horizon === null ? unit : `${unit}::${horizon}`);
@@ -169,6 +200,10 @@ function validateRuntime(plan: StandardExecutionPlanV3, runtime: InternalStandar
     set.trajectories.forEach((row, index) => { if (row.__open_ena_horizon_token !== pairs[index][1] || row.__open_ena_unit_token !== pairs[index][0]) throw new TypeError("Trajectory Unit/Horizon identity token mismatch."); });
   } else if (set.trajectories !== undefined) throw new TypeError("Endpoint cannot contain trajectory tables.");
   set.connectionMatrix.forEach((row, index) => same(row, set.codeColumns.map((column) => set.connectionCounts[index][column]), "connection matrix/table values"));
+  for (const row of set.connectionMatrix) for (const value of row) nonnegativeScientificValue(value);
+  for (const table of [set.connectionCounts, set.lineWeights]) for (const row of table) {
+    for (const [column, value] of Object.entries(row)) if (scientificColumns.has(column)) nonnegativeScientificValue(value);
+  }
   const p = runtime.projection;
   same(Object.keys(p).sort(), ["centerAlignToOrigin", "centerVector", "estimableAxes", "fullAxes", "rank", "runtimeFirstAxis", "type", "variance", ...(plan.reference ? ["targetProjectionRank"] : [])].sort(), "projection fields");
   same(Object.keys(runtime.populations).sort(), ["fit", "fitTokens", "targetTokens", "trajectoryStepCountByUnit", "imputedStepCount", ...(plan.reference ? ["sourceFit"] : [])].sort(), "population fields");
@@ -205,6 +240,7 @@ function validateRuntime(plan: StandardExecutionPlanV3, runtime: InternalStandar
 
 /** Field-specific restoration. Literal user strings are never searched/replaced. */
 function transformSet(plan: StandardExecutionPlanV3, input: ENASet | SerializableEnaSetV3, pairs: [string, string | null][], reverse = false): ENASet | SerializableEnaSetV3 {
+  validateFunctionParameterShape(input.functionParams);
   const labelMap = labels(plan);
   const pairsMap = (entries: readonly [string, string][]) => new Map(entries.map(([a, b]) => reverse ? [b, a] : [a, b]));
   const units = pairsMap(plan.identityDictionary.units.map((entry) => [entry.token, entry.displayLabel]));
@@ -262,7 +298,10 @@ function transformSet(plan: StandardExecutionPlanV3, input: ENASet | Serializabl
     centroids: input.centroids?.map((entry, index) => row(entry, index, true)),
     ...(input.trajectories ? { trajectories: input.trajectories.map((entry, index) => row(entry, index, false, true)) } : {}),
     unitLabels: pairs.map(([unit, horizon]) => reverse ? horizon === null ? unit : `${unit}::${horizon}` : horizon === null ? unitDisplay.get(unit)! : canonicalJsonV3([unitDisplay.get(unit), horizonDisplay.get(horizon)])),
-    functionParams: { ...input.functionParams, windowSizeBack: serializeExtent(input.functionParams.windowSizeBack), windowSizeForward: serializeExtent(input.functionParams.windowSizeForward) },
+    functionParams: {
+      model: input.functionParams.model, weightBy: input.functionParams.weightBy, window: input.functionParams.window, includeMeta: input.functionParams.includeMeta,
+      windowSizeBack: serializeExtent(input.functionParams.windowSizeBack), windowSizeForward: serializeExtent(input.functionParams.windowSizeForward),
+    },
     rotation: { ...input.rotation, codes: input.rotation.codes.map((code) => lookup(codes, code, "Code")), adjacencyKey: adjacency,
       nodes: input.rotation.nodes?.map((entry) => ({ ...Object.fromEntries(Object.entries(entry).filter(([key]) => key !== "code")), code: lookup(codes, entry.code, "Code node") })),
     },

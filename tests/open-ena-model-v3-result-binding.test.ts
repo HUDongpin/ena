@@ -5,8 +5,145 @@ import { bindingFixtureV3 } from "./helpers/open-ena-model-v3-fixture";
 import { bindResultV3, validateBoundResultV3 } from "../lib/open-ena/model-v3/result-binding";
 import { scientificResultHashPayloadV3 } from "../lib/open-ena/model-v3/result-binding";
 import { sha256CanonicalJsonV3 } from "../lib/open-ena/model-v3/canonical-json";
+import type { ENASet } from "jena-js";
+import { buildReferenceV2, fitReferenceSourceV3 } from "../lib/open-ena/model-v3/reference-v2";
+import type { StandardEnaDraftV3 } from "../lib/open-ena/model-v3/types";
+import type { ParsedDataset } from "../lib/open-ena/types";
 
 const observation = (rows: number) => ({ processedRows: rows, maximumBufferedRows: 0, numericCellsAllocated: 120, peakBytesObservedOrBounded: 10240, observationMethod: "exact-counters-and-conservative-byte-bound" as const });
+
+const invalidSetContracts: readonly [string, (set: ENASet) => void, RegExp][] = [
+  ["ordered function network type", (set) => { set.functionParams.networkType = "ordered"; }, /function.*param/i],
+  ["filtered Unit tokens in function parameters", (set) => { set.functionParams.unitsUsed = [String(set.points[0].ENA_UNIT)]; }, /function.*param/i],
+  ["arbitrary Unit token in function parameters", (set) => { Object.assign(set.functionParams, { unit: set.points[0].ENA_UNIT }); }, /function.*param/i],
+  ["disabled includeMeta", (set) => { set.functionParams.includeMeta = false; }, /function.*param/i],
+  ["unknown function parameter", (set) => { Object.assign(set.functionParams, { extra: 42 }); }, /function.*param/i],
+  ["duplicate Code node", (set) => { set.rotation.nodes![1].code = set.rotation.nodes![0].code; }, /node.*Code|Code.*node/i],
+  ["reordered Code nodes", (set) => { set.rotation.nodes!.reverse(); }, /node.*Code|Code.*node/i],
+  ["matched negative connection matrix and count", (set) => { set.connectionMatrix[0][0] = -1; set.connectionCounts[0][set.codeColumns[0]] = -1; }, /nonnegative/i],
+  ["negative sphere-normalized network", (set) => { set.lineWeights[0][set.codeColumns[0]] = -1; }, /nonnegative/i],
+  ["negative Code carried on a count table", (set) => { set.connectionCounts[0][set.codes[0]] = -1; }, /nonnegative/i],
+  ["negative Code carried on a normalized table", (set) => { set.lineWeights[0][set.codes[0]] = -1; }, /nonnegative/i],
+  ["negative raw Code", (set) => { set.rawRows = [{ [set.codes[0]]: -1 }]; }, /nonnegative/i],
+  ["negative raw cooccurrence", (set) => { set.rowConnectionCounts = [{ [set.codeColumns[0]]: -1 }]; }, /nonnegative/i],
+];
+
+for (const boundary of ["direct binder", "rehashed unknown result"] as const) {
+  for (const [label, mutate, error] of invalidSetContracts) {
+    test(`${boundary} rejects ${label}`, async () => {
+      const { plan, compiled } = await bindingFixtureV3();
+      const runtime = structuredClone(runStandardPlanV3(plan));
+      if (boundary === "direct binder") {
+        mutate(runtime.set);
+        await assert.rejects(() => bindResultV3(plan, runtime, observation(5), compiled.diagnostics), error);
+      } else {
+        const changed = structuredClone(await bindResultV3(plan, runtime, observation(5), compiled.diagnostics));
+        // Only the two explicit window extents differ in the serializable set type.
+        mutate(changed.set as unknown as ENASet);
+        Object.assign(changed.binding, { scientificResultSha256: await sha256CanonicalJsonV3(scientificResultHashPayloadV3(changed)) });
+        await assert.rejects(() => validateBoundResultV3(changed, plan), error);
+      }
+    });
+  }
+  for (const rotation of ["svd", "means"] as const) {
+    for (const malformed of ["scaled column", "duplicate unit column"] as const) {
+      test(`${boundary} rejects ${rotation} ${malformed} in the full orthonormal basis`, async () => {
+        const { plan, compiled } = await bindingFixtureV3(undefined, (draft) => {
+          if (rotation === "means") draft.rotation = { type: "means", centerAlignToOrigin: true, negativeLevel: { type: "string", value: "Control" }, positiveLevel: { type: "string", value: "Treatment" } };
+        });
+        const runtime = structuredClone(runStandardPlanV3(plan));
+        const mutate = (set: ENASet) => {
+          if (malformed === "scaled column") set.rotation.rotationMatrix[0][0] = 999;
+          else for (const row of set.rotation.rotationMatrix) row[1] = row[0];
+        };
+        if (boundary === "direct binder") {
+          mutate(runtime.set);
+          await assert.rejects(() => bindResultV3(plan, runtime, observation(5), compiled.diagnostics), /orthonormal/i);
+        } else {
+          const changed = structuredClone(await bindResultV3(plan, runtime, observation(5), compiled.diagnostics));
+          mutate(changed.set as unknown as ENASet);
+          Object.assign(changed.binding, { scientificResultSha256: await sha256CanonicalJsonV3(scientificResultHashPayloadV3(changed)) });
+          await assert.rejects(() => validateBoundResultV3(changed, plan), /orthonormal/i);
+        }
+      });
+    }
+  }
+}
+
+test("orthonormal validation rejects unadmitted cubic work before dot-product traversal", async () => {
+  const { plan, compiled } = await bindingFixtureV3();
+  const runtime = structuredClone(runStandardPlanV3(plan));
+  const unadmitted = structuredClone(plan);
+  Object.assign(unadmitted.header.resourceEstimate, { estimatedRotationWorkUnits: 0 });
+  Object.assign(runtime, { executionPlanHeader: unadmitted.header });
+  let reads = 0;
+  runtime.set.rotation.rotationMatrix = runtime.set.rotation.rotationMatrix.map((row) => new Proxy(row, {
+    get(target, key, receiver) {
+      if (typeof key === "string" && /^\d+$/u.test(key)) reads += 1;
+      return Reflect.get(target, key, receiver);
+    },
+  }));
+  await assert.rejects(() => bindResultV3(unadmitted, runtime, observation(5), compiled.diagnostics), /orthonormal.*work/i);
+  assert.equal(reads, 9, "only the admitted 3×3 finite-shape pass may read matrix cells before the work rejection");
+});
+
+for (const weighting of ["binary", "frequency"] as const) {
+  for (const model of ["EndPoint", "SeparateTrajectory", "AccumulatedTrajectory"] as const) {
+    for (const rotation of (model === "EndPoint" ? ["svd", "means"] : ["svd"]) as readonly ("svd" | "means")[]) {
+      test(`${weighting}/${model}/${rotation} strict binding preserves signed geometry and the complete basis`, async () => {
+        const { plan, compiled } = await bindingFixtureV3(undefined, (draft, data) => {
+          draft.weighting = weighting; draft.model = model;
+          if (weighting === "binary") {
+            const patterns = [[1, 1, 0], [1, 0, 1], [0, 1, 1], [1, 1, 1], [1, 1, 0]];
+            data.rows = data.rows.map((row, index) => ({ ...row, A: patterns[index][0], B: patterns[index][1], C: patterns[index][2] }));
+          }
+          if (model !== "EndPoint") data.rows = data.rows.flatMap((row) => [{ ...row, horizon: "first", time: 1 }, { ...row, horizon: "second", time: 2, A: row.C, C: row.A }]);
+          if (rotation === "means") draft.rotation = { type: "means", centerAlignToOrigin: true, negativeLevel: { type: "string", value: "Control" }, positiveLevel: { type: "string", value: "Treatment" } };
+        });
+        const runtime = runStandardPlanV3(plan);
+        const before = structuredClone(runtime);
+        const bound = await bindResultV3(plan, runtime, observation(plan.rows.length), compiled.diagnostics);
+        await validateBoundResultV3(bound, plan);
+        assert.deepEqual(runtime, before, "binding never rewrites runtime science");
+        assert.deepEqual(bound.set.connectionMatrix, runtime.set.connectionMatrix);
+        assert.deepEqual(bound.set.rotation.rotationMatrix, runtime.set.rotation.rotationMatrix);
+        assert.deepEqual(bound.set.rotation.nodes!.map((node) => node.code), bound.set.codes);
+        assert.deepEqual(Object.keys(bound.set.functionParams).sort(), ["includeMeta", "model", "weightBy", "window", "windowSizeBack", "windowSizeForward"]);
+        assert.equal(bound.set.functionParams.includeMeta, true);
+        assert.ok(runtime.set.pointsForProjection.some((row) => runtime.set.codeColumns.some((column) => Number(row[column]) < 0)), "centered geometry may remain negative");
+      });
+    }
+  }
+}
+
+for (const weighting of ["binary", "frequency"] as const) {
+  for (const model of ["EndPoint", "SeparateTrajectory", "AccumulatedTrajectory"] as const) {
+    test(`${weighting}/${model} retains fixed Reference geometry under strict result validation`, async () => {
+      const configureWeighting = (draft: StandardEnaDraftV3, data: ParsedDataset) => {
+        draft.weighting = weighting;
+        if (weighting === "binary") {
+          const patterns = [[1, 1, 0], [1, 0, 1], [0, 1, 1], [1, 1, 1], [1, 1, 0]];
+          data.rows = data.rows.map((row, index) => ({ ...row, A: patterns[index][0], B: patterns[index][1], C: patterns[index][2] }));
+        }
+      };
+      const source = await bindingFixtureV3(undefined, configureWeighting);
+      const reference = await buildReferenceV2(await fitReferenceSourceV3(source.plan), { displayName: "Strict source", currentPlan: source.plan });
+      const { plan, compiled } = await bindingFixtureV3("c".repeat(64), (draft, data) => {
+        configureWeighting(draft, data);
+        draft.model = model;
+        draft.rotation = { type: "reference", referenceId: reference.referenceId, expectedContentSha256: reference.contentSha256 };
+        if (model !== "EndPoint") data.rows = data.rows.flatMap((row) => [{ ...row, horizon: "first", time: 1 }, { ...row, horizon: "second", time: 2, A: row.C, C: row.A }]);
+      }, reference);
+      const runtime = runStandardPlanV3(plan);
+      const result = await bindResultV3(plan, runtime, observation(plan.rows.length), compiled.diagnostics);
+      await validateBoundResultV3(result, plan);
+      assert.deepEqual(result.set.rotation.rotationMatrix, plan.reference!.rotationSet.rotationMatrix);
+      assert.deepEqual(result.set.rotation.centerVector, plan.reference!.rotationSet.centerVector);
+      assert.deepEqual(result.set.rotation.nodes!.map((node) => node.code), result.set.codes);
+      assert.deepEqual(result.set.connectionMatrix, runtime.set.connectionMatrix);
+    });
+  }
+}
 
 async function api() {
   const path = "../lib/open-ena/model-v3/result-binding";
