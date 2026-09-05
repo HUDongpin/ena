@@ -434,6 +434,8 @@ function captureBoundResultV3(input: unknown, expectedPlan: unknown): BoundResul
   const active = new WeakSet<object>();
   function capture(value: unknown, path: string, depth: number): unknown {
     if (depth > 64 || ++scalars > scalarLimit) throw new TypeError("Bound result exceeds resource admission complexity.");
+    const modelOnlyTable = /^result\.set\.(rawRows|rowConnectionCounts)$/u.test(path);
+    if (modelOnlyTable && !Array.isArray(value)) throw new TypeError("Canonical model-only raw tables must be empty arrays.");
     if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number") {
       if (typeof value === "number" && !Number.isFinite(value)) throw new TypeError("Bound result numeric values must be finite.");
       if (typeof value === "string" && value.length > byteLimit - bytes) throw new TypeError("Bound result exceeds resource admission bytes.");
@@ -448,9 +450,12 @@ function captureBoundResultV3(input: unknown, expectedPlan: unknown): BoundResul
         const descriptor = Object.getOwnPropertyDescriptor(value, "length");
         const length = descriptor && "value" in descriptor ? descriptor.value : undefined;
         integer(length, "Bound result array admission length");
+        // Canonical bound exports never retain optional internal raw tables.
+        // Reject their population before inspecting entries, keys or values.
+        if (modelOnlyTable && length !== 0) throw new TypeError("Canonical model-only raw tables must be empty arrays.");
         let limit = Math.min(scalarLimit, Math.max(n, t, e, c, headerCount, units, horizons, policyArrayBound));
         if (/^result\.set\.(connectionCounts|connectionMatrix|lineWeights|pointsForProjection|points|metaData|centroids|trajectories)$/u.test(path)) limit = t;
-        else if (/^result\.set\.(rawRows|rowConnectionCounts)$/u.test(path)) limit = n;
+        else if (modelOnlyTable) limit = 0;
         else if (/\.connectionMatrix\[\d+\]$|\.rotationMatrix\[\d+\]$/u.test(path)) limit = e;
         else if (/\.rotationMatrix$|\.adjacencyKey$|\.rotationColumns$|\.codeColumns$|\.fullAxes$|\.estimableAxes$|\.centerVector$|\.eigenvalues$/u.test(path)) limit = e;
         else if (/\.rotation\.nodes$|\.rotation\.codes$|\.set\.codes$|\.codeDictionary\.codes$/u.test(path)) limit = c;

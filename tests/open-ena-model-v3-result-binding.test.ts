@@ -41,7 +41,10 @@ for (const boundary of ["direct binder", "rehashed unknown result"] as const) {
         // Only the two explicit window extents differ in the serializable set type.
         mutate(changed.set as unknown as ENASet);
         Object.assign(changed.binding, { scientificResultSha256: await sha256CanonicalJsonV3(scientificResultHashPayloadV3(changed)) });
-        await assert.rejects(() => validateBoundResultV3(changed, plan), error);
+        // Internal raw values are checked by bindResult; canonical imports
+        // reject any nonempty raw population before examining its values.
+        const expected = label === "negative raw Code" || label === "negative raw cooccurrence" ? /canonical model-only.*empty/i : error;
+        await assert.rejects(() => validateBoundResultV3(changed, plan), expected);
       }
     });
   }
@@ -198,6 +201,60 @@ test("unknown result admission rejects oversized matrices before their entries a
   assert.equal(traversed, 0);
 });
 
+for (const tables of [["rawRows"], ["rowConnectionCounts"], ["rawRows", "rowConnectionCounts"]] as const) {
+  test(`rehashed unknown result rejects positive finite nonempty ${tables.join(" and ")} as noncanonical`, async () => {
+    const { plan, compiled } = await bindingFixtureV3();
+    const result = structuredClone(await bindResultV3(plan, runStandardPlanV3(plan), observation(5), compiled.diagnostics));
+    const observed = structuredClone(result.executionProvenance.resources.observed);
+    for (const table of tables) result.set[table] = [{ Unit: result.set.points[0].Unit, "Code 1": 1, "Connection 1": 2 }];
+    Object.assign(result.binding, { scientificResultSha256: await sha256CanonicalJsonV3(scientificResultHashPayloadV3(result)) });
+    await assert.rejects(() => validateBoundResultV3(result, plan), /canonical model-only.*empty/i);
+    assert.deepEqual(result.executionProvenance.resources.observed, observed, "import validation never repairs caller observations");
+  });
+}
+
+for (const table of ["rawRows", "rowConnectionCounts"] as const) {
+  test(`unknown ${table} rejects a non-array object before its own keys`, async () => {
+    const { plan, compiled } = await bindingFixtureV3();
+    const result = structuredClone(await bindResultV3(plan, runStandardPlanV3(plan), observation(5), compiled.diagnostics));
+    let traversed = 0;
+    Object.assign(result.set, { [table]: new Proxy({ length: 0 }, { ownKeys(target) { traversed += 1; return Reflect.ownKeys(target); } }) });
+    await assert.rejects(() => validateBoundResultV3(result, plan), /canonical model-only.*empty/i);
+    assert.equal(traversed, 0);
+  });
+
+  test(`unknown ${table} rejects a nonempty hostile array before entries or own keys`, async () => {
+    const { plan, compiled } = await bindingFixtureV3();
+    const result = structuredClone(await bindResultV3(plan, runStandardPlanV3(plan), observation(5), compiled.diagnostics));
+    let traversed = 0;
+    const rows = new Array(1);
+    Object.defineProperty(rows, 0, { enumerable: true, get() { traversed += 1; throw new Error("must not read row"); } });
+    result.set[table] = new Proxy(rows, {
+      ownKeys(target) { traversed += 1; return Reflect.ownKeys(target); },
+      getOwnPropertyDescriptor(target, key) { if (key !== "length") traversed += 1; return Reflect.getOwnPropertyDescriptor(target, key); },
+    });
+    await assert.rejects(() => validateBoundResultV3(result, plan), /canonical model-only.*empty/i);
+    assert.equal(traversed, 0);
+  });
+
+  test(`unknown ${table} rejects an empty-to-nonempty length drift before entries or own keys`, async () => {
+    const { plan, compiled } = await bindingFixtureV3();
+    const result = structuredClone(await bindResultV3(plan, runStandardPlanV3(plan), observation(5), compiled.diagnostics));
+    let lengthReads = 0;
+    let traversed = 0;
+    result.set[table] = new Proxy([{ "Code 1": 1 }], {
+      ownKeys(target) { traversed += 1; return Reflect.ownKeys(target); },
+      getOwnPropertyDescriptor(target, key) {
+        if (key === "length") return { ...Reflect.getOwnPropertyDescriptor(target, key)!, value: ++lengthReads === 1 ? 0 : 1 };
+        traversed += 1;
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+    });
+    await assert.rejects(() => validateBoundResultV3(result, plan), /length.*changed|canonical model-only.*empty/i);
+    assert.equal(traversed, 0);
+  });
+}
+
 test("result admission accepts more than 256 identity fields using the real source-byte count", async () => {
   const { plan, compiled } = await bindingFixtureV3(undefined, (draft, data) => {
     const fields = Array.from({ length: 300 }, (_, index) => `identity_${index}`);
@@ -261,6 +318,7 @@ test("reserved Code names and token-like user strings restore through roles with
 test("binding records manually countable unique scientific containers including its own copies", async () => {
   const { plan, compiled } = await bindingFixtureV3();
   const runtime = runStandardPlanV3(plan);
+  const before = structuredClone(runtime);
   const result = await bindResultV3(plan, runtime, observation(5), compiled.diagnostics);
   //30captured plan Code slots +168runtime slots +84new transformed slots
   // +123detached slots. Shared basis/matrix references count only once.
@@ -269,6 +327,8 @@ test("binding records manually countable unique scientific containers including 
   assert.equal(runtime.set.rawRows.length, 5, "caller-owned runtime remains intact");
   assert.deepEqual(result.set.rawRows, []);
   assert.deepEqual(result.set.rowConnectionCounts, []);
+  await validateBoundResultV3(result, plan);
+  assert.deepEqual(runtime, before, "complete internal raw tables remain intact after bind and import validation");
 });
 
 test("complete result metadata bound covers shared roles, typed collisions and escaped large Code labels", async () => {
