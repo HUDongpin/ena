@@ -520,6 +520,223 @@ function guardedDenseArrayElementsV3(
   return elements;
 }
 
+/** Admit schema-derived dimensions before enumerating each scientific array. */
+function admitExecutionPlanCardinalitiesV3(
+  root: object,
+  records: Map<object, Record<string, unknown>>,
+  lengths: Map<object, number>,
+  arrayElements: Map<object, unknown[]>,
+): void {
+  // Newly discovered parents are captured and checked once, then reused by the
+  // final copy. In particular, discovering a nested array never requires a third
+  // descriptor read of its parent or another enumeration of its containing array.
+  const record = (value: unknown, label: string, keys?: readonly string[]): Record<string, unknown> => {
+    let accepted = records.get(value as object);
+    if (accepted === undefined) {
+      const staged = snapshotPlainJsonRecordV3(value, label);
+      if (keys !== undefined) exactKeysV3(staged, keys, label);
+      accepted = snapshotPlainJsonRecordV3(value, label);
+      const expectedKeys = keys ?? Object.keys(staged);
+      exactKeysV3(accepted, expectedKeys, label);
+      sameDescriptorValuesV3(staged, accepted, expectedKeys, label);
+      records.set(value as object, accepted);
+    }
+    if (keys !== undefined) exactKeysV3(accepted, keys, label);
+    return accepted;
+  };
+  const length = (value: unknown, label: string, bound?: number, exact = false): number => {
+    const previous = lengths.get(value as object);
+    const admitted = previous ?? shallowArrayLengthV3(value, label);
+    if (bound !== undefined && (exact ? admitted !== bound : admitted > bound)) {
+      throw new TypeError(`${label} has an inconsistent schema cardinality.`);
+    }
+    if (previous === undefined) {
+      const accepted = shallowArrayLengthV3(value, label);
+      if (accepted !== admitted) throw new TypeError(`${label}.length changed after staged admission.`);
+      lengths.set(value as object, accepted);
+    }
+    return admitted;
+  };
+  const elements = (value: unknown, label: string): unknown[] => {
+    const previous = arrayElements.get(value as object);
+    if (previous !== undefined) return previous;
+    const accepted = guardedDenseArrayElementsV3(value as unknown[], length(value, label), label);
+    arrayElements.set(value as object, accepted);
+    return accepted;
+  };
+  const columns = (value: unknown, label: string): string[] => (
+    elements(value, label).map((column) => nonblankStringV3(column, label))
+  );
+
+  const plan = record(root, "executionPlan");
+  const header = record(plan.header, "executionPlan.header");
+  const rowCount = nonnegativeSafeIntegerV3(header.rowCount, "executionPlan.header.rowCount");
+  const resource = record(header.resourceEstimate, "executionPlan.header.resourceEstimate");
+  const config = record(plan.configuration, "executionPlan.configuration");
+  const proof = record(plan.sourceProof, "executionPlan.sourceProof");
+  // Headers and ordered-category levels have no independent absolute cap in
+  // schema v3. Header count supplies the bound for selected column dimensions.
+  const headerCount = length(proof.headers, "sourceProof.headers");
+  const units = record(config.units, "configuration.units", ["columns", "group"]);
+  const horizons = record(config.horizons, "configuration.horizons", ["columns"]);
+  const unitWidth = length(units.columns, "configuration.units.columns", headerCount);
+  const horizonWidth = length(horizons.columns, "configuration.horizons.columns", headerCount);
+  length(proof.selectedColumns, "sourceProof.selectedColumns", headerCount);
+  const unitColumns = columns(units.columns, "configuration.units.columns");
+  const horizonColumns = columns(horizons.columns, "configuration.horizons.columns");
+  const trajectoryColumns = [...new Set([...unitColumns, ...horizonColumns])];
+  const selectedColumns = columns(proof.selectedColumns, "sourceProof.selectedColumns");
+  const group = record(units.group, "configuration.units.group");
+  exactKeysV3(group, group.type === "none" ? ["type"] : ["type", "column"], "configuration.units.group");
+
+  const identity = record(plan.identityDictionary, "identityDictionary", ["units", "horizons", "groups"]);
+  const unitCount = length(identity.units, "identityDictionary.units", rowCount);
+  const horizonCount = length(identity.horizons, "identityDictionary.horizons", rowCount);
+  length(identity.groups, "identityDictionary.groups", group.type === "none" ? 0 : unitCount);
+  for (const [role, width] of [["units", unitWidth], ["horizons", horizonWidth], ["groups", 1]] as const) {
+    for (const [index, value] of elements(identity[role], `identityDictionary.${role}`).entries()) {
+      const label = `identityDictionary.${role}[${index}]`;
+      const entry = record(value, label, ["token", "displayLabel", "fields", "canonicalJson", "sha256"]);
+      length(entry.fields, `${label}.fields`, width, true);
+    }
+  }
+
+  const confirmation = (value: unknown, relevant: readonly string[], label: string): void => {
+    const accepted = record(value, label, [
+      "kind", "analysisFamily", "datasetSha256", "rowCount", "relevantColumns", "confirmedAt", "confirmationVersion",
+    ]);
+    length(accepted.relevantColumns, `${label}.relevantColumns`, relevant.length, true);
+    const actual = columns(accepted.relevantColumns, `${label}.relevantColumns`);
+    if (actual.some((column, index) => column !== relevant[index])) {
+      throw new TypeError(`${label}.relevantColumns must match the ordered identity columns.`);
+    }
+  };
+  type PolicyDimensions = { kind: "columns" | "source-order-confirmed"; width: number; textKeys: number };
+  const policy = (
+    value: unknown,
+    relevant: readonly string[],
+    label: string,
+    expected?: PolicyDimensions,
+  ): PolicyDimensions => {
+    const accepted = record(value, label);
+    if (expected !== undefined && accepted.kind !== expected.kind) {
+      throw new TypeError(`${label} disagrees with the configured order policy.`);
+    }
+    if (accepted.kind === "source-order-confirmed") {
+      exactKeysV3(accepted, ["kind", "confirmation"], label);
+      confirmation(accepted.confirmation, relevant, `${label}.confirmation`);
+      return { kind: accepted.kind, width: 1, textKeys: 0 };
+    }
+    if (accepted.kind !== "columns") throw new TypeError(`${label}.kind is unsupported.`);
+    exactKeysV3(accepted, ["kind", "keys"], label);
+    const width = length(accepted.keys, `${label}.keys`, headerCount);
+    if (expected !== undefined) length(accepted.keys, `${label}.keys`, expected.width, true);
+    let textKeys = 0;
+    for (const [index, value] of elements(accepted.keys, `${label}.keys`).entries()) {
+      const keyLabel = `${label}.keys[${index}]`;
+      const key = record(value, keyLabel, ["column", "direction", "comparator"]);
+      const comparator = record(key.comparator, `${keyLabel}.comparator`);
+      if (comparator.type === "text") textKeys += 1;
+    }
+    if (expected !== undefined && textKeys !== expected.textKeys) {
+      throw new TypeError(`${label} has inconsistent text comparator cardinality.`);
+    }
+    return { kind: accepted.kind, width, textKeys };
+  };
+  const ordering = (
+    value: unknown,
+    dimensions: PolicyDimensions | null,
+    relevant: readonly string[],
+    label: string,
+    keys: readonly string[],
+  ): Record<string, unknown> => {
+    const accepted = record(value, label, dimensions === null ? ["type", "reason"] : keys);
+    if (dimensions === null) return accepted;
+    policy(accepted.requestedPolicy, relevant, `${label}.requestedPolicy`, dimensions);
+    length(accepted.textCollationBindings, `${label}.textCollationBindings`, dimensions.textKeys, true);
+    if (dimensions.kind === "source-order-confirmed") {
+      const binding = record(accepted.sourceOrderBinding, `${label}.sourceOrderBinding`, ["analysisFamily", "datasetBinding", "confirmation"]);
+      confirmation(binding.confirmation, relevant, `${label}.sourceOrderBinding.confirmation`);
+    } else if (accepted.sourceOrderBinding !== null) {
+      throw new TypeError(`${label}.sourceOrderBinding must be null for column order.`);
+    }
+    return accepted;
+  };
+  const window = record(config.window, "configuration.window");
+  const analysis = record(config.analysis, "configuration.analysis");
+  const model = record(analysis.model, "configuration.analysis.model");
+  const rowDimensions = window.type === "MovingStanzaWindow"
+    ? policy(window.rowOrder, horizonColumns, "configuration.window.rowOrder") : null;
+  const horizonDimensions = model.type !== "EndPoint"
+    ? policy(model.horizonOrder, trajectoryColumns, "configuration.analysis.model.horizonOrder") : null;
+  const rowOrdering = ordering(plan.rowOrdering, rowDimensions, horizonColumns, "rowOrdering", [
+    "type", "requestedPolicy", "mappings", "orderedSourceRowIndices", "sourceOrderBinding", "textCollationBindings",
+  ]);
+  if (rowDimensions !== null) {
+    length(rowOrdering.mappings, "rowOrdering.mappings", rowCount, true);
+    length(rowOrdering.orderedSourceRowIndices, "rowOrdering.orderedSourceRowIndices", rowCount, true);
+    for (const [index, value] of elements(rowOrdering.mappings, "rowOrdering.mappings").entries()) {
+      const label = `rowOrdering.mappings[${index}]`;
+      const mapping = record(value, label, ["sourceRowIndex", "horizonToken", "orderTuple", "withinHorizonOrdinal"]);
+      length(mapping.orderTuple, `${label}.orderTuple`, rowDimensions.width, true);
+    }
+  }
+  const horizonOrdering = ordering(plan.horizonOrdering, horizonDimensions, trajectoryColumns, "horizonOrdering", [
+    "type", "requestedPolicy", "horizonTuples", "unitSequences", "implementationHorizonOrder", "sourceOrderBinding", "textCollationBindings",
+  ]);
+  if (horizonDimensions !== null) {
+    length(horizonOrdering.horizonTuples, "horizonOrdering.horizonTuples", horizonCount, true);
+    length(horizonOrdering.implementationHorizonOrder, "horizonOrdering.implementationHorizonOrder", horizonCount, true);
+    length(horizonOrdering.unitSequences, "horizonOrdering.unitSequences", unitCount, true);
+    const estimatedSteps = nonnegativeSafeIntegerV3(resource.trajectorySteps, "resourceEstimate.trajectorySteps");
+    if (estimatedSteps > rowCount) throw new TypeError("Trajectory steps cannot exceed the source row count.");
+    let totalSteps = 0;
+    for (const [index, value] of elements(horizonOrdering.unitSequences, "horizonOrdering.unitSequences").entries()) {
+      const label = `horizonOrdering.unitSequences[${index}]`;
+      const sequence = record(value, label, ["unitToken", "steps"]);
+      totalSteps += length(sequence.steps, `${label}.steps`, horizonCount);
+      if (totalSteps > estimatedSteps) throw new TypeError("Trajectory step cardinality exceeds its resource estimate.");
+    }
+    if (totalSteps !== estimatedSteps) throw new TypeError("Trajectory step cardinality disagrees with its resource estimate.");
+    for (const [index, value] of elements(horizonOrdering.horizonTuples, "horizonOrdering.horizonTuples").entries()) {
+      const label = `horizonOrdering.horizonTuples[${index}]`;
+      const tuple = record(value, label, ["horizonToken", "orderTuple"]);
+      length(tuple.orderTuple, `${label}.orderTuple`, horizonDimensions.width, true);
+    }
+  }
+
+  const dictionary = record(plan.codeDictionary, "codeDictionary");
+  const codeTokens = elements(dictionary.codes, "codeDictionary.codes").map((value, index) => {
+    const label = `codeDictionary.codes[${index}]`;
+    return nonblankStringV3(record(value, label, ["token", "sourceColumn", "displayLabel", "canonicalIdentity"]).token, `${label}.token`);
+  });
+  for (const [index, value] of elements(proof.rows, "sourceProof.rows").entries()) {
+    const label = `sourceProof.rows[${index}]`;
+    const row = record(value, label, ["sourceRowIndex", "values"]);
+    const values = record(row.values, `${label}.values`, selectedColumns);
+    for (const column of selectedColumns) {
+      const scalar = values[column];
+      if (typeof scalar !== "string" && typeof scalar !== "boolean"
+        && (typeof scalar !== "number" || !Number.isFinite(scalar))) {
+        throw new TypeError(`${label}.values.${column} must be a finite JSON scalar.`);
+      }
+    }
+  }
+  const rowKeys = [
+    "sourceRowIndex", "unitToken", "horizonToken", "groupToken", "codeValues",
+    ...(rowDimensions === null ? [] : ["rowOrderTuple"]),
+    ...(horizonDimensions === null ? [] : ["horizonOrderTuple"]),
+  ];
+  for (const [index, value] of elements(plan.rows, "executionPlan.rows").entries()) {
+    const label = `executionPlan.rows[${index}]`;
+    const row = record(value, label, rowKeys);
+    if (rowDimensions !== null) length(row.rowOrderTuple, `${label}.rowOrderTuple`, rowDimensions.width, true);
+    if (horizonDimensions !== null) length(row.horizonOrderTuple, `${label}.horizonOrderTuple`, horizonDimensions.width, true);
+    const values = record(row.codeValues, `${label}.codeValues`, codeTokens);
+    for (const token of codeTokens) finiteNumberV3(values[token], `${label}.codeValues.${token}`);
+  }
+}
+
 function captureAdmittedExecutionPlanV3(
   admission: ExecutionPlanAdmissionCaptureV3,
 ): unknown {
@@ -539,6 +756,9 @@ function captureAdmittedExecutionPlanV3(
     }
     acceptedArrayLengths.set(guard.original, acceptedLength);
   }
+
+  const acceptedArrayElements = new Map<object, unknown[]>();
+  admitExecutionPlanCardinalitiesV3(admission.root, acceptedRecords, acceptedArrayLengths, acceptedArrayElements);
 
   const active = new WeakSet<object>();
   const detached = new WeakMap<object, unknown>();
@@ -562,7 +782,7 @@ function captureAdmittedExecutionPlanV3(
           throw new TypeError(`${label} must be a dense plain JSON array.`);
         }
         const length = guardedLength ?? arrayLengthDescriptorV3(value, label);
-        const elements = guardedDenseArrayElementsV3(value, length, label);
+        const elements = acceptedArrayElements.get(value) ?? guardedDenseArrayElementsV3(value, length, label);
         const output = new Array<unknown>(length);
         detached.set(value, output);
         for (let index = 0; index < elements.length; index += 1) {

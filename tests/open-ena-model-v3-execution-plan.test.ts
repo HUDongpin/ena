@@ -71,6 +71,21 @@ const horizonOrder: NonNullable<StandardEnaDraftV3["horizonOrder"]> = {
   keys: [{ column: "time", direction: "ascending", comparator: { type: "number" } }],
 };
 
+function sourceOrderPolicy(relevantColumns: string[]) {
+  return {
+    kind: "source-order-confirmed" as const,
+    confirmation: {
+      kind: "explicit-researcher-confirmation" as const,
+      analysisFamily: "standard" as const,
+      datasetSha256: DATASET_SHA256,
+      rowCount: 4,
+      relevantColumns,
+      confirmedAt: "2026-09-04T00:00:00.000Z",
+      confirmationVersion: 1 as const,
+    },
+  };
+}
+
 function draft(overrides: Partial<StandardEnaDraftV3> = {}): StandardEnaDraftV3 {
   return {
     unitColumns: ["unit"],
@@ -952,6 +967,214 @@ test("validator rejects unknown root keys without traversing their values", asyn
   candidate.unexpected = guardedRecord({ nested: { prompt: "untrusted" } }, extraValue);
   await assert.rejects(validateExecutionPlanV3(candidate), /invalid shape/);
   assertNoDeepTraversal(extraValue, "unknown root value");
+});
+
+test("schema cardinalities reject offending arrays before their enumeration or crypto", async (t) => {
+  const explicit = await planFor(draft(), unsharedDataset());
+  const source = await planFor(draft({
+    movingStanza: { ...draft().movingStanza, rowOrder: sourceOrderPolicy(["horizon"]) },
+    horizonOrder: sourceOrderPolicy(["unit", "horizon"]),
+  }), unsharedDataset());
+  const noGroups = await planFor(draft({ groupColumn: null }), unsharedDataset());
+  const cases: Array<{
+    path: string;
+    length: number;
+    plan?: StandardExecutionPlanV3;
+  }> = [
+    { path: "configuration.units.columns", length: 50_000 },
+    { path: "configuration.horizons.columns", length: 50_000 },
+    { path: "configuration.window.rowOrder.keys", length: 50_000 },
+    { path: "configuration.analysis.model.horizonOrder.keys", length: 50_000 },
+    { path: "sourceProof.selectedColumns", length: 50_000 },
+    { path: "identityDictionary.units", length: 50_000 },
+    { path: "identityDictionary.horizons", length: 50_000 },
+    { path: "identityDictionary.groups", length: 3 },
+    { path: "identityDictionary.groups", length: 1, plan: noGroups },
+    { path: "identityDictionary.units.0.fields", length: 2 },
+    { path: "identityDictionary.horizons.0.fields", length: 2 },
+    { path: "identityDictionary.groups.0.fields", length: 2 },
+    { path: "rowOrdering.mappings", length: 50_000 },
+    { path: "rowOrdering.orderedSourceRowIndices", length: 5 },
+    { path: "rowOrdering.mappings.0.orderTuple", length: 50_000 },
+    { path: "rows.0.rowOrderTuple", length: 2 },
+    { path: "rowOrdering.requestedPolicy.keys", length: 2 },
+    { path: "rowOrdering.textCollationBindings", length: 1 },
+    { path: "horizonOrdering.horizonTuples", length: 5 },
+    { path: "horizonOrdering.implementationHorizonOrder", length: 5 },
+    { path: "horizonOrdering.unitSequences", length: 3 },
+    { path: "horizonOrdering.unitSequences.0.steps", length: 5 },
+    { path: "horizonOrdering.horizonTuples.0.orderTuple", length: 50_000 },
+    { path: "rows.0.horizonOrderTuple", length: 2 },
+    { path: "horizonOrdering.requestedPolicy.keys", length: 2 },
+    { path: "horizonOrdering.textCollationBindings", length: 1 },
+    ...["configuration.window.rowOrder", "rowOrdering.requestedPolicy", "rowOrdering.sourceOrderBinding"]
+      .map((path) => ({ path: `${path}.confirmation.relevantColumns`, length: 2, plan: source })),
+    ...["configuration.analysis.model.horizonOrder", "horizonOrdering.requestedPolicy", "horizonOrdering.sourceOrderBinding"]
+      .map((path) => ({ path: `${path}.confirmation.relevantColumns`, length: 3, plan: source })),
+    ...["rowOrdering.mappings.0.orderTuple", "rows.0.rowOrderTuple", "horizonOrdering.horizonTuples.0.orderTuple", "rows.0.horizonOrderTuple"]
+      .map((path) => ({ path, length: 2, plan: source })),
+    ...["rowOrdering.textCollationBindings", "horizonOrdering.textCollationBindings"]
+      .map((path) => ({ path, length: 1, plan: source })),
+  ];
+  const subtle = globalThis.crypto.subtle;
+  const originalDigest = subtle.digest;
+  let digestCalls = 0;
+  subtle.digest = ((...args: Parameters<SubtleCrypto["digest"]>) => {
+    digestCalls += 1;
+    return originalDigest.apply(subtle, args);
+  }) as SubtleCrypto["digest"];
+  try {
+    for (const entry of cases) {
+      await t.test(`${entry.path} (${entry.plan === source ? "source" : "explicit"}, ${entry.length})`, async () => {
+        const candidate = mutablePlan(entry.plan ?? explicit);
+        const parts = entry.path.split(".");
+        const key = parts.pop()!;
+        const parent = parts.reduce((value, part) => value[part], candidate);
+        const counts = zeroTrapCounts();
+        parent[key] = guardedArray(new Array(entry.length).fill(null), counts);
+        digestCalls = 0;
+        await assert.rejects(validateExecutionPlanV3(candidate));
+        assertNoDeepTraversal(counts, entry.path);
+        assert.equal(digestCalls, 0, `${entry.path} crypto work`);
+      });
+    }
+  } finally {
+    subtle.digest = originalDigest;
+  }
+});
+
+test("trajectory step totals are admitted before any step array enumeration", async () => {
+  const valid = await planFor(draft(), unsharedDataset());
+  for (const mode of ["sum-mismatch", "resource-over-row-count"] as const) {
+    const candidate = mutablePlan(valid);
+    candidate.header.resourceEstimate.trajectorySteps = mode === "sum-mismatch" ? 3 : 5;
+    const counts = zeroTrapCounts();
+    for (const sequence of candidate.horizonOrdering.unitSequences) {
+      sequence.steps = guardedArray(sequence.steps, counts);
+    }
+    await assert.rejects(validateExecutionPlanV3(candidate));
+    assertNoDeepTraversal(counts, mode);
+  }
+});
+
+test("scientific row shapes and scalar kinds reject nested arrays before traversing their values", async (t) => {
+  const valid = await planFor(draft(), unsharedDataset());
+  for (const path of ["sourceProof", "codeValues"] as const) {
+    for (const placement of ["extra", "selected"] as const) {
+      await t.test(`${path}.${placement}`, async () => {
+        const candidate = mutablePlan(valid);
+        const counts = zeroTrapCounts();
+        const values = path === "sourceProof" ? candidate.sourceProof.rows[0].values : candidate.rows[0].codeValues;
+        values[placement === "extra" ? "extra" : Object.keys(values)[0]] = guardedArray(new Array(50_000).fill(null), counts);
+        await assert.rejects(validateExecutionPlanV3(candidate));
+        assertNoDeepTraversal(counts, path);
+      });
+    }
+  }
+});
+
+test("nested admission rejects stateful length and field swaps before offending traversal", async () => {
+  const valid = await planFor(draft(), unsharedDataset());
+  for (const path of ["identityDictionary.units", "configuration.units.columns", "rowOrdering.mappings.0.orderTuple"]) {
+    const candidate = mutablePlan(valid);
+    const parts = path.split(".");
+    const key = parts.pop()!;
+    const parent = parts.reduce((value, part) => value[part], candidate);
+    const counts = zeroTrapCounts();
+    parent[key] = shiftingLengthArray(new Array(50_000).fill(null), parent[key].length, counts);
+    await assert.rejects(validateExecutionPlanV3(candidate));
+    assertNoDeepTraversal(counts, path);
+  }
+  const candidate = mutablePlan(valid);
+  const counts = zeroTrapCounts();
+  const hostile = guardedArray(new Array(50_000).fill(null), counts);
+  candidate.identityDictionary.units[0] = shiftingRecordProperty(
+    candidate.identityDictionary.units[0], "fields", candidate.identityDictionary.units[0].fields, hostile,
+  );
+  await assert.rejects(validateExecutionPlanV3(candidate));
+  assertNoDeepTraversal(counts, "swapped identity fields");
+});
+
+test("nested capture reuses accepted descriptors and array elements without third reads", async () => {
+  const candidate = mutablePlan(await planFor(draft(), unsharedDataset()));
+  const lengths = zeroTrapCounts();
+  candidate.identityDictionary.units = sequencedLengthArray(candidate.identityDictionary.units, [2, 2, 50_000], lengths);
+  const late = zeroTrapCounts();
+  const hostile = guardedArray(new Array(50_000).fill(null), late);
+  let fieldReads = 0;
+  candidate.identityDictionary.units[0] = new Proxy(candidate.identityDictionary.units[0], {
+    getOwnPropertyDescriptor(target, key) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+      if (key !== "fields" || descriptor === undefined || !("value" in descriptor)) return descriptor;
+      fieldReads += 1;
+      return { ...descriptor, value: fieldReads <= 2 ? descriptor.value : hostile };
+    },
+  });
+  const acceptedMapping = candidate.rowOrdering.mappings[0];
+  let mappingReads = 0;
+  candidate.rowOrdering.mappings = new Proxy(candidate.rowOrdering.mappings, {
+    getOwnPropertyDescriptor(target, key) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+      if (key !== "0" || descriptor === undefined || !("value" in descriptor)) return descriptor;
+      mappingReads += 1;
+      return { ...descriptor, value: mappingReads === 1 ? acceptedMapping : { ...acceptedMapping, orderTuple: hostile } };
+    },
+  });
+  await validateExecutionPlanV3(candidate);
+  assert.equal(lengths.lengthDescriptors, 2);
+  assert.equal(fieldReads, 2);
+  assert.equal(mappingReads, 1, "accepted parent elements are copied from their snapshot");
+  assertNoDeepTraversal(late, "late nested descriptors");
+});
+
+test("cardinality admission preserves shared Horizons, composite dimensions and wide headers/categories", async () => {
+  const composite = await planFor(draft({
+    unitColumns: ["unit", "group"],
+    horizonColumns: ["horizon", "time"],
+    movingStanza: {
+      ...draft().movingStanza,
+      rowOrder: { kind: "columns", keys: [...rowOrder.keys!, ...horizonOrder.keys!] },
+    },
+  }));
+  const validated = await validateExecutionPlanV3(mutablePlan(composite));
+  assert.equal(validated.identityDictionary.horizons.length, 2);
+  assert.equal(validated.identityDictionary.units[0].fields.length, 2);
+  assert.equal(validated.identityDictionary.horizons[0].fields.length, 2);
+  assert.equal(validated.rows[0].rowOrderTuple?.length, 2);
+  const wide = await planFor(draft({
+    horizonOrder: {
+      kind: "columns",
+      keys: [{
+        column: "time", direction: "ascending",
+        comparator: { type: "ordered-category", levels: Array.from({ length: 300 }, (_, index) => ({ type: "number", value: index })) },
+      }],
+    },
+  }), dataset({ headers: [...HEADERS, ...Array.from({ length: 300 }, (_, index) => `unused-${index}`)] }));
+  assert.equal((await validateExecutionPlanV3(mutablePlan(wide))).sourceProof.headers.length, 308);
+});
+
+test("cardinality admission preserves text keys and distinct source-confirmation column unions", async () => {
+  const comparator = { type: "text", locale: "en", sensitivity: "variant", numeric: true } as const;
+  const textPlan = await planFor(draft({
+    movingStanza: {
+      ...draft().movingStanza,
+      rowOrder: { kind: "columns", keys: [{ column: "turn", direction: "ascending", comparator }] },
+    },
+    horizonOrder: { kind: "columns", keys: [{ column: "time", direction: "ascending", comparator }] },
+  }), dataset({ rows: dataset().rows.map((row) => ({ ...row, time: String(row.time), turn: String(row.turn) })) }));
+  const text = await validateExecutionPlanV3(mutablePlan(textPlan));
+  assert.equal(text.rowOrdering.type === "within-horizon-order" && text.rowOrdering.textCollationBindings.length, 1);
+  assert.equal(text.horizonOrdering.type === "trajectory-horizon-order" && text.horizonOrdering.textCollationBindings.length, 1);
+  const sourcePlan = await planFor(draft({
+    horizonColumns: ["unit", "horizon"],
+    movingStanza: { ...draft().movingStanza, rowOrder: sourceOrderPolicy(["unit", "horizon"]) },
+    horizonOrder: sourceOrderPolicy(["unit", "horizon"]),
+  }), unsharedDataset());
+  const source = await validateExecutionPlanV3(mutablePlan(sourcePlan));
+  assert.equal(source.identityDictionary.units[0].fields.length, 1);
+  assert.equal(source.identityDictionary.horizons[0].fields.length, 2);
+  assert.equal(source.horizonOrdering.type === "trajectory-horizon-order"
+    && source.horizonOrdering.sourceOrderBinding?.confirmation.relevantColumns.length, 2);
 });
 
 test("validator rejects a staged 3-to-401 Code shift before any dense array traversal", async () => {
