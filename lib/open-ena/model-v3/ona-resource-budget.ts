@@ -1,6 +1,6 @@
 import { deepFreezeV3 } from "./canonical-json";
 import { estimateOnaGeneratedTableKeyBytesV3, estimateResultIdentityBytesV3 } from "./compiler-dataset";
-import { MAX_ESTIMATED_EXPORT_BYTES_V3, MAX_ESTIMATED_NUMERIC_CELLS_V3, MAX_ESTIMATED_PEAK_BYTES_V3, MAX_ESTIMATED_STRUCTURAL_BYTES_V3, type OnaResourceEstimateV3 } from "./resource-budget";
+import { MAX_ESTIMATED_EXPORT_BYTES_V3, MAX_ESTIMATED_NUMERIC_CELLS_V3, MAX_ESTIMATED_PEAK_BYTES_V3, MAX_ESTIMATED_ROTATION_WORK_UNITS_V3, MAX_ESTIMATED_STRUCTURAL_BYTES_V3, type OnaResourceEstimateV3 } from "./resource-budget";
 import type { CanonicalOnaConfigV3 } from "./types";
 import type { ParsedDataset } from "../types";
 
@@ -15,6 +15,7 @@ export interface OnaOperationalAdmissionV3 {
   readonly generatedTableKeyBytes: number;
   readonly numericSerializationBytes: number;
   readonly metadataSerializationBytes: number;
+  readonly closureWorkUnits: number;
   readonly stages: {
     readonly sourceCaptureCells: number;
     readonly accumulationCells: number;
@@ -22,6 +23,7 @@ export interface OnaOperationalAdmissionV3 {
     readonly bindingCells: number;
     readonly rankDiagnosticCells: number;
     readonly validationScratchCells: number;
+    readonly scientificClosureCells: number;
   };
   readonly incrementalNumericCells: number;
   readonly incrementalPeakBytes: number;
@@ -65,7 +67,15 @@ export function estimateOnaOperationalAdmissionV3(dataset: Pick<ParsedDataset, "
   // Rank diagnostics retain normalized/centered/transposed inputs and the
   // covariance, Jacobi copy, working eigenvectors and reordered output basis.
   const rankDiagnosticCells = safe(4 * e * e + 4 * u * e + 8 * e, "rank diagnostic cells");
-  const validationScratchCells = Math.max(accumulationCells, safe(n * c + 4 * u * e + rankDiagnosticCells, "readiness and rank scratch cells"));
+  // One retained source oracle plus normalized/projection/full-coordinate UE
+  // matrices; native directed-node solve, centroid and axis/vector scratch.
+  // The earlier two-UE audit conservation phase has already returned here.
+  const scientificClosureCells = safe(4 * u * e + 3 * u * c + 3 * c * c + 3 * u * d + 3 * c * d + 2 * u + 8 * c + 8 * e, "scientific closure cells");
+  // Independent safe work proxy including the existing orthogonality loop;
+  // not exact CPU instructions or a cumulative whole-request operation count.
+  const closureWorkUnits = safe(e * e * e + 2 * u * e * e + 4 * u * c * c + 3 * d * c * c * c + 12 * u * e + n * e, "scientific closure work");
+  if (closureWorkUnits > MAX_ESTIMATED_ROTATION_WORK_UNITS_V3) throw new TypeError("ONA scientific closure exceeds the fixed work budget.");
+  const validationScratchCells = Math.max(accumulationCells, safe(n * c + 4 * u * e + rankDiagnosticCells, "readiness and rank scratch cells"), scientificClosureCells);
   const bindingCells = safe(4 * n * c + 4 * compactScientificCells + n * e + validationScratchCells, "binding cells");
   const totalNumericCells = Math.max(baseline.estimatedNumericCells, sourceCaptureCells, accumulationCells, modelCells, bindingCells);
   const resultIdentityBytes = estimateResultIdentityBytesV3(dataset, configuration);
@@ -78,8 +88,8 @@ export function estimateOnaOperationalAdmissionV3(dataset: Pick<ParsedDataset, "
   const totalPeakBytes = Math.max(baseline.estimatedPeakBytes, safe(baseline.estimatedWorkerMaterializationBytes + totalStructuralBytes + 8 * totalNumericCells + numericSerializationBytes, "peak bytes"));
   const totalExportBytes = Math.max(baseline.estimatedExportBytes, safe(resultIdentityBytes + 24 * compactScientificCells, "export bytes"));
   if (totalNumericCells > MAX_ESTIMATED_NUMERIC_CELLS_V3 || totalPeakBytes > MAX_ESTIMATED_PEAK_BYTES_V3 || totalExportBytes > MAX_ESTIMATED_EXPORT_BYTES_V3 || totalStructuralBytes > MAX_ESTIMATED_STRUCTURAL_BYTES_V3) throw new TypeError("ONA operational admission exceeds the fixed resource budget.");
-  return deepFreezeV3({ version: ONA_OPERATIONAL_BUDGET_VERSION_V3, compactScientificCells, resultIdentityBytes, generatedTableKeyBytes: estimateOnaGeneratedTableKeyBytesV3(dataset, configuration), numericSerializationBytes, metadataSerializationBytes,
-    stages: { sourceCaptureCells, accumulationCells, modelCells, bindingCells, rankDiagnosticCells, validationScratchCells },
+  return deepFreezeV3({ version: ONA_OPERATIONAL_BUDGET_VERSION_V3, compactScientificCells, resultIdentityBytes, generatedTableKeyBytes: estimateOnaGeneratedTableKeyBytesV3(dataset, configuration), numericSerializationBytes, metadataSerializationBytes, closureWorkUnits,
+    stages: { sourceCaptureCells, accumulationCells, modelCells, bindingCells, rankDiagnosticCells, validationScratchCells, scientificClosureCells },
     incrementalNumericCells: totalNumericCells - baseline.estimatedNumericCells,
     incrementalPeakBytes: totalPeakBytes - baseline.estimatedPeakBytes,
     incrementalExportBytes: totalExportBytes - baseline.estimatedExportBytes,

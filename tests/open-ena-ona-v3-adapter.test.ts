@@ -20,6 +20,7 @@ import { estimateResultIdentityBytesV3 } from "../lib/open-ena/model-v3/compiler
 import { countOnaScientificCellsV3 } from "../lib/open-ena/model-v3/ona-result-binding";
 import { fitReferenceSourceV3 } from "../lib/open-ena/model-v3/reference-v2";
 import { analyzePlanInWorkerV3 } from "../lib/open-ena/client";
+import { MAX_ESTIMATED_ROTATION_WORK_UNITS_V3 } from "../lib/open-ena/model-v3/resource-budget";
 
 async function fixture(backward: number = 2, sourceOrder = false) {
   const codes = ["C", "A", "B"];
@@ -74,6 +75,8 @@ test("ONA source, runtime order, directional basis and resource tampering fail e
     (draft) => { draft.directionalMask.enabled[0][1] = true; },
     (draft) => { draft.header.resourceEstimate.estimatedNumericCells += 1; },
     (draft) => { draft.operationalAdmission.totalNumericCells += 1; },
+    (draft) => { draft.operationalAdmission.closureWorkUnits -= 1; },
+    (draft) => { draft.operationalAdmission.stages.scientificClosureCells -= 1; },
   ];
   for (const mutate of mutations) {
     const changed = structuredClone(plan); mutate(changed);
@@ -394,7 +397,10 @@ test("ONA binding/import ledger separately includes rank and readiness scratch b
   const input = await fixture(), plan = await publicV3.buildOnaExecutionPlanV3(input.dataset, input.datasetSha256, input.configuration);
   const a = plan.operationalAdmission, n = plan.rows.length, u = plan.identityDictionary.units.length, c = plan.codeDictionary.codes.length, e = c * c;
   assert.equal(a.stages.rankDiagnosticCells, 4 * e * e + 4 * u * e + 8 * e);
-  assert.equal(a.stages.validationScratchCells, Math.max(a.stages.accumulationCells, n * c + 4 * u * e + a.stages.rankDiagnosticCells));
+  const d = Math.min(3, e);
+  assert.equal(a.stages.scientificClosureCells, 4 * u * e + 3 * u * c + 3 * c * c + 3 * u * d + 3 * c * d + 2 * u + 8 * c + 8 * e);
+  assert.equal(a.closureWorkUnits, e ** 3 + 2 * u * e * e + 4 * u * c * c + 3 * d * c ** 3 + 12 * u * e + n * e);
+  assert.equal(a.stages.validationScratchCells, Math.max(a.stages.accumulationCells, n * c + 4 * u * e + a.stages.rankDiagnosticCells, a.stages.scientificClosureCells));
   assert.equal(a.stages.bindingCells, 4 * n * c + 4 * a.compactScientificCells + n * e + a.stages.validationScratchCells);
   const runtime = publicV3.runOnaPlanV3(plan);
   let visited = 0;
@@ -431,6 +437,137 @@ test("escaped ONA identity metadata fits its explicit text envelope and oversize
   assert.equal(oversized.codes.length, 3);
   assert.equal(oversized.codes[0].displayLabel.length, 1_000_000);
 });
+
+async function refreshClosureDatasetHash(dataset: ParsedDataset): Promise<string> {
+  const csv = `${dataset.headers.join(",")}\n${dataset.rows.map((row) => dataset.headers.map((key) => row[key]).join(",")).join("\n")}\n`;
+  dataset.sizeBytes = new TextEncoder().encode(csv).byteLength;
+  return sha256TextV3(csv);
+}
+
+async function closureFixture() {
+  const input = await fixture(1);
+  input.dataset.rows = [[1, 2, 3], [3, 1, 2], [2, 3, 1]].map(([A, B, C], index) => ({ u: `u${index}`, h: `h${index}`, t: 1, g: "unused", A, B, C }));
+  input.datasetSha256 = await refreshClosureDatasetHash(input.dataset);
+  const configuration = decodeCanonicalOnaConfigV3({ ...input.configuration, units: { columns: ["u"], group: { type: "none" } }, directionalMask: createDirectionalMask(input.configuration.codes.map((code) => code.column)) });
+  const plan = await publicV3.buildOnaExecutionPlanV3(input.dataset, input.datasetSha256, configuration);
+  const result = await publicV3.bindOnaResultV3(plan, publicV3.runOnaPlanV3(plan), { processedRows: 3, maximumRetainedRowsAfterChunk: 0, bufferedRowsPeakUpperBound: 1,
+    numericCellsUpperBound: plan.operationalAdmission.totalNumericCells, peakBytesUpperBound: plan.operationalAdmission.totalPeakBytes, observationMethod: "dimension-bounds-and-chunk-boundary-stream-state" });
+  return { input, configuration, plan, result };
+}
+
+test("source aggregate comparison preserves tiny positive scale and rejects a hundred-order forged rescaling", async () => {
+  const { input, configuration } = await closureFixture();
+  input.dataset.rows = input.dataset.rows.map((row) => ({ ...row, A: Number(row.A) * 1e-100, B: Number(row.B) * 1e-100, C: Number(row.C) * 1e-100 }));
+  input.datasetSha256 = await refreshClosureDatasetHash(input.dataset);
+  const plan = await publicV3.buildOnaExecutionPlanV3(input.dataset, input.datasetSha256, configuration);
+  const result = await publicV3.bindOnaResultV3(plan, publicV3.runOnaPlanV3(plan), { processedRows: 3, maximumRetainedRowsAfterChunk: 0, bufferedRowsPeakUpperBound: 1,
+    numericCellsUpperBound: plan.operationalAdmission.totalNumericCells, peakBytesUpperBound: plan.operationalAdmission.totalPeakBytes, observationMethod: "dimension-bounds-and-chunk-boundary-stream-state" });
+  await bindings.validateBoundResultV3(result, plan);
+  const changed = structuredClone(result);
+  changed.set.connectionMatrix.forEach((row, unit) => row.forEach((value, edge) => {
+    row[edge] = value * 1e100; changed.set.connectionCounts[unit][changed.set.codeColumns[edge]] = row[edge];
+  }));
+  changed.orderedAudit.edgeValues.forEach((row) => row.forEach((value, edge) => { row[edge] = value * 1e100; }));
+  Object.assign(changed.binding, { scientificResultSha256: await sha256CanonicalJsonV3(bindings.scientificResultHashPayloadV3(changed)) });
+  await assert.rejects(() => bindings.validateBoundResultV3(changed, plan), /source.*aggregate/i);
+});
+
+test("combined closure work is checked before any orthogonality iteration", async () => {
+  const { plan } = await closureFixture(), runtime = publicV3.runOnaPlanV3(plan);
+  const changed = { ...plan, operationalAdmission: { ...plan.operationalAdmission, closureWorkUnits: MAX_ESTIMATED_ROTATION_WORK_UNITS_V3 + 1 } };
+  let iterations = 0;
+  runtime.set.rotation.rotationMatrix = new Proxy(runtime.set.rotation.rotationMatrix, { get(target, key, receiver) {
+    if (key === Symbol.iterator && ++iterations > 1) throw new Error("orthogonality loop started before work admission");
+    return Reflect.get(target, key, receiver);
+  } });
+  await assert.rejects(() => publicV3.bindOnaResultV3(changed, runtime, { processedRows: 3, maximumRetainedRowsAfterChunk: 0, bufferedRowsPeakUpperBound: 1,
+    numericCellsUpperBound: plan.operationalAdmission.totalNumericCells, peakBytesUpperBound: plan.operationalAdmission.totalPeakBytes, observationMethod: "dimension-bounds-and-chunk-boundary-stream-state" }), /work budget/);
+  assert.ok(iterations <= 1);
+});
+
+test("combined closure work rejects an otherwise admitted ONA baseline before scientific preflight", async () => {
+  const { input, configuration } = await closureFixture(), codeNames = Array.from({ length: 14 }, (_, index) => `node${index}`);
+  input.dataset.rows = Array.from({ length: 10 }, (_, index) => ({ u: `u${index}`, h: `h${index}`, t: 1,
+    ...Object.fromEntries(codeNames.map((code) => [code, 1e-200])),
+  }));
+  input.dataset.headers = ["u", "h", "t", ...codeNames];
+  input.datasetSha256 = await refreshClosureDatasetHash(input.dataset);
+  const oversized = decodeCanonicalOnaConfigV3({ ...configuration, codes: codeNames.map((column) => ({ column, displayLabel: column })), directionalMask: createDirectionalMask(codeNames) });
+  const baseline = publicV3.estimateOnaResourcesV3({ rowCount: 10, unitCount: 10, horizonCount: 10, codeCount: 14, horizonSizes: Array(10).fill(1),
+    backward: { kind: "finite", value: 1 }, datasetSizeBytes: input.dataset.sizeBytes, identityPayloadBytes: 0 });
+  assert.equal(baseline.blocked, false);
+  // If preflight reached accumulation, these source products would underflow.
+  await assert.rejects(() => publicV3.buildOnaExecutionPlanV3(input.dataset, input.datasetSha256, oversized), /scientific closure exceeds the fixed work budget/);
+});
+
+for (const rowsPerUnit of [1, 2]) {
+  test(`near-MAX finite Unit aggregates conserve ${rowsPerUnit}-row audits without cross-Unit overflow`, async () => {
+    const { input, configuration } = await closureFixture();
+    const magnitude = rowsPerUnit === 1 ? 1.3e154 : 1e154;
+    input.dataset.rows = Array.from({ length: 3 }, (_, unit) => Array.from({ length: rowsPerUnit }, (_, turn) => ({
+      u: `u${unit}`, h: `h${unit}`, t: turn + 1, g: "unused", A: magnitude, B: magnitude, C: unit + 1,
+    }))).flat();
+    input.datasetSha256 = await refreshClosureDatasetHash(input.dataset);
+    const legacy = analyzeDataset(input.dataset, { ...input.legacyConfig, groupColumn: null, directionalMask: configuration.directionalMask });
+    const plan = await publicV3.buildOnaExecutionPlanV3(input.dataset, input.datasetSha256, configuration);
+    const runtime = publicV3.runOnaPlanV3(plan), restored = sourceRestoredSet(runtime.set, plan);
+    for (const field of ["connectionCounts", "lineWeights", "pointsForProjection", "points", "centroids", "rotation"] as const) assert.deepEqual(restored[field], legacy.set[field], field);
+    assert.deepEqual(runtime.set.connectionMatrix, legacy.set.connectionMatrix);
+    assert.deepEqual(runtime.set.variance, legacy.set.variance);
+    assert.deepEqual({ ...runtime.orderedAudit, codeOrder: input.legacyConfig.codes }, buildOpenEnaOrderedAudit(legacy.set));
+    const largeEdge = plan.codeDictionary.edges.findIndex((edge) => edge.groundIndex === 1 && edge.responseIndex === 2);
+    assert.ok(runtime.set.connectionMatrix.every((row) => Number.isFinite(row[largeEdge]) && row[largeEdge] > Number.MAX_VALUE / 3));
+    assert.equal(runtime.set.connectionMatrix.reduce((sum, row) => sum + row[largeEdge], 0), Infinity, "an unnecessary cross-Unit sum would overflow");
+    const worker = workerHost(); worker.send({ kind: "run-open-ena-plan-v3", id: `near-max-${rowsPerUnit}`, plan, chunkSize: 1 });
+    const terminal = await worker.terminal(); assert.equal(terminal.kind, "result-v3", terminal.kind === "error" ? terminal.message : "near-MAX finite result");
+    if (terminal.kind === "result-v3") {
+      const bound = await bindings.validateBoundResultV3(terminal.result, plan);
+      assert.deepEqual(bound.set.connectionMatrix, legacy.set.connectionMatrix);
+      assert.deepEqual(bound.set.variance, legacy.set.variance);
+      assert.deepEqual(bound.orderedAudit.edgeValues, runtime.orderedAudit.edgeValues);
+    }
+  });
+}
+
+for (const kind of ["eigenvalue energy", "non-eigen orthonormal basis"] as const) {
+  test(`ONA closure rejects rehashed ${kind}`, async () => {
+    const { plan, result } = await closureFixture(), changed = structuredClone(result);
+    if (kind === "eigenvalue energy") changed.set.rotation.eigenvalues[0] += 1;
+    else for (const row of changed.set.rotation.rotationMatrix) {
+      const first = row[0], last = row[row.length - 1];
+      row[0] = (first + last) / Math.sqrt(2); row[row.length - 1] = (last - first) / Math.sqrt(2);
+    }
+    Object.assign(changed.binding, { scientificResultSha256: await sha256CanonicalJsonV3(bindings.scientificResultHashPayloadV3(changed)) });
+    await assert.rejects(() => bindings.validateBoundResultV3(changed, plan), /eigenvalue energy|cross-axis/i);
+  });
+}
+
+test("a complete alternate model with preserved response totals cannot replace source-bound Unit aggregates", async () => {
+  const { input, configuration, plan, result } = await closureFixture();
+  const alternate = { ...input.dataset, rows: input.dataset.rows.map((row) => ({ ...row })) };
+  const first = alternate.rows[0].B; alternate.rows[0].B = alternate.rows[1].B; alternate.rows[1].B = first;
+  const alternatePlan = await publicV3.buildOnaExecutionPlanV3(alternate, await refreshClosureDatasetHash(alternate), configuration);
+  const alternateResult = await publicV3.bindOnaResultV3(alternatePlan, publicV3.runOnaPlanV3(alternatePlan), result.executionProvenance.resources.observed);
+  assert.deepEqual(alternateResult.orderedResponseNodeSummary, result.orderedResponseNodeSummary);
+  const changed = { ...structuredClone(result), set: alternateResult.set, orderedAudit: alternateResult.orderedAudit };
+  Object.assign(changed.binding, { scientificResultSha256: await sha256CanonicalJsonV3(bindings.scientificResultHashPayloadV3(changed)) });
+  await assert.rejects(() => bindings.validateBoundResultV3(changed, plan), /source.*aggregate/i);
+});
+
+for (const field of ["points", "lineWeights", "centerVector", "audit", "centroids", "nodes", "variance", "pointsForProjection"] as const) {
+  test(`rehashed ONA ${field} tampering cannot bypass scientific derivation closure`, async () => {
+    const { plan, result } = await closureFixture();
+    const changed = structuredClone(result);
+    if (field === "points" || field === "centroids") changed.set[field]![0].SVD1 = Number(changed.set[field]![0].SVD1) + 123;
+    else if (field === "lineWeights" || field === "pointsForProjection") changed.set[field][0]["Connection 2"] = Number(changed.set[field][0]["Connection 2"]) + 123;
+    else if (field === "centerVector") changed.set.rotation.centerVector[0] += 123;
+    else if (field === "audit") changed.orderedAudit.edgeValues[0][1] += 123;
+    else if (field === "nodes") changed.set.rotation.nodes![0].SVD1 = Number(changed.set.rotation.nodes![0].SVD1) + 123;
+    else changed.set.variance.SVD1 += 123;
+    Object.assign(changed.binding, { scientificResultSha256: await sha256CanonicalJsonV3(bindings.scientificResultHashPayloadV3(changed)) });
+    await assert.rejects(() => bindings.validateBoundResultV3(changed, plan), /scientific|deriv|audit|conserv|source|projection|variance|node|center|normal/i);
+  });
+}
 
 // Restore scientific aliases only through their exact dictionaries. Numeric
 // arrays are never rounded, sorted, sign-flipped or projected again by the oracle.

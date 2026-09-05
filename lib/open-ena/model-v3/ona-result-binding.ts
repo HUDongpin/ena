@@ -1,11 +1,13 @@
 import { orderedAdjacencyKey, type ENASet, type Row } from "jena-js";
 import { canonicalJsonV3, deepFreezeV3, sha256CanonicalJsonV3, snapshotPlainJsonRecordV3 } from "./canonical-json";
 import { centeredNetworkRankV3 } from "./diagnostics";
-import { captureOnaExecutionPlanInputV3, captureOnaJsonV3, buildOnaResponseNodeSummaryV3, toOnaJenaOptionsV3, validateOnaExecutionPlanV3, verifyOnaScientificReadinessV3, type InternalOnaRunResultV3, type OnaExecutionPlanV3 } from "./ona-adapter";
+import { captureOnaExecutionPlanInputV3, captureOnaJsonV3, buildOnaResponseNodeSummaryV3, toOnaJenaOptionsV3, validateOnaExecutionPlanV3, verifyOnaScientificEvidenceV3, type InternalOnaRunResultV3, type OnaExecutionPlanV3 } from "./ona-adapter";
 import type { BoundOnaResultV3, OnaRuntimeResourceObservationV3, OnaResultExecutionProvenanceV3, ResultBindingV3, SerializableEnaSetV3 } from "./types";
 import { buildOpenEnaOrderedAudit } from "../ordered-audit";
 import type { OpenEnaOrderedAudit, OpenEnaOrderedResponseNodeSummary } from "../types";
 import { MAX_ESTIMATED_NUMERIC_CELLS_V3, MAX_ESTIMATED_ROTATION_WORK_UNITS_V3, MAX_ESTIMATED_PEAK_BYTES_V3, MAX_ESTIMATED_STRUCTURAL_BYTES_V3 } from "./resource-budget";
+import { assertOnaScientificClosureV3 } from "./ona-scientific-closure";
+import type { OnaCompilerDiagnosticV3 } from "./ona-compiler-preflight";
 
 const COUNTERS = { version: 1, numericCells: "conservative-phase-dimension-upper-bound", bufferedRows: "chunk-boundary-observation-plus-separate-peak-upper-bound", bytes: "conservative-structural-and-temporary-overlap-bound" } as const;
 const CAPABILITIES = { "build-model": "available", "export-current-model": "available", "export-reference": "blocked", "group-inference": "blocked", "trajectory-inference": "blocked", "longitudinal-comparison": "blocked", "ai-interpretation": "blocked" } as const;
@@ -96,6 +98,7 @@ function guardBindingAllocation(plan: OnaExecutionPlanV3, retainedScientificCell
 }
 
 function validateRuntime(plan: OnaExecutionPlanV3, runtime: OnaRuntimeEvidenceV3, retainedScientificCells = countOnaScientificCellsV3(runtime.set, runtime.orderedAudit, runtime.orderedResponseNodeSummary)): number {
+  assertClosureWorkAdmission(plan);
   same(runtime.configuration, plan.configuration, "configuration"); same(runtime.executionPlanHeader, plan.header, "header");
   const set = runtime.set, codes = plan.codeDictionary.codes.map((code) => code.token), edges = orderedAdjacencyKey(codes), columns = edges.map((edge) => edge.name);
   keys(set, ["modelType", "codes", "units", "conversation", "codeColumns", "adjacencyKey", "rawRows", "rowConnectionCounts", "connectionCounts", "connectionMatrix", "metaData", "unitLabels", "functionParams", "networkType", "rowWindowProvenance", "lineWeights", "pointsForProjection", "points", "rotation", "variance", "centroids"], "set");
@@ -175,7 +178,7 @@ function mappedPayload(plan: OnaExecutionPlanV3, set: ENASet | SerializableEnaSe
   return { set: mappedSet, orderedAudit: { ...audit, codeOrder: audit.codeOrder.map((value) => lookup(codes, value)) }, orderedResponseNodeSummary: { ...summary, codeOrder: summary.codeOrder.map((value) => lookup(codes, value)), groups: summary.groups.map((group) => ({ ...group, name: plan.configuration.units.group.type === "none" ? group.name : lookup(groups, group.name) })) } };
 }
 
-function provenance(plan: OnaExecutionPlanV3, rank: number, observed: OnaRuntimeResourceObservationV3): OnaResultExecutionProvenanceV3 {
+function provenance(plan: OnaExecutionPlanV3, rank: number, observed: OnaRuntimeResourceObservationV3, diagnostics: readonly OnaCompilerDiagnosticV3[]): OnaResultExecutionProvenanceV3 {
   const tokens = population(plan), fullAxes = Array.from({ length: plan.codeDictionary.edges.length }, (_, index) => `SVD${index + 1}`);
   const groups = new Map(plan.rows.map((row) => [row.unitToken, row.groupToken]));
   return { header: plan.header, sourceProofSha256: plan.sourceProof.sourceProofSha256, identityDictionary: plan.identityDictionary, codeDictionary: plan.codeDictionary, codeRepresentations: plan.codeRepresentations,
@@ -184,7 +187,24 @@ function provenance(plan: OnaExecutionPlanV3, rank: number, observed: OnaRuntime
     adapterParameters: plan.adapterParameters, weighting: plan.weighting, directionalMask: plan.directionalMask, normalization: "sphere", boundary: "within-horizon", reference: null,
     projection: { type: "svd", centerAlignToOrigin: true, rank, fullAxes, estimableAxes: fullAxes.slice(0, rank), geometryPath: "set.rotation", variancePath: "set.variance" },
     populations: { fit: "endpoint-units", fitTokens: tokens, targetTokens: tokens, imputedStepCount: 0 },
-    resources: { targetBaseline: plan.header.resourceEstimate, operationalAdmission: plan.operationalAdmission, counterContract: COUNTERS, observed }, diagnostics: verifyOnaScientificReadinessV3(plan) };
+    resources: { targetBaseline: plan.header.resourceEstimate, operationalAdmission: plan.operationalAdmission, counterContract: COUNTERS, observed }, diagnostics };
+}
+
+function assertClosureWorkAdmission(plan: OnaExecutionPlanV3): void {
+  const n = plan.rows.length, u = plan.identityDictionary.units.length, c = plan.codeDictionary.codes.length, e = c * c, d = Math.min(3, e);
+  const work = e ** 3 + 2 * u * e * e + 4 * u * c * c + 3 * d * c ** 3 + 12 * u * e + n * e;
+  if (!Number.isSafeInteger(work) || work !== plan.operationalAdmission.closureWorkUnits || work > MAX_ESTIMATED_ROTATION_WORK_UNITS_V3) throw new TypeError("ONA scientific closure exceeds its admitted work budget.");
+}
+
+/** The source oracle and closure temporaries do not escape into provenance. */
+function validateScientificClosure(plan: OnaExecutionPlanV3, runtime: OnaRuntimeEvidenceV3, retainedCells: number): readonly OnaCompilerDiagnosticV3[] {
+  assertClosureWorkAdmission(plan);
+  guardBindingAllocation(plan, retainedCells, plan.operationalAdmission.stages.validationScratchCells);
+  const evidence = verifyOnaScientificEvidenceV3(plan);
+  guardBindingAllocation(plan, retainedCells, plan.operationalAdmission.stages.scientificClosureCells);
+  assertOnaScientificClosureV3({ set: runtime.set, runtimeUnitTokens: population(plan), sourceUnitTokens: evidence.unitTokens, sourceConnectionMatrix: evidence.connectionMatrix,
+    auditEdgeValues: runtime.orderedAudit.edgeValues, auditUnitTokens: plan.runtimeSourceRowIndices.map((index) => plan.rows[index].unitToken) });
+  return evidence.diagnostics;
 }
 
 export function onaScientificResultHashPayloadV3(result: Pick<BoundOnaResultV3, "configuration" | "executionProvenance" | "set" | "orderedAudit" | "orderedResponseNodeSummary" | "capabilityStatus">) {
@@ -197,12 +217,12 @@ export async function bindOnaResultV3(plan: OnaExecutionPlanV3, runtime: Interna
   guardBindingAllocation(plan, runtimeCells, 0);
   const rank = validateRuntime(plan, runtime);
   validateOnaObservationV3(plan, observed);
+  const diagnostics = validateScientificClosure(plan, runtime, runtimeCells);
   guardBindingAllocation(plan, runtimeCells + plan.operationalAdmission.compactScientificCells, 0);
   const mapped = mappedPayload(plan, runtime.set, runtime.orderedAudit, runtime.orderedResponseNodeSummary);
   const cells = countOnaScientificCellsV3(mapped.set, mapped.orderedAudit, mapped.orderedResponseNodeSummary);
   if (cells > plan.operationalAdmission.compactScientificCells) throw new TypeError("ONA compact output exceeds its enumerated scientific-cell envelope.");
-  guardBindingAllocation(plan, runtimeCells + cells, plan.operationalAdmission.stages.validationScratchCells);
-  const payload = { configuration: plan.configuration, executionProvenance: provenance(plan, rank, observed), ...mapped, capabilityStatus: CAPABILITIES };
+  const payload = { configuration: plan.configuration, executionProvenance: provenance(plan, rank, observed, diagnostics), ...mapped, capabilityStatus: CAPABILITIES };
   guardBindingAllocation(plan, runtimeCells + 2 * cells, 0);
   const detached = captureOnaJsonV3(payload, { byteLimit: plan.operationalAdmission.totalExportBytes, structuralLimit: plan.operationalAdmission.totalPeakBytes }) as typeof payload;
   const scientificResultSha256 = await sha256CanonicalJsonV3(detached);
@@ -263,9 +283,9 @@ export async function validateBoundOnaResultV3(input: unknown, expectedPlan: unk
     + countOnaScientificCellsV3(restored.set, restored.orderedAudit, restored.orderedResponseNodeSummary);
   const rank = validateRuntime(plan, runtime, retainedCells);
   validateOnaObservationV3(plan, captured.executionProvenance.resources.observed);
+  const diagnostics = validateScientificClosure(plan, runtime, retainedCells);
   same(captured.configuration, plan.configuration, "configuration");
-  guardBindingAllocation(plan, retainedCells, plan.operationalAdmission.stages.validationScratchCells);
-  same(captured.executionProvenance, provenance(plan, rank, captured.executionProvenance.resources.observed), "complete provenance");
+  same(captured.executionProvenance, provenance(plan, rank, captured.executionProvenance.resources.observed, diagnostics), "complete provenance");
   same(captured.capabilityStatus, CAPABILITIES, "descriptive capabilities");
   same(mappedPayload(plan, restored.set, restored.orderedAudit, restored.orderedResponseNodeSummary), { set: captured.set, orderedAudit: captured.orderedAudit, orderedResponseNodeSummary: captured.orderedResponseNodeSummary }, "reversible identity mapping");
   return deepFreezeV3(captured);

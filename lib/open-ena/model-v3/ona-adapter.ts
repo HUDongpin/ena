@@ -215,12 +215,29 @@ export function completeOnaPlanFromAccumulationV3(plan: OnaExecutionPlanV3, data
 }
 
 export function verifyOnaScientificReadinessV3(plan: OnaExecutionPlanV3): readonly OnaCompilerDiagnosticV3[] {
+  return verifyOnaScientificEvidenceV3(plan).diagnostics;
+}
+
+/**
+ * Reuses the existing model-only readiness accumulation. Only the U×E matrix
+ * escapes this scope; its duplicate connectionCounts table is not retained.
+ * Preflight groups Horizons lexically, so prove its own first-seen Unit order
+ * before comparing against the separately recorded legacy runtime schedule.
+ */
+export function verifyOnaScientificEvidenceV3(plan: OnaExecutionPlanV3): {
+  readonly diagnostics: readonly OnaCompilerDiagnosticV3[];
+  readonly unitTokens: readonly string[];
+  readonly connectionMatrix: number[][];
+} {
   const dataset = parsedDatasetFromSourceProofV3(plan.sourceProof);
   const prepared = validateOnaDatasetV3(dataset, plan.header.datasetBinding, plan.configuration);
   if (!prepared.ordering || prepared.diagnostics.some((entry) => entry.severity === "error")) throw new TypeError("ONA source proof is not scientifically executable.");
   const scientific = runOnaScientificPreflightV3(dataset, plan.configuration, prepared.ordering);
   if (scientific.diagnostics.some((entry) => entry.severity === "error")) throw new TypeError("ONA source proof fails scientific readiness.");
-  return scientific.diagnostics;
+  if (!scientific.model) throw new TypeError("ONA readiness did not retain its authoritative model-only target.");
+  const unitTokens = [...new Set(prepared.ordering.orderedSourceRowIndices.map((index) => plan.rows[index].unitToken))];
+  if (unitTokens.length !== scientific.model.connectionMatrix.length) throw new TypeError("ONA readiness Unit order differs from its authoritative target.");
+  return { diagnostics: scientific.diagnostics, unitTokens, connectionMatrix: scientific.model.connectionMatrix };
 }
 
 const ONA_PLAN_KEYS = ["header", "configuration", "sourceProof", "identityDictionary", "codeDictionary", "codeRepresentations", "rows", "rowOrdering", "horizonOrdering", "runtimeSourceRowIndices", "adapterParameters", "weighting", "directionalMask", "reference", "operationalAdmission"];
