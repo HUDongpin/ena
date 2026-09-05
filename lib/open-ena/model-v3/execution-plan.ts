@@ -60,6 +60,7 @@ import {
 import type {
   BackwardExtentV3,
   CanonicalRowOrderV3,
+  CanonicalOnaConfigV3,
   CanonicalStandardConfigV3,
   DatasetBindingV3,
   ForwardExtentV3,
@@ -72,6 +73,7 @@ import {
   JENA_SOURCE_COMMIT,
 } from "../types";
 import type { DatasetHashKind, ParsedDataset } from "../types";
+import { captureOnaExecutionPlanInputV3, validateOnaExecutionPlanV3, type OnaExecutionPlanV3 } from "./ona-adapter";
 
 const LOWERCASE_SHA256_V3 = /^[a-f0-9]{64}$/u;
 const LOWERCASE_GIT_SHA_V3 = /^[a-f0-9]{40}$/u;
@@ -314,7 +316,16 @@ export interface StandardExecutionPlanV3 {
   readonly reference: ValidatedReferenceExecutionBindingV3 | null;
 }
 
-export type OpenEnaExecutionPlanV3 = StandardExecutionPlanV3;
+export type OpenEnaExecutionPlanV3 = StandardExecutionPlanV3 | OnaExecutionPlanV3;
+export type { OnaExecutionPlanV3 } from "./ona-adapter";
+
+export function isStandardExecutionPlanV3(plan: OpenEnaExecutionPlanV3): plan is StandardExecutionPlanV3 {
+  return plan.header.analysisFamily === "standard";
+}
+
+export function isOnaExecutionPlanV3(plan: OpenEnaExecutionPlanV3): plan is OnaExecutionPlanV3 {
+  return plan.header.analysisFamily === "ona";
+}
 export type { ValidatedReferenceExecutionBindingV3 } from "./types";
 
 type PromiseOutcomeV3<T> =
@@ -858,7 +869,7 @@ function datasetBindingV3(value: unknown, label: string): DatasetBindingV3 {
   };
 }
 
-function selectedSourceColumnsV3(config: CanonicalStandardConfigV3): string[] {
+function selectedSourceColumnsV3(config: CanonicalStandardConfigV3 | CanonicalOnaConfigV3): string[] {
   const selected = new Set<string>([
     ...config.units.columns,
     ...config.horizons.columns,
@@ -868,7 +879,7 @@ function selectedSourceColumnsV3(config: CanonicalStandardConfigV3): string[] {
   if (config.window.type === "MovingStanzaWindow" && config.window.rowOrder.kind === "columns") {
     for (const key of config.window.rowOrder.keys) selected.add(key.column);
   }
-  if (config.analysis.model.type !== "EndPoint" && config.analysis.model.horizonOrder.kind === "columns") {
+  if (config.analysisFamily === "standard" && config.analysis.model.type !== "EndPoint" && config.analysis.model.horizonOrder.kind === "columns") {
     for (const key of config.analysis.model.horizonOrder.keys) selected.add(key.column);
   }
   return [...selected].sort(codeUnitCompareV3);
@@ -889,7 +900,7 @@ function selectedSourceValueV3(row: object, column: string, label: string): stri
 export function buildStandardSourceProofPayloadV3(
   datasetValue: ParsedDataset,
   bindingValue: DatasetBindingV3,
-  config: CanonicalStandardConfigV3,
+  config: CanonicalStandardConfigV3 | CanonicalOnaConfigV3,
 ): StandardSourceProofPayloadV3 {
   const datasetRecord = snapshotPlainJsonRecordV3(datasetValue, "source proof dataset");
   const expectedDatasetKeys = own.call(datasetRecord, "hashKind")
@@ -961,7 +972,7 @@ function sourceProofPayloadV3(proof: StandardSourceProofV3): StandardSourceProof
   return snapshot as unknown as StandardSourceProofPayloadV3;
 }
 
-function parsedDatasetFromSourceProofV3(proof: StandardSourceProofPayloadV3): ParsedDataset {
+export function parsedDatasetFromSourceProofV3(proof: StandardSourceProofPayloadV3): ParsedDataset {
   const rows = [...proof.rows]
     .sort((left, right) => left.sourceRowIndex - right.sourceRowIndex)
     .map((row) => row.values);
@@ -975,9 +986,9 @@ function parsedDatasetFromSourceProofV3(proof: StandardSourceProofPayloadV3): Pa
   }) as unknown as ParsedDataset;
 }
 
-function decodeStandardSourceProofV3(
+export function decodeStandardSourceProofV3(
   value: unknown,
-  config: CanonicalStandardConfigV3,
+  config: CanonicalStandardConfigV3 | CanonicalOnaConfigV3,
   binding: DatasetBindingV3,
   rowCount: number,
 ): StandardSourceProofV3 {
@@ -1338,7 +1349,7 @@ function requiredTokenV3(mapping: ReadonlyMap<string, string>, canonicalJson: st
   return token;
 }
 
-function mapRowOrderingV3(
+export function mapRowOrderingV3(
   ordering: SourceResolvedRowOrderingV3,
   horizonTokens: ReadonlyMap<string, string>,
 ): ResolvedExecutionRowOrderingV3 {
@@ -1467,7 +1478,7 @@ function sourceOrderContextV3(binding: DatasetBindingV3) {
   };
 }
 
-function executionPlanWithoutHashV3(plan: StandardExecutionPlanV3): Record<string, unknown> {
+function executionPlanWithoutHashV3(plan: OpenEnaExecutionPlanV3): Record<string, unknown> {
   const snapshot = plainRecordV3(snapshotJsonValueV3(plan), "execution plan");
   const header = plainRecordV3(snapshot.header, "execution plan header");
   const outputHeader = { ...header };
@@ -1476,7 +1487,7 @@ function executionPlanWithoutHashV3(plan: StandardExecutionPlanV3): Record<strin
 }
 
 export function executionPlanHashPayloadV3(
-  plan: StandardExecutionPlanV3,
+  plan: OpenEnaExecutionPlanV3,
 ): Record<string, unknown> {
   return executionPlanWithoutHashV3(plan);
 }
@@ -1721,7 +1732,7 @@ export async function buildStandardExecutionPlanV3(input: {
     reference,
   };
   const executionPlanSha256 = await sha256CanonicalJsonV3(planWithoutExecutionHash);
-  return validateExecutionPlanV3({
+  return validateStandardExecutionPlanV3({
     ...planWithoutExecutionHash,
     header: { ...planWithoutExecutionHash.header, executionPlanSha256 },
   });
@@ -2427,17 +2438,49 @@ async function decodePlanShapeV3(value: unknown): Promise<StandardExecutionPlanV
   };
 }
 
+/** Fixed parent snapshot only, not scientific admission or ready authority. */
+export function captureExecutionPlanDiscriminatorV3(input: unknown): Record<string, unknown> {
+  // Detach the fixed discriminator parents coherently before choosing a family.
+  // Downstream admission consumes these captures, so proxies are not read a
+  // third time and changing the family cannot redirect the accepted graph.
+  const root = snapshotPlainJsonRecordV3(input, "executionPlan");
+  const rootAgain = snapshotPlainJsonRecordV3(input, "executionPlan");
+  exactKeysV3(rootAgain, Object.keys(root), "executionPlan");
+  sameDescriptorValuesV3(root, rootAgain, Object.keys(root), "executionPlan");
+  const header = snapshotPlainJsonRecordV3(root.header, "executionPlan.header");
+  const headerAgain = snapshotPlainJsonRecordV3(root.header, "executionPlan.header");
+  exactKeysV3(headerAgain, Object.keys(header), "executionPlan.header");
+  sameDescriptorValuesV3(header, headerAgain, Object.keys(header), "executionPlan.header");
+  return { ...root, header };
+}
+
 /** Detached ADMITTED snapshot only. This carries no validated/ready authority. */
 export function captureExecutionPlanInputV3(input: unknown): unknown {
+  const capturedRoot = captureExecutionPlanDiscriminatorV3(input);
+  const header = snapshotPlainJsonRecordV3(capturedRoot.header, "captured discriminator header");
+  if (header.analysisFamily === "ona") return captureOnaExecutionPlanInputV3(capturedRoot);
   // Shallow admission precedes canonical capture so hostile or impossible
   // envelopes cannot force scientific-array traversal or dense dictionaries.
-  const admission = admitExecutionPlanEnvelopeV3(input);
+  const admission = admitExecutionPlanEnvelopeV3(capturedRoot);
   const capturedInput = captureAdmittedExecutionPlanV3(admission);
   return capturedInput;
 }
 
+export function validateExecutionPlanV3(input: StandardExecutionPlanV3): Promise<StandardExecutionPlanV3>;
+export function validateExecutionPlanV3(input: OnaExecutionPlanV3): Promise<OnaExecutionPlanV3>;
+export function validateExecutionPlanV3(input: unknown): Promise<OpenEnaExecutionPlanV3>;
 export async function validateExecutionPlanV3(input: unknown): Promise<OpenEnaExecutionPlanV3> {
-  const capturedInput = captureExecutionPlanInputV3(input);
+  const root = captureExecutionPlanDiscriminatorV3(input);
+  const header = snapshotPlainJsonRecordV3(root.header, "captured execution header");
+  return header.analysisFamily === "ona" ? validateOnaExecutionPlanV3(root) : validateCapturedStandardExecutionPlanV3(captureExecutionPlanInputV3(root));
+}
+
+/** Standard-only unknown boundary for Reference ownership and Standard consumers. */
+export async function validateStandardExecutionPlanV3(input: unknown): Promise<StandardExecutionPlanV3> {
+  return validateCapturedStandardExecutionPlanV3(captureExecutionPlanInputV3(input));
+}
+
+async function validateCapturedStandardExecutionPlanV3(capturedInput: unknown): Promise<StandardExecutionPlanV3> {
   // The accepted descriptor capture runs before any await. The deep decoder
   // consumes only its detached graph and never reads caller-owned input again.
   const plan = await decodePlanShapeV3(capturedInput);

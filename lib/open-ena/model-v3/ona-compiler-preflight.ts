@@ -53,6 +53,7 @@ export const ONA_COMPILER_DIAGNOSTIC_IDS_V3 = Object.freeze([
   "ONA_NO_ENABLED_CONNECTION",
   "ONA_NUMERICAL_INVALID",
   "ONA_TARGET_RANK_ZERO",
+  "ONA_ZERO_NETWORK_UNITS",
   "ONA_SVD_ONE_DIMENSIONAL",
   "ONA_DRAFT_INVALID",
   "ONA_RESOURCE_BUDGET_EXCEEDED",
@@ -551,32 +552,39 @@ export function runOnaScientificPreflightV3(
   }
   const zeroCount = signaled.filter((value) => !value).length;
   const centeredRank = centeredNetworkRankV3(connectionMatrix, true);
-  if (zeroCount > 0 || centeredRank === 0) {
-    const totalCount = zeroCount > 0 ? zeroCount : connectionMatrix.length;
-    return deepFreezeV3({
-      diagnostics: [onaDiagnosticV3(
+  const diagnostics: OnaCompilerDiagnosticV3[] = [];
+  if (zeroCount > 0) {
+    diagnostics.push(onaDiagnosticV3(
+      "ONA_ZERO_NETWORK_UNITS", "rotation", "ONA retains analytical Units with zero directed networks.",
+      "These Units remain in the descriptive model with the existing ONA normalization and coordinates; they are not removed or imputed.",
+      { fieldPath: "rotation", severity: "warning", blocks: [], evidence: { totalCount: zeroCount, sampleLimit: 5,
+        samples: Array.from({ length: Math.min(zeroCount, 5) }, () => ({ detail: "Analytical Unit has an all-zero directed network." })), truncated: zeroCount > 5 } },
+    ));
+  }
+  if (centeredRank === 0) {
+    const totalCount = connectionMatrix.length;
+    diagnostics.push(onaDiagnosticV3(
         "ONA_TARGET_RANK_ZERO",
         "rotation",
-        "The mandatory ONA SVD target is rank zero.",
-        "Every analytical observation must have an enabled finite network, and the centered normalized target must contain estimable variation.",
+        "The descriptive ONA fit has no estimable centered variation.",
+        "The existing SVD geometry and variance are retained. Completion axes, including normalized roundoff-level variance, are not evidence of an estimable dimension.",
         {
           fieldPath: "rotation",
+          severity: "warning",
+          blocks: [],
           evidence: {
             totalCount,
             sampleLimit: 5,
             samples: Array.from(
               { length: Math.min(totalCount, 5) },
-              () => ({ detail: zeroCount > 0 ? "Analytical Unit has an all-zero directed network." : "Target participates in the rank-zero centered population." }),
+              () => ({ detail: "Target participates in the rank-zero centered population." }),
             ),
             truncated: totalCount > 5,
           },
         },
-      )],
-      model,
-    });
+      ));
   }
-  const diagnostics = centeredRank === 1
-    ? [onaDiagnosticV3(
+  if (centeredRank === 1) diagnostics.push(onaDiagnosticV3(
         "ONA_SVD_ONE_DIMENSIONAL",
         "rotation",
         "The mandatory ONA SVD target is one-dimensional.",
@@ -595,7 +603,6 @@ export function runOnaScientificPreflightV3(
             truncated: connectionMatrix.length > 5,
           },
         },
-      )]
-    : [];
+      ));
   return deepFreezeV3({ diagnostics, model });
 }

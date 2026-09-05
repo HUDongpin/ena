@@ -4,6 +4,8 @@ import type { ModelDiagnosticV3 } from "./diagnostics";
 import type { ExecutionPlanHeaderV3 } from "./execution-plan";
 import type { StandardExecutionPlanV3 } from "./execution-plan";
 import type { ModelCapabilityStatusV3 } from "./compiler";
+import type { OnaExecutionPlanV3 } from "./ona-adapter";
+import type { OnaCompilerDiagnosticV3 } from "./ona-compiler-preflight";
 
 export const STANDARD_MODEL_TYPES = [
   "EndPoint",
@@ -299,7 +301,7 @@ export interface ResultExecutionProvenanceV3 {
   readonly diagnostics: readonly ModelDiagnosticV3[];
 }
 
-export interface BoundResultV3 {
+export interface BoundStandardResultV3 {
   readonly schemaVersion: 3;
   readonly kind: "open-ena-bound-result";
   readonly binding: ResultBindingV3;
@@ -309,6 +311,72 @@ export interface BoundResultV3 {
   readonly capabilityStatus: ModelCapabilityStatusV3;
   readonly createdAt: string;
 }
+
+export interface OnaRuntimeResourceObservationV3 {
+  readonly processedRows: number;
+  /** Observed maximum only at successful chunk boundaries, never called a true peak. */
+  readonly maximumRetainedRowsAfterChunk: number;
+  /** Conservative retained history plus one arriving row. */
+  readonly bufferedRowsPeakUpperBound: number;
+  readonly numericCellsUpperBound: number;
+  readonly peakBytesUpperBound: number;
+  readonly observationMethod: "dimension-bounds-and-chunk-boundary-stream-state";
+}
+
+export interface OnaResultExecutionProvenanceV3 {
+  readonly header: OnaExecutionPlanV3["header"];
+  readonly sourceProofSha256: string;
+  readonly identityDictionary: OnaExecutionPlanV3["identityDictionary"];
+  readonly unitGroups: readonly { readonly unitToken: string; readonly groupToken: string | null }[];
+  readonly codeDictionary: OnaExecutionPlanV3["codeDictionary"];
+  readonly codeRepresentations: OnaExecutionPlanV3["codeRepresentations"];
+  readonly labels: ResultExecutionProvenanceV3["labels"];
+  readonly ordering: {
+    readonly requestedRowOrder: CanonicalRowOrderV3;
+    readonly resolvedRowOrder: OnaExecutionPlanV3["rowOrdering"];
+    readonly resolvedHorizonOrder: OnaExecutionPlanV3["horizonOrdering"];
+    readonly runtimeSourceRowIndices: readonly number[];
+  };
+  readonly adapterParameters: OnaExecutionPlanV3["adapterParameters"];
+  readonly weighting: OnaExecutionPlanV3["weighting"];
+  readonly directionalMask: OnaExecutionPlanV3["directionalMask"];
+  readonly normalization: "sphere";
+  readonly boundary: "within-horizon";
+  readonly reference: null;
+  readonly projection: {
+    readonly type: "svd";
+    readonly centerAlignToOrigin: true;
+    readonly rank: number;
+    readonly fullAxes: readonly string[];
+    readonly estimableAxes: readonly string[];
+    /** Geometry is carried once, in the hashed set; no duplicate numeric payload. */
+    readonly geometryPath: "set.rotation";
+    readonly variancePath: "set.variance";
+  };
+  readonly populations: { readonly fit: "endpoint-units"; readonly fitTokens: readonly string[]; readonly targetTokens: readonly string[]; readonly imputedStepCount: 0 };
+  readonly resources: {
+    readonly targetBaseline: OnaExecutionPlanV3["header"]["resourceEstimate"];
+    readonly operationalAdmission: OnaExecutionPlanV3["operationalAdmission"];
+    readonly counterContract: { readonly version: 1; readonly numericCells: "conservative-phase-dimension-upper-bound"; readonly bufferedRows: "chunk-boundary-observation-plus-separate-peak-upper-bound"; readonly bytes: "conservative-structural-and-temporary-overlap-bound" };
+    readonly observed: OnaRuntimeResourceObservationV3;
+  };
+  readonly diagnostics: readonly OnaCompilerDiagnosticV3[];
+}
+
+export interface BoundOnaResultV3 {
+  readonly schemaVersion: 3;
+  readonly kind: "open-ena-bound-result";
+  readonly binding: ResultBindingV3;
+  readonly configuration: CanonicalOnaConfigV3;
+  readonly executionProvenance: OnaResultExecutionProvenanceV3;
+  readonly set: SerializableEnaSetV3;
+  readonly orderedAudit: import("../types").OpenEnaOrderedAudit;
+  readonly orderedResponseNodeSummary: import("../types").OpenEnaOrderedResponseNodeSummary;
+  readonly capabilityStatus: ModelCapabilityStatusV3;
+  readonly createdAt: string;
+}
+
+export type BoundResultV3 = BoundStandardResultV3 | BoundOnaResultV3;
 
 export interface StandardMeansBindingV3 {
   readonly groupColumn: string;

@@ -251,7 +251,29 @@ function identityPayloadBytesV3(
  * Dictionary fields, embedded canonical JSON and worst typed display labels are
  * counted independently, even when different roles use the same source fields.
  */
-export function estimateResultIdentityBytesV3(dataset: Pick<ParsedDataset, "rows">, config: CanonicalStandardConfigV3): number {
+export function estimateOnaGeneratedTableKeyBytesV3(dataset: Pick<ParsedDataset, "rows">, config: CanonicalOnaConfigV3): number {
+  // Typed Map keys preserve number/string/Boolean distinctions without encoding
+  // potentially huge identity strings before their separate byte admission.
+  interface Trie { children: Map<string | number | boolean, Trie>; terminal: boolean }
+  const root: Trie = { children: new Map(), terminal: false };
+  let units = 0;
+  for (const row of dataset.rows) {
+    let current = root;
+    for (const column of config.units.columns) {
+      const value = scalarIdentityV3(Object.getOwnPropertyDescriptor(row, column)?.value, "ONA Unit key bound").value;
+      let child = current.children.get(value);
+      if (!child) { child = { children: new Map(), terminal: false }; current.children.set(value, child); }
+      current = child;
+    }
+    if (!current.terminal) { current.terminal = true; units += 1; }
+  }
+  const c = config.codes.length, e = c * c, d = Math.min(3, e);
+  const bytes = 64 * (4 * units * e + 2 * units * d + c * d);
+  if (!Number.isSafeInteger(bytes)) throw new ResourceEstimateErrorV3("UNSAFE_ARITHMETIC", "ONA generated table-key bytes exceed safe arithmetic.");
+  return bytes;
+}
+
+export function estimateResultIdentityBytesV3(dataset: Pick<ParsedDataset, "rows">, config: CanonicalStandardConfigV3 | CanonicalOnaConfigV3): number {
   const encoder = new TextEncoder();
   const bytes = (value: unknown) => encoder.encode(canonicalJsonV3(value)).byteLength;
   let total = 0;
@@ -264,11 +286,16 @@ export function estimateResultIdentityBytesV3(dataset: Pick<ParsedDataset, "rows
   // Fixed field names, version/hash strings, numeric/index text and bounded
   // diagnostic wrappers. Dynamic Code/identity strings are charged below.
   const c = config.codes.length;
-  const e = c * (c - 1) / 2;
+  const e = config.analysisFamily === "ona" ? c * c : c * (c - 1) / 2;
   add(16_384 + multiply(c * c + 10, 2_048) + multiply(dataset.rows.length, 1_024) + multiply(e, 256));
+  if (config.analysisFamily === "ona") {
+    // Generated Code/Connection/SVD field names repeat in the four Unit×edge
+    // tables and point/centroid/node tables. No source label becomes a key.
+    add(estimateOnaGeneratedTableKeyBytesV3(dataset, config));
+  }
   for (const [role, columns, occurrences] of [
     ["Unit", config.units.columns, 14], ["Horizon", config.horizons.columns, 8],
-    ["Group", config.units.group.type === "stable-metadata" ? [config.units.group.column] : [], 7],
+    ["Group", config.units.group.type === "stable-metadata" ? [config.units.group.column] : [], config.analysisFamily === "ona" ? 8 : 7],
   ] as const) {
     if (columns.length === 0) continue;
     for (const source of dataset.rows) {
@@ -311,9 +338,10 @@ export function estimateResultIdentityBytesV3(dataset: Pick<ParsedDataset, "rows
   // Source/display Code identities occur in configuration, audit dictionaries,
   // reversible aliases and both endpoint fields of canonical/alias edge maps.
   for (const code of config.codes) {
-    const codeConstruction = addSafeV3(total, multiply(6 * (code.column.length + code.displayLabel.length) + 512, 24 + 4 * Math.max(0, c - 1)), "Code identity construction");
+    const occurrences = config.analysisFamily === "ona" ? 16 + 4 * c : 12 + 2 * Math.max(0, c - 1);
+    const codeConstruction = addSafeV3(total, multiply(6 * (code.column.length + code.displayLabel.length) + 512, 2 * occurrences), "Code identity construction");
     if (codeConstruction > MAX_ESTIMATED_EXPORT_BYTES_V3) return codeConstruction;
-    add(multiply(bytes({ column: code.column, displayLabel: code.displayLabel, identity: canonicalJsonV3({ type: "string", value: code.column }) }), 12 + 2 * Math.max(0, c - 1)));
+    add(multiply(bytes({ column: code.column, displayLabel: code.displayLabel, identity: canonicalJsonV3({ type: "string", value: code.column }) }), occurrences));
   }
   return total;
 }

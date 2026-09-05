@@ -5,9 +5,9 @@ import { bindOpenEnaResultProvenance } from "./analyze";
 import { cloneOpenEnaConfig } from "./network-config";
 import type { OpenEnaConfig, OpenEnaResult, OpenEnaRotationReference, ParsedDataset } from "./types";
 import type { OpenEnaWorkerRequest, OpenEnaWorkerResponse } from "./jena.worker";
-import { validateExecutionPlanV3, type StandardExecutionPlanV3 } from "./model-v3/execution-plan";
+import { validateExecutionPlanV3, type StandardExecutionPlanV3, type OnaExecutionPlanV3, type OpenEnaExecutionPlanV3 } from "./model-v3/execution-plan";
 import { validateBoundResultV3 } from "./model-v3/result-binding";
-import type { BoundResultV3, OpenEnaWorkerStageV3 } from "./model-v3/types";
+import type { BoundResultV3, BoundStandardResultV3, BoundOnaResultV3, OpenEnaWorkerStageV3 } from "./model-v3/types";
 
 export interface AnalyzePlanWorkerOptionsV3 {
   signal?: AbortSignal;
@@ -19,7 +19,10 @@ function createProductionWorker() {
 }
 
 /** One immutable scientific input. Operational callbacks never cross the wire. */
-export async function analyzePlanInWorkerV3(readyPlan: StandardExecutionPlanV3, options: AnalyzePlanWorkerOptionsV3 = {}): Promise<BoundResultV3> {
+export function analyzePlanInWorkerV3(readyPlan: StandardExecutionPlanV3, options?: AnalyzePlanWorkerOptionsV3): Promise<BoundStandardResultV3>;
+export function analyzePlanInWorkerV3(readyPlan: OnaExecutionPlanV3, options?: AnalyzePlanWorkerOptionsV3): Promise<BoundOnaResultV3>;
+export function analyzePlanInWorkerV3(readyPlan: OpenEnaExecutionPlanV3, options?: AnalyzePlanWorkerOptionsV3): Promise<BoundResultV3>;
+export async function analyzePlanInWorkerV3(readyPlan: OpenEnaExecutionPlanV3, options: AnalyzePlanWorkerOptionsV3 = {}): Promise<BoundResultV3> {
   const plan = await validateExecutionPlanV3(readyPlan);
   if (options.signal?.aborted) throw new DOMException("The jENA run was cancelled.", "AbortError");
   const id = `open-ena-v3-${crypto.randomUUID()}`;

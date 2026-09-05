@@ -284,7 +284,7 @@ for (const means of [false, true]) test(`worker retains actual ${means ? "Means"
   worker.send({ kind: "run-open-ena-plan-v3", id: "projection", plan: target, chunkSize: 1 });
   const messages = await worker.terminal("projection");
   assert.equal(messages.at(-1)?.kind, "result-v3", String(messages.at(-1)?.message));
-  const result = messages.at(-1)!.result as import("../lib/open-ena/model-v3/types").BoundResultV3;
+  const result = messages.at(-1)!.result as import("../lib/open-ena/model-v3/types").BoundStandardResultV3;
   assert.equal(result.executionProvenance.projection.rank, 1);
   assert.equal(result.executionProvenance.projection.targetProjectionRank, 1);
   assert.equal(result.executionProvenance.populations.sourceFit?.rank, artifact.fit.rank);
@@ -319,7 +319,7 @@ test("singleton Reference projection preserves supported source axes with actual
   worker.send({ kind: "run-open-ena-plan-v3", id: "singleton", plan: target, chunkSize: 1 });
   const terminal = (await worker.terminal("singleton")).at(-1)!;
   assert.equal(terminal.kind, "result-v3", String(terminal.message));
-  const result = terminal.result as import("../lib/open-ena/model-v3/types").BoundResultV3;
+  const result = terminal.result as import("../lib/open-ena/model-v3/types").BoundStandardResultV3;
   assert.equal(result.executionProvenance.projection.rank, 0);
   assert.deepEqual(result.executionProvenance.projection.estimableAxes, reference.fit.estimableAxes);
   assert.equal(result.executionProvenance.diagnostics.filter((entry) => entry.id === "STANDARD_REFERENCE_TARGET_DEGENERATE").length, 1);
@@ -341,14 +341,14 @@ test("Reference validation preserves tolerance-level rankzero even with positive
   worker.send({ kind: "run-open-ena-plan-v3", id: "tolerance", plan: target, chunkSize: 1 });
   const terminal = (await worker.terminal("tolerance")).at(-1)!;
   assert.equal(terminal.kind, "result-v3", String(terminal.message));
-  const result = terminal.result as import("../lib/open-ena/model-v3/types").BoundResultV3;
+  const result = terminal.result as import("../lib/open-ena/model-v3/types").BoundStandardResultV3;
   assert.equal(result.executionProvenance.projection.rank, 0);
   assert.ok(result.executionProvenance.projection.variance.some((value) => value > 0));
   const { validateBoundResultV3 } = await import("../lib/open-ena/model-v3/result-binding");
   await validateBoundResultV3(result, target);
 });
 
-test("unimplemented v3 ONA plans never enter the Standard stream", async () => {
+test("Standard plans disguised with ONA family tags never enter either numerical stream", async () => {
   const { plan } = await bindingFixtureV3();
   const worker = host();
   worker.send({ kind: "run-open-ena-plan-v3", id: "ona", plan: { ...plan, header: { ...plan.header, analysisFamily: "ona" }, configuration: { ...plan.configuration, analysisFamily: "ona" } }, chunkSize: 1 });

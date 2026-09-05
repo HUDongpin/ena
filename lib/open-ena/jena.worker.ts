@@ -9,13 +9,15 @@ import {
   completeStandardPlanFromAccumulationV3,
   verifyStandardScientificReadinessV3,
 } from "./analyze";
-import { validateExecutionPlanV3, type StandardExecutionPlanV3 } from "./model-v3/execution-plan";
+import { validateExecutionPlanV3, isOnaExecutionPlanV3, type OnaExecutionPlanV3, type OpenEnaExecutionPlanV3 } from "./model-v3/execution-plan";
+import { completeOnaPlanFromAccumulationV3, toOnaJenaOptionsV3, verifyOnaScientificReadinessV3 } from "./model-v3/ona-adapter";
+import { bindOnaResultV3 } from "./model-v3/ona-result-binding";
 import { bindResultV3 } from "./model-v3/result-binding";
 import { toStandardJenaOptionsV3 } from "./model-v3/standard-adapter";
 import { snapshotPlainJsonRecordV3 } from "./model-v3/canonical-json";
 import { MAX_ESTIMATED_NUMERIC_CELLS_V3, MAX_ESTIMATED_PEAK_BYTES_V3 } from "./model-v3/resource-budget";
 import { assertReferenceAdmissionV3 } from "./model-v3/reference-codec-v2";
-import type { BoundResultV3, OpenEnaWorkerStageV3, RuntimeResourceObservationV3 } from "./model-v3/types";
+import type { BoundResultV3, OpenEnaWorkerStageV3, RuntimeResourceObservationV3, OnaRuntimeResourceObservationV3 } from "./model-v3/types";
 import { validateConfig } from "./csv";
 import { cloneOpenEnaConfig } from "./network-config";
 import { buildOpenEnaOrderedAudit } from "./ordered-audit";
@@ -28,7 +30,7 @@ import type {
 } from "./types";
 
 export type OpenEnaWorkerRequest =
-  | { kind: "run-open-ena-plan-v3"; id: string; plan: StandardExecutionPlanV3; chunkSize: number }
+  | { kind: "run-open-ena-plan-v3"; id: string; plan: OpenEnaExecutionPlanV3; chunkSize: number }
   | {
       kind: "run";
       id: string;
@@ -76,7 +78,7 @@ interface WorkerRunV3 {
   id: string;
   chunkSize: number;
   cancelled: boolean;
-  planOutcome: Promise<{ plan: StandardExecutionPlanV3 } | { error: unknown }>;
+  planOutcome: Promise<{ plan: OpenEnaExecutionPlanV3 } | { error: unknown }>;
 }
 
 const DEFAULT_CHUNK_SIZE = 2_000;
@@ -131,6 +133,54 @@ export function createOpenEnaWorkerHost(
 
   const post = (message: OpenEnaWorkerResponse) => scope.postMessage(message);
 
+  const executeOnaV3 = async (run: WorkerRunV3, plan: OnaExecutionPlanV3) => {
+    let stream: ReturnType<typeof createAccumulationStream> | undefined;
+    const cancelled = () => { if (run.cancelled) throw new DOMException("The ONA v3 run was cancelled.", "AbortError"); };
+    const progress = (stage: OpenEnaWorkerStageV3, value: number) => { cancelled(); post({ kind: "progress-v3", id: run.id, executionPlanSha256: plan.header.executionPlanSha256, stage, progress: value }); };
+    const admission = plan.operationalAdmission, estimate = plan.header.resourceEstimate;
+    const sourceCells = 3 * plan.rows.length * plan.codeDictionary.codes.length;
+    const guard = (cells: number, scratch: number, limit: number) => {
+      cancelled();
+      if (![cells, scratch].every((value) => Number.isSafeInteger(value) && value >= 0) || sourceCells + cells + scratch > Math.min(limit, admission.totalNumericCells)) throw new TypeError(`ONA runtime phase exceeds its admitted resource upper bound (${sourceCells}+${cells}+${scratch}>${Math.min(limit, admission.totalNumericCells)} numeric slots).`);
+    };
+    try {
+      cancelled(); verifyOnaScientificReadinessV3(plan); cancelled();
+      progress("materialize", 0.05);
+      const options = toOnaJenaOptionsV3(plan), { rows, ...streamOptions } = options;
+      let maximumRetainedRowsAfterChunk = 0;
+      stream = createStream({ ...streamOptions, expectedRows: rows.length, materialization: "full", onResources(state) {
+        // Partial native Code/network counters are an additional guard only;
+        // they do not measure ordered expansions or the true retained peak.
+        guard(state.numericCells, state.temporaryNumericCellsBound, admission.stages.accumulationCells);
+      } });
+      if (typeof stream.finishAsync !== "function") throw new TypeError("ONA v3 requires cancellable asynchronous stream completion.");
+      progress("accumulate", 0.1);
+      for (let index = 0; index < rows.length; index += run.chunkSize) {
+        cancelled(); const state = stream.push(rows.slice(index, index + run.chunkSize));
+        if (!Number.isSafeInteger(state.activeBufferedRows) || state.activeBufferedRows < 0 || state.activeBufferedRows > estimate.estimatedRetainedWindowRows || state.rowsSeen !== Math.min(index + run.chunkSize, rows.length)) throw new TypeError("ONA exact chunk-boundary stream state exceeds its resource contract.");
+        maximumRetainedRowsAfterChunk = Math.max(maximumRetainedRowsAfterChunk, state.activeBufferedRows);
+        progress("accumulate", 0.1 + 0.55 * state.rowsSeen / rows.length);
+        await yieldToMessageQueue();
+      }
+      const data = await stream.finishAsync({ chunkSize: run.chunkSize, yieldControl: async () => { await yieldToMessageQueue(); cancelled(); } });
+      const stages = { normalize: 0.7, center: 0.75, "rotate-or-project": 0.8, "position-nodes": 0.85 };
+      const runtime = completeOnaPlanFromAccumulationV3(plan, data, rows, { onStage(stage) { progress(stage, stages[stage]); }, onResources(state) { guard(state.numericCells, state.temporaryNumericCellsBound, admission.stages.modelCells); } });
+      // Native finish has disposed histories/expansions. Release only our raw
+      // and row-edge materialization after audit extraction, preserving evidence.
+      runtime.set.rawRows = []; runtime.set.rowConnectionCounts = []; runtime.set.rowWindowProvenance = []; runtime.set.metaData = [];
+      data.rawRows = []; data.rowConnectionCounts = []; data.rowWindowProvenance = []; data.metaData = [];
+      rows.length = 0;
+      await yieldToMessageQueue(); cancelled();
+      progress("validate-result", 0.9);
+      const observed: OnaRuntimeResourceObservationV3 = { processedRows: stream.state.rowsSeen, maximumRetainedRowsAfterChunk,
+        bufferedRowsPeakUpperBound: Math.min(plan.rows.length, estimate.estimatedRetainedWindowRows + 1), numericCellsUpperBound: admission.totalNumericCells,
+        peakBytesUpperBound: admission.totalPeakBytes, observationMethod: "dimension-bounds-and-chunk-boundary-stream-state" };
+      const result = await bindOnaResultV3(plan, runtime, observed);
+      cancelled(); progress("complete", 1); cancelled();
+      post({ kind: "result-v3", id: run.id, executionPlanSha256: plan.header.executionPlanSha256, result });
+    } finally { stream?.dispose(); }
+  };
+
   const executeV3 = async (run: WorkerRunV3) => {
     let stream: ReturnType<typeof createAccumulationStream> | undefined;
     const cancelled = () => {
@@ -142,7 +192,7 @@ export function createOpenEnaWorkerHost(
       cancelled();
       if ("error" in outcome) throw outcome.error;
       const plan = outcome.plan;
-      if (plan.configuration.analysisFamily !== "standard") throw new TypeError("v3 ONA execution is not implemented yet.");
+      if (isOnaExecutionPlanV3(plan)) { await executeOnaV3(run, plan); return; }
       const progress = (stage: OpenEnaWorkerStageV3, value: number) => {
         cancelled();
         post({ kind: "progress-v3", id: run.id, executionPlanSha256: plan.header.executionPlanSha256, stage, progress: value });

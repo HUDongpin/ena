@@ -5,6 +5,10 @@ export {
   sha256TextV3,
 } from "./canonical-json";
 
+export { buildOnaExecutionPlanV3, buildOnaCodeDictionaryV3, toOnaJenaOptionsV3, runOnaPlanV3 } from "./ona-adapter";
+export type { OnaExecutionPlanV3, OnaCodeDictionaryV3, OnaAdapterParametersV3, InternalOnaRunResultV3 } from "./ona-adapter";
+export { bindOnaResultV3 } from "./ona-result-binding";
+
 export {
   ONA_COMPILER_DIAGNOSTIC_IDS_V3,
   compileOnaDraftV3,

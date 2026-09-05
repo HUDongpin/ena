@@ -411,6 +411,7 @@ test("ONA diagnostic identifiers are stable, exact, and duplicate-free", () => {
     "ONA_NO_ENABLED_CONNECTION",
     "ONA_NUMERICAL_INVALID",
     "ONA_TARGET_RANK_ZERO",
+    "ONA_ZERO_NETWORK_UNITS",
     "ONA_SVD_ONE_DIMENSIONAL",
     "ONA_DRAFT_INVALID",
     "ONA_RESOURCE_BUDGET_EXCEEDED",
@@ -420,7 +421,7 @@ test("ONA diagnostic identifiers are stable, exact, and duplicate-free", () => {
   assert.equal(Object.isFrozen(ONA_COMPILER_DIAGNOSTIC_IDS_V3), true);
 });
 
-test("ONA fails closed before canonical readiness for empty, unstable-Group, all-zero, and rank-zero targets", async () => {
+test("ONA fails closed for invalid source contracts while preserving descriptive rank-zero and zero-network Units", async () => {
   await assertInvalidOna(dataset({ rows: [] }), onaDraft(), "ONA_DATASET_EMPTY");
 
   await assertInvalidOna(dataset({
@@ -437,26 +438,27 @@ test("ONA fails closed before canonical readiness for empty, unstable-Group, all
     ] as ParsedDataset["rows"],
   }), onaDraft(), "ONA_CODE_ALL_ZERO");
 
-  await assertInvalidOna(dataset({
-    rows: [
-      { unit: "u1", horizon: "h1", time: 1, turn: 1, group: "g1", A: 1, B: 1, C: 1 },
-    ] as ParsedDataset["rows"],
-  }), onaDraft(), "ONA_TARGET_RANK_ZERO");
-
-  await assertInvalidOna(dataset({
-    rows: [
-      { unit: "u1", horizon: "h1", time: 1, turn: 1, group: "g1", A: 1, B: 1, C: 1 },
-      { unit: "u2", horizon: "h2", time: 2, turn: 1, group: "g2", A: 2, B: 2, C: 2 },
-    ] as ParsedDataset["rows"],
-  }), onaDraft(), "ONA_TARGET_RANK_ZERO");
-
-  await assertInvalidOna(dataset({
-    rows: [
-      { unit: "u0", horizon: "h0", time: 0, turn: 1, group: "g0", A: 1, B: 0, C: 0 },
-      { unit: "u1", horizon: "h1", time: 1, turn: 1, group: "g1", A: 1, B: 1, C: 0 },
-      { unit: "u2", horizon: "h2", time: 2, turn: 1, group: "g2", A: 1, B: 0, C: 1 },
-    ] as ParsedDataset["rows"],
-  }), onaDraft(), "ONA_TARGET_RANK_ZERO");
+  const assertDescriptiveReady = async (input: ParsedDataset, warning: string) => {
+    const result = await compileOnaDraftV3(input, DATASET_SHA256, onaDraft());
+    assert.equal(result.status, "ready");
+    if (result.status !== "ready") return;
+    assert.ok(result.diagnostics.some((entry) => entry.id === warning && entry.severity === "warning" && entry.blocks.length === 0));
+    assert.equal(result.capabilityStatus["build-model"], "available");
+    assert.equal(result.capabilityStatus["export-current-model"], "available");
+    assert.equal(result.capabilityStatus["group-inference"], "blocked");
+  };
+  await assertDescriptiveReady(dataset({ rows: [
+    { unit: "u1", horizon: "h1", time: 1, turn: 1, group: "g1", A: 1, B: 1, C: 1 },
+  ] }), "ONA_TARGET_RANK_ZERO");
+  await assertDescriptiveReady(dataset({ rows: [
+    { unit: "u1", horizon: "h1", time: 1, turn: 1, group: "g1", A: 1, B: 1, C: 1 },
+    { unit: "u2", horizon: "h2", time: 2, turn: 1, group: "g2", A: 2, B: 2, C: 2 },
+  ] }), "ONA_TARGET_RANK_ZERO");
+  await assertDescriptiveReady(dataset({ rows: [
+    { unit: "u0", horizon: "h0", time: 0, turn: 1, group: "g0", A: 1, B: 0, C: 0 },
+    { unit: "u1", horizon: "h1", time: 1, turn: 1, group: "g1", A: 1, B: 1, C: 0 },
+    { unit: "u2", horizon: "h2", time: 2, turn: 1, group: "g2", A: 1, B: 0, C: 1 },
+  ] }), "ONA_ZERO_NETWORK_UNITS");
 });
 
 test("ONA rank-one SVD remains ready with a stable one-dimensional warning", async () => {

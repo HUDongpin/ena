@@ -4,10 +4,12 @@ import { assertStandardRotationOutputV3, fixedProjectionRankV3, standardRuntimeD
 import { canonicalJsonV3, deepFreezeV3, sha256CanonicalJsonV3, snapshotPlainJsonRecordV3 } from "./canonical-json";
 import type { ModelCapabilityStatusV3 } from "./compiler";
 import type { ModelCapabilityV3, ModelDiagnosticV3 } from "./diagnostics";
-import { captureExecutionPlanInputV3, validateExecutionPlanV3, type StandardExecutionPlanV3 } from "./execution-plan";
+import { captureExecutionPlanDiscriminatorV3, captureExecutionPlanInputV3, validateStandardExecutionPlanV3, isOnaExecutionPlanV3, type OpenEnaExecutionPlanV3, type StandardExecutionPlanV3 } from "./execution-plan";
 import { buildMeansBindingV3, scheduleStandardExecutionRowsV3 } from "./standard-adapter";
 import { MAX_ESTIMATED_EXPORT_BYTES_V3, MAX_ESTIMATED_NUMERIC_CELLS_V3, MAX_ESTIMATED_PEAK_BYTES_V3, MAX_ESTIMATED_ROTATION_WORK_UNITS_V3 } from "./resource-budget";
-import type { BoundResultV3, InternalStandardRunResultV3, ResultBindingV3, ResultExecutionProvenanceV3, RuntimeResourceObservationV3, SerializableEnaSetV3 } from "./types";
+import type { BoundStandardResultV3 as BoundResultV3, BoundResultV3 as AnyBoundResultV3, BoundOnaResultV3, InternalStandardRunResultV3, ResultBindingV3, ResultExecutionProvenanceV3, RuntimeResourceObservationV3, SerializableEnaSetV3 } from "./types";
+import { onaPlanBindingV3, onaScientificResultHashPayloadV3, validateBoundOnaResultV3 } from "./ona-result-binding";
+import type { OnaExecutionPlanV3 } from "./ona-adapter";
 
 const CAPABILITIES: readonly ModelCapabilityV3[] = ["build-model", "export-current-model", "export-reference", "group-inference", "trajectory-inference", "longitudinal-comparison", "ai-interpretation"];
 const COUNTER_CONTRACT = { version: 1, numericCells: "peak-tracked-retained-scientific-slots", numericMetadata: "covered-by-structural-byte-policy", bytes: "conservative-structural-and-temporary-overlap-bound" } as const;
@@ -390,7 +392,8 @@ function validateFixedProjectionRankV3(plan: StandardExecutionPlanV3, admittedPl
   if (p.projection.rank !== actualRank || p.projection.targetProjectionRank !== actualRank) throw new TypeError("Declared Reference target rank disagrees with the actual full fixed projection.");
 }
 
-export function scientificResultHashPayloadV3(result: Pick<BoundResultV3, "configuration" | "executionProvenance" | "set" | "capabilityStatus">) {
+export function scientificResultHashPayloadV3(result: Pick<BoundResultV3, "configuration" | "executionProvenance" | "set" | "capabilityStatus"> | BoundOnaResultV3) {
+  if ("orderedAudit" in result) return onaScientificResultHashPayloadV3(result);
   return { configuration: result.configuration, executionProvenance: result.executionProvenance, set: result.set, capabilityStatus: result.capabilityStatus };
 }
 
@@ -546,11 +549,14 @@ export async function bindResultV3(plan: StandardExecutionPlanV3, runtime: Inter
 }
 
 /** Validate both currentness and the complete scientific content; never treats a hash as authentication. */
-export async function validateBoundResultV3(input: unknown, expectedPlan: unknown): Promise<BoundResultV3> {
+export async function validateBoundStandardResultV3(input: unknown, expectedPlan: unknown): Promise<BoundResultV3> {
+  return validateBoundStandardResultFromCapturedPlanV3(input, captureExecutionPlanInputV3(expectedPlan));
+}
+
+async function validateBoundStandardResultFromCapturedPlanV3(input: unknown, capturedPlan: unknown): Promise<BoundResultV3> {
   // Both captures occur synchronously. Settle a failed plan promise even when
   // result admission throws before the first await.
-  const capturedPlan = captureExecutionPlanInputV3(expectedPlan);
-  const planOutcome = validateExecutionPlanV3(capturedPlan).then((plan) => ({ plan }), (error: unknown) => ({ error }));
+  const planOutcome = validateStandardExecutionPlanV3(capturedPlan).then((plan) => ({ plan }), (error: unknown) => ({ error }));
   const captured = captureBoundResultV3(input, capturedPlan);
   const outcome = await planOutcome;
   if ("error" in outcome) throw outcome.error;
@@ -582,10 +588,18 @@ export async function validateBoundResultV3(input: unknown, expectedPlan: unknow
 }
 
 /** Cheap currentness only, for already validated immutable values. Not content authentication. */
-export function resultMatchesPlanV3(result: BoundResultV3 | null, plan: StandardExecutionPlanV3): boolean {
+export function resultMatchesPlanV3(result: AnyBoundResultV3 | null, plan: OpenEnaExecutionPlanV3): boolean {
   if (!result || result.schemaVersion !== 3 || result.kind !== "open-ena-bound-result") return false;
-  const expected = planBinding(plan);
+  const expected = isOnaExecutionPlanV3(plan) ? onaPlanBindingV3(plan) : planBinding(plan);
   return /^[a-f0-9]{64}$/u.test(result.binding.scientificResultSha256)
     && Object.keys(result.binding).length === Object.keys(expected).length + 1
     && Object.entries(expected).every(([key, value]) => result.binding[key as keyof ResultBindingV3] === value);
+}
+
+export function validateBoundResultV3(input: unknown, expectedPlan: StandardExecutionPlanV3): Promise<BoundResultV3>;
+export function validateBoundResultV3(input: unknown, expectedPlan: OnaExecutionPlanV3): Promise<BoundOnaResultV3>;
+export function validateBoundResultV3(input: unknown, expectedPlan: unknown): Promise<AnyBoundResultV3>;
+export async function validateBoundResultV3(input: unknown, expectedPlan: unknown): Promise<AnyBoundResultV3> {
+  const root = captureExecutionPlanDiscriminatorV3(expectedPlan), header = snapshotPlainJsonRecordV3(root.header, "bound plan header");
+  return header.analysisFamily === "ona" ? validateBoundOnaResultV3(input, root) : validateBoundStandardResultFromCapturedPlanV3(input, captureExecutionPlanInputV3(root));
 }

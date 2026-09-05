@@ -2,10 +2,10 @@ import { runStandardPlanV3 } from "../analyze";
 import type { ParsedDataset } from "../types";
 import { canonicalJsonV3, deepFreezeV3, sha256CanonicalJsonV3, snapshotPlainJsonRecordV3 } from "./canonical-json";
 import { validateStandardDraftV3 } from "./diagnostics";
-import { validateExecutionPlanV3, type StandardExecutionPlanV3 } from "./execution-plan";
+import { validateStandardExecutionPlanV3, type StandardExecutionPlanV3 } from "./execution-plan";
 import { buildStandardCodeDictionaryV3 } from "./standard-adapter";
 import { decodeReferenceV2, referenceCodecInternalsV2 } from "./reference-codec-v2";
-import type { OpenEnaStandardReferenceV2, ReferenceSourceWitnessV3, StandardEnaDraftV3, InternalStandardRunResultV3, BoundResultV3 } from "./types";
+import type { OpenEnaStandardReferenceV2, ReferenceSourceWitnessV3, StandardEnaDraftV3, InternalStandardRunResultV3, BoundStandardResultV3 } from "./types";
 import type { AnalyzePlanWorkerOptionsV3 } from "../client";
 
 export { assertReferenceAdmissionV3, captureReferenceExecutionBindingV3, bindReferenceToTargetV3, decodeReferenceV2 } from "./reference-codec-v2";
@@ -52,7 +52,7 @@ function assertScientificReadiness(plan: StandardExecutionPlanV3): void {
  * boundary; UI callers must not implement main-thread refits to obtain proof.
  */
 export async function fitReferenceSourceV3(sourcePlan: unknown): Promise<ReferenceSourceWitnessV3> {
-  const plan = await validateExecutionPlanV3(sourcePlan);
+  const plan = await validateStandardExecutionPlanV3(sourcePlan);
   assertSourcePlan(plan);
   assertScientificReadiness(plan);
   const result = runStandardPlanV3(plan, { materialization: "model" });
@@ -120,10 +120,10 @@ async function captureOwnedSourceFit(plan: StandardExecutionPlanV3, result: Pick
  * decoder stays usable by workers/server code. No caller transport/result hook
  * can enter this authority-bearing path, and no main-thread fit is performed.
  */
-export async function analyzePlanWithReferenceSourceV3(sourcePlan: unknown, options: AnalyzePlanWorkerOptionsV3 = {}): Promise<{ result: BoundResultV3; sourceWitness: ReferenceSourceWitnessV3 }> {
+export async function analyzePlanWithReferenceSourceV3(sourcePlan: unknown, options: AnalyzePlanWorkerOptionsV3 = {}): Promise<{ result: BoundStandardResultV3; sourceWitness: ReferenceSourceWitnessV3 }> {
   const captured = snapshotPlainJsonRecordV3(options, "Owned Reference worker options");
   if (Object.keys(captured).some((key) => key !== "signal" && key !== "onProgress")) throw new TypeError("Owned Reference worker options cannot override the production transport.");
-  const plan = await validateExecutionPlanV3(sourcePlan);
+  const plan = await validateStandardExecutionPlanV3(sourcePlan);
   assertSourcePlan(plan);
   const { analyzePlanInWorkerV3 } = await import("../client");
   const result = await analyzePlanInWorkerV3(plan, { signal: captured.signal as AbortSignal | undefined, onProgress: captured.onProgress as AnalyzePlanWorkerOptionsV3["onProgress"] });
@@ -161,7 +161,7 @@ export async function buildReferenceV2(source: ReferenceSourceWitnessV3, options
   const displayName = string(captured.displayName, "Reference displayName");
   const owned = witnesses.get(source);
   if (!owned) throw new TypeError("Reference minting requires an owned target-fitted source witness; imported/projected results cannot mint.");
-  const current = await validateExecutionPlanV3(captured.currentPlan);
+  const current = await validateStandardExecutionPlanV3(captured.currentPlan);
   assertSourcePlan(current);
   if (canonicalJsonV3({ header: current.header, configuration: current.configuration }) !== owned.currentIdentity) throw new TypeError("Reference source is stale against the independently supplied current plan.");
   const contentSha256 = await sha256CanonicalJsonV3(owned.scientific);
