@@ -35,3 +35,18 @@ test("Model tabs implement the ARIA roving-focus keyboard pattern", () => {
     "the tablist must retain one roving tab stop",
   );
 });
+
+test("Models v3 keyboard coverage uses a real component browser harness", () => {
+  const behaviorTest = readFileSync(
+    new URL("./open-ena-model-v3-tabs-browser.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(behaviorTest, /chromium\.launch\(\{ headless: true \}\)/u);
+  for (const key of ["ArrowRight", "ArrowLeft", "ArrowUp", "ArrowDown", "Home", "End"]) {
+    assert.match(behaviorTest, new RegExp(`\\["${key}"`, "u"));
+  }
+  assert.match(behaviorTest, /page\.keyboard\.press\(key\)/u);
+  assert.match(behaviorTest, /page\.keyboard\.press\("Escape"\)/u);
+  assert.match(behaviorTest, /document\.activeElement/u);
+  assert.match(behaviorTest, /button button/u);
+});
