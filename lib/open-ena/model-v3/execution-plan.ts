@@ -6,6 +6,7 @@ import {
   snapshotPlainJsonRecordV3,
 } from "./canonical-json";
 import type { ReadyStandardCompileResultV3 } from "./compiler";
+import { captureBundleJsonV3 } from "../bundle-json-v3";
 import {
   compilerDatasetEnvelopeV3,
   exactStandardResourceEstimateV3,
@@ -1320,6 +1321,51 @@ function captureReadyCompileResultV3(value: unknown): CapturedReadyCompileV3 {
     resourceEstimate: standardResourceEstimateV3(snapshot.resourceEstimate, "compileResult.resourceEstimate"),
     operationalAdmission: captureStandardOperationalAdmissionV3(snapshot.operationalAdmission),
   };
+}
+
+export type SerializedStandardCompileProvenanceV3 = Omit<CapturedReadyCompileV3, "canonicalConfiguration">;
+
+/** Bounded serialized claims only: this creates no ready receipt or source plan.
+ * The private ready-shape decoder is reused solely for its complete grammar.
+ */
+export async function decodeSerializedStandardCompileProvenanceV3(
+  input: unknown,
+): Promise<SerializedStandardCompileProvenanceV3> {
+  const root = plainRecordV3(captureBundleJsonV3(input), "Serialized Standard compile claims");
+  exactKeysV3(root, ["configuration", "compileProvenance"], "Serialized Standard compile claims");
+  const provenance = plainRecordV3(root.compileProvenance, "Serialized compile provenance");
+  exactKeysV3(provenance, ["draftFingerprint", "datasetBinding", "sourceProofSha256", "configurationSha256",
+    "diagnostics", "capabilityStatus", "resourceEstimate", "operationalAdmission"], "Serialized compile provenance");
+  const { canonicalConfiguration, ...claims } = captureReadyCompileResultV3({
+    ...provenance, status: "ready", canonicalConfiguration: root.configuration,
+  });
+  if (await sha256CanonicalJsonV3(canonicalConfiguration) !== claims.configurationSha256) {
+    throw new TypeError("Serialized configuration hash does not match compile provenance.");
+  }
+  if (claims.datasetBinding.rowCount !== claims.resourceEstimate.rows
+    || claims.resourceEstimate.codes !== canonicalConfiguration.codes.length
+    || claims.resourceEstimate.adjacencyDimensions !== canonicalConfiguration.codes.length * (canonicalConfiguration.codes.length - 1) / 2) {
+    throw new TypeError("Serialized configuration and resource/dataset claims disagree.");
+  }
+  const orders = [
+    canonicalConfiguration.window.type === "MovingStanzaWindow" ? canonicalConfiguration.window.rowOrder : null,
+    canonicalConfiguration.analysis.model.type === "EndPoint" ? null : canonicalConfiguration.analysis.model.horizonOrder,
+  ];
+  for (const [index, order] of orders.entries()) if (order?.kind === "source-order-confirmed") {
+    const confirmation = order.confirmation;
+    if (confirmation.analysisFamily !== "standard"
+      || confirmation.datasetSha256 !== claims.datasetBinding.normalizedTableSha256
+      || confirmation.rowCount !== claims.datasetBinding.rowCount
+      || canonicalJsonV3(confirmation.relevantColumns) !== canonicalJsonV3(index === 0
+        ? canonicalConfiguration.horizons.columns
+        : [...new Set([...canonicalConfiguration.units.columns, ...canonicalConfiguration.horizons.columns])])) {
+      throw new TypeError("Serialized order confirmation disagrees with its original dataset binding.");
+    }
+  }
+  exactJsonEqualV3(claims.operationalAdmission, estimateStandardOperationalAdmissionV3(
+    canonicalConfiguration, claims.resourceEstimate, claims.operationalAdmission.sourceProofJsonBytes,
+  ), "Serialized operational admission");
+  return deepFreezeV3(claims);
 }
 
 function exactJsonEqualV3(left: unknown, right: unknown, label: string): void {

@@ -13,6 +13,8 @@ import type {
   StandardEnaDraftV3,
 } from "./types";
 import { analysisKindFor } from "../network-config";
+import { captureDraftArtifactV3 } from "../draft-artifact-v3";
+import { decodeCanonicalOnaConfigV3, decodeCanonicalStandardConfigV3 } from "./schema";
 import type {
   OpenEnaConfig,
   OpenEnaDirectionalMask,
@@ -414,5 +416,46 @@ export function migrateLegacyOpenEnaConfigToDraftV3(
     ona: emptyOnaDraftV3(),
     requiresReview,
     autoRun: false,
+  });
+}
+
+/** Independent preview container, never the currently active workspace. */
+export function workspaceDraftsFromArtifactV3(input: unknown): ModelWorkspaceDraftsV3 {
+  const { analysisFamily, draft } = captureDraftArtifactV3(input);
+  return deepFreezeV3({ schemaVersion: 3, activeFamily: analysisFamily,
+    standard: analysisFamily === "standard" ? draft as StandardEnaDraftV3 : emptyStandardDraftV3(),
+    ona: analysisFamily === "ona" ? draft as OrderedNetworkDraftV3 : emptyOnaDraftV3() });
+}
+
+/** Canonical bytes carry configuration intent, never a transferable ready receipt.
+ * Active order confirmations retain their original binding verbatim. Inactive
+ * fields have no canonical representation and use explicit empty draft defaults.
+ */
+export function migrateCanonicalConfigurationToDraftV3(input: unknown): ModelWorkspaceDraftsV3 {
+  const root = snapshotPlainJsonRecordV3(input, "Canonical imported configuration");
+  if (root.analysisFamily === "ona") {
+    const config = decodeCanonicalOnaConfigV3(root);
+    return workspaceDraftsFromArtifactV3({
+      unitColumns: config.units.columns, horizonColumns: config.horizons.columns,
+      groupColumn: config.units.group.type === "none" ? null : config.units.group.column,
+      codes: config.codes.map((code) => code.column), backward: config.window.backward,
+      rowOrder: config.window.rowOrder, directionalMask: config.directionalMask,
+    });
+  }
+  const config = decodeCanonicalStandardConfigV3(root);
+  const rotation = config.analysis.rotation;
+  return workspaceDraftsFromArtifactV3({
+    unitColumns: config.units.columns, horizonColumns: config.horizons.columns,
+    groupColumn: config.units.group.type === "none" ? null : config.units.group.column,
+    codes: config.codes.map((code) => code.column), weighting: config.weighting.type,
+    model: config.analysis.model.type, windowType: config.window.type,
+    movingStanza: config.window.type === "MovingStanzaWindow"
+      ? { backward: config.window.backward, forward: config.window.forward, rowOrder: config.window.rowOrder }
+      : emptyStandardDraftV3().movingStanza,
+    horizonOrder: config.analysis.model.type === "EndPoint" ? null : config.analysis.model.horizonOrder,
+    rotation: rotation.type === "means"
+      ? { type: "means", centerAlignToOrigin: rotation.centerAlignToOrigin,
+        negativeLevel: rotation.contrast.negativeLevel, positiveLevel: rotation.contrast.positiveLevel }
+      : rotation,
   });
 }

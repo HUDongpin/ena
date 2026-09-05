@@ -19,6 +19,7 @@ import { captureBundleJsonV3 } from "./bundle-json-v3";
 import { parseOpenEnaAnalysisBundle } from "./legacy-analysis-bundle-parser";
 import { validateBoundResultV3 } from "./model-v3/result-binding";
 import { decodeReferenceV2 } from "./model-v3/reference-codec-v2";
+import { deepFreezeV3 } from "./model-v3/canonical-json";
 import type {
   BoundResultV3,
   BoundStandardResultV3,
@@ -431,6 +432,49 @@ export function parseRotationReference(text: string, filename = "reference.json"
   }
   if (isRecord(value)) return referenceFromResultBundle(value, filename);
   throw new Error("Reference rotation JSON must contain an object.");
+}
+
+/** Strict candidate admission for the unified importer. Keep the legacy public
+ * parser's compatibility API intact, but never silently discard new scientific
+ * claims (especially trajectory/family declarations) at this front door.
+ */
+export function captureLegacyReferenceCandidateV3(input: unknown): {
+  readonly candidate: OpenEnaRotationReference;
+  readonly missingProvenance: readonly string[];
+} {
+  const value = captureBundleJsonV3(input);
+  const exact = (value: unknown, required: string[], optional: string[] = []): JsonRecord => {
+    if (!isRecord(value)) throw new TypeError("Legacy Reference must contain exact objects.");
+    const allowed = new Set([...required, ...optional]);
+    if (required.some((key) => !Object.hasOwn(value, key)) || Object.keys(value).some((key) => !allowed.has(key))) {
+      throw new TypeError("Legacy Reference has missing or unsupported scientific fields.");
+    }
+    return value;
+  };
+  const root = exact(value, ["schemaVersion", "kind", "app", "runtime", "runtimeVersion", "referenceId", "name", "source", "fit", "compatibility", "rotationSet"]);
+  const source = exact(root.source, ["datasetName", "normalizedUtf8TextSha256", "analyzedAt"], ["hashKind"]);
+  const fit = exact(root.fit, ["method", "unitColumns", "conversationColumns"], ["groupColumn", "groupOrder"]);
+  exact(fit, ["method", "unitColumns", "conversationColumns", ...(fit.method === "mean" ? ["groupColumn", "groupOrder"] : [])]);
+  const compatibility = exact(root.compatibility, ["model", "codes", "window", "windowSizeBack", "windowSizeForward", "weightBy", "centerAlignToOrigin", "normalization"]);
+  const rotation = exact(root.rotationSet, ["codes", "adjacencyKey", "rotationMatrix", "rotationColumns", "eigenvalues", "centerVector", "nodes"]);
+  if (!Array.isArray(rotation.adjacencyKey)) throw new TypeError("Legacy Reference adjacency must be an array.");
+  for (const edge of rotation.adjacencyKey) exact(edge, ["source", "target", "name", "sourceIndex", "targetIndex"]);
+  const backward = compatibility.windowSizeBack;
+  if ((backward !== "Infinity" && (!Number.isSafeInteger(backward) || (backward as number) < 1))
+    || !Number.isSafeInteger(compatibility.windowSizeForward) || (compatibility.windowSizeForward as number) < 0
+    || (compatibility.window === "Conversation" && (backward !== "Infinity" || compatibility.windowSizeForward !== 0))) {
+    throw new TypeError("Legacy Reference window extents are inconsistent or invalid.");
+  }
+  const candidate = parseReferenceObject(root);
+  const missingProvenance = [
+    ...(!source.normalizedUtf8TextSha256 ? ["source.normalizedUtf8TextSha256"] : []),
+    ...(!source.hashKind ? ["source.hashKind"] : []),
+    "source.configurationSha256", "source.executionPlanSha256", "source.sourceProofSha256",
+    "source.datasetBinding.headerSha256", "source.datasetBinding.rowCount", "source.runtime.algorithmBuildSha",
+    ...(compatibility.window === "MovingStanzaWindow" ? ["compatibility.rowOrder"] : []),
+    ...(fit.method === "mean" ? ["fit.typedContrastLevels"] : []),
+  ];
+  return deepFreezeV3({ candidate, missingProvenance });
 }
 
 export function buildReferenceRotationPackage(

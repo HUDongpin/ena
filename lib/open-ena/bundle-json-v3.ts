@@ -9,6 +9,11 @@ export const BUNDLE_JSON_LIMITS_V3 = Object.freeze({
   depth: 64,
   values: 1_000_000,
   arrayLength: 250_000,
+  objectKeys: 250_000,
+  // Keep the portable exporter domain: text tokens share the whole-file cap,
+  // while scientific integer/count bounds belong to the semantic decoders.
+  stringLength: 16 * 1024 * 1024,
+  numberMagnitude: Number.MAX_VALUE,
 });
 const unsafe = new Set(["__proto__", "prototype", "constructor"]);
 function fail(reason: string): never {
@@ -27,7 +32,10 @@ export function captureBundleJsonV3(input: unknown): unknown {
     )
       fail("depth or value limit exceeded");
     structuralCharge += 8;
-    if (typeof value === "string") structuralCharge += value.length * 3;
+    if (typeof value === "string") {
+      if (value.length > BUNDLE_JSON_LIMITS_V3.stringLength) fail("string length limit exceeded");
+      structuralCharge += value.length * 3;
+    }
     if (structuralCharge > BUNDLE_JSON_LIMITS_V3.bytes)
       fail("structural size limit exceeded");
     if (
@@ -37,7 +45,7 @@ export function captureBundleJsonV3(input: unknown): unknown {
     )
       return value;
     if (typeof value === "number") {
-      if (!Number.isFinite(value)) fail("numbers must be finite");
+      if (!Number.isFinite(value) || Math.abs(value) > BUNDLE_JSON_LIMITS_V3.numberMagnitude) fail("numbers must be finite and within numeric bounds");
       return Object.is(value, -0) ? 0 : value;
     }
     if (typeof value !== "object" || active.has(value))
@@ -63,7 +71,7 @@ export function captureBundleJsonV3(input: unknown): unknown {
       )
         fail("array size limit exceeded");
       const keys = Reflect.ownKeys(value);
-      if (!array && keys.length > BUNDLE_JSON_LIMITS_V3.arrayLength)
+      if (!array && keys.length > BUNDLE_JSON_LIMITS_V3.objectKeys)
         fail("container size limit exceeded");
       if (array && keys.length !== length + 1)
         fail("requires dense arrays without extra properties");
@@ -108,6 +116,7 @@ export function parseBundleJsonV3(text: string): unknown {
   };
   function string(): string {
     const start = cursor++;
+    let length = 0;
     while (cursor < text.length) {
       const character = text[cursor++];
       if (character === '"') {
@@ -117,7 +126,15 @@ export function parseBundleJsonV3(text: string): unknown {
           fail("invalid string");
         }
       }
-      if (character === "\\") cursor++;
+      if (++length > BUNDLE_JSON_LIMITS_V3.stringLength) fail("string length limit exceeded");
+      if (character.charCodeAt(0) < 0x20) fail("invalid string control character");
+      if (character === "\\") {
+        const escaped = text[cursor++];
+        if (escaped === "u") {
+          if (!/^[a-f\d]{4}$/iu.test(text.slice(cursor, cursor + 4))) fail("invalid Unicode escape");
+          cursor += 4;
+        } else if (escaped === undefined || !'"\\/bfnrt'.includes(escaped)) fail("invalid string escape");
+      }
     }
     return fail("unterminated string");
   }
@@ -143,7 +160,7 @@ export function parseBundleJsonV3(text: string): unknown {
         return output;
       }
       while (cursor < text.length) {
-        if (++count > BUNDLE_JSON_LIMITS_V3.arrayLength)
+        if (++count > (object ? BUNDLE_JSON_LIMITS_V3.objectKeys : BUNDLE_JSON_LIMITS_V3.arrayLength))
           fail("container size limit exceeded");
         whitespace();
         let key = String(count - 1);
@@ -176,8 +193,8 @@ export function parseBundleJsonV3(text: string): unknown {
     if (!match) fail("invalid value");
     cursor += match[0].length;
     const parsed: unknown = JSON.parse(match[0]);
-    if (typeof parsed === "number" && !Number.isFinite(parsed))
-      fail("numbers must be finite");
+    if (typeof parsed === "number" && (!Number.isFinite(parsed) || Math.abs(parsed) > BUNDLE_JSON_LIMITS_V3.numberMagnitude))
+      fail("numbers must be finite and within numeric bounds");
     return parsed;
   }
   const output = value(0);
