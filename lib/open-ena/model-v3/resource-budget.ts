@@ -1,4 +1,5 @@
 import {
+  DENSE_SVD_FLOAT64_BYTES,
   DENSE_SVD_MAX_MATRIX_BYTES,
   DENSE_SVD_MAX_WORK_UNITS,
   estimateDenseSvdBudget,
@@ -295,6 +296,80 @@ function structuralEstimateV3(input: StructuralEstimateInputV3): {
   return { estimatedStateCount, estimatedStructuralBytes };
 }
 
+interface NumericPopulationV3 {
+  rows: number;
+  codes: number;
+  targets: number;
+  dimensions: number;
+  retainedRows: number;
+  partitions: number;
+}
+
+/** Shared v3.5 formula: compiler estimates and serialized lower-bound checks
+ * must use the same overlap terms, including the Reference-only cell term.
+ */
+function standardNumericCellsV3(input: NumericPopulationV3, referenceProjection: boolean): number {
+  const { rows: rowCount, codes: codeCount, targets: trajectorySteps, dimensions: adjacencyDimensions,
+    retainedRows: estimatedRetainedWindowRows, partitions } = input;
+  const rawCodeCells = safeMultiplyV3(rowCount, codeCount, "Raw Code cells");
+  const trajectoryCells = safeMultiplyV3(trajectorySteps, adjacencyDimensions, "Trajectory cells");
+  const referenceCells = referenceProjection ? trajectoryCells : 0;
+  const capturedCodeCells = safeMultiplyV3(4, rawCodeCells, "Captured Code cells");
+  const streamingCodeCells = safeMultiplyV3(2 * codeCount,
+    safeAddV3(estimatedRetainedWindowRows, partitions, "Streaming state rows"), "Streaming Code cells");
+  const accumulatedCopies = safeMultiplyV3(4, trajectoryCells, "Accumulation copies");
+  const projectionCopies = safeMultiplyV3(8, trajectoryCells, "Projection copies");
+  const rotationCopies = safeAddV3(safeMultiplyV3(6, safeMultiplyV3(adjacencyDimensions, adjacencyDimensions, "Rotation square"), "Rotation overlaps"), safeMultiplyV3(8, adjacencyDimensions, "Axis vectors"), "Rotation cells");
+  const displayDimensions = Math.min(3, adjacencyDimensions);
+  const displayCopies = safeAddV3(safeMultiplyV3(6 * displayDimensions, trajectorySteps, "Display points and centroids"), safeMultiplyV3(4 * displayDimensions, codeCount, "Display nodes"), "Display cells");
+  const nodeSolveCopies = safeAddV3(
+    safeAddV3(safeMultiplyV3(2 * codeCount, trajectorySteps, "Node weights"), safeMultiplyV3(3, safeMultiplyV3(codeCount, codeCount, "Node square"), "Node solves"), "Node matrices"),
+    safeAddV3(trajectorySteps, safeMultiplyV3(4, codeCount, "Node vectors"), "Node RHS"), "Node solve cells");
+  return [capturedCodeCells, streamingCodeCells, accumulatedCopies, projectionCopies, rotationCopies,
+    displayCopies, nodeSolveCopies, referenceCells]
+    .reduce((sum, cells) => safeAddV3(sum, cells, "Numeric overlap envelope"), 0);
+}
+
+function onaExportedCellsV3(rows: number, codes: number, targets: number, dimensions: number): number {
+  return safeAddV3(safeMultiplyV3(rows, codes, "ONA raw Code cells"),
+    safeMultiplyV3(targets, dimensions, "ONA Endpoint cells"), "ONA exported cells");
+}
+
+function onaNumericCellsV3(rows: number, codes: number, targets: number, dimensions: number, matrixCells: number): number {
+  return safeAddV3(onaExportedCellsV3(rows, codes, targets, dimensions),
+    safeAddV3(matrixCells, dimensions, "ONA numeric cells"), "ONA numeric cells");
+}
+
+function windowStateCellsV3(partitions: number, codes: number): number {
+  const width = safeAddV3(safeMultiplyV3(2, codes, "Window state Code cells"), 5, "Window state width");
+  return safeMultiplyV3(partitions, width, "Window state cells");
+}
+
+function workerMaterializationBytesV3(rows: number, codes: number, retainedRows: number, windowStateCells: number): number {
+  const columns = safeAddV3(codes, 5, "Worker columns");
+  return safeMultiplyV3(safeAddV3(safeAddV3(
+    safeMultiplyV3(rows, columns, "Worker materialization cells"),
+    safeMultiplyV3(retainedRows, columns, "Retained window cells"), "Worker and retained window cells"),
+  windowStateCells, "Worker materialization cells"), 16, "Worker materialization bytes");
+}
+
+function standardExportBytesV3(numericCells: number, resultIdentityBytes: number): number {
+  return safeAddV3(resultIdentityBytes, safeMultiplyV3(numericCells, 24, "Export bytes"), "Complete result export bytes");
+}
+
+function onaExportBytesV3(rows: number, codes: number, targets: number, dimensions: number): number {
+  return safeMultiplyV3(onaExportedCellsV3(rows, codes, targets, dimensions), 24, "ONA export bytes");
+}
+
+function peakBytesV3(numericCells: number, workerBytes: number, structuralBytes: number): number {
+  return safeAddV3(safeAddV3(safeMultiplyV3(numericCells, DENSE_SVD_FLOAT64_BYTES, "Numeric bytes"),
+    workerBytes, "Numeric and worker bytes"), structuralBytes, "Peak bytes");
+}
+
+function structuralResultBytesV3(structuralBytes: number, resultIdentityBytes: number): number {
+  return safeAddV3(structuralBytes, safeMultiplyV3(3, resultIdentityBytes, "Result identity capture overlap"), "Structural result bytes");
+}
+
 function snapshotHorizonSizesV3(value: unknown, horizonCount: number, rowCount: number): number[] {
   const input = snapshotDenseJsonArrayV3(value, "resource input.horizonSizes");
   if (input.length !== horizonCount) {
@@ -444,15 +519,36 @@ export function assertSerializedResourceClaimsV3(
   } else {
     throw new TypeError("Serialized resource family is inconsistent.");
   }
-  const stateCount = [estimate.rows, estimate.units, estimate.horizons, targets,
-    estimate.aggregateStateUpperBound, estimate.estimatedRetainedWindowRows]
-    .reduce((total, value) => safeAddV3(total, value, "Serialized resource state count"), 0);
+  // Only population-based structure is independently derivable here. The
+  // unsigned source/identity payload sizes do not authenticate external bytes.
+  const structural = structuralEstimateV3({ rowCount: estimate.rows, unitCount: estimate.units,
+    horizonCount: estimate.horizons, targetCount: targets, aggregateStateUpperBound: estimate.aggregateStateUpperBound,
+    retainedRowCount: estimate.estimatedRetainedWindowRows, codeCount: codes, datasetSizeBytes: 0, identityPayloadBytes: 0 });
   const rotation = estimateDenseSvdBudget(targets, dimensions);
-  if (estimate.estimatedStateCount !== stateCount
-    || estimate.estimatedRotationMatrixBytes !== rotation.matrixBytes
-    || estimate.estimatedRotationWorkUnits !== rotation.workUnits) {
-    throw new TypeError("Serialized resource state count or dense rotation dimensions are inconsistent.");
-  }
+  const atLeast = (claimed: number, minimum: number, label: string): void => {
+    if (claimed < minimum) throw new TypeError(`Serialized resource ${label} is below its derivable component bound.`);
+  };
+  atLeast(estimate.estimatedStateCount, structural.estimatedStateCount, "state count");
+  atLeast(estimate.estimatedRotationMatrixBytes, rotation.matrixBytes, "dense rotation matrix bytes");
+  atLeast(estimate.estimatedRotationWorkUnits, rotation.workUnits, "dense rotation work");
+  atLeast(estimate.estimatedWindowStateCells, windowStateCellsV3(estimate.windowPartitions, codes), "window state cells");
+  const matrixCells = Math.ceil(estimate.estimatedRotationMatrixBytes / DENSE_SVD_FLOAT64_BYTES);
+  const numericMinimum = configuration.analysisFamily === "standard"
+    ? standardNumericCellsV3({ rows: estimate.rows, codes, targets, dimensions,
+      retainedRows: estimate.estimatedRetainedWindowRows, partitions: estimate.windowPartitions }, configuration.analysis.rotation.type === "reference")
+    : onaNumericCellsV3(estimate.rows, codes, targets, dimensions, matrixCells);
+  atLeast(estimate.estimatedNumericCells, Math.max(numericMinimum, matrixCells), "numeric cells");
+  // Aggregates use admitted upstream claims, not just their minima: increasing
+  // a component cannot leave an understated worker/export/peak total behind.
+  atLeast(estimate.estimatedWorkerMaterializationBytes, workerMaterializationBytesV3(estimate.rows, codes,
+    estimate.estimatedRetainedWindowRows, estimate.estimatedWindowStateCells), "worker materialization bytes");
+  const resultIdentityBytes = estimate.analysisFamily === "standard" ? estimate.resultIdentityBytes : 0;
+  atLeast(estimate.estimatedStructuralBytes, structuralResultBytesV3(structural.estimatedStructuralBytes, resultIdentityBytes), "structural bytes");
+  atLeast(estimate.estimatedExportBytes, estimate.analysisFamily === "standard"
+    ? standardExportBytesV3(estimate.estimatedNumericCells, resultIdentityBytes)
+    : onaExportBytesV3(estimate.rows, codes, targets, dimensions), "export bytes");
+  atLeast(estimate.estimatedPeakBytes, peakBytesV3(estimate.estimatedNumericCells,
+    estimate.estimatedWorkerMaterializationBytes, estimate.estimatedStructuralBytes), "peak bytes");
 }
 
 function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3): StandardResourceEstimateV3 {
@@ -560,77 +656,17 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
   });
   // Runtime result, detached/hash representation and transport capture overlap.
   // Reference artifact representations have their separate additive ledger.
-  structural.estimatedStructuralBytes = safeAddV3(structural.estimatedStructuralBytes,
-    safeMultiplyV3(3, resultIdentityBytes, "Result identity capture overlap"), "Structural result bytes");
-
-  const rawCodeCells = safeMultiplyV3(rowCount, codeCount, "Raw Code cells");
-  const trajectoryCells = safeMultiplyV3(trajectorySteps, adjacencyDimensions, "Trajectory cells");
+  structural.estimatedStructuralBytes = structuralResultBytesV3(structural.estimatedStructuralBytes, resultIdentityBytes);
   const denseRotation = estimateDenseSvdBudget(trajectorySteps, adjacencyDimensions);
-  const referenceCells = input.referenceProjection ? trajectoryCells : 0;
-  // v3.5: summed conservative overlap envelope. These are admission bounds,
-  // never a claim that every stage is simultaneously live or measured heap.
-  // Source proof/plan/runtime/output overlap: 4NC.
-  const capturedCodeCells = safeMultiplyV3(4, rawCodeCells, "Captured Code cells");
-  // Retained row + Code vector and per-partition running/aggregate vectors.
-  const streamingCodeCells = safeMultiplyV3(2 * codeCount,
-    safeAddV3(estimatedRetainedWindowRows, windowPartitionSizes.length, "Streaming state rows"), "Streaming Code cells");
-  // Stream sums, temporary finalized count rows, count table, and matrix: 4TE.
-  const accumulatedCopies = safeMultiplyV3(4, trajectoryCells, "Accumulation copies");
-  // Normalized/centered/full-projection matrices, output rows and bind copy: 8TE.
-  const projectionCopies = safeMultiplyV3(8, trajectoryCells, "Projection copies");
-  // Dense diagnostic/rotation scratch and retained complete basis/axis vectors.
-  const rotationCopies = safeAddV3(safeMultiplyV3(6, safeMultiplyV3(adjacencyDimensions, adjacencyDimensions, "Rotation square"), "Rotation overlaps"), safeMultiplyV3(8, adjacencyDimensions, "Axis vectors"), "Rotation cells");
-  const displayDimensions = Math.min(3, adjacencyDimensions);
-  const displayCopies = safeAddV3(safeMultiplyV3(6 * displayDimensions, trajectorySteps, "Display points and centroids"), safeMultiplyV3(4 * displayDimensions, codeCount, "Display nodes"), "Display cells");
-  // Node weights and transpose, normal/linear solve, one rhs and node vectors.
-  const nodeSolveCopies = safeAddV3(
-    safeAddV3(safeMultiplyV3(2 * codeCount, trajectorySteps, "Node weights"), safeMultiplyV3(3, safeMultiplyV3(codeCount, codeCount, "Node square"), "Node solves"), "Node matrices"),
-    safeAddV3(trajectorySteps, safeMultiplyV3(4, codeCount, "Node vectors"), "Node RHS"), "Node solve cells");
-  const estimatedNumericCells = [capturedCodeCells, streamingCodeCells, accumulatedCopies, projectionCopies, rotationCopies, displayCopies, nodeSolveCopies, referenceCells]
-    .reduce((sum, cells) => safeAddV3(sum, cells, "Numeric overlap envelope"), 0);
-  const workerColumns = safeAddV3(codeCount, 5, "Worker columns");
-  const movingStateWidth = safeAddV3(
-    safeMultiplyV3(2, codeCount, "Moving state Code cells"),
-    5,
-    "Moving state cells",
-  );
-  const conversationStateWidth = safeAddV3(
-    safeMultiplyV3(2, codeCount, "Conversation state Code cells"),
-    5,
-    "Conversation state cells",
-  );
-  const estimatedWindowStateCells = safeMultiplyV3(
-    windowPartitionSizes.length,
-    input.windowType === "Conversation" ? conversationStateWidth : movingStateWidth,
-    "Window state cells",
-  );
-  const estimatedWorkerMaterializationBytes = safeMultiplyV3(
-    safeAddV3(
-      safeAddV3(
-        safeMultiplyV3(rowCount, workerColumns, "Worker materialization cells"),
-        safeMultiplyV3(estimatedRetainedWindowRows, workerColumns, "Retained window cells"),
-        "Worker and retained window cells",
-      ),
-      estimatedWindowStateCells,
-      "Worker materialization cells",
-    ),
-    16,
-    "Worker materialization bytes",
-  );
-  const estimatedExportBytes = safeAddV3(resultIdentityBytes, safeMultiplyV3(
-    estimatedNumericCells,
-    24,
-    "Export bytes",
-  ), "Complete result export bytes");
-  const estimatedPeakBytes = safeAddV3(
-    safeAddV3(
-      safeMultiplyV3(estimatedNumericCells, 8, "Numeric bytes"),
-      estimatedWorkerMaterializationBytes,
-      "Numeric and worker bytes",
-    ),
-    structural.estimatedStructuralBytes,
-    "Peak bytes",
-  );
+  const estimatedNumericCells = standardNumericCellsV3({ rows: rowCount, codes: codeCount,
+    targets: trajectorySteps, dimensions: adjacencyDimensions, retainedRows: estimatedRetainedWindowRows,
+    partitions: windowPartitionSizes.length }, input.referenceProjection);
+  const estimatedWindowStateCells = windowStateCellsV3(windowPartitionSizes.length, codeCount);
+  const estimatedWorkerMaterializationBytes = workerMaterializationBytesV3(rowCount, codeCount,
+    estimatedRetainedWindowRows, estimatedWindowStateCells);
+  const estimatedExportBytes = standardExportBytesV3(estimatedNumericCells, resultIdentityBytes);
+  const estimatedPeakBytes = peakBytesV3(estimatedNumericCells, estimatedWorkerMaterializationBytes,
+    structural.estimatedStructuralBytes);
   const blockedReasons = blockedReasonsV3({
     datasetSizeBytes,
     identityPayloadBytes,
@@ -731,48 +767,14 @@ function estimateOnaResourcesInternalV3(inputValue: OnaResourceInputV3): OnaReso
     datasetSizeBytes,
     identityPayloadBytes,
   });
-  const rawCodeCells = safeMultiplyV3(rowCount, codeCount, "ONA raw Code cells");
-  const endpointCells = safeMultiplyV3(unitCount, adjacencyDimensions, "ONA Endpoint cells");
   const denseRotation = estimateDenseSvdBudget(unitCount, adjacencyDimensions);
-  const estimatedNumericCells = safeAddV3(
-    safeAddV3(rawCodeCells, endpointCells, "ONA numeric cells"),
-    safeAddV3(denseRotation.matrixCells, directionalMaskCells, "ONA numeric cells"),
-    "ONA numeric cells",
-  );
-  const workerColumns = safeAddV3(codeCount, 5, "ONA worker columns");
-  const stateWidth = safeAddV3(
-    safeMultiplyV3(2, codeCount, "ONA state Code cells"),
-    5,
-    "ONA state cells",
-  );
-  const estimatedWindowStateCells = safeMultiplyV3(horizonCount, stateWidth, "ONA window state cells");
-  const estimatedWorkerMaterializationBytes = safeMultiplyV3(
-    safeAddV3(
-      safeAddV3(
-        safeMultiplyV3(rowCount, workerColumns, "ONA worker materialization cells"),
-        safeMultiplyV3(estimatedRetainedWindowRows, workerColumns, "ONA retained window cells"),
-        "ONA worker and retained window cells",
-      ),
-      estimatedWindowStateCells,
-      "ONA worker materialization cells",
-    ),
-    16,
-    "ONA worker materialization bytes",
-  );
-  const estimatedExportBytes = safeMultiplyV3(
-    safeAddV3(rawCodeCells, endpointCells, "ONA export cells"),
-    24,
-    "ONA export bytes",
-  );
-  const estimatedPeakBytes = safeAddV3(
-    safeAddV3(
-      safeMultiplyV3(estimatedNumericCells, 8, "ONA numeric bytes"),
-      estimatedWorkerMaterializationBytes,
-      "ONA numeric and worker bytes",
-    ),
-    structural.estimatedStructuralBytes,
-    "ONA peak bytes",
-  );
+  const estimatedNumericCells = onaNumericCellsV3(rowCount, codeCount, unitCount, adjacencyDimensions, denseRotation.matrixCells);
+  const estimatedWindowStateCells = windowStateCellsV3(horizonCount, codeCount);
+  const estimatedWorkerMaterializationBytes = workerMaterializationBytesV3(rowCount, codeCount,
+    estimatedRetainedWindowRows, estimatedWindowStateCells);
+  const estimatedExportBytes = onaExportBytesV3(rowCount, codeCount, unitCount, adjacencyDimensions);
+  const estimatedPeakBytes = peakBytesV3(estimatedNumericCells, estimatedWorkerMaterializationBytes,
+    structural.estimatedStructuralBytes);
   const blockedReasons = blockedReasonsV3({
     datasetSizeBytes,
     identityPayloadBytes,

@@ -28,12 +28,36 @@ import {
   estimateOnaResourcesV3,
   estimateStandardResourcesV3,
 } from "../lib/open-ena/model-v3/resource-budget";
-import { canonicalJsonV3 } from "../lib/open-ena/model-v3/canonical-json";
+import { canonicalJsonV3, sha256CanonicalJsonV3 } from "../lib/open-ena/model-v3/canonical-json";
 import { scalarIdentityV3 } from "../lib/open-ena/model-v3/identity";
 import type {
   OnaResourceInputV3,
   StandardResourceInputV3,
 } from "../lib/open-ena/model-v3/resource-budget";
+
+test("shared formula extraction preserves every field of the pre-refactor estimator corpus", async () => {
+  // Captured before the Task19 QUALITY correction on eaa958389a6e6c252c69caf11018d55fb9549b32.
+  // Includes admitted/blocked outputs and both Standard Reference-cost branches.
+  const estimates = [];
+  const extents = [{ kind: "finite", value: 1 }, { kind: "finite", value: 3 }, { kind: "infinity" }] as const;
+  const forwards = [{ kind: "finite", value: 0 }, { kind: "finite", value: 2 }, { kind: "infinity" }] as const;
+  for (const windowType of ["Conversation", "MovingStanzaWindow"] as const) {
+    for (const backward of extents) for (const forward of forwards) for (const referenceProjection of [false, true]) {
+      estimates.push(estimateStandardResourcesV3({
+        rowCount: 6, unitCount: 2, horizonCount: 2, codeCount: 4, horizonSizes: [2, 4],
+        windowPartitionSizes: windowType === "Conversation" ? [1, 1, 2, 2] : [2, 4],
+        trajectorySteps: 4, windowType, backward, forward, referenceProjection,
+        resultIdentityBytes: 32, datasetSizeBytes: 100, identityPayloadBytes: 100,
+      }));
+    }
+  }
+  for (const codeCount of [4, 30]) for (const backward of extents) {
+    estimates.push(estimateOnaResourcesV3({ rowCount: 6, unitCount: 2, horizonCount: 2,
+      codeCount, horizonSizes: [2, 4], backward, datasetSizeBytes: 100, identityPayloadBytes: 100 }));
+  }
+  assert.equal(estimates.length, 42);
+  assert.equal(await sha256CanonicalJsonV3(estimates), "37cdf868df336c4117b9615fb8c174395f62db4507d30ad0bb5e067c4002f7a8");
+});
 
 test("Standard resource estimates use undirected edges and actual Horizon sizes", () => {
   const estimate = estimateStandardResourcesV3({

@@ -19,6 +19,7 @@ import { decodeSerializedStandardCompileProvenanceV3 } from "../lib/open-ena/mod
 import { buildOnaExecutionPlanV3, runOnaPlanV3 } from "../lib/open-ena/model-v3/ona-adapter";
 import { bindOnaResultV3 } from "../lib/open-ena/model-v3/ona-result-binding";
 import * as resourceBudget from "../lib/open-ena/model-v3/resource-budget";
+import { estimateStandardOperationalAdmissionV3 } from "../lib/open-ena/model-v3/standard-closure-resource-budget";
 
 const textOf = (file: { bytes: Uint8Array }) => new TextDecoder().decode(file.bytes);
 const draftFixture = (): StandardEnaDraftV3 => structuredClone(migrateLegacyOpenEnaConfigToDraftV3(SAMPLE_CONFIG).standard);
@@ -277,6 +278,13 @@ test("native Reference v2 becomes an immutable candidate without registration or
   assert.equal(imported.autoRun, false);
   assert.deepEqual(imported.candidate, JSON.parse(textOf(file)));
   assert.equal(Object.isFrozen(imported.candidate), true);
+  const reference = JSON.parse(textOf(file));
+  const target = await bindingFixtureV3("b".repeat(64), (draft) => {
+    draft.rotation = { type: "reference", referenceId: reference.referenceId, expectedContentSha256: reference.contentSha256 };
+  }, reference);
+  const configurationImport = await artifacts.importOpenEnaArtifactV3(textOf(await artifacts.exportCanonicalConfigV3(target.compiled)));
+  if (configurationImport.kind !== "draft") throw new Error("Expected canonical Reference configuration preview");
+  assert.deepEqual(configurationImport.draft.standard.rotation, target.compiled.canonicalConfiguration.analysis.rotation);
 });
 
 test("legacy Reference reports received hash and missing provenance without inventing v2 evidence", async () => {
@@ -440,7 +448,7 @@ test("canonical resource claims reject impossible counts and model dimensions", 
       aggregateStateUpperBound: estimate.windowPartitions + 1,
       estimatedRetainedWindowRows: estimate.rows + 1,
       estimatedForwardBufferRows: estimate.rows + 1,
-      estimatedRotationMatrixBytes: estimate.estimatedRotationMatrixBytes + 1,
+      estimatedRotationMatrixBytes: estimate.estimatedRotationMatrixBytes - 1,
       ...(family === "standard" ? { trajectorySteps: estimate.units + 1 } : { endpointNetworks: 1 }),
     })) await t.test(`${family} inconsistent ${key}`, async () => {
       const mutated = structuredClone(original);
@@ -464,4 +472,60 @@ test("resource claim validation preserves unsigned source-size uncertainty and t
   }
   ona.payload.compileProvenance.resourceEstimate.estimatedPeakBytes = resourceBudget.MAX_ESTIMATED_PEAK_BYTES_V3;
   assert.equal((await artifacts.importOpenEnaArtifactV3(await rehash(ona))).kind, "draft");
+});
+
+test("resource components and aggregates cannot underreport observable formula floors", async (t) => {
+  for (const [family, original] of Object.entries(await genuineCanonicalArtifacts())) {
+    const resource = original.payload.compileProvenance.resourceEstimate;
+    const cases = [
+      ...["estimatedWindowStateCells", "estimatedNumericCells", "estimatedWorkerMaterializationBytes",
+        "estimatedExportBytes", "estimatedStructuralBytes", "estimatedPeakBytes"]
+        .map((key) => ({ label: `${key} below observable floor`, patch: {
+          [key]: key === "estimatedStructuralBytes" ? 0 : resource[key] - 1,
+        } })),
+      { label: "larger window state with unchanged worker aggregate", patch: { estimatedWindowStateCells: resource.estimatedWindowStateCells + 1 } },
+      { label: "larger numeric component with unchanged peak aggregate", patch: { estimatedNumericCells: resource.estimatedNumericCells + 1 } },
+      { label: "larger worker component with unchanged peak aggregate", patch: { estimatedWorkerMaterializationBytes: resource.estimatedWorkerMaterializationBytes + 1 } },
+      { label: "larger structural component with unchanged peak aggregate", patch: { estimatedStructuralBytes: resource.estimatedStructuralBytes + 1 } },
+      { label: "coordinated zero aggregates cannot erase population costs", patch: {
+        estimatedWindowStateCells: 0, estimatedNumericCells: 0, estimatedWorkerMaterializationBytes: 0,
+        estimatedStructuralBytes: 0, estimatedExportBytes: 0, estimatedPeakBytes: 0,
+      } },
+      { label: "coordinated one-cell aggregates cannot erase population costs", patch: {
+        estimatedWindowStateCells: 1, estimatedNumericCells: 1, estimatedWorkerMaterializationBytes: 16,
+        estimatedStructuralBytes: 16, estimatedExportBytes: 24, estimatedPeakBytes: 40,
+      } },
+    ];
+    for (const { label, patch } of cases) await t.test(`${family}: ${label}`, async () => {
+      const mutated = structuredClone(original);
+      Object.assign(mutated.payload.compileProvenance.resourceEstimate, patch);
+      // Exercise the shared boundary directly, independently of Standard's
+      // additional operational ledger, then the actual rehashed import route.
+      assert.throws(() => resourceBudget.assertSerializedResourceClaimsV3(
+        mutated.payload.compileProvenance.resourceEstimate, mutated.payload.configuration,
+      ), /resource|bound|component|formula/i);
+      await assert.rejects(artifacts.importOpenEnaArtifactV3(await rehash(mutated)));
+    });
+  }
+});
+
+test("coherent conservative resource upper bounds remain importable in both families", async () => {
+  for (const [family, original] of Object.entries(await genuineCanonicalArtifacts())) {
+    const changed = structuredClone(original);
+    const provenance = changed.payload.compileProvenance;
+    const estimate = provenance.resourceEstimate;
+    estimate.estimatedStateCount += 1;
+    estimate.estimatedRotationMatrixBytes += 8;
+    estimate.estimatedRotationWorkUnits += 1;
+    estimate.estimatedWindowStateCells += 3;
+    estimate.estimatedNumericCells += 1;
+    estimate.estimatedWorkerMaterializationBytes += 48;
+    estimate.estimatedStructuralBytes += 64;
+    estimate.estimatedExportBytes += 100;
+    estimate.estimatedPeakBytes += 256;
+    if (family === "standard") provenance.operationalAdmission = estimateStandardOperationalAdmissionV3(
+      changed.payload.configuration, estimate, provenance.operationalAdmission.sourceProofJsonBytes,
+    );
+    assert.equal((await artifacts.importOpenEnaArtifactV3(await rehash(changed))).kind, "draft");
+  }
 });
