@@ -56,6 +56,13 @@ test("group display defaults match the official Mean/CI/Outlier/Include Hidden c
     includeHiddenPoints: false,
   });
   assert.equal(module.openEnaGroupUnitKey("Alpha", "a1"), JSON.stringify(["Alpha", "a1"]));
+  const reserved = Object.create(null) as Record<string, typeof module.DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS>;
+  reserved.__proto__ = {
+    ...module.DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS,
+    showMean: false,
+  };
+  assert.equal(module.resolveOpenEnaGroupDisplayOptions(reserved, "__proto__").showMean, false);
+  assert.equal(module.resolveOpenEnaGroupDisplayOptions({}, "constructor").showMean, true);
 });
 
 test("Include Hidden Points changes derived summaries but never reveals a hidden unit mark", async () => {
@@ -323,6 +330,43 @@ test("large unit groups keep a bounded initial DOM and expose a search route to 
   assert.equal((markup.match(/aria-label="Hide unit unit-/g) ?? []).length, 200);
   assert.match(markup, /Showing 200 of 250 matching units \(250 total\)\./);
   assert.doesNotMatch(markup, /Hide unit unit-250 in Large/);
+});
+
+test("native v3 identity bridge keeps stable keys separate from visible labels", async () => {
+  const module = await import("../components/open-ena/OpenEnaGroupDisplayControls");
+  const Renderable = module.default as unknown as ComponentType<Record<string, unknown>>;
+  const markup = renderToStaticMarkup(createElement(Renderable, {
+    groups: [{
+      name: "legacy-fallback",
+      id: "__open_ena_group_v3_000001",
+      label: "Group 1 [number]",
+      color: "#cc423a",
+      unitIds: ["__open_ena_unit_v3_000001", "constructor"],
+      unitLabelsById: {
+        __open_ena_unit_v3_000001: "Unit 1 [number]",
+        constructor: "Unit constructor",
+      },
+    }],
+    settingsByGroup: {
+      __open_ena_group_v3_000001: {
+        showUnitPoints: true,
+        showMean: true,
+        showConfidenceIntervals: true,
+        showOutlierIntervals: false,
+        includeHiddenPoints: false,
+      },
+    },
+    hiddenUnitKeys: [JSON.stringify(["__open_ena_group_v3_000001", "constructor"])],
+    view: "2d",
+    onSettingsChange: () => {},
+    onUnitVisibilityChange: () => {},
+    onRevealAllHidden: () => {},
+  }));
+  assert.match(markup, /Group 1 \[number\] · 1 of 2 unit points visible/u);
+  assert.match(markup, /aria-label="Hide unit Unit 1 \[number\] in Group 1 \[number\]"/u);
+  assert.match(markup, /aria-label="Show unit Unit constructor in Group 1 \[number\]"/u);
+  assert.doesNotMatch(markup, /legacy-fallback/u);
+  assert.doesNotMatch(markup, /__open_ena_(?:group|unit)_v3/u);
 });
 
 test("Workspace owns one identity-keyed display state and passes it to both 2D and 3D group presenters", () => {

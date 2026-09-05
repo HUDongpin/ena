@@ -6,6 +6,10 @@ export interface OpenEnaOfficialFieldPathEditorProps {
   label: string;
   selectedFields: readonly string[];
   options: readonly string[];
+  fieldId?: string;
+  emptyLabel?: string;
+  addRemoveLabel?: (label: string) => string;
+  removeLabel?: (field: string, label: string) => string;
   disabled?: boolean;
   onChange: (fields: string[]) => void;
 }
@@ -14,6 +18,10 @@ export function OpenEnaOfficialFieldPathEditor({
   label,
   selectedFields,
   options,
+  fieldId,
+  emptyLabel = "Add field",
+  addRemoveLabel = (fieldLabel) => `Add or remove ${fieldLabel} fields`,
+  removeLabel = (field, fieldLabel) => `Remove ${field} from ${fieldLabel}`,
   disabled = false,
   onChange,
 }: OpenEnaOfficialFieldPathEditorProps) {
@@ -41,7 +49,7 @@ export function OpenEnaOfficialFieldPathEditor({
           style={{ "--ena-official-field-count": Math.max(1, selectedFields.length) } as CSSProperties}
         >
           {selectedFields.length === 0 ? (
-            <span className="ena-official-field-path-empty">Add field</span>
+            <span className="ena-official-field-path-empty">{emptyLabel}</span>
           ) : selectedFields.map((field) => (
             <span className="ena-official-field-path-segment" key={field}>
               <span className="ena-official-drag-dots" aria-hidden="true">
@@ -51,7 +59,7 @@ export function OpenEnaOfficialFieldPathEditor({
               <button
                 type="button"
                 className="ena-official-field-remove"
-                aria-label={`Remove ${field} from ${label}`}
+                aria-label={removeLabel(field, label)}
                 disabled={disabled}
                 onClick={() => setField(field, false)}
               >
@@ -62,8 +70,9 @@ export function OpenEnaOfficialFieldPathEditor({
         </div>
         <button
           type="button"
+          id={fieldId}
           className="ena-official-field-path-add"
-          aria-label={`Add or remove ${label} fields`}
+          aria-label={addRemoveLabel(label)}
           aria-controls={pickerId}
           aria-expanded={open}
           disabled={disabled}
@@ -139,6 +148,7 @@ export type OpenEnaOfficialIconName =
   | "collapse"
   | "mean"
   | "visibility"
+  | "show"
   | "exclude"
   | "reset";
 
@@ -147,6 +157,7 @@ function iconGlyph(icon: OpenEnaOfficialIconName): ReactNode {
   if (icon === "collapse") return <><path d="m7 10 5-5 5 5" /><path d="M12 5v14" /><path d="M6 19h12" /></>;
   if (icon === "mean") return <><path d="M4 12h16M12 4v16" /><rect x="9" y="9" width="6" height="6" /></>;
   if (icon === "visibility") return <><path d="M3 4.5 21 19.5" /><path d="M10.6 10.7a2 2 0 0 0 2.7 2.7" /><path d="M6.2 7.1C4.5 8.3 3.3 10 2.5 12c2 4 5.2 6 9.5 6 1.5 0 2.9-.3 4.1-.8" /><path d="M9.8 6.2c.7-.1 1.4-.2 2.2-.2 4.3 0 7.5 2 9.5 6-.5 1.1-1.2 2.1-2 2.9" /></>;
+  if (icon === "show") return <><path d="M2.5 12c2-4 5.2-6 9.5-6s7.5 2 9.5 6c-2 4-5.2 6-9.5 6s-7.5-2-9.5-6Z" /><circle cx="12" cy="12" r="2.5" /></>;
   if (icon === "exclude") return <><circle cx="12" cy="12" r="8" /><path d="M8 12h8" /></>;
   return <><path d="M4.5 10a8 8 0 1 1 1.3 7" /><path d="M4 5v5h5" /></>;
 }
@@ -155,12 +166,16 @@ export function OpenEnaOfficialIconButton({
   icon,
   ariaLabel,
   title,
+  ariaPressed,
+  describedBy,
   disabled = false,
   onClick,
 }: {
   icon: OpenEnaOfficialIconName;
   ariaLabel: string;
   title: string;
+  ariaPressed?: boolean;
+  describedBy?: string;
   disabled?: boolean;
   onClick?: () => void;
 }) {
@@ -169,6 +184,8 @@ export function OpenEnaOfficialIconButton({
       type="button"
       className="ena-official-icon-button"
       aria-label={ariaLabel}
+      aria-pressed={ariaPressed}
+      aria-describedby={describedBy}
       title={title}
       disabled={disabled}
       onClick={onClick}

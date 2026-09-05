@@ -23,6 +23,7 @@
     "test:browser:open-ena-node-drag": "node tests/open-ena-node-drag-browser-smoke.mjs",
     "test:browser:open-ena-login": "node tests/open-ena-login-browser-smoke.mjs",
     "test:browser:open-ena-model-v3-tabs": "node tests/open-ena-model-v3-tabs-browser.mjs",
+    "test:browser:open-ena-model-v3-units": "node tests/open-ena-model-v3-units-browser.mjs",
     "test:browser:longitudinal-v3": "node tests/open-ena-longitudinal-v3-browser-smoke.mjs",
     "prompt:verify": "node --import tsx scripts/verify-open-ena-ai-prompts.ts",
     "test:production-browser-receipt:unit": "node --test scripts/verify-open-ena-production-browser-run.test.mjs",

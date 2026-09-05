@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type CSSProperties } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import type { OpenEnaGroupDisplayCopy } from "@/lib/open-ena-i18n";
 import {
   DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS,
@@ -11,9 +11,20 @@ import {
 } from "@/lib/open-ena/group-display";
 
 export interface OpenEnaGroupDisplayControlGroup {
+  /** Stable machine identity. Legacy callers may omit it and continue using name. */
+  id?: string;
+  /** Visible identity label. Legacy callers may omit it and continue using name. */
+  label?: string;
   name: string;
   color: string;
   unitIds: string[];
+  /** Own-key lookup from stable Unit IDs to visible labels. */
+  unitLabelsById?: Readonly<Record<string, string>>;
+}
+
+export interface GroupDisclosureCommandV3 {
+  revision: number;
+  action: "collapse-all" | "open-all-options";
 }
 
 export interface OpenEnaGroupDisplayControlsProps {
@@ -23,6 +34,7 @@ export interface OpenEnaGroupDisplayControlsProps {
   view: "2d" | "3d";
   copy?: OpenEnaGroupDisplayCopy;
   disabled?: boolean;
+  disclosureCommand?: GroupDisclosureCommandV3;
   onSettingsChange: (groupName: string, patch: Partial<OpenEnaGroupDisplayOptions>) => void;
   onUnitVisibilityChange: (groupName: string, unitId: string, visible: boolean) => void;
   onRevealAllHidden: () => void;
@@ -99,15 +111,38 @@ export default function OpenEnaGroupDisplayControls({
   view,
   copy = DEFAULT_GROUP_DISPLAY_COPY,
   disabled = false,
+  disclosureCommand,
   onSettingsChange,
   onUnitVisibilityChange,
   onRevealAllHidden,
 }: OpenEnaGroupDisplayControlsProps) {
   const headingId = useId();
   const [unitQueries, setUnitQueries] = useState<Record<string, string>>({});
+  const [openByGroup, setOpenByGroup] = useState<Record<string, boolean>>({});
+  const lastDisclosureCommand = useRef<GroupDisclosureCommandV3 | null>(null);
+  const groupIds = groups.map((group) => group.id ?? group.name);
+  const groupIdentity = JSON.stringify(groupIds);
+
+  useEffect(() => {
+    const priorCommand = lastDisclosureCommand.current;
+    const explicitCommand = disclosureCommand !== undefined
+      && (priorCommand?.revision !== disclosureCommand.revision
+        || priorCommand.action !== disclosureCommand.action);
+    const commandForNewGroups = explicitCommand ? disclosureCommand : priorCommand;
+    setOpenByGroup((current) => Object.fromEntries(groupIds.map((groupId) => [
+      groupId,
+      explicitCommand
+        ? disclosureCommand.action === "open-all-options"
+        : Object.hasOwn(current, groupId)
+          ? current[groupId]
+          : commandForNewGroups?.action === "open-all-options",
+    ])));
+    if (explicitCommand) lastDisclosureCommand.current = disclosureCommand;
+  }, [disclosureCommand?.action, disclosureCommand?.revision, groupIdentity]);
+
   const hidden = new Set(hiddenUnitKeys);
   const hiddenCount = groups.reduce((count, group) => (
-    count + group.unitIds.filter((unitId) => hidden.has(openEnaGroupUnitKey(group.name, unitId))).length
+    count + group.unitIds.filter((unitId) => hidden.has(openEnaGroupUnitKey(group.id ?? group.name, unitId))).length
   ), 0);
 
   return (
@@ -134,15 +169,19 @@ export default function OpenEnaGroupDisplayControls({
 
       <div className="ena-group-display-list">
         {groups.map((group, groupIndex) => {
-          const settings = resolveOpenEnaGroupDisplayOptions(settingsByGroup, group.name);
+          const groupId = group.id ?? group.name;
+          const groupLabel = group.label ?? group.name;
+          const unitLabels = new Map(Object.entries(group.unitLabelsById ?? {}));
+          const unitLabel = (unitId: string) => unitLabels.get(unitId) ?? unitId;
+          const settings = resolveOpenEnaGroupDisplayOptions(settingsByGroup, groupId);
           const visibleUnitIds = group.unitIds.filter((unitId) => (
-            !hidden.has(openEnaGroupUnitKey(group.name, unitId))
+            !hidden.has(openEnaGroupUnitKey(groupId, unitId))
           ));
           const individuallyVisibleCount = visibleUnitIds.length;
-          const unitQuery = unitQueries[group.name] ?? "";
+          const unitQuery = unitQueries[groupId] ?? "";
           const normalizedUnitQuery = unitQuery.trim().toLocaleLowerCase();
           const matchingUnitIds = normalizedUnitQuery
-            ? group.unitIds.filter((unitId) => unitId.toLocaleLowerCase().includes(normalizedUnitQuery))
+            ? group.unitIds.filter((unitId) => unitLabel(unitId).toLocaleLowerCase().includes(normalizedUnitQuery))
             : group.unitIds;
           const renderedUnitIds = matchingUnitIds.slice(0, MAX_RENDERED_UNIT_ACTIONS_PER_GROUP);
           const plottedCount = settings.showUnitPoints ? individuallyVisibleCount : 0;
@@ -168,15 +207,25 @@ export default function OpenEnaGroupDisplayControls({
           const includeHiddenDisabled = disabled
             || (settings.includeHiddenPoints && individuallyVisibleCount === 0);
           return (
-            <details key={group.name} className="ena-group-display-group">
-              <summary aria-label={copy.visibleCount(group.name, plottedCount, group.unitIds.length)}>
+            <details
+              key={groupId}
+              className="ena-group-display-group"
+              open={openByGroup[groupId] ?? false}
+              onToggle={(event) => {
+                const open = event.currentTarget.open;
+                setOpenByGroup((current) => current[groupId] === open
+                  ? current
+                  : { ...current, [groupId]: open });
+              }}
+            >
+              <summary aria-label={copy.visibleCount(groupLabel, plottedCount, group.unitIds.length)}>
                 <i
                   className="ena-group-display-swatch"
                   aria-hidden="true"
                   style={{ "--ena-group-display-color": group.color } as CSSProperties}
                 />
-                <span className="ena-group-display-name">{group.name}</span>
-                <span className="sr-only">{copy.visibleCount(group.name, plottedCount, group.unitIds.length)}</span>
+                <span className="ena-group-display-name">{groupLabel}</span>
+                <span className="sr-only">{copy.visibleCount(groupLabel, plottedCount, group.unitIds.length)}</span>
                 <span className="ena-group-display-mean-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24">
                     <path d="M4 12h16M12 4v16" />
@@ -185,43 +234,43 @@ export default function OpenEnaGroupDisplayControls({
                 </span>
               </summary>
 
-              <div className="ena-group-display-settings" role="group" aria-label={copy.displaySettings(group.name)}>
+              <div className="ena-group-display-settings" role="group" aria-label={copy.displaySettings(groupLabel)}>
                 <GroupSwitch
-                  label={copy.settingLabel(copy.showUnitPoints, group.name)}
+                  label={copy.settingLabel(copy.showUnitPoints, groupLabel)}
                   visibleLabel={copy.showUnitPoints}
                   checked={settings.showUnitPoints}
                   disabled={disabled}
-                  onChange={(checked) => onSettingsChange(group.name, { showUnitPoints: checked })}
+                  onChange={(checked) => onSettingsChange(groupId, { showUnitPoints: checked })}
                 />
                 <GroupSwitch
-                  label={copy.settingLabel(copy.showMean, group.name)}
+                  label={copy.settingLabel(copy.showMean, groupLabel)}
                   visibleLabel={copy.showMean}
                   checked={settings.showMean}
                   disabled={disabled}
-                  onChange={(checked) => onSettingsChange(group.name, { showMean: checked })}
+                  onChange={(checked) => onSettingsChange(groupId, { showMean: checked })}
                 />
                 <GroupSwitch
-                  label={copy.settingLabel(copy.showConfidenceIntervals, group.name)}
+                  label={copy.settingLabel(copy.showConfidenceIntervals, groupLabel)}
                   visibleLabel={copy.showConfidenceIntervals}
                   checked={settings.showConfidenceIntervals}
                   disabled={disabled || !settings.showMean || summaryUnitCount < 2}
                   describedBy={intervalDependencyIds}
-                  onChange={(checked) => onSettingsChange(group.name, { showConfidenceIntervals: checked })}
+                  onChange={(checked) => onSettingsChange(groupId, { showConfidenceIntervals: checked })}
                 />
                 <GroupSwitch
-                  label={copy.settingLabel(copy.showOutlierIntervals, group.name)}
+                  label={copy.settingLabel(copy.showOutlierIntervals, groupLabel)}
                   visibleLabel={copy.showOutlierIntervals}
                   checked={settings.showOutlierIntervals}
                   disabled={outlierDisabled}
                   describedBy={outlierDescriptionIds}
-                  onChange={(checked) => onSettingsChange(group.name, { showOutlierIntervals: checked })}
+                  onChange={(checked) => onSettingsChange(groupId, { showOutlierIntervals: checked })}
                 />
                 <GroupSwitch
-                  label={copy.settingLabel(copy.includeHiddenPoints, group.name)}
+                  label={copy.settingLabel(copy.includeHiddenPoints, groupLabel)}
                   visibleLabel={copy.includeHiddenPoints}
                   checked={settings.includeHiddenPoints}
                   disabled={includeHiddenDisabled}
-                  onChange={(checked) => onSettingsChange(group.name, { includeHiddenPoints: checked })}
+                  onChange={(checked) => onSettingsChange(groupId, { includeHiddenPoints: checked })}
                 />
                 {view === "3d" ? (
                   <p id={outlierBoundaryId} className="ena-group-display-boundary" role="note">
@@ -251,12 +300,12 @@ export default function OpenEnaGroupDisplayControls({
                     <span>{copy.searchUnits}</span>
                     <input
                       type="search"
-                      aria-label={copy.searchUnitsLabel(group.name)}
+                      aria-label={copy.searchUnitsLabel(groupLabel)}
                       value={unitQuery}
                       disabled={disabled}
                       onChange={(event) => setUnitQueries((current) => ({
                         ...current,
-                        [group.name]: event.target.value,
+                        [groupId]: event.target.value,
                       }))}
                     />
                   </label>
@@ -268,16 +317,17 @@ export default function OpenEnaGroupDisplayControls({
                 ) : null}
                 <ul>
                   {renderedUnitIds.map((unitId) => {
-                    const isVisible = !hidden.has(openEnaGroupUnitKey(group.name, unitId));
+                    const isVisible = !hidden.has(openEnaGroupUnitKey(groupId, unitId));
+                    const visibleUnitLabel = unitLabel(unitId);
                     const hidesLastSummaryUnit = isVisible
                       && individuallyVisibleCount <= 1
                       && !settings.includeHiddenPoints;
                     return (
                       <li key={unitId}>
-                        <span>{unitId}</span>
+                        <span>{visibleUnitLabel}</span>
                         <button
                           type="button"
-                          aria-label={copy.unitAction(isVisible, unitId, group.name)}
+                          aria-label={copy.unitAction(isVisible, visibleUnitLabel, groupLabel)}
                           aria-disabled={disabled || hidesLastSummaryUnit}
                           aria-describedby={hidesLastSummaryUnit ? keepOneVisibleId : undefined}
                           disabled={disabled}
@@ -286,7 +336,7 @@ export default function OpenEnaGroupDisplayControls({
                             : undefined}
                           onClick={() => {
                             if (!disabled && !hidesLastSummaryUnit) {
-                              onUnitVisibilityChange(group.name, unitId, !isVisible);
+                              onUnitVisibilityChange(groupId, unitId, !isVisible);
                             }
                           }}
                         >

@@ -104,6 +104,8 @@ jobs:
       - run: npm run test:browser --workspace=jena-js
       - name: Run the Models v3 accessible tabs browser gate
         run: npm run test:browser:open-ena-model-v3-tabs
+      - name: Run the Models v3 Units controls browser gate
+        run: npm run test:browser:open-ena-model-v3-units
       - name: Install Chromium for the pinned Playwright CLI
         run: npx --yes --package @playwright/cli@0.1.18 playwright-cli install-browser chromium
       - name: Run the Open ENA 3D Data View and fullscreen smoke
