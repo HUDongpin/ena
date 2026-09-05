@@ -1,6 +1,6 @@
 import type { ENASet, Row } from "jena-js";
 import { adjacencyKey } from "jena-js/core";
-import { assertStandardRotationOutputV3, fixedProjectionRankV3, standardRuntimeDiagnosticsV3, verifyStandardScientificReadinessV3 } from "../analyze";
+import { assertStandardRotationOutputV3, fixedProjectionRankV3, standardRuntimeDiagnosticsV3, verifyStandardScientificEvidenceV3 } from "../analyze";
 import { canonicalJsonV3, deepFreezeV3, sha256CanonicalJsonV3, snapshotPlainJsonRecordV3 } from "./canonical-json";
 import type { ModelCapabilityStatusV3 } from "./compiler";
 import type { ModelCapabilityV3, ModelDiagnosticV3 } from "./diagnostics";
@@ -10,6 +10,8 @@ import { MAX_ESTIMATED_EXPORT_BYTES_V3, MAX_ESTIMATED_NUMERIC_CELLS_V3, MAX_ESTI
 import type { BoundStandardResultV3 as BoundResultV3, BoundResultV3 as AnyBoundResultV3, BoundOnaResultV3, InternalStandardRunResultV3, ResultBindingV3, ResultExecutionProvenanceV3, RuntimeResourceObservationV3, SerializableEnaSetV3 } from "./types";
 import { onaPlanBindingV3, onaScientificResultHashPayloadV3, validateBoundOnaResultV3 } from "./ona-result-binding";
 import type { OnaExecutionPlanV3 } from "./ona-adapter";
+import { assertStandardScientificClosureV3 } from "./standard-scientific-closure";
+import { assertCombinedStandardResourcesV3, canonicalJsonByteLengthV3, captureStandardOperationalAdmissionV3 } from "./standard-closure-resource-budget";
 
 const CAPABILITIES: readonly ModelCapabilityV3[] = ["build-model", "export-current-model", "export-reference", "group-inference", "trajectory-inference", "longitudinal-comparison", "ai-interpretation"];
 const COUNTER_CONTRACT = { version: 1, numericCells: "peak-tracked-retained-scientific-slots", numericMetadata: "covered-by-structural-byte-policy", bytes: "conservative-structural-and-temporary-overlap-bound" } as const;
@@ -102,10 +104,11 @@ function validateObservation(plan: StandardExecutionPlanV3, observed: RuntimeRes
   for (const field of ["processedRows", "maximumBufferedRows", "numericCellsAllocated", "peakBytesObservedOrBounded"] as const) integer(observed[field], `Observed ${field}`);
   if (observed.observationMethod !== "exact-counters-and-conservative-byte-bound" || observed.processedRows !== plan.rows.length) throw new TypeError("Observed resource method/processed population is invalid.");
   const estimate = plan.header.resourceEstimate;
+  const limits = assertCombinedStandardResourcesV3(plan.operationalAdmission, plan.reference?.admission, plan.referenceSerializationAdmission, plan.planSerializationAdmission);
   // R is retained after eviction; one arriving row can coexist before eviction.
   if (observed.maximumBufferedRows > Math.min(plan.rows.length, estimate.estimatedRetainedWindowRows + 1)
-    || observed.numericCellsAllocated > Math.min(MAX_ESTIMATED_NUMERIC_CELLS_V3, estimate.estimatedNumericCells + (plan.reference?.admission.incrementalNumericCells ?? 0))
-    || observed.peakBytesObservedOrBounded > Math.min(MAX_ESTIMATED_PEAK_BYTES_V3, estimate.estimatedPeakBytes + (plan.reference?.admission.incrementalPeakBytes ?? 0))) throw new TypeError("Observed runtime resources exceed the admitted estimate or hard limit.");
+    || observed.numericCellsAllocated > limits.estimatedNumericCells
+    || observed.peakBytesObservedOrBounded > limits.estimatedPeakBytes) throw new TypeError("Observed runtime resources exceed the admitted estimate or hard limit.");
 }
 
 function populationPairs(plan: StandardExecutionPlanV3, runtime: InternalStandardRunResultV3): [string, string | null][] {
@@ -206,6 +209,18 @@ function validateRuntime(plan: StandardExecutionPlanV3, runtime: InternalStandar
   for (const table of [set.connectionCounts, set.lineWeights]) for (const row of table) {
     for (const [column, value] of Object.entries(row)) if (scientificColumns.has(column)) nonnegativeScientificValue(value);
   }
+  const unitFields = ["__open_ena_unit_token", "ENA_UNIT"];
+  const displayAxes = set.rotation.rotationColumns.slice(0, 3);
+  const tableFields = (table: readonly Row[], fields: readonly string[], role: string) => {
+    for (const row of table) same(Object.keys(row).sort(), [...fields].sort(), `${role} fields`);
+  };
+  tableFields(set.rawRows, [...unitFields, "__open_ena_horizon_token", ...codes], "raw source");
+  tableFields(set.rowConnectionCounts, [...unitFields, "__open_ena_horizon_token", ...codes, ...set.codeColumns], "raw cooccurrence");
+  for (const [role, table] of [["counts", set.connectionCounts], ["line weights", set.lineWeights], ["projection inputs", set.pointsForProjection]] as const) tableFields(table, [...unitFields, ...set.codeColumns], role);
+  tableFields(set.points, [...unitFields, ...displayAxes], "points");
+  tableFields(set.metaData, unitFields, "metadata");
+  tableFields(set.centroids!, ["unit", ...displayAxes], "centroids");
+  if (set.trajectories) tableFields(set.trajectories, [...unitFields, "__open_ena_horizon_token"], "trajectory");
   const p = runtime.projection;
   same(Object.keys(p).sort(), ["centerAlignToOrigin", "centerVector", "estimableAxes", "fullAxes", "rank", "runtimeFirstAxis", "type", "variance", ...(plan.reference ? ["targetProjectionRank"] : [])].sort(), "projection fields");
   same(Object.keys(runtime.populations).sort(), ["fit", "fitTokens", "targetTokens", "trajectoryStepCountByUnit", "imputedStepCount", ...(plan.reference ? ["sourceFit"] : [])].sort(), "population fields");
@@ -385,9 +400,10 @@ function validateFixedProjectionRankV3(plan: StandardExecutionPlanV3, admittedPl
   // All fixed Reference representations are already charged in the additive
   // ledger. Do not charge them again as target bytes in this conservative bound.
   const bytes = 8 * (targetSlots + scratch) + estimate.estimatedStructuralBytes + estimate.estimatedWorkerMaterializationBytes + admission.incrementalPeakBytes;
+  const limits = assertCombinedStandardResourcesV3(plan.operationalAdmission, admission, plan.referenceSerializationAdmission, plan.planSerializationAdmission);
   if (![slots, scratch, bytes].every(Number.isSafeInteger)
-    || slots + scratch > Math.min(MAX_ESTIMATED_NUMERIC_CELLS_V3, estimate.estimatedNumericCells + admission.incrementalNumericCells)
-    || bytes > Math.min(MAX_ESTIMATED_PEAK_BYTES_V3, estimate.estimatedPeakBytes + admission.incrementalPeakBytes)) throw new TypeError("Fixed projection rank validation exceeds admitted allocation resources.");
+    || slots + scratch > limits.estimatedNumericCells
+    || bytes > limits.estimatedPeakBytes) throw new TypeError("Fixed projection rank validation exceeds admitted allocation resources.");
   const actualRank = fixedProjectionRankV3(runtime.set);
   if (p.projection.rank !== actualRank || p.projection.targetProjectionRank !== actualRank) throw new TypeError("Declared Reference target rank disagrees with the actual full fixed projection.");
 }
@@ -398,7 +414,7 @@ export function scientificResultHashPayloadV3(result: Pick<BoundResultV3, "confi
 }
 
 /** Admit dimensions before own-key traversal, then detach all values before hashing yields. */
-function captureBoundResultV3(input: unknown, expectedPlan: unknown): BoundResultV3 {
+function captureBoundResultV3(input: unknown, expectedPlan: unknown, internal?: { rawCells: number; originalScientificCells: number }): BoundResultV3 {
   const plan = snapshotPlainJsonRecordV3(expectedPlan, "Expected plan");
   const header = snapshotPlainJsonRecordV3(plan.header, "Expected plan header");
   const estimate = snapshotPlainJsonRecordV3(header.resourceEstimate, "Expected resource estimate");
@@ -417,8 +433,11 @@ function captureBoundResultV3(input: unknown, expectedPlan: unknown): BoundResul
     integer(admission.incrementalNumericCells, "Reference admission cells"); integer(admission.incrementalPeakBytes, "Reference admission bytes");
     referenceCells = admission.incrementalNumericCells; referenceBytes = admission.incrementalPeakBytes;
   }
-  const numericLimit = Math.min(MAX_ESTIMATED_NUMERIC_CELLS_V3, Number(estimate.estimatedNumericCells) + referenceCells);
-  const byteLimit = Math.min(MAX_ESTIMATED_PEAK_BYTES_V3, Number(estimate.estimatedPeakBytes) + referenceBytes);
+  const operational = captureStandardOperationalAdmissionV3(plan.operationalAdmission);
+  const numericLimit = Math.min(MAX_ESTIMATED_NUMERIC_CELLS_V3, operational.totalNumericCells + referenceCells);
+  const supplemental = plan.referenceSerializationAdmission as StandardExecutionPlanV3["referenceSerializationAdmission"];
+  const planSerialization = plan.planSerializationAdmission as StandardExecutionPlanV3["planSerializationAdmission"];
+  const byteLimit = Math.min(MAX_ESTIMATED_PEAK_BYTES_V3, operational.totalPeakBytes + referenceBytes + (supplemental?.incrementalPeakBytes ?? 0) + planSerialization.serializationPeakBytes);
   // Numeric arrays plus the already admitted structural/identity bytes bound
   // total complexity without imposing a new identity-field-count policy.
   const scalarLimit = numericLimit + Math.floor(byteLimit / 8);
@@ -435,12 +454,91 @@ function captureBoundResultV3(input: unknown, expectedPlan: unknown): BoundResul
   let bytes = 0;
   const encoder = new TextEncoder();
   const active = new WeakSet<object>();
-  function capture(value: unknown, path: string, depth: number): unknown {
+  const originalScientificContainers = new WeakSet<object>();
+  function fixedReferenceValue(actual: unknown, expected: unknown, scientific = false, countable = true): unknown {
+    if (expected === null || typeof expected !== "object") {
+      if (!Object.is(actual, expected)) throw new TypeError("Runtime fixed Reference geometry differs from the captured plan.");
+      if (internal && scientific && countable && typeof expected === "number") internal.originalScientificCells += 1;
+      return expected;
+    }
+    if (scientific && actual !== null && typeof actual === "object") {
+      countable &&= !originalScientificContainers.has(actual);
+      originalScientificContainers.add(actual);
+    }
+    if (Array.isArray(expected)) {
+      if (!Array.isArray(actual) || Object.getOwnPropertyDescriptor(actual, "length")?.value !== expected.length) throw new TypeError("Runtime fixed Reference geometry has invalid dimensions.");
+      for (let index = 0; index < expected.length; index += 1) {
+        const entry = Object.getOwnPropertyDescriptor(actual, String(index));
+        if (!entry || !entry.enumerable || !("value" in entry)) throw new TypeError("Runtime fixed Reference geometry requires dense data entries.");
+        fixedReferenceValue(entry.value, expected[index], scientific, countable);
+      }
+      if (Reflect.ownKeys(actual).length !== expected.length + 1 || Object.getOwnPropertyDescriptor(actual, "length")?.value !== expected.length) throw new TypeError("Runtime fixed Reference geometry changed during capture.");
+    } else {
+      const record = snapshotPlainJsonRecordV3(actual, "Runtime fixed Reference geometry");
+      const keys = Object.keys(expected);
+      if (Object.keys(record).length !== keys.length || keys.some((key) => !Object.hasOwn(record, key))) throw new TypeError("Runtime fixed Reference geometry has unexpected fields.");
+      for (const key of keys) fixedReferenceValue(record[key], (expected as Record<string, unknown>)[key], scientific || ["rotationMatrix", "centerVector", "eigenvalues", "nodes", "variance"].includes(key), countable);
+    }
+    return expected;
+  }
+  function captureInternalRaw(value: unknown, path: string): [] {
+    if (!Array.isArray(value)) throw new TypeError("Internal raw tables must be arrays.");
+    const length = Object.getOwnPropertyDescriptor(value, "length")?.value;
+    integer(length, "Internal raw table length");
+    // Conversation rowConnectionCounts is a partition table, not necessarilyN.
+    if (length > n) throw new TypeError("Internal raw table exceeds admitted source/partition cardinality.");
+    if (Object.getOwnPropertyDescriptor(value, "length")?.value !== length) throw new TypeError("Internal raw table length changed before capture.");
+    const dictionary = plan.codeDictionary as StandardExecutionPlanV3["codeDictionary"];
+    const identities = plan.identityDictionary as StandardExecutionPlanV3["identityDictionary"];
+    const codes = dictionary.codes.map((entry) => entry.token);
+    const edges = adjacencyKey(codes).map((entry) => entry.name);
+    const scientific = new Set(path.endsWith(".rawRows") ? codes : [...codes, ...edges]);
+    const unitTokens = new Set(identities.units.map((entry) => entry.token)), horizonTokens = new Set(identities.horizons.map((entry) => entry.token));
+    const expected = ["__open_ena_unit_token", "ENA_UNIT", "__open_ena_horizon_token", ...scientific].sort();
+    for (let index = 0; index < length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) throw new TypeError("Internal raw table requires dense data entries.");
+      const row = snapshotPlainJsonRecordV3(descriptor.value, "Internal raw row");
+      for (const [key, cell] of Object.entries(row)) {
+        if (scientific.has(key)) { nonnegativeScientificValue(cell); internal!.rawCells += 1; }
+        else if (key === "__open_ena_unit_token" || key === "ENA_UNIT") { if (typeof cell !== "string" || !unitTokens.has(cell)) throw new TypeError("Unknown raw Unit token."); }
+        else if (key === "__open_ena_horizon_token") { if (typeof cell !== "string" || !horizonTokens.has(cell)) throw new TypeError("Unknown raw Horizon token."); }
+        else throw new TypeError("Unknown internal raw scientific fields.");
+      }
+      same(Object.keys(row).sort(), expected, "internal raw table fields");
+      if (internal!.rawCells > numericLimit) throw new TypeError("Internal raw input exceeds admitted retained numeric resources.");
+    }
+    if (Reflect.ownKeys(value).length !== length + 1 || Object.getOwnPropertyDescriptor(value, "length")?.value !== length) throw new TypeError("Internal raw table changed or has extra properties.");
+    return [];
+  }
+  function capture(value: unknown, path: string, depth: number, scientific = false, originalCountable = true): unknown {
     if (depth > 64 || ++scalars > scalarLimit) throw new TypeError("Bound result exceeds resource admission complexity.");
     const modelOnlyTable = /^result\.set\.(rawRows|rowConnectionCounts)$/u.test(path);
+    if (modelOnlyTable && internal) return captureInternalRaw(value, path);
+    if (internal && plan.reference !== null) {
+      const reference = plan.reference as StandardExecutionPlanV3["reference"];
+      if (path === "result.set.rotation") {
+        fixedReferenceValue(value, reference!.rotationSet);
+        // The owned Reference arrays replace, rather than copy, the validated
+        // caller geometry. Retained original geometry is charged separately.
+        return reference!.rotationSet;
+      }
+      if (path === "result.projection.centerVector") { fixedReferenceValue(value, reference!.rotationSet.centerVector, true); return reference!.rotationSet.centerVector; }
+      if (path === "result.populations.sourceFit") { fixedReferenceValue(value, reference!.artifact.fit); return reference!.artifact.fit; }
+    }
     if (modelOnlyTable && !Array.isArray(value)) throw new TypeError("Canonical model-only raw tables must be empty arrays.");
+    scientific ||= /^result\.set\.(connectionCounts|connectionMatrix|lineWeights|pointsForProjection|points|centroids|variance)$|^result\.set\.rotation\.(rotationMatrix|centerVector|eigenvalues|nodes)$|^result\.projection\.(centerVector|variance)$|^result\.populations\.sourceFit\.variance$/u.test(path);
+    if (internal && scientific && value !== null && typeof value === "object") {
+      originalCountable &&= !originalScientificContainers.has(value);
+      originalScientificContainers.add(value);
+    }
     if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number") {
+      if (internal && value === Infinity && /^result\.set\.functionParams\.windowSize(Back|Forward)$/u.test(path)) return "Infinity";
       if (typeof value === "number" && !Number.isFinite(value)) throw new TypeError("Bound result numeric values must be finite.");
+      if (internal && scientific && originalCountable && typeof value === "number") {
+        internal.originalScientificCells += 1;
+        if (internal.rawCells + internal.originalScientificCells + operational.stages.sourceCaptureCells + operational.compactScientificCells > numericLimit) throw new TypeError("Binding input capture exceeds retained numeric admission.");
+      }
       if (typeof value === "string" && value.length > byteLimit - bytes) throw new TypeError("Bound result exceeds resource admission bytes.");
       bytes += encoder.encode(JSON.stringify(value)).byteLength;
       if (bytes > byteLimit) throw new TypeError("Bound result exceeds resource admission bytes.");
@@ -476,7 +574,7 @@ function captureBoundResultV3(input: unknown, expectedPlan: unknown): BoundResul
         }
         const keys = Reflect.ownKeys(value);
         if (keys.length !== length + 1 || keys.some((key) => key !== "length" && (typeof key !== "string" || !/^(0|[1-9]\d*)$/u.test(key) || Number(key) >= length))) throw new TypeError("Bound result admission array has extra properties.");
-        const result = entries.map((entry, index) => capture(entry, `${path}[${index}]`, depth + 1));
+        const result = entries.map((entry, index) => capture(entry, `${path}[${index}]`, depth + 1, scientific, originalCountable));
         const again = Object.getOwnPropertyDescriptor(value, "length");
         if (!again || !("value" in again) || again.value !== length || entries.some((entry, index) => !Object.is(Object.getOwnPropertyDescriptor(value, String(index))?.value, entry))) throw new TypeError("Bound result changed during descriptor admission capture.");
         return result;
@@ -485,7 +583,7 @@ function captureBoundResultV3(input: unknown, expectedPlan: unknown): BoundResul
       if (Object.keys(record).length > scalarLimit) throw new TypeError("Bound result exceeds admitted object cardinality.");
       bytes += Object.keys(record).reduce((sum, key) => sum + encoder.encode(JSON.stringify(key)).byteLength + 2, 2);
       if (bytes > byteLimit) throw new TypeError("Bound result exceeds resource admission bytes.");
-      const captured = Object.fromEntries(Object.entries(record).map(([key, entry]) => [key, capture(entry, `${path}.${key}`, depth + 1)]));
+      const captured = Object.fromEntries(Object.entries(record).map(([key, entry]) => [key, capture(entry, `${path}.${key}`, depth + 1, scientific, originalCountable)]));
       const again = snapshotPlainJsonRecordV3(value, `Admission ${path}`);
       if (Object.keys(again).length !== Object.keys(record).length || Object.keys(record).some((key) => !Object.is(record[key], again[key]))) throw new TypeError("Bound result changed during descriptor admission capture.");
       return captured;
@@ -494,18 +592,64 @@ function captureBoundResultV3(input: unknown, expectedPlan: unknown): BoundResul
   return capture(input, "result", 0) as BoundResultV3;
 }
 
-/** Bind one owned runtime output to the captured plan. Never reads current UI state. */
-export async function bindResultV3(plan: StandardExecutionPlanV3, runtime: InternalStandardRunResultV3, observedResources: RuntimeResourceObservationV3, diagnostics: readonly ModelDiagnosticV3[]): Promise<BoundResultV3> {
+type OwnedStandardReadinessV3 = Awaited<ReturnType<typeof verifyStandardScientificEvidenceV3>>;
+function captureRuntimeV3(plan: StandardExecutionPlanV3, runtimeInput: InternalStandardRunResultV3, observedInput: RuntimeResourceObservationV3, providedDiagnostics: readonly ModelDiagnosticV3[] | null) {
+  const counts = { rawCells: 0, originalScientificCells: 0 };
+  const root = snapshotPlainJsonRecordV3(runtimeInput, "Internal Standard runtime");
+  const captured = captureBoundResultV3({ ...root, observedInput, providedDiagnostics }, plan, counts) as unknown as InternalStandardRunResultV3 & { observedInput: RuntimeResourceObservationV3; providedDiagnostics: readonly ModelDiagnosticV3[] | null };
+  for (const field of ["windowSizeBack", "windowSizeForward"] as const) if ((captured.set.functionParams[field] as unknown) === "Infinity") captured.set.functionParams[field] = Infinity;
+  return { runtime: captured, observed: captured.observedInput, providedDiagnostics: captured.providedDiagnostics, originalCells: counts.rawCells + counts.originalScientificCells };
+}
+
+function guardScientificClosureV3(plan: StandardExecutionPlanV3, heldCells: number): void {
+  const a = plan.operationalAdmission;
+  const cells = a.stages.sourceCaptureCells + heldCells + a.stages.sourceOracleCells + a.stages.algebraCells + a.stages.rankDiagnosticCells;
+  const limit = assertCombinedStandardResourcesV3(a, plan.reference?.admission, plan.referenceSerializationAdmission, plan.planSerializationAdmission);
+  if (!Number.isSafeInteger(cells) || cells > limit.estimatedNumericCells) throw new TypeError("Standard scientific closure exceeds its pre-allocation numeric admission.");
+}
+
+async function prepareOwnedStandardBindingV3(capturedPlan: StandardExecutionPlanV3) {
+  const plan = await validateStandardExecutionPlanV3(capturedPlan);
+  guardScientificClosureV3(plan, 0);
+  const readiness = await verifyStandardScientificEvidenceV3(plan);
+  return { plan, readiness };
+}
+
+/** @internal The factory owns the real readiness source oracle. bind closes
+ * over that private value, never this.compiled or a caller-supplied oracle.
+ */
+export async function prepareStandardResultBindingV3(input: StandardExecutionPlanV3) {
+  const capturedPlan = captureExecutionPlanInputV3(input) as StandardExecutionPlanV3;
+  const { plan, readiness } = await prepareOwnedStandardBindingV3(capturedPlan);
+  return Object.freeze({ compiled: readiness.compiled, bind: async (runtime: InternalStandardRunResultV3, observed: RuntimeResourceObservationV3) => {
+    const captured = captureRuntimeV3(plan, runtime, observed, null);
+    return bindCapturedResultV3(plan, captured.runtime, captured.observed, readiness, captured.originalCells);
+  } });
+}
+
+/** Both caller graphs are bounded and detached before this function first yields. */
+export async function bindResultV3(inputPlan: StandardExecutionPlanV3, runtime: InternalStandardRunResultV3, observed: RuntimeResourceObservationV3, diagnostics: readonly ModelDiagnosticV3[]): Promise<BoundResultV3> {
+  const capturedPlan = captureExecutionPlanInputV3(inputPlan) as StandardExecutionPlanV3;
+  const captured = captureRuntimeV3(capturedPlan, runtime, observed, diagnostics);
+  const { plan, readiness } = await prepareOwnedStandardBindingV3(capturedPlan);
+  same(captured.providedDiagnostics, readiness.compiled.diagnostics, "compiler diagnostics");
+  return bindCapturedResultV3(plan, captured.runtime, captured.observed, readiness, captured.originalCells);
+}
+
+async function bindCapturedResultV3(plan: StandardExecutionPlanV3, runtime: InternalStandardRunResultV3, observedResources: RuntimeResourceObservationV3, readiness: OwnedStandardReadinessV3, originalCells: number): Promise<BoundResultV3> {
   const binding = planBinding(plan);
   const pairs = validateRuntime(plan, runtime);
   same(runtime.diagnostics, standardRuntimeDiagnosticsV3(runtime.projection.type, runtime.projection.rank, runtime.meansBinding), "runtime diagnostics");
   validateObservation(plan, observedResources);
-  const merged = mergedDiagnostics(plan, diagnostics, runtime.diagnostics);
+  const merged = mergedDiagnostics(plan, readiness.compiled.diagnostics, runtime.diagnostics);
   const planCells = plan.rows.reduce((sum, row) => sum + Object.values(row.codeValues).length, 0)
     + plan.sourceProof.rows.reduce((sum, row) => sum + plan.codeDictionary.codes.filter((code) => typeof row.values[code.sourceColumn] === "number").length, 0);
   const referenceAllowance = plan.reference?.admission.incrementalNumericCells ?? 0;
-  const numericLimit = Math.min(MAX_ESTIMATED_NUMERIC_CELLS_V3, plan.header.resourceEstimate.estimatedNumericCells + referenceAllowance);
+  const numericLimit = Math.min(MAX_ESTIMATED_NUMERIC_CELLS_V3, plan.operationalAdmission.totalNumericCells + referenceAllowance);
   const runtimeCells = scientificSlotsV3([runtime.set], [runtime.projection], [plan.reference]);
+  guardScientificClosureV3(plan, runtimeCells + originalCells);
+  if (plan.reference && runtime.projection.rank !== fixedProjectionRankV3(runtime.set)) throw new TypeError("Declared Reference target rank disagrees with the actual full fixed projection.");
+  assertStandardScientificClosureV3(plan, runtime, pairs, readiness.evidence);
   // Bound v3 exposes model materialization. Synchronous scientific fixtures may
   // retain optional raw tables; their storage is counted but never copied into
   // unbudgeted per-row edge exports.
@@ -515,12 +659,12 @@ export async function bindResultV3(plan: StandardExecutionPlanV3, runtime: Inter
   };
   // A transformed set cannot allocate more scientific slots than one complete
   // runtime set. Check its bound before making any new scientific row objects.
-  guard(planCells + runtimeCells + scientificSlotsV3([modelSet], [], []));
+  guard(planCells + originalCells + runtimeCells + scientificSlotsV3([modelSet], [], []));
   const payload = {
     configuration: plan.configuration,
     executionProvenance: {
       ...staticProvenance(plan), projection: runtime.projection, populations: runtime.populations, meansBinding: runtime.meansBinding,
-      resources: { targetBaseline: plan.header.resourceEstimate, referenceAdmission: plan.reference?.admission ?? null, counterContract: COUNTER_CONTRACT, observed: observedResources },
+      resources: { targetBaseline: plan.header.resourceEstimate, operationalAdmission: plan.operationalAdmission, referenceAdmission: plan.reference?.admission ?? null, referenceSerializationAdmission: plan.referenceSerializationAdmission, planSerializationAdmission: plan.planSerializationAdmission, counterContract: COUNTER_CONTRACT, observed: observedResources },
       diagnostics: merged,
     },
     set: transformSet(plan, modelSet, pairs) as SerializableEnaSetV3,
@@ -528,16 +672,16 @@ export async function bindResultV3(plan: StandardExecutionPlanV3, runtime: Inter
   };
   const transformedCells = scientificSlotsV3([runtime.set, payload.set], [runtime.projection], [plan.reference]);
   const detachedCopyCells = scientificSlotsV3([payload.set], [payload.executionProvenance.projection], [payload.executionProvenance.reference]) + (runtime.populations.sourceFit?.variance.length ?? 0);
-  guard(planCells + transformedCells + detachedCopyCells);
-  const exportLimit = Math.min(MAX_ESTIMATED_EXPORT_BYTES_V3, plan.header.resourceEstimate.estimatedExportBytes + (plan.reference?.admission.incrementalExportBytes ?? 0));
-  if (plan.header.resourceEstimate.resultIdentityBytes + 24 * detachedCopyCells > exportLimit) throw new TypeError("Binding serialization exceeds admitted export resources.");
+  guard(planCells + originalCells + transformedCells + detachedCopyCells);
+  const exportLimit = assertCombinedStandardResourcesV3(plan.operationalAdmission, plan.reference?.admission, plan.referenceSerializationAdmission, plan.planSerializationAdmission).estimatedExportBytes;
+  canonicalJsonByteLengthV3(payload, exportLimit);
   // Captures and rejects all unsupported/nonfinite JSON values before the await.
   const serialized = canonicalJsonV3(payload);
   if (new TextEncoder().encode(serialized).byteLength > exportLimit) throw new TypeError("Complete scientific result exceeds admitted export bytes.");
   const detached = JSON.parse(serialized) as typeof payload;
-  const boundPeak = planCells + scientificSlotsV3([runtime.set, payload.set, detached.set], [runtime.projection, detached.executionProvenance.projection], [plan.reference, detached.executionProvenance.reference], [runtime.populations.sourceFit?.variance, detached.executionProvenance.populations.sourceFit?.variance]);
+  const boundPeak = planCells + originalCells + readiness.evidence.targetVectors.reduce((sum, row) => sum + row.length, 0) + scientificSlotsV3([runtime.set, payload.set, detached.set], [runtime.projection, detached.executionProvenance.projection], [plan.reference, detached.executionProvenance.reference], [runtime.populations.sourceFit?.variance, detached.executionProvenance.populations.sourceFit?.variance]);
   guard(boundPeak);
-  const boundBytes = 8 * boundPeak + plan.header.resourceEstimate.estimatedStructuralBytes + plan.header.resourceEstimate.estimatedWorkerMaterializationBytes + (plan.reference?.admission.incrementalPeakBytes ?? 0);
+  const boundBytes = assertCombinedStandardResourcesV3(plan.operationalAdmission, plan.reference?.admission, plan.referenceSerializationAdmission, plan.planSerializationAdmission).estimatedPeakBytes;
   detached.executionProvenance.resources.observed = {
     ...observedResources,
     numericCellsAllocated: Math.max(observedResources.numericCellsAllocated, boundPeak),
@@ -565,12 +709,17 @@ async function validateBoundStandardResultFromCapturedPlanV3(input: unknown, cap
   same(Object.keys(captured).sort(), ["binding", "capabilityStatus", "configuration", "createdAt", "executionProvenance", "kind", "schemaVersion", "set"], "envelope keys");
   const { scientificResultSha256, ...binding } = captured.binding;
   same(binding, planBinding(plan), "complete binding");
+  const exportLimit = assertCombinedStandardResourcesV3(plan.operationalAdmission, plan.reference?.admission, plan.referenceSerializationAdmission, plan.planSerializationAdmission).estimatedExportBytes;
+  canonicalJsonByteLengthV3(scientificResultHashPayloadV3(captured), exportLimit);
   if (!/^[a-f0-9]{64}$/u.test(scientificResultSha256) || await sha256CanonicalJsonV3(scientificResultHashPayloadV3(captured)) !== scientificResultSha256) throw new TypeError("Scientific result SHA-256 does not match its complete content.");
   const p = captured.executionProvenance;
   const { projection, populations, meansBinding, resources, diagnostics, ...staticFields } = p;
   same(staticFields, staticProvenance(plan), "complete static provenance");
   same(captured.configuration, plan.configuration, "canonical configuration");
   same(resources.targetBaseline, plan.header.resourceEstimate, "resource baseline");
+  same(resources.operationalAdmission, plan.operationalAdmission, "operational admission");
+  same(resources.referenceSerializationAdmission, plan.referenceSerializationAdmission, "Reference serialization admission");
+  same(resources.planSerializationAdmission, plan.planSerializationAdmission, "plan serialization admission");
   same(resources.referenceAdmission, plan.reference?.admission ?? null, "Reference admission");
   same(resources.counterContract, COUNTER_CONTRACT, "resource counter semantics");
   validateObservation(plan, resources.observed);
@@ -581,7 +730,9 @@ async function validateBoundStandardResultFromCapturedPlanV3(input: unknown, cap
   validateFixedProjectionRankV3(plan, capturedPlan as StandardExecutionPlanV3, captured, runtime);
   // Reverse/forward equality detects extra exported identity values and labels.
   same(transformSet(plan, runtime.set, pairs), captured.set, "restored scientific tables");
-  const compiled = await verifyStandardScientificReadinessV3(plan);
+  guardScientificClosureV3(plan, scientificSlotsV3([captured.set, runtime.set], [projection], [plan.reference, p.reference]));
+  const { compiled, evidence } = await verifyStandardScientificEvidenceV3(plan);
+  assertStandardScientificClosureV3(plan, runtime, pairs, evidence);
   same(diagnostics, mergedDiagnostics(plan, compiled.diagnostics, standardRuntimeDiagnosticsV3(projection.type, projection.rank, meansBinding)), "complete compiler/runtime diagnostics");
   same(captured.capabilityStatus, capabilities(plan, diagnostics), "capability status");
   return deepFreezeV3(captured);

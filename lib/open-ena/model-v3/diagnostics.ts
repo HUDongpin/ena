@@ -26,6 +26,8 @@ import {
   estimateStandardResourcesV3,
 } from "./resource-budget";
 import type { EarlyStandardResourceEstimateV3, StandardResourceEstimateV3 } from "./resource-budget";
+import { standardClosureWorkUnitsV3 } from "./standard-closure-resource-budget";
+import { admitStandardDraftScienceV3 } from "./standard-draft-admission";
 import { datasetHashKindFor } from "../types";
 import type { ParsedDataset, DatasetHashKind } from "../types";
 import type {
@@ -241,6 +243,15 @@ interface IdentityValidationV3 {
 interface ScientificNetworksV3 {
   endpointByUnit: Map<string, number[]>;
   targetVectors: number[][];
+  targetKeys: { unitKey: string; horizonKey: string | null }[];
+}
+
+/** @internal Same-invocation source oracle; never a caller-provided certificate. */
+export interface StandardScientificEvidenceV3 {
+  readonly codeColumns: readonly string[];
+  readonly targetVectors: readonly (readonly number[])[];
+  readonly targetKeys: readonly { readonly unitKey: string; readonly horizonKey: string | null }[];
+  readonly intrinsicRank: number | null;
 }
 
 const own = Object.prototype.hasOwnProperty;
@@ -1372,15 +1383,18 @@ function scientificNetworksV3(
       rawJenaConnectionVectorV3(row, accumulated.codeColumns)
     ));
     const endpointByUnit = new Map<string, number[]>();
+    const targetKeys: ScientificNetworksV3["targetKeys"] = [];
     accumulated.connectionCounts.forEach((row, index) => {
       const token = String(row[DIAGNOSTIC_UNIT_FIELD_V3] ?? "");
       const unitKey = synthetic.unitKeyByToken.get(token);
       if (unitKey === undefined) throw new Error("jENA diagnostic Unit token was not recognized.");
       endpointByUnit.set(unitKey, [...(rawVectors[index] ?? [])]);
+      targetKeys.push({ unitKey, horizonKey: null });
     });
     return {
       endpointByUnit,
       targetVectors: rawVectors.map((vector) => [...vector]),
+      targetKeys,
     };
   }
 
@@ -1389,6 +1403,7 @@ function scientificNetworksV3(
     rawJenaConnectionVectorV3(row, separated.codeColumns)
   ));
   const stepByUnit = new Map<string, Map<string, number[]>>();
+  const stepKeys: ScientificNetworksV3["targetKeys"] = [];
   rawStepVectors.forEach((vector, index) => {
     const trajectory = separated.trajectories?.[index];
     const unitToken = String(trajectory?.[DIAGNOSTIC_UNIT_FIELD_V3] ?? "");
@@ -1401,25 +1416,30 @@ function scientificNetworksV3(
     const byHorizon = stepByUnit.get(unitKey) ?? new Map<string, number[]>();
     byHorizon.set(horizonKey, [...vector]);
     stepByUnit.set(unitKey, byHorizon);
+    stepKeys.push({ unitKey, horizonKey });
   });
   if (model === "SeparateTrajectory") {
     return {
       endpointByUnit: new Map(),
       targetVectors: rawStepVectors.map((vector) => [...vector]),
+      targetKeys: stepKeys,
     };
   }
   const edgeWidth = profiles.length * (profiles.length - 1) / 2;
   const targetVectors: number[][] = [];
+  const targetKeys: ScientificNetworksV3["targetKeys"] = [];
   for (const sequence of horizonOrdering!.unitSequences) {
     const running = zeroVectorV3(edgeWidth);
     for (const step of sequence.steps) {
       addVectorV3(running, stepByUnit.get(sequence.unitKey)?.get(step.horizonKey) ?? zeroVectorV3(edgeWidth));
       targetVectors.push([...running]);
+      targetKeys.push({ unitKey: sequence.unitKey, horizonKey: step.horizonKey });
     }
   }
   return {
     endpointByUnit: new Map(),
     targetVectors,
+    targetKeys,
   };
 }
 
@@ -1986,13 +2006,17 @@ export interface PreparedStandardDraftValidationV3 {
     hashKind: DatasetHashKind;
   }> | null;
   readonly diagnostics: readonly ModelDiagnosticV3[];
+  readonly scientificEvidence: StandardScientificEvidenceV3 | null;
+  readonly scientificAdmission: ReturnType<typeof admitStandardDraftScienceV3> | null;
 }
 
 function preparedValidationV3(
   dataset: DatasetSnapshotV3 | null,
   diagnostics: readonly ModelDiagnosticV3[],
+  scientificEvidence: StandardScientificEvidenceV3 | null = null,
+  scientificAdmission: ReturnType<typeof admitStandardDraftScienceV3> | null = null,
 ): PreparedStandardDraftValidationV3 {
-  return deepFreezeV3({ dataset, diagnostics });
+  return deepFreezeV3({ dataset, diagnostics, scientificEvidence, scientificAdmission });
 }
 
 /** @internal Compiler-only prepared boundary; intentionally absent from the public v3 barrel. */
@@ -2387,6 +2411,16 @@ export function prepareStandardDraftValidationV3(
         resourceBlocked = true;
         output.push(resourceBudgetDiagnosticV3(estimate));
       }
+      if (!resourceBlocked) {
+        try { standardClosureWorkUnitsV3(estimate, modelDraft.rotation.type); }
+        catch (error) {
+          if (!(error instanceof TypeError)) throw error;
+          output.push(diagnosticV3({ id: "RESOURCE_BUDGET_EXCEEDED", severity: "error", scope: "resources", fieldPath: "resources",
+            summary: "Scientific closure exceeds the fixed work budget.", detail: error.message,
+            blocks: ["build-model", "export-current-model", "export-reference"] }));
+          resourceBlocked = true;
+        }
+      }
     } catch (error) {
       if (!(error instanceof ResourceEstimateErrorV3)) throw error;
       resourceBlocked = true;
@@ -2522,7 +2556,26 @@ export function prepareStandardDraftValidationV3(
 
   const rotationShapeReady = !trajectoryMeansInvalid && referenceInvalid === null
     && meansMembershipReady;
+  let scientificAdmission: ReturnType<typeof admitStandardDraftScienceV3> | null = null;
+  if (rotationShapeReady && scientificFieldPrerequisitesValid && rowOrderReady && horizonOrderReady && !resourceBlocked
+    && !output.some((entry) => entry.blocks.includes("build-model"))) {
+    try {
+      scientificAdmission = admitStandardDraftScienceV3(dataset as unknown as ParsedDataset, binding, {
+        ...modelDraft,
+        // Reuse the authoritative detached policy snapshots. Never revisit the
+        // original active policy (which may be a descriptor-changing proxy).
+        movingStanza: preparedOrders.moving ?? { backward: { kind: "finite", value: 1 }, forward: { kind: "finite", value: 0 }, rowOrder: null },
+        horizonOrder: preparedOrders.horizonOrder,
+      });
+    }
+    catch (error) {
+      if (!(error instanceof TypeError) && !(error instanceof ResourceEstimateErrorV3)) throw error;
+      resourceBlocked = true;
+      output.push(resourceBudgetDiagnosticV3(null));
+    }
+  }
   let networks: ScientificNetworksV3 | null = null;
+  let intrinsicRank: number | null = null;
   const emptyTargetReady = dataset.rows.length === 0
     && scientificFieldPrerequisitesValid
     && rowOrderReady
@@ -2582,6 +2635,7 @@ export function prepareStandardDraftValidationV3(
           ? true
           : modelDraft.rotation.centerAlignToOrigin;
         const rank = centeredNetworkRankV3(networks.targetVectors, centerAlignToOrigin);
+        if (modelDraft.rotation.type !== "reference") intrinsicRank = rank;
         const rankDiagnostic = rankDiagnosticV3(
           rank,
           modelDraft.rotation,
@@ -2604,7 +2658,9 @@ export function prepareStandardDraftValidationV3(
     if (shape !== null) output.push(shape);
   }
 
-  return preparedValidationV3(dataset, finalizeDiagnosticsV3(output));
+  return preparedValidationV3(dataset, finalizeDiagnosticsV3(output), networks === null ? null : {
+    codeColumns: profilesInDraftOrder.map((profile) => profile.code), targetVectors: networks.targetVectors, targetKeys: networks.targetKeys, intrinsicRank,
+  }, scientificAdmission);
 }
 
 export function validateStandardDraftV3(

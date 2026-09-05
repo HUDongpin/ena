@@ -7,16 +7,15 @@ import {
   canonicalizeOfficialMeanRotation,
   compactOpenEnaSet,
   completeStandardPlanFromAccumulationV3,
-  verifyStandardScientificReadinessV3,
 } from "./analyze";
 import { validateExecutionPlanV3, isOnaExecutionPlanV3, type OnaExecutionPlanV3, type OpenEnaExecutionPlanV3 } from "./model-v3/execution-plan";
 import { completeOnaPlanFromAccumulationV3, toOnaJenaOptionsV3, verifyOnaScientificReadinessV3 } from "./model-v3/ona-adapter";
 import { bindOnaResultV3 } from "./model-v3/ona-result-binding";
-import { bindResultV3 } from "./model-v3/result-binding";
+import { prepareStandardResultBindingV3 } from "./model-v3/result-binding";
+import { assertCombinedStandardResourcesV3 } from "./model-v3/standard-closure-resource-budget";
 import { toStandardJenaOptionsV3 } from "./model-v3/standard-adapter";
 import { snapshotPlainJsonRecordV3 } from "./model-v3/canonical-json";
 import { MAX_ESTIMATED_NUMERIC_CELLS_V3, MAX_ESTIMATED_PEAK_BYTES_V3 } from "./model-v3/resource-budget";
-import { assertReferenceAdmissionV3 } from "./model-v3/reference-codec-v2";
 import type { BoundResultV3, OpenEnaWorkerStageV3, RuntimeResourceObservationV3, OnaRuntimeResourceObservationV3 } from "./model-v3/types";
 import { validateConfig } from "./csv";
 import { cloneOpenEnaConfig } from "./network-config";
@@ -197,14 +196,14 @@ export function createOpenEnaWorkerHost(
         cancelled();
         post({ kind: "progress-v3", id: run.id, executionPlanSha256: plan.header.executionPlanSha256, stage, progress: value });
       };
-      const compiled = await verifyStandardScientificReadinessV3(plan);
+      const preparedBinding = await prepareStandardResultBindingV3(plan);
       cancelled();
       const estimate = plan.header.resourceEstimate;
       const admission = plan.reference?.admission;
       if (estimate.blocked) throw new TypeError("Plan exceeds the pre-allocation resource budget.");
-      if (admission) assertReferenceAdmissionV3(admission, estimate);
-      const numericLimit = Math.min(MAX_ESTIMATED_NUMERIC_CELLS_V3, estimate.estimatedNumericCells + (admission?.incrementalNumericCells ?? 0));
-      const byteLimit = Math.min(MAX_ESTIMATED_PEAK_BYTES_V3, estimate.estimatedPeakBytes + (admission?.incrementalPeakBytes ?? 0));
+      const limits = assertCombinedStandardResourcesV3(plan.operationalAdmission, admission, plan.referenceSerializationAdmission, plan.planSerializationAdmission);
+      const numericLimit = limits.estimatedNumericCells;
+      const byteLimit = limits.estimatedPeakBytes;
       // Count actual captured/remapped Reference numeric slots. The admission
       // ledger still separately bounds simultaneous capture/hash representations.
       const geometry = plan.reference?.artifact.geometry;
@@ -223,10 +222,13 @@ export function createOpenEnaWorkerHost(
         cancelled();
         for (const value of [numericCells, scratch, bufferPeak]) if (!Number.isSafeInteger(value) || value < 0) throw new TypeError("Runtime resource counter is invalid.");
         const current = materializedCells + numericCells;
-        const allocationBound = current + scratch;
-        const bytes = 8 * (current - referenceCells + scratch) + estimate.estimatedWorkerMaterializationBytes + estimate.estimatedStructuralBytes + (admission?.incrementalPeakBytes ?? 0);
-        if (allocationBound > numericLimit || allocationBound - referenceCells > estimate.estimatedNumericCells || bytes > byteLimit || bufferPeak > Math.min(plan.rows.length, estimate.estimatedRetainedWindowRows + 1)) throw new TypeError("Runtime allocation exceeds the declared resource estimate or hard limit.");
-        numericPeak = Math.max(numericPeak, current);
+        // The owned readiness matrix remains live until binding. Account for it
+        // separately while retaining the original stream/fit baseline check.
+        const retainedEvidenceCells = estimate.trajectorySteps * estimate.adjacencyDimensions;
+        const allocationBound = current + scratch + retainedEvidenceCells;
+        const bytes = 8 * (allocationBound - referenceCells) + estimate.estimatedWorkerMaterializationBytes + plan.operationalAdmission.totalStructuralBytes + (admission?.incrementalPeakBytes ?? 0);
+        if (allocationBound > numericLimit || current + scratch - referenceCells > estimate.estimatedNumericCells || bytes > byteLimit || bufferPeak > Math.min(plan.rows.length, estimate.estimatedRetainedWindowRows + 1)) throw new TypeError("Runtime allocation exceeds the declared resource estimate or hard limit.");
+        numericPeak = Math.max(numericPeak, current + retainedEvidenceCells);
         bytePeak = Math.max(bytePeak, bytes);
         maximumBufferedRows = Math.max(maximumBufferedRows, bufferPeak);
       };
@@ -263,7 +265,7 @@ export function createOpenEnaWorkerHost(
         processedRows: stream.state.rowsSeen, maximumBufferedRows, numericCellsAllocated: numericPeak,
         peakBytesObservedOrBounded: bytePeak, observationMethod: "exact-counters-and-conservative-byte-bound",
       };
-      const result = await bindResultV3(plan, runtime, observed, compiled.diagnostics);
+      const result = await preparedBinding.bind(runtime, observed);
       cancelled();
       progress("complete", 1);
       cancelled();

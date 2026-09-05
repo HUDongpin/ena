@@ -835,8 +835,8 @@ test("50k rows fail the shallow resource envelope before any row snapshot or ana
   assert.equal(deepRowInspection, 0);
 });
 
-test("16,667 low-cardinality Moving rows pass early admission and reach exact diagnostics", () => {
-  const rows = Array.from({ length: 16_667 }, (_, turn) => ({
+for (const count of [2001, 16_667]) test(`${count} low-cardinality Moving rows retain early admission and exact operational diagnostics`, () => {
+  const rows = Array.from({ length: count }, (_, turn) => ({
     unit: "u",
     horizon: "h",
     turn,
@@ -853,8 +853,8 @@ test("16,667 low-cardinality Moving rows pass early admission and reach exact di
       rowOrder: ascendingNumber("turn"),
     },
   }));
-  assert.equal(output.some((entry) => entry.id === "RESOURCE_BUDGET_EXCEEDED"), false);
-  assert.equal(output.some((entry) => entry.id === "STANDARD_TARGET_RANK_ZERO"), true);
+  assert.equal(output.some((entry) => entry.id === "RESOURCE_BUDGET_EXCEEDED"), count === 16_667);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_TARGET_RANK_ZERO"), count !== 16_667, "unadmitted large input must stop before rank work");
 });
 
 test("huge selected identities defeat a lying tiny dataset size before canonicalization", () => {

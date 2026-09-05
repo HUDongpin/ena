@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { rehashStandardPlanForTestV3 } from "./helpers/open-ena-model-v3-fixture";
 import test from "node:test";
 import { runStandardPlanV3 } from "../lib/open-ena/analyze";
 import { canonicalJsonV3, sha256CanonicalJsonV3 } from "../lib/open-ena/model-v3/canonical-json";
@@ -221,7 +222,7 @@ test("Reference rederived binding rejects forged permutation, source fit, center
   ]) {
     const forged = clone(plan);
     change(forged.reference!);
-    forged.header.executionPlanSha256 = await sha256CanonicalJsonV3(executionPlanHashPayloadV3(forged));
+    await rehashStandardPlanForTestV3(forged);
     await assert.rejects(() => validateExecutionPlanV3(forged), /Reference/i);
   }
 });
@@ -395,7 +396,7 @@ test("Reference admission ledger is deterministic and cannot be forged", async (
   for (const key of ["incrementalNumericCells", "incrementalPeakBytes", "incrementalExportBytes"] as const) {
     const forged = clone(plan);
     forged.reference!.admission[key] = 0;
-    forged.header.executionPlanSha256 = await sha256CanonicalJsonV3(executionPlanHashPayloadV3(forged));
+    await rehashStandardPlanForTestV3(forged);
     await assert.rejects(() => validateExecutionPlanV3(forged), /Reference admission/i);
   }
 });

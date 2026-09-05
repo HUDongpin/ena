@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Session } from "node:inspector/promises";
 import { createAccumulationStream, type AccumulationStream } from "jena-js";
 import { createOpenEnaWorkerHost, type OpenEnaWorkerScope } from "../lib/open-ena/jena.worker";
-import { bindingFixtureV3 } from "./helpers/open-ena-model-v3-fixture";
+import { bindingFixtureV3, rehashStandardPlanForTestV3 } from "./helpers/open-ena-model-v3-fixture";
 import * as client from "../lib/open-ena/client";
 import * as references from "../lib/open-ena/model-v3/reference-v2";
 import { executionPlanHashPayloadV3, validateExecutionPlanV3 } from "../lib/open-ena/model-v3/execution-plan";
@@ -40,6 +41,28 @@ test("production scope verifies a plan before streaming and publishes only a fin
   assert.equal(messages.at(-1)?.kind, "result-v3");
   assert.equal(worker.streamCount(), 1);
   assert.deepEqual([...new Set(messages.filter((entry) => entry.kind === "progress-v3").map((entry) => entry.stage))], ["verify-plan", "materialize", "accumulate", "normalize", "center", "rotate-or-project", "position-nodes", "validate-result", "complete"]);
+});
+
+test("worker reuses one actual source-network computation through readiness and binding", async () => {
+  const { plan } = await bindingFixtureV3();
+  const inspector = new Session();
+  inspector.connect();
+  try {
+    await inspector.post("Profiler.enable");
+    await inspector.post("Profiler.startPreciseCoverage", { callCount: true, detailed: true });
+    const worker = host();
+    worker.send({ kind: "run-open-ena-plan-v3", id: "one-evidence", plan, chunkSize: 2 });
+    assert.equal((await worker.terminal("one-evidence")).at(-1)?.kind, "result-v3");
+    const coverage = await inspector.post("Profiler.takePreciseCoverage");
+    const sourceCalls = coverage.result.flatMap((script) => script.url.endsWith("/model-v3/diagnostics.ts")
+      ? script.functions.filter((entry) => entry.functionName === "scientificNetworksV3") : []);
+    assert.equal(sourceCalls.length, 1, "V8 must observe the real scientific source function");
+    assert.equal(sourceCalls[0].ranges[0].count, 1, "readiness evidence must serve the later binder without recomputing the source networks");
+    assert.equal(worker.streamCount(), 1);
+  } finally {
+    await inspector.post("Profiler.stopPreciseCoverage");
+    inspector.disconnect();
+  }
 });
 
 test("queued and active cancellation dispose owned streams and never publish partial science", async () => {
@@ -144,7 +167,8 @@ test("coherently rehashed all-zero Code plans cannot bypass scientific readiness
 test("rehashed false resource estimates fail exact recomputation before allocation", async () => {
   const { plan } = await bindingFixtureV3();
   const changed = { ...plan, header: { ...plan.header, resourceEstimate: { ...plan.header.resourceEstimate, estimatedNumericCells: 1 } } };
-  const candidate = { ...changed, header: { ...changed.header, executionPlanSha256: await sha256CanonicalJsonV3(executionPlanHashPayloadV3(changed)) } };
+  const candidate = structuredClone(changed);
+  await rehashStandardPlanForTestV3(candidate);
   const worker = host();
   worker.send({ kind: "run-open-ena-plan-v3", id: "estimate", plan: candidate, chunkSize: 1 });
   assert.equal((await worker.terminal("estimate")).at(-1)?.kind, "error");

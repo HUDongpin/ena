@@ -724,8 +724,7 @@ test("ONA exact resources and scientific preflight share one coherent detached r
   assert.equal(result.resourceEstimate.endpointNetworks, 2);
 });
 
-test("Conversation compiler resources use Unit-by-Horizon partitions without changing global Horizon count", async () => {
-  const rowCount = 10_001;
+for (const rowCount of [2001, 10_001]) test(`Conversation compiler resources preserve ${rowCount} Unit-by-Horizon partitions and admit their full operational cost`, async () => {
   const rows = Array.from({ length: rowCount }, (_, index) => ({
     unit: `u${index}`,
     horizon: "shared",
@@ -748,6 +747,11 @@ test("Conversation compiler resources use Unit-by-Horizon partitions without cha
       },
     }),
   );
+  if (rowCount === 10_001) {
+    assert.equal(result.status, "invalid", "original large population now exceeds the independent operational byte cap");
+    assert.ok(result.diagnostics.some((entry) => entry.id === "RESOURCE_BUDGET_EXCEEDED"));
+    return;
+  }
   assert.equal(result.status, "ready", result.diagnostics.map((entry) => entry.id).join(", "));
   if (result.status !== "ready") return;
   assert.equal(result.resourceEstimate.units, rowCount);

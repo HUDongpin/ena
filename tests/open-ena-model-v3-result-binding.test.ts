@@ -86,8 +86,8 @@ test("orthonormal validation rejects unadmitted cubic work before dot-product tr
       return Reflect.get(target, key, receiver);
     },
   }));
-  await assert.rejects(() => bindResultV3(unadmitted, runtime, observation(5), compiled.diagnostics), /orthonormal.*work/i);
-  assert.equal(reads, 9, "only the admitted 3×3 finite-shape pass may read matrix cells before the work rejection");
+  await assert.rejects(() => bindResultV3(unadmitted, runtime, observation(5), compiled.diagnostics), /work|admission/i);
+  assert.equal(reads, 0, "plan admission must reject before runtime matrix traversal");
 });
 
 for (const weighting of ["binary", "frequency"] as const) {
@@ -320,10 +320,11 @@ test("binding records manually countable unique scientific containers including 
   const runtime = runStandardPlanV3(plan);
   const before = structuredClone(runtime);
   const result = await bindResultV3(plan, runtime, observation(5), compiled.diagnostics);
-  //30captured plan Code slots +168runtime slots +84new transformed slots
-  // +123detached slots. Shared basis/matrix references count only once.
-  //Runtime rowConnectionCounts retains both3Code and3edge values per row.
-  assert.equal(result.executionProvenance.resources.observed.numericCellsAllocated, 405);
+  //30 plan slots +168 untouched caller runtime slots +123 captured compact
+  // runtime slots +84 transformed slots +123 detached slots +15 oracle slots.
+  // Shared basis/matrix references count once in each retained graph; JSON
+  // occurrences are charged independently by the serialization admission.
+  assert.equal(result.executionProvenance.resources.observed.numericCellsAllocated, 543);
   assert.equal(runtime.set.rawRows.length, 5, "caller-owned runtime remains intact");
   assert.deepEqual(result.set.rawRows, []);
   assert.deepEqual(result.set.rowConnectionCounts, []);

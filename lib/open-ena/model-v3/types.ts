@@ -289,6 +289,9 @@ export interface ResultExecutionProvenanceV3 {
   readonly meansBinding: StandardMeansBindingV3 | null;
   readonly resources: {
     readonly targetBaseline: ExecutionPlanHeaderV3["resourceEstimate"];
+    readonly operationalAdmission: import("./standard-closure-resource-budget").StandardOperationalAdmissionV3;
+    readonly referenceSerializationAdmission: import("./standard-closure-resource-budget").ReferenceBoundSerializationAdmissionV3 | null;
+    readonly planSerializationAdmission: import("./standard-closure-resource-budget").StandardPlanSerializationAdmissionV3;
     readonly referenceAdmission: ReferenceAdmissionV3 | null;
     readonly counterContract: {
       readonly version: 1;

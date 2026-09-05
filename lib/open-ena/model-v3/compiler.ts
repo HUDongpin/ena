@@ -10,7 +10,9 @@ import {
 import type {
   ModelCapabilityV3,
   ModelDiagnosticV3,
+  StandardScientificEvidenceV3,
 } from "./diagnostics";
+import type { StandardOperationalAdmissionV3 } from "./standard-closure-resource-budget";
 import { ResourceEstimateErrorV3 } from "./resource-budget";
 import type {
   OnaResourceEstimateV3,
@@ -18,12 +20,7 @@ import type {
 } from "./resource-budget";
 import {
   decodeCanonicalOnaConfigV3,
-  decodeCanonicalStandardConfigV3,
 } from "./schema";
-import {
-  OPEN_ENA_RUNTIME_POLICY_VERSION_V3,
-  OPEN_ENA_VALIDATION_CONTRACT_VERSION_V3,
-} from "./types";
 import type {
   CanonicalOnaConfigV3,
   CanonicalStandardConfigV3,
@@ -36,7 +33,6 @@ import {
   captureDatasetBindingV3,
   compilerDatasetEnvelopeV3,
   exactOnaResourceEstimateV3,
-  exactStandardResourceEstimateV3,
   parsedEnvelopeV3,
   snapshotCompilerDatasetInputV3,
 } from "./compiler-dataset";
@@ -52,9 +48,6 @@ import {
   validateOnaDatasetV3,
 } from "./ona-compiler-preflight";
 import type { OnaCompilerDiagnosticV3 } from "./ona-compiler-preflight";
-import {
-  buildStandardSourceProofPayloadV3,
-} from "./execution-plan";
 
 export { ONA_COMPILER_DIAGNOSTIC_IDS_V3 } from "./ona-compiler-preflight";
 export type {
@@ -96,6 +89,7 @@ export interface ReadyStandardCompileResultV3 {
   readonly capabilityStatus: ModelCapabilityStatusV3;
   /** Exact post-validation estimate; early-envelope telemetry is never returned here. */
   readonly resourceEstimate: StandardResourceEstimateV3;
+  readonly operationalAdmission: StandardOperationalAdmissionV3;
 }
 
 export type OnaCompileResultV3 = InvalidOnaCompileResultV3 | ReadyOnaCompileResultV3;
@@ -158,24 +152,6 @@ function datasetBindingDiagnosticV3(): ModelDiagnosticV3 {
   });
 }
 
-function exactResourceDiagnosticV3(estimate: StandardResourceEstimateV3 | null): ModelDiagnosticV3 {
-  const reasons = estimate?.blockedReasons ?? ["unsafe-arithmetic"];
-  return deepFreezeV3({
-    id: "RESOURCE_BUDGET_EXCEEDED",
-    severity: "error",
-    scope: "resources",
-    fieldPath: "resources",
-    summary: "The exact model configuration exceeds the fixed resource budget.",
-    detail: "No rows, Codes, extents, or Horizons were reduced automatically; revise the configuration explicitly before model construction or export.",
-    blocks: ["build-model", "export-current-model", "export-reference"],
-    evidence: {
-      totalCount: reasons.length,
-      sampleLimit: 5,
-      samples: reasons.slice(0, 5).map((reason) => ({ identity: reason, detail: String(reason) })),
-      truncated: reasons.length > 5,
-    },
-  });
-}
 
 function draftFingerprintInputV3<T>(draft: T): { fingerprintPromise: Promise<string>; snapshot: T } {
   const json = canonicalJsonV3(draft);
@@ -201,58 +177,29 @@ function compilerPromiseValueV3<T>(outcome: CompilerPromiseOutcomeV3<T>): T {
   return outcome.value;
 }
 
-function standardCanonicalFromDraftV3(draft: StandardEnaDraftV3): unknown {
-  const rotation = draft.rotation.type === "svd"
-    ? { type: "svd", centerAlignToOrigin: draft.rotation.centerAlignToOrigin }
-    : draft.rotation.type === "means"
-      ? {
-          type: "means",
-          centerAlignToOrigin: draft.rotation.centerAlignToOrigin,
-          contrast: {
-            groupColumn: draft.groupColumn,
-            negativeLevel: draft.rotation.negativeLevel,
-            positiveLevel: draft.rotation.positiveLevel,
-          },
-        }
-      : {
-          type: "reference",
-          referenceId: draft.rotation.referenceId,
-          expectedContentSha256: draft.rotation.expectedContentSha256,
-        };
-  return {
-    schemaVersion: 3,
-    analysisFamily: "standard",
-    contracts: {
-      validationContractVersion: OPEN_ENA_VALIDATION_CONTRACT_VERSION_V3,
-      runtimePolicyVersion: OPEN_ENA_RUNTIME_POLICY_VERSION_V3,
-    },
-    units: {
-      columns: draft.unitColumns,
-      group: draft.groupColumn === null
-        ? { type: "none" }
-        : { type: "stable-metadata", column: draft.groupColumn },
-    },
-    horizons: { columns: draft.horizonColumns },
-    codes: draft.codes.map((column) => ({ column, displayLabel: column })),
-    weighting: { type: draft.weighting },
-    window: draft.windowType === "Conversation"
-      ? { type: "Conversation" }
-      : {
-          type: "MovingStanzaWindow",
-          backward: draft.movingStanza.backward,
-          forward: draft.movingStanza.forward,
-          rowOrder: draft.movingStanza.rowOrder,
-        },
-    analysis: draft.model === "EndPoint"
-      ? { model: { type: "EndPoint" }, rotation }
-      : { model: { type: draft.model, horizonOrder: draft.horizonOrder }, rotation },
-  };
-}
 
 export async function compileStandardDraftV3(
   dataset: ParsedDataset,
   datasetSha256: string,
   draft: StandardEnaDraftV3,
+): Promise<StandardCompileResultV3> {
+  return compileStandardDraftInternalV3(dataset, datasetSha256, draft);
+}
+
+/** @internal Owns the same real prepared validation as the ordinary compiler.
+ * No evidence input or caller registration hook is accepted. Ordinary compile
+ * results never retain the extra source matrix after their invocation returns.
+ */
+export async function compileStandardDraftWithScientificEvidenceV3(dataset: ParsedDataset, datasetSha256: string, draft: StandardEnaDraftV3) {
+  let evidence: StandardScientificEvidenceV3 | null = null;
+  const compiled = await compileStandardDraftInternalV3(dataset, datasetSha256, draft, (value) => { evidence = value; });
+  if (compiled.status === "ready" && evidence === null) throw new TypeError("Ready Standard compilation requires its own scientific source evidence.");
+  return { compiled, evidence: evidence as StandardScientificEvidenceV3 | null };
+}
+
+async function compileStandardDraftInternalV3(
+  dataset: ParsedDataset, datasetSha256: string, draft: StandardEnaDraftV3,
+  retainEvidence?: (evidence: StandardScientificEvidenceV3 | null) => void,
 ): Promise<StandardCompileResultV3> {
   const capturedDraft = draftFingerprintInputV3(draft);
   const draftFingerprintOutcomePromise = settleCompilerPromiseV3(capturedDraft.fingerprintPromise);
@@ -277,6 +224,7 @@ export async function compileStandardDraftV3(
     bindingCapture.provisionalBinding,
     capturedDraft.snapshot,
   );
+  retainEvidence?.(prepared.scientificEvidence);
   const draftFingerprint = compilerPromiseValueV3(await draftFingerprintOutcomePromise);
   const bindingOutcome = await bindingOutcomePromise;
   if (!bindingOutcome.ok) throw bindingOutcome.error;
@@ -302,39 +250,8 @@ export async function compileStandardDraftV3(
       canonicalConfiguration: null,
     });
   }
-  const validatedDataset = prepared.dataset as unknown as ParsedDataset;
-  const canonicalConfiguration = deepFreezeV3(decodeCanonicalStandardConfigV3(
-    standardCanonicalFromDraftV3(capturedDraft.snapshot),
-  ));
-  let resourceEstimate: StandardResourceEstimateV3;
-  let sourceProofPayload: ReturnType<typeof buildStandardSourceProofPayloadV3>;
-  try {
-    sourceProofPayload = buildStandardSourceProofPayloadV3(
-      validatedDataset,
-      binding,
-      canonicalConfiguration,
-    );
-    resourceEstimate = exactStandardResourceEstimateV3(
-      validatedDataset,
-      canonicalConfiguration,
-    );
-  } catch (error) {
-    if (!(error instanceof ResourceEstimateErrorV3)) throw error;
-    return deepFreezeV3({
-      status: "invalid",
-      draftFingerprint,
-      diagnostics: [...diagnostics, exactResourceDiagnosticV3(null)],
-      canonicalConfiguration: null,
-    });
-  }
-  if (resourceEstimate.blocked) {
-    return deepFreezeV3({
-      status: "invalid",
-      draftFingerprint,
-      diagnostics: [...diagnostics, exactResourceDiagnosticV3(resourceEstimate)],
-      canonicalConfiguration: null,
-    });
-  }
+  if (prepared.scientificAdmission === null) throw new TypeError("Ready Standard compilation requires its mandatory pre-evidence resource admission.");
+  const { canonicalConfiguration, resourceEstimate, sourceProofPayload, operationalAdmission } = prepared.scientificAdmission;
   return deepFreezeV3({
     status: "ready",
     draftFingerprint,
@@ -348,6 +265,7 @@ export async function compileStandardDraftV3(
       standardIntrinsicCapabilityBlocksV3(canonicalConfiguration),
     ),
     resourceEstimate,
+    operationalAdmission,
   });
 }
 

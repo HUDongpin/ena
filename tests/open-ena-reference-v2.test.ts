@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { rehashStandardPlanForTestV3 } from "./helpers/open-ena-model-v3-fixture";
 import test from "node:test";
 import { runStandardPlanV3 } from "../lib/open-ena/analyze";
 import { sha256CanonicalJsonV3 } from "../lib/open-ena/model-v3/canonical-json";
@@ -400,10 +401,7 @@ test("Moving compatibility preserves policy structure and effective extents, exc
 });
 
 async function rehashPlan(plan: Mutable<StandardExecutionPlanV3>): Promise<void> {
-  const { sourceProofSha256: _proofHash, ...proof } = plan.sourceProof;
-  plan.sourceProof.sourceProofSha256 = await sha256CanonicalJsonV3(proof);
-  const { executionPlanSha256: _planHash, ...header } = plan.header;
-  plan.header.executionPlanSha256 = await sha256CanonicalJsonV3({ ...plan, header });
+  await rehashStandardPlanForTestV3(plan);
 }
 
 test("owned source factory reruns scientific readiness on a coherent all-zero selected Code replacement", async () => {

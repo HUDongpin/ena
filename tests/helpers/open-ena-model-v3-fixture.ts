@@ -4,6 +4,24 @@ import { buildStandardExecutionPlanV3 } from "../../lib/open-ena/model-v3/execut
 import type { OpenEnaStandardReferenceV2, StandardEnaDraftV3 } from "../../lib/open-ena/model-v3/types";
 import { bindReferenceToTargetV3 } from "../../lib/open-ena/model-v3/reference-v2";
 import type { ParsedDataset } from "../../lib/open-ena/types";
+import type { StandardExecutionPlanV3 } from "../../lib/open-ena/model-v3/execution-plan";
+import { canonicalJsonByteLengthV3, estimateStandardOperationalAdmissionV3, estimateReferenceBoundSerializationAdmissionV3, estimateStandardPlanSerializationAdmissionV3 } from "../../lib/open-ena/model-v3/standard-closure-resource-budget";
+import { sha256CanonicalJsonV3 } from "../../lib/open-ena/model-v3/canonical-json";
+
+/** Small adversarial fixtures deliberately compute hashes independently of the
+ * production guarded serializer. Refresh honest derived declarations so the
+ * intended deeper source/Reference mutation is what the validator rejects. */
+export async function rehashStandardPlanForTestV3(plan: StandardExecutionPlanV3): Promise<void> {
+  const { sourceProofSha256: _sourceHash, ...source } = plan.sourceProof;
+  Object.assign(plan.sourceProof, { sourceProofSha256: await sha256CanonicalJsonV3(source) });
+  Object.assign(plan, {
+    operationalAdmission: estimateStandardOperationalAdmissionV3(plan.configuration, plan.header.resourceEstimate, canonicalJsonByteLengthV3(source)),
+    referenceSerializationAdmission: plan.reference ? estimateReferenceBoundSerializationAdmissionV3(plan.codeDictionary.codes.length, plan.reference.sourceFit, plan.reference.admission) : null,
+  });
+  Object.assign(plan, { planSerializationAdmission: estimateStandardPlanSerializationAdmissionV3(plan) });
+  const { executionPlanSha256: _planHash, ...header } = plan.header;
+  Object.assign(plan.header, { executionPlanSha256: await sha256CanonicalJsonV3({ ...plan, header }) });
+}
 
 export async function bindingFixtureV3(hash = "a".repeat(64), modify?: (draft: StandardEnaDraftV3, data: ParsedDataset) => void, reference?: OpenEnaStandardReferenceV2) {
   const data: ParsedDataset = {

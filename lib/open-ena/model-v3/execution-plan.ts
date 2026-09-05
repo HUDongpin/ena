@@ -41,6 +41,7 @@ import {
   estimateStandardResourcesV3,
 } from "./resource-budget";
 import type { StandardResourceEstimateV3 } from "./resource-budget";
+import { assertCombinedStandardResourcesV3, canonicalJsonByteLengthV3, captureStandardOperationalAdmissionV3, estimateReferenceBoundSerializationAdmissionV3, estimateStandardOperationalAdmissionV3, estimateStandardPlanSerializationAdmissionV3, type ReferenceBoundSerializationAdmissionV3, type StandardOperationalAdmissionV3, type StandardPlanSerializationAdmissionV3 } from "./standard-closure-resource-budget";
 import { assertReferenceAdmissionV3, bindReferenceToTargetV3, captureReferenceExecutionBindingV3 } from "./reference-codec-v2";
 import { decodeCanonicalStandardConfigV3 } from "./schema";
 import {
@@ -65,6 +66,7 @@ import type {
   DatasetBindingV3,
   ForwardExtentV3,
   StandardModelTypeV3,
+  ReferenceAdmissionV3,
   ValidatedReferenceExecutionBindingV3,
 } from "./types";
 import {
@@ -96,6 +98,9 @@ const EXECUTION_PLAN_ROOT_KEYS_V3 = [
   "adapterParameters",
   "weighting",
   "reference",
+  "operationalAdmission",
+  "referenceSerializationAdmission",
+  "planSerializationAdmission",
 ] as const;
 
 const EXECUTION_PLAN_HEADER_KEYS_V3 = [
@@ -180,7 +185,9 @@ const DIAGNOSTIC_SCOPES_V3 = new Set([
   "resources",
   "migration",
 ]);
-const DIAGNOSTIC_IDS_V3 = new Set<string>(MODEL_DIAGNOSTIC_IDS_V3);
+// Source admission is shared with diagnostics. Defer reading their exported
+// catalogue until validation runs, after the module graph is initialized.
+const DIAGNOSTIC_IDS_V3 = { has: (id: string) => (MODEL_DIAGNOSTIC_IDS_V3 as readonly string[]).includes(id) };
 
 type ResolvedOrderValueV3 = string | number;
 
@@ -314,6 +321,9 @@ export interface StandardExecutionPlanV3 {
     readonly runtime: "binary" | "sum";
   };
   readonly reference: ValidatedReferenceExecutionBindingV3 | null;
+  readonly operationalAdmission: StandardOperationalAdmissionV3;
+  readonly referenceSerializationAdmission: ReferenceBoundSerializationAdmissionV3 | null;
+  readonly planSerializationAdmission: StandardPlanSerializationAdmissionV3;
 }
 
 export type OpenEnaExecutionPlanV3 = StandardExecutionPlanV3 | OnaExecutionPlanV3;
@@ -1275,6 +1285,7 @@ interface CapturedReadyCompileV3 {
   readonly diagnostics: readonly ModelDiagnosticV3[];
   readonly capabilityStatus: ReadyStandardCompileResultV3["capabilityStatus"];
   readonly resourceEstimate: StandardResourceEstimateV3;
+  readonly operationalAdmission: StandardOperationalAdmissionV3;
 }
 
 function captureReadyCompileResultV3(value: unknown): CapturedReadyCompileV3 {
@@ -1289,6 +1300,7 @@ function captureReadyCompileResultV3(value: unknown): CapturedReadyCompileV3 {
     "diagnostics",
     "capabilityStatus",
     "resourceEstimate",
+    "operationalAdmission",
   ], "compileResult");
   if (snapshot.status !== "ready") throw new TypeError("compileResult must be genuinely ready.");
   const canonicalConfiguration = decodeCanonicalStandardConfigV3(snapshot.canonicalConfiguration);
@@ -1306,6 +1318,7 @@ function captureReadyCompileResultV3(value: unknown): CapturedReadyCompileV3 {
     diagnostics,
     capabilityStatus: capabilityStatusV3(snapshot.capabilityStatus, canonicalConfiguration, diagnostics),
     resourceEstimate: standardResourceEstimateV3(snapshot.resourceEstimate, "compileResult.resourceEstimate"),
+    operationalAdmission: captureStandardOperationalAdmissionV3(snapshot.operationalAdmission),
   };
 }
 
@@ -1313,6 +1326,26 @@ function exactJsonEqualV3(left: unknown, right: unknown, label: string): void {
   if (canonicalJsonV3(left) !== canonicalJsonV3(right)) {
     throw new TypeError(`${label} does not match its canonical source.`);
   }
+}
+
+function captureReferenceWithStandardAdmissionV3(input: unknown, target: StandardOperationalAdmissionV3, codeCount: number) {
+  const root = snapshotPlainJsonRecordV3(input, "Reference provisional binding");
+  const ledger = snapshotPlainJsonRecordV3(root.admission, "Reference provisional admission");
+  exactKeysV3(ledger, ["version", "incrementalNumericCells", "incrementalPeakBytes", "incrementalExportBytes"], "Reference provisional admission");
+  if (ledger.version !== 1 || (root.sourceFit !== "svd" && root.sourceFit !== "means")) throw new TypeError("Reference provisional admission is invalid.");
+  const declared: ReferenceAdmissionV3 = { version: 1,
+    incrementalNumericCells: nonnegativeSafeIntegerV3(ledger.incrementalNumericCells, "Reference numeric cells"),
+    incrementalPeakBytes: nonnegativeSafeIntegerV3(ledger.incrementalPeakBytes, "Reference peak bytes"),
+    incrementalExportBytes: nonnegativeSafeIntegerV3(ledger.incrementalExportBytes, "Reference export bytes") };
+  const provisional = estimateReferenceBoundSerializationAdmissionV3(codeCount, root.sourceFit, declared);
+  assertCombinedStandardResourcesV3(target, declared, provisional);
+  const baseline = assertCombinedStandardResourcesV3(target, null, provisional);
+  // The old codec only captures bounded values and compares its small scalar
+  // ledger. It performs no whole-scientific JSON/hash before rederiving R.
+  const captured = captureReferenceExecutionBindingV3(root, baseline);
+  const supplement = estimateReferenceBoundSerializationAdmissionV3(codeCount, captured.sourceFit, captured.admission);
+  assertCombinedStandardResourcesV3(target, captured.admission, supplement);
+  return { captured, supplement };
 }
 
 function canonicalIdentityJsonForRowV3(
@@ -1478,7 +1511,46 @@ function sourceOrderContextV3(binding: DatasetBindingV3) {
   };
 }
 
+/** Full source/plan text admission precedes the older JSON-based deep decoder
+ * and hash-payload clone. Only detached, cardinality-admitted graphs enter from
+ * the unknown boundary; the counter itself never creates a complete JSON text.
+ */
+function assertStandardPlanSerializationV3(input: unknown): void {
+  const root = snapshotPlainJsonRecordV3(input, "Standard serialized plan");
+  const declared = snapshotPlainJsonRecordV3(root.planSerializationAdmission, "Plan serialization admission");
+  exactKeysV3(declared, ["version", "planJsonBytesUpper", "serializationPeakBytes"], "Plan serialization admission");
+  nonnegativeSafeIntegerV3(declared.planJsonBytesUpper, "Plan JSON upper bytes");
+  nonnegativeSafeIntegerV3(declared.serializationPeakBytes, "Plan serialization peak bytes");
+  const planSerialization = estimateStandardPlanSerializationAdmissionV3(root);
+  exactJsonEqualV3(declared, planSerialization, "Plan serialization admission");
+  const source = snapshotPlainJsonRecordV3(root.sourceProof, "Source proof serialization");
+  const { sourceProofSha256: _hash, ...payload } = source;
+  const target = captureStandardOperationalAdmissionV3(root.operationalAdmission);
+  if (canonicalJsonByteLengthV3(payload) !== target.sourceProofJsonBytes) throw new TypeError("Source proof serialization bytes differ from admitted source.");
+  const header = snapshotPlainJsonRecordV3(root.header, "Serialization plan header");
+  const config = decodeCanonicalStandardConfigV3(root.configuration);
+  const baseline = standardResourceEstimateV3(header.resourceEstimate, "Serialization resource baseline");
+  exactJsonEqualV3(target, estimateStandardOperationalAdmissionV3(config, baseline, target.sourceProofJsonBytes), "Serialized plan operational admission");
+  let reference: ReferenceAdmissionV3 | null = null;
+  let supplement: ReferenceBoundSerializationAdmissionV3 | null = null;
+  if (root.reference !== null) {
+    const captured = snapshotPlainJsonRecordV3(root.reference, "Serialization Reference");
+    reference = snapshotPlainJsonRecordV3(captured.admission, "Serialization Reference admission") as unknown as ReferenceAdmissionV3;
+    if (captured.sourceFit !== "svd" && captured.sourceFit !== "means") throw new TypeError("Reference source fit is unsupported.");
+    supplement = estimateReferenceBoundSerializationAdmissionV3(config.codes.length, captured.sourceFit, reference);
+  }
+  const declaredSupplement = root.referenceSerializationAdmission;
+  if (declaredSupplement !== null) {
+    const record = snapshotPlainJsonRecordV3(declaredSupplement, "Reference serialization admission");
+    exactKeysV3(record, ["version", "scientificValueOccurrences", "referencePayloadBytes", "incrementalNumericCells", "incrementalPeakBytes", "incrementalExportBytes"], "Reference serialization admission");
+    for (const [key, value] of Object.entries(record)) if (key !== "version") nonnegativeSafeIntegerV3(value, key);
+  }
+  exactJsonEqualV3(declaredSupplement, supplement, "Reference serialization admission");
+  assertCombinedStandardResourcesV3(target, reference, supplement, planSerialization);
+}
+
 function executionPlanWithoutHashV3(plan: OpenEnaExecutionPlanV3): Record<string, unknown> {
+  if (plan.header.analysisFamily === "standard") assertStandardPlanSerializationV3(plan);
   const snapshot = plainRecordV3(snapshotJsonValueV3(plan), "execution plan");
   const header = plainRecordV3(snapshot.header, "execution plan header");
   const outputHeader = { ...header };
@@ -1586,11 +1658,11 @@ export async function buildStandardExecutionPlanV3(input: {
   if (earlyAdmission.blocked) {
     throw new TypeError("Ready compiler envelope exceeds the fixed pre-snapshot resource budget.");
   }
-  const referenceSnapshot = inputRecord.reference === null ? null : captureReferenceExecutionBindingV3(inputRecord.reference, {
-    estimatedNumericCells: compile.resourceEstimate.estimatedNumericCells,
-    estimatedPeakBytes: Math.max(earlyAdmission.estimatedPeakBytes, compile.resourceEstimate.estimatedPeakBytes),
-    estimatedExportBytes: compile.resourceEstimate.estimatedExportBytes,
-  });
+  const operationalAdmission = estimateStandardOperationalAdmissionV3(compile.canonicalConfiguration, compile.resourceEstimate, compile.operationalAdmission.sourceProofJsonBytes);
+  exactJsonEqualV3(compile.operationalAdmission, operationalAdmission, "Ready compiler operational admission");
+  const referenceCapture = inputRecord.reference === null ? null : captureReferenceWithStandardAdmissionV3(inputRecord.reference, operationalAdmission, compile.canonicalConfiguration.codes.length);
+  const referenceSnapshot = referenceCapture?.captured ?? null;
+  const referenceSerializationAdmission = referenceCapture?.supplement ?? null;
   const dataset = snapshotCompilerDatasetInputV3(envelope, compile.datasetBinding);
   if (datasetHashKindFor(dataset) !== compile.datasetBinding.hashKind) {
     throw new TypeError("The dataset hash kind does not match the ready compile invocation.");
@@ -1600,6 +1672,7 @@ export async function buildStandardExecutionPlanV3(input: {
     compile.datasetBinding,
     compile.canonicalConfiguration,
   );
+  exactJsonEqualV3(operationalAdmission, estimateStandardOperationalAdmissionV3(compile.canonicalConfiguration, compile.resourceEstimate, canonicalJsonByteLengthV3(sourceProofPayload)), "Source proof serialization admission");
   const sourceProofSha256 = await sha256CanonicalJsonV3(sourceProofPayload);
   if (sourceProofSha256 !== compile.sourceProofSha256) {
     throw new TypeError("Selected source proof does not match the ready compile invocation.");
@@ -1608,7 +1681,7 @@ export async function buildStandardExecutionPlanV3(input: {
   const exactResourceEstimate = exactStandardResourceEstimateV3(proofDataset, compile.canonicalConfiguration);
   exactJsonEqualV3(exactResourceEstimate, compile.resourceEstimate, "Ready compiler resource estimate");
   if (exactResourceEstimate.blocked) throw new TypeError("A blocked resource estimate cannot build a plan.");
-  if (referenceSnapshot) assertReferenceAdmissionV3(referenceSnapshot.admission, exactResourceEstimate);
+  assertCombinedStandardResourcesV3(operationalAdmission, referenceSnapshot?.admission, referenceSerializationAdmission);
 
   // Resource admission precedes the quadratic edge dictionary allocation.
   const codeDictionary = buildStandardCodeDictionaryV3(compile.canonicalConfiguration.codes);
@@ -1730,10 +1803,15 @@ export async function buildStandardExecutionPlanV3(input: {
     adapterParameters,
     weighting,
     reference,
+    operationalAdmission,
+    referenceSerializationAdmission,
   };
-  const executionPlanSha256 = await sha256CanonicalJsonV3(planWithoutExecutionHash);
+  const planSerializationAdmission = estimateStandardPlanSerializationAdmissionV3(planWithoutExecutionHash);
+  assertCombinedStandardResourcesV3(operationalAdmission, reference?.admission, referenceSerializationAdmission, planSerializationAdmission);
+  const admittedPlan = { ...planWithoutExecutionHash, planSerializationAdmission };
+  const executionPlanSha256 = await sha256CanonicalJsonV3(admittedPlan);
   return validateStandardExecutionPlanV3({
-    ...planWithoutExecutionHash,
+    ...admittedPlan,
     header: { ...planWithoutExecutionHash.header, executionPlanSha256 },
   });
 }
@@ -2333,13 +2411,22 @@ function admitExecutionPlanEnvelopeV3(value: unknown): ExecutionPlanAdmissionCap
   if (lowerBound.blocked) {
     throw new TypeError("Execution plan exceeds an unavoidable Standard resource lower bound.");
   }
-  const reference = plan.reference === null ? null : {
+  const operationalAdmission = captureStandardOperationalAdmissionV3(plan.operationalAdmission);
+  // Unknown declarations never reduce either the unavoidable lower bound or
+  // the declared baseline during provisional admission. Exact derivation from
+  // detached source follows; this only rejects impossible envelopes early.
+  const provisionalTarget = { ...operationalAdmission,
+    totalNumericCells: Math.max(operationalAdmission.totalNumericCells, lowerBound.estimatedNumericCells, nonnegativeSafeIntegerV3(resource.estimatedNumericCells, "Declared numeric cells")),
+    totalPeakBytes: Math.max(operationalAdmission.totalPeakBytes, early.estimatedPeakBytes, lowerBound.estimatedPeakBytes, nonnegativeSafeIntegerV3(resource.estimatedPeakBytes, "Declared peak bytes")),
+    totalExportBytes: Math.max(operationalAdmission.totalExportBytes, lowerBound.estimatedExportBytes, nonnegativeSafeIntegerV3(resource.estimatedExportBytes, "Declared export bytes")),
+  };
+  assertCombinedStandardResourcesV3(provisionalTarget);
+  const referenceCapture = plan.reference === null ? null : captureReferenceWithStandardAdmissionV3(plan.reference, provisionalTarget, codeCount);
+  if (referenceCapture) exactJsonEqualV3(plan.referenceSerializationAdmission, referenceCapture.supplement, "Reference bound serialization admission");
+  else if (plan.referenceSerializationAdmission !== null) throw new TypeError("Non-Reference plan cannot carry Reference serialization admission.");
+  const reference = referenceCapture === null ? null : {
     original: plan.reference as object,
-    captured: captureReferenceExecutionBindingV3(plan.reference, {
-      estimatedNumericCells: Math.max(lowerBound.estimatedNumericCells, nonnegativeSafeIntegerV3(resource.estimatedNumericCells, "resourceEstimate.estimatedNumericCells")),
-      estimatedPeakBytes: Math.max(early.estimatedPeakBytes, lowerBound.estimatedPeakBytes, nonnegativeSafeIntegerV3(resource.estimatedPeakBytes, "resourceEstimate.estimatedPeakBytes")),
-      estimatedExportBytes: Math.max(lowerBound.estimatedExportBytes, nonnegativeSafeIntegerV3(resource.estimatedExportBytes, "resourceEstimate.estimatedExportBytes")),
-    }),
+    captured: referenceCapture.captured,
   };
   return {
     root: value as object,
@@ -2404,6 +2491,12 @@ async function decodePlanShapeV3(value: unknown): Promise<StandardExecutionPlanV
   exactJsonEqualV3(weightingRecord, expectedWeighting, "Execution weighting provenance");
   const reference = await referenceBindingV3(plan.reference, configuration, codeDictionary);
   const resourceEstimate = standardResourceEstimateV3(headerRecord.resourceEstimate, "executionPlan.header.resourceEstimate");
+  const operationalAdmission = captureStandardOperationalAdmissionV3(plan.operationalAdmission);
+  const { sourceProofSha256: _sourceHash, ...sourcePayload } = sourceProof;
+  exactJsonEqualV3(operationalAdmission, estimateStandardOperationalAdmissionV3(configuration, resourceEstimate, canonicalJsonByteLengthV3(sourcePayload)), "Standard operational admission");
+  const referenceSerializationAdmission = reference === null ? null : estimateReferenceBoundSerializationAdmissionV3(codeDictionary.codes.length, reference.sourceFit, reference.admission);
+  exactJsonEqualV3(plan.referenceSerializationAdmission, referenceSerializationAdmission, "Reference bound serialization admission");
+  assertCombinedStandardResourcesV3(operationalAdmission, reference?.admission, referenceSerializationAdmission);
   const configurationSha256 = lowercaseSha256V3(headerRecord.configurationSha256, "executionPlan.header.configurationSha256");
   const executionPlanSha256 = lowercaseSha256V3(headerRecord.executionPlanSha256, "executionPlan.header.executionPlanSha256");
   return {
@@ -2435,6 +2528,9 @@ async function decodePlanShapeV3(value: unknown): Promise<StandardExecutionPlanV
     adapterParameters,
     weighting: expectedWeighting,
     reference,
+    operationalAdmission,
+    referenceSerializationAdmission,
+    planSerializationAdmission: estimateStandardPlanSerializationAdmissionV3(plan),
   };
 }
 
@@ -2463,6 +2559,7 @@ export function captureExecutionPlanInputV3(input: unknown): unknown {
   // envelopes cannot force scientific-array traversal or dense dictionaries.
   const admission = admitExecutionPlanEnvelopeV3(capturedRoot);
   const capturedInput = captureAdmittedExecutionPlanV3(admission);
+  assertStandardPlanSerializationV3(capturedInput);
   return capturedInput;
 }
 
@@ -2593,6 +2690,7 @@ async function validateCapturedStandardExecutionPlanV3(capturedInput: unknown): 
   assertIdentityMembershipV3(identities, plan.rows, plan.configuration);
   const exactResourceEstimate = exactStandardResourceEstimateV3(proofDataset, plan.configuration);
   exactJsonEqualV3(exactResourceEstimate, plan.header.resourceEstimate, "Execution resource estimate");
-  if (plan.reference) assertReferenceAdmissionV3(plan.reference.admission, exactResourceEstimate);
+  exactJsonEqualV3(plan.operationalAdmission, estimateStandardOperationalAdmissionV3(plan.configuration, exactResourceEstimate, canonicalJsonByteLengthV3(sourceProofPayload)), "Execution operational admission");
+  assertCombinedStandardResourcesV3(plan.operationalAdmission, plan.reference?.admission, plan.referenceSerializationAdmission, plan.planSerializationAdmission);
   return deepFreezeV3({ ...plan, identityDictionary: identities });
 }

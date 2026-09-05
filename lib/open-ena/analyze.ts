@@ -35,7 +35,7 @@ import type { StandardExecutionPlanV3 } from "./model-v3/execution-plan";
 import { buildMeansBindingV3, buildMeansMasksV3, toStandardJenaOptionsV3 } from "./model-v3/standard-adapter";
 import type { InternalStandardRunResultV3 } from "./model-v3/types";
 import type { StandardEnaDraftV3 } from "./model-v3/types";
-import { compileStandardDraftV3 } from "./model-v3/compiler";
+import { compileStandardDraftWithScientificEvidenceV3 } from "./model-v3/compiler";
 
 export const AUTO_CORRELATION_UNIT_LIMIT = 500;
 
@@ -351,6 +351,12 @@ export function completeStandardPlanFromAccumulationV3(
 
 /** Recompute scientific eligibility from the plan's captured selected source. No fit is performed here. */
 export async function verifyStandardScientificReadinessV3(plan: StandardExecutionPlanV3) {
+  return (await verifyStandardScientificEvidenceV3(plan)).compiled;
+}
+
+/** @internal Evidence comes only from this owned source reconstruction and its
+ * real compiler invocation; callers cannot supply or register an oracle. */
+export async function verifyStandardScientificEvidenceV3(plan: StandardExecutionPlanV3) {
   const config = plan.configuration;
   const rotation = config.analysis.rotation;
   const proof = plan.sourceProof;
@@ -372,10 +378,12 @@ export async function verifyStandardScientificReadinessV3(plan: StandardExecutio
       negativeLevel: rotation.contrast.negativeLevel, positiveLevel: rotation.contrast.positiveLevel,
     },
   };
-  const compiled = await compileStandardDraftV3(dataset, plan.header.datasetSha256, draft);
+  const { compiled, evidence } = await compileStandardDraftWithScientificEvidenceV3(dataset, plan.header.datasetSha256, draft);
   if (compiled.status !== "ready") throw new TypeError(`Standard plan is not scientifically ready: ${compiled.diagnostics.map((entry) => entry.id).join(", ")}.`);
   if (canonicalJsonV3(compiled.resourceEstimate) !== canonicalJsonV3(plan.header.resourceEstimate)) throw new TypeError("Standard plan resource estimate differs from exact source recomputation.");
-  return compiled;
+  if (evidence === null) throw new TypeError("Standard source evidence is missing.");
+  if (canonicalJsonV3(compiled.operationalAdmission) !== canonicalJsonV3(plan.operationalAdmission)) throw new TypeError("Standard operational admission differs from exact source recomputation.");
+  return { compiled, evidence };
 }
 
 function buildBaseJenaOptions(
