@@ -2474,14 +2474,17 @@ export function prepareStandardDraftValidationV3(
       }));
     }
     if (connectivity.edgeCount === 0) {
+      const referenceProjection = modelDraft.rotation.type === "reference";
       output.push(diagnosticV3({
         id: "STANDARD_NO_GLOBAL_COOCCURRENCE",
-        severity: "error",
+        severity: referenceProjection ? "warning" : "error",
         scope: "codes",
         fieldPath: "codes",
         summary: "The candidate network has no global co-occurrence edge.",
-        detail: "No pair of selected Codes is jointly present under the resolved candidate scientific window.",
-        blocks: ["build-model"],
+        detail: referenceProjection
+          ? "No target co-occurrence edge is present; the existing fixed Reference axes can project these zero-network observations. All-zero selected Codes still block modeling."
+          : "No pair of selected Codes is jointly present under the resolved candidate scientific window.",
+        blocks: referenceProjection ? [] : ["build-model"],
         evidence: evidenceV3(connectivity.candidateWindowCount, Array.from(
           { length: Math.min(connectivity.candidateWindowCount, SAMPLE_LIMIT) },
           (_, index) => ({ identity: `window-${index + 1}`, detail: "Resolved candidate window contains no Code pair." }),

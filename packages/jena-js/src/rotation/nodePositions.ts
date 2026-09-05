@@ -78,6 +78,12 @@ export function lwsLeastSquaresPositions(lineWeights: Matrix, points: Matrix, nu
   return solveNodePositionsFromWeights(weights, points);
 }
 
+/** Projection-only incidence centroids. No least-squares solver or node fitting occurs. */
+export function fixedNodePositions(lineWeights: Matrix, nodes: Matrix): NodePositionResult {
+  const weights = nodeWeightsFromLineWeights(lineWeights, nodes.length);
+  return { nodes, centroids: multiplyMatrices(weights, nodes), weights };
+}
+
 function directedNodeCount(adjacencyLength: number, method: string): number {
   const numNodes = Math.round(Math.sqrt(adjacencyLength));
   if (numNodes * numNodes !== adjacencyLength) {

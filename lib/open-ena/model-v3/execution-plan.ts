@@ -41,6 +41,7 @@ import {
   estimateStandardResourcesV3,
 } from "./resource-budget";
 import type { StandardResourceEstimateV3 } from "./resource-budget";
+import { assertReferenceAdmissionV3, bindReferenceToTargetV3, captureReferenceExecutionBindingV3 } from "./reference-v2";
 import { decodeCanonicalStandardConfigV3 } from "./schema";
 import {
   buildCodeRepresentationBindingsV3,
@@ -412,6 +413,7 @@ interface ExecutionPlanAdmissionCaptureV3 {
   readonly root: object;
   readonly records: ReadonlyMap<object, StagedRecordGuardV3>;
   readonly arrays: ReadonlyMap<object, StagedArrayGuardV3>;
+  readonly reference: { readonly original: object; readonly captured: ValidatedReferenceExecutionBindingV3 } | null;
 }
 
 interface MutableExecutionPlanAdmissionCaptureV3 {
@@ -763,6 +765,7 @@ function captureAdmittedExecutionPlanV3(
   const active = new WeakSet<object>();
   const detached = new WeakMap<object, unknown>();
   const visit = (value: unknown, label: string): unknown => {
+    if (admission.reference !== null && value === admission.reference.original) return admission.reference.captured;
     if (value === null || typeof value === "string" || typeof value === "boolean") return value;
     if (typeof value === "number") {
       if (!Number.isFinite(value)) throw new TypeError(`${label} must contain only finite JSON numbers.`);
@@ -1439,16 +1442,17 @@ function stringArrayV3(value: unknown, label: string, distinct = false): string[
   return array;
 }
 
-function referenceBindingV3(
+async function referenceBindingV3(
   value: unknown,
   config: CanonicalStandardConfigV3,
   _dictionary: StandardCodeDictionaryV3,
-): ValidatedReferenceExecutionBindingV3 | null {
+): Promise<ValidatedReferenceExecutionBindingV3 | null> {
   const rotation = config.analysis.rotation;
   if (rotation.type === "reference") {
-    throw new TypeError(
-      "Reference execution remains fail-closed until Task 13 supplies a complete content-addressed Reference v2 artifact.",
-    );
+    const captured = captureReferenceExecutionBindingV3(value);
+    const derived = await bindReferenceToTargetV3(captured.artifact, config);
+    exactJsonEqualV3(captured, derived, "Reference rederived execution binding");
+    return derived;
   }
   if (value !== null) throw new TypeError("SVD and Means execution plans must not carry a Reference binding.");
   return null;
@@ -1541,12 +1545,10 @@ export async function buildStandardExecutionPlanV3(input: {
   const inputRecord = snapshotPlainJsonRecordV3(input, "execution plan input");
   exactKeysV3(inputRecord, ["dataset", "datasetSha256", "compileResult", "reference"], "execution plan input");
   const compile = captureReadyCompileResultV3(inputRecord.compileResult);
-  if (compile.canonicalConfiguration.analysis.rotation.type === "reference") {
-    throw new TypeError(
-      "Reference execution remains fail-closed until Task 13 supplies a complete content-addressed Reference v2 artifact.",
-    );
+  if (compile.canonicalConfiguration.analysis.rotation.type === "reference" && inputRecord.reference === null) {
+    throw new TypeError("Reference execution requires a complete artifact binding.");
   }
-  if (inputRecord.reference !== null) {
+  if (compile.canonicalConfiguration.analysis.rotation.type !== "reference" && inputRecord.reference !== null) {
     throw new TypeError("SVD and Means execution plans must not carry a Reference binding.");
   }
   const datasetSha256 = lowercaseSha256V3(inputRecord.datasetSha256, "datasetSha256");
@@ -1572,11 +1574,15 @@ export async function buildStandardExecutionPlanV3(input: {
   if (earlyAdmission.blocked) {
     throw new TypeError("Ready compiler envelope exceeds the fixed pre-snapshot resource budget.");
   }
+  const referenceSnapshot = inputRecord.reference === null ? null : captureReferenceExecutionBindingV3(inputRecord.reference, {
+    estimatedNumericCells: compile.resourceEstimate.estimatedNumericCells,
+    estimatedPeakBytes: Math.max(earlyAdmission.estimatedPeakBytes, compile.resourceEstimate.estimatedPeakBytes),
+    estimatedExportBytes: compile.resourceEstimate.estimatedExportBytes,
+  });
   const dataset = snapshotCompilerDatasetInputV3(envelope, compile.datasetBinding);
   if (datasetHashKindFor(dataset) !== compile.datasetBinding.hashKind) {
     throw new TypeError("The dataset hash kind does not match the ready compile invocation.");
   }
-  const referenceSnapshot = inputRecord.reference === null ? null : snapshotJsonValueV3(inputRecord.reference);
   const sourceProofPayload = buildStandardSourceProofPayloadV3(
     dataset,
     compile.datasetBinding,
@@ -1590,6 +1596,7 @@ export async function buildStandardExecutionPlanV3(input: {
   const exactResourceEstimate = exactStandardResourceEstimateV3(proofDataset, compile.canonicalConfiguration);
   exactJsonEqualV3(exactResourceEstimate, compile.resourceEstimate, "Ready compiler resource estimate");
   if (exactResourceEstimate.blocked) throw new TypeError("A blocked resource estimate cannot build a plan.");
+  if (referenceSnapshot) assertReferenceAdmissionV3(referenceSnapshot.admission, exactResourceEstimate);
 
   // Resource admission precedes the quadratic edge dictionary allocation.
   const codeDictionary = buildStandardCodeDictionaryV3(compile.canonicalConfiguration.codes);
@@ -1664,7 +1671,7 @@ export async function buildStandardExecutionPlanV3(input: {
         unitTokens,
         horizonTokens,
       );
-  const reference = referenceBindingV3(referenceSnapshot, compile.canonicalConfiguration, codeDictionary);
+  const reference = await referenceBindingV3(referenceSnapshot, compile.canonicalConfiguration, codeDictionary);
   const sourceProof: StandardSourceProofV3 = {
     ...sourceProofPayload,
     sourceProofSha256,
@@ -2124,9 +2131,6 @@ function admitExecutionPlanEnvelopeV3(value: unknown): ExecutionPlanAdmissionCap
     EXECUTION_PLAN_ROOT_KEYS_V3,
     "executionPlan",
   );
-  if (plan.reference !== null) {
-    throw new TypeError("Standard execution plans cannot carry an unvalidated Reference binding.");
-  }
 
   const configuration = stageRecordV3(
     capture,
@@ -2148,11 +2152,7 @@ function admitExecutionPlanEnvelopeV3(value: unknown): ExecutionPlanAdmissionCap
     analysis.rotation,
     "executionPlan.configuration.analysis.rotation",
   );
-  if (rotation.type === "reference") {
-    throw new TypeError(
-      "Reference execution remains fail-closed until Task 13 supplies a complete content-addressed Reference v2 artifact.",
-    );
-  }
+  if ((rotation.type === "reference") !== (plan.reference !== null)) throw new TypeError("Reference configuration must carry exactly one complete Reference binding.");
   const codeCount = stageArrayLengthV3(
     capture,
     configuration.codes,
@@ -2313,21 +2313,30 @@ function admitExecutionPlanEnvelopeV3(value: unknown): ExecutionPlanAdmissionCap
     windowType: "MovingStanzaWindow",
     backward: { kind: "finite", value: 1 },
     forward: { kind: "finite", value: 0 },
-    referenceProjection: false,
+    referenceProjection: rotation.type === "reference",
     datasetSizeBytes,
     identityPayloadBytes: 0,
   });
   if (lowerBound.blocked) {
     throw new TypeError("Execution plan exceeds an unavoidable Standard resource lower bound.");
   }
+  const reference = plan.reference === null ? null : {
+    original: plan.reference as object,
+    captured: captureReferenceExecutionBindingV3(plan.reference, {
+      estimatedNumericCells: Math.max(lowerBound.estimatedNumericCells, nonnegativeSafeIntegerV3(resource.estimatedNumericCells, "resourceEstimate.estimatedNumericCells")),
+      estimatedPeakBytes: Math.max(early.estimatedPeakBytes, lowerBound.estimatedPeakBytes, nonnegativeSafeIntegerV3(resource.estimatedPeakBytes, "resourceEstimate.estimatedPeakBytes")),
+      estimatedExportBytes: Math.max(lowerBound.estimatedExportBytes, nonnegativeSafeIntegerV3(resource.estimatedExportBytes, "resourceEstimate.estimatedExportBytes")),
+    }),
+  };
   return {
     root: value as object,
     records: capture.records,
     arrays: capture.arrays,
+    reference,
   };
 }
 
-function decodePlanShapeV3(value: unknown): StandardExecutionPlanV3 {
+async function decodePlanShapeV3(value: unknown): Promise<StandardExecutionPlanV3> {
   const plan = plainRecordV3(value, "executionPlan");
   exactKeysV3(plan, EXECUTION_PLAN_ROOT_KEYS_V3, "executionPlan");
   const headerRecord = plainRecordV3(plan.header, "executionPlan.header");
@@ -2380,7 +2389,7 @@ function decodePlanShapeV3(value: unknown): StandardExecutionPlanV3 {
     runtime: adapterParameters.weightBy,
   };
   exactJsonEqualV3(weightingRecord, expectedWeighting, "Execution weighting provenance");
-  const reference = referenceBindingV3(plan.reference, configuration, codeDictionary);
+  const reference = await referenceBindingV3(plan.reference, configuration, codeDictionary);
   const resourceEstimate = standardResourceEstimateV3(headerRecord.resourceEstimate, "executionPlan.header.resourceEstimate");
   const configurationSha256 = lowercaseSha256V3(headerRecord.configurationSha256, "executionPlan.header.configurationSha256");
   const executionPlanSha256 = lowercaseSha256V3(headerRecord.executionPlanSha256, "executionPlan.header.executionPlanSha256");
@@ -2423,7 +2432,7 @@ export async function validateExecutionPlanV3(input: unknown): Promise<OpenEnaEx
   const capturedInput = captureAdmittedExecutionPlanV3(admission);
   // The accepted descriptor capture runs before any await. The deep decoder
   // consumes only its detached graph and never reads caller-owned input again.
-  const plan = decodePlanShapeV3(capturedInput);
+  const plan = await decodePlanShapeV3(capturedInput);
   const sourceProofPayload = sourceProofPayloadV3(plan.sourceProof);
   const proofDataset = parsedDatasetFromSourceProofV3(sourceProofPayload);
   const sourceProofHashOutcomePromise = settlePromiseV3(sha256CanonicalJsonV3(sourceProofPayload));
@@ -2533,5 +2542,6 @@ export async function validateExecutionPlanV3(input: unknown): Promise<OpenEnaEx
   assertIdentityMembershipV3(identities, plan.rows, plan.configuration);
   const exactResourceEstimate = exactStandardResourceEstimateV3(proofDataset, plan.configuration);
   exactJsonEqualV3(exactResourceEstimate, plan.header.resourceEstimate, "Execution resource estimate");
+  if (plan.reference) assertReferenceAdmissionV3(plan.reference.admission, exactResourceEstimate);
   return deepFreezeV3({ ...plan, identityDictionary: identities });
 }

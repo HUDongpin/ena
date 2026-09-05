@@ -1,13 +1,13 @@
 import { runStandardPlanV3 } from "../analyze";
 import { JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT, type ParsedDataset } from "../types";
-import { canonicalJsonV3, deepFreezeV3, sha256CanonicalJsonV3, snapshotDenseJsonArrayV3, snapshotPlainJsonRecordV3 } from "./canonical-json";
+import { canonicalJsonV3, deepFreezeV3, sha256CanonicalJsonV3, snapshotPlainJsonRecordV3 } from "./canonical-json";
 import { validateStandardDraftV3 } from "./diagnostics";
 import { validateExecutionPlanV3, type StandardExecutionPlanV3 } from "./execution-plan";
 import { MAX_ESTIMATED_EXPORT_BYTES_V3, MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3, MAX_ESTIMATED_NUMERIC_CELLS_V3, MAX_ESTIMATED_PEAK_BYTES_V3, MAX_ESTIMATED_ROTATION_WORK_UNITS_V3, MAX_ESTIMATED_STATE_COUNT_V3 } from "./resource-budget";
 import { decodeCanonicalStandardConfigV3 } from "./schema";
 import { buildStandardCodeDictionaryV3 } from "./standard-adapter";
 import { OPEN_ENA_EXECUTION_CONTRACT_VERSION_V3, OPEN_ENA_RUNTIME_POLICY_VERSION_V3, OPEN_ENA_VALIDATION_CONTRACT_VERSION_V3 } from "./types";
-import type { CanonicalStandardConfigV3, OpenEnaStandardReferenceV2, ReferenceCodeIdentityV2, ReferenceCompatibilityV2, ReferenceSourceWitnessV3, StandardEnaDraftV3 } from "./types";
+import type { CanonicalStandardConfigV3, OpenEnaStandardReferenceV2, ReferenceAdmissionV3, ReferenceCodeIdentityV2, ReferenceCompatibilityV2, ReferenceSourceWitnessV3, StandardEnaDraftV3, ValidatedReferenceExecutionBindingV3 } from "./types";
 
 type Scientific = Omit<OpenEnaStandardReferenceV2, "displayName" | "referenceId" | "contentSha256">;
 const PREFIX = "open-ena-standard-ref-v2:";
@@ -15,11 +15,14 @@ const TOLERANCE = 1e-8;
 const witnesses = new WeakMap<ReferenceSourceWitnessV3, { scientific: Scientific; currentIdentity: string }>();
 const ROOT_KEYS = ["schemaVersion", "kind", "family", "sourceModel", "source", "fit", "compatibility", "basis", "geometry", "displayName", "contentSha256", "referenceId"];
 
-function record(input: unknown, keys: readonly string[], label: string): Record<string, unknown> {
+function record(input: unknown, keys: readonly string[] | undefined, label: string): Record<string, unknown> {
   const value = snapshotPlainJsonRecordV3(input, label);
+  const accepted = snapshotPlainJsonRecordV3(input, label);
   const actual = Object.keys(value);
-  if (actual.length !== keys.length || actual.some((key) => !keys.includes(key))) throw new TypeError(`${label} must have exact keys: ${keys.join(", ")}.`);
-  return value;
+  const expected = keys ?? actual;
+  if (actual.length !== expected.length || actual.some((key) => !expected.includes(key))) throw new TypeError(`${label} must have exact keys: ${expected.join(", ")}.`);
+  if (Object.keys(accepted).length !== actual.length || actual.some((key) => !Object.hasOwn(accepted, key) || !Object.is(value[key], accepted[key]))) throw new TypeError(`${label} changed during coherent descriptor capture.`);
+  return accepted;
 }
 
 function arrayLength(input: unknown, label: string, max: number): number {
@@ -34,7 +37,20 @@ function arrayLength(input: unknown, label: string, max: number): number {
 function array(input: unknown, label: string, max: number, exact?: number): unknown[] {
   const length = arrayLength(input, label, max);
   if (exact !== undefined && length !== exact) throw new TypeError(`${label} must contain exactly ${exact} entries.`);
-  return snapshotDenseJsonArrayV3(input, label);
+  if (arrayLength(input, label, max) !== length) throw new TypeError(`${label} length changed during coherent descriptor capture.`);
+  const capture = (): unknown[] => {
+    const keys = Reflect.ownKeys(input as object);
+    if (keys.length !== length + 1 || keys.some((key) => key !== "length" && (typeof key !== "string" || !/^(0|[1-9]\d*)$/u.test(key) || Number(key) >= length))) throw new TypeError(`${label} must be a dense plain Reference array.`);
+    return Array.from({ length }, (_unused, index) => {
+      const descriptor = Object.getOwnPropertyDescriptor(input, String(index));
+      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) throw new TypeError(`${label}[${index}] must be an own data property, not an accessor.`);
+      return descriptor.value;
+    });
+  };
+  const staged = capture();
+  const accepted = capture();
+  if (staged.some((value, index) => !Object.is(value, accepted[index]))) throw new TypeError(`${label} changed during coherent descriptor capture.`);
+  return accepted;
 }
 
 function same(actual: unknown, expected: unknown, label: string): void {
@@ -87,7 +103,30 @@ function compatibility(configuration: CanonicalStandardConfigV3): ReferenceCompa
 }
 
 /** Bound all work before copying/enumerating scientific arrays or performing E cubed checks. */
-function captureArtifact(input: unknown): Record<string, unknown> {
+type ReferenceBaselineV3 = { readonly estimatedNumericCells: number; readonly estimatedPeakBytes: number; readonly estimatedExportBytes: number };
+const EMPTY_BASELINE: ReferenceBaselineV3 = { estimatedNumericCells: 0, estimatedPeakBytes: 0, estimatedExportBytes: 0 };
+
+export function assertReferenceAdmissionV3(admission: ReferenceAdmissionV3, baseline: ReferenceBaselineV3): void {
+  if (baseline.estimatedNumericCells + admission.incrementalNumericCells > MAX_ESTIMATED_NUMERIC_CELLS_V3
+    || baseline.estimatedPeakBytes + admission.incrementalPeakBytes > MAX_ESTIMATED_PEAK_BYTES_V3
+    || baseline.estimatedExportBytes + admission.incrementalExportBytes > MAX_ESTIMATED_EXPORT_BYTES_V3) throw new TypeError("Reference and target exceed the combined projection resource budget.");
+}
+
+/** Conservative structural cost: four simultaneous capture/hash/runtime representations, one export. */
+function referenceAdmission(value: unknown): ReferenceAdmissionV3 {
+  let numeric = 0;
+  let bytes = 0;
+  function visit(input: unknown): void {
+    bytes += typeof input === "string" ? input.length * 6 + 32 : typeof input === "object" ? 64 : 32;
+    if (typeof input === "number") numeric += 1;
+    if (Array.isArray(input)) input.forEach(visit);
+    else if (input !== null && typeof input === "object") Object.entries(input).forEach(([key, entry]) => { visit(key); visit(entry); });
+  }
+  visit(value);
+  return { version: 1, incrementalNumericCells: numeric * 4, incrementalPeakBytes: bytes * 4, incrementalExportBytes: bytes };
+}
+
+function captureArtifact(input: unknown, baseline: ReferenceBaselineV3 = EMPTY_BASELINE): Record<string, unknown> {
   const root = record(input, ROOT_KEYS, "Reference");
   const basis = record(root.basis, ["codes", "edges"], "Reference basis");
   const count = arrayLength(basis.codes, "Reference Codes", MAX_ESTIMATED_STATE_COUNT_V3);
@@ -98,15 +137,20 @@ function captureArtifact(input: unknown): Record<string, unknown> {
   if (![edges, cells, work].every(Number.isSafeInteger) || work > MAX_ESTIMATED_ROTATION_WORK_UNITS_V3
     || cells > MAX_ESTIMATED_NUMERIC_CELLS_V3 || cells * 8 > MAX_ESTIMATED_PEAK_BYTES_V3
     || cells * 32 > MAX_ESTIMATED_EXPORT_BYTES_V3) throw new TypeError("Reference geometry exceeds the rotation resource budget.");
-  arrayLength(basis.edges, "Reference edges", edges);
+  assertReferenceAdmissionV3({ version: 1, incrementalNumericCells: cells * 4, incrementalPeakBytes: cells * 128, incrementalExportBytes: cells * 32 }, baseline);
+  basis.codes = array(basis.codes, "Reference Codes", count, count);
+  basis.edges = array(basis.edges, "Reference edges", edges, edges);
   const geometry = record(root.geometry, ["centerVector", "rotationMatrix", "rotationColumns", "eigenvalues", "nodeColumns", "nodes"], "Reference geometry");
   const matrixRows = array(geometry.rotationMatrix, "Reference rotationMatrix", edges, edges);
   geometry.rotationMatrix = matrixRows.map((row) => array(row, "Reference rotation row", edges, edges));
-  arrayLength(geometry.centerVector, "Reference centerVector", edges);
-  arrayLength(geometry.rotationColumns, "Reference rotationColumns", edges);
-  arrayLength(geometry.eigenvalues, "Reference eigenvalues", edges);
-  arrayLength(geometry.nodeColumns, "Reference nodeColumns", 3);
-  arrayLength(geometry.nodes, "Reference nodes", count);
+  geometry.centerVector = array(geometry.centerVector, "Reference centerVector", edges, edges);
+  geometry.rotationColumns = array(geometry.rotationColumns, "Reference rotationColumns", edges, edges);
+  geometry.eigenvalues = array(geometry.eigenvalues, "Reference eigenvalues", edges);
+  geometry.nodeColumns = array(geometry.nodeColumns, "Reference nodeColumns", 3, 3);
+  geometry.nodes = array(geometry.nodes, "Reference nodes", count, count).map((inputNode) => {
+    const node = record(inputNode, ["code", "coordinates"], "Reference node");
+    return { ...node, coordinates: array(node.coordinates, "Reference node coordinates", 3, 3) };
+  });
   let textBytes = 0;
   let retainedBytes = 0;
   let values = 0;
@@ -116,7 +160,7 @@ function captureArtifact(input: unknown): Record<string, unknown> {
     if (values > MAX_ESTIMATED_NUMERIC_CELLS_V3 || depth > 32) throw new TypeError("Reference exceeds the nested value resource budget.");
     // Conservative capture/serialization proxies, using the existing export and peak policies.
     retainedBytes += typeof value === "string" ? value.length * 6 + 32 : typeof value === "object" ? 64 : 32;
-    if (retainedBytes > MAX_ESTIMATED_EXPORT_BYTES_V3 || retainedBytes * 2 > MAX_ESTIMATED_PEAK_BYTES_V3) throw new TypeError("Reference exceeds the capture/export byte resource budget.");
+    if (retainedBytes + baseline.estimatedExportBytes > MAX_ESTIMATED_EXPORT_BYTES_V3 || retainedBytes * 4 + baseline.estimatedPeakBytes > MAX_ESTIMATED_PEAK_BYTES_V3) throw new TypeError("Reference exceeds the combined capture/export byte resource budget.");
     if (typeof value === "string") {
       textBytes += value.length * 6 + 2;
       if (textBytes > MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3) throw new TypeError("Reference exceeds the metadata byte resource budget.");
@@ -129,7 +173,7 @@ function captureArtifact(input: unknown): Record<string, unknown> {
     active.add(value);
     try {
       if (Array.isArray(value)) return array(value, label, MAX_ESTIMATED_STATE_COUNT_V3).map((entry, index) => capture(entry, `${label}[${index}]`, depth + 1));
-      const object = snapshotPlainJsonRecordV3(value, label);
+      const object = record(value, undefined, label);
       const output: Record<string, unknown> = {};
       for (const key of Object.keys(object)) {
         capture(key, label, depth + 1);
@@ -142,9 +186,109 @@ function captureArtifact(input: unknown): Record<string, unknown> {
   return capture({ ...root, basis, geometry }, "Reference", 0) as Record<string, unknown>;
 }
 
+/** Synchronous pre-copy boundary; no caller-owned Reference graph survives the first await. */
+export function captureReferenceExecutionBindingV3(input: unknown, baseline: ReferenceBaselineV3 = EMPTY_BASELINE): ValidatedReferenceExecutionBindingV3 {
+  const root = record(input, ["artifact", "admission", "referenceId", "contentSha256", "basisPermutation", "rotationSet", "sourceFit"], "Reference binding");
+  const artifact = captureArtifact(root.artifact, baseline) as unknown as OpenEnaStandardReferenceV2;
+  const width = artifact.geometry.rotationMatrix.length;
+  const count = artifact.basis.codes.length;
+  const rotation = record(root.rotationSet, ["codes", "adjacencyKey", "rotationMatrix", "rotationColumns", "eigenvalues", "centerVector", "nodes"], "Reference rotationSet");
+  // Before walking any caller binding arrays, charge the artifact and the unavoidable duplicate matrix.
+  const artifactAdmission = referenceAdmission(artifact);
+  assertReferenceAdmissionV3({ ...artifactAdmission, incrementalPeakBytes: artifactAdmission.incrementalPeakBytes + width * width * 128, incrementalNumericCells: artifactAdmission.incrementalNumericCells + width * width * 4 }, baseline);
+  const basisPermutation = array(root.basisPermutation, "Reference basis permutation", width, width).map((value) => integer(value, 0, width - 1, "Reference basis index"));
+  const codes = array(rotation.codes, "Reference runtime Codes", count, count).map((value) => string(value, "Reference runtime Code"));
+  const adjacencyKey = array(rotation.adjacencyKey, "Reference runtime edges", width, width).map((entry) => {
+    const edge = record(entry, ["source", "target", "name", "sourceIndex", "targetIndex"], "Reference runtime edge");
+    return { source: string(edge.source, "Reference edge source"), target: string(edge.target, "Reference edge target"), name: string(edge.name, "Reference edge name"), sourceIndex: integer(edge.sourceIndex, 0, count - 1, "Reference source index"), targetIndex: integer(edge.targetIndex, 0, count - 1, "Reference target index") };
+  });
+  const rotationColumns = array(rotation.rotationColumns, "Reference runtime axes", width, width).map((value) => string(value, "Reference runtime axis"));
+  const rotationMatrix = array(rotation.rotationMatrix, "Reference runtime matrix", width, width).map((row) => vector(row, width, "Reference runtime matrix row"));
+  const centerVector = vector(rotation.centerVector, width, "Reference runtime center");
+  const eigenvalues = array(rotation.eigenvalues, "Reference runtime eigenvalues", width).map((value) => finite(value, "Reference runtime eigenvalue"));
+  const nodes = array(rotation.nodes, "Reference runtime nodes", count, count).map((entry) => {
+    const node = record(entry, ["code", ...rotationColumns.slice(0, 3)], "Reference runtime node");
+    return { code: string(node.code, "Reference runtime node Code"), ...Object.fromEntries(rotationColumns.slice(0, 3).map((axis) => [axis, finite(node[axis], "Reference runtime node coordinate")])) };
+  });
+  const admission = record(root.admission, ["version", "incrementalNumericCells", "incrementalPeakBytes", "incrementalExportBytes"], "Reference admission");
+  if (admission.version !== 1) throw new TypeError("Reference admission version is unsupported.");
+  for (const key of ["incrementalNumericCells", "incrementalPeakBytes", "incrementalExportBytes"]) integer(admission[key], 0, Number.MAX_SAFE_INTEGER, "Reference admission cost");
+  const captured = { artifact, referenceId: string(root.referenceId, "Reference binding ID"), contentSha256: hash(root.contentSha256, "Reference binding SHA"), basisPermutation, rotationSet: { codes, adjacencyKey, rotationMatrix, rotationColumns, eigenvalues, centerVector, nodes }, sourceFit: root.sourceFit };
+  if (captured.sourceFit !== "svd" && captured.sourceFit !== "means") throw new TypeError("Reference source fit must be SVD or Means.");
+  const derived = referenceAdmission(captured);
+  assertReferenceAdmissionV3(derived, baseline);
+  same(admission, derived, "Reference admission ledger");
+  return { ...captured, sourceFit: captured.sourceFit, admission: derived };
+}
+
 function scientificFromArtifact(reference: OpenEnaStandardReferenceV2): Scientific {
   const { displayName: _displayName, referenceId: _referenceId, contentSha256: _contentSha256, ...scientific } = reference;
   return scientific;
+}
+
+/** Decode both inputs before awaiting hashes, then bind only a compatible complete Reference. */
+export async function bindReferenceToTargetV3(input: unknown, target: CanonicalStandardConfigV3): Promise<ValidatedReferenceExecutionBindingV3> {
+  const capturedArtifact = captureArtifact(input);
+  const sourceCodeCount = (capturedArtifact.basis as { codes: unknown[] }).codes.length;
+  let config: CanonicalStandardConfigV3;
+  try {
+    const capturedTarget = record(target, undefined, "Reference target configuration");
+    capturedTarget.codes = array(capturedTarget.codes, "Reference target Codes", sourceCodeCount, sourceCodeCount);
+    config = decodeCanonicalStandardConfigV3(capturedTarget);
+  }
+  catch (error) {
+    if (error instanceof TypeError) throw new TypeError(`Reference target configuration is invalid: ${error.message}`, { cause: error });
+    throw error;
+  }
+  const reference = await decodeReferenceV2(capturedArtifact).catch((error: unknown) => {
+    if (error instanceof TypeError && !error.message.includes("Reference")) throw new TypeError(`Reference artifact is invalid: ${error.message}`, { cause: error });
+    throw error;
+  });
+  const rotation = config.analysis.rotation;
+  if (rotation.type !== "reference" || rotation.referenceId !== reference.referenceId || rotation.expectedContentSha256 !== reference.contentSha256) throw new TypeError("Reference target identity/content SHA does not match the selected artifact.");
+  same(reference.compatibility, compatibility(config), "Reference target compatibility");
+  const identityKey = (value: ReferenceCodeIdentityV2) => canonicalJsonV3(value);
+  const sourceCodes = new Set(reference.basis.codes.map(identityKey));
+  if (sourceCodes.size !== config.codes.length || config.codes.some((entry) => !sourceCodes.has(identityKey(code(entry.column))))) throw new TypeError("Reference and target must have identical typed Code identities, without implicit field renaming.");
+  const dictionary = buildStandardCodeDictionaryV3(config.codes);
+  const edgeKey = (left: ReferenceCodeIdentityV2, right: ReferenceCodeIdentityV2) => canonicalJsonV3([identityKey(left), identityKey(right)].sort());
+  const edgeIndices = new Map(reference.basis.edges.map((edge, index) => [edgeKey(edge.source, edge.target), index]));
+  const basisPermutation = dictionary.edges.map((edge) => {
+    const index = edgeIndices.get(edgeKey(code(edge.sourceCodeIdentity), code(edge.targetCodeIdentity)));
+    if (index === undefined) throw new TypeError("Reference is missing a target undirected edge.");
+    return index;
+  });
+  if (new Set(basisPermutation).size !== dictionary.edges.length) throw new TypeError("Reference edge permutation is not bijective.");
+  const expectedAxes = reference.geometry.rotationColumns.map((_axis, index) => index === 0 && reference.fit.method === "means" ? "MR1" : `SVD${index + 1}`);
+  same(reference.geometry.rotationColumns, expectedAxes, "Reference runtime axes");
+  const nodesByIdentity = new Map(reference.geometry.nodes.map((node) => [identityKey(node.code), node]));
+  const runtimeCodes = dictionary.codes.map((entry) => entry.token);
+  const codeIndices = new Map(dictionary.codes.map((entry, index) => [entry.sourceColumn, index]));
+  const rotationSet = {
+    codes: runtimeCodes,
+    adjacencyKey: dictionary.edges.map((edge) => {
+      const sourceIndex = codeIndices.get(edge.sourceCodeIdentity)!;
+      const targetIndex = codeIndices.get(edge.targetCodeIdentity)!;
+      return { source: runtimeCodes[sourceIndex], target: runtimeCodes[targetIndex], name: `${runtimeCodes[sourceIndex]} & ${runtimeCodes[targetIndex]}`, sourceIndex, targetIndex };
+    }),
+    rotationMatrix: basisPermutation.map((index) => [...reference.geometry.rotationMatrix[index]]),
+    centerVector: basisPermutation.map((index) => reference.geometry.centerVector[index]),
+    rotationColumns: [...reference.geometry.rotationColumns], eigenvalues: [...reference.geometry.eigenvalues],
+    nodes: dictionary.codes.map((entry) => {
+      const node = nodesByIdentity.get(identityKey(code(entry.sourceColumn)));
+      if (!node) throw new TypeError("Reference fixed node identity is missing.");
+      return { code: entry.token, ...Object.fromEntries(reference.geometry.nodeColumns.map((axis, index) => [axis, node.coordinates[index]])) };
+    }),
+  };
+  // A row permutation must retain the same orthonormal columns; verify the remapped geometry too.
+  for (let left = 0; left < rotationSet.rotationColumns.length; left += 1) for (let right = left; right < rotationSet.rotationColumns.length; right += 1) {
+    const product = rotationSet.rotationMatrix.reduce((sum, row) => sum + row[left] * row[right], 0);
+    if (Math.abs(product - (left === right ? 1 : 0)) > TOLERANCE) throw new TypeError("Reference remapped geometry must remain orthonormal.");
+  }
+  const captured = { artifact: { ...reference, displayName: reference.referenceId }, referenceId: reference.referenceId, contentSha256: reference.contentSha256, basisPermutation, rotationSet, sourceFit: reference.fit.method };
+  const admission = referenceAdmission(captured);
+  assertReferenceAdmissionV3(admission, EMPTY_BASELINE);
+  return deepFreezeV3({ ...captured, admission });
 }
 
 function decodeShape(input: unknown): OpenEnaStandardReferenceV2 {
@@ -340,7 +484,7 @@ export async function fitReferenceSourceV3(sourcePlan: unknown): Promise<Referen
         validationContractVersion: header.validationContractVersion, runtimePolicyVersion: header.runtimePolicyVersion, executionContractVersion: header.executionContractVersion },
     },
     fit: {
-      method: result.projection.type, origin: "target-fitted", population: "endpoint-units", observationCount: population.length,
+      method: result.projection.type === "reference" ? (() => { throw new TypeError("Reference projected results cannot mint a source fit."); })() : result.projection.type, origin: "target-fitted", population: "endpoint-units", observationCount: population.length,
       populationSha256: await sha256CanonicalJsonV3(population), centerAlignToOrigin: result.projection.centerAlignToOrigin,
       rank: result.projection.rank, estimableAxes: [...result.projection.estimableAxes], variance: [...result.projection.variance],
       means: means === null ? null : { groupColumn: means.groupColumn, negativeLevel: means.negative.level, positiveLevel: means.positive.level,

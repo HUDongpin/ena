@@ -1,5 +1,6 @@
 import { accumulateData, cohensD, dimensionSummary, ena, enaStats, extractMakeSetOptions, groupSummary, makeSet, type ENAData, type ENASet, type Row } from "jena-js";
 import type { ENAWorkerOptions } from "jena-js/browser";
+import { svdRotation } from "jena-js/rotation";
 import type {
   CanonicalOpenEnaConfig,
   GroupNetwork,
@@ -164,7 +165,7 @@ function assertStandardFiniteVectorV3(values: readonly unknown[], width: number,
   }
 }
 
-function assertStandardRotationOutputV3(set: ENASet): void {
+function assertStandardRotationOutputV3(set: ENASet, referenceProjection = false): void {
   const width = set.codeColumns.length;
   const axes = set.rotation.rotationColumns;
   if (axes.length !== width || new Set(axes).size !== width || axes.some((axis) => typeof axis !== "string" || !axis)
@@ -176,8 +177,9 @@ function assertStandardRotationOutputV3(set: ENASet): void {
   if (!set.rotation.eigenvalues.every(Number.isFinite)) throw new Error("STANDARD_OUTPUT_NONFINITE: eigenvalues must be finite.");
   const variance = axes.map((axis) => set.variance[axis]);
   assertStandardFiniteVectorV3(variance, width, "full-basis variance");
+  const varianceTotal = variance.reduce((sum, value) => sum + value, 0);
   if (Object.keys(set.variance).length !== width || variance.some((value) => value < 0 || value > 1)
-    || Math.abs(variance.reduce((sum, value) => sum + value, 0) - 1) > 1e-8) {
+    || (Math.abs(varianceTotal - 1) > 1e-8 && !(referenceProjection && varianceTotal === 0))) {
     throw new Error("Standard target-fit variance must be normalized over the complete rotation basis.");
   }
   for (const rows of [set.lineWeights, set.pointsForProjection]) {
@@ -194,6 +196,22 @@ function assertStandardRotationOutputV3(set: ENASet): void {
   }
 }
 
+/** Diagnostic decomposition only: no target-derived axes, center, or nodes enter the projection. */
+function fixedProjectionRankV3(set: ENASet): number {
+  const width = set.codeColumns.length;
+  const projected = set.pointsForProjection.map((row) => set.rotation.rotationColumns.map((_axis, axisIndex) => (
+    set.codeColumns.reduce((sum, column, edgeIndex) => sum + Number(row[column]) * set.rotation.rotationMatrix[edgeIndex][axisIndex], 0)
+  )));
+  if (projected.length < 2 || projected.every((row) => row.every((value, index) => value === projected[0][index]))) return 0;
+  const mean = projected[0].map((_value, index) => projected.reduce((sum, row) => sum + row[index] / projected.length, 0));
+  const centered = projected.map((row) => row.map((value, index) => value - mean[index]));
+  let scale = 1;
+  for (const row of projected) for (const value of row) scale = Math.max(scale, Math.abs(value));
+  const eigenvalues = svdRotation(centered).eigenvalues;
+  const threshold = Math.max(Number.MIN_VALUE, (eigenvalues[0] ?? 0) * 1e-12, (8 * Number.EPSILON * width * scale) ** 2);
+  return eigenvalues.filter((value) => value > threshold).length;
+}
+
 /**
  * @internal Synchronous numerical execution of a built/validated immutable v3
  * Standard plan. The async worker boundary owns untrusted-plan validation and
@@ -204,23 +222,20 @@ export function runStandardPlanV3(plan: StandardExecutionPlanV3): InternalStanda
     throw new TypeError("The Standard runner requires a Standard execution plan.");
   }
   const rotation = plan.configuration.analysis.rotation;
-  // The adapter rejects Reference unconditionally until the Reference v2 tasks.
   const options = toStandardJenaOptionsV3(plan);
-  if (rotation.type !== "svd" && rotation.type !== "means") {
-    throw new TypeError("Reference execution remains fail-closed until complete Reference v2 validation.");
-  }
   const data = accumulateData(options);
-  const populations = standardFitPopulationV3(plan, data);
+  let populations = standardFitPopulationV3(plan, data);
   const width = data.codeColumns.length;
   if (data.connectionMatrix.length !== data.connectionCounts.length) {
     throw new Error("Standard fitting matrix does not cover its analytical population.");
   }
   for (const row of data.connectionMatrix) assertStandardFiniteVectorV3(row, width, "target network");
-  if (data.connectionMatrix.some((row) => row.every((value) => value === 0))) {
+  if (data.connectionMatrix.length === 0) throw new Error("Standard execution requires a real analytical observation.");
+  if (rotation.type !== "reference" && data.connectionMatrix.some((row) => row.every((value) => value === 0))) {
     throw new Error("STANDARD_TARGET_RANK_ZERO: a zero network analytical observation blocks target fitting.");
   }
-  const rank = centeredNetworkRankV3(data.connectionMatrix, rotation.centerAlignToOrigin);
-  if (rank === 0) throw new Error("STANDARD_TARGET_RANK_ZERO: the target fitting population has rank zero.");
+  let rank = rotation.type === "reference" ? 0 : centeredNetworkRankV3(data.connectionMatrix, rotation.centerAlignToOrigin);
+  if (rotation.type !== "reference" && rank === 0) throw new Error("STANDARD_TARGET_RANK_ZERO: the target fitting population has rank zero.");
   const meansBinding = rotation.type === "means" ? buildMeansBindingV3(plan) : null;
   const makeOptions = extractMakeSetOptions(options);
   if (meansBinding !== null) {
@@ -231,9 +246,19 @@ export function runStandardPlanV3(plan: StandardExecutionPlanV3): InternalStanda
   const generatedSet = makeSet(data, makeOptions);
   const runtimeFirstAxis = generatedSet.rotation.rotationColumns[0] ?? "";
   const set = meansBinding === null ? generatedSet : canonicalizeOfficialMeanRotation(generatedSet);
-  assertStandardRotationOutputV3(set);
+  assertStandardRotationOutputV3(set, rotation.type === "reference");
   const diagnostics: ModelDiagnosticV3[] = [];
-  if (meansBinding !== null) {
+  if (rotation.type === "reference") {
+    const reference = plan.reference!;
+    if (canonicalJsonV3(set.rotation) !== canonicalJsonV3(reference.rotationSet)) throw new Error("Reference projection refitted or changed fixed geometry.");
+    rank = fixedProjectionRankV3(set);
+    populations = { ...populations, fit: "reference-source-endpoint-units", fitTokens: [], sourceFit: reference.artifact.fit };
+    if (rank === 0) diagnostics.push({
+      id: "STANDARD_REFERENCE_TARGET_DEGENERATE", severity: "warning", scope: "reference", fieldPath: "rotation",
+      summary: "The actual fixed Reference projection has no target variation.",
+      detail: "The source basis and its supported coordinates remain fixed; this target projection has rank zero.", blocks: [],
+    });
+  } else if (meansBinding !== null) {
     if (set.rotation.rotationColumns[0] !== "MR1") throw new Error("Means rotation did not produce canonical MR1.");
     const [positive, negative] = buildMeansMasksV3(meansBinding, set.points);
     const coordinateMean = (mask: boolean[]) => {
@@ -269,7 +294,7 @@ export function runStandardPlanV3(plan: StandardExecutionPlanV3): InternalStanda
   // MR1 has already passed the nonzero contrast guard. Supported coordinates
   // can outnumber independent dimensions; `rank` remains the intrinsic rank.
   const meansVarianceFloor = variance.reduce((largest, value) => Math.max(largest, value), 0) * 1e-12;
-  const estimableAxes = meansBinding === null
+  const estimableAxes = rotation.type === "reference" ? [...plan.reference!.artifact.fit.estimableAxes] : meansBinding === null
     ? fullAxes.slice(0, rank)
     : fullAxes.filter((_axis, index) => index === 0 || variance[index] > meansVarianceFloor);
   return {
@@ -281,12 +306,13 @@ export function runStandardPlanV3(plan: StandardExecutionPlanV3): InternalStanda
     projection: {
       type: rotation.type,
       runtimeFirstAxis,
-      centerAlignToOrigin: rotation.centerAlignToOrigin,
+      centerAlignToOrigin: rotation.type === "reference" ? plan.reference!.artifact.fit.centerAlignToOrigin : rotation.centerAlignToOrigin,
       centerVector: [...set.rotation.centerVector],
       rank,
       fullAxes,
       estimableAxes,
       variance,
+      ...(rotation.type === "reference" ? { targetProjectionRank: rank } : {}),
     },
     populations,
   };

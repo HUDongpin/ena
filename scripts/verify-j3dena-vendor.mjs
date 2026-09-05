@@ -91,9 +91,9 @@ export const J3DENA_VENDOR_CONTRACT = Object.freeze({
   jenaNumericsSha256: "3a4567fba2d89bc7c2dd8b3a849d16f578d6a426155b6fd5ed59aab49f6002f1",
   jenaProvenanceSha256: "f7d0a7c545036beb53f480bd33393d2a1ad20b7763e7863fcb8e115fe32a12dd",
   jenaSourceTreeSerialization: JENA_SOURCE_TREE_SERIALIZATION,
-  jenaSourceTreeSha256: "1ef67a5c52fa9811f5b825bdd341a62de1d88d73a9d2439aa4a2407f0f5ff932",
+  jenaSourceTreeSha256: "a5241cf754025884288be7138fec29de48928d7dd2e44e052f599f4a56c66728",
   jenaSourceTreeFileCount: 36,
-  jenaSourceTreeByteLength: 439_609,
+  jenaSourceTreeByteLength: 441_876,
 });
 
 const DEFAULT_PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");

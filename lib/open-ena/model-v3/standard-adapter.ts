@@ -1,4 +1,4 @@
-import type { Row, RotationOptions } from "jena-js";
+import type { MakeSetOptions, Row } from "jena-js";
 import type { ENAWorkerOptions } from "jena-js/browser";
 import { canonicalJsonV3, deepFreezeV3, snapshotDenseJsonArrayV3, snapshotPlainJsonRecordV3 } from "./canonical-json";
 import type { StandardAdapterParametersV3, StandardExecutionPlanV3, StandardExecutionRowV3 } from "./execution-plan";
@@ -485,16 +485,15 @@ export function buildMeansMasksV3(binding: StandardMeansBindingV3, connectionCou
   return masks;
 }
 
-function makeSetRotationOptionsV3(plan: StandardExecutionPlanV3): {
-  centerAlignToOrigin: boolean;
-  rotation: RotationOptions;
-} {
+function makeSetRotationOptionsV3(plan: StandardExecutionPlanV3): MakeSetOptions {
   const rotation = plan.configuration.analysis.rotation;
   if (rotation.type === "reference") {
-    throw new TypeError(
-      "Reference mapping requires a complete validated Reference v2 artifact; execution remains fail-closed until the Reference tasks are complete.",
-    );
+    const reference = plan.reference;
+    if (reference === null || reference.referenceId !== rotation.referenceId || reference.contentSha256 !== rotation.expectedContentSha256
+      || reference.artifact.referenceId !== reference.referenceId || reference.artifact.contentSha256 !== reference.contentSha256) throw new TypeError("Reference mapping requires the selected complete validated Reference v2 artifact.");
+    return { centerAlignToOrigin: reference.artifact.fit.centerAlignToOrigin, rotationSet: reference.rotationSet, nodePositionMethod: "reference-fixed" };
   }
+  if (plan.reference !== null) throw new TypeError("Target-fitted options cannot carry a Reference binding.");
   if (rotation.type === "svd") {
     return { centerAlignToOrigin: rotation.centerAlignToOrigin, rotation: { method: "svd" } };
   }

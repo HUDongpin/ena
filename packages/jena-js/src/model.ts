@@ -23,6 +23,7 @@ import {
   centroidsAsRows,
   directedNodePositions,
   directedNodePositionsWithGroundResponseAdded,
+  fixedNodePositions,
   lwsLeastSquaresPositions,
   nodesAsRows,
   type NodePositionResult
@@ -191,6 +192,8 @@ function makeNodePositions(
     }
   }
   switch (method) {
+    case 'reference-fixed':
+      throw new Error('Reference fixed nodes must use the validated projection-only path.');
     case 'undirected':
       return lwsLeastSquaresPositions(lineWeights, points, codeCount);
     case 'directed':
@@ -211,19 +214,40 @@ export function makeSet(enadata: ENAData, options: MakeSetOptions = {}): ENASet 
   const rotationResult = makeRotation(enadata, pointsForProjection, options);
   const dimCount = Math.min(dimensions, rotationResult.rotationColumns.length);
   const dimensionNames = rotationResult.rotationColumns.slice(0, dimCount);
+  let fixedNodes: Matrix | undefined;
+  if (options.nodePositionMethod === 'reference-fixed') {
+    const reference = options.rotationSet!;
+    if ((enadata.networkType ?? 'standard') !== 'standard'
+      || reference.codes.length !== enadata.codes.length
+      || reference.codes.some((code, index) => code !== enadata.codes[index])
+      || !Array.isArray(reference.nodes) || reference.nodes.length !== enadata.codes.length) {
+      throw new Error('Reference fixed nodes require Standard data and complete identity-aligned Code nodes.');
+    }
+    fixedNodes = reference.nodes.map((node, index) => {
+      if (node === null || typeof node !== 'object' || node.code !== enadata.codes[index]) throw new Error('Reference fixed node Code identities must match runtime order exactly.');
+      return dimensionNames.map((axis) => {
+        const value = node[axis];
+        if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('Reference fixed node coordinates must be complete and finite.');
+        return value;
+      });
+    });
+  }
   // rENA projects onto the full rotation matrix (ena.make.set.R: points <-
   // points.for.projection %*% rotation.matrix) and normalizes variance across
   // ALL rotated dimensions; only display output is truncated to `dimensions`.
   const fullPointsMatrix = multiplyMatrices(pointsForProjection, rotationResult.rotationMatrix);
   const pointsMatrix = selectMatrixColumns(fullPointsMatrix, dimCount);
-  const nodePositionResult = makeNodePositions(
+  const nodePositionResult = fixedNodes !== undefined ? fixedNodePositions(lineWeightsMatrix, fixedNodes) : makeNodePositions(
     lineWeightsMatrix,
     pointsMatrix,
     enadata.codes.length,
     enadata.networkType ?? 'standard',
     options
   );
-  const variances = varianceColumns(fullPointsMatrix);
+  // Exact constant Reference targets have zero variance; repeated-sum rounding
+  // must not become a normalized 100% axis when projection permits rank zero.
+  const constantReference = fixedNodes !== undefined && fullPointsMatrix.every((row) => row.every((value, index) => value === fullPointsMatrix[0]?.[index]));
+  const variances = constantReference ? rotationResult.rotationColumns.map(() => 0) : varianceColumns(fullPointsMatrix);
   const varianceTotal = variances.reduce((sum, value) => sum + value, 0);
   const variance = Object.fromEntries(rotationResult.rotationColumns.map((name, index) => [name, varianceTotal === 0 ? 0 : (variances[index] ?? 0) / varianceTotal]));
 

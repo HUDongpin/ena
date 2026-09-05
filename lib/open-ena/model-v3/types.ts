@@ -195,15 +195,26 @@ export interface DatasetBindingV3 {
 /**
  * Minimal execution-time view of a separately validated Standard Reference
  * v2 artifact. Reference parsing, compatibility proof, and basis remapping
- * remain owned by the Reference tasks; an execution plan only accepts their
- * already-remapped, content-addressed output.
+ * are independently rederived at execution-plan construction and validation.
+ * The complete artifact preserves the evidence behind remapped runtime output.
  */
 export interface ValidatedReferenceExecutionBindingV3 {
+  readonly artifact: OpenEnaStandardReferenceV2;
+  /** Incremental to the header's target/projection baseline, including artifact and duplicate remapped geometry. */
+  readonly admission: ReferenceAdmissionV3;
   readonly referenceId: string;
   readonly contentSha256: string;
+  /** For each target runtime edge index, its corresponding source artifact edge index. */
   readonly basisPermutation: readonly number[];
   readonly rotationSet: RotationSet;
   readonly sourceFit: "svd" | "means";
+}
+
+export interface ReferenceAdmissionV3 {
+  readonly version: 1;
+  readonly incrementalNumericCells: number;
+  readonly incrementalPeakBytes: number;
+  readonly incrementalExportBytes: number;
 }
 
 export interface StandardMeansBindingV3 {
@@ -226,11 +237,11 @@ export interface InternalStandardRunResultV3 {
   readonly diagnostics: readonly ModelDiagnosticV3[];
   readonly meansBinding: StandardMeansBindingV3 | null;
   readonly projection: {
-    readonly type: "svd" | "means";
+    readonly type: "svd" | "means" | "reference";
     readonly runtimeFirstAxis: string;
     readonly centerAlignToOrigin: boolean;
     readonly centerVector: readonly number[];
-    /** Intrinsic independent target rank under the established numerical policy. */
+    /** Intrinsic target rank; Reference measures the actual full fixed coordinates. Source rank is populations.sourceFit.rank. */
     readonly rank: number;
     /** Complete square basis, including completion axes required by Reference. */
     readonly fullAxes: readonly string[];
@@ -239,19 +250,25 @@ export interface InternalStandardRunResultV3 {
      * SVD uses the intrinsic rank prefix. Means retains validated MR1 plus
      * residual coordinates with variance share > largest axis share * 1e-12;
      * multiple supported Means coordinates can describe one intrinsic dimension.
+     * Reference retains source-supported axes even when this target has rank zero.
      */
     readonly estimableAxes: readonly string[];
     /** Full-basis variance shares in fullAxes order, never display-renormalized. */
     readonly variance: readonly number[];
+    /** Explicit Reference target rank, equal to rank; absent for a target fit. */
+    readonly targetProjectionRank?: number;
   };
   readonly populations: {
     /** Means centering/residual SVD uses all endpoints; meansBinding defines MR1. */
-    readonly fit: "endpoint-units" | "observed-unit-horizon-steps";
-    /** Actual connectionCounts order: Unit tokens or canonical [Unit,Horizon] pairs. */
+    readonly fit: "endpoint-units" | "observed-unit-horizon-steps" | "reference-source-endpoint-units";
+    /** Actual target fit order, or empty for Reference; source identity is retained by sourceFit.populationSha256. */
     readonly fitTokens: readonly string[];
+    /** Actual target connectionCounts order: Unit tokens or canonical [Unit,Horizon] pairs. */
     readonly targetTokens: readonly string[];
     readonly trajectoryStepCountByUnit: Readonly<Record<string, number>>;
     readonly imputedStepCount: 0;
+    /** Original Reference fit metadata; never replaced by the target projection population. */
+    readonly sourceFit?: OpenEnaStandardReferenceV2["fit"];
   };
 }
 

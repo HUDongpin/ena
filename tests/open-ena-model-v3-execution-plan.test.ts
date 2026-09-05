@@ -338,7 +338,7 @@ function referenceBinding(
         [rotationColumns[2]]: index === 2 ? 1 : 0,
       })),
     },
-  };
+  } as unknown as ValidatedReferenceExecutionBindingV3; // Deliberately untrusted legacy fixture lacks artifact and admission.
 }
 
 function assertDeepFrozen(value: unknown, seen = new WeakSet<object>()): void {
@@ -616,7 +616,7 @@ test("build rejects accessors, sparse rows, and exotic rows without invoking get
   }));
 });
 
-test("SVD and Means require null Reference while Reference remains fail-closed until Task 13", async () => {
+test("SVD and Means require null Reference while incomplete legacy bindings fail closed", async () => {
   await assert.rejects(planFor(draft(), dataset(), referenceBinding()));
   await assert.rejects(planFor(draft({
     model: "EndPoint",
@@ -660,7 +660,7 @@ test("SVD and Means require null Reference while Reference remains fail-closed u
   assert.equal(means.configuration.analysis.rotation.type, "means");
 });
 
-test("build rejects every unavailable Reference branch before rows, Reference, or crypto work", async () => {
+test("build rejects incompatible or incomplete Reference bindings before source rows or crypto work", async () => {
   const inputDataset = unsharedDataset();
   const svdCompile = await readyCompile(inputDataset, draft());
   const referenceCompile = await readyCompile(inputDataset, draft({
@@ -704,7 +704,8 @@ test("build rejects every unavailable Reference branch before rows, Reference, o
           : guardedRecord(referenceValue, reference) as unknown as ValidatedReferenceExecutionBindingV3,
       }), () => true, name);
       assertNoDeepTraversal(rows, `${name} rows`);
-      assertNoDeepTraversal(reference, `${name} Reference`);
+      if (name === "Reference rotation with binding") assert.equal(reference.elementDescriptors, 0, "Empty binding shallow shape only");
+      else assertNoDeepTraversal(reference, `${name} Reference`);
       assert.equal(digestCalls, 0, `${name} crypto work`);
     }
   } finally {
@@ -715,7 +716,7 @@ test("build rejects every unavailable Reference branch before rows, Reference, o
   }
 });
 
-test("validator rejects every unavailable Reference branch before scientific traversal", async () => {
+test("validator rejects incompatible or incomplete Reference bindings before scientific traversal", async () => {
   const basePlan = await planFor(draft(), unsharedDataset());
   const subtle = globalThis.crypto.subtle;
   const originalDescriptor = Object.getOwnPropertyDescriptor(subtle, "digest");
@@ -759,7 +760,8 @@ test("validator rejects every unavailable Reference branch before scientific tra
       assertNoDeepTraversal(rows, `${name} rows`);
       assertNoDeepTraversal(proofRows, `${name} source-proof rows`);
       assertNoDeepTraversal(dictionaryCodes, `${name} Code dictionary`);
-      assertNoDeepTraversal(reference, `${name} Reference`);
+      if (name === "Reference rotation with binding") assert.equal(reference.elementDescriptors, 0, "Empty binding shallow shape only");
+      else assertNoDeepTraversal(reference, `${name} Reference`);
       assert.equal(digestCalls, 0, `${name} crypto work`);
     }
   } finally {

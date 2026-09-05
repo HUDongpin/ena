@@ -19,7 +19,7 @@ export type NetworkType = "standard" | "ordered";
 export type WeightBy = "binary" | "sum" | ((values: number[]) => number);
 
 export type RotationMethod = "svd" | "mean" | "generalized" | "regression" | "regression2" | "hena" | "spherical";
-export type NodePositionMethod = "undirected" | "directed" | "directed-ground-response";
+export type NodePositionMethod = "undirected" | "directed" | "directed-ground-response" | "reference-fixed";
 export type GroupSelector = string[] | boolean[];
 
 export interface MeanRotationParams {
