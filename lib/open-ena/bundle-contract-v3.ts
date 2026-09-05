@@ -47,6 +47,7 @@ import type {
   OnaResultExecutionProvenanceV3,
   PresentationArtifactV3,
 } from "./model-v3/types";
+import { buildMethodsReportV3 } from "./methods-v3";
 
 const CAPABILITIES = [
   "build-model",
@@ -2014,11 +2015,14 @@ export async function assertPortableBundleContractV3(
       { warnings: result.executionProvenance.diagnostics, execution: [] },
       "bound diagnostics",
     );
-    same(
-      bundle.methodsReportMarkdown,
-      minimalBundleMethodsV3(result),
-      "bound methods report",
-    );
+    const fullMethods = buildMethodsReportV3(result);
+    const task17Methods = minimalBundleMethodsV3(result);
+    if (
+      bundle.methodsReportMarkdown !== fullMethods &&
+      bundle.methodsReportMarkdown !== task17Methods
+    ) {
+      fail("bound methods report");
+    }
     if (Object.hasOwn(bundle, "presentation"))
       assertPresentation(bundle.presentation!, result);
   } catch (error) {

@@ -170,10 +170,15 @@ function draftResult(draft: ModelWorkspaceDraftsV3, receivedArtifactSha256: stri
     draft, artifact, review: draftReview(draft), replaceDraftAction: { required: true } });
 }
 
-function historicalResult(artifact: HistoricalImportV3["artifact"], configuration: unknown, receivedArtifactSha256: string): HistoricalImportV3 {
+function historicalResult(
+  artifact: HistoricalImportV3["artifact"],
+  configuration: unknown,
+  receivedArtifactSha256: string,
+  artifactContext: readonly string[] = [],
+): HistoricalImportV3 {
   const draft = migrateCanonicalConfigurationToDraftV3(configuration);
   return deepFreezeV3({ kind: "historical-result", autoRun: false, executable: false, readOnly: true,
-    receivedArtifactSha256, artifact, review: ["historical-result", "source-currentness-unverified", ...draftReview(draft)],
+    receivedArtifactSha256, artifact, review: ["historical-result", ...artifactContext, "source-currentness-unverified", ...draftReview(draft)],
     loadConfigurationAction: { required: true, draft } });
 }
 
@@ -225,7 +230,12 @@ export async function importOpenEnaArtifactV3(text: string): Promise<OpenEnaImpo
     await verifyIntegrity(value);
     const bundle = await parseAnalysisBundleV3(canonicalJsonV3(value.analysisBundle));
     if (value.analysisFamily !== bundle.configuration.analysisFamily) throw new TypeError("STALE audit family mismatch.");
-    return historicalResult(value as unknown as StaleAuditImportArtifactV3, bundle.configuration, receivedArtifactSha256);
+    return historicalResult(
+      value as unknown as StaleAuditImportArtifactV3,
+      bundle.configuration,
+      receivedArtifactSha256,
+      ["stale-audit", "stale-against-current-draft-fingerprint"],
+    );
   }
   if ((value.schemaVersion === 2 && value.kind === "open-ena-standard-reference-rotation")
     || (value.schemaVersion === 1 && value.kind === "open-ena-reference-rotation")) {

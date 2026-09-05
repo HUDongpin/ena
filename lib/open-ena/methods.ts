@@ -31,6 +31,20 @@ import {
   type OpenEnaMarginalMeanInterval,
 } from "./uncertainty";
 
+export {
+  buildCodesSectionV3,
+  buildDataBindingSectionV3,
+  buildHorizonsSectionV3,
+  buildLimitationsSectionV3,
+  buildMethodsReportV3,
+  buildModelTrajectorySectionV3,
+  buildOrderingSectionV3,
+  buildRotationSectionV3,
+  buildUnitsSectionV3,
+  buildWarningsCapabilitiesSectionV3,
+  buildWindowWeightingSectionV3,
+} from "./methods-v3";
+
 export interface OpenEnaPresentationOptions {
   view?: "2d" | "3d";
   codeColors?: Readonly<Record<string, string>>;

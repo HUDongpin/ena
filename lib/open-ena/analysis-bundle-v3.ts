@@ -15,9 +15,9 @@ import { captureBundleJsonV3, parseBundleJsonV3 } from "./bundle-json-v3";
 import {
   assertPortableBundleContractV3,
   boundResultFromBundleV3,
-  minimalBundleMethodsV3,
   unavailableBundleStatisticsV3,
 } from "./bundle-contract-v3";
+import { buildMethodsReportV3 } from "./methods-v3";
 
 export interface AnalysisBundleValidationOptionsV3 {
   /** Independent source-backed plan, never reconstructed from bundle claims. */
@@ -137,7 +137,7 @@ export async function buildAnalysisBundleV3(
       execution: [],
     },
     ...(presentation ? { presentation } : {}),
-    methodsReportMarkdown: minimalBundleMethodsV3(result),
+    methodsReportMarkdown: buildMethodsReportV3(result),
     ...("orderedAudit" in result
       ? {
           orderedAudit: result.orderedAudit,
