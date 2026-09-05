@@ -381,6 +381,87 @@ export interface BoundOnaResultV3 {
 
 export type BoundResultV3 = BoundStandardResultV3 | BoundOnaResultV3;
 
+export interface OpenEnaModelTablesV3 {
+  connectionCounts: import("jena-js").Row[];
+  lineWeights: import("jena-js").Row[];
+  pointsForProjection: import("jena-js").Row[];
+  points: import("jena-js").Row[];
+  trajectories: import("jena-js").Row[];
+}
+
+/** Retains optional-field presence, including trajectories, in the scientific hash. */
+export type OpenEnaBundleModelDataV3 = Omit<SerializableEnaSetV3,
+  "connectionCounts" | "lineWeights" | "pointsForProjection" | "points" | "rotation">;
+
+export interface BoundStatisticsV3 {
+  available: boolean;
+  diagnostics: string[];
+  value: import("jena-js").ENAStatsResult | null;
+}
+
+export interface NodeDisplayOverrideV3 {
+  code: string;
+  coordinates: Record<string, number>;
+}
+
+export interface PresentationArtifactV3 {
+  boundResultSha256: string;
+  hiddenCodes: string[];
+  hiddenGroups: ScalarIdentityV3[];
+  codeColors: Record<string, string>;
+  nodeOverrides: NodeDisplayOverrideV3[];
+  dimensions: string[];
+  camera3d?: import("../plot3d").OpenEna3dCamera;
+}
+
+export interface BundleComponentHashesV3 {
+  manifest: string;
+  createdAt: string;
+  configuration: string;
+  executionProvenance: string;
+  tables: string;
+  modelData: string;
+  rotation: string;
+  statistics: string;
+  capabilityStatus: string;
+  diagnostics: string;
+  presentation?: string;
+  methodsReportMarkdown: string;
+}
+
+interface AnalysisBundleBaseV3 {
+  schemaVersion: 3;
+  kind: "open-ena-analysis-bundle";
+  manifest: ResultBindingV3;
+  createdAt: string;
+  tables: OpenEnaModelTablesV3;
+  modelData: OpenEnaBundleModelDataV3;
+  rotation: RotationSet;
+  statistics: BoundStatisticsV3;
+  capabilityStatus: BoundResultV3["capabilityStatus"];
+  presentation?: PresentationArtifactV3;
+  methodsReportMarkdown: string;
+}
+
+export interface StandardAnalysisBundleV3 extends AnalysisBundleBaseV3 {
+  configuration: BoundStandardResultV3["configuration"];
+  executionProvenance: ResultExecutionProvenanceV3;
+  diagnostics: { warnings: readonly ModelDiagnosticV3[]; execution: string[] };
+  integrity: { componentHashes: BundleComponentHashesV3; bundleContentSha256: string };
+}
+
+export interface OnaAnalysisBundleV3 extends AnalysisBundleBaseV3 {
+  configuration: BoundOnaResultV3["configuration"];
+  executionProvenance: OnaResultExecutionProvenanceV3;
+  orderedAudit: BoundOnaResultV3["orderedAudit"];
+  orderedResponseNodeSummary: BoundOnaResultV3["orderedResponseNodeSummary"];
+  diagnostics: { warnings: readonly import("./ona-compiler-preflight").OnaCompilerDiagnosticV3[]; execution: string[] };
+  integrity: { componentHashes: BundleComponentHashesV3 & { orderedAudit: string; orderedResponseNodeSummary: string }; bundleContentSha256: string };
+}
+
+/** Portable historical artifact. This type does not confer source/current-plan authority. */
+export type OpenEnaAnalysisBundleV3 = StandardAnalysisBundleV3 | OnaAnalysisBundleV3;
+
 export interface StandardMeansBindingV3 {
   readonly groupColumn: string;
   readonly negative: { readonly level: ScalarIdentityV3; readonly unitTokens: readonly string[] };

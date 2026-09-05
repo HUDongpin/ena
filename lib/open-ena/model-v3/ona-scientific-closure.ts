@@ -106,6 +106,12 @@ export function assertOnaScientificClosureV3(input: {
   });
   assertAuditConservation(set.connectionMatrix, input.runtimeUnitTokens, input.auditEdgeValues, input.auditUnitTokens);
 
+  assertOnaInternalDerivationsV3(set);
+}
+
+/** Checks supplied geometry algebra only; source and audit conservation stay in the caller above. */
+export function assertOnaInternalDerivationsV3(set: ScientificSet): void {
+
   const lineWeights = sphereNorm(set.connectionMatrix);
   const nonzero = lineWeights.filter((row) => row.some((value) => value !== 0));
   if (!nonzero.length) throw new TypeError("ONA scientific derivation requires enabled network signal.");

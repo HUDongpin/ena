@@ -199,7 +199,7 @@ export function assertStandardRotationOutputV3(set: ENASet, referenceProjection 
 }
 
 /** @internal Diagnostic decomposition only: no target-derived axes, center, or nodes enter the projection. */
-export function fixedProjectionRankV3(set: ENASet): number {
+export function fixedProjectionRankV3(set: Pick<ENASet, "codeColumns" | "pointsForProjection" | "rotation">): number {
   const width = set.codeColumns.length;
   const projected = set.pointsForProjection.map((row) => set.rotation.rotationColumns.map((_axis, axisIndex) => (
     set.codeColumns.reduce((sum, column, edgeIndex) => sum + Number(row[column]) * set.rotation.rotationMatrix[edgeIndex][axisIndex], 0)

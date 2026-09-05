@@ -2012,3 +2012,5 @@ export function parseOpenEnaAnalysisBundle(
   }
   return freezeParsed(value as OpenEnaAnalysisBundleV2);
 }
+export { buildAnalysisBundleV3, parseAnalysisBundleV3, buildBundleIntegrityV3 } from "./analysis-bundle-v3";
+export type { BuildAnalysisBundleOptionsV3, AnalysisBundleValidationOptionsV3 } from "./analysis-bundle-v3";
