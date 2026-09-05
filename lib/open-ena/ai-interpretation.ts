@@ -3361,9 +3361,23 @@ export async function buildAiInterpretationReviewV3(
       "AI native selection requires locale, inference and controls",
     );
   const locale = aiLocale(value.locale as Locale);
-  const inference = value.inference as NativeAiInferenceV3;
+  const inference = value.inference;
+  // Dispatch is only a hint for the producer's private identity check below.
+  // Reject accessors/inherited kinds without ordinary reads of an unowned handle.
+  const kindDescriptor =
+    inference !== null && typeof inference === "object"
+      ? Object.getOwnPropertyDescriptor(inference, "kind")
+      : undefined;
+  if (
+    !kindDescriptor ||
+    !kindDescriptor.enumerable ||
+    !("value" in kindDescriptor) ||
+    (kindDescriptor.value !== "open-ena-endpoint-inference" &&
+      kindDescriptor.value !== "open-ena-trajectory-inference")
+  )
+    throw new TypeError("Native v3 inference receipt kind/authority mismatch");
   const authority =
-    inference?.kind === "open-ena-endpoint-inference"
+    kindDescriptor.value === "open-ena-endpoint-inference"
       ? assertOpenEnaInferenceCoordinatorConsumerV3(
           inference,
           input,

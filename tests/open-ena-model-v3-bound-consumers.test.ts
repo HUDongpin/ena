@@ -1172,3 +1172,70 @@ test("AI descriptive all-frame completeness stays distinct from selected repeate
   for (const row of wire.evidence.inference)
     if (row.test === "friedman") assert.equal(row.nComplete, 4);
 });
+
+test("AI review and wire reject forged receipt handles without invoking ordinary kind getters", async () => {
+  const ai = await import("../lib/open-ena/ai-interpretation");
+  for (const consumer of [
+    ai.buildAiInterpretationReviewV3,
+    ai.buildOpenEnaAiInterpretationRequestV3,
+  ]) {
+    for (const kind of [
+      "open-ena-endpoint-inference",
+      "open-ena-trajectory-inference",
+    ]) {
+      for (const shape of [
+        "own-accessor",
+        "inherited-accessor",
+        "get-proxy",
+      ] as const) {
+        let ordinaryGets = 0;
+        const accessor = Object.defineProperty({}, "kind", {
+          enumerable: true,
+          get() {
+            ordinaryGets += 1;
+            return kind;
+          },
+        });
+        const inference =
+          shape === "own-accessor"
+            ? accessor
+            : shape === "inherited-accessor"
+              ? Object.create(accessor)
+              : new Proxy(
+                  { kind },
+                  {
+                    get(target, key, receiver) {
+                      ordinaryGets += 1;
+                      return Reflect.get(target, key, receiver);
+                    },
+                  },
+                );
+        await assert.rejects(
+          () =>
+            consumer({}, {}, {
+              locale: "en",
+              inference,
+              controls: {},
+            } as never),
+          /authority|receipt|kind/i,
+        );
+        assert.equal(
+          ordinaryGets,
+          0,
+          `${consumer.name}: ${kind} ${shape} must reject without ordinary property reads`,
+        );
+      }
+      // An own enumerable data discriminator is only a dispatch hint. It does
+      // not let a frozen clone manufacture the actual producer's authority.
+      await assert.rejects(
+        () =>
+          consumer({}, {}, {
+            locale: "en",
+            inference: Object.freeze({ kind }),
+            controls: {},
+          } as never),
+        /authority/i,
+      );
+    }
+  }
+});
