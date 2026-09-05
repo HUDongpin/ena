@@ -67,6 +67,8 @@ const MODEL_CAPABILITIES_V3: readonly ModelCapabilityV3[] = Object.freeze([
 
 export type ModelCapabilityStatusV3 = Readonly<Record<ModelCapabilityV3, "available" | "blocked">>;
 
+const compilerOwnedReadyResultsV3 = new WeakSet<object>();
+
 export type StandardCompileResultV3 = InvalidStandardCompileResultV3 | ReadyStandardCompileResultV3;
 
 export interface InvalidStandardCompileResultV3 {
@@ -110,6 +112,21 @@ export interface ReadyOnaCompileResultV3 {
   readonly capabilityStatus: ModelCapabilityStatusV3;
   /** Exact post-validation estimate; ONA has no public early-envelope result. */
   readonly resourceEstimate: OnaResourceEstimateV3;
+}
+
+export type ReadyCompileResultV3 = ReadyStandardCompileResultV3 | ReadyOnaCompileResultV3;
+
+/** Check-only, realm-local receipt. There is deliberately no caller registration API. */
+export function isCompilerOwnedReadyResultV3(value: unknown): value is ReadyCompileResultV3 {
+  return value !== null
+    && typeof value === "object"
+    && compilerOwnedReadyResultsV3.has(value);
+}
+
+function ownReadyResultV3<T extends ReadyCompileResultV3>(value: T): T {
+  const result = deepFreezeV3(value);
+  compilerOwnedReadyResultsV3.add(result);
+  return result;
 }
 
 function capabilityStatusV3(
@@ -252,7 +269,7 @@ async function compileStandardDraftInternalV3(
   }
   if (prepared.scientificAdmission === null) throw new TypeError("Ready Standard compilation requires its mandatory pre-evidence resource admission.");
   const { canonicalConfiguration, resourceEstimate, sourceProofPayload, operationalAdmission } = prepared.scientificAdmission;
-  return deepFreezeV3({
+  return ownReadyResultV3({
     status: "ready",
     draftFingerprint,
     datasetBinding: binding,
@@ -387,7 +404,7 @@ export async function compileOnaDraftV3(
   if (scientific.diagnostics.some((entry) => entry.severity === "error")) {
     return invalidOnaResultV3(draftFingerprint, scientific.diagnostics);
   }
-  return deepFreezeV3({
+  return ownReadyResultV3({
     status: "ready",
     draftFingerprint,
     canonicalConfiguration,

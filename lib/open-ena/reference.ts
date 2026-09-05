@@ -3,7 +3,6 @@ import {
   assertOpenEnaCapabilityForConfig,
   assertOpenEnaCapabilityForContext,
 } from "./capabilities";
-import { parseOpenEnaAnalysisBundle } from "./export";
 import type {
   DatasetHashKind,
   OpenEnaConfig,
@@ -15,8 +14,50 @@ import type {
   ParsedDataset,
 } from "./types";
 import { datasetHashKindFor, JENA_RUNTIME_VERSION } from "./types";
+import { buildAnalysisBundleV3 } from "./analysis-bundle-v3";
+import { captureBundleJsonV3 } from "./bundle-json-v3";
+import { validateBoundResultV3 } from "./model-v3/result-binding";
+import { decodeReferenceV2 } from "./model-v3/reference-codec-v2";
+import type {
+  BoundResultV3,
+  BoundStandardResultV3,
+} from "./model-v3/types";
 
 type JsonRecord = Record<string, unknown>;
+
+/**
+ * Projected Endpoints may download the exact original artifact recorded in
+ * provenance. This pure facade cannot mint or register a source fit.
+ */
+export async function originalReferenceForResultV3(
+  input: BoundResultV3,
+  currentPlan?: unknown,
+) {
+  const result = captureBundleJsonV3(input) as BoundResultV3;
+  const portableValidation = buildAnalysisBundleV3(result);
+  const currentValidation = currentPlan === undefined
+    ? Promise.resolve({ error: null })
+    : validateBoundResultV3(result, currentPlan).then(
+        () => ({ error: null }),
+        (error: unknown) => ({ error }),
+      );
+
+  await portableValidation;
+  const currentOutcome = await currentValidation;
+  if (currentOutcome.error) throw currentOutcome.error;
+  if (result.configuration.analysisFamily !== "standard") {
+    throw new TypeError("Only Standard ENA can export a Reference.");
+  }
+  const standardResult = result as BoundStandardResultV3;
+  if (standardResult.configuration.analysis.model.type !== "EndPoint") {
+    throw new TypeError("Only a Standard EndPoint can download a Reference.");
+  }
+  if (standardResult.binding.referenceId === null
+    || standardResult.executionProvenance.reference === null) {
+    throw new TypeError("Only a Reference-projected Endpoint has an original Reference to download.");
+  }
+  return decodeReferenceV2(standardResult.executionProvenance.reference.artifact);
+}
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -382,10 +423,10 @@ export function parseRotationReference(text: string, filename = "reference.json"
     if (hasOrderedResultBundleIdentity(value)) {
       throw new Error("ONA result bundles cannot be used as reference rotations.");
     }
-    return referenceFromResultBundle(
-      parseOpenEnaAnalysisBundle(text) as JsonRecord,
-      filename,
-    );
+    if (!("inference" in value)) {
+      throw new Error("Schema-v2 analysis bundle must contain inference.");
+    }
+    return referenceFromResultBundle(value, filename);
   }
   if (isRecord(value)) return referenceFromResultBundle(value, filename);
   throw new Error("Reference rotation JSON must contain an object.");

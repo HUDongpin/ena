@@ -2014,3 +2014,11 @@ export function parseOpenEnaAnalysisBundle(
 }
 export { buildAnalysisBundleV3, parseAnalysisBundleV3, buildBundleIntegrityV3 } from "./analysis-bundle-v3";
 export type { BuildAnalysisBundleOptionsV3, AnalysisBundleValidationOptionsV3 } from "./analysis-bundle-v3";
+export {
+  exportCanonicalConfigV3,
+  exportCurrentAnalysisV3,
+  exportDraftV3,
+  exportReferenceV2,
+  exportStaleAuditV3,
+} from "./model-artifact-exports-v3";
+export type { ExportFileDescriptorV3, ExportReferenceV2Options } from "./model-artifact-exports-v3";
