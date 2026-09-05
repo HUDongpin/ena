@@ -7,7 +7,7 @@ import { decodeSerializedStandardCompileProvenanceV3 } from "./model-v3/executio
 import { migrateCanonicalConfigurationToDraftV3, migrateLegacyOpenEnaConfigToDraftV3, workspaceDraftsFromArtifactV3 } from "./model-v3/migration";
 import { decodeCanonicalOnaConfigV3, decodeCanonicalStandardConfigV3 } from "./model-v3/schema";
 import { decodeReferenceV2 } from "./model-v3/reference-codec-v2";
-import { RESOURCE_BUDGET_VERSION_V3 } from "./model-v3/resource-budget";
+import { RESOURCE_BUDGET_VERSION_V3, assertSerializedResourceClaimsV3, type OnaResourceEstimateV3 } from "./model-v3/resource-budget";
 import { ONA_COMPILER_DIAGNOSTIC_IDS_V3 } from "./model-v3/ona-compiler-preflight";
 import { captureLegacyReferenceCandidateV3 } from "./reference";
 import type { CanonicalOnaConfigV3, ModelWorkspaceDraftsV3, OpenEnaAnalysisBundleV3, OpenEnaStandardReferenceV2 } from "./model-v3/types";
@@ -136,9 +136,7 @@ async function verifyOnaCompileClaims(value: unknown, configuration: CanonicalOn
   if (resource.version !== RESOURCE_BUDGET_VERSION_V3 || resource.analysisFamily !== "ona" || resource.blocked !== false
     || !Array.isArray(resource.blockedReasons) || resource.blockedReasons.length !== 0) throw new TypeError("ONA resource claims are unsupported or blocked.");
   for (const key of onaResourceIntegers) integer(resource[key]);
-  const count = configuration.codes.length;
-  if (resource.codes !== count || resource.adjacencyDimensions !== count * count || resource.directionalMaskCells !== count * count
-    || resource.endpointNetworks !== resource.units) throw new TypeError("ONA resource dimensions disagree with configuration.");
+  assertSerializedResourceClaimsV3(resource as unknown as OnaResourceEstimateV3, configuration);
   const order = configuration.window.rowOrder;
   if (order.kind === "source-order-confirmed" && (order.confirmation.analysisFamily !== "ona"
     || order.confirmation.rowCount !== resource.rows

@@ -38,6 +38,7 @@ import type {
 } from "./ordering";
 import {
   RESOURCE_BUDGET_VERSION_V3,
+  assertSerializedResourceClaimsV3,
   estimateEarlyStandardResourcesV3,
   estimateStandardResourcesV3,
 } from "./resource-budget";
@@ -1342,11 +1343,10 @@ export async function decodeSerializedStandardCompileProvenanceV3(
   if (await sha256CanonicalJsonV3(canonicalConfiguration) !== claims.configurationSha256) {
     throw new TypeError("Serialized configuration hash does not match compile provenance.");
   }
-  if (claims.datasetBinding.rowCount !== claims.resourceEstimate.rows
-    || claims.resourceEstimate.codes !== canonicalConfiguration.codes.length
-    || claims.resourceEstimate.adjacencyDimensions !== canonicalConfiguration.codes.length * (canonicalConfiguration.codes.length - 1) / 2) {
+  if (claims.datasetBinding.rowCount !== claims.resourceEstimate.rows) {
     throw new TypeError("Serialized configuration and resource/dataset claims disagree.");
   }
+  assertSerializedResourceClaimsV3(claims.resourceEstimate, canonicalConfiguration);
   const orders = [
     canonicalConfiguration.window.type === "MovingStanzaWindow" ? canonicalConfiguration.window.rowOrder : null,
     canonicalConfiguration.analysis.model.type === "EndPoint" ? null : canonicalConfiguration.analysis.model.horizonOrder,

@@ -6,6 +6,8 @@ import {
 import { deepFreezeV3, snapshotDenseJsonArrayV3, snapshotPlainJsonRecordV3 } from "./canonical-json";
 import type {
   BackwardExtentV3,
+  CanonicalOnaConfigV3,
+  CanonicalStandardConfigV3,
   ForwardExtentV3,
   StandardWindowTypeV3,
 } from "./types";
@@ -371,6 +373,86 @@ function blockedReasonsV3(values: {
     ...(values.estimatedPeakBytes > MAX_ESTIMATED_PEAK_BYTES_V3 ? ["peak-bytes" as const] : []),
     ...(values.estimatedExportBytes > MAX_ESTIMATED_EXPORT_BYTES_V3 ? ["export-bytes" as const] : []),
   ];
+}
+
+/** Check already shape-decoded serialized claims against their own metadata.
+ * This shares the estimator's versioned admission policy, but cannot establish
+ * source truth or recover the absent Horizon sizes. In particular, dataset
+ * byte size is an unsigned claim bounded here, not independently remeasured.
+ * No compiler/runtime estimator or execution authority is changed by this check.
+ */
+export function assertSerializedResourceClaimsV3(
+  estimate: StandardResourceEstimateV3 | OnaResourceEstimateV3,
+  configuration: CanonicalStandardConfigV3 | CanonicalOnaConfigV3,
+): void {
+  if (estimate.version !== RESOURCE_BUDGET_VERSION_V3
+    || estimate.analysisFamily !== configuration.analysisFamily
+    || estimate.blocked !== false || estimate.blockedReasons.length !== 0) {
+    throw new TypeError("Serialized resource claims require the current admitted family contract.");
+  }
+  const reasons = blockedReasonsV3({ ...estimate,
+    estimatedRotationMatrixBytesOna: estimate.analysisFamily === "ona"
+      ? estimate.estimatedRotationMatrixBytes : undefined,
+  });
+  if (reasons.length !== 0) {
+    throw new TypeError(`Serialized resource claims exceed versioned admission budgets: ${reasons.join(", ")}.`);
+  }
+  for (const key of ["rows", "units", "horizons", "windowPartitions"] as const) {
+    if (nonnegativeSafeIntegerV3(estimate[key], `Serialized resource ${key}`) === 0
+      || estimate[key] > estimate.rows) {
+      throw new TypeError("Serialized resource population counts must be positive and cannot exceed rows.");
+    }
+  }
+  const codes = configuration.codes.length;
+  const dimensions = configuration.analysisFamily === "standard"
+    ? safeMultiplyV3(codes, codes - 1, "Standard resource dimensions") / 2
+    : safeMultiplyV3(codes, codes, "ONA resource dimensions");
+  if (estimate.codes !== codes || estimate.adjacencyDimensions !== dimensions
+    || estimate.aggregateStateUpperBound !== estimate.windowPartitions
+    || estimate.estimatedRetainedWindowRows > estimate.rows
+    || estimate.estimatedForwardBufferRows > estimate.rows
+    || estimate.estimatedWindowVisits < estimate.rows) {
+    throw new TypeError("Serialized resource counts or dimensions contradict their configuration.");
+  }
+  let targets: number;
+  if (configuration.analysisFamily === "standard" && estimate.analysisFamily === "standard") {
+    // Endpoint trajectorySteps is the actual Unit target count, not zero.
+    targets = estimate.trajectorySteps;
+    if (configuration.analysis.model.type === "EndPoint" ? targets !== estimate.units
+      : targets <= estimate.units || targets < estimate.horizons || targets > estimate.rows
+        || targets > safeMultiplyV3(estimate.units, estimate.horizons, "Trajectory population bound")) {
+      throw new TypeError("Serialized resource target count contradicts its Standard model.");
+    }
+    if (configuration.window.type === "Conversation") {
+      // These are Unit-by-Horizon partitions; global Moving Stanza Horizons
+      // instead may be shared by multiple Units.
+      if (estimate.windowPartitions < Math.max(estimate.units, estimate.horizons)
+        || estimate.windowPartitions > safeMultiplyV3(estimate.units, estimate.horizons, "Conversation partition bound")
+        || estimate.estimatedRetainedWindowRows !== 0
+        || (configuration.analysis.model.type !== "EndPoint" && estimate.windowPartitions !== targets)) {
+        throw new TypeError("Serialized resource Conversation partition counts are inconsistent.");
+      }
+    } else if (estimate.windowPartitions !== estimate.horizons) {
+      throw new TypeError("Serialized resource Moving Stanza partition count must equal Horizons.");
+    }
+  } else if (configuration.analysisFamily === "ona" && estimate.analysisFamily === "ona") {
+    targets = estimate.endpointNetworks;
+    if (targets !== estimate.units || estimate.windowPartitions !== estimate.horizons
+      || estimate.directionalMaskCells !== dimensions || estimate.estimatedForwardBufferRows !== 0) {
+      throw new TypeError("Serialized resource ONA counts or dimensions are inconsistent.");
+    }
+  } else {
+    throw new TypeError("Serialized resource family is inconsistent.");
+  }
+  const stateCount = [estimate.rows, estimate.units, estimate.horizons, targets,
+    estimate.aggregateStateUpperBound, estimate.estimatedRetainedWindowRows]
+    .reduce((total, value) => safeAddV3(total, value, "Serialized resource state count"), 0);
+  const rotation = estimateDenseSvdBudget(targets, dimensions);
+  if (estimate.estimatedStateCount !== stateCount
+    || estimate.estimatedRotationMatrixBytes !== rotation.matrixBytes
+    || estimate.estimatedRotationWorkUnits !== rotation.workUnits) {
+    throw new TypeError("Serialized resource state count or dense rotation dimensions are inconsistent.");
+  }
 }
 
 function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3): StandardResourceEstimateV3 {

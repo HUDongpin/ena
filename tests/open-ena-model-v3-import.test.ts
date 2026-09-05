@@ -18,6 +18,7 @@ import { bindingFixtureV3 } from "./helpers/open-ena-model-v3-fixture";
 import { decodeSerializedStandardCompileProvenanceV3 } from "../lib/open-ena/model-v3/execution-plan";
 import { buildOnaExecutionPlanV3, runOnaPlanV3 } from "../lib/open-ena/model-v3/ona-adapter";
 import { bindOnaResultV3 } from "../lib/open-ena/model-v3/ona-result-binding";
+import * as resourceBudget from "../lib/open-ena/model-v3/resource-budget";
 
 const textOf = (file: { bytes: Uint8Array }) => new TextDecoder().decode(file.bytes);
 const draftFixture = (): StandardEnaDraftV3 => structuredClone(migrateLegacyOpenEnaConfigToDraftV3(SAMPLE_CONFIG).standard);
@@ -371,4 +372,96 @@ test("genuine schema-v1 result stays historical and requires explicit configurat
   assert.equal(imported.artifact.schemaVersion, 1);
   assert.equal(Object.isFrozen(imported.artifact), true);
   assert.equal(JSON.stringify({ currentDraft, registry }), before);
+});
+
+async function genuineCanonicalArtifacts() {
+  const standard = JSON.parse(textOf(await artifacts.exportCanonicalConfigV3((await bindingFixtureV3()).compiled)));
+  const rows = [
+    { u: "u1", h: "h1", t: 1, A: 2, B: 0, C: 1 },
+    { u: "u2", h: "h1", t: 2, A: 0, B: 3, C: 1 },
+    { u: "u1", h: "h2", t: 1, A: 0, B: 2, C: 2 },
+  ];
+  const compiled = await compileOnaDraftV3({ name: "claims.csv", source: "upload", sizeBytes: 100,
+    headers: Object.keys(rows[0]), rows }, "d".repeat(64), {
+    unitColumns: ["u"], horizonColumns: ["h"], groupColumn: null, codes: ["A", "B", "C"],
+    backward: { kind: "finite", value: 2 }, directionalMask: createDirectionalMask(["A", "B", "C"]),
+    rowOrder: { kind: "columns", keys: [{ column: "t", direction: "ascending", comparator: { type: "number" } }] },
+  });
+  assert.equal(compiled.status, "ready");
+  if (compiled.status !== "ready") throw new Error("Expected real ONA compiler control");
+  const ona = JSON.parse(textOf(await artifacts.exportCanonicalConfigV3(compiled)));
+  return { standard, ona };
+}
+
+test("rehashed canonical claims reject the four SPEC resource counterexamples", async (t) => {
+  const { standard, ona } = await genuineCanonicalArtifacts();
+  for (const original of [standard, ona]) assert.equal((await artifacts.importOpenEnaArtifactV3(JSON.stringify(original))).kind, "draft");
+  for (const [label, original, key, value] of [
+    ["Standard Units exceed source rows", standard, "units", 1000],
+    ["ONA zero rows with two Units", ona, "rows", 0],
+    ["ONA unblocked peak exceeds policy", ona, "estimatedPeakBytes", 2 ** 40],
+    ["ONA unblocked dense matrix exceeds policy", ona, "estimatedRotationMatrixBytes", 2 ** 40],
+  ] as const) await t.test(label, async () => {
+    const mutated = structuredClone(original);
+    mutated.payload.compileProvenance.resourceEstimate[key] = value;
+    await assert.rejects(artifacts.importOpenEnaArtifactV3(await rehash(mutated)), /resource|budget|population|count|dimension/i);
+  });
+});
+
+test("both canonical families enforce every applicable versioned hard resource budget", async (t) => {
+  const originals = await genuineCanonicalArtifacts();
+  const budgets = {
+    datasetSizeBytes: resourceBudget.MAX_ESTIMATED_DATASET_BYTES_V3,
+    identityPayloadBytes: resourceBudget.MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3,
+    estimatedStateCount: resourceBudget.MAX_ESTIMATED_STATE_COUNT_V3,
+    estimatedStructuralBytes: resourceBudget.MAX_ESTIMATED_STRUCTURAL_BYTES_V3,
+    estimatedNumericCells: resourceBudget.MAX_ESTIMATED_NUMERIC_CELLS_V3,
+    estimatedWindowVisits: resourceBudget.MAX_ESTIMATED_WINDOW_VISITS_V3,
+    estimatedRotationWorkUnits: resourceBudget.MAX_ESTIMATED_ROTATION_WORK_UNITS_V3,
+    estimatedPeakBytes: resourceBudget.MAX_ESTIMATED_PEAK_BYTES_V3,
+    estimatedExportBytes: resourceBudget.MAX_ESTIMATED_EXPORT_BYTES_V3,
+  };
+  for (const [family, original] of Object.entries(originals)) {
+    for (const [key, maximum] of Object.entries({ ...budgets,
+      ...(family === "ona" ? { estimatedRotationMatrixBytes: resourceBudget.MAX_ESTIMATED_ROTATION_MATRIX_BYTES_ONA_V3 } : {}),
+    })) await t.test(`${family} ${key}`, async () => {
+      const mutated = structuredClone(original);
+      mutated.payload.compileProvenance.resourceEstimate[key] = maximum + 1;
+      await assert.rejects(artifacts.importOpenEnaArtifactV3(await rehash(mutated)));
+    });
+  }
+});
+
+test("canonical resource claims reject impossible counts and model dimensions", async (t) => {
+  for (const [family, original] of Object.entries(await genuineCanonicalArtifacts())) {
+    const estimate = original.payload.compileProvenance.resourceEstimate;
+    for (const [key, value] of Object.entries({
+      rows: 0, units: 0, horizons: 0, windowPartitions: 0,
+      aggregateStateUpperBound: estimate.windowPartitions + 1,
+      estimatedRetainedWindowRows: estimate.rows + 1,
+      estimatedForwardBufferRows: estimate.rows + 1,
+      estimatedRotationMatrixBytes: estimate.estimatedRotationMatrixBytes + 1,
+      ...(family === "standard" ? { trajectorySteps: estimate.units + 1 } : { endpointNetworks: 1 }),
+    })) await t.test(`${family} inconsistent ${key}`, async () => {
+      const mutated = structuredClone(original);
+      mutated.payload.compileProvenance.resourceEstimate[key] = value;
+      await assert.rejects(artifacts.importOpenEnaArtifactV3(await rehash(mutated)));
+    });
+    for (const key of ["units", "horizons", "windowPartitions"]) await t.test(`${family} ${key} above rows`, async () => {
+      const mutated = structuredClone(original);
+      mutated.payload.compileProvenance.resourceEstimate[key] = estimate.rows + 1;
+      await assert.rejects(artifacts.importOpenEnaArtifactV3(await rehash(mutated)));
+    });
+  }
+});
+
+test("resource claim validation preserves unsigned source-size uncertainty and the inclusive peak limit", async () => {
+  const { standard, ona } = await genuineCanonicalArtifacts();
+  for (const original of [standard, ona]) {
+    const changed = structuredClone(original);
+    changed.payload.compileProvenance.resourceEstimate.datasetSizeBytes += 1;
+    assert.equal((await artifacts.importOpenEnaArtifactV3(await rehash(changed))).kind, "draft");
+  }
+  ona.payload.compileProvenance.resourceEstimate.estimatedPeakBytes = resourceBudget.MAX_ESTIMATED_PEAK_BYTES_V3;
+  assert.equal((await artifacts.importOpenEnaArtifactV3(await rehash(ona))).kind, "draft");
 });
