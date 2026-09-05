@@ -254,3 +254,92 @@ export interface InternalStandardRunResultV3 {
     readonly imputedStepCount: 0;
   };
 }
+
+/** Realm-local proof of an owned, validated fresh fit; never a worker BoundResult. */
+declare const referenceSourceWitnessV3: unique symbol;
+export interface ReferenceSourceWitnessV3 {
+  readonly [referenceSourceWitnessV3]: true;
+}
+
+export type ReferenceCodeIdentityV2 = { readonly type: "string"; readonly value: string };
+export type ReferenceRowPolicyV2 =
+  | Extract<CanonicalRowOrderV3, { kind: "columns" }>
+  | { kind: "source-order-confirmed" };
+
+export interface ReferenceCompatibilityV2 {
+  readonly normalization: "sphere";
+  readonly unitFields: readonly string[];
+  readonly horizonFields: readonly string[];
+  readonly weighting: CanonicalStandardConfigV3["weighting"];
+  readonly window: {
+    readonly type: StandardWindowTypeV3;
+    readonly backward: BackwardExtentV3;
+    readonly forward: ForwardExtentV3;
+    readonly rowOrder: ReferenceRowPolicyV2 | null;
+  };
+}
+
+export interface OpenEnaStandardReferenceV2 {
+  readonly schemaVersion: 2;
+  readonly kind: "open-ena-standard-reference-rotation";
+  readonly family: "Standard";
+  readonly sourceModel: "EndPoint";
+  readonly displayName: string;
+  readonly contentSha256: string;
+  readonly referenceId: string;
+  readonly source: {
+    readonly datasetBinding: DatasetBindingV3;
+    readonly configuration: CanonicalStandardConfigV3;
+    readonly configurationSha256: string;
+    readonly executionPlanSha256: string;
+    readonly sourceProofSha256: string;
+    /** Public hashes establish internal integrity, not source authentication. */
+    readonly externalHashVerification: "provenance-only-no-normalized-table-preimage";
+    readonly runtime: {
+      readonly runtimeVersion: string;
+      readonly algorithmBuildSha: string;
+      readonly validationContractVersion: typeof OPEN_ENA_VALIDATION_CONTRACT_VERSION_V3;
+      readonly runtimePolicyVersion: typeof OPEN_ENA_RUNTIME_POLICY_VERSION_V3;
+      readonly executionContractVersion: typeof OPEN_ENA_EXECUTION_CONTRACT_VERSION_V3;
+    };
+  };
+  readonly fit: {
+    readonly method: "svd" | "means";
+    readonly origin: "target-fitted";
+    readonly population: "endpoint-units";
+    readonly observationCount: number;
+    readonly populationSha256: string;
+    readonly centerAlignToOrigin: boolean;
+    readonly rank: number;
+    readonly estimableAxes: readonly string[];
+    readonly variance: readonly number[];
+    readonly means: null | {
+      readonly groupColumn: string;
+      readonly negativeLevel: ScalarIdentityV3;
+      readonly positiveLevel: ScalarIdentityV3;
+      readonly negativeCount: number;
+      readonly positiveCount: number;
+      readonly direction: "positive-minus-negative";
+    };
+  };
+  readonly compatibility: ReferenceCompatibilityV2;
+  readonly basis: {
+    readonly codes: readonly ReferenceCodeIdentityV2[];
+    readonly edges: ReadonlyArray<{
+      readonly source: ReferenceCodeIdentityV2;
+      readonly target: ReferenceCodeIdentityV2;
+    }>;
+  };
+  readonly geometry: {
+    readonly centerVector: readonly number[];
+    readonly rotationMatrix: ReadonlyArray<readonly number[]>;
+    readonly rotationColumns: readonly string[];
+    readonly eigenvalues: readonly number[];
+    /** Only coordinates actually fitted by jENA; no synthesized completion nodes. */
+    readonly nodeColumns: readonly string[];
+    readonly nodes: ReadonlyArray<{
+      readonly code: ReferenceCodeIdentityV2;
+      readonly coordinates: readonly number[];
+    }>;
+  };
+}
