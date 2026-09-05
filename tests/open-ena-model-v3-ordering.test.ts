@@ -5,6 +5,7 @@ import {
   OrderingDomainErrorV3,
   resolveHorizonOrderV3,
   resolveRowOrderV3,
+  createResolvedTupleContractV3,
 } from "../lib/open-ena/model-v3/ordering";
 import type {
   OrderingResolutionContextV3,
@@ -146,6 +147,38 @@ const ascendingNumber = (column: string): OrderKeyV3 => ({
   column,
   direction: "ascending",
   comparator: { type: "number" },
+});
+
+test("portable tuple contracts retain native normalized comparator domains", () => {
+  const cases: [OrderKeyV3, unknown[], unknown[]][] = [
+    [ascendingNumber("k"), [1, 2], ["1", null]],
+    [{ column: "k", direction: "ascending", comparator: { type: "date", format: "YYYY-MM-DD" } }, ["2024-02-29", "2024-03-01"], ["2023-02-29", 1]],
+    [{ column: "k", direction: "ascending", comparator: { type: "datetime", format: "ISO-8601", timeZone: "offset-in-value" } }, ["2024-01-01T00:00:00.000000001Z", "2024-01-01T00:00:00.000000002Z"], ["2024-01-01T00:00:00Z", "2024-01-01T01:00:00.000000001+01:00"]],
+    [{ column: "k", direction: "descending", comparator: { type: "ordered-category", levels: [{ type: "string", value: "first" }, { type: "string", value: "second" }] } }, [1, 0], [2, 0.5, "first"]],
+  ];
+  for (const [key, ordered, invalid] of cases) {
+    const contract = createResolvedTupleContractV3(columnsPolicy(key), []);
+    ordered.forEach((value) => contract.assertTuple([value]));
+    assert.equal(contract.compare([ordered[0]], [ordered[1]]), -1);
+    for (const value of invalid) assert.throws(() => contract.assertTuple([value]), /tuple|normalized|date|category|finite/i);
+    assert.throws(() => contract.assertTuple([]), /width|tuple/i);
+    assert.throws(() => contract.assertTuple([ordered[0], ordered[1]]), /width|tuple/i);
+  }
+});
+
+test("portable text comparison reuses the captured native collation", () => {
+  const policy = columnsPolicy({ column: "k", direction: "ascending", comparator: { type: "text", locale: "en", sensitivity: "variant", numeric: true } });
+  const resolved = resolveRowOrderV3([{ h: "h", k: "2" }, { h: "h", k: "10" }], ["h"], policy);
+  const contract = createResolvedTupleContractV3(policy, resolved.textCollationBindings);
+  assert.equal(contract.compare(["2"], ["10"]), -1);
+  assert.throws(() => contract.assertTuple([2]), /text|tuple/i);
+  assert.throws(() => createResolvedTupleContractV3(policy, resolved.textCollationBindings.map((entry) => ({ ...entry, caseFirst: "upper" }))), /collation/i);
+});
+
+test("portable source-confirmed tuples are one nonnegative ordinal", () => {
+  const contract = createResolvedTupleContractV3(confirmedPolicy(3, ["h"]), []);
+  assert.equal(contract.compare([0], [1]), -1);
+  for (const tuple of [[], ["0"], [-1], [0.5], [0, 1]]) assert.throws(() => contract.assertTuple(tuple), /tuple|ordinal/i);
 });
 
 test("row ordering sorts only inside each Horizon and retains source indices", () => {

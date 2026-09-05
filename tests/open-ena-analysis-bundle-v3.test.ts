@@ -12,6 +12,7 @@ import {
 import type {
   OpenEnaAnalysisBundleV3,
   StandardEnaDraftV3,
+  StandardAnalysisBundleV3,
 } from "../lib/open-ena/model-v3/types";
 import { runStandardPlanV3 } from "../lib/open-ena/analyze";
 import { bindResultV3 } from "../lib/open-ena/model-v3/result-binding";
@@ -600,4 +601,226 @@ test("explicit null presentation is rejected even with an honest component hash"
     () => parseAnalysisBundleV3(JSON.stringify(bundle)),
     /contract/i,
   );
+});
+
+async function orderedBundleFixture(
+  trajectory = false,
+  unbalanced = false,
+  sourceConfirmed = false,
+  accumulated = false,
+) {
+  const { result } = await fixture((draft, data) => {
+    draft.windowType = "MovingStanzaWindow";
+    draft.movingStanza.rowOrder = {
+      kind: "columns",
+      keys: [
+        {
+          column: "unit",
+          direction: "ascending",
+          comparator: {
+            type: "text",
+            locale: "en",
+            sensitivity: "variant",
+            numeric: false,
+          },
+        },
+      ],
+    };
+    if (trajectory) {
+      draft.model = accumulated
+        ? "AccumulatedTrajectory"
+        : "SeparateTrajectory";
+      data.rows = data.rows.flatMap((row, index) => [
+        { ...row, horizon: "first", time: 1 },
+        ...(unbalanced && index === 2
+          ? []
+          : [{ ...row, horizon: "second", time: 2, A: row.C, C: row.A }]),
+        ...(unbalanced && index === 3
+          ? [{ ...row, horizon: "third", time: 3, A: row.B, B: row.C }]
+          : []),
+      ]);
+    }
+    if (sourceConfirmed) {
+      const policy = (relevantColumns: string[]) => ({
+        kind: "source-order-confirmed" as const,
+        confirmation: {
+          kind: "explicit-researcher-confirmation" as const,
+          analysisFamily: "standard" as const,
+          datasetSha256: "a".repeat(64),
+          rowCount: data.rows.length,
+          relevantColumns,
+          confirmedAt: "2026-09-05T00:00:00.000Z",
+          confirmationVersion: 1 as const,
+        },
+      });
+      draft.movingStanza.rowOrder = policy(["horizon"]);
+      if (trajectory) draft.horizonOrder = policy(["unit", "horizon"]);
+    }
+  });
+  return (await buildAnalysisBundleV3(result)) as StandardAnalysisBundleV3;
+}
+
+for (const [label, trajectory, mutate] of [
+  [
+    "SPEC F1: trajectory declares Endpoint Horizon ordering",
+    true,
+    (bundle: StandardAnalysisBundleV3) => {
+      Object.assign(bundle.executionProvenance.ordering, {
+        resolvedHorizonOrder: {
+          type: "not-applicable",
+          reason: "endpoint-model",
+        },
+      });
+    },
+  ],
+  [
+    "SPEC F2: ten trajectory points have no Unit sequences",
+    true,
+    (bundle: StandardAnalysisBundleV3) => {
+      Object.assign(bundle.executionProvenance.ordering.resolvedHorizonOrder, {
+        unitSequences: [],
+      });
+    },
+  ],
+  [
+    "SPEC F3: one row key has an empty normalized tuple",
+    false,
+    (bundle: StandardAnalysisBundleV3) => {
+      const row = bundle.executionProvenance.ordering.resolvedRowOrder;
+      if (row.type === "within-horizon-order")
+        Object.assign(row.mappings[0], { orderTuple: [] });
+    },
+  ],
+  [
+    "SPEC F3: ascending text is decreasing within a Horizon",
+    false,
+    (bundle: StandardAnalysisBundleV3) => {
+      const row = bundle.executionProvenance.ordering.resolvedRowOrder;
+      if (row.type === "within-horizon-order")
+        Object.assign(row.mappings[0], { orderTuple: ["zzzz"] });
+    },
+  ],
+] as const)
+  test(label, async () => {
+    const bundle = structuredClone(await orderedBundleFixture(trajectory));
+    mutate(bundle);
+    await rehash(bundle, true);
+    await assert.rejects(
+      () => parseAnalysisBundleV3(JSON.stringify(bundle)),
+      /contract|order|sequence|tuple/i,
+    );
+  });
+
+for (const mutation of [
+  "missing Unit",
+  "missing step",
+  "extra observed step",
+  "duplicate step",
+  "reordered steps",
+] as const)
+  test(`trajectory sequence rejects ${mutation} after honest rehash`, async () => {
+    const bundle = structuredClone(await orderedBundleFixture(true, true));
+    const order = bundle.executionProvenance.ordering.resolvedHorizonOrder;
+    assert.equal(order.type, "trajectory-horizon-order");
+    if (order.type !== "trajectory-horizon-order")
+      throw new Error("trajectory fixture");
+    const sequence = order.unitSequences.find(
+      (entry) => entry.steps.length === 2,
+    )!;
+    if (mutation === "missing Unit")
+      Object.assign(order, { unitSequences: order.unitSequences.slice(1) });
+    else if (mutation === "missing step")
+      Object.assign(sequence, {
+        steps: sequence.steps
+          .slice(1)
+          .map((step, index) => ({ ...step, trajectoryOrdinal: index })),
+      });
+    else if (mutation === "extra observed step") {
+      const missing = order.horizonTuples.find(
+        (entry) =>
+          !sequence.steps.some(
+            (step) => step.horizonToken === entry.horizonToken,
+          ),
+      )!;
+      Object.assign(sequence, {
+        steps: [
+          ...sequence.steps,
+          { horizonToken: missing.horizonToken, trajectoryOrdinal: 2 },
+        ],
+      });
+    } else if (mutation === "duplicate step")
+      Object.assign(sequence, {
+        steps: [
+          ...sequence.steps,
+          { ...sequence.steps[0], trajectoryOrdinal: 2 },
+        ],
+      });
+    else
+      Object.assign(sequence, {
+        steps: [...sequence.steps]
+          .reverse()
+          .map((step, index) => ({ ...step, trajectoryOrdinal: index })),
+      });
+    await rehash(bundle, true);
+    await assert.rejects(
+      () => parseAnalysisBundleV3(JSON.stringify(bundle)),
+      /contract|sequence|step|ordinal/i,
+    );
+  });
+
+for (const accumulated of [false, true])
+  for (const sourceConfirmed of [false, true])
+    test(`unbalanced ${accumulated ? "Accumulated" : "Separate"} trajectories retain ${sourceConfirmed ? "source-confirmed" : "column"} order`, async () => {
+      const bundle = await orderedBundleFixture(
+        true,
+        true,
+        sourceConfirmed,
+        accumulated,
+      );
+      const order = bundle.executionProvenance.ordering.resolvedHorizonOrder;
+      assert.equal(order.type, "trajectory-horizon-order");
+      if (order.type !== "trajectory-horizon-order")
+        throw new Error("trajectory fixture");
+      assert.deepEqual(
+        [
+          ...new Set(order.unitSequences.map((entry) => entry.steps.length)),
+        ].sort(),
+        [1, 2, 3],
+      );
+      assert.deepEqual(
+        await parseAnalysisBundleV3(JSON.stringify(bundle)),
+        bundle,
+      );
+    });
+
+test("Horizon tuples enforce numeric width/domain and per-Unit ordering", async () => {
+  const original = await orderedBundleFixture(true);
+  for (const tuple of [[], ["1"], [99]]) {
+    const bundle = structuredClone(original),
+      order = bundle.executionProvenance.ordering.resolvedHorizonOrder;
+    if (order.type !== "trajectory-horizon-order")
+      throw new Error("trajectory fixture");
+    const first = order.unitSequences[0].steps[0].horizonToken;
+    Object.assign(
+      order.horizonTuples.find((entry) => entry.horizonToken === first)!,
+      { orderTuple: tuple },
+    );
+    await rehash(bundle, true);
+    await assert.rejects(
+      () => parseAnalysisBundleV3(JSON.stringify(bundle)),
+      /contract|tuple|order/i,
+    );
+  }
+});
+
+test("equal Horizon tuples across separate Units remain valid", async () => {
+  const { result } = await fixture((draft, data) => {
+    draft.model = "SeparateTrajectory";
+    data.rows = data.rows.flatMap((row) => [
+      { ...row, horizon: `${row.unit}-first`, time: 1 },
+      { ...row, horizon: `${row.unit}-second`, time: 2, A: row.C, C: row.A },
+    ]);
+  });
+  const bundle = await buildAnalysisBundleV3(result);
+  assert.deepEqual(await parseAnalysisBundleV3(JSON.stringify(bundle)), bundle);
 });

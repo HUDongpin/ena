@@ -1,5 +1,6 @@
 import type { Row } from "jena-js";
 import { fixedProjectionRankV3 } from "./analyze";
+import { createResolvedTupleContractV3 } from "./model-v3/ordering";
 import { adjacencyKey, orderedAdjacencyKey } from "jena-js/core";
 import {
   canonicalJsonV3,
@@ -635,10 +636,13 @@ function assertResolvedOrderMetadata(
   });
 }
 
-function assertOrdering(
-  p: ResultExecutionProvenanceV3 | OnaResultExecutionProvenanceV3,
-  ona: boolean,
-): void {
+function assertOrdering(result: BoundResultV3): void {
+  const p = result.executionProvenance;
+  const ona = result.configuration.analysisFamily === "ona";
+  const endpoint =
+    ona ||
+    (result as BoundStandardResultV3).configuration.analysis.model.type ===
+      "EndPoint";
   const o = p.ordering,
     n = p.header.rowCount;
   keys(o, [
@@ -651,6 +655,16 @@ function assertOrdering(
   permutation(o.runtimeSourceRowIndices, n, "runtime row order");
   const row = o.resolvedRowOrder,
     horizon = o.resolvedHorizonOrder;
+  same(
+    row.type === "not-applicable",
+    result.configuration.window.type === "Conversation",
+    "configured row-order applicability",
+  );
+  same(
+    horizon.type === "not-applicable",
+    endpoint,
+    "configured Horizon-order applicability",
+  );
   const horizons = new Set(
     p.identityDictionary.horizons.map((entry) => entry.token),
   );
@@ -673,6 +687,10 @@ function assertOrdering(
     same(row.type, "within-horizon-order", "row ordering type");
     same(row.requestedPolicy, o.requestedRowOrder, "row policy");
     assertResolvedOrderMetadata(row, p);
+    const tupleContract = createResolvedTupleContractV3(
+      row.requestedPolicy,
+      row.textCollationBindings,
+    );
     permutation(row.orderedSourceRowIndices, n, "resolved row order");
     permutation(
       row.mappings.map((entry) => entry.sourceRowIndex),
@@ -689,15 +707,13 @@ function assertOrdering(
       ]);
       if (!horizons.has(entry.horizonToken)) fail("row Horizon identity");
       integer(entry.withinHorizonOrdinal);
-      if (
-        !Array.isArray(entry.orderTuple) ||
-        entry.orderTuple.some(
-          (cell) =>
-            typeof cell !== "string" &&
-            (typeof cell !== "number" || !Number.isFinite(cell)),
-        )
-      )
-        fail("order tuple");
+      tupleContract.assertTuple(entry.orderTuple);
+      if (row.requestedPolicy.kind === "source-order-confirmed")
+        same(
+          entry.orderTuple,
+          [entry.withinHorizonOrdinal],
+          "source-confirmed within-Horizon tuple",
+        );
       const list = ordinals.get(entry.horizonToken) ?? [];
       list.push(entry.withinHorizonOrdinal);
       ordinals.set(entry.horizonToken, list);
@@ -712,21 +728,37 @@ function assertOrdering(
       o.runtimeSourceRowIndices,
     ]) {
       const next = new Map<string, number>();
+      const previous = new Map<string, (typeof row.mappings)[number]>();
       indices.forEach((index) => {
         const item = map.get(index)!;
         if (item.withinHorizonOrdinal !== (next.get(item.horizonToken) ?? 0))
           fail("within-Horizon ordinal order");
         next.set(item.horizonToken, item.withinHorizonOrdinal + 1);
+        const prior = previous.get(item.horizonToken);
+        if (
+          prior &&
+          (tupleContract.compare(prior.orderTuple, item.orderTuple) >= 0 ||
+            (row.requestedPolicy.kind === "source-order-confirmed" &&
+              prior.sourceRowIndex >= item.sourceRowIndex))
+        )
+          fail("within-Horizon tuple order or unresolved tie");
+        previous.set(item.horizonToken, item);
       });
     }
   }
-  if (horizon.type === "not-applicable")
+  if (horizon.type === "not-applicable") {
     same(
       horizon,
       { type: "not-applicable", reason: "endpoint-model" },
       "Horizon order reason",
     );
-  else {
+    if (!ona)
+      same(
+        (p as ResultExecutionProvenanceV3).ordering.requestedHorizonOrder,
+        null,
+        "Endpoint requested Horizon order",
+      );
+  } else {
     keys(horizon, [
       "type",
       "requestedPolicy",
@@ -743,6 +775,10 @@ function assertOrdering(
       "Horizon policy",
     );
     assertResolvedOrderMetadata(horizon, p);
+    const tupleContract = createResolvedTupleContractV3(
+      horizon.requestedPolicy,
+      horizon.textCollationBindings,
+    );
     unique(
       horizon.horizonTuples.map((entry) => entry.horizonToken),
       "Horizon tuples",
@@ -759,17 +795,21 @@ function assertOrdering(
     );
     horizon.horizonTuples.forEach((entry) => {
       keys(entry, ["horizonToken", "orderTuple"]);
-      if (
-        !horizons.has(entry.horizonToken) ||
-        !Array.isArray(entry.orderTuple) ||
-        entry.orderTuple.some(
-          (cell) =>
-            typeof cell !== "string" &&
-            (typeof cell !== "number" || !Number.isFinite(cell)),
-        )
-      )
-        fail("Horizon tuple");
+      if (!horizons.has(entry.horizonToken)) fail("Horizon tuple identity");
+      tupleContract.assertTuple(entry.orderTuple);
     });
+    if (horizon.requestedPolicy.kind === "source-order-confirmed")
+      permutation(
+        horizon.horizonTuples.map((entry) => entry.orderTuple[0] as number),
+        horizons.size,
+        "source-confirmed Horizon first-appearance tuples",
+      );
+    const tuples = new Map(
+      horizon.horizonTuples.map((entry) => [
+        entry.horizonToken,
+        entry.orderTuple,
+      ]),
+    );
     unique(
       horizon.unitSequences.map((entry) => entry.unitToken),
       "Unit sequences",
@@ -791,6 +831,14 @@ function assertOrdering(
           step.trajectoryOrdinal !== index
         )
           fail("trajectory ordinal");
+        if (
+          index &&
+          tupleContract.compare(
+            tuples.get(entry.steps[index - 1].horizonToken)!,
+            tuples.get(step.horizonToken)!,
+          ) >= 0
+        )
+          fail("Unit Horizon tuple order or unresolved tie");
       });
     });
   }
@@ -1001,7 +1049,7 @@ async function assertProvenance(result: BoundResultV3): Promise<void> {
     same(result.binding.referenceId, null, "absent Reference ID");
     same(result.binding.referenceContentSha256, null, "absent Reference hash");
   }
-  assertOrdering(p, ona);
+  assertOrdering(result);
   assertResources(p, ona);
 }
 
@@ -1152,6 +1200,33 @@ function assertTables(result: BoundResultV3): [string, string | null][] {
       [...unitMap.keys()].sort(),
       "complete Unit population",
     );
+  else {
+    const order = p.ordering.resolvedHorizonOrder;
+    if (order.type !== "trajectory-horizon-order")
+      fail("trajectory ordering applicability");
+    const observed = new Map<string, string[]>();
+    for (const [unit, horizon] of pairs) {
+      const steps = observed.get(unit) ?? [];
+      steps.push(horizon!);
+      observed.set(unit, steps);
+    }
+    same(
+      [...observed.keys()].sort(),
+      [...unitMap.keys()].sort(),
+      "complete trajectory Unit population",
+    );
+    same(
+      order.unitSequences.map((entry) => entry.unitToken).sort(),
+      [...observed.keys()].sort(),
+      "trajectory Unit sequence coverage",
+    );
+    for (const sequence of order.unitSequences)
+      same(
+        sequence.steps.map((step) => step.horizonToken),
+        observed.get(sequence.unitToken),
+        "trajectory observed step sequence coverage/order",
+      );
+  }
   const n = pairs.length,
     groups = new Map(
       p.unitGroups.map((entry) => [entry.unitToken, entry.groupToken]),

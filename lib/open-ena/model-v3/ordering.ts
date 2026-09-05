@@ -799,6 +799,57 @@ function compareResolvedTuplesV3(
   return 0;
 }
 
+/** Internal portable comparison of already declared tuples. This checks their
+ * normalized representation and captured comparator semantics only; it never
+ * claims that a tuple was derived from an absent source cell or confirmation.
+ * Native source resolution above/below keeps its existing callers unchanged.
+ */
+export function createResolvedTupleContractV3(
+  policy: CanonicalRowOrderV3,
+  capturedCollations: readonly TextCollationBindingV3[],
+): {
+  assertTuple(tuple: readonly unknown[]): void;
+  compare(left: readonly unknown[], right: readonly unknown[]): number;
+} {
+  const record = snapshotPlainJsonRecordV3(policy, "portable order policy");
+  if (record.kind !== "columns" && record.kind !== "source-order-confirmed") {
+    throw new TypeError("Portable tuple policy has an unsupported kind.");
+  }
+  assertExactKeysV3(record, record.kind === "columns" ? ["kind", "keys"] : ["kind", "confirmation"], "portable order policy");
+  const compiled = record.kind === "columns"
+    ? snapshotDenseJsonArrayV3(record.keys, "portable order keys").map(snapshotOrderKeyV3)
+    : null;
+  if (compiled?.length === 0) throw new TypeError("Portable tuple requires declared order keys.");
+  if (canonicalJsonV3(textCollationBindingsV3(compiled)) !== canonicalJsonV3(capturedCollations)) {
+    throw new TypeError("Portable tuple collation differs from the supported captured native semantics.");
+  }
+  const captureTuple = (tuple: readonly unknown[]): ResolvedOrderValueV3[] => {
+    const values = snapshotDenseJsonArrayV3(tuple, "portable normalized tuple");
+    if (values.length !== (compiled?.length ?? 1)) throw new TypeError("Portable tuple width differs from its declared policy.");
+    values.forEach((value, index) => {
+      if (compiled === null) {
+        if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new TypeError("Source-confirmed tuple must contain one nonnegative ordinal.");
+        return;
+      }
+      const key = compiled[index].key;
+      if (key.comparator.type === "ordered-category") {
+        if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value >= key.comparator.levels.length) throw new TypeError("Normalized category tuple must contain an in-range category index.");
+      } else {
+        const normalized = resolveOrderValueV3({ [key.column]: value }, compiled[index]);
+        if (normalized !== value) throw new TypeError("Portable tuple must contain the native normalized comparator value.");
+      }
+    });
+    return values as ResolvedOrderValueV3[];
+  };
+  return {
+    assertTuple(tuple) { captureTuple(tuple); },
+    compare(left, right) {
+      const a = captureTuple(left), b = captureTuple(right);
+      return compiled === null ? (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0) : compareResolvedTuplesV3(a, b, compiled);
+    },
+  };
+}
+
 function resolvedTupleSignatureV3(tuple: readonly ResolvedOrderValueV3[]): string {
   return canonicalJsonV3(tuple);
 }
