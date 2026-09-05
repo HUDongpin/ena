@@ -8,6 +8,7 @@ import {
 import { scalarIdentityV3 } from "./identity";
 import {
   MAX_ESTIMATED_IDENTITY_PAYLOAD_BYTES_V3,
+  MAX_ESTIMATED_EXPORT_BYTES_V3,
   ResourceEstimateErrorV3,
   estimateCanonicalIdentityAdmissionFieldPayloadBytesV3,
   estimateOnaResourcesV3,
@@ -242,6 +243,81 @@ function identityPayloadBytesV3(
   return total;
 }
 
+/**
+ * Data-derived bound for complete BoundResult identity/metadata serialization.
+ * Role occurrences include both Unit and ENA_UNIT: Unit14, Horizon8, Group7
+ * across model tables, metadata, trajectories and composite unitLabels. Counting
+ * all source rows conservatively covers observed targets without imputing steps.
+ * Dictionary fields, embedded canonical JSON and worst typed display labels are
+ * counted independently, even when different roles use the same source fields.
+ */
+export function estimateResultIdentityBytesV3(dataset: Pick<ParsedDataset, "rows">, config: CanonicalStandardConfigV3): number {
+  const encoder = new TextEncoder();
+  const bytes = (value: unknown) => encoder.encode(canonicalJsonV3(value)).byteLength;
+  let total = 0;
+  const add = (value: number) => { total = addSafeV3(total, value, "Bound result identity bytes"); };
+  const multiply = (left: number, right: number) => {
+    const result = left * right;
+    if (!Number.isSafeInteger(result)) throw new ResourceEstimateErrorV3("UNSAFE_ARITHMETIC", "Bound result identity multiplication exceeds safe arithmetic.");
+    return result;
+  };
+  // Fixed field names, version/hash strings, numeric/index text and bounded
+  // diagnostic wrappers. Dynamic Code/identity strings are charged below.
+  const c = config.codes.length;
+  const e = c * (c - 1) / 2;
+  add(16_384 + multiply(c * c + 10, 2_048) + multiply(dataset.rows.length, 1_024) + multiply(e, 256));
+  for (const [role, columns, occurrences] of [
+    ["Unit", config.units.columns, 14], ["Horizon", config.horizons.columns, 8],
+    ["Group", config.units.group.type === "stable-metadata" ? [config.units.group.column] : [], 7],
+  ] as const) {
+    if (columns.length === 0) continue;
+    for (const source of dataset.rows) {
+      // Admission before constructing long labels, including a caller-declared
+      // tiny source size. Column/value length itself supplies this lower bound.
+      let constructionBytes = 0;
+      for (const column of columns) {
+        const value = Object.getOwnPropertyDescriptor(source, column)?.value;
+        constructionBytes = addSafeV3(constructionBytes, estimateCanonicalIdentityAdmissionFieldPayloadBytesV3(column, value), "Identity label construction");
+      }
+      // The field proxy already uses6bytes per UTF16 unit. Eight such copies
+      // bound base+typed forms, their two JSON escaping layers and dictionary
+      // wrappers before any long string is concatenated or encoded.
+      const constructionBound = addSafeV3(total, addSafeV3(multiply(constructionBytes, 8 * (occurrences + 1)), 4_096, "Role construction wrappers"), "Result identity admission");
+      if (constructionBound > MAX_ESTIMATED_EXPORT_BYTES_V3) return constructionBound;
+      const fields = columns.map((column) => ({ column, value: scalarIdentityV3(Object.getOwnPropertyDescriptor(source, column)?.value, "Result identity source") }));
+      const base = fields.map((field) => `${field.column}=${String(field.value.value)}`).join(", ");
+      const typed = fields.map((field) => `${field.column}:${field.value.type}(${JSON.stringify(field.value.value)})`).join(", ");
+      // Any suffix count is bounded by the number of admitted source values and
+      // allocated identities, both below MAX_SAFE_INTEGER.16digits covers it.
+      const displayLabel = `${role} ${base} [${typed}] #9007199254740991`;
+      // Composite unitLabels embeds a JSON array as a JSON string, so use the
+      // second escaped form for every label occurrence (a conservative bound).
+      add(multiply(bytes(canonicalJsonV3(displayLabel)) + 8, occurrences));
+      add(bytes({ token: "x".repeat(64), fields, canonicalJson: canonicalJsonV3({ fields }), sha256: "x".repeat(64), displayLabel }));
+      if (total > MAX_ESTIMATED_EXPORT_BYTES_V3) return total;
+    }
+  }
+  // Bound encoding expansion before creating the complete policy JSON string.
+  function encodedUpperBound(value: unknown): number {
+    if (typeof value === "string") return multiply(value.length, 6) + 2;
+    if (value === null || typeof value !== "object") return 24;
+    if (Array.isArray(value)) return value.reduce((sum, item) => addSafeV3(sum, encodedUpperBound(item) + 1, "Policy array bytes"), 2);
+    return Object.entries(value).reduce((sum, [key, item]) => addSafeV3(sum, encodedUpperBound(key) + encodedUpperBound(item) + 2, "Policy object bytes"), 2);
+  }
+  const policyConstruction = addSafeV3(total, multiply(encodedUpperBound(config), 8), "Policy capture bytes");
+  if (policyConstruction > MAX_ESTIMATED_EXPORT_BYTES_V3) return policyConstruction;
+  // Complete canonical configuration plus requested/resolved policy copies.
+  add(multiply(bytes(config), 8));
+  // Source/display Code identities occur in configuration, audit dictionaries,
+  // reversible aliases and both endpoint fields of canonical/alias edge maps.
+  for (const code of config.codes) {
+    const codeConstruction = addSafeV3(total, multiply(6 * (code.column.length + code.displayLabel.length) + 512, 24 + 4 * Math.max(0, c - 1)), "Code identity construction");
+    if (codeConstruction > MAX_ESTIMATED_EXPORT_BYTES_V3) return codeConstruction;
+    add(multiply(bytes({ column: code.column, displayLabel: code.displayLabel, identity: canonicalJsonV3({ type: "string", value: code.column }) }), 12 + 2 * Math.max(0, c - 1)));
+  }
+  return total;
+}
+
 function resourceShapeV3(
   dataset: ParsedDataset,
   config: CanonicalStandardConfigV3 | CanonicalOnaConfigV3,
@@ -316,6 +392,7 @@ export function exactStandardResourceEstimateV3(
     referenceProjection: config.analysis.rotation.type === "reference",
     datasetSizeBytes: dataset.sizeBytes,
     identityPayloadBytes: shape.identityPayloadBytes,
+    resultIdentityBytes: estimateResultIdentityBytesV3(dataset, config),
   });
 }
 

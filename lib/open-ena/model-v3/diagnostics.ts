@@ -2381,6 +2381,7 @@ export function prepareStandardDraftValidationV3(
         referenceProjection: modelDraft.rotation.type === "reference",
         datasetSizeBytes: dataset.sizeBytes,
         identityPayloadBytes,
+        resultIdentityBytes: 0, // Provisional preflight only; the ready compiler recomputes complete result metadata admission.
       });
       if (estimate.blocked) {
         resourceBlocked = true;

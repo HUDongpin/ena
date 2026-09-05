@@ -166,4 +166,14 @@ export interface MakeSetOptions {
   rotation?: RotationOptions;
   rotationSet?: RotationSet;
   nodePositionMethod?: NodePositionMethod;
+  /** Operational in-process observation; never part of scientific function parameters. */
+  observer?: {
+    onStage?: (stage: 'normalize' | 'center' | 'rotate-or-project' | 'position-nodes') => void;
+    onResources?: (state: {
+      /** Exact currently retained tracked scientific numeric slots at this boundary. */
+      numericCells: number;
+      /** Conservative additional scratch slots checked BEFORE the next allocation. */
+      temporaryNumericCellsBound: number;
+    }) => void;
+  };
 }

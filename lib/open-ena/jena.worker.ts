@@ -6,7 +6,16 @@ import {
   buildOpenEnaResult,
   canonicalizeOfficialMeanRotation,
   compactOpenEnaSet,
+  completeStandardPlanFromAccumulationV3,
+  verifyStandardScientificReadinessV3,
 } from "./analyze";
+import { validateExecutionPlanV3, type StandardExecutionPlanV3 } from "./model-v3/execution-plan";
+import { bindResultV3 } from "./model-v3/result-binding";
+import { toStandardJenaOptionsV3 } from "./model-v3/standard-adapter";
+import { snapshotPlainJsonRecordV3 } from "./model-v3/canonical-json";
+import { MAX_ESTIMATED_NUMERIC_CELLS_V3, MAX_ESTIMATED_PEAK_BYTES_V3 } from "./model-v3/resource-budget";
+import { assertReferenceAdmissionV3 } from "./model-v3/reference-codec-v2";
+import type { BoundResultV3, OpenEnaWorkerStageV3, RuntimeResourceObservationV3 } from "./model-v3/types";
 import { validateConfig } from "./csv";
 import { cloneOpenEnaConfig } from "./network-config";
 import { buildOpenEnaOrderedAudit } from "./ordered-audit";
@@ -19,6 +28,7 @@ import type {
 } from "./types";
 
 export type OpenEnaWorkerRequest =
+  | { kind: "run-open-ena-plan-v3"; id: string; plan: StandardExecutionPlanV3; chunkSize: number }
   | {
       kind: "run";
       id: string;
@@ -30,6 +40,8 @@ export type OpenEnaWorkerRequest =
   | { kind: "cancel"; id: string };
 
 export type OpenEnaWorkerResponse =
+  | { kind: "progress-v3"; id: string; executionPlanSha256: string; progress: number; stage: OpenEnaWorkerStageV3 }
+  | { kind: "result-v3"; id: string; executionPlanSha256: string; result: BoundResultV3 }
   | { kind: "progress"; id: string; progress: number; stage: ENAWorkerProgress["stage"] }
   | { kind: "result"; id: string; result: OpenEnaResult }
   | { kind: "cancelled"; id: string }
@@ -58,6 +70,13 @@ interface WorkerRun {
   reference: OpenEnaRotationReference | null;
   chunkSize: number;
   cancelled: boolean;
+}
+
+interface WorkerRunV3 {
+  id: string;
+  chunkSize: number;
+  cancelled: boolean;
+  planOutcome: Promise<{ plan: StandardExecutionPlanV3 } | { error: unknown }>;
 }
 
 const DEFAULT_CHUNK_SIZE = 2_000;
@@ -106,11 +125,104 @@ export function createOpenEnaWorkerHost(
   dependencies: OpenEnaWorkerDependencies = {},
 ) {
   const createStream = dependencies.createAccumulationStream ?? createAccumulationStream;
-  const queue: WorkerRun[] = [];
-  let active: WorkerRun | null = null;
+  const queue: (WorkerRun | WorkerRunV3)[] = [];
+  let active: WorkerRun | WorkerRunV3 | null = null;
   let pumping = false;
 
   const post = (message: OpenEnaWorkerResponse) => scope.postMessage(message);
+
+  const executeV3 = async (run: WorkerRunV3) => {
+    let stream: ReturnType<typeof createAccumulationStream> | undefined;
+    const cancelled = () => {
+      if (run.cancelled) throw new DOMException("The v3 run was cancelled.", "AbortError");
+    };
+    try {
+      cancelled();
+      const outcome = await run.planOutcome;
+      cancelled();
+      if ("error" in outcome) throw outcome.error;
+      const plan = outcome.plan;
+      if (plan.configuration.analysisFamily !== "standard") throw new TypeError("v3 ONA execution is not implemented yet.");
+      const progress = (stage: OpenEnaWorkerStageV3, value: number) => {
+        cancelled();
+        post({ kind: "progress-v3", id: run.id, executionPlanSha256: plan.header.executionPlanSha256, stage, progress: value });
+      };
+      const compiled = await verifyStandardScientificReadinessV3(plan);
+      cancelled();
+      const estimate = plan.header.resourceEstimate;
+      const admission = plan.reference?.admission;
+      if (estimate.blocked) throw new TypeError("Plan exceeds the pre-allocation resource budget.");
+      if (admission) assertReferenceAdmissionV3(admission, estimate);
+      const numericLimit = Math.min(MAX_ESTIMATED_NUMERIC_CELLS_V3, estimate.estimatedNumericCells + (admission?.incrementalNumericCells ?? 0));
+      const byteLimit = Math.min(MAX_ESTIMATED_PEAK_BYTES_V3, estimate.estimatedPeakBytes + (admission?.incrementalPeakBytes ?? 0));
+      // Count actual captured/remapped Reference numeric slots. The admission
+      // ledger still separately bounds simultaneous capture/hash representations.
+      const geometry = plan.reference?.artifact.geometry;
+      const rotation = plan.reference?.rotationSet;
+      const referenceCells = geometry && rotation ? geometry.rotationMatrix.reduce((sum, row) => sum + row.length, 0)
+        + geometry.centerVector.length + geometry.eigenvalues.length + geometry.nodes.reduce((sum, node) => sum + node.coordinates.length, 0)
+        + plan.reference!.artifact.fit.variance.length + rotation.rotationMatrix.reduce((sum, row) => sum + row.length, 0)
+        + rotation.centerVector.length + rotation.eigenvalues.length + (rotation.nodes ?? []).reduce((sum, row) => sum + Object.values(row).filter((value) => typeof value === "number").length, 0) : 0;
+      // Source proof and typed execution rows retain two Code-value copies.
+      let materializedCells = plan.rows.reduce((sum, row) => sum + Object.values(row.codeValues).length, 0)
+        + plan.sourceProof.rows.reduce((sum, row) => sum + plan.codeDictionary.codes.filter((code) => typeof row.values[code.sourceColumn] === "number").length, 0) + referenceCells;
+      let maximumBufferedRows = 0;
+      let numericPeak = 0;
+      let bytePeak = 0;
+      const observe = (numericCells: number, scratch: number, bufferPeak = 0) => {
+        cancelled();
+        for (const value of [numericCells, scratch, bufferPeak]) if (!Number.isSafeInteger(value) || value < 0) throw new TypeError("Runtime resource counter is invalid.");
+        const current = materializedCells + numericCells;
+        const allocationBound = current + scratch;
+        const bytes = 8 * (current - referenceCells + scratch) + estimate.estimatedWorkerMaterializationBytes + estimate.estimatedStructuralBytes + (admission?.incrementalPeakBytes ?? 0);
+        if (allocationBound > numericLimit || allocationBound - referenceCells > estimate.estimatedNumericCells || bytes > byteLimit || bufferPeak > Math.min(plan.rows.length, estimate.estimatedRetainedWindowRows + 1)) throw new TypeError("Runtime allocation exceeds the declared resource estimate or hard limit.");
+        numericPeak = Math.max(numericPeak, current);
+        bytePeak = Math.max(bytePeak, bytes);
+        maximumBufferedRows = Math.max(maximumBufferedRows, bufferPeak);
+      };
+      observe(0, plan.rows.length * plan.codeDictionary.codes.length);
+      progress("materialize", 0.05);
+      const options = toStandardJenaOptionsV3(plan);
+      const { rows, ...streamOptions } = options;
+      materializedCells += rows.length * plan.codeDictionary.codes.length;
+      stream = createStream({ ...streamOptions, expectedRows: rows.length, materialization: "model", onResources(state) {
+        observe(state.numericCells, state.temporaryNumericCellsBound, state.bufferedRowsPeak);
+      } });
+      if (typeof stream.finishAsync !== "function") throw new TypeError("v3 requires cancellable asynchronous stream completion.");
+      progress("accumulate", 0.1);
+      for (let index = 0; index < rows.length; index += run.chunkSize) {
+        cancelled();
+        stream.push(rows.slice(index, index + run.chunkSize));
+        progress("accumulate", 0.1 + 0.55 * Math.min(rows.length, index + run.chunkSize) / rows.length);
+        await yieldToMessageQueue();
+      }
+      const data = await stream.finishAsync({ chunkSize: run.chunkSize, yieldControl: async () => { await yieldToMessageQueue(); cancelled(); } });
+      const stages = { normalize: 0.7, center: 0.75, "rotate-or-project": 0.8, "position-nodes": 0.85 };
+      const runtime = completeStandardPlanFromAccumulationV3(plan, data, {
+        onStage(stage) { progress(stage, stages[stage]); },
+        onResources(state) { observe(state.numericCells, state.temporaryNumericCellsBound); },
+      });
+      // Numerical output no longer needs the temporary mapped input. Release it
+      // before binder capture so every retained scientific container is visible
+      // to the binder, rather than supplying a guessed/caller-owned byte offset.
+      materializedCells -= rows.length * plan.codeDictionary.codes.length;
+      rows.length = 0;
+      await yieldToMessageQueue(); cancelled();
+      progress("validate-result", 0.9);
+      const observed: RuntimeResourceObservationV3 = {
+        processedRows: stream.state.rowsSeen, maximumBufferedRows, numericCellsAllocated: numericPeak,
+        peakBytesObservedOrBounded: bytePeak, observationMethod: "exact-counters-and-conservative-byte-bound",
+      };
+      const result = await bindResultV3(plan, runtime, observed, compiled.diagnostics);
+      cancelled();
+      progress("complete", 1);
+      cancelled();
+      post({ kind: "result-v3", id: run.id, executionPlanSha256: plan.header.executionPlanSha256, result });
+    } catch (error) {
+      if (run.cancelled || (error instanceof DOMException && error.name === "AbortError")) post({ kind: "cancelled", id: run.id });
+      else post({ kind: "error", id: run.id, message: error instanceof Error ? error.message : String(error) });
+    } finally { stream?.dispose(); }
+  };
 
   const executeRun = async (run: WorkerRun) => {
     let stream: ReturnType<typeof createAccumulationStream> | undefined;
@@ -190,7 +302,8 @@ export function createOpenEnaWorkerHost(
       let next = queue.shift();
       while (next) {
         active = next;
-        await executeRun(next);
+        if ("planOutcome" in next) await executeV3(next);
+        else await executeRun(next);
         active = null;
         next = queue.shift();
       }
@@ -215,7 +328,7 @@ export function createOpenEnaWorkerHost(
       }
       return;
     }
-    if (message.kind === "run") {
+    if (message.kind === "run" || message.kind === "run-open-ena-plan-v3") {
       if (active?.id === message.id || queue.some((run) => run.id === message.id)) {
         post({
           kind: "error",
@@ -225,7 +338,15 @@ export function createOpenEnaWorkerHost(
         return;
       }
       try {
-        queue.push(snapshotRunRequest(message));
+        if (message.kind === "run-open-ena-plan-v3") {
+          const captured = snapshotPlainJsonRecordV3(message, "v3 worker request");
+          const keys = Object.keys(captured).sort();
+          if (keys.join(",") !== "chunkSize,id,kind,plan" || !Number.isSafeInteger(captured.chunkSize) || Number(captured.chunkSize) < 1) throw new TypeError("v3 requests accept only id, plan and operational chunkSize.");
+          post({ kind: "progress-v3", id: message.id, stage: "verify-plan", progress: 0, executionPlanSha256: "" });
+          // Validation owns descriptor-safe admission/capture before its first await.
+          const planOutcome = validateExecutionPlanV3(captured.plan).then((plan) => ({ plan }), (error: unknown) => ({ error }));
+          queue.push({ id: message.id, chunkSize: Math.min(Number(captured.chunkSize), DEFAULT_CHUNK_SIZE), cancelled: false, planOutcome });
+        } else queue.push(snapshotRunRequest(message));
       } catch (error) {
         post({
           kind: "error",

@@ -107,6 +107,8 @@ export interface StreamingAccumulateOptions extends Omit<AccumulateOptions, 'row
   expectedRows?: number;
   materialization?: StreamingMaterialization;
   onProgress?: (progress: number, state: AccumulationChunkState) => void;
+  /** Standard scientific numeric storage only; metadata/JS object bytes are not measured. */
+  onResources?: (state: { numericCells: number; numericCellsPeak: number; bufferedRows: number; bufferedRowsPeak: number; temporaryNumericCellsBound: number }) => void;
 }
 
 export interface AccumulationChunkState {
@@ -126,6 +128,8 @@ export interface AccumulationStream {
   readonly state: AccumulationChunkState;
   push(rows: Row[]): AccumulationChunkState;
   finish(): ENAData;
+  /** Bounded asynchronous flushing shares the synchronous numerical emission. */
+  finishAsync?(options: { chunkSize: number; yieldControl: () => Promise<void> }): Promise<ENAData>;
   /** Idempotently releases retained stream state without mutating an already returned result. */
   dispose(): void;
   reset(): void;
@@ -443,6 +447,8 @@ interface MetadataState {
 }
 
 interface StreamingInternals {
+  observation: { numericCells: number; numericCellsPeak: number; bufferedRows: number; bufferedRowsPeak: number };
+  onResources?: StreamingAccumulateOptions['onResources'];
   networkType: NetworkType;
   model: ModelType;
   window: WindowType;
@@ -474,6 +480,19 @@ interface StreamingInternals {
   metadataOrder: string[];
   orderedUnitDisplayIdentities: Map<string, string>;
   rowConnectionSequence: number;
+}
+
+function observeStorage(internals: StreamingInternals, cells: number, rows = 0, scratch = 0): void {
+  const next = { numericCells: internals.observation.numericCells + cells, bufferedRows: internals.observation.bufferedRows + rows };
+  const observation = {
+    ...next,
+    numericCellsPeak: Math.max(internals.observation.numericCellsPeak, next.numericCells),
+    bufferedRowsPeak: Math.max(internals.observation.bufferedRowsPeak, next.bufferedRows)
+  };
+  // The callback can reject an allocation before it occurs. Counts describe
+  // scientific Code/network slots, not numeric metadata or cumulative churn.
+  internals.onResources?.({ ...observation, temporaryNumericCellsBound: scratch });
+  internals.observation = observation;
 }
 
 export function rowsToNumericTable(rows: Row[], columns: string[]): NumericTable {
@@ -765,6 +784,7 @@ function ensureEndpointCount(internals: StreamingInternals, row: Row, sequence: 
   const displayLabel = String(row.ENA_UNIT ?? mergeColumns(row, internals.units));
   let accumulator = internals.endpointCounts.get(key);
   if (!accumulator) {
+    observeStorage(internals, internals.codeColumns.length);
     accumulator = {
       row: {
         ...Object.fromEntries(internals.units.map((column) => [column, row[column] ?? null])),
@@ -786,6 +806,7 @@ function ensureStepCount(internals: StreamingInternals, row: Row, sequence: numb
   const key = mergeColumns(row, [...internals.units, ...internals.conversation]);
   let accumulator = internals.stepCounts.get(key);
   if (!accumulator) {
+    observeStorage(internals, internals.codeColumns.length);
     accumulator = {
       row: {
         ...Object.fromEntries(internals.units.map((column) => [column, row[column] ?? null])),
@@ -856,6 +877,7 @@ function registerCountAccumulator(internals: StreamingInternals, row: Row, seque
 }
 
 function consumeRowConnection(internals: StreamingInternals, index: number, row: Row): void {
+  if (internals.materialization === 'full') observeStorage(internals, internals.codeColumns.length);
   if (internals.materialization === 'full') internals.rowConnectionRows.push({ index, row });
   const unit = String(row.ENA_UNIT ?? '');
   if (internals.unitFilter && !internals.unitFilter.has(unit)) return;
@@ -879,8 +901,12 @@ function makeNoForwardCoOccurrence(state: MovingConversationState, entry: Stream
   }
   const previousRows = state.noForwardHistory.slice(-Math.max(0, back - 1));
   const previous = sumCodeVectors(previousRows, internals.codes.length);
+  observeStorage(internals, internals.codes.length, 1);
   state.noForwardHistory.push(entry.codeValues);
-  while (state.noForwardHistory.length > back - 1) state.noForwardHistory.shift();
+  while (state.noForwardHistory.length > back - 1) {
+    state.noForwardHistory.shift();
+    observeStorage(internals, -internals.codes.length, -1);
+  }
   return coOccurrenceFromSums(addVectors(previous, entry.codeValues), previous, binary);
 }
 
@@ -1225,8 +1251,10 @@ function computeWindowCoOccurrence(state: MovingConversationState, rowIndex: num
   return binary ? co.map((value) => (value > 0 ? 1 : 0)) : co;
 }
 
-function emitReadyRows(state: MovingConversationState, final: boolean, internals: StreamingInternals): void {
-  while (state.nextEmitLocalIndex < state.rowsSeen) {
+function emitReadyRows(state: MovingConversationState, final: boolean, internals: StreamingInternals, limit = Infinity): number {
+  let emitted = 0;
+  while (state.nextEmitLocalIndex < state.rowsSeen && emitted < limit) {
+    observeStorage(internals, 0, 0, 4 * internals.codeColumns.length + 4 * internals.codes.length);
     const entry = state.buffer.find((candidate) => candidate.localIndex === state.nextEmitLocalIndex);
     if (!entry) break;
     const co = computeWindowCoOccurrence(state, state.nextEmitLocalIndex, final, internals);
@@ -1237,20 +1265,24 @@ function emitReadyRows(state: MovingConversationState, final: boolean, internals
       rowWithCoOccurrences(entry.row, finalizeCoOccurrence(co, internals), internals.codeColumns)
     );
     state.nextEmitLocalIndex += 1;
+    emitted += 1;
   }
 
   if (Number.isFinite(internals.windowSizeBack)) {
     const keepFrom = Math.max(0, state.nextEmitLocalIndex - Math.max(0, internals.windowSizeBack - 1));
     while (state.buffer.length > 0 && (state.buffer[0]?.localIndex ?? 0) < keepFrom) {
       state.buffer.shift();
+      observeStorage(internals, -2 * internals.codes.length, -1);
       state.bufferOffset = keepFrom;
     }
   }
+  return emitted;
 }
 
 function getMovingConversation(internals: StreamingInternals, identityKey: string, displayLabel: string): MovingConversationState {
   let state = internals.movingConversations.get(identityKey);
   if (!state) {
+    observeStorage(internals, 2 * internals.codes.length);
     state = {
       key: displayLabel,
       identity: identityKey,
@@ -1298,6 +1330,7 @@ function pushMovingRow(internals: StreamingInternals, row: Row, globalIndex: num
     return;
   }
 
+  observeStorage(internals, 2 * internals.codes.length, 1);
   state.buffer.push(entry);
   emitReadyRows(state, false, internals);
 }
@@ -1306,6 +1339,7 @@ function pushConversationRow(internals: StreamingInternals, row: Row, sequence: 
   const key = mergeColumns(row, [...internals.conversation, 'ENA_UNIT']);
   let aggregate = internals.conversationAggregates.get(key);
   if (!aggregate) {
+    observeStorage(internals, 2 * internals.codes.length);
     aggregate = {
       key,
       row: {
@@ -1325,9 +1359,12 @@ function pushConversationRow(internals: StreamingInternals, row: Row, sequence: 
   }
 }
 
-function flushConversationWindow(internals: StreamingInternals): void {
+function flushConversationWindow(internals: StreamingInternals, start = 0, end = internals.conversationAggregateOrder.length): void {
   const binary = internals.weightBy === 'binary';
-  for (const key of internals.conversationAggregateOrder) {
+  for (let index = start; index < end; index += 1) {
+    observeStorage(internals, 0, 0, 4 * internals.codeColumns.length + 4 * internals.codes.length);
+    const key = internals.conversationAggregateOrder[index];
+    if (key === undefined) throw new Error('Conversation aggregate order is incomplete.');
     const aggregate = internals.conversationAggregates.get(key);
     if (!aggregate) continue;
     const co = coOccurrenceFromSums(aggregate.sums, undefined, binary);
@@ -1471,9 +1508,13 @@ function flushMovingWindow(internals: StreamingInternals): void {
   for (const state of internals.movingConversations.values()) emitReadyRows(state, true, internals);
 }
 
-function finishInternals(internals: StreamingInternals): ENAData {
-  if (internals.window === 'Conversation') flushConversationWindow(internals);
-  else flushMovingWindow(internals);
+function finishInternals(internals: StreamingInternals, flushed = false): ENAData {
+  if (!flushed) {
+    if (internals.window === 'Conversation') flushConversationWindow(internals);
+    else flushMovingWindow(internals);
+  }
+  const count = internals.model === 'EndPoint' ? internals.endpointCounts.size : internals.stepCounts.size;
+  observeStorage(internals, 0, 0, 4 * count * internals.codeColumns.length);
 
   const resultRows = internals.model === 'EndPoint'
     ? makeEndpointResult(internals)
@@ -1515,6 +1556,7 @@ function finishInternals(internals: StreamingInternals): ENAData {
       ...(internals.unitFilter ? { unitsUsed: [...internals.unitFilter] } : {})
     }
   };
+  observeStorage(internals, 2 * count * internals.codeColumns.length);
   const trajectoryRows = (resultRows as { trajectories?: Row[] }).trajectories;
   if (trajectoryRows) result.trajectories = trajectoryRows;
   if (internals.networkType === 'ordered') {
@@ -1543,7 +1585,7 @@ function updateProgress(state: AccumulationChunkState, internals: StreamingInter
   state.activeConversations = internals.movingConversations.size + internals.conversationAggregates.size;
   state.activeBufferedRows = activeBufferedRows(internals);
   state.activeConversationsPeak = Math.max(state.activeConversationsPeak, state.activeConversations);
-  state.activeBufferedRowsPeak = Math.max(state.activeBufferedRowsPeak, state.activeBufferedRows);
+  state.activeBufferedRowsPeak = Math.max(state.activeBufferedRowsPeak, state.activeBufferedRows, internals.observation.bufferedRowsPeak);
 }
 
 function makeInternals(options: StreamingAccumulateOptions): StreamingInternals {
@@ -1560,6 +1602,8 @@ function makeInternals(options: StreamingAccumulateOptions): StreamingInternals 
   assertNonEmptyColumns(codes, 'codes');
   if (options.rows) assertRowsHaveColumns(options.rows, [...units, ...conversation, ...codes, ...metadata]);
   return {
+    observation: { numericCells: 0, numericCellsPeak: 0, bufferedRows: 0, bufferedRowsPeak: 0 },
+    ...(options.onResources ? { onResources: options.onResources } : {}),
     networkType,
     model,
     window,
@@ -1596,11 +1640,15 @@ function makeInternals(options: StreamingAccumulateOptions): StreamingInternals 
 }
 
 function ingestRow(internals: StreamingInternals, row: Row, globalIndex: number): void {
+  observeStorage(internals, 0, 0, 4 * internals.codeColumns.length + 4 * internals.codes.length);
   assertOrderedRawKeysDoNotCollide(internals, row, globalIndex);
   assertOrderedIdentityValues(internals, row, globalIndex);
   const rowWithUnit = makeUnitRow(row, internals.units);
   assertOrderedUnitDisplayIsUnique(internals, rowWithUnit);
-  if (internals.materialization === 'full') internals.rawRows.push(rowWithUnit);
+  if (internals.materialization === 'full') {
+    observeStorage(internals, internals.codes.length);
+    internals.rawRows.push(rowWithUnit);
+  }
   ensureMetadata(internals, rowWithUnit, globalIndex);
   registerCountAccumulator(internals, rowWithUnit, globalIndex);
   if (internals.window === 'Conversation') pushConversationRow(internals, rowWithUnit, internals.rowConnectionSequence);
@@ -1711,6 +1759,39 @@ function makeAccumulationStreamController(
         return result;
       } finally {
         activeInternals = undefined;
+        dispose();
+      }
+    },
+    async finishAsync({ chunkSize: requestedChunkSize, yieldControl }): Promise<ENAData> {
+      if (state.isFinished || !resources.internals) throw new Error('Accumulation stream has already finished.');
+      state.isFinished = true;
+      const current = resources.internals;
+      try {
+        validateStreamingControlOptions({ chunkSize: requestedChunkSize });
+        const chunkSize = Math.min(requestedChunkSize, 2_000);
+        if (state.rowsSeen === 0) throw new Error('rows is empty; provide at least one coded data row.');
+        if (current.window === 'Conversation') {
+          for (let start = 0; start < current.conversationAggregateOrder.length; start += chunkSize) {
+            flushConversationWindow(current, start, Math.min(start + chunkSize, current.conversationAggregateOrder.length));
+            await yieldControl();
+            if (state.isDisposed) throw new Error('Accumulation stream was disposed during asynchronous finish.');
+          }
+        } else if (current.windowSizeForward !== 0) {
+          for (const conversation of current.movingConversations.values()) {
+            while (conversation.nextEmitLocalIndex < conversation.rowsSeen) {
+              if (emitReadyRows(conversation, true, current, chunkSize) === 0) throw new Error('Moving window flush made no progress.');
+              await yieldControl();
+              if (state.isDisposed) throw new Error('Accumulation stream was disposed during asynchronous finish.');
+            }
+          }
+        }
+        await yieldControl();
+        if (state.isDisposed) throw new Error('Accumulation stream was disposed during asynchronous finish.');
+        const result = finishInternals(current, true);
+        updateProgress(state, current, expectedRows);
+        state.progress = 1;
+        return result;
+      } finally {
         dispose();
       }
     },

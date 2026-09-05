@@ -23,6 +23,7 @@ import {
   JENA_SOURCE_COMMIT,
 } from "../lib/open-ena/types";
 import type { ParsedDataset } from "../lib/open-ena/types";
+import { estimateResultIdentityBytesV3 } from "../lib/open-ena/model-v3/compiler-dataset";
 import * as publicModelV3 from "../lib/open-ena/model-v3/index";
 
 const DATASET_SHA256 = "a".repeat(64);
@@ -296,6 +297,7 @@ function replacementResourceEstimate(
     referenceProjection: plan.reference !== null,
     datasetSizeBytes,
     identityPayloadBytes: plan.header.resourceEstimate.identityPayloadBytes,
+    resultIdentityBytes: estimateResultIdentityBytesV3({ rows: plan.sourceProof.rows.map((row: { values: Record<string, string | number | boolean> }) => ({ ...row.values })) }, config),
   });
 }
 

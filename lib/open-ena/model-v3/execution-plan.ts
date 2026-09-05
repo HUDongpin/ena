@@ -41,7 +41,7 @@ import {
   estimateStandardResourcesV3,
 } from "./resource-budget";
 import type { StandardResourceEstimateV3 } from "./resource-budget";
-import { assertReferenceAdmissionV3, bindReferenceToTargetV3, captureReferenceExecutionBindingV3 } from "./reference-v2";
+import { assertReferenceAdmissionV3, bindReferenceToTargetV3, captureReferenceExecutionBindingV3 } from "./reference-codec-v2";
 import { decodeCanonicalStandardConfigV3 } from "./schema";
 import {
   buildCodeRepresentationBindingsV3,
@@ -1080,6 +1080,7 @@ const STANDARD_RESOURCE_KEYS_V3 = [
   "adjacencyDimensions",
   "datasetSizeBytes",
   "identityPayloadBytes",
+  "resultIdentityBytes",
   "aggregateStateUpperBound",
   "estimatedStateCount",
   "estimatedStructuralBytes",
@@ -2316,6 +2317,7 @@ function admitExecutionPlanEnvelopeV3(value: unknown): ExecutionPlanAdmissionCap
     referenceProjection: rotation.type === "reference",
     datasetSizeBytes,
     identityPayloadBytes: 0,
+    resultIdentityBytes: 0, // Provisional lower bound; full source/config verification recomputes the mandatory final term.
   });
   if (lowerBound.blocked) {
     throw new TypeError("Execution plan exceeds an unavoidable Standard resource lower bound.");
@@ -2425,11 +2427,17 @@ async function decodePlanShapeV3(value: unknown): Promise<StandardExecutionPlanV
   };
 }
 
-export async function validateExecutionPlanV3(input: unknown): Promise<OpenEnaExecutionPlanV3> {
+/** Detached ADMITTED snapshot only. This carries no validated/ready authority. */
+export function captureExecutionPlanInputV3(input: unknown): unknown {
   // Shallow admission precedes canonical capture so hostile or impossible
   // envelopes cannot force scientific-array traversal or dense dictionaries.
   const admission = admitExecutionPlanEnvelopeV3(input);
   const capturedInput = captureAdmittedExecutionPlanV3(admission);
+  return capturedInput;
+}
+
+export async function validateExecutionPlanV3(input: unknown): Promise<OpenEnaExecutionPlanV3> {
+  const capturedInput = captureExecutionPlanInputV3(input);
   // The accepted descriptor capture runs before any await. The deep decoder
   // consumes only its detached graph and never reads caller-owned input again.
   const plan = await decodePlanShapeV3(capturedInput);

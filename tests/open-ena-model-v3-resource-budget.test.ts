@@ -48,6 +48,7 @@ test("Standard resource estimates use undirected edges and actual Horizon sizes"
     backward: { kind: "infinity" },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    resultIdentityBytes: 0, // Explicit abstract metadata cost for this arithmetic fixture.
     datasetSizeBytes: 1,
     identityPayloadBytes: 100,
   });
@@ -71,6 +72,7 @@ test("public v3.4 Standard resource estimates require explicit scientific window
     backward: { kind: "finite", value: 1 },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    resultIdentityBytes: 0, // Explicit abstract metadata cost for this arithmetic fixture.
     datasetSizeBytes: 1,
     identityPayloadBytes: 100,
   };
@@ -92,6 +94,7 @@ const standardBase: StandardResourceInputV3 = {
   backward: { kind: "finite", value: 1 },
   forward: { kind: "finite", value: 0 },
   referenceProjection: false,
+  resultIdentityBytes: 0, // Explicit abstract metadata cost for this arithmetic fixture.
   datasetSizeBytes: 1,
   identityPayloadBytes: 100,
 };
@@ -125,9 +128,39 @@ for (const testCase of [
 test("Reference projection adds exactly one target-by-edge cell block", () => {
   const withoutReference = estimateStandardResourcesV3(standardBase);
   const withReference = estimateStandardResourcesV3({ ...standardBase, referenceProjection: true });
-  assert.equal(withoutReference.estimatedNumericCells, 230);
-  assert.equal(withReference.estimatedNumericCells, 260);
+  assert.equal(withoutReference.estimatedNumericCells, 1_015);
+  assert.equal(withReference.estimatedNumericCells, 1_045);
   assert.equal(withReference.estimatedNumericCells - withoutReference.estimatedNumericCells, 5 * 6);
+});
+
+test("v3.5 covers retained model copies, projection and diagnostic overlap beyond the old cell proxy", () => {
+  const estimate = estimateStandardResourcesV3(standardBase);
+  assert.equal(estimate.version, "open-ena-resource-v3.5");
+  // N=8,C=4,E=6,T=5,H=2,R=0,D=3. Each term is independently countable.
+  const raw = 4 * 8 * 4;
+  const windows = 2 * 0 * 4 + 2 * 2 * 4;
+  const accumulated = 4 * 5 * 6;
+  const projected = 8 * 5 * 6;
+  const rotation = 6 * 6 * 6 + 8 * 6;
+  const display = 6 * 5 * 3 + 4 * 4 * 3;
+  const nodes = 2 * 5 * 4 + 3 * 4 * 4 + 5 + 4 * 4;
+  assert.equal(estimate.estimatedNumericCells, raw + windows + accumulated + projected + rotation + display + nodes);
+  assert.ok(estimate.estimatedNumericCells > 230);
+});
+
+test("mandatory result metadata cost adds three structural copies and one complete export envelope", () => {
+  const base = estimateStandardResourcesV3(standardBase);
+  const result = estimateStandardResourcesV3({ ...standardBase, resultIdentityBytes: 12_345 });
+  assert.equal(result.resultIdentityBytes, 12_345);
+  assert.equal(result.estimatedStructuralBytes - base.estimatedStructuralBytes, 3 * 12_345);
+  assert.equal(result.estimatedExportBytes, 12_345 + 24 * result.estimatedNumericCells);
+  assert.equal(result.estimatedPeakBytes - base.estimatedPeakBytes, 3 * 12_345);
+  const { resultIdentityBytes: _missing, ...missing } = standardBase;
+  assert.throws(() => estimateStandardResourcesV3(missing as never), /shape|keys|resultIdentity/i);
+  assert.throws(() => estimateStandardResourcesV3({ ...standardBase, resultIdentityBytes: Number.MAX_SAFE_INTEGER }), /safe|arithmetic|bytes/i);
+  const blocked = estimateStandardResourcesV3({ ...standardBase, resultIdentityBytes: MAX_ESTIMATED_EXPORT_BYTES_V3 });
+  assert.ok(blocked.blockedReasons.includes("export-bytes"));
+  assert.ok(blocked.blockedReasons.includes("peak-bytes"));
 });
 
 test("Standard structural estimate uses the fixed v3.4 allocation proxies exactly", () => {
@@ -137,7 +170,7 @@ test("Standard structural estimate uses the fixed v3.4 allocation proxies exactl
   assert.equal(estimate.datasetSizeBytes, 1);
   assert.equal(estimate.identityPayloadBytes, 100);
   assert.equal(estimate.estimatedStructuralBytes, 50_278);
-  assert.equal(estimate.estimatedPeakBytes, 53_686);
+  assert.equal(estimate.estimatedPeakBytes, 59_966);
 });
 
 test("state-count admits just below and exactly at the limit, then blocks one state above", () => {
@@ -153,6 +186,7 @@ test("state-count admits just below and exactly at the limit, then blocks one st
     backward: { kind: "finite", value: 1 },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    resultIdentityBytes: 0, // Explicit abstract metadata cost for this arithmetic fixture.
     datasetSizeBytes: 0,
     identityPayloadBytes: 0,
   };
@@ -179,6 +213,7 @@ test("structural, dataset, and identity byte limits have independent determinist
     backward: { kind: "finite", value: 1 },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    resultIdentityBytes: 0, // Explicit abstract metadata cost for this arithmetic fixture.
     datasetSizeBytes: 0,
     identityPayloadBytes: 0,
   });
@@ -272,6 +307,7 @@ test("Standard dense rotation estimates include three E-squared matrices and two
     backward: { kind: "finite", value: 1 },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    resultIdentityBytes: 0, // Explicit abstract metadata cost for this arithmetic fixture.
     datasetSizeBytes: 1,
     identityPayloadBytes: 100,
   });
@@ -294,6 +330,7 @@ test("Standard rotation work boundary is fixed at the shared dense SVD limit", (
     backward: { kind: "finite", value: 1 },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    resultIdentityBytes: 0, // Explicit abstract metadata cost for this arithmetic fixture.
     datasetSizeBytes: 1,
     identityPayloadBytes: 100,
   });
@@ -313,6 +350,7 @@ test("Standard rotation work boundary is fixed at the shared dense SVD limit", (
     backward: { kind: "finite", value: 1 },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    resultIdentityBytes: 0, // Explicit abstract metadata cost for this arithmetic fixture.
     datasetSizeBytes: 1,
     identityPayloadBytes: 100,
   });
@@ -365,6 +403,7 @@ test("Moving retained rows sum across all Horizons and cover streaming telemetry
         ? { kind: "finite", value: testCase.forward }
         : { kind: "infinity" },
       referenceProjection: false,
+      resultIdentityBytes: 0, // Explicit abstract metadata cost for this arithmetic fixture.
       datasetSizeBytes: 1,
       identityPayloadBytes: 100,
     });
@@ -386,6 +425,7 @@ test("backward Infinity retains running state but no raw history across many Hor
     backward: { kind: "infinity" },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    resultIdentityBytes: 0, // Explicit abstract metadata cost for this arithmetic fixture.
     datasetSizeBytes: 1,
     identityPayloadBytes: 100,
   });
@@ -408,6 +448,7 @@ test("Conversation and ONA include per-Horizon state storage without pretending 
     backward: { kind: "finite", value: 1 },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    resultIdentityBytes: 0, // Explicit abstract metadata cost for this arithmetic fixture.
     datasetSizeBytes: 1,
     identityPayloadBytes: 100,
   });
@@ -443,6 +484,7 @@ test("Conversation distinguishes global Horizons from Unit-by-Horizon scientific
     backward: { kind: "finite", value: 1 },
     forward: { kind: "finite", value: 0 },
     referenceProjection: true,
+    resultIdentityBytes: 0, // Explicit abstract metadata cost for this arithmetic fixture.
     datasetSizeBytes: 1,
     identityPayloadBytes: 1,
   });
@@ -551,7 +593,7 @@ test("resource constants, provenance, output detachment, and deep freezing are f
     STRUCTURAL_DATASET_MULTIPLIER_V3,
     CANONICAL_IDENTITY_FIELD_WRAPPER_BYTES_V3,
   ], [
-    "open-ena-resource-v3.4",
+    "open-ena-resource-v3.5",
     25_000_000,
     100_000_000,
     512 * 1024 * 1024,
@@ -576,7 +618,7 @@ test("resource constants, provenance, output detachment, and deep freezing are f
   const estimate = estimateStandardResourcesV3({ ...standardBase, horizonSizes });
   horizonSizes[0] = 8;
   assert.equal(estimate.analysisFamily, "standard");
-  assert.equal(estimate.version, "open-ena-resource-v3.4");
+  assert.equal(estimate.version, "open-ena-resource-v3.5");
   assert.equal(Object.isFrozen(estimate), true);
   assert.equal(Object.isFrozen(estimate.blockedReasons), true);
 });
@@ -649,7 +691,7 @@ test("summed field budgets cover a mixed multi-field canonical identity", () => 
 
 test("each Standard hard-limit fixture reports the exact fixed reason set", () => {
   const cases: Array<[readonly string[], StandardResourceInputV3]> = [
-    [["numeric-cells", "rotation-work", "peak-bytes"], {
+    [["numeric-cells", "rotation-work", "peak-bytes", "export-bytes"], {
       ...standardBase,
       rowCount: 1,
       unitCount: 1,
@@ -670,7 +712,7 @@ test("each Standard hard-limit fixture reports the exact fixed reason set", () =
       trajectorySteps: 1,
       windowType: "Conversation",
     }],
-    [["state-count", "structural-bytes", "peak-bytes"], {
+    [["state-count", "structural-bytes", "numeric-cells", "peak-bytes", "export-bytes"], {
       ...standardBase,
       rowCount: 3_600_000,
       unitCount: 1,
@@ -680,7 +722,7 @@ test("each Standard hard-limit fixture reports the exact fixed reason set", () =
       codeCount: 3,
       trajectorySteps: 1,
     }],
-    [["state-count", "structural-bytes", "peak-bytes", "export-bytes"], {
+    [["state-count", "structural-bytes", "numeric-cells", "peak-bytes", "export-bytes"], {
       ...standardBase,
       rowCount: 1_200_000,
       unitCount: 1,
@@ -758,12 +800,13 @@ test("the 4,500-row by 50-Code reviewer case is blocked by dense rotation work",
     backward: { kind: "finite", value: 1 },
     forward: { kind: "finite", value: 0 },
     referenceProjection: false,
+    resultIdentityBytes: 0, // Explicit abstract metadata cost for this arithmetic fixture.
     datasetSizeBytes: 1,
     identityPayloadBytes: 100,
   });
   assert.equal(estimate.adjacencyDimensions, 1_225);
   assert.equal(estimate.estimatedWindowVisits, 4_500);
-  assert.equal(estimate.estimatedNumericCells, 4_734_225);
+  assert.equal(estimate.estimatedNumericCells, 9_951_588);
   assert.equal(estimate.estimatedRotationWorkUnits, 1_841_266_875);
   assert.deepEqual(estimate.blockedReasons, ["rotation-work"]);
 });

@@ -10,7 +10,7 @@ import type {
   StandardWindowTypeV3,
 } from "./types";
 
-export const RESOURCE_BUDGET_VERSION_V3 = "open-ena-resource-v3.4" as const;
+export const RESOURCE_BUDGET_VERSION_V3 = "open-ena-resource-v3.5" as const;
 export const MAX_ESTIMATED_NUMERIC_CELLS_V3 = 25_000_000;
 export const MAX_ESTIMATED_WINDOW_VISITS_V3 = 100_000_000;
 export const MAX_ESTIMATED_PEAK_BYTES_V3 = 512 * 1024 * 1024;
@@ -130,6 +130,8 @@ export interface StandardResourceInputV3 {
   readonly referenceProjection: boolean;
   readonly datasetSizeBytes: number;
   readonly identityPayloadBytes: number;
+  /** Mandatory final bound for complete result identity/metadata serialization. */
+  readonly resultIdentityBytes: number;
 }
 
 export interface OnaResourceInputV3 {
@@ -183,6 +185,7 @@ interface ResourceEstimateBaseV3 {
 export interface StandardResourceEstimateV3 extends ResourceEstimateBaseV3 {
   readonly analysisFamily: "standard";
   readonly trajectorySteps: number;
+  readonly resultIdentityBytes: number;
 }
 
 export interface OnaResourceEstimateV3 extends ResourceEstimateBaseV3 {
@@ -385,6 +388,7 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
     "referenceProjection",
     "datasetSizeBytes",
     "identityPayloadBytes",
+    "resultIdentityBytes",
   ];
   assertExactKeysV3(
     input,
@@ -401,6 +405,7 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
     input.identityPayloadBytes,
     "resource input.identityPayloadBytes",
   );
+  const resultIdentityBytes = nonnegativeSafeIntegerV3(input.resultIdentityBytes, "resource input.resultIdentityBytes");
   const horizonSizes = snapshotHorizonSizesV3(input.horizonSizes, horizonCount, rowCount);
   if (input.windowType !== "MovingStanzaWindow" && input.windowType !== "Conversation") {
     throw new TypeError("resource input.windowType is invalid.");
@@ -471,16 +476,36 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
     datasetSizeBytes,
     identityPayloadBytes,
   });
+  // Runtime result, detached/hash representation and transport capture overlap.
+  // Reference artifact representations have their separate additive ledger.
+  structural.estimatedStructuralBytes = safeAddV3(structural.estimatedStructuralBytes,
+    safeMultiplyV3(3, resultIdentityBytes, "Result identity capture overlap"), "Structural result bytes");
 
   const rawCodeCells = safeMultiplyV3(rowCount, codeCount, "Raw Code cells");
   const trajectoryCells = safeMultiplyV3(trajectorySteps, adjacencyDimensions, "Trajectory cells");
   const denseRotation = estimateDenseSvdBudget(trajectorySteps, adjacencyDimensions);
   const referenceCells = input.referenceProjection ? trajectoryCells : 0;
-  const estimatedNumericCells = safeAddV3(
-    safeAddV3(rawCodeCells, trajectoryCells, "Numeric cells"),
-    safeAddV3(denseRotation.matrixCells, referenceCells, "Numeric cells"),
-    "Numeric cells",
-  );
+  // v3.5: summed conservative overlap envelope. These are admission bounds,
+  // never a claim that every stage is simultaneously live or measured heap.
+  // Source proof/plan/runtime/output overlap: 4NC.
+  const capturedCodeCells = safeMultiplyV3(4, rawCodeCells, "Captured Code cells");
+  // Retained row + Code vector and per-partition running/aggregate vectors.
+  const streamingCodeCells = safeMultiplyV3(2 * codeCount,
+    safeAddV3(estimatedRetainedWindowRows, windowPartitionSizes.length, "Streaming state rows"), "Streaming Code cells");
+  // Stream sums, temporary finalized count rows, count table, and matrix: 4TE.
+  const accumulatedCopies = safeMultiplyV3(4, trajectoryCells, "Accumulation copies");
+  // Normalized/centered/full-projection matrices, output rows and bind copy: 8TE.
+  const projectionCopies = safeMultiplyV3(8, trajectoryCells, "Projection copies");
+  // Dense diagnostic/rotation scratch and retained complete basis/axis vectors.
+  const rotationCopies = safeAddV3(safeMultiplyV3(6, safeMultiplyV3(adjacencyDimensions, adjacencyDimensions, "Rotation square"), "Rotation overlaps"), safeMultiplyV3(8, adjacencyDimensions, "Axis vectors"), "Rotation cells");
+  const displayDimensions = Math.min(3, adjacencyDimensions);
+  const displayCopies = safeAddV3(safeMultiplyV3(6 * displayDimensions, trajectorySteps, "Display points and centroids"), safeMultiplyV3(4 * displayDimensions, codeCount, "Display nodes"), "Display cells");
+  // Node weights and transpose, normal/linear solve, one rhs and node vectors.
+  const nodeSolveCopies = safeAddV3(
+    safeAddV3(safeMultiplyV3(2 * codeCount, trajectorySteps, "Node weights"), safeMultiplyV3(3, safeMultiplyV3(codeCount, codeCount, "Node square"), "Node solves"), "Node matrices"),
+    safeAddV3(trajectorySteps, safeMultiplyV3(4, codeCount, "Node vectors"), "Node RHS"), "Node solve cells");
+  const estimatedNumericCells = [capturedCodeCells, streamingCodeCells, accumulatedCopies, projectionCopies, rotationCopies, displayCopies, nodeSolveCopies, referenceCells]
+    .reduce((sum, cells) => safeAddV3(sum, cells, "Numeric overlap envelope"), 0);
   const workerColumns = safeAddV3(codeCount, 5, "Worker columns");
   const movingStateWidth = safeAddV3(
     safeMultiplyV3(2, codeCount, "Moving state Code cells"),
@@ -510,11 +535,11 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
     16,
     "Worker materialization bytes",
   );
-  const estimatedExportBytes = safeMultiplyV3(
-    safeAddV3(rawCodeCells, trajectoryCells, "Export cells"),
+  const estimatedExportBytes = safeAddV3(resultIdentityBytes, safeMultiplyV3(
+    estimatedNumericCells,
     24,
     "Export bytes",
-  );
+  ), "Complete result export bytes");
   const estimatedPeakBytes = safeAddV3(
     safeAddV3(
       safeMultiplyV3(estimatedNumericCells, 8, "Numeric bytes"),
@@ -546,6 +571,7 @@ function estimateStandardResourcesInternalV3(inputValue: StandardResourceInputV3
     adjacencyDimensions,
     datasetSizeBytes,
     identityPayloadBytes,
+    resultIdentityBytes,
     aggregateStateUpperBound,
     estimatedStateCount: structural.estimatedStateCount,
     estimatedStructuralBytes: structural.estimatedStructuralBytes,

@@ -2,6 +2,8 @@ import type { ENASet, RotationSet } from "jena-js";
 import type { DatasetHashKind, OpenEnaDirectionalMask } from "../types";
 import type { ModelDiagnosticV3 } from "./diagnostics";
 import type { ExecutionPlanHeaderV3 } from "./execution-plan";
+import type { StandardExecutionPlanV3 } from "./execution-plan";
+import type { ModelCapabilityStatusV3 } from "./compiler";
 
 export const STANDARD_MODEL_TYPES = [
   "EndPoint",
@@ -215,6 +217,97 @@ export interface ReferenceAdmissionV3 {
   readonly incrementalNumericCells: number;
   readonly incrementalPeakBytes: number;
   readonly incrementalExportBytes: number;
+}
+
+export type OpenEnaWorkerStageV3 = "verify-plan" | "materialize" | "accumulate" | "normalize" | "center" | "rotate-or-project" | "position-nodes" | "validate-result" | "complete";
+
+export interface RuntimeResourceObservationV3 {
+  readonly processedRows: number;
+  /** Exact high-water of live raw window history rows, including the arriving row before eviction. */
+  readonly maximumBufferedRows: number;
+  /** Peak concurrently retained tracked numeric slots; never cumulative allocation or measured JS heap. */
+  readonly numericCellsAllocated: number;
+  readonly peakBytesObservedOrBounded: number;
+  readonly observationMethod: "exact-counters-and-conservative-byte-bound";
+}
+
+export interface ResultBindingV3 {
+  readonly datasetSha256: string;
+  readonly datasetHashKind: DatasetHashKind;
+  readonly headerSha256: string;
+  readonly rowCount: number;
+  readonly configurationSha256: string;
+  readonly executionPlanSha256: string;
+  readonly runtimeVersion: string;
+  readonly algorithmBuildSha: string;
+  readonly validationContractVersion: typeof OPEN_ENA_VALIDATION_CONTRACT_VERSION_V3;
+  readonly runtimePolicyVersion: typeof OPEN_ENA_RUNTIME_POLICY_VERSION_V3;
+  readonly executionContractVersion: typeof OPEN_ENA_EXECUTION_CONTRACT_VERSION_V3;
+  readonly referenceId: string | null;
+  readonly referenceContentSha256: string | null;
+  readonly scientificResultSha256: string;
+}
+
+/** Only the two known window extent fields admit the explicit Infinity literal. */
+export type SerializableEnaSetV3 = Omit<ENASet, "functionParams"> & {
+  readonly functionParams: Omit<ENASet["functionParams"], "windowSizeBack" | "windowSizeForward"> & {
+    readonly windowSizeBack: number | "Infinity";
+    readonly windowSizeForward: number | "Infinity";
+  };
+};
+
+export interface ResultExecutionProvenanceV3 {
+  readonly header: ExecutionPlanHeaderV3;
+  readonly sourceProofSha256: string;
+  readonly identityDictionary: StandardExecutionPlanV3["identityDictionary"];
+  readonly unitGroups: readonly { readonly unitToken: string; readonly groupToken: string | null }[];
+  readonly codeDictionary: StandardExecutionPlanV3["codeDictionary"];
+  readonly codeRepresentations: StandardExecutionPlanV3["codeRepresentations"];
+  readonly labels: {
+    readonly unitColumn: "Unit";
+    readonly horizonColumn: "Horizon";
+    readonly groupColumn: "Group";
+    readonly codes: readonly { runtimeToken: string; column: string; sourceColumn: string; displayLabel: string; canonicalIdentity: string }[];
+    readonly edges: readonly { runtimeColumn: string; column: string; sourceCodeIdentity: string; targetCodeIdentity: string }[];
+  };
+  readonly ordering: {
+    readonly requestedRowOrder: CanonicalRowOrderV3 | null;
+    readonly requestedHorizonOrder: CanonicalHorizonOrderV3 | null;
+    readonly resolvedRowOrder: StandardExecutionPlanV3["rowOrdering"];
+    readonly resolvedHorizonOrder: StandardExecutionPlanV3["horizonOrdering"];
+    readonly runtimeSourceRowIndices: readonly number[];
+  };
+  readonly adapterParameters: StandardExecutionPlanV3["adapterParameters"];
+  readonly weighting: StandardExecutionPlanV3["weighting"];
+  readonly normalization: "sphere";
+  readonly boundary: "within-horizon";
+  readonly reference: StandardExecutionPlanV3["reference"];
+  readonly projection: InternalStandardRunResultV3["projection"];
+  readonly populations: InternalStandardRunResultV3["populations"];
+  readonly meansBinding: StandardMeansBindingV3 | null;
+  readonly resources: {
+    readonly targetBaseline: ExecutionPlanHeaderV3["resourceEstimate"];
+    readonly referenceAdmission: ReferenceAdmissionV3 | null;
+    readonly counterContract: {
+      readonly version: 1;
+      readonly numericCells: "peak-tracked-retained-scientific-slots";
+      readonly numericMetadata: "covered-by-structural-byte-policy";
+      readonly bytes: "conservative-structural-and-temporary-overlap-bound";
+    };
+    readonly observed: RuntimeResourceObservationV3;
+  };
+  readonly diagnostics: readonly ModelDiagnosticV3[];
+}
+
+export interface BoundResultV3 {
+  readonly schemaVersion: 3;
+  readonly kind: "open-ena-bound-result";
+  readonly binding: ResultBindingV3;
+  readonly configuration: CanonicalStandardConfigV3;
+  readonly executionProvenance: ResultExecutionProvenanceV3;
+  readonly set: SerializableEnaSetV3;
+  readonly capabilityStatus: ModelCapabilityStatusV3;
+  readonly createdAt: string;
 }
 
 export interface StandardMeansBindingV3 {
