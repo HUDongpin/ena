@@ -2557,8 +2557,7 @@ export function prepareStandardDraftValidationV3(
   const rotationShapeReady = !trajectoryMeansInvalid && referenceInvalid === null
     && meansMembershipReady;
   let scientificAdmission: ReturnType<typeof admitStandardDraftScienceV3> | null = null;
-  if (rotationShapeReady && scientificFieldPrerequisitesValid && rowOrderReady && horizonOrderReady && !resourceBlocked
-    && !output.some((entry) => entry.blocks.includes("build-model"))) {
+  if (rotationShapeReady && scientificFieldPrerequisitesValid && rowOrderReady && horizonOrderReady && !resourceBlocked) {
     try {
       scientificAdmission = admitStandardDraftScienceV3(dataset as unknown as ParsedDataset, binding, {
         ...modelDraft,
@@ -2586,7 +2585,7 @@ export function prepareStandardDraftValidationV3(
     const rankDiagnostic = rankDiagnosticV3(0, modelDraft.rotation, 0);
     if (rankDiagnostic !== null) output.push(rankDiagnostic);
   } else if (scientificFieldPrerequisitesValid && rowOrderReady && horizonOrderReady
-    && rotationShapeReady && !resourceBlocked) {
+    && rotationShapeReady && !resourceBlocked && scientificAdmission !== null) {
     let jenaNonfinite = false;
     try {
       networks = scientificNetworksV3(

@@ -8,6 +8,64 @@ import { buildReferenceV2, fitReferenceSourceV3 } from "../lib/open-ena/model-v3
 import { bindingFixtureV3 } from "./helpers/open-ena-model-v3-fixture";
 
 const observed = (rows: number) => ({ processedRows: rows, maximumBufferedRows: 0, numericCellsAllocated: 120, peakBytesObservedOrBounded: 10240, observationMethod: "exact-counters-and-conservative-byte-bound" as const });
+
+function swapMeansResidualAxes(set: ENASet, projection: { readonly variance: readonly number[] }): void {
+  const axes = set.rotation.rotationColumns;
+  for (const row of set.rotation.rotationMatrix) [row[1], row[2]] = [row[2], row[1]];
+  for (const table of [set.points, set.centroids!, set.rotation.nodes!]) {
+    for (const row of table) [row[axes[1]], row[axes[2]]] = [row[axes[2]], row[axes[1]]];
+  }
+  [set.variance[axes[1]], set.variance[axes[2]]] = [set.variance[axes[2]], set.variance[axes[1]]];
+  Object.assign(projection.variance, { 1: projection.variance[2], 2: projection.variance[1] });
+}
+
+for (const boundary of ["direct binding", "rehash import"] as const) {
+  test(`Means ${boundary} rejects coherently swapped unequal residual axes`, async () => {
+    const { plan, compiled } = await bindingFixtureV3(undefined, (draft) => {
+      draft.rotation = { type: "means", centerAlignToOrigin: true, negativeLevel: { type: "string", value: "Control" }, positiveLevel: { type: "string", value: "Treatment" } };
+    });
+    const runtime = structuredClone(runStandardPlanV3(plan));
+    assert.ok(runtime.projection.variance[1] > 2 * runtime.projection.variance[2], "native residual axes have distinguishable ordered energy");
+    if (boundary === "direct binding") {
+      swapMeansResidualAxes(runtime.set, runtime.projection);
+      await assert.rejects(() => bindResultV3(plan, runtime, observed(plan.rows.length), compiled.diagnostics), /Means residual.*energy/i);
+    } else {
+      const forged = structuredClone(await bindResultV3(plan, runtime, observed(plan.rows.length), compiled.diagnostics));
+      swapMeansResidualAxes(forged.set as unknown as ENASet, forged.executionProvenance.projection);
+      Object.assign(forged.binding, { scientificResultSha256: await sha256CanonicalJsonV3(scientificResultHashPayloadV3(forged)) });
+      await assert.rejects(() => validateBoundResultV3(forged, plan), /Means residual.*energy/i);
+    }
+  });
+
+  for (const epsilon of [0, 1e-12]) test(`Means ${boundary} preserves residual subspace freedom at source perturbation ${epsilon}`, async () => {
+    const { plan, compiled } = await bindingFixtureV3(undefined, (draft, data) => {
+      draft.codes = ["A", "B", "C", "D"];
+      data.headers.push("D");
+      const pairs = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]];
+      data.rows = pairs.map((pair, index) => ({
+        unit: `u${index}`, horizon: "h1", time: 1, group: index === 0 ? "Control" : index === 1 ? "Treatment" : "Other",
+        ...Object.fromEntries(draft.codes.map((code, column) => [code, pair.includes(column) ? 1 : index === 0 && column === 2 ? epsilon : 0])),
+      }));
+      draft.rotation = { type: "means", centerAlignToOrigin: true, negativeLevel: { type: "string", value: "Control" }, positiveLevel: { type: "string", value: "Treatment" } };
+    });
+    const runtime = structuredClone(runStandardPlanV3(plan));
+    const residuals = runtime.projection.variance.slice(1, 5);
+    assert.ok(residuals.every((value) => value > 0.1));
+    assert.ok(Math.max(...residuals) - Math.min(...residuals) < 1e-10);
+    const original = await bindResultV3(plan, runtime, observed(plan.rows.length), compiled.diagnostics);
+    await validateBoundResultV3(original, plan);
+    if (boundary === "direct binding") {
+      swapMeansResidualAxes(runtime.set, runtime.projection);
+      await validateBoundResultV3(await bindResultV3(plan, runtime, observed(plan.rows.length), compiled.diagnostics), plan);
+    } else {
+      const swapped = structuredClone(original);
+      swapMeansResidualAxes(swapped.set as unknown as ENASet, swapped.executionProvenance.projection);
+      Object.assign(swapped.binding, { scientificResultSha256: await sha256CanonicalJsonV3(scientificResultHashPayloadV3(swapped)) });
+      await validateBoundResultV3(swapped, plan);
+    }
+  });
+}
+
 const mutations: readonly [string, (set: ENASet) => void][] = [
   ["Code field on counts", (set) => { set.connectionCounts[0][set.codes[0]] = 123; }],
   ["Code field on points", (set) => { set.points[0][set.codes[0]] = 123; }],

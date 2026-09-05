@@ -4,6 +4,7 @@ import { Session } from "node:inspector/promises";
 import { canonicalJsonV3, sha256CanonicalJsonV3 } from "../lib/open-ena/model-v3/canonical-json";
 import { validateExecutionPlanV3 } from "../lib/open-ena/model-v3/execution-plan";
 import { compileStandardDraftV3 } from "../lib/open-ena/model-v3/compiler";
+import { validateStandardDraftV3 } from "../lib/open-ena/model-v3/diagnostics";
 import { canonicalJsonByteLengthV3, estimateStandardOperationalAdmissionV3, estimateReferenceBoundSerializationAdmissionV3, estimateStandardPlanSerializationAdmissionV3, assertCombinedStandardResourcesV3 } from "../lib/open-ena/model-v3/standard-closure-resource-budget";
 import { buildReferenceV2, fitReferenceSourceV3 } from "../lib/open-ena/model-v3/reference-v2";
 import { bindingFixtureV3 } from "./helpers/open-ena-model-v3-fixture";
@@ -114,3 +115,48 @@ test("compiler rejects excessive repeated source text before its source proof ha
     inspector.disconnect();
   }
 });
+
+for (const boundary of ["compiler", "diagnostics"] as const) {
+  test(`${boundary} requires actual operational admission despite a prior scientific blocker`, async () => {
+    let dataset!: ParsedDataset, draft!: StandardEnaDraftV3;
+    await bindingFixtureV3(undefined, (capturedDraft, capturedData) => { dataset = capturedData; draft = capturedDraft; });
+    for (const oversized of [false, true]) {
+      const source = structuredClone(dataset), configuration = structuredClone(draft);
+      if (oversized) {
+        const rename = new Map(configuration.codes.map((code) => [code, code.repeat(10_000)]));
+        configuration.codes = configuration.codes.map((code) => rename.get(code)!);
+        source.headers = source.headers.map((key) => rename.get(key) ?? key);
+        source.sizeBytes = 20_000;
+        source.rows = Array.from({ length: 2500 }, (_, index) => ({
+          unit: `u${index}`, horizon: "h1", time: 1, group: index % 2 ? "Control" : "Treatment",
+          ...Object.fromEntries(configuration.codes.map((code, column) => [code, index % 3 === column ? 1 : 0])),
+        }));
+      }
+      const binding = { hashKind: "normalized-utf8-csv-text-sha256" as const, normalizedTableSha256: "a".repeat(64), rowCount: source.rows.length, headerSha256: await sha256CanonicalJsonV3(source.headers) };
+      const inspector = new Session();
+      inspector.connect();
+      try {
+        await inspector.post("Profiler.enable");
+        await inspector.post("Profiler.startPreciseCoverage", { callCount: true, detailed: true });
+        const diagnostics = boundary === "compiler"
+          ? (await compileStandardDraftV3(source, binding.normalizedTableSha256, configuration)).diagnostics
+          : validateStandardDraftV3(source, binding, configuration);
+        const coverage = await inspector.post("Profiler.takePreciseCoverage");
+        const calls = (name: string) => coverage.result.flatMap((script) => script.url.includes("/model-v3/") ? script.functions.filter((entry) => entry.functionName === name) : []).reduce((sum, entry) => sum + entry.ranges[0].count, 0);
+        if (oversized) {
+          assert.ok(diagnostics.some((entry) => entry.id === "STANDARD_NO_GLOBAL_COOCCURRENCE"), "retain the original scientific classification");
+          assert.equal(calls("scientificNetworksV3"), 0, "blocked source cannot bypass mandatory admission");
+          assert.equal(calls("admitStandardDraftScienceV3"), 1);
+          assert.ok(diagnostics.some((entry) => entry.id === "RESOURCE_BUDGET_EXCEEDED"));
+        } else {
+          assert.equal(diagnostics.some((entry) => entry.blocks.includes("build-model")), false);
+          assert.equal(calls("admitStandardDraftScienceV3"), 1);
+          assert.equal(calls("scientificNetworksV3"), 1, "admitted valid control still computes its real evidence once");
+        }
+      } finally {
+        await inspector.post("Profiler.stopPreciseCoverage");
+        inspector.disconnect();
+      }
+    }
+  });
+}

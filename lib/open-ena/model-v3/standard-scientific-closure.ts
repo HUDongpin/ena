@@ -78,6 +78,12 @@ export function assertStandardScientificClosureV3(plan: StandardExecutionPlanV3,
       const positive = new Set(membership.positive.unitTokens), negative = new Set(membership.negative.unitTokens);
       const direction = normalizeVector(subtractVectors(meanColumns(centered.filter((_row, index) => positive.has(pairs[index][0]))), meanColumns(centered.filter((_row, index) => negative.has(pairs[index][0])))));
       direction.forEach((value, edge) => equal(set.rotation.rotationMatrix[edge][0], value, "Means MR1 positive-minus-negative contrast"));
+      // Native orthogonalSvd orders the residual spectrum, independently of
+      // MR1. Reuse the geometric tolerance so equal/nearly-equal eigenspaces
+      // retain their valid basis freedom without refitting or replacing axes.
+      for (let axis = 2; axis < energies.length; axis += 1) {
+        residual(Math.max(0, energies[axis] - energies[axis - 1]), Math.max(energies[axis], energies[axis - 1]), "Means residual descending energy");
+      }
     }
     const start = runtime.projection.type === "means" ? 1 : 0;
     for (let left = start; left < axes.length; left += 1) for (let right = left + 1; right < axes.length; right += 1) {
