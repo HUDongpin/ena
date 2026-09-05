@@ -300,6 +300,116 @@ function executionRowToJenaRowV3(row: StandardExecutionRowV3): Row {
   };
 }
 
+function pushHorizonPriorityV3(heap: number[], priority: number): void {
+  let index = heap.length;
+  heap.push(priority);
+  while (index > 0) {
+    const parent = Math.floor((index - 1) / 2);
+    if (heap[parent] <= priority) break;
+    heap[index] = heap[parent];
+    index = parent;
+  }
+  heap[index] = priority;
+}
+
+function popHorizonPriorityV3(heap: number[]): number {
+  const first = heap[0];
+  const last = heap.pop()!;
+  if (heap.length > 0) {
+    let index = 0;
+    while (index * 2 + 1 < heap.length) {
+      let child = index * 2 + 1;
+      if (child + 1 < heap.length && heap[child + 1] < heap[child]) child += 1;
+      if (last <= heap[child]) break;
+      heap[index] = heap[child];
+      index = child;
+    }
+    heap[index] = last;
+  }
+  return first;
+}
+
+/**
+ * Internal execution permutation for a built/validated plan. Whole Horizon
+ * buckets retain shared-Unit context and their exact within-Horizon row order.
+ * Unit sequences supply scientific constraints; implementationHorizonOrder is
+ * only a deterministic priority among currently unconstrained Horizons.
+ * Worker/result binding must reuse this permutation's preserved sourceRowIndex,
+ * rather than assuming jENA row outputs still correspond to plan.rows order.
+ */
+export function scheduleStandardExecutionRowsV3(plan: StandardExecutionPlanV3): readonly StandardExecutionRowV3[] {
+  if (plan.configuration.analysis.model.type === "EndPoint") return Object.freeze([...plan.rows]);
+  const order = plan.horizonOrdering;
+  if (order.type !== "trajectory-horizon-order") {
+    throw new TypeError("Standard trajectory schedule requires resolved Unit sequences.");
+  }
+  const buckets = new Map<string, StandardExecutionRowV3[]>();
+  const observedByUnit = new Map<string, Set<string>>();
+  const sourceIndices = new Set<number>();
+  for (const row of plan.rows) {
+    if (!Number.isSafeInteger(row.sourceRowIndex) || row.sourceRowIndex < 0
+      || row.sourceRowIndex >= plan.rows.length || sourceIndices.has(row.sourceRowIndex)) {
+      throw new TypeError("Standard trajectory schedule requires a complete source-row permutation.");
+    }
+    sourceIndices.add(row.sourceRowIndex);
+    const bucket = buckets.get(row.horizonToken) ?? [];
+    bucket.push(row);
+    buckets.set(row.horizonToken, bucket);
+    const observed = observedByUnit.get(row.unitToken) ?? new Set<string>();
+    observed.add(row.horizonToken);
+    observedByUnit.set(row.unitToken, observed);
+  }
+  const priorities = new Map(order.implementationHorizonOrder.map((token, index) => [token, index]));
+  if (priorities.size !== order.implementationHorizonOrder.length || priorities.size !== buckets.size
+    || [...priorities.keys()].some((token) => !buckets.has(token))) {
+    throw new TypeError("Standard trajectory schedule requires every observed Horizon exactly once in its tie priority.");
+  }
+  const successors = order.implementationHorizonOrder.map(() => new Set<number>());
+  const indegrees = order.implementationHorizonOrder.map(() => 0);
+  const coveredUnits = new Set<string>();
+  for (const sequence of order.unitSequences) {
+    const observed = observedByUnit.get(sequence.unitToken);
+    if (observed === undefined || coveredUnits.has(sequence.unitToken) || sequence.steps.length !== observed.size) {
+      throw new TypeError("Standard trajectory schedule requires one complete sequence per observed Unit.");
+    }
+    coveredUnits.add(sequence.unitToken);
+    const coveredSteps = new Set<string>();
+    let previous: number | undefined;
+    for (const [ordinal, step] of sequence.steps.entries()) {
+      if (step.trajectoryOrdinal !== ordinal || !observed.has(step.horizonToken) || coveredSteps.has(step.horizonToken)) {
+        throw new TypeError("Standard trajectory schedule must cover each observed Unit-Horizon step exactly once without imputation.");
+      }
+      coveredSteps.add(step.horizonToken);
+      const current = priorities.get(step.horizonToken)!;
+      if (previous !== undefined && !successors[previous].has(current)) {
+        successors[previous].add(current);
+        indegrees[current] += 1;
+      }
+      previous = current;
+    }
+  }
+  if (coveredUnits.size !== observedByUnit.size) {
+    throw new TypeError("Standard trajectory schedule is missing an observed Unit sequence.");
+  }
+  // Kahn's algorithm with a min-heap: O(rows + steps + H log H), without
+  // repeated full sorting or shifting an O(H)-length ready queue.
+  const ready: number[] = [];
+  indegrees.forEach((count, priority) => { if (count === 0) pushHorizonPriorityV3(ready, priority); });
+  const scheduled: StandardExecutionRowV3[] = [];
+  while (ready.length > 0) {
+    const priority = popHorizonPriorityV3(ready);
+    for (const row of buckets.get(order.implementationHorizonOrder[priority])!) scheduled.push(row);
+    for (const next of successors[priority]) {
+      indegrees[next] -= 1;
+      if (indegrees[next] === 0) pushHorizonPriorityV3(ready, next);
+    }
+  }
+  if (scheduled.length !== plan.rows.length) {
+    throw new TypeError("Standard trajectory schedule contains cyclic Horizon constraints.");
+  }
+  return Object.freeze(scheduled);
+}
+
 function meanGroupUnitsV3(plan: StandardExecutionPlanV3, column: string, level: ScalarIdentityV3): string[] {
   const group = plan.identityDictionary.groups.find((entry) => entry.fields.some((field) => (
     field.column === column && field.value.type === level.type && field.value.value === level.value
@@ -351,7 +461,7 @@ function makeSetRotationOptionsV3(plan: StandardExecutionPlanV3): {
 export function toStandardJenaOptionsV3(plan: StandardExecutionPlanV3): ENAWorkerOptions {
   const parameters = assertStandardAdapterParametersV3(plan);
   return {
-    rows: plan.rows.map(executionRowToJenaRowV3),
+    rows: scheduleStandardExecutionRowsV3(plan).map(executionRowToJenaRowV3),
     units: [parameters.unitTokenColumn],
     conversation: [parameters.horizonTokenColumn],
     codes: [...parameters.codeTokens],

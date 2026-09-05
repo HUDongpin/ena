@@ -77,9 +77,18 @@ type Counts = Record<string, number[]>;
  * in standard-window-v3.test.ts cover these otherwise surprising cases.
  * This oracle never calls jENA window, matrix, or aggregation helpers.
  */
-function expectedCounts(source: ParsedDataset, input: StandardEnaDraftV3, backward: number, forward: number): Counts {
+function expectedCounts(
+  source: ParsedDataset,
+  input: StandardEnaDraftV3,
+  backward: number,
+  forward: number,
+  scientificSequence?: readonly string[],
+): Counts {
   const steps: Counts = {};
-  const horizons = [...new Set(source.rows.map((row) => String(row.horizon)))].sort();
+  // These fixtures use numeric time. Source-confirmed tests pass their known
+  // intended sequence explicitly; Horizon names never define scientific order.
+  const horizonTimes = new Map(source.rows.map((row) => [String(row.horizon), Number(row.time)]));
+  const horizons = scientificSequence ?? [...horizonTimes.keys()].sort((a, b) => horizonTimes.get(a)! - horizonTimes.get(b)!);
   function add(row: Row, values: number[]) {
     const key = `${row.unit}/${row.horizon}`;
     const previous = steps[key] ?? [0, 0, 0];
@@ -260,4 +269,165 @@ test("Reference mapping reports the missing validated artifact without SVD fallb
     } },
   };
   assert.throws(() => adapter.toStandardJenaOptionsV3(referencePlan), /Reference.*validated.*artifact/i);
+});
+
+const REVERSED_SEQUENCE = ["h2", "h1", "h3-u1", "h3-u2", "h3-u3", "h3-u4"];
+const TRAJECTORY_WINDOWS = [
+  { window: "MovingStanzaWindow", backward: 1, forward: 0 },
+  { window: "MovingStanzaWindow", backward: 2, forward: 2 },
+  { window: "Conversation", backward: Infinity, forward: 0 },
+] as const;
+
+function reverseScientificTime(source: ParsedDataset): ParsedDataset {
+  return { ...source, rows: source.rows.map((row) => ({ ...row, time: row.time === 1 ? 2 : row.time === 2 ? 1 : row.time })) };
+}
+
+function actualPaths(set: ENASet, plan: StandardExecutionPlanV3): Record<string, string[]> {
+  const units = new Map(plan.identityDictionary.units.map((entry) => [entry.token, String(entry.fields[0].value.value)]));
+  const horizons = new Map(plan.identityDictionary.horizons.map((entry) => [entry.token, String(entry.fields[0].value.value)]));
+  const paths: Record<string, string[]> = {};
+  for (const row of set.trajectories ?? []) {
+    const unit = units.get(String(row.__open_ena_unit_token));
+    const horizon = horizons.get(String(row.__open_ena_horizon_token));
+    assert.ok(unit && horizon);
+    (paths[unit] ??= []).push(horizon);
+  }
+  return paths;
+}
+
+function assertScheduledPermutation(plan: StandardExecutionPlanV3): void {
+  const scheduled = adapter.scheduleStandardExecutionRowsV3(plan);
+  assert.notEqual(scheduled, plan.rows, "the scheduling array is detached from the plan");
+  assert.ok(Object.isFrozen(scheduled));
+  const originalRows = new Map(plan.rows.map((row) => [row.sourceRowIndex, row]));
+  for (const row of scheduled) assert.equal(row, originalRows.get(row.sourceRowIndex), "retain immutable execution-row identity for provenance");
+  assert.deepEqual(scheduled.map((row) => row.sourceRowIndex).sort((a, b) => a - b),
+    Array.from({ length: plan.rows.length }, (_, index) => index));
+  const emittedHorizons = new Set<string>();
+  let previous: string | undefined;
+  for (const row of scheduled) {
+    if (row.horizonToken !== previous) {
+      assert.ok(!emittedHorizons.has(row.horizonToken), "a Horizon must remain one unsplit bucket");
+      emittedHorizons.add(row.horizonToken);
+      previous = row.horizonToken;
+    }
+  }
+  for (const horizon of emittedHorizons) {
+    assert.deepEqual(scheduled.filter((row) => row.horizonToken === horizon),
+      plan.rows.filter((row) => row.horizonToken === horizon), "preserve every within-Horizon row and its relative order");
+  }
+}
+
+for (const model of ["SeparateTrajectory", "AccumulatedTrajectory"] as const) {
+  for (const { window, backward, forward } of TRAJECTORY_WINDOWS) {
+    for (const weighting of ["binary", "frequency"] as const) {
+      test(`${model} / ${window} / ${weighting} / ${backward},${forward}: reversed scientific order overrides lexical and source order`, async () => {
+        const input = draft(model, window, weighting, backward, forward);
+        const source = reverseScientificTime(dataset(weighting));
+        const plan = await planFor(input, source);
+        const snapshot = canonicalJsonV3(plan);
+        const set = ena(adapter.toStandardJenaOptionsV3(plan));
+        const counts = actualCounts(set, plan);
+        assert.deepEqual(counts, expectedCounts(source, input, backward, forward, REVERSED_SEQUENCE));
+        assert.deepEqual(actualPaths(set, plan), {
+          u1: ["h2", "h1", "h3-u1"], u2: ["h2", "h1", "h3-u2"],
+          u3: ["h2", "h1", "h3-u3"], u4: ["h2", "h1", "h3-u4"],
+        });
+        if (model === "SeparateTrajectory") {
+          assert.deepEqual(counts, expectedCounts(dataset(weighting), input, backward, forward), "Separate networks stay unchanged while paths reorder");
+        } else if (forward === 0) {
+          const ab = weighting === "binary" ? 1 : 6;
+          const ac = weighting === "binary" ? 1 : 8;
+          assert.deepEqual(counts["u1/h2"], [0, ac, 0]);
+          assert.deepEqual(counts["u1/h1"], [ab, ac, 0]);
+        }
+        assertScheduledPermutation(plan);
+        assert.equal(canonicalJsonV3(plan), snapshot);
+      });
+    }
+  }
+}
+
+for (const model of ["SeparateTrajectory", "AccumulatedTrajectory"] as const) {
+  for (const window of ["MovingStanzaWindow", "Conversation"] as const) {
+    test(`${model} / ${window}: unequal observed steps and disjoint equal-time Horizons are scheduled without imputation`, async () => {
+      const input = draft(model, window, "frequency", 2, 2);
+      const source = reverseScientificTime(dataset("frequency"));
+      source.rows = source.rows.filter((row) => !(row.unit === "u2" && row.horizon === "h1") && row.horizon !== "h3-u3");
+      const plan = await planFor(input, source);
+      const set = ena(adapter.toStandardJenaOptionsV3(plan));
+      assert.deepEqual(actualCounts(set, plan), expectedCounts(source, input, 2, 2, REVERSED_SEQUENCE));
+      assert.deepEqual(actualPaths(set, plan), {
+        u1: ["h2", "h1", "h3-u1"], u2: ["h2", "h3-u2"],
+        u3: ["h2", "h1"], u4: ["h2", "h1", "h3-u4"],
+      });
+      assertScheduledPermutation(plan);
+      // h3-u1/u2/u4 are disjoint at equal time. Their stable priority is only
+      // a deterministic implementation choice, with no fabricated shared step.
+      const scheduled = adapter.scheduleStandardExecutionRowsV3(plan);
+      const tail = [...new Set(scheduled.filter((row) => row.horizonOrderTuple?.[0] === 3).map((row) => row.horizonToken))];
+      assert.equal(plan.horizonOrdering.type, "trajectory-horizon-order");
+      if (plan.horizonOrdering.type !== "trajectory-horizon-order") throw new Error("Expected trajectory order");
+      assert.deepEqual(tail, plan.horizonOrdering.implementationHorizonOrder.filter((token) => tail.includes(token)));
+    });
+
+    test(`${model} / ${window}: an explicitly confirmed source Horizon sequence survives lexical row materialization`, async () => {
+      const input = draft(model, window, "frequency", 2, 2);
+      const source = dataset("frequency");
+      source.rows = REVERSED_SEQUENCE.flatMap((horizon) => source.rows.filter((row) => row.horizon === horizon));
+      input.horizonOrder = {
+        kind: "source-order-confirmed",
+        confirmation: {
+          kind: "explicit-researcher-confirmation", analysisFamily: "standard",
+          datasetSha256: DATASET_SHA256, rowCount: source.rows.length, relevantColumns: ["unit", "horizon"],
+          confirmedAt: "2026-09-05T00:00:00.000Z", confirmationVersion: 1,
+        },
+      };
+      const plan = await planFor(input, source);
+      const set = ena(adapter.toStandardJenaOptionsV3(plan));
+      assert.deepEqual(actualCounts(set, plan), expectedCounts(source, input, 2, 2, REVERSED_SEQUENCE));
+      assert.deepEqual(actualPaths(set, plan).u1, ["h2", "h1", "h3-u1"]);
+      assertScheduledPermutation(plan);
+    });
+  }
+}
+
+test("Endpoint preserves its existing resolved row order when Horizon time reverses", async () => {
+  const input = draft("EndPoint", "MovingStanzaWindow", "frequency");
+  const plan = await planFor(input, reverseScientificTime(dataset("frequency")));
+  assert.deepEqual(adapter.scheduleStandardExecutionRowsV3(plan), plan.rows);
+  assert.deepEqual(adapter.toStandardJenaOptionsV3(plan).rows, plan.rows.map((row) => ({
+    __open_ena_unit_token: row.unitToken, __open_ena_horizon_token: row.horizonToken, ...row.codeValues,
+  })));
+});
+
+test("trajectory scheduling rejects missing, duplicate, uncovered, and cyclic mapping proofs", async () => {
+  const plan = await planFor(draft("AccumulatedTrajectory", "MovingStanzaWindow", "frequency"));
+  assert.equal(plan.horizonOrdering.type, "trajectory-horizon-order");
+  if (plan.horizonOrdering.type !== "trajectory-horizon-order") throw new Error("Expected trajectory order");
+  const order = plan.horizonOrdering;
+  const first = order.unitSequences[0];
+  const malformed: Array<Partial<typeof order>> = [
+    { implementationHorizonOrder: order.implementationHorizonOrder.slice(1) },
+    { implementationHorizonOrder: [...order.implementationHorizonOrder, order.implementationHorizonOrder[0]] },
+    { implementationHorizonOrder: ["unknown", ...order.implementationHorizonOrder.slice(1)] },
+    { unitSequences: order.unitSequences.slice(1) },
+    { unitSequences: [first, ...order.unitSequences] },
+    { unitSequences: [{ ...first, unitToken: "unknown" }, ...order.unitSequences.slice(1)] },
+    { unitSequences: [{ ...first, steps: first.steps.slice(1) }, ...order.unitSequences.slice(1)] },
+    { unitSequences: [{ ...first, steps: [first.steps[0], first.steps[0], ...first.steps.slice(2)] }, ...order.unitSequences.slice(1)] },
+    { unitSequences: [{ ...first, steps: [{ horizonToken: "unknown", trajectoryOrdinal: 0 }, ...first.steps.slice(1)] }, ...order.unitSequences.slice(1)] },
+    { unitSequences: [{ ...first, steps: first.steps.map((step) => ({ ...step, trajectoryOrdinal: 9 })) }, ...order.unitSequences.slice(1)] },
+  ];
+  for (const mutation of malformed) {
+    assert.throws(() => adapter.scheduleStandardExecutionRowsV3({ ...plan, horizonOrdering: { ...order, ...mutation } }), /trajectory schedule/i);
+  }
+  assert.throws(() => adapter.scheduleStandardExecutionRowsV3({ ...plan, horizonOrdering: { type: "not-applicable", reason: "endpoint-model" } }), /trajectory schedule/i);
+  assert.throws(() => adapter.scheduleStandardExecutionRowsV3({ ...plan, rows: [plan.rows[0], ...plan.rows.slice(0, -1)] }), /trajectory schedule/i);
+  // One Unit reverses the two shared Horizons while the others retain h1→h2.
+  // Every membership is present exactly once, but no global schedule exists.
+  const cyclic = { ...first, steps: [first.steps[1], first.steps[0], ...first.steps.slice(2)].map((step, trajectoryOrdinal) => ({ ...step, trajectoryOrdinal })) };
+  assert.throws(() => adapter.scheduleStandardExecutionRowsV3({
+    ...plan, horizonOrdering: { ...order, unitSequences: [cyclic, ...order.unitSequences.slice(1)] },
+  }), /trajectory schedule.*cycl/i);
 });
