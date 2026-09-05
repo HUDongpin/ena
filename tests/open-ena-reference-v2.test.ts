@@ -143,6 +143,101 @@ async function rehash(artifact: Mutable<Artifact>): Promise<Mutable<Artifact>> {
   return artifact;
 }
 
+test("SVD decoder rejects rehashed rank three when only one eigenvalue supports a coordinate", async () => {
+  const { mod, artifact } = await reference();
+  assert.equal(artifact.fit.rank, 3);
+  const overstated = clone(artifact);
+  overstated.geometry.eigenvalues = [artifact.geometry.eigenvalues[0], 0, 0];
+  overstated.fit.variance = [1, 0, 0];
+  overstated.fit.rank = 3;
+  overstated.fit.estimableAxes = [...artifact.geometry.rotationColumns];
+  await rehash(overstated);
+  await assert.rejects(() => mod.decodeReferenceV2(overstated), /rank.*eigenvalue|eigenvalue.*rank/i);
+});
+
+test("SVD decoder rejects rehashed rank one when three eigenvalues support coordinates", async () => {
+  const { mod, artifact } = await reference();
+  assert.equal(artifact.fit.rank, 3);
+  const understated = clone(artifact);
+  understated.fit.rank = 1;
+  understated.fit.estimableAxes = [artifact.geometry.rotationColumns[0]];
+  await rehash(understated);
+  await assert.rejects(() => mod.decodeReferenceV2(understated), /rank.*eigenvalue|eigenvalue.*rank/i);
+});
+
+test("SVD import rank uses the rounding floor and a strict greater-than threshold", async () => {
+  const { mod, artifact } = await reference();
+  const floor = (8 * Number.EPSILON * 3) ** 2;
+  for (const [second, expectedRank] of [[floor * 0.5, 1], [floor, 1], [floor * 2, 2]] as const) {
+    const imported = clone(artifact);
+    imported.geometry.eigenvalues = [1e-20, second, 0];
+    const total = imported.geometry.eigenvalues.reduce((sum, value) => sum + value, 0);
+    imported.fit.variance = imported.geometry.eigenvalues.map((value) => value / total);
+    imported.fit.rank = expectedRank;
+    imported.fit.estimableAxes = imported.geometry.rotationColumns.slice(0, expectedRank);
+    await rehash(imported);
+    assert.equal((await mod.decodeReferenceV2(imported)).fit.rank, expectedRank);
+    imported.fit.rank = expectedRank === 1 ? 2 : 1;
+    imported.fit.estimableAxes = imported.geometry.rotationColumns.slice(0, imported.fit.rank);
+    await rehash(imported);
+    await assert.rejects(() => mod.decodeReferenceV2(imported), /rank.*eigenvalue|eigenvalue.*rank/i);
+  }
+});
+
+test("Means decoder rejects rehashed zero-MR1 variance despite valid residual variance", async () => {
+  const { mod, artifact } = await reference(true);
+  const changed = clone(artifact);
+  changed.fit.variance = [0, 1, 0];
+  changed.fit.estimableAxes = ["MR1", "SVD2"];
+  changed.fit.rank = 1;
+  await rehash(changed);
+  await assert.rejects(() => mod.decodeReferenceV2(changed), /MR1.*positive|positive.*MR1/i);
+});
+
+for (const perturbation of [0, 1e-7]) test(`SVD Reference preserves valid rank-one full geometry with perturbation ${perturbation}`, async () => {
+  const mod = await api();
+  const source = dataset();
+  source.rows = [
+    { unit: "c1", horizon: "h1", time: 1, group: "Control", A: 1, B: 1, C: 1 },
+    { unit: "c2", horizon: "h2", time: 2, group: "Control", A: 1, B: 2, C: 3 },
+    { unit: "t1", horizon: "h3", time: 3, group: "Treatment", A: 1, B: 1, C: 1 + perturbation },
+    { unit: "t2", horizon: "h4", time: 4, group: "Treatment", A: 1, B: 2, C: 3 + perturbation },
+  ];
+  const plan = await planFor(draft(), source);
+  const result = runStandardPlanV3(plan);
+  assert.equal(result.projection.rank, 1);
+  const artifact = await mod.buildReferenceV2(await mod.fitReferenceSourceV3(plan), { displayName: "Rank one", currentPlan: plan });
+  assert.equal(artifact.fit.rank, 1);
+  assert.deepEqual(artifact.fit.estimableAxes, ["SVD1"]);
+  assert.deepEqual(artifact.geometry.rotationMatrix, result.set.rotation.rotationMatrix);
+  assert.equal(artifact.geometry.rotationColumns.length, 3);
+  if (perturbation !== 0) assert.ok(artifact.geometry.eigenvalues.slice(1).some((value) => value > 0), "positive subthreshold eigenvalues do not increase numerical rank");
+  assert.deepEqual(await mod.decodeReferenceV2(artifact), artifact);
+});
+
+test("Means Reference retains a genuine positive MR1 variance below the residual relative threshold", async () => {
+  const mod = await api();
+  const source = dataset();
+  const epsilon = 1e-8;
+  source.rows = [
+    { unit: "control", horizon: "h1", time: 1, group: "Control", A: 1, B: 1 - epsilon, C: 1 + epsilon },
+    { unit: "treatment", horizon: "h2", time: 2, group: "Treatment", A: 1, B: 1 + epsilon, C: 1 - epsilon },
+    { unit: "other1", horizon: "h3", time: 3, group: "Other", A: 1, B: 1, C: 1 },
+    { unit: "other2", horizon: "h4", time: 4, group: "Other", A: 1, B: 2, C: 2 },
+    { unit: "other3", horizon: "h5", time: 5, group: "Other", A: 1, B: 3, C: 3 },
+  ];
+  const plan = await planFor(draft(true), source);
+  const result = runStandardPlanV3(plan);
+  const variance = result.projection.variance;
+  assert.ok(variance[0] > 0 && variance[0] < Math.max(...variance) * 1e-12);
+  const artifact = await mod.buildReferenceV2(await mod.fitReferenceSourceV3(plan), { displayName: "Small MR1", currentPlan: plan });
+  assert.deepEqual(artifact.fit.variance, variance);
+  assert.ok(artifact.fit.estimableAxes.includes("MR1"));
+  assert.deepEqual(artifact.geometry.rotationMatrix, result.set.rotation.rotationMatrix);
+  assert.equal(artifact.geometry.rotationColumns.length, 3);
+  assert.deepEqual(await mod.decodeReferenceV2(artifact), artifact);
+});
+
 const mutations: Array<[string, (value: Mutable<Artifact>) => void, RegExp]> = [
   ["duplicate Codes", (value) => { value.basis.codes[1] = value.basis.codes[0]; }, /Code/i],
   ["incomplete edges", (value) => { value.basis.edges.pop(); }, /edge/i],

@@ -230,9 +230,14 @@ function decodeShape(input: unknown): OpenEnaStandardReferenceV2 {
       || eigenvalues.some((value, index) => value < 0 || (index > 0 && value > eigenvalues[index - 1] + TOLERANCE))) throw new TypeError("Reference SVD requires valid nonnegative ordered eigenvalues and no Means metadata.");
     const total = eigenvalues.reduce((sum, value) => sum + value, 0);
     if (!Number.isFinite(total) || variance.some((value, index) => Math.abs(value - eigenvalues[index] / total) > TOLERANCE)) throw new TypeError("Reference SVD eigenvalues must agree with full-basis variance.");
+    // Match centeredNetworkRankV3: qualifying sphere-normalized nonnegative
+    // networks have inputScale <= 1, so its rounding floor is (8 * EPSILON * E)^2.
+    const rankThreshold = Math.max(Number.MIN_VALUE, eigenvalues[0] * 1e-12, (8 * Number.EPSILON * width) ** 2);
+    if (rank !== eigenvalues.filter((value) => value > rankThreshold).length) throw new TypeError("Reference SVD intrinsic rank must match its eigenvalues under the numerical rank policy.");
     same(fit.estimableAxes, axes.slice(0, rank), "Reference SVD estimable axes");
   } else {
     if (eigenvalues.length !== 0 || axes[0] !== "MR1") throw new TypeError("Reference Means requires MR1 and no SVD eigenvalues.");
+    if (variance[0] <= 0) throw new TypeError("Reference Means MR1 must have positive variance for its nonzero contrast.");
     const means = record(fit.means, ["groupColumn", "negativeLevel", "positiveLevel", "negativeCount", "positiveCount", "direction"], "Reference Means metadata");
     if (configuration.units.group.type !== "stable-metadata" || configuration.units.group.column !== rotation.contrast.groupColumn
       || canonicalJsonV3(rotation.contrast.negativeLevel) === canonicalJsonV3(rotation.contrast.positiveLevel)) throw new TypeError("Reference Means contrast requires stable Group metadata and distinct typed levels.");
