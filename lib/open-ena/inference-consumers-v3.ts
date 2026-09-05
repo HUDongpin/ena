@@ -50,7 +50,7 @@ const CONTROL_ITEM_LIMIT = 10_000;
 const CONTROL_STRING_LIMIT = 65_536;
 const CONTROL_CHARACTER_BUDGET = 1_048_576;
 
-function captureControlArray(input: unknown, label: string, exactLength?: number): unknown[] {
+export function captureControlArrayV3(input: unknown, label: string, exactLength?: number, maximumLength = CONTROL_ITEM_LIMIT): unknown[] {
   if (!Array.isArray(input) || Object.getPrototypeOf(input) !== Array.prototype) {
     throw new TypeError(`controls ${label} must be a plain array`);
   }
@@ -58,7 +58,7 @@ function captureControlArray(input: unknown, label: string, exactLength?: number
     const descriptor = Object.getOwnPropertyDescriptor(input, "length");
     const length: unknown = descriptor && "value" in descriptor ? descriptor.value : undefined;
     if (!descriptor || descriptor.enumerable || typeof length !== "number"
-      || !Number.isSafeInteger(length) || length < 0 || length > CONTROL_ITEM_LIMIT
+      || !Number.isSafeInteger(length) || length < 0 || length > maximumLength
       || (exactLength !== undefined && length !== exactLength)) {
       throw new TypeError(`controls ${label} length exceeds its allowed limit`);
     }
@@ -114,10 +114,10 @@ function captureControls(input: unknown) {
     if (scalar.type === "string") text(scalar.value);
     return scalar;
   }
-  const axes = captureControlArray(value.axes, "axes", 2).map(text);
+  const axes = captureControlArrayV3(value.axes, "axes", 2).map(text);
   if (axes[0] === axes[1]) throw new TypeError("Choose two distinct available axes");
-  const hiddenCodes = value.hiddenCodes === undefined ? [] : captureControlArray(value.hiddenCodes, "hidden Codes").map(text);
-  const hiddenGroups = value.hiddenGroups === undefined ? [] : captureControlArray(value.hiddenGroups, "hidden Groups").map(identity);
+  const hiddenCodes = value.hiddenCodes === undefined ? [] : captureControlArrayV3(value.hiddenCodes, "hidden Codes").map(text);
+  const hiddenGroups = value.hiddenGroups === undefined ? [] : captureControlArrayV3(value.hiddenGroups, "hidden Groups").map(identity);
   return deepFreezeV3({ primaryGroup: identity(value.primaryGroup), secondaryGroup: identity(value.secondaryGroup), axes: axes as [string, string], hiddenCodes, hiddenGroups });
 }
 
@@ -128,7 +128,7 @@ function adapterConfiguration(result: BoundStandardResultV3): OpenEnaConfig {
   const { configuration: config, set, executionProvenance: p } = result;
   const extent = (value: number | "Infinity") => value === "Infinity" ? Infinity : value;
   return {
-    unitColumns: [...set.units], conversationColumns: [...set.conversation], groupColumn: "Group", codes: [...set.codes],
+    unitColumns: [...set.units], conversationColumns: [...set.conversation], groupColumn: config.units.group.type === "none" ? null : "Group", codes: [...set.codes],
     model: config.analysis.model.type, window: config.window.type,
     windowSizeBack: config.window.type === "Conversation" ? 1 : extent(set.functionParams.windowSizeBack),
     windowSizeForward: config.window.type === "Conversation" ? 0 : extent(set.functionParams.windowSizeForward),
@@ -180,14 +180,19 @@ export type OpenEnaInferenceInputV3 = Awaited<ReturnType<typeof buildInferenceIn
 /** Pure row-shape conversion after the public strong gate. No fit, filtering,
  * population reduction or scientific coordinate/weight conversion occurs. */
 export function endpointScientificAdapterV3(input: OpenEnaInferenceInputV3) {
-  const { result } = input, p = result.executionProvenance;
+  return boundScientificAdapterV3(input.result, input.supportedAxes);
+}
+
+/** Internal row adapter shared by strongly admitted endpoint and trajectory consumers. */
+export function boundScientificAdapterV3(result: BoundStandardResultV3, supportedAxes: readonly string[]) {
+  const p = result.executionProvenance;
   const extent = (value: number | "Infinity") => value === "Infinity" ? Infinity : value;
   const set: ENASet = { ...result.set, functionParams: { ...result.set.functionParams, windowSizeBack: extent(result.set.functionParams.windowSizeBack), windowSizeForward: extent(result.set.functionParams.windowSizeForward) } };
   const counts = new Map<string, number>();
   for (const row of set.points) counts.set(String(row.Group), (counts.get(String(row.Group)) ?? 0) + 1);
   return {
     adapterConfiguration: adapterConfiguration(result),
-    set, dimensions: [...input.supportedAxes], analyzedAt: result.createdAt,
+    set, dimensions: [...supportedAxes], analyzedAt: result.createdAt,
     groups: p.identityDictionary.groups.map((group) => ({ name: group.displayLabel, count: counts.get(group.displayLabel) ?? 0, pointCount: counts.get(group.displayLabel) ?? 0 })),
   };
 }
