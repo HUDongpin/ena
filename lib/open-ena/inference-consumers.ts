@@ -1,5 +1,6 @@
 import type { Scalar } from "jena-js";
 import type {
+  OpenEnaEndpointInferenceResultV2,
   OpenEnaFriedmanInferenceRowV2,
   OpenEnaInferenceFamilyV2,
   OpenEnaInferenceResultV2,
@@ -116,6 +117,7 @@ function assertPlainInferenceJsonData(
     validated: Set<object>;
     objectNodeCount: number;
     ownKeyCount: number;
+    nativeTextCharacters?: number;
   } = {
     active: new Set<object>(),
     validated: new Set<object>(),
@@ -124,6 +126,10 @@ function assertPlainInferenceJsonData(
   },
   depth = 0,
 ): void {
+  if (typeof value === "string" && state.nativeTextCharacters !== undefined) {
+    state.nativeTextCharacters += value.length;
+    if (value.length > 262_144 || state.nativeTextCharacters > 1_048_576) throw new Error(INFERENCE_JSON_BUDGET_ERROR);
+  }
   if (value === null || typeof value === "string" || typeof value === "boolean") return;
   if (typeof value === "number") return;
   if (typeof value !== "object") throw new Error(INFERENCE_JSON_DATA_ERROR);
@@ -538,8 +544,8 @@ function validateUniqueBoundedStringArray(
   }
 }
 
-function nonEmptyString(value: unknown, label: string) {
-  if (typeof value !== "string" || value.length === 0 || value.length > MAX_INFERENCE_STRING_LENGTH) {
+function nonEmptyString(value: unknown, label: string, maximumLength = MAX_INFERENCE_STRING_LENGTH) {
+  if (typeof value !== "string" || value.length === 0 || value.length > maximumLength) {
     throw new Error(`${label} must be a bounded non-empty string.`);
   }
   return value;
@@ -1073,7 +1079,7 @@ function validateRow(value: unknown, expectedTest: "mann-whitney-u" | "wilcoxon-
   }
 }
 
-function validateRequest(value: unknown, kind: OpenEnaInferenceResultV2["kind"]) {
+function validateRequest(value: unknown, kind: OpenEnaInferenceResultV2["kind"], nativeEndpoint = false) {
   if (!isRecord(value) || value.kind !== kind) throw new Error("Inference request is invalid.");
   const keys = kind === "endpoint-independent"
     ? ["kind", "primaryGroup", "secondaryGroup", "axes"]
@@ -1088,8 +1094,8 @@ function validateRequest(value: unknown, kind: OpenEnaInferenceResultV2["kind"])
   if ((value.axes as unknown[]).length !== 2
     || new Set(value.axes as string[]).size !== 2) throw new Error("Inference axes are invalid.");
   if (kind === "endpoint-independent") {
-    nonEmptyString(value.primaryGroup, "Inference primary group");
-    nonEmptyString(value.secondaryGroup, "Inference secondary group");
+    nonEmptyString(value.primaryGroup, "Inference primary group", nativeEndpoint ? 262_144 : MAX_INFERENCE_STRING_LENGTH);
+    nonEmptyString(value.secondaryGroup, "Inference secondary group", nativeEndpoint ? 262_144 : MAX_INFERENCE_STRING_LENGTH);
     return;
   }
   validateStringArray(value.repeatedEntityColumns, "Inference identity columns");
@@ -1120,7 +1126,7 @@ function validateRequest(value: unknown, kind: OpenEnaInferenceResultV2["kind"])
   }
 }
 
-function validateBinding(value: unknown) {
+function validateBinding(value: unknown, nativeEndpoint = false) {
   if (!isRecord(value)) throw new Error("Inference binding is invalid.");
   exactKeys(
     value,
@@ -1175,8 +1181,14 @@ function validateBinding(value: unknown) {
     3,
     MAX_CONFIGURATION_CODES,
   );
-  windowInteger(value.configuration.windowSizeBack, "Inference backward window");
-  windowInteger(value.configuration.windowSizeForward, "Inference forward window");
+  if (nativeEndpoint) {
+    for (const extent of [value.configuration.windowSizeBack, value.configuration.windowSizeForward]) {
+      if (extent !== Infinity && (typeof extent !== "number" || !Number.isSafeInteger(extent) || extent < 0)) throw new Error("Native inference window extent is invalid.");
+    }
+  } else {
+    windowInteger(value.configuration.windowSizeBack, "Inference backward window");
+    windowInteger(value.configuration.windowSizeForward, "Inference forward window");
+  }
   if ((value.configuration.model !== "EndPoint"
       && value.configuration.model !== "SeparateTrajectory"
       && value.configuration.model !== "AccumulatedTrajectory")
@@ -1586,7 +1598,15 @@ function deepFreeze<T>(value: T, seen = new Set<unknown>()): T {
 
 /** Strict aggregate inference reader used by schema-v2 result-bundle parsing. */
 export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceResultV2 {
-  assertPlainInferenceJsonData(value);
+  return parseInferenceResult(value);
+}
+
+// A per-call reader domain, never a mutable global parser switch. The native
+// domain is available only through the check-only coordinator authority gate.
+function parseInferenceResult(value: unknown, nativeEndpoint = false): OpenEnaInferenceResultV2 {
+  assertPlainInferenceJsonData(value, nativeEndpoint ? {
+    active: new Set<object>(), validated: new Set<object>(), objectNodeCount: 0, ownKeyCount: 0, nativeTextCharacters: 0,
+  } : undefined);
   if (!isRecord(value) || value.schemaVersion !== 2) throw new Error("Inference result schema v2 is required.");
   const kind = value.kind;
   if (kind !== "endpoint-independent"
@@ -1602,7 +1622,8 @@ export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceR
       : [...COMMON_RESULT_KEYS, "rows"],
     "Inference result",
   );
-  validateRequest(value.request, kind);
+  if (nativeEndpoint && kind !== "endpoint-independent") throw new Error("Native v3 inference requires endpoint context.");
+  validateRequest(value.request, kind, nativeEndpoint);
   if (kind === "trajectory-repeated-periods") {
     if (!Array.isArray(value.omnibusRows)
       || !Array.isArray(value.followupRows)
@@ -1620,7 +1641,7 @@ export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceR
     || value.rows.length > MAX_INFERENCE_ARRAY_LENGTH) {
     throw new Error("Inference rows exceed the bounded aggregate row budget.");
   }
-  validateBinding(value.binding);
+  validateBinding(value.binding, nativeEndpoint);
   validateFamilies(value.families);
   validateWarnings(value.warnings, "Inference warnings");
   validateMethod(value.method);
@@ -1839,5 +1860,29 @@ export function assertOpenEnaInferenceCoordinatorConsumerV2(
   const parsed = parseOpenEnaInferenceResultV2(value);
   if (parsed !== value) throw new Error("Inference consumer authority mismatch.");
   assertOpenEnaInferenceCoordinatorAuthorityV2(parsed);
+  return parsed;
+}
+
+// Pure v3 admission leaf: never imports a producer, bundle parser or exporter.
+export { assertCurrentCapabilityV3, buildInferenceInputV3 } from "./inference-consumers-v3";
+export type { OpenEnaEndpointControlsV3, OpenEnaInferenceInputV3 } from "./inference-consumers-v3";
+
+/** Internal check-only reader for a real native coordinator object. It cannot
+ * register authority, admit imported JSON, or turn an adapter into a source
+ * configuration. The v3 producer alone binds this to the complete v3 result. */
+export function assertOpenEnaInferenceNativeCoordinatorV3(
+  value: unknown,
+  expected: OpenEnaInferenceExpectedBindingV2,
+  request: OpenEnaEndpointInferenceResultV2["request"],
+  context: OpenEnaInferenceProducerContextV2,
+): OpenEnaEndpointInferenceResultV2 {
+  assertOpenEnaInferenceCoordinatorAuthorityV2(value);
+  const parsed = parseInferenceResult(value, true);
+  assertOpenEnaInferenceBindingV2(parsed, expected);
+  assertOpenEnaInferenceCoordinatorCurrentContextAuthorityV2(parsed, context);
+  if (parsed.kind !== "endpoint-independent" || parsed.request.primaryGroup !== request.primaryGroup
+    || parsed.request.secondaryGroup !== request.secondaryGroup || !sameAxes(parsed.request.axes, request.axes)) {
+    throw new Error(CURRENT_CONTEXT_MISMATCH);
+  }
   return parsed;
 }

@@ -1,3 +1,7 @@
+import { assertOpenEnaInferenceNativeCoordinatorV3 } from "./inference-consumers";
+import { canonicalJsonV3 } from "./model-v3/canonical-json";
+import type { ResultBindingV3 } from "./model-v3/types";
+import { buildInferenceInputV3, endpointScientificAdapterV3, type OpenEnaEndpointControlsV3, type OpenEnaInferenceInputV3 } from "./inference-consumers-v3";
 import { assertOpenEnaCapabilityForResult } from "./capabilities";
 import {
   OpenEnaLongitudinalIntegrityError,
@@ -146,6 +150,8 @@ interface OpenEnaInferenceResultSnapshotV2 {
 }
 
 interface OpenEnaInferenceCoordinatorSnapshotV2 {
+  /** Present only on the strongly admitted native v3 producer path. */
+  scientificBindingV3?: ResultBindingV3;
   request: OpenEnaInferenceRequestV2;
   result: OpenEnaInferenceResultSnapshotV2;
   currentBinding: OpenEnaInferenceCurrentBindingV2;
@@ -711,6 +717,7 @@ async function sha256(value: unknown) {
 }
 
 interface FamilyIdentityScope {
+  scientificBindingV3?: ResultBindingV3;
   binding: OpenEnaInferenceBindingV2;
   design: OpenEnaInferenceRequestV2["kind"];
   axisIndexes: number[];
@@ -759,10 +766,14 @@ async function familyIdentity(
   scope: FamilyIdentityScope,
 ) {
   return `openena-family-v2-${await sha256({
-    contract: "open-ena-rank-inference-v2",
+    contract: scope.scientificBindingV3 ? "open-ena-rank-inference-v3" : "open-ena-rank-inference-v2",
     method: OPEN_ENA_RANK_INFERENCE_METHOD,
     role,
-    binding: canonicalIdentityBinding(scope.binding),
+    // Native v3 hashes the exact portable scientific identity. Runtime
+    // Infinity adapter fields never pass through JSON.stringify here.
+    binding: scope.scientificBindingV3
+      ? { result: scope.scientificBindingV3, axes: scope.binding.axes }
+      : canonicalIdentityBinding(scope.binding),
     design: scope.design,
     axisIndexes: scope.axisIndexes,
     groupIndexes: scope.groupIndexes,
@@ -1104,6 +1115,7 @@ async function coordinateEndpoint(
     request.axes,
   );
   const identityScope: FamilyIdentityScope = {
+    ...(input.scientificBindingV3 ? { scientificBindingV3: input.scientificBindingV3 } : {}),
     binding,
     design: request.kind,
     axisIndexes: request.axes.map((axis) => input.result.dimensions.indexOf(axis)),
@@ -1752,6 +1764,12 @@ export async function runOpenEnaInferenceV2(
 ): Promise<OpenEnaInferenceResultV2> {
   assertOpenEnaCapabilityForResult(input.result, "inference");
   const snapshot = snapshotCoordinatorInput(input);
+  return runCapturedCoordinatorV2(snapshot);
+}
+
+/** Both admitted entrypoints use the complete existing binding validation,
+ * computation and private coordinator receipt path. */
+async function runCapturedCoordinatorV2(snapshot: OpenEnaInferenceCoordinatorSnapshotV2): Promise<OpenEnaInferenceResultV2> {
   const binding = validateBinding(snapshot);
   if (snapshot.request.kind === "endpoint-independent"
     && snapshot.comparisonFrame !== undefined) {
@@ -1766,4 +1784,83 @@ export async function runOpenEnaInferenceV2(
       trajectoryMapping: coordinatorAuthorityTrajectoryMapping(snapshot, inference),
     },
   );
+}
+
+const nativeInferenceReceiptsV3 = new WeakMap<object, {
+  input: OpenEnaInferenceInputV3;
+  coordinator: OpenEnaEndpointInferenceResultV2;
+}>();
+
+function nativeCoordinatorContextV3(input: OpenEnaInferenceInputV3) {
+  const adapted = endpointScientificAdapterV3(input);
+  const currentBinding = {
+    datasetNormalizedUtf8TextSha256: input.binding.datasetSha256,
+    datasetHashKind: input.binding.datasetHashKind,
+    configuration: adapted.adapterConfiguration,
+  };
+  const request: OpenEnaEndpointInferenceResultV2["request"] = {
+    kind: "endpoint-independent", primaryGroup: input.groupSelection.primary,
+    secondaryGroup: input.groupSelection.secondary, axes: [...input.controls.axes],
+  };
+  return { adapted, currentBinding, request };
+}
+
+function checkNativeCoordinatorV3(coordinator: OpenEnaEndpointInferenceResultV2, input: OpenEnaInferenceInputV3) {
+  const { adapted, currentBinding, request } = nativeCoordinatorContextV3(input);
+  return assertOpenEnaInferenceNativeCoordinatorV3(coordinator, {
+    ...currentBinding, analyzedAt: input.result.createdAt, modelType: "EndPoint", axes: input.controls.axes, trajectoryMapping: null,
+  }, request, {
+    groupNames: adapted.groups.map((group) => group.name), groupColumn: "Group", trajectoryMapping: null,
+  });
+}
+
+/** Current-result endpoint inference. Bound trajectory inference requires the
+ * longitudinal comparison context and is intentionally rejected by this API.
+ * Only portable science/statistics leave this function; the legacy adapter and
+ * its real coordinator receipt remain private and cannot be exported alone. */
+export async function runOpenEnaInferenceV3(result: unknown, independentPlan: unknown, controls: OpenEnaEndpointControlsV3) {
+  const input = await buildInferenceInputV3(result, independentPlan, controls);
+  const { adapted, currentBinding, request } = nativeCoordinatorContextV3(input);
+  const snapshot: OpenEnaInferenceCoordinatorSnapshotV2 = deepFreeze({
+    request,
+    scientificBindingV3: input.binding,
+    result: {
+      ...adapted,
+      projectionReferenceFitMethod: input.provenance.reference?.fit.method === "means" ? "mean" : input.provenance.reference?.fit.method ?? null,
+      provenanceBinding: currentBinding,
+    },
+    currentBinding,
+  });
+  const coordinator = await runCapturedCoordinatorV2(snapshot);
+  if (coordinator.kind !== "endpoint-independent") throw new OpenEnaInferenceIntegrityError("binding-mismatch");
+  checkNativeCoordinatorV3(coordinator, input);
+  const envelope = deepFreeze({
+    schemaVersion: 3 as const, kind: "open-ena-endpoint-inference" as const,
+    ...input,
+    inference: {
+      coordinateSystem: coordinator.coordinateSystem, method: coordinator.method,
+      status: coordinator.status, reason: coordinator.reason, scope: coordinator.scope,
+      ledger: coordinator.ledger, rows: coordinator.rows, families: coordinator.families, warnings: coordinator.warnings,
+    },
+  });
+  nativeInferenceReceiptsV3.set(envelope, { input, coordinator });
+  return envelope;
+}
+
+export type OpenEnaEndpointInferenceResultV3 = Awaited<ReturnType<typeof runOpenEnaInferenceV3>>;
+
+/** Check-only live consumer. Object identity proves actual production; strong
+ * current-result admission and the entire scientific binding prevent borrowing
+ * that receipt across results. Display visibility is not scientific selection. */
+export async function assertOpenEnaInferenceCoordinatorConsumerV3(
+  value: unknown, currentResult: unknown, independentPlan: unknown, controls: OpenEnaEndpointControlsV3,
+): Promise<OpenEnaEndpointInferenceResultV3> {
+  const receipt = value !== null && typeof value === "object" ? nativeInferenceReceiptsV3.get(value) : undefined;
+  if (!receipt) throw new TypeError("Native v3 inference consumer authority mismatch");
+  const current = await buildInferenceInputV3(currentResult, independentPlan, controls);
+  if (canonicalJsonV3(current.binding) !== canonicalJsonV3(receipt.input.binding)) throw new TypeError("stale native v3 inference scientific binding");
+  if (canonicalJsonV3([current.controls.axes, current.controls.primaryGroup, current.controls.secondaryGroup])
+    !== canonicalJsonV3([receipt.input.controls.axes, receipt.input.controls.primaryGroup, receipt.input.controls.secondaryGroup])) throw new TypeError("Native v3 inference scientific controls/context mismatch");
+  checkNativeCoordinatorV3(receipt.coordinator, current);
+  return value as OpenEnaEndpointInferenceResultV3;
 }

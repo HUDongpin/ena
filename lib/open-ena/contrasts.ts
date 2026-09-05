@@ -1,3 +1,5 @@
+import { buildInferenceInputV3, endpointScientificAdapterV3, type OpenEnaEndpointControlsV3 } from "./inference-consumers-v3";
+import { deepFreezeV3 } from "./model-v3/canonical-json";
 import type { Row } from "jena-js";
 import {
   assertOpenEnaCapabilityForConfig,
@@ -212,7 +214,7 @@ function equalUnitMean(rows: Row[], column: string, label: string) {
 }
 
 function fullResultCoordinateExtent(
-  result: OpenEnaResult,
+  result: EndpointContrastScienceInput,
   axes: [string, string],
   nodes: Array<{ x: number; y: number }>,
   groupColumn: string,
@@ -264,7 +266,7 @@ function finiteValues(values: unknown[]) {
 }
 
 function officialPointPositionScale(
-  result: OpenEnaResult,
+  result: EndpointContrastScienceInput,
   axes: readonly [string, string],
 ) {
   const ratios = (kind: "min" | "max") => axes.flatMap((axis) => {
@@ -287,7 +289,7 @@ function officialPointPositionScale(
   return Number.isFinite(scale) && scale > 1e-12 ? scale : 1;
 }
 
-function fullRotatedPointCoordinates(result: OpenEnaResult) {
+function fullRotatedPointCoordinates(result: EndpointContrastScienceInput) {
   const matrix = result.set.rotation.rotationMatrix;
   const columns = result.set.codeColumns;
   const dimensionCount = result.set.rotation.rotationColumns.length;
@@ -310,7 +312,7 @@ function fullRotatedPointCoordinates(result: OpenEnaResult) {
 }
 
 function fullRotatedPointMaximum(
-  result: OpenEnaResult,
+  result: EndpointContrastScienceInput,
   fullCoordinates: number[][] | null,
 ) {
   let maximum = 0;
@@ -330,7 +332,7 @@ function fullRotatedPointMaximum(
 }
 
 function fullRotatedGroupCoordinates(
-  result: OpenEnaResult,
+  result: EndpointContrastScienceInput,
   groupColumn: string,
   fullCoordinates: number[][] | null,
 ) {
@@ -367,7 +369,7 @@ function fullRotatedGroupCoordinates(
 }
 
 function fullRotatedGroupConfidenceMaximum(
-  result: OpenEnaResult,
+  result: EndpointContrastScienceInput,
   groupColumn: string,
   fullCoordinates: number[][] | null,
 ) {
@@ -385,7 +387,7 @@ function fullRotatedGroupConfidenceMaximum(
 }
 
 function fullRotatedGroupOutlierMaximum(
-  result: OpenEnaResult,
+  result: EndpointContrastScienceInput,
   groupColumn: string,
   fullCoordinates: number[][] | null,
 ) {
@@ -403,7 +405,7 @@ function fullRotatedGroupOutlierMaximum(
 }
 
 function officialWebEnaPlotFrame(
-  result: OpenEnaResult,
+  result: EndpointContrastScienceInput,
   groupColumn: string,
 ) {
   const defaultAxes = result.dimensions.slice(0, 2) as [string, string];
@@ -438,7 +440,7 @@ function officialWebEnaPlotFrame(
 }
 
 function buildSide(
-  result: OpenEnaResult,
+  result: EndpointContrastScienceInput,
   groupColumn: string,
   groupName: string,
   axes: [string, string],
@@ -491,72 +493,28 @@ function buildSide(
   };
 }
 
-export function buildPairwiseGroupContrast(
-  result: OpenEnaResult,
-  config: OpenEnaConfig,
+type EndpointContrastScienceInput = Pick<OpenEnaResult, "set" | "dimensions"> & {
+  groups: Array<{ name: string; count: number; pointCount: number; color?: string }>;
+};
+
+function buildEndpointContrastScience(
+  result: EndpointContrastScienceInput,
+  groupColumn: string,
   primaryGroup: string,
   secondaryGroup: string,
-  selectedAxes?: readonly string[],
-  createdAt = new Date().toISOString(),
-): OpenEnaPairwiseContrast {
-  assertOpenEnaCapabilityForContext(config, result, "group-contrast");
-  const resolvedAxes = selectedAxes ?? result.dimensions.slice(0, 2);
-  if (result.set.modelType !== "EndPoint" || config.model !== "EndPoint") {
-    throw new Error("Pairwise group contrasts require an endpoint ENA result and endpoint configuration.");
-  }
-  if (!config.groupColumn) throw new Error("Pairwise group contrasts require a comparison-group column.");
-  if (result.provenanceBinding && !sameOpenEnaConfig(result.provenanceBinding.configuration, config)) {
-    throw new Error("The result provenance binding does not match the supplied configuration.");
-  }
-  const sourceHash = result.provenanceBinding?.datasetNormalizedUtf8TextSha256 ?? null;
-  if (sourceHash !== null && !/^[0-9a-f]{64}$/iu.test(sourceHash)) {
-    throw new Error("The result provenance binding must contain a 64-character source dataset SHA-256 value.");
-  }
-  if (config.codes.length !== result.set.rotation.codes.length
-    || config.codes.some((code, index) => code !== result.set.rotation.codes[index])) {
-    throw new Error("The supplied configuration code order does not match the current result geometry.");
-  }
-  if (result.projectionReference) {
-    if (config.rotation !== "reference" || config.referenceRotationId !== result.projectionReference.referenceId) {
-      throw new Error("The supplied configuration does not match the result reference provenance.");
-    }
-  } else if (config.rotation === "reference" || config.referenceRotationId !== null) {
-    throw new Error("The supplied configuration declares a reference that is absent from the result provenance.");
-  }
-  const declaredGroups = result.groups.map((group) => group.name);
-  if (declaredGroups.length < 2 || declaredGroups.length > 6) {
-    throw new Error("Pairwise group contrasts require an ENA result with 2 to 6 declared groups.");
-  }
-  if (new Set(declaredGroups).size !== declaredGroups.length) {
-    throw new Error("Declared ENA result group names must be unique so pairwise selection is unambiguous.");
-  }
-  if (primaryGroup === secondaryGroup) throw new Error("Choose two distinct groups for a pairwise contrast.");
-  if (!declaredGroups.includes(primaryGroup) || !declaredGroups.includes(secondaryGroup)) {
-    throw new Error("Each selected group name must exactly match a declared ENA result group.");
-  }
-  if (resolvedAxes.length !== 2 || resolvedAxes[0] === resolvedAxes[1]
-    || resolvedAxes.some((axis) => !result.dimensions.includes(axis))) {
-    throw new Error("Choose two distinct axes available in the current ENA result geometry.");
-  }
-  const parsedTime = Date.parse(createdAt);
-  if (!Number.isFinite(parsedTime) || new Date(parsedTime).toISOString() !== createdAt) {
-    throw new Error("Pairwise contrast time must be a canonical ISO timestamp.");
-  }
-  const analyzedTime = Date.parse(result.analyzedAt);
-  if (!Number.isFinite(analyzedTime) || new Date(analyzedTime).toISOString() !== result.analyzedAt) {
-    throw new Error("The ENA result analysis time must be a canonical ISO timestamp.");
-  }
+  resolvedAxes: readonly string[],
+) {
   const axes: [string, string] = [resolvedAxes[0], resolvedAxes[1]];
   const primary = buildSide(
     result,
-    config.groupColumn,
+    groupColumn,
     primaryGroup,
     axes,
     result.groups.find((group) => group.name === primaryGroup)?.color,
   );
   const secondary = buildSide(
     result,
-    config.groupColumn,
+    groupColumn,
     secondaryGroup,
     axes,
     result.groups.find((group) => group.name === secondaryGroup)?.color,
@@ -574,8 +532,8 @@ export function buildPairwiseGroupContrast(
       y: finite(node[axes[1]], `Node ${code} ${axes[1]}`),
     };
   });
-  const coordinateExtent = fullResultCoordinateExtent(result, axes, nodes, config.groupColumn);
-  const officialPlotFrame = officialWebEnaPlotFrame(result, config.groupColumn);
+  const coordinateExtent = fullResultCoordinateExtent(result, axes, nodes, groupColumn);
+  const officialPlotFrame = officialWebEnaPlotFrame(result, groupColumn);
   const edges = result.set.adjacencyKey.map((edge) => {
     const primaryWeight = primary.meanWeights[edge.name];
     const secondaryWeight = secondary.meanWeights[edge.name];
@@ -635,6 +593,65 @@ export function buildPairwiseGroupContrast(
       };
     }),
   };
+  return { axes, dimensions, coordinateExtent, officialPlotFrame, geometry, primary, secondary, nodes, edges, edgeScaleDenominators };
+}
+
+export function buildPairwiseGroupContrast(
+  result: OpenEnaResult,
+  config: OpenEnaConfig,
+  primaryGroup: string,
+  secondaryGroup: string,
+  selectedAxes?: readonly string[],
+  createdAt = new Date().toISOString(),
+): OpenEnaPairwiseContrast {
+  assertOpenEnaCapabilityForContext(config, result, "group-contrast");
+  const resolvedAxes = selectedAxes ?? result.dimensions.slice(0, 2);
+  if (result.set.modelType !== "EndPoint" || config.model !== "EndPoint") {
+    throw new Error("Pairwise group contrasts require an endpoint ENA result and endpoint configuration.");
+  }
+  if (!config.groupColumn) throw new Error("Pairwise group contrasts require a comparison-group column.");
+  if (result.provenanceBinding && !sameOpenEnaConfig(result.provenanceBinding.configuration, config)) {
+    throw new Error("The result provenance binding does not match the supplied configuration.");
+  }
+  const sourceHash = result.provenanceBinding?.datasetNormalizedUtf8TextSha256 ?? null;
+  if (sourceHash !== null && !/^[0-9a-f]{64}$/iu.test(sourceHash)) {
+    throw new Error("The result provenance binding must contain a 64-character source dataset SHA-256 value.");
+  }
+  if (config.codes.length !== result.set.rotation.codes.length
+    || config.codes.some((code, index) => code !== result.set.rotation.codes[index])) {
+    throw new Error("The supplied configuration code order does not match the current result geometry.");
+  }
+  if (result.projectionReference) {
+    if (config.rotation !== "reference" || config.referenceRotationId !== result.projectionReference.referenceId) {
+      throw new Error("The supplied configuration does not match the result reference provenance.");
+    }
+  } else if (config.rotation === "reference" || config.referenceRotationId !== null) {
+    throw new Error("The supplied configuration declares a reference that is absent from the result provenance.");
+  }
+  const declaredGroups = result.groups.map((group) => group.name);
+  if (declaredGroups.length < 2 || declaredGroups.length > 6) {
+    throw new Error("Pairwise group contrasts require an ENA result with 2 to 6 declared groups.");
+  }
+  if (new Set(declaredGroups).size !== declaredGroups.length) {
+    throw new Error("Declared ENA result group names must be unique so pairwise selection is unambiguous.");
+  }
+  if (primaryGroup === secondaryGroup) throw new Error("Choose two distinct groups for a pairwise contrast.");
+  if (!declaredGroups.includes(primaryGroup) || !declaredGroups.includes(secondaryGroup)) {
+    throw new Error("Each selected group name must exactly match a declared ENA result group.");
+  }
+  if (resolvedAxes.length !== 2 || resolvedAxes[0] === resolvedAxes[1]
+    || resolvedAxes.some((axis) => !result.dimensions.includes(axis))) {
+    throw new Error("Choose two distinct axes available in the current ENA result geometry.");
+  }
+  const parsedTime = Date.parse(createdAt);
+  if (!Number.isFinite(parsedTime) || new Date(parsedTime).toISOString() !== createdAt) {
+    throw new Error("Pairwise contrast time must be a canonical ISO timestamp.");
+  }
+  const analyzedTime = Date.parse(result.analyzedAt);
+  if (!Number.isFinite(analyzedTime) || new Date(analyzedTime).toISOString() !== result.analyzedAt) {
+    throw new Error("The ENA result analysis time must be a canonical ISO timestamp.");
+  }
+  const { axes, dimensions, coordinateExtent, officialPlotFrame, geometry, primary, secondary, nodes, edges, edgeScaleDenominators } = buildEndpointContrastScience(result, config.groupColumn, primaryGroup, secondaryGroup, resolvedAxes);
   const fit: OpenEnaReferenceFit = result.projectionReference
     ? cloneJson(result.projectionReference.fit)
     : config.rotation === "mean"
@@ -782,4 +799,25 @@ export function pairwiseGroupContrastEdgesToCsv(contrast: OpenEnaPairwiseContras
     signedDifference: edge.signedDifference,
     stronger: edge.stronger,
   })));
+}
+
+/** Descriptive current-result endpoint contrast; visibility is presentation
+ * state and never selects or removes the scientific Unit/Code population. */
+export async function buildContrastV3(result: unknown, independentPlan: unknown, controls: OpenEnaEndpointControlsV3) {
+  const input = await buildInferenceInputV3(result, independentPlan, controls);
+  const adapted = endpointScientificAdapterV3(input);
+  if (adapted.groups.length < 2 || adapted.groups.length > 6) throw new TypeError("Pairwise group contrasts require 2 to 6 declared Groups");
+  const science = buildEndpointContrastScience(adapted, "Group", input.groupSelection.primary, input.groupSelection.secondary, input.controls.axes);
+  return deepFreezeV3({
+    schemaVersion: 3 as const, kind: "open-ena-endpoint-contrast" as const,
+    ...input, ...science,
+    groupColumn: input.configuration.units.group.type === "stable-metadata" ? input.configuration.units.group.column : null,
+    declaredGroups: adapted.groups,
+    groupOrder: [input.controls.primaryGroup, input.controls.secondaryGroup],
+    inference: null,
+    boundaries: [
+      "Primary-minus-Secondary network differences, group means and marginal intervals are descriptive; they do not establish significance, causality or independence.",
+      input.provenance.interpretation,
+    ],
+  });
 }
