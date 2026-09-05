@@ -2,15 +2,30 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { runStandardPlanV3 } from "../lib/open-ena/analyze";
 import {
+  OPEN_ENA_BUNDLE_SCIENTIFIC_TOLERANCE,
   exportCanonicalConfigV3,
   exportCurrentAnalysisV3,
   exportDraftV3,
   exportReferenceV2,
   exportStaleAuditV3,
 } from "../lib/open-ena/export";
+import {
+  OPEN_ENA_BUNDLE_SCIENTIFIC_TOLERANCE as LEAF_BUNDLE_SCIENTIFIC_TOLERANCE,
+} from "../lib/open-ena/legacy-analysis-bundle-parser";
 import { bindResultV3 } from "../lib/open-ena/model-v3/result-binding";
 import { fitReferenceSourceV3 } from "../lib/open-ena/model-v3/reference-v2";
 import { bindingFixtureV3 } from "./helpers/open-ena-model-v3-fixture";
+import { createDirectionalMask } from "../lib/open-ena/network-config";
+import {
+  buildOnaExecutionPlanV3,
+  runOnaPlanV3,
+} from "../lib/open-ena/model-v3/ona-adapter";
+import { bindOnaResultV3 } from "../lib/open-ena/model-v3/ona-result-binding";
+import { decodeCanonicalOnaConfigV3 } from "../lib/open-ena/model-v3/schema";
+import {
+  OPEN_ENA_RUNTIME_POLICY_VERSION_V3,
+  OPEN_ENA_VALIDATION_CONTRACT_VERSION_V3,
+} from "../lib/open-ena/model-v3/types";
 
 async function boundFixture(hash = "a".repeat(64)) {
   const { plan, compiled } = await bindingFixtureV3(hash);
@@ -22,6 +37,55 @@ async function boundFixture(hash = "a".repeat(64)) {
     observationMethod: "exact-counters-and-conservative-byte-bound",
   }, compiled.diagnostics);
   return { plan, compiled, result };
+}
+
+async function onaBoundFixture() {
+  const rows = [
+    { u: "u1", h: "h1", t: 1, A: 2, B: 0, C: 1 },
+    { u: "u2", h: "h1", t: 2, A: 0, B: 3, C: 1 },
+    { u: "u1", h: "h2", t: 1, A: 0, B: 2, C: 2 },
+  ];
+  const codes = ["A", "B", "C"];
+  const configuration = decodeCanonicalOnaConfigV3({
+    schemaVersion: 3,
+    analysisFamily: "ona",
+    contracts: {
+      validationContractVersion: OPEN_ENA_VALIDATION_CONTRACT_VERSION_V3,
+      runtimePolicyVersion: OPEN_ENA_RUNTIME_POLICY_VERSION_V3,
+    },
+    units: { columns: ["u"], group: { type: "none" } },
+    horizons: { columns: ["h"] },
+    codes: codes.map((column) => ({ column, displayLabel: column })),
+    model: { type: "EndPoint" },
+    weighting: { type: "frequency", engineMethod: "sum" },
+    window: {
+      type: "MovingStanzaWindow",
+      backward: { kind: "finite", value: 2 },
+      forward: 0,
+      rowOrder: {
+        kind: "columns",
+        keys: [{ column: "t", direction: "ascending", comparator: { type: "number" } }],
+      },
+    },
+    rotation: { type: "svd", centerAlignToOrigin: true },
+    directionalMask: createDirectionalMask(codes),
+  });
+  const plan = await buildOnaExecutionPlanV3({
+    rows,
+    headers: Object.keys(rows[0]),
+    name: "ona-current.csv",
+    sizeBytes: 512,
+    source: "upload",
+  }, "d".repeat(64), configuration);
+  const result = await bindOnaResultV3(plan, runOnaPlanV3(plan), {
+    processedRows: rows.length,
+    maximumRetainedRowsAfterChunk: 0,
+    bufferedRowsPeakUpperBound: Math.min(rows.length, plan.header.resourceEstimate.estimatedRetainedWindowRows + 1),
+    numericCellsUpperBound: plan.operationalAdmission.totalNumericCells,
+    peakBytesUpperBound: plan.operationalAdmission.totalPeakBytes,
+    observationMethod: "dimension-bounds-and-chunk-boundary-stream-state",
+  });
+  return { plan, result };
 }
 
 function decoded(bytes: Uint8Array): Record<string, unknown> {
@@ -117,6 +181,27 @@ test("current Standard analysis export keeps bundle bytes bound to the independe
   assert.match(artifact.filename, /\.standard-ena-analysis\.v3\.json$/u);
   assert.deepEqual(result, before);
   assert.equal(decoded(artifact.bytes).kind, "open-ena-analysis-bundle");
+});
+
+test("normal analysis export requires one actual independent plan and accepts current Standard and ONA plans", async () => {
+  const standard = await boundFixture();
+  const current = exportCurrentAnalysisV3 as (result: unknown, plan?: unknown) => Promise<unknown>;
+  await assert.rejects(() => current(standard.result), /plan|execution|current/i);
+  for (const invalid of [undefined, null, false, 0, "", {}]) {
+    await assert.rejects(() => current(standard.result, invalid), /plan|execution|current/i);
+  }
+  await assert.doesNotReject(() => exportCurrentAnalysisV3(standard.result, standard.plan));
+  const ona = await onaBoundFixture();
+  const exported = await exportCurrentAnalysisV3(ona.result, ona.plan);
+  assert.equal(exported.family, "ONA");
+  assert.match(exported.filename, /\.ona-analysis\.v3\.json$/u);
+});
+
+test("legacy bundle parser tolerance remains available from the public export facade", () => {
+  assert.equal(
+    OPEN_ENA_BUNDLE_SCIENTIFIC_TOLERANCE,
+    LEAF_BUNDLE_SCIENTIFIC_TOLERANCE,
+  );
 });
 
 test("Reference export delegates fresh fits to the private witness owner", async () => {

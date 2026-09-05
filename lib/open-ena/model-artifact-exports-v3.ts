@@ -174,9 +174,10 @@ export async function exportCurrentAnalysisV3(
   currentPlan: OpenEnaExecutionPlanV3,
 ) {
   const result = captureBundleJsonV3(input) as BoundResultV3;
+  const capturedCurrentPlan = captureExecutionPlanInputV3(currentPlan) as OpenEnaExecutionPlanV3;
   // First reject malformed historical science without relabeling it as stale.
   const portable = buildAnalysisBundleV3(result);
-  const current = buildAnalysisBundleV3(result, { expectedPlan: currentPlan }).then(
+  const current = buildAnalysisBundleV3(result, { expectedPlan: capturedCurrentPlan }).then(
     () => ({ error: null }),
     (error: unknown) => ({ error }),
   );

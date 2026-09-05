@@ -549,7 +549,10 @@ export function buildAnalysisBundle(
   };
 }
 
-export { parseOpenEnaAnalysisBundle } from "./legacy-analysis-bundle-parser";
+export {
+  OPEN_ENA_BUNDLE_SCIENTIFIC_TOLERANCE,
+  parseOpenEnaAnalysisBundle,
+} from "./legacy-analysis-bundle-parser";
 export type { OpenEnaAnalysisBundleV1, OpenEnaAnalysisBundleV2 } from "./legacy-analysis-bundle-parser";
 export { buildAnalysisBundleV3, parseAnalysisBundleV3, buildBundleIntegrityV3 } from "./analysis-bundle-v3";
 export type { BuildAnalysisBundleOptionsV3, AnalysisBundleValidationOptionsV3 } from "./analysis-bundle-v3";
