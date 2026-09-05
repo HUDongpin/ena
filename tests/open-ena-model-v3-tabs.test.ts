@@ -11,9 +11,14 @@ import {
   modelDiagnosticFieldTargetV3,
   modelDiagnosticTabV3,
   modelFieldIdV3,
+  OPEN_ENA_MODEL_FIELD_PATHS_V3,
   type ModelUiDiagnosticV3,
 } from "../components/open-ena/model-v3/OpenEnaModelDiagnosticsV3";
 import type { ModelScientificContextV3 } from "../components/open-ena/model-v3/model-state";
+import { compileOnaDraftV3 } from "../lib/open-ena/model-v3/compiler";
+import { validateStandardDraftV3 } from "../lib/open-ena/model-v3/diagnostics";
+import type { OrderedNetworkDraftV3, StandardEnaDraftV3 } from "../lib/open-ena/model-v3/types";
+import type { ParsedDataset } from "../lib/open-ena/types";
 
 const scientificContext: ModelScientificContextV3 = Object.freeze({
   datasetSha256: "a".repeat(64),
@@ -301,4 +306,127 @@ test("field navigation IDs are stable and collision-free for punctuation and Uni
     fieldPath: "model",
     fieldId: modelFieldIdV3("windows", "model"),
   });
+});
+
+test("actual missing and identical Means diagnostics navigate to the Units contrast group while retaining Rotation scope", () => {
+  const dataset: ParsedDataset = {
+    name: "means-navigation.csv",
+    headers: ["unit", "horizon", "group", "A", "B", "C"],
+    rows: [
+      { unit: "u1", horizon: "h1", group: "g1", A: 1, B: 1, C: 0 },
+      { unit: "u2", horizon: "h1", group: "g2", A: 0, B: 1, C: 1 },
+      { unit: "u3", horizon: "h1", group: "g1", A: 1, B: 0, C: 1 },
+    ],
+    sizeBytes: 1,
+    source: "upload",
+  };
+  const base: StandardEnaDraftV3 = {
+    unitColumns: ["unit"],
+    horizonColumns: ["horizon"],
+    groupColumn: "group",
+    codes: ["A", "B", "C"],
+    weighting: "frequency",
+    model: "EndPoint",
+    windowType: "Conversation",
+    movingStanza: { backward: { kind: "finite", value: 1 }, forward: { kind: "finite", value: 0 }, rowOrder: null },
+    horizonOrder: null,
+    rotation: { type: "means", centerAlignToOrigin: true, negativeLevel: null, positiveLevel: null },
+  };
+  const binding = {
+    hashKind: "normalized-utf8-csv-text-sha256" as const,
+    normalizedTableSha256: "a".repeat(64),
+    rowCount: dataset.rows.length,
+    headerSha256: "b".repeat(64),
+  };
+  const cases = [
+    ["STANDARD_MEANS_LEVEL_REQUIRED", base],
+    ["STANDARD_MEANS_IDENTICAL", {
+      ...base,
+      rotation: {
+        type: "means" as const,
+        centerAlignToOrigin: true,
+        negativeLevel: { type: "string" as const, value: "g1" },
+        positiveLevel: { type: "string" as const, value: "g1" },
+      },
+    }],
+  ] as const;
+  for (const [id, draft] of cases) {
+    const diagnostic = validateStandardDraftV3(dataset, binding, draft).find((entry) => entry.id === id);
+    assert.ok(diagnostic, id);
+    assert.equal(diagnostic.fieldPath, "rotation");
+    assert.equal(diagnostic.scope, "rotation");
+    assert.equal(modelDiagnosticTabV3("standard", diagnostic), "windows");
+    assert.deepEqual(modelDiagnosticFieldTargetV3("standard", diagnostic), {
+      tab: "units",
+      fieldPath: OPEN_ENA_MODEL_FIELD_PATHS_V3.meansContrast,
+      fieldId: modelFieldIdV3("units", OPEN_ENA_MODEL_FIELD_PATHS_V3.meansContrast),
+    });
+  }
+});
+
+const ONA_CODE_COLUMNS = ["source.Code[甲]", "B / 特殊", "C::node"] as const;
+
+async function actualOnaAllZeroDiagnostic(zeroCode: typeof ONA_CODE_COLUMNS[number]) {
+  const rows = [1, 2].map((time) => Object.fromEntries([
+    ["unit", `u${time}`],
+    ["horizon", "h1"],
+    ["time", time],
+    ...ONA_CODE_COLUMNS.map((code, index) => [code, code === zeroCode ? 0 : time + index + 1]),
+  ]));
+  const dataset: ParsedDataset = {
+    name: "ona-code-identity.csv",
+    headers: ["unit", "horizon", "time", ...ONA_CODE_COLUMNS],
+    rows,
+    sizeBytes: 1,
+    source: "upload",
+  };
+  const draft: OrderedNetworkDraftV3 = {
+    unitColumns: ["unit"],
+    horizonColumns: ["horizon"],
+    groupColumn: null,
+    codes: [...ONA_CODE_COLUMNS],
+    backward: { kind: "finite", value: 1 },
+    rowOrder: { kind: "columns", keys: [{ column: "time", direction: "ascending", comparator: { type: "number" } }] },
+    directionalMask: {
+      schemaVersion: 1,
+      codeOrder: [...ONA_CODE_COLUMNS],
+      enabled: ONA_CODE_COLUMNS.map((_source, sourceIndex) => ONA_CODE_COLUMNS.map((_target, targetIndex) => sourceIndex !== targetIndex)),
+    },
+  };
+  const compiled = await compileOnaDraftV3(dataset, "c".repeat(64), draft);
+  assert.equal(compiled.status, "invalid");
+  const diagnostic = compiled.diagnostics.find((entry) => entry.id === "ONA_CODE_ALL_ZERO");
+  assert.ok(diagnostic, JSON.stringify(compiled.diagnostics));
+  return diagnostic;
+}
+
+test("actual ONA all-zero diagnostics expose exact structured Code identities without compiler English", async () => {
+  const rendered: Array<{ code: string; samples: unknown[]; markup: string }> = [];
+  for (const code of ONA_CODE_COLUMNS.slice(0, 2)) {
+    const diagnostic = await actualOnaAllZeroDiagnostic(code);
+    const samples: unknown[] = [];
+    const fixtureCopy: OpenEnaModelTabsV3Copy["diagnostics"] = {
+      ...copy.diagnostics,
+      localize: () => ({ summary: "An ONA Code is all zero", detail: "Localized ONA detail" }),
+      evidenceSample: (sample) => {
+        samples.push(sample);
+        return `Code column: ${String(Reflect.get(sample, "codeColumn"))}`;
+      },
+    };
+    const markup = renderToStaticMarkup(createElement(
+      (await import("../components/open-ena/model-v3/OpenEnaModelDiagnosticsV3")).OpenEnaModelDiagnosticsV3,
+      {
+        copy: fixtureCopy,
+        diagnostics: [diagnostic],
+        scientificContext: { ...scientificContext, family: "ona" },
+        onNavigateField: () => undefined,
+        onSuggestedAction: () => undefined,
+      },
+    ));
+    rendered.push({ code, samples, markup });
+    assert.deepEqual(samples, [{ codeColumn: code }]);
+    assert.match(markup, new RegExp(code.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    assert.doesNotMatch(markup, /Code &quot;|is all zero\./u);
+  }
+  assert.notEqual(rendered[0].markup, rendered[1].markup);
 });

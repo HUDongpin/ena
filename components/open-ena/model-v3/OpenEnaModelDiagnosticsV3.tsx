@@ -37,6 +37,8 @@ export interface ModelUiDiagnosticLocalizationInputV3 {
 export interface ModelUiEvidenceSampleLocalizationInputV3 {
   readonly rowIndex?: number;
   readonly identity?: string;
+  /** Exact source Code identity from blocking ONA_CODE_ALL_ZERO evidence. */
+  readonly codeColumn?: string;
 }
 
 export interface ModelSuggestedActionLocalizationInputV3 {
@@ -117,6 +119,7 @@ function fieldTabV3(
     || fieldPath.startsWith("unitColumns.")
     || fieldPath === "groupColumn"
     || fieldPath.startsWith("group.")
+    || fieldPath === "rotation.meansContrast"
     || fieldPath === "rotation.negativeLevel"
     || fieldPath === "rotation.positiveLevel"
   ) return "units";
@@ -153,11 +156,34 @@ function fieldTabV3(
   return null;
 }
 
+export const OPEN_ENA_MODEL_FIELD_PATHS_V3 = Object.freeze({
+  meansContrast: "rotation.meansContrast",
+} as const);
+
+function diagnosticFieldPathV3(
+  family: AnalysisFamilyV3,
+  diagnosticOrFieldPath: ModelUiDiagnosticV3 | string | undefined,
+): string | undefined {
+  if (typeof diagnosticOrFieldPath !== "object" || diagnosticOrFieldPath === null) {
+    return diagnosticOrFieldPath;
+  }
+  if (
+    family === "standard"
+    && diagnosticOrFieldPath.fieldPath === "rotation"
+    && (
+      diagnosticOrFieldPath.id === "STANDARD_MEANS_LEVEL_REQUIRED"
+      || diagnosticOrFieldPath.id === "STANDARD_MEANS_IDENTICAL"
+    )
+  ) return OPEN_ENA_MODEL_FIELD_PATHS_V3.meansContrast;
+  return diagnosticOrFieldPath.fieldPath;
+}
+
 /** Global and unknown paths deliberately return null instead of a fake anchor. */
 export function modelDiagnosticFieldTargetV3(
   family: AnalysisFamilyV3,
-  fieldPath: string | undefined,
+  diagnosticOrFieldPath: ModelUiDiagnosticV3 | string | undefined,
 ): ModelDiagnosticFieldTargetV3 | null {
+  const fieldPath = diagnosticFieldPathV3(family, diagnosticOrFieldPath);
   if (fieldPath === undefined) return null;
   if (
     fieldPath === "dataset"
@@ -224,6 +250,7 @@ interface PendingConfirmationV3 {
   readonly label: string;
   readonly confirmation: string;
   readonly trigger: HTMLButtonElement;
+  readonly fieldTarget: ModelDiagnosticFieldTargetV3 | null;
 }
 
 function resolvePendingActionV3(
@@ -252,6 +279,7 @@ export function OpenEnaModelDiagnosticsV3({
   onSuggestedAction,
 }: OpenEnaModelDiagnosticsV3Props) {
   const [pending, setPending] = useState<PendingConfirmationV3 | null>(null);
+  const [focusReturn, setFocusReturn] = useState<PendingConfirmationV3 | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const grouped = useMemo(() => {
@@ -265,27 +293,22 @@ export function OpenEnaModelDiagnosticsV3({
   }, [diagnostics]);
 
   function returnPendingFocus(closed: PendingConfirmationV3): void {
-    requestAnimationFrame(() => {
-      if (closed.trigger.isConnected) {
-        closed.trigger.focus();
-        return;
-      }
-      const target = modelDiagnosticFieldTargetV3(
-        closed.context.family,
-        closed.fieldPath,
-      );
-      const targetElement = target === null
-        ? null
-        : document.getElementById(target.fieldId);
-      if (targetElement instanceof HTMLElement) targetElement.focus();
-      else containerRef.current?.focus();
-    });
+    if (closed.trigger.isConnected) {
+      closed.trigger.focus();
+      return;
+    }
+    const target = closed.fieldTarget;
+    const targetElement = target === null
+      ? null
+      : document.getElementById(target.fieldId);
+    if (targetElement instanceof HTMLElement) targetElement.focus();
+    else containerRef.current?.focus();
   }
 
   function dismissPending(returnFocus: boolean): void {
     const closed = pending;
     setPending(null);
-    if (returnFocus && closed !== null) returnPendingFocus(closed);
+    if (returnFocus && closed !== null) setFocusReturn(closed);
   }
 
   useEffect(() => {
@@ -296,7 +319,7 @@ export function OpenEnaModelDiagnosticsV3({
     ) {
       const closed = pending;
       setPending(null);
-      returnPendingFocus(closed);
+      setFocusReturn(closed);
     }
   }, [diagnostics, pending, scientificContext]);
 
@@ -305,6 +328,12 @@ export function OpenEnaModelDiagnosticsV3({
     const dialog = dialogRef.current;
     if (dialog !== null && !dialog.open) dialog.showModal();
   }, [pending]);
+
+  useEffect(() => {
+    if (pending !== null || focusReturn === null) return;
+    returnPendingFocus(focusReturn);
+    setFocusReturn(null);
+  }, [focusReturn, pending]);
 
   function navigate(
     event: MouseEvent<HTMLAnchorElement>,
@@ -383,10 +412,7 @@ export function OpenEnaModelDiagnosticsV3({
                 }),
               };
               const localized = copy.localize(localizationInput);
-              const target = modelDiagnosticFieldTargetV3(
-                scientificContext.family,
-                diagnostic.fieldPath,
-              );
+              const target = modelDiagnosticFieldTargetV3(scientificContext.family, diagnostic);
               const evidence = diagnostic.evidence;
               const actions = scientificContext.family === "standard"
                 ? suggestedActionsV3(diagnostic)
@@ -419,6 +445,9 @@ export function OpenEnaModelDiagnosticsV3({
                               ...(typeof (sample as unknown as { readonly identity?: unknown }).identity === "string"
                                 ? { identity: (sample as unknown as { readonly identity: string }).identity }
                                 : {}),
+                              ...(typeof (sample as unknown as { readonly codeColumn?: unknown }).codeColumn === "string"
+                                ? { codeColumn: (sample as unknown as { readonly codeColumn: string }).codeColumn }
+                                : {}),
                             }, index, localizationInput)}
                           </li>
                         ))}
@@ -440,6 +469,7 @@ export function OpenEnaModelDiagnosticsV3({
                           label: actionCopy.label,
                           confirmation: actionCopy.confirmation,
                           trigger: event.currentTarget,
+                          fieldTarget: target,
                         })}
                       >
                         {actionCopy.label}

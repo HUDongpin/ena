@@ -134,6 +134,9 @@ test("compiler-exported ONA config and shaped ONA draft both import as ONA draft
   const compiled = await compileOnaDraftV3(dataset, "d".repeat(64), draft);
   assert.equal(compiled.status, "ready", JSON.stringify(compiled.diagnostics));
   if (compiled.status !== "ready") throw new Error("Expected ONA readiness");
+  assert.equal(compiled.diagnostics.some((diagnostic) => (
+    diagnostic.evidence?.samples.some((sample) => Object.hasOwn(sample, "codeColumn"))
+  )), false, "ready compiler artifacts retain the existing ONA evidence grammar");
   for (const file of [await artifacts.exportCanonicalConfigV3(compiled), await artifacts.exportDraftV3(draft)]) {
     const imported = await artifacts.importOpenEnaArtifactV3(textOf(file));
     if (imported.kind !== "draft") throw new Error("Expected draft");

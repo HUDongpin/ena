@@ -1,6 +1,65 @@
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { chromium } from "playwright";
+import { tsImport } from "tsx/esm/api";
+
+const { compileOnaDraftV3 } = await tsImport(
+  "../lib/open-ena/model-v3/compiler.ts",
+  import.meta.url,
+);
+const { validateStandardDraftV3 } = await tsImport(
+  "../lib/open-ena/model-v3/diagnostics.ts",
+  import.meta.url,
+);
+
+const meansDataset = {
+  name: "means-browser.csv",
+  headers: ["unit", "horizon", "group", "A", "B", "C"],
+  rows: [
+    { unit: "u1", horizon: "h1", group: "g1", A: 1, B: 1, C: 0 },
+    { unit: "u2", horizon: "h1", group: "g2", A: 0, B: 1, C: 1 },
+    { unit: "u3", horizon: "h1", group: "g1", A: 1, B: 0, C: 1 },
+  ],
+  sizeBytes: 1,
+  source: "upload",
+};
+const meansDraft = {
+  unitColumns: ["unit"], horizonColumns: ["horizon"], groupColumn: "group", codes: ["A", "B", "C"],
+  weighting: "frequency", model: "EndPoint", windowType: "Conversation",
+  movingStanza: { backward: { kind: "finite", value: 1 }, forward: { kind: "finite", value: 0 }, rowOrder: null },
+  horizonOrder: null,
+  rotation: { type: "means", centerAlignToOrigin: true, negativeLevel: null, positiveLevel: null },
+};
+const actualMeansDiagnostic = validateStandardDraftV3(
+  meansDataset,
+  { hashKind: "normalized-utf8-csv-text-sha256", normalizedTableSha256: "a".repeat(64), rowCount: 3, headerSha256: "b".repeat(64) },
+  meansDraft,
+).find((diagnostic) => diagnostic.id === "STANDARD_MEANS_LEVEL_REQUIRED");
+assert.ok(actualMeansDiagnostic);
+assert.equal(actualMeansDiagnostic.fieldPath, "rotation");
+
+const onaCodeColumns = ["source.Code[甲]", "B / 特殊", "C::node"];
+async function compileActualOnaAllZero(zeroCode) {
+  const rows = [1, 2].map((time) => Object.fromEntries([
+    ["unit", `u${time}`], ["horizon", "h1"], ["time", time],
+    ...onaCodeColumns.map((code, index) => [code, code === zeroCode ? 0 : time + index + 1]),
+  ]));
+  const result = await compileOnaDraftV3(
+    { name: "ona-browser.csv", headers: ["unit", "horizon", "time", ...onaCodeColumns], rows, sizeBytes: 1, source: "upload" },
+    "c".repeat(64),
+    {
+      unitColumns: ["unit"], horizonColumns: ["horizon"], groupColumn: null, codes: onaCodeColumns,
+      backward: { kind: "finite", value: 1 },
+      rowOrder: { kind: "columns", keys: [{ column: "time", direction: "ascending", comparator: { type: "number" } }] },
+      directionalMask: { schemaVersion: 1, codeOrder: onaCodeColumns, enabled: onaCodeColumns.map((_source, sourceIndex) => onaCodeColumns.map((_target, targetIndex) => sourceIndex !== targetIndex)) },
+    },
+  );
+  assert.equal(result.status, "invalid");
+  const diagnostic = result.diagnostics.find((entry) => entry.id === "ONA_CODE_ALL_ZERO");
+  assert.ok(diagnostic);
+  return diagnostic;
+}
+const actualOnaAllZeroDiagnostics = await Promise.all(onaCodeColumns.slice(0, 2).map(compileActualOnaAllZero));
 
 const entry = `
   import React from "react";
@@ -13,6 +72,8 @@ const entry = `
   let family = "standard";
   let draftFingerprint = "model-draft-json-v3:{}";
   let removeActionOnDispatch = false;
+  const actualOnaAllZeroDiagnostics = ${JSON.stringify(actualOnaAllZeroDiagnostics)};
+  const evidenceInputs = [];
   const copy = ${JSON.stringify({
     tabListLabel: "Model configuration",
     tabs: { units: "Units", horizons: "Horizons", windows: "Windows", codes: "Codes" },
@@ -56,15 +117,19 @@ const entry = `
     summary: diagnostic.id === "STANDARD_UNITS_REQUIRED" ? "Select at least one Unit field"
       : diagnostic.id === "STANDARD_MEANS_LEVEL_REQUIRED" ? "Select both Means levels"
       : diagnostic.id === "STANDARD_CODE_ALL_ZERO" ? "Code A is all zero"
+      : diagnostic.id === "ONA_CODE_ALL_ZERO" ? "An ONA Code is all zero"
       : "The dataset binding is invalid",
     detail: "Localized diagnostic detail",
   });
   copy.diagnostics.evidenceTotal = (count) => count + " affected rows";
-  copy.diagnostics.evidenceSample = (_sample, index) => "Evidence sample " + (index + 1);
+  copy.diagnostics.evidenceSample = (sample, index) => {
+    evidenceInputs.push(sample);
+    return sample.codeColumn === undefined ? "Evidence sample " + (index + 1) : "Code column: " + sample.codeColumn;
+  };
   copy.diagnostics.suggestedAction = () => ({ label: "Exclude Code A", confirmation: "Remove Code A from this model?" });
   let diagnostics = [
     { id: "STANDARD_UNITS_REQUIRED", severity: "error", scope: "units", fieldPath: "unitColumns", summary: "raw", detail: "raw", blocks: ["build-model"] },
-    { id: "STANDARD_MEANS_LEVEL_REQUIRED", severity: "warning", scope: "rotation", fieldPath: "rotation.negativeLevel", summary: "raw", detail: "raw", blocks: ["group-inference"] },
+    ${JSON.stringify(actualMeansDiagnostic)},
     { id: "STANDARD_CODE_ALL_ZERO", severity: "error", scope: "codes", fieldPath: "codes.Code A", summary: "raw", detail: "raw", blocks: ["build-model"], evidence: { totalCount: 8, sampleLimit: 5, samples: [{ rowIndex: 1, detail: "raw evidence" }], truncated: true }, suggestedActions: [{ id: "exclude-code", label: "raw action", confirmationText: "raw confirmation", confirmationRequired: true, patch: { type: "exclude-code", code: "Code A" } }] },
     { id: "STANDARD_DATASET_BINDING_INVALID", severity: "error", scope: "dataset", summary: "raw global", detail: "raw global", blocks: ["build-model"] },
   ];
@@ -84,7 +149,8 @@ const entry = `
       },
       status: { configurationReadiness: "ready", editorBlocked: false, runStatus: "idle", resultStatus: "stale" },
       renderPanel: (tab, fields) => React.createElement("div", null,
-        React.createElement("input", { id: fields.id(tab === "units" ? "unitColumns" : tab === "horizons" ? "horizonColumns" : tab === "windows" ? "window" : "codes.Code A"), "data-panel-field": tab })),
+        ...(tab === "units" ? ["unitColumns", "rotation.meansContrast"] : [tab === "horizons" ? "horizonColumns" : tab === "windows" ? "window" : "codes.Code A"])
+          .map((fieldPath) => React.createElement("input", { key: fieldPath, id: fields.id(fieldPath), "data-panel-field": tab, "data-field-path": fieldPath }))),
       onSuggestedAction: (action, admittedContext) => {
         actions.push({ id: action.id, patch: action.patch, revision: admittedContext.scientificRevision });
         if (removeActionOnDispatch) {
@@ -112,6 +178,9 @@ const entry = `
       render();
     },
     confirmRemovesAction() { removeActionOnDispatch = true; },
+    showOnaDiagnostic(diagnostic) { family = "ona"; evidenceInputs.length = 0; diagnostics = [diagnostic]; render(); },
+    evidenceInputs,
+    actualOnaAllZeroDiagnostics,
   };
 `;
 
@@ -153,6 +222,11 @@ try {
   assert.equal(await helpDialog.getAttribute("aria-modal"), null);
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "About Units settings");
+
+  await page.locator('[data-model-tab="windows"]').click();
+  await page.getByRole("link", { name: "Select both Means levels" }).click();
+  assert.equal(await page.locator('[role="tab"][aria-selected="true"]').getAttribute("data-model-tab"), "units");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-field-path") === "rotation.meansContrast");
 
   await page.getByRole("link", { name: "Code A is all zero" }).click();
   assert.equal(await page.locator('[data-model-tab="codes"]').getAttribute("aria-selected"), "true");
@@ -216,6 +290,20 @@ try {
   assert.deepEqual(await page.evaluate(() => window.__task25.actions), [{ id: "exclude-code", patch: { type: "exclude-code", code: "Code A" }, revision: 5 }]);
   assert.equal(await page.getByRole("button", { name: "Exclude Code A" }).count(), 0);
   assert.equal(await page.evaluate(() => window.__task25.actions.length), 1);
+
+  const onaObservations = [];
+  for (let index = 0; index < 2; index += 1) {
+    await page.evaluate((fixtureIndex) => window.__task25.showOnaDiagnostic(window.__task25.actualOnaAllZeroDiagnostics[fixtureIndex]), index);
+    await page.getByRole("link", { name: "An ONA Code is all zero" }).waitFor();
+    onaObservations.push({
+      text: await page.locator(".ena-model-diagnostics").innerText(),
+      samples: await page.evaluate(() => window.__task25.evidenceInputs),
+    });
+  }
+  assert.deepEqual(onaObservations[0].samples, [{ codeColumn: onaCodeColumns[0] }]);
+  assert.deepEqual(onaObservations[1].samples, [{ codeColumn: onaCodeColumns[1] }]);
+  assert.notEqual(onaObservations[0].text, onaObservations[1].text);
+  assert.equal(onaObservations.some((observation) => /Code "|is all zero\./u.test(observation.text)), false);
   console.log("Task25 Models v3 tabs browser behavior: PASS");
 } finally {
   await browser.close();

@@ -72,7 +72,12 @@ export interface OnaCompilerDiagnosticV3 {
   readonly evidence?: {
     readonly totalCount: number;
     readonly sampleLimit: 5;
-    readonly samples: readonly { readonly rowIndex?: number; readonly detail: string }[];
+    readonly samples: readonly {
+      readonly rowIndex?: number;
+      /** Only blocking ONA_CODE_ALL_ZERO invalid diagnostics set this field. */
+      readonly codeColumn?: string;
+      readonly detail: string;
+    }[];
     readonly truncated: boolean;
   };
 }
@@ -331,7 +336,10 @@ export function validateOnaDatasetV3(
           evidence: {
             totalCount: allZeroCodes.length,
             sampleLimit: 5,
-            samples: allZeroCodes.slice(0, 5).map((code) => ({ detail: `Code ${JSON.stringify(code.column)} is all zero.` })),
+            samples: allZeroCodes.slice(0, 5).map((code) => ({
+              codeColumn: code.column,
+              detail: `Code ${JSON.stringify(code.column)} is all zero.`,
+            })),
             truncated: allZeroCodes.length > 5,
           },
         },

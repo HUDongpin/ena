@@ -443,6 +443,12 @@ test("ONA fails closed for invalid source contracts while preserving descriptive
     assert.equal(result.status, "ready");
     if (result.status !== "ready") return;
     assert.ok(result.diagnostics.some((entry) => entry.id === warning && entry.severity === "warning" && entry.blocks.length === 0));
+    for (const diagnostic of result.diagnostics) {
+      for (const sample of diagnostic.evidence?.samples ?? []) {
+        assert.equal(Object.hasOwn(sample, "codeColumn"), false,
+          "ready ONA warnings must retain the existing portable evidence shape");
+      }
+    }
     assert.equal(result.capabilityStatus["build-model"], "available");
     assert.equal(result.capabilityStatus["export-current-model"], "available");
     assert.equal(result.capabilityStatus["group-inference"], "blocked");
@@ -459,6 +465,42 @@ test("ONA fails closed for invalid source contracts while preserving descriptive
     { unit: "u1", horizon: "h1", time: 1, turn: 1, group: "g1", A: 1, B: 1, C: 0 },
     { unit: "u2", horizon: "h2", time: 2, turn: 1, group: "g2", A: 1, B: 0, C: 1 },
   ] }), "ONA_ZERO_NETWORK_UNITS");
+});
+
+test("ONA all-zero Code evidence preserves five exact source identities and truncation only on the invalid path", async () => {
+  const codes = ["source.A", "B / 特殊", "節點C", "D::node", "E[5]", "F.6"];
+  const rows = [1, 2].map((time) => Object.fromEntries([
+    ["unit", `u${time}`],
+    ["horizon", "h1"],
+    ["time", time],
+    ["turn", time],
+    ["group", `g${time}`],
+    ...codes.map((code) => [code, 0]),
+  ])) as ParsedDataset["rows"];
+  const result = await compileOnaDraftV3(dataset({
+    headers: ["unit", "horizon", "time", "turn", "group", ...codes],
+    rows,
+  }), DATASET_SHA256, onaDraft({
+    codes,
+    directionalMask: {
+      schemaVersion: 1,
+      codeOrder: codes,
+      enabled: codes.map((_source, sourceIndex) => codes.map((_target, targetIndex) => sourceIndex !== targetIndex)),
+    },
+  }));
+  assert.equal(result.status, "invalid");
+  const diagnostic = result.diagnostics.find((entry) => entry.id === "ONA_CODE_ALL_ZERO");
+  assert.ok(diagnostic);
+  assert.deepEqual(diagnostic.evidence, {
+    totalCount: 6,
+    sampleLimit: 5,
+    samples: codes.slice(0, 5).map((codeColumn) => ({
+      codeColumn,
+      detail: `Code ${JSON.stringify(codeColumn)} is all zero.`,
+    })),
+    truncated: true,
+  });
+  assert.equal(result.canonicalConfiguration, null);
 });
 
 test("ONA rank-one SVD remains ready with a stable one-dimensional warning", async () => {

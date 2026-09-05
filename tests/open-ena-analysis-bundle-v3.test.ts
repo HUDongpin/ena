@@ -1086,6 +1086,28 @@ test("diagnostic optional absence and valid present action/evidence preserve nat
   }
 });
 
+test("blocking ONA all-zero Code metadata is not admitted into a ready portable warning", async () => {
+  const { result } = await onaFixture(true, true);
+  const bundle = structuredClone(await buildAnalysisBundleV3(result));
+  assert.ok(bundle.executionProvenance.diagnostics.length);
+  Object.assign(bundle.executionProvenance.diagnostics[0], {
+    evidence: {
+      totalCount: 1,
+      sampleLimit: 5,
+      samples: [{ detail: "Ready warning evidence", codeColumn: "source.Code[甲]" }],
+      truncated: false,
+    },
+  });
+  Object.assign(bundle.diagnostics, {
+    warnings: bundle.executionProvenance.diagnostics,
+  });
+  await rehash(bundle, true);
+  await assert.rejects(
+    () => parseAnalysisBundleV3(JSON.stringify(bundle)),
+    /contract|diagnostic|evidence/i,
+  );
+});
+
 for (const patchType of ["replace-row-order", "replace-horizon-order"] as const)
   test(`diagnostic ${patchType} preserves valid policy payload and rejects malformed nested fields`, async () => {
     const { result } = await fixture();
