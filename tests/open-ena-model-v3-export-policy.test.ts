@@ -62,6 +62,38 @@ test("invalid drafts export only as non-executable, detached JSON data", async (
   );
 });
 
+test("draft export accepts only exact Standard or ONA draft grammar without requiring readiness", async () => {
+  const invalidStandard = {
+    unitColumns: [], horizonColumns: [], groupColumn: null, codes: [],
+    weighting: "frequency", model: "SeparateTrajectory", windowType: "Conversation",
+    movingStanza: { backward: { kind: "finite", value: 1 }, forward: { kind: "finite", value: 0 }, rowOrder: null },
+    horizonOrder: null,
+    rotation: { type: "means", centerAlignToOrigin: true, negativeLevel: null, positiveLevel: null },
+  };
+  const standard = await exportDraftV3(invalidStandard);
+  assert.equal(standard.analysisFamily, "standard");
+  assert.deepEqual(decoded(standard.bytes).draft, invalidStandard);
+
+  const invalidOna = {
+    unitColumns: [], horizonColumns: [], groupColumn: null, codes: [],
+    backward: { kind: "infinity" }, rowOrder: null, directionalMask: null,
+  };
+  const ona = await exportDraftV3(invalidOna);
+  assert.equal(ona.analysisFamily, "ona");
+  assert.deepEqual(decoded(ona.bytes).draft, invalidOna);
+
+  for (const unsupported of [
+    true,
+    [],
+    null,
+    { model: "TMA" },
+    { analysisFamily: "ona", codes: [] },
+    { ...invalidStandard, backward: { kind: "infinity" } },
+  ]) {
+    await assert.rejects(() => exportDraftV3(unsupported), /draft|shape|family|object/i);
+  }
+});
+
 test("canonical configuration export accepts only an actual compiler-owned ready result", async () => {
   const { compiled } = await boundFixture();
   const artifact = await exportCanonicalConfigV3(compiled);
@@ -102,6 +134,33 @@ test("Reference export delegates fresh fits to the private witness owner", async
     () => exportReferenceV2(result, { currentPlan: plan }),
     /witness/i,
   );
+});
+
+test("Reference export captures one coherent current plan before both consumers", async () => {
+  const { plan, result } = await boundFixture();
+  const other = await boundFixture("b".repeat(64));
+  const sourceWitness = await fitReferenceSourceV3(plan);
+  let rootOwnKeys = 0;
+  const changingPlan = new Proxy(plan, {
+    ownKeys(target) {
+      rootOwnKeys += 1;
+      return Reflect.ownKeys(target);
+    },
+    getOwnPropertyDescriptor(target, property) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(target, property);
+      if (property === "header" && descriptor && "value" in descriptor && rootOwnKeys > 2) {
+        return { ...descriptor, value: other.plan.header };
+      }
+      return descriptor;
+    },
+  });
+  const artifact = await exportReferenceV2(result, {
+    sourceWitness,
+    currentPlan: changingPlan,
+    displayName: "Single capture",
+  });
+  assert.equal(decoded(artifact.bytes).displayName, "Single capture");
+  assert.equal(rootOwnKeys, 2, "the coherent plan intake performs its documented double descriptor check once");
 });
 
 test("Reference-projected Endpoint downloads its exact original artifact and never mints", async () => {

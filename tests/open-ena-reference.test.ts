@@ -91,6 +91,11 @@ test("a jENA mean-rotation reference round-trips and self-projects without coord
   const meanBundle = buildAnalysisBundle(dataset, meanConfig, fitted, SAMPLE_HASH);
   const meanFromBundle = parseRotationReference(JSON.stringify(meanBundle), "mean-results.json");
   assert.deepEqual(meanFromBundle.fit, reference.fit);
+  const unexpectedRoot = { ...meanBundle, unexpected: true };
+  assert.throws(
+    () => parseRotationReference(JSON.stringify(unexpectedRoot), "unexpected-root-results.json"),
+    /unsupported analysis bundle field/i,
+  );
   const missingV2Inference = structuredClone(meanBundle) as Partial<typeof meanBundle>;
   delete missingV2Inference.inference;
   assert.throws(

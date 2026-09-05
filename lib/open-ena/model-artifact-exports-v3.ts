@@ -1,5 +1,6 @@
 import { buildAnalysisBundleV3 } from "./analysis-bundle-v3";
 import { captureBundleJsonV3 } from "./bundle-json-v3";
+import { captureDraftArtifactV3 } from "./draft-artifact-v3";
 import {
   canonicalJsonV3,
   sha256CanonicalJsonV3,
@@ -10,13 +11,14 @@ import {
   isCompilerOwnedReadyResultV3,
   type ReadyCompileResultV3,
 } from "./model-v3/compiler";
-import type { OpenEnaExecutionPlanV3 } from "./model-v3/execution-plan";
+import {
+  captureExecutionPlanInputV3,
+  type OpenEnaExecutionPlanV3,
+} from "./model-v3/execution-plan";
 import type {
   BoundResultV3,
   BoundStandardResultV3,
-  OrderedNetworkDraftV3,
   ReferenceSourceWitnessV3,
-  StandardEnaDraftV3,
 } from "./model-v3/types";
 import { validateBoundResultV3 } from "./model-v3/result-binding";
 import { buildReferenceV2 } from "./model-v3/reference-v2";
@@ -124,12 +126,6 @@ async function selfHashedJsonArtifactV3<T extends { kind: string }>(
   });
 }
 
-function analysisFamilyForDraftV3(draft: Record<string, unknown>): "standard" | "ona" {
-  return Object.hasOwn(draft, "backward") || Object.hasOwn(draft, "directionalMask")
-    ? "ona"
-    : "standard";
-}
-
 export async function exportCanonicalConfigV3(input: ReadyCompileResultV3) {
   if (!isCompilerOwnedReadyResultV3(input)) {
     throw new TypeError("Canonical configuration export requires a compiler-owned ready result.");
@@ -161,11 +157,8 @@ export async function exportCanonicalConfigV3(input: ReadyCompileResultV3) {
   );
 }
 
-export async function exportDraftV3(
-  input: StandardEnaDraftV3 | OrderedNetworkDraftV3 | unknown,
-) {
-  const draft = captureBundleJsonV3(input) as Record<string, unknown>;
-  const analysisFamily = analysisFamilyForDraftV3(draft);
+export async function exportDraftV3(input: unknown) {
+  const { analysisFamily, draft } = captureDraftArtifactV3(input);
   const draftSha256 = await sha256CanonicalJsonV3(draft);
   return selfHashedJsonArtifactV3({
     schemaVersion: 3 as const,
@@ -239,23 +232,26 @@ export async function exportReferenceV2(
 ) {
   const result = captureBundleJsonV3(input) as BoundResultV3;
   const capturedOptions = capturedReferenceOptionsV2(options);
+  const currentPlan = capturedOptions.currentPlan === undefined
+    ? undefined
+    : captureExecutionPlanInputV3(capturedOptions.currentPlan);
   let artifact;
   if (result.configuration.analysisFamily === "standard"
     && result.binding.referenceId !== null) {
-    artifact = await originalReferenceForResultV3(result, capturedOptions.currentPlan);
+    artifact = await originalReferenceForResultV3(result, currentPlan);
   } else {
     const portableValidation = buildAnalysisBundleV3(result);
-    const currentValidation = capturedOptions.currentPlan === undefined
+    const currentValidation = currentPlan === undefined
       ? Promise.resolve({ error: null })
-      : validateBoundResultV3(result, capturedOptions.currentPlan).then(
+      : validateBoundResultV3(result, currentPlan).then(
           () => ({ error: null }),
           (error: unknown) => ({ error }),
         );
     const freshMint = capturedOptions.sourceWitness !== undefined
-      && capturedOptions.currentPlan !== undefined
+      && currentPlan !== undefined
       ? buildReferenceV2(capturedOptions.sourceWitness, {
           displayName: capturedOptions.displayName ?? "Standard ENA Reference",
-          currentPlan: capturedOptions.currentPlan,
+          currentPlan,
         }).then(
           (reference) => ({ reference, error: null }),
           (error: unknown) => ({ reference: null, error }),
@@ -274,7 +270,7 @@ export async function exportReferenceV2(
     if (capturedOptions.sourceWitness === undefined) {
       throw new TypeError("Fresh Reference export requires an owned source witness.");
     }
-    if (capturedOptions.currentPlan === undefined) {
+    if (currentPlan === undefined) {
       throw new TypeError("Fresh Reference export requires an independent current plan.");
     }
     const mintOutcome = await freshMint;

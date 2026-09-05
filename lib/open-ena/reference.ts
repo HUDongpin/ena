@@ -16,6 +16,7 @@ import type {
 import { datasetHashKindFor, JENA_RUNTIME_VERSION } from "./types";
 import { buildAnalysisBundleV3 } from "./analysis-bundle-v3";
 import { captureBundleJsonV3 } from "./bundle-json-v3";
+import { parseOpenEnaAnalysisBundle } from "./legacy-analysis-bundle-parser";
 import { validateBoundResultV3 } from "./model-v3/result-binding";
 import { decodeReferenceV2 } from "./model-v3/reference-codec-v2";
 import type {
@@ -423,10 +424,10 @@ export function parseRotationReference(text: string, filename = "reference.json"
     if (hasOrderedResultBundleIdentity(value)) {
       throw new Error("ONA result bundles cannot be used as reference rotations.");
     }
-    if (!("inference" in value)) {
-      throw new Error("Schema-v2 analysis bundle must contain inference.");
-    }
-    return referenceFromResultBundle(value, filename);
+    return referenceFromResultBundle(
+      parseOpenEnaAnalysisBundle(text) as JsonRecord,
+      filename,
+    );
   }
   if (isRecord(value)) return referenceFromResultBundle(value, filename);
   throw new Error("Reference rotation JSON must contain an object.");
