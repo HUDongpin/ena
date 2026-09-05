@@ -56,3 +56,53 @@ it('fixed Reference rejects ordered data', () => {
   const data = accumulateData({ rows: [{ unit: 'a', horizon: 'h', A: 1, B: 1, C: 1 }], units: ['unit'], conversation: ['horizon'], codes: ['A', 'B', 'C'], networkType: 'ordered', weightBy: 'sum' });
   expect(() => makeSet(data, { rotationSet, nodePositionMethod: fixed, dimensions: 3 })).toThrow(/Ordered.*rotationSet/);
 });
+
+it('fixed Reference rejects nonfinite supplied node coordinates outside the requested display axes', () => {
+  const { data, rotationSet } = fixture();
+  for (const coordinate of [NaN, Infinity]) {
+    const reference = structuredClone(rotationSet);
+    reference.nodes![0]!.SVD3 = coordinate;
+    expect(() => makeSet(data, { rotationSet: reference, nodePositionMethod: fixed, dimensions: 2 })).toThrow(/Reference.*finite/);
+  }
+});
+
+it('fixed Reference rejects a sparse Code identity array with an unchanged length', () => {
+  const { data, rotationSet } = fixture();
+  const reference = structuredClone(rotationSet);
+  delete reference.codes[1];
+  expect(reference.codes.length).toBe(data.codes.length);
+  expect(() => makeSet(data, { rotationSet: reference, nodePositionMethod: fixed, dimensions: 2 })).toThrow(/Reference.*identity/);
+});
+
+it('fixed Reference rejects a sparse fixed node array with an unchanged length', () => {
+  const { data, rotationSet } = fixture();
+  const reference = structuredClone(rotationSet);
+  delete reference.nodes![1];
+  expect(reference.nodes).toHaveLength(data.codes.length);
+  expect(() => makeSet(data, { rotationSet: reference, nodePositionMethod: fixed, dimensions: 2 })).toThrow(/Reference.*dense/);
+});
+
+it('fixed Reference permits absent undisplayed node coordinates for a 2D projection', () => {
+  const { data, rotationSet } = fixture();
+  for (const node of rotationSet.nodes!) delete node.SVD3;
+  const set = makeSet(data, { rotationSet, nodePositionMethod: fixed, dimensions: 2 });
+  expect(set.rotation.nodes).toEqual(rotationSet.nodes);
+  expect(set.centroids?.map((row) => [row.SVD1, row.SVD2])).toEqual([[25, 35], [40, 50], [55, 65]]);
+  expect(() => makeSet(data, { rotationSet, nodePositionMethod: fixed, dimensions: 3 })).toThrow(/Reference.*complete/);
+});
+
+it('fixed Reference retains a full six-axis basis when four fitted Code nodes only have three coordinates', () => {
+  const data = accumulateData({
+    rows: [
+      { unit: 'a', horizon: 'a', A: 1, B: 1, C: 0, D: 0 },
+      { unit: 'b', horizon: 'b', A: 1, B: 0, C: 1, D: 0 },
+      { unit: 'c', horizon: 'c', A: 0, B: 0, C: 1, D: 1 },
+      { unit: 'd', horizon: 'd', A: 1, B: 0, C: 0, D: 1 }
+    ],
+    units: ['unit'], conversation: ['horizon'], codes: ['A', 'B', 'C', 'D'], networkType: 'standard', window: 'Conversation', weightBy: 'sum'
+  });
+  const rotationSet = makeSet(data, { dimensions: 3 }).rotation;
+  expect(rotationSet.rotationColumns).toHaveLength(6);
+  expect(rotationSet.nodes?.every((node) => Object.keys(node).length === 4)).toBe(true);
+  expect(makeSet(data, { rotationSet, nodePositionMethod: fixed, dimensions: 3 }).rotation).toEqual(rotationSet);
+});

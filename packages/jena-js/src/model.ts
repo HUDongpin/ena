@@ -218,13 +218,23 @@ export function makeSet(enadata: ENAData, options: MakeSetOptions = {}): ENASet 
   if (options.nodePositionMethod === 'reference-fixed') {
     const reference = options.rotationSet!;
     if ((enadata.networkType ?? 'standard') !== 'standard'
-      || reference.codes.length !== enadata.codes.length
-      || reference.codes.some((code, index) => code !== enadata.codes[index])
+      || !Array.isArray(reference.codes) || reference.codes.length !== enadata.codes.length
       || !Array.isArray(reference.nodes) || reference.nodes.length !== enadata.codes.length) {
       throw new Error('Reference fixed nodes require Standard data and complete identity-aligned Code nodes.');
     }
+    for (let index = 0; index < enadata.codes.length; index += 1) {
+      if (!Object.hasOwn(reference.codes, index) || reference.codes[index] !== enadata.codes[index]) {
+        throw new Error('Reference fixed nodes require a dense identity-aligned Code array.');
+      }
+      if (!Object.hasOwn(reference.nodes, index)) throw new Error('Reference fixed nodes require a dense node array.');
+    }
     fixedNodes = reference.nodes.map((node, index) => {
       if (node === null || typeof node !== 'object' || node.code !== enadata.codes[index]) throw new Error('Reference fixed node Code identities must match runtime order exactly.');
+      for (const axis of reference.rotationColumns) {
+        if (Object.hasOwn(node, axis) && (typeof node[axis] !== 'number' || !Number.isFinite(node[axis]))) {
+          throw new Error('Reference fixed node coordinates must be finite for every supplied rotation axis.');
+        }
+      }
       return dimensionNames.map((axis) => {
         const value = node[axis];
         if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('Reference fixed node coordinates must be complete and finite.');
