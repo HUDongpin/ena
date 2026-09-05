@@ -72,6 +72,7 @@ const entry = `
   let family = "standard";
   let draftFingerprint = "model-draft-json-v3:{}";
   let removeActionOnDispatch = false;
+  let meansContrastAvailable = true;
   const actualOnaAllZeroDiagnostics = ${JSON.stringify(actualOnaAllZeroDiagnostics)};
   const evidenceInputs = [];
   const copy = ${JSON.stringify({
@@ -149,7 +150,7 @@ const entry = `
       },
       status: { configurationReadiness: "ready", editorBlocked: false, runStatus: "idle", resultStatus: "stale" },
       renderPanel: (tab, fields) => React.createElement("div", null,
-        ...(tab === "units" ? ["unitColumns", "rotation.meansContrast"] : [tab === "horizons" ? "horizonColumns" : tab === "windows" ? "window" : "codes.Code A"])
+        ...(tab === "units" ? ["unitColumns", ...(meansContrastAvailable ? ["rotation.meansContrast"] : [])] : [tab === "horizons" ? "horizonColumns" : tab === "windows" ? "window" : "codes.Code A"])
           .map((fieldPath) => React.createElement("input", { key: fieldPath, id: fields.id(fieldPath), "data-panel-field": tab, "data-field-path": fieldPath }))),
       onSuggestedAction: (action, admittedContext) => {
         actions.push({ id: action.id, patch: action.patch, revision: admittedContext.scientificRevision });
@@ -179,6 +180,7 @@ const entry = `
     },
     confirmRemovesAction() { removeActionOnDispatch = true; },
     showOnaDiagnostic(diagnostic) { family = "ona"; evidenceInputs.length = 0; diagnostics = [diagnostic]; render(); },
+    setMeansContrastAvailable(available) { meansContrastAvailable = available; render(); },
     evidenceInputs,
     actualOnaAllZeroDiagnostics,
   };
@@ -224,8 +226,44 @@ try {
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "About Units settings");
 
   await page.locator('[data-model-tab="windows"]').click();
-  await page.getByRole("link", { name: "Select both Means levels" }).click();
+  const meansLink = page.getByRole("link", { name: "Select both Means levels" });
+  await meansLink.click();
   assert.equal(await page.locator('[role="tab"][aria-selected="true"]').getAttribute("data-model-tab"), "units");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-field-path") === "rotation.meansContrast");
+
+  await meansLink.click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-field-path") === "rotation.meansContrast");
+
+  await page.locator('[data-model-tab="windows"]').click();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-model-tab")), "units", "a consumed diagnostic request must not replay on a keyboard revisit");
+  await page.keyboard.press("ArrowRight");
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-model-tab")), "horizons");
+
+  await page.evaluate(() => {
+    document.querySelector('[data-diagnostic-scope="rotation"] a')?.click();
+    document.querySelector('[data-model-tab="windows"]')?.click();
+  });
+  await page.locator('[data-model-tab="windows"]').focus();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-model-tab")), "units", "an explicit user tab change must cancel an obsolete focus request");
+
+  await page.locator('[data-model-tab="windows"]').click();
+  await page.evaluate(() => window.__task25.setMeansContrastAvailable(false));
+  await meansLink.click();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.locator('[data-model-tab="windows"]').click();
+  await page.evaluate(() => window.__task25.setMeansContrastAvailable(true));
+  await page.locator('[data-model-tab="windows"]').focus();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-model-tab")), "units", "a missing target must consume rather than defer its request");
+  await meansLink.click();
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-field-path") === "rotation.meansContrast");
 
   await page.getByRole("link", { name: "Code A is all zero" }).click();

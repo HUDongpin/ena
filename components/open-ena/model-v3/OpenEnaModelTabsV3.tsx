@@ -218,6 +218,7 @@ export function OpenEnaModelTabsV3({
   }
 
   function selectTab(tab: OpenEnaModelTabV3): void {
+    setFocusRequest(null);
     setHelpTab(null);
     setActiveTab(tab);
     onTabChange?.(tab);
@@ -271,8 +272,12 @@ export function OpenEnaModelTabsV3({
 
   useEffect(() => {
     if (focusRequest === null || focusRequest.tab !== activeTab) return;
+    const request = focusRequest;
     const frame = requestAnimationFrame(() => {
-      document.getElementById(focusRequest.fieldId)?.focus();
+      document.getElementById(request.fieldId)?.focus();
+      setFocusRequest((current) => (
+        current?.sequence === request.sequence ? null : current
+      ));
     });
     return () => cancelAnimationFrame(frame);
   }, [activeTab, focusRequest]);
