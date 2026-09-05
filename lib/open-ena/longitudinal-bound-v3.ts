@@ -44,7 +44,7 @@ function captureIdentityControls() {
     return value;
   };
   const identity = (input: unknown): IdentityFieldV3[] => {
-    const fields = captureControlArrayV3(input, "Horizon identity fields", undefined, 256).map((field) => {
+    const fields = captureControlArrayV3(input, "Horizon identity fields").map((field) => {
       const record = snapshotPlainJsonRecordV3(field, "Horizon field");
       if (Object.keys(record).length !== 2 || !("column" in record) || !("value" in record)) throw new TypeError("Horizon identity requires exact column/value fields");
       return { column: text(record.column), value: scalar(record.value) };

@@ -290,3 +290,20 @@ test("typed scalar Group collision, exact statistics and full native family cont
   }));
   assert.equal(repeat.inference.omnibusRows[0].pRaw, friedmanRankTest(blocks).pValueUpperTail);
 });
+
+test("a legal wide composite Horizon is preserved without borrowing the legacy source-column limit", async () => {
+  const a = await api(), extraColumns = Array.from({ length: 256 }, (_, i) => `boundary${i}`);
+  const f = await fixture((draft, data) => {
+    draft.horizonColumns = ["horizon", ...extraColumns]; data.headers.push(...extraColumns);
+    data.rows = data.rows.map((row) => ({ ...row, ...Object.fromEntries(extraColumns.map((column) => [column, 0])) }));
+  });
+  const view = a.buildLongitudinalViewV3(f.result, {});
+  assert.equal(view.entities[0].steps[0].horizon.identity.length, 257);
+  const periods = ["h1", "h2", "h3"].map((period) => f.result.executionProvenance.identityDictionary.horizons.find((h) => h.fields[0].value.value === period)!.fields);
+  const c = { ...repeated(f.result), request: { ...repeated(f.result).request, periods } };
+  const inference = await a.runOpenEnaTrajectoryInferenceV3(f.result, f.plan, c);
+  assert.equal(inference.inference.kind, "trajectory-repeated-periods"); assert.equal(inference.inference.status, "available");
+  assert.deepEqual(inference.context.horizonColumns, ["horizon", ...extraColumns]);
+  assert.deepEqual(inference.controls.request, c.request);
+  assert.equal(await a.assertOpenEnaTrajectoryInferenceConsumerV3(inference, f.result, f.plan, c), inference);
+});
