@@ -9,6 +9,7 @@ import {
 import {
   decodeCanonicalOnaConfigV3,
   decodeCanonicalStandardConfigV3,
+  decodeCanonicalRowOrderV3,
 } from "./model-v3/schema";
 import {
   scalarIdentityV3,
@@ -26,6 +27,7 @@ import {
 } from "./model-v3/standard-closure-resource-budget";
 import {
   MODEL_DIAGNOSTIC_IDS_V3,
+  MODEL_SUGGESTED_ACTION_IDS_V3,
   centeredNetworkRankV3,
 } from "./model-v3/diagnostics";
 import { ONA_COMPILER_DIAGNOSTIC_IDS_V3 } from "./model-v3/ona-compiler-preflight";
@@ -1084,7 +1086,7 @@ function assertTables(result: BoundResultV3): [string, string | null][] {
     ["networkType", ...(ona ? ["rowWindowProvenance"] : ["trajectories"])],
   );
   same(
-    s.networkType ?? "standard",
+    Object.hasOwn(s, "networkType") ? s.networkType : "standard",
     ona ? "ordered" : "standard",
     "model family",
   );
@@ -1288,6 +1290,12 @@ function assertTables(result: BoundResultV3): [string, string | null][] {
     "analytical labels",
   );
   matrix(s.connectionMatrix, n, e, "connection matrix", true);
+  if (!ona && result.configuration.weighting.type === "binary") {
+    // Binary aggregates sum discrete native 0/1 contributions. Normalization
+    // alone cannot distinguish fractional rescaling of the same networks.
+    for (const row of s.connectionMatrix)
+      for (const value of row) integer(value);
+  }
   same(
     s.connectionMatrix,
     s.connectionCounts.map((row) => s.codeColumns.map((column) => row[column])),
@@ -1544,7 +1552,11 @@ function assertDiagnostics(result: BoundResultV3): void {
       ["id", "severity", "scope", "summary", "detail", "blocks"],
       ["fieldPath", "evidence", ...(!ona ? ["suggestedActions"] : [])],
     );
-    [d.id, d.scope, d.summary, d.detail].forEach(string);
+    const diagnosticString = (value: unknown) => {
+      string(value);
+      if (!value.trim()) fail("nonblank diagnostic text");
+    };
+    [d.id, d.scope, d.summary, d.detail].forEach(diagnosticString);
     if (
       !(
         ona ? ["error", "warning"] : ["error", "warning", "information"]
@@ -1559,9 +1571,32 @@ function assertDiagnostics(result: BoundResultV3): void {
       ).includes(d.id)
     )
       fail("diagnostic family/id");
-    if (d.fieldPath !== undefined) string(d.fieldPath);
+    const scopes = ona
+      ? [
+          "dataset",
+          "units",
+          "windows",
+          "codes",
+          "rotation",
+          "model",
+          "resources",
+        ]
+      : [
+          "dataset",
+          "units",
+          "horizons",
+          "windows",
+          "codes",
+          "rotation",
+          "reference",
+          "resources",
+          "migration",
+        ];
+    if (!scopes.includes(d.scope)) fail("diagnostic scope");
+    if (Object.hasOwn(d, "fieldPath")) diagnosticString(d.fieldPath);
     const actions = "suggestedActions" in d ? d.suggestedActions : undefined;
-    if (actions)
+    if (Object.hasOwn(d, "suggestedActions")) {
+      if (!Array.isArray(actions)) fail("diagnostic action array");
       for (const action of actions) {
         keys(action, [
           "id",
@@ -1570,16 +1605,31 @@ function assertDiagnostics(result: BoundResultV3): void {
           "confirmationRequired",
           "patch",
         ]);
-        string(action.id);
-        string(action.label);
-        string(action.confirmationText);
+        if (
+          !(MODEL_SUGGESTED_ACTION_IDS_V3 as readonly string[]).includes(
+            action.id,
+          )
+        )
+          fail("diagnostic action ID");
+        diagnosticString(action.label);
+        diagnosticString(action.confirmationText);
         same(action.confirmationRequired, true, "action confirmation");
         const patch = action.patch;
         if (patch.type === "exclude-code") {
           keys(patch, ["type", "code"]);
-          string(patch.code);
+          diagnosticString(patch.code);
         } else if (patch.type === "clear-group") keys(patch, ["type"]);
-        else if (patch.type === "select-model") {
+        else if (
+          patch.type === "replace-row-order" ||
+          patch.type === "replace-horizon-order"
+        ) {
+          keys(patch, ["type", "value"]);
+          same(
+            patch.value,
+            decodeCanonicalRowOrderV3(patch.value),
+            "suggested order policy",
+          );
+        } else if (patch.type === "select-model") {
           keys(patch, ["type", "value"]);
           if (
             ![
@@ -1595,23 +1645,30 @@ function assertDiagnostics(result: BoundResultV3): void {
             fail("suggested rotation");
         } else fail("unsupported suggested action patch");
       }
+    }
     unique(d.blocks, "diagnostic blocks");
     if (d.blocks.some((block: string) => !CAPABILITIES.includes(block)))
       fail("diagnostic capability");
-    if (d.evidence) {
-      keys(d.evidence, ["totalCount", "sampleLimit", "samples", "truncated"]);
-      integer(d.evidence.totalCount);
-      same(d.evidence.sampleLimit, 5, "sample limit");
+    if (Object.hasOwn(d, "evidence")) {
+      const evidence = d.evidence!;
+      keys(evidence, ["totalCount", "sampleLimit", "samples", "truncated"]);
+      integer(evidence.totalCount);
+      same(evidence.sampleLimit, 5, "sample limit");
       if (
-        d.evidence.samples.length > 5 ||
-        typeof d.evidence.truncated !== "boolean"
+        !Array.isArray(evidence.samples) ||
+        evidence.samples.length > 5 ||
+        evidence.samples.length > evidence.totalCount ||
+        typeof evidence.truncated !== "boolean" ||
+        evidence.truncated !== evidence.totalCount > evidence.samples.length
       )
         fail("evidence bound");
-      d.evidence.samples.forEach(
-        (sample: { detail: string; rowIndex?: number }) => {
+      evidence.samples.forEach(
+        (sample: { detail: string; rowIndex?: number; identity?: unknown }) => {
           keys(sample, ["detail"], ["rowIndex", ...(!ona ? ["identity"] : [])]);
-          string(sample.detail);
-          if (sample.rowIndex !== undefined) {
+          diagnosticString(sample.detail);
+          if (Object.hasOwn(sample, "identity"))
+            diagnosticString(sample.identity);
+          if (Object.hasOwn(sample, "rowIndex")) {
             integer(sample.rowIndex);
             if (sample.rowIndex >= result.binding.rowCount)
               fail("evidence row index");

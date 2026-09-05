@@ -11,9 +11,18 @@ import {
 import {
   decodeCanonicalOnaConfigV3,
   decodeCanonicalStandardConfigV3,
+  decodeCanonicalRowOrderV3,
 } from "../lib/open-ena/model-v3/schema";
 
 const HASH = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+test("standalone row-order decoder reuses exact canonical policy shapes", () => {
+  const order = columnOrder();
+  assert.deepEqual(decodeCanonicalRowOrderV3(order), order);
+  for (const value of [null, false, { ...order, unsupported: true }, { kind: "columns", keys: [] }]) {
+    assert.throws(() => decodeCanonicalRowOrderV3(value), /order|keys|field|object/i);
+  }
+});
 
 function contracts(): Record<string, unknown> {
   return {

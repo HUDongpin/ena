@@ -311,6 +311,11 @@ function decodeOrder(value: unknown, label: string): CanonicalRowOrderV3 {
   throw new TypeError(`${label}.kind must be \"columns\" or \"source-order-confirmed\".`);
 }
 
+/** Exact policy shape for declared action payloads; no source binding is implied. */
+export function decodeCanonicalRowOrderV3(value: unknown): CanonicalRowOrderV3 {
+  return decodeOrder(value, "canonical row order");
+}
+
 function decodeBackwardExtent(value: unknown, label: string): BackwardExtentV3 {
   const record = strictRecord(value, label);
   if (record.kind === "infinity") {

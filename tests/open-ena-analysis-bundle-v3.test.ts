@@ -4,6 +4,12 @@ import {
   buildAnalysisBundleV3,
   parseAnalysisBundleV3,
 } from "../lib/open-ena/export";
+import { boundResultFromBundleV3 } from "../lib/open-ena/bundle-contract-v3";
+import {
+  BUNDLE_JSON_LIMITS_V3,
+  captureBundleJsonV3,
+  parseBundleJsonV3,
+} from "../lib/open-ena/bundle-json-v3";
 import {
   canonicalJsonV3,
   sha256CanonicalJsonV3,
@@ -147,7 +153,7 @@ test("Reference projection retains fixed source geometry and source fit provenan
   );
 });
 
-async function onaFixture(grouped = true) {
+async function onaFixture(grouped = true, zeroUnit = false) {
   const rows = [
     { u: "u1", h: "h1", t: 1, g: "g1", A: 2, B: 0, C: 1 },
     { u: "u2", h: "h1", t: 2, g: "g2", A: 0, B: 3, C: 1 },
@@ -156,6 +162,9 @@ async function onaFixture(grouped = true) {
   ];
   const codes = ["A", "B", "C"],
     directionalMask = createDirectionalMask(codes);
+  if (zeroUnit)
+    for (const row of rows)
+      if (row.u === "u1") Object.assign(row, { A: 0, B: 0, C: 0 });
   directionalMask.enabled[0][1] = false;
   const configuration = decodeCanonicalOnaConfigV3({
     schemaVersion: 3,
@@ -823,4 +832,367 @@ test("equal Horizon tuples across separate Units remain valid", async () => {
   });
   const bundle = await buildAnalysisBundleV3(result);
   assert.deepEqual(await parseAnalysisBundleV3(JSON.stringify(bundle)), bundle);
+});
+
+const binaryFixtureModifier: NonNullable<
+  Parameters<typeof bindingFixtureV3>[1]
+> = (draft, data) => {
+  draft.weighting = "binary";
+  const values = [
+    [1, 1, 0],
+    [1, 0, 1],
+    [0, 1, 1],
+    [1, 1, 1],
+    [1, 1, 0],
+  ];
+  data.rows = data.rows.map((row, index) => ({
+    ...row,
+    A: values[index][0],
+    B: values[index][1],
+    C: values[index][2],
+  }));
+};
+
+test("QUALITY F1: fractional Binary counts reject at builder and parser despite coherent normalized geometry", async () => {
+  const { result } = await fixture(binaryFixtureModifier);
+  const original = await buildAnalysisBundleV3(result);
+  assert.deepEqual(
+    await parseAnalysisBundleV3(JSON.stringify(original)),
+    original,
+  );
+  const changed = structuredClone(original);
+  changed.modelData.connectionMatrix.forEach((row, index) =>
+    row.forEach((value, edge) => {
+      row[edge] = value / 2;
+      changed.tables.connectionCounts[index][
+        changed.modelData.codeColumns[edge]
+      ] = value / 2;
+    }),
+  );
+  await rehash(changed, true);
+  await assert.rejects(
+    () => parseAnalysisBundleV3(JSON.stringify(changed)),
+    /Binary|integer|contract/i,
+  );
+  await assert.rejects(
+    () => buildAnalysisBundleV3(boundResultFromBundleV3(changed)),
+    /Binary|integer|contract/i,
+  );
+});
+
+test("Frequency fractional counts and Binary Reference projections remain valid", async () => {
+  const frequency = await fixture((_draft, data) => {
+    data.rows = data.rows.map((row) => ({
+      ...row,
+      A: Number(row.A) / 2,
+      B: Number(row.B) / 2,
+      C: Number(row.C) / 2,
+    }));
+  });
+  const fractional = await buildAnalysisBundleV3(frequency.result);
+  assert.ok(
+    fractional.modelData.connectionMatrix.some((row) =>
+      row.some((value) => !Number.isInteger(value)),
+    ),
+  );
+  assert.deepEqual(
+    await parseAnalysisBundleV3(JSON.stringify(fractional)),
+    fractional,
+  );
+  const source = await bindingFixtureV3(undefined, binaryFixtureModifier);
+  const reference = await buildReferenceV2(
+    await fitReferenceSourceV3(source.plan),
+    { displayName: "Binary source", currentPlan: source.plan },
+  );
+  const { plan, compiled } = await bindingFixtureV3(
+    "c".repeat(64),
+    (draft, data) => {
+      binaryFixtureModifier(draft, data);
+      draft.rotation = {
+        type: "reference",
+        referenceId: reference.referenceId,
+        expectedContentSha256: reference.contentSha256,
+      };
+    },
+    reference,
+  );
+  const result = await bindResultV3(
+    plan,
+    runStandardPlanV3(plan),
+    {
+      processedRows: plan.rows.length,
+      maximumBufferedRows: 0,
+      numericCellsAllocated: 120,
+      peakBytesObservedOrBounded: 10240,
+      observationMethod: "exact-counters-and-conservative-byte-bound",
+    },
+    compiled.diagnostics,
+  );
+  const bundle = await buildAnalysisBundleV3(result);
+  assert.deepEqual(await parseAnalysisBundleV3(JSON.stringify(bundle)), bundle);
+});
+
+for (const [label, mutation] of [
+  [
+    "false actions",
+    (d: object) => Object.assign(d, { suggestedActions: false }),
+  ],
+  ["null actions", (d: object) => Object.assign(d, { suggestedActions: null })],
+  ["false evidence", (d: object) => Object.assign(d, { evidence: false })],
+  ["null evidence", (d: object) => Object.assign(d, { evidence: null })],
+  [
+    "object sample identity",
+    (d: object) =>
+      Object.assign(d, {
+        evidence: {
+          totalCount: 1,
+          sampleLimit: 5,
+          samples: [{ detail: "Evidence", identity: { arbitrary: 1 } }],
+          truncated: false,
+        },
+      }),
+  ],
+  ["unknown scope", (d: object) => Object.assign(d, { scope: "not-a-scope" })],
+  [
+    "unknown action ID",
+    (d: object) =>
+      Object.assign(d, {
+        suggestedActions: [
+          {
+            id: "not-an-action",
+            label: "Action",
+            confirmationText: "Confirm",
+            confirmationRequired: true,
+            patch: { type: "clear-group" },
+          },
+        ],
+      }),
+  ],
+  [
+    "false sample array",
+    (d: object) =>
+      Object.assign(d, {
+        evidence: {
+          totalCount: 1,
+          sampleLimit: 5,
+          samples: false,
+          truncated: false,
+        },
+      }),
+  ],
+  [
+    "incorrect truncation",
+    (d: object) =>
+      Object.assign(d, {
+        evidence: {
+          totalCount: 2,
+          sampleLimit: 5,
+          samples: [{ detail: "Evidence" }],
+          truncated: false,
+        },
+      }),
+  ],
+  [
+    "sample count over total",
+    (d: object) =>
+      Object.assign(d, {
+        evidence: {
+          totalCount: 0,
+          sampleLimit: 5,
+          samples: [{ detail: "Evidence" }],
+          truncated: false,
+        },
+      }),
+  ],
+  [
+    "null sample row index",
+    (d: object) =>
+      Object.assign(d, {
+        evidence: {
+          totalCount: 1,
+          sampleLimit: 5,
+          samples: [{ detail: "Evidence", rowIndex: null }],
+          truncated: false,
+        },
+      }),
+  ],
+] as const)
+  test(`QUALITY F2: diagnostic ${label} rejects after honest rehash`, async () => {
+    const { result } = await fixture();
+    const bundle = structuredClone(await buildAnalysisBundleV3(result));
+    assert.ok(bundle.executionProvenance.diagnostics.length);
+    mutation(bundle.executionProvenance.diagnostics[0]);
+    Object.assign(bundle.diagnostics, {
+      warnings: bundle.executionProvenance.diagnostics,
+    });
+    await rehash(bundle, true);
+    await assert.rejects(
+      () => parseAnalysisBundleV3(JSON.stringify(bundle)),
+      /contract|diagnostic|evidence|action/i,
+    );
+    await assert.rejects(
+      () => buildAnalysisBundleV3(boundResultFromBundleV3(bundle)),
+      /contract|diagnostic|evidence|action/i,
+    );
+  });
+
+test("diagnostic optional absence and valid present action/evidence preserve native Standard and ONA diagnostics", async () => {
+  for (const { result } of [await fixture(), await onaFixture(true, true)]) {
+    const bundle = structuredClone(await buildAnalysisBundleV3(result));
+    assert.ok(bundle.executionProvenance.diagnostics.length);
+    assert.deepEqual(
+      await parseAnalysisBundleV3(JSON.stringify(bundle)),
+      bundle,
+    );
+    for (const diagnostic of bundle.executionProvenance.diagnostics) {
+      Reflect.deleteProperty(diagnostic, "evidence");
+      Reflect.deleteProperty(diagnostic, "suggestedActions");
+    }
+    Object.assign(bundle.diagnostics, {
+      warnings: bundle.executionProvenance.diagnostics,
+    });
+    await rehash(bundle, true);
+    assert.deepEqual(
+      await parseAnalysisBundleV3(JSON.stringify(bundle)),
+      bundle,
+    );
+    if (bundle.configuration.analysisFamily === "standard") {
+      Object.assign(bundle.executionProvenance.diagnostics[0], {
+        evidence: {
+          totalCount: 1,
+          sampleLimit: 5,
+          samples: [{ detail: "Evidence", identity: "Unit", rowIndex: 0 }],
+          truncated: false,
+        },
+        suggestedActions: [
+          {
+            id: "clear-group",
+            label: "Clear Group",
+            confirmationText: "Confirm",
+            confirmationRequired: true,
+            patch: { type: "clear-group" },
+          },
+        ],
+      });
+      Object.assign(bundle.diagnostics, {
+        warnings: bundle.executionProvenance.diagnostics,
+      });
+      await rehash(bundle, true);
+      assert.deepEqual(
+        await parseAnalysisBundleV3(JSON.stringify(bundle)),
+        bundle,
+      );
+    }
+  }
+});
+
+for (const patchType of ["replace-row-order", "replace-horizon-order"] as const)
+  test(`diagnostic ${patchType} preserves valid policy payload and rejects malformed nested fields`, async () => {
+    const { result } = await fixture();
+    const bundle = structuredClone(await buildAnalysisBundleV3(result));
+    const action = {
+      id: patchType,
+      label: "Replace order",
+      confirmationText: "Confirm",
+      confirmationRequired: true,
+      patch: {
+        type: patchType,
+        value: {
+          kind: "columns",
+          keys: [
+            {
+              column: "time",
+              direction: "ascending",
+              comparator: { type: "number" },
+            },
+          ],
+        },
+      },
+    };
+    Object.assign(bundle.executionProvenance.diagnostics[0], {
+      suggestedActions: [action],
+    });
+    Object.assign(bundle.diagnostics, {
+      warnings: bundle.executionProvenance.diagnostics,
+    });
+    await rehash(bundle, true);
+    assert.deepEqual(
+      await parseAnalysisBundleV3(JSON.stringify(bundle)),
+      bundle,
+    );
+    for (const value of [
+      null,
+      { kind: "columns", keys: [] },
+      {
+        kind: "columns",
+        keys: [
+          {
+            column: "time",
+            direction: "ascending",
+            comparator: { type: "number", extra: true },
+          },
+        ],
+      },
+    ]) {
+      Object.assign(action.patch, { value });
+      await rehash(bundle, true);
+      await assert.rejects(
+        () => parseAnalysisBundleV3(JSON.stringify(bundle)),
+        /contract|order|keys|field/i,
+      );
+    }
+  });
+
+test("QUALITY F3: object entry admission matches the parser at the exact shared container boundary", () => {
+  const object = Object.fromEntries(
+    Array.from({ length: BUNDLE_JSON_LIMITS_V3.arrayLength }, (_, index) => [
+      `k${index.toString(36)}`,
+      0,
+    ]),
+  );
+  assert.deepEqual(
+    parseBundleJsonV3(JSON.stringify(captureBundleJsonV3(object))),
+    object,
+  );
+  object.extra = 0;
+  let propertyReads = 0;
+  const input = new Proxy(object, {
+    getOwnPropertyDescriptor(target, key) {
+      propertyReads++;
+      return Reflect.getOwnPropertyDescriptor(target, key);
+    },
+  });
+  assert.throws(
+    () => captureBundleJsonV3(input),
+    /container.*limit|size.*limit/i,
+  );
+  assert.equal(
+    propertyReads,
+    0,
+    "reject too many object entries before copying properties",
+  );
+  assert.throws(
+    () => parseBundleJsonV3(JSON.stringify(object)),
+    /container.*limit|size.*limit/i,
+  );
+});
+
+test("QUALITY F4: explicit null networkType rejects while Standard absence stays valid", async () => {
+  const { result } = await fixture();
+  const original = await buildAnalysisBundleV3(result);
+  const changed = structuredClone(original);
+  Object.assign(changed.modelData, { networkType: null });
+  await rehash(changed, true);
+  await assert.rejects(
+    () => parseAnalysisBundleV3(JSON.stringify(changed)),
+    /contract|family/i,
+  );
+  await assert.rejects(
+    () => buildAnalysisBundleV3(boundResultFromBundleV3(changed)),
+    /contract|family/i,
+  );
+  const absent = structuredClone(original);
+  delete absent.modelData.networkType;
+  await rehash(absent, true);
+  assert.deepEqual(await parseAnalysisBundleV3(JSON.stringify(absent)), absent);
 });

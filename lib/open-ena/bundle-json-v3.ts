@@ -63,6 +63,8 @@ export function captureBundleJsonV3(input: unknown): unknown {
       )
         fail("array size limit exceeded");
       const keys = Reflect.ownKeys(value);
+      if (!array && keys.length > BUNDLE_JSON_LIMITS_V3.arrayLength)
+        fail("container size limit exceeded");
       if (array && keys.length !== length + 1)
         fail("requires dense arrays without extra properties");
       const output: unknown[] | Record<string, unknown> = array ? [] : {};
