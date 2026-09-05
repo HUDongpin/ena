@@ -2,7 +2,7 @@ import type { Row, RotationOptions } from "jena-js";
 import type { ENAWorkerOptions } from "jena-js/browser";
 import { canonicalJsonV3, deepFreezeV3, snapshotDenseJsonArrayV3, snapshotPlainJsonRecordV3 } from "./canonical-json";
 import type { StandardAdapterParametersV3, StandardExecutionPlanV3, StandardExecutionRowV3 } from "./execution-plan";
-import type { BackwardExtentV3, CanonicalCodeV3, CanonicalStandardConfigV3, ScalarIdentityV3 } from "./types";
+import type { BackwardExtentV3, CanonicalCodeV3, CanonicalStandardConfigV3, StandardMeansBindingV3 } from "./types";
 
 const CODE_TOKEN_PREFIX_V3 = "__open_ena_code_v3_";
 const EDGE_TOKEN_PREFIX_V3 = "__open_ena_edge_v3_";
@@ -410,15 +410,79 @@ export function scheduleStandardExecutionRowsV3(plan: StandardExecutionPlanV3): 
   return Object.freeze(scheduled);
 }
 
-function meanGroupUnitsV3(plan: StandardExecutionPlanV3, column: string, level: ScalarIdentityV3): string[] {
-  const group = plan.identityDictionary.groups.find((entry) => entry.fields.some((field) => (
-    field.column === column && field.value.type === level.type && field.value.value === level.value
-  )));
-  if (group === undefined) throw new TypeError("Means requires a validated typed Group level.");
-  const members = new Set(plan.rows.filter((row) => row.groupToken === group.token).map((row) => row.unitToken));
-  const units = plan.identityDictionary.units.filter((entry) => members.has(entry.token)).map((entry) => entry.token);
-  if (units.length === 0) throw new TypeError("Means requires nonempty Unit membership in both Groups.");
-  return units;
+/** Unit-stable typed Group membership, independent of source-row multiplicity. */
+export function buildMeansBindingV3(plan: StandardExecutionPlanV3): StandardMeansBindingV3 {
+  const config = plan.configuration;
+  const rotation = config.analysis.rotation;
+  if (config.analysisFamily !== "standard" || config.analysis.model.type !== "EndPoint" || rotation.type !== "means") {
+    throw new TypeError("Means binding requires a Standard EndPoint Means plan.");
+  }
+  const { groupColumn, negativeLevel, positiveLevel } = rotation.contrast;
+  if (config.units.group.type !== "stable-metadata" || config.units.group.column !== groupColumn) {
+    throw new TypeError("Means contrast requires the configured Unit-stable Group column.");
+  }
+  const negativeKey = canonicalJsonV3(negativeLevel);
+  const positiveKey = canonicalJsonV3(positiveLevel);
+  if (negativeKey === positiveKey) throw new TypeError("Means requires distinct non-overlapping Group levels.");
+  const groupKeys = new Map(plan.identityDictionary.groups.map((group) => {
+    if (group.fields.length !== 1 || group.fields[0].column !== groupColumn) {
+      throw new TypeError("Means requires verified typed Group fields.");
+    }
+    return [group.token, canonicalJsonV3(group.fields[0].value)];
+  }));
+  const knownUnits = new Set(plan.identityDictionary.units.map((unit) => unit.token));
+  const membership = new Map<string, string>();
+  for (const row of plan.rows) {
+    const group = row.groupToken === null ? undefined : groupKeys.get(row.groupToken);
+    if (!knownUnits.has(row.unitToken) || group === undefined) {
+      throw new TypeError("Means requires known Unit tokens and nonempty typed Group membership.");
+    }
+    const previous = membership.get(row.unitToken);
+    if (previous !== undefined && previous !== group) {
+      throw new TypeError("Means Group membership must be stable within each Unit.");
+    }
+    membership.set(row.unitToken, group);
+  }
+  if (membership.size !== knownUnits.size) throw new TypeError("Means requires membership for every Endpoint Unit.");
+  const unitsFor = (key: string) => plan.identityDictionary.units
+    .filter((unit) => membership.get(unit.token) === key).map((unit) => unit.token);
+  const negative = unitsFor(negativeKey);
+  const positive = unitsFor(positiveKey);
+  if (negative.length === 0 || positive.length === 0) {
+    throw new TypeError("Means requires nonempty Unit membership in both Group levels.");
+  }
+  return deepFreezeV3({
+    groupColumn,
+    negative: { level: { ...negativeLevel }, unitTokens: negative },
+    positive: { level: { ...positiveLevel }, unitTokens: positive },
+    direction: "positive-minus-negative",
+  });
+}
+
+/** Positive FIRST: jENA's mean rotation computes mean(left) - mean(right). */
+export function buildMeansMasksV3(binding: StandardMeansBindingV3, connectionCounts: readonly Row[]): [boolean[], boolean[]] {
+  const positive = new Set(binding.positive.unitTokens);
+  const negative = new Set(binding.negative.unitTokens);
+  if (positive.size === 0 || negative.size === 0
+    || positive.size !== binding.positive.unitTokens.length || negative.size !== binding.negative.unitTokens.length
+    || [...positive].some((token) => negative.has(token))) {
+    throw new TypeError("Means requires two nonempty, distinct, non-overlapping Unit memberships.");
+  }
+  const seen = new Set<string>();
+  const masks: [boolean[], boolean[]] = [[], []];
+  for (const row of connectionCounts) {
+    const token = row.__open_ena_unit_token;
+    if (typeof token !== "string" || row.ENA_UNIT !== token || seen.has(token)) {
+      throw new TypeError("Means Endpoint counts must contain each Unit exactly once, without duplicate tokens.");
+    }
+    seen.add(token);
+    masks[0].push(positive.has(token));
+    masks[1].push(negative.has(token));
+  }
+  if ([...positive, ...negative].some((token) => !seen.has(token))) {
+    throw new TypeError("Means Endpoint counts are missing selected Unit membership.");
+  }
+  return masks;
 }
 
 function makeSetRotationOptionsV3(plan: StandardExecutionPlanV3): {
@@ -437,7 +501,7 @@ function makeSetRotationOptionsV3(plan: StandardExecutionPlanV3): {
   if (plan.configuration.analysis.model.type !== "EndPoint") {
     throw new TypeError("Direct Means rotation is only valid for EndPoint models.");
   }
-  const { groupColumn, positiveLevel, negativeLevel } = rotation.contrast;
+  const binding = buildMeansBindingV3(plan);
   return {
     centerAlignToOrigin: rotation.centerAlignToOrigin,
     rotation: {
@@ -445,8 +509,8 @@ function makeSetRotationOptionsV3(plan: StandardExecutionPlanV3): {
       params: {
         // jENA subtracts right from left; preserve positive-minus-negative.
         groups: [
-          meanGroupUnitsV3(plan, groupColumn, positiveLevel),
-          meanGroupUnitsV3(plan, groupColumn, negativeLevel),
+          [...binding.positive.unitTokens],
+          [...binding.negative.unitTokens],
         ],
       },
     },

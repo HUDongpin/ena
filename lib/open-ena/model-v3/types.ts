@@ -1,5 +1,7 @@
-import type { RotationSet } from "jena-js";
+import type { ENASet, RotationSet } from "jena-js";
 import type { DatasetHashKind, OpenEnaDirectionalMask } from "../types";
+import type { ModelDiagnosticV3 } from "./diagnostics";
+import type { ExecutionPlanHeaderV3 } from "./execution-plan";
 
 export const STANDARD_MODEL_TYPES = [
   "EndPoint",
@@ -202,4 +204,47 @@ export interface ValidatedReferenceExecutionBindingV3 {
   readonly basisPermutation: readonly number[];
   readonly rotationSet: RotationSet;
   readonly sourceFit: "svd" | "means";
+}
+
+export interface StandardMeansBindingV3 {
+  readonly groupColumn: string;
+  readonly negative: { readonly level: ScalarIdentityV3; readonly unitTokens: readonly string[] };
+  readonly positive: { readonly level: ScalarIdentityV3; readonly unitTokens: readonly string[] };
+  readonly direction: "positive-minus-negative";
+}
+
+/**
+ * Internal synchronous output for an already built/validated plan. This is not
+ * the hashed, immutable worker BoundResult. Diagnostics here cover runtime
+ * rotation eligibility; the bound-result task must retain compiler diagnostics
+ * too. No resource observations or untrusted-plan verification are implied.
+ */
+export interface InternalStandardRunResultV3 {
+  readonly configuration: CanonicalStandardConfigV3;
+  readonly executionPlanHeader: ExecutionPlanHeaderV3;
+  readonly set: ENASet;
+  readonly diagnostics: readonly ModelDiagnosticV3[];
+  readonly meansBinding: StandardMeansBindingV3 | null;
+  readonly projection: {
+    readonly type: "svd" | "means";
+    readonly runtimeFirstAxis: string;
+    readonly centerAlignToOrigin: boolean;
+    readonly centerVector: readonly number[];
+    readonly rank: number;
+    /** Complete square basis, including completion axes required by Reference. */
+    readonly fullAxes: readonly string[];
+    /** Only these axes support scientific interpretation or dimension claims. */
+    readonly estimableAxes: readonly string[];
+    /** Full-basis variance shares in fullAxes order, never display-renormalized. */
+    readonly variance: readonly number[];
+  };
+  readonly populations: {
+    /** Means centering/residual SVD uses all endpoints; meansBinding defines MR1. */
+    readonly fit: "endpoint-units" | "observed-unit-horizon-steps";
+    /** Actual connectionCounts order: Unit tokens or canonical [Unit,Horizon] pairs. */
+    readonly fitTokens: readonly string[];
+    readonly targetTokens: readonly string[];
+    readonly trajectoryStepCountByUnit: Readonly<Record<string, number>>;
+    readonly imputedStepCount: 0;
+  };
 }
