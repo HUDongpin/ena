@@ -230,10 +230,16 @@ export interface InternalStandardRunResultV3 {
     readonly runtimeFirstAxis: string;
     readonly centerAlignToOrigin: boolean;
     readonly centerVector: readonly number[];
+    /** Intrinsic independent target rank under the established numerical policy. */
     readonly rank: number;
     /** Complete square basis, including completion axes required by Reference. */
     readonly fullAxes: readonly string[];
-    /** Only these axes support scientific interpretation or dimension claims. */
+    /**
+     * Supported projected coordinates, not a count of independent dimensions.
+     * SVD uses the intrinsic rank prefix. Means retains validated MR1 plus
+     * residual coordinates with variance share > largest axis share * 1e-12;
+     * multiple supported Means coordinates can describe one intrinsic dimension.
+     */
     readonly estimableAxes: readonly string[];
     /** Full-basis variance shares in fullAxes order, never display-renormalized. */
     readonly variance: readonly number[];

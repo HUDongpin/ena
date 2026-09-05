@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { accumulateData, sphereNorm, type Row } from "jena-js";
+import { accumulateData, ena, sphereNorm, type Row } from "jena-js";
 import * as analysis from "../lib/open-ena/analyze";
 import { canonicalJsonV3 } from "../lib/open-ena/model-v3/canonical-json";
 import { compileStandardDraftV3 } from "../lib/open-ena/model-v3/compiler";
@@ -228,6 +228,49 @@ for (const model of MODELS.slice(1)) {
 }
 
 for (const center of [true, false]) {
+  test(`Means coordinate eligibility retains residual variance independently of intrinsic rank (center=${center})`, async () => {
+    const source = dataset([
+      { unit: "c1", horizon: "h1", time: 1, group: "Control", A: 1, B: 1, C: 1 },
+      { unit: "c2", horizon: "h2", time: 2, group: "Control", A: 1, B: 2, C: 3 },
+      { unit: "t1", horizon: "h3", time: 3, group: "Treatment", A: 1, B: 1, C: 1.0000001 },
+      { unit: "t2", horizon: "h4", time: 4, group: "Treatment", A: 1, B: 2, C: 3.0000001 },
+    ]);
+    const plan = await planFor(draft("EndPoint", true, center), source);
+    const unchangedGeometry = ena(adapter.toStandardJenaOptionsV3(plan));
+    const result = run(plan);
+    assert.equal(result.projection.rank, 1, "intrinsic independent rank remains governed by the established numerical rank policy");
+    close(result.set.variance.MR1, 0.48738256299622296);
+    close(result.set.variance.SVD2, 0.5126174370037772);
+    assert.ok(result.set.variance.SVD3 < 1e-15, "the completion coordinate has only numerical noise");
+    assert.deepEqual(result.projection.estimableAxes, ["MR1", "SVD2"], "Means coordinates are not ordered by intrinsic SVD eigenvalues");
+    assert.ok(result.projection.estimableAxes.length > result.projection.rank, "eligible coordinates do not claim independent dimensions");
+    assert.deepEqual(result.projection.fullAxes, ["MR1", "SVD2", "SVD3"]);
+    assert.deepEqual(result.set.rotation, unchangedGeometry.rotation);
+    assert.deepEqual(result.set.points, unchangedGeometry.points);
+    assert.deepEqual(result.set.variance, unchangedGeometry.variance);
+    assert.deepEqual(result.projection.variance, result.projection.fullAxes.map((axis) => unchangedGeometry.variance[axis]));
+  });
+
+  test(`exact rank-one Means excludes residual completion noise without truncating full geometry (center=${center})`, async () => {
+    const source = dataset([
+      { unit: "c1", horizon: "h1", time: 1, group: "Control", A: 1, B: 1, C: 0 },
+      { unit: "c2", horizon: "h2", time: 2, group: "Control", A: 1, B: 1, C: 0 },
+      { unit: "t1", horizon: "h3", time: 3, group: "Treatment", A: 0, B: 1, C: 1 },
+      { unit: "t2", horizon: "h4", time: 4, group: "Treatment", A: 0, B: 1, C: 1 },
+    ]);
+    const plan = await planFor(draft("EndPoint", true, center), source);
+    const unchangedGeometry = ena(adapter.toStandardJenaOptionsV3(plan));
+    const result = run(plan);
+    assert.equal(result.projection.rank, 1);
+    assert.deepEqual(result.projection.estimableAxes, ["MR1"]);
+    close(result.set.variance.MR1, 1);
+    assert.ok(result.set.variance.SVD2 < 1e-24 && result.set.variance.SVD3 < 1e-24);
+    assert.deepEqual(result.projection.fullAxes, ["MR1", "SVD2", "SVD3"]);
+    assert.deepEqual(result.set.rotation, unchangedGeometry.rotation);
+    assert.deepEqual(result.set.points, unchangedGeometry.points);
+    assert.deepEqual(result.set.variance, unchangedGeometry.variance);
+  });
+
   test(`rank-one SVD exposes one estimable axis while preserving the full reference basis (center=${center})`, async () => {
     const source = dataset([
       { unit: "u1", horizon: "h1", time: 1, group: "Control", A: 1, B: 1, C: 0 },

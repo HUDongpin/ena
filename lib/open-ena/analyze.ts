@@ -261,6 +261,17 @@ export function runStandardPlanV3(plan: StandardExecutionPlanV3): InternalStanda
       blocks: ["ai-interpretation"],
     });
   }
+  const fullAxes = [...set.rotation.rotationColumns];
+  const variance = fullAxes.map((axis) => set.variance[axis]);
+  // Means rotates the intrinsic signal across coordinates; its axis order is
+  // not an eigenvalue order. Apply the rank policy's 1e-12 relative variance
+  // scale to actual projected variance shares to exclude completion noise.
+  // MR1 has already passed the nonzero contrast guard. Supported coordinates
+  // can outnumber independent dimensions; `rank` remains the intrinsic rank.
+  const meansVarianceFloor = variance.reduce((largest, value) => Math.max(largest, value), 0) * 1e-12;
+  const estimableAxes = meansBinding === null
+    ? fullAxes.slice(0, rank)
+    : fullAxes.filter((_axis, index) => index === 0 || variance[index] > meansVarianceFloor);
   return {
     configuration: plan.configuration,
     executionPlanHeader: plan.header,
@@ -273,9 +284,9 @@ export function runStandardPlanV3(plan: StandardExecutionPlanV3): InternalStanda
       centerAlignToOrigin: rotation.centerAlignToOrigin,
       centerVector: [...set.rotation.centerVector],
       rank,
-      fullAxes: [...set.rotation.rotationColumns],
-      estimableAxes: set.rotation.rotationColumns.slice(0, rank),
-      variance: set.rotation.rotationColumns.map((axis) => set.variance[axis]),
+      fullAxes,
+      estimableAxes,
+      variance,
     },
     populations,
   };
