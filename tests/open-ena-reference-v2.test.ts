@@ -165,6 +165,17 @@ test("SVD decoder rejects rehashed rank one when three eigenvalues support coord
   await assert.rejects(() => mod.decodeReferenceV2(understated), /rank.*eigenvalue|eigenvalue.*rank/i);
 });
 
+test("SVD decoder rejects rehashed small unordered eigenvalues that put a zero axis in the estimable prefix", async () => {
+  const { mod, artifact } = await reference();
+  const unordered = clone(artifact);
+  unordered.geometry.eigenvalues = [1e-12, 0, 5e-10];
+  unordered.fit.variance = [1 / 501, 0, 500 / 501];
+  unordered.fit.rank = 2;
+  unordered.fit.estimableAxes = ["SVD1", "SVD2"];
+  await rehash(unordered);
+  await assert.rejects(() => mod.decodeReferenceV2(unordered), /ordered eigenvalues/i);
+});
+
 test("SVD import rank uses the rounding floor and a strict greater-than threshold", async () => {
   const { mod, artifact } = await reference();
   const floor = (8 * Number.EPSILON * 3) ** 2;

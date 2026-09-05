@@ -227,7 +227,7 @@ function decodeShape(input: unknown): OpenEnaStandardReferenceV2 {
   const eigenvalues = array(geometry.eigenvalues, "Reference eigenvalues", width).map((value) => finite(value, "Reference eigenvalue"));
   if (rotation.type === "svd") {
     if (fit.means !== null || eigenvalues.length !== width || eigenvalues[0] <= 0
-      || eigenvalues.some((value, index) => value < 0 || (index > 0 && value > eigenvalues[index - 1] + TOLERANCE))) throw new TypeError("Reference SVD requires valid nonnegative ordered eigenvalues and no Means metadata.");
+      || eigenvalues.some((value, index) => value < 0 || (index > 0 && value > eigenvalues[index - 1]))) throw new TypeError("Reference SVD requires valid nonnegative ordered eigenvalues and no Means metadata.");
     const total = eigenvalues.reduce((sum, value) => sum + value, 0);
     if (!Number.isFinite(total) || variance.some((value, index) => Math.abs(value - eigenvalues[index] / total) > TOLERANCE)) throw new TypeError("Reference SVD eigenvalues must agree with full-basis variance.");
     // Match centeredNetworkRankV3: qualifying sphere-normalized nonnegative
