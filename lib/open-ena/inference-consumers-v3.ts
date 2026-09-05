@@ -1,6 +1,6 @@
 import type { ENASet } from "jena-js";
 import type { OpenEnaConfig } from "./types";
-import { canonicalJsonV3, deepFreezeV3, snapshotDenseJsonArrayV3, snapshotPlainJsonRecordV3 } from "./model-v3/canonical-json";
+import { canonicalJsonV3, deepFreezeV3, snapshotPlainJsonRecordV3 } from "./model-v3/canonical-json";
 import { captureExecutionPlanInputV3, type OpenEnaExecutionPlanV3 } from "./model-v3/execution-plan";
 import { resultMatchesPlanV3, validateBoundResultV3 } from "./model-v3/result-binding";
 import { scalarIdentityV3 } from "./model-v3/identity";
@@ -51,15 +51,49 @@ const CONTROL_STRING_LIMIT = 65_536;
 const CONTROL_CHARACTER_BUDGET = 1_048_576;
 
 function captureControlArray(input: unknown, label: string, exactLength?: number): unknown[] {
-  if (!Array.isArray(input)) throw new TypeError(`controls ${label} must be an array`);
-  const descriptor = Object.getOwnPropertyDescriptor(input, "length");
-  const length: unknown = descriptor && "value" in descriptor ? descriptor.value : undefined;
-  // Reject before ownKeys/element traversal, including sparse or proxy arrays.
-  if (typeof length !== "number" || !Number.isSafeInteger(length) || length < 0
-    || length > CONTROL_ITEM_LIMIT || (exactLength !== undefined && length !== exactLength)) {
-    throw new TypeError(`controls ${label} length exceeds its allowed limit`);
+  if (!Array.isArray(input) || Object.getPrototypeOf(input) !== Array.prototype) {
+    throw new TypeError(`controls ${label} must be a plain array`);
   }
-  return snapshotDenseJsonArrayV3(input, `controls ${label}`);
+  function readLength(): number {
+    const descriptor = Object.getOwnPropertyDescriptor(input, "length");
+    const length: unknown = descriptor && "value" in descriptor ? descriptor.value : undefined;
+    if (!descriptor || descriptor.enumerable || typeof length !== "number"
+      || !Number.isSafeInteger(length) || length < 0 || length > CONTROL_ITEM_LIMIT
+      || (exactLength !== undefined && length !== exactLength)) {
+      throw new TypeError(`controls ${label} length exceeds its allowed limit`);
+    }
+    return length;
+  }
+  // Admit before enumeration. A Proxy meta-trap can itself do arbitrary work;
+  // once it returns, process only this fixed, bounded set of captured keys.
+  const length = readLength();
+  const keys = Reflect.ownKeys(input);
+  if (keys.length !== length + 1 || !keys.includes("length")) {
+    throw new TypeError(`controls ${label} captured key count differs from its admitted length`);
+  }
+  for (const key of keys) {
+    if (key !== "length" && (typeof key !== "string" || !/^(0|[1-9]\d*)$/u.test(key)
+      || !Number.isSafeInteger(Number(key)) || Number(key) >= length)) {
+      throw new TypeError(`controls ${label} capture requires dense array indices within its admitted length`);
+    }
+  }
+  function assertCapturedLength(): void {
+    if (readLength() !== length) throw new TypeError(`controls ${label} length changed during capture`);
+  }
+  // Recheck before allocation and element descriptors. Keep all later work and
+  // allocation tied to the admitted length, even if a descriptor trap mutates.
+  assertCapturedLength();
+  const captured = new Array<unknown>(length);
+  for (let index = 0; index < length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(input, String(index));
+    assertCapturedLength();
+    if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) {
+      throw new TypeError(`controls ${label} elements must be own enumerable data properties`);
+    }
+    captured[index] = descriptor.value;
+  }
+  assertCapturedLength();
+  return captured;
 }
 
 function captureControls(input: unknown) {
@@ -112,7 +146,10 @@ export async function buildInferenceInputV3(input: unknown, independentPlan: unk
   if (result.configuration.analysis.model.type !== "EndPoint") throw new TypeError("This bound inference/contrast entrypoint requires EndPoint; bound trajectory context is required by the longitudinal consumer");
   const p = result.executionProvenance;
   const groups = p.identityDictionary.groups;
-  const group = (value: ScalarIdentityV3) => groups.find((entry) => canonicalJsonV3(entry.fields[0].value) === canonicalJsonV3(value));
+  // Index every declared typed identity once. Visibility may contain all
+  // Groups or repeated entries; neither case should rescan the inventory.
+  const groupsByIdentity = new Map(groups.map((entry) => [canonicalJsonV3(entry.fields[0].value), entry]));
+  const group = (value: ScalarIdentityV3) => groupsByIdentity.get(canonicalJsonV3(value));
   const primary = group(controls.primaryGroup), secondary = group(controls.secondaryGroup);
   if (!primary || !secondary || primary.token === secondary.token) throw new TypeError("Choose two distinct typed Group identities from the bound result");
   const supportedAxes = p.projection.estimableAxes.filter((axis) =>

@@ -400,3 +400,118 @@ test("hidden Code controls use canonical source identities even when a source na
   assert.deepEqual(hidden.primary, visible.primary);
   await assert.rejects(() => a.buildContrastV3(f.result, f.plan, { ...controls(f.result), hiddenCodes: ["Code 1"] }), /visibility.*canonical.*Code/i);
 });
+
+for (const field of ["axes", "hiddenCodes", "hiddenGroups"] as const) {
+  test(`control ${field} growth during ownKeys rejects before element descriptor traversal`, async () => {
+    const a = await api(), f = await fixture((draft, data) => {
+      draft.codes = ["A", "B", "C", "D"]; data.headers.push("D");
+      data.rows = data.rows.map((row, i) => ({ ...row, D: [1, 4, 2, 5, 3][i] }));
+    });
+    const thirdAxis = f.result.executionProvenance.projection.estimableAxes[2];
+    assert.equal(typeof thirdAxis, "string");
+    for (const consumer of [a.buildInferenceInputV3, a.runOpenEnaInferenceV3, a.buildContrastV3]) {
+      const selected = controls(f.result);
+      const initial: unknown[] = field === "axes" ? [...selected.axes] : field === "hiddenCodes" ? ["A"] : [selected.primaryGroup];
+      const extra: unknown = field === "axes" ? thirdAxis : initial[0];
+      let elementDescriptorReads = 0;
+      const growing = new Proxy(initial, {
+        ownKeys(target) {
+          const grownLength = field === "axes" ? 3 : 10_001;
+          while (target.length < grownLength) target.push(extra);
+          return Reflect.ownKeys(target);
+        },
+        getOwnPropertyDescriptor(target, key) {
+          if (typeof key === "string" && /^\d+$/u.test(key)) elementDescriptorReads += 1;
+          return Reflect.getOwnPropertyDescriptor(target, key);
+        },
+      });
+      const options = { ...selected, [field]: growing } as Controls;
+      await assert.rejects(() => consumer(f.result, f.plan, options), /controls.*length|limit|capture/i);
+      assert.equal(elementDescriptorReads, 0, "growth visible in ownKeys must reject before any element descriptor read");
+    }
+  });
+
+  test(`control ${field} growth during descriptor capture cannot escape the admitted length`, async () => {
+    const a = await api(), f = await fixture();
+    const selected = controls(f.result);
+    const initial: unknown[] = field === "axes" ? [...selected.axes] : field === "hiddenCodes" ? ["A"] : [selected.primaryGroup];
+    let lengthReads = 0, elementDescriptorReads = 0;
+    const growing = new Proxy(initial, {
+      getOwnPropertyDescriptor(target, key) {
+        const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+        if (key === "length" && ++lengthReads === 2) {
+          const grownLength = field === "axes" ? 3 : 10_001;
+          while (target.length < grownLength) target.push(target[0]);
+        } else if (typeof key === "string" && /^\d+$/u.test(key)) {
+          elementDescriptorReads += 1;
+        }
+        return descriptor;
+      },
+    });
+    await assert.rejects(() => a.buildInferenceInputV3(f.result, f.plan, { ...selected, [field]: growing } as Controls), /controls.*length|limit|capture/i);
+    assert.ok(elementDescriptorReads <= 1, "detect descriptor-time growth before further bounded element traversal");
+  });
+}
+
+test("large typed Group inventories admit duplicate visibility with linear identity serialization work", async (t) => {
+  const a = await api(), f = await fixture((_draft, data) => {
+    const seeds = [...data.rows];
+    const identities = [1, "1", true, "true", ...Array.from({ length: 196 }, (_, index) => `group-${index}`)];
+    data.rows = identities.flatMap((group, groupIndex) => Array.from({ length: 2 }, (_, copy) => {
+      const index = groupIndex * 2 + copy;
+      return { ...seeds[index % seeds.length], unit: `u${index}`, horizon: `h${index}`, group, time: index };
+    }));
+  });
+  const groups = f.result.executionProvenance.identityDictionary.groups;
+  assert.equal(groups.length, 200);
+  const selected = { ...controls(f.result), primaryGroup: { type: "number", value: 1 } as const, secondaryGroup: { type: "string", value: "1" } as const };
+  const lastIdentity = groups.at(-1)!.fields[0].value;
+  const hiddenGroups = Array.from({ length: 10_000 }, () => lastIdentity);
+  async function countIdentitySerializations(action: () => ReturnType<typeof a.buildInferenceInputV3>) {
+    // Count actual serialization operations for one identity value without
+    // changing their result. This bounds work independently of host timing.
+    const original = JSON.stringify;
+    let calls = 0;
+    JSON.stringify = ((...args: Parameters<typeof JSON.stringify>) => {
+      if (args[0] === lastIdentity.value) calls += 1;
+      return Reflect.apply(original, JSON, args);
+    }) as typeof JSON.stringify;
+    try { return { result: await action(), calls }; }
+    finally { JSON.stringify = original; }
+  }
+  const visible = await countIdentitySerializations(() => a.buildInferenceInputV3(f.result, f.plan, selected));
+  const hidden = await countIdentitySerializations(() => a.buildInferenceInputV3(f.result, f.plan, { ...selected, hiddenGroups }));
+  assert.equal(hidden.result.controls.hiddenGroups.length, 10_000, "duplicate visibility entries remain valid and intact");
+  assert.deepEqual(hidden.result.controls.hiddenGroups, hiddenGroups);
+  assert.deepEqual(hidden.result.result.set, visible.result.result.set);
+  assert.deepEqual(hidden.result.result.executionProvenance.identityDictionary, f.result.executionProvenance.identityDictionary);
+  assert.notEqual(hidden.result.groupSelection.primary, hidden.result.groupSelection.secondary);
+  // The same large inventory also preserves Boolean true versus textual true.
+  const booleans = await a.buildInferenceInputV3(f.result, f.plan, { ...selected, primaryGroup: { type: "boolean", value: true }, secondaryGroup: { type: "string", value: "true" } });
+  assert.notEqual(booleans.groupSelection.primary, booleans.groupSelection.secondary);
+  await assert.rejects(() => a.buildInferenceInputV3(f.result, f.plan, { ...selected, hiddenGroups: [...hiddenGroups.slice(0, -1), { type: "boolean", value: false }] }), /typed Groups/i);
+  const inference = await a.runOpenEnaInferenceV3(f.result, f.plan, { ...selected, hiddenGroups });
+  assert.equal(inference.inference.ledger?.includedEntityCount, 4);
+  assert.equal(inference.result.executionProvenance.identityDictionary.groups.length, 200);
+  await assert.rejects(() => a.buildContrastV3(f.result, f.plan, { ...selected, hiddenGroups: groups.map((group) => group.fields[0].value) }), /2 to 6 declared Groups/i);
+  t.diagnostic(`visibility identity serialization delta: ${hidden.calls - visible.calls} for ${hiddenGroups.length} entries`);
+  assert.ok(hidden.calls - visible.calls <= hiddenGroups.length * 2,
+    `visibility caused ${hidden.calls - visible.calls} identity serializations for ${hiddenGroups.length} entries`);
+});
+
+test("bounded control capture uses data descriptors and preserves plain/null-prototype record support", async () => {
+  const a = await api(), f = await fixture(), selected = controls(f.result);
+  const options = Object.assign(Object.create(null), selected);
+  options.primaryGroup = Object.assign(Object.create(null), selected.primaryGroup);
+  options.axes = new Proxy([...selected.axes], { get() { throw new Error("ordinary array get must not run"); } });
+  assert.deepEqual((await a.buildInferenceInputV3(f.result, f.plan, options)).controls.axes, selected.axes);
+  let getterCalls = 0;
+  const accessor = [...selected.axes];
+  Object.defineProperty(accessor, "0", { enumerable: true, configurable: true, get() { getterCalls += 1; return selected.axes[0]; } });
+  const sparse = new Array(2); sparse[0] = selected.axes[0];
+  const decorated = [...selected.axes]; Object.assign(decorated, { extra: "unexpected" });
+  for (const axes of [accessor, sparse, decorated, Object.assign([...selected.axes], { [Symbol("extra")]: true })]) {
+    await assert.rejects(() => a.buildInferenceInputV3(f.result, f.plan, { ...selected, axes: axes as [string, string] }), /controls.*(length|capture|data properties)/i);
+  }
+  assert.equal(getterCalls, 0);
+});
