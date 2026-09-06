@@ -269,7 +269,8 @@ export function makeSet(enadata: ENAData, options: MakeSetOptions = {}): ENASet 
   const pointsMatrix = selectMatrixColumns(fullPointsMatrix, dimCount);
   retained += n * (e + dimCount);
   options.observer?.onStage?.('position-nodes');
-  observe(2 * n * c + 3 * c * c + n + 4 * c + (n + c) * d);
+  const standardNodeScratch = (enadata.networkType ?? 'standard') === 'standard' && fixedNodes === undefined;
+  observe(2 * n * c + (standardNodeScratch ? 4 : 3) * c * c + n + (standardNodeScratch ? 6 : 4) * c + (n + c) * d);
   const nodePositionResult = fixedNodes !== undefined ? fixedNodePositions(lineWeightsMatrix, fixedNodes) : makeNodePositions(
     lineWeightsMatrix,
     pointsMatrix,

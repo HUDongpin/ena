@@ -5,7 +5,7 @@ import { canonicalJsonV3, sha256CanonicalJsonV3 } from "../lib/open-ena/model-v3
 import { validateExecutionPlanV3 } from "../lib/open-ena/model-v3/execution-plan";
 import { compileStandardDraftV3 } from "../lib/open-ena/model-v3/compiler";
 import { validateStandardDraftV3 } from "../lib/open-ena/model-v3/diagnostics";
-import { canonicalJsonByteLengthV3, estimateStandardOperationalAdmissionV3, estimateReferenceBoundSerializationAdmissionV3, estimateStandardPlanSerializationAdmissionV3, assertCombinedStandardResourcesV3 } from "../lib/open-ena/model-v3/standard-closure-resource-budget";
+import { canonicalJsonByteLengthV3, standardClosureWorkUnitsV3, estimateStandardOperationalAdmissionV3, estimateReferenceBoundSerializationAdmissionV3, estimateStandardPlanSerializationAdmissionV3, assertCombinedStandardResourcesV3 } from "../lib/open-ena/model-v3/standard-closure-resource-budget";
 import { buildReferenceV2, fitReferenceSourceV3 } from "../lib/open-ena/model-v3/reference-v2";
 import { bindingFixtureV3 } from "./helpers/open-ena-model-v3-fixture";
 import type { ParsedDataset } from "../lib/open-ena/types";
@@ -160,3 +160,14 @@ for (const boundary of ["compiler", "diagnostics"] as const) {
     }
   });
 }
+
+
+test("Standard node eigensolve is admitted before the fixed work ceiling", async () => {
+  const { plan } = await bindingFixtureV3();
+  // Three Codes / three edges. At 43,009 steps the old node ledger was
+  // 7,999,944 units, just below the unchanged 8,000,000 ceiling. The bounded
+  // Jacobi node decomposition must now be charged before any allocation.
+  const nearLimit = { ...plan.header.resourceEstimate, trajectorySteps: 43_009 };
+  assert.throws(() => standardClosureWorkUnitsV3(nearLimit, "svd"), /fixed work budget/);
+  assert.ok(standardClosureWorkUnitsV3({ ...nearLimit, trajectorySteps: 40_000 }, "svd") < 8_000_000);
+});

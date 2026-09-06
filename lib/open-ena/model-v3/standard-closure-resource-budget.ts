@@ -144,7 +144,11 @@ export function estimateStandardPlanSerializationAdmissionV3(input: unknown): St
 
 export function standardClosureWorkUnitsV3(baseline: StandardResourceEstimateV3, method: CanonicalStandardConfigV3["analysis"]["rotation"]["type"]): number {
   const t = baseline.trajectorySteps, c = baseline.codes, e = baseline.adjacencyDimensions, d = Math.min(3, e);
-  const work = safe(e ** 3 + 2 * t * e * e + 4 * t * c * c + 3 * d * c ** 3 + 20 * t * e + 8 * t * c * d
+  // Up to three Standard materialization/closure passes; each node Gram
+  // decomposition has at most the kernel's 100 Jacobi sweeps. Charge the
+  // added cubic sweep work without changing the baseline v3.5 or hard cap.
+  const nodeSpectralWork = method === "reference" ? 0 : 3 * 100 * c ** 3;
+  const work = safe(nodeSpectralWork + e ** 3 + 2 * t * e * e + 4 * t * c * c + 3 * d * c ** 3 + 20 * t * e + 8 * t * c * d
     + (method === "reference" ? t * e * e + e ** 3 : 0), "scientific closure work");
   if (work > MAX_ESTIMATED_ROTATION_WORK_UNITS_V3) throw new TypeError("Standard scientific closure exceeds the fixed work budget.");
   return work;
@@ -161,7 +165,9 @@ export function estimateStandardOperationalAdmissionV3(config: CanonicalStandard
   const compactScientificCells = safe(4 * t * e + 2 * t * d + (reference ? 2 * e : c * d + e * e + 5 * e), "compact scientific cells");
   const sourceCaptureCells = safe(6 * n * c, "source capture cells");
   const sourceOracleCells = safe(baseline.estimatedNumericCells + 2 * n * c + 2 * t * e, "source oracle cells");
-  const nodeCells = reference ? t * c + c * d : 2 * t * c + (d + 1) * c * c + d * t + 5 * d * c;
+  // Normal Gram + Jacobi working copy + accumulating basis + returned basis
+  // overlap at the eigensolver return; eigenvalues/coefficients add 2c slots.
+  const nodeCells = reference ? t * c + c * d : 2 * t * c + Math.max(d + 1, 4) * c * c + d * t + 5 * d * c + 2 * c;
   const algebraCells = safe(4 * t * e + 2 * t * d + 8 * e + nodeCells + (method === "means" ? t * e + 8 * e : 0), "algebra cells");
   const rankDiagnosticCells = reference ? safe(2 * t * e + 4 * e * e + 8 * e, "fixed projection diagnostic cells") : 0;
   const bindingCells = safe(sourceCaptureCells + 4 * compactScientificCells + sourceOracleCells + algebraCells + rankDiagnosticCells, "binding cells");
