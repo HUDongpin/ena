@@ -203,6 +203,31 @@ test("Units toolbar exposes four real actions with only Hide/Restore pressed sta
   assert.doesNotMatch(markup, /aria-label="Exclude group configuration"[^>]*aria-pressed/u);
 });
 
+test("disabled Means selectors retain typed direction and share a visible supplied-copy prerequisite reason", () => {
+  const state = createModelStateV3(drafts(), datasetSha256);
+  const basePreview = preview(state);
+  assert.equal(basePreview.availability, "available");
+  if (basePreview.availability !== "available") throw new Error("Expected available preview fixture");
+  for (const groupStability of [
+    { availability: "unavailable" as const },
+    { availability: "available" as const, status: "unstable" as const },
+  ]) {
+    const markup = renderToStaticMarkup(createElement(OpenEnaUnitsPanelV3, {
+      ...props(state),
+      preview: { ...basePreview, groupStability },
+    }));
+    const negative = markup.match(/<select\b[^>]*id="field:rotation\.negativeLevel"[^>]*>/u)?.[0] ?? "";
+    const positive = markup.match(/<select\b[^>]*id="field:rotation\.positiveLevel"[^>]*>/u)?.[0] ?? "";
+    assert.match(negative, /disabled/u);
+    assert.match(positive, /disabled/u);
+    const reasonId = negative.match(/aria-describedby="([^"]+)"/u)?.[1];
+    assert.ok(reasonId, "negative Means selector needs an associated disable reason");
+    assert.equal(positive.match(/aria-describedby="([^"]+)"/u)?.[1], reasonId);
+    assert.match(markup, new RegExp(`id="${reasonId}"[^>]*>Choose a current, stable Group to select Means levels\\.`, "u"));
+    assert.match(markup, /Group 1 \[number\] to Group 1 \[string\]/u, "direction remains independently visible");
+  }
+});
+
 test("stale or absent preview evidence is unavailable while a retained plot remains explicitly stale", () => {
   const state = createModelStateV3(drafts(), datasetSha256);
   const stalePreview = preview(state);

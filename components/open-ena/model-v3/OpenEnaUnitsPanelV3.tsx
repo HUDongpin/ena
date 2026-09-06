@@ -269,6 +269,7 @@ export function OpenEnaUnitsPanelV3({
   const positiveSelectValue = positiveKey === null ? "" : positiveToken ?? "retained-positive";
   const stableGroupPreview = activePreview?.groupStability.availability === "available"
     && activePreview.groupStability.status === "stable";
+  const meansEditingDisabled = !stableGroupPreview || groupLevels.length === 0;
   const meansInvalid = meansRotation !== null && (
     draft.groupColumn === null
     || negativeKey === null
@@ -281,6 +282,7 @@ export function OpenEnaUnitsPanelV3({
   );
   const hideReasonId = `${reasonBaseId}-hide`;
   const excludeReasonId = `${reasonBaseId}-exclude`;
+  const meansUnavailableReasonId = `${reasonBaseId}-means-unavailable`;
 
   function replaceUnitColumns(unitColumns: string[]) {
     dispatch(family === "standard"
@@ -375,7 +377,8 @@ export function OpenEnaUnitsPanelV3({
             <select
               id={fields.id("rotation.negativeLevel")}
               value={negativeSelectValue}
-              disabled={!stableGroupPreview || groupLevels.length === 0}
+              aria-describedby={meansEditingDisabled ? meansUnavailableReasonId : undefined}
+              disabled={meansEditingDisabled}
               onChange={(event) => replaceMeansLevel("negativeLevel", event.target.value)}
             >
               <option value="">{copy.noMeansLevel}</option>
@@ -390,7 +393,8 @@ export function OpenEnaUnitsPanelV3({
             <select
               id={fields.id("rotation.positiveLevel")}
               value={positiveSelectValue}
-              disabled={!stableGroupPreview || groupLevels.length === 0}
+              aria-describedby={meansEditingDisabled ? meansUnavailableReasonId : undefined}
+              disabled={meansEditingDisabled}
               onChange={(event) => replaceMeansLevel("positiveLevel", event.target.value)}
             >
               <option value="">{copy.noMeansLevel}</option>
@@ -402,7 +406,10 @@ export function OpenEnaUnitsPanelV3({
           </label>
           {negativeLabel !== null && positiveLabel !== null
             ? <p>{copy.meansDirection(negativeLabel, positiveLabel)}</p>
-            : <p>{copy.meansUnavailable}</p>}
+            : null}
+          {meansEditingDisabled ? (
+            <p id={meansUnavailableReasonId}>{copy.meansUnavailable}</p>
+          ) : null}
           {meansInvalid ? <p role="alert">{copy.meansInvalid}</p> : null}
         </fieldset>
       ) : null}

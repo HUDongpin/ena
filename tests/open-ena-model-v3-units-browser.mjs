@@ -79,6 +79,13 @@ const nullMeansDraft = {
     negativeLevel: null,
   },
 };
+const unstableData = structuredClone(sourceData);
+unstableData.rows[1].unit = unstableData.rows[0].unit;
+const actualUnstableDiagnostic = validateStandardDraftV3(unstableData, {
+  ...diagnosticBinding,
+  rowCount: unstableData.rows.length,
+}, standardDraft).find((diagnostic) => diagnostic.id === "STANDARD_GROUP_UNSTABLE_WITHIN_UNIT");
+assert.ok(actualUnstableDiagnostic);
 assert.ok(validateStandardDraftV3(sourceData, diagnosticBinding, missingGroupDraft)
   .some((diagnostic) => diagnostic.id === "STANDARD_GROUP_FIELD_MISSING"));
 assert.ok(validateStandardDraftV3(sourceData, diagnosticBinding, missingMeansDraft)
@@ -190,19 +197,21 @@ const entry = `
 
   function UnitsApp() {
     const [state, setState] = useState(accepted);
+    const [groupStability, setGroupStability] = useState({ availability: "available", status: "stable" });
     const dispatch = (action) => {
       actions.push(action);
       setState((current) => modelStateReducerV3(current, action));
     };
     window.__task26Dispatch = dispatch;
     window.__task26State = state;
+    window.__task26SetGroupStability = setGroupStability;
     const preview = state.scientificRevision === 0 ? {
       availability: "available",
       context: modelScientificContextV3(state),
       units: actualResult.executionProvenance.identityDictionary.units,
       groups: actualResult.executionProvenance.identityDictionary.groups,
       unitGroups: actualResult.executionProvenance.unitGroups,
-      groupStability: { availability: "available", status: "stable" },
+      groupStability,
     } : { availability: "unavailable" };
     return React.createElement(OpenEnaUnitsPanelV3, {
       copy: unitsCopy,
@@ -211,7 +220,7 @@ const entry = `
       fields: { id: (path) => "browser-field:" + path },
       columnOptions: ["unit", "horizon", "group", "A", "B", "C"],
       preview,
-      diagnostics: [],
+      diagnostics: groupStability.status === "unstable" ? [${JSON.stringify(actualUnstableDiagnostic)}] : [],
       localizeDiagnostic: (diagnostic) => ({ summary: diagnostic.id, detail: diagnostic.id }),
       view: "2d",
       hiddenUnitKeys: [],
@@ -282,6 +291,25 @@ try {
 
   await page.locator('[id="browser-field:rotation.meansContrast"]').focus();
   assert.equal(await page.evaluate(() => document.activeElement?.id), "browser-field:rotation.meansContrast");
+
+  const negativeMeans = panel.locator('[id="browser-field:rotation.negativeLevel"]');
+  const positiveMeans = panel.locator('[id="browser-field:rotation.positiveLevel"]');
+  for (const stability of [
+    { availability: "unavailable" },
+    { availability: "available", status: "unstable" },
+  ]) {
+    await page.evaluate((next) => window.__task26SetGroupStability(next), stability);
+    await page.waitForFunction(() => document.querySelector('[id="browser-field:rotation.negativeLevel"]')?.disabled === true);
+    assert.notEqual(await negativeMeans.inputValue(), "");
+    assert.notEqual(await positiveMeans.inputValue(), "");
+    const reasonId = await negativeMeans.getAttribute("aria-describedby");
+    assert.ok(reasonId, "disabled negative Means select needs a reason");
+    assert.equal(await positiveMeans.getAttribute("aria-describedby"), reasonId);
+    assert.equal(await page.locator(`#${reasonId}`).textContent(), "Choose a current, stable Group to select Means levels.");
+    assert.match(await panel.getByRole("group", { name: "Means contrast" }).textContent(), / to /u);
+  }
+  await page.evaluate(() => window.__task26SetGroupStability({ availability: "available", status: "stable" }));
+  await page.waitForFunction(() => document.querySelector('[id="browser-field:rotation.negativeLevel"]')?.disabled === false);
 
   await panel.getByRole("button", { name: "Open all group display options" }).click();
   await page.waitForFunction(() => Array.from(document.querySelectorAll('#root .ena-group-display-group')).every((node) => node.open));
