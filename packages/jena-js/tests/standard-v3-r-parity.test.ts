@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { lwsLeastSquaresPositions } from '../src/rotation/nodePositions.js';
-import { describe, expect, it } from 'vitest';
-import { ena, type ENAOptions, type Row } from '../src/index.js';
+import { describe, expect, it, vi } from 'vitest';
+import * as api from '../src/index.js';
+import { ena, type ENAOptions, type ENASet, type Row } from '../src/index.js';
 import { expectStrictReferenceParity, expectStrictFrame, expectStrictStandardParity, expectRepeatedSubspaceClose, expectAbsoluteMatrixClose, type StandardGolden } from './golden-helpers.js';
 
 const fixture = JSON.parse(readFileSync(new URL('../fixtures/goldens/rena-current-standard-v3.generated.json', import.meta.url), 'utf8')) as { input: Row[]; meta: { rENAVersion: string }; configs: Record<string, StandardGolden> };
@@ -119,4 +120,128 @@ describe('repeated block geometry consistency', () => {
     inconsistent.centroids = source.centroids!;
     expect(() => expectStrictFrame(inconsistent, frame, source.codeColumns, false)).toThrow();
   });
+});
+
+
+const identityCases: Array<{ name: string; rows: (set: ENASet) => Row[]; field: string }> = [
+  { name: 'aggregate Unit', rows: (set) => set.connectionCounts, field: 'unit' },
+  { name: 'weight Unit', rows: (set) => set.lineWeights, field: 'unit' },
+  { name: 'centered ENA_UNIT', rows: (set) => set.pointsForProjection, field: 'ENA_UNIT' },
+  { name: 'point Unit', rows: (set) => set.points, field: 'unit' },
+  { name: 'point ENA_UNIT', rows: (set) => set.points, field: 'ENA_UNIT' },
+  { name: 'centroid label', rows: (set) => set.centroids!, field: 'unit' },
+  { name: 'trajectory Unit', rows: (set) => set.trajectories!, field: 'unit' },
+  { name: 'trajectory ENA_UNIT', rows: (set) => set.trajectories!, field: 'ENA_UNIT' },
+  { name: 'trajectory Horizon', rows: (set) => set.trajectories!, field: 'horizon' },
+  { name: 'node Code', rows: (set) => set.rotation.nodes!, field: 'code' }
+];
+const identityMutations: Array<{ name: string; apply: (row: Row, field: string) => void }> = [
+  { name: 'wrong', apply: (row, field) => { row[field] = 'WRONG'; } },
+  { name: 'missing', apply: (row, field) => { delete row[field]; } },
+  { name: 'wrong type', apply: (row, field) => { row[field] = 1; } }
+];
+
+function parityInputs(name: string) {
+  const golden = fixture.configs[name]!;
+  const options = optionsFor(golden);
+  return { golden, options, actual: ena(options), full: ena({ ...options, dimensions: golden.dimensions.returned }) };
+}
+
+describe('typed identities on requested and complete tables', () => {
+  for (const name of ['separateMovingBinary', 'separateConversationBinary']) {
+    for (const view of ['actual', 'full'] as const) for (const identity of identityCases) {
+      it(`rejects wrong, missing and type-changed ${view} ${identity.name}: ${name}`, () => {
+        const good = parityInputs(name);
+        for (const mutation of identityMutations) {
+          const changed = structuredClone(good[view]);
+          mutation.apply(identity.rows(changed)[0]!, identity.field);
+          expect(() => expectStrictStandardParity(view === 'actual' ? changed : good.actual, view === 'full' ? changed : good.full, good.golden, good.options), mutation.name).toThrow();
+        }
+      });
+    }
+    for (const view of ['actual', 'full'] as const) {
+      it(`rejects spoofed Horizon fields and tuple reordering in ${view}: ${name}`, () => {
+        const good = parityInputs(name);
+        for (const table of ['connectionCounts', 'lineWeights', 'pointsForProjection', 'points'] as const) {
+          const changed = structuredClone(good[view]);
+          // A compact row has no Horizon field, even one copied from the
+          // right trajectory row: schema expansion must happen in the helper.
+          changed[table][0]!.horizon = changed.trajectories![0]!.horizon!;
+          expect(() => expectStrictStandardParity(view === 'actual' ? changed : good.actual, view === 'full' ? changed : good.full, good.golden, good.options)).toThrow();
+        }
+        const reordered = structuredClone(good[view]);
+        [reordered.trajectories![0], reordered.trajectories![1]] = [reordered.trajectories![1]!, reordered.trajectories![0]!];
+        expect(() => expectStrictStandardParity(view === 'actual' ? reordered : good.actual, view === 'full' ? reordered : good.full, good.golden, good.options)).toThrow();
+      });
+    }
+  }
+});
+
+describe('requested coordinate completeness', () => {
+  for (const name of ['endpointMovingBinary', 'endpointMovingMeans']) {
+    for (const table of ['nodes', 'centroids'] as const) {
+      it(`rejects corrupt, absent, nonfinite and extra requested ${table} coordinates: ${name}`, () => {
+        const good = parityInputs(name);
+        const axis = good.full.rotation.rotationColumns[0]!;
+        for (const mutation of [
+          (row: Row) => { row[axis] = 999; },
+          (row: Row) => { delete row[axis]; },
+          (row: Row) => { row[axis] = NaN; },
+          (row: Row) => { row[good.full.rotation.rotationColumns[3]!] = 0; }
+        ]) {
+          const changed = structuredClone(good.actual);
+          mutation((table === 'nodes' ? changed.rotation.nodes! : changed.centroids!)[0]!);
+          expect(() => expectStrictStandardParity(changed, good.full, good.golden, good.options)).toThrow();
+        }
+      });
+    }
+  }
+});
+
+describe('Reference target identity rejection', () => {
+  for (const name of ['separateMovingBinary', 'separateConversationBinary']) {
+    it(`accepts the source-bound expanded target identity: ${name}`, () => {
+      const source = parityInputs('endpointMovingBinary');
+      const target = fixture.configs[name]!;
+      expectStrictReferenceParity(source.full, source.golden, target, optionsFor(target));
+    });
+    it(`rejects spoofed compact Horizon and reordered Reference tuples: ${name}`, () => {
+      const source = parityInputs('endpointMovingBinary');
+      const target = fixture.configs[name]!;
+      const original = api.makeSet;
+      const mutations: Array<(set: ENASet) => void> = [
+        ...(['connectionCounts', 'lineWeights', 'pointsForProjection', 'points'] as const).map((table) => (set: ENASet) => { set[table][0]!.horizon = set.trajectories![0]!.horizon!; }),
+        (set) => { [set.trajectories![0], set.trajectories![1]] = [set.trajectories![1]!, set.trajectories![0]!]; }
+      ];
+      for (const mutate of mutations) {
+        const spy = vi.spyOn(api, 'makeSet').mockImplementation((...args: Parameters<typeof api.makeSet>) => {
+          const result = original(...args); mutate(result); return result;
+        });
+        try {
+          expect(() => expectStrictReferenceParity(source.full, source.golden, target, optionsFor(target))).toThrow();
+        } finally { spy.mockRestore(); }
+      }
+    });
+    for (const identity of identityCases) {
+      it(`rejects wrong, missing and type-changed Reference ${identity.name}: ${name}`, () => {
+        const source = parityInputs('endpointMovingBinary');
+        const target = fixture.configs[name]!;
+        const original = api.makeSet;
+        for (const mutation of identityMutations) {
+          // Only the comparator test intercepts the returned projection. The
+          // real accumulation/projection still runs; production is untouched.
+          const spy = vi.spyOn(api, 'makeSet').mockImplementation((...args: Parameters<typeof api.makeSet>) => {
+            const result = original(...args);
+            mutation.apply(identity.rows(result)[0]!, identity.field);
+            return result;
+          });
+          try {
+            expect(() => expectStrictReferenceParity(source.full, source.golden, target, optionsFor(target)), mutation.name).toThrow();
+          } finally {
+            spy.mockRestore();
+          }
+        }
+      });
+    }
+  }
 });

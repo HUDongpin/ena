@@ -183,8 +183,9 @@ and reject a different plane, inconsistent centroid rotation, unequal-axis
 swaps, nonfinite/missing cells, and independently flipped node signs.
 
 R 0.4.4 retains all six axes even when `dimensions=3`; the fixture records
-both requested and returned dimensions. jENA's requested-three coordinate
-view is checked against the first three explicitly named full columns. A
+both requested and returned dimensions. jENA's requested-three points, nodes and centroid coordinate
+views are each checked against the first three explicitly named full columns,
+including exact typed identities, schema/dimension completeness and finite cells. A
 second materialization requests six coordinates to check full points/nodes/
 centroids, while rotation and variance must be identical across both views.
 Neither the R oracle nor variance is truncated to mimic a different fit.
@@ -206,8 +207,16 @@ raw labels such as `U1::H1::U1`; jENA represents the same tuple as
 The test validates every component, expands the typed jENA tuple with the
 redundant Unit, and checks both complete label recipes. It never strips a
 suffix from an arbitrary string, coerces identity types, or changes the R
-file. Counts, row order, trajectory-point correspondence and centroid labels
-are all checked independently.
+file. jENA point, normalized-weight and centered-vector rows are compact: their
+Unit fields are checked exactly, and the Horizon comes from the same-index
+**actual** `trajectories` tuple. Both actual schemas and their row order are
+validated before expansion; an extra Horizon field on a compact row is rejected,
+even if it happens to match the expected Horizon. Counts, row order, actual
+trajectory-point correspondence and centroid labels are checked on both the
+requested and complete materializations and on the projected Reference target.
+Wrong, absent and type-changed Unit/ENA_UNIT/Horizon/Code fields and centroid
+labels are rejected. Oracle-to-oracle identity checks do not substitute for
+these actual-result checks.
 
 Reference checks use each current source fit and a different R target case,
 reverse the target Code order, and construct a bijective unordered-edge

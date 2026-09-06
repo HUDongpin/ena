@@ -210,6 +210,54 @@ function exactFields(actual: Row[], expected: Row[], columns: string[], label: s
   }));
 }
 
+/** Keep identity types and exact schemas; only explicitly named numeric cells are removed. */
+function metadataRows(rows: Row[], numericColumns: string[]): Row[] {
+  return rows.map((row) => Object.fromEntries(Object.entries(row).filter(([key]) => !numericColumns.includes(key))));
+}
+function expectMetadata(actual: Row[], actualColumns: string[], expected: Row[], expectedColumns: string[], label: string): void {
+  expect(metadataRows(actual, actualColumns), `${label}: exact typed metadata and row order`).toEqual(metadataRows(expected, expectedColumns));
+}
+
+/**
+ * jENA compact coordinate rows retain Unit metadata; trajectory Horizon is in
+ * the SAME-index actual.trajectories row. Validate both actual schemas before
+ * combining them, and expand only R's declared redundant Conversation Unit.
+ */
+function expectUnitTableIdentities(actual: ENASet, expected: StandardFrame, displayed: string[]): void {
+  const oracleMetadata = metadataRows(expected.points, expected.rotationColumns);
+  let compactMetadata = oracleMetadata;
+  let labels: import('../src/index.js').Scalar[];
+  if (actual.modelType !== 'EndPoint') {
+    expect(actual.units).toEqual(['unit']);
+    expect(actual.conversation).toEqual(['horizon']);
+    const conversation = actual.functionParams.window === 'Conversation';
+    const oracleKeys = ['unit', 'ENA_UNIT', 'horizon', ...(conversation ? ['unit.1'] : [])];
+    for (const row of oracleMetadata) expect(Object.keys(row).sort()).toEqual([...oracleKeys].sort());
+    const expectedTrajectories = oracleMetadata.map((row) => ({ unit: row.unit!, ENA_UNIT: row.ENA_UNIT!, horizon: row.horizon! }));
+    expect(actual.trajectories, 'actual typed trajectory tuples and order').toEqual(expectedTrajectories);
+    compactMetadata = oracleMetadata.map((row) => ({ unit: row.unit!, ENA_UNIT: row.ENA_UNIT! }));
+    expectMetadata(actual.points, displayed, compactMetadata, [], 'compact points');
+    const actualMetadata = metadataRows(actual.points, displayed);
+    // Both inputs have already been checked, so a merge cannot overwrite and
+    // conceal a conflicting Unit or a spoofed compact-row Horizon field.
+    const expanded: Row[] = actualMetadata.map((row, i) => ({
+      ...row, ...actual.trajectories![i]!,
+      ...(conversation ? { 'unit.1': actual.trajectories![i]!.unit! } : {})
+    }));
+    expect(expanded, 'actual point + trajectory correspondence to R').toEqual(oracleMetadata);
+    labels = actual.trajectories!.map((row) => `${row.ENA_UNIT}::${row.horizon}`);
+    const rawLabels = expanded.map((row) => `${row.ENA_UNIT}::${row.horizon}${conversation ? `::${row['unit.1']}` : ''}`);
+    expect(expected.centroids.map((row) => row.unit), 'R whole trajectory label recipe').toEqual(rawLabels);
+  } else {
+    expect(actual.trajectories ?? []).toEqual([]);
+    expectMetadata(actual.points, displayed, oracleMetadata, [], 'endpoint points');
+    labels = metadataRows(actual.points, displayed).map((row) => row.ENA_UNIT!);
+    expect(expected.centroids.map((row) => row.unit), 'R endpoint labels').toEqual(labels);
+  }
+  expect(actual.unitLabels, 'actual whole Unit/step label recipe').toEqual(labels);
+  expectMetadata(actual.centroids!, displayed, labels.map((unit) => ({ unit })), [], 'centroid labels');
+}
+
 function columns(matrix: Matrix, indices: number[]): Matrix {
   return matrix.map((row) => indices.map((i) => row[i]!));
 }
@@ -223,6 +271,8 @@ function distances(matrix: Matrix): Matrix {
 /** Only equal-variance blocks may mix; MR1 is always a fixed singleton. */
 export function expectStrictFrame(actual: ENASet, expected: StandardFrame, edges: string[], fixedMeans: boolean): Matrix {
   const names = expected.rotationColumns;
+  expectUnitTableIdentities(actual, expected, names);
+  expectMetadata(actual.rotation.nodes!, names, expected.nodes, names, 'full node Code identities');
   expect(actual.rotation.rotationColumns).toEqual(names);
   expect(actual.rotation.rotationMatrix.length).toBe(edges.length);
   expect(expected.rotationMatrix.map((row) => row.codes)).toEqual(edges);
@@ -289,35 +339,42 @@ export function expectStrictStandardParity(actual: ENASet, full: ENASet, golden:
     exactFields([actual.rowConnectionCounts[i]!], [golden.rowConnectionCounts[i]!], Object.keys(golden.rowConnectionCounts[i]!), `row counts ${i}`);
   }
   exactFields(actual.connectionCounts, golden.connectionCounts, Object.keys(golden.connectionCounts[0]!), 'aggregate counts');
-  if (options.window === 'Conversation' && options.model !== 'EndPoint') {
-    // ena.accumulate.data.R adds units.by to conversations.by. ena.set.R
-    // cbinds units + conversation, yielding the duplicate unit.1 column in
-    // this one-Unit fixture. Expand jENA's typed tuple; never strip labels.
-    expect(options.units).toEqual(['unit']);
-    expect(options.conversation).toEqual(['horizon']);
-    const expanded: Row[] = actual.trajectories!.map((row) => ({ ...row, 'unit.1': row.unit! }));
-    exactFields(expanded, golden.trajectories, ['unit', 'ENA_UNIT', 'horizon', 'unit.1'], 'R Conversation tuple');
-    expect(actual.unitLabels).toEqual(actual.trajectories!.map((row) => `${row.ENA_UNIT}::${row.horizon}`));
-    expect(golden.unitLabels).toEqual(expanded.map((row) => `${row.ENA_UNIT}::${row.horizon}::${row['unit.1']}`));
-  } else {
-    expect(actual.unitLabels).toEqual(golden.unitLabels);
-    if (golden.trajectories.length) exactFields(actual.trajectories!, golden.trajectories, Object.keys(golden.trajectories[0]!), 'trajectories');
-  }
-  expect(golden.centroids.map((row) => row.unit)).toEqual(golden.unitLabels);
-  expect(actual.centroids!.map((row) => row.unit)).toEqual(actual.unitLabels);
-  exactFields(actual.points, golden.points, ['unit', 'ENA_UNIT'], 'point Units');
-  if (golden.trajectories.length) exactFields(golden.points, golden.trajectories, Object.keys(golden.trajectories[0]!), 'point trajectory tuple');
-  for (const [label, observed, oracle] of [
-    ['lineWeights', actual.lineWeights, golden.lineWeights],
-    ['centered edge vectors', actual.pointsForProjection, golden.centeredPoints]
-  ] as const) expectAbsoluteMatrixClose(strictMatrix(observed, edges), strictMatrix(oracle, edges), 1e-10, label);
-  expectAbsoluteMatrixClose([actual.rotation.centerVector], strictMatrix([golden.centerVector], edges), 1e-10, 'center');
-  expect(actual.rotation).toEqual({ ...full.rotation, nodes: actual.rotation.nodes });
-  expect(actual.variance).toEqual(full.variance);
   const frame = golden.canonicalMeansFrame ?? golden;
   const names = frame.rotationColumns;
+  const requested = names.slice(0, golden.dimensions.requested);
   expect(names.length).toBe(golden.dimensions.returned);
-  expectAbsoluteMatrixClose(strictMatrix(actual.points, names.slice(0, golden.dimensions.requested)), strictMatrix(full.points, names.slice(0, golden.dimensions.requested)), 0, 'display prefix');
+  for (const [set, displayed] of [[actual, requested], [full, names]] as const) {
+    expect(set.codes).toEqual(options.codes);
+    expect(set.codeColumns).toEqual(edges);
+    expect(set.rotation.codes).toEqual(options.codes);
+    expect(set.modelType).toBe(options.model);
+    expect(set.units).toEqual(options.units);
+    expect(set.conversation).toEqual(options.conversation);
+    expect(set.functionParams.window).toBe(options.window);
+    expect(set.trajectories?.length ?? 0).toBe(golden.rowCounts.trajectories);
+    expectUnitTableIdentities(set, frame, [...displayed]);
+    expect(golden.centroids.map((row) => row.unit)).toEqual(golden.unitLabels);
+    expectMetadata(set.connectionCounts, edges, golden.connectionCounts, edges, 'aggregate identities');
+    exactFields(set.connectionCounts, golden.connectionCounts, Object.keys(golden.connectionCounts[0]!), 'aggregate counts');
+    for (const [label, observed, oracle] of [
+      ['lineWeights', set.lineWeights, golden.lineWeights],
+      ['centered edge vectors', set.pointsForProjection, golden.centeredPoints]
+    ] as const) {
+      expectMetadata(observed, edges, oracle, edges, label);
+      expectAbsoluteMatrixClose(strictMatrix(observed, edges), strictMatrix(oracle, edges), 1e-10, label);
+    }
+    expectAbsoluteMatrixClose([set.rotation.centerVector], strictMatrix([golden.centerVector], edges), 1e-10, 'center');
+  }
+  const { nodes: requestedNodes, ...requestedRotation } = actual.rotation;
+  const { nodes: fullNodes, ...fullRotation } = full.rotation;
+  expect(requestedRotation).toEqual(fullRotation);
+  expect(actual.variance).toEqual(full.variance);
+  expectMetadata(requestedNodes!, requested, fullNodes!, names, 'requested node Code identities and dimensions');
+  for (const [label, observed, complete] of [
+    ['points', actual.points, full.points], ['nodes', requestedNodes!, fullNodes!], ['centroids', actual.centroids!, full.centroids!]
+  ] as const) {
+    expectAbsoluteMatrixClose(strictMatrix(observed, requested), strictMatrix(complete, requested), label === 'points' ? 0 : 1e-10, `requested ${label} prefix`);
+  }
   expectStrictFrame(full, frame, edges, options.rotation?.method === 'mean');
 }
 
@@ -349,6 +406,18 @@ export function expectStrictReferenceParity(source: ENASet, sourceGolden: Standa
   const stages: string[] = [];
   const projected = makeSet(target, { dimensions: frame.rotationColumns.length, rotationSet, nodePositionMethod: 'reference-fixed', observer: { onStage: (stage) => stages.push(stage) } });
   expect(stages).toEqual(['normalize', 'center', 'rotate-or-project', 'position-nodes']);
+  expect(projected.codes).toEqual(target.codes);
+  expect(projected.codeColumns).toEqual(target.codeColumns);
+  expect(projected.rotation.codes).toEqual(target.codes);
+  expect(projected.modelType).toBe(targetOptions.model);
+  expect(projected.units).toEqual(targetOptions.units);
+  expect(projected.conversation).toEqual(targetOptions.conversation);
+  expectUnitTableIdentities(projected, targetGolden, frame.rotationColumns);
+  for (const [label, actualRows, expectedRows] of [
+    ['Reference counts', projected.connectionCounts, targetGolden.connectionCounts],
+    ['Reference weights', projected.lineWeights, targetGolden.lineWeights],
+    ['Reference centered vectors', projected.pointsForProjection, targetGolden.centeredPoints]
+  ] as const) expectMetadata(actualRows, target.codeColumns, expectedRows, source.codeColumns, label);
   expect(source.rotation).toEqual(originalSource);
   expect(projected.rotation.rotationMatrix).toBe(rotationSet.rotationMatrix);
   expect(projected.rotation.nodes).toBe(rotationSet.nodes);
@@ -362,6 +431,7 @@ export function expectStrictReferenceParity(source: ENASet, sourceGolden: Standa
   const expectedPoints = product(centered, strictMatrix(frame.rotationMatrix, frame.rotationColumns));
   expectAbsoluteMatrixClose(product(strictMatrix(projected.points, frame.rotationColumns), change), expectedPoints, 1e-10, 'Reference fixed-source points');
   const expectedNodes = target.codes.map((code) => frame.nodes.find((row) => row.code === code)!);
+  expectMetadata(projected.rotation.nodes!, frame.rotationColumns, expectedNodes, frame.rotationColumns, 'Reference node Code identities');
   expectAbsoluteMatrixClose(product(strictMatrix(projected.rotation.nodes!, frame.rotationColumns), change), strictMatrix(expectedNodes, frame.rotationColumns), 1e-10, 'Reference fixed-source nodes');
   // Derive incidence centroids from the R target weights and R source nodes.
   const nodeWeights = weights.map((row) => {
