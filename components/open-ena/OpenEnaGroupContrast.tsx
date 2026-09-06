@@ -1,6 +1,8 @@
 import {
+  useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -176,6 +178,8 @@ type PlotKind = "comparison" | "primary" | "secondary";
 type GroupRole = "primary" | "secondary";
 type PlotCopyStatus = "idle" | "copying" | "image-copied" | "svg-copied" | "unavailable" | "cancelled";
 type GroupContrastUiCopy = NonNullable<OpenEnaGroupContrastProps["uiCopy"]>;
+const RESTORE_HIT_TARGET_SVG_SIZE = 56;
+const RESTORE_HIT_TARGET_CSS_SIZE = 33;
 
 function plotCopyStatusLabel(status: PlotCopyStatus, copy: GroupContrastUiCopy) {
   switch (status) {
@@ -671,10 +675,10 @@ function GroupMeanMarker({
       <title>{label}</title>
       {interactive ? (
         <rect
-          x="-28"
-          y="-28"
-          width="56"
-          height="56"
+          x={-RESTORE_HIT_TARGET_SVG_SIZE / 2}
+          y={-RESTORE_HIT_TARGET_SVG_SIZE / 2}
+          width={RESTORE_HIT_TARGET_SVG_SIZE}
+          height={RESTORE_HIT_TARGET_SVG_SIZE}
           transform={`scale(${restoreHitTargetScale})`}
           fill="transparent"
           pointerEvents="all"
@@ -1114,6 +1118,34 @@ function ContrastSvg({
   sideRole?: GroupRole;
   restorePanelForRole?: Partial<Record<GroupRole, { label: string; slot: GroupRole; onRestore: () => void }>>;
 }) {
+  const comparisonSvgRef = useRef<SVGSVGElement | null>(null);
+  const [svgScreenScale, setSvgScreenScale] = useState(1);
+  const bindSvgRef = useCallback((node: SVGSVGElement | null) => {
+    comparisonSvgRef.current = node;
+    if (kind !== "comparison" || !svgRef) return;
+    if (typeof svgRef === "function") svgRef(node);
+    else svgRef.current = node;
+  }, [kind, svgRef]);
+  useLayoutEffect(() => {
+    if (kind !== "comparison") return;
+    const svg = comparisonSvgRef.current;
+    if (!svg) return;
+    const measure = () => {
+      const matrix = svg.getScreenCTM();
+      if (!matrix) return;
+      const next = Math.min(Math.hypot(matrix.a, matrix.b), Math.hypot(matrix.c, matrix.d));
+      if (!Number.isFinite(next) || next <= 0) return;
+      setSvgScreenScale((current) => Math.abs(current - next) < 0.0001 ? current : next);
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(svg);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [kind]);
   const titleId = useId();
   const descriptionId = useId();
   const viewportId = useId();
@@ -1322,7 +1354,7 @@ function ContrastSvg({
 
   return (
     <svg
-      ref={kind === "comparison" ? svgRef : undefined}
+      ref={kind === "comparison" ? bindSvgRef : undefined}
       viewBox={`0 0 ${width} ${height}`}
       role="img"
       aria-labelledby={`${titleId} ${descriptionId}`}
@@ -1630,7 +1662,7 @@ function ContrastSvg({
             showLabel={showGroupLabels}
             restoreLabel={restore?.label}
             restoreSlot={restore?.slot}
-            restoreHitTargetScale={1 / zoom}
+            restoreHitTargetScale={RESTORE_HIT_TARGET_CSS_SIZE / (RESTORE_HIT_TARGET_SVG_SIZE * zoom * svgScreenScale)}
             onRestore={restore?.onRestore}
           />
         );

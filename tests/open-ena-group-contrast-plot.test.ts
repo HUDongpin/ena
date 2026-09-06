@@ -843,7 +843,9 @@ test("the central comparison SVG accepts the Workspace export ref", () => {
   assert.ok(existsSync(componentPath));
   const source = readFileSync(componentPath, "utf8");
   assert.match(source, /svgRef\?:\s*Ref<SVGSVGElement>/);
-  assert.match(source, /kind\s*===\s*"comparison"\s*\?\s*svgRef\s*:\s*undefined/);
+  assert.match(source, /ref=\{kind\s*===\s*"comparison"\s*\?\s*bindSvgRef\s*:\s*undefined\}/);
+  assert.match(source, /typeof svgRef === "function"\) svgRef\(node\)/);
+  assert.match(source, /else svgRef\.current = node/);
 });
 
 test("Copy image resolves the semantic plot SVG instead of a toolbar icon", () => {

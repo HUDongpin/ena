@@ -189,8 +189,15 @@ test("actual plot and panel actions keep 32px targets and locale-independent foc
   assert.match(panelActions, /min-height:\s*32px;/u);
   assert.match(contrast, /data-ena-restore-slot=\{interactive\s*\?\s*restoreSlot\s*:\s*undefined\}/u);
   assert.match(contrast, /data-ena-restore-hit-target="true"/u);
-  assert.match(contrast, /width="56"[\s\S]*?height="56"/u);
-  assert.match(contrast, /restoreHitTargetScale=\{1\s*\/\s*zoom\}/u);
+  assert.match(contrast, /const RESTORE_HIT_TARGET_SVG_SIZE\s*=\s*56;/u);
+  assert.match(contrast, /const RESTORE_HIT_TARGET_CSS_SIZE\s*=\s*33;/u);
+  assert.match(contrast, /useLayoutEffect\(\(\)\s*=>\s*\{/u);
+  assert.match(contrast, /new ResizeObserver\(measure\)/u);
+  assert.match(contrast, /observer\?\.disconnect\(\)/u);
+  assert.match(contrast, /window\.removeEventListener\("resize", measure\)/u);
+  assert.match(contrast, /typeof svgRef === "function"\) svgRef\(node\)/u);
+  assert.match(contrast, /else svgRef\.current = node/u);
+  assert.match(contrast, /RESTORE_HIT_TARGET_CSS_SIZE\s*\/\s*\(RESTORE_HIT_TARGET_SVG_SIZE\s*\*\s*zoom\s*\*\s*svgScreenScale\)/u);
   assert.match(contrast, /data-ena-restore-hit-target-scale=\{dataNumber\(restoreHitTargetScale\)\}/u);
   assert.match(contrast, /focusAfterRender\('\[data-ena-panel-action="switch-plots"\]'\)/u);
   assert.doesNotMatch(contrast, /focusAfterRender\(['"]\[aria-label=/u);

@@ -43,10 +43,11 @@ const expected = {
   },
 };
 
-const observations = { locales: {}, restoreTargets: {}, zoomBounds: {}, clipboardReads: 0, errors: [], network: [] };
+const observations = { locales: {}, restoreTargets: {}, restoreHitTargets: {}, zoomBounds: {}, responsiveSweep: [], clipboardReads: 0, errors: [], network: [] };
 const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1050 }, reducedMotion: "reduce" });
+  page.on("dialog", (dialog) => dialog.accept());
   page.on("pageerror", (error) => observations.errors.push(error.message));
   page.on("console", (message) => {
     if (message.type() === "error") observations.errors.push(message.text());
@@ -75,6 +76,14 @@ try {
   await page.waitForFunction(() => document.querySelector("[data-testid=open-ena-workspace-v3]").dataset.resultStatus === "current");
   await page.getByTestId("open-ena-group-contrast").waitFor();
   const scientificResultBefore = await page.evaluate(() => JSON.stringify(window.jobs[0].result));
+  const downloadCurrentAnalysis = async () => {
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByTestId("open-ena-export-current-analysis").click(),
+    ]);
+    return readFile(await download.path(), "utf8");
+  };
+  const scientificExportBefore = await downloadCurrentAnalysis();
 
   await page.evaluate(() => {
     window.task32Q1Clipboard = { confirmCalls: 0, confirmDecision: false, confirmThrows: false, writes: [], writeTexts: [], serialized: [] };
@@ -198,9 +207,12 @@ try {
     await page.waitForFunction(() => document.activeElement?.getAttribute("data-ena-restore-slot") === "secondary");
     const restore = plot.locator('[data-ena-restore-slot="secondary"]').first();
     const restoreRect = await restore.evaluate((element) => element.getBoundingClientRect().toJSON());
+    const restoreHitRect = await restore.locator('[data-ena-restore-hit-target]').evaluate((element) => element.getBoundingClientRect().toJSON());
     assert.ok(restoreRect.width >= 32 && restoreRect.height >= 32, `${locale}: revealed Restore target is at least 32px: ${JSON.stringify(restoreRect)}`);
+    assert.ok(restoreHitRect.width >= 32 && restoreHitRect.height >= 32, `${locale}: actual transparent Restore rectangle is at least 32px: ${JSON.stringify(restoreHitRect)}`);
     assert.match(await restore.getAttribute("aria-label") ?? "", expected[locale].restore);
     observations.restoreTargets[locale] = restoreRect;
+    observations.restoreHitTargets[locale] = restoreHitRect;
     await restore.press("Enter");
     await page.waitForFunction(() => document.activeElement?.getAttribute("data-ena-panel-role") === "secondary");
 
@@ -252,10 +264,12 @@ try {
     await page.waitForFunction(() => document.activeElement?.getAttribute("data-ena-restore-slot") === "secondary");
     const restore = plot.locator('[data-ena-restore-slot="secondary"]').first();
     const rect = await restore.evaluate((element) => element.getBoundingClientRect().toJSON());
+    const hitRect = await restore.locator('[data-ena-restore-hit-target]').evaluate((element) => element.getBoundingClientRect().toJSON());
     assert.ok(rect.width >= 32 && rect.height >= 32, `${expectedZoom}x plot zoom Restore target is at least 32px: ${JSON.stringify(rect)}`);
+    assert.ok(hitRect.width >= 32 && hitRect.height >= 32, `${expectedZoom}x actual transparent rectangle is at least 32px: ${JSON.stringify(hitRect)}`);
     await restore.press("Enter");
     await page.waitForFunction(() => document.activeElement?.getAttribute("data-ena-panel-role") === "secondary");
-    observations.zoomBounds[expectedZoom] = rect;
+    observations.zoomBounds[expectedZoom] = { group: rect, hit: hitRect };
   };
   await measureRestoreAtZoomBound("zoom-out", "0.6");
   await plot.locator('[data-ena-plot-toolbar="comparison"] [data-ena-plot-action="recenter"]').click();
@@ -277,11 +291,58 @@ try {
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-ena-restore-slot") === "secondary");
   const narrowRestore = plot.locator('[data-ena-restore-slot="secondary"]').first();
   const narrowRestoreRect = await narrowRestore.evaluate((element) => element.getBoundingClientRect().toJSON());
+  const narrowRestoreHitRect = await narrowRestore.locator('[data-ena-restore-hit-target]').evaluate((element) => element.getBoundingClientRect().toJSON());
   assert.ok(narrowRestoreRect.width >= 32 && narrowRestoreRect.height >= 32, `narrow 200 percent Restore target is at least 32px: ${JSON.stringify(narrowRestoreRect)}`);
-  observations.narrowRestoreTarget = narrowRestoreRect;
+  assert.ok(narrowRestoreHitRect.width >= 32 && narrowRestoreHitRect.height >= 32, `narrow actual transparent Restore rectangle is at least 32px: ${JSON.stringify(narrowRestoreHitRect)}`);
+  observations.narrowRestoreTarget = { group: narrowRestoreRect, hit: narrowRestoreHitRect };
   await page.screenshot({ path: `${outputDir}/plot-actions-zh-hans-narrow-200-percent-restore.png`, fullPage: true });
   await narrowRestore.press("Enter");
   await page.screenshot({ path: `${outputDir}/plot-actions-zh-hans-narrow-200-percent.png`, fullPage: true });
+
+  for (const viewportWidth of [901, 1024, 1280, 1399, 1400, 1440]) {
+    await page.setViewportSize({ width: viewportWidth, height: 1050 });
+    await page.evaluate(() => { document.documentElement.style.fontSize = "16px"; });
+    await page.waitForTimeout(50);
+    for (const targetZoom of ["0.6", "1", "2.4"]) {
+      await plot.locator('[data-ena-plot-toolbar="comparison"] [data-ena-plot-action="recenter"]').click();
+      if (targetZoom !== "1") {
+        const zoomAction = targetZoom === "0.6" ? "zoom-out" : "zoom-in";
+        const zoomButton = plot.locator(`[data-ena-plot-toolbar="comparison"] [data-ena-plot-action="${zoomAction}"]`);
+        while (!(await zoomButton.isDisabled())) await zoomButton.click();
+      }
+      await plot.locator('[data-ena-panel-toolbar="secondary"] [data-ena-panel-action="remove"]').click();
+      await page.waitForFunction(() => document.activeElement?.getAttribute("data-ena-restore-slot") === "secondary");
+      const responsiveRestore = plot.locator('[data-ena-restore-slot="secondary"]').first();
+      const geometry = await responsiveRestore.evaluate((element) => {
+        const hit = element.querySelector('[data-ena-restore-hit-target]');
+        const visible = element.querySelector('rect:not([data-ena-restore-hit-target])');
+        const hitRect = hit.getBoundingClientRect();
+        const visibleRect = visible.getBoundingClientRect();
+        return {
+          hit: hitRect.toJSON(),
+          visible: visibleRect.toJSON(),
+          centerDelta: {
+            x: Math.abs((hitRect.left + hitRect.right) / 2 - (visibleRect.left + visibleRect.right) / 2),
+            y: Math.abs((hitRect.top + hitRect.bottom) / 2 - (visibleRect.top + visibleRect.bottom) / 2),
+          },
+          pointerEvents: getComputedStyle(hit).pointerEvents,
+        };
+      });
+      assert.ok(geometry.hit.width >= 32 && geometry.hit.height >= 32, `${viewportWidth}px/${targetZoom}x actual Restore rect is at least 32px: ${JSON.stringify(geometry.hit)}`);
+      assert.ok(geometry.hit.width <= 34 && geometry.hit.height <= 34, `${viewportWidth}px/${targetZoom}x Restore rect remains narrowly bounded: ${JSON.stringify(geometry.hit)}`);
+      assert.ok(geometry.centerDelta.x < 0.1 && geometry.centerDelta.y < 0.1, `${viewportWidth}px/${targetZoom}x hit rect stays centered on the visible marker`);
+      assert.equal(geometry.pointerEvents, "all");
+      observations.responsiveSweep.push({ viewportWidth, targetZoom, geometry });
+      if (targetZoom === "1" && [901, 1280, 1400].includes(viewportWidth)) {
+        await page.screenshot({ path: `${outputDir}/restore-${viewportWidth}-zoom-1.png` });
+      }
+      await responsiveRestore.press("Enter");
+      await page.waitForFunction(() => document.activeElement?.getAttribute("data-ena-panel-role") === "secondary");
+    }
+  }
+
+  await page.setViewportSize({ width: 1440, height: 1050 });
+  observations.actualExportEquality = scientificExportBefore === await downloadCurrentAnalysis();
 
   observations.clipboardReads = await page.evaluate(() => window.task32Q1ClipboardReads ?? 0);
   observations.workerJobs = await page.evaluate(() => window.jobs.length);
@@ -291,10 +352,11 @@ try {
   assert.equal(observations.workerJobs, 1, "locale and presentation actions never start another Worker job");
   assert.equal(observations.resultStatus, "current", "presentation actions preserve the bound scientific result");
   assert.equal(observations.scientificResultEqual, true, "locale, clipboard, panel and zoom actions preserve the exact bound scientific object");
+  assert.equal(observations.actualExportEquality, true, "actual downloaded current-analysis bytes remain exact after locale, clipboard, panel, viewport and zoom actions");
   assert.deepEqual(observations.errors, []);
   assert.deepEqual(observations.network, []);
   await writeFile(`${outputDir}/results.json`, `${JSON.stringify(observations, null, 2)}\n`);
-  console.log("Task32 Q1 actual GroupContrast actions: 3 locales, reject/accept PNG and SVG fallback, stable focus, 32px normal/reflow, one current Worker result PASS.");
+  console.log("Task32 Q2 actual GroupContrast actions: 3 locales, protected PNG/SVG clipboard, stable focus, responsive 33px Restore rect, exact downloaded analysis, one current Worker result PASS.");
 } finally {
   await browser.close();
 }
