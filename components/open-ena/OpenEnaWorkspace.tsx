@@ -1,4 +1,5 @@
 "use client";
+import { buildUnitDisplayLabelIndexV3, hiddenUnitLabelsV3 } from "../../lib/open-ena/hidden-unit-display-v3";
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type { Row } from "jena-js";
 import type { Locale } from "@/lib/i18n";
@@ -655,14 +656,14 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   };
   const graph = { showCodeGraph: !display.allCodesSuppressed, codeVisibility: display.codeVisibility, codeSourceByRenderedCode: renderedSource, codeLabelByRenderedCode: presentation?.codeLabelByRenderedCode };
   const trajectoryPresentation = useMemo(() => result && isTrajectory ? buildTrajectoryPresentationV3(result as BoundStandardResultV3, { showCentroidPaths: showGroupCentroidPaths, endpointsOnly, visibleHorizons, hiddenUnitKeys, groupSettingsByToken: baseDisplay.groups }) : undefined, [result, isTrajectory, showGroupCentroidPaths, endpointsOnly, visibleHorizons, hiddenUnitKeys, baseDisplay.groups]);
-  const plotResult = presentation && result ? { ...presentation.result, trajectoryPresentation, groupPresentation: {
+  const hasHiddenUnits = hiddenUnitKeys.length > 0;
+  const hiddenUnitLabelIndex = useMemo(() => result && hasHiddenUnits ? buildUnitDisplayLabelIndexV3(result) : null, [result, hasHiddenUnits]);
+  const hiddenUnits = useMemo(() => hiddenUnitLabelsV3(hiddenUnitLabelIndex, hiddenUnitKeys), [hiddenUnitLabelIndex, hiddenUnitKeys]);
+  const plotResult = useMemo(() => presentation && result ? { ...presentation.result, trajectoryPresentation, groupPresentation: {
     allSuppressed: display.allGroupsSuppressed,
-    settingsByName: Object.fromEntries(groups.map((group) => [group.displayLabel, resolveOpenEnaGroupDisplayOptions(display.groups, group.token)])),
-    hiddenUnits: new Set(result.executionProvenance.identityDictionary.units.filter((unit) => {
-      const group = result.executionProvenance.unitGroups.find((entry) => entry.unitToken === unit.token)?.groupToken;
-      return hiddenUnitKeys.includes(JSON.stringify([group, unit.token]));
-    }).map((unit) => unit.displayLabel)),
-  } } : null;
+    settingsByName: Object.fromEntries(result.executionProvenance.identityDictionary.groups.map((group) => [group.displayLabel, resolveOpenEnaGroupDisplayOptions(display.groups, group.token)])),
+    hiddenUnits,
+  } } : null, [presentation, result, trajectoryPresentation, display.groups, display.allGroupsSuppressed, hiddenUnits]);
   function exportPresentation() {
     if (!result) return;
     const preset = buildPresentationArtifactV3(result, {
