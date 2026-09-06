@@ -17,8 +17,13 @@ import {
 import { codeColorFor, JENA_GROUP_COLORS, type OpenEnaCodeColors } from "./plot-style";
 import type { OpenEnaNodeLayoutPositions } from "./node-layout";
 import type {
+  OpenEnaCodeGraphPresentation,
   OpenEnaOrderedNodeTotals,
   OpenEnaOrderedPlotScope,
+} from "./ordered-plot";
+import {
+  openEnaRenderedCodeIsVisible,
+  openEnaRenderedEdgeIsVisible,
 } from "./ordered-plot";
 import {
   openEnaUnitPointGlyphColors,
@@ -65,7 +70,7 @@ interface PositionedSelfLoop extends PositionedOrderedEdge {
   tangent: MutablePoint3;
 }
 
-export interface CompileOpenEnaOrdered3dPlotInput {
+export interface CompileOpenEnaOrdered3dPlotInput extends OpenEnaCodeGraphPresentation {
   result: OpenEnaResult;
   config: OpenEnaConfig;
   scope: OpenEnaOrderedPlotScope;
@@ -730,6 +735,9 @@ export function compileOpenEnaOrdered3dPlotSpec(
     showPoints,
     showNetworks,
     showLabels,
+    showCodeGraph = true,
+    codeVisibility,
+    codeSourceByRenderedCode,
     showUnitLabels,
     showVariance,
     edgeScale,
@@ -743,6 +751,7 @@ export function compileOpenEnaOrdered3dPlotSpec(
     nodeTotals,
     nodeLayout,
   } = input;
+  const codePresentation = { showCodeGraph, codeVisibility, codeSourceByRenderedCode };
   const dimensions = [xDimension, yDimension, zDimension] as const;
   validateSelectedDimensions(result, dimensions);
   const variance = dimensions.map((dimension) => selectedVariance(result, dimension)) as MutablePoint3;
@@ -761,6 +770,9 @@ export function compileOpenEnaOrdered3dPlotSpec(
       return typeof candidate === "number" && Number.isFinite(candidate) ? candidate : point[axis]!;
     }) as MutablePoint3;
   });
+  const renderedNodeIndices = model.nodes.flatMap((node, nodeIndex) => (
+    openEnaRenderedCodeIsVisible(codePresentation, node.code) ? [nodeIndex] : []
+  ));
   const coordinateMagnitudes = [
     ...fitted.nodeCoordinates.flatMap((point) => point.map((coordinate) => Math.abs(coordinate))),
     ...fitted.pointCoordinates.flatMap((point) => point.map((coordinate) => Math.abs(coordinate))),
@@ -775,10 +787,13 @@ export function compileOpenEnaOrdered3dPlotSpec(
     displayNodeCoordinates.reduce((sum, point) => sum + point[axis]!, 0)
       / displayNodeCoordinates.length
   )) as MutablePoint3;
-  const visibleDirections = new Set(model.visibleEdges.map((edge) => (
+  const renderedEdges = model.visibleEdges.filter((edge) => (
+    openEnaRenderedEdgeIsVisible(codePresentation, edge.ground, edge.response)
+  ));
+  const visibleDirections = new Set(renderedEdges.map((edge) => (
     `${edge.groundIndex}:${edge.responseIndex}`
   )));
-  const positioned = model.visibleEdges.map((edge): PositionedOrderedEdge => ({
+  const positioned = renderedEdges.map((edge): PositionedOrderedEdge => ({
     edge,
     edgeIndex: model.edges.indexOf(edge),
     widthBucket: widthBucket(edge.relativeMagnitude),
@@ -795,7 +810,7 @@ export function compileOpenEnaOrdered3dPlotSpec(
     .map((entry) => selfLoopPosition(entry, displayNodeCoordinates, centroid, sceneExtent));
 
   const traces: OpenEna3dTrace[] = [];
-  if (showNetworks) {
+  if (showNetworks && showCodeGraph) {
     traces.push(...compileDirectedTraces({
       offDiagonal,
       selfLoops,
@@ -818,35 +833,38 @@ export function compileOpenEnaOrdered3dPlotSpec(
       pointScale: safePointScale,
     }));
   }
-  traces.push({
-    type: "scatter3d",
-    mode: showLabels ? "markers+text" : "markers",
-    name: "Codes",
-    x: displayNodeCoordinates.map((point) => point[0]),
-    y: displayNodeCoordinates.map((point) => point[1]),
-    z: displayNodeCoordinates.map((point) => point[2]),
-    text: model.nodes.map((node) => node.code),
-    customdata: model.nodes.map((node, nodeIndex) => (
-      codeHover(node.code, displayNodeCoordinates[nodeIndex]!, node.responseTotal, dimensions)
-    )),
-    textposition: "top center",
-    textfont: { color: "#263740", size: 12 },
-    marker: {
-      color: model.nodes.map((node) => codeColorFor(codeColors, node.code)),
-      size: model.nodes.map((node) => node.radius * safePointScale),
-      symbol: "circle",
-      opacity: 1,
-      line: { color: "#ffffff", width: 1.5 },
-    },
-    hovertemplate: "%{customdata}<extra></extra>",
-    showlegend: false,
-    meta: {
-      role: "code-node",
-      analysisKind: "ona",
-      scope: resolvedScope,
-      markerSymbol: "circle",
-    },
-  });
+  if (renderedNodeIndices.length > 0) {
+    traces.push({
+      type: "scatter3d",
+      mode: showLabels ? "markers+text" : "markers",
+      name: "Codes",
+      x: renderedNodeIndices.map((nodeIndex) => displayNodeCoordinates[nodeIndex]![0]),
+      y: renderedNodeIndices.map((nodeIndex) => displayNodeCoordinates[nodeIndex]![1]),
+      z: renderedNodeIndices.map((nodeIndex) => displayNodeCoordinates[nodeIndex]![2]),
+      text: renderedNodeIndices.map((nodeIndex) => model.nodes[nodeIndex]!.code),
+      customdata: renderedNodeIndices.map((nodeIndex) => {
+        const node = model.nodes[nodeIndex]!;
+        return codeHover(node.code, displayNodeCoordinates[nodeIndex]!, node.responseTotal, dimensions);
+      }),
+      textposition: "top center",
+      textfont: { color: "#263740", size: 12 },
+      marker: {
+        color: renderedNodeIndices.map((nodeIndex) => codeColorFor(codeColors, model.nodes[nodeIndex]!.code)),
+        size: renderedNodeIndices.map((nodeIndex) => model.nodes[nodeIndex]!.radius * safePointScale),
+        symbol: "circle",
+        opacity: 1,
+        line: { color: "#ffffff", width: 1.5 },
+      },
+      hovertemplate: "%{customdata}<extra></extra>",
+      showlegend: false,
+      meta: {
+        role: "code-node",
+        analysisKind: "ona",
+        scope: resolvedScope,
+        markerSymbol: "circle",
+      },
+    });
+  }
   traces.push(...axisTraces(axisExtent, dimensions).map((trace) => ({
     ...trace,
     meta: { ...trace.meta, analysisKind: "ona" as const, scope: resolvedScope },

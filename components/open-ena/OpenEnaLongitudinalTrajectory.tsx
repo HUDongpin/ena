@@ -10,6 +10,10 @@ import {
   codeColorFor,
   type OpenEnaCodeColors,
 } from "@/lib/open-ena/plot-style";
+import {
+  openEnaRenderedCodeIsVisible,
+  type OpenEnaCodeGraphPresentation,
+} from "@/lib/open-ena/ordered-plot";
 
 export interface OpenEnaLongitudinalTrajectoryCopy {
   title: string;
@@ -62,7 +66,7 @@ export interface OpenEnaLongitudinalTrajectoryCopy {
   noConnectedPaths: string;
 }
 
-export interface OpenEnaLongitudinalTrajectoryProps {
+export interface OpenEnaLongitudinalTrajectoryProps extends OpenEnaCodeGraphPresentation {
   trajectory: OpenEnaLongitudinalView;
   codeColors?: OpenEnaCodeColors;
   showIndividualPaths: boolean;
@@ -476,6 +480,9 @@ export default function OpenEnaLongitudinalTrajectory({
   showGroupCentroidPaths,
   showPoints,
   showLabels,
+  showCodeGraph = true,
+  codeVisibility,
+  codeSourceByRenderedCode,
   showVariance,
   pointScale,
   plotZoom,
@@ -491,6 +498,7 @@ export default function OpenEnaLongitudinalTrajectory({
     nExcluded: copy?.nExcluded ?? copy?.excludedCount ?? DEFAULT_COPY.nExcluded,
   };
   const view = trajectory;
+  const codePresentation = { showCodeGraph, codeVisibility, codeSourceByRenderedCode };
   const reactId = useId().replace(/[^a-zA-Z0-9_-]/gu, "") || "ena-longitudinal";
   const titleId = `${reactId}-title`;
   const descriptionId = `${reactId}-description`;
@@ -564,6 +572,9 @@ export default function OpenEnaLongitudinalTrajectory({
   const nodeMarks = view.nodes
     .filter((node) => finiteNumber(node.x) && finiteNumber(node.y))
     .slice(0, MAX_LONGITUDINAL_NODES);
+  const renderedNodeMarks = nodeMarks.filter((node) => (
+    openEnaRenderedCodeIsVisible(codePresentation, node.code)
+  ));
   const pointRadius = bounded(pointScale, 0.5, 2.4, 1) * 4.2;
   const cohortLabel = view.cohortPolicy === "complete" ? strings.complete : strings.available;
   const xAxis = safeText(view.axes?.[0], 48, strings.firstAxis);
@@ -667,7 +678,7 @@ export default function OpenEnaLongitudinalTrajectory({
             <line x1={PAD_X} y1={origin.y} x2={WIDTH - PAD_X} y2={origin.y} className="ena-longitudinal-axis" />
             <line x1={origin.x} y1={PAD_Y} x2={origin.x} y2={HEIGHT - PAD_Y} className="ena-longitudinal-axis" />
 
-            {nodeMarks.map((node, nodeIndex) => {
+            {renderedNodeMarks.map((node, nodeIndex) => {
               const point = project(node.x, node.y);
               const nodeColor = codeColorFor(codeColors, node.code);
               return (
@@ -797,7 +808,7 @@ export default function OpenEnaLongitudinalTrajectory({
               );
             })}
 
-            {showLabels && nodeMarks.map((node, nodeIndex) => {
+            {showLabels && renderedNodeMarks.map((node, nodeIndex) => {
               const point = project(node.x, node.y);
               return (
                 <text

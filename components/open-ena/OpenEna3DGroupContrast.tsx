@@ -9,13 +9,14 @@ import type {
   OpenEnaNodeDimensionPosition,
   OpenEnaNodeLayoutPositions,
 } from "@/lib/open-ena/node-layout";
+import type { OpenEnaCodeGraphPresentation } from "@/lib/open-ena/ordered-plot";
 import type { OpenEna3dAspectRatio, OpenEna3dCamera } from "@/lib/open-ena/plot3d";
 import type { CameraPreset, OpenEnaResult } from "@/lib/open-ena/types";
 import OpenEnaInteractive3DPlot, {
   type OpenEna3dRenderStatus,
 } from "./OpenEnaInteractive3DPlot";
 
-export interface OpenEna3DGroupContrastProps {
+export interface OpenEna3DGroupContrastProps extends OpenEnaCodeGraphPresentation {
   result: OpenEnaResult;
   contrast: OpenEnaPairwiseContrast;
   groupDisplay?: Pick<OpenEnaDerivedGroupDisplay, "primary" | "secondary" | "hiddenUnitKeys">;
@@ -61,6 +62,9 @@ export default function OpenEna3DGroupContrast({
   showPoints,
   showNetworks,
   showLabels,
+  showCodeGraph = true,
+  codeVisibility,
+  codeSourceByRenderedCode,
   showUnitLabels,
   showVariance,
   edgeScale,
@@ -108,6 +112,9 @@ export default function OpenEna3DGroupContrast({
     showPoints,
     showNetworks,
     showLabels,
+    showCodeGraph,
+    codeVisibility,
+    codeSourceByRenderedCode,
     showUnitLabels,
     showVariance,
     showTrajectories: false,

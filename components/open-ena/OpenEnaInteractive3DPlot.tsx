@@ -16,6 +16,7 @@ import type {
 } from "@/lib/open-ena/node-layout";
 import { compileOpenEnaOrdered3dPlotSpec } from "@/lib/open-ena/ordered-plot3d";
 import type {
+  OpenEnaCodeGraphPresentation,
   OpenEnaOrderedNodeTotals,
   OpenEnaOrderedPlotScope,
 } from "@/lib/open-ena/ordered-plot";
@@ -56,7 +57,7 @@ export function openEna3dFullscreenMode(capabilities: {
     : "fallback";
 }
 
-export interface OpenEnaInteractive3DPlotProps {
+export interface OpenEnaInteractive3DPlotProps extends OpenEnaCodeGraphPresentation {
   analysisKind?: "ena" | "ona";
   result: OpenEnaResult;
   orderedConfig?: OpenEnaConfig;
@@ -125,6 +126,18 @@ interface PlotlyEventRoot extends HTMLDivElement {
       };
     };
   };
+}
+
+export function openEna3dCodePositionByIdentity(spec: OpenEna3dPlotSpec, code: string) {
+  const trace = spec.data.find((candidate) => candidate.meta.role === "code-node");
+  const pointNumber = trace?.text?.indexOf(code) ?? -1;
+  if (pointNumber < 0) return null;
+  const x = trace?.x[pointNumber];
+  const y = trace?.y[pointNumber];
+  const z = trace?.z[pointNumber];
+  return typeof x === "number" && typeof y === "number" && typeof z === "number"
+    ? { x, y, z }
+    : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -310,6 +323,9 @@ export default function OpenEnaInteractive3DPlot({
   showPoints,
   showNetworks,
   showLabels,
+  showCodeGraph = true,
+  codeVisibility,
+  codeSourceByRenderedCode,
   showUnitLabels,
   showVariance,
   showTrajectories,
@@ -342,15 +358,17 @@ export default function OpenEnaInteractive3DPlot({
   const relayoutListenerRef = useRef<((update: Record<string, unknown>) => void) | null>(null);
   const hoverListenerRef = useRef<((event: PlotlyGl3dPointEvent) => void) | null>(null);
   const unhoverListenerRef = useRef<((event: PlotlyGl3dPointEvent) => void) | null>(null);
-  const hoveredCodeRef = useRef<{ code: string; pointNumber: number } | null>(null);
+  const hoveredCodeRef = useRef<{ code: string } | null>(null);
   const activeNodeDragRef = useRef<{
     pointerId: number;
+    target: HTMLDivElement;
     code: string;
     startClientX: number;
     startClientY: number;
     startPosition: OpenEnaNodePosition3d;
   } | null>(null);
   const pendingNodeMoveRef = useRef<{ code: string; next: OpenEnaNodePosition3d } | null>(null);
+  const visibleCodeIdentitiesRef = useRef<ReadonlySet<string>>(new Set());
   const nodeMoveFrameRef = useRef<number | null>(null);
   const actionStatusTimerRef = useRef<number | null>(null);
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
@@ -406,6 +424,9 @@ export default function OpenEnaInteractive3DPlot({
         showPoints,
         showNetworks,
         showLabels,
+        showCodeGraph,
+        codeVisibility,
+        codeSourceByRenderedCode,
         showUnitLabels,
         showVariance,
         edgeScale,
@@ -436,6 +457,9 @@ export default function OpenEnaInteractive3DPlot({
       showPoints,
       showNetworks,
       showLabels,
+      showCodeGraph,
+      codeVisibility,
+      codeSourceByRenderedCode,
       showUnitLabels,
       showVariance,
       showTrajectories,
@@ -467,6 +491,9 @@ export default function OpenEnaInteractive3DPlot({
     showPoints,
     showNetworks,
     showLabels,
+    showCodeGraph,
+    codeVisibility,
+    codeSourceByRenderedCode,
     showUnitLabels,
     showVariance,
     showTrajectories,
@@ -478,6 +505,10 @@ export default function OpenEnaInteractive3DPlot({
     flipY,
     nodeLayout,
   ]);
+  const renderedCodeTrace = spec.data.find((trace) => trace.meta.role === "code-node");
+  const renderedCodeIdentities = new Set(renderedCodeTrace?.text ?? []);
+  const renderedCodeIdentityKey = JSON.stringify([...renderedCodeIdentities]);
+  visibleCodeIdentitiesRef.current = renderedCodeIdentities;
   const cameraResetKey = `${camera}:${plotZoom}:${plotResetRevision}`;
   const controlledCameraKey = cameraKey(initialCamera);
   const controlledAspectRatioKey = aspectRatioKey(initialAspectRatio);
@@ -725,8 +756,12 @@ export default function OpenEnaInteractive3DPlot({
             }
             const code = point.fullData?.text?.[point.pointNumber]
               ?? point.data?.text?.[point.pointNumber];
-            if (typeof code !== "string" || !code.trim()) return;
-            hoveredCodeRef.current = { code, pointNumber: point.pointNumber };
+            if (typeof code !== "string" || !code.trim() || !visibleCodeIdentitiesRef.current.has(code)) {
+              hoveredCodeRef.current = null;
+              setHoveredCode(null);
+              return;
+            }
+            hoveredCodeRef.current = { code };
             setHoveredCode(code);
           };
           hoverListenerRef.current = listener;
@@ -761,6 +796,28 @@ export default function OpenEnaInteractive3DPlot({
       active = false;
     };
   }, [Plotly, spec, cameraResetKey, onCameraChange, onAspectRatioChange, onReady, onError]);
+
+  useEffect(() => {
+    const visibleCodes = visibleCodeIdentitiesRef.current;
+    if (hoveredCodeRef.current && !visibleCodes.has(hoveredCodeRef.current.code)) {
+      hoveredCodeRef.current = null;
+      setHoveredCode(null);
+    }
+    const pending = pendingNodeMoveRef.current;
+    if (pending && !visibleCodes.has(pending.code)) pendingNodeMoveRef.current = null;
+    const active = activeNodeDragRef.current;
+    if (!active || visibleCodes.has(active.code)) return;
+    if (nodeMoveFrameRef.current !== null) {
+      window.cancelAnimationFrame(nodeMoveFrameRef.current);
+      nodeMoveFrameRef.current = null;
+    }
+    pendingNodeMoveRef.current = null;
+    if (active.target.hasPointerCapture(active.pointerId)) {
+      active.target.releasePointerCapture(active.pointerId);
+    }
+    activeNodeDragRef.current = null;
+    setNodeDragging(null);
+  }, [renderedCodeIdentityKey]);
 
   useEffect(() => {
     if (!Plotly || status !== "ready" || !plotRootRef.current || !initialCamera) return;
@@ -849,7 +906,7 @@ export default function OpenEnaInteractive3DPlot({
     nodeMoveFrameRef.current = null;
     const pending = pendingNodeMoveRef.current;
     pendingNodeMoveRef.current = null;
-    if (!pending || !onNodeMove) return;
+    if (!pending || !onNodeMove || !visibleCodeIdentitiesRef.current.has(pending.code)) return;
     const { code, next } = pending;
     onNodeMove(code, new Map([[xDimension, next.x], [yDimension, next.y], [zDimension, next.z]]));
   }
@@ -857,29 +914,27 @@ export default function OpenEnaInteractive3DPlot({
   function beginNodeDrag(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || status !== "ready" || !onNodeMove || activeNodeDragRef.current) return;
     const hovered = hoveredCodeRef.current;
-    if (!hovered) return;
-    const codeTrace = spec.data.find((trace) => trace.meta.role === "code-node");
-    const x = codeTrace?.x[hovered.pointNumber];
-    const y = codeTrace?.y[hovered.pointNumber];
-    const z = codeTrace?.z[hovered.pointNumber];
-    if (typeof x !== "number" || typeof y !== "number" || typeof z !== "number") return;
+    if (!hovered || !visibleCodeIdentitiesRef.current.has(hovered.code)) return;
+    const position = openEna3dCodePositionByIdentity(spec, hovered.code);
+    if (!position) return;
 
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     activeNodeDragRef.current = {
       pointerId: event.pointerId,
+      target: event.currentTarget,
       code: hovered.code,
       startClientX: event.clientX,
       startClientY: event.clientY,
-      startPosition: { x, y, z },
+      startPosition: position,
     };
     setNodeDragging(hovered.code);
   }
 
   function moveDraggedNode(event: ReactPointerEvent<HTMLDivElement>) {
     const active = activeNodeDragRef.current;
-    if (!active || active.pointerId !== event.pointerId) return;
+    if (!active || active.pointerId !== event.pointerId || !visibleCodeIdentitiesRef.current.has(active.code)) return;
     event.preventDefault();
     event.stopPropagation();
     const bounds = event.currentTarget.getBoundingClientRect();

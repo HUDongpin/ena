@@ -17,6 +17,54 @@ export type OpenEnaOrderedPlotScope = OpenEnaOrderedNetworkScope;
 
 export type OpenEnaOrderedNodeTotals = OpenEnaOrderedNetworkNodeTotals;
 
+/**
+ * Presentation-only Code visibility. Keys in `codeVisibility` are canonical
+ * source columns. Renderers that display public aliases must provide the
+ * complete alias-to-source map rather than guessing across the two namespaces.
+ */
+export interface OpenEnaCodeGraphPresentation {
+  showCodeGraph?: boolean;
+  codeVisibility?: Readonly<Record<string, boolean>>;
+  codeSourceByRenderedCode?: Readonly<Record<string, string>>;
+}
+
+export function openEnaSourceCodeForRenderedCode(
+  presentation: OpenEnaCodeGraphPresentation,
+  renderedCode: string,
+) {
+  const mapping = presentation.codeSourceByRenderedCode;
+  if (mapping === undefined) return renderedCode;
+  if (!Object.hasOwn(mapping, renderedCode)) {
+    throw new TypeError(`Code presentation mapping is missing rendered Code “${renderedCode}”.`);
+  }
+  const sourceCode = mapping[renderedCode];
+  if (typeof sourceCode !== "string" || sourceCode.length === 0) {
+    throw new TypeError(`Code presentation mapping for “${renderedCode}” must name a source Code.`);
+  }
+  return sourceCode;
+}
+
+export function openEnaRenderedCodeIsVisible(
+  presentation: OpenEnaCodeGraphPresentation,
+  renderedCode: string,
+) {
+  const sourceCode = openEnaSourceCodeForRenderedCode(presentation, renderedCode);
+  if (presentation.showCodeGraph === false) return false;
+  const visibility = presentation.codeVisibility;
+  return visibility === undefined
+    || !Object.hasOwn(visibility, sourceCode)
+    || visibility[sourceCode] !== false;
+}
+
+export function openEnaRenderedEdgeIsVisible(
+  presentation: OpenEnaCodeGraphPresentation,
+  source: string,
+  target: string,
+) {
+  return openEnaRenderedCodeIsVisible(presentation, source)
+    && openEnaRenderedCodeIsVisible(presentation, target);
+}
+
 export interface OpenEnaOrderedPlotNode extends OpenEnaOrderedNetworkNode {
   x: number;
   y: number;

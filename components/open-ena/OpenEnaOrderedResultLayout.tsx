@@ -4,7 +4,7 @@ import type {
   OpenEnaNodeDimensionPosition,
   OpenEnaNodeLayoutPositions,
 } from "@/lib/open-ena/node-layout";
-import type { OpenEnaOrderedNodeTotals } from "@/lib/open-ena/ordered-plot";
+import type { OpenEnaCodeGraphPresentation, OpenEnaOrderedNodeTotals } from "@/lib/open-ena/ordered-plot";
 import type { OpenEnaConfig, OpenEnaResult } from "@/lib/open-ena/types";
 import OpenEnaOrderedPlot, { type OpenEnaOrderedPlotCopy } from "./OpenEnaOrderedPlot";
 
@@ -36,7 +36,7 @@ const DEFAULT_COPY: OpenEnaOrderedResultLayoutCopy = {
   rightToolsLabel: "Ordered plot tools",
 };
 
-export interface OpenEnaOrderedResultLayoutProps {
+export interface OpenEnaOrderedResultLayoutProps extends OpenEnaCodeGraphPresentation {
   result: OpenEnaResult;
   config: OpenEnaConfig;
   primaryGroupName: string | null;
@@ -99,6 +99,9 @@ export default function OpenEnaOrderedResultLayout(props: OpenEnaOrderedResultLa
     showPoints: props.showPoints,
     showNetworks: props.showNetworks,
     showLabels: props.showLabels,
+    showCodeGraph: props.showCodeGraph,
+    codeVisibility: props.codeVisibility,
+    codeSourceByRenderedCode: props.codeSourceByRenderedCode,
     showUnitLabels: props.showUnitLabels,
     showVariance: props.showVariance,
     codeColors: props.codeColors,

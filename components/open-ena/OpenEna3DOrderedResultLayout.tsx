@@ -6,13 +6,13 @@ import type {
   OpenEnaNodeDimensionPosition,
   OpenEnaNodeLayoutPositions,
 } from "@/lib/open-ena/node-layout";
-import type { OpenEnaOrderedNodeTotals } from "@/lib/open-ena/ordered-plot";
+import type { OpenEnaCodeGraphPresentation, OpenEnaOrderedNodeTotals } from "@/lib/open-ena/ordered-plot";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
 import type { OpenEna3dAspectRatio, OpenEna3dCamera } from "@/lib/open-ena/plot3d";
 import type { CameraPreset, OpenEnaConfig, OpenEnaResult } from "@/lib/open-ena/types";
 import OpenEnaInteractive3DPlot from "./OpenEnaInteractive3DPlot";
 
-export interface OpenEna3DOrderedResultLayoutProps {
+export interface OpenEna3DOrderedResultLayoutProps extends OpenEnaCodeGraphPresentation {
   result: OpenEnaResult;
   config: OpenEnaConfig;
   primaryGroupName: string | null;
@@ -86,6 +86,9 @@ export default function OpenEna3DOrderedResultLayout(props: OpenEna3DOrderedResu
     showPoints: props.showPoints,
     showNetworks: props.showNetworks,
     showLabels: props.showLabels,
+    showCodeGraph: props.showCodeGraph,
+    codeVisibility: props.codeVisibility,
+    codeSourceByRenderedCode: props.codeSourceByRenderedCode,
     showUnitLabels: props.showUnitLabels,
     showVariance: props.showVariance,
     showTrajectories: false,

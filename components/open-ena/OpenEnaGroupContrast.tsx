@@ -23,6 +23,11 @@ import type {
   OpenEnaNodeLayoutPositions,
 } from "@/lib/open-ena/node-layout";
 import {
+  openEnaRenderedCodeIsVisible,
+  openEnaRenderedEdgeIsVisible,
+  type OpenEnaCodeGraphPresentation,
+} from "@/lib/open-ena/ordered-plot";
+import {
   marginalMeanIntervalPair,
   meanCenteredIqrOutlierIntervalPair,
   type OpenEnaMeanCenteredIqrOutlierIntervalPair,
@@ -31,7 +36,7 @@ import {
 import OpenEnaPlotActionIcon from "./OpenEnaPlotActionIcon";
 import OpenEnaSvgDraggableNode from "./OpenEnaSvgDraggableNode";
 
-export interface OpenEnaGroupContrastProps {
+export interface OpenEnaGroupContrastProps extends OpenEnaCodeGraphPresentation {
   contrast: OpenEnaPairwiseContrast;
   codeColors?: OpenEnaCodeColors;
   edgeThreshold: number;
@@ -949,6 +954,9 @@ function ContrastSvg({
   showPoints,
   showNetworks,
   showLabels,
+  showCodeGraph = true,
+  codeVisibility,
+  codeSourceByRenderedCode,
   showGroupLabels,
   showUnitLabels,
   unitCircle = false,
@@ -980,6 +988,11 @@ function ContrastSvg({
   const descriptionId = useId();
   const viewportId = useId();
   const compact = kind !== "comparison";
+  const codePresentation = {
+    showCodeGraph,
+    codeVisibility,
+    codeSourceByRenderedCode,
+  };
   const width = compact ? MINI_WIDTH : MAIN_WIDTH;
   const height = compact ? MINI_HEIGHT : MAIN_HEIGHT;
   const viewportClipId = `ena-${kind}-${viewportId.replace(/[^a-zA-Z0-9_-]/gu, "")}-viewport`;
@@ -1274,11 +1287,12 @@ function ContrastSvg({
           </>
         ) : null}
       </g>
-      {showNetworks ? (
+      {showNetworks && codePresentation.showCodeGraph !== false ? (
         <g className="ena-set-network-edges">
           {signedComparison ? (
             <g data-ena-network-role="signed-difference">
               {contrast.edges.map((edge) => {
+                if (!openEnaRenderedEdgeIsVisible(codePresentation, edge.source, edge.target)) return null;
                 const start = nodePoints.get(edge.source);
                 const end = nodePoints.get(edge.target);
                 if (!start || !end) return null;
@@ -1320,6 +1334,7 @@ function ContrastSvg({
           ) : plottedGroups.map(({ role, side }, displayedIndex) => (
             <g key={role} data-ena-network-role={role}>
               {contrast.edges.map((edge) => {
+                if (!openEnaRenderedEdgeIsVisible(codePresentation, edge.source, edge.target)) return null;
                 const start = nodePoints.get(edge.source);
                 const end = nodePoints.get(edge.target);
                 if (!start || !end) return null;
@@ -1427,7 +1442,9 @@ function ContrastSvg({
         </g>
       ) : null}
       <g className="ena-set-network-nodes">
-        {contrast.nodes.map((node: ContrastNode) => {
+        {contrast.nodes
+          .filter((node: ContrastNode) => openEnaRenderedCodeIsVisible(codePresentation, node.code))
+          .map((node: ContrastNode) => {
           if (unitCircle && !connectedCodes.has(node.code)) return null;
           const point = nodePoints.get(node.code);
           if (!point) return null;
@@ -1643,7 +1660,8 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
   ].join(" · ");
   const threshold = bounded(edgeThreshold, 0, 1, 0);
   const denominator = Math.max(comparisonScale, ZERO_TOLERANCE);
-  const strongestDifferences = (showNetworks ? contrast.edges : [])
+  const strongestDifferences = (showNetworks && props.showCodeGraph !== false ? contrast.edges : [])
+    .filter((edge) => openEnaRenderedEdgeIsVisible(props, edge.source, edge.target))
     .filter((edge) => Math.abs(finiteOrZero(edge.signedDifference)) > ZERO_TOLERANCE)
     .filter((edge) => Math.abs(finiteOrZero(edge.signedDifference)) / denominator >= threshold)
     .toSorted((left, right) => (

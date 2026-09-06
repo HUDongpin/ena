@@ -8,6 +8,11 @@ import {
 } from "./group-display";
 import { codeColorFor, JENA_GROUP_COLORS, type OpenEnaCodeColors } from "./plot-style";
 import {
+  openEnaRenderedCodeIsVisible,
+  openEnaRenderedEdgeIsVisible,
+  type OpenEnaCodeGraphPresentation,
+} from "./ordered-plot";
+import {
   resolveOpenEnaNodeDimensions,
   type OpenEnaNodeLayoutPositions,
 } from "./node-layout";
@@ -248,7 +253,7 @@ export interface OpenEna3dPlotSpec {
   diagnostics?: { degenerateDimensions: string[] };
 }
 
-export interface CompileOpenEna3dPlotInput {
+export interface CompileOpenEna3dPlotInput extends OpenEnaCodeGraphPresentation {
   result: OpenEnaResult;
   /** Selected endpoint contrast used to compile the linked three-plot 3D workbench. */
   contrast?: OpenEnaPairwiseContrast | null;
@@ -629,6 +634,9 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     showPoints,
     showNetworks,
     showLabels,
+    showCodeGraph = true,
+    codeVisibility,
+    codeSourceByRenderedCode,
     showUnitLabels,
     showVariance,
     showTrajectories: _legacyShowTrajectories,
@@ -640,6 +648,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     flipY,
     nodeLayout,
   } = input;
+  const codePresentation = { showCodeGraph, codeVisibility, codeSourceByRenderedCode };
   // Preserve the historical input shape while enforcing a strict presenter
   // boundary: generic ENA plots never compile longitudinal trajectory marks.
   void _legacyShowTrajectories;
@@ -653,6 +662,9 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     const resolved = resolveOpenEnaNodeDimensions(canonical, nodeLayout?.get(code));
     return { ...row, ...Object.fromEntries(resolved) };
   });
+  const renderedDisplayNodeRows = displayNodeRows.filter((row) => (
+    openEnaRenderedCodeIsVisible(codePresentation, String(row.code ?? ""))
+  ));
   const points = result.set.points;
   const safePointScale = clamp(pointScale, 0.2, 5, 1);
   const safeEdgeScale = clamp(edgeScale, 0.1, 5, 1);
@@ -737,7 +749,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
   ];
   const axisExtent = Math.max(0.5, ...coordinateMagnitudes) * 1.15;
 
-  if (showNetworks) {
+  if (showNetworks && showCodeGraph) {
     const weightedEdges = contrast
       ? contrast.edges.map((contrastEdge) => {
           const edge = result.set.adjacencyKey.find((candidate) => candidate.name === contrastEdge.name);
@@ -778,6 +790,11 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     const nodeByCode = new Map(displayNodeRows.map((row) => [String(row.code ?? ""), row]));
     for (const weighted of weightedEdges) {
       if (weighted.value <= 1e-12 || weighted.value / maximumEdge < safeThreshold) continue;
+      if (!openEnaRenderedEdgeIsVisible(
+        codePresentation,
+        weighted.edge.source,
+        weighted.edge.target,
+      )) continue;
       const source = nodeByCode.get(weighted.edge.source) ?? displayNodeRows[weighted.edge.sourceIndex];
       const target = nodeByCode.get(weighted.edge.target) ?? displayNodeRows[weighted.edge.targetIndex];
       const group = result.groups[weighted.groupIndex];
@@ -916,16 +933,16 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     });
   });
 
-  if (displayNodeRows.length > 0) {
+  if (renderedDisplayNodeRows.length > 0) {
     traces.push({
       type: "scatter3d",
       mode: showLabels ? "markers+text" : "markers",
       name: "Codes",
-      x: displayNodeRows.map((row) => coordinate(row, xDimension)),
-      y: displayNodeRows.map((row) => coordinate(row, yDimension)),
-      z: displayNodeRows.map((row) => coordinate(row, zDimension)),
-      text: displayNodeRows.map((row) => String(row.code ?? "")),
-      customdata: displayNodeRows.map((row) => {
+      x: renderedDisplayNodeRows.map((row) => coordinate(row, xDimension)),
+      y: renderedDisplayNodeRows.map((row) => coordinate(row, yDimension)),
+      z: renderedDisplayNodeRows.map((row) => coordinate(row, zDimension)),
+      text: renderedDisplayNodeRows.map((row) => String(row.code ?? "")),
+      customdata: renderedDisplayNodeRows.map((row) => {
         const label = String(row.code ?? "");
         const point = dimensions.map((dimension) => coordinate(row, dimension)) as [number, number, number];
         return pointHover(`Code: ${label}`, "Code node", point, dimensions);
@@ -933,7 +950,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       textposition: "top center",
       textfont: { color: "#263740", size: 12 },
       marker: {
-        color: displayNodeRows.map((row) => codeColorFor(codeColors, String(row.code ?? ""))),
+        color: renderedDisplayNodeRows.map((row) => codeColorFor(codeColors, String(row.code ?? ""))),
         size: 9,
         symbol: "circle",
         opacity: 1,

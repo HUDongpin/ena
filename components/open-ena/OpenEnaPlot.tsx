@@ -4,11 +4,16 @@ import type {
   OpenEnaNodeDimensionPosition,
   OpenEnaNodeLayoutPositions,
 } from "@/lib/open-ena/node-layout";
+import {
+  openEnaRenderedCodeIsVisible,
+  openEnaRenderedEdgeIsVisible,
+  type OpenEnaCodeGraphPresentation,
+} from "@/lib/open-ena/ordered-plot";
 import { codeColorFor, type OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
 import type { CameraPreset, GroupNetwork, OpenEnaResult, OpenEnaView } from "@/lib/open-ena/types";
 import OpenEnaSvgDraggableNode from "./OpenEnaSvgDraggableNode";
 
-interface OpenEnaPlotProps {
+interface OpenEnaPlotProps extends OpenEnaCodeGraphPresentation {
   result: OpenEnaResult;
   codeColors?: OpenEnaCodeColors;
   groupColumn: string | null;
@@ -210,6 +215,9 @@ export function MiniNetwork({
   label,
   maxNetworkWeight,
   edgeThreshold,
+  showCodeGraph = true,
+  codeVisibility,
+  codeSourceByRenderedCode,
 }: {
   result: OpenEnaResult;
   codeColors?: OpenEnaCodeColors;
@@ -219,7 +227,8 @@ export function MiniNetwork({
   label: string;
   maxNetworkWeight: number;
   edgeThreshold: number;
-}) {
+} & OpenEnaCodeGraphPresentation) {
+  const presentation = { showCodeGraph, codeVisibility, codeSourceByRenderedCode };
   const nodes = (result.set.rotation.nodes ?? []).map((row) => ({
     x: numberValue(row, xDimension),
     y: numberValue(row, yDimension),
@@ -229,6 +238,7 @@ export function MiniNetwork({
   }));
   const positions = screenProjector(nodes, "2d", "xy").positions;
   const strongestEdges = result.set.adjacencyKey
+    .filter((edge) => openEnaRenderedEdgeIsVisible(presentation, edge.source, edge.target))
     .map((edge) => ({ name: edge.name, value: Math.abs(group.meanWeights[edge.name] ?? 0) }))
     .filter((edge) => passesEdgeThreshold(edge.value, maxNetworkWeight, edgeThreshold))
     .sort((left, right) => right.value - left.value)
@@ -243,6 +253,7 @@ export function MiniNetwork({
     <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={accessibleLabel} className="open-ena-mini-svg">
       <rect width={WIDTH} height={HEIGHT} rx="18" className="ena-plot-background" />
       {result.set.adjacencyKey.map((edge) => {
+        if (!openEnaRenderedEdgeIsVisible(presentation, edge.source, edge.target)) return null;
         const source = positions.get(`node-${edge.source}`);
         const target = positions.get(`node-${edge.target}`);
         const weight = Math.abs(group.meanWeights[edge.name] ?? 0);
@@ -261,7 +272,7 @@ export function MiniNetwork({
           />
         );
       })}
-      {nodes.map((node) => {
+      {nodes.filter((node) => openEnaRenderedCodeIsVisible(presentation, node.label)).map((node) => {
         const point = positions.get(node.key);
         if (!point) return null;
         return (
@@ -293,6 +304,9 @@ export default function OpenEnaPlot({
   showPoints,
   showNetworks,
   showLabels,
+  showCodeGraph = true,
+  codeVisibility,
+  codeSourceByRenderedCode,
   showUnitLabels,
   showVariance,
   showTrajectories: _legacyShowTrajectories,
@@ -307,6 +321,7 @@ export default function OpenEnaPlot({
   copy,
   svgRef,
 }: OpenEnaPlotProps) {
+  const codePresentation = { showCodeGraph, codeVisibility, codeSourceByRenderedCode };
   const canonicalNodes = (result.set.rotation.nodes ?? []).map((row) => ({
     x: numberValue(row, xDimension),
     y: numberValue(row, yDimension),
@@ -360,6 +375,7 @@ export default function OpenEnaPlot({
   const varianceZ = (result.set.variance[zDimension] ?? 0) * 100;
   const isComparison = result.groups.length === 2;
   const strongestEdges = result.set.adjacencyKey
+    .filter((edge) => openEnaRenderedEdgeIsVisible(codePresentation, edge.source, edge.target))
     .map((edge) => ({ edge, ...edgeWeight(result.groups, edge.name) }))
     .filter((item) => item.group && passesEdgeThreshold(item.value, maxEdge, edgeThreshold))
     .sort((left, right) => right.value - left.value)
@@ -455,6 +471,7 @@ export default function OpenEnaPlot({
         )}
 
         {showNetworks && result.set.adjacencyKey.map((edge) => {
+          if (!openEnaRenderedEdgeIsVisible(codePresentation, edge.source, edge.target)) return null;
           const source = positions.get(`node-${edge.source}`);
           const target = positions.get(`node-${edge.target}`);
           const weighted = edgeWeight(result.groups, edge.name);
@@ -559,7 +576,7 @@ export default function OpenEnaPlot({
           );
         })}
 
-        {nodes.map((node) => {
+        {nodes.filter((node) => openEnaRenderedCodeIsVisible(codePresentation, node.label)).map((node) => {
           const point = positions.get(node.key);
           if (!point) return null;
           const nodeColor = codeColorFor(codeColors, node.label);

@@ -7,6 +7,9 @@ import { codeColorFor, type OpenEnaCodeColors } from "@/lib/open-ena/plot-style"
 import {
   buildOpenEnaOrderedPlotModel,
   buildOrderedEdgeGlyph,
+  openEnaRenderedCodeIsVisible,
+  openEnaRenderedEdgeIsVisible,
+  type OpenEnaCodeGraphPresentation,
   type OpenEnaOrderedNodeTotals,
   type OpenEnaOrderedPlotModel,
   type OpenEnaOrderedPlotScope,
@@ -108,7 +111,7 @@ const DEFAULT_COPY: OpenEnaOrderedPlotCopy = {
   ),
 };
 
-export interface OpenEnaOrderedPlotProps {
+export interface OpenEnaOrderedPlotProps extends OpenEnaCodeGraphPresentation {
   result: OpenEnaResult;
   config: OpenEnaConfig;
   scope: OpenEnaOrderedPlotScope;
@@ -327,9 +330,13 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
   const edgeScale = bounded(props.edgeScale, 0.1, 4, 1);
   const pointScale = bounded(props.pointScale, 0.5, 2, 1);
   const textScale = bounded(props.textScale, 0.5, 2, 1);
-  const offDiagonalEdges = model.visibleEdges.filter((edge) => !edge.selfConnection);
+  const renderedEdges = model.visibleEdges.filter((edge) => (
+    openEnaRenderedEdgeIsVisible(props, edge.ground, edge.response)
+  ));
+  const offDiagonalEdges = renderedEdges.filter((edge) => !edge.selfConnection);
   const selfEdges = new Map(model.visibleEdges
     .filter((edge) => edge.selfConnection)
+    .filter((edge) => openEnaRenderedEdgeIsVisible(props, edge.ground, edge.response))
     .map((edge) => [edge.ground, edge]));
   const pointStyles = openEnaUnitPointStyleAssignments(props.result.groups.map((group) => group.name));
   const pointGroups = [...new Set(model.points
@@ -414,7 +421,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
           </text>
         </g>
 
-        {props.showNetworks ? offDiagonalEdges.map((edge) => {
+        {props.showNetworks && props.showCodeGraph !== false ? offDiagonalEdges.map((edge) => {
           const sourceNode = model.nodes[edge.groundIndex];
           const responseNode = model.nodes[edge.responseIndex];
           const source = positions.get(`node:${edge.ground}`);
@@ -517,7 +524,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
           );
         }) : null}
 
-        {model.nodes.map((node) => {
+        {model.nodes.filter((node) => openEnaRenderedCodeIsVisible(props, node.code)).map((node) => {
           const screen = positions.get(`node:${node.code}`);
           if (!screen) return null;
           const self = selfEdges.get(node.code);
@@ -559,7 +566,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
                 >
                   <title>{`${node.code} · ${copy.nodeSizeLabel}: ${displayNumber(node.responseTotal)} (${model.nodeSizeDefinition})`}</title>
                 </circle>
-                {props.showNetworks && self && selfLabel ? (
+                {props.showNetworks && props.showCodeGraph !== false && self && selfLabel ? (
                   <circle
                     r={selfRadius}
                     data-ona-self-loop={node.code}
