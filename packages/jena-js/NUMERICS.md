@@ -185,7 +185,15 @@ swaps, nonfinite/missing cells, and independently flipped node signs.
 R 0.4.4 retains all six axes even when `dimensions=3`; the fixture records
 both requested and returned dimensions. jENA's requested-three points, nodes and centroid coordinate
 views are each checked against the first three explicitly named full columns,
-including exact typed identities, schema/dimension completeness and finite cells. A
+including exact typed identities, schema/dimension completeness and finite cells.
+All three requested coordinate tables must be **exactly equal** to those full
+prefixes: changing only the requested dimension count deterministically selects
+columns without changing the fit or the per-axis node solve. All 14 current
+configurations enforce this equality. The full frame then receives the single
+`1e-10` absolute comparison to R under the shared allowed transform. A separate
+prefix tolerance is not added to that bound. Boundary controls cover both SVD
+and fixed Means: shared R+0.8e-10 coordinates pass, while requested R+1.6e-10
+with full R+0.8e-10 must fail for nodes and centroids. A
 second materialization requests six coordinates to check full points/nodes/
 centroids, while rotation and variance must be identical across both views.
 Neither the R oracle nor variance is truncated to mimic a different fit.

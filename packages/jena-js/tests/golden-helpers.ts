@@ -373,7 +373,9 @@ export function expectStrictStandardParity(actual: ENASet, full: ENASet, golden:
   for (const [label, observed, complete] of [
     ['points', actual.points, full.points], ['nodes', requestedNodes!, fullNodes!], ['centroids', actual.centroids!, full.centroids!]
   ] as const) {
-    expectAbsoluteMatrixClose(strictMatrix(observed, requested), strictMatrix(complete, requested), label === 'points' ? 0 : 1e-10, `requested ${label} prefix`);
+    // dimensions only selects deterministic output columns. Exact prefix
+    // equality leaves a single 1e-10 allowance: the full-frame comparison to R.
+    expectAbsoluteMatrixClose(strictMatrix(observed, requested), strictMatrix(complete, requested), 0, `requested ${label} prefix`);
   }
   expectStrictFrame(full, frame, edges, options.rotation?.method === 'mean');
 }

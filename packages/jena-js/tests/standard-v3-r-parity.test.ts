@@ -245,3 +245,27 @@ describe('Reference target identity rejection', () => {
     }
   }
 });
+
+describe('requested geometry has one absolute R allowance', () => {
+  for (const name of ['endpointMovingBinary', 'endpointMovingMeans']) {
+    for (const table of ['nodes', 'centroids'] as const) {
+      it(`rejects composed tolerance for ${table}: ${name}`, () => {
+        const { golden, options, actual, full } = parityInputs(name);
+        const frame = golden.canonicalMeansFrame ?? golden;
+        const axis = frame.rotationColumns[0]!;
+        const dot = full.rotation.rotationMatrix.reduce((sum, row, i) => sum + row[0]! * (frame.rotationMatrix[i]![axis] as number), 0);
+        const sign = options.rotation?.method === 'mean' ? 1 : dot < 0 ? -1 : 1;
+        const requestedRows = table === 'nodes' ? actual.rotation.nodes! : actual.centroids!;
+        const fullRows = table === 'nodes' ? full.rotation.nodes! : full.centroids!;
+        const expected = frame[table][0]![axis] as number;
+        fullRows[0]![axis] = sign * (expected + 0.8e-10);
+        requestedRows[0]![axis] = fullRows[0]![axis]!;
+        // A shared prefix inside the one R allowance remains admissible.
+        expectStrictStandardParity(actual, full, golden, options);
+        requestedRows[0]![axis] = sign * (expected + 1.6e-10);
+        expect(Math.abs(sign * (requestedRows[0]![axis] as number) - expected)).toBeGreaterThan(1e-10);
+        expect(() => expectStrictStandardParity(actual, full, golden, options)).toThrow();
+      });
+    }
+  }
+});
