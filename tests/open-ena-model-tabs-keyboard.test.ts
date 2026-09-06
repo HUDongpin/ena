@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -7,33 +8,15 @@ const workspace = readFileSync(
   "utf8",
 );
 
-test("Model tabs implement the ARIA roving-focus keyboard pattern", () => {
-  assert.match(
-    workspace,
-    /const MODEL_TAB_ORDER = \["units", "horizons", "windows", "codes"\] as const/,
-    "the visual order must have one canonical keyboard order",
-  );
-  assert.match(
-    workspace,
-    /onKeyDown=\{\(event\) => handleModelTabKeyDown\(event, tab\.id\)\}/,
-    "every Model tab must delegate keyboard movement",
-  );
-  assert.match(workspace, /case "ArrowRight":/);
-  assert.match(workspace, /case "ArrowDown":/);
-  assert.match(workspace, /case "ArrowLeft":/);
-  assert.match(workspace, /case "ArrowUp":/);
-  assert.match(workspace, /case "Home":/);
-  assert.match(workspace, /case "End":/);
-  assert.match(
-    workspace,
-    /setModelTab\(nextTab\)[\s\S]{0,240}querySelector<HTMLButtonElement>[\s\S]{0,180}focus\(\)/,
-    "keyboard movement must update selection and move DOM focus to the active tab",
-  );
-  assert.match(
-    workspace,
-    /tabIndex=\{modelTab === tab\.id \? 0 : -1\}[\s\S]{0,180}data-model-tab=\{tab\.id\}/,
-    "the tablist must retain one roving tab stop",
-  );
+test("accepted Models tabs own the ARIA roving-focus keyboard pattern", () => {
+
+  const tabs = moduleV3("components/open-ena/model-v3/OpenEnaModelTabsV3.tsx");
+  assert.match(tabs, /role="tablist"/);
+  for (const key of ["ArrowLeft", "ArrowRight", "Home", "End"]) assert.ok(tabs.includes(key));
+  assert.match(tabs, /aria-selected/);
+  assert.match(tabs, /tabIndex=/);
+  assert.match(v3, /<OpenEnaModelTabsV3/);
+
 });
 
 test("Models v3 keyboard coverage uses a real component browser harness", () => {

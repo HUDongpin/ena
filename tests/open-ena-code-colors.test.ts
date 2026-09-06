@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -104,94 +105,21 @@ test("code colors default to black and accept only six-digit hexadecimal palette
   assert.equal(plotStyle.codeColorFor({ goal: "not-a-color" }, "goal"), "#000000");
 });
 
-test("Codes rows open the product Color Presets dialog without invalidating the model", () => {
-  const workspace = source("components/open-ena/OpenEnaWorkspace.tsx");
+test("Code color confirmation is bound to the active editor family without a scientific edit", () => {
 
-  assert.match(workspace, /const \[codeColors, setCodeColors\] = useState/);
-  assert.match(workspace, /const \[codeColorCompanions, setCodeColorCompanions\] = useState<Record<string, string>>\(\{\}\)/);
-  assert.match(workspace, /const \[activeCodeColor, setActiveCodeColor\] = useState<string \| null>\(null\)/);
-  assert.match(
-    workspace,
-    /const openCodeColorPicker = \(header: string\) => \{\s*setActiveCodeColor\(\(current\) => current === null \? header : current\);\s*\};/,
-  );
-  assert.match(
-    workspace,
-    /useEffect\(\(\) => \{\s*if \(activeCodeColor === null \|\| config\.codes\.includes\(activeCodeColor\)\) return;\s*setActiveCodeColor\(null\);\s*\}, \[activeCodeColor, config\.codes\]\);/,
-  );
-  assert.match(workspace, /import OpenEnaCodeColorPicker from "\.\/OpenEnaCodeColorPicker"/);
-  assert.match(workspace, /import \{ openEnaCodeColorPair \} from "@\/lib\/open-ena\/code-color-presets"/);
-  assert.match(
-    workspace,
-    /className="ena-official-code-row"[\s\S]*?className="ena-code-color-control"[\s\S]*?type="button"[\s\S]*?aria-haspopup="dialog"[\s\S]*?aria-expanded=\{activeCodeColor === header\}[\s\S]*?data-ena-code-color-trigger=\{header\}[\s\S]*?data-ena-code-color-primary=\{codeColorFor\(codeColors, header\)\}[\s\S]*?disabled=\{loading \|\| sourceBusy\}[\s\S]*?openCodeColorPicker\(header\)[\s\S]*?className="ena-code-color-swatch"/,
-  );
-  assert.equal(
-    (workspace.match(/data-ena-code-color-primary=\{codeColorFor\(codeColors, header\)\}/g) ?? []).length,
-    1,
-  );
-  assert.doesNotMatch(workspace, /data-ena-code-color=\{/);
-  assert.match(workspace, /aria-label=\{copy\.model\.codeColorPicker\.chooseColor\(header\)\}/);
-  assert.match(workspace, /title=\{copy\.model\.codeColorPicker\.chooseColor\(header\)\}/);
-  assert.equal((workspace.match(/<OpenEnaCodeColorPicker\b/g) ?? []).length, 1);
-  assert.match(
-    workspace,
-    /<OpenEnaCodeColorPicker[\s\S]*?code=\{activeCodeColor\}[\s\S]*?value=\{openEnaCodeColorPair\(codeColorFor\(codeColors, activeCodeColor\), codeColorCompanions\[activeCodeColor\]\)\}[\s\S]*?copy=\{copy\.model\.codeColorPicker\}[\s\S]*?onCancel=\{\(\) => setActiveCodeColor\(null\)\}[\s\S]*?onConfirm=\{\(pair\) => \{\s*const confirmedCode = activeCodeColor;\s*if \(!config\.codes\.includes\(confirmedCode\)\) \{\s*setActiveCodeColor\(null\);\s*return;\s*\}\s*setCodeColors\(\(current\) => updateCodeColor\(current, confirmedCode, pair\.primary\)\);\s*setCodeColorCompanions\(\(current\) => \(\{ \.\.\.current, \[confirmedCode\]: pair\.complementary \}\)\);[\s\S]*?setActiveCodeColor\(null\)[\s\S]*?\}\}/,
-  );
-  const picker = workspace.match(/<OpenEnaCodeColorPicker[\s\S]*?\n\s*\/>/)?.[0] ?? "";
-  assert.doesNotMatch(picker, /updateConfig/, "confirming a color remains presentation-only");
-  assert.equal(
-    (workspace.match(/setCodeColors\(\{\}\);\s*setCodeColorCompanions\(\{\}\);\s*setActiveCodeColor\(null\);/g) ?? []).length,
-    3,
-  );
-  assert.ok((workspace.match(/setActiveCodeColor\(null\)/g) ?? []).length >= 4);
-  assert.match(workspace, /activeCodeColor !== null \? \(\s*<OpenEnaCodeColorPicker/);
-  assert.doesNotMatch(workspace, /type="color"/);
-  assert.doesNotMatch(workspace, /(?:codeColorCompanions|complementaryColors)=\{/);
-  assert.doesNotMatch(
-    workspace,
-    /buildAnalysisBundle\([\s\S]{0,1200}codeColorCompanions/,
-    "companion colors must not enter the scientific or export bundle",
-  );
-  assert.doesNotMatch(
-    workspace,
-    /(?:buildAnalysisBundle|downloadJson|rowsToCsv)[\s\S]{0,1200}codeColorCompanions/,
-    "companion colors must stay outside every analysis and export path",
-  );
+  assert.match(v3, /OpenEnaCodeColorPicker/);
+  assert.match(v3, /modelState.display\[family\].codeColors/);
+  assert.match(owner, /case "confirm-code-color"[\s\S]*?sameScientificContextV3/);
+  assert.match(owner, /set-code-color/);
+  assert.match(v3, /activeColorIntent.context/);
+
 });
 
-test("the selected code-color map is passed to every Open ENA network renderer and model bundle", () => {
-  const workspace = source("components/open-ena/OpenEnaWorkspace.tsx");
-  const workspaceSource = parseTsx(workspace);
+test("every native network renderer receives explicit SOURCE-to-public Code presentation mapping", () => {
 
-  for (const [component, expectedCount] of Object.entries({
-    OpenEnaLongitudinalTrajectory: 1,
-    OpenEnaGroupContrast: 1,
-    OpenEnaPlot: 1,
-    MiniNetwork: 1,
-    OpenEna3DOrderedResultLayout: 1,
-    OpenEnaOrderedResultLayout: 1,
-    OpenEna3DGroupContrast: 1,
-    OpenEnaInteractive3DPlot: 1,
-  })) {
-    assertEveryRendererUsesCodeColors(workspaceSource, component, expectedCount);
-  }
+  assert.match(v3, /codeSourceByRenderedCode: renderedSource/);
+  assert.match(v3, /codeLabelByRenderedCode: presentation\?\.codeLabelByRenderedCode/);
+  for (const name of ["OpenEnaPlot", "OpenEnaInteractive3DPlot", "OpenEnaGroupContrast", "OpenEna3DGroupContrast", "OpenEnaOrderedResultLayout", "OpenEna3DOrderedResultLayout"]) assert.ok(v3.includes(`<${name} {...plotProps}`), name);
+  assert.doesNotMatch(v3, /buildAnalysisBundle\(/);
 
-  assert.throws(
-    () => assertEveryRendererUsesCodeColors(
-      parseTsx("const Probe = () => <><OpenEna3DOrderedResultLayout /><OpenEnaOrderedResultLayout codeColors={codeColors} /></>;"),
-      "OpenEna3DOrderedResultLayout",
-      1,
-    ),
-    /must receive its own direct codeColors/u,
-    "a sibling renderer's palette prop must not satisfy this renderer's assertion",
-  );
-
-  const analysisBundleCalls = buildAnalysisBundleCalls(workspaceSource);
-  assert.equal(analysisBundleCalls.length, 2);
-  analysisBundleCalls.forEach((call, index) => {
-    assert.equal(call.arguments.length, 5, `analysis bundle ${index + 1} should include its options object`);
-    const options = call.arguments[4];
-    assert.ok(ts.isObjectLiteralExpression(options), `analysis bundle ${index + 1} options must be an object literal`);
-    if (!ts.isObjectLiteralExpression(options)) return;
-    assert.ok(hasCodeColorsOption(options), `analysis bundle ${index + 1} must retain codeColors`);
-  });
 });

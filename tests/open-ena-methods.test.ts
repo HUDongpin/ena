@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -460,32 +461,11 @@ test("reference MR1 interpretation distinguishes same-source, held-out, and unve
   assert.match(buildMethodsReport(dataset, SAMPLE_CONFIG, projected, sourceHash), /descriptive by construction/);
 });
 
-test("the Stats panel exposes copy and download actions for the generated methods report", () => {
-  const workspace = readFileSync(
-    join(process.cwd(), "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  const inferencePanel = readFileSync(
-    join(process.cwd(), "components", "open-ena", "OpenEnaInferencePanel.tsx"),
-    "utf8",
-  );
-  const inferenceCopy = readFileSync(
-    join(process.cwd(), "lib", "open-ena-i18n.ts"),
-    "utf8",
-  );
-  assert.match(workspace, /buildMethodsReport/);
-  assert.match(workspace, /copy\.stats\.ui\.methodsTitle/);
-  assert.match(workspace, /copy\.stats\.ui\.copyMethods/);
-  assert.match(workspace, /methods-report\.md/);
-  assert.match(workspace, /navigator\.clipboard\.writeText/);
-  assert.match(workspace, /copy\.stats\.ui\.referenceMr1Title/);
-  assert.match(inferenceCopy, /methodsTitle: "Methods & Reproducibility"/);
-  assert.match(
-    `${workspace}\n${inferencePanel}\n${inferenceCopy}`,
-    /(?:statistics remain in|Coordinates are the) unflipped (?:fitted-)?model coordinates/i,
-  );
-  assert.match(workspace, /edgeThreshold,/);
-  assert.match(workspace, /showNetworks,/);
-  assert.match(workspace, /showUnitLabels,/);
-  assert.match(workspace, /plotZoom,/);
+test("Stats offers Copy and download for the actual bound Methods report", () => {
+
+  assert.match(v3, /<summary>\{copy.stats.ui.methodsTitle\}<\/summary>/);
+  assert.match(v3, /navigator.clipboard.writeText\(buildMethodsReportV3\(result\)\)/);
+  assert.match(v3, /copy.stats.ui.copyMethods/);
+  assert.match(v3, /downloadText\("methods.md", buildMethodsReportV3\(result\)/);
+
 });

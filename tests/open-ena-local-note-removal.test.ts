@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -15,9 +16,11 @@ test("Data omits the screenshot-selected local-computation note card", () => {
   assert.doesNotMatch(styles, /\.ena-local-note\b/);
 });
 
-test("removing the note leaves source loading and AI consent enforcement intact", () => {
-  assert.match(workspace, /loadTrajectorySample/);
-  assert.match(workspace, /copy\.data\.trajectorySample/);
-  assert.match(workspace, /<OpenEnaAiInterpretation/);
-  assert.match(workspace, /disabled=\{!result \|\| resultIsStale \|\| !aiInterpretationRequest \|\| !currentInference\}/);
+test("source loading remains reachable and AI retains explicit reviewed-payload consent", () => {
+
+  assert.match(shell(), />Load sample<\/button>/);
+  assert.match(shell(), /aria-label="Open coded CSV or XLSX"/);
+  assert.match(moduleV3("components/open-ena/OpenEnaAiInterpretation.tsx"), /data-ena-ai-consent="explicit"/);
+  assert.match(moduleV3("components/open-ena/OpenEnaAiInterpretation.tsx"), /!consentGranted/);
+
 });

@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -1190,16 +1191,13 @@ test("official comparison keeps one signed-difference edge per connection while 
   assert.match(secondary, /data-ena-network-role="secondary"/);
 });
 
-test("Workspace retains the single Comparison Download Model and Data View toolbar actions", () => {
-  const workspaceSource = readFileSync(
-    join(process.cwd(), "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  assert.equal((workspaceSource.match(/data-testid="open-ena-data-view-toggle"/g) ?? []).length, 1);
-  assert.equal((workspaceSource.match(/\bDownload Model\b/g) ?? []).length, 1);
-  assert.equal((workspaceSource.match(/className="ena-download-model-button-icon"/g) ?? []).length, 1);
-  assert.match(workspaceSource, /data-testid="open-ena-data-view-toggle"[\s\S]{0,500}setCenterSurface/);
-  assert.match(workspaceSource, /ena-download-model-button[\s\S]{0,1000}buildAnalysisBundle/);
+test("Comparison retains a single Download Model and Data View toolbar", () => {
+
+  const markup = shell();
+  assert.equal((markup.match(/Download Model<\/button>/g) ?? []).length, 1);
+  assert.equal((markup.match(/data-testid="open-ena-data-view-toggle"/g) ?? []).length, 1);
+  assert.match(markup, /class="ena-visual-toolbar"/);
+
 });
 
 test("one selected code color is reused by Comparison, Primary, and Secondary code nodes", async () => {

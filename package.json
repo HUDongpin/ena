@@ -43,7 +43,8 @@
     "plotly.js-gl3d-dist-min": "3.7.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "read-excel-file": "9.3.5"
+    "read-excel-file": "9.3.5",
+    "write-excel-file": "4.1.1"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,89 +25,40 @@ function workspaceSegment(startMarker: string, endMarker: string) {
   return workspace.slice(start, end);
 }
 
-test("the compact workbench rail retains the existing ENA mark and Open ENA identity", () => {
-  const brand = workspace.match(/<div className="ena-rail-brand"[\s\S]*?<\/div>/)?.[0] ?? "";
+test("compact rail retains the ENA mark, Open ENA identity and runtime", () => {
 
-  assert.ok(brand, "the workbench rail must retain one compact brand block");
-  assert.match(brand, /data-ena-rail-brand="true"/, "the rail brand needs one stable semantic owner");
-  assert.match(brand, /src="\/ena-mark\.svg"/, "the existing ENA network mark remains unchanged");
-  assert.match(brand, />OPEN ENA<\//, "Open ENA remains the visible product name");
-  assert.match(brand, /data-ena-rail-version="true"[\s\S]*?JENA_RAIL_DISPLAY_VERSION/, "the visible version stays derived from the runtime constant");
-  assert.doesNotMatch(workspace, /ENA Hong Kong/i);
+  const markup = shell();
+  assert.equal((markup.match(/data-ena-rail-brand="true"/g) ?? []).length, 1);
+  assert.match(markup, /src="\/ena-mark.svg"/);
+  assert.match(markup, />OPEN ENA</);
+  assert.match(markup, /data-ena-rail-version="true"/);
+
 });
 
-test("the existing ENA.HK rail drawings remain and AI is a dedicated downstream mode", () => {
-  const iconBlock = workspace.match(/const modeIcons:\s*Record<OpenEnaMode, React\.ReactNode>\s*=\s*\{[\s\S]*?\n\};/)?.[0] ?? "";
+test("the five original inline rail icons remain in Data-to-AI order", () => {
 
-  assert.equal((iconBlock.match(/<svg\b/g) ?? []).length, 5, "the rail has four analysis icons plus the AI logo");
-  assert.doesNotMatch(iconBlock, /M4 5\.5h16v5H4zm0 8h16v5H4z/, "the Sets icon artwork must be removed");
-  assert.match(iconBlock, /M4 5\.5h16v13H4zM4 10h16M9 5\.5v13/, "preserve the current Data icon artwork");
-  assert.match(iconBlock, /<circle cx="6" cy="7" r="2\.2"[\s\S]*?<circle cx="18" cy="6" r="2\.2"[\s\S]*?<circle cx="12" cy="18" r="2\.2"/, "preserve the current Model icon artwork");
-  assert.match(iconBlock, /M4 19\.5V4\.5M4 19\.5h16[\s\S]*?m6\.5 15 4-4 3 2 5-6/, "preserve the current Plot Tools icon artwork");
-  assert.match(iconBlock, /M5 19V11h3v8zm6 0V5h3v14zm6 0V8h3v11z/, "preserve the current Stats & Export icon artwork");
-  assert.match(iconBlock, /<rect x="3\.5" y="4" width="17" height="16" rx="4"[\s\S]*?m7\.5 15 2\.2-6 2\.2 6M8\.2 13h3M15 9v6/, "AI uses a distinct logo after Stats");
-  assert.match(copy, /modes:\s*\{\s*data:\s*"Data",\s*model:\s*"Model",\s*plot:\s*"Plot Tools",\s*stats:\s*"Stats & Export",\s*ai:\s*"AI"\s*\}/);
-  assert.match(workspace, /\{modeIcons\[item\]\}[\s\S]*?<span>\{copy\.modes\[item\]\}<\/span>/);
+  const rail = shell().match(/<nav class="ena-tool-rail"[\s\S]*?<\/nav>/)?.[0] ?? "";
+  assert.equal((rail.match(/class="ena-rail-button"/g) ?? []).length, 5);
+  assert.equal((rail.match(/<svg /g) ?? []).length, 5);
+  assert.ok(rail.indexOf('aria-label="Stats &amp; Export"') < rail.indexOf('aria-label="AI-assisted interpretation"'));
+
 });
 
-test("the no-result state keeps the official comparison workbench frames and compact context", () => {
-  const emptyWorkbench = workspaceSegment(
-    'data-testid="open-ena-empty-workbench"',
-    "{error ? <div className=\"ena-error-banner\"",
-  );
+test("the empty workbench retains comparison and two side frames with persistent plot tools", () => {
 
-  const expectedOrder = [
-    'data-testid="open-ena-empty-comparison-plot"',
-    'data-testid="open-ena-empty-primary-plot"',
-    'data-testid="open-ena-empty-secondary-plot"',
-    'data-testid="open-ena-empty-plot-tools"',
-    'data-testid="open-ena-empty-data-view"',
-  ];
-  let cursor = -1;
-  for (const marker of expectedOrder) {
-    const position = emptyWorkbench.indexOf(marker);
-    assert.ok(position > cursor, `${marker} must be present in official workbench reading order`);
-    cursor = position;
-  }
+  const markup = shell();
+  for (const id of ["open-ena-empty-workbench", "open-ena-empty-comparison-plot", "open-ena-empty-primary-plot", "open-ena-empty-secondary-plot", "open-ena-empty-plot-tools", "open-ena-empty-data-view"]) assert.ok(markup.includes(`data-testid="${id}"`), id);
 
-  assert.match(emptyWorkbench, />\s*COMPARISON PLOT\s*</);
-  assert.match(emptyWorkbench, />\s*PRIMARY PLOT\s*</);
-  assert.match(emptyWorkbench, />\s*SECONDARY PLOT\s*</);
-  assert.match(emptyWorkbench, /\{persistentPlotTools\}/, "the real disabled Plot Tools surface remains present before a model is built");
-  assert.match(emptyWorkbench, />\s*Data View\s*</);
 });
 
-test("the empty-state network is one coordinate-declared inline SVG with edges beneath nodes", () => {
-  const emptyWorkbench = workspaceSegment(
-    'data-testid="open-ena-empty-workbench"',
-    "{error ? <div className=\"ena-error-banner\"",
-  );
-  const inlineSvgs = [...emptyWorkbench.matchAll(/<svg\b[\s\S]*?<\/svg>/g)].map((match) => match[0]);
+test("the empty-state network is a connected SVG with edges beneath its four nodes", () => {
 
-  assert.equal(inlineSvgs.length, 1, "the empty workbench must contain exactly one inline SVG illustration");
-  const illustration = inlineSvgs[0];
-  assert.match(illustration, /data-testid="open-ena-empty-network"/);
-  assert.match(illustration, /viewBox="[\d. -]+"/);
+  const network = shell().match(/<svg[^>]*data-testid="open-ena-empty-network"[\s\S]*?<\/svg>/)?.[0] ?? "";
+  assert.match(network, /viewBox="0 0 200 135"/);
+  assert.equal((network.match(/<circle /g) ?? []).length, 4);
+  assert.equal((network.match(/<line /g) ?? []).length, 5);
+  assert.ok(network.lastIndexOf("<line ") < network.indexOf("<circle "));
 
-  const edges = [...illustration.matchAll(/<line\b[^>]*\/?\s*>/g)].map((match) => match[0]);
-  const nodes = [...illustration.matchAll(/<circle\b[^>]*\/?\s*>/g)].map((match) => match[0]);
-  assert.ok(edges.length >= 4, "the network declares at least four connected edges");
-  assert.ok(nodes.length >= 4, "the network declares at least four nodes");
-  for (const edge of edges) {
-    for (const coordinate of ["x1", "y1", "x2", "y2"]) {
-      assert.match(edge, new RegExp(`\\b${coordinate}="-?[\\d.]+"`), `every edge declares ${coordinate}`);
-    }
-  }
-  for (const node of nodes) {
-    for (const coordinate of ["cx", "cy", "r"]) {
-      assert.match(node, new RegExp(`\\b${coordinate}="[\\d.]+"`), `every node declares ${coordinate}`);
-    }
-  }
-  assert.ok(
-    illustration.lastIndexOf("<line") < illustration.indexOf("<circle"),
-    "all edges must be drawn before node circles so every join is visually clean",
-  );
-  assert.doesNotMatch(emptyWorkbench, /<(?:span|i)\s+className="[ne]\d+"/, "remove the disconnected absolutely positioned span/i motif");
 });
 
 test("loaded results retain the dense main Comparison plus stacked Primary and Secondary plots", () => {

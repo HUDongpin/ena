@@ -1,3 +1,4 @@
+import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 import type { ReactNode, Ref } from "react";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
 import type {
@@ -37,7 +38,7 @@ const DEFAULT_COPY: OpenEnaOrderedResultLayoutCopy = {
 };
 
 export interface OpenEnaOrderedResultLayoutProps extends OpenEnaCodeGraphPresentation {
-  result: OpenEnaResult;
+  result: OpenEnaPlotResult;
   config: OpenEnaConfig;
   primaryGroupName: string | null;
   secondaryGroupName: string | null;
@@ -101,7 +102,7 @@ export default function OpenEnaOrderedResultLayout(props: OpenEnaOrderedResultLa
     showLabels: props.showLabels,
     showCodeGraph: props.showCodeGraph,
     codeVisibility: props.codeVisibility,
-    codeSourceByRenderedCode: props.codeSourceByRenderedCode,
+    codeSourceByRenderedCode: props.codeSourceByRenderedCode, codeLabelByRenderedCode: props.codeLabelByRenderedCode,
     showUnitLabels: props.showUnitLabels,
     showVariance: props.showVariance,
     codeColors: props.codeColors,

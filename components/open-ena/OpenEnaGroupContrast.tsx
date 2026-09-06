@@ -7,6 +7,7 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
+import type { OpenEnaContrastPresentation } from "@/lib/open-ena/bound-presentation-v3";
 import type {
   OpenEnaPairwiseContrast,
   OpenEnaPairwiseContrastSide,
@@ -23,7 +24,7 @@ import type {
   OpenEnaNodeLayoutPositions,
 } from "@/lib/open-ena/node-layout";
 import {
-  openEnaRenderedCodeIsVisible,
+  openEnaRenderedCodeIsVisible, openEnaRenderedCodeLabel,
   openEnaRenderedEdgeIsVisible,
   type OpenEnaCodeGraphPresentation,
 } from "@/lib/open-ena/ordered-plot";
@@ -37,7 +38,7 @@ import OpenEnaPlotActionIcon from "./OpenEnaPlotActionIcon";
 import OpenEnaSvgDraggableNode from "./OpenEnaSvgDraggableNode";
 
 export interface OpenEnaGroupContrastProps extends OpenEnaCodeGraphPresentation {
-  contrast: OpenEnaPairwiseContrast;
+  contrast: OpenEnaContrastPresentation;
   codeColors?: OpenEnaCodeColors;
   edgeThreshold: number;
   showPoints: boolean;
@@ -300,7 +301,7 @@ function validExtent(value: CoordinateExtent | undefined): value is CoordinateEx
   );
 }
 
-function derivedExtent(contrast: OpenEnaPairwiseContrast): CoordinateExtent {
+function derivedExtent(contrast: OpenEnaContrastPresentation): CoordinateExtent {
   const validPoints = [
     ...contrast.nodes,
     ...contrast.primary.points,
@@ -316,7 +317,7 @@ function derivedExtent(contrast: OpenEnaPairwiseContrast): CoordinateExtent {
   };
 }
 
-function resolveExtent(contrast: OpenEnaPairwiseContrast) {
+function resolveExtent(contrast: OpenEnaContrastPresentation) {
   const runtimeExtent = contrast.coordinateExtent;
   return validExtent(runtimeExtent)
     ? { extent: runtimeExtent, source: "full-result" as const }
@@ -324,7 +325,7 @@ function resolveExtent(contrast: OpenEnaPairwiseContrast) {
 }
 
 function resolveOfficialPlotFrame(
-  contrast: OpenEnaPairwiseContrast,
+  contrast: OpenEnaContrastPresentation,
   extent: CoordinateExtent,
 ) {
   const frame = contrast.officialPlotFrame;
@@ -427,7 +428,7 @@ function differenceSign(edge: ContrastEdge) {
 }
 
 function groupColor(
-  contrast: OpenEnaPairwiseContrast,
+  contrast: OpenEnaContrastPresentation,
   side: OpenEnaPairwiseContrastSide,
   role: GroupRole,
 ) {
@@ -438,7 +439,7 @@ function groupColor(
 }
 
 function groupCaptionColor(
-  contrast: OpenEnaPairwiseContrast,
+  contrast: OpenEnaContrastPresentation,
   side: OpenEnaPairwiseContrastSide,
   role: GroupRole,
 ) {
@@ -956,7 +957,7 @@ function ContrastSvg({
   showLabels,
   showCodeGraph = true,
   codeVisibility,
-  codeSourceByRenderedCode,
+  codeSourceByRenderedCode, codeLabelByRenderedCode,
   showGroupLabels,
   showUnitLabels,
   unitCircle = false,
@@ -991,7 +992,7 @@ function ContrastSvg({
   const codePresentation = {
     showCodeGraph,
     codeVisibility,
-    codeSourceByRenderedCode,
+    codeSourceByRenderedCode, codeLabelByRenderedCode,
   };
   const width = compact ? MINI_WIDTH : MAIN_WIDTH;
   const height = compact ? MINI_HEIGHT : MAIN_HEIGHT;
@@ -1141,7 +1142,7 @@ function ContrastSvg({
       : pointsHidden > 0
         ? ` ${pointsHidden} analytic-unit mark${pointsHidden === 1 ? " is" : "s are"} hidden by group or unit display controls.`
         : "";
-  const reference = contrast.resultProvenance.projectionReference;
+  const reference = contrast.resultProvenance?.projectionReference;
   const referenceId = reference ? safeFigureLabel(reference.referenceId, 30) : null;
   const referenceName = reference ? safeFigureLabel(reference.name, 72) : null;
   const sourceHash = reference?.source.normalizedUtf8TextSha256;
@@ -1308,7 +1309,7 @@ function ContrastSvg({
                 const strongerSide = strongerSourceRole === "primary" ? contrast.primary : contrast.secondary;
                 const strongerName = strongerSide.name;
                 const stroke = groupColor(contrast, strongerSide, strongerSourceRole);
-                const edgeLabel = `${edge.name}: signed Primary-minus-Secondary difference ${formatNumber(difference, true)}; ${strongerName} ${role} group is stronger`;
+                const edgeLabel = `${openEnaRenderedCodeLabel(codePresentation, edge.source)} ↔ ${openEnaRenderedCodeLabel(codePresentation, edge.target)}: signed Primary-minus-Secondary difference ${formatNumber(difference, true)}; ${strongerName} ${role} group is stronger`;
                 return (
                   <line
                     key={edge.name}
@@ -1343,7 +1344,7 @@ function ContrastSvg({
                 const ratio = magnitude / safeDenominator;
                 if (magnitude <= ZERO_TOLERANCE || ratio < threshold) return null;
                 const stroke = groupColor(contrast, side, role);
-                const edgeLabel = `${edge.name}: ${side.name} ${role} group mean weight ${formatNumber(value)}`;
+                const edgeLabel = `${openEnaRenderedCodeLabel(codePresentation, edge.source)} ↔ ${openEnaRenderedCodeLabel(codePresentation, edge.target)}: ${side.name} ${role} group mean weight ${formatNumber(value)}`;
                 return (
                   <line
                     key={`${role}:${edge.name}`}
@@ -1448,7 +1449,7 @@ function ContrastSvg({
           if (unitCircle && !connectedCodes.has(node.code)) return null;
           const point = nodePoints.get(node.code);
           if (!point) return null;
-          const codeLabel = safeFigureLabel(node.code, 72) || "Unnamed code";
+          const codeLabel = safeFigureLabel(openEnaRenderedCodeLabel(codePresentation, node.code), 72) || "Unnamed code";
           const nodeSize = codeNodeSize(node.code);
           const nodeColor = codeColorFor(codeColors, node.code);
           return (
@@ -2040,7 +2041,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
           <tbody>
             {strongestDifferences.length ? strongestDifferences.map((edge) => (
               <tr key={edge.name}>
-                <th scope="row">{edge.name}</th>
+                <th scope="row">{props.codeLabelByRenderedCode ? `${openEnaRenderedCodeLabel(props, edge.source)} ↔ ${openEnaRenderedCodeLabel(props, edge.target)}` : edge.name}</th>
                 <td>{formatNumber(edge.primaryWeight)}</td>
                 <td>{formatNumber(edge.secondaryWeight)}</td>
                 <td data-ena-sign={differenceSign(edge)}>{formatNumber(edge.signedDifference, true)}</td>

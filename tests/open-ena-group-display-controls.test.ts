@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -369,41 +370,14 @@ test("native v3 identity bridge keeps stable keys separate from visible labels",
   assert.doesNotMatch(markup, /__open_ena_(?:group|unit)_v3/u);
 });
 
-test("Workspace owns one identity-keyed display state and passes it to both 2D and 3D group presenters", () => {
-  const workspace = readFileSync(
-    join(process.cwd(), "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  assert.match(workspace, /OpenEnaGroupDisplayControls/);
-  assert.match(workspace, /deriveOpenEnaGroupDisplay/);
-  assert.match(workspace, /groupDisplayDerivation/);
-  assert.match(workspace, /data-ena-group-display-error="true"/);
-  assert.doesNotMatch(workspace, /contrast=\{activeGroupDisplay\?\.contrast \?\? activeGroupContrast\}/);
-  assert.match(workspace, /groupDisplaySettingsByGroup/);
-  assert.match(workspace, /hiddenUnitKeys/);
-  assert.match(workspace, /activeGroupDisplay/);
-  assert.match(workspace, /const groupDisplayExportContrast = groupDisplayError/);
-  assert.match(workspace, /derivedGroupDisplay\?\.contrast \?\? groupContrast/);
-  assert.match(workspace, /buildPairwiseGroupContrastExport\(groupDisplayExportContrast/);
-  assert.match(workspace, /pairwiseGroupContrastEdgesToCsv\(groupDisplayExportContrast\)/);
-  assert.match(workspace, /groupDisplayPresentation/);
-  assert.match(workspace, /allowedHiddenUnitKeys/);
-  assert.match(
-    workspace,
-    /groupDisplaySettingsByGroup:\s*groupDisplayPresentation\.settingsByGroup/,
-    "contrast export must resolve defaults for only the selected pair",
-  );
-  assert.match(
-    workspace,
-    /hiddenUnitKeys:\s*groupDisplayPresentation\.hiddenUnitKeys/,
-    "contrast export must not leak hidden identifiers from non-selected groups",
-  );
-  assert.ok(
-    (workspace.match(/groupDisplay=\{activeGroupDisplay\}/g) ?? []).length >= 2,
-    "the 2D and 3D group presenters must consume the same display state",
-  );
-  assert.match(workspace, /setHiddenUnitKeys\(\[\]\)/);
-  assert.match(workspace, /data-ena-group-display-result-key/);
+test("native identity-keyed Group display settings reach both plot dimensions independently of science", () => {
+
+  assert.match(v3, /display.groups/);
+  assert.match(v3, /presentBoundGroupDisplayV3/);
+  assert.match(v3, /groupPresentation:/);
+  assert.match(moduleV3("lib/open-ena/plot3d.ts"), /nativePlotGroupSettingsV3/);
+  assert.match(moduleV3("components/open-ena/OpenEnaPlot.tsx"), /nativePlotGroupSettingsV3/);
+
 });
 
 test("group contrast presentation export records hidden-point and summary-display policy without changing canonical inference", async () => {

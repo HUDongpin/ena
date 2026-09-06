@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useRef, type CSSProperties, type ReactNode } from "react";
+import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type {
   OpenEnaNodeDimensionPosition,
@@ -13,7 +14,7 @@ import type { CameraPreset, OpenEnaConfig, OpenEnaResult } from "@/lib/open-ena/
 import OpenEnaInteractive3DPlot from "./OpenEnaInteractive3DPlot";
 
 export interface OpenEna3DOrderedResultLayoutProps extends OpenEnaCodeGraphPresentation {
-  result: OpenEnaResult;
+  result: OpenEnaPlotResult;
   config: OpenEnaConfig;
   primaryGroupName: string | null;
   secondaryGroupName: string | null;
@@ -88,7 +89,7 @@ export default function OpenEna3DOrderedResultLayout(props: OpenEna3DOrderedResu
     showLabels: props.showLabels,
     showCodeGraph: props.showCodeGraph,
     codeVisibility: props.codeVisibility,
-    codeSourceByRenderedCode: props.codeSourceByRenderedCode,
+    codeSourceByRenderedCode: props.codeSourceByRenderedCode, codeLabelByRenderedCode: props.codeLabelByRenderedCode,
     showUnitLabels: props.showUnitLabels,
     showVariance: props.showVariance,
     showTrajectories: false,

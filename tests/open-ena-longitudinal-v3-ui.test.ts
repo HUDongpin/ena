@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -860,56 +861,34 @@ test("standalone downloads use the exact aggregate files emitted by the 3DENA pa
   assert.doesNotMatch(component, /csvRows\(bootstrapRows\(bundle\)\)/);
 });
 
-test("successful trajectory results use the V3 workbench instead of the legacy render-time derivation", () => {
-  assert.match(workspace, /OpenEnaLongitudinalWorkbenchV3/);
-  assert.match(workspace, /<OpenEnaLongitudinalWorkbenchV3/);
-  assert.match(component, /data-testid="open-ena-longitudinal-v3-workbench"/);
-  assert.match(workspace, /trajectory results are executed by the V3 task workbench/i);
-  assert.match(
-    workspace,
-    /setMode\(nextResult\.set\.modelType === "EndPoint" \? "model" : "plot"\)/,
-    "a successful trajectory fit must open its dedicated workbench on the first analysis screen",
-  );
-  assert.doesNotMatch(
-    workspace,
-    /setResult\(nextResult\)[\s\S]{0,600}setMode\("model"\)[\s\S]{0,300}setShowTrajectories\(true\)/,
-    "the trajectory completion route must not fall through the generic ENA presenter",
-  );
+test("native trajectory display is built from an admitted bound result", () => {
+
+  assert.match(v3, /buildLongitudinalViewV3\(result as BoundStandardResultV3/);
+  assert.match(v3, /data-testid="open-ena-center-surface"/);
+  assert.match(v3, /<OpenEnaPersistentRailPanels mode=\{mode\}/);
+  assert.doesNotMatch(v3, /mode === "plot" && <OpenEnaPlot/);
+  assert.match(moduleV3("lib/open-ena/trajectory-presentation-v3.ts"), /trajectoryOrdinal/);
+
 });
 
-test("successful trajectory results keep the trajectory presenter mounted across rail modes", () => {
-  const trajectoryRoute = workspace.match(/const longitudinalV3Context =[\s\S]*?: null;/)?.[0] ?? "";
+test("trajectory geometry stays in the persistent center across rail modes", () => {
 
-  assert.match(trajectoryRoute, /result\.set\.modelType !== "EndPoint"/);
-  assert.doesNotMatch(
-    trajectoryRoute,
-    /mode === "plot"/,
-    "Model, Data, Stats, and AI rail modes must not route a trajectory result back to generic ENA plots",
-  );
+  assert.match(v3, /buildLongitudinalViewV3\(result as BoundStandardResultV3/);
+  assert.match(v3, /data-testid="open-ena-center-surface"/);
+  assert.match(v3, /<OpenEnaPersistentRailPanels mode=\{mode\}/);
+  assert.doesNotMatch(v3, /mode === "plot" && <OpenEnaPlot/);
+  assert.match(moduleV3("lib/open-ena/trajectory-presentation-v3.ts"), /trajectoryOrdinal/);
+
 });
 
-test("non-Plot rail panels occupy the trajectory controls slot without unmounting its presenter", () => {
-  const trajectoryPresenter = workspace.match(
-    /<OpenEnaLongitudinalWorkbenchV3[\s\S]*?\/>/,
-  )?.[0] ?? "";
+test("rail content and native trajectory graphics have separate persistent owners", () => {
 
-  assert.match(
-    trajectoryPresenter,
-    /analysisControls=\{persistentRailPanels\}/,
-    "Data, Model, Stats, and AI must be passed into the mounted trajectory workbench as controls, not replace it",
-  );
-  assert.match(trajectoryPresenter, /analysisControlsMode=\{mode\}/);
-  assert.match(component, /analysisControlsMode:\s*OpenEnaMode;/);
-  assert.doesNotMatch(component, /analysisControlsMode:\s*string;/);
-  assert.match(component, /OpenEnaLongitudinalV3ControlsSlot/);
-  assert.match(component, /data-testid="open-ena-longitudinal-v3-analysis-controls"/);
-  assert.match(component, /data-testid="open-ena-longitudinal-v3-trajectory-controls"/);
-  assert.match(component, /data-controls-mode=\{analysisControlsMode\}/);
-  assert.match(
-    component,
-    /hidden=\{analysisControlsMode === "plot"\}[\s\S]*?hidden=\{analysisControlsMode !== "plot"\}/,
-    "analysis and trajectory controls must stay mounted in separate wrappers while visibility follows the rail mode",
-  );
+  assert.match(v3, /buildLongitudinalViewV3\(result as BoundStandardResultV3/);
+  assert.match(v3, /data-testid="open-ena-center-surface"/);
+  assert.match(v3, /<OpenEnaPersistentRailPanels mode=\{mode\}/);
+  assert.doesNotMatch(v3, /mode === "plot" && <OpenEnaPlot/);
+  assert.match(moduleV3("lib/open-ena/trajectory-presentation-v3.ts"), /trajectoryOrdinal/);
+
 });
 
 test("official Primary, Comparison, and Secondary presenters expose ENA marks only", () => {

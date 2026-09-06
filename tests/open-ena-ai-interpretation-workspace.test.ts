@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -58,76 +59,26 @@ function workspaceAiPanel() {
   return sourceBlock(workspace, /function renderAiPanel\(\)/, "renderAiPanel");
 }
 
-test("AI interpretation is a dedicated fifth rail mode sourced from Stats results", () => {
-  assert.equal(
-    existsSync(aiComponentPath),
-    true,
-    "components/open-ena/OpenEnaAiInterpretation.tsx must implement the reviewed AI surface",
-  );
-  assert.match(
-    workspace,
-    /import OpenEnaAiInterpretation from ["']\.\/OpenEnaAiInterpretation["'];/,
-    "the workspace must import the dedicated AI surface",
-  );
+test("AI remains the fifth rail mode with native Stats evidence and explicit navigation", () => {
 
-  const statsPanel = workspaceStatsPanel();
-  const aiPanel = workspaceAiPanel();
-  assert.doesNotMatch(statsPanel, /<OpenEnaAiInterpretation\b/, "Stats & Export must no longer embed the AI surface");
-  assert.match(
-    aiPanel,
-    /<OpenEnaAiInterpretation\b[\s\S]*?request=\{[^}]+\}[\s\S]*?disabled=\{[^}]+\}/,
-    "the AI mode must pass a reviewed Stats request and an explicit disabled state",
-  );
-  assert.match(aiPanel, /data-ena-ai-source="stats-results"/);
-  assert.match(aiPanel, /setStatsTab\("comparison"\)[\s\S]*?setMode\("stats"\)/);
+  const markup = shell();
+  const names = [...markup.matchAll(/class="ena-rail-button"[^>]*aria-label="([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(names, ["Data", "Model", "Plot Tools", "Stats &amp; Export", "AI-assisted interpretation"]);
+  assert.match(markup, /data-ena-ai-source="stats-results"/);
+  assert.match(markup, />Open Stats<\/button>/);
+  assert.match(v3, /buildAiInterpretationReviewV3\(result, currentPlan, selection\)/);
+  assert.doesNotMatch(moduleV3("components/open-ena/model-v3/OpenEnaNativeStatsPanelV3.tsx"), /<OpenEnaAiInterpretation/);
 
-  assert.match(
-    types,
-    /export type OpenEnaMode\s*=\s*"data"\s*\|\s*"model"\s*\|\s*"plot"\s*\|\s*"stats"\s*\|\s*"ai"\s*;/,
-    "AI interpretation must be an explicit mode after Stats",
-  );
-  const iconStart = workspace.indexOf("const modeIcons:");
-  const iconEnd = workspace.indexOf("async function sha256Hex", iconStart);
-  assert.ok(iconStart >= 0 && iconEnd > iconStart, "all five rail icons must remain explicit");
-  const iconBlock = workspace.slice(iconStart, iconEnd);
-  assert.deepEqual(
-    [...iconBlock.matchAll(/^\s{2}(data|model|plot|stats|ai):\s*\(/gm)].map((match) => match[1]),
-    ["data", "model", "plot", "stats", "ai"],
-    "AI must follow the four remaining analysis modes",
-  );
-  assert.equal((iconBlock.match(/<svg\b/g) ?? []).length, 5, "the rail must contain one icon for every mode");
-  for (const svgContract of [
-    /data:\s*\([\s\S]*?M4 5\.5h16v13H4zM4 10h16M9 5\.5v13/,
-    /model:\s*\([\s\S]*?cx="6" cy="7" r="2\.2"[\s\S]*?cx="18" cy="6" r="2\.2"[\s\S]*?cx="12" cy="18" r="2\.2"[\s\S]*?m8 7 7\.8-\.8M7\.4 8\.7l3\.5 7\.4m5\.6-8\.2-3\.4 8\.2/,
-    /plot:\s*\([\s\S]*?M4 19\.5V4\.5M4 19\.5h16[\s\S]*?m6\.5 15 4-4 3 2 5-6/,
-    /stats:\s*\([\s\S]*?M5 19V11h3v8zm6 0V5h3v14zm6 0V8h3v11z/,
-  ]) {
-    assert.match(iconBlock, svgContract, "each of the four remaining rail SVG designs must remain unchanged");
-  }
-  assert.match(iconBlock, /ai:\s*\([\s\S]*?<rect x="3\.5" y="4" width="17" height="16" rx="4"[\s\S]*?m7\.5 15 2\.2-6 2\.2 6M8\.2 13h3M15 9v6/);
 });
 
-test("AI panel uses a provider-neutral kicker and enlarges the requested review guidance by one pixel", () => {
-  const aiPanel = workspaceAiPanel();
-  assert.match(aiPanel, /<p className="ena-panel-kicker">AI<\/p>/);
-  assert.doesNotMatch(aiPanel, /AI · OpenRouter/);
-  assert.match(aiComponent, /<p className="ena-panel-kicker">AI<\/p>/);
-  assert.doesNotMatch(aiComponent, /AI · OpenRouter/);
+test("AI guidance remains provider-neutral with the established readable typography", () => {
 
-  assert.match(
-    globalStyles,
-    /\.ena-ai-stats-source-summary p\s*\{[\s\S]*?font-size:\s*calc\(0\.65rem \+ var\(--ena-font-step, 1px\) \+ 1px\);/,
-  );
-  assert.match(
-    globalStyles,
-    /\.ena-ai-disclosure\s*\{[\s\S]*?font-size:\s*calc\(0\.66rem \+ var\(--ena-font-step, 1px\)\);/,
-  );
-  assert.doesNotMatch(globalStyles, /\.ena-ai-privacy\b/);
-  assert.doesNotMatch(globalStyles, /\.ena-ai-provider-disclosure\b/);
-  assert.match(
-    globalStyles,
-    /\.ena-ai-disabled-reason\s*\{[\s\S]*?font-size:\s*calc\(0\.68rem \+ var\(--ena-font-step, 1px\)\);/,
-  );
+  assert.match(shell(), /class="ena-panel-kicker">AI<\/p>/);
+  assert.doesNotMatch(shell(), /AI · OpenRouter/);
+  assert.match(aiComponent, /<p className="ena-panel-kicker">AI<\/p>/);
+  assert.match(globalStyles, /\.ena-ai-stats-source-summary p\s*\{[\s\S]*?font-size:\s*calc\(0\.65rem \+ var\(--ena-font-step, 1px\) \+ 1px\);/);
+  assert.match(globalStyles, /\.ena-ai-disabled-reason\s*\{[\s\S]*?font-size:/);
+
 });
 
 test("the researcher must review the aggregate payload and give explicit consent before generation", () => {
@@ -195,56 +146,24 @@ test("the only AI network request is a POST inside the explicit Generate handler
   assert.match(aiComponent, /if\s*\(response\.status\s*===\s*409\)\s*clearOperation\(\)/);
 });
 
-test("generation is disabled when there is no current result or the fitted evidence is stale", () => {
-  const aiPanel = workspaceAiPanel();
-  assert.match(
-    workspace,
-    /const\s+resultIsStale\s*=\s*Boolean\([^;]+!sameOpenEnaConfig\(config,\s*resultConfig\)\)/,
-    "the existing fitted-result staleness guard must remain authoritative",
-  );
-  assert.match(
-    aiPanel,
-    /<OpenEnaAiInterpretation\b[\s\S]*?disabled=\{[^}]*(?:!result|resultIsStale)[^}]*\}/,
-    "the AI mode must disable generation for missing or stale Stats evidence",
-  );
-  assert.match(
-    aiComponent,
-    /disabled=\{[^}]*(?:disabled|!request)[^}]*\}/,
-    "the component's Generate button must fail closed when no reviewed request is available",
-  );
-  assert.match(
-    workspace,
-    /if\s*\([^)]*!currentInference[^)]*\)\s*return null;/,
-    "the workspace must not build any AI request before the Stats inference coordinator has produced a current result",
-  );
-  assert.match(
-    workspace,
-    /buildOpenEnaAiInterpretationRequest\(\{[\s\S]*?currentInference,?[\s\S]*?\}\)/,
-    "the AI builder must receive the exact current inference authority rather than a plot contrast statistic",
-  );
-  assert.match(
-    aiComponent,
-    /(?:disabledReason|copy\.noCurrentResult|copy\.staleResult)/,
-    "the disabled state must explain whether evidence is absent or stale",
-  );
+test("AI generation requires the exact current native review and full local scientific identity", () => {
+
+  assert.match(v3, /disabled=\{!activeAiReview \|\| !current\}/);
+  assert.match(v3, /localScientificIdentity=\{activeAiReview \? canonicalJsonV3\(\{ binding: activeAiReview.binding, context: activeAiReview.context, configuration: activeAiReview.configuration \}\)/);
+  assert.match(aiComponent, /localScientificIdentity/);
+  assert.match(aiComponent, /disabled=\{[^}]*(?:disabled|!request)[^}]*\}/);
+  assert.doesNotMatch(v3, /buildOpenEnaAiInterpretationRequest\(/);
+
 });
 
-test("one-period trajectory AI uses the derivation aggregate while the Plot view keeps its two-period minimum", () => {
-  assert.match(
-    workspace,
-    /const\s+longitudinalView\s*=\s*longitudinalTimeOrder\.length\s*>=\s*2[\s\S]*?derivation\?\.view\s*\?\?\s*null/,
-    "the descriptive Plot must retain its existing two-period trajectory requirement",
-  );
-  assert.match(
-    workspace,
-    /const\s+aiLongitudinalView\s*=\s*longitudinalDerivationState\.derivation\?\.view\s*\?\?\s*null/,
-    "AI must receive the separately derived aggregate view even when only one period is selected",
-  );
-  assert.match(
-    workspace,
-    /buildOpenEnaAiInterpretationRequest\(\{[\s\S]*?longitudinalView:\s*result\.set\.modelType\s*===\s*["']EndPoint["']\s*\?\s*null\s*:\s*aiLongitudinalView/,
-    "a one-period trajectory comparison must not be suppressed by the Plot-only view gate",
-  );
+test("one-period native inference eligibility is independent from drawing multi-step trajectories", () => {
+
+  assert.match(v3, /inferenceDesign === "independent" \? endpointControls && periods\[0\]/);
+  assert.match(v3, /buildAiInterpretationReviewV3\(result, currentPlan, selection\)/);
+  assert.match(v3, /activeAiReview.wireLimitations/);
+  assert.match(moduleV3("lib/open-ena/trajectory-presentation-v3.ts"), /steps/);
+  assert.doesNotMatch(v3, /hasUsableLongitudinalView/);
+
 });
 
 test("the UI supports cancellation, a visible error, and an explicit retry", () => {

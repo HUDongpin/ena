@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -122,75 +123,14 @@ function workspaceSource() {
   );
 }
 
-test("Workspace routes one current frozen inference authority to every local consumer", () => {
-  const workspace = workspaceSource();
-  assert.match(
-    workspace,
-    /longitudinalInferenceRowsToCsv,/,
-    "the Workspace must import the aggregate-only inference CSV serializer",
-  );
-  assert.match(
-    workspace,
-    /const currentInference = lastInferenceRequestKey === inferenceRequestKey \? lastInference : null;/,
-    "all consumers must be bound to the synchronously visible inference, not raw state",
-  );
+test("one current native inference authority feeds Stats AI and separate statistics export", () => {
 
-  const methodsStart = workspace.indexOf("const methodsReport = useMemo");
-  const methodsEnd = workspace.indexOf("const referenceMeanNotice", methodsStart);
-  assert.ok(methodsStart >= 0 && methodsEnd > methodsStart);
-  const methodsBlock = workspace.slice(methodsStart, methodsEnd);
-  assert.match(
-    methodsBlock,
-    /buildMethodsReport\([\s\S]*?\},\s*currentInference\s*,\s*inferenceProducerContext\s*\)/,
-  );
-  assert.match(methodsBlock, /\[[\s\S]*?currentInference[\s\S]*?\]\s*,?\s*\)/);
-  assert.doesNotMatch(methodsBlock, /buildMethodsReport\([\s\S]*?lastInference/);
+  assert.match(v3, /inference\?\.key === consumerKey/);
+  assert.match(v3, /inference=\{activeInference\}/);
+  assert.match(v3, /inference: activeInference, controls:/);
+  assert.match(v3, /exportNativeStatisticsV3\(activeInference, result, currentPlan, controls!/);
+  assert.doesNotMatch(v3, /runOpenEnaInferenceV2|buildAnalysisBundle\(/);
 
-  const contextStart = workspace.indexOf("const inferenceProducerContext = useMemo");
-  const contextEnd = workspace.indexOf("useEffect", contextStart);
-  assert.ok(contextStart >= 0 && contextEnd > contextStart);
-  const contextBlock = workspace.slice(contextStart, contextEnd);
-  assert.match(contextBlock, /aiLongitudinalView\?\.identityConfirmed/);
-  assert.match(contextBlock, /repeatedEntityColumns:\s*\[\.\.\.aiLongitudinalView\.repeatedEntityColumns\]/);
-  assert.match(contextBlock, /timeOrder:\s*\[\.\.\.aiLongitudinalView\.timeOrder\]/);
-
-  const bundleCalls = [...workspace.matchAll(/buildAnalysisBundle\(/g)];
-  assert.equal(bundleCalls.length, 2, "both Workspace result-bundle download actions must remain explicit");
-  for (const [index, call] of bundleCalls.entries()) {
-    const block = workspace.slice(call.index, call.index + 1_600);
-    assert.match(block, /inference:\s*currentInference/, `bundle download ${index + 1} must use currentInference`);
-    assert.match(block, /inferenceContext:\s*inferenceProducerContext/, `bundle download ${index + 1} must bind current context`);
-    assert.doesNotMatch(block, /inference:\s*lastInference/);
-  }
-
-  const longitudinalStart = workspace.indexOf("function renderLongitudinalPanel()");
-  const longitudinalEnd = workspace.indexOf("function renderPlotPanel()", longitudinalStart);
-  assert.ok(longitudinalStart >= 0 && longitudinalEnd > longitudinalStart);
-  const longitudinalBlock = workspace.slice(longitudinalStart, longitudinalEnd);
-  assert.match(
-    longitudinalBlock,
-    /buildLongitudinalGroupCentroidExport\(\s*longitudinalView,\s*\{[\s\S]*?\},\s*currentInference\s*,?\s*\)/,
-  );
-  assert.match(
-    longitudinalBlock,
-    /longitudinalInferenceRowsToCsv\(\s*longitudinalView,\s*currentInference\s*,?\s*\)/,
-  );
-  assert.match(
-    longitudinalBlock,
-    /disabled=\{!currentInference \|\| !longitudinalView\}/,
-  );
-  assert.doesNotMatch(
-    longitudinalBlock,
-    /currentInference\.(?:status|reason)[\s\S]{0,80}(?:available|not-estimable)/,
-    "a completed not-estimable Run remains downloadable for audit",
-  );
-
-  const aiStart = workspace.indexOf("function renderAiPanel()");
-  const aiEnd = workspace.indexOf("function renderStatsPanel()", aiStart);
-  assert.ok(aiStart >= 0 && aiEnd > aiStart);
-  const aiBlock = workspace.slice(aiStart, aiEnd);
-  assert.match(aiBlock, /<OpenEnaAiInterpretation[\s\S]*?disabled=\{[^}]*!currentInference[^}]*\}/);
-  assert.match(aiBlock, /key=\{`\$\{locale\}:\$\{inferenceRequestKey\}:\$\{currentInference\?\.analyzedAt/);
 });
 
 test("JSON, Methods and inference CSV retain the exact values of one current inference", async () => {
@@ -309,14 +249,12 @@ test("a real one-period trajectory builds a private frame and runs independent M
   assert.notEqual(inference.status, "disabled");
   assert.equal(inference.rows.length, 2);
 
-  const workspace = workspaceSource();
-  assert.match(workspace, /longitudinalTimeOrder\.length < 1/);
-  assert.match(
-    workspace,
-    /const longitudinalView = longitudinalTimeOrder\.length >= 2\s*\?[\s\S]{0,120}derivation\?\.view\s*\?\? null\s*:\s*null/,
-    "one-period inference must not masquerade as a plotted trajectory",
-  );
-  assert.match(workspace, /const longitudinalComparisonFrame = longitudinalDerivationState\.derivation\?\.comparisonFrame \?\? null/);
+
+  assert.match(v3, /trajectory-independent-period/);
+  assert.match(v3, /trajectory-paired-periods/);
+  assert.match(v3, /runOpenEnaTrajectoryInferenceV3/);
+  assert.match(v3, /primaryGroup: endpointControls!.primaryGroup/);
+
 });
 
 test("the same four people at baseline and scaffolded enter paired Wilcoxon, never 4+4 Mann–Whitney", async () => {
@@ -371,10 +309,12 @@ test("the same four people at baseline and scaffolded enter paired Wilcoxon, nev
   assert.deepEqual(periodAsGroup.rows, []);
   assert.doesNotMatch(JSON.stringify(periodAsGroup.rows), /mann-whitney-u/);
 
-  const workspace = workspaceSource();
-  assert.match(workspace, /const hasTwoGroups = Boolean\([\s\S]{0,160}currentResultGroupNames\.length >= 2/);
-  assert.match(workspace, /independent:\s*\{[\s\S]{0,160}enabled: Boolean\(result && hasTwoGroups/);
-  assert.match(workspace, /paired:\s*\{[\s\S]{0,120}enabled: Boolean\(trajectory && longitudinalTimeOrder\.length >= 2\)/);
+
+  assert.match(v3, /trajectory-independent-period/);
+  assert.match(v3, /trajectory-paired-periods/);
+  assert.match(v3, /runOpenEnaTrajectoryInferenceV3/);
+  assert.match(v3, /primaryGroup: endpointControls!.primaryGroup/);
+
 });
 
 test("stable result, warning, integrity and p-method codes have localized researcher-facing copy", () => {

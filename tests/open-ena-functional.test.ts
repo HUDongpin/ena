@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -293,81 +294,35 @@ test("browser results discard row-level source payloads after modeling", async (
   assert.equal(JSON.stringify(compact).includes("utterance"), false);
 });
 
-test("source ingestion owns dataset generation and blocks analysis until the source is committed", () => {
-  const workspace = readFileSync(
-    join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
+test("source generation guards preparation and disables Run until source review is committed", () => {
 
-  assert.match(workspace, /const \[sourceBusy, setSourceBusy\] = useState\(false\)/);
-  assert.match(workspace, /const datasetGenerationRef = useRef\(0\)/);
-  assert.match(workspace, /const canRun = Boolean\([\s\S]{0,180}!sourceBusy[\s\S]{0,80}!loading/);
-  assert.match(workspace, /datasetGenerationRef\.current \+= 1/);
-  assert.match(workspace, /const analysisGeneration = datasetGenerationRef\.current/);
-  assert.match(workspace, /datasetGenerationRef\.current !== analysisGeneration/);
-  assert.match(workspace, /aria-busy=\{loading \|\| sourceBusy\}/);
+  assert.match(v3, /sourceGeneration = useRef/);
+  assert.match(v3, /sourceGeneration.current/);
+  assert.match(v3, /disabled=\{!controller.canRun \|\| sourceBusy \|\| sourcePreview !== null\}/);
+  assert.match(v3, /aria-busy=\{sourceBusy \|\| modelState.runStatus === "running"\}/);
+  assert.match(owner, /adopt-dataset/);
+
 });
 
-test("composite identities preserve declared order while codes remain in visible CSV-header order", () => {
-  const workspace = readFileSync(
-    join(process.cwd(), "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  const officialControls = readFileSync(
-    join(process.cwd(), "components", "open-ena", "OpenEnaOfficialModelControls.tsx"),
-    "utf8",
-  );
-  assert.match(officialControls, /if \(!selected\.has\(field\)\) onChange\(\[\.\.\.selectedFields, field\]\)/);
-  assert.match(officialControls, /onChange\(selectedFields\.filter\(\(candidate\) => candidate !== field\)\)/);
-  assert.match(workspace, /function toggleInHeaderOrder/);
-  assert.match(workspace, /return headers\.filter\(\(candidate\) => next\.has\(candidate\)\)/);
-  assert.match(workspace, /selectedFields=\{config\.unitColumns\}/);
-  assert.match(workspace, /onChange=\{\(unitColumns\) => updateConfig\(\(current\) => \(\{ \.\.\.current, unitColumns \}\)\)\}/);
-  assert.match(workspace, /selectedFields=\{config\.conversationColumns\}/);
-  assert.match(workspace, /onChange=\{\(conversationColumns\) => updateConfig/);
-  assert.match(workspace, /codes: toggleInHeaderOrder\(headers, current\.codes, header, event\.target\.checked\)/);
+test("native panels preserve explicit composite identity and Code order in separate family drafts", () => {
+
+  assert.match(v3, /<OpenEnaUnitsPanelV3/);
+  assert.match(v3, /<OpenEnaHorizonsPanelV3/);
+  assert.match(v3, /<OpenEnaCodesPanelV3/);
+  assert.doesNotMatch(v3, /toggleInHeaderOrder|coerceSelectedCodes/);
+  assert.match(owner, /createModelStateV3\(drafts,/);
+
 });
 
-test("a replacement source aborts the current run only at the source commit boundary", () => {
-  const workspace = readFileSync(
-    join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  const loadSample = workspace.slice(
-    workspace.indexOf("async function loadSample"),
-    workspace.indexOf("async function openCodedData"),
-  );
-  const openCodedData = workspace.slice(
-    workspace.indexOf("async function openCodedData"),
-    workspace.indexOf("function resetPlot"),
-  );
+test("source adoption invalidates the old request only after verified preparation completes", () => {
 
-  for (const [sourceCommit, hashStatement] of [
-    [loadSample, "const nextHash = await sha256Hex(text)"],
-    [openCodedData, "const nextHash = await sha256Hex(normalizedHashText)"],
-  ] as const) {
-    const hashFinished = sourceCommit.indexOf(hashStatement);
-    const abortCurrentRun = sourceCommit.indexOf("abortRef.current?.abort()");
-    const commitDataset = sourceCommit.indexOf("setDataset(nextDataset)");
-    assert.ok(hashFinished >= 0, "source ingestion must hash the complete source before commit");
-    assert.ok(abortCurrentRun > hashFinished, "the current analysis must remain owned by the old dataset during source read/hash");
-    assert.ok(abortCurrentRun < commitDataset, "the current analysis must be aborted immediately before the new dataset commit");
-  }
-  assert.match(
-    workspace,
-    /async function runAnalysis\([\s\S]{0,240}nextDatasetHash\s*=\s*datasetHash[\s\S]*?datasetSha256:\s*nextDatasetHash[\s\S]*?setResult\(nextResult\)/,
-    "each worker result must bind to the immutable hash supplied to that run",
-  );
-  assert.match(
-    loadSample,
-    /await runAnalysis\(nextDataset,\s*SAMPLE_CONFIG,\s*nextHash\)/,
-    "the teaching sample must pass its freshly computed hash into the immediate worker run",
-  );
-  assert.match(
-    loadSample,
-    /fetch\(SAMPLE_DATASET_URL,\s*\{\s*cache:\s*"no-store"/,
-    "the teaching sample must not reuse stale bytes after a fixture revision",
-  );
+  const intake = functionSourceV3(v3, "confirmSourceTyping");
+  assert.ok(intake.indexOf("await prepareTypedCsvSourceV3") < intake.indexOf("installSource("));
+  assert.match(intake, /sourceGeneration.current/);
+  assert.match(owner, /case "install-source"[\s\S]*?adopt-dataset/);
+  assert.match(owner, /state.model.runningRequest/);
+  assert.match(moduleV3("lib/open-ena/sample-source-v3.ts"), /originalCsvSha256|sha256/);
+
 });
 
 test("the reproducibility bundle retains normalized tables, count evidence, and the full rotation set", async () => {
@@ -435,47 +390,15 @@ test("CSV export neutralizes spreadsheet formulas while preserving numeric scala
   assert.equal(rowsToCsv([{ "=formulaHeader": "safe" }]), "'=formulaHeader\r\nsafe\r\n");
 });
 
-test("the researcher interface exposes the implemented model controls, data tables, and result exports", () => {
-  const workspace = readFileSync(
-    join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
+test("the native Workspace exposes four model panels, bound tables, and truthful separate exports", () => {
 
-  assert.match(workspace, /windowSizeForward/);
-  assert.match(workspace, /rotation/);
-  assert.match(workspace, /centerAlignToOrigin/);
-  assert.match(workspace, /result\.stats\.tests/);
-  assert.match(workspace, /buildAnalysisBundle/);
-  assert.match(workspace, /rowsToCsv/);
-  assert.match(workspace, /copy\.resultTables/);
-  assert.deepEqual(getOpenEnaCopy("en").resultTables.exportLabels, {
-    coordinates: "Coordinates CSV",
-    lineWeights: "Line weights CSV",
-    connectionCounts: "Connection counts CSV",
-    trajectories: "Trajectory steps CSV",
-    centroids: "Centroids CSV",
-    nodePositions: "Node positions CSV",
-    adjacencyKey: "Adjacency key CSV",
-  });
-  assert.match(workspace, /copy\.stats\.effect/);
-  assert.deepEqual(
-    (["en", "zh-hant", "zh-hans"] as const).map((locale) => getOpenEnaCopy(locale).stats.effect),
-    ["Absolute Cohen’s d", "絕對 Cohen’s d", "绝对 Cohen’s d"],
-  );
-  assert.match(workspace, /Not estimable/);
-  assert.match(workspace, /Number\.isFinite/);
-  assert.match(workspace, /function selectAxisDimension/);
-  assert.match(workspace, /updateOpenEnaWorkspace3dAxis\(\{/);
-  assert.match(workspace, /threeD: threeDDimensions/);
-  assert.match(workspace, /setThreeDDimensions\(next\.threeD\)/);
-  assert.doesNotMatch(workspace, /disabled=\{oppositeDimensions\.includes\(dimension\)\}/);
-  assert.match(workspace, /Export SVG/);
-  assert.match(workspace, /Export PNG/);
-  assert.match(workspace, /XMLSerializer/);
-  assert.match(workspace, /sourceAbortRef\.current = sourceController/);
-  assert.match(workspace, /sourceController\.signal\.aborted \|\| sourceAbortRef\.current !== sourceController/);
-  assert.match(workspace, /maxNetworkWeight/);
-  assert.doesNotMatch(workspace, /Math\.max\([\s\S]{0,120}\.\.\.result\.groups\.flatMap/);
+  for (const name of ["Units", "Horizons", "Windows", "Codes"]) assert.ok(v3.includes(`<OpenEna${name}PanelV3`));
+  for (const api of ["buildDataViewV3", "exportCurrentAnalysisV3", "exportNativeStatisticsV3", "buildMethodsReportV3"]) assert.ok(v3.includes(api));
+  const markup = shell();
+  assert.match(markup, />Export SVG<\/button>/);
+  assert.match(markup, />Export PNG<\/button>/);
+  assert.doesNotMatch(v3, /result\.stats\.tests/);
+
 });
 
 test("plot projection keys cannot collide with code labels and mini-networks share one edge scale", () => {
@@ -680,41 +603,22 @@ test("trajectory export tables carry a stable step identity without leaking sour
   assert.doesNotMatch(coordinateCsv, /private source row|utterance/);
 });
 
-test("the researcher interface routes verified trajectory models to the dedicated workbench", () => {
-  const workspace = readFileSync(
-    join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  const plot = readFileSync(
-    join(projectRoot, "components", "open-ena", "OpenEnaPlot.tsx"),
-    "utf8",
-  );
-  const trajectoryWorkbench = readFileSync(
-    join(projectRoot, "components", "open-ena", "OpenEnaLongitudinalWorkbenchV3.tsx"),
-    "utf8",
-  );
+test("native trajectory graphics use admitted fitted sequences in both plot dimensions", () => {
 
-  assert.match(workspace, /SeparateTrajectory/);
-  assert.match(workspace, /AccumulatedTrajectory/);
-  assert.match(workspace, /showTrajectories/);
-  assert.equal(getOpenEnaCopy("en").resultTables.exportLabels.trajectories, "Trajectory steps CSV");
-  assert.doesNotMatch(plot, /ena-trajectory-path|result\.set\.trajectories/);
-  assert.match(trajectoryWorkbench, /compileTrajectoryPlotlySpec/);
-  assert.match(trajectoryWorkbench, /data-testid="open-ena-longitudinal-v3-workbench"/);
+  assert.match(v3, /buildLongitudinalViewV3\(/);
+  assert.match(v3, /buildTrajectoryPresentationV3\(/);
+  assert.match(moduleV3("components/open-ena/OpenEnaPlot.tsx"), /trajectoryPresentation/);
+  assert.match(moduleV3("lib/open-ena/plot3d.ts"), /trajectoryPresentation/);
+  assert.doesNotMatch(v3, /OpenEnaLongitudinalWorkbenchV3|buildLongitudinalV3ModelBundle/);
+
 });
 
-test("the public Open ENA contract documents mutually exclusive ENA and trajectory presenters", () => {
+test("the public contract distinguishes native fitted-sequence layers from legacy renderer flags", () => {
   const readme = readFileSync(join(projectRoot, "README.md"), "utf8");
-
-  assert.match(
-    readme,
-    /Generic 2D and 3D ENA presenters show codes, network edges, unit points, and group means without trajectory paths, arrows, or time-point labels\./,
-  );
-  assert.match(
-    readme,
-    /The dedicated longitudinal trajectory presenter shows fitted code references, participant-period points, square centroids, black paths, and midpoint direction arrows without ENA mean-network edges\./,
-  );
-  assert.doesNotMatch(readme, /fitted jENA coordinates, nodes, networks, means, and trajectories/);
+  assert.match(readme, /Legacy generic ENA renderer calls still ignore a trajectory flag alone/);
+  assert.match(readme, /validated fitted-sequence presentation layer to the 2D and/);
+  assert.match(readme, /Per-point source membership is\n  unavailable and stays null/);
+  assert.match(readme, /genuine typed XLSX derivative/);
 });
 
 test("pending model edits preserve the last valid research result until rebuild", async () => {
@@ -725,16 +629,11 @@ test("pending model edits preserve the last valid research result until rebuild"
   assert.equal(types.sameOpenEnaConfig?.(SAMPLE_CONFIG, { ...SAMPLE_CONFIG, codes: [...SAMPLE_CONFIG.codes] }), true);
   assert.equal(types.sameOpenEnaConfig?.(SAMPLE_CONFIG, { ...SAMPLE_CONFIG, windowSizeBack: 6 }), false);
 
-  const workspace = readFileSync(
-    join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  const updateConfigBody = workspace.match(/function updateConfig[\s\S]*?\n  }\n\n  async function runAnalysis/)?.[0] ?? "";
-  assert.doesNotMatch(updateConfigBody, /setResult\(null\)/);
-  assert.doesNotMatch(updateConfigBody, /setResultConfig\(null\)/);
-  assert.match(workspace, /resultIsStale/);
-  assert.match(workspace, /loading && !result/);
-  assert.match(workspace, /Configuration changed/);
+
+  assert.match(v3, /modelState.resultStatus === "stale"/);
+  assert.match(v3, /Historical geometry: edits require a new run/);
+  assert.match(owner, /modelStateReducerV3/);
+
 });
 
 test("the worker derives a de-identified ordered audit before clearing jENA row materialization", () => {
@@ -748,7 +647,7 @@ test("the worker derives a de-identified ordered audit before clearing jENA row 
   assert.match(worker, /orderedAudit \? \{ \.\.\.result, orderedAudit \} : result/);
 });
 
-test("source evidence can be searched and filtered locally without entering exports", async () => {
+test("legacy source-search compatibility remains local while native Data View discloses bound membership", async () => {
   const { filterSourceEvidence } = await import("../lib/open-ena/evidence") as {
     filterSourceEvidence: (
       dataset: ReturnType<typeof sampleDataset>,
@@ -772,15 +671,9 @@ test("source evidence can be searched and filtered locally without entering expo
   assert.ok(activeRows.length > 0);
   assert.ok(activeRows.every(({ row }) => SAMPLE_CONFIG.codes.some((code) => ["1", "true"].includes(String(row[code]).toLowerCase()))));
 
-  const workspace = readFileSync(
-    join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  assert.match(workspace, /Source evidence/);
-  assert.match(workspace, /filterSourceEvidence/);
-  assert.match(workspace, /activeCodesOnly/);
-  assert.match(workspace, /copy\.aiInterpretation\.privacyLocal/);
-  assert.match(workspace, /copy\.aiInterpretation\.privacyExternal/);
+
+  assert.match(v3, /Global runtime source traversal \(not per-point membership\)/);
+
   const i18n = readFileSync(
     join(projectRoot, "lib", "open-ena-i18n.ts"),
     "utf8",
@@ -797,16 +690,14 @@ test("source evidence can be searched and filtered locally without entering expo
     /"(?:sourceRows|rawRows)":/,
     "the actual result-bundle protocol must exclude raw source-row payloads",
   );
-  assert.match(readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8"), /Parsed record/);
+  assert.match(v3, /label="Source data"/);
 });
 
-test("the empty-state checklist treats comparison groups as optional", () => {
-  const workspace = readFileSync(
-    join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  assert.doesNotMatch(workspace, /Define units, conversations, groups, and at least 3 codes/);
-  assert.match(workspace, /Define units, conversations, and at least 3 codes/);
+test("the empty-state checklist treats Group as optional without inventing a Code minimum", () => {
+
+  assert.match(shell(), /Group is optional/);
+  assert.doesNotMatch(shell(), /at least 3 codes/);
+
 });
 
 test("relative edge thresholds preserve strongest connections and suppress weaker ones", async () => {
@@ -820,32 +711,16 @@ test("relative edge thresholds preserve strongest connections and suppress weake
   assert.equal(plotModule.passesEdgeThreshold?.(0, 1, 0), false);
 });
 
-test("Plot Tools expose dense-network inspection controls without rebuilding the model", () => {
-  const workspace = readFileSync(
-    join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  const plot = readFileSync(
-    join(projectRoot, "components", "open-ena", "OpenEnaPlot.tsx"),
-    "utf8",
-  );
-  for (const control of [
-    "edgeThreshold",
-    "pointScale",
-    "plotZoom",
-    "flipX",
-    "flipY",
-    "showVariance",
-    "showUnitLabels",
-  ]) assert.match(workspace, new RegExp(control));
-  assert.match(workspace, /Zoom in/);
-  assert.match(workspace, /Zoom out/);
-  assert.match(workspace, /Fit plot/);
-  assert.match(workspace, /Flip X/);
-  assert.match(workspace, /Flip Y/);
-  assert.match(plot, /passesEdgeThreshold/);
-  assert.match(plot, /pointScale/);
-  assert.match(plot, /plotZoom/);
+test("persistent Plot Tools expose dense-network inspection controls without a scientific dispatch", () => {
+
+  const tools = moduleV3("components/open-ena/OpenEnaPersistentPlotTools.tsx");
+  for (const name of ["edgeThreshold", "pointScale", "plotZoom", "flipX", "flipY"]) assert.ok(tools.includes(name));
+  assert.match(tools, /Zoom in/);
+  assert.match(tools, /Zoom out/);
+  assert.match(v3, /onFlipXChange=\{setFlipX\}/);
+  assert.match(v3, /onPlotZoomChange=\{setPlotZoom\}/);
+  assert.match(moduleV3("components/open-ena/OpenEnaPlot.tsx"), /passesEdgeThreshold/);
+
 });
 
 test("de-labeled ENA and every ONA SVG export scrub analytic-unit identities from point metadata", () => {
@@ -938,8 +813,8 @@ test("export dimension contract preserves valid vector aspect and bounds request
   assert.deepEqual(squareRaster, { width: 4000, height: 4000, effectiveScale: 0.9765625, status: "constrained" });
 
   const workspace = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8");
-  const serializer = workspace.match(/function serializedPlotSvg\(\)[\s\S]*?(?=\n  function exportPlotSvg\(\))/)?.[0] ?? "";
-  const pngExporter = workspace.match(/function exportPlotPng\(\)[\s\S]*?(?=\n  function |\n  async function )/)?.[0] ?? "";
+  const serializer = functionSourceV3(workspace, "serializedPlotSvg");
+  const pngExporter = functionSourceV3(workspace, "exportPlotPng");
   assert.match(serializer, /resolveOpenEnaPlotExportDimensions\(source\.getAttribute\("viewBox"\)\)/);
   assert.match(serializer, /clone\.setAttribute\("width", String\(dimensions\.width\)\)/);
   assert.match(serializer, /clone\.setAttribute\("height", String\(dimensions\.height\)\)/);

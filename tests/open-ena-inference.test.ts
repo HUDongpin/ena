@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -163,27 +164,13 @@ test("models with more than two groups disable endpoint Mann-Whitney inference",
   assert.equal(inference.reason, "exactly-two-groups-required");
 });
 
-test("the inference UI requires an explicit V2 run and discloses immutable provenance, resolved methods, Holm, and MR1 circularity", () => {
-  const workspace = readFileSync(
-    join(process.cwd(), "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  const panel = readFileSync(
-    join(process.cwd(), "components", "open-ena", "OpenEnaInferencePanel.tsx"),
-    "utf8",
-  );
-  const copy = readFileSync(
-    join(process.cwd(), "lib", "open-ena-i18n.ts"),
-    "utf8",
-  );
-  assert.match(workspace, /runOpenEnaInferenceV2/);
-  assert.match(workspace, /runInferentialComparison/);
-  assert.doesNotMatch(workspace, /buildEndpointMannWhitney|const mannWhitney\b/);
-  assert.match(panel, /inference\.provenance/);
-  assert.match(panel, /row\.resolvedPMethod/);
-  assert.match(panel, /copy\.pHolm/);
-  assert.doesNotMatch(workspace, /Two-sided normal approximation uses average ranks/);
-  assert.doesNotMatch(`${workspace}\n${panel}`, /No multiplicity correction is applied/);
-  assert.match(workspace, /copy\.stats\.ui\.mr1Circularity/);
-  assert.match(copy, /MR1 is constructed from the same group contrast/);
+test("the inference UI requires an explicit native run with current result and plan binding", () => {
+
+  assert.match(v3, /onClick=\{\(\) => void attempt\(runInference\)\}/);
+  assert.match(v3, /runOpenEnaInferenceV3\(/);
+  assert.match(v3, /runOpenEnaTrajectoryInferenceV3\(/);
+  assert.match(v3, /consumerKey === consumerKeyRef.current/);
+  assert.match(moduleV3("components/open-ena/model-v3/OpenEnaNativeStatsPanelV3.tsx"), /method|multiplicity/);
+  assert.doesNotMatch(v3, /runOpenEnaInferenceV2/);
+
 });

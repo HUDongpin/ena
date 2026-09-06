@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -89,27 +90,15 @@ test("workspace-scoped range IDs remain unique when two workspaces are server-re
   assert.match(markup, /<output id=":R1:-open-ena-window-back-value" for=":R1:-open-ena-window-back">/u);
 });
 
-test("the two Windows ranges and three Plot Tools ranges use the shared accessible field", () => {
-  const modelPanel = sourceSegment(workspace, "function renderModelPanel()", "function renderLongitudinalPanel()");
-  const plotPanel = sourceSegment(workspace, "function renderPlotPanel()", "function renderAiPanel()");
+test("native raw Windows controls replace scientific sliders and Plot Tools retain accessible ranges", () => {
 
-  assert.equal((modelPanel.match(/<OpenEnaRangeField\b/gu) ?? []).length, 2);
-  assert.equal((plotPanel.match(/<OpenEnaRangeField\b/gu) ?? []).length, 3);
+  assert.match(v3, /<OpenEnaWindowsPanelV3/);
+  assert.match(moduleV3("components/open-ena/model-v3/OpenEnaWindowsPanelV3.tsx"), /aria-invalid/);
+  const markup = shell();
+  assert.match(markup, /type="range"/);
+  assert.match(markup, /aria-valuetext=/);
+  assert.match(v3, /<OpenEnaRangeField/);
 
-  for (const binding of [
-    "copy.model.back",
-    "copy.model.forward",
-    "copy.plot.edgeScale",
-    "copy.plot.edgeThreshold",
-    "copy.plot.pointScale",
-  ]) {
-    assert.match(workspace, new RegExp(`label=\\{${binding.replaceAll(".", "\\.")}\\}`, "u"));
-  }
-
-  assert.equal((modelPanel.match(/accessibleValueText=/gu) ?? []).length, 2);
-  assert.equal((plotPanel.match(/accessibleValueText=/gu) ?? []).length, 3);
-  assert.doesNotMatch(modelPanel, /<label className="ena-field ena-range-field">/u);
-  assert.doesNotMatch(plotPanel, /<label className="ena-field ena-range-field">/u);
 });
 
 test("the Model tablist and desktop rail grow with 200 percent text instead of overlapping or clipping", () => {

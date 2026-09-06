@@ -11,7 +11,7 @@ import {
   type OpenEnaCodeColors,
 } from "@/lib/open-ena/plot-style";
 import {
-  openEnaRenderedCodeIsVisible,
+  openEnaRenderedCodeIsVisible, openEnaRenderedCodeLabel,
   type OpenEnaCodeGraphPresentation,
 } from "@/lib/open-ena/ordered-plot";
 
@@ -482,7 +482,7 @@ export default function OpenEnaLongitudinalTrajectory({
   showLabels,
   showCodeGraph = true,
   codeVisibility,
-  codeSourceByRenderedCode,
+  codeSourceByRenderedCode, codeLabelByRenderedCode,
   showVariance,
   pointScale,
   plotZoom,
@@ -498,7 +498,7 @@ export default function OpenEnaLongitudinalTrajectory({
     nExcluded: copy?.nExcluded ?? copy?.excludedCount ?? DEFAULT_COPY.nExcluded,
   };
   const view = trajectory;
-  const codePresentation = { showCodeGraph, codeVisibility, codeSourceByRenderedCode };
+  const codePresentation = { showCodeGraph, codeVisibility, codeSourceByRenderedCode, codeLabelByRenderedCode };
   const reactId = useId().replace(/[^a-zA-Z0-9_-]/gu, "") || "ena-longitudinal";
   const titleId = `${reactId}-title`;
   const descriptionId = `${reactId}-description`;
@@ -818,7 +818,7 @@ export default function OpenEnaLongitudinalTrajectory({
                   textAnchor="middle"
                   className="ena-longitudinal-node-label"
                 >
-                  {safeText(node.code, 64)}
+                  {safeText(openEnaRenderedCodeLabel(codePresentation, node.code), 64)}
                 </text>
               );
             })}

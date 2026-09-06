@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import type { OpenEnaContrastPresentation } from "@/lib/open-ena/bound-presentation-v3";
+import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
 import type { OpenEnaDerivedGroupDisplay } from "@/lib/open-ena/group-display";
@@ -17,8 +19,8 @@ import OpenEnaInteractive3DPlot, {
 } from "./OpenEnaInteractive3DPlot";
 
 export interface OpenEna3DGroupContrastProps extends OpenEnaCodeGraphPresentation {
-  result: OpenEnaResult;
-  contrast: OpenEnaPairwiseContrast;
+  result: OpenEnaPlotResult;
+  contrast: OpenEnaContrastPresentation;
   groupDisplay?: Pick<OpenEnaDerivedGroupDisplay, "primary" | "secondary" | "hiddenUnitKeys">;
   codeColors?: OpenEnaCodeColors;
   groupColumn: string;
@@ -46,6 +48,7 @@ export interface OpenEna3DGroupContrastProps extends OpenEnaCodeGraphPresentatio
   onAspectRatioChange?: (aspectRatio: OpenEna3dAspectRatio | null) => void;
   centerMode: "plot" | "data";
   dataView?: ReactNode;
+  rightTools?: ReactNode;
   copy: OpenEnaCopy;
 }
 
@@ -64,7 +67,7 @@ export default function OpenEna3DGroupContrast({
   showLabels,
   showCodeGraph = true,
   codeVisibility,
-  codeSourceByRenderedCode,
+  codeSourceByRenderedCode, codeLabelByRenderedCode,
   showUnitLabels,
   showVariance,
   edgeScale,
@@ -82,6 +85,7 @@ export default function OpenEna3DGroupContrast({
   onAspectRatioChange,
   centerMode,
   dataView,
+  rightTools,
   copy,
 }: OpenEna3DGroupContrastProps) {
   const [readyStage, setReadyStage] = useState<"comparison" | "primary" | "secondary" | "all">(
@@ -114,7 +118,7 @@ export default function OpenEna3DGroupContrast({
     showLabels,
     showCodeGraph,
     codeVisibility,
-    codeSourceByRenderedCode,
+    codeSourceByRenderedCode, codeLabelByRenderedCode,
     showUnitLabels,
     showVariance,
     showTrajectories: false,
@@ -361,6 +365,7 @@ export default function OpenEna3DGroupContrast({
               onStatusChange={secondaryStatus}
             />}
           </article>
+          {rightTools}
         </div>
       </div>
     </section>

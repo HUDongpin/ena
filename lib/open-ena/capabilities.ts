@@ -122,7 +122,7 @@ function mismatch(message: string): never {
   throw new OpenEnaCapabilityError("analysis-network-mismatch", "analysis", message);
 }
 
-export function openEnaAnalysisKindFromResult(result: OpenEnaResult): AnalysisKind {
+export function openEnaAnalysisKindFromResult(result: Pick<OpenEnaResult, "set" | "executionProvenance" | "provenanceBinding">): AnalysisKind {
   const networkType = Reflect.get(result.set, "networkType") as unknown;
   const functionNetworkType = Reflect.get(result.set.functionParams ?? {}, "networkType") as unknown;
   if (networkType !== undefined && networkType !== "standard" && networkType !== "ordered") {
@@ -198,7 +198,7 @@ export function assertOpenEnaCapabilityForConfig(
 }
 
 export function assertOpenEnaCapabilityForResult(
-  result: OpenEnaResult,
+  result: Pick<OpenEnaResult, "set" | "executionProvenance" | "provenanceBinding">,
   feature: OpenEnaCapability,
 ) {
   if (openEnaAnalysisKindFromResult(result) === "ona" && !onaCapabilityEnabled(feature)) {

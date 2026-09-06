@@ -1,3 +1,4 @@
+import { nativePlotGroupSettingsV3, type OpenEnaPlotResult } from "./bound-presentation-v3";
 import type { Row } from "jena-js";
 import {
   buildOpenEnaOrderedNetworkModel,
@@ -22,7 +23,7 @@ import type {
   OpenEnaOrderedPlotScope,
 } from "./ordered-plot";
 import {
-  openEnaRenderedCodeIsVisible,
+  openEnaRenderedCodeIsVisible, openEnaRenderedCodeLabel,
   openEnaRenderedEdgeIsVisible,
 } from "./ordered-plot";
 import {
@@ -71,7 +72,7 @@ interface PositionedSelfLoop extends PositionedOrderedEdge {
 }
 
 export interface CompileOpenEnaOrdered3dPlotInput extends OpenEnaCodeGraphPresentation {
-  result: OpenEnaResult;
+  result: OpenEnaPlotResult;
   config: OpenEnaConfig;
   scope: OpenEnaOrderedPlotScope;
   xDimension: string;
@@ -124,7 +125,7 @@ function strictCoordinate(row: Row, dimension: string, label: string) {
   return value;
 }
 
-function selectedVariance(result: OpenEnaResult, dimension: string) {
+function selectedVariance(result: OpenEnaPlotResult, dimension: string) {
   if (!Object.hasOwn(result.set.variance, dimension)) {
     throw new Error(`ONA variance ${dimension} is missing from the completed fitted result.`);
   }
@@ -140,7 +141,7 @@ function countExact(values: readonly string[], expected: string) {
 }
 
 function validateSelectedDimensions(
-  result: OpenEnaResult,
+  result: OpenEnaPlotResult,
   dimensions: readonly [string, string, string],
 ) {
   if (dimensions.some((dimension) => dimension.trim().length === 0)) {
@@ -248,7 +249,7 @@ function canonicalLaneNormal(
 }
 
 function presentationScope(
-  result: OpenEnaResult,
+  result: OpenEnaPlotResult,
   scope: OpenEnaOrderedPlotScope,
 ): OrderedPresentationScope {
   if (scope.kind === "overall") return "overall";
@@ -261,9 +262,9 @@ function scopeTitle(scope: OrderedPresentationScope) {
   return scope === "overall" ? "Overall" : scope === "primary" ? "Primary" : "Secondary";
 }
 
-function edgeHover(edge: OpenEnaOrderedNetworkEdge, scope: OrderedPresentationScope) {
+function edgeHover(edge: OpenEnaOrderedNetworkEdge, scope: OrderedPresentationScope, presentation: OpenEnaCodeGraphPresentation) {
   return [
-    `<b>${escapeHoverText(edge.ground)} → ${escapeHoverText(edge.response)}</b>`,
+    `<b>${escapeHoverText(openEnaRenderedCodeLabel(presentation, edge.ground))} → ${escapeHoverText(openEnaRenderedCodeLabel(presentation, edge.response))}</b>`,
     "Direction: ground/source → response/target",
     `Scope: ${scopeTitle(scope)}`,
     `Normalized mean: ${formattedNumber(edge.normalizedMeanWeight)}`,
@@ -301,7 +302,7 @@ function codeHover(
   ].join("<br>");
 }
 
-function scopeColor(result: OpenEnaResult, scope: OpenEnaOrderedPlotScope) {
+function scopeColor(result: OpenEnaPlotResult, scope: OpenEnaOrderedPlotScope) {
   if (scope.kind === "overall") return OVERALL_COLOR;
   const groupIndex = result.groups.findIndex((group) => group.name === scope.name);
   const group = result.groups[groupIndex];
@@ -311,7 +312,7 @@ function scopeColor(result: OpenEnaResult, scope: OpenEnaOrderedPlotScope) {
     : JENA_GROUP_COLORS[groupIndex % JENA_GROUP_COLORS.length] ?? JENA_GROUP_COLORS[0];
 }
 
-function groupColor(result: OpenEnaResult, groupIndex: number) {
+function groupColor(result: OpenEnaPlotResult, groupIndex: number) {
   const group = result.groups[groupIndex];
   if (!group) throw new Error("ONA unit-point group is missing from the fitted result.");
   return typeof group.color === "string" && group.color.trim().length > 0
@@ -376,7 +377,7 @@ function markerGlyph(style: Exclude<OpenEnaUnitPointStyle, "solid">) {
 }
 
 function validateFittedRows(
-  result: OpenEnaResult,
+  result: OpenEnaPlotResult,
   codes: readonly string[],
   dimensions: readonly [string, string, string],
 ) {
@@ -631,7 +632,7 @@ function compileDirectedTraces(input: {
 }
 
 function compileUnitTraces(input: {
-  result: OpenEnaResult;
+  result: OpenEnaPlotResult;
   config: OpenEnaConfig;
   scope: OpenEnaOrderedPlotScope;
   presentationScope: OrderedPresentationScope;
@@ -648,11 +649,12 @@ function compileUnitTraces(input: {
     .sort((left, right) => left.group.name < right.group.name ? -1 : left.group.name > right.group.name ? 1 : 0);
   const traces: OpenEna3dTrace[] = [];
   for (const { group, groupIndex } of entries) {
+    if (!nativePlotGroupSettingsV3(input.result, group.name).showUnitPoints) continue;
     const selectedIndices = input.pointRows.flatMap((row, pointIndex) => {
       const belongs = input.config.groupColumn === null && input.result.groups.length === 1
         ? true
         : String(row[input.config.groupColumn ?? ""] ?? "") === group.name;
-      return belongs ? [pointIndex] : [];
+      return belongs && !input.result.groupPresentation?.hiddenUnits.has(String(row.ENA_UNIT)) ? [pointIndex] : [];
     });
     if (selectedIndices.length === 0) continue;
     const color = groupColor(input.result, groupIndex);
@@ -737,7 +739,7 @@ export function compileOpenEnaOrdered3dPlotSpec(
     showLabels,
     showCodeGraph = true,
     codeVisibility,
-    codeSourceByRenderedCode,
+    codeSourceByRenderedCode, codeLabelByRenderedCode,
     showUnitLabels,
     showVariance,
     edgeScale,
@@ -751,7 +753,7 @@ export function compileOpenEnaOrdered3dPlotSpec(
     nodeTotals,
     nodeLayout,
   } = input;
-  const codePresentation = { showCodeGraph, codeVisibility, codeSourceByRenderedCode };
+  const codePresentation = { showCodeGraph, codeVisibility, codeSourceByRenderedCode, codeLabelByRenderedCode };
   const dimensions = [xDimension, yDimension, zDimension] as const;
   validateSelectedDimensions(result, dimensions);
   const variance = dimensions.map((dimension) => selectedVariance(result, dimension)) as MutablePoint3;
@@ -797,7 +799,7 @@ export function compileOpenEnaOrdered3dPlotSpec(
     edge,
     edgeIndex: model.edges.indexOf(edge),
     widthBucket: widthBucket(edge.relativeMagnitude),
-    hover: edgeHover(edge, resolvedScope),
+    hover: edgeHover(edge, resolvedScope, input),
   }));
   if (positioned.some((entry) => entry.edgeIndex < 0)) {
     throw new Error("ONA visible edges must retain their canonical shared-model identity.");
@@ -841,10 +843,11 @@ export function compileOpenEnaOrdered3dPlotSpec(
       x: renderedNodeIndices.map((nodeIndex) => displayNodeCoordinates[nodeIndex]![0]),
       y: renderedNodeIndices.map((nodeIndex) => displayNodeCoordinates[nodeIndex]![1]),
       z: renderedNodeIndices.map((nodeIndex) => displayNodeCoordinates[nodeIndex]![2]),
-      text: renderedNodeIndices.map((nodeIndex) => model.nodes[nodeIndex]!.code),
+      ids: renderedNodeIndices.map((nodeIndex) => model.nodes[nodeIndex]!.code),
+      text: renderedNodeIndices.map((nodeIndex) => openEnaRenderedCodeLabel(input, model.nodes[nodeIndex]!.code)),
       customdata: renderedNodeIndices.map((nodeIndex) => {
         const node = model.nodes[nodeIndex]!;
-        return codeHover(node.code, displayNodeCoordinates[nodeIndex]!, node.responseTotal, dimensions);
+        return codeHover(openEnaRenderedCodeLabel(input, node.code), displayNodeCoordinates[nodeIndex]!, node.responseTotal, dimensions);
       }),
       textposition: "top center",
       textfont: { color: "#263740", size: 12 },

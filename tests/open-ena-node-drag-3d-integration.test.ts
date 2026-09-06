@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -43,23 +44,11 @@ test("one 3D layout and movement callback flow through standard and ordered comp
   assert.match(triptych, /const sharedPlotProps = \{[\s\S]*nodeLayout,[\s\S]*onNodeMove,/);
 });
 
-test("ONA 3D is a reachable overall, Primary, and Secondary workspace", () => {
-  const layoutPath = join(projectRoot, "components/open-ena/OpenEna3DOrderedResultLayout.tsx");
-  assert.ok(existsSync(layoutPath), "ONA 3D result layout must exist");
-  const layout = readFileSync(layoutPath, "utf8");
-  const workspace = source("components/open-ena/OpenEnaWorkspace.tsx");
+test("native ONA 3D receives result-bound node positions and the shared presentation map", () => {
 
-  assert.equal((layout.match(/<OpenEnaInteractive3DPlot/g) ?? []).length, 3);
-  assert.match(layout, /analysisKind="ona"/);
-  assert.match(layout, /orderedScope=\{\{ kind: "overall" \}\}/);
-  assert.match(layout, /orderedScope=\{\{ kind: "group", name: primaryGroup\.name \}\}/);
-  assert.match(layout, /orderedScope=\{\{ kind: "group", name: secondaryGroup\.name \}\}/);
-  assert.match(layout, /nodeLayout/);
-  assert.match(layout, /onNodeMove/);
-  assert.match(workspace, /import OpenEna3DOrderedResultLayout/);
-  assert.match(workspace, /completedResultKind === "ona"[\s\S]*view === "3d"[\s\S]*<OpenEna3DOrderedResultLayout/);
-  assert.match(workspace, /<OpenEna3DOrderedResultLayout[\s\S]*nodeLayout=\{activeNodeLayout\.positions\}[\s\S]*onNodeMove=\{moveNode\}/);
-  assert.match(workspace, /data-ena-plot-action="reset-node-layout"[\s\S]*onClick=\{resetNodeLayout\}/);
-  assert.match(workspace, /const threeDViewLabel = completedResultKind === "ona"[\s\S]*?copy\.ona\.workspace\.threeD[\s\S]*?: copy\.views\.threeD/);
-  assert.match(workspace, /<strong>\{threeDViewLabel\}<\/strong>/);
+  assert.match(v3, /<OpenEna3DOrderedResultLayout \{\.\.\.plotProps\}/);
+  assert.match(v3, /nodeLayout, onNodeMove: moveNode/);
+  assert.match(v3, /codeSourceByRenderedCode/);
+  assert.match(moduleV3("components/open-ena/OpenEna3DOrderedResultLayout.tsx"), /onNodeMove/);
+
 });

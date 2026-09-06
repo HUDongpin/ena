@@ -1,3 +1,4 @@
+import type { OpenEnaPlotResult } from "./bound-presentation-v3";
 import type { Row } from "jena-js";
 import {
   buildOpenEnaOrderedNetworkModel,
@@ -23,9 +24,17 @@ export type OpenEnaOrderedNodeTotals = OpenEnaOrderedNetworkNodeTotals;
  * complete alias-to-source map rather than guessing across the two namespaces.
  */
 export interface OpenEnaCodeGraphPresentation {
+  codeLabelByRenderedCode?: Readonly<Record<string, string>>;
   showCodeGraph?: boolean;
   codeVisibility?: Readonly<Record<string, boolean>>;
   codeSourceByRenderedCode?: Readonly<Record<string, string>>;
+}
+
+export function openEnaRenderedCodeLabel(presentation: OpenEnaCodeGraphPresentation, code: string): string {
+  const labels = presentation.codeLabelByRenderedCode;
+  if (labels === undefined) return code;
+  if (!Object.hasOwn(labels, code) || typeof labels[code] !== "string") throw new TypeError("Missing rendered Code display label.");
+  return labels[code];
 }
 
 export function openEnaSourceCodeForRenderedCode(
@@ -144,7 +153,7 @@ function projectedPointIntegrityFailure(): never {
 }
 
 export function buildOpenEnaOrderedPlotModel(input: {
-  result: OpenEnaResult;
+  result: OpenEnaPlotResult;
   config: OpenEnaConfig;
   scope: OpenEnaOrderedPlotScope;
   xDimension: string;
@@ -153,7 +162,7 @@ export function buildOpenEnaOrderedPlotModel(input: {
   nodeTotals?: OpenEnaOrderedNodeTotals;
 }): OpenEnaOrderedPlotModel {
   const { result, scope, xDimension, yDimension } = input;
-  const config = canonicalizeOpenEnaConfig(input.config);
+  const config = result.boundPresentation ? input.config : canonicalizeOpenEnaConfig(input.config);
   const networkModel = buildOpenEnaOrderedNetworkModel({
     result,
     config,

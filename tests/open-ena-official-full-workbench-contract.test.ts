@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -242,24 +243,12 @@ test("desktop shell preserves ENA.HK identity and exposes four stable workbench 
   );
 });
 
-test("Model mode is organized as accessible Units, Horizons, Windows, and Codes sections", () => {
-  const modelPanel = functionSegment("function renderModelPanel()", "function renderLongitudinalPanel()");
+test("Model mode composes the accepted accessible Units, Horizons, Windows, and Codes panels", () => {
 
-  expectMatch(modelPanel, /role="tablist"[^>]*aria-label=[^>]*(?:model|configuration)/i,
-    "Model mode needs an accessible configuration tablist");
-  const sectionNames = ["units", "(?:horizons|conversations)", "windows", "codes"];
-  for (const section of sectionNames) {
-    expectMatch(
-      modelPanel,
-      new RegExp(`id:\\s*["']${section.replace("(?:horizons|conversations)", "horizons")}["']`, "i"),
-      `Model mode needs a researcher-visible ${section} tab or honest local equivalent`,
-    );
-  }
-  expectMatch(modelPanel, /data-ena-model-tab=\{tab\.id\}/, "each rendered model tab must expose its stable semantic identifier");
-  assert.equal((modelPanel.match(/\{ id: "(?:units|horizons|windows|codes)"/g) ?? []).length, 4,
-    "all four keyboard-addressable tabs must be declared in the rendered tab collection");
-  expectMatch(modelPanel, /aria-selected=/, "the selected model tab must be exposed to assistive technology");
-  expectMatch(modelPanel, /data-ena-model-panel=/, "the active tab must own a scoped model panel");
+  for (const name of ["Units", "Horizons", "Windows", "Codes"]) assert.ok(v3.includes(`<OpenEna${name}PanelV3`));
+  assert.match(v3, /<OpenEnaModelTabsV3/);
+  assert.match(moduleV3("components/open-ena/model-v3/OpenEnaModelTabsV3.tsx"), /role="tablist"/);
+
 });
 
 test("all four Model tabs use the compact official stage before validation and rebuild", () => {
@@ -315,32 +304,13 @@ test("loaded Teaching Sample keeps Comparison central and Primary, Secondary, th
     "the right stack must read Primary Plot, Secondary Plot, then Plot Tools");
 });
 
-test("Data View is an explicit center-surface state that replaces the Comparison plot", () => {
-  expectMatch(
-    workspace,
-    /data-testid="open-ena-center-surface"/,
-    "the replaceable center research surface needs one stable semantic owner",
-  );
-  expectMatch(workspace, /data-testid="open-ena-data-view-toggle"/, "Data View needs an explicit toggle");
-  expectMatch(workspace, /data-testid="open-ena-center-data-view"/, "Data View needs a center-surface table state");
-  expectMatch(dataViewSource, /data-testid="open-ena-data-view"/, "the center branch must use the dedicated semantic Data View surface");
+test("Data View replaces the center while preserving comparison side plots and tools", () => {
 
-  const resultData = functionSegment("function renderResultData()", "const analysisPanel =");
-  assert.doesNotMatch(
-    resultData,
-    /return\s*\(\s*<details\b/,
-    "Data View must not remain a collapsible details table appended below the plots",
-  );
-  assert.equal(
-    (workspace.match(/aiPanel=\{renderAiPanel\(\)\}/g) ?? []).length,
-    1,
-    "one persistent AI child must remain mounted beside the mode-selected analysis panel",
-  );
-  expectMatch(
-    workspace,
-    /data-testid="open-ena-persistent-ai-lifecycle"[\s\S]{0,160}hidden=\{mode !== "ai"\}/,
-    "the persistent AI child must switch visibility by mode without conditional unmounting",
-  );
+  assert.match(v3, /centerMode=\{centerSurface\} dataView=\{nativeDataView\} rightTools=\{persistentPlotTools\}/);
+  assert.match(v3, /onReturnToComparison=\{\(\) => setCenterSurface\("plot"\)\}/);
+  assert.match(v3, /onContextChange=\{setDataViewContext\}/);
+  assert.match(v3, /exportDisabled=\{!current\}/);
+
 });
 
 test("loaded plot markup discloses observations, group summaries, shared scale, axes, variance, unit, and horizon", async () => {

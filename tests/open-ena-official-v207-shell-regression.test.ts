@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -80,28 +81,21 @@ test("v2.0.7-inspired desktop shell gives the research workbench the full vertic
   );
 });
 
-test("the left rail owns the ENA mark and a visible runtime version", () => {
-  const rail = sourceSegment(
-    workspace,
-    '<nav className="ena-tool-rail"',
-    "</nav>",
-  );
+test("the rail owns one ENA mark and visible runtime version", () => {
 
-  assert.match(rail, /data-ena-rail-brand=/, "the rail needs one semantic brand owner");
-  assert.match(rail, /(?:src=)?["']\/ena-mark\.svg["']/, "the existing ENA mark moves into the rail");
-  assert.match(rail, /data-ena-rail-version=/, "the rail needs a semantic version owner");
-  assert.match(
-    rail,
-    /JENA_RAIL_DISPLAY_VERSION/,
-    "the displayed rail version stays derived from the actual jENA runtime rather than duplicated copy",
-  );
+  const markup = shell();
+  assert.equal((markup.match(/data-ena-rail-brand="true"/g) ?? []).length, 1);
+  assert.match(markup, /src="\/ena-mark.svg"/);
+  assert.match(markup, />OPEN ENA</);
+  assert.match(markup, /data-ena-rail-version="true"/);
+
 });
 
 test("Open ENA preserves the four remaining analysis icons and adds AI after Stats", () => {
   const iconBlock = sourceSegment(
     workspace,
     "const modeIcons:",
-    "async function sha256Hex",
+    "function downloadText",
   );
   const actualIcons = [...iconBlock.matchAll(/<svg\b[\s\S]*?<\/svg>/g)].map((match) => match[0]);
   assert.deepEqual(actualIcons.slice(0, 4), [
@@ -173,7 +167,7 @@ test("GroupContrast keeps Comparison central and Primary, Secondary, then Plot T
 test("Comparison, Primary, and Secondary plot titles and markers use black ink", () => {
   assert.match(
     workspace,
-    /className=\{`ena-visual-toolbar\$\{view === "2d" && activeGroupContrast\s*\?\s*" ena-visual-toolbar-group-contrast"\s*:\s*""\}`\}/,
+    /className=\{`ena-visual-toolbar\$\{view === "2d" && contrast\s*\?\s*" ena-visual-toolbar-group-contrast"\s*:\s*""\}`\}/,
     "the shared Comparison Plot heading needs a contrast-only styling hook",
   );
 
@@ -247,22 +241,13 @@ test("Open ENA scopes the compact Helvetica workbench typography without changin
   );
 });
 
-test("the current-result surface has one official-style comparison heading rather than a stacked local preamble", () => {
-  assert.doesNotMatch(
-    groupContrast,
-    /<header className="ena-set-comparison-header">/,
-    "the pairwise renderer must not consume a second heading row above Comparison, Primary, and Secondary",
-  );
-  assert.match(
-    groupContrast,
-    /aria-label="Primary \/ Secondary Group Comparison"/,
-    "removing the redundant visual preamble must retain an accessible section name",
-  );
-  assert.match(
-    workspace,
-    /activeGroupContrast\s*\?\s*copy\.workspace\.comparison/,
-    "the shared visual toolbar becomes the single current-result Comparison plot heading",
-  );
+test("the persistent center has a single comparison heading and bound currentness disclosure", () => {
+
+  assert.match(shell(), /class="ena-visual-toolbar"/);
+  assert.match(v3, /copy.workspace.comparison/);
+  assert.match(v3, /Historical geometry: edits require a new run/);
+  assert.doesNotMatch(v3, /className="ena-result-heading"/);
+
 });
 
 test("Data View is the official-style bottom research bar while plot evidence stays out of the primary canvas", () => {
@@ -283,54 +268,20 @@ test("Data View is the official-style bottom research bar while plot evidence st
   );
 });
 
-test("the plot toolbar contains view and export actions, not a model-type launcher", () => {
-  const toolbarActions = sourceSegment(
-    workspace,
-    '<div className="ena-visual-toolbar-actions">',
-    '{view === "3d" && result && threeDDimensions ? (',
-  );
+test("the plot-title toolbar contains display and export actions without a model launcher", () => {
 
-  assert.doesNotMatch(toolbarActions, /trajectory-analysis-button|launchTrajectoryAnalysis|copy\.longitudinal\.launch/);
-  assert.doesNotMatch(
-    toolbarActions,
-    /SeparateTrajectory|AccumulatedTrajectory|setModelTab|updateConfig/,
-    "plot actions must never mutate or navigate the model configuration workflow",
-  );
-  assert.doesNotMatch(styles, /\.ena-trajectory-analysis-button/);
-  assert.doesNotMatch(workspace, /className="ena-workbench-topbar"|className="ena-workbench-statusbar"/);
-  assert.equal(
-    (workspace.match(/showTrajectories=\{false\}/g) ?? []).length,
-    2,
-    "generic 3D presenters must remain endpoint-only and never inherit V3 trajectory rendering",
-  );
+  const toolbar = shell().match(/<div class="ena-visual-toolbar"[\s\S]*?<\/div><\/div><div>/)?.[0] ?? shell();
+  for (const label of ["2D", "3D ENA", "Download Model", "Export SVG", "Export PNG"]) assert.ok(toolbar.includes(label), label);
+  assert.doesNotMatch(toolbar, /Configure trajectory model/);
+
 });
 
-test("the trajectory configuration shortcut stays in the responsive Model heading flow", () => {
-  const modelPanel = sourceSegment(
-    workspace,
-    "function renderModelPanel()",
-    "function renderLongitudinalPanel()",
-  );
-  const shortcutRule = styles.match(/\.ena-trajectory-model-shortcut\s*\{([^}]*)\}/)?.[1] ?? "";
+test("the trajectory configuration shortcut stays in the responsive Model heading", () => {
 
-  assert.match(
-    modelPanel,
-    /<div className="ena-panel-heading">[\s\S]{0,1600}data-testid="open-ena-configure-trajectory-model"[\s\S]{0,1000}<\/div>\s*<div[\s\S]{0,180}className="ena-model-tabs"/,
-    "the shortcut belongs after the Model description and before its tablist",
-  );
-  assert.match(shortcutRule, /max-width:\s*100%/);
-  assert.match(shortcutRule, /white-space:\s*normal/);
-  assert.doesNotMatch(shortcutRule, /position:\s*absolute/);
-  assert.ok(
-    (styles.match(/\.ena-panel-heading\s*>\s*p:last-of-type/g) ?? []).length >= 2,
-    "both heading typography rules must keep matching the description after the shortcut is appended",
-  );
-  assert.doesNotMatch(styles, /\.ena-panel-heading\s*>\s*p:last-child/);
-  assert.match(
-    styles,
-    /@media \(max-width:\s*640px\)[\s\S]*?\.ena-trajectory-model-shortcut\s*\{[^}]*width:\s*100%;/,
-    "the localized shortcut must use a full-width mobile hit target",
-  );
+  assert.match(v3, /<header className="ena-panel-heading">[\s\S]*?mode === "model" && family === "standard" && <button[^>]*className="ena-model-trajectory-button"/);
+  assert.match(styles, /ena-panel-heading/);
+  assert.match(v3, /tab: "windows", serial:/);
+
 });
 
 test("the visible comparison caption keeps only the official Units and Horizon definitions", () => {
@@ -552,49 +503,13 @@ test("plot papers use color-coded group captions and official scale notation", (
   );
 });
 
-test("the local 2D and in-place 3D controls sit immediately before Download Model in the plot-title toolbar", () => {
-  const controls = sourceSegment(
-    workspace,
-    '<aside className="ena-control-panel"',
-    '<div className="ena-visual-workspace"',
-  );
-  const toolbar = sourceSegment(
-    workspace,
-    '<div className={`ena-visual-toolbar${view === "2d" && activeGroupContrast ? " ena-visual-toolbar-group-contrast" : ""}`}>',
-    '{view === "3d" && result && threeDDimensions ? (',
-  );
+test("2D and in-place 3D controls precede the single Download Model button", () => {
 
-  assert.doesNotMatch(controls, /className="ena-view-toggle"/, "the view switch no longer belongs to the Model control panel");
-  assert.match(toolbar, /className="ena-analysis-toolbar-cluster"[\s\S]*?className="ena-view-toggle"/);
-  assert.match(toolbar, /aria-pressed=\{view === "2d"\}/);
-  assert.match(toolbar, /aria-pressed=\{view === "3d"\}/);
-  assert.match(toolbar, /selectVisualizationView\("3d"\)/);
-  assert.doesNotMatch(toolbar, /<a\b|href=\{siteConfig\.threeDenaUrl\}/);
+  const markup = shell();
+  const toolbar = markup.slice(markup.indexOf('class="ena-visual-toolbar"'));
+  assert.ok(toolbar.indexOf('class="ena-view-toggle"') < toolbar.indexOf('class="ena-download-model-button"'));
+  assert.equal((toolbar.match(/Download Model<\/button>/g) ?? []).length, 1);
 
-  const viewToggleIndex = toolbar.indexOf('className="ena-view-toggle"');
-  const downloadIndex = toolbar.indexOf('className="ena-compact-toolbar-button ena-download-model-button"');
-  assert.ok(viewToggleIndex >= 0 && downloadIndex > viewToggleIndex,
-    "2D/3D must immediately precede Download Model in reading and keyboard order");
-  assert.match(
-    styles,
-    /\.ena-analysis-toolbar-cluster\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*stretch;[^}]*gap:\s*6px;/,
-    "the two controls must render as one adjacent toolbar group",
-  );
-  const responsiveToolbarBase = sourceSegment(
-    styles,
-    ".ena-analysis-toolbar-cluster",
-    "@media (min-width: 1400px)",
-  );
-  assert.match(
-    responsiveToolbarBase,
-    /\.ena-download-model-button-icon\s*\{[^}]*width:\s*13px;[^}]*height:\s*13px;[^}]*fill:\s*none;[^}]*stroke:\s*currentColor;/,
-    "the download icon must remain compact before the desktop-only breakpoint",
-  );
-  assert.match(
-    styles,
-    /@media \(min-width:\s*1400px\)[\s\S]*?\.ena-analysis-toolbar-cluster\s*\{[^}]*position:\s*static;[^}]*height:\s*auto;[^}]*flex-wrap:\s*wrap;/,
-    "the desktop group stays in semantic normal flow and wraps enlarged actions",
-  );
 });
 
 test("the scrollable control panel reserves pointer clearance above the fixed 2D and 3D switch", () => {

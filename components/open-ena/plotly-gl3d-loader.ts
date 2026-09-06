@@ -22,10 +22,12 @@ export interface PlotlyGl3dPointEventData {
   data?: {
     meta?: { role?: string };
     text?: string[];
+    ids?: string[];
   };
   fullData?: {
     meta?: { role?: string };
     text?: string[];
+    ids?: string[];
   };
 }
 

@@ -1,3 +1,4 @@
+import { nativePlotGroupSettingsV3, type OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 import type { Ref } from "react";
 import type {
   OpenEnaNodeDimensionPosition,
@@ -7,7 +8,7 @@ import { codeColorFor, type OpenEnaCodeColors } from "@/lib/open-ena/plot-style"
 import {
   buildOpenEnaOrderedPlotModel,
   buildOrderedEdgeGlyph,
-  openEnaRenderedCodeIsVisible,
+  openEnaRenderedCodeIsVisible, openEnaRenderedCodeLabel,
   openEnaRenderedEdgeIsVisible,
   type OpenEnaCodeGraphPresentation,
   type OpenEnaOrderedNodeTotals,
@@ -112,7 +113,7 @@ const DEFAULT_COPY: OpenEnaOrderedPlotCopy = {
 };
 
 export interface OpenEnaOrderedPlotProps extends OpenEnaCodeGraphPresentation {
-  result: OpenEnaResult;
+  result: OpenEnaPlotResult;
   config: OpenEnaConfig;
   scope: OpenEnaOrderedPlotScope;
   xDimension: string;
@@ -245,10 +246,13 @@ function wrapLegendLabel(label: string, maximumWidth: number) {
 function edgeDescription(
   edge: OpenEnaOrderedPlotModel["edges"][number],
   copy: OpenEnaOrderedPlotCopy,
+  presentation: OpenEnaCodeGraphPresentation = {},
 ) {
+  const ground = openEnaRenderedCodeLabel(presentation, edge.ground);
+  const response = openEnaRenderedCodeLabel(presentation, edge.response);
   return [
-    `${edge.ground} ${copy.groundSourceLabel} → ${edge.response} ${copy.responseTargetLabel}`,
-    copy.respondedToWith.replace("{ground}", edge.ground).replace("{response}", edge.response),
+    `${ground} ${copy.groundSourceLabel} → ${response} ${copy.responseTargetLabel}`,
+    copy.respondedToWith.replace("{ground}", ground).replace("{response}", response),
     `${copy.normalizedMeanWeight} ${displayNumber(edge.normalizedMeanWeight)}`,
     `${copy.rawAggregateCount} ${displayNumber(edge.rawAggregateCount)}`,
     ...(edge.selfConnection ? [copy.selfConnection] : []),
@@ -439,7 +443,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
             lane: 1,
             showChevron: edge.chevron,
           });
-          const label = edgeDescription(edge, copy);
+          const label = edgeDescription(edge, copy, props);
           return (
             <g
               key={edge.name}
@@ -490,6 +494,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
         }) : null}
 
         {props.showPoints ? model.points.map((point) => {
+          if (!nativePlotGroupSettingsV3(props.result, point.group ?? "All Units").showUnitPoints || props.result.groupPresentation?.hiddenUnits.has(point.unit)) return null;
           const screen = positions.get(`point:${point.key}`);
           if (!screen) return null;
           const group = point.group === null
@@ -535,7 +540,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
               Math.max(1.5, node.radius * (0.18 + Math.sqrt(self.relativeMagnitude) * 0.42) * Math.sqrt(edgeScale)),
             )
             : 0;
-          const selfLabel = self ? edgeDescription(self, copy) : null;
+          const selfLabel = self ? edgeDescription(self, copy, props) : null;
           const toDimensions = (clientX: number, clientY: number, target: SVGGElement) => {
             const screenPoint = clientPointInOrderedSvg(target, clientX, clientY);
             if (!screenPoint) return null;
@@ -564,7 +569,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
                   stroke={nodeColor}
                   strokeWidth={5}
                 >
-                  <title>{`${node.code} · ${copy.nodeSizeLabel}: ${displayNumber(node.responseTotal)} (${model.nodeSizeDefinition})`}</title>
+                  <title>{`${openEnaRenderedCodeLabel(props, node.code)} · ${copy.nodeSizeLabel}: ${displayNumber(node.responseTotal)} (${model.nodeSizeDefinition})`}</title>
                 </circle>
                 {props.showNetworks && props.showCodeGraph !== false && self && selfLabel ? (
                   <circle
@@ -575,10 +580,10 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
                     stroke="#17313a"
                     strokeWidth={1}
                   >
-                    <title>{`${node.code} ↻ ${node.code} · ${selfLabel}`}</title>
+                    <title>{`${openEnaRenderedCodeLabel(props, node.code)} ↻ ${openEnaRenderedCodeLabel(props, node.code)} · ${selfLabel}`}</title>
                   </circle>
                 ) : null}
-                {props.showLabels ? <text y={-node.radius - 9} textAnchor="middle" className="ena-set-result-label">{node.code}</text> : null}
+                {props.showLabels ? <text y={-node.radius - 9} textAnchor="middle" className="ena-set-result-label">{openEnaRenderedCodeLabel(props, node.code)}</text> : null}
               </OpenEnaSvgDraggableNode>
             </g>
           );
@@ -658,7 +663,7 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
           <ol aria-label={copy.visibleConnections}>
             {model.visibleEdges
               .toSorted((left, right) => right.normalizedMeanWeight - left.normalizedMeanWeight)
-              .map((edge) => <li key={edge.name}>{edgeDescription(edge, copy)}</li>)}
+              .map((edge) => <li key={edge.name}>{edgeDescription(edge, copy, props)}</li>)}
           </ol>
         ) : <p>{copy.noVisibleConnections}</p>}
       </details>

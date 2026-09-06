@@ -171,7 +171,7 @@ test("the snapshot retains the canonical GPLv3 text and immutable corresponding-
   assert.match(workspaceSource, /JENA_SOURCE_URL/);
   assert.match(workspaceSource, /href=\{JENA_SOURCE_URL\}/);
   assert.doesNotMatch(workspaceSource, /copy\.workspace\.jenaSourceLabel/);
-  assert.match(workspaceSource, /JENA_RAIL_DISPLAY_VERSION/);
+  assert.match(workspaceSource, /JENA_RUNTIME_VERSION.split/);
   assert.match(workspaceSource, /copy\.workspace\.jenaSourceAriaLabel/);
   assert.match(workspaceSource, /target="_blank"/);
   assert.match(workspaceSource, /rel="noopener noreferrer"/);

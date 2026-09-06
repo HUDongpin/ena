@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import type { OpenEnaContrastPresentation } from "@/lib/open-ena/bound-presentation-v3";
+import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
 import type { OpenEnaDerivedGroupDisplay } from "@/lib/open-ena/group-display";
@@ -59,11 +61,11 @@ export function openEna3dFullscreenMode(capabilities: {
 
 export interface OpenEnaInteractive3DPlotProps extends OpenEnaCodeGraphPresentation {
   analysisKind?: "ena" | "ona";
-  result: OpenEnaResult;
+  result: OpenEnaPlotResult;
   orderedConfig?: OpenEnaConfig;
   orderedScope?: OpenEnaOrderedPlotScope;
   orderedNodeTotals?: OpenEnaOrderedNodeTotals;
-  contrast?: OpenEnaPairwiseContrast | null;
+  contrast?: OpenEnaContrastPresentation | null;
   groupDisplay?: Pick<OpenEnaDerivedGroupDisplay, "primary" | "secondary" | "hiddenUnitKeys">;
   plotKind?: OpenEna3dPlotKind;
   compact?: boolean;
@@ -130,7 +132,7 @@ interface PlotlyEventRoot extends HTMLDivElement {
 
 export function openEna3dCodePositionByIdentity(spec: OpenEna3dPlotSpec, code: string) {
   const trace = spec.data.find((candidate) => candidate.meta.role === "code-node");
-  const pointNumber = trace?.text?.indexOf(code) ?? -1;
+  const pointNumber = (trace?.ids ?? trace?.text)?.indexOf(code) ?? -1;
   if (pointNumber < 0) return null;
   const x = trace?.x[pointNumber];
   const y = trace?.y[pointNumber];
@@ -325,7 +327,7 @@ export default function OpenEnaInteractive3DPlot({
   showLabels,
   showCodeGraph = true,
   codeVisibility,
-  codeSourceByRenderedCode,
+  codeSourceByRenderedCode, codeLabelByRenderedCode,
   showUnitLabels,
   showVariance,
   showTrajectories,
@@ -426,7 +428,7 @@ export default function OpenEnaInteractive3DPlot({
         showLabels,
         showCodeGraph,
         codeVisibility,
-        codeSourceByRenderedCode,
+        codeSourceByRenderedCode, codeLabelByRenderedCode,
         showUnitLabels,
         showVariance,
         edgeScale,
@@ -459,7 +461,7 @@ export default function OpenEnaInteractive3DPlot({
       showLabels,
       showCodeGraph,
       codeVisibility,
-      codeSourceByRenderedCode,
+      codeSourceByRenderedCode, codeLabelByRenderedCode,
       showUnitLabels,
       showVariance,
       showTrajectories,
@@ -493,7 +495,7 @@ export default function OpenEnaInteractive3DPlot({
     showLabels,
     showCodeGraph,
     codeVisibility,
-    codeSourceByRenderedCode,
+    codeSourceByRenderedCode, codeLabelByRenderedCode,
     showUnitLabels,
     showVariance,
     showTrajectories,
@@ -506,7 +508,7 @@ export default function OpenEnaInteractive3DPlot({
     nodeLayout,
   ]);
   const renderedCodeTrace = spec.data.find((trace) => trace.meta.role === "code-node");
-  const renderedCodeIdentities = new Set(renderedCodeTrace?.text ?? []);
+  const renderedCodeIdentities = new Set(renderedCodeTrace?.ids ?? renderedCodeTrace?.text ?? []);
   const renderedCodeIdentityKey = JSON.stringify([...renderedCodeIdentities]);
   visibleCodeIdentitiesRef.current = renderedCodeIdentities;
   const cameraResetKey = `${camera}:${plotZoom}:${plotResetRevision}`;
@@ -754,8 +756,8 @@ export default function OpenEnaInteractive3DPlot({
               setHoveredCode(null);
               return;
             }
-            const code = point.fullData?.text?.[point.pointNumber]
-              ?? point.data?.text?.[point.pointNumber];
+            const code = point.fullData?.ids?.[point.pointNumber] ?? point.data?.ids?.[point.pointNumber]
+              ?? point.fullData?.text?.[point.pointNumber] ?? point.data?.text?.[point.pointNumber];
             if (typeof code !== "string" || !code.trim() || !visibleCodeIdentitiesRef.current.has(code)) {
               hoveredCodeRef.current = null;
               setHoveredCode(null);

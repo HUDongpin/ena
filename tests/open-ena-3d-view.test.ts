@@ -972,26 +972,15 @@ test("camera presets are explicit display-only orientations and the client plot 
     join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
     "utf8",
   );
-  assert.match(workspace, /initialCamera=\{interactive3dCamera\}/);
-  assert.match(workspace, /onCameraChange=\{setInteractive3dCamera\}/);
-  assert.match(workspace, /initialAspectRatio=\{interactive3dAspectRatio\}/);
-  assert.match(workspace, /onAspectRatioChange=\{setInteractive3dAspectRatio\}/);
-  assert.match(workspace, /view === "3d" && threeDDimensions && activeGroupContrast && activeGroupDisplay && resultConfig\?\.groupColumn/);
-  assert.match(workspace, /<OpenEna3DGroupContrast/);
-  assert.match(workspace, /sharedCamera=\{interactive3dCamera\}/);
-  assert.match(workspace, /sharedAspectRatio=\{interactive3dAspectRatio\}/);
-  assert.match(workspace, /function selectCameraPreset/);
-  assert.match(workspace, /function selectAxisDimension/);
-  assert.match(workspace, /updateOpenEnaWorkspace3dAxis\(\{/);
-  assert.match(workspace, /threeD: threeDDimensions/);
-  assert.match(workspace, /setThreeDDimensions\(next\.threeD\)/);
-  assert.match(workspace, /data-testid="open-ena-3d-display-controls"/);
-  assert.match(workspace, /data-testid="open-ena-3d-camera-position"/);
-  assert.match(workspace, /open-ena-3d-axis-\$\{axis\}/);
-  assert.match(workspace, /\["isometric", copy\.plot\.default3dCamera\]/);
-  assert.match(workspace, /\["yx", copy\.plot\.yx\]/);
-  assert.match(workspace, /\["zx", copy\.plot\.zx\]/);
-  assert.match(workspace, /\["zy", copy\.plot\.zy\]/);
+  assert.match(workspace, /initialCamera=\{camera\}/);
+  assert.match(workspace, /onCameraChange=\{setCamera\}/);
+  assert.match(workspace, /initialAspectRatio=\{aspectRatio\}/);
+  assert.match(workspace, /onAspectRatioChange=\{setAspectRatio\}/);
+  assert.match(workspace, /sharedCamera=\{camera\}/);
+  assert.match(workspace, /sharedAspectRatio=\{aspectRatio\}/);
+  assert.match(workspace, /setCamera\(cameraForPreset\(preset\)\)/);
+  assert.match(workspace, /setAspectRatio\(null\)/);
+  for (const preset of ["isometric", "yx", "zx", "zy"]) assert.ok(workspace.includes(`["${preset}", copy.plot.`));
 
   const styles = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
   assert.match(styles, /\.ena-visual-workspace\[data-ena-view="3d"\][\s\S]*?background: #fff;/);

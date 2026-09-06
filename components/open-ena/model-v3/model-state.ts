@@ -98,6 +98,9 @@ export interface ModelStateV3 {
 export type ModelStateActionV3 =
   | { type: "set-active-family"; family: AnalysisFamilyV3 }
   | { type: "set-dataset"; datasetSha256: string }
+  /** A newly accepted source generation invalidates asynchronous work even when
+   * its normalized content hash is equal (e.g. different file metadata). */
+  | { type: "adopt-dataset"; datasetSha256: string }
   | { type: "replace-standard-draft"; draft: StandardEnaDraftV3 }
   | { type: "replace-ona-draft"; draft: OrderedNetworkDraftV3 }
   | { type: "set-editor-blocked"; family: AnalysisFamilyV3; blocked: boolean }
@@ -514,9 +517,10 @@ export function modelStateReducerV3(
             }),
             undo: null,
           });
-    case "set-dataset": {
+    case "set-dataset":
+    case "adopt-dataset": {
       assertHash(action.datasetSha256);
-      if (action.datasetSha256 === state.datasetSha256) return state;
+      if (action.type === "set-dataset" && action.datasetSha256 === state.datasetSha256) return state;
       const next = updateDisplay(
         updateDisplay(
           state,

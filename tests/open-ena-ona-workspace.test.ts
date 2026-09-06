@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -12,111 +13,67 @@ const dataView = readFileSync(
 );
 const i18n = readFileSync(new URL("../lib/open-ena-i18n.ts", import.meta.url), "utf8");
 
-test("Workspace keeps ONA as a complete analysis family behind the official Codes switch", () => {
-  assert.match(workspace, /OpenEnaOfficialTwoEndedSwitch/);
-  assert.match(
-    workspace,
-    /data-ena-official-panel="codes"[\s\S]*?startLabel="Ordered Network"[\s\S]*?endLabel="Standard Network"/u,
-  );
-  assert.match(workspace, /selectAnalysisFamily\(endSelected \? "ena" : "ona"\)/u);
-  assert.match(workspace, /OpenEnaOrderPanel/);
-  assert.match(workspace, /OpenEnaDirectionalMaskEditor/);
-  assert.match(workspace, /createAnalysisFamilyDrafts/);
-  assert.match(workspace, /beginAnalysisFamilyConfiguration/);
-  assert.match(workspace, /switchAnalysisFamily/);
+test("ONA has an independent native draft, explicit family switch, and scientific directional mask", () => {
+
+  assert.match(v3, /<OpenEnaModelTabsV3/);
+  assert.match(owner, /set-active-family/);
+  assert.match(v3, /directionalMask/);
+  assert.match(owner, /buildOnaExecutionPlanV3/);
+  assert.doesNotMatch(v3, /updateOnaOrderPanel|coerceSelectedCodes/);
+
 });
 
-test("incomplete order-column edits stay in the draft-safe family transition", () => {
-  const handlerStart = workspace.indexOf("function updateOnaOrderPanel");
-  const handlerEnd = workspace.indexOf(
-    "function openTrajectoryModelConfiguration",
-    handlerStart,
-  );
+test("unfinished ONA order text remains in the durable raw owner across family transitions", () => {
 
-  assert.notEqual(handlerStart, -1);
-  assert.notEqual(handlerEnd, -1);
+  assert.match(owner, /windowFieldBlockersV3/);
+  assert.match(owner, /windows-raw/);
+  assert.match(v3, /rawState=\{state.raw.windows\}/);
+  assert.doesNotMatch(v3, /applyAnalysisFamilyPolicy/);
 
-  const handler = workspace.slice(handlerStart, handlerEnd);
-  assert.match(handler, /transitionOpenEnaOrderPanelValue/);
-  assert.doesNotMatch(handler, /cloneOpenEnaConfig|canonicalizeOpenEnaConfig/);
-  assert.match(workspace, /useState<OpenEnaOrderPanelValue>/);
-  assert.match(workspace, /setOnaOrderPanelDraft\(transition\.panelValue\)/);
-  assert.match(workspace, /value=\{onaOrderPanelDraft\}/);
-  assert.doesNotMatch(workspace, /value=\{orderPanelValueFromConfig\(config\)\}/);
-  assert.match(
-    workspace,
-    /const nextFamilyDrafts = createAnalysisFamilyDrafts\(next\);[\s\S]{0,180}setOnaOrderPanelDraft\(orderPanelValueFromConfig\(nextFamilyDrafts\.ona\)\)/,
-    "a newly installed dataset/configuration must reset the ordered-form draft from its ONA family draft",
-  );
-  assert.match(
-    workspace,
-    /if \(target === "ona"\) \{[\s\S]{0,220}setOnaOrderPanelDraft\(\(current\) => \(\{[\s\S]{0,160}windowSizeBack: transition\.activeConfig\.windowSizeBack/,
-    "returning to ONA must preserve its partial form while synchronizing the family-specific window",
-  );
 });
 
-test("completed result kind, not mutable draft kind, selects the ONA renderer and audited Data View", () => {
-  assert.match(workspace, /openEnaAnalysisKindFromResult/);
-  assert.match(workspace, /completedResultKind\s*===\s*["']ona["']/);
-  assert.match(workspace, /OpenEnaOrderedResultLayout/);
-  assert.match(workspace, /buildOpenEnaOnaDataView/);
-  assert.match(workspace, /result\.orderedResponseNodeSummary/);
-  assert.match(workspace, /OpenEnaOnaStats/);
+test("completed bound family owns the plot and Data View while the editor family can differ", () => {
+
+  assert.match(v3, /completedResultKind = result\?\.configuration.analysisFamily/);
+  assert.match(v3, /completedResultKind === "ona"/);
+  assert.match(v3, /buildDataViewV3\(result, currentPlan\)/);
+  assert.doesNotMatch(v3, /isOrderedResult\(result, config\)/);
+
 });
 
-test("ONA Presenter exposes every completed descriptive group instead of freezing the first two", () => {
-  assert.match(workspace, /data-testid="open-ena-ona-descriptive-group-controls"/);
-  const controls = workspace.match(
-    /<section[\s\S]{0,300}data-testid="open-ena-ona-descriptive-group-controls"[\s\S]*?<\/section>/,
-  )?.[0] ?? "";
-  assert.ok(controls);
-  assert.equal(controls.match(/result\.groups\.map\(/g)?.length, 2);
-  assert.match(controls, /setPrimaryGroupName/);
-  assert.match(controls, /setSecondaryGroupName/);
-  assert.match(controls, /copy\.ona\.layout\.primaryPlot/);
-  assert.match(controls, /copy\.ona\.layout\.secondaryPlot/);
-  assert.match(controls, /copy\.ona\.layout\.descriptiveBoundary/);
+test("ONA descriptive Group selectors preserve the full declared identity inventory", () => {
+
+  assert.match(v3, /identityDictionary.groups/);
+  assert.match(v3, /groups.map\(\(group\) => <option/);
+  assert.match(v3, /copy.ona.layout.descriptiveBoundary/);
+  assert.doesNotMatch(v3, /groups.slice\(0, 2\)/);
+
 });
 
-test("ONA bundle presentation records the two descriptive groups selected in Presenter", () => {
-  assert.match(
-    workspace,
-    /const selectedPresentationGroupOrder = useMemo(?:<[^>]+>)?\([\s\S]*?completedResultKind !== "ona"[\s\S]*?primaryGroupName[\s\S]*?secondaryGroupName/,
-  );
-  assert.equal(
-    workspace.match(/selectedGroupOrder: selectedPresentationGroupOrder/g)?.length,
-    3,
-    "Methods, Stats export, and toolbar export must share the completed ONA Presenter selection",
-  );
-  assert.doesNotMatch(
-    workspace,
-    /selectedGroupOrder: groupContrast\?\.groupOrder/,
-    "ONA has no subtraction contrast, so bundle presentation cannot derive its group selection from groupContrast",
-  );
+test("native ONA exports preserve their strict grammar and separate selected-group descriptive output", () => {
+
+  assert.match(v3, /buildOnaBoundViewV3\(result, currentPlan, primaryGroupName \|\| null\)/);
+  assert.match(v3, /exportCurrentAnalysisV3\(result, currentPlan\)/);
+  assert.doesNotMatch(v3, /selectedPresentationGroupOrder|buildAnalysisBundle\(/);
+
 });
 
-test("ONA Data View, 3D routing, and unsupported capability controls are explicit", () => {
-  assert.match(dataView, /"provenance"/);
-  assert.match(dataView, /"directed-edge"/);
-  assert.match(workspace, /onaCapabilityDisabled/);
-  assert.match(workspace, /disabled=\{[^}]*onaCapabilityDisabled/);
-  assert.match(workspace, /disabled=\{!genericThreeDAvailable\}/);
-  assert.match(workspace, /view === "3d" && threeDDimensions[\s\S]*OpenEna3DOrderedResultLayout/);
-  assert.doesNotMatch(
-    workspace,
-    /nextView === "3d" && completedResultKind === "ona"[\s\S]{0,160}setError/,
-  );
-  assert.doesNotMatch(workspace, /setMode\(["']sets["']\)/);
-  assert.match(workspace, /capabilityAnalysisKind\s*===\s*["']ona["']/);
+test("native ONA Data View and 3D remain reachable while inference is explicitly unavailable", () => {
+
+  assert.match(v3, /<OpenEna3DOrderedResultLayout/);
+  assert.match(v3, /<OpenEnaDataView/);
+  assert.match(v3, /ONA remains descriptive only; group and trajectory inference are unavailable/);
+  assert.match(v3, /disabled=\{!current \|\| !controls \|\| inferenceBusy \|\| completedResultKind === "ona"\}/);
+
 });
 
-test("ONA exports distinguish aggregate, de-identified audit, local identity view, and full bundle", () => {
-  assert.match(workspace, /buildOpenEnaOnaAggregateEdgeExport/);
-  assert.match(workspace, /buildOpenEnaOnaDeidentifiedAuditExport/);
-  assert.match(workspace, /copy\.ona\.exports\.auditWarning/);
-  assert.match(workspace, /copy\.ona\.exports\.auditConfirmation/);
-  assert.match(workspace, /copy\.ona\.exports\.bundleConfirmation/);
-  assert.match(workspace, /local-identity-bearing-view/);
+test("ONA exports distinguish aggregate edges, deidentified full-run audit, local identities, and bound bundle", () => {
+
+  for (const text of ["Export ONA aggregate edges", "Export ONA deidentified audit", "Export current Data View", "Export current analysis"]) assert.ok(v3.includes(text));
+  assert.match(v3, /window.confirm\(copy.ona.exports.auditConfirmation\)/);
+  assert.match(moduleV3("lib/open-ena/ona-bound-view-v3.ts"), /auditRows/);
+  assert.match(v3, /Full-run deidentified ordered audit/);
+
 });
 
 test("English, Traditional Chinese, and Simplified Chinese ONA research copy is present", () => {

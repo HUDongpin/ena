@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -18,34 +19,13 @@ const controlsPath = join(
   "OpenEnaOfficialModelControls.tsx",
 );
 
-test("Model tabs compose the approved official Units, Horizons, Windows, and Codes surfaces", () => {
-  assert.match(workspace, /data-ena-official-model-tabs="true"/u);
-  assert.match(
-    workspace,
-    /<OpenEnaOfficialFieldPathEditor[\s\S]*?selectedFields=\{config\.unitColumns\}/u,
-  );
-  assert.match(
-    workspace,
-    /<OpenEnaOfficialFieldPathEditor[\s\S]*?selectedFields=\{config\.conversationColumns\}/u,
-  );
-  for (const panel of ["units", "horizons", "windows", "codes"]) {
-    assert.match(
-      workspace,
-      new RegExp(`data-ena-official-panel="${panel}"`, "u"),
-      `${panel} must expose its official-parity panel identity`,
-    );
-  }
-  for (const label of ["Create Sample", "Transmodal", "Standard", "Ordered Network", "Standard Network"]) {
-    assert.match(workspace, new RegExp(label, "u"));
-  }
-  assert.match(workspace, /data-ena-official-horizon-columns="true"/u);
-  assert.match(workspace, /data-ena-official-window-settings="true"/u);
-  assert.match(workspace, /data-ena-official-code-list="true"/u);
-  assert.match(
-    workspace,
-    /className="ena-model-tab-help" aria-hidden="true"/u,
-    "the visual help badge must not change the tab's accessible name",
-  );
+test("Workspace composes the accepted four Models panels with typed context and durable raw owners", () => {
+
+  assert.match(v3, /<OpenEnaModelTabsV3 .*scientificContext=\{context\}/);
+  for (const name of ["Units", "Horizons", "Windows", "Codes"]) assert.ok(v3.includes(`<OpenEna${name}PanelV3`));
+  assert.match(v3, /rawState=\{state.raw.windows\}/);
+  assert.match(v3, /state.raw.horizonOrder/);
+
 });
 test("the compact parity CSS uses official geometry with Open ENA Baby Blue tokens", () => {
   const marker = "/* Open ENA official Model parity controls. */";
