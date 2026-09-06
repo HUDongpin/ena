@@ -1123,8 +1123,17 @@ function ContrastSvg({
   const bindSvgRef = useCallback((node: SVGSVGElement | null) => {
     comparisonSvgRef.current = node;
     if (kind !== "comparison" || !svgRef) return;
-    if (typeof svgRef === "function") svgRef(node);
-    else svgRef.current = node;
+    if (typeof svgRef === "function") {
+      const cleanup = svgRef(node);
+      if (node && typeof cleanup === "function") {
+        return () => {
+          if (comparisonSvgRef.current === node) comparisonSvgRef.current = null;
+          cleanup();
+        };
+      }
+      return;
+    }
+    svgRef.current = node;
   }, [kind, svgRef]);
   useLayoutEffect(() => {
     if (kind !== "comparison") return;

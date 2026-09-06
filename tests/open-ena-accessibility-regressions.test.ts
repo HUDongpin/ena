@@ -195,8 +195,10 @@ test("actual plot and panel actions keep 32px targets and locale-independent foc
   assert.match(contrast, /new ResizeObserver\(measure\)/u);
   assert.match(contrast, /observer\?\.disconnect\(\)/u);
   assert.match(contrast, /window\.removeEventListener\("resize", measure\)/u);
-  assert.match(contrast, /typeof svgRef === "function"\) svgRef\(node\)/u);
-  assert.match(contrast, /else svgRef\.current = node/u);
+  assert.match(contrast, /const cleanup = svgRef\(node\)/u);
+  assert.match(contrast, /node && typeof cleanup === "function"/u);
+  assert.match(contrast, /comparisonSvgRef\.current === node[\s\S]*?comparisonSvgRef\.current = null[\s\S]*?cleanup\(\)/u);
+  assert.match(contrast, /svgRef\.current = node/u);
   assert.match(contrast, /RESTORE_HIT_TARGET_CSS_SIZE\s*\/\s*\(RESTORE_HIT_TARGET_SVG_SIZE\s*\*\s*zoom\s*\*\s*svgScreenScale\)/u);
   assert.match(contrast, /data-ena-restore-hit-target-scale=\{dataNumber\(restoreHitTargetScale\)\}/u);
   assert.match(contrast, /focusAfterRender\('\[data-ena-panel-action="switch-plots"\]'\)/u);
