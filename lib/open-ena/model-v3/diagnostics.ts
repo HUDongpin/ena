@@ -28,6 +28,7 @@ import {
 import type { EarlyStandardResourceEstimateV3, StandardResourceEstimateV3 } from "./resource-budget";
 import { standardClosureWorkUnitsV3 } from "./standard-closure-resource-budget";
 import { admitStandardDraftScienceV3 } from "./standard-draft-admission";
+import { profileCodeColumnValuesV3 } from "./code-profile";
 import { datasetHashKindFor } from "../types";
 import type { ParsedDataset, DatasetHashKind } from "../types";
 import type {
@@ -841,52 +842,14 @@ function analyzeCodeProfileV3(
   code: string,
   weighting: "binary" | "frequency",
 ): { profile: NormalizedCodeProfileV3 | null; invalidRows: number[] } {
-  const invalidRows: number[] = [];
-  const magnitudes: number[] = [];
-  const typedValues: Array<{ type: "number" | "boolean"; value: number | boolean }> = [];
-  const binaryKinds = new Set<"number" | "boolean">();
-  const numericRows: number[] = [];
-  const booleanRows: number[] = [];
-  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
-    const row = rows[rowIndex];
-    if (!own.call(row, code)) {
-      invalidRows.push(rowIndex);
-      continue;
-    }
-    const value = row[code];
-    if (weighting === "binary") {
-      if (typeof value === "number" && (value === 0 || value === 1)) {
-        const normalized = Object.is(value, -0) ? 0 : value;
-        binaryKinds.add("number");
-        numericRows.push(rowIndex);
-        magnitudes.push(normalized);
-        typedValues.push({ type: "number", value: normalized });
-      } else if (typeof value === "boolean") {
-        binaryKinds.add("boolean");
-        booleanRows.push(rowIndex);
-        magnitudes.push(value ? 1 : 0);
-        typedValues.push({ type: "boolean", value });
-      } else {
-        invalidRows.push(rowIndex);
-      }
-    } else if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
-      const normalized = Object.is(value, -0) ? 0 : value;
-      magnitudes.push(normalized);
-      typedValues.push({ type: "number", value: normalized });
-    } else {
-      invalidRows.push(rowIndex);
-    }
-  }
-  if (weighting === "binary" && binaryKinds.size > 1) {
-    invalidRows.push(...numericRows, ...booleanRows);
-  }
-  if (invalidRows.length > 0) return { profile: null, invalidRows: [...new Set(invalidRows)].sort((a, b) => a - b) };
+  const analyzed = profileCodeColumnValuesV3(rows, code, weighting);
+  if (analyzed.status === "invalid") return { profile: null, invalidRows: analyzed.invalidRows };
   return {
     profile: {
       code,
-      magnitudes,
-      signature: canonicalJsonV3(typedValues),
-      allZero: magnitudes.length > 0 && magnitudes.every((value) => value === 0),
+      magnitudes: analyzed.magnitudes,
+      signature: analyzed.signature,
+      allZero: analyzed.allZero,
     },
     invalidRows: [],
   };

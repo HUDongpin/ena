@@ -106,6 +106,7 @@ export type ModelStateActionV3 =
   | { type: "set-code-visible"; code: string; visible: boolean }
   | { type: "set-code-color"; code: string; color: string }
   | { type: "set-code-order"; codes: string[] }
+  | { type: "set-codes"; codes: string[] }
   | { type: "hide-all-groups" }
   | { type: "restore-group-visibility" }
   | {
@@ -385,6 +386,70 @@ function excludeCodes(
   );
 }
 
+function reconcileOnaMaskBySourceV3(
+  mask: NonNullable<OrderedNetworkDraftV3["directionalMask"]>,
+  codes: readonly string[],
+): NonNullable<OrderedNetworkDraftV3["directionalMask"]> {
+  const oldIndices = new Map<string, number[]>();
+  mask.codeOrder.forEach((code, index) => {
+    const indices = oldIndices.get(code) ?? [];
+    indices.push(index);
+    oldIndices.set(code, indices);
+  });
+  const occurrences = new Map<string, number>();
+  const retainedIndices = codes.map((code) => {
+    const occurrence = occurrences.get(code) ?? 0;
+    occurrences.set(code, occurrence + 1);
+    return oldIndices.get(code)?.[occurrence] ?? null;
+  });
+  return {
+    schemaVersion: 1,
+    codeOrder: [...codes],
+    enabled: retainedIndices.map((sourceIndex) =>
+      retainedIndices.map((targetIndex) =>
+        sourceIndex === null || targetIndex === null
+          ? true
+          : mask.enabled[sourceIndex][targetIndex],
+      ),
+    ),
+  };
+}
+
+function setCodes(state: ModelStateV3, value: unknown): ModelStateV3 {
+  const codes = captureBundleJsonV3(value) as unknown;
+  if (
+    !Array.isArray(codes) ||
+    codes.some((code) => typeof code !== "string" || code.length === 0)
+  ) {
+    throw new TypeError(
+      "Codes must be a dense array of nonempty source-column names.",
+    );
+  }
+  const family = state.drafts.activeFamily;
+  if (family === "standard") {
+    return changeDraft(
+      state,
+      family,
+      { ...state.drafts.standard, codes },
+      null,
+    );
+  }
+  const draft = state.drafts.ona;
+  return changeDraft(
+    state,
+    family,
+    {
+      ...draft,
+      codes,
+      directionalMask:
+        draft.directionalMask === null
+          ? null
+          : reconcileOnaMaskBySourceV3(draft.directionalMask, codes),
+    },
+    null,
+  );
+}
+
 function visibilityBinding(state: ModelStateV3): VisibilityBindingV3 {
   return Object.freeze({
     datasetSha256: state.datasetSha256,
@@ -591,6 +656,8 @@ export function modelStateReducerV3(
         ? state
         : updateDisplay(state, family, { ...display, codeOrder: codes });
     }
+    case "set-codes":
+      return setCodes(state, action.codes);
     case "hide-all-groups":
       return display.allGroupsSuppressed
         ? state

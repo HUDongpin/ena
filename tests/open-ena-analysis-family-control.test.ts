@@ -10,6 +10,11 @@ import {
 import { createDirectionalMask } from "../lib/open-ena/network-config";
 import { SAMPLE_CONFIG, type OpenEnaConfig } from "../lib/open-ena/types";
 import { OpenEnaAnalysisFamilyControl } from "../components/open-ena/OpenEnaAnalysisFamilyControl";
+import {
+  createModelStateV3,
+  modelStateReducerV3,
+} from "../components/open-ena/model-v3/model-state";
+import type { ModelWorkspaceDraftsV3 } from "../lib/open-ena/model-v3/types";
 
 function trajectoryEna(): OpenEnaConfig {
   return {
@@ -148,4 +153,38 @@ test("analysis-family control renders two method cards instead of a switch", () 
   assert.match(markup, /Standard family boundary/u);
   assert.match(markup, /Ordered family boundary/u);
   assert.match(markup, /Selected/u);
+});
+
+test("v3 Exclude all clears only the active family and stays empty after remount and family round trip", () => {
+  const workspace: ModelWorkspaceDraftsV3 = {
+    schemaVersion: 3,
+    activeFamily: "standard",
+    standard: {
+      unitColumns: ["speaker"], horizonColumns: ["conversation"], groupColumn: "condition",
+      codes: ["A", "B", "C"], weighting: "binary", model: "EndPoint", windowType: "Conversation",
+      movingStanza: {
+        backward: { kind: "finite", value: 1 }, forward: { kind: "finite", value: 0 }, rowOrder: null,
+      },
+      horizonOrder: null,
+      rotation: { type: "svd", centerAlignToOrigin: true },
+    },
+    ona: {
+      unitColumns: ["speaker"], horizonColumns: ["conversation"], groupColumn: null,
+      codes: ["C", "B", "A"], backward: { kind: "finite", value: 5 }, rowOrder: null,
+      directionalMask: null,
+    },
+  };
+  const sha = "f".repeat(64);
+  const state = createModelStateV3(workspace, sha);
+  const excluded = modelStateReducerV3(state, { type: "exclude-all-codes" });
+  assert.deepEqual(excluded.drafts.standard.codes, []);
+  assert.deepEqual(excluded.drafts.ona.codes, workspace.ona.codes);
+  assert.equal(excluded.drafts.standard.windowType, "Conversation");
+
+  const remounted = createModelStateV3(excluded.drafts, excluded.datasetSha256);
+  assert.deepEqual(remounted.drafts.standard.codes, []);
+  const ona = modelStateReducerV3(remounted, { type: "set-active-family", family: "ona" });
+  assert.deepEqual(ona.drafts.ona.codes, workspace.ona.codes);
+  const standard = modelStateReducerV3(ona, { type: "set-active-family", family: "standard" });
+  assert.deepEqual(standard.drafts.standard.codes, []);
 });
