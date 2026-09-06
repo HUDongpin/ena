@@ -34,6 +34,9 @@ export interface OpenEnaGroupDisplayControlsProps {
   view: "2d" | "3d";
   copy?: OpenEnaGroupDisplayCopy;
   disabled?: boolean;
+  /** Effective suppression overrides the stored settings without rewriting them. */
+  suppressedGroups?: Readonly<Record<string, string>>;
+  intervalsUnavailableReason?: string;
   disclosureCommand?: GroupDisclosureCommandV3;
   onSettingsChange: (groupName: string, patch: Partial<OpenEnaGroupDisplayOptions>) => void;
   onUnitVisibilityChange: (groupName: string, unitId: string, visible: boolean) => void;
@@ -111,6 +114,8 @@ export default function OpenEnaGroupDisplayControls({
   view,
   copy = DEFAULT_GROUP_DISPLAY_COPY,
   disabled = false,
+  suppressedGroups = {},
+  intervalsUnavailableReason,
   disclosureCommand,
   onSettingsChange,
   onUnitVisibilityChange,
@@ -140,10 +145,18 @@ export default function OpenEnaGroupDisplayControls({
     if (explicitCommand) lastDisclosureCommand.current = disclosureCommand;
   }, [disclosureCommand?.action, disclosureCommand?.revision, groupIdentity]);
 
+  const suppressionDescriptionIds = groups.flatMap((group, index) => Object.hasOwn(suppressedGroups, group.id ?? group.name) && suppressedGroups[group.id ?? group.name] ? [`${headingId}-group-${index}-suppressed`] : []).join(" ") || undefined;
   const hidden = new Set(hiddenUnitKeys);
   const hiddenCount = groups.reduce((count, group) => (
     count + group.unitIds.filter((unitId) => hidden.has(openEnaGroupUnitKey(group.id ?? group.name, unitId))).length
   ), 0);
+
+  const effectiveHiddenCount = groups.reduce((count, group) => {
+    const id = group.id ?? group.name;
+    const suppressed = Object.hasOwn(suppressedGroups, id) && Boolean(suppressedGroups[id]);
+    const pointsShown = !suppressed && resolveOpenEnaGroupDisplayOptions(settingsByGroup, id).showUnitPoints;
+    return count + group.unitIds.filter((unitId) => !pointsShown || hidden.has(openEnaGroupUnitKey(id, unitId))).length;
+  }, 0);
 
   return (
     <section
@@ -160,7 +173,8 @@ export default function OpenEnaGroupDisplayControls({
           type="button"
           className="ena-inline-link"
           aria-label={copy.showAllHiddenLabel}
-          disabled={disabled || hiddenCount === 0}
+          disabled={disabled || hiddenCount === 0 || Boolean(suppressionDescriptionIds)}
+          aria-describedby={suppressionDescriptionIds}
           onClick={onRevealAllHidden}
         >
           {copy.showAll(hiddenCount)}
@@ -174,17 +188,22 @@ export default function OpenEnaGroupDisplayControls({
           const unitLabels = new Map(Object.entries(group.unitLabelsById ?? {}));
           const unitLabel = (unitId: string) => unitLabels.get(unitId) ?? unitId;
           const settings = resolveOpenEnaGroupDisplayOptions(settingsByGroup, groupId);
+          const suppressionReason = Object.hasOwn(suppressedGroups, groupId) ? suppressedGroups[groupId] : undefined;
+          const groupDisabled = disabled || Boolean(suppressionReason);
+          const suppressionId = `${headingId}-group-${groupIndex}-suppressed`;
+          const intervalsUnavailableId = `${headingId}-group-${groupIndex}-intervals-unavailable`;
+          const groupDescriptionId = suppressionReason ? suppressionId : undefined;
           const visibleUnitIds = group.unitIds.filter((unitId) => (
             !hidden.has(openEnaGroupUnitKey(groupId, unitId))
           ));
           const individuallyVisibleCount = visibleUnitIds.length;
-          const unitQuery = unitQueries[groupId] ?? "";
+          const unitQuery = Object.hasOwn(unitQueries, groupId) ? unitQueries[groupId] : "";
           const normalizedUnitQuery = unitQuery.trim().toLocaleLowerCase();
           const matchingUnitIds = normalizedUnitQuery
             ? group.unitIds.filter((unitId) => unitLabel(unitId).toLocaleLowerCase().includes(normalizedUnitQuery))
             : group.unitIds;
           const renderedUnitIds = matchingUnitIds.slice(0, MAX_RENDERED_UNIT_ACTIONS_PER_GROUP);
-          const plottedCount = settings.showUnitPoints ? individuallyVisibleCount : 0;
+          const plottedCount = !suppressionReason && settings.showUnitPoints ? individuallyVisibleCount : 0;
           const summaryUnitCount = settings.includeHiddenPoints
             ? group.unitIds.length
             : individuallyVisibleCount;
@@ -193,24 +212,27 @@ export default function OpenEnaGroupDisplayControls({
           const outlierBoundaryId = `${headingId}-group-${groupIndex}-outlier-boundary`;
           const keepOneVisibleId = `${headingId}-group-${groupIndex}-keep-one-visible`;
           const intervalDependencyIds = [
-            !settings.showMean ? meanRequiredId : "",
-            summaryUnitCount < 2 ? intervalSampleId : "",
+            groupDescriptionId,
+            intervalsUnavailableReason ? intervalsUnavailableId : "",
+            !intervalsUnavailableReason && !settings.showMean ? meanRequiredId : "",
+            !intervalsUnavailableReason && summaryUnitCount < 2 ? intervalSampleId : "",
           ].filter(Boolean).join(" ") || undefined;
           const outlierDescriptionIds = [
             intervalDependencyIds,
-            outlierBoundaryId,
+            !intervalsUnavailableReason ? outlierBoundaryId : "",
           ].filter(Boolean).join(" ");
-          const outlierDisabled = disabled
+          const outlierDisabled = groupDisabled
+            || Boolean(intervalsUnavailableReason)
             || view === "3d"
             || !settings.showMean
             || summaryUnitCount < 2;
-          const includeHiddenDisabled = disabled
+          const includeHiddenDisabled = groupDisabled
             || (settings.includeHiddenPoints && individuallyVisibleCount === 0);
           return (
             <details
               key={groupId}
               className="ena-group-display-group"
-              open={openByGroup[groupId] ?? false}
+              open={Object.hasOwn(openByGroup, groupId) ? openByGroup[groupId] : false}
               onToggle={(event) => {
                 const open = event.currentTarget.open;
                 setOpenByGroup((current) => current[groupId] === open
@@ -234,26 +256,29 @@ export default function OpenEnaGroupDisplayControls({
                 </span>
               </summary>
 
+              {suppressionReason ? <p id={suppressionId} role="note">{suppressionReason}</p> : null}
               <div className="ena-group-display-settings" role="group" aria-label={copy.displaySettings(groupLabel)}>
                 <GroupSwitch
                   label={copy.settingLabel(copy.showUnitPoints, groupLabel)}
                   visibleLabel={copy.showUnitPoints}
                   checked={settings.showUnitPoints}
-                  disabled={disabled}
+                  disabled={groupDisabled}
+                  describedBy={groupDescriptionId}
                   onChange={(checked) => onSettingsChange(groupId, { showUnitPoints: checked })}
                 />
                 <GroupSwitch
                   label={copy.settingLabel(copy.showMean, groupLabel)}
                   visibleLabel={copy.showMean}
                   checked={settings.showMean}
-                  disabled={disabled}
+                  disabled={groupDisabled}
+                  describedBy={groupDescriptionId}
                   onChange={(checked) => onSettingsChange(groupId, { showMean: checked })}
                 />
                 <GroupSwitch
                   label={copy.settingLabel(copy.showConfidenceIntervals, groupLabel)}
                   visibleLabel={copy.showConfidenceIntervals}
                   checked={settings.showConfidenceIntervals}
-                  disabled={disabled || !settings.showMean || summaryUnitCount < 2}
+                  disabled={groupDisabled || Boolean(intervalsUnavailableReason) || !settings.showMean || summaryUnitCount < 2}
                   describedBy={intervalDependencyIds}
                   onChange={(checked) => onSettingsChange(groupId, { showConfidenceIntervals: checked })}
                 />
@@ -270,9 +295,10 @@ export default function OpenEnaGroupDisplayControls({
                   visibleLabel={copy.includeHiddenPoints}
                   checked={settings.includeHiddenPoints}
                   disabled={includeHiddenDisabled}
+                  describedBy={groupDescriptionId}
                   onChange={(checked) => onSettingsChange(groupId, { includeHiddenPoints: checked })}
                 />
-                {view === "3d" ? (
+                {intervalsUnavailableReason ? <p id={intervalsUnavailableId} className="ena-group-display-boundary" role="note">{intervalsUnavailableReason}</p> : view === "3d" ? (
                   <p id={outlierBoundaryId} className="ena-group-display-boundary" role="note">
                     {copy.outlierThreeDBoundary}
                   </p>
@@ -281,12 +307,12 @@ export default function OpenEnaGroupDisplayControls({
                     {copy.outlierTwoDBoundary}
                   </p>
                 )}
-                {!settings.showMean ? (
+                {!intervalsUnavailableReason && !settings.showMean ? (
                   <p id={meanRequiredId} className="ena-group-display-boundary" role="note">
                     {copy.meanRequiredBoundary}
                   </p>
                 ) : null}
-                {summaryUnitCount < 2 ? (
+                {!intervalsUnavailableReason && summaryUnitCount < 2 ? (
                   <p id={intervalSampleId} className="ena-group-display-boundary" role="note">
                     {copy.intervalRequiresTwoUnits}
                   </p>
@@ -294,7 +320,7 @@ export default function OpenEnaGroupDisplayControls({
               </div>
 
               <details className="ena-group-display-units">
-                <summary>{copy.unitVisibility(individuallyVisibleCount, group.unitIds.length)}</summary>
+                <summary>{copy.unitVisibility(plottedCount, group.unitIds.length)}</summary>
                 {group.unitIds.length > MAX_RENDERED_UNIT_ACTIONS_PER_GROUP ? (
                   <label className="ena-group-display-unit-search">
                     <span>{copy.searchUnits}</span>
@@ -328,14 +354,14 @@ export default function OpenEnaGroupDisplayControls({
                         <button
                           type="button"
                           aria-label={copy.unitAction(isVisible, visibleUnitLabel, groupLabel)}
-                          aria-disabled={disabled || hidesLastSummaryUnit}
-                          aria-describedby={hidesLastSummaryUnit ? keepOneVisibleId : undefined}
-                          disabled={disabled}
+                          aria-disabled={groupDisabled || hidesLastSummaryUnit}
+                          aria-describedby={[groupDescriptionId, hidesLastSummaryUnit ? keepOneVisibleId : ""].filter(Boolean).join(" ") || undefined}
+                          disabled={groupDisabled}
                           title={hidesLastSummaryUnit
                             ? copy.keepOneVisible
                             : undefined}
                           onClick={() => {
-                            if (!disabled && !hidesLastSummaryUnit) {
+                            if (!groupDisabled && !hidesLastSummaryUnit) {
                               onUnitVisibilityChange(groupId, unitId, !isVisible);
                             }
                           }}
@@ -358,7 +384,7 @@ export default function OpenEnaGroupDisplayControls({
       </div>
 
       <p className="sr-only" aria-live="polite">
-        {copy.hiddenStatus(hiddenCount)}
+        {copy.hiddenStatus(effectiveHiddenCount)}
       </p>
     </section>
   );

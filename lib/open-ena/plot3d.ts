@@ -945,7 +945,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
   });
 
   if (_legacyShowTrajectories && trajectory) for (const path of trajectory.paths) {
-    if (!nativePlotGroupSettingsV3(result, path.group).showUnitPoints) continue;
+    if (!nativePlotGroupSettingsV3(result, path.group).showUnitPoints || result.groupPresentation?.hiddenUnits.has(path.unitLabel)) continue;
     traces.push({ type: "scatter3d", mode: "lines", name: "Observed fitted Unit path",
       x: [coordinate(path.from, xDimension), coordinate(path.to, xDimension)], y: [coordinate(path.from, yDimension), coordinate(path.to, yDimension)], z: [coordinate(path.from, zDimension), coordinate(path.to, zDimension)],
       line: { color: "#263740", width: 2 }, showlegend: false, hovertemplate: `Fitted ordinals ${path.fromOrdinal} → ${path.toOrdinal}<extra></extra>`, meta: { role: "trajectory-path", groupName: path.group } });

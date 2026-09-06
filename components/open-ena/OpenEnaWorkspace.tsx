@@ -654,7 +654,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     setNodeOverrides((previous) => { const positions = new Map(previous.hash === resultHash ? previous.positions : []); positions.set(source, new Map([...(positions.get(source) ?? []), ...position])); return { hash: resultHash, positions }; });
   };
   const graph = { showCodeGraph: !display.allCodesSuppressed, codeVisibility: display.codeVisibility, codeSourceByRenderedCode: renderedSource, codeLabelByRenderedCode: presentation?.codeLabelByRenderedCode };
-  const trajectoryPresentation = useMemo(() => result && isTrajectory ? buildTrajectoryPresentationV3(result as BoundStandardResultV3, { showCentroidPaths: showGroupCentroidPaths, endpointsOnly, visibleHorizons }) : undefined, [result, isTrajectory, showGroupCentroidPaths, endpointsOnly, visibleHorizons]);
+  const trajectoryPresentation = useMemo(() => result && isTrajectory ? buildTrajectoryPresentationV3(result as BoundStandardResultV3, { showCentroidPaths: showGroupCentroidPaths, endpointsOnly, visibleHorizons, hiddenUnitKeys, groupSettingsByToken: baseDisplay.groups }) : undefined, [result, isTrajectory, showGroupCentroidPaths, endpointsOnly, visibleHorizons, hiddenUnitKeys, baseDisplay.groups]);
   const plotResult = presentation && result ? { ...presentation.result, trajectoryPresentation, groupPresentation: {
     allSuppressed: display.allGroupsSuppressed,
     settingsByName: Object.fromEntries(groups.map((group) => [group.displayLabel, resolveOpenEnaGroupDisplayOptions(display.groups, group.token)])),
@@ -784,7 +784,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
             dispatchModel({ type: "replace-standard-draft", draft: next });
           }
         }}
-        renderPanel={(tab, fields) => tab === "units" ? <OpenEnaUnitsPanelV3 copy={unitsCopy} groupDisplayCopy={copy.groupDisplay} state={modelState} fields={fields} columnOptions={dataset?.headers ?? []}
+        renderPanel={(tab, fields) => tab === "units" ? <OpenEnaUnitsPanelV3 presetHiddenGroupTokens={state.presetHiddenGroups?.resultHash === resultHash ? state.presetHiddenGroups.tokens : []} copy={unitsCopy} groupDisplayCopy={copy.groupDisplay} state={modelState} fields={fields} columnOptions={dataset?.headers ?? []}
           preview={previews.units} diagnostics={diagnostics} localizeDiagnostic={localizedDiagnostic} view={view} hiddenUnitKeys={hiddenUnitKeys} dispatch={dispatchModel}
           onUnitVisibilityChange={(group, unit, visible) => setHiddenUnitKeys((values) => visible ? values.filter((key) => key !== JSON.stringify([group, unit])) : [...new Set([...values, JSON.stringify([group, unit])])])} onRevealAllHidden={() => setHiddenUnitKeys([])} />
           : tab === "horizons" ? <OpenEnaHorizonsPanelV3 copy={horizonsCopy} orderCopy={orderCopy} state={modelState} fields={fields} columnOptions={dataset?.headers ?? []} preview={previews.horizons}

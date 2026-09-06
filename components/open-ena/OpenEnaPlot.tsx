@@ -508,7 +508,7 @@ export default function OpenEnaPlot({
         })}
 
         {_legacyShowTrajectories && trajectory?.paths.map((path, index) => {
-          if (!nativePlotGroupSettingsV3(result, path.group).showUnitPoints) return null;
+          if (!nativePlotGroupSettingsV3(result, path.group).showUnitPoints || result.groupPresentation?.hiddenUnits.has(path.unitLabel)) return null;
           const from = positions.get(trajectoryPointPositions.get(trajectoryPointKey(path.from)) ?? "");
           const to = positions.get(trajectoryPointPositions.get(trajectoryPointKey(path.to)) ?? "");
           return from && to ? <line key={index} className="ena-individual-trajectory-path" data-ena-trajectory-path="true" data-from-ordinal={path.fromOrdinal} data-to-ordinal={path.toOrdinal} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="#263740" opacity={0.4} strokeWidth={1.5} /> : null;

@@ -108,6 +108,7 @@ export interface OpenEnaUnitsPanelV3Props {
   };
   readonly view: "2d" | "3d";
   readonly hiddenUnitKeys: readonly string[];
+  readonly presetHiddenGroupTokens?: readonly string[];
   readonly dispatch: (action: ModelStateActionV3) => void;
   readonly onUnitVisibilityChange: (
     groupToken: string,
@@ -116,6 +117,13 @@ export interface OpenEnaUnitsPanelV3Props {
   ) => void;
   readonly onRevealAllHidden: () => void;
 }
+
+/** Scoped integration copy; full catalog translation remains Task32-owned. */
+export const GROUP_DISPLAY_APPLICABILITY_COPY_V3 = {
+  preset: "A presentation preset hides this Group. Clear preset Group hiding to use these saved controls; individual Unit preferences are retained.",
+  global: "All Groups are hidden. Restore Group visibility to use these saved controls; individual Unit preferences are retained.",
+  trajectoryIntervals: "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.",
+} as const;
 
 const GROUP_COLORS = [
   "#cc423a",
@@ -221,6 +229,7 @@ export function OpenEnaUnitsPanelV3({
   localizeDiagnostic,
   view,
   hiddenUnitKeys,
+  presetHiddenGroupTokens = [],
   dispatch,
   onUnitVisibilityChange,
   onRevealAllHidden,
@@ -236,6 +245,14 @@ export function OpenEnaUnitsPanelV3({
   const draft = state.drafts[family];
   const display = state.display[family];
   const plotGroups = resultGroups(state);
+  const presetSuppressed = new Set(presetHiddenGroupTokens);
+  const suppressedGroups = Object.fromEntries(plotGroups.flatMap((group) => {
+    const reasons = [display.allGroupsSuppressed ? GROUP_DISPLAY_APPLICABILITY_COPY_V3.global : "",
+      presetSuppressed.has(group.id ?? group.name) ? GROUP_DISPLAY_APPLICABILITY_COPY_V3.preset : ""].filter(Boolean);
+    return reasons.length ? [[group.id ?? group.name, reasons.join(" ")]] : [];
+  }));
+  const trajectoryIntervalsUnavailable = state.result?.configuration.analysisFamily === "standard"
+    && state.result.configuration.analysis.model.type !== "EndPoint";
   const canHideGroups = plotGroups.length > 0;
   const canExcludeGroup = draft.groupColumn !== null;
   const canUndoGroup = validUndo(state);
@@ -485,6 +502,8 @@ export function OpenEnaUnitsPanelV3({
             <OpenEnaGroupDisplayControls
               groups={plotGroups}
               settingsByGroup={display.groups}
+              suppressedGroups={suppressedGroups}
+              intervalsUnavailableReason={trajectoryIntervalsUnavailable ? GROUP_DISPLAY_APPLICABILITY_COPY_V3.trajectoryIntervals : undefined}
               hiddenUnitKeys={hiddenUnitKeys}
               view={view}
               copy={groupDisplayCopy}
