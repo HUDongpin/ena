@@ -58,6 +58,7 @@ export type OpenEnaCodesPreviewV3 =
       readonly availability: "available";
       readonly context: ModelScientificContextV3;
       readonly fields: readonly OpenEnaCodeFieldPreviewV3[];
+      readonly diagnosticAvailability: "available" | "unavailable";
       readonly diagnostics: readonly CodeDiagnosticV3[];
     }
   | {
@@ -105,6 +106,7 @@ export interface OpenEnaCodesPanelV3Copy {
   readonly positiveCount: (count: number) => string;
   readonly unavailable: string;
   readonly diagnostics: string;
+  readonly diagnosticsUnavailable: string;
   readonly chooseColor: (code: string) => string;
   readonly hideCode: (code: string) => string;
   readonly showCode: (code: string) => string;
@@ -231,15 +233,16 @@ export function createOpenEnaCodesPreviewV3(
   const roles = activeRoleColumns(state);
   const diagnosticPrefix =
     state.drafts.activeFamily === "standard" ? "STANDARD_" : "ONA_";
-  const codeDiagnostics =
+  const diagnosticEvidenceCurrent =
     diagnosticEvidence.availability === "available" &&
-    sameContext(diagnosticEvidence.context, context)
-      ? diagnosticEvidence.diagnostics.filter(
-          (diagnostic) =>
-            diagnostic.scope === "codes" &&
-            diagnostic.id.startsWith(diagnosticPrefix),
-        )
-      : [];
+    sameContext(diagnosticEvidence.context, context);
+  const codeDiagnostics = diagnosticEvidenceCurrent
+    ? diagnosticEvidence.diagnostics.filter(
+        (diagnostic) =>
+          diagnostic.scope === "codes" &&
+          diagnostic.id.startsWith(diagnosticPrefix),
+      )
+    : [];
   const fields = [...new Set(columns)].map(
     (column): OpenEnaCodeFieldPreviewV3 => {
       const reasons: CodeFieldIncompatibilityReasonV3[] = [];
@@ -283,6 +286,9 @@ export function createOpenEnaCodesPreviewV3(
     availability: "available",
     context,
     fields,
+    diagnosticAvailability: diagnosticEvidenceCurrent
+      ? "available"
+      : "unavailable",
     diagnostics: codeDiagnostics,
   };
 }
@@ -527,6 +533,11 @@ export function OpenEnaCodesPanelV3({
           <p id={`${reasonId}-exclude-empty`}>{copy.excludeUnavailable}</p>
         </>
       ) : null}
+      {activePreview?.diagnosticAvailability === "available" ? null : (
+        <p className="ena-model-codes-v3-diagnostics-unavailable">
+          {copy.diagnosticsUnavailable}
+        </p>
+      )}
 
       <section
         id={managerId}

@@ -205,6 +205,8 @@ const copy: OpenEnaCodesPanelV3Copy = {
   positiveCount: (count) => `${count} positive rows`,
   unavailable: "Unavailable for this exact draft",
   diagnostics: "Diagnostics",
+  diagnosticsUnavailable:
+    "Compiler diagnostics are unavailable for this exact draft.",
   chooseColor: (code) => `Choose color for ${code}`,
   hideCode: (code) => `Hide ${code} node`,
   showCode: (code) => `Show ${code} node`,
@@ -425,9 +427,95 @@ test("stale or wrong-family compiler diagnostics never enter a current source pr
   );
   assert.equal(preview.availability, "available");
   if (preview.availability === "available") {
+    assert.equal(preview.diagnosticAvailability, "unavailable");
     assert.deepEqual(preview.diagnostics, []);
     assert.ok(preview.fields.every((field) => field.diagnostics.length === 0));
   }
+});
+
+test("diagnostic availability distinguishes absent and all five context mismatches from a current empty check", () => {
+  const state = createModelStateV3(drafts(), datasetSha256);
+  const currentContext = modelScientificContextV3(state);
+  const current = createOpenEnaCodesPreviewV3(dataset(), datasetSha256, state, {
+    availability: "available",
+    context: currentContext,
+    diagnostics: [],
+  });
+  assert.equal(current.availability, "available");
+  if (current.availability !== "available") return;
+  assert.equal(current.diagnosticAvailability, "available");
+
+  const staleDiagnostic = {
+    id: "STANDARD_CODE_VALUE_INVALID" as const,
+    severity: "error" as const,
+    scope: "codes" as const,
+    fieldPath: "codes.A",
+    summary: "stale compiler summary",
+    detail: "stale compiler detail",
+    blocks: ["build-model" as const],
+  };
+  const mismatches = [
+    { ...currentContext, datasetSha256: "b".repeat(64) },
+    { ...currentContext, family: "ona" as const },
+    {
+      ...currentContext,
+      scientificRevision: currentContext.scientificRevision + 1,
+    },
+    {
+      ...currentContext,
+      draftFingerprint: `${currentContext.draftFingerprint}:stale`,
+    },
+    { ...currentContext, executionEpoch: currentContext.executionEpoch + 1 },
+  ];
+  const unavailableInputs = [
+    { availability: "unavailable" as const },
+    ...mismatches.map((context) => ({
+      availability: "available" as const,
+      context,
+      diagnostics: [staleDiagnostic],
+    })),
+  ];
+  for (const diagnosticEvidence of unavailableInputs) {
+    const preview = createOpenEnaCodesPreviewV3(
+      dataset(),
+      datasetSha256,
+      state,
+      diagnosticEvidence,
+    );
+    assert.equal(preview.availability, "available");
+    if (preview.availability !== "available") continue;
+    assert.equal(preview.diagnosticAvailability, "unavailable");
+    assert.notDeepEqual(preview, current);
+    assert.equal(
+      preview.fields.find((field) => field.column === "A")?.profile
+        .availability,
+      "available",
+    );
+    assert.deepEqual(preview.diagnostics, []);
+    const markup = renderToStaticMarkup(
+      createElement(OpenEnaCodesPanelV3, {
+        ...panelProps(state),
+        preview,
+      }),
+    );
+    assert.match(
+      markup,
+      /Compiler diagnostics are unavailable for this exact draft/u,
+    );
+    assert.match(markup, /A[\s\S]*Frequency[\s\S]*1 positive rows/u);
+    assert.doesNotMatch(
+      markup,
+      /stale compiler summary|stale compiler detail/u,
+    );
+  }
+
+  const recoveredMarkup = renderToStaticMarkup(
+    createElement(OpenEnaCodesPanelV3, {
+      ...panelProps(state),
+      preview: current,
+    }),
+  );
+  assert.doesNotMatch(recoveredMarkup, /Compiler diagnostics are unavailable/u);
 });
 
 test("set-codes reconciles a non-null ONA mask in source identity and preserves null", () => {

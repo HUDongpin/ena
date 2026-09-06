@@ -154,7 +154,7 @@ const entry = `
     excludeAllCodes: "Exclude all selected Codes", hideUnavailable: "Select at least one Code before hiding nodes.",
     excludeUnavailable: "There are no selected Codes to exclude.", selectedCodes: "Selected Codes", codeType: "Type",
     positiveCountLabel: "Positive rows", profileTypes: { "binary-number": "Numeric Binary", "binary-boolean": "Boolean Binary", frequency: "Frequency" },
-    unavailable: "Unavailable for this exact draft", diagnostics: "Diagnostics", reorderInstructions: "Press Alt+Arrow Up or Alt+Arrow Down to change display order.",
+    unavailable: "Unavailable for this exact draft", diagnostics: "Diagnostics", diagnosticsUnavailable: "Compiler diagnostics are unavailable for this exact draft.", reorderInstructions: "Press Alt+Arrow Up or Alt+Arrow Down to change display order.",
     moveUnavailable: "Display reorder is unavailable until selected Codes are distinct.",
     displayActionUnavailable: "Display actions are unavailable until selected Codes are distinct.",
     restoreBeforeCodeVisibility: "Restore all Codes before changing one Code visibility.",
@@ -185,13 +185,30 @@ const entry = `
   function App() {
     const [state, setState] = useState(() => createModelStateV3(initialDrafts, datasetSha256));
     const [mounted, setMounted] = useState(true);
+    const [diagnosticMode, setDiagnosticMode] = useState("current");
     const dispatch = useCallback((action) => {
       actions.push(action);
       setState((current) => modelStateReducerV3(current, action));
     }, []);
-    const preview = createOpenEnaCodesPreviewV3(dataset, datasetSha256, state, {
-      availability: "available", context: modelScientificContextV3(state), diagnostics: [],
-    });
+    const currentContext = modelScientificContextV3(state);
+    const staleDiagnostic = {
+      id: state.drafts.activeFamily === "standard" ? "STANDARD_CODE_VALUE_INVALID" : "ONA_CODE_ALL_ZERO",
+      severity: "error", scope: "codes", fieldPath: "codes.A",
+      summary: "stale compiler summary", detail: "stale compiler detail", blocks: ["build-model"],
+    };
+    const staleContexts = {
+      dataset: { ...currentContext, datasetSha256: "b".repeat(64) },
+      family: { ...currentContext, family: currentContext.family === "standard" ? "ona" : "standard" },
+      revision: { ...currentContext, scientificRevision: currentContext.scientificRevision + 1 },
+      fingerprint: { ...currentContext, draftFingerprint: currentContext.draftFingerprint + ":stale" },
+      epoch: { ...currentContext, executionEpoch: currentContext.executionEpoch + 1 },
+    };
+    const diagnosticEvidence = diagnosticMode === "current"
+      ? { availability: "available", context: currentContext, diagnostics: [] }
+      : diagnosticMode === "absent"
+        ? { availability: "unavailable" }
+        : { availability: "available", context: staleContexts[diagnosticMode], diagnostics: [staleDiagnostic] };
+    const preview = createOpenEnaCodesPreviewV3(dataset, datasetSha256, state, diagnosticEvidence);
     const focusCodeDiagnostic = () => {
       const family = state.drafts.activeFamily;
       const code = state.drafts[family].codes.includes("A & B") ? "A & B" : "A";
@@ -203,7 +220,7 @@ const entry = `
       if (target) document.getElementById(target.fieldId)?.focus();
     };
     window.__task29 = {
-      state, actions, setMounted,
+      state, actions, setMounted, setDiagnosticMode,
       setFamily(family) { dispatch({ type: "set-active-family", family }); },
     };
     return React.createElement("main", null,
@@ -270,6 +287,46 @@ try {
     await page.locator('[data-code-source="A"]').first().textContent(),
     /Frequency/u,
   );
+  assert.equal(
+    await page
+      .getByText("Compiler diagnostics are unavailable for this exact draft.", {
+        exact: true,
+      })
+      .count(),
+    0,
+  );
+  for (const mode of [
+    "absent",
+    "dataset",
+    "family",
+    "revision",
+    "fingerprint",
+    "epoch",
+  ]) {
+    await page.evaluate(
+      (value) => window.__task29.setDiagnosticMode(value),
+      mode,
+    );
+    await page
+      .getByText("Compiler diagnostics are unavailable for this exact draft.", {
+        exact: true,
+      })
+      .waitFor();
+    assert.match(
+      await page.locator('[data-code-source="A"]').first().textContent(),
+      /Frequency[\s\S]*1 positive rows/u,
+    );
+    assert.equal(
+      await page.getByText("stale compiler summary", { exact: true }).count(),
+      0,
+    );
+  }
+  await page.evaluate(() => window.__task29.setDiagnosticMode("current"));
+  await page
+    .getByText("Compiler diagnostics are unavailable for this exact draft.", {
+      exact: true,
+    })
+    .waitFor({ state: "detached" });
   const initialRevision = (await state()).scientificRevision;
   await page.getByRole("button", { name: "Hide all code nodes" }).click();
   assert.equal((await state()).suppressed, true);
