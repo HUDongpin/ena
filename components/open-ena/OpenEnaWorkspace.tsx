@@ -6,7 +6,7 @@ import type { Locale } from "@/lib/i18n";
 import { getOpenEnaAuthCopy } from "@/lib/open-ena-auth-copy";
 import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
 import OpenEnaPersistentPlotTools from "./OpenEnaPersistentPlotTools";
-import { getOpenEnaCopy } from "@/lib/open-ena-i18n";
+import { formatOpenEnaWorkspaceFailureV3, getOpenEnaCopy, type OpenEnaWorkspaceFailureV3 } from "@/lib/open-ena-i18n";
 import { rowsToCsv, resolveOpenEnaPlotExportDimensions, resolveOpenEnaPlotRasterDimensions, openEnaResultTableFocusTarget, resolveOpenEnaResultTableRovingKey, type OpenEnaResultTableKey, type OpenEnaResultTableViewModel } from "@/lib/open-ena/export";
 import { parseCsv } from "@/lib/open-ena/csv";
 import { parseXlsx, codedDataFileKind } from "@/lib/open-ena/spreadsheet";
@@ -64,6 +64,13 @@ interface OpenEnaWorkspaceProps {
   providerDescriptor?: { provider: string; model: string };
   initialSource?: { dataset: ParsedDataset; datasetSha256: string; drafts: ModelWorkspaceDraftsV3 };
   worker?: WorkspaceWorkerV3;
+}
+
+class OpenEnaKnownWorkspaceFailureV3 extends Error {
+  constructor(readonly failure: OpenEnaWorkspaceFailureV3) {
+    super(failure.id);
+    this.name = "OpenEnaKnownWorkspaceFailureV3";
+  }
 }
 
 export function confirmOpenEnaIdentityBearingExport(
@@ -314,10 +321,10 @@ function downloadJson(filename: string, data: unknown, compact = false) {
 }
 
 
-function ResearchTableV3({ rows, label, unavailable, boundedRows }: { rows: readonly object[]; label: string; unavailable: string; boundedRows: (shown: number, total: number) => string }) {
+function ResearchTableV3({ rows, label, unavailable, boundedRows, columnLabels }: { rows: readonly object[]; label: string; unavailable: string; boundedRows: (shown: number, total: number) => string; columnLabels?: Readonly<Record<string, string>> }) {
   const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
   return <div className="ena-result-table-wrap" role="region" aria-label={label} tabIndex={0}><table>
-    <caption>{label} ({rows.length})</caption><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+    <caption>{label} ({rows.length})</caption><thead><tr>{columns.map((column) => <th key={column}>{columnLabels?.[column] ?? column}</th>)}</tr></thead>
     <tbody>{rows.slice(0, 100).map((row, index) => <tr key={index}>{columns.map((column) => {
       const value = (row as Record<string, unknown>)[column];
       return <td key={column}>{value === null || value === undefined ? unavailable : typeof value === "object" ? JSON.stringify(value) : String(value)}</td>;
@@ -350,7 +357,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const [plotSettingsOpen, setPlotSettingsOpen] = useState(false);
   const [view, setView] = useState<"2d" | "3d">("2d");
   const [modelNavigation, setModelNavigation] = useState<{ tab: "units" | "horizons" | "windows" | "codes"; serial: number }>({ tab: "units", serial: 0 });
-  const [error, setError] = useState("");
+  const [error, setError] = useState<OpenEnaWorkspaceFailureV3 | null>(null);
   const [sourceBusy, setSourceBusy] = useState(false);
   const [sourcePreview, setSourcePreview] = useState<{ text: string; dataset: ParsedDataset; types: SourceTypeDeclarationsV3 } | null>(null);
   const [derivative, setDerivative] = useState<Awaited<ReturnType<typeof prepareTypedCsvSourceV3>> | null>(null);
@@ -429,6 +436,15 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const dataViewGroup = dataViewContext === "primary" ? primary?.fields[0].value ?? null : dataViewContext === "secondary" ? secondary?.fields[0].value ?? null : null;
   const dataViewPresentation = useMemo(() => result ? buildDataViewPresentationV3(result, dataViewGroup) : null, [result, dataViewContext, primary, secondary]);
   const historicalData = useMemo(() => result ? buildHistoricalDataViewV3(result) : null, [result]);
+  const dataViewColumns = useMemo(() => dataViewPresentation?.columns.map((column) => {
+    if (!historicalData) return column;
+    const metadata = historicalData.metadataColumns;
+    const label = column.key === metadata.trajectoryOrdinal ? workspaceCopy.dataView.metadataLabels.trajectoryOrdinal
+      : column.key === metadata.observedHorizons ? workspaceCopy.dataView.metadataLabels.observedHorizons
+        : column.key === metadata.observedSourceRowIndices ? workspaceCopy.dataView.metadataLabels.observedSourceRowIndices
+          : column.label;
+    return label === column.label ? column : { ...column, label };
+  }) ?? null, [dataViewPresentation, historicalData, workspaceCopy.dataView]);
   const longitudinal = useMemo(() => result && isTrajectory ? buildLongitudinalViewV3(result as BoundStandardResultV3) : null, [result, isTrajectory]);
   const contextKey = canonicalJsonV3(context);
   const diagnostics = currentCompilation?.result.diagnostics ?? [];
@@ -489,7 +505,14 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     }
   }, [modelNavigation]);
 
-  async function attempt(work: () => Promise<void>) { try { setError(""); await work(); } catch { setError(workspaceCopy.operationFailed); } }
+  async function attempt(work: () => Promise<void>) {
+    try {
+      setError(null);
+      await work();
+    } catch (caught) {
+      setError(caught instanceof OpenEnaKnownWorkspaceFailureV3 ? caught.failure : { id: "operation-failed" });
+    }
+  }
   function saveDescriptor(value: ExportFileDescriptorV3) { downloadText(value.filename, new TextDecoder().decode(value.bytes), value.mediaType); }
   function saveDerivative(value: NonNullable<typeof derivative>) {
     const url = URL.createObjectURL(new Blob([value.bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
@@ -503,7 +526,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     const generation = ++sourceGeneration.current;
     setSourceBusy(true);
     try {
-      if (file.size > 5 * 1024 * 1024) throw new Error(workspaceCopy.data.codedDataTooLarge);
+      if (file.size > 5 * 1024 * 1024) throw new OpenEnaKnownWorkspaceFailureV3({ id: "coded-data-too-large", limitMiB: 5 });
       if (codedDataFileKind(file.name) === "csv") {
         const text = await file.text();
         const source = parseCsv(text, { name: file.name, sizeBytes: file.size, source: "upload" });
@@ -543,7 +566,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     const generation = ++sourceGeneration.current; setSourceBusy(true);
     try {
       const url = trajectory ? TRAJECTORY_SAMPLE_DATASET_URL : SAMPLE_DATASET_URL;
-      const response = await fetch(url, { cache: "no-store" }); if (!response.ok) throw new Error(workspaceCopy.data.sampleUnavailable);
+      const response = await fetch(url, { cache: "no-store" }); if (!response.ok) throw new OpenEnaKnownWorkspaceFailureV3({ id: "sample-unavailable" });
       const text = await response.text();
       const value = await prepareTeachingSampleV3(text, trajectory ? "trajectory" : "endpoint", new Date());
       if (generation !== sourceGeneration.current) return;
@@ -638,7 +661,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
       const context = canvas.getContext("2d");
       if (!context) {
         URL.revokeObjectURL(sourceUrl);
-        setError(workspaceCopy.plot.pngCanvasUnavailable);
+        setError({ id: "png-canvas-unavailable" });
         return;
       }
       context.fillStyle = "#ffffff";
@@ -647,7 +670,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
       canvas.toBlob((blob) => {
         URL.revokeObjectURL(sourceUrl);
         if (!blob) {
-          setError(workspaceCopy.plot.pngEncodingFailed);
+          setError({ id: "png-encoding-failed" });
           return;
         }
         const url = URL.createObjectURL(blob);
@@ -660,7 +683,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     };
     image.onerror = () => {
       URL.revokeObjectURL(sourceUrl);
-      setError(workspaceCopy.plot.pngRenderFailed);
+      setError({ id: "png-render-failed" });
     };
     image.src = sourceUrl;
   }
@@ -697,7 +720,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   }
   async function previewPresentation(file: File) {
     const intent = ++presetSerial.current, capturedContext = context, capturedResult = result;
-    if (file.size > 16 * 1024 * 1024) throw new Error(workspaceCopy.artifacts.presetTooLarge);
+    if (file.size > 16 * 1024 * 1024) throw new OpenEnaKnownWorkspaceFailureV3({ id: "preset-too-large", limitMiB: 16 });
     const parsed = parseBundleJsonV3(await file.text()) as PresentationArtifactV3;
     assertPresentationArtifactContractV3(parsed);
     if (intent !== presetSerial.current || latest.current.state.model.result !== capturedResult || !sameScientificContextV3(capturedContext, modelScientificContextV3(latest.current.state.model))) return;
@@ -760,11 +783,11 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     settingsOpen={plotSettingsOpen} onSettingsOpenChange={setPlotSettingsOpen} disabled={!result} />;
   const analysisPanel = <div className="ena-control-content ena-model-control-content" lang={locale} dir="ltr">
       <header className="ena-panel-heading"><h1>{copy.modes[mode]}</h1>{mode === "model" && family === "standard" && <button type="button" className="ena-model-trajectory-button" onClick={() => setModelNavigation((value) => ({ tab: "windows", serial: value.serial + 1 }))}>{workspaceCopy.configureTrajectory}</button>}<p role="status" aria-live="polite">{workspaceCopy.resultStatus[current ? "current" : result ? "stale" : "none"]} · {workspaceCopy.runStatus[modelState.runStatus]}</p>
-        {modelState.runStatus === "running" && <p role="status"><progress max={100} value={state.progress?.value ?? 0} />{state.progress?.stage ?? workspaceCopy.startingWorker}</p>}
-        <button type="button" disabled={!controller.canRun || sourceBusy || sourcePreview !== null} onClick={controller.run}>{workspaceCopy.runModel}</button>
+        {modelState.runStatus === "running" && <p role="status"><progress max={100} value={state.progress?.value ?? 0} />{state.progress ? workspaceCopy.workerStage(state.progress.stage) : workspaceCopy.startingWorker}</p>}
+        <button type="button" disabled={!controller.canRun || sourceBusy || sourcePreview !== null} onClick={() => { setError(null); controller.run(); }}>{workspaceCopy.runModel}</button>
         <button type="button" disabled={modelState.runStatus !== "running"} onClick={controller.cancel}>{workspaceCopy.cancelRun}</button>
       </header>
-      {(error || state.error || currentCompilation?.error) && <p role="alert">{error || workspaceCopy.operationFailed}</p>}
+      {(error || state.error || currentCompilation?.error) && <p role="alert">{error ? formatOpenEnaWorkspaceFailureV3(workspaceCopy, error) : workspaceCopy.operationFailed}</p>}
       {controller.importPending && <button type="button" onClick={() => dispatch({ type: "cancel-preview" })}>{workspaceCopy.cancelPendingImport}</button>}
       {state.preview && <OpenEnaImportPreviewV3 preview={state.preview} drafts={modelState.drafts} copy={modelV3Copy.importPreview}
         onCancel={() => dispatch({ type: "cancel-preview" })} onAcceptDraft={() => dispatch({ type: "accept-draft-preview", preview: state.preview! })}
@@ -774,7 +797,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
         <button type="button" onClick={() => void attempt(() => loadSample(false))} disabled={sourceBusy}>{workspaceCopy.data.loadSample}</button>
         <button type="button" onClick={() => void attempt(() => loadSample(true))} disabled={sourceBusy}>{workspaceCopy.data.loadTrajectorySample}</button>
         <p>{workspaceCopy.data.sampleExplanation}</p>
-        <label>{workspaceCopy.data.importArtifact}<input type="file" accept=".json" onChange={(e) => { const file = e.target.files?.[0]; if (file) void attempt(async () => { if (file.size > 16 * 1024 * 1024) throw new Error(workspaceCopy.data.artifactTooLarge); await controller.preview(file.text()); }); e.target.value = ""; }} /></label>
+        <label>{workspaceCopy.data.importArtifact}<input type="file" accept=".json" onChange={(e) => { const file = e.target.files?.[0]; if (file) void attempt(async () => { if (file.size > 16 * 1024 * 1024) throw new OpenEnaKnownWorkspaceFailureV3({ id: "artifact-too-large", limitMiB: 16 }); await controller.preview(file.text()); }); e.target.value = ""; }} /></label>
         {sourcePreview && <section ref={sourceDialogRef} className="ena-source-preparation-dialog" tabIndex={-1} onKeyDown={onSourceDialogKeyDown} role="dialog" aria-label={workspaceCopy.data.reviewTypes}><h3>{workspaceCopy.data.reviewTypesTitle}</h3><p>{workspaceCopy.data.typingExplanation}</p>
           {sourceTypingPreview!.columns.map((column, index) => { const errorId = `${workspaceId}-source-type-error-${index}`; return <div key={column.column}><label>{column.column}<select aria-label={workspaceCopy.data.sourceTypeLabel(column.column)} aria-invalid={column.errorCount > 0} aria-describedby={column.errorCount > 0 ? errorId : undefined} disabled={sourceBusy} value={column.type} onChange={(e) => setSourcePreview({ ...sourcePreview, types: { ...sourcePreview.types, [column.column]: e.target.value as SourceColumnTypeV3 } })}>{(["text", "number", "boolean"] as const).map((type) => <option key={type} value={type}>{workspaceCopy.data.sourceTypes[type]}</option>)}</select></label>
             <p>{workspaceCopy.data.missingCells(column.nullCount)} · {workspaceCopy.data.collisions(column.identityCollisionCount)}</p>{column.errorCount > 0 && <p id={errorId} role="alert">{column.errorCodes.map((code) => workspaceCopy.data.sourceErrors[code]).join(" ")}</p>}<code>{JSON.stringify(column.examples)}</code></div>; })}
@@ -846,25 +869,25 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
           {horizons.map((horizon) => <label key={horizon.token}><input type="checkbox" checked={selectedPeriods.includes(horizon.token)} onChange={(e) => setSelectedPeriods((values) => e.target.checked ? [...values, horizon.token] : values.filter((value) => value !== horizon.token))} />{horizon.displayLabel}</label>)}</>}
         <button type="button" disabled={!current || !controls || inferenceBusy || completedResultKind === "ona"} onClick={() => void attempt(runInference)}>{workspaceCopy.stats.runInference}</button>
         {completedResultKind === "ona" && <p>{workspaceCopy.stats.onaDescriptive}</p>}
-        {onaView && <><p>{onaView.meaning}</p><ResearchTableV3 {...researchTableCopy} rows={onaView.edges} label={workspaceCopy.stats.onaEdges} />
+        {onaView && <><p>{workspaceCopy.stats.onaMeaning}</p><ResearchTableV3 {...researchTableCopy} rows={onaView.edges} label={workspaceCopy.stats.onaEdges} />
           <ResearchTableV3 {...researchTableCopy} rows={onaView.auditRows} label={workspaceCopy.stats.onaAudit} />
           <button type="button" disabled={!current} onClick={() => void attempt(async () => { const value = await buildOnaBoundViewV3(result, currentPlan, primaryGroupName || null); if (latest.current.current && latest.current.state.model.result === result) downloadText("ona-aggregate-edges.csv", rowsToCsv(value.edges), "text/csv"); })}>{workspaceCopy.stats.exportOnaEdges}</button>
           <button type="button" disabled={!current} onClick={() => void attempt(async () => { const value = await buildOnaBoundViewV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && window.confirm(copy.ona.exports.auditConfirmation)) downloadJson("ona-deidentified-audit.json", { binding: value.binding, audit: value.audit, meaning: value.meaning }); })}>{workspaceCopy.stats.exportOnaAudit}</button><p>{copy.ona.exports.auditWarning}</p></>}
         </OpenEnaNativeStatsPanelV3>
         {activeInference && <><button type="button" onClick={() => void attempt(async () => { const file = await exportNativeStatisticsV3(activeInference, result, currentPlan, controls!); if (consumerKey === consumerKeyRef.current) downloadText(file.filename, file.contents, file.mimeType); })}>{workspaceCopy.stats.exportNative}</button></>}
-        {historicalData && <><ResearchTableV3 {...researchTableCopy} rows={historicalData.rows} label={workspaceCopy.stats.localDataView} /><p>{historicalData.sourceIndexMeaning}</p><ResearchTableV3 {...researchTableCopy} rows={historicalData.sourceTraversal} label={workspaceCopy.stats.globalTraversal} />
+        {historicalData && <><ResearchTableV3 {...researchTableCopy} rows={historicalData.rows} label={workspaceCopy.stats.localDataView} columnLabels={{ [historicalData.metadataColumns.trajectoryOrdinal]: workspaceCopy.dataView.metadataLabels.trajectoryOrdinal, [historicalData.metadataColumns.observedHorizons]: workspaceCopy.dataView.metadataLabels.observedHorizons, [historicalData.metadataColumns.observedSourceRowIndices]: workspaceCopy.dataView.metadataLabels.observedSourceRowIndices }} /><p>{workspaceCopy.dataView.sourceIndexMeaning}</p><ResearchTableV3 {...researchTableCopy} rows={historicalData.sourceTraversal} label={workspaceCopy.stats.globalTraversal} columnLabels={workspaceCopy.dataView.sourceTraversalLabels} />
           <button type="button" disabled={!current} onClick={() => void attempt(async () => { if (!result || !currentPlan) return; const value = await buildDataViewV3(result, currentPlan); if (!latest.current.current || latest.current.state.model.result !== result) return; if (window.confirm(workspaceCopy.stats.exportDataViewConfirmation)) downloadText("bound-data-view.csv", rowsToCsv(value.rows), "text/csv"); })}>{workspaceCopy.stats.exportDataView}</button></>}
         {checkedDataView && current && checkedDataView.binding.scientificResultSha256 === result?.binding.scientificResultSha256 && checkedDataView.binding.executionPlanSha256 === currentPlan?.header.executionPlanSha256 && <p>{workspaceCopy.stats.dataViewValidated}</p>}
         {result && <details><summary>{copy.stats.ui.methodsTitle}</summary><button type="button" onClick={() => void attempt(async () => { if (confirmCurrentIdentityBearingExport()) await navigator.clipboard.writeText(buildMethodsReportV3(result)); })}>{copy.stats.ui.copyMethods}</button><pre>{buildMethodsReportV3(result)}</pre><button type="button" onClick={() => { if (confirmCurrentIdentityBearingExport()) downloadText("methods.md", buildMethodsReportV3(result), "text/markdown"); }}>{workspaceCopy.stats.exportMethods}</button></details>}
       </section>}
       <section aria-label={workspaceCopy.artifacts.ariaLabel}><h2>{workspaceCopy.artifacts.title}</h2>
         <p>{workspaceCopy.artifacts.presetScope}</p>{state.presetHiddenGroups?.resultHash === resultHash && <button type="button" onClick={() => dispatch({ type: "clear-preset-group-hiding" })}>{workspaceCopy.artifacts.clearPreset}</button>}
-        <button type="button" disabled={!result} onClick={() => { try { exportPresentation(); } catch { setError(workspaceCopy.operationFailed); } }}>{workspaceCopy.artifacts.exportPreset}</button>
+        <button type="button" disabled={!result} onClick={() => { try { exportPresentation(); } catch { setError({ id: "operation-failed" }); } }}>{workspaceCopy.artifacts.exportPreset}</button>
         <label>{workspaceCopy.artifacts.reviewPreset}<input type="file" accept=".json" onChange={(e) => { const file = e.target.files?.[0]; if (file) void attempt(() => previewPresentation(file)); e.target.value = ""; }} /></label>
         {presetPreview && <section role="dialog" aria-label={workspaceCopy.artifacts.presetPreview}><p>{presetPreview.boundResultSha256 === resultHash ? workspaceCopy.artifacts.presetMatches : workspaceCopy.artifacts.presetMismatch}</p><pre>{JSON.stringify(presetPreview, null, 2)}</pre>
           {!presetCodesCompatible && <p>{workspaceCopy.artifacts.presetCodesMismatch}</p>}{completedResultKind !== family && <p>{workspaceCopy.artifacts.presetFamilyMismatch}</p>}
           <button type="button" onClick={() => { ++presetSerial.current; setPresetPreview(null); }}>{workspaceCopy.artifacts.cancelPreset}</button>
-          <button type="button" disabled={presetPreview.boundResultSha256 !== resultHash || completedResultKind !== family || !presetCodesCompatible || display.allCodesSuppressed || display.allGroupsSuppressed} onClick={() => { try { applyPresentation(); } catch { setError(workspaceCopy.operationFailed); } }}>{workspaceCopy.artifacts.applyPreset}</button></section>}
+          <button type="button" disabled={presetPreview.boundResultSha256 !== resultHash || completedResultKind !== family || !presetCodesCompatible || display.allCodesSuppressed || display.allGroupsSuppressed} onClick={() => { try { applyPresentation(); } catch { setError({ id: "operation-failed" }); } }}>{workspaceCopy.artifacts.applyPreset}</button></section>}
         <button type="button" disabled={!workspaceDraftExportableV3(state)} onClick={() => void attempt(async () => saveDescriptor(await exportDraftV3(draft)))}>{workspaceCopy.artifacts.exportDraft}</button>
         {!workspaceDraftExportableV3(state) && <p>{workspaceCopy.artifacts.draftBlocked}</p>}
         <button type="button" disabled={!currentCompilation?.plan} onClick={() => void attempt(async () => { if (currentCompilation?.result.status === "ready") saveDescriptor(await exportCanonicalConfigV3(currentCompilation.result)); })}>{workspaceCopy.artifacts.exportConfig}</button>
@@ -873,7 +896,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
         <button type="button" disabled={!current || completedResultKind !== "standard" || (isTrajectory && result?.binding.referenceId === null)} onClick={() => void attempt(async () => { if (result && currentPlan) saveDescriptor(await exportReferenceV2(result, { currentPlan, ...(state.sourceWitness ? { sourceWitness: state.sourceWitness } : {}), displayName: dataset?.name ?? workspaceCopy.artifacts.referenceDisplayName })); })}>{result?.binding.referenceId ? workspaceCopy.artifacts.reexportReference : workspaceCopy.artifacts.exportReference}</button>
         <button type="button" disabled={!current || completedResultKind === "ona" || isTrajectory || sets.length >= 6} onClick={() => void attempt(async () => { if (result && currentPlan) { const captured = await captureAnalysisSetV3(result, currentPlan, { name: dataset?.name }); if (latest.current.current && latest.current.state.model.result === result) setSets((values) => upsertAnalysisSetV3(values, captured)); } })}>{workspaceCopy.artifacts.captureSet(sets.length)}</button>
         {sets.map((set) => <p key={set.id}>{set.name}</p>)}
-        <button type="button" disabled={sets.length < 2} onClick={() => { try { setSetComparison(compareAnalysisSetsV3(sets[sets.length - 2], sets[sets.length - 1])); } catch { setError(workspaceCopy.operationFailed); } }}>{workspaceCopy.artifacts.compareSets}</button>
+        <button type="button" disabled={sets.length < 2} onClick={() => { try { setSetComparison(compareAnalysisSetsV3(sets[sets.length - 2], sets[sets.length - 1])); } catch { setError({ id: "operation-failed" }); } }}>{workspaceCopy.artifacts.compareSets}</button>
         {setComparison && <ResearchTableV3 {...researchTableCopy} rows={setComparison.edges} label={workspaceCopy.artifacts.historicalComparison} />}
       </section>
 </div>;
@@ -881,15 +904,15 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
       <div hidden={mode !== "ai"}><OpenEnaAiInterpretation request={activeAiReview?.request ?? null}
         localScientificIdentity={activeAiReview ? canonicalJsonV3({ binding: activeAiReview.binding, context: activeAiReview.context, configuration: activeAiReview.configuration }) : null}
         copy={copy.aiInterpretation} disabled={!activeAiReview || !current} disabledReason={aiLimitation ? workspaceCopy.operationFailed : workspaceCopy.ai.disabled} providerDescriptor={providerDescriptor} />
-        {activeAiReview && <p>{activeAiReview.wireLimitations}</p>}{aiLimitation && <p role="status">{workspaceCopy.operationFailed}</p>}</div>
+        {activeAiReview && <p>{workspaceCopy.ai.wireLimitations}</p>}{aiLimitation && <p role="status">{workspaceCopy.operationFailed}</p>}</div>
 </div>;
   const nativeDataView = dataViewPresentation && <>
-            <OpenEnaDataView columns={dataViewPresentation.columns} rows={dataViewPresentation.rows} context={dataViewContext}
+            <OpenEnaDataView columns={dataViewColumns ?? dataViewPresentation.columns} rows={dataViewPresentation.rows} context={dataViewContext}
               onContextChange={setDataViewContext} onReturnToComparison={() => setCenterSurface("plot")} exportDisabled={!current}
-              contextOptions={[{ value: "comparison", label: copy.ona.dataView.overall }, ...(primary ? [{ value: "primary" as const, label: primary.displayLabel }] : []), ...(secondary ? [{ value: "secondary" as const, label: secondary.displayLabel }] : [])]}
-              exportClassification="local-identity-bearing-view" copy={{ codeGroup: copy.ona.dataView.codeGroup, directedEdgeGroup: copy.ona.dataView.directedEdgeGroup }} notice={dataViewPresentation.sourceIndexMeaning}
+              contextOptions={[{ value: "comparison", label: workspaceCopy.dataView.overall }, ...(primary ? [{ value: "primary" as const, label: primary.displayLabel }] : []), ...(secondary ? [{ value: "secondary" as const, label: secondary.displayLabel }] : [])]}
+              exportClassification="local-identity-bearing-view" copy={workspaceCopy.dataView} emptyMessage={workspaceCopy.dataView.empty} notice={workspaceCopy.dataView.sourceIndexMeaning}
               onExportCsv={() => void attempt(async () => { if (!result || !currentPlan || !current) return; await buildDataViewV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) downloadText("bound-data-view.csv", rowsToCsv(dataViewPresentation.rows.map((row) => Object.fromEntries(Object.entries(row.values).map(([key, value]) => [key, value ?? null])))), "text/csv"); })} />
-            <ResearchTableV3 {...researchTableCopy} rows={dataViewPresentation.sourceTraversal} label={workspaceCopy.stats.globalTraversal} />
+            <ResearchTableV3 {...researchTableCopy} rows={dataViewPresentation.sourceTraversal} label={workspaceCopy.stats.globalTraversal} columnLabels={workspaceCopy.dataView.sourceTraversalLabels} />
           </>;
   return <div className="open-ena-page" data-testid="open-ena-workspace-v3" data-result-status={modelState.resultStatus} data-run-status={modelState.runStatus}>
     <OpenEnaFallbackNotice locale={locale} />
@@ -919,7 +942,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
         {selectedAxes.length < 2 ? <><p>{workspaceCopy.result.oneAxis}</p><ResearchTableV3 {...researchTableCopy} rows={result.set.points} label={workspaceCopy.result.fittedCoordinates} /></>
           : completedResultKind === "ona" ? view === "3d" && threeDDimensions
             ? <OpenEna3DOrderedResultLayout {...plotProps} sharedCamera={camera} onCameraChange={setCamera} sharedAspectRatio={aspectRatio} onAspectRatioChange={setAspectRatio} result={plotResult!} config={presentation.config} primaryGroupName={primary?.displayLabel ?? null} secondaryGroupName={secondary?.displayLabel ?? null} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} />
-            : <OpenEnaOrderedResultLayout {...plotProps} copy={copy.ona.layout} textScale={textScale} result={plotResult!} config={presentation.config} primaryGroupName={primary?.displayLabel ?? null} secondaryGroupName={secondary?.displayLabel ?? null} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} />
+            : <OpenEnaOrderedResultLayout {...plotProps} copy={copy.ona.layout} plotCopy={copy.ona.plot} textScale={textScale} result={plotResult!} config={presentation.config} primaryGroupName={primary?.displayLabel ?? null} secondaryGroupName={secondary?.displayLabel ?? null} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} />
           : contrast ? view === "3d" && threeDDimensions
             ? <OpenEna3DGroupContrast {...plotProps} sharedCamera={camera} onCameraChange={setCamera} sharedAspectRatio={aspectRatio} onAspectRatioChange={setAspectRatio} groupColumn="Group" result={plotResult!} contrast={contrast} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} />
             : <OpenEnaGroupContrast {...plotProps} uiCopy={workspaceCopy.plot} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} onSwitchPlots={() => { setPrimaryGroupName(secondaryGroupName); setSecondaryGroupName(primaryGroupName); }} contrast={contrast} showGroupLabels={showGroupLabels && !display.allGroupsSuppressed} unitCircle={unitCircle} textScale={textScale} svgRef={plotSvgRef} />
@@ -928,7 +951,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
         {!contrast && completedResultKind !== "ona" && <div data-ena-workbench-region="right-stack">{persistentPlotTools}</div>}
         {consumerError && <p role="status">{workspaceCopy.operationFailed}</p>}{!isTrajectory && completedResultKind === "standard" && !endpointControls && <p role="status">{workspaceCopy.result.contrastUnavailable}</p>}
         <p>{workspaceCopy.result.codeLabels}: {result.executionProvenance.labels.codes.map((code) => `${code.column} = ${code.displayLabel}`).join("; ")}</p>
-        {longitudinal && <><p>{longitudinal.provenance.cohortMeaning}</p><ResearchTableV3 {...researchTableCopy} rows={longitudinal.entities.flatMap((entity) => entity.steps)} label={workspaceCopy.result.trajectorySteps} /><pre>{JSON.stringify(longitudinal.comparison, null, 2)}</pre></>}
+        {longitudinal && <><p>{workspaceCopy.result.cohortMeaning}</p><ResearchTableV3 {...researchTableCopy} rows={longitudinal.entities.flatMap((entity) => entity.steps)} label={workspaceCopy.result.trajectorySteps} /><pre>{JSON.stringify(longitudinal.comparison, null, 2)}</pre></>}
       </section>}
 {!result && (              <section className="ena-empty-workbench" data-testid="open-ena-empty-workbench" aria-label={workspaceCopy.empty.ariaLabel}>
                 <div className="ena-empty-analysis-layout">

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   getOpenEnaCopy,
+  formatOpenEnaWorkspaceFailureV3,
   localizeModelDiagnosticV3,
   localizeModelSuggestedActionV3,
   openEnaLocalizedLocales,
@@ -81,6 +82,12 @@ test("Workspace uses the selected Models v3 catalog at every reached v3 copy ent
   assert.match(source, /orderCopy=\{modelV3Copy\.order\}/u);
   assert.match(source, /nativeCopy=\{modelV3Copy\.nativeStats\}/u);
   assert.match(source, /copy=\{modelV3Copy\.importPreview\}/u);
+  assert.match(source, /copy=\{workspaceCopy\.dataView\}/u);
+  assert.match(source, /plotCopy=\{copy\.ona\.plot\}/u);
+  assert.match(source, /workspaceCopy\.ai\.wireLimitations/u);
+  assert.match(source, /workspaceCopy\.stats\.onaMeaning/u);
+  assert.match(source, /workspaceCopy\.result\.cohortMeaning/u);
+  assert.doesNotMatch(source, /\{activeAiReview\.wireLimitations\}|\{onaView\.meaning\}|\{historicalData\.sourceIndexMeaning\}|\{longitudinal\.provenance\.cohortMeaning\}/u);
   assert.doesNotMatch(source, /found\?\.summary|found\?\.detail|`Review \$\{/u);
 });
 
@@ -125,4 +132,59 @@ test("Workspace reached UI uses the typed locale catalog rather than required En
     assert.doesNotMatch(source, new RegExp(`>${text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}<`, "u"), text);
   }
   assert.match(source, /<option key=\{type\} value=\{type\}>\{workspaceCopy\.data\.sourceTypes\[type\]\}<\/option>/u);
+});
+
+test("native Data View and eligible AI explanations are complete locale-owned contracts", () => {
+  const en = getOpenEnaCopy("en").modelV3.workspace;
+  const hant = getOpenEnaCopy("zh-hant").modelV3.workspace;
+  const hans = getOpenEnaCopy("zh-hans").modelV3.workspace;
+  assert.equal(en.dataView.codeGroup, "Normalized undirected edges");
+  assert.equal(en.dataView.directedEdgeGroup, "Normalized directed edges");
+  assert.equal(hant.dataView.codeGroup, "正規化無向邊");
+  assert.equal(hans.dataView.directedEdgeGroup, "归一化有向边");
+  assert.equal(hant.dataView.recordCount(7), "共 7 筆資料檢視記錄");
+  assert.equal(hans.dataView.recordCount(7), "共 7 条数据视图记录");
+  for (const copy of [en, hant, hans]) {
+    assert.match(copy.ai.wireLimitations, /V2/u);
+    assert.match(copy.ai.wireLimitations, /N < 3/u);
+    assert.match(copy.ai.wireLimitations, copy === en ? /aggregate evidence only[\s\S]*typed identities[\s\S]*full binding[\s\S]*partial fitted precedence[\s\S]*observed continuity[\s\S]*rank comparisons[\s\S]*equal weight/u : /彙總證據|汇总证据/u);
+  }
+  assert.doesNotMatch(`${hant.dataView.title} ${hant.dataView.sourceIndexMeaning} ${hant.ai.wireLimitations}`, /Return to|Global retained|The V2 wire/u);
+  assert.doesNotMatch(`${hans.dataView.title} ${hans.dataView.sourceIndexMeaning} ${hans.ai.wireLimitations}`, /Return to|Global retained|The V2 wire/u);
+});
+
+test("known Workspace failures retain structured reasons and render in the current locale", () => {
+  const oversized = { id: "coded-data-too-large", limitMiB: 5 } as const;
+  assert.match(formatOpenEnaWorkspaceFailureV3(getOpenEnaCopy("en").modelV3.workspace, oversized), /5 MB.*5 MiB.*1,024/u);
+  assert.match(formatOpenEnaWorkspaceFailureV3(getOpenEnaCopy("zh-hant").modelV3.workspace, oversized), /編碼資料.*5 MiB/u);
+  assert.match(formatOpenEnaWorkspaceFailureV3(getOpenEnaCopy("zh-hans").modelV3.workspace, oversized), /编码数据.*5 MiB/u);
+  const en = getOpenEnaCopy("en").modelV3.workspace;
+  assert.match(formatOpenEnaWorkspaceFailureV3(en, { id: "artifact-too-large", limitMiB: 16 }), /artifact.*16 MiB/u);
+  assert.match(formatOpenEnaWorkspaceFailureV3(en, { id: "preset-too-large", limitMiB: 16 }), /preset.*16 MiB/u);
+  assert.match(formatOpenEnaWorkspaceFailureV3(en, { id: "sample-unavailable" }), /sample.*unavailable/u);
+});
+
+test("diagnostic guidance preserves multi-case scientific meanings", () => {
+  for (const locale of openEnaLocalizedLocales) {
+    const copy = getOpenEnaCopy(locale).modelV3;
+    const noConnection = localizeModelDiagnosticV3(copy, { id: "ONA_NO_ENABLED_CONNECTION", severity: "error", scope: "codes" });
+    for (const concept of locale === "en" ? [/Code values/u, /Horizon boundaries/u, /response order/u, /backward-window/u, /directional mask/u] : locale === "zh-hant" ? [/代碼/u, /視域/u, /回應順序/u, /向後窗口/u, /方向遮罩/u] : [/代码/u, /视域/u, /回应顺序/u, /向后窗口/u, /方向遮罩/u]) assert.match(noConnection.detail, concept);
+    assert.doesNotMatch(noConnection.detail, /Enable a mask cell|啟用遮罩儲存格|启用遮罩单元格/u);
+  }
+  const en = getOpenEnaCopy("en").modelV3;
+  const noGlobal = localizeModelDiagnosticV3(en, { id: "STANDARD_NO_GLOBAL_COOCCURRENCE", severity: "warning", scope: "codes" });
+  assert.match(noGlobal.detail, /fixed Reference.*valid projection.*warning/u);
+  const rankZero = localizeModelDiagnosticV3(en, { id: "ONA_TARGET_RANK_ZERO", severity: "warning", scope: "rotation" });
+  assert.match(rankZero.detail, /descriptive geometry remains available.*does not block/u);
+});
+
+test("Simplified Chinese dynamic scientific counters use simplified classifiers", () => {
+  const copy = getOpenEnaCopy("zh-hans").modelV3;
+  assert.equal(copy.units.unitCount(2), "2 个单位");
+  assert.equal(copy.units.groupCount(2), "2 个组");
+  assert.equal(copy.horizons.horizonCount(2), "2 个视域");
+  assert.equal(copy.horizons.observationCount(2), "2 个单位 × 视域观测");
+  assert.equal(copy.horizons.sharedHorizons(2), "2 个共享视域");
+  assert.equal(copy.horizons.singleRowObservations(2), "2 个单行观测");
+  assert.doesNotMatch([copy.units.unitCount(2), copy.units.groupCount(2), copy.horizons.horizonCount(2), copy.horizons.observationCount(2)].join(" "), /個/u);
 });

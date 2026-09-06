@@ -76,6 +76,8 @@ export interface OpenEnaGroupContrastProps extends OpenEnaCodeGraphPresentation 
     readonly emptyGroupPrompt: string;
     readonly toolsTitle: string;
     readonly selectedGroupOrder: string;
+    readonly dataViewComparisonRecords: (primary: string, secondary: string) => string;
+    readonly dataViewUnavailable: string;
   };
 }
 
@@ -92,6 +94,8 @@ const DEFAULT_GROUP_CONTRAST_UI_COPY = {
   emptyGroupPrompt: "Click or hover points in the comparison plot to display networks here",
   toolsTitle: "Plot Tools",
   selectedGroupOrder: "Selected group order",
+  dataViewComparisonRecords: (primary: string, secondary: string) => `${primary} and ${secondary} · comparison records`,
+  dataViewUnavailable: "Data View is not available for this comparison result.",
 } as const;
 
 type ContrastEdge = OpenEnaPairwiseContrast["edges"][number];
@@ -1765,13 +1769,13 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
               <header className="ena-set-plot-heading">
                 <div>
                   <h3>{uiCopy.dataView}</h3>
-                  <p>{contrast.primary.name} and {contrast.secondary.name} · comparison records</p>
+                  <p>{uiCopy.dataViewComparisonRecords(contrast.primary.name, contrast.secondary.name)}</p>
                 </div>
                 <span>{xAxis} × {yAxis}</span>
               </header>
               {dataView ?? (
                 <p className="ena-sets-compatibility-note" role="status">
-                  Data View is not available for this comparison result.
+                  {uiCopy.dataViewUnavailable}
                 </p>
               )}
             </section>

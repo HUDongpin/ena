@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { rehashStandardPlanForTestV3 } from "./helpers/open-ena-model-v3-fixture";
 import test from "node:test";
+import { getOpenEnaCopy, localizeModelDiagnosticV3 } from "../lib/open-ena-i18n";
 import { runStandardPlanV3 } from "../lib/open-ena/analyze";
 import { canonicalJsonV3, sha256CanonicalJsonV3 } from "../lib/open-ena/model-v3/canonical-json";
 import { compileStandardDraftV3 } from "../lib/open-ena/model-v3/compiler";
@@ -292,6 +293,11 @@ test("Zero co-occurrence remains blocking for SVD and Means, and nonblocking onl
     const diagnostic = compiled.diagnostics.find((entry) => entry.id === "STANDARD_NO_GLOBAL_COOCCURRENCE")!;
     assert.equal(diagnostic.blocks.includes("build-model"), type !== "reference");
     assert.equal(compiled.status, type === "reference" ? "ready" : "invalid");
+    if (type === "reference") {
+      assert.equal(diagnostic.severity, "warning");
+      assert.deepEqual(diagnostic.blocks, []);
+      assert.match(localizeModelDiagnosticV3(getOpenEnaCopy("en").modelV3, diagnostic).detail, /fixed Reference.*valid projection.*warning/u);
+    }
   }
 });
 

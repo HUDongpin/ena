@@ -115,7 +115,8 @@ test("Group-centroid paths and individual paths have independent display control
 
 test("native trajectory presentation shows actual cohort and available-by-period evidence", () => {
 
-  assert.match(v3, /longitudinal.provenance.cohortMeaning/);
+  assert.match(v3, /workspaceCopy\.result\.cohortMeaning/);
+  assert.match(moduleV3("lib/open-ena/longitudinal-bound-v3.ts"), /cohortMeaning:/);
   assert.match(v3, /longitudinal.comparison/);
   assert.match(moduleV3("components/open-ena/model-v3/OpenEnaNativeStatsPanelV3.tsx"), /ledger/);
   assert.match(moduleV3("lib/open-ena/native-statistics-export-v3.ts"), /availableByPeriod/);

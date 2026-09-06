@@ -160,7 +160,8 @@ test("one-period native inference eligibility is independent from drawing multi-
 
   assert.match(v3, /inferenceDesign === "independent" \? endpointControls && periods\[0\]/);
   assert.match(v3, /buildAiInterpretationReviewV3\(result, currentPlan, selection\)/);
-  assert.match(v3, /activeAiReview.wireLimitations/);
+  assert.match(v3, /workspaceCopy\.ai\.wireLimitations/);
+  assert.match(moduleV3("lib/open-ena/ai-interpretation.ts"), /wireLimitations:/);
   assert.match(moduleV3("lib/open-ena/trajectory-presentation-v3.ts"), /steps/);
   assert.doesNotMatch(v3, /hasUsableLongitudinalView/);
 

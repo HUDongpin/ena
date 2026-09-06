@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { getOpenEnaCopy, localizeModelDiagnosticV3 } from "../lib/open-ena-i18n";
 
 import * as compilerV3 from "../lib/open-ena/model-v3/compiler";
 import { OPEN_ENA_CAPABILITIES } from "../lib/open-ena/capabilities";
@@ -452,6 +453,10 @@ test("ONA fails closed for invalid source contracts while preserving descriptive
     assert.equal(result.capabilityStatus["build-model"], "available");
     assert.equal(result.capabilityStatus["export-current-model"], "available");
     assert.equal(result.capabilityStatus["group-inference"], "blocked");
+    if (warning === "ONA_TARGET_RANK_ZERO") {
+      const diagnostic = result.diagnostics.find((entry) => entry.id === warning)!;
+      assert.match(localizeModelDiagnosticV3(getOpenEnaCopy("en").modelV3, diagnostic).detail, /descriptive geometry remains available.*does not block/u);
+    }
   };
   await assertDescriptiveReady(dataset({ rows: [
     { unit: "u1", horizon: "h1", time: 1, turn: 1, group: "g1", A: 1, B: 1, C: 1 },
@@ -545,6 +550,27 @@ test("ONA rejects a mask with no enabled directed connection", async () => {
       enabled: Array.from({ length: 3 }, () => Array.from({ length: 3 }, () => false)),
     },
   }), "ONA_NO_ENABLED_CONNECTION");
+});
+
+test("ONA no-positive-connection guidance covers all scientific inputs even when every mask cell is enabled", async () => {
+  const input = dataset({ rows: [
+    { unit: "u1", horizon: "h1", time: 1, turn: 1, group: "g1", A: 1, B: 0, C: 0 },
+    { unit: "u2", horizon: "h2", time: 2, turn: 1, group: "g2", A: 0, B: 1, C: 0 },
+    { unit: "u3", horizon: "h3", time: 3, turn: 1, group: "g3", A: 0, B: 0, C: 1 },
+  ] as ParsedDataset["rows"] });
+  for (const diagonal of [false, true]) {
+    const enabled = Array.from({ length: 3 }, (_, row) => Array.from({ length: 3 }, (_, column) => diagonal || row !== column));
+    const result = await compileOnaDraftV3(input, DATASET_SHA256, onaDraft({ directionalMask: { schemaVersion: 1, codeOrder: ["A", "B", "C"], enabled } }));
+    assert.equal(result.status, "invalid");
+    const diagnostic = result.diagnostics.find((entry) => entry.id === "ONA_NO_ENABLED_CONNECTION")!;
+    assert.equal(enabled.flat().filter(Boolean).length, diagonal ? 9 : 6);
+    assert.deepEqual(diagnostic.blocks, ["build-model", "export-current-model", "export-reference"]);
+    for (const locale of ["en", "zh-hant", "zh-hans"] as const) {
+      const localized = localizeModelDiagnosticV3(getOpenEnaCopy(locale).modelV3, diagnostic);
+      assert.doesNotMatch(localized.detail, /Enable a mask cell|啟用遮罩儲存格|启用遮罩单元格/u);
+      assert.match(localized.detail, locale === "en" ? /Code values.*Horizon boundaries.*response order.*backward-window.*directional mask/u : locale === "zh-hant" ? /代碼.*視域.*回應順序.*向後窗口.*方向遮罩/u : /代码.*视域.*回应顺序.*向后窗口.*方向遮罩/u);
+    }
+  }
 });
 
 test("ONA hard resource admission happens before ordered SVD identifiability", async () => {
