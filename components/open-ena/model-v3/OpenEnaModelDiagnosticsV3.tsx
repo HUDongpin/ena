@@ -138,10 +138,15 @@ function fieldTabV3(
     || fieldPath.startsWith("movingStanza.")
     || fieldPath === "rowOrder"
     || fieldPath.startsWith("rowOrder.")
+    || fieldPath === "backward"
+    || fieldPath === "weighting"
     || fieldPath === "rotation"
+    || fieldPath.startsWith("rotation.")
     || fieldPath === "model"
     || fieldPath === "reference"
     || fieldPath.startsWith("reference.")
+    || fieldPath === "resources"
+    || fieldPath.startsWith("resources.")
   ) return "windows";
 
   if (
@@ -188,8 +193,6 @@ export function modelDiagnosticFieldTargetV3(
   if (
     fieldPath === "dataset"
     || fieldPath.startsWith("dataset.")
-    || fieldPath === "resources"
-    || fieldPath.startsWith("resources.")
     || fieldPath === "migration"
     || fieldPath.startsWith("migration.")
   ) return null;

@@ -272,7 +272,7 @@ test("the ONA summary contract renders only its fixed scientific family values",
   assert.match(markup, /SVD/u);
 });
 
-test("field navigation IDs are stable and collision-free for punctuation and Unicode while global paths stay unlinked", () => {
+test("field navigation IDs are stable and collision-free while dataset paths stay unlinked", () => {
   const dotted = modelFieldIdV3("codes", "codes.A.B");
   const hyphenated = modelFieldIdV3("codes", "codes.A-B");
   const unicode = modelFieldIdV3("codes", "codes.學習投入");
@@ -285,7 +285,11 @@ test("field navigation IDs are stable and collision-free for punctuation and Uni
     fieldId: modelFieldIdV3("units", "rotation.negativeLevel"),
   });
   assert.equal(modelDiagnosticFieldTargetV3("standard", "dataset.rows"), null);
-  assert.equal(modelDiagnosticFieldTargetV3("ona", "resources"), null);
+  assert.deepEqual(modelDiagnosticFieldTargetV3("ona", "resources"), {
+    tab: "windows",
+    fieldPath: "resources",
+    fieldId: modelFieldIdV3("windows", "resources"),
+  });
   assert.deepEqual(modelDiagnosticFieldTargetV3("ona", "directionalMask"), {
     tab: "codes",
     fieldPath: "directionalMask",
