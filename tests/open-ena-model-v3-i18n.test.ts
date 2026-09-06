@@ -38,6 +38,25 @@ test("every native Open ENA locale exposes the complete Models v3 copy contract"
   assert.equal(getOpenEnaCopy("zh-hans").modelV3.tabs.tabs.windows, "窗口");
 });
 
+test("actual plot actions, statuses, scale captions, and method boundaries are locale-owned", () => {
+  const en = getOpenEnaCopy("en").modelV3.workspace.plot;
+  const hant = getOpenEnaCopy("zh-hant").modelV3.workspace.plot;
+  const hans = getOpenEnaCopy("zh-hans").modelV3.workspace.plot;
+  assert.equal(en.plotActionLabel(en.comparisonPlot, en.copyImage), "Comparison Plot: Copy image");
+  assert.equal(hant.plotActionLabel(hant.comparisonPlot, hant.copyImage), "比較圖：複製圖像");
+  assert.equal(hans.plotActionLabel(hans.secondaryPlot, hans.zoomOut), "次图：缩小");
+  assert.equal(hant.restorePlot(hant.primaryPlot), "還原主要圖");
+  assert.equal(hans.restorePlot(hans.secondaryPlot), "恢复次图");
+  assert.equal(hant.copyCancelled, "已取消複製");
+  assert.equal(hans.svgCopied, "已将 SVG 复制为文本");
+  assert.equal(hant.sideScaledDescription("Literal-Group-ID", "1.25"), "Literal-Group-ID，縮放 1.25 倍");
+  assert.equal(hans.comparisonScaledDescription(["Group-A", "Group-B"], "2.00"), "Group-A 减 Group-B，缩放 2.00 倍");
+  assert.match(hant.methodBoundary, /主要群組減去次要群組/u);
+  assert.match(hans.methodBoundary, /主组减去次组/u);
+  assert.doesNotMatch(`${hant.copyImageTitle} ${hant.scaledCaption("1.0")} ${hant.methodBoundary}`, /Copy plot|scaled|Each connection/u);
+  assert.doesNotMatch(`${hans.copyImageTitle} ${hans.scaledCaption("1.0")} ${hans.methodBoundary}`, /Copy plot|scaled|Each connection/u);
+});
+
 test("Models v3 diagnostic and suggested-action catalogs cover every exported ID", () => {
   const expectedDiagnostics = [...MODEL_DIAGNOSTIC_IDS_V3, ...ONA_COMPILER_DIAGNOSTIC_IDS_V3].sort();
   for (const locale of openEnaLocalizedLocales) {

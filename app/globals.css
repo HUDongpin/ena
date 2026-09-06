@@ -10760,8 +10760,10 @@ body:has(.open-ena-page) #main-content {
 
 .ena-official-plot-actions button {
   display: inline-grid;
-  width: 27px;
-  height: 27px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
   padding: 0;
   place-items: center;
   color: #47595f;
@@ -10795,8 +10797,10 @@ body:has(.open-ena-page) #main-content {
 
 .ena-official-panel-actions button {
   display: grid;
-  width: 25px;
-  height: 25px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
   padding: 2px;
   place-items: center;
   border: 0;
@@ -11796,8 +11800,10 @@ body:has(.open-ena-page) #main-content {
   }
 
   .open-ena-group-contrast .ena-official-plot-actions button {
-    width: 24px;
-    height: 24px;
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    min-height: 32px;
     font-size: calc(0.75rem + var(--ena-font-step, 1px));
   }
 

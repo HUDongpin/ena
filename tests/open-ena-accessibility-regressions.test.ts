@@ -178,3 +178,20 @@ test("actual Models tabs and source preparation own their styling and focus life
   assert.match(workspace, /aria-invalid=\{column\.errorCount > 0\}/u);
   assert.match(workspace, /aria-describedby=\{column\.errorCount > 0/u);
 });
+
+test("actual plot and panel actions keep 32px targets and locale-independent focus selectors", () => {
+  const contrast = source("components/open-ena/OpenEnaGroupContrast.tsx");
+  const plotActions = firstRuleBody(css, ".ena-official-plot-actions button");
+  const panelActions = firstRuleBody(css, ".ena-official-panel-actions button");
+  assert.match(plotActions, /min-width:\s*32px;/u);
+  assert.match(plotActions, /min-height:\s*32px;/u);
+  assert.match(panelActions, /min-width:\s*32px;/u);
+  assert.match(panelActions, /min-height:\s*32px;/u);
+  assert.match(contrast, /data-ena-restore-slot=\{interactive\s*\?\s*restoreSlot\s*:\s*undefined\}/u);
+  assert.match(contrast, /data-ena-restore-hit-target="true"/u);
+  assert.match(contrast, /width="56"[\s\S]*?height="56"/u);
+  assert.match(contrast, /restoreHitTargetScale=\{1\s*\/\s*zoom\}/u);
+  assert.match(contrast, /data-ena-restore-hit-target-scale=\{dataNumber\(restoreHitTargetScale\)\}/u);
+  assert.match(contrast, /focusAfterRender\('\[data-ena-panel-action="switch-plots"\]'\)/u);
+  assert.doesNotMatch(contrast, /focusAfterRender\(['"]\[aria-label=/u);
+});

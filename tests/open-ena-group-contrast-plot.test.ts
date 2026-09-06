@@ -855,6 +855,19 @@ test("Copy image resolves the semantic plot SVG instead of a toolbar icon", () =
   assert.doesNotMatch(source, /closest\("figure"\)\?\.querySelector\("svg"\)/);
 });
 
+test("plot clipboard publication is fail-closed behind one identity confirmation", () => {
+  const source = readFileSync(componentPath, "utf8");
+  const handleCopy = source.slice(source.indexOf("const handleCopy ="), source.indexOf("const comparisonScale", source.indexOf("const handleCopy =")));
+  assert.match(source, /onConfirmIdentityBearingExport\?:\s*\(\)\s*=>\s*boolean/u);
+  assert.match(handleCopy, /if\s*\(!props\.onConfirmIdentityBearingExport\)[\s\S]*?"unavailable"[\s\S]*?return;/u);
+  assert.match(handleCopy, /confirmed\s*=\s*props\.onConfirmIdentityBearingExport\(\)/u);
+  assert.match(handleCopy, /if\s*\(!confirmed\)[\s\S]*?"cancelled"[\s\S]*?return;/u);
+  assert.ok(handleCopy.indexOf("onConfirmIdentityBearingExport()") < handleCopy.indexOf("copyPlotImage(button)"));
+  assert.equal((handleCopy.match(/onConfirmIdentityBearingExport\(\)/gu) ?? []).length, 1, "one plot-copy intent asks once");
+  const workspace = readFileSync(join(process.cwd(), "components/open-ena/OpenEnaWorkspace.tsx"), "utf8");
+  assert.match(workspace, /<OpenEnaGroupContrast[\s\S]*?onConfirmIdentityBearingExport=\{confirmCurrentIdentityBearingExport\}/u);
+});
+
 test("all horizontally scrollable plot figures are keyboard focusable and labelled", async () => {
   const markup = await render();
   assert.match(markup, /<figure[^>]*tabindex="0"[^>]*aria-label="Comparison plot\. Scroll horizontally on small screens\."/);
@@ -1018,11 +1031,15 @@ test("hidden plots fade without collapsing and removed plots advertise point-bas
   assert.match(source, /data-ena-panel-state=\{panelStates?\.secondary\}/);
   assert.match(source, /panelStates?\.primary\s*!==\s*"removed"[\s\S]{0,500}<figure/);
   assert.match(source, /panelStates?\.secondary\s*!==\s*"removed"[\s\S]{0,500}<figure/);
-  assert.match(source, /panelStates?\[?[^\]\n]*\]?\s*===\s*"hidden"[\s\S]{0,250}"Show Plot"[\s\S]{0,250}"Hide Plot"/);
-  assert.match(source, /panelStates?\.primary\s*===\s*"removed"[\s\S]{0,800}Restore Primary Plot/);
-  assert.match(source, /panelStates?\.secondary\s*===\s*"removed"[\s\S]{0,800}Restore Secondary Plot/);
-  assert.match(source, /Restore Primary Plot[\s\S]{0,500}type:\s*"restore"[\s\S]{0,100}plot:\s*"primary"/);
-  assert.match(source, /Restore Secondary Plot[\s\S]{0,500}type:\s*"restore"[\s\S]{0,100}plot:\s*"secondary"/);
+  assert.match(source, /panelState\s*===\s*"hidden"\s*\?\s*copy\.showPlot\s*:\s*copy\.hidePlot/);
+  assert.match(source, /panelStates?\.primary\s*===\s*"removed"\s*\?\s*uiCopy\.restorePlot\(uiCopy\.primaryPlot\)/);
+  assert.match(source, /panelStates?\.secondary\s*===\s*"removed"\s*\?\s*uiCopy\.restorePlot\(uiCopy\.secondaryPlot\)/);
+  assert.match(source, /data-ena-restore-slot=\{interactive\s*\?\s*restoreSlot\s*:\s*undefined\}/);
+  assert.match(source, /const restorePrimaryPlot[\s\S]{0,400}type:\s*"restore",\s*plot:\s*"primary"/);
+  assert.match(source, /const restoreSecondaryPlot[\s\S]{0,400}type:\s*"restore",\s*plot:\s*"secondary"/);
+  assert.match(source, /slot:\s*"primary"[\s\S]{0,120}onRestore:\s*\(\)\s*=>\s*restorePrimaryPlot\(role\)/);
+  assert.match(source, /slot:\s*"secondary"[\s\S]{0,120}onRestore:\s*\(\)\s*=>\s*restoreSecondaryPlot\(role\)/);
+  assert.doesNotMatch(source, /focusAfterRender\(['"]\[aria-label=/, "focus restoration must not depend on translated labels");
 
   const hiddenRule = css.match(/[^{}]*\[data-ena-panel-state=["']hidden["']\][^{}]*\{([^}]*)\}/)?.[1] ?? "";
   assert.match(hiddenRule, /opacity\s*:\s*0?\.\d+/);

@@ -142,6 +142,16 @@ export interface OpenEnaWorkspaceV3Copy {
     readonly primaryEmptyAria: string; readonly secondaryEmptyAria: string; readonly emptyGroupPrompt: string; readonly selectedGroupOrder: string;
     readonly dataViewComparisonRecords: (primary: string, secondary: string) => string;
     readonly dataViewUnavailable: string;
+    readonly plotActionsLabel: (plot: string) => string; readonly plotActionLabel: (plot: string, action: string) => string;
+    readonly zoomIn: string; readonly zoomOut: string; readonly recenter: string; readonly recenterTitle: string; readonly copyImage: string; readonly copyImageTitle: string;
+    readonly panelActionsLabel: (plot: string) => string; readonly hidePlot: string; readonly showPlot: string; readonly removePlot: string; readonly restorePlot: (plot: string) => string;
+    readonly copying: string; readonly imageCopied: string; readonly svgCopied: string; readonly copyUnavailable: string; readonly copyCancelled: string;
+    readonly scaledCaption: (multiplier: string) => string; readonly sideScaledDescription: (group: string, multiplier: string) => string;
+    readonly comparisonScaledDescription: (groups: readonly string[], multiplier: string) => string;
+    readonly sharedScale: (value: string) => string; readonly differenceScale: (value: string) => string; readonly scaledMultiplier: (value: string) => string;
+    readonly signedEdgeDifferences: string; readonly groupMeanNetwork: string; readonly analyticUnits: (count: number) => string;
+    readonly methodBoundary: string; readonly confidenceMethodBoundary: string; readonly outlierMethodBoundary: string;
+    readonly unitsDefinition: string; readonly horizonDefinition: string; readonly noNonzeroDifferences: string;
   };
   readonly stats: {
     readonly separation: string; readonly inferenceDesign: string; readonly designs: Readonly<Record<"independent" | "paired" | "repeated", string>>;
@@ -2316,6 +2326,23 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
       primaryEmptyAria: t("Primary Plot is empty", "主要圖目前為空", "主图当前为空"), secondaryEmptyAria: t("Secondary Plot is empty", "次要圖目前為空", "次图当前为空"), emptyGroupPrompt: t("Click or hover points in the comparison plot to display networks here", "在比較圖點擊或停留於資料點，即可在此顯示網絡", "在比较图点击或停留于数据点，即可在此显示网络"), selectedGroupOrder: t("Selected group order", "所選群組順序", "所选组顺序"),
       dataViewComparisonRecords: (primary, secondary) => t(`${primary} and ${secondary} · comparison records`, `${primary} 與 ${secondary} · 比較記錄`, `${primary} 与 ${secondary} · 比较记录`),
       dataViewUnavailable: t("Data View is not available for this comparison result.", "此比較結果沒有可用的資料檢視。", "此比较结果没有可用的数据视图。"),
+      plotActionsLabel: (plot) => t(`${plot} actions`, `${plot}操作`, `${plot}操作`), plotActionLabel: (plot, action) => t(`${plot}: ${action}`, `${plot}：${action}`, `${plot}：${action}`),
+      zoomIn: t("Zoom In", "放大", "放大"), zoomOut: t("Zoom Out", "縮小", "缩小"), recenter: t("Recenter", "重新置中", "重新居中"), recenterTitle: t("Recenter Plot", "重新置中圖形", "重新居中图形"), copyImage: t("Copy image", "複製圖像", "复制图像"), copyImageTitle: t("Copy plot image to clipboard", "將圖形圖像複製到剪貼簿", "将图形图像复制到剪贴板"),
+      panelActionsLabel: (plot) => t(`${plot} panel actions`, `${plot}面板操作`, `${plot}面板操作`), hidePlot: t("Hide Plot", "隱藏圖形", "隐藏图形"), showPlot: t("Show Plot", "顯示圖形", "显示图形"), removePlot: t("Remove Plot", "移除圖形", "移除图形"), restorePlot: (plot) => t(`Restore ${plot}`, `還原${plot}`, `恢复${plot}`),
+      copying: t("Copying…", "正在複製…", "正在复制…"), imageCopied: t("Image copied", "已複製圖像", "已复制图像"), svgCopied: t("SVG copied as text", "已將 SVG 複製為文字", "已将 SVG 复制为文本"), copyUnavailable: t("Copy unavailable", "無法複製", "无法复制"), copyCancelled: t("Copy cancelled", "已取消複製", "已取消复制"),
+      scaledCaption: (multiplier) => t(`(scaled ${multiplier}x)`, `（縮放 ${multiplier} 倍）`, `（缩放 ${multiplier} 倍）`),
+      sideScaledDescription: (group, multiplier) => t(`${group}, scaled ${multiplier} times`, `${group}，縮放 ${multiplier} 倍`, `${group}，缩放 ${multiplier} 倍`),
+      comparisonScaledDescription: (groups, multiplier) => groups.length === 2
+        ? t(`${groups[0]} minus ${groups[1]}, scaled ${multiplier} times`, `${groups[0]} 減 ${groups[1]}，縮放 ${multiplier} 倍`, `${groups[0]} 减 ${groups[1]}，缩放 ${multiplier} 倍`)
+        : groups.length === 1 ? t(`${groups[0]}, scaled ${multiplier} times`, `${groups[0]}，縮放 ${multiplier} 倍`, `${groups[0]}，缩放 ${multiplier} 倍`)
+          : t(`No selected group network, scaled ${multiplier} times`, `未選擇群組網絡，縮放 ${multiplier} 倍`, `未选择组网络，缩放 ${multiplier} 倍`),
+      sharedScale: (value) => t(`Shared scale ${value}`, `共用比例 ${value}`, `共享比例 ${value}`), differenceScale: (value) => t(`Difference scale ${value}`, `差異比例 ${value}`, `差异比例 ${value}`), scaledMultiplier: (value) => t(`scaled ${value}x`, `縮放 ${value} 倍`, `缩放 ${value} 倍`),
+      signedEdgeDifferences: t("signed edge differences", "有符號邊差異", "有符号边差异"), groupMeanNetwork: t("group mean network", "群組平均網絡", "组平均网络"), analyticUnits: (count) => t(`${count} analytic units`, `${count} 個分析單位`, `${count} 个分析单位`),
+      methodBoundary: t("Each connection is drawn once as Primary minus Secondary in the stable color of the stronger selected group; line width is the absolute edge difference. The two side plots retain the displayed group-mean networks on their shared mean scale.", "每條連線只繪製一次，表示主要群組減去次要群組，並使用較強所選群組的固定顏色；線寬是邊差異的絕對值。兩個側圖在共用平均比例上保留所顯示的群組平均網絡。", "每条连接只绘制一次，表示主组减去次组，并使用较强所选组的固定颜色；线宽是边差异的绝对值。两个侧图在共享平均比例上保留所显示的组平均网络。"),
+      confidenceMethodBoundary: t("Dashed guides are separate marginal 95% Student-t confidence intervals for the enabled displayed-axis group means; they are not a joint confidence region or a significance test.", "虛線引導線是針對已啟用顯示軸群組平均值的分開邊際 95% Student-t 信賴區間；它們不是聯合信賴區域或顯著性檢定。", "虚线引导线是针对已启用显示轴组平均值的分开边际 95% Student-t 置信区间；它们不是联合置信区域或显著性检验。"),
+      outlierMethodBoundary: t("Short-dashed guides are rENA-compatible mean-centered 1.5 × IQR display intervals; they are not Tukey fences, automatic exclusions, confidence intervals, or tests.", "短虛線引導線是與 rENA 相容、以平均值為中心的 1.5 × IQR 顯示區間；它們不是 Tukey 圍欄、自動排除、信賴區間或檢定。", "短虚线引导线是与 rENA 兼容、以平均值为中心的 1.5 × IQR 显示区间；它们不是 Tukey 围栏、自动排除、置信区间或检验。"),
+      unitsDefinition: t("Units", "單位", "单位"), horizonDefinition: t("Horizon", "視域", "视域"),
+      noNonzeroDifferences: t("No nonzero Primary-minus-Secondary edge differences are present for this selected pair.", "此所選配對沒有非零的主要群組減次要群組邊差異。", "此所选配对没有非零的主组减次组边差异。"),
     },
     stats: {
       separation: t("Model bundles contain unavailable statistics. Inference below is an explicit, separate post-model request.", "模型套件包含不可用的統計項目。下方推論是明確且獨立的模型後要求。", "模型包包含不可用的统计项目。下方推断是明确且独立的模型后请求。"), inferenceDesign: t("Trajectory inference design", "軌跡推論設計", "轨迹推断设计"), designs: { independent: t("Independent groups at a period", "單一時段的獨立群組", "单一时段的独立组"), paired: t("Paired periods", "配對時段", "配对时段"), repeated: t("Repeated periods", "重複時段", "重复时段") },

@@ -287,14 +287,16 @@ test("the trajectory configuration shortcut stays in the responsive Model headin
 });
 
 test("the visible comparison caption keeps only the official Units and Horizon definitions", () => {
+  const englishPlotCopy = getOpenEnaCopy("en").modelV3.workspace.plot;
+  assert.match(englishPlotCopy.methodBoundary, /Each connection is drawn once/);
   assert.match(
     groupContrast,
-    /<span className="sr-only ena-set-method-boundary">[\s\S]*?Each connection is drawn once[\s\S]*?<\/span>/,
+    /<span className="sr-only ena-set-method-boundary">[\s\S]*?\{uiCopy\.methodBoundary\}[\s\S]*?<\/span>/,
     "the detailed statistical boundary remains available to assistive technology without occupying the plot footer",
   );
   assert.match(
     groupContrast,
-    /className="ena-set-plot-definitions"[\s\S]*?<span><strong>Units:<\/strong>[\s\S]*?<span><strong>Horizon:<\/strong>/,
+    /className="ena-set-plot-definitions"[\s\S]*?<span><strong>\{uiCopy\.unitsDefinition\}:<\/strong>[\s\S]*?<span><strong>\{uiCopy\.horizonDefinition\}:<\/strong>/,
     "Units and Horizon remain the two visible plot definitions in official reading order",
   );
   assert.match(
@@ -475,18 +477,21 @@ test("copied plot images preserve the live official renderer styles", () => {
 });
 
 test("plot papers use color-coded group captions and official scale notation", () => {
+  const englishPlotCopy = getOpenEnaCopy("en").modelV3.workspace.plot;
+  assert.equal(englishPlotCopy.analyticUnits(2), "2 analytic units");
+  assert.equal(englishPlotCopy.scaledCaption("1.25"), "(scaled 1.25x)");
   assert.match(groupContrast, /className="ena-set-series-caption"/);
   assert.match(groupContrast, /className="ena-set-series-primary"/);
   assert.match(groupContrast, /className="ena-set-series-secondary"/);
   assert.match(groupContrast, /className="ena-set-scale-caption"[\s\S]*?formatOfficialMultiplier\(props\.edgeScale\)/);
   assert.match(
     groupContrast,
-    /className="sr-only">\{primaryPanelSide\.name\} · \{primaryPanelSide\.unitCount\} analytic units<\/span>/,
+    /className="sr-only">\{primaryPanelSide\.name\} · \{uiCopy\.analyticUnits\(primaryPanelSide\.unitCount\)\}<\/span>/,
     "unit counts remain available to assistive technology while the visible title follows webENA",
   );
   assert.match(
     groupContrast,
-    /className="sr-only">\{secondaryPanelSide\.name\} · \{secondaryPanelSide\.unitCount\} analytic units<\/span>/,
+    /className="sr-only">\{secondaryPanelSide\.name\} · \{uiCopy\.analyticUnits\(secondaryPanelSide\.unitCount\)\}<\/span>/,
   );
   assert.doesNotMatch(
     styles,
