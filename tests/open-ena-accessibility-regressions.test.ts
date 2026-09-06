@@ -148,3 +148,21 @@ test("the 1400px toolbar keeps enlarged actions in wrapping normal flow", () => 
   assert.doesNotMatch(downloadRule, /(?:width|min-width|max-width):\s*138px|min-height:\s*24px/u);
   assert.doesNotMatch(viewButtonRule, /min-height:\s*24px/u);
 });
+
+test("Models v3 exposes localized live diagnostics, field errors, focus return, and keyboard reorder contracts", () => {
+  const tabs = source("components/open-ena/model-v3/OpenEnaModelTabsV3.tsx");
+  const diagnostics = source("components/open-ena/model-v3/OpenEnaModelDiagnosticsV3.tsx");
+  const codes = source("components/open-ena/model-v3/OpenEnaCodesPanelV3.tsx");
+  const order = source("components/open-ena/model-v3/OpenEnaOrderPolicyEditorV3.tsx");
+  assert.match(tabs, /role="status"/u);
+  assert.match(tabs, /aria-live="polite"/u);
+  assert.match(diagnostics, /aria-describedby=/u);
+  assert.match(diagnostics, /copy\.severityLabels\[diagnostic\.severity\]/u);
+  assert.match(diagnostics, /function returnPendingFocus\(/u);
+  assert.match(diagnostics, /closed\.trigger\.focus\(\)/u);
+  assert.match(codes, /event\.altKey/u);
+  assert.match(codes, /event\.key === "ArrowUp"/u);
+  assert.match(order, /event\.key === "Escape"/u);
+  assert.match(order, /sourceReviewTriggerRef\.current\?\.focus\(\)/u);
+  assert.doesNotMatch(tabs + diagnostics + codes + order, /<button[^>]*>\s*<button/u);
+});

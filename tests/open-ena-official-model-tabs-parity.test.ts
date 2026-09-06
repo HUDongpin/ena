@@ -67,6 +67,13 @@ test("the compact parity CSS uses official geometry with Open ENA Baby Blue toke
   );
   assert.doesNotMatch(modelParityCss, /#56b09d|rgb\(86,\s*176,\s*157\)/iu);
   assert.match(modelParityCss, /\.ena-official-code-row\s*\{[^}]*min-height:\s*34px;/u);
+  assert.match(modelParityCss, /\.ena-model-tabs\s*\{[^}]*padding-top:\s*0;/u);
+  assert.match(modelParityCss, /\.ena-model-tabs button::before\s*\{[^}]*top:\s*0;/u);
+  assert.doesNotMatch(modelParityCss.match(/\.ena-model-tabs\s*\{[^}]*\}/u)?.[0] ?? "", /padding-top:\s*[1-9]/u);
+  assert.match(modelParityCss, /\.ena-official-icon-button\s*\{[^}]*(?:min-width|width):\s*32px;[^}]*(?:min-height|height):\s*32px;/u);
+  assert.match(modelParityCss, /\.ena-official-icon-button:focus-visible\s*\{[^}]*outline:\s*3px solid var\(--ena-accent-strong\);/u);
+  assert.match(modelParityCss, /\.ena-model-toolbar\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/u);
+  assert.match(modelParityCss, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.ena-model-control-content \*[\s\S]*?transition-duration:\s*0\.01ms/u);
 });
 
 test("shared official controls expose real disclosure and switch semantics", async () => {

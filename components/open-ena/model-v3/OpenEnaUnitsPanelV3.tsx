@@ -96,6 +96,7 @@ export type OpenEnaUnitsPreviewV3 = AvailableUnitsPreviewV3 | {
 
 export interface OpenEnaUnitsPanelV3Props {
   readonly copy: OpenEnaUnitsPanelV3Copy;
+  readonly applicabilityCopy?: OpenEnaGroupDisplayApplicabilityCopyV3;
   readonly groupDisplayCopy: OpenEnaGroupDisplayCopy;
   readonly state: ModelStateV3;
   readonly fields: OpenEnaModelPanelFieldsV3;
@@ -124,6 +125,12 @@ export const GROUP_DISPLAY_APPLICABILITY_COPY_V3 = {
   global: "All Groups are hidden. Restore Group visibility to use these saved controls; individual Unit preferences are retained.",
   trajectoryIntervals: "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.",
 } as const;
+
+export interface OpenEnaGroupDisplayApplicabilityCopyV3 {
+  readonly preset: string;
+  readonly global: string;
+  readonly trajectoryIntervals: string;
+}
 
 const GROUP_COLORS = [
   "#cc423a",
@@ -220,6 +227,7 @@ function isGroupDiagnostic(diagnostic: UnitsDiagnosticV3): boolean {
 
 export function OpenEnaUnitsPanelV3({
   copy,
+  applicabilityCopy = GROUP_DISPLAY_APPLICABILITY_COPY_V3,
   groupDisplayCopy,
   state,
   fields,
@@ -247,8 +255,8 @@ export function OpenEnaUnitsPanelV3({
   const plotGroups = resultGroups(state);
   const presetSuppressed = new Set(presetHiddenGroupTokens);
   const suppressedGroups = Object.fromEntries(plotGroups.flatMap((group) => {
-    const reasons = [display.allGroupsSuppressed ? GROUP_DISPLAY_APPLICABILITY_COPY_V3.global : "",
-      presetSuppressed.has(group.id ?? group.name) ? GROUP_DISPLAY_APPLICABILITY_COPY_V3.preset : ""].filter(Boolean);
+    const reasons = [display.allGroupsSuppressed ? applicabilityCopy.global : "",
+      presetSuppressed.has(group.id ?? group.name) ? applicabilityCopy.preset : ""].filter(Boolean);
     return reasons.length ? [[group.id ?? group.name, reasons.join(" ")]] : [];
   }));
   const trajectoryIntervalsUnavailable = state.result?.configuration.analysisFamily === "standard"
@@ -503,7 +511,7 @@ export function OpenEnaUnitsPanelV3({
               groups={plotGroups}
               settingsByGroup={display.groups}
               suppressedGroups={suppressedGroups}
-              intervalsUnavailableReason={trajectoryIntervalsUnavailable ? GROUP_DISPLAY_APPLICABILITY_COPY_V3.trajectoryIntervals : undefined}
+              intervalsUnavailableReason={trajectoryIntervalsUnavailable ? applicabilityCopy.trajectoryIntervals : undefined}
               hiddenUnitKeys={hiddenUnitKeys}
               view={view}
               copy={groupDisplayCopy}

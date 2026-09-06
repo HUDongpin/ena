@@ -9026,6 +9026,7 @@ body:has(.open-ena-page) #main-content {
   overflow-x: auto;
   margin: 0 -10px 8px;
   border-top: 0;
+  padding-top: 0;
   border-bottom: 1px solid #d7d7d7;
   background: #fff;
 }
@@ -9337,6 +9338,15 @@ body:has(.open-ena-page) #main-content {
   gap: 8px;
   border-bottom: 1px solid #ccc;
   padding: 8px 4px;
+  flex-wrap: wrap;
+}
+
+.ena-model-toolbar {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .ena-official-create-sample {
@@ -9392,18 +9402,58 @@ body:has(.open-ena-page) #main-content {
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
+  flex-wrap: wrap;
 }
 
 .ena-official-icon-button {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
   place-items: center;
   border: 0;
   padding: 0;
   color: #8e8e8e;
   background: transparent;
   cursor: pointer;
+}
+
+.ena-official-icon-button:focus-visible,
+.ena-official-field-remove:focus-visible,
+.ena-official-field-path-add:focus-visible,
+.ena-model-diagnostics button:focus-visible,
+.ena-model-diagnostics a:focus-visible {
+  outline: 3px solid var(--ena-accent-strong);
+  outline-offset: 2px;
+}
+
+.ena-official-icon-button:focus-visible {
+  outline: 3px solid var(--ena-accent-strong);
+}
+
+.ena-model-diagnostics {
+  min-width: 0;
+}
+
+.ena-model-diagnostics [data-severity] {
+  border-inline-start: 4px solid currentColor;
+  padding-inline-start: 8px;
+}
+
+.ena-model-diagnostics [data-severity] > p:first-child > span:first-child {
+  display: inline-grid;
+  min-width: 1.4em;
+  min-height: 1.4em;
+  place-items: center;
+  border: 1px solid currentColor;
+  font-weight: 800;
+}
+
+.ena-model-diagnostics p,
+.ena-model-diagnostics a,
+.ena-official-field-name {
+  overflow-wrap: anywhere;
 }
 
 .ena-official-icon-button svg {
@@ -9644,6 +9694,17 @@ body:has(.open-ena-page) #main-content {
   .ena-official-horizon-columns,
   .ena-official-setting-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ena-model-control-content *,
+  .ena-model-control-content *::before,
+  .ena-model-control-content *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 /* End Open ENA official Model parity controls. */

@@ -58,7 +58,6 @@ import { OpenEnaImportPreviewV3 } from "./model-v3/OpenEnaImportPreviewV3";
 import { useOpenEnaWorkspaceV3, emptyWorkspaceDraftsV3, sameScientificContextV3, workspaceDraftExportableV3, type WorkspaceWorkerV3 } from "./model-v3/workspace-controller";
 import { buildWorkspacePreviewsV3 } from "./model-v3/workspace-previews";
 import { modelScientificContextV3 } from "./model-v3/model-state";
-import { tabsCopy, unitsCopy, horizonsCopy, windowsCopy, codesCopy, orderCopy } from "./model-v3/model-copy-v3";
 
 interface OpenEnaWorkspaceProps {
   locale: Locale;
@@ -328,6 +327,7 @@ function ResearchTableV3({ rows, label }: { rows: readonly object[]; label: stri
 export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSource, worker }: OpenEnaWorkspaceProps) {
   const workspaceId = useId();
   const copy = getOpenEnaCopy(locale);
+  const modelV3Copy = copy.modelV3;
   const authCopy = getOpenEnaAuthCopy(locale);
   const controller = useOpenEnaWorkspaceV3({ initial: initialSource, worker });
   const { state, dispatch, dispatchModel, context, currentCompilation, currentPlan } = controller;
@@ -428,11 +428,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const longitudinal = useMemo(() => result && isTrajectory ? buildLongitudinalViewV3(result as BoundStandardResultV3) : null, [result, isTrajectory]);
   const contextKey = canonicalJsonV3(context);
   const diagnostics = currentCompilation?.result.diagnostics ?? [];
-  const localizedDiagnostic = (diagnostic: { id: string; fieldPath?: string; scope: string }) => {
-    const found = diagnostics.find((candidate) => candidate.id === diagnostic.id && candidate.fieldPath === diagnostic.fieldPath);
-    return { summary: found?.summary ?? `Review ${diagnostic.fieldPath ?? diagnostic.scope}`, detail: found?.detail ?? diagnostic.id };
-  };
-  const modelCopy = { ...tabsCopy, diagnostics: { ...tabsCopy.diagnostics, localize: localizedDiagnostic } };
+  const localizedDiagnostic = (diagnostic: { readonly id: string; readonly severity: "error" | "warning" | "information"; readonly scope: "dataset" | "units" | "horizons" | "windows" | "codes" | "rotation" | "reference" | "resources" | "migration" | "model"; readonly fieldPath?: string; readonly evidence?: { readonly totalCount: number; readonly sampleLimit: number; readonly truncated: boolean } }) => modelV3Copy.tabs.diagnostics.localize(diagnostic as Parameters<typeof modelV3Copy.tabs.diagnostics.localize>[0]);
+  const modelCopy = modelV3Copy.tabs;
   const sourceTypingPreview = useMemo(() => sourcePreview ? previewSourceTypesV3(sourcePreview.dataset, sourcePreview.types) : null, [sourcePreview]);
   const plan = currentCompilation?.plan;
   const referencePreview: OpenEnaReferenceSelectionPreviewV3 = useMemo(() => {
@@ -739,16 +736,15 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     onResetNodeLayout={() => setNodeOverrides({ hash: resultHash, positions: new Map() })}
     onReset={() => { setEdgeScale(1); setEdgeThreshold(0); setPointScale(1); setTextScale(1); setFlipX(false); setFlipY(false); setPlotZoom(1); setAxes([]); setThreeDAxes([]); setCameraPreset("isometric"); setCamera(cameraForPreset("isometric")); setAspectRatio(null); setHiddenUnitKeys([]); setShowLabels(true); setShowGroupLabels(true); setShowUnitLabels(false); setShowPoints(true); setUnitCircle(false); }}
     settingsOpen={plotSettingsOpen} onSettingsOpenChange={setPlotSettingsOpen} disabled={!result} />;
-  const analysisPanel = <div className="ena-control-content" lang="en" dir="ltr">
+  const analysisPanel = <div className="ena-control-content" lang={locale} dir="ltr">
       <header className="ena-panel-heading"><h1>{copy.modes[mode]}</h1>{mode === "model" && family === "standard" && <button type="button" className="ena-model-trajectory-button" onClick={() => setModelNavigation((value) => ({ tab: "windows", serial: value.serial + 1 }))}>Configure trajectory model</button>}<p role="status" aria-live="polite">{current ? "Current result" : result ? "Retained stale result" : "No result"} · {modelState.runStatus}</p>
         {modelState.runStatus === "running" && <p role="status"><progress max={100} value={state.progress?.value ?? 0} />{state.progress?.stage ?? "Starting model worker"}</p>}
         <button type="button" disabled={!controller.canRun || sourceBusy || sourcePreview !== null} onClick={controller.run}>Run model</button>
         <button type="button" disabled={modelState.runStatus !== "running"} onClick={controller.cancel}>Cancel run</button>
       </header>
       {(error || state.error || currentCompilation?.error) && <p role="alert">{error || state.error || currentCompilation?.error}</p>}
-      {locale !== "en" && <p role="note">The v3 model integration currently uses English copy; the complete locale catalog follows in the Models localization step.</p>}
       {controller.importPending && <button type="button" onClick={() => dispatch({ type: "cancel-preview" })}>Cancel pending import</button>}
-      {state.preview && <OpenEnaImportPreviewV3 preview={state.preview} drafts={modelState.drafts}
+      {state.preview && <OpenEnaImportPreviewV3 preview={state.preview} drafts={modelState.drafts} copy={modelV3Copy.importPreview}
         onCancel={() => dispatch({ type: "cancel-preview" })} onAcceptDraft={() => dispatch({ type: "accept-draft-preview", preview: state.preview! })}
         onKeepHistorical={() => dispatch({ type: "keep-historical", preview: state.preview! })} onAddReference={() => void attempt(controller.addReference)} />}
       {mode === "data" && <section aria-label="Data source"><h2>Coded data</h2>
@@ -785,18 +781,18 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
             dispatchModel({ type: "replace-standard-draft", draft: next });
           }
         }}
-        renderPanel={(tab, fields) => tab === "units" ? <OpenEnaUnitsPanelV3 presetHiddenGroupTokens={state.presetHiddenGroups?.resultHash === resultHash ? state.presetHiddenGroups.tokens : []} copy={unitsCopy} groupDisplayCopy={copy.groupDisplay} state={modelState} fields={fields} columnOptions={dataset?.headers ?? []}
+        renderPanel={(tab, fields) => tab === "units" ? <OpenEnaUnitsPanelV3 presetHiddenGroupTokens={state.presetHiddenGroups?.resultHash === resultHash ? state.presetHiddenGroups.tokens : []} copy={modelV3Copy.units} applicabilityCopy={modelV3Copy.groupApplicability} groupDisplayCopy={copy.groupDisplay} state={modelState} fields={fields} columnOptions={dataset?.headers ?? []}
           preview={previews.units} diagnostics={diagnostics} localizeDiagnostic={localizedDiagnostic} view={view} hiddenUnitKeys={hiddenUnitKeys} dispatch={dispatchModel}
           onUnitVisibilityChange={(group, unit, visible) => setHiddenUnitKeys((values) => visible ? values.filter((key) => key !== JSON.stringify([group, unit])) : [...new Set([...values, JSON.stringify([group, unit])])])} onRevealAllHidden={() => setHiddenUnitKeys([])} />
-          : tab === "horizons" ? <OpenEnaHorizonsPanelV3 copy={horizonsCopy} orderCopy={orderCopy} state={modelState} fields={fields} columnOptions={dataset?.headers ?? []} preview={previews.horizons}
+          : tab === "horizons" ? <OpenEnaHorizonsPanelV3 copy={modelV3Copy.horizons} orderCopy={modelV3Copy.order} state={modelState} fields={fields} columnOptions={dataset?.headers ?? []} preview={previews.horizons}
             diagnostics={diagnostics.filter((diagnostic) => diagnostic.scope !== "model") as Parameters<typeof OpenEnaHorizonsPanelV3>[0]["diagnostics"]} localizeDiagnostic={localizedDiagnostic}
             orderRawState={state.raw.horizonOrder} onOrderRawStateChange={(value) => dispatch({ type: "horizon-raw", value })} onOrderBlockedChange={() => { /* synchronous ALL-field owner is authoritative */ }} dispatch={dispatchModel} />
-          : tab === "windows" ? <OpenEnaWindowsPanelV3 copy={windowsCopy} orderCopy={orderCopy} state={modelState} fields={fields} columnOptions={dataset?.headers ?? []} rawState={state.raw.windows}
+          : tab === "windows" ? <OpenEnaWindowsPanelV3 copy={modelV3Copy.windows} orderCopy={modelV3Copy.order} state={modelState} fields={fields} columnOptions={dataset?.headers ?? []} rawState={state.raw.windows}
             onRawStateChange={(value) => dispatch({ type: "windows-raw", value })} onBlockersChange={() => { /* complete ledger calculated synchronously by workspaceReducerV3 */ }}
             sourcePreview={dataset ? { availability: "available", context, rowCount: dataset.rows.length } : { availability: "unavailable" }} preflight={currentCompilation}
             referenceOptions={state.references.map((r) => ({ referenceId: r.referenceId, contentSha256: r.contentSha256, displayName: r.displayName }))} referencePreview={referencePreview}
             onNavigateToMeansContrast={() => setModelNavigation((value) => ({ tab: "units", serial: value.serial + 1 }))} dispatch={dispatchModel} />
-          : <><OpenEnaCodesPanelV3 copy={codesCopy} state={modelState} fields={fields} preview={dataset ? createOpenEnaCodesPreviewV3(dataset, modelState.datasetSha256, modelState,
+          : <><OpenEnaCodesPanelV3 copy={modelV3Copy.codes} state={modelState} fields={fields} preview={dataset ? createOpenEnaCodesPreviewV3(dataset, modelState.datasetSha256, modelState,
               currentCompilation ? { availability: "available", context: currentCompilation.context, diagnostics: currentCompilation.result.diagnostics } : { availability: "unavailable", context }) : { availability: "unavailable", context }}
               dispatch={dispatchModel} onChooseCodeColor={(code) => setActiveCodeColor({ code, context })} localizeDiagnostic={localizedDiagnostic} />
             {family === "ona" && <fieldset id={fields.id("directionalMask")} tabIndex={-1}><legend>ONA directional mask</legend><p>Rows are source/ground Codes; columns are response Codes. Changes alter the scientific configuration.</p>
@@ -820,7 +816,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
         {view === "3d" && <fieldset className="ena-camera-fieldset"><legend>{copy.plot.cameraPosition}</legend>{cameraPositionOptions.map(([preset, label]) => <label key={preset}><input type="radio" name="ena-camera" value={preset} checked={cameraPreset === preset} onChange={() => { setCameraPreset(preset); setCamera(cameraForPreset(preset)); setAspectRatio(null); }} />{label}</label>)}</fieldset>}
         <button type="button" onClick={() => setNodeOverrides({ hash: resultHash, positions: new Map() })}>Reset node positions</button>
       </section>}
-      {mode === "stats" && <section><h2>{copy.stats.title}</h2><OpenEnaNativeStatsPanelV3 result={result} current={current} axes={twoDAxes} inference={activeInference} copy={copy.stats} renderTable={(rows, label) => <ResearchTableV3 rows={rows} label={label} />}>{groupSelectors}
+      {mode === "stats" && <section><h2>{copy.stats.title}</h2><OpenEnaNativeStatsPanelV3 result={result} current={current} axes={twoDAxes} inference={activeInference} copy={copy.stats} nativeCopy={modelV3Copy.nativeStats} renderTable={(rows, label) => <ResearchTableV3 rows={rows} label={label} />}>{groupSelectors}
         <p>Model bundles contain unavailable statistics. Inference below is an explicit, separate post-model request.</p>
         {isTrajectory && <><label>Trajectory inference design<select value={inferenceDesign} onChange={(e) => setInferenceDesign(e.target.value as typeof inferenceDesign)}><option value="independent">Independent groups at a period</option><option value="paired">Paired periods</option><option value="repeated">Repeated periods</option></select></label>
           <label><input type="checkbox" checked={identityConfirmed} onChange={(e) => setIdentityConfirmed(e.target.checked)} />I confirm these fitted Units identify the same entities across periods.</label>

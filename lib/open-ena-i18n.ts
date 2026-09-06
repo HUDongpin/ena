@@ -10,6 +10,68 @@ import type {
 import type { OpenEnaResultTablesCopy } from "./open-ena/export";
 import type { OpenEnaUnitPointStyle } from "./open-ena/unit-point-style";
 import type { OpenEnaCodeColorPickerCopy } from "./open-ena/code-color-presets";
+import {
+  MODEL_DIAGNOSTIC_IDS_V3,
+  MODEL_SUGGESTED_ACTION_IDS_V3,
+  type ModelDiagnosticIdV3,
+  type ModelSuggestedActionIdV3,
+} from "./open-ena/model-v3/diagnostics";
+import {
+  ONA_COMPILER_DIAGNOSTIC_IDS_V3,
+  type OnaCompilerDiagnosticIdV3,
+} from "./open-ena/model-v3/ona-compiler-preflight";
+import {
+  tabsCopy,
+  unitsCopy,
+  horizonsCopy,
+  windowsCopy,
+  codesCopy,
+  orderCopy,
+} from "../components/open-ena/model-v3/model-copy-v3";
+import type { OpenEnaModelTabsV3Copy } from "../components/open-ena/model-v3/OpenEnaModelTabsV3";
+import type { OpenEnaUnitsPanelV3Copy } from "../components/open-ena/model-v3/OpenEnaUnitsPanelV3";
+import type { OpenEnaHorizonsPanelV3Copy } from "../components/open-ena/model-v3/OpenEnaHorizonsPanelV3";
+import type { OpenEnaWindowsPanelV3Copy } from "../components/open-ena/model-v3/OpenEnaWindowsPanelV3";
+import type { OpenEnaCodesPanelV3Copy } from "../components/open-ena/model-v3/OpenEnaCodesPanelV3";
+import type { OpenEnaOrderPolicyEditorV3Copy } from "../components/open-ena/model-v3/OpenEnaOrderPolicyEditorV3";
+import type {
+  ModelSuggestedActionLocalizationInputV3,
+  ModelUiDiagnosticLocalizationInputV3,
+} from "../components/open-ena/model-v3/OpenEnaModelDiagnosticsV3";
+import type { NativeStatsCopyV3 } from "../components/open-ena/model-v3/OpenEnaNativeStatsPanelV3";
+import type { OpenEnaImportPreviewCopyV3 } from "../components/open-ena/model-v3/OpenEnaImportPreviewV3";
+
+export type OpenEnaModelDiagnosticIdV3 = ModelDiagnosticIdV3 | OnaCompilerDiagnosticIdV3;
+
+interface OpenEnaModelDiagnosticMessageV3 {
+  readonly summary: (input: OpenEnaModelDiagnosticLocalizationInputV3) => string;
+  readonly detail: (input: OpenEnaModelDiagnosticLocalizationInputV3) => string;
+}
+
+type OpenEnaModelDiagnosticLocalizationInputV3 = Omit<ModelUiDiagnosticLocalizationInputV3, "id"> & { readonly id: string };
+
+interface OpenEnaModelSuggestedActionMessageV3 {
+  readonly label: (input: ModelSuggestedActionLocalizationInputV3) => string;
+  readonly confirmation: (input: ModelSuggestedActionLocalizationInputV3) => string;
+}
+
+export interface OpenEnaModelV3Copy {
+  readonly tabs: OpenEnaModelTabsV3Copy;
+  readonly units: OpenEnaUnitsPanelV3Copy;
+  readonly horizons: OpenEnaHorizonsPanelV3Copy;
+  readonly windows: OpenEnaWindowsPanelV3Copy;
+  readonly codes: OpenEnaCodesPanelV3Copy;
+  readonly order: OpenEnaOrderPolicyEditorV3Copy;
+  readonly nativeStats: NativeStatsCopyV3;
+  readonly importPreview: OpenEnaImportPreviewCopyV3;
+  readonly groupApplicability: {
+    readonly preset: string;
+    readonly global: string;
+    readonly trajectoryIntervals: string;
+  };
+  readonly diagnosticMessages: Readonly<Record<OpenEnaModelDiagnosticIdV3, OpenEnaModelDiagnosticMessageV3>>;
+  readonly suggestedActions: Readonly<Record<ModelSuggestedActionIdV3, OpenEnaModelSuggestedActionMessageV3>>;
+}
 
 export interface OpenEnaPersistentPlotToolsCopy {
   plotSettings: string;
@@ -504,6 +566,7 @@ export interface OpenEnaCopy {
     identityOmittedPoint: (index: number) => string;
   };
   groupDisplay: OpenEnaGroupDisplayCopy;
+  modelV3: OpenEnaModelV3Copy;
   ona: OpenEnaOnaCopy;
   sets: {
     title: string;
@@ -1555,6 +1618,345 @@ const resultTablesZhHans: OpenEnaResultTablesCopy = {
   emptyRows: "此表格没有可用数据行。",
 };
 
+type NativeModelLocaleV3 = "en" | "zh-hant" | "zh-hans";
+
+const MODEL_DIAGNOSTIC_IDS_ALL_V3 = Object.freeze([
+  ...MODEL_DIAGNOSTIC_IDS_V3,
+  ...ONA_COMPILER_DIAGNOSTIC_IDS_V3,
+] as const);
+
+const MODEL_EXACT_ZH_HANT_V3: Readonly<Record<string, string>> = {
+  "Global diagnostics": "全域診斷", "More evidence is available": "尚有更多證據", "Confirm scientific change": "確認科學設定變更", "Field": "欄位",
+  "Unit fields": "單位欄位", "Add a Unit field": "新增單位欄位", "Units and Groups": "單位與群組",
+  "Unavailable for this draft": "此草稿目前不可用", "Group stability": "群組穩定性", "Stable within every Unit": "每個單位內均保持穩定",
+  "Group changes within at least one Unit": "群組值在至少一個單位內發生變化", "Create Sample / Group": "建立樣本／群組", "No Group": "沒有群組",
+  "Means contrast": "均值對比", "Negative level": "負向層級", "Positive level": "正向層級", "No level selected": "尚未選擇層級",
+  "Choose a current, stable Group to select Means levels.": "請選擇目前且穩定的群組，再設定均值層級。",
+  "Means remains selected and needs a Group and two distinct levels.": "均值旋轉保持選取；仍需一個群組及兩個不同層級。",
+  "Group actions": "群組操作", "Collapse all group option panels": "摺疊所有群組選項", "Open all group display options": "展開所有群組顯示選項",
+  "A result with Groups is required.": "需要包含群組的結果。", "Hide all group layers": "隱藏所有群組圖層", "Restore all group layers": "還原所有群組圖層",
+  "Exclude group configuration": "排除群組設定", "A result for this dataset and family is required.": "需要此資料集與分析系列的結果。",
+  "Choose a Group before excluding it.": "請先選擇要排除的群組。", "Undo Group exclusion": "復原群組排除",
+  "Group configuration excluded. The retained result is stale.": "已排除群組設定；保留的結果現已過期。", "Current draft Groups": "目前草稿群組",
+  "Groups from the retained result": "保留結果中的群組", "These display controls belong to the retained stale result.": "這些顯示控制項屬於保留的過期結果。",
+  "No result-bound Group display is available.": "目前沒有與結果綁定的群組顯示。", "Group stability diagnostics": "群組穩定性診斷",
+  "Horizon identity": "視域識別", "Add a Horizon field": "新增視域欄位", "Horizon structure counts": "視域結構計數",
+  "Unit by Horizon structure": "單位 × 視域結構", "Source rows": "來源資料列", "No shared Horizons": "沒有共用視域",
+  "Trajectory step order": "軌跡步驟順序", "Horizon order is not applicable to End Point; the inactive draft is preserved.": "端點模型不使用視域順序；未啟用的草稿設定會保留。",
+  "Horizon order is not applicable to ONA End Point.": "ONA 端點模型不使用視域順序。", "Per-Unit sequence preview": "各單位序列預覽",
+  "Sequence preview unavailable for this context": "此情境無法提供序列預覽", "Add tie-breaker order key": "新增同值判定順序鍵", "Horizon diagnostics": "視域診斷",
+  "EndPoint": "端點", "Moving Stanza Window": "移動節段窗口", "Conversation / Horizon Window": "對話／視域窗口",
+  "All source rows in the same typed Horizon contribute; extent and row order are inactive.": "同一類型化視域內的所有來源資料列都會參與；範圍與資料列順序不啟用。",
+  "Backward context": "向後情境", "Forward context": "向前情境", "Finite": "有限", "Entire Horizon": "整個視域", "Rows": "資料列",
+  "Includes the current row only within its Horizon.": "在該視域內僅包含目前資料列。", "Includes the current row and every preceding row within its Horizon.": "在該視域內包含目前資料列及所有先前資料列。",
+  "Adds no following rows.": "不加入後續資料列。", "Adds every following row within its Horizon; the current row is excluded from this count.": "加入該視域內所有後續資料列；此計數不包含目前資料列。",
+  "Enter an extent.": "請輸入範圍。", "Use a whole decimal integer or Infinity.": "請使用十進位整數或 Infinity。", "Backward context must be at least 1.": "向後情境至少為 1。",
+  "Forward context must be at least 0.": "向前情境至少為 0。", "The extent exceeds the largest safe integer.": "範圍超過最大安全整數。", "Row order": "資料列順序",
+  "Binary accepts one consistent 0/1 numeric or false/true Boolean representation per Code.": "每個代碼必須一致使用數字 0/1 或布林 false/true 二元表示。",
+  "Frequency accepts finite nonnegative numeric Code values, including decimals.": "頻數接受有限且非負的代碼數值，包括小數。", "Projection & Rotation": "投影與旋轉",
+  "Align target-fitted center to the origin": "將目標擬合中心對齊原點", "Set the ordered Means contrast in Units.": "在單位面板設定有方向的均值對比。",
+  "Open Means contrast in Units": "在單位面板開啟均值對比", "Direct Means rotation requires EndPoint. The Means selection is preserved.": "直接均值旋轉需要端點模型；均值選擇會保留。",
+  "Choose SVD": "選擇 SVD", "Choose Reference": "選擇參考", "Return to EndPoint": "返回端點模型", "Reference source": "參考來源",
+  "No Reference selected": "尚未選擇參考", "Choose an owned validated Reference. The Reference selection remains active and Run is blocked.": "請選擇已擁有且通過驗證的參考；目前選擇會保留，並阻止執行。",
+  "Current owned Reference evidence is unavailable for this exact context.": "目前擁有的參考證據不適用於此精確情境。",
+  "The selected Reference is incompatible with this target. The selection is preserved.": "所選參考與此目標不相容；選擇會保留。", "Compatible with the current target configuration.": "與目前目標設定相容。",
+  "Reference evidence": "參考證據", "Content hash": "內容雜湊", "Source fit": "來源擬合", "Source SVD": "來源 SVD", "Source Means": "來源均值",
+  "Source population": "來源母體", "Endpoint Units": "端點單位", "Source observations": "來源觀測", "Fixed basis": "固定基底",
+  "Centering is fixed by the source Reference": "中心化由來源參考固定", "source fit aligned to origin": "來源擬合已對齊原點", "source fit center retained": "保留來源擬合中心",
+  "Target projection": "目標投影", "No current target projection has been adopted.": "尚未採用目前目標投影。", "Compatibility details": "相容性詳情",
+  "Execution resource preflight": "執行資源預檢", "No current compiler-owned preflight is available for this exact scientific context.": "此精確科學情境沒有目前由編譯器擁有的預檢。",
+  "Active raw Window input is invalid, so there is no executable plan or current estimate.": "啟用中的原始窗口輸入無效，因此沒有可執行計畫或目前估算。",
+  "The active draft is invalid, so there is no executable plan or current estimate.": "啟用中的草稿無效，因此沒有可執行計畫或目前估算。", "Current preflight admitted": "目前預檢已准入",
+  "Hard caps block execution; they never authorize truncating rows, Codes, windows, or data.": "硬性上限會阻止執行，絕不授權截斷資料列、代碼、窗口或資料。",
+  "Ordered Network Analysis Window contract": "有序網絡分析窗口契約", "Forward context is fixed at 0 for Ordered Network Analysis.": "有序網絡分析的向前情境固定為 0。",
+  "Frequency weighting is fixed for Ordered Network Analysis.": "有序網絡分析固定使用頻數權重。", "EndPoint is fixed for Ordered Network Analysis.": "有序網絡分析固定使用端點模型。",
+  "SVD is fixed for Ordered Network Analysis.": "有序網絡分析固定使用 SVD。", "Selected codes become the nodes in the model network.": "所選代碼會成為模型網絡中的節點。",
+  "Analysis family": "分析系列", "Method boundary": "方法邊界", "Undirected co-occurrence": "無向共現", "Standard boundary": "標準 ENA 邊界",
+  "Directed ground-response": "有向前項—回應", "ONA boundary": "ONA 邊界", "Code actions": "代碼操作", "Hide all code nodes": "隱藏所有代碼節點",
+  "Restore all code nodes": "還原所有代碼節點", "Exclude all selected Codes": "排除所有已選代碼", "Select at least one Code before hiding nodes.": "請先選擇至少一個代碼，再隱藏節點。",
+  "There are no selected Codes to exclude.": "沒有可排除的已選代碼。", "Selected Codes": "已選代碼", "Type": "類型", "Positive rows": "正值資料列",
+  "Numeric Binary": "數字二元", "Boolean Binary": "布林二元", "Unavailable for this exact draft": "此精確草稿目前不可用",
+  "Compiler diagnostics are unavailable for this exact draft.": "此精確草稿沒有可用的編譯器診斷。", "Press Alt+Arrow Up or Alt+Arrow Down to change display order.": "按 Alt+向上鍵或 Alt+向下鍵變更顯示順序。",
+  "Display reorder is unavailable until selected Codes are distinct.": "已選代碼互不相同後才能調整顯示順序。", "Display actions are unavailable until selected Codes are distinct.": "已選代碼互不相同後才能使用顯示操作。",
+  "Restore all Codes before changing one Code visibility.": "變更單一代碼可見性前，請先還原所有代碼。", "Manage Codes": "管理代碼", "Close Code manager": "關閉代碼管理器",
+  "Compatible source fields can be selected. Incompatible fields remain visible with reasons.": "可選擇相容的來源欄位；不相容欄位仍會顯示原因。", "Missing from the current dataset": "目前資料集缺少此欄位",
+  "Used by an active scientific role": "正由啟用中的科學角色使用", "Values do not use one uniform numeric 0/1 or Boolean representation": "值未一致使用數字 0/1 或布林表示",
+  "Values are not all finite nonnegative numbers": "並非所有值都是有限非負數", "Selected more than once; remove it to repair the draft": "重複選取；請移除重複項以修復草稿",
+  "No codes selected": "尚未選擇代碼", "At least three distinct Codes are required to run a model.": "執行模型至少需要三個不同代碼。",
+  "Units, Horizons, Windows, Order, Rotation, and the other analysis family remain preserved.": "單位、視域、窗口、順序、旋轉及另一分析系列的設定均會保留。", "Undo Code exclusion": "復原代碼排除",
+  "Sort by fields": "依欄位排序", "Use source order": "使用來源順序", "Add order key": "新增順序鍵", "Choose a field": "選擇欄位", "Direction": "方向",
+  "Comparator": "比較器", "Ordered category": "有序類別", "Ordered category levels": "有序類別層級", "Add category level": "新增類別層級", "Value type": "值類型",
+  "Value": "值", "Locale": "語系", "Sensitivity": "敏感度", "Base": "基礎", "Accent": "重音", "Case": "大小寫", "Variant": "變體", "Numeric collation": "數字排序",
+  "Complete every active order field before running.": "執行前請完成所有啟用中的順序欄位。", "I confirm the observed source sequence for this exact dataset and field context.": "我確認此精確資料集與欄位情境中觀察到的來源序列。",
+  "Review source-order statement": "檢視來源順序聲明", "Accept statement": "接受聲明", "Source order explicitly confirmed": "已明確確認來源順序", "Source order is not confirmed": "尚未確認來源順序",
+  "The dataset or scientific context changed. Review the statement again.": "資料集或科學情境已變更；請重新檢視聲明。", "Relevant fields": "相關欄位", "Confirmation version": "確認版本", "Confirmed at": "確認時間",
+  "Unavailable for this context": "此情境目前不可用", "Correlation goodness-of-fit statistics are unavailable in this native model bundle; no correlation test is claimed.": "此原生模型套件不提供相關性適配度統計，因此不宣稱已進行相關檢驗。",
+  "These descriptive values belong to the retained historical model.": "這些描述值屬於保留的歷史模型。", "These values belong to the current bound model.": "這些值屬於目前綁定的模型。",
+  "Researcher-requested post-model inference": "研究者要求的模型後推論", "Native comparison statistics": "原生比較統計", "Repeated-measures omnibus statistics": "重複量數整體統計",
+  "Selected-request followup statistics": "所選要求的後續統計", "Observed inference population": "觀察到的推論母體", "Target variance along fixed Reference axes": "固定參考軸上的目標變異",
+  "Variance in the fitted space": "擬合空間中的變異", "Review imported artifact": "檢視匯入成果", "Current draft": "目前草稿", "Imported draft": "匯入的草稿", "Cancel import": "取消匯入",
+  "Replace configuration": "取代設定", "Load configuration": "載入設定", "Keep read-only historical result": "保留唯讀歷史結果", "Add Reference": "新增參考",
+  "This result is historical. Its configuration is loaded only by an explicit action.": "此結果為歷史結果；只有明確操作才會載入其設定。",
+  "Accepting an artifact does not start a model. References are added without selecting Rotation.": "接受成果不會啟動模型；新增參考時不會選取旋轉。",
+  "Legacy schema 2 analysis packages cannot become a v3 Reference because they do not contain the required fitted basis evidence.": "舊版 schema 2 分析套件缺少必要的擬合基底證據，因此不能成為 v3 參考。",
+  "A presentation preset hides this Group. Clear preset Group hiding to use these saved controls; individual Unit preferences are retained.": "呈現預設隱藏了此群組。清除預設群組隱藏後即可使用這些已儲存控制項；個別單位偏好仍會保留。",
+  "All Groups are hidden. Restore Group visibility to use these saved controls; individual Unit preferences are retained.": "所有群組均已隱藏。還原群組可見性後即可使用這些已儲存控制項；個別單位偏好仍會保留。",
+  "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.": "原生軌跡顯示摘要不提供信賴區間或離群區間；已儲存的區間偏好不適用於此檢視。",
+};
+
+function traditionalToSimplifiedV3(input: string): string {
+  const pairs = "域域診诊斷断欄栏單单個个體体穩稳變变擇择層层組组摺折顯显還还復复過过這这與与計计數数構构跡迹序序啟启範范圍围輸输為为擬拟齊齐參参證证據据雜杂湊凑觀观測测詳详編编譯译資资劃划執执絕绝網网絡络應应節节點点類类值值順顺調调將将選选項项離离開开關关閉闭資资料料列列進进進进異异態态統统載载入入舊旧儲储視视讀读變变動动維维礎础總总確确認认間间與与學学術术導导標标準准連连線线權权負负向向屬属於于僅仅現现來来們们處处從从無无採采聲声時时歷历";
+  const map = new Map<string, string>();
+  for (let index = 0; index < pairs.length; index += 2) map.set(pairs[index], pairs[index + 1]);
+  return Array.from(input, (character) => map.get(character) ?? character).join("");
+}
+
+const MODEL_TERM_TRANSLATIONS_V3: Readonly<Record<Exclude<NativeModelLocaleV3, "en">, ReadonlyArray<readonly [string, string]>>> = {
+  "zh-hant": [
+    ["Model configuration", "模型設定"], ["Units", "單位"], ["Horizons", "視域"], ["Windows", "窗口"], ["Codes", "代碼"],
+    ["Unit", "單位"], ["Horizon", "視域"], ["Window", "窗口"], ["Code", "代碼"], ["Group", "群組"],
+    ["About", "關於"], ["settings", "設定"], ["help", "說明"], ["Choose", "選擇"], ["fields", "欄位"], ["field", "欄位"],
+    ["Model status", "模型狀態"], ["Configuration incomplete", "設定未完成"], ["Configuration ready", "設定已就緒"],
+    ["No result", "沒有結果"], ["Running", "執行中"], ["Current result", "目前結果"], ["Stale result", "過期結果"],
+    ["Run error", "執行錯誤"], ["Obsolete run", "已淘汰的執行"], ["Cancelled run", "已取消的執行"],
+    ["Scientific configuration", "科學設定"], ["Family", "分析系列"], ["Model", "模型"], ["Weighting", "權重"],
+    ["Rotation", "旋轉"], ["count", "數量"], ["Unavailable", "不可用"], ["Standard ENA", "標準 ENA"],
+    ["Ordered Network Analysis", "有序網絡分析"], ["End Point", "端點"], ["Separate Trajectory", "分離軌跡"],
+    ["Accumulated Trajectory", "累積軌跡"], ["Moving Stanza", "移動節段"], ["Conversation", "對話"],
+    ["Binary", "二元"], ["Frequency", "頻數"], ["Means", "均值"], ["Reference", "參考"],
+    ["diagnostics", "診斷"], ["Diagnostics", "診斷"], ["Dataset", "資料集"], ["Resources", "資源"],
+    ["Migration", "遷移"], ["Error", "錯誤"], ["error", "錯誤"], ["Warning", "警告"], ["warning", "警告"], ["Information", "資訊"],
+    ["Evidence", "證據"], ["affected rows", "受影響資料列"], ["Confirm", "確認"], ["Cancel", "取消"],
+    ["Add", "新增"], ["Remove", "移除"], ["Hide", "隱藏"], ["Restore", "還原"], ["Exclude", "排除"], ["Undo", "復原"],
+    ["Current", "目前"], ["retained", "保留"], ["selected", "已選"], ["Selected", "已選"], ["source", "來源"], ["Source", "來源"],
+    ["order", "順序"], ["Order", "順序"], ["Ascending", "升序"], ["Descending", "降序"], ["Number", "數字"],
+    ["Date", "日期"], ["Datetime", "日期時間"], ["Text", "文字"], ["String", "字串"], ["Boolean", "布林值"],
+    ["Rows", "資料列"], ["rows", "資料列"], ["Close", "關閉"], ["Review", "檢視"], ["Import", "匯入"], ["Export", "匯出"],
+    ["available", "可用"], ["unavailable", "不可用"], ["current", "目前"], ["stale", "過期"], ["historical", "歷史"],
+    ["No ", "沒有"], ["All ", "所有"], ["This ", "此"], ["The ", "該"], ["is required", "為必填"], ["are required", "為必填"],
+  ],
+  "zh-hans": [
+    ["Model configuration", "模型设置"], ["Units", "单位"], ["Horizons", "视域"], ["Windows", "窗口"], ["Codes", "代码"],
+    ["Unit", "单位"], ["Horizon", "视域"], ["Window", "窗口"], ["Code", "代码"], ["Group", "组"],
+    ["About", "关于"], ["settings", "设置"], ["help", "帮助"], ["Choose", "选择"], ["fields", "字段"], ["field", "字段"],
+    ["Model status", "模型状态"], ["Configuration incomplete", "设置未完成"], ["Configuration ready", "设置已就绪"],
+    ["No result", "没有结果"], ["Running", "运行中"], ["Current result", "当前结果"], ["Stale result", "过期结果"],
+    ["Run error", "运行错误"], ["Obsolete run", "已淘汰的运行"], ["Cancelled run", "已取消的运行"],
+    ["Scientific configuration", "科学设置"], ["Family", "分析系列"], ["Model", "模型"], ["Weighting", "权重"],
+    ["Rotation", "旋转"], ["count", "数量"], ["Unavailable", "不可用"], ["Standard ENA", "标准 ENA"],
+    ["Ordered Network Analysis", "有序网络分析"], ["End Point", "端点"], ["Separate Trajectory", "分离轨迹"],
+    ["Accumulated Trajectory", "累积轨迹"], ["Moving Stanza", "移动节段"], ["Conversation", "对话"],
+    ["Binary", "二元"], ["Frequency", "频数"], ["Means", "均值"], ["Reference", "参考"],
+    ["diagnostics", "诊断"], ["Diagnostics", "诊断"], ["Dataset", "数据集"], ["Resources", "资源"],
+    ["Migration", "迁移"], ["Error", "错误"], ["error", "错误"], ["Warning", "警告"], ["warning", "警告"], ["Information", "信息"],
+    ["Evidence", "证据"], ["affected rows", "受影响数据行"], ["Confirm", "确认"], ["Cancel", "取消"],
+    ["Add", "添加"], ["Remove", "移除"], ["Hide", "隐藏"], ["Restore", "恢复"], ["Exclude", "排除"], ["Undo", "撤销"],
+    ["Current", "当前"], ["retained", "保留"], ["selected", "已选"], ["Selected", "已选"], ["source", "来源"], ["Source", "来源"],
+    ["order", "顺序"], ["Order", "顺序"], ["Ascending", "升序"], ["Descending", "降序"], ["Number", "数字"],
+    ["Date", "日期"], ["Datetime", "日期时间"], ["Text", "文本"], ["String", "字符串"], ["Boolean", "布尔值"],
+    ["Rows", "数据行"], ["rows", "数据行"], ["Close", "关闭"], ["Review", "查看"], ["Import", "导入"], ["Export", "导出"],
+    ["available", "可用"], ["unavailable", "不可用"], ["current", "当前"], ["stale", "过期"], ["historical", "历史"],
+    ["No ", "没有"], ["All ", "所有"], ["This ", "此"], ["The ", "该"], ["is required", "为必填"], ["are required", "为必填"],
+  ],
+};
+
+function translateModelTextV3(locale: NativeModelLocaleV3, input: string): string {
+  if (locale === "en" || input === "—" || /^[\d.×/()\s-]+$/u.test(input)) return input;
+  const exact = MODEL_EXACT_ZH_HANT_V3[input];
+  if (exact !== undefined) return locale === "zh-hant" ? exact : traditionalToSimplifiedV3(exact);
+  return MODEL_TERM_TRANSLATIONS_V3[locale].reduce((value, [from, to]) => value.replaceAll(from, to), input);
+}
+
+function localizeModelTreeV3<T>(value: T, locale: NativeModelLocaleV3): T {
+  if (typeof value === "string") return translateModelTextV3(locale, value) as T;
+  if (typeof value === "function") {
+    return ((...args: unknown[]) => translateModelTextV3(locale, (value as (...values: unknown[]) => string)(...args))) as T;
+  }
+  if (Array.isArray(value)) return value.map((item) => localizeModelTreeV3(item, locale)) as T;
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, localizeModelTreeV3(item, locale)])) as T;
+  }
+  return value;
+}
+
+function diagnosticTitleV3(locale: NativeModelLocaleV3, id: OpenEnaModelDiagnosticIdV3): string {
+  const words = id.replace(/^STANDARD_/u, "").replace(/^ONA_/u, "ONA ").replaceAll("_", " ").toLowerCase();
+  if (locale === "en") return words.replace(/^./u, (letter) => letter.toUpperCase());
+  const replacements = locale === "zh-hant"
+    ? [["dataset", "資料集"], ["binding", "綁定"], ["invalid", "無效"], ["required", "必填"], ["identity", "識別"], ["missing", "缺少"], ["unsupported", "不支援"], ["codes", "代碼"], ["code", "代碼"], ["too few", "數量不足"], ["duplicate", "重複"], ["selection", "選擇"], ["field", "欄位"], ["role", "角色"], ["collision", "衝突"], ["value", "值"], ["all zero", "全為零"], ["isolated", "孤立"], ["profile", "分布"], ["global", "全域"], ["cooccurrence", "共現"], ["group", "群組"], ["unstable", "不穩定"], ["within unit", "單位內"], ["horizon", "視域"], ["order", "順序"], ["unresolved tie", "未解決同值"], ["confirmation stale", "確認已過期"], ["means", "均值"], ["level", "層級"], ["identical", "相同"], ["trajectory", "軌跡"], ["rank zero", "秩為零"], ["one dimensional", "一維"], ["reference", "參考"], ["incompatible", "不相容"], ["output nonfinite", "輸出非有限值"], ["resource budget exceeded", "超出資源預算"], ["empty", "空白"], ["no enabled connection", "沒有啟用連線"], ["numerical", "數值"], ["draft", "草稿"], ["zero network units", "零網絡單位"]]
+    : [["dataset", "数据集"], ["binding", "绑定"], ["invalid", "无效"], ["required", "必填"], ["identity", "标识"], ["missing", "缺少"], ["unsupported", "不支持"], ["codes", "代码"], ["code", "代码"], ["too few", "数量不足"], ["duplicate", "重复"], ["selection", "选择"], ["field", "字段"], ["role", "角色"], ["collision", "冲突"], ["value", "值"], ["all zero", "全为零"], ["isolated", "孤立"], ["profile", "分布"], ["global", "全局"], ["cooccurrence", "共现"], ["group", "组"], ["unstable", "不稳定"], ["within unit", "单位内"], ["horizon", "视域"], ["order", "顺序"], ["unresolved tie", "未解决同值"], ["confirmation stale", "确认已过期"], ["means", "均值"], ["level", "层级"], ["identical", "相同"], ["trajectory", "轨迹"], ["rank zero", "秩为零"], ["one dimensional", "一维"], ["reference", "参考"], ["incompatible", "不兼容"], ["output nonfinite", "输出非有限值"], ["resource budget exceeded", "超出资源预算"], ["empty", "空白"], ["no enabled connection", "没有启用连接"], ["numerical", "数值"], ["draft", "草稿"], ["zero network units", "零网络单位"]];
+  return replacements.reduce((value, [from, to]) => value.replaceAll(from, to), words);
+}
+
+function diagnosticMessagesV3(locale: NativeModelLocaleV3): OpenEnaModelV3Copy["diagnosticMessages"] {
+  return Object.fromEntries(MODEL_DIAGNOSTIC_IDS_ALL_V3.map((id) => [id, {
+    summary: () => diagnosticTitleV3(locale, id),
+    detail: (input: OpenEnaModelDiagnosticLocalizationInputV3) => {
+      const field = input.fieldPath ?? input.scope;
+      const count = input.evidence?.totalCount;
+      if (locale === "en") return `Review ${field}${count === undefined ? "." : `; ${count} affected items.`}`;
+      return locale === "zh-hant"
+        ? `請檢查 ${field}${count === undefined ? "。" : `；共有 ${count} 個受影響項目。`}`
+        : `请检查 ${field}${count === undefined ? "。" : `；共有 ${count} 个受影响项目。`}`;
+    },
+  }])) as unknown as OpenEnaModelV3Copy["diagnosticMessages"];
+}
+
+function actionIdentityV3(input: ModelSuggestedActionLocalizationInputV3): string {
+  switch (input.patch.type) {
+    case "exclude-code": return input.patch.code;
+    case "select-model": return input.patch.value;
+    case "select-rotation": return input.patch.value;
+    case "replace-row-order": return "rowOrder";
+    case "replace-horizon-order": return "horizonOrder";
+    case "clear-group": return "group";
+  }
+}
+
+function suggestedActionMessagesV3(locale: NativeModelLocaleV3): OpenEnaModelV3Copy["suggestedActions"] {
+  return Object.fromEntries(MODEL_SUGGESTED_ACTION_IDS_V3.map((id) => [id, {
+    label: (input: ModelSuggestedActionLocalizationInputV3) => {
+      const identity = actionIdentityV3(input);
+      const enLabels: Record<ModelSuggestedActionIdV3, string> = {
+        "exclude-code": `Exclude ${identity} Code`, "replace-row-order": "Use suggested row order",
+        "replace-horizon-order": "Use suggested Horizon order", "select-endpoint": "Select End Point",
+        "select-svd": "Select SVD", "select-reference": "Select Reference", "clear-group": "Clear Group selection",
+      };
+      const zhHantLabels: Record<ModelSuggestedActionIdV3, string> = {
+        "exclude-code": `排除代碼 ${identity}`, "replace-row-order": "使用建議的資料列順序",
+        "replace-horizon-order": "使用建議的視域順序", "select-endpoint": "選擇端點模型",
+        "select-svd": "選擇 SVD", "select-reference": "選擇參考", "clear-group": "清除群組選擇",
+      };
+      const zhHansLabels: Record<ModelSuggestedActionIdV3, string> = {
+        "exclude-code": `排除代码 ${identity}`, "replace-row-order": "使用建议的数据行顺序",
+        "replace-horizon-order": "使用建议的视域顺序", "select-endpoint": "选择端点模型",
+        "select-svd": "选择 SVD", "select-reference": "选择参考", "clear-group": "清除组选择",
+      };
+      return locale === "en" ? enLabels[id] : locale === "zh-hant" ? zhHantLabels[id] : zhHansLabels[id];
+    },
+    confirmation: (input: ModelSuggestedActionLocalizationInputV3) => locale === "en" ? `Confirm this scientific configuration change: ${actionIdentityV3(input)}.` : locale === "zh-hant" ? `確認套用此科學設定變更：${actionIdentityV3(input)}。` : `确认应用此科学设置更改：${actionIdentityV3(input)}。`,
+  }])) as OpenEnaModelV3Copy["suggestedActions"];
+}
+
+const nativeStatsCopyEnV3: NativeStatsCopyV3 = {
+  unavailable: "Correlation goodness-of-fit statistics are unavailable in this native model bundle; no correlation test is claimed.",
+  historical: "These descriptive values belong to the retained historical model.", current: "These values belong to the current bound model.",
+  inferred: "Researcher-requested post-model inference", rows: "Native comparison statistics", omnibus: "Repeated-measures omnibus statistics",
+  followups: "Selected-request followup statistics", ledger: "Observed inference population", fixedVariance: "Target variance along fixed Reference axes", fittedVariance: "Variance in the fitted space",
+};
+
+const importPreviewCopyEnV3: OpenEnaImportPreviewCopyV3 = {
+  title: "Review imported artifact", field: "Field", before: "Current draft", after: "Imported draft", cancel: "Cancel import",
+  accept: "Replace configuration", loadConfiguration: "Load configuration", keepHistorical: "Keep read-only historical result",
+  registerReference: "Add Reference", historical: "This result is historical. Its configuration is loaded only by an explicit action.",
+  noAutoRun: "Accepting an artifact does not start a model. References are added without selecting Rotation.",
+  legacyReference: "Legacy schema 2 analysis packages cannot become a v3 Reference because they do not contain the required fitted basis evidence.",
+};
+
+const groupApplicabilityEnV3 = {
+  preset: "A presentation preset hides this Group. Clear preset Group hiding to use these saved controls; individual Unit preferences are retained.",
+  global: "All Groups are hidden. Restore Group visibility to use these saved controls; individual Unit preferences are retained.",
+  trajectoryIntervals: "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.",
+} as const;
+
+function createModelV3Copy(locale: NativeModelLocaleV3): OpenEnaModelV3Copy {
+  let model!: OpenEnaModelV3Copy;
+  const localizedTabs = localizeModelTreeV3(tabsCopy, locale);
+  const hant = locale === "zh-hant";
+  const chinese = locale !== "en";
+  const localizedUnits: OpenEnaUnitsPanelV3Copy = {
+    ...localizeModelTreeV3(unitsCopy, locale),
+    addRemoveFields: (label) => chinese ? `${hant ? "新增或移除" : "添加或移除"}${label}${hant ? "欄位" : "字段"}` : `Add or remove ${label} fields`,
+    removeField: (field, label) => chinese ? `${hant ? "從" : "从"}${label}${hant ? "移除" : "移除"}${field}` : `Remove ${field} from ${label}`,
+    unitCount: (count) => chinese ? `${count} 個${hant ? "單位" : "单位"}` : `${count} Units`, groupCount: (count) => chinese ? `${count} 個${hant ? "群組" : "组"}` : `${count} Groups`,
+    unavailableGroupField: (field) => chinese ? `${field}（${hant ? "目前欄位不可用" : "当前字段不可用"}）` : `${field} (unavailable current field)`,
+    unavailableMeansLevel: (label) => chinese ? `${label}（${hant ? "目前層級不可用" : "当前层级不可用"}）` : `${label} (unavailable current level)`,
+    meansDirection: (negative, positive) => chinese ? `${negative} → ${positive}` : `${negative} to ${positive}`,
+  };
+  const localizedHorizons: OpenEnaHorizonsPanelV3Copy = {
+    ...localizeModelTreeV3(horizonsCopy, locale),
+    addRemoveFields: localizedUnits.addRemoveFields, removeField: localizedUnits.removeField,
+    unitCount: localizedUnits.unitCount,
+    horizonCount: (count) => chinese ? `${count} 個${hant ? "視域" : "视域"}` : `${count} Horizons`,
+    observationCount: (count) => chinese ? `${count} 個${hant ? "單位 × 視域觀測" : "单位 × 视域观测"}` : `${count} Unit by Horizon observations`,
+    sharedHorizons: (count) => chinese ? `${count} 個${hant ? "共用視域" : "共享视域"}` : `${count} shared Horizons`,
+    singleRowObservations: (count) => chinese ? `${count} 個${hant ? "單列觀測" : "单行观测"}` : `${count} single-row observations`,
+    extremeObservations: (minimum, maximum) => chinese ? `${hant ? "觀測資料列範圍" : "观测数据行范围"}：${minimum}–${maximum}` : `Observed rows range from ${minimum} to ${maximum}`,
+    boundedRows: (shown, total) => chinese ? `${hant ? "顯示" : "显示"} ${shown}／${total} 個${hant ? "觀測" : "观测"}` : `Showing ${shown} of ${total} observations`,
+    sequence: (unit, steps) => `${unit}：${steps}`,
+    boundedSequences: (shown, total) => chinese ? `${hant ? "顯示" : "显示"} ${shown}／${total} 個${hant ? "單位序列" : "单位序列"}` : `Showing ${shown} of ${total} Unit sequences`,
+  };
+  const localizedWindows: OpenEnaWindowsPanelV3Copy = {
+    ...localizeModelTreeV3(windowsCopy, locale),
+    backwardFinite: (preceding) => chinese ? `${hant ? "包含目前資料列，以及同一視域內最多" : "包含当前数据行，以及同一视域内最多"} ${preceding} ${hant ? "個先前資料列。" : "个先前数据行。"}` : `Includes the current row and at most ${preceding} preceding rows within its Horizon.`,
+    forwardFinite: (following) => chinese ? `${hant ? "加入同一視域內最多" : "加入同一视域内最多"} ${following} ${hant ? "個後續資料列；此計數不包含目前資料列。" : "个后续数据行；此计数不包含当前数据行。"}` : `Adds at most ${following} following rows within its Horizon; the current row is excluded from this count.`,
+    unavailableReference: (name) => chinese ? `${name}（${hant ? "目前參考不可用" : "当前参考不可用"}）` : `${name} (unavailable current Reference)`,
+    basisSummary: (codeCount, edgeCount, axisCount) => chinese ? `${codeCount} ${hant ? "個代碼" : "个代码"}，${edgeCount} ${hant ? "條邊" : "条边"}，${axisCount} ${hant ? "個軸" : "个轴"}` : `${codeCount} Codes, ${edgeCount} edges, ${axisCount} axes`,
+    targetProjectionSummary: (rank, variance) => chinese ? `${hant ? "目標秩" : "目标秩"} ${rank}；${hant ? "固定軸變異" : "固定轴方差"} ${variance}` : `Target rank ${rank}; fixed-axis variance ${variance}`,
+    referenceCompatibilityReason: (reason) => chinese ? `${hant ? "參考相容性" : "参考兼容性"}：${reason}` : `Reference compatibility: ${reason.replaceAll("-", " ")}`,
+    resourceRows: (value) => chinese ? `${value} ${hant ? "個資料列" : "个数据行"}` : `${value} rows`, resourceDimensions: (value) => chinese ? `${value} ${hant ? "個鄰接維度" : "个邻接维度"}` : `${value} adjacency dimensions`,
+    resourceVisits: (value) => chinese ? `${value} ${hant ? "次估算窗口造訪" : "次估算窗口访问"}` : `${value} estimated window visits`, resourcePeak: (value) => chinese ? `${value} ${hant ? "估算尖峰位元組" : "估算峰值字节"}` : `${value} estimated peak bytes`,
+    resourceRotation: (value) => chinese ? `${value} ${hant ? "個估算旋轉工作單位" : "个估算旋转工作单位"}` : `${value} estimated rotation work units`,
+  };
+  const localizedCodes: OpenEnaCodesPanelV3Copy = {
+    ...localizeModelTreeV3(codesCopy, locale),
+    familyChanged: (family) => chinese ? `${hant ? "分析系列已切換為" : "分析系列已切换为"} ${family}；${hant ? "已還原其獨立設定。" : "已恢复其独立设置。"}` : `Analysis family changed to ${family}. Independent settings restored.`,
+    positiveCount: (count) => chinese ? `${count} ${hant ? "個正值資料列" : "个正值数据行"}` : `${count} positive rows`,
+    chooseColor: (code) => chinese ? `${hant ? "選擇" : "选择"} ${code} ${hant ? "的顏色" : "的颜色"}` : `Choose color for ${code}`,
+    hideCode: (code) => chinese ? `${hant ? "隱藏" : "隐藏"} ${code} ${hant ? "節點" : "节点"}` : `Hide ${code} node`, showCode: (code) => chinese ? `${hant ? "顯示" : "显示"} ${code} ${hant ? "節點" : "节点"}` : `Show ${code} node`,
+    excludeCode: (code) => chinese ? `${hant ? "排除代碼" : "排除代码"} ${code}` : `Exclude ${code} Code`, reorderCode: (code) => chinese ? `${hant ? "調整" : "调整"} ${code} ${hant ? "的顯示順序" : "的显示顺序"}` : `Reorder ${code}`,
+    addCode: (code) => chinese ? `${hant ? "將" : "将"} ${code} ${hant ? "選為代碼" : "选为代码"}` : `Select ${code} as a Code`,
+  };
+  const localizedOrder: OpenEnaOrderPolicyEditorV3Copy = {
+    ...localizeModelTreeV3(orderCopy, locale),
+    removeKey: (index) => chinese ? `${hant ? "移除順序鍵" : "移除顺序键"} ${index + 1}` : `Remove order key ${index + 1}`,
+    moveKeyUp: (index) => chinese ? `${hant ? "將順序鍵" : "将顺序键"} ${index + 1} ${hant ? "上移" : "上移"}` : `Move order key ${index + 1} up`, moveKeyDown: (index) => chinese ? `${hant ? "將順序鍵" : "将顺序键"} ${index + 1} ${hant ? "下移" : "下移"}` : `Move order key ${index + 1} down`,
+    keyLabel: (index) => chinese ? `${hant ? "順序鍵" : "顺序键"} ${index + 1}` : `Order key ${index + 1}`, missingField: (field) => chinese ? `${field}（${hant ? "目前欄位不可用" : "当前字段不可用"}）` : `${field} (unavailable current field)`,
+    removeCategoryLevel: (index) => chinese ? `${hant ? "移除類別層級" : "移除类别层级"} ${index + 1}` : `Remove category level ${index + 1}`, moveCategoryLevelUp: (index) => chinese ? `${hant ? "將類別層級" : "将类别层级"} ${index + 1} ${hant ? "上移" : "上移"}` : `Move category level ${index + 1} up`, moveCategoryLevelDown: (index) => chinese ? `${hant ? "將類別層級" : "将类别层级"} ${index + 1} ${hant ? "下移" : "下移"}` : `Move category level ${index + 1} down`,
+  };
+  const tabs: OpenEnaModelTabsV3Copy = {
+    ...localizedTabs,
+    tabDiagnosticLabel: ({ label, errors, warnings }) => locale === "en"
+      ? `${label}, ${errors} ${errors === 1 ? "error" : "errors"} and ${warnings} ${warnings === 1 ? "warning" : "warnings"}`
+      : locale === "zh-hant" ? `${label}，${errors} 個錯誤，${warnings} 個警告` : `${label}，${errors} 个错误，${warnings} 个警告`,
+    diagnostics: {
+      ...localizedTabs.diagnostics,
+      localize: (input) => localizeModelDiagnosticV3(model, input),
+      suggestedAction: (input) => localizeModelSuggestedActionV3(model, input),
+      evidenceSample: (sample, index) => {
+        const identity = sample.codeColumn ?? sample.identity;
+        const row = sample.rowIndex === undefined ? "" : locale === "en" ? `row ${sample.rowIndex + 1}` : locale === "zh-hant" ? `第 ${sample.rowIndex + 1} 列` : `第 ${sample.rowIndex + 1} 行`;
+        return [locale === "en" ? `Evidence sample ${index + 1}` : locale === "zh-hant" ? `證據樣本 ${index + 1}` : `证据样本 ${index + 1}`, identity, row].filter(Boolean).join(" · ");
+      },
+    },
+  };
+  model = {
+    tabs, units: localizedUnits,
+    horizons: localizedHorizons, windows: localizedWindows,
+    codes: localizedCodes, order: localizedOrder,
+    nativeStats: localizeModelTreeV3(nativeStatsCopyEnV3, locale), importPreview: localizeModelTreeV3(importPreviewCopyEnV3, locale),
+    groupApplicability: localizeModelTreeV3(groupApplicabilityEnV3, locale),
+    diagnosticMessages: diagnosticMessagesV3(locale), suggestedActions: suggestedActionMessagesV3(locale),
+  };
+  return model;
+}
+
+export function localizeModelDiagnosticV3(copy: OpenEnaModelV3Copy, input: OpenEnaModelDiagnosticLocalizationInputV3) {
+  const message = copy.diagnosticMessages[input.id as OpenEnaModelDiagnosticIdV3];
+  if (message === undefined) throw new Error(`Unknown Models v3 diagnostic ID: ${input.id}`);
+  return { summary: message.summary(input), detail: message.detail(input) };
+}
+
+export function localizeModelSuggestedActionV3(copy: OpenEnaModelV3Copy, input: ModelSuggestedActionLocalizationInputV3) {
+  const message = copy.suggestedActions[input.id];
+  if (message === undefined) throw new Error(`Unknown Models v3 suggested action ID: ${input.id}`);
+  return { label: message.label(input), confirmation: message.confirmation(input) };
+}
+
+const modelV3En = createModelV3Copy("en");
+const modelV3ZhHant = createModelV3Copy("zh-hant");
+const modelV3ZhHans = createModelV3Copy("zh-hans");
+
 const en: OpenEnaCopy = {
   eyebrow: "Browser-based research workspace",
   title: "Open ENA",
@@ -1595,6 +1997,7 @@ const en: OpenEnaCopy = {
     shortcut: "Manage group/unit visibility and Mean, CI, or outlier guides →",
   },
   resultTables: resultTablesEn,
+  modelV3: modelV3En,
   ona: {
     family: {
       legend: "Analysis family",
@@ -2252,6 +2655,7 @@ const zhHant: OpenEnaCopy = {
     shortcut: "管理群組／分析單位可見性及平均值、CI 或離群範圍 →",
   },
   resultTables: resultTablesZhHant,
+  modelV3: modelV3ZhHant,
   ona: {
     ...en.ona,
     family: {
@@ -2655,6 +3059,7 @@ const zhHans: OpenEnaCopy = {
     shortcut: "管理组／分析单位可见性及均值、CI 或离群范围 →",
   },
   resultTables: resultTablesZhHans,
+  modelV3: modelV3ZhHans,
   ona: {
     ...zhHant.ona,
     family: {
