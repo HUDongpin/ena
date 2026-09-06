@@ -40,6 +40,7 @@ import type {
 } from "../components/open-ena/model-v3/OpenEnaModelDiagnosticsV3";
 import type { NativeStatsCopyV3 } from "../components/open-ena/model-v3/OpenEnaNativeStatsPanelV3";
 import type { OpenEnaImportPreviewCopyV3 } from "../components/open-ena/model-v3/OpenEnaImportPreviewV3";
+import type { SourceTypeErrorCodeV3 } from "./open-ena/source-preparation-v3";
 
 export type OpenEnaModelDiagnosticIdV3 = ModelDiagnosticIdV3 | OnaCompilerDiagnosticIdV3;
 
@@ -69,8 +70,68 @@ export interface OpenEnaModelV3Copy {
     readonly global: string;
     readonly trajectoryIntervals: string;
   };
+  readonly workspace: OpenEnaWorkspaceV3Copy;
   readonly diagnosticMessages: Readonly<Record<OpenEnaModelDiagnosticIdV3, OpenEnaModelDiagnosticMessageV3>>;
   readonly suggestedActions: Readonly<Record<ModelSuggestedActionIdV3, OpenEnaModelSuggestedActionMessageV3>>;
+}
+
+export interface OpenEnaWorkspaceV3Copy {
+  readonly configureTrajectory: string;
+  readonly resultStatus: Readonly<Record<"current" | "stale" | "none", string>>;
+  readonly runStatus: Readonly<Record<"idle" | "running" | "error" | "obsolete" | "cancelled", string>>;
+  readonly startingWorker: string;
+  readonly runModel: string;
+  readonly cancelRun: string;
+  readonly cancelPendingImport: string;
+  readonly operationFailed: string;
+  readonly data: {
+    readonly ariaLabel: string; readonly title: string; readonly openFile: string; readonly loadSample: string; readonly loadTrajectorySample: string;
+    readonly sampleExplanation: string; readonly importArtifact: string; readonly artifactTooLarge: string;
+    readonly reviewTypes: string; readonly reviewTypesTitle: string; readonly typingExplanation: string;
+    readonly sourceTypeLabel: (column: string) => string; readonly sourceTypes: Readonly<Record<"text" | "number" | "boolean", string>>;
+    readonly missingCells: (count: number) => string; readonly collisions: (count: number) => string; readonly invalidCells: (count: number) => string;
+    readonly sourceErrors: Readonly<Record<SourceTypeErrorCodeV3, string>>;
+    readonly cancelPreparation: string; readonly confirmPreparation: string; readonly confirmPreparationDisabled: string;
+    readonly datasetSummary: (name: string, rows: number, hash: string, hashKind: string | undefined) => string;
+    readonly sourceData: string; readonly downloadTyped: string; readonly downloadReceipt: string; readonly downloadOriginal: string;
+    readonly historicalArtifact: (hash: string) => string; readonly reviewHistorical: string;
+    readonly unavailableCell: string; readonly boundedRows: (shown: number, total: number) => string;
+    readonly codedDataTooLarge: string; readonly sampleUnavailable: string;
+  };
+  readonly onaMask: { readonly legend: string; readonly description: string; readonly initialize: string };
+  readonly plot: {
+    readonly title: string; readonly exportContrastJson: string; readonly exportContrastEdges: string; readonly switchPlots: string;
+    readonly showCentroidPaths: string; readonly endpointsOnly: string; readonly fittedOrder: string; readonly displayHorizon: (label: string) => string;
+    readonly points: string; readonly networks: string; readonly codeLabels: string; readonly unitLabels: string; readonly variance: string; readonly trajectories: string;
+    readonly flipX: string; readonly flipY: string; readonly edgeThreshold: string; readonly edgeScale: string; readonly pointScale: string; readonly zoom: string;
+    readonly unavailable: string; readonly axis: (index: number) => string; readonly resetNodes: string;
+    readonly pngCanvasUnavailable: string; readonly pngEncodingFailed: string; readonly pngRenderFailed: string;
+    readonly unknownRenderedCode: string; readonly toolsTitle: string;
+    readonly comparisonPlot: string; readonly primaryPlot: string; readonly secondaryPlot: string; readonly dataView: string;
+    readonly comparisonAria: string; readonly primaryPlotAria: string; readonly secondaryPlotAria: string;
+    readonly primaryEmptyAria: string; readonly secondaryEmptyAria: string; readonly emptyGroupPrompt: string; readonly selectedGroupOrder: string;
+  };
+  readonly stats: {
+    readonly separation: string; readonly inferenceDesign: string; readonly designs: Readonly<Record<"independent" | "paired" | "repeated", string>>;
+    readonly identityConfirmation: string; readonly periodInstructions: string; readonly runInference: string; readonly onaDescriptive: string;
+    readonly onaEdges: string; readonly onaAudit: string; readonly exportOnaEdges: string; readonly exportOnaAudit: string; readonly exportNative: string;
+    readonly localDataView: string; readonly globalTraversal: string; readonly exportDataView: string; readonly exportDataViewConfirmation: string;
+    readonly dataViewValidated: string; readonly exportMethods: string;
+  };
+  readonly artifacts: {
+    readonly ariaLabel: string; readonly title: string; readonly clearPreset: string; readonly exportPreset: string; readonly reviewPreset: string;
+    readonly presetPreview: string; readonly presetMatches: string; readonly presetMismatch: string; readonly presetCodesMismatch: string; readonly presetFamilyMismatch: string;
+    readonly cancelPreset: string; readonly applyPreset: string; readonly exportDraft: string; readonly draftBlocked: string; readonly exportConfig: string;
+    readonly exportAnalysis: string; readonly exportAnalysisConfirmation: string; readonly exportStale: string; readonly reexportReference: string; readonly exportReference: string;
+    readonly captureSet: (count: number) => string; readonly compareSets: string; readonly historicalComparison: string;
+    readonly presetTooLarge: string; readonly referenceDisplayName: string;
+    readonly presetScope: string;
+  };
+  readonly ai: { readonly ready: string; readonly unavailable: string; readonly openStats: string; readonly disabled: string };
+  readonly toolbar: { readonly dataView: string; readonly downloadModel: string; readonly exportSvg: string; readonly exportPng: string; readonly researchSpace: string };
+  readonly shell: { readonly workspaceAria: string; readonly modesAria: string; readonly local: string; readonly runtimePrivacy: (version: string) => string };
+  readonly result: { readonly plotAria: string; readonly historicalGeometry: string; readonly boundGeometry: string; readonly oneAxis: string; readonly fittedCoordinates: string; readonly contrastUnavailable: string; readonly codeLabels: string; readonly trajectorySteps: string };
+  readonly empty: { readonly ariaLabel: string; readonly comparisonPlot: string; readonly setupRequired: string; readonly researchSpace: string; readonly networkAria: string; readonly pathway: string; readonly complete: string; readonly incomplete: string; readonly openRows: string; readonly defineModel: string; readonly buildModel: string; readonly primaryPlot: string; readonly secondaryPlot: string; readonly awaitingGroup: string; readonly primaryPending: string; readonly secondaryPending: string; readonly dataReady: (rows: number) => string; readonly dataPrompt: string };
 }
 
 export interface OpenEnaPersistentPlotToolsCopy {
@@ -1704,67 +1765,228 @@ const MODEL_EXACT_ZH_HANT_V3: Readonly<Record<string, string>> = {
   "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.": "原生軌跡顯示摘要不提供信賴區間或離群區間；已儲存的區間偏好不適用於此檢視。",
 };
 
-function traditionalToSimplifiedV3(input: string): string {
-  const pairs = "域域診诊斷断欄栏單单個个體体穩稳變变擇择層层組组摺折顯显還还復复過过這这與与計计數数構构跡迹序序啟启範范圍围輸输為为擬拟齊齐參参證证據据雜杂湊凑觀观測测詳详編编譯译資资劃划執执絕绝網网絡络應应節节點点類类值值順顺調调將将選选項项離离開开關关閉闭資资料料列列進进進进異异態态統统載载入入舊旧儲储視视讀读變变動动維维礎础總总確确認认間间與与學学術术導导標标準准連连線线權权負负向向屬属於于僅仅現现來来們们處处從从無无採采聲声時时歷历";
-  const map = new Map<string, string>();
-  for (let index = 0; index < pairs.length; index += 2) map.set(pairs[index], pairs[index + 1]);
-  return Array.from(input, (character) => map.get(character) ?? character).join("");
-}
+const MODEL_EXACT_ZH_HANS_V3: Readonly<Record<string, string>> = {
+  "Global diagnostics": "全局诊断",
+  "More evidence is available": "尚有更多证据",
+  "Confirm scientific change": "确认科学设置更改",
+  "Field": "字段",
+  "Unit fields": "单位字段",
+  "Add a Unit field": "添加单位字段",
+  "Units and Groups": "单位与组",
+  "Unavailable for this draft": "此草稿当前不可用",
+  "Group stability": "组稳定性",
+  "Stable within every Unit": "在每个单位内保持稳定",
+  "Group changes within at least one Unit": "组值在至少一个单位内发生变化",
+  "Create Sample / Group": "创建样本／组",
+  "No Group": "没有组",
+  "Means contrast": "均值对比",
+  "Negative level": "负向层级",
+  "Positive level": "正向层级",
+  "No level selected": "尚未选择层级",
+  "Choose a current, stable Group to select Means levels.": "请选择当前且稳定的组，再设置均值层级。",
+  "Means remains selected and needs a Group and two distinct levels.": "均值旋转仍保持选中；还需要一个组及两个不同层级。",
+  "Group actions": "组操作",
+  "Collapse all group option panels": "折叠所有组选项",
+  "Open all group display options": "展开所有组显示选项",
+  "A result with Groups is required.": "需要包含组的结果。",
+  "Hide all group layers": "隐藏所有组图层",
+  "Restore all group layers": "恢复所有组图层",
+  "Exclude group configuration": "排除组设置",
+  "A result for this dataset and family is required.": "需要此数据集与分析系列的结果。",
+  "Choose a Group before excluding it.": "请先选择要排除的组。",
+  "Undo Group exclusion": "撤销组排除",
+  "Group configuration excluded. The retained result is stale.": "已排除组设置；保留的结果现已过期。",
+  "Current draft Groups": "当前草稿组",
+  "Groups from the retained result": "保留结果中的组",
+  "These display controls belong to the retained stale result.": "这些显示控件属于保留的过期结果。",
+  "No result-bound Group display is available.": "当前没有与结果绑定的组显示。",
+  "Group stability diagnostics": "组稳定性诊断",
+  "Horizon identity": "视域标识",
+  "Add a Horizon field": "添加视域字段",
+  "Horizon structure counts": "视域结构计数",
+  "Unit by Horizon structure": "单位 × 视域结构",
+  "Source rows": "来源数据行",
+  "No shared Horizons": "没有共享视域",
+  "Trajectory step order": "轨迹步骤顺序",
+  "Horizon order is not applicable to End Point; the inactive draft is preserved.": "端点模型不使用视域顺序；未启用的草稿设置会保留。",
+  "Horizon order is not applicable to ONA End Point.": "ONA 端点模型不使用视域顺序。",
+  "Per-Unit sequence preview": "各单位序列预览",
+  "Sequence preview unavailable for this context": "此情境无法提供序列预览",
+  "Add tie-breaker order key": "添加同值判定顺序键",
+  "Horizon diagnostics": "视域诊断",
+  "EndPoint": "端点",
+  "Moving Stanza Window": "移动节段窗口",
+  "Conversation / Horizon Window": "对话／视域窗口",
+  "All source rows in the same typed Horizon contribute; extent and row order are inactive.": "同一类型化视域内的所有来源数据行都会参与；范围与数据行顺序不启用。",
+  "Backward context": "向后上下文",
+  "Forward context": "向前上下文",
+  "Finite": "有限",
+  "Entire Horizon": "整个视域",
+  "Rows": "数据行",
+  "Includes the current row only within its Horizon.": "在该视域内仅包含当前数据行。",
+  "Includes the current row and every preceding row within its Horizon.": "在该视域内包含当前数据行及所有先前数据行。",
+  "Adds no following rows.": "不加入后续数据行。",
+  "Adds every following row within its Horizon; the current row is excluded from this count.": "加入该视域内所有后续数据行；此计数不包含当前数据行。",
+  "Enter an extent.": "请输入范围。",
+  "Use a whole decimal integer or Infinity.": "请使用十进制整数或 Infinity。",
+  "Backward context must be at least 1.": "向后上下文至少为 1。",
+  "Forward context must be at least 0.": "向前上下文至少为 0。",
+  "The extent exceeds the largest safe integer.": "范围超过最大安全整数。",
+  "Row order": "数据行顺序",
+  "Binary accepts one consistent 0/1 numeric or false/true Boolean representation per Code.": "每个代码必须一致使用数字 0/1 或布尔 false/true 二元表示。",
+  "Frequency accepts finite nonnegative numeric Code values, including decimals.": "频数接受有限且非负的代码数值，包括小数。",
+  "Projection & Rotation": "投影与旋转",
+  "Align target-fitted center to the origin": "将目标拟合中心对齐原点",
+  "Set the ordered Means contrast in Units.": "在单位面板设置有方向的均值对比。",
+  "Open Means contrast in Units": "在单位面板开启均值对比",
+  "Direct Means rotation requires EndPoint. The Means selection is preserved.": "直接均值旋转需要端点模型；均值选择会保留。",
+  "Choose SVD": "选择 SVD",
+  "Choose Reference": "选择参考",
+  "Return to EndPoint": "返回端点模型",
+  "Reference source": "参考来源",
+  "No Reference selected": "尚未选择参考",
+  "Choose an owned validated Reference. The Reference selection remains active and Run is blocked.": "请选择已拥有且通过验证的参考；当前选择会保留，并阻止执行。",
+  "Current owned Reference evidence is unavailable for this exact context.": "当前所选参考证据不适用于此精确上下文。",
+  "The selected Reference is incompatible with this target. The selection is preserved.": "所选参考与此目标不兼容；选择会保留。",
+  "Compatible with the current target configuration.": "与当前目标设置兼容。",
+  "Reference evidence": "参考证据",
+  "Content hash": "内容哈希",
+  "Source fit": "来源拟合",
+  "Source SVD": "来源 SVD",
+  "Source Means": "来源均值",
+  "Source population": "来源总体",
+  "Endpoint Units": "端点单位",
+  "Source observations": "来源观测",
+  "Fixed basis": "固定基底",
+  "Centering is fixed by the source Reference": "中心化由来源参考固定",
+  "source fit aligned to origin": "来源拟合已对齐原点",
+  "source fit center retained": "保留来源拟合中心",
+  "Target projection": "目标投影",
+  "No current target projection has been adopted.": "尚未采用当前目标投影。",
+  "Compatibility details": "兼容性详情",
+  "Execution resource preflight": "执行资源预检",
+  "No current compiler-owned preflight is available for this exact scientific context.": "此精确科学上下文没有当前由编译器拥有的预检。",
+  "Active raw Window input is invalid, so there is no executable plan or current estimate.": "启用中的原始窗口输入无效，因此没有可运行计划或当前估算。",
+  "The active draft is invalid, so there is no executable plan or current estimate.": "启用中的草稿无效，因此没有可运行计划或当前估算。",
+  "Current preflight admitted": "当前预检已准入",
+  "Hard caps block execution; they never authorize truncating rows, Codes, windows, or data.": "硬性上限会阻止运行，绝不授权截断数据行、代码、窗口或数据。",
+  "Ordered Network Analysis Window contract": "有序网络分析窗口契约",
+  "Forward context is fixed at 0 for Ordered Network Analysis.": "有序网络分析的向前上下文固定为 0。",
+  "Frequency weighting is fixed for Ordered Network Analysis.": "有序网络分析固定使用频数权重。",
+  "EndPoint is fixed for Ordered Network Analysis.": "有序网络分析固定使用端点模型。",
+  "SVD is fixed for Ordered Network Analysis.": "有序网络分析固定使用 SVD。",
+  "Selected codes become the nodes in the model network.": "所选代码会成为模型网络中的节点。",
+  "Analysis family": "分析系列",
+  "Method boundary": "方法边界",
+  "Undirected co-occurrence": "无向共现",
+  "Standard boundary": "标准 ENA 边界",
+  "Directed ground-response": "有向前项—响应",
+  "ONA boundary": "ONA 边界",
+  "Code actions": "代码操作",
+  "Hide all code nodes": "隐藏所有代码节点",
+  "Restore all code nodes": "恢复所有代码节点",
+  "Exclude all selected Codes": "排除所有已选代码",
+  "Select at least one Code before hiding nodes.": "请先选择至少一个代码，再隐藏节点。",
+  "There are no selected Codes to exclude.": "没有可排除的已选代码。",
+  "Selected Codes": "已选代码",
+  "Type": "类型",
+  "Positive rows": "正值数据行",
+  "Numeric Binary": "数字二元",
+  "Boolean Binary": "布尔二元",
+  "Unavailable for this exact draft": "此精确草稿当前不可用",
+  "Compiler diagnostics are unavailable for this exact draft.": "此精确草稿没有可用的编译器诊断。",
+  "Press Alt+Arrow Up or Alt+Arrow Down to change display order.": "按 Alt+向上键或 Alt+向下键变更显示顺序。",
+  "Display reorder is unavailable until selected Codes are distinct.": "已选代码互不相同后才能调整显示顺序。",
+  "Display actions are unavailable until selected Codes are distinct.": "已选代码互不相同后才能使用显示操作。",
+  "Restore all Codes before changing one Code visibility.": "变更单一代码可见性前，请先恢复所有代码。",
+  "Manage Codes": "管理代码",
+  "Close Code manager": "关闭代码管理器",
+  "Compatible source fields can be selected. Incompatible fields remain visible with reasons.": "可选择兼容的来源字段；不兼容字段仍会显示原因。",
+  "Missing from the current dataset": "当前数据集缺少此字段",
+  "Used by an active scientific role": "正由启用中的科学角色使用",
+  "Values do not use one uniform numeric 0/1 or Boolean representation": "值未一致使用数字 0/1 或布尔表示",
+  "Values are not all finite nonnegative numbers": "并非所有值都是有限非负数",
+  "Selected more than once; remove it to repair the draft": "重复选择；请移除重复项以修复草稿",
+  "No codes selected": "尚未选择代码",
+  "At least three distinct Codes are required to run a model.": "运行模型至少需要三个不同代码。",
+  "Units, Horizons, Windows, Order, Rotation, and the other analysis family remain preserved.": "单位、视域、窗口、顺序、旋转及另一分析系列的设置都会保留。",
+  "Undo Code exclusion": "撤销代码排除",
+  "Sort by fields": "依字段排序",
+  "Use source order": "使用来源顺序",
+  "Add order key": "添加顺序键",
+  "Choose a field": "选择字段",
+  "Direction": "方向",
+  "Comparator": "比较器",
+  "Ordered category": "有序类别",
+  "Ordered category levels": "有序类别层级",
+  "Add category level": "添加类别层级",
+  "Value type": "值类型",
+  "Value": "值",
+  "Locale": "区域设置",
+  "Sensitivity": "敏感度",
+  "Base": "基础",
+  "Accent": "重音",
+  "Case": "大小写",
+  "Variant": "变体",
+  "Numeric collation": "数字排序",
+  "Complete every active order field before running.": "运行前请完成所有启用中的顺序字段。",
+  "I confirm the observed source sequence for this exact dataset and field context.": "我确认此精确数据集与字段情境中观测到的来源序列。",
+  "Review source-order statement": "查看来源顺序声明",
+  "Accept statement": "接受声明",
+  "Source order explicitly confirmed": "已明确确认来源顺序",
+  "Source order is not confirmed": "尚未确认来源顺序",
+  "The dataset or scientific context changed. Review the statement again.": "数据集或科学上下文已更改；请重新查看声明。",
+  "Relevant fields": "相关字段",
+  "Confirmation version": "确认版本",
+  "Confirmed at": "确认时间",
+  "Unavailable for this context": "此上下文当前不可用",
+  "Correlation goodness-of-fit statistics are unavailable in this native model bundle; no correlation test is claimed.": "此原生模型套件不提供相关拟合优度统计，因此不声称已执行相关检验。",
+  "These descriptive values belong to the retained historical model.": "这些描述值属于保留的历史模型。",
+  "These values belong to the current bound model.": "这些值属于当前绑定模型。",
+  "Researcher-requested post-model inference": "研究者请求的模型后推断",
+  "Native comparison statistics": "原生比较统计",
+  "Repeated-measures omnibus statistics": "重复测量总体统计",
+  "Selected-request followup statistics": "所选请求的后续统计",
+  "Observed inference population": "观测到的推断总体",
+  "Target variance along fixed Reference axes": "固定参考轴上的目标方差",
+  "Variance in the fitted space": "拟合空间中的方差",
+  "Review imported artifact": "查看导入成果",
+  "Current draft": "当前草稿",
+  "Imported draft": "导入的草稿",
+  "Cancel import": "取消导入",
+  "Replace configuration": "替换设置",
+  "Load configuration": "加载设置",
+  "Keep read-only historical result": "保留只读历史结果",
+  "Add Reference": "添加参考",
+  "This result is historical. Its configuration is loaded only by an explicit action.": "这是历史结果；只有明确操作才会加载其设置。",
+  "Accepting an artifact does not start a model. References are added without selecting Rotation.": "接受成果不会启动模型；添加参考时不会选择旋转。",
+  "Legacy schema 2 analysis packages cannot become a v3 Reference because they do not contain the required fitted basis evidence.": "旧版 schema 2 分析套件缺少必要的拟合基底证据，因此不能成为 v3 参考。",
+  "A presentation preset hides this Group. Clear preset Group hiding to use these saved controls; individual Unit preferences are retained.": "呈现预设隐藏了此组。清除预设组隐藏后即可使用这些已保存控件；个别单位偏好仍会保留。",
+  "All Groups are hidden. Restore Group visibility to use these saved controls; individual Unit preferences are retained.": "所有组均已隐藏。恢复组可见性后即可使用这些已保存控件；个别单位偏好仍会保留。",
+  "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.": "原生轨迹显示摘要不提供置信区间或离群区间；已保存的区间偏好不适用于此视图。",
+};
 
-const MODEL_TERM_TRANSLATIONS_V3: Readonly<Record<Exclude<NativeModelLocaleV3, "en">, ReadonlyArray<readonly [string, string]>>> = {
-  "zh-hant": [
-    ["Model configuration", "模型設定"], ["Units", "單位"], ["Horizons", "視域"], ["Windows", "窗口"], ["Codes", "代碼"],
-    ["Unit", "單位"], ["Horizon", "視域"], ["Window", "窗口"], ["Code", "代碼"], ["Group", "群組"],
-    ["About", "關於"], ["settings", "設定"], ["help", "說明"], ["Choose", "選擇"], ["fields", "欄位"], ["field", "欄位"],
-    ["Model status", "模型狀態"], ["Configuration incomplete", "設定未完成"], ["Configuration ready", "設定已就緒"],
-    ["No result", "沒有結果"], ["Running", "執行中"], ["Current result", "目前結果"], ["Stale result", "過期結果"],
-    ["Run error", "執行錯誤"], ["Obsolete run", "已淘汰的執行"], ["Cancelled run", "已取消的執行"],
-    ["Scientific configuration", "科學設定"], ["Family", "分析系列"], ["Model", "模型"], ["Weighting", "權重"],
-    ["Rotation", "旋轉"], ["count", "數量"], ["Unavailable", "不可用"], ["Standard ENA", "標準 ENA"],
-    ["Ordered Network Analysis", "有序網絡分析"], ["End Point", "端點"], ["Separate Trajectory", "分離軌跡"],
-    ["Accumulated Trajectory", "累積軌跡"], ["Moving Stanza", "移動節段"], ["Conversation", "對話"],
-    ["Binary", "二元"], ["Frequency", "頻數"], ["Means", "均值"], ["Reference", "參考"],
-    ["diagnostics", "診斷"], ["Diagnostics", "診斷"], ["Dataset", "資料集"], ["Resources", "資源"],
-    ["Migration", "遷移"], ["Error", "錯誤"], ["error", "錯誤"], ["Warning", "警告"], ["warning", "警告"], ["Information", "資訊"],
-    ["Evidence", "證據"], ["affected rows", "受影響資料列"], ["Confirm", "確認"], ["Cancel", "取消"],
-    ["Add", "新增"], ["Remove", "移除"], ["Hide", "隱藏"], ["Restore", "還原"], ["Exclude", "排除"], ["Undo", "復原"],
-    ["Current", "目前"], ["retained", "保留"], ["selected", "已選"], ["Selected", "已選"], ["source", "來源"], ["Source", "來源"],
-    ["order", "順序"], ["Order", "順序"], ["Ascending", "升序"], ["Descending", "降序"], ["Number", "數字"],
-    ["Date", "日期"], ["Datetime", "日期時間"], ["Text", "文字"], ["String", "字串"], ["Boolean", "布林值"],
-    ["Rows", "資料列"], ["rows", "資料列"], ["Close", "關閉"], ["Review", "檢視"], ["Import", "匯入"], ["Export", "匯出"],
-    ["available", "可用"], ["unavailable", "不可用"], ["current", "目前"], ["stale", "過期"], ["historical", "歷史"],
-    ["No ", "沒有"], ["All ", "所有"], ["This ", "此"], ["The ", "該"], ["is required", "為必填"], ["are required", "為必填"],
-  ],
-  "zh-hans": [
-    ["Model configuration", "模型设置"], ["Units", "单位"], ["Horizons", "视域"], ["Windows", "窗口"], ["Codes", "代码"],
-    ["Unit", "单位"], ["Horizon", "视域"], ["Window", "窗口"], ["Code", "代码"], ["Group", "组"],
-    ["About", "关于"], ["settings", "设置"], ["help", "帮助"], ["Choose", "选择"], ["fields", "字段"], ["field", "字段"],
-    ["Model status", "模型状态"], ["Configuration incomplete", "设置未完成"], ["Configuration ready", "设置已就绪"],
-    ["No result", "没有结果"], ["Running", "运行中"], ["Current result", "当前结果"], ["Stale result", "过期结果"],
-    ["Run error", "运行错误"], ["Obsolete run", "已淘汰的运行"], ["Cancelled run", "已取消的运行"],
-    ["Scientific configuration", "科学设置"], ["Family", "分析系列"], ["Model", "模型"], ["Weighting", "权重"],
-    ["Rotation", "旋转"], ["count", "数量"], ["Unavailable", "不可用"], ["Standard ENA", "标准 ENA"],
-    ["Ordered Network Analysis", "有序网络分析"], ["End Point", "端点"], ["Separate Trajectory", "分离轨迹"],
-    ["Accumulated Trajectory", "累积轨迹"], ["Moving Stanza", "移动节段"], ["Conversation", "对话"],
-    ["Binary", "二元"], ["Frequency", "频数"], ["Means", "均值"], ["Reference", "参考"],
-    ["diagnostics", "诊断"], ["Diagnostics", "诊断"], ["Dataset", "数据集"], ["Resources", "资源"],
-    ["Migration", "迁移"], ["Error", "错误"], ["error", "错误"], ["Warning", "警告"], ["warning", "警告"], ["Information", "信息"],
-    ["Evidence", "证据"], ["affected rows", "受影响数据行"], ["Confirm", "确认"], ["Cancel", "取消"],
-    ["Add", "添加"], ["Remove", "移除"], ["Hide", "隐藏"], ["Restore", "恢复"], ["Exclude", "排除"], ["Undo", "撤销"],
-    ["Current", "当前"], ["retained", "保留"], ["selected", "已选"], ["Selected", "已选"], ["source", "来源"], ["Source", "来源"],
-    ["order", "顺序"], ["Order", "顺序"], ["Ascending", "升序"], ["Descending", "降序"], ["Number", "数字"],
-    ["Date", "日期"], ["Datetime", "日期时间"], ["Text", "文本"], ["String", "字符串"], ["Boolean", "布尔值"],
-    ["Rows", "数据行"], ["rows", "数据行"], ["Close", "关闭"], ["Review", "查看"], ["Import", "导入"], ["Export", "导出"],
-    ["available", "可用"], ["unavailable", "不可用"], ["current", "当前"], ["stale", "过期"], ["historical", "历史"],
-    ["No ", "没有"], ["All ", "所有"], ["This ", "此"], ["The ", "该"], ["is required", "为必填"], ["are required", "为必填"],
-  ],
+const MODEL_SHORT_LOCALES_V3: Readonly<Record<string, readonly [string, string]>> = {
+  "Model configuration": ["模型設定", "模型设置"], Units: ["單位", "单位"], Horizons: ["視域", "视域"], Windows: ["窗口", "窗口"], Codes: ["代碼", "代码"],
+  "About Units settings": ["關於單位設定", "关于单位设置"], "Units help": ["單位說明", "单位帮助"], "Choose Unit fields.": ["選擇單位欄位。", "选择单位字段。"],
+  "About Horizons settings": ["關於視域設定", "关于视域设置"], "Horizons help": ["視域說明", "视域帮助"], "Choose Horizon fields.": ["選擇視域欄位。", "选择视域字段。"],
+  "About Windows settings": ["關於窗口設定", "关于窗口设置"], "Windows help": ["窗口說明", "窗口帮助"], "Choose a Window.": ["選擇窗口類型及其精確情境範圍。", "选择窗口类型及其精确情境范围。"],
+  "About Codes settings": ["關於代碼設定", "关于代码设置"], "Codes help": ["代碼說明", "代码帮助"], "Choose Code fields.": ["選擇代碼欄位。", "选择代码字段。"],
+  "Model status": ["模型狀態", "模型状态"], "Configuration incomplete": ["設定未完成", "设置未完成"], "Configuration ready": ["設定已就緒", "设置已就绪"], "No result": ["沒有結果", "没有结果"], Running: ["執行中", "运行中"], "Current result": ["目前結果", "当前结果"], "Stale result": ["過期結果", "过期结果"], "Run error": ["執行錯誤", "运行错误"], "Obsolete run": ["已淘汰的執行", "已淘汰的运行"], "Cancelled run": ["已取消的執行", "已取消的运行"],
+  "Scientific configuration": ["科學設定", "科学设置"], Family: ["分析系列", "分析系列"], Model: ["模型", "模型"], Window: ["窗口", "窗口"], Weighting: ["權重", "权重"], Rotation: ["旋轉", "旋转"], "Units count": ["單位數量", "单位数量"], "Horizons count": ["視域數量", "视域数量"], "Groups count": ["群組數量", "组数量"], "Codes count": ["代碼數量", "代码数量"],
+  "Standard ENA": ["標準 ENA", "标准 ENA"], "Ordered Network Analysis": ["有序網絡分析", "有序网络分析"], "End Point": ["端點", "端点"], "Separate Trajectory": ["分離軌跡", "分离轨迹"], "Accumulated Trajectory": ["累積軌跡", "累积轨迹"], "Moving Stanza": ["移動節段", "移动节段"], Conversation: ["對話", "对话"], Binary: ["二元", "二元"], Frequency: ["頻數", "频数"], "Frequency (sum)": ["頻數（總和）", "频数（总和）"], Means: ["均值", "均值"], Reference: ["參考", "参考"], Unavailable: ["不可用", "不可用"],
+  "Model diagnostics": ["模型診斷", "模型诊断"], "Global diagnostics": ["全域診斷", "全局诊断"], Dataset: ["資料集", "数据集"], Resources: ["資源", "资源"], Migration: ["遷移", "迁移"], Error: ["錯誤", "错误"], Warning: ["警告", "警告"], Information: ["資訊", "信息"], Evidence: ["證據", "证据"], "More evidence is available": ["尚有更多證據", "尚有更多证据"], "Confirm scientific change": ["確認科學設定變更", "确认科学设置更改"], Confirm: ["確認", "确认"], Cancel: ["取消", "取消"],
+  Field: ["欄位", "字段"], Direction: ["方向", "方向"], Ascending: ["升序", "升序"], Descending: ["降序", "降序"], Comparator: ["比較器", "比较器"], Number: ["數字", "数字"], Text: ["文字", "文本"], Boolean: ["布林值", "布尔值"], String: ["字串", "字符串"], Locale: ["語系", "语言区域"], Sensitivity: ["敏感度", "敏感度"], Value: ["值", "值"], Diagnostics: ["診斷", "诊断"], Type: ["類型", "类型"],
+  Unit: ["單位", "单位"], Horizon: ["視域", "视域"], Source: ["來源", "来源"], Selected: ["已選", "已选"], "Date (YYYY-MM-DD)": ["日期（YYYY-MM-DD）", "日期（YYYY-MM-DD）"],
+  "Datetime (ISO-8601, offset in value)": ["日期時間（ISO-8601，值內含時區偏移）", "日期时间（ISO-8601，值内含时区偏移）"],
 };
 
 function translateModelTextV3(locale: NativeModelLocaleV3, input: string): string {
-  if (locale === "en" || input === "—" || /^[\d.×/()\s-]+$/u.test(input)) return input;
-  const exact = MODEL_EXACT_ZH_HANT_V3[input];
-  if (exact !== undefined) return locale === "zh-hant" ? exact : traditionalToSimplifiedV3(exact);
-  return MODEL_TERM_TRANSLATIONS_V3[locale].reduce((value, [from, to]) => value.replaceAll(from, to), input);
+  if (locale === "en" || input === "—" || input === "SVD" || input === "true" || input === "false" || /^[\d.×/()\s-]+$/u.test(input)) return input;
+  const exact = locale === "zh-hant" ? MODEL_EXACT_ZH_HANT_V3[input] : MODEL_EXACT_ZH_HANS_V3[input];
+  const localized = exact ?? MODEL_SHORT_LOCALES_V3[input]?.[locale === "zh-hant" ? 0 : 1];
+  if (localized === undefined) throw new Error(`Missing Models v3 ${locale} copy for: ${input}`);
+  return localized;
 }
 
 function localizeModelTreeV3<T>(value: T, locale: NativeModelLocaleV3): T {
@@ -1779,25 +2001,123 @@ function localizeModelTreeV3<T>(value: T, locale: NativeModelLocaleV3): T {
   return value;
 }
 
-function diagnosticTitleV3(locale: NativeModelLocaleV3, id: OpenEnaModelDiagnosticIdV3): string {
-  const words = id.replace(/^STANDARD_/u, "").replace(/^ONA_/u, "ONA ").replaceAll("_", " ").toLowerCase();
-  if (locale === "en") return words.replace(/^./u, (letter) => letter.toUpperCase());
-  const replacements = locale === "zh-hant"
-    ? [["dataset", "資料集"], ["binding", "綁定"], ["invalid", "無效"], ["required", "必填"], ["identity", "識別"], ["missing", "缺少"], ["unsupported", "不支援"], ["codes", "代碼"], ["code", "代碼"], ["too few", "數量不足"], ["duplicate", "重複"], ["selection", "選擇"], ["field", "欄位"], ["role", "角色"], ["collision", "衝突"], ["value", "值"], ["all zero", "全為零"], ["isolated", "孤立"], ["profile", "分布"], ["global", "全域"], ["cooccurrence", "共現"], ["group", "群組"], ["unstable", "不穩定"], ["within unit", "單位內"], ["horizon", "視域"], ["order", "順序"], ["unresolved tie", "未解決同值"], ["confirmation stale", "確認已過期"], ["means", "均值"], ["level", "層級"], ["identical", "相同"], ["trajectory", "軌跡"], ["rank zero", "秩為零"], ["one dimensional", "一維"], ["reference", "參考"], ["incompatible", "不相容"], ["output nonfinite", "輸出非有限值"], ["resource budget exceeded", "超出資源預算"], ["empty", "空白"], ["no enabled connection", "沒有啟用連線"], ["numerical", "數值"], ["draft", "草稿"], ["zero network units", "零網絡單位"]]
-    : [["dataset", "数据集"], ["binding", "绑定"], ["invalid", "无效"], ["required", "必填"], ["identity", "标识"], ["missing", "缺少"], ["unsupported", "不支持"], ["codes", "代码"], ["code", "代码"], ["too few", "数量不足"], ["duplicate", "重复"], ["selection", "选择"], ["field", "字段"], ["role", "角色"], ["collision", "冲突"], ["value", "值"], ["all zero", "全为零"], ["isolated", "孤立"], ["profile", "分布"], ["global", "全局"], ["cooccurrence", "共现"], ["group", "组"], ["unstable", "不稳定"], ["within unit", "单位内"], ["horizon", "视域"], ["order", "顺序"], ["unresolved tie", "未解决同值"], ["confirmation stale", "确认已过期"], ["means", "均值"], ["level", "层级"], ["identical", "相同"], ["trajectory", "轨迹"], ["rank zero", "秩为零"], ["one dimensional", "一维"], ["reference", "参考"], ["incompatible", "不兼容"], ["output nonfinite", "输出非有限值"], ["resource budget exceeded", "超出资源预算"], ["empty", "空白"], ["no enabled connection", "没有启用连接"], ["numerical", "数值"], ["draft", "草稿"], ["zero network units", "零网络单位"]];
-  return replacements.reduce((value, [from, to]) => value.replaceAll(from, to), words);
-}
+const DIAGNOSTIC_SUMMARIES_V3: Readonly<Record<OpenEnaModelDiagnosticIdV3, readonly [string, string, string]>> = {
+  STANDARD_DATASET_BINDING_INVALID: ["Dataset binding is invalid", "資料集綁定無效", "数据集绑定无效"],
+  STANDARD_UNITS_REQUIRED: ["Select at least one Unit identity field", "請選擇至少一個單位識別欄位", "请选择至少一个单位标识字段"],
+  STANDARD_HORIZONS_REQUIRED: ["Select at least one Horizon identity field", "請選擇至少一個視域識別欄位", "请选择至少一个视域标识字段"],
+  STANDARD_IDENTITY_MISSING: ["A selected identity is missing", "所選識別值有缺失", "所选标识值有缺失"],
+  STANDARD_IDENTITY_VALUE_UNSUPPORTED: ["An identity value has an unsupported type", "識別值使用不支援的類型", "标识值使用不支持的类型"],
+  STANDARD_CODES_TOO_FEW: ["Select at least three distinct Codes", "請選擇至少三個不同代碼", "请选择至少三个不同代码"],
+  STANDARD_CODES_DUPLICATE_SELECTION: ["Remove duplicate Code selections", "請移除重複的代碼選擇", "请移除重复的代码选择"],
+  STANDARD_CODE_FIELD_MISSING: ["A selected Code field is missing", "所選代碼欄位不存在", "所选代码字段不存在"],
+  STANDARD_CODE_ROLE_COLLISION: ["A Code conflicts with an active structural role", "代碼與啟用中的結構角色衝突", "代码与启用中的结构角色冲突"],
+  STANDARD_CODE_VALUE_INVALID: ["Code values violate the selected weighting domain", "代碼值違反所選權重值域", "代码值违反所选权重值域"],
+  STANDARD_CODE_ALL_ZERO: ["A selected Code is zero for every row", "所選代碼在所有資料列均為零", "所选代码在所有数据行均为零"],
+  STANDARD_CODE_ISOLATED: ["A selected Code has no candidate co-occurrence", "所選代碼沒有候選共現", "所选代码没有候选共现"],
+  STANDARD_CODE_DUPLICATE_PROFILE: ["Selected Codes have duplicate value profiles", "所選代碼具有重複值分布", "所选代码具有重复值分布"],
+  STANDARD_NO_GLOBAL_COOCCURRENCE: ["No candidate Code pair co-occurs", "沒有候選代碼配對共現", "没有候选代码配对共现"],
+  STANDARD_GROUP_FIELD_MISSING: ["The selected Group field or value is missing", "所選群組欄位或值缺失", "所选组字段或值缺失"],
+  STANDARD_GROUP_UNSTABLE_WITHIN_UNIT: ["Group must remain stable within each Unit", "群組在每個單位內必須保持穩定", "组在每个单位内必须保持稳定"],
+  STANDARD_HORIZON_SHARED_BY_MULTIPLE_UNITS: ["Shared Horizons are allowed and kept separate by Unit", "共用視域是允許的，並會按單位分開", "共享视域是允许的，并会按单位分开"],
+  STANDARD_ROW_ORDER_REQUIRED: ["Moving Stanza requires an explicit row order", "移動節段需要明確的資料列順序", "移动节段需要明确的数据行顺序"],
+  STANDARD_ROW_ORDER_INVALID: ["The row order cannot be resolved", "無法解析資料列順序", "无法解析数据行顺序"],
+  STANDARD_HORIZON_ORDER_REQUIRED: ["Trajectory models require an explicit Horizon order", "軌跡模型需要明確的視域順序", "轨迹模型需要明确的视域顺序"],
+  STANDARD_HORIZON_ORDER_INVALID: ["The Horizon order cannot be resolved", "無法解析視域順序", "无法解析视域顺序"],
+  STANDARD_HORIZON_ORDER_UNRESOLVED_TIE: ["Add a key to resolve tied Horizon positions", "請新增順序鍵以解決視域同值", "请添加顺序键以解决视域同值"],
+  STANDARD_SOURCE_ORDER_CONFIRMATION_STALE: ["Review the source-order confirmation again", "請重新檢視來源順序確認", "请重新查看来源顺序确认"],
+  STANDARD_MEANS_REQUIRES_ENDPOINT: ["Direct Means rotation requires an End Point model", "直接均值旋轉需要端點模型", "直接均值旋转需要端点模型"],
+  STANDARD_MEANS_GROUP_REQUIRED: ["Means rotation requires a stable Group", "均值旋轉需要穩定群組", "均值旋转需要稳定组"],
+  STANDARD_MEANS_LEVEL_REQUIRED: ["Select both ordered Means levels", "請選擇兩個有方向的均值層級", "请选择两个有方向的均值层级"],
+  STANDARD_MEANS_LEVEL_EMPTY: ["A selected Means level has no eligible Unit network", "所選均值層級沒有符合資格的單位網絡", "所选均值层级没有符合资格的单位网络"],
+  STANDARD_MEANS_IDENTICAL: ["Means levels must be distinct and produce a nonzero contrast", "均值層級必須不同且產生非零對比", "均值层级必须不同且产生非零对比"],
+  STANDARD_TRAJECTORY_HAS_NO_PATH: ["No Unit has a fitted multi-step trajectory path", "沒有單位具有擬合的多步軌跡路徑", "没有单位具有拟合的多步轨迹路径"],
+  STANDARD_TRAJECTORY_SINGLE_STEP_UNITS: ["Some Units have one fitted trajectory step", "部分單位只有一個擬合軌跡步驟", "部分单位只有一个拟合轨迹步骤"],
+  STANDARD_TARGET_RANK_ZERO: ["The target network space has rank zero", "目標網絡空間的秩為零", "目标网络空间的秩为零"],
+  STANDARD_SVD_ONE_DIMENSIONAL: ["The SVD model is valid with one axis; two-axis consumers remain unavailable", "SVD 模型以單一軸有效；雙軸消費者仍不可用", "SVD 模型以单一轴有效；双轴消费者仍不可用"],
+  STANDARD_REFERENCE_MISSING: ["Select an owned Reference with its expected digest", "請選擇具預期摘要的已擁有參考", "请选择具预期摘要的已拥有参考"],
+  STANDARD_REFERENCE_INCOMPATIBLE: ["The selected Reference is incompatible with this target", "所選參考與此目標不相容", "所选参考与此目标不兼容"],
+  STANDARD_REFERENCE_TARGET_DEGENERATE: ["Reference projection remains valid although the target has rank zero", "即使目標秩為零，參考投影仍然有效", "即使目标秩为零，参考投影仍然有效"],
+  STANDARD_OUTPUT_NONFINITE: ["The fitted output contains a nonfinite value", "擬合輸出包含非有限值", "拟合输出包含非有限值"],
+  RESOURCE_BUDGET_EXCEEDED: ["The exact execution estimate exceeds a hard resource limit", "精確執行估算超出硬性資源上限", "精确运行估算超出硬性资源上限"],
+  ONA_DATASET_BINDING_INVALID: ["ONA dataset binding is invalid", "ONA 資料集綁定無效", "ONA 数据集绑定无效"],
+  ONA_DATASET_EMPTY: ["ONA requires at least one source row", "ONA 至少需要一個來源資料列", "ONA 至少需要一个来源数据行"],
+  ONA_DATASET_FIELD_INVALID: ["An ONA structural field is missing or invalid", "ONA 結構欄位缺失或無效", "ONA 结构字段缺失或无效"],
+  ONA_ORDER_INVALID: ["ONA requires one valid explicit response order", "ONA 需要一個有效的明確回應順序", "ONA 需要一个有效的明确回应顺序"],
+  ONA_GROUP_UNSTABLE: ["ONA Group must remain stable within each Unit", "ONA 群組在每個單位內必須保持穩定", "ONA 组在每个单位内必须保持稳定"],
+  ONA_CODE_ALL_ZERO: ["An ONA Code is zero for every row", "ONA 代碼在所有資料列均為零", "ONA 代码在所有数据行均为零"],
+  ONA_NO_ENABLED_CONNECTION: ["Enable at least one directed ONA connection", "請啟用至少一條 ONA 有向連線", "请启用至少一条 ONA 有向连接"],
+  ONA_NUMERICAL_INVALID: ["ONA numerical accumulation produced an invalid value", "ONA 數值累積產生無效值", "ONA 数值累积产生无效值"],
+  ONA_TARGET_RANK_ZERO: ["The ONA target network space has rank zero", "ONA 目標網絡空間的秩為零", "ONA 目标网络空间的秩为零"],
+  ONA_ZERO_NETWORK_UNITS: ["Some ONA Units have zero directed network mass", "部分 ONA 單位的有向網絡總量為零", "部分 ONA 单位的有向网络总量为零"],
+  ONA_SVD_ONE_DIMENSIONAL: ["The ONA SVD model is valid with one axis", "ONA SVD 模型以單一軸有效", "ONA SVD 模型以单一轴有效"],
+  ONA_DRAFT_INVALID: ["The ONA draft violates its fixed scientific contract", "ONA 草稿違反固定科學契約", "ONA 草稿违反固定科学契约"],
+  ONA_RESOURCE_BUDGET_EXCEEDED: ["The exact ONA estimate exceeds a hard resource limit", "精確 ONA 估算超出硬性資源上限", "精确 ONA 估算超出硬性资源上限"],
+};
+
+const DIAGNOSTIC_GUIDANCE_V3: Readonly<Record<OpenEnaModelDiagnosticIdV3, readonly [string, string, string]>> = {
+  STANDARD_DATASET_BINDING_INVALID: ["Reopen the exact admitted source so its rows, headers, digest, and hash kind agree.", "重新開啟精確准入來源，使資料列、欄位、摘要及雜湊種類一致。", "重新打开精确准入来源，使数据行、字段、摘要及哈希类型一致。"],
+  STANDARD_UNITS_REQUIRED: ["Add current source fields to the ordered Unit identity.", "將目前來源欄位加入有序單位識別。", "将当前来源字段加入有序单位标识。"],
+  STANDARD_HORIZONS_REQUIRED: ["Add current source fields to the ordered Horizon identity.", "將目前來源欄位加入有序視域識別。", "将当前来源字段加入有序视域标识。"],
+  STANDARD_IDENTITY_MISSING: ["Use present fields and nonmissing values on every affected row.", "為每個受影響資料列使用存在的欄位及非缺失值。", "为每个受影响数据行使用存在的字段及非缺失值。"],
+  STANDARD_IDENTITY_VALUE_UNSUPPORTED: ["Identity fields accept supported scalar strings, finite numbers, or Booleans.", "識別欄位只接受受支援的純量字串、有限數字或布林值。", "标识字段只接受受支持的标量字符串、有限数字或布尔值。"],
+  STANDARD_CODES_TOO_FEW: ["Select three different nonblank current fields as Codes.", "選擇三個不同且非空白的目前欄位作為代碼。", "选择三个不同且非空白的当前字段作为代码。"],
+  STANDARD_CODES_DUPLICATE_SELECTION: ["Remove repeated Code selections; display order cannot disambiguate them.", "移除重複代碼選擇；顯示順序無法辨別它們。", "移除重复代码选择；显示顺序无法区分它们。"],
+  STANDARD_CODE_FIELD_MISSING: ["Remove the unavailable choice or reopen a source containing that exact field.", "移除不可用選擇，或重新開啟包含該精確欄位的來源。", "移除不可用选择，或重新打开包含该精确字段的来源。"],
+  STANDARD_CODE_ROLE_COLLISION: ["Use another Code or remove the field from its conflicting structural role.", "使用其他代碼，或將該欄位從衝突的結構角色移除。", "使用其他代码，或将该字段从冲突的结构角色移除。"],
+  STANDARD_CODE_VALUE_INVALID: ["Binary requires one homogeneous numeric 0/1 or Boolean false/true representation per Code; Frequency requires finite nonnegative numbers.", "二元權重要求每個代碼一致使用數字 0/1 或布林 false/true；頻數權重要求有限非負數。", "二元权重要求每个代码一致使用数字 0/1 或布尔 false/true；频数权重要求有限非负数。"],
+  STANDARD_CODE_ALL_ZERO: ["Exclude the exact Code or correct its source values; all-zero nodes cannot contribute.", "排除精確代碼或修正來源值；全零節點無法作出貢獻。", "排除精确代码或修正来源值；全零节点无法作出贡献。"],
+  STANDARD_CODE_ISOLATED: ["Inspect its windowed relation or explicitly confirm exclusion; selection is retained.", "檢視其窗口化關係或明確確認排除；選擇會保留。", "查看其窗口化关系或明确确认排除；选择会保留。"],
+  STANDARD_CODE_DUPLICATE_PROFILE: ["Verify why distinct Code fields carry the same typed row profile.", "核對不同代碼欄位為何具有相同的類型化資料列分布。", "核对不同代码字段为何具有相同的类型化数据行分布。"],
+  STANDARD_NO_GLOBAL_COOCCURRENCE: ["Change Codes, Horizons, or Window so an eligible pair can co-occur.", "變更代碼、視域或窗口，使符合資格的配對可以共現。", "更改代码、视域或窗口，使符合资格的配对可以共现。"],
+  STANDARD_GROUP_FIELD_MISSING: ["Choose a current Group field with supported nonmissing values.", "選擇具有受支援非缺失值的目前群組欄位。", "选择具有受支持非缺失值的当前组字段。"],
+  STANDARD_GROUP_UNSTABLE_WITHIN_UNIT: ["Repair values so every typed Unit belongs to at most one Group.", "修正值，使每個類型化單位最多屬於一個群組。", "修正值，使每个类型化单位最多属于一个组。"],
+  STANDARD_HORIZON_SHARED_BY_MULTIPLE_UNITS: ["This information does not block model construction; typed Unit identities keep the paths separate.", "此資訊不會阻止模型建立；類型化單位識別會保持路徑分離。", "此信息不会阻止模型建立；类型化单位标识会保持路径分离。"],
+  STANDARD_ROW_ORDER_REQUIRED: ["Define order keys or confirm the observed source sequence for this context.", "定義順序鍵，或為此情境確認觀察到的來源序列。", "定义顺序键，或为此情境确认观测到的来源序列。"],
+  STANDARD_ROW_ORDER_INVALID: ["Complete keys and repair missing, duplicate, tied, or invalid comparator values.", "完成順序鍵並修正缺失、重複、同值或無效比較器值。", "完成顺序键并修正缺失、重复、同值或无效比较器值。"],
+  STANDARD_HORIZON_ORDER_REQUIRED: ["Define Horizon keys or confirm the exact observed Horizon sequence.", "定義視域順序鍵，或確認觀察到的精確視域序列。", "定义视域顺序键，或确认观测到的精确视域序列。"],
+  STANDARD_HORIZON_ORDER_INVALID: ["Complete every Horizon key with current fields and valid comparators.", "使用目前欄位及有效比較器完成每個視域順序鍵。", "使用当前字段及有效比较器完成每个视域顺序键。"],
+  STANDARD_HORIZON_ORDER_UNRESOLVED_TIE: ["Add a deterministic key; source index is never a silent tie-breaker.", "新增確定性順序鍵；來源索引絕不會靜默打破同值。", "添加确定性顺序键；来源索引绝不会静默打破同值。"],
+  STANDARD_SOURCE_ORDER_CONFIRMATION_STALE: ["Dataset, family, rows, or relevant fields changed; bind a new confirmation.", "資料集、系列、資料列或相關欄位已變更；請綁定新確認。", "数据集、系列、数据行或相关字段已更改；请绑定新确认。"],
+  STANDARD_MEANS_REQUIRES_ENDPOINT: ["The Means choice is retained; return to End Point or select another rotation deliberately.", "均值選擇會保留；請返回端點模型或明確選擇其他旋轉。", "均值选择会保留；请返回端点模型或明确选择其他旋转。"],
+  STANDARD_MEANS_GROUP_REQUIRED: ["Choose a current Group field stable within every typed Unit.", "選擇在每個類型化單位內穩定的目前群組欄位。", "选择在每个类型化单位内稳定的当前组字段。"],
+  STANDARD_MEANS_LEVEL_REQUIRED: ["Select explicit negative and positive levels; order defines MR1 direction.", "明確選擇負向及正向層級；順序定義 MR1 方向。", "明确选择负向及正向层级；顺序定义 MR1 方向。"],
+  STANDARD_MEANS_LEVEL_EMPTY: ["Choose an observed level with an eligible nonzero Unit network.", "選擇具有符合資格非零單位網絡的已觀察層級。", "选择具有符合资格非零单位网络的已观测层级。"],
+  STANDARD_MEANS_IDENTICAL: ["This covers identical typed selections and distinct selections whose sphere-normalized group means are identical.", "此條件涵蓋相同的類型化選擇，也涵蓋選擇不同但球面正規化群組均值相同的情況。", "此条件涵盖相同的类型化选择，也涵盖选择不同但球面归一化组均值相同的情况。"],
+  STANDARD_TRAJECTORY_HAS_NO_PATH: ["Review Horizon order and coverage; one Unit needs multiple fitted steps.", "檢視視域順序及涵蓋；至少一個單位需要多個擬合步驟。", "查看视域顺序及覆盖；至少一个单位需要多个拟合步骤。"],
+  STANDARD_TRAJECTORY_SINGLE_STEP_UNITS: ["The model remains buildable; these Units contribute observations but no multi-step path segment.", "模型仍可建立；這些單位提供觀測，但沒有多步路徑線段。", "模型仍可建立；这些单位提供观测，但没有多步路径线段。"],
+  STANDARD_TARGET_RANK_ZERO: ["Revise Code selection or variation; SVD and direct Means need a nonzero target basis.", "修訂代碼選擇或變異；SVD 及直接均值需要非零目標基底。", "修订代码选择或变异；SVD 及直接均值需要非零目标基底。"],
+  STANDARD_SVD_ONE_DIMENSIONAL: ["The fitted model remains valid; consumers requiring two supported axes, including AI interpretation, remain unavailable.", "擬合模型仍然有效；需要兩個受支援軸的消費者（包括 AI 解讀）仍不可用。", "拟合模型仍然有效；需要两个受支持轴的消费者（包括 AI 解读）仍不可用。"],
+  STANDARD_REFERENCE_MISSING: ["Select an owned validated Reference with its exact expected content digest.", "選擇具有精確預期內容摘要的已擁有有效參考。", "选择具有精确预期内容摘要的已拥有有效参考。"],
+  STANDARD_REFERENCE_INCOMPATIBLE: ["Match Code identity/order, weighting, family, and fixed basis before projection.", "投影前配對代碼識別／順序、權重、系列及固定基底。", "投影前匹配代码标识／顺序、权重、系列及固定基底。"],
+  STANDARD_REFERENCE_TARGET_DEGENERATE: ["The fixed Reference projection remains valid; only target-derived rank interpretation is degenerate.", "固定參考投影仍然有效；只有目標衍生的秩解讀退化。", "固定参考投影仍然有效；只有目标派生的秩解读退化。"],
+  STANDARD_OUTPUT_NONFINITE: ["Review source magnitude; nonfinite fitted coordinates or weights are rejected.", "檢視來源量級；非有限擬合座標或權重會被拒絕。", "查看来源量级；非有限拟合坐标或权重会被拒绝。"],
+  RESOURCE_BUDGET_EXCEEDED: ["A hard cap blocks execution and never authorizes truncating rows, Codes, windows, or data.", "硬性上限會阻止執行，且絕不授權截斷資料列、代碼、窗口或資料。", "硬性上限会阻止运行，且绝不授权截断数据行、代码、窗口或数据。"],
+  ONA_DATASET_BINDING_INVALID: ["Reopen the exact admitted ONA source so binding fields and digest agree.", "重新開啟精確准入的 ONA 來源，使綁定欄位與摘要一致。", "重新打开精确准入的 ONA 来源，使绑定字段与摘要一致。"],
+  ONA_DATASET_EMPTY: ["Provide source rows; ONA does not invent an empty directed result.", "提供來源資料列；ONA 不會虛構空白有向結果。", "提供来源数据行；ONA 不会虚构空白有向结果。"],
+  ONA_DATASET_FIELD_INVALID: ["Use present structural and order fields with supported values.", "使用存在且具有受支援值的結構及順序欄位。", "使用存在且具有受支持值的结构及顺序字段。"],
+  ONA_ORDER_INVALID: ["Complete explicit response order or bind a current source-order confirmation.", "完成明確回應順序，或綁定目前來源順序確認。", "完成明确回应顺序，或绑定当前来源顺序确认。"],
+  ONA_GROUP_UNSTABLE: ["Repair values so every typed ONA Unit belongs to at most one Group.", "修正值，使每個類型化 ONA 單位最多屬於一個群組。", "修正值，使每个类型化 ONA 单位最多属于一个组。"],
+  ONA_CODE_ALL_ZERO: ["Remove the exact Code or correct its values before directed accumulation.", "在有向累積前移除精確代碼或修正其值。", "在有向累积前移除精确代码或修正其值。"],
+  ONA_NO_ENABLED_CONNECTION: ["Enable a mask cell; an all-disabled directed mask cannot build.", "啟用遮罩儲存格；全部停用的有向遮罩無法建立模型。", "启用遮罩单元格；全部禁用的有向遮罩无法构建模型。"],
+  ONA_NUMERICAL_INVALID: ["Review magnitude and order; overflow, underflow, and nonfinite products reject.", "檢視量級及順序；溢位、下溢及非有限乘積會被拒絕。", "查看量级及顺序；溢出、下溢及非有限乘积会被拒绝。"],
+  ONA_TARGET_RANK_ZERO: ["Revise Codes or mask so the target contains nonzero independent variation.", "修訂代碼或遮罩，使目標包含非零獨立變異。", "修订代码或遮罩，使目标包含非零独立变异。"],
+  ONA_ZERO_NETWORK_UNITS: ["The descriptive model remains available; affected Units carry zero directed mass.", "描述性模型仍可用；受影響單位的有向總量為零。", "描述性模型仍可用；受影响单位的有向总量为零。"],
+  ONA_SVD_ONE_DIMENSIONAL: ["The fitted ONA model remains valid on its single supported axis.", "擬合的 ONA 模型在其單一受支援軸上仍然有效。", "拟合的 ONA 模型在其单一受支持轴上仍然有效。"],
+  ONA_DRAFT_INVALID: ["Restore fixed End Point, SVD, Frequency-sum, backward-only, and mask fields.", "還原固定端點、SVD、頻數總和、僅向後及遮罩欄位。", "恢复固定端点、SVD、频数总和、仅向后及遮罩字段。"],
+  ONA_RESOURCE_BUDGET_EXCEEDED: ["A hard cap blocks execution and never authorizes truncating the ordered source or directed matrix.", "硬性上限會阻止執行，且絕不授權截斷有序來源或有向矩陣。", "硬性上限会阻止运行，且绝不授权截断有序来源或有向矩阵。"],
+};
 
 function diagnosticMessagesV3(locale: NativeModelLocaleV3): OpenEnaModelV3Copy["diagnosticMessages"] {
   return Object.fromEntries(MODEL_DIAGNOSTIC_IDS_ALL_V3.map((id) => [id, {
-    summary: () => diagnosticTitleV3(locale, id),
+    summary: () => DIAGNOSTIC_SUMMARIES_V3[id][locale === "en" ? 0 : locale === "zh-hant" ? 1 : 2],
     detail: (input: OpenEnaModelDiagnosticLocalizationInputV3) => {
       const field = input.fieldPath ?? input.scope;
       const count = input.evidence?.totalCount;
-      if (locale === "en") return `Review ${field}${count === undefined ? "." : `; ${count} affected items.`}`;
-      return locale === "zh-hant"
-        ? `請檢查 ${field}${count === undefined ? "。" : `；共有 ${count} 個受影響項目。`}`
-        : `请检查 ${field}${count === undefined ? "。" : `；共有 ${count} 个受影响项目。`}`;
+      const summary = DIAGNOSTIC_SUMMARIES_V3[id][locale === "en" ? 0 : locale === "zh-hant" ? 1 : 2];
+      const guidance = DIAGNOSTIC_GUIDANCE_V3[id][locale === "en" ? 0 : locale === "zh-hant" ? 1 : 2];
+      if (locale === "en") return `${summary}. Inspect ${field}${count === undefined ? "" : `; ${count} affected items are reported`}. ${guidance}`;
+      return locale === "zh-hant" ? `${summary}。請檢視 ${field}${count === undefined ? "" : `；目前報告 ${count} 個受影響項目`}。${guidance}`
+        : `${summary}。请查看 ${field}${count === undefined ? "" : `；当前报告 ${count} 个受影响项目`}。${guidance}`;
     },
   }])) as unknown as OpenEnaModelV3Copy["diagnosticMessages"];
 }
@@ -1859,6 +2179,65 @@ const groupApplicabilityEnV3 = {
   trajectoryIntervals: "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.",
 } as const;
 
+function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3Copy {
+  const t = (enValue: string, hantValue: string, hansValue: string) => locale === "en" ? enValue : locale === "zh-hant" ? hantValue : hansValue;
+  return {
+    configureTrajectory: t("Configure trajectory model", "設定軌跡模型", "设置轨迹模型"),
+    resultStatus: { current: t("Current result", "目前結果", "当前结果"), stale: t("Retained stale result", "保留的過期結果", "保留的过期结果"), none: t("No result", "沒有結果", "没有结果") },
+    runStatus: { idle: t("Idle", "閒置", "空闲"), running: t("Running", "執行中", "运行中"), error: t("Run error", "執行錯誤", "运行错误"), obsolete: t("Obsolete run", "已淘汰的執行", "已淘汰的运行"), cancelled: t("Cancelled run", "已取消的執行", "已取消的运行") },
+    startingWorker: t("Starting model worker", "正在啟動模型工作程序", "正在启动模型工作进程"), runModel: t("Run model", "執行模型", "运行模型"), cancelRun: t("Cancel run", "取消執行", "取消运行"),
+    cancelPendingImport: t("Cancel pending import", "取消待處理匯入", "取消待处理导入"), operationFailed: t("The requested operation failed. Review the current configuration and try again.", "要求的操作失敗。請檢查目前設定後再試。", "请求的操作失败。请检查当前设置后重试。"),
+    data: {
+      ariaLabel: t("Data source", "資料來源", "数据来源"), title: t("Coded data", "編碼資料", "编码数据"), openFile: t("Open coded CSV or XLSX", "開啟編碼 CSV 或 XLSX", "打开编码 CSV 或 XLSX"),
+      loadSample: t("Load sample", "載入樣本", "加载样本"), loadTrajectorySample: t("Load trajectory sample", "載入軌跡樣本", "加载轨迹样本"),
+      sampleExplanation: t("Samples use versioned explicit type declarations and order policies, then run through the strict model compiler.", "樣本使用具版本的明確類型宣告與順序政策，再交由嚴格模型編譯器處理。", "样本使用带版本的明确类型声明与顺序策略，再交由严格模型编译器处理。"),
+      importArtifact: t("Import configuration, result or Reference", "匯入設定、結果或參考", "导入设置、结果或参考"), artifactTooLarge: t("Artifact exceeds 16 MiB.", "成果超過 16 MiB。", "成果超过 16 MiB。"),
+      reviewTypes: t("Review CSV source types", "檢視 CSV 來源類型", "查看 CSV 来源类型"), reviewTypesTitle: t("Review source column types", "檢視來源欄位類型", "查看来源字段类型"),
+      typingExplanation: t("Text preserves identifiers and literal formula-looking text. Number accepts complete JSON decimal numbers without spaces or a plus sign; overflow, nonzero underflow and unsafe integers reject. Fractions use IEEE 754 rounding. Boolean accepts only literal true or false. Missing cells remain missing. Confirm creates a separate typed XLSX source; Code selection never converts values.", "文字會保留識別值及看似公式的原文。數字只接受不含空格或加號的完整 JSON 十進位數；溢位、非零下溢及不安全整數會被拒絕。小數依 IEEE 754 捨入。布林值只接受原文 true 或 false。缺失儲存格仍為缺失。確認後會建立獨立的具類型 XLSX 來源；選擇代碼絕不轉換值。", "文本会保留标识值及看似公式的原文。数字只接受不含空格或加号的完整 JSON 十进制数；溢出、非零下溢及不安全整数会被拒绝。小数依 IEEE 754 舍入。布尔值只接受原文 true 或 false。缺失单元格仍为缺失。确认后会建立独立的带类型 XLSX 来源；选择代码绝不转换值。"),
+      sourceTypeLabel: (column) => t(`Source type: ${column}`, `來源類型：${column}`, `来源类型：${column}`), sourceTypes: { text: t("Text", "文字", "文本"), number: t("Number", "數字", "数字"), boolean: t("Boolean", "布林值", "布尔值") },
+      missingCells: (count) => t(`${count} missing cells`, `${count} 個缺失儲存格`, `${count} 个缺失单元格`), collisions: (count) => t(`${count} potential identity collisions`, `${count} 個潛在識別衝突`, `${count} 个潜在标识冲突`), invalidCells: (count) => t(`${count} invalid cells.`, `${count} 個無效儲存格。`, `${count} 个无效单元格。`),
+      sourceErrors: {
+        "literal-text-required": t("CSV preparation requires literal source text cells.", "CSV 準備需要原文字串儲存格。", "CSV 准备需要原文本字符串单元格。"),
+        "boolean-literal-required": t("Boolean requires literal true or false.", "布林值必須是原文 true 或 false。", "布尔值必须是原文 true 或 false。"),
+        "number-token-required": t("Number requires a complete JSON decimal token.", "數字必須是完整的 JSON 十進位記號。", "数字必须是完整的 JSON 十进制记号。"),
+        "number-range-invalid": t("Number overflows, underflows or loses integer precision.", "數字發生溢位、下溢或失去整數精度。", "数字发生溢出、下溢或失去整数精度。"),
+      },
+      cancelPreparation: t("Cancel source preparation", "取消來源準備", "取消来源准备"), confirmPreparation: t("Confirm types and create typed XLSX", "確認類型並建立具類型 XLSX", "确认类型并建立带类型 XLSX"), confirmPreparationDisabled: t("Resolve all invalid source cells before confirming types.", "確認類型前，請先處理所有無效來源儲存格。", "确认类型前，请先处理所有无效来源单元格。"),
+      datasetSummary: (name, rows, hash, kind) => t(`${name} · ${rows} rows · ${hash} · ${kind ?? "unrecorded"}`, `${name} · ${rows} 個資料列 · ${hash} · ${kind ?? "未記錄"}`, `${name} · ${rows} 个数据行 · ${hash} · ${kind ?? "未记录"}`), sourceData: t("Source data", "來源資料", "来源数据"),
+      downloadTyped: t("Download typed XLSX source", "下載具類型 XLSX 來源", "下载带类型 XLSX 来源"), downloadReceipt: t("Download source derivation receipt", "下載來源衍生收據", "下载来源派生收据"), downloadOriginal: t("Download original CSV", "下載原始 CSV", "下载原始 CSV"),
+      historicalArtifact: (hash) => t(`Historical, read-only artifact ${hash}`, `歷史唯讀成果 ${hash}`, `历史只读成果 ${hash}`), reviewHistorical: t("Review historical configuration", "檢視歷史設定", "查看历史设置"),
+      unavailableCell: t("Unavailable", "不可用", "不可用"), boundedRows: (shown, total) => t(`Showing the first ${shown} of ${total} rows. Exports retain all rows.`, `顯示前 ${shown}/${total} 個資料列；匯出會保留全部資料列。`, `显示前 ${shown}/${total} 个数据行；导出会保留全部数据行。`),
+      codedDataTooLarge: t("Coded data exceeds 5 MB.", "編碼資料超過 5 MB。", "编码数据超过 5 MB。"), sampleUnavailable: t("The sample source is unavailable.", "樣本來源目前不可用。", "样本来源当前不可用。"),
+    },
+    onaMask: { legend: t("ONA directional mask", "ONA 方向遮罩", "ONA 方向遮罩"), description: t("Rows are source/ground Codes; columns are response Codes. Changes alter the scientific configuration.", "資料列是來源／前項代碼；欄是回應代碼。變更會改動科學設定。", "数据行是来源／前项代码；列是回应代码。更改会改动科学设置。"), initialize: t("Initialize explicit all-enabled mask", "初始化明確全部啟用遮罩", "初始化明确全部启用遮罩") },
+    plot: {
+      title: t("Plot presentation", "圖形呈現", "图形呈现"), exportContrastJson: t("Export full-population contrast JSON", "匯出完整母體對比 JSON", "导出完整总体对比 JSON"), exportContrastEdges: t("Export full-population contrast edges", "匯出完整母體對比邊", "导出完整总体对比边"), switchPlots: t("Switch Plots", "交換圖形", "交换图形"), showCentroidPaths: t("Show Group centroid paths", "顯示群組質心路徑", "显示组质心路径"), endpointsOnly: t("Show endpoints only (display)", "僅顯示端點（呈現）", "仅显示端点（呈现）"), fittedOrder: t("Fitted Horizon order is locked. Display filters retain original ordinals and do not change inference cohorts.", "擬合的視域順序已鎖定。顯示篩選會保留原始序位，且不改變推論群組。", "拟合的视域顺序已锁定。显示筛选会保留原始序位，且不改变推断群组。"), displayHorizon: (label) => t(`Display ${label}`, `顯示 ${label}`, `显示 ${label}`),
+      points: t("Points", "點", "点"), networks: t("Networks", "網絡", "网络"), codeLabels: t("Code labels", "代碼標籤", "代码标签"), unitLabels: t("Unit labels", "單位標籤", "单位标签"), variance: t("Variance", "變異", "方差"), trajectories: t("Trajectories", "軌跡", "轨迹"), flipX: t("Flip X", "翻轉 X", "翻转 X"), flipY: t("Flip Y", "翻轉 Y", "翻转 Y"), edgeThreshold: t("Edge threshold", "邊閾值", "边阈值"), edgeScale: t("Edge scale", "邊比例", "边比例"), pointScale: t("Point scale", "點比例", "点比例"), zoom: t("Zoom", "縮放", "缩放"), unavailable: t("Unavailable", "不可用", "不可用"), axis: (index) => t(`Axis ${index}`, `軸 ${index}`, `轴 ${index}`), resetNodes: t("Reset node positions", "重設節點位置", "重置节点位置"),
+      pngCanvasUnavailable: t("The browser could not prepare the PNG canvas.", "瀏覽器無法準備 PNG 畫布。", "浏览器无法准备 PNG 画布。"), pngEncodingFailed: t("The browser could not encode the PNG figure.", "瀏覽器無法編碼 PNG 圖形。", "浏览器无法编码 PNG 图形。"), pngRenderFailed: t("The browser could not render the SVG figure as PNG.", "瀏覽器無法將 SVG 圖形轉譯為 PNG。", "浏览器无法将 SVG 图形渲染为 PNG。"),
+      unknownRenderedCode: t("The rendered Code identity is not available in the source mapping.", "呈現的代碼識別在來源對應中不可用。", "呈现的代码标识在来源映射中不可用。"), toolsTitle: t("Plot Tools", "繪圖工具", "绘图工具"),
+      comparisonPlot: t("Comparison Plot", "比較圖", "比较图"), primaryPlot: t("Primary Plot", "主要圖", "主图"), secondaryPlot: t("Secondary Plot", "次要圖", "次图"), dataView: t("Data View", "資料檢視", "数据视图"),
+      comparisonAria: t("Comparison plot. Scroll horizontally on small screens.", "比較圖；小螢幕可水平捲動。", "比较图；小屏幕可水平滚动。"), primaryPlotAria: t("Primary plot. Scroll horizontally on small screens.", "主要圖；小螢幕可水平捲動。", "主图；小屏幕可水平滚动。"), secondaryPlotAria: t("Secondary plot. Scroll horizontally on small screens.", "次要圖；小螢幕可水平捲動。", "次图；小屏幕可水平滚动。"),
+      primaryEmptyAria: t("Primary Plot is empty", "主要圖目前為空", "主图当前为空"), secondaryEmptyAria: t("Secondary Plot is empty", "次要圖目前為空", "次图当前为空"), emptyGroupPrompt: t("Click or hover points in the comparison plot to display networks here", "在比較圖點擊或停留於資料點，即可在此顯示網絡", "在比较图点击或停留于数据点，即可在此显示网络"), selectedGroupOrder: t("Selected group order", "所選群組順序", "所选组顺序"),
+    },
+    stats: {
+      separation: t("Model bundles contain unavailable statistics. Inference below is an explicit, separate post-model request.", "模型套件包含不可用的統計項目。下方推論是明確且獨立的模型後要求。", "模型包包含不可用的统计项目。下方推断是明确且独立的模型后请求。"), inferenceDesign: t("Trajectory inference design", "軌跡推論設計", "轨迹推断设计"), designs: { independent: t("Independent groups at a period", "單一時段的獨立群組", "单一时段的独立组"), paired: t("Paired periods", "配對時段", "配对时段"), repeated: t("Repeated periods", "重複時段", "重复时段") },
+      identityConfirmation: t("I confirm these fitted Units identify the same entities across periods.", "我確認這些擬合單位在各時段識別相同實體。", "我确认这些拟合单位在各时段标识相同实体。"), periodInstructions: t("Select exactly one period for independent, exactly two for paired, or at least three for repeated inference. Select periods in the requested order. The native consumer verifies fitted precedence and rejects incomparable or reversed periods.", "獨立推論需選一個時段，配對推論需選兩個，重複推論需選至少三個。請依要求順序選取；原生消費者會驗證擬合先後並拒絕不可比較或反向時段。", "独立推断需选一个时段，配对推断需选两个，重复推断需选至少三个。请依请求顺序选择；原生消费者会验证拟合先后并拒绝不可比较或反向时段。"), runInference: t("Run confirmed inference", "執行已確認推論", "运行已确认推断"), onaDescriptive: t("ONA remains descriptive only; group and trajectory inference are unavailable.", "ONA 仍僅提供描述；群組及軌跡推論不可用。", "ONA 仍仅提供描述；组及轨迹推断不可用。"),
+      onaEdges: t("ONA directed aggregate edges", "ONA 有向彙總邊", "ONA 有向汇总边"), onaAudit: t("Full-run deidentified ordered audit", "完整執行去識別有序稽核", "完整运行去标识有序审计"), exportOnaEdges: t("Export ONA aggregate edges", "匯出 ONA 彙總邊", "导出 ONA 汇总边"), exportOnaAudit: t("Export ONA deidentified audit", "匯出 ONA 去識別稽核", "导出 ONA 去标识审计"), exportNative: t("Export native statistics", "匯出原生統計", "导出原生统计"),
+      localDataView: t("Local identity-bearing bound Data View", "本機含識別綁定資料檢視", "本机含标识绑定数据视图"), globalTraversal: t("Global runtime source traversal (not per-point membership)", "全域執行時來源走訪（非逐點成員關係）", "全局运行时来源遍历（非逐点成员关系）"), exportDataView: t("Export current Data View", "匯出目前資料檢視", "导出当前数据视图"), exportDataViewConfirmation: t("This local identity-bearing view contains Unit and Group identities. Export it?", "此本機含識別檢視包含單位及群組識別。要匯出嗎？", "此本机含标识视图包含单位及组标识。要导出吗？"), dataViewValidated: t("Data View validated against the independent current plan.", "資料檢視已依獨立目前計畫驗證。", "数据视图已依独立当前计划验证。"), exportMethods: t("Export Methods", "匯出方法", "导出方法"),
+    },
+    artifacts: {
+      ariaLabel: t("Model artifacts", "模型成果", "模型成果"), title: t("Artifacts", "成果", "成果"), clearPreset: t("Clear preset Group hiding", "清除預設群組隱藏", "清除预设组隐藏"), exportPreset: t("Export presentation preset", "匯出呈現預設", "导出呈现预设"), reviewPreset: t("Review presentation preset", "檢視呈現預設", "查看呈现预设"), presetPreview: t("Presentation preset preview", "呈現預設預覽", "呈现预设预览"), presetMatches: t("This preset matches the retained result. Application changes display only.", "此預設符合保留結果；套用只會改變顯示。", "此预设符合保留结果；应用只会改变显示。"), presetMismatch: t("Unapplied preset: this belongs to a different scientific result.", "未套用預設：其屬於不同科學結果。", "未应用预设：其属于不同科学结果。"), presetCodesMismatch: t("The active editor excludes Codes used by this retained result. The preset remains unapplied.", "啟用中的編輯器排除了保留結果所用代碼；預設維持未套用。", "启用中的编辑器排除了保留结果所用代码；预设保持未应用。"), presetFamilyMismatch: t("The editor family differs from the retained result. The preset remains unapplied.", "編輯器分析系列與保留結果不同；預設維持未套用。", "编辑器分析系列与保留结果不同；预设保持未应用。"), cancelPreset: t("Cancel preset", "取消預設", "取消预设"), applyPreset: t("Apply matching presentation preset", "套用相符呈現預設", "应用匹配呈现预设"), exportDraft: t("Export draft", "匯出草稿", "导出草稿"), draftBlocked: t("Resolve unfinished raw input before exporting: the portable draft grammar cannot represent that visible text. Typed incomplete drafts remain exportable.", "匯出前請處理未完成的原始輸入：可攜式草稿語法無法表示該可見文字。具類型的不完整草稿仍可匯出。", "导出前请处理未完成的原始输入：可移植草稿语法无法表示该可见文本。带类型的不完整草稿仍可导出。"), exportConfig: t("Export canonical configuration", "匯出規範設定", "导出规范设置"), exportAnalysis: t("Export current analysis", "匯出目前分析", "导出当前分析"), exportAnalysisConfirmation: t("Export the full identity-bearing model bundle?", "要匯出完整且含識別的模型套件嗎？", "要导出完整且含标识的模型包吗？"), exportStale: t("Export STALE audit", "匯出過期稽核", "导出过期审计"), reexportReference: t("Re-export original Reference", "重新匯出原始參考", "重新导出原始参考"), exportReference: t("Export Reference", "匯出參考", "导出参考"), captureSet: (count) => t(`Capture analysis set (${count}/6)`, `擷取分析集（${count}/6）`, `捕获分析集（${count}/6）`), compareSets: t("Compare last two sets in the same basis", "在相同基底比較最後兩個分析集", "在相同基底比较最后两个分析集"), historicalComparison: t("Historical same-basis set comparison", "歷史相同基底分析集比較", "历史相同基底分析集比较"),
+      presetTooLarge: t("Presentation preset exceeds 16 MiB.", "呈現預設超過 16 MiB。", "呈现预设超过 16 MiB。"), referenceDisplayName: t("Reference", "參考", "参考"),
+      presetScope: t("This preset contains per-Code visibility and colors, hidden Groups, node positions, selected axes, camera and supported plot layers. It does not contain the Primary/Secondary pair, individual hidden Units, per-Group control preferences, global suppression and its saved visibility snapshots, complementary colors, Horizon filters or Group-centroid path choices. Those preferences stay unchanged when applying a preset. Restore global visibility before applying. Preset-hidden Groups use a separate display overlay that can be cleared without changing per-Group choices.", "此預設包含各代碼的可見性與顏色、隱藏群組、節點位置、所選座標軸、相機及支援的圖層；不包含主要／次要配對、個別隱藏單位、各群組控制偏好、全域隱藏與其可見性快照、互補色、視域篩選或群組質心路徑。套用時這些偏好保持不變。套用前請還原全域可見性。預設隱藏群組使用獨立顯示覆蓋，可在不改變各群組選擇下清除。", "此预设包含各代码的可见性与颜色、隐藏组、节点位置、所选坐标轴、相机及支持的图层；不包含主要／次要配对、个别隐藏单位、各组控制偏好、全局隐藏及其可见性快照、互补色、视域筛选或组质心路径。应用时这些偏好保持不变。应用前请恢复全局可见性。预设隐藏组使用独立显示覆盖，可在不改变各组选择下清除。"),
+    },
+    ai: { ready: t("Current native Stats result is ready for aggregate review.", "目前原生統計結果已可供彙總檢視。", "当前原生统计结果已可供汇总查看。"), unavailable: t("Run and review a current native Stats result first.", "請先執行並檢視目前原生統計結果。", "请先运行并查看当前原生统计结果。"), openStats: t("Open Stats", "開啟統計", "打开统计"), disabled: t("Run a current eligible native inference and review its aggregate evidence first.", "請先執行目前符合資格的原生推論，並檢視其彙總證據。", "请先运行当前符合资格的原生推断，并查看其汇总证据。") },
+    toolbar: { dataView: t("Data View", "資料檢視", "数据视图"), downloadModel: t("Download Model", "下載模型", "下载模型"), exportSvg: t("Export SVG", "匯出 SVG", "导出 SVG"), exportPng: t("Export PNG", "匯出 PNG", "导出 PNG"), researchSpace: t("SVD research space", "SVD 研究空間", "SVD 研究空间") },
+    shell: { workspaceAria: t("Open ENA analysis workspace", "Open ENA 分析工作區", "Open ENA 分析工作区"), modesAria: t("Analysis modes", "分析模式", "分析模式"), local: t("Local", "本機", "本机"), runtimePrivacy: (version) => t(`ENA computation powered by jENA v${version} (GPL-3.0-only); ENA.HK provides the interface, plotting, and exports. Source data stays in this workspace's browser memory unless you intentionally export it.`, `ENA 運算由 jENA v${version}（GPL-3.0-only）提供；ENA.HK 提供介面、繪圖及匯出。除非您主動匯出，來源資料只會保留在此工作區的瀏覽器記憶體中。`, `ENA 计算由 jENA v${version}（GPL-3.0-only）提供；ENA.HK 提供界面、绘图及导出。除非您主动导出，来源数据只会保留在此工作区的浏览器内存中。`) },
+    result: { plotAria: t("Bound model plot", "綁定模型圖", "绑定模型图"), historicalGeometry: t("Historical geometry: edits require a new run.", "歷史幾何：編輯後需要重新執行。", "历史几何：编辑后需要重新运行。"), boundGeometry: t("Bound fitted geometry", "已綁定擬合幾何", "已绑定拟合几何"), oneAxis: t("Only one supported fitted axis is available. No second coordinate is invented.", "只有一個受支援的擬合軸；不會虛構第二座標。", "只有一个受支持的拟合轴；不会虚构第二坐标。"), fittedCoordinates: t("Fitted coordinates", "擬合座標", "拟合坐标"), contrastUnavailable: t("Contrast requires two declared Groups and two supported fitted axes. The fitted model remains available for inspection.", "對比需要兩個已宣告群組及兩個受支援擬合軸；擬合模型仍可供檢視。", "对比需要两个已声明组及两个受支持拟合轴；拟合模型仍可供查看。"), codeLabels: t("Code labels", "代碼標籤", "代码标签"), trajectorySteps: t("Observed fitted trajectory steps and original ordinals", "觀察到的擬合軌跡步驟及原始序位", "观测到的拟合轨迹步骤及原始序位") },
+    empty: { ariaLabel: t("Open ENA model setup workbench", "Open ENA 模型設定工作台", "Open ENA 模型设置工作台"), comparisonPlot: t("COMPARISON PLOT", "比較圖", "比较图"), setupRequired: t("Model setup required", "需要設定模型", "需要设置模型"), researchSpace: t("2D research space", "2D 研究空間", "2D 研究空间"), networkAria: t("Connected four-node epistemic network", "四節點連接知識網絡", "四节点连接知识网络"), pathway: t("MODEL → VIEW → PRESENTER", "模型 → 檢視 → 呈現", "模型 → 视图 → 呈现"), complete: t("Complete: ", "已完成：", "已完成："), incomplete: t("Not complete: ", "未完成：", "未完成："), openRows: t("Open or load coded rows", "開啟或載入編碼資料列", "打开或加载编码数据行"), defineModel: t("Define Units, Horizons, Windows, and Codes; Group is optional", "設定單位、視域、窗口及代碼；群組可選", "设置单位、视域、窗口及代码；组可选"), buildModel: t("Build the model with jENA", "使用 jENA 建立模型", "使用 jENA 构建模型"), primaryPlot: t("PRIMARY PLOT", "主要圖", "主图"), secondaryPlot: t("SECONDARY PLOT", "次要圖", "次图"), awaitingGroup: t("Awaiting group selection", "等待群組選擇", "等待组选择"), primaryPending: t("Primary network appears after a model is built.", "建立模型後會顯示主要網絡。", "构建模型后会显示主网络。"), secondaryPending: t("Secondary network appears after a model is built.", "建立模型後會顯示次要網絡。", "构建模型后会显示次网络。"), dataReady: (rows) => t(`${rows.toLocaleString()} coded rows ready for review`, `${rows.toLocaleString()} 個編碼資料列可供檢視`, `${rows.toLocaleString()} 个编码数据行可供查看`), dataPrompt: t("Open a CSV or XLSX file, or load the teaching sample, to inspect coded rows.", "開啟 CSV 或 XLSX 檔案，或載入教學樣本，以檢視編碼資料列。", "打开 CSV 或 XLSX 文件，或加载教学样本，以查看编码数据行。") },
+  };
+}
+
 function createModelV3Copy(locale: NativeModelLocaleV3): OpenEnaModelV3Copy {
   let model!: OpenEnaModelV3Copy;
   const localizedTabs = localizeModelTreeV3(tabsCopy, locale);
@@ -1919,6 +2298,8 @@ function createModelV3Copy(locale: NativeModelLocaleV3): OpenEnaModelV3Copy {
     tabDiagnosticLabel: ({ label, errors, warnings }) => locale === "en"
       ? `${label}, ${errors} ${errors === 1 ? "error" : "errors"} and ${warnings} ${warnings === 1 ? "warning" : "warnings"}`
       : locale === "zh-hant" ? `${label}，${errors} 個錯誤，${warnings} 個警告` : `${label}，${errors} 个错误，${warnings} 个警告`,
+    status: { ...localizedTabs.status, summary: ({ configuration, result }) => locale === "en" ? `${configuration}. ${result}.` : `${configuration}。${result}。` },
+    scientificSummary: { ...localizedTabs.scientificSummary, count: (value) => `${value}` },
     diagnostics: {
       ...localizedTabs.diagnostics,
       localize: (input) => localizeModelDiagnosticV3(model, input),
@@ -1928,6 +2309,7 @@ function createModelV3Copy(locale: NativeModelLocaleV3): OpenEnaModelV3Copy {
         const row = sample.rowIndex === undefined ? "" : locale === "en" ? `row ${sample.rowIndex + 1}` : locale === "zh-hant" ? `第 ${sample.rowIndex + 1} 列` : `第 ${sample.rowIndex + 1} 行`;
         return [locale === "en" ? `Evidence sample ${index + 1}` : locale === "zh-hant" ? `證據樣本 ${index + 1}` : `证据样本 ${index + 1}`, identity, row].filter(Boolean).join(" · ");
       },
+      evidenceTotal: (totalCount) => locale === "en" ? `${totalCount} affected rows` : locale === "zh-hant" ? `${totalCount} 個受影響資料列` : `${totalCount} 个受影响数据行`,
     },
   };
   model = {
@@ -1936,6 +2318,7 @@ function createModelV3Copy(locale: NativeModelLocaleV3): OpenEnaModelV3Copy {
     codes: localizedCodes, order: localizedOrder,
     nativeStats: localizeModelTreeV3(nativeStatsCopyEnV3, locale), importPreview: localizeModelTreeV3(importPreviewCopyEnV3, locale),
     groupApplicability: localizeModelTreeV3(groupApplicabilityEnV3, locale),
+    workspace: createWorkspaceCopyV3(locale),
     diagnosticMessages: diagnosticMessagesV3(locale), suggestedActions: suggestedActionMessagesV3(locale),
   };
   return model;

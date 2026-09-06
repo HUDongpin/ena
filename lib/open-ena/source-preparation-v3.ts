@@ -5,26 +5,30 @@ import { canonicalJsonV3, sha256TextV3 } from "./model-v3/canonical-json";
 import type { ParsedDataset } from "./types";
 
 export type SourceColumnTypeV3 = "text" | "number" | "boolean";
+export type SourceTypeErrorCodeV3 = "literal-text-required" | "boolean-literal-required" | "number-token-required" | "number-range-invalid";
+export class SourceTypeErrorV3 extends TypeError {
+  constructor(readonly code: SourceTypeErrorCodeV3, message: string) { super(message); this.name = "SourceTypeErrorV3"; }
+}
 export type SourceTypeDeclarationsV3 = Readonly<Record<string, SourceColumnTypeV3>>;
 export const SOURCE_TYPING_POLICY_V3 = "explicit-csv-typed-xlsx-v1";
 export const SOURCE_TYPING_EXPLANATION_V3 = "Text preserves identifiers and literal formula-looking text. Number accepts complete JSON decimal numbers without spaces or a plus sign; overflow, nonzero underflow and unsafe integers reject. Fractions use IEEE 754 rounding. Boolean accepts only literal true or false. Missing cells remain missing. Confirm creates a separate typed XLSX source; Code selection never converts values.";
 
 export function parseDeclaredSourceCellV3(value: Scalar, type: SourceColumnTypeV3): Scalar {
   if (value === null) return null;
-  if (typeof value !== "string") throw new TypeError("CSV preparation requires literal source text cells.");
+  if (typeof value !== "string") throw new SourceTypeErrorV3("literal-text-required", "CSV preparation requires literal source text cells.");
   if (type === "text") return value;
   if (type === "boolean") {
     if (value === "true") return true;
     if (value === "false") return false;
-    throw new TypeError("Boolean requires literal true or false.");
+    throw new SourceTypeErrorV3("boolean-literal-required", "Boolean requires literal true or false.");
   }
   if (type !== "number" || !/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/u.test(value))
-    throw new TypeError("Number requires a complete JSON decimal token.");
+    throw new SourceTypeErrorV3("number-token-required", "Number requires a complete JSON decimal token.");
   const number = JSON.parse(value) as number;
   const mantissa = value.split(/[eE]/u)[0];
   if (!Number.isFinite(number) || (number === 0 && /[1-9]/u.test(mantissa))
     || (Number.isInteger(number) && !Number.isSafeInteger(number)))
-    throw new TypeError("Number overflows, underflows or loses integer precision.");
+    throw new SourceTypeErrorV3("number-range-invalid", "Number overflows, underflows or loses integer precision.");
   return number;
 }
 
@@ -32,11 +36,13 @@ export function previewSourceTypesV3(dataset: ParsedDataset, declarations: Sourc
   if (Object.keys(declarations).length !== dataset.headers.length || dataset.headers.some((column) => !Object.hasOwn(declarations, column)))
     throw new TypeError("Declare exactly one type for every source column.");
   let errorCount = 0;
-  const errors: { row: number; column: string; reason: string }[] = [];
+  const errors: { row: number; column: string; code: SourceTypeErrorCodeV3; reason: string }[] = [];
   const columns = dataset.headers.map((column) => {
     const type = declarations[column];
     if (!["text", "number", "boolean"].includes(type)) throw new TypeError("Unknown source type.");
     let nullCount = 0;
+    let columnErrorCount = 0;
+    const errorCodes = new Set<SourceTypeErrorCodeV3>();
     const mapping = new Map<string, Set<string>>();
     const examples: { before: Scalar; after: Scalar | "invalid" }[] = [];
     dataset.rows.forEach((row, index) => {
@@ -48,11 +54,14 @@ export function previewSourceTypesV3(dataset: ParsedDataset, declarations: Sourc
         if (examples.length < 3) examples.push({ before: value, after: parsed });
       } catch (error) {
         errorCount++;
-        if (errors.length < 20) errors.push({ row: index + 1, column, reason: error instanceof Error ? error.message : String(error) });
+        columnErrorCount++;
+        const code = error instanceof SourceTypeErrorV3 ? error.code : "literal-text-required";
+        errorCodes.add(code);
+        if (errors.length < 20) errors.push({ row: index + 1, column, code, reason: error instanceof Error ? error.message : String(error) });
         if (examples.length < 3) examples.push({ before: value, after: "invalid" });
       }
     });
-    return { column, type, nullCount, examples, identityCollisionCount: [...mapping.values()].filter((values) => values.size > 1).length };
+    return { column, type, nullCount, examples, identityCollisionCount: [...mapping.values()].filter((values) => values.size > 1).length, errorCount: columnErrorCount, errorCodes: [...errorCodes] };
   });
   return { columns, errors, errorCount };
 }

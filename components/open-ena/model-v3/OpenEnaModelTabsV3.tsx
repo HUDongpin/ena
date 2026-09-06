@@ -286,7 +286,7 @@ export function OpenEnaModelTabsV3({
   return (
     <div className="ena-model-v3-shell">
       <div className="ena-model-tab-and-help">
-        <div role="tablist" aria-label={copy.tabListLabel}>
+        <div className="ena-model-tabs" role="tablist" aria-label={copy.tabListLabel}>
           {OPEN_ENA_MODEL_TABS_V3.map((tab) => (
             <button
               key={tab}
@@ -318,6 +318,7 @@ export function OpenEnaModelTabsV3({
         </div>
         <button
           ref={helpButtonRef}
+          className="ena-official-icon-button ena-model-help-button"
           type="button"
           aria-label={activeHelp.buttonLabel}
           aria-expanded={helpTab === activeTab}
@@ -381,6 +382,7 @@ export function OpenEnaModelTabsV3({
         </dl>
       </section>
       <section
+        className="ena-model-tab-panel"
         id={panelIdV3(activeTab)}
         role="tabpanel"
         aria-labelledby={tabIdV3(activeTab)}

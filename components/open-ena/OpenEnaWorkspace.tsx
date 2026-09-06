@@ -1,6 +1,6 @@
 "use client";
 import { buildUnitDisplayLabelIndexV3, hiddenUnitLabelsV3 } from "../../lib/open-ena/hidden-unit-display-v3";
-import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import type { Row } from "jena-js";
 import type { Locale } from "@/lib/i18n";
 import { getOpenEnaAuthCopy } from "@/lib/open-ena-auth-copy";
@@ -15,7 +15,7 @@ import { JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT, JENA_SOURCE_URL, SAMPLE_DATAS
 import { buildPresentationArtifactV3 } from "@/lib/open-ena/presentation-artifact-v3";
 import { parseBundleJsonV3 } from "@/lib/open-ena/bundle-json-v3";
 import { assertPresentationArtifactContractV3 } from "@/lib/open-ena/bundle-contract-v3";
-import { prepareWorkspacePresentationV3, WORKSPACE_PRESET_SCOPE_V3 } from "@/lib/open-ena/workspace-presentation-v3";
+import { prepareWorkspacePresentationV3 } from "@/lib/open-ena/workspace-presentation-v3";
 import { presentBoundResultV3, presentBoundGroupDisplayV3 } from "@/lib/open-ena/bound-presentation-v3";
 import { exportContrastV3 } from "@/lib/open-ena/contrast-export-v3";
 import { buildContrastV3 } from "@/lib/open-ena/contrasts";
@@ -38,7 +38,7 @@ import type { OpenEnaNodeLayoutPositions, OpenEnaNodeDimensionPosition } from "@
 import { cameraForPreset, type OpenEna3dCamera, type OpenEna3dAspectRatio } from "@/lib/open-ena/plot3d";
 import { resolveOpenEnaGroupDisplayOptions } from "@/lib/open-ena/group-display";
 import { prepareTeachingSampleV3 } from "@/lib/open-ena/sample-source-v3";
-import { prepareTypedCsvSourceV3, previewSourceTypesV3, SOURCE_TYPING_EXPLANATION_V3, type SourceTypeDeclarationsV3, type SourceColumnTypeV3 } from "@/lib/open-ena/source-preparation-v3";
+import { prepareTypedCsvSourceV3, previewSourceTypesV3, type SourceTypeDeclarationsV3, type SourceColumnTypeV3 } from "@/lib/open-ena/source-preparation-v3";
 import type { PresentationArtifactV3, BoundOnaResultV3, BoundStandardResultV3, ModelWorkspaceDraftsV3 } from "@/lib/open-ena/model-v3/types";
 import OpenEnaPlot from "./OpenEnaPlot";
 import OpenEnaInteractive3DPlot from "./OpenEnaInteractive3DPlot";
@@ -314,20 +314,22 @@ function downloadJson(filename: string, data: unknown, compact = false) {
 }
 
 
-function ResearchTableV3({ rows, label }: { rows: readonly object[]; label: string }) {
+function ResearchTableV3({ rows, label, unavailable, boundedRows }: { rows: readonly object[]; label: string; unavailable: string; boundedRows: (shown: number, total: number) => string }) {
   const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
   return <div className="ena-result-table-wrap" role="region" aria-label={label} tabIndex={0}><table>
     <caption>{label} ({rows.length})</caption><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
     <tbody>{rows.slice(0, 100).map((row, index) => <tr key={index}>{columns.map((column) => {
       const value = (row as Record<string, unknown>)[column];
-      return <td key={column}>{value === null || value === undefined ? "Unavailable" : typeof value === "object" ? JSON.stringify(value) : String(value)}</td>;
-    })}</tr>)}</tbody></table>{rows.length > 100 && <p>Showing the first 100 rows. Exports retain all rows.</p>}</div>;
+      return <td key={column}>{value === null || value === undefined ? unavailable : typeof value === "object" ? JSON.stringify(value) : String(value)}</td>;
+    })}</tr>)}</tbody></table>{rows.length > 100 && <p>{boundedRows(100, rows.length)}</p>}</div>;
 }
 
 export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSource, worker }: OpenEnaWorkspaceProps) {
   const workspaceId = useId();
   const copy = getOpenEnaCopy(locale);
   const modelV3Copy = copy.modelV3;
+  const workspaceCopy = modelV3Copy.workspace;
+  const researchTableCopy = { unavailable: workspaceCopy.data.unavailableCell, boundedRows: workspaceCopy.data.boundedRows };
   const authCopy = getOpenEnaAuthCopy(locale);
   const controller = useOpenEnaWorkspaceV3({ initial: initialSource, worker });
   const { state, dispatch, dispatchModel, context, currentCompilation, currentPlan } = controller;
@@ -354,6 +356,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const [derivative, setDerivative] = useState<Awaited<ReturnType<typeof prepareTypedCsvSourceV3>> | null>(null);
   const [originalSource, setOriginalSource] = useState<{ text: string; name: string } | null>(null);
   const sourceGeneration = useRef(0);
+  const sourceFileTriggerRef = useRef<HTMLInputElement>(null);
+  const sourceDialogRef = useRef<HTMLElement>(null);
   const [previews, setPreviews] = useState<Awaited<ReturnType<typeof buildWorkspacePreviewsV3>>>({ units: { availability: "unavailable" }, horizons: { availability: "unavailable" } });
   const [activeCodeColor, setActiveCodeColor] = useState<{ code: string; context: typeof context } | null>(null);
   const activeColorIntent = activeCodeColor && sameScientificContextV3(activeCodeColor.context, context) && draft.codes.includes(activeCodeColor.code) ? activeCodeColor : null;
@@ -431,6 +435,12 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const localizedDiagnostic = (diagnostic: { readonly id: string; readonly severity: "error" | "warning" | "information"; readonly scope: "dataset" | "units" | "horizons" | "windows" | "codes" | "rotation" | "reference" | "resources" | "migration" | "model"; readonly fieldPath?: string; readonly evidence?: { readonly totalCount: number; readonly sampleLimit: number; readonly truncated: boolean } }) => modelV3Copy.tabs.diagnostics.localize(diagnostic as Parameters<typeof modelV3Copy.tabs.diagnostics.localize>[0]);
   const modelCopy = modelV3Copy.tabs;
   const sourceTypingPreview = useMemo(() => sourcePreview ? previewSourceTypesV3(sourcePreview.dataset, sourcePreview.types) : null, [sourcePreview]);
+  const sourceDialogOpen = sourcePreview !== null;
+  useEffect(() => {
+    if (!sourceDialogOpen) return;
+    const frame = requestAnimationFrame(() => sourceDialogRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [sourceDialogOpen]);
   const plan = currentCompilation?.plan;
   const referencePreview: OpenEnaReferenceSelectionPreviewV3 = useMemo(() => {
     const selection = modelState.drafts.standard.rotation;
@@ -479,7 +489,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     }
   }, [modelNavigation]);
 
-  async function attempt(work: () => Promise<void>) { try { setError(""); await work(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }
+  async function attempt(work: () => Promise<void>) { try { setError(""); await work(); } catch { setError(workspaceCopy.operationFailed); } }
   function saveDescriptor(value: ExportFileDescriptorV3) { downloadText(value.filename, new TextDecoder().decode(value.bytes), value.mediaType); }
   function saveDerivative(value: NonNullable<typeof derivative>) {
     const url = URL.createObjectURL(new Blob([value.bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
@@ -493,7 +503,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     const generation = ++sourceGeneration.current;
     setSourceBusy(true);
     try {
-      if (file.size > 5 * 1024 * 1024) throw new Error("Coded data exceeds 5 MB.");
+      if (file.size > 5 * 1024 * 1024) throw new Error(workspaceCopy.data.codedDataTooLarge);
       if (codedDataFileKind(file.name) === "csv") {
         const text = await file.text();
         const source = parseCsv(text, { name: file.name, sizeBytes: file.size, source: "upload" });
@@ -517,11 +527,23 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
       setDerivative(value); setOriginalSource({ text: preview.text, name: preview.dataset.name }); installSource(value);
     } finally { if (generation === sourceGeneration.current) setSourceBusy(false); }
   }
+  function cancelSourcePreparation(returnFocus = true) {
+    const generation = ++sourceGeneration.current;
+    setSourcePreview(null);
+    setSourceBusy(false);
+    if (returnFocus) requestAnimationFrame(() => { if (generation === sourceGeneration.current) sourceFileTriggerRef.current?.focus(); });
+  }
+  function onSourceDialogKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    cancelSourcePreparation(true);
+  }
   async function loadSample(trajectory = false) {
     const generation = ++sourceGeneration.current; setSourceBusy(true);
     try {
       const url = trajectory ? TRAJECTORY_SAMPLE_DATASET_URL : SAMPLE_DATASET_URL;
-      const response = await fetch(url, { cache: "no-store" }); if (!response.ok) throw new Error("Sample source unavailable.");
+      const response = await fetch(url, { cache: "no-store" }); if (!response.ok) throw new Error(workspaceCopy.data.sampleUnavailable);
       const text = await response.text();
       const value = await prepareTeachingSampleV3(text, trajectory ? "trajectory" : "endpoint", new Date());
       if (generation !== sourceGeneration.current) return;
@@ -616,7 +638,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
       const context = canvas.getContext("2d");
       if (!context) {
         URL.revokeObjectURL(sourceUrl);
-        setError("The browser could not prepare the PNG canvas.");
+        setError(workspaceCopy.plot.pngCanvasUnavailable);
         return;
       }
       context.fillStyle = "#ffffff";
@@ -625,7 +647,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
       canvas.toBlob((blob) => {
         URL.revokeObjectURL(sourceUrl);
         if (!blob) {
-          setError("The browser could not encode the PNG figure.");
+          setError(workspaceCopy.plot.pngEncodingFailed);
           return;
         }
         const url = URL.createObjectURL(blob);
@@ -638,7 +660,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     };
     image.onerror = () => {
       URL.revokeObjectURL(sourceUrl);
-      setError("The browser could not render the SVG figure as PNG.");
+      setError(workspaceCopy.plot.pngRenderFailed);
     };
     image.src = sourceUrl;
   }
@@ -648,7 +670,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const sourcePositions = nodeOverrides.hash === resultHash ? nodeOverrides.positions : new Map<string, OpenEnaNodeDimensionPosition>();
   const nodeLayout: OpenEnaNodeLayoutPositions = new Map(Object.entries(renderedSource).flatMap(([rendered, source]) => sourcePositions.has(source) ? [[rendered, sourcePositions.get(source)!] as const] : []));
   const moveNode = (rendered: string, position: OpenEnaNodeDimensionPosition) => {
-    const source = renderedSource[rendered]; if (!Object.hasOwn(renderedSource, rendered) || !source) throw new Error("Unknown rendered Code identity.");
+    const source = renderedSource[rendered]; if (!Object.hasOwn(renderedSource, rendered) || !source) throw new Error(workspaceCopy.plot.unknownRenderedCode);
     setNodeOverrides((previous) => { const positions = new Map(previous.hash === resultHash ? previous.positions : []); positions.set(source, new Map([...(positions.get(source) ?? []), ...position])); return { hash: resultHash, positions }; });
   };
   const graph = { showCodeGraph: !display.allCodesSuppressed, codeVisibility: display.codeVisibility, codeSourceByRenderedCode: renderedSource, codeLabelByRenderedCode: presentation?.codeLabelByRenderedCode };
@@ -675,7 +697,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   }
   async function previewPresentation(file: File) {
     const intent = ++presetSerial.current, capturedContext = context, capturedResult = result;
-    if (file.size > 16 * 1024 * 1024) throw new Error("Presentation preset exceeds 16 MiB.");
+    if (file.size > 16 * 1024 * 1024) throw new Error(workspaceCopy.artifacts.presetTooLarge);
     const parsed = parseBundleJsonV3(await file.text()) as PresentationArtifactV3;
     assertPresentationArtifactContractV3(parsed);
     if (intent !== presetSerial.current || latest.current.state.model.result !== capturedResult || !sameScientificContextV3(capturedContext, modelScientificContextV3(latest.current.state.model))) return;
@@ -720,12 +742,12 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
       horizons: previewHorizonsCurrent && previews.horizons.availability === "available" ? { availability: "available", value: previews.horizons.horizons.length } : { availability: "unavailable" },
       groups: previewUnitsCurrent && previews.units.availability === "available" ? { availability: "available", value: previews.units.groups.length } : { availability: "unavailable" }, codes: { availability: "available", value: draft.codes.length } },
   };
-  const groupSelectors = <section aria-label="Current-result Group contrast" data-testid="open-ena-ona-descriptive-group-controls"><p>{copy.contrast.selectedAxes}: {twoDAxes.join(" · ")}</p><label>Primary Group<select aria-label="Primary Group" value={primaryGroupName} onChange={(e) => setPrimaryGroupName(e.target.value)}><option value="">Select Group</option>{groups.map((group) => <option key={group.token} value={group.token}>{group.displayLabel}</option>)}</select></label>
-    <label>Secondary Group<select aria-label="Secondary Group" value={secondaryGroupName} onChange={(e) => setSecondaryGroupName(e.target.value)}><option value="">Select Group</option>{groups.map((group) => <option key={group.token} value={group.token}>{group.displayLabel}</option>)}</select></label>
+  const groupSelectors = <section aria-label={copy.contrast.title} data-testid="open-ena-ona-descriptive-group-controls"><p>{copy.contrast.selectedAxes}: {twoDAxes.join(" · ")}</p><label>{copy.contrast.primary}<select aria-label={copy.contrast.primary} value={primaryGroupName} onChange={(e) => setPrimaryGroupName(e.target.value)}><option value="">{copy.model.noGroup}</option>{groups.map((group) => <option key={group.token} value={group.token}>{group.displayLabel}</option>)}</select></label>
+    <label>{copy.contrast.secondary}<select aria-label={copy.contrast.secondary} value={secondaryGroupName} onChange={(e) => setSecondaryGroupName(e.target.value)}><option value="">{copy.model.noGroup}</option>{groups.map((group) => <option key={group.token} value={group.token}>{group.displayLabel}</option>)}</select></label>
     {completedResultKind === "ona" && <p>{copy.ona.layout.descriptiveBoundary}</p>}</section>;
 
   const persistentPlotTools = <OpenEnaPersistentPlotTools analysisKind={completedResultKind === "ona" ? "ona" : "ena"}
-    title={completedResultKind === "ona" ? copy.ona.presenter.title : "Plot Tools"} copy={completedResultKind === "ona" ? copy.ona.plotTools : undefined}
+    title={completedResultKind === "ona" ? copy.ona.presenter.title : workspaceCopy.plot.toolsTitle} copy={copy.ona.plotTools}
     edgeScale={edgeScale} edgeThreshold={edgeThreshold} pointScale={pointScale} textScale={textScale}
     showLabels={showLabels} showGroupLabels={showGroupLabels} showUnitLabels={showUnitLabels} showPoints={showPoints}
     unitCircle={unitCircle} flipX={flipX} flipY={flipY} plotZoom={plotZoom} nodeLayoutOverrideCount={sourcePositions.size}
@@ -736,34 +758,34 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     onResetNodeLayout={() => setNodeOverrides({ hash: resultHash, positions: new Map() })}
     onReset={() => { setEdgeScale(1); setEdgeThreshold(0); setPointScale(1); setTextScale(1); setFlipX(false); setFlipY(false); setPlotZoom(1); setAxes([]); setThreeDAxes([]); setCameraPreset("isometric"); setCamera(cameraForPreset("isometric")); setAspectRatio(null); setHiddenUnitKeys([]); setShowLabels(true); setShowGroupLabels(true); setShowUnitLabels(false); setShowPoints(true); setUnitCircle(false); }}
     settingsOpen={plotSettingsOpen} onSettingsOpenChange={setPlotSettingsOpen} disabled={!result} />;
-  const analysisPanel = <div className="ena-control-content" lang={locale} dir="ltr">
-      <header className="ena-panel-heading"><h1>{copy.modes[mode]}</h1>{mode === "model" && family === "standard" && <button type="button" className="ena-model-trajectory-button" onClick={() => setModelNavigation((value) => ({ tab: "windows", serial: value.serial + 1 }))}>Configure trajectory model</button>}<p role="status" aria-live="polite">{current ? "Current result" : result ? "Retained stale result" : "No result"} · {modelState.runStatus}</p>
-        {modelState.runStatus === "running" && <p role="status"><progress max={100} value={state.progress?.value ?? 0} />{state.progress?.stage ?? "Starting model worker"}</p>}
-        <button type="button" disabled={!controller.canRun || sourceBusy || sourcePreview !== null} onClick={controller.run}>Run model</button>
-        <button type="button" disabled={modelState.runStatus !== "running"} onClick={controller.cancel}>Cancel run</button>
+  const analysisPanel = <div className="ena-control-content ena-model-control-content" lang={locale} dir="ltr">
+      <header className="ena-panel-heading"><h1>{copy.modes[mode]}</h1>{mode === "model" && family === "standard" && <button type="button" className="ena-model-trajectory-button" onClick={() => setModelNavigation((value) => ({ tab: "windows", serial: value.serial + 1 }))}>{workspaceCopy.configureTrajectory}</button>}<p role="status" aria-live="polite">{workspaceCopy.resultStatus[current ? "current" : result ? "stale" : "none"]} · {workspaceCopy.runStatus[modelState.runStatus]}</p>
+        {modelState.runStatus === "running" && <p role="status"><progress max={100} value={state.progress?.value ?? 0} />{state.progress?.stage ?? workspaceCopy.startingWorker}</p>}
+        <button type="button" disabled={!controller.canRun || sourceBusy || sourcePreview !== null} onClick={controller.run}>{workspaceCopy.runModel}</button>
+        <button type="button" disabled={modelState.runStatus !== "running"} onClick={controller.cancel}>{workspaceCopy.cancelRun}</button>
       </header>
-      {(error || state.error || currentCompilation?.error) && <p role="alert">{error || state.error || currentCompilation?.error}</p>}
-      {controller.importPending && <button type="button" onClick={() => dispatch({ type: "cancel-preview" })}>Cancel pending import</button>}
+      {(error || state.error || currentCompilation?.error) && <p role="alert">{error || workspaceCopy.operationFailed}</p>}
+      {controller.importPending && <button type="button" onClick={() => dispatch({ type: "cancel-preview" })}>{workspaceCopy.cancelPendingImport}</button>}
       {state.preview && <OpenEnaImportPreviewV3 preview={state.preview} drafts={modelState.drafts} copy={modelV3Copy.importPreview}
         onCancel={() => dispatch({ type: "cancel-preview" })} onAcceptDraft={() => dispatch({ type: "accept-draft-preview", preview: state.preview! })}
         onKeepHistorical={() => dispatch({ type: "keep-historical", preview: state.preview! })} onAddReference={() => void attempt(controller.addReference)} />}
-      {mode === "data" && <section aria-label="Data source"><h2>Coded data</h2>
-        <input aria-label="Open coded CSV or XLSX" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => { const file = e.target.files?.[0]; if (file) void attempt(() => openCodedData(file)); e.target.value = ""; }} />
-        <button type="button" onClick={() => void attempt(() => loadSample(false))} disabled={sourceBusy}>Load sample</button>
-        <button type="button" onClick={() => void attempt(() => loadSample(true))} disabled={sourceBusy}>Load trajectory sample</button>
-        <p>Samples use versioned explicit type declarations and order policies, then run through the strict model compiler.</p>
-        <label>Import configuration, result or Reference<input type="file" accept=".json" onChange={(e) => { const file = e.target.files?.[0]; if (file) void attempt(async () => { if (file.size > 16 * 1024 * 1024) throw new Error("Artifact exceeds 16 MiB."); await controller.preview(file.text()); }); e.target.value = ""; }} /></label>
-        {sourcePreview && <section role="dialog" aria-label="Review CSV source types"><h3>Review source column types</h3><p>{SOURCE_TYPING_EXPLANATION_V3}</p>
-          {sourceTypingPreview!.columns.map((column) => <div key={column.column}><label>{column.column}<select aria-label={`Source type: ${column.column}`} disabled={sourceBusy} value={column.type} onChange={(e) => setSourcePreview({ ...sourcePreview, types: { ...sourcePreview.types, [column.column]: e.target.value as SourceColumnTypeV3 } })}>{(["text", "number", "boolean"] as const).map((type) => <option key={type}>{type}</option>)}</select></label>
-            <p>{column.nullCount} missing cells · {column.identityCollisionCount} potential identity collisions</p><code>{JSON.stringify(column.examples)}</code></div>)}
-          {sourceTypingPreview!.errorCount > 0 && <p role="alert">{sourceTypingPreview!.errorCount} invalid cells. {JSON.stringify(sourceTypingPreview!.errors)}</p>}
-          <button type="button" onClick={() => { ++sourceGeneration.current; setSourcePreview(null); setSourceBusy(false); }}>Cancel source preparation</button>
-          <button type="button" disabled={sourceBusy || sourceTypingPreview!.errorCount > 0} onClick={() => void attempt(confirmSourceTyping)}>Confirm types and create typed XLSX</button>
+      {mode === "data" && <section aria-label={workspaceCopy.data.ariaLabel}><h2>{workspaceCopy.data.title}</h2>
+        <input ref={sourceFileTriggerRef} aria-label={workspaceCopy.data.openFile} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => { const file = e.target.files?.[0]; if (file) void attempt(() => openCodedData(file)); e.target.value = ""; }} />
+        <button type="button" onClick={() => void attempt(() => loadSample(false))} disabled={sourceBusy}>{workspaceCopy.data.loadSample}</button>
+        <button type="button" onClick={() => void attempt(() => loadSample(true))} disabled={sourceBusy}>{workspaceCopy.data.loadTrajectorySample}</button>
+        <p>{workspaceCopy.data.sampleExplanation}</p>
+        <label>{workspaceCopy.data.importArtifact}<input type="file" accept=".json" onChange={(e) => { const file = e.target.files?.[0]; if (file) void attempt(async () => { if (file.size > 16 * 1024 * 1024) throw new Error(workspaceCopy.data.artifactTooLarge); await controller.preview(file.text()); }); e.target.value = ""; }} /></label>
+        {sourcePreview && <section ref={sourceDialogRef} className="ena-source-preparation-dialog" tabIndex={-1} onKeyDown={onSourceDialogKeyDown} role="dialog" aria-label={workspaceCopy.data.reviewTypes}><h3>{workspaceCopy.data.reviewTypesTitle}</h3><p>{workspaceCopy.data.typingExplanation}</p>
+          {sourceTypingPreview!.columns.map((column, index) => { const errorId = `${workspaceId}-source-type-error-${index}`; return <div key={column.column}><label>{column.column}<select aria-label={workspaceCopy.data.sourceTypeLabel(column.column)} aria-invalid={column.errorCount > 0} aria-describedby={column.errorCount > 0 ? errorId : undefined} disabled={sourceBusy} value={column.type} onChange={(e) => setSourcePreview({ ...sourcePreview, types: { ...sourcePreview.types, [column.column]: e.target.value as SourceColumnTypeV3 } })}>{(["text", "number", "boolean"] as const).map((type) => <option key={type} value={type}>{workspaceCopy.data.sourceTypes[type]}</option>)}</select></label>
+            <p>{workspaceCopy.data.missingCells(column.nullCount)} · {workspaceCopy.data.collisions(column.identityCollisionCount)}</p>{column.errorCount > 0 && <p id={errorId} role="alert">{column.errorCodes.map((code) => workspaceCopy.data.sourceErrors[code]).join(" ")}</p>}<code>{JSON.stringify(column.examples)}</code></div>; })}
+          {sourceTypingPreview!.errorCount > 0 && <p role="alert">{workspaceCopy.data.invalidCells(sourceTypingPreview!.errorCount)}</p>}
+          <button type="button" onClick={() => cancelSourcePreparation(true)}>{workspaceCopy.data.cancelPreparation}</button>
+          <button type="button" title={sourceTypingPreview!.errorCount > 0 ? workspaceCopy.data.confirmPreparationDisabled : undefined} disabled={sourceBusy || sourceTypingPreview!.errorCount > 0} onClick={() => void attempt(confirmSourceTyping)}>{workspaceCopy.data.confirmPreparation}</button>
         </section>}
-        {dataset && <><p>{dataset.name} · {dataset.rows.length} rows · {modelState.datasetSha256} · {dataset.hashKind}</p><ResearchTableV3 rows={dataset.rows} label="Source data" /></>}
-        {derivative && <><button type="button" onClick={() => saveDerivative(derivative)}>Download typed XLSX source</button><button type="button" onClick={() => downloadJson("source-derivation.json", derivative.receipt)}>Download source derivation receipt</button></>}
-        {originalSource && <button type="button" onClick={() => downloadText(originalSource.name, originalSource.text, "text/csv")}>Download original CSV</button>}
-        {state.historical.map((artifact) => <article key={artifact.receivedArtifactSha256}><p>Historical, read-only artifact {artifact.receivedArtifactSha256}</p><button type="button" onClick={() => dispatch({ type: "preview", value: artifact })}>Review historical configuration</button></article>)}
+        {dataset && <><p>{workspaceCopy.data.datasetSummary(dataset.name, dataset.rows.length, modelState.datasetSha256, dataset.hashKind)}</p><ResearchTableV3 {...researchTableCopy} rows={dataset.rows} label={workspaceCopy.data.sourceData} /></>}
+        {derivative && <><button type="button" onClick={() => saveDerivative(derivative)}>{workspaceCopy.data.downloadTyped}</button><button type="button" onClick={() => downloadJson("source-derivation.json", derivative.receipt)}>{workspaceCopy.data.downloadReceipt}</button></>}
+        {originalSource && <button type="button" onClick={() => downloadText(originalSource.name, originalSource.text, "text/csv")}>{workspaceCopy.data.downloadOriginal}</button>}
+        {state.historical.map((artifact) => <article key={artifact.receivedArtifactSha256}><p>{workspaceCopy.data.historicalArtifact(artifact.receivedArtifactSha256)}</p><button type="button" onClick={() => dispatch({ type: "preview", value: artifact })}>{workspaceCopy.data.reviewHistorical}</button></article>)}
       </section>}
       {mode === "model" && <OpenEnaModelTabsV3 copy={modelCopy} diagnostics={diagnostics} scientificContext={context} scientificSummary={modelSummary}
         initialTab={modelNavigation.tab} status={{ ...modelState, editorBlocked: modelState.editorBlocked[family], configurationReadiness: currentCompilation?.plan ? "ready" : "incomplete" }}
@@ -795,85 +817,85 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
           : <><OpenEnaCodesPanelV3 copy={modelV3Copy.codes} state={modelState} fields={fields} preview={dataset ? createOpenEnaCodesPreviewV3(dataset, modelState.datasetSha256, modelState,
               currentCompilation ? { availability: "available", context: currentCompilation.context, diagnostics: currentCompilation.result.diagnostics } : { availability: "unavailable", context }) : { availability: "unavailable", context }}
               dispatch={dispatchModel} onChooseCodeColor={(code) => setActiveCodeColor({ code, context })} localizeDiagnostic={localizedDiagnostic} />
-            {family === "ona" && <fieldset id={fields.id("directionalMask")} tabIndex={-1}><legend>ONA directional mask</legend><p>Rows are source/ground Codes; columns are response Codes. Changes alter the scientific configuration.</p>
-              {modelState.drafts.ona.directionalMask === null ? <button type="button" onClick={() => dispatchModel({ type: "replace-ona-draft", draft: { ...modelState.drafts.ona, directionalMask: { schemaVersion: 1, codeOrder: [...draft.codes], enabled: draft.codes.map(() => draft.codes.map(() => true)) } } })}>Initialize explicit all-enabled mask</button>
+            {family === "ona" && <fieldset id={fields.id("directionalMask")} tabIndex={-1}><legend>{workspaceCopy.onaMask.legend}</legend><p>{workspaceCopy.onaMask.description}</p>
+              {modelState.drafts.ona.directionalMask === null ? <button type="button" onClick={() => dispatchModel({ type: "replace-ona-draft", draft: { ...modelState.drafts.ona, directionalMask: { schemaVersion: 1, codeOrder: [...draft.codes], enabled: draft.codes.map(() => draft.codes.map(() => true)) } } })}>{workspaceCopy.onaMask.initialize}</button>
                 : modelState.drafts.ona.directionalMask.enabled.map((row, i) => <div key={i}>{row.map((enabled, j) => <label key={j}>{draft.codes[i]} → {draft.codes[j]}<input type="checkbox" checked={enabled} onChange={(e) => { const mask = modelState.drafts.ona.directionalMask!; dispatchModel({ type: "replace-ona-draft", draft: { ...modelState.drafts.ona, directionalMask: { ...mask, enabled: mask.enabled.map((values, r) => values.map((value, c) => r === i && c === j ? e.target.checked : value)) } } }); }} /></label>)}</div>)}</fieldset>}</>}
       />}
       {activeColorIntent && <OpenEnaCodeColorPicker code={activeColorIntent.code} value={openEnaCodeColorPair(modelState.display[family].codeColors[activeColorIntent.code] ?? codeColorFor(undefined, activeColorIntent.code), state.colorCompanions[family][activeColorIntent.code])} copy={copy.model.codeColorPicker}
         onCancel={() => setActiveCodeColor(null)} onConfirm={(value) => { if (!sameScientificContextV3(activeColorIntent.context, controller.context)) return; dispatch({ type: "confirm-code-color", context: activeColorIntent.context, code: activeColorIntent.code, color: value.primary, complementary: value.complementary }); setActiveCodeColor(null); }} />}
-      {mode === "plot" && <section><h2>Plot presentation</h2>{groupSelectors}
-        {activeContrast && endpointControls && <><button type="button" onClick={() => void attempt(async () => { const file = await exportContrastV3(result, currentPlan, endpointControls); if (consumerKey === consumerKeyRef.current && confirmCurrentIdentityBearingExport()) downloadText(file.filename, file.contents, "application/json"); })}>Export full-population contrast JSON</button>
-          <button type="button" onClick={() => void attempt(async () => { const file = await exportContrastV3(result, currentPlan, endpointControls); if (consumerKey === consumerKeyRef.current) downloadText("native-contrast-edges.csv", file.edgesCsv, "text/csv"); })}>Export full-population contrast edges</button>
-          <button type="button" onClick={() => { setPrimaryGroupName(secondaryGroupName); setSecondaryGroupName(primaryGroupName); }}>Switch Plots</button></>}
-        {isTrajectory && <><label><input type="checkbox" checked={showGroupCentroidPaths} onChange={(e) => setShowGroupCentroidPaths(e.target.checked)} />Show Group centroid paths</label>
-          <label><input type="checkbox" checked={endpointsOnly} onChange={(e) => setEndpointsOnly(e.target.checked)} />Show endpoints only (display)</label>
-          <p>Fitted Horizon order is locked. Display filters retain original ordinals and do not change inference cohorts.</p>
-          {horizons.map((horizon) => <label key={horizon.token}><input type="checkbox" checked={visibleHorizons === null || visibleHorizons.includes(horizon.canonicalJson)} onChange={(e) => setVisibleHorizons((values) => { const selected = values ?? horizons.map((value) => value.canonicalJson); return e.target.checked ? [...new Set([...selected, horizon.canonicalJson])] : selected.filter((key) => key !== horizon.canonicalJson); })} />Display {horizon.displayLabel}</label>)}</>}
+      {mode === "plot" && <section><h2>{workspaceCopy.plot.title}</h2>{groupSelectors}
+        {activeContrast && endpointControls && <><button type="button" onClick={() => void attempt(async () => { const file = await exportContrastV3(result, currentPlan, endpointControls); if (consumerKey === consumerKeyRef.current && confirmCurrentIdentityBearingExport()) downloadText(file.filename, file.contents, "application/json"); })}>{workspaceCopy.plot.exportContrastJson}</button>
+          <button type="button" onClick={() => void attempt(async () => { const file = await exportContrastV3(result, currentPlan, endpointControls); if (consumerKey === consumerKeyRef.current) downloadText("native-contrast-edges.csv", file.edgesCsv, "text/csv"); })}>{workspaceCopy.plot.exportContrastEdges}</button>
+          <button type="button" onClick={() => { setPrimaryGroupName(secondaryGroupName); setSecondaryGroupName(primaryGroupName); }}>{workspaceCopy.plot.switchPlots}</button></>}
+        {isTrajectory && <><label><input type="checkbox" checked={showGroupCentroidPaths} onChange={(e) => setShowGroupCentroidPaths(e.target.checked)} />{workspaceCopy.plot.showCentroidPaths}</label>
+          <label><input type="checkbox" checked={endpointsOnly} onChange={(e) => setEndpointsOnly(e.target.checked)} />{workspaceCopy.plot.endpointsOnly}</label>
+          <p>{workspaceCopy.plot.fittedOrder}</p>
+          {horizons.map((horizon) => <label key={horizon.token}><input type="checkbox" checked={visibleHorizons === null || visibleHorizons.includes(horizon.canonicalJson)} onChange={(e) => setVisibleHorizons((values) => { const selected = values ?? horizons.map((value) => value.canonicalJson); return e.target.checked ? [...new Set([...selected, horizon.canonicalJson])] : selected.filter((key) => key !== horizon.canonicalJson); })} />{workspaceCopy.plot.displayHorizon(horizon.displayLabel)}</label>)}</>}
         <button type="button" aria-pressed={view === "2d"} onClick={() => setView("2d")}>2D</button><button type="button" aria-pressed={view === "3d"} disabled={!genericThreeDAvailable} onClick={() => setView("3d")}>3D</button>
-        {(view === "3d" ? [0, 1, 2] : [0, 1]).map((index) => <label key={index}>Axis {index + 1}<select aria-label={`Axis ${index + 1}`} value={selectedAxes[index] ?? ""} onChange={(e) => (view === "3d" ? setThreeDAxes : setAxes)(selectedAxes.map((axis, i) => i === index ? e.target.value : axis))}><option value="">Unavailable</option>{supportedAxes.map((axis) => <option key={axis}>{axis}</option>)}</select></label>)}
-        {[["Points", showPoints, setShowPoints], ["Networks", showNetworks, setShowNetworks], ["Code labels", showLabels, setShowLabels], ["Unit labels", showUnitLabels, setShowUnitLabels], ["Variance", showVariance, setShowVariance], ["Trajectories", showTrajectories, setShowTrajectories], ["Flip X", flipX, setFlipX], ["Flip Y", flipY, setFlipY]].map(([label, value, setter]) => <label key={String(label)}>{String(label)}<input type="checkbox" checked={value as boolean} onChange={(e) => (setter as (value: boolean) => void)(e.target.checked)} /></label>)}
-        {[["Edge threshold", edgeThreshold, setEdgeThreshold, 0, 1], ["Edge scale", edgeScale, setEdgeScale, 0.1, 4], ["Point scale", pointScale, setPointScale, 0.1, 4], ["Zoom", plotZoom, setPlotZoom, 0.5, 3]].map(([label, value, setter, min, max]) => <OpenEnaRangeField key={String(label)} id={String(label)} idPrefix={workspaceId} label={String(label)} value={value as number} formattedValue={String(value)} accessibleValueText={String(value)} min={min as number} max={max as number} step={0.1} onChange={(e) => (setter as (value: number) => void)(e.target.valueAsNumber)} />)}
+        {(view === "3d" ? [0, 1, 2] : [0, 1]).map((index) => <label key={index}>{workspaceCopy.plot.axis(index + 1)}<select aria-label={workspaceCopy.plot.axis(index + 1)} value={selectedAxes[index] ?? ""} onChange={(e) => (view === "3d" ? setThreeDAxes : setAxes)(selectedAxes.map((axis, i) => i === index ? e.target.value : axis))}><option value="">{workspaceCopy.plot.unavailable}</option>{supportedAxes.map((axis) => <option key={axis}>{axis}</option>)}</select></label>)}
+        {[[workspaceCopy.plot.points, showPoints, setShowPoints], [workspaceCopy.plot.networks, showNetworks, setShowNetworks], [workspaceCopy.plot.codeLabels, showLabels, setShowLabels], [workspaceCopy.plot.unitLabels, showUnitLabels, setShowUnitLabels], [workspaceCopy.plot.variance, showVariance, setShowVariance], [workspaceCopy.plot.trajectories, showTrajectories, setShowTrajectories], [workspaceCopy.plot.flipX, flipX, setFlipX], [workspaceCopy.plot.flipY, flipY, setFlipY]].map(([label, value, setter]) => <label key={String(label)}>{String(label)}<input type="checkbox" checked={value as boolean} onChange={(e) => (setter as (value: boolean) => void)(e.target.checked)} /></label>)}
+        {[[workspaceCopy.plot.edgeThreshold, edgeThreshold, setEdgeThreshold, 0, 1], [workspaceCopy.plot.edgeScale, edgeScale, setEdgeScale, 0.1, 4], [workspaceCopy.plot.pointScale, pointScale, setPointScale, 0.1, 4], [workspaceCopy.plot.zoom, plotZoom, setPlotZoom, 0.5, 3]].map(([label, value, setter, min, max]) => <OpenEnaRangeField key={String(label)} id={String(label)} idPrefix={workspaceId} label={String(label)} value={value as number} formattedValue={String(value)} accessibleValueText={String(value)} min={min as number} max={max as number} step={0.1} onChange={(e) => (setter as (value: number) => void)(e.target.valueAsNumber)} />)}
         {view === "3d" && <fieldset className="ena-camera-fieldset"><legend>{copy.plot.cameraPosition}</legend>{cameraPositionOptions.map(([preset, label]) => <label key={preset}><input type="radio" name="ena-camera" value={preset} checked={cameraPreset === preset} onChange={() => { setCameraPreset(preset); setCamera(cameraForPreset(preset)); setAspectRatio(null); }} />{label}</label>)}</fieldset>}
-        <button type="button" onClick={() => setNodeOverrides({ hash: resultHash, positions: new Map() })}>Reset node positions</button>
+        <button type="button" onClick={() => setNodeOverrides({ hash: resultHash, positions: new Map() })}>{workspaceCopy.plot.resetNodes}</button>
       </section>}
-      {mode === "stats" && <section><h2>{copy.stats.title}</h2><OpenEnaNativeStatsPanelV3 result={result} current={current} axes={twoDAxes} inference={activeInference} copy={copy.stats} nativeCopy={modelV3Copy.nativeStats} renderTable={(rows, label) => <ResearchTableV3 rows={rows} label={label} />}>{groupSelectors}
-        <p>Model bundles contain unavailable statistics. Inference below is an explicit, separate post-model request.</p>
-        {isTrajectory && <><label>Trajectory inference design<select value={inferenceDesign} onChange={(e) => setInferenceDesign(e.target.value as typeof inferenceDesign)}><option value="independent">Independent groups at a period</option><option value="paired">Paired periods</option><option value="repeated">Repeated periods</option></select></label>
-          <label><input type="checkbox" checked={identityConfirmed} onChange={(e) => setIdentityConfirmed(e.target.checked)} />I confirm these fitted Units identify the same entities across periods.</label>
-          <p>Select exactly one period for independent, exactly two for paired, or at least three for repeated inference. Select periods in the requested order. The native consumer verifies fitted precedence and rejects incomparable or reversed periods.</p>
+      {mode === "stats" && <section><h2>{copy.stats.title}</h2><OpenEnaNativeStatsPanelV3 result={result} current={current} axes={twoDAxes} inference={activeInference} copy={copy.stats} nativeCopy={modelV3Copy.nativeStats} renderTable={(rows, label) => <ResearchTableV3 {...researchTableCopy} rows={rows} label={label} />}>{groupSelectors}
+        <p>{workspaceCopy.stats.separation}</p>
+        {isTrajectory && <><label>{workspaceCopy.stats.inferenceDesign}<select value={inferenceDesign} onChange={(e) => setInferenceDesign(e.target.value as typeof inferenceDesign)}><option value="independent">{workspaceCopy.stats.designs.independent}</option><option value="paired">{workspaceCopy.stats.designs.paired}</option><option value="repeated">{workspaceCopy.stats.designs.repeated}</option></select></label>
+          <label><input type="checkbox" checked={identityConfirmed} onChange={(e) => setIdentityConfirmed(e.target.checked)} />{workspaceCopy.stats.identityConfirmation}</label>
+          <p>{workspaceCopy.stats.periodInstructions}</p>
           {horizons.map((horizon) => <label key={horizon.token}><input type="checkbox" checked={selectedPeriods.includes(horizon.token)} onChange={(e) => setSelectedPeriods((values) => e.target.checked ? [...values, horizon.token] : values.filter((value) => value !== horizon.token))} />{horizon.displayLabel}</label>)}</>}
-        <button type="button" disabled={!current || !controls || inferenceBusy || completedResultKind === "ona"} onClick={() => void attempt(runInference)}>Run confirmed inference</button>
-        {completedResultKind === "ona" && <p>ONA remains descriptive only; group and trajectory inference are unavailable.</p>}
-        {onaView && <><p>{onaView.meaning}</p><ResearchTableV3 rows={onaView.edges} label="ONA directed aggregate edges" />
-          <ResearchTableV3 rows={onaView.auditRows} label="Full-run deidentified ordered audit" />
-          <button type="button" disabled={!current} onClick={() => void attempt(async () => { const value = await buildOnaBoundViewV3(result, currentPlan, primaryGroupName || null); if (latest.current.current && latest.current.state.model.result === result) downloadText("ona-aggregate-edges.csv", rowsToCsv(value.edges), "text/csv"); })}>Export ONA aggregate edges</button>
-          <button type="button" disabled={!current} onClick={() => void attempt(async () => { const value = await buildOnaBoundViewV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && window.confirm(copy.ona.exports.auditConfirmation)) downloadJson("ona-deidentified-audit.json", { binding: value.binding, audit: value.audit, meaning: value.meaning }); })}>Export ONA deidentified audit</button><p>{copy.ona.exports.auditWarning}</p></>}
+        <button type="button" disabled={!current || !controls || inferenceBusy || completedResultKind === "ona"} onClick={() => void attempt(runInference)}>{workspaceCopy.stats.runInference}</button>
+        {completedResultKind === "ona" && <p>{workspaceCopy.stats.onaDescriptive}</p>}
+        {onaView && <><p>{onaView.meaning}</p><ResearchTableV3 {...researchTableCopy} rows={onaView.edges} label={workspaceCopy.stats.onaEdges} />
+          <ResearchTableV3 {...researchTableCopy} rows={onaView.auditRows} label={workspaceCopy.stats.onaAudit} />
+          <button type="button" disabled={!current} onClick={() => void attempt(async () => { const value = await buildOnaBoundViewV3(result, currentPlan, primaryGroupName || null); if (latest.current.current && latest.current.state.model.result === result) downloadText("ona-aggregate-edges.csv", rowsToCsv(value.edges), "text/csv"); })}>{workspaceCopy.stats.exportOnaEdges}</button>
+          <button type="button" disabled={!current} onClick={() => void attempt(async () => { const value = await buildOnaBoundViewV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && window.confirm(copy.ona.exports.auditConfirmation)) downloadJson("ona-deidentified-audit.json", { binding: value.binding, audit: value.audit, meaning: value.meaning }); })}>{workspaceCopy.stats.exportOnaAudit}</button><p>{copy.ona.exports.auditWarning}</p></>}
         </OpenEnaNativeStatsPanelV3>
-        {activeInference && <><button type="button" onClick={() => void attempt(async () => { const file = await exportNativeStatisticsV3(activeInference, result, currentPlan, controls!); if (consumerKey === consumerKeyRef.current) downloadText(file.filename, file.contents, file.mimeType); })}>Export native statistics</button></>}
-        {historicalData && <><ResearchTableV3 rows={historicalData.rows} label="Local identity-bearing bound Data View" /><p>{historicalData.sourceIndexMeaning}</p><ResearchTableV3 rows={historicalData.sourceTraversal} label="Global runtime source traversal (not per-point membership)" />
-          <button type="button" disabled={!current} onClick={() => void attempt(async () => { if (!result || !currentPlan) return; const value = await buildDataViewV3(result, currentPlan); if (!latest.current.current || latest.current.state.model.result !== result) return; if (window.confirm("This local identity-bearing view contains Unit and Group identities. Export it?")) downloadText("bound-data-view.csv", rowsToCsv(value.rows), "text/csv"); })}>Export current Data View</button></>}
-        {checkedDataView && current && checkedDataView.binding.scientificResultSha256 === result?.binding.scientificResultSha256 && checkedDataView.binding.executionPlanSha256 === currentPlan?.header.executionPlanSha256 && <p>Data View validated against the independent current plan.</p>}
-        {result && <details><summary>{copy.stats.ui.methodsTitle}</summary><button type="button" onClick={() => void attempt(async () => { if (confirmCurrentIdentityBearingExport()) await navigator.clipboard.writeText(buildMethodsReportV3(result)); })}>{copy.stats.ui.copyMethods}</button><pre>{buildMethodsReportV3(result)}</pre><button type="button" onClick={() => { if (confirmCurrentIdentityBearingExport()) downloadText("methods.md", buildMethodsReportV3(result), "text/markdown"); }}>Export Methods</button></details>}
+        {activeInference && <><button type="button" onClick={() => void attempt(async () => { const file = await exportNativeStatisticsV3(activeInference, result, currentPlan, controls!); if (consumerKey === consumerKeyRef.current) downloadText(file.filename, file.contents, file.mimeType); })}>{workspaceCopy.stats.exportNative}</button></>}
+        {historicalData && <><ResearchTableV3 {...researchTableCopy} rows={historicalData.rows} label={workspaceCopy.stats.localDataView} /><p>{historicalData.sourceIndexMeaning}</p><ResearchTableV3 {...researchTableCopy} rows={historicalData.sourceTraversal} label={workspaceCopy.stats.globalTraversal} />
+          <button type="button" disabled={!current} onClick={() => void attempt(async () => { if (!result || !currentPlan) return; const value = await buildDataViewV3(result, currentPlan); if (!latest.current.current || latest.current.state.model.result !== result) return; if (window.confirm(workspaceCopy.stats.exportDataViewConfirmation)) downloadText("bound-data-view.csv", rowsToCsv(value.rows), "text/csv"); })}>{workspaceCopy.stats.exportDataView}</button></>}
+        {checkedDataView && current && checkedDataView.binding.scientificResultSha256 === result?.binding.scientificResultSha256 && checkedDataView.binding.executionPlanSha256 === currentPlan?.header.executionPlanSha256 && <p>{workspaceCopy.stats.dataViewValidated}</p>}
+        {result && <details><summary>{copy.stats.ui.methodsTitle}</summary><button type="button" onClick={() => void attempt(async () => { if (confirmCurrentIdentityBearingExport()) await navigator.clipboard.writeText(buildMethodsReportV3(result)); })}>{copy.stats.ui.copyMethods}</button><pre>{buildMethodsReportV3(result)}</pre><button type="button" onClick={() => { if (confirmCurrentIdentityBearingExport()) downloadText("methods.md", buildMethodsReportV3(result), "text/markdown"); }}>{workspaceCopy.stats.exportMethods}</button></details>}
       </section>}
-      <section aria-label="Model artifacts"><h2>Artifacts</h2>
-        <p>{WORKSPACE_PRESET_SCOPE_V3}</p>{state.presetHiddenGroups?.resultHash === resultHash && <button type="button" onClick={() => dispatch({ type: "clear-preset-group-hiding" })}>Clear preset Group hiding</button>}
-        <button type="button" disabled={!result} onClick={() => { try { exportPresentation(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }}>Export presentation preset</button>
-        <label>Review presentation preset<input type="file" accept=".json" onChange={(e) => { const file = e.target.files?.[0]; if (file) void attempt(() => previewPresentation(file)); e.target.value = ""; }} /></label>
-        {presetPreview && <section role="dialog" aria-label="Presentation preset preview"><p>{presetPreview.boundResultSha256 === resultHash ? "This preset matches the retained result. Application changes display only." : "Unapplied preset: this belongs to a different scientific result."}</p><pre>{JSON.stringify(presetPreview, null, 2)}</pre>
-          {!presetCodesCompatible && <p>The active editor excludes Codes used by this retained result. The preset remains unapplied.</p>}{completedResultKind !== family && <p>The editor family differs from the retained result. The preset remains unapplied.</p>}
-          <button type="button" onClick={() => { ++presetSerial.current; setPresetPreview(null); }}>Cancel preset</button>
-          <button type="button" disabled={presetPreview.boundResultSha256 !== resultHash || completedResultKind !== family || !presetCodesCompatible || display.allCodesSuppressed || display.allGroupsSuppressed} onClick={() => { try { applyPresentation(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }}>Apply matching presentation preset</button></section>}
-        <button type="button" disabled={!workspaceDraftExportableV3(state)} onClick={() => void attempt(async () => saveDescriptor(await exportDraftV3(draft)))}>Export draft</button>
-        {!workspaceDraftExportableV3(state) && <p>Resolve unfinished raw input before exporting: the portable draft grammar cannot represent that visible text. Typed incomplete drafts remain exportable.</p>}
-        <button type="button" disabled={!currentCompilation?.plan} onClick={() => void attempt(async () => { if (currentCompilation?.result.status === "ready") saveDescriptor(await exportCanonicalConfigV3(currentCompilation.result)); })}>Export canonical configuration</button>
-        <button type="button" disabled={!current} onClick={() => void attempt(async () => { if (result && currentPlan) { const descriptor = await exportCurrentAnalysisV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && window.confirm("Export the full identity-bearing model bundle?")) saveDescriptor(descriptor); } })}>Export current analysis</button>
-        <button type="button" disabled={!result} onClick={() => void attempt(async () => { if (result) { const file = await exportStaleAuditV3(result, await sha256TextV3(context.draftFingerprint)); if (latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) saveDescriptor(file); } })}>Export STALE audit</button>
-        <button type="button" disabled={!current || completedResultKind !== "standard" || (isTrajectory && result?.binding.referenceId === null)} onClick={() => void attempt(async () => { if (result && currentPlan) saveDescriptor(await exportReferenceV2(result, { currentPlan, ...(state.sourceWitness ? { sourceWitness: state.sourceWitness } : {}), displayName: dataset?.name ?? "Reference" })); })}>{result?.binding.referenceId ? "Re-export original Reference" : "Export Reference"}</button>
-        <button type="button" disabled={!current || completedResultKind === "ona" || isTrajectory || sets.length >= 6} onClick={() => void attempt(async () => { if (result && currentPlan) { const captured = await captureAnalysisSetV3(result, currentPlan, { name: dataset?.name }); if (latest.current.current && latest.current.state.model.result === result) setSets((values) => upsertAnalysisSetV3(values, captured)); } })}>Capture analysis set ({sets.length}/6)</button>
+      <section aria-label={workspaceCopy.artifacts.ariaLabel}><h2>{workspaceCopy.artifacts.title}</h2>
+        <p>{workspaceCopy.artifacts.presetScope}</p>{state.presetHiddenGroups?.resultHash === resultHash && <button type="button" onClick={() => dispatch({ type: "clear-preset-group-hiding" })}>{workspaceCopy.artifacts.clearPreset}</button>}
+        <button type="button" disabled={!result} onClick={() => { try { exportPresentation(); } catch { setError(workspaceCopy.operationFailed); } }}>{workspaceCopy.artifacts.exportPreset}</button>
+        <label>{workspaceCopy.artifacts.reviewPreset}<input type="file" accept=".json" onChange={(e) => { const file = e.target.files?.[0]; if (file) void attempt(() => previewPresentation(file)); e.target.value = ""; }} /></label>
+        {presetPreview && <section role="dialog" aria-label={workspaceCopy.artifacts.presetPreview}><p>{presetPreview.boundResultSha256 === resultHash ? workspaceCopy.artifacts.presetMatches : workspaceCopy.artifacts.presetMismatch}</p><pre>{JSON.stringify(presetPreview, null, 2)}</pre>
+          {!presetCodesCompatible && <p>{workspaceCopy.artifacts.presetCodesMismatch}</p>}{completedResultKind !== family && <p>{workspaceCopy.artifacts.presetFamilyMismatch}</p>}
+          <button type="button" onClick={() => { ++presetSerial.current; setPresetPreview(null); }}>{workspaceCopy.artifacts.cancelPreset}</button>
+          <button type="button" disabled={presetPreview.boundResultSha256 !== resultHash || completedResultKind !== family || !presetCodesCompatible || display.allCodesSuppressed || display.allGroupsSuppressed} onClick={() => { try { applyPresentation(); } catch { setError(workspaceCopy.operationFailed); } }}>{workspaceCopy.artifacts.applyPreset}</button></section>}
+        <button type="button" disabled={!workspaceDraftExportableV3(state)} onClick={() => void attempt(async () => saveDescriptor(await exportDraftV3(draft)))}>{workspaceCopy.artifacts.exportDraft}</button>
+        {!workspaceDraftExportableV3(state) && <p>{workspaceCopy.artifacts.draftBlocked}</p>}
+        <button type="button" disabled={!currentCompilation?.plan} onClick={() => void attempt(async () => { if (currentCompilation?.result.status === "ready") saveDescriptor(await exportCanonicalConfigV3(currentCompilation.result)); })}>{workspaceCopy.artifacts.exportConfig}</button>
+        <button type="button" data-testid="open-ena-export-current-analysis" disabled={!current} onClick={() => void attempt(async () => { if (result && currentPlan) { const descriptor = await exportCurrentAnalysisV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && window.confirm(workspaceCopy.artifacts.exportAnalysisConfirmation)) saveDescriptor(descriptor); } })}>{workspaceCopy.artifacts.exportAnalysis}</button>
+        <button type="button" disabled={!result} onClick={() => void attempt(async () => { if (result) { const file = await exportStaleAuditV3(result, await sha256TextV3(context.draftFingerprint)); if (latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) saveDescriptor(file); } })}>{workspaceCopy.artifacts.exportStale}</button>
+        <button type="button" disabled={!current || completedResultKind !== "standard" || (isTrajectory && result?.binding.referenceId === null)} onClick={() => void attempt(async () => { if (result && currentPlan) saveDescriptor(await exportReferenceV2(result, { currentPlan, ...(state.sourceWitness ? { sourceWitness: state.sourceWitness } : {}), displayName: dataset?.name ?? workspaceCopy.artifacts.referenceDisplayName })); })}>{result?.binding.referenceId ? workspaceCopy.artifacts.reexportReference : workspaceCopy.artifacts.exportReference}</button>
+        <button type="button" disabled={!current || completedResultKind === "ona" || isTrajectory || sets.length >= 6} onClick={() => void attempt(async () => { if (result && currentPlan) { const captured = await captureAnalysisSetV3(result, currentPlan, { name: dataset?.name }); if (latest.current.current && latest.current.state.model.result === result) setSets((values) => upsertAnalysisSetV3(values, captured)); } })}>{workspaceCopy.artifacts.captureSet(sets.length)}</button>
         {sets.map((set) => <p key={set.id}>{set.name}</p>)}
-        <button type="button" disabled={sets.length < 2} onClick={() => { try { setSetComparison(compareAnalysisSetsV3(sets[sets.length - 2], sets[sets.length - 1])); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }}>Compare last two sets in the same basis</button>
-        {setComparison && <ResearchTableV3 rows={setComparison.edges} label="Historical same-basis set comparison" />}
+        <button type="button" disabled={sets.length < 2} onClick={() => { try { setSetComparison(compareAnalysisSetsV3(sets[sets.length - 2], sets[sets.length - 1])); } catch { setError(workspaceCopy.operationFailed); } }}>{workspaceCopy.artifacts.compareSets}</button>
+        {setComparison && <ResearchTableV3 {...researchTableCopy} rows={setComparison.edges} label={workspaceCopy.artifacts.historicalComparison} />}
       </section>
 </div>;
-  const aiPanel = <div className="ena-control-content ena-ai-mode-panel" data-ena-ai-source="stats-results"><p className="ena-panel-kicker">AI</p><h2>{copy.aiInterpretation.title}</h2><p>{activeInference ? "Current native Stats result is ready for aggregate review." : "Run and review a current native Stats result first."}</p><button type="button" onClick={() => setMode("stats")}>Open Stats</button>
+  const aiPanel = <div className="ena-control-content ena-ai-mode-panel" data-ena-ai-source="stats-results"><p className="ena-panel-kicker">AI</p><h2>{copy.aiInterpretation.title}</h2><p>{activeInference ? workspaceCopy.ai.ready : workspaceCopy.ai.unavailable}</p><button type="button" onClick={() => setMode("stats")}>{workspaceCopy.ai.openStats}</button>
       <div hidden={mode !== "ai"}><OpenEnaAiInterpretation request={activeAiReview?.request ?? null}
         localScientificIdentity={activeAiReview ? canonicalJsonV3({ binding: activeAiReview.binding, context: activeAiReview.context, configuration: activeAiReview.configuration }) : null}
-        copy={copy.aiInterpretation} disabled={!activeAiReview || !current} disabledReason={aiLimitation || "Run a current eligible native inference and review its aggregate evidence first."} providerDescriptor={providerDescriptor} />
-        {activeAiReview && <p>{activeAiReview.wireLimitations}</p>}{aiLimitation && <p role="status">{aiLimitation}</p>}</div>
+        copy={copy.aiInterpretation} disabled={!activeAiReview || !current} disabledReason={aiLimitation ? workspaceCopy.operationFailed : workspaceCopy.ai.disabled} providerDescriptor={providerDescriptor} />
+        {activeAiReview && <p>{activeAiReview.wireLimitations}</p>}{aiLimitation && <p role="status">{workspaceCopy.operationFailed}</p>}</div>
 </div>;
   const nativeDataView = dataViewPresentation && <>
             <OpenEnaDataView columns={dataViewPresentation.columns} rows={dataViewPresentation.rows} context={dataViewContext}
               onContextChange={setDataViewContext} onReturnToComparison={() => setCenterSurface("plot")} exportDisabled={!current}
-              contextOptions={[{ value: "comparison", label: "Comparison: all bound observations" }, ...(primary ? [{ value: "primary" as const, label: primary.displayLabel }] : []), ...(secondary ? [{ value: "secondary" as const, label: secondary.displayLabel }] : [])]}
-              exportClassification="local-identity-bearing-view" copy={{ codeGroup: "Normalized undirected edges", directedEdgeGroup: "Normalized directed edges" }} notice={dataViewPresentation.sourceIndexMeaning}
+              contextOptions={[{ value: "comparison", label: copy.ona.dataView.overall }, ...(primary ? [{ value: "primary" as const, label: primary.displayLabel }] : []), ...(secondary ? [{ value: "secondary" as const, label: secondary.displayLabel }] : [])]}
+              exportClassification="local-identity-bearing-view" copy={{ codeGroup: copy.ona.dataView.codeGroup, directedEdgeGroup: copy.ona.dataView.directedEdgeGroup }} notice={dataViewPresentation.sourceIndexMeaning}
               onExportCsv={() => void attempt(async () => { if (!result || !currentPlan || !current) return; await buildDataViewV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) downloadText("bound-data-view.csv", rowsToCsv(dataViewPresentation.rows.map((row) => Object.fromEntries(Object.entries(row.values).map(([key, value]) => [key, value ?? null])))), "text/csv"); })} />
-            <ResearchTableV3 rows={dataViewPresentation.sourceTraversal} label="Global runtime source traversal (not per-point membership)" />
+            <ResearchTableV3 {...researchTableCopy} rows={dataViewPresentation.sourceTraversal} label={workspaceCopy.stats.globalTraversal} />
           </>;
   return <div className="open-ena-page" data-testid="open-ena-workspace-v3" data-result-status={modelState.resultStatus} data-run-status={modelState.runStatus}>
     <OpenEnaFallbackNotice locale={locale} />
-    <section className="open-ena-workbench" aria-label="Open ENA analysis workspace" aria-busy={sourceBusy || modelState.runStatus === "running"}>
+    <section className="open-ena-workbench" aria-label={workspaceCopy.shell.workspaceAria} aria-busy={sourceBusy || modelState.runStatus === "running"}>
       <div className="ena-workbench-grid">
-        <nav className="ena-tool-rail" aria-label="Analysis modes" data-ena-workbench-region="rail">
+        <nav className="ena-tool-rail" aria-label={workspaceCopy.shell.modesAria} data-ena-workbench-region="rail">
           <div className="ena-rail-brand" data-ena-rail-brand="true" aria-label="ENA.HK Open ENA">
             <span className="ena-mini-mark" aria-hidden="true"><img src="/ena-mark.svg" alt="" /></span><span className="ena-rail-product">OPEN ENA</span>
             <a className="ena-rail-version" data-ena-rail-version="true" href={JENA_SOURCE_URL} target="_blank" rel="noopener noreferrer"
@@ -881,34 +903,34 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
           </div>
           <div className="ena-rail-modes">{(["data", "model", "plot", "stats", "ai"] as const).map((entry) => <button key={entry} type="button" className="ena-rail-button" aria-current={mode === entry ? "step" : undefined} aria-label={entry === "ai" ? copy.aiInterpretation.title : copy.modes[entry]} onClick={() => setMode(entry)}>{modeIcons[entry]}<span>{copy.modes[entry]}</span></button>)}</div>
           <form className="ena-rail-logout" action="/api/open-ena/logout" method="post"><input type="hidden" name="locale" value={locale} /><button type="submit" aria-label={authCopy.signOut} title={authCopy.signOut}>{authCopy.signOut}</button></form>
-          <div className="ena-rail-meta"><span className="ena-rail-privacy">Local</span><span className="sr-only">ENA computation powered by jENA v{JENA_RUNTIME_VERSION} (GPL-3.0-only); ENA.HK provides the interface, plotting, and exports. Source data stays in this workspace’s browser memory unless you intentionally export it.</span></div>
+          <div className="ena-rail-meta"><span className="ena-rail-privacy">{workspaceCopy.shell.local}</span><span className="sr-only">{workspaceCopy.shell.runtimePrivacy(JENA_RUNTIME_VERSION)}</span></div>
         </nav>
         <aside className="ena-control-panel" data-ena-workbench-region="controls"><OpenEnaPersistentRailPanels mode={mode} analysisPanel={analysisPanel} aiPanel={aiPanel} /></aside>
         <div className="ena-visual-workspace" data-ena-view={view} data-testid="open-ena-center-surface">
-          <div className={`ena-visual-toolbar${view === "2d" && contrast ? " ena-visual-toolbar-group-contrast" : ""}`}><div><p>{copy.workspace.comparison}</p><span>{dataset?.name ?? "SVD research space"}</span></div>
-            <div className="ena-visual-toolbar-actions"><button type="button" data-testid="open-ena-data-view-toggle" disabled={!result} aria-pressed={centerSurface === "data"} onClick={() => setCenterSurface((value) => value === "plot" ? "data" : "plot")}>Data View</button>
+          <div className={`ena-visual-toolbar${view === "2d" && contrast ? " ena-visual-toolbar-group-contrast" : ""}`}><div><p>{copy.workspace.comparison}</p><span>{dataset?.name ?? workspaceCopy.toolbar.researchSpace}</span></div>
+          <div className="ena-visual-toolbar-actions"><button type="button" data-testid="open-ena-data-view-toggle" disabled={!result} aria-pressed={centerSurface === "data"} onClick={() => setCenterSurface((value) => value === "plot" ? "data" : "plot")}>{workspaceCopy.toolbar.dataView}</button>
               <div className="ena-analysis-toolbar-cluster"><div className="ena-view-toggle"><button type="button" aria-pressed={view === "2d"} onClick={() => setView("2d")}>{completedResultKind === "ona" ? copy.ona.workspace.twoD : copy.views.twoD}</button><button type="button" aria-pressed={view === "3d"} disabled={!genericThreeDAvailable} onClick={() => setView("3d")}>{completedResultKind === "ona" ? copy.ona.workspace.threeD : copy.views.threeD}</button></div>
-                <button type="button" className="ena-download-model-button" disabled={!current} onClick={() => void attempt(async () => { if (result && currentPlan) { const value = await exportCurrentAnalysisV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) saveDescriptor(value); } })}><span className="ena-download-model-button-icon" aria-hidden="true">↓</span>Download Model</button>
-              </div><button type="button" disabled={!result || view === "3d"} onClick={exportPlotSvg}>Export SVG</button><button type="button" disabled={!result || view === "3d"} onClick={exportPlotPng}>Export PNG</button>
+                <button type="button" className="ena-download-model-button" disabled={!current} onClick={() => void attempt(async () => { if (result && currentPlan) { const value = await exportCurrentAnalysisV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) saveDescriptor(value); } })}><span className="ena-download-model-button-icon" aria-hidden="true">↓</span>{workspaceCopy.toolbar.downloadModel}</button>
+              </div><button type="button" disabled={!result || view === "3d"} onClick={exportPlotSvg}>{workspaceCopy.toolbar.exportSvg}</button><button type="button" disabled={!result || view === "3d"} onClick={exportPlotPng}>{workspaceCopy.toolbar.exportPng}</button>
             </div>
           </div>
           <div>
-      {presentation && result && <section aria-label="Bound model plot" data-ena-workbench-region="center"><p>{modelState.resultStatus === "stale" ? "Historical geometry: edits require a new run." : "Bound fitted geometry"}</p>
-        {selectedAxes.length < 2 ? <><p>Only one supported fitted axis is available. No second coordinate is invented.</p><ResearchTableV3 rows={result.set.points} label="Fitted coordinates" /></>
+      {presentation && result && <section aria-label={workspaceCopy.result.plotAria} data-ena-workbench-region="center"><p>{modelState.resultStatus === "stale" ? workspaceCopy.result.historicalGeometry : workspaceCopy.result.boundGeometry}</p>
+        {selectedAxes.length < 2 ? <><p>{workspaceCopy.result.oneAxis}</p><ResearchTableV3 {...researchTableCopy} rows={result.set.points} label={workspaceCopy.result.fittedCoordinates} /></>
           : completedResultKind === "ona" ? view === "3d" && threeDDimensions
             ? <OpenEna3DOrderedResultLayout {...plotProps} sharedCamera={camera} onCameraChange={setCamera} sharedAspectRatio={aspectRatio} onAspectRatioChange={setAspectRatio} result={plotResult!} config={presentation.config} primaryGroupName={primary?.displayLabel ?? null} secondaryGroupName={secondary?.displayLabel ?? null} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} />
             : <OpenEnaOrderedResultLayout {...plotProps} copy={copy.ona.layout} textScale={textScale} result={plotResult!} config={presentation.config} primaryGroupName={primary?.displayLabel ?? null} secondaryGroupName={secondary?.displayLabel ?? null} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} />
           : contrast ? view === "3d" && threeDDimensions
             ? <OpenEna3DGroupContrast {...plotProps} sharedCamera={camera} onCameraChange={setCamera} sharedAspectRatio={aspectRatio} onAspectRatioChange={setAspectRatio} groupColumn="Group" result={plotResult!} contrast={contrast} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} />
-            : <OpenEnaGroupContrast {...plotProps} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} onSwitchPlots={() => { setPrimaryGroupName(secondaryGroupName); setSecondaryGroupName(primaryGroupName); }} contrast={contrast} showGroupLabels={showGroupLabels && !display.allGroupsSuppressed} unitCircle={unitCircle} textScale={textScale} svgRef={plotSvgRef} />
+            : <OpenEnaGroupContrast {...plotProps} uiCopy={workspaceCopy.plot} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} onSwitchPlots={() => { setPrimaryGroupName(secondaryGroupName); setSecondaryGroupName(primaryGroupName); }} contrast={contrast} showGroupLabels={showGroupLabels && !display.allGroupsSuppressed} unitCircle={unitCircle} textScale={textScale} svgRef={plotSvgRef} />
           : centerSurface === "data" ? nativeDataView : view === "3d" && threeDDimensions ? <OpenEnaInteractive3DPlot {...plotProps} result={plotResult!} initialCamera={camera} onCameraChange={setCamera} initialAspectRatio={aspectRatio} onAspectRatioChange={setAspectRatio} />
           : <OpenEnaPlot {...plotProps} result={plotResult!} view="2d" svgRef={plotSvgRef} />}
         {!contrast && completedResultKind !== "ona" && <div data-ena-workbench-region="right-stack">{persistentPlotTools}</div>}
-        {consumerError && <p role="status">{consumerError}</p>}{!isTrajectory && completedResultKind === "standard" && !endpointControls && <p role="status">Contrast requires two declared Groups and two supported fitted axes. The fitted model remains available for inspection.</p>}
-        <p>Code labels: {result.executionProvenance.labels.codes.map((code) => `${code.column} = ${code.displayLabel}`).join("; ")}</p>
-        {longitudinal && <><p>{longitudinal.provenance.cohortMeaning}</p><ResearchTableV3 rows={longitudinal.entities.flatMap((entity) => entity.steps)} label="Observed fitted trajectory steps and original ordinals" /><pre>{JSON.stringify(longitudinal.comparison, null, 2)}</pre></>}
+        {consumerError && <p role="status">{workspaceCopy.operationFailed}</p>}{!isTrajectory && completedResultKind === "standard" && !endpointControls && <p role="status">{workspaceCopy.result.contrastUnavailable}</p>}
+        <p>{workspaceCopy.result.codeLabels}: {result.executionProvenance.labels.codes.map((code) => `${code.column} = ${code.displayLabel}`).join("; ")}</p>
+        {longitudinal && <><p>{longitudinal.provenance.cohortMeaning}</p><ResearchTableV3 {...researchTableCopy} rows={longitudinal.entities.flatMap((entity) => entity.steps)} label={workspaceCopy.result.trajectorySteps} /><pre>{JSON.stringify(longitudinal.comparison, null, 2)}</pre></>}
       </section>}
-{!result && (              <section className="ena-empty-workbench" data-testid="open-ena-empty-workbench" aria-label="Open ENA model setup workbench">
+{!result && (              <section className="ena-empty-workbench" data-testid="open-ena-empty-workbench" aria-label={workspaceCopy.empty.ariaLabel}>
                 <div className="ena-empty-analysis-layout">
                   <figure
                     className="ena-empty-comparison-plot"
@@ -916,8 +938,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
                     data-ena-workbench-region="center"
                   >
                     <header className="ena-set-plot-heading">
-                      <div><h3>COMPARISON PLOT</h3><p>Model setup required</p></div>
-                      <span>2D research space</span>
+                      <div><h3>{workspaceCopy.empty.comparisonPlot}</h3><p>{workspaceCopy.empty.setupRequired}</p></div>
+                      <span>{workspaceCopy.empty.researchSpace}</span>
                     </header>
                     <div className="ena-empty-surface">
                       <svg
@@ -925,7 +947,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
                         data-testid="open-ena-empty-network"
                         viewBox="0 0 200 135"
                         role="img"
-                        aria-label="Connected four-node epistemic network"
+                        aria-label={workspaceCopy.empty.networkAria}
                       >
                         <line x1="99" y1="17" x2="28" y2="66" />
                         <line x1="99" y1="17" x2="174" y2="64" />
@@ -938,19 +960,19 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
                         <circle cx="102" cy="119" r="10" />
                       </svg>
                       <div className="ena-empty-guidance">
-                        <p className="ena-panel-kicker">MODEL → VIEW → PRESENTER</p>
+                        <p className="ena-panel-kicker">{workspaceCopy.empty.pathway}</p>
                         <h2>{copy.workspace.emptyTitle}</h2>
                         <p>{copy.workspace.emptyText}</p>
                         <ol>
                           <li data-done={dataset ? "true" : "false"}>
-                            <span className="sr-only">{dataset ? "Complete: " : "Not complete: "}</span>
-                            Open or load coded rows
+                            <span className="sr-only">{dataset ? workspaceCopy.empty.complete : workspaceCopy.empty.incomplete}</span>
+                            {workspaceCopy.empty.openRows}
                           </li>
                           <li data-done={controller.canRun ? "true" : "false"}>
-                            <span className="sr-only">{controller.canRun ? "Complete: " : "Not complete: "}</span>
-                            Define Units, Horizons, Windows, and Codes; Group is optional
+                            <span className="sr-only">{controller.canRun ? workspaceCopy.empty.complete : workspaceCopy.empty.incomplete}</span>
+                            {workspaceCopy.empty.defineModel}
                           </li>
-                          <li data-done="false"><span className="sr-only">Not complete: </span>Build the model with jENA</li>
+                          <li data-done="false"><span className="sr-only">{workspaceCopy.empty.incomplete}</span>{workspaceCopy.empty.buildModel}</li>
                         </ol>
                         <button type="button" className="ena-action-button ena-action-primary" onClick={() => void attempt(() => loadSample())} disabled={sourceBusy || modelState.runStatus === "running"}>{copy.data.sample}</button>
                       </div>
@@ -959,12 +981,12 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
 
                   <div className="ena-empty-side-column" data-ena-workbench-region="right-stack">
                     <figure data-testid="open-ena-empty-primary-plot">
-                      <header className="ena-set-plot-heading"><div><h3>PRIMARY PLOT</h3><p>Awaiting group selection</p></div><span>—</span></header>
-                      <div className="ena-empty-plot-placeholder"><span>Primary network appears after a model is built.</span></div>
+                      <header className="ena-set-plot-heading"><div><h3>{workspaceCopy.empty.primaryPlot}</h3><p>{workspaceCopy.empty.awaitingGroup}</p></div><span>—</span></header>
+                      <div className="ena-empty-plot-placeholder"><span>{workspaceCopy.empty.primaryPending}</span></div>
                     </figure>
                     <figure data-testid="open-ena-empty-secondary-plot">
-                      <header className="ena-set-plot-heading"><div><h3>SECONDARY PLOT</h3><p>Awaiting group selection</p></div><span>—</span></header>
-                      <div className="ena-empty-plot-placeholder"><span>Secondary network appears after a model is built.</span></div>
+                      <header className="ena-set-plot-heading"><div><h3>{workspaceCopy.empty.secondaryPlot}</h3><p>{workspaceCopy.empty.awaitingGroup}</p></div><span>—</span></header>
+                      <div className="ena-empty-plot-placeholder"><span>{workspaceCopy.empty.secondaryPending}</span></div>
                     </figure>
                     <div className="ena-empty-plot-tools" data-testid="open-ena-empty-plot-tools">
                       {persistentPlotTools}
@@ -972,7 +994,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
                   </div>
                 </div>
                 <div className="ena-empty-data-view" data-testid="open-ena-empty-data-view">
-                  <strong>Data View</strong><span>{dataset ? `${dataset.rows.length.toLocaleString()} coded rows ready for review` : "Open a CSV or XLSX file, or load the teaching sample, to inspect coded rows."}</span><span aria-hidden="true">⌃</span>
+                  <strong>{workspaceCopy.toolbar.dataView}</strong><span>{dataset ? workspaceCopy.empty.dataReady(dataset.rows.length) : workspaceCopy.empty.dataPrompt}</span><span aria-hidden="true">⌃</span>
                 </div>
               </section>
 )}

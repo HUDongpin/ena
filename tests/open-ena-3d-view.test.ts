@@ -957,9 +957,13 @@ test("camera presets are explicit display-only orientations and the client plot 
   assert.match(groupContrast3d, /data-testid="open-ena-3d-comparison-plot"/);
   assert.match(groupContrast3d, /data-testid="open-ena-3d-primary-plot"/);
   assert.match(groupContrast3d, /data-testid="open-ena-3d-secondary-plot"/);
-  assert.match(groupContrast3d, /<h3>Comparison Plot <small>3D<\/small><\/h3>/);
-  assert.match(groupContrast3d, /<h3>Primary Plot <small>3D<\/small><\/h3>/);
-  assert.match(groupContrast3d, /<h3>Secondary Plot <small>3D<\/small><\/h3>/);
+  assert.match(groupContrast3d, /<h3>\{copy\.plot\.threeDComparisonPlot\} <small>3D<\/small><\/h3>/);
+  assert.match(groupContrast3d, /<h3>\{copy\.plot\.threeDPrimaryPlot\} <small>3D<\/small><\/h3>/);
+  assert.match(groupContrast3d, /<h3>\{copy\.plot\.threeDSecondaryPlot\} <small>3D<\/small><\/h3>/);
+  assert.deepEqual(
+    [getOpenEnaCopy("en").plot.threeDComparisonPlot, getOpenEnaCopy("en").plot.threeDPrimaryPlot, getOpenEnaCopy("en").plot.threeDSecondaryPlot],
+    ["Comparison Plot", "Primary Plot", "Secondary Plot"],
+  );
   assert.match(groupContrast3d, /plotKind="comparison"/);
   assert.match(groupContrast3d, /plotKind="primary"/);
   assert.match(groupContrast3d, /plotKind="secondary"/);
@@ -1029,10 +1033,7 @@ test("3D data mode fails closed with a status message instead of adding a fallba
 
   assert.ok(dataViewCard, "data mode must retain the center card when its child is unavailable");
   assert.doesNotMatch(dataViewCard, /\srole=|\saria-label=/);
-  assert.match(
-    markup,
-    /<p class="ena-sets-compatibility-note" role="status">Data View is not available for this 3D comparison result\.<\/p>/,
-  );
+  assert.match(markup, /<p class="ena-sets-compatibility-note" role="status">Data View: Unavailable<\/p>/);
   assert.doesNotMatch(markup, /aria-label="Data View"/);
 });
 

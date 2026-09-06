@@ -63,7 +63,36 @@ export interface OpenEnaGroupContrastProps extends OpenEnaCodeGraphPresentation 
   nodeLayout?: OpenEnaNodeLayoutPositions;
   onNodeMove?: (code: string, dimensions: OpenEnaNodeDimensionPosition) => void;
   groupDisplay?: Pick<OpenEnaDerivedGroupDisplay, "primary" | "secondary" | "hiddenUnitKeys">;
+  uiCopy?: {
+    readonly comparisonPlot: string;
+    readonly primaryPlot: string;
+    readonly secondaryPlot: string;
+    readonly dataView: string;
+    readonly comparisonAria: string;
+    readonly primaryPlotAria: string;
+    readonly secondaryPlotAria: string;
+    readonly primaryEmptyAria: string;
+    readonly secondaryEmptyAria: string;
+    readonly emptyGroupPrompt: string;
+    readonly toolsTitle: string;
+    readonly selectedGroupOrder: string;
+  };
 }
+
+const DEFAULT_GROUP_CONTRAST_UI_COPY = {
+  comparisonPlot: "Comparison Plot",
+  primaryPlot: "Primary Plot",
+  secondaryPlot: "Secondary Plot",
+  dataView: "Data View",
+  comparisonAria: "Comparison plot. Scroll horizontally on small screens.",
+  primaryPlotAria: "Primary plot. Scroll horizontally on small screens.",
+  secondaryPlotAria: "Secondary plot. Scroll horizontally on small screens.",
+  primaryEmptyAria: "Primary Plot is empty",
+  secondaryEmptyAria: "Secondary Plot is empty",
+  emptyGroupPrompt: "Click or hover points in the comparison plot to display networks here",
+  toolsTitle: "Plot Tools",
+  selectedGroupOrder: "Selected group order",
+} as const;
 
 type ContrastEdge = OpenEnaPairwiseContrast["edges"][number];
 type ContrastNode = OpenEnaPairwiseContrast["nodes"][number];
@@ -1529,6 +1558,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
     rightTools,
     onSwitchPlots,
   } = props;
+  const uiCopy = props.uiCopy ?? DEFAULT_GROUP_CONTRAST_UI_COPY;
   const initialZoom = boundedZoom(props.plotZoom);
   const [panelZooms, setPanelZooms] = useState<PlotZoomState>({
     comparison: initialZoom,
@@ -1716,7 +1746,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
       data-ena-difference-edge-scale-definition={contrast.edgeScaleDenominators.differenceDefinition}
       data-ena-shared-mean-edge-scale-definition={contrast.edgeScaleDenominators.sharedMeanDefinition}
       data-ena-center-mode={centerMode}
-      aria-label="Primary / Secondary Group Comparison"
+      aria-label={uiCopy.comparisonAria}
     >
       <div className="ena-set-comparison-layout">
         <div
@@ -1730,11 +1760,11 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
               className="ena-set-main-plot"
               data-testid="open-ena-group-data-view"
               role="region"
-              aria-label="Data View"
+              aria-label={uiCopy.dataView}
             >
               <header className="ena-set-plot-heading">
                 <div>
-                  <h3>Data View</h3>
+                  <h3>{uiCopy.dataView}</h3>
                   <p>{contrast.primary.name} and {contrast.secondary.name} · comparison records</p>
                 </div>
                 <span>{xAxis} × {yAxis}</span>
@@ -1746,10 +1776,10 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
               )}
             </section>
           ) : (
-            <figure className="ena-set-main-plot" tabIndex={0} aria-label="Comparison plot. Scroll horizontally on small screens.">
+            <figure className="ena-set-main-plot" tabIndex={0} aria-label={uiCopy.comparisonAria}>
               <header className="ena-set-plot-heading ena-group-contrast-plot-heading">
                 <div>
-                  <h3>Comparison Plot</h3>
+                  <h3>{uiCopy.comparisonPlot}</h3>
                   <p
                     className="ena-set-series-caption"
                     aria-label={comparisonAccessibleLabel}
@@ -1824,13 +1854,13 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
           {panelStates.primary !== "removed" && primaryPanelSide && panelRoles.primary ? (
             <figure
               tabIndex={0}
-              aria-label="Primary plot. Scroll horizontally on small screens."
+              aria-label={uiCopy.primaryPlotAria}
               data-ena-panel-role="primary"
               data-ena-panel-state={panelStates.primary}
             >
               <header className="ena-set-plot-heading ena-group-contrast-plot-heading">
                 <div>
-                  <h3>Primary Plot</h3>
+                  <h3>{uiCopy.primaryPlot}</h3>
                   <p
                     className="ena-set-series-caption"
                     aria-label={`${primaryPanelSide.name}, scaled ${formatOfficialMultiplier(props.edgeScale)} times`}
@@ -1873,21 +1903,21 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
               />
             </figure>
           ) : (
-            <section className="ena-empty-side-plot" data-ena-panel-role="primary" data-ena-panel-state="removed" aria-label="Primary Plot is empty">
-              <header className="ena-set-plot-heading ena-group-contrast-plot-heading"><h3>Primary Plot</h3></header>
-              <div className="ena-empty-side-plot-prompt"><OpenEnaPlotActionIcon name="restore" /><p>Click or hover points in the comparison plot to display networks here</p></div>
+            <section className="ena-empty-side-plot" data-ena-panel-role="primary" data-ena-panel-state="removed" aria-label={uiCopy.primaryEmptyAria}>
+              <header className="ena-set-plot-heading ena-group-contrast-plot-heading"><h3>{uiCopy.primaryPlot}</h3></header>
+              <div className="ena-empty-side-plot-prompt"><OpenEnaPlotActionIcon name="restore" /><p>{uiCopy.emptyGroupPrompt}</p></div>
             </section>
           )}
           {panelStates.secondary !== "removed" && secondaryPanelSide && panelRoles.secondary ? (
             <figure
               tabIndex={0}
-              aria-label="Secondary plot. Scroll horizontally on small screens."
+              aria-label={uiCopy.secondaryPlotAria}
               data-ena-panel-role="secondary"
               data-ena-panel-state={panelStates.secondary}
             >
               <header className="ena-set-plot-heading ena-group-contrast-plot-heading">
                 <div>
-                  <h3>Secondary Plot</h3>
+                  <h3>{uiCopy.secondaryPlot}</h3>
                   <p
                     className="ena-set-series-caption"
                     aria-label={`${secondaryPanelSide.name}, scaled ${formatOfficialMultiplier(props.edgeScale)} times`}
@@ -1931,9 +1961,9 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
               />
             </figure>
           ) : (
-            <section className="ena-empty-side-plot" data-ena-panel-role="secondary" data-ena-panel-state="removed" aria-label="Secondary Plot is empty">
-              <header className="ena-set-plot-heading ena-group-contrast-plot-heading"><h3>Secondary Plot</h3></header>
-              <div className="ena-empty-side-plot-prompt"><OpenEnaPlotActionIcon name="restore" /><p>Click or hover points in the comparison plot to display networks here</p></div>
+            <section className="ena-empty-side-plot" data-ena-panel-role="secondary" data-ena-panel-state="removed" aria-label={uiCopy.secondaryEmptyAria}>
+              <header className="ena-set-plot-heading ena-group-contrast-plot-heading"><h3>{uiCopy.secondaryPlot}</h3></header>
+              <div className="ena-empty-side-plot-prompt"><OpenEnaPlotActionIcon name="restore" /><p>{uiCopy.emptyGroupPrompt}</p></div>
             </section>
           )}
           {rightTools ? (
@@ -1941,7 +1971,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
               className="ena-set-right-tools"
               data-testid="open-ena-group-right-tools"
               role="region"
-              aria-label="Plot Tools"
+              aria-label={uiCopy.toolsTitle}
             >
               {rightTools}
             </section>
@@ -1951,7 +1981,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
 
       <ol
         className="ena-set-signed-legend"
-        aria-label="Selected group order"
+        aria-label={uiCopy.selectedGroupOrder}
         data-ena-legend-order="primary-secondary"
         style={{ listStyle: "none", margin: 0, paddingInlineStart: 4 }}
       >

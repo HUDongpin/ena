@@ -44,8 +44,10 @@ function endpointResult(groupNames: readonly string[]) {
 test("Group selectors expose every declared typed identity for the current result", () => {
 
   assert.match(v3, /identityDictionary.groups/);
-  assert.match(v3, /aria-label="Primary Group"/);
-  assert.match(v3, /aria-label="Secondary Group"/);
+  assert.match(v3, /aria-label=\{copy\.contrast\.primary\}/);
+  assert.match(v3, /aria-label=\{copy\.contrast\.secondary\}/);
+  assert.equal(getOpenEnaCopy("en").contrast.primary, "Primary group");
+  assert.equal(getOpenEnaCopy("en").contrast.secondary, "Secondary group");
   assert.match(v3, /groups.map\(\(group\) => <option key=\{group.token\} value=\{group.token\}/);
 
 });
@@ -143,14 +145,17 @@ test("native contrast exports bind selected groups and axes separately from immu
   assert.match(nativeExport, /buildContrastV3\(/);
   assert.match(nativeExport, /controls/);
   assert.match(v3, /exportCurrentAnalysisV3\(result, currentPlan\)/);
-  assert.match(v3, /Model bundles contain unavailable statistics/);
+  assert.match(v3, /workspaceCopy\.stats\.separation/);
+  assert.match(getOpenEnaCopy("en").modelV3.workspace.stats.separation, /Model bundles contain unavailable statistics/);
 
 });
 
 test("unavailable contrast does not invalidate ungrouped or rank-one fitted geometry", () => {
 
-  assert.match(v3, /Contrast requires two declared Groups and two supported fitted axes/);
-  assert.match(v3, /Only one supported fitted axis is available/);
+  assert.match(v3, /workspaceCopy\.result\.contrastUnavailable/);
+  assert.match(v3, /workspaceCopy\.result\.oneAxis/);
+  assert.match(getOpenEnaCopy("en").modelV3.workspace.result.contrastUnavailable, /Contrast requires two declared Groups and two supported fitted axes/);
+  assert.match(getOpenEnaCopy("en").modelV3.workspace.result.oneAxis, /Only one supported fitted axis is available/);
   assert.match(v3, /buildLongitudinalViewV3/);
   assert.match(v3, /consumerError && <p role="status"/);
 

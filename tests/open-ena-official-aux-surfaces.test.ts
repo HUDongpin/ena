@@ -389,7 +389,10 @@ test("ordered Plot Tools consume complete Traditional and Simplified Chinese vis
 test("native ONA layouts and persistent tools retain explicit locale copy ownership", () => {
 
   assert.match(v3, /copy=\{copy.ona.layout\}/);
-  assert.match(v3, /copy=\{completedResultKind === "ona" \? copy.ona.plotTools : undefined\}/);
+  assert.match(v3, /copy=\{copy\.ona\.plotTools\}/);
+  for (const locale of ["en", "zh-hant", "zh-hans"] as const) {
+    assert.ok(getOpenEnaCopy(locale).ona.plotTools.plotSettings.length > 0);
+  }
   assert.match(v3, /copy.ona.layout.descriptiveBoundary/);
 
 });

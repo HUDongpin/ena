@@ -75,8 +75,10 @@ test("independent trajectory inference requires one selected fitted period and a
 test("Horizon order is explicitly reviewed and graph display retains original fitted ordinals", () => {
 
   assert.match(v3, /<OpenEnaHorizonsPanelV3/);
-  assert.match(v3, /Fitted Horizon order is locked/);
-  assert.match(v3, /Observed fitted trajectory steps and original ordinals/);
+  assert.match(v3, /workspaceCopy\.plot\.fittedOrder/);
+  assert.match(v3, /workspaceCopy\.result\.trajectorySteps/);
+  assert.match(copy, /Fitted Horizon order is locked/);
+  assert.match(copy, /Observed fitted trajectory steps and original ordinals/);
   assert.doesNotMatch(v3, /longitudinalTimeOrder.*sort/);
 
 });
@@ -147,7 +149,8 @@ test("native bundle exports use the exact current result and independent plan", 
 
   assert.match(v3, /exportCurrentAnalysisV3\(result, currentPlan\)/);
   assert.match(v3, /latest.current.state.model.result === result/);
-  assert.match(v3, /Model bundles contain unavailable statistics/);
+  assert.match(v3, /workspaceCopy\.stats\.separation/);
+  assert.match(copy, /Model bundles contain unavailable statistics/);
 
 });
 
@@ -248,8 +251,9 @@ test("standalone longitudinal SVG and PNG exports embed the complete plot visual
 
 test("accumulated trajectory display cannot change fitted source order or inference cohorts", () => {
 
-  assert.match(v3, /Fitted Horizon order is locked. Display filters retain original ordinals and do not change inference cohorts/);
-  assert.match(v3, /Display .*horizon.displayLabel/);
+  assert.match(v3, /workspaceCopy\.plot\.fittedOrder/);
+  assert.match(copy, /Fitted Horizon order is locked. Display filters retain original ordinals and do not change inference cohorts/);
+  assert.match(v3, /workspaceCopy\.plot\.displayHorizon\(horizon\.displayLabel\)/);
   assert.match(moduleV3("lib/open-ena/trajectory-presentation-v3.ts"), /trajectoryOrdinal/);
 
 });

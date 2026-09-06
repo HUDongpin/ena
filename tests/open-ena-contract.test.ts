@@ -231,7 +231,7 @@ test("Open ENA exposes honest locale, SEO, and accessible-result contracts", () 
   const copy = readFileSync(join(projectRoot, "lib", "open-ena-i18n.ts"), "utf8");
 
   assert.match(copy, /openEnaLocalizedLocales = \["en", "zh-hant", "zh-hans"\]/);
-  assert.match(workspace, /className="ena-control-content" lang=\{locale\} dir="ltr"/);
+  assert.match(workspace, /className="ena-control-content ena-model-control-content" lang=\{locale\} dir="ltr"/);
   assert.match(workspace, /role="status" aria-live="polite"/);
   assert.match(workspace, /aria-busy=\{sourceBusy \|\| modelState.runStatus === "running"\}/);
   assert.doesNotMatch(workspace, /complete locale catalog follows/);
@@ -249,11 +249,12 @@ test("Open ENA publishes methodology, local-processing, and GPL boundaries", () 
   const packageJson = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf8")) as { dependencies: Record<string, string> };
 
   assert.equal(packageJson.dependencies["jena-js"], "0.7.0-ona.0");
-  assert.match(workspace, /GPL-3\.0-only/);
-  assert.match(workspace, /ENA computation powered by/);
-  assert.match(workspace, /ENA\.HK provides the interface, plotting, and exports/);
+  assert.match(workspace, /workspaceCopy\.shell\.runtimePrivacy\(JENA_RUNTIME_VERSION\)/);
+  assert.match(copy, /GPL-3\.0-only/);
+  assert.match(copy, /ENA computation powered by/);
+  assert.match(copy, /ENA\.HK provides the interface, plotting, and exports/);
   assert.doesNotMatch(workspace, /Powered[\s\S]{0,160}rENA/);
-  assert.match(workspace, /Source data stays in this workspace’s browser memory/);
+  assert.match(copy, /Source data stays in this workspace's browser memory/);
   assert.match(copy, /Visual separation alone is not significance or causality/);
   assert.doesNotMatch(copy, /3D ENA exploratory option opens the separate 3D ENA website/);
   assert.match(copy, /Interactive 3D displays the same fitted jENA coordinates as the 2D view/);

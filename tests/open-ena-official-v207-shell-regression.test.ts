@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 
 const projectRoot = process.cwd();
 
@@ -150,9 +151,9 @@ test("desktop grid uses a compact rail, an approximately 380px control panel, an
 });
 
 test("GroupContrast keeps Comparison central and Primary, Secondary, then Plot Tools in the persistent right stack", () => {
-  const comparisonPosition = groupContrast.indexOf("<h3>Comparison Plot</h3>");
-  const primaryPosition = groupContrast.indexOf("<h3>Primary Plot</h3>", comparisonPosition);
-  const secondaryPosition = groupContrast.indexOf("<h3>Secondary Plot</h3>", primaryPosition);
+  const comparisonPosition = groupContrast.indexOf("<h3>{uiCopy.comparisonPlot}</h3>");
+  const primaryPosition = groupContrast.indexOf("<h3>{uiCopy.primaryPlot}</h3>", comparisonPosition);
+  const secondaryPosition = groupContrast.indexOf("<h3>{uiCopy.secondaryPlot}</h3>", primaryPosition);
   const toolsPosition = groupContrast.indexOf("{rightTools}", secondaryPosition);
 
   assert.ok(comparisonPosition >= 0, "the center region owns Comparison Plot");
@@ -177,16 +178,16 @@ test("Comparison, Primary, and Secondary plot titles and markers use black ink",
     5,
     "Comparison plus the rendered and empty Primary/Secondary states need the scoped plot-heading class",
   );
-  for (const title of ["Comparison Plot", "Primary Plot", "Secondary Plot"]) {
+  for (const title of ["comparisonPlot", "primaryPlot", "secondaryPlot"]) {
     assert.match(
       groupContrast,
-      new RegExp(`${plotHeadingClass}[\\s\\S]{0,160}<h3>${title}<\\/h3>`),
+      new RegExp(`${plotHeadingClass}[\\s\\S]{0,160}<h3>\\{uiCopy\\.${title}\\}<\\/h3>`),
       `${title} needs the scoped black-title hook`,
     );
   }
   assert.match(
     groupContrast,
-    /<header className="ena-set-plot-heading">\s*<div>\s*<h3>Data View<\/h3>/,
+    /<header className="ena-set-plot-heading">\s*<div>\s*<h3>\{uiCopy\.dataView\}<\/h3>/,
     "Data View remains outside the requested black plot-heading treatment",
   );
 
@@ -225,11 +226,11 @@ test("Data View replaces only the center plot and never displaces the right comp
   );
   assert.match(center, /centerMode\s*===\s*"data"/);
   assert.match(center, /\{dataView\s*\?\?/);
-  assert.match(center, /<h3>Comparison Plot<\/h3>/, "Comparison Plot remains the alternate center state");
+  assert.match(center, /<h3>\{uiCopy\.comparisonPlot\}<\/h3>/, "Comparison Plot remains the alternate center state");
 
   const right = groupContrast.slice(groupContrast.indexOf('data-ena-workbench-region="right-stack"'));
-  assert.match(right, /<h3>Primary Plot<\/h3>/);
-  assert.match(right, /<h3>Secondary Plot<\/h3>/);
+  assert.match(right, /<h3>\{uiCopy\.primaryPlot\}<\/h3>/);
+  assert.match(right, /<h3>\{uiCopy\.secondaryPlot\}<\/h3>/);
   assert.match(right, /\{rightTools\}/);
   assert.doesNotMatch(right, /centerMode\s*===\s*"data"/, "the Data View condition is scoped to the center region only");
 });
@@ -245,7 +246,8 @@ test("the persistent center has a single comparison heading and bound currentnes
 
   assert.match(shell(), /class="ena-visual-toolbar"/);
   assert.match(v3, /copy.workspace.comparison/);
-  assert.match(v3, /Historical geometry: edits require a new run/);
+  assert.match(v3, /workspaceCopy\.result\.historicalGeometry/);
+  assert.equal(getOpenEnaCopy("en").modelV3.workspace.result.historicalGeometry, "Historical geometry: edits require a new run.");
   assert.doesNotMatch(v3, /className="ena-result-heading"/);
 
 });

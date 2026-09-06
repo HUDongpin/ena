@@ -483,7 +483,7 @@ export function OpenEnaCodesPanelV3({
       </p>
 
       <div
-        className="ena-model-codes-v3-toolbar"
+        className="ena-model-codes-v3-toolbar ena-model-toolbar"
         role="toolbar"
         aria-label={copy.toolbar}
       >

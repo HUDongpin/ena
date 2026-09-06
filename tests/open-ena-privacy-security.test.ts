@@ -134,7 +134,10 @@ test("standard ENA identity-bearing exports require one explicit confirmation wh
   assert.match(workspace, /function exportPlotSvg\(\)[\s\S]{0,220}confirmCurrentIdentityBearingExport/u);
   assert.match(workspace, /function exportPlotPng\(\)[\s\S]{0,220}confirmCurrentIdentityBearingExport/u);
   assert.match(workspace, /confirmCurrentIdentityBearingExport\(\)\) await navigator.clipboard.writeText/u);
-  const aggregateOna = workspace.slice(workspace.indexOf('const value = await buildOnaBoundViewV3(result, currentPlan, primaryGroupName'), workspace.indexOf('>Export ONA aggregate edges'));
+  const aggregateStart = workspace.indexOf('const value = await buildOnaBoundViewV3(result, currentPlan, primaryGroupName');
+  const aggregateEnd = workspace.indexOf('>{workspaceCopy.stats.exportOnaEdges}</button>', aggregateStart);
+  assert.ok(aggregateStart >= 0 && aggregateEnd > aggregateStart, "the aggregate ONA export button must retain an exact source boundary");
+  const aggregateOna = workspace.slice(aggregateStart, aggregateEnd);
   assert.doesNotMatch(aggregateOna, /confirmOpenEnaIdentityBearingExport|window\.confirm/u);
 
   assert.match(i18n, /identityExportWarning/u);

@@ -453,7 +453,7 @@ export function OpenEnaUnitsPanelV3({
         </section>
       ) : null}
 
-      <div role="toolbar" aria-label={copy.groupToolbar}>
+      <div className="ena-model-toolbar" role="toolbar" aria-label={copy.groupToolbar}>
         <OpenEnaOfficialIconButton
           icon="collapse"
           ariaLabel={copy.collapseGroups}

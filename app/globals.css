@@ -9020,6 +9020,45 @@ body:has(.open-ena-page) #main-content {
   border-bottom: 0;
 }
 
+.ena-model-v3-shell,
+.ena-model-tab-panel,
+.ena-model-units-v3,
+.ena-model-horizons-v3,
+.ena-model-windows-v3,
+.ena-model-codes-v3 {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ena-model-tab-panel {
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-gutter: stable;
+}
+
+.ena-source-preparation-dialog {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.ena-source-preparation-dialog label,
+.ena-source-preparation-dialog code {
+  overflow-wrap: anywhere;
+}
+
+.ena-model-tab-and-help {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: stretch;
+}
+
+.ena-model-help-button {
+  align-self: stretch;
+  color: var(--ena-accent-strong);
+  background: #fff;
+}
+
 .ena-model-tabs {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.25rem), 1fr));
@@ -9072,6 +9111,7 @@ body:has(.open-ena-page) #main-content {
 
 .ena-model-tabs button[aria-selected="true"]::before {
   background: var(--ena-accent);
+  background-color: #89cff0 !important;
 }
 
 .ena-model-tabs button:focus-visible {
@@ -9103,6 +9143,51 @@ body:has(.open-ena-page) #main-content {
   min-width: 0;
   min-height: 0;
   align-content: start;
+}
+
+.ena-model-codes-v3-toolbar,
+.ena-model-units-v3 > [role="toolbar"] {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ena-model-code-row-v3,
+.ena-model-order-v3-key,
+.ena-model-order-v3-level {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ena-model-code-drag-handle-v3,
+.ena-model-code-color-v3 {
+  display: grid;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  place-items: center;
+  padding: 0;
+}
+
+.ena-model-code-color-v3 > span {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border: 1px solid #263740;
+  border-radius: 2px;
+}
+
+.ena-model-horizons-v3-structure,
+.ena-model-horizons-v3-sequences,
+.ena-model-windows-v3-reference-facts,
+.ena-model-windows-v3-resources,
+.ena-model-order-v3-keys,
+.ena-model-codes-v3-list {
+  max-width: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .ena-official-model-panel {

@@ -2,6 +2,7 @@ import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceSh
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 
 const workspace = readFileSync(
   new URL("../components/open-ena/OpenEnaWorkspace.tsx", import.meta.url),
@@ -62,17 +63,21 @@ test("native ONA Data View and 3D remain reachable while inference is explicitly
 
   assert.match(v3, /<OpenEna3DOrderedResultLayout/);
   assert.match(v3, /<OpenEnaDataView/);
-  assert.match(v3, /ONA remains descriptive only; group and trajectory inference are unavailable/);
+  assert.match(v3, /workspaceCopy\.stats\.onaDescriptive/);
+  assert.equal(getOpenEnaCopy("en").modelV3.workspace.stats.onaDescriptive, "ONA remains descriptive only; group and trajectory inference are unavailable.");
   assert.match(v3, /disabled=\{!current \|\| !controls \|\| inferenceBusy \|\| completedResultKind === "ona"\}/);
 
 });
 
 test("ONA exports distinguish aggregate edges, deidentified full-run audit, local identities, and bound bundle", () => {
 
-  for (const text of ["Export ONA aggregate edges", "Export ONA deidentified audit", "Export current Data View", "Export current analysis"]) assert.ok(v3.includes(text));
+  for (const key of ["workspaceCopy.stats.exportOnaEdges", "workspaceCopy.stats.exportOnaAudit", "workspaceCopy.stats.exportDataView", "workspaceCopy.artifacts.exportAnalysis"]) assert.ok(v3.includes(key));
+  const workspaceCopy = getOpenEnaCopy("en").modelV3.workspace;
+  assert.deepEqual([workspaceCopy.stats.exportOnaEdges, workspaceCopy.stats.exportOnaAudit, workspaceCopy.stats.exportDataView, workspaceCopy.artifacts.exportAnalysis], ["Export ONA aggregate edges", "Export ONA deidentified audit", "Export current Data View", "Export current analysis"]);
   assert.match(v3, /window.confirm\(copy.ona.exports.auditConfirmation\)/);
   assert.match(moduleV3("lib/open-ena/ona-bound-view-v3.ts"), /auditRows/);
-  assert.match(v3, /Full-run deidentified ordered audit/);
+  assert.match(v3, /workspaceCopy\.stats\.onaAudit/);
+  assert.equal(workspaceCopy.stats.onaAudit, "Full-run deidentified ordered audit");
 
 });
 

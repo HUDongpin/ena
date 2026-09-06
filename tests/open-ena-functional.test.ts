@@ -631,7 +631,8 @@ test("pending model edits preserve the last valid research result until rebuild"
 
 
   assert.match(v3, /modelState.resultStatus === "stale"/);
-  assert.match(v3, /Historical geometry: edits require a new run/);
+  assert.match(v3, /workspaceCopy\.result\.historicalGeometry/);
+  assert.equal(getOpenEnaCopy("en").modelV3.workspace.result.historicalGeometry, "Historical geometry: edits require a new run.");
   assert.match(owner, /modelStateReducerV3/);
 
 });
@@ -672,7 +673,8 @@ test("legacy source-search compatibility remains local while native Data View di
   assert.ok(activeRows.every(({ row }) => SAMPLE_CONFIG.codes.some((code) => ["1", "true"].includes(String(row[code]).toLowerCase()))));
 
 
-  assert.match(v3, /Global runtime source traversal \(not per-point membership\)/);
+  assert.match(v3, /workspaceCopy\.stats\.globalTraversal/);
+  assert.equal(getOpenEnaCopy("en").modelV3.workspace.stats.globalTraversal, "Global runtime source traversal (not per-point membership)");
 
   const i18n = readFileSync(
     join(projectRoot, "lib", "open-ena-i18n.ts"),
@@ -690,7 +692,8 @@ test("legacy source-search compatibility remains local while native Data View di
     /"(?:sourceRows|rawRows)":/,
     "the actual result-bundle protocol must exclude raw source-row payloads",
   );
-  assert.match(v3, /label="Source data"/);
+  assert.match(v3, /label=\{workspaceCopy\.data\.sourceData\}/);
+  assert.equal(getOpenEnaCopy("en").modelV3.workspace.data.sourceData, "Source data");
 });
 
 test("the empty-state checklist treats Group as optional without inventing a Code minimum", () => {

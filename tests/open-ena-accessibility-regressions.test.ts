@@ -166,3 +166,15 @@ test("Models v3 exposes localized live diagnostics, field errors, focus return, 
   assert.match(order, /sourceReviewTriggerRef\.current\?\.focus\(\)/u);
   assert.doesNotMatch(tabs + diagnostics + codes + order, /<button[^>]*>\s*<button/u);
 });
+
+test("actual Models tabs and source preparation own their styling and focus lifecycle", () => {
+  const tabs = source("components/open-ena/model-v3/OpenEnaModelTabsV3.tsx");
+  assert.match(tabs, /className="ena-model-tabs" role="tablist"/u);
+  assert.match(tabs, /className="ena-official-icon-button ena-model-help-button"/u);
+  assert.match(workspace, /className="ena-control-content ena-model-control-content"/u);
+  assert.match(workspace, /sourceFileTriggerRef/u);
+  assert.match(workspace, /sourceDialogRef/u);
+  assert.match(workspace, /onKeyDown=\{onSourceDialogKeyDown\}/u);
+  assert.match(workspace, /aria-invalid=\{column\.errorCount > 0\}/u);
+  assert.match(workspace, /aria-describedby=\{column\.errorCount > 0/u);
+});

@@ -460,6 +460,7 @@ test("native Data View currentness guards export and discloses unavailable point
   assert.match(v3, /exportDisabled=\{!current\}/);
   assert.match(v3, /buildDataViewV3\(result, currentPlan\)/);
   assert.match(v3, /dataViewPresentation.sourceIndexMeaning/);
-  assert.match(v3, /Global runtime source traversal \(not per-point membership\)/);
+  assert.match(v3, /workspaceCopy\.stats\.globalTraversal/);
+  assert.equal(getOpenEnaCopy("en").modelV3.workspace.stats.globalTraversal, "Global runtime source traversal (not per-point membership)");
 
 });

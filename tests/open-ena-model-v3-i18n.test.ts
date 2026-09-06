@@ -83,3 +83,46 @@ test("Workspace uses the selected Models v3 catalog at every reached v3 copy ent
   assert.match(source, /copy=\{modelV3Copy\.importPreview\}/u);
   assert.doesNotMatch(source, /found\?\.summary|found\?\.detail|`Review \$\{/u);
 });
+
+test("native locale catalogs do not use substring or generated-ID translation", () => {
+  const catalogSource = readFileSync(join(root, "lib/open-ena-i18n.ts"), "utf8");
+  assert.doesNotMatch(catalogSource, /traditionalToSimplifiedV3|MODEL_TERM_TRANSLATIONS_V3|diagnosticTitleV3/u);
+});
+
+test("native diagnostic messages are distinct, semantic, and fully localized", () => {
+  for (const locale of openEnaLocalizedLocales) {
+    const modelV3 = getOpenEnaCopy(locale).modelV3;
+    const messages = [...MODEL_DIAGNOSTIC_IDS_V3, ...ONA_COMPILER_DIAGNOSTIC_IDS_V3].map((id) => localizeModelDiagnosticV3(modelV3, { id, severity: "error", scope: "model", fieldPath: "codes.Exact-Identity", evidence: { totalCount: 7, sampleLimit: 5, truncated: true } }));
+    assert.equal(new Set(messages.map((message) => message.summary)).size, messages.length, `${locale} summaries`);
+    assert.equal(new Set(messages.map((message) => message.detail)).size, messages.length, `${locale} details`);
+    for (const message of messages) {
+      assert.match(message.detail, /Exact-Identity/u);
+      assert.match(message.detail, /7/u);
+    }
+  }
+  const zhHant = getOpenEnaCopy("zh-hant").modelV3;
+  const zhHans = getOpenEnaCopy("zh-hans").modelV3;
+  assert.equal(zhHant.tabs.help.windows.description, "選擇窗口類型及其精確情境範圍。");
+  assert.equal(zhHans.tabs.help.windows.description, "选择窗口类型及其精确情境范围。");
+  for (const id of [...MODEL_DIAGNOSTIC_IDS_V3, ...ONA_COMPILER_DIAGNOSTIC_IDS_V3]) {
+    for (const copy of [zhHant, zhHans]) {
+      const message = localizeModelDiagnosticV3(copy, { id, severity: "warning", scope: "model" });
+      assert.doesNotMatch(`${message.summary} ${message.detail}`, /\b(?:units|required|shared|multiple|requires|endpoint|has no path|target|degenerate|draft|resource|budget|exceeded)\b/iu, id);
+    }
+  }
+  const en = getOpenEnaCopy("en").modelV3;
+  assert.match(localizeModelDiagnosticV3(en, { id: "STANDARD_CODE_VALUE_INVALID", severity: "error", scope: "codes" }).detail, /numeric 0\/1.*Boolean false\/true.*finite nonnegative/u);
+  assert.match(localizeModelDiagnosticV3(en, { id: "STANDARD_HORIZON_SHARED_BY_MULTIPLE_UNITS", severity: "information", scope: "horizons" }).detail, /does not block model construction/u);
+  assert.match(localizeModelDiagnosticV3(en, { id: "STANDARD_SVD_ONE_DIMENSIONAL", severity: "warning", scope: "rotation" }).detail, /fitted model remains valid.*AI interpretation/u);
+  assert.match(localizeModelDiagnosticV3(en, { id: "STANDARD_REFERENCE_TARGET_DEGENERATE", severity: "warning", scope: "reference" }).detail, /projection remains valid/u);
+  assert.match(localizeModelDiagnosticV3(en, { id: "STANDARD_MEANS_IDENTICAL", severity: "error", scope: "rotation" }).detail, /identical typed selections.*sphere-normalized/u);
+});
+
+test("Workspace reached UI uses the typed locale catalog rather than required English literals", () => {
+  const source = readFileSync(join(root, "components/open-ena/OpenEnaWorkspace.tsx"), "utf8");
+  assert.match(source, /const workspaceCopy = modelV3Copy\.workspace;/u);
+  for (const text of ["Configure trajectory model", "Run model", "Cancel run", "Review CSV source types", "Cancel source preparation", "Confirm types and create typed XLSX", "Model artifacts", "Download Model", "Open Stats"]) {
+    assert.doesNotMatch(source, new RegExp(`>${text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}<`, "u"), text);
+  }
+  assert.match(source, /<option key=\{type\} value=\{type\}>\{workspaceCopy\.data\.sourceTypes\[type\]\}<\/option>/u);
+});

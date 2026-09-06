@@ -3,7 +3,7 @@ import test from "node:test";
 import { parseCsv } from "../lib/open-ena/csv";
 import { readFile } from "node:fs/promises";
 import { prepareTeachingSampleV3, SAMPLE_SOURCE_DESCRIPTORS_V3 } from "../lib/open-ena/sample-source-v3";
-import { parseDeclaredSourceCellV3, prepareTypedCsvSourceV3 } from "../lib/open-ena/source-preparation-v3";
+import { parseDeclaredSourceCellV3, prepareTypedCsvSourceV3, previewSourceTypesV3 } from "../lib/open-ena/source-preparation-v3";
 import { parseXlsx } from "../lib/open-ena/spreadsheet";
 import { sha256TextV3 } from "../lib/open-ena/model-v3/canonical-json";
 import { compileStandardDraftV3 } from "../lib/open-ena/model-v3/compiler";
@@ -40,6 +40,15 @@ test("explicit source conversion preserves missing values and rejects corrupt, m
   assert.throws(() => parseDeclaredSourceCellV3("0", "boolean"));
   assert.throws(() => parseDeclaredSourceCellV3("true", "number"));
   assert.equal(parseDeclaredSourceCellV3("9007199254740993", "text"), "9007199254740993");
+});
+
+test("bounded error samples retain truthful per-column invalid state", () => {
+  const rows = Array.from({ length: 25 }, (_value, index) => ({ first: `bad-${index}`, later: index === 24 ? "also-bad" : "1" }));
+  const preview = previewSourceTypesV3({ name: "errors.csv", headers: ["first", "later"], rows, sizeBytes: 1, source: "upload" }, { first: "number", later: "number" });
+  assert.equal(preview.errors.length, 20, "global evidence remains bounded");
+  assert.equal(preview.columns[0].errorCount, 25);
+  assert.equal(preview.columns[1].errorCount, 1);
+  assert.deepEqual(preview.columns[1].errorCodes, ["number-token-required"]);
 });
 
 for (const kind of ["endpoint", "trajectory"] as const) test(`the actual ${kind} CSV teaching file reaches the strict native model through a genuine typed source`, async () => {
