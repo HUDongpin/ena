@@ -40,6 +40,8 @@ import {
   type PlotlyGl3dPointEvent,
 } from "./plotly-gl3d-loader";
 
+import { createOpenEnaPlotlyResourceOwnerV3, type OpenEnaOwnedGlSceneV3 } from "../../lib/open-ena/plotly-resource-owner-v3";
+
 type PlotlyApi = PlotlyGl3dApi;
 type PlotlyImageApi = PlotlyApi & {
   toImage: (
@@ -367,6 +369,7 @@ export default function OpenEnaInteractive3DPlot({
   const initialAspectRatioRef = useRef(initialAspectRatio);
   const lastAspectRatioRef = useRef(initialAspectRatio);
   const ownedViewSyncRef = useRef(createOpenEnaPlotViewSyncV3());
+  const plotResourcesRef = useRef<ReturnType<typeof createOpenEnaPlotlyResourceOwnerV3> | null>(null);
   const relayoutListenerRef = useRef<((update: Record<string, unknown>) => void) | null>(null);
   const hoverListenerRef = useRef<((event: PlotlyGl3dPointEvent) => void) | null>(null);
   const unhoverListenerRef = useRef<((event: PlotlyGl3dPointEvent) => void) | null>(null);
@@ -559,6 +562,11 @@ export default function OpenEnaInteractive3DPlot({
     let active = true;
     let loadedPlotly: PlotlyApi | null = null;
     const plotRoot = plotRootRef.current;
+    const resources = createOpenEnaPlotlyResourceOwnerV3(() => {
+      const scene = (plotRoot as (HTMLDivElement & { _fullLayout?: { scene?: { _scene?: { glplot?: OpenEnaOwnedGlSceneV3 } } } }) | null)?._fullLayout?.scene?._scene?.glplot;
+      return scene ?? null;
+    });
+    plotResourcesRef.current = resources;
 
     void getPlotlyGl3d()
       .then((module) => {
@@ -620,7 +628,7 @@ export default function OpenEnaInteractive3DPlot({
         nodeMoveFrameRef.current = null;
       }
       if (actionStatusTimerRef.current !== null) window.clearTimeout(actionStatusTimerRef.current);
-      if (Plotly && plotRoot) Plotly.purge(plotRoot);
+      if (Plotly && plotRoot) void resources.close(() => Plotly.purge(plotRoot));
     };
   }, []);
 
@@ -633,7 +641,7 @@ export default function OpenEnaInteractive3DPlot({
         return;
       }
       try {
-        void Promise.resolve(Plotly.Plots.resize(plotRoot)).catch(() => {
+        void runPlotlyOperation(() => Plotly.Plots.resize(plotRoot)).catch(() => {
           // Plotly rejects when a final observer callback reaches a detached plot.
         });
       } catch {
@@ -725,12 +733,12 @@ export default function OpenEnaInteractive3DPlot({
 
     void (async () => {
       try {
-        await Plotly.react(
+        await runPlotlyOperation(() => Plotly.react(
           plotRoot,
           spec.data as never[],
           structuredClone(spec.layout) as never,
           spec.config as never,
-        );
+        ));
         if (!active) return;
         if (!retainedView) {
           const nextCamera = lastAppliedCameraKeyRef.current === null && initialCameraRef.current
@@ -743,7 +751,7 @@ export default function OpenEnaInteractive3DPlot({
             "scene.camera": nextCamera,
             "scene.aspectmode": nextAspectRatio ? "manual" : "cube",
             ...(nextAspectRatio ? { "scene.aspectratio": nextAspectRatio } : {}),
-          }, update => Plotly.relayout(plotRoot, update as never));
+          }, update => runPlotlyOperation(() => Plotly.relayout(plotRoot, update as never)));
           if (!active) return;
           lastCameraRef.current = nextCamera;
           lastAspectRatioRef.current = nextAspectRatio;
@@ -759,7 +767,7 @@ export default function OpenEnaInteractive3DPlot({
             "scene.camera": retainedView.camera,
             "scene.aspectmode": retainedView.aspectMode,
             ...(retainedView.aspectMode === "manual" ? { "scene.aspectratio": retainedView.aspectRatio } : {}),
-          }, update => Plotly.relayout(plotRoot, update as never));
+          }, update => runPlotlyOperation(() => Plotly.relayout(plotRoot, update as never)));
           if (!active) return;
           lastCameraRef.current = retainedView.camera;
           lastAspectRatioRef.current = retainedView.aspectRatio;
@@ -882,7 +890,7 @@ export default function OpenEnaInteractive3DPlot({
     if (controlledCameraKey === cameraKey(lastCameraRef.current)) return;
     const plotRoot = plotRootRef.current;
     lastCameraRef.current = initialCamera;
-    void ownedViewSyncRef.current.apply({ "scene.camera": initialCamera }, update => Plotly.relayout(plotRoot, update as never)).catch(() => {
+    void ownedViewSyncRef.current.apply({ "scene.camera": initialCamera }, update => runPlotlyOperation(() => Plotly.relayout(plotRoot, update as never))).catch(() => {
       // A sibling can unmount while a linked-camera update is in flight.
     });
   }, [Plotly, controlledCameraKey, initialCamera, status]);
@@ -895,7 +903,7 @@ export default function OpenEnaInteractive3DPlot({
     void ownedViewSyncRef.current.apply({
       "scene.aspectmode": "manual",
       "scene.aspectratio": initialAspectRatio,
-    }, update => Plotly.relayout(plotRoot, update as never)).catch(() => {
+    }, update => runPlotlyOperation(() => Plotly.relayout(plotRoot, update as never))).catch(() => {
       // A sibling can unmount while a linked orthographic zoom update is in flight.
     });
   }, [Plotly, controlledAspectRatioKey, initialAspectRatio, status]);
@@ -1045,10 +1053,10 @@ export default function OpenEnaInteractive3DPlot({
     if (!Plotly || status !== "ready" || !plotRootRef.current) return;
     const epoch = actionEpochRef.current, root = plotRootRef.current;
     lastCameraRef.current = nextCamera;
-    await Plotly.relayout(
-      plotRootRef.current,
+    await runPlotlyOperation(() => Plotly.relayout(
+      root,
       { "scene.camera": nextCamera } as never,
-    );
+    ));
     if (actionEpochRef.current !== epoch || plotRootRef.current !== root) return;
     onCameraChange?.(nextCamera);
   }
@@ -1057,10 +1065,10 @@ export default function OpenEnaInteractive3DPlot({
     if (!Plotly || status !== "ready" || !plotRootRef.current) return;
     const epoch = actionEpochRef.current, root = plotRootRef.current;
     lastAspectRatioRef.current = nextAspectRatio;
-    await Plotly.relayout(plotRootRef.current, {
+    await runPlotlyOperation(() => Plotly.relayout(root, {
       "scene.aspectmode": "manual",
       "scene.aspectratio": nextAspectRatio,
-    } as never);
+    } as never));
     if (actionEpochRef.current !== epoch || plotRootRef.current !== root) return;
     onAspectRatioChange?.(nextAspectRatio);
   }
@@ -1082,11 +1090,11 @@ export default function OpenEnaInteractive3DPlot({
     const epoch = actionEpochRef.current, root = plotRootRef.current;
     lastCameraRef.current = nextCamera;
     lastAspectRatioRef.current = nextAspectRatio;
-    await Plotly.relayout(plotRootRef.current, {
+    await runPlotlyOperation(() => Plotly.relayout(root, {
       "scene.camera": nextCamera,
       "scene.aspectmode": nextAspectRatio ? "manual" : "cube",
       ...(nextAspectRatio ? { "scene.aspectratio": nextAspectRatio } : {}),
-    } as never);
+    } as never));
     if (actionEpochRef.current !== epoch || plotRootRef.current !== root) return;
     onCameraChange?.(nextCamera);
     onAspectRatioChange?.(nextAspectRatio);
@@ -1111,6 +1119,12 @@ export default function OpenEnaInteractive3DPlot({
     finally { if (active()) { actionPendingRef.current = false; setActionPending(false); } }
   }
 
+  function runPlotlyOperation<T>(operation: () => Promise<T> | T): Promise<T> {
+    const owner = plotResourcesRef.current;
+    if (!owner) return Promise.reject(new Error("Plot resources are unavailable."));
+    return owner.run(operation);
+  }
+
   function copyPlotImage() {
     if (!Plotly || status !== "ready" || !plotRootRef.current || actionPendingRef.current) return;
     const plotRoot = plotRootRef.current;
@@ -1119,7 +1133,7 @@ export default function OpenEnaInteractive3DPlot({
         acquire: captureImageExport ?? (() => () => true), active,
         render: async () => {
           announceAction(copy.plot.copyingImage);
-          const dataUrl = await (Plotly as PlotlyImageApi).toImage(plotRoot, { format: "png", filename: `open-ena-3d-${plotKind}`, width: Math.max(1, Math.round(plotRoot.clientWidth)), height: Math.max(1, Math.round(plotRoot.clientHeight)), scale: Math.min(3, Math.max(2, window.devicePixelRatio || 1)) });
+          const dataUrl = await runPlotlyOperation(() => (Plotly as PlotlyImageApi).toImage(plotRoot, { format: "png", filename: `open-ena-3d-${plotKind}`, width: Math.max(1, Math.round(plotRoot.clientWidth)), height: Math.max(1, Math.round(plotRoot.clientHeight)), scale: Math.min(3, Math.max(2, window.devicePixelRatio || 1)) }));
           return { dataUrl, png: pngBlobFromDataUrl(dataUrl) };
         },
         ...(typeof ClipboardItem === "function" && navigator.clipboard?.write ? { writePng: async (png: Blob) => { await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]); } } : navigator.clipboard?.writeText ? { writeText: async (text: string) => { await navigator.clipboard.writeText(text); } } : {}),
@@ -1157,7 +1171,7 @@ export default function OpenEnaInteractive3DPlot({
           const camera = currentCamera();
           const aspectMode = (plotRoot as PlotlyEventRoot)._fullLayout?.scene?.aspectmode ?? layout.scene.aspectmode;
           nativeTrajectoryFullscreenSizedRef.current = nativeTrajectoryFullscreen;
-          void Promise.resolve(Plotly.relayout(plotRoot, {
+          void runPlotlyOperation(() => Plotly.relayout(plotRoot, {
             // Both fixed dimensions make Plotly.Plots.resize a no-op. Exit
             // must restore its declared auto-width behavior for later reflow.
             width: nativeTrajectoryFullscreen ? width : null,
@@ -1167,7 +1181,7 @@ export default function OpenEnaInteractive3DPlot({
           } as never)).catch(() => {
             // A detached plot can reject a final fullscreen geometry update.
           });
-        } else void Promise.resolve(Plotly.Plots.resize(plotRoot)).catch(() => {
+        } else void runPlotlyOperation(() => Plotly.Plots.resize(plotRoot)).catch(() => {
           // The plot can unmount while the fullscreen resize frame is pending.
         });
       } catch {
