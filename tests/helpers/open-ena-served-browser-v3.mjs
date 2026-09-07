@@ -28,6 +28,17 @@ function treeManifest(path, prefix = "") {
 async function port() {
   return new Promise((yes, no) => { const server = createServer(); server.once("error", no); server.listen(0, "127.0.0.1", () => { const value = server.address().port; server.close(error => error ? no(error) : yes(value)); }); });
 }
+/** Cleanup uses its own bounded wait even when the run lifecycle is aborted. */
+export async function settleAssetReadsBoundedV3(reads, timeoutMs = 5000) {
+  assert.ok(Number.isInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 30000);
+  let settled = 0, timer;
+  const startedAt = new Date().toISOString();
+  const pendingReads = reads.map(read => Promise.resolve(read).then(() => { settled++; }, () => { settled++; }));
+  try {
+    const timedOut = await Promise.race([Promise.all(pendingReads).then(() => false), new Promise(resolve => { timer = setTimeout(() => resolve(true), timeoutMs); })]);
+    return { startedAt, finishedAt: new Date().toISOString(), total: reads.length, settled, pending: reads.length - settled, timedOut };
+  } finally { clearTimeout(timer); }
+}
 export async function createServedBrowserV3({ root, directory, credentials, redact, serverLogPath, disableBrowserCache = false }) {
   mkdirSync(directory, { recursive: true });
   const safe = value => redact(value).replace(/ws:\/\/[^\s]+\/devtools\/browser\/[^\s]+/g, "[redacted browser endpoint]").replace(/postgresql:\/\/[^\s]+/g, "[redacted database endpoint]");
@@ -57,8 +68,9 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
   }, 30000);
   const close = (failure) => closing ??= (async () => {
     if (failure) { receipt.failure = safe(failure.stack ?? failure); lifecycle.cancel(receipt.failure); }
-    await Promise.allSettled(assetReads);
+    receipt.assetReadState.cleanupSettlement = await settleAssetReadsBoundedV3(assetReads);
     receipt.cleanup = await lifecycle.cleanup();
+    if (receipt.assetReadState.cleanupSettlement.timedOut) receipt.cleanup.errors.push({ name: "static asset read settlement", message: `Timed out with ${receipt.assetReadState.cleanupSettlement.pending} required asset reads pending; owned process cleanup still ran` });
     for (const [name, path, entry] of [["postgres", database, databaseEntry], ["browser profile", profile, browserEntry]]) {
       if (!entry || entry.released) rmSync(path, { recursive: true, force: true });
       else receipt.cleanup.errors.push({ name, message: "owned process not stopped; resource preserved" });

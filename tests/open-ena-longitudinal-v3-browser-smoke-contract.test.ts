@@ -198,3 +198,14 @@ test("stale image lease waits on actual image rendering and refuses outputs afte
 test("rendered path and independent rank downloads must exactly agree with aggregate export", () => { requires(["native rendered path rows differ from the actual exported path tests", "bundled.scientificContextSha256, savedRank.context.scientificContextSha256", "compareAllowed(bundled[table], savedRank.inference[table]", "compareAllowed(bundled.ledger, savedRank.inference.ledger"]); });
 
 test("pending fallback uses actual clipboard promise and denial never starts serialization", () => { requires(["forced fallback during genuinely pending image action", "denied identity approval started image serialization", "pending fallback Tab escaped dialog", "pending fallback Shift+Tab escaped dialog"]); });
+
+test("asset settlement timeout cannot prevent owned process cleanup", async () => {
+  const helper = await import("./helpers/open-ena-served-browser-v3.mjs");
+  assert.equal(typeof helper.settleAssetReadsBoundedV3, "function");
+  const started = Date.now();
+  const stalled = await helper.settleAssetReadsBoundedV3([Promise.resolve(), new Promise(() => {})], 20);
+  assert.equal(stalled.timedOut, true); assert.equal(stalled.pending, 1); assert.equal(stalled.settled, 1);
+  assert.ok(Date.now() - started < 1000);
+  const complete = await helper.settleAssetReadsBoundedV3([Promise.resolve(), Promise.reject(new Error("observed error"))], 100);
+  assert.equal(complete.timedOut, false); assert.equal(complete.pending, 0); assert.equal(complete.settled, 2);
+});

@@ -878,12 +878,20 @@ async function exerciseTrajectoryPlotActions(page, args) {
   );
   await waitForActionsReady();
   const perspectiveBaselineDistance = cameraDistance(perspectiveBaseline);
+  await plot.evaluate(root => {
+    window.__nativeCameraActionAudit = [];
+    root.on("plotly_relayout", update => window.__nativeCameraActionAudit.push({ at: performance.now(), update: structuredClone(update), live: structuredClone(root._fullLayout.scene._scene.getCamera()), declarative: structuredClone(root._fullLayout.scene.camera) }));
+  });
   await zoomIn.click();
   const perspectiveZoomIn = await waitForValue(
     readCamera,
     (camera) => cameraDistance(camera) < perspectiveBaselineDistance - 1e-6,
     "perspective Zoom In",
-  );
+  ).catch(async error => {
+    const cameraFailure = await page.evaluate(() => ({ events: window.__nativeCameraActionAudit, status: document.querySelector('.open-ena-3d-plot-actions [role=status]')?.textContent, controls: [...document.querySelectorAll('.open-ena-3d-plot-actions button')].map(button => ({ action: button.dataset.enaPlotAction, disabled: button.disabled })) }));
+    writeFileSync(join(artifactDirectory, "perspective-zoom-failure.json"), JSON.stringify({ baseline: perspectiveBaseline, ...cameraFailure, science: await nativeScience(page) }, null, 2));
+    throw error;
+  });
   const perspectiveZoomInDistance = cameraDistance(perspectiveZoomIn);
   assertBrowser(
     perspectiveZoomInDistance < perspectiveBaselineDistance,
