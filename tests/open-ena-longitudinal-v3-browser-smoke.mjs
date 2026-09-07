@@ -537,12 +537,20 @@ async function exerciseNonPlotRailPanels(page, args) {
     if (!aiRoot || !consent) throw new Error("persistent native AI consent baseline missing");
   });
   const panelAudits = {};
+  const trajectoryPresenterScreenshotPath = join(artifactDirectory, "trajectory-presenter-after-model-navigation.png");
   for (const name of ["AI-assisted interpretation", "Model", "AI-assisted interpretation", "Data", "Stats & Export", "Plot Tools"]) {
     await rail.getByRole("button", { name, exact: true }).click();
     if (name === "AI-assisted interpretation") {
       const consent = page.locator('[data-ena-ai-consent="explicit"] input[type="checkbox"]');
       if (await consent.isEnabled()) await consent.check();
     }
+    const aiVisible = await page.getByTestId("open-ena-persistent-ai-lifecycle").isVisible();
+    const analysisVisible = await page.getByTestId("open-ena-persistent-analysis-panel").isVisible();
+    assert.equal(aiVisible, name === "AI-assisted interpretation");
+    assert.equal(analysisVisible, name !== "AI-assisted interpretation");
+    if (name === "Data") assert.ok(await page.getByRole("button", { name: "Load trajectory sample", exact: true }).isVisible());
+    if (name === "Stats & Export") assert.ok(await page.getByTestId("open-ena-native-trajectory-analysis").isVisible());
+    if (name === "Model") await page.screenshot({ path: trajectoryPresenterScreenshotPath });
     const audit = await page.evaluate(() => {
       const baseline = window.__openEnaAiLifecycleAudit;
       const currentAiRoot = document.querySelector('.ena-ai-interpretation');
@@ -557,8 +565,6 @@ async function exerciseNonPlotRailPanels(page, args) {
     assert.equal(science.taskRequestCount, args.expectedTaskRequestCount);
     panelAudits[name] = audit;
   }
-  const trajectoryPresenterScreenshotPath = join(artifactDirectory, "trajectory-presenter-after-model-navigation.png");
-  await page.screenshot({ path: trajectoryPresenterScreenshotPath });
   return { panelAudits, trajectoryPresenterScreenshotPath };
 }
 
@@ -1136,8 +1142,11 @@ async function exercisePendingImageActions(page) {
   const copy = shell.locator('[data-ena-plot-action="copy-image"]');
   const fullscreen = shell.locator('[data-ena-plot-action="fullscreen"]');
   await page.evaluate(() => {
-    const audit = { clipboard: Object.getOwnPropertyDescriptor(navigator, "clipboard"), calls: 0, downloads: 0, pngs: [], resolve: null, reject: null, originalClick: HTMLAnchorElement.prototype.click };
+    const figure = document.querySelector(".open-ena-interactive-3d-figure");
+    const audit = { figure, fullscreen: Object.getOwnPropertyDescriptor(figure, "requestFullscreen"), canvas: HTMLCanvasElement.prototype.toDataURL, generationCalls: 0, clipboard: Object.getOwnPropertyDescriptor(navigator, "clipboard"), calls: 0, downloads: 0, pngs: [], resolve: null, reject: null, originalClick: HTMLAnchorElement.prototype.click };
     window.__nativePendingImage = audit;
+    Object.defineProperty(figure, "requestFullscreen", { configurable: true, value: async () => { throw new Error("forced fallback during genuinely pending image action"); } });
+    HTMLCanvasElement.prototype.toDataURL = function(...args) { audit.generationCalls++; return audit.canvas.apply(this, args); };
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { write: async items => {
       audit.calls++;
       const blob = await items[0].getType("image/png");
@@ -1148,25 +1157,31 @@ async function exercisePendingImageActions(page) {
   });
   const read = () => page.evaluate(() => {
     const audit = window.__nativePendingImage;
-    return { calls: audit.calls, downloads: audit.downloads, pngs: audit.pngs, pending: Boolean(audit.resolve), actions: [...document.querySelectorAll('.open-ena-3d-plot-actions [data-ena-plot-action]')].map(button => ({ action: button.dataset.enaPlotAction, disabled: button.disabled, focused: document.activeElement === button })) };
+    return { calls: audit.calls, generationCalls: audit.generationCalls, downloads: audit.downloads, pngs: audit.pngs, pending: Boolean(audit.resolve), actions: [...document.querySelectorAll('.open-ena-3d-plot-actions [data-ena-plot-action]')].map(button => ({ action: button.dataset.enaPlotAction, disabled: button.disabled, focused: document.activeElement === button })) };
   });
   try {
     page.once("dialog", dialog => void dialog.dismiss());
     await copy.click();
     await page.waitForTimeout(200);
     assert.equal((await read()).calls, 0, "denied identity approval produced clipboard output");
+    assert.equal((await read()).generationCalls, 0, "denied identity approval started image serialization");
     assert.equal((await read()).downloads, 0, "denied identity approval produced a PNG download");
     // Start actual toImage outside fallback, approve identity, then hold the actual ClipboardItem PNG write.
     page.once("dialog", dialog => void dialog.accept());
     await copy.click();
     await page.waitForFunction(() => Boolean(window.__nativePendingImage.resolve), null, { timeout: 120_000 });
     await fullscreen.click();
+    await page.waitForFunction(() => document.querySelector('.open-ena-interactive-3d-figure')?.getAttribute('data-fallback-fullscreen') === 'true');
     const pending = await read();
     assert.equal(pending.calls, 1);
     assert.deepEqual(pending.pngs[0].signature, [137,80,78,71,13,10,26,10]);
     assert.equal(pending.pngs[0].type, "image/png"); assert.ok(pending.pngs[0].bytes > 8);
     assert.equal(pending.actions.filter(a => a.action !== "fullscreen" && a.disabled).length, 4);
     assert.equal(pending.actions.find(a => a.action === "fullscreen").disabled, false);
+    await page.keyboard.press("Tab");
+    assert.ok(await shell.evaluate(figure => figure.contains(document.activeElement)), "pending fallback Tab escaped dialog");
+    await page.keyboard.press("Shift+Tab");
+    assert.ok(await shell.evaluate(figure => figure.contains(document.activeElement)), "pending fallback Shift+Tab escaped dialog");
     // Exit stays available during the genuinely pending write.
     await fullscreen.click();
     await page.evaluate(() => window.__nativePendingImage.reject(new Error("intentional isolated clipboard write rejection")));
@@ -1189,6 +1204,8 @@ async function exercisePendingImageActions(page) {
     await page.evaluate(() => {
       const audit = window.__nativePendingImage;
       audit.resolve?.();
+      HTMLCanvasElement.prototype.toDataURL = audit.canvas;
+      if (audit.fullscreen) Object.defineProperty(audit.figure, "requestFullscreen", audit.fullscreen); else delete audit.figure.requestFullscreen;
       HTMLAnchorElement.prototype.click = audit.originalClick;
       if (audit.clipboard) Object.defineProperty(navigator, "clipboard", audit.clipboard); else delete navigator.clipboard;
       delete window.__nativePendingImage;
@@ -2217,7 +2234,7 @@ try {
   verifyStandaloneDownloads(downloads.aggregate, aggregate); verifyStandaloneDownloads(downloads.participant, participant);
   assert.deepEqual(aggregate.manifest.binding, plotAudit.binding);
   assert.deepEqual(participant.manifest.binding, plotAudit.binding);
-  const expectedPathRows = aggregate.analysis.pathComparison.tests.map(test => [test.metric, test.timeIndex === null ? "—" : String(test.timeIndex), test.distanceSpace, String(test.observed), String(test.pValue), String(test.holmAdjustedPValue), String(test.permutationCount)]);
+  const expectedPathRows = aggregate.analysis.pathComparison.tests.map(test => [test.metric, test.timeIndex === null ? "—" : String(test.timeIndex), test.distanceSpace ?? "", String(test.observed), String(test.pValue), String(test.holmAdjustedPValue), String(test.permutationCount)]);
   assert.deepEqual(plotAudit.pathRows, expectedPathRows, "native rendered path rows differ from the actual exported path tests");
   for (const standalone of plotAudit.rankDownloads) {
     const savedRank = JSON.parse(readFileSync(standalone.path, "utf8"));
