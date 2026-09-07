@@ -5,16 +5,18 @@ import test from "node:test";
 
 const projectRoot = process.cwd();
 const smokePath = join(projectRoot, "tests", "open-ena-node-drag-browser-smoke.mjs");
+const runtimeSource = readFileSync(join(process.cwd(), "tests/helpers/open-ena-served-browser-v3.mjs"), "utf8");
+const fixtureSource = readFileSync(join(process.cwd(), "tests/helpers/open-ena-native-browser-fixture-v3.mjs"), "utf8");
 
 test("the node-drag smoke owns a served browser lifecycle and four render families", () => {
   assert.equal(existsSync(smokePath), true, "the node-drag browser smoke is missing");
   const source = readFileSync(smokePath, "utf8");
 
   assert.match(source, /OPEN_ENA_NODE_DRAG_SMOKE_ARTIFACT_DIR/u);
-  assert.match(source, /OPEN_ENA_NODE_DRAG_SMOKE_ROUTE/u);
-  assert.match(source, /NEXT_DIST_DIR/u);
+  assert.match(source, /entryUrl: `\$\{baseUrl\}\/en\/open-ena`/u);
+  assert.match(runtimeSource, /NEXT_DIST_DIR/u);
   assert.match(source, /\.next-node-drag-smoke-/u);
-  assert.match(source, /OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS/u);
+  assert.match(runtimeSource, /OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS/u);
   assert.match(source, /stopOwnedServer/u);
   assert.match(source, /removeOwnedDistDirectory/u);
   assert.match(source, /summary\.json/u);
@@ -60,8 +62,8 @@ test("camera, reset, export, and analytical boundaries are acceptance gates", ()
   assert.match(source, /drag mutated analytical result/u);
   assert.match(source, /analysisRunCount/u);
   assert.match(source, /visualCopy/u);
-  assert.match(source, /getByRole\("switch", \{ name: "Network type", exact: true \}\)/u);
-  assert.doesNotMatch(source, /getByRole\("radio", \{ name: \/Ordered Network Analysis/u);
+  assert.match(fixtureSource, /Ordered Network Analysis/u);
+  assert.match(source, /prepareNativeFixtureV3\(page, \{ family: "ona"/u);
   assert.match(source, /\^3D \(\?:ENA\|ONA\)/u);
   assert.match(source, /maxRetries:\s*5/u);
   assert.match(source, /retryDelay:\s*100/u);

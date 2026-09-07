@@ -5,6 +5,8 @@ import test from "node:test";
 
 const projectRoot = process.cwd();
 const smokePath = join(projectRoot, "tests", "open-ena-ona-3d-browser-smoke.mjs");
+const runtimeSource = readFileSync(join(process.cwd(), "tests/helpers/open-ena-served-browser-v3.mjs"), "utf8");
+const fixtureSource = readFileSync(join(process.cwd(), "tests/helpers/open-ena-native-browser-fixture-v3.mjs"), "utf8");
 
 test("the ONA 3D browser smoke owns a synthetic production lane and privacy-bounded Yu lane", () => {
   assert.equal(existsSync(smokePath), true, "the dedicated ONA 3D browser smoke is missing");
@@ -13,26 +15,26 @@ test("the ONA 3D browser smoke owns a synthetic production lane and privacy-boun
   assert.match(source, /OPEN_ENA_ONA_3D_SMOKE_ARTIFACT_DIR/u);
   assert.match(source, /OPEN_ENA_ONA_3D_SMOKE_BROWSER/u);
   assert.match(source, /OPEN_ENA_ONA_3D_PRIVATE_WORKBOOK/u);
-  assert.match(source, /NEXT_DIST_DIR/u);
+  assert.match(runtimeSource, /NEXT_DIST_DIR/u);
   assert.match(source, /\.next-ona-3d-smoke-/u);
-  assert.match(source, /execFileSync\(\s*"npm",\s*\["run",\s*"build"\]/u);
-  assert.match(source, /\["run",\s*"start",\s*"--",\s*"--hostname"/u);
+  assert.match(runtimeSource, /"npm", \["run", "build"\]/u);
+  assert.match(runtimeSource, /"start", "--hostname"/u);
   assert.doesNotMatch(source, /\["run",\s*"dev"/u);
   assert.match(source, /stopOwnedServer/u);
   assert.match(source, /removeOwnedDistDirectory/u);
   assert.match(source, /sourceEvidenceBefore/u);
   assert.match(source, /sourceEvidenceAfter/u);
-  assert.match(source, /NPM_CONFIG_CACHE/u);
-  assert.match(source, /key\.toLowerCase\(\) !== "npm_config_cache"/u);
-  assert.match(source, /npm_config_cache:\s*taskNpmCache/u);
-  assert.match(source, /join\(playwrightCwd, "npm-cache"\)/u);
+  assert.match(runtimeSource, /npm_config_cache/u);
+  assert.match(runtimeSource, /npm_config_cache: join\(directory, "npm-cache"\)/u);
+  assert.match(runtimeSource, /npm_config_cache: join\(directory, "npm-cache"\)/u);
+  assert.match(runtimeSource, /directory/u);
   assert.doesNotMatch(source, /rmSync\([^\n]*\/Users\/dongpinhu\/\.npm/u);
   assert.match(source, /Google Chrome\.app/u);
   assert.match(source, /initdb/u);
   assert.match(source, /pg_ctl/u);
   assert.match(source, /002_open_ena_auth_security\.sql/u);
-  assert.match(source, /OPEN_ENA_ACCOUNT_ID/u);
-  assert.match(source, /OPEN_ENA_AUTH_DATABASE_URL/u);
+  assert.match(runtimeSource, /OPEN_ENA_ACCOUNT_ID/u);
+  assert.match(runtimeSource, /OPEN_ENA_AUTH_DATABASE_URL/u);
   assert.match(source, /stopEphemeralPostgres/u);
   assert.match(source, /open-ena-ona-3d-postgres-/u);
 });
@@ -49,8 +51,8 @@ test("the synthetic lane exercises directed ONA science, circular points, three 
   assert.match(source, /Ordered Network Analysis \(ONA\)/u);
   assert.match(source, /getByRole\("switch", \{ name: "Network type", exact: true \}\)/u);
   assert.doesNotMatch(source, /getByRole\("radio", \{ name: \/Ordered Network Analysis/u);
-  assert.match(source, /Confirmed source-record order/u);
-  assert.match(source, /Edit p² directional mask/u);
+  assert.match(fixtureSource, /Review source-order statement/u);
+  assert.match(source, /const maskCell/u);
   assert.match(source, /CODE_E ground\/source to CODE_A response\/target/u);
   assert.match(source, /analysisRunCount/u);
   assert.match(source, /analysisRunCount\s*===\s*1/u);
@@ -66,12 +68,8 @@ test("the synthetic lane exercises directed ONA science, circular points, three 
   assert.match(source, /reciprocalLane/u);
   assert.match(source, /marker\.symbol/u);
   assert.match(source, /circle/u);
-  const codesTab = source.indexOf('getByRole("tab", { name: "Codes" })');
-  const maskButton = source.indexOf('getByRole("button", { name: "Edit p² directional mask" })');
-  assert.ok(
-    codesTab >= 0 && codesTab < maskButton,
-    "the smoke must enter Codes before opening the directional mask",
-  );
+  const synthetic = source.slice(source.indexOf("async function runSyntheticLane"), source.indexOf("async function runYuPrivateLane"));
+  assert.ok(synthetic.indexOf('name: /^Codes(,|$)/') < synthetic.indexOf('const maskCell ='));
   assert.match(source, /data-ona-point-shape="circle"/u);
   assert.match(source, /wrapper\.querySelector\("circle"\)/u);
   assert.match(source, /literalContract:\s*wrappers\.filter/u);

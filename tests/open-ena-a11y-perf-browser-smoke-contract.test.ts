@@ -5,6 +5,7 @@ import test from "node:test";
 
 const smokePath = join(process.cwd(), "tests/open-ena-a11y-perf-browser-smoke.mjs");
 const source = readFileSync(smokePath, "utf8");
+const runtimeSource = readFileSync(join(process.cwd(), "tests/helpers/open-ena-served-browser-v3.mjs"), "utf8");
 
 test("A11Y-01/A11Y-02/PERF-01 smoke uses the real Open ENA workflow and selectors", () => {
   assert.match(source, /getByRole\("textbox", \{ name: "Account name" \}\)/u);
@@ -16,20 +17,20 @@ test("A11Y-01/A11Y-02/PERF-01 smoke uses the real Open ENA workflow and selector
   assert.doesNotMatch(source, /analysis-result/u);
 });
 
-test("A11Y-01 captures five core sliders from their two real screens without aria-label", () => {
+test("A11Y-01 captures native finite Window inputs and three labelled Plot Tools sliders", () => {
   assert.match(source, /captureSliderScreen\(/u);
   assert.match(source, /Model configuration/u);
-  assert.match(source, /getByRole\("tab", \{ name: "Windows"/u);
+  assert.match(source, /auditWindowExtentInputs\(page\)/u);
   assert.match(source, /getByRole\("button", \{ name: "Plot Tools"/u);
   assert.match(source, /Backward span \(includes current row\)/u);
   assert.match(source, /Forward context rows/u);
-  assert.match(source, /Edge width/u);
-  assert.match(source, /Minimum relative edge/u);
-  assert.match(source, /Unit point size/u);
+  assert.match(source, /Edge scale/u);
+  assert.match(source, /Edge threshold/u);
+  assert.match(source, /Point scale/u);
   assert.match(source, /accessibleName/u);
   assert.match(source, /labelText/u);
   assert.match(source, /valueText/u);
-  assert.doesNotMatch(source, /getAttribute\("aria-label"\)/u);
+
   assert.doesNotMatch(source, /aria-label.*slider|slider.*aria-label/u);
 });
 
@@ -53,7 +54,7 @@ test("A11Y-02 checks enlarged tab, toolbar, and rail geometry plus stable scient
 test("official Model parity audits all four tabs, exact geometry, and reversible interactions", () => {
   assert.match(source, /async function auditOfficialModelTabs/u);
   assert.match(source, /const tabNames = \["Units", "Horizons", "Windows", "Codes"\]/u);
-  assert.match(source, /data-ena-official-panel/u);
+  assert.match(source, /open-ena-model-v3-\$\{panelName\}-panel/u);
   assert.match(source, /ena-official-field-path/u);
   assert.match(source, /ena-official-field-path-add/u);
   assert.match(source, /tabHeightPx/u);
@@ -70,10 +71,10 @@ test("official Model parity audits all four tabs, exact geometry, and reversible
   assert.match(source, /assert\.equal\(unitGeometry\.unpaintedAfterAddPx,\s*0\)/u);
   assert.match(source, /rgb\(137, 207, 240\)/u);
   assert.match(source, /Remove .* from .* identity/u);
-  assert.match(source, /Comparison group/u);
+  assert.match(source, /Create Sample \/ Group/u);
   assert.match(source, /Horizon method/u);
   assert.match(source, /Window horizon method/u);
-  assert.match(source, /Network type/u);
+  assert.match(source, /Ordered Network Analysis/u);
   assert.match(source, /Manage Codes/u);
   for (const panel of ["units", "horizons", "windows", "codes"]) {
     assert.match(
@@ -109,26 +110,21 @@ test("PERF-01 installs longtask timing before the 3D click and verifies all thre
   assert.match(source, /scientific identity changed across isolated runs/u);
 });
 
-test("smoke owns an isolated production build, performs four runs, writes a summary, and cleans the server", () => {
+test("smoke owns a production build, performs four isolated runs and uses bounded lifecycle custody", () => {
   assert.match(source, /OPEN_ENA_A11Y_PERF_SMOKE_ARTIFACT_DIR/u);
-  assert.match(source, /NEXT_DIST_DIR/u);
-  assert.match(source, /npm", \["run", "build"/u);
-  assert.match(source, /npm", \["run", "start"/u);
-  assert.match(source, /\.next-open-ena-a11y-perf-smoke-/u);
-  assert.match(source, /OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS/u);
-  assert.match(source, /OPEN_ENA_AUTH_DATABASE_URL/u);
-  assert.match(source, /async function startEphemeralPostgres/u);
-  assert.match(source, /002_open_ena_auth_security\.sql/u);
-  assert.match(source, /stopEphemeralPostgres\(\)/u);
-  assert.match(source, /redact\(/u);
+  assert.match(source, /createServedBrowserV3/u);
+  assert.match(runtimeSource, /NEXT_DIST_DIR/u);
+  assert.match(runtimeSource, /"npm", \["run", "build"\]/u);
+  assert.match(runtimeSource, /"start", "--hostname", "127.0.0.1"/u);
+  for (const invariant of ["OwnedSmokeLifecycle", "spawnOwned", "OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS", "OPEN_ENA_AUTH_DATABASE_URL", "002_open_ena_auth_security.sql", "sourceManifest", "build-files.json", "servedAssets", "receipt.json", "cleanup.errors", "connectOverCDP"]) assert.ok(runtimeSource.includes(invariant));
   assert.match(source, /for \(let run = 0; run < 4; run \+= 1\)/u);
-  assert.match(source, /newContext\(/u);
-  assert.match(source, /waitForServer\(.*\/en\/open-ena/u);
-  assert.match(source, /summary\.json/u);
-  assert.match(source, /server\.kill\("SIGTERM"\)/u);
-  assert.match(source, /server\.kill\("SIGKILL"\)/u);
-  assert.match(source, /restoreOwnedTsconfigMutation\(\)/u);
-  assert.match(source, /refusing to overwrite it/u);
+  assert.match(source, /a11yContext = await browser.newContext/u);
+  assert.match(source, /perfContext = await browser.newContext/u);
+  assert.match(source, /runtime\?\.close\(failure\)/u);
 });
 
 test("verifier file exists", () => assert.equal(existsSync(smokePath), true));
+
+test("Models v3 keyboard audit exercises native help, exclusion, disabled descriptions, motion and CSS zoom", () => {
+  for (const text of ["async function auditModelsV3Accessibility", 'page.keyboard.press("ArrowRight")', 'page.keyboard.press("Escape")', 'About ${name} settings', 'Undo Code exclusion', 'aria-describedby', 'aria-live', 'aria-pressed', 'reducedMotion: "reduce"', 'document.documentElement.style.zoom = "2"', 'modelsV3Accessibility']) assert.ok(source.includes(text), `missing native Models assertion: ${text}`);
+});

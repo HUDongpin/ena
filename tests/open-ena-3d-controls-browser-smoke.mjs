@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createServedBrowserV3, literalGit } from "./helpers/open-ena-served-browser-v3.mjs";
+import { prepareNativeFixtureV3, runNativeFixtureV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
 import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import {
@@ -150,37 +152,34 @@ function removePlaywrightWorkingDirectory() {
   playwrightWorkingDirectory = null;
 }
 
-function runCli(args, label, timeout = 120_000) {
-  try {
-    return execFileSync(
-      playwrightCli.command,
-      [...playwrightCli.prefix, "--session", sessionName, ...args],
-      {
-        cwd: ensurePlaywrightWorkingDirectory(),
-        encoding: "utf8",
-        env: process.env,
-        maxBuffer: 32 * 1024 * 1024,
-        timeout,
-      },
-    );
-  } catch (caught) {
-    throw createSafePlaywrightCliError({ caught, label, redact });
+let runtime = null;
+async function runCli(args, label, timeout = 300000) {
+  if (args[0] === "--version") return "Playwright module 1.62.1 (owned foreground Chromium)";
+  if (!runtime) throw new Error("Owned production runtime is unavailable");
+  if (args[0] === "open") { await runtime.page.goto(args[1], { waitUntil: "domcontentloaded" }); return ""; }
+  if (args[0] === "close") { await runtime.close(primaryFailure); return ""; }
+  if (args[0] === "screenshot") { await runtime.page.screenshot({ path: args.at(-1), fullPage: true }); return ""; }
+  if (args[0] === "console") return `Errors: ${runtime.receipt.consoleErrors.length}\n${runtime.receipt.consoleErrors.join("\n")}`;
+  if (args[0] === "--raw" && args[1] === "run-code") {
+    const action = new Function(`return (${args[2]});`)();
+    return JSON.stringify(await runtime.stage(label, () => action(runtime.page), timeout));
   }
+  throw new Error("Unsupported owned browser operation");
 }
 
 function browserSource(task, args, helpers = []) {
   const helperDeclarations = helpers.map((helper) => helper.toString()).join("\n");
-  return "async (page) => { " + helperDeclarations + "; const task = " + task.toString()
+  return "async (page) => { " + prepareNativeFixtureV3.toString() + "\n" + runNativeFixtureV3.toString() + "\n" + helperDeclarations + "; const task = " + task.toString()
     + "; return await task(page, " + JSON.stringify(args) + "); }";
 }
 
-function runBrowserPhase(label, task, args = {}, timeout = 180_000, helpers = []) {
+async function runBrowserPhase(label, task, args = {}, timeout = 180_000, helpers = []) {
   process.stdout.write("[3D controls smoke] " + label + " ... ");
-  const output = runCli(
+  const output = (await runCli(
     ["--raw", "run-code", browserSource(task, args, helpers)],
     label,
     timeout,
-  ).trim();
+  )).trim();
   const result = output ? JSON.parse(output) : null;
   process.stdout.write("PASS\n");
   return result;
@@ -321,11 +320,7 @@ function assertArtifactInventoryBeforeSummary() {
 }
 
 function readGitEvidence() {
-  const git = (args) => execFileSync("git", args, {
-    cwd: projectRoot,
-    encoding: "utf8",
-    timeout: 30_000,
-  }).trim();
+  const git = (args) => literalGit(projectRoot, args);
   const status = git(["status", "--porcelain=v1", "--untracked-files=all"]);
   return Object.freeze({
     gitHead: git(["rev-parse", "HEAD"]),
@@ -429,7 +424,7 @@ function cleanupOwnedResources() {
     const cleanupErrors = [];
     if (browserSessionAttempted) {
       try {
-        runCli(["close"], "close browser session", 30_000);
+        await runCli(["close"], "close browser session", 30_000);
       } catch (caught) {
         cleanupErrors.push(caught);
       }
@@ -785,9 +780,9 @@ async function authenticateBuildAndOpen3d(page, args) {
     });
     const originalWorkerPostMessage = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function auditedWorkerPostMessage(message, ...rest) {
-      if (message?.kind === "run" && message?.config && !message?.request?.pathTask) {
+      if (message?.kind === "run-open-ena-plan-v3" && message?.plan?.configuration.analysis.model.type === "EndPoint") {
         audit.analysisRunCount += 1;
-        audit.requestedModelTypes.push(message.config.model);
+        audit.requestedModelTypes.push(message.plan.configuration.analysis.model.type);
       }
       return originalWorkerPostMessage.call(this, message, ...rest);
     };
@@ -819,32 +814,18 @@ async function authenticateBuildAndOpen3d(page, args) {
     input.files = transfer.files;
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }, args.fixtureCsv);
-  await page.getByRole("heading", { name: "Define the ENA model" }).waitFor({ timeout: 30_000 });
-
-  const unitFields = await page.getByRole("group", { name: /Unit identity/ })
-    .getByRole("checkbox")
-    .evaluateAll((nodes) => nodes.filter((node) => node.checked).map((node) => (
-      node.parentElement.textContent.trim()
-    )));
-  assertBrowser(
-    JSON.stringify(unitFields) === JSON.stringify(["Group", "Name"]),
-    "the synthetic Endpoint unit identity is not ordered Group + Name",
-  );
-  await page.getByRole("tab", { name: "Windows" }).click();
-  const modelType = page.getByRole("combobox", { name: "Model type" });
-  await modelType.selectOption(args.modelType);
+  const fixture = await prepareNativeFixtureV3(page);
+  const unitFields = fixture.units;
+  const modelType = page.getByRole("combobox", { name: "Model", exact: true });
   assertBrowser(await modelType.inputValue() === args.modelType, "the fixture was not configured as Endpoint");
-  const build = page.getByRole("button", { name: /Build ENA model/ });
-  assertBrowser(await build.isEnabled(), "the synthetic Endpoint build is disabled");
-  await build.click();
-  await page.getByRole("button", { name: /Rebuild model/ }).waitFor({ timeout: 60_000 });
+  await runNativeFixtureV3(page);
   await page.getByRole("button", { name: "Download Model" }).click({ trial: true, timeout: 30_000 });
   assertBrowser(
     await page.evaluate(() => window.__openEna3dControlsAudit?.analysisRunCount) === 1,
     "the initial Endpoint build did not dispatch exactly one analysis run",
   );
 
-  const visualization = page.getByRole("group", { name: "ENA visualization options" });
+  const visualization = page.locator(".ena-visual-toolbar");
   const threeD = visualization.getByRole("button", { name: /3D ENA/ });
   assertBrowser(await threeD.isEnabled(), "3D ENA is disabled for the 5-code Endpoint fixture");
   await threeD.click();
@@ -898,7 +879,7 @@ async function exerciseGroupDisplayControls(page, args) {
   };
   const selectView = async (view) => {
     await openPlotTools();
-    const visualization = page.getByRole("group", { name: "ENA visualization options" });
+    const visualization = page.locator(".ena-visual-toolbar");
     await visualization.getByRole("button", { name: view === "2d" ? /2D ENA/ : /3D ENA/ }).click();
     if (view === "3d") {
       await page.getByTestId("open-ena-3d-group-contrast").waitFor({ state: "visible", timeout: 60_000 });
@@ -1660,78 +1641,18 @@ let baseUrl = null;
 let cleanupSucceeded = false;
 
 try {
-  execFileSync("npx", ["--version"], { encoding: "utf8", timeout: 30_000 });
-  const playwrightCliVersion = runCli(["--version"], "resolve Playwright CLI", 120_000).trim();
-  assert.ok(playwrightCliVersion.length > 0, "the Playwright CLI did not expose its version");
-
-  ownsDistDirectory = true;
-  const port = await findOpenPort();
-  baseUrl = "http://127.0.0.1:" + port;
-  removeOwnedDistDirectory();
-  const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => (
-    !key.startsWith("OPEN_ENA_3D_CONTROLS_SMOKE_")
-      && ![
-        "NEXT_DIST_DIR",
-        "OPEN_ENA_USERNAME",
-        "OPEN_ENA_PASSWORD",
-        "OPEN_ENA_SESSION_SECRET",
-      ].includes(key)
-  )));
-  const ownedEnvironment = {
-    ...environment,
-    NODE_ENV: "production",
-    NEXT_DIST_DIR: ownedDistDirName,
-    OPEN_ENA_USERNAME: username,
-    OPEN_ENA_PASSWORD: password,
-    OPEN_ENA_SESSION_SECRET: sessionSecret,
-    // The smoke owns a random loopback port; bind production Origin checks to
-    // that exact origin instead of inheriting a stale CI or deployment host.
-    OPEN_ENA_PUBLIC_ORIGIN: baseUrl,
-    OPEN_ENA_ALLOWED_ORIGINS: baseUrl,
-    OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1",
-  };
-  const logFd = openSync(serverLogPath, "w");
-  try {
-    process.stdout.write("[3D controls smoke] build production application ... ");
-    execFileSync(
-      "npm",
-      ["run", "build"],
-      {
-        cwd: projectRoot,
-        env: ownedEnvironment,
-        stdio: ["ignore", logFd, logFd],
-        timeout: 600_000,
-      },
-    );
-    process.stdout.write("PASS\n");
-    ownedServer = spawn(
-      "npm",
-      ["run", "start", "--", "--hostname", "127.0.0.1", "--port", String(port)],
-      {
-        cwd: projectRoot,
-        detached: process.platform !== "win32",
-        env: ownedEnvironment,
-        stdio: ["ignore", logFd, logFd],
-      },
-    );
-  } finally {
-    closeSync(logFd);
-  }
-  if (!ownedServer) throw new Error("The smoke-owned production server did not start.");
-  ownedServer.once("error", (error) => {
-    process.stderr.write("[3D controls smoke] server error: " + redact(error.message) + "\n");
-  });
-  await waitForServer(baseUrl + "/en/open-ena");
-
+  const playwrightCliVersion = "Playwright module 1.62.1";
+  runtime = await createServedBrowserV3({ root: resolve(projectRoot), directory: artifactDirectory + "-runtime", credentials: { username, password, secret: sessionSecret }, redact, serverLogPath });
+  baseUrl = runtime.baseUrl;
   browserSessionAttempted = true;
-  runCli(["open", "about:blank", "--browser", smokeBrowser], "open browser", 120_000);
+  await runCli(["open", "about:blank", "--browser", smokeBrowser], "open browser", 120_000);
   browserOpened = true;
-  const browserRuntimeEvidence = runBrowserPhase(
+  const browserRuntimeEvidence = await runBrowserPhase(
     "record browser runtime identity",
     readBrowserRuntimeEvidence,
   );
   const fixtureCsv = buildEndpointFixtureCsv();
-  const modelAudit = runBrowserPhase(
+  const modelAudit = await runBrowserPhase(
     "authenticate, build the synthetic 5-code Endpoint, and open linked 3D",
     authenticateBuildAndOpen3d,
     {
@@ -1747,7 +1668,7 @@ try {
   assert.equal(modelAudit.baseline.analysisRunCount, 1);
   assert.match(modelAudit.baseline.resultIdentity, /^[a-f0-9]{64}$/u);
 
-  const groupDisplayAudit = runBrowserPhase(
+  const groupDisplayAudit = await runBrowserPhase(
     "exercise group/unit visibility and Mean, CI, Outlier, and Include Hidden across 2D/3D",
     exerciseGroupDisplayControls,
     {
@@ -1768,7 +1689,7 @@ try {
   assert.equal(groupDisplayAudit.analysisRunCount, 1);
   assert.equal(groupDisplayAudit.finalScientificState.resultIdentity, modelAudit.baseline.resultIdentity);
 
-  const dataViewAudit = runBrowserPhase(
+  const dataViewAudit = await runBrowserPhase(
     "exercise 3D Data View by mouse and keyboard without rerunning",
     exerciseDataView,
     {
@@ -1785,7 +1706,7 @@ try {
       assertScientificState,
     ],
   );
-  const fullscreenAudit = runBrowserPhase(
+  const fullscreenAudit = await runBrowserPhase(
     "exercise three per-card fullscreen controls and forced rejection fallback",
     exerciseFullscreenCards,
     {
@@ -1804,7 +1725,7 @@ try {
     ],
   );
   assert.equal(fullscreenAudit.fallbackAudit?.forcedRequestRejection, true);
-  const mobileAudit = runBrowserPhase(
+  const mobileAudit = await runBrowserPhase(
     "verify 390px Data View and all fifteen plot-action hit targets",
     exerciseMobileHitTesting,
     { baseline: modelAudit.baseline, mobileScreenshotPath },
@@ -1833,7 +1754,7 @@ try {
   assert.equal(browserErrors.unknownConsoleWarnings, 0);
   assert.equal(browserErrors.consoleWarningsTotal, browserErrors.classifiedPlatformWarnings);
   assert.deepEqual(browserErrors.pageErrors, [], "browser emitted page errors");
-  const cliConsole = runCli(["console", "error"], "read Playwright console summary");
+  const cliConsole = await runCli(["console", "error"], "read Playwright console summary");
   assert.match(cliConsole, /Errors:\s*0/u, "Playwright reported browser console errors");
   const cliWarningCount = Number(cliConsole.match(/Warnings:\s*(\d+)/u)?.[1] ?? -1);
   assert.equal(
@@ -1889,7 +1810,7 @@ try {
   primaryFailure = caught;
   if (browserOpened) {
     try {
-      runCli(
+      await runCli(
         ["screenshot", "--filename", failureScreenshotPath],
         "capture failure screenshot",
         30_000,

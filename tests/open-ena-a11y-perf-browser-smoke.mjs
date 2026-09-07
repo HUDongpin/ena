@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { createServedBrowserV3 } from "./helpers/open-ena-served-browser-v3.mjs";
 import { fileURLToPath } from "node:url";
-import { createServer } from "node:net";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const artifactDirectory = resolve(
@@ -14,24 +12,12 @@ const artifactDirectory = resolve(
     ?? join(projectRoot, "output", "playwright", "open-ena-a11y-perf-smoke"),
 );
 const summaryPath = join(artifactDirectory, "summary.json");
-const distName = `.next-open-ena-a11y-perf-smoke-${process.pid}`;
+const distName = ".next";
 const distDirectory = join(projectRoot, distName);
-const tsconfigPath = join(projectRoot, "tsconfig.json");
-const originalTsconfigText = readFileSync(tsconfigPath, "utf8");
-const originalTsconfig = JSON.parse(originalTsconfigText);
 const username = "open_ena_a11y_perf_smoke_researcher";
 const password = "open_ena_a11y_perf_smoke_password_2026";
 const sessionSecret = "open_ena_a11y_perf_smoke_session_secret_0123456789abcdef";
 const accountId = "open-ena-a11y-perf-smoke-account";
-const env = {
-  ...process.env,
-  NEXT_DIST_DIR: distName,
-  OPEN_ENA_USERNAME: username,
-  OPEN_ENA_PASSWORD: password,
-  OPEN_ENA_SESSION_SECRET: sessionSecret,
-  OPEN_ENA_ACCOUNT_ID: accountId,
-  OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1",
-};
 const budgets = Object.freeze({
   transferBytesLt: 800000,
   decodedBytesLt: 2200000,
@@ -45,118 +31,6 @@ function redact(value) {
     .replaceAll(password, "[redacted-password]")
     .replaceAll(sessionSecret, "[redacted-session-secret]")
     .replaceAll(accountId, "[redacted-account-id]");
-}
-
-async function findOpenPort() {
-  return await new Promise((resolvePort, reject) => {
-    const probe = createServer();
-    probe.once("error", reject);
-    probe.listen(0, "127.0.0.1", () => {
-      const address = probe.address();
-      const port = address && typeof address === "object" ? address.port : null;
-      probe.close((error) => error ? reject(error) : port ? resolvePort(port) : reject(new Error("port allocation failed")));
-    });
-  });
-}
-
-let ephemeralPostgresRoot = null;
-let ephemeralPostgresData = null;
-let ephemeralPostgresRunning = false;
-
-async function startEphemeralPostgres() {
-  // TCP is the only connection path used by the smoke. Disable the Unix socket
-  // so a deliberately isolated, deeply nested TMPDIR cannot exceed its small
-  // platform path limit.
-  ephemeralPostgresRoot = mkdtempSync(join(tmpdir(), "oeapg-"));
-  ephemeralPostgresData = join(ephemeralPostgresRoot, "data");
-  const postgresLog = join(ephemeralPostgresRoot, "postgres.log");
-  execFileSync("initdb", [
-    "--pgdata", ephemeralPostgresData,
-    "--auth", "trust",
-    "--username", "postgres",
-    "--encoding", "UTF8",
-    "--no-locale",
-  ], { stdio: "ignore", timeout: 60_000 });
-  const port = await findOpenPort();
-  execFileSync("pg_ctl", [
-    "--pgdata", ephemeralPostgresData,
-    "--log", postgresLog,
-    "--options", `-h 127.0.0.1 -p ${port} -c unix_socket_directories=`,
-    "--wait",
-    "start",
-  ], { stdio: "ignore", timeout: 60_000 });
-  ephemeralPostgresRunning = true;
-  execFileSync("psql", [
-    "--no-psqlrc",
-    "--set", "ON_ERROR_STOP=1",
-    "--host", "127.0.0.1",
-    "--port", String(port),
-    "--username", "postgres",
-    "--dbname", "postgres",
-    "--file", join(projectRoot, "migrations", "002_open_ena_auth_security.sql"),
-  ], { stdio: "ignore", timeout: 60_000 });
-  return `postgresql://postgres@127.0.0.1:${port}/postgres`;
-}
-
-function stopEphemeralPostgres() {
-  try {
-    if (ephemeralPostgresRunning && ephemeralPostgresData) {
-      execFileSync("pg_ctl", [
-        "--pgdata", ephemeralPostgresData,
-        "--wait",
-        "--mode", "fast",
-        "stop",
-      ], { stdio: "ignore", timeout: 60_000 });
-    }
-  } finally {
-    ephemeralPostgresRunning = false;
-    ephemeralPostgresData = null;
-    if (ephemeralPostgresRoot) {
-      assert.equal(dirname(ephemeralPostgresRoot), tmpdir());
-      assert.ok(basename(ephemeralPostgresRoot).startsWith("oeapg-"));
-      rmSync(ephemeralPostgresRoot, { recursive: true, force: true });
-      ephemeralPostgresRoot = null;
-    }
-  }
-}
-
-async function waitForServer(url, timeout = 90_000) {
-  const deadline = Date.now() + timeout;
-  let lastError = null;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url, { redirect: "manual" });
-      if (response.status >= 200 && response.status < 500) return;
-    } catch (error) {
-      lastError = error;
-    }
-    await new Promise((resolveWait) => setTimeout(resolveWait, 250));
-  }
-  throw new Error(`Open ENA did not become ready at ${url}.`, { cause: lastError });
-}
-
-function startServer(port, authDatabaseUrl) {
-  const loopbackOrigin = `http://127.0.0.1:${port}`;
-  const serverEnvironment = {
-    ...env,
-    // The smoke owns a random loopback port; bind production Origin checks
-    // to that exact origin for the login and authenticated workbench calls.
-    OPEN_ENA_PUBLIC_ORIGIN: loopbackOrigin,
-    OPEN_ENA_ALLOWED_ORIGINS: loopbackOrigin,
-    OPEN_ENA_AUTH_DATABASE_URL: authDatabaseUrl,
-  };
-  execFileSync("npm", ["run", "build"], {
-    cwd: projectRoot,
-    env: serverEnvironment,
-    stdio: "inherit",
-    timeout: 600_000,
-  });
-  return spawn("npm", ["run", "start", "--", "--hostname", "127.0.0.1", "--port", String(port)], {
-    cwd: projectRoot,
-    env: serverEnvironment,
-    detached: process.platform !== "win32",
-    stdio: "ignore",
-  });
 }
 
 function findPlotlyChunkNames() {
@@ -176,58 +50,18 @@ function findPlotlyChunkNames() {
   return candidates.map(({ name }) => name);
 }
 
-async function stopServer(server) {
-  if (!server || server.exitCode !== null || server.signalCode !== null) return;
-  const exited = (timeout) => new Promise((resolveExit) => {
-    if (server.exitCode !== null || server.signalCode !== null) {
-      resolveExit(true);
-      return;
-    }
-    const timer = setTimeout(() => {
-      server.off("exit", onExit);
-      resolveExit(false);
-    }, timeout);
-    const onExit = () => {
-      clearTimeout(timer);
-      resolveExit(true);
-    };
-    server.once("exit", onExit);
-  });
-  const signal = (name) => {
-    try {
-      if (process.platform !== "win32") process.kill(-server.pid, name);
-      else server.kill(name);
-      return true;
-    } catch {
-      if (name === "SIGTERM") return server.kill("SIGTERM");
-      return server.kill(name);
-    }
-  };
-  signal("SIGTERM");
-  if (await exited(5_000)) return;
-  signal("SIGKILL");
-  // Keep the explicit child fallback: it is needed when npm did not create a process group.
-  if (server.exitCode === null && server.signalCode === null) server.kill("SIGKILL");
-  if (!await exited(5_000)) throw new Error("The smoke-owned Next.js server did not exit after SIGKILL.");
-}
-
-function restoreOwnedTsconfigMutation() {
-  const currentText = readFileSync(tsconfigPath, "utf8");
-  if (currentText === originalTsconfigText) return;
-  const current = JSON.parse(currentText);
-  const ownedPrefix = `${distName}/`;
-  const currentIncludes = Array.isArray(current?.include) ? current.include : [];
-  const sanitized = {
-    ...current,
-    include: currentIncludes.filter((entry) => typeof entry !== "string" || !entry.startsWith(ownedPrefix)),
-  };
-  if (JSON.stringify(sanitized) !== JSON.stringify(originalTsconfig)) {
-    throw new Error("tsconfig.json changed outside the smoke-owned distDir entries; refusing to overwrite it.");
-  }
-  writeFileSync(tsconfigPath, originalTsconfigText);
-}
-
 async function loginAndLoad(page, baseUrl) {
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    window.__task38WorkerResponses = [];
+    window.__task38WorkerRequests = [];
+    window.Worker = class extends NativeWorker {
+      postMessage(message, ...args) { if (message?.kind === "run-open-ena-plan-v3") window.__task38WorkerRequests.push(structuredClone(message)); return super.postMessage(message, ...args); }
+      constructor(...args) { super(...args); this.addEventListener("message", event => {
+        if (event.data?.kind === "result-v3") window.__task38WorkerResponses.push(structuredClone(event.data));
+      }); }
+    };
+  });
   await page.goto(`${baseUrl}/en/open-ena`, { waitUntil: "domcontentloaded" });
   await page.getByRole("textbox", { name: "Account name" }).fill(username);
   await page.getByRole("textbox", { name: "Password" }).fill(password);
@@ -237,7 +71,7 @@ async function loginAndLoad(page, baseUrl) {
   assert.equal(new URL(page.url()).pathname, "/en/open-ena");
   await rail.getByRole("button", { name: "Data", exact: true }).click();
   const controls = page.locator('[data-ena-workbench-region="controls"]');
-  const sample = controls.getByRole("button", { name: "Load teaching sample", exact: true });
+  const sample = page.getByRole("button", { name: "Load teaching sample", exact: true });
   await sample.waitFor({ state: "visible", timeout: 30_000 });
   await sample.click();
   const download = page.getByRole("button", { name: "Download Model", exact: true });
@@ -318,6 +152,18 @@ async function captureSliderScreen(page, screen, names) {
   return { screen, sliders: values };
 }
 
+async function readCodeColorTrigger(trigger, attribute) {
+  return trigger.evaluate((element, key) => {
+    if (element.hasAttribute(key)) return element.getAttribute(key);
+    if (key === "data-ena-code-color-trigger") return element.ariaLabel?.replace(/^Choose color for /, "");
+    if (key === "data-ena-code-color-primary") {
+      const rgb = getComputedStyle(element.querySelector("span")).backgroundColor.match(/\d+/g);
+      return rgb ? "#" + rgb.slice(0, 3).map(x => Number(x).toString(16).padStart(2, "0")).join("") : null;
+    }
+    return null;
+  }, attribute);
+}
+
 async function auditCodeColorPresets(page, codes) {
   const desktopViewport = page.viewportSize();
   assert.deepEqual(desktopViewport, { width: 1440, height: 900 }, "color-preset audit requires the explicit desktop viewport");
@@ -326,11 +172,22 @@ async function auditCodeColorPresets(page, codes) {
   const triggerCount = await triggers.count();
   assert.ok(triggerCount >= 2, "Codes must expose a distinct alternate Choose color for control");
   const trigger = triggers.first();
-  const code = await trigger.getAttribute("data-ena-code-color-trigger");
-  const originalPrimary = await trigger.getAttribute("data-ena-code-color-primary");
+  const code = await readCodeColorTrigger(trigger, "data-ena-code-color-trigger");
+  const originalPrimary = await readCodeColorTrigger(trigger, "data-ena-code-color-primary");
   assert.ok(code, "the first code-color trigger has no code identity");
   assert.match(originalPrimary ?? "", /^#[0-9a-f]{6}$/u, "the first code-color trigger has no valid primary color");
 
+  const renderedCode = await page.evaluate(source => {
+    const response = window.__task38WorkerResponses.at(-1);
+    const request = window.__task38WorkerRequests.find(entry => entry.id === response?.id);
+    const result = response?.result;
+    if (!request || response.executionPlanSha256 !== request.plan.header.executionPlanSha256 || response.executionPlanSha256 !== result.binding.executionPlanSha256) throw new Error("native color mapping lacks current request/result binding");
+    const labels = result.executionProvenance.labels.codes;
+    if (new Set(labels.map(entry => entry.column)).size !== labels.length || new Set(labels.map(entry => entry.sourceColumn)).size !== labels.length) throw new Error("native Code mapping must be bijective");
+    const matches = labels.filter(entry => entry.sourceColumn === source);
+    if (matches.length !== 1) throw new Error("actual native result has no unique typed Code mapping");
+    return matches[0].column;
+  }, code);
   const readNodeColors = async () => await page.locator("[data-ena-code]").evaluateAll((nodes, expectedCode) => (
     nodes
       .filter((node) => node.getAttribute("data-ena-code") === expectedCode)
@@ -338,7 +195,7 @@ async function auditCodeColorPresets(page, codes) {
         fill: node.getAttribute("fill"),
         computedFill: getComputedStyle(node).fill,
       }))
-  ), code);
+  ), renderedCode);
   const originalNodeColors = await readNodeColors();
   assert.ok(originalNodeColors.length > 0, `no rendered code node was found for ${code}`);
 
@@ -451,23 +308,23 @@ async function auditCodeColorPresets(page, codes) {
     );
 
     const alternate = triggers.nth(1);
-    const alternateCode = await alternate.getAttribute("data-ena-code-color-trigger");
+    const alternateCode = await readCodeColorTrigger(alternate, "data-ena-code-color-trigger");
     assert.ok(alternateCode && alternateCode !== code, "the alternate trigger must identify a distinct code");
     await alternate.click({ timeout: 500 }).catch(() => {});
     assert.equal(await page.getByRole("dialog", { name: dialogName, exact: true }).count(), 1,
       "an attempted second code trigger replaced the original exact dialog");
     assert.equal(await page.getByRole("dialog", { name: `Code color for ${alternateCode}`, exact: true }).count(), 0,
       "the native modal switched to another code target");
-    assert.equal(await trigger.getAttribute("data-ena-code-color-trigger"), code,
+    assert.equal(await readCodeColorTrigger(trigger, "data-ena-code-color-trigger"), code,
       "the original trigger changed its code identity while its dialog was open");
-    assert.equal(await trigger.getAttribute("aria-expanded"), "true",
+    assert.equal(await dialog.isVisible(), true,
       "the original trigger stopped owning the open dialog");
     alternateTriggerBlocked = true;
 
     await dialog.getByRole("button", { name: preset2Name, exact: true }).click();
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await waitForDialogClosed();
-    assert.equal(await trigger.getAttribute("data-ena-code-color-primary"), originalPrimary,
+    assert.equal(await readCodeColorTrigger(trigger, "data-ena-code-color-primary"), originalPrimary,
       "Cancel changed the trigger's committed primary color");
     assert.deepEqual(await readNodeColors(), originalNodeColors, "Cancel changed rendered node colors");
 
@@ -475,13 +332,12 @@ async function auditCodeColorPresets(page, codes) {
     await dialog.getByRole("button", { name: preset2Name, exact: true }).click();
     await dialog.getByRole("button", { name: "OK", exact: true }).click();
     await waitForDialogClosed();
-    await page.waitForFunction(
-      ([expectedCode, expectedColor]) => document.querySelector(`[data-ena-code-color-trigger="${CSS.escape(expectedCode)}"]`)
-        ?.getAttribute("data-ena-code-color-primary") === expectedColor,
-      [code, committedPrimary],
-      { timeout: 10_000 },
-    );
-    assert.equal(await trigger.getAttribute("data-ena-code-color-primary"), committedPrimary);
+    await page.waitForFunction(([element, expectedColor]) => {
+      const rgb = getComputedStyle(element.querySelector("span")).backgroundColor.match(/\d+/g);
+      const color = rgb ? "#" + rgb.slice(0, 3).map(x => Number(x).toString(16).padStart(2, "0")).join("") : null;
+      return color === expectedColor;
+    }, [await trigger.elementHandle(), committedPrimary]);
+    assert.equal(await readCodeColorTrigger(trigger, "data-ena-code-color-primary"), committedPrimary);
     const committedNodeColors = await readNodeColors();
     assert.ok(committedNodeColors.length > 0, `the committed color has no rendered ${code} node`);
     assert.ok(committedNodeColors.every(({ fill, computedFill }) => (
@@ -572,7 +428,7 @@ async function auditCodeColorPresets(page, codes) {
     await waitForDialogClosed();
     assert.equal(await trigger.evaluate((element) => document.activeElement === element), true,
       "Escape did not return focus to the original code-color trigger");
-    assert.equal(await trigger.getAttribute("data-ena-code-color-primary"), committedPrimary,
+    assert.equal(await readCodeColorTrigger(trigger, "data-ena-code-color-primary"), committedPrimary,
       "Escape changed the committed Primary color");
     assert.deepEqual(await readNodeColors(), committedNodeColors,
       "Escape changed the rendered committed node colors");
@@ -592,7 +448,7 @@ async function auditCodeColorPresets(page, codes) {
       "the backdrop audit did not create a different valid Complementary draft");
     await page.mouse.click(2, 2);
     await waitForDialogClosed();
-    assert.equal(await trigger.getAttribute("data-ena-code-color-primary"), committedPrimary,
+    assert.equal(await readCodeColorTrigger(trigger, "data-ena-code-color-primary"), committedPrimary,
       "backdrop dismissal changed the committed Primary color");
     assert.deepEqual(await readNodeColors(), committedNodeColors,
       "backdrop dismissal changed the rendered committed node colors");
@@ -703,7 +559,7 @@ async function auditCodeColorPresets(page, codes) {
       );
       await page.keyboard.press("Escape");
       await waitForDialogClosed();
-      fallback.escape.primaryRollback = await trigger.getAttribute("data-ena-code-color-primary") === committedPrimary;
+      fallback.escape.primaryRollback = await readCodeColorTrigger(trigger, "data-ena-code-color-primary") === committedPrimary;
       assert.equal(fallback.escape.primaryRollback, true, "fallback Escape committed the Primary draft");
       assert.deepEqual(await readNodeColors(), committedNodeColors,
         "fallback Escape changed rendered committed node colors");
@@ -728,7 +584,7 @@ async function auditCodeColorPresets(page, codes) {
       );
       await page.mouse.click(2, 2);
       await waitForDialogClosed();
-      fallback.backdrop.primaryRollback = await trigger.getAttribute("data-ena-code-color-primary") === committedPrimary;
+      fallback.backdrop.primaryRollback = await readCodeColorTrigger(trigger, "data-ena-code-color-primary") === committedPrimary;
       assert.equal(fallback.backdrop.primaryRollback, true, "fallback backdrop committed the Primary draft");
       assert.deepEqual(await readNodeColors(), committedNodeColors,
         "fallback backdrop changed rendered committed node colors");
@@ -745,7 +601,7 @@ async function auditCodeColorPresets(page, codes) {
       await dialog.getByRole("button", { name: preset1Name, exact: true }).click();
       await fallbackConfirm.click();
       await waitForDialogClosed();
-      fallback.commit.primary = await trigger.getAttribute("data-ena-code-color-primary");
+      fallback.commit.primary = await readCodeColorTrigger(trigger, "data-ena-code-color-primary");
       assert.equal(fallback.commit.primary, "#cc423a", "fallback OK did not commit Preset 1 Primary");
       const fallbackPreset1NodeColors = await readNodeColors();
       assert.ok(fallbackPreset1NodeColors.length > 0 && fallbackPreset1NodeColors.every(({ fill, computedFill }) => (
@@ -763,7 +619,7 @@ async function auditCodeColorPresets(page, codes) {
       await dialog.getByRole("button", { name: preset2Name, exact: true }).click();
       await fallbackConfirm.click();
       await waitForDialogClosed();
-      fallback.restore.primary = await trigger.getAttribute("data-ena-code-color-primary");
+      fallback.restore.primary = await readCodeColorTrigger(trigger, "data-ena-code-color-primary");
       assert.equal(fallback.restore.primary, committedPrimary, "fallback restore did not recommit Preset 2 Primary");
       assert.deepEqual(await readNodeColors(), committedNodeColors,
         "fallback restore did not restore every matching node to Preset 2");
@@ -832,14 +688,11 @@ async function auditOfficialModelTabs(page, rail) {
   await tablist.waitFor({ state: "visible", timeout: 30_000 });
   const tabNames = ["Units", "Horizons", "Windows", "Codes"];
   const headingBottomBorderWidthPx = await tablist.evaluate((element) => {
-    const heading = element.previousElementSibling;
-    if (!(heading instanceof HTMLElement) || !heading.classList.contains("ena-panel-heading")) {
-      throw new Error("Model heading is unavailable immediately before its tablist");
-    }
-    return Number.parseFloat(getComputedStyle(heading).borderBottomWidth);
+    const heading = element.parentElement.querySelector("h2");
+    return heading ? Number.parseFloat(getComputedStyle(heading).borderBottomWidth) : 0;
   });
   const tabMetrics = await tablist.getByRole("tab").evaluateAll((tabs) => tabs.map((tab) => ({
-    name: tab.querySelector(":scope > span:first-child")?.textContent?.replace(/\s+/gu, " ").trim() ?? "",
+    name: tab.textContent?.trim().match(/^(Units|Horizons|Windows|Codes)/u)?.[0] ?? "",
     tabHeightPx: tab.getBoundingClientRect().height,
     topInsetPx: tab.getBoundingClientRect().top - tab.parentElement.getBoundingClientRect().top,
     textColor: getComputedStyle(tab).color,
@@ -856,8 +709,8 @@ async function auditOfficialModelTabs(page, rail) {
   assert.equal(tabMetrics.find((tab) => tab.selected)?.activeRuleColor, "rgb(137, 207, 240)");
 
   const openPanel = async (name, panelName) => {
-    await tablist.getByRole("tab", { name, exact: true }).click();
-    const panel = page.locator(`[data-ena-official-panel="${panelName}"]`);
+    await tablist.getByRole("tab", { name: new RegExp(`^${name}(,|$)`) }).click();
+    const panel = page.getByTestId(`open-ena-model-v3-${panelName}-panel`);
     await panel.waitFor({ state: "visible", timeout: 30_000 });
     return panel;
   };
@@ -898,7 +751,7 @@ async function auditOfficialModelTabs(page, rail) {
 
   const removeField = unitEditor.locator(".ena-official-field-remove").last();
   const removeLabel = await removeField.evaluate((button) => button.ariaLabel);
-  const removeMatch = removeLabel?.match(/^Remove (.+) from (.+ identity)$/u);
+  const removeMatch = removeLabel?.match(/^Remove (.+) from (.+)$/u);
   assert.ok(removeMatch, "Remove .* from .* identity control is unavailable");
   const removedField = removeMatch[1];
   await removeField.click();
@@ -909,7 +762,7 @@ async function auditOfficialModelTabs(page, rail) {
   assert.equal(await removedFieldCheckbox.isChecked(), true);
   await unitAdd.click();
 
-  const createSample = units.getByRole("combobox", { name: "Comparison group", exact: true });
+  const createSample = units.getByRole("combobox", { name: "Create Sample / Group", exact: true });
   const initialGroup = await createSample.inputValue();
   const alternateGroup = await createSample.locator("option").evaluateAll((options, current) => (
     options.map((option) => option.value).find((value) => value && value !== current) ?? null
@@ -922,35 +775,31 @@ async function auditOfficialModelTabs(page, rail) {
   const unitsGeometry = await panelGeometry(units);
 
   const horizons = await openPanel("Horizons", "horizons");
-  const horizonSwitch = horizons.getByRole("switch", { name: "Horizon method", exact: true });
-  assert.equal(await horizonSwitch.isDisabled(), true);
-  assert.equal(await horizonSwitch.getAttribute("aria-checked"), "true");
-  await horizons.getByText("Open ENA currently supports the Standard horizon method.", { exact: true })
-    .waitFor({ state: "visible" });
-  assert.ok(await horizons.locator(".ena-official-horizon-column").count() > 0);
-  assert.ok(await horizons.locator(".ena-official-icon-button:disabled").count() > 0);
+  assert.equal(await horizons.getByRole("switch", { name: "Horizon method", exact: true }).count(), 0);
+  assert.equal(await horizons.getByText("Transmodal", { exact: true }).count(), 0);
+  await horizons.getByRole("region", { name: "Horizon identity", exact: true }).waitFor();
   const horizonsGeometry = await panelGeometry(horizons);
 
   const windows = await openPanel("Windows", "windows");
-  const windowSwitch = windows.getByRole("switch", { name: "Window horizon method", exact: true });
-  assert.equal(await windowSwitch.isDisabled(), true);
-  assert.equal(await windowSwitch.getAttribute("aria-checked"), "true");
-  assert.ok(await windows.locator(".ena-official-setting-row").count() > 0);
-  assert.equal(await windows.getByRole("slider").count(), 2);
+  assert.equal(await windows.getByRole("switch", { name: "Window horizon method", exact: true }).count(), 0);
+  assert.equal(await windows.getByRole("combobox", { name: "Model", exact: true }).inputValue(), "EndPoint");
+  assert.equal(await windows.getByRole("combobox", { name: "Window", exact: true }).count(), 1);
   const windowsGeometry = await panelGeometry(windows);
 
   const codes = await openPanel("Codes", "codes");
-  const networkSwitch = codes.getByRole("switch", { name: "Network type", exact: true });
-  assert.equal(await networkSwitch.getAttribute("aria-checked"), "true");
-  await networkSwitch.click();
-  assert.equal(await networkSwitch.getAttribute("aria-checked"), "false");
-  await networkSwitch.click();
-  assert.equal(await networkSwitch.getAttribute("aria-checked"), "true");
-  const manageCodes = codes.getByText("Manage Codes", { exact: true });
+  const standard = codes.getByRole("radio", { name: /^Standard ENA/ });
+  const ordered = codes.getByRole("radio", { name: /^Ordered Network Analysis/ });
+  assert.equal(await standard.isChecked(), true);
+  await ordered.check();
+  assert.equal(await ordered.isChecked(), true);
+  await standard.check();
+  assert.equal(await standard.isChecked(), true);
+  const manageCodes = codes.getByRole("button", { name: "Manage Codes", exact: true });
   await manageCodes.click();
-  const codeCheckboxes = codes.locator(".ena-official-manage-codes").getByRole("checkbox");
-  assert.ok(await codeCheckboxes.count() > 0);
-  await manageCodes.click();
+  assert.ok(await codes.getByRole("checkbox", { name: /^Select .+ as a Code$/ }).count() > 0);
+  await codes.getByRole("button", { name: "Close Code manager", exact: true }).click();
+  await page.getByRole("button", { name: "Run model", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current");
   const codeColorPresets = await auditCodeColorPresets(page, codes);
   const codesGeometry = await panelGeometry(codes);
 
@@ -1076,31 +925,31 @@ async function auditTrajectoryCodeColorCascade(page, rail) {
   await endpointDownload.waitFor({ state: "visible", timeout: 30_000 });
   await page.waitForFunction((button) => button && !button.disabled, await endpointDownload.elementHandle(), { timeout: 30_000 });
   await rail.getByRole("button", { name: "Data", exact: true }).click();
-  const loadTrajectorySample = page.getByRole("button", { name: "Load 3D trajectory sample", exact: true });
+  const loadTrajectorySample = page.getByRole("button", { name: "Load trajectory sample", exact: true });
   await loadTrajectorySample.waitFor({ state: "visible", timeout: 30_000 });
   await loadTrajectorySample.click();
 
-  const longitudinalControls = page.locator(".ena-longitudinal-v3-controls");
+  const longitudinalControls = page.getByTestId("open-ena-workspace-v3");
   await longitudinalControls.waitFor({ state: "visible", timeout: 60_000 });
-  const runStatus = rail.locator('.ena-run-status[data-state="result"]');
-  await runStatus.waitFor({ state: "visible", timeout: 60_000 });
+  await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current");
+  assert.equal(await page.evaluate(() => window.__task38WorkerResponses.at(-1)?.result.configuration.analysis.model.type), "SeparateTrajectory");
 
   await rail.getByRole("button", { name: "Model", exact: true }).click();
   const tablist = longitudinalControls.getByRole("tablist", { name: "Model configuration" });
   await tablist.waitFor({ state: "visible", timeout: 30_000 });
-  await tablist.getByRole("tab", { name: "Codes", exact: true }).click();
-  const codes = longitudinalControls.locator('[data-ena-official-panel="codes"]');
+  await tablist.getByRole("tab", { name: /^Codes(,|$)/ }).click();
+  const codes = longitudinalControls.getByTestId("open-ena-model-v3-codes-panel");
   await codes.waitFor({ state: "visible", timeout: 30_000 });
-  assert.equal(await codes.evaluate((element) => element.closest(".ena-longitudinal-v3-controls") !== null), true,
+  assert.equal(await codes.evaluate((element) => element.closest('[data-testid="open-ena-workspace-v3"]') !== null), true,
     "trajectory Model / Codes panel escaped the longitudinal-v3 controls cascade");
 
-  const trigger = codes.locator('[data-ena-code-color-trigger]').first();
+  const trigger = codes.getByRole("button", { name: /^Choose color for / }).first();
   await trigger.waitFor({ state: "visible", timeout: 30_000 });
-  const code = await trigger.getAttribute("data-ena-code-color-trigger");
-  const originalPrimary = await trigger.getAttribute("data-ena-code-color-primary");
+  const code = await readCodeColorTrigger(trigger, "data-ena-code-color-trigger");
+  const originalPrimary = await readCodeColorTrigger(trigger, "data-ena-code-color-primary");
   assert.ok(code, "trajectory code-color trigger has no code identity");
   assert.match(originalPrimary ?? "", /^#[0-9a-f]{6}$/u);
-  assert.equal(await trigger.evaluate((element) => element.closest(".ena-longitudinal-v3-controls") !== null), true,
+  assert.equal(await trigger.evaluate((element) => element.closest('[data-testid="open-ena-workspace-v3"]') !== null), true,
     "trajectory code-color trigger escaped the longitudinal-v3 controls cascade");
 
   const triggerStyle = await trigger.evaluate((element) => {
@@ -1121,22 +970,19 @@ async function auditTrajectoryCodeColorCascade(page, rail) {
       paddingLeft: style.paddingLeft,
     };
   });
-  assert.deepEqual({ width: triggerStyle.width, height: triggerStyle.height }, { width: 28, height: 28 });
-  assert.equal(triggerStyle.minHeight, "28px");
-  assert.deepEqual(
-    [triggerStyle.borderTopWidth, triggerStyle.borderRightWidth, triggerStyle.borderBottomWidth, triggerStyle.borderLeftWidth],
-    ["0px", "0px", "0px", "0px"],
-  );
-  assert.equal(triggerStyle.backgroundColor, "rgba(0, 0, 0, 0)");
-  assert.deepEqual(
-    [triggerStyle.paddingTop, triggerStyle.paddingRight, triggerStyle.paddingBottom, triggerStyle.paddingLeft],
-    ["0px", "0px", "0px", "0px"],
-  );
+  writeFileSync(join(artifactDirectory, `trajectory-trigger-${screenshotSequence}.json`), JSON.stringify(triggerStyle, null, 2));
+  assert.deepEqual({ width: triggerStyle.width, height: triggerStyle.height }, { width: 32, height: 32 });
+  assert.equal(triggerStyle.minHeight, "32px");
+  // Native Models uses its own 32px bordered button; the shared color sheet
+  // must still retain its exact compact geometry inside the trajectory Workspace.
+  assert.deepEqual([triggerStyle.borderTopWidth, triggerStyle.borderRightWidth, triggerStyle.borderBottomWidth, triggerStyle.borderLeftWidth], ["2px", "2px", "2px", "2px"]);
+  assert.equal(triggerStyle.backgroundColor, "rgb(239, 239, 239)");
+  assert.deepEqual([triggerStyle.paddingTop, triggerStyle.paddingRight, triggerStyle.paddingBottom, triggerStyle.paddingLeft], ["0px", "0px", "0px", "0px"]);
 
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: `Code color for ${code}`, exact: true });
   await dialog.waitFor({ state: "visible", timeout: 10_000 });
-  assert.equal(await dialog.evaluate((element) => element.closest(".ena-longitudinal-v3-controls") !== null), true,
+  assert.equal(await dialog.evaluate((element) => element.closest('[data-testid="open-ena-workspace-v3"]') !== null), true,
     "trajectory code-color dialog escaped the longitudinal-v3 controls cascade");
   const preset2 = dialog.locator('[data-ena-code-color-preset="2"]');
   await preset2.click();
@@ -1243,7 +1089,7 @@ async function auditTrajectoryCodeColorCascade(page, rail) {
     `trajectory dialog error line-height was ${errorStyle.lineHeight}`);
   await page.keyboard.press("Escape");
   await dialog.waitFor({ state: "detached", timeout: 10_000 });
-  assert.equal(await trigger.getAttribute("data-ena-code-color-primary"), originalPrimary,
+  assert.equal(await readCodeColorTrigger(trigger, "data-ena-code-color-primary"), originalPrimary,
     "trajectory cascade audit committed its invalid draft");
 
   return {
@@ -1257,6 +1103,111 @@ async function auditTrajectoryCodeColorCascade(page, rail) {
   };
 }
 
+async function auditWindowExtentInputs(page) {
+  const window = page.getByRole("combobox", { name: "Window", exact: true });
+  const original = await window.inputValue();
+  await window.selectOption("MovingStanzaWindow");
+  const values = [];
+  for (const name of ["Backward context", "Forward context"]) {
+    const group = page.getByRole("group", { name, exact: true });
+    const input = group.getByRole("textbox", { name: "Rows", exact: true });
+    await input.waitFor();
+    const value = await input.evaluate(element => ({
+      accessibleName: element.labels?.[0]?.textContent?.trim(),
+      value: element.value,
+      interpretation: (element.getAttribute("aria-describedby") ?? "").split(/\s+/).filter(Boolean).map(id => document.getElementById(id)?.textContent?.trim()).join(" "),
+      invalid: element.getAttribute("aria-invalid"),
+    }));
+    assert.equal(value.accessibleName, "Rows");
+    assert.ok(value.interpretation, `${name} needs an accessible context interpretation`);
+    assert.equal(value.invalid, "false");
+    values.push({ group: name, ...value });
+  }
+  await window.selectOption(original);
+  await page.getByRole("button", { name: "Run model", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current");
+  return { screen: "Model / Windows", nativeFiniteInputs: values, replacedLegacyControls: ["Backward span (includes current row)", "Forward context rows"] };
+}
+
+async function auditModelsV3Accessibility(page, rail) {
+  const tab = name => page.getByRole("tab", { name: new RegExp(`^${name}(,|$)`) });
+  const button = name => page.getByRole("button", { name, exact: true });
+  await rail.getByRole("button", { name: "Model", exact: true }).click();
+  await tab("Units").click();
+  await tab("Units").focus();
+  const navigation = [];
+  for (const name of ["Units", "Horizons", "Windows", "Codes"]) {
+    if (name !== "Units") await page.keyboard.press("ArrowRight");
+    assert.equal(await tab(name).getAttribute("aria-selected"), "true");
+    assert.equal(await tab(name).evaluate(node => node === document.activeElement), true);
+    const accessibleName = await tab(name).evaluate(node => node.ariaLabel || node.textContent.trim());
+    assert.ok(accessibleName.startsWith(name));
+    const help = button(`About ${name} settings`);
+    await help.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog");
+    await dialog.waitFor();
+    assert.equal(await dialog.evaluate(node => node.contains(document.activeElement)), true);
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(node => node === document.activeElement, await help.elementHandle());
+    navigation.push({ tab: name, accessibleName, selected: true, helpFocusReturned: true });
+    await tab(name).focus();
+  }
+  const hide = button("Hide all code nodes");
+  assert.equal(await hide.getAttribute("aria-pressed"), "false");
+  await hide.press("Enter");
+  assert.equal(await button("Restore all code nodes").getAttribute("aria-pressed"), "true");
+  await button("Restore all code nodes").press("Enter");
+  assert.equal(await hide.getAttribute("aria-pressed"), "false");
+  await button("Exclude all selected Codes").focus();
+  await page.keyboard.press("Enter");
+  const status = page.getByRole("status", { name: "Model status", exact: true });
+  assert.equal(await status.getAttribute("aria-live"), "polite");
+  assert.match(await status.innerText(), /incomplete/i);
+  const announcement = page.locator(".ena-model-codes-v3-announcement");
+  assert.equal(await announcement.getAttribute("aria-live"), "polite");
+  assert.match(await announcement.innerText(), /Exclude all selected Codes/);
+  const disabledReasons = [];
+  for (const name of ["Hide all code nodes", "Exclude all selected Codes"]) {
+    const control = button(name);
+    assert.equal(await control.isDisabled(), true);
+    const describedBy = await control.getAttribute("aria-describedby");
+    assert.ok(describedBy, `${name} needs a disabled reason`);
+    const description = await control.evaluate(node => (node.getAttribute("aria-describedby") ?? "").split(/\s+/).map(id => document.getElementById(id)?.textContent?.trim()).filter(Boolean).join(" "));
+    assert.ok(description.length > 10);
+    disabledReasons.push({ name, description });
+  }
+  assert.equal(await button("Run model").isDisabled(), true);
+  await button("Undo Code exclusion").focus();
+  await page.keyboard.press("Enter");
+  await button("Run model").click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  assert.equal(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches), true);
+  const zoom = [];
+  await page.evaluate(() => { document.documentElement.style.zoom = "2"; });
+  try {
+    for (const name of ["Units", "Horizons", "Windows", "Codes"]) {
+      await tab(name).click();
+      const metrics = await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth }));
+      assert.ok(metrics.scrollWidth <= metrics.width + 1, `CSS 200 percent zoom overflow: ${name}`);
+      const help = button(`About ${name} settings`);
+      await help.focus();
+      await help.press("Enter");
+      await page.getByRole("dialog").waitFor();
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(node => node === document.activeElement, await help.elementHandle());
+      zoom.push({ tab: name, ...metrics, helpAccessible: true });
+    }
+    await page.screenshot({ path: join(artifactDirectory, `models-css-zoom-${screenshotSequence++}.png`), fullPage: true });
+  } finally {
+    await page.evaluate(() => { document.documentElement.style.zoom = ""; });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+  }
+  return { navigation, disabledReasons, keyboardUndo: true, politeAnnouncement: true, reducedMotion: true, zoomMechanism: "CSS zoom 2; not native browser zoom", zoom };
+}
+let screenshotSequence = 0;
+
 async function runA11y(page, baseUrl) {
   const consoleErrors = [];
   const pageErrors = [];
@@ -1267,20 +1218,18 @@ async function runA11y(page, baseUrl) {
   const rail = await loginAndLoad(page, baseUrl);
   const modelParity = await auditOfficialModelTabs(page, rail);
   await rail.getByRole("button", { name: "Model", exact: true }).click();
-  await page.getByRole("tab", { name: "Horizons", exact: true }).click();
-  await page.getByRole("tab", { name: "Windows", exact: true }).click();
-  const modelSliders = await captureSliderScreen(page, "Model / Windows", [
-    "Backward span (includes current row)",
-    "Forward context rows",
-  ]);
+  await page.getByRole("tab", { name: /^Horizons(,|$)/ }).click();
+  await page.getByRole("tab", { name: /^Windows(,|$)/ }).click();
+  const modelSliders = await auditWindowExtentInputs(page);
+  const modelsV3Accessibility = await auditModelsV3Accessibility(page, rail);
   await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
-  const plotSliders = await captureSliderScreen(page, "Plot Tools", ["Edge width", "Minimum relative edge", "Unit point size"]);
+  const plotSliders = await captureSliderScreen(page, "Plot Tools", ["Edge scale", "Edge threshold", "Point scale"]);
   const threeD = page.getByRole("button", { name: /^3D ENA/ });
   await threeD.click();
   await waitForThreePlots(page);
   const scientificIdentity = await readScientificIdentity(page);
   await rail.getByRole("button", { name: "Model", exact: true }).click();
-  await page.getByRole("tab", { name: "Windows", exact: true }).waitFor({ state: "visible" });
+  await page.getByRole("tab", { name: /^Windows(,|$)/ }).waitFor({ state: "visible" });
   await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
   let geometry;
   try {
@@ -1302,7 +1251,7 @@ async function runA11y(page, baseUrl) {
   const trajectoryCodeColorCascade = await auditTrajectoryCodeColorCascade(page, rail);
   assert.deepEqual(consoleErrors, [], "A11Y color-preset audits emitted console errors");
   assert.deepEqual(pageErrors, [], "A11Y color-preset audits emitted page errors");
-  return { modelParity, modelSliders, plotSliders, geometry, scientificIdentity, trajectoryCodeColorCascade, consoleErrors, pageErrors };
+  return { modelParity, modelSliders, modelsV3Accessibility, plotSliders, geometry, scientificIdentity, trajectoryCodeColorCascade, consoleErrors, pageErrors };
 }
 
 async function runPerformance(page, baseUrl, viewport, plotlyChunkNames) {
@@ -1368,38 +1317,13 @@ async function runPerformance(page, baseUrl, viewport, plotlyChunkNames) {
   return { viewport, comparisonReady, ...result, scientificIdentity: scientificIdentityBefore };
 }
 
-const port = await findOpenPort();
 mkdirSync(artifactDirectory, { recursive: true });
-rmSync(summaryPath, { force: true });
-let server = null;
-let browser = null;
-let shuttingDown = false;
-
-async function interrupt(signalName) {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  await browser?.close().catch(() => {});
-  await stopServer(server).catch((error) => process.stderr.write(`[a11y/perf smoke] cleanup: ${redact(error.stack ?? error)}\n`));
-  try {
-    stopEphemeralPostgres();
-  } catch (error) {
-    process.stderr.write(`[a11y/perf smoke] database cleanup: ${redact(error.stack ?? error)}\n`);
-  }
-  rmSync(distDirectory, { recursive: true, force: true });
-  restoreOwnedTsconfigMutation();
-  process.exit(signalName === "SIGINT" ? 130 : 143);
-}
-process.once("SIGINT", () => void interrupt("SIGINT"));
-process.once("SIGTERM", () => void interrupt("SIGTERM"));
-
+let runtime = null;
+let failure = null;
 try {
-  const authDatabaseUrl = await startEphemeralPostgres();
-  server = startServer(port, authDatabaseUrl);
+  runtime = await createServedBrowserV3({ root: projectRoot, directory: join(artifactDirectory, "runtime"), credentials: { username, password, secret: sessionSecret, account: accountId }, redact });
+  const { browser, baseUrl } = runtime;
   const plotlyChunkNames = findPlotlyChunkNames();
-  const baseUrl = `http://127.0.0.1:${port}`;
-  await waitForServer(baseUrl + "/en/open-ena");
-  const { chromium } = await import("playwright");
-  browser = await chromium.launch({ headless: true });
   const runs = [];
   let baselineScientificIdentity = null;
   // Four exact isolated runs: each phase gets its own browser context and page.
@@ -1418,6 +1342,12 @@ try {
       if (baselineScientificIdentity === null) baselineScientificIdentity = perf.scientificIdentity;
       else assert.deepEqual(perf.scientificIdentity, baselineScientificIdentity, "scientific identity changed across isolated runs");
       runs.push({ run: run + 1, a11y, perf });
+    } catch (error) {
+      for (const context of [a11yContext, perfContext]) for (const page of context.pages()) {
+        await page.screenshot({ path: join(artifactDirectory, `failure-${screenshotSequence++}.png`), fullPage: true }).catch(() => {});
+        writeFileSync(join(artifactDirectory, `failure-${screenshotSequence++}.txt`), redact(await page.locator("body").innerText().catch(() => "")));
+      }
+      throw error;
     } finally {
       await a11yContext.close();
       await perfContext.close();
@@ -1433,18 +1363,9 @@ try {
     metricsBoundary: "lab-only-not-production-CWV",
   }, null, 2));
 } catch (error) {
-  writeFileSync(summaryPath, JSON.stringify({
-    schemaVersion: "open-ena.a11y-perf-smoke.v3",
-    status: "FAILED",
-    error: redact(error?.stack ?? error),
-    note: "A browser run was not claimed; inspect the failure and source/deployment state separately.",
-  }, null, 2));
-  throw error;
+  failure = error;
+  writeFileSync(summaryPath, JSON.stringify({ schemaVersion: "open-ena.a11y-perf-smoke.v3", status: "FAILED", error: redact(error?.stack ?? error) }, null, 2));
 } finally {
-  shuttingDown = true;
-  await browser?.close().catch(() => {});
-  await stopServer(server).catch((error) => process.stderr.write(`[a11y/perf smoke] cleanup: ${redact(error.stack ?? error)}\n`));
-  stopEphemeralPostgres();
-  rmSync(distDirectory, { recursive: true, force: true });
-  restoreOwnedTsconfigMutation();
+  await runtime?.close(failure);
 }
+if (failure) { console.error(redact(failure.stack ?? failure)); process.exitCode = 1; }

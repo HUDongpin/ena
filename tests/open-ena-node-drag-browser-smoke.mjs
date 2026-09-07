@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createServedBrowserV3, literalGit } from "./helpers/open-ena-served-browser-v3.mjs";
+import { prepareNativeFixtureV3, runNativeFixtureV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import {
   closeSync,
@@ -79,44 +81,35 @@ function ensurePlaywrightWorkingDirectory() {
   return playwrightWorkingDirectory;
 }
 
-function runCli(args, label, timeout = 180_000) {
-  const playwrightDirectory = ensurePlaywrightWorkingDirectory();
-  const npmCacheDirectory = join(playwrightDirectory, "npm-cache");
-  try {
-    return execFileSync(
-      playwrightCli.command,
-      [...playwrightCli.prefix, "--session", sessionName, ...args],
-      {
-        cwd: playwrightDirectory,
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          npm_config_cache: npmCacheDirectory,
-          NPM_CONFIG_CACHE: npmCacheDirectory,
-        },
-        maxBuffer: 32 * 1024 * 1024,
-        timeout,
-      },
-    );
-  } catch (caught) {
-    throw createSafePlaywrightCliError({ caught, label, redact });
+let runtime = null;
+async function runCli(args, label, timeout = 300000) {
+  if (args[0] === "--version") return "Playwright module 1.62.1 (owned foreground Chromium)";
+  if (!runtime) throw new Error("Owned production runtime is unavailable");
+  if (args[0] === "open") { await runtime.page.goto(args[1], { waitUntil: "domcontentloaded" }); return ""; }
+  if (args[0] === "close") { await runtime.close(primaryFailure); return ""; }
+  if (args[0] === "screenshot") { await runtime.page.screenshot({ path: args.at(-1), fullPage: true }); return ""; }
+  if (args[0] === "console") return `Errors: ${runtime.receipt.consoleErrors.length}\n${runtime.receipt.consoleErrors.join("\n")}`;
+  if (args[0] === "--raw" && args[1] === "run-code") {
+    const action = new Function(`return (${args[2]});`)();
+    return JSON.stringify(await runtime.stage(label, () => action(runtime.page), timeout));
   }
+  throw new Error("Unsupported owned browser operation");
 }
 
 function browserSource(task, args, helpers) {
-  return `async (page) => {${helpers.map((helper) => helper.toString()).join("\n")}
+  return `async (page) => {${prepareNativeFixtureV3.toString()}\n${runNativeFixtureV3.toString()}\n${helpers.map((helper) => helper.toString()).join("\n")}
     const task = ${task.toString()};
     return await task(page, ${JSON.stringify(args)});
   }`;
 }
 
-function runBrowserTask(label, task, args, helpers, timeout = 300_000) {
+async function runBrowserTask(label, task, args, helpers, timeout = 300_000) {
   process.stdout.write(`[node-drag smoke] ${label} ... `);
-  const output = runCli(
+  const output = (await runCli(
     ["--raw", "run-code", browserSource(task, args, helpers)],
     label,
     timeout,
-  ).trim();
+  )).trim();
   const result = output ? JSON.parse(output) : null;
   process.stdout.write("PASS\n");
   return result;
@@ -196,7 +189,7 @@ async function cleanup() {
   const failures = [];
   if (browserOpened) {
     try {
-      runCli(["close"], "close browser", 30_000);
+      await runCli(["close"], "close browser", 30_000);
     } catch (caught) {
       failures.push(caught);
     }
@@ -278,12 +271,10 @@ async function installAuditAndAuthenticate(page, args) {
     Object.defineProperty(window, "__openEnaNodeDragAudit", { value: audit, configurable: true });
     const originalPostMessage = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function auditedPostMessage(message, ...rest) {
-      if (message?.kind === "run" && message?.config && !message?.request?.pathTask) {
+      if (message?.kind === "run-open-ena-plan-v3" && message?.plan) {
         audit.analysisRunCount += 1;
         audit.canonicalResult = JSON.stringify({
-          dataset: message.dataset,
-          config: message.config,
-          reference: message.reference,
+          plan: message.plan,
         });
       }
       return originalPostMessage.call(this, message, ...rest);
@@ -326,13 +317,8 @@ async function uploadAndBuildStandard(page, fixtureCsv) {
     input.files = transfer.files;
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }, fixtureCsv);
-  await page.getByRole("heading", { name: "Define the ENA model" }).waitFor({ timeout: 30_000 });
-  await page.getByRole("tab", { name: "Windows", exact: true }).click();
-  await page.getByRole("combobox", { name: "Model type" }).selectOption("EndPoint");
-  const build = page.getByRole("button", { name: /Build ENA model/ });
-  assertBrowser(await build.isEnabled(), "standard model build is disabled");
-  await build.click();
-  await page.getByRole("button", { name: /Rebuild model/ }).waitFor({ timeout: 60_000 });
+  await prepareNativeFixtureV3(page);
+  await runNativeFixtureV3(page);
   await page.getByTestId("open-ena-group-comparison-plot").waitFor({ timeout: 60_000 });
 }
 
@@ -547,20 +533,8 @@ async function recenterPreservesNode(page, testId, expectedNode) {
 async function switchToOnaAndBuild(page) {
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
   await rail.getByRole("button", { name: "Model", exact: true }).click();
-  const modelTabs = page.getByRole("tablist", { name: "Model configuration" });
-  await modelTabs.getByRole("tab", { name: "Codes", exact: true }).click();
-  const networkType = page.getByRole("switch", { name: "Network type", exact: true });
-  await networkType.waitFor({ state: "visible", timeout: 30_000 });
-  if (await networkType.getAttribute("aria-checked") === "true") await networkType.click();
-  assertBrowser(await networkType.getAttribute("aria-checked") === "false",
-    "ONA network family was not selected through the Codes switch");
-  await modelTabs.getByRole("tab", { name: "Windows", exact: true }).click();
-  await page.getByRole("radio", { name: /Confirmed source-record order/ }).check();
-  await page.getByRole("checkbox", { name: /I confirm that source-record order/ }).check();
-  const build = page.getByRole("button", { name: /Build ONA model|Rebuild ONA model/ });
-  assertBrowser(await build.isEnabled(), "ONA model build is disabled");
-  await build.click();
-  await page.getByRole("button", { name: /Rebuild ONA model/ }).waitFor({ timeout: 60_000 });
+  await prepareNativeFixtureV3(page, { family: "ona", sourcePreparation: false });
+  await runNativeFixtureV3(page);
   await page.getByTestId("open-ena-ordered-result-layout").waitFor({ timeout: 60_000 });
 }
 
@@ -660,42 +634,14 @@ let acceptance = null;
 let primaryFailure = null;
 let cleanupFailure = null;
 try {
-  const port = await findOpenPort();
-  const baseUrl = `http://127.0.0.1:${port}`;
-  const environment = {
-    ...process.env,
-    NEXT_DIST_DIR: ownedDistDirName,
-    OPEN_ENA_NODE_DRAG_SMOKE_ROUTE: "1",
-    OPEN_ENA_PUBLIC_ORIGIN: baseUrl,
-    OPEN_ENA_ALLOWED_ORIGINS: baseUrl,
-    OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1",
-  };
-  ownsDistDirectory = true;
-  const logFd = openSync(serverLogPath, "w");
-  try {
-    process.stdout.write("[node-drag smoke] start isolated development application ... ");
-    ownedServer = spawn(
-      "npm",
-      ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(port)],
-      {
-        cwd: projectRoot,
-        env: environment,
-        detached: process.platform !== "win32",
-        stdio: ["ignore", logFd, logFd],
-      },
-    );
-  } finally {
-    closeSync(logFd);
-  }
-  await waitForServer(`${baseUrl}/open-ena-node-drag-smoke`);
-  process.stdout.write("PASS\n");
-  runCli(["open", "about:blank", "--browser", browserName], "open browser", 120_000);
+  runtime = await createServedBrowserV3({ root: resolve(projectRoot), directory: artifactDirectory + "-runtime", credentials: { username, password, secret: sessionSecret }, redact, serverLogPath });
+  const baseUrl = runtime.baseUrl;
   browserOpened = true;
-  acceptance = runBrowserTask(
+  acceptance = await runBrowserTask(
     "drag standard ENA and ONA nodes in 2D and 3D",
     runNodeDragAcceptance,
     {
-      entryUrl: `${baseUrl}/open-ena-node-drag-smoke`,
+      entryUrl: `${baseUrl}/en/open-ena`,
       username,
       password,
       fixtureCsv: buildEndpointFixtureCsv(),

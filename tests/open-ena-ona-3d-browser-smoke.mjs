@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createServedBrowserV3, literalGit } from "./helpers/open-ena-served-browser-v3.mjs";
+import { prepareNativeFixtureV3, runNativeFixtureV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
 import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import {
@@ -103,42 +105,29 @@ function ensurePlaywrightWorkingDirectory() {
   return playwrightWorkingDirectory;
 }
 
-function runCli(args, label, timeout = 120_000) {
-  const playwrightCwd = ensurePlaywrightWorkingDirectory();
-  const taskNpmCache = join(playwrightCwd, "npm-cache");
-  mkdirSync(taskNpmCache, { recursive: true });
-  const inheritedEnvironment = Object.fromEntries(Object.entries(process.env).filter(([key]) => (
-    key.toLowerCase() !== "npm_config_cache"
-  )));
-  try {
-    return execFileSync(
-      playwrightCli.command,
-      [...playwrightCli.prefix, "--session", sessionName, ...args],
-      {
-        cwd: playwrightCwd,
-        encoding: "utf8",
-        env: {
-          ...inheritedEnvironment,
-          NPM_CONFIG_CACHE: taskNpmCache,
-          npm_config_cache: taskNpmCache,
-        },
-        maxBuffer: 32 * 1024 * 1024,
-        timeout,
-      },
-    );
-  } catch (caught) {
-    throw createSafePlaywrightCliError({ caught, label, redact });
+let runtime = null;
+async function runCli(args, label, timeout = 300000) {
+  if (args[0] === "--version") return "Playwright module 1.62.1 (owned foreground Chromium)";
+  if (!runtime) throw new Error("Owned production runtime is unavailable");
+  if (args[0] === "open") { await runtime.page.goto(args[1], { waitUntil: "domcontentloaded" }); return ""; }
+  if (args[0] === "close") { await runtime.close(primaryFailure); return ""; }
+  if (args[0] === "screenshot") { await runtime.page.screenshot({ path: args.at(-1), fullPage: true }); return ""; }
+  if (args[0] === "console") return `Errors: ${runtime.receipt.consoleErrors.length}\n${runtime.receipt.consoleErrors.join("\n")}`;
+  if (args[0] === "--raw" && args[1] === "run-code") {
+    const action = new Function(`return (${args[2]});`)();
+    return JSON.stringify(await runtime.stage(label, () => action(runtime.page), timeout));
   }
+  throw new Error("Unsupported owned browser operation");
 }
 
 function browserSource(task, args) {
-  return "async (page) => { const task = " + task.toString()
+  return "async (page) => { " + prepareNativeFixtureV3.toString() + "\n" + runNativeFixtureV3.toString() + "; const task = " + task.toString()
     + "; return await task(page, " + JSON.stringify(args) + "); }";
 }
 
-function runBrowserPhase(label, task, args = {}, timeout = 240_000) {
+async function runBrowserPhase(label, task, args = {}, timeout = 240_000) {
   process.stdout.write("[ONA 3D smoke] " + label + " ... ");
-  const output = runCli(["--raw", "run-code", browserSource(task, args)], label, timeout).trim();
+  const output = (await runCli(["--raw", "run-code", browserSource(task, args)], label, timeout)).trim();
   const result = output ? JSON.parse(output) : null;
   process.stdout.write("PASS\n");
   return result;
@@ -277,11 +266,7 @@ function artifactEvidence(path) {
 }
 
 function readGitEvidence() {
-  const git = (args) => execFileSync("git", args, {
-    cwd: projectRoot,
-    encoding: "utf8",
-    timeout: 30_000,
-  }).trim();
+  const git = (args) => literalGit(projectRoot, args);
   return {
     head: git(["rev-parse", "HEAD"]),
     tree: git(["rev-parse", "HEAD^{tree}"]),
@@ -350,9 +335,9 @@ async function runSyntheticLane(page, args) {
     }
     const originalPostMessage = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function auditedPostMessage(message, ...rest) {
-      if (message?.kind === "run" && message?.config) {
+      if (message?.kind === "run-open-ena-plan-v3" && message?.plan) {
         audit.analysisRunCount += 1;
-        audit.requestedAnalysisKinds.push(message.config.analysisKind ?? "ena");
+        audit.requestedAnalysisKinds.push(message.plan.configuration.analysisFamily === "ona" ? "ona" : "ena");
       }
       return originalPostMessage.call(this, message, ...rest);
     };
@@ -507,29 +492,13 @@ async function runSyntheticLane(page, args) {
     input.files = transfer.files;
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }, args.fixtureCsv);
-  await page.getByRole("heading", { name: "Define the ENA model" }).waitFor({ timeout: 30_000 });
+  await prepareNativeFixtureV3(page, { family: "ona", backward: args.rowsPerUnit });
   const modelTabs = page.getByRole("tablist", { name: "Model configuration" });
-  await modelTabs.getByRole("tab", { name: "Codes" }).click();
-  const networkSwitch = page.getByRole("switch", { name: "Network type", exact: true });
-  assertBrowser(await networkSwitch.getAttribute("aria-checked") === "true",
-    "the synthetic model did not start as Standard Network");
-  await networkSwitch.click();
-  assertBrowser(await networkSwitch.getAttribute("aria-checked") === "false",
-    "the synthetic model did not switch to Ordered Network");
-  await modelTabs.getByRole("tab", { name: "Windows" }).click();
-  await page.getByRole("radio", { name: /Confirmed source-record order/ }).click();
-  await page.getByRole("checkbox", { name: /I confirm that source-record order/ }).check();
-  await page.getByLabel("Total rows including the current response").fill(String(args.rowsPerUnit));
-  await modelTabs.getByRole("tab", { name: "Codes" }).click();
-  await page.getByRole("button", { name: "Edit p² directional mask" }).click();
+  await modelTabs.getByRole("tab", { name: /^Codes(,|$)/ }).click();
   const maskCell = page.getByRole("checkbox", { name: args.maskedDirection });
   assertBrowser(await maskCell.isChecked(), "the synthetic masked direction did not start enabled");
   await maskCell.uncheck();
-  await page.getByRole("button", { name: "Close directional mask editor" }).click();
-  const buildButton = page.getByRole("button", { name: "Build ONA model" });
-  assertBrowser(await buildButton.isEnabled(), "Build ONA model is disabled");
-  await buildButton.click();
-  await page.getByRole("button", { name: "Rebuild ONA model" }).waitFor({ timeout: 60_000 });
+  await runNativeFixtureV3(page);
   await page.getByTestId("open-ena-ordered-result-layout").waitFor({ timeout: 60_000 });
   const twoDPointAudit = await page.evaluate(() => {
     const wrappers = [...document.querySelectorAll('[data-ona-unit-point="true"]')];
@@ -893,64 +862,12 @@ let summary = null;
 let baseUrl = null;
 
 try {
-  execFileSync("npx", ["--version"], { encoding: "utf8", timeout: 30_000 });
-  const playwrightCliVersion = runCli(["--version"], "resolve Playwright CLI", 120_000).trim();
-  const port = await findOpenPort();
-  baseUrl = "http://127.0.0.1:" + port;
-  const authDatabaseUrl = await startEphemeralPostgres();
-  removeOwnedDistDirectory();
-  const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => (
-    !key.startsWith("OPEN_ENA_ONA_3D_SMOKE_")
-      && ![
-        "NEXT_DIST_DIR",
-        "OPEN_ENA_USERNAME",
-        "OPEN_ENA_PASSWORD",
-        "OPEN_ENA_SESSION_SECRET",
-        "OPEN_ENA_ACCOUNT_ID",
-        "OPEN_ENA_AUTH_DATABASE_URL",
-      ].includes(key)
-  )));
-  const ownedEnvironment = {
-    ...environment,
-    NODE_ENV: "production",
-    NEXT_DIST_DIR: ownedDistDirName,
-    OPEN_ENA_USERNAME: username,
-    OPEN_ENA_PASSWORD: password,
-    OPEN_ENA_SESSION_SECRET: sessionSecret,
-    OPEN_ENA_ACCOUNT_ID: accountId,
-    OPEN_ENA_AUTH_DATABASE_URL: authDatabaseUrl,
-    OPEN_ENA_PUBLIC_ORIGIN: baseUrl,
-    OPEN_ENA_ALLOWED_ORIGINS: baseUrl,
-    OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1",
-  };
-  const logFd = openSync(serverLogPath, "w");
-  try {
-    process.stdout.write("[ONA 3D smoke] build production application ... ");
-    execFileSync("npm", ["run", "build"], {
-      cwd: projectRoot,
-      env: ownedEnvironment,
-      stdio: ["ignore", logFd, logFd],
-      timeout: 600_000,
-    });
-    process.stdout.write("PASS\n");
-    ownedServer = spawn(
-      "npm",
-      ["run", "start", "--", "--hostname", "127.0.0.1", "--port", String(port)],
-      {
-        cwd: projectRoot,
-        detached: process.platform !== "win32",
-        env: ownedEnvironment,
-        stdio: ["ignore", logFd, logFd],
-      },
-    );
-  } finally {
-    closeSync(logFd);
-  }
-  await waitForServer(baseUrl + "/en/open-ena");
-  runCli(["open", "about:blank", "--browser", smokeBrowser], "open browser", 120_000);
+  const playwrightCliVersion = "Playwright module 1.62.1";
+  runtime = await createServedBrowserV3({ root: resolve(projectRoot), directory: artifactDirectory + "-runtime", credentials: { username, password, secret: sessionSecret, account: accountId }, redact, serverLogPath });
+  baseUrl = runtime.baseUrl;
   browserOpened = true;
   const fixtureCsv = buildOrderedFixtureCsv();
-  const synthetic = runBrowserPhase(
+  const synthetic = await runBrowserPhase(
     "run the synthetic directed ONA lifecycle",
     runSyntheticLane,
     {
@@ -967,7 +884,7 @@ try {
     360_000,
   );
   const yu = existsSync(privateWorkbookPath)
-    ? runBrowserPhase(
+    ? await runBrowserPhase(
         "run the aggregate-only Yu private lane",
         runYuPrivateLane,
         { entryUrl: baseUrl + "/en/open-ena", workbookPath: privateWorkbookPath },
@@ -994,7 +911,7 @@ try {
   primaryFailure = caught;
   if (browserOpened) {
     try {
-      runCli(["screenshot", "--filename", failureScreenshotPath], "capture failure screenshot", 30_000);
+      await runCli(["screenshot", "--filename", failureScreenshotPath], "capture failure screenshot", 30_000);
     } catch {
       // Preserve the primary product failure.
     }
@@ -1005,7 +922,7 @@ try {
   }
 } finally {
   try {
-    if (browserOpened) runCli(["close"], "close browser", 30_000);
+    if (browserOpened) await runCli(["close"], "close browser", 30_000);
   } catch (caught) {
     if (!primaryFailure) primaryFailure = caught;
   }

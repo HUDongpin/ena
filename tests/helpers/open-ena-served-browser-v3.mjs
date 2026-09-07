@@ -1,0 +1,106 @@
+// Shared owned production runtime for affected browser regressions. Never accepts an external server.
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { createServer } from "node:net";
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, rmSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { createRequire } from "node:module";
+import { OwnedSmokeLifecycle } from "./open-ena-models-v3-lifecycle.mjs";
+const require = createRequire(import.meta.url);
+const hash = value => createHash("sha256").update(value).digest("hex");
+export function literalGit(root, args) {
+  const pointer = statSync(join(root, ".git")).isDirectory() ? join(root, ".git") : readFileSync(join(root, ".git"), "utf8").trim().replace(/^gitdir: /u, "");
+  return execFileSync("git", ["--no-optional-locks", `--git-dir=${resolve(root, pointer)}`, `--work-tree=${root}`, "-c", `core.worktree=${root}`, "-c", "core.fsmonitor=false", ...args], { cwd: root, encoding: "utf8", timeout: 10000 }).trim();
+}
+function sourceManifest(root) {
+  const stages = new Map(literalGit(root, ["ls-files", "--stage", "-z"]).split("\0").filter(Boolean).map(entry => { const [metadata, path] = entry.split("\t"); return [path, metadata]; }));
+  return [...new Set(literalGit(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]).split("\0"))].filter(Boolean).sort().map(path => {
+    const stage = stages.get(path) ?? "";
+    if (stage.startsWith("160000 ")) return { path, mode: "160000", gitlinkOid: stage.split(" ")[1] };
+    assert.ok(statSync(join(root, path)).isFile());
+    return { path, mode: (statSync(join(root, path)).mode & 0o777).toString(8), sha256: hash(readFileSync(join(root, path))) };
+  });
+}
+function treeManifest(path, prefix = "") {
+  return readdirSync(path).sort().flatMap(name => { const relative = join(prefix, name); const full = join(path, name); return statSync(full).isDirectory() ? treeManifest(full, relative) : [{ path: relative, sha256: hash(readFileSync(full)) }]; });
+}
+async function port() {
+  return new Promise((yes, no) => { const server = createServer(); server.once("error", no); server.listen(0, "127.0.0.1", () => { const value = server.address().port; server.close(error => error ? no(error) : yes(value)); }); });
+}
+export async function createServedBrowserV3({ root, directory, credentials, redact, serverLogPath }) {
+  mkdirSync(directory, { recursive: true });
+  const safe = value => redact(value).replace(/ws:\/\/[^\s]+\/devtools\/browser\/[^\s]+/g, "[redacted browser endpoint]").replace(/postgresql:\/\/[^\s]+/g, "[redacted database endpoint]");
+  const json = (name, value) => writeFileSync(join(directory, name), JSON.stringify(value, null, 2) + "\n");
+  const receipt = { status: "running", sourceGitSha: literalGit(root, ["rev-parse", "HEAD"]), sourceParentSha: literalGit(root, ["rev-parse", "HEAD^"]), harnessPid: process.pid, node: process.version, servedAssets: [], stages: [], consoleErrors: [], pageErrors: [] };
+  const lifecycle = new OwnedSmokeLifecycle({ directory, redact: safe, overallMs: 1800000, onUpdate: state => { receipt.lifecycle = state; if (state.reason) { receipt.status = "fail"; receipt.failure = state.reason.message; } json("receipt.json", receipt); } });
+  let browser, page, databaseEntry, browserEntry, serverEntry, closing;
+  const database = join(directory, "postgres"), profile = join(directory, "browser-profile");
+  const env = { ...process.env, NEXT_DIST_DIR: ".next", NODE_ENV: "production", NEXT_TELEMETRY_DISABLED: "1", OPEN_ENA_USERNAME: credentials.username, OPEN_ENA_PASSWORD: credentials.password, OPEN_ENA_SESSION_SECRET: credentials.secret, OPEN_ENA_ACCOUNT_ID: credentials.account ?? "task38-local-account", OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1", npm_config_cache: join(directory, "npm-cache") };
+  const child = (label, command, args, timeout = 60000) => lifecycle.command(label, command, args, { cwd: root, env, logName: `${label}.log` }, timeout);
+  const assetReads = [];
+  const close = (failure) => closing ??= (async () => {
+    if (failure) { receipt.failure = safe(failure.stack ?? failure); lifecycle.cancel(receipt.failure); }
+    await Promise.allSettled(assetReads);
+    receipt.cleanup = await lifecycle.cleanup();
+    for (const [name, path, entry] of [["postgres", database, databaseEntry], ["browser profile", profile, browserEntry]]) {
+      if (!entry || entry.released) rmSync(path, { recursive: true, force: true });
+      else receipt.cleanup.errors.push({ name, message: "owned process not stopped; resource preserved" });
+    }
+    if (serverLogPath && serverEntry) writeFileSync(serverLogPath, safe(serverEntry.output));
+    receipt.status = failure || lifecycle.reason || receipt.cleanup.errors.length ? "fail" : "pass";
+    json("receipt.json", receipt); lifecycle.dispose();
+    if (receipt.cleanup.errors.length) throw new Error("Owned regression runtime cleanup failed; inspect custody receipt");
+  })();
+  const waitHttp = (url, label) => lifecycle.stage(label, async () => {
+    while (true) {
+      lifecycle.signal.throwIfAborted();
+      try { const response = await fetch(url, { redirect: "manual", signal: AbortSignal.any([lifecycle.signal, AbortSignal.timeout(3000)]) }); await response.body?.cancel(); if (response.status < 500) return; } catch { lifecycle.signal.throwIfAborted(); }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }, 90000);
+  try {
+    receipt.source = sourceManifest(root); json("source-before.json", receipt.source); receipt.sourceContentSha256 = hash(JSON.stringify(receipt.source));
+    await child("npm-version", "npm", ["--version"]); receipt.npm = readFileSync(join(directory, "npm-version.log"), "utf8").trim();
+    await child("npm-path", "which", ["npm"]); receipt.npmPath = readFileSync(join(directory, "npm-path.log"), "utf8").trim();
+    receipt.build = await child("build", "npm", ["run", "build"], 600000);
+    assert.deepEqual(sourceManifest(root), receipt.source, "source changed during owned production build");
+    const files = treeManifest(join(root, ".next")).filter(x => !x.path.startsWith("cache/") && !x.path.startsWith("diagnostics/") && !["trace", "trace-build"].includes(x.path));
+    json("build-files.json", files); receipt.build.contentSha256 = hash(JSON.stringify(files)); receipt.build.buildId = readFileSync(join(root, ".next/BUILD_ID"), "utf8").trim();
+    await child("initdb", "initdb", ["--pgdata", database, "--auth", "trust", "--username", "postgres", "--encoding", "UTF8", "--no-locale"]);
+    const databasePort = await port();
+    databaseEntry = lifecycle.spawnOwned("postgres", "postgres", ["-D", database, "-h", "127.0.0.1", "-p", String(databasePort), "-c", "unix_socket_directories="], { cwd: root, env });
+    receipt.database = { port: databasePort, directory: database, pid: databaseEntry.child.pid };
+    await lifecycle.stage("postgres readiness", async () => {
+      for (let attempt = 0; ; attempt++) {
+        try { await child(`postgres-ready-${attempt}`, "pg_isready", ["--host", "127.0.0.1", "--port", String(databasePort), "--username", "postgres"], 5000); break; }
+        catch (error) { lifecycle.signal.throwIfAborted(); if (databaseEntry.child.exitCode !== null) throw error; await new Promise(resolve => setTimeout(resolve, 100)); }
+      }
+    }, 60000);
+    await child("auth-migration", "psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(databasePort), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations/002_open_ena_auth_security.sql")]);
+    const serverPort = await port(), baseUrl = `http://127.0.0.1:${serverPort}`;
+    serverEntry = lifecycle.spawnOwned("server", process.execPath, [join(root, "node_modules/next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "--port", String(serverPort)], { cwd: root, env: { ...env, OPEN_ENA_AUTH_DATABASE_URL: `postgresql://postgres@127.0.0.1:${databasePort}/postgres`, OPEN_ENA_PUBLIC_ORIGIN: baseUrl, OPEN_ENA_ALLOWED_ORIGINS: baseUrl } });
+    receipt.server = { port: serverPort, baseUrl, pid: serverEntry.child.pid };
+    await waitHttp(`${baseUrl}/en/open-ena`, "server readiness");
+    const { chromium } = await import("playwright");
+    const metadata = JSON.parse(readFileSync(join(dirname(require.resolve("playwright-core/package.json")), "browsers.json"), "utf8")).browsers.find(x => x.name === "chromium");
+    assert.equal(require("playwright/package.json").version, "1.62.1"); assert.equal(metadata.revision, "1234");
+    const browserPort = await port();
+    const args = ["--headless", "--hide-scrollbars", "--no-sandbox", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-extensions", "--disable-breakpad", "--disable-crash-reporter", "--password-store=basic", "--use-mock-keychain", "--remote-debugging-address=127.0.0.1", `--remote-debugging-port=${browserPort}`, `--user-data-dir=${profile}`];
+    browserEntry = lifecycle.spawnOwned("browser", chromium.executablePath(), args, { cwd: root, env });
+    receipt.browser = { port: browserPort, pid: browserEntry.child.pid, executablePath: chromium.executablePath(), args, revision: metadata.revision, packageVersion: "1.62.1" };
+    lifecycle.addCleanup("browser connection", () => browser?.close());
+    await waitHttp(`http://127.0.0.1:${browserPort}/json/version`, "browser readiness");
+    browser = await lifecycle.stage("connect browser", () => chromium.connectOverCDP(`http://127.0.0.1:${browserPort}`, { timeout: 30000 }), 30000);
+    receipt.browser.version = browser.version(); assert.equal(browser.version(), metadata.browserVersion);
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+    page = await context.newPage(); page.setDefaultTimeout(15000);
+    page.on("console", message => { if (message.type() === "error") receipt.consoleErrors.push(safe(message.text())); });
+    page.on("pageerror", error => receipt.pageErrors.push(safe(error.message)));
+    page.on("response", response => {
+      const path = new URL(response.url()).pathname;
+      if (path.startsWith("/_next/static/")) assetReads.push(response.body().then(bytes => receipt.servedAssets.push({ path, status: response.status(), sha256: hash(bytes) })).catch(error => receipt.servedAssets.push({ path, error: safe(error.message) })));
+    });
+    return { baseUrl, browser, page, lifecycle, receipt, close, async stage(label, action, timeout = 300000) { const entry = { label, status: "running" }; receipt.stages.push(entry); try { const value = await lifecycle.stage(label, action, timeout); entry.status = "pass"; return value; } catch (error) { entry.status = "fail"; entry.error = safe(error.message); throw error; } finally { json("receipt.json", receipt); } } };
+  } catch (error) { await close(error); throw error; }
+}
