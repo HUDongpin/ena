@@ -271,7 +271,7 @@ function extractAndVerifyBundle(zipPath, kind, participantLevelIncluded) {
   assert.deepEqual(plot.uncertaintyGeometry, []);
   assert.deepEqual(plot.glyph, { symbol: "square", size: 7 });
   const inferenceRequestKinds = analysis.ranks.map(rank => rank.kind);
-  assert.deepEqual(inferenceRequestKinds, ["independent-period", "paired-periods", "repeated-periods"]);
+  assert.deepEqual(inferenceRequestKinds, ["trajectory-independent-period", "trajectory-paired-periods", "trajectory-repeated-periods"]);
   assert.deepEqual(manifest.requestFamilies, [...inferenceRequestKinds, "path-comparison"]);
   const path = analysis.pathComparison;
   assert.equal(path.repetitions, 500); assert.equal(path.seed, 2026);
@@ -466,7 +466,7 @@ async function authenticateAndRunTrajectory(page, args) {
   await groupSelects.nth(0).selectOption(identities.dictionary.groups[0].token);
   await groupSelects.nth(1).selectOption(identities.dictionary.groups[1].token);
   await page.getByRole("checkbox", { name: "I confirm these fitted Units identify the same entities across periods.", exact: true }).check();
-  const designs = [{ design: "independent", kind: "independent-period", count: 1, method: "mann-whitney" }, { design: "paired", kind: "paired-periods", count: 2, method: "wilcoxon-signed-rank" }, { design: "repeated", kind: "repeated-periods", count: orderedHorizons.length, method: "friedman" }];
+  const designs = [{ design: "independent", kind: "independent-period", count: 1, method: "mann-whitney-u" }, { design: "paired", kind: "paired-periods", count: 2, method: "wilcoxon-signed-rank" }, { design: "repeated", kind: "repeated-periods", count: orderedHorizons.length, method: "friedman" }];
   const rankDownloads = [];
   for (const design of designs) {
     for (const horizon of orderedHorizons) await page.getByRole("checkbox", { name: horizon.displayLabel, exact: true }).uncheck();
@@ -479,7 +479,7 @@ async function authenticateAndRunTrajectory(page, args) {
     const value = JSON.parse(readFileSync(descriptor.path, "utf8"));
     assert.equal(value.kind, "open-ena-native-post-model-statistics");
     assert.deepEqual(value.binding, science.binding);
-    assert.equal(value.inference.kind, design.kind);
+    assert.equal(value.inference.kind, `trajectory-${design.kind}`);
     const rows = value.inference.rows ?? value.inference.omnibusRows;
     assert.ok(rows.length > 0 && rows.every(row => row.test === design.method));
     assert.ok(value.inference.ledger, "rank design must retain genuine inclusion ledger");
