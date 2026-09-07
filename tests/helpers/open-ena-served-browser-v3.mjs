@@ -33,9 +33,16 @@ export async function settleAssetReadsBoundedV3(reads, timeoutMs = 5000) {
   assert.ok(Number.isInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 30000);
   let settled = 0, timer;
   const startedAt = new Date().toISOString();
-  const pendingReads = reads.map(read => Promise.resolve(read).then(() => { settled++; }, () => { settled++; }));
+  const drain = async () => {
+    let observed = 0;
+    while (observed !== reads.length) {
+      const pendingReads = reads.slice(observed); observed = reads.length;
+      await Promise.all(pendingReads.map(read => Promise.resolve(read).then(() => { settled++; }, () => { settled++; })));
+    }
+    return false;
+  };
   try {
-    const timedOut = await Promise.race([Promise.all(pendingReads).then(() => false), new Promise(resolve => { timer = setTimeout(() => resolve(true), timeoutMs); })]);
+    const timedOut = await Promise.race([drain(), new Promise(resolve => { timer = setTimeout(() => resolve(true), timeoutMs); })]);
     return { startedAt, finishedAt: new Date().toISOString(), total: reads.length, settled, pending: reads.length - settled, timedOut };
   } finally { clearTimeout(timer); }
 }
@@ -70,7 +77,7 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
     if (failure) { receipt.failure = safe(failure.stack ?? failure); lifecycle.cancel(receipt.failure); }
     receipt.assetReadState.cleanupSettlement = await settleAssetReadsBoundedV3(assetReads);
     receipt.cleanup = await lifecycle.cleanup();
-    if (receipt.assetReadState.cleanupSettlement.timedOut) receipt.cleanup.errors.push({ name: "static asset read settlement", message: `Timed out with ${receipt.assetReadState.cleanupSettlement.pending} required asset reads pending; owned process cleanup still ran` });
+    if (receipt.assetReadState.cleanupSettlement.timedOut || receipt.assetReadState.cleanupSettlement.pending > 0 || receipt.assetReadState.inFlight > 0) receipt.cleanup.errors.push({ name: "static asset read settlement", message: `Timed out with ${receipt.assetReadState.cleanupSettlement.pending} required asset reads pending; owned process cleanup still ran` });
     for (const [name, path, entry] of [["postgres", database, databaseEntry], ["browser profile", profile, browserEntry]]) {
       if (!entry || entry.released) rmSync(path, { recursive: true, force: true });
       else receipt.cleanup.errors.push({ name, message: "owned process not stopped; resource preserved" });

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 const smokePath = join(process.cwd(), "tests", "open-ena-longitudinal-v3-browser-smoke.mjs");
 const source = readFileSync(smokePath, "utf8");
+type AssetSettlementHelper = { settleAssetReadsBoundedV3: (reads: Promise<unknown>[], timeoutMs: number) => Promise<{ timedOut: boolean; total: number; settled: number; pending: number }> };
 const requires = (tokens: string[]) => { for (const token of tokens) assert.ok(source.includes(token), `missing preserved longitudinal coverage: ${token}`); };
 
 // The retired component names, Plotly 2D ranges and V2 ZIP grammar are intentionally
@@ -200,7 +201,7 @@ test("rendered path and independent rank downloads must exactly agree with aggre
 test("pending fallback uses actual clipboard promise and denial never starts serialization", () => { requires(["forced fallback during genuinely pending image action", "denied identity approval started image serialization", "pending fallback Tab escaped dialog", "pending fallback Shift+Tab escaped dialog"]); });
 
 test("asset settlement timeout cannot prevent owned process cleanup", async () => {
-  const helper = await import("./helpers/open-ena-served-browser-v3.mjs");
+  const helper: AssetSettlementHelper = await import(join(process.cwd(), "tests/helpers/open-ena-served-browser-v3.mjs"));
   assert.equal(typeof helper.settleAssetReadsBoundedV3, "function");
   const started = Date.now();
   const stalled = await helper.settleAssetReadsBoundedV3([Promise.resolve(), new Promise(() => {})], 20);
@@ -208,4 +209,14 @@ test("asset settlement timeout cannot prevent owned process cleanup", async () =
   assert.ok(Date.now() - started < 1000);
   const complete = await helper.settleAssetReadsBoundedV3([Promise.resolve(), Promise.reject(new Error("observed error"))], 100);
   assert.equal(complete.timedOut, false); assert.equal(complete.pending, 0); assert.equal(complete.settled, 2);
+});
+
+test("asset settlement drains newly appended responses within the original deadline", async () => {
+  const { settleAssetReadsBoundedV3 }: AssetSettlementHelper = await import(join(process.cwd(), "tests/helpers/open-ena-served-browser-v3.mjs"));
+  let release!: () => void;
+  const reads = [new Promise<void>(resolve => { release = resolve; })];
+  const pending = settleAssetReadsBoundedV3(reads, 30);
+  reads.push(new Promise(() => {})); release();
+  const result = await pending;
+  assert.equal(result.timedOut, true); assert.equal(result.pending, 1); assert.equal(result.total, 2);
 });
