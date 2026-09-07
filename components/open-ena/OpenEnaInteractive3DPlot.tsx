@@ -628,7 +628,10 @@ export default function OpenEnaInteractive3DPlot({
         nodeMoveFrameRef.current = null;
       }
       if (actionStatusTimerRef.current !== null) window.clearTimeout(actionStatusTimerRef.current);
-      if (Plotly && plotRoot) void resources.close(() => Plotly.purge(plotRoot));
+      if (Plotly && plotRoot) void resources.close(() => Plotly.purge(plotRoot)).catch(() => {
+        // A failed resource cleanup must remain observable after UI unmount.
+        console.error(copy.plot.actionUnavailable);
+      });
     };
   }, []);
 

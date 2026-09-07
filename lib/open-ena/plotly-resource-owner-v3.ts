@@ -5,45 +5,66 @@ export interface OpenEnaOwnedGlSceneV3 {
   _stopped?: boolean;
 }
 
-/** One interactive application root only. Never claims Plotly's shared static
- * export context. Pinned Plotly 3.7.0 setViewport stops the previous glplot but
- * leaves its canvas and GL caches alive; purge also stops rather than loses GL.
- * Ownership is captured from this root's actual scene, not all document canvases.
+/** Owns one interactive root, never Plotly's shared static export context.
+ * Pinned Plotly 3.7.0 setViewport stops old glplots without retiring their GL
+ * caches/canvases. Serialize this root's operations so every replacement is
+ * captured before the next operation can replace it, including across awaits.
  */
 export function createOpenEnaPlotlyResourceOwnerV3(current: () => OpenEnaOwnedGlSceneV3 | null) {
   const owned = new Set<OpenEnaOwnedGlSceneV3>();
-  let pending = 0, closing = false;
-  let cleanup: (() => void) | null = null;
-  let resolveClose: (() => void) | null = null;
+  let tail = Promise.resolve();
+  let closing = false;
   let closePromise: Promise<void> | null = null;
   const capture = () => { const scene = current(); if (scene) owned.add(scene); return scene; };
-  const settle = () => {
-    if (pending) return;
+  const retire = (all = false) => {
     const active = capture();
-    if (closing && cleanup) { cleanup(); cleanup = null; }
+    const failures: unknown[] = [];
     for (const scene of owned) {
-      // The vendor's stopped flag establishes that render/listener disposal has
-      // finished. A pending operation may still use the old scene, so this only
-      // runs after ALL operations (including toImage) have settled.
-      if ((!closing && scene === active) || !scene._stopped) continue;
-      if (!scene.gl.isContextLost()) scene.gl.getExtension("WEBGL_lose_context")?.loseContext();
-      scene.canvas.remove();
-      owned.delete(scene);
+      if (!all && scene === active) continue;
+      try {
+        if (!scene._stopped) throw new Error("Plotly has not stopped a retired scene.");
+        if (!scene.gl.isContextLost()) {
+          const extension = scene.gl.getExtension("WEBGL_lose_context");
+          if (!extension) throw new Error("GL context retirement is unavailable.");
+          extension.loseContext();
+        }
+        // DOM removal is not the resource-release mechanism. It follows the
+        // stopped-scene ownership check and explicit native context retirement.
+        scene.canvas.remove();
+        owned.delete(scene);
+      } catch (error) { failures.push(error); }
     }
-    if (closing) resolveClose?.();
+    if (failures.length === 1) throw failures[0];
+    if (failures.length) throw new AggregateError(failures, "Plot context retirement failed.");
   };
   return {
-    async run<T>(operation: () => Promise<T> | T): Promise<T> {
-      if (closing) throw new Error("Plot root is closed.");
-      capture(); pending++;
-      try { return await operation(); }
-      finally { capture(); pending--; settle(); }
+    run<T>(operation: () => Promise<T> | T): Promise<T> {
+      if (closing) return Promise.reject(new Error("Plot root is closed."));
+      const result = tail.then(async () => {
+        capture();
+        let value!: T, failure: unknown, failed = false;
+        try { value = await operation(); }
+        catch (error) { failure = error; failed = true; }
+        try { retire(); }
+        catch (cleanupError) {
+          if (failed) throw new AggregateError([failure, cleanupError], "Plot operation and retirement failed.", { cause: failure });
+          throw cleanupError;
+        }
+        if (failed) throw failure;
+        return value;
+      });
+      // A failed operation does not strand the queue or swallow its own error.
+      tail = result.then(() => {}, () => {});
+      return result;
     },
     close(purge: () => void): Promise<void> {
       if (closePromise) return closePromise;
-      closing = true; cleanup = purge;
-      closePromise = new Promise<void>(resolve => { resolveClose = resolve; });
-      settle();
+      closing = true;
+      closePromise = tail.then(() => {
+        capture();
+        purge();
+        retire(true);
+      });
       return closePromise;
     },
   };

@@ -87,6 +87,7 @@ export async function checkPlotlyResourceLifecycleV3(page, record) {
   }
   const panel = page.getByTestId("open-ena-ona-3d-overall-plot");
   const imageBefore = audit.at(-1).created;
+  const sharedBefore = audit.at(-1).rows.find(row => row.imageContext).liveObjects;
   for (const reject of [false, true, false]) {
     await page.evaluate(reject => {
       window.__openEnaGlResourceAudit.image(true);
@@ -115,6 +116,9 @@ export async function checkPlotlyResourceLifecycleV3(page, record) {
     }
     const row = await snapshot(reject ? "png-rejected" : "png-success"); bounded(row);
     assert.equal(row.created, imageBefore, "PNG success/rejection must reuse the warmed static context");
+    const shared = row.rows.find(context => context.imageContext);
+    assert.equal(shared.lost, false, "shared static export context must remain reusable");
+    for (const [kind, count] of Object.entries(shared.liveObjects)) assert.ok(count <= (sharedBefore[kind] ?? 0), "same PNG must not accumulate live " + kind);
   }
   await page.locator(".ena-visual-toolbar").getByRole("button", { name: /2D ONA/ }).click();
   await page.getByTestId("open-ena-ordered-result-layout").waitFor();
