@@ -92,7 +92,10 @@ for (const path of [
 // not safe evidence. Status and fixed aggregate assertions remain separately reported.
 let privateLaneActive = false;
 function redact(value) {
-  if (privateLaneActive) return "[private ONA diagnostic withheld; inspect fixed aggregate failure stage]";
+  if (privateLaneActive) {
+    const stage = String(value ?? "").match(/Private ONA gate failed: (private (?:native source setup|bound aggregate and explicit order|actual circles and three directed scenes|full-run rendered aggregate and bounded audit tables)); private details withheld/);
+    return stage ? stage[0] : "[private ONA diagnostic withheld; inspect fixed aggregate failure stage]";
+  }
   return String(value ?? "")
     .replaceAll(username, "[redacted-username]")
     .replaceAll(password, "[redacted-password]")
@@ -489,6 +492,7 @@ async function runSyntheticLane(page, args) {
   await page.getByRole("button", { name: "Sign in" }).click();
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
   await rail.waitFor({ timeout: 30_000 });
+  await page.__task38FinishAuthentication();
   await rail.getByRole("button", { name: "Data", exact: true }).click();
   const fileInput = page.locator('input[type=file][accept*=".csv"]');
   await fileInput.evaluate((input, csv) => {
@@ -619,9 +623,14 @@ async function runSyntheticLane(page, args) {
 
   await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
   const initialAxes = await Promise.all([1, 2, 3].map(index => page.getByRole("combobox", { name: `Axis ${index}`, exact: true }).inputValue()));
-  await page.getByRole("combobox", { name: "Axis 3", exact: true }).selectOption(initialAxes[0]);
+  const thirdAxis = page.getByRole("combobox", { name: "Axis 3", exact: true });
+  const supportedAxisOptions = await thirdAxis.locator("option").evaluateAll(options => options.map(option => option.value).filter(Boolean));
+  const alternateAxis = supportedAxisOptions.find(axis => !initialAxes.includes(axis));
+  assertBrowser(Boolean(alternateAxis), "synthetic ONA fixture needs a fourth supported axis for a valid reversible 3D axis change");
+  await thirdAxis.selectOption(alternateAxis);
   await waitForOrderedPlots();
-  await page.getByRole("combobox", { name: "Axis 3", exact: true }).selectOption(initialAxes[2]);
+  assertBrowser(await thirdAxis.inputValue() === alternateAxis, "native axis control did not retain the selected supported dimension");
+  await thirdAxis.selectOption(initialAxes[2]);
   await waitForOrderedPlots();
   await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
   const threshold = page.getByRole("slider", { name: "Edge threshold" });
@@ -685,6 +694,8 @@ async function runSyntheticLane(page, args) {
       entry.initiatorType === "script" && entry.startTime >= start
     ));
     return {
+      scripts: scripts.map(entry => ({ name: new URL(entry.name).pathname, startTime: entry.startTime, transferSize: entry.transferSize, decodedBodySize: entry.decodedBodySize })),
+      measurementStart: start,
       transferBytes: scripts.reduce((sum, entry) => sum + (entry.transferSize || 0), 0),
       decodedBytes: scripts.reduce((sum, entry) => sum + (entry.decodedBodySize || 0), 0),
       largestLongTaskMs: Math.max(0, ...window.__openEnaOna3dAudit.longTasks),
@@ -723,143 +734,132 @@ async function runSyntheticLane(page, args) {
 }
 
 async function runYuPrivateLane(page, args) {
-  const assertBrowser = (condition, message) => {
-    if (!condition) throw new Error(message);
-  };
-  const consoleErrors = [];
-  const pageErrors = [];
-  page.on("console", (message) => {
-    if (message.type() === "error") consoleErrors.push(message.text());
-  });
-  page.on("pageerror", (error) => pageErrors.push(error.message));
-  await page.goto(args.entryUrl, { waitUntil: "domcontentloaded" });
-  const rail = page.getByRole("navigation", { name: "Analysis modes" });
-  await rail.waitFor({ timeout: 30_000 });
-  await rail.getByRole("button", { name: "Data", exact: true }).click();
-  await page.locator('input[type=file][accept*=".xlsx"]').setInputFiles(args.workbookPath);
-  await page.getByRole("heading", { name: "Define the ENA model" }).waitFor({ timeout: 30_000 });
-  const modelTabs = page.getByRole("tablist", { name: "Model configuration" });
-  await modelTabs.getByRole("tab", { name: "Codes" }).click();
-  const networkSwitch = page.getByRole("switch", { name: "Network type", exact: true });
-  assertBrowser(await networkSwitch.getAttribute("aria-checked") === "true",
-    "the Yu model did not start as Standard Network");
-  await networkSwitch.click();
-  assertBrowser(await networkSwitch.getAttribute("aria-checked") === "false",
-    "the Yu model did not switch to Ordered Network");
-  await modelTabs.getByRole("tab", { name: "Units" }).click();
-  const unitIdentity = page.locator('[data-ena-official-field-path="true"][aria-label="Unit identity"]');
-  const unitIdentityPicker = unitIdentity.getByRole("button", {
-    name: "Add or remove Unit identity fields",
-    exact: true,
-  });
-  await unitIdentityPicker.click();
-  await unitIdentity.getByRole("checkbox", { name: "Group", exact: true }).check();
-  await unitIdentity.getByRole("checkbox", { name: "Name", exact: true }).check();
-  await unitIdentity.getByRole("checkbox", { name: "Lesson", exact: true }).uncheck();
-  await unitIdentityPicker.click();
-  await page.getByLabel("Comparison group").selectOption("Group");
-  await modelTabs.getByRole("tab", { name: "Horizons" }).click();
-  const horizonIdentity = page.locator('[data-ena-official-field-path="true"][aria-label="Horizon identity"]');
-  const horizonIdentityPicker = horizonIdentity.getByRole("button", {
-    name: "Add or remove Horizon identity fields",
-    exact: true,
-  });
-  await horizonIdentityPicker.click();
-  await horizonIdentity.getByRole("checkbox", { name: "Group", exact: true }).check();
-  await horizonIdentity.getByRole("checkbox", { name: "Name", exact: true }).check();
-  await horizonIdentity.getByRole("checkbox", { name: "Lesson", exact: true }).uncheck();
-  await horizonIdentityPicker.click();
-  await modelTabs.getByRole("tab", { name: "Windows" }).click();
-  const orderGroup = page.getByRole("group", { name: "Order columns and typed comparators" });
-  await orderGroup.getByRole("checkbox", { name: "Lesson", exact: true }).check();
-  await orderGroup.getByLabel("Comparator").selectOption("string");
-  await page.getByLabel("Total rows including the current response").fill("2");
-  const buildButton = page.getByRole("button", { name: "Build ONA model" });
-  assertBrowser(await buildButton.isEnabled(), "Yu Build ONA model is disabled");
-  await buildButton.click();
-  await page.getByRole("button", { name: "Rebuild ONA model" }).waitFor({ timeout: 90_000 });
-  const pointAudit = await page.evaluate(() => {
-    const points = [...document.querySelectorAll('[data-ona-unit-point="true"]')];
-    return {
-      count: points.length,
-      allCircles: points.every((wrapper) => {
-        const point = wrapper.querySelector("circle");
-        return wrapper.getAttribute("data-ona-point-shape") === "circle"
-          && point?.tagName.toLowerCase() === "circle"
-          && !wrapper.querySelector("rect, polygon");
-      }),
+  // All values that can identify Units stay inside the page. Only fixed
+  // aggregate failures and numeric/boolean receipts cross this boundary.
+  let stage = "private native source setup";
+  let consoleErrors = 0, pageErrors = 0;
+  const onConsole = message => { if (message.type() === "error") consoleErrors++; };
+  const onPageError = () => { pageErrors++; };
+  page.on("console", onConsole); page.on("pageerror", onPageError);
+  const check = (value, message) => { if (!value) throw new Error(message); };
+  try {
+    const rail = page.getByRole("navigation", { name: "Analysis modes" });
+    await rail.getByRole("button", { name: "Data", exact: true }).click();
+    await page.locator('input[type=file][accept*=".xlsx"]').setInputFiles(args.workbookPath);
+    await prepareNativeFixtureV3(page, { codes: ["EC", "ICT", "MCO", "NI", "SR", "SC", "ATT"], family: "ona", sourcePreparation: false, units: ["Group", "Name"], horizons: ["Group", "Name"], group: "Group", backward: 2 });
+    await page.getByRole("radio", { name: "Sort by fields", exact: true }).check();
+    await page.getByRole("button", { name: "Add order key", exact: true }).click();
+    const order = page.locator(".ena-model-order-v3-key");
+    check(await order.count() === 1, "one explicit Lesson order key required");
+    await order.getByRole("combobox", { name: "Field", exact: true }).selectOption("Lesson");
+    await order.getByRole("combobox", { name: "Direction", exact: true }).selectOption("ascending");
+    await order.getByRole("combobox", { name: "Comparator", exact: true }).selectOption("text");
+    await order.getByRole("textbox", { name: "Locale", exact: true }).fill("en");
+    await order.getByRole("combobox", { name: "Sensitivity", exact: true }).selectOption("variant");
+    await order.getByRole("checkbox", { name: "Numeric collation", exact: true }).uncheck();
+    // The native text comparator is explicit, including its collation policy.
+    // The actual bound source order is checked against literal string order below.
+    await runNativeFixtureV3(page);
+    stage = "private bound aggregate and explicit order";
+    const aggregate = await page.evaluate(() => {
+      const fail = () => { throw new Error("private bound aggregate contract mismatch"); };
+      const audit = window.__openEnaNativeAudit, response = audit?.responses.at(-1);
+      const request = audit?.requests.find(item => item.id === response?.id), r = response?.result, p = request?.plan;
+      if (!r || !p || response.executionPlanSha256 !== p.header.executionPlanSha256 || r.binding.executionPlanSha256 !== p.header.executionPlanSha256 || r.binding.datasetSha256 !== p.header.datasetSha256 || r.configuration.analysisFamily !== "ona" || document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") !== "current") fail();
+      const c = r.configuration;
+      if (JSON.stringify(c.units.columns) !== '["Group","Name"]' || JSON.stringify(c.horizons.columns) !== '["Group","Name"]' || c.window.backward.kind !== "finite" || c.window.backward.value !== 2 || c.window.forward !== 0 || c.window.rowOrder.kind !== "columns" || c.window.rowOrder.keys.length !== 1 || c.window.rowOrder.keys[0].column !== "Lesson" || c.window.rowOrder.keys[0].direction !== "ascending" || c.window.rowOrder.keys[0].comparator.type !== "text") fail();
+      const sourceByIndex = new Map(p.sourceProof.rows.map(row => [row.sourceRowIndex, row.values]));
+      const horizonRows = new Map();
+      for (const index of p.runtimeSourceRowIndices) {
+        const row = p.rows.find(row => row.sourceRowIndex === index), source = sourceByIndex.get(index);
+        if (!row || typeof source?.Lesson !== "string") fail();
+        const prior = horizonRows.get(row.horizonToken) ?? [];
+        prior.push({ index, lesson: source.Lesson }); horizonRows.set(row.horizonToken, prior);
+      }
+      if (horizonRows.size !== 87) fail();
+      for (const rows of horizonRows.values()) {
+        if (rows.length !== 2) fail();
+        const expected = [...rows].sort((a, b) => a.lesson === b.lesson ? a.index - b.index : a.lesson < b.lesson ? -1 : 1);
+        if (rows.some((row, index) => row.index !== expected[index].index)) fail();
+      }
+      const codes = r.executionProvenance.labels.codes;
+      if (codes.length !== 7 || new Set(codes.map(code => code.column)).size !== 7 || new Set(codes.map(code => code.sourceColumn)).size !== 7 || JSON.stringify(codes.map(code => code.sourceColumn)) !== '["EC","ICT","MCO","NI","SR","SC","ATT"]') fail();
+      const edges = r.set.adjacencyKey;
+      if (edges.length !== 49 || r.set.codeColumns.length !== 49 || r.set.codes.length !== 7 || r.set.points.length !== 87 || r.set.connectionCounts.length !== 87 || r.executionProvenance.identityDictionary.units.length !== 87) fail();
+      let rawTotal = 0, rawSelfConnections = 0, zeroNetworks = 0;
+      const totals = edges.map(() => 0);
+      for (const row of r.set.connectionCounts) {
+        let unitTotal = 0;
+        edges.forEach((edge, index) => {
+          const value = row[edge.name];
+          if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || edge.sourceIndex !== index % 7 || edge.targetIndex !== Math.floor(index / 7)) fail();
+          unitTotal += value; totals[index] += value; rawTotal += value;
+          if (edge.sourceIndex === edge.targetIndex) rawSelfConnections += value;
+        });
+        if (unitTotal === 0) zeroNetworks++;
+      }
+      const sourceRows = r.executionProvenance.resources.observed.processedRows;
+      if (sourceRows !== 174 || p.rows.length !== 174 || r.orderedAudit.responseRowIndices.length !== 174 || r.executionProvenance.ordering.runtimeSourceRowIndices.length !== 174 || rawTotal !== 811 || zeroNetworks !== 3 || rawSelfConnections <= 0 || r.orderedAudit.edgeValues.flat().reduce((sum, value) => sum + value, 0) !== rawTotal) fail();
+      window.__task38PrivateOna = { binding: JSON.stringify(r.binding), totals, rawTotal, rawSelfConnections, zeroNetworks };
+      return { sourceRows, units: r.set.points.length, codeNodeCount: codes.length, directedDimensions: edges.length, connectionTotal: rawTotal, selfConnections: rawSelfConnections, zeroNetworks, actualNativeBinding: true, literalStringOrderParity: true };
+    });
+    stage = "private actual circles and three directed scenes";
+    const pointAudit = await page.evaluate(() => {
+      const points = [...document.querySelectorAll('[data-ona-unit-point="true"]')];
+      return { count: points.length, allCircles: points.every(point => point.getAttribute("data-ona-point-shape") === "circle" && point.querySelector("circle") && !point.querySelector("rect,polygon")) };
+    });
+    check(pointAudit.count === 87 && pointAudit.allCircles, "87 actual circle Units required");
+    const visualization = page.locator(".ena-visual-toolbar");
+    await visualization.getByRole("button", { name: /3D ONA/ }).click();
+    const waitPlots = async () => {
+      for (const id of ["open-ena-ona-3d-overall-plot", "open-ena-ona-3d-primary-plot", "open-ena-ona-3d-secondary-plot"]) await page.getByTestId(id).locator('[data-ena-interactive-camera="true"][aria-busy="false"]').waitFor({ timeout: 60000 });
     };
-  });
-  assertBrowser(pointAudit.count === 87 && pointAudit.allCircles, "Yu 2D unit points are not 87 circles");
-  const visualization = page.locator(".ena-visual-toolbar");
-  await visualization.getByRole("button", { name: /3D ONA/ }).click();
-  for (const id of [
-    "open-ena-ona-3d-overall-plot",
-    "open-ena-ona-3d-primary-plot",
-    "open-ena-ona-3d-secondary-plot",
-  ]) {
-    const panel = page.getByTestId(id);
-    await panel.locator('[data-ena-interactive-camera="true"][aria-busy="false"]')
-      .waitFor({ state: "visible", timeout: 90_000 });
-  }
-  const traceReceipt = await page.evaluate(() => {
-    const root = document.querySelector(
-      '[data-testid="open-ena-ona-3d-overall-plot"] [data-ena-plotly-root="true"]',
-    );
-    const region = document.querySelector(
-      '[data-testid="open-ena-ona-3d-overall-plot"] [data-ena-interactive-camera="true"]',
-    );
-    const traces = Array.isArray(root?.data) ? root.data : [];
-    return {
-      codeNodeCount: Number(region?.getAttribute("data-ena-code-node-count")),
-      arrows: traces.filter((trace) => trace.meta?.role === "ordered-edge-arrowhead").length,
-      selfLoops: traces.filter((trace) => trace.meta?.role === "ordered-self-loop-shaft").length,
-      allUnitSymbolsCircle: traces.filter((trace) => trace.meta?.role === "unit-points")
-        .every((trace) => trace.marker?.symbol === "circle"),
-    };
-  });
-  assertBrowser(traceReceipt.codeNodeCount === 7, "Yu ONA does not show seven code nodes");
-  assertBrowser(traceReceipt.arrows > 0,
-    `Yu ONA directed arrows are missing (visible arrow traces: ${traceReceipt.arrows})`);
-  assertBrowser(traceReceipt.allUnitSymbolsCircle, "Yu 3D unit base symbols are not circles");
-  await visualization.getByRole("button", { name: /2D ONA/ }).click();
-  await visualization.getByRole("button", { name: /3D ONA/ }).click();
-  const toggle = page.getByTestId("open-ena-data-view-toggle");
-  await toggle.click();
-  const auditedRows = await page.getByTestId("open-ena-data-view").locator("tbody tr").count();
-  assertBrowser(auditedRows > 0, "Yu ordered audit Data View is empty");
-  await toggle.click();
-  await rail.getByRole("button", { name: /Stats/ }).click();
-  const coverage = page.getByLabel("ONA model coverage");
-  const coverageValues = await coverage.locator("li strong").evaluateAll((nodes) => nodes.map((node) => Number(node.textContent)));
-  const onaStats = page.getByTestId("open-ena-ona-stats");
-  const rawTotal = Number(await onaStats.getByText("Total", { exact: true })
-    .locator("xpath=following-sibling::dd").textContent());
-  const rawSelfConnections = Number(await onaStats.getByText("Self-connections", { exact: true })
-    .locator("xpath=following-sibling::dd").textContent());
-  assertBrowser(coverageValues[0] === 87 && coverageValues[1] === 174
-    && coverageValues[3] === 7 && coverageValues[4] === 49,
-    "Yu aggregate coverage receipt differs");
-  assertBrowser(coverageValues[5] === 3 && rawTotal === 811,
-    `Yu zero-network or total receipt differs (actual total: ${rawTotal}; actual zero networks: ${coverageValues[5]})`);
-  assertBrowser(rawSelfConnections > 0, "Yu authoritative stats contain no self-connections");
-  assertBrowser(traceReceipt.selfLoops > 0,
-    `Yu ONA self-loops are missing (visible self-loop traces: ${traceReceipt.selfLoops}; raw self-connections: ${rawSelfConnections})`);
-  assertBrowser(consoleErrors.length === 0 && pageErrors.length === 0, "Yu private browser lane emitted errors");
-  return {
-    aggregateOnly: true,
-    sourceRows: 174,
-    units: 87,
-    codeNodeCount: 7,
-    directedDimensions: coverageValues[4],
-    connectionTotal: rawTotal,
-    selfConnections: rawSelfConnections,
-    zeroNetworks: 3,
-    pointCircles2d: pointAudit.count,
-    dataViewAuditedRowsVisible: auditedRows,
-    consoleErrors: 0,
-    pageErrors: 0,
-  };
+    await waitPlots();
+    const traces = await page.evaluate(() => {
+      const root = document.querySelector('[data-testid="open-ena-ona-3d-overall-plot"] [data-ena-plotly-root="true"]');
+      const data = root?.data ?? [], units = data.filter(trace => trace.meta?.role === "unit-points");
+      return { codeNodeCount: data.find(trace => trace.meta?.role === "code-node")?.x.length ?? 0, arrows: data.filter(trace => trace.meta?.role === "ordered-edge-arrowhead").length, selfLoops: data.filter(trace => trace.meta?.role === "ordered-self-loop-shaft").length, unitCount: units.reduce((n, trace) => n + trace.x.length, 0), circles: units.every(trace => trace.marker?.symbol === "circle") };
+    });
+    check(traces.codeNodeCount === 7 && traces.unitCount === 87 && traces.circles && traces.arrows > 0 && traces.selfLoops > 0, "Yu ONA directed arrows or self-loops are missing");
+    await visualization.getByRole("button", { name: /2D ONA/ }).click();
+    await visualization.getByRole("button", { name: /3D ONA/ }).click(); await waitPlots();
+    const toggle = page.getByTestId("open-ena-data-view-toggle"); await toggle.click();
+    const auditedRows = await page.getByTestId("open-ena-data-view").locator("tbody tr").count();
+    check(auditedRows > 0, "private Data View has no actual rows"); await toggle.click(); await waitPlots();
+    stage = "private full-run rendered aggregate and bounded audit tables";
+    await rail.getByRole("button", { name: /Stats/ }).click();
+    const primary = page.getByTestId("open-ena-ona-descriptive-group-controls").getByRole("combobox").first();
+    const previousGroup = await primary.inputValue(); await primary.selectOption("");
+    const rendered = await page.evaluate(() => {
+      const fail = () => { throw new Error("private rendered aggregate contract mismatch"); };
+      const region = document.querySelector('[aria-label="ONA directed aggregate edges"]');
+      const headers = [...region.querySelectorAll("th")].map(cell => cell.textContent);
+      const index = name => { const found = headers.indexOf(name); if (found < 0) fail(); return found; };
+      const rows = [...region.querySelectorAll("tbody tr")], seen = new Set(); let rawTotal = 0, selfTotal = 0;
+      if (rows.length !== 49 || !region.querySelector("caption").textContent.endsWith("(49)")) fail();
+      for (const row of rows) {
+        const cells = [...row.children].map(cell => cell.textContent), ground = Number(cells[index("groundIndex")]), response = Number(cells[index("responseIndex")]), count = Number(cells[index("rawAggregateCount")]), key = response * 7 + ground;
+        if (!Number.isInteger(key) || key < 0 || key >= 49 || seen.has(key) || count !== window.__task38PrivateOna.totals[key]) fail();
+        seen.add(key); rawTotal += count; if (ground === response) selfTotal += count;
+      }
+      const audit = document.querySelector('[aria-label="Full-run deidentified ordered audit"]');
+      const r = window.__openEnaNativeAudit.responses.at(-1).result;
+      const auditRows = [...audit.querySelectorAll("tbody tr")];
+      if (!audit.querySelector("caption").textContent.endsWith("(174)") || auditRows.length !== 100 || !audit.querySelector("p") || rawTotal !== 811 || selfTotal !== window.__task38PrivateOna.rawSelfConnections) fail();
+      const names = [...audit.querySelectorAll("th")].map(cell => cell.textContent);
+      auditRows.forEach((row, i) => [...row.children].forEach((cell, j) => {
+        const values = { responseRowIndex: r.orderedAudit.responseRowIndices[i], previousResponseRowIndex: r.orderedAudit.previousResponseRowIndices[i], priorRowCount: r.orderedAudit.priorRowCounts[i], horizonOrdinal: r.orderedAudit.horizonOrdinals[i], edgeValues: r.orderedAudit.edgeValues[i] };
+        const value = values[names[j]];
+        if (value !== null && cell.textContent !== (typeof value === "object" ? JSON.stringify(value) : String(value))) fail();
+      }));
+      return { directedRows: rows.length, sourceRowsInCaption: 174, actualAuditRowsShown: auditRows.length, truncatedDisclosure: true, fullRunConnectionTotal: rawTotal, fullRunSelfConnections: selfTotal };
+    });
+    await primary.selectOption(previousGroup);
+    check(await page.evaluate(() => JSON.stringify(window.__openEnaNativeAudit.responses.at(-1).result.binding) === window.__task38PrivateOna.binding), "display operations changed private bound science");
+    check(consoleErrors === 0 && pageErrors === 0, "private browser emitted errors");
+    return { aggregateOnly: true, ...aggregate, pointCircles2d: pointAudit.count, dataViewAuditedRowsVisible: auditedRows, rendered, consoleErrors, pageErrors };
+  } catch { throw new Error(`Private ONA gate failed: ${stage}; private details withheld`); }
+  finally { page.off("console", onConsole); page.off("pageerror", onPageError); }
 }
 
 const sourceEvidenceBefore = readGitEvidence();
@@ -876,6 +876,19 @@ try {
   runtime = await createServedBrowserV3({ root: resolve(projectRoot), directory: artifactDirectory + "-runtime", credentials: { username, password, secret: sessionSecret, account: accountId }, redact, serverLogPath });
   baseUrl = runtime.baseUrl;
   browserOpened = true;
+  const authCacheSession = await runtime.page.context().newCDPSession(runtime.page);
+  runtime.lifecycle.addCleanup("ONA authentication cache session", () => authCacheSession.detach());
+  runtime.receipt.browser.cachePolicy = "authentication-disabled-then-measurement-browser-default";
+  runtime.receipt.browser.cachePhases = [];
+  await authCacheSession.send("Network.enable");
+  await authCacheSession.send("Network.setCacheDisabled", { cacheDisabled: true });
+  runtime.receipt.browser.cachePhases.push({ phase: "authentication", cacheDisabled: true, at: new Date().toISOString() });
+  runtime.page.__task38FinishAuthentication = async () => {
+    await runtime.page.waitForLoadState("networkidle");
+    await runtime.drainAssetReads("ONA authenticated assets before default-cache measurement");
+    await authCacheSession.send("Network.setCacheDisabled", { cacheDisabled: false });
+    runtime.receipt.browser.cachePhases.push({ phase: "fixture-and-performance", cacheDisabled: false, at: new Date().toISOString(), restoredBeforeFixture: true });
+  };
   const fixtureCsv = buildOrderedFixtureCsv();
   const synthetic = await runBrowserPhase(
     "run the synthetic directed ONA lifecycle",

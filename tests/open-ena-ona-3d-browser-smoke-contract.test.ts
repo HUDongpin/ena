@@ -49,8 +49,8 @@ test("the synthetic lane exercises directed ONA science, circular points, three 
   assert.match(source, /SYNTHETIC_SCAFFOLDED/u);
   assert.match(source, /rowsPerUnit:\s*3/u);
   assert.match(source, /Ordered Network Analysis \(ONA\)/u);
-  assert.match(source, /getByRole\("switch", \{ name: "Network type", exact: true \}\)/u);
-  assert.doesNotMatch(source, /getByRole\("radio", \{ name: \/Ordered Network Analysis/u);
+  assert.match(fixtureSource, /getByRole\("radio"/u);
+  assert.match(source, /prepareNativeFixtureV3\(page, \{ family: "ona"/u);
   assert.match(fixtureSource, /Review source-order statement/u);
   assert.match(source, /const maskCell/u);
   assert.match(source, /CODE_E → CODE_A/u);
@@ -125,32 +125,13 @@ test("the Yu lane emits aggregate-only evidence without identity screenshots or 
   const source = readFileSync(smokePath, "utf8");
 
   assert.match(source, /Yu_ena_coded_data_0712\.xlsx/u);
-  assert.match(source, /data-ena-official-field-path="true"/u);
-  assert.match(source, /Add or remove Unit identity fields/u);
-  assert.match(source, /Add or remove Horizon identity fields/u);
-  assert.match(source, /getByRole\("tab", \{ name: "Units" \}\)/u);
-  assert.match(source, /getByLabel\("Comparison group"\)\.selectOption\("Group"\)/u);
-  assert.match(source, /getByRole\("tab", \{ name: "Horizons" \}\)/u);
-  assert.match(source, /getByRole\("checkbox", \{ name: "Lesson", exact: true \}\)\.uncheck\(\)/u);
-  assert.match(source, /getByRole\("tab", \{ name: "Windows" \}\)/u);
-  assert.match(
-    source,
-    /async function runYuPrivateLane[\s\S]{0,5000}Total rows including the current response"\)\.fill\("2"\)/u,
-  );
-  assert.match(source, /codeNodeCount:\s*7/u);
-  assert.match(source, /aggregateOnly:\s*true/u);
-  assert.match(source, /sourceRows:\s*174/u);
-  assert.match(source, /units:\s*87/u);
-  assert.match(source, /coverageValues\[4\] === 49/u);
-  assert.match(source, /directedDimensions:\s*coverageValues\[4\]/u);
-  assert.match(source, /connectionTotal:\s*rawTotal/u);
-  assert.match(source, /selfConnections:\s*rawSelfConnections/u);
-  assert.match(source, /zeroNetworks:\s*3/u);
+  for (const marker of ["sourcePreparation: false", 'units: ["Group", "Name"]', 'horizons: ["Group", "Name"]', "backward: 2", 'name: "Field"', 'selectOption("Lesson")', 'selectOption("text")', 'name: "Numeric collation"', "literalStringOrderParity", "result-v3"]) assert.ok((source + runtimeSource).includes(marker), marker);
+  for (const marker of ["r.set.points.length !== 87", "sourceRows !== 174", "codes.length !== 7", "edges.length !== 49", "zeroNetworks !== 3", "rawTotal !== 811", "actualNativeBinding", "rawSelfConnections", "actualAuditRowsShown", "Full-run deidentified ordered audit", "aggregateOnly: true"]) assert.ok(source.includes(marker), marker);
+  assert.match(source, /rows.length !== 49/);
+  assert.match(source, /auditRows.length !== 100/);
+  assert.match(source, /primary.selectOption\(""\)/);
   assert.doesNotMatch(source, /const uniqueEdges = new Map/u);
-  assert.match(source, /Yu ONA directed arrows are missing/u);
-  assert.match(source, /Yu ONA self-loops are missing/u);
-  assert.match(source, /actual total:/u);
-  assert.match(source, /actual zero networks:/u);
+  assert.match(source, /Yu ONA directed arrows or self-loops are missing/u);
   assert.doesNotMatch(source, /wrapper\.querySelector\('\[data-ona-point-shape="circle"\]'\)/u);
   assert.doesNotMatch(source, /yu-data-view.*screenshot|screenshot.*yu-data-view/iu);
   assert.doesNotMatch(source, /hover\([^)]*Yu|Yu[^\n]*hover/iu);
@@ -170,6 +151,19 @@ test("package.json exposes the local ONA 3D browser gate", () => {
 test("private lane failures cannot capture a private page or arbitrary diagnostics", () => {
   const source = readFileSync(smokePath, "utf8");
   assert.match(source, /browserOpened && !privateLaneActive/);
-  assert.match(source, /if \(privateLaneActive\) return "\[private ONA diagnostic withheld/);
+  assert.match(source, /if \(privateLaneActive\) \{/);
+  assert.match(source, /private ONA diagnostic withheld/);
   assert.doesNotMatch(source, /disableBrowserCache:\s*true/);
+});
+
+
+test("ONA authentication cache policy restores browser default before fixture and original performance start", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /authentication-disabled-then-measurement-browser-default/);
+  assert.match(source, /Network.setCacheDisabled", \{ cacheDisabled: false \}/);
+  assert.match(source, /await page.__task38FinishAuthentication\(\)/);
+  assert.match(source, /restoredBeforeFixture: true/);
+  assert.match(source, /measurementStart: start/);
+  assert.match(source, /entry.startTime >= start/);
+  for (const budget of ["800_000", "2_200_000", "1_500", "5_000"]) assert.ok(source.includes(budget));
 });
