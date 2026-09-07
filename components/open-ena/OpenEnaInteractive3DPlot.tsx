@@ -749,12 +749,13 @@ export default function OpenEnaInteractive3DPlot({
             return { camera: nextCamera, aspectRatio: nextAspectRatio, aspectMode: retainedView?.aspectMode ?? (nextAspectRatio ? "manual" as const : "cube" as const), retained: !!retainedView };
           },
           render: view => {
-            const layout = structuredClone(spec.layout);
             // An inactive render may stop after react. The effective view must
             // therefore already be in react, never a transient preset reset.
-            layout.scene.camera = structuredClone(view.camera);
-            layout.scene.aspectmode = view.aspectMode;
-            if (view.aspectRatio) layout.scene.aspectratio = { ...view.aspectRatio };
+            const layout = { ...structuredClone(spec.layout), scene: {
+              ...structuredClone(spec.layout.scene), camera: structuredClone(view.camera),
+              aspectmode: view.aspectMode,
+              ...(view.aspectRatio ? { aspectratio: { ...view.aspectRatio } } : {}),
+            } };
             return Plotly.react(plotRoot, spec.data as never[], layout as never, spec.config as never);
           },
           currentUserView: view => ({ ...view, camera: lastCameraRef.current ?? currentCamera(), aspectRatio: lastAspectRatioRef.current ?? currentAspectRatio(), aspectMode: (plotRoot as PlotlyEventRoot)._fullLayout?.scene?.aspectmode ?? view.aspectMode }),
