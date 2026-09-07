@@ -384,6 +384,7 @@ export default function OpenEnaInteractive3DPlot({
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
   const fullscreenInitiatorRef = useRef<HTMLButtonElement | null>(null);
   const fullscreenResizeFrameRef = useRef<number | null>(null);
+  const nativeTrajectoryFullscreenSizedRef = useRef(false);
   const fullscreenFocusFrameRef = useRef<number | null>(null);
   const fullscreenRequestPendingRef = useRef(false);
   const fullscreenStateRef = useRef(false);
@@ -521,6 +522,8 @@ export default function OpenEnaInteractive3DPlot({
     flipY,
     nodeLayout,
   ]);
+  const fullscreenLayoutRef = useRef(spec.layout);
+  fullscreenLayoutRef.current = spec.layout;
   const renderedCodeTrace = spec.data.find((trace) => trace.meta.role === "code-node");
   const renderedCodeIdentities = new Set(renderedCodeTrace?.ids ?? renderedCodeTrace?.text ?? []);
   const renderedCodeIdentityKey = JSON.stringify([...renderedCodeIdentities]);
@@ -816,6 +819,7 @@ export default function OpenEnaInteractive3DPlot({
           eventRoot.on("plotly_unhover", listener);
         }
         setStatus("ready");
+        if (fullscreenStateRef.current) scheduleFullscreenResize();
         if (!readyNotifiedRef.current) {
           readyNotifiedRef.current = true;
           onReady?.();
@@ -1123,7 +1127,32 @@ export default function OpenEnaInteractive3DPlot({
       const plotRoot = plotRootRef.current;
       if (!Plotly || renderStatusRef.current !== "ready" || !plotRoot) return;
       try {
-        void Promise.resolve(Plotly.Plots.resize(plotRoot)).catch(() => {
+        const target = fullscreenTargetRef.current;
+        const nativeTrajectoryFullscreen = fullscreenStateRef.current
+          && target?.getAttribute("data-ena-native-trajectory") === "true";
+        if (nativeTrajectoryFullscreen || nativeTrajectoryFullscreenSizedRef.current) {
+          const layout = fullscreenLayoutRef.current;
+          const width = Math.max(1, plotRoot.clientWidth);
+          const height = nativeTrajectoryFullscreen ? Math.max(1, plotRoot.clientHeight) : layout.height;
+          const margin = nativeTrajectoryFullscreen
+            ? { l: Math.min(16, width * 0.03), r: Math.min(16, width * 0.03), t: Math.min(48, height * 0.05), b: Math.min(28, height * 0.03) }
+            : layout.margin;
+          // Keep the complete legend and variance annotations readable without
+          // letting an outside-paper legend consume the fullscreen scene.
+          const legend = nativeTrajectoryFullscreen
+            ? { ...layout.legend, y: 0, yanchor: "bottom" }
+            : { ...layout.legend, yanchor: "auto" };
+          const camera = currentCamera();
+          const aspectMode = (plotRoot as PlotlyEventRoot)._fullLayout?.scene?.aspectmode ?? layout.scene.aspectmode;
+          nativeTrajectoryFullscreenSizedRef.current = nativeTrajectoryFullscreen;
+          void Promise.resolve(Plotly.relayout(plotRoot, {
+            width, height, margin, legend, "scene.camera": camera,
+            "scene.aspectmode": aspectMode,
+            ...(aspectMode === "manual" ? { "scene.aspectratio": currentAspectRatio() } : {}),
+          } as never)).catch(() => {
+            // A detached plot can reject a final fullscreen geometry update.
+          });
+        } else void Promise.resolve(Plotly.Plots.resize(plotRoot)).catch(() => {
           // The plot can unmount while the fullscreen resize frame is pending.
         });
       } catch {

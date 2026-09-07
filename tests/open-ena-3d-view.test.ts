@@ -1552,8 +1552,8 @@ test("3D fullscreen is native-first with a safe single-owner fallback, lifecycle
   assert.ok(fullscreenLogicStart >= 0 && fullscreenLogicEnd > fullscreenLogicStart);
   assert.doesNotMatch(
     interactive.slice(fullscreenLogicStart, fullscreenLogicEnd),
-    /Plotly\.(?:react|relayout)/u,
-    "fullscreen changes may resize the existing plot but must not recompute or refit its spec",
+    /Plotly\.react/u,
+    "fullscreen changes may relayout dimensions on the existing plot but must not recompute or refit its spec",
   );
 
   assert.match(styles, /\.open-ena-3d-triptych-panel:fullscreen[\s\S]*?width:\s*100vw;[\s\S]*?height:\s*100dvh;/u);

@@ -1290,10 +1290,17 @@ async function exerciseStaleImageLease(page) {
     assert.ok(audit.renderedPngs.every(png => JSON.stringify(png.signature) === JSON.stringify([137,80,78,71,13,10,26,10])));
     assert.equal(audit.outputs, 0, "stale model materialized PNG output after awaited rendering");
     assert.equal(audit.modelRuns, 1);
-    await model.selectOption("SeparateTrajectory");
-    await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute('data-result-status') === 'current');
-    await nativeScience(page);
-    return audit;
+    // ModelState.scientificEdit increments scientificRevision; even restoring
+    // an identical draft does not readmit the old plan. This final intentional
+    // edit remains explicitly stale, while all preceding display gates were current.
+    const finalState = await page.evaluate(() => {
+      const result = window.__openEnaNativeAudit.responses.at(-1).result;
+      const science = JSON.stringify({ binding: result.binding, configuration: result.configuration, set: result.set, executionProvenance: result.executionProvenance });
+      return { resultStatus: document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute('data-result-status'), boundScienceUnchanged: science === window.__nativeLongitudinalScience, binding: result.binding, taskRequestCount: window.__openEnaNativeAudit.requests.length };
+    });
+    assert.equal(finalState.resultStatus, "stale"); assert.equal(finalState.boundScienceUnchanged, true); assert.equal(finalState.taskRequestCount, 1);
+    await page.screenshot({ path: join(artifactDirectory, "intentional-final-stale-model.png") });
+    return { ...audit, finalState };
   } finally {
     await page.evaluate(() => {
       const audit = window.__nativeStaleImage;
@@ -1398,6 +1405,8 @@ async function readFullscreenPlotLayout(page) {
           ? "fallback"
           : "none",
       shell: shellBox,
+      camera: structuredClone(scene?._scene?.getCamera?.() ?? scene?.camera ?? null),
+      renderedLayout: { width: root._fullLayout?.width, height: root._fullLayout?.height, margin: structuredClone(root._fullLayout?.margin ?? null), legend: { x: root._fullLayout?.legend?.x, y: root._fullLayout?.legend?.y }, annotationTexts: root._fullLayout?.annotations?.map(annotation => annotation.text) ?? [] },
       plot: plotBox,
       toolbar: toolbarBox ? {
         ...toolbarBox,
@@ -1445,6 +1454,14 @@ async function readFullscreenPlotLayout(page) {
   });
 }
 
+function assertFullscreenRestoresView(before, after) {
+  for (const vector of ["eye", "up", "center"]) for (const axis of ["x", "y", "z"]) assert.ok(Math.abs(before.camera[vector][axis] - after.camera[vector][axis]) < 1e-7, "fullscreen changed camera orientation or position");
+  assert.equal(before.camera.projection.type, after.camera.projection.type);
+  assert.deepEqual(after.renderedLayout.margin, before.renderedLayout.margin, "fullscreen exit did not restore original plot margins");
+  assert.equal(after.renderedLayout.height, before.renderedLayout.height, "fullscreen exit did not restore original plot height");
+  assert.deepEqual(after.renderedLayout.legend, before.renderedLayout.legend, "fullscreen exit did not restore complete original legend position");
+  assert.deepEqual(after.renderedLayout.annotationTexts, before.renderedLayout.annotationTexts, "fullscreen lost scientific variance annotations");
+}
 function assertFullscreenPlotLayout(audit, label, expectedMode) {
   const assertLayout = (condition, message) => {
     if (!condition) throw new Error(label + ": " + message);
@@ -1542,6 +1559,8 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
   const shellLocator = page.locator(".open-ena-interactive-3d-figure");
   const fullscreenButton = shellLocator.locator('[data-ena-plot-action="fullscreen"]');
   await page.setViewportSize(args.viewport);
+  await page.waitForTimeout(250);
+  const beforeFullscreen = await readFullscreenPlotLayout(page);
   await fullscreenButton.focus();
 
   const setup = await shellLocator.evaluate((shell) => {
@@ -1876,6 +1895,10 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       );
     }, null, { timeout: 15_000 });
 
+    await page.waitForFunction(height => document.querySelector('[data-ena-plotly-root=true]')?._fullLayout?.height === height, beforeFullscreen.renderedLayout.height);
+    const restoredLayout = await readFullscreenPlotLayout(page);
+    assertFullscreenRestoresView(beforeFullscreen, restoredLayout);
+    await nativeScience(page);
     const restoredState = await page.evaluate(() => {
       const audit = window.__openEnaFallbackFullscreenA11yAudit;
       if (!audit) throw new Error("fallback fullscreen audit state is missing");
@@ -1915,6 +1938,7 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       outsideTreeIsolated: modalState.outsideTreeIsolated,
       bodyScrollLocked: modalState.bodyScrollLocked,
       layoutAudit: fallbackLayoutAudit,
+      beforeFullscreen, restoredLayout,
       entryState,
       settledState,
       pendingShiftTabDestination,
@@ -2322,6 +2346,7 @@ try {
   const pendingImageAudit = await runBrowserPhase("real pending PNG denial clipboard rejection and recovery", exercisePendingImageActions, {}, 240_000);
   const fallbackA11yAudit = await runBrowserPhase("reversible fallback fullscreen keyboard modal", exerciseFallbackFullscreenAccessibility, { viewport: { width: 1440, height: 1000 } });
   const responsiveAudit = await runBrowserPhase("responsive native fullscreen and canvas geometry", captureResponsiveEvidence, { viewports: viewportMatrix, artifactDirectory });
+  const finalCurrentScience = await nativeScience(runtime.page);
   const staleImageAudit = await runBrowserPhase("stale model suppresses actual awaited PNG output", exerciseStaleImageLease, {}, 180_000);
   const browserErrors = await runBrowserPhase("strict runtime warning classification", readBrowserErrors, { browser: smokeBrowser });
   assert.deepEqual(browserErrors.consoleErrors, []); assert.deepEqual(browserErrors.consoleWarnings, []); assert.deepEqual(browserErrors.pageErrors, []);
@@ -2332,8 +2357,7 @@ try {
   assert.ok(chromiumAngleReadPixelsDiagnostics.sourcePaths.length <= 1);
   const screenshots = Object.fromEntries(readdirSync(artifactDirectory).filter(name => /\.(png|svg)$/u.test(name)).map(name => [name, artifactEvidence(join(artifactDirectory, name))]));
   const browserRuntimeEvidence = await readBrowserRuntimeEvidence(runtime.page);
-  await nativeScience(runtime.page);
-  completedSummary = { status: "PASS", source: { ...sourceEvidenceBefore, smokeSourceSha256 }, runtimeBrowserVersion: browserRuntimeEvidence.version, runtimeBrowserUserAgent: browserRuntimeEvidence.userAgent, plotAudit, screenshots, downloads, aggregate: { manifest: aggregate.manifest, zipSha256: aggregate.zipSha256 }, participant: { manifest: participant.manifest, zipSha256: participant.zipSha256 }, railPanelAudit, displayAudit, plotActionAudit, pendingImageAudit, fallbackA11yAudit, responsiveAudit, staleImageAudit, browserErrors };
+  completedSummary = { status: "PASS", finalCurrentScience, finalResultStatus: staleImageAudit.finalState.resultStatus, source: { ...sourceEvidenceBefore, smokeSourceSha256 }, runtimeBrowserVersion: browserRuntimeEvidence.version, runtimeBrowserUserAgent: browserRuntimeEvidence.userAgent, plotAudit, screenshots, downloads, aggregate: { manifest: aggregate.manifest, zipSha256: aggregate.zipSha256 }, participant: { manifest: participant.manifest, zipSha256: participant.zipSha256 }, railPanelAudit, displayAudit, plotActionAudit, pendingImageAudit, fallbackA11yAudit, responsiveAudit, staleImageAudit, browserErrors };
 } catch (caught) {
   primaryFailure = caught;
   if (runtime) { try { await runtime.page.screenshot({ path: failureScreenshotPath, fullPage: true }); } catch {} }
