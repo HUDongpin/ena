@@ -722,17 +722,17 @@ export default function OpenEnaInteractive3DPlot({
         await Plotly.react(
           plotRoot,
           spec.data as never[],
-          spec.layout as never,
+          structuredClone(spec.layout) as never,
           spec.config as never,
         );
         if (!active) return;
         if (!retainedView) {
           const nextCamera = lastAppliedCameraKeyRef.current === null && initialCameraRef.current
-            ? initialCameraRef.current
-            : spec.layout.scene.camera;
+            ? structuredClone(initialCameraRef.current)
+            : structuredClone(spec.layout.scene.camera);
           const nextAspectRatio = lastAppliedCameraKeyRef.current === null && initialAspectRatioRef.current
-            ? initialAspectRatioRef.current
-            : spec.layout.scene.aspectratio ?? null;
+            ? { ...initialAspectRatioRef.current }
+            : spec.layout.scene.aspectratio ? { ...spec.layout.scene.aspectratio } : null;
           await Plotly.relayout(plotRoot, {
             "scene.camera": nextCamera,
             "scene.aspectmode": nextAspectRatio ? "manual" : "cube",

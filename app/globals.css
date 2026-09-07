@@ -10052,7 +10052,7 @@ body:has(.open-ena-page) #main-content {
   font: inherit;
   writing-mode: vertical-lr;
   direction: rtl;
-  appearance: slider-vertical;
+  appearance: auto;
   cursor: pointer;
 }
 

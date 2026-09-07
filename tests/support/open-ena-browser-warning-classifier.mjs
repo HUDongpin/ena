@@ -25,7 +25,15 @@ export function classifyChromiumCanvasReadbackDiagnostic(input) {
   const sourceUrl = typeof warning.location?.url === "string" ? warning.location.url : "";
   if (!sourceUrl.startsWith(currentOrigin + "/")) return null;
   const sourcePath = sourceUrl.slice(currentOrigin.length).split(/[?#]/u)[0];
-  if (!nextStaticChunkPath.test(sourcePath)) return null;
+  // Current Turbopack hash names are admitted only with this run's actual
+  // successful owned-build response receipt. The caller must still verify the
+  // exact source line and compare fetched bytes with this recorded digest.
+  const owned = input.ownedServedChunk;
+  const currentOwnedChunk = /^\/_next\/static\/chunks\/[a-z0-9_]{13}\.js$/u.test(sourcePath)
+    && owned && typeof owned === "object" && owned.path === sourcePath
+    && owned.status === 200 && owned.error === undefined
+    && typeof owned.sha256 === "string" && /^[a-f0-9]{64}$/u.test(owned.sha256);
+  if (!nextStaticChunkPath.test(sourcePath) && !currentOwnedChunk) return null;
 
   const lineNumber = warning.location?.lineNumber;
   const columnNumber = warning.location?.columnNumber;
@@ -37,5 +45,6 @@ export function classifyChromiumCanvasReadbackDiagnostic(input) {
     sourcePath,
     reportedLineNumber: lineNumber,
     reportedColumnNumber: columnNumber,
+    ...(currentOwnedChunk ? { ownedSourceSha256: owned.sha256 } : {}),
   };
 }

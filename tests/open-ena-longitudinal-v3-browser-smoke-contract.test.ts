@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
@@ -219,4 +220,26 @@ test("asset settlement drains newly appended responses within the original deadl
   reads.push(new Promise(() => {})); release();
   const result = await pending;
   assert.equal(result.timedOut, true); assert.equal(result.pending, 1); assert.equal(result.total, 2);
+});
+
+test("actual source verifier rejects changed owned bytes and incorrect source lines", async () => {
+  const declaration = "const verifyChromiumCanvasReadbackSource = ";
+  const start = source.indexOf(declaration) + declaration.length;
+  const end = source.indexOf("}, candidate);", start) + "}, candidate)".length;
+  assert.ok(start >= declaration.length && end > start);
+  const expression = source.slice(start, end);
+  let text = 'const context = canvas.getContext("2d", {}); context.getImageData(0,0,1,1); throw new Error("vectorize-text: Unrecognized textAlign:");';
+  let ok = true, contentType = "application/javascript";
+  const page = { evaluate: async (callback: (input: unknown) => unknown, input: unknown) => callback(input) };
+  const fetch = async () => ({ ok, headers: { get: () => contentType }, arrayBuffer: async () => new TextEncoder().encode(text).buffer });
+  const verify = new Function("page", "fetch", `return (${expression});`)(page, fetch);
+  const digest = createHash("sha256").update(text).digest("hex");
+  const candidate = { sourcePath: "/_next/static/chunks/430vty75f5gv_.js", reportedLineNumber: 0, reportedColumnNumber: 0, ownedSourceSha256: digest };
+  assert.equal((await verify(candidate))?.chunkSha256, digest);
+  assert.equal(await verify({ ...candidate, ownedSourceSha256: "0".repeat(64) }), null);
+  assert.equal(await verify({ ...candidate, reportedLineNumber: 1 }), null);
+  ok = false; assert.equal(await verify(candidate), null); ok = true;
+  contentType = "text/plain"; assert.equal(await verify(candidate), null); contentType = "application/javascript";
+  text = text.replace("getImageData", "unrelatedOperation");
+  assert.equal(await verify({ ...candidate, ownedSourceSha256: createHash("sha256").update(text).digest("hex") }), null);
 });

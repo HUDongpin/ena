@@ -2215,11 +2215,13 @@ async function readBrowserErrors(page, args) {
     const digestHex = async (bytes) => [...new Uint8Array(
       await crypto.subtle.digest("SHA-256", bytes),
     )].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const chunkSha256 = await digestHex(sourceBytes);
+    if (input.ownedSourceSha256 && chunkSha256 !== input.ownedSourceSha256) return null;
     return {
       ...input,
       sourceLineNumber: input.reportedLineNumber + 1,
       chunkBytes: sourceBytes.byteLength,
-      chunkSha256: await digestHex(sourceBytes),
+      chunkSha256,
       sourceLineSha256: await digestHex(new TextEncoder().encode(sourceLine)),
     };
   }, candidate);
@@ -2259,6 +2261,7 @@ async function readBrowserErrors(page, args) {
         browser: args.browser,
         currentOrigin,
         warning,
+        ownedServedChunk: runtime.receipt.servedAssets.find(asset => asset.status === 200 && !asset.error && warning.location?.url === currentOrigin + asset.path),
       })
       : null;
     const angleReadPixelsDiagnostic = classifyChromiumAngleReadPixelsDiagnostic({

@@ -177,3 +177,23 @@ test("does not mutate the warning object while classifying it", async () => {
   assert.equal(warning.location.url, currentOrigin + "/_next/static/chunks/32s-eijjk505p.js");
   assert.equal(warning.location.lineNumber, 1914);
 });
+
+test("current underscore Next chunk requires matching owned served bytes before source-line verification", async () => {
+  const { classifyChromiumCanvasReadbackDiagnostic: classify } = await loadClassifier();
+  const sourcePath = "/_next/static/chunks/430vty75f5gv_.js";
+  const ownedServedChunk = { path: sourcePath, status: 200, sha256: "cff3187be0dca504ee69915562d1c2dc9066d6a89d2378fa6466ad3baabc53f4" };
+  const input = { browser: "chromium", currentOrigin, warning: warningFor(sourcePath), ownedServedChunk };
+  assert.equal(classify({ ...input, ownedServedChunk: undefined }), null);
+  assert.deepEqual(classify(input), { normalizedPattern: "Canvas2D exact willReadFrequently advisory", sourcePath, reportedLineNumber: 1914, reportedColumnNumber: 0, ownedSourceSha256: ownedServedChunk.sha256 });
+  for (const invalid of [
+    { ...input, currentOrigin: "https://other.example" },
+    { ...input, warning: warningFor(sourcePath + ".css") },
+    { ...input, warning: warningFor("/_next/static/media/430vty75f5gv_.js") },
+    { ...input, warning: { ...warningFor(sourcePath), text: advisoryText + " extra" } },
+    { ...input, warning: warningFor(sourcePath, { lineNumber: -1 }) },
+    { ...input, ownedServedChunk: { ...ownedServedChunk, path: "/_next/static/chunks/other.js" } },
+    { ...input, ownedServedChunk: { ...ownedServedChunk, status: 304 } },
+    { ...input, ownedServedChunk: { ...ownedServedChunk, sha256: "missing" } },
+    { ...input, ownedServedChunk: { ...ownedServedChunk, error: "body unavailable" } },
+  ]) assert.equal(classify(invalid), null);
+});

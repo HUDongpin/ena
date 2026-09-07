@@ -109,7 +109,7 @@ test("Open ENA code-color desktop geometry preserves the official paired-preset 
   assert.match(marker, /transform:\s*translate\(-50%,\s*-50%\);/u);
   assert.match(marker, /pointer-events:\s*none;/u);
   const hue = dialogRule(".ena-code-color-custom .ena-code-color-editor input.ena-code-color-hue");
-  assert.match(hue, /width:\s*20px;[\s\S]*height:\s*150px;[\s\S]*writing-mode:\s*vertical-lr;[\s\S]*direction:\s*rtl;[\s\S]*appearance:\s*slider-vertical;/u);
+  assert.match(hue, /width:\s*20px;[\s\S]*height:\s*150px;[\s\S]*writing-mode:\s*vertical-lr;[\s\S]*direction:\s*rtl;[\s\S]*appearance:\s*auto;/u);
   assert.match(hue, /min-width:\s*0;/u);
   assert.match(hue, /min-height:\s*0;/u);
   assert.match(hue, /border:\s*0;/u);
