@@ -180,3 +180,9 @@ test("the original full longitudinal npm entry remains unchanged", () => {
 });
 
 test("display Horizon filtering checks absent-step connectors and restores SVG without recomputation", () => { requires(["native SVG connected across an absent fitted step", "filteredSvg.paths.every(path => path.to === path.from + 1)", "restoring Horizon filter changed original SVG geometry"]); });
+
+test("required asset reads are explicitly drained before authentication navigation", () => {
+  requires(['runtime.drainAssetReads("initial required static assets before Sign in")']);
+  const helper = readFileSync(join(process.cwd(), "tests/helpers/open-ena-served-browser-v3.mjs"), "utf8");
+  for (const token of ["scheduledBefore", "settledBefore", "inFlightBefore", "inFlightAfter", "lifecycle.signal.throwIfAborted()", "Required static asset response failed before navigation"]) assert.ok(helper.includes(token));
+});

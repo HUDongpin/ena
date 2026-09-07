@@ -39,6 +39,22 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
   const env = { ...process.env, NEXT_DIST_DIR: ".next", NODE_ENV: "production", NEXT_TELEMETRY_DISABLED: "1", OPEN_ENA_USERNAME: credentials.username, OPEN_ENA_PASSWORD: credentials.password, OPEN_ENA_SESSION_SECRET: credentials.secret, OPEN_ENA_ACCOUNT_ID: credentials.account ?? "task38-local-account", OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1", npm_config_cache: join(directory, "npm-cache") };
   const child = (label, command, args, timeout = 60000) => lifecycle.command(label, command, args, { cwd: root, env, logName: `${label}.log` }, timeout);
   const assetReads = [];
+  receipt.assetReadState = { scheduled: 0, settled: 0, inFlight: 0, drains: [] };
+  const drainAssetReads = async (label = "static assets before navigation") => lifecycle.stage(label, async () => {
+    const drain = { label, startedAt: new Date().toISOString(), scheduledBefore: receipt.assetReadState.scheduled, settledBefore: receipt.assetReadState.settled, inFlightBefore: receipt.assetReadState.inFlight, status: "running" };
+    receipt.assetReadState.drains.push(drain); json("receipt.json", receipt);
+    try {
+      let observed = -1;
+      while (observed !== assetReads.length) {
+        lifecycle.signal.throwIfAborted(); observed = assetReads.length;
+        await Promise.allSettled(assetReads.slice(0, observed));
+      }
+      lifecycle.signal.throwIfAborted();
+      if (receipt.servedAssets.some(asset => asset.error || asset.status !== 200)) throw new Error("Required static asset response failed before navigation; inspect assetReadState and servedAssets");
+      drain.status = "pass";
+    } catch (error) { drain.status = "fail"; throw error; }
+    finally { Object.assign(drain, { settledAt: new Date().toISOString(), scheduledAfter: receipt.assetReadState.scheduled, settledAfter: receipt.assetReadState.settled, inFlightAfter: receipt.assetReadState.inFlight }); json("receipt.json", receipt); }
+  }, 30000);
   const close = (failure) => closing ??= (async () => {
     if (failure) { receipt.failure = safe(failure.stack ?? failure); lifecycle.cancel(receipt.failure); }
     await Promise.allSettled(assetReads);
@@ -109,23 +125,43 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
       };
     });
     const observedPages = new WeakSet();
+    let observedPageCount = 0;
+    receipt.assetNavigations = [];
     const observePage = page => {
       if (observedPages.has(page)) return;
       observedPages.add(page);
+      const pageId = ++observedPageCount;
+      let navigationSequence = 0;
+      const assetRequests = new WeakMap();
+      page.on("framenavigated", frame => { if (frame === page.mainFrame()) receipt.assetNavigations.push({ pageId, navigationSequence: ++navigationSequence, url: safe(frame.url()), at: new Date().toISOString() }); });
+      page.on("request", request => {
+        if (!new URL(request.url()).pathname.startsWith("/_next/static/")) return;
+        assetRequests.set(request, { pageId, navigationSequence, requestedAt: new Date().toISOString(), url: safe(request.url()), resourceType: request.resourceType(), frameUrl: safe(request.frame().url()), pageUrl: safe(page.url()) });
+      });
+      page.on("requestfinished", request => { const entry = assetRequests.get(request); if (entry) entry.requestFinishedAt = new Date().toISOString(); });
+      page.on("requestfailed", request => { const entry = assetRequests.get(request); if (entry) { entry.requestFailedAt = new Date().toISOString(); entry.requestFailure = safe(request.failure()?.errorText ?? "unknown"); } });
       page.on("console", message => { if (message.type() === "error") receipt.consoleErrors.push(safe(message.text())); if (message.type() === "warning") receipt.consoleWarnings.push(safe(message.text())); });
       page.on("pageerror", error => receipt.pageErrors.push(safe(error.message)));
       page.on("response", response => {
         const path = new URL(response.url()).pathname;
-        if (path.startsWith("/_next/static/")) assetReads.push(response.body().then(bytes => {
-          const entry = { path, status: response.status(), sha256: hash(bytes) };
-          const buildEntry = files.find(file => file.path === path.replace("/_next/", ""));
-          if (!buildEntry || buildEntry.sha256 !== entry.sha256) entry.error = "served bytes differ from owned build";
-          receipt.servedAssets.push(entry);
-        }).catch(error => receipt.servedAssets.push({ path, error: safe(error.message) })));
+        if (path.startsWith("/_next/static/")) {
+          const sequence = ++receipt.assetReadState.scheduled;
+          receipt.assetReadState.inFlight++;
+          const scheduledAt = new Date().toISOString();
+          const request = assetRequests.get(response.request()) ?? { pageId };
+          const responseStatus = response.status();
+          Object.assign(request, { responseAt: scheduledAt, responseFrameUrl: safe(response.frame().url()), responsePageUrl: safe(page.url()) });
+          assetReads.push(response.body().then(bytes => {
+            const entry = { path, sequence, request, scheduledAt, settledAt: new Date().toISOString(), status: response.status(), sha256: hash(bytes) };
+            const buildEntry = files.find(file => file.path === path.replace("/_next/", ""));
+            if (!buildEntry || buildEntry.sha256 !== entry.sha256) entry.error = "served bytes differ from owned build";
+            receipt.servedAssets.push(entry);
+          }).catch(error => receipt.servedAssets.push({ path, sequence, request, status: responseStatus, scheduledAt, settledAt: new Date().toISOString(), error: safe(error.message) })).finally(() => { receipt.assetReadState.settled++; receipt.assetReadState.inFlight--; }));
+        }
       });
     };
     context.on("page", observePage);
     page = await context.newPage(); page.setDefaultTimeout(15000); observePage(page);
-    return { baseUrl, browser, page, lifecycle, receipt, close, observePage, async stage(label, action, timeout = 300000) { const entry = { label, status: "running" }; receipt.stages.push(entry); try { const value = await lifecycle.stage(label, action, timeout); entry.status = "pass"; return value; } catch (error) { entry.status = "fail"; entry.error = safe(error.message); throw error; } finally { json("receipt.json", receipt); } } };
+    return { baseUrl, browser, page, lifecycle, receipt, close, observePage, drainAssetReads, async stage(label, action, timeout = 300000) { const entry = { label, status: "running" }; receipt.stages.push(entry); try { const value = await lifecycle.stage(label, action, timeout); entry.status = "pass"; return value; } catch (error) { entry.status = "fail"; entry.error = safe(error.message); throw error; } finally { json("receipt.json", receipt); } } };
   } catch (error) { await close(error); throw error; }
 }

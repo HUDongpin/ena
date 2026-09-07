@@ -421,6 +421,7 @@ async function authenticateAndRunTrajectory(page, args) {
   await page.goto(args.baseUrl + "/en/open-ena", { waitUntil: "networkidle" });
   await page.evaluate(() => document.fonts.ready);
   await page.waitForLoadState("networkidle");
+  await runtime.drainAssetReads("initial required static assets before Sign in");
   await page.getByRole("textbox", { name: "Account name" }).fill(args.username);
   await page.getByRole("textbox", { name: "Password" }).fill(args.password);
   await page.getByRole("button", { name: "Sign in" }).click();
@@ -448,14 +449,14 @@ async function authenticateAndRunTrajectory(page, args) {
   assert.ok(fitted.sequences.length > 1 && fitted.sequences.every(s => s.steps.length > 0));
   const longest = [...fitted.sequences].sort((a,b) => b.steps.length-a.steps.length)[0];
   const orderedHorizons = longest.steps.map(step => {
-    const horizon = fitted.dictionary.horizons.find(h => h.canonicalJson === step.horizonKey || h.token === step.horizonKey);
+    const horizon = fitted.dictionary.horizons.find(h => h.token === step.horizonToken);
     assert.ok(horizon, "fitted Horizon key must resolve by full native typed identity");
     return horizon;
   });
   assert.ok(orderedHorizons.length >= 3);
   for (const sequence of fitted.sequences) {
     assert.deepEqual(sequence.steps.map(step => step.trajectoryOrdinal), sequence.steps.map((_, i) => i));
-    const indexes = sequence.steps.map(step => orderedHorizons.findIndex(h => h.canonicalJson === step.horizonKey || h.token === step.horizonKey));
+    const indexes = sequence.steps.map(step => orderedHorizons.findIndex(h => h.token === step.horizonToken));
     assert.ok(indexes.every((index, i) => index >= 0 && (i === 0 || index > indexes[i-1])), "per-Unit fitted order must agree with selected request precedence");
   }
   await rail.getByRole("button", { name: /^Stats/ }).click();
