@@ -607,6 +607,16 @@ async function exerciseCamerasAndProjections(page, args) {
         const value = root.closest('[data-ena-interactive-camera="true"]')?.getAttribute("data-ena-camera-state");
         return value ? JSON.parse(value) : null;
       });
+      // Controlled props retain the declared up vector. Apply the same exact
+      // orthogonalization used for expectedCameraStates, without widening epsilon.
+      if (controlled) {
+        const eye = ["x", "y", "z"].map(axis => controlled.eye[axis] - controlled.center[axis]);
+        const up = ["x", "y", "z"].map(axis => controlled.up[axis]);
+        const factor = up.reduce((sum, value, i) => sum + value * eye[i], 0) / eye.reduce((sum, value) => sum + value * value, 0);
+        const perpendicular = up.map((value, i) => value - factor * eye[i]);
+        const length = Math.hypot(...perpendicular);
+        controlled.up = { x: perpendicular[0] / length, y: perpendicular[1] / length, z: perpendicular[2] / length };
+      }
       if (cameraMatches(current, expected) && cameraMatches(controlled, expected)) return current;
       lastCamera = current;
       await page.waitForTimeout(50);
