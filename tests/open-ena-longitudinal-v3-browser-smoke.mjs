@@ -995,7 +995,10 @@ async function exerciseTrajectoryPlotActions(page, args) {
   await repaintCodeColor("#218ebf");
   const orthographicColorRepaint = await readAspectRatio();
   assertBrowser(aspectApproximatelyEqual(orthographicColorRepaint, orthographicZoomIn), "same-fit Code color repaint reset orthographic aspect");
-  assertBrowser(cameraApproximatelyEqual(await readCamera(), orthographicCameraBeforeRepaint), "same-fit Code color repaint changed orthographic camera");
+  const orthographicCameraAfterRepaint = await readCamera();
+  const repaintEvents = await page.evaluate(() => window.__nativeCameraActionAudit.slice(-80));
+  writeFileSync(join(artifactDirectory, "orthographic-color-repaint-diagnostic.json"), JSON.stringify({ beforeCamera: orthographicCameraBeforeRepaint, afterCamera: orthographicCameraAfterRepaint, beforeAspect: orthographicZoomIn, afterAspect: orthographicColorRepaint, events: repaintEvents }, null, 2));
+  assertBrowser(cameraApproximatelyEqual(orthographicCameraAfterRepaint, orthographicCameraBeforeRepaint), "same-fit Code color repaint changed orthographic camera");
   await repaintCodeColor(originalCodeColor);
   assertBrowser(aspectApproximatelyEqual(await readAspectRatio(), orthographicZoomIn), "restoring Code color reset orthographic aspect");
   await assertScientificInvariants("orthographic Code color repaint");
