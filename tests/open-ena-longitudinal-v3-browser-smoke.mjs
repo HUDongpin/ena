@@ -1371,7 +1371,8 @@ async function exercisePendingImageActions(page) {
   }
 }
 
-async function checkQueuedRenderExitV3(page) {
+async function checkQueuedRenderExitV3(page, { mode = "restore" } = {}) {
+  const focusReceiptName = mode === "restore" ? "queued-exit-focus.json" : "queued-exit-focus-user-choice.json";
   const baselineScience = await nativeScience(page);
   const shell=page.locator('.open-ena-interactive-3d-figure'), fullscreen=shell.locator('[data-ena-plot-action="fullscreen"]'), copy=shell.locator('[data-ena-plot-action="copy-image"]');
   await page.evaluate(()=>{
@@ -1379,7 +1380,7 @@ async function checkQueuedRenderExitV3(page) {
     let proto=HTMLImageElement.prototype,onload;while(proto&&!onload){onload=Object.getOwnPropertyDescriptor(proto,'onload');proto=Object.getPrototypeOf(proto);}if(!onload?.set||!onload?.get)throw Error('Native image event unavailable');
     const audit={figure,fullscreen:Object.getOwnPropertyDescriptor(figure,'requestFullscreen'),previous:Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'onload'),onload,release:null,released:false,releaseCount:0,held:null,events:[],snapshots:[],listeners:[]};window.__task38QueuedExit=audit;
     Object.defineProperty(figure,'requestFullscreen',{configurable:true,value:async()=>{throw Error('isolated fallback request');}});
-    audit.snapshot=label=>{const active=document.activeElement,exit=figure.querySelector('[data-ena-plot-action="fullscreen"]');const value={label,at:performance.now(),busy:figure.querySelector('[data-ena-interactive-camera]')?.getAttribute('aria-busy'),fallback:figure.getAttribute('data-fallback-fullscreen'),activeTag:active?.tagName,activeAction:active?.getAttribute('data-ena-plot-action'),exitDisabled:exit.disabled,focused:active===exit,inside:figure.contains(active),callbackState:audit.released?"released":audit.release?"held":"not-held",releaseCount:audit.releaseCount};audit.snapshots.push(value);return value;};
+    audit.snapshot=label=>{const active=document.activeElement,exit=figure.querySelector('[data-ena-plot-action="fullscreen"]');const value={label,at:performance.now(),busy:figure.querySelector('[data-ena-interactive-camera]')?.getAttribute('aria-busy'),fallback:figure.getAttribute('data-fallback-fullscreen'),activeTag:active?.tagName,activeAction:active?.getAttribute('data-ena-plot-action'),exitDisabled:exit.disabled,focused:active===exit,inside:figure.contains(active),figureConnected:figure.isConnected,currentFigureMatches:document.querySelector(".open-ena-interactive-3d-figure")===figure,callbackState:audit.released?"released":audit.release?"held":"not-held",releaseCount:audit.releaseCount};audit.snapshots.push(value);return value;};
     for(const type of ['focusin','focusout','click','keydown']){const listener=event=>{audit.events.push({...audit.snapshot(type),eventTarget: event.target?.getAttribute?.('data-ena-plot-action'),key:event.key??null});if(audit.events.length>160)audit.events.shift();};document.addEventListener(type,listener,true);audit.listeners.push({type,listener});}
     Object.defineProperty(HTMLImageElement.prototype,'onload',{configurable:true,get(){return onload.get.call(this);},set(callback){onload.set.call(this,typeof callback!=='function'?callback:function(event){if(!audit.release&&this.naturalWidth>0&&/^(blob:|data:image\/svg)/u.test(this.src)){audit.held={width:this.naturalWidth,height:this.naturalHeight,scheme:this.src.split(':')[0]};audit.release=()=>{if(audit.released)return;audit.released=true;audit.releaseCount++;return callback.call(this,event);};}else callback.call(this,event);});}});
   });
@@ -1398,15 +1399,21 @@ async function checkQueuedRenderExitV3(page) {
     const beforeExit=await page.evaluate(()=>window.__task38QueuedExit.snapshot('queued-before-exit'));assert.equal(beforeExit.exitDisabled,false);assert.equal(beforeExit.callbackState,"held");
     await fullscreen.click();await page.waitForFunction(()=>document.querySelector('.open-ena-interactive-3d-figure')?.getAttribute('data-fallback-fullscreen')!=='true');
     await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);window.__task38QueuedExit.snapshot('exited-still-render-held');});
+    const chosenFocus = mode === "user-choice" ? page.getByRole("navigation", { name: "Analysis modes" }).getByRole("button", { name: "Model", exact: true }) : null;
+    if (chosenFocus) { await chosenFocus.click(); assert.equal(await chosenFocus.evaluate(button => button === document.activeElement), true); await page.evaluate(() => window.__task38QueuedExit.snapshot("later-user-focus-before-release")); }
     await page.evaluate(()=>window.__task38QueuedExit.release());await page.waitForFunction(()=>document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute('aria-busy')==='false',null,{timeout:30000});
     await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);window.__task38QueuedExit.snapshot('ready-after-release');});
     result=await page.evaluate(()=>({held:window.__task38QueuedExit.held,events:window.__task38QueuedExit.events,snapshots:window.__task38QueuedExit.snapshots,scienceRequests:window.__openEnaNativeAudit.requests.length,current:document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute('data-result-status')}));
     assert.deepEqual(await nativeScience(page), baselineScience, 'queued display focus return changed scientific authority or Worker count');
     assert.equal(result.snapshots.at(-1).callbackState, 'released'); assert.equal(result.snapshots.at(-1).releaseCount, 1);
-    writeFileSync(join(artifactDirectory,'queued-exit-focus.json'),JSON.stringify({ latencyInjection: 'Delivery of one actually loaded native image callback held until actual queued-render Exit observation', ...result },null,2));
-    assert.equal(result.snapshots.at(-1).focused,true,'busy Exit must return focus after the held genuine PNG and queued display render finish');return result;
+    writeFileSync(join(artifactDirectory,focusReceiptName),JSON.stringify({ latencyInjection: 'Delivery of one actually loaded native image callback held until actual queued-render Exit observation', ...result },null,2));
+    if (chosenFocus) {
+      assert.equal(await chosenFocus.evaluate(button => button === document.activeElement), true, "deferred fullscreen return stole later user focus");
+      assert.equal(result.snapshots.at(-1).focused, false);
+    } else { assert.equal(result.snapshots.at(-1).figureConnected, true); assert.equal(result.snapshots.at(-1).currentFigureMatches, true); assert.equal(result.snapshots.at(-1).focused,true,'busy Exit must return focus after the held genuine PNG and queued display render finish'); }
+    return result;
   } catch(error) {
-    result=await page.evaluate(()=>({held:window.__task38QueuedExit.held,events:window.__task38QueuedExit.events,snapshots:[...window.__task38QueuedExit.snapshots,window.__task38QueuedExit.snapshot('failure-before-finally')]}));writeFileSync(join(artifactDirectory,'queued-exit-focus.json'),JSON.stringify({status:'FAIL',error:String(error),...result},null,2));throw error;
+    result=await page.evaluate(()=>({held:window.__task38QueuedExit.held,events:window.__task38QueuedExit.events,snapshots:[...window.__task38QueuedExit.snapshots,window.__task38QueuedExit.snapshot('failure-before-finally')]}));writeFileSync(join(artifactDirectory,focusReceiptName),JSON.stringify({status:'FAIL',error:String(error),...result},null,2));throw error;
   } finally {
     await page.evaluate(()=>{const a=window.__task38QueuedExit;a.release?.();for(const{type,listener}of a.listeners)document.removeEventListener(type,listener,true);if(a.previous)Object.defineProperty(HTMLImageElement.prototype,'onload',a.previous);else delete HTMLImageElement.prototype.onload;if(a.fullscreen)Object.defineProperty(a.figure,'requestFullscreen',a.fullscreen);else delete a.figure.requestFullscreen;const root=a.figure.querySelector('[data-ena-plotly-root]');root?.removeListener?.('plotly_hover',root.__task38QueuedHover);delete window.__task38QueuedExit;});
   }
@@ -2523,6 +2530,10 @@ try {
   const plotActionAudit = await runBrowserPhase("perspective orthographic native SVG and actual PNG actions", exerciseTrajectoryPlotActions, { ...scientificArgs, expectedCameraState: expectedCameraStates.isometric }, 240_000);
   const pendingImageAudit = await runBrowserPhase("real pending PNG denial clipboard rejection and recovery", exercisePendingImageActions, {}, 240_000);
   await runBrowserPhase("actual loaded-image latency and queued-render Exit focus return", checkQueuedRenderExitV3, {}, 180_000);
+  await runBrowserPhase("later user focus cancels queued fullscreen return", checkQueuedRenderExitV3, { mode: "user-choice" }, 180_000);
+  await runtime.page.getByRole("navigation", { name: "Analysis modes" }).getByRole("button", { name: "Plot Tools", exact: true }).click();
+  await runtime.page.getByRole("button", { name: "Reset node positions", exact: true }).click();
+  await runtime.page.waitForFunction(() => document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy") === "false", null, { timeout: 30000 });
   const fallbackA11yAudit = await runBrowserPhase("reversible fallback fullscreen keyboard modal", exerciseFallbackFullscreenAccessibility, { viewport: { width: 1440, height: 1000 } });
   const responsiveAudit = await runBrowserPhase("responsive native fullscreen and canvas geometry", captureResponsiveEvidence, { viewports: viewportMatrix, artifactDirectory });
   const finalCurrentScience = await nativeScience(runtime.page);

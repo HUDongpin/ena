@@ -1519,7 +1519,13 @@ test("3D fullscreen is native-first with a safe single-owner fallback, lifecycle
   assert.match(interactive, /setAttribute\("aria-modal", "true"\)/u);
   assert.match(interactive, /setAttribute\("aria-label", fallbackFullscreenLabel\)/u);
   assert.match(interactive, /copy\.plot\.fullscreenDialog/u);
-  assert.match(interactive, /fullscreenInitiatorRef\.current\?\.focus\(\)/u);
+  assert.match(interactive, /fullscreenFocusReturnRef\.current\?\.request\(initiator/u);
+  assert.match(interactive, /fullscreenFocusReturnRef\.current\?\.ready\(status === "error"\)/u);
+  for (const event of ["focusin", "pointerdown"]) {
+    assert.ok(interactive.includes(`document.addEventListener("${event}"`));
+    assert.ok(interactive.includes(`document.removeEventListener("${event}"`));
+  }
+  assert.match(interactive, /actionEpochRef\.current === epoch && figureRef\.current === figure/u);
   assert.match(interactive, /requestAnimationFrame\(/u);
   assert.match(interactive, /Plotly\.Plots\.resize\(plotRoot\)/u);
   assert.match(interactive, /cancelAnimationFrame\(/u);

@@ -5,6 +5,7 @@ import {
   applyCompactTrajectoryPlotlyLayoutV3,
   applyFullscreenTrajectoryPlotlyLayoutV3,
   cloneTrajectoryPlotlyInputV3,
+  createOpenEnaFullscreenFocusReturnV3,
 } from "../lib/open-ena/longitudinal-v3-display";
 
 test("Plotly receives a mutable deep clone while the scientific display spec stays immutable", () => {
@@ -115,4 +116,61 @@ test("non-fullscreen trajectory layout remains unchanged", () => {
 
   assert.equal(applyFullscreenTrajectoryPlotlyLayoutV3(cloned, false), cloned);
   assert.equal(JSON.stringify(cloned), before);
+});
+
+
+function focusReturnFixture() {
+  type Target = { name: string; connected: boolean; enabled: boolean };
+  const body: Target = { name: "body", connected: true, enabled: true };
+  const entry: Target = { name: "entry", connected: true, enabled: false };
+  const region: Target = { name: "region", connected: true, enabled: true };
+  const other: Target = { name: "other", connected: true, enabled: true };
+  let active: Target = body, current = true, sequence = 0;
+  const frames = new Map<number, () => void>(), allFrames: Array<() => void> = [], focused: string[] = [];
+  const owner = createOpenEnaFullscreenFocusReturnV3<Target>({
+    active: () => active, neutral: target => target === body || target === null,
+    usable: target => target.connected && target.enabled,
+    focus: target => { active = target; focused.push(target.name); owner.userIntent(target); },
+    schedule: callback => { const id = ++sequence; frames.set(id, callback); allFrames.push(callback); return id; },
+    cancelSchedule: id => { frames.delete(id); },
+  });
+  return { owner, body, entry, region, other, focused, frames, allFrames,
+    request: () => owner.request(entry, region, () => current),
+    setActive: (target: Target) => { active = target; }, invalidate: () => { current = false; },
+    frame: () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback()); },
+  };
+}
+
+test("deferred fullscreen return waits without polling then completes once at readiness", () => {
+  const f = focusReturnFixture(); f.request(); f.frame();
+  assert.deepEqual(f.focused, []); assert.equal(f.frames.size, 0, "disabled target must not spin animation frames");
+  f.entry.enabled = true; f.owner.ready(false); f.frame();
+  assert.deepEqual(f.focused, ["entry"]);
+  f.owner.ready(false); f.frame(); assert.deepEqual(f.focused, ["entry"], "own focus event must not create another return");
+});
+
+test("later focus or pointer choice cancels a pending return, including an already queued callback", () => {
+  for (const afterFrame of [false, true]) {
+    const f = focusReturnFixture(); f.request(); if (afterFrame) f.frame();
+    f.setActive(f.other); f.owner.userIntent(f.other); f.entry.enabled = true; f.owner.ready(false);
+    f.allFrames.forEach(callback => callback()); f.frame(); assert.deepEqual(f.focused, []);
+  }
+});
+
+test("reentry or unmount cancellation and changed context cannot complete an obsolete return", () => {
+  for (const action of ["cancel", "context", "disconnected"] as const) {
+    const f = focusReturnFixture(); f.request();
+    if (action === "cancel") f.owner.cancel();
+    if (action === "context") f.invalidate();
+    if (action === "disconnected") { f.entry.connected = false; f.region.connected = false; }
+    f.entry.enabled = true; f.owner.ready(false); f.allFrames.forEach(callback => callback()); f.frame();
+    assert.deepEqual(f.focused, []);
+  }
+  const f = focusReturnFixture(); f.request(); const stale = f.allFrames[0]!; f.owner.cancel(); f.request();
+  f.entry.enabled = true; stale(); assert.deepEqual(f.focused, []); f.frame(); assert.deepEqual(f.focused, ["entry"]);
+});
+
+test("terminal render error uses the usable plot region and ends the focus request", () => {
+  const f = focusReturnFixture(); f.request(); f.frame(); f.owner.ready(true); f.frame();
+  assert.deepEqual(f.focused, ["region"]); f.entry.enabled = true; f.owner.ready(false); f.frame(); assert.deepEqual(f.focused, ["region"]);
 });

@@ -9,6 +9,7 @@ import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
 import type { OpenEnaDerivedGroupDisplay } from "@/lib/open-ena/group-display";
 import {
   isolateOpenEnaFallbackFullscreenOutsideTreeV3,
+  createOpenEnaFullscreenFocusReturnV3,
   nextOpenEnaFallbackFullscreenFocusV3,
 } from "@/lib/open-ena/longitudinal-v3-display";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
@@ -392,7 +393,15 @@ export default function OpenEnaInteractive3DPlot({
   const fullscreenInitiatorRef = useRef<HTMLButtonElement | null>(null);
   const fullscreenResizeFrameRef = useRef<number | null>(null);
   const nativeTrajectoryFullscreenSizedRef = useRef(false);
-  const fullscreenFocusFrameRef = useRef<number | null>(null);
+  const fullscreenFocusReturnRef = useRef<ReturnType<typeof createOpenEnaFullscreenFocusReturnV3<HTMLElement>> | null>(null);
+  if (!fullscreenFocusReturnRef.current) fullscreenFocusReturnRef.current = createOpenEnaFullscreenFocusReturnV3<HTMLElement>({
+    active: () => document.activeElement instanceof HTMLElement ? document.activeElement : null,
+    neutral: target => target === null || target === document.body,
+    usable: target => target.isConnected && !target.matches(":disabled") && !target.closest("[inert], [hidden]") && target.getClientRects().length > 0,
+    focus: target => target.focus(),
+    schedule: callback => window.requestAnimationFrame(callback),
+    cancelSchedule: id => window.cancelAnimationFrame(id),
+  });
   const fullscreenRequestPendingRef = useRef(false);
   const fullscreenStateRef = useRef(false);
   const fallbackFullscreenCleanupRef = useRef<(() => void) | null>(null);
@@ -408,9 +417,13 @@ export default function OpenEnaInteractive3DPlot({
   const actionPendingRef = useRef(false), actionEpochRef = useRef(0);
   useEffect(() => {
     actionEpochRef.current++; actionPendingRef.current = false; setActionPending(false);
-    return () => { actionEpochRef.current++; actionPendingRef.current = false; };
+    return () => { actionEpochRef.current++; actionPendingRef.current = false; fullscreenFocusReturnRef.current?.cancel(); };
   }, [result, xDimension, yDimension, zDimension]);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    if (isFullscreen) fullscreenFocusReturnRef.current?.cancel();
+    else if (status === "ready" || status === "error") fullscreenFocusReturnRef.current?.ready(status === "error");
+  }, [isFullscreen, status]);
   const [hoveredCode, setHoveredCode] = useState<string | null>(null);
   const [nodeDragging, setNodeDragging] = useState<string | null>(null);
   const generatedFullscreenTargetId = `open-ena-interactive-3d-fullscreen-target-${instanceId}`;
@@ -691,6 +704,14 @@ export default function OpenEnaInteractive3DPlot({
       (fallbackFullscreenFocusables(target)[0] ?? fullscreenButtonRef.current)?.focus();
     };
 
+    const handleFocusChoice = (event: FocusEvent) => fullscreenFocusReturnRef.current?.userIntent(event.target instanceof HTMLElement ? event.target : null);
+    const handlePointerChoice = (event: globalThis.PointerEvent) => fullscreenFocusReturnRef.current?.userIntent(
+      event.target instanceof Node && fullscreenButtonRef.current?.contains(event.target) ? fullscreenButtonRef.current : null,
+    );
+    const handleWindowBlur = () => fullscreenFocusReturnRef.current?.cancel();
+    document.addEventListener("focusin", handleFocusChoice, true);
+    document.addEventListener("pointerdown", handlePointerChoice, true);
+    window.addEventListener("blur", handleWindowBlur);
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     document.addEventListener("fullscreenerror", handleFullscreenError);
     document.addEventListener("keydown", handleKeyDown);
@@ -699,6 +720,10 @@ export default function OpenEnaInteractive3DPlot({
     syncFullscreenState(false);
 
     return () => {
+      document.removeEventListener("focusin", handleFocusChoice, true);
+      document.removeEventListener("pointerdown", handlePointerChoice, true);
+      window.removeEventListener("blur", handleWindowBlur);
+      fullscreenFocusReturnRef.current?.cancel();
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
       document.removeEventListener("fullscreenerror", handleFullscreenError);
       document.removeEventListener("keydown", handleKeyDown);
@@ -711,10 +736,6 @@ export default function OpenEnaInteractive3DPlot({
       if (fullscreenResizeFrameRef.current !== null) {
         window.cancelAnimationFrame(fullscreenResizeFrameRef.current);
         fullscreenResizeFrameRef.current = null;
-      }
-      if (fullscreenFocusFrameRef.current !== null) {
-        window.cancelAnimationFrame(fullscreenFocusFrameRef.current);
-        fullscreenFocusFrameRef.current = null;
       }
       fullscreenRequestPendingRef.current = false;
       fullscreenStateRef.current = false;
@@ -1195,13 +1216,13 @@ export default function OpenEnaInteractive3DPlot({
   }
 
   function restoreFullscreenFocus() {
-    if (fullscreenFocusFrameRef.current !== null) {
-      window.cancelAnimationFrame(fullscreenFocusFrameRef.current);
-    }
-    fullscreenFocusFrameRef.current = window.requestAnimationFrame(() => {
-      fullscreenFocusFrameRef.current = null;
-      fullscreenInitiatorRef.current?.focus();
-    });
+    const initiator = fullscreenInitiatorRef.current, figure = figureRef.current;
+    if (!initiator || !figure) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && !figure.contains(active)) return;
+    const epoch = actionEpochRef.current;
+    fullscreenFocusReturnRef.current?.request(initiator, figure.querySelector<HTMLElement>('[data-ena-interactive-camera="true"]'),
+      () => actionEpochRef.current === epoch && figureRef.current === figure && figure.isConnected && initiator.isConnected && !fullscreenStateRef.current);
   }
 
   function restoreFallbackFullscreenAccessibility() {
@@ -1272,6 +1293,7 @@ export default function OpenEnaInteractive3DPlot({
   }
 
   async function enterFullscreen(target: HTMLElement) {
+    fullscreenFocusReturnRef.current?.cancel();
     fullscreenInitiatorRef.current = fullscreenButtonRef.current;
     if (openEna3dFullscreenMode({
       requestFullscreen: target.requestFullscreen,
