@@ -1200,6 +1200,30 @@ async function exerciseTrajectoryPlotActions(page, args) {
 }
 
 async function exercisePendingImageActions(page) {
+  // Passive F1 evidence: no focus/preventDefault/propagation changes. Capture
+  // the failing instant before the pending PNG's finally releases its write.
+  await page.evaluate(() => {
+    const figure = document.querySelector(".open-ena-interactive-3d-figure");
+    const selector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const describe = element => {
+      if (!(element instanceof Element)) return null;
+      const ancestors = []; for (let node = element; node; node = node.parentElement) ancestors.push(node);
+      const box = element.getBoundingClientRect(), style = getComputedStyle(element);
+      return { tag: element.tagName, role: element.getAttribute("role"), action: element.getAttribute("data-ena-plot-action"), region: element.hasAttribute("data-ena-interactive-camera"), inside: figure.contains(element), connected: element.isConnected, disabled: element.matches(":disabled"), tabindex: element.getAttribute("tabindex"), tabIndex: element.tabIndex ?? null, ariaHidden: element.getAttribute("aria-hidden"), hidden: element.hasAttribute("hidden"), inertAncestor: ancestors.some(node => node.hasAttribute("inert")), hiddenAncestor: ancestors.some(node => node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true"), display: style.display, visibility: style.visibility, rects: element.getClientRects().length, width: box.width, height: box.height };
+    };
+    const audit = { events: [], snapshots: [], listeners: [] };
+    const snapshot = label => ({ label, at: performance.now(), active: describe(document.activeElement), documentHasFocus: document.hasFocus(), figureConnected: figure.isConnected, fallback: figure.getAttribute("data-fallback-fullscreen"), figureInert: figure.hasAttribute("inert"), role: figure.getAttribute("role"), modal: figure.getAttribute("aria-modal"), renderStatus: figure.getAttribute("data-ena-plot-status"), busy: figure.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy"), pendingWrite: Boolean(window.__nativePendingImage?.resolve), actionEpochExposed: false, focusables: [...figure.querySelectorAll(selector)].map((element, index) => ({ index, ...describe(element) })), actions: [...figure.querySelectorAll('[data-ena-plot-action]')].map(describe) });
+    audit.capture = label => { const value = snapshot(label); audit.snapshots.push(value); if (audit.snapshots.length > 20) audit.snapshots.shift(); return figure.contains(document.activeElement); };
+    for (const [scope, target] of [["window", window], ["document", document]]) for (const capture of [true, false]) for (const type of ["keydown", "keyup", "focusin", "focusout"]) {
+      const listener = event => {
+        if (type.startsWith("key") && !["Tab", "Shift", "Escape"].includes(event.key)) return;
+        audit.events.push({ at: performance.now(), scope, capture, type, key: event.key ?? null, shift: event.shiftKey ?? null, phase: event.eventPhase, defaultPrevented: event.defaultPrevented, cancelBubble: event.cancelBubble, target: describe(event.target), active: describe(document.activeElement), fallback: figure.getAttribute("data-fallback-fullscreen"), pendingWrite: Boolean(window.__nativePendingImage?.resolve) });
+        if (audit.events.length > 160) audit.events.shift();
+      };
+      target.addEventListener(type, listener, capture); audit.listeners.push({ target, type, listener, capture });
+    }
+    window.__nativePendingFocus = audit;
+  });
   const shell = page.locator('.open-ena-interactive-3d-figure');
   const copy = shell.locator('[data-ena-plot-action="copy-image"]');
   const fullscreen = shell.locator('[data-ena-plot-action="fullscreen"]');
@@ -1240,10 +1264,11 @@ async function exercisePendingImageActions(page) {
     assert.equal(pending.pngs[0].type, "image/png"); assert.ok(pending.pngs[0].bytes > 8);
     assert.equal(pending.actions.filter(a => a.action !== "fullscreen" && a.disabled).length, 4);
     assert.equal(pending.actions.find(a => a.action === "fullscreen").disabled, false);
+    await page.evaluate(() => window.__nativePendingFocus.capture("before-tab"));
     await page.keyboard.press("Tab");
-    assert.ok(await shell.evaluate(figure => figure.contains(document.activeElement)), "pending fallback Tab escaped dialog");
+    assert.ok(await shell.evaluate(figure => { window.__nativePendingFocus.capture("after-tab"); return figure.contains(document.activeElement); }), "pending fallback Tab escaped dialog");
     await page.keyboard.press("Shift+Tab");
-    assert.ok(await shell.evaluate(figure => figure.contains(document.activeElement)), "pending fallback Shift+Tab escaped dialog");
+    assert.ok(await shell.evaluate(figure => { window.__nativePendingFocus.capture("after-shift-tab"); return figure.contains(document.activeElement); }), "pending fallback Shift+Tab escaped dialog");
     // Exit stays available during the genuinely pending write.
     await fullscreen.click();
     await page.evaluate(() => window.__nativePendingImage.reject(new Error("intentional isolated clipboard write rejection")));
@@ -1261,9 +1286,17 @@ async function exercisePendingImageActions(page) {
     const recoveryStatus = await shell.locator('[role=status]').innerText();
     assert.match(recoveryStatus, /copied/iu);
     await nativeScience(page);
+    const focus = await page.evaluate(() => ({ events: window.__nativePendingFocus.events, snapshots: window.__nativePendingFocus.snapshots }));
+    writeFileSync(join(artifactDirectory, "pending-focus-diagnostic.json"), JSON.stringify({ status: "PASS", ...focus }, null, 2));
     return { pending, rejected, errorStatus, recovered: await read(), recoveryStatus };
+  } catch (error) {
+    const focus = await page.evaluate(() => { window.__nativePendingFocus.capture("failure-before-release"); return { events: window.__nativePendingFocus.events, snapshots: window.__nativePendingFocus.snapshots }; });
+    writeFileSync(join(artifactDirectory, "pending-focus-diagnostic.json"), JSON.stringify({ status: "FAIL", ...focus }, null, 2));
+    throw error;
   } finally {
     await page.evaluate(() => {
+      for (const { target, type, listener, capture } of window.__nativePendingFocus.listeners) target.removeEventListener(type, listener, capture);
+      delete window.__nativePendingFocus;
       const audit = window.__nativePendingImage;
       audit.resolve?.();
       HTMLCanvasElement.prototype.toDataURL = audit.canvas;
