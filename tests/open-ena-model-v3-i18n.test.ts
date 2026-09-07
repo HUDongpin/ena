@@ -207,3 +207,11 @@ test("Simplified Chinese dynamic scientific counters use simplified classifiers"
   assert.equal(copy.horizons.singleRowObservations(2), "2 个单行观测");
   assert.doesNotMatch([copy.units.unitCount(2), copy.units.groupCount(2), copy.horizons.horizonCount(2), copy.horizons.observationCount(2)].join(" "), /個/u);
 });
+
+
+test("native Data View return action uses existing localized visual and accessible names", async () => {
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync("components/open-ena/OpenEnaWorkspace.tsx", "utf8");
+  for (const field of ["workspaceCopy.dataView.returnLabel", "workspaceCopy.dataView.returnAriaLabel", "copy.ona.dataView.returnLabel", "copy.ona.dataView.returnAriaLabel"]) assert.ok(source.includes(field));
+  assert.match(source, /aria-label=\{centerSurface === "data"/);
+});

@@ -1138,7 +1138,7 @@ async function exerciseDataView(page, args) {
   const dataView = page.getByTestId("open-ena-3d-data-view");
   await dataView.waitFor({ state: "visible", timeout: 30_000 });
   assertBrowser(await toggle.getAttribute("aria-pressed") === "true", "mouse did not press Data View");
-  assertBrowser((await toggle.textContent()).includes("Comparison Plot"), "Data View did not expose its return action");
+  assertBrowser((await toggle.getAttribute("aria-label")).includes("Comparison Plot"), "Data View did not expose its return action");
   assertBrowser(await page.getByTestId("open-ena-3d-comparison-plot").count() === 0, "Comparison plot remained mounted behind Data View");
   assertBrowser(await page.getByTestId("open-ena-3d-primary-plot").count() === 1, "Primary plot disappeared in Data View");
   assertBrowser(await page.getByTestId("open-ena-3d-secondary-plot").count() === 1, "Secondary plot disappeared in Data View");
