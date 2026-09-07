@@ -1779,6 +1779,8 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       "settling Plotly relayout moved focus away from Exit fullscreen",
     );
     const fallbackLayoutAudit = await readFullscreenPlotLayout(page);
+    writeFileSync(join(artifactDirectory, "fallback-fullscreen-layout.json"), JSON.stringify(fallbackLayoutAudit, null, 2));
+    await shellLocator.screenshot({ path: join(artifactDirectory, "fallback-fullscreen-before-assert.png") });
     assertFullscreenPlotLayout(fallbackLayoutAudit, "fallback fullscreen layout", "fallback");
 
     const settledRuntimeLast = settledState.focusableDescriptors.at(-2);
@@ -2092,6 +2094,8 @@ async function captureResponsiveEvidence(page, args) {
       })();
     }, null, { timeout: 15_000 });
   const fullscreenPlotAudit = await readFullscreenPlotLayout(page);
+  writeFileSync(join(artifactDirectory, "native-fullscreen-layout.json"), JSON.stringify(fullscreenPlotAudit, null, 2));
+  await page.locator(".open-ena-interactive-3d-figure").screenshot({ path: join(artifactDirectory, "native-fullscreen-before-assert.png") });
   assertFullscreenPlotLayout(fullscreenPlotAudit, "fullscreen layout", "native");
   const fullscreenPath = args.artifactDirectory + "/desktop-fullscreen-1440x1000.png";
   await page.locator(".open-ena-interactive-3d-figure").screenshot({ path: fullscreenPath });
