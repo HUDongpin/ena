@@ -1205,23 +1205,29 @@ async function exercisePendingImageActions(page) {
   await page.evaluate(() => {
     const figure = document.querySelector(".open-ena-interactive-3d-figure");
     const selector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-    const describe = element => {
+    const describeGeometry = element => {
       if (!(element instanceof Element)) return null;
       const ancestors = []; for (let node = element; node; node = node.parentElement) ancestors.push(node);
       const box = element.getBoundingClientRect(), style = getComputedStyle(element);
       return { tag: element.tagName, role: element.getAttribute("role"), action: element.getAttribute("data-ena-plot-action"), region: element.hasAttribute("data-ena-interactive-camera"), inside: figure.contains(element), connected: element.isConnected, disabled: element.matches(":disabled"), tabindex: element.getAttribute("tabindex"), tabIndex: element.tabIndex ?? null, ariaHidden: element.getAttribute("aria-hidden"), hidden: element.hasAttribute("hidden"), inertAncestor: ancestors.some(node => node.hasAttribute("inert")), hiddenAncestor: ancestors.some(node => node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true"), display: style.display, visibility: style.visibility, rects: element.getClientRects().length, width: box.width, height: box.height };
     };
+    const describe = element => element instanceof Element ? { tag: element.tagName, role: element.getAttribute("role"), action: element.getAttribute("data-ena-plot-action"), region: element.hasAttribute("data-ena-interactive-camera"), inside: figure.contains(element), connected: element.isConnected, disabled: element.matches(":disabled"), tabindex: element.getAttribute("tabindex") } : null;
     const audit = { events: [], snapshots: [], listeners: [] };
-    const snapshot = label => ({ label, at: performance.now(), active: describe(document.activeElement), documentHasFocus: document.hasFocus(), figureConnected: figure.isConnected, fallback: figure.getAttribute("data-fallback-fullscreen"), figureInert: figure.hasAttribute("inert"), role: figure.getAttribute("role"), modal: figure.getAttribute("aria-modal"), renderStatus: figure.getAttribute("data-ena-plot-status"), busy: figure.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy"), pendingWrite: Boolean(window.__nativePendingImage?.resolve), actionEpochExposed: false, focusables: [...figure.querySelectorAll(selector)].map((element, index) => ({ index, ...describe(element) })), actions: [...figure.querySelectorAll('[data-ena-plot-action]')].map(describe) });
-    audit.capture = label => { const value = snapshot(label); audit.snapshots.push(value); if (audit.snapshots.length > 20) audit.snapshots.shift(); return figure.contains(document.activeElement); };
+    const snapshot = (label, geometry = false) => ({ label, at: performance.now(), active: geometry ? describeGeometry(document.activeElement) : describe(document.activeElement), documentHasFocus: document.hasFocus(), figureConnected: figure.isConnected, fallback: figure.getAttribute("data-fallback-fullscreen"), figureInert: figure.hasAttribute("inert"), role: figure.getAttribute("role"), modal: figure.getAttribute("aria-modal"), busy: figure.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy"), nodeHovered: Boolean(figure.querySelector('[data-ena-node-hovered]')), pendingWrite: Boolean(window.__nativePendingImage?.resolve), actionEpochExposed: false, ...(geometry ? { focusables: [...figure.querySelectorAll(selector)].map((element, index) => ({ index, ...describeGeometry(element) })), actions: [...figure.querySelectorAll('[data-ena-plot-action]')].map(describeGeometry) } : {}) });
+    audit.capture = (label, geometry = false) => { const value = snapshot(label, geometry); audit.snapshots.push(value); if (audit.snapshots.length > 40) audit.snapshots.shift(); return figure.contains(document.activeElement); };
     for (const [scope, target] of [["window", window], ["document", document]]) for (const capture of [true, false]) for (const type of ["keydown", "keyup", "focusin", "focusout"]) {
       const listener = event => {
         if (type.startsWith("key") && !["Tab", "Shift", "Escape"].includes(event.key)) return;
-        audit.events.push({ at: performance.now(), scope, capture, type, key: event.key ?? null, shift: event.shiftKey ?? null, phase: event.eventPhase, defaultPrevented: event.defaultPrevented, cancelBubble: event.cancelBubble, target: describe(event.target), active: describe(document.activeElement), fallback: figure.getAttribute("data-fallback-fullscreen"), pendingWrite: Boolean(window.__nativePendingImage?.resolve) });
-        if (audit.events.length > 160) audit.events.shift();
+        audit.events.push({ at: performance.now(), scope, capture, type, key: event.key ?? null, shift: event.shiftKey ?? null, phase: event.eventPhase, defaultPrevented: event.defaultPrevented, cancelBubble: event.cancelBubble, target: describe(event.target), active: describe(document.activeElement), fallback: figure.getAttribute("data-fallback-fullscreen"), pendingWrite: Boolean(window.__nativePendingImage?.resolve), documentHasFocus: document.hasFocus(), busy: figure.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy"), nodeHovered: Boolean(figure.querySelector("[data-ena-node-hovered]")) });
+        if (audit.events.length > 600) audit.events.shift();
       };
       target.addEventListener(type, listener, capture); audit.listeners.push({ target, type, listener, capture });
     }
+    audit.observer = new MutationObserver(records => {
+      for (const record of records) audit.events.push({ at: performance.now(), type: "mutation", attribute: record.attributeName, before: record.oldValue, after: record.target.getAttribute(record.attributeName), target: describe(record.target), active: describe(document.activeElement), documentHasFocus: document.hasFocus(), busy: figure.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy"), fallback: figure.getAttribute("data-fallback-fullscreen"), nodeHovered: Boolean(figure.querySelector("[data-ena-node-hovered]")), pendingWrite: Boolean(window.__nativePendingImage?.resolve) });
+      if (audit.events.length > 600) audit.events.splice(0, audit.events.length - 600);
+    });
+    audit.observer.observe(figure, { subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ["disabled", "aria-busy", "data-fallback-fullscreen"] });
     window.__nativePendingFocus = audit;
   });
   const shell = page.locator('.open-ena-interactive-3d-figure');
@@ -1298,12 +1304,13 @@ async function exercisePendingImageActions(page) {
     writeFileSync(join(artifactDirectory, "pending-focus-diagnostic.json"), JSON.stringify({ status: "PASS", ...focus }, null, 2));
     return { pending, rejected, errorStatus, recovered: await read(), recoveryStatus };
   } catch (error) {
-    const focus = await page.evaluate(() => { window.__nativePendingFocus.capture("failure-before-release"); return { events: window.__nativePendingFocus.events, snapshots: window.__nativePendingFocus.snapshots }; });
+    const focus = await page.evaluate(() => { window.__nativePendingFocus.capture("failure-before-release", true); return { events: window.__nativePendingFocus.events, snapshots: window.__nativePendingFocus.snapshots }; });
     writeFileSync(join(artifactDirectory, "pending-focus-diagnostic.json"), JSON.stringify({ status: "FAIL", ...focus }, null, 2));
     throw error;
   } finally {
     await page.evaluate(() => {
       for (const { target, type, listener, capture } of window.__nativePendingFocus.listeners) target.removeEventListener(type, listener, capture);
+      window.__nativePendingFocus.observer.disconnect();
       delete window.__nativePendingFocus;
       const audit = window.__nativePendingImage;
       audit.resolve?.();
