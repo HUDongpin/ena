@@ -1406,7 +1406,7 @@ async function readFullscreenPlotLayout(page) {
           : "none",
       shell: shellBox,
       camera: structuredClone(scene?._scene?.getCamera?.() ?? scene?.camera ?? null),
-      renderedLayout: { width: root._fullLayout?.width, height: root._fullLayout?.height, margin: structuredClone(root._fullLayout?.margin ?? null), legend: { x: root._fullLayout?.legend?.x, y: root._fullLayout?.legend?.y }, annotationTexts: root._fullLayout?.annotations?.map(annotation => annotation.text) ?? [] },
+      renderedLayout: { width: root._fullLayout?.width, height: root._fullLayout?.height, autosize: root._fullLayout?.autosize, declaredAutosize: root.layout?.autosize, declaredWidth: root.layout?.width, declaredHeight: root.layout?.height, sceneArea: structuredClone(root._fullLayout?._size ?? null), margin: structuredClone(root._fullLayout?.margin ?? null), legend: { x: root._fullLayout?.legend?.x, y: root._fullLayout?.legend?.y }, annotationTexts: root._fullLayout?.annotations?.map(annotation => annotation.text) ?? [] },
       plot: plotBox,
       toolbar: toolbarBox ? {
         ...toolbarBox,
@@ -2007,6 +2007,19 @@ async function captureResponsiveEvidence(page, args) {
   for (const viewport of args.viewports) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.waitForTimeout(250);
+    await page.waitForFunction(() => {
+      const root = document.querySelector('[data-ena-plotly-root=true]');
+      return root && Math.abs(root._fullLayout?.width - root.clientWidth) <= 1 && Math.abs(root._fullLayout?.height - root.clientHeight) <= 1;
+    }, null, { timeout: 15000 }).catch(async error => {
+      writeFileSync(join(artifactDirectory, `${viewport.name}-responsive-canvas-failure.json`), JSON.stringify(await readFullscreenPlotLayout(page), null, 2));
+      await page.locator(".open-ena-interactive-3d-figure").screenshot({ path: join(artifactDirectory, `${viewport.name}-responsive-canvas-failure.png`) });
+      throw error;
+    });
+    const canvasAudit = await readFullscreenPlotLayout(page);
+    const area = canvasAudit.renderedLayout.sceneArea;
+    assertBrowser(Math.abs(canvasAudit.canvas.width - area.w) <= 1 && Math.abs(canvasAudit.canvas.height - area.h) <= 1, "responsive live WebGL size differs from Plotly scene area");
+    assertBrowser(canvasAudit.canvas.left >= canvasAudit.plot.left - 1 && canvasAudit.canvas.right <= canvasAudit.plot.right + 1, "responsive scientific canvas is cropped by its native plot");
+    assertBrowser(Math.abs((canvasAudit.canvas.left + canvasAudit.canvas.right) / 2 - (canvasAudit.plot.left + area.l + area.w / 2)) <= 1, "responsive scientific scene center is outside its computed canvas");
     const overflow = await page.evaluate(() => {
       const shell = document.querySelector(".open-ena-interactive-3d-figure");
       const toolbar = shell?.querySelector(".open-ena-3d-plot-actions") ?? null;
@@ -2092,7 +2105,7 @@ async function captureResponsiveEvidence(page, args) {
     await page.screenshot({ path: pagePath, fullPage: false });
     await page.locator('[data-testid="open-ena-interactive-3d-plot"] [data-ena-plotly-root="true"]').screenshot({ path: plotPath });
     await page.locator(".open-ena-interactive-3d-figure").screenshot({ path: shellPath });
-    results[viewport.name] = { ...viewport, ...overflow, pagePath, plotPath, shellPath };
+    results[viewport.name] = { ...viewport, ...overflow, canvasAudit, pagePath, plotPath, shellPath };
   }
 
   await page.setViewportSize({ width: 1440, height: 1000 });
