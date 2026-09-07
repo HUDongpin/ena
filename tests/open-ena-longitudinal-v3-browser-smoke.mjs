@@ -1243,6 +1243,7 @@ async function exercisePendingImageActions(page) {
   });
   const read = () => page.evaluate(() => {
     const audit = window.__nativePendingImage;
+    window.__nativePendingFocus.capture("pending-read");
     return { calls: audit.calls, generationCalls: audit.generationCalls, downloads: audit.downloads, pngs: audit.pngs, pending: Boolean(audit.resolve), actions: [...document.querySelectorAll('.open-ena-3d-plot-actions [data-ena-plot-action]')].map(button => ({ action: button.dataset.enaPlotAction, disabled: button.disabled, focused: document.activeElement === button })) };
   });
   try {
@@ -1264,11 +1265,18 @@ async function exercisePendingImageActions(page) {
     assert.equal(pending.pngs[0].type, "image/png"); assert.ok(pending.pngs[0].bytes > 8);
     assert.equal(pending.actions.filter(a => a.action !== "fullscreen" && a.disabled).length, 4);
     assert.equal(pending.actions.find(a => a.action === "fullscreen").disabled, false);
-    await page.evaluate(() => window.__nativePendingFocus.capture("before-tab"));
+    for (let traversal = 0; traversal < 12; traversal++) {
+    if (traversal > 0) {
+      await fullscreen.click();
+      await page.waitForFunction(() => document.querySelector(".open-ena-interactive-3d-figure")?.getAttribute("data-fallback-fullscreen") !== "true");
+      await fullscreen.click();
+      await page.waitForFunction(() => document.querySelector(".open-ena-interactive-3d-figure")?.getAttribute("data-fallback-fullscreen") === "true");
+    }
     await page.keyboard.press("Tab");
     assert.ok(await shell.evaluate(figure => { window.__nativePendingFocus.capture("after-tab"); return figure.contains(document.activeElement); }), "pending fallback Tab escaped dialog");
     await page.keyboard.press("Shift+Tab");
     assert.ok(await shell.evaluate(figure => { window.__nativePendingFocus.capture("after-shift-tab"); return figure.contains(document.activeElement); }), "pending fallback Shift+Tab escaped dialog");
+    }
     // Exit stays available during the genuinely pending write.
     await fullscreen.click();
     await page.evaluate(() => window.__nativePendingImage.reject(new Error("intentional isolated clipboard write rejection")));
