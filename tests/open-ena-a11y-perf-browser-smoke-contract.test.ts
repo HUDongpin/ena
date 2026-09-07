@@ -136,3 +136,9 @@ test("native tablet toolbar audit covers download and both exports without chang
   const css = readFileSync(join(process.cwd(), "app/globals.css"), "utf8");
   assert.match(css, /\[data-testid="open-ena-workspace-v3"\] \.ena-visual-toolbar-actions\s*\{[^}]*flex-wrap:\s*wrap/u);
 });
+
+
+test("every isolated page restores default cache after authenticated assets and before sample or measurement", () => {
+  for (const marker of ["contextCachePolicies", "authentication-disabled-then-measurement-browser-default", 'cacheDisabled: false', 'task38-cache-default-before-sample', "loadedPlotlyScripts, []", 'measurementCachePolicy: "browser-default"', '__task38Phase = { phase: "perf"']) assert.ok(source.includes(marker), marker);
+  assert.match(source, /runtime\.drainAssetReads/);
+});

@@ -680,7 +680,7 @@ async function runNodeDragAcceptance(page, args) {
   const finalAudit = await readAudit(page);
   assertBrowser(finalAudit.actualHoverHits.length === 2 && finalAudit.actualHoverHits.every(hit => hit.actualMouse), "both Standard and ONA 3D require actual pointer hover hits");
   assertBrowser(finalAudit.analysisRunCount === 2, "node dragging unexpectedly reran analysis");
-  assertBrowser(finalAudit.canonicalResult === onaCanonical.canonicalResult, "drag mutated analytical result");
+  assertBrowser(finalAudit.canonicalResult === onaCanonical.canonicalResult && finalAudit.boundScience === onaCanonical.boundScience, "drag or reset mutated analytical result");
   return { families, finalAudit, currentUrl: page.url() };
 }
 
@@ -761,6 +761,7 @@ const summary = {
   renderFamilies: Object.keys(acceptance.families),
   analyticalRuns: acceptance.finalAudit.analysisRunCount,
   canonicalResultPreserved: true,
+  nativeResponseSciencePreserved: true,
   triptychSynchronization: true,
   incidentGeometryFollowed: true,
   emptySpaceCameraOrbit: true,

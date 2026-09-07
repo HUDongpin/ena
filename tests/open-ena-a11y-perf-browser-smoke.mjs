@@ -51,6 +51,13 @@ function findPlotlyChunkNames() {
 }
 
 async function loginAndLoad(page, baseUrl) {
+  const authenticationCache = await page.context().newCDPSession(page);
+  await authenticationCache.send("Network.enable");
+  await authenticationCache.send("Network.setCacheDisabled", { cacheDisabled: true });
+  const policy = { ...page.__task38Phase, policy: "authentication-disabled-then-measurement-browser-default", disabledAt: new Date().toISOString() };
+  (runtime.receipt.browser.contextCachePolicies ??= []).push(policy);
+  let authenticationDetached = false;
+  runtime.lifecycle.addCleanup(`authentication cache session ${policy.phase} ${policy.repetition}`, async () => { if (!authenticationDetached) { await authenticationCache.detach(); authenticationDetached = true; } });
   await page.addInitScript(() => {
     const NativeWorker = window.Worker;
     window.__task38WorkerResponses = [];
@@ -69,11 +76,24 @@ async function loginAndLoad(page, baseUrl) {
   await page.getByRole("button", { name: "Sign in" }).click();
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
   await rail.waitFor({ timeout: 30_000 });
+  await page.waitForLoadState("networkidle");
+  await runtime.drainAssetReads(`authenticated ${policy.phase} ${policy.repetition} assets before measurement policy`);
+  await authenticationCache.send("Network.setCacheDisabled", { cacheDisabled: false });
+  policy.restoredAt = new Date().toISOString(); policy.measurementCacheDisabled = false;
+  policy.beforeSample = await page.evaluate(expectedNames => {
+    const loadedPlotly = performance.getEntriesByType("resource").filter(entry => expectedNames.includes(new URL(entry.name).pathname.split("/").at(-1)));
+    performance.mark("task38-cache-default-before-sample");
+    return { mark: performance.now(), loadedPlotlyScripts: loadedPlotly.map(entry => new URL(entry.name).pathname) };
+  }, page.__task38PlotlyChunkNames);
+  assert.deepEqual(policy.beforeSample.loadedPlotlyScripts, [], "authentication must not warm the measured Plotly chunk");
+  await authenticationCache.detach(); authenticationDetached = true;
   assert.equal(new URL(page.url()).pathname, "/en/open-ena");
   await rail.getByRole("button", { name: "Data", exact: true }).click();
   const controls = page.locator('[data-ena-workbench-region="controls"]');
   const sample = page.getByRole("button", { name: "Load teaching sample", exact: true });
   await sample.waitFor({ state: "visible", timeout: 30_000 });
+  policy.sampleClick = await page.evaluate(() => performance.now());
+  assert.ok(policy.sampleClick >= policy.beforeSample.mark);
   await sample.click();
   const download = page.getByRole("button", { name: "Download Model", exact: true });
   await download.waitFor({ state: "visible", timeout: 60_000 });
@@ -1278,6 +1298,8 @@ async function runPerformance(page, baseUrl, viewport, plotlyChunkNames) {
     window.__enaLongTaskObserver.observe({ type: "longtask", buffered: false });
   });
   const clickStart = await page.evaluate(() => performance.now());
+  const cacheDefaultMark = await page.evaluate(() => performance.getEntriesByName("task38-cache-default-before-sample")[0]?.startTime);
+  assert.ok(Number.isFinite(cacheDefaultMark) && clickStart > cacheDefaultMark, "3D measurement must follow restored default cache");
   await page.getByRole("button", { name: /^3D ENA/ }).click();
   const comparison = page.locator('[data-ena-plot-role="comparison"][data-ena-plot-status]');
   await waitForPlotTerminal(page, comparison, "comparison");
@@ -1307,6 +1329,7 @@ async function runPerformance(page, baseUrl, viewport, plotlyChunkNames) {
       })),
       largestNewPlotlyScriptChunk: largestNewPlotlyScriptChunk ? {
         name: largestNewPlotlyScriptChunk.name,
+        startTime: largestNewPlotlyScriptChunk.startTime,
         transferSize: largestNewPlotlyScriptChunk.transferSize,
         decodedBodySize: largestNewPlotlyScriptChunk.decodedBodySize,
       } : null,
@@ -1323,12 +1346,13 @@ async function runPerformance(page, baseUrl, viewport, plotlyChunkNames) {
   const scientificIdentityBefore = await readScientificIdentity(page);
   const scientificIdentityAfter = await readScientificIdentity(page);
   assert.deepEqual(scientificIdentityAfter, scientificIdentityBefore, "3D render changed scientific identity");
-  return { viewport, comparisonReady, ...result, scientificIdentity: scientificIdentityBefore };
+  return { viewport, comparisonReady, clickStart, cacheDefaultMark, measurementCachePolicy: "browser-default", ...result, scientificIdentity: scientificIdentityBefore };
 }
 
 mkdirSync(artifactDirectory, { recursive: true });
 let runtime = null;
 let failure = null;
+let completedSummary = null;
 try {
   runtime = await createServedBrowserV3({ root: projectRoot, directory: join(artifactDirectory, "runtime"), credentials: { username, password, secret: sessionSecret, account: accountId }, redact });
   const { browser, baseUrl } = runtime;
@@ -1342,6 +1366,8 @@ try {
     try {
       const a11yPage = await a11yContext.newPage(), perfPage = await perfContext.newPage();
       runtime.observePage(a11yPage); runtime.observePage(perfPage);
+      a11yPage.__task38Phase = { phase: "a11y", repetition: run + 1 }; perfPage.__task38Phase = { phase: "perf", repetition: run + 1 };
+      a11yPage.__task38PlotlyChunkNames = plotlyChunkNames; perfPage.__task38PlotlyChunkNames = plotlyChunkNames;
       const a11y = await runtime.stage(`a11y repetition ${run + 1}`, () => runA11y(a11yPage, baseUrl));
       const perf = await runtime.stage(`perf repetition ${run + 1}`, () => runPerformance(
         perfPage,
@@ -1364,7 +1390,7 @@ try {
       await perfContext.close();
     }
   }
-  writeFileSync(summaryPath, JSON.stringify({
+  completedSummary = {
     schemaVersion: "open-ena.a11y-perf-smoke.v3",
     status: "PASS",
     route: "/en/open-ena",
@@ -1372,11 +1398,11 @@ try {
     budgets,
     plotlyChunkNames,
     metricsBoundary: "lab-only-not-production-CWV",
-  }, null, 2));
+  };
 } catch (error) {
   failure = error;
-  writeFileSync(summaryPath, JSON.stringify({ schemaVersion: "open-ena.a11y-perf-smoke.v3", status: "FAILED", error: redact(error?.stack ?? error) }, null, 2));
 } finally {
-  await runtime?.close(failure);
+  try { await runtime?.close(failure); } catch (error) { failure ??= error; }
 }
+writeFileSync(summaryPath, JSON.stringify(failure ? { ...completedSummary, schemaVersion: "open-ena.a11y-perf-smoke.v3", status: "FAILED", error: redact(failure?.stack ?? failure) } : completedSummary, null, 2));
 if (failure) { console.error(redact(failure.stack ?? failure)); process.exitCode = 1; }
