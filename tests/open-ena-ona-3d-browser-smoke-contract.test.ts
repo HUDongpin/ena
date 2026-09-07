@@ -126,7 +126,7 @@ test("the Yu lane emits aggregate-only evidence without identity screenshots or 
   const source = readFileSync(smokePath, "utf8");
 
   assert.match(source, /Yu_ena_coded_data_0712\.xlsx/u);
-  for (const marker of ["sourcePreparation: false", 'units: ["Group", "Name"]', 'horizons: ["Group", "Name"]', "backward: 2", 'name: "Field"', 'selectOption("Lesson")', 'selectOption("text")', 'name: "Numeric collation"', "literalStringOrderParity", "result-v3"]) assert.ok((source + runtimeSource).includes(marker), marker);
+  for (const marker of ["private setup Units", "private setup Horizons", "private setup Codes", 'fill("2")', 'name: "Field"', 'selectOption("Lesson")', 'selectOption("text")', 'name: "Numeric collation"', "literalStringOrderParity", "result-v3"]) assert.ok((source + runtimeSource).includes(marker), marker);
   for (const marker of ["r.set.points.length !== 87", "sourceRows !== 174", "codes.length !== 7", "edges.length !== 49", "zeroNetworks !== 3", "rawTotal !== 811", "actualNativeBinding", "rawSelfConnections", "actualAuditRowsShown", "Full-run deidentified ordered audit", "aggregateOnly: true"]) assert.ok(source.includes(marker), marker);
   assert.match(source, /rows.length !== 49/);
   assert.match(source, /auditRows.length !== 100/);

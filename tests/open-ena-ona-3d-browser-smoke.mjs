@@ -93,7 +93,7 @@ for (const path of [
 let privateLaneActive = false;
 function redact(value) {
   if (privateLaneActive) {
-    const stage = String(value ?? "").match(/Private ONA gate failed: (private (?:native source setup|bound aggregate and explicit order|actual circles and three directed scenes|full-run rendered aggregate and bounded audit tables)); private details withheld/);
+    const stage = String(value ?? "").match(/Private ONA gate failed: (private (?:setup (?:family|Units|Horizons|Codes|Windows|Lesson order|Run)|native source setup|bound aggregate and explicit order|actual circles and three directed scenes|full-run rendered aggregate and bounded audit tables)); private details withheld/);
     return stage ? stage[0] : "[private ONA diagnostic withheld; inspect fixed aggregate failure stage]";
   }
   return String(value ?? "")
@@ -753,8 +753,35 @@ async function runYuPrivateLane(page, args) {
   try {
     const rail = page.getByRole("navigation", { name: "Analysis modes" });
     await rail.getByRole("button", { name: "Data", exact: true }).click();
-    await page.locator('input[type=file][accept*=".xlsx"]').setInputFiles(args.workbookPath);
-    await prepareNativeFixtureV3(page, { codes: ["EC", "ICT", "MCO", "NI", "SR", "SC", "ATT"], family: "ona", sourcePreparation: false, units: ["Group", "Name"], horizons: ["Group", "Name"], group: "Group", backward: 2 });
+    await page.getByLabel("Open coded CSV or XLSX", { exact: true }).setInputFiles(args.workbookPath);
+    await page.waitForFunction(() => document.querySelector(".ena-visual-toolbar > div:first-child > span")?.textContent === "Yu_ena_coded_data_0712.xlsx");
+    const tab = name => page.getByRole("tab", { name: new RegExp(`^${name}(,|$)`) });
+    const button = name => page.getByRole("button", { name, exact: true });
+    stage = "private setup family";
+    await rail.getByRole("button", { name: "Model", exact: true }).click(); await tab("Codes").click();
+    await page.getByRole("radio", { name: /^Ordered Network Analysis/ }).check();
+    stage = "private setup Units";
+    await tab("Units").click(); await button("Add or remove Unit fields fields").click();
+    const unitRegion = page.getByRole("region", { name: "Unit fields", exact: true });
+    for (const name of ["Group", "Name"]) await unitRegion.getByRole("checkbox", { name, exact: true }).check();
+    check(await unitRegion.getByRole("checkbox", { checked: true }).count() === 2, "private exact Unit field count");
+    await button("Add or remove Unit fields fields").click();
+    await page.getByRole("combobox", { name: "Create Sample / Group", exact: true }).selectOption("Group");
+    stage = "private setup Horizons";
+    await tab("Horizons").click(); await button("Add or remove Horizon identity fields").click();
+    const horizonRegion = page.getByRole("region", { name: "Horizon identity", exact: true });
+    for (const name of ["Group", "Name"]) await horizonRegion.getByRole("checkbox", { name, exact: true }).check();
+    check(await horizonRegion.getByRole("checkbox", { checked: true }).count() === 2, "private exact Horizon field count");
+    await button("Add or remove Horizon identity fields").click();
+    stage = "private setup Codes";
+    await tab("Codes").click();
+    await page.getByRole("toolbar", { name: "Code actions", exact: true }).getByRole("button", { name: "Manage Codes", exact: true }).click();
+    for (const code of ["EC", "ICT", "MCO", "NI", "SR", "SC", "ATT"]) await page.getByRole("checkbox", { name: `Select ${code} as a Code`, exact: true }).check();
+    await button("Close Code manager").click();
+    stage = "private setup Windows";
+    await tab("Windows").click();
+    await page.getByRole("group", { name: "Backward context", exact: true }).getByRole("textbox", { name: "Rows", exact: true }).fill("2");
+    stage = "private setup Lesson order";
     await page.getByRole("radio", { name: "Sort by fields", exact: true }).check();
     await page.getByRole("button", { name: "Add order key", exact: true }).click();
     const order = page.locator(".ena-model-order-v3-key");
@@ -767,6 +794,7 @@ async function runYuPrivateLane(page, args) {
     await order.getByRole("checkbox", { name: "Numeric collation", exact: true }).uncheck();
     // The native text comparator is explicit, including its collation policy.
     // The actual bound source order is checked against literal string order below.
+    stage = "private setup Run";
     await runNativeFixtureV3(page);
     stage = "private bound aggregate and explicit order";
     const aggregate = await page.evaluate(() => {
