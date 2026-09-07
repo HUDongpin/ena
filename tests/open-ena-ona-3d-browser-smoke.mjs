@@ -41,7 +41,7 @@ const sessionSecret = "open_ena_ona_3d_smoke_session_secret_0123456789abcdef";
 const accountId = "open-ena-ona-3d-smoke-account";
 const sessionName = "open-ena-ona-3d-smoke-" + process.pid;
 const smokeBrowser = process.env.OPEN_ENA_ONA_3D_SMOKE_BROWSER
-  || (existsSync("/Applications/Google Chrome.app") ? "chrome" : "chromium");
+  || "chromium";
 const privateWorkbookPath = resolve(
   process.env.OPEN_ENA_ONA_3D_PRIVATE_WORKBOOK
     || "/Users/dongpinhu/Desktop/Yu_ena_coded_data_0712.xlsx",
@@ -54,7 +54,7 @@ const fixtureContract = Object.freeze({
   codes: ["CODE_A", "CODE_B", "CODE_C", "CODE_D", "CODE_E"],
   groups: ["SYNTHETIC_BASELINE", "SYNTHETIC_SCAFFOLDED"],
   unitsPerGroup: 8,
-  maskedDirection: "CODE_E ground/source to CODE_A response/target",
+  maskedDirection: "CODE_E → CODE_A",
 });
 
 assert.ok(["chromium", "chrome", "msedge"].includes(smokeBrowser));
@@ -88,7 +88,11 @@ for (const path of [
   rmSync(path, { force: true });
 }
 
+// Once private content is admitted, arbitrary browser/locator diagnostics are
+// not safe evidence. Status and fixed aggregate assertions remain separately reported.
+let privateLaneActive = false;
 function redact(value) {
+  if (privateLaneActive) return "[private ONA diagnostic withheld; inspect fixed aggregate failure stage]";
   return String(value ?? "")
     .replaceAll(username, "[redacted-username]")
     .replaceAll(password, "[redacted-password]")
@@ -362,7 +366,7 @@ async function runSyntheticLane(page, args) {
         return originalCreateObjectUrl(blob);
       };
     });
-    const exportButton = page.getByRole("button", { name: /Export aggregate directed edges CSV/ });
+    const exportButton = page.getByRole("button", { name: "Export ONA aggregate edges", exact: true });
     await exportButton.click();
     await page.waitForFunction(() => typeof window.__openEnaAggregateExportText === "string");
     return await digestText(await page.evaluate(() => window.__openEnaAggregateExportText));
@@ -496,7 +500,8 @@ async function runSyntheticLane(page, args) {
   await prepareNativeFixtureV3(page, { family: "ona", backward: args.rowsPerUnit });
   const modelTabs = page.getByRole("tablist", { name: "Model configuration" });
   await modelTabs.getByRole("tab", { name: /^Codes(,|$)/ }).click();
-  const maskCell = page.getByRole("checkbox", { name: args.maskedDirection });
+  await page.getByRole("button", { name: "Initialize explicit all-enabled mask", exact: true }).click();
+  const maskCell = page.getByRole("checkbox", { name: args.maskedDirection, exact: true });
   assertBrowser(await maskCell.isChecked(), "the synthetic masked direction did not start enabled");
   await maskCell.uncheck();
   await runNativeFixtureV3(page);
@@ -612,30 +617,34 @@ async function runSyntheticLane(page, args) {
   assertBrowser(await page.evaluate(() => window.__openEnaOna3dAudit.analysisRunCount) === 1,
     "Data View or 2D/3D switching reran ONA");
 
-  const initialAxes = await Promise.all(["x", "y", "z"].map((axis) => (
-    page.getByTestId("open-ena-3d-axis-" + axis).inputValue()
-  )));
-  await page.getByTestId("open-ena-3d-axis-z").selectOption(initialAxes[0]);
+  await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
+  const initialAxes = await Promise.all([1, 2, 3].map(index => page.getByRole("combobox", { name: `Axis ${index}`, exact: true }).inputValue()));
+  await page.getByRole("combobox", { name: "Axis 3", exact: true }).selectOption(initialAxes[0]);
   await waitForOrderedPlots();
-  await page.getByTestId("open-ena-3d-axis-z").selectOption(initialAxes[2]);
+  await page.getByRole("combobox", { name: "Axis 3", exact: true }).selectOption(initialAxes[2]);
   await waitForOrderedPlots();
   await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
-  const threshold = page.getByRole("slider", { name: "Minimum relative edge" });
-  const pointScale = page.getByRole("slider", { name: "Unit point size" });
+  const threshold = page.getByRole("slider", { name: "Edge threshold" });
+  const pointScale = page.getByRole("slider", { name: "Point scale" });
   const thresholdInitial = await threshold.inputValue();
   const pointScaleInitial = await pointScale.inputValue();
   await threshold.fill("0.2");
   await pointScale.fill("1.4");
   await threshold.fill(thresholdInitial);
   await pointScale.fill(pointScaleInitial);
-  const cameraControl = page.getByTestId("open-ena-3d-camera-position");
+  const cameraControl = page.getByRole("group", { name: "Camera Position", exact: true });
   await cameraControl.getByRole("radio", { name: /X-Y plane/ }).check();
   await cameraControl.getByRole("radio", { name: /Default 3D Camera/ }).check();
-  await overallPanel.getByRole("button", { name: /Zoom In/ }).click();
+  await overallPanel.getByRole("button", { name: /Zoom in/i }).click();
   await overallPanel.getByRole("button", { name: /Recenter/ }).click();
   const entryOrigin = await page.evaluate(() => location.origin);
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: entryOrigin });
-  await overallPanel.locator('button[data-ena-plot-action="copy-image"]').click();
+  const approveImage = dialog => dialog.accept();
+  page.once("dialog", approveImage);
+  try {
+    await overallPanel.locator('button[data-ena-plot-action="copy-image"]').click();
+    await page.getByText("Image copied", { exact: true }).waitFor();
+  } finally { page.off("dialog", approveImage); }
   const fullscreen = overallPanel.locator('button[data-ena-plot-action="fullscreen"]');
   await fullscreen.click();
   await page.waitForTimeout(200);
@@ -884,7 +893,8 @@ try {
     },
     360_000,
   );
-  const yu = existsSync(privateWorkbookPath)
+  privateLaneActive = existsSync(privateWorkbookPath);
+  const yu = privateLaneActive
     ? await runBrowserPhase(
         "run the aggregate-only Yu private lane",
         runYuPrivateLane,
@@ -910,7 +920,7 @@ try {
   };
 } catch (caught) {
   primaryFailure = caught;
-  if (browserOpened) {
+  if (browserOpened && !privateLaneActive) {
     try {
       await runCli(["screenshot", "--filename", failureScreenshotPath], "capture failure screenshot", 30_000);
     } catch {

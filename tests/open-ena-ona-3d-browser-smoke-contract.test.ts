@@ -29,7 +29,7 @@ test("the ONA 3D browser smoke owns a synthetic production lane and privacy-boun
   assert.match(runtimeSource, /npm_config_cache: join\(directory, "npm-cache"\)/u);
   assert.match(runtimeSource, /directory/u);
   assert.doesNotMatch(source, /rmSync\([^\n]*\/Users\/dongpinhu\/\.npm/u);
-  assert.match(source, /Google Chrome\.app/u);
+  assert.match(runtimeSource, /metadata.revision, "1234"/u);
   assert.match(source, /initdb/u);
   assert.match(source, /pg_ctl/u);
   assert.match(source, /002_open_ena_auth_security\.sql/u);
@@ -53,7 +53,7 @@ test("the synthetic lane exercises directed ONA science, circular points, three 
   assert.doesNotMatch(source, /getByRole\("radio", \{ name: \/Ordered Network Analysis/u);
   assert.match(fixtureSource, /Review source-order statement/u);
   assert.match(source, /const maskCell/u);
-  assert.match(source, /CODE_E ground\/source to CODE_A response\/target/u);
+  assert.match(source, /CODE_E → CODE_A/u);
   assert.match(source, /analysisRunCount/u);
   assert.match(source, /analysisRunCount\s*===\s*1/u);
   assert.match(source, /open-ena-ona-3d-overall-plot/u);
@@ -75,17 +75,17 @@ test("the synthetic lane exercises directed ONA science, circular points, three 
   assert.match(source, /literalContract:\s*wrappers\.filter/u);
   assert.match(source, /data-ena-camera-state/u);
   assert.match(source, /data-ena-aspect-ratio-state/u);
-  assert.match(source, /open-ena-3d-axis-z/u);
+  assert.match(source, /name: "Axis 3", exact: true/u);
   const plotToolsButton = source.indexOf('getByRole("button", { name: "Plot Tools", exact: true })');
-  const edgeThresholdSlider = source.indexOf('getByRole("slider", { name: "Minimum relative edge" })');
+  const edgeThresholdSlider = source.indexOf('getByRole("slider", { name: "Edge threshold" })');
   assert.ok(
     plotToolsButton >= 0 && plotToolsButton < edgeThresholdSlider,
     "the smoke must enter Plot Tools before operating display sliders",
   );
-  assert.match(source, /Minimum relative edge/u);
-  assert.match(source, /Unit point size/u);
+  assert.match(source, /Edge threshold/u);
+  assert.match(source, /Point scale/u);
   assert.match(source, /Default 3D Camera/u);
-  assert.match(source, /Zoom In/u);
+  assert.match(source, /Zoom in/iu);
   assert.match(source, /Recenter/u);
   assert.match(source, /data-ena-plot-action="copy-image"/u);
   assert.match(source, /page\.evaluate\(\(\) => location\.origin\)/u);
@@ -104,7 +104,7 @@ test("Data View, responsive, runtime-error, and evidence boundaries are explicit
   assert.match(source, /sidePanelsPreserved/u);
   assert.match(source, /resultIdentity/u);
   assert.match(source, /aggregateExportSha256/u);
-  assert.match(source, /Export aggregate directed edges CSV/u);
+  assert.match(source, /Export ONA aggregate edges/u);
   assert.match(source, /__openEnaAggregateExportText/u);
   assert.match(source, /blob\.type\.includes\("csv"\)/u);
   assert.match(source, /getByRole\("button", \{ name: \/Stats\/ \}\)/u);
@@ -164,4 +164,12 @@ test("package.json exposes the local ONA 3D browser gate", () => {
     packageJson.scripts?.["test:browser:open-ena-ona-3d"],
     "node tests/open-ena-ona-3d-browser-smoke.mjs",
   );
+});
+
+
+test("private lane failures cannot capture a private page or arbitrary diagnostics", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /browserOpened && !privateLaneActive/);
+  assert.match(source, /if \(privateLaneActive\) return "\[private ONA diagnostic withheld/);
+  assert.doesNotMatch(source, /disableBrowserCache:\s*true/);
 });
