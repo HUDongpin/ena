@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { installPlotlyResourceAuditV3, checkPlotlyResourceLifecycleV3 } from "./helpers/open-ena-plotly-resource-audit-v3.mjs";
 import { createServedBrowserV3, literalGit } from "./helpers/open-ena-served-browser-v3.mjs";
 import { prepareNativeFixtureV3, runNativeFixtureV3, nativeFixtureIdentitiesV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
 import { createHash } from "node:crypto";
@@ -665,11 +666,12 @@ async function runSyntheticLane(page, args) {
   const entryOrigin = await page.evaluate(() => location.origin);
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: entryOrigin });
   const approveImage = dialog => dialog.accept();
+  await page.evaluate(() => window.__openEnaGlResourceAudit.image(true));
   page.once("dialog", approveImage);
   try {
     await overallPanel.locator('button[data-ena-plot-action="copy-image"]').click();
     await page.getByText("Image copied", { exact: true }).waitFor();
-  } finally { page.off("dialog", approveImage); }
+  } finally { page.off("dialog", approveImage); await page.evaluate(() => window.__openEnaGlResourceAudit.image(false)); }
   const fullscreen = overallPanel.locator('button[data-ena-plot-action="fullscreen"]');
   await fullscreen.click();
   await page.waitForTimeout(200);
@@ -937,6 +939,7 @@ let baseUrl = null;
 try {
   const playwrightCliVersion = "Playwright module 1.62.1";
   runtime = await createServedBrowserV3({ root: resolve(projectRoot), directory: artifactDirectory + "-runtime", credentials: { username, password, secret: sessionSecret, account: accountId }, redact, serverLogPath });
+  await runtime.page.addInitScript(installPlotlyResourceAuditV3);
   baseUrl = runtime.baseUrl;
   browserOpened = true;
   const authCacheSession = await runtime.page.context().newCDPSession(runtime.page);
@@ -970,6 +973,7 @@ try {
     360_000,
   );
   const diagnosticCatalog = JSON.parse(execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", 'import { getOpenEnaCopy, localizeModelDiagnosticV3 } from "./lib/open-ena-i18n.ts"; import { ONA_COMPILER_DIAGNOSTIC_IDS_V3 } from "./lib/open-ena/model-v3/ona-compiler-preflight.ts"; const copy=getOpenEnaCopy("en").modelV3; process.stdout.write(JSON.stringify(ONA_COMPILER_DIAGNOSTIC_IDS_V3.map(id=>({id,summary:localizeModelDiagnosticV3(copy,{id,severity:"error",scope:"model"}).summary}))));'], { cwd: projectRoot, encoding: "utf8", timeout: 10000 }));
+  const glResources = await runtime.stage("bounded public GL resource lifecycle", () => checkPlotlyResourceLifecycleV3(runtime.page, rows => writeFileSync(join(artifactDirectory, "gl-resource-lifecycle.json"), JSON.stringify(rows, null, 2))), 120000);
   privateLaneActive = existsSync(privateWorkbookPath);
   const yu = privateLaneActive
     ? await runBrowserPhase(
@@ -992,6 +996,7 @@ try {
       sourceRows: fixtureCsv.trim().split("\n").length - 1,
     },
     synthetic,
+    glResources,
     yuPrivate: yu,
     source: { ...sourceEvidenceBefore, smokeSourceSha256 },
   };
