@@ -1561,6 +1561,7 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
   await page.setViewportSize(args.viewport);
   await page.waitForTimeout(250);
   const beforeFullscreen = await readFullscreenPlotLayout(page);
+  writeFileSync(join(artifactDirectory, "before-fallback-fullscreen-layout.json"), JSON.stringify(beforeFullscreen, null, 2));
   await fullscreenButton.focus();
 
   const setup = await shellLocator.evaluate((shell) => {
@@ -1895,7 +1896,10 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       );
     }, null, { timeout: 15_000 });
 
-    await page.waitForFunction(height => document.querySelector('[data-ena-plotly-root=true]')?._fullLayout?.height === height, beforeFullscreen.renderedLayout.height);
+    await page.waitForFunction(height => document.querySelector('[data-ena-plotly-root=true]')?._fullLayout?.height === height, beforeFullscreen.renderedLayout.height).catch(async error => {
+      writeFileSync(join(artifactDirectory, "fullscreen-exit-restore-failure.json"), JSON.stringify({ beforeFullscreen, after: await readFullscreenPlotLayout(page) }, null, 2));
+      throw error;
+    });
     const restoredLayout = await readFullscreenPlotLayout(page);
     assertFullscreenRestoresView(beforeFullscreen, restoredLayout);
     await nativeScience(page);

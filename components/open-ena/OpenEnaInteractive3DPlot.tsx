@@ -522,8 +522,16 @@ export default function OpenEnaInteractive3DPlot({
     flipY,
     nodeLayout,
   ]);
-  const fullscreenLayoutRef = useRef(spec.layout);
-  fullscreenLayoutRef.current = spec.layout;
+  // Plotly owns and mutates the layout object handed to react/relayout. Keep
+  // detached embedded dimensions before handing over each newly compiled spec.
+  const embeddedLayout = useMemo(() => ({
+    height: spec.layout.height,
+    margin: { ...spec.layout.margin },
+    legend: { ...spec.layout.legend },
+    scene: { aspectmode: spec.layout.scene.aspectmode },
+  }), [spec]);
+  const fullscreenLayoutRef = useRef(embeddedLayout);
+  fullscreenLayoutRef.current = embeddedLayout;
   const renderedCodeTrace = spec.data.find((trace) => trace.meta.role === "code-node");
   const renderedCodeIdentities = new Set(renderedCodeTrace?.ids ?? renderedCodeTrace?.text ?? []);
   const renderedCodeIdentityKey = JSON.stringify([...renderedCodeIdentities]);
