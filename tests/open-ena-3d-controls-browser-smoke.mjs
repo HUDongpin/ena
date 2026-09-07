@@ -796,7 +796,8 @@ async function authenticateBuildAndOpen3d(page, args) {
   const fixture = await prepareNativeFixtureV3(page);
   const unitFields = fixture.units;
   const modelType = page.getByRole("combobox", { name: "Model", exact: true });
-  assertBrowser(await modelType.inputValue() === args.modelType, "the fixture was not configured as Endpoint");
+  const configuredModelType = await modelType.inputValue();
+  assertBrowser(configuredModelType === args.modelType, "the fixture was not configured as Endpoint");
   await runNativeFixtureV3(page);
   await page.getByRole("button", { name: "Download Model" }).click({ trial: true, timeout: 30_000 });
   assertBrowser(
@@ -829,7 +830,7 @@ async function authenticateBuildAndOpen3d(page, args) {
     );
   }
   return {
-    modelType: await modelType.inputValue(),
+    modelType: configuredModelType,
     unitFields,
     baseline: await readScientificState(page),
     browserMessages: browserMessageCapture.finish(),
@@ -1630,7 +1631,7 @@ let cleanupSucceeded = false;
 
 try {
   const playwrightCliVersion = "Playwright module 1.62.1";
-  runtime = await createServedBrowserV3({ root: resolve(projectRoot), directory: artifactDirectory + "-runtime", credentials: { username, password, secret: sessionSecret }, redact, serverLogPath });
+  runtime = await createServedBrowserV3({ root: resolve(projectRoot), directory: artifactDirectory + "-runtime", credentials: { username, password, secret: sessionSecret }, redact, serverLogPath, disableBrowserCache: true });
   baseUrl = runtime.baseUrl;
   browserSessionAttempted = true;
   await runCli(["open", "about:blank", "--browser", smokeBrowser], "open browser", 120_000);
