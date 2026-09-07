@@ -125,6 +125,7 @@ interface PlotlyEventRoot extends HTMLDivElement {
   };
   _fullLayout?: {
     scene?: {
+      aspectmode?: "auto" | "cube" | "data" | "manual";
       _scene?: {
         getCamera?: () => unknown;
         glplot?: {
@@ -359,6 +360,7 @@ export default function OpenEnaInteractive3DPlot({
   const figureRef = useRef<HTMLElement>(null);
   const plotRootRef = useRef<HTMLDivElement>(null);
   const lastAppliedCameraKeyRef = useRef<string | null>(null);
+  const lastRenderedSceneRef = useRef<{ fit: object; axes: string } | null>(null);
   const initialCameraRef = useRef(initialCamera);
   const lastCameraRef = useRef(initialCamera);
   const initialAspectRatioRef = useRef(initialAspectRatio);
@@ -524,6 +526,10 @@ export default function OpenEnaInteractive3DPlot({
   const renderedCodeIdentityKey = JSON.stringify([...renderedCodeIdentities]);
   visibleCodeIdentitiesRef.current = renderedCodeIdentities;
   const cameraResetKey = `${camera}:${plotZoom}:${plotResetRevision}`;
+  // Native display wrappers can be rebuilt without changing the fitted result.
+  // Legacy standalone plots retain their actual fitted set as the frame anchor.
+  const scientificFrame = result.boundPresentation ?? result.set;
+  const sceneAxesKey = JSON.stringify([analysisKind, xDimension, yDimension, zDimension]);
   const controlledCameraKey = cameraKey(initialCamera);
   const controlledAspectRatioKey = aspectRatioKey(initialAspectRatio);
   const networkTraces = spec.data.filter((trace) => trace.meta.role === "network-edge");
@@ -693,6 +699,12 @@ export default function OpenEnaInteractive3DPlot({
     readyNotifiedRef.current = false;
     errorNotifiedRef.current = false;
     setErrorMessage(null);
+    const sameSceneAndReset = lastAppliedCameraKeyRef.current === cameraResetKey
+      && lastRenderedSceneRef.current?.fit === scientificFrame
+      && lastRenderedSceneRef.current?.axes === sceneAxesKey;
+    const retainedView = sameSceneAndReset
+      ? { camera: currentCamera(), aspectRatio: currentAspectRatio(), aspectMode: (plotRoot as PlotlyEventRoot)._fullLayout?.scene?.aspectmode ?? spec.layout.scene.aspectmode }
+      : null;
 
     void (async () => {
       try {
@@ -703,7 +715,7 @@ export default function OpenEnaInteractive3DPlot({
           spec.config as never,
         );
         if (!active) return;
-        if (lastAppliedCameraKeyRef.current !== cameraResetKey) {
+        if (!retainedView) {
           const nextCamera = lastAppliedCameraKeyRef.current === null && initialCameraRef.current
             ? initialCameraRef.current
             : spec.layout.scene.camera;
@@ -723,6 +735,19 @@ export default function OpenEnaInteractive3DPlot({
             onAspectRatioChange?.(nextAspectRatio);
           }
         }
+        else {
+          // Plotly.react consumes the declarative preset even for a color or
+          // node-layout repaint. Restore the actual live view before readiness.
+          await Plotly.relayout(plotRoot, {
+            "scene.camera": retainedView.camera,
+            "scene.aspectmode": retainedView.aspectMode,
+            ...(retainedView.aspectMode === "manual" ? { "scene.aspectratio": retainedView.aspectRatio } : {}),
+          } as never);
+          if (!active) return;
+          lastCameraRef.current = retainedView.camera;
+          lastAspectRatioRef.current = retainedView.aspectRatio;
+        }
+        lastRenderedSceneRef.current = { fit: scientificFrame, axes: sceneAxesKey };
         const eventRoot = plotRoot as PlotlyEventRoot;
         if (!relayoutListenerRef.current && eventRoot.on) {
           const listener = (update: Record<string, unknown>) => {
@@ -809,7 +834,7 @@ export default function OpenEnaInteractive3DPlot({
     return () => {
       active = false;
     };
-  }, [Plotly, spec, cameraResetKey, onCameraChange, onAspectRatioChange, onReady, onError]);
+  }, [Plotly, spec, cameraResetKey, scientificFrame, sceneAxesKey, onCameraChange, onAspectRatioChange, onReady, onError]);
 
   useEffect(() => {
     const visibleCodes = visibleCodeIdentitiesRef.current;

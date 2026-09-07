@@ -869,6 +869,22 @@ async function exerciseTrajectoryPlotActions(page, args) {
     );
   };
 
+  const repaintCodeColor = async (color) => {
+    const rail = page.getByRole("navigation", { name: "Analysis modes" });
+    const code = args.expectedCodes[0];
+    await rail.getByRole("button", { name: "Model", exact: true }).click();
+    await page.getByRole("tab", { name: /^Codes(,|$)/ }).click();
+    await page.getByRole("button", { name: `Choose color for ${code}`, exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: `Code color for ${code}`, exact: true });
+    const input = dialog.getByRole("textbox", { name: "Primary", exact: true });
+    const original = await input.inputValue();
+    await input.fill(color);
+    await dialog.getByRole("button", { name: "OK", exact: true }).click();
+    await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
+    await waitForActionsReady();
+    assertBrowser(await plot.evaluate((root, hex) => root.data.filter(trace => trace.meta?.role === "code-node").some(trace => trace.marker?.color === hex || trace.marker?.color?.includes?.(hex)), color), "real Code color change did not reach rendered spec");
+    return original;
+  };
   await projectionSelect.selectOption("3d");
   await cameraSelect.selectOption("isometric");
   const perspectiveBaseline = await waitForValue(
@@ -902,6 +918,12 @@ async function exerciseTrajectoryPlotActions(page, args) {
     "perspective Zoom In changed orientation, center, up, or projection",
   );
   await assertScientificInvariants("perspective zoom in");
+  const originalCodeColor = await repaintCodeColor("#9d5dbb");
+  const perspectiveColorRepaint = await readCamera();
+  assertBrowser(cameraApproximatelyEqual(perspectiveColorRepaint, perspectiveZoomIn), "same-fit Code color repaint reset perspective camera");
+  await repaintCodeColor(originalCodeColor);
+  assertBrowser(cameraApproximatelyEqual(await readCamera(), perspectiveZoomIn), "restoring Code color reset perspective camera");
+  await assertScientificInvariants("perspective Code color repaint");
   await zoomOut.click();
   const perspectiveZoomOut = await waitForValue(
     readCamera,
@@ -969,6 +991,14 @@ async function exerciseTrajectoryPlotActions(page, args) {
     "orthographic Zoom In did not expand the runtime aspect ratio",
   );
   await assertScientificInvariants("orthographic zoom in");
+  const orthographicCameraBeforeRepaint = await readCamera();
+  await repaintCodeColor("#218ebf");
+  const orthographicColorRepaint = await readAspectRatio();
+  assertBrowser(aspectApproximatelyEqual(orthographicColorRepaint, orthographicZoomIn), "same-fit Code color repaint reset orthographic aspect");
+  assertBrowser(cameraApproximatelyEqual(await readCamera(), orthographicCameraBeforeRepaint), "same-fit Code color repaint changed orthographic camera");
+  await repaintCodeColor(originalCodeColor);
+  assertBrowser(aspectApproximatelyEqual(await readAspectRatio(), orthographicZoomIn), "restoring Code color reset orthographic aspect");
+  await assertScientificInvariants("orthographic Code color repaint");
   await zoomOut.click();
   const orthographicZoomOut = await waitForValue(
     readAspectRatio,
@@ -1127,6 +1157,7 @@ async function exerciseTrajectoryPlotActions(page, args) {
   return {
     perspective: {
       baseline: perspectiveBaseline,
+      colorRepaint: perspectiveColorRepaint,
       zoomIn: perspectiveZoomIn,
       zoomOut: perspectiveZoomOut,
       beforeRecenter: perspectiveBeforeRecenter,
@@ -1134,6 +1165,7 @@ async function exerciseTrajectoryPlotActions(page, args) {
     },
     orthographic: {
       baseline: orthographicBaseline,
+      colorRepaint: orthographicColorRepaint,
       zoomIn: orthographicZoomIn,
       zoomOut: orthographicZoomOut,
       beforeRecenter: orthographicBeforeRecenter,
