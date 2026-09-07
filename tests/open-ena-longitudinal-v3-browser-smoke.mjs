@@ -831,6 +831,8 @@ async function exerciseTrajectoryPlotActions(page, args) {
       if (predicate(current)) return current;
       await page.waitForTimeout(50);
     }
+    const timedOutView = await page.evaluate(() => ({ events: window.__nativeCameraActionAudit?.slice(-80), controlledCamera: document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("data-ena-camera-state"), actions: [...document.querySelectorAll('.open-ena-3d-plot-actions button')].map(button => ({ action: button.getAttribute("data-ena-plot-action"), disabled: button.disabled })) }));
+    writeFileSync(join(artifactDirectory, "view-action-timeout.json"), JSON.stringify({ label, current, ...timedOutView }, null, 2));
     throw new Error(label + " did not reach its expected runtime state: " + JSON.stringify(current));
   };
   const waitForActionsReady = async () => {
@@ -896,7 +898,7 @@ async function exerciseTrajectoryPlotActions(page, args) {
   const perspectiveBaselineDistance = cameraDistance(perspectiveBaseline);
   await plot.evaluate(root => {
     window.__nativeCameraActionAudit = [];
-    root.on("plotly_relayout", update => window.__nativeCameraActionAudit.push({ at: performance.now(), update: structuredClone(update), live: structuredClone(root._fullLayout.scene._scene.getCamera()), declarative: structuredClone(root._fullLayout.scene.camera) }));
+    root.on("plotly_relayout", update => window.__nativeCameraActionAudit.push({ at: performance.now(), update: structuredClone(update), live: structuredClone(root._fullLayout.scene._scene.getCamera()), declarative: structuredClone(root._fullLayout.scene.camera), controlledCamera: root.closest('[data-ena-interactive-camera="true"]')?.getAttribute("data-ena-camera-state"), selectedPreset: document.querySelector('.ena-camera-fieldset input:checked')?.value }));
   });
   await zoomIn.click();
   const perspectiveZoomIn = await waitForValue(
@@ -992,6 +994,8 @@ async function exerciseTrajectoryPlotActions(page, args) {
   );
   await assertScientificInvariants("orthographic zoom in");
   const orthographicCameraBeforeRepaint = await readCamera();
+  writeFileSync(join(artifactDirectory, "orthographic-after-zoom-in.json"), JSON.stringify({ camera: orthographicCameraBeforeRepaint, aspect: orthographicZoomIn, events: await page.evaluate(() => window.__nativeCameraActionAudit.slice(-80)) }, null, 2));
+  assertBrowser(orthographicCameraBeforeRepaint?.projection?.type === "orthographic", "orthographic Zoom In must retain its projection");
   await repaintCodeColor("#218ebf");
   const orthographicColorRepaint = await readAspectRatio();
   assertBrowser(aspectApproximatelyEqual(orthographicColorRepaint, orthographicZoomIn), "same-fit Code color repaint reset orthographic aspect");
