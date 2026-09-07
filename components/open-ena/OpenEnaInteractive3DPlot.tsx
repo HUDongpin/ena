@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import { createOpenEnaPlotViewSyncV3 } from "@/lib/open-ena/plot-view-sync-v3";
 import type { OpenEnaContrastPresentation } from "@/lib/open-ena/bound-presentation-v3";
 import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
@@ -365,6 +366,7 @@ export default function OpenEnaInteractive3DPlot({
   const lastCameraRef = useRef(initialCamera);
   const initialAspectRatioRef = useRef(initialAspectRatio);
   const lastAspectRatioRef = useRef(initialAspectRatio);
+  const ownedViewSyncRef = useRef(createOpenEnaPlotViewSyncV3());
   const relayoutListenerRef = useRef<((update: Record<string, unknown>) => void) | null>(null);
   const hoverListenerRef = useRef<((event: PlotlyGl3dPointEvent) => void) | null>(null);
   const unhoverListenerRef = useRef<((event: PlotlyGl3dPointEvent) => void) | null>(null);
@@ -737,11 +739,11 @@ export default function OpenEnaInteractive3DPlot({
           const nextAspectRatio = lastAppliedCameraKeyRef.current === null && initialAspectRatioRef.current
             ? { ...initialAspectRatioRef.current }
             : spec.layout.scene.aspectratio ? { ...spec.layout.scene.aspectratio } : null;
-          await Plotly.relayout(plotRoot, {
+          await ownedViewSyncRef.current.apply({
             "scene.camera": nextCamera,
             "scene.aspectmode": nextAspectRatio ? "manual" : "cube",
             ...(nextAspectRatio ? { "scene.aspectratio": nextAspectRatio } : {}),
-          } as never);
+          }, update => Plotly.relayout(plotRoot, update as never));
           if (!active) return;
           lastCameraRef.current = nextCamera;
           lastAspectRatioRef.current = nextAspectRatio;
@@ -753,11 +755,11 @@ export default function OpenEnaInteractive3DPlot({
         else {
           // Plotly.react consumes the declarative preset even for a color or
           // node-layout repaint. Restore the actual live view before readiness.
-          await Plotly.relayout(plotRoot, {
+          await ownedViewSyncRef.current.apply({
             "scene.camera": retainedView.camera,
             "scene.aspectmode": retainedView.aspectMode,
             ...(retainedView.aspectMode === "manual" ? { "scene.aspectratio": retainedView.aspectRatio } : {}),
-          } as never);
+          }, update => Plotly.relayout(plotRoot, update as never));
           if (!active) return;
           lastCameraRef.current = retainedView.camera;
           lastAspectRatioRef.current = retainedView.aspectRatio;
@@ -766,6 +768,7 @@ export default function OpenEnaInteractive3DPlot({
         const eventRoot = plotRoot as PlotlyEventRoot;
         if (!relayoutListenerRef.current && eventRoot.on) {
           const listener = (update: Record<string, unknown>) => {
+            if (ownedViewSyncRef.current.owns(update)) return;
             const fallbackCamera = lastCameraRef.current ?? spec.layout.scene.camera;
             const nextCamera = cameraFromRelayout(update, fallbackCamera) ?? cameraFromValue(
               eventRoot._fullLayout?.scene?._scene?.getCamera?.(),
@@ -879,10 +882,7 @@ export default function OpenEnaInteractive3DPlot({
     if (controlledCameraKey === cameraKey(lastCameraRef.current)) return;
     const plotRoot = plotRootRef.current;
     lastCameraRef.current = initialCamera;
-    void Promise.resolve(Plotly.relayout(
-      plotRoot,
-      { "scene.camera": initialCamera } as never,
-    )).catch(() => {
+    void ownedViewSyncRef.current.apply({ "scene.camera": initialCamera }, update => Plotly.relayout(plotRoot, update as never)).catch(() => {
       // A sibling can unmount while a linked-camera update is in flight.
     });
   }, [Plotly, controlledCameraKey, initialCamera, status]);
@@ -892,10 +892,10 @@ export default function OpenEnaInteractive3DPlot({
     if (controlledAspectRatioKey === aspectRatioKey(lastAspectRatioRef.current)) return;
     const plotRoot = plotRootRef.current;
     lastAspectRatioRef.current = initialAspectRatio;
-    void Promise.resolve(Plotly.relayout(plotRoot, {
+    void ownedViewSyncRef.current.apply({
       "scene.aspectmode": "manual",
       "scene.aspectratio": initialAspectRatio,
-    } as never)).catch(() => {
+    }, update => Plotly.relayout(plotRoot, update as never)).catch(() => {
       // A sibling can unmount while a linked orthographic zoom update is in flight.
     });
   }, [Plotly, controlledAspectRatioKey, initialAspectRatio, status]);

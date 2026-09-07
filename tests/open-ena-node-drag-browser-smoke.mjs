@@ -438,10 +438,10 @@ async function waitForPlotlyTriptych(page, testIds) {
     for (const root of document.querySelectorAll('[data-ena-plotly-root="true"]')) {
       if (root.__task38EventObserver) continue;
       root.__task38EventObserver = true;
-      const counts = { afterplot: 0, relayout: 0, hover: 0 };
-      for (const [event, key] of [["plotly_afterplot", "afterplot"], ["plotly_relayout", "relayout"], ["plotly_hover", "hover"]]) root.on(event, () => {
+      const counts = { afterplot: 0, relayout: 0, hover: 0 }; root.__task38EventCounts = counts;
+      for (const [event, key] of [["plotly_afterplot", "afterplot"], ["plotly_relayout", "relayout"], ["plotly_hover", "hover"]]) root.on(event, update => {
         counts[key]++;
-        if (counts[key] <= 3 || counts[key] % 20 === 0) console.info("task38-view-events:" + JSON.stringify({ plot: root.closest('[data-ena-plot-role]')?.getAttribute("data-ena-plot-role"), event: key, counts }));
+        if (counts[key] <= 3 || counts[key] % 20 === 0) console.info("task38-view-events:" + JSON.stringify({ plot: root.closest('[data-ena-plot-role]')?.getAttribute("data-ena-plot-role"), event: key, counts, ...(key === "relayout" ? { update } : {}) }));
       });
     }
   });
@@ -530,7 +530,12 @@ async function dragPlotlyNode(page, testId, code, delta) {
   await page.mouse.down();
   await page.mouse.move(start.x + delta.x, start.y + delta.y, { steps: 10 });
   await page.mouse.up();
-  await page.waitForTimeout(500);
+  await page.__task38Stage("threeplot display events settle after genuine drag", () => page.waitForFunction(() => {
+    const counts = JSON.stringify([...document.querySelectorAll('[data-ena-plotly-root="true"]')].map(root => root.__task38EventCounts));
+    const before = window.__task38IdleProbe;
+    if (!before || before.counts !== counts) { window.__task38IdleProbe = { counts, since: performance.now() }; return false; }
+    return performance.now() - before.since >= 500;
+  }, null, { timeout: 20000 }));
 }
 
 function assertPlotlyMove(before, after, label) {
