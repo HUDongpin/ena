@@ -12,7 +12,7 @@ test("durable docs state the exact Models v3 support boundary", () => {
   assert.match(readme, /SVD, Means, and Reference/u);
   assert.match(readme, /TMA.*not implemented/u);
   assert.match(ledger, /Pass\s*\|\s*Fail\s*\|\s*Skip/u);
-  assert.match(ledger, /Local.*GitHub.*Deployment.*Production/su);
+  assert.match(ledger, /Local[\s\S]*GitHub[\s\S]*Deployment[\s\S]*Production/u);
 });
 
 const ledgerPath =

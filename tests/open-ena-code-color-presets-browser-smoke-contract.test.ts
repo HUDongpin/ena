@@ -1,3 +1,4 @@
+import { functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -7,18 +8,10 @@ const smokePath = join(process.cwd(), "tests/open-ena-a11y-perf-browser-smoke.mj
 const source = readFileSync(smokePath, "utf8");
 
 test("production browser smoke covers the complete transactional Code Color Presets workflow", () => {
-  const codeColorAudit = source.match(
-    /async function auditCodeColorPresets\(page, codes\) \{[\s\S]*?\n\}\n\nasync function auditOfficialModelTabs/u,
-  )?.[0];
-  const officialModelTabsAudit = source.match(
-    /async function auditOfficialModelTabs\(page, rail\) \{[\s\S]*?\n\}\n\nasync function readGeometry/u,
-  )?.[0];
-  const trajectoryCascadeAudit = source.match(
-    /async function auditTrajectoryCodeColorCascade\(page, rail\) \{[\s\S]*?\n\}\n\nasync function runA11y/u,
-  )?.[0];
-  const runA11yAudit = source.match(
-    /async function runA11y\(page, baseUrl\) \{[\s\S]*?\n\}\n\nasync function runPerformance/u,
-  )?.[0];
+  const codeColorAudit = functionSourceV3(source, "auditCodeColorPresets");
+  const officialModelTabsAudit = functionSourceV3(source, "auditOfficialModelTabs");
+  const trajectoryCascadeAudit = functionSourceV3(source, "auditTrajectoryCodeColorCascade");
+  const runA11yAudit = functionSourceV3(source, "runA11y");
   assert.ok(codeColorAudit, "auditCodeColorPresets function body is unavailable");
   assert.ok(officialModelTabsAudit, "auditOfficialModelTabs function body is unavailable");
   assert.ok(trajectoryCascadeAudit, "auditTrajectoryCodeColorCascade function body is unavailable");
@@ -106,10 +99,10 @@ test("production browser smoke covers the complete transactional Code Color Pres
   assert.match(source, /Escape changed the rendered committed node colors/u);
   assert.match(source, /backdrop dismissal changed the rendered committed node colors/u);
   assert.match(source, /"360"/u);
-  assert.match(trajectoryCascadeAudit, /Load 3D trajectory sample/u);
+  assert.match(trajectoryCascadeAudit, /Load trajectory sample/u);
   assert.match(trajectoryCascadeAudit, /Download Model/u);
   assert.match(trajectoryCascadeAudit, /endpointDownloadEnabled/u);
-  assert.match(trajectoryCascadeAudit, /ena-longitudinal-v3-controls/u);
+  assert.match(trajectoryCascadeAudit, /open-ena-workspace-v3/u);
   assert.match(trajectoryCascadeAudit, /data-ena-code-color-trigger/u);
   assert.match(trajectoryCascadeAudit, /data-ena-code-color-preset="2"/u);
   assert.match(trajectoryCascadeAudit, /data-ena-code-color-hue/u);
@@ -125,7 +118,7 @@ test("production browser smoke covers the complete transactional Code Color Pres
   );
   assert.match(
     runA11yAudit,
-    /return \{ modelParity, modelSliders, plotSliders, geometry, scientificIdentity, trajectoryCodeColorCascade, consoleErrors, pageErrors \};/u,
+    /return \{ modelParity, modelSliders, modelsV3Accessibility, plotSliders, geometry, tabletToolbarGeometry, scientificIdentity, trajectoryCodeColorCascade, consoleErrors, pageErrors \};/u,
   );
   const fontReset = runA11yAudit.indexOf('document.documentElement.style.fontSize = "";');
   const trajectoryCall = runA11yAudit.indexOf("await auditTrajectoryCodeColorCascade(page, rail)");

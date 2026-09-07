@@ -1,3 +1,4 @@
+import ts from "typescript";
 import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -511,12 +512,43 @@ test("plot papers use color-coded group captions and official scale notation", (
 });
 
 test("2D and in-place 3D controls precede the single Download Model button", () => {
-
   const markup = shell();
-  const toolbar = markup.slice(markup.indexOf('class="ena-visual-toolbar"'));
-  assert.ok(toolbar.indexOf('class="ena-view-toggle"') < toolbar.indexOf('class="ena-download-model-button"'));
-  assert.equal((toolbar.match(/Download Model<\/button>/g) ?? []).length, 1);
-
+  const parsed = ts.createSourceFile("shell.tsx", `<>${markup}</>`, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const elements: ts.JsxElement[] = [];
+  function visit(node: ts.Node) {
+    if (ts.isJsxElement(node)) elements.push(node);
+    ts.forEachChild(node, visit);
+  }
+  visit(parsed);
+  function attribute(node: ts.JsxElement, name: string) {
+    const value = node.openingElement.attributes.properties.find(
+      (item): item is ts.JsxAttribute => ts.isJsxAttribute(item) && item.name.getText(parsed) === name,
+    )?.initializer;
+    return value && ts.isStringLiteral(value) ? value.text : undefined;
+  }
+  const hasClass = (node: ts.JsxElement, token: string) => attribute(node, "class")?.split(/\s+/u).includes(token) ?? false;
+  const toolbars = elements.filter(node => hasClass(node, "ena-visual-toolbar"));
+  assert.equal(toolbars.length, 1, "the actual visual toolbar must exist exactly once");
+  const toolbar = toolbars[0];
+  const within = elements.filter(node => node.pos > toolbar.pos && node.end < toolbar.end);
+  const toggles = within.filter(node => hasClass(node, "ena-view-toggle"));
+  const downloads = within.filter(node => hasClass(node, "ena-download-model-button"));
+  assert.equal(toggles.length, 1);
+  assert.equal(downloads.length, 1);
+  assert.equal(downloads[0].openingElement.tagName.getText(parsed), "button");
+  assert.ok(toggles[0].end <= downloads[0].pos, "view controls must precede Download Model");
+  function accessibleText(node: ts.Node): string {
+    if (ts.isJsxText(node)) return node.text;
+    if (ts.isJsxElement(node)) {
+      if (attribute(node, "aria-hidden") === "true") return "";
+      return attribute(node, "aria-label") ?? node.children.map(accessibleText).join("");
+    }
+    return "";
+  }
+  const toggleButtons = within.filter(node => node.pos > toggles[0].pos && node.end < toggles[0].end && node.openingElement.tagName.getText(parsed) === "button");
+  assert.deepEqual(toggleButtons.map(accessibleText), ["2D ENA", "3D ENA"]);
+  assert.equal(accessibleText(downloads[0]), "Download Model");
+  assert.equal(elements.filter(node => node.openingElement.tagName.getText(parsed) === "button" && accessibleText(node) === "Download Model").length, 1);
 });
 
 test("the scrollable control panel reserves pointer clearance above the fixed 2D and 3D switch", () => {
