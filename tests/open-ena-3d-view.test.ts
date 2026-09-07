@@ -1282,14 +1282,17 @@ test("each 3D paper replaces the Plotly modebar with the same five unframed plot
   assert.match(interactive, /getAspectratio\?\.\(\)/);
   assert.match(interactive, /"scene\.aspectratio": nextAspectRatio/);
   assert.match(interactive, /resetOpenEna3dCameraDistance\(activeCamera, cameraForPreset\(camera\)\)/);
-  assert.match(interactive, /void applyDefaultDisplayDistance\(\)/);
+  assert.match(interactive, /await applyDefaultDisplayDistance\(\)/);
   assert.match(interactive, /data-ena-recenter-behavior="default-distance"/);
   assert.match(groupContrast2d, /onClick=\{\(\) => onZoomChange\(1\)\}/);
   assert.match(interactive, /toImage\(plotRoot,/);
-  assert.match(interactive, /const png = pngBlobFromDataUrl\(dataUrl\)/);
+  assert.match(interactive, /png: pngBlobFromDataUrl\(dataUrl\)/);
   assert.doesNotMatch(interactive, /fetch\(dataUrl\)/);
   assert.match(interactive, /navigator\.clipboard\.write\(\[new ClipboardItem\(\{ "image\/png": png \}\)\]\)/);
-  assert.match(interactive, /navigator\.clipboard\.writeText\(dataUrl\)/);
+  assert.match(interactive, /navigator\.clipboard\.writeText\(text\)/);
+  const exportAction = readFileSync(new URL("../lib/open-ena/plot-image-export-v3.ts", import.meta.url), "utf8");
+  assert.match(exportAction, /operation\.writeText\(image.dataUrl\)/);
+  assert.match(exportAction, /operation\.download\(image.png\)/);
   assert.doesNotMatch(interactive, /querySelectorAll[^\n]*data-ena-plotly-root/);
 
   assert.equal(

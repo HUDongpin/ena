@@ -478,7 +478,7 @@ export default function OpenEnaPlot({
           </g>
         )}
 
-        {showNetworks && !result.groupPresentation?.allSuppressed && result.set.adjacencyKey.map((edge) => {
+        {showNetworks && !trajectory && !result.groupPresentation?.allSuppressed && result.set.adjacencyKey.map((edge) => {
           if (!openEnaRenderedEdgeIsVisible(codePresentation, edge.source, edge.target)) return null;
           const source = positions.get(`node-${edge.source}`);
           const target = positions.get(`node-${edge.target}`);
@@ -511,18 +511,23 @@ export default function OpenEnaPlot({
           if (!nativePlotGroupSettingsV3(result, path.group).showUnitPoints || result.groupPresentation?.hiddenUnits.has(path.unitLabel)) return null;
           const from = positions.get(trajectoryPointPositions.get(trajectoryPointKey(path.from)) ?? "");
           const to = positions.get(trajectoryPointPositions.get(trajectoryPointKey(path.to)) ?? "");
-          return from && to ? <line key={index} className="ena-individual-trajectory-path" data-ena-trajectory-path="true" data-from-ordinal={path.fromOrdinal} data-to-ordinal={path.toOrdinal} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="#263740" opacity={0.4} strokeWidth={1.5} /> : null;
+          return from && to ? <line key={index} className="ena-individual-trajectory-path" data-ena-trajectory-path="true" data-from-ordinal={path.fromOrdinal} data-to-ordinal={path.toOrdinal} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="black" opacity={0.4} strokeWidth={1.5} /> : null;
         })}
         {trajectory?.centroidPaths.map((path, index) => {
           if (!nativePlotGroupSettingsV3(result, path.from.group).showMean) return null;
           const from = positions.get(`trajectory-centroid-${trajectory.centroids.findIndex((point) => point.key === path.from.key)}`);
           const to = positions.get(`trajectory-centroid-${trajectory.centroids.findIndex((point) => point.key === path.to.key)}`);
-          return from && to ? <line key={index} className="ena-group-centroid-path" data-ena-centroid-path="true" x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="#263740" strokeWidth={3}><title>{`${path.from.horizon} → ${path.to.horizon}; ${path.sharedContributorCount} observed shared contributors. Available-population centroids; not a matched change estimate.`}</title></line> : null;
+          if (!from || !to) return null;
+          const dx = to.x - from.x, dy = to.y - from.y, length = Math.hypot(dx, dy);
+          const tip = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+          const ux = length ? dx / length : 0, uy = length ? dy / length : 0;
+          return <g key={index}><line className="ena-group-centroid-path" data-ena-centroid-path="true" x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="black" strokeWidth={3}><title>{`${path.from.horizon} → ${path.to.horizon}; ${path.sharedContributorCount} observed shared contributors. Available-population centroids; not a matched change estimate.`}</title></line>
+            {length > 0 && <polygon data-ena-trajectory-direction="true" points={`${tip.x},${tip.y} ${tip.x - ux * 9 - uy * 4.5},${tip.y - uy * 9 + ux * 4.5} ${tip.x - ux * 9 + uy * 4.5},${tip.y - uy * 9 - ux * 4.5}`} fill="black" />}</g>;
         })}
         {trajectory?.centroids.map((centroid, index) => {
           if (!nativePlotGroupSettingsV3(result, centroid.group).showMean) return null;
           const point = positions.get(`trajectory-centroid-${index}`);
-          return point ? <g key={centroid.key} data-ena-trajectory-centroid="true"><rect x={point.x - 7} y={point.y - 7} width={14} height={14} fill="#263740" /><title>{`${centroid.group} · ${centroid.horizon} · observed n = ${centroid.n}`}</title><text x={point.x + 10} y={point.y - 8}>{centroid.horizon} · n={centroid.n}</text></g> : null;
+          return point ? <g key={centroid.key} data-ena-trajectory-centroid="true"><rect x={point.x - 3.5} y={point.y - 3.5} width={7} height={7} fill="black" /><title>{`${centroid.group} · ${centroid.horizon} · observed n = ${centroid.n}`}</title><text x={point.x + 10} y={point.y - 8}>{centroid.horizon} · n={centroid.n}</text></g> : null;
         })}
         {showPoints && unitPoints.map((unit) => {
           const point = positions.get(unit.key);

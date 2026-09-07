@@ -70,6 +70,16 @@ test("actual native 2D and 3D rendering shows paths without adding statistics or
   assert.equal((hidden.match(/data-ena-trajectory-path="true"/gu) ?? []).length, trajectoryPresentation.paths.length);
   assert.ok(hidden.includes('data-ena-trajectory-centroid="true"'));
   const spec = compileOpenEna3dPlotSpec(props), suppressed = compileOpenEna3dPlotSpec({ ...props, showCodeGraph: false });
+  assert.equal(spec.data.filter(trace => trace.meta.role === "network-edge").length, 0, "native trajectories must not admit mean-network edges");
+  assert.doesNotMatch(svg, /data-ena-edge=/, "2D trajectories must not admit mean-network edges");
+  assert.ok(svg.includes('data-ena-trajectory-direction="true"'), "2D fitted connectors need direction arrows");
+  const arrows = spec.data.filter(trace => trace.meta.role === "direction-arrow");
+  assert.equal(arrows.length, trajectoryPresentation.centroidPaths.filter(path => axes.slice(0, 3).some(axis => path.from.point[axis] !== path.to.point[axis])).length);
+  assert.ok(arrows.length > 0, "3D fitted connectors need direction arrows");
+  for (const arrow of arrows) assert.ok(Math.hypot(arrow.u![0]!, arrow.v![0]!, arrow.w![0]!) > 0);
+  assert.ok(spec.data.filter(trace => trace.name === "Observed Group centroid").every(trace => trace.marker?.size === 7 && trace.marker.symbol === "square"));
+  assert.ok(spec.data.filter(trace => trace.meta.role === "trajectory-path").every(trace => trace.line?.color === "black" && trace.mode === "lines"));
+
   assert.ok(spec.data.some((trace) => trace.meta.role === "trajectory-path"));
   assert.equal(suppressed.data.filter((trace) => trace.meta.role === "trajectory-path").length, spec.data.filter((trace) => trace.meta.role === "trajectory-path").length);
   assert.deepEqual(suppressed.layout.scene, spec.layout.scene);

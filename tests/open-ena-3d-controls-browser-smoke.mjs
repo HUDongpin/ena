@@ -463,6 +463,8 @@ function cleanupOwnedResources() {
 }
 
 
+function assertBrowser(condition, message) { if (!condition) throw new Error(message); }
+
 function beginBrowserMessageCapture(page) {
   const consoleErrors = [];
   const consoleWarnings = [];

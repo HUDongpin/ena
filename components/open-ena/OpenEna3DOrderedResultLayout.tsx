@@ -36,6 +36,7 @@ export interface OpenEna3DOrderedResultLayoutProps extends OpenEnaCodeGraphPrese
   showLabels: boolean;
   showUnitLabels: boolean;
   showVariance: boolean;
+  captureImageExport?: () => (() => boolean) | null;
   codeColors?: OpenEnaCodeColors;
   nodeTotals?: OpenEnaOrderedNodeTotals;
   nodeLayout?: OpenEnaNodeLayoutPositions;
@@ -79,6 +80,7 @@ export default function OpenEna3DOrderedResultLayout(props: OpenEna3DOrderedResu
     orderedConfig: config,
     orderedNodeTotals: props.nodeTotals,
     codeColors: props.codeColors,
+    captureImageExport: props.captureImageExport,
     groupColumn: config.groupColumn,
     xDimension: props.xDimension,
     yDimension: props.yDimension,

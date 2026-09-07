@@ -24,7 +24,7 @@ import { buildDataViewPresentationV3 } from "@/lib/open-ena/data-view-presentati
 import { buildHistoricalDataViewV3, buildDataViewV3 } from "@/lib/open-ena/data-view-export";
 import { buildTrajectoryPresentationV3 } from "@/lib/open-ena/trajectory-presentation-v3";
 import { buildLongitudinalViewV3, type OpenEnaTrajectoryControlsV3 } from "@/lib/open-ena/longitudinal-bound-v3";
-import { runOpenEnaInferenceV3, runOpenEnaTrajectoryInferenceV3 } from "@/lib/open-ena/inference-v2";
+import { runOpenEnaInferenceV3, runOpenEnaTrajectoryInferenceV3, assertOpenEnaTrajectoryInferenceConsumerV3 } from "@/lib/open-ena/inference-v2";
 import type { OpenEnaEndpointControlsV3 } from "@/lib/open-ena/inference-consumers-v3";
 import { buildAiInterpretationReviewV3 } from "@/lib/open-ena/ai-interpretation";
 import { buildHistoricalOnaViewV3, buildOnaBoundViewV3 } from "@/lib/open-ena/ona-bound-view-v3";
@@ -48,6 +48,9 @@ import OpenEnaOrderedResultLayout from "./OpenEnaOrderedResultLayout";
 import OpenEna3DOrderedResultLayout from "./OpenEna3DOrderedResultLayout";
 import OpenEnaAiInterpretation from "./OpenEnaAiInterpretation";
 import OpenEnaCodeColorPicker from "./OpenEnaCodeColorPicker";
+import { OpenEnaTrajectoryAnalysisPanelV3 } from "./model-v3/OpenEnaTrajectoryAnalysisPanelV3";
+import type { OpenEnaTrajectoryPathControlsV3 } from "@/lib/open-ena/trajectory-path-inference-v3";
+import type { OpenEnaTrajectoryExportOptionsV3 } from "@/lib/open-ena/trajectory-export-v3";
 import { OpenEnaNativeStatsPanelV3 } from "./model-v3/OpenEnaNativeStatsPanelV3";
 import { OpenEnaModelTabsV3, type OpenEnaModelScientificSummaryV3 } from "./model-v3/OpenEnaModelTabsV3";
 import { OpenEnaUnitsPanelV3 } from "./model-v3/OpenEnaUnitsPanelV3";
@@ -395,6 +398,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const [identityConfirmed, setIdentityConfirmed] = useState(false);
   const [inference, setInference] = useState<{ key: string; value: NativeInferenceV3 } | null>(null);
   const [inferenceBusy, setInferenceBusy] = useState(false);
+  const [trajectoryRanks, setTrajectoryRanks] = useState<{ frameKey: string; items: NonNullable<OpenEnaTrajectoryExportOptionsV3["ranks"]> }>({ frameKey: "", items: [] });
   const [aiReview, setAiReview] = useState<{ key: string; value: Awaited<ReturnType<typeof buildAiInterpretationReviewV3>> } | null>(null);
   const [aiLimitation, setAiLimitation] = useState("");
   const [sets, setSets] = useState<OpenEnaAnalysisSetV3[]>([]);
@@ -428,6 +432,9 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const consumerKey = canonicalJsonV3({ binding: result?.binding ?? null, plan: currentPlan?.header.executionPlanSha256 ?? null, current, controls });
   const consumerKeyRef = useRef(consumerKey); consumerKeyRef.current = consumerKey;
   const activeInference = inference?.key === consumerKey && current ? inference.value : null;
+  const trajectoryFrameKey = canonicalJsonV3({ context, binding: result?.binding ?? null, plan: currentPlan?.header.executionPlanSha256 ?? null, current });
+  const pathControls: Omit<OpenEnaTrajectoryPathControlsV3, "independentGroupsConfirmed"> | null = isTrajectory && threeDDimensions && primary && secondary && primary.token !== secondary.token
+    ? { axes: [threeDDimensions[0], threeDDimensions[1], threeDDimensions[2]], identityConfirmed, primaryGroup: primary.fields[0].value, secondaryGroup: secondary.fields[0].value, horizons: periods, cohortPolicy: "all-period-complete", repetitions: 500, seed: 2026 } : null;
   const activeAiReview = aiReview?.key === consumerKey && current ? aiReview.value : null;
   const activeContrast = nativeContrast?.key === consumerKey && current ? nativeContrast.value : null;
   const groupDisplay = useMemo(() => activeContrast ? presentBoundGroupDisplayV3(activeContrast, display.groups, hiddenUnitKeys, display.allGroupsSuppressed) : null, [activeContrast, display.groups, hiddenUnitKeys, display.allGroupsSuppressed]);
@@ -579,7 +586,14 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     try {
       const value = isTrajectory ? await runOpenEnaTrajectoryInferenceV3(result, currentPlan, controls as OpenEnaTrajectoryControlsV3)
         : await runOpenEnaInferenceV3(result, currentPlan, controls as OpenEnaEndpointControlsV3);
-      if (key === consumerKeyRef.current) setInference({ key, value });
+      if (key === consumerKeyRef.current) {
+        if (value.kind === "open-ena-trajectory-inference") {
+          await assertOpenEnaTrajectoryInferenceConsumerV3(value, result, currentPlan, value.controls);
+          if (key !== consumerKeyRef.current) return;
+          setTrajectoryRanks(previous => ({ frameKey: trajectoryFrameKey, items: [...(previous.frameKey === trajectoryFrameKey ? previous.items : []).filter(item => (item.value as typeof value).inference.kind !== value.inference.kind), { value, controls: value.controls }] }));
+        }
+        setInference({ key, value });
+      }
     } finally { setInferenceBusy(false); }
   }
   function confirmCurrentIdentityBearingExport() { return window.confirm(copy.stats.identityExportConfirmation); }
@@ -752,7 +766,13 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     if (layers.plotZoom !== undefined) setPlotZoom(layers.plotZoom);
     setPresetPreview(null);
   }
-  const plotProps = { ...graph, codeColors, groupDisplay: groupDisplay ?? undefined, groupColumn: presentation?.config.groupColumn ?? null,
+  const captureImageExport = () => {
+    const captured = latest.current;
+    if (!captured.current || !captured.currentPlan || !captured.state.model.result || !confirmCurrentIdentityBearingExport()) return null;
+    const capturedContext = canonicalJsonV3(modelScientificContextV3(captured.state.model));
+    return () => latest.current.current && latest.current.currentPlan === captured.currentPlan && latest.current.state.model.result === captured.state.model.result && canonicalJsonV3(modelScientificContextV3(latest.current.state.model)) === capturedContext;
+  };
+  const plotProps = { ...graph, codeColors, captureImageExport, groupDisplay: groupDisplay ?? undefined, groupColumn: presentation?.config.groupColumn ?? null,
     xDimension, yDimension, zDimension, camera: cameraPreset, showPoints: showPoints && !display.allGroupsSuppressed,
     showNetworks: showNetworks && !display.allGroupsSuppressed, showLabels, showUnitLabels, showVariance, showTrajectories,
     edgeScale, edgeThreshold, pointScale, plotZoom, flipX, flipY, nodeLayout, onNodeMove: moveNode, copy };
@@ -880,6 +900,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
         {checkedDataView && current && checkedDataView.binding.scientificResultSha256 === result?.binding.scientificResultSha256 && checkedDataView.binding.executionPlanSha256 === currentPlan?.header.executionPlanSha256 && <p>{workspaceCopy.stats.dataViewValidated}</p>}
         {result && <details><summary>{copy.stats.ui.methodsTitle}</summary><button type="button" onClick={() => void attempt(async () => { if (confirmCurrentIdentityBearingExport()) await navigator.clipboard.writeText(buildMethodsReportV3(result)); })}>{copy.stats.ui.copyMethods}</button><pre>{buildMethodsReportV3(result)}</pre><button type="button" onClick={() => { if (confirmCurrentIdentityBearingExport()) downloadText("methods.md", buildMethodsReportV3(result), "text/markdown"); }}>{workspaceCopy.stats.exportMethods}</button></details>}
       </section>}
+      {isTrajectory && <OpenEnaTrajectoryAnalysisPanelV3 key="native-trajectory-analysis" locale={locale} hidden={mode !== "stats"} frameKey={trajectoryFrameKey} result={result} plan={currentPlan} current={current} controls={pathControls} ranks={trajectoryRanks.frameKey === trajectoryFrameKey ? trajectoryRanks.items : []} confirmIdentityExport={confirmCurrentIdentityBearingExport} />}
       <section aria-label={workspaceCopy.artifacts.ariaLabel}><h2>{workspaceCopy.artifacts.title}</h2>
         <p>{workspaceCopy.artifacts.presetScope}</p>{state.presetHiddenGroups?.resultHash === resultHash && <button type="button" onClick={() => dispatch({ type: "clear-preset-group-hiding" })}>{workspaceCopy.artifacts.clearPreset}</button>}
         <button type="button" disabled={!result} onClick={() => { try { exportPresentation(); } catch { setError({ id: "operation-failed" }); } }}>{workspaceCopy.artifacts.exportPreset}</button>

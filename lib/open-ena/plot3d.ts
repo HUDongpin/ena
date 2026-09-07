@@ -39,6 +39,7 @@ export type OpenEna3dTraceRole =
   | "group-mean"
   | "confidence-interval"
   | "trajectory-path"
+  | "direction-arrow"
   | "axis"
   | "axis-arrowhead"
   | "axis-label"
@@ -756,7 +757,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
   ];
   const axisExtent = Math.max(0.5, ...coordinateMagnitudes) * 1.15;
 
-  if (showNetworks && showCodeGraph) {
+  if (showNetworks && showCodeGraph && !trajectory) {
     const weightedEdges = contrast
       ? contrast.edges.map((contrastEdge) => {
           const edge = result.set.adjacencyKey.find((candidate) => candidate.name === contrastEdge.name);
@@ -948,20 +949,26 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     if (!nativePlotGroupSettingsV3(result, path.group).showUnitPoints || result.groupPresentation?.hiddenUnits.has(path.unitLabel)) continue;
     traces.push({ type: "scatter3d", mode: "lines", name: "Observed fitted Unit path",
       x: [coordinate(path.from, xDimension), coordinate(path.to, xDimension)], y: [coordinate(path.from, yDimension), coordinate(path.to, yDimension)], z: [coordinate(path.from, zDimension), coordinate(path.to, zDimension)],
-      line: { color: "#263740", width: 2 }, showlegend: false, hovertemplate: `Fitted ordinals ${path.fromOrdinal} → ${path.toOrdinal}<extra></extra>`, meta: { role: "trajectory-path", groupName: path.group } });
+      line: { color: "black", width: 2 }, showlegend: false, hovertemplate: `Fitted ordinals ${path.fromOrdinal} → ${path.toOrdinal}<extra></extra>`, meta: { role: "trajectory-path", groupName: path.group } });
   }
   if (trajectory) {
     for (const path of trajectory.centroidPaths) {
       if (!nativePlotGroupSettingsV3(result, path.from.group).showMean) continue;
       traces.push({ type: "scatter3d", mode: "lines", name: "Observed Group centroid path",
         x: [coordinate(path.from.point, xDimension), coordinate(path.to.point, xDimension)], y: [coordinate(path.from.point, yDimension), coordinate(path.to.point, yDimension)], z: [coordinate(path.from.point, zDimension), coordinate(path.to.point, zDimension)],
-        line: { color: "#263740", width: 5 }, showlegend: false, hovertemplate: `${path.sharedContributorCount} actual shared contributors; available-population centroids, not matched change<extra></extra>`, meta: { role: "trajectory-path", groupName: path.from.group } });
+        line: { color: "black", width: 5 }, showlegend: false, hovertemplate: `${path.sharedContributorCount} actual shared contributors; available-population centroids, not matched change<extra></extra>`, meta: { role: "trajectory-path", groupName: path.from.group } });
+      // Same mid-segment cone grammar as the pinned longitudinal renderer;
+      // only native observed fitted connectors supply direction and endpoints.
+      const from = dimensions.map(axis => coordinate(path.from.point, axis));
+      const to = dimensions.map(axis => coordinate(path.to.point, axis));
+      const delta = to.map((value, index) => value - from[index]);
+      if (Math.hypot(...delta) > 0) traces.push({ type: "cone", name: "Observed fitted direction", x: [(from[0] + to[0]) / 2], y: [(from[1] + to[1]) / 2], z: [(from[2] + to[2]) / 2], u: [delta[0]], v: [delta[1]], w: [delta[2]], anchor: "tip", sizemode: "absolute", sizeref: Math.max(0.06, axisExtent * 0.06), colorscale: [[0, "black"], [1, "black"]], showscale: false, showlegend: false, hoverinfo: "skip", meta: { role: "direction-arrow", groupName: path.from.group } });
     }
     for (const centroid of trajectory.centroids) {
       if (!nativePlotGroupSettingsV3(result, centroid.group).showMean) continue;
       traces.push({ type: "scatter3d", mode: "markers+text", name: "Observed Group centroid",
         x: [coordinate(centroid.point, xDimension)], y: [coordinate(centroid.point, yDimension)], z: [coordinate(centroid.point, zDimension)],
-        text: [`${centroid.horizon} · n=${centroid.n}`], marker: { color: "#263740", size: 11, symbol: "square" }, showlegend: false,
+        text: [`${centroid.horizon} · n=${centroid.n}`], marker: { color: "black", size: 7, symbol: "square" }, showlegend: false,
         hovertemplate: `Observed n=${centroid.n}<extra></extra>`, meta: { role: "group-mean", groupName: centroid.group } });
     }
   }

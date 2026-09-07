@@ -22,6 +22,7 @@ export interface OpenEna3DGroupContrastProps extends OpenEnaCodeGraphPresentatio
   result: OpenEnaPlotResult;
   contrast: OpenEnaContrastPresentation;
   groupDisplay?: Pick<OpenEnaDerivedGroupDisplay, "primary" | "secondary" | "hiddenUnitKeys">;
+  captureImageExport?: () => (() => boolean) | null;
   codeColors?: OpenEnaCodeColors;
   groupColumn: string;
   xDimension: string;
@@ -56,6 +57,7 @@ export default function OpenEna3DGroupContrast({
   result,
   contrast,
   groupDisplay,
+  captureImageExport,
   codeColors,
   groupColumn,
   xDimension,
@@ -107,6 +109,7 @@ export default function OpenEna3DGroupContrast({
     result,
     contrast,
     groupDisplay,
+    captureImageExport,
     codeColors,
     groupColumn,
     xDimension,
