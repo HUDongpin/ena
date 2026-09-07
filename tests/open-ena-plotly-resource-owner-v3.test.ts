@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createOpenEnaPlotlyResourceOwnerV3, type OpenEnaOwnedGlSceneV3 } from "../lib/open-ena/plotly-resource-owner-v3";
+import { createOpenEnaPlotlyResourceOwnerV3, runOpenEnaPlotlyViewTransactionV3, type OpenEnaOwnedGlSceneV3 } from "../lib/open-ena/plotly-resource-owner-v3";
 
 function scene() {
   let lost = false, removed = false, losses = 0;
@@ -91,4 +91,64 @@ test("purge and context-retirement failures reject close and preserve operation 
   const other = createOpenEnaPlotlyResourceOwnerV3(() => active);
   await assert.rejects(other.run(() => { old._stopped = true; active = scene(); throw operationFailure; }), error => error instanceof AggregateError && error.errors[0] === operationFailure && error.errors[1] === retirementFailure);
   assert.equal(old.state().removed, false, "a failed retirement must not be misrepresented by DOM removal");
+});
+
+test("render captures the effective view only at transaction start and never interleaves its apply step", async () => {
+  const owner = createOpenEnaPlotlyResourceOwnerV3(() => null), held = barrier(), entered = barrier();
+  let view = "perspective", rendered = "", applied = "";
+  const first = owner.run(async () => { entered.release(); await held.promise; view = "orthographic-zoom"; });
+  await entered.promise;
+  const second = runOpenEnaPlotlyViewTransactionV3(owner, {
+    active: () => true, revision: () => 0, prepare: () => view, currentUserView: () => view,
+    render: async chosen => { rendered = chosen; await Promise.resolve(); },
+    apply: async chosen => { applied = chosen; },
+  });
+  const later = owner.run(() => { assert.equal(applied, "orthographic-zoom"); });
+  held.release(); await Promise.all([first, second, later]);
+  assert.equal(rendered, "orthographic-zoom"); assert.equal(applied, rendered);
+});
+
+test("inactive queued input is skipped and an actual later user orbit wins over captured restoration", async () => {
+  const owner = createOpenEnaPlotlyResourceOwnerV3(() => null), held = barrier(), entered = barrier();
+  let revision = 0, active = true, applied = "", userView = "original";
+  const operation = runOpenEnaPlotlyViewTransactionV3(owner, {
+    active: () => active, revision: () => revision, prepare: () => "effective-original", currentUserView: () => userView,
+    render: async () => { entered.release(); await held.promise; }, apply: async value => { applied = value; },
+  });
+  await entered.promise; revision++; userView = "actual-later-orbit";
+  const stale = runOpenEnaPlotlyViewTransactionV3(owner, {
+    active: () => false, revision: () => revision, prepare: () => { throw new Error("stale input prepared"); },
+    currentUserView: () => "", render: async () => { throw new Error("stale input rendered"); }, apply: async () => {},
+  });
+  held.release(); assert.equal(await operation, "actual-later-orbit"); await stale;
+  assert.equal(applied, "actual-later-orbit");
+  active = true;
+  const result = await runOpenEnaPlotlyViewTransactionV3(owner, {
+    active: () => active, revision: () => revision, prepare: () => "effective-reset",
+    currentUserView: () => userView,
+    render: async value => { applied = value; active = false; },
+    apply: async () => { throw new Error("inactive restoration"); },
+  });
+  assert.equal(result, null); assert.equal(applied, "effective-reset", "inactivated react already received the chosen view, never an intermediate preset");
+});
+
+test("changed controlled input cancels its queued operation and orbit during apply is not overwritten on completion", async () => {
+  const owner = createOpenEnaPlotlyResourceOwnerV3(() => null), held = barrier();
+  let input = "old-camera", revision = 0, rendered = false;
+  const oldInput = input, oldRevision = revision;
+  const earlier = owner.run(() => held.promise);
+  const queued = runOpenEnaPlotlyViewTransactionV3(owner, {
+    active: () => input === oldInput && revision === oldRevision, revision: () => revision,
+    prepare: () => input, currentUserView: () => input,
+    render: async () => { rendered = true; }, apply: async () => {},
+  });
+  input = "new-axis-reset-camera"; held.release(); await earlier; await queued;
+  assert.equal(rendered, false);
+  let actual = "explicit-new-fit-camera";
+  const result = await runOpenEnaPlotlyViewTransactionV3(owner, {
+    active: () => true, revision: () => revision, prepare: () => actual, currentUserView: () => actual,
+    render: async chosen => { assert.equal(chosen, "explicit-new-fit-camera"); },
+    apply: async () => { await Promise.resolve(); revision++; actual = "newer-user-orbit"; },
+  });
+  assert.equal(result, "newer-user-orbit", "completion must not overwrite the later user's camera reference");
 });

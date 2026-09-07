@@ -69,3 +69,29 @@ export function createOpenEnaPlotlyResourceOwnerV3(current: () => OpenEnaOwnedGl
     },
   };
 }
+
+/** Capture the live view when this queued transaction starts, and pass it into
+ * react itself. An obsolete render can then exit without publishing a preset.
+ * Only a different actual user-view revision supersedes the selected view.
+ */
+export function runOpenEnaPlotlyViewTransactionV3<T>(owner: ReturnType<typeof createOpenEnaPlotlyResourceOwnerV3>, options: {
+  active(): boolean;
+  revision(): number;
+  prepare(): T;
+  render(view: T): Promise<unknown>;
+  currentUserView(view: T): T;
+  apply(view: T): Promise<unknown>;
+}): Promise<T | null> {
+  return owner.run(async () => {
+    if (!options.active()) return null;
+    const before = options.revision();
+    let view = options.prepare();
+    await options.render(view);
+    if (!options.active()) return null;
+    if (options.revision() !== before) view = options.currentUserView(view);
+    const applying = options.revision();
+    await options.apply(view);
+    if (!options.active()) return null;
+    return options.revision() === applying ? view : options.currentUserView(view);
+  });
+}
