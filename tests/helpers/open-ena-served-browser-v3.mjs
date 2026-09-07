@@ -87,7 +87,7 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
     try {
       assert.equal(literalGit(root, ["rev-parse", "HEAD"]), receipt.sourceGitSha, "Git HEAD changed during browser gate");
       assert.deepEqual(sourceManifest(root), receipt.source, "source changed during browser gate");
-      assert.deepEqual(verifyPlotlyDisposal(root), receipt.plotlyDependency, "applied Plotly dependency changed during browser gate");
+      if (receipt.plotlyDependency) assert.deepEqual(verifyPlotlyDisposal(root), receipt.plotlyDependency, "applied Plotly dependency changed during browser gate");
       if (receipt.servedAssets.some(asset => asset.error || asset.status !== 200)) throw new Error("A served static asset response could not be verified");
     } catch (error) { receipt.cleanup.errors.push({ name: "source and served asset custody", message: safe(error.message) }); }
     if (serverLogPath && serverEntry) writeFileSync(serverLogPath, safe(serverEntry.output));

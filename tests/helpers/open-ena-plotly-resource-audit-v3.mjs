@@ -45,9 +45,9 @@ export function installPlotlyResourceAuditV3() {
 
 export async function checkPlotlyResourceLifecycleV3(page, record) {
   const audit = [];
-  const snapshot = async phase => {
+  const snapshot = async (phase, extra = {}) => {
     const value = await page.evaluate(() => window.__openEnaGlResourceAudit.snapshot());
-    audit.push({ phase, ...value }); record(audit);
+    audit.push({ phase, ...value, ...extra }); record(audit);
     return value;
   };
   const ready = async projection => {
@@ -103,12 +103,14 @@ export async function checkPlotlyResourceLifecycleV3(page, record) {
         if (reject) throw new Error("synthetic clipboard rejection");
       } } });
     }, reject);
+    let imageAudit = null;
     const approve = dialog => dialog.accept(); page.once("dialog", approve);
     try {
       await panel.locator('button[data-ena-plot-action="copy-image"]').click();
       await page.waitForFunction(() => window.__openEnaGlPngResult !== null);
       await panel.locator('button[data-ena-plot-action="copy-image"]:enabled').waitFor();
       const png = await page.evaluate(() => window.__openEnaGlPngResult);
+      imageAudit = png;
       assert.equal(png.valid, true); assert.ok(png.bytes > 1000);
       assert.equal(png.width, expectedImage.width); assert.equal(png.height, expectedImage.height);
       if (role === "overall") { if (sameImageHash) assert.equal(png.sha256, sameImageHash, "same view PNG must retain exact content across rejection and cross-root use"); else sameImageHash = png.sha256; }
@@ -120,7 +122,7 @@ export async function checkPlotlyResourceLifecycleV3(page, record) {
         if (descriptor) Object.defineProperty(navigator, "clipboard", descriptor); else delete navigator.clipboard;
       });
     }
-    const row = await snapshot(role + (reject ? "-png-rejected" : "-png-success")); bounded(row);
+    const row = await snapshot(role + (reject ? "-png-rejected" : "-png-success"), { png: imageAudit }); bounded(row);
     assert.equal(row.created, imageBefore, "PNG success/rejection must reuse the warmed static context");
     const shared = row.rows.find(context => context.imageContext);
     assert.equal(shared.lost, false, "shared static export context must remain reusable");

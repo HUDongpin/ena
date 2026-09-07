@@ -983,6 +983,10 @@ try {
         300_000,
       )
     : { aggregateOnly: true, status: "NOT_RUN_PRIVATE_WORKBOOK_MISSING" };
+  const finalGlResources = await runtime.page.evaluate(() => window.__openEnaGlResourceAudit.snapshot());
+  writeFileSync(join(artifactDirectory, "gl-final-numeric.json"), JSON.stringify(finalGlResources, null, 2));
+  assert.equal(finalGlResources.current, 3); assert.equal(finalGlResources.attached, 3);
+  assert.equal(finalGlResources.retiredUnlost, 0); assert.equal(finalGlResources.currentLosses, 0);
   summary = {
     status: "PASS",
     browser: smokeBrowser,
@@ -996,7 +1000,7 @@ try {
       sourceRows: fixtureCsv.trim().split("\n").length - 1,
     },
     synthetic,
-    glResources,
+    glResources: { ...glResources, finalNumericOnly: true, finalCurrentScenes: finalGlResources.current, finalRetiredUnlost: finalGlResources.retiredUnlost },
     yuPrivate: yu,
     source: { ...sourceEvidenceBefore, smokeSourceSha256 },
   };
