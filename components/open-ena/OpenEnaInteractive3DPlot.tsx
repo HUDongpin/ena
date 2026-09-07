@@ -1258,6 +1258,7 @@ export default function OpenEnaInteractive3DPlot({
       ref={figureRef}
       className="open-ena-plot-figure open-ena-interactive-3d-figure"
       data-ena-plot-kind={plotKind}
+      data-ena-native-trajectory={result.boundPresentation && result.trajectoryPresentation ? "true" : undefined}
       data-ena-plot-size={compact ? "compact" : "main"}
     >
       <div

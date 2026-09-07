@@ -4663,6 +4663,30 @@ body:has(.open-ena-login-page) .back-to-top {
   display: flex;
 }
 
+/* Native longitudinal fullscreen retains the complete plot and five usable
+   actions. Embedded plots and the primary/secondary triptych keep their layout. */
+.open-ena-interactive-3d-figure[data-ena-native-trajectory="true"]:fullscreen,
+.open-ena-interactive-3d-figure[data-ena-native-trajectory="true"][data-fallback-fullscreen="true"] {
+  padding: 0;
+  border: 0;
+}
+
+.open-ena-interactive-3d-figure[data-ena-native-trajectory="true"]:fullscreen .open-ena-3d-plot-actions,
+.open-ena-interactive-3d-figure[data-ena-native-trajectory="true"][data-fallback-fullscreen="true"] .open-ena-3d-plot-actions {
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  max-height: calc(100dvh - 16px);
+}
+
+.open-ena-interactive-3d-figure[data-ena-native-trajectory="true"]:fullscreen .open-ena-3d-plot-actions button,
+.open-ena-interactive-3d-figure[data-ena-native-trajectory="true"][data-fallback-fullscreen="true"] .open-ena-3d-plot-actions button {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  flex: 0 0 auto;
+}
+
 .open-ena-interactive-3d-summary {
   overflow-x: auto;
   overscroll-behavior-inline: contain;

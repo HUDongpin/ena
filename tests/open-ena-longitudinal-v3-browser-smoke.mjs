@@ -1306,6 +1306,15 @@ async function exerciseStaleImageLease(page) {
   }
 }
 
+async function waitForFullscreenCanvas(page) {
+  await page.waitForFunction(() => {
+    const root = document.querySelector('[data-testid="open-ena-interactive-3d-plot"] [data-ena-plotly-root="true"]');
+    const canvas = root?._fullLayout?.scene?._scene?.glplot?.canvas;
+    if (!root || !(canvas instanceof HTMLCanvasElement)) return false;
+    const outer = root.getBoundingClientRect(), inner = canvas.getBoundingClientRect();
+    return inner.width >= outer.width * 0.9 && inner.height >= outer.height * 0.9;
+  }, null, { timeout: 15000 });
+}
 async function readFullscreenPlotLayout(page) {
   return await page.locator('[data-testid="open-ena-interactive-3d-plot"] [data-ena-plotly-root="true"]').evaluate((root) => {
     const shell = root.closest(".open-ena-interactive-3d-figure");
@@ -1778,6 +1787,11 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       settledState.currentActiveDescriptor?.action === "fullscreen",
       "settling Plotly relayout moved focus away from Exit fullscreen",
     );
+    await waitForFullscreenCanvas(page).catch(async error => {
+      writeFileSync(join(artifactDirectory, "fullscreen-resize-failure.json"), JSON.stringify(await readFullscreenPlotLayout(page), null, 2));
+      await shellLocator.screenshot({ path: join(artifactDirectory, "fullscreen-resize-failure.png") });
+      throw error;
+    });
     const fallbackLayoutAudit = await readFullscreenPlotLayout(page);
     writeFileSync(join(artifactDirectory, "fallback-fullscreen-layout.json"), JSON.stringify(fallbackLayoutAudit, null, 2));
     await shellLocator.screenshot({ path: join(artifactDirectory, "fallback-fullscreen-before-assert.png") });
