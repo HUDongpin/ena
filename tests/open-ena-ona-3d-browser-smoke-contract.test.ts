@@ -75,7 +75,8 @@ test("the synthetic lane exercises directed ONA science, circular points, three 
   assert.match(source, /literalContract:\s*wrappers\.filter/u);
   assert.match(source, /data-ena-camera-state/u);
   assert.match(source, /data-ena-aspect-ratio-state/u);
-  assert.match(source, /name: "Axis 3", exact: true/u);
+  assert.match(source, /name: `Axis \$\{index \+ 1\}`/u);
+  assert.match(source, /actual 3D scene did not adopt the valid axis permutation/u);
   const plotToolsButton = source.indexOf('getByRole("button", { name: "Plot Tools", exact: true })');
   const edgeThresholdSlider = source.indexOf('getByRole("slider", { name: "Edge threshold" })');
   assert.ok(

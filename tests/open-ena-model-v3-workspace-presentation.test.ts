@@ -163,3 +163,11 @@ test("native endpoint hiding retains valid population while summary inclusion ch
   }
   assert.equal(canonicalJsonV3(result), before);
 });
+
+test("native 3D axis editor retains all three choices while an intermediate selection is inapplicable", async () => {
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync("components/open-ena/OpenEnaWorkspace.tsx", "utf8");
+  assert.match(source, /const axisControlValues = view === "3d" \? availableThreeDAxes : twoDAxes/);
+  assert.match(source, /axisControlValues\.map\(\(axis, i\)/);
+  assert.match(source, /new Set\(availableThreeDAxes\)\.size === 3/);
+});

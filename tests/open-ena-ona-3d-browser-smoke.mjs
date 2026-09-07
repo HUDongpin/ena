@@ -623,14 +623,21 @@ async function runSyntheticLane(page, args) {
 
   await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
   const initialAxes = await Promise.all([1, 2, 3].map(index => page.getByRole("combobox", { name: `Axis ${index}`, exact: true }).inputValue()));
-  const thirdAxis = page.getByRole("combobox", { name: "Axis 3", exact: true });
-  const supportedAxisOptions = await thirdAxis.locator("option").evaluateAll(options => options.map(option => option.value).filter(Boolean));
-  const alternateAxis = supportedAxisOptions.find(axis => !initialAxes.includes(axis));
-  assertBrowser(Boolean(alternateAxis), "synthetic ONA fixture needs a fourth supported axis for a valid reversible 3D axis change");
-  await thirdAxis.selectOption(alternateAxis);
+  const permutedAxes = [initialAxes[1], initialAxes[2], initialAxes[0]];
+  for (let index = 0; index < 3; index++) {
+    await page.getByRole("combobox", { name: `Axis ${index + 1}`, exact: true }).selectOption(permutedAxes[index]);
+    if (index === 0) {
+      assertBrowser(await threeDButton.isDisabled(), "duplicate-axis 3D must be unavailable");
+      assertBrowser(await page.getByTestId("open-ena-ordered-result-layout").count() === 1, "duplicate axes must retain actual 2D geometry");
+    }
+  }
   await waitForOrderedPlots();
-  assertBrowser(await thirdAxis.inputValue() === alternateAxis, "native axis control did not retain the selected supported dimension");
-  await thirdAxis.selectOption(initialAxes[2]);
+  const axisReadback = await page.evaluate(() => {
+    const root = document.querySelector('[data-testid="open-ena-ona-3d-overall-plot"] [data-ena-plotly-root="true"]');
+    return ["x", "y", "z"].map(axis => root.data.find(trace => trace.meta?.role === "axis-label" && trace.meta.axis === axis)?.meta.dimension);
+  });
+  assertBrowser(JSON.stringify(axisReadback) === JSON.stringify(permutedAxes), "actual 3D scene did not adopt the valid axis permutation");
+  for (let index = 0; index < 3; index++) await page.getByRole("combobox", { name: `Axis ${index + 1}`, exact: true }).selectOption(initialAxes[index]);
   await waitForOrderedPlots();
   await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
   const threshold = page.getByRole("slider", { name: "Edge threshold" });
@@ -737,6 +744,7 @@ async function runYuPrivateLane(page, args) {
   // All values that can identify Units stay inside the page. Only fixed
   // aggregate failures and numeric/boolean receipts cross this boundary.
   let stage = "private native source setup";
+  const requestsBeforePrivate = await page.evaluate(() => window.__openEnaNativeAudit.requests.length);
   let consoleErrors = 0, pageErrors = 0;
   const onConsole = message => { if (message.type() === "error") consoleErrors++; };
   const onPageError = () => { pageErrors++; };
@@ -800,9 +808,10 @@ async function runYuPrivateLane(page, args) {
       }
       const sourceRows = r.executionProvenance.resources.observed.processedRows;
       if (sourceRows !== 174 || p.rows.length !== 174 || r.orderedAudit.responseRowIndices.length !== 174 || r.executionProvenance.ordering.runtimeSourceRowIndices.length !== 174 || rawTotal !== 811 || zeroNetworks !== 3 || rawSelfConnections <= 0 || r.orderedAudit.edgeValues.flat().reduce((sum, value) => sum + value, 0) !== rawTotal) fail();
-      window.__task38PrivateOna = { binding: JSON.stringify(r.binding), totals, rawTotal, rawSelfConnections, zeroNetworks };
+      window.__task38PrivateOna = { binding: JSON.stringify(r.binding), science: JSON.stringify({ set: r.set, configuration: r.configuration, executionProvenance: r.executionProvenance, orderedAudit: r.orderedAudit, orderedResponseNodeSummary: r.orderedResponseNodeSummary }), requests: audit.requests.length, totals, rawTotal, rawSelfConnections, zeroNetworks };
       return { sourceRows, units: r.set.points.length, codeNodeCount: codes.length, directedDimensions: edges.length, connectionTotal: rawTotal, selfConnections: rawSelfConnections, zeroNetworks, actualNativeBinding: true, literalStringOrderParity: true };
     });
+    check(await page.evaluate(() => window.__openEnaNativeAudit.requests.length) === requestsBeforePrivate + 1, "private source must execute exactly one native Worker request");
     stage = "private actual circles and three directed scenes";
     const pointAudit = await page.evaluate(() => {
       const points = [...document.querySelectorAll('[data-ona-unit-point="true"]')];
@@ -850,12 +859,15 @@ async function runYuPrivateLane(page, args) {
       auditRows.forEach((row, i) => [...row.children].forEach((cell, j) => {
         const values = { responseRowIndex: r.orderedAudit.responseRowIndices[i], previousResponseRowIndex: r.orderedAudit.previousResponseRowIndices[i], priorRowCount: r.orderedAudit.priorRowCounts[i], horizonOrdinal: r.orderedAudit.horizonOrdinals[i], edgeValues: r.orderedAudit.edgeValues[i] };
         const value = values[names[j]];
-        if (value !== null && cell.textContent !== (typeof value === "object" ? JSON.stringify(value) : String(value))) fail();
+        if (cell.textContent !== (value === null ? "Unavailable" : typeof value === "object" ? JSON.stringify(value) : String(value))) fail();
       }));
       return { directedRows: rows.length, sourceRowsInCaption: 174, actualAuditRowsShown: auditRows.length, truncatedDisclosure: true, fullRunConnectionTotal: rawTotal, fullRunSelfConnections: selfTotal };
     });
     await primary.selectOption(previousGroup);
-    check(await page.evaluate(() => JSON.stringify(window.__openEnaNativeAudit.responses.at(-1).result.binding) === window.__task38PrivateOna.binding), "display operations changed private bound science");
+    check(await page.evaluate(() => {
+      const r = window.__openEnaNativeAudit.responses.at(-1).result, before = window.__task38PrivateOna;
+      return JSON.stringify(r.binding) === before.binding && JSON.stringify({ set: r.set, configuration: r.configuration, executionProvenance: r.executionProvenance, orderedAudit: r.orderedAudit, orderedResponseNodeSummary: r.orderedResponseNodeSummary }) === before.science && window.__openEnaNativeAudit.requests.length === before.requests;
+    }), "display operations changed private bound science or reran Worker");
     check(consoleErrors === 0 && pageErrors === 0, "private browser emitted errors");
     return { aggregateOnly: true, ...aggregate, pointCircles2d: pointAudit.count, dataViewAuditedRowsVisible: auditedRows, rendered, consoleErrors, pageErrors };
   } catch { throw new Error(`Private ONA gate failed: ${stage}; private details withheld`); }
