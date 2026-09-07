@@ -1301,7 +1301,8 @@ async function exercisePendingImageActions(page) {
     assert.match(recoveryStatus, /copied/iu);
     await nativeScience(page);
     const focus = await page.evaluate(() => ({ events: window.__nativePendingFocus.events, snapshots: window.__nativePendingFocus.snapshots }));
-    writeFileSync(join(artifactDirectory, "pending-focus-diagnostic.json"), JSON.stringify({ status: "PASS", ...focus }, null, 2));
+    assert.equal(focus.events.some(event => event.type === "mutation" && event.attribute === "disabled" && event.target.action === "fullscreen" && event.after !== null && event.fallback === "true"), false, "rendering disabled Exit inside pending fallback fullscreen");
+    writeFileSync(join(artifactDirectory, "pending-focus-diagnostic.json"), JSON.stringify({ status: "PASS", traversalPairs: 12, ...focus }, null, 2));
     return { pending, rejected, errorStatus, recovered: await read(), recoveryStatus };
   } catch (error) {
     const focus = await page.evaluate(() => { window.__nativePendingFocus.capture("failure-before-release", true); return { events: window.__nativePendingFocus.events, snapshots: window.__nativePendingFocus.snapshots }; });

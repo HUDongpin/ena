@@ -1294,7 +1294,9 @@ export default function OpenEnaInteractive3DPlot({
 
   function toggleFullscreen() {
     const target = fullscreenTargetRef.current;
-    if (!target || status !== "ready" || fullscreenRequestPendingRef.current) return;
+    if (!target) return;
+    // Exiting an existing fullscreen surface must survive render/image work.
+    // Readiness gates entry only; disabling the focused Exit also drops focus.
     fullscreenInitiatorRef.current = fullscreenButtonRef.current;
     if (target.getAttribute("data-fallback-fullscreen") === "true") {
       exitFallbackFullscreen(target, true);
@@ -1309,6 +1311,7 @@ export default function OpenEnaInteractive3DPlot({
       }
       return;
     }
+    if (status !== "ready" || fullscreenRequestPendingRef.current) return;
     void enterFullscreen(target).catch(() => announceAction(copy.plot.fullscreenUnavailable));
   }
 
@@ -1430,7 +1433,7 @@ export default function OpenEnaInteractive3DPlot({
             aria-controls={fullscreenTargetId}
             aria-pressed={isFullscreen}
             title={fullscreenActionLabel}
-            disabled={status !== "ready"}
+            disabled={!isFullscreen && status !== "ready"}
             onClick={toggleFullscreen}
           >
             <OpenEnaPlotActionIcon name={isFullscreen ? "exit-fullscreen" : "fullscreen"} />

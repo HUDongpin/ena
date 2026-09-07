@@ -1633,3 +1633,28 @@ test("3D Recenter matches 2D by restoring the default display distance without r
   assert.ok(reset.eye.x < 0 && reset.eye.y > 0 && reset.eye.z > 0);
   assert.notDeepEqual(reset.eye, reference.eye);
 });
+
+test("fullscreen Exit remains actionable during render loading or pending image work", () => {
+  const interactive = readFileSync(join(process.cwd(), "components/open-ena/OpenEnaInteractive3DPlot.tsx"), "utf8");
+  const start = interactive.indexOf("  function toggleFullscreen() {");
+  const end = interactive.indexOf("  const fullscreenActionLabel", start);
+  const toggleSource = interactive.slice(start, end);
+  const buttonStart = interactive.indexOf("ref={fullscreenButtonRef}");
+  const buttonSource = interactive.slice(buttonStart, interactive.indexOf("onClick={toggleFullscreen}", buttonStart));
+  const disabledExpression = buttonSource.match(/disabled=\{([^}]+)\}/u)?.[1];
+  assert.ok(disabledExpression);
+  const disabled = new Function("status", "isFullscreen", `return (${disabledExpression});`);
+  for (const status of ["loading", "error", "ready"]) {
+    assert.equal(disabled(status, true), false, `Exit disabled during ${status}`);
+    for (const mode of ["native", "fallback", "embedded"]) {
+      const calls: string[] = [];
+      const target = { getAttribute: () => mode === "fallback" ? "true" : null };
+      const invoke = new Function("context", `const {fullscreenTargetRef,status,fullscreenRequestPendingRef,fullscreenInitiatorRef,fullscreenButtonRef,document,exitFallbackFullscreen,announceAction,copy,enterFullscreen}=context; ${toggleSource}; toggleFullscreen();`);
+      invoke({ fullscreenTargetRef: { current: target }, status, fullscreenRequestPendingRef: { current: true }, fullscreenInitiatorRef: { current: null }, fullscreenButtonRef: { current: {} }, document: { fullscreenElement: mode === "native" ? target : null, exitFullscreen: () => { calls.push("native-exit"); return Promise.resolve(); } }, exitFallbackFullscreen: (_target: unknown, restore: boolean) => { assert.equal(_target, target); assert.equal(restore, true); calls.push("fallback-exit"); }, announceAction: () => calls.push("announce"), copy: { plot: {} }, enterFullscreen: () => { calls.push("entry"); return Promise.resolve(); } });
+      assert.deepEqual(calls, mode === "embedded" ? [] : [`${mode}-exit`], `${mode} action admission changed during ${status}`);
+    }
+  }
+  assert.equal(disabled("loading", false), true, "entry must remain disabled during loading");
+  assert.equal(disabled("error", false), true, "entry must remain disabled on render error");
+  assert.equal(disabled("ready", false), false);
+});
