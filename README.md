@@ -75,6 +75,131 @@ Workspace supplies a validated fitted-sequence presentation layer to the 2D and
 3D renderers. Retained legacy readers and standalone longitudinal presenters remain
 compatibility surfaces and do not grant authority to imported artifacts.
 
+### Models
+
+Open ENA supports **all six Standard Model/Window combinations**:
+
+| Standard model | Moving Stanza (`MovingStanzaWindow`) | Conversation/Horizon (`Conversation`) |
+| --- | --- | --- |
+| EndPoint | Supported | Supported |
+| SeparateTrajectory (Separate Trajectory) | Supported | Supported |
+| AccumulatedTrajectory (Accumulated Trajectory) | Supported | Supported |
+
+Units identify the analytic entities; Horizons define their context partitions;
+Codes define the network variables. Composite Unit, Horizon and Group identities
+preserve declared Text, Number and Boolean types. Standard **Binary** accepts either a consistently
+numeric 0/1 Code column or a consistently Boolean false/true Code column, with
+explicit Boolean-to-0/1 runtime mapping and provenance. Mixed Boolean/numeric
+representation within a Code is rejected. **Frequency** accepts finite nonnegative
+numbers and rejects booleans. Strings, missing cells and invalid numeric values
+are not silently converted into Codes.
+Moving Stanza has explicit backward and forward finite extents or **Infinity**
+(entire available extent within the Horizon). Conversation uses the whole Horizon.
+Moving row order and trajectory Horizon order are separate scientific choices:
+select explicit keys/comparators, or explicitly confirm source order where offered.
+The application does not guess chronology from labels or bridge unobserved steps.
+
+**SVD, Means, and Reference** are the Standard rotations. Means is fitted directly
+only for **EndPoint**, with a declared Positive-minus-Negative direction. An
+**Endpoint Reference can project all three Standard models**, using the validated
+source center, full basis and fixed nodes after exact Code-identity remapping.
+A target trajectory or projected Endpoint cannot mint a new source Reference.
+Standard and ONA retain isolated drafts and execution contracts: ONA keeps its
+fixed directional masking, ordering and descriptive outputs; Standard weighting,
+Means and Reference controls do not alter that contract. **TMA and advanced rotations are not implemented in the Models tab**, even where the underlying package
+has other research APIs.
+
+Malformed, incompatible, stale, rank-ineligible or over-budget scientific choices
+fail closed with diagnostics. They do not trigger a replacement rotation,
+truncated dataset or automatic rerun. Hide/Show changes display only; Exclude
+changes the model configuration and makes prior results stale. Core model
+admission is broader than individual consumers: endpoint contrasts need two
+supported axes and two selected Groups out of two to six declared Groups; local
+analysis sets require compatible Endpoint results in the same basis. A valid
+rank-one or ungrouped result remains inspectable without granting these actions.
+
+Portable canonical configurations, drafts, analysis bundles and stale-result
+audits use **schema version 3**; Standard Reference uses **schema version 2**.
+Post-model rank statistics have a separate **schema version 1** artifact; native
+trajectory analysis, plot specifications and export manifests use **schema version 3**.
+Result-bound presentation presets describe only their declared display fields.
+The validation, runtime-policy and execution contracts are respectively
+`open-ena-validation-v3.1`, `open-ena-runtime-policy-v3.1` and
+`open-ena-execution-v3.1`; resource admission also includes the documented
+operational supplement. Version strings alone do not establish admission or
+scientific compatibility. Imports check strict shapes, component hashes,
+scientific consistency and resource limits. They open historical previews or
+explicit configuration/Reference choices; **imported artifacts never restore live
+execution authority**, even if serialized configuration metadata says executable.
+They require a newly compiled current plan and explicit run for new results.
+Legacy v1/v2 readers retain their disclosed missing-provenance limits.
+
+Scientific parity is bounded by the fixed fixtures in
+[jENA numerical acceptance](packages/jena-js/NUMERICS.md): the frozen rENA 0.3.1
+baseline and 14 pinned rENA 0.4.4 Standard cases. The latter retains all six returned
+axes and checks requested three-axis views as exact full-frame prefixes; scalar
+geometry/full variance uses 1e-10 absolute bounds, and basis/projector comparisons
+use 1e-8. Full variance is never renormalized. This does not establish universal
+cross-platform or ill-conditioned-input agreement. Undirected fitted nodes use
+a rank-aware minimum-norm solve; directed ONA retains its ridge solve and Reference
+retains source nodes. See the [acceptance ledger](docs/superpowers/specs/2026-09-02-open-ena-standard-model-parameters-acceptance-ledger.md)
+for exact tested revisions, historical failures, unavailable evidence and pending
+final gates. Local acceptance does not imply a deployed or production release.
+
+### Whole-path trajectory analysis and export
+
+The native trajectory panel separately compares **independent whole participant
+histories**. Confirm that the full Unit identity represents the same entity over
+time and that the two Groups contain independent histories. Select typed Groups
+and ordered Horizons with **three genuinely supported axes** and at least **two
+complete Units per group**. The analysis uses equal participant weights and only
+histories complete across all selected Horizons. It defaults to **500 permutations
+and seed 2026**, permutes whole histories between Groups, retains raw p-values and
+reports Holm-adjusted p-values within the declared family. Resource checks bound
+periods, repetitions, memory and work before admission. **Paired whole-path
+comparison is not implemented.** The independent-period, paired-period and
+repeated-period rank designs below remain separate analyses; a paired rank test
+does not imply paired path inference.
+
+The path calculations use a local GPL math port with pinned public SDK/source-map
+provenance. Its independent public-SDK oracle covers **23 metrics in one fixed
+fixture**; that is not a universal metric count or a claim that internal helpers
+are public package exports. The fitted direction and Means separation limitations
+remain visible when interpreting path results.
+
+The default trajectory ZIP and standalone files contain an explicitly allowed
+set of **aggregate** fields: path results, collected rank results, Methods,
+manifest and complete-cohort plot specification. That plot describes the complete
+comparison cohorts, not whichever available points a display filter shows.
+Participant identities and traces require **explicit participant opt-in before
+materialization** and local confirmation. Adding participant files leaves the
+existing aggregate file bytes unchanged. Full identity-bearing model exports are
+a different contract. Every new analysis/export requires the current native result,
+plan and controls; currentness is rechecked after asynchronous work, and stale or
+unmounted actions produce no output. Imported JSON remains historical data.
+
+Native trajectory plots use black paths, direction arrows and 7-pixel square
+centroids; mean-network edges are suppressed for the trajectory presentation.
+Individual paths default off. Native 2D supplies SVG projections, export and zoom;
+3D additionally supplies native fullscreen and its accessible fallback. Image
+actions wait for the figure to be ready and require identity confirmation before
+creating output. If the clipboard API is absent, Copy downloads a real PNG; an
+available clipboard that rejects a write reports an error. Fullscreen Exit stays
+available while work is pending. Deferred focus returns when the figure is ready
+unless the researcher has chosen another focus target or changed context.
+
+The installed Plotly 3.7.0 includes an explicit local disposal correction. Its
+upstream identity, applied digest, exact four substitutions for two disposal
+omissions, license and build guard are documented in
+[Plotly disposal maintenance](docs/maintenance/plotly-3.7.0-disposal-correction.md).
+Measured projection and PNG cycles support bounded resource retention; they do
+not prove universal GPU leak freedom. Known scientific label overlaps and raw
+Canvas2D advisories remain. Browser evidence distinguishes CSS zoom from native
+browser zoom, English served journeys from three-locale catalog/SSR and earlier
+Chinese Workspace checks, and controlled callback latency from naturally measured
+long renders. No official pixel-parity or universal accessibility/performance
+claim is made.
+
 ### Inferential comparison contract
 
 Open ENA does not run an inferential test automatically. In the Comparison workflow,
