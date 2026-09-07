@@ -1,11 +1,14 @@
 # Standard ENA Models v3 acceptance ledger
 
-This is the Task39 durable documentation snapshot, based on locally accepted
-Task38 source `7baab3ac5e7886465cea33a72e941261fe44d796` (tree
-`c16944058b5502a57f982f06c340a2aef508bb12`), prepared on 2026-09-07 UTC.
-It is not final whole-goal acceptance. **Task40 and the final independent
-whole-goal SPEC → QUALITY review of all 41 requirements are Pending.**
-Task39's own independent acceptance is also pending at this writing.
+This Task40 local verification snapshot records fresh complete gates on clean
+candidate `f1f735601c568fba2e2ac79cb6331653a7c95a8e` (tree `1e569e2fc36de9f946d93c4e6b83c6e3d2a3e3d5`), after Task39 was accepted at
+`0b6f5db825d100332597ec9c77cd2a0d6e72e565`.
+Every required broad gate has an actual receipt. The final evidence edit changes
+only this ledger; broad gates belong to the tested candidate, with the content
+bridge and local commit recorded separately.
+**Task40 independent SPEC → QUALITY and final independent whole-goal
+SPEC → QUALITY of all 41 requirements remain Pending.** No writer self-acceptance
+or complete-goal claim is made.
 
 All source/test work is confined to `/Volumes/Starship/ENA/.worktrees/standard-ena-model-v3`,
 branch `codex/standard-ena-model-v3`, Gitdir
@@ -41,8 +44,8 @@ Historical reviews for Tasks1,3–6 remain qualified: Task1's recovered SPEC is 
 a predecessor; Tasks3–4 lack the separately recovered final pair; Task5 reports
 controller QUALITY; Task6 has final QUALITY but not the final raw SPEC pair.
 Later green suites do not retroactively create those missing review receipts.
-A recovered approval is not current execution. Future Task40 must record fresh
-final command exits and skips, and final reviewers must inspect the full goal.
+A recovered approval is not current execution. Task40 fresh command exits and skips are recorded below; final reviewers must
+still inspect the full goal.
 
 ## Per-task evidence and exact historical scope
 
@@ -422,13 +425,13 @@ contain exact historical SHA, counts, raw/report hashes and limitations.
 | Task38: `npm run test:browser:open-ena-node-drag` | Pass (Task38 base) | [E38](#e38-plan-5-task-6-global-38) | Writer and each reviewer actual original argv exit 0; zero test skips; retained warnings/history | Only 7baab3a gate and measured scope |
 | Task38: `npm run test:browser:longitudinal-v3` | Pass (Task38 base) | [E38](#e38-plan-5-task-6-global-38) | Writer and each reviewer actual original argv exit 0; zero test skips; retained warnings/history | Only 7baab3a gate and measured scope |
 | Task38: `node --import tsx --test tests/open-ena-inference-v2.test.ts tests/open-ena-inference-consumers-v2.test.ts tests/open-ena-contrasts.test.ts tests/open-ena-longitudinal-v3.test.ts tests/open-ena-ai-interpretation-payload.test.ts tests/open-ena-data-view-export.test.ts` | Pass (Task38 base) | [E38](#e38-plan-5-task-6-global-38) | Writer and each reviewer actual original argv exit 0; zero test skips; retained warnings/history | Only 7baab3a gate and measured scope |
-| Task39: `node --import tsx --test tests/open-ena-model-v3-documentation.test.ts` | Pass (documentation) | [Task39 documentation receipt](#task39-documentation-receipt) | Original ENOENT and F1 documentation RED retained; final 3/3 GREEN, 0 skips | Documentation contract only; independent review pending |
-| Task40: `npm run test:app` | Pending | Task40 has not run | Fresh complete-gate execution still required | None on final candidate |
-| Task40: `npm run typecheck:app` | Pending | Task40 has not run | Fresh complete-gate execution still required | None on final candidate |
-| Task40: `npm run build:app` | Pending | Task40 has not run | Fresh complete-gate execution still required | None on final candidate |
-| Task40: `npm run jena:verify` | Pending | Task40 has not run | Fresh complete-gate execution still required | None on final candidate |
-| Task40: `npm run test:browser:open-ena-models-v3` | Pending | Task40 has not run | Fresh complete-gate execution still required | None on final candidate |
-| Task40: `npm run verify` | Pending | Task40 has not run | Fresh complete-gate execution still required | None on final candidate |
+| Task39: `node --import tsx --test tests/open-ena-model-v3-documentation.test.ts` | Pass (documentation) | [Task39 documentation receipt](#task39-documentation-receipt) | Original ENOENT and F1 documentation RED retained; final 3/3 GREEN, 0 skips | Documentation contract only; Task39 final SPEC and QUALITY accepted at0b6f5db |
+| Task40: `npm run test:app` | Pass | [Task40 fresh complete gates](#task40-fresh-complete-gates); [08-frozen-test-app.log](/tmp/ena-41-task-controller-20260905/task40-writer/08-frozen-test-app.log) | Exit0; 2649/2649;0 fail/skip/cancel/todo; both private Yu safe gates passed; earlier failures retained below | Tested f1f7356 content; final ledger bridge below |
+| Task40: `npm run typecheck:app` | Pass | [Task40 fresh complete gates](#task40-fresh-complete-gates); [09-frozen-typecheck.log](/tmp/ena-41-task-controller-20260905/task40-writer/09-frozen-typecheck.log) | Exit0; tsc --noEmit exit0 against ES2017; earlier failures retained below | Tested f1f7356 content; final ledger bridge below |
+| Task40: `npm run build:app` | Pass | [Task40 fresh complete gates](#task40-fresh-complete-gates); [10-frozen-build-app.log](/tmp/ena-41-task-controller-20260905/task40-writer/10-frozen-build-app.log) | Exit0; Supported prebuild guard and Next build3368/3368; applied Plotly unchanged; earlier failures retained below | Tested f1f7356 content; final ledger bridge below |
+| Task40: `npm run jena:verify` | Pass | [Task40 fresh complete gates](#task40-fresh-complete-gates); [07-frozen-jena-verify.log](/tmp/ena-41-task-controller-20260905/task40-writer/07-frozen-jena-verify.log) | Exit0; 686/686 in29 files; frozen baseline35/current rENA0.4.4 parity98; pack20/20; pack-check45 files;0 skips; earlier failures retained below | Tested f1f7356 content; final ledger bridge below |
+| Task40: `npm run test:browser:open-ena-models-v3` | Pass | [Task40 fresh complete gates](#task40-fresh-complete-gates); [11-frozen-models-browser.log](/tmp/ena-41-task-controller-20260905/task40-writer/11-frozen-models-browser.log) | Exit0; Fresh owned build/server/Postgres/Chromium;15 journeys;172 reachability checks;153 responses;14 public image views; earlier failures retained below | Tested f1f7356 content; final ledger bridge below |
+| Task40: `npm run verify` | Pass | [Task40 fresh complete gates](#task40-fresh-complete-gates); [12-frozen-full-verify.log](/tmp/ena-41-task-controller-20260905/task40-writer/12-frozen-full-verify.log) | Exit0; Actual complete chain: package686,pack20,receipt tests230,app2649,typecheck/build3368;0 skips; earlier failures retained below | Tested f1f7356 content; final ledger bridge below |
 
 ## R baseline, current oracle and supplemental commands
 
@@ -626,7 +629,8 @@ The tested ledger digest before this outcome annotation was
 `1ee5d0346acdffa32fe3941473654e15a03ba8f2e8619c9f26031259065b5223`; the final annotation and final rerun are bound in the
 frozen handoff, not misrepresented as that earlier digest. The documentation
 contract is a textual boundary/coverage guard, not scientific or browser execution
-evidence. Independent Task39 SPEC then QUALITY remain pending.
+evidence. Task39 independent reviews were pending at this historical snapshot;
+the final accepted pair is recorded below.
 
 ### Task39 F1 correction after independent SPEC
 
@@ -650,8 +654,9 @@ unchanged. The strengthened existing documentation guard first failed at
 actual failure was `Missing trajectory member: analysis.json`. Original Step1
 ENOENT evidence remains intact. Initial GREEN receipts above describe pre-F1
 contents; the final F1 content and focused rerun are bound by the separate repair
-handoff. This correction awaits the same independent SPEC re-review, then QUALITY.
-Task40 and final whole-goal SPEC → QUALITY remain Pending.
+handoff. This correction awaited SPEC then QUALITY at that historical snapshot.
+The final accepted Task39 pair is below; Task40 own review and final whole-goal
+SPEC → QUALITY remain Pending.
 
 ### Task39 Q1 correction after independent QUALITY
 
@@ -673,32 +678,160 @@ with `Plan 1 command rows must be contiguous with their table header`.
 The final parser, row-continuity and focused-test receipts are bound to the
 separate Q1 repair handoff. README and the F1 export correction are unchanged;
 earlier RED/GREEN and rejected-candidate receipts remain historical. Same SPEC
-then QUALITY re-review are pending, as are Task40 and final whole-goal review.
+then QUALITY re-review were pending at this historical snapshot. The final
+accepted Task39 pair is below; Task40 own and final whole-goal reviews remain pending.
+
+## Task39 accepted state and Task40 repair provenance
+
+Task39 was accepted by the controller on 2026-09-07T14:02:53.475285+00:00 at
+0b6f5db825d100332597ec9c77cd2a0d6e72e565, tree 7e1cdccf06609e9005fe809129e43691dcb0a776.
+The final SPEC then QUALITY reports were freshly hash-verified by Task40:
+
+- [Task39 SPEC](/tmp/ena-41-task-controller-20260905/task39-spec-q1/task39-spec-review.md); SHA256 b986c3d9d9f9b1cefd5975bf2d41784a737891034516263188db25226c78c1a0.
+- [Task39 QUALITY](/tmp/ena-41-task-controller-20260905/task39-quality-q1/task39-quality-review.md); SHA256 995c786388ada823e181e3dd4a228c2f3555247d7141086fc8acfb31fc633ac9.
+
+Tasks 0–39 are accepted 40/41 by task count. Task40 own and final whole-goal reviews
+remain separate and pending. E0–E38 and early missing raw review pairs remain historical.
+
+The first full Task40 app run exposed three stale contracts and eight sandbox
+process/loopback failures. The controller authorized exactly four test repairs:
+follow the shared origin helper's real invocation, returned URL and owned server
+env; extract named color-preset audit functions by AST while retaining substantive
+checks and current native labels/report fields; parse SSR class tokens and require
+the actual toolbar, both toggles, ordering and one accessible Download Model button;
+replace the documentation regex dotAll flag with equivalent cross-line matching
+for the existing ES2017 target. No product/helper/workflow/target/dependency,
+numerical assertion, timeout or fixture changed. The unchanged 50ms Worker fixture
+was not patched or claimed repaired. The four-test append is
+f1f735601c568fba2e2ac79cb6331653a7c95a8e; 36 focused tests and typecheck passed before
+it was frozen clean. Task39's original literal RED/GREEN history remains above.
+
+### Task40 preserved failures and repair checks
+
+The first npm cache failure was resolved with an owned temporary npm_config_cache.
+Eight sandbox failures were diagnosed as four spawnSync ps EPERM and four owned
+listen EPERM failures, then rerun with tool-approved process permissions. All 16
+recorded failed-fixture PIDs were independently confirmed absent. An intermediate
+test repair also exposed the helper's comma declaration and adjacent AST node
+boundary; those parser assumptions were corrected. The subsequent ES2017 failure
+was corrected in the fourth test. No automatic approval review rejection occurred.
+
+| Command or boundary | Status | Evidence | Skip/Failure reason | Claim allowed |
+| --- | --- | --- | --- | --- |
+| `npm run jena:verify` | Fail | `2026-09-07T14:05:53.079952+00:00` → `2026-09-07T14:06:04.782691+00:00`; exit1; [03-jena-verify.log](/tmp/ena-41-task-controller-20260905/task40-writer/03-jena-verify.log); SHA256 `c1c77c4d07a61e496479abfd4eb68c14cdf4d73eb09c70a5b4c1b717cc538114` | Exit1 at pack-check; npm cache ENOTDIR; prior numerical stages passed | Earlier outcome; exact cwd/env/status in [03-jena-verify.json](/tmp/ena-41-task-controller-20260905/task40-writer/03-jena-verify.json) |
+| `npm run jena:verify` | Pass | `2026-09-07T14:06:42.808852+00:00` → `2026-09-07T14:06:52.727092+00:00`; exit0; [03b-jena-verify-owned-cache.log](/tmp/ena-41-task-controller-20260905/task40-writer/03b-jena-verify-owned-cache.log); SHA256 `cded04169a8d44087a41afd7280cb69cb25b5114cec768bb101e6748a5f3e899` | Full686+pack20 and pack-check;0skip at predecessor0b6f5db | Earlier outcome; exact cwd/env/status in [03b-jena-verify-owned-cache.json](/tmp/ena-41-task-controller-20260905/task40-writer/03b-jena-verify-owned-cache.json) |
+| `npm run test:app` | Fail | `2026-09-07T14:06:58.432492+00:00` → `2026-09-07T14:08:00.271608+00:00`; exit1; [04-test-app.log](/tmp/ena-41-task-controller-20260905/task40-writer/04-test-app.log); SHA256 `0d584d8425f13907ef2e74fe8151f0ea117014bab33a0407768d23882045fb5b` | 2649 tests/2638pass/11fail/0skip;3 stale contracts and8 sandbox failures | Earlier outcome; exact cwd/env/status in [04-test-app.json](/tmp/ena-41-task-controller-20260905/task40-writer/04-test-app.json) |
+| `node --import tsx --test tests/open-ena-ci-browser-contract.test.ts tests/open-ena-code-color-presets-browser-smoke-contract.test.ts tests/open-ena-official-v207-shell-regression.test.ts` | Fail | `2026-09-07T14:11:02.747071+00:00` → `2026-09-07T14:11:03.296398+00:00`; exit1; [04a-stale-contract-red.log](/tmp/ena-41-task-controller-20260905/task40-writer/04a-stale-contract-red.log); SHA256 `4b94781eeb47d17eaf061b9eed2a75bcda94fdd634ab2d246a4ea956b31c2320` | 33tests/30pass/3fail/0skip targeted original RED | Earlier outcome; exact cwd/env/status in [04a-stale-contract-red.json](/tmp/ena-41-task-controller-20260905/task40-writer/04a-stale-contract-red.json) |
+| `node --import tsx --test tests/open-ena-ci-browser-contract.test.ts tests/open-ena-code-color-presets-browser-smoke-contract.test.ts tests/open-ena-official-v207-shell-regression.test.ts` | Fail | `2026-09-07T14:12:14.053565+00:00` → `2026-09-07T14:12:14.652762+00:00`; exit1; [04b-stale-contract-green.log](/tmp/ena-41-task-controller-20260905/task40-writer/04b-stale-contract-green.log); SHA256 `f6b9bfc2d49760c8751935e66dbcd82e0e8bbfc682f52a9f2d811905d3b94067` | 33tests/31pass/2fail/0skip; filename green does not change actual failure | Earlier outcome; exact cwd/env/status in [04b-stale-contract-green.json](/tmp/ena-41-task-controller-20260905/task40-writer/04b-stale-contract-green.json) |
+| `node --import tsx --test tests/open-ena-ci-browser-contract.test.ts tests/open-ena-code-color-presets-browser-smoke-contract.test.ts tests/open-ena-official-v207-shell-regression.test.ts` | Pass | `2026-09-07T14:12:37.247325+00:00` → `2026-09-07T14:12:37.824802+00:00`; exit0; [04c-stale-contract-green.log](/tmp/ena-41-task-controller-20260905/task40-writer/04c-stale-contract-green.log); SHA256 `745e27456c117fb46374eabb8ccce56dac7bd72557317667cd196ac17aef389c` | 33/33,0skip on three dirty repaired tests | Earlier outcome; exact cwd/env/status in [04c-stale-contract-green.json](/tmp/ena-41-task-controller-20260905/task40-writer/04c-stale-contract-green.json) |
+| `npm run typecheck:app` | Fail | `2026-09-07T14:12:55.055837+00:00` → `2026-09-07T14:13:00.653521+00:00`; exit2; [04d-repair-typecheck.log](/tmp/ena-41-task-controller-20260905/task40-writer/04d-repair-typecheck.log); SHA256 `4fd91d89178cdd6ec8f1e6aaa385460c149c3792b905fed65d9ae9178af06b86` | Exit2 TS1501: Task39 dotAll regex incompatible with ES2017 | Earlier outcome; exact cwd/env/status in [04d-repair-typecheck.json](/tmp/ena-41-task-controller-20260905/task40-writer/04d-repair-typecheck.json) |
+| `node --import tsx --test tests/open-ena-ci-browser-contract.test.ts tests/open-ena-code-color-presets-browser-smoke-contract.test.ts tests/open-ena-official-v207-shell-regression.test.ts tests/open-ena-model-v3-documentation.test.ts` | Pass | `2026-09-07T14:15:02.634054+00:00` → `2026-09-07T14:15:03.215646+00:00`; exit0; [04e-four-contract-green.log](/tmp/ena-41-task-controller-20260905/task40-writer/04e-four-contract-green.log); SHA256 `fae8fda05742cf41cbc249793e3bcac28f1345daf1ee53893dfd922346b05aef` | 36/36,0skip on final four repaired tests | Earlier outcome; exact cwd/env/status in [04e-four-contract-green.json](/tmp/ena-41-task-controller-20260905/task40-writer/04e-four-contract-green.json) |
+| `npm run typecheck:app` | Pass | `2026-09-07T14:15:03.422724+00:00` → `2026-09-07T14:15:04.693080+00:00`; exit0; [04f-four-repair-typecheck.log](/tmp/ena-41-task-controller-20260905/task40-writer/04f-four-repair-typecheck.log); SHA256 `65e7fccc29746dc099af1cfdfb80519c664218fee866932d7796dfe7057b123d` | Exit0 on final four repaired tests | Earlier outcome; exact cwd/env/status in [04f-four-repair-typecheck.json](/tmp/ena-41-task-controller-20260905/task40-writer/04f-four-repair-typecheck.json) |
+
+## Task40 fresh complete gates
+
+All six commands ran sequentially on clean `f1f735601c568fba2e2ac79cb6331653a7c95a8e`, tree `1e569e2fc36de9f946d93c4e6b83c6e3d2a3e3d5`.
+Source 832 entries include unchanged j-3dENA gitlink 47e05006ff5308b6cb857111c2114e47e7bdfc6d.
+The physical manifest pretty-JSON SHA256 is
+7006cfa6272864590d4b381731a721fcc0ba861ce709a44a2e116648239895c0; the browser's compact-JSON
+serialization of the same entries is 17087c1acf709d5631bb936ff9207fb3c30fb945cd6ced18ddb87af8a0ac579a.
+Actual argv, literal cwd, PATH, timestamps, exits and source manifests are linked.
+Explicit environment overrides: NEXT_TELEMETRY_DISABLED=1;
+npm_config_cache=/tmp/ena-41-task-controller-20260905/task40-writer/npm-cache;
+OPEN_ENA_MODELS_V3_ARTIFACT_ROOT=/tmp/ena-41-task-controller-20260905/task40-writer.
+The browser internally creates its own cache/auth environment; credentials are
+not recorded. Node v24.15.0; npm 11.16.0 at /Users/dongpinhu/.npm-global/bin/npm.
+
+| Command or boundary | Status | Evidence | Skip/Failure reason | Claim allowed |
+| --- | --- | --- | --- | --- |
+| `npm run jena:verify` | Pass, exit0 | `2026-09-07T14:15:56.855949+00:00` → `2026-09-07T14:16:08.577825+00:00`; [07-frozen-jena-verify.log](/tmp/ena-41-task-controller-20260905/task40-writer/07-frozen-jena-verify.log); SHA256 `7c34c64b9583b68d6a1427176811f9678d90d2ea3e17172a918f206c1822abea`; [07-frozen-jena-verify.json](/tmp/ena-41-task-controller-20260905/task40-writer/07-frozen-jena-verify.json) | 686/686 in29 files; frozen baseline35/current rENA0.4.4 parity98; pack20/20; pack-check45 files;0 skips | Exact tested source above; no final-review or production claim |
+| `npm run test:app` | Pass, exit0 | `2026-09-07T14:16:27.055308+00:00` → `2026-09-07T14:16:59.875965+00:00`; [08-frozen-test-app.log](/tmp/ena-41-task-controller-20260905/task40-writer/08-frozen-test-app.log); SHA256 `7698013db5bd1452a4c2fccfff86cd3f43db247ec2b619947787451c97654d44`; [08-frozen-test-app.json](/tmp/ena-41-task-controller-20260905/task40-writer/08-frozen-test-app.json) | 2649/2649;0 fail/skip/cancel/todo; both private Yu safe gates passed | Exact tested source above; no final-review or production claim |
+| `npm run typecheck:app` | Pass, exit0 | `2026-09-07T14:17:08.980293+00:00` → `2026-09-07T14:17:10.219731+00:00`; [09-frozen-typecheck.log](/tmp/ena-41-task-controller-20260905/task40-writer/09-frozen-typecheck.log); SHA256 `65e7fccc29746dc099af1cfdfb80519c664218fee866932d7796dfe7057b123d`; [09-frozen-typecheck.json](/tmp/ena-41-task-controller-20260905/task40-writer/09-frozen-typecheck.json) | tsc --noEmit exit0 against ES2017 | Exact tested source above; no final-review or production claim |
+| `npm run build:app` | Pass, exit0 | `2026-09-07T14:17:24.896910+00:00` → `2026-09-07T14:17:37.660244+00:00`; [10-frozen-build-app.log](/tmp/ena-41-task-controller-20260905/task40-writer/10-frozen-build-app.log); SHA256 `4d6da0c4979f0e1495d9c435ddb48f1a8f8e001d94bc53cf3f1a8a5188f5fce5`; [10-frozen-build-app.json](/tmp/ena-41-task-controller-20260905/task40-writer/10-frozen-build-app.json) | Supported prebuild guard and Next build3368/3368; applied Plotly unchanged | Exact tested source above; no final-review or production claim |
+| `npm run test:browser:open-ena-models-v3` | Pass, exit0 | `2026-09-07T14:17:54.190656+00:00` → `2026-09-07T14:19:45.706078+00:00`; [11-frozen-models-browser.log](/tmp/ena-41-task-controller-20260905/task40-writer/11-frozen-models-browser.log); SHA256 `e4b1958d85e51418fe1202159fd256820f0706725cfd51fb595d40fde925126a`; [11-frozen-models-browser.json](/tmp/ena-41-task-controller-20260905/task40-writer/11-frozen-models-browser.json) | Fresh owned build/server/Postgres/Chromium;15 journeys;172 reachability checks;153 responses;14 public image views | Exact tested source above; no final-review or production claim |
+| `npm run verify` | Pass, exit0 | `2026-09-07T14:21:21.646694+00:00` → `2026-09-07T14:23:49.212117+00:00`; [12-frozen-full-verify.log](/tmp/ena-41-task-controller-20260905/task40-writer/12-frozen-full-verify.log); SHA256 `5a015cf5263215d41a2ce75a8a17470b41262c43922ae9b53fb4b922b2f28fd2`; [12-frozen-full-verify.json](/tmp/ena-41-task-controller-20260905/task40-writer/12-frozen-full-verify.json) | Actual complete chain: package686,pack20,receipt tests230,app2649,typecheck/build3368;0 skips | Exact tested source above; no final-review or production claim |
+
+Dedicated Models receipt: [receipt.json](/tmp/ena-41-task-controller-20260905/task40-writer/task37-models-v3-b77MSU/receipt.json); SHA256 `cf67ceb4e6ccf0eb0d1855ca40cc7665b6730d9dbb9396b54ffa58e415e1323f`.
+Its task37-prefixed directory is the existing harness's actual fresh Task40 output,
+not an old run or relocated receipt. Fresh owned build ID crJuJa-6TWFHZRRnWa9Sq,
+build-content digest c0358dbb684671eaecd8ffe735888bc31f512072276aa80d57ad6598f423d072; Playwright 1.62.1 used actual
+Chromium 151.0.7922.34 revision 1234. All 15 journeys passed with 172 actual control
+reachability checks, 153 response bodies matching 8 built paths, 0 unexpected errors,
+0 failed requests,0 classified cancellations and0 cleanup errors.
+The receipt validator within npm run verify is syntax/unit coverage, not a real
+browser journey; the separate required browser gate actually ran.
+
+All 14 public screenshots were actually viewed by the implementation agent:
+[visual-inspection.json](/tmp/ena-41-task-controller-20260905/task40-writer/visual-inspection.json); SHA256 `54557e091875ab51411ca899527221611c92b68f614289682abe4b632f566e7b`.
+The original receipt's automatic visualInspection pending field is preserved;
+this separate actor/timestamp record covers subsequent actual image views.
+Long full-page images displayed resized; separate viewport images show focused
+Plot/Windows controls. Dense scientific-label overlaps remain visible.
+Served journeys are English; historical three-locale SSR/catalog and older Task32
+Chinese browser claims remain distinct. CSS200 means CSS zoom2, not native browser
+zoom. No human visual approval is implied.
+
+Independent cleanup: [browser-physical-cleanup.json](/tmp/ena-41-task-controller-20260905/task40-writer/browser-physical-cleanup.json); SHA256 `9d1b081c450f38460570d0b831dced5fc186b3836e0deeeb840effbe5c1c4423`.
+All 23 recorded owned PIDs were absent, ports 52915 / 52922 / 52918 each returned actual
+ECONNREFUSED, and owned PostgreSQL/profile directories were removed.
+
+Both private Yu safe gates actually passed in each fresh full app suite with 0
+skips: 87 Units / 174 rows / 7 Codes / 49 dimensions / 3 zero-network Units / 811 raw connections and
+0 mismatched cells. No private identifiers, source rows or images were recorded.
+Task38's 74self-loop browser result remains historical, not an extra fresh Task40
+private-browser claim. All public/core tests passed; no scientific skips occurred.
+
+The jENA frozen/current vendor contract is unchanged. Separately, installed
+Plotly 3.7.0 retains the approved four exact substitutions for two disposal omissions:
+upstream fa6ebaf365ea5ad46a9843ea98fb2635c998558b9d876578aa12f765f823cc3d versus
+applied cc2f875652ac1fca82bd7e42594bcf309efc2e37019a9f5b542546e63576654c.
+Supported npm builds ran the prebuild guard with changed: false.
+Task40 did not rerun Task38's five separate affected browser gates; their accepted
+receipts remain historical while all application tests ran afresh.
+
+### Tested content and final ledger commit bridge
+
+Broad gates belong to the clean tested SHA above. The only later source edit is
+this ledger. Its enclosing commit and postcommit handoff identify the exact final
+SHA; no gate is attributed to an unknown future SHA. Final documentation tests,
+both local Markdown renderers, whitespace/status and manifests are captured after
+this evidence edit. The bridge requires all 831 other source entries and installed
+Plotly bytes to match the tested manifest. All 101 original command strings and
+five contiguous five-column register tables remain present. The final topology,
+scoped commit and content bridge are sealed in
+[task40-implementation-handoff.md](/tmp/ena-41-task-controller-20260905/task40-writer/task40-implementation-handoff.md).
+These are local temporary artifacts, not committed or remotely durable evidence.
+A hash identifies bytes; it cannot recover missing temporary files.
+
+Both fresh full-app runs also passed all 16 owned lifecycle fault probes. Separate
+physical checks confirmed their 48 recorded PIDs absent and 16 ports returning
+actual ECONNREFUSED: [full-gates-lifecycle-cleanup.json](/tmp/ena-41-task-controller-20260905/task40-writer/full-gates-lifecycle-cleanup.json); SHA256
+`6926d43d5ff23be434d9f11c1e825a631a058ade660ad33dac6c37c3ced3528b`.
 
 ## Local, remote and release boundaries
 
 | Command or boundary | Status | Evidence | Skip/Failure reason | Claim allowed |
 | --- | --- | --- | --- | --- |
-| Local files | Written; documentation GREEN | Three requested documentation/test paths on accepted 7baab3a base; receipt above | Independent review pending | Local documentation/test changes only |
-| Local commit | Recorded separately after write/test | Accepted base 7baab3ac5e7886465cea33a72e941261fe44d796; enclosing Git history and frozen handoff identify the scoped append | A commit cannot embed its own final SHA without changing itself | Local append only when its actual commit receipt exists; no independent acceptance implied |
-| GitHub branch | Unverified | No live remote query performed in Task39 | Task40 read-only query must record actual remote head or UNVERIFIED authentication failure; failure is not an empty remote | No remote equality or mutation claim |
+| Local files | Written; complete gates Pass | Four-test append `f1f735601c568fba2e2ac79cb6331653a7c95a8e`; final ledger-only evidence edit | Task40 independent review pending | Tested-content bridge above |
+| Local commit | Tested candidate committed | `f1f735601c568fba2e2ac79cb6331653a7c95a8e`; ledger append identified by enclosing Git history and handoff | Broad gates bind tested candidate; ledger commit separate | Local only; no independent acceptance implied |
+| GitHub branch | Pass | 3aea9a934787fe44ade1082980dc6293e00f3d87; [13-preledger-live-remote.log](/tmp/ena-41-task-controller-20260905/task40-writer/13-preledger-live-remote.log); SHA256 `eb142fa88fe7132f8291dd89839f4b578814aa1ba8fd926e38a3d25cca10dd49` | Live comparison ref codex/minor-UI-changes; exit0; `2026-09-07T14:26:21.509517+00:00` | No remote equality or mutation claim |
 | PR | Not performed | No PR created by this task chain | Not authorized in this local scope | No PR/merge claim |
 | Deployment | Not performed | No deployment receipt | Not authorized | No deployment claim |
-| Production | Not performed | No production build/health receipt | Not authorized | No production claim |
+| Production | Not performed | No deployed-production build/health receipt | Not authorized | No production claim |
 | Authenticated production | Not performed | Local authenticated browser fixtures are separate | No authorized production session/receipt | No authenticated production claim |
 | Final whole-goal independent SPEC → QUALITY | Pending | All41 original requirements need final current matrix | Per-task approval and navigation indexes are not final whole-goal review | No complete-goal claim |
 
-Task40 must append the actual full app, typecheck, build:app, jena:verify,
-served Models browser and complete verify receipts, including failures/skips and
-exact final content custody. It must separately record read-only final Git facts.
+Task40 actual full app, typecheck, build:app, jena:verify, served Models browser
+and complete verify receipts are above, including failures/skips and tested
+content custody. Postcommit final Git facts are separately sealed in the handoff.
 The original remote-navigation command names `codex/minor-UI-changes`; that is a
 specified comparison ref, not this worktree's branch and not proof of its remote
 state. GitHub mutation, PR, merge, deployment and production remain outside scope.
 
 | Command or boundary | Status | Evidence | Skip/Failure reason | Claim allowed |
 | --- | --- | --- | --- | --- |
-| Task40: `git diff --check` | Pending | Not executed as Task40 gate | Future final candidate | None |
-| Task40: `git status --short --branch` | Pending | Not executed as Task40 gate | Future final candidate | None |
-| Task40: `git rev-parse HEAD` | Pending | Not executed as Task40 gate | Future final candidate | None |
-| Task40: `git log --oneline --decorate -12` | Pending | Not executed as Task40 gate | Future final candidate | None |
-| Task40: `git ls-remote --heads origin codex/minor-UI-changes` | Pending | No live result | Record actual queried ref and head, or UNVERIFIED error | No remote equality yet |
+| Task40: `git diff --check` | Pass | [05-frozen-whitespace.log](/tmp/ena-41-task-controller-20260905/task40-writer/05-frozen-whitespace.log); exit0; `2026-09-07T14:15:56.302368+00:00` | Clean tested f1f7356; final ledger-byte checks and postcommit status in handoff | Literal local Git only |
+| Task40: `git status --short --branch` | Pass | [06-frozen-status.log](/tmp/ena-41-task-controller-20260905/task40-writer/06-frozen-status.log); exit0; `2026-09-07T14:15:56.581721+00:00` | Clean tested f1f7356; final ledger-byte checks and postcommit status in handoff | Literal local Git only |
+| Task40: `git rev-parse HEAD` | Pass | [14-preledger-topology.json](/tmp/ena-41-task-controller-20260905/task40-writer/14-preledger-topology.json) | Tested f1f7356 snapshot; postcommit final values separately sealed | Local topology only |
+| Task40: `git log --oneline --decorate -12` | Pass | [14-preledger-topology.json](/tmp/ena-41-task-controller-20260905/task40-writer/14-preledger-topology.json) | Tested f1f7356 snapshot; postcommit final values separately sealed | Local topology only |
+| Task40: `git ls-remote --heads origin codex/minor-UI-changes` | Pass | [13-preledger-live-remote.log](/tmp/ena-41-task-controller-20260905/task40-writer/13-preledger-live-remote.log); SHA256 `eb142fa88fe7132f8291dd89839f4b578814aa1ba8fd926e38a3d25cca10dd49` | Exit0; 3aea9a934787fe44ade1082980dc6293e00f3d87; postcommit query separately sealed | No cached-ref substitution; separate comparison branch |
