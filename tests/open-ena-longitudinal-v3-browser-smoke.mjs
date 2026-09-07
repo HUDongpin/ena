@@ -1200,6 +1200,16 @@ async function exerciseTrajectoryPlotActions(page, args) {
 }
 
 async function exercisePendingImageActions(page) {
+  const observeBusyExit = process.env.OPEN_ENA_F1_BUSY_EXIT_OBSERVATION === "1";
+  let resolveBusyExit;
+  const busyExitSignal = new Promise(resolve => { resolveBusyExit = resolve; });
+  if (observeBusyExit) await page.exposeBinding("__task38BusyExitSignal", async () => {
+    try {
+      await page.keyboard.press("Enter");
+      const immediate = await page.evaluate(() => { window.__nativePendingFocus.capture("busy-exit-immediate"); return window.__nativePendingFocus.snapshots.at(-1); });
+      resolveBusyExit({ immediate });
+    } catch (error) { resolveBusyExit({ error: String(error) }); }
+  });
   // Passive F1 evidence: no focus/preventDefault/propagation changes. Capture
   // the failing instant before the pending PNG's finally releases its write.
   await page.evaluate(() => {
@@ -1212,12 +1222,12 @@ async function exercisePendingImageActions(page) {
       return { tag: element.tagName, role: element.getAttribute("role"), action: element.getAttribute("data-ena-plot-action"), region: element.hasAttribute("data-ena-interactive-camera"), inside: figure.contains(element), connected: element.isConnected, disabled: element.matches(":disabled"), tabindex: element.getAttribute("tabindex"), tabIndex: element.tabIndex ?? null, ariaHidden: element.getAttribute("aria-hidden"), hidden: element.hasAttribute("hidden"), inertAncestor: ancestors.some(node => node.hasAttribute("inert")), hiddenAncestor: ancestors.some(node => node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true"), display: style.display, visibility: style.visibility, rects: element.getClientRects().length, width: box.width, height: box.height };
     };
     const describe = element => element instanceof Element ? { tag: element.tagName, role: element.getAttribute("role"), action: element.getAttribute("data-ena-plot-action"), region: element.hasAttribute("data-ena-interactive-camera"), inside: figure.contains(element), connected: element.isConnected, disabled: element.matches(":disabled"), tabindex: element.getAttribute("tabindex") } : null;
-    const audit = { events: [], snapshots: [], listeners: [] };
+    const audit = { events: [], snapshots: [], listeners: [], busyExitSignalled: false };
     const snapshot = (label, geometry = false) => ({ label, at: performance.now(), active: geometry ? describeGeometry(document.activeElement) : describe(document.activeElement), documentHasFocus: document.hasFocus(), figureConnected: figure.isConnected, fallback: figure.getAttribute("data-fallback-fullscreen"), figureInert: figure.hasAttribute("inert"), role: figure.getAttribute("role"), modal: figure.getAttribute("aria-modal"), busy: figure.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy"), nodeHovered: Boolean(figure.querySelector('[data-ena-node-hovered]')), pendingWrite: Boolean(window.__nativePendingImage?.resolve), actionEpochExposed: false, ...(geometry ? { focusables: [...figure.querySelectorAll(selector)].map((element, index) => ({ index, ...describeGeometry(element) })), actions: [...figure.querySelectorAll('[data-ena-plot-action]')].map(describeGeometry) } : {}) });
     audit.capture = (label, geometry = false) => { const value = snapshot(label, geometry); audit.snapshots.push(value); if (audit.snapshots.length > 40) audit.snapshots.shift(); return figure.contains(document.activeElement); };
-    for (const [scope, target] of [["window", window], ["document", document]]) for (const capture of [true, false]) for (const type of ["keydown", "keyup", "focusin", "focusout"]) {
+    for (const [scope, target] of [["window", window], ["document", document]]) for (const capture of [true, false]) for (const type of ["keydown", "keyup", "focusin", "focusout", "click"]) {
       const listener = event => {
-        if (type.startsWith("key") && !["Tab", "Shift", "Escape"].includes(event.key)) return;
+        if (type.startsWith("key") && !["Tab", "Shift", "Escape", "Enter"].includes(event.key)) return;
         audit.events.push({ at: performance.now(), scope, capture, type, key: event.key ?? null, shift: event.shiftKey ?? null, phase: event.eventPhase, defaultPrevented: event.defaultPrevented, cancelBubble: event.cancelBubble, target: describe(event.target), active: describe(document.activeElement), fallback: figure.getAttribute("data-fallback-fullscreen"), pendingWrite: Boolean(window.__nativePendingImage?.resolve), documentHasFocus: document.hasFocus(), busy: figure.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy"), nodeHovered: Boolean(figure.querySelector("[data-ena-node-hovered]")) });
         if (audit.events.length > 600) audit.events.shift();
       };
@@ -1226,6 +1236,10 @@ async function exercisePendingImageActions(page) {
     audit.observer = new MutationObserver(records => {
       for (const record of records) audit.events.push({ at: performance.now(), type: "mutation", attribute: record.attributeName, before: record.oldValue, after: record.target.getAttribute(record.attributeName), target: describe(record.target), active: describe(document.activeElement), documentHasFocus: document.hasFocus(), busy: figure.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy"), fallback: figure.getAttribute("data-fallback-fullscreen"), nodeHovered: Boolean(figure.querySelector("[data-ena-node-hovered]")), pendingWrite: Boolean(window.__nativePendingImage?.resolve) });
       if (audit.events.length > 600) audit.events.splice(0, audit.events.length - 600);
+      const exit = figure.querySelector('[data-ena-plot-action="fullscreen"]');
+      if (typeof window.__task38BusyExitSignal === "function" && !audit.busyExitSignalled && figure.getAttribute("data-fallback-fullscreen") === "true" && figure.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy") === "true" && document.activeElement === exit && !exit.disabled && window.__nativePendingImage?.resolve) {
+        audit.busyExitSignalled = true; audit.capture("busy-exit-signalled"); void window.__task38BusyExitSignal();
+      }
     });
     audit.observer.observe(figure, { subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ["disabled", "aria-busy", "data-fallback-fullscreen"] });
     window.__nativePendingFocus = audit;
@@ -1264,13 +1278,45 @@ async function exercisePendingImageActions(page) {
     await copy.click();
     await page.waitForFunction(() => Boolean(window.__nativePendingImage.resolve), null, { timeout: 120_000 });
     await fullscreen.click();
-    await page.waitForFunction(() => document.querySelector('.open-ena-interactive-3d-figure')?.getAttribute('data-fallback-fullscreen') === 'true');
+    await page.waitForFunction(observe => document.querySelector('.open-ena-interactive-3d-figure')?.getAttribute('data-fallback-fullscreen') === 'true' || (observe && window.__nativePendingFocus.busyExitSignalled), observeBusyExit);
     const pending = await read();
     assert.equal(pending.calls, 1);
     assert.deepEqual(pending.pngs[0].signature, [137,80,78,71,13,10,26,10]);
     assert.equal(pending.pngs[0].type, "image/png"); assert.ok(pending.pngs[0].bytes > 8);
     assert.equal(pending.actions.filter(a => a.action !== "fullscreen" && a.disabled).length, 4);
-    assert.equal(pending.actions.find(a => a.action === "fullscreen").disabled, false);
+    if (!observeBusyExit) assert.equal(pending.actions.find(a => a.action === "fullscreen").disabled, false);
+    let busyExitObservation = null;
+    if (observeBusyExit) {
+      // Supplemental observation only: original first-pair timing is exercised
+      // by the default branch. Never inject focus or a JavaScript click.
+      for (let entry = 1; entry <= 12; entry++) {
+        let timer;
+        const observed = await Promise.race([busyExitSignal, new Promise(resolve => { timer = setTimeout(() => resolve(null), 500); })]).finally(() => clearTimeout(timer));
+        if (observed) {
+          if (observed.error) throw new Error(observed.error);
+          await page.waitForFunction(() => document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy") === "false", null, { timeout: 15000 });
+          const postReady = await page.evaluate(async () => { await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame); window.__nativePendingFocus.capture("busy-exit-post-ready"); return window.__nativePendingFocus.snapshots.at(-1); });
+          const click = await page.evaluate(() => window.__nativePendingFocus.events.find(event => event.type === "click" && event.target?.action === "fullscreen" && event.busy === "true" && event.fallback === "true"));
+          busyExitObservation = { status: click ? "OBSERVED" : "NOT_OBSERVED", entries: entry, click: click ?? null, immediate: observed.immediate, postReady };
+          writeFileSync(join(artifactDirectory, "busy-exit-observation.json"), JSON.stringify(busyExitObservation, null, 2));
+          if (click) {
+            assert.notEqual(postReady.fallback, "true", "busy Exit did not leave fallback fullscreen");
+            assert.equal(postReady.active?.action, "fullscreen", "busy Exit lost post-ready focus return");
+            assert.equal(postReady.active?.disabled, false, "busy Exit returned focus to disabled entry control");
+          }
+          break;
+        }
+        if (entry === 12) {
+          busyExitObservation = { status: "NOT_OBSERVED", entries: entry, reason: "No natural busy interval with focused enabled Exit was signalled within bounded observation windows" };
+          writeFileSync(join(artifactDirectory, "busy-exit-observation.json"), JSON.stringify(busyExitObservation, null, 2));
+          break;
+        }
+        await fullscreen.click();
+        await page.waitForFunction(() => document.querySelector(".open-ena-interactive-3d-figure")?.getAttribute("data-fallback-fullscreen") !== "true");
+        await fullscreen.click();
+        await page.waitForFunction(() => document.querySelector(".open-ena-interactive-3d-figure")?.getAttribute("data-fallback-fullscreen") === "true");
+      }
+    } else {
     for (let traversal = 0; traversal < 12; traversal++) {
     if (traversal > 0) {
       await fullscreen.click();
@@ -1283,8 +1329,9 @@ async function exercisePendingImageActions(page) {
     await page.keyboard.press("Shift+Tab");
     assert.ok(await shell.evaluate(figure => { window.__nativePendingFocus.capture("after-shift-tab"); return figure.contains(document.activeElement); }), "pending fallback Shift+Tab escaped dialog");
     }
+    }
     // Exit stays available during the genuinely pending write.
-    await fullscreen.click();
+    if (await shell.getAttribute("data-fallback-fullscreen") === "true") await fullscreen.click();
     await page.evaluate(() => window.__nativePendingImage.reject(new Error("intentional isolated clipboard write rejection")));
     await page.waitForFunction(() => [...document.querySelectorAll('.open-ena-3d-plot-actions button')].every(button => !button.disabled));
     const rejected = await read();
@@ -1302,7 +1349,7 @@ async function exercisePendingImageActions(page) {
     await nativeScience(page);
     const focus = await page.evaluate(() => ({ events: window.__nativePendingFocus.events, snapshots: window.__nativePendingFocus.snapshots }));
     assert.equal(focus.events.some(event => event.type === "mutation" && event.attribute === "disabled" && event.target.action === "fullscreen" && event.after !== null && event.fallback === "true"), false, "rendering disabled Exit inside pending fallback fullscreen");
-    writeFileSync(join(artifactDirectory, "pending-focus-diagnostic.json"), JSON.stringify({ status: "PASS", traversalPairs: 12, ...focus }, null, 2));
+    writeFileSync(join(artifactDirectory, "pending-focus-diagnostic.json"), JSON.stringify({ status: "PASS", traversalPairs: observeBusyExit ? 0 : 12, busyExitObservation, ...focus }, null, 2));
     return { pending, rejected, errorStatus, recovered: await read(), recoveryStatus };
   } catch (error) {
     const focus = await page.evaluate(() => { window.__nativePendingFocus.capture("failure-before-release", true); return { events: window.__nativePendingFocus.events, snapshots: window.__nativePendingFocus.snapshots }; });
