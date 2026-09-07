@@ -62,6 +62,20 @@ async function loginAndLoad(page, baseUrl) {
     const NativeWorker = window.Worker;
     window.__task38WorkerResponses = [];
     window.__task38WorkerRequests = [];
+    window.__task38ReadinessSamples = [];
+    // Read-only simultaneous readiness: never manufactures Ready or result data.
+    window.__task38ReadyPlots = () => {
+      const roots = [...document.querySelectorAll('[data-ena-plot-role][data-ena-plot-status]')];
+      const states = roots.map(plot => ({ role: plot.getAttribute("data-ena-plot-role"), status: plot.getAttribute("data-ena-plot-status"), ready: plot.getAttribute("data-ena-plot-ready"), busy: (plot.querySelector('[data-ena-interactive-camera="true"]') ?? plot).getAttribute("aria-busy") }));
+      window.__task38ReadinessSamples.push({ at: performance.now(), states });
+      if (window.__task38ReadinessSamples.length > 40) window.__task38ReadinessSamples.shift();
+      if (states.some(state => state.status === "error")) throw new Error("A 3D role reported an explicit render error");
+      if (roots.length > 3) throw new Error("Unexpected extra 3D plot roles");
+      if (roots.length !== 3 || new Set(states.map(state => state.role)).size !== 3 || !["comparison", "primary", "secondary"].every(role => states.some(state => state.role === role))) return null;
+      if (!states.every(state => state.status === "ready" && state.ready === "true" && state.busy === "false")) return null;
+      if (document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") !== "current") return null;
+      return roots;
+    };
     window.Worker = class extends NativeWorker {
       postMessage(message, ...args) { if (message?.kind === "run-open-ena-plan-v3") window.__task38WorkerRequests.push(structuredClone(message)); return super.postMessage(message, ...args); }
       constructor(...args) { super(...args); this.addEventListener("message", event => {
@@ -119,12 +133,14 @@ async function waitForThreePlots(page) {
     const plot = page.locator(`[data-ena-plot-role="${role}"][data-ena-plot-status]`);
     await waitForPlotTerminal(page, plot, role);
   }
+  const ready = await page.waitForFunction(() => Boolean(window.__task38ReadyPlots()), null, { timeout: 60000 });
+  await ready.dispose();
 }
 
 async function readScientificIdentity(page) {
-  return page.evaluate(async () => {
-    const roots = [...document.querySelectorAll('[data-ena-plot-role][data-ena-plot-ready="true"]')];
-    if (roots.length !== 3) throw new Error(`expected three ready plot roots, got ${roots.length}`);
+  const snapshot = await page.waitForFunction(async () => {
+    const roots = window.__task38ReadyPlots();
+    if (!roots) return null;
     const payload = roots.map((plot) => {
       const root = plot.querySelector('[data-ena-plotly-root="true"]');
       if (!root || !Array.isArray(root.data) || root.data.length === 0) throw new Error("plot data is unavailable");
@@ -144,7 +160,9 @@ async function readScientificIdentity(page) {
       roles: payload.map((plot) => plot.role),
       traceCounts: payload.map((plot) => plot.traces.length),
     };
-  });
+  }, null, { timeout: 60000 });
+  try { return await snapshot.jsonValue(); }
+  finally { await snapshot.dispose(); }
 }
 
 async function captureSliderScreen(page, screen, names) {
@@ -1322,9 +1340,10 @@ async function runPerformance(page, baseUrl, viewport, plotlyChunkNames) {
   const comparisonReady = await page.evaluate((start) => performance.now() - start, clickStart);
   await waitForThreePlots(page);
   await page.waitForTimeout(0);
-  const measurementEnd = await page.evaluate(() => performance.now());
-  const result = await page.evaluate(({ start, end, expectedChunkNames }) => {
-    const roots = [...document.querySelectorAll('[data-ena-plot-role][data-ena-plot-ready="true"]')];
+  const measurement = await page.waitForFunction(({ start, expectedChunkNames }) => {
+    const roots = window.__task38ReadyPlots();
+    if (!roots) return null;
+    const end = performance.now();
     const entries = performance.getEntriesByType("resource");
     const scripts = entries.filter((entry) => entry.startTime >= start
       && (entry.initiatorType === "script" || /\.js(?:\?|$)/u.test(entry.name))
@@ -1350,7 +1369,8 @@ async function runPerformance(page, baseUrl, viewport, plotlyChunkNames) {
         decodedBodySize: largestNewPlotlyScriptChunk.decodedBodySize,
       } : null,
     };
-  }, { start: clickStart, end: measurementEnd, expectedChunkNames: plotlyChunkNames });
+  }, { start: clickStart, expectedChunkNames: plotlyChunkNames }, { timeout: 60000 });
+  const result = await measurement.jsonValue(); await measurement.dispose();
   assert.equal(result.roots.length, 3, "3D result did not mount exactly three plot roots");
   assert.ok(result.roots.every((root) => root.ready === "true" && root.plotlyRoot), "a 3D plot root is not ready");
   assert.ok(result.largestNewPlotlyScriptChunk?.transferSize > 0, "no new Plotly script chunk transfer was observed");
@@ -1402,8 +1422,12 @@ try {
       }
       throw error;
     } finally {
-      await a11yContext.close();
-      await perfContext.close();
+      for (const [label, context] of [["a11y", a11yContext], ["perf", perfContext]]) {
+        const page = context.pages()[0];
+        const readiness = page ? await page.evaluate(() => window.__task38ReadinessSamples ?? []).catch(() => []) : [];
+        writeFileSync(join(artifactDirectory, `readiness-${run}-${label}.json`), JSON.stringify(readiness, null, 2));
+        await context.close();
+      }
     }
   }
   completedSummary = {

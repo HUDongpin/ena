@@ -148,3 +148,8 @@ test("trajectory sample readiness belongs to a fresh bound Worker response rathe
   for (const marker of ["beforeTrajectory", "window.__task38WorkerResponses.length > before.responses", "window.__task38WorkerRequests.length > before.requests", "response.result.binding.datasetSha256 !== before.datasetSha256", "request?.plan.header.executionPlanSha256 === response.executionPlanSha256", "trajectoryTransition.requestsAdded, 1", "trajectoryTransition.responsesAdded, 1"]) assert.ok(source.includes(marker), marker);
   assert.match(source, /model.type\), "SeparateTrajectory"/);
 });
+
+
+test("identity and performance snapshots observe simultaneous distinct ready roles before reading unchanged scientific fields", () => {
+  for (const marker of ["window.__task38ReadyPlots", "new Set(states.map(state => state.role)).size !== 3", 'state.status === "ready" && state.ready === "true" && state.busy === "false"', 'state.status === "error"', "window.__task38ReadinessSamples.length > 40", "const snapshot = await page.waitForFunction(async", "const measurement = await page.waitForFunction", "const end = performance.now()", "JSON.stringify(payload)"]) assert.ok(source.includes(marker), marker);
+});
