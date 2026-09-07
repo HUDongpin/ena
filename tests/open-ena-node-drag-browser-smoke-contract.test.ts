@@ -76,3 +76,9 @@ test("package exposes the dedicated node-drag browser command", () => {
     "node tests/open-ena-node-drag-browser-smoke.mjs",
   );
 });
+
+
+test("both 3D families require actual projected mouse hover before layered drag checks", () => {
+  const source = readFileSync(smokePath, "utf8");
+  for (const marker of ["params.projection", "params.view", "params.model", "page.mouse.move(projected.x", "actualHoverHits.length === 2", "real pointer did not hit the projected native Code", "layeredHoverEventAlsoExercised"]) assert.ok(source.includes(marker), marker);
+});

@@ -329,6 +329,7 @@ function readAudit(page) {
     analysisRunCount: window.__openEnaNodeDragAudit?.analysisRunCount ?? -1,
     canonicalResult: window.__openEnaNodeDragAudit?.canonicalResult ?? null,
     visualCopy: window.__openEnaNodeDragAudit?.visualCopy ?? -1,
+    actualHoverHits: window.__openEnaNodeDragAudit?.actualHoverHits ?? [],
   }));
 }
 
@@ -483,25 +484,46 @@ async function dragPlotlyNode(page, testId, code, delta) {
   const root = page.getByTestId(testId).locator('[data-ena-plotly-root="true"]');
   const box = await root.boundingBox();
   assertBrowser(Boolean(box), "Plotly drag root is not visible");
-  const start = { x: box.x + box.width * 0.52, y: box.y + box.height * 0.52 };
-  await page.mouse.move(start.x, start.y);
-  await root.evaluate((element, selectedCode) => {
-    const traces = Array.isArray(element.data) ? element.data : [];
-    const curveNumber = traces.findIndex((trace) => trace.meta?.role === "code-node");
-    const trace = traces[curveNumber];
-    const pointNumber = trace?.text?.indexOf(selectedCode) ?? -1;
-    if (typeof element.emit !== "function" || !trace || pointNumber < 0) {
-      throw new Error("Plotly code-node hover emitter is unavailable");
-    }
-    element.emit("plotly_hover", {
-      points: [{ curveNumber, pointNumber, data: trace, fullData: trace }],
-    });
+  await root.scrollIntoViewIfNeeded();
+  const projected = await root.evaluate((element, selectedCode) => {
+    const trace = element.data.find(trace => trace.meta?.role === "code-node"), index = trace?.text?.indexOf(selectedCode) ?? -1;
+    const scene = element._fullLayout?.scene?._scene, params = scene?.glplot?.cameraParams, scale = scene?.dataScale;
+    if (index < 0 || !params || !scale) throw new Error("actual Plotly projection is unavailable");
+    const multiply = (matrix, vector) => [0, 1, 2, 3].map(row => vector.reduce((sum, value, column) => sum + matrix[column * 4 + row] * value, 0));
+    const point = [trace.x[index] * scale[0], trace.y[index] * scale[1], trace.z[index] * scale[2], 1];
+    const clip = multiply(params.projection, multiply(params.view, multiply(params.model, point)));
+    const canvas = scene.glplot.canvas.getBoundingClientRect();
+    const x = canvas.left + (1 + clip[0] / clip[3]) * canvas.width / 2, y = canvas.top + (1 - clip[1] / clip[3]) * canvas.height / 2;
+    if (![x, y, clip[3]].every(Number.isFinite) || clip[3] <= 0) throw new Error("actual Code projection is not a finite visible point");
+    element.__task38ActualHover = null;
+    const listener = event => {
+      const point = event.points?.[0], data = point?.fullData ?? point?.data;
+      if (data?.meta?.role === "code-node") element.__task38ActualHover = { code: data.ids?.[point.pointNumber] ?? data.text?.[point.pointNumber], pointNumber: point.pointNumber };
+    };
+    element.__task38ActualHoverListener = listener; element.on("plotly_hover", listener);
+    return { x, y, code: trace.ids?.[index] ?? trace.text[index], pointNumber: index };
   }, code);
-  const identities = await nativeFixtureIdentitiesV3(page);
-  const rendered = identities.codes.filter(entry => entry.sourceColumn === code);
-  assertBrowser(rendered.length === 1, "Plotly hover Code mapping must be unique");
+  const offsets = [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [5, 0], [-5, 0], [0, 5], [0, -5]];
+  let start = null;
+  try {
+    await page.mouse.move(Math.max(1, projected.x - 30), Math.max(1, projected.y - 30));
+    for (const [dx, dy] of offsets) {
+      await page.mouse.move(projected.x + dx, projected.y + dy);
+      await page.waitForTimeout(100);
+      const hit = await root.evaluate((element, target) => element.__task38ActualHover?.code === target.code && element.__task38ActualHover?.pointNumber === target.pointNumber && element.getAttribute("data-ena-node-hovered") === target.code, projected);
+      if (hit) { start = { x: projected.x + dx, y: projected.y + dy }; break; }
+    }
+    assertBrowser(Boolean(start), "real pointer did not hit the projected native Code");
+    await page.evaluate(receipt => { (window.__openEnaNodeDragAudit.actualHoverHits ??= []).push(receipt); }, { testId, code, pointNumber: projected.pointNumber, actualMouse: true });
+  } finally { await root.evaluate(element => { element.removeListener("plotly_hover", element.__task38ActualHoverListener); delete element.__task38ActualHoverListener; }); }
+  // Preserve the original layered event-path assertion after an independently
+  // observed real mouse hover, before the actual pointer drag below.
+  await root.evaluate((element, selectedCode) => {
+    const curveNumber = element.data.findIndex(trace => trace.meta?.role === "code-node"), trace = element.data[curveNumber], pointNumber = trace.text.indexOf(selectedCode);
+    element.emit("plotly_hover", { points: [{ curveNumber, pointNumber, data: trace, fullData: trace }] });
+  }, code);
   await page.waitForFunction(({ element, selectedCode }) => element.getAttribute("data-ena-node-hovered") === selectedCode,
-    { element: await root.elementHandle(), selectedCode: rendered[0].column });
+    { element: await root.elementHandle(), selectedCode: projected.code }, { timeout: 30000 });
   await page.mouse.down();
   await page.mouse.move(start.x + delta.x, start.y + delta.y, { steps: 10 });
   await page.mouse.up();
@@ -648,6 +670,7 @@ async function runNodeDragAcceptance(page, args) {
   "ona-3d reset did not restore canonical geometry");
 
   const finalAudit = await readAudit(page);
+  assertBrowser(finalAudit.actualHoverHits.length === 2 && finalAudit.actualHoverHits.every(hit => hit.actualMouse), "both Standard and ONA 3D require actual pointer hover hits");
   assertBrowser(finalAudit.analysisRunCount === 2, "node dragging unexpectedly reran analysis");
   assertBrowser(finalAudit.canonicalResult === onaCanonical.canonicalResult, "drag mutated analytical result");
   return { families, finalAudit, currentUrl: page.url() };
@@ -722,6 +745,8 @@ const summary = {
   recenterPreservedMovedNodes: true,
   resetRestoredCanonicalLayout: true,
   visualCopy: acceptance.finalAudit.visualCopy,
+  actualHoverHits: acceptance.finalAudit.actualHoverHits,
+  layeredHoverEventAlsoExercised: true,
   screenshot: basename(screenshotPath),
   currentUrl: acceptance.currentUrl,
 };
