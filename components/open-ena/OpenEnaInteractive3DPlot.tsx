@@ -626,6 +626,10 @@ export default function OpenEnaInteractive3DPlot({
     if (!Plotly || !plotRootRef.current) return;
     const plotRoot = plotRootRef.current;
     const resizeObserver = new ResizeObserver(() => {
+      if (fullscreenStateRef.current && nativeTrajectoryFullscreenSizedRef.current) {
+        scheduleFullscreenResize();
+        return;
+      }
       try {
         void Promise.resolve(Plotly.Plots.resize(plotRoot)).catch(() => {
           // Plotly rejects when a final observer callback reaches a detached plot.
@@ -827,7 +831,7 @@ export default function OpenEnaInteractive3DPlot({
           eventRoot.on("plotly_unhover", listener);
         }
         setStatus("ready");
-        if (fullscreenStateRef.current) scheduleFullscreenResize();
+        if (fullscreenStateRef.current || (result.boundPresentation && result.trajectoryPresentation)) scheduleFullscreenResize();
         if (!readyNotifiedRef.current) {
           readyNotifiedRef.current = true;
           onReady?.();
@@ -1154,7 +1158,10 @@ export default function OpenEnaInteractive3DPlot({
           const aspectMode = (plotRoot as PlotlyEventRoot)._fullLayout?.scene?.aspectmode ?? layout.scene.aspectmode;
           nativeTrajectoryFullscreenSizedRef.current = nativeTrajectoryFullscreen;
           void Promise.resolve(Plotly.relayout(plotRoot, {
-            width, height, margin, legend, "scene.camera": camera,
+            // Both fixed dimensions make Plotly.Plots.resize a no-op. Exit
+            // must restore its declared auto-width behavior for later reflow.
+            width: nativeTrajectoryFullscreen ? width : null,
+            height, autosize: !nativeTrajectoryFullscreen, margin, legend, "scene.camera": camera,
             "scene.aspectmode": aspectMode,
             ...(aspectMode === "manual" ? { "scene.aspectratio": currentAspectRatio() } : {}),
           } as never)).catch(() => {
