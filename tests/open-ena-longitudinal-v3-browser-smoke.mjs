@@ -98,6 +98,17 @@ const expectedCameraStates = {
     projection: { type: "orthographic" },
   },
 };
+// Plotly's live camera orthogonalizes the declared up vector against the
+// eye-to-center vector. Compare that exact orientation, including roll, rather
+// than requiring the nonorthogonal declarative vector to survive normalization.
+for (const expected of Object.values(expectedCameraStates)) {
+  const eye = [expected.eye.x - expected.center.x, expected.eye.y - expected.center.y, expected.eye.z - expected.center.z];
+  const up = [expected.up.x, expected.up.y, expected.up.z];
+  const factor = up.reduce((sum, value, i) => sum + value * eye[i], 0) / eye.reduce((sum, value) => sum + value * value, 0);
+  const perpendicular = up.map((value, i) => value - factor * eye[i]);
+  const length = Math.hypot(...perpendicular);
+  expected.up = { x: perpendicular[0] / length, y: perpendicular[1] / length, z: perpendicular[2] / length };
+}
 const twoDimensionalProjections = ["xy", "xz", "yz", "yx", "zx", "zy"];
 const viewportMatrix = [
   { width: 1440, height: 1000, name: "desktop" },
@@ -2206,6 +2217,24 @@ try {
   verifyStandaloneDownloads(downloads.aggregate, aggregate); verifyStandaloneDownloads(downloads.participant, participant);
   assert.deepEqual(aggregate.manifest.binding, plotAudit.binding);
   assert.deepEqual(participant.manifest.binding, plotAudit.binding);
+  const expectedPathRows = aggregate.analysis.pathComparison.tests.map(test => [test.metric, test.timeIndex === null ? "—" : String(test.timeIndex), test.distanceSpace, String(test.observed), String(test.pValue), String(test.holmAdjustedPValue), String(test.permutationCount)]);
+  assert.deepEqual(plotAudit.pathRows, expectedPathRows, "native rendered path rows differ from the actual exported path tests");
+  for (const standalone of plotAudit.rankDownloads) {
+    const savedRank = JSON.parse(readFileSync(standalone.path, "utf8"));
+    const bundled = aggregate.analysis.ranks.find(rank => rank.kind === savedRank.inference.kind);
+    assert.ok(bundled, "genuine standalone rank is absent from bundle");
+    assert.equal(bundled.scientificContextSha256, savedRank.context.scientificContextSha256);
+    const compareAllowed = (aggregateValue, sourceValue, label) => {
+      if (Array.isArray(aggregateValue)) { assert.ok(Array.isArray(sourceValue), label); assert.equal(aggregateValue.length, sourceValue.length, label); aggregateValue.forEach((value, i) => compareAllowed(value, sourceValue[i], `${label}[${i}]`)); }
+      else if (aggregateValue && typeof aggregateValue === "object") { assert.ok(sourceValue && typeof sourceValue === "object", label); for (const [key, value] of Object.entries(aggregateValue)) compareAllowed(value, sourceValue[key], `${label}.${key}`); }
+      else assert.deepEqual(aggregateValue, sourceValue, label);
+    };
+    for (const table of ["rows", "omnibusRows", "followupRows"]) {
+      compareAllowed(bundled[table], savedRank.inference[table] ?? [], `${savedRank.inference.kind}.${table}`);
+      for (const row of bundled[table]) for (const required of ["test", "axis", "status", "pRaw", "pHolm"]) assert.ok(Object.hasOwn(row, required), `bundle omitted ${required}`);
+    }
+    compareAllowed(bundled.ledger, savedRank.inference.ledger, `${savedRank.inference.kind}.ledger`);
+  }
   for (const member of aggregate.manifest.files) {
     assert.deepEqual(participant.manifest.files.find(candidate => candidate.filename === member.filename), member, "participant opt-in changed aggregate descriptor");
     assert.deepEqual(readFileSync(join(aggregate.extracted, member.filename)), readFileSync(join(participant.extracted, member.filename)));
@@ -2225,9 +2254,10 @@ try {
   assert.ok(chromiumAngleReadPixelsDiagnostics.count <= 4);
   assert.ok(chromiumAngleReadPixelsDiagnostics.repeatSuppressionCount <= 1);
   assert.ok(chromiumAngleReadPixelsDiagnostics.sourcePaths.length <= 1);
+  const screenshots = Object.fromEntries(readdirSync(artifactDirectory).filter(name => /\.(png|svg)$/u.test(name)).map(name => [name, artifactEvidence(join(artifactDirectory, name))]));
   const browserRuntimeEvidence = await readBrowserRuntimeEvidence(runtime.page);
   await nativeScience(runtime.page);
-  completedSummary = { status: "PASS", source: { ...sourceEvidenceBefore, smokeSourceSha256 }, runtimeBrowserVersion: browserRuntimeEvidence.version, runtimeBrowserUserAgent: browserRuntimeEvidence.userAgent, plotAudit, downloads, aggregate: { manifest: aggregate.manifest, zipSha256: aggregate.zipSha256 }, participant: { manifest: participant.manifest, zipSha256: participant.zipSha256 }, railPanelAudit, displayAudit, plotActionAudit, pendingImageAudit, fallbackA11yAudit, responsiveAudit, staleImageAudit, browserErrors };
+  completedSummary = { status: "PASS", source: { ...sourceEvidenceBefore, smokeSourceSha256 }, runtimeBrowserVersion: browserRuntimeEvidence.version, runtimeBrowserUserAgent: browserRuntimeEvidence.userAgent, plotAudit, screenshots, downloads, aggregate: { manifest: aggregate.manifest, zipSha256: aggregate.zipSha256 }, participant: { manifest: participant.manifest, zipSha256: participant.zipSha256 }, railPanelAudit, displayAudit, plotActionAudit, pendingImageAudit, fallbackA11yAudit, responsiveAudit, staleImageAudit, browserErrors };
 } catch (caught) {
   primaryFailure = caught;
   if (runtime) { try { await runtime.page.screenshot({ path: failureScreenshotPath, fullPage: true }); } catch {} }

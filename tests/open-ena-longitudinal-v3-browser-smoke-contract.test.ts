@@ -194,3 +194,5 @@ test("cache disabling is explicit only for longitudinal correctness and records 
 });
 
 test("stale image lease waits on actual image rendering and refuses outputs after model controls change", () => { requires(["HTMLImageElement.prototype", "audit.release = () => callback.call(this, event)", 'model.selectOption("EndPoint")', "stale model materialized PNG output after awaited rendering", "audit.modelRuns, 1"]); });
+
+test("rendered path and independent rank downloads must exactly agree with aggregate export", () => { requires(["native rendered path rows differ from the actual exported path tests", "bundled.scientificContextSha256, savedRank.context.scientificContextSha256", "compareAllowed(bundled[table], savedRank.inference[table]", "compareAllowed(bundled.ledger, savedRank.inference.ledger"]); });
