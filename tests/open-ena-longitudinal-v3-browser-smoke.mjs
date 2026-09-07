@@ -403,7 +403,7 @@ async function exerciseNativeTwoDActions(page) {
   await zoom.getByRole("button", { name: /^Fit plot/ }).click();
   const recenter = await nativeSvgAudit(page);
   assert.deepEqual(recenter, before, "native 2D Fit plot must restore all SVG geometry");
-  await page.getByRole("button", { name: "Plot Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Close Plot Settings", exact: true }).click();
   const png = await saveNativeDownload(page, page.locator('.ena-visual-toolbar').getByRole("button", { name: "Export PNG", exact: true }), join(artifactDirectory, "native-2d-plot.png"), true);
   assert.deepEqual([...readFileSync(png.path).subarray(0, 8)], [137,80,78,71,13,10,26,10]);
   const svg = await saveNativeDownload(page, page.locator('.ena-visual-toolbar').getByRole("button", { name: "Export SVG", exact: true }), join(artifactDirectory, "native-2d-plot.svg"), true);
@@ -1033,6 +1033,7 @@ async function exerciseTrajectoryPlotActions(page, args) {
   );
   await assertScientificInvariants("orthographic recenter");
 
+  writeFileSync(join(artifactDirectory, "camera-actions-and-color-repaints.json"), JSON.stringify({ perspectiveBaseline, perspectiveZoomIn, perspectiveColorRepaint, perspectiveZoomOut, perspectiveRecenter, orthographicBaseline, orthographicZoomIn, orthographicColorRepaint, orthographicZoomOut, orthographicRecenter, science: await nativeScience(page) }, null, 2));
   const twoD = await exerciseNativeTwoDActions(page);
   await assertScientificInvariants("2D recenter");
   await projectionSelect.selectOption("3d");
