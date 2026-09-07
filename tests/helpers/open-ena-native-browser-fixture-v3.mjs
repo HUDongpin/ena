@@ -1,5 +1,5 @@
 // Researcher UI actions only. Imported datasets, compiler and Worker remain authoritative.
-export async function prepareNativeFixtureV3(page, { codes = ["CODE_A", "CODE_B", "CODE_C", "CODE_D", "CODE_E"], family = "standard", sourcePreparation = true, units = ["Group", "Name"], horizons = ["Conversation"], group = "Group", backward = 3 } = {}) {
+export async function prepareNativeFixtureV3(page, { codes = ["CODE_A", "CODE_B", "CODE_C", "CODE_D", "CODE_E"], family = "standard", sourcePreparation = true, units = ["Group", "Name"], horizons = ["Conversation"], group = "Group", backward = 5 } = {}) {
   const tab = name => page.getByRole("tab", { name: new RegExp(`^${name}(,|$)`) });
   const button = name => page.getByRole("button", { name, exact: true });
   if (sourcePreparation) {
@@ -31,8 +31,9 @@ export async function prepareNativeFixtureV3(page, { codes = ["CODE_A", "CODE_B"
   await tab("Windows").click();
   if (family === "standard") {
     await page.getByRole("combobox", { name: "Model", exact: true }).selectOption("EndPoint");
-    await page.getByRole("combobox", { name: "Window", exact: true }).selectOption("Conversation");
-  } else {
+    await page.getByRole("combobox", { name: "Window", exact: true }).selectOption("MovingStanzaWindow");
+  }
+  {
     await page.getByLabel("Use source order", { exact: true }).check();
     await button("Review source-order statement").click();
     await button("Accept statement").click();
@@ -45,4 +46,18 @@ export async function runNativeFixtureV3(page) {
   if (!await run.isEnabled()) throw new Error("native fixture compilation did not enable Run model");
   await run.click();
   await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current", null, { timeout: 60000 });
+}
+
+export async function nativeFixtureIdentitiesV3(page) {
+  return page.evaluate(() => {
+    const audit = window.__openEnaNativeAudit;
+    const response = audit?.responses.at(-1);
+    const request = audit?.requests.find(value => value.id === response?.id);
+    const result = response?.result;
+    if (!request || response.executionPlanSha256 !== request.plan.header.executionPlanSha256 || response.executionPlanSha256 !== result.binding.executionPlanSha256 || result.binding.datasetSha256 !== request.plan.header.datasetSha256) throw new Error("native fixture identity lacks matching current request/result binding");
+    if (document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") !== "current") throw new Error("native fixture identity is stale");
+    const labels = result.executionProvenance.labels.codes;
+    if (new Set(labels.map(value => value.sourceColumn)).size !== labels.length || new Set(labels.map(value => value.column)).size !== labels.length) throw new Error("native Code source/rendered mapping must be bijective");
+    return { codes: labels, dictionary: result.executionProvenance.identityDictionary, binding: result.binding, configuration: result.configuration };
+  });
 }

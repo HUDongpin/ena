@@ -157,12 +157,9 @@ test("final server log custody follows cleanup, on-disk sanitization, receipt, t
   assert.ok(receipt < summaryWrite, "summary is written before the final server-log receipt");
   assert.match(source, /catch \(sanitizationError\)[\s\S]{0,500}removeUnsafeServerLog\(\)/u);
 
-  const signalHandler = source.match(
-    /async function handleSignal\(signal\) \{[\s\S]*?\n\}/u,
-  )?.[0] ?? "";
-  assert.match(signalHandler, /await cleanupOwnedResources\(\)/u);
-  assert.match(signalHandler, /sanitizeFinalServerLog\(\)/u);
-  assert.match(signalHandler, /if \(cleanupFailure\)[\s\S]{0,500}removeUnsafeServerLog\(\)/u);
+  assert.doesNotMatch(source, /process.once\("SIG(?:INT|TERM)"/u);
+  assert.match(runtimeSource, /OwnedSmokeLifecycle/u);
+  assert.match(runtimeSource, /await lifecycle.cleanup\(\)/u);
   assert.match(source, /let cleanupSucceeded = false/u);
   assert.match(source, /cleanupSucceeded = true/u);
   assert.match(source, /catch \(cleanupError\)[\s\S]{0,500}removeUnsafeServerLog\(\)/u);
@@ -272,7 +269,7 @@ test("the smoke proves group display controls across 2D and 3D without changing 
   assert.match(source, /async function exerciseGroupDisplayControls\(page, args\)/u);
   assert.match(source, /async function readThreeDGroupDisplayState\(page\)/u);
   assert.match(source, /async function readTwoDGroupDisplayState\(page\)/u);
-  assert.match(source, /data-ena-group-display-result-key/u);
+  assert.match(source, /nativeFixtureIdentitiesV3\(page\)\)\.binding.scientificResultSha256/u);
   assert.match(source, /filter\(\(trace\) => trace\.meta\?\.role === role\)/u);
   assert.match(source, /unitTraces:\s*byGroup\("unit-points"\)/u);
   assert.match(source, /trace\.marker\?\.symbol/u);

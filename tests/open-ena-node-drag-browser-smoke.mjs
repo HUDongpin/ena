@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { createServedBrowserV3, literalGit } from "./helpers/open-ena-served-browser-v3.mjs";
-import { prepareNativeFixtureV3, runNativeFixtureV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
+import { prepareNativeFixtureV3, runNativeFixtureV3, nativeFixtureIdentitiesV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import {
   closeSync,
@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import { createSafePlaywrightCliError } from "./support/safe-playwright-cli-error.mjs";
 
 const smokePath = fileURLToPath(import.meta.url);
-const projectRoot = join(dirname(smokePath), "..");
+const projectRoot = resolve(dirname(smokePath), "..");
 const artifactDirectory = resolve(
   process.env.OPEN_ENA_NODE_DRAG_SMOKE_ARTIFACT_DIR
     || join(projectRoot, "output", "playwright", "open-ena-node-drag-smoke"),
@@ -88,7 +88,7 @@ async function runCli(args, label, timeout = 300000) {
   if (args[0] === "open") { await runtime.page.goto(args[1], { waitUntil: "domcontentloaded" }); return ""; }
   if (args[0] === "close") { await runtime.close(primaryFailure); return ""; }
   if (args[0] === "screenshot") { await runtime.page.screenshot({ path: args.at(-1), fullPage: true }); return ""; }
-  if (args[0] === "console") return `Errors: ${runtime.receipt.consoleErrors.length}\n${runtime.receipt.consoleErrors.join("\n")}`;
+  if (args[0] === "console") return `Errors: ${runtime.receipt.consoleErrors.length}\nWarnings: ${runtime.receipt.consoleWarnings.length}\n${runtime.receipt.consoleErrors.join("\n")}`;
   if (args[0] === "--raw" && args[1] === "run-code") {
     const action = new Function(`return (${args[2]});`)();
     return JSON.stringify(await runtime.stage(label, () => action(runtime.page), timeout));
@@ -97,7 +97,7 @@ async function runCli(args, label, timeout = 300000) {
 }
 
 function browserSource(task, args, helpers) {
-  return `async (page) => {${prepareNativeFixtureV3.toString()}\n${runNativeFixtureV3.toString()}\n${helpers.map((helper) => helper.toString()).join("\n")}
+  return `async (page) => {${prepareNativeFixtureV3.toString()}\n${runNativeFixtureV3.toString()}\n${nativeFixtureIdentitiesV3.toString()}\n${helpers.map((helper) => helper.toString()).join("\n")}
     const task = ${task.toString()};
     return await task(page, ${JSON.stringify(args)});
   }`;
@@ -331,6 +331,9 @@ function readAudit(page) {
 }
 
 async function readSvgFamily(page, svgSelector, code, ordered) {
+  const identities = await nativeFixtureIdentitiesV3(page);
+  const matching = identities.codes.filter(entry => entry.sourceColumn === code);
+  assertBrowser(matching.length === 1, "drag Code requires unique source/rendered identity");
   return await page.locator(svgSelector).evaluateAll((roots, input) => roots.map((root) => {
     const node = root.querySelector(`[data-ena-drag-code="${input.code}"]`);
     const nodeTransform = node?.parentElement?.getAttribute("transform") ?? null;
@@ -342,11 +345,14 @@ async function readSvgFamily(page, svgSelector, code, ordered) {
       : [...root.querySelectorAll(`[data-ena-edge*="${input.code}"]`)]
           .map((line) => ["x1", "y1", "x2", "y2"].map((name) => line.getAttribute(name)).join(","));
     return { nodeTransform, incident };
-  }), { code, ordered });
+  }), { code: matching[0].column, ordered });
 }
 
 async function dragSvgNode(page, svgSelector, code, delta) {
-  const node = page.locator(svgSelector).first().locator(`[data-ena-drag-code="${code}"]`);
+  const identities = await nativeFixtureIdentitiesV3(page);
+  const matching = identities.codes.filter(entry => entry.sourceColumn === code);
+  assertBrowser(matching.length === 1, "drag Code requires unique source/rendered identity");
+  const node = page.locator(svgSelector).first().locator(`[data-ena-drag-code="${matching[0].column}"]`);
   const hitTarget = node.locator(".ena-node-drag-hit-target");
   const box = await hitTarget.boundingBox();
   assertBrowser(Boolean(box), "SVG node hit target is not visible");
@@ -403,7 +409,7 @@ async function resetNodeLayout(page) {
 }
 
 async function selectView(page, dimension) {
-  const visualization = page.getByRole("group", { name: "ENA visualization options" });
+  const visualization = page.locator(".ena-visual-toolbar");
   const button = visualization.getByRole("button", {
     name: dimension === "3d" ? /^3D (?:ENA|ONA)/ : /^2D (?:ENA|ONA)/,
   });

@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { createServedBrowserV3, literalGit } from "./helpers/open-ena-served-browser-v3.mjs";
-import { prepareNativeFixtureV3, runNativeFixtureV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
+import { prepareNativeFixtureV3, runNativeFixtureV3, nativeFixtureIdentitiesV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
 import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import {
@@ -25,7 +25,7 @@ import { createSafePlaywrightCliError } from "./support/safe-playwright-cli-erro
 import { classifyChromiumCanvasReadbackDiagnostic } from "./support/open-ena-browser-warning-classifier.mjs";
 
 const smokeSourcePath = fileURLToPath(import.meta.url);
-const projectRoot = join(dirname(smokeSourcePath), "..");
+const projectRoot = resolve(dirname(smokeSourcePath), "..");
 const tsconfigPath = join(projectRoot, "tsconfig.json");
 const originalTsconfig = readFileSync(tsconfigPath, "utf8");
 const artifactDirectory = resolve(
@@ -159,7 +159,7 @@ async function runCli(args, label, timeout = 300000) {
   if (args[0] === "open") { await runtime.page.goto(args[1], { waitUntil: "domcontentloaded" }); return ""; }
   if (args[0] === "close") { await runtime.close(primaryFailure); return ""; }
   if (args[0] === "screenshot") { await runtime.page.screenshot({ path: args.at(-1), fullPage: true }); return ""; }
-  if (args[0] === "console") return `Errors: ${runtime.receipt.consoleErrors.length}\n${runtime.receipt.consoleErrors.join("\n")}`;
+  if (args[0] === "console") return `Errors: ${runtime.receipt.consoleErrors.length}\nWarnings: ${runtime.receipt.consoleWarnings.length}\n${runtime.receipt.consoleErrors.join("\n")}`;
   if (args[0] === "--raw" && args[1] === "run-code") {
     const action = new Function(`return (${args[2]});`)();
     return JSON.stringify(await runtime.stage(label, () => action(runtime.page), timeout));
@@ -169,7 +169,7 @@ async function runCli(args, label, timeout = 300000) {
 
 function browserSource(task, args, helpers = []) {
   const helperDeclarations = helpers.map((helper) => helper.toString()).join("\n");
-  return "async (page) => { " + prepareNativeFixtureV3.toString() + "\n" + runNativeFixtureV3.toString() + "\n" + helperDeclarations + "; const task = " + task.toString()
+  return "async (page) => { " + prepareNativeFixtureV3.toString() + "\n" + runNativeFixtureV3.toString() + "\n" + nativeFixtureIdentitiesV3.toString() + "\n" + helperDeclarations + "; const task = " + task.toString()
     + "; return await task(page, " + JSON.stringify(args) + "); }";
 }
 
@@ -462,50 +462,6 @@ function cleanupOwnedResources() {
   return cleanupPromise;
 }
 
-async function handleSignal(signal) {
-  const exitCode = signal === "SIGINT" ? 130 : 143;
-  let cleanupFailure = null;
-  try {
-    await cleanupOwnedResources();
-  } catch (caught) {
-    cleanupFailure = caught;
-  }
-  let sanitizationFailure = null;
-  if (cleanupFailure) {
-    try {
-      removeUnsafeServerLog();
-    } catch {
-      // The signal exit remains non-zero; never print raw log bytes.
-    }
-  } else {
-    try {
-      sanitizeFinalServerLog();
-    } catch (sanitizationError) {
-      try {
-        removeUnsafeServerLog();
-      } catch {
-        // The signal exit remains non-zero; never print raw log bytes.
-      }
-      sanitizationFailure = sanitizationError;
-    }
-  }
-  if (cleanupFailure) {
-    process.stderr.write("[3D controls smoke] cleanup after " + signal + " failed: "
-      + redact(cleanupFailure) + "\n");
-  }
-  if (sanitizationFailure) {
-    process.stderr.write("[3D controls smoke] server log sanitization after " + signal + " failed: "
-      + redact(sanitizationFailure) + "\n");
-  }
-  process.exit(exitCode);
-}
-
-process.once("SIGINT", () => void handleSignal("SIGINT"));
-process.once("SIGTERM", () => void handleSignal("SIGTERM"));
-
-function assertBrowser(condition, message) {
-  if (!condition) throw new Error(message);
-}
 
 function beginBrowserMessageCapture(page) {
   const consoleErrors = [];
@@ -825,6 +781,13 @@ async function authenticateBuildAndOpen3d(page, args) {
     "the initial Endpoint build did not dispatch exactly one analysis run",
   );
 
+  const identities = await nativeFixtureIdentitiesV3(page);
+  await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
+  const selectedGroups = page.getByTestId("open-ena-ona-descriptive-group-controls").getByRole("combobox");
+  const expectedGroups = ["SYNTHETIC_BASELINE", "SYNTHETIC_SCAFFOLDED"].map(value => identities.dictionary.groups.find(group => group.fields[0].value.value === value));
+  assertBrowser(expectedGroups.every(Boolean), "fixture groups must be present in bound dictionary");
+  await selectedGroups.nth(0).selectOption(expectedGroups[0].token);
+  await selectedGroups.nth(1).selectOption(expectedGroups[1].token);
   const visualization = page.locator(".ena-visual-toolbar");
   const threeD = visualization.getByRole("button", { name: /3D ENA/ });
   assertBrowser(await threeD.isEnabled(), "3D ENA is disabled for the 5-code Endpoint fixture");
@@ -852,9 +815,13 @@ async function authenticateBuildAndOpen3d(page, args) {
 
 async function exerciseGroupDisplayControls(page, args) {
   const browserMessageCapture = beginBrowserMessageCapture(page);
-  const baselineGroup = args.groups[0];
-  const secondaryGroup = args.groups[1];
-  const targetUnitId = baselineGroup + "::SYNTHETIC_UNIT_1";
+  const identities = await nativeFixtureIdentitiesV3(page);
+  const groupEntry = value => { const matches = identities.dictionary.groups.filter(group => group.fields.length === 1 && group.fields[0].column === "Group" && group.fields[0].value.type === "string" && group.fields[0].value.value === value); assertBrowser(matches.length === 1, "fixture Group must have exactly one typed identity"); return matches[0]; };
+  const baselineGroup = groupEntry(args.groups[0]).displayLabel;
+  const secondaryGroup = groupEntry(args.groups[1]).displayLabel;
+  const units = identities.dictionary.units.filter(unit => unit.fields.length === 2 && unit.fields.some(field => field.column === "Group" && field.value.type === "string" && field.value.value === args.groups[0]) && unit.fields.some(field => field.column === "Name" && field.value.type === "string" && field.value.value === "SYNTHETIC_UNIT_1"));
+  assertBrowser(units.length === 1, "fixture target Unit must have exactly one typed identity");
+  const targetUnitId = units[0].displayLabel;
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
 
   const analysisRunCount = async () => await page.evaluate(() => (
@@ -865,7 +832,7 @@ async function exerciseGroupDisplayControls(page, args) {
   };
   const openModelUnits = async () => {
     await rail.getByRole("button", { name: "Model", exact: true }).click();
-    const unitsTab = page.getByRole("tab", { name: "Units", exact: true });
+    const unitsTab = page.getByRole("tab", { name: /^Units(,|$)/ });
     await unitsTab.waitFor({ state: "visible", timeout: 30_000 });
     await unitsTab.click();
     const controls = page.getByTestId("open-ena-group-display-controls");
@@ -874,7 +841,7 @@ async function exerciseGroupDisplayControls(page, args) {
   };
   const openPlotTools = async () => {
     await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
-    await page.getByRole("group", { name: "ENA visualization options" })
+    await page.locator(".ena-visual-toolbar")
       .waitFor({ state: "visible", timeout: 30_000 });
   };
   const selectView = async (view) => {
@@ -906,9 +873,7 @@ async function exerciseGroupDisplayControls(page, args) {
     };
     const units = card.locator(".ena-group-display-units");
     if (!await units.evaluate((element) => element.open)) await units.locator("summary").click();
-    const resultIdentity = await controls.evaluate((element) => (
-      element.parentElement?.getAttribute("data-ena-group-display-result-key") ?? ""
-    ));
+    const resultIdentity = (await nativeFixtureIdentitiesV3(page)).binding.scientificResultSha256;
     return {
       controls,
       card,
@@ -1155,7 +1120,7 @@ async function exerciseDataView(page, args) {
   assertBrowser(await page.getByTestId("open-ena-3d-secondary-plot").count() === 1, "Secondary plot disappeared in Data View");
   await assertSidePanelsPreserved("during mouse Data View");
   assertBrowser(
-    await page.getByRole("group", { name: "ENA visualization options" })
+    await page.locator(".ena-visual-toolbar")
       .getByRole("button", { name: /3D ENA/ }).getAttribute("aria-pressed") === "true",
     "Data View changed the visualization dimension",
   );

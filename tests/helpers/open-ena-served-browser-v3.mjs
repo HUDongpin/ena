@@ -32,7 +32,7 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
   mkdirSync(directory, { recursive: true });
   const safe = value => redact(value).replace(/ws:\/\/[^\s]+\/devtools\/browser\/[^\s]+/g, "[redacted browser endpoint]").replace(/postgresql:\/\/[^\s]+/g, "[redacted database endpoint]");
   const json = (name, value) => writeFileSync(join(directory, name), JSON.stringify(value, null, 2) + "\n");
-  const receipt = { status: "running", sourceGitSha: literalGit(root, ["rev-parse", "HEAD"]), sourceParentSha: literalGit(root, ["rev-parse", "HEAD^"]), harnessPid: process.pid, node: process.version, servedAssets: [], stages: [], consoleErrors: [], pageErrors: [] };
+  const receipt = { status: "running", sourceGitSha: literalGit(root, ["rev-parse", "HEAD"]), sourceParentSha: literalGit(root, ["rev-parse", "HEAD^"]), harnessPid: process.pid, node: process.version, servedAssets: [], stages: [], consoleErrors: [], consoleWarnings: [], pageErrors: [] };
   const lifecycle = new OwnedSmokeLifecycle({ directory, redact: safe, overallMs: 1800000, onUpdate: state => { receipt.lifecycle = state; if (state.reason) { receipt.status = "fail"; receipt.failure = state.reason.message; } json("receipt.json", receipt); } });
   let browser, page, databaseEntry, browserEntry, serverEntry, closing;
   const database = join(directory, "postgres"), profile = join(directory, "browser-profile");
@@ -47,6 +47,12 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
       if (!entry || entry.released) rmSync(path, { recursive: true, force: true });
       else receipt.cleanup.errors.push({ name, message: "owned process not stopped; resource preserved" });
     }
+    receipt.lifecycle = lifecycle.snapshot();
+    try {
+      assert.equal(literalGit(root, ["rev-parse", "HEAD"]), receipt.sourceGitSha, "Git HEAD changed during browser gate");
+      assert.deepEqual(sourceManifest(root), receipt.source, "source changed during browser gate");
+      if (receipt.servedAssets.some(asset => asset.error || asset.status !== 200)) throw new Error("A served static asset response could not be verified");
+    } catch (error) { receipt.cleanup.errors.push({ name: "source and served asset custody", message: safe(error.message) }); }
     if (serverLogPath && serverEntry) writeFileSync(serverLogPath, safe(serverEntry.output));
     receipt.status = failure || lifecycle.reason || receipt.cleanup.errors.length ? "fail" : "pass";
     json("receipt.json", receipt); lifecycle.dispose();
@@ -94,13 +100,32 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
     browser = await lifecycle.stage("connect browser", () => chromium.connectOverCDP(`http://127.0.0.1:${browserPort}`, { timeout: 30000 }), 30000);
     receipt.browser.version = browser.version(); assert.equal(browser.version(), metadata.browserVersion);
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
-    page = await context.newPage(); page.setDefaultTimeout(15000);
-    page.on("console", message => { if (message.type() === "error") receipt.consoleErrors.push(safe(message.text())); });
-    page.on("pageerror", error => receipt.pageErrors.push(safe(error.message)));
-    page.on("response", response => {
-      const path = new URL(response.url()).pathname;
-      if (path.startsWith("/_next/static/")) assetReads.push(response.body().then(bytes => receipt.servedAssets.push({ path, status: response.status(), sha256: hash(bytes) })).catch(error => receipt.servedAssets.push({ path, error: safe(error.message) })));
+    await context.addInitScript(() => {
+      const NativeWorker = window.Worker;
+      window.__openEnaNativeAudit = { requests: [], responses: [] };
+      window.Worker = class extends NativeWorker {
+        constructor(...args) { super(...args); this.addEventListener("message", event => { if (event.data?.kind === "result-v3") window.__openEnaNativeAudit.responses.push(structuredClone(event.data)); }); }
+        postMessage(message, ...args) { if (message?.kind === "run-open-ena-plan-v3") window.__openEnaNativeAudit.requests.push(structuredClone(message)); return super.postMessage(message, ...args); }
+      };
     });
-    return { baseUrl, browser, page, lifecycle, receipt, close, async stage(label, action, timeout = 300000) { const entry = { label, status: "running" }; receipt.stages.push(entry); try { const value = await lifecycle.stage(label, action, timeout); entry.status = "pass"; return value; } catch (error) { entry.status = "fail"; entry.error = safe(error.message); throw error; } finally { json("receipt.json", receipt); } } };
+    const observedPages = new WeakSet();
+    const observePage = page => {
+      if (observedPages.has(page)) return;
+      observedPages.add(page);
+      page.on("console", message => { if (message.type() === "error") receipt.consoleErrors.push(safe(message.text())); if (message.type() === "warning") receipt.consoleWarnings.push(safe(message.text())); });
+      page.on("pageerror", error => receipt.pageErrors.push(safe(error.message)));
+      page.on("response", response => {
+        const path = new URL(response.url()).pathname;
+        if (path.startsWith("/_next/static/")) assetReads.push(response.body().then(bytes => {
+          const entry = { path, status: response.status(), sha256: hash(bytes) };
+          const buildEntry = files.find(file => file.path === path.replace("/_next/", ""));
+          if (!buildEntry || buildEntry.sha256 !== entry.sha256) entry.error = "served bytes differ from owned build";
+          receipt.servedAssets.push(entry);
+        }).catch(error => receipt.servedAssets.push({ path, error: safe(error.message) })));
+      });
+    };
+    context.on("page", observePage);
+    page = await context.newPage(); page.setDefaultTimeout(15000); observePage(page);
+    return { baseUrl, browser, page, lifecycle, receipt, close, observePage, async stage(label, action, timeout = 300000) { const entry = { label, status: "running" }; receipt.stages.push(entry); try { const value = await lifecycle.stage(label, action, timeout); entry.status = "pass"; return value; } catch (error) { entry.status = "fail"; entry.error = safe(error.message); throw error; } finally { json("receipt.json", receipt); } } };
   } catch (error) { await close(error); throw error; }
 }

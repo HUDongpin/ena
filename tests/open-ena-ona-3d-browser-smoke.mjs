@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { createServedBrowserV3, literalGit } from "./helpers/open-ena-served-browser-v3.mjs";
-import { prepareNativeFixtureV3, runNativeFixtureV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
+import { prepareNativeFixtureV3, runNativeFixtureV3, nativeFixtureIdentitiesV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
 import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import {
@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import { createSafePlaywrightCliError } from "./support/safe-playwright-cli-error.mjs";
 
 const smokeSourcePath = fileURLToPath(import.meta.url);
-const projectRoot = join(dirname(smokeSourcePath), "..");
+const projectRoot = resolve(dirname(smokeSourcePath), "..");
 const tsconfigPath = join(projectRoot, "tsconfig.json");
 const originalTsconfig = readFileSync(tsconfigPath, "utf8");
 const artifactDirectory = resolve(
@@ -112,7 +112,7 @@ async function runCli(args, label, timeout = 300000) {
   if (args[0] === "open") { await runtime.page.goto(args[1], { waitUntil: "domcontentloaded" }); return ""; }
   if (args[0] === "close") { await runtime.close(primaryFailure); return ""; }
   if (args[0] === "screenshot") { await runtime.page.screenshot({ path: args.at(-1), fullPage: true }); return ""; }
-  if (args[0] === "console") return `Errors: ${runtime.receipt.consoleErrors.length}\n${runtime.receipt.consoleErrors.join("\n")}`;
+  if (args[0] === "console") return `Errors: ${runtime.receipt.consoleErrors.length}\nWarnings: ${runtime.receipt.consoleWarnings.length}\n${runtime.receipt.consoleErrors.join("\n")}`;
   if (args[0] === "--raw" && args[1] === "run-code") {
     const action = new Function(`return (${args[2]});`)();
     return JSON.stringify(await runtime.stage(label, () => action(runtime.page), timeout));
@@ -121,7 +121,7 @@ async function runCli(args, label, timeout = 300000) {
 }
 
 function browserSource(task, args) {
-  return "async (page) => { " + prepareNativeFixtureV3.toString() + "\n" + runNativeFixtureV3.toString() + "; const task = " + task.toString()
+  return "async (page) => { " + prepareNativeFixtureV3.toString() + "\n" + runNativeFixtureV3.toString() + "\n" + nativeFixtureIdentitiesV3.toString() + "; const task = " + task.toString()
     + "; return await task(page, " + JSON.stringify(args) + "); }";
 }
 
@@ -533,7 +533,7 @@ async function runSyntheticLane(page, args) {
       })),
     }))
   ));
-  const visualization = page.getByRole("group", { name: "ENA visualization options" });
+  const visualization = page.locator(".ena-visual-toolbar");
   const threeDButton = visualization.getByRole("button", { name: /3D ONA/ });
   const roleDiagnostics = {
     groupCount: await visualization.count(),
@@ -781,7 +781,7 @@ async function runYuPrivateLane(page, args) {
     };
   });
   assertBrowser(pointAudit.count === 87 && pointAudit.allCircles, "Yu 2D unit points are not 87 circles");
-  const visualization = page.getByRole("group", { name: "ENA visualization options" });
+  const visualization = page.locator(".ena-visual-toolbar");
   await visualization.getByRole("button", { name: /3D ONA/ }).click();
   for (const id of [
     "open-ena-ona-3d-overall-plot",

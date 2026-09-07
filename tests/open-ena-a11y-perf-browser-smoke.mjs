@@ -1331,9 +1331,11 @@ try {
     const a11yContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const perfContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     try {
-      const a11y = await runA11y(await a11yContext.newPage(), baseUrl);
+      const a11yPage = await a11yContext.newPage(), perfPage = await perfContext.newPage();
+      runtime.observePage(a11yPage); runtime.observePage(perfPage);
+      const a11y = await runtime.stage(`a11y repetition ${run + 1}`, () => runA11y(a11yPage, baseUrl));
       const perf = await runPerformance(
-        await perfContext.newPage(),
+        perfPage,
         baseUrl,
         { width: 1440, height: 900 },
         plotlyChunkNames,
