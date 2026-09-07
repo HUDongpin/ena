@@ -1,3 +1,4 @@
+import { verifyPlotlyDisposal } from "../../scripts/patch-plotly-disposal.mjs";
 // Shared owned production runtime for affected browser regressions. Never accepts an external server.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -86,6 +87,7 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
     try {
       assert.equal(literalGit(root, ["rev-parse", "HEAD"]), receipt.sourceGitSha, "Git HEAD changed during browser gate");
       assert.deepEqual(sourceManifest(root), receipt.source, "source changed during browser gate");
+      assert.deepEqual(verifyPlotlyDisposal(root), receipt.plotlyDependency, "applied Plotly dependency changed during browser gate");
       if (receipt.servedAssets.some(asset => asset.error || asset.status !== 200)) throw new Error("A served static asset response could not be verified");
     } catch (error) { receipt.cleanup.errors.push({ name: "source and served asset custody", message: safe(error.message) }); }
     if (serverLogPath && serverEntry) writeFileSync(serverLogPath, safe(serverEntry.output));
@@ -106,6 +108,7 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
     await child("npm-path", "which", ["npm"]); receipt.npmPath = readFileSync(join(directory, "npm-path.log"), "utf8").trim();
     receipt.build = await child("build", "npm", ["run", "build"], 600000);
     assert.deepEqual(sourceManifest(root), receipt.source, "source changed during owned production build");
+    receipt.plotlyDependency = verifyPlotlyDisposal(root); json("plotly-dependency.json", receipt.plotlyDependency);
     const files = treeManifest(join(root, ".next")).filter(x => !x.path.startsWith("cache/") && !x.path.startsWith("diagnostics/") && !["trace", "trace-build"].includes(x.path));
     json("build-files.json", files); receipt.build.contentSha256 = hash(JSON.stringify(files)); receipt.build.buildId = readFileSync(join(root, ".next/BUILD_ID"), "utf8").trim();
     await child("initdb", "initdb", ["--pgdata", database, "--auth", "trust", "--username", "postgres", "--encoding", "UTF8", "--no-locale"]);

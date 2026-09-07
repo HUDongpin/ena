@@ -939,7 +939,7 @@ test("camera presets are explicit display-only orientations and the client plot 
   assert.match(source, /getCamera\?\.\(\)/);
   assert.match(source, /onCameraChange\?\.\(runtimeCamera\)/);
   assert.match(source, /new ResizeObserver\(/);
-  assert.match(source, /Promise\.resolve\(Plotly\.Plots\.resize\(plotRoot\)\)\.catch/);
+  assert.match(source, /runPlotlyOperation\(\(\) => Plotly\.Plots\.resize\(plotRoot\)\)\.catch/);
   assert.match(source, /testId = plotKind === "comparison"/);
   assert.match(source, /data-ena-dimensions="3"/);
   assert.match(source, /data-ena-interactive-camera="true"/);

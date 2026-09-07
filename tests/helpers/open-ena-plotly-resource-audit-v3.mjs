@@ -85,17 +85,21 @@ export async function checkPlotlyResourceLifecycleV3(page, record) {
     const row = await snapshot("same-projection-" + value); bounded(row);
     assert.equal(row.created, previous, "same-projection repaints must reuse GL scenes");
   }
-  const panel = page.getByTestId("open-ena-ona-3d-overall-plot");
   const imageBefore = audit.at(-1).created;
   const sharedBefore = audit.at(-1).rows.find(row => row.imageContext).liveObjects;
-  for (const reject of [false, true, false]) {
+  let sameImageHash = null;
+  for (const [role, reject] of [["overall", false], ["overall", true], ["overall", false], ["primary", false], ["secondary", false], ["overall", false]]) {
+    const panel = page.getByTestId("open-ena-ona-3d-" + role + "-plot");
+    const expectedImage = await panel.locator('[data-ena-plotly-root="true"]').evaluate(root => ({ width: Math.round(root.clientWidth) * Math.min(3, Math.max(2, devicePixelRatio || 1)), height: Math.round(root.clientHeight) * Math.min(3, Math.max(2, devicePixelRatio || 1)) }));
     await page.evaluate(reject => {
       window.__openEnaGlResourceAudit.image(true);
       window.__openEnaGlPngResult = null;
       window.__openEnaGlOriginalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
       Object.defineProperty(navigator, "clipboard", { configurable: true, value: { write: async items => {
         const blob = await items[0].getType("image/png"), bytes = new Uint8Array(await blob.arrayBuffer());
-        window.__openEnaGlPngResult = { bytes: bytes.length, valid: [137,80,78,71,13,10,26,10].every((b,i) => bytes[i] === b) };
+        const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+        const view = new DataView(bytes.buffer);
+        window.__openEnaGlPngResult = { bytes: bytes.length, valid: [137,80,78,71,13,10,26,10].every((b,i) => bytes[i] === b), width: view.getUint32(16), height: view.getUint32(20), sha256: [...digest].map(n => n.toString(16).padStart(2,"0")).join("") };
         if (reject) throw new Error("synthetic clipboard rejection");
       } } });
     }, reject);
@@ -106,6 +110,8 @@ export async function checkPlotlyResourceLifecycleV3(page, record) {
       await panel.locator('button[data-ena-plot-action="copy-image"]:enabled').waitFor();
       const png = await page.evaluate(() => window.__openEnaGlPngResult);
       assert.equal(png.valid, true); assert.ok(png.bytes > 1000);
+      assert.equal(png.width, expectedImage.width); assert.equal(png.height, expectedImage.height);
+      if (role === "overall") { if (sameImageHash) assert.equal(png.sha256, sameImageHash, "same view PNG must retain exact content across rejection and cross-root use"); else sameImageHash = png.sha256; }
     } finally {
       page.off("dialog", approve);
       await page.evaluate(() => {
@@ -114,7 +120,7 @@ export async function checkPlotlyResourceLifecycleV3(page, record) {
         if (descriptor) Object.defineProperty(navigator, "clipboard", descriptor); else delete navigator.clipboard;
       });
     }
-    const row = await snapshot(reject ? "png-rejected" : "png-success"); bounded(row);
+    const row = await snapshot(role + (reject ? "-png-rejected" : "-png-success")); bounded(row);
     assert.equal(row.created, imageBefore, "PNG success/rejection must reuse the warmed static context");
     const shared = row.rows.find(context => context.imageContext);
     assert.equal(shared.lost, false, "shared static export context must remain reusable");
