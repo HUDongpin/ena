@@ -136,3 +136,30 @@ test("Workspace preset application uses exact result membership and maps public 
   assert.throws(() => prepareWorkspacePresentationV3(result, { ...artifact, hiddenCodes: ["not-a-bound-code"] }), /reference/);
   assert.throws(() => prepareWorkspacePresentationV3(result, { ...artifact, layerOptions: { showMeans: false } }), /not represented/);
 });
+
+test("native endpoint hiding retains valid population while summary inclusion changes independently", async () => {
+  const { buildContrastV3 } = await import("../lib/open-ena/contrasts");
+  const { DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS } = await import("../lib/open-ena/group-display");
+  const { presentBoundGroupDisplayV3 } = await import("../lib/open-ena/bound-presentation-v3");
+  const { default: GroupContrast } = await import("../components/open-ena/OpenEnaGroupContrast");
+  const f = await bindingFixtureV3();
+  const result = await bindResultV3(f.plan, runStandardPlanV3(f.plan), { processedRows: f.plan.rows.length, maximumBufferedRows: 0,
+    numericCellsAllocated: 120, peakBytesObservedOrBounded: 10240, observationMethod: "exact-counters-and-conservative-byte-bound" }, f.compiled.diagnostics) as BoundStandardResultV3;
+  const before = canonicalJsonV3(result);
+  const value = await buildContrastV3(result, f.plan, { primaryGroup: { type: "string", value: "Control" }, secondaryGroup: { type: "string", value: "Treatment" }, axes: ["SVD1", "SVD2"] });
+  const group = result.executionProvenance.identityDictionary.groups.find(entry => entry.fields[0].value.value === "Control")!;
+  const unit = result.executionProvenance.identityDictionary.units.find(entry => entry.fields[0].value.value === "u1")!;
+  for (const includeHiddenPoints of [false, true]) {
+    const display = presentBoundGroupDisplayV3(value, { [group.token]: { ...DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS, includeHiddenPoints } }, [JSON.stringify([group.token, unit.token])], false);
+    assert.equal(display.primary.totalUnitCount, 2);
+    assert.equal(display.primary.validUnitCount, 2, "a hidden valid Unit must not become an invalid/dropped Unit");
+    assert.equal(display.primary.hiddenUnitCount, 1);
+    assert.equal(display.primary.visibleUnitIds.length, 1);
+    assert.equal(display.primary.summaryUnitIds.length, includeHiddenPoints ? 2 : 1);
+    const svg = renderToStaticMarkup(createElement(GroupContrast, { contrast: display.contrast, groupDisplay: display,
+      edgeThreshold: 0, showPoints: true, showNetworks: true, showLabels: true, showGroupLabels: true, showUnitLabels: false,
+      showVariance: true, edgeScale: 1, pointScale: 1, plotZoom: 1, flipX: false, flipY: false }));
+    assert.match(svg, /data-ena-points-total="4" data-ena-points-valid="4" data-ena-points-hidden="1" data-ena-points-shown="3" data-ena-points-dropped="0"/);
+  }
+  assert.equal(canonicalJsonV3(result), before);
+});

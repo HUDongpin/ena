@@ -45,7 +45,7 @@ export function presentBoundGroupDisplayV3(value: Awaited<ReturnType<typeof buil
     const visible = original.unitIds.filter((unit) => !hidden.has(JSON.stringify([group.token, units.get(unit)])));
     const summary = options.includeHiddenPoints ? original.unitIds : visible;
     const summarySet = new Set(summary);
-    const display: OpenEnaResolvedGroupDisplaySide = { name: original.name, settings: options, totalUnitCount: original.unitCount, validUnitCount: summary.length,
+    const display: OpenEnaResolvedGroupDisplaySide = { name: original.name, settings: options, totalUnitCount: original.unitCount, validUnitCount: original.points.filter(point => Number.isFinite(point.x) && Number.isFinite(point.y)).length,
       hiddenUnitCount: original.unitCount - visible.length, visibleUnitIds: visible, summaryUnitIds: summary };
     if (summary.length === 0) return { side: original, display: { ...display, settings: { ...options, showMean: false, showConfidenceIntervals: false, showOutlierIntervals: false } } };
     const points = value.result.set.points.filter((row) => summarySet.has(String(row.ENA_UNIT)));
