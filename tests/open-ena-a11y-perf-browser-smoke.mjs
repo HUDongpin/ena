@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { createServedBrowserV3 } from "./helpers/open-ena-served-browser-v3.mjs";
 import { fileURLToPath } from "node:url";
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
@@ -138,7 +139,7 @@ async function waitForThreePlots(page) {
 }
 
 async function readScientificIdentity(page) {
-  const snapshot = await page.waitForFunction(async () => {
+  const snapshot = await page.waitForFunction(() => {
     const roots = window.__task38ReadyPlots();
     if (!roots) return null;
     const payload = roots.map((plot) => {
@@ -153,15 +154,17 @@ async function readScientificIdentity(page) {
         )),
       };
     });
-    const bytes = new TextEncoder().encode(JSON.stringify(payload));
-    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    // Capture immutable bytes in this synchronous readiness turn. Hash only after polling succeeds.
     return {
-      resultIdentity: [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join(""),
+      serialized: JSON.stringify(payload),
       roles: payload.map((plot) => plot.role),
       traceCounts: payload.map((plot) => plot.traces.length),
     };
   }, null, { timeout: 60000 });
-  try { return await snapshot.jsonValue(); }
+  try {
+    const { serialized, roles, traceCounts } = await snapshot.jsonValue();
+    return { resultIdentity: createHash("sha256").update(serialized, "utf8").digest("hex"), roles, traceCounts };
+  }
   finally { await snapshot.dispose(); }
 }
 

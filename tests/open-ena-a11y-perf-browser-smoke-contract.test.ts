@@ -151,5 +151,23 @@ test("trajectory sample readiness belongs to a fresh bound Worker response rathe
 
 
 test("identity and performance snapshots observe simultaneous distinct ready roles before reading unchanged scientific fields", () => {
-  for (const marker of ["window.__task38ReadyPlots", "new Set(states.map(state => state.role)).size !== 3", 'state.status === "ready" && state.ready === "true" && state.busy === "false"', 'state.status === "error"', "window.__task38ReadinessSamples.length > 40", "const snapshot = await page.waitForFunction(async", "const measurement = await page.waitForFunction", "const end = performance.now()", "JSON.stringify(payload)"]) assert.ok(source.includes(marker), marker);
+  for (const marker of ["window.__task38ReadyPlots", "new Set(states.map(state => state.role)).size !== 3", 'state.status === "ready" && state.ready === "true" && state.busy === "false"', 'state.status === "error"', "window.__task38ReadinessSamples.length > 40", "const snapshot = await page.waitForFunction(()", "const measurement = await page.waitForFunction", "const end = performance.now()", "JSON.stringify(payload)"]) assert.ok(source.includes(marker), marker);
+});
+
+
+test("identity polling returns synchronously false until ready and captures immutable UTF-8 science before hashing", async () => {
+  const implementation = source.slice(source.indexOf("async function readScientificIdentity(page)"), source.indexOf("async function captureSliderScreen"));
+  let disposed = false;
+  const read = new Function("createHash", `${implementation}; return readScientificIdentity;`)((await import("node:crypto")).createHash);
+  const pendingWindow = { __task38ReadyPlots: () => null };
+  const page = { waitForFunction: async (predicate: Function) => {
+    const observed = new Function("window", `return (${predicate.toString()})();`)(pendingWindow);
+    assert.ok(!(observed instanceof Promise), "Playwright polls truthiness without awaiting the predicate");
+    assert.equal(observed, null);
+    return { jsonValue: async () => ({ serialized: '[{"role":"comparison","traces":[]}]', roles: ["comparison"], traceCounts: [0] }), dispose: async () => { disposed = true; } };
+  } };
+  const identity = await read(page);
+  assert.equal(identity.resultIdentity, (await import("node:crypto")).createHash("sha256").update('[{"role":"comparison","traces":[]}]', "utf8").digest("hex"));
+  assert.equal(disposed, true);
+  assert.doesNotMatch(source, /waitForFunction\(async/u);
 });
