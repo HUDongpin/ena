@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -1093,4 +1094,25 @@ test("the installed runtime must report the same source-bound identity", async (
     }),
     /installed runtime identity/i,
   );
+});
+
+// The vendored facade remains historically pinned while its local peer evolves.
+test("current accepted jENA peer passes the default contract and same-length solver tampering fails", async (context) => {
+  const root = mkdtempSync(join(tmpdir(), "task37-vendor-source-"));
+  context.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const path of ["package.json", "package-lock.json", "vendor/j-3dena"]) {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    cpSync(path, join(root, path), { recursive: true });
+  }
+  for (const path of ["package.json", "package-lock.json", "tsconfig.json", "PROVENANCE.md", "NUMERICS.md", "LICENSE", "ENA-SNAPSHOT.md", "src"]) {
+    mkdirSync(join(root, "packages/jena-js"), { recursive: true });
+    cpSync(join("packages/jena-js", path), join(root, "packages/jena-js", path), { recursive: true });
+  }
+  const result = await verifyJ3denaVendor({ projectRoot: root });
+  assert.equal(result.tarballSha256, J3DENA_VENDOR_CONTRACT.tarballSha256);
+  const solver = join(root, "packages/jena-js/src/rotation/nodePositions.ts");
+  const source = readFileSync(solver);
+  const changed = Buffer.from(source); changed[0] = source[0] === 32 ? 33 : 32;
+  writeFileSync(solver, changed);
+  await assert.rejects(verifyJ3denaVendor({ projectRoot: root }), /jena-js source tree sha256/i);
 });

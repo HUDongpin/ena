@@ -2497,7 +2497,9 @@ body:has(.open-ena-login-page) .back-to-top {
   --ena-teal: var(--ena-accent);
   --ena-font-step: 1px;
   display: grid;
-  width: 100vw;
+  /* The parent already reflects zoom and available width; 100vw would
+     enlarge this frame beyond its clipping page under CSS zoom. */
+  width: 100%;
   height: 100dvh;
   grid-template-rows: minmax(0, 1fr);
   margin: 0;
@@ -13720,5 +13722,161 @@ body:has(.open-ena-page) #main-content {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Mobile Models panels grow with their content. Let wheel/keyboard scrolling
+   reach the document when these inner containers have no scroll range. */
+@media (max-width: 900px) {
+  .ena-control-content,
+  .ena-model-codes-v3-list {
+    overscroll-behavior-y: auto;
+  }
+}
+
+/* CSS zoom changes available layout width without changing media-query width.
+   Name only the Open ENA document as a container so other site pages keep their
+   normal layout. Wide browser viewports with a narrow app use a flowing stack. */
+html:has(.open-ena-page) {
+  container-name: open-ena-viewport;
+  container-type: inline-size;
+}
+
+@media (min-width: 901px) {
+  @container open-ena-viewport (max-width: 900px) {
+    body:has(.open-ena-page) {
+      overflow: auto;
+    }
+
+    body:has(.open-ena-page) #main-content,
+    .open-ena-page,
+    .open-ena-workbench,
+    .open-ena-page:has(> .open-ena-fallback-notice) > .open-ena-workbench {
+      height: auto;
+      min-height: 0;
+      overflow: visible;
+    }
+
+    .ena-workbench-grid {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto;
+      overflow: visible;
+    }
+
+    .ena-tool-rail {
+      display: grid;
+      grid-template-columns: 1fr;
+      border-inline-end: 0;
+    }
+
+    .ena-rail-brand {
+      min-height: 58px;
+      grid-template-columns: auto auto auto;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px 12px;
+    }
+
+    .ena-rail-brand .ena-mini-mark,
+    .ena-rail-brand .ena-mini-mark img {
+      width: 32px;
+      height: 32px;
+    }
+
+    .ena-rail-modes {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 4px;
+      padding: 6px;
+      overflow: visible;
+    }
+
+    .ena-rail-meta {
+      display: none;
+    }
+
+    .ena-rail-logout {
+      padding: 5px 8px;
+    }
+
+    .ena-rail-logout button {
+      min-height: 42px;
+    }
+
+    .ena-control-panel,
+    .ena-control-content,
+    .ena-model-codes-v3-list,
+    .ena-visual-workspace {
+      height: auto;
+      max-height: none;
+      overflow: visible;
+      overscroll-behavior-y: auto;
+    }
+
+    .open-ena-group-contrast .ena-set-comparison-layout,
+    .open-ena-group-contrast .ena-set-side-plots {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto;
+      height: auto;
+      margin: 0;
+      padding: 0;
+      gap: 16px;
+    }
+
+    .open-ena-group-contrast .ena-set-main-plot,
+    .open-ena-group-contrast .ena-set-side-plots > figure,
+    .open-ena-group-contrast .open-ena-set-comparison-svg,
+    .open-ena-group-contrast .open-ena-set-mini-svg {
+      height: auto;
+      width: 100%;
+    }
+
+    .open-ena-group-contrast .ena-set-main-plot > .ena-set-plot-heading,
+    .open-ena-group-contrast .ena-set-side-plots .ena-set-plot-heading {
+      position: relative;
+      height: auto;
+      min-height: 48px;
+      padding: 8px;
+      flex-wrap: wrap;
+    }
+
+    .open-ena-group-contrast .ena-set-main-plot > .ena-set-plot-heading h3,
+    .open-ena-group-contrast .ena-set-plot-heading p,
+    .open-ena-group-contrast .ena-set-main-plot figcaption {
+      position: static;
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      overflow: visible;
+      clip: auto;
+      clip-path: none;
+    }
+
+    .open-ena-group-contrast .ena-set-main-plot figcaption {
+      padding: 8px;
+    }
+
+    .open-ena-group-contrast .ena-set-main-plot .ena-official-plot-actions,
+    .open-ena-group-contrast .ena-set-side-plots .ena-official-plot-actions,
+    .open-ena-group-contrast .ena-set-side-plots .ena-official-panel-actions {
+      position: static;
+      flex-direction: row;
+      flex-wrap: wrap;
+    }
+
+    .open-ena-group-contrast .ena-set-right-tools,
+    .open-ena-group-contrast .ena-set-right-tools > .ena-persistent-plot-tools {
+      height: auto;
+    }
+  }
+}
+
+@media (max-width: 900px) {
+  .open-ena-group-contrast .ena-set-plot-heading p {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    overflow: visible;
   }
 }
