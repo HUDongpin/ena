@@ -855,12 +855,14 @@ async function runYuPrivateLane(page, args) {
     });
     check(await page.evaluate(() => window.__openEnaNativeAudit.requests.length) === requestsBeforePrivate + 1, "private source must execute exactly one native Worker request");
     stage = "private actual circles and three directed scenes";
+    const visualization = page.locator(".ena-visual-toolbar");
+    await visualization.getByRole("button", { name: /2D ONA/ }).click();
+    await page.getByTestId("open-ena-ordered-result-layout").waitFor();
     const pointAudit = await page.evaluate(() => {
       const points = [...document.querySelectorAll('[data-ona-unit-point="true"]')];
       return { count: points.length, allCircles: points.every(point => point.getAttribute("data-ona-point-shape") === "circle" && point.querySelector("circle") && !point.querySelector("rect,polygon")) };
     });
     check(pointAudit.count === 87 && pointAudit.allCircles, "87 actual circle Units required");
-    const visualization = page.locator(".ena-visual-toolbar");
     await visualization.getByRole("button", { name: /3D ONA/ }).click();
     const waitPlots = async () => {
       for (const id of ["open-ena-ona-3d-overall-plot", "open-ena-ona-3d-primary-plot", "open-ena-ona-3d-secondary-plot"]) await page.getByTestId(id).locator('[data-ena-interactive-camera="true"][aria-busy="false"]').waitFor({ timeout: 60000 });
