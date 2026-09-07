@@ -787,6 +787,9 @@ async function runYuPrivateLane(page, args) {
     await page.getByRole("toolbar", { name: "Code actions", exact: true }).getByRole("button", { name: "Manage Codes", exact: true }).click();
     for (const code of ["EC", "ICT", "MCO", "NI", "SR", "SC", "ATT"]) await page.getByRole("checkbox", { name: `Select ${code} as a Code`, exact: true }).check();
     await button("Close Code manager").click();
+    await button("Initialize explicit all-enabled mask").click();
+    const mask = page.getByRole("group", { name: "ONA directional mask", exact: true });
+    check(await mask.getByRole("checkbox").count() === 49 && await mask.getByRole("checkbox", { checked: true }).count() === 49, "private full all-enabled49-cell mask required");
     stage = "private setup Windows";
     await tab("Windows").click();
     await page.getByRole("group", { name: "Backward context", exact: true }).getByRole("textbox", { name: "Rows", exact: true }).fill("2");
