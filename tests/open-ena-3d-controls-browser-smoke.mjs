@@ -750,6 +750,7 @@ async function authenticateBuildAndOpen3d(page, args) {
 
   await page.getByRole("textbox", { name: "Account name" }).fill(args.username);
   await page.getByRole("textbox", { name: "Password" }).fill(args.password);
+  await page.waitForLoadState("networkidle");
   await page.getByRole("button", { name: "Sign in" }).click();
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
   await rail.waitFor({ timeout: 30_000 });

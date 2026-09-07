@@ -25,7 +25,7 @@ export async function prepareNativeFixtureV3(page, { codes = ["CODE_A", "CODE_B"
   for (const name of horizons) await page.getByRole("region", { name: "Horizon identity", exact: true }).getByRole("checkbox", { name, exact: true }).check();
   await button("Add or remove Horizon identity fields").click();
   await tab("Codes").click();
-  await button("Manage Codes").click();
+  await page.getByRole("toolbar", { name: "Code actions", exact: true }).getByRole("button", { name: "Manage Codes", exact: true }).click();
   for (const code of codes) await page.getByRole("checkbox", { name: `Select ${code} as a Code`, exact: true }).check();
   await button("Close Code manager").click();
   await tab("Windows").click();

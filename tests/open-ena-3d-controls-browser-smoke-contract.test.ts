@@ -59,6 +59,7 @@ test("the browser harness credentials are unconditional synthetic literals", () 
 test("the native fixture explicitly types Codes and selects ordered Units before the Windows model", () => {
   assert.match(fixtureSource, /Source type: \$\{code\}/u);
   assert.match(fixtureSource, /selectedUnits/u);
+  assert.match(fixtureSource, /getByRole\("toolbar", \{ name: "Code actions", exact: true \}\)\.getByRole\("button", \{ name: "Manage Codes", exact: true \}\)/u);
   assert.match(fixtureSource, /JSON.stringify\(selectedUnits\) !== JSON.stringify\(units\)/u);
   assert.ok(fixtureSource.indexOf('const selectedUnits') < fixtureSource.indexOf('await tab("Windows").click()'));
   assert.match(fixtureSource, /name: "Model", exact: true/u);

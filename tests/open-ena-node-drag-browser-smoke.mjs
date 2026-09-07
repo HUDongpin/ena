@@ -301,6 +301,7 @@ async function installAuditAndAuthenticate(page, args) {
   if (await account.count()) {
     await account.fill(args.username);
     await page.getByRole("textbox", { name: "Password" }).fill(args.password);
+    await page.waitForLoadState("networkidle");
     await page.getByRole("button", { name: "Sign in" }).click();
   }
   await rail.waitFor({ timeout: 30_000 });
