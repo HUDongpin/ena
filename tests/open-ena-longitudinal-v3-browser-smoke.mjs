@@ -1371,6 +1371,47 @@ async function exercisePendingImageActions(page) {
   }
 }
 
+async function checkQueuedRenderExitV3(page) {
+  const baselineScience = await nativeScience(page);
+  const shell=page.locator('.open-ena-interactive-3d-figure'), fullscreen=shell.locator('[data-ena-plot-action="fullscreen"]'), copy=shell.locator('[data-ena-plot-action="copy-image"]');
+  await page.evaluate(()=>{
+    const figure=document.querySelector('.open-ena-interactive-3d-figure');
+    let proto=HTMLImageElement.prototype,onload;while(proto&&!onload){onload=Object.getOwnPropertyDescriptor(proto,'onload');proto=Object.getPrototypeOf(proto);}if(!onload?.set||!onload?.get)throw Error('Native image event unavailable');
+    const audit={figure,fullscreen:Object.getOwnPropertyDescriptor(figure,'requestFullscreen'),previous:Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'onload'),onload,release:null,released:false,releaseCount:0,held:null,events:[],snapshots:[],listeners:[]};window.__task38QueuedExit=audit;
+    Object.defineProperty(figure,'requestFullscreen',{configurable:true,value:async()=>{throw Error('isolated fallback request');}});
+    audit.snapshot=label=>{const active=document.activeElement,exit=figure.querySelector('[data-ena-plot-action="fullscreen"]');const value={label,at:performance.now(),busy:figure.querySelector('[data-ena-interactive-camera]')?.getAttribute('aria-busy'),fallback:figure.getAttribute('data-fallback-fullscreen'),activeTag:active?.tagName,activeAction:active?.getAttribute('data-ena-plot-action'),exitDisabled:exit.disabled,focused:active===exit,inside:figure.contains(active),callbackState:audit.released?"released":audit.release?"held":"not-held",releaseCount:audit.releaseCount};audit.snapshots.push(value);return value;};
+    for(const type of ['focusin','focusout','click','keydown']){const listener=event=>{audit.events.push({...audit.snapshot(type),eventTarget: event.target?.getAttribute?.('data-ena-plot-action'),key:event.key??null});if(audit.events.length>160)audit.events.shift();};document.addEventListener(type,listener,true);audit.listeners.push({type,listener});}
+    Object.defineProperty(HTMLImageElement.prototype,'onload',{configurable:true,get(){return onload.get.call(this);},set(callback){onload.set.call(this,typeof callback!=='function'?callback:function(event){if(!audit.release&&this.naturalWidth>0&&/^(blob:|data:image\/svg)/u.test(this.src)){audit.held={width:this.naturalWidth,height:this.naturalHeight,scheme:this.src.split(':')[0]};audit.release=()=>{if(audit.released)return;audit.released=true;audit.releaseCount++;return callback.call(this,event);};}else callback.call(this,event);});}});
+  });
+  let result;
+  try {
+    await fullscreen.click();await page.waitForFunction(()=>document.querySelector('.open-ena-interactive-3d-figure')?.getAttribute('data-fallback-fullscreen')==='true');
+    await copy.waitFor({state:'visible'});await page.waitForFunction(()=>!document.querySelector('[data-ena-plot-action="copy-image"]').disabled);
+    page.once('dialog',dialog=>dialog.accept());await copy.click();await page.waitForFunction(()=>!!window.__task38QueuedExit.release,null,{timeout:120000});
+    const root=shell.locator('[data-ena-plotly-root="true"]');
+    const candidates=await root.evaluate(element=>{const trace=element.data.find(t=>t.meta?.role==='code-node'),scene=element._fullLayout.scene._scene,params=scene.glplot.cameraParams,scale=scene.dataScale,box=scene.glplot.canvas.getBoundingClientRect();const multiply=(m,v)=>[0,1,2,3].map(r=>v.reduce((s,n,c)=>s+m[c*4+r]*n,0));element.__task38QueuedActualHover=null;element.__task38QueuedHover=e=>{const p=e.points?.[0],t=p?.fullData??p?.data;if(t?.meta?.role==='code-node')element.__task38QueuedActualHover=t.ids?.[p.pointNumber]??t.text?.[p.pointNumber];};element.on('plotly_hover',element.__task38QueuedHover);return trace.x.map((x,index)=>{const clip=multiply(params.projection,multiply(params.view,multiply(params.model,[x*scale[0],trace.y[index]*scale[1],trace.z[index]*scale[2],1])));return{x:box.left+(1+clip[0]/clip[3])*box.width/2,y:box.top+(1-clip[1]/clip[3])*box.height/2,id:trace.ids?.[index]??trace.text[index],visible:clip[3]>0};});});
+    let start;
+    for(const point of candidates){if(!point.visible||point.x<30||point.y<30)continue;for(const[dx,dy]of[[0,0],[2,0],[-2,0],[0,2],[0,-2]]){await page.mouse.move(point.x+dx,point.y+dy);await page.waitForTimeout(90);if(await root.evaluate((element,id)=>element.__task38QueuedActualHover===id&&element.getAttribute('data-ena-node-hovered')===id,point.id)){start={x:point.x+dx,y:point.y+dy};break;}}if(start)break;}
+    assert.ok(start,'real pointer must hit a Code before queued display edit');
+    await page.mouse.down();await page.mouse.move(start.x+38,start.y-23,{steps:5});await page.mouse.up();
+    await page.waitForFunction(()=>document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute('aria-busy')==='true',null,{timeout:5000});
+    const beforeExit=await page.evaluate(()=>window.__task38QueuedExit.snapshot('queued-before-exit'));assert.equal(beforeExit.exitDisabled,false);assert.equal(beforeExit.callbackState,"held");
+    await fullscreen.click();await page.waitForFunction(()=>document.querySelector('.open-ena-interactive-3d-figure')?.getAttribute('data-fallback-fullscreen')!=='true');
+    await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);window.__task38QueuedExit.snapshot('exited-still-render-held');});
+    await page.evaluate(()=>window.__task38QueuedExit.release());await page.waitForFunction(()=>document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute('aria-busy')==='false',null,{timeout:30000});
+    await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);window.__task38QueuedExit.snapshot('ready-after-release');});
+    result=await page.evaluate(()=>({held:window.__task38QueuedExit.held,events:window.__task38QueuedExit.events,snapshots:window.__task38QueuedExit.snapshots,scienceRequests:window.__openEnaNativeAudit.requests.length,current:document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute('data-result-status')}));
+    assert.deepEqual(await nativeScience(page), baselineScience, 'queued display focus return changed scientific authority or Worker count');
+    assert.equal(result.snapshots.at(-1).callbackState, 'released'); assert.equal(result.snapshots.at(-1).releaseCount, 1);
+    writeFileSync(join(artifactDirectory,'queued-exit-focus.json'),JSON.stringify({ latencyInjection: 'Delivery of one actually loaded native image callback held until actual queued-render Exit observation', ...result },null,2));
+    assert.equal(result.snapshots.at(-1).focused,true,'busy Exit must return focus after the held genuine PNG and queued display render finish');return result;
+  } catch(error) {
+    result=await page.evaluate(()=>({held:window.__task38QueuedExit.held,events:window.__task38QueuedExit.events,snapshots:[...window.__task38QueuedExit.snapshots,window.__task38QueuedExit.snapshot('failure-before-finally')]}));writeFileSync(join(artifactDirectory,'queued-exit-focus.json'),JSON.stringify({status:'FAIL',error:String(error),...result},null,2));throw error;
+  } finally {
+    await page.evaluate(()=>{const a=window.__task38QueuedExit;a.release?.();for(const{type,listener}of a.listeners)document.removeEventListener(type,listener,true);if(a.previous)Object.defineProperty(HTMLImageElement.prototype,'onload',a.previous);else delete HTMLImageElement.prototype.onload;if(a.fullscreen)Object.defineProperty(a.figure,'requestFullscreen',a.fullscreen);else delete a.figure.requestFullscreen;const root=a.figure.querySelector('[data-ena-plotly-root]');root?.removeListener?.('plotly_hover',root.__task38QueuedHover);delete window.__task38QueuedExit;});
+  }
+}
+
 async function exerciseStaleImageLease(page) {
   await page.getByRole("navigation", { name: "Analysis modes" }).getByRole("button", { name: "Model", exact: true }).click();
   await page.getByRole("button", { name: "Configure trajectory model", exact: true }).click();
@@ -2481,6 +2522,7 @@ try {
   const displayAudit = await runBrowserPhase("seven cameras manual orbit and six native SVG projections", exerciseCamerasAndProjections, { ...scientificArgs, cameraPresets, expectedCameraLabels, expectedCameraStates, projections: twoDimensionalProjections, browser: smokeBrowser }, 240_000);
   const plotActionAudit = await runBrowserPhase("perspective orthographic native SVG and actual PNG actions", exerciseTrajectoryPlotActions, { ...scientificArgs, expectedCameraState: expectedCameraStates.isometric }, 240_000);
   const pendingImageAudit = await runBrowserPhase("real pending PNG denial clipboard rejection and recovery", exercisePendingImageActions, {}, 240_000);
+  await runBrowserPhase("actual loaded-image latency and queued-render Exit focus return", checkQueuedRenderExitV3, {}, 180_000);
   const fallbackA11yAudit = await runBrowserPhase("reversible fallback fullscreen keyboard modal", exerciseFallbackFullscreenAccessibility, { viewport: { width: 1440, height: 1000 } });
   const responsiveAudit = await runBrowserPhase("responsive native fullscreen and canvas geometry", captureResponsiveEvidence, { viewports: viewportMatrix, artifactDirectory });
   const finalCurrentScience = await nativeScience(runtime.page);
