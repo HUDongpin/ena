@@ -795,6 +795,8 @@ async function runYuPrivateLane(page, args) {
     // The native text comparator is explicit, including its collation policy.
     // The actual bound source order is checked against literal string order below.
     stage = "private setup Run";
+    const privateRun = page.getByRole("button", { name: "Run model", exact: true });
+    await page.waitForFunction(button => button && !button.disabled, await privateRun.elementHandle(), { timeout: 30000 });
     await runNativeFixtureV3(page);
     stage = "private bound aggregate and explicit order";
     const aggregate = await page.evaluate(() => {
