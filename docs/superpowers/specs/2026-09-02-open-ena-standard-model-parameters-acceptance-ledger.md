@@ -313,25 +313,17 @@ contain exact historical SHA, counts, raw/report hashes and limitations.
 | Task0: `Rscript --vanilla -e 'cat(R.version.string, "\n"); cat(as.character(utils::packageVersion("rENA")), "\n")'` | Historical coverage | [E0](#e0-plan-1-task-0-global-0) | Recovered report; invocation/count limits: E0 | Only stated historical scope; no current-candidate pass |
 | Task0: `node --import tsx --test tests/open-ena-model-v3-baseline.test.ts` | Historical coverage | [E0](#e0-plan-1-task-0-global-0) | Recovered report; invocation/count limits: E0 | Only stated historical scope; no current-candidate pass |
 | Task0: `node --import tsx --test tests/open-ena-ona-analysis-plan.test.ts tests/open-ena-ona-worker.test.ts tests/open-ena-ona-bundle.test.ts tests/open-ena-ona-descriptive.test.ts tests/open-ena-ona-3d.test.ts` | Historical coverage | [E0](#e0-plan-1-task-0-global-0) | Recovered report; invocation/count limits: E0 | Only stated historical scope; no current-candidate pass |
-
 | Task1: `node --import tsx --test tests/open-ena-model-v3-types.test.ts` | Historical coverage | [E1](#e1-plan-1-task-1-global-1) | Recovered report; invocation/count limits: E1 | Only stated historical scope; no current-candidate pass |
-
 | Task2: `node --import tsx --test tests/open-ena-model-v3-schema.test.ts` | Historical coverage | [E2](#e2-plan-1-task-2-global-2) | Recovered report; invocation/count limits: E2 | Only stated historical scope; no current-candidate pass |
 | Task2: `node --import tsx --test tests/open-ena-model-v3-schema.test.ts && npm run typecheck:app` | Historical coverage | [E2](#e2-plan-1-task-2-global-2) | Recovered report; invocation/count limits: E2 | Only stated historical scope; no current-candidate pass |
-
 | Task3: `node --import tsx --test --test-concurrency=1 tests/open-ena-model-v3-identity.test.ts` | Unverified | [E3](#e3-plan-1-task-3-global-3) | Exact original invocation/raw final receipt not recovered; historical evidence retained | Historical report only; no standalone Pass or zero-Skip claim |
 | Task3: `node --import tsx --test tests/open-ena-model-v3-identity.test.ts` | Unverified | [E3](#e3-plan-1-task-3-global-3) | Exact original invocation/raw final receipt not recovered; historical evidence retained | Historical report only; no standalone Pass or zero-Skip claim |
-
 | Task4: `node --import tsx --test tests/open-ena-model-v3-ordering.test.ts` | Unverified | [E4](#e4-plan-1-task-4-global-4) | Exact original invocation/raw final receipt not recovered; historical evidence retained | Historical report only; no standalone Pass or zero-Skip claim |
 | Task4: `node --import tsx --test tests/open-ena-model-v3-ordering.test.ts tests/open-ena-model-v3-types.test.ts` | Unverified | [E4](#e4-plan-1-task-4-global-4) | Exact original invocation/raw final receipt not recovered; historical evidence retained | Historical report only; no standalone Pass or zero-Skip claim |
-
 | Task5: `node --import tsx --test tests/open-ena-model-v3-diagnostics.test.ts` | Unverified | [E5](#e5-plan-1-task-5-global-5) | Exact original invocation/raw final receipt not recovered; historical evidence retained | Historical report only; no standalone Pass or zero-Skip claim |
-
 | Task6: `node --import tsx --test tests/open-ena-model-v3-relations.test.ts` | Historical coverage | [E6](#e6-plan-1-task-6-global-6) | Recovered report; invocation/count limits: E6 | Only stated historical scope; no current-candidate pass |
 | Task6: `node --import tsx --test --test-concurrency=1 tests/open-ena-model-v3-diagnostics.test.ts tests/open-ena-model-v3-relations.test.ts` | Historical coverage | [E6](#e6-plan-1-task-6-global-6) | Recovered report; invocation/count limits: E6 | Only stated historical scope; no current-candidate pass |
-
 | Task7: `node --import tsx --test tests/open-ena-model-v3-resource-budget.test.ts` | Unverified | [E7](#e7-plan-1-task-7-global-7) | Exact original invocation/raw final receipt not recovered; historical evidence retained | Historical report only; no standalone Pass or zero-Skip claim |
-
 | Task8: `node --import tsx --test tests/open-ena-model-v3-*.test.ts` | Historical coverage | [E8](#e8-plan-1-task-8-global-8) | Recovered report; invocation/count limits: E8 | Only stated historical scope; no current-candidate pass |
 | Task8: `npm run typecheck:app` | Historical coverage | [E8](#e8-plan-1-task-8-global-8) | Recovered report; invocation/count limits: E8 | Only stated historical scope; no current-candidate pass |
 | Task8: `npm run test:app` | Historical coverage | [E8](#e8-plan-1-task-8-global-8) | Recovered report; invocation/count limits: E8 | Only stated historical scope; no current-candidate pass |
@@ -342,24 +334,17 @@ contain exact historical SHA, counts, raw/report hashes and limitations.
 | Command or boundary | Status | Evidence | Skip/Failure reason | Claim allowed |
 | --- | --- | --- | --- | --- |
 | Task9: `node --import tsx --test tests/open-ena-model-v3-standard-adapter.test.ts` | Historical coverage | [E9](#e9-plan-2-task-1-global-9) | Recovered report; invocation/count limits: E9 | Only stated historical scope; no current-candidate pass |
-
 | Task10: `node --import tsx --test tests/open-ena-model-v3-execution-plan.test.ts` | Historical coverage | [E10](#e10-plan-2-task-2-global-10) | Recovered report; invocation/count limits: E10 | Only stated historical scope; no current-candidate pass |
 | Task10: `node --import tsx --test tests/open-ena-model-v3-execution-plan.test.ts tests/open-ena-model-v3-compiler.test.ts` | Historical coverage | [E10](#e10-plan-2-task-2-global-10) | Recovered report; invocation/count limits: E10 | Only stated historical scope; no current-candidate pass |
-
 | Task11: `npm test --workspace=jena-js -- tests/standard-window-v3.test.ts` | Historical coverage | [E11](#e11-plan-2-task-3-global-11) | Recovered report; invocation/count limits: E11 | Only stated historical scope; no current-candidate pass |
 | Task11: `node --import tsx --test tests/open-ena-model-v3-six-combinations.test.ts` | Historical coverage | [E11](#e11-plan-2-task-3-global-11) | Recovered report; invocation/count limits: E11 | Only stated historical scope; no current-candidate pass |
-
 | Task12: `node --import tsx --test tests/open-ena-model-v3-rotations.test.ts` | Historical coverage | [E12](#e12-plan-2-task-4-global-12) | Recovered report; invocation/count limits: E12 | Only stated historical scope; no current-candidate pass |
 | Task12: `node --import tsx --test tests/open-ena-official-mean-rotation-contract.test.ts` | Historical coverage | [E12](#e12-plan-2-task-4-global-12) | Recovered report; invocation/count limits: E12 | Only stated historical scope; no current-candidate pass |
-
 | Task13: `node --import tsx --test tests/open-ena-reference-v2.test.ts` | Unverified | [E13](#e13-plan-2-task-5-global-13) | Exact original invocation/raw final receipt not recovered; historical evidence retained | Historical report only; no standalone Pass or zero-Skip claim |
-
 | Task14: `node --import tsx --test tests/open-ena-reference-v2-projection.test.ts` | Historical coverage | [E14](#e14-plan-2-task-6-global-14) | Recovered report; invocation/count limits: E14 | Only stated historical scope; no current-candidate pass |
 | Task14: `node --import tsx --test tests/open-ena-reference-v2*.test.ts` | Historical coverage | [E14](#e14-plan-2-task-6-global-14) | Recovered report; invocation/count limits: E14 | Only stated historical scope; no current-candidate pass |
-
 | Task15: `node --import tsx --test tests/open-ena-model-v3-worker.test.ts tests/open-ena-model-v3-result-binding.test.ts` | Historical coverage | [E15](#e15-plan-2-task-7-global-15) | Recovered report; invocation/count limits: E15 | Only stated historical scope; no current-candidate pass |
 | Task15: `node --import tsx --test tests/open-ena-functional.test.ts` | Historical coverage | [E15](#e15-plan-2-task-7-global-15) | Recovered report; invocation/count limits: E15 | Only stated historical scope; no current-candidate pass |
-
 | Task16: `node --import tsx --test tests/open-ena-ona-analysis-plan.test.ts tests/open-ena-ona-worker.test.ts tests/open-ena-ona-bundle.test.ts tests/open-ena-ona-descriptive.test.ts` | Historical coverage | [E16](#e16-plan-2-task-8-global-16) | Recovered report; invocation/count limits: E16 | Only stated historical scope; no current-candidate pass |
 | Task16: `node --import tsx --test tests/open-ena-ona-v3-adapter.test.ts` | Historical coverage | [E16](#e16-plan-2-task-8-global-16) | Recovered report; invocation/count limits: E16 | Only stated historical scope; no current-candidate pass |
 | Task16: `npm test --workspace=jena-js` | Historical coverage | [E16](#e16-plan-2-task-8-global-16) | Recovered report; invocation/count limits: E16 | Only stated historical scope; no current-candidate pass |
@@ -372,23 +357,17 @@ contain exact historical SHA, counts, raw/report hashes and limitations.
 | --- | --- | --- | --- | --- |
 | Task17: `node --import tsx --test tests/open-ena-analysis-bundle-v3.test.ts` | Historical coverage | [E17](#e17-plan-3-task-1-global-17) | Exact invocation/count limits: E17 | Only stated historical scope; no current-candidate pass |
 | Task17: `node --import tsx --test tests/open-ena-ona-bundle.test.ts tests/open-ena-pairwise-export-methods.test.ts` | Historical coverage | [E17](#e17-plan-3-task-1-global-17) | Exact invocation/count limits: E17 | Only stated historical scope; no current-candidate pass |
-
 | Task18: `node --import tsx --test tests/open-ena-model-v3-export-policy.test.ts` | Historical coverage | [E18](#e18-plan-3-task-2-global-18) | Exact invocation/count limits: E18 | Only stated historical scope; no current-candidate pass |
 | Task18: `node --import tsx --test tests/open-ena-model-v3-export-policy.test.ts tests/open-ena-reference-v2.test.ts` | Historical coverage | [E18](#e18-plan-3-task-2-global-18) | Exact invocation/count limits: E18 | Only stated historical scope; no current-candidate pass |
-
 | Task19: `node --import tsx --test tests/open-ena-model-v3-import.test.ts tests/open-ena-model-v3-migration.test.ts` | Historical coverage | [E19](#e19-plan-3-task-3-global-19) | Exact invocation/count limits: E19 | Only stated historical scope; no current-candidate pass |
 | Task19: `node --import tsx --test tests/open-ena-ona-bundle.test.ts` | Historical coverage | [E19](#e19-plan-3-task-3-global-19) | Exact invocation/count limits: E19 | Only stated historical scope; no current-candidate pass |
 | Task19: `node --import tsx --test tests/open-ena-model-v3-import.test.ts` | Historical coverage | [E19](#e19-plan-3-task-3-global-19) | Exact invocation/count limits: E19 | Only stated historical scope; no current-candidate pass |
-
 | Task20: `node --import tsx --test tests/open-ena-methods-v3.test.ts` | Historical coverage | [E20](#e20-plan-3-task-4-global-20) | Exact invocation/count limits: E20 | Only stated historical scope; no current-candidate pass |
 | Task20: `node --import tsx --test tests/open-ena-methods-v3.test.ts tests/open-ena-methods.test.ts tests/open-ena-pairwise-export-methods.test.ts` | Historical coverage | [E20](#e20-plan-3-task-4-global-20) | Exact invocation/count limits: E20 | Only stated historical scope; no current-candidate pass |
-
 | Task21: `node --import tsx --test tests/open-ena-model-v3-inference-consumers.test.ts` | Historical coverage | [E21](#e21-plan-3-task-5-global-21) | Exact invocation/count limits: E21 | Only stated historical scope; no current-candidate pass |
 | Task21: `node --import tsx --test tests/open-ena-inference-v2.test.ts tests/open-ena-inference-consumers-v2.test.ts tests/open-ena-contrasts.test.ts` | Historical coverage | [E21](#e21-plan-3-task-5-global-21) | Exact invocation/count limits: E21 | Only stated historical scope; no current-candidate pass |
-
 | Task22: `node --import tsx --test tests/open-ena-model-v3-longitudinal.test.ts` | Historical coverage | [E22](#e22-plan-3-task-6-global-22) | Exact invocation/count limits: E22 | Only stated historical scope; no current-candidate pass |
 | Task22: `node --import tsx --test tests/open-ena-longitudinal.test.ts tests/open-ena-longitudinal-v3.test.ts tests/open-ena-longitudinal-v3-scientific-revision.test.ts` | Historical coverage | [E22](#e22-plan-3-task-6-global-22) | Exact invocation/count limits: E22 | Only stated historical scope; no current-candidate pass |
-
 | Task23: `node --import tsx --test tests/open-ena-model-v3-bound-consumers.test.ts` | Historical coverage | [E23](#e23-plan-3-task-7-global-23) | Exact invocation/count limits: E23 | Only stated historical scope; no current-candidate pass |
 | Task23: `node --import tsx --test tests/open-ena-ai-interpretation-payload.test.ts tests/open-ena-sets.test.ts tests/open-ena-data-view-export.test.ts` | Historical coverage | [E23](#e23-plan-3-task-7-global-23) | Exact invocation/count limits: E23 | Only stated historical scope; no current-candidate pass |
 | Task23: `npm run typecheck:app` | Historical coverage | [E23](#e23-plan-3-task-7-global-23) | Exact invocation/count limits: E23 | Only stated historical scope; no current-candidate pass |
@@ -399,28 +378,20 @@ contain exact historical SHA, counts, raw/report hashes and limitations.
 | Command or boundary | Status | Evidence | Skip/Failure reason | Claim allowed |
 | --- | --- | --- | --- | --- |
 | Task24: `node --import tsx --test tests/open-ena-model-v3-state.test.ts` | Historical coverage | [E24](#e24-plan-4-task-1-global-24) | Exact invocation/count limits: E24 | Only stated historical scope; no current-candidate pass |
-
 | Task25: `node --import tsx --test tests/open-ena-model-v3-tabs.test.ts` | Historical coverage | [E25](#e25-plan-4-task-2-global-25) | Exact invocation/count limits: E25 | Only stated historical scope; no current-candidate pass |
 | Task25: `node --import tsx --test tests/open-ena-model-v3-tabs.test.ts tests/open-ena-model-tabs-keyboard.test.ts` | Historical coverage | [E25](#e25-plan-4-task-2-global-25) | Exact invocation/count limits: E25 | Only stated historical scope; no current-candidate pass |
-
 | Task26: `node --import tsx --test tests/open-ena-model-v3-units-panel.test.ts tests/open-ena-group-display-controls.test.ts` | Historical coverage | [E26](#e26-plan-4-task-3-global-26) | Exact invocation/count limits: E26 | Only stated historical scope; no current-candidate pass |
 | Task26: `node --import tsx --test tests/open-ena-model-v3-units-panel.test.ts tests/open-ena-group-display-controls.test.ts tests/open-ena-group-contrast-workspace.test.ts` | Historical coverage | [E26](#e26-plan-4-task-3-global-26) | Exact invocation/count limits: E26 | Only stated historical scope; no current-candidate pass |
-
 | Task27: `node --import tsx --test tests/open-ena-model-v3-horizons-panel.test.ts` | Historical coverage | [E27](#e27-plan-4-task-4-global-27) | Exact invocation/count limits: E27 | Only stated historical scope; no current-candidate pass |
 | Task27: `node --import tsx --test tests/open-ena-model-v3-horizons-panel.test.ts tests/open-ena-model-v3-ordering.test.ts` | Historical coverage | [E27](#e27-plan-4-task-4-global-27) | Exact invocation/count limits: E27 | Only stated historical scope; no current-candidate pass |
-
 | Task28: `node --import tsx --test tests/open-ena-model-v3-windows-panel.test.ts` | Historical coverage | [E28](#e28-plan-4-task-5-global-28) | Exact invocation/count limits: E28 | Only stated historical scope; no current-candidate pass |
 | Task28: `node --import tsx --test tests/open-ena-model-v3-windows-panel.test.ts tests/open-ena-model-v3-compiler.test.ts tests/open-ena-reference-v2-projection.test.ts` | Historical coverage | [E28](#e28-plan-4-task-5-global-28) | Exact invocation/count limits: E28 | Only stated historical scope; no current-candidate pass |
-
 | Task29: `node --import tsx --test tests/open-ena-model-v3-codes-panel.test.ts tests/open-ena-analysis-family-control.test.ts` | Historical coverage | [E29](#e29-plan-4-task-6-global-29) | Exact invocation/count limits: E29 | Only stated historical scope; no current-candidate pass |
 | Task29: `node --import tsx --test tests/open-ena-model-v3-codes-panel.test.ts tests/open-ena-analysis-family-control.test.ts tests/open-ena-code-colors.test.ts` | Historical coverage | [E29](#e29-plan-4-task-6-global-29) | Exact invocation/count limits: E29 | Only stated historical scope; no current-candidate pass |
-
 | Task30: `node --import tsx --test tests/open-ena-model-v3-code-visibility.test.ts` | Historical coverage | [E30](#e30-plan-4-task-7-global-30) | Exact invocation/count limits: E30 | Only stated historical scope; no current-candidate pass |
 | Task30: `node --import tsx --test tests/open-ena-3d-view.test.ts tests/open-ena-group-contrast-plot.test.ts tests/open-ena-longitudinal-plot.test.ts tests/open-ena-ona-3d.test.ts` | Historical coverage | [E30](#e30-plan-4-task-7-global-30) | Exact invocation/count limits: E30 | Only stated historical scope; no current-candidate pass |
-
 | Task31: `node --import tsx --test tests/open-ena-model-v3-workspace.test.ts tests/open-ena-official-model-tabs-parity.test.ts` | Historical coverage | [E31](#e31-plan-4-task-8-global-31) | Exact invocation/count limits: E31 | Only stated historical scope; no current-candidate pass |
 | Task31: `node --import tsx --test tests/open-ena-model-v3-import.test.ts tests/open-ena-functional.test.ts tests/open-ena-trajectory-sample.test.ts tests/open-ena-ona-workspace.test.ts` | Historical coverage | [E31](#e31-plan-4-task-8-global-31) | Exact invocation/count limits: E31 | Only stated historical scope; no current-candidate pass |
-
 | Task32: `node --import tsx --test tests/open-ena-model-v3-*.test.ts` | Historical coverage | [E32](#e32-plan-4-task-9-global-32) | Exact invocation/count limits: E32 | Only stated historical scope; no current-candidate pass |
 | Task32: `node --import tsx --test tests/open-ena-accessibility-regressions.test.ts tests/open-ena-model-tabs-keyboard.test.ts tests/open-ena-official-model-tabs-parity.test.ts` | Historical coverage | [E32](#e32-plan-4-task-9-global-32) | Exact invocation/count limits: E32 | Only stated historical scope; no current-candidate pass |
 | Task32: `npm run typecheck:app` | Historical coverage | [E32](#e32-plan-4-task-9-global-32) | Exact invocation/count limits: E32 | Only stated historical scope; no current-candidate pass |
@@ -434,21 +405,16 @@ contain exact historical SHA, counts, raw/report hashes and limitations.
 | Task33: `node --import tsx --test tests/open-ena-model-v3-baseline.test.ts` | Pass (historical) | [E33](#e33-plan-5-task-1-global-33) | None for recorded gate; exit 0 / zero skips | Only unchanged cae13c8 baseline/ONA revalidation |
 | Task33: `node --import tsx --test tests/open-ena-ona-v3-adapter.test.ts` | Pass (historical) | [E33](#e33-plan-5-task-1-global-33) | None for recorded gate; exit 0 / zero skips | Only unchanged cae13c8 baseline/ONA revalidation |
 | Task33: `node --import tsx --test tests/open-ena-ona-analysis-plan.test.ts tests/open-ena-ona-worker.test.ts tests/open-ena-ona-bundle.test.ts tests/open-ena-ona-descriptive.test.ts tests/open-ena-ona-3d.test.ts` | Pass (historical) | [E33](#e33-plan-5-task-1-global-33) | None for recorded gate; exit 0 / zero skips | Only unchanged cae13c8 baseline/ONA revalidation |
-
 | Task34: `npm test --workspace=jena-js -- tests/standard-v3-golden-manifest.test.ts` | Historical coverage | [E34](#e34-plan-5-task-2-global-34) | Exact invocation/count limits: E34 | Only stated historical scope; no current-candidate pass |
-
 | Task35: `npm test --workspace=jena-js -- tests/r-goldens.test.ts` | Pass (historical) | [E35](#e35-plan-5-task-3-global-35) | Final R2 actual argv/exit 0; zero skips; earlier failures retained | Only pinned 88528718 baseline/current/pack scope |
 | Task35: `npm test --workspace=jena-js -- tests/standard-v3-r-parity.test.ts` | Pass (historical) | [E35](#e35-plan-5-task-3-global-35) | Final R2 actual argv/exit 0; zero skips; earlier failures retained | Only pinned 88528718 baseline/current/pack scope |
 | Task35: `npm run test:pack-contract --workspace=jena-js` | Pass (historical) | [E35](#e35-plan-5-task-3-global-35) | Final R2 actual argv/exit 0; zero skips; earlier failures retained | Only pinned 88528718 baseline/current/pack scope |
-
 | Task36: `node --import tsx --test tests/open-ena-ona-*.test.ts` | Pass (historical) | [E36](#e36-plan-5-task-4-global-36) | Actual final argv/exit 0; all18 ONA expansion explicit; zero skips | Only dd975b4 public/private non-regression |
 | Task36: `npm test --workspace=jena-js -- tests/ordered-network.test.ts tests/ordered-window-stability.test.ts tests/ordered-half-product-stability.test.ts tests/ordered-safety-budget.test.ts` | Pass (historical) | [E36](#e36-plan-5-task-4-global-36) | Actual final argv/exit 0; all18 ONA expansion explicit; zero skips | Only dd975b4 public/private non-regression |
 | Task36: `node --import tsx --test tests/open-ena-ona-v3-nonregression.test.ts` | Pass (historical) | [E36](#e36-plan-5-task-4-global-36) | Actual final argv/exit 0; all18 ONA expansion explicit; zero skips | Only dd975b4 public/private non-regression |
-
 | Task37: `node --import tsx --test tests/open-ena-models-v3-browser-smoke-contract.test.ts` | Historical coverage | [E37](#e37-plan-5-task-5-global-37) | Actual final served browser includes build and contract/affected suites; see exact runtime receipt | Only 831b39c local served journey and recorded build |
 | Task37: `npm run build` | Historical coverage | [E37](#e37-plan-5-task-5-global-37) | Actual final served browser includes build and contract/affected suites; see exact runtime receipt | Only 831b39c local served journey and recorded build |
 | Task37: `npm run test:browser:open-ena-models-v3` | Historical coverage | [E37](#e37-plan-5-task-5-global-37) | Actual final served browser includes build and contract/affected suites; see exact runtime receipt | Only 831b39c local served journey and recorded build |
-
 | Task38: `node --import tsx --test tests/open-ena-a11y-perf-browser-smoke-contract.test.ts tests/open-ena-accessibility-regressions.test.ts tests/open-ena-model-v3-i18n.test.ts` | Pass (Task38 base) | [E38](#e38-plan-5-task-6-global-38) | Writer and each reviewer actual original argv exit 0; zero test skips; retained warnings/history | Only 7baab3a gate and measured scope |
 | Task38: `node tests/open-ena-a11y-perf-browser-smoke.mjs` | Pass (Task38 base) | [E38](#e38-plan-5-task-6-global-38) | Writer and each reviewer actual original argv exit 0; zero test skips; retained warnings/history | Only 7baab3a gate and measured scope |
 | Task38: `npm run test:browser:open-ena-3d-controls` | Pass (Task38 base) | [E38](#e38-plan-5-task-6-global-38) | Writer and each reviewer actual original argv exit 0; zero test skips; retained warnings/history | Only 7baab3a gate and measured scope |
@@ -456,9 +422,7 @@ contain exact historical SHA, counts, raw/report hashes and limitations.
 | Task38: `npm run test:browser:open-ena-node-drag` | Pass (Task38 base) | [E38](#e38-plan-5-task-6-global-38) | Writer and each reviewer actual original argv exit 0; zero test skips; retained warnings/history | Only 7baab3a gate and measured scope |
 | Task38: `npm run test:browser:longitudinal-v3` | Pass (Task38 base) | [E38](#e38-plan-5-task-6-global-38) | Writer and each reviewer actual original argv exit 0; zero test skips; retained warnings/history | Only 7baab3a gate and measured scope |
 | Task38: `node --import tsx --test tests/open-ena-inference-v2.test.ts tests/open-ena-inference-consumers-v2.test.ts tests/open-ena-contrasts.test.ts tests/open-ena-longitudinal-v3.test.ts tests/open-ena-ai-interpretation-payload.test.ts tests/open-ena-data-view-export.test.ts` | Pass (Task38 base) | [E38](#e38-plan-5-task-6-global-38) | Writer and each reviewer actual original argv exit 0; zero test skips; retained warnings/history | Only 7baab3a gate and measured scope |
-
 | Task39: `node --import tsx --test tests/open-ena-model-v3-documentation.test.ts` | Pass (documentation) | [Task39 documentation receipt](#task39-documentation-receipt) | Original ENOENT and F1 documentation RED retained; final 3/3 GREEN, 0 skips | Documentation contract only; independent review pending |
-
 | Task40: `npm run test:app` | Pending | Task40 has not run | Fresh complete-gate execution still required | None on final candidate |
 | Task40: `npm run typecheck:app` | Pending | Task40 has not run | Fresh complete-gate execution still required | None on final candidate |
 | Task40: `npm run build:app` | Pending | Task40 has not run | Fresh complete-gate execution still required | None on final candidate |
@@ -688,6 +652,28 @@ ENOENT evidence remains intact. Initial GREEN receipts above describe pre-F1
 contents; the final F1 content and focused rerun are bound by the separate repair
 handoff. This correction awaits the same independent SPEC re-review, then QUALITY.
 Task40 and final whole-goal SPEC → QUALITY remain Pending.
+
+### Task39 Q1 correction after independent QUALITY
+
+The F1 candidate `f76fce7ac62b5322d7d109e84b625ee4fa0dfb78` failed independent
+QUALITY on one P2 table-rendering defect. Blank lines between task groups ended
+the Plan tables: markdown-it-py CommonMark with its table extension rendered only
+12 of the 101 register rows as table rows, and Mistune rendered 35. In-memory
+removal of those separators yielded 101 in both parsers. The sealed report is
+[task39-quality-review.md](/tmp/ena-41-task-controller-20260905/task39-quality/task39-quality-review.md); SHA256 `639d098e43f06473dd6bf845bf3937a0f219d58454815853226eb58d26ed2b43`;
+its actual parser comparison is
+[register-render-proof.json](/tmp/ena-41-task-controller-20260905/task39-quality/register-render-proof.json); SHA256 `2d700a43ac71b3d639c8bdc121560891ad5e166ce1a14906b05d5d5158df9b44`.
+
+This correction removes only the 36 blank separators within the five Plan tables,
+preserving every original command/status/evidence/reason/claim row byte-for-byte.
+The existing command-inventory guard now requires each Plan's rows to be contiguous
+with its header/delimiter and to retain five columns. It first failed at
+`2026-09-07T13:48:09.581449+00:00`: exit 1, 3 tests / 2 pass / 1 fail / 0 skip,
+with `Plan 1 command rows must be contiguous with their table header`.
+The final parser, row-continuity and focused-test receipts are bound to the
+separate Q1 repair handoff. README and the F1 export correction are unchanged;
+earlier RED/GREEN and rejected-candidate receipts remain historical. Same SPEC
+then QUALITY re-review are pending, as are Task40 and final whole-goal review.
 
 ## Local, remote and release boundaries
 

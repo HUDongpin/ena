@@ -48,6 +48,26 @@ test("the ledger accounts for every planned focused verification command", () =>
   for (const command of commands) {
     assert.ok(ledger.includes(`\`${command}\``), `Missing command: ${command}`);
   }
+  const register = ledger.split("## Original focused-command register\n")[1]
+    ?.split("\n## R baseline, current oracle and supplemental commands")[0];
+  assert.ok(register, "the original command register must be present");
+  const groups = [...register.matchAll(/### Plan (\d+)\n([\s\S]*?)(?=\n### Plan |$)/gu)];
+  assert.deepEqual(groups.map((group) => Number(group[1])), [1, 2, 3, 4, 5]);
+  for (const [, plan, contents] of groups) {
+    const lines = contents.split("\n");
+    const header = lines.indexOf("| Command or boundary | Status | Evidence | Skip/Failure reason | Claim allowed |");
+    assert.ok(header >= 0, `Plan ${plan} needs its five-column table header`);
+    assert.equal(lines[header + 1], "| --- | --- | --- | --- | --- |");
+    const rows = lines.map((line, index) => ({ line, index }))
+      .filter(({ line }) => /^\| Task\d+:/u.test(line));
+    assert.ok(rows.length > 0, `Plan ${plan} must contain command rows`);
+    rows.forEach(({ line, index }, ordinal) => {
+      assert.equal(index, header + 2 + ordinal,
+        `Plan ${plan} command rows must be contiguous with their table header`);
+      assert.equal(line.split(/(?<!\\)\|/u).slice(1, -1).length, 5,
+        `Plan ${plan} command rows must retain five columns`);
+    });
+  }
 });
 
 test("documentation preserves strict input, authority, and explicit final-gate statuses", () => {
