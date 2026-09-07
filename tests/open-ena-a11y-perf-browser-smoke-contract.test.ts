@@ -128,3 +128,11 @@ test("verifier file exists", () => assert.equal(existsSync(smokePath), true));
 test("Models v3 keyboard audit exercises native help, exclusion, disabled descriptions, motion and CSS zoom", () => {
   for (const text of ["async function auditModelsV3Accessibility", 'page.keyboard.press("ArrowRight")', 'page.keyboard.press("Escape")', 'About ${name} settings', 'Undo Code exclusion', 'aria-describedby', 'aria-live', 'aria-pressed', 'reducedMotion: "reduce"', 'document.documentElement.style.zoom = "2"', 'modelsV3Accessibility']) assert.ok(source.includes(text), `missing native Models assertion: ${text}`);
 });
+
+test("native tablet toolbar audit covers download and both exports without changing perf cache policy", () => {
+  for (const name of ["Export SVG", "Export PNG", "tabletToolbarGeometry"]) assert.ok(source.includes(name));
+  assert.match(source, /runtime\.stage\(`perf repetition/u);
+  assert.doesNotMatch(source, /disableBrowserCache:\s*true/u);
+  const css = readFileSync(join(process.cwd(), "app/globals.css"), "utf8");
+  assert.match(css, /\[data-testid="open-ena-workspace-v3"\] \.ena-visual-toolbar-actions\s*\{[^}]*flex-wrap:\s*wrap/u);
+});

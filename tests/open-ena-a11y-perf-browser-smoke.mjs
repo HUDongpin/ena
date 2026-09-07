@@ -855,7 +855,7 @@ async function readGeometry(page) {
     )).map((right) => [left.name, right.name]));
     const toolbar = document.querySelector(".ena-visual-toolbar");
     if (!toolbar) throw new Error("visual toolbar is unavailable");
-    const toolbarContent = ["2D ENA", "3D ENA", "Download Model"].map((name) => {
+    const toolbarContent = ["2D ENA", "3D ENA", "Download Model", "Export SVG", "Export PNG"].map((name) => {
       const button = [...toolbar.querySelectorAll("button")].find((candidate) => candidate.textContent?.includes(name));
       if (!button) throw new Error(`${name} button is unavailable`);
       const buttonRect = rectangle(button);
@@ -1231,6 +1231,14 @@ async function runA11y(page, baseUrl) {
   const scientificIdentity = await readScientificIdentity(page);
   await rail.getByRole("button", { name: "Model", exact: true }).click();
   await page.getByRole("tab", { name: /^Windows(,|$)/ }).waitFor({ state: "visible" });
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.locator(".ena-visual-toolbar").scrollIntoViewIfNeeded();
+  const tabletToolbarGeometry = await readGeometry(page);
+  assert.ok(tabletToolbarGeometry.toolbarContent.every(item => item.contained && item.noInternalOverflow), "tablet toolbar action text escapes its button");
+  assert.deepEqual(tabletToolbarGeometry.toolbarOverlaps, [], "tablet toolbar actions overlap");
+  await page.screenshot({ path: join(artifactDirectory, `tablet-toolbar-${screenshotSequence++}.png`), fullPage: true });
+  assert.deepEqual(await readScientificIdentity(page), scientificIdentity, "tablet reflow changed scientific identity");
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
   let geometry;
   try {
@@ -1252,7 +1260,7 @@ async function runA11y(page, baseUrl) {
   const trajectoryCodeColorCascade = await auditTrajectoryCodeColorCascade(page, rail);
   assert.deepEqual(consoleErrors, [], "A11Y color-preset audits emitted console errors");
   assert.deepEqual(pageErrors, [], "A11Y color-preset audits emitted page errors");
-  return { modelParity, modelSliders, modelsV3Accessibility, plotSliders, geometry, scientificIdentity, trajectoryCodeColorCascade, consoleErrors, pageErrors };
+  return { modelParity, modelSliders, modelsV3Accessibility, plotSliders, geometry, tabletToolbarGeometry, scientificIdentity, trajectoryCodeColorCascade, consoleErrors, pageErrors };
 }
 
 async function runPerformance(page, baseUrl, viewport, plotlyChunkNames) {
@@ -1335,12 +1343,12 @@ try {
       const a11yPage = await a11yContext.newPage(), perfPage = await perfContext.newPage();
       runtime.observePage(a11yPage); runtime.observePage(perfPage);
       const a11y = await runtime.stage(`a11y repetition ${run + 1}`, () => runA11y(a11yPage, baseUrl));
-      const perf = await runPerformance(
+      const perf = await runtime.stage(`perf repetition ${run + 1}`, () => runPerformance(
         perfPage,
         baseUrl,
         { width: 1440, height: 900 },
         plotlyChunkNames,
-      );
+      ));
       assert.deepEqual(a11y.scientificIdentity, perf.scientificIdentity, "A11Y and PERF phases produced different scientific identity");
       if (baselineScientificIdentity === null) baselineScientificIdentity = perf.scientificIdentity;
       else assert.deepEqual(perf.scientificIdentity, baselineScientificIdentity, "scientific identity changed across isolated runs");

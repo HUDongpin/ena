@@ -363,7 +363,7 @@ function buildEndpointFixtureCsv() {
   return rows.join("\n") + "\n";
 }
 
-function classifyBrowserMessages(phaseMessages, context) {
+async function classifyBrowserMessages(phaseMessages, context) {
   const consoleErrors = phaseMessages.flatMap((phase) => phase.consoleErrors ?? []);
   const pageErrors = phaseMessages.flatMap((phase) => phase.pageErrors ?? []);
   const warnings = phaseMessages.flatMap((phase) => phase.consoleWarnings ?? []);
@@ -380,9 +380,21 @@ function classifyBrowserMessages(phaseMessages, context) {
       browser: context.browser,
       currentOrigin: context.currentOrigin,
       warning,
+      ownedServedChunk: runtime.receipt.servedAssets.find(asset => asset.status === 200 && !asset.error && sourceUrl === context.currentOrigin + asset.path),
     });
+    let verifiedCanvas = null;
     if (canvas) {
-      platformDiagnostics.canvas2dReadback.push(canvas);
+      const response = await fetch(context.currentOrigin + canvas.sourcePath);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      const sourceLine = bytes.toString("utf8").split(/\r?\n/u)[canvas.reportedLineNumber];
+      const owned = runtime.receipt.servedAssets.find(asset => asset.status === 200 && !asset.error && asset.path === canvas.sourcePath);
+      if (response.status === 200 && /javascript/iu.test(response.headers.get("content-type") ?? "") && bytes.length > 0 && bytes.length <= 16 * 1024 * 1024 && owned?.sha256 === sha256(bytes)
+          && sourceLine?.includes("vectorize-text: Unrecognized textAlign:") && (sourceLine.includes('getContext("2d")') || sourceLine.includes('getContext("2d",')) && sourceLine.includes(".getImageData(0,0,")) {
+        verifiedCanvas = { ...canvas, chunkSha256: sha256(bytes), sourceLineSha256: sha256(sourceLine), sourceLineNumber: canvas.reportedLineNumber + 1 };
+      }
+    }
+    if (verifiedCanvas) {
+      platformDiagnostics.canvas2dReadback.push(verifiedCanvas);
       continue;
     }
     const angle = classifyChromiumAngleReadPixelsDiagnostic({
@@ -561,9 +573,17 @@ async function readScientificState(page) {
     const resultIdentity = Array.from(new Uint8Array(digest), (value) => (
       value.toString(16).padStart(2, "0")
     )).join("");
-    const axisState = ["x", "y", "z"].map((axis) => (
-      document.querySelector('[data-testid="open-ena-3d-axis-' + axis + '"]')?.value ?? null
-    ));
+    const axisState = ["x", "y", "z"].map((axis, index) => {
+      const dimensions = plotPayload.map(plot => {
+        const labels = plot.traces.filter(trace => trace.meta?.role === "axis-label" && trace.meta.axis === axis);
+        if (labels.length !== 1 || typeof labels[0].meta.dimension !== "string" || !labels[0].meta.dimension) throw new Error(`Native ${axis} axis must expose its actual dimension`);
+        return labels[0].meta.dimension;
+      });
+      if (new Set(dimensions).size !== 1) throw new Error("Native 3D panels disagree on selected dimensions");
+      for (const select of document.querySelectorAll(`select[aria-label="Axis ${index + 1}"]`)) if (select.value !== dimensions[0]) throw new Error("Native axis control differs from rendered axis");
+      return dimensions[0];
+    });
+    if (new Set(axisState).size !== 3) throw new Error("Native 3D axes must be distinct");
     const cameraState = plotTestIds.map((testId) => document
       .querySelector('[data-testid="' + testId + '"] [data-ena-interactive-camera="true"]')
       ?.getAttribute("data-ena-camera-state") ?? null);
@@ -1706,7 +1726,8 @@ try {
       assertScientificState,
     ],
   );
-  const browserErrors = classifyBrowserMessages([
+  await runtime.drainAssetReads("controls warning source custody");
+  const browserErrors = await classifyBrowserMessages([
     modelAudit.browserMessages,
     groupDisplayAudit.browserMessages,
     dataViewAudit.browserMessages,
