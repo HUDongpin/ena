@@ -37,7 +37,7 @@ const sessionName = `open-ena-node-drag-smoke-${process.pid}`;
 const ownedDistDirName = `.next-node-drag-smoke-${process.pid}`;
 const ownedDistDirectory = join(projectRoot, ownedDistDirName);
 const browserName = process.env.OPEN_ENA_NODE_DRAG_SMOKE_BROWSER
-  || (existsSync("/Applications/Google Chrome.app") ? "chrome" : "chromium");
+  || "chromium";
 
 assert.ok(["chromium", "chrome", "msedge"].includes(browserName));
 assert.equal(dirname(ownedDistDirectory), projectRoot);
@@ -325,6 +325,7 @@ async function uploadAndBuildStandard(page, fixtureCsv) {
 
 function readAudit(page) {
   return page.evaluate(() => ({
+    boundScience: (() => { const response = window.__openEnaNativeAudit.responses.at(-1), request = window.__openEnaNativeAudit.requests.find(item => item.id === response?.id); if (!response || response.executionPlanSha256 !== request?.plan.header.executionPlanSha256) throw new Error("drag audit has no current native binding"); const r = response.result; return JSON.stringify({ binding: r.binding, set: r.set, configuration: r.configuration, executionProvenance: r.executionProvenance }); })(),
     analysisRunCount: window.__openEnaNodeDragAudit?.analysisRunCount ?? -1,
     canonicalResult: window.__openEnaNodeDragAudit?.canonicalResult ?? null,
     visualCopy: window.__openEnaNodeDragAudit?.visualCopy ?? -1,
@@ -336,6 +337,8 @@ async function readSvgFamily(page, svgSelector, code, ordered) {
   const matching = identities.codes.filter(entry => entry.sourceColumn === code);
   assertBrowser(matching.length === 1, "drag Code requires unique source/rendered identity");
   return await page.locator(svgSelector).evaluateAll((roots, input) => roots.map((root) => {
+    const r = window.__openEnaNativeAudit.responses.at(-1).result;
+    const incidentNames = new Set(r.set.adjacencyKey.filter(edge => edge.source === input.code || edge.target === input.code).map(edge => edge.name));
     const node = root.querySelector(`[data-ena-drag-code="${input.code}"]`);
     const nodeTransform = node?.parentElement?.getAttribute("transform") ?? null;
     const incident = input.ordered
@@ -343,7 +346,7 @@ async function readSvgFamily(page, svgSelector, code, ordered) {
           `[data-ona-edge-glyph][data-ona-ground="${input.code}"],`
           + `[data-ona-edge-glyph][data-ona-response="${input.code}"]`,
         )].map((path) => path.getAttribute("d"))
-      : [...root.querySelectorAll(`[data-ena-edge*="${input.code}"]`)]
+      : [...root.querySelectorAll("[data-ena-edge]")].filter(line => incidentNames.has(line.getAttribute("data-ena-edge")))
           .map((line) => ["x1", "y1", "x2", "y2"].map((name) => line.getAttribute(name)).join(","));
     return { nodeTransform, incident };
   }), { code: matching[0].column, ordered });
@@ -380,10 +383,14 @@ function assertSvgMove(before, after, label) {
 async function clickVisualCopy(page, containerSelector) {
   const before = await readAudit(page);
   const button = page.locator(containerSelector).locator('[data-ena-plot-action="copy-image"]').first();
-  await button.click();
-  await page.waitForFunction((count) => (
-    (window.__openEnaNodeDragAudit?.visualCopy ?? -1) > count
-  ), before.visualCopy);
+  const approve = dialog => dialog.accept();
+  page.once("dialog", approve);
+  try {
+    await button.click();
+    await page.waitForFunction((count) => (
+      (window.__openEnaNodeDragAudit?.visualCopy ?? -1) > count
+    ), before.visualCopy);
+  } finally { page.off("dialog", approve); }
   return (await readAudit(page)).visualCopy;
 }
 
@@ -399,7 +406,8 @@ async function resetNodeLayout(page) {
   const reset = resetLocator();
   assertBrowser(await reset.count() === 1 && !await reset.isDisabled(),
     "Reset node layout is not enabled after a drag");
-  await reset.evaluate((button) => button.click());
+  await reset.scrollIntoViewIfNeeded();
+  await reset.click();
   await page.waitForFunction(() => [...document.querySelectorAll('[data-ena-plot-action="reset-node-layout"]')]
     .some((button) => button.getAttribute("data-ena-node-layout-overrides") === "0" && button.disabled));
   const cleared = page.locator(
@@ -437,12 +445,17 @@ async function readPlotlyFamily(page, testIds, code) {
     const codeTrace = traces.find((trace) => trace.meta?.role === "code-node");
     const pointNumber = codeTrace?.text?.indexOf(selectedCode) ?? -1;
     if (!root || !codeTrace || pointNumber < 0) throw new Error(`code-node trace missing in ${testId}`);
+    const r = window.__openEnaNativeAudit.responses.at(-1).result;
+    const labels = r.executionProvenance.labels.codes.filter(entry => entry.sourceColumn === selectedCode);
+    if (labels.length !== 1) throw new Error("drag Code mapping must be unique");
+    const incidents = r.set.adjacencyKey.map((edge, index) => ({ edge, index })).filter(({ edge }) => edge.source === labels[0].column || edge.target === labels[0].column);
+    const edgeNames = new Set(incidents.map(({ edge }) => edge.name)), edgeIndices = new Set(incidents.map(({ index }) => index));
     const incident = traces.filter((trace) => (
-      trace.meta?.role === "network-edge" && String(trace.meta?.edgeName ?? "").includes(selectedCode)
+      trace.meta?.role === "network-edge" && edgeNames.has(trace.meta?.edgeName)
     ) || (
       ["ordered-edge-shaft", "ordered-edge-arrowhead", "ordered-self-loop-shaft", "ordered-self-loop-arrowhead"]
         .includes(trace.meta?.role)
-      && (trace.meta?.ground === selectedCode || trace.meta?.response === selectedCode)
+      && (trace.meta?.orderedEdgeIndices?.some(index => edgeIndices.has(index)) || trace.meta?.ground === labels[0].column || trace.meta?.response === labels[0].column)
     )).map((trace) => ({
       role: trace.meta?.role,
       edge: trace.meta?.edgeName ?? `${trace.meta?.ground}->${trace.meta?.response}`,
@@ -541,7 +554,10 @@ async function switchToOnaAndBuild(page) {
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
   await rail.getByRole("button", { name: "Model", exact: true }).click();
   await prepareNativeFixtureV3(page, { family: "ona", sourcePreparation: false });
+  await page.getByRole("tab", { name: /^Codes(,|$)/ }).click();
+  await page.getByRole("button", { name: "Initialize explicit all-enabled mask", exact: true }).click();
   await runNativeFixtureV3(page);
+  await selectView(page, "2d");
   await page.getByTestId("open-ena-ordered-result-layout").waitFor({ timeout: 60_000 });
 }
 
@@ -559,7 +575,7 @@ async function runNodeDragAcceptance(page, args) {
   await dragSvgNode(page, '[data-testid="open-ena-group-comparison-plot"]', code, { x: 58, y: 34 });
   const standard2dAfter = await readSvgFamily(page, standard2dSelector, code, false);
   assertSvgMove(standard2dBefore, standard2dAfter, "standard-2d");
-  assertBrowser((await readAudit(page)).canonicalResult === standardCanonical.canonicalResult,
+  assertBrowser((await readAudit(page)).canonicalResult === standardCanonical.canonicalResult && (await readAudit(page)).boundScience === standardCanonical.boundScience,
     "standard-2d drag mutated analytical result");
   const standard2dCopy = await clickVisualCopy(page, '[data-testid="open-ena-group-center-surface"]');
   families["standard-2d"] = { before: standard2dBefore, after: standard2dAfter, visualCopy: standard2dCopy };
@@ -578,7 +594,7 @@ async function runNodeDragAcceptance(page, args) {
   await dragPlotlyNode(page, standard3dIds[0], code, { x: 72, y: -44 });
   const standard3dAfter = await readPlotlyFamily(page, standard3dIds, code);
   assertPlotlyMove(standard3dBefore, standard3dAfter, "standard-3d");
-  assertBrowser((await readAudit(page)).canonicalResult === standardCanonical.canonicalResult,
+  assertBrowser((await readAudit(page)).canonicalResult === standardCanonical.canonicalResult && (await readAudit(page)).boundScience === standardCanonical.boundScience,
     "standard-3d drag mutated analytical result");
   const cameraOrbit = await orbitFromEmptySpace(page, standard3dIds[0]);
   await recenterPreservesNode(page, standard3dIds[0], standard3dAfter[0].node);
@@ -601,7 +617,7 @@ async function runNodeDragAcceptance(page, args) {
   await dragSvgNode(page, '[data-testid="open-ena-ordered-plot"][data-ona-scope="overall"]', code, { x: 52, y: 31 });
   const ona2dAfter = await readSvgFamily(page, ona2dSelector, code, true);
   assertSvgMove(ona2dBefore, ona2dAfter, "ona-2d");
-  assertBrowser((await readAudit(page)).canonicalResult === onaCanonical.canonicalResult,
+  assertBrowser((await readAudit(page)).canonicalResult === onaCanonical.canonicalResult && (await readAudit(page)).boundScience === onaCanonical.boundScience,
     "ona-2d drag mutated analytical result");
   families["ona-2d"] = { before: ona2dBefore, after: ona2dAfter, visualCopy: "svg-live-geometry" };
   await resetNodeLayout(page);
@@ -620,7 +636,7 @@ async function runNodeDragAcceptance(page, args) {
   await dragPlotlyNode(page, ona3dIds[0], code, { x: 68, y: -38 });
   const ona3dAfter = await readPlotlyFamily(page, ona3dIds, code);
   assertPlotlyMove(ona3dBefore, ona3dAfter, "ona-3d");
-  assertBrowser((await readAudit(page)).canonicalResult === onaCanonical.canonicalResult,
+  assertBrowser((await readAudit(page)).canonicalResult === onaCanonical.canonicalResult && (await readAudit(page)).boundScience === onaCanonical.boundScience,
     "ona-3d drag mutated analytical result");
   await recenterPreservesNode(page, ona3dIds[0], ona3dAfter[0].node);
   const ona3dCopy = await clickVisualCopy(page, '[data-testid="open-ena-ona-3d-overall-plot"]');
@@ -641,7 +657,7 @@ let acceptance = null;
 let primaryFailure = null;
 let cleanupFailure = null;
 try {
-  runtime = await createServedBrowserV3({ root: resolve(projectRoot), directory: artifactDirectory + "-runtime", credentials: { username, password, secret: sessionSecret }, redact, serverLogPath });
+  runtime = await createServedBrowserV3({ root: resolve(projectRoot), directory: artifactDirectory + "-runtime", credentials: { username, password, secret: sessionSecret }, redact, serverLogPath, disableBrowserCache: true });
   const baseUrl = runtime.baseUrl;
   browserOpened = true;
   acceptance = await runBrowserTask(
