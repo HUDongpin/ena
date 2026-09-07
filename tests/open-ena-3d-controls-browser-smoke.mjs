@@ -719,7 +719,7 @@ function assertScientificState(actual, expected, label) {
   ]) {
     assertBrowser(
       JSON.stringify(actual[key]) === JSON.stringify(expected[key]),
-      label + " changed " + key,
+      label + " changed " + key + (key === "cameraState" || key === "runtimeCameraState" || key === "aspectRatioState" || key === "runtimeAspectRatioState" ? " " + JSON.stringify({ expected: expected[key], actual: actual[key], runtimeExpected: expected.runtimeCameraState, runtimeActual: actual.runtimeCameraState }) : ""),
     );
   }
 }
