@@ -497,11 +497,11 @@ async function dragPlotlyNode(page, testId, code, delta) {
       points: [{ curveNumber, pointNumber, data: trace, fullData: trace }],
     });
   }, code);
-  await root.evaluate((element, selectedCode) => {
-    if (element.getAttribute("data-ena-node-hovered") !== selectedCode) {
-      throw new Error("Plotly code-node hover was not recognized");
-    }
-  }, code);
+  const identities = await nativeFixtureIdentitiesV3(page);
+  const rendered = identities.codes.filter(entry => entry.sourceColumn === code);
+  assertBrowser(rendered.length === 1, "Plotly hover Code mapping must be unique");
+  await page.waitForFunction(({ element, selectedCode }) => element.getAttribute("data-ena-node-hovered") === selectedCode,
+    { element: await root.elementHandle(), selectedCode: rendered[0].column });
   await page.mouse.down();
   await page.mouse.move(start.x + delta.x, start.y + delta.y, { steps: 10 });
   await page.mouse.up();
