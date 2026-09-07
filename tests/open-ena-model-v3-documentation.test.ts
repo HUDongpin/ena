@@ -60,6 +60,16 @@ test("documentation preserves strict input, authority, and explicit final-gate s
   assert.match(readme, /imported artifacts never restore live\s+execution authority/u);
   assert.match(ledger, /local temporary artifacts, not committed or remotely durable evidence/u);
   assert.match(ledger, /Worker response-body capture race is \*\*not claimed fixed/u);
+  for (const document of [readme, ledger]) {
+    const prose = document.replace(/\s+/gu, " ");
+    for (const member of ["analysis.json", "plot-specification.json", "trajectory-inference.csv", "manifest.json", "participants.json"]) {
+      assert.ok(prose.includes(`\`${member}\``), `Missing trajectory member: ${member}`);
+    }
+    assert.match(prose, /three aggregate payload files[^.]*remain byte-identical/u);
+    assert.match(prose, /`manifest\.json` changes its disclosure and file inventory/u);
+    assert.match(prose, /ZIP bytes and hash also change/u);
+    assert.match(prose, /Methods report is available separately[^;]*; it is not included in the trajectory ZIP/u);
+  }
   for (const command of [
     "npm run test:app",
     "npm run typecheck:app",

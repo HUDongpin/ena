@@ -167,16 +167,24 @@ fixture**; that is not a universal metric count or a claim that internal helpers
 are public package exports. The fitted direction and Means separation limitations
 remain visible when interpreting path results.
 
-The default trajectory ZIP and standalone files contain an explicitly allowed
-set of **aggregate** fields: path results, collected rank results, Methods,
-manifest and complete-cohort plot specification. That plot describes the complete
-comparison cohorts, not whichever available points a display filter shows.
+The default trajectory ZIP contains `analysis.json`, `plot-specification.json`,
+and `trajectory-inference.csv` as its three aggregate payload files, accompanied
+by `manifest.json`. All four are also available as standalone files. The three
+aggregate payload files contain path results, any optionally collected rank
+results, and the complete-cohort plot specification. That plot
+describes the complete comparison cohorts, not whichever available points a
+display filter shows. The bound model Methods report is available separately in
+the Workspace; it is not included in the trajectory ZIP. A rank result's method
+identifier names its statistical procedure, rather than supplying a Methods report.
+
 Participant identities and traces require **explicit participant opt-in before
-materialization** and local confirmation. Adding participant files leaves the
-existing aggregate file bytes unchanged. Full identity-bearing model exports are
-a different contract. Every new analysis/export requires the current native result,
-plan and controls; currentness is rechecked after asynchronous work, and stale or
-unmounted actions produce no output. Imported JSON remains historical data.
+materialization** and local confirmation. These three aggregate payload files
+remain byte-identical after participant opt-in. `participants.json` is added;
+`manifest.json` changes its disclosure and file inventory, so the ZIP bytes and
+hash also change. Full identity-bearing model exports are a different contract.
+Every new analysis/export requires the current native result, plan and controls;
+currentness is rechecked after asynchronous work, and stale or unmounted actions
+produce no output. Imported JSON remains historical data.
 
 Native trajectory plots use black paths, direction arrows and 7-pixel square
 centroids; mean-network edges are suppressed for the trajectory presentation.

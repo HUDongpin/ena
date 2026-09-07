@@ -457,7 +457,7 @@ contain exact historical SHA, counts, raw/report hashes and limitations.
 | Task38: `npm run test:browser:longitudinal-v3` | Pass (Task38 base) | [E38](#e38-plan-5-task-6-global-38) | Writer and each reviewer actual original argv exit 0; zero test skips; retained warnings/history | Only 7baab3a gate and measured scope |
 | Task38: `node --import tsx --test tests/open-ena-inference-v2.test.ts tests/open-ena-inference-consumers-v2.test.ts tests/open-ena-contrasts.test.ts tests/open-ena-longitudinal-v3.test.ts tests/open-ena-ai-interpretation-payload.test.ts tests/open-ena-data-view-export.test.ts` | Pass (Task38 base) | [E38](#e38-plan-5-task-6-global-38) | Writer and each reviewer actual original argv exit 0; zero test skips; retained warnings/history | Only 7baab3a gate and measured scope |
 
-| Task39: `node --import tsx --test tests/open-ena-model-v3-documentation.test.ts` | Pass (documentation) | [Task39 documentation receipt](#task39-documentation-receipt) | Original ENOENT RED retained; 3/3 GREEN, 0 skips | Documentation contract only; independent review pending |
+| Task39: `node --import tsx --test tests/open-ena-model-v3-documentation.test.ts` | Pass (documentation) | [Task39 documentation receipt](#task39-documentation-receipt) | Original ENOENT and F1 documentation RED retained; final 3/3 GREEN, 0 skips | Documentation contract only; independent review pending |
 
 | Task40: `npm run test:app` | Pending | Task40 has not run | Fresh complete-gate execution still required | None on final candidate |
 | Task40: `npm run typecheck:app` | Pending | Task40 has not run | Fresh complete-gate execution still required | None on final candidate |
@@ -591,11 +591,17 @@ resource admission. Its23-metric independent pinned public-SDK oracle is one
 fixture's coverage. Local GPL port/source-map provenance does not turn internal
 helpers into public package APIs. Independent/paired/repeated **rank** designs
 are separate; paired whole-path inference is not implemented.
-Default trajectory ZIP/standalone output is an aggregate positive whitelist with
-complete-cohort geometry. Explicit participant opt-in and confirmation precede
-materialization, asynchronous currentness is rechecked, and existing aggregate
-bytes remain identical when participant files are added. Imported/serialized
-artifacts cannot regain a live result/plan/control execution receipt.
+Default trajectory ZIP/standalone output has three aggregate payload files:
+`analysis.json`, `plot-specification.json`, and `trajectory-inference.csv`, plus
+`manifest.json`. Their positive whitelist covers path results, optionally collected
+rank results, and complete-cohort geometry. The bound model Methods report is
+available separately in the Workspace; it is not included in the trajectory ZIP.
+A rank result's method identifier is not a Methods report. Explicit participant
+opt-in and confirmation precede materialization, and asynchronous currentness is
+rechecked. The three aggregate payload files remain byte-identical after
+participant opt-in. `participants.json` is added; `manifest.json` changes its
+disclosure and file inventory, so the ZIP bytes and hash also change.
+Imported/serialized artifacts cannot regain a live result/plan/control execution receipt.
 
 Task38 Q1 is closed for measured resource scope:10 real projection transitions
 settle3 current/3 attached/0 retired-unlost/0 current-loss;4 same-projection updates
@@ -657,6 +663,31 @@ The tested ledger digest before this outcome annotation was
 frozen handoff, not misrepresented as that earlier digest. The documentation
 contract is a textual boundary/coverage guard, not scientific or browser execution
 evidence. Independent Task39 SPEC then QUALITY remain pending.
+
+### Task39 F1 correction after independent SPEC
+
+The initial documentation candidate `76963844dc041a85e2975ac26b448c49838b2136`
+failed independent SPEC on one P2: the README incorrectly included Methods in the
+trajectory ZIP and overstated which output bytes remain unchanged after participant
+opt-in. This failure is preserved in
+[task39-spec-review.md](/tmp/ena-41-task-controller-20260905/task39-spec/task39-spec-review.md); SHA256 `e165ff07a1f98ca7439402c4545f4560253227e894128295283fac0a39a02672`.
+The reviewer's actual synthetic paired export probe ran on that candidate at
+2026-09-07T13:26:24.815476+00:00, exit 0. It found no Methods report in any default
+member; the three payload members matched, while manifest disclosure/inventory and
+ZIP hashes differed. The default probe had no collected rank requests; rank outputs
+are optional. Its safe filename/key/hash/boolean evidence is
+[export-boundary-probe.stdout](/tmp/ena-41-task-controller-20260905/task39-spec/export-boundary-probe.stdout); SHA256 `e76620ab16be7213fbf884e6ed3cbf9d2d7d71bbb9f00565223b59109e423fab`.
+
+The documentation-only correction names the actual four default members, separates
+bound model Methods, and limits byte invariance to the three aggregate payload
+files. Participant consent/currentness and accepted Task38 export behavior are
+unchanged. The strengthened existing documentation guard first failed at
+`2026-09-07T13:31:56.620862+00:00` with exit 1, 3 tests / 2 pass / 1 fail / 0 skip;
+actual failure was `Missing trajectory member: analysis.json`. Original Step1
+ENOENT evidence remains intact. Initial GREEN receipts above describe pre-F1
+contents; the final F1 content and focused rerun are bound by the separate repair
+handoff. This correction awaits the same independent SPEC re-review, then QUALITY.
+Task40 and final whole-goal SPEC → QUALITY remain Pending.
 
 ## Local, remote and release boundaries
 
