@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createOpenEnaPlotlyResourceOwnerV3 } from "../lib/open-ena/plotly-resource-owner-v3";
 import { performPlotImageExportV3 } from "../lib/open-ena/plot-image-export-v3";
 
 const png = new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], { type: "image/png" });
@@ -33,4 +34,21 @@ test("unmounted or replaced action suppresses stale completion after a destinati
   const barrier = new Promise<void>(resolve => { release = resolve; });
   const promise = performPlotImageExportV3({ acquire: () => () => true, active: () => active, render: async () => image, writePng: async () => { await barrier; }, download: () => {} });
   await Promise.resolve(); active = false; release(); assert.equal(await promise, "obsolete");
+});
+
+test("a lease becoming stale while the plot queue waits prevents actual materialization", async () => {
+  const owner = createOpenEnaPlotlyResourceOwnerV3(() => null);
+  let release!: () => void, current = true, materialized = 0, written = 0;
+  const pending = owner.run(() => new Promise<void>(resolve => { release = resolve; }));
+  await Promise.resolve();
+  const exporting = performPlotImageExportV3({
+    acquire: () => () => current, active: () => true,
+    render: lease => owner.run(async () => {
+      if (lease?.() === false) return null;
+      materialized++; return image;
+    }), download: () => { written++; },
+  });
+  current = false; release(); await pending;
+  assert.equal(await exporting, "obsolete");
+  assert.equal(materialized, 0); assert.equal(written, 0);
 });

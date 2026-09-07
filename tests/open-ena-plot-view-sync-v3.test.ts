@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createOpenEnaPlotViewSyncV3 } from "../lib/open-ena/plot-view-sync-v3";
+import { createOpenEnaPlotViewSyncV3, openEnaPlotViewFieldsV3 } from "../lib/open-ena/plot-view-sync-v3";
 
 test("owned relayout echoes do not feed back while distinct user camera changes stay observable", async () => {
   const guard = createOpenEnaPlotViewSyncV3();
@@ -27,4 +27,12 @@ test("overlapping render ownership survives an older completion and is cleared o
   second(); await b; assert.equal(guard.owns(update), false);
   await assert.rejects(guard.apply(update, async () => { throw new Error("renderer rejected"); }), /renderer rejected/);
   assert.equal(guard.owns(update), false);
+});
+
+
+test("layout-only events cannot become user camera updates while full and partial view inputs remain observable", () => {
+  for (const update of [{ autosize: true }, { width: 640, height: 480 }, { "scene.domain": { x: [0,1] } }]) assert.deepEqual(openEnaPlotViewFieldsV3(update), { camera: false, aspect: false });
+  assert.deepEqual(openEnaPlotViewFieldsV3({ "scene.camera": { eye: { x: 2 } } }), { camera: true, aspect: false });
+  assert.deepEqual(openEnaPlotViewFieldsV3({ "scene.camera.eye.x": 2 }), { camera: true, aspect: false });
+  assert.deepEqual(openEnaPlotViewFieldsV3({ "scene.aspectratio.x": 1.2, "scene.aspectmode": "manual" }), { camera: false, aspect: true });
 });

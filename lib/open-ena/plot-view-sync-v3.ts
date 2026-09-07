@@ -1,5 +1,13 @@
 import { canonicalJsonV3 } from "./model-v3/canonical-json";
 
+export function openEnaPlotViewFieldsV3(update: Record<string, unknown>) {
+  const keys = Object.keys(update);
+  return {
+    camera: keys.some(key => key === "scene.camera" || key.startsWith("scene.camera.")),
+    aspect: keys.some(key => key === "scene.aspectmode" || key === "scene.aspectratio" || key.startsWith("scene.aspectratio.")),
+  };
+}
+
 /** Exact echoes of owned display relayouts are not new user camera inputs.
  * Overlapping async operations own separate tokens; a different user update
  * remains observable even while rendering is in flight. */

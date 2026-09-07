@@ -603,7 +603,11 @@ async function exerciseCamerasAndProjections(page, args) {
     let lastCamera = null;
     while (Date.now() <= deadline) {
       const current = await readRuntimeCamera();
-      if (cameraMatches(current, expected)) return current;
+      const controlled = await plot.evaluate(root => {
+        const value = root.closest('[data-ena-interactive-camera="true"]')?.getAttribute("data-ena-camera-state");
+        return value ? JSON.parse(value) : null;
+      });
+      if (cameraMatches(current, expected) && cameraMatches(controlled, expected)) return current;
       lastCamera = current;
       await page.waitForTimeout(50);
     }
