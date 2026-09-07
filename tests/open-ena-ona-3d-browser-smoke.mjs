@@ -94,7 +94,16 @@ let privateLaneActive = false;
 function redact(value) {
   if (privateLaneActive) {
     const stage = String(value ?? "").match(/Private ONA gate failed: (private (?:setup (?:family|Units|Horizons|Codes|Windows|Lesson order|Run)|native source setup|bound aggregate and explicit order|actual circles and three directed scenes|full-run rendered aggregate and bounded audit tables)); private details withheld/);
-    return stage ? stage[0] : "[private ONA diagnostic withheld; inspect fixed aggregate failure stage]";
+    const safeDiagnostic = String(value ?? "").match(/safeDiagnostics=(\{[^\n]*\})/);
+    let suffix = "";
+    if (safeDiagnostic) {
+      try {
+        const input = JSON.parse(safeDiagnostic[1]);
+        const ids = Array.isArray(input.issueIds) ? input.issueIds.filter(id => typeof id === "string" && /^ONA_[A-Z_]+$/.test(id)) : [];
+        suffix = "; safeDiagnostics=" + JSON.stringify({ issueIds: ids, invalidCount: Number.isSafeInteger(input.invalidCount) ? input.invalidCount : null, runDisabled: input.runDisabled === true, runStatus: ["idle", "running", "error", "cancelled"].includes(input.runStatus) ? input.runStatus : "unknown", requestCount: Number.isSafeInteger(input.requestCount) ? input.requestCount : null });
+      } catch { /* Unrecognized diagnostics stay private. */ }
+    }
+    return stage ? stage[0] + suffix : "[private ONA diagnostic withheld; inspect fixed aggregate failure stage]";
   }
   return String(value ?? "")
     .replaceAll(username, "[redacted-username]")
@@ -900,7 +909,14 @@ async function runYuPrivateLane(page, args) {
     }), "display operations changed private bound science or reran Worker");
     check(consoleErrors === 0 && pageErrors === 0, "private browser emitted errors");
     return { aggregateOnly: true, ...aggregate, pointCircles2d: pointAudit.count, dataViewAuditedRowsVisible: auditedRows, rendered, consoleErrors, pageErrors };
-  } catch { throw new Error(`Private ONA gate failed: ${stage}; private details withheld`); }
+  } catch {
+    const safeDiagnostics = await page.evaluate(catalog => {
+      const summaries = [...document.querySelectorAll("[data-diagnostic-scope] li[data-severity] > p:first-child a, [data-diagnostic-scope] li[data-severity] > p:first-child strong")].map(node => node.textContent);
+      const run = [...document.querySelectorAll("button")].find(button => button.textContent === "Run model");
+      return { issueIds: catalog.filter(entry => summaries.includes(entry.summary)).map(entry => entry.id), invalidCount: document.querySelectorAll('[aria-invalid="true"]').length, runDisabled: run?.disabled === true, runStatus: document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-run-status"), requestCount: window.__openEnaNativeAudit.requests.length };
+    }, args.diagnosticCatalog).catch(() => ({ issueIds: [], invalidCount: null, runDisabled: true, runStatus: "unknown", requestCount: null }));
+    throw new Error(`Private ONA gate failed: ${stage}; private details withheld; safeDiagnostics=${JSON.stringify(safeDiagnostics)}`);
+  }
   finally { page.off("console", onConsole); page.off("pageerror", onPageError); }
 }
 
@@ -948,12 +964,13 @@ try {
     },
     360_000,
   );
+  const diagnosticCatalog = JSON.parse(execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", 'import { getOpenEnaCopy, localizeModelDiagnosticV3 } from "./lib/open-ena-i18n.ts"; import { ONA_COMPILER_DIAGNOSTIC_IDS_V3 } from "./lib/open-ena/model-v3/ona-compiler-preflight.ts"; const copy=getOpenEnaCopy("en").modelV3; process.stdout.write(JSON.stringify(ONA_COMPILER_DIAGNOSTIC_IDS_V3.map(id=>({id,summary:localizeModelDiagnosticV3(copy,{id,severity:"error",scope:"model"}).summary}))));'], { cwd: projectRoot, encoding: "utf8", timeout: 10000 }));
   privateLaneActive = existsSync(privateWorkbookPath);
   const yu = privateLaneActive
     ? await runBrowserPhase(
         "run the aggregate-only Yu private lane",
         runYuPrivateLane,
-        { entryUrl: baseUrl + "/en/open-ena", workbookPath: privateWorkbookPath },
+        { entryUrl: baseUrl + "/en/open-ena", workbookPath: privateWorkbookPath, diagnosticCatalog },
         300_000,
       )
     : { aggregateOnly: true, status: "NOT_RUN_PRIVATE_WORKBOOK_MISSING" };
