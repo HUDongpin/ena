@@ -434,6 +434,17 @@ async function waitForPlotlyTriptych(page, testIds) {
     await page.getByTestId(testId).locator('[data-ena-interactive-camera="true"][aria-busy="false"]')
       .waitFor({ state: "visible", timeout: 60_000 });
   }
+  await page.evaluate(() => {
+    for (const root of document.querySelectorAll('[data-ena-plotly-root="true"]')) {
+      if (root.__task38EventObserver) continue;
+      root.__task38EventObserver = true;
+      const counts = { afterplot: 0, relayout: 0, hover: 0 };
+      for (const [event, key] of [["plotly_afterplot", "afterplot"], ["plotly_relayout", "relayout"], ["plotly_hover", "hover"]]) root.on(event, () => {
+        counts[key]++;
+        if (counts[key] <= 3 || counts[key] % 20 === 0) console.info("task38-view-events:" + JSON.stringify({ plot: root.closest('[data-ena-plot-role]')?.getAttribute("data-ena-plot-role"), event: key, counts }));
+      });
+    }
+  });
   await page.waitForTimeout(400);
 }
 
@@ -485,7 +496,7 @@ async function dragPlotlyNode(page, testId, code, delta) {
   const box = await root.boundingBox();
   assertBrowser(Boolean(box), "Plotly drag root is not visible");
   await root.scrollIntoViewIfNeeded();
-  const projected = await root.evaluate((element, selectedCode) => {
+  const projected = await page.__task38Stage("read real Code projection", () => root.evaluate((element, selectedCode) => {
     const trace = element.data.find(trace => trace.meta?.role === "code-node"), index = trace?.text?.indexOf(selectedCode) ?? -1;
     const scene = element._fullLayout?.scene?._scene, params = scene?.glplot?.cameraParams, scale = scene?.dataScale;
     if (index < 0 || !params || !scale) throw new Error("actual Plotly projection is unavailable");
@@ -502,28 +513,20 @@ async function dragPlotlyNode(page, testId, code, delta) {
     };
     element.__task38ActualHoverListener = listener; element.on("plotly_hover", listener);
     return { x, y, code: trace.ids?.[index] ?? trace.text[index], pointNumber: index };
-  }, code);
+  }, code));
   const offsets = [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [5, 0], [-5, 0], [0, 5], [0, -5]];
   let start = null;
   try {
     await page.mouse.move(Math.max(1, projected.x - 30), Math.max(1, projected.y - 30));
     for (const [dx, dy] of offsets) {
-      await page.mouse.move(projected.x + dx, projected.y + dy);
+      await page.__task38Stage("actual projected mousemove", () => page.mouse.move(projected.x + dx, projected.y + dy));
       await page.waitForTimeout(100);
-      const hit = await root.evaluate((element, target) => element.__task38ActualHover?.code === target.code && element.__task38ActualHover?.pointNumber === target.pointNumber && element.getAttribute("data-ena-node-hovered") === target.code, projected);
+      const hit = await page.__task38Stage("read actual Code hover", () => root.evaluate((element, target) => element.__task38ActualHover?.code === target.code && element.__task38ActualHover?.pointNumber === target.pointNumber && element.getAttribute("data-ena-node-hovered") === target.code, projected));
       if (hit) { start = { x: projected.x + dx, y: projected.y + dy }; break; }
     }
     assertBrowser(Boolean(start), "real pointer did not hit the projected native Code");
     await page.evaluate(receipt => { (window.__openEnaNodeDragAudit.actualHoverHits ??= []).push(receipt); }, { testId, code, pointNumber: projected.pointNumber, actualMouse: true });
   } finally { await root.evaluate(element => { element.removeListener("plotly_hover", element.__task38ActualHoverListener); delete element.__task38ActualHoverListener; }); }
-  // Preserve the original layered event-path assertion after an independently
-  // observed real mouse hover, before the actual pointer drag below.
-  await root.evaluate((element, selectedCode) => {
-    const curveNumber = element.data.findIndex(trace => trace.meta?.role === "code-node"), trace = element.data[curveNumber], pointNumber = trace.text.indexOf(selectedCode);
-    element.emit("plotly_hover", { points: [{ curveNumber, pointNumber, data: trace, fullData: trace }] });
-  }, code);
-  await page.waitForFunction(({ element, selectedCode }) => element.getAttribute("data-ena-node-hovered") === selectedCode,
-    { element: await root.elementHandle(), selectedCode: projected.code }, { timeout: 30000 });
   await page.mouse.down();
   await page.mouse.move(start.x + delta.x, start.y + delta.y, { steps: 10 });
   await page.mouse.up();
@@ -584,8 +587,8 @@ async function switchToOnaAndBuild(page) {
 }
 
 async function runNodeDragAcceptance(page, args) {
-  await installAuditAndAuthenticate(page, args);
-  await uploadAndBuildStandard(page, args.fixtureCsv);
+  await page.__task38Stage("installAuditAndAuthenticate", () => installAuditAndAuthenticate(page, args));
+  await page.__task38Stage("uploadAndBuildStandard", () => uploadAndBuildStandard(page, args.fixtureCsv));
   const code = "CODE_A";
   const families = {};
 
@@ -593,78 +596,78 @@ async function runNodeDragAcceptance(page, args) {
   const standard2dSelector = '[data-testid="open-ena-group-comparison-plot"],'
     + '[data-testid="open-ena-group-primary-plot"],'
     + '[data-testid="open-ena-group-secondary-plot"]';
-  const standard2dBefore = await readSvgFamily(page, standard2dSelector, code, false);
-  await dragSvgNode(page, '[data-testid="open-ena-group-comparison-plot"]', code, { x: 58, y: 34 });
-  const standard2dAfter = await readSvgFamily(page, standard2dSelector, code, false);
+  const standard2dBefore = await page.__task38Stage("readSvgFamily", () => readSvgFamily(page, standard2dSelector, code, false));
+  await page.__task38Stage("dragSvgNode", () => dragSvgNode(page, '[data-testid="open-ena-group-comparison-plot"]', code, { x: 58, y: 34 }));
+  const standard2dAfter = await page.__task38Stage("readSvgFamily", () => readSvgFamily(page, standard2dSelector, code, false));
   assertSvgMove(standard2dBefore, standard2dAfter, "standard-2d");
   assertBrowser((await readAudit(page)).canonicalResult === standardCanonical.canonicalResult && (await readAudit(page)).boundScience === standardCanonical.boundScience,
     "standard-2d drag mutated analytical result");
-  const standard2dCopy = await clickVisualCopy(page, '[data-testid="open-ena-group-center-surface"]');
+  const standard2dCopy = await page.__task38Stage("clickVisualCopy", () => clickVisualCopy(page, '[data-testid="open-ena-group-center-surface"]'));
   families["standard-2d"] = { before: standard2dBefore, after: standard2dAfter, visualCopy: standard2dCopy };
-  await resetNodeLayout(page);
+  await page.__task38Stage("resetNodeLayout", () => resetNodeLayout(page));
   assertBrowser(JSON.stringify(await readSvgFamily(page, standard2dSelector, code, false))
     === JSON.stringify(standard2dBefore), "standard-2d reset did not restore canonical geometry");
 
-  await selectView(page, "3d");
+  await page.__task38Stage("selectView", () => selectView(page, "3d"));
   const standard3dIds = [
     "open-ena-3d-comparison-plot",
     "open-ena-3d-primary-plot",
     "open-ena-3d-secondary-plot",
   ];
-  await waitForPlotlyTriptych(page, standard3dIds);
-  const standard3dBefore = await readPlotlyFamily(page, standard3dIds, code);
-  await dragPlotlyNode(page, standard3dIds[0], code, { x: 72, y: -44 });
-  const standard3dAfter = await readPlotlyFamily(page, standard3dIds, code);
+  await page.__task38Stage("waitForPlotlyTriptych", () => waitForPlotlyTriptych(page, standard3dIds));
+  const standard3dBefore = await page.__task38Stage("readPlotlyFamily", () => readPlotlyFamily(page, standard3dIds, code));
+  await page.__task38Stage("dragPlotlyNode", () => dragPlotlyNode(page, standard3dIds[0], code, { x: 72, y: -44 }));
+  const standard3dAfter = await page.__task38Stage("readPlotlyFamily", () => readPlotlyFamily(page, standard3dIds, code));
   assertPlotlyMove(standard3dBefore, standard3dAfter, "standard-3d");
   assertBrowser((await readAudit(page)).canonicalResult === standardCanonical.canonicalResult && (await readAudit(page)).boundScience === standardCanonical.boundScience,
     "standard-3d drag mutated analytical result");
-  const cameraOrbit = await orbitFromEmptySpace(page, standard3dIds[0]);
-  await recenterPreservesNode(page, standard3dIds[0], standard3dAfter[0].node);
-  const standard3dCopy = await clickVisualCopy(page, '[data-testid="open-ena-3d-comparison-plot"]');
+  const cameraOrbit = await page.__task38Stage("orbitFromEmptySpace", () => orbitFromEmptySpace(page, standard3dIds[0]));
+  await page.__task38Stage("recenterPreservesNode", () => recenterPreservesNode(page, standard3dIds[0], standard3dAfter[0].node));
+  const standard3dCopy = await page.__task38Stage("clickVisualCopy", () => clickVisualCopy(page, '[data-testid="open-ena-3d-comparison-plot"]'));
   families["standard-3d"] = {
     before: standard3dBefore,
     after: standard3dAfter,
     cameraOrbit,
     visualCopy: standard3dCopy,
   };
-  await resetNodeLayout(page);
+  await page.__task38Stage("resetNodeLayout", () => resetNodeLayout(page));
   assertBrowser(JSON.stringify((await readPlotlyFamily(page, standard3dIds, code)).map((plot) => plot.node))
     === JSON.stringify(standard3dBefore.map((plot) => plot.node)),
   "standard-3d reset did not restore canonical geometry");
 
-  await switchToOnaAndBuild(page);
+  await page.__task38Stage("switchToOnaAndBuild", () => switchToOnaAndBuild(page));
   const onaCanonical = await readAudit(page);
   const ona2dSelector = '[data-testid="open-ena-ordered-plot"]';
-  const ona2dBefore = await readSvgFamily(page, ona2dSelector, code, true);
-  await dragSvgNode(page, '[data-testid="open-ena-ordered-plot"][data-ona-scope="overall"]', code, { x: 52, y: 31 });
-  const ona2dAfter = await readSvgFamily(page, ona2dSelector, code, true);
+  const ona2dBefore = await page.__task38Stage("readSvgFamily", () => readSvgFamily(page, ona2dSelector, code, true));
+  await page.__task38Stage("dragSvgNode", () => dragSvgNode(page, '[data-testid="open-ena-ordered-plot"][data-ona-scope="overall"]', code, { x: 52, y: 31 }));
+  const ona2dAfter = await page.__task38Stage("readSvgFamily", () => readSvgFamily(page, ona2dSelector, code, true));
   assertSvgMove(ona2dBefore, ona2dAfter, "ona-2d");
   assertBrowser((await readAudit(page)).canonicalResult === onaCanonical.canonicalResult && (await readAudit(page)).boundScience === onaCanonical.boundScience,
     "ona-2d drag mutated analytical result");
   families["ona-2d"] = { before: ona2dBefore, after: ona2dAfter, visualCopy: "svg-live-geometry" };
-  await resetNodeLayout(page);
+  await page.__task38Stage("resetNodeLayout", () => resetNodeLayout(page));
   assertBrowser(JSON.stringify(await readSvgFamily(page, ona2dSelector, code, true))
     === JSON.stringify(ona2dBefore), "ona-2d reset did not restore canonical geometry");
 
-  await selectView(page, "3d");
+  await page.__task38Stage("selectView", () => selectView(page, "3d"));
   const ona3dIds = [
     "open-ena-ona-3d-overall-plot",
     "open-ena-ona-3d-primary-plot",
     "open-ena-ona-3d-secondary-plot",
   ];
   await page.getByTestId("open-ena-3d-ordered-result-layout").waitFor({ timeout: 60_000 });
-  await waitForPlotlyTriptych(page, ona3dIds);
-  const ona3dBefore = await readPlotlyFamily(page, ona3dIds, code);
-  await dragPlotlyNode(page, ona3dIds[0], code, { x: 68, y: -38 });
-  const ona3dAfter = await readPlotlyFamily(page, ona3dIds, code);
+  await page.__task38Stage("waitForPlotlyTriptych", () => waitForPlotlyTriptych(page, ona3dIds));
+  const ona3dBefore = await page.__task38Stage("readPlotlyFamily", () => readPlotlyFamily(page, ona3dIds, code));
+  await page.__task38Stage("dragPlotlyNode", () => dragPlotlyNode(page, ona3dIds[0], code, { x: 68, y: -38 }));
+  const ona3dAfter = await page.__task38Stage("readPlotlyFamily", () => readPlotlyFamily(page, ona3dIds, code));
   assertPlotlyMove(ona3dBefore, ona3dAfter, "ona-3d");
   assertBrowser((await readAudit(page)).canonicalResult === onaCanonical.canonicalResult && (await readAudit(page)).boundScience === onaCanonical.boundScience,
     "ona-3d drag mutated analytical result");
-  await recenterPreservesNode(page, ona3dIds[0], ona3dAfter[0].node);
-  const ona3dCopy = await clickVisualCopy(page, '[data-testid="open-ena-ona-3d-overall-plot"]');
+  await page.__task38Stage("recenterPreservesNode", () => recenterPreservesNode(page, ona3dIds[0], ona3dAfter[0].node));
+  const ona3dCopy = await page.__task38Stage("clickVisualCopy", () => clickVisualCopy(page, '[data-testid="open-ena-ona-3d-overall-plot"]'));
   families["ona-3d"] = { before: ona3dBefore, after: ona3dAfter, visualCopy: ona3dCopy };
   await page.screenshot({ path: args.screenshotPath, fullPage: true });
-  await resetNodeLayout(page);
+  await page.__task38Stage("resetNodeLayout", () => resetNodeLayout(page));
   assertBrowser(JSON.stringify((await readPlotlyFamily(page, ona3dIds, code)).map((plot) => plot.node))
     === JSON.stringify(ona3dBefore.map((plot) => plot.node)),
   "ona-3d reset did not restore canonical geometry");
@@ -683,6 +686,20 @@ try {
   runtime = await createServedBrowserV3({ root: resolve(projectRoot), directory: artifactDirectory + "-runtime", credentials: { username, password, secret: sessionSecret }, redact, serverLogPath, disableBrowserCache: true });
   const baseUrl = runtime.baseUrl;
   browserOpened = true;
+  const checkpoints = [], viewEvents = [];
+  runtime.page.on("console", message => {
+    if (!message.text().startsWith("task38-view-events:")) return;
+    if (viewEvents.length < 200) viewEvents.push({ at: new Date().toISOString(), event: JSON.parse(message.text().slice("task38-view-events:".length)) });
+    writeFileSync(join(artifactDirectory, "view-events.json"), JSON.stringify(viewEvents, null, 2) + "\n");
+  });
+  runtime.page.__task38Stage = async (label, action) => {
+    const entry = { label, startedAt: new Date().toISOString(), status: "running" }; checkpoints.push(entry);
+    const save = () => writeFileSync(join(artifactDirectory, "checkpoints.json"), JSON.stringify(checkpoints, null, 2) + "\n");
+    save(); process.stdout.write(`[node checkpoint] ${label} start\n`);
+    try { const value = await runtime.stage(label, action, 30000); entry.status = "pass"; return value; }
+    catch (error) { entry.status = "fail"; throw error; }
+    finally { entry.finishedAt = new Date().toISOString(); save(); process.stdout.write(`[node checkpoint] ${label} ${entry.status}\n`); }
+  };
   acceptance = await runBrowserTask(
     "drag standard ENA and ONA nodes in 2D and 3D",
     runNodeDragAcceptance,
@@ -746,7 +763,7 @@ const summary = {
   resetRestoredCanonicalLayout: true,
   visualCopy: acceptance.finalAudit.visualCopy,
   actualHoverHits: acceptance.finalAudit.actualHoverHits,
-  layeredHoverEventAlsoExercised: true,
+  syntheticHoverInjection: false,
   screenshot: basename(screenshotPath),
   currentUrl: acceptance.currentUrl,
 };

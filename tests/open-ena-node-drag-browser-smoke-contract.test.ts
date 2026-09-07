@@ -78,7 +78,15 @@ test("package exposes the dedicated node-drag browser command", () => {
 });
 
 
-test("both 3D families require actual projected mouse hover before layered drag checks", () => {
+test("both 3D families require actual projected mouse hover and direct pointer drag", () => {
   const source = readFileSync(smokePath, "utf8");
-  for (const marker of ["params.projection", "params.view", "params.model", "page.mouse.move(projected.x", "actualHoverHits.length === 2", "real pointer did not hit the projected native Code", "layeredHoverEventAlsoExercised"]) assert.ok(source.includes(marker), marker);
+  for (const marker of ["params.projection", "params.view", "params.model", "page.mouse.move(projected.x", "actualHoverHits.length === 2", "real pointer did not hit the projected native Code", "syntheticHoverInjection: false"]) assert.ok(source.includes(marker), marker);
+});
+
+
+test("node stages write immediate bounded evidence and never inject hover into the user path", () => {
+  const source = readFileSync(smokePath, "utf8");
+  assert.match(source, /checkpoints.json/);
+  assert.match(source, /runtime.stage\(label, action, 30000\)/);
+  assert.doesNotMatch(source, /\.emit\("plotly_hover"/);
 });
