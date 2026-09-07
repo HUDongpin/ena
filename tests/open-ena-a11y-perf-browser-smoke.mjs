@@ -948,12 +948,27 @@ async function auditTrajectoryCodeColorCascade(page, rail) {
   await rail.getByRole("button", { name: "Data", exact: true }).click();
   const loadTrajectorySample = page.getByRole("button", { name: "Load trajectory sample", exact: true });
   await loadTrajectorySample.waitFor({ state: "visible", timeout: 30_000 });
+  const beforeTrajectory = await page.evaluate(() => ({ requests: window.__task38WorkerRequests.length, responses: window.__task38WorkerResponses.length, datasetSha256: window.__task38WorkerResponses.at(-1)?.result.binding.datasetSha256, mark: performance.now() }));
   await loadTrajectorySample.click();
 
   const longitudinalControls = page.getByTestId("open-ena-workspace-v3");
   await longitudinalControls.waitFor({ state: "visible", timeout: 60_000 });
-  await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current");
+  // The previous Endpoint can still be current while the sample fetch/prepare
+  // awaits. Readiness must belong to the newly admitted trajectory response.
+  await page.waitForFunction(before => {
+    const response = window.__task38WorkerResponses.at(-1);
+    const request = window.__task38WorkerRequests.find(value => value.id === response?.id);
+    return window.__task38WorkerResponses.length > before.responses
+      && window.__task38WorkerRequests.length > before.requests
+      && response?.result.configuration.analysis.model.type === "SeparateTrajectory"
+      && response.result.binding.datasetSha256 !== before.datasetSha256
+      && request?.plan.header.executionPlanSha256 === response.executionPlanSha256
+      && response.result.binding.executionPlanSha256 === response.executionPlanSha256
+      && document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current";
+  }, beforeTrajectory, { timeout: 60000 });
   assert.equal(await page.evaluate(() => window.__task38WorkerResponses.at(-1)?.result.configuration.analysis.model.type), "SeparateTrajectory");
+  const trajectoryTransition = await page.evaluate(before => ({ requestsAdded: window.__task38WorkerRequests.length - before.requests, responsesAdded: window.__task38WorkerResponses.length - before.responses, elapsedMs: performance.now() - before.mark, freshSourceAndBoundPlan: true }), beforeTrajectory);
+  assert.equal(trajectoryTransition.requestsAdded, 1); assert.equal(trajectoryTransition.responsesAdded, 1);
 
   await rail.getByRole("button", { name: "Model", exact: true }).click();
   const tablist = longitudinalControls.getByRole("tablist", { name: "Model configuration" });
@@ -1116,6 +1131,7 @@ async function auditTrajectoryCodeColorCascade(page, rail) {
   return {
     code,
     endpointDownloadEnabled: true,
+    trajectoryTransition,
     resultCompleted: true,
     longitudinalAncestor: { panel: true, trigger: true, dialog: true },
     trigger: triggerStyle,

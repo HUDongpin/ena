@@ -142,3 +142,9 @@ test("every isolated page restores default cache after authenticated assets and 
   for (const marker of ["contextCachePolicies", "authentication-disabled-then-measurement-browser-default", 'cacheDisabled: false', 'task38-cache-default-before-sample', "loadedPlotlyScripts, []", 'measurementCachePolicy: "browser-default"', '__task38Phase = { phase: "perf"']) assert.ok(source.includes(marker), marker);
   assert.match(source, /runtime\.drainAssetReads/);
 });
+
+
+test("trajectory sample readiness belongs to a fresh bound Worker response rather than prior Endpoint currentness", () => {
+  for (const marker of ["beforeTrajectory", "window.__task38WorkerResponses.length > before.responses", "window.__task38WorkerRequests.length > before.requests", "response.result.binding.datasetSha256 !== before.datasetSha256", "request?.plan.header.executionPlanSha256 === response.executionPlanSha256", "trajectoryTransition.requestsAdded, 1", "trajectoryTransition.responsesAdded, 1"]) assert.ok(source.includes(marker), marker);
+  assert.match(source, /model.type\), "SeparateTrajectory"/);
+});
