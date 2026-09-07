@@ -28,7 +28,7 @@ function treeManifest(path, prefix = "") {
 async function port() {
   return new Promise((yes, no) => { const server = createServer(); server.once("error", no); server.listen(0, "127.0.0.1", () => { const value = server.address().port; server.close(error => error ? no(error) : yes(value)); }); });
 }
-export async function createServedBrowserV3({ root, directory, credentials, redact, serverLogPath }) {
+export async function createServedBrowserV3({ root, directory, credentials, redact, serverLogPath, disableBrowserCache = false }) {
   mkdirSync(directory, { recursive: true });
   const safe = value => redact(value).replace(/ws:\/\/[^\s]+\/devtools\/browser\/[^\s]+/g, "[redacted browser endpoint]").replace(/postgresql:\/\/[^\s]+/g, "[redacted database endpoint]");
   const json = (name, value) => writeFileSync(join(directory, name), JSON.stringify(value, null, 2) + "\n");
@@ -162,6 +162,19 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
     };
     context.on("page", observePage);
     page = await context.newPage(); page.setDefaultTimeout(15000); observePage(page);
+    receipt.browser.cachePolicy = disableBrowserCache ? "disabled-for-owned-correctness-run" : "browser-default";
+    if (disableBrowserCache) {
+      const cdp = await context.newCDPSession(page);
+      receipt.browser.cdpAssetResponses = [];
+      receipt.browser.cdpCacheEvents = [];
+      const responseReceived = event => {
+        if (new URL(event.response.url).pathname.startsWith("/_next/static/")) receipt.browser.cdpAssetResponses.push({ requestId: event.requestId, at: new Date().toISOString(), timestamp: event.timestamp, type: event.type, url: safe(event.response.url), status: event.response.status, fromDiskCache: event.response.fromDiskCache ?? false, fromServiceWorker: event.response.fromServiceWorker ?? false, fromPrefetchCache: event.response.fromPrefetchCache ?? false, timing: event.response.timing ?? null });
+      };
+      const servedFromCache = event => receipt.browser.cdpCacheEvents.push({ requestId: event.requestId, at: new Date().toISOString() });
+      cdp.on("Network.responseReceived", responseReceived); cdp.on("Network.requestServedFromCache", servedFromCache);
+      lifecycle.addCleanup("owned page cache observer", async () => { cdp.off("Network.responseReceived", responseReceived); cdp.off("Network.requestServedFromCache", servedFromCache); await cdp.detach(); });
+      await lifecycle.stage("disable owned browser cache before navigation", async () => { await cdp.send("Network.enable"); await cdp.send("Network.setCacheDisabled", { cacheDisabled: true }); receipt.browser.cachePolicyAppliedAt = new Date().toISOString(); }, 15000);
+    }
     return { baseUrl, browser, page, lifecycle, receipt, close, observePage, drainAssetReads, async stage(label, action, timeout = 300000) { const entry = { label, status: "running" }; receipt.stages.push(entry); try { const value = await lifecycle.stage(label, action, timeout); entry.status = "pass"; return value; } catch (error) { entry.status = "fail"; entry.error = safe(error.message); throw error; } finally { json("receipt.json", receipt); } } };
   } catch (error) { await close(error); throw error; }
 }

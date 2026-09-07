@@ -186,3 +186,11 @@ test("required asset reads are explicitly drained before authentication navigati
   const helper = readFileSync(join(process.cwd(), "tests/helpers/open-ena-served-browser-v3.mjs"), "utf8");
   for (const token of ["scheduledBefore", "settledBefore", "inFlightBefore", "inFlightAfter", "lifecycle.signal.throwIfAborted()", "Required static asset response failed before navigation"]) assert.ok(helper.includes(token));
 });
+
+test("cache disabling is explicit only for longitudinal correctness and records actual CDP response provenance", () => {
+  requires(["disableBrowserCache: true"]);
+  const helper = readFileSync(join(process.cwd(), "tests/helpers/open-ena-served-browser-v3.mjs"), "utf8");
+  for (const token of ["disableBrowserCache = false", "Network.setCacheDisabled", "fromDiskCache", "fromServiceWorker", "Network.requestServedFromCache", "await cdp.detach()"]) assert.ok(helper.includes(token));
+});
+
+test("stale image lease waits on actual image rendering and refuses outputs after model controls change", () => { requires(["HTMLImageElement.prototype", "audit.release = () => callback.call(this, event)", 'model.selectOption("EndPoint")', "stale model materialized PNG output after awaited rendering", "audit.modelRuns, 1"]); });

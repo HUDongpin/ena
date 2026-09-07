@@ -46,13 +46,13 @@ const ownedDistDirName = ".next-longitudinal-smoke-" + process.pid;
 const ownedDistDirectory = join(projectRoot, ownedDistDirName);
 const cameraPresets = ["isometric", "xy", "xz", "yz", "yx", "zx", "zy"];
 const expectedCameraLabels = {
-  isometric: "ISOMETRIC",
-  xy: "XY",
-  xz: "XZ",
-  yz: "YZ",
-  yx: "YX",
-  zx: "ZX",
-  zy: "ZY",
+  isometric: "Default 3D Camera",
+  xy: "X-Y plane",
+  xz: "X-Z plane",
+  yz: "Y-Z plane",
+  yx: "Y-X plane",
+  zx: "Z-X plane",
+  zy: "Z-Y plane",
 };
 const expectedCameraStates = {
   isometric: {
@@ -470,7 +470,7 @@ async function authenticateAndRunTrajectory(page, args) {
   const rankDownloads = [];
   for (const design of designs) {
     for (const horizon of orderedHorizons) await page.getByRole("checkbox", { name: horizon.displayLabel, exact: true }).uncheck();
-    await page.getByLabel("Trajectory inference design", { exact: true }).selectOption(design.design);
+    await page.getByRole("combobox", { name: /^Trajectory inference design/ }).selectOption(design.design);
     for (const horizon of orderedHorizons.slice(0, design.count)) await page.getByRole("checkbox", { name: horizon.displayLabel, exact: true }).check();
     await page.getByRole("button", { name: "Run confirmed inference", exact: true }).click();
     const exportButton = page.getByRole("button", { name: "Export native statistics", exact: true });
@@ -1181,6 +1181,58 @@ async function exercisePendingImageActions(page) {
       HTMLAnchorElement.prototype.click = audit.originalClick;
       if (audit.clipboard) Object.defineProperty(navigator, "clipboard", audit.clipboard); else delete navigator.clipboard;
       delete window.__nativePendingImage;
+    });
+  }
+}
+
+async function exerciseStaleImageLease(page) {
+  await page.getByRole("navigation", { name: "Analysis modes" }).getByRole("button", { name: "Model", exact: true }).click();
+  await page.getByRole("button", { name: "Configure trajectory model", exact: true }).click();
+  const model = page.getByRole("combobox", { name: "Model", exact: true });
+  assert.equal(await model.inputValue(), "SeparateTrajectory");
+  await page.evaluate(() => {
+    let proto = HTMLImageElement.prototype, onload;
+    while (proto && !onload) { onload = Object.getOwnPropertyDescriptor(proto, "onload"); proto = Object.getPrototypeOf(proto); }
+    if (!onload?.set || !onload?.get) throw new Error("native image load descriptor unavailable");
+    const audit = { onload, previous: Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "onload"), canvas: HTMLCanvasElement.prototype.toDataURL, clipboard: Object.getOwnPropertyDescriptor(navigator, "clipboard"), anchor: HTMLAnchorElement.prototype.click, renderedPngs: [], outputs: 0, release: null, imageLoaded: null };
+    window.__nativeStaleImage = audit;
+    // Hold delivery of an ACTUAL loaded snapshot image event; retain the real
+    // image/event/callback and release it to finish original Plotly PNG rendering.
+    Object.defineProperty(HTMLImageElement.prototype, "onload", { configurable: true, get() { return onload.get.call(this); }, set(callback) { onload.set.call(this, typeof callback !== "function" ? callback : function(event) {
+      if (!audit.release && this.naturalWidth > 0 && /^(blob:|data:image\/svg)/u.test(this.src)) {
+        audit.imageLoaded = { width: this.naturalWidth, height: this.naturalHeight, scheme: this.src.split(':')[0] };
+        audit.release = () => callback.call(this, event);
+      } else callback.call(this, event);
+    }); } });
+    HTMLCanvasElement.prototype.toDataURL = function(...args) { const data = audit.canvas.apply(this, args); if (data.startsWith('data:image/png;base64,')) audit.renderedPngs.push({ width: this.width, height: this.height, signature: [...atob(data.split(',')[1]).slice(0,8)].map(char => char.charCodeAt(0)) }); return data; };
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { write: async () => { audit.outputs++; }, writeText: async () => { audit.outputs++; } } });
+    HTMLAnchorElement.prototype.click = function() { if (this.download.endsWith('.png')) audit.outputs++; return audit.anchor.call(this); };
+  });
+  try {
+    page.once("dialog", dialog => void dialog.accept());
+    await page.locator('.open-ena-3d-plot-actions [data-ena-plot-action="copy-image"]').click();
+    await page.waitForFunction(() => Boolean(window.__nativeStaleImage.release), null, { timeout: 120_000 });
+    await model.selectOption("EndPoint");
+    await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute('data-result-status') === 'stale');
+    await page.evaluate(() => window.__nativeStaleImage.release());
+    await page.waitForFunction(() => document.querySelector('.open-ena-3d-plot-actions [data-ena-plot-action="copy-image"]')?.disabled === false, null, { timeout: 30000 });
+    const audit = await page.evaluate(() => ({ imageLoaded: window.__nativeStaleImage.imageLoaded, renderedPngs: window.__nativeStaleImage.renderedPngs, outputs: window.__nativeStaleImage.outputs, modelRuns: window.__openEnaNativeAudit.requests.length }));
+    assert.ok(audit.imageLoaded.width > 0 && audit.renderedPngs.length > 0, "stale lease check must finish genuine image rendering");
+    assert.ok(audit.renderedPngs.every(png => JSON.stringify(png.signature) === JSON.stringify([137,80,78,71,13,10,26,10])));
+    assert.equal(audit.outputs, 0, "stale model materialized PNG output after awaited rendering");
+    assert.equal(audit.modelRuns, 1);
+    await model.selectOption("SeparateTrajectory");
+    await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute('data-result-status') === 'current');
+    await nativeScience(page);
+    return audit;
+  } finally {
+    await page.evaluate(() => {
+      const audit = window.__nativeStaleImage;
+      if (audit.previous) Object.defineProperty(HTMLImageElement.prototype, 'onload', audit.previous); else delete HTMLImageElement.prototype.onload;
+      HTMLCanvasElement.prototype.toDataURL = audit.canvas;
+      HTMLAnchorElement.prototype.click = audit.anchor;
+      if (audit.clipboard) Object.defineProperty(navigator, 'clipboard', audit.clipboard); else delete navigator.clipboard;
+      delete window.__nativeStaleImage;
     });
   }
 }
@@ -2145,7 +2197,7 @@ let primaryFailure = null;
 let completedSummary = null;
 try {
   assert.equal(externalBaseUrl, null, "longitudinal browser requires an owned local production server");
-  runtime = await createServedBrowserV3({ root: projectRoot, directory: join(artifactDirectory, "runtime"), credentials: { username, password, secret: sessionSecret }, redact, serverLogPath });
+  runtime = await createServedBrowserV3({ root: projectRoot, directory: join(artifactDirectory, "runtime"), credentials: { username, password, secret: sessionSecret }, redact, serverLogPath, disableBrowserCache: true });
   const plotAudit = await runBrowserPhase("native trajectory model ranks path and rendering", authenticateAndRunTrajectory, { username, password, baseUrl: runtime.baseUrl }, 240_000);
   const scientificArgs = { expectedResultHash: plotAudit.resultHashes[0], expectedTaskRequestCount: plotAudit.taskRequestCount, expectedCodes: plotAudit.expectedCodes, orderedHorizons: plotAudit.orderedHorizons, artifactDirectory };
   const downloads = await runBrowserPhase("all native aggregate and participant downloads", downloadAllArtifacts, {}, 240_000);
@@ -2165,6 +2217,7 @@ try {
   const pendingImageAudit = await runBrowserPhase("real pending PNG denial clipboard rejection and recovery", exercisePendingImageActions, {}, 240_000);
   const fallbackA11yAudit = await runBrowserPhase("reversible fallback fullscreen keyboard modal", exerciseFallbackFullscreenAccessibility, { viewport: { width: 1440, height: 1000 } });
   const responsiveAudit = await runBrowserPhase("responsive native fullscreen and canvas geometry", captureResponsiveEvidence, { viewports: viewportMatrix, artifactDirectory });
+  const staleImageAudit = await runBrowserPhase("stale model suppresses actual awaited PNG output", exerciseStaleImageLease, {}, 180_000);
   const browserErrors = await runBrowserPhase("strict runtime warning classification", readBrowserErrors, { browser: smokeBrowser });
   assert.deepEqual(browserErrors.consoleErrors, []); assert.deepEqual(browserErrors.consoleWarnings, []); assert.deepEqual(browserErrors.pageErrors, []);
   assert.ok(browserErrors.platformDiagnostics.canvas2dReadbackDiagnostics.length <= 1);
@@ -2174,7 +2227,7 @@ try {
   assert.ok(chromiumAngleReadPixelsDiagnostics.sourcePaths.length <= 1);
   const browserRuntimeEvidence = await readBrowserRuntimeEvidence(runtime.page);
   await nativeScience(runtime.page);
-  completedSummary = { status: "PASS", source: { ...sourceEvidenceBefore, smokeSourceSha256 }, runtimeBrowserVersion: browserRuntimeEvidence.version, runtimeBrowserUserAgent: browserRuntimeEvidence.userAgent, plotAudit, downloads, aggregate: { manifest: aggregate.manifest, zipSha256: aggregate.zipSha256 }, participant: { manifest: participant.manifest, zipSha256: participant.zipSha256 }, railPanelAudit, displayAudit, plotActionAudit, pendingImageAudit, fallbackA11yAudit, responsiveAudit, browserErrors };
+  completedSummary = { status: "PASS", source: { ...sourceEvidenceBefore, smokeSourceSha256 }, runtimeBrowserVersion: browserRuntimeEvidence.version, runtimeBrowserUserAgent: browserRuntimeEvidence.userAgent, plotAudit, downloads, aggregate: { manifest: aggregate.manifest, zipSha256: aggregate.zipSha256 }, participant: { manifest: participant.manifest, zipSha256: participant.zipSha256 }, railPanelAudit, displayAudit, plotActionAudit, pendingImageAudit, fallbackA11yAudit, responsiveAudit, staleImageAudit, browserErrors };
 } catch (caught) {
   primaryFailure = caught;
   if (runtime) { try { await runtime.page.screenshot({ path: failureScreenshotPath, fullPage: true }); } catch {} }
