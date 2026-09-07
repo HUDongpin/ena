@@ -408,3 +408,19 @@ test("package and Open ENA CI expose the bounded 3D controls browser gate", () =
   assert.match(workflow, /if-no-files-found:\s*error/u);
   assert.match(workflow, /retention-days:\s*14/u);
 });
+
+
+test("controlled camera orientation preserves existing precision and rejects real view changes", () => {
+  const source = readFileSync(smokePath, "utf8");
+  const start = source.indexOf("    const canonicalNumber =");
+  const end = source.indexOf("    const plotPayload =", start);
+  const normalize = new Function(source.slice(start, end) + "; return canonicalControlledCamera;")();
+  const raw = { center: { x: 0, y: 0, z: 0 }, eye: { x: 0.9666666666666667, y: 0.9666666666666667, z: 0.8333333333333334 }, up: { x: 0, y: 0, z: 1 }, projection: { type: "perspective" } };
+  const live = { ...raw, eye: { x: 0.9666666666666668, y: 0.9666666666666668, z: 0.8333333333333331 }, up: { x: -0.3680452470251775, y: -0.3680452470251775, z: 0.8538649730984122 } };
+  const expected = normalize(raw);
+  assert.deepEqual(normalize(live), expected);
+  for (const change of [{ eye: { x: 1.2, y: 1, z: 1 } }, { center: { x: 0.1, y: 0, z: 0 } }, { projection: { type: "orthographic" } }, { up: { x: 1, y: 0, z: 0 } }]) assert.notDeepEqual(normalize({ ...raw, ...change }), expected);
+  for (const change of [{ eye: raw.center }, { up: raw.eye }, { up: { x: NaN, y: 0, z: 1 } }, { center: { x: Infinity, y: 0, z: 0 } }, { projection: { type: "unknown" } }]) assert.throws(() => normalize({ ...raw, ...change }));
+  assert.ok(source.includes("rawControlledCameraState"));
+  assert.ok(source.includes("controlled camera orientation differs from actual runtime camera"));
+});

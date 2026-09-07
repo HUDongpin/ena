@@ -543,6 +543,21 @@ async function readScientificState(page) {
         : value;
       return canonicalVector(candidate);
     };
+    const canonicalControlledCamera = (value) => {
+      for (const vector of [value?.center, value?.eye, value?.up]) {
+        if (![vector?.x, vector?.y, vector?.z].every(component => typeof component === "number" && Number.isFinite(component))) throw new Error("controlled camera vector is invalid");
+      }
+      if (!["perspective", "orthographic"].includes(value?.projection?.type)) throw new Error("controlled camera projection is invalid");
+      const eye = ["x", "y", "z"].map(axis => value.eye[axis] - value.center[axis]);
+      const up = [value.up.x, value.up.y, value.up.z];
+      const squaredLength = eye.reduce((sum, component) => sum + component * component, 0);
+      if (!Number.isFinite(squaredLength) || squaredLength <= 0) throw new Error("controlled camera eye is degenerate");
+      const factor = up.reduce((sum, component, index) => sum + component * eye[index], 0) / squaredLength;
+      const perpendicular = up.map((component, index) => component - factor * eye[index]);
+      const length = Math.hypot(...perpendicular);
+      if (!Number.isFinite(length) || length <= 0) throw new Error("controlled camera up is degenerate");
+      return canonicalCamera({ ...value, up: { x: perpendicular[0] / length, y: perpendicular[1] / length, z: perpendicular[2] / length } });
+    };
     const plotPayload = plotTestIds.map((testId) => {
       const panel = document.querySelector('[data-testid="' + testId + '"]');
       const region = panel?.querySelector('[data-ena-interactive-camera="true"]');
@@ -584,9 +599,10 @@ async function readScientificState(page) {
       return dimensions[0];
     });
     if (new Set(axisState).size !== 3) throw new Error("Native 3D axes must be distinct");
-    const cameraState = plotTestIds.map((testId) => document
+    const rawControlledCameraState = plotTestIds.map((testId) => document
       .querySelector('[data-testid="' + testId + '"] [data-ena-interactive-camera="true"]')
       ?.getAttribute("data-ena-camera-state") ?? null);
+    const cameraState = rawControlledCameraState.map(value => canonicalControlledCamera(JSON.parse(value)));
     const aspectRatioState = plotTestIds.map((testId) => document
       .querySelector('[data-testid="' + testId + '"] [data-ena-interactive-camera="true"]')
       ?.getAttribute("data-ena-aspect-ratio-state") ?? null);
@@ -601,6 +617,7 @@ async function readScientificState(page) {
       }
       return canonicalCamera(scene.getCamera());
     });
+    if (JSON.stringify(cameraState) !== JSON.stringify(runtimeCameraState)) throw new Error("controlled camera orientation differs from actual runtime camera " + JSON.stringify({ cameraState, runtimeCameraState }));
     const runtimeAspectRatioState = plotTestIds.map((testId) => {
       const root = document.querySelector(
         '[data-testid="' + testId + '"] [data-ena-plotly-root="true"]',
@@ -630,6 +647,7 @@ async function readScientificState(page) {
       resultIdentity,
       axisState,
       cameraState,
+      rawControlledCameraState,
       aspectRatioState,
       rangeState,
       runtimeCameraState,
