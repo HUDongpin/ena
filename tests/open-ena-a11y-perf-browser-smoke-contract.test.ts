@@ -10,7 +10,7 @@ const runtimeSource = readFileSync(join(process.cwd(), "tests/helpers/open-ena-s
 test("A11Y-01/A11Y-02/PERF-01 smoke uses the real Open ENA workflow and selectors", () => {
   assert.match(source, /getByRole\("textbox", \{ name: "Account name" \}\)/u);
   assert.match(source, /getByRole\("textbox", \{ name: "Password" \}\)/u);
-  assert.match(source, /getByRole\("button", \{ name: "Load teaching sample"/u);
+  assert.match(source, /getByRole\("button", \{ name: "Load sample"/u);
   assert.match(source, /getByRole\("button", \{ name: \/\^3D ENA\//u);
   assert.match(source, /getByRole\("button", \{ name: "Download Model"/u);
   assert.doesNotMatch(source, /getByLabel\("Account"\)/u);

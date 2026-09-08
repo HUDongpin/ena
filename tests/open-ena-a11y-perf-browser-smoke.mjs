@@ -105,7 +105,7 @@ async function loginAndLoad(page, baseUrl) {
   assert.equal(new URL(page.url()).pathname, "/en/open-ena");
   await rail.getByRole("button", { name: "Data", exact: true }).click();
   const controls = page.locator('[data-ena-workbench-region="controls"]');
-  const sample = page.getByRole("button", { name: "Load teaching sample", exact: true });
+  const sample = page.getByTestId("open-ena-persistent-analysis-panel").getByRole("button", { name: "Load sample", exact: true });
   await sample.waitFor({ state: "visible", timeout: 30_000 });
   policy.sampleClick = await page.evaluate(() => performance.now());
   assert.ok(policy.sampleClick >= policy.beforeSample.mark);
