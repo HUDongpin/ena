@@ -88,6 +88,11 @@ jobs:
           cache: npm
       - name: Verify vendored j-3dENA custody before dependency installation
         run: node scripts/verify-j3dena-vendor.mjs
+      - name: Make PostgreSQL binaries available to owned browser test databases
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-16
+          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
       - name: Initialize isolated Open ENA PostgreSQL schema in migration order
         run: |
           set -euo pipefail
