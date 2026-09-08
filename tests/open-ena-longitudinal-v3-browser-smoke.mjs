@@ -1793,7 +1793,8 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       '[tabindex]:not([tabindex="-1"])',
     ].join(",");
     const focusables = [...audit.shell.querySelectorAll(focusableSelector)]
-      .filter((element) => !element.hasAttribute("hidden") && element.getAttribute("aria-hidden") !== "true");
+      .filter((element) => !element.hasAttribute("hidden") && element.getAttribute("aria-hidden") !== "true"
+        && element.getClientRects().length > 0);
     const actionFor = (element) => {
       if (element === audit.exitButton) return "fullscreen";
       return element?.getAttribute?.("data-ena-plot-action") ?? null;
