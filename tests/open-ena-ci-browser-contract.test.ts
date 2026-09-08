@@ -80,16 +80,12 @@ test("random-port production smokes bind the Origin allowlist to their owned loo
       assert.match(source, /OPEN_ENA_SMOKE_ARTIFACT_DIR/u);
       assert.match(source, /chromium/u);
     }
-    if (file === "open-ena-inference-browser-smoke.mjs") {
-      assert.match(source, /OPEN_ENA_PUBLIC_ORIGIN:\s*baseUrl/u, `${file} must bind its dynamic loopback origin`);
-      assert.match(source, /OPEN_ENA_ALLOWED_ORIGINS:\s*baseUrl/u, `${file} must bind its dynamic origin allowlist`);
-    } else {
-      assert.match(source, /import\s*\{[^}]*\bcreateServedBrowserV3\b[^}]*\}\s*from "\.\/helpers\/open-ena-served-browser-v3\.mjs"/u);
-      assert.match(source, /runtime = await createServedBrowserV3\(\{/u, `${file} must actually create its owned server`);
-      assert.match(source, /(?:baseUrl = runtime\.baseUrl|baseUrl: runtime\.baseUrl|const \{ browser, baseUrl \} = runtime)/u, `${file} must use the returned owned origin`);
-      const helper = readFileSync(join(process.cwd(), "tests/helpers/open-ena-served-browser-v3.mjs"), "utf8");
-      assert.match(helper, /const serverPort = await port\(\), baseUrl = `http:\/\/127\.0\.0\.1:\$\{serverPort\}`/u);
-      assert.match(helper, /serverEntry = lifecycle\.spawnOwned\("server",[^\n]*OPEN_ENA_PUBLIC_ORIGIN: baseUrl, OPEN_ENA_ALLOWED_ORIGINS: baseUrl/u);
-    }
+
+    assert.match(source, /import\s*\{[^}]*\bcreateServedBrowserV3\b[^}]*\}\s*from "\.\/helpers\/open-ena-served-browser-v3\.mjs"/u);
+    assert.match(source, /runtime = await createServedBrowserV3\(\{/u, `${file} must actually create its owned server`);
+    assert.match(source, /(?:baseUrl = runtime\.baseUrl|baseUrl: runtime\.baseUrl|const \{ browser, baseUrl \} = runtime)/u, `${file} must use the returned owned origin`);
+    const helper = readFileSync(join(process.cwd(), "tests/helpers/open-ena-served-browser-v3.mjs"), "utf8");
+    assert.match(helper, /const serverPort = await port\(\), baseUrl = `http:\/\/127\.0\.0\.1:\$\{serverPort\}`/u);
+    assert.match(helper, /serverEntry = lifecycle\.spawnOwned\("server",[^\n]*OPEN_ENA_PUBLIC_ORIGIN: baseUrl, OPEN_ENA_ALLOWED_ORIGINS: baseUrl/u);
   }
 });

@@ -1,249 +1,89 @@
 #!/usr/bin/env node
-
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-} from "node:fs";
-import { createServer } from "node:net";
-import { homedir } from "node:os";
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createServedBrowserV3 } from "./helpers/open-ena-served-browser-v3.mjs";
+import { prepareNativeFixtureV3, runNativeFixtureV3, nativeFixtureIdentitiesV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
 
-const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const artifactDirectory = resolve(
-  process.env.OPEN_ENA_SMOKE_ARTIFACT_DIR
-    || join(projectRoot, "output", "playwright", "open-ena-inference-smoke"),
-);
-const serverLogPath = join(artifactDirectory, "next-server.log");
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const artifactDirectory = resolve(process.env.OPEN_ENA_SMOKE_ARTIFACT_DIR || join(projectRoot, "output/playwright/open-ena-inference-smoke"));
 const username = "open_ena_smoke_researcher";
 const password = "open_ena_smoke_password_2026";
 const sessionSecret = "open_ena_smoke_session_secret_0123456789abcdef";
-const sessionName = `open-ena-inference-smoke-${process.pid}`;
+const smokeBrowser = process.env.OPEN_ENA_SMOKE_BROWSER || "chromium";
+assert.equal(smokeBrowser, "chromium", "The native inference gate uses the owned, pinned Chromium runtime.");
 const fixtureGroups = ["PRIVATE_GROUP_ALPHA", "PRIVATE_GROUP_BETA"];
-const fixturePeriods = [
-  "PRIVATE_PERIOD_BASELINE",
-  "PRIVATE_PERIOD_MIDDLE",
-  "PRIVATE_PERIOD_FINAL",
-];
+const fixturePeriods = ["PRIVATE_PERIOD_BASELINE", "PRIVATE_PERIOD_MIDDLE", "PRIVATE_PERIOD_FINAL"];
 const fixtureEntityPrefix = "PRIVATE_ENTITY_";
-const smokeBrowser = process.env.OPEN_ENA_SMOKE_BROWSER || "chrome";
-assert.ok(
-  ["chromium", "chrome", "firefox", "webkit", "msedge"].includes(smokeBrowser),
-  "OPEN_ENA_SMOKE_BROWSER must name a supported Playwright browser.",
-);
-const bundledPlaywrightWrapper = join(
-  homedir(),
-  ".codex",
-  "skills",
-  "playwright",
-  "scripts",
-  "playwright_cli.sh",
-);
-const playwrightCli = existsSync(bundledPlaywrightWrapper)
-  ? { command: bundledPlaywrightWrapper, prefix: [], version: "0.1.18", source: "bundled skill wrapper" }
-  : {
-      command: "npx",
-      prefix: ["--yes", "--package", "@playwright/cli@0.1.18", "playwright-cli"],
-      version: "0.1.18",
-      source: "pinned npx fallback",
-    };
-
+const fixtureCodes = ["PRIVATE_CODE_A", "PRIVATE_CODE_B", "PRIVATE_CODE_C", "PRIVATE_CODE_D", "PRIVATE_CODE_E"];
 mkdirSync(artifactDirectory, { recursive: true });
-
-function verifyPlaywrightCliVersion() {
-  // Prefer the skill's bundled wrapper. Because that wrapper intentionally
-  // follows its installed CLI package, fail closed if it does not resolve to
-  // the reviewed version; only a missing wrapper uses the pinned npx fallback.
-  let reported;
-  try {
-    reported = execFileSync(
-      playwrightCli.command,
-      [...playwrightCli.prefix, "--version"],
-      {
-        cwd: artifactDirectory,
-        encoding: "utf8",
-        env: process.env,
-        timeout: 120_000,
-      },
-    ).trim();
-  } catch (caught) {
-    throw new Error(
-      "The pinned Playwright CLI could not be resolved. This smoke requires npx and @playwright/cli@0.1.18.",
-      { cause: caught },
-    );
+const redact = value => String(value ?? "").replaceAll(username, "[redacted-username]").replaceAll(password, "[redacted-password]").replaceAll(sessionSecret, "[redacted-session-secret]");
+const sha256 = value => createHash("sha256").update(value).digest("hex");
+let runtime, failure;
+const summary = { status: "running", fixtures: { units: 17, groups: 2, periods: 3, missingPeriods: true }, stages: {} };
+const saveSummary = () => writeFileSync(join(artifactDirectory, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
+async function stage(label, action) {
+  process.stdout.write(`[native inference smoke] ${label} ...\n`);
+  const value = await runtime.stage(label, action);
+  summary.stages[label] = value ?? { passed: true }; saveSummary();
+  return value;
+}
+async function download(page, button, name) {
+  const pending = page.waitForEvent("download");
+  await button.click();
+  const item = await pending;
+  const path = join(artifactDirectory, name);
+  await item.saveAs(path);
+  const bytes = readFileSync(path);
+  return { path, bytes, sha256: sha256(bytes), suggestedFilename: item.suggestedFilename() };
+}
+async function downloadJson(page, button, name) {
+  const item = await download(page, button, name);
+  return { value: JSON.parse(item.bytes.toString("utf8")), sha256: item.sha256 };
+}
+function assertAggregatePrivacy(value) {
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  for (const identity of [fixtureEntityPrefix, ...fixtureGroups, ...fixturePeriods]) assert.ok(!text.includes(identity), `aggregate consumer disclosed ${identity}`);
+  assert.ok(!text.includes("participantCanonical"));
+}
+function assertStatistics(value, binding, kind, method) {
+  assert.equal(value.schemaVersion, 1);
+  assert.equal(value.kind, "open-ena-native-post-model-statistics");
+  assert.equal(value.executable, false);
+  assert.deepEqual(value.binding, binding);
+  assert.equal(value.inference.kind, kind);
+  const rows = value.inference.rows ?? value.inference.omnibusRows;
+  assert.ok(rows.length > 0 && rows.every(row => row.test === method));
+  assert.ok(rows.some(row => row.status === "available"));
+  for (const row of [...rows, ...(value.inference.followupRows ?? [])]) {
+    if (row.status === "available") {
+      assert.ok(Number.isFinite(row.pRaw) && Number.isFinite(row.pHolm));
+      assert.ok(row.pRaw >= 0 && row.pRaw <= row.pHolm && row.pHolm <= 1);
+    } else assert.ok(row.reason, "unavailable statistics must give a reason");
   }
-  assert.equal(
-    reported,
-    playwrightCli.version,
-    `Playwright CLI version drifted through ${playwrightCli.source}: expected ${playwrightCli.version}, received ${reported || "no version"}.`,
-  );
+  assert.ok(value.inference.ledger, "native inference must retain the inclusion ledger");
+  // Local statistics may label selected Groups/Horizons; per-Unit identity is never needed here.
+  assert.ok(!JSON.stringify(value.inference).includes(fixtureEntityPrefix));
+  return rows;
 }
-
-function redact(value) {
-  return String(value ?? "")
-    .replaceAll(username, "[redacted-username]")
-    .replaceAll(password, "[redacted-password]")
-    .replaceAll(sessionSecret, "[redacted-session-secret]");
+async function science(page) {
+  const identity = await nativeFixtureIdentitiesV3(page);
+  const requests = await page.evaluate(() => window.__openEnaNativeAudit.requests.length);
+  return { binding: identity.binding, requests };
 }
-
-function runCli(args, label, timeout = 120_000) {
-  try {
-    return execFileSync(
-      playwrightCli.command,
-      [...playwrightCli.prefix, "--session", sessionName, ...args],
-      {
-        cwd: artifactDirectory,
-        encoding: "utf8",
-        env: process.env,
-        maxBuffer: 24 * 1024 * 1024,
-        timeout,
-      },
-    );
-  } catch (caught) {
-    const stdout = caught && typeof caught === "object" && "stdout" in caught
-      ? redact(caught.stdout)
-      : "";
-    const stderr = caught && typeof caught === "object" && "stderr" in caught
-      ? redact(caught.stderr)
-      : "";
-    const details = `${stdout}\n${stderr}`.trim().slice(-8_000);
-    throw new Error(`Playwright CLI failed during ${label}.${details ? `\n${details}` : ""}`);
-  }
+async function chooseGroups(page, identity) {
+  const selects = page.getByTestId("open-ena-ona-descriptive-group-controls").getByRole("combobox");
+  assert.equal(await selects.count(), 2);
+  await selects.nth(0).selectOption(identity.dictionary.groups[0].token);
+  await selects.nth(1).selectOption(identity.dictionary.groups[1].token);
 }
-
-let dialogHandlerInstalled = false;
-
-function runBrowserPhase(label, source, timeout = 120_000) {
-  process.stdout.write(`[open-ena browser smoke] ${label} ... `);
-  // Standard ENA identity-bearing downloads now have an explicit confirmation
-  // gate. The smoke is an approved test actor, so accept that dialog before
-  // waiting for the download event instead of letting Playwright auto-dismiss it.
-  const installDialogHandler = !dialogHandlerInstalled;
-  const dialogHandlerSource = ` page.on("dialog", (dialog) => {
-    void dialog.accept().catch((error) => {
-      if (!/already handled/u.test(String(error))) throw error;
-    });
-  });`;
-  const instrumentedSource = source.replace(
-    /^async \(page\) => \{/u,
-    `async (page) => {${installDialogHandler ? dialogHandlerSource : ""}`,
-  );
-  const output = runCli(["--raw", "run-code", instrumentedSource], label, timeout).trim();
-  if (installDialogHandler) dialogHandlerInstalled = true;
-  const result = output ? JSON.parse(output) : null;
-  process.stdout.write("PASS\n");
-  return result;
+async function importFixture(page, horizons) {
+  await page.getByRole("navigation", { name: "Analysis modes" }).getByRole("button", { name: "Data", exact: true }).click();
+  await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({ name: "private-native-inference.csv", mimeType: "text/csv", buffer: Buffer.from(buildFixtureCsv()) });
+  await prepareNativeFixtureV3(page, { codes: fixtureCodes, units: ["Group", "Name"], horizons, group: "Group", backward: 1 });
 }
-
-async function findOpenPort() {
-  return await new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      const port = address && typeof address === "object" ? address.port : null;
-      server.close((error) => {
-        if (error) reject(error);
-        else if (port === null) reject(new Error("Could not allocate a local smoke-test port."));
-        else resolve(port);
-      });
-    });
-  });
-}
-
-async function waitForServer(url, timeout = 45_000) {
-  const deadline = Date.now() + timeout;
-  let lastError = null;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url, { redirect: "manual" });
-      if (response.status >= 200 && response.status < 400) return;
-    } catch (caught) {
-      lastError = caught;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`Open ENA did not become ready at ${url}.`, { cause: lastError });
-}
-
-function readServerLogTail() {
-  if (!existsSync(serverLogPath)) return "";
-  return redact(readFileSync(serverLogPath, "utf8")).slice(-8_000);
-}
-
-async function stopOwnedServer(server) {
-  if (!server || server.exitCode !== null || server.signalCode !== null) return;
-  const waitForExit = (timeout) => new Promise((resolve) => {
-    if (server.exitCode !== null || server.signalCode !== null) {
-      resolve(true);
-      return;
-    }
-    const timer = setTimeout(() => {
-      server.off("exit", onExit);
-      resolve(false);
-    }, timeout);
-    const onExit = () => {
-      clearTimeout(timer);
-      resolve(true);
-    };
-    server.once("exit", onExit);
-  });
-  const signalServer = (signal) => {
-    try {
-      if (process.platform === "win32") return server.kill(signal);
-      process.kill(-server.pid, signal);
-      return true;
-    } catch {
-      return server.kill(signal);
-    }
-  };
-  signalServer("SIGTERM");
-  if (await waitForExit(5_000)) return;
-  signalServer("SIGKILL");
-  if (!await waitForExit(5_000)) {
-    throw new Error("The owned loopback Next.js server did not exit after SIGKILL.");
-  }
-}
-
-let ownedServer = null;
-let browserSessionAttempted = false;
-let cleanupPromise = null;
-
-function cleanupOwnedResources() {
-  if (cleanupPromise) return cleanupPromise;
-  cleanupPromise = (async () => {
-    let browserCleanupError = null;
-    if (browserSessionAttempted) {
-      try {
-        runCli(["close"], "close browser session", 30_000);
-      } catch (caught) {
-        browserCleanupError = caught;
-      }
-    }
-    await stopOwnedServer(ownedServer);
-    if (browserCleanupError) throw browserCleanupError;
-  })();
-  return cleanupPromise;
-}
-
-async function handleSignal(signal) {
-  const exitCode = signal === "SIGINT" ? 130 : 143;
-  try {
-    await cleanupOwnedResources();
-  } catch (caught) {
-    process.stderr.write(`[open-ena browser smoke] cleanup after ${signal} failed: ${redact(caught)}\n`);
-  }
-  process.exit(exitCode);
-}
-
-process.once("SIGINT", () => void handleSignal("SIGINT"));
-process.once("SIGTERM", () => void handleSignal("SIGTERM"));
-
 function buildFixtureCsv() {
   const patterns = [
     "1,1,0,0,0",
@@ -295,447 +135,221 @@ function buildFixtureCsv() {
   return `${rows.join("\n")}\n`;
 }
 
-let browserOpened = false;
-let primaryFailure = null;
-let baseUrl = null;
-
 try {
-  verifyPlaywrightCliVersion();
-  const port = await findOpenPort();
-  baseUrl = `http://127.0.0.1:${port}`;
-  const logFd = openSync(serverLogPath, "w");
-  const serverEnvironment = Object.fromEntries(Object.entries(process.env).filter(([key]) => (
-    !key.startsWith("OPEN_ENA_SMOKE_")
-    && !["OPEN_ENA_USERNAME", "OPEN_ENA_PASSWORD", "OPEN_ENA_SESSION_SECRET"].includes(key)
-  )));
-  ownedServer = spawn(
-    "npm",
-    ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(port)],
-    {
-      cwd: projectRoot,
-      detached: process.platform !== "win32",
-      env: {
-        ...serverEnvironment,
-        OPEN_ENA_USERNAME: username,
-        OPEN_ENA_PASSWORD: password,
-        OPEN_ENA_SESSION_SECRET: sessionSecret,
-        // The smoke owns a random loopback port; bind production Origin checks
-        // to that exact origin for authenticated API requests.
-        OPEN_ENA_PUBLIC_ORIGIN: baseUrl,
-        OPEN_ENA_ALLOWED_ORIGINS: baseUrl,
-      },
-      stdio: ["ignore", logFd, logFd],
-    },
-  );
-  closeSync(logFd);
-  ownedServer.once("error", (error) => {
-    process.stderr.write(`[open-ena browser smoke] server error: ${redact(error.message)}\n`);
+  runtime = await createServedBrowserV3({ root: projectRoot, directory: join(artifactDirectory, "runtime"), credentials: { username, password, secret: sessionSecret }, redact, serverLogPath: join(artifactDirectory, "next-server.log"), disableBrowserCache: true });
+  const baseUrl = runtime.baseUrl;
+  const page = runtime.page;
+  page.on("dialog", dialog => { void dialog.accept(); }); // The only uploaded identities belong to this synthetic fixture.
+  let aiPostCount = 0;
+  page.on("request", request => { if (new URL(request.url()).pathname === "/api/open-ena/ai-interpretation" && request.method() === "POST") aiPostCount++; });
+  await stage("authenticate and prepare typed native Endpoint fixture", async () => {
+    const response = await page.goto(baseUrl + "/en/open-ena", { waitUntil: "networkidle" });
+    assert.equal(response.status(), 200);
+    await runtime.drainAssetReads("initial assets before authentication");
+    await page.getByRole("textbox", { name: "Account name" }).fill(username);
+    await page.getByRole("textbox", { name: "Password" }).fill(password);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await page.getByRole("navigation", { name: "Analysis modes" }).waitFor();
+    await importFixture(page, ["Group", "Name", "Lesson"]);
+    await runNativeFixtureV3(page);
+    const identity = await nativeFixtureIdentitiesV3(page);
+    assert.equal(identity.configuration.analysis.model.type, "EndPoint");
+    assert.equal(identity.dictionary.units.length, 17, "Group + Name must distinguish reused entity labels across Groups");
+    return { binding: identity.binding, units: identity.dictionary.units.length };
   });
-
-  await waitForServer(`${baseUrl}/en/open-ena`);
-  const openArgs = ["open", `${baseUrl}/en/open-ena`, "--browser", smokeBrowser];
-  browserSessionAttempted = true;
-  runCli(openArgs, "open browser");
-  browserOpened = true;
-
-  const login = runBrowserPhase("authenticate through the Open ENA form", `async (page) => {
-    const assert = (condition, message) => { if (!condition) throw new Error(message); };
-    await page.getByRole("textbox", { name: "Account name" }).fill(${JSON.stringify(username)});
-    await page.getByRole("textbox", { name: "Password" }).fill(${JSON.stringify(password)});
-    await page.getByRole("button", { name: "Sign in" }).click();
-    const rail = page.getByRole("navigation", { name: "Analysis modes" });
-    await rail.waitFor({ timeout: 30000 });
-    assert(page.url().endsWith("/en/open-ena"), "login did not return to the English workspace");
-    return { title: await page.title(), authenticated: true };
-  }`);
-
-  const fixtureCsv = buildFixtureCsv();
-  const endpointModel = runBrowserPhase("upload the composite-identity Lesson fixture and build Endpoint", `async (page) => {
-    const assert = (condition, message) => { if (!condition) throw new Error(message); };
-    const rail = page.getByRole("navigation", { name: "Analysis modes" });
-    await rail.getByRole("button", { name: "Data", exact: true }).click();
-    await page.locator(\`input[type=file][accept*=".csv"]\`).evaluate((input, csv) => {
-      const transfer = new DataTransfer();
-      transfer.items.add(new File([csv], "open-ena-inference-smoke.csv", { type: "text/csv" }));
-      input.files = transfer.files;
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-    }, ${JSON.stringify(fixtureCsv)});
-    await page.getByRole("heading", { name: "Define the ENA model" }).waitFor({ timeout: 30000 });
-
-    const unitGroup = page.getByRole("group", { name: /Unit identity/ });
-    const unitFields = await unitGroup.getByRole("checkbox").evaluateAll((nodes) => nodes
-      .filter((node) => node.checked)
-      .map((node) => node.parentElement.textContent.trim()));
-    assert(JSON.stringify(unitFields) === JSON.stringify(["Group", "Name"]), "Unit identity was not inferred as ordered Group + Name");
-
-    await page.getByRole("tab", { name: "Horizons" }).click();
-    const horizonFields = await page.getByRole("group", { name: /Horizon identity/ })
-      .getByRole("checkbox")
-      .evaluateAll((nodes) => nodes
-        .filter((node) => node.checked)
-        .map((node) => node.parentElement.textContent.trim()));
-    assert(
-      JSON.stringify(horizonFields) === JSON.stringify(["Group", "Name", "Lesson"]),
-      "Horizon identity was not inferred as Group + Name + Lesson",
-    );
-
-    const build = page.getByRole("button", { name: /Build ENA model/ });
-    assert(await build.isEnabled(), "Endpoint build was not enabled");
-    await build.click();
-    await page.getByRole("button", { name: /Rebuild model/ }).waitFor({ timeout: 30000 });
-    await page.getByRole("button", { name: "Download Model" }).click({ trial: true, timeout: 30000 });
-    return { unitFields, horizonFields };
-  }`);
-
-  const endpoint = runBrowserPhase("run explicit Endpoint Mann-Whitney and inspect consumers", `async (page) => {
-    const assert = (condition, message) => { if (!condition) throw new Error(message); };
-    const rail = page.getByRole("navigation", { name: "Analysis modes" });
-    await rail.getByRole("button", { name: "Stats & Export", exact: true }).click();
-    const designs = page.locator("[data-ena-inference-design=true]");
-    const independent = designs.getByRole("radio", { name: /Independent groups · Mann–Whitney U/ });
-    const pairedDesign = designs.getByRole("radio", { name: /Paired periods · Wilcoxon signed-rank/ });
-    const repeatedDesign = designs.getByRole("radio", { name: /Repeated periods · Friedman/ });
-    assert(await independent.isEnabled(), "Endpoint independent design is disabled");
-    assert(await pairedDesign.isDisabled(), "Endpoint paired design is enabled");
-    assert(await repeatedDesign.isDisabled(), "Endpoint repeated design is enabled");
-    for (const disabledDesign of [pairedDesign, repeatedDesign]) {
-      const reasonId = await disabledDesign.getAttribute("aria-describedby");
-      assert(reasonId && await page.locator("#" + reasonId).textContent(), "Disabled design lacks an aria-describedby reason");
+  const rail = page.getByRole("navigation", { name: "Analysis modes" });
+  const endpointScience = await science(page);
+  await stage("explicit Endpoint Mann-Whitney with full-precision native consumers", async () => {
+    await rail.getByRole("button", { name: /^Stats/ }).click();
+    assert.equal(await page.getByRole("button", { name: "Export native statistics", exact: true }).count(), 0, "inference must not run with model construction");
+    await chooseGroups(page, await nativeFixtureIdentitiesV3(page));
+    const run = page.getByRole("button", { name: "Run confirmed inference", exact: true });
+    await run.focus(); await page.keyboard.press("Enter");
+    const exported = page.getByRole("button", { name: "Export native statistics", exact: true });
+    await exported.waitFor();
+    assert.ok(await run.evaluate(node => document.activeElement === node), "inference completion must not steal keyboard focus");
+    const { value, sha256: hash } = await downloadJson(page, exported, "endpoint-statistics.json");
+    const rows = assertStatistics(value, endpointScience.binding, "endpoint-independent", "mann-whitney-u");
+    assert.equal(rows.length, 2);
+    for (const key of ["pRaw", "pHolm"]) {
+      const exact = await page.locator(`[data-native-metric="${key}"] span[title]`).evaluateAll(nodes => nodes.map(node => Number(node.title)));
+      assert.deepEqual(exact, rows.filter(row => row.status === "available").map(row => row[key]), "comparison cards must preserve exact exported values");
     }
-    const eligibility = page.locator(".ena-inference-eligibility");
-    assert(await eligibility.getAttribute("role") === "status", "Eligibility summary role is missing");
-    assert(await eligibility.getAttribute("aria-live") === "polite", "Eligibility live region is not polite");
-    assert(await page.getByRole("heading", { name: "Inferential comparison results" }).count() === 0, "Endpoint p-values appeared before an explicit run");
-    await independent.check();
-    assert(await page.getByRole("heading", { name: "Inferential comparison results" }).count() === 0, "Selecting a design ran inference implicitly");
-    const run = page.getByRole("button", { name: "Run inferential comparison" });
-    assert(await run.isEnabled(), "Endpoint Run inferential comparison is disabled");
-    await run.focus();
-    await run.press("Enter");
-
-    const caption = page.locator("table caption").filter({ hasText: /^Independent endpoint groups$/ });
-    await caption.waitFor({ timeout: 30000 });
-    const table = caption.locator("..");
-    assert(
-      await page.locator("#open-ena-inference-results").evaluate((heading) => (
-        document.activeElement !== heading && !heading.parentElement.contains(document.activeElement)
-      )),
-      "Result refresh forced focus into newly rendered results",
-    );
-    const headers = await table.locator("thead th").allTextContents();
-    assert(headers.some((value) => value.includes("Holm-adjusted p")), "Endpoint table lacks Holm-adjusted p");
-    assert(headers.some((value) => value.includes("Raw p")), "Endpoint table lacks raw p");
-    assert(await table.locator("tbody tr").count() === 2, "Endpoint result does not contain the two current axes");
-
-    const methods = await page.locator(".ena-methods-preview pre").textContent();
-    assert(methods && methods.includes("Mann") && methods.includes("Holm"), "Endpoint Methods is not bound to the inference");
-    const contrastSummary = await page.locator(".ena-selected-contrast-summary").textContent();
-    assert(contrastSummary && contrastSummary.includes("Selected axes"), "Endpoint contrast axes label is not localized through structured copy");
-    assert(!/\son\s/iu.test(contrastSummary), "Endpoint contrast summary leaked the former hard-coded English connector");
-
-    const bundlePromise = page.waitForEvent("download");
-    await page.getByRole("button", { name: /Export result bundle/ }).click();
-    const bundleDownload = await bundlePromise;
-    const bundleStream = await bundleDownload.createReadStream();
-    let bundleText = "";
-    for await (const chunk of bundleStream) bundleText += chunk.toString("utf8");
-    const bundle = JSON.parse(bundleText);
-    assert(bundle.schemaVersion === 2, "Endpoint result bundle is not schema v2");
-    assert(bundle.inference && bundle.inference.kind === "endpoint-independent", "Endpoint bundle inference differs from Stats");
-    assert(!JSON.stringify(bundle.inference).includes(${JSON.stringify(fixtureEntityPrefix)}), "Endpoint bundle inference leaked entity values");
-
-    await rail.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
-    const aiText = await page.locator("[data-ena-ai-payload-preview] pre").textContent();
-    assert(aiText && aiText.includes("open-ena-ai-interpretation-request-v2"), "Endpoint AI preview is not schema v2");
-    assert(aiText && aiText.includes("endpoint-independent"), "Endpoint AI discriminant is missing");
-    assert(aiText && !aiText.includes(${JSON.stringify(fixtureEntityPrefix)}), "Endpoint AI preview leaked entity values");
-    assert(
-      aiText && !${JSON.stringify(fixtureGroups)}.some((label) => aiText.includes(label)),
-      "Endpoint AI preview leaked real group labels",
-    );
-    assert(await page.getByRole("button", { name: "Generate AI interpretation" }).isDisabled(), "AI generation is enabled without explicit consent");
-    return { rows: 2, schemaVersion: bundle.schemaVersion, inferenceKind: bundle.inference.kind };
-  }`);
-
-  const accessibility = runBrowserPhase("check narrow layouts, keyboard tabs, and result focus target", `async (page) => {
-    const assert = (condition, message) => { if (!condition) throw new Error(message); };
-    const rail = page.getByRole("navigation", { name: "Analysis modes" });
-    await rail.getByRole("button", { name: "Stats & Export", exact: true }).click();
-    await page.getByRole("heading", { name: "Evidence and reproducibility", exact: true }).waitFor({ state: "visible", timeout: 30000 });
-    const widths = {};
-    for (const width of [320, 375, 1024]) {
-      await page.setViewportSize({ width, height: 900 });
-      widths[width] = await page.evaluate(() => ({
-        clientWidth: document.documentElement.clientWidth,
-        scrollWidth: document.documentElement.scrollWidth,
-      }));
-      assert(widths[width].scrollWidth <= widths[width].clientWidth + 1, "Page-level overflow at " + width + "px");
-      const tableWraps = await page.locator(".ena-inference-table-wrap").evaluateAll((nodes) => nodes.map((node) => ({
-        clientWidth: node.clientWidth,
-        scrollWidth: node.scrollWidth,
-        overflowX: getComputedStyle(node).overflowX,
-      })));
-      assert(tableWraps.length >= 2, "Endpoint inference ledger/result table wrappers are missing at " + width + "px");
-      assert(tableWraps.every((wrap) => wrap.overflowX === "auto" || wrap.overflowX === "scroll"), "A table wrapper cannot scroll locally at " + width + "px");
-      assert(tableWraps.some((wrap) => wrap.scrollWidth > wrap.clientWidth), "Wide inference results do not overflow their local wrapper at " + width + "px");
-    }
-    await page.setViewportSize({ width: 1280, height: 900 });
-    assert(await page.getByRole("tablist").count() === 1, "Stats renders more than one tablist");
-    const tabs = page.getByRole("tablist", { name: "Statistics views" });
-    const comparison = tabs.getByRole("tab", { name: "Comparison" });
-    const goodness = tabs.getByRole("tab", { name: "Goodness of Fit" });
-    const variance = tabs.getByRole("tab", { name: "Variance" });
+    await page.locator("details > summary").filter({ hasText: /^Native comparison statistics$/ }).click();
+    await page.locator("details > summary").filter({ hasText: /^Researcher-requested post-model inference$/ }).click();
+    assert.match(await page.locator('section[aria-label="Researcher-requested post-model inference"]').innerText(), /Mann|mann/u);
+    const bundle = (await downloadJson(page, page.getByRole("button", { name: "Download Model", exact: true }), "endpoint-model.json")).value;
+    assert.equal(bundle.schemaVersion, 3); assert.equal(bundle.kind, "open-ena-analysis-bundle");
+    assert.deepEqual(bundle.manifest, endpointScience.binding);
+    assert.equal(bundle.statistics.available, false); assert.equal(bundle.statistics.value, null);
+    assert.deepEqual(await science(page), endpointScience, "post-model inference and export must not rerun or rebind the model");
+    await page.screenshot({ path: join(artifactDirectory, "endpoint-statistics.png") });
+    return { binding: value.binding, rows, sha256: hash };
+  });
+  await stage("keyboard Stats tabs and local table scrolling", async () => {
+    const tabs = page.locator('[data-ena-stats-tab]');
+    const comparison = tabs.filter({ hasText: /^Comparison$/ });
     await comparison.focus();
-    await comparison.press("ArrowRight");
-    assert(await goodness.getAttribute("aria-selected") === "true", "ArrowRight did not select Goodness of Fit");
-    assert(await goodness.evaluate((element) => document.activeElement === element), "ArrowRight did not move active focus to Goodness of Fit");
-    await goodness.press("End");
-    assert(await variance.getAttribute("aria-selected") === "true", "End did not select Variance");
-    assert(await variance.evaluate((element) => document.activeElement === element), "End did not move active focus to Variance");
-    await variance.press("Home");
-    assert(await comparison.getAttribute("aria-selected") === "true", "Home did not restore Comparison");
-    assert(await comparison.evaluate((element) => document.activeElement === element), "Home did not restore active focus to Comparison");
-    const jump = page.getByRole("link", { name: "Jump to inferential results" });
-    await jump.focus();
-    await jump.press("Enter");
-    assert(await page.evaluate(() => location.hash) === "#open-ena-inference-results", "Jump to results did not update the focus target URL");
-    const resultHeading = page.locator("#open-ena-inference-results");
-    assert(await resultHeading.getAttribute("tabindex") === "-1", "Result heading is not programmatically focusable");
-    assert(await resultHeading.evaluate((element) => document.activeElement === element), "Jump to results did not move active focus to the result heading");
-    return { widths, keyboard: true, jumpTarget: "#open-ena-inference-results" };
-  }`);
-
-  const trajectoryV3 = runBrowserPhase("run current V3 trajectory inference envelope", `async (page) => {
-    const assert = (condition, message) => { if (!condition) throw new Error(message); };
-    const rail = page.getByRole("navigation", { name: "Analysis modes" });
-    await rail.getByRole("button", { name: "Model", exact: true }).click();
-    await page.getByRole("heading", { name: "Define the ENA model", exact: true }).waitFor({ state: "visible", timeout: 30000 });
-    const windowsTab = page.getByRole("tab", { name: "Windows", exact: true });
-    await windowsTab.waitFor({ state: "visible", timeout: 30000 });
-    await windowsTab.click();
-    const modelType = page.getByRole("combobox", { name: "Model type" });
-    await modelType.waitFor({ state: "visible", timeout: 30000 });
-    await modelType.selectOption("SeparateTrajectory");
-    const selectedModelType = await modelType.inputValue();
-    assert(selectedModelType === "SeparateTrajectory", "Separate trajectory selection did not bind");
-    const rebuild = page.getByRole("button", { name: /Rebuild model/ });
-    assert(await rebuild.isEnabled(), "Trajectory rebuild is disabled");
-    await rebuild.click();
-
-    const workbench = page.getByTestId("open-ena-longitudinal-v3-workbench");
-    await workbench.waitFor({ state: "visible", timeout: 30000 });
-    await workbench
-      .locator('section[data-trajectory-step="10"] .ena-longitudinal-v3-run-status [data-state="ready"]')
-      .waitFor({ state: "visible", timeout: 30000 });
-    assert(await page.getByTestId("open-ena-center-surface").count() === 0, "Trajectory result fell through to the generic ENA presenter");
-
-    await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
-    await workbench.locator('[data-trajectory-step="1"]').waitFor({ state: "visible", timeout: 30000 });
-    const identity = workbench.getByRole("checkbox", {
-      name: /same raw ID represents the same physical entity/u,
-    });
-    if (!await identity.isChecked()) await identity.check();
-    const runTrajectory = workbench.getByRole("button", { name: "Run trajectory analysis", exact: true });
-    assert(await runTrajectory.isEnabled(), "V3 trajectory analysis is disabled");
-    await runTrajectory.click();
-    const continueLocal = workbench.getByRole("button", { name: "Continue locally", exact: true });
-    const confirmationVisible = await continueLocal
-      .waitFor({ state: "visible", timeout: 3000 })
-      .then(() => true)
-      .catch(() => false);
-    if (confirmationVisible) await continueLocal.click();
-    await workbench
-      .locator('section[data-trajectory-step="10"] .ena-longitudinal-v3-run-status [data-state="complete"]')
-      .waitFor({ state: "visible", timeout: 120000 });
-
-    const inferenceSection = workbench.getByTestId("open-ena-longitudinal-v3-inference");
-    await inferenceSection.waitFor({ state: "visible", timeout: 30000 });
-    const captionText = await inferenceSection.locator("caption").textContent();
-    assert(captionText && captionText.includes("Holm adjustment"), "V3 inference table does not declare Holm adjustment");
-    const inferenceRows = inferenceSection.locator("tbody tr");
-    await inferenceRows.first().waitFor({ timeout: 30000 });
-    const inferenceAudit = await inferenceRows.evaluateAll((rows) => ({
-      rowCount: rows.length,
-      requestKinds: [...new Set(rows.map((row) => row.cells[0]?.textContent?.trim()).filter(Boolean))].sort(),
-      tests: [...new Set(rows.map((row) => row.cells[1]?.textContent?.trim()).filter(Boolean))].sort(),
-    }));
-    for (const requestKind of ["independent-period", "paired-periods", "repeated-periods", "path-comparison"]) {
-      assert(inferenceAudit.requestKinds.includes(requestKind), "V3 inference UI omitted " + requestKind);
+    for (const [key, selected] of [["ArrowRight", "goodness"], ["End", "variance"], ["Home", "comparison"]]) {
+      await page.keyboard.press(key);
+      const active = page.locator(`[data-ena-stats-tab="${selected}"]`);
+      assert.equal(await active.getAttribute("aria-selected"), "true");
+      assert.ok(await active.evaluate(node => document.activeElement === node));
     }
-    for (const testName of ["mann-whitney", "wilcoxon-signed-rank", "friedman"]) {
-      assert(inferenceAudit.tests.includes(testName), "V3 inference UI omitted " + testName);
+    assert.equal(await page.locator('[data-ena-stats-tab][tabindex="0"]').count(), 1);
+    await page.keyboard.press("Tab");
+    assert.ok(await page.locator('[data-ena-stats-panel="comparison"]').evaluate(node => document.activeElement === node), "Tab reaches the focusable result panel");
+    const widths = [];
+    for (const width of [768, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      const box = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
+      assert.ok(box.scrollWidth <= box.width + 1, `page overflow at ${width}px`);
+      const wraps = await page.locator('.ena-result-table-wrap').evaluateAll(nodes => nodes.filter(node => node.getClientRects().length > 0).map(node => ({ tabIndex: node.tabIndex, overflowX: getComputedStyle(node).overflowX, clientWidth: node.clientWidth, scrollWidth: node.scrollWidth })));
+      assert.ok(wraps.length >= 2);
+      assert.ok(wraps.every(node => node.tabIndex === 0 && ["auto", "scroll"].includes(node.overflowX)));
+      assert.ok(wraps.some(node => node.scrollWidth > node.clientWidth));
+      widths.push({ viewport: width, ...box, wraps });
     }
-
-    const analysisPromise = page.waitForEvent("download");
-    await workbench.getByRole("button", { name: "Analysis JSON", exact: true }).click();
-    const analysisDownload = await analysisPromise;
-    const analysisStream = await analysisDownload.createReadStream();
-    let analysisText = "";
-    for await (const chunk of analysisStream) analysisText += chunk.toString("utf8");
-    const analysis = JSON.parse(analysisText);
-    assert(analysis.schemaVersion === "3dena.longitudinal-aggregate-export.v2", "V3 analysis JSON has the wrong schema");
-    assert(analysis.privacy?.participantLevelIncluded === false, "V3 aggregate analysis enabled participant-level output");
-    const analysisKinds = analysis.inference.map((family) => family.request?.kind).filter(Boolean).sort();
-    assert(
-      JSON.stringify(analysisKinds) === JSON.stringify(["independent-period", "paired-periods", "repeated-periods"]),
-      "V3 analysis JSON omitted a coordinate inference family",
-    );
-    assert(Array.isArray(analysis.pathComparisons) && analysis.pathComparisons.length > 0, "V3 analysis JSON omitted whole-path comparison");
-    assert(
-      analysis.pathComparisons.every((comparison) => comparison.result.tests.every((test) => (
-        test.permutationCount === 500
-        && Number.isFinite(test.pValue)
-        && Number.isFinite(test.holmAdjustedPValue)
-      ))),
-      "V3 whole-path permutation evidence is incomplete",
-    );
-    assert(!analysisText.includes(${JSON.stringify(fixtureEntityPrefix)}), "V3 aggregate analysis leaked participant identity values");
-    assert(!analysisText.includes("participantCanonical"), "V3 aggregate analysis leaked participant canonical fields");
-
-    return {
-      modelType: selectedModelType,
-      inferenceRows: inferenceAudit.rowCount,
-      requestKinds: inferenceAudit.requestKinds,
-      tests: inferenceAudit.tests,
-      schemaVersion: analysis.schemaVersion,
-      participantLevelIncluded: analysis.privacy.participantLevelIncluded,
-    };
-  }`, 180_000);
-
-  const locales = runBrowserPhase("run localized Endpoint inference in Traditional and Simplified Chinese", `async (page) => {
-    const assert = (condition, message) => { if (!condition) throw new Error(message); };
-    const checked = {};
-    for (const locale of [
-      {
-        path: "zh-hant",
-        sample: "載入教學範例",
-        stats: "統計與匯出",
-        independent: /獨立群組 · Mann–Whitney U 檢定/,
-        paired: /配對期間 · Wilcoxon signed-rank/,
-        repeated: /重複期間 · Friedman 檢定/,
-        pairedReason: "配對期間推論需要成功的軌跡模型。",
-        ready: "設計與彙總納入帳本已可供檢查；尚未計算任何 p 值。",
-        ledgerCaption: "已確認設計的彙總候選、納入與排除數",
-        run: "執行推論比較",
-        results: "推論比較結果",
-        caption: "獨立端點群組",
-        holm: "Holm 校正 p（主要）",
-        raw: "原始 p（稽核）",
-        provenance: "推論來源記錄",
-        boundary: "端點模型不會驗證兩個獨立群組是否位於同一共同時間期間。",
-        axes: "所選座標軸",
-      },
-      {
-        path: "zh-hans",
-        sample: "加载教学示例",
-        stats: "统计与导出",
-        independent: /独立组 · Mann–Whitney U 检验/,
-        paired: /配对时期 · Wilcoxon signed-rank/,
-        repeated: /重复时期 · Friedman 检验/,
-        pairedReason: "配对时期推断需要成功的轨迹模型。",
-        ready: "设计与汇总纳入账本已可检查；尚未计算任何 p 值。",
-        ledgerCaption: "已确认设计的汇总候选、纳入与排除数",
-        run: "运行推断比较",
-        results: "推断比较结果",
-        caption: "独立端点组",
-        holm: "Holm 校正 p（主要）",
-        raw: "原始 p（审计）",
-        provenance: "推断来源记录",
-        boundary: "端点模型不会验证两个独立组是否处于同一共同时间时期。",
-        axes: "所选坐标轴",
-      },
-    ]) {
-      await page.goto(${JSON.stringify(baseUrl)} + "/" + locale.path + "/open-ena");
+    await page.screenshot({ path: join(artifactDirectory, "inference-narrow-390.png") });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    return { widths, keyboard: true };
+  });
+  await stage("aggregate AI preview and explicit consent", async () => {
+    await rail.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
+    await page.locator('[data-ena-ai-payload-preview] > summary').click();
+    const text = await page.locator('[data-ena-ai-payload-preview] pre').innerText();
+    assert.match(text, /open-ena-ai-interpretation-request-v2/u);
+    assert.match(text, /endpoint-independent/u);
+    assert.ok(text.includes(endpointScience.binding.datasetSha256));
+    assertAggregatePrivacy(text);
+    assert.ok(await page.getByRole("button", { name: "Generate AI interpretation", exact: true }).isDisabled());
+    assert.equal(aiPostCount, 0, "smoke must not send a provider request");
+    return { aggregate: true, providerRequests: aiPostCount };
+  });
+  let orderedHorizons, trajectoryScience;
+  await stage("configure missing-period native trajectories with explicit source order", async () => {
+    await importFixture(page, ["Lesson"]);
+    await page.getByRole("combobox", { name: "Model", exact: true }).selectOption("SeparateTrajectory");
+    await page.getByRole("tab", { name: /^Horizons(,|$)/ }).click();
+    const panel = page.getByRole("tabpanel");
+    await panel.getByLabel("Use source order", { exact: true }).check();
+    await panel.getByRole("button", { name: "Review source-order statement", exact: true }).click();
+    await panel.getByRole("button", { name: "Accept statement", exact: true }).click();
+    await runNativeFixtureV3(page);
+    const identity = await nativeFixtureIdentitiesV3(page);
+    assert.equal(identity.configuration.analysis.model.type, "SeparateTrajectory");
+    assert.equal(identity.dictionary.units.length, 17);
+    const sequences = await page.evaluate(() => window.__openEnaNativeAudit.responses.at(-1).result.executionProvenance.ordering.resolvedHorizonOrder.unitSequences);
+    const longest = [...sequences].sort((a, b) => b.steps.length - a.steps.length)[0];
+    orderedHorizons = longest.steps.map(step => identity.dictionary.horizons.find(horizon => horizon.token === step.horizonToken));
+    assert.equal(orderedHorizons.length, 3);
+    assert.ok(orderedHorizons.every(Boolean));
+    assert.ok(sequences.some(sequence => sequence.steps.length < 3), "fixture must exercise missing-period inclusion");
+    trajectoryScience = await science(page);
+    await rail.getByRole("button", { name: /^Stats/ }).click();
+    await chooseGroups(page, identity);
+    return { binding: trajectoryScience.binding, sequenceLengths: sequences.map(sequence => sequence.steps.length) };
+  });
+  await stage("three explicit native trajectory rank designs", async () => {
+    const designs = [
+      { design: "independent", count: 1, kind: "trajectory-independent-period", method: "mann-whitney-u" },
+      { design: "paired", count: 2, kind: "trajectory-paired-periods", method: "wilcoxon-signed-rank" },
+      { design: "repeated", count: 3, kind: "trajectory-repeated-periods", method: "friedman" },
+    ];
+    const outputs = [];
+    for (const design of designs) {
+      for (const horizon of orderedHorizons) await page.getByRole("checkbox", { name: horizon.displayLabel, exact: true }).uncheck();
+      await page.getByRole("combobox", { name: /^Trajectory inference design/ }).selectOption(design.design);
+      const run = page.getByRole("button", { name: "Run confirmed inference", exact: true });
+      assert.ok(await run.isDisabled(), "empty period selection cannot produce inference");
+      await page.getByRole("checkbox", { name: "I confirm these fitted Units identify the same entities across periods.", exact: true }).check();
+      for (const horizon of orderedHorizons.slice(0, design.count)) await page.getByRole("checkbox", { name: horizon.displayLabel, exact: true }).check();
+      await run.click();
+      const exported = page.getByRole("button", { name: "Export native statistics", exact: true });
+      await exported.waitFor();
+      const { value, sha256: hash } = await downloadJson(page, exported, `trajectory-${design.design}.json`);
+      assertStatistics(value, trajectoryScience.binding, design.kind, design.method);
+      assert.equal(value.controls.request.kind, design.kind);
+      if (design.design === "repeated") assert.ok(value.inference.followupRows.length > 0);
+      assert.deepEqual(await science(page), trajectoryScience);
+      outputs.push({ kind: design.kind, ledger: value.inference.ledger, sha256: hash });
+    }
+    return outputs;
+  });
+  await stage("whole-path permutation and aggregate export integrity", async () => {
+    const panel = page.getByTestId("open-ena-native-trajectory-analysis");
+    const run = panel.getByRole("button", { name: "Run whole-path comparison", exact: true });
+    assert.ok(await run.isDisabled());
+    await panel.getByRole("checkbox", { name: "I confirm that the entity histories in these two Groups are independent.", exact: true }).check();
+    await run.click();
+    await panel.getByText("Whole-path comparison current", { exact: true }).waitFor({ timeout: 120_000 });
+    const rows = await panel.getByTestId("open-ena-native-trajectory-path-statistics").locator("tbody tr").evaluateAll(nodes => nodes.map(node => [...node.cells].map(cell => cell.textContent.trim())));
+    assert.equal(rows.length, 23);
+    for (const row of rows) {
+      assert.equal(Number(row[6]), 500);
+      assert.ok([row[3], row[4], row[5]].every(value => value !== "—" && Number.isFinite(Number(value))));
+      assert.ok(Number(row[4]) >= 0 && Number(row[4]) <= Number(row[5]) && Number(row[5]) <= 1);
+    }
+    assert.equal(await panel.getByRole("checkbox", { name: "Include participant data in this export", exact: true }).isChecked(), false);
+    const zip = await download(page, panel.getByRole("button", { name: "Export trajectory bundle", exact: true }), "trajectory-aggregate.zip");
+    assert.equal(zip.bytes.subarray(0, 4).readUInt32LE(), 0x04034b50);
+    const analysis = await downloadJson(page, panel.getByRole("button", { name: "Download analysis.json", exact: true }), "trajectory-analysis.json");
+    const manifest = (await downloadJson(page, panel.getByRole("button", { name: "Download manifest.json", exact: true }), "trajectory-manifest.json")).value;
+    assert.equal(analysis.value.schemaVersion, 3); assert.equal(analysis.value.kind, "open-ena-native-trajectory-analysis");
+    assert.deepEqual(analysis.value.binding, trajectoryScience.binding);
+    assert.equal(analysis.value.ranks.length, 3);
+    assert.equal(analysis.value.pathComparison.tests.length, 23);
+    assert.ok(analysis.value.pathComparison.tests.every(test => test.permutationCount === 500));
+    assertAggregatePrivacy(analysis.value); assertAggregatePrivacy(manifest);
+    assert.equal(manifest.kind, "open-ena-native-trajectory-export-manifest");
+    assert.equal(manifest.disclosure, "aggregate");
+    assert.deepEqual(new Set(manifest.requestFamilies), new Set(["trajectory-independent-period", "trajectory-paired-periods", "trajectory-repeated-periods", "path-comparison"]));
+    assert.ok(!manifest.files.some(file => file.filename === "participants.json"));
+    assert.equal(manifest.files.find(file => file.filename === "analysis.json").sha256, analysis.sha256);
+    assert.deepEqual(await science(page), trajectoryScience);
+    await page.screenshot({ path: join(artifactDirectory, "trajectory-inference.png") });
+    return { rows: rows.length, permutations: 500, requestFamilies: manifest.requestFamilies, analysisSha256: analysis.sha256, zipSha256: zip.sha256 };
+  });
+  await stage("Traditional and Simplified Chinese native inference", async () => {
+    const locales = [
+      { path: "zh-hant", sample: "載入樣本", stats: "統計與匯出", run: "執行已確認推論", export: "匯出原生統計" },
+      { path: "zh-hans", sample: "加载样本", stats: "统计与导出", run: "运行已确认推断", export: "导出原生统计" },
+    ];
+    const results = [];
+    for (const locale of locales) {
+      await runtime.drainAssetReads(`assets before ${locale.path} navigation`);
+      const response = await page.goto(`${baseUrl}/${locale.path}/open-ena`, { waitUntil: "networkidle" });
+      assert.equal(response.status(), 200);
       const localizedDataPanel = page.getByTestId("open-ena-persistent-analysis-panel");
       await localizedDataPanel.getByRole("button", { name: locale.sample, exact: true }).click();
-      await page.getByRole("button", { name: "Download Model" }).click({ trial: true, timeout: 30000 });
-      const rail = page.getByRole("navigation", { name: "Analysis modes" });
-      await rail.getByRole("button", { name: locale.stats, exact: true }).click();
-      const designs = page.locator("[data-ena-inference-design=true]");
-      assert(await designs.getByRole("radio", { name: locale.independent }).count() === 1, locale.path + " Mann–Whitney full name is missing");
-      const pairedDesign = designs.getByRole("radio", { name: locale.paired });
-      assert(await pairedDesign.count() === 1, locale.path + " Wilcoxon signed-rank full name is missing");
-      assert(await designs.getByRole("radio", { name: locale.repeated }).count() === 1, locale.path + " Friedman/Wilcoxon full name is missing");
-      assert(await pairedDesign.isDisabled(), locale.path + " endpoint paired design is unexpectedly enabled");
-      const reasonId = await pairedDesign.getAttribute("aria-describedby");
-      assert(reasonId && await page.locator("#" + reasonId).textContent() === locale.pairedReason, locale.path + " localized disabled reason is missing");
-      const eligibility = page.locator(".ena-inference-eligibility");
-      assert(await eligibility.getAttribute("role") === "status" && await eligibility.getAttribute("aria-live") === "polite", locale.path + " eligibility live region is incomplete");
-      await designs.getByRole("radio", { name: locale.independent }).check();
-      assert(await eligibility.textContent() === locale.ready, locale.path + " localized eligibility copy is incomplete");
-      const ledger = page.locator(".ena-inference-ledger table");
-      assert(await ledger.locator("caption").textContent() === locale.ledgerCaption, locale.path + " localized ledger caption is missing");
-      assert(await ledger.getByRole("columnheader").count() === 2, locale.path + " ledger headers are incomplete");
-      const run = page.getByRole("button", { name: locale.run, exact: true });
-      assert(await run.isEnabled(), locale.path + " localized endpoint Run is disabled");
-      await run.click();
-      await page.getByRole("heading", { name: locale.results, exact: true }).waitFor({ timeout: 30000 });
-      const caption = page.locator("table caption").filter({ hasText: new RegExp("^" + locale.caption + "$") });
-      await caption.waitFor();
-      const resultTable = caption.locator("..");
-      const headers = await resultTable.getByRole("columnheader").allTextContents();
-      assert(headers.includes(locale.holm) && headers.includes(locale.raw), locale.path + " localized raw/Holm headers are incomplete");
-      assert(await resultTable.locator("tbody tr").count() === 2, locale.path + " localized endpoint result rows are incomplete");
-      assert(await page.getByRole("heading", { name: locale.provenance, exact: true }).count() === 1, locale.path + " localized provenance is missing");
-      assert(await page.getByText(locale.boundary, { exact: true }).count() === 1, locale.path + " endpoint temporal boundary is missing");
-      const contrastSummary = await page.locator(".ena-selected-contrast-summary").textContent();
-      assert(contrastSummary && contrastSummary.includes(locale.axes), locale.path + " selected axes copy is missing");
-      assert(!/\son\s/iu.test(contrastSummary), locale.path + " leaked the former hard-coded English connector");
-      checked[locale.path] = { resultRows: 2, caption: locale.caption };
+      await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current", null, { timeout: 60_000 });
+      await page.locator('.ena-rail-modes').getByRole("button", { name: locale.stats, exact: true }).click();
+      await chooseGroups(page, await nativeFixtureIdentitiesV3(page));
+      await page.getByRole("button", { name: locale.run, exact: true }).click();
+      const exported = page.getByRole("button", { name: locale.export, exact: true }); await exported.waitFor();
+      const { value, sha256: hash } = await downloadJson(page, exported, `${locale.path}-statistics.json`);
+      assertStatistics(value, (await science(page)).binding, "endpoint-independent", "mann-whitney-u");
+      for (const label of ["p（原始）", "p（Holm 校正）"]) assert.ok(await page.getByText(label, { exact: true }).count() > 0);
+      await page.screenshot({ path: join(artifactDirectory, `${locale.path}-statistics.png`) });
+      results.push({ locale: locale.path, rows: value.inference.rows.length, sha256: hash });
     }
-    return checked;
-  }`, 180_000);
-
-  const consoleOutput = runCli(["console", "error"], "read browser console");
-  assert.match(consoleOutput, /Errors:\s*0/u, "Browser console contains errors.");
-  assert.match(consoleOutput, /Warnings:\s*0/u, "Browser console contains warnings.");
-  const serverLogAudit = readServerLogTail();
-  assert(!serverLogAudit.includes(fixtureEntityPrefix), "Next server log leaked participant identity values.");
-  assert.doesNotMatch(serverLogAudit, /entity-\d{6}/u, "Next server log leaked an opaque inference entity token.");
-
-  const summary = {
-    status: "PASS",
-    login,
-    endpointModel,
-    endpoint: {
-      status: "PASS",
-      resultRows: 2,
-      schemaVersion: 2,
-      inferenceKind: "endpoint-independent",
-      browserPhaseReturnCaptured: endpoint !== null,
-    },
-    accessibility,
-    trajectoryV3,
-    locales: {
-      en: { resultRows: 2, caption: "Independent endpoint groups" },
-      ...locales,
-    },
-    console: { errors: 0, warnings: 0 },
-    browser: smokeBrowser,
-    artifacts: artifactDirectory,
-  };
-  process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
-} catch (caught) {
-  primaryFailure = caught;
-  if (browserOpened) {
-    try {
-      runCli(["screenshot"], "capture failure screenshot", 30_000);
-    } catch {
-      // Preserve the original smoke-test error.
-    }
-  }
-  const serverLog = readServerLogTail();
-  if (serverLog) process.stderr.write(`[open-ena browser smoke] server log tail:\n${serverLog}\n`);
+    return results;
+  });
+  await runtime.drainAssetReads("final inference assets");
+  assert.deepEqual(runtime.receipt.consoleErrors, []);
+  assert.deepEqual(runtime.receipt.consoleWarnings, []);
+  assert.deepEqual(runtime.receipt.pageErrors, []);
+  assert.equal(aiPostCount, 0);
+  summary.status = "pass";
+  summary.browserGraphics = runtime.receipt.browser.graphics;
+} catch (error) {
+  failure = error; summary.status = "fail"; summary.error = redact(error.stack ?? error);
+  if (runtime?.page) await runtime.page.screenshot({ path: join(artifactDirectory, "failure.png") }).catch(() => {});
+  process.stderr.write(redact(error.stack ?? error) + "\n");
 } finally {
-  try {
-    await cleanupOwnedResources();
-  } catch (cleanupError) {
-    if (primaryFailure) {
-      process.stderr.write(`[open-ena browser smoke] cleanup failure: ${redact(cleanupError)}\n`);
-    } else {
-      primaryFailure = cleanupError;
-    }
-  }
+  try { if (runtime) await runtime.close(failure); }
+  catch (error) { failure ??= error; summary.status = "fail"; summary.cleanupError = redact(error.stack ?? error); }
+  saveSummary();
 }
-
-if (primaryFailure) throw primaryFailure;
+if (failure) process.exitCode = 1;
+else process.stdout.write(JSON.stringify(summary, null, 2) + "\n");
