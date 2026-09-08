@@ -155,19 +155,6 @@ export default function BackToTop({ label, progressLabel }: BackToTopProps) {
           cy="28"
           r={progressCircleRadius}
           fill="none"
-          stroke="var(--accent-strong)"
-          strokeWidth="5.2"
-          strokeLinecap="round"
-          data-track="page-progress-outline"
-          strokeDasharray={progressCircleCircumference}
-          strokeDashoffset={progressOffset}
-          transform="rotate(-90 28 28)"
-        />
-        <circle
-          cx="28"
-          cy="28"
-          r={progressCircleRadius}
-          fill="none"
           stroke="#48d5e8"
           strokeWidth="2.6"
           strokeLinecap="round"

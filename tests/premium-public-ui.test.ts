@@ -84,7 +84,7 @@ test("the Home page uses a plain paper background without removing purposeful li
   assert.match(openEnaFrame, /border:\s*1px solid rgba\(137, 207, 240, 0\.16\);/u);
   assert.match(workflowConnector, /height:\s*1px;/u);
   assert.match(workflowConnector, /background:\s*#afc1ca;/u);
-  assert.match(globalCss, /data-track="page-progress-outline"/u);
+  assert.doesNotMatch(globalCss, /data-track="page-progress-outline"/u);
   assert.match(globalCss, /data-track="page-progress-arc"/u);
 });
 

@@ -150,35 +150,6 @@ function getMediaBlocks(stylesheet: string, query: string) {
   }
 }
 
-function getProgressCircleMarkup(html: string, track: "page-progress-outline" | "page-progress-arc") {
-  const circle = html.match(new RegExp(`<circle(?=[^>]*data-track="${track}")[^>]*>`));
-  assert.ok(circle, `missing ${track} circle`);
-  return circle[0];
-}
-
-function getMarkupAttribute(markup: string, attribute: string) {
-  const value = markup.match(new RegExp(`${attribute}="([^"]*)"`));
-  assert.ok(value, `missing ${attribute} attribute`);
-  return value[1];
-}
-
-function relativeLuminance(hex: string) {
-  const channels = hex.match(/[0-9a-f]{2}/giu);
-  assert.ok(channels && channels.length === 3, `invalid color: ${hex}`);
-
-  return channels
-    .map((channel) => {
-      const srgb = Number.parseInt(channel, 16) / 255;
-      return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
-    })
-    .reduce((luminance, channel, index) => luminance + channel * [0.2126, 0.7152, 0.0722][index], 0);
-}
-
-function contrastRatio(first: string, second: string) {
-  const [lighter, darker] = [relativeLuminance(first), relativeLuminance(second)].sort((a, b) => b - a);
-  return (lighter + 0.05) / (darker + 0.05);
-}
-
 test("scroll progress clamps page distance to an integer percentage", () => {
   assert.equal(getScrollProgress({ scrollTop: 0, scrollHeight: 1600, clientHeight: 800 }), 0);
   assert.equal(getScrollProgress({ scrollTop: 400, scrollHeight: 1600, clientHeight: 800 }), 50);
@@ -188,7 +159,7 @@ test("scroll progress clamps page distance to an integer percentage", () => {
   assert.equal(getScrollProgress({ scrollTop: 40, scrollHeight: 700, clientHeight: 800 }), 0);
 });
 
-test("back-to-top renders the approved ENA progress-ring artwork and contrast outline", () => {
+test("back-to-top renders the ENA progress-ring artwork without a dark outline", () => {
   const html = renderToStaticMarkup(
     React.createElement(BackToTop, {
       label: "Back to top",
@@ -210,57 +181,10 @@ test("back-to-top renders the approved ENA progress-ring artwork and contrast ou
   assert.match(html, /stroke="#172033"/);
   assert.match(html, /d="M28 37\.5V20\.5M19\.5 29 28 20\.5 36\.5 29"/);
   assert.match(html, /transform="rotate\(-90 28 28\)"/);
-  assert.match(html, /data-track="page-progress-outline"/);
-  assert.match(html, /stroke="var\(--accent-strong\)"/);
-  assert.match(html, /stroke-width="5\.2"/);
+  assert.doesNotMatch(html, /data-track="page-progress-outline"/);
+  assert.doesNotMatch(html, /stroke="var\(--accent-strong\)"/);
   assert.match(html, /data-track="page-progress-arc"/);
-  assert.ok(
-    html.indexOf('data-track="page-progress-outline"') < html.indexOf('data-track="page-progress-arc"'),
-    "the deep-blue outline must render beneath the cyan arc",
-  );
   assert.doesNotMatch(html, />↑</u);
-});
-
-test("progress-ring outline and arc share their complete geometry", () => {
-  const html = renderToStaticMarkup(
-    React.createElement(BackToTop, {
-      label: "Back to top",
-      progressLabel: "Page scroll progress",
-    }),
-  );
-  const outline = getProgressCircleMarkup(html, "page-progress-outline");
-  const arc = getProgressCircleMarkup(html, "page-progress-arc");
-
-  for (const attribute of [
-    "cx",
-    "cy",
-    "r",
-    "fill",
-    "stroke-linecap",
-    "stroke-dasharray",
-    "stroke-dashoffset",
-    "transform",
-  ]) {
-    assert.equal(getMarkupAttribute(outline, attribute), getMarkupAttribute(arc, attribute), attribute);
-  }
-
-  assert.equal(getMarkupAttribute(outline, "stroke-width"), "5.2");
-  assert.equal(getMarkupAttribute(outline, "stroke"), "var(--accent-strong)");
-  assert.equal(getMarkupAttribute(arc, "stroke-width"), "2.6");
-  assert.equal(getMarkupAttribute(arc, "stroke"), "#48d5e8");
-  assert.ok(
-    html.indexOf('data-track="page-progress-outline"') < html.indexOf('data-track="page-progress-arc"'),
-    "the deep-blue outline must render beneath the cyan arc",
-  );
-});
-
-test("the approved deep-blue outline has a 3:1 boundary contrast without rounding", () => {
-  for (const background of ["#dfe6ee", "#89cff0", "#48d5e8", "#ffffff"]) {
-    assert.ok(
-      contrastRatio("#1f6f9e", background) >= 3,
-      `#1f6f9e must have at least 3:1 contrast against ${background}`,
-    );
-  }
 });
 
 test("scroll-progress controller subscribes once and coalesces notifications until flush", () => {
@@ -396,18 +320,17 @@ test("back-to-top CSS preserves the responsive and motion contracts", () => {
 
   const progressTransition = getRuleBlock(
     css,
-    '.back-to-top [data-track="page-progress-outline"],\n.back-to-top [data-track="page-progress-arc"]',
+    '.back-to-top [data-track="page-progress-arc"]',
   );
   assert.match(progressTransition, /transition: stroke-dashoffset 140ms linear;/u);
 
   const reducedMotion = getMediaBlocks(css, "@media (prefers-reduced-motion: reduce)").find((block) =>
-    block.includes('data-track="page-progress-outline"'),
+    block.includes('data-track="page-progress-arc"'),
   );
-  assert.ok(reducedMotion, "missing reduced-motion outline override");
+  assert.ok(reducedMotion, "missing reduced-motion progress override");
   assert.match(reducedMotion, /\.back-to-top,/u);
   assert.match(reducedMotion, /\.back-to-top-progress,/u);
   assert.match(reducedMotion, /\.back-to-top-tooltip,/u);
-  assert.match(reducedMotion, /page-progress-outline/u);
   assert.match(reducedMotion, /page-progress-arc/u);
   assert.match(reducedMotion, /transition: none;/u);
 
