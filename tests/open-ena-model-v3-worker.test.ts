@@ -85,7 +85,10 @@ test("duplicate request ids cannot allocate a second stream", async () => {
   const worker = host();
   const request = { kind: "run-open-ena-plan-v3", id: "duplicate", plan, chunkSize: 2 };
   worker.send(request); worker.send(request);
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  const deadline = Date.now() + 2000;
+  while (!worker.messages.some((message) => message.kind === "result-v3") && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
   assert.equal(worker.messages.filter((message) => message.kind === "error").length, 1);
   assert.equal(worker.messages.filter((message) => message.kind === "result-v3").length, 1);
   assert.equal(worker.streamCount(), 1);
