@@ -1785,6 +1785,7 @@ try {
     playwrightCliVersion,
     runtimeBrowserVersion: browserRuntimeEvidence.version,
     runtimeBrowserUserAgent: browserRuntimeEvidence.userAgent,
+    runtimeBrowserGraphics: runtime.receipt.browser.graphics,
     baseUrl,
     serverLifecycle: "owned-production",
     fixture: {

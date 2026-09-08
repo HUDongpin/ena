@@ -10,6 +10,20 @@ import { createRequire } from "node:module";
 import { OwnedSmokeLifecycle } from "./open-ena-models-v3-lifecycle.mjs";
 const require = createRequire(import.meta.url);
 const hash = value => createHash("sha256").update(value).digest("hex");
+
+/** SwiftShader's explicit opt-in is only for our disposable, synthetic loopback tests. */
+export function ownedBrowserGraphicsV3({ mode = "default", baseUrl }) {
+  assert.ok(["default", "swiftshader"].includes(mode), "Unknown owned browser graphics mode");
+  if (mode === "default") return { mode, args: [] };
+  let ownedOrigin = false;
+  try {
+    const url = new URL(baseUrl);
+    ownedOrigin = url.protocol === "http:" && url.hostname === "127.0.0.1" && Boolean(url.port) && url.origin === baseUrl;
+  } catch { /* Fail closed before enabling software WebGL. */ }
+  assert.ok(ownedOrigin, "Software WebGL requires the owned loopback origin");
+  return { mode, trustedOrigin: baseUrl, args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] };
+}
+
 export function literalGit(root, args) {
   const pointer = statSync(join(root, ".git")).isDirectory() ? join(root, ".git") : readFileSync(join(root, ".git"), "utf8").trim().replace(/^gitdir: /u, "");
   return execFileSync("git", ["--no-optional-locks", `--git-dir=${resolve(root, pointer)}`, `--work-tree=${root}`, "-c", `core.worktree=${root}`, "-c", "core.fsmonitor=false", ...args], { cwd: root, encoding: "utf8", timeout: 10000 }).trim();
@@ -130,13 +144,26 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
     const metadata = JSON.parse(readFileSync(join(dirname(require.resolve("playwright-core/package.json")), "browsers.json"), "utf8")).browsers.find(x => x.name === "chromium");
     assert.equal(require("playwright/package.json").version, "1.62.1"); assert.equal(metadata.revision, "1234");
     const browserPort = await port();
-    const args = ["--headless", "--hide-scrollbars", "--no-sandbox", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-extensions", "--disable-breakpad", "--disable-crash-reporter", "--password-store=basic", "--use-mock-keychain", "--remote-debugging-address=127.0.0.1", `--remote-debugging-port=${browserPort}`, `--user-data-dir=${profile}`];
+    const graphics = ownedBrowserGraphicsV3({ mode: env.OPEN_ENA_BROWSER_GRAPHICS ?? "default", baseUrl });
+    const args = ["--headless", "--hide-scrollbars", "--no-sandbox", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-extensions", "--disable-breakpad", "--disable-crash-reporter", "--password-store=basic", "--use-mock-keychain", ...graphics.args, "--remote-debugging-address=127.0.0.1", `--remote-debugging-port=${browserPort}`, `--user-data-dir=${profile}`];
     browserEntry = lifecycle.spawnOwned("browser", chromium.executablePath(), args, { cwd: root, env });
-    receipt.browser = { port: browserPort, pid: browserEntry.child.pid, executablePath: chromium.executablePath(), args, revision: metadata.revision, packageVersion: "1.62.1" };
+    receipt.browser = { port: browserPort, pid: browserEntry.child.pid, executablePath: chromium.executablePath(), args, graphics, revision: metadata.revision, packageVersion: "1.62.1" };
     lifecycle.addCleanup("browser connection", () => browser?.close());
     await waitHttp(`http://127.0.0.1:${browserPort}/json/version`, "browser readiness");
     browser = await lifecycle.stage("connect browser", () => chromium.connectOverCDP(`http://127.0.0.1:${browserPort}`, { timeout: 30000 }), 30000);
     receipt.browser.version = browser.version(); assert.equal(browser.version(), metadata.browserVersion);
+    await lifecycle.stage("record owned browser graphics", async () => {
+      const cdp = await browser.newBrowserCDPSession();
+      try {
+        const { gpu } = await cdp.send("SystemInfo.getInfo");
+        graphics.renderer = gpu.auxAttributes?.glRenderer ?? null;
+        graphics.vendor = gpu.auxAttributes?.glVendor ?? null;
+        graphics.devices = gpu.devices;
+        json("receipt.json", receipt);
+        process.stdout.write(`Owned Chromium graphics: ${JSON.stringify(graphics)}\n`);
+        if (graphics.mode === "swiftshader") assert.match(graphics.renderer ?? "", /SwiftShader/iu, "Owned CI browser must actually use the requested software renderer");
+      } finally { await cdp.detach(); }
+    }, 30000);
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
     await context.addInitScript(() => {
       const NativeWorker = window.Worker;

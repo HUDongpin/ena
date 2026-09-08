@@ -78,6 +78,9 @@ jobs:
       OPEN_ENA_SECURITY_ALERT_THRESHOLDS: 50,80,100
       OPEN_ENA_BILLABLE_DATABASE_URL: postgresql://open_ena_ci:open_ena_ci_password_2026@127.0.0.1:5432/open_ena_ci
       OPEN_ENA_AI_ENABLED: "false"
+      # The hosted runner has no supported GPU. Opt in only in our disposable
+      # Chromium process, which serves this checkout and synthetic data on loopback.
+      OPEN_ENA_BROWSER_GRAPHICS: swiftshader
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
