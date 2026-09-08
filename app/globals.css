@@ -13923,3 +13923,146 @@ html:has(.open-ena-page) {
   flex-shrink: 0;
   white-space: normal;
 }
+
+
+/* Native Models v3 uses its own semantic markup; keep it inside the workbench design system. */
+.ena-model-control-content {
+  font-size: 13px;
+  line-height: 1.45;
+}
+.ena-model-control-content .ena-panel-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px 4px 14px;
+}
+.ena-model-control-content .ena-panel-heading h1 {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+.ena-model-control-content .ena-panel-heading > p {
+  flex-basis: 100%;
+  margin: 0;
+  color: #60757f;
+  font-size: 12px;
+}
+.ena-model-control-content .ena-panel-heading .ena-action-button {
+  min-height: 34px;
+  padding: 7px 12px;
+  font-size: 12px;
+  line-height: 1.35;
+  border-radius: 3px;
+}
+.ena-model-control-content .ena-model-trajectory-button {
+  flex-basis: 100%;
+  justify-content: flex-start;
+  margin: 0;
+}
+.ena-model-control-content .ena-model-run-button {
+  background: #89cff0;
+  color: #183746;
+  border: 1px solid #5ba5c9;
+}
+.ena-model-control-content .ena-action-button:disabled {
+  opacity: .48;
+  cursor: not-allowed;
+}
+.ena-model-v3-shell .ena-model-tab-and-help {
+  grid-template-columns: minmax(0, 1fr) 28px;
+  border-bottom: 1px solid #d7e1e5;
+}
+.ena-model-v3-shell .ena-model-tabs {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border-bottom: 0;
+  overflow: visible;
+}
+.ena-model-v3-shell .ena-model-tabs button {
+  min-height: 38px;
+  font-size: 11px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.ena-model-status-v3 {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 12px 0 8px;
+  padding: 8px 10px;
+  border-left: 3px solid #89cff0;
+  background: #f0f6f8;
+  color: #425b67;
+  font-size: 12px;
+}
+.ena-model-summary-v3 {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  background: #f8fafb;
+  border: 1px solid #e0e8ec;
+  border-radius: 3px;
+}
+.ena-model-summary-v3 dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  column-gap: 12px;
+  row-gap: 4px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ena-model-summary-v3 dt { color: #617782; }
+.ena-model-summary-v3 dd {
+  margin: 0;
+  color: #263e4a;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.ena-model-tab-panel > section {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 0 2px 12px;
+}
+.ena-model-tab-panel p { margin: 4px 0; }
+.ena-model-tab-panel h2,
+.ena-model-tab-panel h3 { margin: 8px 0; font-size: 14px; line-height: 1.4; }
+.ena-model-tab-panel label:not(.ena-official-switch):has(> select),
+.ena-model-units-v3-group-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #425b67;
+  font-size: 12px;
+}
+.ena-model-tab-panel select,
+.ena-model-tab-panel input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]) {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid #c6d3d9;
+  border-radius: 3px;
+  background: #fff;
+  color: #263e4a;
+  font: inherit;
+}
+.ena-model-tab-panel fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #d7e1e5;
+  border-radius: 3px;
+}
+.ena-model-tab-panel legend { padding: 0 4px; color: #425b67; font-size: 12px; }
+.ena-model-units-v3-counts { display: flex; flex-wrap: wrap; gap: 12px; color: #60757f; font-size: 12px; }
+.ena-model-units-v3-stability { color: #60757f; font-size: 12px; }
+.ena-model-tab-panel ul { margin: 4px 0; padding-left: 18px; }
+.ena-model-control-content :is(button, select, input):focus-visible {
+  outline: 2px solid #287ba6;
+  outline-offset: 2px;
+}

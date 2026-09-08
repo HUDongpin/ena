@@ -347,11 +347,11 @@ export function OpenEnaModelTabsV3({
           <p id={`ena-model-help-${helpTab}-description`}>{copy.help[helpTab].description}</p>
         </section>
       )}
-      <p role="status" aria-label={copy.status.label} aria-live="polite">
+      <p className="ena-model-status-v3" role="status" aria-label={copy.status.label} aria-live="polite">
         <span aria-hidden="true">{configurationIncomplete ? "!" : "✓"}</span>{" "}
         {statusText}
       </p>
-      <section aria-label={copy.scientificSummary.label}>
+      <section className="ena-model-summary-v3" aria-label={copy.scientificSummary.label}>
         <dl>
           <dt>{copy.scientificSummary.fieldLabels.family}</dt>
           <dd>{copy.scientificSummary.family[scientificContext.family]}</dd>

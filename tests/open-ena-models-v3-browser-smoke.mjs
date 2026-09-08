@@ -105,6 +105,24 @@ async function layout(label) {
     assert.ok(metrics.childGap >= 0 && metrics.childGap <= 17, `${label}: vacated panel height`);
     return metrics;
 }
+async function modelStyleContract(label) {
+    const metrics = await page.evaluate(() => {
+        const root = document.querySelector(".ena-model-control-content");
+        const title = root.querySelector(".ena-panel-heading h1");
+        const tabs = [...root.querySelectorAll('[role="tab"]')].map(node => ({ top: node.getBoundingClientRect().top, width: node.getBoundingClientRect().width }));
+        const summary = root.querySelector(".ena-model-summary-v3 dl");
+        const button = root.querySelector(".ena-model-run-button");
+        return { titleSize: parseFloat(getComputedStyle(title).fontSize), tabs, summaryDisplay: getComputedStyle(summary).display, summaryHeight: summary.getBoundingClientRect().height, valueMargin: getComputedStyle(summary.querySelector("dd")).marginLeft, buttonAppearance: getComputedStyle(button).appearance, buttonBackground: getComputedStyle(button).backgroundColor };
+    });
+    assert.ok(metrics.titleSize <= 22, `${label}: workbench heading must stay compact`);
+    assert.equal(metrics.tabs.length, 4);
+    assert.ok(Math.max(...metrics.tabs.map(tab => tab.top)) - Math.min(...metrics.tabs.map(tab => tab.top)) < 2, `${label}: all four tabs must share one row`);
+    assert.equal(metrics.summaryDisplay, "grid", `${label}: scientific summary needs its compact two-column layout`);
+    assert.equal(metrics.valueMargin, "0px", `${label}: summary cannot use browser default dd indentation`);
+    assert.ok(metrics.summaryHeight < 250, `${label}: summary must not displace the model controls`);
+    assert.equal(metrics.buttonBackground, "rgb(137, 207, 240)", `${label}: Run model must retain its workbench styling`);
+    receipt.modelStyleChecks ??= []; receipt.modelStyleChecks.push({ label, ...metrics });
+}
 async function waitForScrollSettlement(locator) {
     await locator.evaluate(node => new Promise(resolve => {
         const started = performance.now(); let previous = node.getBoundingClientRect(); let stable = 0;
@@ -229,11 +247,19 @@ async function strictSourceBoundaries() {
     return { sourceFileSha256: hash(readFileSync(path)), ordinaryImportAutorun: false, nonfiniteTypingBlocked: true, negativeAndTextRejected: true, binary: binary.response.result.binding, frequency: frequency.response.result.binding };
 }
 async function journeys() {
+    await mode("Model");
+    await modelStyleContract("empty desktop model");
+    await shot("desktop-empty-model-styled");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await modelStyleContract("empty model at 1280px");
+    await shot("desktop-1280-empty-model-styled");
+    await page.setViewportSize({ width: 1440, height: 960 });
     await journey(1, "teaching sample and actual Worker", async () => { await mode("Data"); await button("Load teaching sample").click(); await current(); const audit = await lastRun(); json("teaching-sample-worker.json", audit); assert.equal(audit.response.kind, "result-v3"); return { executionPlanSha256: audit.response.executionPlanSha256 }; });
     await mode("Model");
     await tab("Units").click();
     await dump("initial-model");
     await shot("desktop-initial");
+    await modelStyleContract("loaded desktop model");
     await journey(2, "active tab top geometry", async () => layout("desktop Units"));
     await journey(3, "Horizons and Windows removed controls and height", async () => {
         const evidence = {};
