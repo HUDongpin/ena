@@ -227,6 +227,8 @@ try {
 
   const panel = page.getByTestId("open-ena-model-v3-windows-panel");
   await panel.waitFor();
+  assert.equal(await panel.locator(".ena-model-windows-v3-resources").isVisible(), false, "resource details start collapsed in the restored workbench");
+  await panel.locator("summary").filter({ hasText: /^Execution resource preflight$/u }).click();
   await page.evaluate(() => document.getElementById("browser-field:resources").focus());
   assert.equal(await page.evaluate(() => document.activeElement?.id), "browser-field:resources", "resource diagnostics have a real focus target");
   const run = page.getByRole("button", { name: "Run model" });
@@ -295,6 +297,7 @@ try {
   await panel.getByRole("group", { name: "Forward context" }).getByLabel("Rows").fill("2");
   await page.waitForFunction(() => !window.__task28.state.editorBlocked.standard);
 
+  await panel.locator(".ena-row-order-disclosure > summary").click();
   await panel.getByRole("button", { name: "Add order key" }).click();
   await page.waitForFunction(() => window.__task28.blockers.rowOrder);
   await panel.getByRole("group", { name: "Backward context" }).getByLabel("Rows").fill("");
