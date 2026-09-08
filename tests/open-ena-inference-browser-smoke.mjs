@@ -53,7 +53,10 @@ function assertStatistics(value, binding, kind, method) {
   assert.equal(value.kind, "open-ena-native-post-model-statistics");
   assert.equal(value.executable, false);
   assert.deepEqual(value.binding, binding);
-  assert.equal(value.inference.kind, kind);
+  if (kind === "endpoint-independent") {
+    assert.equal(value.inference.scope.design, "independent-endpoint-groups");
+    assert.deepEqual(value.context.axes, value.controls.axes);
+  } else assert.equal(value.inference.kind, kind);
   const rows = value.inference.rows ?? value.inference.omnibusRows;
   assert.ok(rows.length > 0 && rows.every(row => row.test === method));
   assert.ok(rows.some(row => row.status === "available"));
