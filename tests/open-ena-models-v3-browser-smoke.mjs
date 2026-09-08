@@ -123,6 +123,67 @@ async function modelStyleContract(label) {
     assert.equal(metrics.buttonBackground, "rgb(137, 207, 240)", `${label}: Run model must retain its workbench styling`);
     receipt.modelStyleChecks ??= []; receipt.modelStyleChecks.push({ label, ...metrics });
 }
+async function workspaceModeStyleContract(state, name) {
+    if (name === "AI") await page.getByRole("navigation", { name: "Analysis modes" }).getByRole("button").filter({ hasText: /^AI$/ }).click();
+    else await mode(name);
+    const panel = page.locator(".ena-workspace-controls-v3:visible");
+    await panel.waitFor();
+    assert.equal(await panel.count(), 1, `${state} ${name}: exactly one visible styled control panel`);
+    await panel.evaluate(node => { for (let parent = node; parent; parent = parent.parentElement) parent.scrollTop = 0; });
+    const metrics = await panel.evaluate(root => {
+        const rendered = node => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== "hidden";
+        const box = root.getBoundingClientRect();
+        return {
+            heading: root.querySelector("h1,h2")?.textContent,
+            width: innerWidth, documentWidth: document.documentElement.scrollWidth,
+            panel: { left: box.left, right: box.right, width: box.width },
+            headings: [...root.querySelectorAll("h2")].filter(rendered).map(node => ({ text: node.textContent, fontSize: parseFloat(getComputedStyle(node).fontSize), mainAiTitle: node.parentElement === root && root.classList.contains("ena-ai-mode-panel") })),
+            buttons: [...root.querySelectorAll('button:not([class]):not([role="tab"]):not([role="switch"])')].filter(node => rendered(node) && !node.closest(".ena-group-display-units")).map(node => {
+                const style = getComputedStyle(node), rect = node.getBoundingClientRect();
+                return { text: node.textContent, pressed: node.getAttribute("aria-pressed") === "true", background: style.backgroundColor, minHeight: parseFloat(style.minHeight), paddingLeft: parseFloat(style.paddingLeft), paddingRight: parseFloat(style.paddingRight), borderWidth: style.borderTopWidth, borderStyle: style.borderTopStyle, left: rect.left, right: rect.right };
+            }),
+            files: [...root.querySelectorAll('input[type="file"]')].filter(rendered).map(node => {
+                const rect = node.getBoundingClientRect(), selector = getComputedStyle(node, "::file-selector-button");
+                return { label: node.getAttribute("aria-label") ?? node.parentElement.textContent, left: rect.left, right: rect.right, selectorBackground: selector.backgroundColor, selectorPaddingLeft: parseFloat(selector.paddingLeft), selectorBorderStyle: selector.borderTopStyle };
+            }),
+        };
+    });
+    const label = `${state} ${name}`;
+    assert.ok(metrics.heading?.trim(), `${label}: mode content is present`);
+    assert.ok(metrics.documentWidth <= metrics.width + 1, `${label}: document must not overflow horizontally`);
+    assert.ok(metrics.buttons.length > 0, `${label}: inspect the shared native controls, not only the mode header`);
+    for (const heading of metrics.headings) assert.ok(heading.fontSize <= (heading.mainAiTitle ? 20 : 16), `${label}: oversized section heading ${JSON.stringify(heading)}`);
+    for (const control of metrics.buttons) {
+        assert.equal(control.background, control.pressed ? "rgb(137, 207, 240)" : "rgb(243, 248, 250)", `${label}: native button lacks shared styling: ${control.text}`);
+        assert.ok(control.minHeight >= 32 && control.paddingLeft >= 8 && control.paddingRight >= 8, `${label}: native button lacks usable spacing: ${control.text}`);
+        assert.equal(control.borderWidth, "1px", `${label}: native button border: ${control.text}`);
+        assert.equal(control.borderStyle, "solid", `${label}: native button border style: ${control.text}`);
+        assert.ok(control.left >= metrics.panel.left - 1 && control.right <= metrics.panel.right + 1, `${label}: button exceeds control panel: ${control.text}`);
+    }
+    for (const input of metrics.files) {
+        assert.ok(input.left >= metrics.panel.left - 1 && input.right <= metrics.panel.right + 1, `${label}: file input exceeds control panel: ${input.label}`);
+        assert.equal(input.selectorBackground, "rgb(237, 245, 249)", `${label}: file chooser lacks shared styling`);
+        assert.ok(input.selectorPaddingLeft >= 8, `${label}: file chooser lacks spacing`);
+        assert.equal(input.selectorBorderStyle, "solid", `${label}: file chooser lacks border`);
+    }
+    receipt.workspaceModeStyleChecks ??= []; receipt.workspaceModeStyleChecks.push({ state, mode: name, ...metrics });
+    const filename = name.toLowerCase().replace(/[^a-z]+/g, "-").replace(/-$/u, "");
+    await shot(`desktop-${state}-${filename}-styled`);
+    if (name === "Data") {
+        const artifacts = panel.getByRole("heading", { name: "Artifacts", exact: true });
+        await artifacts.scrollIntoViewIfNeeded();
+        await shot(`desktop-${state}-data-artifacts-styled`);
+        await panel.locator("button").last().scrollIntoViewIfNeeded();
+        await shot(`desktop-${state}-data-artifacts-bottom-styled`);
+    }
+    return metrics;
+}
+async function allWorkspaceModeStyles(state) {
+    for (const name of ["Data", "Model", "Plot Tools", "Stats & Export", "AI"]) await workspaceModeStyleContract(state, name);
+    await mode("Model");
+    await page.locator(".ena-workspace-controls-v3:visible").evaluate(node => { for (let parent = node; parent; parent = parent.parentElement) parent.scrollTop = 0; });
+    json("receipt.json", receipt);
+}
 async function waitForScrollSettlement(locator) {
     await locator.evaluate(node => new Promise(resolve => {
         const started = performance.now(); let previous = node.getBoundingClientRect(); let stable = 0;
@@ -247,6 +308,7 @@ async function strictSourceBoundaries() {
     return { sourceFileSha256: hash(readFileSync(path)), ordinaryImportAutorun: false, nonfiniteTypingBlocked: true, negativeAndTextRejected: true, binary: binary.response.result.binding, frequency: frequency.response.result.binding };
 }
 async function journeys() {
+    await allWorkspaceModeStyles("empty");
     await mode("Model");
     await modelStyleContract("empty desktop model");
     await shot("desktop-empty-model-styled");
@@ -255,6 +317,7 @@ async function journeys() {
     await shot("desktop-1280-empty-model-styled");
     await page.setViewportSize({ width: 1440, height: 960 });
     await journey(1, "teaching sample and actual Worker", async () => { await mode("Data"); await button("Load teaching sample").click(); await current(); const audit = await lastRun(); json("teaching-sample-worker.json", audit); assert.equal(audit.response.kind, "result-v3"); return { executionPlanSha256: audit.response.executionPlanSha256 }; });
+    await allWorkspaceModeStyles("loaded");
     await mode("Model");
     await tab("Units").click();
     await dump("initial-model");

@@ -14066,3 +14066,173 @@ html:has(.open-ena-page) {
   outline: 2px solid #287ba6;
   outline-offset: 2px;
 }
+
+
+/* Shared native left-panel controls: Data, Model, Plot Tools, Stats, and AI. */
+.ena-workspace-controls-v3 {
+  color: #263e4a;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.ena-workspace-controls-v3 :where(h2) {
+  margin: 0 0 10px;
+  color: #263e4a;
+  font-size: 16px;
+  line-height: 1.35;
+  font-weight: 650;
+}
+.ena-workspace-controls-v3 :where(h3) {
+  margin: 12px 0 8px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.ena-workspace-controls-v3 :where(p) {
+  margin: 6px 0 12px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.ena-workspace-controls-v3 .ena-workspace-section-v3 {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+  margin: 0 0 18px;
+  padding: 14px 4px;
+  border-top: 1px solid #dce5e9;
+}
+.ena-workspace-controls-v3 .ena-workspace-section-v3 > :is(p, h2, h3) { margin: 0; }
+.ena-workspace-controls-v3 :where(button:not([class]):not([role="tab"]):not([role="switch"])) {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  max-width: 100%;
+  margin: 3px 3px 3px 0;
+  padding: 7px 10px;
+  border: 1px solid #bdcfd8;
+  border-radius: 3px;
+  background: #f3f8fa;
+  color: #254a60;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.ena-workspace-controls-v3 :where(button:not([class]):not([role="tab"]):not([role="switch"])):hover:not(:disabled) {
+  border-color: #65add0;
+  background: #e7f3f9;
+}
+.ena-workspace-controls-v3 :where(button:not([class]):not([role="tab"]):not([role="switch"])):disabled {
+  opacity: .48;
+  cursor: not-allowed;
+}
+.ena-workspace-controls-v3 :where(button:not([class]):not([role="tab"]):not([role="switch"]))[aria-pressed="true"] {
+  border-color: #5ba5c9;
+  background: #89cff0;
+  color: #183746;
+}
+.ena-workspace-controls-v3 :where(input[type="file"]) {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 7px;
+  border: 1px dashed #b9cdd7;
+  border-radius: 3px;
+  background: #f8fbfc;
+  color: #60757f;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ena-workspace-controls-v3 input[type="file"]::file-selector-button {
+  min-height: 30px;
+  margin-right: 8px;
+  padding: 5px 9px;
+  border: 1px solid #bdcfd8;
+  border-radius: 3px;
+  background: #edf5f9;
+  color: #254a60;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ena-workspace-controls-v3 :where(label:has(> select), label:has(> input[type="file"]), label:has(> textarea)) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 5px 0;
+  color: #425b67;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ena-workspace-controls-v3 :where(select, textarea, input[type="text"], input[type="number"]) {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 1px solid #c6d3d9;
+  border-radius: 3px;
+  background: #fff;
+  color: #263e4a;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.ena-workspace-controls-v3 :where(label:has(> input[type="checkbox"]), label:has(> input[type="radio"])) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 5px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ena-workspace-controls-v3 :where(input[type="checkbox"], input[type="radio"]) {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  margin: 2px 0;
+  accent-color: #2e89b5;
+}
+.ena-workspace-controls-v3 :where(fieldset) {
+  min-width: 0;
+  margin: 8px 0;
+  padding: 10px;
+  border: 1px solid #d7e1e5;
+  border-radius: 3px;
+}
+.ena-workspace-controls-v3 :where(legend) { padding: 0 4px; font-size: 12px; color: #425b67; }
+.ena-workspace-controls-v3 :where(details) { margin: 10px 0; padding: 10px; border: 1px solid #d7e1e5; border-radius: 3px; }
+.ena-workspace-controls-v3 :where(summary) { color: #286b8e; font-size: 12px; font-weight: 600; cursor: pointer; }
+.ena-workspace-controls-v3 :where(pre) { max-width: 100%; padding: 10px; overflow: auto; white-space: pre-wrap; font-size: 11px; background: #f5f8fa; }
+.ena-workspace-controls-v3 :where(table) { width: 100%; border-collapse: collapse; font-size: 11px; }
+.ena-workspace-controls-v3 :where(th, td) { padding: 6px 8px; border-bottom: 1px solid #e2e9ed; text-align: left; }
+.ena-workspace-controls-v3 :where(th) { background: #f1f6f8; font-weight: 600; }
+.ena-workspace-controls-v3 .ena-workspace-artifacts-v3 > p:first-of-type {
+  padding: 10px;
+  background: #f5f8fa;
+  border-left: 3px solid #b5dcec;
+  color: #60757f;
+  font-size: 11px;
+  line-height: 1.65;
+}
+.ena-ai-mode-panel.ena-workspace-controls-v3 { padding: 16px 14px 60px; }
+.ena-ai-mode-panel.ena-workspace-controls-v3 > h2 { font-size: 20px; }
+.ena-workspace-controls-v3 :where(button, input, select, textarea):focus-visible { outline: 2px solid #287ba6; outline-offset: 2px; }
+
+.ena-workspace-controls-v3 :where(label:has(> input[type="checkbox"]:first-child), label:has(> input[type="radio"]:first-child)) {
+  justify-content: flex-start;
+}

@@ -171,7 +171,7 @@ test("actual Models tabs and source preparation own their styling and focus life
   const tabs = source("components/open-ena/model-v3/OpenEnaModelTabsV3.tsx");
   assert.match(tabs, /className="ena-model-tabs" role="tablist"/u);
   assert.match(tabs, /className="ena-official-icon-button ena-model-help-button"/u);
-  assert.match(workspace, /className="ena-control-content ena-model-control-content"/u);
+  assert.match(workspace, /className="ena-control-content ena-model-control-content ena-workspace-controls-v3"/u);
   assert.match(workspace, /sourceFileTriggerRef/u);
   assert.match(workspace, /sourceDialogRef/u);
   assert.match(workspace, /onKeyDown=\{onSourceDialogKeyDown\}/u);
