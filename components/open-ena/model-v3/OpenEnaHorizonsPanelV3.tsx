@@ -214,7 +214,7 @@ export function OpenEnaHorizonsPanelV3({
     : [];
 
   return (
-    <section className="ena-model-horizons-v3" data-testid="open-ena-model-v3-horizons-panel">
+    <section className="ena-model-horizons-v3 ena-official-model-panel" data-ena-official-panel="horizons" data-testid="open-ena-model-v3-horizons-panel">
       <OpenEnaOfficialFieldPathEditor
         label={copy.horizonIdentity}
         selectedFields={draft.horizonColumns}
@@ -236,6 +236,16 @@ export function OpenEnaHorizonsPanelV3({
         )}
       </section>
 
+      {activePreview !== null && <div className="ena-official-horizon-columns">
+        {draft.horizonColumns.map((column) => <section key={column} className="ena-official-horizon-column">
+          <header>{column}</header>
+          <ul>{[...new Set(activePreview.horizons.map((horizon) => {
+            const field = horizon.fields.find((value) => value.column === column);
+            return field ? String(field.value.value) : copy.unavailable;
+          }))].slice(0, MAX_SEQUENCE_STEPS).map((label) => <li key={label} title={label}>{label}</li>)}</ul>
+        </section>)}
+      </div>}
+      <details className="ena-panel-details"><summary>{copy.structure}</summary>
       <section aria-label={copy.structure} className="ena-model-horizons-v3-structure">
         {activePreview === null ? <p>{copy.unavailable}</p> : (
           <>
@@ -259,6 +269,8 @@ export function OpenEnaHorizonsPanelV3({
         )}
       </section>
 
+      </details>
+
       {family === "ona" ? <p>{copy.onaOrderNotApplicable}</p> : trajectoryOrderActive ? (
         <>
           <OpenEnaOrderPolicyEditorV3
@@ -278,7 +290,7 @@ export function OpenEnaHorizonsPanelV3({
             onBlockedChange={onOrderBlockedChange}
             now={now}
           />
-          <section aria-label={copy.sequences} className="ena-model-horizons-v3-sequences">
+          <details className="ena-panel-details"><summary>{copy.sequences}</summary><section aria-label={copy.sequences} className="ena-model-horizons-v3-sequences">
             {sequences === null ? <p>{copy.sequenceUnavailable}</p> : (
               <>
                 <p>{copy.boundedSequences(shownSequences.length, sequences.length)}</p>
@@ -290,9 +302,9 @@ export function OpenEnaHorizonsPanelV3({
                 })}</ol>
               </>
             )}
-          </section>
+          </section></details>
         </>
-      ) : <p>{copy.horizonOrderNotApplicable}</p>}
+      ) : <p className="ena-restored-field-note">{copy.horizonOrderNotApplicable}</p>}
 
       {horizonDiagnostics.length > 0 ? (
         <section aria-label={copy.diagnostics}>

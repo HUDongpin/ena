@@ -31,7 +31,7 @@ test("trajectory model choice belongs to native Windows rather than the view too
 
 test("Model heading shortcut focuses native Model type without changing a draft or starting a run", () => {
 
-  assert.match(v3, /className="ena-action-button ena-action-secondary ena-model-trajectory-button"/);
+  assert.match(v3, /className="ena-action-button ena-action-secondary ena-model-trajectory-button ena-trajectory-model-shortcut"/);
   assert.match(v3, /setModelNavigation\(\(value\) => \(\{ tab: "windows", serial: value.serial \+ 1 \}\)\)/);
   assert.match(v3, /ena-model-windows-v3 select/);
   assert.match(v3, /requestAnimationFrame/);

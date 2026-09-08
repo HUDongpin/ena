@@ -122,6 +122,8 @@ export interface OpenEnaModelTabsV3Props {
     readonly editorBlocked: boolean;
   };
   readonly initialTab?: OpenEnaModelTabV3;
+  readonly actions?: ReactNode;
+  readonly readyLabel?: string;
   readonly renderPanel: (
     tab: OpenEnaModelTabV3,
     fields: OpenEnaModelPanelFieldsV3,
@@ -165,6 +167,8 @@ export function OpenEnaModelTabsV3({
   scientificSummary,
   status,
   initialTab = "units",
+  actions,
+  readyLabel,
   renderPanel,
   onTabChange,
   onSuggestedAction,
@@ -274,7 +278,11 @@ export function OpenEnaModelTabsV3({
     if (focusRequest === null || focusRequest.tab !== activeTab) return;
     const request = focusRequest;
     const frame = requestAnimationFrame(() => {
-      document.getElementById(request.fieldId)?.focus();
+      const field = document.getElementById(request.fieldId);
+      for (let parent = field?.parentElement; parent; parent = parent.parentElement) {
+        if (parent instanceof HTMLDetailsElement) parent.open = true;
+      }
+      field?.focus();
       setFocusRequest((current) => (
         current?.sequence === request.sequence ? null : current
       ));
@@ -288,45 +296,28 @@ export function OpenEnaModelTabsV3({
       <div className="ena-model-tab-and-help">
         <div className="ena-model-tabs" role="tablist" aria-label={copy.tabListLabel}>
           {OPEN_ENA_MODEL_TABS_V3.map((tab) => (
-            <button
-              key={tab}
-              ref={(element) => {
-                if (element === null) delete tabRefs.current[tab];
-                else tabRefs.current[tab] = element;
-              }}
-              type="button"
-              id={tabIdV3(tab)}
-              role="tab"
-              aria-controls={panelIdV3(tab)}
-              aria-selected={activeTab === tab}
-              aria-label={copy.tabDiagnosticLabel({
-                tab,
-                label: copy.tabs[tab],
-                errors: counts[tab].errors,
-                warnings: counts[tab].warnings,
-              })}
-              tabIndex={activeTab === tab ? 0 : -1}
-              data-model-tab={tab}
-              onClick={() => selectTab(tab)}
-              onKeyDown={(event) => onTabKeyDown(event, tab)}
-            >
-              <span>{copy.tabs[tab]}</span>{" "}
-              <span aria-hidden="true">{counts[tab].errors > 0 ? `!${counts[tab].errors}` : ""}</span>{" "}
-              <span aria-hidden="true">{counts[tab].warnings > 0 ? `△${counts[tab].warnings}` : ""}</span>
-            </button>
+            <div key={tab} className="ena-model-tab-cell" role="presentation" data-active={activeTab === tab}>
+              <button
+                ref={(element) => { if (element === null) delete tabRefs.current[tab]; else tabRefs.current[tab] = element; }}
+                type="button" id={tabIdV3(tab)} role="tab" aria-controls={panelIdV3(tab)}
+                aria-selected={activeTab === tab}
+                aria-label={copy.tabDiagnosticLabel({ tab, label: copy.tabs[tab], errors: counts[tab].errors, warnings: counts[tab].warnings })}
+                tabIndex={activeTab === tab ? 0 : -1} data-model-tab={tab}
+                onClick={() => selectTab(tab)} onKeyDown={(event) => onTabKeyDown(event, tab)}
+              >
+                <span>{copy.tabs[tab]}</span>
+                {counts[tab].errors > 0 && <span aria-hidden="true">!{counts[tab].errors}</span>}
+                {counts[tab].warnings > 0 && <span aria-hidden="true">△{counts[tab].warnings}</span>}
+              </button>
+              {activeTab === tab && <button
+                ref={helpButtonRef} className="ena-official-icon-button ena-model-help-button"
+                type="button" aria-label={activeHelp.buttonLabel} aria-expanded={helpTab === activeTab}
+                aria-controls={helpTab === activeTab ? `ena-model-help-${activeTab}` : undefined}
+                onClick={() => setHelpTab((current) => current === activeTab ? null : activeTab)}
+              ><span aria-hidden="true">?</span></button>}
+            </div>
           ))}
         </div>
-        <button
-          ref={helpButtonRef}
-          className="ena-official-icon-button ena-model-help-button"
-          type="button"
-          aria-label={activeHelp.buttonLabel}
-          aria-expanded={helpTab === activeTab}
-          aria-controls={helpTab === activeTab ? `ena-model-help-${activeTab}` : undefined}
-          onClick={() => setHelpTab((current) => current === activeTab ? null : activeTab)}
-        >
-          <span aria-hidden="true">?</span>
-        </button>
       </div>
       {helpTab === null ? null : (
         <section
@@ -347,11 +338,26 @@ export function OpenEnaModelTabsV3({
           <p id={`ena-model-help-${helpTab}-description`}>{copy.help[helpTab].description}</p>
         </section>
       )}
-      <p className="ena-model-status-v3" role="status" aria-label={copy.status.label} aria-live="polite">
-        <span aria-hidden="true">{configurationIncomplete ? "!" : "✓"}</span>{" "}
-        {statusText}
+      <section
+        className="ena-model-tab-panel"
+        id={panelIdV3(activeTab)}
+        role="tabpanel"
+        aria-labelledby={tabIdV3(activeTab)}
+      >
+        {renderPanel(activeTab, {
+          id: (fieldPath) => modelFieldIdV3(activeTab, fieldPath),
+        })}
+      </section>
+      <p className="ena-model-status-v3" data-configuration={configurationView} data-result={resultView}
+        role="status" aria-label={copy.status.label} aria-live="polite">
+        <span className="ena-model-status-icon" aria-hidden="true">{configurationIncomplete ? "!" : "✓"}</span>
+        <span aria-hidden="true">{readyLabel && !configurationIncomplete ? readyLabel : copy.status.configuration[configurationView]}</span>
+        <span className="ena-model-result-state" aria-hidden="true">{resultView === "current" || resultView === "none" ? null : copy.status.result[resultView]}</span>
+        <span className="sr-only">{statusText}</span>
       </p>
-      <section className="ena-model-summary-v3" aria-label={copy.scientificSummary.label}>
+      {actions}
+      <details className="ena-model-summary-v3 ena-panel-details">
+        <summary>{copy.scientificSummary.label}</summary>
         <dl>
           <dt>{copy.scientificSummary.fieldLabels.family}</dt>
           <dd>{copy.scientificSummary.family[scientificContext.family]}</dd>
@@ -380,17 +386,7 @@ export function OpenEnaModelTabsV3({
           <dt>{copy.scientificSummary.fieldLabels.codes}</dt>
           <dd>{summaryCount("codes")}</dd>
         </dl>
-      </section>
-      <section
-        className="ena-model-tab-panel"
-        id={panelIdV3(activeTab)}
-        role="tabpanel"
-        aria-labelledby={tabIdV3(activeTab)}
-      >
-        {renderPanel(activeTab, {
-          id: (fieldPath) => modelFieldIdV3(activeTab, fieldPath),
-        })}
-      </section>
+      </details>
       <OpenEnaModelDiagnosticsV3
         diagnostics={diagnostics}
         copy={copy.diagnostics}

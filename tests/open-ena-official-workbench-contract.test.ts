@@ -39,7 +39,9 @@ test("the five original inline rail icons remain in Data-to-AI order", () => {
 
   const rail = shell().match(/<nav class="ena-tool-rail"[\s\S]*?<\/nav>/)?.[0] ?? "";
   assert.equal((rail.match(/class="ena-rail-button"/g) ?? []).length, 5);
-  assert.equal((rail.match(/<svg /g) ?? []).length, 5);
+  const modes = rail.match(/<div class="ena-rail-modes">[\s\S]*?<\/div>/)?.[0] ?? "";
+  assert.equal((modes.match(/<svg /g) ?? []).length, 5);
+  assert.match(rail, /class="ena-rail-logout"[\s\S]*?<svg /, "the restored logout icon is separate from the five modes");
   assert.ok(rail.indexOf('aria-label="Stats &amp; Export"') < rail.indexOf('aria-label="AI-assisted interpretation"'));
 
 });

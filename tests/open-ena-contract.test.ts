@@ -231,7 +231,7 @@ test("Open ENA exposes honest locale, SEO, and accessible-result contracts", () 
   const copy = readFileSync(join(projectRoot, "lib", "open-ena-i18n.ts"), "utf8");
 
   assert.match(copy, /openEnaLocalizedLocales = \["en", "zh-hant", "zh-hans"\]/);
-  assert.match(workspace, /className="ena-control-content ena-model-control-content ena-workspace-controls-v3" lang=\{locale\} dir="ltr"/);
+  assert.match(workspace, /className=\{`ena-control-content ena-workspace-controls-v3 ena-restored-workbench[\s\S]*?data-mode=\{mode\} lang=\{locale\} dir="ltr"/);
   assert.match(workspace, /role="status" aria-live="polite"/);
   assert.match(workspace, /aria-busy=\{sourceBusy \|\| modelState.runStatus === "running"\}/);
   assert.doesNotMatch(workspace, /complete locale catalog follows/);

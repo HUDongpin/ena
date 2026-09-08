@@ -281,7 +281,7 @@ test("the plot-title toolbar contains display and export actions without a model
 
 test("the trajectory configuration shortcut stays in the responsive Model heading", () => {
 
-  assert.match(v3, /<header className="ena-panel-heading">[\s\S]*?mode === "model" && family === "standard" && <button[^>]*className="ena-action-button ena-action-secondary ena-model-trajectory-button"/);
+  assert.match(v3, /<header className="ena-panel-heading">[\s\S]*?mode === "model" && family === "standard" && <button[^>]*className="ena-action-button ena-action-secondary ena-model-trajectory-button ena-trajectory-model-shortcut"/);
   assert.match(styles, /ena-panel-heading/);
   assert.match(v3, /tab: "windows", serial:/);
 

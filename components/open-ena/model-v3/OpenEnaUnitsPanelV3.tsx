@@ -96,6 +96,7 @@ export type OpenEnaUnitsPreviewV3 = AvailableUnitsPreviewV3 | {
 
 export interface OpenEnaUnitsPanelV3Props {
   readonly copy: OpenEnaUnitsPanelV3Copy;
+  readonly createSampleLabel?: string;
   readonly applicabilityCopy?: OpenEnaGroupDisplayApplicabilityCopyV3;
   readonly groupDisplayCopy: OpenEnaGroupDisplayCopy;
   readonly state: ModelStateV3;
@@ -205,6 +206,9 @@ function resultGroups(state: ModelStateV3): OpenEnaGroupDisplayControlGroup[] {
       id: group.token,
       name: group.displayLabel,
       label: group.displayLabel,
+      shortLabel: group.fields.length === 1 && typeof group.fields[0].value.value === "string" && group.fields[0].value.value.trim()
+        ? group.fields[0].value.value
+        : group.displayLabel,
       color: GROUP_COLORS[index % GROUP_COLORS.length],
       unitIds,
       unitLabelsById: Object.fromEntries(unitIds.map((unitId) => [
@@ -227,6 +231,7 @@ function isGroupDiagnostic(diagnostic: UnitsDiagnosticV3): boolean {
 
 export function OpenEnaUnitsPanelV3({
   copy,
+  createSampleLabel = copy.group,
   applicabilityCopy = GROUP_DISPLAY_APPLICABILITY_COPY_V3,
   groupDisplayCopy,
   state,
@@ -340,7 +345,7 @@ export function OpenEnaUnitsPanelV3({
   }
 
   return (
-    <section className="ena-model-units-v3" data-testid="open-ena-model-v3-units-panel">
+    <section className="ena-model-units-v3 ena-official-model-panel" data-ena-official-panel="units" data-testid="open-ena-model-v3-units-panel">
       <OpenEnaOfficialFieldPathEditor
         label={copy.units}
         selectedFields={draft.unitColumns}
@@ -352,18 +357,12 @@ export function OpenEnaUnitsPanelV3({
         onChange={replaceUnitColumns}
       />
 
-      <section aria-label={copy.counts} className="ena-model-units-v3-counts">
-        {activePreview === null ? <p>{copy.unavailable}</p> : (
-          <>
-            <p>{copy.unitCount(activePreview.units.length)}</p>
-            <p>{copy.groupCount(activePreview.groups.length)}</p>
-          </>
-        )}
-      </section>
-
-      <label className="ena-model-units-v3-group-field">
-        <span>{copy.group}</span>
+      <div className="ena-official-unit-toolbar">
+      <label className="ena-official-create-sample">
+        <span className="ena-official-create-sample-icon" aria-hidden="true"><i /><i /><i /><i /></span>
+        <span>{createSampleLabel}</span>
         <select
+          aria-label={copy.group}
           id={fields.id("groupColumn")}
           value={draft.groupColumn ?? ""}
           onChange={(event) => replaceGroupColumn(event.target.value || null)}
@@ -375,20 +374,46 @@ export function OpenEnaUnitsPanelV3({
           {columnOptions.map((column) => <option key={column} value={column}>{column}</option>)}
         </select>
       </label>
-
-      <section aria-label={copy.groupStability} className="ena-model-units-v3-stability">
-        {activePreview?.groupStability.availability === "available"
-          ? <p>{activePreview.groupStability.status === "stable" ? copy.stableGroup : copy.unstableGroup}</p>
-          : <p>{copy.unavailable}</p>}
-      </section>
-
-      {activePreview !== null && activePreview.groups.length > 0 ? (
-        <section aria-label={copy.currentDraftGroups}>
-          <ul>{activePreview.groups.map((group) => (
-            <li key={group.token}>{group.displayLabel}</li>
-          ))}</ul>
-        </section>
-      ) : null}
+      <div className="ena-official-global-tools ena-model-toolbar" role="toolbar" aria-label={copy.groupToolbar}>
+        <OpenEnaOfficialIconButton
+          icon="collapse"
+          ariaLabel={copy.collapseGroups}
+          title={canHideGroups ? copy.collapseGroups : copy.groupOptionsUnavailable}
+          describedBy={!canHideGroups ? hideReasonId : undefined}
+          disabled={!canHideGroups}
+          onClick={() => command("collapse-all")}
+        />
+        <OpenEnaOfficialIconButton
+          icon="mean"
+          ariaLabel={copy.openGroupOptions}
+          title={canHideGroups ? copy.openGroupOptions : copy.groupOptionsUnavailable}
+          describedBy={!canHideGroups ? hideReasonId : undefined}
+          disabled={!canHideGroups}
+          onClick={() => command("open-all-options")}
+        />
+        <OpenEnaOfficialIconButton
+          icon={display.allGroupsSuppressed ? "show" : "visibility"}
+          ariaLabel={display.allGroupsSuppressed ? copy.restoreGroups : copy.hideGroups}
+          title={display.allGroupsSuppressed ? copy.restoreGroups : copy.hideGroups}
+          ariaPressed={display.allGroupsSuppressed}
+          describedBy={!canHideGroups ? hideReasonId : undefined}
+          disabled={!canHideGroups}
+          onClick={() => dispatch({
+            type: display.allGroupsSuppressed
+              ? "restore-group-visibility"
+              : "hide-all-groups",
+          })}
+        />
+        <OpenEnaOfficialIconButton
+          icon="exclude"
+          ariaLabel={copy.excludeGroup}
+          title={canExcludeGroup ? copy.excludeGroup : copy.excludeUnavailable}
+          describedBy={!canExcludeGroup ? excludeReasonId : undefined}
+          disabled={!canExcludeGroup}
+          onClick={() => dispatch({ type: "exclude-group-configuration" })}
+        />
+      </div>
+      </div>
 
       {meansRotation !== null ? (
         <fieldset
@@ -453,45 +478,7 @@ export function OpenEnaUnitsPanelV3({
         </section>
       ) : null}
 
-      <div className="ena-model-toolbar" role="toolbar" aria-label={copy.groupToolbar}>
-        <OpenEnaOfficialIconButton
-          icon="collapse"
-          ariaLabel={copy.collapseGroups}
-          title={canHideGroups ? copy.collapseGroups : copy.groupOptionsUnavailable}
-          describedBy={!canHideGroups ? hideReasonId : undefined}
-          disabled={!canHideGroups}
-          onClick={() => command("collapse-all")}
-        />
-        <OpenEnaOfficialIconButton
-          icon="mean"
-          ariaLabel={copy.openGroupOptions}
-          title={canHideGroups ? copy.openGroupOptions : copy.groupOptionsUnavailable}
-          describedBy={!canHideGroups ? hideReasonId : undefined}
-          disabled={!canHideGroups}
-          onClick={() => command("open-all-options")}
-        />
-        <OpenEnaOfficialIconButton
-          icon={display.allGroupsSuppressed ? "show" : "visibility"}
-          ariaLabel={display.allGroupsSuppressed ? copy.restoreGroups : copy.hideGroups}
-          title={display.allGroupsSuppressed ? copy.restoreGroups : copy.hideGroups}
-          ariaPressed={display.allGroupsSuppressed}
-          describedBy={!canHideGroups ? hideReasonId : undefined}
-          disabled={!canHideGroups}
-          onClick={() => dispatch({
-            type: display.allGroupsSuppressed
-              ? "restore-group-visibility"
-              : "hide-all-groups",
-          })}
-        />
-        <OpenEnaOfficialIconButton
-          icon="exclude"
-          ariaLabel={copy.excludeGroup}
-          title={canExcludeGroup ? copy.excludeGroup : copy.excludeUnavailable}
-          describedBy={!canExcludeGroup ? excludeReasonId : undefined}
-          disabled={!canExcludeGroup}
-          onClick={() => dispatch({ type: "exclude-group-configuration" })}
-        />
-      </div>
+
       {!canHideGroups ? <p id={hideReasonId}>{copy.hideUnavailable}</p> : null}
       {!canExcludeGroup ? <p id={excludeReasonId}>{copy.excludeUnavailable}</p> : null}
       {canUndoGroup ? (
@@ -527,6 +514,34 @@ export function OpenEnaUnitsPanelV3({
           </>
         )}
       </section>
+      <details className="ena-panel-details ena-unit-configuration-details">
+        <summary>{copy.counts}</summary>
+      <section aria-label={copy.counts} className="ena-model-units-v3-counts">
+        {activePreview === null ? <p>{copy.unavailable}</p> : (
+          <>
+            <p>{copy.unitCount(activePreview.units.length)}</p>
+            <p>{copy.groupCount(activePreview.groups.length)}</p>
+          </>
+        )}
+      </section>
+
+
+
+      <section aria-label={copy.groupStability} className="ena-model-units-v3-stability">
+        {activePreview?.groupStability.availability === "available"
+          ? <p>{activePreview.groupStability.status === "stable" ? copy.stableGroup : copy.unstableGroup}</p>
+          : <p>{copy.unavailable}</p>}
+      </section>
+
+      {activePreview !== null && activePreview.groups.length > 0 ? (
+        <section aria-label={copy.currentDraftGroups}>
+          <ul>{activePreview.groups.map((group) => (
+            <li key={group.token}>{group.displayLabel}</li>
+          ))}</ul>
+        </section>
+      ) : null}
+
+      </details>
     </section>
   );
 }

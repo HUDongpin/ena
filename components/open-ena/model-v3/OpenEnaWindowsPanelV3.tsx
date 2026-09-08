@@ -688,7 +688,7 @@ export function OpenEnaWindowsPanelV3({
       );
     }
     return (
-      <section
+      <details className="ena-panel-details"><summary>{copy.resources}</summary><section
         id={fields.id("resources")}
         tabIndex={-1}
         aria-label={copy.resources}
@@ -696,7 +696,7 @@ export function OpenEnaWindowsPanelV3({
       >
         {body}
         <p>{copy.resourceNoTruncation}</p>
-      </section>
+      </section></details>
     );
   }
 
@@ -777,7 +777,7 @@ export function OpenEnaWindowsPanelV3({
   const rotationConflictId = fields.id("rotation.conflict");
 
   return (
-    <section className="ena-model-windows-v3" data-testid="open-ena-model-v3-windows-panel">
+    <section className="ena-model-windows-v3 ena-official-model-panel" data-ena-official-panel="windows" data-testid="open-ena-model-v3-windows-panel">
       <label>
         <span>{copy.model}</span>
         <select
@@ -820,6 +820,8 @@ export function OpenEnaWindowsPanelV3({
             copy={copy}
             onChange={(raw, extent) => updateStandardExtent("forward", raw, extent)}
           />
+          <details className="ena-panel-details ena-row-order-disclosure" open={draft.movingStanza.rowOrder === null}>
+          <summary>{copy.rowOrder}</summary>
           <OpenEnaOrderPolicyEditorV3
             label={copy.rowOrder}
             fieldId={fields.id("movingStanza.rowOrder")}
@@ -835,10 +837,11 @@ export function OpenEnaWindowsPanelV3({
             onBlockedChange={reportOrderBlocker}
             now={now}
           />
+          </details>
         </section>
       ) : <p>{copy.conversationExplanation}</p>}
 
-      <fieldset id={fields.id("weighting")}>
+      <fieldset id={fields.id("weighting")} className="ena-restored-weighting">
         <legend>{copy.weighting}</legend>
         <label>
           <input
@@ -850,7 +853,6 @@ export function OpenEnaWindowsPanelV3({
           />
           {copy.binary}
         </label>
-        <p>{copy.binaryHelp}</p>
         <label>
           <input
             type="radio"
@@ -861,7 +863,9 @@ export function OpenEnaWindowsPanelV3({
           />
           {copy.frequency}
         </label>
-        <p>{copy.frequencyHelp}</p>
+        <details className="ena-weighting-help"><summary aria-label={`${copy.weighting}: ${copy.binary} / ${copy.frequency}`} title={copy.weighting}>?</summary>
+          <div><p>{copy.binaryHelp}</p><p>{copy.frequencyHelp}</p></div>
+        </details>
       </fieldset>
 
       <section className="ena-model-windows-v3-rotation">

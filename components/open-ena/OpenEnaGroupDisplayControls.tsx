@@ -15,6 +15,8 @@ export interface OpenEnaGroupDisplayControlGroup {
   id?: string;
   /** Visible identity label. Legacy callers may omit it and continue using name. */
   label?: string;
+  /** Short visual label only; full typed labels remain in accessible names and actions. */
+  shortLabel?: string;
   name: string;
   color: string;
   unitIds: string[];
@@ -246,7 +248,7 @@ export default function OpenEnaGroupDisplayControls({
                   aria-hidden="true"
                   style={{ "--ena-group-display-color": group.color } as CSSProperties}
                 />
-                <span className="ena-group-display-name">{groupLabel}</span>
+                <span className="ena-group-display-name">{group.shortLabel ?? groupLabel}</span>
                 <span className="sr-only">{copy.visibleCount(groupLabel, plottedCount, group.unitIds.length)}</span>
                 <span className="ena-group-display-mean-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24">

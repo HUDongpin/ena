@@ -468,11 +468,13 @@ export function OpenEnaCodesPanelV3({
 
   return (
     <section
-      className="ena-model-codes-v3"
+      className="ena-model-codes-v3 ena-official-model-panel"
+      data-ena-official-panel="codes"
       data-testid="open-ena-model-v3-codes-panel"
     >
-      <p>{copy.intro}</p>
+      <p className="sr-only">{copy.intro}</p>
       <OpenEnaAnalysisFamilyControl
+        compact
         value={family === "standard" ? "ena" : "ona"}
         onChange={changeFamily}
         copy={copy.family}
@@ -614,7 +616,7 @@ export function OpenEnaCodesPanelV3({
           aria-label={copy.selectedCodes}
           className="ena-model-codes-v3-list"
         >
-          <p>{copy.reorderInstructions}</p>
+          <p className="sr-only">{copy.reorderInstructions}</p>
           {duplicateSelection ? (
             <p id={`${reasonId}-duplicate`}>{copy.moveUnavailable}</p>
           ) : null}
@@ -673,6 +675,8 @@ export function OpenEnaCodesPanelV3({
                   <span aria-hidden="true">⠿</span>
                 </button>
                 <h3>{code}</h3>
+                <details className="ena-code-profile-details">
+                  <summary aria-label={`${code}: ${copy.codeType}`} title={copy.codeType}>?</summary>
                 <dl>
                   <div>
                     <dt>{copy.codeType}</dt>
@@ -691,6 +695,7 @@ export function OpenEnaCodesPanelV3({
                     </dd>
                   </div>
                 </dl>
+                </details>
                 <button
                   type="button"
                   className="ena-model-code-color-v3"
