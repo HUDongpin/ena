@@ -6,24 +6,17 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      diagnostic_smoke:
-        description: Temporary branch-only diagnostic selection; final validation uses the full workflow
-        type: choice
-        options: [all, inference, a11y]
-        default: all
 
 permissions:
   contents: read
 
 concurrency:
-  group: open-ena-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.diagnostic_smoke || 'all' }}
+  group: open-ena-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   verify:
     name: Verify (Node 22)
-    if: ${{ !inputs.diagnostic_smoke || inputs.diagnostic_smoke == 'all' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -119,26 +112,19 @@ jobs:
         run: node scripts/verify-j3dena-vendor.mjs --require-runtime
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser --workspace=jena-js
-        if: ${{ !inputs.diagnostic_smoke || inputs.diagnostic_smoke == 'all' }}
       - name: Run the Models v3 accessible tabs browser gate
-        if: ${{ !inputs.diagnostic_smoke || inputs.diagnostic_smoke == 'all' }}
         run: npm run test:browser:open-ena-model-v3-tabs
       - name: Run the Models v3 Units controls browser gate
-        if: ${{ !inputs.diagnostic_smoke || inputs.diagnostic_smoke == 'all' }}
         run: npm run test:browser:open-ena-model-v3-units
       - name: Run the Models v3 Horizons and ordering browser gate
-        if: ${{ !inputs.diagnostic_smoke || inputs.diagnostic_smoke == 'all' }}
         run: npm run test:browser:open-ena-model-v3-horizons
       - name: Run the Models v3 Windows controls browser gate
-        if: ${{ !inputs.diagnostic_smoke || inputs.diagnostic_smoke == 'all' }}
         run: npm run test:browser:open-ena-model-v3-windows
       - name: Run the Models v3 Codes controls browser gate
-        if: ${{ !inputs.diagnostic_smoke || inputs.diagnostic_smoke == 'all' }}
         run: npm run test:browser:open-ena-model-v3-codes
       - name: Install Chromium for the pinned Playwright CLI
         run: npx --yes --package @playwright/cli@0.1.18 playwright-cli install-browser chromium
       - name: Run the Open ENA 3D Data View and fullscreen smoke
-        if: ${{ !inputs.diagnostic_smoke || inputs.diagnostic_smoke == 'all' }}
         id: open_ena_3d_smoke
         env:
           NEXT_TELEMETRY_DISABLED: "1"
@@ -155,7 +141,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Run the full Open ENA longitudinal application smoke
-        if: ${{ !inputs.diagnostic_smoke || inputs.diagnostic_smoke == 'all' }}
         id: open_ena_longitudinal_smoke
         env:
           NEXT_TELEMETRY_DISABLED: "1"
@@ -172,14 +157,13 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Run the Open ENA inference browser smoke
-        if: ${{ inputs.diagnostic_smoke != 'a11y' }}
         env:
           NEXT_TELEMETRY_DISABLED: "1"
           OPEN_ENA_SMOKE_BROWSER: chromium
           OPEN_ENA_SMOKE_ARTIFACT_DIR: output/playwright/open-ena-inference-${{ github.sha }}-chromium
         run: node tests/open-ena-inference-browser-smoke.mjs
       - name: Upload Open ENA inference browser evidence
-        if: ${{ always() && inputs.diagnostic_smoke != 'a11y' }}
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: open-ena-inference-evidence-${{ github.sha }}-chromium
@@ -187,13 +171,12 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
       - name: Run the Open ENA accessibility and performance browser smoke
-        if: ${{ inputs.diagnostic_smoke != 'inference' }}
         env:
           NEXT_TELEMETRY_DISABLED: "1"
           OPEN_ENA_A11Y_PERF_SMOKE_ARTIFACT_DIR: output/playwright/open-ena-a11y-perf-${{ github.sha }}-chromium
         run: node tests/open-ena-a11y-perf-browser-smoke.mjs
       - name: Upload Open ENA accessibility and performance evidence
-        if: ${{ always() && inputs.diagnostic_smoke != 'inference' }}
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: open-ena-a11y-perf-evidence-${{ github.sha }}-chromium
