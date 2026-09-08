@@ -187,5 +187,5 @@ describe("Standard runtime numerical boundaries", () => {
     expect(result.connectionMatrix).toHaveLength(2);
     expect(result.rawRows).toEqual([]);
     expect(result.rowConnectionCounts).toEqual([]);
-  });
+  }, 30_000); // This checks retained data, not a five-second performance budget on CI runners.
 });

@@ -135,7 +135,7 @@ export default function OpenEnaLogin({ locale, error, configurationReady }: Open
             </p>
             <p className="open-ena-login-collaboration" lang={pluginCopy.contentFallback ? "en" : undefined}>
               {pluginCopy.loginInvitation}{" "}
-              <Link href={`/${locale}/plugins/propose`}>{pluginCopy.loginProposalLink}</Link>.
+              <Link href={`/${locale}/plugins/propose`} prefetch={false}>{pluginCopy.loginProposalLink}</Link>.
             </p>
             <p className="open-ena-login-privacy">
               <span aria-hidden="true">●</span>
