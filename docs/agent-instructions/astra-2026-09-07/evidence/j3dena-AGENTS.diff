@@ -1,0 +1,59 @@
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -3,18 +3,26 @@
+ These instructions apply to the entire `j-3dENA` repository. A more deeply
+ nested `AGENTS.md` may add or override instructions for its own subtree.
+ 
+-## Read order
+-
+-Before planning or editing, read:
+-
+-1. this file;
+-2. `docs/session-records/2026-08-20-nextjs-jena-feasibility-and-agent-plan.md`;
+-3. `design-system/3dena-next/MASTER.md` for UI work;
+-4. the matching file under `design-system/3dena-next/pages/`, if one exists.
+-
+-Reinspect the current worktree before relying on these records. The session
+-record is an evidence-backed starting contract, not permission to ignore newer
+-source, tests, decisions, or nested instructions.
++## Task context
++
++Use applicable instructions already in context and inspect the source and
++contracts relevant to the requested change. Load additional material when its
++scope is needed:
++
++- For numerical or parity work, read the affected versioned parity contract and
++  its fixtures; preserve the scientific invariants below.
++- For computation architecture or lifecycle work, use
++  `docs/architecture/persistent-compute-service-v1.md`.
++- For UI work, use `design-system/3dena-next/MASTER.md` and the matching file
++  under `design-system/3dena-next/pages/`, if one exists.
++- For the origin of a requirement or historical decision, consult the relevant
++  section of
++  `docs/session-records/2026-08-20-nextjs-jena-feasibility-and-agent-plan.md`.
++
++Check the current worktree before relying on historical records. Newer accepted
++decisions, source, tests, and applicable nested instructions take precedence
++over superseded assumptions. An isolated edit does not require rereading the
++complete historical record or unrelated workflows.
+ 
+ ## Project mission
+ 
+@@ -107,11 +115,12 @@
+ authorized successor changes `package.json`, `.npmrc`, and the lockfile
+ together.
+ 
+-Use browser Web Workers for ENA, statistics, trajectory, and bootstrap. If
+-calibration proves that documented maximum workloads cannot fit safely in
+-supported browsers, surface the evidence and obtain an architecture decision
+-before introducing a persistent Node computation service. Do not hide long CPU
+-work in a Vercel serverless request.
++Production scientific computation uses the persistent Node.js/TypeScript
++service specified in `docs/architecture/persistent-compute-service-v1.md`.
++That accepted decision supersedes the earlier Worker-first assumption. Browser
++Workers serve exact-byte preflight, hashing, lightweight inspection, development
++calibration, and SDK compatibility. Do not hide long CPU work in a Vercel
++serverless request.
+ 
+ Worker messages must be structured-clone safe. Do not attempt to send arbitrary
+ JavaScript weighting functions across the worker boundary; encode approved

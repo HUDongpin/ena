@@ -1,0 +1,261 @@
+{
+  "package": {
+    "name": "phaser",
+    "version": "4.1.0",
+    "license": "MIT",
+    "copyright": "Copyright (c) 2026 Richard Davey, Phaser Studio Inc.",
+    "homepage": "https://phaser.io",
+    "repository": "https://github.com/phaserjs/phaser"
+  },
+  "status": "Prepared revision; not installed in automatic skill discovery and not applied to source snapshots.",
+  "source_package_roots": [
+    "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser",
+    "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser"
+  ],
+  "scope": "Two revised skill entrypoints, preserved feature API content split into references, and three directly relevant manuals with one supporting reference.",
+  "source_path_convention": "src/ paths inside API reference tables name files in the upstream Phaser package, not files bundled in this documentation-only library.",
+  "application": "Apply the two revised SKILL.md files and the v4-new-features/references files at matching skills/ relative paths in either verified source package only if that scope is chosen. Keep unrelated package files unchanged.",
+  "api_preservation": "Original v4-new-features API sections lines 14-382 and original additional reference were retained as local topic references. Omitted original wrapper lines contain title, metadata, navigation, separators, and the old final reference-link sentence. Migration API body is unchanged apart from related navigation.",
+  "files": [
+    {
+      "output": "v4-new-features/references/overview.md",
+      "output_sha256": "5c0b9248b3cffb020717354b0674a4228ea49c48c7a6e925dc409901621977e4",
+      "change": "Relocated API material for selective loading; updated links where the relocation changes resolution.",
+      "source_relative_to_phaser_package": "skills/v4-new-features/SKILL.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/v4-new-features/SKILL.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/v4-new-features/SKILL.md"
+      ],
+      "source_sha256": "6b4e2ae40e31e5537f36e4734191f7bea50907d0cce2aafde8dfa1a5bd03a6cf",
+      "duplicate_source_verified_identical": true,
+      "source_lines": [
+        14,
+        38
+      ]
+    },
+    {
+      "output": "v4-new-features/references/filters.md",
+      "output_sha256": "6899ea13e3acd2571c75ac52763f44683f1fb408beeeeebe16047b2c1793bd0a",
+      "change": "Relocated API material for selective loading; updated links where the relocation changes resolution.",
+      "source_relative_to_phaser_package": "skills/v4-new-features/SKILL.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/v4-new-features/SKILL.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/v4-new-features/SKILL.md"
+      ],
+      "source_sha256": "6b4e2ae40e31e5537f36e4734191f7bea50907d0cce2aafde8dfa1a5bd03a6cf",
+      "duplicate_source_verified_identical": true,
+      "source_lines": [
+        40,
+        67
+      ]
+    },
+    {
+      "output": "v4-new-features/references/render-nodes.md",
+      "output_sha256": "89c1b738819ab1ac0392fbaf55c55266ab275c88cb92fc41bbf2af3c82eeac41",
+      "change": "Relocated API material for selective loading; updated links where the relocation changes resolution.",
+      "source_relative_to_phaser_package": "skills/v4-new-features/SKILL.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/v4-new-features/SKILL.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/v4-new-features/SKILL.md"
+      ],
+      "source_sha256": "6b4e2ae40e31e5537f36e4734191f7bea50907d0cce2aafde8dfa1a5bd03a6cf",
+      "duplicate_source_verified_identical": true,
+      "source_lines": [
+        69,
+        149
+      ]
+    },
+    {
+      "output": "v4-new-features/references/capture-frame.md",
+      "output_sha256": "af3ef89917cbc46d78b825a1e2045aeadb8ba182183d110c7e6a59c283e96ff1",
+      "change": "Relocated API material for selective loading; updated links where the relocation changes resolution.",
+      "source_relative_to_phaser_package": "skills/v4-new-features/SKILL.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/v4-new-features/SKILL.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/v4-new-features/SKILL.md"
+      ],
+      "source_sha256": "6b4e2ae40e31e5537f36e4734191f7bea50907d0cce2aafde8dfa1a5bd03a6cf",
+      "duplicate_source_verified_identical": true,
+      "source_lines": [
+        153,
+        178
+      ]
+    },
+    {
+      "output": "v4-new-features/references/gradients.md",
+      "output_sha256": "4462434fb8e111770dd9a6f67853ed4c4e358ad76c502209bf63381b25481102",
+      "change": "Relocated API material for selective loading; updated links where the relocation changes resolution.",
+      "source_relative_to_phaser_package": "skills/v4-new-features/SKILL.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/v4-new-features/SKILL.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/v4-new-features/SKILL.md"
+      ],
+      "source_sha256": "6b4e2ae40e31e5537f36e4734191f7bea50907d0cce2aafde8dfa1a5bd03a6cf",
+      "duplicate_source_verified_identical": true,
+      "source_lines": [
+        180,
+        210
+      ]
+    },
+    {
+      "output": "v4-new-features/references/noise.md",
+      "output_sha256": "01925f922f1f7adfff92cb01e1fdfd1d788f46f3ed9cfce6a28771305b5bb688",
+      "change": "Relocated API material for selective loading; updated links where the relocation changes resolution.",
+      "source_relative_to_phaser_package": "skills/v4-new-features/SKILL.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/v4-new-features/SKILL.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/v4-new-features/SKILL.md"
+      ],
+      "source_sha256": "6b4e2ae40e31e5537f36e4734191f7bea50907d0cce2aafde8dfa1a5bd03a6cf",
+      "duplicate_source_verified_identical": true,
+      "source_lines": [
+        212,
+        257
+      ]
+    },
+    {
+      "output": "v4-new-features/references/sprite-gpu-layer.md",
+      "output_sha256": "3bffc264f5f437b54b75acf023050500e61fd33c05aaa524585b057a6fbbc868",
+      "change": "Relocated API material for selective loading; updated links where the relocation changes resolution.",
+      "source_relative_to_phaser_package": "skills/v4-new-features/SKILL.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/v4-new-features/SKILL.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/v4-new-features/SKILL.md"
+      ],
+      "source_sha256": "6b4e2ae40e31e5537f36e4734191f7bea50907d0cce2aafde8dfa1a5bd03a6cf",
+      "duplicate_source_verified_identical": true,
+      "source_lines": [
+        259,
+        290
+      ]
+    },
+    {
+      "output": "v4-new-features/references/components.md",
+      "output_sha256": "d491674b7f4eae8f8b6be913170460522e55c3e313ca82f61f83f2eb3a8d7bb5",
+      "change": "Relocated API material for selective loading; updated links where the relocation changes resolution.",
+      "source_relative_to_phaser_package": "skills/v4-new-features/SKILL.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/v4-new-features/SKILL.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/v4-new-features/SKILL.md"
+      ],
+      "source_sha256": "6b4e2ae40e31e5537f36e4734191f7bea50907d0cce2aafde8dfa1a5bd03a6cf",
+      "duplicate_source_verified_identical": true,
+      "source_lines": [
+        292,
+        350
+      ]
+    },
+    {
+      "output": "v4-new-features/references/tilemap-gpu-layer.md",
+      "output_sha256": "a58d3745d54a030fba2a93aa4c11b3304a2feaf93bebc5d3fe8ee8ae7dd29214",
+      "change": "Relocated API material for selective loading; updated links where the relocation changes resolution.",
+      "source_relative_to_phaser_package": "skills/v4-new-features/SKILL.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/v4-new-features/SKILL.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/v4-new-features/SKILL.md"
+      ],
+      "source_sha256": "6b4e2ae40e31e5537f36e4734191f7bea50907d0cce2aafde8dfa1a5bd03a6cf",
+      "duplicate_source_verified_identical": true,
+      "source_lines": [
+        352,
+        382
+      ]
+    },
+    {
+      "output": "v4-new-features/references/REFERENCE.md",
+      "output_sha256": "8a3fddf416708f3062c53efb6f6e2fe2aba35087f96a89a69f23ca062a3c5bde",
+      "change": "Preserved supplementary tint/source reference; repaired relocated cross-references.",
+      "source_relative_to_phaser_package": "skills/v4-new-features/references/REFERENCE.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/v4-new-features/references/REFERENCE.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/v4-new-features/references/REFERENCE.md"
+      ],
+      "source_sha256": "3579f0770a96c1a040b1d392c5b30c678c86f9a5a1828eb26344297bc6e593a2",
+      "duplicate_source_verified_identical": true
+    },
+    {
+      "output": "v4-new-features/references/filters-api.md",
+      "output_sha256": "4f651a438ec29bbfcb9079975c4b6358e44a359939ddce1fb5661d68061cccee",
+      "change": "Copied as optional API reference, removing skill discovery metadata and unrelated sibling-skill navigation; retained API body and adjusted included reference links.",
+      "source_relative_to_phaser_package": "skills/filters-and-postfx/SKILL.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/filters-and-postfx/SKILL.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/filters-and-postfx/SKILL.md"
+      ],
+      "source_sha256": "451c4e60b738fb491693b5f4063c622f8e2807a56a39680e4b5ffd140de8c996",
+      "duplicate_source_verified_identical": true
+    },
+    {
+      "output": "v4-new-features/references/components-api.md",
+      "output_sha256": "edb7b33885324ca6c1c83db218d10e06a55cbb9a0a9f6f5b275acf40297f0134",
+      "change": "Copied as optional API reference, removing skill discovery metadata and unrelated sibling-skill navigation; retained API body and adjusted included reference links.",
+      "source_relative_to_phaser_package": "skills/game-object-components/SKILL.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/game-object-components/SKILL.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/game-object-components/SKILL.md"
+      ],
+      "source_sha256": "ccfa17b9df05e0b8d3da34b9cded23b3b239ca47536fa586388ecdedafff6ecc",
+      "duplicate_source_verified_identical": true
+    },
+    {
+      "output": "v4-new-features/references/tilemaps-api.md",
+      "output_sha256": "dca613ec07127a739a5010f9a3e4619ce57803d7b20c3843a82b50a14a68b955",
+      "change": "Copied as optional API reference, removing skill discovery metadata and unrelated sibling-skill navigation; retained API body and adjusted included reference links.",
+      "source_relative_to_phaser_package": "skills/tilemaps/SKILL.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/tilemaps/SKILL.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/tilemaps/SKILL.md"
+      ],
+      "source_sha256": "c1754852ce72c05987c41e1e122eea8f2888cdf46f719259b252d2fda66073eb",
+      "duplicate_source_verified_identical": true
+    },
+    {
+      "output": "v4-new-features/references/components-reference.md",
+      "output_sha256": "0c2e55036ee94b597cba4c1219cd2802080bb96d20154b62f044e7918ef9a6ff",
+      "change": "Copied supporting component reference and fixed its filter-reference link.",
+      "source_relative_to_phaser_package": "skills/game-object-components/references/REFERENCE.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/game-object-components/references/REFERENCE.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/game-object-components/references/REFERENCE.md"
+      ],
+      "source_sha256": "23c207ddf2d9571f47ba12afbc941bd7d1902949bcda98a981f8dffb527308b2",
+      "duplicate_source_verified_identical": true
+    },
+    {
+      "output": "v4-new-features/SKILL.md",
+      "output_sha256": "88e3a2252bee5e5cb0c41f1f8c812eda699e8faa3a3ef08f4e35fd5f023647ea",
+      "change": "Shortened discovery description; replaced multi-feature implementation catalogue with a short selective router; retained API content in topic references.",
+      "source_relative_to_phaser_package": "skills/v4-new-features/SKILL.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/v4-new-features/SKILL.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/v4-new-features/SKILL.md"
+      ],
+      "source_sha256": "6b4e2ae40e31e5537f36e4734191f7bea50907d0cce2aafde8dfa1a5bd03a6cf",
+      "duplicate_source_verified_identical": true
+    },
+    {
+      "output": "v3-to-v4-migration/SKILL.md",
+      "output_sha256": "925b36bf3749731d00e2468a830053856c002c4081d98e28f4d5859950f7ba92",
+      "change": "Shortened discovery description and made related navigation resolve within this portable library; preserved migration API guidance and targeted checks.",
+      "source_relative_to_phaser_package": "skills/v3-to-v4-migration/SKILL.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/skills/v3-to-v4-migration/SKILL.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/skills/v3-to-v4-migration/SKILL.md"
+      ],
+      "source_sha256": "a7d2e1533ecb06874f54e4b93383e6b2c14f6c1dac13f0a10a0d7fe56b6020c3",
+      "duplicate_source_verified_identical": true
+    },
+    {
+      "output": "LICENSE.md",
+      "output_sha256": "c3a9ba7e38d4ef33dccf5fdd1046655c63df06714f84776118fe406f43db5cf2",
+      "change": "Unmodified Phaser MIT license retained with the copied documentation.",
+      "source_relative_to_phaser_package": "LICENSE.md",
+      "source_paths": [
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/node_modules/phaser/LICENSE.md",
+        "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/phaser/LICENSE.md"
+      ],
+      "source_sha256": "c3a9ba7e38d4ef33dccf5fdd1046655c63df06714f84776118fe406f43db5cf2",
+      "duplicate_source_verified_identical": true
+    }
+  ]
+}

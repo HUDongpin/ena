@@ -1,0 +1,22 @@
+[
+  {
+    "skill": "playwright-current",
+    "exit_code": 0,
+    "output": "Skill is valid!\n"
+  },
+  {
+    "skill": "playwright-legacy",
+    "exit_code": 0,
+    "output": "Skill is valid!\n"
+  },
+  {
+    "skill": "phaser/v3-to-v4-migration",
+    "exit_code": 0,
+    "output": "Skill is valid!\n"
+  },
+  {
+    "skill": "phaser/v4-new-features",
+    "exit_code": 0,
+    "output": "Skill is valid!\n"
+  }
+]

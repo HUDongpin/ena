@@ -1,0 +1,11 @@
+--- /Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-a22-current-21200fb-review-20260830.WQNJuS/AGENTS.md
++++ /Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/recovered-mais/AGENTS.md
+@@ -220,7 +220,7 @@
+ 
+ Before editing, each session must:
+ 
+-1. Read this `AGENTS.md`.
++1. Apply the applicable instructions already supplied in context, and read additional task-relevant sections of this `AGENTS.md` as needed.
+ 2. Read the current assignment.
+ 3. Inspect the relevant files.
+ 4. Create or update its session log.

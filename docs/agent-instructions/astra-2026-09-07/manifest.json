@@ -1,0 +1,241 @@
+{
+  "date": "2026-09-07",
+  "handling": "Edit maintained j-3dENA source; preserve dependency/history originals and save completed revisions outside skill discovery.",
+  "live_file": "/Volumes/Starship/ENA/j-3dENA/AGENTS.md",
+  "live_before_sha256": "ddd1cca1cdc9e9d39407bea29e1939949eff657119c4a7df2f88c10fad350597",
+  "live_after_sha256": "4c377001ec2350a2ad736f44f328a453ee0b4a3fd53d60d88bd45e340aa67af3",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "5b0db4fdbb0a0f8c6f4cf5b1cd7ce0219a28e3fdd8f341042b8f5ebb2947fe09"
+    },
+    {
+      "path": "evidence/final-link-check.json",
+      "sha256": "29110c1d650a2739944e92eeb18e2dc9c2e34ee8b6e5df8ff0618d95ec598b1f"
+    },
+    {
+      "path": "evidence/j3dena-AGENTS.before.md",
+      "sha256": "ddd1cca1cdc9e9d39407bea29e1939949eff657119c4a7df2f88c10fad350597"
+    },
+    {
+      "path": "evidence/j3dena-AGENTS.diff",
+      "sha256": "6ac849236d30c861cc6fb7a0bdd52dee72a3d62148bc528bff25c9de5a7e49f4"
+    },
+    {
+      "path": "evidence/j3dena-review.md",
+      "sha256": "8e46d5f51ba680bc234faeb01c1d2d53cfe3c80698503285ed62a132eda4a639"
+    },
+    {
+      "path": "evidence/playwright-link-check.json",
+      "sha256": "190fe2fc35eb9c5e2470112ea721f346dbf5f76216aba216931866711601b504"
+    },
+    {
+      "path": "evidence/playwright-source-map.json",
+      "sha256": "b9ab242655b1abe588ae2f39e05cf3aa9e736e21c9f92ce60f490c833ecf5c81"
+    },
+    {
+      "path": "evidence/quick-validate.json",
+      "sha256": "47007c28431dc78cf576a471c568e853db2b48149e4aff5277e4117bee7e9b90"
+    },
+    {
+      "path": "evidence/skill-scenarios-review.md",
+      "sha256": "217feef2015bb0d250ea899c9dafacca3ff709c317f28d42c36ed9b349651511"
+    },
+    {
+      "path": "recovered-mais/AGENTS.diff",
+      "sha256": "d02bfef6f1cdde825a2499433dc042fd0ba87c3defff74abc83c249bf78eee48"
+    },
+    {
+      "path": "recovered-mais/AGENTS.md",
+      "sha256": "b6a7c4ec2de3e8f9ec1ca5898077abb4a64075d642be50364b8e2548c96916b3"
+    },
+    {
+      "path": "recovered-mais/source-map.json",
+      "sha256": "84c76f27efa7fb6421a94a8a7d69655be5ec706d55e229e83d0263b1c4df4f22"
+    },
+    {
+      "path": "skills/phaser/LICENSE.md",
+      "sha256": "c3a9ba7e38d4ef33dccf5fdd1046655c63df06714f84776118fe406f43db5cf2"
+    },
+    {
+      "path": "skills/phaser/source-mapping.json",
+      "sha256": "44ac2da1ae2d304da73e2eeb7f39e03bbc699aa011bfce2b815b9d4251b7c042"
+    },
+    {
+      "path": "skills/phaser/v3-to-v4-migration/SKILL.md",
+      "sha256": "925b36bf3749731d00e2468a830053856c002c4081d98e28f4d5859950f7ba92"
+    },
+    {
+      "path": "skills/phaser/v4-new-features/SKILL.md",
+      "sha256": "88e3a2252bee5e5cb0c41f1f8c812eda699e8faa3a3ef08f4e35fd5f023647ea"
+    },
+    {
+      "path": "skills/phaser/v4-new-features/references/REFERENCE.md",
+      "sha256": "8a3fddf416708f3062c53efb6f6e2fe2aba35087f96a89a69f23ca062a3c5bde"
+    },
+    {
+      "path": "skills/phaser/v4-new-features/references/capture-frame.md",
+      "sha256": "af3ef89917cbc46d78b825a1e2045aeadb8ba182183d110c7e6a59c283e96ff1"
+    },
+    {
+      "path": "skills/phaser/v4-new-features/references/components-api.md",
+      "sha256": "edb7b33885324ca6c1c83db218d10e06a55cbb9a0a9f6f5b275acf40297f0134"
+    },
+    {
+      "path": "skills/phaser/v4-new-features/references/components-reference.md",
+      "sha256": "0c2e55036ee94b597cba4c1219cd2802080bb96d20154b62f044e7918ef9a6ff"
+    },
+    {
+      "path": "skills/phaser/v4-new-features/references/components.md",
+      "sha256": "d491674b7f4eae8f8b6be913170460522e55c3e313ca82f61f83f2eb3a8d7bb5"
+    },
+    {
+      "path": "skills/phaser/v4-new-features/references/filters-api.md",
+      "sha256": "4f651a438ec29bbfcb9079975c4b6358e44a359939ddce1fb5661d68061cccee"
+    },
+    {
+      "path": "skills/phaser/v4-new-features/references/filters.md",
+      "sha256": "6899ea13e3acd2571c75ac52763f44683f1fb408beeeeebe16047b2c1793bd0a"
+    },
+    {
+      "path": "skills/phaser/v4-new-features/references/gradients.md",
+      "sha256": "4462434fb8e111770dd9a6f67853ed4c4e358ad76c502209bf63381b25481102"
+    },
+    {
+      "path": "skills/phaser/v4-new-features/references/noise.md",
+      "sha256": "01925f922f1f7adfff92cb01e1fdfd1d788f46f3ed9cfce6a28771305b5bb688"
+    },
+    {
+      "path": "skills/phaser/v4-new-features/references/overview.md",
+      "sha256": "5c0b9248b3cffb020717354b0674a4228ea49c48c7a6e925dc409901621977e4"
+    },
+    {
+      "path": "skills/phaser/v4-new-features/references/render-nodes.md",
+      "sha256": "89c1b738819ab1ac0392fbaf55c55266ab275c88cb92fc41bbf2af3c82eeac41"
+    },
+    {
+      "path": "skills/phaser/v4-new-features/references/sprite-gpu-layer.md",
+      "sha256": "3bffc264f5f437b54b75acf023050500e61fd33c05aaa524585b057a6fbbc868"
+    },
+    {
+      "path": "skills/phaser/v4-new-features/references/tilemap-gpu-layer.md",
+      "sha256": "a58d3745d54a030fba2a93aa4c11b3304a2feaf93bebc5d3fe8ee8ae7dd29214"
+    },
+    {
+      "path": "skills/phaser/v4-new-features/references/tilemaps-api.md",
+      "sha256": "dca613ec07127a739a5010f9a3e4619ce57803d7b20c3843a82b50a14a68b955"
+    },
+    {
+      "path": "skills/playwright-current/playwright-cli/LICENSE",
+      "sha256": "45873d00a0dd243596deb4aa23b2493b3d1f0671921bf2538ea431d7380220eb"
+    },
+    {
+      "path": "skills/playwright-current/playwright-cli/NOTICE",
+      "sha256": "6d602191187b35b9b01d2cffa01c8469c2c8d9de8a96f1bf868e0f264f51c81d"
+    },
+    {
+      "path": "skills/playwright-current/playwright-cli/SKILL.md",
+      "sha256": "3938d42ffa775c1430ed1c301d187daa9eae969966b27a43cbb2c07638b2266c"
+    },
+    {
+      "path": "skills/playwright-current/playwright-cli/references/cli-command-reference.md",
+      "sha256": "733e2edb72b6500c816667f12c1218cbf2250972b07a40e39c4610b32030f437"
+    },
+    {
+      "path": "skills/playwright-current/playwright-cli/references/cli-examples.md",
+      "sha256": "5b22856962db10472953b8fd61c3b53941fe184fb8dba9525a5e934b54b8ac5f"
+    },
+    {
+      "path": "skills/playwright-current/playwright-cli/references/element-attributes.md",
+      "sha256": "bf19aa4671e0a50a0fefa9c790f39124e803060eefe395042b723c29fcb7faa2"
+    },
+    {
+      "path": "skills/playwright-current/playwright-cli/references/playwright-tests.md",
+      "sha256": "c5b0719fef2cfdff50bd744051b2f9afc119775db4b48e9b2882c1cf3886797c"
+    },
+    {
+      "path": "skills/playwright-current/playwright-cli/references/request-mocking.md",
+      "sha256": "54e801c9663fc2b6d68ceb058cb1c360724c2499f42acc7852a68e83e5b5f37c"
+    },
+    {
+      "path": "skills/playwright-current/playwright-cli/references/running-code.md",
+      "sha256": "d95c539a5990b71d02d8bdf1d9414df16191eb6cff95b0063820518b7a13dcb2"
+    },
+    {
+      "path": "skills/playwright-current/playwright-cli/references/session-management.md",
+      "sha256": "2d066070b18af4ced5b14d05c47d668e8e3c1ab212c38ee2b707d28a747b4b17"
+    },
+    {
+      "path": "skills/playwright-current/playwright-cli/references/storage-state.md",
+      "sha256": "9ac47f9ae4a1aedcd2077f8ac9ab1ba6bee1962cb83ff51adcd36fb6d83b5ec6"
+    },
+    {
+      "path": "skills/playwright-current/playwright-cli/references/test-generation.md",
+      "sha256": "bcee94a2ae74eda5ba5f569aa4688ec54b4f045d1b7adb80052bd4211c1476bf"
+    },
+    {
+      "path": "skills/playwright-current/playwright-cli/references/tracing.md",
+      "sha256": "792e0ac7705e56ac48df84c0f5400221ce86107897c671590a64a4ea6a82508e"
+    },
+    {
+      "path": "skills/playwright-current/playwright-cli/references/video-recording.md",
+      "sha256": "8555ab5400df0d90e66318aacc0a8a4418fbf872e7463824d55d5c41615abd83"
+    },
+    {
+      "path": "skills/playwright-legacy/playwright-cli/LICENSE",
+      "sha256": "45873d00a0dd243596deb4aa23b2493b3d1f0671921bf2538ea431d7380220eb"
+    },
+    {
+      "path": "skills/playwright-legacy/playwright-cli/NOTICE",
+      "sha256": "6d602191187b35b9b01d2cffa01c8469c2c8d9de8a96f1bf868e0f264f51c81d"
+    },
+    {
+      "path": "skills/playwright-legacy/playwright-cli/SKILL.md",
+      "sha256": "4e664066db6b748d41696820f5e50e78730900ba2c5b76e9a0c9ada12a714e4c"
+    },
+    {
+      "path": "skills/playwright-legacy/playwright-cli/references/cli-command-reference.md",
+      "sha256": "337be60916bb72f4364551f024d69895477d2f8ca2ffeee44cbe942b3df72c94"
+    },
+    {
+      "path": "skills/playwright-legacy/playwright-cli/references/cli-examples.md",
+      "sha256": "45acf5feb4e0503e0b0e41aa595cdc112f603daafd9052b8cfe7b47549071383"
+    },
+    {
+      "path": "skills/playwright-legacy/playwright-cli/references/element-attributes.md",
+      "sha256": "bf19aa4671e0a50a0fefa9c790f39124e803060eefe395042b723c29fcb7faa2"
+    },
+    {
+      "path": "skills/playwright-legacy/playwright-cli/references/playwright-tests.md",
+      "sha256": "d770e9eb15cf1e266b9d92e788722fa189941f89346702a6800b06e25416c4e7"
+    },
+    {
+      "path": "skills/playwright-legacy/playwright-cli/references/request-mocking.md",
+      "sha256": "54e801c9663fc2b6d68ceb058cb1c360724c2499f42acc7852a68e83e5b5f37c"
+    },
+    {
+      "path": "skills/playwright-legacy/playwright-cli/references/running-code.md",
+      "sha256": "0729425a05ee7f16510dae80f1e18041fef53041f1d15cfb2f77a3b30b648244"
+    },
+    {
+      "path": "skills/playwright-legacy/playwright-cli/references/session-management.md",
+      "sha256": "7d52fa2d9fe13c539f09773eca4bb6bc14bdfd42f3bf75655505e70f87707a8f"
+    },
+    {
+      "path": "skills/playwright-legacy/playwright-cli/references/storage-state.md",
+      "sha256": "1122778c9b13b44bddebb4476a7f99d918afd31757be8b4fade3cb09c3d48c99"
+    },
+    {
+      "path": "skills/playwright-legacy/playwright-cli/references/test-generation.md",
+      "sha256": "f08d14388b7002963e27bd242550154cb1379def89597464deb36b6f7afca15f"
+    },
+    {
+      "path": "skills/playwright-legacy/playwright-cli/references/tracing.md",
+      "sha256": "792e0ac7705e56ac48df84c0f5400221ce86107897c671590a64a4ea6a82508e"
+    },
+    {
+      "path": "skills/playwright-legacy/playwright-cli/references/video-recording.md",
+      "sha256": "db920168840dc5e0313a48ef6beaabb64f60823347add9b2670f44baa5e0bb10"
+    }
+  ]
+}

@@ -1,0 +1,298 @@
+[
+  {
+    "variant": "playwright-current",
+    "package_version": "1.62.1",
+    "source_skill_root": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli",
+    "revised_skill_root": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-current/playwright-cli",
+    "files": [
+      {
+        "relative_path": "LICENSE",
+        "source": "/Volumes/Starship/ENA/node_modules/playwright-core/LICENSE",
+        "apply_to": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/LICENSE",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-current/playwright-cli/LICENSE",
+        "source_sha256": "45873d00a0dd243596deb4aa23b2493b3d1f0671921bf2538ea431d7380220eb",
+        "revised_sha256": "45873d00a0dd243596deb4aa23b2493b3d1f0671921bf2538ea431d7380220eb",
+        "status": "unchanged",
+        "package_attribution": true
+      },
+      {
+        "relative_path": "NOTICE",
+        "source": "/Volumes/Starship/ENA/node_modules/playwright-core/NOTICE",
+        "apply_to": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/NOTICE",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-current/playwright-cli/NOTICE",
+        "source_sha256": "6d602191187b35b9b01d2cffa01c8469c2c8d9de8a96f1bf868e0f264f51c81d",
+        "revised_sha256": "6d602191187b35b9b01d2cffa01c8469c2c8d9de8a96f1bf868e0f264f51c81d",
+        "status": "unchanged",
+        "package_attribution": true
+      },
+      {
+        "relative_path": "SKILL.md",
+        "source": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/SKILL.md",
+        "apply_to": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/SKILL.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-current/playwright-cli/SKILL.md",
+        "source_sha256": "29c0b669a524d42b51934d7db9144c1c07a566d0549ae6fb6ccd810e5a3cf61b",
+        "revised_sha256": "3938d42ffa775c1430ed1c301d187daa9eae969966b27a43cbb2c07638b2266c",
+        "status": "modified",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/cli-command-reference.md",
+        "source": null,
+        "apply_to": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/cli-command-reference.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-current/playwright-cli/references/cli-command-reference.md",
+        "source_sha256": null,
+        "revised_sha256": "733e2edb72b6500c816667f12c1218cbf2250972b07a40e39c4610b32030f437",
+        "status": "new",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/cli-examples.md",
+        "source": null,
+        "apply_to": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/cli-examples.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-current/playwright-cli/references/cli-examples.md",
+        "source_sha256": null,
+        "revised_sha256": "5b22856962db10472953b8fd61c3b53941fe184fb8dba9525a5e934b54b8ac5f",
+        "status": "new",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/element-attributes.md",
+        "source": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/element-attributes.md",
+        "apply_to": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/element-attributes.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-current/playwright-cli/references/element-attributes.md",
+        "source_sha256": "bf19aa4671e0a50a0fefa9c790f39124e803060eefe395042b723c29fcb7faa2",
+        "revised_sha256": "bf19aa4671e0a50a0fefa9c790f39124e803060eefe395042b723c29fcb7faa2",
+        "status": "unchanged",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/playwright-tests.md",
+        "source": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/playwright-tests.md",
+        "apply_to": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/playwright-tests.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-current/playwright-cli/references/playwright-tests.md",
+        "source_sha256": "c5b0719fef2cfdff50bd744051b2f9afc119775db4b48e9b2882c1cf3886797c",
+        "revised_sha256": "c5b0719fef2cfdff50bd744051b2f9afc119775db4b48e9b2882c1cf3886797c",
+        "status": "unchanged",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/request-mocking.md",
+        "source": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/request-mocking.md",
+        "apply_to": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/request-mocking.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-current/playwright-cli/references/request-mocking.md",
+        "source_sha256": "54e801c9663fc2b6d68ceb058cb1c360724c2499f42acc7852a68e83e5b5f37c",
+        "revised_sha256": "54e801c9663fc2b6d68ceb058cb1c360724c2499f42acc7852a68e83e5b5f37c",
+        "status": "unchanged",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/running-code.md",
+        "source": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/running-code.md",
+        "apply_to": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/running-code.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-current/playwright-cli/references/running-code.md",
+        "source_sha256": "d95c539a5990b71d02d8bdf1d9414df16191eb6cff95b0063820518b7a13dcb2",
+        "revised_sha256": "d95c539a5990b71d02d8bdf1d9414df16191eb6cff95b0063820518b7a13dcb2",
+        "status": "unchanged",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/session-management.md",
+        "source": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/session-management.md",
+        "apply_to": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/session-management.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-current/playwright-cli/references/session-management.md",
+        "source_sha256": "cd3e261b8763bf952f1e371b876cb78d054379afec85482f9250633e1b7e6c44",
+        "revised_sha256": "2d066070b18af4ced5b14d05c47d668e8e3c1ab212c38ee2b707d28a747b4b17",
+        "status": "modified",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/storage-state.md",
+        "source": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/storage-state.md",
+        "apply_to": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/storage-state.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-current/playwright-cli/references/storage-state.md",
+        "source_sha256": "9ac47f9ae4a1aedcd2077f8ac9ab1ba6bee1962cb83ff51adcd36fb6d83b5ec6",
+        "revised_sha256": "9ac47f9ae4a1aedcd2077f8ac9ab1ba6bee1962cb83ff51adcd36fb6d83b5ec6",
+        "status": "unchanged",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/test-generation.md",
+        "source": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/test-generation.md",
+        "apply_to": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/test-generation.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-current/playwright-cli/references/test-generation.md",
+        "source_sha256": "12f54cfa718d9e559bad918120a4ca4f11c933167713d1b9c5f99872eddaf749",
+        "revised_sha256": "bcee94a2ae74eda5ba5f569aa4688ec54b4f045d1b7adb80052bd4211c1476bf",
+        "status": "modified",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/tracing.md",
+        "source": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/tracing.md",
+        "apply_to": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/tracing.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-current/playwright-cli/references/tracing.md",
+        "source_sha256": "792e0ac7705e56ac48df84c0f5400221ce86107897c671590a64a4ea6a82508e",
+        "revised_sha256": "792e0ac7705e56ac48df84c0f5400221ce86107897c671590a64a4ea6a82508e",
+        "status": "unchanged",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/video-recording.md",
+        "source": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/video-recording.md",
+        "apply_to": "/Volumes/Starship/ENA/node_modules/playwright-core/lib/tools/skills/playwright-cli/references/video-recording.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-current/playwright-cli/references/video-recording.md",
+        "source_sha256": "8555ab5400df0d90e66318aacc0a8a4418fbf872e7463824d55d5c41615abd83",
+        "revised_sha256": "8555ab5400df0d90e66318aacc0a8a4418fbf872e7463824d55d5c41615abd83",
+        "status": "unchanged",
+        "package_attribution": false
+      }
+    ]
+  },
+  {
+    "variant": "playwright-legacy",
+    "package_version": "1.59.1",
+    "source_skill_root": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill",
+    "revised_skill_root": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-legacy/playwright-cli",
+    "files": [
+      {
+        "relative_path": "LICENSE",
+        "source": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/LICENSE",
+        "apply_to": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/LICENSE",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-legacy/playwright-cli/LICENSE",
+        "source_sha256": "45873d00a0dd243596deb4aa23b2493b3d1f0671921bf2538ea431d7380220eb",
+        "revised_sha256": "45873d00a0dd243596deb4aa23b2493b3d1f0671921bf2538ea431d7380220eb",
+        "status": "unchanged",
+        "package_attribution": true
+      },
+      {
+        "relative_path": "NOTICE",
+        "source": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/NOTICE",
+        "apply_to": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/NOTICE",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-legacy/playwright-cli/NOTICE",
+        "source_sha256": "6d602191187b35b9b01d2cffa01c8469c2c8d9de8a96f1bf868e0f264f51c81d",
+        "revised_sha256": "6d602191187b35b9b01d2cffa01c8469c2c8d9de8a96f1bf868e0f264f51c81d",
+        "status": "unchanged",
+        "package_attribution": true
+      },
+      {
+        "relative_path": "SKILL.md",
+        "source": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/SKILL.md",
+        "apply_to": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/SKILL.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-legacy/playwright-cli/SKILL.md",
+        "source_sha256": "8fc9ec712b9cfbeae8937bef4bab83b291083ecbc4a60065e1325b786c5dcaf5",
+        "revised_sha256": "4e664066db6b748d41696820f5e50e78730900ba2c5b76e9a0c9ada12a714e4c",
+        "status": "modified",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/cli-command-reference.md",
+        "source": null,
+        "apply_to": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/cli-command-reference.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-legacy/playwright-cli/references/cli-command-reference.md",
+        "source_sha256": null,
+        "revised_sha256": "337be60916bb72f4364551f024d69895477d2f8ca2ffeee44cbe942b3df72c94",
+        "status": "new",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/cli-examples.md",
+        "source": null,
+        "apply_to": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/cli-examples.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-legacy/playwright-cli/references/cli-examples.md",
+        "source_sha256": null,
+        "revised_sha256": "45acf5feb4e0503e0b0e41aa595cdc112f603daafd9052b8cfe7b47549071383",
+        "status": "new",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/element-attributes.md",
+        "source": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/element-attributes.md",
+        "apply_to": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/element-attributes.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-legacy/playwright-cli/references/element-attributes.md",
+        "source_sha256": "bf19aa4671e0a50a0fefa9c790f39124e803060eefe395042b723c29fcb7faa2",
+        "revised_sha256": "bf19aa4671e0a50a0fefa9c790f39124e803060eefe395042b723c29fcb7faa2",
+        "status": "unchanged",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/playwright-tests.md",
+        "source": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/playwright-tests.md",
+        "apply_to": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/playwright-tests.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-legacy/playwright-cli/references/playwright-tests.md",
+        "source_sha256": "d770e9eb15cf1e266b9d92e788722fa189941f89346702a6800b06e25416c4e7",
+        "revised_sha256": "d770e9eb15cf1e266b9d92e788722fa189941f89346702a6800b06e25416c4e7",
+        "status": "unchanged",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/request-mocking.md",
+        "source": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/request-mocking.md",
+        "apply_to": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/request-mocking.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-legacy/playwright-cli/references/request-mocking.md",
+        "source_sha256": "54e801c9663fc2b6d68ceb058cb1c360724c2499f42acc7852a68e83e5b5f37c",
+        "revised_sha256": "54e801c9663fc2b6d68ceb058cb1c360724c2499f42acc7852a68e83e5b5f37c",
+        "status": "unchanged",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/running-code.md",
+        "source": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/running-code.md",
+        "apply_to": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/running-code.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-legacy/playwright-cli/references/running-code.md",
+        "source_sha256": "0729425a05ee7f16510dae80f1e18041fef53041f1d15cfb2f77a3b30b648244",
+        "revised_sha256": "0729425a05ee7f16510dae80f1e18041fef53041f1d15cfb2f77a3b30b648244",
+        "status": "unchanged",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/session-management.md",
+        "source": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/session-management.md",
+        "apply_to": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/session-management.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-legacy/playwright-cli/references/session-management.md",
+        "source_sha256": "97d9a564f9661bf7f6c940d884f20d79f912e7c84df4d3d5742383b9ff1c7a22",
+        "revised_sha256": "7d52fa2d9fe13c539f09773eca4bb6bc14bdfd42f3bf75655505e70f87707a8f",
+        "status": "modified",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/storage-state.md",
+        "source": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/storage-state.md",
+        "apply_to": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/storage-state.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-legacy/playwright-cli/references/storage-state.md",
+        "source_sha256": "1122778c9b13b44bddebb4476a7f99d918afd31757be8b4fade3cb09c3d48c99",
+        "revised_sha256": "1122778c9b13b44bddebb4476a7f99d918afd31757be8b4fade3cb09c3d48c99",
+        "status": "unchanged",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/test-generation.md",
+        "source": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/test-generation.md",
+        "apply_to": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/test-generation.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-legacy/playwright-cli/references/test-generation.md",
+        "source_sha256": "f08d14388b7002963e27bd242550154cb1379def89597464deb36b6f7afca15f",
+        "revised_sha256": "f08d14388b7002963e27bd242550154cb1379def89597464deb36b6f7afca15f",
+        "status": "unchanged",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/tracing.md",
+        "source": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/tracing.md",
+        "apply_to": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/tracing.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-legacy/playwright-cli/references/tracing.md",
+        "source_sha256": "792e0ac7705e56ac48df84c0f5400221ce86107897c671590a64a4ea6a82508e",
+        "revised_sha256": "792e0ac7705e56ac48df84c0f5400221ce86107897c671590a64a4ea6a82508e",
+        "status": "unchanged",
+        "package_attribution": false
+      },
+      {
+        "relative_path": "references/video-recording.md",
+        "source": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/video-recording.md",
+        "apply_to": "/Volumes/Starship/ENA/output/recovered-root-temp/2026-08-31-system-pressure/mais-value-composition-sim-20260830-x2/work/node_modules/playwright-core/lib/tools/cli-client/skill/references/video-recording.md",
+        "revised": "/Volumes/Starship/ENA/docs/agent-instructions/astra-2026-09-07/skills/playwright-legacy/playwright-cli/references/video-recording.md",
+        "source_sha256": "db920168840dc5e0313a48ef6beaabb64f60823347add9b2670f44baa5e0bb10",
+        "revised_sha256": "db920168840dc5e0313a48ef6beaabb64f60823347add9b2670f44baa5e0bb10",
+        "status": "unchanged",
+        "package_attribution": false
+      }
+    ]
+  }
+]

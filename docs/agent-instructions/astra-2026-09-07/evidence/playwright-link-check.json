@@ -1,0 +1,14 @@
+{
+  "links_checked": 46,
+  "errors": [],
+  "skills": {
+    "playwright-current": {
+      "markdown_files": 12,
+      "entry_lines": 48
+    },
+    "playwright-legacy": {
+      "markdown_files": 12,
+      "entry_lines": 48
+    }
+  }
+}
