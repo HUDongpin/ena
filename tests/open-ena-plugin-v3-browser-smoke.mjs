@@ -55,7 +55,7 @@ try {
   }, null, { timeout: 60000 });
   const counts = () => page.evaluate(() => ({ snapshots: window.__pluginPolicyAudit.snapshots, hashes: window.__pluginPolicyAudit.receiptHashes, requests: window.__openEnaNativeAudit.requests.length }));
   const geometry = () => figure().evaluate(f => {
-    const canvas = f.querySelector('[data-ena-plot-ready="true"]');
+    const canvas = f.querySelector('[data-ena-plotly-root="true"]');
     return canvas.data.map(trace => ({ role: trace.meta.role, x: Array.from(trace.x ?? []), y: Array.from(trace.y ?? []), z: Array.from(trace.z ?? []) }));
   });
   const shot = async name => {
