@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: open-ena-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: open-ena-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.diagnostic_smoke || 'all' }}
   cancel-in-progress: true
 
 jobs:
