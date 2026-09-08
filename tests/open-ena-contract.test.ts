@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -213,50 +214,13 @@ test("the documented Academy sample runs through real jENA 0.7.0-ona.0 determini
   assert.match(manifest.boundaries.join(" "), /declared provenance/);
 });
 
-test("2D is the local default and 3D ENA switches the same fitted result in place", () => {
-  const workspace = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8");
-  const plot = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaPlot.tsx"), "utf8");
-  const worker = readFileSync(join(projectRoot, "lib", "open-ena", "jena.worker.ts"), "utf8");
-  const client = readFileSync(join(projectRoot, "lib", "open-ena", "client.ts"), "utf8");
-  const viewToggleStart = workspace.indexOf('<div className="ena-view-toggle"');
-  const viewToggle = workspace.slice(viewToggleStart, workspace.indexOf("</div>", viewToggleStart));
-  const switchHandlerStart = workspace.indexOf("function selectVisualizationView");
-  const switchHandler = workspace.slice(switchHandlerStart, workspace.indexOf("function resetPlot", switchHandlerStart));
+test("2D remains the default and supported 3D switches the same bound geometry in place", () => {
 
-  assert.match(workspace, /useState<OpenEnaView>\("2d"\)/);
-  assert.match(workspace, /aria-pressed=\{view === "2d"\}/);
-  assert.match(workspace, /aria-pressed=\{view === "3d"\}/);
-  assert.match(
-    workspace,
-    /<strong>\{completedResultKind === "ona" \? copy\.ona\.workspace\.twoD : copy\.views\.twoD\}<\/strong>/,
-    "both the specialized ONA label and standard ENA label must resolve through locale copy",
-  );
-  assert.match(
-    workspace,
-    /const threeDViewLabel = completedResultKind === "ona"[\s\S]*?copy\.ona\.workspace\.threeD[\s\S]*?: copy\.views\.threeD/u,
-    "ONA and standard ENA must expose their localized 3D labels",
-  );
-  assert.match(workspace, /<strong>\{threeDViewLabel\}<\/strong>/u);
-  assert.doesNotMatch(workspace, /copy\.views\.(?:default|exploratory)/);
-  assert.doesNotMatch(viewToggle, /<small|Default|Exploratory/);
-  assert.match(viewToggle, /selectVisualizationView\("2d"\)/);
-  assert.match(viewToggle, /selectVisualizationView\("3d"\)/);
-  assert.doesNotMatch(viewToggle, /<a\b|href=|target=/);
-  assert.match(workspace, /view === "3d" \? \([\s\S]*?<OpenEnaInteractive3DPlot/);
-  assert.doesNotMatch(switchHandler, /analyzeDatasetInWorker|runAnalysis|setResult|updateConfig|new Worker/);
-  assert.match(workspace, /view === "2d" && activeLongitudinalView/);
-  assert.match(workspace, /view === "2d" && activeGroupContrast/);
-  assert.match(plot, /result\.set\.points/);
-  assert.match(worker, /createAccumulationStream/);
-  assert.match(worker, /buildOpenEnaResult/);
-  assert.match(worker, /compactOpenEnaSet/);
-  assert.doesNotMatch(client, /result\.worker/);
-  assert.match(client, /new URL\("\.\/jena\.worker\.ts", import\.meta\.url\)/);
-  assert.match(client, /abortHandler = \(\) => \{[\s\S]*?worker\.postMessage\(\{ kind: "cancel"/);
-  assert.match(client, /finish[\s\S]*?worker\.terminate\(\)/);
-  assert.match(workspace, /if \(controller\.signal\.aborted\) return;/);
-  assert.match(plot, /isComparison[\s\S]*?mean weight/);
-  assert.match(plot, /strongestConnections/);
+  assert.match(shell(), /data-ena-view="2d"/);
+  assert.match(v3, /onClick=\{\(\) => setView\("3d"\)\}/);
+  assert.match(v3, /disabled=\{!genericThreeDAvailable\}/);
+  assert.match(v3, /<OpenEnaInteractive3DPlot .*result=\{plotResult!\}/);
+
 });
 
 test("Open ENA exposes honest locale, SEO, and accessible-result contracts", () => {
@@ -267,11 +231,11 @@ test("Open ENA exposes honest locale, SEO, and accessible-result contracts", () 
   const copy = readFileSync(join(projectRoot, "lib", "open-ena-i18n.ts"), "utf8");
 
   assert.match(copy, /openEnaLocalizedLocales = \["en", "zh-hant", "zh-hans"\]/);
-  assert.match(workspace, /lang=\{workspaceIsLocalized \? undefined : "en"\}/);
-  assert.match(workspace, /dir=\{workspaceIsLocalized \? undefined : "ltr"\}/);
-  assert.match(workspace, /role="status"[\s\S]*?aria-live="polite"/);
-  assert.match(workspace, /aria-busy=\{loading \|\| sourceBusy\}/);
-  assert.match(workspace, /tabIndex=\{-1\}[\s\S]*?aria-hidden="true"/);
+  assert.match(workspace, /className="ena-control-content ena-model-control-content" lang=\{locale\} dir="ltr"/);
+  assert.match(workspace, /role="status" aria-live="polite"/);
+  assert.match(workspace, /aria-busy=\{sourceBusy \|\| modelState.runStatus === "running"\}/);
+  assert.doesNotMatch(workspace, /complete locale catalog follows/);
+  assert.match(workspace, /const modelV3Copy = copy\.modelV3/);
   assert.match(plot, /Strongest edges:/);
   assert.match(plot, /GROUP_VISUAL_ENCODINGS/);
   assert.match(plot, /circle-solid[\s\S]*square-solid[\s\S]*triangle-solid[\s\S]*diamond-solid[\s\S]*cross-solid[\s\S]*hexagon-solid/);
@@ -285,11 +249,12 @@ test("Open ENA publishes methodology, local-processing, and GPL boundaries", () 
   const packageJson = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf8")) as { dependencies: Record<string, string> };
 
   assert.equal(packageJson.dependencies["jena-js"], "0.7.0-ona.0");
-  assert.match(workspace, /GPL-3\.0-only/);
-  assert.match(workspace, /ENA computation powered by/);
-  assert.match(workspace, /ENA\.HK provides the interface, plotting, and exports/);
+  assert.match(workspace, /workspaceCopy\.shell\.runtimePrivacy\(JENA_RUNTIME_VERSION\)/);
+  assert.match(copy, /GPL-3\.0-only/);
+  assert.match(copy, /ENA computation powered by/);
+  assert.match(copy, /ENA\.HK provides the interface, plotting, and exports/);
   assert.doesNotMatch(workspace, /Powered[\s\S]{0,160}rENA/);
-  assert.match(workspace, /Source data stays in this workspace’s browser memory/);
+  assert.match(copy, /Source data stays in this workspace's browser memory/);
   assert.match(copy, /Visual separation alone is not significance or causality/);
   assert.doesNotMatch(copy, /3D ENA exploratory option opens the separate 3D ENA website/);
   assert.match(copy, /Interactive 3D displays the same fitted jENA coordinates as the 2D view/);

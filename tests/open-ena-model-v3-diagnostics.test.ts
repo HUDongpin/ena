@@ -1,0 +1,1286 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+import {
+  MODEL_DIAGNOSTIC_IDS_V3,
+  MODEL_SUGGESTED_ACTION_IDS_V3,
+  validateStandardDraftV3,
+} from "../lib/open-ena/model-v3/diagnostics";
+import type {
+  ModelCapabilityV3,
+  ModelDiagnosticV3,
+  ModelDiagnosticScopeV3,
+  ModelDiagnosticSeverityV3,
+  ModelDraftPatchV3,
+  ModelEvidenceV3,
+  ModelSuggestedActionV3,
+} from "../lib/open-ena/model-v3/diagnostics";
+import type { ParsedDataset } from "../lib/open-ena/types";
+import type {
+  CanonicalHorizonOrderV3,
+  CanonicalRowOrderV3,
+  DatasetBindingV3,
+  StandardEnaDraftV3,
+} from "../lib/open-ena/model-v3/types";
+
+const DATASET_HASH = "a".repeat(64);
+const OTHER_HASH = "b".repeat(64);
+const HEADER_HASH = "c".repeat(64);
+const DEFAULT_HEADERS = ["unit", "horizon", "A", "B", "C"];
+
+const EXPECTED_DIAGNOSTIC_IDS = [
+  "STANDARD_DATASET_BINDING_INVALID",
+  "STANDARD_UNITS_REQUIRED",
+  "STANDARD_HORIZONS_REQUIRED",
+  "STANDARD_IDENTITY_MISSING",
+  "STANDARD_IDENTITY_VALUE_UNSUPPORTED",
+  "STANDARD_CODES_TOO_FEW",
+  "STANDARD_CODES_DUPLICATE_SELECTION",
+  "STANDARD_CODE_FIELD_MISSING",
+  "STANDARD_CODE_ROLE_COLLISION",
+  "STANDARD_CODE_VALUE_INVALID",
+  "STANDARD_CODE_ALL_ZERO",
+  "STANDARD_CODE_ISOLATED",
+  "STANDARD_CODE_DUPLICATE_PROFILE",
+  "STANDARD_NO_GLOBAL_COOCCURRENCE",
+  "STANDARD_GROUP_FIELD_MISSING",
+  "STANDARD_GROUP_UNSTABLE_WITHIN_UNIT",
+  "STANDARD_HORIZON_SHARED_BY_MULTIPLE_UNITS",
+  "STANDARD_ROW_ORDER_REQUIRED",
+  "STANDARD_ROW_ORDER_INVALID",
+  "STANDARD_HORIZON_ORDER_REQUIRED",
+  "STANDARD_HORIZON_ORDER_INVALID",
+  "STANDARD_HORIZON_ORDER_UNRESOLVED_TIE",
+  "STANDARD_SOURCE_ORDER_CONFIRMATION_STALE",
+  "STANDARD_MEANS_REQUIRES_ENDPOINT",
+  "STANDARD_MEANS_GROUP_REQUIRED",
+  "STANDARD_MEANS_LEVEL_REQUIRED",
+  "STANDARD_MEANS_LEVEL_EMPTY",
+  "STANDARD_MEANS_IDENTICAL",
+  "STANDARD_TRAJECTORY_HAS_NO_PATH",
+  "STANDARD_TRAJECTORY_SINGLE_STEP_UNITS",
+  "STANDARD_TARGET_RANK_ZERO",
+  "STANDARD_SVD_ONE_DIMENSIONAL",
+  "STANDARD_REFERENCE_MISSING",
+  "STANDARD_REFERENCE_INCOMPATIBLE",
+  "STANDARD_REFERENCE_TARGET_DEGENERATE",
+  "STANDARD_OUTPUT_NONFINITE",
+  "RESOURCE_BUDGET_EXCEEDED",
+] as const;
+
+type DraftOverrides = Partial<Omit<StandardEnaDraftV3, "movingStanza">> & {
+  movingStanza?: Partial<StandardEnaDraftV3["movingStanza"]>;
+};
+
+function dataset(
+  rows: Array<Record<string, unknown>>,
+  headers: string[] = DEFAULT_HEADERS,
+  overrides: Partial<Omit<ParsedDataset, "headers" | "rows">> = {},
+): ParsedDataset {
+  return {
+    name: "codes.csv",
+    headers,
+    rows: rows as ParsedDataset["rows"],
+    sizeBytes: 1,
+    source: "upload",
+    ...overrides,
+  };
+}
+
+function binding(input: ParsedDataset, overrides: Partial<DatasetBindingV3> = {}): DatasetBindingV3 {
+  return {
+    hashKind: "normalized-utf8-csv-text-sha256",
+    normalizedTableSha256: DATASET_HASH,
+    rowCount: input.rows.length,
+    headerSha256: HEADER_HASH,
+    ...overrides,
+  };
+}
+
+function draft(codes: string[], overrides: DraftOverrides = {}): StandardEnaDraftV3 {
+  const movingStanza: StandardEnaDraftV3["movingStanza"] = {
+    backward: { kind: "finite", value: 1 },
+    forward: { kind: "finite", value: 0 },
+    rowOrder: null,
+    ...overrides.movingStanza,
+  };
+  return {
+    unitColumns: ["unit"],
+    horizonColumns: ["horizon"],
+    groupColumn: null,
+    codes,
+    weighting: "binary",
+    model: "EndPoint",
+    windowType: "Conversation",
+    horizonOrder: null,
+    rotation: { type: "svd", centerAlignToOrigin: true },
+    ...overrides,
+    movingStanza,
+  };
+}
+
+function healthyDataset(): ParsedDataset {
+  return dataset([
+    { unit: "u1", horizon: "h1", A: 1, B: 1, C: 0 },
+    { unit: "u1", horizon: "h1", A: 0, B: 0, C: 1 },
+    { unit: "u2", horizon: "h2", A: 0, B: 1, C: 1 },
+  ]);
+}
+
+function diagnosticsFor(
+  input: ParsedDataset,
+  modelDraft: StandardEnaDraftV3 = draft(["A", "B", "C"]),
+  datasetBinding: DatasetBindingV3 = binding(input),
+): readonly ModelDiagnosticV3[] {
+  return validateStandardDraftV3(input, datasetBinding, modelDraft);
+}
+
+type IsMutableArray<T> = T extends unknown[] ? true : false;
+type AssertFalse<T extends false> = T;
+const readonlyDiagnosticsReturn: AssertFalse<IsMutableArray<ReturnType<typeof validateStandardDraftV3>>> = false;
+void readonlyDiagnosticsReturn;
+
+function assertScientificPatchValuesAreRecursivelyReadonly(
+  rowPatch: Extract<ModelDraftPatchV3, { type: "replace-row-order" }>,
+  horizonPatch: Extract<ModelDraftPatchV3, { type: "replace-horizon-order" }>,
+): void {
+  if (rowPatch.value.kind === "columns") {
+    // @ts-expect-error Scientific order-key arrays inside an action patch are readonly.
+    rowPatch.value.keys.push(rowPatch.value.keys[0]);
+    // @ts-expect-error Nested scientific order-key fields are readonly.
+    rowPatch.value.keys[0].column = "changed";
+    const comparator = rowPatch.value.keys[0].comparator;
+    if (comparator.type === "ordered-category") {
+      // @ts-expect-error Ordered-category levels inside an action patch are readonly.
+      comparator.levels.push(comparator.levels[0]);
+      // @ts-expect-error Nested typed level values inside an action patch are readonly.
+      comparator.levels[0].value = "changed";
+    }
+  }
+  if (horizonPatch.value.kind === "source-order-confirmed") {
+    // @ts-expect-error Confirmation fields inside an action patch are readonly.
+    horizonPatch.value.confirmation.rowCount = 99;
+    // @ts-expect-error Confirmation relevant-column arrays inside an action patch are readonly.
+    horizonPatch.value.confirmation.relevantColumns.push("changed");
+  }
+}
+void assertScientificPatchValuesAreRecursivelyReadonly;
+
+function ids(output: readonly ModelDiagnosticV3[]): string[] {
+  return output.map((entry) => entry.id);
+}
+
+function withoutTask6NumericalDiagnostics(output: readonly ModelDiagnosticV3[]): readonly ModelDiagnosticV3[] {
+  return output.filter((entry) => entry.id !== "STANDARD_TARGET_RANK_ZERO"
+    && entry.id !== "STANDARD_SVD_ONE_DIMENSIONAL"
+    && entry.id !== "STANDARD_REFERENCE_TARGET_DEGENERATE");
+}
+
+function one(output: readonly ModelDiagnosticV3[], id: ModelDiagnosticV3["id"]): ModelDiagnosticV3 {
+  const matches = output.filter((entry) => entry.id === id);
+  assert.equal(matches.length, 1, `expected exactly one ${id}, got ${ids(output).join(", ")}`);
+  return matches[0];
+}
+
+function hasDerivativeConnectivityNoise(output: readonly ModelDiagnosticV3[]): boolean {
+  return output.some((entry) => entry.id === "STANDARD_CODE_ISOLATED"
+    || entry.id === "STANDARD_NO_GLOBAL_COOCCURRENCE");
+}
+
+function hasProfileOrConnectivityDerivative(output: readonly ModelDiagnosticV3[]): boolean {
+  return output.some((entry) => entry.id === "STANDARD_CODE_DUPLICATE_PROFILE"
+    || entry.id === "STANDARD_CODE_ISOLATED"
+    || entry.id === "STANDARD_NO_GLOBAL_COOCCURRENCE");
+}
+
+function ascendingNumber(column: string): CanonicalRowOrderV3 {
+  return {
+    kind: "columns",
+    keys: [{ column, direction: "ascending", comparator: { type: "number" } }],
+  };
+}
+
+function confirmedSourceOrder(rowCount: number): CanonicalRowOrderV3 {
+  return {
+    kind: "source-order-confirmed",
+    confirmation: {
+      kind: "explicit-researcher-confirmation",
+      analysisFamily: "standard",
+      datasetSha256: DATASET_HASH,
+      rowCount,
+      relevantColumns: ["horizon"],
+      confirmedAt: "2026-09-03T00:00:00.000Z",
+      confirmationVersion: 1,
+    },
+  };
+}
+
+test("diagnostic and suggested-action registries are exact, stable, and duplicate-free", () => {
+  assert.deepEqual(MODEL_DIAGNOSTIC_IDS_V3, EXPECTED_DIAGNOSTIC_IDS);
+  assert.equal(MODEL_DIAGNOSTIC_IDS_V3.length, 37);
+  assert.equal(new Set(MODEL_DIAGNOSTIC_IDS_V3).size, 37);
+  assert.deepEqual(MODEL_SUGGESTED_ACTION_IDS_V3, [
+    "exclude-code", "replace-row-order", "replace-horizon-order", "select-endpoint",
+    "select-svd", "select-reference", "clear-group",
+  ]);
+  assert.ok(Object.isFrozen(MODEL_DIAGNOSTIC_IDS_V3));
+  assert.ok(Object.isFrozen(MODEL_SUGGESTED_ACTION_IDS_V3));
+  const capability: ModelCapabilityV3 = "build-model";
+  const scope: ModelDiagnosticScopeV3 = "codes";
+  const severity: ModelDiagnosticSeverityV3 = "warning";
+  const evidence: ModelEvidenceV3 = { totalCount: 0, sampleLimit: 5, samples: [], truncated: false };
+  const patch: ModelDraftPatchV3 = { type: "exclude-code", code: "A" };
+  const action: ModelSuggestedActionV3 = {
+    id: "exclude-code", label: "Exclude A", confirmationText: "Exclude A?",
+    confirmationRequired: true, patch,
+  };
+  assert.deepEqual([capability, scope, severity, evidence.sampleLimit, action.confirmationRequired], [
+    "build-model", "codes", "warning", 5, true,
+  ]);
+});
+
+test("a valid Binary draft has no Task 5 diagnostics", () => {
+  const input = healthyDataset();
+  assert.deepEqual(withoutTask6NumericalDiagnostics(diagnosticsFor(input)), []);
+});
+
+test("minimum Codes use distinct nonblank selections and an empty configuration stays empty", () => {
+  const input = healthyDataset();
+  const emptyDraft = draft([]);
+  const empty = diagnosticsFor(input, emptyDraft);
+  assert.deepEqual(ids(empty), ["STANDARD_CODES_TOO_FEW"]);
+  assert.deepEqual(emptyDraft.codes, []);
+  assert.equal(one(empty, "STANDARD_CODES_TOO_FEW").severity, "error");
+  assert.ok(one(empty, "STANDARD_CODES_TOO_FEW").blocks.includes("build-model"));
+  assert.equal(hasDerivativeConnectivityNoise(empty), false);
+  assert.deepEqual(ids(diagnosticsFor(input, draft(["A", "B"]))), ["STANDARD_CODES_TOO_FEW"]);
+  const duplicate = diagnosticsFor(input, draft(["A", "A", "B", "C"]));
+  assert.deepEqual(ids(duplicate), ["STANDARD_CODES_DUPLICATE_SELECTION"]);
+  assert.equal(one(duplicate, "STANDARD_CODES_DUPLICATE_SELECTION").evidence?.totalCount, 1);
+  assert.deepEqual(ids(diagnosticsFor(input, draft(["A", "A", "B"]))), [
+    "STANDARD_CODES_TOO_FEW", "STANDARD_CODES_DUPLICATE_SELECTION",
+  ]);
+  const blank = diagnosticsFor(input, draft(["A", "B", ""]));
+  assert.ok(ids(blank).includes("STANDARD_CODES_TOO_FEW"));
+  assert.ok(ids(blank).includes("STANDARD_CODE_FIELD_MISSING"));
+});
+
+test("missing Code fields block without all-zero or connectivity derivative noise", () => {
+  const input = healthyDataset();
+  const output = diagnosticsFor(input, draft(["A", "B", "missing"]));
+  const missing = one(output, "STANDARD_CODE_FIELD_MISSING");
+  assert.deepEqual([missing.severity, missing.scope, missing.fieldPath], ["error", "codes", "codes.missing"]);
+  assert.ok(missing.blocks.includes("build-model"));
+  assert.ok(missing.summary.trim().length > 0 && missing.detail.trim().length > 0);
+  assert.equal(ids(output).includes("STANDARD_CODE_ALL_ZERO"), false);
+  assert.equal(hasDerivativeConnectivityNoise(output), false);
+});
+
+test("Code role collisions cover active structural and ordering roles only", () => {
+  const input = dataset([
+    { unit: "u", horizon: "h", group: "g", A: 1, B: 1, turn: 0, week: 0 },
+    { unit: "u", horizon: "h", group: "g", A: 0, B: 1, turn: 1, week: 1 },
+  ], ["unit", "horizon", "group", "A", "B", "turn", "week"]);
+  for (const [code, overrides] of [
+    ["unit", {}],
+    ["horizon", {}],
+    ["group", { groupColumn: "group" }],
+  ] as const) {
+    const output = diagnosticsFor(input, draft(["A", "B", code], overrides));
+    assert.equal(one(output, "STANDARD_CODE_ROLE_COLLISION").fieldPath, `codes.${code}`);
+    assert.equal(ids(output).includes("STANDARD_CODE_VALUE_INVALID"), false);
+    assert.equal(hasDerivativeConnectivityNoise(output), false);
+  }
+  const activeRow = diagnosticsFor(input, draft(["A", "B", "turn"], {
+    windowType: "MovingStanzaWindow",
+    movingStanza: { rowOrder: ascendingNumber("turn") },
+  }));
+  assert.equal(one(activeRow, "STANDARD_CODE_ROLE_COLLISION").fieldPath, "codes.turn");
+  const inactiveRow = diagnosticsFor(input, draft(["A", "B", "turn"], {
+    windowType: "Conversation",
+    movingStanza: { rowOrder: ascendingNumber("turn") },
+  }));
+  assert.equal(ids(inactiveRow).includes("STANDARD_CODE_ROLE_COLLISION"), false);
+
+  const horizonOrder = ascendingNumber("week") as CanonicalHorizonOrderV3;
+  const activeHorizon = diagnosticsFor(input, draft(["A", "B", "week"], {
+    model: "SeparateTrajectory",
+    horizonOrder,
+  }));
+  assert.equal(one(activeHorizon, "STANDARD_CODE_ROLE_COLLISION").fieldPath, "codes.week");
+  const inactiveHorizon = diagnosticsFor(input, draft(["A", "B", "week"], {
+    model: "EndPoint",
+    horizonOrder,
+  }));
+  assert.equal(ids(inactiveHorizon).includes("STANDARD_CODE_ROLE_COLLISION"), false);
+});
+
+test("Binary accepts uniform numeric and Boolean representations without cross-Code coercion", () => {
+  const numeric = dataset([
+    { unit: "u", horizon: "h", A: 0, B: 1, C: 1 },
+    { unit: "u", horizon: "h", A: 1, B: 0, C: 1 },
+  ]);
+  assert.equal(ids(diagnosticsFor(numeric)).includes("STANDARD_CODE_VALUE_INVALID"), false);
+  const boolean = dataset([
+    { unit: "u", horizon: "h", A: false, B: true, C: true },
+    { unit: "u", horizon: "h", A: true, B: false, C: true },
+  ]);
+  assert.equal(ids(diagnosticsFor(boolean)).includes("STANDARD_CODE_VALUE_INVALID"), false);
+  const perCode = dataset([
+    { unit: "u", horizon: "h", A: 0, B: false, C: 1 },
+    { unit: "u", horizon: "h", A: 1, B: true, C: 0 },
+  ]);
+  const output = diagnosticsFor(perCode);
+  assert.equal(ids(output).includes("STANDARD_CODE_VALUE_INVALID"), false);
+  assert.equal(ids(output).includes("STANDARD_CODE_DUPLICATE_PROFILE"), false);
+});
+
+for (const [label, values] of [
+  ["mixed Boolean and number", [0, true]],
+  ["integer two", [2, 0]],
+  ["negative", [-1, 0]],
+  ["fraction", [0.5, 0]],
+  ["numeric string", ["1", "0"]],
+  ["null", [null, 0]],
+  ["undefined", [undefined, 0]],
+  ["NaN", [Number.NaN, 0]],
+  ["Infinity", [Number.POSITIVE_INFINITY, 0]],
+  ["object", [{ value: 1 }, 0]],
+] as const) {
+  test(`Binary rejects ${label} without coercion`, () => {
+    const input = dataset([
+      { unit: "u", horizon: "h", A: values[0], B: 1, C: 1 },
+      { unit: "u", horizon: "h", A: values[1], B: 0, C: 1 },
+    ]);
+    const output = diagnosticsFor(input);
+    const invalid = one(output, "STANDARD_CODE_VALUE_INVALID");
+    assert.deepEqual([invalid.fieldPath, invalid.severity, invalid.scope], ["codes.A", "error", "codes"]);
+    assert.ok(invalid.blocks.includes("build-model"));
+    assert.equal(hasDerivativeConnectivityNoise(output), false);
+  });
+}
+
+test("Binary treats a missing own Code property as invalid", () => {
+  const input = dataset([
+    { unit: "u", horizon: "h", B: 1, C: 1 },
+    { unit: "u", horizon: "h", A: 0, B: 0, C: 1 },
+  ]);
+  const invalid = one(diagnosticsFor(input), "STANDARD_CODE_VALUE_INVALID");
+  assert.equal(invalid.fieldPath, "codes.A");
+  assert.deepEqual(invalid.evidence?.samples.map((sample) => sample.rowIndex), [0]);
+});
+
+test("mixed Binary evidence is the exact union of representation and scalar-invalid rows", () => {
+  const input = dataset([
+    { unit: "u", horizon: "h", A: 0, B: 1, C: 1 },
+    { unit: "u", horizon: "h", A: true, B: 0, C: 1 },
+    { unit: "u", horizon: "h", A: "bad", B: 1, C: 0 },
+  ]);
+  const invalid = one(diagnosticsFor(input), "STANDARD_CODE_VALUE_INVALID");
+  assert.equal(invalid.fieldPath, "codes.A");
+  assert.equal(invalid.evidence?.totalCount, 3);
+  assert.deepEqual(invalid.evidence?.samples.map((sample) => sample.rowIndex), [0, 1, 2]);
+  assert.equal(invalid.evidence?.truncated, false);
+});
+
+test("Frequency accepts finite nonnegative decimals and negative zero", () => {
+  const input = dataset([
+    { unit: "u", horizon: "h", A: 0.25, B: -0, C: 2 },
+    { unit: "u", horizon: "h", A: 1.5, B: 1, C: 0 },
+  ]);
+  const output = diagnosticsFor(input, draft(["A", "B", "C"], { weighting: "frequency" }));
+  assert.equal(ids(output).includes("STANDARD_CODE_VALUE_INVALID"), false);
+  assert.equal(ids(output).includes("STANDARD_CODE_ALL_ZERO"), false);
+});
+
+for (const [label, value] of [
+  ["Boolean", true], ["string", "1"], ["null", null], ["undefined", undefined],
+  ["negative", -0.25], ["NaN", Number.NaN], ["Infinity", Number.POSITIVE_INFINITY],
+  ["object", { value: 1 }],
+] as const) {
+  test(`Frequency rejects ${label}`, () => {
+    const input = dataset([
+      { unit: "u", horizon: "h", A: value, B: 1, C: 1 },
+      { unit: "u", horizon: "h", A: 0, B: 0.5, C: 2 },
+    ]);
+    const output = diagnosticsFor(input, draft(["A", "B", "C"], { weighting: "frequency" }));
+    assert.equal(one(output, "STANDARD_CODE_VALUE_INVALID").fieldPath, "codes.A");
+    assert.equal(hasDerivativeConnectivityNoise(output), false);
+  });
+}
+
+test("Frequency treats a missing own Code property as invalid", () => {
+  const input = dataset([
+    { unit: "u", horizon: "h", B: 1, C: 1 },
+    { unit: "u", horizon: "h", A: 0.5, B: 0, C: 1 },
+  ]);
+  const output = diagnosticsFor(input, draft(["A", "B", "C"], { weighting: "frequency" }));
+  assert.equal(one(output, "STANDARD_CODE_VALUE_INVALID").fieldPath, "codes.A");
+});
+
+test("all-zero Codes block building, offer confirmed exclusion, and are not also isolated", () => {
+  const input = dataset([
+    { unit: "u", horizon: "h", A: 1, B: 1, D: -0 },
+    { unit: "u", horizon: "h", A: 0, B: 1, D: 0 },
+  ], ["unit", "horizon", "A", "B", "D"]);
+  const output = diagnosticsFor(input, draft(["A", "B", "D"]));
+  const allZero = one(output, "STANDARD_CODE_ALL_ZERO");
+  assert.deepEqual([allZero.severity, allZero.scope, allZero.fieldPath], ["error", "codes", "codes.D"]);
+  assert.ok(allZero.blocks.includes("build-model"));
+  assert.equal(output.some((entry) => entry.id === "STANDARD_CODE_ISOLATED" && entry.fieldPath === "codes.D"), false);
+  assert.equal(allZero.evidence?.totalCount, input.rows.length);
+  const action = allZero.suggestedActions?.[0];
+  assert.deepEqual(action?.patch, { type: "exclude-code", code: "D" });
+  assert.equal(action?.confirmationRequired, true);
+  assert.ok((action?.confirmationText.length ?? 0) > 20);
+});
+
+test("all-zero Codes suppress duplicate, isolated, and no-global derivative diagnostics", () => {
+  const input = dataset([
+    { unit: "u1", horizon: "h1", A: 0, B: false, C: -0 },
+    { unit: "u2", horizon: "h2", A: -0, B: false, C: 0 },
+  ]);
+  const output = diagnosticsFor(input);
+  assert.deepEqual(ids(output), [
+    "STANDARD_CODE_ALL_ZERO",
+    "STANDARD_CODE_ALL_ZERO",
+    "STANDARD_CODE_ALL_ZERO",
+  ]);
+  assert.deepEqual(output.map((entry) => entry.fieldPath), ["codes.A", "codes.B", "codes.C"]);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_CODE_DUPLICATE_PROFILE"
+    || entry.id === "STANDARD_CODE_ISOLATED"
+    || entry.id === "STANDARD_NO_GLOBAL_COOCCURRENCE"), false);
+});
+
+test("isolated Codes remain selected, warn strongly, and offer only confirmed exclusion", () => {
+  const input = dataset([
+    { unit: "u1", horizon: "h1", A: 1, B: 1, D: 0 },
+    { unit: "u2", horizon: "h2", A: 0, B: 0, D: 1 },
+  ], ["unit", "horizon", "A", "B", "D"]);
+  const modelDraft = draft(["A", "B", "D"]);
+  const output = diagnosticsFor(input, modelDraft);
+  const isolated = one(output, "STANDARD_CODE_ISOLATED");
+  assert.deepEqual([isolated.severity, isolated.scope, isolated.fieldPath], ["warning", "codes", "codes.D"]);
+  assert.deepEqual(isolated.blocks, []);
+  assert.match(isolated.detail, /retained|meaningful|scientific/i);
+  assert.deepEqual(isolated.suggestedActions?.[0].patch, { type: "exclude-code", code: "D" });
+  assert.equal(isolated.suggestedActions?.[0].confirmationRequired, true);
+  assert.deepEqual(modelDraft.codes, ["A", "B", "D"]);
+});
+
+test("exact typed Code profiles warn deterministically without conflating numeric and Boolean values", () => {
+  const duplicateInput = dataset([
+    { unit: "u", horizon: "h", A: 1, B: 1, C: 0 },
+    { unit: "u", horizon: "h", A: 0, B: 0, C: 1 },
+  ]);
+  const forward = diagnosticsFor(duplicateInput);
+  const duplicate = one(forward, "STANDARD_CODE_DUPLICATE_PROFILE");
+  assert.equal(duplicate.severity, "warning");
+  assert.equal(duplicate.fieldPath, "codes.B");
+  assert.deepEqual(duplicate.blocks, []);
+  assert.deepEqual(duplicate.suggestedActions?.[0].patch, { type: "exclude-code", code: "B" });
+
+  const reversedInput = dataset([...duplicateInput.rows].reverse() as Array<Record<string, unknown>>);
+  const reversed = one(diagnosticsFor(reversedInput), "STANDARD_CODE_DUPLICATE_PROFILE");
+  assert.deepEqual(
+    { id: duplicate.id, fieldPath: duplicate.fieldPath, identity: duplicate.evidence?.samples[0]?.identity },
+    { id: reversed.id, fieldPath: reversed.fieldPath, identity: reversed.evidence?.samples[0]?.identity },
+  );
+
+  const typed = dataset([
+    { unit: "u", horizon: "h", A: 1, B: true, C: 0 },
+    { unit: "u", horizon: "h", A: 0, B: false, C: 1 },
+  ]);
+  assert.equal(ids(diagnosticsFor(typed)).includes("STANDARD_CODE_DUPLICATE_PROFILE"), false);
+});
+
+test("a resolved candidate network with no edge emits the global blocking error", () => {
+  const input = dataset([
+    { unit: "u1", horizon: "h1", A: 1, B: 0, C: 0 },
+    { unit: "u2", horizon: "h2", A: 0, B: 1, C: 0 },
+    { unit: "u3", horizon: "h3", A: 0, B: 0, C: 1 },
+  ]);
+  const output = diagnosticsFor(input);
+  const global = one(output, "STANDARD_NO_GLOBAL_COOCCURRENCE");
+  assert.deepEqual([global.severity, global.scope], ["error", "codes"]);
+  assert.ok(global.blocks.includes("build-model"));
+  assert.equal(output.filter((entry) => entry.id === "STANDARD_CODE_ISOLATED").length, 3);
+});
+
+test("Conversation aggregates across rows within a typed Horizon but never across Horizons", () => {
+  const within = dataset([
+    { unit: "u", horizon: "h", A: 1, B: 0, C: 0 },
+    { unit: "u", horizon: "h", A: 0, B: 1, C: 1 },
+  ]);
+  const withinOutput = diagnosticsFor(within);
+  assert.equal(ids(withinOutput).includes("STANDARD_NO_GLOBAL_COOCCURRENCE"), false);
+  assert.equal(ids(withinOutput).includes("STANDARD_CODE_ISOLATED"), false);
+
+  const across = dataset([
+    { unit: "u1", horizon: "h1", A: 1, B: 0, C: 0 },
+    { unit: "u2", horizon: "h2", A: 0, B: 1, C: 1 },
+  ]);
+  const acrossOutput = diagnosticsFor(across);
+  assert.equal(one(acrossOutput, "STANDARD_CODE_ISOLATED").fieldPath, "codes.A");
+  assert.equal(ids(acrossOutput).includes("STANDARD_NO_GLOBAL_COOCCURRENCE"), false);
+});
+
+test("Unit and Horizon identity failures suppress all profile and connectivity derivatives", () => {
+  const identityCases: Array<[string, ParsedDataset, StandardEnaDraftV3]> = [
+    ["missing Unit", dataset([
+      { horizon: "h1", A: 1, B: 1, C: 0 },
+      { horizon: "h2", A: 0, B: 0, C: 1 },
+    ]), draft(["A", "B", "C"])],
+    ["unsupported Unit", dataset([
+      { unit: { id: "u" }, horizon: "h1", A: 1, B: 0, C: 0 },
+      { unit: { id: "u" }, horizon: "h2", A: 0, B: 1, C: 1 },
+    ]), draft(["A", "B", "C"])],
+    ["missing Horizon", dataset([
+      { unit: "u1", A: 1, B: 0, C: 0 },
+      { unit: "u2", A: 0, B: 1, C: 1 },
+    ]), draft(["A", "B", "C"])],
+    ["unsupported Horizon", dataset([
+      { unit: "u1", horizon: { id: "h" }, A: 1, B: 0, C: 0 },
+      { unit: "u2", horizon: { id: "h" }, A: 0, B: 1, C: 1 },
+    ]), draft(["A", "B", "C"])],
+    ["empty Unit columns", healthyDataset(), draft(["A", "B", "C"], { unitColumns: [] })],
+    ["empty Horizon columns", healthyDataset(), draft(["A", "B", "C"], { horizonColumns: [] })],
+  ];
+  for (const [label, input, modelDraft] of identityCases) {
+    const output = diagnosticsFor(input, modelDraft);
+    if (label.startsWith("missing ")) {
+      assert.equal(ids(output).includes("STANDARD_IDENTITY_MISSING"), true, label);
+    }
+    if (label.startsWith("unsupported ")) {
+      assert.equal(ids(output).includes("STANDARD_IDENTITY_VALUE_UNSUPPORTED"), true, label);
+    }
+    assert.equal(ids(output).includes("RESOURCE_BUDGET_EXCEEDED"), false, label);
+    assert.equal(hasProfileOrConnectivityDerivative(output), false, `${label}: ${ids(output).join(", ")}`);
+  }
+
+  const sharedHorizon = dataset([
+    { unit: "u1", horizon: "shared", A: 1, B: 0, C: 1 },
+    { unit: "u2", horizon: "shared", A: 0, B: 1, C: 1 },
+  ]);
+  assert.equal(hasProfileOrConnectivityDerivative(diagnosticsFor(sharedHorizon)), false);
+});
+
+test("configured Unit and Horizon identities must exist in the trusted current header", () => {
+  const staleRows = [
+    { unit: "u1", horizon: "h1", A: 1, B: 0, C: 0 },
+    { unit: "u2", horizon: "h2", A: 0, B: 1, C: 0 },
+    { unit: "u3", horizon: "h3", A: 0, B: 0, C: 1 },
+  ];
+  for (const [label, headers] of [
+    ["missing Unit header with stale row keys", ["horizon", "A", "B", "C"]],
+    ["missing Horizon header with stale row keys", ["unit", "A", "B", "C"]],
+  ] as const) {
+    const output = diagnosticsFor(dataset(staleRows, [...headers]));
+    assert.equal(hasProfileOrConnectivityDerivative(output), false, `${label}: ${ids(output).join(", ")}`);
+  }
+});
+
+test("a valid zero-row dataset never invents Code-profile or connectivity derivatives", () => {
+  const input = dataset([]);
+  const output = diagnosticsFor(input);
+  assert.equal(hasProfileOrConnectivityDerivative(output), false);
+  assert.equal(output.some((entry) => (entry.evidence?.samples ?? [])
+    .some((sample) => sample.identity?.startsWith("window-") === true)), false);
+});
+
+test("trajectory Horizon-order errors do not suppress independent Code connectivity diagnostics", () => {
+  const input = dataset([
+    { unit: "u1", horizon: "h1", week: 1, A: 1, B: 1, D: 0 },
+    { unit: "u1", horizon: "h1", week: 1, A: 0, B: 1, D: 0 },
+    { unit: "u2", horizon: "h2", week: 2, A: 0, B: 0, D: 1 },
+  ], ["unit", "horizon", "week", "A", "B", "D"]);
+  const required = diagnosticsFor(input, draft(["A", "B", "D"], {
+    model: "SeparateTrajectory",
+    windowType: "Conversation",
+    horizonOrder: null,
+  }));
+  one(required, "STANDARD_HORIZON_ORDER_REQUIRED");
+  assert.equal(one(required, "STANDARD_CODE_ISOLATED").fieldPath, "codes.D");
+
+  const malformed = {
+    kind: "columns",
+    keys: [{ column: "week", direction: "ascending", comparator: { type: "mystery" } }],
+  } as unknown as CanonicalHorizonOrderV3;
+  const invalid = diagnosticsFor(input, draft(["A", "B", "D"], {
+    model: "AccumulatedTrajectory",
+    windowType: "Conversation",
+    horizonOrder: malformed,
+  }));
+  one(invalid, "STANDARD_HORIZON_ORDER_INVALID");
+  assert.equal(one(invalid, "STANDARD_CODE_ISOLATED").fieldPath, "codes.D");
+});
+
+function movingDraft(
+  backward: StandardEnaDraftV3["movingStanza"]["backward"],
+  forward: StandardEnaDraftV3["movingStanza"]["forward"],
+  rowOrder: CanonicalRowOrderV3 | null = ascendingNumber("turn"),
+): StandardEnaDraftV3 {
+  return draft(["A", "B", "C"], {
+    windowType: "MovingStanzaWindow",
+    movingStanza: { backward, forward, rowOrder },
+  });
+}
+
+function orderedSingletonRows(): ParsedDataset {
+  return dataset([
+    { unit: "u", horizon: "h", turn: 3, A: 0, B: 0, C: 1 },
+    { unit: "u", horizon: "h", turn: 1, A: 1, B: 0, C: 0 },
+    { unit: "u", horizon: "h", turn: 2, A: 0, B: 1, C: 0 },
+  ], ["unit", "horizon", "turn", "A", "B", "C"]);
+}
+
+function directMovingConnectivityOracle(
+  inputRows: Array<Record<string, number | string>>,
+  backward: StandardEnaDraftV3["movingStanza"]["backward"],
+  forward: StandardEnaDraftV3["movingStanza"]["forward"],
+): { isolated: string[]; noGlobalEdge: boolean } {
+  const codes = ["A", "B", "C"];
+  const ordered = [...inputRows].sort((left, right) => Number(left.turn) - Number(right.turn));
+  const degree = new Map(codes.map((code) => [code, 0]));
+  const edges = new Set<string>();
+  for (let focal = 0; focal < ordered.length; focal += 1) {
+    const start = backward.kind === "infinity" ? 0 : Math.max(0, focal - (backward.value - 1));
+    const end = forward.kind === "infinity" ? ordered.length - 1 : Math.min(ordered.length - 1, focal + forward.value);
+    const present = codes.filter((code) => ordered.slice(start, end + 1).some((row) => Number(row[code]) > 0));
+    for (let left = 0; left < present.length; left += 1) {
+      for (let right = left + 1; right < present.length; right += 1) {
+        const pair = JSON.stringify([present[left], present[right]].sort());
+        if (edges.has(pair)) continue;
+        edges.add(pair);
+        degree.set(present[left], degree.get(present[left])! + 1);
+        degree.set(present[right], degree.get(present[right])! + 1);
+      }
+    }
+  }
+  return {
+    isolated: codes.filter((code) => degree.get(code) === 0),
+    noGlobalEdge: edges.size === 0,
+  };
+}
+
+test("Moving Stanza finite and Infinity ranges match an independent small direct oracle", () => {
+  const chronological = [
+    { unit: "u", horizon: "h", turn: 1, A: 1, B: 0, C: 0 },
+    { unit: "u", horizon: "h", turn: 2, A: 0, B: 1, C: 0 },
+    { unit: "u", horizon: "h", turn: 3, A: 0, B: 0, C: 1 },
+    { unit: "u", horizon: "h", turn: 4, A: 1, B: 1, C: 0 },
+  ];
+  const input = dataset(
+    [chronological[2], chronological[0], chronological[3], chronological[1]],
+    ["unit", "horizon", "turn", "A", "B", "C"],
+  );
+  const backwards = [
+    { kind: "finite", value: 1 },
+    { kind: "finite", value: 2 },
+    { kind: "infinity" },
+  ] as const;
+  const forwards = [
+    { kind: "finite", value: 0 },
+    { kind: "finite", value: 1 },
+    { kind: "infinity" },
+  ] as const;
+  for (const backward of backwards) {
+    for (const forward of forwards) {
+      const expected = directMovingConnectivityOracle(chronological, backward, forward);
+      const output = diagnosticsFor(input, movingDraft(backward, forward));
+      const actualIsolated = output
+        .filter((entry) => entry.id === "STANDARD_CODE_ISOLATED")
+        .map((entry) => entry.fieldPath!.slice("codes.".length))
+        .sort();
+      assert.deepEqual(actualIsolated, expected.isolated, `${backward.kind}/${forward.kind}`);
+      assert.equal(
+        output.some((entry) => entry.id === "STANDARD_NO_GLOBAL_COOCCURRENCE"),
+        expected.noGlobalEdge,
+        `${backward.kind}/${forward.kind}`,
+      );
+    }
+  }
+});
+
+test("connectivity uses bounded prefix ranges instead of rescanning each wide window", () => {
+  const source = readFileSync(
+    new URL("../lib/open-ena/model-v3/diagnostics.ts", import.meta.url),
+    "utf8",
+  );
+  const start = source.indexOf("function connectivityFromGroupsV3");
+  const end = source.indexOf("function conversationGroupsV3", start);
+  assert.ok(start >= 0 && end > start);
+  const implementation = source.slice(start, end);
+  assert.doesNotMatch(implementation, /group\.slice\s*\(/u);
+  assert.doesNotMatch(implementation, /indices\.reduce\s*\(/u);
+  assert.match(implementation, /prefix/iu);
+  assert.match(implementation, /canonicalJsonV3\s*\(\s*orderedPair\s*\)/u);
+});
+
+test("numerical preflight uses model-only jENA materialization without retained row-edge rows", () => {
+  const source = readFileSync(
+    new URL("../lib/open-ena/model-v3/diagnostics.ts", import.meta.url),
+    "utf8",
+  );
+  const start = source.indexOf("function scientificNetworksV3");
+  const end = source.indexOf("function vectorHasSignalV3", start);
+  assert.ok(start >= 0 && end > start);
+  const implementation = source.slice(start, end);
+  assert.match(implementation, /accumulateDataChunked\s*\(/u);
+  assert.match(implementation, /materialization:\s*"model"/u);
+  assert.doesNotMatch(implementation, /rowConnectionCounts/u);
+  assert.doesNotMatch(implementation, /\baccumulateData\s*\(/u);
+});
+
+test("a below-budget multi-Unit both-Infinity candidate reaches exact Frequency diagnostics", () => {
+  const count = 100;
+  const rows = Array.from({ length: count }, (_, turn) => ({
+    unit: `u${turn % 2}`,
+    horizon: "h",
+    turn,
+    A: turn % 2 === 0 ? 1 : 0.5,
+    B: turn % 3 === 0 ? 2 : 0.25,
+    C: turn % 5 === 0 ? 3 : 0.125,
+  }));
+  const input = dataset(rows, ["unit", "horizon", "turn", "A", "B", "C"]);
+  const modelDraft = {
+    ...movingDraft({ kind: "infinity" }, { kind: "infinity" }),
+    weighting: "frequency" as const,
+  };
+  const output = diagnosticsFor(input, modelDraft);
+  assert.equal(output.some((entry) => entry.id === "RESOURCE_BUDGET_EXCEEDED"), false);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_OUTPUT_NONFINITE"), false);
+});
+
+test("a 10k-row multi-Unit both-Infinity candidate blocks before non-finite jENA work", () => {
+  const count = 10_000;
+  const rows = Array.from({ length: count }, (_, turn) => ({
+    unit: `u${turn % 2}`,
+    horizon: "shared",
+    turn,
+    A: 1e308,
+    B: 1e308,
+    C: 1e308,
+  }));
+  const input = dataset(rows, ["unit", "horizon", "turn", "A", "B", "C"]);
+  const modelDraft = {
+    ...movingDraft({ kind: "infinity" }, { kind: "infinity" }),
+    weighting: "frequency" as const,
+  };
+  const output = diagnosticsFor(input, modelDraft);
+  const resource = one(output, "RESOURCE_BUDGET_EXCEEDED");
+  assert.equal(resource.severity, "error");
+  assert.deepEqual(resource.blocks, ["build-model", "export-current-model", "export-reference"]);
+  assert.equal(resource.evidence?.totalCount, 1);
+  assert.match(resource.evidence?.samples[0]?.detail ?? "", /199990000.*100000000/u);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_HORIZON_SHARED_BY_MULTIPLE_UNITS"), true);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_OUTPUT_NONFINITE"), false);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_TARGET_RANK_ZERO"), false);
+});
+
+test("a 100-Code two-target candidate blocks on dense rotation work before SVD", () => {
+  const codes = Array.from({ length: 100 }, (_, index) => `C${index}`);
+  const rows = [0, 1].map((rowIndex) => ({
+    unit: `u${rowIndex}`,
+    horizon: `h${rowIndex}`,
+    ...Object.fromEntries(codes.map((code, codeIndex) => [
+      code,
+      rowIndex === 0 || codeIndex % 2 === 0 ? 1 : 0,
+    ])),
+  }));
+  const input = dataset(rows, ["unit", "horizon", ...codes]);
+  const output = diagnosticsFor(input, draft(codes));
+  const resource = one(output, "RESOURCE_BUDGET_EXCEEDED");
+  assert.equal(resource.evidence?.samples.some((sample) => (
+    sample.identity === "rotation-work" && /121336380000.*8000000/u.test(sample.detail)
+  )), true);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_TARGET_RANK_ZERO"), false);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_SVD_ONE_DIMENSIONAL"), false);
+});
+
+test("50k rows fail the shallow resource envelope before any row snapshot or analysis", () => {
+  let deepRowInspection = 0;
+  const rowArray = new Proxy(new Array<ParsedDataset["rows"][number]>(50_000), {
+    get() {
+      deepRowInspection += 1;
+      throw new Error("ordinary row-array access entered");
+    },
+    ownKeys() {
+      deepRowInspection += 1;
+      throw new Error("full row-array snapshot entered");
+    },
+    getOwnPropertyDescriptor(target, property) {
+      if (property === "length") return Reflect.getOwnPropertyDescriptor(target, property);
+      deepRowInspection += 1;
+      throw new Error("row element inspection entered");
+    },
+  });
+  const input: ParsedDataset = {
+    name: "large.csv",
+    headers: DEFAULT_HEADERS,
+    rows: rowArray,
+    sizeBytes: 1,
+    source: "upload",
+  };
+  const output = validateStandardDraftV3(input, {
+    hashKind: "normalized-utf8-csv-text-sha256",
+    normalizedTableSha256: DATASET_HASH,
+    rowCount: 50_000,
+    headerSha256: HEADER_HASH,
+  }, draft(["A", "B", "C"]));
+  assert.deepEqual(ids(output), ["RESOURCE_BUDGET_EXCEEDED"]);
+  const resource = one(output, "RESOURCE_BUDGET_EXCEEDED");
+  assert.deepEqual(resource.evidence?.samples.map((sample) => sample.identity), ["peak-bytes"]);
+  assert.equal(deepRowInspection, 0);
+});
+
+for (const count of [2001, 16_667]) test(`${count} low-cardinality Moving rows retain early admission and exact operational diagnostics`, () => {
+  const rows = Array.from({ length: count }, (_, turn) => ({
+    unit: "u",
+    horizon: "h",
+    turn,
+    A: 1,
+    B: 1,
+    C: 1,
+  }));
+  const input = dataset(rows, [...DEFAULT_HEADERS, "turn"]);
+  const output = diagnosticsFor(input, draft(["A", "B", "C"], {
+    windowType: "MovingStanzaWindow",
+    movingStanza: {
+      backward: { kind: "finite", value: 1 },
+      forward: { kind: "finite", value: 0 },
+      rowOrder: ascendingNumber("turn"),
+    },
+  }));
+  assert.equal(output.some((entry) => entry.id === "RESOURCE_BUDGET_EXCEEDED"), count === 16_667);
+  assert.equal(output.some((entry) => entry.id === "STANDARD_TARGET_RANK_ZERO"), count !== 16_667, "unadmitted large input must stop before rank work");
+});
+
+test("huge selected identities defeat a lying tiny dataset size before canonicalization", () => {
+  const hugeIdentity = "x".repeat(Math.floor((64 * 1024 * 1024) / 6) + 1);
+  let fullRowSnapshotEntered = 0;
+  const row = new Proxy({
+    unit: hugeIdentity,
+    horizon: hugeIdentity,
+    A: 1,
+    B: 1,
+    C: 1,
+  }, {
+    ownKeys() {
+      fullRowSnapshotEntered += 1;
+      throw new Error("full row snapshot entered before identity admission");
+    },
+  });
+  const input = dataset([row], DEFAULT_HEADERS, { name: "tiny.csv", sizeBytes: 1 });
+  const output = diagnosticsFor(input);
+  assert.deepEqual(ids(output), ["RESOURCE_BUDGET_EXCEEDED"]);
+  const resource = one(output, "RESOURCE_BUDGET_EXCEEDED");
+  assert.equal(resource.evidence?.samples.some((sample) => sample.identity === "identity-bytes"), true);
+  assert.equal(fullRowSnapshotEntered, 0);
+});
+
+test("canonical identity admission covers JSON escapes for controls and lone surrogates", () => {
+  for (const [name, codeUnit] of [
+    ["NUL", "\u0000"],
+    ["lone high surrogate", "\ud800"],
+    ["lone low surrogate", "\udc00"],
+  ] as const) {
+    const escapedIdentity = codeUnit.repeat(6_000_000);
+    let fullRowSnapshotEntered = 0;
+    const row = new Proxy({
+      unit: escapedIdentity,
+      horizon: escapedIdentity,
+      A: 1,
+      B: 1,
+      C: 1,
+    }, {
+      ownKeys() {
+        fullRowSnapshotEntered += 1;
+        throw new Error(`full row snapshot entered for ${name}`);
+      },
+    });
+    const input = dataset([row], DEFAULT_HEADERS, { name: "tiny.csv", sizeBytes: 1 });
+    const output = diagnosticsFor(input);
+    assert.deepEqual(ids(output), ["RESOURCE_BUDGET_EXCEEDED"], name);
+    const resource = one(output, "RESOURCE_BUDGET_EXCEEDED");
+    assert.equal(resource.evidence?.samples[0]?.identity, "identity-bytes", name);
+    assert.equal(fullRowSnapshotEntered, 0, name);
+  }
+});
+
+test("ordinary Unicode identities remain admitted under the conservative canonical bound", () => {
+  const identity = "研究🙂".repeat(1_000);
+  const input = dataset([{ unit: identity, horizon: identity, A: 1, B: 1, C: 1 }]);
+  const output = diagnosticsFor(input);
+  assert.equal(output.some((entry) => entry.id === "RESOURCE_BUDGET_EXCEEDED"), false);
+});
+
+test("oversized declared dataset payload blocks before the full row-array snapshot", () => {
+  let fullSnapshotEntered = 0;
+  const rowArray = new Proxy(new Array<ParsedDataset["rows"][number]>(), {
+    ownKeys() {
+      fullSnapshotEntered += 1;
+      throw new Error("full row-array snapshot entered");
+    },
+  });
+  const input: ParsedDataset = {
+    name: "oversized.csv",
+    headers: DEFAULT_HEADERS,
+    rows: rowArray,
+    sizeBytes: 128 * 1024 * 1024 + 1,
+    source: "upload",
+  };
+  const output = validateStandardDraftV3(input, {
+    hashKind: "normalized-utf8-csv-text-sha256",
+    normalizedTableSha256: DATASET_HASH,
+    rowCount: 0,
+    headerSha256: HEADER_HASH,
+  }, draft(["A", "B", "C"]));
+  assert.deepEqual(ids(output), ["RESOURCE_BUDGET_EXCEEDED"]);
+  assert.equal(one(output, "RESOURCE_BUDGET_EXCEEDED").evidence?.samples[0]?.identity, "dataset-bytes");
+  assert.equal(fullSnapshotEntered, 0);
+});
+
+test("Moving Stanza finite back one means current only; larger back and forward form candidate edges", () => {
+  const input = orderedSingletonRows();
+  const currentOnly = diagnosticsFor(input, movingDraft(
+    { kind: "finite", value: 1 }, { kind: "finite", value: 0 },
+  ));
+  one(currentOnly, "STANDARD_NO_GLOBAL_COOCCURRENCE");
+
+  const backwardTwo = diagnosticsFor(input, movingDraft(
+    { kind: "finite", value: 2 }, { kind: "finite", value: 0 },
+  ));
+  assert.equal(hasDerivativeConnectivityNoise(backwardTwo), false);
+
+  const forwardOne = diagnosticsFor(input, movingDraft(
+    { kind: "finite", value: 1 }, { kind: "finite", value: 1 },
+  ));
+  assert.equal(hasDerivativeConnectivityNoise(forwardOne), false);
+});
+
+test("Moving Stanza backward, forward, and both Infinity stop at Horizon boundaries", () => {
+  const input = orderedSingletonRows();
+  for (const [backward, forward] of [
+    [{ kind: "infinity" }, { kind: "finite", value: 0 }],
+    [{ kind: "finite", value: 1 }, { kind: "infinity" }],
+    [{ kind: "infinity" }, { kind: "infinity" }],
+  ] as const) {
+    assert.equal(hasDerivativeConnectivityNoise(diagnosticsFor(input, movingDraft(backward, forward))), false);
+  }
+
+  const boundaryInput = dataset([
+    { unit: "u1", horizon: "h1", turn: 1, A: 1, B: 0, C: 0 },
+    { unit: "u2", horizon: "h2", turn: 1, A: 0, B: 1, C: 1 },
+  ], ["unit", "horizon", "turn", "A", "B", "C"]);
+  const boundary = diagnosticsFor(boundaryInput, movingDraft({ kind: "infinity" }, { kind: "infinity" }));
+  assert.equal(one(boundary, "STANDARD_CODE_ISOLATED").fieldPath, "codes.A");
+});
+
+test("Moving Stanza accepts matching source-order confirmation", () => {
+  const input = orderedSingletonRows();
+  const output = diagnosticsFor(input, movingDraft(
+    { kind: "finite", value: 2 },
+    { kind: "finite", value: 0 },
+    confirmedSourceOrder(input.rows.length),
+  ));
+  assert.equal(ids(output).includes("STANDARD_ROW_ORDER_INVALID"), false);
+});
+
+test("unresolved row order, invalid extents, and invalid identities suppress derivative connectivity", () => {
+  const input = orderedSingletonRows();
+  const required = diagnosticsFor(input, movingDraft(
+    { kind: "finite", value: 1 }, { kind: "finite", value: 0 }, null,
+  ));
+  one(required, "STANDARD_ROW_ORDER_REQUIRED");
+  assert.equal(hasDerivativeConnectivityNoise(required), false);
+
+  const tied = dataset([
+    { unit: "u", horizon: "h", turn: 1, A: 1, B: 0, C: 0 },
+    { unit: "u", horizon: "h", turn: 1, A: 0, B: 1, C: 1 },
+  ], ["unit", "horizon", "turn", "A", "B", "C"]);
+  const tieOutput = diagnosticsFor(tied, movingDraft(
+    { kind: "finite", value: 2 }, { kind: "finite", value: 0 },
+  ));
+  one(tieOutput, "STANDARD_ROW_ORDER_INVALID");
+  assert.equal(hasDerivativeConnectivityNoise(tieOutput), false);
+
+  const invalidWindow = movingDraft({ kind: "finite", value: 0 }, { kind: "finite", value: 0 });
+  const invalidWindowOutput = diagnosticsFor(input, invalidWindow);
+  one(invalidWindowOutput, "STANDARD_ROW_ORDER_INVALID");
+  assert.equal(hasDerivativeConnectivityNoise(invalidWindowOutput), false);
+
+  const missingIdentity = dataset([
+    { unit: "u", turn: 1, A: 1, B: 0, C: 0 },
+    { unit: "u", turn: 2, A: 0, B: 1, C: 1 },
+  ], ["unit", "horizon", "turn", "A", "B", "C"]);
+  const identityOutput = diagnosticsFor(missingIdentity, movingDraft(
+    { kind: "finite", value: 2 }, { kind: "finite", value: 0 },
+  ));
+  assert.equal(hasDerivativeConnectivityNoise(identityOutput), false);
+});
+
+test("dataset and binding trust failures emit one stable blocking diagnostic and suppress derivatives", () => {
+  const input = healthyDataset();
+  const cases: Array<[string, ParsedDataset, DatasetBindingV3]> = [
+    ["row count", input, binding(input, { rowCount: input.rows.length + 1 })],
+    ["table hash", input, binding(input, { normalizedTableSha256: "BAD" })],
+    ["header hash", input, binding(input, { headerSha256: "BAD" })],
+    ["hash kind", { ...input, hashKind: "normalized-utf8-text-sha256" }, binding(input)],
+    ["duplicate header", { ...input, headers: ["unit", "horizon", "A", "A", "C"] }, binding(input)],
+    ["blank header", { ...input, headers: ["unit", "horizon", "A", " ", "C"] }, binding(input)],
+  ];
+  for (const [label, caseDataset, caseBinding] of cases) {
+    const output = diagnosticsFor(caseDataset, draft(["A", "B", "C"]), caseBinding);
+    assert.deepEqual(ids(output), ["STANDARD_DATASET_BINDING_INVALID"], label);
+    const invalid = output[0];
+    assert.deepEqual([invalid.severity, invalid.scope, invalid.fieldPath], ["error", "dataset", "dataset"]);
+    assert.ok(invalid.blocks.includes("build-model"));
+    assert.equal(hasDerivativeConnectivityNoise(output), false);
+  }
+});
+
+test("dataset names authoritatively infer hash kind when explicit provenance is absent", () => {
+  const base = healthyDataset();
+  const xlsx = { ...base, name: "research.XLSX" };
+  assert.deepEqual(ids(diagnosticsFor(xlsx, draft(["A", "B", "C"]), binding(xlsx, {
+    hashKind: "normalized-utf8-csv-text-sha256",
+  }))), ["STANDARD_DATASET_BINDING_INVALID"]);
+  assert.deepEqual(withoutTask6NumericalDiagnostics(diagnosticsFor(xlsx, draft(["A", "B", "C"]), binding(xlsx, {
+    hashKind: "canonical-first-xlsx-worksheet-v1-sha256",
+  }))), []);
+
+  const csv = { ...base, name: "research.csv" };
+  assert.deepEqual(ids(diagnosticsFor(csv, draft(["A", "B", "C"]), binding(csv, {
+    hashKind: "canonical-first-xlsx-worksheet-v1-sha256",
+  }))), ["STANDARD_DATASET_BINDING_INVALID"]);
+  assert.deepEqual(withoutTask6NumericalDiagnostics(diagnosticsFor(csv, draft(["A", "B", "C"]), binding(csv, {
+    hashKind: "normalized-utf8-csv-text-sha256",
+  }))), []);
+
+  const explicit = { ...base, name: "research.bin", hashKind: "normalized-utf8-text-sha256" as const };
+  assert.deepEqual(withoutTask6NumericalDiagnostics(diagnosticsFor(explicit, draft(["A", "B", "C"]), binding(explicit, {
+    hashKind: "normalized-utf8-text-sha256",
+  }))), []);
+});
+
+test("dataset trust boundary avoids ordinary Proxy gets and accepts stable descriptor snapshots", () => {
+  let ordinaryGets = 0;
+  const noGet = () => {
+    ordinaryGets += 1;
+    throw new Error("ordinary get must not run");
+  };
+  const rows = [
+    new Proxy({ unit: "u", horizon: "h", A: 1, B: 1, C: 0 }, { get: noGet }),
+    new Proxy({ unit: "u", horizon: "h", A: 0, B: 0, C: 1 }, { get: noGet }),
+  ];
+  const headers = new Proxy([...DEFAULT_HEADERS], { get: noGet });
+  const rowsArray = new Proxy(rows, { get: noGet });
+  const datasetProxy = new Proxy({
+    name: "codes.csv",
+    headers,
+    rows: rowsArray,
+    sizeBytes: 1,
+    source: "upload" as const,
+  }, { get: noGet });
+  const bindingProxy = new Proxy({
+    hashKind: "normalized-utf8-csv-text-sha256" as const,
+    normalizedTableSha256: DATASET_HASH,
+    rowCount: 2,
+    headerSha256: HEADER_HASH,
+  }, { get: noGet });
+  const output = validateStandardDraftV3(datasetProxy, bindingProxy, draft(["A", "B", "C"]));
+  assert.equal(ordinaryGets, 0);
+  assert.equal(ids(output).includes("STANDARD_DATASET_BINDING_INVALID"), false);
+});
+
+test("identity admission and full snapshot reject descriptor TOCTOU disagreement", () => {
+  let unitCaptures = 0;
+  const target = { unit: "u1", horizon: "h1", A: 1, B: 1, C: 1 };
+  const row = new Proxy(target, {
+    getOwnPropertyDescriptor(source, property) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(source, property);
+      if (property !== "unit" || descriptor === undefined || !("value" in descriptor)) return descriptor;
+      unitCaptures += 1;
+      return { ...descriptor, value: unitCaptures === 1 ? "u1" : "u2" };
+    },
+  });
+  const input = dataset([row]);
+  assert.deepEqual(ids(diagnosticsFor(input)), ["STANDARD_DATASET_BINDING_INVALID"]);
+  assert.equal(unitCaptures, 2);
+});
+
+test("accessor, class, sparse, and exotic dataset structures fail closed as binding diagnostics", () => {
+  const accessorRow: Record<string, unknown> = { unit: "u", horizon: "h", B: 1, C: 1 };
+  Object.defineProperty(accessorRow, "A", { enumerable: true, get: () => 1 });
+  class RowClass {
+    unit = "u";
+    horizon = "h";
+    A = 1;
+    B = 1;
+    C = 0;
+  }
+  const sparseRows = new Array<Record<string, unknown>>(2);
+  sparseRows[1] = { unit: "u", horizon: "h", A: 1, B: 1, C: 0 };
+  const cases = [
+    dataset([accessorRow]),
+    dataset([new RowClass() as unknown as Record<string, unknown>]),
+    dataset(sparseRows),
+  ];
+  for (const input of cases) {
+    const output = diagnosticsFor(input, draft(["A", "B", "C"]), binding(input));
+    assert.deepEqual(ids(output), ["STANDARD_DATASET_BINDING_INVALID"]);
+  }
+});
+
+test("direct JavaScript malformed draft structures fail closed instead of being silently accepted", () => {
+  const input = healthyDataset();
+  const malformedCases: unknown[] = [
+    { ...draft(["A", "B", "C"]), codes: { A: true } },
+    { ...draft(["A", "B", "C"]), weighting: "sum" },
+    { ...draft(["A", "B", "C"]), unitColumns: ["unit", , "other"] },
+    { ...draft(["A", "B", "C"]), horizonColumns: new Date() },
+  ];
+  for (const malformed of malformedCases) {
+    assert.throws(() => validateStandardDraftV3(
+      input,
+      binding(input),
+      malformed as StandardEnaDraftV3,
+    ), /draft|codes|weighting|columns|array|shape|plain/i);
+  }
+});
+
+test("malformed active row and Horizon order policies cannot pass the direct JavaScript boundary", () => {
+  const input = dataset([
+    { unit: "u", horizon: "h1", turn: 1, A: 1, B: 1, C: 0 },
+    { unit: "u", horizon: "h2", turn: 2, A: 0, B: 1, C: 1 },
+  ], [...DEFAULT_HEADERS, "turn"]);
+  const malformedOrder = {
+    kind: "columns",
+    keys: [{ column: "turn", direction: "ascending", comparator: { type: "mystery" } }],
+  } as unknown as CanonicalRowOrderV3;
+  const rowOutput = diagnosticsFor(input, draft(["A", "B", "C"], {
+    windowType: "MovingStanzaWindow",
+    movingStanza: { rowOrder: malformedOrder },
+  }));
+  one(rowOutput, "STANDARD_ROW_ORDER_INVALID");
+  assert.equal(hasDerivativeConnectivityNoise(rowOutput), false);
+
+  const horizonOutput = diagnosticsFor(input, draft(["A", "B", "C"], {
+    model: "SeparateTrajectory",
+    horizonOrder: malformedOrder,
+  }));
+  one(horizonOutput, "STANDARD_HORIZON_ORDER_INVALID");
+  assert.equal(hasDerivativeConnectivityNoise(horizonOutput), false);
+});
+
+test("invalid-value evidence is exact, safely bounded, and never copies raw values", () => {
+  const secret = "SECRET_RAW_VALUE_DO_NOT_COPY";
+  const rows = Array.from({ length: 8 }, (_, rowIndex) => ({
+    unit: `u${rowIndex}`,
+    horizon: `h${rowIndex}`,
+    A: secret,
+    B: 1,
+    C: 1,
+  }));
+  const invalid = one(diagnosticsFor(dataset(rows)), "STANDARD_CODE_VALUE_INVALID");
+  assert.equal(invalid.evidence?.totalCount, 8);
+  assert.equal(invalid.evidence?.sampleLimit, 5);
+  assert.equal(invalid.evidence?.samples.length, 5);
+  assert.equal(invalid.evidence?.truncated, true);
+  assert.deepEqual(invalid.evidence?.samples.map((sample) => sample.rowIndex), [0, 1, 2, 3, 4]);
+  assert.equal(JSON.stringify(invalid.evidence).includes(secret), false);
+});
+
+test("evidence samples are bounded before allocating per-row detail objects", () => {
+  const count = 10_000;
+  const input = dataset(Array.from({ length: count }, (_, rowIndex) => ({
+    unit: `u${rowIndex}`,
+    horizon: `h${rowIndex}`,
+    A: rowIndex % 2,
+    B: 1,
+    D: 0,
+  })), ["unit", "horizon", "A", "B", "D"]);
+  const allZero = one(diagnosticsFor(input, draft(["A", "B", "D"])), "STANDARD_CODE_ALL_ZERO");
+  assert.equal(allZero.evidence?.totalCount, count);
+  assert.equal(allZero.evidence?.samples.length, 5);
+  assert.equal(allZero.evidence?.truncated, true);
+
+  const source = readFileSync(
+    new URL("../lib/open-ena/model-v3/diagnostics.ts", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(source, /analyzed\.invalidRows\.map\s*\(/u);
+  assert.doesNotMatch(source, /dataset\.rows\.map\s*\(/u);
+});
+
+test("all emitted evidence and actions obey the total-count and scientific-confirmation contracts", () => {
+  const input = dataset([
+    { unit: "u1", horizon: "h1", A: 1, B: 1, D: 0 },
+    { unit: "u2", horizon: "h2", A: 0, B: 0, D: 1 },
+  ], ["unit", "horizon", "A", "B", "D"]);
+  const output = diagnosticsFor(input, draft(["A", "B", "D", "missing"]));
+  for (const entry of output) {
+    assert.ok(entry.summary.trim().length > 0);
+    assert.ok(entry.detail.trim().length > 0);
+    if (entry.severity === "error") assert.ok(entry.blocks.includes("build-model"));
+    if (entry.id === "STANDARD_CODE_ISOLATED" || entry.id === "STANDARD_CODE_DUPLICATE_PROFILE") {
+      assert.equal(entry.blocks.includes("build-model"), false);
+    }
+    if (entry.evidence !== undefined) {
+      assert.equal(entry.evidence.sampleLimit, 5);
+      assert.ok(entry.evidence.totalCount >= entry.evidence.samples.length);
+      assert.ok(entry.evidence.samples.length <= 5);
+      assert.equal(entry.evidence.truncated, entry.evidence.totalCount > entry.evidence.samples.length);
+      for (const sample of entry.evidence.samples) {
+        assert.ok(sample.detail.trim().length > 0);
+        assert.deepEqual(Object.keys(sample).every((key) => ["rowIndex", "identity", "detail"].includes(key)), true);
+      }
+    }
+    for (const action of entry.suggestedActions ?? []) {
+      assert.equal(action.confirmationRequired, true);
+      assert.ok(action.confirmationText.trim().length > 20);
+    }
+  }
+});
+
+test("diagnostics are detached, recursively frozen, and deterministically ordered", () => {
+  const rows = Array.from({ length: 6 }, (_, rowIndex) => ({
+    unit: `u${rowIndex}`,
+    horizon: `h${rowIndex}`,
+    A: "invalid",
+    B: 1,
+    C: 1,
+  }));
+  const input = dataset(rows);
+  const modelDraft = draft(["C", "A", "B", "missing"]);
+  const output = diagnosticsFor(input, modelDraft);
+  const serialized = JSON.stringify(output);
+  input.headers.reverse();
+  (rows[0] as Record<string, unknown>).A = 1;
+  modelDraft.codes.reverse();
+  assert.equal(JSON.stringify(output), serialized);
+  assert.ok(Object.isFrozen(output));
+  for (const entry of output) {
+    assert.ok(Object.isFrozen(entry));
+    assert.ok(Object.isFrozen(entry.blocks));
+    if (entry.evidence !== undefined) {
+      assert.ok(Object.isFrozen(entry.evidence));
+      assert.ok(Object.isFrozen(entry.evidence.samples));
+      assert.ok(entry.evidence.samples.every(Object.isFrozen));
+    }
+    if (entry.suggestedActions !== undefined) {
+      assert.ok(Object.isFrozen(entry.suggestedActions));
+      assert.ok(entry.suggestedActions.every(Object.isFrozen));
+      assert.ok(entry.suggestedActions.every((action) => Object.isFrozen(action.patch)));
+    }
+  }
+  assert.throws(() => (output as ModelDiagnosticV3[]).push(output[0]), TypeError);
+
+  const insertionA = dataset([{ unit: "u", horizon: "h", A: "x", B: 1, C: 1 }]);
+  const insertionB = dataset([{ C: 1, B: 1, A: "x", horizon: "h", unit: "u" }]);
+  assert.deepEqual(diagnosticsFor(insertionA), diagnosticsFor(insertionB));
+  const orderKeys = output.map((entry) => `${String(MODEL_DIAGNOSTIC_IDS_V3.indexOf(entry.id)).padStart(2, "0")}:${entry.fieldPath ?? ""}`);
+  assert.deepEqual(orderKeys, [...orderKeys].sort());
+});

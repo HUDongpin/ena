@@ -24,7 +24,7 @@ import {
   stringVectorToUpperTriangle,
   sumColumns,
   vectorToUpperTriangle
-} from './core/index.js';
+} from './core/matrix.js';
 import { assertNonEmptyColumns, assertRowsHaveColumns } from './core/guards.js';
 import { mergeColumns, typedTupleIdentity } from './core/table.js';
 import { validateAccumulateOptions } from './core/validate.js';
@@ -36,6 +36,64 @@ export interface NumericTable {
 }
 
 export type StreamingMaterialization = 'full' | 'model';
+
+export type EnaNumericalErrorCode =
+  | 'STANDARD_CONNECTION_NONFINITE'
+  | 'STANDARD_ACCUMULATION_NONFINITE'
+  | 'ORDERED_CONNECTION_NONFINITE'
+  | 'ORDERED_PRODUCT_UNDERFLOW'
+  | 'ORDERED_MASK_UNDERFLOW'
+  | 'ORDERED_UNIT_AGGREGATION_NONFINITE';
+
+export class EnaNumericalError extends Error {
+  readonly code: EnaNumericalErrorCode;
+  readonly edgeIndex: number;
+  readonly sourceCode: string;
+  readonly targetCode: string;
+
+  constructor(input: {
+    code: EnaNumericalErrorCode;
+    edgeIndex: number;
+    sourceCode: string;
+    targetCode: string;
+    value: number;
+    leftOperand?: number;
+    rightOperand?: number;
+    contribution?: 'lagged' | 'same-row';
+    maskWeight?: number;
+  }) {
+    let message: string;
+    if (input.code === 'STANDARD_CONNECTION_NONFINITE'
+      || input.code === 'STANDARD_ACCUMULATION_NONFINITE') {
+      const stage = input.code === 'STANDARD_CONNECTION_NONFINITE'
+        ? 'derived connection'
+        : 'model accumulation';
+      message = `Standard ENA ${stage} produced a non-finite value at edge index ${input.edgeIndex} ` +
+        `(${JSON.stringify(input.sourceCode)} -- ${JSON.stringify(input.targetCode)}); got ${String(input.value)}.`;
+    } else if (input.code === 'ORDERED_PRODUCT_UNDERFLOW') {
+      message = `Ordered network analysis numeric underflow at edge index ${input.edgeIndex} ` +
+        `(${input.sourceCode} -> ${input.targetCode}): positive ${input.contribution ?? 'ordered'} operands ` +
+        `${String(input.leftOperand)} and ${String(input.rightOperand)} produced 0.`;
+    } else if (input.code === 'ORDERED_MASK_UNDERFLOW') {
+      message = `Ordered network analysis mask underflow at edge index ${input.edgeIndex} ` +
+        `(${input.sourceCode} -> ${input.targetCode}): positive connection ${String(input.value)} and mask weight ` +
+        `${String(input.maskWeight)} produced 0.`;
+    } else if (input.code === 'ORDERED_UNIT_AGGREGATION_NONFINITE') {
+      message = `Ordered network analysis unit aggregation overflow at edge index ${input.edgeIndex} ` +
+        `(${input.sourceCode} -> ${input.targetCode}); got ${String(input.value)}. Reduce row count or raw code magnitudes.`;
+    } else {
+      message = `Ordered network analysis derived a non-finite connection at edge index ${input.edgeIndex} ` +
+        `(${input.sourceCode} -> ${input.targetCode}); got ${String(input.value)}. ` +
+        'Reduce raw code magnitudes so every connection product remains finite.';
+    }
+    super(message);
+    this.name = 'EnaNumericalError';
+    this.code = input.code;
+    this.edgeIndex = input.edgeIndex;
+    this.sourceCode = input.sourceCode;
+    this.targetCode = input.targetCode;
+  }
+}
 
 export interface ChunkedAccumulateOptions extends AccumulateOptions {
   chunkSize?: number;
@@ -49,6 +107,8 @@ export interface StreamingAccumulateOptions extends Omit<AccumulateOptions, 'row
   expectedRows?: number;
   materialization?: StreamingMaterialization;
   onProgress?: (progress: number, state: AccumulationChunkState) => void;
+  /** Standard scientific numeric storage only; metadata/JS object bytes are not measured. */
+  onResources?: (state: { numericCells: number; numericCellsPeak: number; bufferedRows: number; bufferedRowsPeak: number; temporaryNumericCellsBound: number }) => void;
 }
 
 export interface AccumulationChunkState {
@@ -68,9 +128,30 @@ export interface AccumulationStream {
   readonly state: AccumulationChunkState;
   push(rows: Row[]): AccumulationChunkState;
   finish(): ENAData;
+  /** Bounded asynchronous flushing shares the synchronous numerical emission. */
+  finishAsync?(options: { chunkSize: number; yieldControl: () => Promise<void> }): Promise<ENAData>;
   /** Idempotently releases retained stream state without mutating an already returned result. */
   dispose(): void;
   reset(): void;
+}
+
+function validateStreamingControlOptions(options: {
+  chunkSize?: unknown;
+  materialization?: unknown;
+}): void {
+  if (options.chunkSize !== undefined
+    && (typeof options.chunkSize !== 'number'
+      || !Number.isSafeInteger(options.chunkSize)
+      || options.chunkSize <= 0)) {
+    throw new RangeError(`chunkSize must be a positive safe integer; got ${String(options.chunkSize)}.`);
+  }
+  if (options.materialization !== undefined
+    && options.materialization !== 'full'
+    && options.materialization !== 'model') {
+    throw new TypeError(
+      `materialization must be exactly "full" or "model"; got ${String(options.materialization)}.`
+    );
+  }
 }
 
 /**
@@ -366,6 +447,8 @@ interface MetadataState {
 }
 
 interface StreamingInternals {
+  observation: { numericCells: number; numericCellsPeak: number; bufferedRows: number; bufferedRowsPeak: number };
+  onResources?: StreamingAccumulateOptions['onResources'];
   networkType: NetworkType;
   model: ModelType;
   window: WindowType;
@@ -397,6 +480,19 @@ interface StreamingInternals {
   metadataOrder: string[];
   orderedUnitDisplayIdentities: Map<string, string>;
   rowConnectionSequence: number;
+}
+
+function observeStorage(internals: StreamingInternals, cells: number, rows = 0, scratch = 0): void {
+  const next = { numericCells: internals.observation.numericCells + cells, bufferedRows: internals.observation.bufferedRows + rows };
+  const observation = {
+    ...next,
+    numericCellsPeak: Math.max(internals.observation.numericCellsPeak, next.numericCells),
+    bufferedRowsPeak: Math.max(internals.observation.bufferedRowsPeak, next.bufferedRows)
+  };
+  // The callback can reject an allocation before it occurs. Counts describe
+  // scientific Code/network slots, not numeric metadata or cumulative churn.
+  internals.onResources?.({ ...observation, temporaryNumericCellsBound: scratch });
+  internals.observation = observation;
 }
 
 export function rowsToNumericTable(rows: Row[], columns: string[]): NumericTable {
@@ -594,6 +690,29 @@ function coOccurrenceFromSums(total: number[], subtract: number[] | undefined, b
   return binary ? co.map((value) => (value > 0 ? 1 : 0)) : co;
 }
 
+function standardEdgeCodes(internals: StreamingInternals, edgeIndex: number): [string, string] {
+  let cursor = 0;
+  for (let target = 1; target < internals.codes.length; target += 1) {
+    for (let source = 0; source < target; source += 1) {
+      if (cursor === edgeIndex) {
+        return [internals.codes[source] ?? String(source), internals.codes[target] ?? String(target)];
+      }
+      cursor += 1;
+    }
+  }
+  return [String(edgeIndex), String(edgeIndex)];
+}
+
+function throwStandardNumericalError(
+  code: EnaNumericalErrorCode,
+  edgeIndex: number,
+  value: number,
+  internals: StreamingInternals
+): never {
+  const [sourceCode, targetCode] = standardEdgeCodes(internals, edgeIndex);
+  throw new EnaNumericalError({ code, edgeIndex, sourceCode, targetCode, value });
+}
+
 function finalizeCoOccurrence(values: number[], internals: StreamingInternals): number[] {
   // Ordered edge construction applies its directional mask before returning
   // so a fractional mask can keep an otherwise overflowing sum representable.
@@ -604,16 +723,26 @@ function finalizeCoOccurrence(values: number[], internals: StreamingInternals): 
   if (internals.networkType === 'ordered') {
     const codeCount = internals.codes.length;
     for (let edgeIndex = 0; edgeIndex < finalized.length; edgeIndex += 1) {
-      const value = finalized[edgeIndex];
+      const value = finalized[edgeIndex] ?? Number.NaN;
       const groundIndex = edgeIndex % codeCount;
       const responseIndex = Math.floor(edgeIndex / codeCount);
       const ground = internals.codes[groundIndex] ?? String(groundIndex);
       const response = internals.codes[responseIndex] ?? String(responseIndex);
       if (!Number.isFinite(value)) {
-        throw new Error(
-          `Ordered network analysis derived a non-finite connection at edge index ${edgeIndex} ` +
-          `(${ground} -> ${response}); got ${String(value)}. Reduce raw code magnitudes so every connection product remains finite.`
-        );
+        throw new EnaNumericalError({
+          code: 'ORDERED_CONNECTION_NONFINITE',
+          edgeIndex,
+          sourceCode: ground,
+          targetCode: response,
+          value
+        });
+      }
+    }
+  } else {
+    for (let edgeIndex = 0; edgeIndex < finalized.length; edgeIndex += 1) {
+      const value = finalized[edgeIndex] ?? Number.NaN;
+      if (!Number.isFinite(value)) {
+        throwStandardNumericalError('STANDARD_CONNECTION_NONFINITE', edgeIndex, value, internals);
       }
     }
   }
@@ -655,6 +784,7 @@ function ensureEndpointCount(internals: StreamingInternals, row: Row, sequence: 
   const displayLabel = String(row.ENA_UNIT ?? mergeColumns(row, internals.units));
   let accumulator = internals.endpointCounts.get(key);
   if (!accumulator) {
+    observeStorage(internals, internals.codeColumns.length);
     accumulator = {
       row: {
         ...Object.fromEntries(internals.units.map((column) => [column, row[column] ?? null])),
@@ -676,6 +806,7 @@ function ensureStepCount(internals: StreamingInternals, row: Row, sequence: numb
   const key = mergeColumns(row, [...internals.units, ...internals.conversation]);
   let accumulator = internals.stepCounts.get(key);
   if (!accumulator) {
+    observeStorage(internals, internals.codeColumns.length);
     accumulator = {
       row: {
         ...Object.fromEntries(internals.units.map((column) => [column, row[column] ?? null])),
@@ -715,14 +846,21 @@ function addToAccumulator(
         const responseIndex = Math.floor(index / codeCount);
         const ground = internals.codes[groundIndex] ?? String(groundIndex);
         const response = internals.codes[responseIndex] ?? String(responseIndex);
-        throw new Error(
-          `Ordered network analysis unit aggregation overflow at edge index ${index} ` +
-          `(${ground} -> ${response}); got ${String(total)}. Reduce row count or raw code magnitudes.`
-        );
+        throw new EnaNumericalError({
+          code: 'ORDERED_UNIT_AGGREGATION_NONFINITE',
+          edgeIndex: index,
+          sourceCode: ground,
+          targetCode: response,
+          value: total
+        });
       }
       accumulator.sums[index] = total;
     } else {
-      accumulator.sums[index] = (accumulator.sums[index] ?? 0) + value;
+      const total = (accumulator.sums[index] ?? 0) + value;
+      if (!Number.isFinite(total)) {
+        throwStandardNumericalError('STANDARD_ACCUMULATION_NONFINITE', index, total, internals);
+      }
+      accumulator.sums[index] = total;
     }
   }
 }
@@ -739,6 +877,7 @@ function registerCountAccumulator(internals: StreamingInternals, row: Row, seque
 }
 
 function consumeRowConnection(internals: StreamingInternals, index: number, row: Row): void {
+  if (internals.materialization === 'full') observeStorage(internals, internals.codeColumns.length);
   if (internals.materialization === 'full') internals.rowConnectionRows.push({ index, row });
   const unit = String(row.ENA_UNIT ?? '');
   if (internals.unitFilter && !internals.unitFilter.has(unit)) return;
@@ -762,8 +901,12 @@ function makeNoForwardCoOccurrence(state: MovingConversationState, entry: Stream
   }
   const previousRows = state.noForwardHistory.slice(-Math.max(0, back - 1));
   const previous = sumCodeVectors(previousRows, internals.codes.length);
+  observeStorage(internals, internals.codes.length, 1);
   state.noForwardHistory.push(entry.codeValues);
-  while (state.noForwardHistory.length > back - 1) state.noForwardHistory.shift();
+  while (state.noForwardHistory.length > back - 1) {
+    state.noForwardHistory.shift();
+    observeStorage(internals, -internals.codes.length, -1);
+  }
   return coOccurrenceFromSums(addVectors(previous, entry.codeValues), previous, binary);
 }
 
@@ -777,10 +920,16 @@ function assertOrderedProductDidNotUnderflow(
   contribution: 'lagged' | 'same-row'
 ): void {
   if (left > 0 && right > 0 && product === 0) {
-    throw new Error(
-      `Ordered network analysis numeric underflow at edge index ${edgeIndex} (${ground} -> ${response}): ` +
-      `positive ${contribution} operands ${String(left)} and ${String(right)} produced 0.`
-    );
+    throw new EnaNumericalError({
+      code: 'ORDERED_PRODUCT_UNDERFLOW',
+      edgeIndex,
+      sourceCode: ground,
+      targetCode: response,
+      value: product,
+      leftOperand: left,
+      rightOperand: right,
+      contribution
+    });
   }
 }
 
@@ -907,10 +1056,14 @@ function orderedConnections(
         connection = orderedExpansionTotal(maskedPartials);
       }
       if ((lagged > 0 || sameRow > 0) && maskWeight > 0 && connection === 0) {
-        throw new Error(
-          `Ordered network analysis mask underflow at edge index ${edgeIndex} (${ground} -> ${responseCode}): ` +
-          `positive connection ${String(unmaskedConnection)} and mask weight ${String(maskWeight)} produced 0.`
-        );
+        throw new EnaNumericalError({
+          code: 'ORDERED_MASK_UNDERFLOW',
+          edgeIndex,
+          sourceCode: ground,
+          targetCode: responseCode,
+          value: unmaskedConnection,
+          maskWeight
+        });
       }
       connections[edgeIndex] = connection;
     }
@@ -1049,6 +1202,19 @@ function makeOrderedNoForwardConnections(
   return connections;
 }
 
+/** Inclusive bounds within one Horizon; backward includes the current row. */
+export function windowBoundsForRow(
+  current: number,
+  horizonLength: number,
+  backward: number,
+  forward: number
+): { first: number; last: number } {
+  return {
+    first: backward === Infinity ? 0 : Math.max(0, current - Math.max(0, backward - 1)),
+    last: forward === Infinity ? horizonLength - 1 : Math.min(horizonLength - 1, current + forward)
+  };
+}
+
 function rowsForLocalRange(state: MovingConversationState, earliest: number, last: number): number[][] {
   return state.buffer
     .filter((entry) => entry.localIndex >= earliest && entry.localIndex <= last)
@@ -1061,18 +1227,10 @@ function computeWindowCoOccurrence(state: MovingConversationState, rowIndex: num
   const back = internals.windowSizeBack;
   const forward = internals.windowSizeForward;
   const binary = internals.weightBy === 'binary';
-  const infiniteBack = !Number.isFinite(back);
   const infiniteForward = !Number.isFinite(forward);
   if (!final && (infiniteForward || rowIndex + forward >= rowCount)) return undefined;
 
-  let earliest = 0;
-  let last = rowIndex;
-  if (infiniteBack) earliest = 0;
-  else if (back === 0) earliest = rowIndex;
-  else if (rowIndex - (back - 1) >= 0) earliest = rowIndex - (back - 1);
-
-  if (infiniteForward || rowIndex + forward >= rowCount) last = rowCount - 1;
-  else if (forward > 0 && rowIndex + forward <= rowCount - 1) last = rowIndex + forward;
+  const { first: earliest, last } = windowBoundsForRow(rowIndex, rowCount, back, forward);
 
   const currRows = rowsForLocalRange(state, earliest, last);
   if (currRows.length !== last - earliest + 1) return undefined;
@@ -1093,8 +1251,10 @@ function computeWindowCoOccurrence(state: MovingConversationState, rowIndex: num
   return binary ? co.map((value) => (value > 0 ? 1 : 0)) : co;
 }
 
-function emitReadyRows(state: MovingConversationState, final: boolean, internals: StreamingInternals): void {
-  while (state.nextEmitLocalIndex < state.rowsSeen) {
+function emitReadyRows(state: MovingConversationState, final: boolean, internals: StreamingInternals, limit = Infinity): number {
+  let emitted = 0;
+  while (state.nextEmitLocalIndex < state.rowsSeen && emitted < limit) {
+    observeStorage(internals, 0, 0, 4 * internals.codeColumns.length + 4 * internals.codes.length);
     const entry = state.buffer.find((candidate) => candidate.localIndex === state.nextEmitLocalIndex);
     if (!entry) break;
     const co = computeWindowCoOccurrence(state, state.nextEmitLocalIndex, final, internals);
@@ -1105,20 +1265,24 @@ function emitReadyRows(state: MovingConversationState, final: boolean, internals
       rowWithCoOccurrences(entry.row, finalizeCoOccurrence(co, internals), internals.codeColumns)
     );
     state.nextEmitLocalIndex += 1;
+    emitted += 1;
   }
 
   if (Number.isFinite(internals.windowSizeBack)) {
     const keepFrom = Math.max(0, state.nextEmitLocalIndex - Math.max(0, internals.windowSizeBack - 1));
     while (state.buffer.length > 0 && (state.buffer[0]?.localIndex ?? 0) < keepFrom) {
       state.buffer.shift();
+      observeStorage(internals, -2 * internals.codes.length, -1);
       state.bufferOffset = keepFrom;
     }
   }
+  return emitted;
 }
 
 function getMovingConversation(internals: StreamingInternals, identityKey: string, displayLabel: string): MovingConversationState {
   let state = internals.movingConversations.get(identityKey);
   if (!state) {
+    observeStorage(internals, 2 * internals.codes.length);
     state = {
       key: displayLabel,
       identity: identityKey,
@@ -1166,6 +1330,7 @@ function pushMovingRow(internals: StreamingInternals, row: Row, globalIndex: num
     return;
   }
 
+  observeStorage(internals, 2 * internals.codes.length, 1);
   state.buffer.push(entry);
   emitReadyRows(state, false, internals);
 }
@@ -1174,6 +1339,7 @@ function pushConversationRow(internals: StreamingInternals, row: Row, sequence: 
   const key = mergeColumns(row, [...internals.conversation, 'ENA_UNIT']);
   let aggregate = internals.conversationAggregates.get(key);
   if (!aggregate) {
+    observeStorage(internals, 2 * internals.codes.length);
     aggregate = {
       key,
       row: {
@@ -1193,9 +1359,12 @@ function pushConversationRow(internals: StreamingInternals, row: Row, sequence: 
   }
 }
 
-function flushConversationWindow(internals: StreamingInternals): void {
+function flushConversationWindow(internals: StreamingInternals, start = 0, end = internals.conversationAggregateOrder.length): void {
   const binary = internals.weightBy === 'binary';
-  for (const key of internals.conversationAggregateOrder) {
+  for (let index = start; index < end; index += 1) {
+    observeStorage(internals, 0, 0, 4 * internals.codeColumns.length + 4 * internals.codes.length);
+    const key = internals.conversationAggregateOrder[index];
+    if (key === undefined) throw new Error('Conversation aggregate order is incomplete.');
     const aggregate = internals.conversationAggregates.get(key);
     if (!aggregate) continue;
     const co = coOccurrenceFromSums(aggregate.sums, undefined, binary);
@@ -1252,10 +1421,13 @@ function finalizedAccumulatorSums(accumulator: CountAccumulator | undefined, int
       const responseIndex = Math.floor(edgeIndex / codeCount);
       const ground = internals.codes[groundIndex] ?? String(groundIndex);
       const response = internals.codes[responseIndex] ?? String(responseIndex);
-      throw new Error(
-        `Ordered network analysis unit aggregation overflow at edge index ${edgeIndex} ` +
-        `(${ground} -> ${response}); got ${String(value)}. Reduce row count or raw code magnitudes.`
-      );
+      throw new EnaNumericalError({
+        code: 'ORDERED_UNIT_AGGREGATION_NONFINITE',
+        edgeIndex,
+        sourceCode: ground,
+        targetCode: response,
+        value
+      });
     }
     return value;
   });
@@ -1309,7 +1481,14 @@ function makeTrajectoryResult(internals: StreamingInternals): { connectionCounts
     for (const groupRows of rowsByUnit.values()) {
       const running = Object.fromEntries(internals.codeColumns.map((column) => [column, 0])) as Row;
       for (const row of groupRows) {
-        for (const column of internals.codeColumns) running[column] = numeric(running, column) + numeric(row, column);
+        for (let edgeIndex = 0; edgeIndex < internals.codeColumns.length; edgeIndex += 1) {
+          const column = internals.codeColumns[edgeIndex] ?? '';
+          const total = numeric(running, column) + numeric(row, column);
+          if (internals.networkType === 'standard' && !Number.isFinite(total)) {
+            throwStandardNumericalError('STANDARD_ACCUMULATION_NONFINITE', edgeIndex, total, internals);
+          }
+          running[column] = total;
+        }
         countRows.push({ ...row, ...running });
       }
     }
@@ -1329,9 +1508,13 @@ function flushMovingWindow(internals: StreamingInternals): void {
   for (const state of internals.movingConversations.values()) emitReadyRows(state, true, internals);
 }
 
-function finishInternals(internals: StreamingInternals): ENAData {
-  if (internals.window === 'Conversation') flushConversationWindow(internals);
-  else flushMovingWindow(internals);
+function finishInternals(internals: StreamingInternals, flushed = false): ENAData {
+  if (!flushed) {
+    if (internals.window === 'Conversation') flushConversationWindow(internals);
+    else flushMovingWindow(internals);
+  }
+  const count = internals.model === 'EndPoint' ? internals.endpointCounts.size : internals.stepCounts.size;
+  observeStorage(internals, 0, 0, 4 * count * internals.codeColumns.length);
 
   const resultRows = internals.model === 'EndPoint'
     ? makeEndpointResult(internals)
@@ -1373,6 +1556,7 @@ function finishInternals(internals: StreamingInternals): ENAData {
       ...(internals.unitFilter ? { unitsUsed: [...internals.unitFilter] } : {})
     }
   };
+  observeStorage(internals, 2 * count * internals.codeColumns.length);
   const trajectoryRows = (resultRows as { trajectories?: Row[] }).trajectories;
   if (trajectoryRows) result.trajectories = trajectoryRows;
   if (internals.networkType === 'ordered') {
@@ -1401,7 +1585,7 @@ function updateProgress(state: AccumulationChunkState, internals: StreamingInter
   state.activeConversations = internals.movingConversations.size + internals.conversationAggregates.size;
   state.activeBufferedRows = activeBufferedRows(internals);
   state.activeConversationsPeak = Math.max(state.activeConversationsPeak, state.activeConversations);
-  state.activeBufferedRowsPeak = Math.max(state.activeBufferedRowsPeak, state.activeBufferedRows);
+  state.activeBufferedRowsPeak = Math.max(state.activeBufferedRowsPeak, state.activeBufferedRows, internals.observation.bufferedRowsPeak);
 }
 
 function makeInternals(options: StreamingAccumulateOptions): StreamingInternals {
@@ -1418,6 +1602,8 @@ function makeInternals(options: StreamingAccumulateOptions): StreamingInternals 
   assertNonEmptyColumns(codes, 'codes');
   if (options.rows) assertRowsHaveColumns(options.rows, [...units, ...conversation, ...codes, ...metadata]);
   return {
+    observation: { numericCells: 0, numericCellsPeak: 0, bufferedRows: 0, bufferedRowsPeak: 0 },
+    ...(options.onResources ? { onResources: options.onResources } : {}),
     networkType,
     model,
     window,
@@ -1454,11 +1640,15 @@ function makeInternals(options: StreamingAccumulateOptions): StreamingInternals 
 }
 
 function ingestRow(internals: StreamingInternals, row: Row, globalIndex: number): void {
+  observeStorage(internals, 0, 0, 4 * internals.codeColumns.length + 4 * internals.codes.length);
   assertOrderedRawKeysDoNotCollide(internals, row, globalIndex);
   assertOrderedIdentityValues(internals, row, globalIndex);
   const rowWithUnit = makeUnitRow(row, internals.units);
   assertOrderedUnitDisplayIsUnique(internals, rowWithUnit);
-  if (internals.materialization === 'full') internals.rawRows.push(rowWithUnit);
+  if (internals.materialization === 'full') {
+    observeStorage(internals, internals.codes.length);
+    internals.rawRows.push(rowWithUnit);
+  }
   ensureMetadata(internals, rowWithUnit, globalIndex);
   registerCountAccumulator(internals, rowWithUnit, globalIndex);
   if (internals.window === 'Conversation') pushConversationRow(internals, rowWithUnit, internals.rowConnectionSequence);
@@ -1467,8 +1657,8 @@ function ingestRow(internals: StreamingInternals, row: Row, globalIndex: number)
 }
 
 export function accumulateDataChunked(options: ChunkedAccumulateOptions): ENAData {
+  validateStreamingControlOptions(options);
   const chunkSize = options.chunkSize ?? 10_000;
-  if (chunkSize <= 0 || !Number.isFinite(chunkSize)) throw new Error('chunkSize must be a positive finite number.');
   const { rows, onProgress, ...streamOptions } = options;
   onProgress?.(0);
   const stream = createAccumulationStream({
@@ -1572,6 +1762,39 @@ function makeAccumulationStreamController(
         dispose();
       }
     },
+    async finishAsync({ chunkSize: requestedChunkSize, yieldControl }): Promise<ENAData> {
+      if (state.isFinished || !resources.internals) throw new Error('Accumulation stream has already finished.');
+      state.isFinished = true;
+      const current = resources.internals;
+      try {
+        validateStreamingControlOptions({ chunkSize: requestedChunkSize });
+        const chunkSize = Math.min(requestedChunkSize, 2_000);
+        if (state.rowsSeen === 0) throw new Error('rows is empty; provide at least one coded data row.');
+        if (current.window === 'Conversation') {
+          for (let start = 0; start < current.conversationAggregateOrder.length; start += chunkSize) {
+            flushConversationWindow(current, start, Math.min(start + chunkSize, current.conversationAggregateOrder.length));
+            await yieldControl();
+            if (state.isDisposed) throw new Error('Accumulation stream was disposed during asynchronous finish.');
+          }
+        } else if (current.windowSizeForward !== 0) {
+          for (const conversation of current.movingConversations.values()) {
+            while (conversation.nextEmitLocalIndex < conversation.rowsSeen) {
+              if (emitReadyRows(conversation, true, current, chunkSize) === 0) throw new Error('Moving window flush made no progress.');
+              await yieldControl();
+              if (state.isDisposed) throw new Error('Accumulation stream was disposed during asynchronous finish.');
+            }
+          }
+        }
+        await yieldControl();
+        if (state.isDisposed) throw new Error('Accumulation stream was disposed during asynchronous finish.');
+        const result = finishInternals(current, true);
+        updateProgress(state, current, expectedRows);
+        state.progress = 1;
+        return result;
+      } finally {
+        dispose();
+      }
+    },
     dispose,
     reset(): void {
       dispose();
@@ -1581,8 +1804,8 @@ function makeAccumulationStreamController(
 }
 
 export function createAccumulationStream(options: StreamingAccumulateOptions): AccumulationStream {
+  validateStreamingControlOptions(options);
   const { rows: initialRows, chunkSize = 10_000, expectedRows, onProgress } = options;
-  if (chunkSize <= 0 || !Number.isFinite(chunkSize)) throw new Error('chunkSize must be a positive finite number.');
   validateAccumulateOptions(options, { requireRows: false });
   const internals = makeInternals(options);
   const resources: AccumulationStreamResources = {

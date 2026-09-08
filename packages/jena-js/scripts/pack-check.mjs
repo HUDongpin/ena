@@ -118,6 +118,24 @@ if (mapProblems.length > 0) {
   process.exit(1);
 }
 
+const publicDeclarations = files
+  .filter((file) => file.endsWith(".d.ts"))
+  .map((file) => readFileSync(join(projectDir, file), "utf8"))
+  .join("\n");
+for (const code of [
+  "STANDARD_CONNECTION_NONFINITE",
+  "STANDARD_ACCUMULATION_NONFINITE",
+  "ORDERED_CONNECTION_NONFINITE",
+  "ORDERED_PRODUCT_UNDERFLOW",
+  "ORDERED_MASK_UNDERFLOW",
+  "ORDERED_UNIT_AGGREGATION_NONFINITE",
+]) {
+  if (!publicDeclarations.includes(`'${code}'`)) {
+    console.error(`dist/index.d.ts is missing public EnaNumericalErrorCode ${code}.`);
+    process.exit(1);
+  }
+}
+
 // The worker entry registers its message host as a module side effect; if
 // sideEffects stops declaring it, bundlers tree-shake a bare
 // `import "jena-js/browser/worker"` into an empty worker chunk (0.6.2).
@@ -136,5 +154,5 @@ try {
 }
 
 console.log(
-  "pack-check OK: only dist + docs ship, source maps are fresh, all entry points present, worker side effect declared, zero runtime dependencies.",
+  "pack-check OK: only dist + docs ship, source maps and public numerical declarations are fresh, all entry points present, worker side effect declared, zero runtime dependencies.",
 );

@@ -461,3 +461,48 @@ export function applyFullscreenTrajectoryPlotlyLayoutV3(
   }
   return input;
 }
+
+
+/** One exit owns one deferred return; readiness events, never polling, retry it. */
+export function createOpenEnaFullscreenFocusReturnV3<T>(environment: {
+  active: () => T | null;
+  neutral: (target: T | null) => boolean;
+  usable: (target: T) => boolean;
+  focus: (target: T) => void;
+  schedule: (callback: () => void) => number;
+  cancelSchedule: (id: number) => void;
+}) {
+  type Ticket = { preferred: T; fallback: T | null; origin: T | null; current: () => boolean; terminal: boolean };
+  let pending: Ticket | null = null;
+  let frame: { id: number } | null = null;
+  const cancel = () => {
+    pending = null;
+    if (frame) environment.cancelSchedule(frame.id);
+    frame = null;
+  };
+  const attempt = () => {
+    const ticket = pending;
+    if (!ticket || frame) return;
+    const scheduled = { id: 0 }; frame = scheduled;
+    scheduled.id = environment.schedule(() => {
+      if (pending !== ticket || frame !== scheduled) return;
+      frame = null;
+      const active = environment.active();
+      if (!ticket.current() || (!environment.neutral(active) && active !== ticket.origin && active !== ticket.preferred)) { cancel(); return; }
+      const target = environment.usable(ticket.preferred) ? ticket.preferred
+        : ticket.terminal && ticket.fallback !== null && environment.usable(ticket.fallback) ? ticket.fallback : null;
+      if (target === null) { if (ticket.terminal) cancel(); return; }
+      // Clear ownership before focusin, so our own focus cannot cancel a newer ticket.
+      pending = null;
+      environment.focus(target);
+    });
+  };
+  return {
+    request(preferred: T, fallback: T | null, current: () => boolean) {
+      cancel(); pending = { preferred, fallback, origin: environment.active(), current, terminal: false }; attempt();
+    },
+    ready(terminalError: boolean) { if (pending) { pending.terminal = terminalError; attempt(); } },
+    userIntent(target: T | null) { if (pending && target !== pending.preferred) cancel(); },
+    cancel,
+  };
+}

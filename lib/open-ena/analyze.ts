@@ -1,5 +1,6 @@
-import { cohensD, dimensionSummary, ena, enaStats, groupSummary, type ENASet, type Row } from "jena-js";
+import { accumulateData, accumulateDataChunked, cohensD, dimensionSummary, ena, enaStats, extractMakeSetOptions, groupSummary, makeSet, type ENAData, type ENASet, type MakeSetOptions, type Row } from "jena-js";
 import type { ENAWorkerOptions } from "jena-js/browser";
+import { svdRotation } from "jena-js/rotation";
 import type {
   CanonicalOpenEnaConfig,
   GroupNetwork,
@@ -28,6 +29,13 @@ import { JENA_GROUP_COLORS } from "./plot-style";
 import { validateReferenceCompatibility } from "./reference";
 import { buildOpenEnaOrderedResponseNodeSummary } from "./ordered-node-summary";
 import { datasetHashKindFor, JENA_RUNTIME_VERSION, OPEN_ENA_APP_VERSION } from "./types";
+import { canonicalJsonV3 } from "./model-v3/canonical-json";
+import { centeredNetworkRankV3, type ModelDiagnosticV3 } from "./model-v3/diagnostics";
+import type { StandardExecutionPlanV3 } from "./model-v3/execution-plan";
+import { buildMeansBindingV3, buildMeansMasksV3, toStandardJenaOptionsV3 } from "./model-v3/standard-adapter";
+import type { InternalStandardRunResultV3 } from "./model-v3/types";
+import type { StandardEnaDraftV3 } from "./model-v3/types";
+import { compileStandardDraftWithScientificEvidenceV3 } from "./model-v3/compiler";
 
 export const AUTO_CORRELATION_UNIT_LIMIT = 500;
 
@@ -119,6 +127,263 @@ export function canonicalizeOfficialMeanRotation(set: ENASet): ENASet {
       Object.entries(set.variance).map(([key, value]) => [key === from ? to : key, value]),
     ),
   };
+}
+
+function standardFitPopulationV3(plan: StandardExecutionPlanV3, data: ENAData): InternalStandardRunResultV3["populations"] {
+  const endpoint = plan.configuration.analysis.model.type === "EndPoint";
+  const expected = new Set(plan.rows.map((row) => endpoint
+    ? row.unitToken : canonicalJsonV3([row.unitToken, row.horizonToken])));
+  const seen = new Set<string>();
+  const counts: Record<string, number> = {};
+  const tokens = data.connectionCounts.map((row, index) => {
+    const unit = row.__open_ena_unit_token;
+    const step = data.trajectories?.[index];
+    if (typeof unit !== "string" || (!endpoint && (step?.__open_ena_unit_token !== unit || typeof step.__open_ena_horizon_token !== "string"))) {
+      throw new Error("Standard fitting population lost its Unit-Horizon identity.");
+    }
+    const token = endpoint ? unit : canonicalJsonV3([unit, step!.__open_ena_horizon_token]);
+    if (!expected.has(token) || seen.has(token)) {
+      throw new Error("Standard fitting must use each observed analytical Unit or Unit-Horizon step exactly once.");
+    }
+    seen.add(token);
+    if (!endpoint) counts[unit] = (counts[unit] ?? 0) + 1;
+    return token;
+  });
+  if (seen.size !== expected.size || (!endpoint && data.trajectories?.length !== tokens.length)) {
+    throw new Error("Standard fitting population is missing observed Unit-Horizon steps.");
+  }
+  return {
+    fit: endpoint ? "endpoint-units" : "observed-unit-horizon-steps",
+    fitTokens: tokens,
+    targetTokens: [...tokens],
+    trajectoryStepCountByUnit: counts,
+    imputedStepCount: 0,
+  };
+}
+
+function assertStandardFiniteVectorV3(values: readonly unknown[], width: number, label: string): void {
+  if (values.length !== width || !values.every(Number.isFinite)) {
+    throw new Error(`STANDARD_OUTPUT_NONFINITE: ${label} must have ${width} finite coordinates.`);
+  }
+}
+
+export function assertStandardRotationOutputV3(set: ENASet, referenceProjection = false): void {
+  const width = set.codeColumns.length;
+  const axes = set.rotation.rotationColumns;
+  if (axes.length !== width || new Set(axes).size !== width || axes.some((axis) => typeof axis !== "string" || !axis)
+    || set.rotation.rotationMatrix.length !== width) {
+    throw new Error("Standard rotation must preserve its complete square basis and unique axes.");
+  }
+  for (const row of set.rotation.rotationMatrix) assertStandardFiniteVectorV3(row, width, "rotation basis");
+  assertStandardFiniteVectorV3(set.rotation.centerVector, width, "center vector");
+  if (!set.rotation.eigenvalues.every(Number.isFinite)) throw new Error("STANDARD_OUTPUT_NONFINITE: eigenvalues must be finite.");
+  const variance = axes.map((axis) => set.variance[axis]);
+  assertStandardFiniteVectorV3(variance, width, "full-basis variance");
+  const varianceTotal = variance.reduce((sum, value) => sum + value, 0);
+  if (Object.keys(set.variance).length !== width || variance.some((value) => value < 0 || value > 1)
+    || (Math.abs(varianceTotal - 1) > 1e-8 && !(referenceProjection && varianceTotal === 0))) {
+    throw new Error("Standard target-fit variance must be normalized over the complete rotation basis.");
+  }
+  for (const rows of [set.lineWeights, set.pointsForProjection]) {
+    if (rows.length !== set.connectionCounts.length) throw new Error("Standard normalization lost analytical observations.");
+    for (const row of rows) assertStandardFiniteVectorV3(set.codeColumns.map((column) => row[column]), width, "normalized/projected network");
+  }
+  const displayAxes = axes.slice(0, 3);
+  if (set.points.length !== set.connectionCounts.length || set.centroids?.length !== set.connectionCounts.length
+    || set.rotation.nodes?.length !== set.codes.length) {
+    throw new Error("Standard rotation must retain all analytical points, centroids, and code nodes.");
+  }
+  for (const rows of [set.points, set.centroids, set.rotation.nodes]) {
+    for (const row of rows) assertStandardFiniteVectorV3(displayAxes.map((axis) => row[axis]), displayAxes.length, "point/node position");
+  }
+}
+
+/** @internal Diagnostic decomposition only: no target-derived axes, center, or nodes enter the projection. */
+export function fixedProjectionRankV3(set: Pick<ENASet, "codeColumns" | "pointsForProjection" | "rotation">): number {
+  const width = set.codeColumns.length;
+  const projected = set.pointsForProjection.map((row) => set.rotation.rotationColumns.map((_axis, axisIndex) => (
+    set.codeColumns.reduce((sum, column, edgeIndex) => sum + Number(row[column]) * set.rotation.rotationMatrix[edgeIndex][axisIndex], 0)
+  )));
+  if (projected.length < 2 || projected.every((row) => row.every((value, index) => value === projected[0][index]))) return 0;
+  const mean = projected[0].map((_value, index) => projected.reduce((sum, row) => sum + row[index] / projected.length, 0));
+  const centered = projected.map((row) => row.map((value, index) => value - mean[index]));
+  let scale = 1;
+  for (const row of projected) for (const value of row) scale = Math.max(scale, Math.abs(value));
+  const eigenvalues = svdRotation(centered).eigenvalues;
+  const threshold = Math.max(Number.MIN_VALUE, (eigenvalues[0] ?? 0) * 1e-12, (8 * Number.EPSILON * width * scale) ** 2);
+  return eigenvalues.filter((value) => value > threshold).length;
+}
+
+/** @internal Deterministic diagnostics from verified runtime rank/membership. */
+export function standardRuntimeDiagnosticsV3(
+  type: InternalStandardRunResultV3["projection"]["type"],
+  rank: number,
+  meansBinding: InternalStandardRunResultV3["meansBinding"],
+): ModelDiagnosticV3[] {
+  const diagnostics: ModelDiagnosticV3[] = [];
+  if (type === "reference" && rank === 0) diagnostics.push({
+    id: "STANDARD_REFERENCE_TARGET_DEGENERATE", severity: "warning", scope: "reference", fieldPath: "rotation",
+    summary: "The actual fixed Reference projection has no target variation.",
+    detail: "The source basis and its supported coordinates remain fixed; this target projection has rank zero.", blocks: [],
+  });
+  if (type === "means" && meansBinding) for (const level of ["negative", "positive"] as const) {
+    if (meansBinding[level].unitTokens.length !== 1) continue;
+    diagnostics.push({
+      id: "STANDARD_MEANS_LEVEL_EMPTY", severity: "warning", scope: "rotation", fieldPath: `rotation.${level}Level`,
+      summary: `The selected ${level} Means level has no within-group variance sample.`,
+      detail: "Its one eligible Unit permits descriptive Means rotation, but group inference requiring within-group variance is not estimable.",
+      blocks: ["group-inference"],
+    });
+  }
+  if (type === "svd" && rank === 1) diagnostics.push({
+    id: "STANDARD_SVD_ONE_DIMENSIONAL", severity: "warning", scope: "rotation", fieldPath: "rotation",
+    summary: "The fitted SVD target is one-dimensional.",
+    detail: "SVD1 is estimable; completion axes remain in the full basis for Reference and do not support second-dimension claims.",
+    blocks: ["ai-interpretation"],
+  });
+  return diagnostics;
+}
+
+/**
+ * @internal Synchronous numerical execution of a built/validated immutable v3
+ * Standard plan. The async worker boundary owns untrusted-plan validation and
+ * immutable result binding. This entry deliberately leaves legacy ENA/ONA alone.
+ */
+export function runStandardPlanV3(plan: StandardExecutionPlanV3, operational?: { materialization: "model" }): InternalStandardRunResultV3 {
+  if (plan.header.analysisFamily !== "standard" || plan.configuration.analysisFamily !== "standard") {
+    throw new TypeError("The Standard runner requires a Standard execution plan.");
+  }
+  const options = toStandardJenaOptionsV3(plan);
+  const data = operational?.materialization === "model" ? accumulateDataChunked({ ...options, materialization: "model" }) : accumulateData(options);
+  return completeStandardPlanFromAccumulationV3(plan, data);
+}
+
+/** Internal shared fitting boundary. The worker supplies its single completed stream. */
+export function completeStandardPlanFromAccumulationV3(
+  plan: StandardExecutionPlanV3,
+  data: ENAData,
+  observer?: MakeSetOptions["observer"],
+): InternalStandardRunResultV3 {
+  if (plan.header.analysisFamily !== "standard") throw new TypeError("Standard fitting requires a Standard plan.");
+  const rotation = plan.configuration.analysis.rotation;
+  let populations = standardFitPopulationV3(plan, data);
+  const width = data.codeColumns.length;
+  if (data.connectionMatrix.length !== data.connectionCounts.length) {
+    throw new Error("Standard fitting matrix does not cover its analytical population.");
+  }
+  for (const row of data.connectionMatrix) assertStandardFiniteVectorV3(row, width, "target network");
+  if (data.connectionMatrix.length === 0) throw new Error("Standard execution requires a real analytical observation.");
+  if (rotation.type !== "reference" && data.connectionMatrix.some((row) => row.every((value) => value === 0))) {
+    throw new Error("STANDARD_TARGET_RANK_ZERO: a zero network analytical observation blocks target fitting.");
+  }
+  observer?.onResources?.({ numericCells: 2 * data.connectionCounts.length * width, temporaryNumericCellsBound: 2 * data.connectionCounts.length * width + 3 * width * width + 8 * width });
+  let rank = rotation.type === "reference" ? 0 : centeredNetworkRankV3(data.connectionMatrix, rotation.centerAlignToOrigin);
+  if (rotation.type !== "reference" && rank === 0) throw new Error("STANDARD_TARGET_RANK_ZERO: the target fitting population has rank zero.");
+  const meansBinding = rotation.type === "means" ? buildMeansBindingV3(plan) : null;
+  // Only model options are needed here; mapping rows a second time would retain
+  // a duplicate materialization and would lose the worker's allocation custody.
+  const makeOptions: MakeSetOptions = {
+    dimensions: 3,
+    centerAlignToOrigin: rotation.type === "reference" ? plan.reference!.artifact.fit.centerAlignToOrigin : rotation.centerAlignToOrigin,
+    ...(rotation.type === "reference"
+      ? { rotationSet: plan.reference!.rotationSet, nodePositionMethod: "reference-fixed" as const }
+      : { rotation: { method: "svd" as const } }),
+    ...(observer ? { observer } : {}),
+  };
+  if (meansBinding !== null) {
+    // Bind after accumulation: dictionary order and physical source-row order
+    // are not assumptions about the actual Endpoint fitting matrix.
+    makeOptions.rotation = { method: "mean", params: { groups: buildMeansMasksV3(meansBinding, data.connectionCounts) } };
+  }
+  const generatedSet = makeSet(data, makeOptions);
+  const runtimeFirstAxis = generatedSet.rotation.rotationColumns[0] ?? "";
+  const set = meansBinding === null ? generatedSet : canonicalizeOfficialMeanRotation(generatedSet);
+  assertStandardRotationOutputV3(set, rotation.type === "reference");
+  if (rotation.type === "reference") {
+    const reference = plan.reference!;
+    if (canonicalJsonV3(set.rotation) !== canonicalJsonV3(reference.rotationSet)) throw new Error("Reference projection refitted or changed fixed geometry.");
+    observer?.onResources?.({ numericCells: 4 * data.connectionCounts.length * width + 2 * data.connectionCounts.length * Math.min(3, width) + width, temporaryNumericCellsBound: 2 * data.connectionCounts.length * width + 3 * width * width + 8 * width });
+    rank = fixedProjectionRankV3(set);
+    populations = { ...populations, fit: "reference-source-endpoint-units", fitTokens: [], sourceFit: reference.artifact.fit };
+  } else if (meansBinding !== null) {
+    if (set.rotation.rotationColumns[0] !== "MR1") throw new Error("Means rotation did not produce canonical MR1.");
+    const [positive, negative] = buildMeansMasksV3(meansBinding, set.points);
+    const coordinateMean = (mask: boolean[]) => {
+      const values = set.points.filter((_row, index) => mask[index]).map((row) => Number(row.MR1));
+      return values.reduce((sum, value) => sum + value / values.length, 0);
+    };
+    const direction = coordinateMean(positive) - coordinateMean(negative);
+    if (!Number.isFinite(direction) || direction <= 8 * Number.EPSILON * Math.max(1, width)) {
+      throw new Error("STANDARD_MEANS_IDENTICAL: MR1 requires a non-zero positive-minus-negative direction.");
+    }
+  }
+  const fullAxes = [...set.rotation.rotationColumns];
+  const variance = fullAxes.map((axis) => set.variance[axis]);
+  // Means rotates the intrinsic signal across coordinates; its axis order is
+  // not an eigenvalue order. Apply the rank policy's 1e-12 relative variance
+  // scale to actual projected variance shares to exclude completion noise.
+  // MR1 has already passed the nonzero contrast guard. Supported coordinates
+  // can outnumber independent dimensions; `rank` remains the intrinsic rank.
+  const meansVarianceFloor = variance.reduce((largest, value) => Math.max(largest, value), 0) * 1e-12;
+  const estimableAxes = rotation.type === "reference" ? [...plan.reference!.artifact.fit.estimableAxes] : meansBinding === null
+    ? fullAxes.slice(0, rank)
+    : fullAxes.filter((_axis, index) => index === 0 || variance[index] > meansVarianceFloor);
+  return {
+    configuration: plan.configuration,
+    executionPlanHeader: plan.header,
+    set,
+    diagnostics: standardRuntimeDiagnosticsV3(rotation.type, rank, meansBinding),
+    meansBinding,
+    projection: {
+      type: rotation.type,
+      runtimeFirstAxis,
+      centerAlignToOrigin: rotation.type === "reference" ? plan.reference!.artifact.fit.centerAlignToOrigin : rotation.centerAlignToOrigin,
+      centerVector: [...set.rotation.centerVector],
+      rank,
+      fullAxes,
+      estimableAxes,
+      variance,
+      ...(rotation.type === "reference" ? { targetProjectionRank: rank } : {}),
+    },
+    populations,
+  };
+}
+
+/** Recompute scientific eligibility from the plan's captured selected source. No fit is performed here. */
+export async function verifyStandardScientificReadinessV3(plan: StandardExecutionPlanV3) {
+  return (await verifyStandardScientificEvidenceV3(plan)).compiled;
+}
+
+/** @internal Evidence comes only from this owned source reconstruction and its
+ * real compiler invocation; callers cannot supply or register an oracle. */
+export async function verifyStandardScientificEvidenceV3(plan: StandardExecutionPlanV3) {
+  const config = plan.configuration;
+  const rotation = config.analysis.rotation;
+  const proof = plan.sourceProof;
+  const dataset: ParsedDataset = {
+    name: proof.dataset.name, source: proof.dataset.source, sizeBytes: proof.dataset.sizeBytes, hashKind: proof.dataset.hashKind,
+    headers: [...proof.headers], rows: [...proof.rows].sort((a, b) => a.sourceRowIndex - b.sourceRowIndex).map((row) => ({ ...row.values })),
+  };
+  const draft: StandardEnaDraftV3 = {
+    unitColumns: [...config.units.columns], horizonColumns: [...config.horizons.columns],
+    groupColumn: config.units.group.type === "none" ? null : config.units.group.column,
+    codes: config.codes.map((entry) => entry.column), weighting: config.weighting.type,
+    model: config.analysis.model.type, windowType: config.window.type,
+    movingStanza: config.window.type === "MovingStanzaWindow"
+      ? { backward: config.window.backward, forward: config.window.forward, rowOrder: config.window.rowOrder }
+      : { backward: { kind: "infinity" }, forward: { kind: "finite", value: 0 }, rowOrder: null },
+    horizonOrder: config.analysis.model.type === "EndPoint" ? null : config.analysis.model.horizonOrder,
+    rotation: rotation.type !== "means" ? rotation : {
+      type: "means", centerAlignToOrigin: rotation.centerAlignToOrigin,
+      negativeLevel: rotation.contrast.negativeLevel, positiveLevel: rotation.contrast.positiveLevel,
+    },
+  };
+  const { compiled, evidence } = await compileStandardDraftWithScientificEvidenceV3(dataset, plan.header.datasetSha256, draft);
+  if (compiled.status !== "ready") throw new TypeError(`Standard plan is not scientifically ready: ${compiled.diagnostics.map((entry) => entry.id).join(", ")}.`);
+  if (canonicalJsonV3(compiled.resourceEstimate) !== canonicalJsonV3(plan.header.resourceEstimate)) throw new TypeError("Standard plan resource estimate differs from exact source recomputation.");
+  if (evidence === null) throw new TypeError("Standard source evidence is missing.");
+  if (canonicalJsonV3(compiled.operationalAdmission) !== canonicalJsonV3(plan.operationalAdmission)) throw new TypeError("Standard operational admission differs from exact source recomputation.");
+  return { compiled, evidence };
 }
 
 function buildBaseJenaOptions(

@@ -8,7 +8,7 @@
  */
 import type { Matrix, Row } from '../types.js';
 import { multiplyMatrices, transpose } from '../core/matrix.js';
-import { solveLinearSystem } from '../core/linear.js';
+import { solveLinearSystem, symmetricJacobiEigen } from '../core/linear.js';
 
 function nodeWeightsFromLineWeights(lineWeights: Matrix, numNodes: number): Matrix {
   return lineWeights.map((adjacency) => {
@@ -46,16 +46,28 @@ function directedWeightsFromLineWeights(lineWeights: Matrix, numNodes: number): 
   });
 }
 
-function solveNodePositionsFromWeights(weights: Matrix, points: Matrix): NodePositionResult {
+function solveNodePositionsFromWeights(weights: Matrix, points: Matrix, unregularized = false): NodePositionResult {
   const wt = transpose(weights);
   const normal = multiplyMatrices(wt, weights);
   const dims = points[0]?.length ?? 0;
   const nodeCount = weights[0]?.length ?? 0;
   const nodeColumns: Matrix = [];
+  // Official rENA 0.4.4/libqe solves W'W X = W'T without regularization.
+  // Spectral inversion gives the minimum-norm solution when W is singular;
+  // a ridge biases even full-rank node coordinates and their centroids.
+  const eigen = unregularized ? symmetricJacobiEigen(normal) : undefined;
+  const cutoff = eigen ? nodeCount * Number.EPSILON * (eigen.eigenvalues[0] ?? 0) : 0;
 
   for (let dim = 0; dim < dims; dim += 1) {
     const rhs = multiplyMatrices(wt, points.map((row) => [row[dim] ?? 0])).map((row) => row[0] ?? 0);
-    nodeColumns.push(solveLinearSystem(normal, rhs));
+    if (eigen) {
+      const coefficients = eigen.eigenvalues.map((value, column) => value > cutoff
+        ? eigen.eigenvectors.reduce((sum, row, i) => sum + row[column]! * rhs[i]!, 0) / value
+        : 0);
+      nodeColumns.push(eigen.eigenvectors.map((row) => row.reduce((sum, value, i) => sum + value * coefficients[i]!, 0)));
+    } else {
+      nodeColumns.push(solveLinearSystem(normal, rhs));
+    }
   }
 
   const nodes = Array.from({ length: nodeCount }, (_unused, nodeIndex) => nodeColumns.map((col) => col[nodeIndex] ?? 0));
@@ -75,7 +87,13 @@ export function lwsLeastSquaresPositions(lineWeights: Matrix, points: Matrix, nu
   if (points.length === 0) return { nodes: [], centroids: [], weights: [] };
 
   const weights = nodeWeightsFromLineWeights(lineWeights, numNodes);
-  return solveNodePositionsFromWeights(weights, points);
+  return solveNodePositionsFromWeights(weights, points, true);
+}
+
+/** Projection-only incidence centroids. No least-squares solver or node fitting occurs. */
+export function fixedNodePositions(lineWeights: Matrix, nodes: Matrix): NodePositionResult {
+  const weights = nodeWeightsFromLineWeights(lineWeights, nodes.length);
+  return { nodes, centroids: multiplyMatrices(weights, nodes), weights };
 }
 
 function directedNodeCount(adjacencyLength: number, method: string): number {

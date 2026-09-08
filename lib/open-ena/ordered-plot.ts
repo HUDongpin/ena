@@ -1,3 +1,4 @@
+import type { OpenEnaPlotResult } from "./bound-presentation-v3";
 import type { Row } from "jena-js";
 import {
   buildOpenEnaOrderedNetworkModel,
@@ -16,6 +17,62 @@ const ZERO_TOLERANCE = 1e-12;
 export type OpenEnaOrderedPlotScope = OpenEnaOrderedNetworkScope;
 
 export type OpenEnaOrderedNodeTotals = OpenEnaOrderedNetworkNodeTotals;
+
+/**
+ * Presentation-only Code visibility. Keys in `codeVisibility` are canonical
+ * source columns. Renderers that display public aliases must provide the
+ * complete alias-to-source map rather than guessing across the two namespaces.
+ */
+export interface OpenEnaCodeGraphPresentation {
+  codeLabelByRenderedCode?: Readonly<Record<string, string>>;
+  showCodeGraph?: boolean;
+  codeVisibility?: Readonly<Record<string, boolean>>;
+  codeSourceByRenderedCode?: Readonly<Record<string, string>>;
+}
+
+export function openEnaRenderedCodeLabel(presentation: OpenEnaCodeGraphPresentation, code: string): string {
+  const labels = presentation.codeLabelByRenderedCode;
+  if (labels === undefined) return code;
+  if (!Object.hasOwn(labels, code) || typeof labels[code] !== "string") throw new TypeError("Missing rendered Code display label.");
+  return labels[code];
+}
+
+export function openEnaSourceCodeForRenderedCode(
+  presentation: OpenEnaCodeGraphPresentation,
+  renderedCode: string,
+) {
+  const mapping = presentation.codeSourceByRenderedCode;
+  if (mapping === undefined) return renderedCode;
+  if (!Object.hasOwn(mapping, renderedCode)) {
+    throw new TypeError(`Code presentation mapping is missing rendered Code “${renderedCode}”.`);
+  }
+  const sourceCode = mapping[renderedCode];
+  if (typeof sourceCode !== "string" || sourceCode.length === 0) {
+    throw new TypeError(`Code presentation mapping for “${renderedCode}” must name a source Code.`);
+  }
+  return sourceCode;
+}
+
+export function openEnaRenderedCodeIsVisible(
+  presentation: OpenEnaCodeGraphPresentation,
+  renderedCode: string,
+) {
+  const sourceCode = openEnaSourceCodeForRenderedCode(presentation, renderedCode);
+  if (presentation.showCodeGraph === false) return false;
+  const visibility = presentation.codeVisibility;
+  return visibility === undefined
+    || !Object.hasOwn(visibility, sourceCode)
+    || visibility[sourceCode] !== false;
+}
+
+export function openEnaRenderedEdgeIsVisible(
+  presentation: OpenEnaCodeGraphPresentation,
+  source: string,
+  target: string,
+) {
+  return openEnaRenderedCodeIsVisible(presentation, source)
+    && openEnaRenderedCodeIsVisible(presentation, target);
+}
 
 export interface OpenEnaOrderedPlotNode extends OpenEnaOrderedNetworkNode {
   x: number;
@@ -96,7 +153,7 @@ function projectedPointIntegrityFailure(): never {
 }
 
 export function buildOpenEnaOrderedPlotModel(input: {
-  result: OpenEnaResult;
+  result: OpenEnaPlotResult;
   config: OpenEnaConfig;
   scope: OpenEnaOrderedPlotScope;
   xDimension: string;
@@ -105,7 +162,7 @@ export function buildOpenEnaOrderedPlotModel(input: {
   nodeTotals?: OpenEnaOrderedNodeTotals;
 }): OpenEnaOrderedPlotModel {
   const { result, scope, xDimension, yDimension } = input;
-  const config = canonicalizeOpenEnaConfig(input.config);
+  const config = result.boundPresentation ? input.config : canonicalizeOpenEnaConfig(input.config);
   const networkModel = buildOpenEnaOrderedNetworkModel({
     result,
     config,

@@ -1,6 +1,7 @@
 import { OPEN_ENA_CAPABILITIES, openEnaAnalysisKindFromResult, type OpenEnaCapability } from "@/lib/open-ena/capabilities";
 import { serializeOpenEnaConfig } from "@/lib/open-ena/network-config";
-import type { OpenEnaConfig, OpenEnaResult, PortableOpenEnaConfig } from "@/lib/open-ena/types";
+import type { OpenEnaConfig, PortableOpenEnaConfig } from "@/lib/open-ena/types";
+import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 
 export const OPEN_ENA_PLUGIN_CORE_API_VERSION = "1" as const;
 export const OPEN_ENA_PLUGIN_RESULT_SCHEMA_VERSION = 2 as const;
@@ -28,12 +29,19 @@ export interface OpenEnaPluginScientificResultV1 {
   variance: Readonly<Record<string, number>>;
   groups: readonly unknown[];
   projectionReference: unknown;
+  /** Native provenance stays in its own grammar; a presentation adapter does
+   * not manufacture a legacy configuration or Reference source authority. */
+  native?: Readonly<{
+    binding: NonNullable<OpenEnaPlotResult["boundPresentation"]>["binding"];
+    configuration: NonNullable<OpenEnaPlotResult["boundPresentation"]>["configuration"];
+    projection: NonNullable<OpenEnaPlotResult["boundPresentation"]>["executionProvenance"]["projection"];
+  }>;
 }
 
 export interface OpenEnaPluginContextV1 {
   schemaVersion: "ena.hk/plugin-context/v1";
   coreApiVersion: typeof OPEN_ENA_PLUGIN_CORE_API_VERSION;
-  resultSchemaVersion: typeof OPEN_ENA_PLUGIN_RESULT_SCHEMA_VERSION;
+  resultSchemaVersion: typeof OPEN_ENA_PLUGIN_RESULT_SCHEMA_VERSION | 3;
   analysisKind: "ena" | "ona";
   modelType: "EndPoint" | "SeparateTrajectory" | "AccumulatedTrajectory";
   dimensions: readonly string[];
@@ -44,7 +52,8 @@ export interface OpenEnaPluginContextV1 {
   stale: boolean;
 }
 
-const contextResultOwners = new WeakMap<object, OpenEnaResult>();
+const contextResultOwners = new WeakMap<object, OpenEnaPlotResult>();
+const nativeScientificSnapshots = new WeakMap<object, OpenEnaPluginScientificResultV1>();
 
 function jsonClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -80,11 +89,14 @@ function capabilitiesFor(analysisKind: "ena" | "ona"): OpenEnaCapability[] {
   ];
 }
 
-export function createOpenEnaPluginScientificResultV1(result: OpenEnaResult, config?: OpenEnaConfig | null): OpenEnaPluginScientificResultV1 {
+export function createOpenEnaPluginScientificResultV1(result: OpenEnaPlotResult, config?: OpenEnaConfig | null): OpenEnaPluginScientificResultV1 {
   const analysisKind = openEnaAnalysisKindFromResult(result);
-  const boundConfig = config ?? result.provenanceBinding?.configuration ?? null;
+  const native = result.boundPresentation;
+  const cached = native && nativeScientificSnapshots.get(native);
+  if (cached) return cached;
+  const boundConfig = native ? null : config ?? result.provenanceBinding?.configuration ?? null;
   if (boundConfig && boundConfig.model !== result.set.modelType) throw new TypeError("Plugin scientific binding configuration does not match the completed result model.");
-  const sourceDatasetSha256 = result.provenanceBinding?.datasetNormalizedUtf8TextSha256
+  const sourceDatasetSha256 = native?.binding.datasetSha256 ?? result.provenanceBinding?.datasetNormalizedUtf8TextSha256
     ?? result.projectionReference?.source.normalizedUtf8TextSha256
     ?? null;
   const snapshot: OpenEnaPluginScientificResultV1 = {
@@ -110,12 +122,15 @@ export function createOpenEnaPluginScientificResultV1(result: OpenEnaResult, con
     variance: jsonClone(result.set.variance),
     groups: jsonClone(result.groups),
     projectionReference: jsonClone(result.projectionReference),
+    ...(native ? { native: jsonClone({ binding: native.binding, configuration: native.configuration, projection: native.executionProvenance.projection }) } : {}),
   };
-  return deepFreezeOpenEnaPluginValue(snapshot) as OpenEnaPluginScientificResultV1;
+  const frozen = deepFreezeOpenEnaPluginValue(snapshot) as OpenEnaPluginScientificResultV1;
+  if (native) nativeScientificSnapshots.set(native, frozen);
+  return frozen;
 }
 
 export function createOpenEnaPluginContextV1(input: {
-  result: OpenEnaResult;
+  result: OpenEnaPlotResult;
   config?: OpenEnaConfig | null;
   selectedDimensions: readonly string[];
   stale: boolean;
@@ -127,7 +142,7 @@ export function createOpenEnaPluginContextV1(input: {
   const context = deepFreezeOpenEnaPluginValue({
     schemaVersion: "ena.hk/plugin-context/v1" as const,
     coreApiVersion: OPEN_ENA_PLUGIN_CORE_API_VERSION,
-    resultSchemaVersion: OPEN_ENA_PLUGIN_RESULT_SCHEMA_VERSION,
+    resultSchemaVersion: input.result.boundPresentation ? 3 : OPEN_ENA_PLUGIN_RESULT_SCHEMA_VERSION,
     analysisKind,
     modelType: input.result.set.modelType,
     dimensions: [...input.result.dimensions],
@@ -141,6 +156,6 @@ export function createOpenEnaPluginContextV1(input: {
   return context;
 }
 
-export function openEnaPluginContextOwnsResult(context: OpenEnaPluginContextV1, result: OpenEnaResult) {
+export function openEnaPluginContextOwnsResult(context: OpenEnaPluginContextV1, result: OpenEnaPlotResult) {
   return contextResultOwners.get(context) === result;
 }

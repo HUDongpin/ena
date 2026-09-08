@@ -19,7 +19,7 @@ test("README documents the explicit four-path inference contract and its boundar
 
   assert.match(contract, /does not run an inferential test automatically/i);
   assert.match(contract, /confirm(?:s)? (?:the )?composite repeated-entity identity/i);
-  assert.match(contract, /Run inferential comparison/);
+  assert.match(contract, /Run confirmed inference/);
 
   assert.match(contract, /Independent endpoint groups[^\n]*Mann[–-]Whitney U/i);
   assert.match(
@@ -55,10 +55,10 @@ test("README documents the explicit four-path inference contract and its boundar
     /Not-estimable planned members retain null\s+raw\/Holm p values[\s\S]*planned family size/i,
   );
 
-  assert.match(longitudinalBoundary, /Available and Complete[^\n]*descriptive plot/i);
+  assert.match(longitudinalBoundary, /Available-by-Horizon centroids may have different contributors/i);
   assert.match(
     longitudinalBoundary,
-    /axis flips, labels, zoom,\s+scaling, and display toggles do not change the inferential sample/i,
+    /Display filters, camera, colors, visibility and node positions do not change\s+cohorts, fitted ordinals or p-values/i,
   );
   assert.match(longitudinalBoundary, /clustered observations[^\n]*out of scope/i);
   assert.match(longitudinalBoundary, /mixed-effects models[^\n]*out of scope/i);

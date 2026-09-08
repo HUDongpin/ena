@@ -1,5 +1,7 @@
 import type { Scalar } from "jena-js";
+import { canonicalJsonV3 } from "./model-v3/canonical-json";
 import type {
+  OpenEnaEndpointInferenceResultV2,
   OpenEnaFriedmanInferenceRowV2,
   OpenEnaInferenceFamilyV2,
   OpenEnaInferenceResultV2,
@@ -116,6 +118,7 @@ function assertPlainInferenceJsonData(
     validated: Set<object>;
     objectNodeCount: number;
     ownKeyCount: number;
+    nativeTextCharacters?: number;
   } = {
     active: new Set<object>(),
     validated: new Set<object>(),
@@ -124,6 +127,10 @@ function assertPlainInferenceJsonData(
   },
   depth = 0,
 ): void {
+  if (typeof value === "string" && state.nativeTextCharacters !== undefined) {
+    state.nativeTextCharacters += value.length;
+    if (value.length > 262_144 || state.nativeTextCharacters > 1_048_576) throw new Error(INFERENCE_JSON_BUDGET_ERROR);
+  }
   if (value === null || typeof value === "string" || typeof value === "boolean") return;
   if (typeof value === "number") return;
   if (typeof value !== "object") throw new Error(INFERENCE_JSON_DATA_ERROR);
@@ -509,11 +516,11 @@ function probabilityOrNull(value: unknown) {
     || (typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1);
 }
 
-function validateStringArray(value: unknown, label: string) {
+function validateStringArray(value: unknown, label: string, maximumLength = MAX_INFERENCE_STRING_LENGTH) {
   if (!Array.isArray(value)
     || value.length > MAX_INFERENCE_ARRAY_LENGTH
     || value.some((item) => (
-      typeof item !== "string" || item.length > MAX_INFERENCE_STRING_LENGTH
+      typeof item !== "string" || item.length > maximumLength
     ))) {
     throw new Error(`${label} must be a bounded string array.`);
   }
@@ -538,8 +545,8 @@ function validateUniqueBoundedStringArray(
   }
 }
 
-function nonEmptyString(value: unknown, label: string) {
-  if (typeof value !== "string" || value.length === 0 || value.length > MAX_INFERENCE_STRING_LENGTH) {
+function nonEmptyString(value: unknown, label: string, maximumLength = MAX_INFERENCE_STRING_LENGTH) {
+  if (typeof value !== "string" || value.length === 0 || value.length > maximumLength) {
     throw new Error(`${label} must be a bounded non-empty string.`);
   }
   return value;
@@ -1073,7 +1080,8 @@ function validateRow(value: unknown, expectedTest: "mann-whitney-u" | "wilcoxon-
   }
 }
 
-function validateRequest(value: unknown, kind: OpenEnaInferenceResultV2["kind"]) {
+function validateRequest(value: unknown, kind: OpenEnaInferenceResultV2["kind"], nativeV3 = false) {
+  const stringLimit = nativeV3 ? 262_144 : MAX_INFERENCE_STRING_LENGTH;
   if (!isRecord(value) || value.kind !== kind) throw new Error("Inference request is invalid.");
   const keys = kind === "endpoint-independent"
     ? ["kind", "primaryGroup", "secondaryGroup", "axes"]
@@ -1088,8 +1096,8 @@ function validateRequest(value: unknown, kind: OpenEnaInferenceResultV2["kind"])
   if ((value.axes as unknown[]).length !== 2
     || new Set(value.axes as string[]).size !== 2) throw new Error("Inference axes are invalid.");
   if (kind === "endpoint-independent") {
-    nonEmptyString(value.primaryGroup, "Inference primary group");
-    nonEmptyString(value.secondaryGroup, "Inference secondary group");
+    nonEmptyString(value.primaryGroup, "Inference primary group", nativeV3 ? 262_144 : MAX_INFERENCE_STRING_LENGTH);
+    nonEmptyString(value.secondaryGroup, "Inference secondary group", nativeV3 ? 262_144 : MAX_INFERENCE_STRING_LENGTH);
     return;
   }
   validateStringArray(value.repeatedEntityColumns, "Inference identity columns");
@@ -1097,21 +1105,21 @@ function validateRequest(value: unknown, kind: OpenEnaInferenceResultV2["kind"])
     || new Set(value.repeatedEntityColumns as string[]).size !== (value.repeatedEntityColumns as string[]).length) {
     throw new Error("Inference identity columns are invalid.");
   }
-  nonEmptyString(value.timeColumn, "Inference time column");
+  nonEmptyString(value.timeColumn, "Inference time column", stringLimit);
   if (kind === "trajectory-independent-period") {
-    nonEmptyString(value.period, "Inference period");
-    nonEmptyString(value.primaryGroup, "Inference primary group");
-    nonEmptyString(value.secondaryGroup, "Inference secondary group");
+    nonEmptyString(value.period, "Inference period", stringLimit);
+    nonEmptyString(value.primaryGroup, "Inference primary group", stringLimit);
+    nonEmptyString(value.secondaryGroup, "Inference secondary group", stringLimit);
     return;
   }
-  if (value.group !== null) nonEmptyString(value.group, "Inference group");
+  if (value.group !== null) nonEmptyString(value.group, "Inference group", stringLimit);
   if (kind === "trajectory-paired-periods") {
-    nonEmptyString(value.earlierPeriod, "Inference earlier period");
-    nonEmptyString(value.laterPeriod, "Inference later period");
+    nonEmptyString(value.earlierPeriod, "Inference earlier period", stringLimit);
+    nonEmptyString(value.laterPeriod, "Inference later period", stringLimit);
     if (value.cohortPolicy !== "pairwise-complete") throw new Error("Inference cohort policy is invalid.");
     return;
   }
-  validateStringArray(value.periods, "Inference periods");
+  validateStringArray(value.periods, "Inference periods", stringLimit);
   if ((value.periods as string[]).length < 3
     || new Set(value.periods as string[]).size !== (value.periods as string[]).length
     || value.cohortPolicy !== "all-period-complete"
@@ -1120,7 +1128,7 @@ function validateRequest(value: unknown, kind: OpenEnaInferenceResultV2["kind"])
   }
 }
 
-function validateBinding(value: unknown) {
+function validateBinding(value: unknown, nativeV3 = false) {
   if (!isRecord(value)) throw new Error("Inference binding is invalid.");
   exactKeys(
     value,
@@ -1175,8 +1183,14 @@ function validateBinding(value: unknown) {
     3,
     MAX_CONFIGURATION_CODES,
   );
-  windowInteger(value.configuration.windowSizeBack, "Inference backward window");
-  windowInteger(value.configuration.windowSizeForward, "Inference forward window");
+  if (nativeV3) {
+    for (const extent of [value.configuration.windowSizeBack, value.configuration.windowSizeForward]) {
+      if (extent !== Infinity && (typeof extent !== "number" || !Number.isSafeInteger(extent) || extent < 0)) throw new Error("Native inference window extent is invalid.");
+    }
+  } else {
+    windowInteger(value.configuration.windowSizeBack, "Inference backward window");
+    windowInteger(value.configuration.windowSizeForward, "Inference forward window");
+  }
   if ((value.configuration.model !== "EndPoint"
       && value.configuration.model !== "SeparateTrajectory"
       && value.configuration.model !== "AccumulatedTrajectory")
@@ -1190,7 +1204,7 @@ function validateBinding(value: unknown) {
   }
   if (value.configuration.rotation === "reference") {
     nonEmptyString(value.configuration.referenceRotationId, "Inference reference rotation ID");
-    if (value.configuration.model !== "EndPoint") {
+    if (!nativeV3 && value.configuration.model !== "EndPoint") {
       throw new Error("Inference reference rotation configuration requires an endpoint model.");
     }
   } else if (value.configuration.referenceRotationId !== null) {
@@ -1219,7 +1233,7 @@ function validateBinding(value: unknown) {
       value.trajectoryMapping.repeatedEntityColumns,
       "Inference trajectory identity columns",
     );
-    validateStringArray(value.trajectoryMapping.timeOrder, "Inference trajectory time order");
+    validateStringArray(value.trajectoryMapping.timeOrder, "Inference trajectory time order", nativeV3 ? 262_144 : MAX_INFERENCE_STRING_LENGTH);
     const repeatedEntityColumns = value.trajectoryMapping.repeatedEntityColumns as string[];
     const timeOrder = value.trajectoryMapping.timeOrder as string[];
     const unitColumns = value.configuration.unitColumns as string[];
@@ -1241,7 +1255,7 @@ function validateBinding(value: unknown) {
       || !conversationColumns.includes(value.trajectoryMapping.timeColumn)
       || timeOrder.length === 0
       || new Set(timeOrder).size !== timeOrder.length
-      || timeOrder.some((period) => period.length === 0 || period.length > 4_096)) {
+      || timeOrder.some((period) => period.length === 0 || period.length > (nativeV3 ? 262_144 : MAX_INFERENCE_STRING_LENGTH))) {
       throw new Error("Inference trajectory mapping is invalid.");
     }
   }
@@ -1586,7 +1600,15 @@ function deepFreeze<T>(value: T, seen = new Set<unknown>()): T {
 
 /** Strict aggregate inference reader used by schema-v2 result-bundle parsing. */
 export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceResultV2 {
-  assertPlainInferenceJsonData(value);
+  return parseInferenceResult(value);
+}
+
+// A per-call reader domain, never a mutable global parser switch. The native
+// domain is available only through the check-only coordinator authority gate.
+function parseInferenceResult(value: unknown, nativeV3 = false): OpenEnaInferenceResultV2 {
+  assertPlainInferenceJsonData(value, nativeV3 ? {
+    active: new Set<object>(), validated: new Set<object>(), objectNodeCount: 0, ownKeyCount: 0, nativeTextCharacters: 0,
+  } : undefined);
   if (!isRecord(value) || value.schemaVersion !== 2) throw new Error("Inference result schema v2 is required.");
   const kind = value.kind;
   if (kind !== "endpoint-independent"
@@ -1602,7 +1624,7 @@ export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceR
       : [...COMMON_RESULT_KEYS, "rows"],
     "Inference result",
   );
-  validateRequest(value.request, kind);
+  validateRequest(value.request, kind, nativeV3);
   if (kind === "trajectory-repeated-periods") {
     if (!Array.isArray(value.omnibusRows)
       || !Array.isArray(value.followupRows)
@@ -1620,7 +1642,7 @@ export function parseOpenEnaInferenceResultV2(value: unknown): OpenEnaInferenceR
     || value.rows.length > MAX_INFERENCE_ARRAY_LENGTH) {
     throw new Error("Inference rows exceed the bounded aggregate row budget.");
   }
-  validateBinding(value.binding);
+  validateBinding(value.binding, nativeV3);
   validateFamilies(value.families);
   validateWarnings(value.warnings, "Inference warnings");
   validateMethod(value.method);
@@ -1839,5 +1861,28 @@ export function assertOpenEnaInferenceCoordinatorConsumerV2(
   const parsed = parseOpenEnaInferenceResultV2(value);
   if (parsed !== value) throw new Error("Inference consumer authority mismatch.");
   assertOpenEnaInferenceCoordinatorAuthorityV2(parsed);
+  return parsed;
+}
+
+// Pure v3 admission leaf: never imports a producer, bundle parser or exporter.
+export { assertCurrentCapabilityV3, buildInferenceInputV3 } from "./inference-consumers-v3";
+export type { OpenEnaEndpointControlsV3, OpenEnaInferenceInputV3 } from "./inference-consumers-v3";
+
+/** Internal check-only reader for a real native coordinator object. It cannot
+ * register authority, admit imported JSON, or turn an adapter into a source
+ * configuration. The v3 producer alone binds this to the complete v3 result. */
+export function assertOpenEnaInferenceNativeCoordinatorV3(
+  value: unknown,
+  expected: OpenEnaInferenceExpectedBindingV2,
+  request: OpenEnaInferenceResultV2["request"],
+  context: OpenEnaInferenceProducerContextV2,
+): OpenEnaInferenceResultV2 {
+  assertOpenEnaInferenceCoordinatorAuthorityV2(value);
+  const parsed = parseInferenceResult(value, true);
+  assertOpenEnaInferenceBindingV2(parsed, expected);
+  assertOpenEnaInferenceCoordinatorCurrentContextAuthorityV2(parsed, context);
+  if (canonicalJsonV3(parsed.request) !== canonicalJsonV3(request)) {
+    throw new Error(CURRENT_CONTEXT_MISMATCH);
+  }
   return parsed;
 }

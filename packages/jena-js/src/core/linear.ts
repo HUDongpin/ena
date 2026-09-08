@@ -95,7 +95,7 @@ export function gramSchmidtComplete(columns: Matrix, dimension: number, toleranc
 
 // Ridge-free by default: R's lm solves regression designs with plain QR, and
 // even a 1e-10 ridge shifts regression-rotation directions by ~1e-9, which is
-// visible against rENA goldens. Node positioning keeps its own explicit ridge
+// visible against rENA goldens. Directed node positioning retains the legacy ridge
 // via solveLinearSystem (see NUMERICS.md).
 export function designSolve(design: Matrix, response: Matrix, ridge = 0): Matrix {
   const xt = transpose(design);

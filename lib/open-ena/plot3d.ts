@@ -1,3 +1,6 @@
+import { nativePlotGroupSettingsV3 } from "./bound-presentation-v3";
+import type { OpenEnaContrastPresentation } from "./bound-presentation-v3";
+import type { OpenEnaPlotResult } from "./bound-presentation-v3";
 import type { Row } from "jena-js";
 import { assertOpenEnaCapabilityForResult } from "./capabilities";
 import type { OpenEnaPairwiseContrast, OpenEnaPairwiseContrastSide } from "./contrasts";
@@ -7,6 +10,11 @@ import {
   type OpenEnaResolvedGroupDisplaySide,
 } from "./group-display";
 import { codeColorFor, JENA_GROUP_COLORS, type OpenEnaCodeColors } from "./plot-style";
+import {
+  openEnaRenderedCodeIsVisible, openEnaRenderedCodeLabel,
+  openEnaRenderedEdgeIsVisible,
+  type OpenEnaCodeGraphPresentation,
+} from "./ordered-plot";
 import {
   resolveOpenEnaNodeDimensions,
   type OpenEnaNodeLayoutPositions,
@@ -31,6 +39,7 @@ export type OpenEna3dTraceRole =
   | "group-mean"
   | "confidence-interval"
   | "trajectory-path"
+  | "direction-arrow"
   | "axis"
   | "axis-arrowhead"
   | "axis-label"
@@ -102,6 +111,7 @@ export interface OpenEna3dTrace {
   colorscale?: Array<[number, string]>;
   showscale?: boolean;
   text?: string[];
+  ids?: string[];
   customdata?: Array<string | null>;
   textposition?: string;
   textfont?: { color?: string; size?: number };
@@ -248,10 +258,10 @@ export interface OpenEna3dPlotSpec {
   diagnostics?: { degenerateDimensions: string[] };
 }
 
-export interface CompileOpenEna3dPlotInput {
-  result: OpenEnaResult;
+export interface CompileOpenEna3dPlotInput extends OpenEnaCodeGraphPresentation {
+  result: OpenEnaPlotResult;
   /** Selected endpoint contrast used to compile the linked three-plot 3D workbench. */
-  contrast?: OpenEnaPairwiseContrast | null;
+  contrast?: OpenEnaContrastPresentation | null;
   groupDisplay?: Pick<OpenEnaDerivedGroupDisplay, "primary" | "secondary" | "hiddenUnitKeys">;
   /** Defaults to comparison so existing single-plot callers keep their behavior. */
   plotKind?: OpenEna3dPlotKind;
@@ -383,7 +393,7 @@ function groupColor(group: GroupNetwork, groupIndex: number) {
   return JENA_GROUP_COLORS[paletteIndex] ?? JENA_GROUP_COLORS[0];
 }
 
-function groupIndexForRow(result: OpenEnaResult, groupColumn: string | null, row: Row) {
+function groupIndexForRow(result: OpenEnaPlotResult, groupColumn: string | null, row: Row) {
   if (!groupColumn || result.groups.length < 2) return 0;
   const value = String(row[groupColumn] ?? "");
   const index = result.groups.findIndex((group) => group.name === value);
@@ -405,7 +415,7 @@ function pointHover(
   ].join("<br>");
 }
 
-function edgeWeight(result: OpenEnaResult, edgeName: string) {
+function edgeWeight(result: OpenEnaPlotResult, edgeName: string) {
   const groups = result.groups;
   if (groups.length === 0) return { value: 0, groupIndex: 0, comparison: false };
   if (groups.length === 1) {
@@ -629,6 +639,9 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     showPoints,
     showNetworks,
     showLabels,
+    showCodeGraph = true,
+    codeVisibility,
+    codeSourceByRenderedCode, codeLabelByRenderedCode,
     showUnitLabels,
     showVariance,
     showTrajectories: _legacyShowTrajectories,
@@ -640,8 +653,9 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     flipY,
     nodeLayout,
   } = input;
+  const codePresentation = { showCodeGraph, codeVisibility, codeSourceByRenderedCode, codeLabelByRenderedCode };
   // Preserve the historical input shape while enforcing a strict presenter
-  // boundary: generic ENA plots never compile longitudinal trajectory marks.
+  // boundary: a legacy trajectory flag needs an explicit native fitted-sequence layer.
   void _legacyShowTrajectories;
   const dimensions = [xDimension, yDimension, zDimension] as const;
   const traces: OpenEna3dTrace[] = [];
@@ -653,7 +667,13 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     const resolved = resolveOpenEnaNodeDimensions(canonical, nodeLayout?.get(code));
     return { ...row, ...Object.fromEntries(resolved) };
   });
+  const renderedDisplayNodeRows = displayNodeRows.filter((row) => (
+    openEnaRenderedCodeIsVisible(codePresentation, String(row.code ?? ""))
+  ));
   const points = result.set.points;
+  const trajectory = result.trajectoryPresentation;
+  const trajectoryPointKey = (row: Row) => JSON.stringify([row.Unit, row.Horizon]);
+  const visibleTrajectoryPoints = trajectory ? new Set(trajectory.points.map((point) => trajectoryPointKey(point.point))) : null;
   const safePointScale = clamp(pointScale, 0.2, 5, 1);
   const safeEdgeScale = clamp(edgeScale, 0.1, 5, 1);
   const safeThreshold = clamp(edgeThreshold, 0, 1, 0);
@@ -737,7 +757,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
   ];
   const axisExtent = Math.max(0.5, ...coordinateMagnitudes) * 1.15;
 
-  if (showNetworks) {
+  if (showNetworks && showCodeGraph && !trajectory) {
     const weightedEdges = contrast
       ? contrast.edges.map((contrastEdge) => {
           const edge = result.set.adjacencyKey.find((candidate) => candidate.name === contrastEdge.name);
@@ -778,6 +798,11 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     const nodeByCode = new Map(displayNodeRows.map((row) => [String(row.code ?? ""), row]));
     for (const weighted of weightedEdges) {
       if (weighted.value <= 1e-12 || weighted.value / maximumEdge < safeThreshold) continue;
+      if (!openEnaRenderedEdgeIsVisible(
+        codePresentation,
+        weighted.edge.source,
+        weighted.edge.target,
+      )) continue;
       const source = nodeByCode.get(weighted.edge.source) ?? displayNodeRows[weighted.edge.sourceIndex];
       const target = nodeByCode.get(weighted.edge.target) ?? displayNodeRows[weighted.edge.targetIndex];
       const group = result.groups[weighted.groupIndex];
@@ -787,7 +812,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       const meaning = weighted.comparison && contrast
         ? `${contrast.primary.name} − ${contrast.secondary.name}: ${formatCoordinate(weighted.rawValue)}; ${group.name} stronger by ${formatCoordinate(weighted.value)}`
         : `${group.name} mean weight ${formatCoordinate(weighted.rawValue)}`;
-      const hover = `<b>${escapeHoverText(weighted.edge.source)} ↔ ${escapeHoverText(weighted.edge.target)}</b><br>${escapeHoverText(meaning)}`;
+      const hover = `<b>${escapeHoverText(openEnaRenderedCodeLabel(input, weighted.edge.source))} ↔ ${escapeHoverText(openEnaRenderedCodeLabel(input, weighted.edge.target))}</b><br>${escapeHoverText(meaning)}`;
       traces.push({
         type: "scatter3d",
         mode: "lines",
@@ -821,10 +846,13 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
         plotKind !== "comparison" || !selectedComparisonGroupIndices.has(groupIndex)
       )) return;
       if (display && !display.settings.showUnitPoints) return;
+      if (!nativePlotGroupSettingsV3(result, group.name).showUnitPoints) return;
       const visibleUnitIds = display ? new Set(display.visibleUnitIds) : null;
       const selected = points.filter((row) => (
         groupIndexForRow(result, groupColumn, row) === groupIndex
           && (!visibleUnitIds || visibleUnitIds.has(String(row.ENA_UNIT ?? "")))
+          && !result.groupPresentation?.hiddenUnits.has(String(row.ENA_UNIT))
+          && (!visibleTrajectoryPoints || visibleTrajectoryPoints.has(trajectoryPointKey(row)))
       ));
       if (selected.length === 0) return;
       const color = groupColor(group, groupIndex);
@@ -890,6 +918,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       plotKind !== "comparison" || !selectedComparisonGroupIndices.has(groupIndex)
     )) return;
     if (display && !display.settings.showMean) return;
+    if (trajectory || !nativePlotGroupSettingsV3(result, group.name).showMean) return;
     const color = groupColor(group, groupIndex);
     const markerSymbol = "square";
     const meanSource = side?.meanPoint ?? group.meanPoint;
@@ -916,24 +945,52 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     });
   });
 
-  if (displayNodeRows.length > 0) {
+  if (_legacyShowTrajectories && trajectory) for (const path of trajectory.paths) {
+    if (!nativePlotGroupSettingsV3(result, path.group).showUnitPoints || result.groupPresentation?.hiddenUnits.has(path.unitLabel)) continue;
+    traces.push({ type: "scatter3d", mode: "lines", name: "Observed fitted Unit path",
+      x: [coordinate(path.from, xDimension), coordinate(path.to, xDimension)], y: [coordinate(path.from, yDimension), coordinate(path.to, yDimension)], z: [coordinate(path.from, zDimension), coordinate(path.to, zDimension)],
+      line: { color: "black", width: 2 }, showlegend: false, hovertemplate: `Fitted ordinals ${path.fromOrdinal} → ${path.toOrdinal}<extra></extra>`, meta: { role: "trajectory-path", groupName: path.group } });
+  }
+  if (trajectory) {
+    for (const path of trajectory.centroidPaths) {
+      if (!nativePlotGroupSettingsV3(result, path.from.group).showMean) continue;
+      traces.push({ type: "scatter3d", mode: "lines", name: "Observed Group centroid path",
+        x: [coordinate(path.from.point, xDimension), coordinate(path.to.point, xDimension)], y: [coordinate(path.from.point, yDimension), coordinate(path.to.point, yDimension)], z: [coordinate(path.from.point, zDimension), coordinate(path.to.point, zDimension)],
+        line: { color: "black", width: 5 }, showlegend: false, hovertemplate: `${path.sharedContributorCount} actual shared contributors; available-population centroids, not matched change<extra></extra>`, meta: { role: "trajectory-path", groupName: path.from.group } });
+      // Same mid-segment cone grammar as the pinned longitudinal renderer;
+      // only native observed fitted connectors supply direction and endpoints.
+      const from = dimensions.map(axis => coordinate(path.from.point, axis));
+      const to = dimensions.map(axis => coordinate(path.to.point, axis));
+      const delta = to.map((value, index) => value - from[index]);
+      if (Math.hypot(...delta) > 0) traces.push({ type: "cone", name: "Observed fitted direction", x: [(from[0] + to[0]) / 2], y: [(from[1] + to[1]) / 2], z: [(from[2] + to[2]) / 2], u: [delta[0]], v: [delta[1]], w: [delta[2]], anchor: "tip", sizemode: "absolute", sizeref: Math.max(0.06, axisExtent * 0.06), colorscale: [[0, "black"], [1, "black"]], showscale: false, showlegend: false, hoverinfo: "skip", meta: { role: "direction-arrow", groupName: path.from.group } });
+    }
+    for (const centroid of trajectory.centroids) {
+      if (!nativePlotGroupSettingsV3(result, centroid.group).showMean) continue;
+      traces.push({ type: "scatter3d", mode: "markers+text", name: "Observed Group centroid",
+        x: [coordinate(centroid.point, xDimension)], y: [coordinate(centroid.point, yDimension)], z: [coordinate(centroid.point, zDimension)],
+        text: [`${centroid.horizon} · n=${centroid.n}`], marker: { color: "black", size: 7, symbol: "square" }, showlegend: false,
+        hovertemplate: `Observed n=${centroid.n}<extra></extra>`, meta: { role: "group-mean", groupName: centroid.group } });
+    }
+  }
+  if (renderedDisplayNodeRows.length > 0) {
     traces.push({
       type: "scatter3d",
       mode: showLabels ? "markers+text" : "markers",
       name: "Codes",
-      x: displayNodeRows.map((row) => coordinate(row, xDimension)),
-      y: displayNodeRows.map((row) => coordinate(row, yDimension)),
-      z: displayNodeRows.map((row) => coordinate(row, zDimension)),
-      text: displayNodeRows.map((row) => String(row.code ?? "")),
-      customdata: displayNodeRows.map((row) => {
-        const label = String(row.code ?? "");
+      x: renderedDisplayNodeRows.map((row) => coordinate(row, xDimension)),
+      y: renderedDisplayNodeRows.map((row) => coordinate(row, yDimension)),
+      z: renderedDisplayNodeRows.map((row) => coordinate(row, zDimension)),
+      ids: renderedDisplayNodeRows.map((row) => String(row.code)),
+      text: renderedDisplayNodeRows.map((row) => openEnaRenderedCodeLabel(input, String(row.code ?? ""))),
+      customdata: renderedDisplayNodeRows.map((row) => {
+        const label = openEnaRenderedCodeLabel(input, String(row.code ?? ""));
         const point = dimensions.map((dimension) => coordinate(row, dimension)) as [number, number, number];
         return pointHover(`Code: ${label}`, "Code node", point, dimensions);
       }),
       textposition: "top center",
       textfont: { color: "#263740", size: 12 },
       marker: {
-        color: displayNodeRows.map((row) => codeColorFor(codeColors, String(row.code ?? ""))),
+        color: renderedDisplayNodeRows.map((row) => codeColorFor(codeColors, String(row.code ?? ""))),
         size: 9,
         symbol: "circle",
         opacity: 1,

@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -445,101 +446,22 @@ test("result-table view model and static markup keep localized unavailable tabs 
   assert.doesNotMatch(unavailableTab, /\sdisabled(?:=|\s|>)/u);
 });
 
-test("Workspace isolates generic 3D axes from inference, 2D, and AI evidence consumers", () => {
-  const inferenceRequest = workspace.match(
-    /const inferenceRequest\s*=\s*useMemo\([\s\S]*?(?=\n  const inferencePreviewState)/,
-  )?.[0] ?? "";
-  const inferenceKeyAndCurrent = workspace.match(
-    /const inferenceRequestKey\s*=\s*useMemo\([\s\S]*?const currentInference[^;]*;/,
-  )?.[0] ?? "";
-  const aiEvidence = workspace.match(
-    /const aiInterpretationRequest\s*=\s*useMemo\([\s\S]*?(?=\n  const |\n  function )/,
-  )?.[0] ?? "";
-  const runAnalysis = workspace.match(
-    /async function runAnalysis\([\s\S]*?(?=\n  async function loadSample)/,
-  )?.[0] ?? "";
-  const resetPlot = workspace.match(
-    /function resetPlot\(\)[\s\S]*?(?=\n  function serializedPlotSvg)/,
-  )?.[0] ?? "";
+test("generic 3D display axes stay separate from 2D inference and AI controls", () => {
 
-  assert.match(workspace, /const \[threeDDimensions, setThreeDDimensions\] = useState<OpenEnaWorkspaceAxes\["threeD"\]>\(null\)/);
-  assert.match(workspace, /const groupContrastAxes = useMemo\([\s\S]*?\[xDimension, yDimension\]/);
-  for (const block of [inferenceRequest, inferenceKeyAndCurrent, aiEvidence]) {
-    assert.doesNotMatch(block, /threeD(?:X|Y|Z)Dimension/);
-  }
-  assert.match(runAnalysis, /setThreeDDimensions\(initialAxes\.threeD\)/);
-  assert.match(resetPlot, /view === "3d"[\s\S]*?resetOpenEnaWorkspaceAxisSurface/);
-  assert.match(
-    workspace,
-    /const standardThreeDPluginAvailability = standardThreeDPluginContext[\s\S]*?openEnaRuntimePluginAvailability\("ena-hk\/3d-ena"/,
-  );
-  assert.match(
-    workspace,
-    /const genericThreeDAvailable = result !== null[\s\S]*?threeDDimensions !== null[\s\S]*?completedResultKind === "ona" \|\| standardThreeDPluginAvailability\?\.enabled === true/,
-  );
-  assert.match(workspace, /disabled=\{[^}]*!genericThreeDAvailable[^}]*\}/);
-  assert.match(
-    workspace,
-    /aria-describedby=\{result && !genericThreeDAvailable/,
-  );
-  assert.match(workspace, /copy\.plot\.threeDRequiresThreeDimensions/);
-  assert.match(
-    workspace,
-    /function clearCompletedResult\(\)[\s\S]*?setResult\(null\)[\s\S]*?setResultConfig\(null\)[\s\S]*?setThreeDDimensions\(null\)[\s\S]*?setView\("2d"\)/,
-  );
-  assert.equal(
-    [...workspace.matchAll(/setResult\(null\)/gu)].length,
-    1,
-    "every completed-result clear path must revoke the owned 3D tuple through one helper",
-  );
+  assert.match(v3, /threeDAxes, setThreeDAxes/);
+  assert.match(v3, /view === "3d" \? setThreeDAxes : setAxes/);
+  assert.match(v3, /axes: \[twoDAxes\[0\], twoDAxes\[1\]\]/);
+  assert.match(v3, /buildAiInterpretationReviewV3\(result, currentPlan, selection\)/);
 
-  const threeDControls = workspace.match(
-    /className="ena-three-d-axis-controls"[\s\S]*?<\/section>/,
-  )?.[0] ?? "";
-  assert.match(threeDControls, /threeDDimensions\[0\]/);
-  assert.match(threeDControls, /threeDDimensions\[1\]/);
-  assert.match(threeDControls, /threeDDimensions\[2\]/);
-  assert.doesNotMatch(threeDControls, /\bxDimension\b|\byDimension\b|\bzDimension\b/);
-
-  const generic3d = workspace.match(
-    /threeDDimensions && activeGroupContrast[\s\S]*?<OpenEna3DGroupContrast[\s\S]*?<OpenEnaInteractive3DPlot[\s\S]*?\/>/,
-  )?.[0] ?? "";
-  assert.match(generic3d, /xDimension=\{threeDDimensions\[0\]\}/);
-  assert.match(generic3d, /yDimension=\{threeDDimensions\[1\]\}/);
-  assert.match(generic3d, /zDimension=\{threeDDimensions\[2\]\}/);
-  assert.match(generic3d, /showTrajectories=\{false\}/);
-
-  assert.match(workspace, /Shared \{xDimension\} × \{yDimension\} space/);
-  assert.match(workspace, /methodsDimensions: \[xDimension, yDimension\]/);
 });
 
-test("Workspace keeps unavailable result tabs visible and guards CSV export", () => {
-  const resultTables = workspace.match(
-    /function renderResultTables\(\)[\s\S]*?(?=\n  function renderResultData)/,
-  )?.[0] ?? "";
+test("native Data View currentness guards export and discloses unavailable point membership", () => {
 
-  assert.match(resultTables, /openEnaResultTableAvailability\(/);
-  assert.doesNotMatch(resultTables, /\.filter\([^\n]*projectionReference/);
-  assert.match(resultTables, /buildOpenEnaResultTableViewModel\(/);
-  assert.match(resultTables, /<OpenEnaResultTables/);
-  assert.match(resultTables, /if \(!resultTableViewModel\.export\.disabled\)/);
-  assert.doesNotMatch(resultTables, /rowsToCsv\(tableMap\[resultTable\] as Row\[\]\)/);
+  assert.match(v3, /exportDisabled=\{!current\}/);
+  assert.match(v3, /buildDataViewV3\(result, currentPlan\)/);
+  assert.match(v3, /workspaceCopy\.dataView\.sourceIndexMeaning/);
+  assert.match(moduleV3("lib/open-ena/data-view-export.ts"), /sourceIndexMeaning:/);
+  assert.match(v3, /workspaceCopy\.stats\.globalTraversal/);
+  assert.equal(getOpenEnaCopy("en").modelV3.workspace.stats.globalTraversal, "Global runtime source traversal (not per-point membership)");
 
-  const wrapper = workspace.match(
-    /export function OpenEnaResultTables\([\s\S]*?(?=\nexport function OpenEnaResultTablesView)/,
-  )?.[0] ?? "";
-  const presenter = workspace.match(
-    /export function OpenEnaResultTablesView\([\s\S]*?(?=\nconst modeIcons)/,
-  )?.[0] ?? "";
-  assert.match(wrapper, /useState/);
-  assert.match(wrapper, /useEffect/);
-  assert.match(wrapper, /resolveOpenEnaResultTableRovingKey\(/);
-  assert.match(wrapper, /rovingKey=\{resolvedRovingKey\}/);
-  assert.match(presenter, /onFocus=\{\(\) => onRovingKeyChange\(tab\.key\)\}/);
-  assert.match(presenter, /onKeyDown=/);
-  assert.match(presenter, /openEnaResultTableFocusTarget\(/);
-  assert.match(presenter, /onRovingKeyChange\(targetKey\)[\s\S]*?\.focus\(\)/);
-  assert.match(presenter, /ownerDocument\.getElementById\([^)]*\)\?\.focus\(\)/);
-  assert.doesNotMatch(presenter, /\n\s+disabled=\{tab\.disabled\}/);
-  assert.match(presenter, /if \(!tab\.disabled\) onSelect\(tab\.key\)/);
 });

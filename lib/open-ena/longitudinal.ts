@@ -1817,3 +1817,7 @@ export function longitudinalInferenceRowsToCsv(
     parseBoundLongitudinalInference(view, inference),
   ));
 }
+
+// New model-v3 bound consumers; the legacy longitudinal APIs above remain separate.
+export { buildLongitudinalViewV3, reorderLongitudinalViewV3, buildLongitudinalInferenceInputV3 } from "./longitudinal-bound-v3";
+export type { LongitudinalViewV3, LongitudinalViewOptionsV3, OpenEnaTrajectoryControlsV3, TrajectoryRequestV3, HorizonIdentityV3 } from "./longitudinal-bound-v3";

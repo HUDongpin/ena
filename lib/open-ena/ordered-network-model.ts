@@ -1,3 +1,4 @@
+import type { OpenEnaPlotResult } from "./bound-presentation-v3";
 import type { Row } from "jena-js";
 import { openEnaAnalysisKindFromResult } from "./capabilities";
 import {
@@ -161,7 +162,7 @@ function validateNodeTotals(
   totals: OpenEnaOrderedNetworkNodeTotals,
   codes: readonly string[],
   scope: OpenEnaOrderedNetworkScope,
-  result: OpenEnaResult,
+  result: OpenEnaPlotResult,
 ) {
   if (typeof totals !== "object"
     || totals === null
@@ -239,7 +240,7 @@ function rowBelongsToScope(
 }
 
 function assertOptionalProvenanceBinding(
-  result: OpenEnaResult,
+  result: OpenEnaPlotResult,
   config: CanonicalOpenEnaConfig,
 ) {
   if (!Object.hasOwn(result, "provenanceBinding")) return;
@@ -256,7 +257,7 @@ function invalidOrderedAuditIntegrity(): never {
 }
 
 function optionalOrderedAuditResponseRowCount(
-  result: OpenEnaResult,
+  result: OpenEnaPlotResult,
   codes: readonly string[],
 ) {
   if (!Object.hasOwn(result, "orderedAudit")) return null;
@@ -310,7 +311,7 @@ function validateCompletedResultGroups(value: unknown): GroupNetwork[] {
 }
 
 function assertExecutionProvenance(
-  result: OpenEnaResult,
+  result: OpenEnaPlotResult,
   config: CanonicalOpenEnaConfig,
 ) {
   const execution = result.executionProvenance;
@@ -354,15 +355,29 @@ function assertExecutionProvenance(
 }
 
 export function buildOpenEnaOrderedNetworkModel(input: {
-  result: OpenEnaResult;
+  result: OpenEnaPlotResult;
   config: OpenEnaConfig;
   scope: OpenEnaOrderedNetworkScope;
   edgeThreshold: number;
   nodeTotals?: OpenEnaOrderedNetworkNodeTotals;
 }): OpenEnaOrderedNetworkModel {
   const { result, scope } = input;
-  const config = canonicalizeOpenEnaConfig(input.config);
-  assertOptionalProvenanceBinding(result, config);
+  const native = result.boundPresentation;
+  const config = native ? input.config : canonicalizeOpenEnaConfig(input.config);
+  if (native) {
+    if (native.configuration.analysisFamily !== "ona" || !sameStrings(native.set.codes, result.set.codes)
+      || !sameStrings(input.config.codes, native.set.codes)
+      || input.config.groupColumn !== (native.configuration.units.group.type === "none" ? null : "Group")
+      || !input.config.directionalMask
+      || native.configuration.directionalMask.enabled.some((row, i) => row.some((cell, j) => cell !== input.config.directionalMask!.enabled[i]?.[j]))) {
+      throw new TypeError("Native ordered presentation differs from its bound Code, Group or mask facts.");
+    }
+  } else {
+    const legacyConfig = canonicalizeOpenEnaConfig(input.config);
+    if (!sameStrings(result.set.codes, legacyConfig.codes)) throw new Error("The shared ordered-network model code order disagrees with the completed configuration.");
+    assertOptionalProvenanceBinding(result, legacyConfig);
+    assertExecutionProvenance(result, legacyConfig);
+  }
   if (config.analysisKind !== "ona"
     || openEnaAnalysisKindFromResult(result) !== "ona"
     || result.set.networkType !== "ordered") {
@@ -371,7 +386,6 @@ export function buildOpenEnaOrderedNetworkModel(input: {
   if (!sameStrings(result.set.codes, config.codes)) {
     throw new Error("The shared ordered-network model code order disagrees with the completed configuration.");
   }
-  assertExecutionProvenance(result, config);
   const maskErrors = validateDirectionalMask(config.directionalMask, config.codes);
   if (!config.directionalMask || maskErrors.length > 0) {
     throw new Error(`The shared ordered-network model requires one valid label-bound p² directional mask. ${maskErrors.join(" ")}`.trim());
@@ -393,7 +407,7 @@ export function buildOpenEnaOrderedNetworkModel(input: {
       || edge.targetIndex !== responseIndex
       || edge.source !== config.codes[groundIndex]
       || edge.target !== config.codes[responseIndex]
-      || edge.name !== `${edge.source} & ${edge.target}`
+      || edge.name !== (native ? native.set.adjacencyKey[edgeIndex]?.name : `${edge.source} & ${edge.target}`)
       || result.set.codeColumns[edgeIndex] !== edge.name) {
       throw new Error("ONA adjacency must use the complete response-major, ground-minor source/target contract.");
     }

@@ -12,6 +12,7 @@ export function extractMakeSetOptions(options: MakeSetOptions): MakeSetOptions {
   if (options.rotation !== undefined) makeOptions.rotation = options.rotation;
   if (options.rotationSet !== undefined) makeOptions.rotationSet = options.rotationSet;
   if (options.nodePositionMethod !== undefined) makeOptions.nodePositionMethod = options.nodePositionMethod;
+  if (options.observer !== undefined) makeOptions.observer = options.observer;
   return makeOptions;
 }
 

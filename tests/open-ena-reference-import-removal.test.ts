@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,10 +25,12 @@ test("the Model panel does not retain an unreachable reference-projection option
   assert.doesNotMatch(workspace, /ena-reference-model-note/);
 });
 
-test("coded-data entry points and reference-package export remain available", () => {
-  assert.match(workspace, /accept="\.csv,\.xlsx,/);
-  assert.match(workspace, /void loadSample\(\)/);
-  assert.match(workspace, /void loadTrajectorySample\(\)/);
-  assert.match(workspace, /buildReferenceRotationPackage/);
-  assert.match(workspace, /referenceRotationJson/);
+test("coded-data entry and native Reference export coexist with explicit artifact previews", () => {
+
+  assert.match(shell(), /aria-label="Open coded CSV or XLSX"/);
+  assert.match(shell(), />Load sample<\/button>/);
+  assert.match(shell(), />Export Reference<\/button>/);
+  assert.match(v3, /<OpenEnaImportPreviewV3/);
+  assert.match(v3, /exportReferenceV2\(/);
+
 });

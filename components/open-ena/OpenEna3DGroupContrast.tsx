@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import type { OpenEnaContrastPresentation } from "@/lib/open-ena/bound-presentation-v3";
+import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
 import type { OpenEnaDerivedGroupDisplay } from "@/lib/open-ena/group-display";
@@ -9,16 +11,18 @@ import type {
   OpenEnaNodeDimensionPosition,
   OpenEnaNodeLayoutPositions,
 } from "@/lib/open-ena/node-layout";
+import type { OpenEnaCodeGraphPresentation } from "@/lib/open-ena/ordered-plot";
 import type { OpenEna3dAspectRatio, OpenEna3dCamera } from "@/lib/open-ena/plot3d";
 import type { CameraPreset, OpenEnaResult } from "@/lib/open-ena/types";
 import OpenEnaInteractive3DPlot, {
   type OpenEna3dRenderStatus,
 } from "./OpenEnaInteractive3DPlot";
 
-export interface OpenEna3DGroupContrastProps {
-  result: OpenEnaResult;
-  contrast: OpenEnaPairwiseContrast;
+export interface OpenEna3DGroupContrastProps extends OpenEnaCodeGraphPresentation {
+  result: OpenEnaPlotResult;
+  contrast: OpenEnaContrastPresentation;
   groupDisplay?: Pick<OpenEnaDerivedGroupDisplay, "primary" | "secondary" | "hiddenUnitKeys">;
+  captureImageExport?: () => (() => boolean) | null;
   codeColors?: OpenEnaCodeColors;
   groupColumn: string;
   xDimension: string;
@@ -45,8 +49,10 @@ export interface OpenEna3DGroupContrastProps {
   onAspectRatioChange?: (aspectRatio: OpenEna3dAspectRatio | null) => void;
   runtimeDisabledPluginIds?: readonly string[];
   resultIsStale?: boolean;
+  isPluginResultCurrent?: () => boolean;
   centerMode: "plot" | "data";
   dataView?: ReactNode;
+  rightTools?: ReactNode;
   copy: OpenEnaCopy;
 }
 
@@ -54,6 +60,7 @@ export default function OpenEna3DGroupContrast({
   result,
   contrast,
   groupDisplay,
+  captureImageExport,
   codeColors,
   groupColumn,
   xDimension,
@@ -63,6 +70,9 @@ export default function OpenEna3DGroupContrast({
   showPoints,
   showNetworks,
   showLabels,
+  showCodeGraph = true,
+  codeVisibility,
+  codeSourceByRenderedCode, codeLabelByRenderedCode,
   showUnitLabels,
   showVariance,
   edgeScale,
@@ -80,8 +90,10 @@ export default function OpenEna3DGroupContrast({
   onAspectRatioChange,
   runtimeDisabledPluginIds = [],
   resultIsStale = false,
+  isPluginResultCurrent,
   centerMode,
   dataView,
+  rightTools,
   copy,
 }: OpenEna3DGroupContrastProps) {
   const [readyStage, setReadyStage] = useState<"comparison" | "primary" | "secondary" | "all">(
@@ -103,6 +115,7 @@ export default function OpenEna3DGroupContrast({
     result,
     contrast,
     groupDisplay,
+    captureImageExport,
     codeColors,
     groupColumn,
     xDimension,
@@ -112,6 +125,9 @@ export default function OpenEna3DGroupContrast({
     showPoints,
     showNetworks,
     showLabels,
+    showCodeGraph,
+    codeVisibility,
+    codeSourceByRenderedCode, codeLabelByRenderedCode,
     showUnitLabels,
     showVariance,
     showTrajectories: false,
@@ -131,6 +147,7 @@ export default function OpenEna3DGroupContrast({
     copy,
     runtimeDisabledPluginIds,
     resultIsStale,
+    isPluginResultCurrent,
   } as const;
   const comparisonReady = useCallback(
     () => {
@@ -229,12 +246,12 @@ export default function OpenEna3DGroupContrast({
     >
       <header className="open-ena-3d-triptych-header">
         <div>
-          <span>LINKED 3D GROUP COMPARISON</span>
+          <span>{copy.contrast.title} · 3D</span>
           <h2 id={titleId}>
             {contrast.primary.name} − {contrast.secondary.name}
           </h2>
         </div>
-        <p>One fitted jENA space · shared axes, frame, and camera</p>
+        <p>{copy.plot.sameFittedSpace}</p>
       </header>
 
       <div className="open-ena-3d-triptych-layout">
@@ -250,7 +267,7 @@ export default function OpenEna3DGroupContrast({
             >
               {dataView ?? (
                 <p className="ena-sets-compatibility-note" role="status">
-                  Data View is not available for this 3D comparison result.
+                  {copy.modelV3.workspace.plot.dataView}: {copy.modelV3.workspace.plot.unavailable}
                 </p>
               )}
             </div>
@@ -265,8 +282,8 @@ export default function OpenEna3DGroupContrast({
             >
               <header className="open-ena-3d-triptych-heading">
                 <div>
-                  <h3>Comparison Plot <small>3D</small></h3>
-                  <p>{contrast.primary.name} − {contrast.secondary.name} · signed edge differences</p>
+                  <h3>{copy.plot.threeDComparisonPlot} <small>3D</small></h3>
+                  <p>{contrast.primary.name} − {contrast.secondary.name} · {copy.workspace.strongestDifferences}</p>
                 </div>
                 <span>n = {contrast.primary.unitCount} vs {contrast.secondary.unitCount}</span>
               </header>
@@ -279,7 +296,7 @@ export default function OpenEna3DGroupContrast({
                 }}
                 displayModeBar={false}
                 testId="open-ena-interactive-3d-plot"
-                ariaLabel={`Comparison 3D plot: ${contrast.primary.name} minus ${contrast.secondary.name}.`}
+                ariaLabel={`${copy.plot.threeDComparisonPlot}: ${contrast.primary.name} − ${contrast.secondary.name}.`}
                 onReady={comparisonReady}
                 onError={comparisonError}
                 onStatusChange={comparisonStatus}
@@ -300,8 +317,8 @@ export default function OpenEna3DGroupContrast({
           >
             <header className="open-ena-3d-triptych-heading">
               <div>
-                <h3>Primary Plot <small>3D</small></h3>
-                <p><strong>{contrast.primary.name}</strong> · n = {contrast.primary.unitCount} · group mean network</p>
+                <h3>{copy.plot.threeDPrimaryPlot} <small>3D</small></h3>
+                <p><strong>{contrast.primary.name}</strong> · n = {contrast.primary.unitCount} · {copy.workspace.groupMeans}</p>
               </div>
             </header>
             {readyStage === "comparison" ? sidePlaceholder("primary", contrast.primary.name) : <OpenEnaInteractive3DPlot
@@ -318,7 +335,7 @@ export default function OpenEna3DGroupContrast({
               showVariance={false}
               showUnitLabels={false}
               testId="open-ena-3d-primary-canvas"
-              ariaLabel={`Primary 3D plot: ${contrast.primary.name}, ${contrast.primary.unitCount} analytic units. Camera linked to Comparison.`}
+              ariaLabel={`${copy.plot.threeDPrimaryPlot}: ${contrast.primary.name} · ${copy.workspace.units} ${contrast.primary.unitCount}.`}
               onReady={primaryReady}
               onError={primaryError}
               onStatusChange={primaryStatus}
@@ -336,8 +353,8 @@ export default function OpenEna3DGroupContrast({
           >
             <header className="open-ena-3d-triptych-heading">
               <div>
-                <h3>Secondary Plot <small>3D</small></h3>
-                <p><strong>{contrast.secondary.name}</strong> · n = {contrast.secondary.unitCount} · group mean network</p>
+                <h3>{copy.plot.threeDSecondaryPlot} <small>3D</small></h3>
+                <p><strong>{contrast.secondary.name}</strong> · n = {contrast.secondary.unitCount} · {copy.workspace.groupMeans}</p>
               </div>
             </header>
             {readyStage === "comparison" || readyStage === "primary" ? sidePlaceholder("secondary", contrast.secondary.name) : <OpenEnaInteractive3DPlot
@@ -354,12 +371,13 @@ export default function OpenEna3DGroupContrast({
               showVariance={false}
               showUnitLabels={false}
               testId="open-ena-3d-secondary-canvas"
-              ariaLabel={`Secondary 3D plot: ${contrast.secondary.name}, ${contrast.secondary.unitCount} analytic units. Camera linked to Comparison.`}
+              ariaLabel={`${copy.plot.threeDSecondaryPlot}: ${contrast.secondary.name} · ${copy.workspace.units} ${contrast.secondary.unitCount}.`}
               onReady={secondaryReady}
               onError={secondaryError}
               onStatusChange={secondaryStatus}
             />}
           </article>
+          {rightTools}
         </div>
       </div>
     </section>

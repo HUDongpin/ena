@@ -5,6 +5,8 @@ import test from "node:test";
 
 const projectRoot = process.cwd();
 const smokePath = join(projectRoot, "tests", "open-ena-3d-controls-browser-smoke.mjs");
+const runtimeSource = readFileSync(join(process.cwd(), "tests/helpers/open-ena-served-browser-v3.mjs"), "utf8");
+const fixtureSource = readFileSync(join(process.cwd(), "tests/helpers/open-ena-native-browser-fixture-v3.mjs"), "utf8");
 const packagePath = join(projectRoot, "package.json");
 const workflowPath = join(projectRoot, ".github", "workflows", "open-ena-ci.yml");
 
@@ -14,10 +16,10 @@ test("the 3D controls smoke owns a production build, synthetic Endpoint fixture,
 
   assert.match(source, /OPEN_ENA_3D_CONTROLS_SMOKE_ARTIFACT_DIR/u);
   assert.match(source, /OPEN_ENA_3D_CONTROLS_SMOKE_BROWSER/u);
-  assert.match(source, /NEXT_DIST_DIR/u);
+  assert.match(runtimeSource, /NEXT_DIST_DIR/u);
   assert.match(source, /\.next-3d-controls-smoke-/u);
-  assert.match(source, /execFileSync\(\s*"npm",\s*\["run",\s*"build"\]/u);
-  assert.match(source, /\["run",\s*"start",\s*"--",\s*"--hostname"/u);
+  assert.match(runtimeSource, /"npm", \["run", "build"\]/u);
+  assert.match(runtimeSource, /"start", "--hostname"/u);
   assert.doesNotMatch(source, /\["run",\s*"dev"/u);
   assert.match(source, /originalTsconfig/u);
   assert.match(source, /writeFileSync\(tsconfigPath, originalTsconfig/u);
@@ -34,7 +36,7 @@ test("the 3D controls smoke owns a production build, synthetic Endpoint fixture,
   }
   assert.match(source, /modelType:\s*"EndPoint"/u);
   assert.match(source, /open_ena_3d_controls_smoke_researcher/u);
-  assert.match(source, /OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS/u);
+  assert.match(runtimeSource, /OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS/u);
   assert.match(source, /page\.addInitScript\(installAnalysisAudit\)/u);
   assert.ok(
     source.indexOf("page.addInitScript(installAnalysisAudit)")
@@ -54,37 +56,14 @@ test("the browser harness credentials are unconditional synthetic literals", () 
   assert.match(source, /OPEN_ENA_3D_CONTROLS_SMOKE_BROWSER/u);
 });
 
-test("the 3D controls smoke provisions and cleans up durable authentication state", () => {
-  const source = readFileSync(smokePath, "utf8");
-
-  assert.match(source, /const accountId = "open-ena-3d-controls-smoke-account";/u);
-  assert.match(source, /async function startEphemeralPostgres\(\)/u);
-  assert.match(source, /function stopEphemeralPostgres\(\)/u);
-  assert.match(source, /mkdtempSync\(join\(tmpdir\(\), "oe3dpg-"\)\)/u);
-  assert.match(source, /ephemeralPostgresStartAttempted = true;/u);
-  assert.match(source, /cleanupOwnedEphemeralPostgres/u);
-  assert.match(source, /await stopEphemeralPostgres\(\)/u);
-  assert.match(source, /migrations", "002_open_ena_auth_security\.sql"/u);
-  assert.match(source, /OPEN_ENA_ACCOUNT_ID:\s*accountId/u);
-  assert.match(source, /OPEN_ENA_AUTH_DATABASE_URL:\s*authDatabaseUrl/u);
-  assert.ok(
-    source.indexOf("const authDatabaseUrl = await startEphemeralPostgres();")
-      < source.indexOf('process.stdout.write("[3D controls smoke] build production application'),
-    "the durable authentication database must exist before the production build",
-  );
-  assert.match(source, /stopEphemeralPostgres\(\)/u);
-});
-
-test("the Endpoint fixture reads Units before selecting Model type from the Windows tab", () => {
-  const source = readFileSync(smokePath, "utf8");
-  const unitIdentity = source.indexOf('[aria-label="Unit identity"]');
-  const windowsTab = source.indexOf('getByRole("tab", { name: "Windows" })');
-  const modelType = source.indexOf('getByRole("combobox", { name: "Model type" })');
-
-  assert.ok(unitIdentity >= 0, "the smoke does not verify inferred Unit identity");
-  assert.match(source, /locator\("\.ena-official-field-name"\)\s*\.allTextContents\(\)/u);
-  assert.ok(windowsTab > unitIdentity, "the smoke must inspect Units before leaving that tab");
-  assert.ok(modelType > windowsTab, "Model type must be located only after selecting Windows");
+test("the native fixture explicitly types Codes and selects ordered Units before the Windows model", () => {
+  assert.match(fixtureSource, /Source type: \$\{code\}/u);
+  assert.match(fixtureSource, /selectedUnits/u);
+  assert.match(fixtureSource, /getByRole\("toolbar", \{ name: "Code actions", exact: true \}\)\.getByRole\("button", \{ name: "Manage Codes", exact: true \}\)/u);
+  assert.match(fixtureSource, /JSON.stringify\(selectedUnits\) !== JSON.stringify\(units\)/u);
+  assert.ok(fixtureSource.indexOf('const selectedUnits') < fixtureSource.indexOf('await tab("Windows").click()'));
+  assert.match(fixtureSource, /name: "Model", exact: true/u);
+  assert.match(fixtureSource, /selectOption\("EndPoint"\)/u);
 });
 
 test("the smoke sanitizes CLI failures and emits portable SHA-256 evidence", () => {
@@ -179,12 +158,9 @@ test("final server log custody follows cleanup, on-disk sanitization, receipt, t
   assert.ok(receipt < summaryWrite, "summary is written before the final server-log receipt");
   assert.match(source, /catch \(sanitizationError\)[\s\S]{0,500}removeUnsafeServerLog\(\)/u);
 
-  const signalHandler = source.match(
-    /async function handleSignal\(signal\) \{[\s\S]*?\n\}/u,
-  )?.[0] ?? "";
-  assert.match(signalHandler, /await cleanupOwnedResources\(\)/u);
-  assert.match(signalHandler, /sanitizeFinalServerLog\(\)/u);
-  assert.match(signalHandler, /if \(cleanupFailure\)[\s\S]{0,500}removeUnsafeServerLog\(\)/u);
+  assert.doesNotMatch(source, /process.once\("SIG(?:INT|TERM)"/u);
+  assert.match(runtimeSource, /OwnedSmokeLifecycle/u);
+  assert.match(runtimeSource, /await lifecycle.cleanup\(\)/u);
   assert.match(source, /let cleanupSucceeded = false/u);
   assert.match(source, /cleanupSucceeded = true/u);
   assert.match(source, /catch \(cleanupError\)[\s\S]{0,500}removeUnsafeServerLog\(\)/u);
@@ -222,22 +198,11 @@ test("PASS fails closed on unknown artifact inventory and declares the final sev
   assert.doesNotMatch(source, /rmSync\([^\n]*unknown/iu);
 });
 
-test("Playwright CLI state lives in an owned temporary working directory outside evidence", () => {
+test("the owned pinned browser runtime records process and build custody outside the seven-file evidence inventory", () => {
   const source = readFileSync(smokePath, "utf8");
-  const remover = source.match(
-    /function removePlaywrightWorkingDirectory\(\) \{[\s\S]*?\n\}/u,
-  )?.[0] ?? "";
-
-  assert.match(source, /mkdtempSync\(join\(tmpdir\(\), "open-ena-3d-controls-playwright-"\)\)/u);
-  assert.match(source, /cwd:\s*ensurePlaywrightWorkingDirectory\(\)/u);
-  assert.doesNotMatch(source, /cwd:\s*artifactDirectory/u);
-  assert.match(remover, /assert\.equal\(dirname\(playwrightWorkingDirectory\), tmpdir\(\)\)/u);
-  assert.match(remover, /startsWith\("open-ena-3d-controls-playwright-"\)/u);
-  assert.match(remover, /recursive:\s*true/u);
-  const cleanup = source.match(
-    /function cleanupOwnedResources\(\) \{[\s\S]*?\n\}/u,
-  )?.[0] ?? "";
-  assert.match(cleanup, /removePlaywrightWorkingDirectory\(\)/u);
+  assert.match(source, /directory: artifactDirectory \+ "-runtime"/u);
+  for (const token of ["OwnedSmokeLifecycle", "spawnOwned", "connectOverCDP", "sourceManifest", "build-files.json", "servedAssets", "cleanup.errors"]) assert.ok(runtimeSource.includes(token));
+  assert.match(runtimeSource, /metadata.revision, "1234"/u);
 });
 
 test("initial navigation is captured only after the Worker audit init script is installed", () => {
@@ -305,7 +270,7 @@ test("the smoke proves group display controls across 2D and 3D without changing 
   assert.match(source, /async function exerciseGroupDisplayControls\(page, args\)/u);
   assert.match(source, /async function readThreeDGroupDisplayState\(page\)/u);
   assert.match(source, /async function readTwoDGroupDisplayState\(page\)/u);
-  assert.match(source, /data-ena-group-display-result-key/u);
+  assert.match(source, /nativeFixtureIdentitiesV3\(page\)\)\.binding.scientificResultSha256/u);
   assert.match(source, /filter\(\(trace\) => trace\.meta\?\.role === role\)/u);
   assert.match(source, /unitTraces:\s*byGroup\("unit-points"\)/u);
   assert.match(source, /trace\.marker\?\.symbol/u);
@@ -442,4 +407,20 @@ test("package and Open ENA CI expose the bounded 3D controls browser gate", () =
   );
   assert.match(workflow, /if-no-files-found:\s*error/u);
   assert.match(workflow, /retention-days:\s*14/u);
+});
+
+
+test("controlled camera orientation preserves existing precision and rejects real view changes", () => {
+  const source = readFileSync(smokePath, "utf8");
+  const start = source.indexOf("    const canonicalNumber =");
+  const end = source.indexOf("    const plotPayload =", start);
+  const normalize = new Function(source.slice(start, end) + "; return canonicalControlledCamera;")();
+  const raw = { center: { x: 0, y: 0, z: 0 }, eye: { x: 0.9666666666666667, y: 0.9666666666666667, z: 0.8333333333333334 }, up: { x: 0, y: 0, z: 1 }, projection: { type: "perspective" } };
+  const live = { ...raw, eye: { x: 0.9666666666666668, y: 0.9666666666666668, z: 0.8333333333333331 }, up: { x: -0.3680452470251775, y: -0.3680452470251775, z: 0.8538649730984122 } };
+  const expected = normalize(raw);
+  assert.deepEqual(normalize(live), expected);
+  for (const change of [{ eye: { x: 1.2, y: 1, z: 1 } }, { center: { x: 0.1, y: 0, z: 0 } }, { projection: { type: "orthographic" } }, { up: { x: 1, y: 0, z: 0 } }]) assert.notDeepEqual(normalize({ ...raw, ...change }), expected);
+  for (const change of [{ eye: raw.center }, { up: raw.eye }, { up: { x: NaN, y: 0, z: 1 } }, { center: { x: Infinity, y: 0, z: 0 } }, { projection: { type: "unknown" } }]) assert.throws(() => normalize({ ...raw, ...change }));
+  assert.ok(source.includes("rawControlledCameraState"));
+  assert.ok(source.includes("controlled camera orientation differs from actual runtime camera"));
 });

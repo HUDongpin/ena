@@ -939,7 +939,7 @@ test("camera presets are explicit display-only orientations and the client plot 
   assert.match(source, /getCamera\?\.\(\)/);
   assert.match(source, /onCameraChange\?\.\(runtimeCamera\)/);
   assert.match(source, /new ResizeObserver\(/);
-  assert.match(source, /Promise\.resolve\(Plotly\.Plots\.resize\(plotRoot\)\)\.catch/);
+  assert.match(source, /runPlotlyOperation\(\(\) => Plotly\.Plots\.resize\(plotRoot\)\)\.catch/);
   assert.match(source, /testId = plotKind === "comparison"/);
   assert.match(source, /data-ena-dimensions="3"/);
   assert.match(source, /data-ena-interactive-camera="true"/);
@@ -957,9 +957,13 @@ test("camera presets are explicit display-only orientations and the client plot 
   assert.match(groupContrast3d, /data-testid="open-ena-3d-comparison-plot"/);
   assert.match(groupContrast3d, /data-testid="open-ena-3d-primary-plot"/);
   assert.match(groupContrast3d, /data-testid="open-ena-3d-secondary-plot"/);
-  assert.match(groupContrast3d, /<h3>Comparison Plot <small>3D<\/small><\/h3>/);
-  assert.match(groupContrast3d, /<h3>Primary Plot <small>3D<\/small><\/h3>/);
-  assert.match(groupContrast3d, /<h3>Secondary Plot <small>3D<\/small><\/h3>/);
+  assert.match(groupContrast3d, /<h3>\{copy\.plot\.threeDComparisonPlot\} <small>3D<\/small><\/h3>/);
+  assert.match(groupContrast3d, /<h3>\{copy\.plot\.threeDPrimaryPlot\} <small>3D<\/small><\/h3>/);
+  assert.match(groupContrast3d, /<h3>\{copy\.plot\.threeDSecondaryPlot\} <small>3D<\/small><\/h3>/);
+  assert.deepEqual(
+    [getOpenEnaCopy("en").plot.threeDComparisonPlot, getOpenEnaCopy("en").plot.threeDPrimaryPlot, getOpenEnaCopy("en").plot.threeDSecondaryPlot],
+    ["Comparison Plot", "Primary Plot", "Secondary Plot"],
+  );
   assert.match(groupContrast3d, /plotKind="comparison"/);
   assert.match(groupContrast3d, /plotKind="primary"/);
   assert.match(groupContrast3d, /plotKind="secondary"/);
@@ -972,26 +976,15 @@ test("camera presets are explicit display-only orientations and the client plot 
     join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
     "utf8",
   );
-  assert.match(workspace, /initialCamera=\{interactive3dCamera\}/);
-  assert.match(workspace, /onCameraChange=\{setInteractive3dCamera\}/);
-  assert.match(workspace, /initialAspectRatio=\{interactive3dAspectRatio\}/);
-  assert.match(workspace, /onAspectRatioChange=\{setInteractive3dAspectRatio\}/);
-  assert.match(workspace, /view === "3d" && threeDDimensions && activeGroupContrast && activeGroupDisplay && resultConfig\?\.groupColumn/);
-  assert.match(workspace, /<OpenEna3DGroupContrast/);
-  assert.match(workspace, /sharedCamera=\{interactive3dCamera\}/);
-  assert.match(workspace, /sharedAspectRatio=\{interactive3dAspectRatio\}/);
-  assert.match(workspace, /function selectCameraPreset/);
-  assert.match(workspace, /function selectAxisDimension/);
-  assert.match(workspace, /updateOpenEnaWorkspace3dAxis\(\{/);
-  assert.match(workspace, /threeD: threeDDimensions/);
-  assert.match(workspace, /setThreeDDimensions\(next\.threeD\)/);
-  assert.match(workspace, /data-testid="open-ena-3d-display-controls"/);
-  assert.match(workspace, /data-testid="open-ena-3d-camera-position"/);
-  assert.match(workspace, /open-ena-3d-axis-\$\{axis\}/);
-  assert.match(workspace, /\["isometric", copy\.plot\.default3dCamera\]/);
-  assert.match(workspace, /\["yx", copy\.plot\.yx\]/);
-  assert.match(workspace, /\["zx", copy\.plot\.zx\]/);
-  assert.match(workspace, /\["zy", copy\.plot\.zy\]/);
+  assert.match(workspace, /initialCamera=\{camera\}/);
+  assert.match(workspace, /onCameraChange=\{setCamera\}/);
+  assert.match(workspace, /initialAspectRatio=\{aspectRatio\}/);
+  assert.match(workspace, /onAspectRatioChange=\{setAspectRatio\}/);
+  assert.match(workspace, /sharedCamera=\{camera\}/);
+  assert.match(workspace, /sharedAspectRatio=\{aspectRatio\}/);
+  assert.match(workspace, /setCamera\(cameraForPreset\(preset\)\)/);
+  assert.match(workspace, /setAspectRatio\(null\)/);
+  for (const preset of ["isometric", "yx", "zx", "zy"]) assert.ok(workspace.includes(`["${preset}", copy.plot.`));
 
   const styles = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
   assert.match(styles, /\.ena-visual-workspace\[data-ena-view="3d"\][\s\S]*?background: #fff;/);
@@ -1040,10 +1033,7 @@ test("3D data mode fails closed with a status message instead of adding a fallba
 
   assert.ok(dataViewCard, "data mode must retain the center card when its child is unavailable");
   assert.doesNotMatch(dataViewCard, /\srole=|\saria-label=/);
-  assert.match(
-    markup,
-    /<p class="ena-sets-compatibility-note" role="status">Data View is not available for this 3D comparison result\.<\/p>/,
-  );
+  assert.match(markup, /<p class="ena-sets-compatibility-note" role="status">Data View: Unavailable<\/p>/);
   assert.doesNotMatch(markup, /aria-label="Data View"/);
 });
 
@@ -1292,14 +1282,17 @@ test("each 3D paper replaces the Plotly modebar with the same five unframed plot
   assert.match(interactive, /getAspectratio\?\.\(\)/);
   assert.match(interactive, /"scene\.aspectratio": nextAspectRatio/);
   assert.match(interactive, /resetOpenEna3dCameraDistance\(activeCamera, cameraForPreset\(camera\)\)/);
-  assert.match(interactive, /void applyDefaultDisplayDistance\(\)/);
+  assert.match(interactive, /await applyDefaultDisplayDistance\(\)/);
   assert.match(interactive, /data-ena-recenter-behavior="default-distance"/);
   assert.match(groupContrast2d, /onClick=\{\(\) => onZoomChange\(1\)\}/);
   assert.match(interactive, /toImage\(plotRoot,/);
-  assert.match(interactive, /const png = pngBlobFromDataUrl\(dataUrl\)/);
+  assert.match(interactive, /png: pngBlobFromDataUrl\(dataUrl\)/);
   assert.doesNotMatch(interactive, /fetch\(dataUrl\)/);
   assert.match(interactive, /navigator\.clipboard\.write\(\[new ClipboardItem\(\{ "image\/png": png \}\)\]\)/);
-  assert.match(interactive, /navigator\.clipboard\.writeText\(dataUrl\)/);
+  assert.match(interactive, /navigator\.clipboard\.writeText\(text\)/);
+  const exportAction = readFileSync(new URL("../lib/open-ena/plot-image-export-v3.ts", import.meta.url), "utf8");
+  assert.match(exportAction, /operation\.writeText\(image.dataUrl\)/);
+  assert.match(exportAction, /operation\.download\(image.png\)/);
   assert.doesNotMatch(interactive, /querySelectorAll[^\n]*data-ena-plotly-root/);
 
   assert.equal(
@@ -1526,7 +1519,13 @@ test("3D fullscreen is native-first with a safe single-owner fallback, lifecycle
   assert.match(interactive, /setAttribute\("aria-modal", "true"\)/u);
   assert.match(interactive, /setAttribute\("aria-label", fallbackFullscreenLabel\)/u);
   assert.match(interactive, /copy\.plot\.fullscreenDialog/u);
-  assert.match(interactive, /fullscreenInitiatorRef\.current\?\.focus\(\)/u);
+  assert.match(interactive, /fullscreenFocusReturnRef\.current\?\.request\(initiator/u);
+  assert.match(interactive, /fullscreenFocusReturnRef\.current\?\.ready\(status === "error"\)/u);
+  for (const event of ["focusin", "pointerdown"]) {
+    assert.ok(interactive.includes(`document.addEventListener("${event}"`));
+    assert.ok(interactive.includes(`document.removeEventListener("${event}"`));
+  }
+  assert.match(interactive, /actionEpochRef\.current === epoch && figureRef\.current === figure/u);
   assert.match(interactive, /requestAnimationFrame\(/u);
   assert.match(interactive, /Plotly\.Plots\.resize\(plotRoot\)/u);
   assert.match(interactive, /cancelAnimationFrame\(/u);
@@ -1559,8 +1558,8 @@ test("3D fullscreen is native-first with a safe single-owner fallback, lifecycle
   assert.ok(fullscreenLogicStart >= 0 && fullscreenLogicEnd > fullscreenLogicStart);
   assert.doesNotMatch(
     interactive.slice(fullscreenLogicStart, fullscreenLogicEnd),
-    /Plotly\.(?:react|relayout)/u,
-    "fullscreen changes may resize the existing plot but must not recompute or refit its spec",
+    /Plotly\.react/u,
+    "fullscreen changes may relayout dimensions on the existing plot but must not recompute or refit its spec",
   );
 
   assert.match(styles, /\.open-ena-3d-triptych-panel:fullscreen[\s\S]*?width:\s*100vw;[\s\S]*?height:\s*100dvh;/u);
@@ -1639,4 +1638,29 @@ test("3D Recenter matches 2D by restoring the default display distance without r
   assert.deepEqual(reset.projection, current.projection);
   assert.ok(reset.eye.x < 0 && reset.eye.y > 0 && reset.eye.z > 0);
   assert.notDeepEqual(reset.eye, reference.eye);
+});
+
+test("fullscreen Exit remains actionable during render loading or pending image work", () => {
+  const interactive = readFileSync(join(process.cwd(), "components/open-ena/OpenEnaInteractive3DPlot.tsx"), "utf8");
+  const start = interactive.indexOf("  function toggleFullscreen() {");
+  const end = interactive.indexOf("  const fullscreenActionLabel", start);
+  const toggleSource = interactive.slice(start, end);
+  const buttonStart = interactive.indexOf("ref={fullscreenButtonRef}");
+  const buttonSource = interactive.slice(buttonStart, interactive.indexOf("onClick={toggleFullscreen}", buttonStart));
+  const disabledExpression = buttonSource.match(/disabled=\{([^}]+)\}/u)?.[1];
+  assert.ok(disabledExpression);
+  const disabled = new Function("status", "isFullscreen", `return (${disabledExpression});`);
+  for (const status of ["loading", "error", "ready"]) {
+    assert.equal(disabled(status, true), false, `Exit disabled during ${status}`);
+    for (const mode of ["native", "fallback", "embedded"]) {
+      const calls: string[] = [];
+      const target = { getAttribute: () => mode === "fallback" ? "true" : null };
+      const invoke = new Function("context", `const {fullscreenTargetRef,status,fullscreenRequestPendingRef,fullscreenInitiatorRef,fullscreenButtonRef,document,exitFallbackFullscreen,announceAction,copy,enterFullscreen}=context; ${toggleSource}; toggleFullscreen();`);
+      invoke({ fullscreenTargetRef: { current: target }, status, fullscreenRequestPendingRef: { current: true }, fullscreenInitiatorRef: { current: null }, fullscreenButtonRef: { current: {} }, document: { fullscreenElement: mode === "native" ? target : null, exitFullscreen: () => { calls.push("native-exit"); return Promise.resolve(); } }, exitFallbackFullscreen: (_target: unknown, restore: boolean) => { assert.equal(_target, target); assert.equal(restore, true); calls.push("fallback-exit"); }, announceAction: () => calls.push("announce"), copy: { plot: {} }, enterFullscreen: () => { calls.push("entry"); return Promise.resolve(); } });
+      assert.deepEqual(calls, mode === "embedded" ? [] : [`${mode}-exit`], `${mode} action admission changed during ${status}`);
+    }
+  }
+  assert.equal(disabled("loading", false), true, "entry must remain disabled during loading");
+  assert.equal(disabled("error", false), true, "entry must remain disabled on render error");
+  assert.equal(disabled("ready", false), false);
 });

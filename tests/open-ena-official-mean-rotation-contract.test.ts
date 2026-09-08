@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -138,27 +139,13 @@ test("an endpoint reference rotation remains protected while official comparison
   }), "svd");
 });
 
-test("Workspace delegates group and model transitions to the shared official comparison policy", () => {
-  const workspace = readFileSync(
-    join(process.cwd(), "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  const calls = workspace.match(/officialComparisonRotation\s*\(/g) ?? [];
+test("native Group and model edits never silently choose Means or replace a scientific rotation", () => {
 
-  assert.match(
-    workspace,
-    /import[\s\S]{0,400}officialComparisonRotation[\s\S]{0,400}from\s+["']@\/lib\/open-ena\/csv["']/,
-    "the workbench must consume the same tested policy that CSV inference uses",
-  );
-  assert.ok(
-    calls.length >= 2,
-    "both comparison-group changes and endpoint/model changes must reconcile rotation through the pure policy",
-  );
-  assert.doesNotMatch(
-    workspace,
-    /rotation:\s*!event\.target\.value\s*&&\s*current\.rotation\s*===\s*["']mean["']/,
-    "the former one-way inline fallback must not bypass the shared two-group policy",
-  );
+  assert.doesNotMatch(v3, /officialComparisonRotation|applyOfficialComparisonRotationPolicy|updateConfig\(/);
+  assert.match(v3, /OpenEnaUnitsPanelV3/);
+  assert.match(v3, /modelNavigation.tab === "units"/);
+  assert.match(v3, /ena-model-units-v3-means/);
+
 });
 
 test("the browser worker canonicalizes generalized RR1 before building the visible and exported result", () => {

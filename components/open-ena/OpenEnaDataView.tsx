@@ -30,6 +30,7 @@ export interface OpenEnaDataViewProps {
   onContextChange: (context: OpenEnaDataViewContext) => void;
   onReturnToComparison: () => void;
   onExportCsv: () => void;
+  exportDisabled?: boolean;
   contextOptions?: ReadonlyArray<OpenEnaDataViewContextOption>;
   maxTableHeight?: CSSProperties["maxHeight"];
   emptyMessage?: ReactNode;
@@ -46,6 +47,7 @@ export interface OpenEnaDataViewCopy {
   contextLabel: string;
   record: string;
   records: string;
+  recordCount: (count: number) => string;
   exportLabel: string;
   exportAriaLabel: string;
   tableAriaLabel: string;
@@ -71,6 +73,7 @@ const DEFAULT_COPY: OpenEnaDataViewCopy = {
   contextLabel: "Show units in",
   record: "Data View record",
   records: "Data View records",
+  recordCount: (count) => `${count.toLocaleString("en-US")} ${count === 1 ? "Data View record" : "Data View records"}`,
   exportLabel: "Export CSV ↓",
   exportAriaLabel: "Export Data View records as CSV",
   tableAriaLabel: "Data View records",
@@ -118,6 +121,7 @@ export default function OpenEnaDataView({
   onContextChange,
   onReturnToComparison,
   onExportCsv,
+  exportDisabled = false,
   contextOptions = DEFAULT_CONTEXT_OPTIONS,
   maxTableHeight = "min(64vh, 680px)",
   emptyMessage = "No Data View records match this context.",
@@ -151,7 +155,6 @@ export default function OpenEnaDataView({
     ...metadataColumns,
     ...visibleVariableColumns,
   ];
-  const recordCount = rows.length.toLocaleString("en-US");
 
   useEffect(() => setRowPage(0), [context, rows]);
   useEffect(() => setVariableColumnPage(0), [columns]);
@@ -187,8 +190,8 @@ export default function OpenEnaDataView({
             ))}
           </select>
         </label>
-        <output aria-live="polite">{recordCount} {rows.length === 1 ? copy.record : copy.records}</output>
-        <button type="button" onClick={onExportCsv} disabled={rows.length === 0} aria-label={copy.exportAriaLabel}>
+        <output aria-live="polite">{copy.recordCount(rows.length)}</output>
+        <button type="button" onClick={onExportCsv} disabled={exportDisabled || rows.length === 0} aria-label={copy.exportAriaLabel}>
           {copy.exportLabel}
         </button>
       </div>

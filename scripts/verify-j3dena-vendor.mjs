@@ -91,9 +91,20 @@ export const J3DENA_VENDOR_CONTRACT = Object.freeze({
   jenaNumericsSha256: "3a4567fba2d89bc7c2dd8b3a849d16f578d6a426155b6fd5ed59aab49f6002f1",
   jenaProvenanceSha256: "f7d0a7c545036beb53f480bd33393d2a1ad20b7763e7863fcb8e115fe32a12dd",
   jenaSourceTreeSerialization: JENA_SOURCE_TREE_SERIALIZATION,
-  jenaSourceTreeSha256: "b325c61e549392f7f80a504ba235b62d2fd74e9038f48ce768c483caf06bd671",
-  jenaSourceTreeFileCount: 35,
-  jenaSourceTreeByteLength: 431_196,
+  jenaSourceTreeSha256: "4866eb411ea910677399d285a5ae44d75c224f3c70560938b2c87109fc4294b7",
+  jenaSourceTreeFileCount: 36,
+  jenaSourceTreeByteLength: 449_757,
+});
+
+// The facade artifact above records its immutable upstream build provenance.
+// The installed workspace peer has since received the accepted Models v3
+// numerical repair (Task35, 885287181e4564c8615297b8667dd26bdd286d70).
+// Pin that distinct local source tree without rewriting the artifact's identity.
+export const J3DENA_VERIFICATION_CONTRACT = Object.freeze({
+  ...J3DENA_VENDOR_CONTRACT,
+  jenaSourceTreeSha256: "24fdcb7314ca89e0391987ea5a6e8127539100c2e5966cc9dea8bac615f8acc8",
+  jenaSourceTreeFileCount: 36,
+  jenaSourceTreeByteLength: 459_333,
 });
 
 const DEFAULT_PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -1173,7 +1184,7 @@ async function verifyRuntimePackage(projectRoot, contract) {
 
 export async function verifyJ3denaVendor({
   projectRoot = DEFAULT_PROJECT_ROOT,
-  contract = J3DENA_VENDOR_CONTRACT,
+  contract = J3DENA_VERIFICATION_CONTRACT,
   requireInstalled = false,
   requireRuntime = false,
 } = {}) {

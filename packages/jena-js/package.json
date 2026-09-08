@@ -87,7 +87,8 @@
     "goldens:elasticnet": "Rscript scripts/generate-elasticnet-goldens.R .",
     "goldens:ordered-window": "Rscript --vanilla scripts/generate-ordered-window-golden.R",
     "goldens:diff": "node scripts/compare-goldens.mjs",
-    "goldens:compare": "vitest run tests/r-goldens.test.ts"
+    "goldens:compare": "vitest run tests/r-goldens.test.ts",
+    "goldens:standard-v3": "Rscript --vanilla scripts/regen-standard-v3-goldens.R fixtures/goldens/rena-current-standard-v3.generated.json"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

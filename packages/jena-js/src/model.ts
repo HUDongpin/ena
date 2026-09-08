@@ -23,6 +23,7 @@ import {
   centroidsAsRows,
   directedNodePositions,
   directedNodePositionsWithGroundResponseAdded,
+  fixedNodePositions,
   lwsLeastSquaresPositions,
   nodesAsRows,
   type NodePositionResult
@@ -191,6 +192,8 @@ function makeNodePositions(
     }
   }
   switch (method) {
+    case 'reference-fixed':
+      throw new Error('Reference fixed nodes must use the validated projection-only path.');
     case 'undirected':
       return lwsLeastSquaresPositions(lineWeights, points, codeCount);
     case 'directed':
@@ -206,24 +209,81 @@ export function makeSet(enadata: ENAData, options: MakeSetOptions = {}): ENASet 
   validateOrderedMakeSetPhase(enadata, options);
   const dimensions = options.dimensions ?? 2;
   const centerAlignToOrigin = options.centerAlignToOrigin ?? true;
+  const n = enadata.connectionMatrix.length;
+  const e = enadata.codeColumns.length;
+  const c = enadata.codes.length;
+  const d = Math.min(dimensions, e);
+  // Matrices/tables here are actual retained numeric slots, counted once by
+  // ownership. Scratch bounds describe dense helper overlap, never heap bytes.
+  let retained = 2 * n * e + enadata.rawRows.length * c + enadata.rowConnectionCounts.length * e;
+  const observe = (scratch = 0): void => options.observer?.onResources?.({ numericCells: retained, temporaryNumericCellsBound: scratch });
+  options.observer?.onStage?.('normalize');
+  observe(n * e);
   const lineWeightsMatrix = sphereNorm(enadata.connectionMatrix);
+  retained += n * e;
+  options.observer?.onStage?.('center');
+  observe(n * e + e);
   const { pointsForProjection, centerVector } = centerForProjection(lineWeightsMatrix, centerAlignToOrigin, options.rotationSet);
+  retained += n * e + (options.rotationSet ? 0 : e);
+  options.observer?.onStage?.('rotate-or-project');
+  // Means additionally retains centered/deflated residual networks and the
+  // leading-axis completion basis while SVD decomposes its residual covariance.
+  observe(options.rotation?.method === 'mean' ? 6 * e * e + 4 * n * e + 8 * e : 3 * e * e + 2 * n * e + 8 * e);
   const rotationResult = makeRotation(enadata, pointsForProjection, options);
+  if (!options.rotationSet) retained += rotationResult.rotationMatrix.reduce((sum, row) => sum + row.length, 0) + rotationResult.eigenvalues.length;
   const dimCount = Math.min(dimensions, rotationResult.rotationColumns.length);
   const dimensionNames = rotationResult.rotationColumns.slice(0, dimCount);
+  let fixedNodes: Matrix | undefined;
+  if (options.nodePositionMethod === 'reference-fixed') {
+    const reference = options.rotationSet!;
+    if ((enadata.networkType ?? 'standard') !== 'standard'
+      || !Array.isArray(reference.codes) || reference.codes.length !== enadata.codes.length
+      || !Array.isArray(reference.nodes) || reference.nodes.length !== enadata.codes.length) {
+      throw new Error('Reference fixed nodes require Standard data and complete identity-aligned Code nodes.');
+    }
+    for (let index = 0; index < enadata.codes.length; index += 1) {
+      if (!Object.hasOwn(reference.codes, index) || reference.codes[index] !== enadata.codes[index]) {
+        throw new Error('Reference fixed nodes require a dense identity-aligned Code array.');
+      }
+      if (!Object.hasOwn(reference.nodes, index)) throw new Error('Reference fixed nodes require a dense node array.');
+    }
+    fixedNodes = reference.nodes.map((node, index) => {
+      if (node === null || typeof node !== 'object' || node.code !== enadata.codes[index]) throw new Error('Reference fixed node Code identities must match runtime order exactly.');
+      for (const axis of reference.rotationColumns) {
+        if (Object.hasOwn(node, axis) && (typeof node[axis] !== 'number' || !Number.isFinite(node[axis]))) {
+          throw new Error('Reference fixed node coordinates must be finite for every supplied rotation axis.');
+        }
+      }
+      return dimensionNames.map((axis) => {
+        const value = node[axis];
+        if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error('Reference fixed node coordinates must be complete and finite.');
+        return value;
+      });
+    });
+    retained += c * dimCount;
+  }
   // rENA projects onto the full rotation matrix (ena.make.set.R: points <-
   // points.for.projection %*% rotation.matrix) and normalizes variance across
   // ALL rotated dimensions; only display output is truncated to `dimensions`.
   const fullPointsMatrix = multiplyMatrices(pointsForProjection, rotationResult.rotationMatrix);
   const pointsMatrix = selectMatrixColumns(fullPointsMatrix, dimCount);
-  const nodePositionResult = makeNodePositions(
+  retained += n * (e + dimCount);
+  options.observer?.onStage?.('position-nodes');
+  const standardNodeScratch = (enadata.networkType ?? 'standard') === 'standard' && fixedNodes === undefined;
+  observe(2 * n * c + (standardNodeScratch ? 4 : 3) * c * c + n + (standardNodeScratch ? 6 : 4) * c + (n + c) * d);
+  const nodePositionResult = fixedNodes !== undefined ? fixedNodePositions(lineWeightsMatrix, fixedNodes) : makeNodePositions(
     lineWeightsMatrix,
     pointsMatrix,
     enadata.codes.length,
     enadata.networkType ?? 'standard',
     options
   );
-  const variances = varianceColumns(fullPointsMatrix);
+  retained += n * c + n * dimCount + (fixedNodes ? 0 : c * dimCount);
+  observe(2 * n * e + 2 * n * dimCount + c * dimCount + 2 * e);
+  // Exact constant Reference targets have zero variance; repeated-sum rounding
+  // must not become a normalized 100% axis when projection permits rank zero.
+  const constantReference = fixedNodes !== undefined && fullPointsMatrix.every((row) => row.every((value, index) => value === fullPointsMatrix[0]?.[index]));
+  const variances = constantReference ? rotationResult.rotationColumns.map(() => 0) : varianceColumns(fullPointsMatrix);
   const varianceTotal = variances.reduce((sum, value) => sum + value, 0);
   const variance = Object.fromEntries(rotationResult.rotationColumns.map((name, index) => [name, varianceTotal === 0 ? 0 : (variances[index] ?? 0) / varianceTotal]));
 
@@ -237,7 +297,7 @@ export function makeSet(enadata: ENAData, options: MakeSetOptions = {}): ENASet 
     nodes: options.rotationSet?.nodes ?? nodesAsRows(enadata.codes, nodePositionResult.nodes, dimensionNames)
   };
 
-  return {
+  const result: ENASet = {
     ...enadata,
     lineWeights: rowsFromMatrix(enadata.connectionCounts, enadata.codeColumns, enadata.codeColumns, lineWeightsMatrix),
     pointsForProjection: rowsFromMatrix(enadata.connectionCounts, enadata.codeColumns, enadata.codeColumns, pointsForProjection),
@@ -246,6 +306,9 @@ export function makeSet(enadata: ENAData, options: MakeSetOptions = {}): ENASet 
     variance,
     centroids: centroidsAsRows(enadata.unitLabels, nodePositionResult.centroids, dimensionNames)
   };
+  retained += 2 * n * e + 2 * n * dimCount + (options.rotationSet ? 0 : c * dimCount) + 2 * e;
+  observe();
+  return result;
 }
 
 export function projectIn(enadata: ENAData, by: RotationSet | ENASet, options: Omit<MakeSetOptions, 'rotationSet'> = {}): ENASet {

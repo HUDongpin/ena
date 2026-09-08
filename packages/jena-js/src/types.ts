@@ -19,7 +19,7 @@ export type NetworkType = "standard" | "ordered";
 export type WeightBy = "binary" | "sum" | ((values: number[]) => number);
 
 export type RotationMethod = "svd" | "mean" | "generalized" | "regression" | "regression2" | "hena" | "spherical";
-export type NodePositionMethod = "undirected" | "directed" | "directed-ground-response";
+export type NodePositionMethod = "undirected" | "directed" | "directed-ground-response" | "reference-fixed";
 export type GroupSelector = string[] | boolean[];
 
 export interface MeanRotationParams {
@@ -166,4 +166,14 @@ export interface MakeSetOptions {
   rotation?: RotationOptions;
   rotationSet?: RotationSet;
   nodePositionMethod?: NodePositionMethod;
+  /** Operational in-process observation; never part of scientific function parameters. */
+  observer?: {
+    onStage?: (stage: 'normalize' | 'center' | 'rotate-or-project' | 'position-nodes') => void;
+    onResources?: (state: {
+      /** Exact currently retained tracked scientific numeric slots at this boundary. */
+      numericCells: number;
+      /** Conservative additional scratch slots checked BEFORE the next allocation. */
+      temporaryNumericCellsBound: number;
+    }) => void;
+  };
 }

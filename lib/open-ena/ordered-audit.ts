@@ -44,6 +44,7 @@ export function buildOpenEnaOrderedAudit(set: ENASet): OpenEnaOrderedAudit | und
 
   const horizonOrdinalByIdentity = new Map<string, number>();
   const responseRowIndices: number[] = [];
+  const seenResponseRows = new Set<number>();
   const previousResponseRowIndices: Array<number | null> = [];
   const priorRowCounts: number[] = [];
   const horizonOrdinals: number[] = [];
@@ -55,7 +56,7 @@ export function buildOpenEnaOrderedAudit(set: ENASet): OpenEnaOrderedAudit | und
     if (!Number.isSafeInteger(responseRowIndex)
       || responseRowIndex < 0
       || responseRowIndex >= windowRows.length
-      || responseRowIndices.includes(responseRowIndex)) {
+      || seenResponseRows.has(responseRowIndex)) {
       throw new Error("ONA ordered audit response-row indices must be a complete unique mapping.");
     }
     const previous = provenance.previousRowIndex;
@@ -77,6 +78,7 @@ export function buildOpenEnaOrderedAudit(set: ENASet): OpenEnaOrderedAudit | und
     const row = set.rowConnectionCounts[auditIndex];
     if (!row) throw new Error("ONA ordered audit is missing a row connection vector.");
     responseRowIndices.push(responseRowIndex);
+    seenResponseRows.add(responseRowIndex);
     previousResponseRowIndices.push(previous);
     priorRowCounts.push(provenance.priorRowCount);
     horizonOrdinals.push(horizonOrdinal);

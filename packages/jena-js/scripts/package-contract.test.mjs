@@ -51,6 +51,23 @@ test("pins the canonical GPL-3.0-only license copy and npm inclusion", () => {
   );
 });
 
+test("public numerical error contract exports Standard and ordered typed codes", () => {
+  const publicIndex = readFileSync(join(PROJECT_DIR, "src", "index.ts"), "utf8");
+  const performance = readFileSync(join(PROJECT_DIR, "src", "performance.ts"), "utf8");
+  assert.match(publicIndex, /EnaNumericalError,/u);
+  assert.match(publicIndex, /EnaNumericalErrorCode,/u);
+  for (const code of [
+    "STANDARD_CONNECTION_NONFINITE",
+    "STANDARD_ACCUMULATION_NONFINITE",
+    "ORDERED_CONNECTION_NONFINITE",
+    "ORDERED_PRODUCT_UNDERFLOW",
+    "ORDERED_MASK_UNDERFLOW",
+    "ORDERED_UNIT_AGGREGATION_NONFINITE",
+  ]) {
+    assert.match(performance, new RegExp(`\\| '${code}'`, "u"));
+  }
+});
+
 test("accepts a matching zero-runtime package and lock root", () => {
   assert.doesNotThrow(() => assertZeroRuntimeDependencyContract(validPackage(), validLock()));
 });

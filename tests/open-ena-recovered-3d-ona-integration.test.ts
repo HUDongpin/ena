@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -78,30 +79,17 @@ test("user-facing and manifest boundaries no longer contradict the reachable ver
   );
   assert.doesNotMatch(i18n, /3D ONA is not verified in this release/u);
   assert.match(analyze, /3D ONA is display-only and consumes the same completed fitted coordinates/u);
-  assert.match(
-    workspace,
-    /const threeDViewLabel = completedResultKind === "ona"[\s\S]*?copy\.ona\.workspace\.threeD[\s\S]*?: copy\.views\.threeD/u,
-  );
-  assert.match(workspace, /aria-label=\{!genericThreeDAvailable[\s\S]*?threeDViewLabel/u);
+  assert.match(workspace, /completedResultKind === "ona" \? copy.ona.workspace.threeD : copy.views.threeD/);
+
+  assert.match(workspace, /disabled=\{!genericThreeDAvailable\}/u);
 });
 
-test("the current 3D ONA layout preserves side plots while Data View replaces only Overall", () => {
-  const workspace = readFileSync(
-    join(projectRoot, "components/open-ena/OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  const layout = readFileSync(
-    join(projectRoot, "components/open-ena/OpenEna3DOrderedResultLayout.tsx"),
-    "utf8",
-  );
-  assert.match(layout, /centerMode:\s*"plot"\s*\|\s*"data"/u);
-  assert.match(layout, /dataView\?:\s*ReactNode/u);
-  assert.match(
-    layout,
-    /centerMode === "data"[\s\S]*?data-testid="open-ena-ona-3d-data-view"[\s\S]*?:\s*\([\s\S]*?data-testid="open-ena-ona-3d-overall-plot"/u,
-  );
-  assert.match(
-    workspace,
-    /<OpenEna3DOrderedResultLayout[\s\S]*?centerMode=\{effectiveCenterSurface\}[\s\S]*?dataView=\{effectiveCenterSurface === "data"/u,
-  );
+test("3D ONA preserves its side plots while native Data View replaces only Overall", () => {
+
+  assert.match(v3, /<OpenEna3DOrderedResultLayout .*centerMode=\{centerSurface\} dataView=\{nativeDataView\}/);
+  const layout = moduleV3("components/open-ena/OpenEna3DOrderedResultLayout.tsx");
+  assert.match(layout, /centerMode === "data"/);
+  assert.match(layout, /dataView/);
+  assert.match(v3, /onReturnToComparison=\{\(\) => setCenterSurface\("plot"\)\}/);
+
 });

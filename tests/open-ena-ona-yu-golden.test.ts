@@ -7,13 +7,15 @@ import {
   verifyOpenEnaOnaYuGolden,
 } from "../scripts/verify-open-ena-ona-yu-golden";
 
-const externalGoldenAvailable = existsSync(DEFAULT_YU_ONA_WORKBOOK_PATH)
-  && existsSync(DEFAULT_YU_ONA_GOLDEN_PATH);
+const missingInputs = [
+  ...(!existsSync(DEFAULT_YU_ONA_WORKBOOK_PATH) ? ["private/local Yu workbook"] : []),
+  ...(!existsSync(DEFAULT_YU_ONA_GOLDEN_PATH) ? ["R-derived Yu golden CSV"] : []),
+];
 
 test("Open ENA reproduces the external Yu within-student ONA gold standard exactly", {
-  skip: externalGoldenAvailable
+  skip: missingInputs.length === 0
     ? false
-    : "The private/local Yu workbook and R-derived golden CSV are not committed fixtures.",
+    : `Yu ONA golden missing ${missingInputs.join(" and ")}; no scientific pass is claimed.`,
 }, async () => {
   const verification = await verifyOpenEnaOnaYuGolden();
 

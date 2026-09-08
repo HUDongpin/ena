@@ -4,6 +4,15 @@ The [Epistemic Network Analysis Hub of Knowledge](https://www.ena.hk).
 
 ## ENA Plugin Lab
 
+Native v3 results retain their own configuration and source/Reference binding in
+the Plugin Lab context. The trusted 3D presenter preserves native trajectories
+and Group/Unit visibility. After a scientific edit, the historical 3D geometry
+remains visible through the core presenter without dispatching a new plugin run.
+Current-result exports and plugin receipts require the current result/plan;
+receipt hashing and download recheck that lease so an in-flight operation cannot
+publish a receipt after the result becomes stale. Restoring the same draft does
+not restore currentness: an explicit model rerun is required.
+
 ENA Plugin Lab provides a public catalog and a governed path for researchers to
 co-design new ENA methods, visualizations, workflows, diagnostics, and exports
 with Dr. Peter Hu. `Plugin` is the product unit; every catalog entry separately
@@ -63,57 +72,202 @@ tutorial collection with searchable track and level filters, localized index and
 interfaces, an English reviewed-content fallback, and downloadable synthetic practice
 data for learning the ENA workflow.
 
-Open ENA is a browser-based research workspace powered by the pinned
-`jena-js` runtime. It accepts coded CSV or XLSX data and keeps the standard two-dimensional
-ENA view selected by default. Its 2D and interactive 3D presenters use the same fitted
-jENA result, while ENA and longitudinal trajectory marks remain on separate research
-surfaces. Switching between 2D and 3D changes presentation only: it does not rerun or
-refit the analysis, and the displayed geometry remains descriptive rather than
-inferential evidence.
+Open ENA is a browser-based research workspace powered by the pinned `jena-js`
+runtime. The Models v3 Workspace uses separate Standard ENA and ONA drafts,
+strict typed source admission, compiled execution plans, and bound results.
+Data, Plot, Stats and AI consume native results; new inference and current exports
+also require the independently compiled current plan. Scientific edits retain the
+previous geometry as stale and require an explicit run. Display changes do not
+refit, abort an otherwise current run, or change its scientific result.
 
-Generic 2D and 3D ENA presenters show codes, network edges, unit points, and group means without trajectory paths, arrows, or time-point labels.
-The dedicated longitudinal trajectory presenter shows fitted code references, participant-period points, square centroids, black paths, and midpoint direction arrows without ENA mean-network edges.
+CSV cells enter as literal text. Researchers review explicit Text, Number or
+Boolean declarations before creating a genuine typed XLSX derivative. Numbers use
+whole-token JSON decimal syntax; overflow, nonzero underflow and unsafe integers
+reject, and ordinary IEEE 754 fraction rounding is disclosed. Text preserves
+identifiers such as `001` and `9007199254740993`. Native XLSX cell types remain
+unchanged. The downloadable derivative reuploads through the same worksheet
+parser and normalized worksheet hash. The original CSV and a separate derivation
+receipt remain downloadable; neither is claimed as authentication of the
+transformation. Serialization uses pinned MIT-licensed `write-excel-file@4.1.1`.
 
-The researcher workspace currently provides:
+The current native Workspace provides:
 
-- endpoint, separate-trajectory, and accumulated-trajectory ENA models with binary code columns;
-- ordered, multi-column unit and conversation identities;
-- optional comparison groups, including multi-group SVD and jENA one-way F summaries;
-- an ordered Primary-versus-Secondary endpoint contrast for any selected pair within a two-to-six-group result, rendered as fixed-geometry Comparison, Primary, and Secondary panels with equal-unit mean networks and signed Primary-minus-Secondary edge differences;
-- moving-stanza or whole-conversation windows, including backward and forward context;
-- binary or summed-product edge weighting;
-- SVD rotation or two-group means rotation, with optional pinning of zero-network units to the origin;
-- reusable endpoint reference rotations for projecting independent datasets into the same fitted jENA geometry;
-- an in-memory Sets workspace that retains up to six endpoint analyses in one exact reference geometry, assigns Primary and Secondary sets, and renders stable comparison/primary/secondary plots with signed Primary-minus-Secondary edge differences;
-- linked 2D and interactive WebGL 3D projections within each strict presenter boundary, with selectable axes, point scaling, zoom/fit, camera controls, axis flips, and optional labels;
-- cohort-aware longitudinal group-centroid paths for separate and accumulated trajectory results, with an explicit repeated-entity field, a reviewable/reorderable period sequence, Available versus Complete cohort policies, equal-weight entity-period centroids, missing-period gaps, and per-period inclusion diagnostics;
-- standalone SVG and 3x-resolution PNG figure export for the current 2D research view, plus PNG clipboard capture from each interactive 3D plot toolbar;
-- jENA dimension summaries, correlations, Welch/ANOVA test statistics, and absolute Cohen's d for datasets within the automatic diagnostics limit;
-- researcher-triggered, design-matched rank inference for independent endpoint groups, independent groups at one selected trajectory period, paired trajectory periods, and three-or-more-period repeated trajectories, with raw and Holm-adjusted p-values from one frozen inference result;
-- a local source-evidence browser with text search and active-code filtering that keeps raw source rows out of model exports;
-- an optional, researcher-triggered GPT-5.6 Luna interpretation of a reviewed, anonymized aggregate evidence request through a server-only OpenRouter connection;
-- inspectable and downloadable coordinates, pre-normalization connection counts, line weights, centroids, node positions, adjacency keys, a derived analysis bundle with the full rotation set, a reusable reference-rotation package, and an analysis manifest.
+- Units, Horizons, Windows and Codes editors with durable unfinished input, typed
+  identities, explicit order policies and independent family drafts;
+- EndPoint, SeparateTrajectory and AccumulatedTrajectory Standard models with
+  strict Binary or Frequency Codes; ONA has its own directional mask and order;
+- explicit SVD, Means or compatible Reference rotation where supported, without
+  silently replacing an invalid scientific choice;
+- the complete declared Group inventory, with native endpoint contrasts requiring
+  two selected Groups, two supported axes, and a total of two to six Groups;
+- persistent 2D and WebGL 3D plots, display-only Code and Group choices, SOURCE
+  labels mapped independently from public Code aliases, camera controls and node
+  positions; ungrouped and rank-one models remain inspectable;
+- native observed-point trajectory paths, original fitted ordinals and available
+  Group-by-Horizon centroids with actual contributing counts. Connectors use
+  observed adjacent fitted steps, not an invented global chronology. Individual
+  paths default off. Display filtering never bridges a removed intermediate step;
+- a native Data View with context selection, paging, export and return to the
+  central plot while side plots remain mounted. Per-point source membership is
+  unavailable and stays null; global runtime source traversal is separate;
+- explicit native endpoint, independent-period, paired-period and repeated-period
+  inference; ONA remains descriptive. Model bundles retain unavailable statistics,
+  with post-model inference exported separately;
+- bound Methods Copy/download, identity-confirmed model/Data View/plot exports,
+  truthful source-owned Reference export or original-Reference re-export, and
+  up to six local same-basis analysis sets;
+- read-only artifact previews, explicit draft/configuration replacement and
+  immutable Reference registration that neither selects rotation nor runs a model;
+- separate result-bound presentation presets. Their supported fields are disclosed;
+  the format does not encode the selected Group pair or a complete view state;
+- optional AI interpretation only after review and explicit consent for the
+  approved aggregate wire request. Full scientific identity stays local for
+  request and response currentness; unsupported partial-order evidence is disclosed.
 
-Open ENA follows the pinned jENA 0.7.0-ona.0 plotting defaults for scientific data
-marks: the first/positive network is blue (`#3366cc`), the second/negative
-network is red (`#dc3912`), and network edges and trajectory paths are solid.
-Marker shapes, signed values, accessible labels, and tables provide redundant
-group and direction cues. Dashed strokes are reserved for neutral coordinate
-guides, not ENA connections or trajectories. This also preserves rENA's
-standard Primary-blue, Secondary-red, solid-line subtraction convention.
+Legacy generic ENA renderer calls still ignore a trajectory flag alone. The native
+Workspace supplies a validated fitted-sequence presentation layer to the 2D and
+3D renderers. Retained legacy readers and standalone longitudinal presenters remain
+compatibility surfaces and do not grant authority to imported artifacts.
 
-Endpoint models expose jENA's descriptive, group-test, and point-centroid diagnostic
-summaries. Trajectory models preserve ordered unit-conversation steps and directed
-paths; endpoint group tests and correlations are not silently reused for repeated
-trajectory observations. jENA's statistical helper reports test statistics and
-degrees of freedom but does not calculate p-values.
+### Models
+
+Open ENA supports **all six Standard Model/Window combinations**:
+
+| Standard model | Moving Stanza (`MovingStanzaWindow`) | Conversation/Horizon (`Conversation`) |
+| --- | --- | --- |
+| EndPoint | Supported | Supported |
+| SeparateTrajectory (Separate Trajectory) | Supported | Supported |
+| AccumulatedTrajectory (Accumulated Trajectory) | Supported | Supported |
+
+Units identify the analytic entities; Horizons define their context partitions;
+Codes define the network variables. Composite Unit, Horizon and Group identities
+preserve declared Text, Number and Boolean types. Standard **Binary** accepts either a consistently
+numeric 0/1 Code column or a consistently Boolean false/true Code column, with
+explicit Boolean-to-0/1 runtime mapping and provenance. Mixed Boolean/numeric
+representation within a Code is rejected. **Frequency** accepts finite nonnegative
+numbers and rejects booleans. Strings, missing cells and invalid numeric values
+are not silently converted into Codes.
+Moving Stanza has explicit backward and forward finite extents or **Infinity**
+(entire available extent within the Horizon). Conversation uses the whole Horizon.
+Moving row order and trajectory Horizon order are separate scientific choices:
+select explicit keys/comparators, or explicitly confirm source order where offered.
+The application does not guess chronology from labels or bridge unobserved steps.
+
+**SVD, Means, and Reference** are the Standard rotations. Means is fitted directly
+only for **EndPoint**, with a declared Positive-minus-Negative direction. An
+**Endpoint Reference can project all three Standard models**, using the validated
+source center, full basis and fixed nodes after exact Code-identity remapping.
+A target trajectory or projected Endpoint cannot mint a new source Reference.
+Standard and ONA retain isolated drafts and execution contracts: ONA keeps its
+fixed directional masking, ordering and descriptive outputs; Standard weighting,
+Means and Reference controls do not alter that contract. **TMA and advanced rotations are not implemented in the Models tab**, even where the underlying package
+has other research APIs.
+
+Malformed, incompatible, stale, rank-ineligible or over-budget scientific choices
+fail closed with diagnostics. They do not trigger a replacement rotation,
+truncated dataset or automatic rerun. Hide/Show changes display only; Exclude
+changes the model configuration and makes prior results stale. Core model
+admission is broader than individual consumers: endpoint contrasts need two
+supported axes and two selected Groups out of two to six declared Groups; local
+analysis sets require compatible Endpoint results in the same basis. A valid
+rank-one or ungrouped result remains inspectable without granting these actions.
+
+Portable canonical configurations, drafts, analysis bundles and stale-result
+audits use **schema version 3**; Standard Reference uses **schema version 2**.
+Post-model rank statistics have a separate **schema version 1** artifact; native
+trajectory analysis, plot specifications and export manifests use **schema version 3**.
+Result-bound presentation presets describe only their declared display fields.
+The validation, runtime-policy and execution contracts are respectively
+`open-ena-validation-v3.1`, `open-ena-runtime-policy-v3.1` and
+`open-ena-execution-v3.1`; resource admission also includes the documented
+operational supplement. Version strings alone do not establish admission or
+scientific compatibility. Imports check strict shapes, component hashes,
+scientific consistency and resource limits. They open historical previews or
+explicit configuration/Reference choices; **imported artifacts never restore live
+execution authority**, even if serialized configuration metadata says executable.
+They require a newly compiled current plan and explicit run for new results.
+Legacy v1/v2 readers retain their disclosed missing-provenance limits.
+
+Scientific parity is bounded by the fixed fixtures in
+[jENA numerical acceptance](packages/jena-js/NUMERICS.md): the frozen rENA 0.3.1
+baseline and 14 pinned rENA 0.4.4 Standard cases. The latter retains all six returned
+axes and checks requested three-axis views as exact full-frame prefixes; scalar
+geometry/full variance uses 1e-10 absolute bounds, and basis/projector comparisons
+use 1e-8. Full variance is never renormalized. This does not establish universal
+cross-platform or ill-conditioned-input agreement. Undirected fitted nodes use
+a rank-aware minimum-norm solve; directed ONA retains its ridge solve and Reference
+retains source nodes. See the [acceptance ledger](docs/superpowers/specs/2026-09-02-open-ena-standard-model-parameters-acceptance-ledger.md)
+for exact tested revisions, historical failures, unavailable evidence and pending
+final gates. Local acceptance does not imply a deployed or production release.
+
+### Whole-path trajectory analysis and export
+
+The native trajectory panel separately compares **independent whole participant
+histories**. Confirm that the full Unit identity represents the same entity over
+time and that the two Groups contain independent histories. Select typed Groups
+and ordered Horizons with **three genuinely supported axes** and at least **two
+complete Units per group**. The analysis uses equal participant weights and only
+histories complete across all selected Horizons. It defaults to **500 permutations
+and seed 2026**, permutes whole histories between Groups, retains raw p-values and
+reports Holm-adjusted p-values within the declared family. Resource checks bound
+periods, repetitions, memory and work before admission. **Paired whole-path
+comparison is not implemented.** The independent-period, paired-period and
+repeated-period rank designs below remain separate analyses; a paired rank test
+does not imply paired path inference.
+
+The path calculations use a local GPL math port with pinned public SDK/source-map
+provenance. Its independent public-SDK oracle covers **23 metrics in one fixed
+fixture**; that is not a universal metric count or a claim that internal helpers
+are public package exports. The fitted direction and Means separation limitations
+remain visible when interpreting path results.
+
+The default trajectory ZIP contains `analysis.json`, `plot-specification.json`,
+and `trajectory-inference.csv` as its three aggregate payload files, accompanied
+by `manifest.json`. All four are also available as standalone files. The three
+aggregate payload files contain path results, any optionally collected rank
+results, and the complete-cohort plot specification. That plot
+describes the complete comparison cohorts, not whichever available points a
+display filter shows. The bound model Methods report is available separately in
+the Workspace; it is not included in the trajectory ZIP. A rank result's method
+identifier names its statistical procedure, rather than supplying a Methods report.
+
+Participant identities and traces require **explicit participant opt-in before
+materialization** and local confirmation. These three aggregate payload files
+remain byte-identical after participant opt-in. `participants.json` is added;
+`manifest.json` changes its disclosure and file inventory, so the ZIP bytes and
+hash also change. Full identity-bearing model exports are a different contract.
+Every new analysis/export requires the current native result, plan and controls;
+currentness is rechecked after asynchronous work, and stale or unmounted actions
+produce no output. Imported JSON remains historical data.
+
+Native trajectory plots use black paths, direction arrows and 7-pixel square
+centroids; mean-network edges are suppressed for the trajectory presentation.
+Individual paths default off. Native 2D supplies SVG projections, export and zoom;
+3D additionally supplies native fullscreen and its accessible fallback. Image
+actions wait for the figure to be ready and require identity confirmation before
+creating output. If the clipboard API is absent, Copy downloads a real PNG; an
+available clipboard that rejects a write reports an error. Fullscreen Exit stays
+available while work is pending. Deferred focus returns when the figure is ready
+unless the researcher has chosen another focus target or changed context.
+
+The installed Plotly 3.7.0 includes an explicit local disposal correction. Its
+upstream identity, applied digest, exact four substitutions for two disposal
+omissions, license and build guard are documented in
+[Plotly disposal maintenance](docs/maintenance/plotly-3.7.0-disposal-correction.md).
+Measured projection and PNG cycles support bounded resource retention; they do
+not prove universal GPU leak freedom. Known scientific label overlaps and raw
+Canvas2D advisories remain. Browser evidence distinguishes CSS zoom from native
+browser zoom, English served journeys from three-locale catalog/SSR and earlier
+Chinese Workspace checks, and controlled callback latency from naturally measured
+long renders. No official pixel-parity or universal accessibility/performance
+claim is made.
 
 ### Inferential comparison contract
 
 Open ENA does not run an inferential test automatically. In the Comparison workflow,
 the researcher selects the study design, confirms the composite repeated-entity identity
-for a trajectory design, reviews the candidate/included/missing/zero ledger, and then
-clicks **Run inferential comparison**. The selected design determines the method; there
+for a trajectory design, selects the required periods, and then clicks **Run confirmed inference**. The
+returned native result reports the candidate/included/missing/zero ledger. The selected design determines the method; there
 is no arbitrary statistical-method selector.
 
 1. **Independent endpoint groups — Mann–Whitney U.** The selected Primary and Secondary
@@ -139,31 +293,27 @@ signed-rank rows use the **Wilcox zero** method.
 Each estimable planned member retains raw p as an audit value and presents the
 Holm-adjusted p as the primary p-value. Not-estimable planned members retain null
 raw/Holm p values while remaining in the planned family size.
-Stats, inference CSV/JSON, Methods, and AI review consume the same frozen inference
-result instead of recomputing separate statistics.
+Native Stats, the separate statistics artifact and AI review consume the same
+current native inference result. Bound model Methods describe the fitted model;
+computed inference is not inserted into its immutable model bundle.
 
 ### Longitudinal plot and inference independence
 
-The longitudinal group-centroid overlay is a descriptive view derived from a
-successful jENA trajectory model. Available and Complete control only the descriptive plot
-cohort; they do not filter the all-period comparison frame. Axis flips, labels, zoom,
-scaling, and display toggles do not change the inferential sample, statistics, effect
-direction, or p-values. Changing the confirmed identity, time order, selected group,
-periods, axes, model result, or provenance invalidates the prior inference and requires
-an explicit rerun.
+The native longitudinal overlay uses observed fitted points and per-Unit sequence
+facts. Available-by-Horizon centroids may have different contributors, so their
+movement is descriptive rather than a matched-cohort change. Every centroid shows
+its actual contributing count. A connector requires observed adjacent fitted steps
+and shared contributors; incomparable Horizons and hidden intermediate steps do
+not acquire invented connections.
 
-Separate trajectories permit a researcher-selected period order. Accumulated trajectories
-are instead locked to a source encounter order that must agree with every analytic unit's
-fitted jENA step sequence, because each accumulated point contains its preceding network
-history. Duplicate entity-period projected steps are first averaged to one equal-weight
-entity-period point before either descriptive aggregation or inferential slicing. Missing
-group-period centroids and adjacent centroids with zero
-shared repeated entities create visible discontinuities and are never bridged. Individual
-plot marks are deterministically stratified by group and visibly disclosed when sampled;
-the scientific group-centroid path is never sampled. Dedicated JSON and CSV exports preserve cohort counts, movement,
-the complete fitted rotation geometry, source hash, model timestamp, configuration,
-and reference-projection lineage while excluding raw source rows and repeated-entity
-identifiers.
+Paired inference uses its selected two-period complete cohort. Repeated inference
+uses the selected all-period complete cohort; full-frame completeness and selected
+complete-block counts remain distinct. Period follow-up indexes are interpreted in
+the selected request, while the availability ledger uses the full fitted frame.
+Changes to inference controls invalidate that inference and require explicit Run.
+Display filters, camera, colors, visibility and node positions do not change
+cohorts, fitted ordinals or p-values. Fitted scientific order is immutable for both
+trajectory model types; changing it requires a new model run.
 
 The rank procedures assume that independent groups, matched entities, or complete
 repeated-entity blocks are independent of other analytic units at the corresponding
@@ -171,68 +321,21 @@ design level. Clustered observations and cluster-robust inference are out of sco
 and mixed-effects models are out of scope. The resulting associations do not establish
 causality, learning gains, or practical importance. Accumulated-trajectory comparisons
 are additionally path-dependent because a later point contains its preceding network
-history; fitted-axis sign and MR1 group-separation geometry also constrain interpretation.
+history; fitted-axis sign and Means group-separation geometry also constrain interpretation.
 
-Reference projection is endpoint-only in this release. The imported reference must
-match the code names and order, window method and effective spans, weighting,
-normalization, and zero-network handling. The reference center, axes, and node
-positions stay fixed. Variance reported for the projected result describes the new
-dataset in that fixed basis and must not be interpreted as the fitted reference
-sample's explained variance. Reference-projected point-centroid correlations and
-target-fitted centroid exports are withheld because jENA 0.7.0-ona.0 retains target-fitted
-centroids while the displayed nodes are fixed from the imported reference. Reference
-packages preserve whether the fitted axis was SVD or MR1 and, for MR1, the defining
-comparison field and group order.
+Reference projection uses the original validated source basis for compatible
+Standard endpoint and trajectory targets. Target-fitted trajectory results cannot
+mint a new Reference. Imported original References can be re-exported without
+claiming target-fit source authority. Projected target variance describes the new
+dataset in that fixed basis, independently of the source-fit variance.
 
-The current visual comparison workspace supports up to six groups. A derived
-model-size budget also combines row count, unique units, and the number of code-pair
-edges, preventing configurations whose intermediate jENA tables would exceed a safe
-browser envelope even when the CSV itself is within the 20,000-row file limit. CSV
-ingestion also stops at 256 total columns before constructing row objects, and initial
-model inference selects at most the first 30 eligible binary code columns. Column
-headers and imported reference code names are limited to 256 characters to prevent
-quadratic edge-name expansion from oversized labels.
-
-The retained Sets workspace is separately capped at six analysis sets. Each snapshot
-keeps endpoint coordinates and one equal-unit mean per edge rather than duplicating
-the full unit-by-edge table. Plots deterministically show at most 2,000 unit points
-per set while comparison calculations and exports retain every captured endpoint
-unit. Shared-comparison JSON carries one canonical fitted-reference provenance object
-and exact geometry. It excludes raw rows but retains analytic-unit identifiers, so
-researchers must pseudonymize identifiers before sharing when required.
-
-The current-result group contrast keeps one coordinate domain from the full endpoint
-result while the selected pair changes. The Comparison panel draws each nonzero
-Primary-minus-Secondary edge difference once, using blue for Primary-stronger edges,
-red for Secondary-stronger edges, and the maximum absolute difference as its denominator.
-The Primary and Secondary panels retain their displayed group-summary networks on one
-shared mean denominator. By default, every selected group's analytic-unit projection is a
-small group-colored circle in the Comparison panel; the side panels remain mean-network
-views, and larger group-colored squares mark enabled group means. Model → Units can hide
-one group or individual unit marks and independently show each group's mean and marginal
-95% Student-t confidence guides. The optional rENA-compatible mean-centered 1.5 × IQR
-outlier guide is available in 2D only and does not remove points. Hidden unit marks remain
-hidden: Include Hidden Points only chooses whether display-derived means, intervals, and
-group-summary networks include those units. These controls are display-only and do not
-change the fitted jENA result, Stats, inference, rotation, or result identity. Plotting
-retains the jENA coordinates and deterministically samples only when a group exceeds 2,000
-valid points. The ranked evidence table and exports retain the ordered signed differences.
-Dedicated contrast JSON records both denominators, the active figure and group-display
-controls, the unflipped statistical coordinate system, the ordered pair, and the original
-rotation-fit provenance. It excludes raw rows but retains analytic-unit and group identifiers.
-
-The pairwise point-centroid correlation helper scales quadratically, so Open ENA runs
-the complete jENA statistics helper automatically only through 500 units. Larger
-models still return the ENA model and linear dimension/group summaries; the interface
-labels the omitted diagnostics. Trajectory export tables include a stable point index
-and conversation-step identity so standalone CSVs remain joinable. Result bundles
-intentionally exclude raw source rows, row-level co-occurrence records, and unselected source columns, so researchers must
-preserve the exact source CSV and codebook with the manifest and derived outputs.
-Derived tables still retain selected analytic-unit and group identifiers and, for
-trajectories, selected conversation identifiers. Pseudonymize those fields before
-sharing when required; “raw-row-excluding” does not mean anonymous.
-CSV exports prefix spreadsheet-active string cells with an apostrophe while leaving
-numeric scalar values unchanged.
+Scientific exports can retain Unit, Group and selected Horizon identities. Raw-row
+exclusion does not mean anonymity; preserve the exact source and codebook, and
+pseudonymize identity fields before sharing when needed. Identity-bearing model,
+Data View and plot exports require an explicit local confirmation. CSV exporters
+prefix spreadsheet-active string cells with an apostrophe while preserving numeric
+scalars. Format and compiler resource limits reject oversized input without
+truncating the scientific dataset.
 
 ### Optional AI-assisted interpretation
 

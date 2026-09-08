@@ -13,6 +13,9 @@ import {
 import type { OpenEnaAiInterpretationCopy } from "@/lib/open-ena-i18n";
 
 interface OpenEnaAiInterpretationProps {
+  /** Full native binding/context remains local and participates in consent,
+   * cancellation and response adoption. It is never sent to the provider. */
+  localScientificIdentity?: string | null;
   request: OpenEnaAiInterpretationRequest | null;
   copy: OpenEnaAiInterpretationCopy;
   disabled: boolean;
@@ -66,6 +69,7 @@ export async function executeOpenEnaAiGeneration<T>({
 }
 
 export default function OpenEnaAiInterpretation({
+  localScientificIdentity = null,
   request,
   copy,
   disabled,
@@ -84,6 +88,7 @@ export default function OpenEnaAiInterpretation({
   const operationStorageKeyRef = useRef<string | null>(null);
   const requestIdentity = request
     ? JSON.stringify({
+        localScientificIdentity,
         schemaVersion: request.schemaVersion,
         promptVersion: request.promptVersion,
         locale: request.locale,

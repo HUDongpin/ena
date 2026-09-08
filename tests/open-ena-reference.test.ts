@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -91,6 +92,11 @@ test("a jENA mean-rotation reference round-trips and self-projects without coord
   const meanBundle = buildAnalysisBundle(dataset, meanConfig, fitted, SAMPLE_HASH);
   const meanFromBundle = parseRotationReference(JSON.stringify(meanBundle), "mean-results.json");
   assert.deepEqual(meanFromBundle.fit, reference.fit);
+  const unexpectedRoot = { ...meanBundle, unexpected: true };
+  assert.throws(
+    () => parseRotationReference(JSON.stringify(unexpectedRoot), "unexpected-root-results.json"),
+    /unsupported analysis bundle field/i,
+  );
   const missingV2Inference = structuredClone(meanBundle) as Partial<typeof meanBundle>;
   delete missingV2Inference.inference;
   assert.throws(
@@ -328,20 +334,12 @@ test("a projected result bundle preserves the original fitted-reference lineage"
   );
 });
 
-test("reference-package export and projected-result provenance remain after browser import removal", () => {
-  const workspace = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8");
-  const plot = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaPlot.tsx"), "utf8");
-  assert.doesNotMatch(workspace, /Import reference rotation/);
-  assert.doesNotMatch(workspace, /Project into reference rotation/);
-  assert.doesNotMatch(workspace, /openReferenceRotation|referenceInputRef|referenceImportRef/);
-  assert.match(workspace, /buildReferenceRotationPackage/);
-  assert.match(workspace, /copy\.stats\.ui\.referenceRotationJson/);
-  assert.match(workspace, /setResult\(null\)[\s\S]{0,80}setResultConfig\(null\)/);
-  assert.match(workspace, /not-applicable-reference/);
-  assert.match(workspace, /buildAnalysisBundle\([\s\S]{0,1600}true,/);
-  assert.match(workspace, /buildReferenceRotationPackage\([\s\S]{0,180}true,/);
-  assert.match(plot, /Projected into fixed reference:/);
-  assert.match(plot, /analyzed-table SHA-256/);
-  assert.match(plot, /Variance shares describe current data in this fixed basis, not reference-fit explained variance/);
-  assert.match(plot, /ena-reference-figure-provenance/);
+test("native Reference export uses actual source authority and preserves projected-result binding", () => {
+
+  assert.match(v3, /exportReferenceV2\(result, \{ currentPlan/);
+  assert.match(v3, /sourceWitness: state.sourceWitness/);
+  assert.match(owner, /decodeReferenceV2/);
+  assert.match(owner, /bindReferenceToTargetV3/);
+  assert.doesNotMatch(v3, /buildReferenceRotationPackage\(/);
+
 });

@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { installPlotlyResourceAuditV3, checkPlotlyResourceLifecycleV3 } from "./helpers/open-ena-plotly-resource-audit-v3.mjs";
+import { createServedBrowserV3, literalGit } from "./helpers/open-ena-served-browser-v3.mjs";
+import { prepareNativeFixtureV3, runNativeFixtureV3, nativeFixtureIdentitiesV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
 import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import {
@@ -21,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import { createSafePlaywrightCliError } from "./support/safe-playwright-cli-error.mjs";
 
 const smokeSourcePath = fileURLToPath(import.meta.url);
-const projectRoot = join(dirname(smokeSourcePath), "..");
+const projectRoot = resolve(dirname(smokeSourcePath), "..");
 const tsconfigPath = join(projectRoot, "tsconfig.json");
 const originalTsconfig = readFileSync(tsconfigPath, "utf8");
 const artifactDirectory = resolve(
@@ -39,7 +42,7 @@ const sessionSecret = "open_ena_ona_3d_smoke_session_secret_0123456789abcdef";
 const accountId = "open-ena-ona-3d-smoke-account";
 const sessionName = "open-ena-ona-3d-smoke-" + process.pid;
 const smokeBrowser = process.env.OPEN_ENA_ONA_3D_SMOKE_BROWSER
-  || (existsSync("/Applications/Google Chrome.app") ? "chrome" : "chromium");
+  || "chromium";
 const privateWorkbookPath = resolve(
   process.env.OPEN_ENA_ONA_3D_PRIVATE_WORKBOOK
     || "/Users/dongpinhu/Desktop/Yu_ena_coded_data_0712.xlsx",
@@ -52,7 +55,7 @@ const fixtureContract = Object.freeze({
   codes: ["CODE_A", "CODE_B", "CODE_C", "CODE_D", "CODE_E"],
   groups: ["SYNTHETIC_BASELINE", "SYNTHETIC_SCAFFOLDED"],
   unitsPerGroup: 8,
-  maskedDirection: "CODE_E ground/source to CODE_A response/target",
+  maskedDirection: "CODE_E → CODE_A",
 });
 
 assert.ok(["chromium", "chrome", "msedge"].includes(smokeBrowser));
@@ -86,7 +89,23 @@ for (const path of [
   rmSync(path, { force: true });
 }
 
+// Once private content is admitted, arbitrary browser/locator diagnostics are
+// not safe evidence. Status and fixed aggregate assertions remain separately reported.
+let privateLaneActive = false;
 function redact(value) {
+  if (privateLaneActive) {
+    const stage = String(value ?? "").match(/Private ONA gate failed: (private (?:setup (?:family|Units|Horizons|Codes|Windows|Lesson order|Run)|native source setup|bound aggregate and explicit order|actual circles and three directed scenes|full-run rendered aggregate and bounded audit tables)); private details withheld/);
+    const safeDiagnostic = String(value ?? "").match(/safeDiagnostics=(\{[^\n]*\})/);
+    let suffix = "";
+    if (safeDiagnostic) {
+      try {
+        const input = JSON.parse(safeDiagnostic[1]);
+        const ids = Array.isArray(input.issueIds) ? input.issueIds.filter(id => typeof id === "string" && /^ONA_[A-Z_]+$/.test(id)) : [];
+        suffix = "; safeDiagnostics=" + JSON.stringify({ issueIds: ids, invalidCount: Number.isSafeInteger(input.invalidCount) ? input.invalidCount : null, runDisabled: input.runDisabled === true, runStatus: ["idle", "running", "error", "cancelled"].includes(input.runStatus) ? input.runStatus : "unknown", requestCount: Number.isSafeInteger(input.requestCount) ? input.requestCount : null });
+      } catch { /* Unrecognized diagnostics stay private. */ }
+    }
+    return stage ? stage[0] + suffix : "[private ONA diagnostic withheld; inspect fixed aggregate failure stage]";
+  }
   return String(value ?? "")
     .replaceAll(username, "[redacted-username]")
     .replaceAll(password, "[redacted-password]")
@@ -103,42 +122,29 @@ function ensurePlaywrightWorkingDirectory() {
   return playwrightWorkingDirectory;
 }
 
-function runCli(args, label, timeout = 120_000) {
-  const playwrightCwd = ensurePlaywrightWorkingDirectory();
-  const taskNpmCache = join(playwrightCwd, "npm-cache");
-  mkdirSync(taskNpmCache, { recursive: true });
-  const inheritedEnvironment = Object.fromEntries(Object.entries(process.env).filter(([key]) => (
-    key.toLowerCase() !== "npm_config_cache"
-  )));
-  try {
-    return execFileSync(
-      playwrightCli.command,
-      [...playwrightCli.prefix, "--session", sessionName, ...args],
-      {
-        cwd: playwrightCwd,
-        encoding: "utf8",
-        env: {
-          ...inheritedEnvironment,
-          NPM_CONFIG_CACHE: taskNpmCache,
-          npm_config_cache: taskNpmCache,
-        },
-        maxBuffer: 32 * 1024 * 1024,
-        timeout,
-      },
-    );
-  } catch (caught) {
-    throw createSafePlaywrightCliError({ caught, label, redact });
+let runtime = null;
+async function runCli(args, label, timeout = 300000) {
+  if (args[0] === "--version") return "Playwright module 1.62.1 (owned foreground Chromium)";
+  if (!runtime) throw new Error("Owned production runtime is unavailable");
+  if (args[0] === "open") { await runtime.page.goto(args[1], { waitUntil: "domcontentloaded" }); return ""; }
+  if (args[0] === "close") { await runtime.close(primaryFailure); return ""; }
+  if (args[0] === "screenshot") { await runtime.page.screenshot({ path: args.at(-1), fullPage: true }); return ""; }
+  if (args[0] === "console") return `Errors: ${runtime.receipt.consoleErrors.length}\nWarnings: ${runtime.receipt.consoleWarnings.length}\n${runtime.receipt.consoleErrors.join("\n")}`;
+  if (args[0] === "--raw" && args[1] === "run-code") {
+    const action = new Function(`return (${args[2]});`)();
+    return JSON.stringify(await runtime.stage(label, () => action(runtime.page), timeout));
   }
+  throw new Error("Unsupported owned browser operation");
 }
 
 function browserSource(task, args) {
-  return "async (page) => { const task = " + task.toString()
+  return "async (page) => { " + prepareNativeFixtureV3.toString() + "\n" + runNativeFixtureV3.toString() + "\n" + nativeFixtureIdentitiesV3.toString() + "; const task = " + task.toString()
     + "; return await task(page, " + JSON.stringify(args) + "); }";
 }
 
-function runBrowserPhase(label, task, args = {}, timeout = 240_000) {
+async function runBrowserPhase(label, task, args = {}, timeout = 240_000) {
   process.stdout.write("[ONA 3D smoke] " + label + " ... ");
-  const output = runCli(["--raw", "run-code", browserSource(task, args)], label, timeout).trim();
+  const output = (await runCli(["--raw", "run-code", browserSource(task, args)], label, timeout)).trim();
   const result = output ? JSON.parse(output) : null;
   process.stdout.write("PASS\n");
   return result;
@@ -277,11 +283,7 @@ function artifactEvidence(path) {
 }
 
 function readGitEvidence() {
-  const git = (args) => execFileSync("git", args, {
-    cwd: projectRoot,
-    encoding: "utf8",
-    timeout: 30_000,
-  }).trim();
+  const git = (args) => literalGit(projectRoot, args);
   return {
     head: git(["rev-parse", "HEAD"]),
     tree: git(["rev-parse", "HEAD^{tree}"]),
@@ -350,9 +352,9 @@ async function runSyntheticLane(page, args) {
     }
     const originalPostMessage = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function auditedPostMessage(message, ...rest) {
-      if (message?.kind === "run" && message?.config) {
+      if (message?.kind === "run-open-ena-plan-v3" && message?.plan) {
         audit.analysisRunCount += 1;
-        audit.requestedAnalysisKinds.push(message.config.analysisKind ?? "ena");
+        audit.requestedAnalysisKinds.push(message.plan.configuration.analysisFamily === "ona" ? "ona" : "ena");
       }
       return originalPostMessage.call(this, message, ...rest);
     };
@@ -377,7 +379,7 @@ async function runSyntheticLane(page, args) {
         return originalCreateObjectUrl(blob);
       };
     });
-    const exportButton = page.getByRole("button", { name: /Export aggregate directed edges CSV/ });
+    const exportButton = page.getByRole("button", { name: "Export ONA aggregate edges", exact: true });
     await exportButton.click();
     await page.waitForFunction(() => typeof window.__openEnaAggregateExportText === "string");
     return await digestText(await page.evaluate(() => window.__openEnaAggregateExportText));
@@ -496,9 +498,11 @@ async function runSyntheticLane(page, args) {
   await page.goto(args.entryUrl, { waitUntil: "domcontentloaded" });
   await page.getByRole("textbox", { name: "Account name" }).fill(args.username);
   await page.getByRole("textbox", { name: "Password" }).fill(args.password);
+  await page.waitForLoadState("networkidle");
   await page.getByRole("button", { name: "Sign in" }).click();
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
   await rail.waitFor({ timeout: 30_000 });
+  await page.__task38FinishAuthentication();
   await rail.getByRole("button", { name: "Data", exact: true }).click();
   const fileInput = page.locator('input[type=file][accept*=".csv"]');
   await fileInput.evaluate((input, csv) => {
@@ -507,29 +511,14 @@ async function runSyntheticLane(page, args) {
     input.files = transfer.files;
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }, args.fixtureCsv);
-  await page.getByRole("heading", { name: "Define the ENA model" }).waitFor({ timeout: 30_000 });
+  await prepareNativeFixtureV3(page, { family: "ona", backward: args.rowsPerUnit });
   const modelTabs = page.getByRole("tablist", { name: "Model configuration" });
-  await modelTabs.getByRole("tab", { name: "Codes" }).click();
-  const networkSwitch = page.getByRole("switch", { name: "Network type", exact: true });
-  assertBrowser(await networkSwitch.getAttribute("aria-checked") === "true",
-    "the synthetic model did not start as Standard Network");
-  await networkSwitch.click();
-  assertBrowser(await networkSwitch.getAttribute("aria-checked") === "false",
-    "the synthetic model did not switch to Ordered Network");
-  await modelTabs.getByRole("tab", { name: "Windows" }).click();
-  await page.getByRole("radio", { name: /Confirmed source-record order/ }).click();
-  await page.getByRole("checkbox", { name: /I confirm that source-record order/ }).check();
-  await page.getByLabel("Total rows including the current response").fill(String(args.rowsPerUnit));
-  await modelTabs.getByRole("tab", { name: "Codes" }).click();
-  await page.getByRole("button", { name: "Edit p² directional mask" }).click();
-  const maskCell = page.getByRole("checkbox", { name: args.maskedDirection });
+  await modelTabs.getByRole("tab", { name: /^Codes(,|$)/ }).click();
+  await page.getByRole("button", { name: "Initialize explicit all-enabled mask", exact: true }).click();
+  const maskCell = page.getByRole("checkbox", { name: args.maskedDirection, exact: true });
   assertBrowser(await maskCell.isChecked(), "the synthetic masked direction did not start enabled");
   await maskCell.uncheck();
-  await page.getByRole("button", { name: "Close directional mask editor" }).click();
-  const buildButton = page.getByRole("button", { name: "Build ONA model" });
-  assertBrowser(await buildButton.isEnabled(), "Build ONA model is disabled");
-  await buildButton.click();
-  await page.getByRole("button", { name: "Rebuild ONA model" }).waitFor({ timeout: 60_000 });
+  await runNativeFixtureV3(page);
   await page.getByTestId("open-ena-ordered-result-layout").waitFor({ timeout: 60_000 });
   const twoDPointAudit = await page.evaluate(() => {
     const wrappers = [...document.querySelectorAll('[data-ona-unit-point="true"]')];
@@ -564,7 +553,7 @@ async function runSyntheticLane(page, args) {
       })),
     }))
   ));
-  const visualization = page.getByRole("group", { name: "ENA visualization options" });
+  const visualization = page.locator(".ena-visual-toolbar");
   const threeDButton = visualization.getByRole("button", { name: /3D ONA/ });
   const roleDiagnostics = {
     groupCount: await visualization.count(),
@@ -642,30 +631,47 @@ async function runSyntheticLane(page, args) {
   assertBrowser(await page.evaluate(() => window.__openEnaOna3dAudit.analysisRunCount) === 1,
     "Data View or 2D/3D switching reran ONA");
 
-  const initialAxes = await Promise.all(["x", "y", "z"].map((axis) => (
-    page.getByTestId("open-ena-3d-axis-" + axis).inputValue()
-  )));
-  await page.getByTestId("open-ena-3d-axis-z").selectOption(initialAxes[0]);
+  await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
+  const initialAxes = await Promise.all([1, 2, 3].map(index => page.getByRole("combobox", { name: `Axis ${index}`, exact: true }).inputValue()));
+  const permutedAxes = [initialAxes[1], initialAxes[2], initialAxes[0]];
+  for (let index = 0; index < 3; index++) {
+    await page.getByRole("combobox", { name: `Axis ${index + 1}`, exact: true }).selectOption(permutedAxes[index]);
+    if (index === 0) {
+      assertBrowser(await threeDButton.isDisabled(), "duplicate-axis 3D must be unavailable");
+      assertBrowser(await page.getByTestId("open-ena-ordered-result-layout").count() === 1, "duplicate axes must retain actual 2D geometry");
+    }
+  }
   await waitForOrderedPlots();
-  await page.getByTestId("open-ena-3d-axis-z").selectOption(initialAxes[2]);
+  const axisReadback = await page.evaluate(() => {
+    const root = document.querySelector('[data-testid="open-ena-ona-3d-overall-plot"] [data-ena-plotly-root="true"]');
+    return ["x", "y", "z"].map(axis => root.data.find(trace => trace.meta?.role === "axis-label" && trace.meta.axis === axis)?.meta.dimension);
+  });
+  assertBrowser(JSON.stringify(axisReadback) === JSON.stringify(permutedAxes), "actual 3D scene did not adopt the valid axis permutation");
+  for (let index = 0; index < 3; index++) await page.getByRole("combobox", { name: `Axis ${index + 1}`, exact: true }).selectOption(initialAxes[index]);
   await waitForOrderedPlots();
   await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
-  const threshold = page.getByRole("slider", { name: "Minimum relative edge" });
-  const pointScale = page.getByRole("slider", { name: "Unit point size" });
+  const threshold = page.getByRole("slider", { name: "Edge threshold" });
+  const pointScale = page.getByRole("slider", { name: "Point scale" });
   const thresholdInitial = await threshold.inputValue();
   const pointScaleInitial = await pointScale.inputValue();
   await threshold.fill("0.2");
   await pointScale.fill("1.4");
   await threshold.fill(thresholdInitial);
   await pointScale.fill(pointScaleInitial);
-  const cameraControl = page.getByTestId("open-ena-3d-camera-position");
+  const cameraControl = page.getByRole("group", { name: "Camera Position", exact: true });
   await cameraControl.getByRole("radio", { name: /X-Y plane/ }).check();
   await cameraControl.getByRole("radio", { name: /Default 3D Camera/ }).check();
-  await overallPanel.getByRole("button", { name: /Zoom In/ }).click();
+  await overallPanel.getByRole("button", { name: /Zoom in/i }).click();
   await overallPanel.getByRole("button", { name: /Recenter/ }).click();
   const entryOrigin = await page.evaluate(() => location.origin);
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: entryOrigin });
-  await overallPanel.locator('button[data-ena-plot-action="copy-image"]').click();
+  const approveImage = dialog => dialog.accept();
+  await page.evaluate(() => window.__openEnaGlResourceAudit.image(true));
+  page.once("dialog", approveImage);
+  try {
+    await overallPanel.locator('button[data-ena-plot-action="copy-image"]').click();
+    await page.getByText("Image copied", { exact: true }).waitFor();
+  } finally { page.off("dialog", approveImage); await page.evaluate(() => window.__openEnaGlResourceAudit.image(false)); }
   const fullscreen = overallPanel.locator('button[data-ena-plot-action="fullscreen"]');
   await fullscreen.click();
   await page.waitForTimeout(200);
@@ -706,6 +712,8 @@ async function runSyntheticLane(page, args) {
       entry.initiatorType === "script" && entry.startTime >= start
     ));
     return {
+      scripts: scripts.map(entry => ({ name: new URL(entry.name).pathname, startTime: entry.startTime, transferSize: entry.transferSize, decodedBodySize: entry.decodedBodySize })),
+      measurementStart: start,
       transferBytes: scripts.reduce((sum, entry) => sum + (entry.transferSize || 0), 0),
       decodedBytes: scripts.reduce((sum, entry) => sum + (entry.decodedBodySize || 0), 0),
       largestLongTaskMs: Math.max(0, ...window.__openEnaOna3dAudit.longTasks),
@@ -744,143 +752,179 @@ async function runSyntheticLane(page, args) {
 }
 
 async function runYuPrivateLane(page, args) {
-  const assertBrowser = (condition, message) => {
-    if (!condition) throw new Error(message);
-  };
-  const consoleErrors = [];
-  const pageErrors = [];
-  page.on("console", (message) => {
-    if (message.type() === "error") consoleErrors.push(message.text());
-  });
-  page.on("pageerror", (error) => pageErrors.push(error.message));
-  await page.goto(args.entryUrl, { waitUntil: "domcontentloaded" });
-  const rail = page.getByRole("navigation", { name: "Analysis modes" });
-  await rail.waitFor({ timeout: 30_000 });
-  await rail.getByRole("button", { name: "Data", exact: true }).click();
-  await page.locator('input[type=file][accept*=".xlsx"]').setInputFiles(args.workbookPath);
-  await page.getByRole("heading", { name: "Define the ENA model" }).waitFor({ timeout: 30_000 });
-  const modelTabs = page.getByRole("tablist", { name: "Model configuration" });
-  await modelTabs.getByRole("tab", { name: "Codes" }).click();
-  const networkSwitch = page.getByRole("switch", { name: "Network type", exact: true });
-  assertBrowser(await networkSwitch.getAttribute("aria-checked") === "true",
-    "the Yu model did not start as Standard Network");
-  await networkSwitch.click();
-  assertBrowser(await networkSwitch.getAttribute("aria-checked") === "false",
-    "the Yu model did not switch to Ordered Network");
-  await modelTabs.getByRole("tab", { name: "Units" }).click();
-  const unitIdentity = page.locator('[data-ena-official-field-path="true"][aria-label="Unit identity"]');
-  const unitIdentityPicker = unitIdentity.getByRole("button", {
-    name: "Add or remove Unit identity fields",
-    exact: true,
-  });
-  await unitIdentityPicker.click();
-  await unitIdentity.getByRole("checkbox", { name: "Group", exact: true }).check();
-  await unitIdentity.getByRole("checkbox", { name: "Name", exact: true }).check();
-  await unitIdentity.getByRole("checkbox", { name: "Lesson", exact: true }).uncheck();
-  await unitIdentityPicker.click();
-  await page.getByLabel("Comparison group").selectOption("Group");
-  await modelTabs.getByRole("tab", { name: "Horizons" }).click();
-  const horizonIdentity = page.locator('[data-ena-official-field-path="true"][aria-label="Horizon identity"]');
-  const horizonIdentityPicker = horizonIdentity.getByRole("button", {
-    name: "Add or remove Horizon identity fields",
-    exact: true,
-  });
-  await horizonIdentityPicker.click();
-  await horizonIdentity.getByRole("checkbox", { name: "Group", exact: true }).check();
-  await horizonIdentity.getByRole("checkbox", { name: "Name", exact: true }).check();
-  await horizonIdentity.getByRole("checkbox", { name: "Lesson", exact: true }).uncheck();
-  await horizonIdentityPicker.click();
-  await modelTabs.getByRole("tab", { name: "Windows" }).click();
-  const orderGroup = page.getByRole("group", { name: "Order columns and typed comparators" });
-  await orderGroup.getByRole("checkbox", { name: "Lesson", exact: true }).check();
-  await orderGroup.getByLabel("Comparator").selectOption("string");
-  await page.getByLabel("Total rows including the current response").fill("2");
-  const buildButton = page.getByRole("button", { name: "Build ONA model" });
-  assertBrowser(await buildButton.isEnabled(), "Yu Build ONA model is disabled");
-  await buildButton.click();
-  await page.getByRole("button", { name: "Rebuild ONA model" }).waitFor({ timeout: 90_000 });
-  const pointAudit = await page.evaluate(() => {
-    const points = [...document.querySelectorAll('[data-ona-unit-point="true"]')];
-    return {
-      count: points.length,
-      allCircles: points.every((wrapper) => {
-        const point = wrapper.querySelector("circle");
-        return wrapper.getAttribute("data-ona-point-shape") === "circle"
-          && point?.tagName.toLowerCase() === "circle"
-          && !wrapper.querySelector("rect, polygon");
-      }),
+  // All values that can identify Units stay inside the page. Only fixed
+  // aggregate failures and numeric/boolean receipts cross this boundary.
+  let stage = "private native source setup";
+  const requestsBeforePrivate = await page.evaluate(() => window.__openEnaNativeAudit.requests.length);
+  let consoleErrors = 0, pageErrors = 0;
+  const onConsole = message => { if (message.type() === "error") consoleErrors++; };
+  const onPageError = () => { pageErrors++; };
+  page.on("console", onConsole); page.on("pageerror", onPageError);
+  const check = (value, message) => { if (!value) throw new Error(message); };
+  try {
+    const rail = page.getByRole("navigation", { name: "Analysis modes" });
+    await rail.getByRole("button", { name: "Data", exact: true }).click();
+    await page.getByLabel("Open coded CSV or XLSX", { exact: true }).setInputFiles(args.workbookPath);
+    await page.waitForFunction(() => document.querySelector(".ena-visual-toolbar > div:first-child > span")?.textContent === "Yu_ena_coded_data_0712.xlsx");
+    const tab = name => page.getByRole("tab", { name: new RegExp(`^${name}(,|$)`) });
+    const button = name => page.getByRole("button", { name, exact: true });
+    stage = "private setup family";
+    await rail.getByRole("button", { name: "Model", exact: true }).click(); await tab("Codes").click();
+    await page.getByRole("radio", { name: /^Ordered Network Analysis/ }).check();
+    stage = "private setup Units";
+    await tab("Units").click(); await button("Add or remove Unit fields fields").click();
+    const unitRegion = page.getByRole("region", { name: "Unit fields", exact: true });
+    for (const name of ["Group", "Name"]) await unitRegion.getByRole("checkbox", { name, exact: true }).check();
+    check(await unitRegion.getByRole("checkbox", { checked: true }).count() === 2, "private exact Unit field count");
+    await button("Add or remove Unit fields fields").click();
+    await page.getByRole("combobox", { name: "Create Sample / Group", exact: true }).selectOption("Group");
+    stage = "private setup Horizons";
+    await tab("Horizons").click(); await button("Add or remove Horizon identity fields").click();
+    const horizonRegion = page.getByRole("region", { name: "Horizon identity", exact: true });
+    for (const name of ["Group", "Name"]) await horizonRegion.getByRole("checkbox", { name, exact: true }).check();
+    check(await horizonRegion.getByRole("checkbox", { checked: true }).count() === 2, "private exact Horizon field count");
+    await button("Add or remove Horizon identity fields").click();
+    stage = "private setup Codes";
+    await tab("Codes").click();
+    await page.getByRole("toolbar", { name: "Code actions", exact: true }).getByRole("button", { name: "Manage Codes", exact: true }).click();
+    for (const code of ["EC", "ICT", "MCO", "NI", "SR", "SC", "ATT"]) await page.getByRole("checkbox", { name: `Select ${code} as a Code`, exact: true }).check();
+    await button("Close Code manager").click();
+    await button("Initialize explicit all-enabled mask").click();
+    const mask = page.getByRole("group", { name: "ONA directional mask", exact: true });
+    check(await mask.getByRole("checkbox").count() === 49 && await mask.getByRole("checkbox", { checked: true }).count() === 49, "private full all-enabled49-cell mask required");
+    stage = "private setup Windows";
+    await tab("Windows").click();
+    await page.getByRole("group", { name: "Backward context", exact: true }).getByRole("textbox", { name: "Rows", exact: true }).fill("2");
+    stage = "private setup Lesson order";
+    await page.getByRole("radio", { name: "Sort by fields", exact: true }).check();
+    await page.getByRole("button", { name: "Add order key", exact: true }).click();
+    const order = page.locator(".ena-model-order-v3-key");
+    check(await order.count() === 1, "one explicit Lesson order key required");
+    await order.getByRole("combobox", { name: "Field", exact: true }).selectOption("Lesson");
+    await order.getByRole("combobox", { name: "Direction", exact: true }).selectOption("ascending");
+    await order.getByRole("combobox", { name: "Comparator", exact: true }).selectOption("text");
+    await order.getByRole("textbox", { name: "Locale", exact: true }).fill("en");
+    await order.getByRole("combobox", { name: "Sensitivity", exact: true }).selectOption("variant");
+    await order.getByRole("checkbox", { name: "Numeric collation", exact: true }).uncheck();
+    // The native text comparator is explicit, including its collation policy.
+    // The actual bound source order is checked against literal string order below.
+    stage = "private setup Run";
+    const privateRun = page.getByRole("button", { name: "Run model", exact: true });
+    await page.waitForFunction(button => button && !button.disabled, await privateRun.elementHandle(), { timeout: 30000 });
+    await runNativeFixtureV3(page);
+    stage = "private bound aggregate and explicit order";
+    const aggregate = await page.evaluate(() => {
+      const fail = () => { throw new Error("private bound aggregate contract mismatch"); };
+      const audit = window.__openEnaNativeAudit, response = audit?.responses.at(-1);
+      const request = audit?.requests.find(item => item.id === response?.id), r = response?.result, p = request?.plan;
+      if (!r || !p || response.executionPlanSha256 !== p.header.executionPlanSha256 || r.binding.executionPlanSha256 !== p.header.executionPlanSha256 || r.binding.datasetSha256 !== p.header.datasetSha256 || r.configuration.analysisFamily !== "ona" || document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") !== "current") fail();
+      const c = r.configuration;
+      if (JSON.stringify(c.units.columns) !== '["Group","Name"]' || JSON.stringify(c.horizons.columns) !== '["Group","Name"]' || c.window.backward.kind !== "finite" || c.window.backward.value !== 2 || c.window.forward !== 0 || c.window.rowOrder.kind !== "columns" || c.window.rowOrder.keys.length !== 1 || c.window.rowOrder.keys[0].column !== "Lesson" || c.window.rowOrder.keys[0].direction !== "ascending" || c.window.rowOrder.keys[0].comparator.type !== "text") fail();
+      const sourceByIndex = new Map(p.sourceProof.rows.map(row => [row.sourceRowIndex, row.values]));
+      const horizonRows = new Map();
+      for (const index of p.runtimeSourceRowIndices) {
+        const row = p.rows.find(row => row.sourceRowIndex === index), source = sourceByIndex.get(index);
+        if (!row || typeof source?.Lesson !== "string") fail();
+        const prior = horizonRows.get(row.horizonToken) ?? [];
+        prior.push({ index, lesson: source.Lesson }); horizonRows.set(row.horizonToken, prior);
+      }
+      if (horizonRows.size !== 87) fail();
+      for (const rows of horizonRows.values()) {
+        if (rows.length !== 2) fail();
+        const expected = [...rows].sort((a, b) => a.lesson === b.lesson ? a.index - b.index : a.lesson < b.lesson ? -1 : 1);
+        if (rows.some((row, index) => row.index !== expected[index].index)) fail();
+      }
+      const codes = r.executionProvenance.labels.codes;
+      if (codes.length !== 7 || new Set(codes.map(code => code.column)).size !== 7 || new Set(codes.map(code => code.sourceColumn)).size !== 7 || JSON.stringify(codes.map(code => code.sourceColumn)) !== '["EC","ICT","MCO","NI","SR","SC","ATT"]') fail();
+      const edges = r.set.adjacencyKey;
+      if (edges.length !== 49 || r.set.codeColumns.length !== 49 || r.set.codes.length !== 7 || r.set.points.length !== 87 || r.set.connectionCounts.length !== 87 || r.executionProvenance.identityDictionary.units.length !== 87) fail();
+      let rawTotal = 0, rawSelfConnections = 0, zeroNetworks = 0;
+      const totals = edges.map(() => 0);
+      for (const row of r.set.connectionCounts) {
+        let unitTotal = 0;
+        edges.forEach((edge, index) => {
+          const value = row[edge.name];
+          if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || edge.sourceIndex !== index % 7 || edge.targetIndex !== Math.floor(index / 7)) fail();
+          unitTotal += value; totals[index] += value; rawTotal += value;
+          if (edge.sourceIndex === edge.targetIndex) rawSelfConnections += value;
+        });
+        if (unitTotal === 0) zeroNetworks++;
+      }
+      const sourceRows = r.executionProvenance.resources.observed.processedRows;
+      if (sourceRows !== 174 || p.rows.length !== 174 || r.orderedAudit.responseRowIndices.length !== 174 || r.executionProvenance.ordering.runtimeSourceRowIndices.length !== 174 || rawTotal !== 811 || zeroNetworks !== 3 || rawSelfConnections <= 0 || r.orderedAudit.edgeValues.flat().reduce((sum, value) => sum + value, 0) !== rawTotal) fail();
+      window.__task38PrivateOna = { binding: JSON.stringify(r.binding), science: JSON.stringify({ set: r.set, configuration: r.configuration, executionProvenance: r.executionProvenance, orderedAudit: r.orderedAudit, orderedResponseNodeSummary: r.orderedResponseNodeSummary }), requests: audit.requests.length, totals, rawTotal, rawSelfConnections, zeroNetworks };
+      return { sourceRows, units: r.set.points.length, codeNodeCount: codes.length, directedDimensions: edges.length, connectionTotal: rawTotal, selfConnections: rawSelfConnections, zeroNetworks, actualNativeBinding: true, literalStringOrderParity: true };
+    });
+    check(await page.evaluate(() => window.__openEnaNativeAudit.requests.length) === requestsBeforePrivate + 1, "private source must execute exactly one native Worker request");
+    stage = "private actual circles and three directed scenes";
+    const visualization = page.locator(".ena-visual-toolbar");
+    await visualization.getByRole("button", { name: /2D ONA/ }).click();
+    await page.getByTestId("open-ena-ordered-result-layout").waitFor();
+    const pointAudit = await page.evaluate(() => {
+      const points = [...document.querySelectorAll('[data-ona-unit-point="true"]')];
+      return { count: points.length, allCircles: points.every(point => point.getAttribute("data-ona-point-shape") === "circle" && point.querySelector("circle") && !point.querySelector("rect,polygon")) };
+    });
+    check(pointAudit.count === 87 && pointAudit.allCircles, "87 actual circle Units required");
+    await visualization.getByRole("button", { name: /3D ONA/ }).click();
+    const waitPlots = async () => {
+      for (const id of ["open-ena-ona-3d-overall-plot", "open-ena-ona-3d-primary-plot", "open-ena-ona-3d-secondary-plot"]) await page.getByTestId(id).locator('[data-ena-interactive-camera="true"][aria-busy="false"]').waitFor({ timeout: 60000 });
     };
-  });
-  assertBrowser(pointAudit.count === 87 && pointAudit.allCircles, "Yu 2D unit points are not 87 circles");
-  const visualization = page.getByRole("group", { name: "ENA visualization options" });
-  await visualization.getByRole("button", { name: /3D ONA/ }).click();
-  for (const id of [
-    "open-ena-ona-3d-overall-plot",
-    "open-ena-ona-3d-primary-plot",
-    "open-ena-ona-3d-secondary-plot",
-  ]) {
-    const panel = page.getByTestId(id);
-    await panel.locator('[data-ena-interactive-camera="true"][aria-busy="false"]')
-      .waitFor({ state: "visible", timeout: 90_000 });
+    await waitPlots();
+    const traces = await page.evaluate(() => {
+      const root = document.querySelector('[data-testid="open-ena-ona-3d-overall-plot"] [data-ena-plotly-root="true"]');
+      const data = root?.data ?? [], units = data.filter(trace => trace.meta?.role === "unit-points");
+      return { codeNodeCount: data.find(trace => trace.meta?.role === "code-node")?.x.length ?? 0, arrows: data.filter(trace => trace.meta?.role === "ordered-edge-arrowhead").length, selfLoops: data.filter(trace => trace.meta?.role === "ordered-self-loop-shaft").length, unitCount: units.reduce((n, trace) => n + trace.x.length, 0), circles: units.every(trace => trace.marker?.symbol === "circle") };
+    });
+    check(traces.codeNodeCount === 7 && traces.unitCount === 87 && traces.circles && traces.arrows > 0 && traces.selfLoops > 0, "Yu ONA directed arrows or self-loops are missing");
+    await visualization.getByRole("button", { name: /2D ONA/ }).click();
+    await visualization.getByRole("button", { name: /3D ONA/ }).click(); await waitPlots();
+    const toggle = page.getByTestId("open-ena-data-view-toggle"); await toggle.click();
+    const auditedRows = await page.getByTestId("open-ena-data-view").locator("tbody tr").count();
+    check(auditedRows > 0, "private Data View has no actual rows"); await toggle.click(); await waitPlots();
+    stage = "private full-run rendered aggregate and bounded audit tables";
+    await rail.getByRole("button", { name: /Stats/ }).click();
+    const primary = page.getByTestId("open-ena-ona-descriptive-group-controls").getByRole("combobox").first();
+    const previousGroup = await primary.inputValue(); await primary.selectOption("");
+    const rendered = await page.evaluate(() => {
+      const fail = () => { throw new Error("private rendered aggregate contract mismatch"); };
+      const region = document.querySelector('[aria-label="ONA directed aggregate edges"]');
+      const headers = [...region.querySelectorAll("th")].map(cell => cell.textContent);
+      const index = name => { const found = headers.indexOf(name); if (found < 0) fail(); return found; };
+      const rows = [...region.querySelectorAll("tbody tr")], seen = new Set(); let rawTotal = 0, selfTotal = 0;
+      if (rows.length !== 49 || !region.querySelector("caption").textContent.endsWith("(49)")) fail();
+      for (const row of rows) {
+        const cells = [...row.children].map(cell => cell.textContent), ground = Number(cells[index("groundIndex")]), response = Number(cells[index("responseIndex")]), count = Number(cells[index("rawAggregateCount")]), key = response * 7 + ground;
+        if (!Number.isInteger(key) || key < 0 || key >= 49 || seen.has(key) || count !== window.__task38PrivateOna.totals[key]) fail();
+        seen.add(key); rawTotal += count; if (ground === response) selfTotal += count;
+      }
+      const audit = document.querySelector('[aria-label="Full-run deidentified ordered audit"]');
+      const r = window.__openEnaNativeAudit.responses.at(-1).result;
+      const auditRows = [...audit.querySelectorAll("tbody tr")];
+      if (!audit.querySelector("caption").textContent.endsWith("(174)") || auditRows.length !== 100 || !audit.querySelector("p") || rawTotal !== 811 || selfTotal !== window.__task38PrivateOna.rawSelfConnections) fail();
+      const names = [...audit.querySelectorAll("th")].map(cell => cell.textContent);
+      auditRows.forEach((row, i) => [...row.children].forEach((cell, j) => {
+        const values = { responseRowIndex: r.orderedAudit.responseRowIndices[i], previousResponseRowIndex: r.orderedAudit.previousResponseRowIndices[i], priorRowCount: r.orderedAudit.priorRowCounts[i], horizonOrdinal: r.orderedAudit.horizonOrdinals[i], edgeValues: r.orderedAudit.edgeValues[i] };
+        const value = values[names[j]];
+        if (cell.textContent !== (value === null ? "Unavailable" : typeof value === "object" ? JSON.stringify(value) : String(value))) fail();
+      }));
+      return { directedRows: rows.length, sourceRowsInCaption: 174, actualAuditRowsShown: auditRows.length, truncatedDisclosure: true, fullRunConnectionTotal: rawTotal, fullRunSelfConnections: selfTotal };
+    });
+    await primary.selectOption(previousGroup);
+    check(await page.evaluate(() => {
+      const r = window.__openEnaNativeAudit.responses.at(-1).result, before = window.__task38PrivateOna;
+      return JSON.stringify(r.binding) === before.binding && JSON.stringify({ set: r.set, configuration: r.configuration, executionProvenance: r.executionProvenance, orderedAudit: r.orderedAudit, orderedResponseNodeSummary: r.orderedResponseNodeSummary }) === before.science && window.__openEnaNativeAudit.requests.length === before.requests;
+    }), "display operations changed private bound science or reran Worker");
+    check(consoleErrors === 0 && pageErrors === 0, "private browser emitted errors");
+    return { aggregateOnly: true, ...aggregate, pointCircles2d: pointAudit.count, dataViewAuditedRowsVisible: auditedRows, rendered, consoleErrors, pageErrors };
+  } catch {
+    const safeDiagnostics = await page.evaluate(catalog => {
+      const summaries = [...document.querySelectorAll("[data-diagnostic-scope] li[data-severity] > p:first-child a, [data-diagnostic-scope] li[data-severity] > p:first-child strong")].map(node => node.textContent);
+      const run = [...document.querySelectorAll("button")].find(button => button.textContent === "Run model");
+      return { issueIds: catalog.filter(entry => summaries.includes(entry.summary)).map(entry => entry.id), invalidCount: document.querySelectorAll('[aria-invalid="true"]').length, runDisabled: run?.disabled === true, runStatus: document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-run-status"), requestCount: window.__openEnaNativeAudit.requests.length };
+    }, args.diagnosticCatalog).catch(() => ({ issueIds: [], invalidCount: null, runDisabled: true, runStatus: "unknown", requestCount: null }));
+    throw new Error(`Private ONA gate failed: ${stage}; private details withheld; safeDiagnostics=${JSON.stringify(safeDiagnostics)}`);
   }
-  const traceReceipt = await page.evaluate(() => {
-    const root = document.querySelector(
-      '[data-testid="open-ena-ona-3d-overall-plot"] [data-ena-plotly-root="true"]',
-    );
-    const region = document.querySelector(
-      '[data-testid="open-ena-ona-3d-overall-plot"] [data-ena-interactive-camera="true"]',
-    );
-    const traces = Array.isArray(root?.data) ? root.data : [];
-    return {
-      codeNodeCount: Number(region?.getAttribute("data-ena-code-node-count")),
-      arrows: traces.filter((trace) => trace.meta?.role === "ordered-edge-arrowhead").length,
-      selfLoops: traces.filter((trace) => trace.meta?.role === "ordered-self-loop-shaft").length,
-      allUnitSymbolsCircle: traces.filter((trace) => trace.meta?.role === "unit-points")
-        .every((trace) => trace.marker?.symbol === "circle"),
-    };
-  });
-  assertBrowser(traceReceipt.codeNodeCount === 7, "Yu ONA does not show seven code nodes");
-  assertBrowser(traceReceipt.arrows > 0,
-    `Yu ONA directed arrows are missing (visible arrow traces: ${traceReceipt.arrows})`);
-  assertBrowser(traceReceipt.allUnitSymbolsCircle, "Yu 3D unit base symbols are not circles");
-  await visualization.getByRole("button", { name: /2D ONA/ }).click();
-  await visualization.getByRole("button", { name: /3D ONA/ }).click();
-  const toggle = page.getByTestId("open-ena-data-view-toggle");
-  await toggle.click();
-  const auditedRows = await page.getByTestId("open-ena-data-view").locator("tbody tr").count();
-  assertBrowser(auditedRows > 0, "Yu ordered audit Data View is empty");
-  await toggle.click();
-  await rail.getByRole("button", { name: /Stats/ }).click();
-  const coverage = page.getByLabel("ONA model coverage");
-  const coverageValues = await coverage.locator("li strong").evaluateAll((nodes) => nodes.map((node) => Number(node.textContent)));
-  const onaStats = page.getByTestId("open-ena-ona-stats");
-  const rawTotal = Number(await onaStats.getByText("Total", { exact: true })
-    .locator("xpath=following-sibling::dd").textContent());
-  const rawSelfConnections = Number(await onaStats.getByText("Self-connections", { exact: true })
-    .locator("xpath=following-sibling::dd").textContent());
-  assertBrowser(coverageValues[0] === 87 && coverageValues[1] === 174
-    && coverageValues[3] === 7 && coverageValues[4] === 49,
-    "Yu aggregate coverage receipt differs");
-  assertBrowser(coverageValues[5] === 3 && rawTotal === 811,
-    `Yu zero-network or total receipt differs (actual total: ${rawTotal}; actual zero networks: ${coverageValues[5]})`);
-  assertBrowser(rawSelfConnections > 0, "Yu authoritative stats contain no self-connections");
-  assertBrowser(traceReceipt.selfLoops > 0,
-    `Yu ONA self-loops are missing (visible self-loop traces: ${traceReceipt.selfLoops}; raw self-connections: ${rawSelfConnections})`);
-  assertBrowser(consoleErrors.length === 0 && pageErrors.length === 0, "Yu private browser lane emitted errors");
-  return {
-    aggregateOnly: true,
-    sourceRows: 174,
-    units: 87,
-    codeNodeCount: 7,
-    directedDimensions: coverageValues[4],
-    connectionTotal: rawTotal,
-    selfConnections: rawSelfConnections,
-    zeroNetworks: 3,
-    pointCircles2d: pointAudit.count,
-    dataViewAuditedRowsVisible: auditedRows,
-    consoleErrors: 0,
-    pageErrors: 0,
-  };
+  finally { page.off("console", onConsole); page.off("pageerror", onPageError); }
 }
 
 const sourceEvidenceBefore = readGitEvidence();
@@ -893,64 +937,26 @@ let summary = null;
 let baseUrl = null;
 
 try {
-  execFileSync("npx", ["--version"], { encoding: "utf8", timeout: 30_000 });
-  const playwrightCliVersion = runCli(["--version"], "resolve Playwright CLI", 120_000).trim();
-  const port = await findOpenPort();
-  baseUrl = "http://127.0.0.1:" + port;
-  const authDatabaseUrl = await startEphemeralPostgres();
-  removeOwnedDistDirectory();
-  const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => (
-    !key.startsWith("OPEN_ENA_ONA_3D_SMOKE_")
-      && ![
-        "NEXT_DIST_DIR",
-        "OPEN_ENA_USERNAME",
-        "OPEN_ENA_PASSWORD",
-        "OPEN_ENA_SESSION_SECRET",
-        "OPEN_ENA_ACCOUNT_ID",
-        "OPEN_ENA_AUTH_DATABASE_URL",
-      ].includes(key)
-  )));
-  const ownedEnvironment = {
-    ...environment,
-    NODE_ENV: "production",
-    NEXT_DIST_DIR: ownedDistDirName,
-    OPEN_ENA_USERNAME: username,
-    OPEN_ENA_PASSWORD: password,
-    OPEN_ENA_SESSION_SECRET: sessionSecret,
-    OPEN_ENA_ACCOUNT_ID: accountId,
-    OPEN_ENA_AUTH_DATABASE_URL: authDatabaseUrl,
-    OPEN_ENA_PUBLIC_ORIGIN: baseUrl,
-    OPEN_ENA_ALLOWED_ORIGINS: baseUrl,
-    OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1",
-  };
-  const logFd = openSync(serverLogPath, "w");
-  try {
-    process.stdout.write("[ONA 3D smoke] build production application ... ");
-    execFileSync("npm", ["run", "build"], {
-      cwd: projectRoot,
-      env: ownedEnvironment,
-      stdio: ["ignore", logFd, logFd],
-      timeout: 600_000,
-    });
-    process.stdout.write("PASS\n");
-    ownedServer = spawn(
-      "npm",
-      ["run", "start", "--", "--hostname", "127.0.0.1", "--port", String(port)],
-      {
-        cwd: projectRoot,
-        detached: process.platform !== "win32",
-        env: ownedEnvironment,
-        stdio: ["ignore", logFd, logFd],
-      },
-    );
-  } finally {
-    closeSync(logFd);
-  }
-  await waitForServer(baseUrl + "/en/open-ena");
-  runCli(["open", "about:blank", "--browser", smokeBrowser], "open browser", 120_000);
+  const playwrightCliVersion = "Playwright module 1.62.1";
+  runtime = await createServedBrowserV3({ root: resolve(projectRoot), directory: artifactDirectory + "-runtime", credentials: { username, password, secret: sessionSecret, account: accountId }, redact, serverLogPath });
+  await runtime.page.addInitScript(installPlotlyResourceAuditV3);
+  baseUrl = runtime.baseUrl;
   browserOpened = true;
+  const authCacheSession = await runtime.page.context().newCDPSession(runtime.page);
+  runtime.lifecycle.addCleanup("ONA authentication cache session", () => authCacheSession.detach());
+  runtime.receipt.browser.cachePolicy = "authentication-disabled-then-measurement-browser-default";
+  runtime.receipt.browser.cachePhases = [];
+  await authCacheSession.send("Network.enable");
+  await authCacheSession.send("Network.setCacheDisabled", { cacheDisabled: true });
+  runtime.receipt.browser.cachePhases.push({ phase: "authentication", cacheDisabled: true, at: new Date().toISOString() });
+  runtime.page.__task38FinishAuthentication = async () => {
+    await runtime.page.waitForLoadState("networkidle");
+    await runtime.drainAssetReads("ONA authenticated assets before default-cache measurement");
+    await authCacheSession.send("Network.setCacheDisabled", { cacheDisabled: false });
+    runtime.receipt.browser.cachePhases.push({ phase: "fixture-and-performance", cacheDisabled: false, at: new Date().toISOString(), restoredBeforeFixture: true });
+  };
   const fixtureCsv = buildOrderedFixtureCsv();
-  const synthetic = runBrowserPhase(
+  const synthetic = await runBrowserPhase(
     "run the synthetic directed ONA lifecycle",
     runSyntheticLane,
     {
@@ -966,14 +972,21 @@ try {
     },
     360_000,
   );
-  const yu = existsSync(privateWorkbookPath)
-    ? runBrowserPhase(
+  const diagnosticCatalog = JSON.parse(execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", 'import { getOpenEnaCopy, localizeModelDiagnosticV3 } from "./lib/open-ena-i18n.ts"; import { ONA_COMPILER_DIAGNOSTIC_IDS_V3 } from "./lib/open-ena/model-v3/ona-compiler-preflight.ts"; const copy=getOpenEnaCopy("en").modelV3; process.stdout.write(JSON.stringify(ONA_COMPILER_DIAGNOSTIC_IDS_V3.map(id=>({id,summary:localizeModelDiagnosticV3(copy,{id,severity:"error",scope:"model"}).summary}))));'], { cwd: projectRoot, encoding: "utf8", timeout: 10000 }));
+  const glResources = await runtime.stage("bounded public GL resource lifecycle", () => checkPlotlyResourceLifecycleV3(runtime.page, rows => writeFileSync(join(artifactDirectory, "gl-resource-lifecycle.json"), JSON.stringify(rows, null, 2))), 120000);
+  privateLaneActive = existsSync(privateWorkbookPath);
+  const yu = privateLaneActive
+    ? await runBrowserPhase(
         "run the aggregate-only Yu private lane",
         runYuPrivateLane,
-        { entryUrl: baseUrl + "/en/open-ena", workbookPath: privateWorkbookPath },
+        { entryUrl: baseUrl + "/en/open-ena", workbookPath: privateWorkbookPath, diagnosticCatalog },
         300_000,
       )
     : { aggregateOnly: true, status: "NOT_RUN_PRIVATE_WORKBOOK_MISSING" };
+  const finalGlResources = await runtime.page.evaluate(() => window.__openEnaGlResourceAudit.snapshot());
+  writeFileSync(join(artifactDirectory, "gl-final-numeric.json"), JSON.stringify(finalGlResources, null, 2));
+  assert.equal(finalGlResources.current, 3); assert.equal(finalGlResources.attached, 3);
+  assert.equal(finalGlResources.retiredUnlost, 0); assert.equal(finalGlResources.currentLosses, 0);
   summary = {
     status: "PASS",
     browser: smokeBrowser,
@@ -987,14 +1000,15 @@ try {
       sourceRows: fixtureCsv.trim().split("\n").length - 1,
     },
     synthetic,
+    glResources: { ...glResources, finalNumericOnly: true, finalCurrentScenes: finalGlResources.current, finalRetiredUnlost: finalGlResources.retiredUnlost },
     yuPrivate: yu,
     source: { ...sourceEvidenceBefore, smokeSourceSha256 },
   };
 } catch (caught) {
   primaryFailure = caught;
-  if (browserOpened) {
+  if (browserOpened && !privateLaneActive) {
     try {
-      runCli(["screenshot", "--filename", failureScreenshotPath], "capture failure screenshot", 30_000);
+      await runCli(["screenshot", "--filename", failureScreenshotPath], "capture failure screenshot", 30_000);
     } catch {
       // Preserve the primary product failure.
     }
@@ -1005,7 +1019,7 @@ try {
   }
 } finally {
   try {
-    if (browserOpened) runCli(["close"], "close browser", 30_000);
+    if (browserOpened) await runCli(["close"], "close browser", 30_000);
   } catch (caught) {
     if (!primaryFailure) primaryFailure = caught;
   }

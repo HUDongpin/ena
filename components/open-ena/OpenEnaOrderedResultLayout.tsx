@@ -1,10 +1,11 @@
+import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 import type { ReactNode, Ref } from "react";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
 import type {
   OpenEnaNodeDimensionPosition,
   OpenEnaNodeLayoutPositions,
 } from "@/lib/open-ena/node-layout";
-import type { OpenEnaOrderedNodeTotals } from "@/lib/open-ena/ordered-plot";
+import type { OpenEnaCodeGraphPresentation, OpenEnaOrderedNodeTotals } from "@/lib/open-ena/ordered-plot";
 import type { OpenEnaConfig, OpenEnaResult } from "@/lib/open-ena/types";
 import OpenEnaOrderedPlot, { type OpenEnaOrderedPlotCopy } from "./OpenEnaOrderedPlot";
 
@@ -36,8 +37,8 @@ const DEFAULT_COPY: OpenEnaOrderedResultLayoutCopy = {
   rightToolsLabel: "Ordered plot tools",
 };
 
-export interface OpenEnaOrderedResultLayoutProps {
-  result: OpenEnaResult;
+export interface OpenEnaOrderedResultLayoutProps extends OpenEnaCodeGraphPresentation {
+  result: OpenEnaPlotResult;
   config: OpenEnaConfig;
   primaryGroupName: string | null;
   secondaryGroupName: string | null;
@@ -99,6 +100,9 @@ export default function OpenEnaOrderedResultLayout(props: OpenEnaOrderedResultLa
     showPoints: props.showPoints,
     showNetworks: props.showNetworks,
     showLabels: props.showLabels,
+    showCodeGraph: props.showCodeGraph,
+    codeVisibility: props.codeVisibility,
+    codeSourceByRenderedCode: props.codeSourceByRenderedCode, codeLabelByRenderedCode: props.codeLabelByRenderedCode,
     showUnitLabels: props.showUnitLabels,
     showVariance: props.showVariance,
     codeColors: props.codeColors,

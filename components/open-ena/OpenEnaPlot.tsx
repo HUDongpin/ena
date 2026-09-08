@@ -1,15 +1,22 @@
+import { nativePlotGroupSettingsV3 } from "@/lib/open-ena/bound-presentation-v3";
+import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 import type { Row } from "jena-js";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type {
   OpenEnaNodeDimensionPosition,
   OpenEnaNodeLayoutPositions,
 } from "@/lib/open-ena/node-layout";
+import {
+  openEnaRenderedCodeIsVisible, openEnaRenderedCodeLabel,
+  openEnaRenderedEdgeIsVisible,
+  type OpenEnaCodeGraphPresentation,
+} from "@/lib/open-ena/ordered-plot";
 import { codeColorFor, type OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
 import type { CameraPreset, GroupNetwork, OpenEnaResult, OpenEnaView } from "@/lib/open-ena/types";
 import OpenEnaSvgDraggableNode from "./OpenEnaSvgDraggableNode";
 
-interface OpenEnaPlotProps {
-  result: OpenEnaResult;
+interface OpenEnaPlotProps extends OpenEnaCodeGraphPresentation {
+  result: OpenEnaPlotResult;
   codeColors?: OpenEnaCodeColors;
   groupColumn: string | null;
   view: OpenEnaView;
@@ -210,8 +217,11 @@ export function MiniNetwork({
   label,
   maxNetworkWeight,
   edgeThreshold,
+  showCodeGraph = true,
+  codeVisibility,
+  codeSourceByRenderedCode, codeLabelByRenderedCode,
 }: {
-  result: OpenEnaResult;
+  result: OpenEnaPlotResult;
   codeColors?: OpenEnaCodeColors;
   group: GroupNetwork;
   xDimension: string;
@@ -219,7 +229,8 @@ export function MiniNetwork({
   label: string;
   maxNetworkWeight: number;
   edgeThreshold: number;
-}) {
+} & OpenEnaCodeGraphPresentation) {
+  const presentation = { showCodeGraph, codeVisibility, codeSourceByRenderedCode, codeLabelByRenderedCode };
   const nodes = (result.set.rotation.nodes ?? []).map((row) => ({
     x: numberValue(row, xDimension),
     y: numberValue(row, yDimension),
@@ -229,7 +240,8 @@ export function MiniNetwork({
   }));
   const positions = screenProjector(nodes, "2d", "xy").positions;
   const strongestEdges = result.set.adjacencyKey
-    .map((edge) => ({ name: edge.name, value: Math.abs(group.meanWeights[edge.name] ?? 0) }))
+    .filter((edge) => openEnaRenderedEdgeIsVisible(presentation, edge.source, edge.target))
+    .map((edge) => ({ name: `${openEnaRenderedCodeLabel(presentation, edge.source)} ↔ ${openEnaRenderedCodeLabel(presentation, edge.target)}`, value: Math.abs(group.meanWeights[edge.name] ?? 0) }))
     .filter((edge) => passesEdgeThreshold(edge.value, maxNetworkWeight, edgeThreshold))
     .sort((left, right) => right.value - left.value)
     .slice(0, 3)
@@ -243,6 +255,7 @@ export function MiniNetwork({
     <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={accessibleLabel} className="open-ena-mini-svg">
       <rect width={WIDTH} height={HEIGHT} rx="18" className="ena-plot-background" />
       {result.set.adjacencyKey.map((edge) => {
+        if (!openEnaRenderedEdgeIsVisible(presentation, edge.source, edge.target)) return null;
         const source = positions.get(`node-${edge.source}`);
         const target = positions.get(`node-${edge.target}`);
         const weight = Math.abs(group.meanWeights[edge.name] ?? 0);
@@ -261,7 +274,7 @@ export function MiniNetwork({
           />
         );
       })}
-      {nodes.map((node) => {
+      {nodes.filter((node) => openEnaRenderedCodeIsVisible(presentation, node.label)).map((node) => {
         const point = positions.get(node.key);
         if (!point) return null;
         return (
@@ -273,7 +286,7 @@ export function MiniNetwork({
               stroke={group.color}
               strokeWidth="6"
             />
-            <text y="-24" textAnchor="middle" className="ena-mini-label">{node.label}</text>
+            <text y="-24" textAnchor="middle" className="ena-mini-label">{openEnaRenderedCodeLabel(presentation, node.label)}</text>
           </g>
         );
       })}
@@ -293,6 +306,9 @@ export default function OpenEnaPlot({
   showPoints,
   showNetworks,
   showLabels,
+  showCodeGraph = true,
+  codeVisibility,
+  codeSourceByRenderedCode, codeLabelByRenderedCode,
   showUnitLabels,
   showVariance,
   showTrajectories: _legacyShowTrajectories,
@@ -307,6 +323,7 @@ export default function OpenEnaPlot({
   copy,
   svgRef,
 }: OpenEnaPlotProps) {
+  const codePresentation = { showCodeGraph, codeVisibility, codeSourceByRenderedCode, codeLabelByRenderedCode };
   const canonicalNodes = (result.set.rotation.nodes ?? []).map((row) => ({
     x: numberValue(row, xDimension),
     y: numberValue(row, yDimension),
@@ -339,8 +356,14 @@ export default function OpenEnaPlot({
     key: `mean-${index}`,
     label: `mean-${index}`,
   }));
+  const trajectory = result.trajectoryPresentation;
+  const trajectoryCentroids = (trajectory?.centroids ?? []).map((centroid, index) => ({ key: `trajectory-centroid-${index}`, label: centroid.horizon,
+    x: Number(centroid.point[xDimension]), y: Number(centroid.point[yDimension]), z: Number(centroid.point[zDimension] ?? 0) }));
+  const trajectoryPointKey = (row: Row) => JSON.stringify([row.Unit, row.Horizon]);
+  const trajectoryPointPositions = new Map(unitPoints.map((point) => [trajectoryPointKey(point.row), point.key]));
+  const visibleTrajectoryPoints = trajectory ? new Set(trajectory.points.map((point) => trajectoryPointKey(point.point))) : null;
   const projection = screenProjector(
-    [...nodes, ...unitPoints, ...meanPoints],
+    [...nodes, ...unitPoints, ...meanPoints, ...trajectoryCentroids],
     view,
     camera,
     plotZoom,
@@ -350,8 +373,8 @@ export default function OpenEnaPlot({
   );
   const positions = projection.positions;
   // Kept in the public prop shape so historical settings can still be read.
-  // Generic ENA presenters never render longitudinal paths; those belong only
-  // to the versioned trajectory workbench.
+  // A legacy flag alone cannot manufacture trajectories. Native fitted-sequence
+  // presentation is supplied explicitly by the bound Workspace.
   void _legacyShowTrajectories;
   const edgeValues = result.set.adjacencyKey.map((edge) => edgeWeight(result.groups, edge.name).value);
   const maxEdge = Math.max(1e-9, ...edgeValues);
@@ -360,6 +383,7 @@ export default function OpenEnaPlot({
   const varianceZ = (result.set.variance[zDimension] ?? 0) * 100;
   const isComparison = result.groups.length === 2;
   const strongestEdges = result.set.adjacencyKey
+    .filter((edge) => openEnaRenderedEdgeIsVisible(codePresentation, edge.source, edge.target))
     .map((edge) => ({ edge, ...edgeWeight(result.groups, edge.name) }))
     .filter((item) => item.group && passesEdgeThreshold(item.value, maxEdge, edgeThreshold))
     .sort((left, right) => right.value - left.value)
@@ -454,15 +478,16 @@ export default function OpenEnaPlot({
           </g>
         )}
 
-        {showNetworks && result.set.adjacencyKey.map((edge) => {
+        {showNetworks && !trajectory && !result.groupPresentation?.allSuppressed && result.set.adjacencyKey.map((edge) => {
+          if (!openEnaRenderedEdgeIsVisible(codePresentation, edge.source, edge.target)) return null;
           const source = positions.get(`node-${edge.source}`);
           const target = positions.get(`node-${edge.target}`);
           const weighted = edgeWeight(result.groups, edge.name);
           if (!source || !target || !weighted.group || !passesEdgeThreshold(weighted.value, maxEdge, edgeThreshold)) return null;
           const relative = weighted.value / maxEdge;
           const edgeLabel = isComparison
-            ? `${edge.name}: ${weighted.group.name} stronger by ${weighted.value.toFixed(3)}`
-            : `${edge.name}: ${weighted.group.name} mean weight ${weighted.value.toFixed(3)}`;
+            ? `${openEnaRenderedCodeLabel(codePresentation, edge.source)} ↔ ${openEnaRenderedCodeLabel(codePresentation, edge.target)}: ${weighted.group.name} stronger by ${weighted.value.toFixed(3)}`
+            : `${openEnaRenderedCodeLabel(codePresentation, edge.source)} ↔ ${openEnaRenderedCodeLabel(codePresentation, edge.target)}: ${weighted.group.name} mean weight ${weighted.value.toFixed(3)}`;
           return (
             <line
               key={edge.name}
@@ -482,12 +507,35 @@ export default function OpenEnaPlot({
           );
         })}
 
+        {_legacyShowTrajectories && trajectory?.paths.map((path, index) => {
+          if (!nativePlotGroupSettingsV3(result, path.group).showUnitPoints || result.groupPresentation?.hiddenUnits.has(path.unitLabel)) return null;
+          const from = positions.get(trajectoryPointPositions.get(trajectoryPointKey(path.from)) ?? "");
+          const to = positions.get(trajectoryPointPositions.get(trajectoryPointKey(path.to)) ?? "");
+          return from && to ? <line key={index} className="ena-individual-trajectory-path" data-ena-trajectory-path="true" data-from-ordinal={path.fromOrdinal} data-to-ordinal={path.toOrdinal} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="black" opacity={0.4} strokeWidth={1.5} /> : null;
+        })}
+        {trajectory?.centroidPaths.map((path, index) => {
+          if (!nativePlotGroupSettingsV3(result, path.from.group).showMean) return null;
+          const from = positions.get(`trajectory-centroid-${trajectory.centroids.findIndex((point) => point.key === path.from.key)}`);
+          const to = positions.get(`trajectory-centroid-${trajectory.centroids.findIndex((point) => point.key === path.to.key)}`);
+          if (!from || !to) return null;
+          const dx = to.x - from.x, dy = to.y - from.y, length = Math.hypot(dx, dy);
+          const tip = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+          const ux = length ? dx / length : 0, uy = length ? dy / length : 0;
+          return <g key={index}><line className="ena-group-centroid-path" data-ena-centroid-path="true" x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="black" strokeWidth={3}><title>{`${path.from.horizon} → ${path.to.horizon}; ${path.sharedContributorCount} observed shared contributors. Available-population centroids; not a matched change estimate.`}</title></line>
+            {length > 0 && <polygon data-ena-trajectory-direction="true" points={`${tip.x},${tip.y} ${tip.x - ux * 9 - uy * 4.5},${tip.y - uy * 9 + ux * 4.5} ${tip.x - ux * 9 + uy * 4.5},${tip.y - uy * 9 - ux * 4.5}`} fill="black" />}</g>;
+        })}
+        {trajectory?.centroids.map((centroid, index) => {
+          if (!nativePlotGroupSettingsV3(result, centroid.group).showMean) return null;
+          const point = positions.get(`trajectory-centroid-${index}`);
+          return point ? <g key={centroid.key} data-ena-trajectory-centroid="true"><rect x={point.x - 3.5} y={point.y - 3.5} width={7} height={7} fill="black" /><title>{`${centroid.group} · ${centroid.horizon} · observed n = ${centroid.n}`}</title><text x={point.x + 10} y={point.y - 8}>{centroid.horizon} · n={centroid.n}</text></g> : null;
+        })}
         {showPoints && unitPoints.map((unit) => {
           const point = positions.get(unit.key);
-          if (!point || !unit.row) return null;
+          if (!point || !unit.row || (visibleTrajectoryPoints && !visibleTrajectoryPoints.has(trajectoryPointKey(unit.row)))) return null;
           const group = groupColumn
             ? result.groups.find((item) => item.name === String(unit.row?.[groupColumn])) ?? result.groups[0]
             : result.groups[0];
+          if (!nativePlotGroupSettingsV3(result, group?.name ?? "").showUnitPoints || result.groupPresentation?.hiddenUnits.has(String(unit.row.ENA_UNIT))) return null;
           const groupIndex = Math.max(0, result.groups.findIndex((item) => item.name === group?.name));
           const encoding = getGroupVisualEncoding(groupIndex);
           const markSize = (view === "3d" ? Math.max(5.5, 7.5 + point.depth * 1.2) : 7.5) * pointScale;
@@ -526,7 +574,7 @@ export default function OpenEnaPlot({
         {meanPoints.map((mean, index) => {
           const point = positions.get(mean.key);
           const group = result.groups[index];
-          if (!point || !group) return null;
+          if (trajectory || !point || !group || !nativePlotGroupSettingsV3(result, group.name).showMean) return null;
           return (
             <g
               key={mean.label}
@@ -559,7 +607,7 @@ export default function OpenEnaPlot({
           );
         })}
 
-        {nodes.map((node) => {
+        {nodes.filter((node) => openEnaRenderedCodeIsVisible(codePresentation, node.label)).map((node) => {
           const point = positions.get(node.key);
           if (!point) return null;
           const nodeColor = codeColorFor(codeColors, node.label);
@@ -593,7 +641,7 @@ export default function OpenEnaPlot({
                   stroke={nodeColor}
                   style={{ fill: nodeColor, stroke: nodeColor }}
                 />
-                {showLabels ? <text y="-23" textAnchor="middle" className="ena-result-label">{node.label}</text> : null}
+                {showLabels ? <text y="-23" textAnchor="middle" className="ena-result-label">{openEnaRenderedCodeLabel(codePresentation, node.label)}</text> : null}
               </OpenEnaSvgDraggableNode>
             </g>
           );
@@ -682,7 +730,7 @@ export default function OpenEnaPlot({
           </thead>
           <tbody>
             {strongestEdges.map(({ edge, group, value }) => (
-              <tr key={edge.name}><th scope="row">{edge.name}</th><td>{group?.name}</td><td>{value.toFixed(3)}</td></tr>
+              <tr key={edge.name}><th scope="row">{openEnaRenderedCodeLabel(codePresentation, edge.source)} ↔ {openEnaRenderedCodeLabel(codePresentation, edge.target)}</th><td>{group?.name}</td><td>{value.toFixed(3)}</td></tr>
             ))}
           </tbody>
         </table>

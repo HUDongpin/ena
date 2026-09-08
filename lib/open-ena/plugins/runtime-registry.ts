@@ -1,5 +1,6 @@
 import { compileOpenEna3dPlotSpec, type CompileOpenEna3dPlotInput, type OpenEna3dPlotSpec } from "@/lib/open-ena/plot3d";
-import { JENA_RUNTIME_VERSION, type OpenEnaResult } from "@/lib/open-ena/types";
+import { JENA_RUNTIME_VERSION } from "@/lib/open-ena/types";
+import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 import { OPEN_ENA_PLUGIN_CATALOG } from "./catalog";
 import {
   OPEN_ENA_PLUGIN_CORE_API_VERSION,
@@ -41,7 +42,7 @@ type FrozenDisplayInput = Omit<CompileOpenEna3dPlotInput, "result" | "nodeLayout
 export interface OpenEna3dPresenterSnapshotV1 {
   schemaVersion: "ena.hk/3d-presenter-snapshot/v1";
   result: Readonly<{
-    modelType: OpenEnaResult["set"]["modelType"];
+    modelType: OpenEnaPlotResult["set"]["modelType"];
     networkType: "standard";
     codes: readonly string[];
     points: readonly unknown[];
@@ -50,6 +51,12 @@ export interface OpenEna3dPresenterSnapshotV1 {
     variance: Readonly<Record<string, number>>;
     groups: readonly unknown[];
     dimensions: readonly string[];
+    trajectoryPresentation?: OpenEnaPlotResult["trajectoryPresentation"];
+    groupPresentation?: Readonly<{
+      allSuppressed: boolean;
+      settingsByName: NonNullable<OpenEnaPlotResult["groupPresentation"]>["settingsByName"];
+      hiddenUnits: readonly string[];
+    }>;
   }>;
   display: Readonly<FrozenDisplayInput>;
   nodeLayoutEntries: readonly (readonly [string, readonly (readonly [string, number])[]])[];
@@ -81,6 +88,12 @@ export function createOpenEna3dPresenterSnapshotV1(input: CompileOpenEna3dPlotIn
       variance: scientific?.variance ?? jsonClone(result.set.variance),
       groups: scientific?.groups ?? jsonClone(result.groups),
       dimensions: scientific?.dimensions ?? jsonClone(result.dimensions),
+      ...(result.trajectoryPresentation ? { trajectoryPresentation: jsonClone(result.trajectoryPresentation) } : {}),
+      ...(result.groupPresentation ? { groupPresentation: jsonClone({
+        allSuppressed: result.groupPresentation.allSuppressed,
+        settingsByName: result.groupPresentation.settingsByName,
+        hiddenUnits: [...result.groupPresentation.hiddenUnits],
+      }) } : {}),
     },
     display: jsonClone(display),
     nodeLayoutEntries: nodeLayout
@@ -105,7 +118,12 @@ function compileSanitized3dSnapshot(snapshot: OpenEna3dPresenterSnapshotV1) {
     },
     groups: snapshot.result.groups,
     dimensions: snapshot.result.dimensions,
-  } as unknown as OpenEnaResult;
+    trajectoryPresentation: snapshot.result.trajectoryPresentation,
+    ...(snapshot.result.groupPresentation ? { groupPresentation: {
+      ...snapshot.result.groupPresentation,
+      hiddenUnits: new Set(snapshot.result.groupPresentation.hiddenUnits),
+    } } : {}),
+  } as unknown as OpenEnaPlotResult;
   return compileOpenEna3dPlotSpec({
     ...snapshot.display,
     result: sanitizedResult,
@@ -137,10 +155,11 @@ export function parseOpenEnaDisabledPluginIds(raw: string | undefined) {
   return Object.freeze([...new Set(raw.split(",").map((entry) => entry.trim()).filter((entry) => Object.hasOwn(OPEN_ENA_RUNTIME_PLUGIN_REGISTRY, entry)))]);
 }
 
-export function openEnaRuntimePluginAvailability(
+function pluginAvailability(
   pluginId: string,
   context: OpenEnaPluginContextV1,
   disabledPluginIds: readonly string[],
+  historicalDisplay = false,
 ): OpenEnaPluginAvailability {
   const registered = OPEN_ENA_RUNTIME_PLUGIN_REGISTRY[pluginId];
   if (!registered) return { enabled: false, reasonCode: "plugin-unknown" };
@@ -149,14 +168,33 @@ export function openEnaRuntimePluginAvailability(
   if (disabledPluginIds.includes(pluginId)) return { enabled: false, reasonCode: "plugin-disabled" };
   if (module.manifest.lifecycle === "revoked" || module.manifest.lifecycle === "deprecated") return { enabled: false, reasonCode: "plugin-revoked" };
   if (context.schemaVersion !== "ena.hk/plugin-context/v1" || context.coreApiVersion !== OPEN_ENA_PLUGIN_CORE_API_VERSION || module.manifest.compatibility.coreApi !== context.coreApiVersion) return { enabled: false, reasonCode: "contract-incompatible" };
-  if (context.resultSchemaVersion !== OPEN_ENA_PLUGIN_RESULT_SCHEMA_VERSION || !module.manifest.compatibility.resultSchemaVersions.includes(context.resultSchemaVersion)) return { enabled: false, reasonCode: "result-schema-incompatible" };
+  if (![OPEN_ENA_PLUGIN_RESULT_SCHEMA_VERSION, 3].includes(context.resultSchemaVersion) || !module.manifest.compatibility.resultSchemaVersions.includes(context.resultSchemaVersion)) return { enabled: false, reasonCode: "result-schema-incompatible" };
   if (module.manifest.compatibility.requiredCapabilities.some((capability) => !context.capabilities.includes(capability))) return { enabled: false, reasonCode: "capability-incompatible" };
-  if (context.stale) return { enabled: false, reasonCode: "result-stale" };
+  if (context.stale && !historicalDisplay) return { enabled: false, reasonCode: "result-stale" };
   if (!module.manifest.compatibility.analysisKinds.includes(context.analysisKind)) return { enabled: false, reasonCode: "analysis-incompatible" };
   if (!module.manifest.compatibility.modelTypes.includes(context.modelType)) return { enabled: false, reasonCode: "model-incompatible" };
   if (context.dimensions.length < module.manifest.compatibility.minimumDimensions || context.selectedDimensions.length < module.manifest.compatibility.minimumDimensions || new Set(context.selectedDimensions).size !== context.selectedDimensions.length) return { enabled: false, reasonCode: "dimensions-insufficient" };
   if (!module.manifest.compatibility.jenaVersions.includes(JENA_RUNTIME_VERSION)) return { enabled: false, reasonCode: "runtime-incompatible" };
   return { enabled: true, reasonCode: null };
+}
+
+export function openEnaRuntimePluginAvailability(pluginId: string, context: OpenEnaPluginContextV1, disabledPluginIds: readonly string[]) {
+  return pluginAvailability(pluginId, context, disabledPluginIds);
+}
+
+export function openEnaHistorical3dDisplayAvailability(pluginId: string, context: OpenEnaPluginContextV1, disabledPluginIds: readonly string[]): OpenEnaPluginAvailability {
+  if (!context.stale || !context.scientificResult.native) return { enabled: false, reasonCode: "result-stale" };
+  return pluginAvailability(pluginId, context, disabledPluginIds, true);
+}
+
+/** Historical geometry is drawn by the native core presenter. It never calls
+ * a registry module and never supplies authority for a new plugin receipt. */
+export function compileOpenEnaHistorical3dDisplay(pluginId: string, context: OpenEnaPluginContextV1, input: CompileOpenEna3dPlotInput, disabledPluginIds: readonly string[]) {
+  const availability = openEnaHistorical3dDisplayAvailability(pluginId, context, disabledPluginIds);
+  if (!availability.enabled) throw new OpenEnaPluginRuntimeError(availability.reasonCode);
+  if (!input.result.boundPresentation || !openEnaPluginContextOwnsResult(context, input.result)) throw new OpenEnaPluginRuntimeError("scientific-result-changed");
+  if ([input.xDimension, input.yDimension, input.zDimension].some((dimension, index) => dimension !== context.selectedDimensions[index])) throw new OpenEnaPluginRuntimeError("dimensions-insufficient");
+  return compileOpenEna3dPlotSpec(input);
 }
 
 export function compileOpenEnaTrusted3dPlugin(

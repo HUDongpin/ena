@@ -51,7 +51,7 @@ export function resolveOpenEnaGroupDisplayOptions(
 ): OpenEnaGroupDisplayOptions {
   return {
     ...DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS,
-    ...settingsByGroup[groupName],
+    ...(Object.hasOwn(settingsByGroup, groupName) ? settingsByGroup[groupName] : undefined),
   };
 }
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createServedBrowserV3, literalGit } from "./helpers/open-ena-served-browser-v3.mjs";
+import { nativeFixtureIdentitiesV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
 import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import {
@@ -44,13 +46,13 @@ const ownedDistDirName = ".next-longitudinal-smoke-" + process.pid;
 const ownedDistDirectory = join(projectRoot, ownedDistDirName);
 const cameraPresets = ["isometric", "xy", "xz", "yz", "yx", "zx", "zy"];
 const expectedCameraLabels = {
-  isometric: "ISOMETRIC",
-  xy: "XY",
-  xz: "XZ",
-  yz: "YZ",
-  yx: "YX",
-  zx: "ZX",
-  zy: "ZY",
+  isometric: "Default 3D Camera",
+  xy: "X-Y plane",
+  xz: "X-Z plane",
+  yz: "Y-Z plane",
+  yx: "Y-X plane",
+  zx: "Z-X plane",
+  zy: "Z-Y plane",
 };
 const expectedCameraStates = {
   isometric: {
@@ -96,6 +98,17 @@ const expectedCameraStates = {
     projection: { type: "orthographic" },
   },
 };
+// Plotly's live camera orthogonalizes the declared up vector against the
+// eye-to-center vector. Compare that exact orientation, including roll, rather
+// than requiring the nonorthogonal declarative vector to survive normalization.
+for (const expected of Object.values(expectedCameraStates)) {
+  const eye = [expected.eye.x - expected.center.x, expected.eye.y - expected.center.y, expected.eye.z - expected.center.z];
+  const up = [expected.up.x, expected.up.y, expected.up.z];
+  const factor = up.reduce((sum, value, i) => sum + value * eye[i], 0) / eye.reduce((sum, value) => sum + value * value, 0);
+  const perpendicular = up.map((value, i) => value - factor * eye[i]);
+  const length = Math.hypot(...perpendicular);
+  expected.up = { x: perpendicular[0] / length, y: perpendicular[1] / length, z: perpendicular[2] / length };
+}
 const twoDimensionalProjections = ["xy", "xz", "yz", "yx", "zx", "zy"];
 const viewportMatrix = [
   { width: 1440, height: 1000, name: "desktop" },
@@ -135,22 +148,13 @@ function redact(value) {
     .replaceAll(sessionSecret, "[redacted-session-secret]");
 }
 
-function runCli(args, label, timeout = 120_000) {
-  try {
-    return execFileSync(
-      playwrightCli.command,
-      [...playwrightCli.prefix, "--session", sessionName, ...args],
-      {
-        cwd: artifactDirectory,
-        encoding: "utf8",
-        env: process.env,
-        maxBuffer: 32 * 1024 * 1024,
-        timeout,
-      },
-    );
-  } catch (caught) {
-    throw createSafePlaywrightCliError({ caught, label, redact });
-  }
+let runtime = null;
+async function runBrowserPhase(label, task, args = {}, timeout = 180_000) {
+  process.stdout.write("[longitudinal V3 smoke] " + label + " ... ");
+  const result = await runtime.stage(label, () => task(runtime.page, args), timeout);
+  writeFileSync(join(artifactDirectory, label.replace(/[^a-z0-9]+/giu, "-") + ".json"), JSON.stringify(result, null, 2) + "\n");
+  process.stdout.write("PASS\n");
+  return result;
 }
 
 function classifyChromiumAngleReadPixelsDiagnostic(input) {
@@ -172,100 +176,6 @@ function classifyChromiumAngleReadPixelsDiagnostic(input) {
     reportedLineNumber: warning.location.lineNumber,
     reportedColumnNumber: warning.location.columnNumber,
   };
-}
-
-function browserSource(task, args, helpers = []) {
-  const helperDeclarations = helpers.map((helper) => helper.toString()).join("\n");
-  return "async (page) => { " + helperDeclarations + "; const task = " + task.toString()
-    + "; return await task(page, " + JSON.stringify(args) + "); }";
-}
-
-function runBrowserPhase(label, task, args = {}, timeout = 180_000, helpers = []) {
-  process.stdout.write("[longitudinal V3 smoke] " + label + " ... ");
-  const output = runCli(
-    ["--raw", "run-code", browserSource(task, args, helpers)],
-    label,
-    timeout,
-  ).trim();
-  const result = output ? JSON.parse(output) : null;
-  process.stdout.write("PASS\n");
-  return result;
-}
-
-async function findOpenPort() {
-  return await new Promise((resolvePort, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      const port = address && typeof address === "object" ? address.port : null;
-      server.close((error) => {
-        if (error) reject(error);
-        else if (port === null) reject(new Error("Could not allocate a loopback port."));
-        else resolvePort(port);
-      });
-    });
-  });
-}
-
-async function waitForServer(url, timeout = 90_000) {
-  const deadline = Date.now() + timeout;
-  let lastError = null;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url, { redirect: "manual" });
-      if (response.status >= 200 && response.status < 500) return;
-    } catch (caught) {
-      lastError = caught;
-    }
-    await new Promise((resolveWait) => setTimeout(resolveWait, 250));
-  }
-  throw new Error("Open ENA did not become ready at " + url + ".", { cause: lastError });
-}
-
-function readServerLogTail() {
-  if (!existsSync(serverLogPath)) return "";
-  return redact(readFileSync(serverLogPath, "utf8")).slice(-12_000);
-}
-
-async function stopOwnedServer(server) {
-  if (!server || server.exitCode !== null || server.signalCode !== null) return;
-  const waitForExit = (timeout) => new Promise((resolveExit) => {
-    if (server.exitCode !== null || server.signalCode !== null) {
-      resolveExit(true);
-      return;
-    }
-    const timer = setTimeout(() => {
-      server.off("exit", onExit);
-      resolveExit(false);
-    }, timeout);
-    const onExit = () => {
-      clearTimeout(timer);
-      resolveExit(true);
-    };
-    server.once("exit", onExit);
-  });
-  const signalServer = (signal) => {
-    try {
-      if (process.platform === "win32") return server.kill(signal);
-      process.kill(-server.pid, signal);
-      return true;
-    } catch {
-      return server.kill(signal);
-    }
-  };
-  signalServer("SIGTERM");
-  if (await waitForExit(5_000)) return;
-  signalServer("SIGKILL");
-  if (!await waitForExit(5_000)) {
-    throw new Error("The smoke-owned Next.js server did not exit after SIGKILL.");
-  }
-}
-
-function removeOwnedDistDirectory() {
-  assert.equal(dirname(ownedDistDirectory), projectRoot);
-  assert.ok(basename(ownedDistDirectory).startsWith(".next-longitudinal-smoke-"));
-  if (existsSync(ownedDistDirectory)) rmSync(ownedDistDirectory, { recursive: true, force: true });
 }
 
 function sha256(bytes) {
@@ -292,11 +202,7 @@ function artifactEvidence(path) {
 }
 
 function readGitEvidence() {
-  const git = (args) => execFileSync("git", args, {
-    cwd: projectRoot,
-    encoding: "utf8",
-    timeout: 30_000,
-  }).trim();
+  const git = (args) => literalGit(projectRoot, args);
   const status = git(["status", "--porcelain=v1", "--untracked-files=all"]);
   return Object.freeze({
     gitHead: git(["rev-parse", "HEAD"]),
@@ -343,623 +249,339 @@ function safeArchiveMember(path) {
 }
 
 function extractAndVerifyBundle(zipPath, kind, participantLevelIncluded) {
-  assert.ok(existsSync(zipPath), kind + " ZIP is missing");
-  assert.ok(statSync(zipPath).size > 0, kind + " ZIP is empty");
+  assert.ok(statSync(zipPath).size > 0);
+  const memberNames = execFileSync("unzip", ["-Z1", zipPath], { encoding: "utf8" }).trim().split("\n");
+  assert.ok(memberNames.every(safeArchiveMember));
+  assert.equal(new Set(memberNames).size, memberNames.length);
   execFileSync("unzip", ["-t", zipPath], { encoding: "utf8", timeout: 30_000 });
   const extracted = join(downloadDirectory, "extracted-" + kind);
-  if (existsSync(extracted)) rmSync(extracted, { recursive: true, force: true });
   mkdirSync(extracted, { recursive: true });
-  execFileSync("unzip", ["-qq", "-o", zipPath, "-d", extracted], {
-    encoding: "utf8",
-    timeout: 30_000,
-  });
-  const manifestPath = join(extracted, "provenance-manifest.json");
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  assert.equal(manifest.schemaVersion, "3dena.longitudinal-provenance-manifest.v2");
-  assert.equal(manifest.participantLevelIncluded, participantLevelIncluded);
-  assert.ok(Array.isArray(manifest.members) && manifest.members.length >= 5);
-  for (const requiredMember of [
-    "analysis.json",
-    "trajectory-path.csv",
-    "trajectory-metadata.csv",
-    "trajectory-inference.csv",
-    "plotly-spec.json",
-  ]) {
-    assert.equal(
-      manifest.members.some((member) => member.path === requiredMember),
-      true,
-      kind + " ZIP omitted required contract member " + requiredMember,
-    );
+  execFileSync("unzip", ["-qq", zipPath, "-d", extracted], { encoding: "utf8", timeout: 30_000 });
+  const manifest = JSON.parse(readFileSync(join(extracted, "manifest.json"), "utf8"));
+  assert.equal(manifest.schemaVersion, 3);
+  assert.equal(manifest.kind, "open-ena-native-trajectory-export-manifest");
+  assert.equal(manifest.executable, false);
+  assert.equal(manifest.disclosure, participantLevelIncluded ? "participant-opt-in" : "aggregate");
+  const required = ["analysis.json", "plot-specification.json", "trajectory-inference.csv", ...(participantLevelIncluded ? ["participants.json"] : [])];
+  assert.deepEqual(manifest.files.map(file => file.filename).sort(), required.sort());
+  assert.deepEqual(memberNames.sort(), [...required, "manifest.json"].sort());
+  for (const member of manifest.files) {
+    assert.ok(safeArchiveMember(member.filename));
+    assert.equal(member.mimeType, member.filename.endsWith('.csv') ? "text/csv" : "application/json");
+    const bytes = readFileSync(join(extracted, member.filename));
+    assert.equal(bytes.byteLength, member.byteLength);
+    assert.equal(sha256(bytes), member.sha256);
   }
-  assert.equal(
-    manifest.members.some((member) => member.path === "trajectory-bootstrap.csv"),
-    false,
-    kind + " trajectory ZIP still contains a bootstrap CSV",
-  );
-  assert.equal(manifest.contentSetHash, hashAnalysisValueV1(manifest.members));
-  const expectedFiles = [
-    ...manifest.members.map((member) => member.path),
-    "provenance-manifest.json",
-  ].sort();
-  assert.ok(expectedFiles.every(safeArchiveMember), kind + " ZIP contains an unsafe member path");
-  assert.deepEqual(readdirSync(extracted).sort(), expectedFiles);
-  for (const member of manifest.members) {
-    assert.ok(safeArchiveMember(member.path));
-    const memberBytes = readFileSync(join(extracted, member.path));
-    assert.equal(memberBytes.byteLength, member.byteLength, kind + ":" + member.path + " length");
-    assert.equal(sha256(memberBytes), member.sha256, kind + ":" + member.path + " SHA-256");
-  }
-  assert.equal(
-    manifest.members.some((member) => member.path === "trajectory-participants.csv"),
-    participantLevelIncluded,
-  );
   const analysis = JSON.parse(readFileSync(join(extracted, "analysis.json"), "utf8"));
-  const plotly = JSON.parse(readFileSync(join(extracted, "plotly-spec.json"), "utf8"));
-  assert.equal(analysis.identity.resultHash, manifest.resultHash);
-  assert.equal(plotly.resultHash, manifest.resultHash);
-  assert.equal(analysis.privacy.participantLevelIncluded, false);
-  const inferenceRequestKinds = analysis.inference
-    .map((family) => family.request?.kind)
-    .filter(Boolean)
-    .sort();
-  assert.deepEqual(inferenceRequestKinds, [
-    "independent-period",
-    "paired-periods",
-    "repeated-periods",
-  ]);
-  assert.ok(
-    Array.isArray(analysis.pathComparisons) && analysis.pathComparisons.length > 0,
-    kind + " trajectory analysis omitted the whole-path comparison family",
-  );
-  for (const comparison of analysis.pathComparisons) {
-    assert.ok(comparison.result.tests.length > 0, kind + " whole-path comparison has no tests");
-    for (const test of comparison.result.tests) {
-      assert.equal(test.permutationCount, 500, kind + " whole-path permutation count");
-      assert.ok(Number.isFinite(test.pValue), kind + " whole-path p value");
-      assert.ok(Number.isFinite(test.holmAdjustedPValue), kind + " whole-path Holm p value");
-    }
+  const plot = JSON.parse(readFileSync(join(extracted, "plot-specification.json"), "utf8"));
+  assert.deepEqual(analysis.binding, manifest.binding);
+  assert.deepEqual(plot.binding, manifest.binding);
+  assert.equal(plot.purpose, "aggregate-path-comparison-complete-cohort");
+  assert.equal(plot.participantTracesIncluded, false);
+  assert.deepEqual(plot.meanNetworkEdges, []);
+  assert.deepEqual(plot.uncertaintyGeometry, []);
+  assert.deepEqual(plot.glyph, { symbol: "square", size: 7 });
+  const inferenceRequestKinds = analysis.ranks.map(rank => rank.kind);
+  assert.deepEqual(inferenceRequestKinds, ["trajectory-independent-period", "trajectory-paired-periods", "trajectory-repeated-periods"]);
+  assert.deepEqual(manifest.requestFamilies, [...inferenceRequestKinds, "path-comparison"]);
+  const path = analysis.pathComparison;
+  assert.equal(path.repetitions, 500); assert.equal(path.seed, 2026);
+  assert.equal(path.cohortPolicy, "all-period-complete");
+  assert.equal(path.identityConfirmed, true); assert.equal(path.independentGroupsConfirmed, true);
+  assert.equal(path.axes.length, 3); assert.equal(new Set(path.axes).size, 3);
+  assert.ok(path.tests.length > 0);
+  assert.equal(path.tests.length, 5 * path.periods.length + 4 * (path.periods.length - 1));
+  assert.match(path.scientificContextSha256, /^[a-f0-9]{64}$/u);
+  assert.match(path.permutationPlanSha256, /^[a-f0-9]{64}$/u);
+  for (const test of path.tests) {
+    assert.equal(test.permutationCount, 500);
+    assert.ok(Number.isFinite(test.observed) && Number.isFinite(test.pValue) && Number.isFinite(test.holmAdjustedPValue));
+    assert.ok(test.pValue >= 0 && test.pValue <= test.holmAdjustedPValue && test.holmAdjustedPValue <= 1);
   }
   const inferenceCsv = readFileSync(join(extracted, "trajectory-inference.csv"), "utf8");
-  for (const requestKind of [
-    "independent-period",
-    "paired-periods",
-    "repeated-periods",
-    "path-comparison",
-  ]) {
-    assert.match(inferenceCsv, new RegExp(`"${requestKind}"`, "u"));
-  }
-  assert.equal(
-    plotly.data.filter((trace) => trace.meta?.role === "network-edge").length,
-    0,
-    kind + " trajectory Plotly export contains ENA mean-network edges",
-  );
-  assert.equal(
-    plotly.data.filter((trace) => trace.meta?.role === "network-node").length,
-    1,
-    kind + " trajectory Plotly export omitted fitted code references",
-  );
-  const participantTraceCount = plotly.data.filter((trace) => trace.meta?.role === "participant").length;
-  const individualPathTraceCount = plotly.data.filter((trace) => trace.meta?.role === "individual-path").length;
+  for (const family of manifest.requestFamilies) assert.ok(inferenceCsv.includes(family));
+  const forbiddenKeys = new Set(["entities", "identityDictionary", "unitSequences", "participantPeriods", "unitOrder", "rawInput", "set", "sourceRows", "traces", "sourceMetadata"]);
+  const noParticipantFacts = value => {
+    if (!value || typeof value !== "object") return;
+    for (const [key, item] of Object.entries(value)) {
+      assert.ok(!forbiddenKeys.has(key), `aggregate ${kind} leaked identity-bearing ${key}`);
+      noParticipantFacts(item);
+    }
+  };
+  noParticipantFacts(analysis); noParticipantFacts(plot);
+  let participants = null;
   if (participantLevelIncluded) {
-    assert.ok(participantTraceCount > 0, kind + " opt-in Plotly export omitted participant points");
-    assert.match(manifest.privacyWarning ?? "", /privacy|re-identification/iu);
-  } else {
-    assert.equal(participantTraceCount, 0, kind + " aggregate Plotly export leaked participant points");
-    assert.equal(individualPathTraceCount, 0, kind + " aggregate Plotly export leaked individual paths");
-    assert.equal(JSON.stringify(plotly).includes("participantCanonical"), false);
+    participants = JSON.parse(readFileSync(join(extracted, "participants.json"), "utf8"));
+    assert.equal(participants.disclosure, "participant-opt-in");
+    assert.ok(participants.entities.length > 0 && participants.entities.every(entity => entity.identity && entity.steps.length > 0));
+    assert.deepEqual(participants.binding, manifest.binding);
   }
-  return {
-    extracted,
-    manifest,
-    analysis,
-    plotly,
-    participantTraceCount,
-    individualPathTraceCount,
-    zipSha256: sha256(readFileSync(zipPath)),
-  };
+  return { extracted, manifest, analysis, plot, participants, zipSha256: sha256(readFileSync(zipPath)) };
 }
-
 function verifyStandaloneDownloads(downloads, aggregate) {
-  const mapping = [
-    ["path", "trajectory-path.csv"],
-    ["metadata", "trajectory-metadata.csv"],
-    ["inference", "trajectory-inference.csv"],
-    ["analysis", "analysis.json"],
-    ["plotly", "plotly-spec.json"],
-  ];
-  for (const [kind, member] of mapping) {
-    const path = downloads[kind];
-    assert.ok(path && existsSync(path), "standalone " + kind + " download is missing");
-    const standaloneBytes = readFileSync(path);
-    const bundleBytes = readFileSync(join(aggregate.extracted, member));
-    assert.equal(sha256(standaloneBytes), sha256(bundleBytes), kind + " differs from aggregate ZIP");
+  for (const name of [...aggregate.manifest.files.map(file => file.filename), "manifest.json"]) {
+    const standaloneBytes = readFileSync(downloads[name]);
+    assert.deepEqual(standaloneBytes, readFileSync(join(aggregate.extracted, name)), `${name} differs from genuine ZIP`);
   }
 }
-
-let ownedServer = null;
-let ownsDistDirectory = false;
-let browserSessionAttempted = false;
-let cleanupPromise = null;
-
-function cleanupOwnedResources() {
-  if (cleanupPromise) return cleanupPromise;
-  cleanupPromise = (async () => {
-    let browserCleanupError = null;
-    if (browserSessionAttempted) {
-      try {
-        runCli(["close"], "close browser session", 30_000);
-      } catch (caught) {
-        browserCleanupError = caught;
-      }
-    }
-    await stopOwnedServer(ownedServer);
-    if (ownsDistDirectory) {
-      // Next appends the custom dist directory to tsconfig.json during build.
-      // This smoke owns that temporary build, so it must restore the exact
-      // pre-run config before deleting the matching dist directory.
-      writeFileSync(tsconfigPath, originalTsconfig, "utf8");
-      removeOwnedDistDirectory();
-    }
-    if (browserCleanupError) throw browserCleanupError;
-  })();
-  return cleanupPromise;
+// Preservation map: native Worker binding replaces legacy path-task receipts;
+// separately collected real rank designs replace an all-families legacy table;
+// complete-cohort native ZIP replaces Plotly/V2 serialization; native SVG
+// replaces Plotly 2D. Camera math and full fullscreen isolation checks remain.
+async function nativeScience(page) {
+  return page.evaluate(() => {
+    const audit = window.__openEnaNativeAudit;
+    const response = audit?.responses.at(-1), result = response?.result;
+    const request = audit?.requests.find(value => value.id === response?.id);
+    if (request?.kind !== "run-open-ena-plan-v3" || response?.kind !== "result-v3"
+      || request.plan.header.executionPlanSha256 !== response.executionPlanSha256
+      || result.binding.executionPlanSha256 !== response.executionPlanSha256
+      || result.binding.datasetSha256 !== request.plan.header.datasetSha256
+      || document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") !== "current") throw new Error("native scientific request/result binding is not current");
+    const science = JSON.stringify({ binding: result.binding, configuration: result.configuration, set: result.set, executionProvenance: result.executionProvenance });
+    if (window.__nativeLongitudinalScience && window.__nativeLongitudinalScience !== science) throw new Error("display action changed bound fitted coordinates, configuration or provenance");
+    window.__nativeLongitudinalScience ??= science;
+    return { resultHashes: [result.binding.scientificResultSha256], binding: result.binding, taskRequestCount: audit.requests.length, responseCount: audit.responses.length };
+  });
 }
-
-async function handleSignal(signal) {
-  const exitCode = signal === "SIGINT" ? 130 : 143;
-  try {
-    await cleanupOwnedResources();
-  } catch (caught) {
-    process.stderr.write("[longitudinal V3 smoke] cleanup after " + signal + " failed: "
-      + redact(caught) + "\n");
-  }
-  process.exit(exitCode);
+function nativeCameraControl(page) {
+  const controls = page.getByRole("group", { name: "Camera position", exact: true });
+  return {
+    async selectOption(value) { await page.locator(`.ena-camera-fieldset input[value="${value}"]`).check(); },
+    async isVisible() { return page.locator('.ena-camera-fieldset').isVisible(); },
+    async selection() { return page.locator('.ena-camera-fieldset input:checked').evaluate(input => ({ value: input.value, label: input.parentElement.textContent.trim() })); },
+  };
 }
-
-process.once("SIGINT", () => void handleSignal("SIGINT"));
-process.once("SIGTERM", () => void handleSignal("SIGTERM"));
-
+function nativeProjectionControl(page) {
+  return { async selectOption(projection) {
+    const rail = page.getByRole("navigation", { name: "Analysis modes" });
+    await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
+    await page.locator('.ena-visual-toolbar').getByRole("button", { name: projection === "3d" ? "3D ENA" : "2D ENA", exact: true }).click();
+    if (projection === "3d") {
+      await page.locator('[data-ena-plotly-root=true]').waitFor();
+      await page.waitForFunction(() => Boolean(document.querySelector('[data-ena-plotly-root=true]')?._fullLayout?.scene));
+    } else {
+      const axes = await page.evaluate(() => window.__openEnaNativeAudit.responses.at(-1).result.executionProvenance.projection.fullAxes.slice(0, 3));
+      for (const [index, letter] of [...projection].entries()) await page.getByRole("combobox", { name: `Axis ${index + 1}`, exact: true }).selectOption(axes["xyz".indexOf(letter)]);
+      await page.locator('svg.open-ena-main-svg').waitFor();
+    }
+  } };
+}
+async function nativeSvgAudit(page) {
+  return page.locator('svg.open-ena-main-svg').evaluate(svg => ({
+    codeLabels: [...svg.querySelectorAll('[data-ena-code]')].map(node => node.getAttribute('data-ena-code')),
+    centroids: [...svg.querySelectorAll('[data-ena-trajectory-centroid] rect')].map(node => ({ x: node.getAttribute('x'), y: node.getAttribute('y'), width: node.getAttribute('width'), height: node.getAttribute('height') })),
+    points: [...svg.querySelectorAll('[data-ena-unit-point]')].map(node => [node.getAttribute('cx'), node.getAttribute('cy'), node.getAttribute('transform')]),
+    paths: [...svg.querySelectorAll('[data-ena-trajectory-path]')].map(node => ({ from: Number(node.getAttribute('data-from-ordinal')), to: Number(node.getAttribute('data-to-ordinal')), geometry: ['x1','y1','x2','y2'].map(key => node.getAttribute(key)) })),
+    arrows: svg.querySelectorAll('[data-ena-trajectory-direction]').length,
+    networkEdges: svg.querySelectorAll('[data-ena-edge]').length,
+    viewBox: svg.getAttribute('viewBox'),
+  }));
+}
+async function saveNativeDownload(page, button, destination, approve = false) {
+  if (approve) page.once("dialog", dialog => void dialog.accept());
+  const pending = page.waitForEvent("download", { timeout: 120_000 });
+  await button.click();
+  const download = await pending;
+  assert.equal(await download.failure(), null);
+  await download.saveAs(destination);
+  assert.ok(statSync(destination).size > 0);
+  return { path: destination, suggestedFilename: download.suggestedFilename(), ...artifactEvidence(destination) };
+}
+async function exerciseNativeTwoDActions(page) {
+  await nativeProjectionControl(page).selectOption("xy");
+  const before = await nativeSvgAudit(page);
+  await page.getByRole("button", { name: "Plot Settings", exact: true }).click();
+  const zoom = page.getByRole("group", { name: "Plot zoom", exact: true });
+  await zoom.getByRole("button", { name: "Zoom in", exact: true }).click();
+  const zoomIn = await nativeSvgAudit(page);
+  assert.notDeepEqual(zoomIn.centroids, before.centroids, "native 2D Zoom in must change actual projected geometry");
+  await zoom.getByRole("button", { name: "Zoom out", exact: true }).click();
+  const zoomOut = await nativeSvgAudit(page);
+  assert.deepEqual(zoomOut.centroids, before.centroids, "native 2D inverse zoom must restore actual SVG centroids");
+  await zoom.getByRole("button", { name: "Zoom in", exact: true }).click();
+  await zoom.getByRole("button", { name: /^Fit plot/ }).click();
+  const recenter = await nativeSvgAudit(page);
+  assert.deepEqual(recenter, before, "native 2D Fit plot must restore all SVG geometry");
+  await page.getByRole("button", { name: "Close Plot Settings", exact: true }).click();
+  const png = await saveNativeDownload(page, page.locator('.ena-visual-toolbar').getByRole("button", { name: "Export PNG", exact: true }), join(artifactDirectory, "native-2d-plot.png"), true);
+  assert.deepEqual([...readFileSync(png.path).subarray(0, 8)], [137,80,78,71,13,10,26,10]);
+  const svg = await saveNativeDownload(page, page.locator('.ena-visual-toolbar').getByRole("button", { name: "Export SVG", exact: true }), join(artifactDirectory, "native-2d-plot.svg"), true);
+  assert.match(readFileSync(svg.path, "utf8"), /<svg/u);
+  await nativeScience(page);
+  return { before, zoomIn, zoomOut, recenter, png, svg };
+}
 async function authenticateAndRunTrajectory(page, args) {
-  const assertBrowser = (condition, message) => {
-    if (!condition) throw new Error(message);
-  };
-  const installTaskRequestAudit = () => {
-    if (window.__openEnaLongitudinalSmokeTaskAudit) return;
-    const audit = {
-      taskRequestCount: 0,
-      workerRunCount: 0,
-      remotePostCount: 0,
-      aiPostCount: 0,
-      bootstrapTaskCount: 0,
-      networkOverlayTaskCount: 0,
-    };
-    Object.defineProperty(window, "__openEnaLongitudinalSmokeTaskAudit", {
-      configurable: true,
-      value: audit,
-    });
-    const originalWorkerPostMessage = Worker.prototype.postMessage;
-    Worker.prototype.postMessage = function auditedWorkerPostMessage(message, ...rest) {
-      if (message?.kind === "run" && message?.request?.pathTask) {
-        audit.workerRunCount += 1;
-        audit.taskRequestCount += 1;
-        if (Object.hasOwn(message.request, "bootstrapTask")) audit.bootstrapTaskCount += 1;
-        if (Object.hasOwn(message.request, "networkOverlayTask")) audit.networkOverlayTaskCount += 1;
-      }
-      return originalWorkerPostMessage.call(this, message, ...rest);
-    };
-    const originalFetch = window.fetch.bind(window);
-    window.fetch = async (input, init) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      const method = String(init?.method || (typeof input === "object" && input && "method" in input
-        ? input.method
-        : "GET")).toUpperCase();
-      const pathname = new URL(url, window.location.href).pathname;
-      if (method === "POST" && pathname === "/api/open-ena/ai-interpretation") {
-        audit.aiPostCount += 1;
-      }
-      if (method === "POST" && pathname === "/api/open-ena/longitudinal") {
-        audit.remotePostCount += 1;
-        audit.taskRequestCount += 1;
-        try {
-          const payload = typeof init?.body === "string" ? JSON.parse(init.body) : null;
-          if (payload?.request && Object.hasOwn(payload.request, "bootstrapTask")) {
-            audit.bootstrapTaskCount += 1;
-          }
-          if (payload?.request && Object.hasOwn(payload.request, "networkOverlayTask")) {
-            audit.networkOverlayTaskCount += 1;
-          }
-        } catch {
-          // Route validation remains authoritative for malformed request bodies.
-        }
-      }
-      return await originalFetch(input, init);
-    };
-  };
-  await page.addInitScript(installTaskRequestAudit);
-  await page.evaluate(installTaskRequestAudit);
   page.__openEnaLongitudinalConsoleErrors = [];
   page.__openEnaLongitudinalConsoleWarnings = [];
   page.__openEnaLongitudinalPageErrors = [];
-  page.on("console", (message) => {
+  page.on("console", message => {
     if (message.type() === "error") page.__openEnaLongitudinalConsoleErrors.push(message.text());
-    if (message.type() === "warning") {
-      page.__openEnaLongitudinalConsoleWarnings.push({
-        text: message.text(),
-        location: message.location(),
-      });
-    }
+    if (message.type() === "warning") page.__openEnaLongitudinalConsoleWarnings.push({ text: message.text(), location: message.location() });
   });
-  page.on("pageerror", (error) => {
-    page.__openEnaLongitudinalPageErrors.push(error.message);
+  page.on("pageerror", error => page.__openEnaLongitudinalPageErrors.push(error.message));
+  await page.addInitScript(() => {
+    window.__openEnaLongitudinalSmokeTaskAudit = { aiPostCount: 0 };
+    const originalFetch = window.fetch;
+    window.fetch = function(input, init) {
+      const url = new URL(typeof input === "string" ? input : input.url ?? input.href, location.href);
+      if (url.pathname === "/api/open-ena/ai-interpretation" && String(init?.method ?? "GET").toUpperCase() === "POST") window.__openEnaLongitudinalSmokeTaskAudit.aiPostCount++;
+      return originalFetch.call(this, input, init);
+    };
   });
-
+  await page.goto(args.baseUrl + "/en/open-ena", { waitUntil: "networkidle" });
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForLoadState("networkidle");
+  await runtime.drainAssetReads("initial required static assets before Sign in");
   await page.getByRole("textbox", { name: "Account name" }).fill(args.username);
   await page.getByRole("textbox", { name: "Password" }).fill(args.password);
   await page.getByRole("button", { name: "Sign in" }).click();
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
   await rail.waitFor({ timeout: 30_000 });
-  const dataButton = rail.getByRole("button", { name: "Data", exact: true });
-  const trajectorySampleButton = page.getByRole("button", {
-    name: "Load 3D trajectory sample",
-    exact: true,
-  });
+  const trajectorySampleButton = page.getByRole("button", { name: "Load trajectory sample", exact: true });
   let dataPanelVisible = false;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await dataButton.click();
-    dataPanelVisible = await trajectorySampleButton
-      .waitFor({ state: "visible", timeout: 5_000 })
-      .then(() => true)
-      .catch(() => false);
+    await rail.getByRole("button", { name: "Data", exact: true }).click();
+    dataPanelVisible = await trajectorySampleButton.waitFor({ state: "visible", timeout: 5_000 }).then(() => true).catch(() => false);
     if (dataPanelVisible) break;
   }
-  assertBrowser(dataPanelVisible, "the trajectory sample panel did not remain active after authentication");
+  assert.ok(dataPanelVisible, "native trajectory sample panel must be reachable after login");
   await trajectorySampleButton.click();
-  const workbench = page.getByTestId("open-ena-longitudinal-v3-workbench");
-  await workbench.waitFor({ timeout: 60_000 });
-  assertBrowser(
-    await page.getByTestId("open-ena-center-surface").count() === 0,
-    "the first post-fit screen fell through to the generic ENA presenter",
-  );
-
-  const plotTools = rail.getByRole("button", { name: "Plot Tools", exact: true });
-  await plotTools.click();
-  await workbench.locator('[data-trajectory-step="1"]').waitFor({ timeout: 30_000 });
-  const identity = workbench.getByRole("checkbox", {
-    name: /same raw ID represents the same physical entity/u,
+  await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current", null, { timeout: 120_000 });
+  const identities = await nativeFixtureIdentitiesV3(page);
+  const science = await nativeScience(page);
+  assert.equal(science.taskRequestCount, 1);
+  assert.equal(science.responseCount, 1);
+  assert.equal(identities.configuration.analysis.model.type, "SeparateTrajectory");
+  const fitted = await page.evaluate(() => {
+    const result = window.__openEnaNativeAudit.responses.at(-1).result;
+    return { sequences: result.executionProvenance.ordering.resolvedHorizonOrder.unitSequences, points: result.set.points, dictionary: result.executionProvenance.identityDictionary };
   });
-  if (!await identity.isChecked()) await identity.check();
-  const ciUiCount = await workbench.getByText(/Bootstrap|confidence interval|confidence level|resampling design/iu).count()
-    + await workbench.getByTestId("open-ena-longitudinal-v3-bootstrap").count()
-    + await workbench.getByRole("button", { name: "Bootstrap CSV", exact: true }).count();
-  assertBrowser(ciUiCount === 0, "trajectory CI/bootstrap UI is still visible");
-
-  await workbench.getByRole("button", { name: "Run trajectory analysis", exact: true }).click();
-  const continueLocal = workbench.getByRole("button", { name: "Continue locally", exact: true });
-  const remoteConfirmationVisible = await continueLocal
-    .waitFor({ state: "visible", timeout: 3_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (remoteConfirmationVisible) {
-    await continueLocal.click();
+  assert.ok(fitted.sequences.length > 1 && fitted.sequences.every(s => s.steps.length > 0));
+  const longest = [...fitted.sequences].sort((a,b) => b.steps.length-a.steps.length)[0];
+  const orderedHorizons = longest.steps.map(step => {
+    const horizon = fitted.dictionary.horizons.find(h => h.token === step.horizonToken);
+    assert.ok(horizon, "fitted Horizon key must resolve by full native typed identity");
+    return horizon;
+  });
+  assert.ok(orderedHorizons.length >= 3);
+  for (const sequence of fitted.sequences) {
+    assert.deepEqual(sequence.steps.map(step => step.trajectoryOrdinal), sequence.steps.map((_, i) => i));
+    const indexes = sequence.steps.map(step => orderedHorizons.findIndex(h => h.token === step.horizonToken));
+    assert.ok(indexes.every((index, i) => index >= 0 && (i === 0 || index > indexes[i-1])), "per-Unit fitted order must agree with selected request precedence");
   }
-  await workbench.locator("[data-state=complete]").waitFor({ timeout: 120_000 });
-  const postRunCiUiCount = await workbench.getByText(/Bootstrap|confidence interval|confidence level|resampling design/iu).count()
-    + await workbench.getByTestId("open-ena-longitudinal-v3-bootstrap").count()
-    + await workbench.getByRole("button", { name: "Bootstrap CSV", exact: true }).count();
-  assertBrowser(postRunCiUiCount === 0, "trajectory CI/bootstrap UI is still visible after execution");
-  const plot = page.getByTestId("open-ena-longitudinal-v3-plot");
-  await plot.waitFor({ timeout: 30_000 });
-  const inferenceRows = workbench
-    .getByTestId("open-ena-longitudinal-v3-inference")
-    .locator("tbody tr");
-  await inferenceRows.first().waitFor({ timeout: 30_000 });
-  const inferenceAudit = await inferenceRows.evaluateAll((rows) => ({
-    rowCount: rows.length,
-    requestKinds: [...new Set(rows.map((row) => row.cells[0]?.textContent?.trim()).filter(Boolean))].sort(),
-    tests: [...new Set(rows.map((row) => row.cells[1]?.textContent?.trim()).filter(Boolean))].sort(),
-  }));
-  for (const requestKind of [
-    "independent-period",
-    "paired-periods",
-    "repeated-periods",
-    "path-comparison",
-  ]) {
-    assertBrowser(inferenceAudit.requestKinds.includes(requestKind), "trajectory UI omitted " + requestKind);
+  await rail.getByRole("button", { name: /^Stats/ }).click();
+  const groupControls = page.getByTestId("open-ena-ona-descriptive-group-controls");
+  const groupSelects = groupControls.getByRole("combobox");
+  assert.equal(await groupSelects.count(), 2);
+  await groupSelects.nth(0).selectOption(identities.dictionary.groups[0].token);
+  await groupSelects.nth(1).selectOption(identities.dictionary.groups[1].token);
+  await page.getByRole("checkbox", { name: "I confirm these fitted Units identify the same entities across periods.", exact: true }).check();
+  const designs = [{ design: "independent", kind: "independent-period", count: 1, method: "mann-whitney-u" }, { design: "paired", kind: "paired-periods", count: 2, method: "wilcoxon-signed-rank" }, { design: "repeated", kind: "repeated-periods", count: orderedHorizons.length, method: "friedman" }];
+  const rankDownloads = [];
+  for (const design of designs) {
+    for (const horizon of orderedHorizons) await page.getByRole("checkbox", { name: horizon.displayLabel, exact: true }).uncheck();
+    await page.getByRole("combobox", { name: /^Trajectory inference design/ }).selectOption(design.design);
+    for (const horizon of orderedHorizons.slice(0, design.count)) await page.getByRole("checkbox", { name: horizon.displayLabel, exact: true }).check();
+    await page.getByRole("button", { name: "Run confirmed inference", exact: true }).click();
+    const exportButton = page.getByRole("button", { name: "Export native statistics", exact: true });
+    await exportButton.waitFor();
+    const descriptor = await saveNativeDownload(page, exportButton, join(downloadDirectory, `rank-${design.design}.json`));
+    const value = JSON.parse(readFileSync(descriptor.path, "utf8"));
+    assert.equal(value.kind, "open-ena-native-post-model-statistics");
+    assert.deepEqual(value.binding, science.binding);
+    assert.equal(value.inference.kind, `trajectory-${design.kind}`);
+    const rows = value.inference.rows ?? value.inference.omnibusRows;
+    assert.ok(rows.length > 0 && rows.every(row => row.test === design.method));
+    assert.ok(value.inference.ledger, "rank design must retain genuine inclusion ledger");
+    if (design.design === "repeated") assert.ok(value.inference.followupRows.length > 0);
+    assert.equal(value.controls.request.kind, `trajectory-${design.kind}`);
+    rankDownloads.push({ ...descriptor, kind: design.kind, inference: value.inference, controls: value.controls });
   }
-  for (const testName of ["mann-whitney", "wilcoxon-signed-rank", "friedman"]) {
-    assertBrowser(inferenceAudit.tests.includes(testName), "trajectory UI omitted " + testName);
+  const pathPanel = page.getByTestId("open-ena-native-trajectory-analysis");
+  assert.equal(await pathPanel.getByRole("button", { name: "Run whole-path comparison", exact: true }).isEnabled(), false);
+  await pathPanel.getByRole("checkbox", { name: "I confirm that the entity histories in these two Groups are independent.", exact: true }).check();
+  await pathPanel.getByRole("button", { name: "Run whole-path comparison", exact: true }).click();
+  await pathPanel.getByText("Whole-path comparison current", { exact: true }).waitFor({ timeout: 120_000 });
+  const pathRows = await pathPanel.getByTestId("open-ena-native-trajectory-path-statistics").locator('tbody tr').evaluateAll(rows => rows.map(row => [...row.cells].map(cell => cell.textContent.trim())));
+  // 3 coordinate, 2 centroid distance metrics per period, plus 4 step/cumulative per noninitial period.
+  assert.equal(pathRows.length, orderedHorizons.length * 5 + (orderedHorizons.length - 1) * 4);
+  for (const row of pathRows) {
+    assert.equal(Number(row[6]), 500);
+    assert.ok([row[3], row[4], row[5]].every(value => value !== "—" && Number.isFinite(Number(value))));
+    assert.ok(Number(row[4]) >= 0 && Number(row[4]) <= Number(row[5]) && Number(row[5]) <= 1);
   }
-  await page.waitForFunction(() => {
-    const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
-    return Boolean(root && root._fullLayout && Array.isArray(root.data) && root.data.length > 0);
-  }, null, { timeout: 30_000 });
-
-  const plotAudit = await plot.evaluate((root, codes) => {
-    const traces = Array.isArray(root.data) ? root.data : [];
-    const allowedRoles = new Set([
-      "participant", "individual-path", "centroid", "trajectory-path",
-      "direction-arrow", "network-node", "axis-shaft",
-      "axis-arrowhead",
-    ]);
-    const codeTrace = traces.find((trace) => trace.meta?.role === "network-node");
-    const displayedCodes = Array.isArray(codeTrace?.text) ? codeTrace.text.map(String) : [];
-    const centroidTraces = traces.filter((trace) => trace.meta?.role === "centroid");
-    const trajectoryTraces = traces.filter((trace) => trace.meta?.role === "trajectory-path");
-    const resultHashes = [...new Set(traces.map((trace) => trace.meta?.resultHash).filter(Boolean))];
-    return {
-      displayedCodes,
-      codesPresent: codes.every((code) => displayedCodes.includes(code)),
-      centroidSquares: centroidTraces.length > 0
-        && centroidTraces.every((trace) => trace.marker?.symbol === "square" && trace.marker?.size === 7),
-      blackTrajectories: trajectoryTraces.length > 0
-        && trajectoryTraces.every((trace) => ["black", "#000", "#000000", "rgb(0, 0, 0)"].includes(trace.line?.color)),
-      lineOnlyTrajectories: trajectoryTraces.length > 0
-        && trajectoryTraces.every((trace) => trace.mode === "lines" && trace.marker === undefined),
-      participantTraceCount: traces.filter((trace) => trace.meta?.role === "participant").length,
-      directionArrowTraceCount: traces.filter((trace) => trace.meta?.role === "direction-arrow").length,
-      networkEdgeTraceCount: traces.filter((trace) => trace.meta?.role === "network-edge").length,
-      uncertaintyTraceCount: traces.filter((trace) => trace.meta?.role === "uncertainty").length,
-      errorBarTraceCount: traces.filter((trace) => (
-        trace.error_x !== undefined || trace.error_y !== undefined || trace.error_z !== undefined
-        || Object.keys(trace).some((key) => key.startsWith("error_"))
-      )).length,
-      unknownTraceRoles: traces
-        .map((trace) => trace.meta?.role)
-        .filter((role) => typeof role !== "string" || !allowedRoles.has(role)),
-      resultHashes,
-      taskRequestCount: window.__openEnaLongitudinalSmokeTaskAudit?.taskRequestCount ?? 0,
-    };
-  }, args.expectedCodes);
-  assertBrowser(plotAudit.codesPresent, "the trajectory plot omitted fitted ENA code labels");
-  assertBrowser(plotAudit.centroidSquares, "trajectory centroids are not 7px square markers");
-  assertBrowser(plotAudit.blackTrajectories, "trajectory path lines are not black");
-  assertBrowser(plotAudit.lineOnlyTrajectories, "trajectory paths still duplicate centroid square markers");
-  assertBrowser(plotAudit.participantTraceCount > 0, "trajectory plot omitted participant-period/time-point points");
-  assertBrowser(plotAudit.directionArrowTraceCount > 0, "trajectory plot omitted direction arrows");
-  assertBrowser(plotAudit.networkEdgeTraceCount === 0, "trajectory plot still contains ENA mean-network edges");
-  assertBrowser(plotAudit.uncertaintyTraceCount === 0, "trajectory analysis still plots CI geometry");
-  assertBrowser(plotAudit.errorBarTraceCount === 0, "trajectory analysis still plots XYZ/error-bar geometry");
-  assertBrowser(plotAudit.unknownTraceRoles.length === 0, "trajectory plot contains an unsupported rectangle/box trace role");
-  assertBrowser(plotAudit.resultHashes.length === 1, "plot traces do not share one immutable result hash");
-  assertBrowser(plotAudit.taskRequestCount === 1, "the trajectory analysis did not submit exactly one scientific task");
-  const bootstrapTaskCount = await page.evaluate(() => (
-    window.__openEnaLongitudinalSmokeTaskAudit?.bootstrapTaskCount ?? -1
-  ));
-  assertBrowser(bootstrapTaskCount === 0, "trajectory scientific request still contains bootstrapTask");
-  plotAudit.bootstrapTaskCount = bootstrapTaskCount;
-  const networkOverlayTaskCount = await page.evaluate(() => (
-    window.__openEnaLongitudinalSmokeTaskAudit?.networkOverlayTaskCount ?? -1
-  ));
-  assertBrowser(networkOverlayTaskCount === 0, "trajectory scientific request still contains networkOverlayTask");
-  plotAudit.networkOverlayTaskCount = networkOverlayTaskCount;
-  plotAudit.inferenceAudit = inferenceAudit;
-  return plotAudit;
+  await nativeProjectionControl(page).selectOption("3d");
+  const plot = page.locator('[data-ena-plotly-root=true]');
+  const plotAudit = await plot.evaluate(root => {
+    const traces = root.data;
+    const allowed = new Set(["axis", "axis-label", "axis-arrowhead", "unit-points", "group-mean", "trajectory-path", "direction-arrow", "code-node"]);
+    const centroidTraces = traces.filter(trace => trace.meta?.role === "group-mean");
+    const paths = traces.filter(trace => trace.meta?.role === "trajectory-path");
+    return { displayedCodes: traces.filter(t => t.meta?.role === "code-node").flatMap(t => t.text ?? []), centroidSquares: centroidTraces.length > 0 && centroidTraces.every(t => t.marker?.symbol === "square" && t.marker?.size === 7), blackTrajectories: paths.length > 0 && paths.every(t => t.line?.color === "black"), lineOnlyTrajectories: paths.every(t => t.mode === "lines" && t.marker === undefined), directionArrowTraceCount: traces.filter(t => t.meta?.role === "direction-arrow").length, participantTraceCount: traces.filter(t => t.meta?.role === "unit-points").length, networkEdgeTraceCount: traces.filter(t => t.meta?.role === "network-edge").length, errorBarTraceCount: traces.filter(t => Object.keys(t).some(k => k.startsWith("error_"))).length, unknownTraceRoles: traces.map(t => t.meta?.role).filter(role => !allowed.has(role)) };
+  });
+  plotAudit.codesPresent = identities.codes.every(code => plotAudit.displayedCodes.includes(code.displayLabel));
+  assert.ok(plotAudit.codesPresent && plotAudit.centroidSquares && plotAudit.blackTrajectories && plotAudit.lineOnlyTrajectories);
+  assert.ok(plotAudit.directionArrowTraceCount > 0 && plotAudit.participantTraceCount > 0);
+  assert.equal(plotAudit.networkEdgeTraceCount, 0);
+  assert.ok(plotAudit.errorBarTraceCount === 0 && plotAudit.unknownTraceRoles.length === 0);
+  await nativeScience(page);
+  return { ...plotAudit, ...science, expectedCodes: identities.codes.map(code => code.displayLabel), orderedHorizons, fitted, rankDownloads, pathRows };
 }
-
 async function exerciseNonPlotRailPanels(page, args) {
-  const assertBrowser = (condition, message) => {
-    if (!condition) throw new Error(message);
-  };
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
-  const workbench = page.getByTestId("open-ena-longitudinal-v3-workbench");
-  const analysisSlot = page.getByTestId("open-ena-longitudinal-v3-analysis-controls");
-  const trajectorySlot = page.getByTestId("open-ena-longitudinal-v3-trajectory-controls");
-  await analysisSlot.waitFor({ state: "hidden", timeout: 15_000 });
-  await trajectorySlot.waitFor({ state: "visible", timeout: 15_000 });
-  assertBrowser(await analysisSlot.count() === 1, "Plot mode unmounted the persistent analysis controls");
-  assertBrowser(await trajectorySlot.count() === 1, "Plot mode unmounted the trajectory controls");
-
   await page.evaluate(() => {
-    const mountedWorkbench = document.querySelector('[data-testid="open-ena-longitudinal-v3-workbench"]');
-    const plot = document.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]');
-    const aiLifecycle = document.querySelector('[data-testid="open-ena-persistent-ai-lifecycle"]');
-    const aiRoot = aiLifecycle?.querySelector(".ena-ai-interpretation");
-    const consent = aiLifecycle?.querySelector('[data-ena-ai-consent="explicit"] input[type="checkbox"]');
-    if (!mountedWorkbench || !plot || !aiLifecycle || !aiRoot || !consent) {
-      throw new Error("AI lifecycle baseline is incomplete");
-    }
-    const token = "ai-lifecycle-" + crypto.randomUUID();
-    for (const node of [mountedWorkbench, plot, aiRoot, consent]) {
-      node.__openEnaLifecycleToken = token;
-    }
-    window.__openEnaAiLifecycleAudit = {
-      token,
-      workbench: mountedWorkbench,
-      plot,
-      aiRoot,
-      consent,
-      baselineAiPostCount: window.__openEnaLongitudinalSmokeTaskAudit?.aiPostCount ?? 0,
-    };
+    const aiRoot = document.querySelector('.ena-ai-interpretation');
+    const consent = document.querySelector('[data-ena-ai-consent="explicit"] input[type="checkbox"]');
+    window.__openEnaAiLifecycleAudit = { aiRoot, consent, plot: document.querySelector('[data-ena-plotly-root=true]'), baselineAiPostCount: window.__openEnaLongitudinalSmokeTaskAudit.aiPostCount };
+    if (!aiRoot || !consent) throw new Error("persistent native AI consent baseline missing");
   });
-
-  const readAiLifecycle = async (transition) => await page.evaluate((label) => {
-    const audit = window.__openEnaAiLifecycleAudit;
-    const currentWorkbench = document.querySelector('[data-testid="open-ena-longitudinal-v3-workbench"]');
-    const currentPlot = document.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]');
-    const currentAiLifecycle = document.querySelector('[data-testid="open-ena-persistent-ai-lifecycle"]');
-    const currentAiRoot = currentAiLifecycle?.querySelector(".ena-ai-interpretation");
-    const currentConsent = currentAiLifecycle?.querySelector('[data-ena-ai-consent="explicit"] input[type="checkbox"]');
-    const aiPostCount = window.__openEnaLongitudinalSmokeTaskAudit?.aiPostCount ?? -1;
-    return {
-      transition: label,
-      token: audit?.token ?? null,
-      workbenchSame: currentWorkbench === audit.workbench,
-      plotSame: currentPlot === audit.plot,
-      aiRootSame: currentAiRoot === audit.aiRoot,
-      consentSame: currentConsent === audit.consent,
-      workbenchToken: currentWorkbench?.__openEnaLifecycleToken ?? null,
-      plotToken: currentPlot?.__openEnaLifecycleToken ?? null,
-      aiRootToken: currentAiRoot?.__openEnaLifecycleToken ?? null,
-      consentToken: currentConsent?.__openEnaLifecycleToken ?? null,
-      aiLifecycleCount: document.querySelectorAll('[data-testid="open-ena-persistent-ai-lifecycle"]').length,
-      aiRootCount: document.querySelectorAll(".ena-ai-interpretation").length,
-      consentCount: document.querySelectorAll('[data-ena-ai-consent="explicit"] input[type="checkbox"]').length,
-      consentEnabled: currentConsent ? !currentConsent.disabled : false,
-      consentChecked: currentConsent?.checked ?? false,
-      aiPostCount,
-      baselineAiPostCount: audit?.baselineAiPostCount ?? -1,
-      aiPostCountMatches: aiPostCount === audit.baselineAiPostCount,
-      taskRequestCount: window.__openEnaLongitudinalSmokeTaskAudit?.taskRequestCount ?? -1,
-    };
-  }, transition);
-
-  const assertAiLifecycle = (audit, transition, expectedConsentChecked) => {
-    assertBrowser(audit.workbenchSame, transition + " remounted the V3 workbench");
-    assertBrowser(audit.plotSame, transition + " replaced the Plotly presenter root");
-    assertBrowser(audit.aiRootSame, transition + " remounted the AI interpretation root");
-    assertBrowser(audit.consentSame, transition + " replaced the AI consent control");
-    assertBrowser(audit.aiLifecycleCount === 1, transition + " duplicated the AI lifecycle wrapper");
-    assertBrowser(audit.aiRootCount === 1, transition + " duplicated the AI interpretation root");
-    assertBrowser(audit.consentCount === 1, transition + " duplicated the AI consent control");
-    assertBrowser([
-      audit.workbenchToken,
-      audit.plotToken,
-      audit.aiRootToken,
-      audit.consentToken,
-    ].every((token) => token === audit.token), transition + " changed a lifecycle mount token");
-    assertBrowser(audit.consentChecked === expectedConsentChecked, transition + " lost AI consent state");
-    assertBrowser(audit.aiPostCountMatches, transition + " submitted an automatic AI generation request");
-    assertBrowser(audit.taskRequestCount === args.expectedTaskRequestCount, transition + " submitted a scientific task");
-  };
-
-  const aiLifecycleAudits = {};
-  aiLifecycleAudits.plotBaseline = await readAiLifecycle("Plot baseline");
-  assertAiLifecycle(aiLifecycleAudits.plotBaseline, "Plot baseline", false);
-
-  await rail.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
-  const aiLifecycle = page.getByTestId("open-ena-persistent-ai-lifecycle");
-  await aiLifecycle.waitFor({ state: "visible", timeout: 15_000 });
-  const consentControl = page.locator('[data-ena-ai-consent="explicit"] input[type="checkbox"]');
-  const consentEnabled = await consentControl.isEnabled();
-  if (consentEnabled) await consentControl.check();
-  const expectedConsentChecked = consentEnabled;
-  aiLifecycleAudits.plotToAi = await readAiLifecycle("Plot to AI");
-  assertAiLifecycle(aiLifecycleAudits.plotToAi, "Plot to AI", expectedConsentChecked);
-
-  await rail.getByRole("button", { name: "Model", exact: true }).click();
-  await aiLifecycle.waitFor({ state: "hidden", timeout: 15_000 });
-  aiLifecycleAudits.aiToModel = await readAiLifecycle("AI to Model");
-  assertAiLifecycle(aiLifecycleAudits.aiToModel, "AI to Model", expectedConsentChecked);
-
-  await rail.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
-  await aiLifecycle.waitFor({ state: "visible", timeout: 15_000 });
-  aiLifecycleAudits.modelToAi = await readAiLifecycle("Model to AI");
-  assertAiLifecycle(aiLifecycleAudits.modelToAi, "Model to AI", expectedConsentChecked);
-
-  await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
-  await analysisSlot.waitFor({ state: "hidden", timeout: 15_000 });
-  await trajectorySlot.waitFor({ state: "visible", timeout: 15_000 });
-  aiLifecycleAudits.aiToPlot = await readAiLifecycle("AI to Plot");
-  assertAiLifecycle(aiLifecycleAudits.aiToPlot, "AI to Plot", expectedConsentChecked);
-
-  const nonPlotPanelExpectations = [
-    { railLabel: "Data", accessibleName: "Data", mode: "data", heading: "Start with coded data" },
-    { railLabel: "Model", accessibleName: "Model", mode: "model", heading: "Define the ENA model" },
-    { railLabel: "Stats & Export", accessibleName: "Stats & Export", mode: "stats", heading: "Evidence and reproducibility" },
-    { railLabel: "AI", accessibleName: "AI-assisted interpretation", mode: "ai", heading: "AI-assisted interpretation" },
-  ];
   const panelAudits = {};
-  let trajectoryPresenterScreenshotPath = null;
-  for (const expectation of nonPlotPanelExpectations) {
-    await rail.getByRole("button", { name: expectation.accessibleName, exact: true }).click();
-    await analysisSlot.waitFor({ state: "visible", timeout: 15_000 });
-    const audit = await page.evaluate((expected) => {
-      const controls = document.querySelector('[data-testid="open-ena-longitudinal-v3-analysis-controls"]');
-      const plot = document.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]');
-      const traces = Array.isArray(plot?.data) ? plot.data : [];
-      const resultHashes = [...new Set(traces.map((trace) => trace.meta?.resultHash).filter(Boolean))];
-      return {
-        mode: expected.mode,
-        slotMode: controls?.getAttribute("data-controls-mode") ?? null,
-        panelHeading: controls?.querySelector(".ena-panel-heading h2")?.textContent?.trim() ?? "",
-        workbenchCount: document.querySelectorAll('[data-testid="open-ena-longitudinal-v3-workbench"]').length,
-        genericSurfaceCount: document.querySelectorAll('[data-testid="open-ena-center-surface"]').length,
-        ordinaryPresenterCount: document.querySelectorAll([
-          '[data-testid="open-ena-center-surface"]',
-          '[data-testid="open-ena-group-center-surface"]',
-          '[data-testid="open-ena-3d-comparison-plot"]',
-          '[data-testid="open-ena-3d-primary-plot"]',
-          '[data-testid="open-ena-3d-secondary-plot"]',
-        ].join(",")).length,
-        bundleResultHash: resultHashes.length === 1 ? resultHashes[0] : null,
-        taskRequestCount: window.__openEnaLongitudinalSmokeTaskAudit?.taskRequestCount ?? -1,
-      };
-    }, expectation);
-    assertBrowser(audit.slotMode === expectation.mode, expectation.railLabel + " did not occupy its controls slot");
-    assertBrowser(audit.panelHeading.includes(expectation.heading), expectation.railLabel + " target panel is not visible");
-    assertBrowser(audit.workbenchCount === 1, expectation.railLabel + " navigation unmounted the trajectory presenter");
-    assertBrowser(audit.genericSurfaceCount === 0, expectation.railLabel + " navigation exposed the generic ENA surface");
-    assertBrowser(audit.ordinaryPresenterCount === 0, expectation.railLabel + " navigation exposed an ordinary ENA presenter");
-    assertBrowser(audit.bundleResultHash === args.expectedResultHash, expectation.railLabel + " navigation changed the trajectory result hash");
-    assertBrowser(audit.taskRequestCount === args.expectedTaskRequestCount, expectation.railLabel + " navigation submitted a scientific task");
-    panelAudits[expectation.mode] = audit;
-    if (expectation.mode === "model") {
-      trajectoryPresenterScreenshotPath = args.artifactDirectory + "/trajectory-presenter-after-model-navigation.png";
-      await workbench.screenshot({ path: trajectoryPresenterScreenshotPath });
+  const trajectoryPresenterScreenshotPath = join(artifactDirectory, "trajectory-presenter-after-model-navigation.png");
+  for (const name of ["AI-assisted interpretation", "Model", "AI-assisted interpretation", "Data", "Stats & Export", "Plot Tools"]) {
+    await rail.getByRole("button", { name, exact: true }).click();
+    if (name === "AI-assisted interpretation") {
+      const consent = page.locator('[data-ena-ai-consent="explicit"] input[type="checkbox"]');
+      if (await consent.isEnabled()) await consent.check();
     }
+    const aiVisible = await page.getByTestId("open-ena-persistent-ai-lifecycle").isVisible();
+    const analysisVisible = await page.getByTestId("open-ena-persistent-analysis-panel").isVisible();
+    assert.equal(aiVisible, name === "AI-assisted interpretation");
+    assert.equal(analysisVisible, name !== "AI-assisted interpretation");
+    if (name === "Data") assert.ok(await page.getByRole("button", { name: "Load trajectory sample", exact: true }).isVisible());
+    if (name === "Stats & Export") assert.ok(await page.getByTestId("open-ena-native-trajectory-analysis").isVisible());
+    if (name === "Model") await page.screenshot({ path: trajectoryPresenterScreenshotPath });
+    const audit = await page.evaluate(() => {
+      const baseline = window.__openEnaAiLifecycleAudit;
+      const currentAiRoot = document.querySelector('.ena-ai-interpretation');
+      const currentConsent = document.querySelector('[data-ena-ai-consent="explicit"] input[type="checkbox"]');
+      return { aiSame: currentAiRoot === baseline.aiRoot, consentSame: currentConsent === baseline.consent, consentChecked: currentConsent.checked, consentEnabled: !currentConsent.disabled, plotSame: document.querySelector('[data-ena-plotly-root=true]') === baseline.plot, aiPostCount: window.__openEnaLongitudinalSmokeTaskAudit.aiPostCount, baselineAiPostCount: baseline.baselineAiPostCount, mode: document.querySelector('.ena-rail-button[aria-current=step]')?.getAttribute('aria-label') };
+    });
+    assert.ok(audit.aiSame && audit.consentSame && audit.plotSame, name + " replaced native mounted state");
+    assert.equal(audit.mode, name);
+    assert.equal(audit.aiPostCount, audit.baselineAiPostCount);
+    assert.equal(audit.consentChecked, audit.consentEnabled);
+    const science = await nativeScience(page);
+    assert.equal(science.taskRequestCount, args.expectedTaskRequestCount);
+    panelAudits[name] = audit;
   }
-
-  await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
-  await workbench.locator('[data-trajectory-step="1"]').waitFor({ state: "visible", timeout: 15_000 });
-  await analysisSlot.waitFor({ state: "hidden", timeout: 15_000 });
-  await trajectorySlot.waitFor({ state: "visible", timeout: 15_000 });
-  assertBrowser(await analysisSlot.count() === 1, "Plot Tools unmounted the persistent analysis controls");
-  assertBrowser(await trajectorySlot.count() === 1, "Plot Tools unmounted the trajectory controls");
-  aiLifecycleAudits.finalPlot = await readAiLifecycle("Final Plot");
-  assertAiLifecycle(aiLifecycleAudits.finalPlot, "Final Plot", expectedConsentChecked);
-  const trajectoryBoundaryAudit = await page.evaluate(() => {
-    const plot = document.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]');
-    const traces = Array.isArray(plot?.data) ? plot.data : [];
-    const resultHashes = [...new Set(traces.map((trace) => trace.meta?.resultHash).filter(Boolean))];
-    return {
-      workbenchCount: document.querySelectorAll('[data-testid="open-ena-longitudinal-v3-workbench"]').length,
-      genericSurfaceCount: document.querySelectorAll('[data-testid="open-ena-center-surface"]').length,
-      ordinaryPresenterCount: document.querySelectorAll([
-        '[data-testid="open-ena-center-surface"]',
-        '[data-testid="open-ena-group-center-surface"]',
-        '[data-testid="open-ena-3d-comparison-plot"]',
-        '[data-testid="open-ena-3d-primary-plot"]',
-        '[data-testid="open-ena-3d-secondary-plot"]',
-      ].join(",")).length,
-      bundleResultHash: resultHashes.length === 1 ? resultHashes[0] : null,
-      taskRequestCount: window.__openEnaLongitudinalSmokeTaskAudit?.taskRequestCount ?? -1,
-    };
-  });
-  assertBrowser(trajectoryBoundaryAudit.workbenchCount === 1, "Plot Tools remounted the trajectory presenter");
-  assertBrowser(trajectoryBoundaryAudit.genericSurfaceCount === 0, "Plot Tools exposed the generic ENA surface");
-  assertBrowser(trajectoryBoundaryAudit.ordinaryPresenterCount === 0, "Plot Tools exposed an ordinary ENA presenter");
-  assertBrowser(trajectoryBoundaryAudit.bundleResultHash === args.expectedResultHash, "Plot Tools changed the trajectory result hash");
-  assertBrowser(trajectoryBoundaryAudit.taskRequestCount === args.expectedTaskRequestCount, "Plot Tools submitted a scientific task");
-  assertBrowser(Boolean(trajectoryPresenterScreenshotPath), "Model panel screenshot was not captured");
-  return {
-    ...trajectoryBoundaryAudit,
-    panelAudits,
-    trajectoryPresenterScreenshotPath,
-    aiLifecycleAudit: {
-      token: aiLifecycleAudits.plotBaseline.token,
-      consentEnabled,
-      expectedConsentChecked,
-      baselineAiPostCount: aiLifecycleAudits.plotBaseline.baselineAiPostCount,
-      finalAiPostCount: aiLifecycleAudits.finalPlot.aiPostCount,
-      transitions: aiLifecycleAudits,
-    },
-  };
+  return { panelAudits, trajectoryPresenterScreenshotPath };
 }
 
 async function exerciseCamerasAndProjections(page, args) {
   const assertBrowser = (condition, message) => {
     if (!condition) throw new Error(message);
   };
-  const plot = page.getByTestId("open-ena-longitudinal-v3-plot");
-  const cameraSelect = page.getByLabel("3D camera preset");
-  const projectionSelect = page.getByLabel("3D / 2D projection");
+  const plot = page.locator('[data-testid="open-ena-interactive-3d-plot"] [data-ena-plotly-root="true"]');
+  const cameraSelect = nativeCameraControl(page);
+  const projectionSelect = nativeProjectionControl(page);
   const sceneInteraction = plot.locator("#scene");
   const cameraDragFractions = [
     { from: { x: 0.5, y: 0.5 }, to: { x: 0.75, y: 0.7 } },
     { from: { x: 0.5, y: 0.5 }, to: { x: 0.25, y: 0.3 } },
   ];
-  const resultLabel = await plot.getAttribute("aria-label");
-  const expectedResultLabelFragment = "Result " + args.expectedResultHash.slice(0, 12) + ".";
+  const resultLabel = args.expectedResultHash;
+
   const cameraMatches = (actual, expected, epsilon = 1e-7) => {
     const vectorMatches = (left, right) => ["x", "y", "z"].every(
       (key) => Math.abs(Number(left?.[key]) - Number(right?.[key])) <= epsilon,
@@ -981,7 +603,21 @@ async function exerciseCamerasAndProjections(page, args) {
     let lastCamera = null;
     while (Date.now() <= deadline) {
       const current = await readRuntimeCamera();
-      if (cameraMatches(current, expected)) return current;
+      const controlled = await plot.evaluate(root => {
+        const value = root.closest('[data-ena-interactive-camera="true"]')?.getAttribute("data-ena-camera-state");
+        return value ? JSON.parse(value) : null;
+      });
+      // Controlled props retain the declared up vector. Apply the same exact
+      // orthogonalization used for expectedCameraStates, without widening epsilon.
+      if (controlled) {
+        const eye = ["x", "y", "z"].map(axis => controlled.eye[axis] - controlled.center[axis]);
+        const up = ["x", "y", "z"].map(axis => controlled.up[axis]);
+        const factor = up.reduce((sum, value, i) => sum + value * eye[i], 0) / eye.reduce((sum, value) => sum + value * value, 0);
+        const perpendicular = up.map((value, i) => value - factor * eye[i]);
+        const length = Math.hypot(...perpendicular);
+        controlled.up = { x: perpendicular[0] / length, y: perpendicular[1] / length, z: perpendicular[2] / length };
+      }
+      if (cameraMatches(current, expected) && cameraMatches(controlled, expected)) return current;
       lastCamera = current;
       await page.waitForTimeout(50);
     }
@@ -996,14 +632,7 @@ async function exerciseCamerasAndProjections(page, args) {
     }
     return null;
   };
-  const readScientificInvariants = async () => await plot.evaluate((root) => ({
-    resultHashes: [...new Set(
-      (Array.isArray(root.data) ? root.data : [])
-        .map((trace) => trace.meta?.resultHash)
-        .filter(Boolean),
-    )],
-    taskRequestCount: window.__openEnaLongitudinalSmokeTaskAudit?.taskRequestCount ?? -1,
-  }));
+  const readScientificInvariants = async () => await nativeScience(page);
   const assertScientificInvariants = async (label) => {
     const current = await readScientificInvariants();
     assertBrowser(
@@ -1095,17 +724,10 @@ async function exerciseCamerasAndProjections(page, args) {
       cameraStates[preset].projection?.type === (preset === "isometric" ? "perspective" : "orthographic"),
       "camera preset " + preset + " uses the wrong Plotly projection type",
     );
-    assertBrowser(
-      (await plot.getAttribute("aria-label"))?.includes(expectedResultLabelFragment),
-      preset + " changed the result identity",
-    );
     await assertScientificInvariants("camera preset " + preset);
     const cameraSelection = {
       visible: await cameraSelect.isVisible(),
-      ...await cameraSelect.evaluate((select) => ({
-        value: select.value,
-        label: select.selectedOptions[0]?.textContent?.trim() ?? "",
-      })),
+      ...await cameraSelect.selection(),
     };
     assertBrowser(cameraSelection.visible, preset + " camera selector is not visible");
     assertBrowser(cameraSelection.value === preset, preset + " camera option is not selected");
@@ -1126,30 +748,27 @@ async function exerciseCamerasAndProjections(page, args) {
   const projectionStates = {};
   for (const projection of args.projections) {
     await projectionSelect.selectOption(projection);
-    await page.waitForFunction((value) => {
-      const selects = [...document.querySelectorAll("select")];
-      const select = selects.find((candidate) => candidate.parentElement?.textContent?.includes("3D / 2D projection"));
-      const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
-      return select?.value === value
-        && Boolean(root?._fullLayout)
-        && Array.isArray(root?.data)
-        && root.data.every((trace) => trace.type !== "scatter3d" && trace.type !== "cone");
-    }, projection, { timeout: 15_000 });
-    projectionStates[projection] = await plot.evaluate((root) => ({
-      types: [...new Set(root.data.map((trace) => trace.type))],
-      roles: [...new Set(root.data.map((trace) => trace.meta?.role).filter(Boolean))],
-      xTitle: root._fullLayout?.xaxis?.title?.text ?? null,
-      yTitle: root._fullLayout?.yaxis?.title?.text ?? null,
-    }));
-    assertBrowser(
-      (await plot.getAttribute("aria-label"))?.includes(expectedResultLabelFragment),
-      projection + " changed the result identity",
-    );
+    projectionStates[projection] = await nativeSvgAudit(page);
+    assertBrowser(projectionStates[projection].codeLabels.length === args.expectedCodes.length, "2D omitted fitted Code labels");
+    assertBrowser(projectionStates[projection].centroids.every(value => value.width === "7" && value.height === "7"), "2D centroid glyph changed");
+    assertBrowser(projectionStates[projection].networkEdges === 0, "2D trajectory contains mean-network edges");
     await assertScientificInvariants("2D projection " + projection);
   }
+  // Remove an interior observed Horizon using actual display controls. No
+  // connector may jump across its absence; fitted coordinates remain bound.
+  const hiddenHorizon = args.orderedHorizons[1];
+  const horizonFilter = page.getByRole("checkbox", { name: `Display ${hiddenHorizon.displayLabel}`, exact: true });
+  const beforeFilter = await nativeSvgAudit(page);
+  await horizonFilter.uncheck();
+  const filteredSvg = await nativeSvgAudit(page);
+  assertBrowser(filteredSvg.centroids.length < beforeFilter.centroids.length, "Horizon display filter did not remove actual centroid geometry");
+  assertBrowser(filteredSvg.paths.every(path => path.to === path.from + 1), "native SVG connected across an absent fitted step");
+  await assertScientificInvariants("absent Horizon display filter");
+  await horizonFilter.check();
+  assertBrowser(JSON.stringify(await nativeSvgAudit(page)) === JSON.stringify(beforeFilter), "restoring Horizon filter changed original SVG geometry");
   await projectionSelect.selectOption("3d");
   await page.waitForFunction(() => {
-    const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
+    const root = document.querySelector("[data-testid=open-ena-interactive-3d-plot] [data-ena-plotly-root=true]");
     return Boolean(root?._fullLayout?.scene);
   }, null, { timeout: 15_000 });
   await cameraSelect.selectOption("isometric");
@@ -1173,9 +792,9 @@ async function exerciseTrajectoryPlotActions(page, args) {
   const assertBrowser = (condition, message) => {
     if (!condition) throw new Error(message);
   };
-  const plot = page.getByTestId("open-ena-longitudinal-v3-plot");
-  const cameraSelect = page.getByLabel("3D camera preset");
-  const projectionSelect = page.getByLabel("3D / 2D projection");
+  const plot = page.locator('[data-testid="open-ena-interactive-3d-plot"] [data-ena-plotly-root="true"]');
+  const cameraSelect = nativeCameraControl(page);
+  const projectionSelect = nativeProjectionControl(page);
   const zoomIn = page.locator('[data-ena-plot-action="zoom-in"]');
   const zoomOut = page.locator('[data-ena-plot-action="zoom-out"]');
   const recenter = page.locator('[data-ena-plot-action="recenter"]');
@@ -1226,11 +845,13 @@ async function exerciseTrajectoryPlotActions(page, args) {
       if (predicate(current)) return current;
       await page.waitForTimeout(50);
     }
+    const timedOutView = await page.evaluate(() => ({ events: window.__nativeCameraActionAudit?.slice(-80), controlledCamera: document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("data-ena-camera-state"), actions: [...document.querySelectorAll('.open-ena-3d-plot-actions button')].map(button => ({ action: button.getAttribute("data-ena-plot-action"), disabled: button.disabled })) }));
+    writeFileSync(join(artifactDirectory, "view-action-timeout.json"), JSON.stringify({ label, current, ...timedOutView }, null, 2));
     throw new Error(label + " did not reach its expected runtime state: " + JSON.stringify(current));
   };
   const waitForActionsReady = async () => {
     await page.waitForFunction(() => [...document.querySelectorAll(
-      '.ena-longitudinal-v3-plot-actions [data-ena-plot-action]',
+      '.open-ena-3d-plot-actions [data-ena-plot-action]',
     )].every((button) => !button.disabled), null, { timeout: 15_000 });
   };
   const readCamera = async () => await plot.evaluate((root) => {
@@ -1250,21 +871,8 @@ async function exerciseTrajectoryPlotActions(page, args) {
     const aspect = scene?._scene?.glplot?.getAspectratio?.() ?? scene?.aspectratio;
     return aspect ? { x: Number(aspect.x), y: Number(aspect.y), z: Number(aspect.z) } : null;
   });
-  const readRanges = async () => await plot.evaluate((root) => {
-    const x = root?._fullLayout?.xaxis?.range;
-    const y = root?._fullLayout?.yaxis?.range;
-    return Array.isArray(x) && Array.isArray(y)
-      ? { x: [Number(x[0]), Number(x[1])], y: [Number(y[0]), Number(y[1])] }
-      : null;
-  });
-  const readScientificInvariants = async () => await plot.evaluate((root) => ({
-    resultHashes: [...new Set(
-      (Array.isArray(root.data) ? root.data : [])
-        .map((trace) => trace.meta?.resultHash)
-        .filter(Boolean),
-    )],
-    taskRequestCount: window.__openEnaLongitudinalSmokeTaskAudit?.taskRequestCount ?? -1,
-  }));
+  const readRanges = async () => nativeSvgAudit(page);
+  const readScientificInvariants = async () => await nativeScience(page);
   const assertScientificInvariants = async (label) => {
     const current = await readScientificInvariants();
     assertBrowser(
@@ -1277,6 +885,22 @@ async function exerciseTrajectoryPlotActions(page, args) {
     );
   };
 
+  const repaintCodeColor = async (color) => {
+    const rail = page.getByRole("navigation", { name: "Analysis modes" });
+    const code = args.expectedCodes[0];
+    await rail.getByRole("button", { name: "Model", exact: true }).click();
+    await page.getByRole("tab", { name: /^Codes(,|$)/ }).click();
+    await page.getByRole("button", { name: `Choose color for ${code}`, exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: `Code color for ${code}`, exact: true });
+    const input = dialog.getByRole("textbox", { name: "Primary", exact: true });
+    const original = await input.inputValue();
+    await input.fill(color);
+    await dialog.getByRole("button", { name: "OK", exact: true }).click();
+    await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
+    await waitForActionsReady();
+    assertBrowser(await plot.evaluate((root, hex) => root.data.filter(trace => trace.meta?.role === "code-node").some(trace => trace.marker?.color === hex || trace.marker?.color?.includes?.(hex)), color), "real Code color change did not reach rendered spec");
+    return original;
+  };
   await projectionSelect.selectOption("3d");
   await cameraSelect.selectOption("isometric");
   const perspectiveBaseline = await waitForValue(
@@ -1286,12 +910,20 @@ async function exerciseTrajectoryPlotActions(page, args) {
   );
   await waitForActionsReady();
   const perspectiveBaselineDistance = cameraDistance(perspectiveBaseline);
+  await plot.evaluate(root => {
+    window.__nativeCameraActionAudit = [];
+    root.on("plotly_relayout", update => window.__nativeCameraActionAudit.push({ at: performance.now(), update: structuredClone(update), live: structuredClone(root._fullLayout.scene._scene.getCamera()), declarative: structuredClone(root._fullLayout.scene.camera), controlledCamera: root.closest('[data-ena-interactive-camera="true"]')?.getAttribute("data-ena-camera-state"), selectedPreset: document.querySelector('.ena-camera-fieldset input:checked')?.value }));
+  });
   await zoomIn.click();
   const perspectiveZoomIn = await waitForValue(
     readCamera,
     (camera) => cameraDistance(camera) < perspectiveBaselineDistance - 1e-6,
     "perspective Zoom In",
-  );
+  ).catch(async error => {
+    const cameraFailure = await page.evaluate(() => ({ events: window.__nativeCameraActionAudit, status: document.querySelector('.open-ena-3d-plot-actions [role=status]')?.textContent, controls: [...document.querySelectorAll('.open-ena-3d-plot-actions button')].map(button => ({ action: button.dataset.enaPlotAction, disabled: button.disabled })) }));
+    writeFileSync(join(artifactDirectory, "perspective-zoom-failure.json"), JSON.stringify({ baseline: perspectiveBaseline, ...cameraFailure, science: await nativeScience(page) }, null, 2));
+    throw error;
+  });
   const perspectiveZoomInDistance = cameraDistance(perspectiveZoomIn);
   assertBrowser(
     perspectiveZoomInDistance < perspectiveBaselineDistance,
@@ -1302,6 +934,12 @@ async function exerciseTrajectoryPlotActions(page, args) {
     "perspective Zoom In changed orientation, center, up, or projection",
   );
   await assertScientificInvariants("perspective zoom in");
+  const originalCodeColor = await repaintCodeColor("#9d5dbb");
+  const perspectiveColorRepaint = await readCamera();
+  assertBrowser(cameraApproximatelyEqual(perspectiveColorRepaint, perspectiveZoomIn), "same-fit Code color repaint reset perspective camera");
+  await repaintCodeColor(originalCodeColor);
+  assertBrowser(cameraApproximatelyEqual(await readCamera(), perspectiveZoomIn), "restoring Code color reset perspective camera");
+  await assertScientificInvariants("perspective Code color repaint");
   await zoomOut.click();
   const perspectiveZoomOut = await waitForValue(
     readCamera,
@@ -1369,6 +1007,19 @@ async function exerciseTrajectoryPlotActions(page, args) {
     "orthographic Zoom In did not expand the runtime aspect ratio",
   );
   await assertScientificInvariants("orthographic zoom in");
+  const orthographicCameraBeforeRepaint = await readCamera();
+  writeFileSync(join(artifactDirectory, "orthographic-after-zoom-in.json"), JSON.stringify({ camera: orthographicCameraBeforeRepaint, aspect: orthographicZoomIn, events: await page.evaluate(() => window.__nativeCameraActionAudit.slice(-80)) }, null, 2));
+  assertBrowser(orthographicCameraBeforeRepaint?.projection?.type === "orthographic", "orthographic Zoom In must retain its projection");
+  await repaintCodeColor("#218ebf");
+  const orthographicColorRepaint = await readAspectRatio();
+  assertBrowser(aspectApproximatelyEqual(orthographicColorRepaint, orthographicZoomIn), "same-fit Code color repaint reset orthographic aspect");
+  const orthographicCameraAfterRepaint = await readCamera();
+  const repaintEvents = await page.evaluate(() => window.__nativeCameraActionAudit.slice(-80));
+  writeFileSync(join(artifactDirectory, "orthographic-color-repaint-diagnostic.json"), JSON.stringify({ beforeCamera: orthographicCameraBeforeRepaint, afterCamera: orthographicCameraAfterRepaint, beforeAspect: orthographicZoomIn, afterAspect: orthographicColorRepaint, events: repaintEvents }, null, 2));
+  assertBrowser(cameraApproximatelyEqual(orthographicCameraAfterRepaint, orthographicCameraBeforeRepaint), "same-fit Code color repaint changed orthographic camera");
+  await repaintCodeColor(originalCodeColor);
+  assertBrowser(aspectApproximatelyEqual(await readAspectRatio(), orthographicZoomIn), "restoring Code color reset orthographic aspect");
+  await assertScientificInvariants("orthographic Code color repaint");
   await zoomOut.click();
   const orthographicZoomOut = await waitForValue(
     readAspectRatio,
@@ -1403,52 +1054,12 @@ async function exerciseTrajectoryPlotActions(page, args) {
   );
   await assertScientificInvariants("orthographic recenter");
 
-  await projectionSelect.selectOption("xy");
-  await waitForValue(readRanges, (ranges) => Boolean(ranges), "2D XY range baseline");
-  await waitForActionsReady();
-  const twoDBaseline = await readRanges();
-  assertBrowser(Boolean(twoDBaseline), "2D XY ranges are unavailable");
-  const twoDBaselineSpan = Math.abs(twoDBaseline.x[1] - twoDBaseline.x[0]);
-  await zoomIn.click();
-  const twoDZoomIn = await waitForValue(
-    readRanges,
-    (ranges) => ranges && Math.abs(ranges.x[1] - ranges.x[0]) < twoDBaselineSpan - 1e-6,
-    "2D Zoom In",
-  );
-  const twoDZoomInSpan = Math.abs(twoDZoomIn.x[1] - twoDZoomIn.x[0]);
-  await assertScientificInvariants("2D zoom in");
-  await zoomOut.click();
-  const twoDZoomOut = await waitForValue(
-    readRanges,
-    (ranges) => ranges && Math.abs(ranges.x[1] - ranges.x[0]) > twoDZoomInSpan + 1e-6,
-    "2D Zoom Out",
-  );
-  const twoDZoomOutSpan = Math.abs(twoDZoomOut.x[1] - twoDZoomOut.x[0]);
-  assertBrowser(twoDZoomOutSpan > twoDZoomInSpan, "2D Zoom Out did not expand the visible range");
-  assertBrowser(
-    rangesApproximatelyEqual(twoDZoomOut, twoDBaseline),
-    "2D Zoom In then Zoom Out did not restore the baseline ranges",
-  );
-  await assertScientificInvariants("2D zoom out");
-  await zoomIn.click();
-  const twoDBeforeRecenter = await waitForValue(
-    readRanges,
-    (ranges) => ranges && Math.abs(ranges.x[1] - ranges.x[0]) < twoDZoomOutSpan - 1e-6,
-    "2D pre-Recenter offset",
-  );
-  await assertScientificInvariants("2D pre-recenter zoom in");
-  await recenter.click();
-  const twoDRecenter = await waitForValue(
-    readRanges,
-    (ranges) => rangesApproximatelyEqual(ranges, twoDBaseline),
-    "2D Recenter",
-  );
-  assertBrowser(
-    rangesApproximatelyEqual(twoDRecenter, twoDBaseline),
-    "2D Recenter did not restore the immutable initial ranges",
-  );
+  writeFileSync(join(artifactDirectory, "camera-actions-and-color-repaints.json"), JSON.stringify({ perspectiveBaseline, perspectiveZoomIn, perspectiveColorRepaint, perspectiveZoomOut, perspectiveRecenter, orthographicBaseline, orthographicZoomIn, orthographicColorRepaint, orthographicZoomOut, orthographicRecenter, science: await nativeScience(page) }, null, 2));
+  const twoD = await exerciseNativeTwoDActions(page);
   await assertScientificInvariants("2D recenter");
-
+  await projectionSelect.selectOption("3d");
+  await cameraSelect.selectOption("isometric");
+  await waitForActionsReady();
   const copyPath = args.artifactDirectory + "/trajectory-plot-copy.png";
   let copyEvidence = null;
   await page.evaluate(() => {
@@ -1465,7 +1076,7 @@ async function exerciseTrajectoryPlotActions(page, args) {
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
     Object.defineProperty(window, "ClipboardItem", { configurable: true, value: undefined });
     HTMLAnchorElement.prototype.click = function copyAnchorClick() {
-      if (this.download === "3dena-longitudinal-trajectory.png") {
+      if (this.download === "open-ena-3d-comparison.png") {
         window.__openEnaTrajectoryCopyAudit.copyAnchorClickCount += 1;
         window.__openEnaTrajectoryCopyAudit.copyAnchorHref = this.href;
       }
@@ -1477,12 +1088,13 @@ async function exerciseTrajectoryPlotActions(page, args) {
     // fallback anchor click. CI Chromium can legitimately take >30s on a
     // cold GPU/runner, so do not let Playwright's default timeout race it.
     const copyDownloadPromise = page.waitForEvent("download", { timeout: 120_000 });
+    page.once("dialog", dialog => void dialog.accept());
     await copyImage.click();
     const download = await copyDownloadPromise;
     assertBrowser(await download.failure() === null, "trajectory Copy download failed");
     const suggestedFilename = download.suggestedFilename();
     assertBrowser(
-      suggestedFilename === "3dena-longitudinal-trajectory.png",
+      suggestedFilename === "open-ena-3d-comparison.png",
       "trajectory Copy suggested the wrong filename: " + suggestedFilename,
     );
     await download.saveAs(copyPath);
@@ -1504,17 +1116,17 @@ async function exerciseTrajectoryPlotActions(page, args) {
       "trajectory Copy download is not a non-empty PNG",
     );
     await page.waitForFunction(() => (
-      document.querySelector('.ena-longitudinal-v3-plot-shell [role="status"]')?.textContent?.trim()
+      document.querySelector('.open-ena-interactive-3d-figure [role="status"]')?.textContent?.trim()
         === "Image downloaded"
     ), null, { timeout: 15_000 });
-    const status = await page.locator('.ena-longitudinal-v3-plot-shell [role="status"]').textContent();
+    const status = await page.locator('.open-ena-interactive-3d-figure [role="status"]').textContent();
     const copyRuntimeAudit = await page.evaluate(() => ({
       copyAnchorClickCount:
         window.__openEnaTrajectoryCopyAudit?.copyAnchorClickCount ?? -1,
       copyAnchorHref:
         window.__openEnaTrajectoryCopyAudit?.copyAnchorHref ?? null,
       realPlotlyRoot: Boolean(
-        document.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]')?._fullLayout,
+        document.querySelector('[data-testid="open-ena-interactive-3d-plot"] [data-ena-plotly-root="true"]')?._fullLayout,
       ),
     }));
     assertBrowser(
@@ -1567,6 +1179,7 @@ async function exerciseTrajectoryPlotActions(page, args) {
   return {
     perspective: {
       baseline: perspectiveBaseline,
+      colorRepaint: perspectiveColorRepaint,
       zoomIn: perspectiveZoomIn,
       zoomOut: perspectiveZoomOut,
       beforeRecenter: perspectiveBeforeRecenter,
@@ -1574,27 +1187,310 @@ async function exerciseTrajectoryPlotActions(page, args) {
     },
     orthographic: {
       baseline: orthographicBaseline,
+      colorRepaint: orthographicColorRepaint,
       zoomIn: orthographicZoomIn,
       zoomOut: orthographicZoomOut,
       beforeRecenter: orthographicBeforeRecenter,
       recenter: orthographicRecenter,
     },
-    twoD: {
-      baseline: twoDBaseline,
-      zoomIn: twoDZoomIn,
-      zoomOut: twoDZoomOut,
-      beforeRecenter: twoDBeforeRecenter,
-      recenter: twoDRecenter,
-    },
+    twoD,
     copy: copyEvidence,
     restoredIsometric,
   };
 }
 
+async function exercisePendingImageActions(page) {
+  const observeBusyExit = process.env.OPEN_ENA_F1_BUSY_EXIT_OBSERVATION === "1";
+  let resolveBusyExit;
+  const busyExitSignal = new Promise(resolve => { resolveBusyExit = resolve; });
+  if (observeBusyExit) await page.exposeBinding("__task38BusyExitSignal", async () => {
+    try {
+      await page.keyboard.press("Enter");
+      const immediate = await page.evaluate(() => { window.__nativePendingFocus.capture("busy-exit-immediate"); return window.__nativePendingFocus.snapshots.at(-1); });
+      resolveBusyExit({ immediate });
+    } catch (error) { resolveBusyExit({ error: String(error) }); }
+  });
+  // Passive F1 evidence: no focus/preventDefault/propagation changes. Capture
+  // the failing instant before the pending PNG's finally releases its write.
+  await page.evaluate(() => {
+    const figure = document.querySelector(".open-ena-interactive-3d-figure");
+    const selector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const describeGeometry = element => {
+      if (!(element instanceof Element)) return null;
+      const ancestors = []; for (let node = element; node; node = node.parentElement) ancestors.push(node);
+      const box = element.getBoundingClientRect(), style = getComputedStyle(element);
+      return { tag: element.tagName, role: element.getAttribute("role"), action: element.getAttribute("data-ena-plot-action"), region: element.hasAttribute("data-ena-interactive-camera"), inside: figure.contains(element), connected: element.isConnected, disabled: element.matches(":disabled"), tabindex: element.getAttribute("tabindex"), tabIndex: element.tabIndex ?? null, ariaHidden: element.getAttribute("aria-hidden"), hidden: element.hasAttribute("hidden"), inertAncestor: ancestors.some(node => node.hasAttribute("inert")), hiddenAncestor: ancestors.some(node => node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true"), display: style.display, visibility: style.visibility, rects: element.getClientRects().length, width: box.width, height: box.height };
+    };
+    const describe = element => element instanceof Element ? { tag: element.tagName, role: element.getAttribute("role"), action: element.getAttribute("data-ena-plot-action"), region: element.hasAttribute("data-ena-interactive-camera"), inside: figure.contains(element), connected: element.isConnected, disabled: element.matches(":disabled"), tabindex: element.getAttribute("tabindex") } : null;
+    const audit = { events: [], snapshots: [], listeners: [], busyExitSignalled: false };
+    const snapshot = (label, geometry = false) => ({ label, at: performance.now(), active: geometry ? describeGeometry(document.activeElement) : describe(document.activeElement), documentHasFocus: document.hasFocus(), figureConnected: figure.isConnected, fallback: figure.getAttribute("data-fallback-fullscreen"), figureInert: figure.hasAttribute("inert"), role: figure.getAttribute("role"), modal: figure.getAttribute("aria-modal"), busy: figure.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy"), nodeHovered: Boolean(figure.querySelector('[data-ena-node-hovered]')), pendingWrite: Boolean(window.__nativePendingImage?.resolve), actionEpochExposed: false, ...(geometry ? { focusables: [...figure.querySelectorAll(selector)].map((element, index) => ({ index, ...describeGeometry(element) })), actions: [...figure.querySelectorAll('[data-ena-plot-action]')].map(describeGeometry) } : {}) });
+    audit.capture = (label, geometry = false) => { const value = snapshot(label, geometry); audit.snapshots.push(value); if (audit.snapshots.length > 40) audit.snapshots.shift(); return figure.contains(document.activeElement); };
+    for (const [scope, target] of [["window", window], ["document", document]]) for (const capture of [true, false]) for (const type of ["keydown", "keyup", "focusin", "focusout", "click"]) {
+      const listener = event => {
+        if (type.startsWith("key") && !["Tab", "Shift", "Escape", "Enter"].includes(event.key)) return;
+        audit.events.push({ at: performance.now(), scope, capture, type, key: event.key ?? null, shift: event.shiftKey ?? null, phase: event.eventPhase, defaultPrevented: event.defaultPrevented, cancelBubble: event.cancelBubble, target: describe(event.target), active: describe(document.activeElement), fallback: figure.getAttribute("data-fallback-fullscreen"), pendingWrite: Boolean(window.__nativePendingImage?.resolve), documentHasFocus: document.hasFocus(), busy: figure.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy"), nodeHovered: Boolean(figure.querySelector("[data-ena-node-hovered]")) });
+        if (audit.events.length > 600) audit.events.shift();
+      };
+      target.addEventListener(type, listener, capture); audit.listeners.push({ target, type, listener, capture });
+    }
+    audit.observer = new MutationObserver(records => {
+      for (const record of records) audit.events.push({ at: performance.now(), type: "mutation", attribute: record.attributeName, before: record.oldValue, after: record.target.getAttribute(record.attributeName), target: describe(record.target), active: describe(document.activeElement), documentHasFocus: document.hasFocus(), busy: figure.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy"), fallback: figure.getAttribute("data-fallback-fullscreen"), nodeHovered: Boolean(figure.querySelector("[data-ena-node-hovered]")), pendingWrite: Boolean(window.__nativePendingImage?.resolve) });
+      if (audit.events.length > 600) audit.events.splice(0, audit.events.length - 600);
+      const exit = figure.querySelector('[data-ena-plot-action="fullscreen"]');
+      if (typeof window.__task38BusyExitSignal === "function" && !audit.busyExitSignalled && figure.getAttribute("data-fallback-fullscreen") === "true" && figure.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy") === "true" && document.activeElement === exit && !exit.disabled && window.__nativePendingImage?.resolve) {
+        audit.busyExitSignalled = true; audit.capture("busy-exit-signalled"); void window.__task38BusyExitSignal();
+      }
+    });
+    audit.observer.observe(figure, { subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ["disabled", "aria-busy", "data-fallback-fullscreen"] });
+    window.__nativePendingFocus = audit;
+  });
+  const shell = page.locator('.open-ena-interactive-3d-figure');
+  const copy = shell.locator('[data-ena-plot-action="copy-image"]');
+  const fullscreen = shell.locator('[data-ena-plot-action="fullscreen"]');
+  await page.evaluate(() => {
+    const figure = document.querySelector(".open-ena-interactive-3d-figure");
+    const audit = { figure, fullscreen: Object.getOwnPropertyDescriptor(figure, "requestFullscreen"), canvas: HTMLCanvasElement.prototype.toDataURL, generationCalls: 0, clipboard: Object.getOwnPropertyDescriptor(navigator, "clipboard"), calls: 0, downloads: 0, pngs: [], resolve: null, reject: null, originalClick: HTMLAnchorElement.prototype.click };
+    window.__nativePendingImage = audit;
+    Object.defineProperty(figure, "requestFullscreen", { configurable: true, value: async () => { throw new Error("forced fallback during genuinely pending image action"); } });
+    HTMLCanvasElement.prototype.toDataURL = function(...args) { audit.generationCalls++; return audit.canvas.apply(this, args); };
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { write: async items => {
+      audit.calls++;
+      const blob = await items[0].getType("image/png");
+      audit.pngs.push({ type: blob.type, bytes: blob.size, signature: [...new Uint8Array(await blob.arrayBuffer()).subarray(0,8)] });
+      await new Promise((resolve, reject) => { audit.resolve = resolve; audit.reject = reject; });
+    } } });
+    HTMLAnchorElement.prototype.click = function() { if (this.download.endsWith('.png')) audit.downloads++; return audit.originalClick.call(this); };
+  });
+  const read = () => page.evaluate(() => {
+    const audit = window.__nativePendingImage;
+    window.__nativePendingFocus.capture("pending-read");
+    return { calls: audit.calls, generationCalls: audit.generationCalls, downloads: audit.downloads, pngs: audit.pngs, pending: Boolean(audit.resolve), actions: [...document.querySelectorAll('.open-ena-3d-plot-actions [data-ena-plot-action]')].map(button => ({ action: button.dataset.enaPlotAction, disabled: button.disabled, focused: document.activeElement === button })) };
+  });
+  try {
+    page.once("dialog", dialog => void dialog.dismiss());
+    await copy.click();
+    await page.waitForTimeout(200);
+    assert.equal((await read()).calls, 0, "denied identity approval produced clipboard output");
+    assert.equal((await read()).generationCalls, 0, "denied identity approval started image serialization");
+    assert.equal((await read()).downloads, 0, "denied identity approval produced a PNG download");
+    // Start actual toImage outside fallback, approve identity, then hold the actual ClipboardItem PNG write.
+    page.once("dialog", dialog => void dialog.accept());
+    await copy.click();
+    await page.waitForFunction(() => Boolean(window.__nativePendingImage.resolve), null, { timeout: 120_000 });
+    await fullscreen.click();
+    await page.waitForFunction(observe => document.querySelector('.open-ena-interactive-3d-figure')?.getAttribute('data-fallback-fullscreen') === 'true' || (observe && window.__nativePendingFocus.busyExitSignalled), observeBusyExit);
+    const pending = await read();
+    assert.equal(pending.calls, 1);
+    assert.deepEqual(pending.pngs[0].signature, [137,80,78,71,13,10,26,10]);
+    assert.equal(pending.pngs[0].type, "image/png"); assert.ok(pending.pngs[0].bytes > 8);
+    assert.equal(pending.actions.filter(a => a.action !== "fullscreen" && a.disabled).length, 4);
+    if (!observeBusyExit) assert.equal(pending.actions.find(a => a.action === "fullscreen").disabled, false);
+    let busyExitObservation = null;
+    if (observeBusyExit) {
+      // Supplemental observation only: original first-pair timing is exercised
+      // by the default branch. Never inject focus or a JavaScript click.
+      for (let entry = 1; entry <= 12; entry++) {
+        let timer;
+        const observed = await Promise.race([busyExitSignal, new Promise(resolve => { timer = setTimeout(() => resolve(null), 500); })]).finally(() => clearTimeout(timer));
+        if (observed) {
+          if (observed.error) throw new Error(observed.error);
+          await page.waitForFunction(() => document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy") === "false", null, { timeout: 15000 });
+          const postReady = await page.evaluate(async () => { await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame); window.__nativePendingFocus.capture("busy-exit-post-ready"); return window.__nativePendingFocus.snapshots.at(-1); });
+          const click = await page.evaluate(() => window.__nativePendingFocus.events.find(event => event.type === "click" && event.target?.action === "fullscreen" && event.busy === "true" && event.fallback === "true"));
+          busyExitObservation = { status: click ? "OBSERVED" : "NOT_OBSERVED", entries: entry, click: click ?? null, immediate: observed.immediate, postReady };
+          writeFileSync(join(artifactDirectory, "busy-exit-observation.json"), JSON.stringify(busyExitObservation, null, 2));
+          if (click) {
+            assert.notEqual(postReady.fallback, "true", "busy Exit did not leave fallback fullscreen");
+            assert.equal(postReady.active?.action, "fullscreen", "busy Exit lost post-ready focus return");
+            assert.equal(postReady.active?.disabled, false, "busy Exit returned focus to disabled entry control");
+          }
+          break;
+        }
+        if (entry === 12) {
+          busyExitObservation = { status: "NOT_OBSERVED", entries: entry, reason: "No natural busy interval with focused enabled Exit was signalled within bounded observation windows" };
+          writeFileSync(join(artifactDirectory, "busy-exit-observation.json"), JSON.stringify(busyExitObservation, null, 2));
+          break;
+        }
+        await fullscreen.click();
+        await page.waitForFunction(() => document.querySelector(".open-ena-interactive-3d-figure")?.getAttribute("data-fallback-fullscreen") !== "true");
+        await fullscreen.click();
+        await page.waitForFunction(() => document.querySelector(".open-ena-interactive-3d-figure")?.getAttribute("data-fallback-fullscreen") === "true");
+      }
+    } else {
+    for (let traversal = 0; traversal < 12; traversal++) {
+    if (traversal > 0) {
+      await fullscreen.click();
+      await page.waitForFunction(() => document.querySelector(".open-ena-interactive-3d-figure")?.getAttribute("data-fallback-fullscreen") !== "true");
+      await fullscreen.click();
+      await page.waitForFunction(() => document.querySelector(".open-ena-interactive-3d-figure")?.getAttribute("data-fallback-fullscreen") === "true");
+    }
+    await page.keyboard.press("Tab");
+    assert.ok(await shell.evaluate(figure => { window.__nativePendingFocus.capture("after-tab"); return figure.contains(document.activeElement); }), "pending fallback Tab escaped dialog");
+    await page.keyboard.press("Shift+Tab");
+    assert.ok(await shell.evaluate(figure => { window.__nativePendingFocus.capture("after-shift-tab"); return figure.contains(document.activeElement); }), "pending fallback Shift+Tab escaped dialog");
+    }
+    }
+    // Exit stays available during the genuinely pending write.
+    if (await shell.getAttribute("data-fallback-fullscreen") === "true") await fullscreen.click();
+    await page.evaluate(() => window.__nativePendingImage.reject(new Error("intentional isolated clipboard write rejection")));
+    await page.waitForFunction(() => [...document.querySelectorAll('.open-ena-3d-plot-actions button')].every(button => !button.disabled));
+    const rejected = await read();
+    assert.equal(rejected.downloads, 0, "supported clipboard rejection silently fell back to a download");
+    const errorStatus = await shell.locator('[role=status]').innerText();
+    assert.ok(errorStatus.length > 0 && !/copied|downloaded/iu.test(errorStatus), "rejected real PNG write must retain actual error status");
+    await page.evaluate(() => { window.__nativePendingImage.resolve = null; window.__nativePendingImage.reject = null; });
+    page.once("dialog", dialog => void dialog.accept());
+    await copy.click();
+    await page.waitForFunction(() => Boolean(window.__nativePendingImage.resolve), null, { timeout: 120_000 });
+    await page.evaluate(() => window.__nativePendingImage.resolve());
+    await page.waitForFunction(() => [...document.querySelectorAll('.open-ena-3d-plot-actions button')].every(button => !button.disabled));
+    const recoveryStatus = await shell.locator('[role=status]').innerText();
+    assert.match(recoveryStatus, /copied/iu);
+    await nativeScience(page);
+    const focus = await page.evaluate(() => ({ events: window.__nativePendingFocus.events, snapshots: window.__nativePendingFocus.snapshots }));
+    assert.equal(focus.events.some(event => event.type === "mutation" && event.attribute === "disabled" && event.target.action === "fullscreen" && event.after !== null && event.fallback === "true"), false, "rendering disabled Exit inside pending fallback fullscreen");
+    writeFileSync(join(artifactDirectory, "pending-focus-diagnostic.json"), JSON.stringify({ status: "PASS", traversalPairs: observeBusyExit ? 0 : 12, busyExitObservation, ...focus }, null, 2));
+    return { pending, rejected, errorStatus, recovered: await read(), recoveryStatus };
+  } catch (error) {
+    const focus = await page.evaluate(() => { window.__nativePendingFocus.capture("failure-before-release", true); return { events: window.__nativePendingFocus.events, snapshots: window.__nativePendingFocus.snapshots }; });
+    writeFileSync(join(artifactDirectory, "pending-focus-diagnostic.json"), JSON.stringify({ status: "FAIL", ...focus }, null, 2));
+    throw error;
+  } finally {
+    await page.evaluate(() => {
+      for (const { target, type, listener, capture } of window.__nativePendingFocus.listeners) target.removeEventListener(type, listener, capture);
+      window.__nativePendingFocus.observer.disconnect();
+      delete window.__nativePendingFocus;
+      const audit = window.__nativePendingImage;
+      audit.resolve?.();
+      HTMLCanvasElement.prototype.toDataURL = audit.canvas;
+      if (audit.fullscreen) Object.defineProperty(audit.figure, "requestFullscreen", audit.fullscreen); else delete audit.figure.requestFullscreen;
+      HTMLAnchorElement.prototype.click = audit.originalClick;
+      if (audit.clipboard) Object.defineProperty(navigator, "clipboard", audit.clipboard); else delete navigator.clipboard;
+      delete window.__nativePendingImage;
+    });
+  }
+}
+
+async function checkQueuedRenderExitV3(page, { mode = "restore" } = {}) {
+  const focusReceiptName = mode === "restore" ? "queued-exit-focus.json" : "queued-exit-focus-user-choice.json";
+  const baselineScience = await nativeScience(page);
+  const shell=page.locator('.open-ena-interactive-3d-figure'), fullscreen=shell.locator('[data-ena-plot-action="fullscreen"]'), copy=shell.locator('[data-ena-plot-action="copy-image"]');
+  await page.evaluate(()=>{
+    const figure=document.querySelector('.open-ena-interactive-3d-figure');
+    let proto=HTMLImageElement.prototype,onload;while(proto&&!onload){onload=Object.getOwnPropertyDescriptor(proto,'onload');proto=Object.getPrototypeOf(proto);}if(!onload?.set||!onload?.get)throw Error('Native image event unavailable');
+    const audit={figure,fullscreen:Object.getOwnPropertyDescriptor(figure,'requestFullscreen'),previous:Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'onload'),onload,release:null,released:false,releaseCount:0,held:null,events:[],snapshots:[],listeners:[]};window.__task38QueuedExit=audit;
+    Object.defineProperty(figure,'requestFullscreen',{configurable:true,value:async()=>{throw Error('isolated fallback request');}});
+    audit.snapshot=label=>{const active=document.activeElement,exit=figure.querySelector('[data-ena-plot-action="fullscreen"]');const value={label,at:performance.now(),busy:figure.querySelector('[data-ena-interactive-camera]')?.getAttribute('aria-busy'),fallback:figure.getAttribute('data-fallback-fullscreen'),activeTag:active?.tagName,activeAction:active?.getAttribute('data-ena-plot-action'),exitDisabled:exit.disabled,focused:active===exit,inside:figure.contains(active),figureConnected:figure.isConnected,currentFigureMatches:document.querySelector(".open-ena-interactive-3d-figure")===figure,callbackState:audit.released?"released":audit.release?"held":"not-held",releaseCount:audit.releaseCount};audit.snapshots.push(value);return value;};
+    for(const type of ['focusin','focusout','click','keydown']){const listener=event=>{audit.events.push({...audit.snapshot(type),eventTarget: event.target?.getAttribute?.('data-ena-plot-action'),key:event.key??null});if(audit.events.length>160)audit.events.shift();};document.addEventListener(type,listener,true);audit.listeners.push({type,listener});}
+    Object.defineProperty(HTMLImageElement.prototype,'onload',{configurable:true,get(){return onload.get.call(this);},set(callback){onload.set.call(this,typeof callback!=='function'?callback:function(event){if(!audit.release&&this.naturalWidth>0&&/^(blob:|data:image\/svg)/u.test(this.src)){audit.held={width:this.naturalWidth,height:this.naturalHeight,scheme:this.src.split(':')[0]};audit.release=()=>{if(audit.released)return;audit.released=true;audit.releaseCount++;return callback.call(this,event);};}else callback.call(this,event);});}});
+  });
+  let result;
+  try {
+    await fullscreen.click();await page.waitForFunction(()=>document.querySelector('.open-ena-interactive-3d-figure')?.getAttribute('data-fallback-fullscreen')==='true');
+    await copy.waitFor({state:'visible'});await page.waitForFunction(()=>!document.querySelector('[data-ena-plot-action="copy-image"]').disabled);
+    page.once('dialog',dialog=>dialog.accept());await copy.click();await page.waitForFunction(()=>!!window.__task38QueuedExit.release,null,{timeout:120000});
+    const root=shell.locator('[data-ena-plotly-root="true"]');
+    const candidates=await root.evaluate(element=>{const trace=element.data.find(t=>t.meta?.role==='code-node'),scene=element._fullLayout.scene._scene,params=scene.glplot.cameraParams,scale=scene.dataScale,box=scene.glplot.canvas.getBoundingClientRect();const multiply=(m,v)=>[0,1,2,3].map(r=>v.reduce((s,n,c)=>s+m[c*4+r]*n,0));element.__task38QueuedActualHover=null;element.__task38QueuedHover=e=>{const p=e.points?.[0],t=p?.fullData??p?.data;if(t?.meta?.role==='code-node')element.__task38QueuedActualHover=t.ids?.[p.pointNumber]??t.text?.[p.pointNumber];};element.on('plotly_hover',element.__task38QueuedHover);return trace.x.map((x,index)=>{const clip=multiply(params.projection,multiply(params.view,multiply(params.model,[x*scale[0],trace.y[index]*scale[1],trace.z[index]*scale[2],1])));return{x:box.left+(1+clip[0]/clip[3])*box.width/2,y:box.top+(1-clip[1]/clip[3])*box.height/2,id:trace.ids?.[index]??trace.text[index],visible:clip[3]>0};});});
+    let start;
+    for(const point of candidates){if(!point.visible||point.x<30||point.y<30)continue;for(const[dx,dy]of[[0,0],[2,0],[-2,0],[0,2],[0,-2]]){await page.mouse.move(point.x+dx,point.y+dy);await page.waitForTimeout(90);if(await root.evaluate((element,id)=>element.__task38QueuedActualHover===id&&element.getAttribute('data-ena-node-hovered')===id,point.id)){start={x:point.x+dx,y:point.y+dy};break;}}if(start)break;}
+    assert.ok(start,'real pointer must hit a Code before queued display edit');
+    await page.mouse.down();await page.mouse.move(start.x+38,start.y-23,{steps:5});await page.mouse.up();
+    await page.waitForFunction(()=>document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute('aria-busy')==='true',null,{timeout:5000});
+    const beforeExit=await page.evaluate(()=>window.__task38QueuedExit.snapshot('queued-before-exit'));assert.equal(beforeExit.exitDisabled,false);assert.equal(beforeExit.callbackState,"held");
+    await fullscreen.click();await page.waitForFunction(()=>document.querySelector('.open-ena-interactive-3d-figure')?.getAttribute('data-fallback-fullscreen')!=='true');
+    await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);window.__task38QueuedExit.snapshot('exited-still-render-held');});
+    const chosenFocus = mode === "user-choice" ? page.getByRole("navigation", { name: "Analysis modes" }).getByRole("button", { name: "Model", exact: true }) : null;
+    if (chosenFocus) { await chosenFocus.click(); assert.equal(await chosenFocus.evaluate(button => button === document.activeElement), true); await page.evaluate(() => window.__task38QueuedExit.snapshot("later-user-focus-before-release")); }
+    await page.evaluate(()=>window.__task38QueuedExit.release());await page.waitForFunction(()=>document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute('aria-busy')==='false',null,{timeout:30000});
+    await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);window.__task38QueuedExit.snapshot('ready-after-release');});
+    result=await page.evaluate(()=>({held:window.__task38QueuedExit.held,events:window.__task38QueuedExit.events,snapshots:window.__task38QueuedExit.snapshots,scienceRequests:window.__openEnaNativeAudit.requests.length,current:document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute('data-result-status')}));
+    assert.deepEqual(await nativeScience(page), baselineScience, 'queued display focus return changed scientific authority or Worker count');
+    assert.equal(result.snapshots.at(-1).callbackState, 'released'); assert.equal(result.snapshots.at(-1).releaseCount, 1);
+    writeFileSync(join(artifactDirectory,focusReceiptName),JSON.stringify({ latencyInjection: 'Delivery of one actually loaded native image callback held until actual queued-render Exit observation', ...result },null,2));
+    if (chosenFocus) {
+      assert.equal(await chosenFocus.evaluate(button => button === document.activeElement), true, "deferred fullscreen return stole later user focus");
+      assert.equal(result.snapshots.at(-1).focused, false);
+    } else { assert.equal(result.snapshots.at(-1).figureConnected, true); assert.equal(result.snapshots.at(-1).currentFigureMatches, true); assert.equal(result.snapshots.at(-1).focused,true,'busy Exit must return focus after the held genuine PNG and queued display render finish'); }
+    return result;
+  } catch(error) {
+    result=await page.evaluate(()=>({held:window.__task38QueuedExit.held,events:window.__task38QueuedExit.events,snapshots:[...window.__task38QueuedExit.snapshots,window.__task38QueuedExit.snapshot('failure-before-finally')]}));writeFileSync(join(artifactDirectory,focusReceiptName),JSON.stringify({status:'FAIL',error:String(error),...result},null,2));throw error;
+  } finally {
+    await page.evaluate(()=>{const a=window.__task38QueuedExit;a.release?.();for(const{type,listener}of a.listeners)document.removeEventListener(type,listener,true);if(a.previous)Object.defineProperty(HTMLImageElement.prototype,'onload',a.previous);else delete HTMLImageElement.prototype.onload;if(a.fullscreen)Object.defineProperty(a.figure,'requestFullscreen',a.fullscreen);else delete a.figure.requestFullscreen;const root=a.figure.querySelector('[data-ena-plotly-root]');root?.removeListener?.('plotly_hover',root.__task38QueuedHover);delete window.__task38QueuedExit;});
+  }
+}
+
+async function exerciseStaleImageLease(page) {
+  await page.getByRole("navigation", { name: "Analysis modes" }).getByRole("button", { name: "Model", exact: true }).click();
+  await page.getByRole("button", { name: "Configure trajectory model", exact: true }).click();
+  const model = page.getByRole("combobox", { name: "Model", exact: true });
+  assert.equal(await model.inputValue(), "SeparateTrajectory");
+  await page.evaluate(() => {
+    let proto = HTMLImageElement.prototype, onload;
+    while (proto && !onload) { onload = Object.getOwnPropertyDescriptor(proto, "onload"); proto = Object.getPrototypeOf(proto); }
+    if (!onload?.set || !onload?.get) throw new Error("native image load descriptor unavailable");
+    const audit = { onload, previous: Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "onload"), canvas: HTMLCanvasElement.prototype.toDataURL, clipboard: Object.getOwnPropertyDescriptor(navigator, "clipboard"), anchor: HTMLAnchorElement.prototype.click, renderedPngs: [], outputs: 0, release: null, imageLoaded: null };
+    window.__nativeStaleImage = audit;
+    // Hold delivery of an ACTUAL loaded snapshot image event; retain the real
+    // image/event/callback and release it to finish original Plotly PNG rendering.
+    Object.defineProperty(HTMLImageElement.prototype, "onload", { configurable: true, get() { return onload.get.call(this); }, set(callback) { onload.set.call(this, typeof callback !== "function" ? callback : function(event) {
+      if (!audit.release && this.naturalWidth > 0 && /^(blob:|data:image\/svg)/u.test(this.src)) {
+        audit.imageLoaded = { width: this.naturalWidth, height: this.naturalHeight, scheme: this.src.split(':')[0] };
+        audit.release = () => callback.call(this, event);
+      } else callback.call(this, event);
+    }); } });
+    HTMLCanvasElement.prototype.toDataURL = function(...args) { const data = audit.canvas.apply(this, args); if (data.startsWith('data:image/png;base64,')) audit.renderedPngs.push({ width: this.width, height: this.height, signature: [...atob(data.split(',')[1]).slice(0,8)].map(char => char.charCodeAt(0)) }); return data; };
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { write: async () => { audit.outputs++; }, writeText: async () => { audit.outputs++; } } });
+    HTMLAnchorElement.prototype.click = function() { if (this.download.endsWith('.png')) audit.outputs++; return audit.anchor.call(this); };
+  });
+  try {
+    page.once("dialog", dialog => void dialog.accept());
+    await page.locator('.open-ena-3d-plot-actions [data-ena-plot-action="copy-image"]').click();
+    await page.waitForFunction(() => Boolean(window.__nativeStaleImage.release), null, { timeout: 120_000 });
+    await model.selectOption("EndPoint");
+    await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute('data-result-status') === 'stale');
+    await page.evaluate(() => window.__nativeStaleImage.release());
+    await page.waitForFunction(() => document.querySelector('.open-ena-3d-plot-actions [data-ena-plot-action="copy-image"]')?.disabled === false, null, { timeout: 30000 });
+    const audit = await page.evaluate(() => ({ imageLoaded: window.__nativeStaleImage.imageLoaded, renderedPngs: window.__nativeStaleImage.renderedPngs, outputs: window.__nativeStaleImage.outputs, modelRuns: window.__openEnaNativeAudit.requests.length }));
+    assert.ok(audit.imageLoaded.width > 0 && audit.renderedPngs.length > 0, "stale lease check must finish genuine image rendering");
+    assert.ok(audit.renderedPngs.every(png => JSON.stringify(png.signature) === JSON.stringify([137,80,78,71,13,10,26,10])));
+    assert.equal(audit.outputs, 0, "stale model materialized PNG output after awaited rendering");
+    assert.equal(audit.modelRuns, 1);
+    // ModelState.scientificEdit increments scientificRevision; even restoring
+    // an identical draft does not readmit the old plan. This final intentional
+    // edit remains explicitly stale, while all preceding display gates were current.
+    const finalState = await page.evaluate(() => {
+      const result = window.__openEnaNativeAudit.responses.at(-1).result;
+      const science = JSON.stringify({ binding: result.binding, configuration: result.configuration, set: result.set, executionProvenance: result.executionProvenance });
+      return { resultStatus: document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute('data-result-status'), boundScienceUnchanged: science === window.__nativeLongitudinalScience, binding: result.binding, taskRequestCount: window.__openEnaNativeAudit.requests.length };
+    });
+    assert.equal(finalState.resultStatus, "stale"); assert.equal(finalState.boundScienceUnchanged, true); assert.equal(finalState.taskRequestCount, 1);
+    await page.screenshot({ path: join(artifactDirectory, "intentional-final-stale-model.png") });
+    return { ...audit, finalState };
+  } finally {
+    await page.evaluate(() => {
+      const audit = window.__nativeStaleImage;
+      if (audit.previous) Object.defineProperty(HTMLImageElement.prototype, 'onload', audit.previous); else delete HTMLImageElement.prototype.onload;
+      HTMLCanvasElement.prototype.toDataURL = audit.canvas;
+      HTMLAnchorElement.prototype.click = audit.anchor;
+      if (audit.clipboard) Object.defineProperty(navigator, 'clipboard', audit.clipboard); else delete navigator.clipboard;
+      delete window.__nativeStaleImage;
+    });
+  }
+}
+
+async function waitForFullscreenCanvas(page) {
+  await page.waitForFunction(() => {
+    const root = document.querySelector('[data-testid="open-ena-interactive-3d-plot"] [data-ena-plotly-root="true"]');
+    const canvas = root?._fullLayout?.scene?._scene?.glplot?.canvas;
+    if (!root || !(canvas instanceof HTMLCanvasElement)) return false;
+    const outer = root.getBoundingClientRect(), inner = canvas.getBoundingClientRect();
+    return inner.width >= outer.width * 0.9 && inner.height >= outer.height * 0.9;
+  }, null, { timeout: 15000 });
+}
 async function readFullscreenPlotLayout(page) {
-  return await page.getByTestId("open-ena-longitudinal-v3-plot").evaluate((root) => {
-    const shell = root.closest(".ena-longitudinal-v3-plot-shell");
-    const toolbar = shell?.querySelector(".ena-longitudinal-v3-plot-actions") ?? null;
+  return await page.locator('[data-testid="open-ena-interactive-3d-plot"] [data-ena-plotly-root="true"]').evaluate((root) => {
+    const shell = root.closest(".open-ena-interactive-3d-figure");
+    const toolbar = shell?.querySelector(".open-ena-3d-plot-actions") ?? null;
     const boxFor = (element) => {
       if (!element) return null;
       const rect = element.getBoundingClientRect();
@@ -1622,12 +1518,13 @@ async function readFullscreenPlotLayout(page) {
       : [];
     const traces = Array.isArray(root.data) ? root.data : [];
     const svd3Shaft = traces.find((trace) => (
-      trace.meta?.role === "axis-shaft"
-      && (trace.meta?.axis === "SVD3" || trace.text?.includes?.("SVD3"))
+      trace.meta?.role === "axis"
+      && (trace.meta?.axis === "z" || trace.meta?.axis === "SVD3" || trace.name === "SVD3")
     ));
+    const svd3Label = traces.find(trace => trace.meta?.role === "axis-label" && trace.text?.includes?.("SVD3"));
     const svd3Arrowhead = traces.find((trace) => (
       trace.meta?.role === "axis-arrowhead"
-      && (trace.meta?.axis === "SVD3" || trace.name === "SVD3 axis arrowhead")
+      && (trace.meta?.axis === "z" || trace.meta?.axis === "SVD3" || trace.name === "SVD3 axis arrowhead")
     ));
     const scene = root._fullLayout?.scene;
     const glplot = scene?._scene?.glplot;
@@ -1673,6 +1570,8 @@ async function readFullscreenPlotLayout(page) {
           ? "fallback"
           : "none",
       shell: shellBox,
+      camera: structuredClone(scene?._scene?.getCamera?.() ?? scene?.camera ?? null),
+      renderedLayout: { width: root._fullLayout?.width, height: root._fullLayout?.height, autosize: root._fullLayout?.autosize, declaredAutosize: root.layout?.autosize, declaredWidth: root.layout?.width, declaredHeight: root.layout?.height, sceneArea: structuredClone(root._fullLayout?._size ?? null), margin: structuredClone(root._fullLayout?.margin ?? null), legend: { x: root._fullLayout?.legend?.x, y: root._fullLayout?.legend?.y }, annotationTexts: root._fullLayout?.annotations?.map(annotation => annotation.text) ?? [] },
       plot: plotBox,
       toolbar: toolbarBox ? {
         ...toolbarBox,
@@ -1694,9 +1593,9 @@ async function readFullscreenPlotLayout(page) {
       svd3Axis: {
         shaftPresent: Boolean(svd3Shaft),
         arrowheadPresent: Boolean(svd3Arrowhead),
-        labelPresent: Array.isArray(svd3Shaft?.text) && svd3Shaft.text.at(-1) === "SVD3",
+        labelPresent: Boolean(svd3Label),
         finiteNonDegenerate: svd3Shaft?.type === "scatter3d"
-          && svd3Shaft?.mode === "lines+text"
+          && svd3Shaft?.mode === "lines"
           && svd3Shaft?.visible !== false
           && svd3Arrowhead?.type === "cone"
           && svd3Arrowhead?.visible !== false
@@ -1708,9 +1607,9 @@ async function readFullscreenPlotLayout(page) {
           && Number.isFinite(shaftStart)
           && Number.isFinite(shaftTip)
           && Math.abs(shaftTip - shaftStart) > 0,
-        arrowTipMatchesShaft: Number.isFinite(shaftTip)
+        arrowTipContinuesShaft: Number.isFinite(shaftTip)
           && Number.isFinite(arrowTip)
-          && Math.abs(shaftTip - arrowTip) <= Math.max(1, Math.abs(shaftTip)) * 1e-9,
+          && arrowTip > shaftTip && shaftTip > shaftStart && [svd3Shaft.x, svd3Shaft.y, svd3Arrowhead.x, svd3Arrowhead.y].every(values => values.every(value => Math.abs(value) < 1e-9)),
         range: zRange,
         rangeHeadroomRatio: Number.isFinite(arrowTip) && rangeSpan > 0
           ? Math.min(arrowTip - rangeLow, rangeHigh - arrowTip) / rangeSpan
@@ -1720,6 +1619,14 @@ async function readFullscreenPlotLayout(page) {
   });
 }
 
+function assertFullscreenRestoresView(before, after) {
+  for (const vector of ["eye", "up", "center"]) for (const axis of ["x", "y", "z"]) assert.ok(Math.abs(before.camera[vector][axis] - after.camera[vector][axis]) < 1e-7, "fullscreen changed camera orientation or position");
+  assert.equal(before.camera.projection.type, after.camera.projection.type);
+  assert.deepEqual(after.renderedLayout.margin, before.renderedLayout.margin, "fullscreen exit did not restore original plot margins");
+  assert.equal(after.renderedLayout.height, before.renderedLayout.height, "fullscreen exit did not restore original plot height");
+  assert.deepEqual(after.renderedLayout.legend, before.renderedLayout.legend, "fullscreen exit did not restore complete original legend position");
+  assert.deepEqual(after.renderedLayout.annotationTexts, before.renderedLayout.annotationTexts, "fullscreen lost scientific variance annotations");
+}
 function assertFullscreenPlotLayout(audit, label, expectedMode) {
   const assertLayout = (condition, message) => {
     if (!condition) throw new Error(label + ": " + message);
@@ -1771,16 +1678,8 @@ function assertFullscreenPlotLayout(audit, label, expectedMode) {
       && left.top < right.bottom
       && left.bottom > right.top
   );
-  assertLayout(
-    audit.legend && audit.legend.width > 0 && audit.legend.height > 0,
-    "the Plotly legend is missing from the fullscreen geometry audit",
-  );
-  assertLayout(
-    audit.modebar && audit.modebar.width > 0 && audit.modebar.height > 0,
-    "the Plotly modebar is missing from the fullscreen geometry audit",
-  );
   assertLayout(!boxesOverlap(audit.toolbar, audit.legend), "the toolbar covers the Plotly legend");
-  assertLayout(!boxesOverlap(audit.toolbar, audit.modebar), "the toolbar covers the Plotly modebar");
+  assertLayout(!boxesOverlap(audit.toolbar, audit.modebar), "the toolbar covers any visible modebar");
   assertLayout(
     audit.webglRuntimeReady
       && audit.canvas
@@ -1812,7 +1711,7 @@ function assertFullscreenPlotLayout(audit, label, expectedMode) {
   );
   assertLayout(
     audit.svd3Axis.finiteNonDegenerate
-      && audit.svd3Axis.arrowTipMatchesShaft
+      && audit.svd3Axis.arrowTipContinuesShaft
       && audit.svd3Axis.rangeHeadroomRatio >= 0.01,
     "the SVD3 axis is degenerate, disconnected, or lacks visible range headroom",
   );
@@ -1822,14 +1721,17 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
   const assertBrowser = (condition, message) => {
     if (!condition) throw new Error(message);
   };
-  const shellLocator = page.locator(".ena-longitudinal-v3-plot-shell");
-  const fullscreenButton = shellLocator.getByRole("button", { name: "Fullscreen", exact: true });
+  const shellLocator = page.locator(".open-ena-interactive-3d-figure");
+  const fullscreenButton = shellLocator.locator('[data-ena-plot-action="fullscreen"]');
   await page.setViewportSize(args.viewport);
+  await page.waitForTimeout(250);
+  const beforeFullscreen = await readFullscreenPlotLayout(page);
+  writeFileSync(join(artifactDirectory, "before-fallback-fullscreen-layout.json"), JSON.stringify(beforeFullscreen, null, 2));
   await fullscreenButton.focus();
 
   const setup = await shellLocator.evaluate((shell) => {
     const opener = document.activeElement;
-    const exitButton = shell.querySelector(".ena-longitudinal-v3-plot-actions button");
+    const exitButton = shell.querySelector('[data-ena-plot-action="fullscreen"]');
     if (!(opener instanceof HTMLElement) || !(exitButton instanceof HTMLElement)) {
       throw new Error("fallback fullscreen focus anchors are unavailable");
     }
@@ -1906,7 +1808,7 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       insideShell: audit.shell.contains(element),
       active: document.activeElement === element,
     });
-    const controls = [...audit.shell.querySelectorAll(".ena-longitudinal-v3-plot-actions button")]
+    const controls = [...audit.shell.querySelectorAll(".open-ena-3d-plot-actions button")]
       .map((button) => ({
         action: actionFor(button),
         label: button.getAttribute("aria-label") || button.textContent?.trim() || "",
@@ -2043,7 +1945,7 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
 
     await page.waitForFunction(() => {
       const dataActionButtons = [...document.querySelectorAll(
-        '.ena-longitudinal-v3-plot-shell [data-ena-plot-action]',
+        '.open-ena-interactive-3d-figure [data-ena-plot-action]:not([data-ena-plot-action=fullscreen])',
       )];
       return dataActionButtons.length === 4 && dataActionButtons.every((button) => !button.disabled);
     }, null, { timeout: 15_000 });
@@ -2063,17 +1965,24 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       "settled fallback focusables escaped the dialog shell",
     );
     assertBrowser(
-      settledState.focusableDescriptors[0]?.action === "fullscreen",
-      "Exit fullscreen is not the first runtime focusable",
+      settledState.focusableDescriptors.at(-1)?.action === "fullscreen",
+      "Exit fullscreen is not the last runtime focusable",
     );
     assertBrowser(
       settledState.currentActiveDescriptor?.action === "fullscreen",
       "settling Plotly relayout moved focus away from Exit fullscreen",
     );
+    await waitForFullscreenCanvas(page).catch(async error => {
+      writeFileSync(join(artifactDirectory, "fullscreen-resize-failure.json"), JSON.stringify(await readFullscreenPlotLayout(page), null, 2));
+      await shellLocator.screenshot({ path: join(artifactDirectory, "fullscreen-resize-failure.png") });
+      throw error;
+    });
     const fallbackLayoutAudit = await readFullscreenPlotLayout(page);
+    writeFileSync(join(artifactDirectory, "fallback-fullscreen-layout.json"), JSON.stringify(fallbackLayoutAudit, null, 2));
+    await shellLocator.screenshot({ path: join(artifactDirectory, "fallback-fullscreen-before-assert.png") });
     assertFullscreenPlotLayout(fallbackLayoutAudit, "fallback fullscreen layout", "fallback");
 
-    const settledRuntimeLast = settledState.focusableDescriptors.at(-1);
+    const settledRuntimeLast = settledState.focusableDescriptors.at(-2);
     assertBrowser(Boolean(settledRuntimeLast), "settled fallback has no runtime focusable");
     await page.keyboard.press("Shift+Tab");
     const settledAfterShiftTab = await readFallbackControlSnapshot();
@@ -2089,7 +1998,7 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
 
     await page.keyboard.press("Tab");
     const tabToExit = (await readFallbackControlSnapshot()).currentActiveDescriptor?.action === "fullscreen";
-    assertBrowser(tabToExit, "Tab from the runtime last focusable did not wrap to Exit fullscreen");
+    assertBrowser(tabToExit, "Tab from the penultimate focusable did not reach Exit fullscreen");
 
     const traversal = [];
     for (let step = 0; step < settledState.focusableDescriptors.length; step += 1) {
@@ -2152,6 +2061,13 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       );
     }, null, { timeout: 15_000 });
 
+    await page.waitForFunction(height => document.querySelector('[data-ena-plotly-root=true]')?._fullLayout?.height === height, beforeFullscreen.renderedLayout.height).catch(async error => {
+      writeFileSync(join(artifactDirectory, "fullscreen-exit-restore-failure.json"), JSON.stringify({ beforeFullscreen, after: await readFullscreenPlotLayout(page) }, null, 2));
+      throw error;
+    });
+    const restoredLayout = await readFullscreenPlotLayout(page);
+    assertFullscreenRestoresView(beforeFullscreen, restoredLayout);
+    await nativeScience(page);
     const restoredState = await page.evaluate(() => {
       const audit = window.__openEnaFallbackFullscreenA11yAudit;
       if (!audit) throw new Error("fallback fullscreen audit state is missing");
@@ -2191,6 +2107,7 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       outsideTreeIsolated: modalState.outsideTreeIsolated,
       bodyScrollLocked: modalState.bodyScrollLocked,
       layoutAudit: fallbackLayoutAudit,
+      beforeFullscreen, restoredLayout,
       entryState,
       settledState,
       pendingShiftTabDestination,
@@ -2210,7 +2127,7 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       if (await shellLocator.getAttribute("data-fallback-fullscreen") === "true") {
         await page.keyboard.press("Escape");
         await page.waitForFunction(() => (
-          document.querySelector(".ena-longitudinal-v3-plot-shell")
+          document.querySelector(".open-ena-interactive-3d-figure")
             ?.getAttribute("data-fallback-fullscreen") === null
         ), null, { timeout: 15_000 });
       }
@@ -2255,10 +2172,23 @@ async function captureResponsiveEvidence(page, args) {
   for (const viewport of args.viewports) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.waitForTimeout(250);
+    await page.waitForFunction(() => {
+      const root = document.querySelector('[data-ena-plotly-root=true]');
+      return root && Math.abs(root._fullLayout?.width - root.clientWidth) <= 1 && Math.abs(root._fullLayout?.height - root.clientHeight) <= 1;
+    }, null, { timeout: 15000 }).catch(async error => {
+      writeFileSync(join(artifactDirectory, `${viewport.name}-responsive-canvas-failure.json`), JSON.stringify(await readFullscreenPlotLayout(page), null, 2));
+      await page.locator(".open-ena-interactive-3d-figure").screenshot({ path: join(artifactDirectory, `${viewport.name}-responsive-canvas-failure.png`) });
+      throw error;
+    });
+    const canvasAudit = await readFullscreenPlotLayout(page);
+    const area = canvasAudit.renderedLayout.sceneArea;
+    assertBrowser(Math.abs(canvasAudit.canvas.width - area.w) <= 1 && Math.abs(canvasAudit.canvas.height - area.h) <= 1, "responsive live WebGL size differs from Plotly scene area");
+    assertBrowser(canvasAudit.canvas.left >= canvasAudit.plot.left - 1 && canvasAudit.canvas.right <= canvasAudit.plot.right + 1, "responsive scientific canvas is cropped by its native plot");
+    assertBrowser(Math.abs((canvasAudit.canvas.left + canvasAudit.canvas.right) / 2 - (canvasAudit.plot.left + area.l + area.w / 2)) <= 1, "responsive scientific scene center is outside its computed canvas");
     const overflow = await page.evaluate(() => {
-      const shell = document.querySelector(".ena-longitudinal-v3-plot-shell");
-      const toolbar = shell?.querySelector(".ena-longitudinal-v3-plot-actions") ?? null;
-      const plot = shell?.querySelector('[data-testid="open-ena-longitudinal-v3-plot"]') ?? null;
+      const shell = document.querySelector(".open-ena-interactive-3d-figure");
+      const toolbar = shell?.querySelector(".open-ena-3d-plot-actions") ?? null;
+      const plot = shell?.querySelector('[data-testid="open-ena-interactive-3d-plot"] [data-ena-plotly-root="true"]') ?? null;
       const boxFor = (element) => {
         if (!element) return null;
         const rect = element.getBoundingClientRect();
@@ -2280,9 +2210,9 @@ async function captureResponsiveEvidence(page, args) {
           .map((button) => Math.round(button.getBoundingClientRect().top))).size
         : 0;
       const clippedInteractiveControls = [...document.querySelectorAll(
-        '[data-testid="open-ena-longitudinal-v3-workbench"] button, '
-          + '[data-testid="open-ena-longitudinal-v3-workbench"] input, '
-          + '[data-testid="open-ena-longitudinal-v3-workbench"] select',
+        '[data-testid="open-ena-workspace-v3"] button, '
+          + '[data-testid="open-ena-workspace-v3"] input, '
+          + '[data-testid="open-ena-workspace-v3"] select',
       )].flatMap((element) => {
         const style = getComputedStyle(element);
         const rect = element.getBoundingClientRect();
@@ -2328,22 +2258,8 @@ async function captureResponsiveEvidence(page, args) {
         + JSON.stringify(overflow.clippedInteractiveControls),
     );
     if (viewport.width === 390) {
-      assertBrowser(
-        overflow.shellBox && overflow.toolbarBox && overflow.plotBox,
-        "mobile trajectory shell geometry is incomplete",
-      );
-      assertBrowser(
-        overflow.toolbarRowCount >= 2,
-        "the 390px trajectory toolbar did not wrap to at least two rows",
-      );
-      assertBrowser(
-        overflow.toolbarBox.bottom <= overflow.plotBox.top + 1,
-        "the 390px trajectory toolbar overlaps or follows the Plotly canvas",
-      );
-      assertBrowser(
-        overflow.plotBox.bottom <= overflow.shellBox.bottom + 1,
-        "the 390px Plotly canvas escapes its fixed-height shell",
-      );
+      assertBrowser(overflow.shellBox && overflow.toolbarBox && overflow.plotBox, "mobile native plot geometry is incomplete");
+      assertBrowser(overflow.plotBox.bottom <= overflow.shellBox.bottom + 1, "mobile canvas escapes its figure");
     }
     const pagePath = args.artifactDirectory + "/" + viewport.name + "-"
       + viewport.width + "x" + viewport.height + ".png";
@@ -2352,19 +2268,19 @@ async function captureResponsiveEvidence(page, args) {
     const shellPath = args.artifactDirectory + "/" + viewport.name + "-shell-"
       + viewport.width + "x" + viewport.height + ".png";
     await page.screenshot({ path: pagePath, fullPage: false });
-    await page.getByTestId("open-ena-longitudinal-v3-plot").screenshot({ path: plotPath });
-    await page.locator(".ena-longitudinal-v3-plot-shell").screenshot({ path: shellPath });
-    results[viewport.name] = { ...viewport, ...overflow, pagePath, plotPath, shellPath };
+    await page.locator('[data-testid="open-ena-interactive-3d-plot"] [data-ena-plotly-root="true"]').screenshot({ path: plotPath });
+    await page.locator(".open-ena-interactive-3d-figure").screenshot({ path: shellPath });
+    results[viewport.name] = { ...viewport, ...overflow, canvasAudit, pagePath, plotPath, shellPath };
   }
 
   await page.setViewportSize({ width: 1440, height: 1000 });
-  const fullscreen = page.getByRole("button", { name: "Fullscreen", exact: true });
+  const fullscreen = page.locator('.open-ena-3d-plot-actions [data-ena-plot-action="fullscreen"]');
   await fullscreen.click();
   await page.waitForFunction(() => {
-    const shell = document.querySelector(".ena-longitudinal-v3-plot-shell");
+    const shell = document.querySelector(".open-ena-interactive-3d-figure");
     return document.fullscreenElement === shell;
   }, null, { timeout: 15_000 });
-    const fullscreenBox = await page.locator(".ena-longitudinal-v3-plot-shell").boundingBox();
+    const fullscreenBox = await page.locator(".open-ena-interactive-3d-figure").boundingBox();
     const fullscreenViewport = await page.evaluate(() => ({
       width: window.innerWidth,
       height: window.innerHeight,
@@ -2378,7 +2294,7 @@ async function captureResponsiveEvidence(page, args) {
       "fullscreen plot does not fill the available viewport height",
     );
     await page.waitForFunction(() => {
-      const root = document.querySelector("[data-testid=open-ena-longitudinal-v3-plot]");
+      const root = document.querySelector("[data-testid=open-ena-interactive-3d-plot] [data-ena-plotly-root=true]");
       if (!root) return false;
       const plotBox = root.getBoundingClientRect();
       const glplot = root._fullLayout?.scene?._scene?.glplot;
@@ -2398,48 +2314,38 @@ async function captureResponsiveEvidence(page, args) {
       })();
     }, null, { timeout: 15_000 });
   const fullscreenPlotAudit = await readFullscreenPlotLayout(page);
+  writeFileSync(join(artifactDirectory, "native-fullscreen-layout.json"), JSON.stringify(fullscreenPlotAudit, null, 2));
+  await page.locator(".open-ena-interactive-3d-figure").screenshot({ path: join(artifactDirectory, "native-fullscreen-before-assert.png") });
   assertFullscreenPlotLayout(fullscreenPlotAudit, "fullscreen layout", "native");
   const fullscreenPath = args.artifactDirectory + "/desktop-fullscreen-1440x1000.png";
-  await page.locator(".ena-longitudinal-v3-plot-shell").screenshot({ path: fullscreenPath });
-  const exitFullscreen = page.getByRole("button", { name: "Exit fullscreen", exact: true });
+  await page.locator(".open-ena-interactive-3d-figure").screenshot({ path: fullscreenPath });
+  const exitFullscreen = page.locator('.open-ena-3d-plot-actions [data-ena-plot-action="fullscreen"]');
   await exitFullscreen.click();
   await page.waitForFunction(() => {
-    const shell = document.querySelector(".ena-longitudinal-v3-plot-shell");
+    const shell = document.querySelector(".open-ena-interactive-3d-figure");
     return document.fullscreenElement !== shell
       && shell?.getAttribute("data-fallback-fullscreen") !== "true";
   }, null, { timeout: 15_000 });
     return { results, fullscreenBox, fullscreenViewport, fullscreenPlotAudit, fullscreenPath };
 }
 
-async function downloadAllArtifacts(page, args) {
-  const buttons = [
-    ["bundle", "Analysis bundle ZIP"],
-    ["path", "Path CSV"],
-    ["metadata", "Metadata CSV"],
-    ["inference", "Inference CSV"],
-    ["analysis", "Analysis JSON"],
-    ["plotly", "Plotly spec JSON"],
-    ["participant", "Participant-level ZIP (opt-in)"],
-  ];
-  const saved = {};
-  for (const [kind, label] of buttons) {
-    const button = page.getByRole("button", { name: label, exact: true });
-    if (kind === "participant") {
-      page.once("dialog", (dialog) => void dialog.accept());
-    }
-    const downloadPromise = page.waitForEvent("download");
-    await button.click();
-    const download = await downloadPromise;
-    const extension = kind === "bundle" || kind === "participant"
-      ? ".zip"
-      : kind === "path" || kind === "metadata" || kind === "inference"
-        ? ".csv"
-        : ".json";
-    const destination = args.downloadDirectory + "/" + kind + extension;
-    await download.saveAs(destination);
-    saved[kind] = destination;
+async function downloadAllArtifacts(page) {
+  await page.getByRole("navigation", { name: "Analysis modes" }).getByRole("button", { name: /^Stats/ }).click();
+  const panel = page.getByTestId("open-ena-native-trajectory-analysis");
+  const participants = panel.getByRole("checkbox", { name: "Include participant data in this export", exact: true });
+  assert.equal(await participants.isChecked(), false);
+  const bundle = panel.getByRole("button", { name: "Export trajectory bundle", exact: true });
+  const downloads = { aggregate: {}, participant: {} };
+  for (const kind of ["aggregate", "participant"]) {
+    if (kind === "participant") await participants.check();
+    const zip = await saveNativeDownload(page, bundle, join(downloadDirectory, `${kind}.zip`), kind === "participant");
+    assert.equal(zip.suggestedFilename, "open-ena-native-trajectory.zip");
+    downloads[kind].bundle = zip.path;
+    const names = ["analysis.json", "plot-specification.json", "trajectory-inference.csv", "manifest.json", ...(kind === "participant" ? ["participants.json"] : [])];
+    for (const name of names) downloads[kind][name] = (await saveNativeDownload(page, panel.getByRole("button", { name: `Download ${name}`, exact: true }), join(downloadDirectory, `${kind}-${name}`), kind === "participant")).path;
   }
-  return saved;
+  await nativeScience(page);
+  return downloads;
 }
 
 async function readBrowserErrors(page, args) {
@@ -2487,11 +2393,13 @@ async function readBrowserErrors(page, args) {
     const digestHex = async (bytes) => [...new Uint8Array(
       await crypto.subtle.digest("SHA-256", bytes),
     )].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const chunkSha256 = await digestHex(sourceBytes);
+    if (input.ownedSourceSha256 && chunkSha256 !== input.ownedSourceSha256) return null;
     return {
       ...input,
       sourceLineNumber: input.reportedLineNumber + 1,
       chunkBytes: sourceBytes.byteLength,
-      chunkSha256: await digestHex(sourceBytes),
+      chunkSha256,
       sourceLineSha256: await digestHex(new TextEncoder().encode(sourceLine)),
     };
   }, candidate);
@@ -2531,6 +2439,7 @@ async function readBrowserErrors(page, args) {
         browser: args.browser,
         currentOrigin,
         warning,
+        ownedServedChunk: runtime.receipt.servedAssets.find(asset => asset.status === 200 && !asset.error && warning.location?.url === currentOrigin + asset.path),
       })
       : null;
     const angleReadPixelsDiagnostic = classifyChromiumAngleReadPixelsDiagnostic({
@@ -2581,368 +2490,77 @@ async function readBrowserRuntimeEvidence(page) {
 }
 
 let primaryFailure = null;
-let baseUrl = externalBaseUrl;
-let browserOpened = false;
 let completedSummary = null;
-
 try {
-  execFileSync("npx", ["--version"], { encoding: "utf8", timeout: 30_000 });
-  const playwrightCliVersion = runCli(["--version"], "resolve Playwright CLI", 120_000).trim();
-  assert.ok(playwrightCliVersion.length > 0, "the Playwright CLI did not expose its version");
-  if (!baseUrl) {
-    ownsDistDirectory = true;
-    const port = await findOpenPort();
-    baseUrl = "http://127.0.0.1:" + port;
-    removeOwnedDistDirectory();
-    const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => (
-      !key.startsWith("OPEN_ENA_LONGITUDINAL_SMOKE_")
-      && !["OPEN_ENA_USERNAME", "OPEN_ENA_PASSWORD", "OPEN_ENA_SESSION_SECRET"].includes(key)
-    )));
-    const ownedEnvironment = {
-      ...environment,
-      NODE_ENV: "production",
-      NEXT_DIST_DIR: ownedDistDirName,
-      OPEN_ENA_USERNAME: username,
-      OPEN_ENA_PASSWORD: password,
-      OPEN_ENA_SESSION_SECRET: sessionSecret,
-      // The smoke owns a random loopback port; bind production Origin checks
-      // to that exact origin rather than the deployment's public origin.
-      OPEN_ENA_PUBLIC_ORIGIN: baseUrl,
-      OPEN_ENA_ALLOWED_ORIGINS: baseUrl,
-      OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1",
+  assert.equal(externalBaseUrl, null, "longitudinal browser requires an owned local production server");
+  runtime = await createServedBrowserV3({ root: projectRoot, directory: join(artifactDirectory, "runtime"), credentials: { username, password, secret: sessionSecret }, redact, serverLogPath, disableBrowserCache: true });
+  const plotAudit = await runBrowserPhase("native trajectory model ranks path and rendering", authenticateAndRunTrajectory, { username, password, baseUrl: runtime.baseUrl }, 240_000);
+  const scientificArgs = { expectedResultHash: plotAudit.resultHashes[0], expectedTaskRequestCount: plotAudit.taskRequestCount, expectedCodes: plotAudit.expectedCodes, orderedHorizons: plotAudit.orderedHorizons, artifactDirectory };
+  const downloads = await runBrowserPhase("all native aggregate and participant downloads", downloadAllArtifacts, {}, 240_000);
+  const aggregate = extractAndVerifyBundle(downloads.aggregate.bundle, "aggregate", false);
+  const participant = extractAndVerifyBundle(downloads.participant.bundle, "participant", true);
+  verifyStandaloneDownloads(downloads.aggregate, aggregate); verifyStandaloneDownloads(downloads.participant, participant);
+  assert.deepEqual(aggregate.manifest.binding, plotAudit.binding);
+  assert.deepEqual(participant.manifest.binding, plotAudit.binding);
+  const expectedPathRows = aggregate.analysis.pathComparison.tests.map(test => [test.metric, test.timeIndex === null ? "—" : String(test.timeIndex), test.distanceSpace ?? "", String(test.observed), String(test.pValue), String(test.holmAdjustedPValue), String(test.permutationCount)]);
+  assert.deepEqual(plotAudit.pathRows, expectedPathRows, "native rendered path rows differ from the actual exported path tests");
+  for (const standalone of plotAudit.rankDownloads) {
+    const savedRank = JSON.parse(readFileSync(standalone.path, "utf8"));
+    const bundled = aggregate.analysis.ranks.find(rank => rank.kind === savedRank.inference.kind);
+    assert.ok(bundled, "genuine standalone rank is absent from bundle");
+    assert.equal(bundled.scientificContextSha256, savedRank.context.scientificContextSha256);
+    const compareAllowed = (aggregateValue, sourceValue, label) => {
+      if (Array.isArray(aggregateValue)) { assert.ok(Array.isArray(sourceValue), label); assert.equal(aggregateValue.length, sourceValue.length, label); aggregateValue.forEach((value, i) => compareAllowed(value, sourceValue[i], `${label}[${i}]`)); }
+      else if (aggregateValue && typeof aggregateValue === "object") { assert.ok(sourceValue && typeof sourceValue === "object", label); for (const [key, value] of Object.entries(aggregateValue)) compareAllowed(value, sourceValue[key], `${label}.${key}`); }
+      else assert.deepEqual(aggregateValue, sourceValue, label);
     };
-    const logFd = openSync(serverLogPath, "w");
-    try {
-      process.stdout.write("[longitudinal V3 smoke] build production application ... ");
-      execFileSync(
-        "npm",
-        ["run", "build"],
-        {
-          cwd: projectRoot,
-          env: ownedEnvironment,
-          stdio: ["ignore", logFd, logFd],
-          timeout: 600_000,
-        },
-      );
-      process.stdout.write("PASS\n");
-      ownedServer = spawn(
-        "npm",
-        ["run", "start", "--", "--hostname", "127.0.0.1", "--port", String(port)],
-        {
-          cwd: projectRoot,
-          detached: process.platform !== "win32",
-          env: ownedEnvironment,
-          stdio: ["ignore", logFd, logFd],
-        },
-      );
-    } finally {
-      closeSync(logFd);
+    for (const table of ["rows", "omnibusRows", "followupRows"]) {
+      compareAllowed(bundled[table], savedRank.inference[table] ?? [], `${savedRank.inference.kind}.${table}`);
+      for (const row of bundled[table]) for (const required of ["test", "axis", "status", "pRaw", "pHolm"]) assert.ok(Object.hasOwn(row, required), `bundle omitted ${required}`);
     }
-    if (!ownedServer) {
-      throw new Error("The smoke-owned production server did not start.");
-    }
-    ownedServer.once("error", (error) => {
-      process.stderr.write("[longitudinal V3 smoke] server error: " + redact(error.message) + "\n");
-    });
-    await waitForServer(baseUrl + "/en/open-ena");
+    compareAllowed(bundled.ledger, savedRank.inference.ledger, `${savedRank.inference.kind}.ledger`);
   }
-
-  browserSessionAttempted = true;
-  runCli(["open", baseUrl + "/en/open-ena", "--browser", smokeBrowser], "open browser", 120_000);
-  browserOpened = true;
-  const browserRuntimeEvidence = runBrowserPhase(
-    "record the actual browser runtime identity",
-    readBrowserRuntimeEvidence,
-  );
-
-  const plotAudit = runBrowserPhase(
-    "authenticate, load the trajectory sample, and run the V2 envelope",
-    authenticateAndRunTrajectory,
-    {
-      username,
-      password,
-      expectedCodes: expectedCodeLabels,
-      artifactDirectory,
-    },
-    240_000,
-  );
-  const railPanelAudit = runBrowserPhase(
-    "open Data, Model, Stats, and AI inside the mounted trajectory presenter",
-    exerciseNonPlotRailPanels,
-    {
-      expectedResultHash: plotAudit.resultHashes[0],
-      expectedTaskRequestCount: plotAudit.taskRequestCount,
-      artifactDirectory,
-    },
-  );
-  plotAudit.trajectoryBoundaryAudit = railPanelAudit;
-  const displayAudit = runBrowserPhase(
-    "exercise seven 3D cameras and six 2D projections without rerunning",
-    exerciseCamerasAndProjections,
-    {
-      cameraPresets,
-      expectedCameraLabels,
-      expectedCameraStates,
-      expectedResultHash: plotAudit.resultHashes[0],
-      expectedTaskRequestCount: plotAudit.taskRequestCount,
-      projections: twoDimensionalProjections,
-      browser: smokeBrowser,
-      artifactDirectory,
-    },
-  );
-  const plotActionAudit = runBrowserPhase(
-    "exercise perspective, orthographic, 2D, and Copy plot actions",
-    exerciseTrajectoryPlotActions,
-    {
-      expectedResultHash: plotAudit.resultHashes[0],
-      expectedTaskRequestCount: plotAudit.taskRequestCount,
-      expectedCameraState: expectedCameraStates.isometric,
-      artifactDirectory,
-    },
-    240_000,
-  );
-  const fallbackA11yAudit = runBrowserPhase(
-    "exercise reversible fallback fullscreen keyboard-modal behavior",
-    exerciseFallbackFullscreenAccessibility,
-    { viewport: { width: 1440, height: 1000 } },
-    180_000,
-    [readFullscreenPlotLayout, assertFullscreenPlotLayout],
-  );
-  const responsiveAudit = runBrowserPhase(
-    "capture desktop, tablet, mobile, and fullscreen overflow evidence",
-    captureResponsiveEvidence,
-    { viewports: viewportMatrix, artifactDirectory },
-    180_000,
-    [readFullscreenPlotLayout, assertFullscreenPlotLayout],
-  );
-  runBrowserPhase(
-    "click all seven trajectory downloads",
-    downloadAllArtifacts,
-    { downloadDirectory },
-    240_000,
-  );
-  const downloads = {
-    bundle: join(downloadDirectory, "bundle.zip"),
-    path: join(downloadDirectory, "path.csv"),
-    metadata: join(downloadDirectory, "metadata.csv"),
-    inference: join(downloadDirectory, "inference.csv"),
-    analysis: join(downloadDirectory, "analysis.json"),
-    plotly: join(downloadDirectory, "plotly.json"),
-    participant: join(downloadDirectory, "participant.zip"),
-  };
-  const browserErrors = runBrowserPhase(
-    "collect console and page errors",
-    readBrowserErrors,
-    { browser: smokeBrowser },
-    180_000,
-    [classifyChromiumAngleReadPixelsDiagnostic, classifyChromiumCanvasReadbackDiagnostic],
-  );
-  assert.deepEqual(browserErrors.consoleErrors, [], "browser console contains errors");
-  assert.deepEqual(browserErrors.consoleWarnings, [], "browser console contains warnings");
-  assert.deepEqual(browserErrors.pageErrors, [], "browser emitted page errors");
-  assert.ok(
-    browserErrors.platformDiagnostics.canvas2dReadbackDiagnostics.length <= 1,
-    "Chromium emitted repeated Plotly Canvas2D readback diagnostics",
-  );
-  const chromiumAngleReadPixelsDiagnostics =
-    browserErrors.platformDiagnostics.chromiumAngleReadPixelsDiagnostics;
-  assert.ok(
-    chromiumAngleReadPixelsDiagnostics.count <= 4,
-    "Chromium emitted more ANGLE ReadPixels driver diagnostics than the audited platform pattern allows",
-  );
-  assert.ok(
-    chromiumAngleReadPixelsDiagnostics.repeatSuppressionCount <= 1,
-    "Chromium emitted repeated ANGLE terminal suppression diagnostics",
-  );
-  assert.ok(
-    chromiumAngleReadPixelsDiagnostics.sourcePaths.length <= 1,
-    "Chromium emitted ANGLE ReadPixels diagnostics from multiple source paths",
-  );
-  const cliConsole = runCli(["console", "error"], "read Playwright console summary");
-  assert.match(cliConsole, /Errors:\s*0/u);
-  const cliWarningMatch = cliConsole.match(/Warnings:\s*(\d+)/u);
-  assert.ok(cliWarningMatch, "Playwright console summary omitted its warning count");
-  const cliWarningCount = Number(cliWarningMatch[1]);
-  if (["chromium", "chrome", "msedge"].includes(smokeBrowser)) {
-    const classifiedChromiumWarningCount =
-      browserErrors.platformDiagnostics.canvas2dReadbackDiagnostics.length
-      + browserErrors.platformDiagnostics.chromiumAngleReadPixelsDiagnostics.count;
-    assert.equal(
-      cliWarningCount,
-      classifiedChromiumWarningCount,
-      "Chromium emitted an unclassified console warning",
-    );
-  } else if (smokeBrowser !== "firefox") {
-    assert.equal(cliWarningCount, 0, "browser emitted an unclassified console warning");
+  for (const member of aggregate.manifest.files) {
+    assert.deepEqual(participant.manifest.files.find(candidate => candidate.filename === member.filename), member, "participant opt-in changed aggregate descriptor");
+    assert.deepEqual(readFileSync(join(aggregate.extracted, member.filename)), readFileSync(join(participant.extracted, member.filename)));
   }
-
-  assert.equal(Object.keys(downloads).length, 7);
-  const aggregate = extractAndVerifyBundle(downloads.bundle, "aggregate", false);
-  const participant = extractAndVerifyBundle(downloads.participant, "participant", true);
-  assert.equal(aggregate.manifest.resultHash, participant.manifest.resultHash);
-  for (const member of aggregate.manifest.members.filter(
-    (candidate) => candidate.path !== "plotly-spec.json",
-  )) {
-    const participantMember = participant.manifest.members.find(
-      (candidate) => candidate.path === member.path,
-    );
-    assert.deepEqual(participantMember, member, "shared member differs: " + member.path);
-  }
-  assert.equal(aggregate.participantTraceCount, 0);
-  assert.ok(participant.participantTraceCount > 0);
-  assert.notEqual(
-    sha256(readFileSync(join(aggregate.extracted, "plotly-spec.json"))),
-    sha256(readFileSync(join(participant.extracted, "plotly-spec.json"))),
-    "participant opt-in must produce a distinct privacy-scoped Plotly member",
-  );
-  verifyStandaloneDownloads(downloads, aggregate);
-  const downloadEvidence = Object.fromEntries(
-    Object.entries(downloads).map(([kind, path]) => [kind, artifactEvidence(path)]),
-  );
-  for (const receipt of Object.values(downloadEvidence)) {
-    assert.match(receipt.file, /^downloads\//u, "download receipt escaped the downloads directory");
-    assert.ok(receipt.bytes > 0, "download receipt has no bytes");
-    assert.match(receipt.sha256, /^[a-f0-9]{64}$/u, "download receipt has an invalid SHA-256");
-  }
-
-  const serverLog = readServerLogTail();
-  assert.doesNotMatch(serverLog, /open_ena_longitudinal_smoke_password/u);
-  assert.doesNotMatch(serverLog, /open_ena_longitudinal_smoke_session_secret/u);
-
-  const {
-    trajectoryPresenterScreenshotPath,
-    ...trajectoryBoundaryAudit
-  } = plotAudit.trajectoryBoundaryAudit;
-  const portablePlotAudit = {
-    ...plotAudit,
-    trajectoryBoundaryAudit: {
-      ...trajectoryBoundaryAudit,
-      trajectoryPresenterScreenshot: artifactEvidence(trajectoryPresenterScreenshotPath),
-    },
-  };
-  const portableViewports = Object.fromEntries(
-    Object.entries(responsiveAudit.results).map(([name, evidence]) => {
-      const { pagePath, plotPath, shellPath, ...viewportEvidence } = evidence;
-      return [name, {
-        ...viewportEvidence,
-        pageScreenshot: artifactEvidence(pagePath),
-        plotScreenshot: artifactEvidence(plotPath),
-        shellScreenshot: artifactEvidence(shellPath),
-      }];
-    }),
-  );
-  const {
-    copy: plotActionCopy,
-    ...portablePlotActionAudit
-  } = plotActionAudit;
-  const {
-    copyPath,
-    ...portablePlotActionCopy
-  } = plotActionCopy;
-
-  completedSummary = {
-    status: "PASS",
-    browser: smokeBrowser,
-    playwrightCliSource: playwrightCli.source,
-    playwrightCliVersion,
-    runtimeBrowserVersion: browserRuntimeEvidence.version,
-    runtimeBrowserUserAgent: browserRuntimeEvidence.userAgent,
-    baseUrl,
-    serverLifecycle: ownedServer ? "owned" : "external",
-    plotAudit: portablePlotAudit,
-    cameras: Object.keys(displayAudit.cameraStates),
-    cameraStates: displayAudit.cameraStates,
-    cameraLabels: displayAudit.cameraLabels,
-    cameraInteraction: {
-      beforeDrag: displayAudit.beforeDrag,
-      afterDrag: displayAudit.afterDrag,
-      restoredAfterDrag: displayAudit.restoredAfterDrag,
-      dragVerified: displayAudit.dragVerified,
-      dragAttempts: displayAudit.dragAttempts,
-    },
-    cameraScreenshots: Object.fromEntries(
-      Object.entries(displayAudit.cameraScreenshots)
-        .map(([preset, path]) => [preset, artifactEvidence(path)]),
-    ),
-    projections: Object.keys(displayAudit.projectionStates),
-    plotActions: {
-      ...portablePlotActionAudit,
-      copy: {
-        ...portablePlotActionCopy,
-        receipt: artifactEvidence(copyPath),
-      },
-    },
-    fallbackA11yAudit,
-    viewports: portableViewports,
-    fullscreen: {
-      box: responsiveAudit.fullscreenBox,
-      viewport: responsiveAudit.fullscreenViewport,
-      plotAudit: responsiveAudit.fullscreenPlotAudit,
-      screenshot: artifactEvidence(responsiveAudit.fullscreenPath),
-    },
-    downloads: downloadEvidence,
-    aggregate: {
-      resultHash: aggregate.manifest.resultHash,
-      contentSetHash: aggregate.manifest.contentSetHash,
-      zipSha256: aggregate.zipSha256,
-    },
-    participant: {
-      participantLevelIncluded: participant.manifest.participantLevelIncluded,
-      contentSetHash: participant.manifest.contentSetHash,
-      zipSha256: participant.zipSha256,
-    },
-    browserErrors: {
-      consoleErrors: 0,
-      consoleWarnings: 0,
-      pageErrors: 0,
-      platformDiagnostics: browserErrors.platformDiagnostics,
-    },
-    artifacts: ".",
-  };
+  await nativeProjectionControl(runtime.page).selectOption("3d");
+  const railPanelAudit = await runBrowserPhase("persistent Data Model Stats AI and Plot rail", exerciseNonPlotRailPanels, scientificArgs);
+  const displayAudit = await runBrowserPhase("seven cameras manual orbit and six native SVG projections", exerciseCamerasAndProjections, { ...scientificArgs, cameraPresets, expectedCameraLabels, expectedCameraStates, projections: twoDimensionalProjections, browser: smokeBrowser }, 240_000);
+  const plotActionAudit = await runBrowserPhase("perspective orthographic native SVG and actual PNG actions", exerciseTrajectoryPlotActions, { ...scientificArgs, expectedCameraState: expectedCameraStates.isometric }, 240_000);
+  const pendingImageAudit = await runBrowserPhase("real pending PNG denial clipboard rejection and recovery", exercisePendingImageActions, {}, 240_000);
+  await runBrowserPhase("actual loaded-image latency and queued-render Exit focus return", checkQueuedRenderExitV3, {}, 180_000);
+  await runBrowserPhase("later user focus cancels queued fullscreen return", checkQueuedRenderExitV3, { mode: "user-choice" }, 180_000);
+  await runtime.page.getByRole("navigation", { name: "Analysis modes" }).getByRole("button", { name: "Plot Tools", exact: true }).click();
+  await runtime.page.getByRole("button", { name: "Reset node positions", exact: true }).click();
+  await runtime.page.waitForFunction(() => document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy") === "false", null, { timeout: 30000 });
+  const fallbackA11yAudit = await runBrowserPhase("reversible fallback fullscreen keyboard modal", exerciseFallbackFullscreenAccessibility, { viewport: { width: 1440, height: 1000 } });
+  const responsiveAudit = await runBrowserPhase("responsive native fullscreen and canvas geometry", captureResponsiveEvidence, { viewports: viewportMatrix, artifactDirectory });
+  const finalCurrentScience = await nativeScience(runtime.page);
+  const staleImageAudit = await runBrowserPhase("stale model suppresses actual awaited PNG output", exerciseStaleImageLease, {}, 180_000);
+  const browserErrors = await runBrowserPhase("strict runtime warning classification", readBrowserErrors, { browser: smokeBrowser });
+  assert.deepEqual(browserErrors.consoleErrors, []); assert.deepEqual(browserErrors.consoleWarnings, []); assert.deepEqual(browserErrors.pageErrors, []);
+  assert.ok(browserErrors.platformDiagnostics.canvas2dReadbackDiagnostics.length <= 1);
+  const chromiumAngleReadPixelsDiagnostics = browserErrors.platformDiagnostics.chromiumAngleReadPixelsDiagnostics;
+  assert.ok(chromiumAngleReadPixelsDiagnostics.count <= 4);
+  assert.ok(chromiumAngleReadPixelsDiagnostics.repeatSuppressionCount <= 1);
+  assert.ok(chromiumAngleReadPixelsDiagnostics.sourcePaths.length <= 1);
+  const screenshots = Object.fromEntries(readdirSync(artifactDirectory).filter(name => /\.(png|svg)$/u.test(name)).map(name => [name, artifactEvidence(join(artifactDirectory, name))]));
+  const browserRuntimeEvidence = await readBrowserRuntimeEvidence(runtime.page);
+  completedSummary = { status: "PASS", finalCurrentScience, finalResultStatus: staleImageAudit.finalState.resultStatus, source: { ...sourceEvidenceBefore, smokeSourceSha256 }, runtimeBrowserVersion: browserRuntimeEvidence.version, runtimeBrowserUserAgent: browserRuntimeEvidence.userAgent, plotAudit, screenshots, downloads, aggregate: { manifest: aggregate.manifest, zipSha256: aggregate.zipSha256 }, participant: { manifest: participant.manifest, zipSha256: participant.zipSha256 }, railPanelAudit, displayAudit, plotActionAudit, pendingImageAudit, fallbackA11yAudit, responsiveAudit, staleImageAudit, browserErrors };
 } catch (caught) {
   primaryFailure = caught;
-  if (browserOpened) {
-    try {
-      runCli(
-        ["screenshot", "--filename", failureScreenshotPath],
-        "capture failure screenshot",
-        30_000,
-      );
-    } catch {
-      // Preserve the primary failure.
-    }
-  }
-  const serverLog = readServerLogTail();
-  if (serverLog) {
-    process.stderr.write("[longitudinal V3 smoke] server log tail:\n" + serverLog + "\n");
-  }
+  if (runtime) { try { await runtime.page.screenshot({ path: failureScreenshotPath, fullPage: true }); } catch {} }
 } finally {
-  try {
-    await cleanupOwnedResources();
-  } catch (cleanupError) {
-    if (primaryFailure) {
-      process.stderr.write("[longitudinal V3 smoke] cleanup failure: " + redact(cleanupError) + "\n");
-    } else {
-      primaryFailure = cleanupError;
-    }
-  }
+  if (runtime) { try { await runtime.close(primaryFailure); } catch (cleanupError) { primaryFailure ??= cleanupError; } }
 }
-
-if (primaryFailure) throw primaryFailure;
-assert.ok(completedSummary, "the browser smoke did not produce a completed evidence summary");
 const sourceEvidenceAfter = readGitEvidence();
 assert.equal(sourceEvidenceAfter.gitHead, sourceEvidenceBefore.gitHead, "Git HEAD changed during browser evidence capture");
 assert.equal(sourceEvidenceAfter.gitTree, sourceEvidenceBefore.gitTree, "Git tree changed during browser evidence capture");
 assert.equal(sourceEvidenceAfter.clean, true, "source worktree is dirty after browser evidence cleanup");
-completedSummary.source = {
-  gitHead: sourceEvidenceBefore.gitHead,
-  gitTree: sourceEvidenceBefore.gitTree,
-  worktreeCleanBefore: sourceEvidenceBefore.clean,
-  worktreeCleanAfter: sourceEvidenceAfter.clean,
-  smokeSourceSha256,
-};
-writeFileSync(
-  join(artifactDirectory, "summary.json"),
-  JSON.stringify(completedSummary, null, 2) + "\n",
-);
-process.stdout.write(JSON.stringify(completedSummary, null, 2) + "\n");
+if (primaryFailure) { writeFileSync(join(artifactDirectory, "failure.json"), JSON.stringify({ status: "FAIL", message: redact(primaryFailure.stack), source: { ...sourceEvidenceBefore, smokeSourceSha256 } }, null, 2)); throw primaryFailure; }
+assert.ok(completedSummary);
+completedSummary.source.worktreeCleanBefore = sourceEvidenceBefore.clean;
+completedSummary.source.worktreeCleanAfter = sourceEvidenceAfter.clean;
+writeFileSync(join(artifactDirectory, "summary.json"), JSON.stringify(completedSummary, null, 2) + "\n");
+process.stdout.write(JSON.stringify({ status: completedSummary.status, evidence: artifactDirectory }) + "\n");

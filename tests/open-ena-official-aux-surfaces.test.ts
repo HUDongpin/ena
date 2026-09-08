@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -385,54 +386,15 @@ test("ordered Plot Tools consume complete Traditional and Simplified Chinese vis
   }
 });
 
-test("ONA workspace routes locale copy for directed-space chrome and plot tools", () => {
-  const workspace = source("components/open-ena/OpenEnaWorkspace.tsx");
+test("native ONA layouts and persistent tools retain explicit locale copy ownership", () => {
 
-  assert.match(workspace, /copy=\{completedResultKind === "ona" \? copy\.ona\.plotTools : undefined\}/);
-  for (const key of [
-    "directedSpace",
-    "twoD",
-    "downloadBundle",
-    "staleTitle",
-    "staleDescription",
-    "rebuilding",
-    "cancel",
-    "statsKicker",
-  ]) {
-    assert.match(workspace, new RegExp(`copy\\.ona\\.workspace\\.${key}`));
+  assert.match(v3, /copy=\{copy.ona.layout\}/);
+  assert.match(v3, /copy=\{copy\.ona\.plotTools\}/);
+  for (const locale of ["en", "zh-hant", "zh-hans"] as const) {
+    assert.ok(getOpenEnaCopy(locale).ona.plotTools.plotSettings.length > 0);
   }
-  assert.match(workspace, /copy\.ona\.unavailable\.inference/);
-  assert.match(workspace, /copy\.ona\.unavailable\.groupContrast/);
-  assert.match(workspace, /copy\.ona\.dataView\.missingDatasetBinding/);
-  assert.doesNotMatch(workspace, /copy\.ona\.unavailable\.reference/);
+  assert.match(v3, /copy.ona.layout.descriptiveBoundary/);
 
-  for (const englishLiteral of [
-    "p² directed space",
-    "2D ONA",
-    "Download ONA bundle",
-    "The directed ONA view remains bound to the last successful ordered model. Rebuild to apply the pending controls.",
-    "Rebuilding ordered network with jENA",
-    "ONA · descriptive",
-    "ONA is descriptive-only in this release; inferential tests are not available.",
-    "ONA group networks are descriptive means; pairwise subtraction is unavailable.",
-    "ONA Data View requires the analyzed dataset SHA-256 binding.",
-    "Reference rotation is unavailable for ONA. Return to the Standard ENA family before importing a reference.",
-  ]) {
-    assert.ok(!workspace.includes(englishLiteral), `ONA Workspace must not hard-code ${englishLiteral}`);
-  }
-
-  const enCopy = getOpenEnaCopy("en").ona.workspace;
-  const zhHantCopy = getOpenEnaCopy("zh-hant").ona.workspace;
-  const zhHansCopy = getOpenEnaCopy("zh-hans").ona.workspace;
-  assert.equal(enCopy.twoD, "2D ONA");
-  assert.equal(zhHantCopy.twoD, "2D ONA");
-  assert.equal(zhHansCopy.twoD, "2D ONA");
-  assert.notEqual(zhHantCopy.directedSpace, enCopy.directedSpace);
-  assert.notEqual(zhHansCopy.directedSpace, enCopy.directedSpace);
-  assert.notEqual(zhHantCopy.downloadBundle, enCopy.downloadBundle);
-  assert.notEqual(zhHansCopy.downloadBundle, enCopy.downloadBundle);
-  assert.notEqual(zhHantCopy.statsKicker, enCopy.statsKicker);
-  assert.notEqual(zhHansCopy.statsKicker, enCopy.statsKicker);
 });
 
 test("persistent Plot Tools source wires controlled values exclusively through callbacks", () => {

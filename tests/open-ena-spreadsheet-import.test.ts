@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -41,21 +42,14 @@ async function spreadsheetModule(): Promise<SpreadsheetModule> {
   return loaded as SpreadsheetModule;
 }
 
-test("the coded-data picker accepts CSV and XLSX, including their browser MIME types", () => {
-  const acceptValue = workspace.match(
-    /ref=\{fileInputRef\}[\s\S]*?accept="([^"]+)"/,
-  )?.[1];
-  assert.ok(acceptValue, "the coded-data file picker must declare accepted formats");
+test("coded-data picker advertises CSV and XLSX extensions and browser MIME types", () => {
 
-  const accepted = new Set(acceptValue.split(",").map((value) => value.trim()));
-  assert.equal(accepted.has(".csv"), true);
-  assert.equal(accepted.has(".xlsx"), true);
-  assert.equal(accepted.has("text/csv"), true);
-  assert.equal(
-    accepted.has("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-    true,
-  );
-  assert.equal(accepted.has(".xls"), false, "legacy XLS is not part of the supported contract");
+  const markup = shell();
+  const accept = markup.match(/aria-label="Open coded CSV or XLSX"[^>]*accept="([^"]+)"/)?.[1];
+  assert.deepEqual(accept?.split(","), [".csv", ".xlsx", "text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]);
+  assert.match(v3, /parseXlsx/);
+  assert.match(v3, /prepareTypedCsvSourceV3/);
+
 });
 
 test("English, Simplified Chinese, and Traditional Chinese all disclose CSV and XLSX import", () => {

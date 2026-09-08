@@ -15,12 +15,14 @@ export {
   accumulateDataChunked,
   accumulateDataStreaming,
   createAccumulationStream,
+  EnaNumericalError,
   expandOrderedPriorRowIndices
 } from "./performance.js";
 export type {
   AccumulationChunkState,
   AccumulationStream,
   ChunkedAccumulateOptions,
+  EnaNumericalErrorCode,
   StreamingAccumulateOptions,
   StreamingMaterialization
 } from "./performance.js";

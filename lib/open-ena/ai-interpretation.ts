@@ -1,3 +1,25 @@
+import { assertCurrentCapabilityV3 } from "./inference-consumers-v3";
+import type { OpenEnaEndpointControlsV3 } from "./inference-consumers-v3";
+import type {
+  OpenEnaTrajectoryControlsV3,
+  HorizonIdentityV3,
+} from "./longitudinal-bound-v3";
+import { buildLongitudinalViewV3 } from "./longitudinal-bound-v3";
+import {
+  assertOpenEnaInferenceCoordinatorConsumerV3,
+  assertOpenEnaTrajectoryInferenceConsumerV3,
+} from "./inference-v2";
+import type {
+  OpenEnaEndpointInferenceResultV3,
+  OpenEnaTrajectoryInferenceResultV3,
+} from "./inference-v2";
+import {
+  publicBoundOrderingV3,
+  publicProjectionV3,
+  typedIdentityKeyV3,
+} from "./bound-labels-v3";
+import { snapshotPlainJsonRecordV3 } from "./model-v3/canonical-json";
+
 import type { Locale } from "../i18n";
 import { assertOpenEnaCapabilityForContext } from "./capabilities";
 import {
@@ -1268,9 +1290,63 @@ function omission(
   };
 }
 
+/** Shared pure wire projection: statistical facts and resolved request-local
+ * roles/period indexes, never a reconstructed coordinator receipt. */
+type InferenceProjectionFactsV3 =
+  | { kind: "endpoint-independent"; rows: OpenEnaMannWhitneyInferenceRowV2[] }
+  | {
+      kind: "trajectory-independent-period";
+      rows: OpenEnaMannWhitneyInferenceRowV2[];
+    }
+  | { kind: "trajectory-paired-periods"; rows: OpenEnaWilcoxonInferenceRowV2[] }
+  | {
+      kind: "trajectory-repeated-periods";
+      omnibusRows: OpenEnaFriedmanInferenceRowV2[];
+      followupRows: OpenEnaWilcoxonInferenceRowV2[];
+      ledger: { completeBlockCount: number } | null;
+    };
+
 function buildInferenceProjection(
   result: OpenEnaResult,
   inference: OpenEnaInferenceResultV2,
+) {
+  let scope: OpenEnaAiInferenceScopeV2;
+  if (inference.kind === "endpoint-independent")
+    scope = { kind: inference.kind, groupRoles: ["primary", "secondary"] };
+  else if (inference.kind === "trajectory-independent-period")
+    scope = {
+      kind: inference.kind,
+      groupRoles: ["primary", "secondary"],
+      periodIndex: periodIndex(inference, inference.scope.period),
+      periodCount: periodCount(inference),
+    };
+  else if (inference.kind === "trajectory-paired-periods")
+    scope = {
+      kind: inference.kind,
+      groupRole: roleForSelectedRepeatedGroup(result, inference),
+      earlierPeriodIndex: periodIndex(inference, inference.scope.earlierPeriod),
+      laterPeriodIndex: periodIndex(inference, inference.scope.laterPeriod),
+      periodCount: periodCount(inference),
+      differenceDirection: "later-minus-earlier",
+      cohortPolicy: "pairwise-complete",
+    };
+  else
+    scope = {
+      kind: inference.kind,
+      groupRole: roleForSelectedRepeatedGroup(result, inference),
+      selectedPeriodIndices: inference.scope.periods.map((period) =>
+        periodIndex(inference, period),
+      ),
+      periodCount: periodCount(inference),
+      cohortPolicy: "all-period-complete",
+      posthocContrasts: "all-period-pairs",
+    };
+  return projectInferenceFactsV3(inference, scope);
+}
+
+function projectInferenceFactsV3(
+  inference: InferenceProjectionFactsV3,
+  scope: OpenEnaAiInferenceScopeV2,
 ): {
   scope: OpenEnaAiInferenceScopeV2;
   members: OpenEnaAiInferenceMemberV2[];
@@ -1278,15 +1354,21 @@ function buildInferenceProjection(
 } {
   const members: OpenEnaAiInferenceMemberV2[] = [];
   const omissions: OpenEnaAiInferenceOmissionV2[] = [];
-  if (inference.kind === "endpoint-independent" || inference.kind === "trajectory-independent-period") {
+  if (
+    inference.kind === "endpoint-independent" ||
+    inference.kind === "trajectory-independent-period"
+  ) {
     for (const row of inference.rows) {
       const id = `comparison-${axisRole(row.axisIndex)}`;
-      const passesGate = row.nPrimary >= OPEN_ENA_AI_MIN_AGGREGATE_N
-        && row.nSecondary >= OPEN_ENA_AI_MIN_AGGREGATE_N;
+      const passesGate =
+        row.nPrimary >= OPEN_ENA_AI_MIN_AGGREGATE_N &&
+        row.nSecondary >= OPEN_ENA_AI_MIN_AGGREGATE_N;
       if (row.status !== "available") {
         omissions.push(omission(id, row, "comparison-family", "not-available"));
       } else if (!passesGate) {
-        omissions.push(omission(id, row, "comparison-family", "minimum-aggregate"));
+        omissions.push(
+          omission(id, row, "comparison-family", "minimum-aggregate"),
+        );
       } else {
         members.push({
           id,
@@ -1296,7 +1378,10 @@ function buildInferenceProjection(
           nPrimary: row.nPrimary,
           nSecondary: row.nSecondary,
           uPrimary: requiredFinite(row.uPrimary, "AI Mann-Whitney U primary"),
-          uSecondary: requiredFinite(row.uSecondary, "AI Mann-Whitney U secondary"),
+          uSecondary: requiredFinite(
+            row.uSecondary,
+            "AI Mann-Whitney U secondary",
+          ),
           rankBiserialPrimaryVsSecondary: requiredFinite(
             row.rankBiserialPrimaryVsSecondary,
             "AI Mann-Whitney rank-biserial effect",
@@ -1306,36 +1391,54 @@ function buildInferenceProjection(
     }
     if (inference.kind === "endpoint-independent") {
       return {
-        scope: { kind: inference.kind, groupRoles: ["primary", "secondary"] },
+        scope,
         members,
         omissions,
       };
     }
     return {
-      scope: {
-        kind: inference.kind,
-        groupRoles: ["primary", "secondary"],
-        periodIndex: periodIndex(inference, inference.scope.period),
-        periodCount: periodCount(inference),
-      },
+      scope,
       members,
       omissions,
     };
   }
 
   if (inference.kind === "trajectory-paired-periods") {
-    const groupRole = roleForSelectedRepeatedGroup(result, inference);
-    const earlier = periodIndex(inference, inference.scope.earlierPeriod);
-    const later = periodIndex(inference, inference.scope.laterPeriod);
+    if (scope.kind !== inference.kind)
+      throw new Error("AI scope kind mismatch");
+    const {
+      groupRole,
+      earlierPeriodIndex: earlier,
+      laterPeriodIndex: later,
+    } = scope;
     for (const row of inference.rows) {
       const id = `comparison-${axisRole(row.axisIndex)}-period-${earlier + 1}-period-${later + 1}`;
-      const passesGate = row.nMatched >= OPEN_ENA_AI_MIN_AGGREGATE_N
-        && row.nRanked >= OPEN_ENA_AI_MIN_AGGREGATE_N
-        && row.nNonzero >= OPEN_ENA_AI_MIN_AGGREGATE_N;
+      const passesGate =
+        row.nMatched >= OPEN_ENA_AI_MIN_AGGREGATE_N &&
+        row.nRanked >= OPEN_ENA_AI_MIN_AGGREGATE_N &&
+        row.nNonzero >= OPEN_ENA_AI_MIN_AGGREGATE_N;
       if (row.status !== "available") {
-        omissions.push(omission(id, row, "comparison-family", "not-available", earlier, later));
+        omissions.push(
+          omission(
+            id,
+            row,
+            "comparison-family",
+            "not-available",
+            earlier,
+            later,
+          ),
+        );
       } else if (!passesGate) {
-        omissions.push(omission(id, row, "comparison-family", "minimum-aggregate", earlier, later));
+        omissions.push(
+          omission(
+            id,
+            row,
+            "comparison-family",
+            "minimum-aggregate",
+            earlier,
+            later,
+          ),
+        );
       } else {
         members.push({
           id,
@@ -1363,23 +1466,17 @@ function buildInferenceProjection(
       }
     }
     return {
-      scope: {
-        kind: inference.kind,
-        groupRole,
-        earlierPeriodIndex: earlier,
-        laterPeriodIndex: later,
-        periodCount: periodCount(inference),
-        differenceDirection: "later-minus-earlier",
-        cohortPolicy: "pairwise-complete",
-      },
+      scope,
       members,
       omissions,
     };
   }
 
-  const groupRole = roleForSelectedRepeatedGroup(result, inference);
-  const selectedPeriodIndices = inference.scope.periods.map((period) => periodIndex(inference, period));
-  const completeGate = (inference.ledger?.completeBlockCount ?? 0) >= OPEN_ENA_AI_MIN_AGGREGATE_N;
+  if (scope.kind !== "trajectory-repeated-periods")
+    throw new Error("AI scope kind mismatch");
+  const { groupRole, selectedPeriodIndices } = scope;
+  const completeGate =
+    (inference.ledger?.completeBlockCount ?? 0) >= OPEN_ENA_AI_MIN_AGGREGATE_N;
   for (const row of inference.omnibusRows) {
     const id = `omnibus-${axisRole(row.axisIndex)}`;
     if (row.status !== "available") {
@@ -1397,7 +1494,10 @@ function buildInferenceProjection(
         nMissingCompleteBlocks: row.nMissingCompleteBlocks,
         nPeriods: row.nPeriods,
         q: requiredFinite(row.q, "AI Friedman Q"),
-        degreesFreedom: requiredFinite(row.degreesFreedom, "AI Friedman degrees of freedom"),
+        degreesFreedom: requiredFinite(
+          row.degreesFreedom,
+          "AI Friedman degrees of freedom",
+        ),
         kendallsW: requiredFinite(row.kendallsW, "AI Friedman Kendall W"),
       });
     }
@@ -1406,16 +1506,31 @@ function buildInferenceProjection(
     const earlier = selectedPeriodIndices[row.earlierPeriodIndex];
     const later = selectedPeriodIndices[row.laterPeriodIndex];
     if (earlier === undefined || later === undefined) {
-      throw new Error("AI repeated-period follow-up index is outside the selected-period scope.");
+      throw new Error(
+        "AI repeated-period follow-up index is outside the selected-period scope.",
+      );
     }
     const id = `posthoc-${axisRole(row.axisIndex)}-period-${earlier + 1}-period-${later + 1}`;
     if (row.status !== "available") {
-      omissions.push(omission(id, row, "posthoc-family", "not-available", earlier, later));
-    } else if (!completeGate
-      || row.nMatched < OPEN_ENA_AI_MIN_AGGREGATE_N
-      || row.nNonzero < OPEN_ENA_AI_MIN_AGGREGATE_N
-      || row.nRanked < OPEN_ENA_AI_MIN_AGGREGATE_N) {
-      omissions.push(omission(id, row, "posthoc-family", "minimum-aggregate", earlier, later));
+      omissions.push(
+        omission(id, row, "posthoc-family", "not-available", earlier, later),
+      );
+    } else if (
+      !completeGate ||
+      row.nMatched < OPEN_ENA_AI_MIN_AGGREGATE_N ||
+      row.nNonzero < OPEN_ENA_AI_MIN_AGGREGATE_N ||
+      row.nRanked < OPEN_ENA_AI_MIN_AGGREGATE_N
+    ) {
+      omissions.push(
+        omission(
+          id,
+          row,
+          "posthoc-family",
+          "minimum-aggregate",
+          earlier,
+          later,
+        ),
+      );
     } else {
       members.push({
         id,
@@ -1443,14 +1558,7 @@ function buildInferenceProjection(
     }
   }
   return {
-    scope: {
-      kind: inference.kind,
-      groupRole,
-      selectedPeriodIndices,
-      periodCount: periodCount(inference),
-      cohortPolicy: "all-period-complete",
-      posthocContrasts: "all-period-pairs",
-    },
+    scope,
     members,
     omissions,
   };
@@ -1637,7 +1745,7 @@ function trajectoryDescriptiveV2(
 }
 
 function boundariesV2(
-  inference: OpenEnaInferenceResultV2,
+  inference: Pick<OpenEnaInferenceResultV2, "kind" | "warnings">,
   hasMinimumAggregateOmission: boolean,
 ) {
   const selected = new Set<OpenEnaAiBoundaryCodeV2>(V2_BASE_BOUNDARIES);
@@ -2859,4 +2967,507 @@ export function parseOpenEnaAiInterpretationResponse(
     );
   }
   throw new Error("AI response schema version is invalid.");
+}
+
+/** LOCAL review only: exact canonical configuration is intentionally excluded
+ * from the outbound aggregate wire request. This entrypoint requires the real
+ * independent current plan even when no statistics are requested. */
+export async function buildAiInterpretationPayloadV3(
+  input: unknown,
+  independentPlan: unknown,
+) {
+  const result = await assertCurrentCapabilityV3(
+    input,
+    independentPlan,
+    "ai-interpretation",
+  );
+  return deepFreeze({
+    scope: "local-provenance-review" as const,
+    configurationSha256: result.binding.configurationSha256,
+    executionPlanSha256: result.binding.executionPlanSha256,
+    binding: result.binding,
+    configuration: result.configuration,
+    ordering: publicBoundOrderingV3(result),
+    projection: publicProjectionV3(result),
+    warnings: result.executionProvenance.diagnostics,
+    capabilityStatus: result.capabilityStatus,
+    currentness: "independent-plan-validated" as const,
+    stale: false as const,
+  });
+}
+
+type NativeAiSelectionV3 = { locale: Locale } & (
+  | {
+      inference: OpenEnaEndpointInferenceResultV3;
+      controls: OpenEnaEndpointControlsV3;
+    }
+  | {
+      inference: OpenEnaTrajectoryInferenceResultV3;
+      controls: OpenEnaTrajectoryControlsV3;
+    }
+);
+type NativeAiInferenceV3 = NativeAiSelectionV3["inference"];
+function nativeAiScopeV3(
+  envelope: NativeAiInferenceV3,
+): OpenEnaAiInferenceScopeV2 {
+  if (envelope.kind === "open-ena-endpoint-inference")
+    return {
+      kind: "endpoint-independent",
+      groupRoles: ["primary", "secondary"],
+    };
+  const request = envelope.context.request;
+  const indexes = new Map(
+    envelope.context.frameIndexHorizons.map((identity, index) => [
+      typedIdentityKeyV3(identity),
+      index,
+    ]),
+  );
+  const index = (identity: HorizonIdentityV3) => {
+    const value = indexes.get(typedIdentityKeyV3(identity));
+    if (value === undefined)
+      throw new TypeError("AI selected Horizon lacks a fitted frame index");
+    return value;
+  };
+  const periodCount = envelope.context.frameIndexHorizons.length;
+  if (request.kind === "trajectory-independent-period")
+    return {
+      kind: request.kind,
+      groupRoles: ["primary", "secondary"],
+      periodIndex: index(request.period),
+      periodCount,
+    };
+  // A request-local role carries no full dictionary index or source label.
+  const groupRole =
+    request.group === null ? ("all-units" as const) : ("group-1" as const);
+  if (request.kind === "trajectory-paired-periods")
+    return {
+      kind: request.kind,
+      groupRole,
+      earlierPeriodIndex: index(request.earlierPeriod),
+      laterPeriodIndex: index(request.laterPeriod),
+      periodCount,
+      differenceDirection: "later-minus-earlier",
+      cohortPolicy: "pairwise-complete",
+    };
+  return {
+    kind: request.kind,
+    groupRole,
+    selectedPeriodIndices: request.periods.map(index),
+    periodCount,
+    cohortPolicy: "all-period-complete",
+    posthocContrasts: "all-period-pairs",
+  };
+}
+
+/** Frame indexes serialize a partial fitted order. A V2 continuity field may
+ * only refer to a neighbor whose precedence is proved by the observed DAG. */
+function assertNativeAiPeriodPrecedenceV3(
+  envelope: OpenEnaTrajectoryInferenceResultV3,
+  periodIndex: number,
+) {
+  if (periodIndex === 0) return;
+  const p = envelope.result.executionProvenance;
+  const tokens = new Map(
+    p.identityDictionary.horizons.map((h) => [
+      typedIdentityKeyV3(h.fields),
+      h.token,
+    ]),
+  );
+  const previous = tokens.get(
+    typedIdentityKeyV3(envelope.context.frameIndexHorizons[periodIndex - 1]),
+  )!;
+  const current = tokens.get(
+    typedIdentityKeyV3(envelope.context.frameIndexHorizons[periodIndex]),
+  )!;
+  const edges = new Map<string, Set<string>>();
+  const order = p.ordering.resolvedHorizonOrder;
+  if (order.type !== "trajectory-horizon-order")
+    throw new TypeError("AI requires fitted trajectory order");
+  for (const unit of order.unitSequences)
+    for (let i = 1; i < unit.steps.length; i++) {
+      const from = unit.steps[i - 1].horizonToken;
+      const targets = edges.get(from) ?? new Set<string>();
+      targets.add(unit.steps[i].horizonToken);
+      edges.set(from, targets);
+    }
+  const queue = [previous],
+    seen = new Set(queue);
+  for (let i = 0; i < queue.length; i++)
+    for (const next of edges.get(queue[i]) ?? []) {
+      if (next === current) return;
+      if (!seen.has(next)) {
+        seen.add(next);
+        queue.push(next);
+      }
+    }
+  throw new TypeError(
+    "AI native wire cannot express continuity between incomparable fitted Horizons; review the native inference locally",
+  );
+}
+
+/** Aggregate descriptive facts derive from the receipt's complete bound model.
+ * Display filters never select the population, and no individual observations
+ * or identity dictionaries leave this helper. */
+function nativeDescriptiveV3(
+  envelope: NativeAiInferenceV3,
+  scope: OpenEnaAiInferenceScopeV2,
+): OpenEnaAiDescriptiveEvidenceV2 {
+  const result = envelope.result,
+    selectedAxes = envelope.controls.axes;
+  const axes = ([0, 1] as const).map((index) => ({
+    id: axisRole(index),
+    role: axisRole(index),
+    varianceShare: result.set.variance[selectedAxes[index]] ?? null,
+  })) as OpenEnaAiDescriptiveEvidenceV2["axes"];
+  const dictionary = result.executionProvenance.identityDictionary;
+  const byGroup = new Map(
+    dictionary.groups.map((group) => [
+      typedIdentityKeyV3(group.fields[0].value),
+      group.displayLabel,
+    ]),
+  );
+  const selected =
+    envelope.kind === "open-ena-endpoint-inference"
+      ? [
+          {
+            identity: envelope.controls.primaryGroup,
+            role: "primary" as const,
+          },
+          {
+            identity: envelope.controls.secondaryGroup,
+            role: "secondary" as const,
+          },
+        ]
+      : envelope.context.request.kind === "trajectory-independent-period"
+        ? [
+            {
+              identity: envelope.context.request.primaryGroup,
+              role: "primary" as const,
+            },
+            {
+              identity: envelope.context.request.secondaryGroup,
+              role: "secondary" as const,
+            },
+          ]
+        : [
+            {
+              identity: envelope.context.request.group,
+              role:
+                envelope.context.request.group === null
+                  ? ("all-units" as const)
+                  : ("group-1" as const),
+            },
+          ];
+  const mean = (rows: typeof result.set.points, column: string) =>
+    rows.reduce(
+      (sum, row) => sum + finiteExact(row[column], "AI aggregate coordinate"),
+      0,
+    ) / rows.length;
+  const selectedGroups = selected.map((item) => ({
+    ...item,
+    label:
+      item.identity === null
+        ? null
+        : byGroup.get(typedIdentityKeyV3(item.identity))!,
+  }));
+  if (envelope.kind === "open-ena-endpoint-inference") {
+    const rows = selectedGroups.map((g) =>
+      result.set.points.filter((row) => row.Group === g.label),
+    );
+    const eligible = rows.every(
+      (group) => group.length >= OPEN_ENA_AI_MIN_AGGREGATE_N,
+    );
+    const groups: OpenEnaAiEvidenceGroupV2[] = eligible
+      ? rows.map((group, index) => ({
+          id: `descriptive-${selectedGroups[index].role}`,
+          role: selectedGroups[index].role,
+          n: group.length,
+          meanCoordinates: {
+            "axis-1": mean(group, selectedAxes[0]),
+            "axis-2": mean(group, selectedAxes[1]),
+          },
+        }))
+      : [];
+    const weights = selectedGroups.map((group) =>
+      result.set.lineWeights.filter((row) => row.Group === group.label),
+    );
+    const edges: OpenEnaAiEvidenceEdgeV2[] = eligible
+      ? result.set.adjacencyKey
+          .map((edge) => ({
+            edge,
+            primaryWeight: mean(weights[0], edge.name),
+            secondaryWeight: mean(weights[1], edge.name),
+          }))
+          .sort(
+            (a, b) =>
+              Math.abs(b.primaryWeight - b.secondaryWeight) -
+                Math.abs(a.primaryWeight - a.secondaryWeight) ||
+              a.edge.name.localeCompare(b.edge.name),
+          )
+          .slice(0, OPEN_ENA_AI_MAX_EDGES)
+          .map((item, index) => ({
+            id: `edge-difference-${index + 1}`,
+            sourceCodeRole: `code-${item.edge.sourceIndex + 1}`,
+            targetCodeRole: `code-${item.edge.targetIndex + 1}`,
+            primaryWeight: item.primaryWeight,
+            secondaryWeight: item.secondaryWeight,
+            signedDifference: item.primaryWeight - item.secondaryWeight,
+          }))
+      : [];
+    return { axes, groups, edges, trajectory: null };
+  }
+  if (scope.kind === "trajectory-independent-period")
+    assertNativeAiPeriodPrecedenceV3(envelope, scope.periodIndex);
+  const view = buildLongitudinalViewV3(result);
+  let availableEntityCount = 0,
+    completeEntityCount = 0;
+  const groups: OpenEnaAiEvidenceGroupV2[] = [],
+    groupPeriods: OpenEnaAiTrajectoryPeriodV2[] = [];
+  for (const selected of selectedGroups) {
+    const entities = view.entities.filter(
+      (entity) =>
+        selected.label === null || entity.group?.label === selected.label,
+    );
+    availableEntityCount += entities.length;
+    completeEntityCount += entities.filter(
+      (entity) =>
+        entity.steps.length === envelope.context.frameIndexHorizons.length,
+    ).length;
+    if (entities.length < OPEN_ENA_AI_MIN_AGGREGATE_N) continue;
+    // Equal Unit weight for the across-period summary; observed steps stay
+    // equally represented within each Unit. The wire does not claim these are period centroids.
+    const coordinates = selectedAxes.map(
+      (axis) =>
+        entities.reduce(
+          (sum, entity) =>
+            sum +
+            mean(
+              entity.steps.map((step) => step.point),
+              axis,
+            ),
+          0,
+        ) / entities.length,
+    );
+    groups.push({
+      id: `descriptive-${selected.role}`,
+      role: selected.role,
+      n: entities.length,
+      meanCoordinates: { "axis-1": coordinates[0], "axis-2": coordinates[1] },
+    });
+    // The legacy reader requires the selected centroid for available independent
+    // period inference. Other native path summaries remain deliberately absent.
+    if (scope.kind === "trajectory-independent-period") {
+      const currentKey = typedIdentityKeyV3(
+        envelope.context.frameIndexHorizons[scope.periodIndex],
+      );
+      const previousKey =
+        scope.periodIndex > 0
+          ? typedIdentityKeyV3(
+              envelope.context.frameIndexHorizons[scope.periodIndex - 1],
+            )
+          : null;
+      const current: typeof result.set.points = [],
+        previous: typeof result.set.points = [];
+      let overlap = 0;
+      for (const entity of entities) {
+        const currentStep = entity.steps.find(
+          (step) => typedIdentityKeyV3(step.horizon.identity) === currentKey,
+        );
+        const previousStep =
+          previousKey === null
+            ? undefined
+            : entity.steps.find(
+                (step) =>
+                  typedIdentityKeyV3(step.horizon.identity) === previousKey,
+              );
+        if (currentStep) current.push(currentStep.point);
+        if (previousStep) previous.push(previousStep.point);
+        if (currentStep && previousStep) overlap++;
+      }
+      if (current.length >= OPEN_ENA_AI_MIN_AGGREGATE_N) {
+        const centroid = {
+          axis1: mean(current, selectedAxes[0]),
+          axis2: mean(current, selectedAxes[1]),
+        };
+        const continuityStatus =
+          scope.periodIndex === 0
+            ? ("start" as const)
+            : previous.length === 0
+              ? ("missing-period" as const)
+              : overlap === 0
+                ? ("no-contributor-overlap" as const)
+                : ("connected" as const);
+        if (
+          continuityStatus === "connected" &&
+          previous.length < OPEN_ENA_AI_MIN_AGGREGATE_N
+        )
+          throw new TypeError(
+            "AI native wire continuity requires a previous aggregate of at least 3 Units; review this period locally",
+          );
+        const delta =
+          continuityStatus === "connected"
+            ? {
+                axis1: centroid.axis1 - mean(previous, selectedAxes[0]),
+                axis2: centroid.axis2 - mean(previous, selectedAxes[1]),
+              }
+            : null;
+        groupPeriods.push({
+          id: `trajectory-${selected.role}-period-${scope.periodIndex + 1}`,
+          groupRole: selected.role,
+          periodIndex: scope.periodIndex,
+          nUsed: current.length,
+          nExcluded: entities.length - current.length,
+          centroid,
+          delta,
+          stepDistance: delta ? Math.hypot(delta.axis1, delta.axis2) : null,
+          continuityStatus,
+        });
+      }
+    }
+  }
+  // No path/delta is invented across an implementation-only frame linearization.
+  // Native rank evidence supplies the explicit selected scientific comparisons.
+  return {
+    axes,
+    groups,
+    edges: [],
+    trajectory: {
+      cohortPolicy: "available",
+      periodCount: "periodCount" in scope ? scope.periodCount : 0,
+      availableEntityCount,
+      completeEntityCount,
+      includedEntityCount: availableEntityCount,
+      groupPeriods,
+    },
+  };
+}
+
+/** The full native binding and typed context stay LOCAL. Only request is passed
+ * to the existing consent/review client and strict aggregate-only route. A V2
+ * wire binding alone is never evidence of native currentness or identity maps. */
+export async function buildAiInterpretationReviewV3(
+  input: unknown,
+  independentPlan: unknown,
+  selection: NativeAiSelectionV3,
+) {
+  const value = snapshotPlainJsonRecordV3(selection, "AI native selection");
+  if (
+    Object.keys(value).length !== 3 ||
+    Object.keys(value).some(
+      (key) => !["locale", "inference", "controls"].includes(key),
+    )
+  )
+    throw new TypeError(
+      "AI native selection requires locale, inference and controls",
+    );
+  const locale = aiLocale(value.locale as Locale);
+  const inference = value.inference;
+  // Dispatch is only a hint for the producer's private identity check below.
+  // Reject accessors/inherited kinds without ordinary reads of an unowned handle.
+  const kindDescriptor =
+    inference !== null && typeof inference === "object"
+      ? Object.getOwnPropertyDescriptor(inference, "kind")
+      : undefined;
+  if (
+    !kindDescriptor ||
+    !kindDescriptor.enumerable ||
+    !("value" in kindDescriptor) ||
+    (kindDescriptor.value !== "open-ena-endpoint-inference" &&
+      kindDescriptor.value !== "open-ena-trajectory-inference")
+  )
+    throw new TypeError("Native v3 inference receipt kind/authority mismatch");
+  const authority =
+    kindDescriptor.value === "open-ena-endpoint-inference"
+      ? assertOpenEnaInferenceCoordinatorConsumerV3(
+          inference,
+          input,
+          independentPlan,
+          value.controls as OpenEnaEndpointControlsV3,
+        )
+      : assertOpenEnaTrajectoryInferenceConsumerV3(
+          inference,
+          input,
+          independentPlan,
+          value.controls as OpenEnaTrajectoryControlsV3,
+        );
+  const envelope = await authority;
+  // The real consumer has strongly captured/validated this exact bound source
+  // against the independent current plan. Do not recapture caller graphs.
+  const bound = envelope.result;
+  if (bound.capabilityStatus["ai-interpretation"] !== "available")
+    throw new TypeError(
+      "ai-interpretation blocked by the bound model capability",
+    );
+  if (envelope.inference.status === "disabled")
+    throw new TypeError(
+      "AI requires confirmed available or not-estimable inference",
+    );
+  const scope = nativeAiScopeV3(envelope);
+  const facts: InferenceProjectionFactsV3 =
+    envelope.kind === "open-ena-endpoint-inference"
+      ? { kind: "endpoint-independent", rows: envelope.inference.rows }
+      : envelope.inference;
+  const projection = projectInferenceFactsV3(facts, scope);
+  const evidence: OpenEnaAiEvidenceV2 = {
+    kind: scope.kind,
+    modelType: envelope.result.configuration.analysis.model.type,
+    scope,
+    descriptive: nativeDescriptiveV3(envelope, scope),
+    inference: projection.members,
+    inferenceOmissions: projection.omissions,
+    boundaries: boundariesV2(
+      { kind: scope.kind, warnings: envelope.inference.warnings },
+      projection.omissions.some(
+        (entry) => entry.reason === "minimum-aggregate",
+      ),
+    ),
+  };
+  const request: OpenEnaAiInterpretationRequestV2 = {
+    schemaVersion: OPEN_ENA_AI_REQUEST_SCHEMA_VERSION_V2,
+    promptVersion: OPEN_ENA_AI_PROMPT_VERSION_V2,
+    locale,
+    binding: {
+      analyzedAt: envelope.result.createdAt,
+      datasetHash: envelope.binding.datasetSha256,
+      datasetHashKind: envelope.binding.datasetHashKind,
+      modelType: envelope.result.configuration.analysis.model.type,
+      axes: [...envelope.controls.axes],
+      evidenceKey: stableEvidenceKey(evidence),
+    },
+    evidence,
+  };
+  parseOpenEnaAiInterpretationRequestV2(request);
+  const context =
+    envelope.kind === "open-ena-endpoint-inference"
+      ? {
+          axes: envelope.controls.axes,
+          primaryGroup: envelope.controls.primaryGroup,
+          secondaryGroup: envelope.controls.secondaryGroup,
+        }
+      : {
+          request: envelope.context.request,
+          axes: envelope.context.axes,
+          identityConfirmed: envelope.context.identityConfirmed,
+          frameIndexHorizons: envelope.context.frameIndexHorizons,
+          unitSequences: publicBoundOrderingV3(bound).unitSequences,
+          scientificContextSha256: envelope.scientificContextSha256,
+        };
+  return deepFreeze({
+    currentness: "independent-plan-validated" as const,
+    binding: bound.binding,
+    configuration: bound.configuration,
+    context,
+    wireLimitations:
+      "The V2 wire is aggregate evidence only. It omits native typed identities and full binding. Native path summaries are omitted because the V2 wire cannot express partial fitted precedence. Independent-period requests include only required selected centroids with proved fitted precedence and truthful observed continuity; incomparable predecessors and a connected previous centroid below N3 require local review. Selected native rank comparisons remain included. Trajectory group coordinate summaries use equal Unit weight across each Unit’s observed steps.",
+    request,
+  });
+}
+export async function buildOpenEnaAiInterpretationRequestV3(
+  input: unknown,
+  independentPlan: unknown,
+  selection: NativeAiSelectionV3,
+): Promise<OpenEnaAiInterpretationRequestV2> {
+  return (
+    await buildAiInterpretationReviewV3(input, independentPlan, selection)
+  ).request;
 }

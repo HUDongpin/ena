@@ -1,12 +1,15 @@
 import {
+  useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
   type ReactNode,
   type Ref,
 } from "react";
+import type { OpenEnaContrastPresentation } from "@/lib/open-ena/bound-presentation-v3";
 import type {
   OpenEnaPairwiseContrast,
   OpenEnaPairwiseContrastSide,
@@ -23,6 +26,11 @@ import type {
   OpenEnaNodeLayoutPositions,
 } from "@/lib/open-ena/node-layout";
 import {
+  openEnaRenderedCodeIsVisible, openEnaRenderedCodeLabel,
+  openEnaRenderedEdgeIsVisible,
+  type OpenEnaCodeGraphPresentation,
+} from "@/lib/open-ena/ordered-plot";
+import {
   marginalMeanIntervalPair,
   meanCenteredIqrOutlierIntervalPair,
   type OpenEnaMeanCenteredIqrOutlierIntervalPair,
@@ -31,8 +39,8 @@ import {
 import OpenEnaPlotActionIcon from "./OpenEnaPlotActionIcon";
 import OpenEnaSvgDraggableNode from "./OpenEnaSvgDraggableNode";
 
-export interface OpenEnaGroupContrastProps {
-  contrast: OpenEnaPairwiseContrast;
+export interface OpenEnaGroupContrastProps extends OpenEnaCodeGraphPresentation {
+  contrast: OpenEnaContrastPresentation;
   codeColors?: OpenEnaCodeColors;
   edgeThreshold: number;
   showPoints: boolean;
@@ -54,16 +62,135 @@ export interface OpenEnaGroupContrastProps {
   dataView?: ReactNode;
   rightTools?: ReactNode;
   onSwitchPlots?: () => void;
+  onConfirmIdentityBearingExport?: () => boolean;
   nodeLayout?: OpenEnaNodeLayoutPositions;
   onNodeMove?: (code: string, dimensions: OpenEnaNodeDimensionPosition) => void;
   groupDisplay?: Pick<OpenEnaDerivedGroupDisplay, "primary" | "secondary" | "hiddenUnitKeys">;
+  uiCopy?: {
+    readonly comparisonPlot: string;
+    readonly primaryPlot: string;
+    readonly secondaryPlot: string;
+    readonly dataView: string;
+    readonly comparisonAria: string;
+    readonly primaryPlotAria: string;
+    readonly secondaryPlotAria: string;
+    readonly primaryEmptyAria: string;
+    readonly secondaryEmptyAria: string;
+    readonly emptyGroupPrompt: string;
+    readonly toolsTitle: string;
+    readonly selectedGroupOrder: string;
+    readonly dataViewComparisonRecords: (primary: string, secondary: string) => string;
+    readonly dataViewUnavailable: string;
+    readonly plotActionsLabel: (plot: string) => string;
+    readonly plotActionLabel: (plot: string, action: string) => string;
+    readonly zoomIn: string;
+    readonly zoomOut: string;
+    readonly recenter: string;
+    readonly recenterTitle: string;
+    readonly copyImage: string;
+    readonly copyImageTitle: string;
+    readonly panelActionsLabel: (plot: string) => string;
+    readonly hidePlot: string;
+    readonly showPlot: string;
+    readonly removePlot: string;
+    readonly switchPlots: string;
+    readonly restorePlot: (plot: string) => string;
+    readonly copying: string;
+    readonly imageCopied: string;
+    readonly svgCopied: string;
+    readonly copyUnavailable: string;
+    readonly copyCancelled: string;
+    readonly scaledCaption: (multiplier: string) => string;
+    readonly sideScaledDescription: (group: string, multiplier: string) => string;
+    readonly comparisonScaledDescription: (groups: readonly string[], multiplier: string) => string;
+    readonly sharedScale: (value: string) => string;
+    readonly differenceScale: (value: string) => string;
+    readonly scaledMultiplier: (value: string) => string;
+    readonly signedEdgeDifferences: string;
+    readonly groupMeanNetwork: string;
+    readonly analyticUnits: (count: number) => string;
+    readonly methodBoundary: string;
+    readonly confidenceMethodBoundary: string;
+    readonly outlierMethodBoundary: string;
+    readonly unitsDefinition: string;
+    readonly horizonDefinition: string;
+    readonly noNonzeroDifferences: string;
+  };
 }
+
+const DEFAULT_GROUP_CONTRAST_UI_COPY = {
+  comparisonPlot: "Comparison Plot",
+  primaryPlot: "Primary Plot",
+  secondaryPlot: "Secondary Plot",
+  dataView: "Data View",
+  comparisonAria: "Comparison plot. Scroll horizontally on small screens.",
+  primaryPlotAria: "Primary plot. Scroll horizontally on small screens.",
+  secondaryPlotAria: "Secondary plot. Scroll horizontally on small screens.",
+  primaryEmptyAria: "Primary Plot is empty",
+  secondaryEmptyAria: "Secondary Plot is empty",
+  emptyGroupPrompt: "Click or hover points in the comparison plot to display networks here",
+  toolsTitle: "Plot Tools",
+  selectedGroupOrder: "Selected group order",
+  dataViewComparisonRecords: (primary: string, secondary: string) => `${primary} and ${secondary} · comparison records`,
+  dataViewUnavailable: "Data View is not available for this comparison result.",
+  plotActionsLabel: (plot: string) => `${plot} actions`,
+  plotActionLabel: (plot: string, action: string) => `${plot}: ${action}`,
+  zoomIn: "Zoom In",
+  zoomOut: "Zoom Out",
+  recenter: "Recenter",
+  recenterTitle: "Recenter Plot",
+  copyImage: "Copy image",
+  copyImageTitle: "Copy plot image to clipboard",
+  panelActionsLabel: (plot: string) => `${plot} panel actions`,
+  hidePlot: "Hide Plot",
+  showPlot: "Show Plot",
+  removePlot: "Remove Plot",
+  switchPlots: "Switch Plots",
+  restorePlot: (plot: string) => `Restore ${plot}`,
+  copying: "Copying…",
+  imageCopied: "Image copied",
+  svgCopied: "SVG copied as text",
+  copyUnavailable: "Copy unavailable",
+  copyCancelled: "Copy cancelled",
+  scaledCaption: (multiplier: string) => `(scaled ${multiplier}x)`,
+  sideScaledDescription: (group: string, multiplier: string) => `${group}, scaled ${multiplier} times`,
+  comparisonScaledDescription: (groups: readonly string[], multiplier: string) => groups.length === 2
+    ? `${groups[0]} minus ${groups[1]}, scaled ${multiplier} times`
+    : groups.length === 1 ? `${groups[0]}, scaled ${multiplier} times` : `No selected group network, scaled ${multiplier} times`,
+  sharedScale: (value: string) => `Shared scale ${value}`,
+  differenceScale: (value: string) => `Difference scale ${value}`,
+  scaledMultiplier: (value: string) => `scaled ${value}x`,
+  signedEdgeDifferences: "signed edge differences",
+  groupMeanNetwork: "group mean network",
+  analyticUnits: (count: number) => `${count} analytic units`,
+  methodBoundary: "Each connection is drawn once as Primary minus Secondary in the stable color of the stronger selected group; line width is the absolute edge difference. The two side plots retain the displayed group-mean networks on their shared mean scale.",
+  confidenceMethodBoundary: "Dashed guides are separate marginal 95% Student-t confidence intervals for the enabled displayed-axis group means; they are not a joint confidence region or a significance test.",
+  outlierMethodBoundary: "Short-dashed guides are rENA-compatible mean-centered 1.5 × IQR display intervals; they are not Tukey fences, automatic exclusions, confidence intervals, or tests.",
+  unitsDefinition: "Units",
+  horizonDefinition: "Horizon",
+  noNonzeroDifferences: "No nonzero Primary-minus-Secondary edge differences are present for this selected pair.",
+} as const;
 
 type ContrastEdge = OpenEnaPairwiseContrast["edges"][number];
 type ContrastNode = OpenEnaPairwiseContrast["nodes"][number];
 type CoordinateExtent = OpenEnaPairwiseContrast["coordinateExtent"];
 type PlotKind = "comparison" | "primary" | "secondary";
 type GroupRole = "primary" | "secondary";
+type PlotCopyStatus = "idle" | "copying" | "image-copied" | "svg-copied" | "unavailable" | "cancelled";
+type GroupContrastUiCopy = NonNullable<OpenEnaGroupContrastProps["uiCopy"]>;
+const RESTORE_HIT_TARGET_SVG_SIZE = 56;
+const RESTORE_HIT_TARGET_CSS_SIZE = 33;
+
+function plotCopyStatusLabel(status: PlotCopyStatus, copy: GroupContrastUiCopy) {
+  switch (status) {
+    case "idle": return "";
+    case "copying": return copy.copying;
+    case "image-copied": return copy.imageCopied;
+    case "svg-copied": return copy.svgCopied;
+    case "unavailable": return copy.copyUnavailable;
+    case "cancelled": return copy.copyCancelled;
+  }
+}
 type ProjectedPoint = { x: number; y: number };
 
 export function officialEquiUnitCircleNodePositions(
@@ -295,7 +422,7 @@ function validExtent(value: CoordinateExtent | undefined): value is CoordinateEx
   );
 }
 
-function derivedExtent(contrast: OpenEnaPairwiseContrast): CoordinateExtent {
+function derivedExtent(contrast: OpenEnaContrastPresentation): CoordinateExtent {
   const validPoints = [
     ...contrast.nodes,
     ...contrast.primary.points,
@@ -311,7 +438,7 @@ function derivedExtent(contrast: OpenEnaPairwiseContrast): CoordinateExtent {
   };
 }
 
-function resolveExtent(contrast: OpenEnaPairwiseContrast) {
+function resolveExtent(contrast: OpenEnaContrastPresentation) {
   const runtimeExtent = contrast.coordinateExtent;
   return validExtent(runtimeExtent)
     ? { extent: runtimeExtent, source: "full-result" as const }
@@ -319,7 +446,7 @@ function resolveExtent(contrast: OpenEnaPairwiseContrast) {
 }
 
 function resolveOfficialPlotFrame(
-  contrast: OpenEnaPairwiseContrast,
+  contrast: OpenEnaContrastPresentation,
   extent: CoordinateExtent,
 ) {
   const frame = contrast.officialPlotFrame;
@@ -422,7 +549,7 @@ function differenceSign(edge: ContrastEdge) {
 }
 
 function groupColor(
-  contrast: OpenEnaPairwiseContrast,
+  contrast: OpenEnaContrastPresentation,
   side: OpenEnaPairwiseContrastSide,
   role: GroupRole,
 ) {
@@ -433,7 +560,7 @@ function groupColor(
 }
 
 function groupCaptionColor(
-  contrast: OpenEnaPairwiseContrast,
+  contrast: OpenEnaContrastPresentation,
   side: OpenEnaPairwiseContrastSide,
   role: GroupRole,
 ) {
@@ -503,6 +630,8 @@ interface GroupMeanMarkerProps {
   color: string;
   showLabel: boolean;
   restoreLabel?: string | null;
+  restoreSlot?: GroupRole;
+  restoreHitTargetScale?: number;
   onRestore?: () => void;
 }
 
@@ -514,6 +643,8 @@ function GroupMeanMarker({
   color,
   showLabel,
   restoreLabel,
+  restoreSlot,
+  restoreHitTargetScale = 1,
   onRestore,
 }: GroupMeanMarkerProps) {
   const halfSize = 5.75;
@@ -537,19 +668,22 @@ function GroupMeanMarker({
       data-ena-summary-marker="true"
       data-ena-group-role={role}
       data-ena-restore-panel={interactive ? restoreLabel : undefined}
+      data-ena-restore-slot={interactive ? restoreSlot : undefined}
       data-ena-point-shape="square"
       data-ena-marker-size={halfSize * 2}
     >
       <title>{label}</title>
       {interactive ? (
         <rect
-          x="-12"
-          y="-12"
-          width="24"
-          height="24"
+          x={-RESTORE_HIT_TARGET_SVG_SIZE / 2}
+          y={-RESTORE_HIT_TARGET_SVG_SIZE / 2}
+          width={RESTORE_HIT_TARGET_SVG_SIZE}
+          height={RESTORE_HIT_TARGET_SVG_SIZE}
+          transform={`scale(${restoreHitTargetScale})`}
           fill="transparent"
           pointerEvents="all"
           data-ena-restore-hit-target="true"
+          data-ena-restore-hit-target-scale={dataNumber(restoreHitTargetScale)}
         />
       ) : null}
       <rect
@@ -824,6 +958,7 @@ interface PlotActionToolbarProps {
   onZoomChange: (next: number) => void;
   onCopy: (button: HTMLButtonElement, kind: PlotKind) => void;
   copyStatus: string;
+  copy: GroupContrastUiCopy;
 }
 
 function PlotActionToolbar({
@@ -832,20 +967,21 @@ function PlotActionToolbar({
   onZoomChange,
   onCopy,
   copyStatus,
+  copy,
 }: PlotActionToolbarProps) {
-  const plotName = kind === "comparison" ? "Comparison" : kind === "primary" ? "Primary" : "Secondary";
+  const plotName = kind === "comparison" ? copy.comparisonPlot : kind === "primary" ? copy.primaryPlot : copy.secondaryPlot;
   return (
     <div
       className="ena-official-plot-actions"
       role="group"
-      aria-label={`${plotName} Plot actions`}
+      aria-label={copy.plotActionsLabel(plotName)}
       data-ena-plot-toolbar={kind}
     >
       <button
         type="button"
         data-ena-plot-action="zoom-in"
-        aria-label={`${plotName} Plot: Zoom In`}
-        title="Zoom In"
+        aria-label={copy.plotActionLabel(plotName, copy.zoomIn)}
+        title={copy.zoomIn}
         disabled={zoom >= 2.4}
         onClick={() => onZoomChange(boundedZoom(zoom + 0.2))}
       >
@@ -854,8 +990,8 @@ function PlotActionToolbar({
       <button
         type="button"
         data-ena-plot-action="zoom-out"
-        aria-label={`${plotName} Plot: Zoom Out`}
-        title="Zoom Out"
+        aria-label={copy.plotActionLabel(plotName, copy.zoomOut)}
+        title={copy.zoomOut}
         disabled={zoom <= 0.6}
         onClick={() => onZoomChange(boundedZoom(zoom - 0.2))}
       >
@@ -864,8 +1000,8 @@ function PlotActionToolbar({
       <button
         type="button"
         data-ena-plot-action="recenter"
-        aria-label={`${plotName} Plot: Recenter`}
-        title="Recenter Plot"
+        aria-label={copy.plotActionLabel(plotName, copy.recenter)}
+        title={copy.recenterTitle}
         onClick={() => onZoomChange(1)}
       >
         <OpenEnaPlotActionIcon name="recenter" />
@@ -873,8 +1009,8 @@ function PlotActionToolbar({
       <button
         type="button"
         data-ena-plot-action="copy-image"
-        aria-label={`${plotName} Plot: Copy image`}
-        title="Copy plot image to clipboard"
+        aria-label={copy.plotActionLabel(plotName, copy.copyImage)}
+        title={copy.copyImageTitle}
         onClick={(event) => onCopy(event.currentTarget, kind)}
       >
         <OpenEnaPlotActionIcon name="copy" />
@@ -890,6 +1026,7 @@ interface PlotPanelActionToolbarProps {
   onToggleVisibility: () => void;
   onRemove: () => void;
   onSwitchPlots?: () => void;
+  copy: GroupContrastUiCopy;
 }
 
 function PlotPanelActionToolbar({
@@ -898,21 +1035,23 @@ function PlotPanelActionToolbar({
   onToggleVisibility,
   onRemove,
   onSwitchPlots,
+  copy,
 }: PlotPanelActionToolbarProps) {
-  const visibilityLabel = panelState === "hidden" ? "Show Plot" : "Hide Plot";
+  const plotName = plot === "primary" ? copy.primaryPlot : copy.secondaryPlot;
+  const visibilityLabel = panelState === "hidden" ? copy.showPlot : copy.hidePlot;
   return (
     <div
       className="ena-official-panel-actions"
       role="group"
-      aria-label={`${plot === "primary" ? "Primary" : "Secondary"} Plot panel actions`}
+      aria-label={copy.panelActionsLabel(plotName)}
       data-ena-panel-toolbar={plot}
     >
       {plot === "secondary" && onSwitchPlots ? (
         <button
           type="button"
           data-ena-panel-action="switch-plots"
-          aria-label="Switch Plots"
-          title="Switch Plots"
+          aria-label={copy.switchPlots}
+          title={copy.switchPlots}
           onClick={onSwitchPlots}
         >
           <OpenEnaPlotActionIcon name="switch" />
@@ -931,8 +1070,8 @@ function PlotPanelActionToolbar({
       <button
         type="button"
         data-ena-panel-action="remove"
-        aria-label="Remove Plot"
-        title="Remove Plot"
+        aria-label={copy.removePlot}
+        title={copy.removePlot}
         onClick={onRemove}
       >
         <OpenEnaPlotActionIcon name="remove" />
@@ -949,6 +1088,9 @@ function ContrastSvg({
   showPoints,
   showNetworks,
   showLabels,
+  showCodeGraph = true,
+  codeVisibility,
+  codeSourceByRenderedCode, codeLabelByRenderedCode,
   showGroupLabels,
   showUnitLabels,
   unitCircle = false,
@@ -974,12 +1116,54 @@ function ContrastSvg({
   groupMeanScale: number;
   networkRoles?: GroupRole[];
   sideRole?: GroupRole;
-  restorePanelForRole?: Partial<Record<GroupRole, { label: string; onRestore: () => void }>>;
+  restorePanelForRole?: Partial<Record<GroupRole, { label: string; slot: GroupRole; onRestore: () => void }>>;
 }) {
+  const comparisonSvgRef = useRef<SVGSVGElement | null>(null);
+  const [svgScreenScale, setSvgScreenScale] = useState(1);
+  const bindSvgRef = useCallback((node: SVGSVGElement | null) => {
+    comparisonSvgRef.current = node;
+    if (kind !== "comparison" || !svgRef) return;
+    if (typeof svgRef === "function") {
+      const cleanup = svgRef(node);
+      if (node && typeof cleanup === "function") {
+        return () => {
+          if (comparisonSvgRef.current === node) comparisonSvgRef.current = null;
+          cleanup();
+        };
+      }
+      return;
+    }
+    svgRef.current = node;
+  }, [kind, svgRef]);
+  useLayoutEffect(() => {
+    if (kind !== "comparison") return;
+    const svg = comparisonSvgRef.current;
+    if (!svg) return;
+    const measure = () => {
+      const matrix = svg.getScreenCTM();
+      if (!matrix) return;
+      const next = Math.min(Math.hypot(matrix.a, matrix.b), Math.hypot(matrix.c, matrix.d));
+      if (!Number.isFinite(next) || next <= 0) return;
+      setSvgScreenScale((current) => Math.abs(current - next) < 0.0001 ? current : next);
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(svg);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [kind]);
   const titleId = useId();
   const descriptionId = useId();
   const viewportId = useId();
   const compact = kind !== "comparison";
+  const codePresentation = {
+    showCodeGraph,
+    codeVisibility,
+    codeSourceByRenderedCode, codeLabelByRenderedCode,
+  };
   const width = compact ? MINI_WIDTH : MAIN_WIDTH;
   const height = compact ? MINI_HEIGHT : MAIN_HEIGHT;
   const viewportClipId = `ena-${kind}-${viewportId.replace(/[^a-zA-Z0-9_-]/gu, "")}-viewport`;
@@ -1128,7 +1312,7 @@ function ContrastSvg({
       : pointsHidden > 0
         ? ` ${pointsHidden} analytic-unit mark${pointsHidden === 1 ? " is" : "s are"} hidden by group or unit display controls.`
         : "";
-  const reference = contrast.resultProvenance.projectionReference;
+  const reference = contrast.resultProvenance?.projectionReference;
   const referenceId = reference ? safeFigureLabel(reference.referenceId, 30) : null;
   const referenceName = reference ? safeFigureLabel(reference.name, 72) : null;
   const sourceHash = reference?.source.normalizedUtf8TextSha256;
@@ -1179,7 +1363,7 @@ function ContrastSvg({
 
   return (
     <svg
-      ref={kind === "comparison" ? svgRef : undefined}
+      ref={kind === "comparison" ? bindSvgRef : undefined}
       viewBox={`0 0 ${width} ${height}`}
       role="img"
       aria-labelledby={`${titleId} ${descriptionId}`}
@@ -1274,11 +1458,12 @@ function ContrastSvg({
           </>
         ) : null}
       </g>
-      {showNetworks ? (
+      {showNetworks && codePresentation.showCodeGraph !== false ? (
         <g className="ena-set-network-edges">
           {signedComparison ? (
             <g data-ena-network-role="signed-difference">
               {contrast.edges.map((edge) => {
+                if (!openEnaRenderedEdgeIsVisible(codePresentation, edge.source, edge.target)) return null;
                 const start = nodePoints.get(edge.source);
                 const end = nodePoints.get(edge.target);
                 if (!start || !end) return null;
@@ -1294,7 +1479,7 @@ function ContrastSvg({
                 const strongerSide = strongerSourceRole === "primary" ? contrast.primary : contrast.secondary;
                 const strongerName = strongerSide.name;
                 const stroke = groupColor(contrast, strongerSide, strongerSourceRole);
-                const edgeLabel = `${edge.name}: signed Primary-minus-Secondary difference ${formatNumber(difference, true)}; ${strongerName} ${role} group is stronger`;
+                const edgeLabel = `${openEnaRenderedCodeLabel(codePresentation, edge.source)} ↔ ${openEnaRenderedCodeLabel(codePresentation, edge.target)}: signed Primary-minus-Secondary difference ${formatNumber(difference, true)}; ${strongerName} ${role} group is stronger`;
                 return (
                   <line
                     key={edge.name}
@@ -1320,6 +1505,7 @@ function ContrastSvg({
           ) : plottedGroups.map(({ role, side }, displayedIndex) => (
             <g key={role} data-ena-network-role={role}>
               {contrast.edges.map((edge) => {
+                if (!openEnaRenderedEdgeIsVisible(codePresentation, edge.source, edge.target)) return null;
                 const start = nodePoints.get(edge.source);
                 const end = nodePoints.get(edge.target);
                 if (!start || !end) return null;
@@ -1328,7 +1514,7 @@ function ContrastSvg({
                 const ratio = magnitude / safeDenominator;
                 if (magnitude <= ZERO_TOLERANCE || ratio < threshold) return null;
                 const stroke = groupColor(contrast, side, role);
-                const edgeLabel = `${edge.name}: ${side.name} ${role} group mean weight ${formatNumber(value)}`;
+                const edgeLabel = `${openEnaRenderedCodeLabel(codePresentation, edge.source)} ↔ ${openEnaRenderedCodeLabel(codePresentation, edge.target)}: ${side.name} ${role} group mean weight ${formatNumber(value)}`;
                 return (
                   <line
                     key={`${role}:${edge.name}`}
@@ -1427,11 +1613,13 @@ function ContrastSvg({
         </g>
       ) : null}
       <g className="ena-set-network-nodes">
-        {contrast.nodes.map((node: ContrastNode) => {
+        {contrast.nodes
+          .filter((node: ContrastNode) => openEnaRenderedCodeIsVisible(codePresentation, node.code))
+          .map((node: ContrastNode) => {
           if (unitCircle && !connectedCodes.has(node.code)) return null;
           const point = nodePoints.get(node.code);
           if (!point) return null;
-          const codeLabel = safeFigureLabel(node.code, 72) || "Unnamed code";
+          const codeLabel = safeFigureLabel(openEnaRenderedCodeLabel(codePresentation, node.code), 72) || "Unnamed code";
           const nodeSize = codeNodeSize(node.code);
           const nodeColor = codeColorFor(codeColors, node.code);
           return (
@@ -1482,6 +1670,8 @@ function ContrastSvg({
             color={groupColor(contrast, side, role)}
             showLabel={showGroupLabels}
             restoreLabel={restore?.label}
+            restoreSlot={restore?.slot}
+            restoreHitTargetScale={RESTORE_HIT_TARGET_CSS_SIZE / (RESTORE_HIT_TARGET_SVG_SIZE * zoom * svgScreenScale)}
             onRestore={restore?.onRestore}
           />
         );
@@ -1511,16 +1701,17 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
     rightTools,
     onSwitchPlots,
   } = props;
+  const uiCopy = props.uiCopy ?? DEFAULT_GROUP_CONTRAST_UI_COPY;
   const initialZoom = boundedZoom(props.plotZoom);
   const [panelZooms, setPanelZooms] = useState<PlotZoomState>({
     comparison: initialZoom,
     primary: initialZoom,
     secondary: initialZoom,
   });
-  const [copyStatus, setCopyStatus] = useState<Record<PlotKind, string>>({
-    comparison: "",
-    primary: "",
-    secondary: "",
+  const [copyStatus, setCopyStatus] = useState<Record<PlotKind, PlotCopyStatus>>({
+    comparison: "idle",
+    primary: "idle",
+    secondary: "idle",
   });
   const [panelStates, setPanelStates] = useState<OpenEnaPlotPanelState>(OPEN_ENA_INITIAL_PLOT_PANEL_STATE);
   const [panelRoles, setPanelRoles] = useState<OpenEnaPanelRoles>({
@@ -1563,22 +1754,22 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
         primary: panelStates.secondary === "hidden" ? "hidden" : "visible",
         secondary: "removed",
       });
-      focusAfterRender('[aria-label="Restore Secondary Plot"]');
+      focusAfterRender('[data-ena-restore-slot="secondary"]');
       return;
     }
     setPanelRoles((current) => ({ ...current, [plot]: null }));
     setPanelStates((current) => reduceOpenEnaPlotPanelState(current, { type: "remove", plot }));
-    focusAfterRender(`[aria-label="Restore ${plot === "primary" ? "Primary" : "Secondary"} Plot"]`);
+    focusAfterRender(`[data-ena-restore-slot="${plot}"]`);
   };
 
-  const restorePrimaryPlotLabel = panelStates.primary === "removed" ? "Restore Primary Plot" : null;
+  const restorePrimaryPlotLabel = panelStates.primary === "removed" ? uiCopy.restorePlot(uiCopy.primaryPlot) : null;
   const restorePrimaryPlot = (role: GroupRole) => {
     const action: OpenEnaPlotPanelAction = { type: "restore", plot: "primary" };
     setPanelRoles((current) => ({ ...current, primary: role }));
     setPanelStates((current) => reduceOpenEnaPlotPanelState(current, action));
     focusAfterRender('[data-ena-panel-role="primary"]');
   };
-  const restoreSecondaryPlotLabel = panelStates.secondary === "removed" ? "Restore Secondary Plot" : null;
+  const restoreSecondaryPlotLabel = panelStates.secondary === "removed" ? uiCopy.restorePlot(uiCopy.secondaryPlot) : null;
   const restoreSecondaryPlot = (role: GroupRole) => {
     const action: OpenEnaPlotPanelAction = { type: "restore", plot: "secondary" };
     setPanelRoles((current) => ({ ...current, secondary: role }));
@@ -1586,16 +1777,18 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
     focusAfterRender('[data-ena-panel-role="secondary"]');
   };
 
-  const restorePanelForRole: Partial<Record<GroupRole, { label: string; onRestore: () => void }>> = {};
+  const restorePanelForRole: Partial<Record<GroupRole, { label: string; slot: GroupRole; onRestore: () => void }>> = {};
   for (const role of ["primary", "secondary"] as const) {
     if (restorePrimaryPlotLabel) {
       restorePanelForRole[role] = {
         label: restorePrimaryPlotLabel,
+        slot: "primary",
         onRestore: () => restorePrimaryPlot(role),
       };
     } else if (restoreSecondaryPlotLabel && panelRoles.primary !== role) {
       restorePanelForRole[role] = {
         label: restoreSecondaryPlotLabel,
+        slot: "secondary",
         onRestore: () => restoreSecondaryPlot(role),
       };
     }
@@ -1609,19 +1802,35 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
     // caption out of sync with Stats and the exported comparison direction.
     setPanelRoles({ primary: "primary", secondary: "secondary" });
     onSwitchPlots?.();
+    focusAfterRender('[data-ena-panel-action="switch-plots"]');
   };
 
   const updatePanelZoom = (kind: PlotKind, next: number) => {
     setPanelZooms((current) => ({ ...current, [kind]: boundedZoom(next) }));
   };
   const handleCopy = (button: HTMLButtonElement, kind: PlotKind) => {
-    setCopyStatus((current) => ({ ...current, [kind]: "Copying…" }));
+    if (!props.onConfirmIdentityBearingExport) {
+      setCopyStatus((current) => ({ ...current, [kind]: "unavailable" }));
+      return;
+    }
+    let confirmed = false;
+    try {
+      confirmed = props.onConfirmIdentityBearingExport();
+    } catch {
+      setCopyStatus((current) => ({ ...current, [kind]: "unavailable" }));
+      return;
+    }
+    if (!confirmed) {
+      setCopyStatus((current) => ({ ...current, [kind]: "cancelled" }));
+      return;
+    }
+    setCopyStatus((current) => ({ ...current, [kind]: "copying" }));
     void copyPlotImage(button).then(
       (format) => setCopyStatus((current) => ({
         ...current,
-        [kind]: format === "image" ? "Image copied" : "SVG copied as text",
+        [kind]: format === "image" ? "image-copied" : "svg-copied",
       })),
-      () => setCopyStatus((current) => ({ ...current, [kind]: "Copy unavailable" })),
+      () => setCopyStatus((current) => ({ ...current, [kind]: "unavailable" })),
     );
   };
   const comparisonScale = Math.max(0, finiteOrZero(contrast.edgeScaleDenominators.difference));
@@ -1632,18 +1841,19 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
   const xAxisLabel = officialAxisLabel(xAxis);
   const yAxisLabel = officialAxisLabel(yAxis);
   const sharedMeanPlotMeta = [
-    `Shared scale ${formatNumber(groupMeanScale)}`,
-    `scaled ${formatMultiplier(props.edgeScale)}x`,
+    uiCopy.sharedScale(formatNumber(groupMeanScale)),
+    uiCopy.scaledMultiplier(formatMultiplier(props.edgeScale)),
     ...(showVariance ? [`${xAxisLabel} ${xVariance.toFixed(1)}%`, `${yAxisLabel} ${yVariance.toFixed(1)}%`] : []),
   ].join(" · ");
   const comparisonPlotMeta = [
-    `Difference scale ${formatNumber(comparisonScale)}`,
-    `scaled ${formatMultiplier(props.edgeScale)}x`,
+    uiCopy.differenceScale(formatNumber(comparisonScale)),
+    uiCopy.scaledMultiplier(formatMultiplier(props.edgeScale)),
     ...(showVariance ? [`${xAxisLabel} ${xVariance.toFixed(1)}%`, `${yAxisLabel} ${yVariance.toFixed(1)}%`] : []),
   ].join(" · ");
   const threshold = bounded(edgeThreshold, 0, 1, 0);
   const denominator = Math.max(comparisonScale, ZERO_TOLERANCE);
-  const strongestDifferences = (showNetworks ? contrast.edges : [])
+  const strongestDifferences = (showNetworks && props.showCodeGraph !== false ? contrast.edges : [])
+    .filter((edge) => openEnaRenderedEdgeIsVisible(props, edge.source, edge.target))
     .filter((edge) => Math.abs(finiteOrZero(edge.signedDifference)) > ZERO_TOLERANCE)
     .filter((edge) => Math.abs(finiteOrZero(edge.signedDifference)) / denominator >= threshold)
     .toSorted((left, right) => (
@@ -1663,11 +1873,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
   const secondaryPanelSide = sideForRole(panelRoles.secondary);
   const sidePlotCount = Number(panelStates.primary !== "removed") + Number(panelStates.secondary !== "removed");
   const comparisonNames = activeNetworkRoles.map((role) => sideForRole(role)?.name).filter(Boolean) as string[];
-  const comparisonAccessibleLabel = comparisonNames.length === 2
-    ? `${comparisonNames[0]} minus ${comparisonNames[1]}, scaled ${formatOfficialMultiplier(props.edgeScale)} times`
-    : comparisonNames.length === 1
-      ? `${comparisonNames[0]}, scaled ${formatOfficialMultiplier(props.edgeScale)} times`
-      : `No selected group network, scaled ${formatOfficialMultiplier(props.edgeScale)} times`;
+  const comparisonAccessibleLabel = uiCopy.comparisonScaledDescription(comparisonNames, formatOfficialMultiplier(props.edgeScale));
   const primaryGroupDisplay = groupDisplaySide(props.groupDisplay, "primary", contrast.primary);
   const secondaryGroupDisplay = groupDisplaySide(props.groupDisplay, "secondary", contrast.secondary);
   const displaySides = [
@@ -1697,7 +1903,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
       data-ena-difference-edge-scale-definition={contrast.edgeScaleDenominators.differenceDefinition}
       data-ena-shared-mean-edge-scale-definition={contrast.edgeScaleDenominators.sharedMeanDefinition}
       data-ena-center-mode={centerMode}
-      aria-label="Primary / Secondary Group Comparison"
+      aria-label={uiCopy.comparisonAria}
     >
       <div className="ena-set-comparison-layout">
         <div
@@ -1711,26 +1917,26 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
               className="ena-set-main-plot"
               data-testid="open-ena-group-data-view"
               role="region"
-              aria-label="Data View"
+              aria-label={uiCopy.dataView}
             >
               <header className="ena-set-plot-heading">
                 <div>
-                  <h3>Data View</h3>
-                  <p>{contrast.primary.name} and {contrast.secondary.name} · comparison records</p>
+                  <h3>{uiCopy.dataView}</h3>
+                  <p>{uiCopy.dataViewComparisonRecords(contrast.primary.name, contrast.secondary.name)}</p>
                 </div>
                 <span>{xAxis} × {yAxis}</span>
               </header>
               {dataView ?? (
                 <p className="ena-sets-compatibility-note" role="status">
-                  Data View is not available for this comparison result.
+                  {uiCopy.dataViewUnavailable}
                 </p>
               )}
             </section>
           ) : (
-            <figure className="ena-set-main-plot" tabIndex={0} aria-label="Comparison plot. Scroll horizontally on small screens.">
+            <figure className="ena-set-main-plot" tabIndex={0} aria-label={uiCopy.comparisonAria}>
               <header className="ena-set-plot-heading ena-group-contrast-plot-heading">
                 <div>
-                  <h3>Comparison Plot</h3>
+                  <h3>{uiCopy.comparisonPlot}</h3>
                   <p
                     className="ena-set-series-caption"
                     aria-label={comparisonAccessibleLabel}
@@ -1749,8 +1955,8 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                         </span>,
                       ];
                     })}
-                    <span className="ena-set-scale-caption"> (scaled {formatOfficialMultiplier(props.edgeScale)}x)</span>
-                    <span className="sr-only"> · {activeNetworkRoles.length === 2 ? "signed edge differences" : "group mean network"}</span>
+                    <span className="ena-set-scale-caption"> {uiCopy.scaledCaption(formatOfficialMultiplier(props.edgeScale))}</span>
+                    <span className="sr-only"> · {activeNetworkRoles.length === 2 ? uiCopy.signedEdgeDifferences : uiCopy.groupMeanNetwork}</span>
                   </p>
                 </div>
                 <div className="ena-set-plot-heading-tools">
@@ -1760,7 +1966,8 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                     zoom={panelZooms.comparison}
                     onZoomChange={(next) => updatePanelZoom("comparison", next)}
                     onCopy={handleCopy}
-                    copyStatus={copyStatus.comparison}
+                    copyStatus={plotCopyStatusLabel(copyStatus.comparison, uiCopy)}
+                    copy={uiCopy}
                   />
                 </div>
               </header>
@@ -1779,18 +1986,18 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                   role="status"
                   data-testid="open-ena-group-no-nonzero-differences"
                 >
-                  No nonzero Primary-minus-Secondary edge differences are present for this selected pair.
+                  {uiCopy.noNonzeroDifferences}
                 </p>
               ) : null}
               <figcaption>
                 <span className="sr-only ena-set-method-boundary">
-                  Each connection is drawn once as Primary minus Secondary in the stable color of the stronger selected group; line width is the absolute edge difference. The two side plots retain the displayed group-mean networks on their shared mean scale.
-                  {anyConfidenceGuideShown ? " Dashed guides are separate marginal 95% Student-t confidence intervals for the enabled displayed-axis group means; they are not a joint confidence region or a significance test." : ""}
-                  {anyOutlierGuideShown ? " Short-dashed guides are rENA-compatible mean-centered 1.5 × IQR display intervals; they are not Tukey fences, automatic exclusions, confidence intervals, or tests." : ""}
+                  {uiCopy.methodBoundary}
+                  {anyConfidenceGuideShown ? ` ${uiCopy.confidenceMethodBoundary}` : ""}
+                  {anyOutlierGuideShown ? ` ${uiCopy.outlierMethodBoundary}` : ""}
                 </span>
                 <span className="ena-set-plot-definitions">
-                  <span><strong>Units:</strong> {contrast.configuration.unitColumns.join(" › ")}</span>
-                  <span><strong>Horizon:</strong> {contrast.configuration.conversationColumns.join(" › ")}</span>
+                  <span><strong>{uiCopy.unitsDefinition}:</strong> {contrast.configuration.unitColumns.join(" › ")}</span>
+                  <span><strong>{uiCopy.horizonDefinition}:</strong> {contrast.configuration.conversationColumns.join(" › ")}</span>
                 </span>
               </figcaption>
             </figure>
@@ -1805,16 +2012,16 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
           {panelStates.primary !== "removed" && primaryPanelSide && panelRoles.primary ? (
             <figure
               tabIndex={0}
-              aria-label="Primary plot. Scroll horizontally on small screens."
+              aria-label={uiCopy.primaryPlotAria}
               data-ena-panel-role="primary"
               data-ena-panel-state={panelStates.primary}
             >
               <header className="ena-set-plot-heading ena-group-contrast-plot-heading">
                 <div>
-                  <h3>Primary Plot</h3>
+                  <h3>{uiCopy.primaryPlot}</h3>
                   <p
                     className="ena-set-series-caption"
-                    aria-label={`${primaryPanelSide.name}, scaled ${formatOfficialMultiplier(props.edgeScale)} times`}
+                    aria-label={uiCopy.sideScaledDescription(primaryPanelSide.name, formatOfficialMultiplier(props.edgeScale))}
                   >
                     <span
                       className="ena-set-series-primary"
@@ -1823,8 +2030,8 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                     >
                       {primaryPanelSide.name}
                     </span>
-                    <span className="ena-set-scale-caption"> (scaled {formatOfficialMultiplier(props.edgeScale)}x)</span>
-                    <span className="sr-only">{primaryPanelSide.name} · {primaryPanelSide.unitCount} analytic units</span>
+                    <span className="ena-set-scale-caption"> {uiCopy.scaledCaption(formatOfficialMultiplier(props.edgeScale))}</span>
+                    <span className="sr-only">{primaryPanelSide.name} · {uiCopy.analyticUnits(primaryPanelSide.unitCount)}</span>
                   </p>
                 </div>
                 <div className="ena-set-plot-heading-tools">
@@ -1833,6 +2040,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                     state={panelStates.primary}
                     onToggleVisibility={() => togglePanelVisibility("primary")}
                     onRemove={() => removePanel("primary")}
+                    copy={uiCopy}
                   />
                   <span>{sharedMeanPlotMeta}</span>
                   <PlotActionToolbar
@@ -1840,7 +2048,8 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                     zoom={panelZooms.primary}
                     onZoomChange={(next) => updatePanelZoom("primary", next)}
                     onCopy={handleCopy}
-                    copyStatus={copyStatus.primary}
+                    copyStatus={plotCopyStatusLabel(copyStatus.primary, uiCopy)}
+                    copy={uiCopy}
                   />
                 </div>
               </header>
@@ -1854,24 +2063,24 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
               />
             </figure>
           ) : (
-            <section className="ena-empty-side-plot" data-ena-panel-role="primary" data-ena-panel-state="removed" aria-label="Primary Plot is empty">
-              <header className="ena-set-plot-heading ena-group-contrast-plot-heading"><h3>Primary Plot</h3></header>
-              <div className="ena-empty-side-plot-prompt"><OpenEnaPlotActionIcon name="restore" /><p>Click or hover points in the comparison plot to display networks here</p></div>
+            <section className="ena-empty-side-plot" data-ena-panel-role="primary" data-ena-panel-state="removed" aria-label={uiCopy.primaryEmptyAria}>
+              <header className="ena-set-plot-heading ena-group-contrast-plot-heading"><h3>{uiCopy.primaryPlot}</h3></header>
+              <div className="ena-empty-side-plot-prompt"><OpenEnaPlotActionIcon name="restore" /><p>{uiCopy.emptyGroupPrompt}</p></div>
             </section>
           )}
           {panelStates.secondary !== "removed" && secondaryPanelSide && panelRoles.secondary ? (
             <figure
               tabIndex={0}
-              aria-label="Secondary plot. Scroll horizontally on small screens."
+              aria-label={uiCopy.secondaryPlotAria}
               data-ena-panel-role="secondary"
               data-ena-panel-state={panelStates.secondary}
             >
               <header className="ena-set-plot-heading ena-group-contrast-plot-heading">
                 <div>
-                  <h3>Secondary Plot</h3>
+                  <h3>{uiCopy.secondaryPlot}</h3>
                   <p
                     className="ena-set-series-caption"
-                    aria-label={`${secondaryPanelSide.name}, scaled ${formatOfficialMultiplier(props.edgeScale)} times`}
+                    aria-label={uiCopy.sideScaledDescription(secondaryPanelSide.name, formatOfficialMultiplier(props.edgeScale))}
                   >
                     <span
                       className="ena-set-series-secondary"
@@ -1880,8 +2089,8 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                     >
                       {secondaryPanelSide.name}
                     </span>
-                    <span className="ena-set-scale-caption"> (scaled {formatOfficialMultiplier(props.edgeScale)}x)</span>
-                    <span className="sr-only">{secondaryPanelSide.name} · {secondaryPanelSide.unitCount} analytic units</span>
+                    <span className="ena-set-scale-caption"> {uiCopy.scaledCaption(formatOfficialMultiplier(props.edgeScale))}</span>
+                    <span className="sr-only">{secondaryPanelSide.name} · {uiCopy.analyticUnits(secondaryPanelSide.unitCount)}</span>
                   </p>
                 </div>
                 <div className="ena-set-plot-heading-tools">
@@ -1891,6 +2100,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                     onSwitchPlots={onSwitchPlots ? handleSwitchPlots : undefined}
                     onToggleVisibility={() => togglePanelVisibility("secondary")}
                     onRemove={() => removePanel("secondary")}
+                    copy={uiCopy}
                   />
                   <span>{sharedMeanPlotMeta}</span>
                   <PlotActionToolbar
@@ -1898,7 +2108,8 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                     zoom={panelZooms.secondary}
                     onZoomChange={(next) => updatePanelZoom("secondary", next)}
                     onCopy={handleCopy}
-                    copyStatus={copyStatus.secondary}
+                    copyStatus={plotCopyStatusLabel(copyStatus.secondary, uiCopy)}
+                    copy={uiCopy}
                   />
                 </div>
               </header>
@@ -1912,9 +2123,9 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
               />
             </figure>
           ) : (
-            <section className="ena-empty-side-plot" data-ena-panel-role="secondary" data-ena-panel-state="removed" aria-label="Secondary Plot is empty">
-              <header className="ena-set-plot-heading ena-group-contrast-plot-heading"><h3>Secondary Plot</h3></header>
-              <div className="ena-empty-side-plot-prompt"><OpenEnaPlotActionIcon name="restore" /><p>Click or hover points in the comparison plot to display networks here</p></div>
+            <section className="ena-empty-side-plot" data-ena-panel-role="secondary" data-ena-panel-state="removed" aria-label={uiCopy.secondaryEmptyAria}>
+              <header className="ena-set-plot-heading ena-group-contrast-plot-heading"><h3>{uiCopy.secondaryPlot}</h3></header>
+              <div className="ena-empty-side-plot-prompt"><OpenEnaPlotActionIcon name="restore" /><p>{uiCopy.emptyGroupPrompt}</p></div>
             </section>
           )}
           {rightTools ? (
@@ -1922,7 +2133,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
               className="ena-set-right-tools"
               data-testid="open-ena-group-right-tools"
               role="region"
-              aria-label="Plot Tools"
+              aria-label={uiCopy.toolsTitle}
             >
               {rightTools}
             </section>
@@ -1932,7 +2143,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
 
       <ol
         className="ena-set-signed-legend"
-        aria-label="Selected group order"
+        aria-label={uiCopy.selectedGroupOrder}
         data-ena-legend-order="primary-secondary"
         style={{ listStyle: "none", margin: 0, paddingInlineStart: 4 }}
       >
@@ -2022,7 +2233,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
           <tbody>
             {strongestDifferences.length ? strongestDifferences.map((edge) => (
               <tr key={edge.name}>
-                <th scope="row">{edge.name}</th>
+                <th scope="row">{props.codeLabelByRenderedCode ? `${openEnaRenderedCodeLabel(props, edge.source)} ↔ ${openEnaRenderedCodeLabel(props, edge.target)}` : edge.name}</th>
                 <td>{formatNumber(edge.primaryWeight)}</td>
                 <td>{formatNumber(edge.secondaryWeight)}</td>
                 <td data-ena-sign={differenceSign(edge)}>{formatNumber(edge.signedDifference, true)}</td>

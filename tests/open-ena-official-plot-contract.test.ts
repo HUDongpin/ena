@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 
 const projectRoot = process.cwd();
 const contrast = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaGroupContrast.tsx"), "utf8");
@@ -40,9 +41,13 @@ test("official-style group contrast plots are plain and keep scientific network 
 });
 
 test("official-style plot headings and renderer slots keep the workbench roles explicit", () => {
-  assert.match(contrast, /<h3>Comparison Plot<\/h3>/);
-  assert.match(contrast, /<h3>Primary Plot<\/h3>/);
-  assert.match(contrast, /<h3>Secondary Plot<\/h3>/);
+  assert.match(contrast, /<h3>\{uiCopy\.comparisonPlot\}<\/h3>/);
+  assert.match(contrast, /<h3>\{uiCopy\.primaryPlot\}<\/h3>/);
+  assert.match(contrast, /<h3>\{uiCopy\.secondaryPlot\}<\/h3>/);
+  assert.deepEqual(
+    [getOpenEnaCopy("en").modelV3.workspace.plot.comparisonPlot, getOpenEnaCopy("en").modelV3.workspace.plot.primaryPlot, getOpenEnaCopy("en").modelV3.workspace.plot.secondaryPlot],
+    ["Comparison Plot", "Primary Plot", "Secondary Plot"],
+  );
   assert.doesNotMatch(contrast, /<h3>(?:COMPARISON|PRIMARY|SECONDARY) PLOT<\/h3>/);
   assert.match(contrast, /centerMode\?:\s*"plot"\s*\|\s*"data"/);
   assert.match(contrast, /dataView\?:\s*ReactNode/);

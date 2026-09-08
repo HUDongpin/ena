@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -107,15 +108,11 @@ test("the bundled 3D trajectory sample produces complete TP1 to TP3 group and in
   assert.match(markup, />TP3<\/text>/);
 });
 
-test("the Data panel exposes the synthetic TP1 to TP3 sample without enabling native RData upload", () => {
-  const workspace = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8");
-  const copy = readFileSync(join(projectRoot, "lib", "open-ena-i18n.ts"), "utf8");
+test("the actual TP1–TP3 sample is reachable through versioned typed-source preparation", () => {
 
-  assert.match(workspace, /loadTrajectorySample/);
-  assert.match(workspace, /copy\.data\.trajectorySample/);
-  assert.match(copy, /trajectorySample:\s*"Load 3D trajectory sample"/);
-  assert.match(copy, /trajectorySample:\s*"載入 3D 軌跡範例"/);
-  assert.match(copy, /trajectorySample:\s*"加载 3D 轨迹示例"/);
-  assert.match(copy, /TP1(?:–|-)TP3/);
-  assert.doesNotMatch(workspace, /accept="[^"]*\.RData/i);
+  assert.match(shell(), />Load trajectory sample<\/button>/);
+  assert.match(v3, /loadSample\(true\)/);
+  assert.match(moduleV3("lib/open-ena/sample-source-v3.ts"), /TP1.*TP2.*TP3/);
+  assert.doesNotMatch(shell(), /accept="[^"]*\.RData/i);
+
 });

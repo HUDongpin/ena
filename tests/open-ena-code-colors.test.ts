@@ -1,12 +1,87 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import * as ts from "typescript";
 
 const projectRoot = process.cwd();
 
 function source(path: string) {
   return readFileSync(join(projectRoot, path), "utf8");
+}
+
+type OpenEnaJsxOpeningElement = ts.JsxOpeningElement | ts.JsxSelfClosingElement;
+
+function parseTsx(sourceText: string) {
+  return ts.createSourceFile("OpenEnaWorkspace.tsx", sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+}
+
+function jsxOpenings(sourceFile: ts.SourceFile, tagName: string) {
+  const openings: Array<{ node: OpenEnaJsxOpeningElement; fragment: string }> = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node))
+      && node.tagName.getText(sourceFile) === tagName
+    ) {
+      openings.push({ node, fragment: node.getText(sourceFile) });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return openings;
+}
+
+function hasDirectCodeColorsAttribute(opening: OpenEnaJsxOpeningElement) {
+  return opening.attributes.properties.some((property) => (
+    ts.isJsxAttribute(property)
+    && ts.isIdentifier(property.name)
+    && property.name.text === "codeColors"
+    && property.initializer !== undefined
+    && ts.isJsxExpression(property.initializer)
+    && property.initializer.expression !== undefined
+    && ts.isIdentifier(property.initializer.expression)
+    && property.initializer.expression.text === "codeColors"
+  ));
+}
+
+function assertEveryRendererUsesCodeColors(sourceFile: ts.SourceFile, tagName: string, expectedCount: number) {
+  const openings = jsxOpenings(sourceFile, tagName);
+  assert.equal(openings.length, expectedCount, `${tagName} should render ${expectedCount} time(s)`);
+  openings.forEach(({ node, fragment }, index) => {
+    assert.ok(
+      hasDirectCodeColorsAttribute(node),
+      `${tagName} invocation ${index + 1} must receive its own direct codeColors={codeColors} attribute; found ${fragment}`,
+    );
+  });
+}
+
+function buildAnalysisBundleCalls(sourceFile: ts.SourceFile) {
+  const calls: ts.CallExpression[] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node)
+      && ts.isIdentifier(node.expression)
+      && node.expression.text === "buildAnalysisBundle"
+    ) {
+      calls.push(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return calls;
+}
+
+function hasCodeColorsOption(options: ts.ObjectLiteralExpression) {
+  return options.properties.some((property) => (
+    (ts.isShorthandPropertyAssignment(property) && property.name.text === "codeColors")
+    || (
+      ts.isPropertyAssignment(property)
+      && property.name.getText() === "codeColors"
+      && ts.isIdentifier(property.initializer)
+      && property.initializer.text === "codeColors"
+    )
+  ));
 }
 
 test("code colors default to black and accept only six-digit hexadecimal palette values", async () => {
@@ -30,65 +105,21 @@ test("code colors default to black and accept only six-digit hexadecimal palette
   assert.equal(plotStyle.codeColorFor({ goal: "not-a-color" }, "goal"), "#000000");
 });
 
-test("the Codes panel places a native palette after every selected code without invalidating the model", () => {
-  const workspace = source("components/open-ena/OpenEnaWorkspace.tsx");
-  const styles = source("app/globals.css");
+test("Code color confirmation is bound to the active editor family without a scientific edit", () => {
 
-  assert.match(workspace, /const \[codeColors, setCodeColors\] = useState/);
-  assert.match(
-    workspace,
-    /className="ena-official-code-row"[\s\S]*?type="color"[\s\S]*?className="ena-official-manage-codes"[\s\S]*?type="checkbox"[\s\S]*?config\.codes\.includes\(header\)/,
-  );
-  assert.match(workspace, /aria-label=\{`\$\{copy\.model\.codeColor\}: \$\{header\}`\}/);
-  assert.match(workspace, /value=\{codeColorFor\(codeColors, header\)\}/);
-  assert.match(workspace, /onChange=\{\(event\) => setCodeColors\(\(current\) => updateCodeColor\(current, header, event\.target\.value\)\)\}/);
-  assert.doesNotMatch(
-    workspace,
-    /type="color"[\s\S]{0,500}?updateConfig/,
-    "code colors are presentation state and must not make the fitted model stale",
-  );
-  assert.match(styles, /\.ena-code-color-input\s*\{[\s\S]*?cursor:\s*pointer;[\s\S]*?\}/);
+  assert.match(v3, /OpenEnaCodeColorPicker/);
+  assert.match(v3, /modelState.display\[family\].codeColors/);
+  assert.match(owner, /case "confirm-code-color"[\s\S]*?sameScientificContextV3/);
+  assert.match(owner, /set-code-color/);
+  assert.match(v3, /activeColorIntent.context/);
+
 });
 
-test("the code palette keeps a compact 20px swatch inside an easy 28px hit target", () => {
-  const workspace = source("components/open-ena/OpenEnaWorkspace.tsx");
-  const styles = source("app/globals.css");
-  const genericCodeLabelRule = styles.indexOf(".ena-code-options label,");
-  const compactControlRule = styles.indexOf(".ena-code-options .ena-code-color-control");
+test("every native network renderer receives explicit SOURCE-to-public Code presentation mapping", () => {
 
-  assert.match(
-    workspace,
-    /className="ena-code-color-control"[\s\S]*?className="ena-code-color-input"[\s\S]*?type="color"/,
-  );
-  assert.ok(genericCodeLabelRule >= 0);
-  assert.ok(
-    compactControlRule > genericCodeLabelRule,
-    "the compact hit-target rule must follow and override the generic 44px code-label rule",
-  );
-  assert.match(
-    styles,
-    /\.ena-official-code-row \.ena-code-color-control\s*\{[^}]*display:\s*grid;[^}]*width:\s*28px;[^}]*height:\s*28px;[^}]*min-height:\s*28px;[^}]*place-items:\s*center;[^}]*padding:\s*0;[^}]*\}/,
-  );
-  assert.match(
-    styles,
-    /\.ena-code-color-input\s*\{[^}]*width:\s*20px;[^}]*height:\s*20px;[^}]*padding:\s*1px;[^}]*\}/,
-  );
-});
+  assert.match(v3, /codeSourceByRenderedCode: renderedSource/);
+  assert.match(v3, /codeLabelByRenderedCode: presentation\?\.codeLabelByRenderedCode/);
+  for (const name of ["OpenEnaPlot", "OpenEnaInteractive3DPlot", "OpenEnaGroupContrast", "OpenEna3DGroupContrast", "OpenEnaOrderedResultLayout", "OpenEna3DOrderedResultLayout"]) assert.ok(v3.includes(`<${name} {...plotProps}`), name);
+  assert.doesNotMatch(v3, /buildAnalysisBundle\(/);
 
-test("the selected code-color map is passed to every Open ENA network renderer and model bundle", () => {
-  const workspace = source("components/open-ena/OpenEnaWorkspace.tsx");
-
-  for (const component of [
-    "OpenEnaLongitudinalTrajectory",
-    "OpenEnaGroupContrast",
-    "OpenEnaPlot",
-    "MiniNetwork",
-  ]) {
-    assert.match(
-      workspace,
-      new RegExp(`<${component}[\\s\\S]{0,900}?codeColors=\\{codeColors\\}`),
-      `${component} should receive the live per-code presentation palette`,
-    );
-  }
-  assert.match(workspace, /buildAnalysisBundle\([\s\S]*?codeColors/);
 });

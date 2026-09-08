@@ -39,7 +39,14 @@ export async function createOpenEnaPluginRunReceiptV1(input: {
   settings: { axes: readonly string[]; camera: string; flipX: boolean; flipY: boolean };
   now?: string;
   runId?: string;
+  /** Captures the caller's exact current result/plan and display operation.
+   * Recheck after asynchronous hashes so an obsolete request cannot escape. */
+  isCurrent?: () => boolean;
 }): Promise<OpenEnaPluginRunReceiptV1> {
+  const assertCurrent = () => {
+    if (input.isCurrent && !input.isCurrent()) throw new TypeError("Plugin receipt lease is no longer current.");
+  };
+  assertCurrent();
   const recordedAt = input.now ?? new Date().toISOString();
   const runId = input.runId ?? globalThis.crypto.randomUUID();
   if (Number.isNaN(Date.parse(recordedAt)) || !/^[0-9a-f-]{36}$/iu.test(runId)) throw new TypeError("Plugin run receipt identity is invalid.");
@@ -49,6 +56,7 @@ export async function createOpenEnaPluginRunReceiptV1(input: {
   if (!parentRecord || typeof parentRecord.sourceDatasetSha256 !== "string" || !/^[0-9a-f]{64}$/u.test(parentRecord.sourceDatasetSha256)) {
     throw new TypeError("Plugin run receipt requires verified source provenance.");
   }
+  if (parentRecord.native && !input.isCurrent) throw new TypeError("Native plugin receipts require a current-result lease.");
   const parentResultBindingSha256 = await sha256(input.parentScientificResult);
   const postPluginResultBindingSha256 = await sha256(input.currentScientificResult);
   if (!input.manifest.changesAnalysis && parentResultBindingSha256 !== postPluginResultBindingSha256) {
@@ -70,5 +78,6 @@ export async function createOpenEnaPluginRunReceiptV1(input: {
     recordedAt,
     runId,
   };
+  assertCurrent();
   return deepFreeze(receipt) as OpenEnaPluginRunReceiptV1;
 }

@@ -1,10 +1,13 @@
 # Numerical Notes
 
-How jena-js computes ENA models, where it deliberately deviates from rENA's solvers, and the agreement bounds enforced by the golden parity tests (`tests/r-goldens.test.ts`, `tests/stats-parity.test.ts` against fixtures generated from rENA 0.3.1).
+How jena-js computes ENA models and the independently generated R oracles that
+bound its numerical agreement. The current Standard contract is enforced by
+`tests/standard-v3-r-parity.test.ts`; legacy 0.3.1 acceptance remains in
+`tests/r-goldens.test.ts` and the statistics/rotation suites.
 
 ## Dimension signs are arbitrary
 
-SVD/eigen decompositions determine each rotated dimension only up to sign. jena-js and rENA can legitimately return mirrored axes for the same model. Golden tests compare points, node positions, and rotation-matrix columns **up to a per-column sign**; downstream code must not attach meaning to the absolute sign of a dimension. This also flips the sign of signed group statistics (e.g. the Welch t statistic) relative to an rENA run — magnitudes match.
+SVD/eigen decompositions determine each rotated dimension only up to sign. jena-js and rENA can legitimately return mirrored axes for the same model. Legacy tests compare projected tables up to per-column signs. The current Standard suite selects one sign from each nondegenerate SVD basis column and applies it consistently to points, nodes, centroids and Reference coordinates. Means MR1 is fixed Positive-minus-Negative and never receives sign forgiveness; its direction has declared group meaning. This also flips the sign of signed group statistics (e.g. the Welch t statistic) relative to an rENA run — magnitudes match.
 
 ## Ordered numerical boundary
 
@@ -46,10 +49,37 @@ rENA's `prcomp(tol = 0)` drops exactly-zero components, so rENA may report fewer
 
 ## Linear solves and node positions
 
-`solveLinearSystem` applies an unconditional ridge of 1e-10 to the normal equations; rENA uses `arma::solve(..., equilibrate)`. On well-conditioned systems the difference is far below test tolerances. Node positions, however, solve `(WᵀW) x = Wᵀ points`, and on small models this system can be **singular** — rENA itself warns `solve(): system is singular; attempting approx solution` on the bundled fixtures. Both solvers then approximate the same minimum-norm solution, agreeing only to a few 1e-6 (golden bound: 4e-6 + 2e-6·|value|). Two consequences:
+Standard undirected nodes solve `(WᵀW) X = WᵀP` without ridge. This follows
+rENA 0.4.4's `R/rena_wrappers.R::lws_lsq_positions` →
+libqe `modeling.hpp::node_positions` → `linalg_fallback.hpp::solve_spd`.
+The pinned R build delegates to Armadillo/LAPACK's unregularized solve. jENA
+uses the existing symmetric Jacobi decomposition of `WᵀW`, inverting eigenvalues
+above `codes × Number.EPSILON × largestEigenvalue` and setting the others to
+zero. This implements the Moore–Penrose minimum-norm solution at the declared
+floating-point rank cutoff. It is not ridge regularization. This numerical rank
+policy is explicit; agreement on the retained fixtures does not promise identical
+rank decisions for arbitrarily ill-conditioned inputs or different BLAS builds.
 
-- Individual node coordinates on tiny/degenerate models are solver-sensitive at the 1e-6 level in both packages.
-- **Centroids are robust**: `centroids = W · nodes`, and the null-space component that makes nodes ambiguous is annihilated by W, so centroids (and `enaCorrelations`, which consumes them) match rENA to 1e-9.
+The former `1e-10` ridge biased full-rank current-oracle node coordinates by up
+to approximately `1.10e-7` in the first failing comparisons. Removing the ridge
+allows all 14 current cases to satisfy **1e-10 absolute** for complete node and
+centroid coordinates, including all six axes. A singular two-node regression
+also checks the minimum-norm nodes and centroids at `1e-12`. Centroids remain
+`W · nodes`. Operational resource accounting includes the spectral solve's
+additional matrices/vectors before allocation: four overlapping Code-square
+matrices and two added Code vectors. The independent operational ledger also
+charges up to three node decompositions of 100 bounded Jacobi sweeps, adding
+`300 × codes³` work units for non-Reference Standard fits. The frozen v3.5
+baseline estimator and the 8,000,000-work-unit, numeric-cell and byte ceilings
+are unchanged. This is a stricter operational admission: a three-Code ledger
+at 43,009 steps formerly estimated 7,999,944 work units and now rejects before
+allocation. Reference fixed-node and public ONA paths retain their existing
+solve and work accounting.
+
+Directed/ONA node positioning still uses its original `solveLinearSystem`
+`1e-10` ridge. Regression design solves remain ridge-free. The legacy 0.3.1
+node tolerance (`4e-6 + 2e-6·|value|`) is preserved only for that historical
+suite, including its singular fixtures; it is not a current Standard bound.
 
 ## Stats
 
@@ -64,7 +94,7 @@ rENA's `prcomp(tol = 0)` drops exactly-zero components, so rENA may report fewer
 
 - With string formulas, rENA cannot extract the predictor name, so the first regression axis is named after the first *adjacency column* (e.g. `A & B_reg`), and `regression2` axes are named `V_reg`. When x and y produce the same name, the second becomes `..._reg.1` (R `make.unique` semantics).
 - rENA's y-direction regression is evaluated against the **original** points, not the x-deflated ones (its `with.ena.matrix` helper rebinds `V`), and the two leading axes are **not** orthogonalized against each other. jena reproduces both behaviors.
-- Regression design solves are ridge-free (matching R's `lm`); only node positioning uses the 1e-10 ridge described above.
+- Regression design solves are ridge-free (matching R's `lm`); only directed node positioning retains the 1e-10 ridge described above.
 - `regression2` requires more units than adjacency columns; with fewer, R's `lm` returns NA coefficients and rENA errors — jena's validation of that case is the shared design-solve behavior.
 
 **Variance-share caveat (rENA artifact):** rENA completes the rotation basis with `prcomp`, whose numerically-null trailing directions come from LAPACK's arbitrary null-space basis. Those directions can overlap the regression axis and silently absorb a real variance share (~5% on our research fixture), contaminating every reported share in a way that is not reproducible across BLAS implementations (reported upstream as [rENA#48](https://gitlab.com/epistemic-analytics/qe-packages/rENA/-/issues/48)). jena instead keeps only directions genuinely spanned by the deflated data and completes the basis orthogonally, so null directions carry exactly zero variance and shares are well-defined. Golden tests therefore compare variance shares renormalized over the directions that carry variance on both sides; for SVD/mean rotations this reduces to the strict per-column check.
@@ -96,7 +126,7 @@ Function-valued `weightBy` is applied once per windowed co-occurrence cell, BEFO
 
 R model formulas in the regression rotations are parsed by a simplified parser (`~`, `+`, `:` only — no `*`, `poly()`, or nested calls). Unsupported syntax is rejected loudly rather than mis-parsed.
 
-## Golden test tolerances (summary)
+## Legacy 0.3.1 golden test tolerances (preserved)
 
 | Quantity | Bound |
 |---|---|
@@ -107,3 +137,106 @@ R model formulas in the regression rotations are parsed by a simplified parser (
 | Rotation matrix columns (up to sign, commonly-spanned directions only) | 5e-7 |
 | Correlations, Cohen's d, t/F statistics | 1e-9 |
 | Normal quantiles | 1e-8 relative |
+
+
+## Current Standard v3 oracle and strict acceptance
+
+The two retained fixture identifiers are
+`fixtures/goldens/sena-configs.generated.json` (official rENA 0.3.1) and
+`fixtures/goldens/rena-current-standard-v3.generated.json` (official stable
+rENA 0.4.4). Both run, with no core-suite skips. The current file was generated
+by the pinned `scripts/regen-standard-v3-goldens.R` using R 4.4.2 aarch64,
+rENA artifact SHA-256
+`2aae98760ea6e304a90fba8efa95f546b61e9aeaf021c5de506b730a5606dc2e`,
+tma 0.3.3 and the disclosed **development** libqe 0.1.2.9002. Full dependency,
+BLAS/LAPACK and local-build provenance remains in the fixture. It is a retained
+local-build oracle, not a hermetic or cross-platform guarantee. Task35 does not
+regenerate either oracle or derive any expected fit using TypeScript.
+
+All 14 declared configurations consume the fixture's 48 strict numeric 0/1
+rows (eight Units, three Horizons, four Codes). Coverage includes Binary and
+Frequency (`sum`), finite back/forward windows, forward and backward Infinity,
+Conversation, EndPoint/SeparateTrajectory/AccumulatedTrajectory, SVD and Means.
+Only `windowSizeBack` and `windowSizeForward` decode the string `"Infinity"`;
+missing values, `null`, and generic numeric coercion are not accepted.
+
+| Current quantity | Acceptance |
+|---|---|
+| Input/row/aggregate/point/trajectory row counts | Exact |
+| Every supplied R row-connection field, aggregate counts, typed Unit/Horizon identities and order | Exact, with the explicit lossless Conversation tuple correspondence below |
+| Sphere-normalized line weights, center vector, centered edge vectors | 1e-10 absolute |
+| Points, nodes, centroids, including every returned axis | 1e-10 absolute |
+| Every full variance share | 1e-10 absolute, no removal or renormalization |
+| Nondegenerate SVD basis columns | 1e-8 absolute after a single basis-derived sign used for every coordinate table |
+| Repeated-eigenvalue edge-space projector `B Bᵀ` | 1e-8 absolute, with orthonormality and equal shape required |
+| Repeated-block projected pairwise distances and all tables in the same block frame | 1e-10 absolute |
+| Means MR1 | Fixed Positive-minus-Negative; reversed MR1 and reversed group roles must fail |
+| Reference | Exact edge identity permutation, fixed source center/basis/nodes; coordinates/centroids/full variance 1e-10 absolute |
+
+Spectral blocks are formed only when expected variance shares differ by at
+most `1e-12 × largestShare`; the anchored MR1 is always a singleton. Unequal
+axes cannot be exchanged or globally Procrustes-aligned. For repeated blocks,
+the comparison uses the edge-space projector (not the vacuous `BᵀB` identity),
+projected pairwise distances, and one within-block change of basis applied to
+all coordinate tables. Controls accept an orthogonally rotated equal plane
+and reject a different plane, inconsistent centroid rotation, unequal-axis
+swaps, nonfinite/missing cells, and independently flipped node signs.
+
+R 0.4.4 retains all six axes even when `dimensions=3`; the fixture records
+both requested and returned dimensions. jENA's requested-three points, nodes and centroid coordinate
+views are each checked against the first three explicitly named full columns,
+including exact typed identities, schema/dimension completeness and finite cells.
+All three requested coordinate tables must be **exactly equal** to those full
+prefixes: changing only the requested dimension count deterministically selects
+columns without changing the fit or the per-axis node solve. All 14 current
+configurations enforce this equality. The full frame then receives the single
+`1e-10` absolute comparison to R under the shared allowed transform. A separate
+prefix tolerance is not added to that bound. Boundary controls cover both SVD
+and fixed Means: shared R+0.8e-10 coordinates pass, while requested R+1.6e-10
+with full R+0.8e-10 must fail for nodes and centroids. A
+second materialization requests six coordinates to check full points/nodes/
+centroids, while rotation and variance must be identical across both views.
+Neither the R oracle nor variance is truncated to mimic a different fit.
+
+Two current Means fixtures retain raw negative MR1 from libqe's QR sign
+replacement. Their separate `canonicalMeansFrame` is anchored entirely in R
+to the predeclared Positive U1–U4 minus Negative U5–U8 contrast. The recorded
+R orientation is applied to MR1 across rotation, points, nodes and centroids;
+raw coordinates remain untouched. The current suite accepts that fixed R
+canonical frame and cannot flip jENA MR1 at comparison time. This directional
+contract is stronger than the original legacy suite's sign-indeterminate
+comparison, so raw current-axis equality is not claimed.
+
+R's Conversation accumulator appends Units to `conversations.by`.
+`ena.set.R` then combines Units and conversation metadata. For this explicit
+one-Unit/one-Horizon oracle, that yields a redundant typed `unit.1` field and
+raw labels such as `U1::H1::U1`; jENA represents the same tuple as
+`{unit: "U1", ENA_UNIT: "U1", horizon: "H1"}` and label `U1::H1`.
+The test validates every component, expands the typed jENA tuple with the
+redundant Unit, and checks both complete label recipes. It never strips a
+suffix from an arbitrary string, coerces identity types, or changes the R
+file. jENA point, normalized-weight and centered-vector rows are compact: their
+Unit fields are checked exactly, and the Horizon comes from the same-index
+**actual** `trajectories` tuple. Both actual schemas and their row order are
+validated before expansion; an extra Horizon field on a compact row is rejected,
+even if it happens to match the expected Horizon. Counts, row order, actual
+trajectory-point correspondence and centroid labels are checked on both the
+requested and complete materializations and on the projected Reference target.
+Wrong, absent and type-changed Unit/ENA_UNIT/Horizon/Code fields and centroid
+labels are rejected. Oracle-to-oracle identity checks do not substitute for
+these actual-result checks.
+
+Reference checks use each current source fit and a different R target case,
+reverse the target Code order, and construct a bijective unordered-edge
+permutation. Expected coordinates are computed as
+`(R target weights − R source center) × R source basis`; expected nodes stay
+at the source positions and centroids use target incidence weights. The
+runtime must retain the supplied source rotation/center/nodes and leave the
+source unchanged. These are deterministic projections of R tables, not a
+TypeScript-generated oracle or a new target fit.
+
+The older 0.3.1 fixture contains positive Code values above one at its legacy
+API boundary. Its expected tables and original assertions are preserved;
+that input is not used to weaken the strict Standard v3 numeric 0/1 contract.
+Current tolerances do not inherit legacy sign choices, zero filling, null-axis
+omission or variance-share renormalization.

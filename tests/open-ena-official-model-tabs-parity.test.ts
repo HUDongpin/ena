@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -18,34 +19,13 @@ const controlsPath = join(
   "OpenEnaOfficialModelControls.tsx",
 );
 
-test("Model tabs compose the approved official Units, Horizons, Windows, and Codes surfaces", () => {
-  assert.match(workspace, /data-ena-official-model-tabs="true"/u);
-  assert.match(
-    workspace,
-    /<OpenEnaOfficialFieldPathEditor[\s\S]*?selectedFields=\{config\.unitColumns\}/u,
-  );
-  assert.match(
-    workspace,
-    /<OpenEnaOfficialFieldPathEditor[\s\S]*?selectedFields=\{config\.conversationColumns\}/u,
-  );
-  for (const panel of ["units", "horizons", "windows", "codes"]) {
-    assert.match(
-      workspace,
-      new RegExp(`data-ena-official-panel="${panel}"`, "u"),
-      `${panel} must expose its official-parity panel identity`,
-    );
-  }
-  for (const label of ["Create Sample", "Transmodal", "Standard", "Ordered Network", "Standard Network"]) {
-    assert.match(workspace, new RegExp(label, "u"));
-  }
-  assert.match(workspace, /data-ena-official-horizon-columns="true"/u);
-  assert.match(workspace, /data-ena-official-window-settings="true"/u);
-  assert.match(workspace, /data-ena-official-code-list="true"/u);
-  assert.match(
-    workspace,
-    /className="ena-model-tab-help" aria-hidden="true"/u,
-    "the visual help badge must not change the tab's accessible name",
-  );
+test("Workspace composes the accepted four Models panels with typed context and durable raw owners", () => {
+
+  assert.match(v3, /<OpenEnaModelTabsV3 .*scientificContext=\{context\}/);
+  for (const name of ["Units", "Horizons", "Windows", "Codes"]) assert.ok(v3.includes(`<OpenEna${name}PanelV3`));
+  assert.match(v3, /rawState=\{state.raw.windows\}/);
+  assert.match(v3, /state.raw.horizonOrder/);
+
 });
 test("the compact parity CSS uses official geometry with Open ENA Baby Blue tokens", () => {
   const marker = "/* Open ENA official Model parity controls. */";
@@ -57,6 +37,16 @@ test("the compact parity CSS uses official geometry with Open ENA Baby Blue toke
   const modelParityCss = css.slice(start, end);
 
   assert.doesNotMatch(css, /--ena-model-tab-stage-height:\s*380px/u);
+  assert.match(
+    modelParityCss,
+    /\.ena-model-tabs\s*\{[^}]*border-top:\s*0;/u,
+    "the Model tabs must not leave a gray inset above their active indicator",
+  );
+  assert.match(
+    modelParityCss,
+    /\.ena-model-control-content \.ena-panel-heading\s*\{[^}]*border-bottom:\s*0;/u,
+    "the Model heading must not leave a gray separator above the active indicator",
+  );
   assert.match(modelParityCss, /\.ena-model-tabs button\s*\{[^}]*min-height:\s*34px;/u);
   assert.match(
     modelParityCss,
@@ -68,10 +58,22 @@ test("the compact parity CSS uses official geometry with Open ENA Baby Blue toke
   );
   assert.match(
     modelParityCss,
-    /\.ena-official-field-path-add\s*\{[^}]*height:\s*30px;[^}]*background:\s*var\(--ena-accent\);/u,
+    /\.ena-official-field-path\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*40px;[^}]*gap:\s*0;[^}]*padding:\s*0\s+0\s+0\s+4px;/u,
+    "the add control must own the complete 40px trailing surface without gray gutters",
+  );
+  assert.match(
+    modelParityCss,
+    /\.ena-official-field-path-add\s*\{[^}]*width:\s*40px;[^}]*height:\s*30px;[^}]*background:\s*var\(--ena-accent\);/u,
   );
   assert.doesNotMatch(modelParityCss, /#56b09d|rgb\(86,\s*176,\s*157\)/iu);
   assert.match(modelParityCss, /\.ena-official-code-row\s*\{[^}]*min-height:\s*34px;/u);
+  assert.match(modelParityCss, /\.ena-model-tabs\s*\{[^}]*padding-top:\s*0;/u);
+  assert.match(modelParityCss, /\.ena-model-tabs button::before\s*\{[^}]*top:\s*0;/u);
+  assert.doesNotMatch(modelParityCss.match(/\.ena-model-tabs\s*\{[^}]*\}/u)?.[0] ?? "", /padding-top:\s*[1-9]/u);
+  assert.match(modelParityCss, /\.ena-official-icon-button\s*\{[^}]*(?:min-width|width):\s*32px;[^}]*(?:min-height|height):\s*32px;/u);
+  assert.match(modelParityCss, /\.ena-official-icon-button:focus-visible\s*\{[^}]*outline:\s*3px solid var\(--ena-accent-strong\);/u);
+  assert.match(modelParityCss, /\.ena-model-toolbar\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/u);
+  assert.match(modelParityCss, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.ena-model-control-content \*[\s\S]*?transition-duration:\s*0\.01ms/u);
 });
 
 test("shared official controls expose real disclosure and switch semantics", async () => {

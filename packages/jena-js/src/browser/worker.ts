@@ -214,7 +214,16 @@ export function createENAWorkerHost(scope: ENAWorkerScope, options: ENAWorkerHos
         return;
       }
       const rawChunk = message.chunkSize;
-      const chunkSize = rawChunk !== undefined && Number.isInteger(rawChunk) && rawChunk > 0 ? rawChunk : DEFAULT_CHUNK_SIZE;
+      if (rawChunk !== undefined && (!Number.isSafeInteger(rawChunk) || rawChunk <= 0)) {
+        post({
+          v: 1,
+          kind: 'error',
+          id: message.id,
+          message: `chunkSize must be a positive safe integer; got ${String(rawChunk)}.`
+        });
+        return;
+      }
+      const chunkSize = rawChunk ?? DEFAULT_CHUNK_SIZE;
       const run: WorkerRun = {
         id: message.id,
         options: message.options,

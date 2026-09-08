@@ -1,19 +1,20 @@
 "use client";
 
 import { useId, useRef, type CSSProperties, type ReactNode } from "react";
+import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
 import type {
   OpenEnaNodeDimensionPosition,
   OpenEnaNodeLayoutPositions,
 } from "@/lib/open-ena/node-layout";
-import type { OpenEnaOrderedNodeTotals } from "@/lib/open-ena/ordered-plot";
+import type { OpenEnaCodeGraphPresentation, OpenEnaOrderedNodeTotals } from "@/lib/open-ena/ordered-plot";
 import type { OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
 import type { OpenEna3dAspectRatio, OpenEna3dCamera } from "@/lib/open-ena/plot3d";
 import type { CameraPreset, OpenEnaConfig, OpenEnaResult } from "@/lib/open-ena/types";
 import OpenEnaInteractive3DPlot from "./OpenEnaInteractive3DPlot";
 
-export interface OpenEna3DOrderedResultLayoutProps {
-  result: OpenEnaResult;
+export interface OpenEna3DOrderedResultLayoutProps extends OpenEnaCodeGraphPresentation {
+  result: OpenEnaPlotResult;
   config: OpenEnaConfig;
   primaryGroupName: string | null;
   secondaryGroupName: string | null;
@@ -35,6 +36,7 @@ export interface OpenEna3DOrderedResultLayoutProps {
   showLabels: boolean;
   showUnitLabels: boolean;
   showVariance: boolean;
+  captureImageExport?: () => (() => boolean) | null;
   codeColors?: OpenEnaCodeColors;
   nodeTotals?: OpenEnaOrderedNodeTotals;
   nodeLayout?: OpenEnaNodeLayoutPositions;
@@ -78,6 +80,7 @@ export default function OpenEna3DOrderedResultLayout(props: OpenEna3DOrderedResu
     orderedConfig: config,
     orderedNodeTotals: props.nodeTotals,
     codeColors: props.codeColors,
+    captureImageExport: props.captureImageExport,
     groupColumn: config.groupColumn,
     xDimension: props.xDimension,
     yDimension: props.yDimension,
@@ -86,6 +89,9 @@ export default function OpenEna3DOrderedResultLayout(props: OpenEna3DOrderedResu
     showPoints: props.showPoints,
     showNetworks: props.showNetworks,
     showLabels: props.showLabels,
+    showCodeGraph: props.showCodeGraph,
+    codeVisibility: props.codeVisibility,
+    codeSourceByRenderedCode: props.codeSourceByRenderedCode, codeLabelByRenderedCode: props.codeLabelByRenderedCode,
     showUnitLabels: props.showUnitLabels,
     showVariance: props.showVariance,
     showTrajectories: false,

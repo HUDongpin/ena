@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createServedBrowserV3, literalGit } from "./helpers/open-ena-served-browser-v3.mjs";
+import { prepareNativeFixtureV3, runNativeFixtureV3, nativeFixtureIdentitiesV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
 import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import {
@@ -21,10 +23,9 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import { fileURLToPath } from "node:url";
 import { createSafePlaywrightCliError } from "./support/safe-playwright-cli-error.mjs";
 import { classifyChromiumCanvasReadbackDiagnostic } from "./support/open-ena-browser-warning-classifier.mjs";
-import { cleanupOwnedEphemeralPostgres } from "./support/owned-ephemeral-postgres.mjs";
 
 const smokeSourcePath = fileURLToPath(import.meta.url);
-const projectRoot = join(dirname(smokeSourcePath), "..");
+const projectRoot = resolve(dirname(smokeSourcePath), "..");
 const tsconfigPath = join(projectRoot, "tsconfig.json");
 const originalTsconfig = readFileSync(tsconfigPath, "utf8");
 const artifactDirectory = resolve(
@@ -52,7 +53,6 @@ const ownedEvidencePaths = Object.freeze([
 const username = "open_ena_3d_controls_smoke_researcher";
 const password = "open_ena_3d_controls_smoke_password_2026";
 const sessionSecret = "open_ena_3d_controls_smoke_session_secret_0123456789abcdef";
-const accountId = "open-ena-3d-controls-smoke-account";
 const sessionName = "open-ena-3d-controls-smoke-" + process.pid;
 const smokeBrowser = process.env.OPEN_ENA_3D_CONTROLS_SMOKE_BROWSER || "chromium";
 const ownedDistDirName = ".next-3d-controls-smoke-" + process.pid;
@@ -111,8 +111,7 @@ function redact(value) {
   return String(value ?? "")
     .replaceAll(username, "[redacted-username]")
     .replaceAll(password, "[redacted-password]")
-    .replaceAll(sessionSecret, "[redacted-session-secret]")
-    .replaceAll(accountId, "[redacted-account-id]");
+    .replaceAll(sessionSecret, "[redacted-session-secret]");
 }
 
 function classifyChromiumAngleReadPixelsDiagnostic(input) {
@@ -153,37 +152,34 @@ function removePlaywrightWorkingDirectory() {
   playwrightWorkingDirectory = null;
 }
 
-function runCli(args, label, timeout = 120_000) {
-  try {
-    return execFileSync(
-      playwrightCli.command,
-      [...playwrightCli.prefix, "--session", sessionName, ...args],
-      {
-        cwd: ensurePlaywrightWorkingDirectory(),
-        encoding: "utf8",
-        env: process.env,
-        maxBuffer: 32 * 1024 * 1024,
-        timeout,
-      },
-    );
-  } catch (caught) {
-    throw createSafePlaywrightCliError({ caught, label, redact });
+let runtime = null;
+async function runCli(args, label, timeout = 300000) {
+  if (args[0] === "--version") return "Playwright module 1.62.1 (owned foreground Chromium)";
+  if (!runtime) throw new Error("Owned production runtime is unavailable");
+  if (args[0] === "open") { await runtime.page.goto(args[1], { waitUntil: "domcontentloaded" }); return ""; }
+  if (args[0] === "close") { await runtime.close(primaryFailure); return ""; }
+  if (args[0] === "screenshot") { await runtime.page.screenshot({ path: args.at(-1), fullPage: true }); return ""; }
+  if (args[0] === "console") return `Errors: ${runtime.receipt.consoleErrors.length}\nWarnings: ${runtime.receipt.consoleWarnings.length}\n${runtime.receipt.consoleErrors.join("\n")}`;
+  if (args[0] === "--raw" && args[1] === "run-code") {
+    const action = new Function(`return (${args[2]});`)();
+    return JSON.stringify(await runtime.stage(label, () => action(runtime.page), timeout));
   }
+  throw new Error("Unsupported owned browser operation");
 }
 
 function browserSource(task, args, helpers = []) {
   const helperDeclarations = helpers.map((helper) => helper.toString()).join("\n");
-  return "async (page) => { " + helperDeclarations + "; const task = " + task.toString()
+  return "async (page) => { " + prepareNativeFixtureV3.toString() + "\n" + runNativeFixtureV3.toString() + "\n" + nativeFixtureIdentitiesV3.toString() + "\n" + helperDeclarations + "; const task = " + task.toString()
     + "; return await task(page, " + JSON.stringify(args) + "); }";
 }
 
-function runBrowserPhase(label, task, args = {}, timeout = 180_000, helpers = []) {
+async function runBrowserPhase(label, task, args = {}, timeout = 180_000, helpers = []) {
   process.stdout.write("[3D controls smoke] " + label + " ... ");
-  const output = runCli(
+  const output = (await runCli(
     ["--raw", "run-code", browserSource(task, args, helpers)],
     label,
     timeout,
-  ).trim();
+  )).trim();
   const result = output ? JSON.parse(output) : null;
   process.stdout.write("PASS\n");
   return result;
@@ -203,59 +199,6 @@ async function findOpenPort() {
       });
     });
   });
-}
-
-let ephemeralPostgresRoot = null;
-let ephemeralPostgresData = null;
-let ephemeralPostgresStartAttempted = false;
-
-async function startEphemeralPostgres() {
-  // Keep this prefix short because PostgreSQL Unix socket paths have a small
-  // platform limit and the macOS temporary directory is already deeply nested.
-  ephemeralPostgresRoot = mkdtempSync(join(tmpdir(), "oe3dpg-"));
-  ephemeralPostgresData = join(ephemeralPostgresRoot, "data");
-  const socketDirectory = join(ephemeralPostgresRoot, "socket");
-  const postgresLog = join(ephemeralPostgresRoot, "postgres.log");
-  mkdirSync(socketDirectory, { recursive: true });
-  execFileSync("initdb", [
-    "--pgdata", ephemeralPostgresData,
-    "--auth", "trust",
-    "--username", "postgres",
-    "--encoding", "UTF8",
-    "--no-locale",
-  ], { stdio: "ignore", timeout: 60_000 });
-  const port = await findOpenPort();
-  ephemeralPostgresStartAttempted = true;
-  execFileSync("pg_ctl", [
-    "--pgdata", ephemeralPostgresData,
-    "--log", postgresLog,
-    "--options", `-h 127.0.0.1 -p ${port} -k ${socketDirectory}`,
-    "--wait",
-    "start",
-  ], { stdio: "ignore", timeout: 60_000 });
-  execFileSync("psql", [
-    "--no-psqlrc",
-    "--set", "ON_ERROR_STOP=1",
-    "--host", "127.0.0.1",
-    "--port", String(port),
-    "--username", "postgres",
-    "--dbname", "postgres",
-    "--file", join(projectRoot, "migrations", "002_open_ena_auth_security.sql"),
-  ], { stdio: "ignore", timeout: 60_000 });
-  return `postgresql://postgres@127.0.0.1:${port}/postgres`;
-}
-
-async function stopEphemeralPostgres() {
-  if (!ephemeralPostgresRoot || !ephemeralPostgresData) return;
-  await cleanupOwnedEphemeralPostgres({
-    rootDirectory: ephemeralPostgresRoot,
-    dataDirectory: ephemeralPostgresData,
-    rootPrefix: "oe3dpg-",
-    startAttempted: ephemeralPostgresStartAttempted,
-  });
-  ephemeralPostgresRoot = null;
-  ephemeralPostgresData = null;
-  ephemeralPostgresStartAttempted = false;
 }
 
 async function waitForServer(url, timeout = 90_000) {
@@ -377,11 +320,7 @@ function assertArtifactInventoryBeforeSummary() {
 }
 
 function readGitEvidence() {
-  const git = (args) => execFileSync("git", args, {
-    cwd: projectRoot,
-    encoding: "utf8",
-    timeout: 30_000,
-  }).trim();
+  const git = (args) => literalGit(projectRoot, args);
   const status = git(["status", "--porcelain=v1", "--untracked-files=all"]);
   return Object.freeze({
     gitHead: git(["rev-parse", "HEAD"]),
@@ -424,7 +363,7 @@ function buildEndpointFixtureCsv() {
   return rows.join("\n") + "\n";
 }
 
-function classifyBrowserMessages(phaseMessages, context) {
+async function classifyBrowserMessages(phaseMessages, context) {
   const consoleErrors = phaseMessages.flatMap((phase) => phase.consoleErrors ?? []);
   const pageErrors = phaseMessages.flatMap((phase) => phase.pageErrors ?? []);
   const warnings = phaseMessages.flatMap((phase) => phase.consoleWarnings ?? []);
@@ -441,9 +380,21 @@ function classifyBrowserMessages(phaseMessages, context) {
       browser: context.browser,
       currentOrigin: context.currentOrigin,
       warning,
+      ownedServedChunk: runtime.receipt.servedAssets.find(asset => asset.status === 200 && !asset.error && sourceUrl === context.currentOrigin + asset.path),
     });
+    let verifiedCanvas = null;
     if (canvas) {
-      platformDiagnostics.canvas2dReadback.push(canvas);
+      const response = await fetch(context.currentOrigin + canvas.sourcePath);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      const sourceLine = bytes.toString("utf8").split(/\r?\n/u)[canvas.reportedLineNumber];
+      const owned = runtime.receipt.servedAssets.find(asset => asset.status === 200 && !asset.error && asset.path === canvas.sourcePath);
+      if (response.status === 200 && /javascript/iu.test(response.headers.get("content-type") ?? "") && bytes.length > 0 && bytes.length <= 16 * 1024 * 1024 && owned?.sha256 === sha256(bytes)
+          && sourceLine?.includes("vectorize-text: Unrecognized textAlign:") && (sourceLine.includes('getContext("2d")') || sourceLine.includes('getContext("2d",')) && sourceLine.includes(".getImageData(0,0,")) {
+        verifiedCanvas = { ...canvas, chunkSha256: sha256(bytes), sourceLineSha256: sha256(sourceLine), sourceLineNumber: canvas.reportedLineNumber + 1 };
+      }
+    }
+    if (verifiedCanvas) {
+      platformDiagnostics.canvas2dReadback.push(verifiedCanvas);
       continue;
     }
     const angle = classifyChromiumAngleReadPixelsDiagnostic({
@@ -485,7 +436,7 @@ function cleanupOwnedResources() {
     const cleanupErrors = [];
     if (browserSessionAttempted) {
       try {
-        runCli(["close"], "close browser session", 30_000);
+        await runCli(["close"], "close browser session", 30_000);
       } catch (caught) {
         cleanupErrors.push(caught);
       }
@@ -495,11 +446,6 @@ function cleanupOwnedResources() {
     } catch (caught) {
       cleanupErrors.push(caught);
     } finally {
-      try {
-        await stopEphemeralPostgres();
-      } catch (caught) {
-        cleanupErrors.push(caught);
-      }
       if (ownsDistDirectory) {
         try {
           writeFileSync(tsconfigPath, originalTsconfig, "utf8");
@@ -528,50 +474,8 @@ function cleanupOwnedResources() {
   return cleanupPromise;
 }
 
-async function handleSignal(signal) {
-  const exitCode = signal === "SIGINT" ? 130 : 143;
-  let cleanupFailure = null;
-  try {
-    await cleanupOwnedResources();
-  } catch (caught) {
-    cleanupFailure = caught;
-  }
-  let sanitizationFailure = null;
-  if (cleanupFailure) {
-    try {
-      removeUnsafeServerLog();
-    } catch {
-      // The signal exit remains non-zero; never print raw log bytes.
-    }
-  } else {
-    try {
-      sanitizeFinalServerLog();
-    } catch (sanitizationError) {
-      try {
-        removeUnsafeServerLog();
-      } catch {
-        // The signal exit remains non-zero; never print raw log bytes.
-      }
-      sanitizationFailure = sanitizationError;
-    }
-  }
-  if (cleanupFailure) {
-    process.stderr.write("[3D controls smoke] cleanup after " + signal + " failed: "
-      + redact(cleanupFailure) + "\n");
-  }
-  if (sanitizationFailure) {
-    process.stderr.write("[3D controls smoke] server log sanitization after " + signal + " failed: "
-      + redact(sanitizationFailure) + "\n");
-  }
-  process.exit(exitCode);
-}
 
-process.once("SIGINT", () => void handleSignal("SIGINT"));
-process.once("SIGTERM", () => void handleSignal("SIGTERM"));
-
-function assertBrowser(condition, message) {
-  if (!condition) throw new Error(message);
-}
+function assertBrowser(condition, message) { if (!condition) throw new Error(message); }
 
 function beginBrowserMessageCapture(page) {
   const consoleErrors = [];
@@ -639,6 +543,21 @@ async function readScientificState(page) {
         : value;
       return canonicalVector(candidate);
     };
+    const canonicalControlledCamera = (value) => {
+      for (const vector of [value?.center, value?.eye, value?.up]) {
+        if (![vector?.x, vector?.y, vector?.z].every(component => typeof component === "number" && Number.isFinite(component))) throw new Error("controlled camera vector is invalid");
+      }
+      if (!["perspective", "orthographic"].includes(value?.projection?.type)) throw new Error("controlled camera projection is invalid");
+      const eye = ["x", "y", "z"].map(axis => value.eye[axis] - value.center[axis]);
+      const up = [value.up.x, value.up.y, value.up.z];
+      const squaredLength = eye.reduce((sum, component) => sum + component * component, 0);
+      if (!Number.isFinite(squaredLength) || squaredLength <= 0) throw new Error("controlled camera eye is degenerate");
+      const factor = up.reduce((sum, component, index) => sum + component * eye[index], 0) / squaredLength;
+      const perpendicular = up.map((component, index) => component - factor * eye[index]);
+      const length = Math.hypot(...perpendicular);
+      if (!Number.isFinite(length) || length <= 0) throw new Error("controlled camera up is degenerate");
+      return canonicalCamera({ ...value, up: { x: perpendicular[0] / length, y: perpendicular[1] / length, z: perpendicular[2] / length } });
+    };
     const plotPayload = plotTestIds.map((testId) => {
       const panel = document.querySelector('[data-testid="' + testId + '"]');
       const region = panel?.querySelector('[data-ena-interactive-camera="true"]');
@@ -669,12 +588,21 @@ async function readScientificState(page) {
     const resultIdentity = Array.from(new Uint8Array(digest), (value) => (
       value.toString(16).padStart(2, "0")
     )).join("");
-    const axisState = ["x", "y", "z"].map((axis) => (
-      document.querySelector('[data-testid="open-ena-3d-axis-' + axis + '"]')?.value ?? null
-    ));
-    const cameraState = plotTestIds.map((testId) => document
+    const axisState = ["x", "y", "z"].map((axis, index) => {
+      const dimensions = plotPayload.map(plot => {
+        const labels = plot.traces.filter(trace => trace.meta?.role === "axis-label" && trace.meta.axis === axis);
+        if (labels.length !== 1 || typeof labels[0].meta.dimension !== "string" || !labels[0].meta.dimension) throw new Error(`Native ${axis} axis must expose its actual dimension`);
+        return labels[0].meta.dimension;
+      });
+      if (new Set(dimensions).size !== 1) throw new Error("Native 3D panels disagree on selected dimensions");
+      for (const select of document.querySelectorAll(`select[aria-label="Axis ${index + 1}"]`)) if (select.value !== dimensions[0]) throw new Error("Native axis control differs from rendered axis");
+      return dimensions[0];
+    });
+    if (new Set(axisState).size !== 3) throw new Error("Native 3D axes must be distinct");
+    const rawControlledCameraState = plotTestIds.map((testId) => document
       .querySelector('[data-testid="' + testId + '"] [data-ena-interactive-camera="true"]')
       ?.getAttribute("data-ena-camera-state") ?? null);
+    const cameraState = rawControlledCameraState.map(value => canonicalControlledCamera(JSON.parse(value)));
     const aspectRatioState = plotTestIds.map((testId) => document
       .querySelector('[data-testid="' + testId + '"] [data-ena-interactive-camera="true"]')
       ?.getAttribute("data-ena-aspect-ratio-state") ?? null);
@@ -689,6 +617,7 @@ async function readScientificState(page) {
       }
       return canonicalCamera(scene.getCamera());
     });
+    if (JSON.stringify(cameraState) !== JSON.stringify(runtimeCameraState)) throw new Error("controlled camera orientation differs from actual runtime camera " + JSON.stringify({ cameraState, runtimeCameraState }));
     const runtimeAspectRatioState = plotTestIds.map((testId) => {
       const root = document.querySelector(
         '[data-testid="' + testId + '"] [data-ena-plotly-root="true"]',
@@ -718,6 +647,7 @@ async function readScientificState(page) {
       resultIdentity,
       axisState,
       cameraState,
+      rawControlledCameraState,
       aspectRatioState,
       rangeState,
       runtimeCameraState,
@@ -807,7 +737,7 @@ function assertScientificState(actual, expected, label) {
   ]) {
     assertBrowser(
       JSON.stringify(actual[key]) === JSON.stringify(expected[key]),
-      label + " changed " + key,
+      label + " changed " + key + (key === "cameraState" || key === "runtimeCameraState" || key === "aspectRatioState" || key === "runtimeAspectRatioState" ? " " + JSON.stringify({ expected: expected[key], actual: actual[key], runtimeExpected: expected.runtimeCameraState, runtimeActual: actual.runtimeCameraState }) : ""),
     );
   }
 }
@@ -846,9 +776,9 @@ async function authenticateBuildAndOpen3d(page, args) {
     });
     const originalWorkerPostMessage = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function auditedWorkerPostMessage(message, ...rest) {
-      if (message?.kind === "run" && message?.config && !message?.request?.pathTask) {
+      if (message?.kind === "run-open-ena-plan-v3" && message?.plan?.configuration.analysis.model.type === "EndPoint") {
         audit.analysisRunCount += 1;
-        audit.requestedModelTypes.push(message.config.model);
+        audit.requestedModelTypes.push(message.plan.configuration.analysis.model.type);
       }
       return originalWorkerPostMessage.call(this, message, ...rest);
     };
@@ -858,6 +788,7 @@ async function authenticateBuildAndOpen3d(page, args) {
 
   await page.getByRole("textbox", { name: "Account name" }).fill(args.username);
   await page.getByRole("textbox", { name: "Password" }).fill(args.password);
+  await page.waitForLoadState("networkidle");
   await page.getByRole("button", { name: "Sign in" }).click();
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
   await rail.waitFor({ timeout: 30_000 });
@@ -880,31 +811,26 @@ async function authenticateBuildAndOpen3d(page, args) {
     input.files = transfer.files;
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }, args.fixtureCsv);
-  await page.getByRole("heading", { name: "Define the ENA model" }).waitFor({ timeout: 30_000 });
-
-  const unitFields = await page
-    .locator('[data-ena-official-field-path="true"][aria-label="Unit identity"]')
-    .locator(".ena-official-field-name")
-    .allTextContents();
-  assertBrowser(
-    JSON.stringify(unitFields) === JSON.stringify(["Group", "Name"]),
-    "the synthetic Endpoint unit identity is not ordered Group + Name",
-  );
-  await page.getByRole("tab", { name: "Windows" }).click();
-  const modelType = page.getByRole("combobox", { name: "Model type" });
-  await modelType.selectOption(args.modelType);
-  assertBrowser(await modelType.inputValue() === args.modelType, "the fixture was not configured as Endpoint");
-  const build = page.getByRole("button", { name: /Build ENA model/ });
-  assertBrowser(await build.isEnabled(), "the synthetic Endpoint build is disabled");
-  await build.click();
-  await page.getByRole("button", { name: /Rebuild model/ }).waitFor({ timeout: 60_000 });
+  const fixture = await prepareNativeFixtureV3(page);
+  const unitFields = fixture.units;
+  const modelType = page.getByRole("combobox", { name: "Model", exact: true });
+  const configuredModelType = await modelType.inputValue();
+  assertBrowser(configuredModelType === args.modelType, "the fixture was not configured as Endpoint");
+  await runNativeFixtureV3(page);
   await page.getByRole("button", { name: "Download Model" }).click({ trial: true, timeout: 30_000 });
   assertBrowser(
     await page.evaluate(() => window.__openEna3dControlsAudit?.analysisRunCount) === 1,
     "the initial Endpoint build did not dispatch exactly one analysis run",
   );
 
-  const visualization = page.getByRole("group", { name: "ENA visualization options" });
+  const identities = await nativeFixtureIdentitiesV3(page);
+  await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
+  const selectedGroups = page.getByTestId("open-ena-ona-descriptive-group-controls").getByRole("combobox");
+  const expectedGroups = ["SYNTHETIC_BASELINE", "SYNTHETIC_SCAFFOLDED"].map(value => identities.dictionary.groups.find(group => group.fields[0].value.value === value));
+  assertBrowser(expectedGroups.every(Boolean), "fixture groups must be present in bound dictionary");
+  await selectedGroups.nth(0).selectOption(expectedGroups[0].token);
+  await selectedGroups.nth(1).selectOption(expectedGroups[1].token);
+  const visualization = page.locator(".ena-visual-toolbar");
   const threeD = visualization.getByRole("button", { name: /3D ENA/ });
   assertBrowser(await threeD.isEnabled(), "3D ENA is disabled for the 5-code Endpoint fixture");
   await threeD.click();
@@ -922,7 +848,7 @@ async function authenticateBuildAndOpen3d(page, args) {
     );
   }
   return {
-    modelType: await modelType.inputValue(),
+    modelType: configuredModelType,
     unitFields,
     baseline: await readScientificState(page),
     browserMessages: browserMessageCapture.finish(),
@@ -931,9 +857,13 @@ async function authenticateBuildAndOpen3d(page, args) {
 
 async function exerciseGroupDisplayControls(page, args) {
   const browserMessageCapture = beginBrowserMessageCapture(page);
-  const baselineGroup = args.groups[0];
-  const secondaryGroup = args.groups[1];
-  const targetUnitId = baselineGroup + "::SYNTHETIC_UNIT_1";
+  const identities = await nativeFixtureIdentitiesV3(page);
+  const groupEntry = value => { const matches = identities.dictionary.groups.filter(group => group.fields.length === 1 && group.fields[0].column === "Group" && group.fields[0].value.type === "string" && group.fields[0].value.value === value); assertBrowser(matches.length === 1, "fixture Group must have exactly one typed identity"); return matches[0]; };
+  const baselineGroup = groupEntry(args.groups[0]).displayLabel;
+  const secondaryGroup = groupEntry(args.groups[1]).displayLabel;
+  const units = identities.dictionary.units.filter(unit => unit.fields.length === 2 && unit.fields.some(field => field.column === "Group" && field.value.type === "string" && field.value.value === args.groups[0]) && unit.fields.some(field => field.column === "Name" && field.value.type === "string" && field.value.value === "SYNTHETIC_UNIT_1"));
+  assertBrowser(units.length === 1, "fixture target Unit must have exactly one typed identity");
+  const targetUnitId = units[0].displayLabel;
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
 
   const analysisRunCount = async () => await page.evaluate(() => (
@@ -944,7 +874,7 @@ async function exerciseGroupDisplayControls(page, args) {
   };
   const openModelUnits = async () => {
     await rail.getByRole("button", { name: "Model", exact: true }).click();
-    const unitsTab = page.getByRole("tab", { name: "Units", exact: true });
+    const unitsTab = page.getByRole("tab", { name: /^Units(,|$)/ });
     await unitsTab.waitFor({ state: "visible", timeout: 30_000 });
     await unitsTab.click();
     const controls = page.getByTestId("open-ena-group-display-controls");
@@ -953,12 +883,12 @@ async function exerciseGroupDisplayControls(page, args) {
   };
   const openPlotTools = async () => {
     await rail.getByRole("button", { name: "Plot Tools", exact: true }).click();
-    await page.getByRole("group", { name: "ENA visualization options" })
+    await page.locator(".ena-visual-toolbar")
       .waitFor({ state: "visible", timeout: 30_000 });
   };
   const selectView = async (view) => {
     await openPlotTools();
-    const visualization = page.getByRole("group", { name: "ENA visualization options" });
+    const visualization = page.locator(".ena-visual-toolbar");
     await visualization.getByRole("button", { name: view === "2d" ? /2D ENA/ : /3D ENA/ }).click();
     if (view === "3d") {
       await page.getByTestId("open-ena-3d-group-contrast").waitFor({ state: "visible", timeout: 60_000 });
@@ -985,9 +915,7 @@ async function exerciseGroupDisplayControls(page, args) {
     };
     const units = card.locator(".ena-group-display-units");
     if (!await units.evaluate((element) => element.open)) await units.locator("summary").click();
-    const resultIdentity = await controls.evaluate((element) => (
-      element.parentElement?.getAttribute("data-ena-group-display-result-key") ?? ""
-    ));
+    const resultIdentity = (await nativeFixtureIdentitiesV3(page)).binding.scientificResultSha256;
     return {
       controls,
       card,
@@ -1228,13 +1156,14 @@ async function exerciseDataView(page, args) {
   const dataView = page.getByTestId("open-ena-3d-data-view");
   await dataView.waitFor({ state: "visible", timeout: 30_000 });
   assertBrowser(await toggle.getAttribute("aria-pressed") === "true", "mouse did not press Data View");
-  assertBrowser((await toggle.textContent()).includes("Comparison Plot"), "Data View did not expose its return action");
+  assertBrowser(await toggle.getAttribute("aria-label") === "Return to Comparison Plot", "Data View did not expose its full accessible return action");
+  assertBrowser((await toggle.textContent()).trim() === "Return to Comparison", "Data View did not expose its visible return action");
   assertBrowser(await page.getByTestId("open-ena-3d-comparison-plot").count() === 0, "Comparison plot remained mounted behind Data View");
   assertBrowser(await page.getByTestId("open-ena-3d-primary-plot").count() === 1, "Primary plot disappeared in Data View");
   assertBrowser(await page.getByTestId("open-ena-3d-secondary-plot").count() === 1, "Secondary plot disappeared in Data View");
   await assertSidePanelsPreserved("during mouse Data View");
   assertBrowser(
-    await page.getByRole("group", { name: "ENA visualization options" })
+    await page.locator(".ena-visual-toolbar")
       .getByRole("button", { name: /3D ENA/ }).getAttribute("aria-pressed") === "true",
     "Data View changed the visualization dimension",
   );
@@ -1720,83 +1649,18 @@ let baseUrl = null;
 let cleanupSucceeded = false;
 
 try {
-  execFileSync("npx", ["--version"], { encoding: "utf8", timeout: 30_000 });
-  const playwrightCliVersion = runCli(["--version"], "resolve Playwright CLI", 120_000).trim();
-  assert.ok(playwrightCliVersion.length > 0, "the Playwright CLI did not expose its version");
-
-  ownsDistDirectory = true;
-  const port = await findOpenPort();
-  baseUrl = "http://127.0.0.1:" + port;
-  const authDatabaseUrl = await startEphemeralPostgres();
-  removeOwnedDistDirectory();
-  const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => (
-    !key.startsWith("OPEN_ENA_3D_CONTROLS_SMOKE_")
-      && ![
-        "NEXT_DIST_DIR",
-        "OPEN_ENA_USERNAME",
-        "OPEN_ENA_PASSWORD",
-        "OPEN_ENA_SESSION_SECRET",
-        "OPEN_ENA_ACCOUNT_ID",
-        "OPEN_ENA_AUTH_DATABASE_URL",
-      ].includes(key)
-  )));
-  const ownedEnvironment = {
-    ...environment,
-    NODE_ENV: "production",
-    NEXT_DIST_DIR: ownedDistDirName,
-    OPEN_ENA_USERNAME: username,
-    OPEN_ENA_PASSWORD: password,
-    OPEN_ENA_SESSION_SECRET: sessionSecret,
-    OPEN_ENA_ACCOUNT_ID: accountId,
-    OPEN_ENA_AUTH_DATABASE_URL: authDatabaseUrl,
-    // The smoke owns a random loopback port; bind production Origin checks to
-    // that exact origin instead of inheriting a stale CI or deployment host.
-    OPEN_ENA_PUBLIC_ORIGIN: baseUrl,
-    OPEN_ENA_ALLOWED_ORIGINS: baseUrl,
-    OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1",
-  };
-  const logFd = openSync(serverLogPath, "w");
-  try {
-    process.stdout.write("[3D controls smoke] build production application ... ");
-    execFileSync(
-      "npm",
-      ["run", "build"],
-      {
-        cwd: projectRoot,
-        env: ownedEnvironment,
-        stdio: ["ignore", logFd, logFd],
-        timeout: 600_000,
-      },
-    );
-    process.stdout.write("PASS\n");
-    ownedServer = spawn(
-      "npm",
-      ["run", "start", "--", "--hostname", "127.0.0.1", "--port", String(port)],
-      {
-        cwd: projectRoot,
-        detached: process.platform !== "win32",
-        env: ownedEnvironment,
-        stdio: ["ignore", logFd, logFd],
-      },
-    );
-  } finally {
-    closeSync(logFd);
-  }
-  if (!ownedServer) throw new Error("The smoke-owned production server did not start.");
-  ownedServer.once("error", (error) => {
-    process.stderr.write("[3D controls smoke] server error: " + redact(error.message) + "\n");
-  });
-  await waitForServer(baseUrl + "/en/open-ena");
-
+  const playwrightCliVersion = "Playwright module 1.62.1";
+  runtime = await createServedBrowserV3({ root: resolve(projectRoot), directory: artifactDirectory + "-runtime", credentials: { username, password, secret: sessionSecret }, redact, serverLogPath, disableBrowserCache: true });
+  baseUrl = runtime.baseUrl;
   browserSessionAttempted = true;
-  runCli(["open", "about:blank", "--browser", smokeBrowser], "open browser", 120_000);
+  await runCli(["open", "about:blank", "--browser", smokeBrowser], "open browser", 120_000);
   browserOpened = true;
-  const browserRuntimeEvidence = runBrowserPhase(
+  const browserRuntimeEvidence = await runBrowserPhase(
     "record browser runtime identity",
     readBrowserRuntimeEvidence,
   );
   const fixtureCsv = buildEndpointFixtureCsv();
-  const modelAudit = runBrowserPhase(
+  const modelAudit = await runBrowserPhase(
     "authenticate, build the synthetic 5-code Endpoint, and open linked 3D",
     authenticateBuildAndOpen3d,
     {
@@ -1812,7 +1676,7 @@ try {
   assert.equal(modelAudit.baseline.analysisRunCount, 1);
   assert.match(modelAudit.baseline.resultIdentity, /^[a-f0-9]{64}$/u);
 
-  const groupDisplayAudit = runBrowserPhase(
+  const groupDisplayAudit = await runBrowserPhase(
     "exercise group/unit visibility and Mean, CI, Outlier, and Include Hidden across 2D/3D",
     exerciseGroupDisplayControls,
     {
@@ -1833,7 +1697,7 @@ try {
   assert.equal(groupDisplayAudit.analysisRunCount, 1);
   assert.equal(groupDisplayAudit.finalScientificState.resultIdentity, modelAudit.baseline.resultIdentity);
 
-  const dataViewAudit = runBrowserPhase(
+  const dataViewAudit = await runBrowserPhase(
     "exercise 3D Data View by mouse and keyboard without rerunning",
     exerciseDataView,
     {
@@ -1850,7 +1714,7 @@ try {
       assertScientificState,
     ],
   );
-  const fullscreenAudit = runBrowserPhase(
+  const fullscreenAudit = await runBrowserPhase(
     "exercise three per-card fullscreen controls and forced rejection fallback",
     exerciseFullscreenCards,
     {
@@ -1869,7 +1733,7 @@ try {
     ],
   );
   assert.equal(fullscreenAudit.fallbackAudit?.forcedRequestRejection, true);
-  const mobileAudit = runBrowserPhase(
+  const mobileAudit = await runBrowserPhase(
     "verify 390px Data View and all fifteen plot-action hit targets",
     exerciseMobileHitTesting,
     { baseline: modelAudit.baseline, mobileScreenshotPath },
@@ -1882,7 +1746,8 @@ try {
       assertScientificState,
     ],
   );
-  const browserErrors = classifyBrowserMessages([
+  await runtime.drainAssetReads("controls warning source custody");
+  const browserErrors = await classifyBrowserMessages([
     modelAudit.browserMessages,
     groupDisplayAudit.browserMessages,
     dataViewAudit.browserMessages,
@@ -1898,7 +1763,7 @@ try {
   assert.equal(browserErrors.unknownConsoleWarnings, 0);
   assert.equal(browserErrors.consoleWarningsTotal, browserErrors.classifiedPlatformWarnings);
   assert.deepEqual(browserErrors.pageErrors, [], "browser emitted page errors");
-  const cliConsole = runCli(["console", "error"], "read Playwright console summary");
+  const cliConsole = await runCli(["console", "error"], "read Playwright console summary");
   assert.match(cliConsole, /Errors:\s*0/u, "Playwright reported browser console errors");
   const cliWarningCount = Number(cliConsole.match(/Warnings:\s*(\d+)/u)?.[1] ?? -1);
   assert.equal(
@@ -1954,7 +1819,7 @@ try {
   primaryFailure = caught;
   if (browserOpened) {
     try {
-      runCli(
+      await runCli(
         ["screenshot", "--filename", failureScreenshotPath],
         "capture failure screenshot",
         30_000,

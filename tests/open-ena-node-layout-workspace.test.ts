@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -75,20 +76,12 @@ test("Reset node layout is disabled without overrides and enabled with one overr
   assert.match(enabledButton, /data-ena-node-layout-overrides="1"/);
 });
 
-test("Workspace owns one fingerprinted layout lifecycle without coupling it to plot recenter", () => {
-  const workspace = source("components/open-ena/OpenEnaWorkspace.tsx");
+test("node layout is result-bound and reset independently from camera and plot scales", () => {
 
-  assert.match(workspace, /createOpenEnaNodeLayoutFingerprint/);
-  assert.match(workspace, /createOpenEnaNodeLayoutState/);
-  assert.match(workspace, /moveOpenEnaNode/);
-  assert.match(workspace, /resetOpenEnaNodeLayout/);
-  assert.match(workspace, /const nodeLayoutFingerprint = useMemo/);
-  assert.match(workspace, /current\.fingerprint === nodeLayoutFingerprint/);
-  assert.match(workspace, /const moveNode = useCallback/);
-  assert.match(workspace, /nodeLayoutOverrideCount=\{openEnaNodeLayoutOverrideCount\(activeNodeLayout\)\}/);
-  assert.match(workspace, /onResetNodeLayout=\{resetNodeLayout\}/);
+  assert.match(v3, /nodeOverrides.hash === resultHash/);
+  assert.match(v3, /onResetNodeLayout=\{\(\) => setNodeOverrides/);
+  assert.match(v3, /onReset=\{\(\) => \{ setEdgeScale/);
+  assert.match(v3, /setCamera\(cameraForPreset\("isometric"\)\)/);
+  assert.match(v3, /codeSourceByRenderedCode/);
 
-  const resetPlot = workspace.match(/function resetPlot\(\) \{[\s\S]*?\n  \}/)?.[0] ?? "";
-  assert.ok(resetPlot, "Workspace must retain a dedicated plot-view reset function");
-  assert.doesNotMatch(resetPlot, /resetOpenEnaNodeLayout|setNodeLayout/);
 });

@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -56,6 +57,13 @@ test("group display defaults match the official Mean/CI/Outlier/Include Hidden c
     includeHiddenPoints: false,
   });
   assert.equal(module.openEnaGroupUnitKey("Alpha", "a1"), JSON.stringify(["Alpha", "a1"]));
+  const reserved = Object.create(null) as Record<string, typeof module.DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS>;
+  reserved.__proto__ = {
+    ...module.DEFAULT_OPEN_ENA_GROUP_DISPLAY_OPTIONS,
+    showMean: false,
+  };
+  assert.equal(module.resolveOpenEnaGroupDisplayOptions(reserved, "__proto__").showMean, false);
+  assert.equal(module.resolveOpenEnaGroupDisplayOptions({}, "constructor").showMean, true);
 });
 
 test("Include Hidden Points changes derived summaries but never reveals a hidden unit mark", async () => {
@@ -325,41 +333,51 @@ test("large unit groups keep a bounded initial DOM and expose a search route to 
   assert.doesNotMatch(markup, /Hide unit unit-250 in Large/);
 });
 
-test("Workspace owns one identity-keyed display state and passes it to both 2D and 3D group presenters", () => {
-  const workspace = readFileSync(
-    join(process.cwd(), "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  assert.match(workspace, /OpenEnaGroupDisplayControls/);
-  assert.match(workspace, /deriveOpenEnaGroupDisplay/);
-  assert.match(workspace, /groupDisplayDerivation/);
-  assert.match(workspace, /data-ena-group-display-error="true"/);
-  assert.doesNotMatch(workspace, /contrast=\{activeGroupDisplay\?\.contrast \?\? activeGroupContrast\}/);
-  assert.match(workspace, /groupDisplaySettingsByGroup/);
-  assert.match(workspace, /hiddenUnitKeys/);
-  assert.match(workspace, /activeGroupDisplay/);
-  assert.match(workspace, /const groupDisplayExportContrast = groupDisplayError/);
-  assert.match(workspace, /derivedGroupDisplay\?\.contrast \?\? groupContrast/);
-  assert.match(workspace, /buildPairwiseGroupContrastExport\(groupDisplayExportContrast/);
-  assert.match(workspace, /pairwiseGroupContrastEdgesToCsv\(groupDisplayExportContrast\)/);
-  assert.match(workspace, /groupDisplayPresentation/);
-  assert.match(workspace, /allowedHiddenUnitKeys/);
-  assert.match(
-    workspace,
-    /groupDisplaySettingsByGroup:\s*groupDisplayPresentation\.settingsByGroup/,
-    "contrast export must resolve defaults for only the selected pair",
-  );
-  assert.match(
-    workspace,
-    /hiddenUnitKeys:\s*groupDisplayPresentation\.hiddenUnitKeys/,
-    "contrast export must not leak hidden identifiers from non-selected groups",
-  );
-  assert.ok(
-    (workspace.match(/groupDisplay=\{activeGroupDisplay\}/g) ?? []).length >= 2,
-    "the 2D and 3D group presenters must consume the same display state",
-  );
-  assert.match(workspace, /setHiddenUnitKeys\(\[\]\)/);
-  assert.match(workspace, /data-ena-group-display-result-key/);
+test("native v3 identity bridge keeps stable keys separate from visible labels", async () => {
+  const module = await import("../components/open-ena/OpenEnaGroupDisplayControls");
+  const Renderable = module.default as unknown as ComponentType<Record<string, unknown>>;
+  const markup = renderToStaticMarkup(createElement(Renderable, {
+    groups: [{
+      name: "legacy-fallback",
+      id: "__open_ena_group_v3_000001",
+      label: "Group 1 [number]",
+      color: "#cc423a",
+      unitIds: ["__open_ena_unit_v3_000001", "constructor"],
+      unitLabelsById: {
+        __open_ena_unit_v3_000001: "Unit 1 [number]",
+        constructor: "Unit constructor",
+      },
+    }],
+    settingsByGroup: {
+      __open_ena_group_v3_000001: {
+        showUnitPoints: true,
+        showMean: true,
+        showConfidenceIntervals: true,
+        showOutlierIntervals: false,
+        includeHiddenPoints: false,
+      },
+    },
+    hiddenUnitKeys: [JSON.stringify(["__open_ena_group_v3_000001", "constructor"])],
+    view: "2d",
+    onSettingsChange: () => {},
+    onUnitVisibilityChange: () => {},
+    onRevealAllHidden: () => {},
+  }));
+  assert.match(markup, /Group 1 \[number\] · 1 of 2 unit points visible/u);
+  assert.match(markup, /aria-label="Hide unit Unit 1 \[number\] in Group 1 \[number\]"/u);
+  assert.match(markup, /aria-label="Show unit Unit constructor in Group 1 \[number\]"/u);
+  assert.doesNotMatch(markup, /legacy-fallback/u);
+  assert.doesNotMatch(markup, /__open_ena_(?:group|unit)_v3/u);
+});
+
+test("native identity-keyed Group display settings reach both plot dimensions independently of science", () => {
+
+  assert.match(v3, /display.groups/);
+  assert.match(v3, /presentBoundGroupDisplayV3/);
+  assert.match(v3, /groupPresentation:/);
+  assert.match(moduleV3("lib/open-ena/plot3d.ts"), /nativePlotGroupSettingsV3/);
+  assert.match(moduleV3("components/open-ena/OpenEnaPlot.tsx"), /nativePlotGroupSettingsV3/);
+
 });
 
 test("group contrast presentation export records hidden-point and summary-display policy without changing canonical inference", async () => {

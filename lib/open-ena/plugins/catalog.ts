@@ -30,7 +30,7 @@ const rawCatalog = [
     },
     authors: [{ name: "Dr. Peter Hu Dongpin", role: "software", publicConsent: true }, { name: "Dr. Peter Hu Dongpin", role: "visualization", publicConsent: true }],
     maintainer,
-    compatibility: { coreApi: "1", jenaVersions: ["0.7.0-ona.0"], resultSchemaVersions: [2], analysisKinds: ["ena"], modelTypes: ["EndPoint", "SeparateTrajectory", "AccumulatedTrajectory"], minimumDimensions: 3, requiredCapabilities: ["3d"] },
+    compatibility: { coreApi: "1", jenaVersions: ["0.7.0-ona.0"], resultSchemaVersions: [2, 3], analysisKinds: ["ena"], modelTypes: ["EndPoint", "SeparateTrajectory", "AccumulatedTrajectory"], minimumDimensions: 3, requiredCapabilities: ["3d"] },
     permissions: { dataAccessTier: "D2", network: "none", storage: "none", externalProcessing: false },
     scientificBoundary: { claims: ["Presents the existing fitted jENA coordinates in a linked three-dimensional view."], nonClaims: ["Does not rebuild connections, refit rotations, run inference, or establish validity from visual separation."] },
     engineeringAssurance: previewAssurance, source: source(), licenses,

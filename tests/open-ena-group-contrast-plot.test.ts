@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -842,7 +843,12 @@ test("the central comparison SVG accepts the Workspace export ref", () => {
   assert.ok(existsSync(componentPath));
   const source = readFileSync(componentPath, "utf8");
   assert.match(source, /svgRef\?:\s*Ref<SVGSVGElement>/);
-  assert.match(source, /kind\s*===\s*"comparison"\s*\?\s*svgRef\s*:\s*undefined/);
+  assert.match(source, /ref=\{kind\s*===\s*"comparison"\s*\?\s*bindSvgRef\s*:\s*undefined\}/);
+  assert.match(source, /const cleanup = svgRef\(node\)/);
+  assert.match(source, /node && typeof cleanup === "function"/);
+  assert.match(source, /if \(comparisonSvgRef\.current === node\) comparisonSvgRef\.current = null/);
+  assert.match(source, /cleanup\(\)/);
+  assert.match(source, /svgRef\.current = node/);
 });
 
 test("Copy image resolves the semantic plot SVG instead of a toolbar icon", () => {
@@ -852,6 +858,19 @@ test("Copy image resolves the semantic plot SVG instead of a toolbar icon", () =
     /closest\("figure"\)\?\.querySelector<SVGSVGElement>\("svg\[data-ena-plot-kind\]"\)/,
   );
   assert.doesNotMatch(source, /closest\("figure"\)\?\.querySelector\("svg"\)/);
+});
+
+test("plot clipboard publication is fail-closed behind one identity confirmation", () => {
+  const source = readFileSync(componentPath, "utf8");
+  const handleCopy = source.slice(source.indexOf("const handleCopy ="), source.indexOf("const comparisonScale", source.indexOf("const handleCopy =")));
+  assert.match(source, /onConfirmIdentityBearingExport\?:\s*\(\)\s*=>\s*boolean/u);
+  assert.match(handleCopy, /if\s*\(!props\.onConfirmIdentityBearingExport\)[\s\S]*?"unavailable"[\s\S]*?return;/u);
+  assert.match(handleCopy, /confirmed\s*=\s*props\.onConfirmIdentityBearingExport\(\)/u);
+  assert.match(handleCopy, /if\s*\(!confirmed\)[\s\S]*?"cancelled"[\s\S]*?return;/u);
+  assert.ok(handleCopy.indexOf("onConfirmIdentityBearingExport()") < handleCopy.indexOf("copyPlotImage(button)"));
+  assert.equal((handleCopy.match(/onConfirmIdentityBearingExport\(\)/gu) ?? []).length, 1, "one plot-copy intent asks once");
+  const workspace = readFileSync(join(process.cwd(), "components/open-ena/OpenEnaWorkspace.tsx"), "utf8");
+  assert.match(workspace, /<OpenEnaGroupContrast[\s\S]*?onConfirmIdentityBearingExport=\{confirmCurrentIdentityBearingExport\}/u);
 });
 
 test("all horizontally scrollable plot figures are keyboard focusable and labelled", async () => {
@@ -1017,11 +1036,15 @@ test("hidden plots fade without collapsing and removed plots advertise point-bas
   assert.match(source, /data-ena-panel-state=\{panelStates?\.secondary\}/);
   assert.match(source, /panelStates?\.primary\s*!==\s*"removed"[\s\S]{0,500}<figure/);
   assert.match(source, /panelStates?\.secondary\s*!==\s*"removed"[\s\S]{0,500}<figure/);
-  assert.match(source, /panelStates?\[?[^\]\n]*\]?\s*===\s*"hidden"[\s\S]{0,250}"Show Plot"[\s\S]{0,250}"Hide Plot"/);
-  assert.match(source, /panelStates?\.primary\s*===\s*"removed"[\s\S]{0,800}Restore Primary Plot/);
-  assert.match(source, /panelStates?\.secondary\s*===\s*"removed"[\s\S]{0,800}Restore Secondary Plot/);
-  assert.match(source, /Restore Primary Plot[\s\S]{0,500}type:\s*"restore"[\s\S]{0,100}plot:\s*"primary"/);
-  assert.match(source, /Restore Secondary Plot[\s\S]{0,500}type:\s*"restore"[\s\S]{0,100}plot:\s*"secondary"/);
+  assert.match(source, /panelState\s*===\s*"hidden"\s*\?\s*copy\.showPlot\s*:\s*copy\.hidePlot/);
+  assert.match(source, /panelStates?\.primary\s*===\s*"removed"\s*\?\s*uiCopy\.restorePlot\(uiCopy\.primaryPlot\)/);
+  assert.match(source, /panelStates?\.secondary\s*===\s*"removed"\s*\?\s*uiCopy\.restorePlot\(uiCopy\.secondaryPlot\)/);
+  assert.match(source, /data-ena-restore-slot=\{interactive\s*\?\s*restoreSlot\s*:\s*undefined\}/);
+  assert.match(source, /const restorePrimaryPlot[\s\S]{0,400}type:\s*"restore",\s*plot:\s*"primary"/);
+  assert.match(source, /const restoreSecondaryPlot[\s\S]{0,400}type:\s*"restore",\s*plot:\s*"secondary"/);
+  assert.match(source, /slot:\s*"primary"[\s\S]{0,120}onRestore:\s*\(\)\s*=>\s*restorePrimaryPlot\(role\)/);
+  assert.match(source, /slot:\s*"secondary"[\s\S]{0,120}onRestore:\s*\(\)\s*=>\s*restoreSecondaryPlot\(role\)/);
+  assert.doesNotMatch(source, /focusAfterRender\(['"]\[aria-label=/, "focus restoration must not depend on translated labels");
 
   const hiddenRule = css.match(/[^{}]*\[data-ena-panel-state=["']hidden["']\][^{}]*\{([^}]*)\}/)?.[1] ?? "";
   assert.match(hiddenRule, /opacity\s*:\s*0?\.\d+/);
@@ -1190,16 +1213,13 @@ test("official comparison keeps one signed-difference edge per connection while 
   assert.match(secondary, /data-ena-network-role="secondary"/);
 });
 
-test("Workspace retains the single Comparison Download Model and Data View toolbar actions", () => {
-  const workspaceSource = readFileSync(
-    join(process.cwd(), "components", "open-ena", "OpenEnaWorkspace.tsx"),
-    "utf8",
-  );
-  assert.equal((workspaceSource.match(/data-testid="open-ena-data-view-toggle"/g) ?? []).length, 1);
-  assert.equal((workspaceSource.match(/\bDownload Model\b/g) ?? []).length, 1);
-  assert.equal((workspaceSource.match(/className="ena-download-model-button-icon"/g) ?? []).length, 1);
-  assert.match(workspaceSource, /data-testid="open-ena-data-view-toggle"[\s\S]{0,500}setCenterSurface/);
-  assert.match(workspaceSource, /ena-download-model-button[\s\S]{0,1000}buildAnalysisBundle/);
+test("Comparison retains a single Download Model and Data View toolbar", () => {
+
+  const markup = shell();
+  assert.equal((markup.match(/Download Model<\/button>/g) ?? []).length, 1);
+  assert.equal((markup.match(/data-testid="open-ena-data-view-toggle"/g) ?? []).length, 1);
+  assert.match(markup, /class="ena-visual-toolbar"/);
+
 });
 
 test("one selected code color is reused by Comparison, Primary, and Secondary code nodes", async () => {

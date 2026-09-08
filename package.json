@@ -22,12 +22,22 @@
     "test:browser:open-ena-ona-3d": "node tests/open-ena-ona-3d-browser-smoke.mjs",
     "test:browser:open-ena-node-drag": "node tests/open-ena-node-drag-browser-smoke.mjs",
     "test:browser:open-ena-login": "node tests/open-ena-login-browser-smoke.mjs",
+    "test:browser:open-ena-model-v3-tabs": "node tests/open-ena-model-v3-tabs-browser.mjs",
+    "test:browser:open-ena-model-v3-units": "node tests/open-ena-model-v3-units-browser.mjs",
+    "test:browser:open-ena-model-v3-horizons": "node tests/open-ena-model-v3-horizons-browser.mjs",
+    "test:browser:open-ena-model-v3-windows": "node tests/open-ena-model-v3-windows-browser.mjs",
+    "test:browser:open-ena-model-v3-codes": "node tests/open-ena-model-v3-codes-browser.mjs",
     "test:browser:longitudinal-v3": "node tests/open-ena-longitudinal-v3-browser-smoke.mjs",
     "prompt:verify": "node --import tsx scripts/verify-open-ena-ai-prompts.ts",
     "test:production-browser-receipt:unit": "node --test scripts/verify-open-ena-production-browser-run.test.mjs",
     "verify:production-browser-receipt": "node --check scripts/verify-open-ena-production-browser-run.mjs && node --check scripts/verify-open-ena-production-browser-run.test.mjs && npm run test:production-browser-receipt:unit",
     "verify:j3dena-vendor": "node scripts/verify-j3dena-vendor.mjs",
-    "verify": "npm run prompt:verify && npm run verify:j3dena-vendor -- --require-installed && npm run jena:verify && node scripts/verify-j3dena-vendor.mjs --require-runtime && npm run verify:production-browser-receipt && npm run test:app && npm run typecheck:app && npm run build:app"
+    "verify": "npm run prompt:verify && npm run verify:j3dena-vendor -- --require-installed && npm run jena:verify && node scripts/verify-j3dena-vendor.mjs --require-runtime && npm run verify:production-browser-receipt && npm run test:app && npm run typecheck:app && npm run build:app",
+    "test:browser:open-ena-models-v3": "node tests/open-ena-models-v3-browser-smoke.mjs",
+    "postinstall": "node scripts/patch-plotly-disposal.mjs --apply",
+    "prebuild:app": "node scripts/patch-plotly-disposal.mjs --apply",
+    "predev": "node scripts/patch-plotly-disposal.mjs --apply",
+    "verify:plotly-disposal": "node scripts/patch-plotly-disposal.mjs --check"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",
@@ -38,7 +48,8 @@
     "plotly.js-gl3d-dist-min": "3.7.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "read-excel-file": "9.3.5"
+    "read-excel-file": "9.3.5",
+    "write-excel-file": "4.1.1"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

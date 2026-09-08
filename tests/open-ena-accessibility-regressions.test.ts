@@ -1,3 +1,4 @@
+import { workspaceV3Source as v3, controllerV3Source as owner, renderWorkspaceShellV3 as shell, moduleSourceV3 as moduleV3, functionSourceV3 } from "./helpers/open-ena-workspace-v3-ui";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -89,27 +90,15 @@ test("workspace-scoped range IDs remain unique when two workspaces are server-re
   assert.match(markup, /<output id=":R1:-open-ena-window-back-value" for=":R1:-open-ena-window-back">/u);
 });
 
-test("the two Windows ranges and three Plot Tools ranges use the shared accessible field", () => {
-  const modelPanel = sourceSegment(workspace, "function renderModelPanel()", "function renderLongitudinalPanel()");
-  const plotPanel = sourceSegment(workspace, "function renderPlotPanel()", "function renderAiPanel()");
+test("native raw Windows controls replace scientific sliders and Plot Tools retain accessible ranges", () => {
 
-  assert.equal((modelPanel.match(/<OpenEnaRangeField\b/gu) ?? []).length, 2);
-  assert.equal((plotPanel.match(/<OpenEnaRangeField\b/gu) ?? []).length, 3);
+  assert.match(v3, /<OpenEnaWindowsPanelV3/);
+  assert.match(moduleV3("components/open-ena/model-v3/OpenEnaWindowsPanelV3.tsx"), /aria-invalid/);
+  const markup = shell();
+  assert.match(markup, /type="range"/);
+  assert.match(markup, /aria-valuetext=/);
+  assert.match(v3, /<OpenEnaRangeField/);
 
-  for (const binding of [
-    "copy.model.back",
-    "copy.model.forward",
-    "copy.plot.edgeScale",
-    "copy.plot.edgeThreshold",
-    "copy.plot.pointScale",
-  ]) {
-    assert.match(workspace, new RegExp(`label=\\{${binding.replaceAll(".", "\\.")}\\}`, "u"));
-  }
-
-  assert.equal((modelPanel.match(/accessibleValueText=/gu) ?? []).length, 2);
-  assert.equal((plotPanel.match(/accessibleValueText=/gu) ?? []).length, 3);
-  assert.doesNotMatch(modelPanel, /<label className="ena-field ena-range-field">/u);
-  assert.doesNotMatch(plotPanel, /<label className="ena-field ena-range-field">/u);
 });
 
 test("the Model tablist and desktop rail grow with 200 percent text instead of overlapping or clipping", () => {
@@ -158,4 +147,60 @@ test("the 1400px toolbar keeps enlarged actions in wrapping normal flow", () => 
   assert.doesNotMatch(clusterRule, /position:\s*absolute|height:\s*24px/u);
   assert.doesNotMatch(downloadRule, /(?:width|min-width|max-width):\s*138px|min-height:\s*24px/u);
   assert.doesNotMatch(viewButtonRule, /min-height:\s*24px/u);
+});
+
+test("Models v3 exposes localized live diagnostics, field errors, focus return, and keyboard reorder contracts", () => {
+  const tabs = source("components/open-ena/model-v3/OpenEnaModelTabsV3.tsx");
+  const diagnostics = source("components/open-ena/model-v3/OpenEnaModelDiagnosticsV3.tsx");
+  const codes = source("components/open-ena/model-v3/OpenEnaCodesPanelV3.tsx");
+  const order = source("components/open-ena/model-v3/OpenEnaOrderPolicyEditorV3.tsx");
+  assert.match(tabs, /role="status"/u);
+  assert.match(tabs, /aria-live="polite"/u);
+  assert.match(diagnostics, /aria-describedby=/u);
+  assert.match(diagnostics, /copy\.severityLabels\[diagnostic\.severity\]/u);
+  assert.match(diagnostics, /function returnPendingFocus\(/u);
+  assert.match(diagnostics, /closed\.trigger\.focus\(\)/u);
+  assert.match(codes, /event\.altKey/u);
+  assert.match(codes, /event\.key === "ArrowUp"/u);
+  assert.match(order, /event\.key === "Escape"/u);
+  assert.match(order, /sourceReviewTriggerRef\.current\?\.focus\(\)/u);
+  assert.doesNotMatch(tabs + diagnostics + codes + order, /<button[^>]*>\s*<button/u);
+});
+
+test("actual Models tabs and source preparation own their styling and focus lifecycle", () => {
+  const tabs = source("components/open-ena/model-v3/OpenEnaModelTabsV3.tsx");
+  assert.match(tabs, /className="ena-model-tabs" role="tablist"/u);
+  assert.match(tabs, /className="ena-official-icon-button ena-model-help-button"/u);
+  assert.match(workspace, /className="ena-control-content ena-model-control-content"/u);
+  assert.match(workspace, /sourceFileTriggerRef/u);
+  assert.match(workspace, /sourceDialogRef/u);
+  assert.match(workspace, /onKeyDown=\{onSourceDialogKeyDown\}/u);
+  assert.match(workspace, /aria-invalid=\{column\.errorCount > 0\}/u);
+  assert.match(workspace, /aria-describedby=\{column\.errorCount > 0/u);
+});
+
+test("actual plot and panel actions keep 32px targets and locale-independent focus selectors", () => {
+  const contrast = source("components/open-ena/OpenEnaGroupContrast.tsx");
+  const plotActions = firstRuleBody(css, ".ena-official-plot-actions button");
+  const panelActions = firstRuleBody(css, ".ena-official-panel-actions button");
+  assert.match(plotActions, /min-width:\s*32px;/u);
+  assert.match(plotActions, /min-height:\s*32px;/u);
+  assert.match(panelActions, /min-width:\s*32px;/u);
+  assert.match(panelActions, /min-height:\s*32px;/u);
+  assert.match(contrast, /data-ena-restore-slot=\{interactive\s*\?\s*restoreSlot\s*:\s*undefined\}/u);
+  assert.match(contrast, /data-ena-restore-hit-target="true"/u);
+  assert.match(contrast, /const RESTORE_HIT_TARGET_SVG_SIZE\s*=\s*56;/u);
+  assert.match(contrast, /const RESTORE_HIT_TARGET_CSS_SIZE\s*=\s*33;/u);
+  assert.match(contrast, /useLayoutEffect\(\(\)\s*=>\s*\{/u);
+  assert.match(contrast, /new ResizeObserver\(measure\)/u);
+  assert.match(contrast, /observer\?\.disconnect\(\)/u);
+  assert.match(contrast, /window\.removeEventListener\("resize", measure\)/u);
+  assert.match(contrast, /const cleanup = svgRef\(node\)/u);
+  assert.match(contrast, /node && typeof cleanup === "function"/u);
+  assert.match(contrast, /comparisonSvgRef\.current === node[\s\S]*?comparisonSvgRef\.current = null[\s\S]*?cleanup\(\)/u);
+  assert.match(contrast, /svgRef\.current = node/u);
+  assert.match(contrast, /RESTORE_HIT_TARGET_CSS_SIZE\s*\/\s*\(RESTORE_HIT_TARGET_SVG_SIZE\s*\*\s*zoom\s*\*\s*svgScreenScale\)/u);
+  assert.match(contrast, /data-ena-restore-hit-target-scale=\{dataNumber\(restoreHitTargetScale\)\}/u);
+  assert.match(contrast, /focusAfterRender\('\[data-ena-panel-action="switch-plots"\]'\)/u);
+  assert.doesNotMatch(contrast, /focusAfterRender\(['"]\[aria-label=/u);
 });

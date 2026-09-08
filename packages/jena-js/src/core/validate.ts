@@ -10,7 +10,7 @@ const MODELS = new Set(['EndPoint', 'AccumulatedTrajectory', 'SeparateTrajectory
 const WINDOWS = new Set(['MovingStanzaWindow', 'Conversation']);
 const NETWORK_TYPES = new Set(['standard', 'ordered']);
 const ROTATION_METHODS = new Set(['svd', 'mean', 'generalized', 'regression', 'regression2', 'hena', 'spherical']);
-const NODE_POSITION_METHODS = new Set(['undirected', 'directed', 'directed-ground-response']);
+const NODE_POSITION_METHODS = new Set(['undirected', 'directed', 'directed-ground-response', 'reference-fixed']);
 
 function isWindowSize(value: number): boolean {
   return value === Number.POSITIVE_INFINITY || (Number.isInteger(value) && value >= 0);
@@ -123,6 +123,9 @@ export function validateAccumulateOptions(
 }
 
 export function validateMakeSetOptions(options: MakeSetOptions): void {
+  if (options.nodePositionMethod === 'reference-fixed' && (!options.rotationSet || options.rotation !== undefined)) {
+    throw new Error('Reference fixed nodes require a rotationSet and prohibit simultaneous target rotation.');
+  }
   if (options.dimensions !== undefined && (!Number.isInteger(options.dimensions) || options.dimensions < 1)) {
     throw new Error(`dimensions must be an integer >= 1; got ${String(options.dimensions)}. (Values above the available rotated dimensions are clamped.)`);
   }
