@@ -10098,6 +10098,7 @@ body:has(.open-ena-page) #main-content {
 }
 
 .ena-code-color-dialog .ena-code-color-custom .ena-code-color-value-row > button {
+  height: 25px;
   width: 25px;
   min-height: 25px;
   border: 1px solid #a9bab8;
@@ -10116,6 +10117,7 @@ body:has(.open-ena-page) #main-content {
 }
 
 .ena-code-color-dialog .ena-code-color-custom .ena-code-color-value-row input[type="text"] {
+  height: 25px;
   width: 100%;
   min-width: 0;
   min-height: 25px;

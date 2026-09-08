@@ -139,12 +139,14 @@ test("Open ENA code-color desktop geometry preserves the official paired-preset 
   assert.match(customLabel, /font-size:\s*11px;/u);
   assert.match(customLabel, /font-weight:\s*700;/u);
   const valueButton = dialogRule(".ena-code-color-custom .ena-code-color-value-row > button");
+  assert.match(valueButton, /(?:^|\s)height:\s*25px;/u);
   assert.match(valueButton, /min-height:\s*25px;/u);
   assert.match(valueButton, /border:\s*1px\s+solid\s+#a9bab8;/u);
   assert.match(valueButton, /border-radius:\s*3px;/u);
   assert.match(valueButton, /padding:\s*0;/u);
   assert.match(valueButton, /font:\s*inherit;/u);
   const valueInput = dialogRule(".ena-code-color-custom .ena-code-color-value-row input[type=\"text\"]");
+  assert.match(valueInput, /(?:^|\s)height:\s*25px;/u);
   assert.match(valueInput, /min-height:\s*25px;/u);
   assert.match(valueInput, /border:\s*1px\s+solid\s+#a9bab8;/u);
   assert.match(valueInput, /border-radius:\s*3px;/u);
