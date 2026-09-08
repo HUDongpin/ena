@@ -840,7 +840,7 @@ async function auditOfficialModelTabs(page, rail) {
   await manageCodes.click();
   assert.ok(await codes.getByRole("checkbox", { name: /^Select .+ as a Code$/ }).count() > 0);
   await codes.getByRole("button", { name: "Close Code manager", exact: true }).click();
-  await page.getByRole("button", { name: "Run model", exact: true }).click();
+  await page.getByRole("button", { name: /^(?:Build ENA model|Rebuild model)$/u }).click();
   await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current");
   const codeColorPresets = await auditCodeColorPresets(page, codes);
   const codesGeometry = await panelGeometry(codes);
@@ -1182,7 +1182,7 @@ async function auditWindowExtentInputs(page) {
     values.push({ group: name, ...value });
   }
   await window.selectOption(original);
-  await page.getByRole("button", { name: "Run model", exact: true }).click();
+  await page.getByRole("button", { name: /^(?:Build ENA model|Rebuild model)$/u }).click();
   await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current");
   return { screen: "Model / Windows", nativeFiniteInputs: values, replacedLegacyControls: ["Backward span (includes current row)", "Forward context rows"] };
 }
@@ -1235,10 +1235,10 @@ async function auditModelsV3Accessibility(page, rail) {
     assert.ok(description.length > 10);
     disabledReasons.push({ name, description });
   }
-  assert.equal(await button("Run model").isDisabled(), true);
+  assert.equal(await button(/^(?:Build ENA model|Rebuild model)$/u).isDisabled(), true);
   await button("Undo Code exclusion").focus();
   await page.keyboard.press("Enter");
-  await button("Run model").click();
+  await button(/^(?:Build ENA model|Rebuild model)$/u).click();
   await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current");
   await page.emulateMedia({ reducedMotion: "reduce" });
   assert.equal(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches), true);
