@@ -347,7 +347,14 @@ try {
   if (runtime?.page) await runtime.page.screenshot({ path: join(artifactDirectory, "failure.png") }).catch(() => {});
   process.stderr.write(redact(error.stack ?? error) + "\n");
 } finally {
-  try { if (runtime) await runtime.close(failure); }
+  try {
+    if (runtime) {
+      await runtime.close(failure);
+      const serverLog = readFileSync(join(artifactDirectory, "next-server.log"), "utf8");
+      assertAggregatePrivacy(serverLog);
+      assert.doesNotMatch(serverLog, /entity-\d{6}/u, "server logs must not expose per-entity inference tokens");
+    }
+  }
   catch (error) { failure ??= error; summary.status = "fail"; summary.cleanupError = redact(error.stack ?? error); }
   saveSummary();
 }
