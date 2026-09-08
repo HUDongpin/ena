@@ -203,6 +203,10 @@ try {
     assert.equal(await page.locator('[data-ena-stats-tab][tabindex="0"]').count(), 1);
     await page.keyboard.press("Tab");
     assert.ok(await page.locator('[data-ena-stats-panel="comparison"]').evaluate(node => document.activeElement === node), "Tab reaches the focusable result panel");
+    // Switching Stats tabs remounts the intentionally collapsed audit disclosures.
+    for (const title of ["Native comparison statistics", "Researcher-requested post-model inference"]) {
+      await page.locator("details > summary").filter({ hasText: new RegExp(`^${title}$`) }).click();
+    }
     const widths = [];
     for (const width of [768, 390]) {
       await page.setViewportSize({ width, height: 844 });
