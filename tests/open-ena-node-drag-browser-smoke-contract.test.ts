@@ -62,6 +62,13 @@ test("camera, reset, export, and analytical boundaries are acceptance gates", ()
   assert.match(source, /drag mutated analytical result/u);
   assert.match(source, /analysisRunCount/u);
   assert.match(source, /visualCopy/u);
+  assert.match(source, /idle 3D plots must stay ready without rerender loops/u);
+  assert.match(source, /stable.transitions === 0/u);
+  assert.match(source, /page\.waitForEvent\("download"/u);
+  assert.match(source, /download\.createReadStream\(\)/u);
+  assert.match(source, /SVG must preserve the dragged ONA labels and directed edges/u);
+  assert.match(source, /PNG export must have an actual PNG signature/u);
+  assert.match(source, /plotFileExports: acceptance\.plotFileExports/u);
   assert.match(fixtureSource, /Ordered Network Analysis/u);
   assert.match(source, /prepareNativeFixtureV3\(page, \{ family: "ona"/u);
   assert.match(source, /\^3D \(\?:ENA\|ONA\)/u);

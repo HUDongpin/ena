@@ -55,6 +55,8 @@ type PlotlyImageApi = PlotlyApi & {
 };
 export type OpenEna3dRenderStatus = "loading" | "ready" | "error";
 type RenderStatus = OpenEna3dRenderStatus;
+// Keep omitted plugin settings stable across local render-status updates.
+const NO_DISABLED_PLUGINS: readonly string[] = [];
 const THREE_D_ENA_PLUGIN = (() => {
   const manifest = OPEN_ENA_PLUGIN_CATALOG.find((entry) => entry.pluginId === "ena-hk/3d-ena");
   if (!manifest) throw new TypeError("The 3D ENA plugin manifest is unavailable.");
@@ -369,7 +371,7 @@ export default function OpenEnaInteractive3DPlot({
   onReady,
   onError,
   onStatusChange,
-  runtimeDisabledPluginIds = [],
+  runtimeDisabledPluginIds = NO_DISABLED_PLUGINS,
   resultIsStale = false,
   isPluginResultCurrent,
   copy,

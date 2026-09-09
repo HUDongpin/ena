@@ -429,6 +429,49 @@ async function selectView(page, dimension) {
   await button.click();
 }
 
+async function exportDraggedOnaPlotFiles(page, screenshotPath) {
+  const expected = await page.locator('[data-testid="open-ena-ordered-plot"][data-ona-scope="overall"] svg').evaluate(svg => ({
+    viewBox: svg.getAttribute("viewBox"),
+    labels: [...svg.querySelectorAll("[data-ena-drag-code]")].map(node => ({ code: node.getAttribute("data-ena-drag-code"), transform: node.getAttribute("transform"), text: node.textContent })),
+    paths: [...svg.querySelectorAll("[data-ona-edge-glyph]")].map(path => path.getAttribute("d")),
+  }));
+  const exports = [];
+  for (const [label, extension] of [["Export SVG", "svg"], ["Export PNG", "png"]]) {
+    let confirmed = false;
+    const approve = async dialog => { confirmed = true; await dialog.accept(); };
+    page.once("dialog", approve);
+    try {
+      const pending = page.waitForEvent("download", { timeout: 15000 });
+      await page.getByRole("button", { name: label, exact: true }).click();
+      const download = await pending;
+      assertBrowser(confirmed, `${label} must retain identity-export confirmation`);
+      const chunks = [];
+      for await (const chunk of await download.createReadStream()) chunks.push(chunk);
+      const bytes = Buffer.concat(chunks);
+      await download.saveAs(screenshotPath.replace("ona-3d-after-drag.png", `ona-2d-dragged.${extension}`));
+      assertBrowser(bytes.length > 100, `${label} did not generate an actual image file`);
+      if (extension === "svg") {
+        const actual = await page.evaluate(text => {
+          const svg = new DOMParser().parseFromString(text, "image/svg+xml").documentElement;
+          return {
+            viewBox: svg.getAttribute("viewBox"),
+            labels: [...svg.querySelectorAll("[data-ena-drag-code]")].map(node => ({ code: node.getAttribute("data-ena-drag-code"), transform: node.getAttribute("transform"), text: node.textContent })),
+            paths: [...svg.querySelectorAll("[data-ona-edge-glyph]")].map(path => path.getAttribute("d")),
+          };
+        }, bytes.toString("utf8"));
+        assertBrowser(JSON.stringify(actual) === JSON.stringify(expected), "SVG must preserve the dragged ONA labels and directed edges");
+      } else {
+        assertBrowser(bytes.subarray(0, 8).toString("hex") === "89504e470d0a1a0a", "PNG export must have an actual PNG signature");
+        assertBrowser(bytes.readUInt32BE(16) > 0 && bytes.readUInt32BE(20) > 0, "PNG export must have positive pixel dimensions");
+      }
+      exports.push({ format: extension, bytes: bytes.length, confirmationAccepted: confirmed, generated: true });
+    } finally {
+      page.off("dialog", approve);
+    }
+  }
+  return exports;
+}
+
 async function waitForPlotlyTriptych(page, testIds) {
   for (const testId of testIds) {
     const root = page.getByTestId(testId).locator('[data-ena-plotly-root="true"]');
@@ -448,6 +491,18 @@ async function waitForPlotlyTriptych(page, testIds) {
     }
   });
   await page.waitForTimeout(400);
+  const stable = await page.evaluate(async ids => {
+    const roots = ids.map(id => document.querySelector(`[data-testid="${id}"] [data-ena-plot-status]`));
+    const changes = [];
+    const observer = new MutationObserver(records => changes.push(...records.map(record => record.oldValue)));
+    for (const root of roots) observer.observe(root, { attributes: true, attributeFilter: ["data-ena-plot-status"], attributeOldValue: true });
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    observer.disconnect();
+    return { statuses: roots.map(root => root.getAttribute("data-ena-plot-status")), transitions: changes.length };
+  }, testIds);
+  assertBrowser(stable.statuses.every(status => status === "ready") && stable.transitions === 0,
+    `idle 3D plots must stay ready without rerender loops: ${JSON.stringify(stable)}`);
+
 }
 
 async function readPlotlyFamily(page, testIds, code) {
@@ -660,6 +715,7 @@ async function runNodeDragAcceptance(page, args) {
   assertBrowser((await readAudit(page)).canonicalResult === onaCanonical.canonicalResult && (await readAudit(page)).boundScience === onaCanonical.boundScience,
     "ona-2d drag mutated analytical result");
   families["ona-2d"] = { before: ona2dBefore, after: ona2dAfter, visualCopy: "svg-live-geometry" };
+  const plotFileExports = await page.__task38Stage("download dragged ONA SVG and PNG", () => exportDraggedOnaPlotFiles(page, args.screenshotPath));
   await page.__task38Stage("resetNodeLayout", () => resetNodeLayout(page));
   assertBrowser(JSON.stringify(await readSvgFamily(page, ona2dSelector, code, true))
     === JSON.stringify(ona2dBefore), "ona-2d reset did not restore canonical geometry");
@@ -691,7 +747,7 @@ async function runNodeDragAcceptance(page, args) {
   assertBrowser(finalAudit.actualHoverHits.length === 2 && finalAudit.actualHoverHits.every(hit => hit.actualMouse), "both Standard and ONA 3D require actual pointer hover hits");
   assertBrowser(finalAudit.analysisRunCount === 2, "node dragging unexpectedly reran analysis");
   assertBrowser(finalAudit.canonicalResult === onaCanonical.canonicalResult && finalAudit.boundScience === onaCanonical.boundScience, "drag or reset mutated analytical result");
-  return { families, finalAudit, currentUrl: page.url() };
+  return { families, finalAudit, plotFileExports, currentUrl: page.url() };
 }
 
 let acceptance = null;
@@ -736,6 +792,7 @@ try {
       clickVisualCopy,
       resetNodeLayout,
       selectView,
+      exportDraggedOnaPlotFiles,
       waitForPlotlyTriptych,
       readPlotlyFamily,
       dragPlotlyNode,
@@ -780,6 +837,7 @@ const summary = {
   recenterPreservedLabelPositions: true,
   resetRestoredCanonicalLayout: true,
   visualCopy: acceptance.finalAudit.visualCopy,
+  plotFileExports: acceptance.plotFileExports,
   actualHoverHits: acceptance.finalAudit.actualHoverHits,
   syntheticHoverInjection: false,
   screenshot: basename(screenshotPath),
