@@ -243,3 +243,9 @@ test("actual source verifier rejects changed owned bytes and incorrect source li
   text = text.replace("getImageData", "unrelatedOperation");
   assert.equal(await verify({ ...candidate, ownedSourceSha256: createHash("sha256").update(text).digest("hex") }), null);
 });
+
+test("queued-render regression targets code text and accepts its separate trace", () => {
+  requires(['"code-label"', "t.meta?.role==='code-label'", "if(t?.meta?.role==='code-label')", "code text before queued display edit"]);
+  const queued = source.slice(source.indexOf("async function checkQueuedRenderExitV3"), source.indexOf("async function exerciseStaleImageLease"));
+  assert.doesNotMatch(queued, /meta\?\.role==='code-node'/);
+});
