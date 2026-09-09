@@ -156,6 +156,41 @@ jobs:
           path: output/playwright/open-ena-longitudinal-v3-${{ github.sha }}-chromium
           if-no-files-found: error
           retention-days: 14
+      - name: Run the Open ENA code label drag regression
+        id: open_ena_node_drag_smoke
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          OPEN_ENA_NODE_DRAG_SMOKE_BROWSER: chromium
+          OPEN_ENA_NODE_DRAG_SMOKE_ARTIFACT_DIR: output/playwright/open-ena-node-drag-${{ github.sha }}-chromium
+        run: npm run test:browser:open-ena-node-drag
+      - name: Upload Open ENA code label drag evidence
+        if: ${{ always() && !cancelled() && steps.open_ena_node_drag_smoke.outcome != 'skipped' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: open-ena-node-drag-evidence-${{ github.sha }}-chromium
+          path: |
+            output/playwright/open-ena-node-drag-${{ github.sha }}-chromium
+            output/playwright/open-ena-node-drag-${{ github.sha }}-chromium-runtime/*.json
+            output/playwright/open-ena-node-drag-${{ github.sha }}-chromium-runtime/*.log
+          if-no-files-found: error
+          retention-days: 14
+      - name: Run the Open ENA Group exclusion and retained plot layout regression
+        id: open_ena_stale_plot_layout_smoke
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          OPEN_ENA_STALE_LAYOUT_ARTIFACT_DIR: output/playwright/open-ena-stale-plot-layout-${{ github.sha }}-chromium
+        run: npm run test:browser:open-ena-stale-plot-layout
+      - name: Upload Open ENA Group exclusion and retained plot layout evidence
+        if: ${{ always() && !cancelled() && steps.open_ena_stale_plot_layout_smoke.outcome != 'skipped' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: open-ena-stale-plot-layout-evidence-${{ github.sha }}-chromium
+          path: |
+            output/playwright/open-ena-stale-plot-layout-${{ github.sha }}-chromium
+            output/playwright/open-ena-stale-plot-layout-${{ github.sha }}-chromium-runtime/*.json
+            output/playwright/open-ena-stale-plot-layout-${{ github.sha }}-chromium-runtime/*.log
+          if-no-files-found: error
+          retention-days: 14
       - name: Run the Open ENA inference browser smoke
         env:
           NEXT_TELEMETRY_DISABLED: "1"

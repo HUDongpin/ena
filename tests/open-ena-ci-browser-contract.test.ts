@@ -48,6 +48,8 @@ test("Browser CI runs every durable-auth production smoke and retains each evide
   for (const [command, evidence] of [
     ["test:browser:open-ena-3d-controls", "open-ena-3d-controls-evidence"],
     ["test:browser:longitudinal-v3", "open-ena-longitudinal-v3-evidence"],
+    ["test:browser:open-ena-node-drag", "open-ena-node-drag-evidence"],
+    ["test:browser:open-ena-stale-plot-layout", "open-ena-stale-plot-layout-evidence"],
     ["node tests/open-ena-inference-browser-smoke.mjs", "open-ena-inference-evidence"],
     ["node tests/open-ena-a11y-perf-browser-smoke.mjs", "open-ena-a11y-perf-evidence"],
   ]) {
@@ -55,6 +57,32 @@ test("Browser CI runs every durable-auth production smoke and retains each evide
     assert.match(workflow, new RegExp(evidence, "u"), `${evidence} must be uploaded`);
   }
 });
+
+for (const [id, script, filename, evidence, environment] of [
+  ["open_ena_node_drag_smoke", "test:browser:open-ena-node-drag", "open-ena-node-drag-browser-smoke.mjs", "open-ena-node-drag", "OPEN_ENA_NODE_DRAG_SMOKE_ARTIFACT_DIR"],
+  ["open_ena_stale_plot_layout_smoke", "test:browser:open-ena-stale-plot-layout", "open-ena-stale-plot-layout-browser.mjs", "open-ena-stale-plot-layout", "OPEN_ENA_STALE_LAYOUT_ARTIFACT_DIR"],
+]) {
+  test(`${script} is a required browser gate with evidence on success or failure`, () => {
+    const steps = workflow.split(/^      - /mu);
+    const runStep = steps.find(step => step.includes(`id: ${id}\n`));
+    assert.ok(runStep, `${script} must have its own CI step`);
+    assert.ok(runStep.includes(`run: npm run ${script}\n`));
+    assert.doesNotMatch(runStep, /(?:continue-on-error|if):/u, "the regression must not be optional or ignore failure");
+    const artifactDirectory = `output/playwright/${evidence}-\${{ github.sha }}-chromium`;
+    assert.ok(runStep.includes(`${environment}: ${artifactDirectory}\n`));
+    const packageJson = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8"));
+    assert.equal(packageJson.scripts[script], `node tests/${filename}`);
+    const uploadStep = steps.find(step => step.includes(`name: ${evidence}-evidence-`));
+    assert.ok(uploadStep, "the gate must upload its evidence separately");
+    assert.ok(uploadStep.includes(`always() && !cancelled() && steps.${id}.outcome != 'skipped'`));
+    assert.match(uploadStep, /uses: actions\/upload-artifact@[a-f0-9]{40}/u);
+    assert.ok(uploadStep.includes(`${artifactDirectory}\n`), "keep screenshots and the test summary");
+    assert.ok(uploadStep.includes(`${artifactDirectory}-runtime/*.json\n`), "keep source and runtime receipts");
+    assert.ok(uploadStep.includes(`${artifactDirectory}-runtime/*.log\n`), "keep build and server failure diagnostics");
+    assert.match(uploadStep, /if-no-files-found: error/u);
+    assert.match(uploadStep, /retention-days: 14/u);
+  });
+}
 
 test("Browser CI does not let skipped downstream evidence uploads mask the first smoke failure", () => {
   assert.match(
