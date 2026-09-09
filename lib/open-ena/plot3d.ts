@@ -35,6 +35,7 @@ const GROUP_LINE_DASHES = ["solid", "dash", "dot", "dashdot", "longdash", "longd
 export type OpenEna3dTraceRole =
   | "unit-points"
   | "code-node"
+  | "code-label"
   | "network-edge"
   | "group-mean"
   | "confidence-interval"
@@ -661,13 +662,13 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
   const traces: OpenEna3dTrace[] = [];
   const unitLegendGroupIndices = new Set<number>();
   const nodeRows = result.set.rotation.nodes ?? [];
-  const displayNodeRows = nodeRows.map((row) => {
+  const labelRows = nodeRows.map((row) => {
     const code = String(row.code ?? "");
     const canonical = new Map(dimensions.map((dimension) => [dimension, coordinate(row, dimension)]));
     const resolved = resolveOpenEnaNodeDimensions(canonical, nodeLayout?.get(code));
     return { ...row, ...Object.fromEntries(resolved) };
   });
-  const renderedDisplayNodeRows = displayNodeRows.filter((row) => (
+  const renderedDisplayNodeRows = nodeRows.filter((row) => (
     openEnaRenderedCodeIsVisible(codePresentation, String(row.code ?? ""))
   ));
   const points = result.set.points;
@@ -795,7 +796,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
             : contrast.edgeScaleDenominators.sharedMean,
         )
       : Math.max(1e-12, ...weightedEdges.map((edge) => edge.value));
-    const nodeByCode = new Map(displayNodeRows.map((row) => [String(row.code ?? ""), row]));
+    const nodeByCode = new Map(nodeRows.map((row) => [String(row.code ?? ""), row]));
     for (const weighted of weightedEdges) {
       if (weighted.value <= 1e-12 || weighted.value / maximumEdge < safeThreshold) continue;
       if (!openEnaRenderedEdgeIsVisible(
@@ -803,8 +804,8 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
         weighted.edge.source,
         weighted.edge.target,
       )) continue;
-      const source = nodeByCode.get(weighted.edge.source) ?? displayNodeRows[weighted.edge.sourceIndex];
-      const target = nodeByCode.get(weighted.edge.target) ?? displayNodeRows[weighted.edge.targetIndex];
+      const source = nodeByCode.get(weighted.edge.source) ?? nodeRows[weighted.edge.sourceIndex];
+      const target = nodeByCode.get(weighted.edge.target) ?? nodeRows[weighted.edge.targetIndex];
       const group = result.groups[weighted.groupIndex];
       if (!source || !target || !group) continue;
       const relativeWeight = weighted.value / maximumEdge;
@@ -975,7 +976,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
   if (renderedDisplayNodeRows.length > 0) {
     traces.push({
       type: "scatter3d",
-      mode: showLabels ? "markers+text" : "markers",
+      mode: "markers",
       name: "Codes",
       x: renderedDisplayNodeRows.map((row) => coordinate(row, xDimension)),
       y: renderedDisplayNodeRows.map((row) => coordinate(row, yDimension)),
@@ -999,6 +1000,21 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       hovertemplate: "%{customdata}<extra></extra>",
       showlegend: false,
       meta: { role: "code-node", markerSymbol: "circle" },
+    });
+  }
+
+  if (showLabels && renderedDisplayNodeRows.length > 0) {
+    const labels = labelRows.filter(row => openEnaRenderedCodeIsVisible(codePresentation, String(row.code ?? "")));
+    traces.push({
+      type: "scatter3d", mode: "text", name: "Code labels",
+      x: labels.map(row => coordinate(row, xDimension)),
+      y: labels.map(row => coordinate(row, yDimension)),
+      z: labels.map(row => coordinate(row, zDimension)),
+      ids: labels.map(row => String(row.code)),
+      text: labels.map(row => openEnaRenderedCodeLabel(input, String(row.code))),
+      textposition: "top center", textfont: { color: "#263740", size: 12 },
+      hovertemplate: "%{text}<extra></extra>", showlegend: false,
+      meta: { role: "code-label" },
     });
   }
 

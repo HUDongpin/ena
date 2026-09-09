@@ -151,8 +151,8 @@ interface PlotlyEventRoot extends HTMLDivElement {
   };
 }
 
-export function openEna3dCodePositionByIdentity(spec: OpenEna3dPlotSpec, code: string) {
-  const trace = spec.data.find((candidate) => candidate.meta.role === "code-node");
+export function openEna3dCodePositionByIdentity(spec: OpenEna3dPlotSpec, code: string, role: "code-node" | "code-label" = "code-node") {
+  const trace = spec.data.find((candidate) => candidate.meta.role === role);
   const pointNumber = (trace?.ids ?? trace?.text)?.indexOf(code) ?? -1;
   if (pointNumber < 0) return null;
   const x = trace?.x[pointNumber];
@@ -615,7 +615,7 @@ export default function OpenEnaInteractive3DPlot({
   }), [spec]);
   const fullscreenLayoutRef = useRef(embeddedLayout);
   fullscreenLayoutRef.current = embeddedLayout;
-  const renderedCodeTrace = spec.data.find((trace) => trace.meta.role === "code-node");
+  const renderedCodeTrace = spec.data.find((trace) => trace.meta.role === "code-label");
   const renderedCodeIdentities = new Set(renderedCodeTrace?.ids ?? renderedCodeTrace?.text ?? []);
   const renderedCodeIdentityKey = JSON.stringify([...renderedCodeIdentities]);
   visibleCodeIdentitiesRef.current = renderedCodeIdentities;
@@ -902,7 +902,7 @@ export default function OpenEnaInteractive3DPlot({
             if (activeNodeDragRef.current) return;
             const point = event.points?.[0];
             const meta = point?.fullData?.meta ?? point?.data?.meta;
-            if (!point || !meta || meta.role !== "code-node") {
+            if (!point || !meta || meta.role !== "code-label") {
               hoveredCodeRef.current = null;
               setHoveredCode(null);
               return;
@@ -1076,7 +1076,7 @@ export default function OpenEnaInteractive3DPlot({
     if (event.button !== 0 || status !== "ready" || !onNodeMove || activeNodeDragRef.current) return;
     const hovered = hoveredCodeRef.current;
     if (!hovered || !visibleCodeIdentitiesRef.current.has(hovered.code)) return;
-    const position = openEna3dCodePositionByIdentity(spec, hovered.code);
+    const position = openEna3dCodePositionByIdentity(spec, hovered.code, "code-label");
     if (!position) return;
 
     event.preventDefault();

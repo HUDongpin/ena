@@ -1,3 +1,5 @@
+// Historical node-layout names now store text-label anchors only.
+// Never apply these presentation positions to nodes, edges, or fitted results.
 import type { AnalysisKind } from "./types";
 
 export type OpenEnaNodePositionMethod = "undirected" | "directed";

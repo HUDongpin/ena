@@ -156,17 +156,18 @@ function screenPositions(
   nodeLayout?: OpenEnaNodeLayoutPositions,
 ) {
   const canonicalNodes = model.nodes.map((node) => ({ key: `node:${node.code}`, x: node.x, y: node.y }));
-  const displayedNodes = model.nodes.map((node) => {
+  const labelNodes = model.nodes.map((node) => {
     const override = nodeLayout?.get(node.code);
     return {
-      key: `node:${node.code}`,
+      key: `label:${node.code}`,
       x: override?.get(xDimension) ?? node.x,
       y: override?.get(yDimension) ?? node.y,
     };
   });
   const points = model.points.map((point) => ({ key: `point:${point.key}`, x: point.x, y: point.y }));
   const values = [
-    ...displayedNodes,
+    ...canonicalNodes,
+    ...labelNodes,
     ...points,
   ];
   const frameValues = [
@@ -532,6 +533,9 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
         {model.nodes.filter((node) => openEnaRenderedCodeIsVisible(props, node.code)).map((node) => {
           const screen = positions.get(`node:${node.code}`);
           if (!screen) return null;
+          const labelPoint = positions.get(`label:${node.code}`)!;
+          const override = props.nodeLayout?.get(node.code);
+          const labelPosition = new Map([[props.xDimension, override?.get(props.xDimension) ?? node.x], [props.yDimension, override?.get(props.yDimension) ?? node.y]]);
           const self = selfEdges.get(node.code);
           const nodeColor = codeColorFor(props.codeColors, node.code);
           const selfRadius = self
@@ -554,37 +558,41 @@ export default function OpenEnaOrderedPlot(props: OpenEnaOrderedPlotProps) {
               className="ona-code-node"
               data-ona-code-node-position={node.code}
             >
-              <OpenEnaSvgDraggableNode
-                code={node.code}
-                radius={node.radius}
-                disabled={!props.onNodeMove}
-                toDimensions={toDimensions}
-                onNodeMove={props.onNodeMove ?? (() => {})}
+              <circle
+                r={node.radius}
+                data-ena-code={node.code}
+                data-ona-response-total={node.responseTotal}
+                fill="#ffffff"
+                stroke={nodeColor}
+                strokeWidth={5}
               >
+                <title>{`${openEnaRenderedCodeLabel(props, node.code)} · ${copy.nodeSizeLabel}: ${displayNumber(node.responseTotal)} (${model.nodeSizeDefinition})`}</title>
+              </circle>
+              {props.showNetworks && props.showCodeGraph !== false && self && selfLabel ? (
                 <circle
-                  r={node.radius}
-                  data-ena-code={node.code}
-                  data-ona-response-total={node.responseTotal}
-                  fill="#ffffff"
-                  stroke={nodeColor}
-                  strokeWidth={5}
+                  r={selfRadius}
+                  data-ona-self-loop={node.code}
+                  fill={model.scopeColor}
+                  fillOpacity={0.35 + self.relativeMagnitude * 0.6}
+                  stroke="#17313a"
+                  strokeWidth={1}
                 >
-                  <title>{`${openEnaRenderedCodeLabel(props, node.code)} · ${copy.nodeSizeLabel}: ${displayNumber(node.responseTotal)} (${model.nodeSizeDefinition})`}</title>
+                  <title>{`${openEnaRenderedCodeLabel(props, node.code)} ↻ ${openEnaRenderedCodeLabel(props, node.code)} · ${selfLabel}`}</title>
                 </circle>
-                {props.showNetworks && props.showCodeGraph !== false && self && selfLabel ? (
-                  <circle
-                    r={selfRadius}
-                    data-ona-self-loop={node.code}
-                    fill={model.scopeColor}
-                    fillOpacity={0.35 + self.relativeMagnitude * 0.6}
-                    stroke="#17313a"
-                    strokeWidth={1}
-                  >
-                    <title>{`${openEnaRenderedCodeLabel(props, node.code)} ↻ ${openEnaRenderedCodeLabel(props, node.code)} · ${selfLabel}`}</title>
-                  </circle>
-                ) : null}
-                {props.showLabels ? <text y={-node.radius - 9} textAnchor="middle" className="ena-set-result-label">{openEnaRenderedCodeLabel(props, node.code)}</text> : null}
-              </OpenEnaSvgDraggableNode>
+              ) : null}
+              {props.showLabels ? (
+                <OpenEnaSvgDraggableNode
+                  code={node.code}
+                  position={labelPosition}
+                  offset={{ x: labelPoint.x - screen.x, y: labelPoint.y - screen.y }}
+                  disabled={!props.onNodeMove}
+                  toDimensions={toDimensions}
+                  onNodeMove={props.onNodeMove ?? (() => {})}
+                >
+                  <text y={-node.radius - 9} textAnchor="middle" className="ena-set-result-label">{openEnaRenderedCodeLabel(props, node.code)}</text>
+                </OpenEnaSvgDraggableNode>
+              ) : null}
+
             </g>
           );
         })}

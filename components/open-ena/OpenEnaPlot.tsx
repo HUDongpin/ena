@@ -332,10 +332,11 @@ export default function OpenEnaPlot({
     label: String(row.code),
     row,
   }));
-  const nodes = canonicalNodes.map((node) => {
+  const labelNodes = canonicalNodes.map((node) => {
     const override = nodeLayout?.get(node.label);
     return {
       ...node,
+      key: `label-${node.label}`,
       x: override?.get(xDimension) ?? node.x,
       y: override?.get(yDimension) ?? node.y,
       z: override?.get(zDimension) ?? node.z,
@@ -363,7 +364,7 @@ export default function OpenEnaPlot({
   const trajectoryPointPositions = new Map(unitPoints.map((point) => [trajectoryPointKey(point.row), point.key]));
   const visibleTrajectoryPoints = trajectory ? new Set(trajectory.points.map((point) => trajectoryPointKey(point.point))) : null;
   const projection = screenProjector(
-    [...nodes, ...unitPoints, ...meanPoints, ...trajectoryCentroids],
+    [...canonicalNodes, ...labelNodes, ...unitPoints, ...meanPoints, ...trajectoryCentroids],
     view,
     camera,
     plotZoom,
@@ -607,10 +608,13 @@ export default function OpenEnaPlot({
           );
         })}
 
-        {nodes.filter((node) => openEnaRenderedCodeIsVisible(codePresentation, node.label)).map((node) => {
+        {canonicalNodes.filter((node) => openEnaRenderedCodeIsVisible(codePresentation, node.label)).map((node) => {
           const point = positions.get(node.key);
           if (!point) return null;
           const nodeColor = codeColorFor(codeColors, node.label);
+          const labelPoint = positions.get(`label-${node.label}`)!;
+          const labelNode = labelNodes.find(label => label.label === node.label)!;
+
           const toDimensions = (clientX: number, clientY: number, target: SVGGElement) => {
             const screen = clientPointInSvg(target, clientX, clientY);
             const fitted = screen ? projection.inverse2d(screen.x, screen.y) : null;
@@ -626,23 +630,27 @@ export default function OpenEnaPlot({
               filter="url(#ena-node-shadow)"
               data-ena-code-node-position={node.label}
             >
-              <OpenEnaSvgDraggableNode
-                code={node.label}
-                radius={view === "3d" ? Math.max(11, 14 + point.depth * 2) : 14}
-                disabled={view !== "2d" || !onNodeMove}
-                toDimensions={toDimensions}
-                onNodeMove={onNodeMove ?? (() => {})}
-              >
-                <circle
-                  r={view === "3d" ? Math.max(11, 14 + point.depth * 2) : 14}
-                  className="ena-result-node"
-                  data-ena-code={node.label}
-                  fill={nodeColor}
-                  stroke={nodeColor}
-                  style={{ fill: nodeColor, stroke: nodeColor }}
-                />
-                {showLabels ? <text y="-23" textAnchor="middle" className="ena-result-label">{openEnaRenderedCodeLabel(codePresentation, node.label)}</text> : null}
-              </OpenEnaSvgDraggableNode>
+              <circle
+                r={view === "3d" ? Math.max(11, 14 + point.depth * 2) : 14}
+                className="ena-result-node"
+                data-ena-code={node.label}
+                fill={nodeColor}
+                stroke={nodeColor}
+                style={{ fill: nodeColor, stroke: nodeColor }}
+              />
+              {showLabels ? (
+                <OpenEnaSvgDraggableNode
+                  code={node.label}
+                  position={new Map([[xDimension, labelNode.x], [yDimension, labelNode.y]])}
+                  offset={{ x: labelPoint.x - point.x, y: labelPoint.y - point.y }}
+                  disabled={view !== "2d" || !onNodeMove}
+                  toDimensions={toDimensions}
+                  onNodeMove={onNodeMove ?? (() => {})}
+                >
+                  <text y="-23" textAnchor="middle" className="ena-result-label">{openEnaRenderedCodeLabel(codePresentation, node.label)}</text>
+                </OpenEnaSvgDraggableNode>
+              ) : null}
+
             </g>
           );
         })}

@@ -10,13 +10,13 @@ function source(relativePath: string) {
   return readFileSync(join(projectRoot, relativePath), "utf8");
 }
 
-test("interactive Plotly presenter distinguishes code-node drag from camera orbit", () => {
+test("interactive Plotly presenter distinguishes code-label drag from camera orbit", () => {
   const interactive = source("components/open-ena/OpenEnaInteractive3DPlot.tsx");
   const loader = source("components/open-ena/plotly-gl3d-loader.ts");
 
   assert.match(interactive, /plotly_hover/);
   assert.match(interactive, /plotly_unhover/);
-  assert.match(interactive, /meta\.role === "code-node"/);
+  assert.match(interactive, /meta\.role !== "code-label"/);
   assert.match(interactive, /dragOpenEnaNodeIn3d/);
   assert.match(interactive, /onPointerDownCapture=\{beginNodeDrag\}/);
   assert.match(interactive, /onPointerMoveCapture=\{moveDraggedNode\}/);

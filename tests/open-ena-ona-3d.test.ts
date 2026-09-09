@@ -419,7 +419,7 @@ test("deep-frozen fitted inputs compile without mutation and repeated calls are 
   assert.ok(first.data.every((trace) => trace.meta.analysisKind === "ona" && trace.meta.scope === "overall"));
 });
 
-test("ONA 3D node overrides rebuild directed, reciprocal, and self-loop traces without mutation", () => {
+test("ONA 3D label overrides preserve nodes, directed edges, and self-loops", () => {
   const fixture = orderedFixture();
   const resultBefore = structuredClone(fixture.result);
   const baseline = compileOpenEnaOrdered3dPlotSpec(compileInput(fixture));
@@ -447,12 +447,13 @@ test("ONA 3D node overrides rebuild directed, reciprocal, and self-loop traces w
     trace.meta.ground === "B" && trace.meta.response === "C"
   );
 
-  assert.deepEqual([
-    nodeTrace(moved).x[codeIndex],
-    nodeTrace(moved).y[codeIndex],
-    nodeTrace(moved).z[codeIndex],
-  ], [3, -2, 1]);
-  assert.notDeepEqual(orderedGeometry(moved, incident), orderedGeometry(baseline, incident));
+  assert.deepEqual(nodeTrace(moved), nodeTrace(baseline), "label movement must not move code markers");
+  const labelTrace = moved.data.find(trace => trace.meta.role === "code-label");
+  assert.ok(labelTrace, "labels require a separate trace");
+  assert.deepEqual([labelTrace.x[codeIndex], labelTrace.y[codeIndex], labelTrace.z[codeIndex]], [3, -2, 1]);
+  assert.deepEqual(moved.data.filter(trace => trace.meta.role !== "code-label"), baseline.data.filter(trace => trace.meta.role !== "code-label"));
+
+  assert.deepEqual(orderedGeometry(moved, incident), orderedGeometry(baseline, incident));
   assert.deepEqual(orderedGeometry(moved, unrelated), orderedGeometry(baseline, unrelated));
   assert.ok(orderedGeometry(moved, incident).some(({ role }) => role === "ordered-self-loop-shaft"));
   assert.ok(orderedGeometry(moved, incident).some(({ role }) => role === "ordered-self-loop-arrowhead"));

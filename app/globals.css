@@ -29,18 +29,6 @@
   cursor: grabbing;
 }
 
-.ena-node-drag-hit-target {
-  fill: transparent;
-  stroke: transparent;
-  pointer-events: all;
-  touch-action: none;
-}
-
-.ena-svg-draggable-node[data-ena-node-dragging="true"] .ena-node-drag-hit-target {
-  stroke: color-mix(in srgb, var(--accent-strong) 58%, transparent);
-  stroke-width: 2px;
-}
-
 .open-ena-interactive-3d-canvas[data-ena-node-hovered] {
   cursor: grab;
 }
@@ -14566,4 +14554,11 @@ html:has(.open-ena-page) {
   .ena-restored-workbench .ena-model-code-row-v3 { grid-template-columns: 24px minmax(0, 1fr) 24px repeat(3, 28px); }
   .ena-restored-workbench .ena-model-code-row-v3 .ena-official-icon-button,
   .ena-restored-workbench .ena-model-code-color-v3 { width: 28px; min-width: 28px; }
+}
+
+/* Only code text participates in label dragging; the plotted node stays fixed. */
+.ena-svg-draggable-node text {
+  pointer-events: bounding-box;
+  user-select: none;
+  touch-action: none;
 }

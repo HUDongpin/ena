@@ -175,7 +175,7 @@ export default function OpenEnaPersistentPlotTools({
   flipY,
   plotZoom,
   nodeLayoutOverrideCount = 0,
-  resetNodeLayoutLabel = "Reset node layout",
+  resetNodeLayoutLabel = "Reset label positions",
   onEdgeScaleChange,
   onEdgeThresholdChange,
   onPointScaleChange,

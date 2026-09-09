@@ -349,7 +349,7 @@ async function readSvgFamily(page, svgSelector, code, ordered) {
         )].map((path) => path.getAttribute("d"))
       : [...root.querySelectorAll("[data-ena-edge]")].filter(line => incidentNames.has(line.getAttribute("data-ena-edge")))
           .map((line) => ["x1", "y1", "x2", "y2"].map((name) => line.getAttribute(name)).join(","));
-    return { nodeTransform, incident };
+    return { nodeTransform, labelTransform: node?.getAttribute("transform"), incident };
   }), { code: matching[0].column, ordered });
 }
 
@@ -358,7 +358,7 @@ async function dragSvgNode(page, svgSelector, code, delta) {
   const matching = identities.codes.filter(entry => entry.sourceColumn === code);
   assertBrowser(matching.length === 1, "drag Code requires unique source/rendered identity");
   const node = page.locator(svgSelector).first().locator(`[data-ena-drag-code="${matching[0].column}"]`);
-  const hitTarget = node.locator(".ena-node-drag-hit-target");
+  const hitTarget = node.locator("text");
   const box = await hitTarget.boundingBox();
   assertBrowser(Boolean(box), "SVG node hit target is not visible");
   const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -372,12 +372,14 @@ async function dragSvgNode(page, svgSelector, code, delta) {
 function assertSvgMove(before, after, label) {
   assertBrowser(before.length === after.length && before.length >= 1, `${label} triptych inventory changed`);
   for (let index = 0; index < before.length; index += 1) {
-    assertBrowser(before[index].nodeTransform !== after[index].nodeTransform, `${label} triptych node did not move`);
+    assertBrowser(before[index].nodeTransform === after[index].nodeTransform, `${label} code node moved during label drag`);
+    assertBrowser(before[index].labelTransform !== after[index].labelTransform, `${label} triptych label did not move`);
+    assertBrowser(JSON.stringify(before[index].incident) === JSON.stringify(after[index].incident), `${label} incident edge moved during label drag`);
   }
   assertBrowser(before[0].incident.length > 0, `${label} has no incident edge`);
   assertBrowser(
-    JSON.stringify(before[0].incident) !== JSON.stringify(after[0].incident),
-    `${label} incident edge did not follow node`,
+    JSON.stringify(before[0].incident) === JSON.stringify(after[0].incident),
+    `${label} incident edge moved during label drag`,
   );
 }
 
@@ -406,7 +408,7 @@ async function resetNodeLayout(page) {
   }
   const reset = resetLocator();
   assertBrowser(await reset.count() === 1 && !await reset.isDisabled(),
-    "Reset node layout is not enabled after a drag");
+    "Reset label positions is not enabled after a drag");
   await reset.scrollIntoViewIfNeeded();
   await reset.click();
   await page.waitForFunction(() => [...document.querySelectorAll('[data-ena-plot-action="reset-node-layout"]')]
@@ -415,7 +417,7 @@ async function resetNodeLayout(page) {
     '[data-ena-plot-action="reset-node-layout"][data-ena-node-layout-overrides="0"]',
   ).first();
   assertBrowser(await cleared.count() === 1 && await cleared.isDisabled(),
-    "Reset node layout did not clear its overrides");
+    "Reset label positions did not clear its overrides");
 }
 
 async function selectView(page, dimension) {
@@ -455,6 +457,7 @@ async function readPlotlyFamily(page, testIds, code) {
     );
     const traces = Array.isArray(root?.data) ? root.data : [];
     const codeTrace = traces.find((trace) => trace.meta?.role === "code-node");
+    const labelTrace = traces.find((trace) => trace.meta?.role === "code-label");
     const pointNumber = codeTrace?.text?.indexOf(selectedCode) ?? -1;
     if (!root || !codeTrace || pointNumber < 0) throw new Error(`code-node trace missing in ${testId}`);
     const r = window.__openEnaNativeAudit.responses.at(-1).result;
@@ -485,6 +488,7 @@ async function readPlotlyFamily(page, testIds, code) {
         y: codeTrace.y[pointNumber],
         z: codeTrace.z[pointNumber],
       },
+      label: labelTrace ? { x: labelTrace.x[pointNumber], y: labelTrace.y[pointNumber], z: labelTrace.z[pointNumber] } : null,
       incident,
       camera: typeof scene?.getCamera === "function" ? scene.getCamera() : null,
     };
@@ -497,7 +501,7 @@ async function dragPlotlyNode(page, testId, code, delta) {
   assertBrowser(Boolean(box), "Plotly drag root is not visible");
   await root.scrollIntoViewIfNeeded();
   const projected = await page.__task38Stage("read real Code projection", () => root.evaluate((element, selectedCode) => {
-    const trace = element.data.find(trace => trace.meta?.role === "code-node"), index = trace?.text?.indexOf(selectedCode) ?? -1;
+    const trace = element.data.find(trace => trace.meta?.role === "code-label"), index = trace?.text?.indexOf(selectedCode) ?? -1;
     const scene = element._fullLayout?.scene?._scene, params = scene?.glplot?.cameraParams, scale = scene?.dataScale;
     if (index < 0 || !params || !scale) throw new Error("actual Plotly projection is unavailable");
     const multiply = (matrix, vector) => [0, 1, 2, 3].map(row => vector.reduce((sum, value, column) => sum + matrix[column * 4 + row] * value, 0));
@@ -509,12 +513,12 @@ async function dragPlotlyNode(page, testId, code, delta) {
     element.__task38ActualHover = null;
     const listener = event => {
       const point = event.points?.[0], data = point?.fullData ?? point?.data;
-      if (data?.meta?.role === "code-node") element.__task38ActualHover = { code: data.ids?.[point.pointNumber] ?? data.text?.[point.pointNumber], pointNumber: point.pointNumber };
+      if (data?.meta?.role === "code-label") element.__task38ActualHover = { code: data.ids?.[point.pointNumber] ?? data.text?.[point.pointNumber], pointNumber: point.pointNumber };
     };
     element.__task38ActualHoverListener = listener; element.on("plotly_hover", listener);
     return { x, y, code: trace.ids?.[index] ?? trace.text[index], pointNumber: index };
   }, code));
-  const offsets = [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [5, 0], [-5, 0], [0, 5], [0, -5]];
+  const offsets = [[0, -12], [5, -12], [-5, -12], [0, -18], [0, -8], [0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [5, 0], [-5, 0], [0, 5], [0, -5]];
   let start = null;
   try {
     await page.mouse.move(Math.max(1, projected.x - 30), Math.max(1, projected.y - 30));
@@ -542,15 +546,19 @@ function assertPlotlyMove(before, after, label) {
   assertBrowser(before.length === 3 && after.length === 3, `${label} triptych is incomplete`);
   for (let index = 0; index < 3; index += 1) {
     assertBrowser(
-      JSON.stringify(before[index].node) !== JSON.stringify(after[index].node),
-      `${label} triptych node did not move`,
+      JSON.stringify(before[index].label) !== JSON.stringify(after[index].label),
+      `${label} triptych label did not move`,
     );
   }
-  assertBrowser(after.every((plot) => JSON.stringify(plot.node) === JSON.stringify(after[0].node)),
-    `${label} triptych node coordinates are not synchronized`);
+  for (let index = 0; index < 3; index++) {
+    assertBrowser(JSON.stringify(before[index].node) === JSON.stringify(after[index].node), `${label} code node moved during label drag`);
+    assertBrowser(JSON.stringify(before[index].incident) === JSON.stringify(after[index].incident), `${label} incident edge moved during label drag`);
+  }
+  assertBrowser(after.every((plot) => JSON.stringify(plot.label) === JSON.stringify(after[0].label)),
+    `${label} triptych label coordinates are not synchronized`);
   assertBrowser(before[0].incident.length > 0, `${label} has no incident edge`);
-  assertBrowser(JSON.stringify(before[0].incident) !== JSON.stringify(after[0].incident),
-    `${label} incident edge did not follow node`);
+  assertBrowser(JSON.stringify(before[0].incident) === JSON.stringify(after[0].incident),
+    `${label} incident edge moved during label drag`);
 }
 
 async function orbitFromEmptySpace(page, testId) {
@@ -572,12 +580,12 @@ async function orbitFromEmptySpace(page, testId) {
   return { before, after };
 }
 
-async function recenterPreservesNode(page, testId, expectedNode) {
+async function recenterPreservesLabel(page, testId, expectedLabel) {
   const panel = page.getByTestId(testId);
   await panel.locator('[data-ena-plot-action="recenter"]').click();
   await page.waitForTimeout(300);
-  const after = (await readPlotlyFamily(page, [testId], "CODE_A"))[0].node;
-  assertBrowser(JSON.stringify(after) === JSON.stringify(expectedNode), "Recenter changed the moved node layout");
+  const after = (await readPlotlyFamily(page, [testId], "CODE_A"))[0].label;
+  assertBrowser(JSON.stringify(after) === JSON.stringify(expectedLabel), "Recenter changed the moved label position");
 }
 
 async function switchToOnaAndBuild(page) {
@@ -602,9 +610,11 @@ async function runNodeDragAcceptance(page, args) {
     + '[data-testid="open-ena-group-primary-plot"],'
     + '[data-testid="open-ena-group-secondary-plot"]';
   const standard2dBefore = await page.__task38Stage("readSvgFamily", () => readSvgFamily(page, standard2dSelector, code, false));
+  await page.screenshot({ path: args.screenshotPath.replace("ona-3d-after-drag", "standard-2d-before-drag"), fullPage: true });
   await page.__task38Stage("dragSvgNode", () => dragSvgNode(page, '[data-testid="open-ena-group-comparison-plot"]', code, { x: 58, y: 34 }));
   const standard2dAfter = await page.__task38Stage("readSvgFamily", () => readSvgFamily(page, standard2dSelector, code, false));
   assertSvgMove(standard2dBefore, standard2dAfter, "standard-2d");
+  await page.screenshot({ path: args.screenshotPath.replace("ona-3d-after-drag", "standard-2d-after-drag"), fullPage: true });
   assertBrowser((await readAudit(page)).canonicalResult === standardCanonical.canonicalResult && (await readAudit(page)).boundScience === standardCanonical.boundScience,
     "standard-2d drag mutated analytical result");
   const standard2dCopy = await page.__task38Stage("clickVisualCopy", () => clickVisualCopy(page, '[data-testid="open-ena-group-center-surface"]'));
@@ -627,7 +637,7 @@ async function runNodeDragAcceptance(page, args) {
   assertBrowser((await readAudit(page)).canonicalResult === standardCanonical.canonicalResult && (await readAudit(page)).boundScience === standardCanonical.boundScience,
     "standard-3d drag mutated analytical result");
   const cameraOrbit = await page.__task38Stage("orbitFromEmptySpace", () => orbitFromEmptySpace(page, standard3dIds[0]));
-  await page.__task38Stage("recenterPreservesNode", () => recenterPreservesNode(page, standard3dIds[0], standard3dAfter[0].node));
+  await page.__task38Stage("recenterPreservesLabel", () => recenterPreservesLabel(page, standard3dIds[0], standard3dAfter[0].label));
   const standard3dCopy = await page.__task38Stage("clickVisualCopy", () => clickVisualCopy(page, '[data-testid="open-ena-3d-comparison-plot"]'));
   families["standard-3d"] = {
     before: standard3dBefore,
@@ -636,8 +646,8 @@ async function runNodeDragAcceptance(page, args) {
     visualCopy: standard3dCopy,
   };
   await page.__task38Stage("resetNodeLayout", () => resetNodeLayout(page));
-  assertBrowser(JSON.stringify((await readPlotlyFamily(page, standard3dIds, code)).map((plot) => plot.node))
-    === JSON.stringify(standard3dBefore.map((plot) => plot.node)),
+  assertBrowser(JSON.stringify((await readPlotlyFamily(page, standard3dIds, code)).map((plot) => ({ node: plot.node, label: plot.label, incident: plot.incident })))
+    === JSON.stringify(standard3dBefore.map((plot) => ({ node: plot.node, label: plot.label, incident: plot.incident }))),
   "standard-3d reset did not restore canonical geometry");
 
   await page.__task38Stage("switchToOnaAndBuild", () => switchToOnaAndBuild(page));
@@ -668,13 +678,13 @@ async function runNodeDragAcceptance(page, args) {
   assertPlotlyMove(ona3dBefore, ona3dAfter, "ona-3d");
   assertBrowser((await readAudit(page)).canonicalResult === onaCanonical.canonicalResult && (await readAudit(page)).boundScience === onaCanonical.boundScience,
     "ona-3d drag mutated analytical result");
-  await page.__task38Stage("recenterPreservesNode", () => recenterPreservesNode(page, ona3dIds[0], ona3dAfter[0].node));
+  await page.__task38Stage("recenterPreservesLabel", () => recenterPreservesLabel(page, ona3dIds[0], ona3dAfter[0].label));
   const ona3dCopy = await page.__task38Stage("clickVisualCopy", () => clickVisualCopy(page, '[data-testid="open-ena-ona-3d-overall-plot"]'));
   families["ona-3d"] = { before: ona3dBefore, after: ona3dAfter, visualCopy: ona3dCopy };
   await page.screenshot({ path: args.screenshotPath, fullPage: true });
   await page.__task38Stage("resetNodeLayout", () => resetNodeLayout(page));
-  assertBrowser(JSON.stringify((await readPlotlyFamily(page, ona3dIds, code)).map((plot) => plot.node))
-    === JSON.stringify(ona3dBefore.map((plot) => plot.node)),
+  assertBrowser(JSON.stringify((await readPlotlyFamily(page, ona3dIds, code)).map((plot) => ({ node: plot.node, label: plot.label, incident: plot.incident })))
+    === JSON.stringify(ona3dBefore.map((plot) => ({ node: plot.node, label: plot.label, incident: plot.incident }))),
   "ona-3d reset did not restore canonical geometry");
 
   const finalAudit = await readAudit(page);
@@ -706,7 +716,7 @@ try {
     finally { entry.finishedAt = new Date().toISOString(); save(); process.stdout.write(`[node checkpoint] ${label} ${entry.status}\n`); }
   };
   acceptance = await runBrowserTask(
-    "drag standard ENA and ONA nodes in 2D and 3D",
+    "drag standard ENA and ONA code text in 2D and 3D",
     runNodeDragAcceptance,
     {
       entryUrl: `${baseUrl}/en/open-ena`,
@@ -731,7 +741,7 @@ try {
       dragPlotlyNode,
       assertPlotlyMove,
       orbitFromEmptySpace,
-      recenterPreservesNode,
+      recenterPreservesLabel,
       switchToOnaAndBuild,
     ],
   );
@@ -763,9 +773,11 @@ const summary = {
   canonicalResultPreserved: true,
   nativeResponseSciencePreserved: true,
   triptychSynchronization: true,
-  incidentGeometryFollowed: true,
+  incidentGeometryPreserved: true,
+  codeNodesPreserved: true,
+  codeTextMoved: true,
   emptySpaceCameraOrbit: true,
-  recenterPreservedMovedNodes: true,
+  recenterPreservedLabelPositions: true,
   resetRestoredCanonicalLayout: true,
   visualCopy: acceptance.finalAudit.visualCopy,
   actualHoverHits: acceptance.finalAudit.actualHoverHits,

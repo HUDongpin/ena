@@ -1199,14 +1199,8 @@ function ContrastSvg({
         ? [[node.code, { x: node.x, y: node.y }] as const]
         : []
     )));
-  const modelNodePoints = new Map([...baseModelNodePoints].map(([code, point]) => {
-    const override = nodeLayout?.get(code);
-    return [code, {
-      x: override?.get(xAxis) ?? point.x,
-      y: override?.get(yAxis) ?? point.y,
-    }] as const;
-  }));
-  modelNodePoints.forEach((point, code) => nodePoints.set(code, project(point.x, point.y)));
+  // Layout overrides belong to code text; network geometry always uses fitted nodes.
+  baseModelNodePoints.forEach((point, code) => nodePoints.set(code, project(point.x, point.y)));
   const xAxisLabel = officialAxisLabel(xAxis);
   const yAxisLabel = officialAxisLabel(yAxis);
   const xVarianceShare = finiteOrZero(contrast.geometry.variance[xAxis]);
@@ -1622,6 +1616,11 @@ function ContrastSvg({
           const codeLabel = safeFigureLabel(openEnaRenderedCodeLabel(codePresentation, node.code), 72) || "Unnamed code";
           const nodeSize = codeNodeSize(node.code);
           const nodeColor = codeColorFor(codeColors, node.code);
+          const fitted = baseModelNodePoints.get(node.code)!;
+          const override = nodeLayout?.get(node.code);
+          const labelPosition = new Map([[xAxis, override?.get(xAxis) ?? fitted.x], [yAxis, override?.get(yAxis) ?? fitted.y]]);
+          const labelPoint = project(labelPosition.get(xAxis)!, labelPosition.get(yAxis)!);
+
           return (
             <g
               key={node.code}
@@ -1629,30 +1628,32 @@ function ContrastSvg({
               role="img"
               aria-label={`${codeLabel} code node`}
             >
-              <OpenEnaSvgDraggableNode
-                code={node.code}
-                radius={nodeSize}
-                disabled={!onNodeMove}
-                toDimensions={toNodeDimensions}
-                onNodeMove={onNodeMove ?? (() => {})}
-              >
-                <title>{`${codeLabel} code node`}</title>
-                <circle
-                  r={nodeSize}
-                  className="ena-set-result-node"
-                  data-ena-code-node="neutral"
-                  data-ena-code-node-size={dataNumber(nodeSize)}
-                  data-ena-code={node.code}
-                  fill={nodeColor}
-                  stroke={nodeColor}
-                  style={{ fill: nodeColor, stroke: nodeColor }}
-                />
-                {showLabels ? (
+              <title>{`${codeLabel} code node`}</title>
+              <circle
+                r={nodeSize}
+                className="ena-set-result-node"
+                data-ena-code-node="neutral"
+                data-ena-code-node-size={dataNumber(nodeSize)}
+                data-ena-code={node.code}
+                fill={nodeColor}
+                stroke={nodeColor}
+                style={{ fill: nodeColor, stroke: nodeColor }}
+              />
+              {showLabels ? (
+                <OpenEnaSvgDraggableNode
+                  code={node.code}
+                  position={labelPosition}
+                  offset={{ x: labelPoint.x - point.x, y: labelPoint.y - point.y }}
+                  disabled={!onNodeMove}
+                  toDimensions={toNodeDimensions}
+                  onNodeMove={onNodeMove ?? (() => {})}
+                >
                   <text x={nodeSize + 3} y="3" textAnchor="start" className="ena-set-result-label">
                     {codeLabel}
                   </text>
-                ) : null}
-              </OpenEnaSvgDraggableNode>
+                </OpenEnaSvgDraggableNode>
+              ) : null}
+
             </g>
           );
         })}

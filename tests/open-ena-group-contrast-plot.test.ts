@@ -295,7 +295,7 @@ test("official webENA frame scales analytic-unit evidence but preserves raw netw
   );
 });
 
-test("one fitted-dimension node override synchronizes the 2D triptych and incident edges", async () => {
+test("label positions synchronize the 2D triptych while nodes and edges remain fixed", async () => {
   const original = structuredClone(contrast);
   const nodeLayout = new Map([
     ["Evidence", new Map([["SVD1", 2], ["SVD2", -1]])],
@@ -305,16 +305,16 @@ test("one fitted-dimension node override synchronizes the 2D triptych and incide
   const primary = plotSvg(markup, "open-ena-group-primary-plot");
   const secondary = plotSvg(markup, "open-ena-group-secondary-plot");
 
-  assert.deepEqual(codeNodePosition(comparison, "Evidence"), { x: 602.25, y: 431.75 });
-  assert.deepEqual(codeNodePosition(primary, "Evidence"), { x: 259.0416666666667, y: 130.89583333333334 });
-  assert.deepEqual(codeNodePosition(secondary, "Evidence"), { x: 259.0416666666667, y: 130.89583333333334 });
-  assert.equal((markup.match(/data-ena-drag-code="Evidence"/g) ?? []).length, 3);
-
-  for (const svg of [comparison, primary, secondary]) {
-    const evidenceReflection = edgeLineTags(svg).find((line) => line.includes("Evidence &amp; Reflection")) ?? "";
-    assert.equal(Number(tagAttribute(evidenceReflection, "x1")), codeNodePosition(svg, "Evidence")?.x);
-    assert.equal(Number(tagAttribute(evidenceReflection, "y1")), codeNodePosition(svg, "Evidence")?.y);
+  const baseline = await render();
+  for (const id of ["open-ena-group-comparison-plot", "open-ena-group-primary-plot", "open-ena-group-secondary-plot"]) {
+    const before = plotSvg(baseline, id), after = plotSvg(markup, id);
+    assert.deepEqual(codeNodePosition(after, "Evidence"), codeNodePosition(before, "Evidence"));
+    assert.deepEqual(edgeLineTags(after), edgeLineTags(before), "label movement must preserve every edge endpoint");
+    const label = (svg: string) => svg.match(/<g[^>]*data-ena-label-position="Evidence"[^>]*>/)?.[0];
+    assert.ok(label(after));
+    assert.notEqual(label(after), label(before));
   }
+  assert.equal((markup.match(/data-ena-drag-code="Evidence"/g) ?? []).length, 3);
   assert.deepEqual(contrast, original, "triptych layout overrides must not mutate contrast science");
 });
 

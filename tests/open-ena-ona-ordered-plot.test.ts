@@ -1187,7 +1187,7 @@ test("the ordered SVG renders scaled triangles, pair chevrons, self inner discs,
   assert.match(compactMarkup, /<details[^>]*class="ona-visible-edge-summary"/);
 });
 
-test("ONA 2D node overrides move directed glyphs, self-connections, and all three descriptive plots", async () => {
+test("ONA 2D label overrides preserve nodes, directed glyphs, and self-connections", async () => {
   const { result, config } = orderedFixture();
   const original = structuredClone(result);
   const { default: OpenEnaOrderedPlot } = await import("../components/open-ena/OpenEnaOrderedPlot");
@@ -1222,11 +1222,14 @@ test("ONA 2D node overrides move directed glyphs, self-connections, and all thre
     `<g(?=[^>]*data-ona-code-node-position="${code}")(?=[^>]*transform="translate\\(([^ ]+) ([^)]+)\\)")[^>]*>`,
   ))?.slice(1, 3).map(Number) ?? [];
 
-  assert.notDeepEqual(node(moved, "A"), node(baseline, "A"));
+  assert.deepEqual(node(moved, "A"), node(baseline, "A"));
+  const label = (markup: string) => markup.match(/<g[^>]*data-ena-label-position="A"[^>]*>/)?.[0];
+  assert.ok(label(moved));
+  assert.notEqual(label(moved), label(baseline));
   assert.deepEqual(node(moved, "B"), node(baseline, "B"));
-  assert.notEqual(path(moved, "data-ona-edge-glyph", "broadcast-triangle"), path(baseline, "data-ona-edge-glyph", "broadcast-triangle"));
-  assert.notEqual(path(moved, "data-ona-edge-hit-target", "true"), path(baseline, "data-ona-edge-hit-target", "true"));
-  assert.notEqual(path(moved, "data-ona-chevron", "A-to-B"), path(baseline, "data-ona-chevron", "A-to-B"));
+  assert.equal(path(moved, "data-ona-edge-glyph", "broadcast-triangle"), path(baseline, "data-ona-edge-glyph", "broadcast-triangle"));
+  assert.equal(path(moved, "data-ona-edge-hit-target", "true"), path(baseline, "data-ona-edge-hit-target", "true"));
+  assert.equal(path(moved, "data-ona-chevron", "A-to-B"), path(baseline, "data-ona-chevron", "A-to-B"));
   assert.equal(path(moved, "data-ona-chevron", "B-to-C"), path(baseline, "data-ona-chevron", "B-to-C"));
   assert.match(moved, /data-ona-code-node-position="A"[\s\S]*?data-ona-self-loop="A"/);
   assert.match(moved, /data-ena-drag-code="A"/);

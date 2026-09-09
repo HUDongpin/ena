@@ -1,7 +1,8 @@
 import type { ENASet } from "jena-js";
-import type { BoundResultV3 } from "./model-v3/types";
+import type { BoundResultV3, BoundStandardResultV3 } from "./model-v3/types";
 import type { GroupNetwork, OpenEnaConfig, OpenEnaResult } from "./types";
-import { WEB_ENA_MAX_POSITION_MODIFIER, type OpenEnaPairwiseContrast, type buildContrastV3 } from "./contrasts";
+import { buildEndpointContrastScience, WEB_ENA_MAX_POSITION_MODIFIER, type OpenEnaPairwiseContrast, type buildContrastV3 } from "./contrasts";
+import { boundScientificAdapterV3 } from "./inference-consumers-v3";
 import { resolveOpenEnaGroupDisplayOptions, type OpenEnaGroupDisplaySettingsByGroup, type OpenEnaResolvedGroupDisplaySide } from "./group-display";
 import { marginalMeanIntervalPair, marginalMeanStudentT95, meanCenteredIqrOutlierIntervalPair } from "./uncertainty";
 
@@ -11,7 +12,37 @@ export type OpenEnaContrastPresentation = Pick<OpenEnaPairwiseContrast,
     declaredGroups: ReadonlyArray<{ name: string }>;
     resultProvenance?: Pick<OpenEnaPairwiseContrast["resultProvenance"], "projectionReference"> };
 
-export function presentBoundContrastV3(value: Awaited<ReturnType<typeof buildContrastV3>>): OpenEnaContrastPresentation {
+type BoundContrastGeometryV3 = Pick<Awaited<ReturnType<typeof buildContrastV3>>,
+  "result" | "configuration" | "axes" | "coordinateExtent" | "officialPlotFrame" | "geometry"
+  | "primary" | "secondary" | "nodes" | "edges" | "edgeScaleDenominators" | "declaredGroups">;
+
+/** Present an already admitted endpoint result in the same three-plot frame
+ * before and after draft edits. Only retained groups and axes are selectable;
+ * current exports and inference still require the independent current plan. */
+export function presentRetainedEndpointContrastV3(
+  bound: BoundResultV3,
+  primaryToken: string | null,
+  secondaryToken: string | null,
+  selectedAxes: readonly string[],
+): BoundContrastGeometryV3 | null {
+  if (bound.configuration.analysisFamily !== "standard" || bound.configuration.analysis.model.type !== "EndPoint") return null;
+  const result = bound as BoundStandardResultV3;
+  const groups = result.executionProvenance.identityDictionary.groups;
+  if (groups.length < 2 || groups.length > 6) return null;
+  const primary = groups.find(group => group.token === primaryToken);
+  const secondary = groups.find(group => group.token === secondaryToken);
+  if (!primary || !secondary || primary.token === secondary.token) return null;
+  const supportedAxes = retainedBoundPlotAxesV3(result);
+  if (selectedAxes.length !== 2 || selectedAxes[0] === selectedAxes[1]
+    || selectedAxes.some(axis => !supportedAxes.includes(axis))) return null;
+  const adapted = boundScientificAdapterV3(result, supportedAxes);
+  return {
+    result, configuration: result.configuration, declaredGroups: adapted.groups,
+    ...buildEndpointContrastScience(adapted, "Group", primary.displayLabel, secondary.displayLabel, selectedAxes),
+  };
+}
+
+export function presentBoundContrastV3(value: BoundContrastGeometryV3): OpenEnaContrastPresentation {
   return { axes: [...value.axes], coordinateExtent: value.coordinateExtent, officialPlotFrame: value.officialPlotFrame,
     geometry: value.geometry, primary: value.primary, secondary: value.secondary, nodes: value.nodes, edges: value.edges,
     edgeScaleDenominators: value.edgeScaleDenominators, declaredGroups: value.declaredGroups,
@@ -34,7 +65,7 @@ export function nativePlotGroupSettingsV3(result: OpenEnaPlotResult, name: strin
 /** Native contrast display filtering is never handed back to inference. The
  * canonical geometry and coordinate scale stay fixed. The display envelope may
  * expand for subset intervals, but never shrinks below the full-result frame. */
-export function presentBoundGroupDisplayV3(value: Awaited<ReturnType<typeof buildContrastV3>>, settings: OpenEnaGroupDisplaySettingsByGroup, hiddenKeys: readonly string[], suppressed: boolean) {
+export function presentBoundGroupDisplayV3(value: BoundContrastGeometryV3, settings: OpenEnaGroupDisplaySettingsByGroup, hiddenKeys: readonly string[], suppressed: boolean) {
   const contrast = presentBoundContrastV3(value);
   const hidden = new Set(hiddenKeys), dictionary = value.result.executionProvenance.identityDictionary;
   const units = new Map(dictionary.units.map((unit) => [unit.displayLabel, unit.token]));

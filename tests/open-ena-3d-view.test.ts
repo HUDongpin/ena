@@ -453,7 +453,7 @@ test("3D unit observations stay circular while group means use square summary ma
   );
 });
 
-test("standard 3D node overrides rebuild code and incident-edge traces without changing the fitted frame", () => {
+test("standard 3D label overrides preserve all fitted nodes and edges", () => {
   const result = threeDimensionalResult();
   const before = structuredClone(result);
   const [xDimension = "SVD1", yDimension = "SVD2", zDimension = "SVD3"] = result.dimensions;
@@ -488,12 +488,13 @@ test("standard 3D node overrides rebuild code and incident-edge traces without c
   const incidentName = result.set.adjacencyKey.find((candidate) => candidate.source === "A" || candidate.target === "A")!.name;
   const unrelatedName = result.set.adjacencyKey.find((candidate) => candidate.source !== "A" && candidate.target !== "A")!.name;
 
-  assert.deepEqual([
-    nodeTrace(moved).x[codeIndex],
-    nodeTrace(moved).y[codeIndex],
-    nodeTrace(moved).z[codeIndex],
-  ], [3, -2, 1]);
-  assert.notDeepEqual(edge(moved, incidentName), edge(baseline, incidentName));
+  assert.deepEqual(nodeTrace(moved), nodeTrace(baseline), "label movement must not move code markers");
+  const labelTrace = moved.data.find(trace => trace.meta.role === "code-label");
+  assert.ok(labelTrace, "labels require a separate trace");
+  assert.deepEqual([labelTrace.x[codeIndex], labelTrace.y[codeIndex], labelTrace.z[codeIndex]], [3, -2, 1]);
+  assert.deepEqual(moved.data.filter(trace => trace.meta.role !== "code-label"), baseline.data.filter(trace => trace.meta.role !== "code-label"));
+
+  assert.deepEqual(edge(moved, incidentName), edge(baseline, incidentName));
   assert.deepEqual(edge(moved, unrelatedName), edge(baseline, unrelatedName));
   assert.deepEqual(
     moved.data.filter((trace) => trace.meta.role === "unit-points" || trace.meta.role === "group-mean"),

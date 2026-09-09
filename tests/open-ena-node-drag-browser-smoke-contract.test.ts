@@ -36,7 +36,7 @@ test("the smoke route is development-only and opt-in", () => {
   assert.match(route, /<OpenEnaWorkspace locale="en"/u);
 });
 
-test("the smoke performs real pointer drags and audits moved node geometry", () => {
+test("the smoke performs real pointer drags and audits moved text and fixed network geometry", () => {
   const source = readFileSync(smokePath, "utf8");
 
   assert.match(source, /page\.mouse\.move/u);
@@ -46,8 +46,8 @@ test("the smoke performs real pointer drags and audits moved node geometry", () 
   assert.match(source, /data-ena-edge/u);
   assert.match(source, /data-ona-edge-glyph/u);
   assert.match(source, /meta\?\.role === "code-node"/u);
-  assert.match(source, /node did not move/u);
-  assert.match(source, /incident edge did not follow node/u);
+  assert.match(source, /label did not move/u);
+  assert.match(source, /incident edge moved during label drag/u);
   assert.match(source, /triptych/u);
 });
 
@@ -56,7 +56,7 @@ test("camera, reset, export, and analytical boundaries are acceptance gates", ()
 
   assert.match(source, /empty-space camera orbit/u);
   assert.match(source, /data-ena-plot-action="recenter"/u);
-  assert.match(source, /Reset node layout/u);
+  assert.match(source, /Reset label positions/u);
   assert.match(source, /data-ena-plot-action="copy-image"/u);
   assert.match(source, /canonicalResult/u);
   assert.match(source, /drag mutated analytical result/u);

@@ -765,7 +765,7 @@ export function compileOpenEnaOrdered3dPlotSpec(
     ...(nodeTotals ? { nodeTotals } : {}),
   });
   const fitted = validateFittedRows(result, model.codes, dimensions);
-  const displayNodeCoordinates = fitted.nodeCoordinates.map((point, nodeIndex) => {
+  const labelCoordinates = fitted.nodeCoordinates.map((point, nodeIndex) => {
     const override = nodeLayout?.get(model.nodes[nodeIndex]!.code);
     return dimensions.map((dimension, axis) => {
       const candidate = override?.get(dimension);
@@ -786,8 +786,8 @@ export function compileOpenEnaOrdered3dPlotSpec(
   const resolvedScope = presentationScope(result, scope);
   const resolvedScopeColor = scopeColor(result, scope);
   const centroid = [0, 1, 2].map((axis) => (
-    displayNodeCoordinates.reduce((sum, point) => sum + point[axis]!, 0)
-      / displayNodeCoordinates.length
+    fitted.nodeCoordinates.reduce((sum, point) => sum + point[axis]!, 0)
+      / fitted.nodeCoordinates.length
   )) as MutablePoint3;
   const renderedEdges = model.visibleEdges.filter((edge) => (
     openEnaRenderedEdgeIsVisible(codePresentation, edge.ground, edge.response)
@@ -806,10 +806,10 @@ export function compileOpenEnaOrdered3dPlotSpec(
   }
   const offDiagonal = positioned
     .filter((entry) => !entry.edge.selfConnection)
-    .map((entry) => offDiagonalPosition(entry, displayNodeCoordinates, visibleDirections, sceneExtent));
+    .map((entry) => offDiagonalPosition(entry, fitted.nodeCoordinates, visibleDirections, sceneExtent));
   const selfLoops = positioned
     .filter((entry) => entry.edge.selfConnection)
-    .map((entry) => selfLoopPosition(entry, displayNodeCoordinates, centroid, sceneExtent));
+    .map((entry) => selfLoopPosition(entry, fitted.nodeCoordinates, centroid, sceneExtent));
 
   const traces: OpenEna3dTrace[] = [];
   if (showNetworks && showCodeGraph) {
@@ -838,16 +838,16 @@ export function compileOpenEnaOrdered3dPlotSpec(
   if (renderedNodeIndices.length > 0) {
     traces.push({
       type: "scatter3d",
-      mode: showLabels ? "markers+text" : "markers",
+      mode: "markers",
       name: "Codes",
-      x: renderedNodeIndices.map((nodeIndex) => displayNodeCoordinates[nodeIndex]![0]),
-      y: renderedNodeIndices.map((nodeIndex) => displayNodeCoordinates[nodeIndex]![1]),
-      z: renderedNodeIndices.map((nodeIndex) => displayNodeCoordinates[nodeIndex]![2]),
+      x: renderedNodeIndices.map((nodeIndex) => fitted.nodeCoordinates[nodeIndex]![0]),
+      y: renderedNodeIndices.map((nodeIndex) => fitted.nodeCoordinates[nodeIndex]![1]),
+      z: renderedNodeIndices.map((nodeIndex) => fitted.nodeCoordinates[nodeIndex]![2]),
       ids: renderedNodeIndices.map((nodeIndex) => model.nodes[nodeIndex]!.code),
       text: renderedNodeIndices.map((nodeIndex) => openEnaRenderedCodeLabel(input, model.nodes[nodeIndex]!.code)),
       customdata: renderedNodeIndices.map((nodeIndex) => {
         const node = model.nodes[nodeIndex]!;
-        return codeHover(openEnaRenderedCodeLabel(input, node.code), displayNodeCoordinates[nodeIndex]!, node.responseTotal, dimensions);
+        return codeHover(openEnaRenderedCodeLabel(input, node.code), fitted.nodeCoordinates[nodeIndex]!, node.responseTotal, dimensions);
       }),
       textposition: "top center",
       textfont: { color: "#263740", size: 12 },
@@ -866,6 +866,19 @@ export function compileOpenEnaOrdered3dPlotSpec(
         scope: resolvedScope,
         markerSymbol: "circle",
       },
+    });
+  }
+  if (showLabels && renderedNodeIndices.length > 0) {
+    traces.push({
+      type: "scatter3d", mode: "text", name: "Code labels",
+      x: renderedNodeIndices.map(index => labelCoordinates[index]![0]),
+      y: renderedNodeIndices.map(index => labelCoordinates[index]![1]),
+      z: renderedNodeIndices.map(index => labelCoordinates[index]![2]),
+      ids: renderedNodeIndices.map(index => model.nodes[index]!.code),
+      text: renderedNodeIndices.map(index => openEnaRenderedCodeLabel(input, model.nodes[index]!.code)),
+      textposition: "top center", textfont: { color: "#263740", size: 12 },
+      hovertemplate: "%{text}<extra></extra>", showlegend: false,
+      meta: { role: "code-label", analysisKind: "ona", scope: resolvedScope },
     });
   }
   traces.push(...axisTraces(axisExtent, dimensions).map((trace) => ({

@@ -18,7 +18,7 @@ import { buildPresentationArtifactV3 } from "@/lib/open-ena/presentation-artifac
 import { parseBundleJsonV3 } from "@/lib/open-ena/bundle-json-v3";
 import { assertPresentationArtifactContractV3 } from "@/lib/open-ena/bundle-contract-v3";
 import { prepareWorkspacePresentationV3 } from "@/lib/open-ena/workspace-presentation-v3";
-import { presentBoundResultV3, presentBoundGroupDisplayV3 } from "@/lib/open-ena/bound-presentation-v3";
+import { presentBoundResultV3, presentBoundGroupDisplayV3, presentRetainedEndpointContrastV3 } from "@/lib/open-ena/bound-presentation-v3";
 import { exportContrastV3 } from "@/lib/open-ena/contrast-export-v3";
 import { buildContrastV3 } from "@/lib/open-ena/contrasts";
 import OpenEnaDataView, { type OpenEnaDataViewContext } from "./OpenEnaDataView";
@@ -451,7 +451,10 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     ? { axes: [threeDDimensions[0], threeDDimensions[1], threeDDimensions[2]], identityConfirmed, primaryGroup: primary.fields[0].value, secondaryGroup: secondary.fields[0].value, horizons: periods, cohortPolicy: "all-period-complete", repetitions: 500, seed: 2026 } : null;
   const activeAiReview = aiReview?.key === consumerKey && current ? aiReview.value : null;
   const activeContrast = nativeContrast?.key === consumerKey && current ? nativeContrast.value : null;
-  const groupDisplay = useMemo(() => activeContrast ? presentBoundGroupDisplayV3(activeContrast, display.groups, hiddenUnitKeys, display.allGroupsSuppressed) : null, [activeContrast, display.groups, hiddenUnitKeys, display.allGroupsSuppressed]);
+  const retainedPlotContrast = useMemo(() => result
+    ? presentRetainedEndpointContrastV3(result, primaryGroupName, secondaryGroupName, twoDAxes)
+    : null, [result, primaryGroupName, secondaryGroupName, twoDAxes.join("\0")]);
+  const groupDisplay = useMemo(() => retainedPlotContrast ? presentBoundGroupDisplayV3(retainedPlotContrast, display.groups, hiddenUnitKeys, display.allGroupsSuppressed) : null, [retainedPlotContrast, display.groups, hiddenUnitKeys, display.allGroupsSuppressed]);
   const contrast = groupDisplay?.contrast ?? null;
   const onaView = useMemo(() => result?.configuration.analysisFamily === "ona" ? buildHistoricalOnaViewV3(result as BoundOnaResultV3, primary?.token ?? null) : null, [result, primaryGroupName]);
   const dataViewGroup = dataViewContext === "primary" ? primary?.fields[0].value ?? null : dataViewContext === "secondary" ? secondary?.fields[0].value ?? null : null;

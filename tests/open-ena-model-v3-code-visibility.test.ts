@@ -245,16 +245,16 @@ test("Standard SVG and Plotly omit only hidden Code identities and their inciden
   );
 });
 
-test("global suppression preserves Standard frame, units, means, axes, and saved node layout", () => {
+test("global suppression preserves Standard frame, units, means, axes, and saved label positions", () => {
   const props = standardProps();
   const nodeLayout = new Map([["A", new Map([[props.xDimension, 0.4], [props.yDimension, -0.2], [props.zDimension, 0.3]])]]);
   const visible = compileOpenEna3dPlotSpec({ ...props, nodeLayout });
   const hidden = compileOpenEna3dPlotSpec({ ...props, nodeLayout, showCodeGraph: false } as never);
   const restored = compileOpenEna3dPlotSpec({ ...props, nodeLayout, showCodeGraph: true } as never);
-  assert.equal(hidden.data.some((trace) => trace.meta.role === "code-node" || trace.meta.role === "network-edge"), false);
+  assert.equal(hidden.data.some((trace) => trace.meta.role === "code-node" || trace.meta.role === "code-label" || trace.meta.role === "network-edge"), false);
   assert.deepEqual(hidden.layout, visible.layout);
   assert.deepEqual(restored, visible);
-  const restoredCodes = restored.data.find((trace) => trace.meta.role === "code-node");
+  const restoredCodes = restored.data.find((trace) => trace.meta.role === "code-label");
   const index = restoredCodes?.text?.indexOf("A") ?? -1;
   assert.deepEqual([restoredCodes?.x[index], restoredCodes?.y[index], restoredCodes?.z[index]], [0.4, -0.2, 0.3]);
 });
@@ -444,16 +444,16 @@ test("ONA 3D filters every directed layer and Code trace in lockstep without cha
   );
 });
 
-test("ONA 3D hide and restore returns exact moved Code and directed geometry", () => {
+test("ONA 3D hide and restore returns exact moved label and fixed directed geometry", () => {
   const nodeLayout = new Map([["A", new Map([["SVD1", 2.25], ["SVD2", -1.75], ["SVD3", 0.8]])]]);
   const visible = compileOpenEnaOrdered3dPlotSpec(ordered3dInput({ nodeLayout }));
   const hidden = compileOpenEnaOrdered3dPlotSpec(ordered3dInput({ nodeLayout, showCodeGraph: false }));
   const restored = compileOpenEnaOrdered3dPlotSpec(ordered3dInput({ nodeLayout, showCodeGraph: true }));
   const directedRoles = new Set(["ordered-edge-shaft", "ordered-edge-arrowhead", "ordered-self-loop-shaft", "ordered-self-loop-arrowhead"]);
-  assert.equal(hidden.data.some((trace) => trace.meta.role === "code-node" || directedRoles.has(trace.meta.role)), false);
+  assert.equal(hidden.data.some((trace) => trace.meta.role === "code-node" || trace.meta.role === "code-label" || directedRoles.has(trace.meta.role)), false);
   assert.deepEqual(hidden.layout, visible.layout);
   assert.deepEqual(restored, visible);
-  const codeTrace = restored.data.find((trace) => trace.meta.role === "code-node")!;
+  const codeTrace = restored.data.find((trace) => trace.meta.role === "code-label")!;
   const index = codeTrace.text!.indexOf("A");
   assert.deepEqual([codeTrace.x[index], codeTrace.y[index], codeTrace.z[index]], [2.25, -1.75, 0.8]);
 });
@@ -481,8 +481,8 @@ test("Standard 3D comparison, primary, and secondary compiler branches share per
     assert.deepEqual(spec.data.find((trace) => trace.meta.role === "code-node")?.text, ["A", "C"]);
     assert.ok(spec.data.filter((trace) => trace.meta.role === "network-edge").every((trace) => !String(trace.meta.edgeName).includes("B")));
     assert.deepEqual(
-      spec.data.filter((trace) => trace.meta.role !== "code-node" && trace.meta.role !== "network-edge"),
-      baseline.data.filter((trace) => trace.meta.role !== "code-node" && trace.meta.role !== "network-edge"),
+      spec.data.filter((trace) => trace.meta.role !== "code-node" && trace.meta.role !== "code-label" && trace.meta.role !== "network-edge"),
+      baseline.data.filter((trace) => trace.meta.role !== "code-node" && trace.meta.role !== "code-label" && trace.meta.role !== "network-edge"),
     );
     assert.ok(spec.data.some((trace) => trace.meta.role === "axis"));
   }
@@ -582,7 +582,7 @@ test("existing network and label preferences remain independent beneath Code vis
   const props = standardProps();
   const noNetworks = compileOpenEna3dPlotSpec({ ...props, showNetworks: false, showLabels: true });
   assert.equal(noNetworks.data.some((trace) => trace.meta.role === "network-edge"), false);
-  assert.equal(noNetworks.data.find((trace) => trace.meta.role === "code-node")?.mode, "markers+text");
+  assert.equal(noNetworks.data.find((trace) => trace.meta.role === "code-label")?.mode, "text");
   const noLabels = compileOpenEna3dPlotSpec({ ...props, showNetworks: true, showLabels: false });
   assert.ok(noLabels.data.some((trace) => trace.meta.role === "network-edge"));
   assert.equal(noLabels.data.find((trace) => trace.meta.role === "code-node")?.mode, "markers");

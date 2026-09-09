@@ -11,7 +11,8 @@ import type { OpenEnaNodeDimensionPosition } from "@/lib/open-ena/node-layout";
 
 export interface OpenEnaSvgDraggableNodeProps {
   code: string;
-  radius: number;
+  position: OpenEnaNodeDimensionPosition;
+  offset: { x: number; y: number };
   children: ReactNode;
   disabled?: boolean;
   toDimensions: (
@@ -24,7 +25,8 @@ export interface OpenEnaSvgDraggableNodeProps {
 
 export default function OpenEnaSvgDraggableNode({
   code,
-  radius,
+  position,
+  offset,
   children,
   disabled = false,
   toDimensions,
@@ -34,6 +36,10 @@ export default function OpenEnaSvgDraggableNode({
   const pointerIdRef = useRef<number | null>(null);
   const frameRef = useRef<number | null>(null);
   const pendingMoveRef = useRef<OpenEnaNodeDimensionPosition | null>(null);
+  const startRef = useRef<{
+    pointer: OpenEnaNodeDimensionPosition;
+    position: OpenEnaNodeDimensionPosition;
+  } | null>(null);
 
   const flushPendingMove = () => {
     frameRef.current = null;
@@ -56,14 +62,19 @@ export default function OpenEnaSvgDraggableNode({
   const handlePointerMove = (event: PointerEvent<SVGGElement>) => {
     if (disabled || pointerIdRef.current !== event.pointerId) return;
     const dimensions = toDimensions(event.clientX, event.clientY, event.currentTarget);
-    if (!dimensions) return;
-    pendingMoveRef.current = dimensions;
+    const start = startRef.current;
+    if (!dimensions || !start) return;
+    pendingMoveRef.current = new Map([...start.position].map(([dimension, value]) => [
+      dimension,
+      value + (dimensions.get(dimension) ?? 0) - (start.pointer.get(dimension) ?? 0),
+    ]));
     if (frameRef.current === null) frameRef.current = requestAnimationFrame(flushPendingMove);
   };
 
   const cancelPointerDrag = () => {
     cancelPendingMove();
     pointerIdRef.current = null;
+    startRef.current = null;
     setDragging(false);
   };
 
@@ -75,6 +86,7 @@ export default function OpenEnaSvgDraggableNode({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     pointerIdRef.current = null;
+    startRef.current = null;
     setDragging(false);
   };
 
@@ -84,10 +96,15 @@ export default function OpenEnaSvgDraggableNode({
       data-ena-node-draggable="true"
       data-ena-node-dragging={dragging}
       data-ena-drag-code={code}
+      data-ena-label-position={code}
+      transform={`translate(${offset.x} ${offset.y})`}
       onPointerDown={(event) => {
         if (disabled || event.button !== 0) return;
+        const pointer = toDimensions(event.clientX, event.clientY, event.currentTarget);
+        if (!pointer) return;
         event.preventDefault();
         event.stopPropagation();
+        startRef.current = { pointer, position: new Map(position) };
         pointerIdRef.current = event.pointerId;
         event.currentTarget.setPointerCapture(event.pointerId);
         setDragging(true);
@@ -97,11 +114,6 @@ export default function OpenEnaSvgDraggableNode({
       onPointerCancel={cancelPointerDrag}
       onLostPointerCapture={cancelPointerDrag}
     >
-      <circle
-        r={Math.max(12, radius)}
-        className="ena-node-drag-hit-target"
-        aria-hidden="true"
-      />
       {children}
     </g>
   );

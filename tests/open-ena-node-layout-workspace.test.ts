@@ -49,29 +49,29 @@ function renderTools(nodeLayoutOverrideCount: number) {
   }));
 }
 
-test("Reset node layout has exact localized copy and remains separate from Reset view", () => {
+test("Reset label positions has exact localized copy and remains separate from Reset view", () => {
   const en = getOpenEnaCopy("en").plot;
   const zhHant = getOpenEnaCopy("zh-hant").plot;
   const zhHans = getOpenEnaCopy("zh-hans").plot;
 
-  assert.equal(en.resetNodeLayout, "Reset node layout");
-  assert.equal(zhHant.resetNodeLayout, "重設節點配置");
-  assert.equal(zhHans.resetNodeLayout, "重置节点布局");
+  assert.equal(en.resetNodeLayout, "Reset label positions");
+  assert.equal(zhHant.resetNodeLayout, "重設標籤位置");
+  assert.equal(zhHans.resetNodeLayout, "重置标签位置");
   assert.notEqual(en.resetNodeLayout, en.reset);
   assert.notEqual(zhHant.resetNodeLayout, zhHant.reset);
   assert.notEqual(zhHans.resetNodeLayout, zhHans.reset);
 });
 
-test("Reset node layout is disabled without overrides and enabled with one override", () => {
+test("Reset label positions is disabled without overrides and enabled with one override", () => {
   const disabledMarkup = renderTools(0);
   const enabledMarkup = renderTools(1);
 
   const disabledButton = disabledMarkup.match(/<button[^>]*data-ena-plot-action="reset-node-layout"[^>]*>/)?.[0] ?? "";
   const enabledButton = enabledMarkup.match(/<button[^>]*data-ena-plot-action="reset-node-layout"[^>]*>/)?.[0] ?? "";
-  assert.match(disabledButton, /aria-label="Reset node layout"/);
+  assert.match(disabledButton, /aria-label="Reset label positions"/);
   assert.match(disabledButton, /disabled=""/);
   assert.match(disabledButton, /data-ena-node-layout-overrides="0"/);
-  assert.match(enabledButton, /aria-label="Reset node layout"/);
+  assert.match(enabledButton, /aria-label="Reset label positions"/);
   assert.doesNotMatch(enabledButton, /disabled=""/);
   assert.match(enabledButton, /data-ena-node-layout-overrides="1"/);
 });

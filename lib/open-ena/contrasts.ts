@@ -497,7 +497,9 @@ type EndpointContrastScienceInput = Pick<OpenEnaResult, "set" | "dimensions"> & 
   groups: Array<{ name: string; count: number; pointCount: number; color?: string }>;
 };
 
-function buildEndpointContrastScience(
+/** Pure descriptive geometry shared by current consumers and admitted retained
+ * result presenters. This helper grants no currentness or inference authority. */
+export function buildEndpointContrastScience(
   result: EndpointContrastScienceInput,
   groupColumn: string,
   primaryGroup: string,

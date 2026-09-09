@@ -136,7 +136,7 @@ test("standalone and mini-network code nodes share the selected palette", async 
   assert.match(miniMarkup, /<circle[^>]*data-ena-code="B"[^>]*fill="#000000"/);
 });
 
-test("generic 2D ENA applies a dimension layout to one node and every incident edge without reframing", async () => {
+test("generic 2D ENA moves code text while preserving nodes, edges, and frame", async () => {
   const { default: OpenEnaPlot } = await import("../components/open-ena/OpenEnaPlot");
   const result = sixGroupTrajectoryResult();
   const before = structuredClone(result);
@@ -177,10 +177,13 @@ test("generic 2D ENA applies a dimension layout to one node and every incident e
     `<line[^>]*data-ena-edge="${edge.replace(" & ", " &amp; ")}"[^>]*>`,
   ))?.[0] ?? "";
 
-  assert.notDeepEqual(nodeTransform(moved, "A"), nodeTransform(baseline, "A"));
+  assert.deepEqual(nodeTransform(moved, "A"), nodeTransform(baseline, "A"));
+  const label = (markup: string) => markup.match(/<g[^>]*data-ena-label-position="A"[^>]*>/)?.[0];
+  assert.ok(label(moved));
+  assert.notEqual(label(moved), label(baseline));
   assert.deepEqual(nodeTransform(moved, "B"), nodeTransform(baseline, "B"));
-  assert.notEqual(edgeTag(moved, "A & B"), edgeTag(baseline, "A & B"));
+  assert.equal(edgeTag(moved, "A & B"), edgeTag(baseline, "A & B"));
   assert.equal(edgeTag(moved, "B & C"), edgeTag(baseline, "B & C"));
   assert.match(moved, /data-ena-drag-code="A"/);
-  assert.deepEqual(result, before, "display-only node movement cannot mutate the fitted result");
+  assert.deepEqual(result, before, "label movement cannot mutate the fitted result");
 });
