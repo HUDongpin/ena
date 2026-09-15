@@ -115,6 +115,32 @@ export type OpenEnaResultTableAvailability =
   | { available: true; reason: null }
   | { available: false; reason: OpenEnaResultTableUnavailableReason };
 
+/** Structural table source shared by legacy OpenEnaResult and bound v3 results. */
+export interface OpenEnaResultTableSource {
+  readonly set: {
+    readonly modelType: OpenEnaResult["set"]["modelType"];
+    readonly trajectories?: readonly Row[];
+    readonly points: readonly Row[];
+    readonly lineWeights: readonly Row[];
+    readonly connectionCounts: readonly Row[];
+    readonly pointsForProjection: readonly Row[];
+    readonly centroids?: readonly Row[];
+    readonly rotation: { readonly nodes?: readonly Row[] };
+    readonly adjacencyKey: OpenEnaResult["set"]["adjacencyKey"];
+    readonly conversation: readonly string[];
+  };
+  readonly projectionReference?: unknown;
+}
+
+export type OpenEnaResultTableCsvExport =
+  | { status: "ready"; filename: string; csv: string; reason: null }
+  | { status: "unavailable"; filename: null; csv: null; reason: OpenEnaResultTableUnavailableReason }
+  | { status: "empty"; filename: null; csv: null; reason: null };
+
+export function openEnaResultTableCsvFilename(key: OpenEnaResultTableKey): string {
+  return `open-ena-${key}.csv`;
+}
+
 export interface OpenEnaResultTablesCopy {
   summaryTitle: string;
   summaryDescription: string;
@@ -356,7 +382,7 @@ export function rowsToCsv(rows: readonly Row[]): string {
   ].join("\r\n") + "\r\n";
 }
 
-function trajectoryExportRows(result: OpenEnaResult, rows: Row[]): Row[] {
+function trajectoryExportRows(result: OpenEnaResultTableSource, rows: readonly Row[]): Row[] {
   if (result.set.modelType === "EndPoint") return rows.map((row) => ({ ...row }));
   return rows.map((row, index) => {
     const trajectory = result.set.trajectories?.[index];
@@ -375,7 +401,7 @@ function trajectoryExportRows(result: OpenEnaResult, rows: Row[]): Row[] {
   });
 }
 
-export function buildResultTables(result: OpenEnaResult) {
+export function buildResultTables(result: OpenEnaResultTableSource) {
   return {
     coordinates: trajectoryExportRows(result, result.set.points),
     lineWeights: trajectoryExportRows(result, result.set.lineWeights),
@@ -388,6 +414,29 @@ export function buildResultTables(result: OpenEnaResult) {
     centroids: result.projectionReference ? [] : trajectoryExportRows(result, result.set.centroids ?? []),
     nodePositions: (result.set.rotation.nodes ?? []).map((row) => ({ ...row })),
     adjacencyKey: result.set.adjacencyKey.map((edge) => ({ ...edge })),
+  };
+}
+
+export function exportOpenEnaResultTableCsv(
+  result: OpenEnaResultTableSource,
+  key: OpenEnaResultTableKey,
+): OpenEnaResultTableCsvExport {
+  const availability = openEnaResultTableAvailability({
+    modelType: result.set.modelType,
+    projectionReference: Boolean(result.projectionReference),
+  })[key];
+  if (!availability.available) {
+    return { status: "unavailable", filename: null, csv: null, reason: availability.reason };
+  }
+  const csv = rowsToCsv(buildResultTables(result)[key]);
+  if (csv.length === 0) {
+    return { status: "empty", filename: null, csv: null, reason: null };
+  }
+  return {
+    status: "ready",
+    filename: openEnaResultTableCsvFilename(key),
+    csv,
+    reason: null,
   };
 }
 

@@ -12,8 +12,10 @@ import {
 } from "../lib/open-ena/plot3d";
 import {
   buildOpenEnaResultTableViewModel,
+  exportOpenEnaResultTableCsv,
   OPEN_ENA_RESULT_TABLE_KEYS,
   openEnaResultTableAvailability,
+  openEnaResultTableCsvFilename,
   openEnaResultTableFocusTarget,
   resolveOpenEnaResultTableRovingKey,
   type OpenEnaResultTableKey,
@@ -444,6 +446,18 @@ test("result-table view model and static markup keep localized unavailable tabs 
   assert.ok(unavailableTab.includes('aria-describedby="open-ena-result-table-reason-trajectories"'));
   assert.ok(unavailableTab.includes('tabindex="-1"'));
   assert.doesNotMatch(unavailableTab, /\sdisabled(?:=|\s|>)/u);
+  const exportButton = html.match(/<button[^>]*data-testid="open-ena-result-table-export"[^>]*>/u)?.[0] ?? "";
+  assert.match(exportButton, /\sdisabled(?:=|\s|>)/u);
+  assert.match(html, /data-testid="open-ena-result-tables"/u);
+});
+
+test("workspace restores result-table export wiring without the empty-CSV download path", () => {
+  assert.equal(openEnaResultTableCsvFilename("trajectories"), "open-ena-trajectories.csv");
+  assert.match(workspace, /<OpenEnaResultTables/);
+  assert.match(workspace, /exportOpenEnaResultTableCsv/);
+  assert.match(workspace, /onClick=\{\(\) => onSelect\(tab\.key\)\}/);
+  assert.doesNotMatch(workspace, /rowsToCsv\(tableMap/);
+  assert.equal(typeof exportOpenEnaResultTableCsv, "function");
 });
 
 test("generic 3D display axes stay separate from 2D inference and AI controls", () => {
