@@ -2,8 +2,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { Locale } from "../../../lib/i18n";
 import { canonicalJsonV3 } from "../../../lib/open-ena/model-v3/canonical-json";
+import { OpenEnaUnmetPrerequisiteList } from "../OpenEnaUnmetPrerequisiteList";
 import { runOpenEnaTrajectoryPathInferenceV3, assertOpenEnaTrajectoryPathInferenceConsumerV3, type OpenEnaTrajectoryPathControlsV3, type OpenEnaTrajectoryPathInferenceResultV3 } from "../../../lib/open-ena/trajectory-path-inference-v3";
 import { buildOpenEnaTrajectoryExportV3, assertOpenEnaTrajectoryExportConsumerV3, type OpenEnaTrajectoryExportOptionsV3, type OpenEnaTrajectoryExportV3 } from "../../../lib/open-ena/trajectory-export-v3";
+import { wholePathAdmissionEligibilityV3, wholePathPredicateLabelV3, type WholePathAdmissionFactsV3 } from "../../../lib/open-ena/analysis-workflow-eligibility-v3";
 
 export function trajectoryAnalysisCopyV3(locale: Locale) {
   const t = (en: string, hant: string, hans: string) => locale === "zh-hant" ? hant : locale === "zh-hans" ? hans : en;
@@ -11,6 +13,16 @@ export function trajectoryAnalysisCopyV3(locale: Locale) {
     title: t("Whole-path comparison and collected analyses", "完整路徑比較與已收集分析", "完整路径比较与已收集分析"),
     independent: t("I confirm that the entity histories in these two Groups are independent.", "我確認這兩個群組中的實體歷程彼此獨立。", "我确认这两个组中的实体历程彼此独立。"),
     requirements: t("Confirm physical identity and independent Groups, select at least two Horizons in fitted order, and choose three distinct supported axes. Only complete histories enter this comparison.", "確認實體身分及群組獨立性，按已擬合次序選擇至少兩個視域，並選擇三條不同的受支援軸。此比較只納入完整歷程。", "确认实体身份及组独立性，按已拟合顺序选择至少两个视域，并选择三条不同的受支持轴。此比较只纳入完整历程。"),
+    pairedNote: t("Paired whole-path comparison is not implemented. This action compares independent whole participant histories.", "配對完整路徑比較尚未實作。此動作比較獨立的完整參與者歷程。", "配对完整路径比较尚未实现。此操作比较独立的完整参与者历程。"),
+    unmetPrerequisites: t("Unmet prerequisites", "未滿足的前置條件", "未满足的前置条件"),
+    predicates: {
+      "current-result": t("Current bound result", "目前綁定結果", "当前绑定结果"),
+      "distinct-groups": t("Two distinct fitted Groups", "兩個不同的已擬合群組", "两个不同的已拟合组"),
+      "three-supported-axes": t("Three distinct supported axes", "三條不同的受支援軸", "三条不同的受支持轴"),
+      "identity-confirmed": t("Physical identity confirmation for fitted Units across periods", "已確認擬合單位在各時段為相同實體", "已确认拟合单位在各时段为相同实体"),
+      "independent-groups-confirmed": t("Independent Group histories confirmation", "已確認兩群組歷程彼此獨立", "已确认两组历程彼此独立"),
+      "two-ordered-horizons": t("At least two Horizons in fitted order", "按已擬合次序選擇至少兩個視域", "按已拟合顺序选择至少两个视域"),
+    },
     run: t("Run whole-path comparison", "執行完整路徑比較", "运行完整路径比较"),
     running: t("Computing whole-path comparison…", "正在計算完整路徑比較…", "正在计算完整路径比较…"),
     ready: t("Whole-path comparison current", "完整路徑比較為目前結果", "完整路径比较为当前结果"),
@@ -30,9 +42,10 @@ export function trajectoryAnalysisCopyV3(locale: Locale) {
   };
 }
 
-export function OpenEnaTrajectoryAnalysisPanelV3({ locale, hidden, frameKey, result, plan, current, controls, ranks, confirmIdentityExport }: {
+export function OpenEnaTrajectoryAnalysisPanelV3({ locale, hidden, frameKey, result, plan, current, controls, admission, ranks, confirmIdentityExport }: {
   locale: Locale; hidden: boolean; frameKey: string; result: unknown; plan: unknown; current: boolean;
   controls: Omit<OpenEnaTrajectoryPathControlsV3, "independentGroupsConfirmed"> | null;
+  admission?: Omit<WholePathAdmissionFactsV3, "independentGroupsConfirmed">;
   ranks: NonNullable<OpenEnaTrajectoryExportOptionsV3["ranks"]>;
   confirmIdentityExport: () => boolean;
 }) {
@@ -49,7 +62,16 @@ export function OpenEnaTrajectoryAnalysisPanelV3({ locale, hidden, frameKey, res
   useEffect(() => { revision.current++; pending.current = false; setBusy(null); setPath(null); setPrepared(null); setParticipants(false); setIndependent(false); setMessage(null); }, [frameKey]);
   useEffect(() => () => { revision.current++; }, []);
   const pathCurrent = current && path?.key === key;
-  const admitted = current && completeControls?.identityConfirmed && independent && completeControls.horizons.length >= 2 && new Set(completeControls.axes).size === 3;
+  const pathAdmission = wholePathAdmissionEligibilityV3({
+    current: admission?.current ?? current,
+    identityConfirmed: admission?.identityConfirmed ?? Boolean(completeControls?.identityConfirmed),
+    independentGroupsConfirmed: independent,
+    distinctGroups: admission?.distinctGroups ?? Boolean(completeControls?.primaryGroup && completeControls?.secondaryGroup),
+    axes: admission?.axes ?? completeControls?.axes ?? [],
+    horizonCount: admission?.horizonCount ?? completeControls?.horizons.length ?? 0,
+  });
+  const unmetPathItems = pathAdmission.unmet.map((id) => ({ id, label: wholePathPredicateLabelV3(id, copy.predicates) }));
+  const admitted = pathAdmission.eligible && completeControls !== null;
   const still = (captured: typeof latest.current, serial: number, exportSelection = false) => revision.current === serial && latest.current.current && latest.current.result === captured.result && latest.current.plan === captured.plan && (exportSelection ? latest.current.selectionKey === captured.selectionKey : latest.current.key === captured.key);
   async function compute() {
     if (!admitted || !completeControls || pending.current) return;
@@ -86,9 +108,11 @@ export function OpenEnaTrajectoryAnalysisPanelV3({ locale, hidden, frameKey, res
   }
   return <section hidden={hidden} aria-label={copy.title} data-testid="open-ena-native-trajectory-analysis">
     <h3>{copy.title}</h3><p id="native-path-requirements">{copy.requirements}</p>
+    <p>{copy.pairedNote}</p>
     <label><input type="checkbox" checked={independent} onChange={event => setIndependent(event.target.checked)} />{copy.independent}</label>
-    <p>{copy.axes}: {completeControls?.axes.join(" · ") ?? "—"}</p>
-    <button type="button" disabled={!admitted || busy !== null} aria-describedby="native-path-requirements" onClick={() => void compute()}>{copy.run}</button>
+    <p>{copy.axes}: {completeControls?.axes.join(" · ") ?? admission?.axes.join(" · ") ?? "—"}</p>
+    <button type="button" disabled={!admitted || busy !== null} aria-describedby={unmetPathItems.length ? "native-path-requirements native-path-unmet" : "native-path-requirements"} onClick={() => void compute()}>{copy.run}</button>
+    <OpenEnaUnmetPrerequisiteList id="native-path-unmet" testId="open-ena-whole-path-prerequisites" title={copy.unmetPrerequisites} items={unmetPathItems} />
     <p role="status" aria-live="polite">{busy === "path" ? copy.running : busy === "export" ? copy.exporting : message ? copy[message] : pathCurrent ? copy.ready : path ? copy.stale : ""}</p>
     {pathCurrent && path && <table data-testid="open-ena-native-trajectory-path-statistics" aria-label={copy.table}><thead><tr>{copy.headers.map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{path.value.inference.tests.map(test => <tr key={test.id}><td>{test.metric}</td><td>{test.timeIndex ?? "—"}</td><td>{test.distanceSpace}</td><td>{test.observed}</td><td>{test.pValue ?? "—"}</td><td>{test.holmAdjustedPValue ?? "—"}</td><td>{test.permutationCount}</td></tr>)}</tbody></table>}
     <p>{copy.collected}: {ranks.map(rank => (rank.value as { inference: { kind: string } }).inference.kind).join(" · ") || "—"}</p>
