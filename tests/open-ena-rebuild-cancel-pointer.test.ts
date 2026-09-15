@@ -43,28 +43,35 @@ test("rebuild Cancel remains a real keyboard-activatable button above plot stack
   assert.match(workspace, /className="ena-model-run-progress"/u);
 });
 
-test("the model panel stacking context stays above overflowing group plot chrome", () => {
+test("plot overlay stacking stays inside the result figure so Cancel and dialogs remain free", () => {
   const rail = firstRuleBody(css, ".ena-tool-rail");
   const panel = firstRuleBody(css, ".ena-control-panel");
   const visual = firstRuleBody(css, ".ena-visual-workspace");
+  const comparison = firstRuleBody(css, ".open-ena-set-comparison");
   const cancel = firstRuleBody(css, ".ena-model-cancel-button");
   const progress = firstRuleBody(css, ".ena-model-run-progress");
   const sidePlotActions = css.match(
     /\.open-ena-group-contrast \.ena-set-side-plots \.ena-official-panel-actions\s*\{([^}]*)\}/u,
   )?.[1] ?? "";
 
-  const railZ = declaredZIndex(rail);
-  const panelZ = declaredZIndex(panel);
-  const visualZ = declaredZIndex(visual);
   const cancelZ = declaredZIndex(cancel);
   const progressZ = declaredZIndex(progress);
   const plotActionZ = Number(sidePlotActions.match(/z-index:\s*(\d+);/u)?.[1] ?? "0");
 
-  assert.match(visual, /isolation:\s*isolate;/u, "plot chrome must be contained in the research surface");
-  assert.ok(plotActionZ >= 7, "side-plot Remove keeps its overlay stacking inside the result surface");
-  assert.ok(visualZ < panelZ, "contained plot stacking cannot paint above the model panel");
-  assert.ok(panelZ > plotActionZ, "model-panel Cancel must outrank overflowing Remove Plot hit targets");
-  assert.ok(railZ > panelZ, "the mode rail stays above both the panel and research surface");
+  assert.doesNotMatch(rail, /z-index:/u, "the rail must not steal viewport clicks from fallback dialogs");
+  assert.doesNotMatch(
+    panel,
+    /z-index:/u,
+    "the control panel must not trap position:fixed code-color fallback overlays",
+  );
+  assert.doesNotMatch(visual, /z-index:/u);
+  assert.doesNotMatch(
+    visual,
+    /isolation:/u,
+    "the research surface must not isolate position:fixed 3D fullscreen descendants",
+  );
+  assert.match(comparison, /isolation:\s*isolate;/u, "plot chrome must stay inside the result figure stacking context");
+  assert.ok(plotActionZ >= 7, "side-plot Remove keeps its overlay stacking inside the result figure");
   assert.ok(cancelZ > plotActionZ && progressZ > plotActionZ);
   assert.doesNotMatch(
     css,

@@ -2674,8 +2674,6 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 .ena-tool-rail {
-  position: relative;
-  z-index: 13;
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -2903,7 +2901,6 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-control-panel {
   position: relative;
-  z-index: 12;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -4048,8 +4045,6 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-visual-workspace {
   position: relative;
-  z-index: 1;
-  isolation: isolate;
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -7753,6 +7748,7 @@ body:has(.open-ena-login-page) .back-to-top {
 
 /* Shared-set comparison: one fixed 2D reference geometry and edge scale. */
 .open-ena-set-comparison {
+  isolation: isolate;
   min-width: 0;
   max-width: 100%;
   padding: 14px 16px 18px;
