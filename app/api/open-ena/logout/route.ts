@@ -9,7 +9,10 @@ import {
 import { resolveOpenEnaRequestOrigin } from "@/lib/open-ena-auth-request";
 import {
   createProductionOpenEnaAuthSecurityStore,
+  openEnaAuthFailureBody,
+  openEnaAuthFailureHeaders,
   openEnaAuthSecurityConfigurationReady,
+  type OpenEnaAuthFailureReason,
   type OpenEnaAuthSecurityStore,
 } from "@/lib/server/open-ena-auth-security-store";
 
@@ -79,8 +82,15 @@ async function readLogoutLocale(request: Request) {
   return formLocale(new URLSearchParams(new TextDecoder("utf-8", { fatal: true }).decode(bytes)).get("locale"));
 }
 
-function noStore(body: string, status: number) {
-  return new NextResponse(body, { status, headers: { "Cache-Control": "no-store" } });
+function noStore(body: string, status: number, headers?: HeadersInit) {
+  return new NextResponse(body, {
+    status,
+    headers: { "Cache-Control": "no-store", ...headers },
+  });
+}
+
+function authFailure(reason: OpenEnaAuthFailureReason) {
+  return noStore(openEnaAuthFailureBody(reason), 503, openEnaAuthFailureHeaders(reason));
 }
 
 function clearSessionCookie(response: NextResponse, environment: OpenEnaAuthEnvironment) {
@@ -111,15 +121,15 @@ export function createOpenEnaLogoutPostHandler(dependencies: LogoutRouteDependen
     );
     if (!requestOrigin) return noStore("Invalid request origin", 403);
     if (!openEnaAuthSecurityConfigurationReady(environment)) {
-      return noStore("Open ENA secure authentication is not configured.", 503);
+      return authFailure("not-configured");
     }
     let securityStore: OpenEnaAuthSecurityStore | null;
     try {
       securityStore = await securityStoreFactory();
     } catch {
-      securityStore = null;
+      return authFailure("store-error");
     }
-    if (!securityStore) return noStore("Open ENA secure authentication is unavailable.", 503);
+    if (!securityStore) return authFailure("store-unavailable");
 
     const principal = verifyOpenEnaSessionTokenAny(
       cookieValue(request.headers, OPEN_ENA_SESSION_COOKIE),
@@ -131,7 +141,7 @@ export function createOpenEnaLogoutPostHandler(dependencies: LogoutRouteDependen
         await securityStore.revokeSession(principal.jti, principal.expiresAtSeconds);
       } catch {
         // Clearing a cookie without persisting revocation leaves a replayable token.
-        return noStore("Open ENA secure authentication is unavailable.", 503);
+        return authFailure("store-error");
       }
     }
 
