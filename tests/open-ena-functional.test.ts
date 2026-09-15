@@ -395,6 +395,7 @@ test("the native Workspace exposes four model panels, bound tables, and truthful
   for (const name of ["Units", "Horizons", "Windows", "Codes"]) assert.ok(v3.includes(`<OpenEna${name}PanelV3`));
   for (const api of ["buildDataViewV3", "exportCurrentAnalysisV3", "exportNativeStatisticsV3", "buildMethodsReportV3", "exportOpenEnaResultTableCsv"]) assert.ok(v3.includes(api));
   assert.match(v3, /<OpenEnaResultTables/);
+  assert.doesNotMatch(v3, /buildResultTables/);
   const markup = shell();
   assert.match(markup, />Export SVG<\/button>/);
   assert.match(markup, />Export PNG<\/button>/);

@@ -10,7 +10,7 @@ import { getOpenEnaAuthCopy } from "@/lib/open-ena-auth-copy";
 import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
 import OpenEnaPersistentPlotTools from "./OpenEnaPersistentPlotTools";
 import { formatOpenEnaWorkspaceFailureV3, getOpenEnaCopy, type OpenEnaWorkspaceFailureV3 } from "@/lib/open-ena-i18n";
-import { rowsToCsv, resolveOpenEnaPlotExportDimensions, resolveOpenEnaPlotRasterDimensions, openEnaResultTableFocusTarget, resolveOpenEnaResultTableRovingKey, buildResultTables, buildOpenEnaResultTableViewModel, openEnaResultTableAvailability, exportOpenEnaResultTableCsv, type OpenEnaResultTableKey, type OpenEnaResultTableViewModel } from "@/lib/open-ena/export";
+import { rowsToCsv, resolveOpenEnaPlotExportDimensions, resolveOpenEnaPlotRasterDimensions, openEnaResultTableFocusTarget, resolveOpenEnaResultTableRovingKey, buildOpenEnaResultTable, buildOpenEnaResultTableViewModel, openEnaResultTableAvailability, openEnaResultTableRowCounts, exportOpenEnaResultTableCsv, type OpenEnaResultTableKey, type OpenEnaResultTableViewModel } from "@/lib/open-ena/export";
 import { parseCsv } from "@/lib/open-ena/csv";
 import { parseXlsx, codedDataFileKind } from "@/lib/open-ena/spreadsheet";
 import { sha256TextV3, canonicalJsonV3 } from "@/lib/open-ena/model-v3/canonical-json";
@@ -426,17 +426,26 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     set: result.set,
     projectionReference: result.executionProvenance.projection.type === "reference" ? true : null,
   } : null, [result]);
-  const resultTables = useMemo(() => resultTableSource ? buildResultTables(resultTableSource) : null, [resultTableSource]);
   const resultTableAvailability = useMemo(() => resultTableSource ? openEnaResultTableAvailability({
     modelType: resultTableSource.set.modelType,
     projectionReference: Boolean(resultTableSource.projectionReference),
   }) : null, [resultTableSource]);
-  const resultTableViewModel = useMemo(() => resultTables && resultTableAvailability ? buildOpenEnaResultTableViewModel({
-    selectedKey: resultTable,
-    tables: resultTables,
-    availability: resultTableAvailability,
-    copy: copy.resultTables,
-  }) : null, [resultTables, resultTableAvailability, resultTable, copy.resultTables]);
+  const resultTableRowCounts = useMemo(() => resultTableSource ? openEnaResultTableRowCounts(resultTableSource) : null, [resultTableSource]);
+  const resultTablePreviewRows = useMemo(() => {
+    if (!resultTableSource || !resultTableAvailability?.[resultTable].available) return [];
+    return buildOpenEnaResultTable(resultTableSource, resultTable, { limit: 100 });
+  }, [resultTableSource, resultTableAvailability, resultTable]);
+  const resultTableViewModel = useMemo(() => {
+    if (!resultTableRowCounts || !resultTableAvailability) return null;
+    const model = buildOpenEnaResultTableViewModel({
+      selectedKey: resultTable,
+      rowCounts: resultTableRowCounts,
+      selectedRows: resultTablePreviewRows,
+      availability: resultTableAvailability,
+      copy: copy.resultTables,
+    });
+    return current ? model : { ...model, export: { ...model.export, disabled: true } };
+  }, [resultTableRowCounts, resultTableAvailability, resultTable, resultTablePreviewRows, copy.resultTables, current]);
   const completedResultKind = result?.configuration.analysisFamily;
   const supportedAxes = presentation?.result.dimensions ?? [];
   const twoDAxes = axes.length === 2 && axes.every((axis) => supportedAxes.includes(axis)) ? axes : supportedAxes.slice(0, 2);
@@ -971,9 +980,10 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
           <button type="button" disabled={!current} onClick={() => void attempt(async () => { const value = await buildOnaBoundViewV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && window.confirm(copy.ona.exports.auditConfirmation)) downloadJson("ona-deidentified-audit.json", { binding: value.binding, audit: value.audit, meaning: value.meaning }); })}>{workspaceCopy.stats.exportOnaAudit}</button><p>{copy.ona.exports.auditWarning}</p></>}
         </OpenEnaNativeStatsPanelV3>
         {resultTableViewModel && resultTableSource && <OpenEnaResultTables model={resultTableViewModel} onSelect={setResultTable} onExport={() => {
-          if (resultTableViewModel.export.disabled) return;
+          if (!current || resultTableViewModel.export.disabled) return;
           const exported = exportOpenEnaResultTableCsv(resultTableSource, resultTable);
           if (exported.status !== "ready") return;
+          if (!latest.current.current || latest.current.state.model.result !== result) return;
           const publish = () => downloadText(exported.filename, exported.csv, "text/csv;charset=utf-8");
           if (IDENTITY_BEARING_RESULT_TABLES.has(resultTable)) confirmOpenEnaIdentityBearingExport((message) => window.confirm(message), copy.stats.identityExportConfirmation, publish);
           else publish();
