@@ -183,35 +183,204 @@ export function createPostgresOpenEnaAuthSecurityStore(
   };
 }
 
-let productionStorePromise: Promise<OpenEnaAuthSecurityStore | null> | null = null;
+export const OPEN_ENA_AUTH_STORE_UNAVAILABLE_MESSAGE =
+  "Open ENA secure authentication is unavailable.";
+export const OPEN_ENA_AUTH_NOT_CONFIGURED_MESSAGE =
+  "Open ENA secure authentication is not configured.";
+export const OPEN_ENA_AUTH_ERROR_HEADER = "X-Open-ENA-Auth-Error";
+export const OPEN_ENA_AUTH_UNAVAILABLE_RETRY_AFTER_SECONDS = 2;
+export const OPEN_ENA_AUTH_STORE_CREATE_ATTEMPTS = 2;
+
+export type OpenEnaAuthFailureReason =
+  | "not-configured"
+  | "store-unavailable"
+  | "store-error";
+
+export type OpenEnaAuthSecurityPool = {
+  query(
+    sql: string,
+    params?: unknown[],
+  ): Promise<{ rows: Array<Record<string, unknown>> }>;
+  on(event: "error", listener: (error: Error) => void): unknown;
+  end(): Promise<void> | void;
+};
+
+export type OpenEnaAuthSecurityPoolFactory = (
+  connectionString: string,
+) => OpenEnaAuthSecurityPool | Promise<OpenEnaAuthSecurityPool>;
+
+export type CreateProductionOpenEnaAuthSecurityStoreOptions = {
+  createPool?: OpenEnaAuthSecurityPoolFactory;
+};
+
+type ProductionStoreGeneration = {
+  promise: Promise<OpenEnaAuthSecurityStore | null>;
+  pool: OpenEnaAuthSecurityPool | null;
+};
+
+const TRANSIENT_STORE_FAILURE_CODES: Record<string, true> = {
+  ECONNABORTED: true,
+  ECONNREFUSED: true,
+  ECONNRESET: true,
+  EPIPE: true,
+  ETIMEDOUT: true,
+  ENOTFOUND: true,
+  EAI_AGAIN: true,
+  EHOSTUNREACH: true,
+  ENETUNREACH: true,
+  "08000": true,
+  "08001": true,
+  "08003": true,
+  "08004": true,
+  "08006": true,
+  "57P01": true,
+  "57P02": true,
+  "57P03": true,
+  "53300": true,
+};
+
+let productionStore: ProductionStoreGeneration | null = null;
+
+export function openEnaAuthFailureBody(reason: OpenEnaAuthFailureReason) {
+  switch (reason) {
+    case "not-configured":
+      return OPEN_ENA_AUTH_NOT_CONFIGURED_MESSAGE;
+    case "store-unavailable":
+    case "store-error":
+      return OPEN_ENA_AUTH_STORE_UNAVAILABLE_MESSAGE;
+    default: {
+      const exhaustive: never = reason;
+      return exhaustive;
+    }
+  }
+}
+
+export function openEnaAuthFailureHeaders(reason: OpenEnaAuthFailureReason): Record<string, string> {
+  switch (reason) {
+    case "not-configured":
+      return { [OPEN_ENA_AUTH_ERROR_HEADER]: reason };
+    case "store-unavailable":
+    case "store-error":
+      return {
+        [OPEN_ENA_AUTH_ERROR_HEADER]: reason,
+        "Retry-After": String(OPEN_ENA_AUTH_UNAVAILABLE_RETRY_AFTER_SECONDS),
+      };
+    default: {
+      const exhaustive: never = reason;
+      return exhaustive;
+    }
+  }
+}
+
+function failureCode(error: unknown) {
+  if (!error || typeof error !== "object" || !("code" in error)) return "";
+  return typeof error.code === "string" ? error.code : "";
+}
+
+function logAuthStoreFailure(event: string, error: unknown) {
+  // Never log the error message: node-pg and URL parsers may embed the DSN.
+  console.error("open-ena-auth-store", event, error instanceof Error ? error.name : typeof error, failureCode(error));
+}
+
+export function isTransientOpenEnaAuthStoreFailure(error: unknown) {
+  const code = failureCode(error);
+  if (code && TRANSIENT_STORE_FAILURE_CODES[code] === true) return true;
+  if (!(error instanceof Error)) return false;
+  return /Connection terminated(?: unexpectedly)?/u.test(error.message)
+    || /timeout expired/iu.test(error.message)
+    || /Cannot use a pool after calling end/u.test(error.message)
+    || /Client has encountered a connection error/u.test(error.message);
+}
+
+export function invalidateProductionOpenEnaAuthSecurityStore() {
+  const current = productionStore;
+  productionStore = null;
+  if (!current?.pool) return;
+  void Promise.resolve(current.pool.end()).catch(() => undefined);
+}
+
+function discardGeneration(generation: ProductionStoreGeneration) {
+  if (productionStore !== generation) return;
+  const pool = generation.pool;
+  generation.pool = null;
+  productionStore = null;
+  if (pool) void Promise.resolve(pool.end()).catch(() => undefined);
+}
+
+async function openAuthSecurityPool(
+  databaseUrl: string,
+  createPool?: OpenEnaAuthSecurityPoolFactory,
+) {
+  if (createPool) return createPool(databaseUrl);
+  const { Pool } = await import("pg");
+  return new Pool({
+    connectionString: databaseUrl,
+    max: 2,
+    // Serverless Postgres (Neon and similar) can exceed 2s on a cold compute.
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+    statement_timeout: 5_000,
+    allowExitOnIdle: true,
+  }) as OpenEnaAuthSecurityPool;
+}
+
+async function createPoolBackedStore(
+  generation: ProductionStoreGeneration,
+  databaseUrl: string,
+  createPool?: OpenEnaAuthSecurityPoolFactory,
+) {
+  for (let attempt = 1; attempt <= OPEN_ENA_AUTH_STORE_CREATE_ATTEMPTS; attempt += 1) {
+    try {
+      const pool = await openAuthSecurityPool(databaseUrl, createPool);
+      if (productionStore !== generation) {
+        void Promise.resolve(pool.end()).catch(() => undefined);
+        return null;
+      }
+      generation.pool = pool;
+      pool.on("error", (error) => {
+        logAuthStoreFailure("pool-error", error);
+        discardGeneration(generation);
+      });
+      return createPostgresOpenEnaAuthSecurityStore(async (sql, params) => {
+        try {
+          const result = await pool.query(sql, params as unknown[]);
+          return { rows: result.rows as Array<Record<string, unknown>> };
+        } catch (error) {
+          if (isTransientOpenEnaAuthStoreFailure(error)) {
+            logAuthStoreFailure("query-transient", error);
+            discardGeneration(generation);
+          }
+          throw error;
+        }
+      });
+    } catch (error) {
+      logAuthStoreFailure(
+        attempt >= OPEN_ENA_AUTH_STORE_CREATE_ATTEMPTS ? "create-exhausted" : "create-retry",
+        error,
+      );
+    }
+  }
+  return null;
+}
 
 export async function createProductionOpenEnaAuthSecurityStore(
   environment: OpenEnaAuthEnvironment = process.env,
   injectedQuery?: OpenEnaAuthSecurityQuery,
+  options?: CreateProductionOpenEnaAuthSecurityStoreOptions,
 ): Promise<OpenEnaAuthSecurityStore | null> {
   if (injectedQuery) return createPostgresOpenEnaAuthSecurityStore(injectedQuery);
-  if (productionStorePromise) return productionStorePromise;
+  if (productionStore) return productionStore.promise;
   const databaseUrl = configuredDatabaseUrl(environment);
   if (!databaseUrl) return null;
 
-  const pending = import("pg")
-    .then(({ Pool }) => {
-      const pool = new Pool({
-        connectionString: databaseUrl,
-        max: 2,
-        connectionTimeoutMillis: 2_000,
-        idleTimeoutMillis: 30_000,
-        statement_timeout: 5_000,
-      });
-      return createPostgresOpenEnaAuthSecurityStore(async (sql, params) => {
-        const result = await pool.query(sql, params as unknown[]);
-        return { rows: result.rows as Array<Record<string, unknown>> };
-      });
-    })
-    .catch(() => null);
-  productionStorePromise = pending;
-  const store = await pending;
-  if (!store && productionStorePromise === pending) productionStorePromise = null;
+  const generation: ProductionStoreGeneration = {
+    promise: Promise.resolve(null),
+    pool: null,
+  };
+  generation.promise = createPoolBackedStore(generation, databaseUrl, options?.createPool);
+  productionStore = generation;
+  const store = await generation.promise;
+  if (!store && productionStore === generation) discardGeneration(generation);
   return store;
 }
 

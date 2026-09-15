@@ -15,7 +15,10 @@ import {
 import { resolveOpenEnaRequestOrigin } from "@/lib/open-ena-auth-request";
 import {
   createProductionOpenEnaAuthSecurityStore,
+  openEnaAuthFailureBody,
+  openEnaAuthFailureHeaders,
   openEnaAuthSecurityConfigurationReady,
+  type OpenEnaAuthFailureReason,
   type OpenEnaAuthSecurityStore,
 } from "@/lib/server/open-ena-auth-security-store";
 
@@ -51,6 +54,13 @@ function noStoreResponse(body: string, status: number, headers?: HeadersInit) {
   return new NextResponse(body, {
     status,
     headers: { "Cache-Control": "no-store", ...headers },
+  });
+}
+
+function authFailureResponse(reason: OpenEnaAuthFailureReason) {
+  return new NextResponse(openEnaAuthFailureBody(reason), {
+    status: 503,
+    headers: { "Cache-Control": "no-store", ...openEnaAuthFailureHeaders(reason) },
   });
 }
 
@@ -176,16 +186,16 @@ export function createOpenEnaLoginPostHandler(
     // This keeps malformed/oversized traffic from exhausting the credential
     // bucket while still placing the throttle before any password comparison.
     if (!openEnaAuthSecurityConfigurationReady(environment)) {
-      return noStoreResponse("Open ENA secure authentication is not configured.", 503);
+      return authFailureResponse("not-configured");
     }
 
     let securityStore: OpenEnaAuthSecurityStore | null;
     try {
       securityStore = await securityStoreFactory();
     } catch {
-      securityStore = null;
+      return authFailureResponse("store-error");
     }
-    if (!securityStore) return noStoreResponse("Open ENA secure authentication is unavailable.", 503);
+    if (!securityStore) return authFailureResponse("store-unavailable");
 
     const accountReference = accountRef(environment);
     const source = loginSourceRef(request.headers, environment, accountReference);
@@ -201,7 +211,7 @@ export function createOpenEnaLoginPostHandler(
         windowSeconds: OPEN_ENA_LOGIN_WINDOW_SECONDS,
       });
     } catch {
-      return noStoreResponse("Open ENA secure authentication is unavailable.", 503);
+      return authFailureResponse("store-error");
     }
     if (!attemptAllowed) {
       return noStoreResponse("Too many login attempts", 429, {
@@ -221,14 +231,14 @@ export function createOpenEnaLoginPostHandler(
           ? await securityStore.consumeDisposableCredential({ usernameRef, password })
           : null;
       } catch {
-        return noStoreResponse("Open ENA secure authentication is unavailable.", 503);
+        return authFailureResponse("store-error");
       }
       if (principalRef) {
         try {
           sessionToken = createDisposableSessionToken(principalRef);
           sessionMaxAgeSeconds = OPEN_ENA_DISPOSABLE_SESSION_MAX_AGE_SECONDS;
         } catch {
-          return noStoreResponse("Open ENA secure authentication is unavailable.", 503);
+          return authFailureResponse("store-error");
         }
       } else {
         const response = redirectToWorkspace(requestOrigin, locale, true);
