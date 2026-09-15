@@ -675,7 +675,7 @@ test("pending model edits preserve the last valid research result until rebuild"
   assert.equal(types.sameOpenEnaConfig?.(SAMPLE_CONFIG, { ...SAMPLE_CONFIG, windowSizeBack: 6 }), false);
 
 
-  assert.match(v3, /modelState.resultStatus === "stale"/);
+  assert.match(v3, /modelState.resultStatus === "stale" && rebuildCue/);
   assert.match(v3, /workspaceCopy\.result\.historicalGeometry/);
   assert.equal(getOpenEnaCopy("en").modelV3.workspace.result.historicalGeometry, "Historical geometry: edits require a new run.");
   assert.equal(getOpenEnaCopy("en").modelV3.workspace.result.sourceReplacementNotice, "Source replaced. Historical geometry is retained until you rebuild.");

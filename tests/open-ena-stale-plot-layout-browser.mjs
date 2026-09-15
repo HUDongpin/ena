@@ -54,6 +54,7 @@ try {
       assert.equal(await group.inputValue(), "", "circle-minus must actually remove the Group setting");
       assert.equal(await exclude.isDisabled(), true, "no Group remains to exclude twice");
       assert.equal(await page.getByTestId("open-ena-workspace-v3").getAttribute("data-result-status"), "stale");
+      assert.equal(await page.getByTestId("open-ena-stale-rebuild").count(), 0, "Group exclusion must not mount the source-replacement Rebuild callout");
       assert.equal(await page.getByRole("button", { name: "Download Model", exact: true }).isDisabled(), true);
       assert.deepEqual(await geometry(), before, "Group exclusion must preserve all three plot frames, geometry and labels");
       assert.equal(await page.locator(".open-ena-main-svg").count(), 0, "Group exclusion must not mount the oversized fallback");

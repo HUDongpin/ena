@@ -28,9 +28,11 @@ test("CSV/XLSX admit keeps current drafts, cues Rebuild, and never auto-runs", (
 });
 
 test("stale source-replacement UI focuses a one-click Rebuild affordance", () => {
+  assert.match(workspace, /modelState\.resultStatus === "stale" && rebuildCue/u);
   assert.match(workspace, /data-testid="open-ena-stale-rebuild-run"/u);
   assert.match(workspace, /data-testid="open-ena-stale-rebuild"/u);
   assert.match(workspace, /requestRebuildAfterSourceReplacement/u);
+  assert.match(workspace, /modelState\.resultStatus === "stale" \? workspaceCopy\.result\.historicalGeometry : workspaceCopy\.result\.boundGeometry/u);
   assert.match(workspace, /staleRebuildRef\.current \?\? runButtonRef\.current/u);
   assert.match(workspace, /if \(controller\.canRun\) \{\s*controller\.run\(\);/u);
   assert.match(css, /\.ena-stale-rebuild-callout/u);
