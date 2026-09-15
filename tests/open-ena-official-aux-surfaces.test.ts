@@ -22,6 +22,11 @@ const noOp = () => undefined;
 test("Plot Settings closes restore the trigger after commit and Escape is fully handled", () => {
   const scheduleFocusRestore = Reflect.get(persistentPlotToolsModule, "scheduleOpenEnaFocusRestore");
   assert.equal(typeof scheduleFocusRestore, "function", "a hook-free focus scheduler must be exported");
+  assert.equal(
+    typeof Reflect.get(persistentPlotToolsModule, "scheduleOpenEnaDomFocusRestore"),
+    "function",
+    "DOM restores must share a double-animation-frame scheduler",
+  );
 
   const scheduled: Array<() => void> = [];
   let focusCount = 0;
@@ -53,7 +58,13 @@ test("Plot Settings closes restore the trigger after commit and Escape is fully 
   assert.match(plotTools, /ref=\{settingsCloseButtonRef\}/);
   assert.match(plotTools, /event\.preventDefault\(\);\s*event\.stopPropagation\(\);\s*requestSettingsClose\(\)/);
   assert.match(plotTools, /aria-label=\{copy\.closePlotSettings\}[\s\S]{0,160}onClick=\{requestSettingsClose\}/);
-  assert.match(plotTools, /settingsOpen\s*\?\s*settingsCloseButtonRef\.current\s*:\s*wasOpen\s*\?\s*settingsTriggerRef\.current/);
+  assert.match(plotTools, /const pendingTriggerRestoreRef = useRef\(false\)/);
+  assert.match(plotTools, /if \(settingsOpen\) pendingTriggerRestoreRef\.current = true/);
+  assert.match(plotTools, /settingsOpen\s*\?\s*settingsCloseButtonRef\.current\s*:\s*pendingTriggerRestoreRef\.current \? settingsTriggerRef\.current/);
+  assert.match(plotTools, /scheduleOpenEnaDomFocusRestore\(/);
+  assert.match(plotTools, /if \(!settingsOpen\) pendingTriggerRestoreRef\.current = false/);
+  assert.match(plotTools, /useLayoutEffect\(/);
+  assert.doesNotMatch(plotTools, /wasSettingsOpenRef/);
   assert.match(plotTools, /return \(\) => \{[\s\S]*?pendingFocusCancelRef\.current\(\)/);
 
   const openMarkup = renderToStaticMarkup(createElement(OpenEnaPersistentPlotTools, {

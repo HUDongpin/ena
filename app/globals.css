@@ -8191,6 +8191,22 @@ body:has(.open-ena-login-page) .back-to-top {
   gap: 8px;
 }
 
+.ena-artifact-sets {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ena-artifact-sets li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .ena-sets-card {
   display: grid;
   min-width: 0;
