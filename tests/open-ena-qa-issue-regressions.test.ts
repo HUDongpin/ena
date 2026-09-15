@@ -43,18 +43,51 @@ type WorkspaceAxes = {
   threeD: readonly [string, string, string] | null;
 };
 
+const englishWorkbenchMarkerByLocale = {
+  es: /inglés/u,
+  fr: /anglais/u,
+  pt: /inglês/u,
+  de: /Englisch/u,
+  ar: /الإنجليز/u,
+  ko: /영어/u,
+  ja: /英語/u,
+  hi: /अंग्रेज़/u,
+  ru: /английск/u,
+  id: /Inggris/u,
+  bn: /ইংরেজি/u,
+} as const;
+
 test("Open ENA fallback disclosure is absent for localized routes and explicit for every other locale", () => {
   const getFallbackNotice = Reflect.get(openEnaI18nModule, "getOpenEnaFallbackNotice");
+  const isLocalized = Reflect.get(openEnaI18nModule, "isOpenEnaLocalizedLocale");
   assert.equal(typeof getFallbackNotice, "function", "the shared pure fallback helper must be exported");
+  assert.equal(typeof isLocalized, "function", "localized Open ENA locales must be exported");
+  const seen = new Set<string>();
   for (const locale of locales) {
     const notice = getFallbackNotice(locale);
-    if (["en", "zh-hant", "zh-hans"].includes(locale)) assert.equal(notice, null);
-    else {
-      assert.ok(notice);
-      assert.match(notice, /English interface/i);
-      assert.match(notice, new RegExp(`\\b${locale}\\b`, "i"));
+    if (isLocalized(locale)) {
+      assert.equal(notice, null);
+      continue;
     }
+    assert.ok(typeof notice === "string" && notice.length > 0, `${locale} must have a localized fallback notice`);
+    assert.equal(seen.has(notice), false, `${locale} must not reuse another locale's disclosure`);
+    seen.add(notice);
+    assert.match(notice, new RegExp(`\\b${locale}\\b`, "u"));
+    assert.match(notice, englishWorkbenchMarkerByLocale[locale as keyof typeof englishWorkbenchMarkerByLocale]);
+    assert.doesNotMatch(notice, /English interface is shown while this route and locale are retained/u);
+    assert.doesNotMatch(notice, /workbench is translated/iu);
   }
+  assert.equal(seen.size, 11);
+
+  const noticeComponent = readFileSync(
+    new URL("../components/open-ena/OpenEnaFallbackNotice.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(noticeComponent, /getLocaleMeta\(locale\)/);
+  assert.match(noticeComponent, /lang=\{meta\.htmlLang\}/);
+  assert.match(noticeComponent, /dir=\{meta\.dir\}/);
+  assert.match(noticeComponent, /data-testid="open-ena-fallback-notice"/);
+  assert.doesNotMatch(noticeComponent, /lang="en"/);
 });
 
 test("workspace lifecycle, fallback, unavailable tabs, and mobile trajectory CSS remain bounded", () => {
