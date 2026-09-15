@@ -3828,6 +3828,25 @@ body:has(.open-ena-login-page) .back-to-top {
   opacity: 0.62;
 }
 
+.ena-unmet-prerequisite-list {
+  margin: 8px 0;
+  border: 1px solid #d5c28c;
+  border-radius: 3px;
+  padding: 8px 10px;
+  color: #644b13;
+  background: #fffaf0;
+}
+.ena-unmet-prerequisite-list p {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.ena-unmet-prerequisite-list ul {
+  margin: 0;
+  padding-inline-start: 1.2em;
+  font-size: 11px;
+  line-height: 1.55;
+}
 .ena-result-table-unavailable-notes {
   margin: 10px 12px 0;
   border: 1px solid #d5c28c;

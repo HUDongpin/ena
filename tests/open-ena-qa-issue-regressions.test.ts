@@ -549,3 +549,19 @@ test("native Data View currentness guards export and discloses unavailable point
   assert.equal(getOpenEnaCopy("en").modelV3.workspace.stats.globalTraversal, "Global runtime source traversal (not per-point membership)");
 
 });
+
+test("trajectory analysis-set and whole-path controls keep scientific gates and expose unmet checklists", () => {
+  assert.match(v3, /analysisSetCaptureEligibilityV3/);
+  assert.match(v3, /analysisSetCompareEligibilityV3/);
+  assert.match(v3, /admission=\{pathAdmission\}/);
+  assert.match(v3, /data-testid="open-ena-capture-analysis-set"/);
+  assert.match(v3, /open-ena-capture-analysis-set-prerequisites/);
+  assert.match(v3, /open-ena-compare-analysis-sets-prerequisites/);
+  assert.match(v3, /disabled=\{!captureEligibility\.eligible\}/);
+  assert.match(v3, /disabled=\{!compareEligibility\.eligible\}/);
+  assert.doesNotMatch(v3, /disabled=\{!current \|\| completedResultKind === "ona" \|\| isTrajectory \|\| sets\.length >= 6\}/);
+  const artifacts = getOpenEnaCopy("en").modelV3.workspace.artifacts;
+  assert.match(artifacts.capturePredicates["endpoint-model"], /EndPoint model/);
+  assert.match(artifacts.comparePredicates["same-basis-geometry"], /EndPoint-only same-basis/);
+  assert.match(styles, /\.ena-unmet-prerequisite-list\s*\{[^}]*border:/u);
+});

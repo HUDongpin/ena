@@ -16,12 +16,21 @@ test("unavailable trajectory state exposes disabled researcher actions and local
     const copy = trajectoryAnalysisCopyV3(locale);
     const html = renderToStaticMarkup(createElement(OpenEnaTrajectoryAnalysisPanelV3, { locale, hidden: false, frameKey: "no-model", result: null, plan: null, current: false, controls: null, ranks: [], confirmIdentityExport: () => { throw new Error("render must not request export permission"); } }));
     assert.ok(html.includes(copy.run)); assert.ok(html.includes(copy.export)); assert.ok(html.includes(copy.requirements));
+    assert.ok(html.includes(copy.pairedNote));
+    assert.ok(html.includes(copy.unmetPrerequisites));
+    assert.match(html, /data-testid="open-ena-whole-path-prerequisites"/);
+    assert.match(html, /data-unmet-predicate="current-result"/);
+    assert.match(html, /data-unmet-predicate="three-supported-axes"/);
     assert.equal((html.match(/<button[^>]+disabled=""/g) ?? []).length, 2);
     assert.match(html, /aria-live="polite"/);
     assert.doesNotMatch(html, /checked=""/);
-    for (const key of ["unavailable", "stale", "exportError", "running", "exporting", "exported", "independent", "participants"] as const) {
+    for (const key of ["unavailable", "stale", "exportError", "running", "exporting", "exported", "independent", "participants", "pairedNote", "unmetPrerequisites"] as const) {
       assert.ok(copy[key].length > 0);
       if (locale !== "en") assert.notEqual(copy[key], trajectoryAnalysisCopyV3("en")[key]);
+    }
+    for (const id of ["current-result", "distinct-groups", "three-supported-axes", "identity-confirmed", "independent-groups-confirmed", "two-ordered-horizons"] as const) {
+      assert.ok(copy.predicates[id].length > 0);
+      if (locale !== "en") assert.notEqual(copy.predicates[id], trajectoryAnalysisCopyV3("en").predicates[id]);
     }
   }
 });

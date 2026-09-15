@@ -35,6 +35,13 @@ import { exportNativeStatisticsV3, type NativeInferenceV3 } from "@/lib/open-ena
 import { buildMethodsReportV3 } from "@/lib/open-ena/methods-v3";
 import { exportCanonicalConfigV3, exportDraftV3, exportCurrentAnalysisV3, exportStaleAuditV3, exportReferenceV2, type ExportFileDescriptorV3 } from "@/lib/open-ena/model-artifact-exports-v3";
 import { captureAnalysisSetV3, compareAnalysisSetsV3, upsertAnalysisSetV3, type OpenEnaAnalysisSetV3 } from "@/lib/open-ena/sets-bound-v3";
+import {
+  analysisSetCaptureEligibilityV3,
+  analysisSetCapturePredicateLabelV3,
+  analysisSetCompareEligibilityV3,
+  analysisSetComparePredicateLabelV3,
+} from "@/lib/open-ena/analysis-workflow-eligibility-v3";
+import { OpenEnaUnmetPrerequisiteList } from "./OpenEnaUnmetPrerequisiteList";
 import { openEnaCodeColorPair } from "@/lib/open-ena/code-color-presets";
 import { codeColorFor } from "@/lib/open-ena/plot-style";
 import type { OpenEnaNodeLayoutPositions, OpenEnaNodeDimensionPosition } from "@/lib/open-ena/node-layout";
@@ -496,6 +503,25 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const trajectoryFrameKey = canonicalJsonV3({ context, binding: result?.binding ?? null, plan: currentPlan?.header.executionPlanSha256 ?? null, current });
   const pathControls: Omit<OpenEnaTrajectoryPathControlsV3, "independentGroupsConfirmed"> | null = isTrajectory && threeDDimensions && primary && secondary && primary.token !== secondary.token
     ? { axes: [threeDDimensions[0], threeDDimensions[1], threeDDimensions[2]], identityConfirmed, primaryGroup: primary.fields[0].value, secondaryGroup: secondary.fields[0].value, horizons: periods, cohortPolicy: "all-period-complete", repetitions: 500, seed: 2026 } : null;
+  const pathAdmission = {
+    current,
+    identityConfirmed,
+    distinctGroups: Boolean(primary && secondary && primary.token !== secondary.token),
+    axes: threeDDimensions ?? availableThreeDAxes,
+    horizonCount: periods.length,
+  };
+  const captureEligibility = analysisSetCaptureEligibilityV3({
+    current,
+    standardFamily: completedResultKind === "standard",
+    endpointModel: completedResultKind === "standard" && result?.configuration.analysis.model.type === "EndPoint",
+    retainedDimensionCount: supportedAxes.length,
+    retainedSetCount: sets.length,
+  });
+  const compareEligibility = analysisSetCompareEligibilityV3(sets);
+  const capturePrerequisiteId = `${workspaceId}-capture-set-prerequisites`;
+  const comparePrerequisiteId = `${workspaceId}-compare-set-prerequisites`;
+  const captureUnmetItems = captureEligibility.unmet.map((id) => ({ id, label: analysisSetCapturePredicateLabelV3(id, workspaceCopy.artifacts.capturePredicates) }));
+  const compareUnmetItems = compareEligibility.unmet.map((id) => ({ id, label: analysisSetComparePredicateLabelV3(id, workspaceCopy.artifacts.comparePredicates) }));
   const activeAiReview = aiReview?.key === consumerKey && current ? aiReview.value : null;
   const activeContrast = nativeContrast?.key === consumerKey && current ? nativeContrast.value : null;
   const retainedPlotContrast = useMemo(() => result
@@ -1034,7 +1060,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
         {checkedDataView && current && checkedDataView.binding.scientificResultSha256 === result?.binding.scientificResultSha256 && checkedDataView.binding.executionPlanSha256 === currentPlan?.header.executionPlanSha256 && <p>{workspaceCopy.stats.dataViewValidated}</p>}
         {result && <details><summary>{copy.stats.ui.methodsTitle}</summary><button type="button" onClick={() => void attempt(async () => { if (confirmCurrentIdentityBearingExport()) await navigator.clipboard.writeText(buildMethodsReportV3(result)); })}>{copy.stats.ui.copyMethods}</button><pre>{buildMethodsReportV3(result)}</pre><button type="button" onClick={() => { if (confirmCurrentIdentityBearingExport()) downloadText("methods.md", buildMethodsReportV3(result), "text/markdown"); }}>{workspaceCopy.stats.exportMethods}</button></details>}
       </section>}
-      {isTrajectory && <OpenEnaTrajectoryAnalysisPanelV3 key="native-trajectory-analysis" locale={locale} hidden={mode !== "stats"} frameKey={trajectoryFrameKey} result={result} plan={currentPlan} current={current} controls={pathControls} ranks={trajectoryRanks.frameKey === trajectoryFrameKey ? trajectoryRanks.items : []} confirmIdentityExport={confirmCurrentIdentityBearingExport} />}
+      {isTrajectory && <OpenEnaTrajectoryAnalysisPanelV3 key="native-trajectory-analysis" locale={locale} hidden={mode !== "stats"} frameKey={trajectoryFrameKey} result={result} plan={currentPlan} current={current} controls={pathControls} admission={pathAdmission} ranks={trajectoryRanks.frameKey === trajectoryFrameKey ? trajectoryRanks.items : []} confirmIdentityExport={confirmCurrentIdentityBearingExport} />}
       <details className="ena-panel-details ena-artifacts-disclosure"><summary>{workspaceCopy.artifacts.title}</summary>
       <section className="ena-workspace-section-v3 ena-workspace-artifacts-v3" aria-label={workspaceCopy.artifacts.ariaLabel}>
         <p>{workspaceCopy.artifacts.presetScope}</p>{state.presetHiddenGroups?.resultHash === resultHash && <button type="button" onClick={() => dispatch({ type: "clear-preset-group-hiding" })}>{workspaceCopy.artifacts.clearPreset}</button>}
@@ -1050,9 +1076,11 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
         <button type="button" data-testid="open-ena-export-current-analysis" disabled={!current} onClick={() => void attempt(async () => { if (result && currentPlan) { const descriptor = await exportCurrentAnalysisV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && window.confirm(workspaceCopy.artifacts.exportAnalysisConfirmation)) saveDescriptor(descriptor); } })}>{workspaceCopy.artifacts.exportAnalysis}</button>
         <button type="button" disabled={!result} onClick={() => void attempt(async () => { if (result) { const file = await exportStaleAuditV3(result, await sha256TextV3(context.draftFingerprint)); if (latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) saveDescriptor(file); } })}>{workspaceCopy.artifacts.exportStale}</button>
         <button type="button" disabled={!current || completedResultKind !== "standard" || (isTrajectory && result?.binding.referenceId === null)} onClick={() => void attempt(async () => { if (result && currentPlan) saveDescriptor(await exportReferenceV2(result, { currentPlan, ...(state.sourceWitness ? { sourceWitness: state.sourceWitness } : {}), displayName: dataset?.name ?? workspaceCopy.artifacts.referenceDisplayName })); })}>{result?.binding.referenceId ? workspaceCopy.artifacts.reexportReference : workspaceCopy.artifacts.exportReference}</button>
-        <button type="button" disabled={!current || completedResultKind === "ona" || isTrajectory || sets.length >= 6} onClick={() => void attempt(async () => { if (result && currentPlan) { const captured = await captureAnalysisSetV3(result, currentPlan, { name: dataset?.name }); if (latest.current.current && latest.current.state.model.result === result) setSets((values) => upsertAnalysisSetV3(values, captured)); } })}>{workspaceCopy.artifacts.captureSet(sets.length)}</button>
+        <button type="button" data-testid="open-ena-capture-analysis-set" disabled={!captureEligibility.eligible} aria-describedby={!captureEligibility.eligible ? capturePrerequisiteId : undefined} onClick={() => void attempt(async () => { if (result && currentPlan) { const captured = await captureAnalysisSetV3(result, currentPlan, { name: dataset?.name }); if (latest.current.current && latest.current.state.model.result === result) setSets((values) => upsertAnalysisSetV3(values, captured)); } })}>{workspaceCopy.artifacts.captureSet(sets.length)}</button>
+        <OpenEnaUnmetPrerequisiteList id={capturePrerequisiteId} testId="open-ena-capture-analysis-set-prerequisites" title={workspaceCopy.artifacts.unmetPrerequisites} items={captureUnmetItems} />
         {sets.map((set) => <p key={set.id}>{set.name}</p>)}
-        <button type="button" disabled={sets.length < 2} onClick={() => { try { setSetComparison(compareAnalysisSetsV3(sets[sets.length - 2], sets[sets.length - 1])); } catch { setError({ id: "operation-failed" }); } }}>{workspaceCopy.artifacts.compareSets}</button>
+        <button type="button" data-testid="open-ena-compare-analysis-sets" disabled={!compareEligibility.eligible} aria-describedby={!compareEligibility.eligible ? comparePrerequisiteId : undefined} onClick={() => { try { setSetComparison(compareAnalysisSetsV3(sets[sets.length - 2], sets[sets.length - 1])); } catch { setError({ id: "operation-failed" }); } }}>{workspaceCopy.artifacts.compareSets}</button>
+        <OpenEnaUnmetPrerequisiteList id={comparePrerequisiteId} testId="open-ena-compare-analysis-sets-prerequisites" title={workspaceCopy.artifacts.unmetPrerequisites} items={compareUnmetItems} />
         {setComparison && <ResearchTableV3 {...researchTableCopy} rows={setComparison.edges} label={workspaceCopy.artifacts.historicalComparison} />}
       </section>
       </details>
