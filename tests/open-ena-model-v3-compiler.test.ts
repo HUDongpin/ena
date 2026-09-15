@@ -19,6 +19,10 @@ import {
   decodeCanonicalOnaConfigV3,
   decodeCanonicalStandardConfigV3,
 } from "../lib/open-ena/model-v3/schema";
+import {
+  MAX_SEEDED_ONA_MASK_CODES_V3,
+  seedOrderedNetworkDraftFromStandardV3,
+} from "../lib/open-ena/model-v3/ona-draft";
 import type {
   OrderedNetworkDraftV3,
   StandardEnaDraftV3,
@@ -337,6 +341,45 @@ test("ONA compilation rejects missing fixed-contract fields and disguised Standa
   const noOrder = await compileOnaDraftV3(dataset(), DATASET_SHA256, onaDraft({ rowOrder: null }));
   assert.equal(noOrder.status, "invalid");
   assert.equal(noOrder.canonicalConfiguration, null);
+  assert.equal(noOrder.diagnostics.some((entry) => entry.id === "ONA_ORDER_INVALID"), true);
+  assert.equal(noOrder.diagnostics.some((entry) => entry.id === "ONA_DRAFT_INVALID"), false);
+
+  const noMask = await compileOnaDraftV3(dataset(), DATASET_SHA256, onaDraft({ directionalMask: null }));
+  assert.equal(noMask.status, "invalid");
+  assert.equal(noMask.diagnostics.some((entry) => entry.id === "ONA_DRAFT_INVALID"), true);
+
+  const maskAndBackward = await compileOnaDraftV3(
+    dataset(),
+    DATASET_SHA256,
+    onaDraft({ directionalMask: null, backward: { kind: "finite", value: 0 } }),
+  );
+  assert.equal(maskAndBackward.status, "invalid");
+  assert.equal(
+    maskAndBackward.diagnostics.some((entry) => entry.id === "ONA_DRAFT_INVALID" && entry.fieldPath === "directionalMask"),
+    true,
+  );
+  assert.equal(
+    maskAndBackward.diagnostics.some((entry) => entry.id === "ONA_DRAFT_INVALID" && entry.fieldPath === "backward"),
+    true,
+  );
+
+  const empty = await compileOnaDraftV3(dataset(), DATASET_SHA256, {
+    unitColumns: [],
+    horizonColumns: [],
+    groupColumn: null,
+    codes: [],
+    backward: { kind: "finite", value: 1 },
+    rowOrder: null,
+    directionalMask: null,
+  });
+  assert.equal(empty.status, "invalid");
+  assert.deepEqual(empty.diagnostics.map((entry) => entry.id).sort(), [
+    "ONA_DATASET_FIELD_INVALID",
+    "ONA_DATASET_FIELD_INVALID",
+    "ONA_DATASET_FIELD_INVALID",
+    "ONA_DRAFT_INVALID",
+    "ONA_ORDER_INVALID",
+  ].sort());
 
   const disguised = {
     ...onaDraft(),
@@ -347,6 +390,49 @@ test("ONA compilation rejects missing fixed-contract fields and disguised Standa
   const leaked = await compileOnaDraftV3(dataset(), DATASET_SHA256, disguised);
   assert.equal(leaked.status, "invalid");
   assert.equal(leaked.canonicalConfiguration, null);
+  assert.equal(leaked.diagnostics.some((entry) => entry.id === "ONA_DRAFT_INVALID"), true);
+});
+
+test("ONA seed copies column row-order only and refuses oversized masks", () => {
+  const columns = standardDraft({
+    movingStanza: {
+      backward: { kind: "finite", value: 4 },
+      forward: { kind: "finite", value: 2 },
+      rowOrder,
+    },
+  });
+  const seededColumns = seedOrderedNetworkDraftFromStandardV3(columns);
+  assert.deepEqual(seededColumns.rowOrder, rowOrder);
+  assert.notEqual(seededColumns.rowOrder, columns.movingStanza.rowOrder);
+  assert.equal(seededColumns.directionalMask?.codeOrder.length, 3);
+
+  const sourceOrder = standardDraft({
+    movingStanza: {
+      backward: { kind: "finite", value: 4 },
+      forward: { kind: "finite", value: 0 },
+      rowOrder: {
+        kind: "source-order-confirmed",
+        confirmation: {
+          kind: "explicit-researcher-confirmation",
+          analysisFamily: "standard",
+          datasetSha256: DATASET_SHA256,
+          rowCount: 4,
+          relevantColumns: ["horizon"],
+          confirmedAt: "2026-09-05T00:00:00.000Z",
+          confirmationVersion: 1,
+        },
+      },
+    },
+  });
+  const seededSource = seedOrderedNetworkDraftFromStandardV3(sourceOrder);
+  assert.equal(seededSource.rowOrder, null);
+
+  const oversized = standardDraft({
+    codes: Array.from({ length: MAX_SEEDED_ONA_MASK_CODES_V3 + 1 }, (_, index) => `C${index}`),
+  });
+  const seededOversized = seedOrderedNetworkDraftFromStandardV3(oversized);
+  assert.equal(seededOversized.codes.length, MAX_SEEDED_ONA_MASK_CODES_V3 + 1);
+  assert.equal(seededOversized.directionalMask, null);
 });
 
 test("the v3 barrel exposes curated APIs without internal snapshots or early-envelope telemetry", () => {
@@ -360,6 +446,7 @@ test("the v3 barrel exposes curated APIs without internal snapshots or early-env
     "estimateOnaResourcesV3",
     "decodeCanonicalStandardConfigV3",
     "decodeCanonicalOnaConfigV3",
+    "seedOrderedNetworkDraftFromStandardV3",
   ]) {
     assert.equal(keys.includes(expected), true, `missing curated v3 export ${expected}`);
   }

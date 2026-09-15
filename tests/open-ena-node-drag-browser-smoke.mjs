@@ -648,7 +648,10 @@ async function switchToOnaAndBuild(page) {
   await rail.getByRole("button", { name: "Model", exact: true }).click();
   await prepareNativeFixtureV3(page, { family: "ona", sourcePreparation: false });
   await page.getByRole("tab", { name: /^Codes(,|$)/ }).click();
-  await page.getByRole("button", { name: "Initialize explicit all-enabled mask", exact: true }).click();
+  const initializeMask = page.getByRole("button", { name: "Initialize explicit all-enabled mask", exact: true });
+  assertBrowser(await initializeMask.count() === 0, "ONA family switch after Standard load left the directional mask uninitialized");
+  const build = page.getByRole("button", { name: /^(?:Build ENA model|Rebuild model)$/u });
+  assertBrowser(await build.isEnabled(), "ONA family switch after Standard load did not enable Build");
   await runNativeFixtureV3(page);
   await selectView(page, "2d");
   await page.getByTestId("open-ena-ordered-result-layout").waitFor({ timeout: 60_000 });

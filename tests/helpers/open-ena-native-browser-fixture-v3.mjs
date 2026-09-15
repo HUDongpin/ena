@@ -1,4 +1,9 @@
 // Researcher UI actions only. Imported datasets, compiler and Worker remain authoritative.
+export async function initializeOnaMaskIfNeededV3(page) {
+  const initialize = page.getByRole("button", { name: "Initialize explicit all-enabled mask", exact: true });
+  if (await initialize.count()) await initialize.click();
+}
+
 export async function prepareNativeFixtureV3(page, { codes = ["CODE_A", "CODE_B", "CODE_C", "CODE_D", "CODE_E"], family = "standard", sourcePreparation = true, units = ["Group", "Name"], horizons = ["Conversation"], group = "Group", backward = 5 } = {}) {
   const tab = name => page.getByRole("tab", { name: new RegExp(`^${name}(,|$)`) });
   const button = name => page.getByRole("button", { name, exact: true });
@@ -28,6 +33,10 @@ export async function prepareNativeFixtureV3(page, { codes = ["CODE_A", "CODE_B"
   await page.getByRole("toolbar", { name: "Code actions", exact: true }).getByRole("button", { name: "Manage Codes", exact: true }).click();
   for (const code of codes) await page.getByRole("checkbox", { name: `Select ${code} as a Code`, exact: true }).check();
   await button("Close Code manager").click();
+  if (family === "ona") {
+    const initialize = button("Initialize explicit all-enabled mask");
+    if (await initialize.count()) await initialize.click();
+  }
   await tab("Windows").click();
   if (family === "standard") {
     await page.getByRole("combobox", { name: "Model", exact: true }).selectOption("EndPoint");

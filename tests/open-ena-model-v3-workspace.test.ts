@@ -6,8 +6,11 @@ import { modelScientificContextV3 } from "../components/open-ena/model-v3/model-
 import { exportDraftV3 } from "../lib/open-ena/model-artifact-exports-v3";
 import { importOpenEnaArtifactV3 } from "../lib/open-ena/model-artifact-imports-v3";
 import { bindingFixtureV3 } from "./helpers/open-ena-model-v3-fixture";
+import { compileOnaDraftV3 } from "../lib/open-ena/model-v3/compiler";
 import { migrateCanonicalConfigurationToDraftV3 } from "../lib/open-ena/model-v3/migration";
 import { parsedDatasetFromSourceProofV3 } from "../lib/open-ena/model-v3/execution-plan";
+import type { ModelWorkspaceDraftsV3 } from "../lib/open-ena/model-v3/types";
+import type { ParsedDataset } from "../lib/open-ena/types";
 
 async function fixture() {
   const f = await bindingFixtureV3(undefined, (draft) => {
@@ -134,4 +137,75 @@ test("preset adoption is atomic display state and preserves science, requests, a
   const changed = workspaceReducerV3(state, { type: "model", action: { type: "exclude-code", code: "A" } });
   assert.equal(workspaceReducerV3(changed, action), changed, "late application cannot cross a scientific edit");
   assert.equal(workspaceReducerV3(changed, { ...action, context: modelScientificContextV3(changed.model) }), changed, "even a new intent cannot apply missing SOURCE Code controls");
+});
+
+test("family switch from an unseeded ONA sibling auto-applies the fixed contract and unblocks Build", async () => {
+  const datasetSha256 = "c".repeat(64);
+  const dataset: ParsedDataset = {
+    name: "ona-family-switch.csv",
+    source: "upload",
+    sizeBytes: 256,
+    headers: ["unit", "horizon", "time", "group", "A", "B", "C"],
+    rows: [
+      { unit: "u1", horizon: "h1", time: 1, group: "g1", A: 1, B: 1, C: 0 },
+      { unit: "u1", horizon: "h1", time: 2, group: "g1", A: 0, B: 1, C: 1 },
+      { unit: "u2", horizon: "h2", time: 1, group: "g2", A: 1, B: 0, C: 1 },
+      { unit: "u2", horizon: "h2", time: 2, group: "g2", A: 1, B: 1, C: 0 },
+    ],
+  };
+  const drafts: ModelWorkspaceDraftsV3 = {
+    schemaVersion: 3,
+    activeFamily: "standard",
+    standard: {
+      unitColumns: ["unit"],
+      horizonColumns: ["horizon"],
+      groupColumn: "group",
+      codes: ["A", "B", "C"],
+      weighting: "binary",
+      model: "EndPoint",
+      windowType: "Conversation",
+      movingStanza: {
+        backward: { kind: "finite", value: 5 },
+        forward: { kind: "finite", value: 0 },
+        rowOrder: {
+          kind: "columns",
+          keys: [{ column: "time", direction: "ascending", comparator: { type: "number" } }],
+        },
+      },
+      horizonOrder: null,
+      rotation: { type: "svd", centerAlignToOrigin: true },
+    },
+    ona: {
+      unitColumns: [],
+      horizonColumns: [],
+      groupColumn: null,
+      codes: [],
+      backward: { kind: "finite", value: 1 },
+      rowOrder: null,
+      directionalMask: null,
+    },
+  };
+  let state = createWorkspaceStateV3({ dataset, datasetSha256, drafts });
+  const before = await compileOnaDraftV3(dataset, datasetSha256, state.model.drafts.ona);
+  assert.equal(before.status, "invalid");
+  assert.equal(before.diagnostics.some((entry) => entry.id === "ONA_DRAFT_INVALID" || entry.id === "ONA_ORDER_INVALID"), true);
+  state = workspaceReducerV3(state, { type: "model", action: { type: "set-active-family", family: "ona" } });
+  assert.equal(state.model.drafts.activeFamily, "ona");
+  assert.deepEqual(state.model.drafts.ona.codes, ["A", "B", "C"]);
+  assert.deepEqual(state.model.drafts.ona.rowOrder, drafts.standard.movingStanza.rowOrder);
+  assert.equal(state.model.drafts.ona.directionalMask?.schemaVersion, 1);
+  assert.equal(state.raw.windows.ona.rowOrder.mode, "columns");
+  assert.equal(state.raw.windows.ona.rowOrder.rows.length, 1);
+  assert.equal(state.raw.windows.ona.backward.finiteText, "5");
+  assert.equal(workspaceRawBlockersV3(state).rowOrder, false);
+  assert.equal(state.model.editorBlocked.ona, false);
+  const compiled = await compileOnaDraftV3(dataset, datasetSha256, state.model.drafts.ona);
+  assert.equal(compiled.status, "ready", compiled.diagnostics.map((entry) => entry.id).join(", "));
+  if (compiled.status === "ready") {
+    assert.deepEqual(compiled.canonicalConfiguration.model, { type: "EndPoint" });
+    assert.deepEqual(compiled.canonicalConfiguration.weighting, { type: "frequency", engineMethod: "sum" });
+    assert.equal(compiled.canonicalConfiguration.window.forward, 0);
+    assert.deepEqual(compiled.canonicalConfiguration.rotation, { type: "svd", centerAlignToOrigin: true });
+    assert.equal(compiled.capabilityStatus["build-model"], "available");
+  }
 });

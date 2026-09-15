@@ -9,6 +9,10 @@ import {
   canonicalJsonV3,
   deepFreezeV3,
 } from "../../../lib/open-ena/model-v3/canonical-json";
+import {
+  isUnseededOrderedNetworkDraftV3,
+  seedOrderedNetworkDraftFromStandardV3,
+} from "../../../lib/open-ena/model-v3/ona-draft";
 import type {
   AnalysisFamilyV3,
   BoundResultV3,
@@ -506,17 +510,26 @@ export function modelStateReducerV3(
   const family = state.drafts.activeFamily;
   const display = state.display[family];
   switch (action.type) {
-    case "set-active-family":
+    case "set-active-family": {
       assertFamily(action.family);
-      return action.family === family
-        ? state
-        : scientificEdit(state, {
-            drafts: Object.freeze({
-              ...state.drafts,
-              activeFamily: action.family,
-            }),
-            undo: null,
-          });
+      if (action.family === family) return state;
+      let next = state;
+      if (action.family === "ona" && isUnseededOrderedNetworkDraftV3(state.drafts.ona)) {
+        next = changeDraft(
+          state,
+          "ona",
+          seedOrderedNetworkDraftFromStandardV3(state.drafts.standard),
+          null,
+        );
+      }
+      return scientificEdit(next, {
+        drafts: Object.freeze({
+          ...next.drafts,
+          activeFamily: action.family,
+        }),
+        undo: null,
+      });
+    }
     case "set-dataset":
     case "adopt-dataset": {
       assertHash(action.datasetSha256);

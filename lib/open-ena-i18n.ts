@@ -2169,7 +2169,7 @@ const DIAGNOSTIC_GUIDANCE_V3: Readonly<Record<OpenEnaModelDiagnosticIdV3, readon
   ONA_TARGET_RANK_ZERO: ["The admitted descriptive geometry remains available and this diagnostic does not block the model. If independent variation was expected, inspect Code values, order, backward window, and mask before rebuilding.", "已准入的描述幾何仍可使用，此診斷不會阻擋模型。若原本預期有獨立變異，請在重建前檢查代碼值、順序、向後窗口及遮罩。", "已准入的描述几何仍可使用，此诊断不会阻止模型。若原本预期有独立变异，请在重建前检查代码值、顺序、向后窗口及遮罩。"],
   ONA_ZERO_NETWORK_UNITS: ["The descriptive model remains available; affected Units carry zero directed mass.", "描述性模型仍可用；受影響單位的有向總量為零。", "描述性模型仍可用；受影响单位的有向总量为零。"],
   ONA_SVD_ONE_DIMENSIONAL: ["The fitted ONA model remains valid on its single supported axis.", "擬合的 ONA 模型在其單一受支援軸上仍然有效。", "拟合的 ONA 模型在其单一受支持轴上仍然有效。"],
-  ONA_DRAFT_INVALID: ["Restore fixed End Point, SVD, Frequency-sum, backward-only, and mask fields.", "還原固定端點、SVD、頻數總和、僅向後及遮罩欄位。", "恢复固定端点、SVD、频数总和、仅向后及遮罩字段。"],
+  ONA_DRAFT_INVALID: ["Initialize the directional mask from selected Codes; End Point, SVD, Frequency-sum, and backward-only stay the fixed ONA family values.", "請依所選代碼初始化方向遮罩；端點、SVD、頻數總和與僅向後窗口仍為固定 ONA 系列值。", "请按所选代码初始化方向遮罩；端点、SVD、频数总和与仅向后窗口仍为固定 ONA 系列值。"],
   ONA_RESOURCE_BUDGET_EXCEEDED: ["A hard cap blocks execution and never authorizes truncating the ordered source or directed matrix.", "硬性上限會阻止執行，且絕不授權截斷有序來源或有向矩陣。", "硬性上限会阻止运行，且绝不授权截断有序来源或有向矩阵。"],
 };
 

@@ -71,6 +71,11 @@ test("camera, reset, export, and analytical boundaries are acceptance gates", ()
   assert.match(source, /plotFileExports: acceptance\.plotFileExports/u);
   assert.match(fixtureSource, /Ordered Network Analysis/u);
   assert.match(source, /prepareNativeFixtureV3\(page, \{ family: "ona"/u);
+  assert.match(source, /ONA family switch after Standard load did not enable Build/u);
+  assert.doesNotMatch(source, /Initialize explicit all-enabled mask", exact: true \}\)\.click\(\)/u);
+  assert.doesNotMatch(source, /initializeOnaMaskIfNeededV3/u);
+  assert.match(fixtureSource, /if \(family === "ona"\) \{/u);
+  assert.match(fixtureSource, /if \(await initialize\.count\(\)\) await initialize\.click\(\)/u);
   assert.match(source, /\^3D \(\?:ENA\|ONA\)/u);
   assert.match(source, /maxRetries:\s*5/u);
   assert.match(source, /retryDelay:\s*100/u);

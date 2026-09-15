@@ -14,6 +14,7 @@ import type {
 } from "./types";
 import { analysisKindFor } from "../network-config";
 import { captureDraftArtifactV3 } from "../draft-artifact-v3";
+import { seedOrderedNetworkDraftFromStandardV3 } from "./ona-draft";
 import { decodeCanonicalOnaConfigV3, decodeCanonicalStandardConfigV3 } from "./schema";
 import type {
   OpenEnaConfig,
@@ -223,18 +224,6 @@ function emptyStandardDraftV3(): StandardEnaDraftV3 {
   };
 }
 
-function emptyOnaDraftV3(): OrderedNetworkDraftV3 {
-  return {
-    unitColumns: [],
-    horizonColumns: [],
-    groupColumn: null,
-    codes: [],
-    backward: { kind: "finite", value: 1 },
-    rowOrder: null,
-    directionalMask: null,
-  };
-}
-
 function standardRotationV3(config: OpenEnaConfig): StandardEnaDraftV3["rotation"] {
   if (config.rotation === "svd") {
     return { type: "svd", centerAlignToOrigin: config.centerAlignToOrigin };
@@ -403,6 +392,7 @@ export function migrateLegacyOpenEnaConfigToDraftV3(
       autoRun: false,
     });
   }
+  const standard = standardDraftV3(decoded);
   const requiresReview: MigrationReviewReasonV3[] = [
     ...(decoded.window === "MovingStanzaWindow" ? ["row-order" as const] : []),
     ...(decoded.model === "EndPoint" ? [] : ["horizon-order" as const]),
@@ -412,8 +402,8 @@ export function migrateLegacyOpenEnaConfigToDraftV3(
   return deepFreezeV3({
     schemaVersion: 3,
     activeFamily: "standard",
-    standard: standardDraftV3(decoded),
-    ona: emptyOnaDraftV3(),
+    standard,
+    ona: seedOrderedNetworkDraftFromStandardV3(standard),
     requiresReview,
     autoRun: false,
   });
@@ -422,9 +412,21 @@ export function migrateLegacyOpenEnaConfigToDraftV3(
 /** Independent preview container, never the currently active workspace. */
 export function workspaceDraftsFromArtifactV3(input: unknown): ModelWorkspaceDraftsV3 {
   const { analysisFamily, draft } = captureDraftArtifactV3(input);
-  return deepFreezeV3({ schemaVersion: 3, activeFamily: analysisFamily,
-    standard: analysisFamily === "standard" ? draft as StandardEnaDraftV3 : emptyStandardDraftV3(),
-    ona: analysisFamily === "ona" ? draft as OrderedNetworkDraftV3 : emptyOnaDraftV3() });
+  if (analysisFamily === "standard") {
+    const standard = draft as StandardEnaDraftV3;
+    return deepFreezeV3({
+      schemaVersion: 3,
+      activeFamily: "standard",
+      standard,
+      ona: seedOrderedNetworkDraftFromStandardV3(standard),
+    });
+  }
+  return deepFreezeV3({
+    schemaVersion: 3,
+    activeFamily: "ona",
+    standard: emptyStandardDraftV3(),
+    ona: draft as OrderedNetworkDraftV3,
+  });
 }
 
 /** Canonical bytes carry configuration intent, never a transferable ready receipt.

@@ -136,6 +136,95 @@ export function assertExactOnaDraftV3(value: unknown): OrderedNetworkDraftV3 {
   return record as unknown as OrderedNetworkDraftV3;
 }
 
+/**
+ * Researcher-completable ONA draft gaps. Shape/contract violations stay on
+ * ONA_DRAFT_INVALID at the compiler catch-all; this list is only for an exact
+ * ONA draft that still cannot decode to the fixed family contract.
+ */
+export function onaDraftAdmissionDiagnosticsV3(
+  value: unknown,
+): readonly OnaCompilerDiagnosticV3[] {
+  let draft: OrderedNetworkDraftV3;
+  try {
+    draft = assertExactOnaDraftV3(value);
+  } catch {
+    return [];
+  }
+  const diagnostics: OnaCompilerDiagnosticV3[] = [];
+  if (!Array.isArray(draft.unitColumns) || draft.unitColumns.length === 0) {
+    diagnostics.push(onaDiagnosticV3(
+      "ONA_DATASET_FIELD_INVALID",
+      "units",
+      "An ONA scientific field is missing from the dataset.",
+      "Every Unit, Horizon, Group, Code, and order field must be an exact current header.",
+      { fieldPath: "unitColumns" },
+    ));
+  }
+  if (!Array.isArray(draft.horizonColumns) || draft.horizonColumns.length === 0) {
+    diagnostics.push(onaDiagnosticV3(
+      "ONA_DATASET_FIELD_INVALID",
+      "dataset",
+      "An ONA scientific field is missing from the dataset.",
+      "Every Unit, Horizon, Group, Code, and order field must be an exact current header.",
+      { fieldPath: "horizonColumns" },
+    ));
+  }
+  if (!Array.isArray(draft.codes) || draft.codes.length < 3) {
+    diagnostics.push(onaDiagnosticV3(
+      "ONA_DATASET_FIELD_INVALID",
+      "codes",
+      "An ONA scientific field is missing from the dataset.",
+      "Every Unit, Horizon, Group, Code, and order field must be an exact current header.",
+      { fieldPath: "codes" },
+    ));
+  }
+  if (draft.rowOrder === null) {
+    diagnostics.push(onaDiagnosticV3(
+      "ONA_ORDER_INVALID",
+      "windows",
+      "ONA row order cannot be resolved exactly.",
+      "Order fields, comparators, ties, and dataset-bound confirmation must satisfy the fixed ONA ordering contract.",
+      { fieldPath: "rowOrder" },
+    ));
+  }
+  switch (draft.backward.kind) {
+    case "infinity":
+      break;
+    case "finite":
+      if (!Number.isSafeInteger(draft.backward.value) || draft.backward.value < 1) {
+        diagnostics.push(onaDiagnosticV3(
+          "ONA_DRAFT_INVALID",
+          "windows",
+          "The ONA draft is not executable.",
+          "ONA requires a finite backward extent of at least 1 row, or infinity.",
+          { fieldPath: "backward" },
+        ));
+      }
+      break;
+    default: {
+      const _exhaustive: never = draft.backward;
+      void _exhaustive;
+      diagnostics.push(onaDiagnosticV3(
+        "ONA_DRAFT_INVALID",
+        "windows",
+        "The ONA draft is not executable.",
+        "ONA requires a finite backward extent of at least 1 row, or infinity.",
+        { fieldPath: "backward" },
+      ));
+    }
+  }
+  if (draft.directionalMask === null) {
+    diagnostics.push(onaDiagnosticV3(
+      "ONA_DRAFT_INVALID",
+      "codes",
+      "The ONA draft is not executable.",
+      "ONA requires its fixed EndPoint, backward-only, Frequency/sum, SVD, explicit-order, directional-mask contract with no Standard-only fields.",
+      { fieldPath: "directionalMask" },
+    ));
+  }
+  return diagnostics;
+}
+
 /** @internal Fixed ONA canonical candidate; strict decoder runs at the caller. */
 export function onaCanonicalFromDraftV3(draft: OrderedNetworkDraftV3): unknown {
   return {

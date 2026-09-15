@@ -231,6 +231,101 @@ test("family switches preserve both drafts, stale results and obsolete requests;
   );
 });
 
+test("switching to ONA seeds an unconfigured sibling with Standard mappings, mask, and row order", () => {
+  const input = drafts();
+  input.standard.movingStanza.rowOrder = {
+    kind: "columns",
+    keys: [{ column: "time", direction: "ascending", comparator: { type: "number" } }],
+  };
+  input.ona = {
+    unitColumns: [],
+    horizonColumns: [],
+    groupColumn: null,
+    codes: [],
+    backward: { kind: "finite", value: 1 },
+    rowOrder: null,
+    directionalMask: null,
+  };
+  const state = createModelStateV3(input, datasetSha256);
+  const switched = reduce(state, { type: "set-active-family", family: "ona" });
+  assert.equal(switched.drafts.activeFamily, "ona");
+  assert.deepEqual(switched.drafts.ona.unitColumns, input.standard.unitColumns);
+  assert.deepEqual(switched.drafts.ona.horizonColumns, input.standard.horizonColumns);
+  assert.equal(switched.drafts.ona.groupColumn, input.standard.groupColumn);
+  assert.deepEqual(switched.drafts.ona.codes, input.standard.codes);
+  assert.deepEqual(switched.drafts.ona.backward, input.standard.movingStanza.backward);
+  assert.deepEqual(switched.drafts.ona.rowOrder, input.standard.movingStanza.rowOrder);
+  assert.deepEqual(switched.drafts.ona.directionalMask, {
+    schemaVersion: 1,
+    codeOrder: ["A", "B", "C"],
+    enabled: [
+      [true, true, true],
+      [true, true, true],
+      [true, true, true],
+    ],
+  });
+  assert.deepEqual(switched.display.ona.codeOrder, ["A", "B", "C"]);
+  assert.equal(switched.drafts.standard, state.drafts.standard);
+  const customized = reduce(switched, {
+    type: "set-codes",
+    codes: ["C", "B", "A"],
+  });
+  const returned = reduce(
+    reduce(customized, { type: "set-active-family", family: "standard" }),
+    { type: "set-active-family", family: "ona" },
+  );
+  assert.deepEqual(returned.drafts.ona.codes, ["C", "B", "A"]);
+});
+
+test("switching to ONA does not copy a Standard source-order receipt or overwrite a customized backward extent", () => {
+  const input = drafts();
+  input.standard.movingStanza.rowOrder = {
+    kind: "source-order-confirmed",
+    confirmation: {
+      kind: "explicit-researcher-confirmation",
+      analysisFamily: "standard",
+      datasetSha256,
+      rowCount: 3,
+      relevantColumns: ["horizon"],
+      confirmedAt: "2026-09-05T00:00:00.000Z",
+      confirmationVersion: 1,
+    },
+  };
+  input.ona = {
+    unitColumns: [],
+    horizonColumns: [],
+    groupColumn: null,
+    codes: [],
+    backward: { kind: "infinity" },
+    rowOrder: null,
+    directionalMask: null,
+  };
+  const preserved = reduce(createModelStateV3(input, datasetSha256), {
+    type: "set-active-family",
+    family: "ona",
+  });
+  assert.equal(preserved.drafts.ona.backward.kind, "infinity");
+  assert.deepEqual(preserved.drafts.ona.unitColumns, []);
+  assert.equal(preserved.drafts.ona.directionalMask, null);
+
+  input.ona = {
+    unitColumns: [],
+    horizonColumns: [],
+    groupColumn: null,
+    codes: [],
+    backward: { kind: "finite", value: 1 },
+    rowOrder: null,
+    directionalMask: null,
+  };
+  const seeded = reduce(createModelStateV3(input, datasetSha256), {
+    type: "set-active-family",
+    family: "ona",
+  });
+  assert.equal(seeded.drafts.ona.rowOrder, null);
+  assert.deepEqual(seeded.drafts.ona.codes, input.standard.codes);
+  assert.equal(seeded.drafts.ona.directionalMask?.schemaVersion, 1);
+});
+
 test("editing an inactive family preserves the active execution and independent Undo", async () => {
   const { state } = await current();
   const active = running(reduce(state, { type: "exclude-code", code: "A" }));

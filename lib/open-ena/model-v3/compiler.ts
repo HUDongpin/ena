@@ -44,6 +44,7 @@ import {
   assertExactOnaDraftV3,
   onaCanonicalFromDraftV3,
   onaDiagnosticV3,
+  onaDraftAdmissionDiagnosticsV3,
   runOnaScientificPreflightV3,
   validateOnaDatasetV3,
 } from "./ona-compiler-preflight";
@@ -351,12 +352,18 @@ export async function compileOnaDraftV3(
   if (!bindingOutcome.ok) throw bindingOutcome.error;
   const binding: DatasetBindingV3 = bindingOutcome.value;
   if (draftBoundaryError !== null || canonicalConfiguration === null) {
-    return invalidOnaResultV3(draftFingerprint, [onaDiagnosticV3(
-      "ONA_DRAFT_INVALID",
-      "model",
-      "The ONA draft is not executable.",
-      "ONA requires its fixed EndPoint, backward-only, Frequency/sum, SVD, explicit-order, directional-mask contract with no Standard-only fields.",
-    )]);
+    const admission = onaDraftAdmissionDiagnosticsV3(capturedDraft.snapshot);
+    return invalidOnaResultV3(
+      draftFingerprint,
+      admission.length > 0
+        ? admission
+        : [onaDiagnosticV3(
+          "ONA_DRAFT_INVALID",
+          "model",
+          "The ONA draft is not executable.",
+          "ONA requires its fixed EndPoint, backward-only, Frequency/sum, SVD, explicit-order, directional-mask contract with no Standard-only fields.",
+        )],
+    );
   }
   if (datasetSnapshotError !== null || validatedDataset === null
     || await sha256CanonicalJsonV3(validatedDataset.headers) !== binding.headerSha256) {
