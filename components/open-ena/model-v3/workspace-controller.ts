@@ -40,8 +40,14 @@ export interface WorkspaceStateV3 {
   readonly progress: { readonly value: number; readonly stage: string } | null;
   readonly colorCompanions: Readonly<Record<"standard" | "ona", Readonly<Record<string, string>>>>;
   readonly autoRunIntent: ModelScientificContextV3 | null;
+  /** Discoverability only: never starts a run. Set when source replacement retains stale geometry. */
+  readonly rebuildCue: WorkspaceRebuildCueV3 | null;
   readonly error: string | null;
 }
+export type WorkspaceRebuildCueV3 = {
+  readonly reason: "source-replacement";
+  readonly serial: number;
+};
 export type WorkspaceActionV3 =
   | { type: "model"; action: ModelStateActionV3 }
   | { type: "windows-raw"; value: OpenEnaWindowsPanelRawStateV3 }
@@ -127,7 +133,7 @@ export function workspaceDraftExportableV3(state: WorkspaceStateV3): boolean {
 export function createWorkspaceStateV3(input?: { dataset: ParsedDataset; datasetSha256: string; drafts: ModelWorkspaceDraftsV3 }): WorkspaceStateV3 {
   const drafts = input?.drafts ?? emptyWorkspaceDraftsV3();
   return reconcileRaw({ dataset: input?.dataset ?? null, model: createModelStateV3(drafts, input?.datasetSha256 ?? "0".repeat(64)),
-    raw: rawEditors(drafts), compilation: null, references: [], preview: null, historical: [], sourceWitness: null, presetHiddenGroups: null, progress: null, colorCompanions: { standard: {}, ona: {} }, error: null, autoRunIntent: null });
+    raw: rawEditors(drafts), compilation: null, references: [], preview: null, historical: [], sourceWitness: null, presetHiddenGroups: null, progress: null, colorCompanions: { standard: {}, ona: {} }, error: null, autoRunIntent: null, rebuildCue: null });
 }
 
 export function workspaceReducerV3(state: WorkspaceStateV3, action: WorkspaceActionV3): WorkspaceStateV3 {
@@ -139,22 +145,32 @@ export function workspaceReducerV3(state: WorkspaceStateV3, action: WorkspaceAct
       const raw = seededOnaWindows
         ? { ...state.raw, windows: { ...state.raw.windows, ona: rawEditors(model.drafts).windows.ona } }
         : state.raw;
-      return reconcileRaw({
+      const next = reconcileRaw({
         ...state,
         progress: action.action.type === "mark-running" ? null : state.progress,
         model,
         raw,
       });
+      return action.action.type === "mark-running" && next.rebuildCue
+        ? { ...next, rebuildCue: null } : next;
     }
     case "windows-raw": return reconcileRaw({ ...state, raw: { ...state.raw, windows: action.value } });
     case "horizon-raw": return reconcileRaw({ ...state, raw: { ...state.raw, horizonOrder: action.value } });
     case "install-source": {
+      const retainedResult = state.model.result;
       let model = modelStateReducerV3(state.model, { type: "adopt-dataset", datasetSha256: action.datasetSha256 });
       model = modelStateReducerV3(model, { type: "replace-standard-draft", draft: action.drafts.standard });
       model = modelStateReducerV3(model, { type: "replace-ona-draft", draft: action.drafts.ona });
       model = modelStateReducerV3(model, { type: "set-active-family", family: action.drafts.activeFamily });
       const next = reconcileRaw({ ...state, dataset: action.dataset, model, presetHiddenGroups: null, raw: rawEditors(model.drafts), compilation: null, preview: null, error: null, autoRunIntent: null });
-      return { ...next, autoRunIntent: action.autoRun ? modelScientificContextV3(next.model) : null };
+      const rebuildCue = !action.autoRun && retainedResult
+        ? { reason: "source-replacement" as const, serial: (state.rebuildCue?.serial ?? 0) + 1 }
+        : null;
+      return {
+        ...next,
+        autoRunIntent: action.autoRun ? modelScientificContextV3(next.model) : null,
+        rebuildCue,
+      };
     }
     case "clear-auto-run-intent": return state.autoRunIntent ? { ...state, autoRunIntent: null } : state;
     case "clear-preset-group-hiding": return { ...state, presetHiddenGroups: null };
@@ -200,9 +216,13 @@ export function workspaceReducerV3(state: WorkspaceStateV3, action: WorkspaceAct
         ? state.references : [...state.references, action.reference] } : state;
     case "completed": {
       const model = modelStateReducerV3(state.model, { type: "accept-result", request: action.request, result: action.result });
-      return model === state.model ? state : { ...state, model, sourceWitness: action.sourceWitness, error: null };
+      return model === state.model ? state : { ...state, model, sourceWitness: action.sourceWitness, error: null, rebuildCue: null };
     }
     case "error": return { ...state, error: action.message };
+    default: {
+      const _exhaustive: never = action;
+      return _exhaustive;
+    }
   }
 }
 

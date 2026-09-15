@@ -77,7 +77,7 @@ import { OpenEnaHorizonsPanelV3 } from "./model-v3/OpenEnaHorizonsPanelV3";
 import { OpenEnaWindowsPanelV3, type OpenEnaReferenceSelectionPreviewV3 } from "./model-v3/OpenEnaWindowsPanelV3";
 import { OpenEnaCodesPanelV3, createOpenEnaCodesPreviewV3 } from "./model-v3/OpenEnaCodesPanelV3";
 import { OpenEnaImportPreviewV3 } from "./model-v3/OpenEnaImportPreviewV3";
-import { useOpenEnaWorkspaceV3, emptyWorkspaceDraftsV3, sameScientificContextV3, workspaceDraftExportableV3, type WorkspaceWorkerV3 } from "./model-v3/workspace-controller";
+import { useOpenEnaWorkspaceV3, sameScientificContextV3, workspaceDraftExportableV3, type WorkspaceWorkerV3 } from "./model-v3/workspace-controller";
 import { buildWorkspacePreviewsV3 } from "./model-v3/workspace-previews";
 import { modelScientificContextV3 } from "./model-v3/model-state";
 
@@ -398,6 +398,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const sourceGeneration = useRef(0);
   const sourceFileTriggerRef = useRef<HTMLInputElement>(null);
   const sourceDialogRef = useRef<HTMLElement>(null);
+  const runButtonRef = useRef<HTMLButtonElement>(null);
+  const staleRebuildRef = useRef<HTMLButtonElement>(null);
   const [previews, setPreviews] = useState<Awaited<ReturnType<typeof buildWorkspacePreviewsV3>>>({ units: { availability: "unavailable" }, horizons: { availability: "unavailable" } });
   const [activeCodeColor, setActiveCodeColor] = useState<{ code: string; context: typeof context } | null>(null);
   const activeColorIntent = activeCodeColor && sameScientificContextV3(activeCodeColor.context, context) && draft.codes.includes(activeCodeColor.code) ? activeCodeColor : null;
@@ -601,6 +603,22 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
       requestAnimationFrame(() => document.querySelector<HTMLElement>(modelNavigation.tab === "units" ? '.ena-model-units-v3-means' : '.ena-model-windows-v3 select')?.focus());
     }
   }, [modelNavigation]);
+  const rebuildCue = state.rebuildCue;
+  useEffect(() => {
+    if (!rebuildCue) return;
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => {
+        const target = staleRebuildRef.current ?? runButtonRef.current;
+        target?.scrollIntoView({ block: "nearest", inline: "nearest" });
+        if (target && !target.disabled) target.focus();
+      });
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
+  }, [rebuildCue]);
 
   async function attempt(work: () => Promise<void>) {
     try {
@@ -615,8 +633,20 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     const url = URL.createObjectURL(new Blob([value.bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = value.dataset.name; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  function installSource(value: { dataset: ParsedDataset; datasetSha256: string }, drafts = emptyWorkspaceDraftsV3(), autoRun = false) {
+  function installSource(value: { dataset: ParsedDataset; datasetSha256: string }, drafts = state.model.drafts, autoRun = false) {
     dispatch({ type: "install-source", ...value, drafts, autoRun }); setSourcePreview(null); setMode("model");
+  }
+  function requestRebuildAfterSourceReplacement() {
+    setError(null);
+    setMode("model");
+    if (controller.canRun) {
+      controller.run();
+      return;
+    }
+    requestAnimationFrame(() => {
+      runButtonRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      if (runButtonRef.current && !runButtonRef.current.disabled) runButtonRef.current.focus();
+    });
   }
   async function openCodedData(file: File) {
     dispatch({ type: "clear-auto-run-intent" });
@@ -928,7 +958,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
         ? { kicker: restoredCopy.plotKicker, title: completedResultKind === "ona" ? copy.ona.presenter.title : copy.plot.title, description: completedResultKind === "ona" ? copy.ona.presenter.description : copy.plot.description }
         : { kicker: restoredCopy.statsKicker, title: copy.stats.title, description: restoredCopy.statsDescription };
   const modelActions = <div className="ena-model-actions">
-    <button type="button" className="ena-action-button ena-action-primary ena-model-run-button" data-testid="open-ena-run-model"
+    <button type="button" ref={runButtonRef} className="ena-action-button ena-action-primary ena-model-run-button" data-testid="open-ena-run-model"
+      data-ena-rebuild-cue={rebuildCue?.reason}
       disabled={!controller.canRun || sourceBusy || sourcePreview !== null}
       onClick={() => { setError(null); controller.run(); }}>
       {result ? copy.model.rerun : copy.model.run}<span aria-hidden="true">→</span>
@@ -948,7 +979,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="17" r="2" /><circle cx="12" cy="10" r="2" /><circle cx="19" cy="5" r="2" /><path d="m6.5 15.6 4-4m3.2-2.8 3.6-2.6" /></svg>
           <span>{workspaceCopy.configureTrajectory}</span><span aria-hidden="true">→</span>
         </button>}
-        {mode !== "model" && result && !current && <p className="ena-restored-stale-notice" role="status" aria-live="polite">{workspaceCopy.resultStatus.stale}</p>}
+        {result && !current && <p className="ena-restored-stale-notice" role="status" aria-live="polite">{rebuildCue ? workspaceCopy.result.sourceReplacementNotice : workspaceCopy.resultStatus.stale}</p>}
       </header>
       {(error || state.error || currentCompilation?.error) && <p role="alert">{error ? formatOpenEnaWorkspaceFailureV3(workspaceCopy, error) : workspaceCopy.operationFailed}</p>}
       {controller.importPending && <button type="button" onClick={() => dispatch({ type: "cancel-preview" })}>{workspaceCopy.cancelPendingImport}</button>}
@@ -1099,7 +1130,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
               onExportCsv={() => void attempt(async () => { if (!result || !currentPlan || !current) return; await buildDataViewV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) downloadText("bound-data-view.csv", rowsToCsv(dataViewPresentation.rows.map((row) => Object.fromEntries(Object.entries(row.values).map(([key, value]) => [key, value ?? null])))), "text/csv"); })} />
             <ResearchTableV3 {...researchTableCopy} rows={dataViewPresentation.sourceTraversal} label={workspaceCopy.stats.globalTraversal} columnLabels={workspaceCopy.dataView.sourceTraversalLabels} />
           </>;
-  return <div className="open-ena-page" data-testid="open-ena-workspace-v3" data-result-status={modelState.resultStatus} data-run-status={modelState.runStatus}>
+  return <div className="open-ena-page" data-testid="open-ena-workspace-v3" data-result-status={modelState.resultStatus} data-run-status={modelState.runStatus} data-ena-rebuild-cue={rebuildCue?.reason}>
     <OpenEnaFallbackNotice locale={locale} />
     <section className="open-ena-workbench" aria-label={workspaceCopy.shell.workspaceAria} aria-busy={sourceBusy || modelState.runStatus === "running"}>
       <div className="ena-workbench-grid">
@@ -1123,7 +1154,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
             </div>
           </div>
           <div>
-      {presentation && result && <section aria-label={workspaceCopy.result.plotAria} data-ena-workbench-region="center"><p>{modelState.resultStatus === "stale" ? workspaceCopy.result.historicalGeometry : workspaceCopy.result.boundGeometry}</p>
+      {presentation && result && <section aria-label={workspaceCopy.result.plotAria} data-ena-workbench-region="center">{modelState.resultStatus === "stale" ? <div className="ena-stale-rebuild-callout" data-testid="open-ena-stale-rebuild" data-ena-rebuild-cue={rebuildCue?.reason}><p role="status" aria-live="polite">{rebuildCue ? workspaceCopy.result.sourceReplacementNotice : workspaceCopy.result.historicalGeometry}</p>{rebuildCue ? <button type="button" ref={staleRebuildRef} className="ena-action-button ena-action-primary ena-stale-rebuild-button" data-testid="open-ena-stale-rebuild-run" aria-label={workspaceCopy.result.rebuildNowAria} disabled={sourceBusy || sourcePreview !== null || modelState.runStatus === "running"} onClick={requestRebuildAfterSourceReplacement}>{workspaceCopy.result.rebuildNow}<span aria-hidden="true">→</span></button> : null}</div> : <p>{workspaceCopy.result.boundGeometry}</p>}
         {view === "3d" && completedResultKind === "standard" && !genericThreeDAvailable ? <p role="status">{copy.plot.threeDUnavailable}</p> : selectedAxes.length < 2 ? <><p>{workspaceCopy.result.oneAxis}</p><ResearchTableV3 {...researchTableCopy} rows={result.set.points} label={workspaceCopy.result.fittedCoordinates} /></>
           : completedResultKind === "ona" ? view === "3d" && threeDDimensions
             ? <OpenEna3DOrderedResultLayout {...plotProps} sharedCamera={camera} onCameraChange={setCamera} sharedAspectRatio={aspectRatio} onAspectRatioChange={setAspectRatio} result={plotResult!} config={presentation.config} primaryGroupName={primary?.displayLabel ?? null} secondaryGroupName={secondary?.displayLabel ?? null} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} />

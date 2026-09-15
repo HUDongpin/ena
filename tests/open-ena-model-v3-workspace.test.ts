@@ -93,6 +93,30 @@ test("same-hash source re-adoption expires compilation and the exact in-flight r
   assert.notDeepEqual(modelScientificContextV3(state.model), original);
 });
 
+test("source replacement with a retained result cues Rebuild without auto-running", async () => {
+  const f = await fixture();
+  const { bindResultV3 } = await import("../lib/open-ena/model-v3/result-binding");
+  const { runStandardPlanV3 } = await import("../lib/open-ena/analyze");
+  const result = await bindResultV3(f.plan, runStandardPlanV3(f.plan), { processedRows: f.plan.rows.length, maximumBufferedRows: 0, numericCellsAllocated: 120, peakBytesObservedOrBounded: 10240, observationMethod: "exact-counters-and-conservative-byte-bound" }, f.compiled.diagnostics);
+  let state = workspaceReducerV3(f.state, { type: "model", action: { type: "mark-running", context: modelScientificContextV3(f.state.model), executionPlanSha256: f.plan.header.executionPlanSha256 } });
+  state = workspaceReducerV3(state, { type: "completed", request: state.model.runningRequest!, result, sourceWitness: null });
+  assert.equal(state.model.resultStatus, "current");
+  assert.equal(state.rebuildCue, null);
+  const drafts = state.model.drafts;
+  state = workspaceReducerV3(state, { type: "install-source", dataset: { ...state.dataset!, name: "replaced.typed.xlsx" }, datasetSha256: "b".repeat(64), drafts });
+  assert.equal(state.autoRunIntent, null, "CSV/XLSX admit must not inherit sample auto-run");
+  assert.equal(state.model.resultStatus, "stale");
+  assert.equal(state.rebuildCue?.reason, "source-replacement");
+  assert.equal(state.rebuildCue?.serial, 1);
+  assert.equal(state.model.drafts, drafts, "file admit retains the current mapping so Rebuild can be explicit");
+  const cued = state;
+  state = workspaceReducerV3(cued, { type: "install-source", dataset: cued.dataset!, datasetSha256: "c".repeat(64), drafts, autoRun: true });
+  assert.ok(state.autoRunIntent);
+  assert.equal(state.rebuildCue, null, "sample auto-run does not raise a rebuild cue");
+  state = workspaceReducerV3(cued, { type: "model", action: { type: "mark-running", context: modelScientificContextV3(cued.model), executionPlanSha256: f.plan.header.executionPlanSha256 } });
+  assert.equal(state.rebuildCue, null, "explicit Rebuild clears the cue");
+});
+
 test("sample auto-run and color confirmations are exact-context one-shot intents", async () => {
   const f = await fixture();
   let state = workspaceReducerV3(f.state, { type: "install-source", dataset: f.state.dataset!, datasetSha256: f.state.model.datasetSha256, drafts: f.state.model.drafts, autoRun: true });
