@@ -38,7 +38,16 @@ import { captureAnalysisSetV3, compareAnalysisSetsV3, upsertAnalysisSetV3, type 
 import { openEnaCodeColorPair } from "@/lib/open-ena/code-color-presets";
 import { codeColorFor } from "@/lib/open-ena/plot-style";
 import type { OpenEnaNodeLayoutPositions, OpenEnaNodeDimensionPosition } from "@/lib/open-ena/node-layout";
-import { cameraForPreset, type OpenEna3dCamera, type OpenEna3dAspectRatio } from "@/lib/open-ena/plot3d";
+import {
+  cameraForPreset,
+  selectOpenEnaWorkspacePlotAxis,
+  type OpenEna3dCamera,
+  type OpenEna3dAspectRatio,
+} from "@/lib/open-ena/plot3d";
+import {
+  openEnaAiLocalScientificIdentityV3,
+  openEnaConsumerAuthorityKeyV3,
+} from "@/lib/open-ena/workspace-consumer-authority-v3";
 import { resolveOpenEnaGroupDisplayOptions } from "@/lib/open-ena/group-display";
 import { prepareTeachingSampleV3 } from "@/lib/open-ena/sample-source-v3";
 import { prepareTypedCsvSourceV3, previewSourceTypesV3, type SourceTypeDeclarationsV3, type SourceColumnTypeV3 } from "@/lib/open-ena/source-preparation-v3";
@@ -476,7 +485,12 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
       : inferenceDesign === "paired" ? { kind: "trajectory-paired-periods", group: primary?.fields[0].value ?? null, earlierPeriod: periods[0], laterPeriod: periods[1], cohortPolicy: "pairwise-complete" }
         : { kind: "trajectory-repeated-periods", group: primary?.fields[0].value ?? null, periods, cohortPolicy: "all-period-complete", posthocContrasts: "all-period-pairs" } } : null;
   const controls = isTrajectory ? trajectoryControls : endpointControls;
-  const consumerKey = canonicalJsonV3({ binding: result?.binding ?? null, plan: currentPlan?.header.executionPlanSha256 ?? null, current, controls });
+  const consumerKey = openEnaConsumerAuthorityKeyV3({
+    binding: result?.binding ?? null,
+    plan: currentPlan?.header.executionPlanSha256 ?? null,
+    current,
+    controls,
+  });
   const consumerKeyRef = useRef(consumerKey); consumerKeyRef.current = consumerKey;
   const activeInference = inference?.key === consumerKey && current ? inference.value : null;
   const trajectoryFrameKey = canonicalJsonV3({ context, binding: result?.binding ?? null, plan: currentPlan?.header.executionPlanSha256 ?? null, current });
@@ -647,6 +661,32 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     } finally { setInferenceBusy(false); }
   }
   function confirmCurrentIdentityBearingExport() { return window.confirm(copy.stats.identityExportConfirmation); }
+  function applyPlotAxisSelection(index: number, dimension: string) {
+    const next = selectOpenEnaWorkspacePlotAxis(
+      {
+        twoD: twoDAxes.length === 2 ? [twoDAxes[0], twoDAxes[1]] : null,
+        threeD: availableThreeDAxes.length === 3
+          ? [availableThreeDAxes[0], availableThreeDAxes[1], availableThreeDAxes[2]]
+          : null,
+      },
+      view,
+      index,
+      dimension,
+      supportedAxes,
+    );
+    switch (view) {
+      case "3d":
+        setThreeDAxes(next.threeD ? [...next.threeD] : []);
+        return;
+      case "2d":
+        setAxes(next.twoD ? [...next.twoD] : []);
+        return;
+      default: {
+        const exhaustive: never = view;
+        void exhaustive;
+      }
+    }
+  }
   function serializedPlotSvg() {
     const source = plotSvgRef.current;
     if (!source) return null;
@@ -957,7 +997,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
           {horizons.map((horizon) => <label key={horizon.token}><input type="checkbox" checked={visibleHorizons === null || visibleHorizons.includes(horizon.canonicalJson)} onChange={(e) => setVisibleHorizons((values) => { const selected = values ?? horizons.map((value) => value.canonicalJson); return e.target.checked ? [...new Set([...selected, horizon.canonicalJson])] : selected.filter((key) => key !== horizon.canonicalJson); })} />{workspaceCopy.plot.displayHorizon(horizon.displayLabel)}</label>)}</>}
         <div className="ena-view-toggle ena-restored-view-toggle"><button type="button" aria-pressed={view === "2d"} onClick={() => setView("2d")}>2D</button><button type="button" aria-pressed={view === "3d"} disabled={!genericThreeDAvailable} onClick={() => setView("3d")}>3D</button></div>
         <fieldset className="ena-restored-axis-fields"><legend>{restoredCopy.dimensions}</legend>
-        {(view === "3d" ? [0, 1, 2] : [0, 1]).map((index) => <label key={index}>{workspaceCopy.plot.axis(index + 1)}<select aria-label={workspaceCopy.plot.axis(index + 1)} value={axisControlValues[index] ?? ""} onChange={(e) => (view === "3d" ? setThreeDAxes : setAxes)(axisControlValues.map((axis, i) => i === index ? e.target.value : axis))}><option value="">{workspaceCopy.plot.unavailable}</option>{supportedAxes.map((axis) => <option key={axis}>{axis}</option>)}</select></label>)}
+        {(view === "3d" ? [0, 1, 2] : [0, 1]).map((index) => <label key={index}>{workspaceCopy.plot.axis(index + 1)}<select aria-label={workspaceCopy.plot.axis(index + 1)} value={axisControlValues[index] ?? ""} onChange={(e) => applyPlotAxisSelection(index, e.target.value)}><option value="">{workspaceCopy.plot.unavailable}</option>{supportedAxes.map((axis) => <option key={axis}>{axis}</option>)}</select></label>)}
         </fieldset><fieldset className="ena-restored-check-stack"><legend>{restoredCopy.display}</legend>
         {[[workspaceCopy.plot.points, showPoints, setShowPoints], [workspaceCopy.plot.networks, showNetworks, setShowNetworks], [workspaceCopy.plot.codeLabels, showLabels, setShowLabels], [workspaceCopy.plot.unitLabels, showUnitLabels, setShowUnitLabels], [workspaceCopy.plot.variance, showVariance, setShowVariance], [workspaceCopy.plot.trajectories, showTrajectories, setShowTrajectories], [workspaceCopy.plot.flipX, flipX, setFlipX], [workspaceCopy.plot.flipY, flipY, setFlipY]].map(([label, value, setter]) => <label key={String(label)}>{String(label)}<input type="checkbox" checked={value as boolean} onChange={(e) => (setter as (value: boolean) => void)(e.target.checked)} /></label>)}
         </fieldset><fieldset className="ena-restored-scale-fields"><legend>{restoredCopy.scales}</legend>
@@ -1019,7 +1059,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
 </div>;
   const aiPanel = <div className="ena-control-content ena-ai-mode-panel ena-workspace-controls-v3 ena-restored-workbench" data-ena-ai-source="stats-results"><header className="ena-panel-heading"><p className="ena-panel-kicker">{restoredCopy.aiKicker}</p><h2>{copy.aiInterpretation.title}</h2><p>{activeInference ? workspaceCopy.ai.ready : workspaceCopy.ai.unavailable}</p></header><button type="button" onClick={() => setMode("stats")}>{workspaceCopy.ai.openStats}</button>
       <div hidden={mode !== "ai"}><OpenEnaAiInterpretation request={activeAiReview?.request ?? null}
-        localScientificIdentity={activeAiReview ? canonicalJsonV3({ binding: activeAiReview.binding, context: activeAiReview.context, configuration: activeAiReview.configuration }) : null}
+        localScientificIdentity={openEnaAiLocalScientificIdentityV3(activeAiReview)}
         copy={copy.aiInterpretation} disabled={!activeAiReview || !current} disabledReason={aiLimitation ? workspaceCopy.operationFailed : workspaceCopy.ai.disabled} providerDescriptor={providerDescriptor} />
         {activeAiReview && <details className="ena-panel-details"><summary>{restoredCopy.aiEvidenceScope}</summary><p>{workspaceCopy.ai.wireLimitations}</p></details>}{aiLimitation && <p role="status">{workspaceCopy.operationFailed}</p>}</div>
 </div>;

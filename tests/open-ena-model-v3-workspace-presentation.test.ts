@@ -168,6 +168,7 @@ test("native 3D axis editor retains all three choices while an intermediate sele
   const { readFileSync } = await import("node:fs");
   const source = readFileSync("components/open-ena/OpenEnaWorkspace.tsx", "utf8");
   assert.match(source, /const axisControlValues = view === "3d" \? availableThreeDAxes : twoDAxes/);
-  assert.match(source, /axisControlValues\.map\(\(axis, i\)/);
+  assert.match(source, /selectOpenEnaWorkspacePlotAxis/);
+  assert.match(source, /applyPlotAxisSelection\(index, e\.target\.value\)/);
   assert.match(source, /new Set\(availableThreeDAxes\)\.size === 3/);
 });

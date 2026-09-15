@@ -149,7 +149,8 @@ test("the only AI network request is a POST inside the explicit Generate handler
 test("AI generation requires the exact current native review and full local scientific identity", () => {
 
   assert.match(v3, /disabled=\{!activeAiReview \|\| !current\}/);
-  assert.match(v3, /localScientificIdentity=\{activeAiReview \? canonicalJsonV3\(\{ binding: activeAiReview.binding, context: activeAiReview.context, configuration: activeAiReview.configuration \}\)/);
+  assert.match(v3, /localScientificIdentity=\{openEnaAiLocalScientificIdentityV3\(activeAiReview\)\}/);
+  assert.match(aiComponent, /openEnaAiReviewedRequestIdentityV3/);
   assert.match(aiComponent, /localScientificIdentity/);
   assert.match(aiComponent, /disabled=\{[^}]*(?:disabled|!request)[^}]*\}/);
   assert.doesNotMatch(v3, /buildOpenEnaAiInterpretationRequest\(/);
@@ -190,8 +191,13 @@ test("the UI supports cancellation, a visible error, and an explicit retry", () 
 test("changing the evidence binding aborts work, revokes consent, and makes old output unrenderable", () => {
   assert.match(
     aiComponent,
-    /const\s+requestIdentity\s*=\s*request[\s\S]*?schemaVersion:[\s\S]*?promptVersion:[\s\S]*?locale:[\s\S]*?binding:[\s\S]*?evidence:/,
+    /const\s+requestIdentity\s*=\s*openEnaAiReviewedRequestIdentityV3\(\{[\s\S]*?localScientificIdentity,[\s\S]*?request,/,
     "response validity must be bound to the complete reviewed request, including its exact sanitized evidence",
+  );
+  assert.match(
+    moduleV3("lib/open-ena/workspace-consumer-authority-v3.ts"),
+    /schemaVersion:[\s\S]*?promptVersion:[\s\S]*?locale:[\s\S]*?binding:[\s\S]*?evidence:/,
+    "AI request identity must include the reviewed schema, prompt, locale, binding, and evidence",
   );
   const invalidationEffect = aiComponent.match(
     /useEffect\(\(\)\s*=>\s*\{([\s\S]*?)\},\s*\[[^\]]*requestIdentity[^\]]*\]\);/,
