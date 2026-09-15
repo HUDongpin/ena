@@ -115,6 +115,32 @@ export type OpenEnaResultTableAvailability =
   | { available: true; reason: null }
   | { available: false; reason: OpenEnaResultTableUnavailableReason };
 
+/** Structural table source shared by legacy OpenEnaResult and bound v3 results. */
+export interface OpenEnaResultTableSource {
+  readonly set: {
+    readonly modelType: OpenEnaResult["set"]["modelType"];
+    readonly trajectories?: readonly Row[];
+    readonly points: readonly Row[];
+    readonly lineWeights: readonly Row[];
+    readonly connectionCounts: readonly Row[];
+    readonly pointsForProjection: readonly Row[];
+    readonly centroids?: readonly Row[];
+    readonly rotation: { readonly nodes?: readonly Row[] };
+    readonly adjacencyKey: OpenEnaResult["set"]["adjacencyKey"];
+    readonly conversation: readonly string[];
+  };
+  readonly projectionReference?: unknown;
+}
+
+export type OpenEnaResultTableCsvExport =
+  | { status: "ready"; filename: string; csv: string; reason: null }
+  | { status: "unavailable"; filename: null; csv: null; reason: OpenEnaResultTableUnavailableReason }
+  | { status: "empty"; filename: null; csv: null; reason: null };
+
+export function openEnaResultTableCsvFilename(key: OpenEnaResultTableKey): string {
+  return `open-ena-${key}.csv`;
+}
+
 export interface OpenEnaResultTablesCopy {
   summaryTitle: string;
   summaryDescription: string;
@@ -240,7 +266,9 @@ function openEnaResultTableHeaders(rows: readonly Row[]) {
 
 export function buildOpenEnaResultTableViewModel(input: {
   selectedKey: OpenEnaResultTableKey;
-  tables: Readonly<Record<OpenEnaResultTableKey, readonly Row[]>>;
+  tables?: Readonly<Record<OpenEnaResultTableKey, readonly Row[]>>;
+  rowCounts?: Readonly<Record<OpenEnaResultTableKey, number>>;
+  selectedRows?: readonly Row[];
   availability: Readonly<Record<OpenEnaResultTableKey, OpenEnaResultTableAvailability>>;
   copy: OpenEnaResultTablesCopy;
   idPrefix?: string;
@@ -249,8 +277,12 @@ export function buildOpenEnaResultTableViewModel(input: {
   const idPrefix = input.idPrefix ?? "open-ena-result-table";
   const panelId = `${idPrefix}-panel`;
   const previewLimit = input.previewLimit ?? 100;
+  const countFor = (key: OpenEnaResultTableKey) => (
+    input.rowCounts?.[key] ?? input.tables?.[key]?.length ?? 0
+  );
   const selectedAvailability = input.availability[input.selectedKey];
-  const selectedRows = input.tables[input.selectedKey];
+  const selectedRows = input.selectedRows ?? input.tables?.[input.selectedKey] ?? [];
+  const selectedCount = countFor(input.selectedKey);
   const selectedLabel = input.copy.labels[input.selectedKey];
   const selectedReason = selectedAvailability.reason
     ? input.copy.unavailableReasons[selectedAvailability.reason]
@@ -267,7 +299,7 @@ export function buildOpenEnaResultTableViewModel(input: {
       id: `${idPrefix}-tab-${key}`,
       controls: panelId,
       label: input.copy.labels[key],
-      badge: availability.available ? String(input.tables[key].length) : input.copy.notApplicableShort,
+      badge: availability.available ? String(countFor(key)) : input.copy.notApplicableShort,
       selected: input.selectedKey === key,
       disabled: !availability.available,
       tabIndex: key === rovingKey ? 0 : -1,
@@ -280,11 +312,11 @@ export function buildOpenEnaResultTableViewModel(input: {
     : [];
   const rowSummary = !selectedAvailability.available
     ? ""
-    : selectedRows.length === 0
+    : selectedCount === 0
       ? input.copy.emptyRows
-      : selectedRows.length > previewLimit
-        ? input.copy.showingPreviewRows(previewRows.length, selectedRows.length)
-        : input.copy.showingAllRows(selectedRows.length);
+      : selectedCount > previewLimit
+        ? input.copy.showingPreviewRows(previewRows.length, selectedCount)
+        : input.copy.showingAllRows(selectedCount);
   return {
     summaryTitle: input.copy.summaryTitle,
     summaryDescription: input.copy.summaryDescription,
@@ -299,12 +331,12 @@ export function buildOpenEnaResultTableViewModel(input: {
       available: selectedAvailability.available,
       note: selectedReason ? input.copy.notApplicableNote(selectedLabel, selectedReason) : null,
       tableAriaLabel: input.copy.tableAriaLabel(selectedLabel),
-      headers: selectedAvailability.available ? openEnaResultTableHeaders(selectedRows) : [],
+      headers: selectedAvailability.available ? openEnaResultTableHeaders(previewRows) : [],
       rows: previewRows,
       rowSummary,
     },
     export: {
-      disabled: !selectedAvailability.available || selectedRows.length === 0,
+      disabled: !selectedAvailability.available || selectedCount === 0,
       label: input.copy.exportLabels[input.selectedKey],
       ariaLabel: input.copy.exportAriaLabel(selectedLabel),
     },
@@ -356,7 +388,11 @@ export function rowsToCsv(rows: readonly Row[]): string {
   ].join("\r\n") + "\r\n";
 }
 
-function trajectoryExportRows(result: OpenEnaResult, rows: Row[]): Row[] {
+function limitRows<T>(rows: readonly T[], limit: number | undefined): readonly T[] {
+  return limit == null ? rows : rows.slice(0, limit);
+}
+
+function trajectoryExportRows(result: OpenEnaResultTableSource, rows: readonly Row[]): Row[] {
   if (result.set.modelType === "EndPoint") return rows.map((row) => ({ ...row }));
   return rows.map((row, index) => {
     const trajectory = result.set.trajectories?.[index];
@@ -375,19 +411,86 @@ function trajectoryExportRows(result: OpenEnaResult, rows: Row[]): Row[] {
   });
 }
 
-export function buildResultTables(result: OpenEnaResult) {
+export function openEnaResultTableRowCounts(
+  result: OpenEnaResultTableSource,
+): Record<OpenEnaResultTableKey, number> {
   return {
-    coordinates: trajectoryExportRows(result, result.set.points),
-    lineWeights: trajectoryExportRows(result, result.set.lineWeights),
-    connectionCounts: trajectoryExportRows(result, result.set.connectionCounts),
-    trajectories: trajectoryExportRows(result, result.set.trajectories ?? []),
+    coordinates: result.set.points.length,
+    lineWeights: result.set.lineWeights.length,
+    connectionCounts: result.set.connectionCounts.length,
+    trajectories: result.set.trajectories?.length ?? 0,
+    centroids: result.projectionReference ? 0 : result.set.centroids?.length ?? 0,
+    nodePositions: result.set.rotation.nodes?.length ?? 0,
+    adjacencyKey: result.set.adjacencyKey.length,
+  };
+}
+
+export function buildOpenEnaResultTable(
+  result: OpenEnaResultTableSource,
+  key: OpenEnaResultTableKey,
+  options: { limit?: number } = {},
+): Row[] {
+  const limit = options.limit;
+  switch (key) {
+    case "coordinates":
+      return trajectoryExportRows(result, limitRows(result.set.points, limit));
+    case "lineWeights":
+      return trajectoryExportRows(result, limitRows(result.set.lineWeights, limit));
+    case "connectionCounts":
+      return trajectoryExportRows(result, limitRows(result.set.connectionCounts, limit));
+    case "trajectories":
+      return trajectoryExportRows(result, limitRows(result.set.trajectories ?? [], limit));
+    case "centroids":
+      // jENA projectIn retains target-fitted centroids even though the displayed
+      // nodes come from the fixed reference. Do not export those as if they
+      // described the shown reference geometry.
+      return result.projectionReference
+        ? []
+        : trajectoryExportRows(result, limitRows(result.set.centroids ?? [], limit));
+    case "nodePositions":
+      return limitRows(result.set.rotation.nodes ?? [], limit).map((row) => ({ ...row }));
+    case "adjacencyKey":
+      return limitRows(result.set.adjacencyKey, limit).map((edge) => ({ ...edge }));
+    default: {
+      const exhaustive: never = key;
+      throw new TypeError(`Unhandled result table ${String(exhaustive)}`);
+    }
+  }
+}
+
+export function buildResultTables(result: OpenEnaResultTableSource) {
+  return {
+    coordinates: buildOpenEnaResultTable(result, "coordinates"),
+    lineWeights: buildOpenEnaResultTable(result, "lineWeights"),
+    connectionCounts: buildOpenEnaResultTable(result, "connectionCounts"),
+    trajectories: buildOpenEnaResultTable(result, "trajectories"),
     pointsForProjection: trajectoryExportRows(result, result.set.pointsForProjection),
-    // jENA projectIn retains target-fitted centroids even though the displayed
-    // nodes come from the fixed reference. Do not export those as if they
-    // described the shown reference geometry.
-    centroids: result.projectionReference ? [] : trajectoryExportRows(result, result.set.centroids ?? []),
-    nodePositions: (result.set.rotation.nodes ?? []).map((row) => ({ ...row })),
-    adjacencyKey: result.set.adjacencyKey.map((edge) => ({ ...edge })),
+    centroids: buildOpenEnaResultTable(result, "centroids"),
+    nodePositions: buildOpenEnaResultTable(result, "nodePositions"),
+    adjacencyKey: buildOpenEnaResultTable(result, "adjacencyKey"),
+  };
+}
+
+export function exportOpenEnaResultTableCsv(
+  result: OpenEnaResultTableSource,
+  key: OpenEnaResultTableKey,
+): OpenEnaResultTableCsvExport {
+  const availability = openEnaResultTableAvailability({
+    modelType: result.set.modelType,
+    projectionReference: Boolean(result.projectionReference),
+  })[key];
+  if (!availability.available) {
+    return { status: "unavailable", filename: null, csv: null, reason: availability.reason };
+  }
+  const csv = rowsToCsv(buildOpenEnaResultTable(result, key));
+  if (csv.length === 0) {
+    return { status: "empty", filename: null, csv: null, reason: null };
+  }
+  return {
+    status: "ready",
+    filename: openEnaResultTableCsvFilename(key),
+    csv,
+    reason: null,
   };
 }
 

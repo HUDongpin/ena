@@ -10,7 +10,7 @@ import { getOpenEnaAuthCopy } from "@/lib/open-ena-auth-copy";
 import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
 import OpenEnaPersistentPlotTools from "./OpenEnaPersistentPlotTools";
 import { formatOpenEnaWorkspaceFailureV3, getOpenEnaCopy, type OpenEnaWorkspaceFailureV3 } from "@/lib/open-ena-i18n";
-import { rowsToCsv, resolveOpenEnaPlotExportDimensions, resolveOpenEnaPlotRasterDimensions, openEnaResultTableFocusTarget, resolveOpenEnaResultTableRovingKey, type OpenEnaResultTableKey, type OpenEnaResultTableViewModel } from "@/lib/open-ena/export";
+import { rowsToCsv, resolveOpenEnaPlotExportDimensions, resolveOpenEnaPlotRasterDimensions, openEnaResultTableFocusTarget, resolveOpenEnaResultTableRovingKey, buildOpenEnaResultTable, buildOpenEnaResultTableViewModel, openEnaResultTableAvailability, openEnaResultTableRowCounts, exportOpenEnaResultTableCsv, type OpenEnaResultTableKey, type OpenEnaResultTableViewModel } from "@/lib/open-ena/export";
 import { parseCsv } from "@/lib/open-ena/csv";
 import { parseXlsx, codedDataFileKind } from "@/lib/open-ena/spreadsheet";
 import { sha256TextV3, canonicalJsonV3 } from "@/lib/open-ena/model-v3/canonical-json";
@@ -82,6 +82,14 @@ class OpenEnaKnownWorkspaceFailureV3 extends Error {
     this.name = "OpenEnaKnownWorkspaceFailureV3";
   }
 }
+
+const IDENTITY_BEARING_RESULT_TABLES = new Set<OpenEnaResultTableKey>([
+  "coordinates",
+  "lineWeights",
+  "connectionCounts",
+  "trajectories",
+  "centroids",
+]);
 
 export function confirmOpenEnaIdentityBearingExport(
   confirmExport: (message: string) => boolean,
@@ -170,7 +178,7 @@ export function OpenEnaResultTablesView({
   onExport: () => void;
 }) {
   return (
-    <details className="ena-result-data">
+    <details className="ena-result-data" data-testid="open-ena-result-tables">
       <summary>
         <span>{model.summaryTitle}</span>
         <small>{model.summaryDescription}</small>
@@ -190,9 +198,7 @@ export function OpenEnaResultTablesView({
               tabIndex={tab.key === rovingKey ? 0 : -1}
               title={tab.reason ?? undefined}
               onFocus={() => onRovingKeyChange(tab.key)}
-              onClick={() => {
-                if (!tab.disabled) onSelect(tab.key);
-              }}
+              onClick={() => onSelect(tab.key)}
               onKeyDown={(event) => {
                 const targetKey = openEnaResultTableFocusTarget(
                   model.tabs.map((candidate) => candidate.key),
@@ -213,6 +219,7 @@ export function OpenEnaResultTablesView({
         <button
           type="button"
           className="ena-action-button ena-action-secondary ena-table-export"
+          data-testid="open-ena-result-table-export"
           aria-label={model.export.ariaLabel}
           disabled={model.export.disabled}
           onClick={() => {
@@ -403,6 +410,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const [inferenceDesign, setInferenceDesign] = useState<"independent" | "paired" | "repeated">("independent");
   const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
   const [identityConfirmed, setIdentityConfirmed] = useState(false);
+  const [resultTable, setResultTable] = useState<OpenEnaResultTableKey>("coordinates");
   const [inference, setInference] = useState<{ key: string; value: NativeInferenceV3 } | null>(null);
   const [inferenceBusy, setInferenceBusy] = useState(false);
   const [trajectoryRanks, setTrajectoryRanks] = useState<{ frameKey: string; items: NonNullable<OpenEnaTrajectoryExportOptionsV3["ranks"]> }>({ frameKey: "", items: [] });
@@ -414,6 +422,30 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const latest = useRef({ state, currentPlan, current }); latest.current = { state, currentPlan, current };
   const resultHash = result?.binding.scientificResultSha256 ?? "";
   const presentation = useMemo(() => result ? presentBoundResultV3(result) : null, [result]);
+  const resultTableSource = useMemo(() => result ? {
+    set: result.set,
+    projectionReference: result.executionProvenance.projection.type === "reference" ? true : null,
+  } : null, [result]);
+  const resultTableAvailability = useMemo(() => resultTableSource ? openEnaResultTableAvailability({
+    modelType: resultTableSource.set.modelType,
+    projectionReference: Boolean(resultTableSource.projectionReference),
+  }) : null, [resultTableSource]);
+  const resultTableRowCounts = useMemo(() => resultTableSource ? openEnaResultTableRowCounts(resultTableSource) : null, [resultTableSource]);
+  const resultTablePreviewRows = useMemo(() => {
+    if (!resultTableSource || !resultTableAvailability?.[resultTable].available) return [];
+    return buildOpenEnaResultTable(resultTableSource, resultTable, { limit: 100 });
+  }, [resultTableSource, resultTableAvailability, resultTable]);
+  const resultTableViewModel = useMemo(() => {
+    if (!resultTableRowCounts || !resultTableAvailability) return null;
+    const model = buildOpenEnaResultTableViewModel({
+      selectedKey: resultTable,
+      rowCounts: resultTableRowCounts,
+      selectedRows: resultTablePreviewRows,
+      availability: resultTableAvailability,
+      copy: copy.resultTables,
+    });
+    return current ? model : { ...model, export: { ...model.export, disabled: true } };
+  }, [resultTableRowCounts, resultTableAvailability, resultTable, resultTablePreviewRows, copy.resultTables, current]);
   const completedResultKind = result?.configuration.analysisFamily;
   const supportedAxes = presentation?.result.dimensions ?? [];
   const twoDAxes = axes.length === 2 && axes.every((axis) => supportedAxes.includes(axis)) ? axes : supportedAxes.slice(0, 2);
@@ -947,6 +979,15 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
           <button type="button" disabled={!current} onClick={() => void attempt(async () => { const value = await buildOnaBoundViewV3(result, currentPlan, primaryGroupName || null); if (latest.current.current && latest.current.state.model.result === result) downloadText("ona-aggregate-edges.csv", rowsToCsv(value.edges), "text/csv"); })}>{workspaceCopy.stats.exportOnaEdges}</button>
           <button type="button" disabled={!current} onClick={() => void attempt(async () => { const value = await buildOnaBoundViewV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && window.confirm(copy.ona.exports.auditConfirmation)) downloadJson("ona-deidentified-audit.json", { binding: value.binding, audit: value.audit, meaning: value.meaning }); })}>{workspaceCopy.stats.exportOnaAudit}</button><p>{copy.ona.exports.auditWarning}</p></>}
         </OpenEnaNativeStatsPanelV3>
+        {resultTableViewModel && resultTableSource && <OpenEnaResultTables model={resultTableViewModel} onSelect={setResultTable} onExport={() => {
+          if (!current || resultTableViewModel.export.disabled) return;
+          const exported = exportOpenEnaResultTableCsv(resultTableSource, resultTable);
+          if (exported.status !== "ready") return;
+          if (!latest.current.current || latest.current.state.model.result !== result) return;
+          const publish = () => downloadText(exported.filename, exported.csv, "text/csv;charset=utf-8");
+          if (IDENTITY_BEARING_RESULT_TABLES.has(resultTable)) confirmOpenEnaIdentityBearingExport((message) => window.confirm(message), copy.stats.identityExportConfirmation, publish);
+          else publish();
+        }} />}
         {activeInference && <><button type="button" onClick={() => void attempt(async () => { const file = await exportNativeStatisticsV3(activeInference, result, currentPlan, controls!); if (consumerKey === consumerKeyRef.current) downloadText(file.filename, file.contents, file.mimeType); })}>{workspaceCopy.stats.exportNative}</button></>}
         {historicalData && <details className="ena-panel-details"><summary>{workspaceCopy.stats.localDataView}</summary><ResearchTableV3 {...researchTableCopy} rows={historicalData.rows} label={workspaceCopy.stats.localDataView} columnLabels={{ [historicalData.metadataColumns.trajectoryOrdinal]: workspaceCopy.dataView.metadataLabels.trajectoryOrdinal, [historicalData.metadataColumns.observedHorizons]: workspaceCopy.dataView.metadataLabels.observedHorizons, [historicalData.metadataColumns.observedSourceRowIndices]: workspaceCopy.dataView.metadataLabels.observedSourceRowIndices }} /><p>{workspaceCopy.dataView.sourceIndexMeaning}</p><ResearchTableV3 {...researchTableCopy} rows={historicalData.sourceTraversal} label={workspaceCopy.stats.globalTraversal} columnLabels={workspaceCopy.dataView.sourceTraversalLabels} />
           <button type="button" disabled={!current} onClick={() => void attempt(async () => { if (!result || !currentPlan) return; const value = await buildDataViewV3(result, currentPlan); if (!latest.current.current || latest.current.state.model.result !== result) return; if (window.confirm(workspaceCopy.stats.exportDataViewConfirmation)) downloadText("bound-data-view.csv", rowsToCsv(value.rows), "text/csv"); })}>{workspaceCopy.stats.exportDataView}</button></details>}

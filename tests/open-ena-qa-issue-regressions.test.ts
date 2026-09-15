@@ -11,10 +11,14 @@ import {
   updateOpenEnaWorkspace3dAxis,
 } from "../lib/open-ena/plot3d";
 import {
+  buildOpenEnaResultTable,
   buildOpenEnaResultTableViewModel,
+  exportOpenEnaResultTableCsv,
   OPEN_ENA_RESULT_TABLE_KEYS,
   openEnaResultTableAvailability,
+  openEnaResultTableCsvFilename,
   openEnaResultTableFocusTarget,
+  openEnaResultTableRowCounts,
   resolveOpenEnaResultTableRovingKey,
   type OpenEnaResultTableKey,
 } from "../lib/open-ena/export";
@@ -444,6 +448,75 @@ test("result-table view model and static markup keep localized unavailable tabs 
   assert.ok(unavailableTab.includes('aria-describedby="open-ena-result-table-reason-trajectories"'));
   assert.ok(unavailableTab.includes('tabindex="-1"'));
   assert.doesNotMatch(unavailableTab, /\sdisabled(?:=|\s|>)/u);
+  const exportButton = html.match(/<button[^>]*data-testid="open-ena-result-table-export"[^>]*>/u)?.[0] ?? "";
+  assert.match(exportButton, /\sdisabled(?:=|\s|>)/u);
+  assert.match(html, /data-testid="open-ena-result-tables"/u);
+});
+
+test("workspace restores result-table export wiring without the empty-CSV download path", () => {
+  assert.equal(openEnaResultTableCsvFilename("trajectories"), "open-ena-trajectories.csv");
+  assert.match(workspace, /<OpenEnaResultTables/);
+  assert.match(workspace, /exportOpenEnaResultTableCsv/);
+  assert.match(workspace, /onClick=\{\(\) => onSelect\(tab\.key\)\}/);
+  assert.match(workspace, /buildOpenEnaResultTable\(resultTableSource, resultTable, \{ limit: 100 \}\)/);
+  assert.match(workspace, /openEnaResultTableRowCounts/);
+  assert.doesNotMatch(workspace, /buildResultTables/);
+  assert.match(workspace, /if \(!current \|\| resultTableViewModel\.export\.disabled\) return;/);
+  assert.match(workspace, /!latest\.current\.current \|\| latest\.current\.state\.model\.result !== result/);
+  assert.doesNotMatch(workspace, /rowsToCsv\(tableMap/);
+  assert.equal(typeof exportOpenEnaResultTableCsv, "function");
+});
+
+test("result-table preview uses bounded selected rows while export stays enabled for the full count", () => {
+  const availability = openEnaResultTableAvailability({
+    modelType: "SeparateTrajectory",
+    projectionReference: false,
+  });
+  const model = buildOpenEnaResultTableViewModel({
+    selectedKey: "trajectories",
+    rowCounts: {
+      coordinates: 250,
+      lineWeights: 250,
+      connectionCounts: 250,
+      trajectories: 250,
+      centroids: 2,
+      nodePositions: 5,
+      adjacencyKey: 10,
+    },
+    selectedRows: [{ unit: "u1", step: 0 }, { unit: "u1", step: 1 }],
+    availability,
+    copy: getOpenEnaCopy("en").resultTables,
+    previewLimit: 100,
+  });
+  assert.equal(model.tabs.find((tab) => tab.key === "trajectories")?.badge, "250");
+  assert.equal(model.panel.rows.length, 2);
+  assert.equal(model.export.disabled, false);
+  assert.match(model.panel.rowSummary, /2/);
+  assert.match(model.panel.rowSummary, /250/);
+});
+
+test("single-table builder materializes only the requested key and honors preview limits", () => {
+  const source = {
+    set: {
+      modelType: "SeparateTrajectory" as const,
+      trajectories: [{ unit: "u1", h: "h1" }, { unit: "u1", h: "h2" }, { unit: "u2", h: "h1" }],
+      points: [{ unit: "u1" }, { unit: "u1" }, { unit: "u2" }],
+      lineWeights: [{ unit: "u1", w: 1 }, { unit: "u1", w: 2 }, { unit: "u2", w: 3 }],
+      connectionCounts: [{ unit: "u1" }, { unit: "u1" }, { unit: "u2" }],
+      pointsForProjection: [{ unit: "u1" }, { unit: "u1" }, { unit: "u2" }],
+      centroids: [{ group: "g1" }],
+      rotation: { nodes: [{ code: "A" }, { code: "B" }] },
+      adjacencyKey: [
+        { source: "A", target: "B", name: "A~B", sourceIndex: 0, targetIndex: 1 },
+      ],
+      conversation: ["h"],
+    },
+  };
+  assert.deepEqual(openEnaResultTableRowCounts(source).trajectories, 3);
+  const preview = buildOpenEnaResultTable(source, "trajectories", { limit: 1 });
+  assert.equal(preview.length, 1);
+  const full = buildOpenEnaResultTable(source, "trajectories");
+  assert.equal(full.length, 3);
 });
 
 test("generic 3D display axes stay separate from 2D inference and AI controls", () => {
