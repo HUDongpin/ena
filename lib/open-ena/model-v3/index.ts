@@ -68,6 +68,10 @@ export type {
 } from "./identity";
 
 export { migrateLegacyOpenEnaConfigToDraftV3 } from "./migration";
+export {
+  isUnseededOrderedNetworkDraftV3,
+  seedOrderedNetworkDraftFromStandardV3,
+} from "./ona-draft";
 export type {
   MigratedModelDraftV3,
   MigrationReviewReasonV3,

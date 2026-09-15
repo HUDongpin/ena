@@ -132,7 +132,20 @@ export function createWorkspaceStateV3(input?: { dataset: ParsedDataset; dataset
 
 export function workspaceReducerV3(state: WorkspaceStateV3, action: WorkspaceActionV3): WorkspaceStateV3 {
   switch (action.type) {
-    case "model": return reconcileRaw({ ...state, progress: action.action.type === "mark-running" ? null : state.progress, model: modelStateReducerV3(state.model, action.action) });
+    case "model": {
+      const model = modelStateReducerV3(state.model, action.action);
+      const seededOnaWindows = action.action.type === "set-active-family"
+        && model.drafts.ona !== state.model.drafts.ona;
+      const raw = seededOnaWindows
+        ? { ...state.raw, windows: { ...state.raw.windows, ona: rawEditors(model.drafts).windows.ona } }
+        : state.raw;
+      return reconcileRaw({
+        ...state,
+        progress: action.action.type === "mark-running" ? null : state.progress,
+        model,
+        raw,
+      });
+    }
     case "windows-raw": return reconcileRaw({ ...state, raw: { ...state.raw, windows: action.value } });
     case "horizon-raw": return reconcileRaw({ ...state, raw: { ...state.raw, horizonOrder: action.value } });
     case "install-source": {
@@ -140,7 +153,7 @@ export function workspaceReducerV3(state: WorkspaceStateV3, action: WorkspaceAct
       model = modelStateReducerV3(model, { type: "replace-standard-draft", draft: action.drafts.standard });
       model = modelStateReducerV3(model, { type: "replace-ona-draft", draft: action.drafts.ona });
       model = modelStateReducerV3(model, { type: "set-active-family", family: action.drafts.activeFamily });
-      const next = reconcileRaw({ ...state, dataset: action.dataset, model, presetHiddenGroups: null, raw: rawEditors(action.drafts), compilation: null, preview: null, error: null, autoRunIntent: null });
+      const next = reconcileRaw({ ...state, dataset: action.dataset, model, presetHiddenGroups: null, raw: rawEditors(model.drafts), compilation: null, preview: null, error: null, autoRunIntent: null });
       return { ...next, autoRunIntent: action.autoRun ? modelScientificContextV3(next.model) : null };
     }
     case "clear-auto-run-intent": return state.autoRunIntent ? { ...state, autoRunIntent: null } : state;

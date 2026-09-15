@@ -337,6 +337,30 @@ test("ONA compilation rejects missing fixed-contract fields and disguised Standa
   const noOrder = await compileOnaDraftV3(dataset(), DATASET_SHA256, onaDraft({ rowOrder: null }));
   assert.equal(noOrder.status, "invalid");
   assert.equal(noOrder.canonicalConfiguration, null);
+  assert.equal(noOrder.diagnostics.some((entry) => entry.id === "ONA_ORDER_INVALID"), true);
+  assert.equal(noOrder.diagnostics.some((entry) => entry.id === "ONA_DRAFT_INVALID"), false);
+
+  const noMask = await compileOnaDraftV3(dataset(), DATASET_SHA256, onaDraft({ directionalMask: null }));
+  assert.equal(noMask.status, "invalid");
+  assert.equal(noMask.diagnostics.some((entry) => entry.id === "ONA_DRAFT_INVALID"), true);
+
+  const empty = await compileOnaDraftV3(dataset(), DATASET_SHA256, {
+    unitColumns: [],
+    horizonColumns: [],
+    groupColumn: null,
+    codes: [],
+    backward: { kind: "finite", value: 1 },
+    rowOrder: null,
+    directionalMask: null,
+  });
+  assert.equal(empty.status, "invalid");
+  assert.deepEqual(empty.diagnostics.map((entry) => entry.id).sort(), [
+    "ONA_DATASET_FIELD_INVALID",
+    "ONA_DATASET_FIELD_INVALID",
+    "ONA_DATASET_FIELD_INVALID",
+    "ONA_DRAFT_INVALID",
+    "ONA_ORDER_INVALID",
+  ].sort());
 
   const disguised = {
     ...onaDraft(),
@@ -347,6 +371,7 @@ test("ONA compilation rejects missing fixed-contract fields and disguised Standa
   const leaked = await compileOnaDraftV3(dataset(), DATASET_SHA256, disguised);
   assert.equal(leaked.status, "invalid");
   assert.equal(leaked.canonicalConfiguration, null);
+  assert.equal(leaked.diagnostics.some((entry) => entry.id === "ONA_DRAFT_INVALID"), true);
 });
 
 test("the v3 barrel exposes curated APIs without internal snapshots or early-envelope telemetry", () => {
@@ -360,6 +385,7 @@ test("the v3 barrel exposes curated APIs without internal snapshots or early-env
     "estimateOnaResourcesV3",
     "decodeCanonicalStandardConfigV3",
     "decodeCanonicalOnaConfigV3",
+    "seedOrderedNetworkDraftFromStandardV3",
   ]) {
     assert.equal(keys.includes(expected), true, `missing curated v3 export ${expected}`);
   }

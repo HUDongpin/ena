@@ -78,6 +78,25 @@ test("legacy Standard migration preserves known scientific fields, maps sum to F
   assert.deepEqual(input, before);
   assert.equal(Object.isFrozen(migrated), true);
   assert.equal(Object.isFrozen(migrated.standard.codes), true);
+  assert.deepEqual(migrated.ona.unitColumns, migrated.standard.unitColumns);
+  assert.deepEqual(migrated.ona.horizonColumns, migrated.standard.horizonColumns);
+  assert.equal(migrated.ona.groupColumn, migrated.standard.groupColumn);
+  assert.deepEqual(migrated.ona.codes, migrated.standard.codes);
+  assert.deepEqual(migrated.ona.backward, migrated.standard.movingStanza.backward);
+  assert.equal(migrated.ona.rowOrder, null);
+  assert.deepEqual(migrated.ona.directionalMask, {
+    schemaVersion: 1,
+    codeOrder: ["A", "B", "C", "D"],
+    enabled: [
+      [true, true, true, true],
+      [true, true, true, true],
+      [true, true, true, true],
+      [true, true, true, true],
+    ],
+  });
+  assert.equal("model" in migrated.ona, false);
+  assert.equal("weighting" in migrated.ona, false);
+  assert.equal("rotation" in migrated.ona, false);
 });
 
 test("legacy Conversation EndPoint migration does not invent inactive ordering confirmations", () => {

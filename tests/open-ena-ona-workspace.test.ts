@@ -20,6 +20,8 @@ test("ONA has an independent native draft, explicit family switch, and scientifi
   assert.match(owner, /set-active-family/);
   assert.match(v3, /directionalMask/);
   assert.match(owner, /buildOnaExecutionPlanV3/);
+  assert.match(readFileSync(new URL("../components/open-ena/model-v3/model-state.ts", import.meta.url), "utf8"), /seedOrderedNetworkDraftFromStandardV3/);
+  assert.match(owner, /seededOnaWindows/);
   assert.doesNotMatch(v3, /updateOnaOrderPanel|coerceSelectedCodes/);
 
 });
@@ -88,4 +90,6 @@ test("English, Traditional Chinese, and Simplified Chinese ONA research copy is 
   assert.match(i18n, /顺序网络分析/);
   assert.match(i18n, /ground\/source/);
   assert.match(i18n, /來源\/ground|來源碼|源码|source\/ground/);
+  assert.doesNotMatch(i18n, /Restore fixed End Point, SVD, Frequency-sum, backward-only, and mask fields/);
+  assert.match(i18n, /Initialize the directional mask from selected Codes/);
 });
