@@ -68,11 +68,6 @@ const nextConfig: NextConfig = {
       { source: "/plugin-lab/:slug*", destination: "/en/plugins/:slug*", permanent: false },
       { source: "/:locale/plugin-lab", destination: "/:locale/plugins", permanent: false },
       { source: "/:locale/plugin-lab/:slug*", destination: "/:locale/plugins/:slug*", permanent: false },
-      // Canonicalize common mixed-case Chinese locale spellings (#37).
-      { source: "/zh-Hant", destination: "/zh-hant", permanent: false },
-      { source: "/zh-Hant/:path*", destination: "/zh-hant/:path*", permanent: false },
-      { source: "/zh-Hans", destination: "/zh-hans", permanent: false },
-      { source: "/zh-Hans/:path*", destination: "/zh-hans/:path*", permanent: false },
       { source: "/news", destination: "/en/news", permanent: false },
       { source: "/academy", destination: "/en/academy", permanent: false },
       { source: "/academy/:slug*", destination: "/en/academy/:slug*", permanent: false },
