@@ -167,6 +167,11 @@ test("Open ENA code-color desktop geometry preserves the official paired-preset 
   assert.match(error, /color:\s*#a32626;/u);
   assert.match(error, /font-size:\s*11px;/u);
   assert.match(error, /line-height:\s*1\.3;/u);
+  assert.doesNotMatch(
+    rule(".ena-control-panel"),
+    /z-index:/u,
+    "numeric panel stacking would trap the fallback overlay inside the 380px column",
+  );
   const fallback = rule(".ena-code-color-dialog[data-ena-dialog-fallback=\"true\"]");
   assert.match(fallback, /position:\s*fixed;/u);
   assert.match(fallback, /inset:\s*0;/u);
