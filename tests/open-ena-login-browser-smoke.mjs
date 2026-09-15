@@ -313,6 +313,12 @@ async function auditAuthentication(browser, { loginUrl, password, redact, userna
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.locator(".open-ena-workbench").waitFor({ state: "visible", timeout: 30_000 });
 
+    await page.getByRole("button", { name: "Sign out" }).click({ noWaitAfter: true });
+    await page.locator(".open-ena-login-form").waitFor({ state: "visible", timeout: 30_000 });
+    assert.equal(await page.locator(".open-ena-workbench").count(), 0);
+    const sessionCookie = (await context.cookies()).find((cookie) => cookie.name === "open-ena-session");
+    assert.ok(!sessionCookie || sessionCookie.value === "", "sign out must clear the open-ena-session cookie");
+
     assertNoBrowserErrors(messages, "authentication audit");
     return { warningCount: messages.warnings.length };
   } finally {

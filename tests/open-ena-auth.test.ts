@@ -393,7 +393,9 @@ test("login and logout handlers use a hardened HttpOnly session cookie", () => {
   assert.match(loginRoute, /sameSite:\s*"lax"/);
   assert.match(loginRoute, /secure:\s*(?:process\.env|environment)\.NODE_ENV === "production"/);
   assert.match(logoutRoute, /maxAge:\s*0/);
+  assert.match(logoutRoute, /expires:\s*new Date\(0\)/);
   assert.match(logoutRoute, /OPEN_ENA_SESSION_COOKIE/);
+  assert.match(logoutRoute, /revalidatePath\(`\/\$\{locale\}\/open-ena`\)/);
 });
 
 test("same-origin form posts require an operator-owned origin list when Next uses an internal origin", async () => {
@@ -447,9 +449,88 @@ test("the authenticated workbench provides a localized POST logout control", () 
     join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"),
     "utf8",
   );
+  const navigation = readFileSync(
+    join(projectRoot, "lib", "open-ena-logout-navigation.ts"),
+    "utf8",
+  );
 
   assert.match(workspace, /action="\/api\/open-ena\/logout"/);
   assert.match(workspace, /method="post"/);
   assert.match(workspace, /name="locale" value=\{locale\}/);
   assert.match(workspace, /authCopy\.signOut/);
+  assert.match(workspace, /onSubmit=\{submitOpenEnaLogoutAsDocumentRequest\}/);
+  assert.match(navigation, /form\.submit\(\)/);
+  assert.match(navigation, /setAttribute\("method", "post"\)/);
+});
+
+test("sign-out performs a document POST with the route locale and does not fire submit", async () => {
+  const navigation = await import("../lib/open-ena-logout-navigation");
+  const submitted: Array<{ tag: string; attributes: Record<string, string>; children: string[] }> = [];
+  let submitCount = 0;
+
+  type OpenEnaLogoutNode = {
+    tag: string;
+    attributes: Record<string, string>;
+    children: OpenEnaLogoutNode[];
+    setAttribute(name: string, value: string): void;
+    appendChild(node: OpenEnaLogoutNode): OpenEnaLogoutNode;
+    submit(): void;
+  };
+
+  function createNode(tag: string): OpenEnaLogoutNode {
+    const node: OpenEnaLogoutNode = {
+      tag,
+      attributes: {},
+      children: [],
+      setAttribute(name, value) {
+        node.attributes[name] = value;
+      },
+      appendChild(child) {
+        node.children.push(child);
+        return child;
+      },
+      submit() {
+        submitCount += 1;
+        submitted.push({
+          tag: node.tag,
+          attributes: { ...node.attributes },
+          children: node.children.map((child) => `${child.tag}:${child.attributes.name}=${child.attributes.value}`),
+        });
+      },
+    };
+    return node;
+  }
+
+  const body = createNode("body");
+  let prevented = false;
+  let stopped = false;
+  navigation.submitOpenEnaLogoutAsDocumentRequest(
+    {
+      preventDefault() { prevented = true; },
+      stopPropagation() { stopped = true; },
+      currentTarget: {
+        getAttribute(name) {
+          return name === "action" ? "/api/open-ena/logout" : null;
+        },
+        elements: {
+          namedItem(name) {
+            return name === "locale" ? { value: "zh-hant" } : null;
+          },
+        },
+      },
+    },
+    {
+      createElement: createNode,
+      body,
+    },
+  );
+
+  assert.equal(prevented, true);
+  assert.equal(stopped, true);
+  assert.equal(submitCount, 1);
+  assert.equal(submitted[0]?.tag, "form");
+  assert.equal(submitted[0]?.attributes.action, "/api/open-ena/logout");
+  assert.equal(submitted[0]?.attributes.method, "post");
+  assert.deepEqual(submitted[0]?.children, ["input:locale=zh-hant"]);
+  assert.equal(body.children[0]?.tag, "form");
 });

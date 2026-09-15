@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 import { isLocale, type Locale } from "@/lib/i18n";
 import {
@@ -20,6 +21,7 @@ type LogoutRouteDependencies = {
   environment?: OpenEnaAuthEnvironment;
   securityStoreFactory?: () => Promise<OpenEnaAuthSecurityStore | null>;
   now?: () => number;
+  revalidateOpenEnaWorkspace?: (locale: Locale) => void;
 };
 
 class LogoutBodyTooLargeError extends Error {}
@@ -90,6 +92,7 @@ function clearSessionCookie(response: NextResponse, environment: OpenEnaAuthEnvi
     secure: environment.NODE_ENV === "production",
     path: "/",
     maxAge: 0,
+    expires: new Date(0),
   });
 }
 
@@ -98,6 +101,7 @@ export function createOpenEnaLogoutPostHandler(dependencies: LogoutRouteDependen
   const securityStoreFactory = dependencies.securityStoreFactory
     ?? (() => createProductionOpenEnaAuthSecurityStore(environment));
   const now = dependencies.now ?? (() => Date.now());
+  const revalidateOpenEnaWorkspace = dependencies.revalidateOpenEnaWorkspace;
 
   return async function handleOpenEnaLogoutPost(request: Request) {
     const requestOrigin = resolveOpenEnaRequestOrigin(
@@ -140,12 +144,17 @@ export function createOpenEnaLogoutPostHandler(dependencies: LogoutRouteDependen
     }
     const response = NextResponse.redirect(new URL(`/${locale}/open-ena`, requestOrigin), { status: 303 });
     clearSessionCookie(response, environment);
+    revalidateOpenEnaWorkspace?.(locale);
     response.headers.set("Cache-Control", "no-store");
     return response;
   };
 }
 
-const productionPostHandler = createOpenEnaLogoutPostHandler();
+const productionPostHandler = createOpenEnaLogoutPostHandler({
+  revalidateOpenEnaWorkspace(locale) {
+    revalidatePath(`/${locale}/open-ena`);
+  },
+});
 
 export async function POST(request: NextRequest) {
   return productionPostHandler(request);
