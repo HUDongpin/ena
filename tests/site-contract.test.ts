@@ -258,6 +258,18 @@ test("the locale route tree includes reviewed News and Academy details", () => {
   assert.equal(existsSync(join(projectRoot, "app", "[locale]", "academy", "[slug]", "page.tsx")), true);
 });
 
+test("News and Academy empty states do not ship the unused EmptyCollection surface", () => {
+  assert.equal(existsSync(join(projectRoot, "components", "EmptyCollection.tsx")), false);
+  const css = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
+  assert.doesNotMatch(css, /\.empty-(?:section|visual|frame|accent|faint|node|copy|note)\b/);
+  const news = readFileSync(join(projectRoot, "app", "[locale]", "news", "page.tsx"), "utf8");
+  const academy = readFileSync(join(projectRoot, "app", "[locale]", "academy", "page.tsx"), "utf8");
+  assert.match(news, /news-no-results/);
+  assert.match(academy, /news-no-results/);
+  assert.doesNotMatch(news, /EmptyCollection/);
+  assert.doesNotMatch(academy, /EmptyCollection/);
+});
+
 test("ENA logo assets use the Baby Blue palette and remain free of AIEDHK branding", () => {
   for (const filename of ["ena-mark.svg", "ena-logo.svg"]) {
     const path = join(projectRoot, "public", filename);
