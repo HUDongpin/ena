@@ -835,10 +835,10 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
       onClick={() => { setError(null); controller.run(); }}>
       {result ? copy.model.rerun : copy.model.run}<span aria-hidden="true">→</span>
     </button>
-    {modelState.runStatus === "running" && <>
+    {modelState.runStatus === "running" && <div className="ena-model-run-progress">
       <p role="status" aria-live="polite"><progress max={100} value={state.progress?.value ?? 0} />{state.progress ? workspaceCopy.workerStage(state.progress.stage) : workspaceCopy.startingWorker}</p>
-      <button type="button" className="ena-action-button ena-action-secondary ena-model-cancel-button" onClick={controller.cancel}>{workspaceCopy.cancelRun}</button>
-    </>}
+      <button type="button" className="ena-action-button ena-action-secondary ena-model-cancel-button" data-testid="open-ena-cancel-run" onClick={controller.cancel}>{workspaceCopy.cancelRun}</button>
+    </div>}
   </div>;
   const analysisPanel = <div className={`ena-control-content ena-workspace-controls-v3 ena-restored-workbench${mode === "model" ? " ena-model-control-content" : ""}`} data-mode={mode} lang={locale} dir="ltr">
       <header className="ena-panel-heading">
