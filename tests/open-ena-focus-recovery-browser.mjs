@@ -95,8 +95,9 @@ try {
   });
   await capture.focus();
   await page.keyboard.press("Enter");
-  const remove = page.getByRole("button", { name: /^Remove / });
+  const remove = page.locator("[data-ena-set-remove]");
   await remove.waitFor();
+  assert.equal(await remove.count(), 1, "capture must retain exactly one analysis set");
   await remove.focus();
   assert.match(await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? ""), /^Remove /);
   await page.keyboard.press("Enter");

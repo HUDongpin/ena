@@ -38,6 +38,7 @@ test("the focus-recovery harness proves Escape and Remove under Strict Mode", ()
   assert.match(browser, /<React\.StrictMode>/u);
   assert.match(browser, /keyboard\.press\("Escape"\)/u);
   assert.match(browser, /keyboard\.press\("Enter"\)/u);
+  assert.match(browser, /data-ena-set-remove/u);
   assert.match(browser, /Minimum edge weight/u);
   assert.match(browser, /aria-label"\) === "Plot Settings"/u);
   assert.match(browser, /activeElement\?\.id === "open-ena-capture-set"/u);

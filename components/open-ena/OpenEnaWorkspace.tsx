@@ -684,7 +684,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     );
     setSets(remaining);
     setSetComparison((value) => (
-      value && (value.primary.id === setId || value.secondary.id === setId) ? null : value
+      value && (value.primary.setId === setId || value.secondary.setId === setId) ? null : value
     ));
   }
   function onSourceDialogKeyDown(event: KeyboardEvent<HTMLElement>) {
