@@ -113,6 +113,28 @@ try {
   await page.waitForFunction(() => window.jobs[2]?.signal?.aborted === true);
   assert.equal(await page.getByTestId("open-ena-workspace-v3").getAttribute("data-run-status"), "cancelled");
   assert.equal(await page.evaluate((before) => JSON.stringify(window.jobs[0].result) === before, scientificBefore), true);
+
+  const fallbackHit = await page.evaluate(() => {
+    const panel = document.querySelector(".ena-control-panel");
+    if (!(panel instanceof HTMLElement)) return { hitDialog: false, reason: "missing-panel" };
+    const overlay = document.createElement("div");
+    overlay.className = "ena-code-color-dialog";
+    overlay.setAttribute("data-ena-dialog-fallback", "true");
+    panel.appendChild(overlay);
+    const top = document.elementFromPoint(2, 2);
+    return {
+      hitDialog: top === overlay,
+      tag: top?.tagName ?? null,
+      className: typeof top?.className === "string" ? top.className : null,
+      fallback: top instanceof Element ? top.getAttribute("data-ena-dialog-fallback") : null,
+    };
+  });
+  assert.equal(
+    fallbackHit.hitDialog,
+    true,
+    `code-color fallback overlay must own viewport (2, 2) from inside the control panel: ${JSON.stringify(fallbackHit)}`,
+  );
+
   assert.deepEqual(errors, []);
   console.log("rebuild Cancel pointer hit-target and keyboard preservation PASS");
 } catch (error) {

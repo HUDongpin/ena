@@ -85,6 +85,8 @@ test("the rebuild-cancel pointer harness proves the hit target and preserves the
   assert.match(workflow, /npm run test:browser:open-ena-rebuild-cancel-pointer/u);
   assert.match(browser, /viewport:\s*\{\s*width:\s*1440,\s*height:\s*900\s*\}/u);
   assert.match(browser, /elementFromPoint/u);
+  assert.match(browser, /elementFromPoint\(2,\s*2\)/u);
+  assert.match(browser, /data-ena-dialog-fallback/u);
   assert.match(browser, /getByTestId\("open-ena-cancel-run"\)/u);
   assert.match(browser, /force:\s*false/u);
   assert.match(browser, /keyboard\.press\("Enter"\)/u);
