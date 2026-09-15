@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { installPlotlyResourceAuditV3, checkPlotlyResourceLifecycleV3 } from "./helpers/open-ena-plotly-resource-audit-v3.mjs";
 import { createServedBrowserV3, literalGit } from "./helpers/open-ena-served-browser-v3.mjs";
-import { prepareNativeFixtureV3, runNativeFixtureV3, nativeFixtureIdentitiesV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
+import { prepareNativeFixtureV3, runNativeFixtureV3, nativeFixtureIdentitiesV3, initializeOnaMaskIfNeededV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
 import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import {
@@ -514,7 +514,6 @@ async function runSyntheticLane(page, args) {
   await prepareNativeFixtureV3(page, { family: "ona", backward: args.rowsPerUnit });
   const modelTabs = page.getByRole("tablist", { name: "Model configuration" });
   await modelTabs.getByRole("tab", { name: /^Codes(,|$)/ }).click();
-  await page.getByRole("button", { name: "Initialize explicit all-enabled mask", exact: true }).click();
   const maskCell = page.getByRole("checkbox", { name: args.maskedDirection, exact: true });
   assertBrowser(await maskCell.isChecked(), "the synthetic masked direction did not start enabled");
   await maskCell.uncheck();
@@ -789,7 +788,7 @@ async function runYuPrivateLane(page, args) {
     await page.getByRole("toolbar", { name: "Code actions", exact: true }).getByRole("button", { name: "Manage Codes", exact: true }).click();
     for (const code of ["EC", "ICT", "MCO", "NI", "SR", "SC", "ATT"]) await page.getByRole("checkbox", { name: `Select ${code} as a Code`, exact: true }).check();
     await button("Close Code manager").click();
-    await button("Initialize explicit all-enabled mask").click();
+    await initializeOnaMaskIfNeededV3(page);
     const mask = page.getByRole("group", { name: "ONA directional mask", exact: true });
     check(await mask.getByRole("checkbox").count() === 49 && await mask.getByRole("checkbox", { checked: true }).count() === 49, "private full all-enabled49-cell mask required");
     stage = "private setup Windows";

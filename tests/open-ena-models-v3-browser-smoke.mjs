@@ -549,7 +549,8 @@ async function journeys() {
         for (const code of ["TE", "EX", "IN", "RE", "SP", "TP"])
             await page.getByLabel(`Select ${code} as a Code`, { exact: true }).check();
         await button("Close Code manager").click();
-        await button("Initialize explicit all-enabled mask").click();
+        const initializeMask = button("Initialize explicit all-enabled mask");
+        if (await initializeMask.count()) await initializeMask.click();
         await page.getByLabel("TE → EX", { exact: true }).uncheck();
         await button("Reorder TE").focus();
         await page.keyboard.press("Alt+ArrowDown");
