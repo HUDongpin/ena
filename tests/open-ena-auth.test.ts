@@ -198,7 +198,7 @@ test("one semantic fallback notice remains visible before and after sign-in", as
     assert.match(markup, /data-testid="open-ena-fallback-notice"/);
     assert.match(markup, new RegExp(`lang="${meta.htmlLang}"`));
     assert.match(markup, new RegExp(`dir="${meta.dir}"`));
-    assert.match(markup, new RegExp(notice.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+    assert.match(markup, englishWorkbenchMarkerByLocale[locale]);
   }
 
   assert.equal(seenNotices.size, 11);
