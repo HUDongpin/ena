@@ -820,7 +820,7 @@ export function OpenEnaWindowsPanelV3({
             copy={copy}
             onChange={(raw, extent) => updateStandardExtent("forward", raw, extent)}
           />
-          <details className="ena-panel-details ena-row-order-disclosure" open={draft.movingStanza.rowOrder === null}>
+          <details className="ena-panel-details ena-row-order-disclosure" open={draft.movingStanza.rowOrder === null || blockers.rowOrder}>
           <summary>{copy.rowOrder}</summary>
           <OpenEnaOrderPolicyEditorV3
             label={copy.rowOrder}

@@ -4,6 +4,14 @@ export async function initializeOnaMaskIfNeededV3(page) {
   if (await initialize.count()) await initialize.click();
 }
 
+async function setExactParentLabeledCheckboxes(scope, names) {
+  for (const checkbox of await scope.getByRole("checkbox").all()) {
+    const label = await checkbox.evaluate(node => node.parentElement.textContent.trim());
+    if (names.includes(label)) await checkbox.check();
+    else await checkbox.uncheck();
+  }
+}
+
 export async function prepareNativeFixtureV3(page, { codes = ["CODE_A", "CODE_B", "CODE_C", "CODE_D", "CODE_E"], family = "standard", sourcePreparation = true, units = ["Group", "Name"], horizons = ["Conversation"], group = "Group", backward = 5 } = {}) {
   const tab = name => page.getByRole("tab", { name: new RegExp(`^${name}(,|$)`) });
   const button = name => page.getByRole("button", { name, exact: true });
@@ -20,14 +28,15 @@ export async function prepareNativeFixtureV3(page, { codes = ["CODE_A", "CODE_B"
   await tab("Units").click();
   const unitRegion = page.getByRole("region", { name: "Unit fields", exact: true });
   await button("Add or remove Unit fields fields").click();
-  for (const name of units) await unitRegion.getByRole("checkbox", { name, exact: true }).check();
+  await setExactParentLabeledCheckboxes(unitRegion, units);
   const selectedUnits = await unitRegion.getByRole("checkbox").evaluateAll(nodes => nodes.filter(node => node.checked).map(node => node.parentElement.textContent.trim()));
   if (JSON.stringify(selectedUnits) !== JSON.stringify(units)) throw new Error("native Unit identity differs from explicit ordered fixture fields");
   await button("Add or remove Unit fields fields").click();
   await page.getByRole("combobox", { name: "Create Sample / Group", exact: true }).selectOption(group);
   await tab("Horizons").click();
   await button("Add or remove Horizon identity fields").click();
-  for (const name of horizons) await page.getByRole("region", { name: "Horizon identity", exact: true }).getByRole("checkbox", { name, exact: true }).check();
+  const horizonRegion = page.getByRole("region", { name: "Horizon identity", exact: true });
+  await setExactParentLabeledCheckboxes(horizonRegion, horizons);
   await button("Add or remove Horizon identity fields").click();
   await tab("Codes").click();
   await page.getByRole("toolbar", { name: "Code actions", exact: true }).getByRole("button", { name: "Manage Codes", exact: true }).click();
@@ -43,8 +52,12 @@ export async function prepareNativeFixtureV3(page, { codes = ["CODE_A", "CODE_B"
     await page.getByRole("combobox", { name: "Window", exact: true }).selectOption("MovingStanzaWindow");
   }
   {
+    const rowOrder = page.locator("details.ena-row-order-disclosure");
+    if (await rowOrder.count()) await rowOrder.evaluate((el) => { el.open = true; });
     await page.getByLabel("Use source order", { exact: true }).check();
-    await button("Review source-order statement").click();
+    const review = button("Review source-order statement");
+    await review.waitFor({ state: "attached" });
+    await review.click({ force: true });
     await button("Accept statement").click();
     await page.getByRole("group", { name: "Backward context", exact: true }).getByRole("textbox", { name: "Rows", exact: true }).fill(String(backward));
   }
