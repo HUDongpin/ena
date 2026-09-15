@@ -63,6 +63,11 @@ const nextConfig: NextConfig = {
       { source: "/open-ena", destination: "/en/open-ena", permanent: false },
       { source: "/plugins", destination: "/en/plugins", permanent: false },
       { source: "/plugins/:slug*", destination: "/en/plugins/:slug*", permanent: false },
+      // Alias legacy Plugin Lab path to the public catalog (#36).
+      { source: "/plugin-lab", destination: "/en/plugins", permanent: false },
+      { source: "/plugin-lab/:slug*", destination: "/en/plugins/:slug*", permanent: false },
+      { source: "/:locale/plugin-lab", destination: "/:locale/plugins", permanent: false },
+      { source: "/:locale/plugin-lab/:slug*", destination: "/:locale/plugins/:slug*", permanent: false },
       { source: "/news", destination: "/en/news", permanent: false },
       { source: "/academy", destination: "/en/academy", permanent: false },
       { source: "/academy/:slug*", destination: "/en/academy/:slug*", permanent: false },
