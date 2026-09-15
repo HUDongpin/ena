@@ -187,6 +187,32 @@ export function onaDraftAdmissionDiagnosticsV3(
       { fieldPath: "rowOrder" },
     ));
   }
+  switch (draft.backward.kind) {
+    case "infinity":
+      break;
+    case "finite":
+      if (!Number.isSafeInteger(draft.backward.value) || draft.backward.value < 1) {
+        diagnostics.push(onaDiagnosticV3(
+          "ONA_DRAFT_INVALID",
+          "windows",
+          "The ONA draft is not executable.",
+          "ONA requires a finite backward extent of at least 1 row, or infinity.",
+          { fieldPath: "backward" },
+        ));
+      }
+      break;
+    default: {
+      const _exhaustive: never = draft.backward;
+      void _exhaustive;
+      diagnostics.push(onaDiagnosticV3(
+        "ONA_DRAFT_INVALID",
+        "windows",
+        "The ONA draft is not executable.",
+        "ONA requires a finite backward extent of at least 1 row, or infinity.",
+        { fieldPath: "backward" },
+      ));
+    }
+  }
   if (draft.directionalMask === null) {
     diagnostics.push(onaDiagnosticV3(
       "ONA_DRAFT_INVALID",
