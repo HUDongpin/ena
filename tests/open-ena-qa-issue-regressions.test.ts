@@ -8,6 +8,7 @@ import { locales } from "../lib/i18n";
 import {
   createOpenEnaWorkspaceAxes,
   resetOpenEnaWorkspaceAxisSurface,
+  selectOpenEnaWorkspacePlotAxis,
   updateOpenEnaWorkspace3dAxis,
 } from "../lib/open-ena/plot3d";
 import {
@@ -202,6 +203,12 @@ test("generic 3D axis transitions are immutable, inventory-bound, and preserve 2
     inferenceIdentityBefore,
     "changing generic 3D axes must not alter inference request/key inputs",
   );
+  const selected3d = selectOpenEnaWorkspacePlotAxis(initial, "3d", 0, "SVD2", inventory) as WorkspaceAxes;
+  assert.deepEqual(selected3d.twoD, initial.twoD);
+  assert.deepEqual(selected3d.threeD, changed3d.threeD);
+  const selected2d = selectOpenEnaWorkspacePlotAxis(initial, "2d", 1, "SVD3", inventory) as WorkspaceAxes;
+  assert.deepEqual(selected2d.twoD, ["SVD1", "SVD3"]);
+  assert.deepEqual(selected2d.threeD, initial.threeD);
 
   for (const invalidDimension of ["", "   ", "PRIVATE-NON-MEMBER"]) {
     const rejected = updateOpenEnaWorkspace3dAxis(
@@ -522,9 +529,13 @@ test("single-table builder materializes only the requested key and honors previe
 test("generic 3D display axes stay separate from 2D inference and AI controls", () => {
 
   assert.match(v3, /threeDAxes, setThreeDAxes/);
-  assert.match(v3, /view === "3d" \? setThreeDAxes : setAxes/);
+  assert.match(v3, /selectOpenEnaWorkspacePlotAxis/);
+  assert.match(v3, /applyPlotAxisSelection/);
+  assert.match(v3, /case "3d":\s*setThreeDAxes\(next\.threeD/);
+  assert.match(v3, /case "2d":\s*setAxes\(next\.twoD/);
   assert.match(v3, /axes: \[twoDAxes\[0\], twoDAxes\[1\]\]/);
   assert.match(v3, /buildAiInterpretationReviewV3\(result, currentPlan, selection\)/);
+  assert.match(v3, /openEnaConsumerAuthorityKeyV3/);
 
 });
 

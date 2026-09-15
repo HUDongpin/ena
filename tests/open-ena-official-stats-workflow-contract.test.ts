@@ -20,7 +20,8 @@ test("native Stats uses explicit admitted inference and preserves full local cur
   assert.match(workspaceV3Source, /runOpenEnaTrajectoryInferenceV3\(/u);
   assert.doesNotMatch(workspaceV3Source, /runOpenEnaInferenceV2|result\.stats|renderJenaTestContent/u);
   const key = workspaceV3Source.split("const consumerKey =")[1].split(";", 1)[0];
-  assert.match(key, /binding:|currentPlan|controls/u); assert.doesNotMatch(key, /flipX|plotZoom|showLabels|edgeScale/u);
+  assert.match(key, /openEnaConsumerAuthorityKeyV3/u);
+  assert.match(key, /binding:|currentPlan|controls/u); assert.doesNotMatch(key, /flipX|plotZoom|showLabels|edgeScale|threeDAxes|selectedAxes/u);
   assert.match(native, /nativeStatisticsTablesV3\(inference\)/u);
 });
 test("unavailable correlations remain explicit and variance uses only the selected bound axes", () => {

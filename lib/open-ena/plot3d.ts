@@ -184,6 +184,45 @@ export function updateOpenEnaWorkspace3dAxis(
   return { twoD, threeD };
 }
 
+export function selectOpenEnaWorkspacePlotAxis(
+  axes: OpenEnaWorkspaceAxes,
+  view: "2d" | "3d",
+  axisIndex: number,
+  dimension: string,
+  dimensions: readonly string[],
+): OpenEnaWorkspaceAxes {
+  switch (view) {
+    case "3d": {
+      const axis = (["x", "y", "z"] as const)[axisIndex];
+      if (axis === undefined) {
+        return {
+          twoD: axes.twoD ? [...axes.twoD] : null,
+          threeD: axes.threeD ? [...axes.threeD] : null,
+        };
+      }
+      return updateOpenEnaWorkspace3dAxis(axes, axis, dimension, dimensions);
+    }
+    case "2d": {
+      const twoD: [string, string] | null = axes.twoD ? [...axes.twoD] : null;
+      const threeD: [string, string, string] | null = axes.threeD ? [...axes.threeD] : null;
+      if (
+        !twoD
+        || (axisIndex !== 0 && axisIndex !== 1)
+        || !dimension.trim()
+        || !dimensions.includes(dimension)
+      ) {
+        return { twoD, threeD };
+      }
+      twoD[axisIndex] = dimension;
+      return { twoD, threeD };
+    }
+    default: {
+      const exhaustive: never = view;
+      throw new TypeError(`Unsupported plot axis view: ${String(exhaustive)}`);
+    }
+  }
+}
+
 export function resetOpenEnaWorkspaceAxisSurface(
   axes: OpenEnaWorkspaceAxes,
   surface: "2d" | "3d",

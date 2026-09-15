@@ -10,6 +10,7 @@ import {
   type OpenEnaAiInterpretationRequest,
   type OpenEnaAiInterpretationResponse,
 } from "@/lib/open-ena/ai-interpretation";
+import { openEnaAiReviewedRequestIdentityV3 } from "@/lib/open-ena/workspace-consumer-authority-v3";
 import type { OpenEnaAiInterpretationCopy } from "@/lib/open-ena-i18n";
 
 interface OpenEnaAiInterpretationProps {
@@ -86,16 +87,10 @@ export default function OpenEnaAiInterpretation({
   const abortControllerRef = useRef<AbortController | null>(null);
   const operationIdRef = useRef<string | null>(null);
   const operationStorageKeyRef = useRef<string | null>(null);
-  const requestIdentity = request
-    ? JSON.stringify({
-        localScientificIdentity,
-        schemaVersion: request.schemaVersion,
-        promptVersion: request.promptVersion,
-        locale: request.locale,
-        binding: request.binding,
-        evidence: request.evidence,
-      })
-    : null;
+  const requestIdentity = openEnaAiReviewedRequestIdentityV3({
+    localScientificIdentity,
+    request,
+  });
   const currentRequestIdentityRef = useRef(requestIdentity);
   currentRequestIdentityRef.current = requestIdentity;
   const operationStorageKey = request
