@@ -65,6 +65,7 @@ export async function prepareNativeFixtureV3(page, { codes = ["CODE_A", "CODE_B"
   }
   return { units: selectedUnits, codes, family, horizons };
 }
+
 export async function runNativeFixtureV3(page) {
   const run = page.getByRole("button", { name: /^(?:Build ENA model|Rebuild model)$/u });
   if (!await run.isEnabled()) throw new Error("native fixture compilation did not enable the model build action");
