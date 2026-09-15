@@ -33,7 +33,10 @@ export async function prepareNativeFixtureV3(page, { codes = ["CODE_A", "CODE_B"
   await page.getByRole("toolbar", { name: "Code actions", exact: true }).getByRole("button", { name: "Manage Codes", exact: true }).click();
   for (const code of codes) await page.getByRole("checkbox", { name: `Select ${code} as a Code`, exact: true }).check();
   await button("Close Code manager").click();
-  if (family === "ona") await initializeOnaMaskIfNeededV3(page);
+  if (family === "ona") {
+    const initialize = button("Initialize explicit all-enabled mask");
+    if (await initialize.count()) await initialize.click();
+  }
   await tab("Windows").click();
   if (family === "standard") {
     await page.getByRole("combobox", { name: "Model", exact: true }).selectOption("EndPoint");

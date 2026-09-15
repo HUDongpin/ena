@@ -138,7 +138,7 @@ async function runCli(args, label, timeout = 300000) {
 }
 
 function browserSource(task, args) {
-  return "async (page) => { " + prepareNativeFixtureV3.toString() + "\n" + runNativeFixtureV3.toString() + "\n" + nativeFixtureIdentitiesV3.toString() + "; const task = " + task.toString()
+  return "async (page) => { " + initializeOnaMaskIfNeededV3.toString() + "\n" + prepareNativeFixtureV3.toString() + "\n" + runNativeFixtureV3.toString() + "\n" + nativeFixtureIdentitiesV3.toString() + "; const task = " + task.toString()
     + "; return await task(page, " + JSON.stringify(args) + "); }";
 }
 

@@ -51,6 +51,7 @@ test("the synthetic lane exercises directed ONA science, circular points, three 
   assert.match(source, /Ordered Network Analysis \(ONA\)/u);
   assert.match(fixtureSource, /getByRole\("radio"/u);
   assert.match(source, /prepareNativeFixtureV3\(page, \{ family: "ona"/u);
+  assert.match(source, /initializeOnaMaskIfNeededV3\.toString\(\)/u);
   assert.match(fixtureSource, /Review source-order statement/u);
   assert.match(source, /const maskCell/u);
   assert.match(source, /CODE_E → CODE_A/u);
