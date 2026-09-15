@@ -393,7 +393,9 @@ test("CSV export neutralizes spreadsheet formulas while preserving numeric scala
 test("the native Workspace exposes four model panels, bound tables, and truthful separate exports", () => {
 
   for (const name of ["Units", "Horizons", "Windows", "Codes"]) assert.ok(v3.includes(`<OpenEna${name}PanelV3`));
-  for (const api of ["buildDataViewV3", "exportCurrentAnalysisV3", "exportNativeStatisticsV3", "buildMethodsReportV3"]) assert.ok(v3.includes(api));
+  for (const api of ["buildDataViewV3", "exportCurrentAnalysisV3", "exportNativeStatisticsV3", "buildMethodsReportV3", "exportOpenEnaResultTableCsv"]) assert.ok(v3.includes(api));
+  assert.match(v3, /<OpenEnaResultTables/);
+  assert.doesNotMatch(v3, /buildResultTables/);
   const markup = shell();
   assert.match(markup, />Export SVG<\/button>/);
   assert.match(markup, />Export PNG<\/button>/);
@@ -601,6 +603,49 @@ test("trajectory export tables carry a stable step identity without leaking sour
   const coordinateCsv = exportModule.rowsToCsv(tables.coordinates);
   assert.match(coordinateCsv, /^unit,ENA_UNIT,SVD1,SVD2,SVD3,group,OPEN_ENA_POINT_INDEX,TRAJ_UNIT,pointIndex\r?\n/);
   assert.doesNotMatch(coordinateCsv, /private source row|utterance/);
+});
+
+test("Endpoint trajectory-step CSV is not a successful empty download and Separate remains nonempty", () => {
+  const { exportOpenEnaResultTableCsv, rowsToCsv, buildResultTables, openEnaResultTableCsvFilename } = openEnaExportContract;
+  const endpoint = analyzeDataset(sampleDataset(), SAMPLE_CONFIG);
+  const endpointTrajectories = exportOpenEnaResultTableCsv(endpoint, "trajectories");
+  assert.equal(endpoint.set.modelType, "EndPoint");
+  assert.equal(endpointTrajectories.status, "unavailable");
+  assert.equal(endpointTrajectories.reason, "endpoint-model");
+  assert.equal(endpointTrajectories.csv, null);
+  assert.equal(endpointTrajectories.filename, null);
+  assert.equal(rowsToCsv(buildResultTables(endpoint).trajectories), "", "legacy empty-row CSV remains the 0-byte trap");
+  assert.equal(openEnaResultTableCsvFilename("trajectories"), "open-ena-trajectories.csv");
+  const endpointCoordinates = exportOpenEnaResultTableCsv(endpoint, "coordinates");
+  assert.equal(endpointCoordinates.status, "ready");
+  assert.ok((endpointCoordinates.csv?.length ?? 0) > 0);
+
+  const trajectoryConfig = {
+    ...SAMPLE_CONFIG,
+    unitColumns: ["unit"],
+    conversationColumns: ["conversation"],
+    groupColumn: "group",
+    codes: ["A", "B", "C"],
+    model: "SeparateTrajectory",
+    window: "Conversation",
+  } as unknown as typeof SAMPLE_CONFIG;
+  const separate = analyzeDataset(trajectoryDataset(), trajectoryConfig);
+  const separateExport = exportOpenEnaResultTableCsv(separate, "trajectories");
+  assert.equal(separateExport.status, "ready");
+  assert.equal(separateExport.filename, "open-ena-trajectories.csv");
+  assert.ok((separateExport.csv?.length ?? 0) > 0);
+  const separateLines = separateExport.csv!.split(/\r?\n/u).filter((line) => line.length > 0);
+  assert.ok(separateLines.length > 1, "Separate trajectory CSV must include a header and at least one step");
+  assert.match(separateLines[0] ?? "", /ENA_UNIT|unit|TRAJ_UNIT/u);
+
+  const accumulated = analyzeDataset(trajectoryDataset(), {
+    ...trajectoryConfig,
+    model: "AccumulatedTrajectory",
+  } as unknown as typeof SAMPLE_CONFIG);
+  const accumulatedExport = exportOpenEnaResultTableCsv(accumulated, "trajectories");
+  assert.equal(accumulatedExport.status, "ready");
+  assert.ok((accumulatedExport.csv?.length ?? 0) > 0);
+  assert.ok(accumulatedExport.csv!.split(/\r?\n/u).filter((line) => line.length > 0).length > 1);
 });
 
 test("native trajectory graphics use admitted fitted sequences in both plot dimensions", () => {
