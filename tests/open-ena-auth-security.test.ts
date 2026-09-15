@@ -239,6 +239,54 @@ test("logout revokes exactly one jti and another instance rejects its replay", a
   assert.ok(unrelated);
 });
 
+test("logout revalidates the localized Open ENA gate after clearing the session cookie", async () => {
+  const authModule = await dynamicModule("../lib/open-ena-auth");
+  const logoutModule = await dynamicModule("../app/api/open-ena/logout/route");
+  assert.ok(authModule);
+  assert.ok(logoutModule);
+  const createLogoutHandler = logoutModule.createOpenEnaLogoutPostHandler;
+  assert.equal(typeof createLogoutHandler, "function");
+  if (typeof createLogoutHandler !== "function") return;
+
+  const issuedAt = 1_800_000_000_000;
+  const token = createOpenEnaSessionTokenV2(issuedAt, AUTH_ENVIRONMENT);
+  const principal = (authModule.verifyOpenEnaSessionTokenV2 as (
+    token: string,
+    now: number,
+    environment: DynamicModule,
+  ) => OpenEnaPrincipal | null)(token, issuedAt + 2_000, AUTH_ENVIRONMENT);
+  assert.ok(principal);
+  const revokedJtis = new Set<string>();
+  const revalidated: string[] = [];
+  const logout = (createLogoutHandler as (dependencies: DynamicModule) => (request: Request) => Promise<Response>)({
+    environment: AUTH_ENVIRONMENT,
+    now: () => issuedAt + 2_000,
+    securityStoreFactory: async () => ({
+      consumeLoginAttempt: async () => true,
+      isSessionRevoked: async (jti: string) => revokedJtis.has(jti),
+      revokeSession: async (jti: string) => { revokedJtis.add(jti); },
+    }),
+    revalidateOpenEnaWorkspace: (locale: string) => { revalidated.push(locale); },
+  });
+  const response = await logout(new Request("https://www.ena.hk/api/open-ena/logout", {
+    method: "POST",
+    headers: {
+      cookie: `open-ena-session=${encodeURIComponent(token)}`,
+      "content-type": "application/x-www-form-urlencoded",
+      origin: "https://www.ena.hk",
+    },
+    body: "locale=zh-hans",
+  }));
+  const setCookie = response.headers.get("set-cookie") ?? "";
+
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.get("location"), "https://www.ena.hk/zh-hans/open-ena");
+  assert.match(setCookie, /open-ena-session=/);
+  assert.match(setCookie, /Max-Age=0/i);
+  assert.deepEqual(revalidated, ["zh-hans"]);
+  assert.deepEqual([...revokedJtis], [principal.jti]);
+});
+
 test("logout fails closed when durable revocation cannot be persisted", async () => {
   const logoutModule = await dynamicModule("../app/api/open-ena/logout/route");
   assert.ok(logoutModule);

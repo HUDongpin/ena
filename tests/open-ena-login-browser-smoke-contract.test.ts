@@ -77,6 +77,10 @@ test("the login browser gate covers responsive branding and authentication witho
   assert.match(source, /getByLabel\("Account name"\)\.fill\(username\)/u);
   assert.match(source, /getByLabel\("Password"\)\.fill\(password\)/u);
   assert.match(source, /locator\("\.open-ena-workbench"\)\.waitFor\(\{ state: "visible", timeout: 30_000 \}\)/u);
+  assert.match(source, /getByRole\("button", \{ name: "Sign out" \}\)\.click\(\{ noWaitAfter: true \}\)/u);
+  assert.match(source, /locator\("\.open-ena-login-form"\)\.waitFor\(\{ state: "visible", timeout: 30_000 \}\)/u);
+  assert.match(source, /locator\("\.open-ena-workbench"\)\.count\(\)/u);
+  assert.match(source, /cookie\.name === "open-ena-session"/u);
   assert.match(source, /document\.activeElement/u);
   assert.match(source, /\.blur\(\)/u);
   assert.match(source, /window\.scrollTo/u);
