@@ -1349,77 +1349,6 @@ button:focus-visible {
   min-height: 100dvh;
 }
 
-.empty-section {
-  display: grid;
-  grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1.28fr);
-  align-items: center;
-  gap: clamp(38px, 8vw, 110px);
-  margin-block: clamp(70px, 10vw, 124px);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: clamp(30px, 6vw, 70px);
-  background: var(--surface-strong);
-  box-shadow: var(--shadow-soft);
-}
-
-.empty-visual {
-  display: grid;
-  min-height: 310px;
-  place-items: center;
-  border-radius: 16px;
-  background:
-    radial-gradient(circle at 50% 45%, var(--accent-soft), transparent 65%),
-    var(--surface-soft);
-}
-
-.empty-visual svg {
-  width: min(220px, 76%);
-}
-
-.empty-frame {
-  stroke: var(--line-strong);
-  stroke-width: 3;
-}
-
-.empty-accent {
-  stroke: var(--accent);
-  stroke-width: 7;
-}
-
-.empty-faint {
-  stroke: var(--line-strong);
-  stroke-width: 3;
-}
-
-.empty-node {
-  fill: var(--surface-strong);
-  stroke: var(--accent);
-  stroke-width: 6;
-}
-
-.empty-copy h2 {
-  margin: 0;
-  font-size: clamp(2rem, 4vw, 3.45rem);
-  font-weight: 800;
-  letter-spacing: -0.052em;
-  line-height: 1.04;
-  text-wrap: balance;
-}
-
-.empty-copy > p {
-  max-width: 650px;
-  margin: 22px 0 0;
-  color: var(--muted);
-  font-size: 1.05rem;
-  line-height: 1.72;
-}
-
-.empty-copy .empty-note {
-  color: var(--accent-strong);
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
 .purpose-section {
   display: grid;
   grid-template-columns: minmax(280px, 0.68fr) minmax(0, 1.32fr);
@@ -5890,7 +5819,6 @@ body:has(.open-ena-login-page) .back-to-top {
 }
 
 @media (max-width: 760px) {
-  .empty-section,
   .scope-inner {
     grid-template-columns: 1fr;
   }
@@ -5937,10 +5865,6 @@ body:has(.open-ena-login-page) .back-to-top {
     grid-column: auto;
     grid-row: auto;
     min-height: 190px;
-  }
-
-  .empty-visual {
-    min-height: 250px;
   }
 
   .footer-grid {
@@ -6068,8 +5992,7 @@ body:has(.open-ena-login-page) .back-to-top {
     padding-block: 72px;
   }
 
-  .closing-panel,
-  .empty-section {
+  .closing-panel {
     padding: 24px;
   }
 
