@@ -4006,9 +4006,25 @@ export function isOpenEnaLocalizedLocale(
   return (openEnaLocalizedLocales as readonly Locale[]).includes(locale);
 }
 
+const openEnaFallbackNotices = {
+  en: null,
+  "zh-hant": null,
+  "zh-hans": null,
+  es: "Open ENA aún no está traducido para la ruta es. El espacio de trabajo permanece en inglés mientras se conservan esta ruta y este idioma.",
+  fr: "Open ENA n'est pas encore traduit pour la route fr. L'espace de travail reste en anglais, tandis que cette route et cette langue sont conservées.",
+  pt: "O Open ENA ainda não está traduzido para a rota pt. A área de trabalho permanece em inglês enquanto esta rota e este idioma são mantidos.",
+  de: "Open ENA ist für die Route de noch nicht übersetzt. Die Arbeitsfläche bleibt auf Englisch, während diese Route und diese Sprache beibehalten werden.",
+  ar: "Open ENA غير مترجم بعد لمسار ar. تبقى مساحة العمل بالإنجليزية ومن اليسار إلى اليمين، مع الإبقاء على هذا المسار وهذه اللغة.",
+  ko: "Open ENA는 ko 경로에 아직 번역되어 있지 않습니다. 이 경로와 로케일은 유지되며 작업 공간은 영어로 표시됩니다.",
+  ja: "Open ENA は ja ルート向けにまだ翻訳されていません。このルートとロケールは保持されたまま、ワークベンチは英語で表示されます。",
+  hi: "Open ENA अभी hi रूट के लिए अनुवादित नहीं है। यह रूट और लोकेल बनाए रखते हुए कार्यक्षेत्र अंग्रेज़ी में दिखाया जाता है।",
+  ru: "Open ENA пока не переведён для маршрута ru. Рабочая область остаётся на английском, при этом этот маршрут и язык сохраняются.",
+  id: "Open ENA belum diterjemahkan untuk rute id. Area kerja tetap berbahasa Inggris sementara rute dan locale ini tetap dipertahankan.",
+  bn: "Open ENA এখনও bn রুটের জন্য অনুবাদ করা হয়নি। এই রুট ও লোকেল বজায় রেখে ওয়ার্কবেঞ্চ ইংরেজিতে দেখানো হয়।",
+} as const satisfies Record<Locale, string | null>;
+
 export function getOpenEnaFallbackNotice(locale: Locale) {
-  if (isOpenEnaLocalizedLocale(locale)) return null;
-  return `Open ENA is not yet localized for the ${locale} route. The English interface is shown while this route and locale are retained.`;
+  return openEnaFallbackNotices[locale];
 }
 
 export function getOpenEnaCopy(locale: Locale): OpenEnaCopy {

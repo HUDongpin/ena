@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useLayoutEffect, useRef, type CSSProperties } from "react";
 import type { OpenEnaPersistentPlotToolsCopy } from "@/lib/open-ena-i18n";
 
 export interface OpenEnaPersistentPlotToolsProps {
@@ -108,6 +108,29 @@ export function scheduleOpenEnaFocusRestore<Handle>(
   };
 }
 
+export function scheduleOpenEnaDomFocusRestore(
+  target: Pick<HTMLElement, "focus" | "isConnected"> & { disabled?: boolean } | null,
+  onSettled?: () => void,
+) {
+  return scheduleOpenEnaFocusRestore(
+    target,
+    (callback) => {
+      let inner = 0;
+      const outer = window.requestAnimationFrame(() => {
+        inner = window.requestAnimationFrame(() => {
+          onSettled?.();
+          callback();
+        });
+      });
+      return { outer, get inner() { return inner; } };
+    },
+    (handle) => {
+      window.cancelAnimationFrame(handle.outer);
+      window.cancelAnimationFrame(handle.inner);
+    },
+  );
+}
+
 function OfficialBinaryToggle({
   label,
   copy,
@@ -199,18 +222,16 @@ export default function OpenEnaPersistentPlotTools({
   const settingsTriggerRef = useRef<HTMLButtonElement>(null);
   const settingsCloseButtonRef = useRef<HTMLButtonElement>(null);
   const pendingFocusCancelRef = useRef<() => void>(() => {});
-  const wasSettingsOpenRef = useRef(settingsOpen);
-  useEffect(() => {
-    const wasOpen = wasSettingsOpenRef.current;
-    wasSettingsOpenRef.current = settingsOpen;
+  const pendingTriggerRestoreRef = useRef(false);
+  useLayoutEffect(() => {
     pendingFocusCancelRef.current();
+    if (settingsOpen) pendingTriggerRestoreRef.current = true;
     const focusTarget = settingsOpen
       ? settingsCloseButtonRef.current
-      : wasOpen ? settingsTriggerRef.current : null;
-    pendingFocusCancelRef.current = scheduleOpenEnaFocusRestore(
+      : pendingTriggerRestoreRef.current ? settingsTriggerRef.current : null;
+    pendingFocusCancelRef.current = scheduleOpenEnaDomFocusRestore(
       focusTarget,
-      (callback) => window.requestAnimationFrame(callback),
-      (handle) => window.cancelAnimationFrame(handle),
+      () => { if (!settingsOpen) pendingTriggerRestoreRef.current = false; },
     );
     return () => {
       pendingFocusCancelRef.current();

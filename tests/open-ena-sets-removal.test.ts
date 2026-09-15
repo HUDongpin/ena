@@ -26,9 +26,16 @@ test("Open ENA removes the Sets rail entry and opens on Data", () => {
 
 test("Open ENA removes the Sets panel and captured-set comparison interface", () => {
   assert.doesNotMatch(workspace, /function renderSetsPanel\(/);
-  assert.doesNotMatch(workspace, /open-ena-sets-heading/);
-  assert.doesNotMatch(workspace, /open-ena-capture-set/);
   assert.doesNotMatch(workspace, /import OpenEnaSetComparison/);
   assert.doesNotMatch(workspace, /<OpenEnaSetComparison/);
   assert.doesNotMatch(workspace, />Captured sets</);
+});
+
+test("Artifacts keep analysis-set capture and remove focus tokens without restoring the Sets rail", () => {
+  assert.match(workspace, /id="open-ena-sets-heading"/);
+  assert.match(workspace, /id="open-ena-capture-set"/);
+  assert.match(workspace, /id=\{`open-ena-set-remove-\$\{set\.id\}`\}/);
+  assert.match(workspace, /nextAnalysisSetRemovalFocusId/);
+  assert.match(workspace, /removeCapturedAnalysisSet/);
+  assert.match(workspace, /scheduleOpenEnaDomFocusRestore/);
 });
