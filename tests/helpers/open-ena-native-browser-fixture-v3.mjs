@@ -4,15 +4,14 @@ export async function initializeOnaMaskIfNeededV3(page) {
   if (await initialize.count()) await initialize.click();
 }
 
-async function setExactParentLabeledCheckboxes(scope, names) {
-  for (const checkbox of await scope.getByRole("checkbox").all()) {
-    const label = await checkbox.evaluate(node => node.parentElement.textContent.trim());
-    if (names.includes(label)) await checkbox.check();
-    else await checkbox.uncheck();
-  }
-}
-
 export async function prepareNativeFixtureV3(page, { codes = ["CODE_A", "CODE_B", "CODE_C", "CODE_D", "CODE_E"], family = "standard", sourcePreparation = true, units = ["Group", "Name"], horizons = ["Conversation"], group = "Group", backward = 5 } = {}) {
+  async function setExactParentLabeledCheckboxes(scope, names) {
+    for (const checkbox of await scope.getByRole("checkbox").all()) {
+      const label = await checkbox.evaluate(node => node.parentElement.textContent.trim());
+      if (names.includes(label)) await checkbox.check();
+      else await checkbox.uncheck();
+    }
+  }
   const tab = name => page.getByRole("tab", { name: new RegExp(`^${name}(,|$)`) });
   const button = name => page.getByRole("button", { name, exact: true });
   if (sourcePreparation) {
