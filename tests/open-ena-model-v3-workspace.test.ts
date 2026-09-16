@@ -1,16 +1,22 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { createWorkspaceStateV3, workspaceReducerV3, workspaceDraftExportableV3, workspaceRawBlockersV3 } from "../components/open-ena/model-v3/workspace-controller";
+import { createWorkspaceStateV3, workspaceReducerV3, workspaceDraftExportableV3, workspaceRawBlockersV3, emptyWorkspaceDraftsV3, draftsForInstalledSourceV3 } from "../components/open-ena/model-v3/workspace-controller";
 import { modelScientificContextV3 } from "../components/open-ena/model-v3/model-state";
 import { exportDraftV3 } from "../lib/open-ena/model-artifact-exports-v3";
 import { importOpenEnaArtifactV3 } from "../lib/open-ena/model-artifact-imports-v3";
-import { bindingFixtureV3 } from "./helpers/open-ena-model-v3-fixture";
-import { compileOnaDraftV3 } from "../lib/open-ena/model-v3/compiler";
+import { parseCsv } from "../lib/open-ena/csv";
+import { runStandardPlanV3 } from "../lib/open-ena/analyze";
+import { compileOnaDraftV3, compileStandardDraftV3 } from "../lib/open-ena/model-v3/compiler";
+import { bindResultV3 } from "../lib/open-ena/model-v3/result-binding";
 import { migrateCanonicalConfigurationToDraftV3 } from "../lib/open-ena/model-v3/migration";
-import { parsedDatasetFromSourceProofV3 } from "../lib/open-ena/model-v3/execution-plan";
+import { parsedDatasetFromSourceProofV3, buildStandardExecutionPlanV3 } from "../lib/open-ena/model-v3/execution-plan";
+import { prepareTeachingSampleV3 } from "../lib/open-ena/sample-source-v3";
+import { prepareTypedCsvSourceV3 } from "../lib/open-ena/source-preparation-v3";
 import type { ModelWorkspaceDraftsV3 } from "../lib/open-ena/model-v3/types";
-import type { ParsedDataset } from "../lib/open-ena/types";
+import { SAMPLE_CONFIG, type ParsedDataset } from "../lib/open-ena/types";
+import { bindingFixtureV3 } from "./helpers/open-ena-model-v3-fixture";
 
 async function fixture() {
   const f = await bindingFixtureV3(undefined, (draft) => {
@@ -95,26 +101,100 @@ test("same-hash source re-adoption expires compilation and the exact in-flight r
 
 test("source replacement with a retained result cues Rebuild without auto-running", async () => {
   const f = await fixture();
-  const { bindResultV3 } = await import("../lib/open-ena/model-v3/result-binding");
-  const { runStandardPlanV3 } = await import("../lib/open-ena/analyze");
   const result = await bindResultV3(f.plan, runStandardPlanV3(f.plan), { processedRows: f.plan.rows.length, maximumBufferedRows: 0, numericCellsAllocated: 120, peakBytesObservedOrBounded: 10240, observationMethod: "exact-counters-and-conservative-byte-bound" }, f.compiled.diagnostics);
   let state = workspaceReducerV3(f.state, { type: "model", action: { type: "mark-running", context: modelScientificContextV3(f.state.model), executionPlanSha256: f.plan.header.executionPlanSha256 } });
   state = workspaceReducerV3(state, { type: "completed", request: state.model.runningRequest!, result, sourceWitness: null });
   assert.equal(state.model.resultStatus, "current");
   assert.equal(state.rebuildCue, null);
   const drafts = state.model.drafts;
-  state = workspaceReducerV3(state, { type: "install-source", dataset: { ...state.dataset!, name: "replaced.typed.xlsx" }, datasetSha256: "b".repeat(64), drafts });
+  const fitted = state;
+  const replaced = { ...fitted.dataset!, name: "replaced.typed.xlsx" };
+  state = workspaceReducerV3(fitted, { type: "install-source", dataset: replaced, datasetSha256: "b".repeat(64), drafts });
   assert.equal(state.autoRunIntent, null, "CSV/XLSX admit must not inherit sample auto-run");
   assert.equal(state.model.resultStatus, "stale");
   assert.equal(state.rebuildCue?.reason, "source-replacement");
   assert.equal(state.rebuildCue?.serial, 1);
   assert.equal(state.model.drafts, drafts, "file admit retains the current mapping so Rebuild can be explicit");
+  const omitted = workspaceReducerV3(fitted, { type: "install-source", dataset: replaced, datasetSha256: "d".repeat(64) });
+  assert.deepEqual(omitted.model.drafts.standard.unitColumns, drafts.standard.unitColumns);
+  assert.equal(omitted.rebuildCue?.reason, "source-replacement");
+  const emptied = workspaceReducerV3(fitted, { type: "install-source", dataset: replaced, datasetSha256: "e".repeat(64), drafts: emptyWorkspaceDraftsV3() });
+  assert.deepEqual(emptied.model.drafts.standard.unitColumns, drafts.standard.unitColumns, "stale empty drafts must not wipe a live Unit/Horizon mapping");
+  assert.equal(emptied.rebuildCue?.reason, "source-replacement");
+  assert.deepEqual(
+    draftsForInstalledSourceV3(drafts, emptyWorkspaceDraftsV3(), false).standard.unitColumns,
+    drafts.standard.unitColumns,
+  );
   const cued = state;
   state = workspaceReducerV3(cued, { type: "install-source", dataset: cued.dataset!, datasetSha256: "c".repeat(64), drafts, autoRun: true });
   assert.ok(state.autoRunIntent);
   assert.equal(state.rebuildCue, null, "sample auto-run does not raise a rebuild cue");
   state = workspaceReducerV3(cued, { type: "model", action: { type: "mark-running", context: modelScientificContextV3(cued.model), executionPlanSha256: f.plan.header.executionPlanSha256 } });
   assert.equal(state.rebuildCue, null, "explicit Rebuild clears the cue");
+});
+
+test("fitted teaching sample then same coded CSV admit keeps Unit/Horizon and raises rebuildCue", async () => {
+  const text = await readFile("public/data/academy/ena-design-talk-sample.csv", "utf8");
+  const sample = await prepareTeachingSampleV3(text, "endpoint", new Date("2026-09-06T00:00:00.000Z"));
+  let state = createWorkspaceStateV3();
+  state = workspaceReducerV3(state, {
+    type: "install-source",
+    dataset: sample.dataset,
+    datasetSha256: sample.datasetSha256,
+    drafts: sample.drafts,
+    autoRun: true,
+  });
+  assert.ok(state.autoRunIntent);
+  assert.equal(state.rebuildCue, null, "sample auto-run does not raise a rebuild cue");
+  assert.deepEqual(state.model.drafts.standard.unitColumns, ["team_id"]);
+  assert.deepEqual(state.model.drafts.standard.horizonColumns, ["conversation_id"]);
+  const compiled = await compileStandardDraftV3(sample.dataset, sample.datasetSha256, sample.drafts.standard);
+  assert.equal(compiled.status, "ready", compiled.diagnostics.map((entry) => entry.id).join(", "));
+  if (compiled.status !== "ready") return;
+  const plan = await buildStandardExecutionPlanV3({
+    dataset: sample.dataset,
+    datasetSha256: sample.datasetSha256,
+    compileResult: compiled,
+    reference: null,
+  });
+  const result = await bindResultV3(plan, runStandardPlanV3(plan), {
+    processedRows: plan.rows.length,
+    maximumBufferedRows: 0,
+    numericCellsAllocated: 120,
+    peakBytesObservedOrBounded: 10240,
+    observationMethod: "exact-counters-and-conservative-byte-bound",
+  }, compiled.diagnostics);
+  state = workspaceReducerV3(state, { type: "compiled", value: { context: modelScientificContextV3(state.model), result: compiled, plan, error: null } });
+  state = workspaceReducerV3(state, { type: "model", action: { type: "mark-running", context: modelScientificContextV3(state.model), executionPlanSha256: plan.header.executionPlanSha256 } });
+  state = workspaceReducerV3(state, { type: "completed", request: state.model.runningRequest!, result, sourceWitness: null });
+  assert.equal(state.model.resultStatus, "current");
+  const source = parseCsv(text, { name: "ena-design-talk-sample.csv", source: "upload" });
+  const numeric = new Set([...SAMPLE_CONFIG.codes, "line_number"]);
+  const typed = await prepareTypedCsvSourceV3(
+    text,
+    source,
+    Object.fromEntries(source.headers.map((column) => [column, numeric.has(column) ? "number" : "text"])),
+    new Date("2026-09-16T00:00:00.000Z"),
+  );
+  const fitted = state;
+  state = workspaceReducerV3(fitted, { type: "install-source", dataset: typed.dataset, datasetSha256: typed.datasetSha256 });
+  assert.equal(state.autoRunIntent, null);
+  assert.equal(state.model.resultStatus, "stale");
+  assert.equal(state.rebuildCue?.reason, "source-replacement");
+  assert.deepEqual(state.model.drafts.standard.unitColumns, ["team_id"]);
+  assert.deepEqual(state.model.drafts.standard.horizonColumns, ["conversation_id"]);
+  assert.deepEqual(state.model.drafts.standard.codes, SAMPLE_CONFIG.codes);
+  const emptied = workspaceReducerV3(fitted, {
+    type: "install-source",
+    dataset: typed.dataset,
+    datasetSha256: typed.datasetSha256,
+    drafts: emptyWorkspaceDraftsV3(),
+  });
+  assert.deepEqual(emptied.model.drafts.standard.unitColumns, ["team_id"]);
+  assert.deepEqual(emptied.model.drafts.standard.horizonColumns, ["conversation_id"]);
+  assert.equal(emptied.rebuildCue?.reason, "source-replacement");
+  const recompiled = await compileStandardDraftV3(typed.dataset, typed.datasetSha256, emptied.model.drafts.standard);
+  assert.equal(recompiled.status, "ready", "same-shaped teaching CSV must remain Rebuild-ready");
 });
 
 test("sample auto-run and color confirmations are exact-context one-shot intents", async () => {
@@ -140,8 +220,6 @@ test("Workspace has a durable reducer-owned raw editor and worker lifecycle", as
 
 test("preset adoption is atomic display state and preserves science, requests, and underlying Group preferences", async () => {
   const f = await fixture();
-  const { bindResultV3 } = await import("../lib/open-ena/model-v3/result-binding");
-  const { runStandardPlanV3 } = await import("../lib/open-ena/analyze");
   const result = await bindResultV3(f.plan, runStandardPlanV3(f.plan), { processedRows: f.plan.rows.length, maximumBufferedRows: 0, numericCellsAllocated: 120, peakBytesObservedOrBounded: 10240, observationMethod: "exact-counters-and-conservative-byte-bound" }, f.compiled.diagnostics);
   let state = workspaceReducerV3(f.state, { type: "model", action: { type: "mark-running", context: modelScientificContextV3(f.state.model), executionPlanSha256: f.plan.header.executionPlanSha256 } });
   state = workspaceReducerV3(state, { type: "completed", request: state.model.runningRequest!, result, sourceWitness: null });

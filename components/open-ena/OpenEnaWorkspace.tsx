@@ -649,8 +649,16 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     const url = URL.createObjectURL(new Blob([value.bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = value.dataset.name; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  function installSource(value: { dataset: ParsedDataset; datasetSha256: string }, drafts = state.model.drafts, autoRun = false) {
-    dispatch({ type: "install-source", ...value, drafts, autoRun }); setSourcePreview(null); setMode("model");
+  function installSource(value: { dataset: ParsedDataset; datasetSha256: string }, drafts?: ModelWorkspaceDraftsV3, autoRun = false) {
+    dispatch({
+      type: "install-source",
+      dataset: value.dataset,
+      datasetSha256: value.datasetSha256,
+      autoRun,
+      ...(drafts !== undefined ? { drafts } : {}),
+    });
+    setSourcePreview(null);
+    setMode("model");
   }
   function requestRebuildAfterSourceReplacement() {
     setError(null);
