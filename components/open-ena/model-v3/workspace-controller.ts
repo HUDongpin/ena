@@ -52,7 +52,7 @@ export type WorkspaceActionV3 =
   | { type: "model"; action: ModelStateActionV3 }
   | { type: "windows-raw"; value: OpenEnaWindowsPanelRawStateV3 }
   | { type: "horizon-raw"; value: OrderPolicyEditorRawStateV3 }
-  | { type: "install-source"; dataset: ParsedDataset; datasetSha256: string; drafts: ModelWorkspaceDraftsV3; autoRun?: boolean }
+  | { type: "install-source"; dataset: ParsedDataset; datasetSha256: string; drafts?: ModelWorkspaceDraftsV3; autoRun?: boolean }
   | { type: "clear-auto-run-intent" }
   | { type: "clear-preset-group-hiding" }
   | { type: "apply-display-preset"; context: ModelScientificContextV3; resultHash: string; codeVisibility: Record<string, boolean>; codeColors: Record<string, string>; hiddenGroupTokens: string[] }
@@ -74,6 +74,33 @@ export function emptyWorkspaceDraftsV3(): ModelWorkspaceDraftsV3 {
     movingStanza: { backward: { kind: "finite", value: 5 }, forward: { kind: "finite", value: 0 }, rowOrder: null },
     horizonOrder: null, rotation: { type: "svd", centerAlignToOrigin: true },
   });
+}
+
+function draftHasIdentityMappingV3(drafts: ModelWorkspaceDraftsV3): boolean {
+  switch (drafts.activeFamily) {
+    case "standard":
+      return drafts.standard.unitColumns.length > 0 || drafts.standard.horizonColumns.length > 0;
+    case "ona":
+      return drafts.ona.unitColumns.length > 0 || drafts.ona.horizonColumns.length > 0;
+    default: {
+      const _exhaustive: never = drafts.activeFamily;
+      return _exhaustive;
+    }
+  }
+}
+
+/** File admit keeps the live mapping. Only sample auto-run supplies replacement drafts. */
+export function draftsForInstalledSourceV3(
+  current: ModelWorkspaceDraftsV3,
+  incoming: ModelWorkspaceDraftsV3 | undefined,
+  autoRun: boolean,
+): ModelWorkspaceDraftsV3 {
+  if (autoRun && incoming) return incoming;
+  if (!incoming) return current;
+  if (!autoRun && draftHasIdentityMappingV3(current) && !draftHasIdentityMappingV3(incoming)) {
+    return current;
+  }
+  return incoming;
 }
 export function sameScientificContextV3(a: ModelScientificContextV3, b: ModelScientificContextV3, includeEpoch = true): boolean {
   return a.datasetSha256 === b.datasetSha256 && a.family === b.family
@@ -158,10 +185,11 @@ export function workspaceReducerV3(state: WorkspaceStateV3, action: WorkspaceAct
     case "horizon-raw": return reconcileRaw({ ...state, raw: { ...state.raw, horizonOrder: action.value } });
     case "install-source": {
       const retainedResult = state.model.result;
+      const drafts = draftsForInstalledSourceV3(state.model.drafts, action.drafts, Boolean(action.autoRun));
       let model = modelStateReducerV3(state.model, { type: "adopt-dataset", datasetSha256: action.datasetSha256 });
-      model = modelStateReducerV3(model, { type: "replace-standard-draft", draft: action.drafts.standard });
-      model = modelStateReducerV3(model, { type: "replace-ona-draft", draft: action.drafts.ona });
-      model = modelStateReducerV3(model, { type: "set-active-family", family: action.drafts.activeFamily });
+      model = modelStateReducerV3(model, { type: "replace-standard-draft", draft: drafts.standard });
+      model = modelStateReducerV3(model, { type: "replace-ona-draft", draft: drafts.ona });
+      model = modelStateReducerV3(model, { type: "set-active-family", family: drafts.activeFamily });
       const next = reconcileRaw({ ...state, dataset: action.dataset, model, presetHiddenGroups: null, raw: rawEditors(model.drafts), compilation: null, preview: null, error: null, autoRunIntent: null });
       const rebuildCue = !action.autoRun && retainedResult
         ? { reason: "source-replacement" as const, serial: (state.rebuildCue?.serial ?? 0) + 1 }

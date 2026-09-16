@@ -18,9 +18,12 @@ const workflow = source(".github/workflows/open-ena-ci.yml");
 const pkg = JSON.parse(source("package.json"));
 
 test("CSV/XLSX admit keeps current drafts, cues Rebuild, and never auto-runs", () => {
-  assert.match(workspace, /function installSource\([^)]*drafts = state\.model\.drafts/u);
+  assert.match(workspace, /function installSource\([^)]*drafts\?: ModelWorkspaceDraftsV3, autoRun = false/u);
   assert.match(workspace, /installSource\(value, value\.drafts, true\)/u);
+  assert.match(workspace, /drafts !== undefined \? \{ drafts \} : \{\}/u);
   assert.doesNotMatch(workspace, /emptyWorkspaceDraftsV3/u);
+  assert.doesNotMatch(workspace, /drafts = state\.model\.drafts/u);
+  assert.match(controller, /draftsForInstalledSourceV3\(state\.model\.drafts, action\.drafts, Boolean\(action\.autoRun\)\)/u);
   assert.match(controller, /rebuildCue = !action\.autoRun && retainedResult/u);
   assert.match(controller, /reason: "source-replacement"/u);
   assert.match(controller, /action\.action\.type === "mark-running" && next\.rebuildCue/u);
@@ -46,10 +49,14 @@ test("stale source-replacement UI focuses a one-click Rebuild affordance", () =>
 test("the stale-rebuild cue harness proves CSV admit discoverability without silent rebuild", () => {
   assert.equal(pkg.scripts["test:browser:open-ena-stale-rebuild-cue"], "node tests/open-ena-stale-rebuild-cue-browser.mjs");
   assert.match(workflow, /npm run test:browser:open-ena-stale-rebuild-cue/u);
+  assert.match(browser, /Load sample/u);
+  assert.match(browser, /ena-design-talk-sample\.csv/u);
   assert.match(browser, /Confirm types and create typed XLSX/u);
   assert.match(browser, /open-ena-stale-rebuild-run/u);
   assert.match(browser, /window\.jobs\.length === 1/u);
   assert.match(browser, /data-ena-rebuild-cue/u);
+  assert.match(browser, /team_id/u);
+  assert.match(browser, /conversation_id/u);
   assert.match(browser, /getByTestId\("open-ena-stale-rebuild-run"\)\.click/u);
   assert.match(browser, /window\.jobs\.length === 2/u);
 });
