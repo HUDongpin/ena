@@ -103,6 +103,7 @@ test("the screenshot-selected public sections are absent", () => {
   const mission = source("app", "[locale]", "mission", "page.tsx");
   const news = source("app", "[locale]", "news", "page.tsx");
   const academy = source("app", "[locale]", "academy", "page.tsx");
+  const css = `${source("app", "globals.css")}\n${source("app", "premium-public.css")}`;
 
   assert.doesNotMatch(
     home,
@@ -111,6 +112,10 @@ test("the screenshot-selected public sections are absent", () => {
   assert.doesNotMatch(mission, /<NetworkFigure|definition-section|definition-copy|dictionary\.mission\.definition(?:Title|Text)/);
   assert.doesNotMatch(news, /news-selection-panel|selection-network|copy\.selection(?:Eyebrow|Title|Text)/);
   assert.doesNotMatch(academy, /news-selection-panel|selection-network|copy\.pathway(?:Eyebrow|Title|Text)/);
+  assert.doesNotMatch(
+    css,
+    /\.(?:questions-section|questions-intro|question-grid|question-item|purpose-section|purpose-copy|values-grid|value-item|scope-band|scope-inner|resources-section|resource-grid|resource-item|resource-featured|resource-arrow)\b/,
+  );
 });
 
 test("News and Academy collections omit their hero blocks while preserving filters and results", () => {
