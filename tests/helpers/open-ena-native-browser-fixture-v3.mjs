@@ -51,14 +51,15 @@ export async function prepareNativeFixtureV3(page, { codes = ["CODE_A", "CODE_B"
     await page.getByRole("combobox", { name: "Window", exact: true }).selectOption("MovingStanzaWindow");
   }
   {
-    // Draft-preserving re-admit can leave Row order collapsed. Native details
-    // content is in the DOM, so wait attached and force the explicit review.
+    // Re-admit can leave Row order collapsed. Open it through the same
+    // visible summary control used by a researcher.
     const rowOrder = page.locator("details.ena-row-order-disclosure");
-    if (await rowOrder.count()) await rowOrder.evaluate((el) => { el.open = true; });
+    if (await rowOrder.count() && await rowOrder.getAttribute("open") === null) {
+      await rowOrder.locator("summary").click();
+    }
     await page.getByLabel("Use source order", { exact: true }).check();
     const review = button("Review source-order statement");
-    await review.waitFor({ state: "attached" });
-    await review.click({ force: true });
+    await review.click();
     await button("Accept statement").click();
     await page.getByRole("group", { name: "Backward context", exact: true }).getByRole("textbox", { name: "Rows", exact: true }).fill(String(backward));
   }

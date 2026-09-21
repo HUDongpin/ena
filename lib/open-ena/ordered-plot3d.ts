@@ -520,6 +520,10 @@ function compileDirectedTraces(input: {
   const lineWidth = (bucket: number) => (
     input.edgeScale * (1.25 + 5.75 * bucketRepresentative(bucket))
   );
+  // Directions/tangents have unit norm; sizeref is the intended data-space
+  // length. Plotly's "absolute" mode also applies inter-cone spacing, which
+  // scales these already scene-relative lengths a second time. Use "raw"
+  // for both arrow families so group/threshold bucketing cannot enlarge them.
   const coneSize = (bucket: number) => (
     input.sceneExtent * input.edgeScale * (0.012 + 0.018 * bucketRepresentative(bucket))
   );
@@ -564,7 +568,7 @@ function compileDirectedTraces(input: {
       w: entries.map((entry) => entry.direction[2]),
       customdata: entries.map((entry) => entry.hover),
       anchor: "tip",
-      sizemode: "absolute",
+      sizemode: "raw",
       sizeref: coneSize(bucket),
       colorscale: [[0, input.color], [1, input.color]],
       showscale: false,
@@ -619,7 +623,7 @@ function compileDirectedTraces(input: {
       w: entries.map((entry) => entry.tangent[2]),
       customdata: entries.map((entry) => entry.hover),
       anchor: "tip",
-      sizemode: "absolute",
+      sizemode: "raw",
       sizeref: coneSize(bucket),
       colorscale: [[0, input.color], [1, input.color]],
       showscale: false,

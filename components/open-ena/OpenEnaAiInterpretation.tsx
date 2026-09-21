@@ -6,6 +6,7 @@ import {
   OPEN_ENA_AI_CONSENT_VALUE,
   OPEN_ENA_AI_OPERATION_HEADER,
   OPEN_ENA_AI_OPERATION_ID,
+  OPEN_ENA_AI_RETRY_HEADER,
   parseOpenEnaAiInterpretationResponse,
   type OpenEnaAiInterpretationRequest,
   type OpenEnaAiInterpretationResponse,
@@ -38,6 +39,13 @@ type AiAuditReceiptView = {
 };
 
 type GenerationStatus = "idle" | "loading";
+
+export function mayRenewOpenEnaAiOperation(response: Response, operationId: string) {
+  return !response.ok
+    && response.status >= 400
+    && response.headers.get(OPEN_ENA_AI_RETRY_HEADER) === "new-operation"
+    && response.headers.get(OPEN_ENA_AI_OPERATION_HEADER) === operationId;
+}
 
 interface ExecuteOpenEnaAiGenerationInput<T> {
   task: () => Promise<T>;
@@ -174,6 +182,7 @@ export default function OpenEnaAiInterpretation({
         const payload = await response.json().catch(() => null) as unknown;
         if (!response.ok) {
           if (response.status === 409) clearOperation();
+          else if (mayRenewOpenEnaAiOperation(response, operationId)) clearOperation();
           const safeMessage = payload && typeof payload === "object" && "error" in payload
             && typeof (payload as { error?: unknown }).error === "string"
             ? (payload as { error: string }).error

@@ -16,6 +16,9 @@ async function closed(port: number) { return new Promise<boolean>(resolve => { c
 
 for (const signal of ["SIGTERM", "SIGINT", "build-deadline", "overall-deadline"] as const) test(`actual smoke preserves receipt and reaps build descendants on ${signal}`, async () => {
   const dir = mkdtempSync(join(artifactRoot, "task37-q1-build-fault-")); mkdirSync(join(dir, "bin"));
+  // The extensionless npm fixture must remain CommonJS even when TMPDIR
+  // is nested inside this ES module repository.
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ type: "commonjs" }));
   const pidFile = join(dir, "pids.json");
   writeFileSync(join(dir, "bin/npm"), `#!${process.execPath}\nconst fs=require('node:fs'),cp=require('node:child_process'); if(process.argv[2]==='--version'){console.log('fault-fixture-only');}else{const child=cp.spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});process.send('ready');setInterval(()=>{},1000)"],{stdio:['ignore','ignore','ignore','ipc']});child.once('message',()=>fs.writeFileSync(process.env.FAULT_PIDS,JSON.stringify([process.pid,child.pid])));setInterval(()=>{},1000);}`, { mode: 0o755 });
   const child = spawn(process.execPath, [join(root, "tests/open-ena-models-v3-browser-smoke.mjs")], { cwd: root, env: { ...process.env, PATH: `${join(dir, "bin")}:${process.env.PATH}`, FAULT_PIDS: pidFile, OPEN_ENA_MODELS_V3_ARTIFACT_ROOT: dir, ...(signal === "build-deadline" ? { OPEN_ENA_MODELS_V3_BUILD_TIMEOUT_MS: "500" } : {}), ...(signal === "overall-deadline" ? { OPEN_ENA_MODELS_V3_OVERALL_TIMEOUT_MS: "3000" } : {}) }, stdio: "ignore" });

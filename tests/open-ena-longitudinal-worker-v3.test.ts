@@ -178,34 +178,47 @@ async function successfulRemoteTransport(
   return { fetchMock, deletionCount: () => deletionCalls };
 }
 
-test("Worker V3 posts ordered progress and exactly one result for one immutable request", async () => {
+test("Worker V3 posts ordered progress and exactly one result for one immutable request", { timeout: 5000 }, async () => {
   const listeners: Array<(event: { data: OpenEnaLongitudinalWorkerRequestV3 }) => void> = [];
   const responses: OpenEnaLongitudinalWorkerResponseV3[] = [];
+  const terminal = Promise.withResolvers<void>();
   const request = await validOpenEnaLongitudinalRequestV3();
   createOpenEnaLongitudinalWorkerHostV3({
     addEventListener: (_type, listener) => listeners.push(listener),
-    postMessage: (message) => responses.push(message),
-  }, { execute: async (input) => fakeBundle(input) });
+    postMessage: (message) => {
+      responses.push(message);
+      if (message.kind !== "progress") terminal.resolve();
+    },
+  }, { execute: async (input) => {
+    // Exercise execution that legitimately exceeds the former 20 ms sleep.
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    return fakeBundle(input);
+  } });
   listeners[0]!({ data: { kind: "run", id: "one", request } });
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await terminal.promise;
   assert.deepEqual(responses.filter((message) => message.kind === "progress").map((message) => message.progress), [0.05, 0.22, 0.96]);
   assert.equal(responses.filter((message) => message.kind === "result").length, 1);
   assert.equal(responses.at(-1)?.kind, "result");
 });
 
-test("Worker V3 suppresses a late scientific result after cancellation", async () => {
+test("Worker V3 suppresses a late scientific result after cancellation", { timeout: 5000 }, async () => {
   const listeners: Array<(event: { data: OpenEnaLongitudinalWorkerRequestV3 }) => void> = [];
   const responses: OpenEnaLongitudinalWorkerResponseV3[] = [];
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const started = Promise.withResolvers<void>();
+  const gate = Promise.withResolvers<void>();
+  const terminal = Promise.withResolvers<void>();
   createOpenEnaLongitudinalWorkerHostV3({
     addEventListener: (_type, listener) => listeners.push(listener),
-    postMessage: (message) => responses.push(message),
-  }, { execute: async (input) => { await gate; return fakeBundle(input); } });
+    postMessage: (message) => {
+      responses.push(message);
+      if (message.kind !== "progress") terminal.resolve();
+    },
+  }, { execute: async (input) => { started.resolve(); await gate.promise; return fakeBundle(input); } });
   listeners[0]!({ data: { kind: "run", id: "cancelled", request: await validOpenEnaLongitudinalRequestV3() } });
+  await started.promise;
   listeners[0]!({ data: { kind: "cancel", id: "cancelled" } });
-  release();
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  gate.resolve();
+  await terminal.promise;
   assert.equal(responses.some((message) => message.kind === "result"), false);
   assert.equal(responses.at(-1)?.kind, "cancelled");
 });
