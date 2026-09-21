@@ -107,7 +107,7 @@ export interface OpenEna3dTrace {
   v?: number[];
   w?: number[];
   anchor?: "tip";
-  sizemode?: "absolute";
+  sizemode?: "absolute" | "raw";
   sizeref?: number;
   colorscale?: Array<[number, string]>;
   showscale?: boolean;

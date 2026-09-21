@@ -604,6 +604,40 @@ test("off-diagonal cones point ground-to-response with target insets and stable 
   assert.ok(Math.abs(magnitude(laneB) - sceneExtent * RECIPROCAL_LANE_OFFSET_RATIO) < 1e-10);
 });
 
+test("ONA arrowheads use scene-relative physical lengths without Plotly's inter-cone spacing multiplier", () => {
+  // Plotly absolute sizing still multiplies by the spacing of consecutive
+  // cones in each trace. Large fitted nodes (the production fixture reaches
+  // +/-204) made both edge and self-loop arrows obscure the whole network.
+  // Raw sizing must keep their physical length bounded by our scene scale,
+  // independent of coordinates, group scope, and threshold bucket population.
+  for (const scale of [0.01, 1, 250]) {
+    const fixture = orderedFixture();
+    for (const node of requiredRotationNodes(fixture.result)) {
+      for (const dimension of DIMENSIONS) node[dimension] = Number(node[dimension]) * scale;
+    }
+    const before = structuredClone(fixture.result);
+    for (const scope of [{ kind: "overall" }, { kind: "group", name: "first" }, { kind: "group", name: "second" }] as const) {
+      for (const edgeThreshold of [0, 0.35]) {
+        const spec = compileOpenEnaOrdered3dPlotSpec(compileInput(fixture, { scope, edgeThreshold }));
+        const extent = Math.abs(spec.layout.scene.xaxis.range[1]);
+        const arrows = spec.data.filter((trace) => DIRECTED_ROLES.has(trace.meta.role) && trace.meta.role.endsWith("arrowhead"));
+        assert.ok(arrows.some((trace) => trace.meta.role === "ordered-edge-arrowhead"));
+        if (edgeThreshold === 0) assert.ok(arrows.some((trace) => trace.meta.role === "ordered-self-loop-arrowhead"));
+        for (const arrow of arrows) {
+          assert.equal(arrow.sizemode, "raw", "precomputed physical arrow lengths must not be multiplied by inter-cone spacing");
+          assert.equal(arrow.anchor, "tip");
+          for (let index = 0; index < arrow.x.length; index++) {
+            const physicalLength = Math.hypot(arrow.u![index]!, arrow.v![index]!, arrow.w![index]!) * arrow.sizeref!;
+            assert.ok(physicalLength > 0 && physicalLength <= extent * 0.031,
+              `arrow length ${physicalLength} must remain a small fraction of scene extent ${extent}`);
+          }
+        }
+      }
+    }
+    assert.deepEqual(fixture.result, before, "sizing must not alter fitted scientific data");
+  }
+});
+
 test("diagonal cells render only as deterministic closed coplanar 24-segment loops with tangent cones independent of camera", () => {
   const fixture = orderedFixture();
   const isometric = compileOpenEnaOrdered3dPlotSpec(compileInput(fixture, { camera: "isometric" }));

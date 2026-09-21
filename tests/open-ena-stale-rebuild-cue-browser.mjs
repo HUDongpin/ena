@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { prepareNativeFixtureV3 } from "./helpers/open-ena-native-browser-fixture-v3.mjs";
 import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
 
@@ -86,6 +87,7 @@ try {
   assert.match(await page.getByRole("region", { name: "Unit fields", exact: true }).innerText(), /team_id/);
   await page.getByRole("tab", { name: /Horizons,/ }).click();
   assert.match(await page.getByRole("region", { name: "Horizon identity", exact: true }).innerText(), /conversation_id/);
+  await prepareNativeFixtureV3(page, { sourcePreparation: false, units: ["team_id"], horizons: ["conversation_id"], group: "condition", codes: ["goal", "evidence", "strategy", "tradeoff", "revision"], backward: 1 });
   await page.getByTestId("open-ena-stale-rebuild-run").click();
   await page.waitForFunction(() => window.jobs.length === 2);
   assert.equal(await page.evaluate(() => window.jobs.length), 2, "Rebuild now is an explicit researcher action");

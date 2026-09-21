@@ -322,6 +322,24 @@ test("a deferred A generation cannot settle over a newer A generation after A to
   );
 });
 
+test("the UI renews an operation only for a matching server-confirmed pre-dispatch failure", async () => {
+  const module = await import("../components/open-ena/OpenEnaAiInterpretation") as Record<string, unknown>;
+  const mayRenew = module.mayRenewOpenEnaAiOperation as ((response: Response, operationId: string) => boolean) | undefined;
+  assert.equal(typeof mayRenew, "function");
+  const operationId = "aiop-01234567-89ab-4cde-8f01-23456789abcd";
+  const headers = {
+    "x-open-ena-ai-retry": "new-operation",
+    "x-open-ena-ai-operation-id": operationId,
+  };
+  assert.equal(mayRenew!(new Response(null, { status: 503, headers }), operationId), true);
+  assert.equal(mayRenew!(new Response(null, { status: 503 }), operationId), false);
+  assert.equal(mayRenew!(new Response(null, { status: 200, headers }), operationId), false);
+  assert.equal(mayRenew!(new Response(null, { status: 503, headers }), "aiop-fedcba98-7654-4321-8fed-cba987654321"), false);
+  assert.equal(mayRenew!(new Response(null, { status: 503, headers: { ...headers, "x-open-ena-ai-retry": "unknown" } }), operationId), false);
+  assert.match(aiComponent, /mayRenewOpenEnaAiOperation\(response,\s*operationId\)/,
+    "the actual failed-response path must use the recovery decision");
+});
+
 test("AI output carries permanent limitations and visible provider, model, and provenance", () => {
   assert.match(
     aiComponent,

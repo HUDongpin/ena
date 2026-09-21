@@ -235,6 +235,70 @@ test("AI generation operation IDs are stable across login rotation and prevent a
   assert.equal(providerCalls, 2);
 });
 
+test("a released pre-dispatch failure permits an explicit retry with a fresh operation", async () => {
+  const store = new MemoryBillableStore();
+  let attempts = 0;
+  const { handler } = dependencies({
+    billableStore: store,
+    limits: BILLABLE_LIMITS,
+    generate: async () => {
+      attempts += 1;
+      if (attempts === 1) throw Object.assign(new Error("private configuration detail"), {
+        code: "invalid-configuration", providerDispatched: false,
+      });
+      return generatedResult;
+    },
+  });
+  const failed = await handler(request());
+  assert.equal(failed.status, 503);
+  assert.equal(failed.headers.get("x-open-ena-ai-retry"), "new-operation");
+  assert.equal(failed.headers.get(OPEN_ENA_AI_OPERATION_HEADER), VALID_OPERATION_ID);
+  assert.equal((await handler(request())).status, 409, "the old ID must still prevent a replay");
+  const retried = await handler(request(undefined, {
+    operationId: "aiop-fedcba98-7654-4321-8fed-cba987654321",
+  }));
+  assert.equal(retried.status, 200);
+  assert.equal(attempts, 2);
+});
+
+test("a dispatched failure never authorizes a new operation automatically", async () => {
+  const store = new MemoryBillableStore();
+  const { handler } = dependencies({
+    billableStore: store, limits: BILLABLE_LIMITS,
+    generate: async () => { throw Object.assign(new Error("private network detail"), {
+      code: "upstream-network", providerDispatched: true,
+    }); },
+  });
+  const failed = await handler(request());
+  assert.equal(failed.status, 502);
+  assert.equal(failed.headers.get("x-open-ena-ai-retry"), null);
+  assert.equal((await handler(request())).status, 409);
+});
+
+test("failed reservation release cannot authorize a fresh operation", async () => {
+  class FailingReleaseStore extends MemoryBillableStore {
+    override async release() { throw new Error("private store failure"); }
+  }
+  const { handler } = dependencies({
+    billableStore: new FailingReleaseStore(), limits: BILLABLE_LIMITS,
+    generate: async () => { throw Object.assign(new Error("private configuration detail"), {
+      code: "invalid-configuration", providerDispatched: false,
+    }); },
+  });
+  const failed = await handler(request());
+  assert.equal(failed.status, 503);
+  assert.equal(failed.headers.get("x-open-ena-ai-retry"), null);
+});
+
+test("an unknown dispatch outcome cannot authorize a fresh operation", async () => {
+  const { handler } = dependencies({
+    billableStore: new MemoryBillableStore(), limits: BILLABLE_LIMITS,
+    generate: async () => { throw new Error("unclassified provider failure"); },
+  });
+  const failed = await handler(request());
+  assert.equal(failed.headers.get("x-open-ena-ai-retry"), null);
+});
+
 test("AI operation IDs are required and strictly bounded before parsing or provider use", async () => {
   for (const operationId of [null, "not-an-operation", "aiop-00000000-0000-0000-0000-000000000000"]) {
     const { handler, calls } = dependencies();

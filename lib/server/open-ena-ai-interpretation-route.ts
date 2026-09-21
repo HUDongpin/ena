@@ -11,6 +11,7 @@ import {
   OPEN_ENA_AI_CONSENT_VALUE,
   OPEN_ENA_AI_OPERATION_HEADER,
   OPEN_ENA_AI_OPERATION_ID,
+  OPEN_ENA_AI_RETRY_HEADER,
   parseOpenEnaAiInterpretationRequest,
   type OpenEnaAiInterpretationRequest,
   type OpenEnaAiInterpretationResponse,
@@ -436,6 +437,7 @@ export function createOpenEnaAiInterpretationPostHandler(
     try {
       result = await dependencies.generate(parsedRequest, request.signal);
     } catch (error) {
+      let releasedBeforeDispatch = false;
       let receiptTerminalFailure = false;
       if (consentReceipt && store?.updateAiConsentReceiptStatus) {
         try {
@@ -471,7 +473,12 @@ export function createOpenEnaAiInterpretationPostHandler(
             } catch {
               // Settlement already succeeded; do not encourage a second provider dispatch.
             }
-          } else await store!.release(reservation);
+          } else {
+            await store!.release(reservation);
+            // Only an explicit no-dispatch verdict plus successful cleanup
+            // permits the user's next attempt to create a new operation.
+            releasedBeforeDispatch = errorProperty(error, "providerDispatched") === false;
+          }
         } catch {
           return jsonResponse({ error: "AI interpretation is temporarily unavailable." }, 503);
         }
@@ -479,7 +486,12 @@ export function createOpenEnaAiInterpretationPostHandler(
       if (receiptTerminalFailure) {
         return jsonResponse({ error: "AI interpretation consent receipt storage is unavailable." }, 503);
       }
-      return safeProviderFailure(error);
+      const failure = safeProviderFailure(error);
+      if (releasedBeforeDispatch) {
+        failure.headers.set(OPEN_ENA_AI_RETRY_HEADER, "new-operation");
+        failure.headers.set(OPEN_ENA_AI_OPERATION_HEADER, operationId);
+      }
+      return failure;
     }
     if (reservation) {
       try {
