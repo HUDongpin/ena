@@ -25,6 +25,9 @@ pnpm-debug.log*
 /output/
 /.worktrees/
 
+# Repo-root local scratch (Node compile cache, research dumps)
+/tmp/
+
 # Editors and macOS
 .DS_Store
 *.swp
