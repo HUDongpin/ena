@@ -679,18 +679,43 @@ git commit -m "test: record Standard ENA acceptance evidence"
 
 - [ ] **Step 9: Verify final local topology without pushing**
 
-Run:
+Run for a current read-only check (revised 2026-09-23):
 
 ```bash
 git rev-parse HEAD
 git status --short --branch
 git log --oneline --decorate -12
-git ls-remote --heads origin codex/minor-UI-changes
+git ls-remote --heads origin refs/heads/main
+git rev-parse --verify 'refs/heads/main^{commit}'
+git cat-file -e '3aea9a934787fe44ade1082980dc6293e00f3d87^{commit}'
+git merge-base --is-ancestor 3aea9a934787fe44ade1082980dc6293e00f3d87 refs/heads/main
 ```
 
-Expected: a clean local branch with exact local HEAD and a separately reported
-remote SHA. Do not push, create a PR, merge, deploy, or claim production
-verification.
+Expected: a clean local branch with exact local HEAD, a separately reported
+live remote `main` SHA equal to local `main`, and the frozen comparison commit
+reachable from that `main`. If local and remote `main` differ, stop before
+claiming live remote containment. Do not push, create a PR, merge, deploy, or
+claim production verification.
+
+**2026-09-23 read-only addendum:** The original Task40 command was
+`git ls-remote --heads origin codex/minor-UI-changes`. It is a historical
+query, not a continuing requirement that this task branch remain live. The
+reported 2026-09-07 result remains historical; its linked
+`/tmp` raw log is no longer available. A new, separately dated live comparison
+of that branch and `main` is preserved in the
+[remote comparison receipt](../evidence/2026-09-23-minor-ui-remote-comparison.json)
+and [branch-query output](../evidence/2026-09-23-minor-ui-live-remote.log)
+with a [SHA-256 checksum](../evidence/2026-09-23-minor-ui-remote-comparison.sha256).
+From the repository root, verify it with
+`shasum -a 256 -c docs/superpowers/evidence/2026-09-23-minor-ui-remote-comparison.sha256`.
+The new branch-query output has the same SHA-256 as the historical log recorded
+in the ledger. The original file and its capture provenance remain unavailable;
+the new capture does not complete the pending independent acceptance review.
+
+The revised Step 9 commands check current `main` lineage, including after an
+intentional retirement of the task branch. They do not prove that the old branch
+still exists or what the remote returned on 2026-09-07. After that branch is
+deleted, an empty response to the original branch query is expected.
 
 ## Plan 5 completion checkpoint
 

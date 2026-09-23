@@ -835,3 +835,28 @@ state. GitHub mutation, PR, merge, deployment and production remain outside scop
 | Task40: `git rev-parse HEAD` | Pass | [14-preledger-topology.json](/tmp/ena-41-task-controller-20260905/task40-writer/14-preledger-topology.json) | Tested f1f7356 snapshot; postcommit final values separately sealed | Local topology only |
 | Task40: `git log --oneline --decorate -12` | Pass | [14-preledger-topology.json](/tmp/ena-41-task-controller-20260905/task40-writer/14-preledger-topology.json) | Tested f1f7356 snapshot; postcommit final values separately sealed | Local topology only |
 | Task40: `git ls-remote --heads origin codex/minor-UI-changes` | Pass | [13-preledger-live-remote.log](/tmp/ena-41-task-controller-20260905/task40-writer/13-preledger-live-remote.log); SHA256 `eb142fa88fe7132f8291dd89839f4b578814aa1ba8fd926e38a3d25cca10dd49` | Exit0; 3aea9a934787fe44ade1082980dc6293e00f3d87; postcommit query separately sealed | No cached-ref substitution; separate comparison branch |
+
+### 2026-09-23 remote comparison preservation
+
+The Task40 branch query above is a **historical reported Pass** for 2026-09-07.
+Its linked `/tmp` raw log was unavailable when checked on 2026-09-23, so the
+original file and capture provenance cannot be recovered from that link. The new
+[remote comparison receipt](../evidence/2026-09-23-minor-ui-remote-comparison.json),
+[branch-query output](../evidence/2026-09-23-minor-ui-live-remote.log),
+and [SHA-256 checksum](../evidence/2026-09-23-minor-ui-remote-comparison.sha256)
+preserve a separate 2026-09-23 live query: `codex/minor-UI-changes` at
+`3aea9a934787fe44ade1082980dc6293e00f3d87`, `main` at
+`ba73170ce6a114d60aee9c669dfbedc17f8ea888`, and the branch commit
+reachable from that exact `main`. The receipt also records the merged PR #32
+head and the audit state. The fresh branch-query output hashes to
+`eb142fa88fe7132f8291dd89839f4b578814aa1ba8fd926e38a3d25cca10dd49`,
+exactly the SHA-256 recorded for the missing historical log. This establishes
+byte-equivalent query output, not the original file's capture time or
+provenance. It does not establish a future branch state or change the pending
+independent acceptance status.
+
+For later read-only checks, use the [Plan 5 Step 9 addendum](../plans/2026-09-02-open-ena-standard-model-parameters-05-parity-acceptance.md)
+to query live `main` and test the frozen commit's ancestry after confirming
+local and remote `main` SHAs agree. The original branch query need not remain
+an executable future gate once that branch is intentionally retired; its
+historical result stays bounded to the recorded time.

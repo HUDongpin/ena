@@ -1,0 +1,76 @@
+{
+  "audit": {
+    "after_sha256": "42910071839d80a7682f8b118e7a37c26ba632d480802b519799471cdb1a8450",
+    "before_sha256": "42910071839d80a7682f8b118e7a37c26ba632d480802b519799471cdb1a8450",
+    "live_remote_head_count": 2,
+    "live_remote_state": "verified",
+    "tool": "git-branch-worktree-convergence/scripts/audit-git-topology.sh --repo /Volumes/Starship/ENA --remote origin",
+    "unchanged_during_capture": true
+  },
+  "branch": {
+    "ref": "refs/heads/codex/minor-UI-changes",
+    "sha": "3aea9a934787fe44ade1082980dc6293e00f3d87",
+    "tree": "6ab2275b19d2b8a81dfa30666f85e0cba81a6dff"
+  },
+  "branch_head_ancestor_of_main": true,
+  "branch_only_commits_vs_main": 0,
+  "byte_equivalent_log_path": "docs/superpowers/evidence/2026-09-23-minor-ui-live-remote.log",
+  "captured_at_utc": "2026-09-23T08:57:39+00:00",
+  "historical_2026_09_07_log_sha256_recorded": "eb142fa88fe7132f8291dd89839f4b578814aa1ba8fd926e38a3d25cca10dd49",
+  "historical_2026_09_07_raw_log_available_at_capture": false,
+  "limitations": [
+    "This snapshot proves the listed refs at capture time only.",
+    "The new branch-query output matches the checksum recorded for the missing historical log, but the original file and its capture provenance remain unavailable.",
+    "Branch ancestry does not establish final independent acceptance, deployment, or production behavior."
+  ],
+  "live_queries": [
+    {
+      "argv": [
+        "git",
+        "--no-optional-locks",
+        "ls-remote",
+        "--heads",
+        "origin",
+        "codex/minor-UI-changes"
+      ],
+      "exit_code": 0,
+      "stdout": "3aea9a934787fe44ade1082980dc6293e00f3d87\trefs/heads/codex/minor-UI-changes\n",
+      "stdout_sha256": "eb142fa88fe7132f8291dd89839f4b578814aa1ba8fd926e38a3d25cca10dd49"
+    },
+    {
+      "argv": [
+        "git",
+        "--no-optional-locks",
+        "ls-remote",
+        "--heads",
+        "origin",
+        "main"
+      ],
+      "exit_code": 0,
+      "stdout": "ba73170ce6a114d60aee9c669dfbedc17f8ea888\trefs/heads/main\n",
+      "stdout_sha256": "8cca3bbe0a6a5b650199c57a1ccb13571f8cfe65db0bcb45532caf6490afb7b3"
+    }
+  ],
+  "main": {
+    "ref": "refs/heads/main",
+    "sha": "ba73170ce6a114d60aee9c669dfbedc17f8ea888",
+    "tree": "368dc3d7b27c44b69053a1f3082ebf356e986a01"
+  },
+  "new_branch_query_stdout_matches_historical_log_sha256": true,
+  "pr32": {
+    "baseRefName": "main",
+    "headRefName": "codex/minor-UI-changes",
+    "headRefOid": "3aea9a934787fe44ade1082980dc6293e00f3d87",
+    "mergeCommit": {
+      "oid": "3aea9a934787fe44ade1082980dc6293e00f3d87"
+    },
+    "mergedAt": "2026-09-08T05:05:15Z",
+    "number": 32,
+    "state": "MERGED",
+    "url": "https://github.com/HUDongpin/ena/pull/32"
+  },
+  "remote": "origin",
+  "repository": "HUDongpin/ena",
+  "schema": "ena-remote-comparison-receipt/v1",
+  "scope": "new read-only live snapshot; not a reconstruction of the 2026-09-07 Task40 raw log or a final acceptance result"
+}
