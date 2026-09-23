@@ -12,7 +12,7 @@ import {
   openEnaAuthSecurityConfigurationReady,
   verifyProductionOpenEnaSessionTokenAny,
 } from "@/lib/server/open-ena-auth-security-store";
-import { OPEN_ENA_AI_DEFAULT_MODEL } from "@/lib/server/luna-client";
+import { OPEN_ENA_AI_DEFAULT_MODEL } from "@/lib/server/deepseek-client";
 import {
   getOpenEnaCopy,
   isOpenEnaLocalizedLocale,
@@ -86,7 +86,7 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
   const copy = getOpenEnaCopy(typedLocale);
   const configuredAiModel = process.env.OPEN_ENA_AI_MODEL?.trim();
   const providerDescriptor = {
-    provider: "OpenRouter",
+    provider: "DeepSeek",
     model: configuredAiModel && configuredAiModel.length <= 160
       && !/[\u0000-\u001f\u007f]/u.test(configuredAiModel)
       && /^[A-Za-z0-9._:/@-]+$/u.test(configuredAiModel)

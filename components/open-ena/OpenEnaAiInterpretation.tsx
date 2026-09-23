@@ -83,7 +83,7 @@ export default function OpenEnaAiInterpretation({
   copy,
   disabled,
   disabledReason,
-  providerDescriptor = { provider: "OpenRouter", model: "server-configured model" },
+  providerDescriptor = { provider: "DeepSeek", model: "server-configured model" },
   showHeading = true,
 }: OpenEnaAiInterpretationProps) {
   const [consentedRequestIdentity, setConsentedRequestIdentity] = useState<string | null>(null);
@@ -102,7 +102,7 @@ export default function OpenEnaAiInterpretation({
   const currentRequestIdentityRef = useRef(requestIdentity);
   currentRequestIdentityRef.current = requestIdentity;
   const operationStorageKey = request
-    ? `open-ena-ai-operation-v1:${request.binding.evidenceKey}`
+    ? `open-ena-ai-operation-v2:${request.binding.evidenceKey}`
     : null;
   const consentGranted = requestIdentity !== null && consentedRequestIdentity === requestIdentity;
   const currentResponse = aiResponse && aiResponseRequestIdentity === requestIdentity ? aiResponse : null;

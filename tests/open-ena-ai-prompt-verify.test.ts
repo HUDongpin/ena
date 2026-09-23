@@ -148,7 +148,7 @@ test("the verification function fails controlled prompt-byte, hash, schema, fixt
   }
 
   const commentedClientSource = readFileSync(
-    join(projectRoot, "tests/open-ena-ai-interpretation-client.test.ts"),
+    join(projectRoot, "tests/open-ena-deepseek-provider.test.ts"),
     "utf8",
   ).split("\n").map((line) => `// ${line}`).join("\n");
   const commentOnlyBinding = verifier.buildOpenEnaAiPromptVerificationV1({
@@ -206,7 +206,7 @@ test("the verification function fails controlled prompt-byte, hash, schema, fixt
 
   const sourceDrift = verifier.buildOpenEnaAiPromptVerificationV1({
     mockClientTestSource: `${readFileSync(
-      join(projectRoot, "tests/open-ena-ai-interpretation-client.test.ts"),
+      join(projectRoot, "tests/open-ena-deepseek-provider.test.ts"),
       "utf8",
     )}\n// source-manifest-drift`,
   });
@@ -279,8 +279,8 @@ test("offline evaluation and verification sources have no network, environment, 
   assert.doesNotMatch(sources, /\bfetch\s*\(/u);
   assert.doesNotMatch(sources, /process\.env/u);
   assert.doesNotMatch(sources, /\b(?:writeFile|appendFile|createWriteStream|rmSync|unlinkSync)\b/u);
-  assert.doesNotMatch(sources, /from\s+["'][^"']*luna-client["']/u);
+  assert.doesNotMatch(sources, /from\s+["'][^"']*deepseek-client["']/u);
   assert.doesNotMatch(sources, /https?:\/\//u);
-  const runtimeClient = readFileSync(join(projectRoot, "lib/server/luna-client.ts"), "utf8");
+  const runtimeClient = readFileSync(join(projectRoot, "lib/server/deepseek-client.ts"), "utf8");
   assert.doesNotMatch(runtimeClient, /open-ena-ai-prompt-evaluation/u);
 });

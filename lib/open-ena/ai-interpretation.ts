@@ -68,7 +68,7 @@ export const OPEN_ENA_AI_MAX_EDGES = 12;
 export const OPEN_ENA_AI_MAX_REQUEST_BYTES = 48 * 1024;
 export const OPEN_ENA_AI_MIN_AGGREGATE_N = 3;
 export const OPEN_ENA_AI_CONSENT_HEADER = "x-open-ena-ai-consent";
-export const OPEN_ENA_AI_CONSENT_VALUE = "reviewed-aggregate-v2";
+export const OPEN_ENA_AI_CONSENT_VALUE = "reviewed-aggregate-v3";
 export const OPEN_ENA_AI_OPERATION_HEADER = "x-open-ena-ai-operation-id";
 export const OPEN_ENA_AI_RETRY_HEADER = "x-open-ena-ai-retry";
 export const OPEN_ENA_AI_OPERATION_ID = /^aiop-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -1123,7 +1123,7 @@ export interface OpenEnaAiInterpretationResponseV2 {
   schemaVersion: typeof OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2;
   promptVersion: typeof OPEN_ENA_AI_PROMPT_VERSION_V2;
   binding: OpenEnaAiBindingV2;
-  provider: "openrouter";
+  provider: "openrouter" | "deepseek";
   model: string;
   generatedAt: string;
   interpretation: {
@@ -2922,7 +2922,7 @@ export function parseOpenEnaAiInterpretationResponseV2(
   ], "AI v2 response");
   if (record.schemaVersion !== OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2) throw new Error("AI v2 response schema version is invalid.");
   if (record.promptVersion !== OPEN_ENA_AI_PROMPT_VERSION_V2) throw new Error("AI v2 response prompt version is invalid.");
-  if (record.provider !== "openrouter") throw new Error("AI v2 response provider is invalid.");
+  if (record.provider !== "openrouter" && record.provider !== "deepseek") throw new Error("AI v2 response provider is invalid.");
   const binding = parseBindingV2(record.binding);
   if (expectedRequest && JSON.stringify(binding) !== JSON.stringify(expectedRequest.binding)) {
     throw new Error("AI v2 response binding does not match the current reviewed evidence.");
@@ -2934,7 +2934,7 @@ export function parseOpenEnaAiInterpretationResponseV2(
     schemaVersion: OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2,
     promptVersion: OPEN_ENA_AI_PROMPT_VERSION_V2,
     binding,
-    provider: "openrouter",
+    provider: record.provider,
     model: strictV2Label(record.model, "AI v2 response model"),
     generatedAt: boundedText(record.generatedAt, "AI v2 response timestamp", 64),
     interpretation: parseInterpretationV2(record.interpretation, validEvidenceIds),

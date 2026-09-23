@@ -1,3 +1,4 @@
+// Historical OpenRouter compatibility fixture only. Production imports deepseek-client.ts.
 import type {
   OpenEnaAiInterpretationRequest,
   OpenEnaAiInterpretationResponse,

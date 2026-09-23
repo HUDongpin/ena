@@ -1891,7 +1891,7 @@ export function evaluateOpenEnaAiOfflineCandidateV1(
       schemaVersion: OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2,
       promptVersion: OPEN_ENA_AI_PROMPT_VERSION_V2,
       binding: evaluationCase.request.binding,
-      provider: "openrouter",
+      provider: "deepseek",
       model: SYNTHETIC_MODEL,
       generatedAt: SYNTHETIC_ANALYZED_AT,
       interpretation: candidate,

@@ -287,7 +287,7 @@ const utcDayKey = (date: Date) => date.toISOString().slice(0, 10);
 const utcMonthKey = (date: Date) => date.toISOString().slice(0, 7);
 const usageKey = (...parts: string[]) => parts.join("\0");
 export function providerRefForResource(resource: string) {
-  if (resource === "ai-interpretation") return "openrouter";
+  if (resource === "ai-interpretation") return "deepseek";
   if (resource === "longitudinal") return "persistent-compute";
   return `resource:${resource}`;
 }

@@ -74,7 +74,7 @@ test("AI remains the fifth rail mode with native Stats evidence and explicit nav
 test("AI guidance remains provider-neutral with the established readable typography", () => {
 
   assert.match(shell(), /class="ena-panel-kicker">AI<\/p>/);
-  assert.doesNotMatch(shell(), /AI · OpenRouter/);
+  assert.doesNotMatch(shell(), /AI · (?:OpenRouter|DeepSeek)/);
   assert.match(aiComponent, /<p className="ena-panel-kicker">AI<\/p>/);
   assert.match(globalStyles, /\.ena-ai-stats-source-summary p\s*\{[\s\S]*?font-size:\s*calc\(0\.65rem \+ var\(--ena-font-step, 1px\) \+ 1px\);/);
   assert.match(globalStyles, /\.ena-ai-disabled-reason\s*\{[\s\S]*?font-size:/);
@@ -136,7 +136,7 @@ test("the only AI network request is a POST inside the explicit Generate handler
   }
   assert.doesNotMatch(
     aiComponent,
-    /https?:\/\/(?:openrouter|api\.openai|api\.anthropic|generativelanguage)\./i,
+    /https?:\/\/(?:openrouter|api\.deepseek|api\.openai|api\.anthropic|generativelanguage)\./i,
     "the browser must call only the owned server route, never an external provider directly",
   );
   assert.match(aiComponent, /\[OPEN_ENA_AI_CONSENT_HEADER\]:\s*OPEN_ENA_AI_CONSENT_VALUE/);

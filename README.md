@@ -340,28 +340,28 @@ truncating the scientific dataset.
 ### Optional AI-assisted interpretation
 
 AI interpretation is disabled unless the server is configured with
-`OPEN_ENA_AI_ENABLED=true` and a server-only `OPENROUTER_API_KEY`. The default
-provider URL is `https://openrouter.ai/api/v1` and the default model is
-`openai/gpt-5.6-luna`. `OPEN_ENA_AI_MODEL` may select another OpenRouter model,
-but the provider URL is intentionally restricted to the official HTTPS OpenRouter
-API so a configuration mistake cannot send the bearer key to another host. Copy
+`OPEN_ENA_AI_ENABLED=true` and a server-only `DEEPSEEK_API_KEY`. The only approved
+provider endpoint is `https://api.deepseek.com`; the model is `deepseek-flash`.
+The server rejects other model IDs and does not read `OPENROUTER_API_KEY` or an
+arbitrary provider URL. Copy
 `.env.example` to a local ignored environment file and never use a `NEXT_PUBLIC_*`
 variable for the provider key. AI requests also require an explicit Open ENA
 username, a password of at least 12 characters, and an independent session secret
 of at least 32 characters; the source-code fallback login is not accepted by the AI
 route.
 
-Before opt-in, the workspace identifies the actual OpenRouter gateway and model,
-the aggregate-only payload boundary, the endpoint-specific Zero Data Retention
-(ZDR) caveat, downstream model-provider/subprocessor retention and training
-policies, the non-fixed processing region, and the minimal hash-bound consent
-receipt. Every generation sends the request-level routing constraints
-`provider.zdr=true` and `provider.data_collection="deny"`; when no endpoint
-satisfies both controls, the request fails closed rather than falling back to a
-non-ZDR or data-collecting endpoint. These fields record the application's routing
-requirements, not a downstream-provider attestation. OpenRouter and downstream
-endpoint policies are external configuration facts; the interface deliberately
-does not promise a region or retention period that the deployment cannot prove.
+Before opt-in, the workspace identifies DeepSeek and the model, the aggregate-only
+payload boundary, retention and training uncertainty, possible processing in
+mainland China, and the minimal hash-bound consent receipt. Every generation
+uses the DeepSeek Responses API with `store=false`, non-thinking mode, and a strict JSON Schema.
+This does not establish zero retention or exclusion from model training. The
+operator must review the current DeepSeek API terms and privacy disclosures.
+The application checks `GET /user/balance` before dispatch; its durable internal
+ledger enforces the daily, monthly, global, provider, and per-request reservations.
+DeepSeek does not expose the OpenRouter-style monthly key limit used by the prior
+integration. For ledger settlement, reported token usage is costed conservatively
+at the documented peak DeepSeek Flash rates as of 2026-09-24; this is an upper
+bound estimate, not a provider invoice. Missing usage settles the full reservation.
 
 Vercel Web Analytics is an optional, aggregate-only service in the site shell.
 It is disabled until the visitor explicitly enables it in the footer disclosure,
@@ -384,14 +384,15 @@ design, or researcher review. To prevent aggregate centroids from degenerating i
 individual records, every exported AI group and non-missing trajectory group-period
 must contain at least three entities. The route uses the configured durable
 per-account request limit, caps provider output at 1,800 tokens, propagates browser cancellation,
-and bounds both request and response bodies. Configure a provider-side OpenRouter
-monthly budget and the versioned billable policy, including
+and bounds both request and response bodies. Configure the versioned billable
+policy, including
 `OPEN_ENA_BILLABLE_REQUESTS_PER_MINUTE`,
 `OPEN_ENA_AI_MAX_RESERVATION_MICRO_USD`, and
 `OPEN_ENA_LONGITUDINAL_MAX_RESERVATION_MICRO_USD`, as durable production limits.
-Before each provider request, the server verifies the key's monthly limit and
-remaining allowance, reserves the configured maximum, and settles strictly
-reported provider cost in micro-USD. Production quota and spend decisions come
+Before each provider request, the server checks DeepSeek balance availability,
+confirms the reserved maximum covers the conservative peak-rate request bound,
+and settles reported token usage at a conservative peak-rate estimate in micro-USD.
+Production quota and spend decisions come
 only from the PostgreSQL-backed stable account principal; a new login token or a
 different application instance does not create a fresh quota bucket.
 Each explicit AI generation also carries a browser-created operation ID. A failed

@@ -13,7 +13,7 @@ import {
   openEnaAiAuthConfigurationReady,
   OPEN_ENA_AI_MAX_REQUEST_BYTES,
 } from "../lib/server/open-ena-ai-interpretation-route";
-import type { OpenEnaAiGenerationResult } from "../lib/server/luna-client";
+import type { OpenEnaAiGenerationResult } from "../lib/server/deepseek-client";
 import { MemoryBillableStore } from "../lib/server/open-ena-billable";
 
 const WORKSPACE_URL = "http://localhost:3000/api/open-ena/ai-interpretation";
@@ -529,7 +529,7 @@ test("AI interpretation returns a fixed safe upgrade response for historical pro
   assert.doesNotMatch(JSON.stringify(body), /V1_PRIVATE_EVIDENCE_MUST_NOT_LEAK/);
 });
 
-test("AI interpretation reports the OpenRouter credit gate without exposing account details", async () => {
+test("AI interpretation reports the DeepSeek balance gate without exposing account details", async () => {
   const { handler } = dependencies({
     generate: async () => {
       throw Object.assign(new Error("private billing body and account identifier"), {
@@ -544,7 +544,7 @@ test("AI interpretation reports the OpenRouter credit gate without exposing acco
 
   assert.equal(response.status, 402);
   assertNoStore(response);
-  assert.match(responseText, /OpenRouter credits are required/i);
+  assert.match(responseText, /DeepSeek balance is required/i);
   assert.doesNotMatch(responseText, /private billing body|account identifier/);
 });
 

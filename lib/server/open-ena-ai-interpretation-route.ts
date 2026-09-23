@@ -20,7 +20,7 @@ import {
   generateLunaInterpretation,
   OPEN_ENA_AI_DEFAULT_MODEL,
   type OpenEnaAiGenerationResult,
-} from "@/lib/server/luna-client";
+} from "@/lib/server/deepseek-client";
 import type {
   AiConsentReceipt,
   AiConsentReceiptInput,
@@ -183,7 +183,7 @@ function safeProviderFailure(error: unknown) {
 
   if (status === 402 || code === "upstream-payment-required") {
     return jsonResponse(
-      { error: "OpenRouter credits are required before AI interpretation can run." },
+      { error: "DeepSeek balance is required before AI interpretation can run." },
       402,
     );
   }
@@ -345,7 +345,7 @@ export function createOpenEnaAiInterpretationPostHandler(
     let descriptor: { provider: string; model: string };
     try {
       descriptor = dependencies.providerDescriptor?.() ?? {
-        provider: "openrouter",
+        provider: "deepseek",
         model: dependencies.environment?.OPEN_ENA_AI_MODEL?.trim() || OPEN_ENA_AI_DEFAULT_MODEL,
       };
     } catch {
@@ -552,8 +552,6 @@ const productionPostHandler = createOpenEnaAiInterpretationPostHandler({
     if (!limits) return Promise.reject(Object.assign(new Error("AI interpretation billing policy is unavailable."), { code: "invalid-configuration", providerDispatched: false }));
     return generateLunaInterpretation(request, {
       signal,
-      providerMonthlyMicroUsd: limits.providerMonthlyMicroUsd,
-      globalMonthlyMicroUsd: limits.globalMonthlyMicroUsd,
       reservationMicroUsd: limits.maxReservationMicroUsd,
       environment: process.env,
     });

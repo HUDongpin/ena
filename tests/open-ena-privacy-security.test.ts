@@ -55,8 +55,8 @@ const parsedRequest = {
 } as unknown as OpenEnaAiInterpretationRequest;
 const generatedResponse = {
   marker: "safe-generated-response",
-  provider: "openrouter",
-  model: "openai/gpt-5.6-luna",
+  provider: "deepseek",
+  model: "deepseek-flash",
   generatedAt: "2026-08-30T00:00:00.000Z",
 } as unknown as OpenEnaAiInterpretationResponse;
 
@@ -80,7 +80,7 @@ function aiRequest(body = JSON.stringify({ browser: "payload-order-is-not-author
       origin: "http://localhost:3000",
       "x-forwarded-host": "localhost:3000",
       "x-forwarded-proto": "http",
-      "x-open-ena-ai-consent": "reviewed-aggregate-v2",
+      "x-open-ena-ai-consent": "reviewed-aggregate-v3",
       "x-open-ena-ai-operation-id": operationId,
     },
     body,
@@ -94,7 +94,7 @@ function aiDependencies(store: BillableStore, requireBillable = false) {
     billableStore: store,
     limits,
     requireBillable,
-    providerDescriptor: () => ({ provider: "openrouter", model: "openai/gpt-5.6-luna" }),
+    providerDescriptor: () => ({ provider: "deepseek", model: "deepseek-flash" }),
     parseRequest: () => parsedRequest,
     generate: async () => ({
       response: generatedResponse,
@@ -160,21 +160,18 @@ test("AI removes the screenshot-selected disclosure cards while preserving expli
   assert.match(aiComponent, /data-ena-ai-payload-preview="reviewed-aggregate"/u);
   assert.match(aiComponent, /data-ena-ai-consent="explicit"/u);
   assert.match(aiComponent, /OPEN_ENA_AI_CONSENT_HEADER/u);
-  assert.match(i18n, /OpenRouter/u);
-  assert.match(i18n, /metadata/iu);
-  assert.match(i18n, /zero.data.retention|ZDR/iu);
+  assert.match(i18n, /DeepSeek/u);
+  assert.match(i18n, /zero.retention/iu);
   assert.match(i18n, /processing region/iu);
   assert.match(i18n, /durable/iu);
   assert.match(i18n, /provider, data, retention, region, and receipt disclosures/iu);
-  assert.match(i18n, /Every AI generation requests ZDR-only routing and denies provider data collection/u);
-  assert.match(i18n, /fails instead of falling back to a non-ZDR provider/u);
-  assert.match(i18n, /每次 AI 生成都要求僅使用 ZDR 端點並拒絕供應商資料收集/u);
-  assert.match(i18n, /不會降級至非 ZDR 供應商/u);
-  assert.match(i18n, /每次 AI 生成都要求仅使用 ZDR 端点并拒绝供应商数据收集/u);
-  assert.match(i18n, /不会降级到非 ZDR 供应商/u);
-  assert.match(readme, /provider\.zdr=true/u);
-  assert.match(readme, /provider\.data_collection="deny"/u);
-  assert.match(readme, /fails closed rather than falling back to a\s+non-ZDR or data-collecting endpoint/u);
+  assert.match(i18n, /this app requests a non-stored response object/u);
+  assert.match(i18n, /DeepSeek may process data in mainland China/u);
+  assert.match(i18n, /本程式要求不儲存回應物件/u);
+  assert.match(i18n, /本程序要求不存储响应对象/u);
+  assert.match(readme, /DeepSeek Responses API with `store=false`, non-thinking mode/u);
+  assert.match(readme, /does not establish zero retention or exclusion from model training/u);
+  assert.match(readme, /durable internal\s+ledger enforces the daily, monthly, global, provider/u);
 });
 
 test("successful AI responses expose a minimal consent receipt and the UI renders its durable provenance", async () => {
@@ -186,7 +183,7 @@ test("successful AI responses expose a minimal consent receipt and the UI render
   assert.equal(response.headers.get("x-open-ena-ai-operation-id"), operationId);
   const expectedHash = createHash("sha256").update(canonicalJson(parsedRequest), "utf8").digest("hex");
   assert.equal(response.headers.get("x-open-ena-ai-request-sha256"), expectedHash);
-  assert.equal(response.headers.get("x-open-ena-ai-consent-policy"), "reviewed-aggregate-v2");
+  assert.equal(response.headers.get("x-open-ena-ai-consent-policy"), "reviewed-aggregate-v3");
   assert.equal(response.headers.get("x-open-ena-ai-receipt-durable"), "false");
   assert.equal(response.headers.get("x-open-ena-ai-receipt-status"), "completed");
   assert.equal(response.headers.get("x-open-ena-ai-receipt-provider"), generatedResponse.provider);
@@ -257,9 +254,9 @@ test("production AI dispatch requires both receipt creation and terminal-status 
       principalRefHash: "a".repeat(64),
       operationId,
       requestSha256: "b".repeat(64),
-      consentPolicyVersion: "reviewed-aggregate-v2",
-      provider: "openrouter",
-      model: "openai/gpt-5.6-luna",
+      consentPolicyVersion: "reviewed-aggregate-v3",
+      provider: "deepseek",
+      model: "deepseek-flash",
       recordedAt: new Date().toISOString(),
       status: "authorized",
       durable: true,
@@ -293,9 +290,9 @@ test("memory and PostgreSQL stores implement the same privacy-minimal consent re
     principalRef: "raw-principal-never-store-this",
     operationId,
     requestSha256: "a".repeat(64),
-    consentPolicyVersion: "reviewed-aggregate-v2",
-    provider: "openrouter",
-    model: "openai/gpt-5.6-luna",
+    consentPolicyVersion: "reviewed-aggregate-v3",
+    provider: "deepseek",
+    model: "deepseek-flash",
   });
   assert.ok(recorded);
   assert.equal(recorded.durable, false);
@@ -307,24 +304,24 @@ test("memory and PostgreSQL stores implement the same privacy-minimal consent re
   const completed = await memory.updateAiConsentReceiptStatus({
     receiptId: String(recorded.id),
     status: "completed",
-    provider: "openrouter",
-    model: "openai/gpt-5.6-luna",
+    provider: "deepseek",
+    model: "deepseek-flash",
   });
   assert.equal(completed?.status, "completed");
   const replayed = await memory.recordAiConsentReceipt({
     principalRef: "raw-principal-never-store-this",
     operationId,
     requestSha256: "a".repeat(64),
-    consentPolicyVersion: "reviewed-aggregate-v2",
-    provider: "openrouter",
-    model: "openai/gpt-5.6-luna",
+    consentPolicyVersion: "reviewed-aggregate-v3",
+    provider: "deepseek",
+    model: "deepseek-flash",
   });
   assert.equal(replayed?.id, recorded.id, "receipt identity must be idempotent for one operation");
   assert.equal(await memory.updateAiConsentReceiptStatus({
     receiptId: String(recorded.id),
     status: "failed",
-    provider: "openrouter",
-    model: "openai/gpt-5.6-luna",
+    provider: "deepseek",
+    model: "deepseek-flash",
   }), null, "terminal receipt states must not be rewritten");
 
   const calls: Array<{ sql: string; params: readonly unknown[] }> = [];
@@ -341,9 +338,9 @@ test("memory and PostgreSQL stores implement the same privacy-minimal consent re
     principalRef: "raw-principal-never-store-this",
     operationId,
     requestSha256: "a".repeat(64),
-    consentPolicyVersion: "reviewed-aggregate-v2",
-    provider: "openrouter",
-    model: "openai/gpt-5.6-luna",
+    consentPolicyVersion: "reviewed-aggregate-v3",
+    provider: "deepseek",
+    model: "deepseek-flash",
   });
   assert.match(calls[0]!.sql, /open_ena_record_ai_consent_receipt/u);
   assert.match(calls[0]!.sql, /AS receipt/u);

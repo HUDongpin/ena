@@ -30,66 +30,66 @@ export const OPEN_ENA_AI_PROMPT_VERIFICATION_SCHEMA_VERSION_V1 =
 const LOCALES = ["en", "zh-hant", "zh-hans"] as const;
 
 const CONTRACT_TEST_SOURCE_SHA256 = deepFreeze({
-  client: "a087a632510e41a4b58787655a3acb6776073afb763b2f087cfbcde19f5cb32b",
+  client: "d1136b0d6f9686fb633b382c5d513cc0eec80a37d94212825a9a8ac3b5756c40",
   payload: "4e46712d5a086885b4bef1650368c3b74978899821c08efe3b06ed2e3c3426ad",
-  route: "cdcd0360024174608a70cf7232e3325bf63375d82eef01fad0dfabca255b0eed",
-  workspace: "10954c3f607648317985d687de6058b36a0fc7c1487cb4d8cc5f22fce6cc2341",
+  route: "f0ea53759d84e2eb3dbdbcfb11ab7107279bc6a399f5df11e46568a16b7fd1a0",
+  workspace: "c1d780f78acb072902cdda5c2979e36033e4e44f7d6242e1df907faf199b2397",
 } as const satisfies Readonly<Record<ContractTestSourceKey, string>>);
 
 const MOCK_CLIENT_COVERAGE_BINDINGS = [
   {
     coverageId: "mock-timeout",
     sourceKey: "client",
-    sourceFile: "tests/open-ena-ai-interpretation-client.test.ts",
-    testName: "Luna interpretation aborts at the injected timeout and redacts the fetch error",
+    sourceFile: "tests/open-ena-deepseek-provider.test.ts",
+    testName: "DeepSeek timeout aborts balance preflight before dispatch",
   },
   {
     coverageId: "mock-cancellation",
     sourceKey: "client",
-    sourceFile: "tests/open-ena-ai-interpretation-client.test.ts",
-    testName: "Luna interpretation propagates caller cancellation to the provider request",
+    sourceFile: "tests/open-ena-deepseek-provider.test.ts",
+    testName: "DeepSeek caller cancellation cannot dispatch after balance preflight",
   },
   {
     coverageId: "mock-rate-limit-429",
     sourceKey: "client",
-    sourceFile: "tests/open-ena-ai-interpretation-client.test.ts",
-    testName: "Luna interpretation maps OpenRouter 429 to a fail-closed rate-limit error",
+    sourceFile: "tests/open-ena-deepseek-provider.test.ts",
+    testName: "DeepSeek 429 is rate limited without exposing provider details",
   },
   {
     coverageId: "mock-payment-required-402",
     sourceKey: "client",
-    sourceFile: "tests/open-ena-ai-interpretation-client.test.ts",
-    testName: "Luna interpretation identifies OpenRouter 402 without exposing billing details or keys",
+    sourceFile: "tests/open-ena-deepseek-provider.test.ts",
+    testName: "DeepSeek 402 is a balance failure without exposing provider details",
   },
   {
     coverageId: "mock-network-failure",
     sourceKey: "client",
-    sourceFile: "tests/open-ena-ai-interpretation-client.test.ts",
-    testName: "Luna interpretation redacts non-timeout fetch failures",
+    sourceFile: "tests/open-ena-deepseek-provider.test.ts",
+    testName: "DeepSeek network failures redact upstream details",
   },
   {
     coverageId: "mock-oversize-response",
     sourceKey: "client",
-    sourceFile: "tests/open-ena-ai-interpretation-client.test.ts",
-    testName: "Luna interpretation rejects an oversized provider response before schema parsing",
+    sourceFile: "tests/open-ena-deepseek-provider.test.ts",
+    testName: "DeepSeek oversized response fails closed before schema parsing",
   },
   {
     coverageId: "mock-malformed-completion",
     sourceKey: "client",
-    sourceFile: "tests/open-ena-ai-interpretation-client.test.ts",
-    testName: "Luna interpretation rejects malformed completion JSON without echoing provider content",
+    sourceFile: "tests/open-ena-deepseek-provider.test.ts",
+    testName: "DeepSeek malformed completion does not echo model content",
   },
   {
     coverageId: "runtime-unknown-schema-fail-closed",
     sourceKey: "client",
-    sourceFile: "tests/open-ena-ai-interpretation-client.test.ts",
-    testName: "Luna runtime rejects an unknown request schema before configuration or fetch",
+    sourceFile: "tests/open-ena-deepseek-provider.test.ts",
+    testName: "DeepSeek unknown request schema fails before balance or dispatch",
   },
   {
     coverageId: "runtime-extra-sensitive-field-fail-closed",
     sourceKey: "client",
-    sourceFile: "tests/open-ena-ai-interpretation-client.test.ts",
-    testName: "Luna runtime rejects extra sensitive evidence fields before fetch",
+    sourceFile: "tests/open-ena-deepseek-provider.test.ts",
+    testName: "DeepSeek extra sensitive evidence fails before balance or dispatch",
   },
   {
     coverageId: "payload-hostile-label-projection",
@@ -187,7 +187,7 @@ type ContractTestSourceKey = "client" | "payload" | "route" | "workspace";
 function defaultContractTestSources(): Readonly<Record<ContractTestSourceKey, string>> {
   return {
     client: readFileSync(
-      new URL("../tests/open-ena-ai-interpretation-client.test.ts", import.meta.url),
+      new URL("../tests/open-ena-deepseek-provider.test.ts", import.meta.url),
       "utf8",
     ),
     payload: readFileSync(

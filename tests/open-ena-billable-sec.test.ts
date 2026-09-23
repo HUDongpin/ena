@@ -77,7 +77,7 @@ test("global and provider ceilings aggregate across different principals", async
 });
 
 test("test and PostgreSQL stores share the same explicit provider scope mapping", () => {
-  assert.equal(providerRefForResource("ai-interpretation"), "openrouter");
+  assert.equal(providerRefForResource("ai-interpretation"), "deepseek");
   assert.equal(providerRefForResource("longitudinal"), "persistent-compute");
   assert.equal(providerRefForResource("future-resource"), "resource:future-resource");
 });
