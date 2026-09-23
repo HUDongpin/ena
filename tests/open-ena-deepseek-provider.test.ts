@@ -168,6 +168,29 @@ test("DeepSeek network failures redact upstream details", async () => {
   );
 });
 
+test("DeepSeek production diagnostics log only a fixed failure stage", async () => {
+  const mutableEnvironment = process.env as Record<string, string | undefined>;
+  const priorEnv = mutableEnvironment.NODE_ENV;
+  const priorError = console.error;
+  const entries: string[] = [];
+  mutableEnvironment.NODE_ENV = "production";
+  console.error = (...values: unknown[]) => { entries.push(values.map(String).join(" ")); };
+  try {
+    await assert.rejects(
+      generateLunaInterpretation(interpretationRequest(), {
+        environment: configured,
+        fetch: async () => { throw new Error("private provider body and synthetic-deepseek-key"); },
+      }),
+      (error: unknown) => error instanceof LunaClientError && error.code === "upstream-network",
+    );
+  } finally {
+    console.error = priorError;
+    if (priorEnv === undefined) delete mutableEnvironment.NODE_ENV;
+    else mutableEnvironment.NODE_ENV = priorEnv;
+  }
+  assert.deepEqual(entries, ["open-ena-deepseek-failure:balance-network"]);
+});
+
 test("DeepSeek oversized response fails closed before schema parsing", async () => {
   await assert.rejects(
     generateLunaInterpretation(interpretationRequest(), {

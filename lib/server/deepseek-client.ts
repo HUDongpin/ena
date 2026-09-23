@@ -126,6 +126,17 @@ function requestError(status: number, dispatched: boolean): LunaClientError {
   return new LunaClientError("invalid-configuration", "AI interpretation provider configuration is invalid.", dispatched);
 }
 
+type DeepSeekFailureStage =
+  | "balance-network" | "balance-http" | "balance-body"
+  | "responses-network" | "responses-http" | "responses-body"
+  | "responses-shape" | "responses-contract";
+
+function reportFailure(stage: DeepSeekFailureStage, status?: number) {
+  if (process.env.NODE_ENV !== "production") return;
+  // Fixed stage and numeric status only: no request, response, key, or account data.
+  console.error(`open-ena-deepseek-failure:${stage}${status === undefined ? "" : `:${status}`}`);
+}
+
 export async function generateLunaInterpretation(
   request: OpenEnaAiInterpretationRequest,
   options: DeepSeekClientOptions = {},
@@ -194,14 +205,19 @@ export async function generateLunaInterpretation(
       });
     } catch {
       if (controller.signal.aborted) throw cancelled(false);
+      reportFailure("balance-network");
       throw new LunaClientError("upstream-network", "AI interpretation provider could not be reached.");
     }
-    if (!balance.ok) throw requestError(balance.status, false);
+    if (!balance.ok) {
+      reportFailure("balance-http", balance.status);
+      throw requestError(balance.status, false);
+    }
     try {
       const body = await boundedJson(balance) as { is_available?: unknown };
       if (body?.is_available !== true) throw new Error("balance unavailable");
     } catch {
       if (controller.signal.aborted) throw cancelled(false);
+      reportFailure("balance-body");
       throw new LunaClientError("invalid-configuration", "AI interpretation provider balance is unavailable.");
     }
     if (controller.signal.aborted) throw cancelled(false);
@@ -226,14 +242,19 @@ export async function generateLunaInterpretation(
       });
     } catch {
       if (controller.signal.aborted) throw cancelled(true);
+      reportFailure("responses-network");
       throw new LunaClientError("upstream-network", "AI interpretation provider could not be reached.", true);
     }
-    if (!upstream.ok) throw requestError(upstream.status, true);
+    if (!upstream.ok) {
+      reportFailure("responses-http", upstream.status);
+      throw requestError(upstream.status, true);
+    }
     let payload: unknown;
     try {
       payload = await boundedJson(upstream);
     } catch {
       if (controller.signal.aborted) throw cancelled(true);
+      reportFailure("responses-body");
       throw new LunaClientError("upstream-malformed", "AI interpretation returned an invalid response.", true);
     }
     const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
@@ -248,6 +269,7 @@ export async function generateLunaInterpretation(
       )).map((entry) => entry.text);
     });
     if (record.status !== "completed" || texts.length !== 1 || texts[0].includes(apiKey)) {
+      reportFailure("responses-shape");
       throw new LunaClientError("upstream-malformed", "AI interpretation returned an invalid response.", true);
     }
     try {
@@ -262,6 +284,7 @@ export async function generateLunaInterpretation(
       }, normalized);
       return { response, usage: readUsage(record.usage, reservation), providerDispatched: true };
     } catch {
+      reportFailure("responses-contract");
       throw new LunaClientError("upstream-malformed", "AI interpretation returned an invalid response.", true);
     }
   } finally {

@@ -30,7 +30,7 @@ export const OPEN_ENA_AI_PROMPT_VERIFICATION_SCHEMA_VERSION_V1 =
 const LOCALES = ["en", "zh-hant", "zh-hans"] as const;
 
 const CONTRACT_TEST_SOURCE_SHA256 = deepFreeze({
-  client: "d1136b0d6f9686fb633b382c5d513cc0eec80a37d94212825a9a8ac3b5756c40",
+  client: "090d026c80502333c722e6a20079df2654c62b55a26491a905c51e3fc4dda924",
   payload: "4e46712d5a086885b4bef1650368c3b74978899821c08efe3b06ed2e3c3426ad",
   route: "f0ea53759d84e2eb3dbdbcfb11ab7107279bc6a399f5df11e46568a16b7fd1a0",
   workspace: "c1d780f78acb072902cdda5c2979e36033e4e44f7d6242e1df907faf199b2397",
