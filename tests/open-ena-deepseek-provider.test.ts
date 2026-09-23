@@ -217,6 +217,37 @@ test("DeepSeek malformed completion does not echo model content", async () => {
   );
 });
 
+test("DeepSeek contract diagnostics classify unknown evidence refs without logging model text", async () => {
+  const mutableEnvironment = process.env as Record<string, string | undefined>;
+  const priorEnv = mutableEnvironment.NODE_ENV;
+  const priorError = console.error;
+  const entries: string[] = [];
+  mutableEnvironment.NODE_ENV = "production";
+  console.error = (...values: unknown[]) => { entries.push(values.map(String).join(" ")); };
+  try {
+    await assert.rejects(
+      generateLunaInterpretation(interpretationRequest(), {
+        environment: configured,
+        fetch: async (input) => String(input).endsWith("/user/balance")
+          ? Response.json({ is_available: true })
+          : Response.json({
+              status: "completed",
+              output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify({
+                ...interpretation,
+                observedPatterns: [{ statement: "PRIVATE_MODEL_TEXT", evidenceRefs: ["unknown-evidence-id"] }],
+              }) }] }],
+            }),
+      }),
+      (error: unknown) => error instanceof LunaClientError && error.code === "upstream-malformed",
+    );
+  } finally {
+    console.error = priorError;
+    if (priorEnv === undefined) delete mutableEnvironment.NODE_ENV;
+    else mutableEnvironment.NODE_ENV = priorEnv;
+  }
+  assert.deepEqual(entries, ["open-ena-deepseek-failure:responses-contract-evidence-ref"]);
+});
+
 test("DeepSeek unknown request schema fails before balance or dispatch", async () => {
   let called = false;
   await assert.rejects(

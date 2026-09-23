@@ -129,12 +129,27 @@ function requestError(status: number, dispatched: boolean): LunaClientError {
 type DeepSeekFailureStage =
   | "balance-network" | "balance-http" | "balance-body"
   | "responses-network" | "responses-http" | "responses-body"
-  | "responses-shape" | "responses-contract";
+  | "responses-shape" | "responses-contract-json" | "responses-contract-evidence-ref"
+  | "responses-contract-observation" | "responses-contract-question"
+  | "responses-contract-limitation" | "responses-contract-binding"
+  | "responses-contract-structure" | "responses-contract-other";
 
 function reportFailure(stage: DeepSeekFailureStage, status?: number) {
   if (process.env.NODE_ENV !== "production") return;
   // Fixed stage and numeric status only: no request, response, key, or account data.
   console.error(`open-ena-deepseek-failure:${stage}${status === undefined ? "" : `:${status}`}`);
+}
+
+function contractFailureStage(error: unknown): DeepSeekFailureStage {
+  if (error instanceof SyntaxError) return "responses-contract-json";
+  const message = error instanceof Error ? error.message : "";
+  if (/cites evidence that was not supplied|evidence ref|evidenceRefs/iu.test(message)) return "responses-contract-evidence-ref";
+  if (/observed pattern/iu.test(message)) return "responses-contract-observation";
+  if (/contextual question/iu.test(message)) return "responses-contract-question";
+  if (/limitation/iu.test(message)) return "responses-contract-limitation";
+  if (/binding/iu.test(message)) return "responses-contract-binding";
+  if (/interpretation|response schema|response model|response provider/iu.test(message)) return "responses-contract-structure";
+  return "responses-contract-other";
 }
 
 export async function generateLunaInterpretation(
@@ -283,8 +298,8 @@ export async function generateLunaInterpretation(
         interpretation: JSON.parse(texts[0]),
       }, normalized);
       return { response, usage: readUsage(record.usage, reservation), providerDispatched: true };
-    } catch {
-      reportFailure("responses-contract");
+    } catch (error) {
+      reportFailure(contractFailureStage(error));
       throw new LunaClientError("upstream-malformed", "AI interpretation returned an invalid response.", true);
     }
   } finally {
