@@ -169,6 +169,9 @@ test("AI removes the screenshot-selected disclosure cards while preserving expli
   assert.match(i18n, /DeepSeek may process data in mainland China/u);
   assert.match(i18n, /本程式要求不儲存回應物件/u);
   assert.match(i18n, /本程序要求不存储响应对象/u);
+  assert.match(i18n, /consentLabel: "I reviewed this aggregate request and consent to send it to DeepSeek\. Processing may occur in mainland China; zero retention and exclusion from model training are not guaranteed\."/u);
+  assert.match(i18n, /consentLabel: "我已審閱此彙總請求，並同意將它傳送給 DeepSeek。資料可能在中國內地處理；不保證零保留或排除模型訓練。"/u);
+  assert.match(i18n, /consentLabel: "我已审阅此汇总请求，并同意将它发送给 DeepSeek。数据可能在中国内地处理；不保证零保留或排除模型训练。"/u);
   assert.match(readme, /DeepSeek Responses API with `store=false`, non-thinking mode/u);
   assert.match(readme, /does not establish zero retention or exclusion from model training/u);
   assert.match(readme, /durable internal\s+ledger enforces the daily, monthly, global, provider/u);
