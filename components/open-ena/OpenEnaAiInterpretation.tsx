@@ -40,6 +40,12 @@ type AiAuditReceiptView = {
 
 type GenerationStatus = "idle" | "loading";
 
+export type OpenEnaAiFailureRecovery = "retry" | "sign-in";
+
+export function openEnaAiFailureRecovery(status: number): OpenEnaAiFailureRecovery {
+  return status === 401 ? "sign-in" : "retry";
+}
+
 export function mayRenewOpenEnaAiOperation(response: Response, operationId: string) {
   return !response.ok
     && response.status >= 400
@@ -91,6 +97,7 @@ export default function OpenEnaAiInterpretation({
   const [aiResponse, setAiResponse] = useState<OpenEnaAiInterpretationResponse | null>(null);
   const [aiResponseRequestIdentity, setAiResponseRequestIdentity] = useState<string | null>(null);
   const [aiError, setAiError] = useState("");
+  const [aiRecovery, setAiRecovery] = useState<OpenEnaAiFailureRecovery>("retry");
   const [auditReceipt, setAuditReceipt] = useState<AiAuditReceiptView | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const operationIdRef = useRef<string | null>(null);
@@ -126,6 +133,7 @@ export default function OpenEnaAiInterpretation({
     setAiResponse(null);
     setAiResponseRequestIdentity(null);
     setAiError("");
+    setAiRecovery("retry");
     setAuditReceipt(null);
     setGenerationStatus("idle");
     setConsentedRequestIdentity(null);
@@ -183,10 +191,13 @@ export default function OpenEnaAiInterpretation({
         if (!response.ok) {
           if (response.status === 409) clearOperation();
           else if (mayRenewOpenEnaAiOperation(response, operationId)) clearOperation();
-          const safeMessage = payload && typeof payload === "object" && "error" in payload
+          const recovery = openEnaAiFailureRecovery(response.status);
+          const payloadMessage = payload && typeof payload === "object" && "error" in payload
             && typeof (payload as { error?: unknown }).error === "string"
             ? (payload as { error: string }).error
             : copy.errorTitle;
+          const safeMessage = recovery === "sign-in" ? copy.sessionRecovery : payloadMessage;
+          if (!isStaleGeneration()) setAiRecovery(recovery);
           throw new Error(safeMessage);
         }
         const parsed = parseOpenEnaAiInterpretationResponse(payload, request);
@@ -221,6 +232,10 @@ export default function OpenEnaAiInterpretation({
       },
       fallbackError: copy.errorTitle,
     });
+  }
+
+  function handleRecoverSession() {
+    window.location.assign(`${window.location.pathname}${window.location.search}`);
   }
 
   function handleCancelInterpretation() {
@@ -292,12 +307,28 @@ export default function OpenEnaAiInterpretation({
       </div>
 
       {aiError ? (
-        <div className="ena-ai-error" role="alert">
+        <div className="ena-ai-error" role="alert" data-ena-ai-recovery={aiRecovery}>
           <strong>{copy.errorTitle}</strong>
           <p>{aiError}</p>
-          <button type="button" className="ena-inline-link" onClick={handleGenerateInterpretation}>
-            {copy.retry}
-          </button>
+          {aiRecovery === "sign-in" ? (
+            <button
+              type="button"
+              className="ena-inline-link"
+              data-ena-ai-recovery="sign-in"
+              onClick={handleRecoverSession}
+            >
+              {copy.signInAgain}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="ena-inline-link"
+              data-ena-ai-recovery="retry"
+              onClick={handleGenerateInterpretation}
+            >
+              {copy.retry}
+            </button>
+          )}
         </div>
       ) : null}
 

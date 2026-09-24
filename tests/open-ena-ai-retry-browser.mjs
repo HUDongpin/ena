@@ -45,5 +45,34 @@ try {
     assert.deepEqual(errors, []);
     await page.close();
   }
-  console.log("AI explicit retry: renewed confirmed failure, retained uncertain operation, no automatic dispatch PASS");
+  const page = await browser.newPage();
+  const operations = [];
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.route("**/*", async route => {
+    if (new URL(route.request().url()).pathname === "/api/open-ena/ai-interpretation") {
+      operations.push(route.request().headers()["x-open-ena-ai-operation-id"]);
+      return route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Authentication required." }),
+      });
+    }
+    return route.fulfill({ contentType: "text/html", body: '<!doctype html><div id="root"></div>' });
+  });
+  await page.goto("http://localhost:32119");
+  await page.addScriptTag({ content: bundle.outputFiles[0].text });
+  await page.getByRole("checkbox").check();
+  await page.locator(".ena-ai-actions button").click();
+  const alert = page.getByRole("alert");
+  await alert.waitFor();
+  assert.equal(operations.length, 1, "an authentication failure must not automatically dispatch a retry");
+  assert.match(await alert.innerText(), /Sign in again/);
+  assert.equal(await alert.getByRole("button", { name: "Retry" }).count(), 0);
+  await alert.getByRole("button", { name: "Sign in again" }).click();
+  await page.waitForTimeout(50);
+  assert.equal(operations.length, 1, "session recovery must not submit another AI generation");
+  assert.deepEqual(errors, []);
+  await page.close();
+  console.log("AI explicit retry: renewed confirmed failure, retained uncertain operation, auth-required uses sign-in, no automatic dispatch PASS");
 } finally { await browser.close(); }
