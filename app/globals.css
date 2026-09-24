@@ -3605,11 +3605,22 @@ body:has(.open-ena-login-page) .back-to-top {
   font-size: 12px;
   font-weight: 600;
 }
-.ena-unmet-prerequisite-list ul {
+.ena-unmet-prerequisite-list ul,
+.ena-rebuild-blocking-checklist ol {
   margin: 0;
   padding-inline-start: 1.2em;
   font-size: 11px;
   line-height: 1.55;
+}
+.ena-rebuild-blocking-checklist {
+  margin: 0 0 10px;
+}
+.ena-unmet-prerequisite-list .ena-rebuild-blocking-checklist-description {
+  font-weight: 500;
+}
+.ena-rebuild-blocking-checklist a:focus-visible {
+  outline: 3px solid var(--ena-accent-strong);
+  outline-offset: 2px;
 }
 .ena-result-table-unavailable-notes {
   margin: 10px 12px 0;

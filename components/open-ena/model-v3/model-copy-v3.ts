@@ -77,6 +77,16 @@ export const tabsCopy: OpenEnaModelTabsV3Copy = {
     confirmLabel: "Confirm",
     cancelLabel: "Cancel",
   },
+  blockingChecklist: {
+    title: "Unmet prerequisites",
+    description: "Rebuild and Run stay blocked until each condition below is resolved. Open an item to edit its Model control.",
+    raw: {
+      backward: "Complete the backward window extent.",
+      forward: "Complete the forward window extent.",
+      rowOrder: "Resolve the row order.",
+      horizonOrder: "Resolve the Horizon order.",
+    },
+  },
 };
 
 export const unitsCopy: OpenEnaUnitsPanelV3Copy = {

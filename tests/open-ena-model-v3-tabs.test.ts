@@ -161,6 +161,16 @@ const copy: OpenEnaModelTabsV3Copy = {
     confirmLabel: "Confirm",
     cancelLabel: "Cancel",
   },
+  blockingChecklist: {
+    title: "Unmet prerequisites",
+    description: "Rebuild and Run stay blocked until each condition below is resolved. Open an item to edit its Model control.",
+    raw: {
+      backward: "Complete the backward window extent.",
+      forward: "Complete the forward window extent.",
+      rowOrder: "Resolve the row order.",
+      horizonOrder: "Resolve the Horizon order.",
+    },
+  },
 };
 
 test("Models v3 renders exactly four accessible tabs, scoped counts, localized diagnostics, and safe currentness", () => {
