@@ -12,6 +12,7 @@ import {
   createOpenEnaAiInterpretationPostHandler,
   openEnaAiAuthConfigurationReady,
   OPEN_ENA_AI_MAX_REQUEST_BYTES,
+  principalFromOpenEnaAiSessionVerdict,
 } from "../lib/server/open-ena-ai-interpretation-route";
 import type { OpenEnaAiGenerationResult } from "../lib/server/deepseek-client";
 import { MemoryBillableStore } from "../lib/server/open-ena-billable";
@@ -111,11 +112,68 @@ function assertNoStore(response: Response) {
 test("AI interpretation requires the current Open ENA session before parsing a request", async () => {
   const { handler, calls } = dependencies();
   const response = await handler(request(undefined, { session: null }));
+  const body = await json(response);
 
   assert.equal(response.status, 401);
+  assert.equal(body.error, "Authentication required.");
+  assert.equal(response.headers.get("x-open-ena-ai-retry"), null);
+  assert.equal(response.headers.get("x-open-ena-auth-error"), null);
   assertNoStore(response);
   assert.deepEqual(calls.parsedValues, []);
   assert.deepEqual(calls.generatedRequests, []);
+});
+
+test("AI interpretation treats an invalid session as authentication required", async () => {
+  const { handler, calls } = dependencies();
+  const response = await handler(request(undefined, { session: "not-a-session" }));
+  const body = await json(response);
+
+  assert.equal(response.status, 401);
+  assert.equal(body.error, "Authentication required.");
+  assert.equal(response.headers.get("x-open-ena-ai-retry"), null);
+  assert.deepEqual(calls.parsedValues, []);
+  assert.deepEqual(calls.generatedRequests, []);
+});
+
+test("AI interpretation classifies auth configuration and store outages separately from a missing session", async () => {
+  const cases = [
+    ["not-configured", "Open ENA secure authentication is not configured.", null],
+    ["store-unavailable", "Open ENA secure authentication is unavailable.", "2"],
+    ["store-error", "Open ENA secure authentication is unavailable.", "2"],
+  ] as const;
+  for (const [reason, message, retryAfter] of cases) {
+    const { handler, calls } = dependencies({
+      verifyPrincipal: () => principalFromOpenEnaAiSessionVerdict({ outcome: reason }),
+    });
+    const response = await handler(request());
+    const body = await json(response);
+
+    assert.equal(response.status, 503);
+    assert.equal(body.error, message);
+    assert.equal(response.headers.get("x-open-ena-auth-error"), reason);
+    assert.equal(response.headers.get("retry-after"), retryAfter);
+    assert.equal(response.headers.get("x-open-ena-ai-retry"), null);
+    assert.doesNotMatch(JSON.stringify(body), /Authentication required/);
+    assertNoStore(response);
+    assert.deepEqual(calls.parsedValues, []);
+    assert.deepEqual(calls.generatedRequests, []);
+  }
+});
+
+test("AI interpretation hides unexpected auth verifier failures behind a safe unavailable response", async () => {
+  const { handler, calls } = dependencies({
+    verifyPrincipal: () => {
+      throw new Error("postgres://secret-user:secret-pass@db.internal/open_ena");
+    },
+  });
+  const response = await handler(request());
+  const responseText = await response.text();
+
+  assert.equal(response.status, 503);
+  assert.match(responseText, /Authentication service is temporarily unavailable/);
+  assert.doesNotMatch(responseText, /secret-user|secret-pass|postgres:\/\//);
+  assert.equal(response.headers.get("x-open-ena-ai-retry"), null);
+  assert.deepEqual(calls.parsedValues, []);
 });
 
 test("AI interpretation rejects a cross-origin request with the existing origin policy", async () => {

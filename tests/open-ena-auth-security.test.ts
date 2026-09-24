@@ -13,6 +13,7 @@ import {
 } from "../lib/open-ena-auth-request";
 import {
   createProductionOpenEnaAuthSecurityStore,
+  classifyProductionOpenEnaSessionTokenAny,
   invalidateProductionOpenEnaAuthSecurityStore,
   isTransientOpenEnaAuthStoreFailure,
   OPEN_ENA_AUTH_ERROR_HEADER,
@@ -684,6 +685,94 @@ test("transient store failure detection stays conservative", () => {
     false,
   );
   assert.equal(isTransientOpenEnaAuthStoreFailure(new TypeError("Invalid disposable credential material.")), false);
+});
+
+test("production session classification separates login, configuration, and store failures", async () => {
+  const issuedAt = 1_800_000_000_000;
+  const token = createOpenEnaSessionTokenV2(issuedAt, AUTH_ENVIRONMENT);
+  const secretDetail = "postgres://secret-user:secret-pass@db.internal/open_ena";
+  const logged: unknown[][] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => {
+    logged.push(args);
+  };
+  try {
+    const missingConfig = await classifyProductionOpenEnaSessionTokenAny(token, issuedAt + 1_000, {});
+    assert.deepEqual(missingConfig, { outcome: "not-configured" });
+
+    let creates = 0;
+    const storeDown = await classifyProductionOpenEnaSessionTokenAny(
+      token,
+      issuedAt + 1_000,
+      AUTH_ENVIRONMENT,
+      undefined,
+      {
+        createPool: () => {
+          creates += 1;
+          throw Object.assign(new Error(secretDetail), { code: "ECONNREFUSED" });
+        },
+      },
+    );
+    assert.equal(storeDown.outcome, "store-unavailable");
+    assert.equal(creates, OPEN_ENA_AUTH_STORE_CREATE_ATTEMPTS);
+
+    const missingSession = await classifyProductionOpenEnaSessionTokenAny(
+      undefined,
+      issuedAt + 1_000,
+      AUTH_ENVIRONMENT,
+      async () => {
+        throw new Error("revocation must not run without a session");
+      },
+    );
+    assert.deepEqual(missingSession, { outcome: "unauthenticated" });
+
+    const invalidSession = await classifyProductionOpenEnaSessionTokenAny(
+      "not-a-session",
+      issuedAt + 1_000,
+      AUTH_ENVIRONMENT,
+      async () => ({ rows: [{ revoked: false }] }),
+    );
+    assert.deepEqual(invalidSession, { outcome: "unauthenticated" });
+
+    const revoked = await classifyProductionOpenEnaSessionTokenAny(
+      token,
+      issuedAt + 1_000,
+      AUTH_ENVIRONMENT,
+      async (sql) => {
+        assert.match(sql, /open_ena_session_is_revoked/u);
+        return { rows: [{ revoked: true }] };
+      },
+    );
+    assert.deepEqual(revoked, { outcome: "unauthenticated" });
+
+    const revocationOutage = await classifyProductionOpenEnaSessionTokenAny(
+      token,
+      issuedAt + 1_000,
+      AUTH_ENVIRONMENT,
+      async () => {
+        throw Object.assign(new Error(secretDetail), { code: "57P01" });
+      },
+    );
+    assert.deepEqual(revocationOutage, { outcome: "store-error" });
+
+    const accepted = await classifyProductionOpenEnaSessionTokenAny(
+      token,
+      issuedAt + 1_000,
+      AUTH_ENVIRONMENT,
+      async () => ({ rows: [{ revoked: false }] }),
+    );
+    assert.equal(accepted.outcome, "authenticated");
+    if (accepted.outcome === "authenticated") {
+      assert.match(accepted.principal.principalRef, /^[A-Za-z0-9_-]{43}$/u);
+      assert.notEqual(accepted.principal.principalRef, AUTH_ENVIRONMENT.OPEN_ENA_ACCOUNT_ID);
+    }
+  } finally {
+    console.error = originalError;
+    invalidateProductionOpenEnaAuthSecurityStore();
+  }
+
+  const serialized = JSON.stringify(logged);
+  assert.doesNotMatch(serialized, /secret-user|secret-pass|postgres:\/\//);
 });
 
 test("logout store construction failures use the structured 503 contract", async () => {

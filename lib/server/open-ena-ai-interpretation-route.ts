@@ -3,7 +3,13 @@ import {
   openEnaV2AuthConfigurationReady,
   OPEN_ENA_SESSION_COOKIE,
 } from "@/lib/open-ena-auth";
-import { verifyProductionOpenEnaSessionTokenAny } from "@/lib/server/open-ena-auth-security-store";
+import {
+  classifyProductionOpenEnaSessionTokenAny,
+  openEnaAuthFailureBody,
+  openEnaAuthFailureHeaders,
+  type OpenEnaAuthFailureReason,
+  type OpenEnaProductionSessionVerification,
+} from "@/lib/server/open-ena-auth-security-store";
 import { createProductionBillableStore, parseBillablePolicy, type BillableStore, type BillableLimits } from "./open-ena-billable";
 import { resolveOpenEnaRequestOrigin } from "@/lib/open-ena-auth-request";
 import {
@@ -54,6 +60,35 @@ export function openEnaAiAuthConfigurationReady(
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ) {
   return openEnaV2AuthConfigurationReady(environment);
+}
+
+export class OpenEnaAiAuthUnavailableError extends Error {
+  readonly reason: OpenEnaAuthFailureReason;
+
+  constructor(reason: OpenEnaAuthFailureReason) {
+    super(openEnaAuthFailureBody(reason));
+    this.name = "OpenEnaAiAuthUnavailableError";
+    this.reason = reason;
+  }
+}
+
+export function principalFromOpenEnaAiSessionVerdict(
+  verdict: OpenEnaProductionSessionVerification,
+): { principalRef: string } | null {
+  switch (verdict.outcome) {
+    case "authenticated":
+      return verdict.principal;
+    case "unauthenticated":
+      return null;
+    case "not-configured":
+    case "store-unavailable":
+    case "store-error":
+      throw new OpenEnaAiAuthUnavailableError(verdict.outcome);
+    default: {
+      const exhaustive: never = verdict;
+      return exhaustive;
+    }
+  }
 }
 
 function jsonResponse(body: unknown, status: number, extraHeaders: HeadersInit = {}) {
@@ -232,7 +267,14 @@ export function createOpenEnaAiInterpretationPostHandler(
     let principal: { principalRef: string } | null;
     try {
       principal = await dependencies.verifyPrincipal(sessionToken);
-    } catch {
+    } catch (error) {
+      if (error instanceof OpenEnaAiAuthUnavailableError) {
+        return jsonResponse(
+          { error: openEnaAuthFailureBody(error.reason) },
+          503,
+          openEnaAuthFailureHeaders(error.reason),
+        );
+      }
       return jsonResponse({ error: "Authentication service is temporarily unavailable." }, 503);
     }
     if (!principal) {
@@ -541,7 +583,9 @@ export function createOpenEnaAiInterpretationPostHandler(
 }
 
 const productionPostHandler = createOpenEnaAiInterpretationPostHandler({
-  verifyPrincipal: (token) => verifyProductionOpenEnaSessionTokenAny(token),
+  verifyPrincipal: async (token) => principalFromOpenEnaAiSessionVerdict(
+    await classifyProductionOpenEnaSessionTokenAny(token),
+  ),
   authConfigurationReady: openEnaAiAuthConfigurationReady,
   environment: process.env,
   requireBillable: true,

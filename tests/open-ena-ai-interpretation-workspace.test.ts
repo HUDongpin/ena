@@ -186,6 +186,26 @@ test("the UI supports cancellation, a visible error, and an explicit retry", () 
   );
   assert.match(aiComponent, /copy\.cancel/);
   assert.match(aiComponent, /copy\.retry/);
+  assert.match(aiComponent, /openEnaAiFailureRecovery\(response\.status\)/);
+  assert.match(
+    aiComponent,
+    /data-ena-ai-recovery=["']sign-in["'][\s\S]*?onClick=\{handleRecoverSession\}[\s\S]*?copy\.signInAgain/,
+    "authentication-required recovery must offer session sign-in",
+  );
+  assert.match(
+    aiComponent,
+    /recovery === ["']sign-in["'] \? copy\.sessionRecovery/,
+    "authentication-required copy must replace a generic AI retry message",
+  );
+  const signInAction = aiComponent.slice(
+    aiComponent.indexOf('data-ena-ai-recovery="sign-in"'),
+    aiComponent.indexOf('data-ena-ai-recovery="retry"'),
+  );
+  assert.doesNotMatch(
+    signInAction,
+    /handleGenerateInterpretation/,
+    "session recovery must not submit another AI generation",
+  );
 });
 
 test("changing the evidence binding aborts work, revokes consent, and makes old output unrenderable", () => {
@@ -322,6 +342,35 @@ test("a deferred A generation cannot settle over a newer A generation after A to
   );
 });
 
+test("authentication required uses sign-in recovery and leaves provider retry renewal unchanged", async () => {
+  const module = await import("../components/open-ena/OpenEnaAiInterpretation") as Record<string, unknown>;
+  const recovery = module.openEnaAiFailureRecovery as ((status: number) => string) | undefined;
+  assert.equal(typeof recovery, "function");
+  assert.equal(recovery!(401), "sign-in");
+  assert.equal(recovery!(503), "retry");
+  assert.equal(recovery!(502), "retry");
+  assert.equal(recovery!(429), "retry");
+  assert.equal(recovery!(200), "retry");
+
+  const copies = {
+    en: aiCopy("en"),
+    "zh-hant": aiCopy("zh-hant"),
+    "zh-hans": aiCopy("zh-hans"),
+  };
+  assert.match(copies.en.sessionRecovery, /sign in again/i);
+  assert.match(copies.en.signInAgain, /sign in again/i);
+  assert.doesNotMatch(copies.en.sessionRecovery, /\bretry\b/i);
+  assert.doesNotMatch(copies.en.signInAgain, /\bretry\b/i);
+  assert.match(copies["zh-hant"].sessionRecovery, /重新登入/);
+  assert.match(copies["zh-hant"].signInAgain, /重新登入/);
+  assert.match(copies["zh-hans"].sessionRecovery, /重新登录/);
+  assert.match(copies["zh-hans"].signInAgain, /重新登录/);
+  for (const locale of ["en", "zh-hant", "zh-hans"] as const) {
+    assert.doesNotMatch(copies[locale].sessionRecovery, /Authentication required/);
+    assert.notEqual(copies[locale].signInAgain, copies[locale].retry);
+  }
+});
+
 test("the UI renews an operation only for a matching server-confirmed pre-dispatch failure", async () => {
   const module = await import("../components/open-ena/OpenEnaAiInterpretation") as Record<string, unknown>;
   const mayRenew = module.mayRenewOpenEnaAiOperation as ((response: Response, operationId: string) => boolean) | undefined;
@@ -397,6 +446,8 @@ test("en, zh-Hant, and zh-Hans provide complete AI UI, disclosure, and truthful 
     "generating",
     "cancel",
     "retry",
+    "sessionRecovery",
+    "signInAgain",
     "errorTitle",
     "noCurrentResult",
     "staleResult",
