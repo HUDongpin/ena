@@ -110,6 +110,16 @@ const entry = `
       confirmLabel: "Confirm",
       cancelLabel: "Cancel",
     },
+    blockingChecklist: {
+      title: "Unmet prerequisites",
+      description: "Rebuild and Run stay blocked until each condition below is resolved. Open an item to edit its Model control.",
+      raw: {
+        backward: "Complete the backward window extent.",
+        forward: "Complete the forward window extent.",
+        rowOrder: "Resolve the row order.",
+        horizonOrder: "Resolve the Horizon order.",
+      },
+    },
   })};
   copy.tabDiagnosticLabel = ({ label, errors, warnings }) => label + ", " + errors + " error and " + warnings + " warning";
   copy.status.summary = ({ configuration, result }) => configuration + ". " + result + ".";
@@ -210,6 +220,18 @@ try {
   assert.equal(await page.locator("button button").count(), 0);
   assert.equal(await page.locator('[role="tab"][tabindex="0"]').count(), 1);
 
+  const checklist = page.getByTestId("open-ena-rebuild-blocking-checklist");
+  await checklist.waitFor();
+  assert.deepEqual(await checklist.locator("[data-unmet-predicate]").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-unmet-predicate"))), [
+    "STANDARD_UNITS_REQUIRED:unitColumns",
+    "STANDARD_MEANS_LEVEL_REQUIRED:rotation",
+    "STANDARD_CODE_ALL_ZERO:codes.Code A",
+    "STANDARD_DATASET_BINDING_INVALID:global",
+  ]);
+  assert.equal(await page.evaluate(() => document.querySelector("[data-testid=open-ena-rebuild-blocking-checklist] [data-unmet-predicate='STANDARD_MEANS_LEVEL_REQUIRED:rotation'] a")?.getAttribute("href")?.includes("ena-model-field-units-")), true);
+  await checklist.getByRole("link", { name: "Select at least one Unit field" }).click();
+  await page.waitForFunction(() => document.activeElement?.getAttribute("data-field-path") === "unitColumns");
+
   await page.locator('[data-model-tab="units"]').focus();
   for (const [key, expected] of [["ArrowRight", "horizons"], ["ArrowDown", "windows"], ["ArrowLeft", "horizons"], ["ArrowUp", "units"], ["End", "codes"], ["Home", "units"]]) {
     await page.keyboard.press(key);
@@ -226,7 +248,7 @@ try {
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "About Units settings");
 
   await page.locator('[data-model-tab="windows"]').click();
-  const meansLink = page.getByRole("link", { name: "Select both Means levels" });
+  const meansLink = page.locator(".ena-model-diagnostics").getByRole("link", { name: "Select both Means levels" });
   await meansLink.click();
   assert.equal(await page.locator('[role="tab"][aria-selected="true"]').getAttribute("data-model-tab"), "units");
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-field-path") === "rotation.meansContrast");
@@ -266,7 +288,7 @@ try {
   await meansLink.click();
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-field-path") === "rotation.meansContrast");
 
-  await page.getByRole("link", { name: "Code A is all zero" }).click();
+  await page.locator(".ena-model-diagnostics").getByRole("link", { name: "Code A is all zero" }).click();
   assert.equal(await page.locator('[data-model-tab="codes"]').getAttribute("aria-selected"), "true");
   await page.waitForFunction(() => document.activeElement?.getAttribute("data-panel-field") === "codes");
   assert.equal(await page.locator('[data-diagnostic-scope="dataset"] a').count(), 0);
@@ -332,7 +354,7 @@ try {
   const onaObservations = [];
   for (let index = 0; index < 2; index += 1) {
     await page.evaluate((fixtureIndex) => window.__task25.showOnaDiagnostic(window.__task25.actualOnaAllZeroDiagnostics[fixtureIndex]), index);
-    await page.getByRole("link", { name: "An ONA Code is all zero" }).waitFor();
+    await page.locator(".ena-model-diagnostics").getByRole("link", { name: "An ONA Code is all zero" }).waitFor();
     onaObservations.push({
       text: await page.locator(".ena-model-diagnostics").innerText(),
       samples: await page.evaluate(() => window.__task25.evidenceInputs),
