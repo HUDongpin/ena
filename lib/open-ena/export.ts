@@ -194,6 +194,11 @@ export interface OpenEnaResultTableViewModel {
     disabled: boolean;
     label: string;
     ariaLabel: string;
+    applicabilityNote: string | null;
+    applicabilityNoteId: string | null;
+    applicabilityReason: string | null;
+    applicabilityAction: string | null;
+    applicabilityFamilyApplies: boolean;
   };
 }
 
@@ -339,6 +344,11 @@ export function buildOpenEnaResultTableViewModel(input: {
       disabled: !selectedAvailability.available || selectedCount === 0,
       label: input.copy.exportLabels[input.selectedKey],
       ariaLabel: input.copy.exportAriaLabel(selectedLabel),
+      applicabilityNote: null,
+      applicabilityNoteId: null,
+      applicabilityReason: null,
+      applicabilityAction: null,
+      applicabilityFamilyApplies: false,
     },
   };
 }

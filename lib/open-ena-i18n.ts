@@ -8,6 +8,7 @@ import type {
   OpenEnaResolvedRankPMethod,
 } from "./open-ena/rank-inference";
 import type { OpenEnaResultTablesCopy } from "./open-ena/export";
+import type { OpenEnaExportApplicabilityCopy } from "./open-ena/export-applicability";
 import type {
   AnalysisSetCapturePredicateIdV3,
   AnalysisSetComparePredicateIdV3,
@@ -163,6 +164,7 @@ export interface OpenEnaWorkspaceV3Copy {
     readonly onaEdges: string; readonly onaAudit: string; readonly exportOnaEdges: string; readonly exportOnaAudit: string; readonly exportNative: string;
     readonly localDataView: string; readonly globalTraversal: string; readonly exportDataView: string; readonly exportDataViewConfirmation: string;
     readonly dataViewValidated: string; readonly exportMethods: string; readonly onaMeaning: string;
+    readonly exportApplicability: OpenEnaExportApplicabilityCopy;
   };
   readonly artifacts: {
     readonly ariaLabel: string; readonly title: string; readonly clearPreset: string; readonly exportPreset: string; readonly reviewPreset: string;
@@ -2366,6 +2368,23 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
       onaEdges: t("ONA directed aggregate edges", "ONA 有向彙總邊", "ONA 有向汇总边"), onaAudit: t("Full-run deidentified ordered audit", "完整執行去識別有序稽核", "完整运行去标识有序审计"), exportOnaEdges: t("Export ONA aggregate edges", "匯出 ONA 彙總邊", "导出 ONA 汇总边"), exportOnaAudit: t("Export ONA deidentified audit", "匯出 ONA 去識別稽核", "导出 ONA 去标识审计"), exportNative: t("Export native statistics", "匯出原生統計", "导出原生统计"),
       localDataView: t("Local identity-bearing bound Data View", "本機含識別綁定資料檢視", "本机含标识绑定数据视图"), globalTraversal: t("Global runtime source traversal (not per-point membership)", "全域執行時來源走訪（非逐點成員關係）", "全局运行时来源遍历（非逐点成员关系）"), exportDataView: t("Export current Data View", "匯出目前資料檢視", "导出当前数据视图"), exportDataViewConfirmation: t("This local identity-bearing view contains Unit and Group identities. Export it?", "此本機含識別檢視包含單位及群組識別。要匯出嗎？", "此本机含标识视图包含单位及组标识。要导出吗？"), dataViewValidated: t("Data View validated against the independent current plan.", "資料檢視已依獨立目前計畫驗證。", "数据视图已依独立当前计划验证。"), exportMethods: t("Export Methods", "匯出方法", "导出方法"),
       onaMeaning: t("Descriptive directed ground/source to response/target networks. Group filtering affects aggregate descriptive tables only; the deidentified audit covers the full run and carries no per-Group source membership. No difference test or inferential effect is computed.", "描述由前項／來源指向回應／目標的有向網絡。群組篩選只影響彙總描述表；去識別稽核涵蓋完整執行，且不包含逐群組來源成員關係。不會計算差異檢定或推論效應。", "描述由前项／来源指向回应／目标的有向网络。组筛选只影响汇总描述表；去标识审计涵盖完整运行，且不包含逐组来源成员关系。不会计算差异检验或推断效应。"),
+      exportApplicability: {
+        reasons: {
+          "not-applicable-family": t("Not applicable to this model family.", "不適用於此模型族。", "不适用于此模型族。"),
+          "would-be-empty": t("This export would be empty for this model family.", "此匯出在此模型族下會是空檔。", "此导出在此模型族下会是空文件。"),
+          "requires-rebuild": t("Requires a rebuild of the current result.", "需要重新建立目前結果。", "需要重新构建当前结果。"),
+          "projection-reference": t("Not applicable to projection-reference results.", "不適用於參考投影結果。", "不适用于参考投影结果。"),
+          "awaiting-inference": t("Run confirmed inference before exporting native statistics.", "請先執行已確認推論，再匯出原生統計。", "请先运行已确认推断，再导出原生统计。"),
+        },
+        hints: {
+          "all-families": t("Applies to Endpoint, Separate, Accumulated, and ONA results.", "適用於端點、分離軌跡、累積軌跡及 ONA 結果。", "适用于端点、分离轨迹、累积轨迹及 ONA 结果。"),
+          trajectory: t("Applies to Separate and Accumulated trajectory results.", "適用於分離軌跡與累積軌跡結果。", "适用于分离轨迹与累积轨迹结果。"),
+          ona: t("Applies to ONA results.", "適用於 ONA 結果。", "适用于 ONA 结果。"),
+          "endpoint-and-trajectory": t("Applies to Endpoint, Separate, and Accumulated results.", "適用於端點、分離軌跡及累積軌跡結果。", "适用于端点、分离轨迹及累积轨迹结果。"),
+          endpoint: t("Applies to Endpoint results.", "適用於端點結果。", "适用于端点结果。"),
+          "bound-reference": t("Re-exports the Reference already bound to this trajectory result.", "重新匯出已綁定至此軌跡結果的參考。", "重新导出已绑定至此轨迹结果的参考。"),
+        },
+      },
     },
     artifacts: {
       ariaLabel: t("Model artifacts", "模型成果", "模型成果"), title: t("Artifacts", "成果", "成果"), clearPreset: t("Clear preset Group hiding", "清除預設群組隱藏", "清除预设组隐藏"), exportPreset: t("Export presentation preset", "匯出呈現預設", "导出呈现预设"), reviewPreset: t("Review presentation preset", "檢視呈現預設", "查看呈现预设"), presetPreview: t("Presentation preset preview", "呈現預設預覽", "呈现预设预览"), presetMatches: t("This preset matches the retained result. Application changes display only.", "此預設符合保留結果；套用只會改變顯示。", "此预设符合保留结果；应用只会改变显示。"), presetMismatch: t("Unapplied preset: this belongs to a different scientific result.", "未套用預設：其屬於不同科學結果。", "未应用预设：其属于不同科学结果。"), presetCodesMismatch: t("The active editor excludes Codes used by this retained result. The preset remains unapplied.", "啟用中的編輯器排除了保留結果所用代碼；預設維持未套用。", "启用中的编辑器排除了保留结果所用代码；预设保持未应用。"), presetFamilyMismatch: t("The editor family differs from the retained result. The preset remains unapplied.", "編輯器分析系列與保留結果不同；預設維持未套用。", "编辑器分析系列与保留结果不同；预设保持未应用。"), cancelPreset: t("Cancel preset", "取消預設", "取消预设"), applyPreset: t("Apply matching presentation preset", "套用相符呈現預設", "应用匹配呈现预设"), exportDraft: t("Export draft", "匯出草稿", "导出草稿"), draftBlocked: t("Resolve unfinished raw input before exporting: the portable draft grammar cannot represent that visible text. Typed incomplete drafts remain exportable.", "匯出前請處理未完成的原始輸入：可攜式草稿語法無法表示該可見文字。具類型的不完整草稿仍可匯出。", "导出前请处理未完成的原始输入：可移植草稿语法无法表示该可见文本。带类型的不完整草稿仍可导出。"), exportConfig: t("Export canonical configuration", "匯出規範設定", "导出规范设置"), exportAnalysis: t("Export current analysis", "匯出目前分析", "导出当前分析"), exportAnalysisConfirmation: t("Export the full identity-bearing model bundle?", "要匯出完整且含識別的模型套件嗎？", "要导出完整且含标识的模型包吗？"), exportStale: t("Export STALE audit", "匯出過期稽核", "导出过期审计"), reexportReference: t("Re-export original Reference", "重新匯出原始參考", "重新导出原始参考"), exportReference: t("Export Reference", "匯出參考", "导出参考"), captureSet: (count) => t(`Capture analysis set (${count}/6)`, `擷取分析集（${count}/6）`, `捕获分析集（${count}/6）`), compareSets: t("Compare last two sets in the same basis", "在相同基底比較最後兩個分析集", "在相同基底比较最后两个分析集"), historicalComparison: t("Historical same-basis set comparison", "歷史相同基底分析集比較", "历史相同基底分析集比较"), unmetPrerequisites: t("Unmet prerequisites", "未滿足的前置條件", "未满足的前置条件"), capturePredicates: { "current-result": t("Current bound result", "目前綁定結果", "当前绑定结果"), "standard-family": t("Standard ENA family (ONA analysis sets are not verified)", "標準 ENA 系列（ONA 分析集尚未驗證）", "标准 ENA 系列（ONA 分析集尚未验证）"), "endpoint-model": t("EndPoint model (trajectory results cannot be captured as shared analysis sets; build an EndPoint model instead)", "端點模型（軌跡結果不能擷取為共享分析集；請改為建立端點模型）", "端点模型（轨迹结果不能捕获为共享分析集；请改为构建端点模型）"), "two-retained-dimensions": t("At least two supported retained dimensions", "至少兩個受支援的保留維度", "至少两个受支持的保留维度"), "retention-capacity": t("Fewer than 6 retained analysis sets", "保留的分析集少於 6 個", "保留的分析集少于 6 个") }, comparePredicates: { "two-captured-sets": t("At least two captured analysis sets", "至少兩個已擷取的分析集", "至少两个已捕获的分析集"), "same-basis-geometry": t("Same fitted source and exact compatible geometry (EndPoint-only same-basis)", "相同擬合來源且幾何完全相容（僅端點、同一基底）", "相同拟合来源且几何完全兼容（仅端点、同一基底）") },
