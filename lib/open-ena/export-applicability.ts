@@ -5,6 +5,17 @@ import type { BoundResultV3 } from "./model-v3/types";
 export const OPEN_ENA_EXPORT_FAMILIES = ["endpoint", "separate", "accumulated", "ona"] as const;
 export type OpenEnaExportFamily = (typeof OPEN_ENA_EXPORT_FAMILIES)[number];
 
+/**
+ * Researcher-facing family names shared with teaching-sample disclosures.
+ * Stats & Export hints use these same words.
+ */
+export const OPEN_ENA_EXPORT_FAMILY_NAMES = {
+  endpoint: "Endpoint",
+  separate: "Separate trajectory",
+  accumulated: "Accumulated trajectory",
+  ona: "ONA",
+} as const satisfies Record<OpenEnaExportFamily, string>;
+
 /** Table, CSV, and related export actions whose applicability depends on the result family. */
 export const OPEN_ENA_STATS_EXPORT_ACTIONS = [
   "coordinates-csv",
