@@ -284,4 +284,7 @@ test("workspace export controls read the shared applicability disclosure", () =>
   assert.match(workspace, /action="native-statistics"/u);
   assert.match(workspace, /exportNativeStatisticsV3\(activeInference, result, currentPlan, controls!\)/u);
   assert.match(workspace, /if \(!current \|\| resultTableViewModel\.export\.disabled\) return;/u);
+  const downloadModel = workspace.match(/<button type="button" className="ena-download-model-button ena-compact-toolbar-button"[^>]*>/u)?.[0] ?? "";
+  assert.match(downloadModel, /aria-describedby=\{currentAnalysisNote \? currentAnalysisNoteId : undefined\}/u);
+  assert.doesNotMatch(downloadModel, /aria-label/u);
 });
