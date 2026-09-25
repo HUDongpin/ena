@@ -8,7 +8,12 @@ import type {
   OpenEnaResolvedRankPMethod,
 } from "./open-ena/rank-inference";
 import type { OpenEnaResultTablesCopy } from "./open-ena/export";
-import type { OpenEnaExportApplicabilityCopy } from "./open-ena/export-applicability";
+import {
+  OPEN_ENA_EXPORT_FAMILY_NAMES,
+  type OpenEnaExportApplicabilityCopy,
+  type OpenEnaExportFamily,
+} from "./open-ena/export-applicability";
+import type { TeachingSampleKind } from "./open-ena/teaching-sample-guide";
 import type {
   AnalysisSetCapturePredicateIdV3,
   AnalysisSetComparePredicateIdV3,
@@ -120,7 +125,33 @@ export interface OpenEnaWorkspaceV3Copy {
     };
   };
   readonly data: {
-    readonly ariaLabel: string; readonly title: string; readonly openFile: string; readonly loadSample: string; readonly loadTrajectorySample: string;
+    readonly ariaLabel: string; readonly title: string; readonly openFile: string;     readonly loadSample: string; readonly loadTrajectorySample: string;
+    readonly teachingSamples: {
+      readonly libraryLabel: string;
+      readonly familyLabel: string;
+      readonly rowShapeLabel: string;
+      readonly expectedOutputLabel: string;
+      readonly loadOnaSample: string;
+      readonly families: Readonly<Record<OpenEnaExportFamily, string>>;
+      readonly rowShapes: Readonly<Record<TeachingSampleKind, string>>;
+      readonly expectedOutputs: Readonly<Record<TeachingSampleKind, string>>;
+    };
+    readonly firstSuccess: {
+      readonly title: string;
+      readonly loaded: string;
+      readonly drafts: (family: string) => string;
+      readonly gates: string;
+      readonly gatesClear: string;
+      readonly gatesPending: string;
+      readonly build: string;
+      readonly buildRunning: string;
+      readonly buildDone: string;
+      readonly complete: string;
+      readonly incomplete: string;
+      readonly analysisSetNote: string;
+      readonly onaContractNote: string;
+      readonly trajectoryNote: string;
+    };
     readonly sampleExplanation: string; readonly importArtifact: string; readonly artifactTooLarge: string;
     readonly reviewTypes: string; readonly reviewTypesTitle: string; readonly typingExplanation: string;
     readonly sourceTypeLabel: (column: string) => string; readonly sourceTypes: Readonly<Record<"text" | "number" | "boolean", string>>;
@@ -182,7 +213,7 @@ export interface OpenEnaWorkspaceV3Copy {
   readonly toolbar: { readonly dataView: string; readonly downloadModel: string; readonly exportSvg: string; readonly exportPng: string; readonly researchSpace: string };
   readonly shell: { readonly workspaceAria: string; readonly modesAria: string; readonly local: string; readonly runtimePrivacy: (version: string) => string };
   readonly result: { readonly plotAria: string; readonly historicalGeometry: string; readonly sourceReplacementNotice: string; readonly rebuildNow: string; readonly rebuildNowAria: string; readonly boundGeometry: string; readonly oneAxis: string; readonly fittedCoordinates: string; readonly contrastUnavailable: string; readonly codeLabels: string; readonly trajectorySteps: string; readonly cohortMeaning: string };
-  readonly empty: { readonly ariaLabel: string; readonly comparisonPlot: string; readonly setupRequired: string; readonly researchSpace: string; readonly networkAria: string; readonly pathway: string; readonly complete: string; readonly incomplete: string; readonly openRows: string; readonly defineModel: string; readonly buildModel: string; readonly primaryPlot: string; readonly secondaryPlot: string; readonly awaitingGroup: string; readonly primaryPending: string; readonly secondaryPending: string; readonly dataReady: (rows: number) => string; readonly dataPrompt: string };
+  readonly empty: { readonly ariaLabel: string; readonly comparisonPlot: string; readonly setupRequired: string; readonly researchSpace: string; readonly networkAria: string; readonly pathway: string; readonly complete: string; readonly incomplete: string; readonly openRows: string; readonly defineModel: string; readonly buildModel: string; readonly primaryPlot: string; readonly secondaryPlot: string; readonly awaitingGroup: string; readonly primaryPending: string; readonly secondaryPending: string; readonly dataReady: (rows: number) => string; readonly dataPrompt: string; readonly sampleLibraryHint: string };
 }
 
 export type OpenEnaWorkspaceFailureV3 =
@@ -2314,6 +2345,45 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
     data: {
       ariaLabel: t("Data source", "資料來源", "数据来源"), title: t("Coded data", "編碼資料", "编码数据"), openFile: t("Open coded CSV or XLSX", "開啟編碼 CSV 或 XLSX", "打开编码 CSV 或 XLSX"),
       loadSample: t("Load sample", "載入樣本", "加载样本"), loadTrajectorySample: t("Load trajectory sample", "載入軌跡樣本", "加载轨迹样本"),
+      teachingSamples: {
+        libraryLabel: t("Teaching samples", "教學樣本", "教学样本"),
+        familyLabel: t("Family", "模型族", "模型族"),
+        rowShapeLabel: t("Row shape", "資料列形狀", "数据行形状"),
+        expectedOutputLabel: t("Expected output", "預期產出", "预期产出"),
+        loadOnaSample: t("Load ONA sample", "載入 ONA 樣本", "加载 ONA 样本"),
+        families: {
+          endpoint: t(OPEN_ENA_EXPORT_FAMILY_NAMES.endpoint, "端點", "端点"),
+          separate: t(OPEN_ENA_EXPORT_FAMILY_NAMES.separate, "分離軌跡", "分离轨迹"),
+          accumulated: t(OPEN_ENA_EXPORT_FAMILY_NAMES.accumulated, "累積軌跡", "累积轨迹"),
+          ona: t(OPEN_ENA_EXPORT_FAMILY_NAMES.ona, "ONA", "ONA"),
+        },
+        rowShapes: {
+          endpoint: t("48 synthetic rows · 8 teams · 5 codes", "48 個合成資料列 · 8 個團隊 · 5 個代碼", "48 个合成数据行 · 8 个团队 · 5 个代码"),
+          trajectory: t("54 synthetic rows · 6 learners · TP1–TP3 · 6 codes", "54 個合成資料列 · 6 位學習者 · TP1–TP3 · 6 個代碼", "54 个合成数据行 · 6 位学习者 · TP1–TP3 · 6 个代码"),
+          ona: t("48 synthetic rows · 8 teams · 5 codes", "48 個合成資料列 · 8 個團隊 · 5 個代碼", "48 个合成数据行 · 8 个团队 · 5 个代码"),
+        },
+        expectedOutputs: {
+          endpoint: t("Endpoint fit", "端點擬合", "端点拟合"),
+          trajectory: t(OPEN_ENA_EXPORT_FAMILY_NAMES.separate, "分離軌跡", "分离轨迹"),
+          ona: t("ONA-ready", "可建立 ONA", "可构建 ONA"),
+        },
+      },
+      firstSuccess: {
+        title: t("First Build", "第一次建立", "第一次构建"),
+        loaded: t("Sample loaded", "已載入樣本", "已加载样本"),
+        drafts: (family) => t(`Eligible drafts prefilled for ${family}`, `已為${family}預填符合門檻的草稿`, `已为${family}预填符合门槛的草稿`),
+        gates: t("Remaining gates", "尚餘門檻", "剩余门槛"),
+        gatesClear: t("No remaining Build gates", "沒有尚餘的建立門檻", "没有剩余的构建门槛"),
+        gatesPending: t("Checking admission gates", "正在檢查准入門檻", "正在检查准入门槛"),
+        build: t("Build", "建立", "构建"),
+        buildRunning: t("Build is running", "正在建立", "正在构建"),
+        buildDone: t("First Build succeeded", "第一次建立已成功", "第一次构建已成功"),
+        complete: t("Complete: ", "已完成：", "已完成："),
+        incomplete: t("Not complete: ", "未完成：", "未完成："),
+        analysisSetNote: t("Analysis sets stay an Endpoint gate. This path ends at the first Build.", "分析集仍是端點門檻。這條路徑到第一次成功建立為止。", "分析集仍是端点门槛。这条路径到第一次成功构建为止。"),
+        onaContractNote: t("The fixed ONA contract is prefilled and unchanged: EndPoint, backward-only window, frequency-sum weighting, SVD, explicit row order, and an all-enabled directional mask.", "已預填且未改動固定 ONA 契約：端點、僅向後窗口、頻數總和權重、SVD、明確資料列順序，以及全部啟用的方向遮罩。", "已预填且未改动固定 ONA 契约：端点、仅向后窗口、频数总和权重、SVD、明确数据行顺序，以及全部启用的方向遮罩。"),
+        trajectoryNote: t("Switching to ONA or Accumulated trajectory keeps that family's admission gates. Use the ONA teaching sample for a prefilled ONA Build.", "改為 ONA 或累積軌跡時，該模型族的准入門檻仍然有效。若要預填並建立 ONA，請使用 ONA 教學樣本。", "改为 ONA 或累积轨迹时，该模型族的准入门槛仍然有效。若要预填并构建 ONA，请使用 ONA 教学样本。"),
+      },
       sampleExplanation: t("Samples use versioned explicit type declarations and order policies, then run through the strict model compiler.", "樣本使用具版本的明確類型宣告與順序政策，再交由嚴格模型編譯器處理。", "样本使用带版本的明确类型声明与顺序策略，再交由严格模型编译器处理。"),
       importArtifact: t("Import configuration, result or Reference", "匯入設定、結果或參考", "导入设置、结果或参考"), artifactTooLarge: t("Artifact exceeds 16 MiB.", "成果超過 16 MiB。", "成果超过 16 MiB。"),
       reviewTypes: t("Review CSV source types", "檢視 CSV 來源類型", "查看 CSV 来源类型"), reviewTypesTitle: t("Review source column types", "檢視來源欄位類型", "查看来源字段类型"),
@@ -2398,7 +2468,7 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
     toolbar: { dataView: t("Data View", "資料檢視", "数据视图"), downloadModel: t("Download Model", "下載模型", "下载模型"), exportSvg: t("Export SVG", "匯出 SVG", "导出 SVG"), exportPng: t("Export PNG", "匯出 PNG", "导出 PNG"), researchSpace: t("SVD research space", "SVD 研究空間", "SVD 研究空间") },
     shell: { workspaceAria: t("Open ENA analysis workspace", "Open ENA 分析工作區", "Open ENA 分析工作区"), modesAria: t("Analysis modes", "分析模式", "分析模式"), local: t("Local", "本機", "本机"), runtimePrivacy: (version) => t(`ENA computation powered by jENA v${version} (GPL-3.0-only); ENA.HK provides the interface, plotting, and exports. Source data stays in this workspace's browser memory unless you intentionally export it.`, `ENA 運算由 jENA v${version}（GPL-3.0-only）提供；ENA.HK 提供介面、繪圖及匯出。除非您主動匯出，來源資料只會保留在此工作區的瀏覽器記憶體中。`, `ENA 计算由 jENA v${version}（GPL-3.0-only）提供；ENA.HK 提供界面、绘图及导出。除非您主动导出，来源数据只会保留在此工作区的浏览器内存中。`) },
     result: { plotAria: t("Bound model plot", "綁定模型圖", "绑定模型图"), historicalGeometry: t("Historical geometry: edits require a new run.", "歷史幾何：編輯後需要重新執行。", "历史几何：编辑后需要重新运行。"), sourceReplacementNotice: t("Source replaced. Historical geometry is retained until you rebuild.", "來源已替換。歷史幾何會保留，直到你重新建立模型。", "来源已替换。历史几何会保留，直到你重新构建模型。"), rebuildNow: t("Rebuild now", "立即重新建立", "立即重新构建"), rebuildNowAria: t("Rebuild the model after source replacement. The model does not run until you choose Rebuild.", "來源替換後重新建立模型。在你選擇重新建立之前，模型不會自動執行。", "来源替换后重新构建模型。在你选择重新构建之前，模型不会自动运行。"), boundGeometry: t("Bound fitted geometry", "已綁定擬合幾何", "已绑定拟合几何"), oneAxis: t("Only one supported fitted axis is available. No second coordinate is invented.", "只有一個受支援的擬合軸；不會虛構第二座標。", "只有一个受支持的拟合轴；不会虚构第二坐标。"), fittedCoordinates: t("Fitted coordinates", "擬合座標", "拟合坐标"), contrastUnavailable: t("Contrast requires two declared Groups and two supported fitted axes. The fitted model remains available for inspection.", "對比需要兩個已宣告群組及兩個受支援擬合軸；擬合模型仍可供檢視。", "对比需要两个已声明组及两个受支持拟合轴；拟合模型仍可供查看。"), codeLabels: t("Code labels", "代碼標籤", "代码标签"), trajectorySteps: t("Observed fitted trajectory steps and original ordinals", "觀察到的擬合軌跡步驟及原始序位", "观测到的拟合轨迹步骤及原始序位"), cohortMeaning: t("Downstream complete-case availability does not determine core trajectory validity. Display filters do not change the cohort or fitted ordinals.", "下游完整案例的可用性不決定核心軌跡是否有效。顯示篩選不會改變隊列或擬合序位。", "下游完整案例的可用性不决定核心轨迹是否有效。显示筛选不会改变队列或拟合序位。") },
-    empty: { ariaLabel: t("Open ENA model setup workbench", "Open ENA 模型設定工作台", "Open ENA 模型设置工作台"), comparisonPlot: t("COMPARISON PLOT", "比較圖", "比较图"), setupRequired: t("Model setup required", "需要設定模型", "需要设置模型"), researchSpace: t("2D research space", "2D 研究空間", "2D 研究空间"), networkAria: t("Connected four-node epistemic network", "四節點連接知識網絡", "四节点连接知识网络"), pathway: t("MODEL → VIEW → PRESENTER", "模型 → 檢視 → 呈現", "模型 → 视图 → 呈现"), complete: t("Complete: ", "已完成：", "已完成："), incomplete: t("Not complete: ", "未完成：", "未完成："), openRows: t("Open or load coded rows", "開啟或載入編碼資料列", "打开或加载编码数据行"), defineModel: t("Define Units, Horizons, Windows, and Codes; Group is optional", "設定單位、視域、窗口及代碼；群組可選", "设置单位、视域、窗口及代码；组可选"), buildModel: t("Build the model with jENA", "使用 jENA 建立模型", "使用 jENA 构建模型"), primaryPlot: t("PRIMARY PLOT", "主要圖", "主图"), secondaryPlot: t("SECONDARY PLOT", "次要圖", "次图"), awaitingGroup: t("Awaiting group selection", "等待群組選擇", "等待组选择"), primaryPending: t("Primary network appears after a model is built.", "建立模型後會顯示主要網絡。", "构建模型后会显示主网络。"), secondaryPending: t("Secondary network appears after a model is built.", "建立模型後會顯示次要網絡。", "构建模型后会显示次网络。"), dataReady: (rows) => t(`${rows.toLocaleString()} coded rows ready for review`, `${rows.toLocaleString()} 個編碼資料列可供檢視`, `${rows.toLocaleString()} 个编码数据行可供查看`), dataPrompt: t("Open a CSV or XLSX file, or load the teaching sample, to inspect coded rows.", "開啟 CSV 或 XLSX 檔案，或載入教學樣本，以檢視編碼資料列。", "打开 CSV 或 XLSX 文件，或加载教学样本，以查看编码数据行。") },
+    empty: { ariaLabel: t("Open ENA model setup workbench", "Open ENA 模型設定工作台", "Open ENA 模型设置工作台"), comparisonPlot: t("COMPARISON PLOT", "比較圖", "比较图"), setupRequired: t("Model setup required", "需要設定模型", "需要设置模型"), researchSpace: t("2D research space", "2D 研究空間", "2D 研究空间"), networkAria: t("Connected four-node epistemic network", "四節點連接知識網絡", "四节点连接知识网络"), pathway: t("MODEL → VIEW → PRESENTER", "模型 → 檢視 → 呈現", "模型 → 视图 → 呈现"), complete: t("Complete: ", "已完成：", "已完成："), incomplete: t("Not complete: ", "未完成：", "未完成："), openRows: t("Open or load coded rows", "開啟或載入編碼資料列", "打开或加载编码数据行"), defineModel: t("Define Units, Horizons, Windows, and Codes; Group is optional", "設定單位、視域、窗口及代碼；群組可選", "设置单位、视域、窗口及代码；组可选"), buildModel: t("Build the model with jENA", "使用 jENA 建立模型", "使用 jENA 构建模型"), primaryPlot: t("PRIMARY PLOT", "主要圖", "主图"), secondaryPlot: t("SECONDARY PLOT", "次要圖", "次图"), awaitingGroup: t("Awaiting group selection", "等待群組選擇", "等待组选择"), primaryPending: t("Primary network appears after a model is built.", "建立模型後會顯示主要網絡。", "构建模型后会显示主网络。"), secondaryPending: t("Secondary network appears after a model is built.", "建立模型後會顯示次要網絡。", "构建模型后会显示次网络。"), dataReady: (rows) => t(`${rows.toLocaleString()} coded rows ready for review`, `${rows.toLocaleString()} 個編碼資料列可供檢視`, `${rows.toLocaleString()} 个编码数据行可供查看`), dataPrompt: t("Open a CSV or XLSX file, or load a teaching sample, to inspect coded rows.", "開啟 CSV 或 XLSX 檔案，或載入教學樣本，以檢視編碼資料列。", "打开 CSV 或 XLSX 文件，或加载教学样本，以查看编码数据行。"), sampleLibraryHint: t("Trajectory and ONA samples are listed under Data, with family, row shape, and expected output.", "軌跡與 ONA 樣本列在資料區，並標明模型族、資料列形狀與預期產出。", "轨迹与 ONA 样本列在数据区，并标明模型族、数据行形状与预期产出。") },
   };
 }
 

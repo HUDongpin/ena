@@ -16,7 +16,7 @@ import { OpenEnaExportApplicabilityNote } from "./OpenEnaExportApplicabilityNote
 import { parseCsv } from "@/lib/open-ena/csv";
 import { parseXlsx, codedDataFileKind } from "@/lib/open-ena/spreadsheet";
 import { sha256TextV3, canonicalJsonV3 } from "@/lib/open-ena/model-v3/canonical-json";
-import { JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT, JENA_SOURCE_URL, SAMPLE_DATASET_URL, TRAJECTORY_SAMPLE_DATASET_URL, type OpenEnaMode, type CameraPreset, type ParsedDataset } from "@/lib/open-ena/types";
+import { JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT, JENA_SOURCE_URL, type OpenEnaMode, type CameraPreset, type ParsedDataset } from "@/lib/open-ena/types";
 import { buildPresentationArtifactV3 } from "@/lib/open-ena/presentation-artifact-v3";
 import { parseBundleJsonV3 } from "@/lib/open-ena/bundle-json-v3";
 import { assertPresentationArtifactContractV3 } from "@/lib/open-ena/bundle-contract-v3";
@@ -59,7 +59,16 @@ import {
   openEnaConsumerAuthorityKeyV3,
 } from "@/lib/open-ena/workspace-consumer-authority-v3";
 import { resolveOpenEnaGroupDisplayOptions } from "@/lib/open-ena/group-display";
-import { prepareTeachingSampleV3 } from "@/lib/open-ena/sample-source-v3";
+import { prepareTeachingSampleV3, SAMPLE_SOURCE_DESCRIPTORS_V3 } from "@/lib/open-ena/sample-source-v3";
+import {
+  TEACHING_SAMPLE_CATALOG,
+  teachingSampleFirstSuccessProgress,
+  teachingSampleKindFromLoadRequest,
+  type TeachingSampleBuildPhase,
+  type TeachingSampleKind,
+} from "@/lib/open-ena/teaching-sample-guide";
+import { OpenEnaTeachingSampleLibrary } from "./OpenEnaTeachingSampleLibrary";
+import { OpenEnaTeachingSampleProgress } from "./OpenEnaTeachingSampleProgress";
 import { prepareTypedCsvSourceV3, previewSourceTypesV3, type SourceTypeDeclarationsV3, type SourceColumnTypeV3 } from "@/lib/open-ena/source-preparation-v3";
 import type { PresentationArtifactV3, BoundOnaResultV3, BoundStandardResultV3, ModelWorkspaceDraftsV3 } from "@/lib/open-ena/model-v3/types";
 import OpenEnaPlot from "./OpenEnaPlot";
@@ -399,6 +408,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   }, [baseDisplay, state.presetHiddenGroups, result]);
   const current = modelState.resultStatus === "current" && currentPlan !== null;
   const [mode, setMode] = useState<OpenEnaMode>("data");
+  const [teachingSampleKind, setTeachingSampleKind] = useState<TeachingSampleKind | null>(null);
   const [dataViewContext, setDataViewContext] = useState<OpenEnaDataViewContext>("comparison");
   const [centerSurface, setCenterSurface] = useState<"plot" | "data">("plot");
   const [textScale, setTextScale] = useState(1);
@@ -720,6 +730,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     });
   }
   async function openCodedData(file: File) {
+    setTeachingSampleKind(null);
     dispatch({ type: "clear-auto-run-intent" });
     const generation = ++sourceGeneration.current;
     setSourceBusy(true);
@@ -745,6 +756,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     try {
       const value = await prepareTypedCsvSourceV3(preview.text, preview.dataset, preview.types, new Date());
       if (generation !== sourceGeneration.current) return;
+      setTeachingSampleKind(null);
       setDerivative(value); setOriginalSource({ text: preview.text, name: preview.dataset.name }); installSource(value);
     } finally { if (generation === sourceGeneration.current) setSourceBusy(false); }
   }
@@ -778,16 +790,32 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     event.stopPropagation();
     cancelSourcePreparation(true);
   }
-  async function loadSample(trajectory = false) {
+  async function loadSample(trajectoryOrKind: boolean | TeachingSampleKind = false) {
+    const kind = teachingSampleKindFromLoadRequest(trajectoryOrKind);
     const generation = ++sourceGeneration.current; setSourceBusy(true);
     try {
-      const url = trajectory ? TRAJECTORY_SAMPLE_DATASET_URL : SAMPLE_DATASET_URL;
+      const url = SAMPLE_SOURCE_DESCRIPTORS_V3[kind].url;
       const response = await fetch(url, { cache: "no-store" }); if (!response.ok) throw new OpenEnaKnownWorkspaceFailureV3({ id: "sample-unavailable" });
       const text = await response.text();
-      const value = await prepareTeachingSampleV3(text, trajectory ? "trajectory" : "endpoint", new Date());
+      const value = await prepareTeachingSampleV3(text, kind, new Date());
       if (generation !== sourceGeneration.current) return;
       setDerivative(value); setOriginalSource(value.original); installSource(value, value.drafts, true);
+      setTeachingSampleKind(kind);
     } finally { if (generation === sourceGeneration.current) setSourceBusy(false); }
+  }
+  function requestTeachingSample(kind: TeachingSampleKind) {
+    switch (kind) {
+      case "endpoint":
+        return loadSample(false);
+      case "trajectory":
+        return loadSample(true);
+      case "ona":
+        return loadSample("ona");
+      default: {
+        const exhaustive: never = kind;
+        return exhaustive;
+      }
+    }
   }
   async function runInference() {
     if (!result || !currentPlan || !current || !controls) return;
@@ -1052,6 +1080,45 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     rawBlockers: workspaceRawBlockersV3(state),
   });
   const rebuildBlockingDescribedBy = rebuildBlockingChecklist.length > 0 ? `${rebuildBlockingChecklistId}-title` : undefined;
+  const teachingBuildPhase: TeachingSampleBuildPhase = current ? "succeeded" : modelState.runStatus === "running" ? "running" : "pending";
+  const teachingAdmissionSettled = currentCompilation !== null;
+  const teachingProgress = teachingSampleKind === null ? null : teachingSampleFirstSuccessProgress({
+    loaded: true,
+    draftsPrefilled: true,
+    admissionSettled: teachingAdmissionSettled,
+    remainingGateCount: rebuildBlockingChecklist.length,
+    buildPhase: teachingBuildPhase,
+  });
+  const teachingFamilyLabel = teachingSampleKind === null ? "" : workspaceCopy.data.teachingSamples.families[TEACHING_SAMPLE_CATALOG[teachingSampleKind].family];
+  const teachingGateLabels = rebuildBlockingChecklist.map((item) => ({
+    id: item.predicateId,
+    label: item.kind === "raw"
+      ? modelV3Copy.tabs.blockingChecklist.raw[item.field]
+      : localizedDiagnostic(item.diagnostic).summary,
+  }));
+  const teachingSampleProgress = teachingProgress && teachingSampleKind ? (
+    <OpenEnaTeachingSampleProgress
+      kind={teachingSampleKind}
+      familyLabel={teachingFamilyLabel}
+      steps={teachingProgress}
+      buildPhase={teachingBuildPhase}
+      admissionSettled={teachingAdmissionSettled}
+      remainingGates={teachingGateLabels}
+      copy={workspaceCopy.data.firstSuccess}
+    />
+  ) : null;
+  const teachingSampleCenterProgress = teachingProgress && teachingSampleKind ? (
+    <OpenEnaTeachingSampleProgress
+      kind={teachingSampleKind}
+      familyLabel={teachingFamilyLabel}
+      steps={teachingProgress}
+      buildPhase={teachingBuildPhase}
+      admissionSettled={teachingAdmissionSettled}
+      remainingGates={teachingGateLabels}
+      copy={workspaceCopy.data.firstSuccess}
+      testId="open-ena-teaching-sample-progress-center"
+    />
+  ) : null;
   const modelActions = <div className="ena-model-actions">
     <button type="button" ref={runButtonRef} className="ena-action-button ena-action-primary ena-model-run-button" data-testid="open-ena-run-model"
       data-ena-rebuild-cue={rebuildCue?.reason}
@@ -1135,8 +1202,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
         <label className="ena-action-button ena-action-primary ena-restored-file-action"><span aria-hidden="true">＋</span><span>{workspaceCopy.data.openFile}</span>
         <input ref={sourceFileTriggerRef} aria-label={workspaceCopy.data.openFile} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => { const file = e.target.files?.[0]; if (file) void attempt(() => openCodedData(file)); e.target.value = ""; }} />
         </label><p>{copy.data.uploadHint}</p>
-        <button type="button" className="ena-action-button ena-action-secondary" onClick={() => void attempt(() => loadSample(false))} disabled={sourceBusy}><span aria-hidden="true">◇</span>{workspaceCopy.data.loadSample}</button><p>{copy.data.sampleHint}</p>
-        <button type="button" className="ena-action-button ena-action-secondary" onClick={() => void attempt(() => loadSample(true))} disabled={sourceBusy}><span aria-hidden="true">↗</span>{workspaceCopy.data.loadTrajectorySample}</button><p>{copy.data.trajectorySampleHint}</p>
+        <OpenEnaTeachingSampleLibrary copy={{ ...workspaceCopy.data.teachingSamples, loadSample: workspaceCopy.data.loadSample, loadTrajectorySample: workspaceCopy.data.loadTrajectorySample }} disabled={sourceBusy} onLoad={(kind) => void attempt(() => requestTeachingSample(kind))} />
         </div>
         <details className="ena-panel-details ena-data-import-details"><summary>{workspaceCopy.data.importArtifact}</summary><p>{workspaceCopy.data.sampleExplanation}</p>
         <label>{workspaceCopy.data.importArtifact}<input type="file" accept=".json" onChange={(e) => { const file = e.target.files?.[0]; if (file) void attempt(async () => { if (file.size > 16 * 1024 * 1024) throw new OpenEnaKnownWorkspaceFailureV3({ id: "artifact-too-large", limitMiB: 16 }); await controller.preview(file.text()); }); e.target.value = ""; }} /></label></details>
@@ -1152,6 +1218,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
         {originalSource && <button type="button" onClick={() => downloadText(originalSource.name, originalSource.text, "text/csv")}>{workspaceCopy.data.downloadOriginal}</button>}
         {state.historical.map((artifact) => <article key={artifact.receivedArtifactSha256}><p>{workspaceCopy.data.historicalArtifact(artifact.receivedArtifactSha256)}</p><button type="button" onClick={() => dispatch({ type: "preview", value: artifact })}>{workspaceCopy.data.reviewHistorical}</button></article>)}
       </section>}
+      {mode === "model" && teachingSampleProgress}
       {mode === "model" && <OpenEnaModelTabsV3 actions={modelActions} readyLabel={copy.model.valid} copy={modelCopy} diagnostics={diagnostics} scientificContext={context} scientificSummary={modelSummary} rawBlockers={workspaceRawBlockersV3(state)} blockingChecklistId={rebuildBlockingChecklistId}
         initialTab={modelNavigation.tab} status={{ ...modelState, editorBlocked: modelState.editorBlocked[family], configurationReadiness: currentCompilation?.plan ? "ready" : "incomplete" }}
         onSuggestedAction={(action, intent) => {
@@ -1374,7 +1441,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
                         <p className="ena-panel-kicker">{workspaceCopy.empty.pathway}</p>
                         <h2>{copy.workspace.emptyTitle}</h2>
                         <p>{copy.workspace.emptyText}</p>
-                        <ol>
+                        {teachingSampleCenterProgress ?? <ol>
                           <li data-done={dataset ? "true" : "false"}>
                             <span className="sr-only">{dataset ? workspaceCopy.empty.complete : workspaceCopy.empty.incomplete}</span>
                             {workspaceCopy.empty.openRows}
@@ -1384,7 +1451,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
                             {workspaceCopy.empty.defineModel}
                           </li>
                           <li data-done="false"><span className="sr-only">{workspaceCopy.empty.incomplete}</span>{workspaceCopy.empty.buildModel}</li>
-                        </ol>
+                        </ol>}
+                        <p>{workspaceCopy.empty.sampleLibraryHint}</p>
                         <button type="button" className="ena-action-button ena-action-primary" onClick={() => void attempt(() => loadSample())} disabled={sourceBusy || modelState.runStatus === "running"}>{copy.data.sample}</button>
                       </div>
                     </div>
