@@ -3648,6 +3648,21 @@ body:has(.open-ena-login-page) .back-to-top {
   background: #fffaf0;
 }
 
+.ena-export-applicability {
+  margin: 4px 0 8px;
+  color: #3d5c56;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.ena-export-applicability[data-export-applicability-reason="not-applicable-family"],
+.ena-export-applicability[data-export-applicability-reason="would-be-empty"],
+.ena-export-applicability[data-export-applicability-reason="requires-rebuild"],
+.ena-export-applicability[data-export-applicability-reason="projection-reference"],
+.ena-export-applicability[data-export-applicability-reason="awaiting-inference"] {
+  color: #644b13;
+}
+
 .ena-result-tabs button span {
   margin-inline-start: 4px;
   color: #64747a;

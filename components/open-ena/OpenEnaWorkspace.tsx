@@ -11,6 +11,8 @@ import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
 import OpenEnaPersistentPlotTools, { scheduleOpenEnaDomFocusRestore } from "./OpenEnaPersistentPlotTools";
 import { formatOpenEnaWorkspaceFailureV3, getOpenEnaCopy, type OpenEnaWorkspaceFailureV3 } from "@/lib/open-ena-i18n";
 import { rowsToCsv, resolveOpenEnaPlotExportDimensions, resolveOpenEnaPlotRasterDimensions, openEnaResultTableFocusTarget, resolveOpenEnaResultTableRovingKey, buildOpenEnaResultTable, buildOpenEnaResultTableViewModel, openEnaResultTableAvailability, openEnaResultTableRowCounts, exportOpenEnaResultTableCsv, type OpenEnaResultTableKey, type OpenEnaResultTableViewModel } from "@/lib/open-ena/export";
+import { openEnaExportApplicabilityText, openEnaExportDisclosure, openEnaExportFamilyFromResult, openEnaResultTableExportAction, type OpenEnaExportDisclosure, type OpenEnaExportDisclosureContext, type OpenEnaStatsExportAction } from "@/lib/open-ena/export-applicability";
+import { OpenEnaExportApplicabilityNote } from "./OpenEnaExportApplicabilityNote";
 import { parseCsv } from "@/lib/open-ena/csv";
 import { parseXlsx, codedDataFileKind } from "@/lib/open-ena/spreadsheet";
 import { sha256TextV3, canonicalJsonV3 } from "@/lib/open-ena/model-v3/canonical-json";
@@ -68,7 +70,7 @@ import OpenEnaOrderedResultLayout from "./OpenEnaOrderedResultLayout";
 import OpenEna3DOrderedResultLayout from "./OpenEna3DOrderedResultLayout";
 import OpenEnaAiInterpretation from "./OpenEnaAiInterpretation";
 import OpenEnaCodeColorPicker from "./OpenEnaCodeColorPicker";
-import { OpenEnaTrajectoryAnalysisPanelV3 } from "./model-v3/OpenEnaTrajectoryAnalysisPanelV3";
+import { OpenEnaTrajectoryAnalysisPanelV3, trajectoryAnalysisCopyV3 } from "./model-v3/OpenEnaTrajectoryAnalysisPanelV3";
 import type { OpenEnaTrajectoryPathControlsV3 } from "@/lib/open-ena/trajectory-path-inference-v3";
 import type { OpenEnaTrajectoryExportOptionsV3 } from "@/lib/open-ena/trajectory-export-v3";
 import { OpenEnaNativeStatsPanelV3 } from "./model-v3/OpenEnaNativeStatsPanelV3";
@@ -239,6 +241,8 @@ export function OpenEnaResultTablesView({
           className="ena-action-button ena-action-secondary ena-table-export"
           data-testid="open-ena-result-table-export"
           aria-label={model.export.ariaLabel}
+          aria-describedby={model.export.applicabilityNoteId ?? undefined}
+          title={model.export.applicabilityNote ?? undefined}
           disabled={model.export.disabled}
           onClick={() => {
             if (!model.export.disabled) onExport();
@@ -247,6 +251,15 @@ export function OpenEnaResultTablesView({
           {model.export.label} ↓
         </button>
       </div>
+      {model.export.applicabilityNote && model.export.applicabilityNoteId && model.export.applicabilityAction ? (
+        <OpenEnaExportApplicabilityNote
+          id={model.export.applicabilityNoteId}
+          action={model.export.applicabilityAction}
+          text={model.export.applicabilityNote}
+          reason={model.export.applicabilityReason}
+          familyApplies={model.export.applicabilityFamilyApplies}
+        />
+      ) : null}
       {model.unavailableNotes.length ? (
         <div className="ena-result-table-unavailable-notes">
           {model.unavailableNotes.map((note) => (
@@ -378,6 +391,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const { state, dispatch, dispatchModel, context, currentCompilation, currentPlan } = controller;
   const modelState = state.model, family = modelState.drafts.activeFamily, draft = modelState.drafts[family];
   const dataset = state.dataset, result = modelState.result;
+  const exportFamily = openEnaExportFamilyFromResult(result);
   const baseDisplay = modelState.display[result?.configuration.analysisFamily ?? family];
   const display = useMemo(() => {
     if (!state.presetHiddenGroups || state.presetHiddenGroups.resultHash !== result?.binding.scientificResultSha256) return baseDisplay;
@@ -467,8 +481,28 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
       availability: resultTableAvailability,
       copy: copy.resultTables,
     });
-    return current ? model : { ...model, export: { ...model.export, disabled: true } };
-  }, [resultTableRowCounts, resultTableAvailability, resultTable, resultTablePreviewRows, copy.resultTables, current]);
+    const family = openEnaExportFamilyFromResult(result);
+    const withCurrent = current ? model : { ...model, export: { ...model.export, disabled: true } };
+    if (!family) return withCurrent;
+    const disclosure = openEnaExportDisclosure(openEnaResultTableExportAction(resultTable), {
+      family,
+      current,
+      projectionReference: Boolean(resultTableSource?.projectionReference),
+      rowCount: resultTableRowCounts[resultTable],
+    });
+    return {
+      ...withCurrent,
+      export: {
+        ...withCurrent.export,
+        disabled: withCurrent.export.disabled || disclosure.disabled,
+        applicabilityNote: openEnaExportApplicabilityText(disclosure, workspaceCopy.stats.exportApplicability),
+        applicabilityNoteId: `${workspaceId}-result-table-export-applicability`,
+        applicabilityReason: disclosure.reason,
+        applicabilityAction: disclosure.action,
+        applicabilityFamilyApplies: disclosure.familyApplies,
+      },
+    };
+  }, [resultTableRowCounts, resultTableAvailability, resultTable, resultTablePreviewRows, copy.resultTables, current, result, resultTableSource, workspaceCopy.stats.exportApplicability, workspaceId]);
   const completedResultKind = result?.configuration.analysisFamily;
   const supportedAxes = presentation?.result.dimensions ?? [];
   const twoDAxes = axes.length === 2 && axes.every((axis) => supportedAxes.includes(axis)) ? axes : supportedAxes.slice(0, 2);
@@ -1031,6 +1065,54 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
       <button type="button" className="ena-action-button ena-action-secondary ena-model-cancel-button" data-testid="open-ena-cancel-run" onClick={controller.cancel}>{workspaceCopy.cancelRun}</button>
     </div>}
   </div>;
+  const exportApplicabilityCopy = workspaceCopy.stats.exportApplicability;
+  const discloseExport = (
+    action: OpenEnaStatsExportAction,
+    overrides: Partial<Pick<OpenEnaExportDisclosureContext, "rowCount" | "inferenceReady">> = {},
+  ): OpenEnaExportDisclosure | null => exportFamily ? openEnaExportDisclosure(action, {
+    family: exportFamily,
+    current,
+    projectionReference: Boolean(resultTableSource?.projectionReference),
+    referenceBound: Boolean(result?.binding.referenceId),
+    inferenceReady: Boolean(activeInference),
+    ...overrides,
+  }) : null;
+  const exportNoteId = (action: OpenEnaStatsExportAction, suffix = "") => `${workspaceId}-export-note-${action}${suffix}`;
+  const onaEdgesDisclosure = discloseExport("ona-aggregate-edges");
+  const onaAuditDisclosure = discloseExport("ona-deidentified-audit");
+  const nativeStatsDisclosure = discloseExport("native-statistics");
+  const dataViewDisclosure = discloseExport("bound-data-view", { rowCount: historicalData?.rows.length });
+  const centerDataViewDisclosure = discloseExport("bound-data-view", { rowCount: dataViewPresentation?.rows.length });
+  const methodsDisclosure = discloseExport("methods");
+  const trajectoryBundleDisclosure = discloseExport("trajectory-bundle");
+  const currentAnalysisDisclosure = discloseExport("current-analysis");
+  const referenceDisclosure = discloseExport("reference");
+  const contrastJsonDisclosure = discloseExport("contrast-json");
+  const contrastEdgesDisclosure = discloseExport("contrast-edges");
+  const applicabilityText = (disclosure: OpenEnaExportDisclosure | null) => disclosure ? openEnaExportApplicabilityText(disclosure, exportApplicabilityCopy) : "";
+  const disclosedName = (label: string, disclosure: OpenEnaExportDisclosure | null, note: string) => disclosure?.disabled && note ? `${label}. ${note}` : undefined;
+  const onaEdgesNote = applicabilityText(onaEdgesDisclosure);
+  const onaAuditNote = applicabilityText(onaAuditDisclosure);
+  const nativeStatsNote = applicabilityText(nativeStatsDisclosure);
+  const dataViewNote = applicabilityText(dataViewDisclosure);
+  const centerDataViewNote = applicabilityText(centerDataViewDisclosure);
+  const methodsNote = applicabilityText(methodsDisclosure);
+  const trajectoryBundleNote = applicabilityText(trajectoryBundleDisclosure);
+  const currentAnalysisNote = applicabilityText(currentAnalysisDisclosure);
+  const referenceNote = applicabilityText(referenceDisclosure);
+  const contrastJsonNote = applicabilityText(contrastJsonDisclosure);
+  const contrastEdgesNote = applicabilityText(contrastEdgesDisclosure);
+  const onaEdgesNoteId = exportNoteId("ona-aggregate-edges");
+  const onaAuditNoteId = exportNoteId("ona-deidentified-audit");
+  const nativeStatsNoteId = exportNoteId("native-statistics");
+  const dataViewNoteId = exportNoteId("bound-data-view");
+  const centerDataViewNoteId = exportNoteId("bound-data-view", "-center");
+  const methodsNoteId = exportNoteId("methods");
+  const trajectoryBundleNoteId = exportNoteId("trajectory-bundle");
+  const currentAnalysisNoteId = exportNoteId("current-analysis");
+  const referenceNoteId = exportNoteId("reference");
+  const contrastJsonNoteId = exportNoteId("contrast-json");
+  const contrastEdgesNoteId = exportNoteId("contrast-edges");
   const analysisPanel = <div className={`ena-control-content ena-workspace-controls-v3 ena-restored-workbench${mode === "model" ? " ena-model-control-content" : ""}`} data-mode={mode} lang={locale} dir="ltr">
       <header className="ena-panel-heading">
         <p className="ena-panel-kicker">{panelHeading.kicker}</p>
@@ -1107,9 +1189,11 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
       {activeColorIntent && <OpenEnaCodeColorPicker code={activeColorIntent.code} value={openEnaCodeColorPair(modelState.display[family].codeColors[activeColorIntent.code] ?? codeColorFor(undefined, activeColorIntent.code), state.colorCompanions[family][activeColorIntent.code])} copy={copy.model.codeColorPicker}
         onCancel={() => setActiveCodeColor(null)} onConfirm={(value) => { if (!sameScientificContextV3(activeColorIntent.context, controller.context)) return; dispatch({ type: "confirm-code-color", context: activeColorIntent.context, code: activeColorIntent.code, color: value.primary, complementary: value.complementary }); setActiveCodeColor(null); }} />}
       {mode === "plot" && <section className="ena-workspace-section-v3 ena-workspace-plot-v3">{groupSelectors}
-        {activeContrast && endpointControls && <details className="ena-panel-details"><summary>{restoredCopy.contrastActions}</summary><div className="ena-restored-action-row"><button type="button" onClick={() => void attempt(async () => { const file = await exportContrastV3(result, currentPlan, endpointControls); if (consumerKey === consumerKeyRef.current && confirmCurrentIdentityBearingExport()) downloadText(file.filename, file.contents, "application/json"); })}>{workspaceCopy.plot.exportContrastJson}</button>
-          <button type="button" onClick={() => void attempt(async () => { const file = await exportContrastV3(result, currentPlan, endpointControls); if (consumerKey === consumerKeyRef.current) downloadText("native-contrast-edges.csv", file.edgesCsv, "text/csv"); })}>{workspaceCopy.plot.exportContrastEdges}</button>
-          <button type="button" onClick={() => { setPrimaryGroupName(secondaryGroupName); setSecondaryGroupName(primaryGroupName); }}>{workspaceCopy.plot.switchPlots}</button></div></details>}
+        {(Boolean(activeContrast && endpointControls) || Boolean(contrastJsonDisclosure && !contrastJsonDisclosure.familyApplies)) && <details className="ena-panel-details"><summary>{restoredCopy.contrastActions}</summary><div className="ena-restored-action-row"><button type="button" disabled={!contrastJsonDisclosure?.familyApplies || Boolean(contrastJsonDisclosure?.disabled) || !endpointControls} aria-label={disclosedName(workspaceCopy.plot.exportContrastJson, contrastJsonDisclosure, contrastJsonNote)} aria-describedby={contrastJsonNote ? contrastJsonNoteId : undefined} title={contrastJsonNote || undefined} onClick={() => void attempt(async () => { if (!contrastJsonDisclosure?.familyApplies || contrastJsonDisclosure.disabled || !endpointControls) return; const file = await exportContrastV3(result, currentPlan, endpointControls); if (consumerKey === consumerKeyRef.current && confirmCurrentIdentityBearingExport()) downloadText(file.filename, file.contents, "application/json"); })}>{workspaceCopy.plot.exportContrastJson}</button>
+          {contrastJsonDisclosure && contrastJsonNote ? <OpenEnaExportApplicabilityNote id={contrastJsonNoteId} action="contrast-json" text={contrastJsonNote} reason={contrastJsonDisclosure.reason} familyApplies={contrastJsonDisclosure.familyApplies} /> : null}
+          <button type="button" disabled={!contrastEdgesDisclosure?.familyApplies || Boolean(contrastEdgesDisclosure?.disabled) || !endpointControls} aria-label={disclosedName(workspaceCopy.plot.exportContrastEdges, contrastEdgesDisclosure, contrastEdgesNote)} aria-describedby={contrastEdgesNote ? contrastEdgesNoteId : undefined} title={contrastEdgesNote || undefined} onClick={() => void attempt(async () => { if (!contrastEdgesDisclosure?.familyApplies || contrastEdgesDisclosure.disabled || !endpointControls) return; const file = await exportContrastV3(result, currentPlan, endpointControls); if (consumerKey === consumerKeyRef.current) downloadText("native-contrast-edges.csv", file.edgesCsv, "text/csv"); })}>{workspaceCopy.plot.exportContrastEdges}</button>
+          {contrastEdgesDisclosure && contrastEdgesNote ? <OpenEnaExportApplicabilityNote id={contrastEdgesNoteId} action="contrast-edges" text={contrastEdgesNote} reason={contrastEdgesDisclosure.reason} familyApplies={contrastEdgesDisclosure.familyApplies} /> : null}
+          {activeContrast && endpointControls ? <button type="button" onClick={() => { setPrimaryGroupName(secondaryGroupName); setSecondaryGroupName(primaryGroupName); }}>{workspaceCopy.plot.switchPlots}</button> : null}</div></details>}
         {isTrajectory && <><label><input type="checkbox" checked={showGroupCentroidPaths} onChange={(e) => setShowGroupCentroidPaths(e.target.checked)} />{workspaceCopy.plot.showCentroidPaths}</label>
           <label><input type="checkbox" checked={endpointsOnly} onChange={(e) => setEndpointsOnly(e.target.checked)} />{workspaceCopy.plot.endpointsOnly}</label>
           <p>{workspaceCopy.plot.fittedOrder}</p>
@@ -1134,9 +1218,11 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
         <button type="button" disabled={!current || !controls || inferenceBusy || completedResultKind === "ona"} onClick={() => void attempt(runInference)}>{workspaceCopy.stats.runInference}</button>
         {completedResultKind === "ona" && <p>{workspaceCopy.stats.onaDescriptive}</p>}
         {onaView && <><p>{workspaceCopy.stats.onaMeaning}</p><ResearchTableV3 {...researchTableCopy} rows={onaView.edges} label={workspaceCopy.stats.onaEdges} />
-          <ResearchTableV3 {...researchTableCopy} rows={onaView.auditRows} label={workspaceCopy.stats.onaAudit} />
-          <button type="button" disabled={!current} onClick={() => void attempt(async () => { const value = await buildOnaBoundViewV3(result, currentPlan, primaryGroupName || null); if (latest.current.current && latest.current.state.model.result === result) downloadText("ona-aggregate-edges.csv", rowsToCsv(value.edges), "text/csv"); })}>{workspaceCopy.stats.exportOnaEdges}</button>
-          <button type="button" disabled={!current} onClick={() => void attempt(async () => { const value = await buildOnaBoundViewV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && window.confirm(copy.ona.exports.auditConfirmation)) downloadJson("ona-deidentified-audit.json", { binding: value.binding, audit: value.audit, meaning: value.meaning }); })}>{workspaceCopy.stats.exportOnaAudit}</button><p>{copy.ona.exports.auditWarning}</p></>}
+          <ResearchTableV3 {...researchTableCopy} rows={onaView.auditRows} label={workspaceCopy.stats.onaAudit} /></>}
+        {onaEdgesDisclosure && onaEdgesNote ? <><button type="button" disabled={onaEdgesDisclosure.disabled || !current} aria-label={disclosedName(workspaceCopy.stats.exportOnaEdges, onaEdgesDisclosure, onaEdgesNote)} aria-describedby={onaEdgesNoteId} title={onaEdgesNote} onClick={() => void attempt(async () => { if (onaEdgesDisclosure.disabled || !current) return; const value = await buildOnaBoundViewV3(result, currentPlan, primaryGroupName || null); if (latest.current.current && latest.current.state.model.result === result) downloadText("ona-aggregate-edges.csv", rowsToCsv(value.edges), "text/csv"); })}>{workspaceCopy.stats.exportOnaEdges}</button>
+          <OpenEnaExportApplicabilityNote id={onaEdgesNoteId} action="ona-aggregate-edges" text={onaEdgesNote} reason={onaEdgesDisclosure.reason} familyApplies={onaEdgesDisclosure.familyApplies} /></> : null}
+        {onaAuditDisclosure && onaAuditNote ? <><button type="button" disabled={onaAuditDisclosure.disabled || !current} aria-label={disclosedName(workspaceCopy.stats.exportOnaAudit, onaAuditDisclosure, onaAuditNote)} aria-describedby={onaAuditNoteId} title={onaAuditNote} onClick={() => void attempt(async () => { if (onaAuditDisclosure.disabled || !current) return; const value = await buildOnaBoundViewV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && window.confirm(copy.ona.exports.auditConfirmation)) downloadJson("ona-deidentified-audit.json", { binding: value.binding, audit: value.audit, meaning: value.meaning }); })}>{workspaceCopy.stats.exportOnaAudit}</button>
+          <OpenEnaExportApplicabilityNote id={onaAuditNoteId} action="ona-deidentified-audit" text={onaAuditNote} reason={onaAuditDisclosure.reason} familyApplies={onaAuditDisclosure.familyApplies} />{onaView ? <p>{copy.ona.exports.auditWarning}</p> : null}</> : null}
         </OpenEnaNativeStatsPanelV3>
         {resultTableViewModel && resultTableSource && <OpenEnaResultTables model={resultTableViewModel} onSelect={setResultTable} onExport={() => {
           if (!current || resultTableViewModel.export.disabled) return;
@@ -1147,13 +1233,16 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
           if (IDENTITY_BEARING_RESULT_TABLES.has(resultTable)) confirmOpenEnaIdentityBearingExport((message) => window.confirm(message), copy.stats.identityExportConfirmation, publish);
           else publish();
         }} />}
-        {activeInference && <><button type="button" onClick={() => void attempt(async () => { const file = await exportNativeStatisticsV3(activeInference, result, currentPlan, controls!); if (consumerKey === consumerKeyRef.current) downloadText(file.filename, file.contents, file.mimeType); })}>{workspaceCopy.stats.exportNative}</button></>}
+        {activeInference && nativeStatsDisclosure && nativeStatsNote ? <><button type="button" disabled={nativeStatsDisclosure.disabled} aria-describedby={nativeStatsNoteId} title={nativeStatsNote} onClick={() => void attempt(async () => { if (nativeStatsDisclosure.disabled) return; const file = await exportNativeStatisticsV3(activeInference, result, currentPlan, controls!); if (consumerKey === consumerKeyRef.current) downloadText(file.filename, file.contents, file.mimeType); })}>{workspaceCopy.stats.exportNative}</button><OpenEnaExportApplicabilityNote id={nativeStatsNoteId} action="native-statistics" text={nativeStatsNote} reason={nativeStatsDisclosure.reason} familyApplies={nativeStatsDisclosure.familyApplies} /></> : null}
+        {!activeInference && nativeStatsDisclosure && nativeStatsNote ? <><button type="button" disabled aria-label={disclosedName(workspaceCopy.stats.exportNative, nativeStatsDisclosure, nativeStatsNote)} aria-describedby={nativeStatsNoteId} title={nativeStatsNote}>{workspaceCopy.stats.exportNative}</button><OpenEnaExportApplicabilityNote id={nativeStatsNoteId} action="native-statistics" text={nativeStatsNote} reason={nativeStatsDisclosure.reason} familyApplies={nativeStatsDisclosure.familyApplies} /></> : null}
+        {!isTrajectory && trajectoryBundleDisclosure && !trajectoryBundleDisclosure.familyApplies && trajectoryBundleNote ? <><button type="button" disabled aria-label={disclosedName(trajectoryAnalysisCopyV3(locale).export, trajectoryBundleDisclosure, trajectoryBundleNote)} aria-describedby={trajectoryBundleNoteId} title={trajectoryBundleNote}>{trajectoryAnalysisCopyV3(locale).export}</button><OpenEnaExportApplicabilityNote id={trajectoryBundleNoteId} action="trajectory-bundle" text={trajectoryBundleNote} reason={trajectoryBundleDisclosure.reason} familyApplies={trajectoryBundleDisclosure.familyApplies} /></> : null}
         {historicalData && <details className="ena-panel-details"><summary>{workspaceCopy.stats.localDataView}</summary><ResearchTableV3 {...researchTableCopy} rows={historicalData.rows} label={workspaceCopy.stats.localDataView} columnLabels={{ [historicalData.metadataColumns.trajectoryOrdinal]: workspaceCopy.dataView.metadataLabels.trajectoryOrdinal, [historicalData.metadataColumns.observedHorizons]: workspaceCopy.dataView.metadataLabels.observedHorizons, [historicalData.metadataColumns.observedSourceRowIndices]: workspaceCopy.dataView.metadataLabels.observedSourceRowIndices }} /><p>{workspaceCopy.dataView.sourceIndexMeaning}</p><ResearchTableV3 {...researchTableCopy} rows={historicalData.sourceTraversal} label={workspaceCopy.stats.globalTraversal} columnLabels={workspaceCopy.dataView.sourceTraversalLabels} />
-          <button type="button" disabled={!current} onClick={() => void attempt(async () => { if (!result || !currentPlan) return; const value = await buildDataViewV3(result, currentPlan); if (!latest.current.current || latest.current.state.model.result !== result) return; if (window.confirm(workspaceCopy.stats.exportDataViewConfirmation)) downloadText("bound-data-view.csv", rowsToCsv(value.rows), "text/csv"); })}>{workspaceCopy.stats.exportDataView}</button></details>}
+          <button type="button" disabled={!current || Boolean(dataViewDisclosure?.disabled)} aria-label={disclosedName(workspaceCopy.stats.exportDataView, dataViewDisclosure, dataViewNote)} aria-describedby={dataViewNote ? dataViewNoteId : undefined} title={dataViewNote || undefined} onClick={() => void attempt(async () => { if (!result || !currentPlan || !current || dataViewDisclosure?.disabled) return; const value = await buildDataViewV3(result, currentPlan); if (!latest.current.current || latest.current.state.model.result !== result) return; if (window.confirm(workspaceCopy.stats.exportDataViewConfirmation)) downloadText("bound-data-view.csv", rowsToCsv(value.rows), "text/csv"); })}>{workspaceCopy.stats.exportDataView}</button>
+          {dataViewDisclosure && dataViewNote ? <OpenEnaExportApplicabilityNote id={dataViewNoteId} action="bound-data-view" text={dataViewNote} reason={dataViewDisclosure.reason} familyApplies={dataViewDisclosure.familyApplies} /> : null}</details>}
         {checkedDataView && current && checkedDataView.binding.scientificResultSha256 === result?.binding.scientificResultSha256 && checkedDataView.binding.executionPlanSha256 === currentPlan?.header.executionPlanSha256 && <p>{workspaceCopy.stats.dataViewValidated}</p>}
-        {result && <details><summary>{copy.stats.ui.methodsTitle}</summary><button type="button" onClick={() => void attempt(async () => { if (confirmCurrentIdentityBearingExport()) await navigator.clipboard.writeText(buildMethodsReportV3(result)); })}>{copy.stats.ui.copyMethods}</button><pre>{buildMethodsReportV3(result)}</pre><button type="button" onClick={() => { if (confirmCurrentIdentityBearingExport()) downloadText("methods.md", buildMethodsReportV3(result), "text/markdown"); }}>{workspaceCopy.stats.exportMethods}</button></details>}
+        {result && <details><summary>{copy.stats.ui.methodsTitle}</summary><button type="button" aria-describedby={methodsNote ? methodsNoteId : undefined} title={methodsNote || undefined} onClick={() => void attempt(async () => { if (confirmCurrentIdentityBearingExport()) await navigator.clipboard.writeText(buildMethodsReportV3(result)); })}>{copy.stats.ui.copyMethods}</button><pre>{buildMethodsReportV3(result)}</pre><button type="button" aria-describedby={methodsNote ? methodsNoteId : undefined} title={methodsNote || undefined} onClick={() => { if (confirmCurrentIdentityBearingExport()) downloadText("methods.md", buildMethodsReportV3(result), "text/markdown"); }}>{workspaceCopy.stats.exportMethods}</button>{methodsDisclosure && methodsNote ? <OpenEnaExportApplicabilityNote id={methodsNoteId} action="methods" text={methodsNote} reason={methodsDisclosure.reason} familyApplies={methodsDisclosure.familyApplies} /> : null}</details>}
       </section>}
-      {isTrajectory && <OpenEnaTrajectoryAnalysisPanelV3 key="native-trajectory-analysis" locale={locale} hidden={mode !== "stats"} frameKey={trajectoryFrameKey} result={result} plan={currentPlan} current={current} controls={pathControls} admission={pathAdmission} ranks={trajectoryRanks.frameKey === trajectoryFrameKey ? trajectoryRanks.items : []} confirmIdentityExport={confirmCurrentIdentityBearingExport} />}
+      {isTrajectory && <OpenEnaTrajectoryAnalysisPanelV3 key="native-trajectory-analysis" locale={locale} hidden={mode !== "stats"} frameKey={trajectoryFrameKey} result={result} plan={currentPlan} current={current} controls={pathControls} admission={pathAdmission} ranks={trajectoryRanks.frameKey === trajectoryFrameKey ? trajectoryRanks.items : []} confirmIdentityExport={confirmCurrentIdentityBearingExport} exportApplicabilityNote={trajectoryBundleNote || null} exportApplicabilityNoteId={trajectoryBundleNote ? trajectoryBundleNoteId : null} exportApplicabilityReason={trajectoryBundleDisclosure?.reason ?? null} exportApplicabilityFamilyApplies={Boolean(trajectoryBundleDisclosure?.familyApplies)} />}
       <details className="ena-panel-details ena-artifacts-disclosure"><summary>{workspaceCopy.artifacts.title}</summary>
       <section className="ena-workspace-section-v3 ena-workspace-artifacts-v3" aria-label={workspaceCopy.artifacts.ariaLabel}>
         <p>{workspaceCopy.artifacts.presetScope}</p>{state.presetHiddenGroups?.resultHash === resultHash && <button type="button" onClick={() => dispatch({ type: "clear-preset-group-hiding" })}>{workspaceCopy.artifacts.clearPreset}</button>}
@@ -1166,9 +1255,11 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
         <button type="button" disabled={!workspaceDraftExportableV3(state)} onClick={() => void attempt(async () => saveDescriptor(await exportDraftV3(draft)))}>{workspaceCopy.artifacts.exportDraft}</button>
         {!workspaceDraftExportableV3(state) && <p>{workspaceCopy.artifacts.draftBlocked}</p>}
         <button type="button" disabled={!currentCompilation?.plan} onClick={() => void attempt(async () => { if (currentCompilation?.result.status === "ready") saveDescriptor(await exportCanonicalConfigV3(currentCompilation.result)); })}>{workspaceCopy.artifacts.exportConfig}</button>
-        <button type="button" data-testid="open-ena-export-current-analysis" disabled={!current} onClick={() => void attempt(async () => { if (result && currentPlan) { const descriptor = await exportCurrentAnalysisV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && window.confirm(workspaceCopy.artifacts.exportAnalysisConfirmation)) saveDescriptor(descriptor); } })}>{workspaceCopy.artifacts.exportAnalysis}</button>
+        <button type="button" data-testid="open-ena-export-current-analysis" disabled={!current || Boolean(currentAnalysisDisclosure?.disabled)} aria-label={disclosedName(workspaceCopy.artifacts.exportAnalysis, currentAnalysisDisclosure, currentAnalysisNote)} aria-describedby={currentAnalysisNote ? currentAnalysisNoteId : undefined} title={currentAnalysisNote || undefined} onClick={() => void attempt(async () => { if (currentAnalysisDisclosure?.disabled) return; if (result && currentPlan) { const descriptor = await exportCurrentAnalysisV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && window.confirm(workspaceCopy.artifacts.exportAnalysisConfirmation)) saveDescriptor(descriptor); } })}>{workspaceCopy.artifacts.exportAnalysis}</button>
+        {currentAnalysisDisclosure && currentAnalysisNote ? <OpenEnaExportApplicabilityNote id={currentAnalysisNoteId} action="current-analysis" text={currentAnalysisNote} reason={currentAnalysisDisclosure.reason} familyApplies={currentAnalysisDisclosure.familyApplies} /> : null}
         <button type="button" disabled={!result} onClick={() => void attempt(async () => { if (result) { const file = await exportStaleAuditV3(result, await sha256TextV3(context.draftFingerprint)); if (latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) saveDescriptor(file); } })}>{workspaceCopy.artifacts.exportStale}</button>
-        <button type="button" disabled={!current || completedResultKind !== "standard" || (isTrajectory && result?.binding.referenceId === null)} onClick={() => void attempt(async () => { if (result && currentPlan) saveDescriptor(await exportReferenceV2(result, { currentPlan, ...(state.sourceWitness ? { sourceWitness: state.sourceWitness } : {}), displayName: dataset?.name ?? workspaceCopy.artifacts.referenceDisplayName })); })}>{result?.binding.referenceId ? workspaceCopy.artifacts.reexportReference : workspaceCopy.artifacts.exportReference}</button>
+        <button type="button" disabled={!current || completedResultKind !== "standard" || (isTrajectory && result?.binding.referenceId === null) || Boolean(referenceDisclosure?.disabled)} aria-label={disclosedName(result?.binding.referenceId ? workspaceCopy.artifacts.reexportReference : workspaceCopy.artifacts.exportReference, referenceDisclosure, referenceNote)} aria-describedby={referenceNote ? referenceNoteId : undefined} title={referenceNote || undefined} onClick={() => void attempt(async () => { if (referenceDisclosure?.disabled) return; if (result && currentPlan) saveDescriptor(await exportReferenceV2(result, { currentPlan, ...(state.sourceWitness ? { sourceWitness: state.sourceWitness } : {}), displayName: dataset?.name ?? workspaceCopy.artifacts.referenceDisplayName })); })}>{result?.binding.referenceId ? workspaceCopy.artifacts.reexportReference : workspaceCopy.artifacts.exportReference}</button>
+        {referenceDisclosure && referenceNote ? <OpenEnaExportApplicabilityNote id={referenceNoteId} action="reference" text={referenceNote} reason={referenceDisclosure.reason} familyApplies={referenceDisclosure.familyApplies} /> : null}
         <h3 id="open-ena-sets-heading" tabIndex={-1}>{copy.sets.title}</h3>
         <button type="button" id="open-ena-capture-set" data-testid="open-ena-capture-analysis-set" disabled={!captureEligibility.eligible} aria-describedby={!captureEligibility.eligible ? capturePrerequisiteId : undefined} onClick={() => void attempt(async () => { if (result && currentPlan) { const captured = await captureAnalysisSetV3(result, currentPlan, { name: dataset?.name }); if (latest.current.current && latest.current.state.model.result === result) setSets((values) => upsertAnalysisSetV3(values, captured)); } })}>{workspaceCopy.artifacts.captureSet(sets.length)}</button>
         <OpenEnaUnmetPrerequisiteList id={capturePrerequisiteId} testId="open-ena-capture-analysis-set-prerequisites" title={workspaceCopy.artifacts.unmetPrerequisites} items={captureUnmetItems} />
@@ -1207,7 +1298,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
             <OpenEnaDataView columns={dataViewColumns ?? dataViewPresentation.columns} rows={dataViewPresentation.rows} context={dataViewContext}
               onContextChange={setDataViewContext} onReturnToComparison={() => setCenterSurface("plot")} exportDisabled={!current}
               contextOptions={[{ value: "comparison", label: workspaceCopy.dataView.overall }, ...(primary ? [{ value: "primary" as const, label: primary.displayLabel }] : []), ...(secondary ? [{ value: "secondary" as const, label: secondary.displayLabel }] : [])]}
-              exportClassification="local-identity-bearing-view" copy={workspaceCopy.dataView} emptyMessage={workspaceCopy.dataView.empty} notice={workspaceCopy.dataView.sourceIndexMeaning}
+              exportClassification="local-identity-bearing-view" copy={workspaceCopy.dataView} emptyMessage={workspaceCopy.dataView.empty} notice={workspaceCopy.dataView.sourceIndexMeaning} exportApplicabilityNote={centerDataViewNote || null} exportApplicabilityNoteId={centerDataViewNote ? centerDataViewNoteId : null} exportApplicabilityReason={centerDataViewDisclosure?.reason ?? null} exportApplicabilityFamilyApplies={Boolean(centerDataViewDisclosure?.familyApplies)}
               onExportCsv={() => void attempt(async () => { if (!result || !currentPlan || !current) return; await buildDataViewV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) downloadText("bound-data-view.csv", rowsToCsv(dataViewPresentation.rows.map((row) => Object.fromEntries(Object.entries(row.values).map(([key, value]) => [key, value ?? null])))), "text/csv"); })} />
             <ResearchTableV3 {...researchTableCopy} rows={dataViewPresentation.sourceTraversal} label={workspaceCopy.stats.globalTraversal} columnLabels={workspaceCopy.dataView.sourceTraversalLabels} />
           </>;
@@ -1230,7 +1321,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
           <div className={`ena-visual-toolbar${view === "2d" && contrast ? " ena-visual-toolbar-group-contrast" : ""}`}><div><p>{copy.workspace.comparison}</p><span>{dataset?.name ?? workspaceCopy.toolbar.researchSpace}</span></div>
           <div className="ena-visual-toolbar-actions"><button type="button" data-testid="open-ena-data-view-toggle" disabled={!result} aria-pressed={centerSurface === "data"} aria-label={centerSurface === "data" ? (completedResultKind === "ona" ? copy.ona.dataView.returnAriaLabel : workspaceCopy.dataView.returnAriaLabel) : workspaceCopy.toolbar.dataView} onClick={() => setCenterSurface((value) => value === "plot" ? "data" : "plot")}>{centerSurface === "data" ? (completedResultKind === "ona" ? copy.ona.dataView.returnLabel : workspaceCopy.dataView.returnLabel) : workspaceCopy.toolbar.dataView}</button>
               <div className="ena-analysis-toolbar-cluster"><div className="ena-view-toggle"><button type="button" aria-pressed={view === "2d"} onClick={() => setView("2d")}>{completedResultKind === "ona" ? copy.ona.workspace.twoD : copy.views.twoD}</button><button type="button" aria-pressed={view === "3d"} disabled={!genericThreeDAvailable} onClick={() => setView("3d")}>{completedResultKind === "ona" ? copy.ona.workspace.threeD : copy.views.threeD}</button></div>
-                <button type="button" className="ena-download-model-button ena-compact-toolbar-button" disabled={!current} onClick={() => void attempt(async () => { if (result && currentPlan) { const value = await exportCurrentAnalysisV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) saveDescriptor(value); } })}><span className="ena-download-model-button-icon" aria-hidden="true">↓</span>{workspaceCopy.toolbar.downloadModel}</button>
+                <button type="button" className="ena-download-model-button ena-compact-toolbar-button" disabled={!current || Boolean(currentAnalysisDisclosure?.disabled)} aria-describedby={currentAnalysisNote ? currentAnalysisNoteId : undefined} title={currentAnalysisNote || undefined} onClick={() => void attempt(async () => { if (currentAnalysisDisclosure?.disabled) return; if (result && currentPlan) { const value = await exportCurrentAnalysisV3(result, currentPlan); if (latest.current.current && latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) saveDescriptor(value); } })}><span className="ena-download-model-button-icon" aria-hidden="true">↓</span>{workspaceCopy.toolbar.downloadModel}</button>
               </div><button type="button" className="ena-compact-toolbar-button" disabled={!result || view === "3d"} onClick={exportPlotSvg}>{workspaceCopy.toolbar.exportSvg}</button><button type="button" className="ena-compact-toolbar-button" disabled={!result || view === "3d"} onClick={exportPlotPng}>{workspaceCopy.toolbar.exportPng}</button>
             </div>
           </div>

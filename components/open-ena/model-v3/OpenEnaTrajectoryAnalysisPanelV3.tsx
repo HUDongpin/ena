@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Locale } from "../../../lib/i18n";
 import { canonicalJsonV3 } from "../../../lib/open-ena/model-v3/canonical-json";
 import { OpenEnaUnmetPrerequisiteList } from "../OpenEnaUnmetPrerequisiteList";
+import { OpenEnaExportApplicabilityNote } from "../OpenEnaExportApplicabilityNote";
 import { runOpenEnaTrajectoryPathInferenceV3, assertOpenEnaTrajectoryPathInferenceConsumerV3, type OpenEnaTrajectoryPathControlsV3, type OpenEnaTrajectoryPathInferenceResultV3 } from "../../../lib/open-ena/trajectory-path-inference-v3";
 import { buildOpenEnaTrajectoryExportV3, assertOpenEnaTrajectoryExportConsumerV3, type OpenEnaTrajectoryExportOptionsV3, type OpenEnaTrajectoryExportV3 } from "../../../lib/open-ena/trajectory-export-v3";
 import { wholePathAdmissionEligibilityV3, wholePathPredicateLabelV3, type WholePathAdmissionFactsV3 } from "../../../lib/open-ena/analysis-workflow-eligibility-v3";
@@ -42,12 +43,16 @@ export function trajectoryAnalysisCopyV3(locale: Locale) {
   };
 }
 
-export function OpenEnaTrajectoryAnalysisPanelV3({ locale, hidden, frameKey, result, plan, current, controls, admission, ranks, confirmIdentityExport }: {
+export function OpenEnaTrajectoryAnalysisPanelV3({ locale, hidden, frameKey, result, plan, current, controls, admission, ranks, confirmIdentityExport, exportApplicabilityNote = null, exportApplicabilityNoteId = null, exportApplicabilityReason = null, exportApplicabilityFamilyApplies = false }: {
   locale: Locale; hidden: boolean; frameKey: string; result: unknown; plan: unknown; current: boolean;
   controls: Omit<OpenEnaTrajectoryPathControlsV3, "independentGroupsConfirmed"> | null;
   admission?: Omit<WholePathAdmissionFactsV3, "independentGroupsConfirmed">;
   ranks: NonNullable<OpenEnaTrajectoryExportOptionsV3["ranks"]>;
   confirmIdentityExport: () => boolean;
+  exportApplicabilityNote?: string | null;
+  exportApplicabilityNoteId?: string | null;
+  exportApplicabilityReason?: string | null;
+  exportApplicabilityFamilyApplies?: boolean;
 }) {
   const copy = trajectoryAnalysisCopyV3(locale);
   const [independent, setIndependent] = useState(false), [participants, setParticipants] = useState(false);
@@ -118,7 +123,8 @@ export function OpenEnaTrajectoryAnalysisPanelV3({ locale, hidden, frameKey, res
     <p>{copy.collected}: {ranks.map(rank => (rank.value as { inference: { kind: string } }).inference.kind).join(" · ") || "—"}</p>
     <p>{copy.disclosure}</p>
     <label><input type="checkbox" checked={participants} onChange={event => setParticipants(event.target.checked)} />{copy.participants}</label>
-    <button type="button" disabled={!pathCurrent || busy !== null} onClick={() => void exportFiles()}>{copy.export}</button>
+    <button type="button" disabled={!pathCurrent || busy !== null} aria-describedby={exportApplicabilityNote && exportApplicabilityNoteId ? exportApplicabilityNoteId : undefined} title={exportApplicabilityNote ?? undefined} onClick={() => void exportFiles()}>{copy.export}</button>
+    {exportApplicabilityNote && exportApplicabilityNoteId ? <OpenEnaExportApplicabilityNote id={exportApplicabilityNoteId} action="trajectory-bundle" text={exportApplicabilityNote} reason={exportApplicabilityReason} familyApplies={exportApplicabilityFamilyApplies} /> : null}
     {prepared?.key === selectionKey && prepared.value.files.map(file => <button type="button" key={file.filename} disabled={!pathCurrent || busy !== null} onClick={() => void exportFiles(file.filename)}>{copy.download(file.filename)}</button>)}
   </section>;
 }
