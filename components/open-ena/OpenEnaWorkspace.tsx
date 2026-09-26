@@ -1082,20 +1082,24 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const rebuildBlockingDescribedBy = rebuildBlockingChecklist.length > 0 ? `${rebuildBlockingChecklistId}-title` : undefined;
   const teachingBuildPhase: TeachingSampleBuildPhase = current ? "succeeded" : modelState.runStatus === "running" ? "running" : "pending";
   const teachingAdmissionSettled = currentCompilation !== null;
-  const teachingProgress = teachingSampleKind === null ? null : teachingSampleFirstSuccessProgress({
-    loaded: true,
-    draftsPrefilled: true,
-    admissionSettled: teachingAdmissionSettled,
-    remainingGateCount: rebuildBlockingChecklist.length,
-    buildPhase: teachingBuildPhase,
-  });
-  const teachingFamilyLabel = teachingSampleKind === null ? "" : workspaceCopy.data.teachingSamples.families[TEACHING_SAMPLE_CATALOG[teachingSampleKind].family];
   const teachingGateLabels = rebuildBlockingChecklist.map((item) => ({
     id: item.predicateId,
     label: item.kind === "raw"
       ? modelV3Copy.tabs.blockingChecklist.raw[item.field]
       : localizedDiagnostic(item.diagnostic).summary,
   }));
+  if (currentCompilation !== null && teachingGateLabels.length === 0
+    && (currentCompilation.plan === null || currentCompilation.error !== null)) {
+    teachingGateLabels.push({ id: "execution-plan", label: workspaceCopy.data.firstSuccess.gatesBlocked });
+  }
+  const teachingProgress = teachingSampleKind === null ? null : teachingSampleFirstSuccessProgress({
+    loaded: true,
+    draftsPrefilled: true,
+    admissionSettled: teachingAdmissionSettled,
+    remainingGateCount: teachingGateLabels.length,
+    buildPhase: teachingBuildPhase,
+  });
+  const teachingFamilyLabel = teachingSampleKind === null ? "" : workspaceCopy.data.teachingSamples.families[TEACHING_SAMPLE_CATALOG[teachingSampleKind].family];
   const teachingSampleProgress = teachingProgress && teachingSampleKind ? (
     <OpenEnaTeachingSampleProgress
       kind={teachingSampleKind}

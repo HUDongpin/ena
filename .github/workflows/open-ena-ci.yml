@@ -130,6 +130,8 @@ jobs:
         run: npm run test:browser:open-ena-focus-recovery
       - name: Run the stale source-replacement Rebuild cue gate
         run: npm run test:browser:open-ena-stale-rebuild-cue
+      - name: Run the teaching sample execution-plan recovery gate
+        run: node tests/open-ena-teaching-sample-progress-browser.mjs
       - name: Install Chromium for the pinned Playwright CLI
         run: npx --yes --package @playwright/cli@0.1.18 playwright-cli install-browser chromium
       - name: Run the Open ENA 3D Data View and fullscreen smoke

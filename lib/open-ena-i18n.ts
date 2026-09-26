@@ -143,6 +143,7 @@ export interface OpenEnaWorkspaceV3Copy {
       readonly gates: string;
       readonly gatesClear: string;
       readonly gatesPending: string;
+      readonly gatesBlocked: string;
       readonly build: string;
       readonly buildRunning: string;
       readonly buildDone: string;
@@ -2375,6 +2376,7 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
         gates: t("Remaining gates", "尚餘門檻", "剩余门槛"),
         gatesClear: t("No remaining Build gates", "沒有尚餘的建立門檻", "没有剩余的构建门槛"),
         gatesPending: t("Checking admission gates", "正在檢查准入門檻", "正在检查准入门槛"),
+        gatesBlocked: t("Build is blocked. Review the model settings and any reported error.", "無法建立。請檢查模型設定及顯示的錯誤。", "无法构建。请检查模型设置及显示的错误。"),
         build: t("Build", "建立", "构建"),
         buildRunning: t("Build is running", "正在建立", "正在构建"),
         buildDone: t("First Build succeeded", "第一次建立已成功", "第一次构建已成功"),
