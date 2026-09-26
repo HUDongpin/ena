@@ -4,16 +4,34 @@ import { sha256TextV3 } from "./model-v3/canonical-json";
 import { migrateLegacyOpenEnaConfigToDraftV3 } from "./model-v3/migration";
 import { seedOrderedNetworkDraftFromStandardV3 } from "./model-v3/ona-draft";
 import type { ModelWorkspaceDraftsV3, StandardEnaDraftV3 } from "./model-v3/types";
+import type { TeachingSampleKind } from "./teaching-sample-guide";
 import { SAMPLE_CONFIG, TRAJECTORY_SAMPLE_CONFIG, SAMPLE_DATASET_URL, TRAJECTORY_SAMPLE_DATASET_URL } from "./types";
 
-export const SAMPLE_SOURCE_DESCRIPTORS_V3 = Object.freeze({
-  endpoint: { url: SAMPLE_DATASET_URL, sha256: "2aafd9920a0e576a584ea9d7c32cd3190e435199a065f61497b03d7c9cebff3b", config: SAMPLE_CONFIG },
-  trajectory: { version: "native-period-horizons-v1", url: TRAJECTORY_SAMPLE_DATASET_URL, sha256: "573dbe1104d73878b4b310fb4592e09078c240a489f28637d4308dfd520766bd", config: TRAJECTORY_SAMPLE_CONFIG },
+const endpointSourceDescriptorV3 = Object.freeze({
+  url: SAMPLE_DATASET_URL,
+  sha256: "2aafd9920a0e576a584ea9d7c32cd3190e435199a065f61497b03d7c9cebff3b",
+  config: SAMPLE_CONFIG,
 });
+
+export const SAMPLE_SOURCE_DESCRIPTORS_V3 = Object.freeze({
+  endpoint: endpointSourceDescriptorV3,
+  trajectory: Object.freeze({
+    version: "native-period-horizons-v1",
+    url: TRAJECTORY_SAMPLE_DATASET_URL,
+    sha256: "573dbe1104d73878b4b310fb4592e09078c240a489f28637d4308dfd520766bd",
+    config: TRAJECTORY_SAMPLE_CONFIG,
+  }),
+  /** Same coded rows as Endpoint, with the active family set to an eligible ONA draft. */
+  ona: endpointSourceDescriptorV3,
+} as const satisfies Record<TeachingSampleKind, {
+  readonly url: string;
+  readonly sha256: string;
+  readonly config: typeof SAMPLE_CONFIG | typeof TRAJECTORY_SAMPLE_CONFIG;
+}>);
 
 /** Explicit versioned teaching-source preparation. It neither creates a source
  * order receipt nor executes a worker; the sample button owns that one-shot intent. */
-export async function prepareTeachingSampleV3(text: string, kind: keyof typeof SAMPLE_SOURCE_DESCRIPTORS_V3, confirmedAt: Date) {
+export async function prepareTeachingSampleV3(text: string, kind: TeachingSampleKind, confirmedAt: Date) {
   const descriptor = SAMPLE_SOURCE_DESCRIPTORS_V3[kind];
   if (await sha256TextV3(text) !== descriptor.sha256) throw new Error("The sample bytes changed; review its versioned source typing descriptor.");
   const source = parseCsv(text, { name: descriptor.url.split("/").at(-1)!, source: "sample" });
@@ -29,7 +47,7 @@ export async function prepareTeachingSampleV3(text: string, kind: keyof typeof S
     horizonOrder: kind === "trajectory" ? { kind: "columns", keys: [{ column: "Period", direction: "ascending", comparator: { type: "ordered-category", levels: ["TP1", "TP2", "TP3"].map((period) => ({ type: "string", value: period })) } }] } : null };
   const drafts: ModelWorkspaceDraftsV3 = {
     schemaVersion: 3,
-    activeFamily: "standard",
+    activeFamily: kind === "ona" ? "ona" : "standard",
     standard,
     ona: seedOrderedNetworkDraftFromStandardV3(standard),
   };

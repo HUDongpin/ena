@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { moveHorizontalScrollableRegion } from "@/lib/open-ena/horizontal-scroll";
+import { OpenEnaExportApplicabilityNote } from "./OpenEnaExportApplicabilityNote";
 
 export type OpenEnaDataViewContext = "comparison" | "primary" | "secondary";
 export type OpenEnaDataViewCell = string | number | boolean | null | undefined;
@@ -31,6 +32,10 @@ export interface OpenEnaDataViewProps {
   onReturnToComparison: () => void;
   onExportCsv: () => void;
   exportDisabled?: boolean;
+  exportApplicabilityNote?: string | null;
+  exportApplicabilityNoteId?: string | null;
+  exportApplicabilityReason?: string | null;
+  exportApplicabilityFamilyApplies?: boolean;
   contextOptions?: ReadonlyArray<OpenEnaDataViewContextOption>;
   maxTableHeight?: CSSProperties["maxHeight"];
   emptyMessage?: ReactNode;
@@ -122,6 +127,10 @@ export default function OpenEnaDataView({
   onReturnToComparison,
   onExportCsv,
   exportDisabled = false,
+  exportApplicabilityNote = null,
+  exportApplicabilityNoteId = null,
+  exportApplicabilityReason = null,
+  exportApplicabilityFamilyApplies = false,
   contextOptions = DEFAULT_CONTEXT_OPTIONS,
   maxTableHeight = "min(64vh, 680px)",
   emptyMessage = "No Data View records match this context.",
@@ -191,10 +200,11 @@ export default function OpenEnaDataView({
           </select>
         </label>
         <output aria-live="polite">{copy.recordCount(rows.length)}</output>
-        <button type="button" onClick={onExportCsv} disabled={exportDisabled || rows.length === 0} aria-label={copy.exportAriaLabel}>
+        <button type="button" onClick={onExportCsv} disabled={exportDisabled || rows.length === 0} aria-label={copy.exportAriaLabel} aria-describedby={exportApplicabilityNote && exportApplicabilityNoteId ? exportApplicabilityNoteId : undefined} title={exportApplicabilityNote ?? undefined}>
           {copy.exportLabel}
         </button>
       </div>
+      {exportApplicabilityNote && exportApplicabilityNoteId ? <OpenEnaExportApplicabilityNote id={exportApplicabilityNoteId} action="bound-data-view" text={exportApplicabilityNote} reason={exportApplicabilityReason} familyApplies={exportApplicabilityFamilyApplies} /> : null}
       {notice ? <div className="ena-data-view-notice" role="note">{notice}</div> : null}
       <div
         className="ena-data-view-pagination"
