@@ -4,7 +4,7 @@ import { applyPresentationV3 } from "./presentation-artifact-v3";
 import { assertPresentationArtifactContractV3 } from "./bundle-contract-v3";
 import { canonicalJsonV3 } from "./model-v3/canonical-json";
 
-export const WORKSPACE_PRESET_SCOPE_V3 = "This preset contains per-Code visibility and colors, hidden Groups, node positions, selected axes, camera and supported plot layers. It does not contain the Primary/Secondary pair, individual hidden Units, per-Group control preferences, global suppression and its saved visibility snapshots, complementary colors, Horizon filters or Group-centroid path choices. Those preferences stay unchanged when applying a preset. Restore global visibility before applying. Preset-hidden Groups use a separate display overlay that can be cleared without changing per-Group choices.";
+export const WORKSPACE_PRESET_SCOPE_V3 = "This preset contains per-Code visibility and colors, hidden Groups, node positions, selected axes, camera and supported plot layers. It does not contain the Primary/Secondary pair, individual hidden Units, per-Group control preferences, global suppression and its saved visibility snapshots, complementary colors, Horizon filters or Group-centroid path choices. Those preferences stay unchanged when applying a preset. Restore global visibility before applying. Preset-hidden Groups use a separate display overlay that can be cleared without changing per-Group choices. Applying a preset does not change 2D inference axes. Dimensions that differ stay unapplied and are reported, so presentation cannot silently replace confirmed evidence.";
 
 /** Detached presets have no scientific authority. A matching hash alone is
  * insufficient: validate every public identity against this exact bound result. */

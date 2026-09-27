@@ -30,6 +30,11 @@ export const OPEN_ENA_WORKBENCH_PRESENTATION_CONTROL_KEYS_V3 = [
   "xDimension",
   "yDimension",
   "zDimension",
+  "textScale",
+  "endpointsOnly",
+  "visibleHorizons",
+  "showGroupCentroidPaths",
+  "hiddenUnitKeys",
 ] as const;
 
 const PRESENTATION_CONTROL_KEY_SET = new Set<string>(

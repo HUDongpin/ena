@@ -84,6 +84,19 @@ for (const [id, script, filename, evidence, environment] of [
   });
 }
 
+test("Browser CI runs the AI presentation retention gates", () => {
+  const packageJson = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  };
+  for (const [script, filename] of [
+    ["test:browser:open-ena-ai-presentation-retention", "open-ena-ai-presentation-retention-browser.mjs"],
+    ["test:browser:open-ena-ai-interpretation-retention", "open-ena-ai-interpretation-retention-browser.mjs"],
+  ] as const) {
+    assert.equal(packageJson.scripts[script], `node tests/${filename}`);
+    assert.match(workflow, new RegExp(`npm run ${script.replaceAll(":", "\\:")}`, "u"));
+  }
+});
+
 test("Browser CI does not let skipped downstream evidence uploads mask the first smoke failure", () => {
   assert.match(
     workflow,

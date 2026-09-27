@@ -209,4 +209,156 @@ test("official workbench wires presentation-safe consumer and AI invalidation", 
     aiComponent,
     /useEffect\(\(\)\s*=>\s*\{[\s\S]*?setAiResponse\(null\)[\s\S]*?setConsentedRequestIdentity\(null\)[\s\S]*?\},\s*\[[^\]]*requestIdentity[^\]]*\]\);/,
   );
+  assert.match(workspaceV3Source, /onReset=\{\(\) => \{ setEdgeScale/);
+  assert.doesNotMatch(
+    workspaceV3Source,
+    /onReset=\{\(\) => \{[^}]*setAxes/,
+    "Plot Tools Reset must not clear 2D inference axes",
+  );
+  assert.doesNotMatch(
+    workspaceV3Source,
+    /setAxes\(\[\.\.\.value\.dimensions\]\)/,
+    "Applying a presentation preset must not assign 2D inference axes",
+  );
+  assert.match(workspaceV3Source, /open-ena-preset-inference-axes-notice/);
+});
+
+test("presentation controls keep the consumer key and reviewed AI identity", () => {
+  const confirmed = authority();
+  const confirmedAi = reviewIdentity();
+  const presentation = {
+    view: "3d",
+    threeDAxes: ["SVD3", "SVD1", "SVD2"],
+    selectedAxes: ["SVD3", "SVD1", "SVD2"],
+    xDimension: "SVD3",
+    yDimension: "SVD1",
+    zDimension: "SVD2",
+    camera: { eye: { x: 1.4, y: 1.4, z: 1.4 } },
+    cameraPreset: "xy",
+    aspectRatio: { x: 1, y: 1.5, z: 0.8 },
+    plotZoom: 1.6,
+    flipX: true,
+    flipY: true,
+    edgeThreshold: 0.35,
+    edgeScale: 2,
+    pointScale: 1.4,
+    textScale: 1.2,
+    unitCircle: true,
+    showLabels: false,
+    showGroupLabels: false,
+    showUnitLabels: true,
+    showPoints: false,
+    showNetworks: false,
+    showVariance: false,
+    showTrajectories: true,
+    endpointsOnly: true,
+    visibleHorizons: ["h2"],
+    showGroupCentroidPaths: false,
+    hiddenUnitKeys: ["unit-a"],
+  };
+  assert.equal(authority({ controls: { ...endpointControls(), ...presentation } }), confirmed);
+  assert.equal(reviewIdentity(), confirmedAi);
+});
+
+test("group, trajectory design, scientific currentness, binding, plan, locale, and analyzedAt still invalidate", () => {
+  const confirmed = authority();
+  const confirmedAi = reviewIdentity();
+  const period = { type: "string" as const, value: "h1" };
+  const later = { type: "string" as const, value: "h2" };
+  const independent = {
+    axes: [...fittedAxes] as [string, string],
+    identityConfirmed: false,
+    request: {
+      kind: "trajectory-independent-period" as const,
+      period,
+      primaryGroup: primary,
+      secondaryGroup: secondary,
+    },
+  };
+  const independentKey = authority({ controls: independent });
+  assert.notEqual(
+    authority({ controls: { ...endpointControls(), primaryGroup: { type: "string", value: "transfer" } } }),
+    confirmed,
+  );
+  assert.notEqual(
+    authority({
+      controls: {
+        ...independent,
+        request: {
+          kind: "trajectory-paired-periods",
+          group: primary,
+          earlierPeriod: period,
+          laterPeriod: later,
+          cohortPolicy: "pairwise-complete",
+        },
+      },
+    }),
+    independentKey,
+  );
+  assert.notEqual(
+    authority({
+      controls: {
+        ...independent,
+        request: { ...independent.request, period: later },
+      },
+    }),
+    independentKey,
+  );
+  assert.notEqual(authority({ controls: { ...independent, identityConfirmed: true } }), independentKey);
+  assert.notEqual(authority({ current: false }), confirmed, "a scientific edit that stales the result changes current");
+  assert.notEqual(authority({ binding: { ...binding, scientificResultSha256: "d".repeat(64) } }), confirmed);
+  assert.notEqual(authority({ plan: "e".repeat(64) }), confirmed);
+  assert.notEqual(
+    reviewIdentity({
+      request: {
+        schemaVersion: "open-ena-ai-interpretation-request-v2",
+        promptVersion: "open-ena-aggregate-inference-review-v2",
+        locale: "zh-hant",
+        binding: {
+          analyzedAt: "2026-09-15T00:00:00.000Z",
+          datasetHash: binding.datasetSha256,
+          datasetHashKind: "normalized-utf8-csv-text-sha256",
+          modelType: "EndPoint",
+          axes: [...fittedAxes],
+          evidenceKey: "fnv1a32-aaaaaaaa",
+        },
+        evidence: {
+          kind: "endpoint-independent",
+          modelType: "EndPoint",
+          axes: [{ id: "axis-1", name: "SVD1" }, { id: "axis-2", name: "SVD2" }],
+        },
+      },
+    }),
+    confirmedAi,
+  );
+  assert.notEqual(
+    reviewIdentity({
+      localScientificIdentity: "different-local-identity",
+    }),
+    confirmedAi,
+  );
+  assert.notEqual(
+    reviewIdentity({
+      request: {
+        schemaVersion: "open-ena-ai-interpretation-request-v2",
+        promptVersion: "open-ena-aggregate-inference-review-v2",
+        locale: "en",
+        binding: {
+          analyzedAt: "2026-09-16T00:00:00.000Z",
+          datasetHash: binding.datasetSha256,
+          datasetHashKind: "normalized-utf8-csv-text-sha256",
+          modelType: "EndPoint",
+          axes: [...fittedAxes],
+          evidenceKey: "fnv1a32-aaaaaaaa",
+        },
+        evidence: {
+          kind: "endpoint-independent",
+          modelType: "EndPoint",
+          axes: [{ id: "axis-1", name: "SVD1" }, { id: "axis-2", name: "SVD2" }],
+        },
+      },
+    }),
+    confirmedAi,
+    "analyzedAt remains part of the reviewed AI identity",
+  );
 });

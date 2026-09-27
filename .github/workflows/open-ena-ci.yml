@@ -126,6 +126,10 @@ jobs:
         run: npm run test:browser:open-ena-rebuild-cancel-pointer
       - name: Run the AI explicit retry browser gate
         run: npm run test:browser:open-ena-ai-retry
+      - name: Run the AI presentation identity browser gate
+        run: npm run test:browser:open-ena-ai-presentation-retention
+      - name: Run the AI interpretation retention workspace browser gate
+        run: npm run test:browser:open-ena-ai-interpretation-retention
       - name: Run the keyboard focus-recovery gate
         run: npm run test:browser:open-ena-focus-recovery
       - name: Run the stale source-replacement Rebuild cue gate

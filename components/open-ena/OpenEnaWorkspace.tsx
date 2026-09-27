@@ -446,6 +446,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const cameraPositionOptions: Array<[CameraPreset, string]> = [["isometric", copy.plot.default3dCamera], ["xy", copy.plot.xy], ["xz", copy.plot.xz], ["yz", copy.plot.yz], ["yx", copy.plot.yx], ["zx", copy.plot.zx], ["zy", copy.plot.zy]];
   const [aspectRatio, setAspectRatio] = useState<OpenEna3dAspectRatio | null>(null);
   const [presetPreview, setPresetPreview] = useState<PresentationArtifactV3 | null>(null);
+  const [presetAxisNotice, setPresetAxisNotice] = useState<{ resultHash: string; dimensions: readonly [string, string] } | null>(null);
   const presetSerial = useRef(0);
   const [nodeOverrides, setNodeOverrides] = useState<{ hash: string; positions: OpenEnaNodeLayoutPositions }>({ hash: "", positions: new Map() });
   const [hiddenUnitKeys, setHiddenUnitKeys] = useState<string[]>([]);
@@ -639,7 +640,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     return () => { active = false; };
   }, [contextKey, currentCompilation, dataset]);
   useEffect(() => {
-    setPrimaryGroupName((previous) => groups.some((group) => group.token === previous) ? previous : groups[0]?.token ?? ""); setSecondaryGroupName((previous) => groups.some((group) => group.token === previous) ? previous : groups[1]?.token ?? ""); setSelectedPeriods([]); setIdentityConfirmed(false); setAxes([]); setThreeDAxes([]); setVisibleHorizons(null); setEndpointsOnly(false); setHiddenUnitKeys([]);
+    setPrimaryGroupName((previous) => groups.some((group) => group.token === previous) ? previous : groups[0]?.token ?? ""); setSecondaryGroupName((previous) => groups.some((group) => group.token === previous) ? previous : groups[1]?.token ?? ""); setSelectedPeriods([]); setIdentityConfirmed(false); setAxes([]); setThreeDAxes([]); setVisibleHorizons(null); setEndpointsOnly(false); setHiddenUnitKeys([]); setPresetAxisNotice(null);
   }, [resultHash]);
   useEffect(() => {
     let active = true;
@@ -853,6 +854,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
         return;
       case "2d":
         setAxes(next.twoD ? [...next.twoD] : []);
+        setPresetAxisNotice(null);
         return;
       default: {
         const exhaustive: never = view;
@@ -1011,7 +1013,16 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     const value = prepared.presentation, layers = value.layerOptions ?? {};
     dispatch({ type: "apply-display-preset", context, resultHash, codeVisibility: prepared.codeVisibility, codeColors: prepared.codeColors, hiddenGroupTokens: prepared.hiddenGroupTokens });
     setNodeOverrides({ hash: resultHash, positions: prepared.nodePositions });
-    if (value.dimensions.length === 3) { setThreeDAxes([...value.dimensions]); setView("3d"); } else { setAxes([...value.dimensions]); setView("2d"); }
+    if (value.dimensions.length === 3) {
+      setThreeDAxes([...value.dimensions]);
+      setView("3d");
+      setPresetAxisNotice(null);
+    } else if (value.dimensions.length === 2) {
+      const plotted: readonly [string, string] = [value.dimensions[0], value.dimensions[1]];
+      const changesInferenceAxes = twoDAxes.length !== 2 || plotted[0] !== twoDAxes[0] || plotted[1] !== twoDAxes[1];
+      setView("2d");
+      setPresetAxisNotice(changesInferenceAxes ? { resultHash, dimensions: plotted } : null);
+    } else setPresetAxisNotice(null);
     if (value.camera3d) setCamera(value.camera3d);
     if (layers.showPoints !== undefined) setShowPoints(layers.showPoints);
     if (layers.showNetworks !== undefined) setShowNetworks(layers.showNetworks);
@@ -1065,7 +1076,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     onShowUnitLabelsChange={setShowUnitLabels} onShowPointsChange={setShowPoints} onUnitCircleChange={setUnitCircle}
     onFlipXChange={setFlipX} onFlipYChange={setFlipY} onPlotZoomChange={setPlotZoom}
     onResetNodeLayout={() => setNodeOverrides({ hash: resultHash, positions: new Map() })}
-    onReset={() => { setEdgeScale(1); setEdgeThreshold(0); setPointScale(1); setTextScale(1); setFlipX(false); setFlipY(false); setPlotZoom(1); setAxes([]); setThreeDAxes([]); setCameraPreset("isometric"); setCamera(cameraForPreset("isometric")); setAspectRatio(null); setHiddenUnitKeys([]); setShowLabels(true); setShowGroupLabels(true); setShowUnitLabels(false); setShowPoints(true); setUnitCircle(false); }}
+    onReset={() => { setEdgeScale(1); setEdgeThreshold(0); setPointScale(1); setTextScale(1); setFlipX(false); setFlipY(false); setPlotZoom(1); setThreeDAxes([]); setCameraPreset("isometric"); setCamera(cameraForPreset("isometric")); setAspectRatio(null); setHiddenUnitKeys([]); setShowLabels(true); setShowGroupLabels(true); setShowUnitLabels(false); setShowPoints(true); setUnitCircle(false); }}
     settingsOpen={plotSettingsOpen} onSettingsOpenChange={setPlotSettingsOpen} disabled={!result} />;
   const panelHeading = mode === "data"
     ? { kicker: restoredCopy.dataKicker, title: copy.data.title, description: copy.data.description }
@@ -1323,6 +1334,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
           {!presetCodesCompatible && <p>{workspaceCopy.artifacts.presetCodesMismatch}</p>}{completedResultKind !== family && <p>{workspaceCopy.artifacts.presetFamilyMismatch}</p>}
           <button type="button" onClick={() => { ++presetSerial.current; setPresetPreview(null); }}>{workspaceCopy.artifacts.cancelPreset}</button>
           <button type="button" disabled={presetPreview.boundResultSha256 !== resultHash || completedResultKind !== family || !presetCodesCompatible || display.allCodesSuppressed || display.allGroupsSuppressed} onClick={() => { try { applyPresentation(); } catch { setError({ id: "operation-failed" }); } }}>{workspaceCopy.artifacts.applyPreset}</button></section>}
+        {presetAxisNotice && presetAxisNotice.resultHash === resultHash ? <p role="status" data-testid="open-ena-preset-inference-axes-notice">{workspaceCopy.artifacts.presetInferenceAxesWithheld(presetAxisNotice.dimensions.join(" · "))}</p> : null}
         <button type="button" disabled={!workspaceDraftExportableV3(state)} onClick={() => void attempt(async () => saveDescriptor(await exportDraftV3(draft)))}>{workspaceCopy.artifacts.exportDraft}</button>
         {!workspaceDraftExportableV3(state) && <p>{workspaceCopy.artifacts.draftBlocked}</p>}
         <button type="button" disabled={!currentCompilation?.plan} onClick={() => void attempt(async () => { if (currentCompilation?.result.status === "ready") saveDescriptor(await exportCanonicalConfigV3(currentCompilation.result)); })}>{workspaceCopy.artifacts.exportConfig}</button>
