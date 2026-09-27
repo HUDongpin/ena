@@ -93,7 +93,7 @@ test("Browser CI runs the AI presentation retention gates", () => {
     ["test:browser:open-ena-ai-interpretation-retention", "open-ena-ai-interpretation-retention-browser.mjs"],
   ] as const) {
     assert.equal(packageJson.scripts[script], `node tests/${filename}`);
-    assert.match(workflow, new RegExp(`npm run ${script.replaceAll(":", "\\:")}`, "u"));
+    assert.ok(workflow.includes(`npm run ${script}`));
   }
 });
 

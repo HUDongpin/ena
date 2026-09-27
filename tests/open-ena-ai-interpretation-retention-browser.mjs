@@ -14,19 +14,29 @@ import { compileStandardDraftV3 } from './lib/open-ena/model-v3/compiler';
 import { migrateCanonicalConfigurationToDraftV3 } from './lib/open-ena/model-v3/migration';
 import { parsedDatasetFromSourceProofV3 } from './lib/open-ena/model-v3/execution-plan';
 const groups = ['Control', 'Treatment', 'Other'];
-const patterns = [[1,0,0,1],[0,1,1,0],[1,1,0,0],[0,0,1,1],[1,0,1,0],[0,1,0,1],[1,1,1,0],[0,1,1,1],[1,0,1,1]];
+const horizons = ['h1', 'h2', 'h3'];
 const rows = [];
-let patternIndex = 0;
-for (const group of groups) for (const unit of [1, 2, 3]) for (const horizon of ['h1', 'h2', 'h3']) {
-  const pattern = patterns[patternIndex % patterns.length];
-  patternIndex += 1;
-  rows.push({ unit: group + unit, horizon, group, A: pattern[0], B: pattern[1], C: pattern[2], D: pattern[3] });
+for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+  const group = groups[groupIndex];
+  for (let unit = 1; unit <= 3; unit += 1) {
+    for (let horizonIndex = 0; horizonIndex < horizons.length; horizonIndex += 1) {
+      rows.push({
+        unit: group + unit,
+        horizon: horizons[horizonIndex],
+        group,
+        A: 1 + (unit + horizonIndex + groupIndex) % 3,
+        B: 1 + (horizonIndex + unit * 2 + groupIndex) % 4,
+        C: 1 + (horizonIndex * 2 + unit + groupIndex * 3) % 5,
+      });
+    }
+  }
 }
-const data = { name: 'retention.xlsx', source: 'upload', sizeBytes: 4096, headers: ['unit', 'horizon', 'group', 'A', 'B', 'C', 'D'], rows };
+const data = { name: 'retention.xlsx', source: 'upload', sizeBytes: 4096, headers: ['unit', 'horizon', 'group', 'A', 'B', 'C'], rows };
 const order = { kind: 'columns', keys: [{ column: 'unit', direction: 'ascending', comparator: { type: 'text', locale: 'en-US', sensitivity: 'variant', numeric: false } }] };
+const horizonOrder = { kind: 'columns', keys: [{ column: 'horizon', direction: 'ascending', comparator: { type: 'text', locale: 'en-US', sensitivity: 'variant', numeric: false } }] };
 const modelType = window.__openEnaRetentionModel || 'EndPoint';
-const standard = { unitColumns: ['unit'], horizonColumns: ['horizon'], groupColumn: 'group', codes: ['A', 'B', 'C', 'D'], weighting: 'frequency', model: modelType, windowType: 'MovingStanzaWindow', movingStanza: { backward: { kind: 'finite', value: 1 }, forward: { kind: 'finite', value: 0 }, rowOrder: order }, horizonOrder: null, rotation: { type: 'svd', centerAlignToOrigin: true } };
-const drafts = { schemaVersion: 3, activeFamily: 'standard', standard, ona: { unitColumns: ['unit'], horizonColumns: ['horizon'], groupColumn: 'group', codes: ['D', 'C', 'B', 'A'], backward: { kind: 'finite', value: 1 }, rowOrder: order, directionalMask: { schemaVersion: 1, codeOrder: ['D', 'C', 'B', 'A'], enabled: [[true, false, true, true], [true, true, false, true], [false, true, true, false], [true, false, true, true]] } } };
+const standard = { unitColumns: ['unit'], horizonColumns: ['horizon'], groupColumn: 'group', codes: ['A', 'B', 'C'], weighting: 'frequency', model: modelType, windowType: 'Conversation', movingStanza: { backward: { kind: 'finite', value: 1 }, forward: { kind: 'finite', value: 0 }, rowOrder: order }, horizonOrder, rotation: { type: 'svd', centerAlignToOrigin: true } };
+const drafts = { schemaVersion: 3, activeFamily: 'standard', standard, ona: { unitColumns: ['unit'], horizonColumns: ['horizon'], groupColumn: 'group', codes: ['C', 'B', 'A'], backward: { kind: 'finite', value: 1 }, rowOrder: order, directionalMask: { schemaVersion: 1, codeOrder: ['C', 'B', 'A'], enabled: [[true, false, true], [true, true, false], [false, true, true]] } } };
 window.jobs = [];
 window.missingReferenceDraft = async () => new TextDecoder().decode((await exportDraftV3({ ...standard, model: 'EndPoint', rotation: { type: 'reference', referenceId: 'missing-reference', expectedContentSha256: 'd'.repeat(64) } })).bytes);
 const worker = (plan, options) => new Promise((resolve) => { window.jobs.push({ plan, signal: options.signal, resolve }); });
@@ -81,7 +91,7 @@ async function aiState(page) {
     const generate = document.querySelector(".ena-ai-actions button");
     const evidenceKey = [...document.querySelectorAll(".ena-ai-provenance div")].find((row) => row.querySelector("dt")?.textContent === "Evidence key")?.querySelector("dd")?.textContent ?? "";
     return {
-      text: result?.innerText ?? "",
+      text: result?.querySelector("li p")?.textContent ?? "",
       evidenceKey,
       consent: consent instanceof HTMLInputElement ? consent.checked : false,
       generateDisabled: !(generate instanceof HTMLButtonElement) || generate.disabled,
@@ -169,7 +179,7 @@ async function runInferenceAndGenerate(page, { failOnce = false } = {}) {
   const stats = page.locator(".ena-workspace-stats-v3");
   if (await stats.getByRole("combobox", { name: "Trajectory inference design" }).count()) {
     const identity = stats.getByRole("checkbox", { name: "I confirm these fitted Units identify the same entities across periods." });
-    if (await identity.isChecked()) await identity.uncheck();
+    if (!(await identity.isChecked())) await identity.check();
     const periods = await labeledCheckboxes(stats, "confirm these fitted Units");
     assert.ok(periods.length >= 1, "trajectory inference needs a fitted period");
     for (const period of periods) {
@@ -181,10 +191,19 @@ async function runInferenceAndGenerate(page, { failOnce = false } = {}) {
   await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Run confirmed inference" && !button.disabled));
   await infer.click();
   await page.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
-  await page.waitForFunction(() => {
-    const box = document.querySelector(".ena-ai-consent input");
-    return box instanceof HTMLInputElement && !box.disabled;
-  });
+  try {
+    await page.waitForFunction(() => {
+      const box = document.querySelector(".ena-ai-consent input");
+      return box instanceof HTMLInputElement && !box.disabled;
+    }, undefined, { timeout: 20_000 });
+  } catch (error) {
+    const diagnostic = await page.evaluate(() => ({
+      statuses: [...document.querySelectorAll("[role=status], [role=alert]")].map((node) => node.textContent),
+      ai: document.querySelector("[data-ena-ai-source]")?.innerText?.slice(0, 1800) ?? "",
+      consentDisabled: document.querySelector(".ena-ai-consent input")?.disabled ?? null,
+    }));
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${JSON.stringify(diagnostic, null, 2)}`);
+  }
   await page.locator(".ena-ai-consent input").check();
   await page.getByRole("button", { name: "Generate AI interpretation", exact: true }).click();
   if (failOnce) {
@@ -290,8 +309,8 @@ try {
     assert.equal(cleared.generateDisabled, true, `${label} must disable Generate`);
     assert.equal(endpoint.fetchCount(), 1, `${label} must not request another interpretation`);
   };
-  await page.getByText("Comparison exports", { exact: true }).click();
-  await page.getByRole("button", { name: "Switch Plots", exact: true }).click();
+  await page.getByTestId("open-ena-persistent-analysis-panel").getByText("Comparison exports", { exact: true }).click();
+  await page.getByTestId("open-ena-persistent-analysis-panel").getByRole("button", { name: "Switch Plots", exact: true }).click();
   await assertCleared("Switch Plots");
   const primary = plot.getByRole("combobox", { name: "Primary group", exact: true });
   const secondary = plot.getByRole("combobox", { name: "Secondary group", exact: true });
@@ -325,7 +344,6 @@ try {
   assert.equal(trajectory.fetchCount(), 1, "trajectory display options must not request another interpretation");
   await trajectory.page.getByRole("button", { name: "Stats & Export", exact: true }).click();
   const trajectoryStats = trajectory.page.locator(".ena-workspace-stats-v3");
-  await trajectoryStats.getByRole("combobox", { name: "Trajectory inference design" }).selectOption("paired");
   const trajectoryCleared = async (label) => {
     const cleared = await aiState(trajectory.page);
     assert.equal(cleared.text, "", label);
@@ -333,13 +351,14 @@ try {
     assert.equal(cleared.generateDisabled, true, label);
     assert.equal(trajectory.fetchCount(), 1, label);
   };
+  await trajectoryStats.getByRole("checkbox", { name: "I confirm these fitted Units identify the same entities across periods." }).uncheck();
+  await trajectoryCleared("trajectory identity confirmation");
+  await trajectoryStats.getByRole("combobox", { name: "Trajectory inference design" }).selectOption("paired");
   await trajectoryCleared("trajectory design change");
   const trajectoryPeriods = await labeledCheckboxes(trajectoryStats, "confirm these fitted Units");
   assert.ok(trajectoryPeriods.length >= 2, "period change needs a second fitted horizon");
   await trajectoryPeriods[1].check();
   await trajectoryCleared("trajectory period change");
-  await trajectoryStats.getByRole("checkbox", { name: "I confirm these fitted Units identify the same entities across periods." }).check();
-  await trajectoryCleared("trajectory identity confirmation");
   assert.deepEqual(trajectory.errors, []);
   await trajectory.page.close();
 
