@@ -86,7 +86,7 @@ try {
  const sourceInput=page.getByLabel('Open coded CSV or XLSX');
  await sourceInput.setInputFiles({name:'review.csv',mimeType:'text/csv',buffer:Buffer.from(sampleText)});
  await page.getByRole('dialog',{name:'Review CSV source types'}).waitFor();
- assert.equal(await page.getByRole('button',{name:'Run model',exact:true}).isDisabled(),true,'pending source review cannot launch the previously active source');
+ assert.equal(await page.getByTestId('open-ena-run-model').isDisabled(),true,'pending source review cannot launch the previously active source');
  await page.getByLabel('Source type: team_id',{exact:true}).selectOption('number');
  assert.equal(await page.getByRole('button',{name:'Confirm types and create typed XLSX',exact:true}).isDisabled(),true,'invalid explicit typing cannot adopt source');
  await page.getByRole('button',{name:'Cancel source preparation',exact:true}).click();
@@ -111,9 +111,9 @@ try {
  const artifactInput=page.getByLabel('Import configuration, result or Reference');
  await artifactInput.setInputFiles({name:'configuration.json',mimeType:'application/json',buffer:Buffer.from(standardDraft)});
  await page.getByRole('button',{name:'Replace configuration',exact:true}).click();
- await page.waitForFunction(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Run model')?.disabled===false);
+ await page.waitForFunction(()=>{const button=document.querySelector('[data-testid="open-ena-run-model"]');return button instanceof HTMLButtonElement&&!button.disabled;});
  assert.equal(await page.evaluate(()=>window.workerStarts),3,'ordinary CSV preparation/config import never inherits sample autorun');
- await page.getByRole('button',{name:'Run model',exact:true}).click();await page.waitForFunction(()=>window.workerStarts===4);await current();
+ await page.getByTestId('open-ena-run-model').click();await page.waitForFunction(()=>window.workerStarts===4);await current();
  const referenceDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Export Reference',exact:true}).click();
  const nativeReference=await referenceDownload;const referenceBytes=await readFile(await nativeReference.path());
  assert.equal(JSON.parse(referenceBytes).schemaVersion,2,'production witness mints a genuine native Reference');
@@ -124,14 +124,14 @@ try {
  await page.getByLabel('Projection & Rotation').selectOption('reference');
  const referenceSelect=page.getByLabel('Reference source');
  const referenceOption=await referenceSelect.locator('option').nth(1).getAttribute('value');await referenceSelect.selectOption(referenceOption);
- await page.waitForFunction(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Run model')?.disabled===false);
- await page.getByRole('button',{name:'Run model',exact:true}).click();await page.waitForFunction(()=>window.workerStarts===5);await current();
+ await page.waitForFunction(()=>{const button=document.querySelector('[data-testid="open-ena-run-model"]');return button instanceof HTMLButtonElement&&!button.disabled;});
+ await page.getByTestId('open-ena-run-model').click();await page.waitForFunction(()=>window.workerStarts===5);await current();
  const onaDraft=await page.evaluate(text=>window.sampleDraftArtifact(text,true),sampleText);
  await page.getByRole('button',{name:'Data',exact:true}).click();await artifactInput.setInputFiles({name:'ona-draft.json',mimeType:'application/json',buffer:Buffer.from(onaDraft)});
  await page.getByRole('button',{name:'Replace configuration',exact:true}).click();
- await page.waitForFunction(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Run model')?.disabled===false);
+ await page.waitForFunction(()=>{const button=document.querySelector('[data-testid="open-ena-run-model"]');return button instanceof HTMLButtonElement&&!button.disabled;});
  assert.equal(await page.evaluate(()=>window.workerStarts),5);
- await page.getByRole('button',{name:'Run model',exact:true}).click();await page.waitForFunction(()=>window.workerStarts===6);await current();
+ await page.getByTestId('open-ena-run-model').click();await page.waitForFunction(()=>window.workerStarts===6);await current();
  assert.ok(await page.locator('[data-ona-code-node-position]').count()>0,'actual ONA worker reaches directed bound renderer');
  await page.evaluate(()=>{window.holdCompileDigest=true;});
  await page.getByRole('button',{name:'Data',exact:true}).click();await page.getByRole('button',{name:'Load sample',exact:true}).click();
@@ -141,7 +141,7 @@ try {
  await sampleBackward.fill('');
  await page.evaluate(()=>{window.holdCompileDigest=false;window.digestWaiters.splice(0).forEach(resolve=>resolve());});
  await sampleBackward.fill('5');
- await page.waitForFunction(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Run model')?.disabled===false);
+ await page.waitForFunction(()=>{const button=document.querySelector('[data-testid="open-ena-run-model"]');return button instanceof HTMLButtonElement&&!button.disabled;});
  await page.waitForTimeout(100);assert.equal(await page.evaluate(()=>window.workerStarts),6,'editing a sample while compile is pending consumes its one-shot auto-run intent');
  assert.deepEqual(errors,[]);
  console.log('Task31 production browser worker: actual CSV teaching files → typed XLSX → native compile/plan → real Worker → admitted BoundResult; same-source reload, reupload/no-auto-run, explicit CSV review/cancel/type conversion, genuine Reference witness export/import/projection, actual ONA worker, real Plotly camera/reset, native trajectory graph and explicit native repeated-inference export PASS.');
