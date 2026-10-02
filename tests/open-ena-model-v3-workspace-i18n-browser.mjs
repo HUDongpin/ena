@@ -37,8 +37,11 @@ try {
   await page.locator(".ena-control-panel").waitFor();
   await page.waitForFunction(() => !document.querySelector("button")?.disabled);
   await page.getByRole("button", { name: "Model", exact: true }).click();
-  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Run model" && !button.disabled));
-  await page.getByRole("button", { name: "Run model", exact: true }).click();
+  await page.waitForFunction(() => {
+    const button = document.querySelector("[data-testid=open-ena-run-model]");
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
+  await page.getByTestId("open-ena-run-model").click();
   await page.waitForFunction(() => window.jobs.length === 1);
   await page.evaluate(() => window.resolveRun(0));
   await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current");
