@@ -151,17 +151,6 @@ async function buildModel(page) {
   return jobsBefore + 1;
 }
 
-async function chooseNonDefaultAxis(page) {
-  await page.getByRole("button", { name: "Plot Tools", exact: true }).click();
-  const plot = page.locator(".ena-workspace-plot-v3");
-  const axis2 = plot.getByRole("combobox", { name: "Axis 2", exact: true });
-  const dimensions = (await axis2.locator("option").allTextContents()).map((text) => text.trim()).filter((text) => text && text !== "Unavailable");
-  assert.ok(dimensions.length >= 3, `a non-default inference axis needs three fitted dimensions, saw ${dimensions.join(", ") || "none"}`);
-  await axis2.selectOption({ label: dimensions[2] });
-  assert.equal(await axis2.inputValue(), dimensions[2]);
-  return dimensions;
-}
-
 async function labeledCheckboxes(scope, excludedText) {
   const boxes = scope.getByRole("checkbox");
   const count = await boxes.count();
@@ -233,12 +222,37 @@ try {
   const endpoint = await openWorkspace(browser);
   const { page } = endpoint;
   await buildModel(page);
-  const dimensions = await chooseNonDefaultAxis(page);
+  await page.getByRole("button", { name: "Plot Tools", exact: true }).click();
+  const plot = page.locator(".ena-workspace-plot-v3");
+  const axis2 = () => plot.getByRole("combobox", { name: "Axis 2", exact: true });
+  const dimensions = (await axis2().locator("option").allTextContents()).map((text) => text.trim()).filter((text) => text && text !== "Unavailable");
+  assert.ok(dimensions.length >= 3, `a non-default inference axis needs three fitted dimensions, saw ${dimensions.join(", ") || "none"}`);
+  assert.equal(await axis2().inputValue(), dimensions[1], "Axis 2 starts on the second fitted dimension");
+  const artifacts = page.locator("details.ena-artifacts-disclosure");
+  await artifacts.locator("summary").click();
+  const presetInput = page.getByLabel("Review presentation preset");
+  const applyPreset = () => page.getByRole("button", { name: "Apply matching presentation preset", exact: true });
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export presentation preset", exact: true }).click();
+  const beforeInference = JSON.parse(await readFile(await (await downloadPromise).path(), "utf8"));
+  assert.deepEqual(beforeInference.dimensions, [dimensions[0], dimensions[1]]);
+  await presetInput.setInputFiles({
+    name: "unconfirmed-preset.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({ ...beforeInference, dimensions: [dimensions[0], dimensions[2]] })),
+  });
+  await applyPreset().click();
+  await page.waitForFunction((expected) => {
+    const select = document.querySelector(".ena-workspace-plot-v3 select[aria-label='Axis 2']");
+    return select instanceof HTMLSelectElement && select.value === expected;
+  }, dimensions[2]);
+  assert.equal(await page.getByTestId("open-ena-preset-inference-axes-notice").count(), 0);
+  assert.equal(endpoint.fetchCount(), 0, "a 2D preset with no confirmed inference must not request an interpretation");
+  await artifacts.locator("summary").click();
+
   const retained = await runInferenceAndGenerate(page);
   assert.equal(endpoint.fetchCount(), 1);
 
-  const plot = page.locator(".ena-workspace-plot-v3");
-  const axis2 = () => plot.getByRole("combobox", { name: "Axis 2", exact: true });
   const assertRetained = async (label) => {
     await page.getByRole("button", { name: "Plot Tools", exact: true }).click();
     assert.equal(await axis2().inputValue(), dimensions[2], `${label} must leave the confirmed 2D inference axes unchanged`);
@@ -264,27 +278,30 @@ try {
 
   await tools.getByRole("button", { name: "Plot Settings", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "Plot Settings" });
-  await settings.getByRole("button", { name: "Reset all plot tools", exact: true }).click();
+  const resetDisplay = settings.getByRole("button", { name: "Reset display settings", exact: true });
+  assert.equal((await resetDisplay.innerText()).replace(/\s+/g, " ").trim(), "Reset display settings");
+  await resetDisplay.click();
   await settings.getByRole("button", { name: "Close Plot Settings", exact: true }).click();
   await assertRetained("Plot Tools Reset");
   assert.equal(await page.getByTestId("open-ena-preset-inference-axes-notice").count(), 0);
 
   await page.locator("details.ena-artifacts-disclosure > summary").click();
-  const downloadPromise = page.waitForEvent("download");
+  const confirmedDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export presentation preset", exact: true }).click();
-  const original = JSON.parse(await readFile(await (await downloadPromise).path(), "utf8"));
+  const original = JSON.parse(await readFile(await (await confirmedDownload).path(), "utf8"));
   const confirmedAxes = [await plot.getByRole("combobox", { name: "Axis 1", exact: true }).inputValue(), await axis2().inputValue()];
   assert.deepEqual(original.dimensions, confirmedAxes);
   const withheld = dimensions.find((dimension) => dimension !== confirmedAxes[0] && dimension !== confirmedAxes[1]);
   assert.ok(withheld, "preset notice needs a fitted dimension that is not a current inference axis");
   const mismatched = { ...original, dimensions: [confirmedAxes[0], withheld] };
-  const presetInput = page.getByLabel("Review presentation preset");
-  const applyPreset = () => page.getByRole("button", { name: "Apply matching presentation preset", exact: true });
   await presetInput.setInputFiles({ name: "mismatched-preset.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(mismatched)) });
   await applyPreset().click();
   await page.getByTestId("open-ena-preset-inference-axes-notice").waitFor();
-  assert.match(await page.getByTestId("open-ena-preset-inference-axes-notice").innerText(), new RegExp(withheld.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  await assertRetained("a presentation preset whose 2D dimensions differ");
+  const notice = await page.getByTestId("open-ena-preset-inference-axes-notice").innerText();
+  assert.match(notice, /confirmed interpretation's axes are kept/);
+  assert.match(notice, /other display settings were applied/);
+  assert.match(notice, new RegExp(withheld.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  await assertRetained("a presentation preset whose 2D dimensions differ from the confirmed inference");
 
   await presetInput.setInputFiles({ name: "matching-preset.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(original)) });
   await applyPreset().click();

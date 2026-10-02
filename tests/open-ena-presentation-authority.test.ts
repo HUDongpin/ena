@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 import { selectOpenEnaWorkspacePlotAxis } from "../lib/open-ena/plot3d";
 import {
   OPEN_ENA_WORKBENCH_PRESENTATION_CONTROL_KEYS_V3,
@@ -8,6 +9,7 @@ import {
   openEnaConsumerAuthorityKeyV3,
   snapshotOpenEnaConsumerAuthorityControlsV3,
 } from "../lib/open-ena/workspace-consumer-authority-v3";
+import { workspacePresetTwoDAxisDecisionV3 } from "../lib/open-ena/workspace-presentation-v3";
 import { workspaceV3Source } from "./helpers/open-ena-workspace-v3-ui";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -195,6 +197,23 @@ test("leaked presentation fields are stripped from the shared official workbench
     authority({ controls: { ...scientific, ...leaked } }),
     authority({ controls: scientific }),
   );
+  assert.equal(
+    new Set(OPEN_ENA_WORKBENCH_PRESENTATION_CONTROL_KEYS_V3).size,
+    OPEN_ENA_WORKBENCH_PRESENTATION_CONTROL_KEYS_V3.length,
+    "presentation control keys must not list the same field twice",
+  );
+});
+
+test("a 2D preset applies axes unless a confirmed inference already uses different axes", () => {
+  const current = ["SVD1", "SVD2"] as const;
+  const different = ["SVD1", "SVD3"] as const;
+  assert.equal(workspacePresetTwoDAxisDecisionV3(false, current, different), "apply-axes");
+  assert.equal(workspacePresetTwoDAxisDecisionV3(false, current, current), "apply-axes");
+  assert.equal(workspacePresetTwoDAxisDecisionV3(false, [], different), "apply-axes");
+  assert.equal(workspacePresetTwoDAxisDecisionV3(true, current, different), "keep-confirmed-axes");
+  assert.equal(workspacePresetTwoDAxisDecisionV3(true, ["SVD2", "SVD1"], current), "keep-confirmed-axes");
+  assert.equal(workspacePresetTwoDAxisDecisionV3(true, current, current), "apply-axes");
+  assert.equal(workspacePresetTwoDAxisDecisionV3(true, [], different), "keep-confirmed-axes");
 });
 
 test("official workbench wires presentation-safe consumer and AI invalidation", () => {
@@ -215,12 +234,38 @@ test("official workbench wires presentation-safe consumer and AI invalidation", 
     /onReset=\{\(\) => \{[^}]*setAxes/,
     "Plot Tools Reset must not clear 2D inference axes",
   );
-  assert.doesNotMatch(
-    workspaceV3Source,
-    /setAxes\(\[\.\.\.value\.dimensions\]\)/,
-    "Applying a presentation preset must not assign 2D inference axes",
-  );
+  assert.match(workspaceV3Source, /workspacePresetTwoDAxisDecisionV3\(Boolean\(activeInference\), twoDAxes, plotted\)/);
+  assert.match(workspaceV3Source, /case "apply-axes":\s*setAxes\(\[\.\.\.value\.dimensions\]\)/);
+  assert.match(workspaceV3Source, /case "keep-confirmed-axes":/);
+  assert.equal(workspaceV3Source.match(/setAxes\(\[\.\.\.value\.dimensions\]\)/g)?.length, 1);
+  assert.doesNotMatch(workspaceV3Source, /WORKSPACE_PRESET_SCOPE_V3/);
   assert.match(workspaceV3Source, /open-ena-preset-inference-axes-notice/);
+});
+
+test("preset axis notice and plot reset name the behavior in every locale", () => {
+  const notices = (["en", "zh-hant", "zh-hans"] as const).map((locale) => getOpenEnaCopy(locale).modelV3.workspace.artifacts.presetInferenceAxesWithheld("SVD1 · SVD3"));
+  assert.match(notices[0], /confirmed interpretation's axes are kept/);
+  assert.match(notices[0], /other display settings were applied/);
+  assert.match(notices[0], /SVD1 · SVD3/);
+  assert.match(notices[1], /已保留確認解讀的軸/);
+  assert.match(notices[1], /其他顯示設定已套用/);
+  assert.match(notices[1], /繪製維度 SVD1 · SVD3 未使用/);
+  assert.match(notices[2], /已保留确认解读的轴/);
+  assert.match(notices[2], /其他显示设置已应用/);
+  assert.match(notices[2], /绘制维度 SVD1 · SVD3 未使用/);
+  assert.notEqual(notices[1], notices[2]);
+  for (const locale of ["en", "zh-hant", "zh-hans"] as const) {
+    const scope = getOpenEnaCopy(locale).modelV3.workspace.artifacts.presetScope;
+    assert.doesNotMatch(scope, /does not change 2D inference axes|不會改變二維推論軸|不会改变二维推断轴/);
+  }
+  const resets = (["en", "zh-hant", "zh-hans"] as const).map((locale) => getOpenEnaCopy(locale).ona.plotTools);
+  assert.equal(resets[0].resetAll, "Reset display settings");
+  assert.equal(resets[0].resetAllPlotTools, "Reset display settings");
+  assert.equal(resets[1].resetAll, "重設顯示設定");
+  assert.equal(resets[1].resetAllPlotTools, "重設顯示設定");
+  assert.equal(resets[2].resetAll, "重置显示设置");
+  assert.equal(resets[2].resetAllPlotTools, "重置显示设置");
+  assert.notEqual(resets[1].resetAll, resets[2].resetAll);
 });
 
 test("presentation controls keep the consumer key and reviewed AI identity", () => {

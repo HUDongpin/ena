@@ -20,7 +20,7 @@ import { JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT, JENA_SOURCE_URL, type OpenEna
 import { buildPresentationArtifactV3 } from "@/lib/open-ena/presentation-artifact-v3";
 import { parseBundleJsonV3 } from "@/lib/open-ena/bundle-json-v3";
 import { assertPresentationArtifactContractV3 } from "@/lib/open-ena/bundle-contract-v3";
-import { prepareWorkspacePresentationV3 } from "@/lib/open-ena/workspace-presentation-v3";
+import { prepareWorkspacePresentationV3, workspacePresetTwoDAxisDecisionV3 } from "@/lib/open-ena/workspace-presentation-v3";
 import { presentBoundResultV3, presentBoundGroupDisplayV3, presentRetainedEndpointContrastV3 } from "@/lib/open-ena/bound-presentation-v3";
 import { exportContrastV3 } from "@/lib/open-ena/contrast-export-v3";
 import { buildContrastV3 } from "@/lib/open-ena/contrasts";
@@ -1019,9 +1019,22 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
       setPresetAxisNotice(null);
     } else if (value.dimensions.length === 2) {
       const plotted: readonly [string, string] = [value.dimensions[0], value.dimensions[1]];
-      const changesInferenceAxes = twoDAxes.length !== 2 || plotted[0] !== twoDAxes[0] || plotted[1] !== twoDAxes[1];
-      setView("2d");
-      setPresetAxisNotice(changesInferenceAxes ? { resultHash, dimensions: plotted } : null);
+      const axisDecision = workspacePresetTwoDAxisDecisionV3(Boolean(activeInference), twoDAxes, plotted);
+      switch (axisDecision) {
+        case "apply-axes":
+          setAxes([...value.dimensions]);
+          setView("2d");
+          setPresetAxisNotice(null);
+          break;
+        case "keep-confirmed-axes":
+          setView("2d");
+          setPresetAxisNotice({ resultHash, dimensions: plotted });
+          break;
+        default: {
+          const exhaustive: never = axisDecision;
+          void exhaustive;
+        }
+      }
     } else setPresetAxisNotice(null);
     if (value.camera3d) setCamera(value.camera3d);
     if (layers.showPoints !== undefined) setShowPoints(layers.showPoints);
