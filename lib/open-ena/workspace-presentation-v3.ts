@@ -4,7 +4,18 @@ import { applyPresentationV3 } from "./presentation-artifact-v3";
 import { assertPresentationArtifactContractV3 } from "./bundle-contract-v3";
 import { canonicalJsonV3 } from "./model-v3/canonical-json";
 
-export const WORKSPACE_PRESET_SCOPE_V3 = "This preset contains per-Code visibility and colors, hidden Groups, node positions, selected axes, camera and supported plot layers. It does not contain the Primary/Secondary pair, individual hidden Units, per-Group control preferences, global suppression and its saved visibility snapshots, complementary colors, Horizon filters or Group-centroid path choices. Those preferences stay unchanged when applying a preset. Restore global visibility before applying. Preset-hidden Groups use a separate display overlay that can be cleared without changing per-Group choices.";
+export type WorkspacePresetTwoDAxisDecisionV3 = "apply-axes" | "keep-confirmed-axes";
+
+/** 2D preset axes apply as an evidence change unless a confirmed inference is
+ * already current and the preset axes differ from those confirmed axes. */
+export function workspacePresetTwoDAxisDecisionV3(
+  confirmedInference: boolean,
+  currentAxes: readonly string[],
+  presetAxes: readonly [string, string],
+): WorkspacePresetTwoDAxisDecisionV3 {
+  const axesDiffer = currentAxes.length !== 2 || presetAxes[0] !== currentAxes[0] || presetAxes[1] !== currentAxes[1];
+  return confirmedInference && axesDiffer ? "keep-confirmed-axes" : "apply-axes";
+}
 
 /** Detached presets have no scientific authority. A matching hash alone is
  * insufficient: validate every public identity against this exact bound result. */

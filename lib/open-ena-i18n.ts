@@ -209,6 +209,7 @@ export interface OpenEnaWorkspaceV3Copy {
     readonly comparePredicates: Readonly<Record<AnalysisSetComparePredicateIdV3, string>>;
     readonly presetTooLarge: string; readonly referenceDisplayName: string;
     readonly presetScope: string;
+    readonly presetInferenceAxesWithheld: (dimensions: string) => string;
   };
   readonly ai: { readonly ready: string; readonly unavailable: string; readonly openStats: string; readonly disabled: string; readonly wireLimitations: string };
   readonly toolbar: { readonly dataView: string; readonly downloadModel: string; readonly exportSvg: string; readonly exportPng: string; readonly researchSpace: string };
@@ -2461,7 +2462,8 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
     artifacts: {
       ariaLabel: t("Model artifacts", "模型成果", "模型成果"), title: t("Artifacts", "成果", "成果"), clearPreset: t("Clear preset Group hiding", "清除預設群組隱藏", "清除预设组隐藏"), exportPreset: t("Export presentation preset", "匯出呈現預設", "导出呈现预设"), reviewPreset: t("Review presentation preset", "檢視呈現預設", "查看呈现预设"), presetPreview: t("Presentation preset preview", "呈現預設預覽", "呈现预设预览"), presetMatches: t("This preset matches the retained result. Application changes display only.", "此預設符合保留結果；套用只會改變顯示。", "此预设符合保留结果；应用只会改变显示。"), presetMismatch: t("Unapplied preset: this belongs to a different scientific result.", "未套用預設：其屬於不同科學結果。", "未应用预设：其属于不同科学结果。"), presetCodesMismatch: t("The active editor excludes Codes used by this retained result. The preset remains unapplied.", "啟用中的編輯器排除了保留結果所用代碼；預設維持未套用。", "启用中的编辑器排除了保留结果所用代码；预设保持未应用。"), presetFamilyMismatch: t("The editor family differs from the retained result. The preset remains unapplied.", "編輯器分析系列與保留結果不同；預設維持未套用。", "编辑器分析系列与保留结果不同；预设保持未应用。"), cancelPreset: t("Cancel preset", "取消預設", "取消预设"), applyPreset: t("Apply matching presentation preset", "套用相符呈現預設", "应用匹配呈现预设"), exportDraft: t("Export draft", "匯出草稿", "导出草稿"), draftBlocked: t("Resolve unfinished raw input before exporting: the portable draft grammar cannot represent that visible text. Typed incomplete drafts remain exportable.", "匯出前請處理未完成的原始輸入：可攜式草稿語法無法表示該可見文字。具類型的不完整草稿仍可匯出。", "导出前请处理未完成的原始输入：可移植草稿语法无法表示该可见文本。带类型的不完整草稿仍可导出。"), exportConfig: t("Export canonical configuration", "匯出規範設定", "导出规范设置"), exportAnalysis: t("Export current analysis", "匯出目前分析", "导出当前分析"), exportAnalysisConfirmation: t("Export the full identity-bearing model bundle?", "要匯出完整且含識別的模型套件嗎？", "要导出完整且含标识的模型包吗？"), exportStale: t("Export STALE audit", "匯出過期稽核", "导出过期审计"), reexportReference: t("Re-export original Reference", "重新匯出原始參考", "重新导出原始参考"), exportReference: t("Export Reference", "匯出參考", "导出参考"), captureSet: (count) => t(`Capture analysis set (${count}/6)`, `擷取分析集（${count}/6）`, `捕获分析集（${count}/6）`), compareSets: t("Compare last two sets in the same basis", "在相同基底比較最後兩個分析集", "在相同基底比较最后两个分析集"), historicalComparison: t("Historical same-basis set comparison", "歷史相同基底分析集比較", "历史相同基底分析集比较"), unmetPrerequisites: t("Unmet prerequisites", "未滿足的前置條件", "未满足的前置条件"), capturePredicates: { "current-result": t("Current bound result", "目前綁定結果", "当前绑定结果"), "standard-family": t("Standard ENA family (ONA analysis sets are not verified)", "標準 ENA 系列（ONA 分析集尚未驗證）", "标准 ENA 系列（ONA 分析集尚未验证）"), "endpoint-model": t("EndPoint model (trajectory results cannot be captured as shared analysis sets; build an EndPoint model instead)", "端點模型（軌跡結果不能擷取為共享分析集；請改為建立端點模型）", "端点模型（轨迹结果不能捕获为共享分析集；请改为构建端点模型）"), "two-retained-dimensions": t("At least two supported retained dimensions", "至少兩個受支援的保留維度", "至少两个受支持的保留维度"), "retention-capacity": t("Fewer than 6 retained analysis sets", "保留的分析集少於 6 個", "保留的分析集少于 6 个") }, comparePredicates: { "two-captured-sets": t("At least two captured analysis sets", "至少兩個已擷取的分析集", "至少两个已捕获的分析集"), "same-basis-geometry": t("Same fitted source and exact compatible geometry (EndPoint-only same-basis)", "相同擬合來源且幾何完全相容（僅端點、同一基底）", "相同拟合来源且几何完全兼容（仅端点、同一基底）") },
       presetTooLarge: t("Presentation preset exceeds 16 MiB.", "呈現預設超過 16 MiB。", "呈现预设超过 16 MiB。"), referenceDisplayName: t("Reference", "參考", "参考"),
-      presetScope: t("This preset contains per-Code visibility and colors, hidden Groups, node positions, selected axes, camera and supported plot layers. It does not contain the Primary/Secondary pair, individual hidden Units, per-Group control preferences, global suppression and its saved visibility snapshots, complementary colors, Horizon filters or Group-centroid path choices. Those preferences stay unchanged when applying a preset. Restore global visibility before applying. Preset-hidden Groups use a separate display overlay that can be cleared without changing per-Group choices.", "此預設包含各代碼的可見性與顏色、隱藏群組、節點位置、所選座標軸、相機及支援的圖層；不包含主要／次要配對、個別隱藏單位、各群組控制偏好、全域隱藏與其可見性快照、互補色、視域篩選或群組質心路徑。套用時這些偏好保持不變。套用前請還原全域可見性。預設隱藏群組使用獨立顯示覆蓋，可在不改變各群組選擇下清除。", "此预设包含各代码的可见性与颜色、隐藏组、节点位置、所选坐标轴、相机及支持的图层；不包含主要／次要配对、个别隐藏单位、各组控制偏好、全局隐藏及其可见性快照、互补色、视域筛选或组质心路径。应用时这些偏好保持不变。应用前请恢复全局可见性。预设隐藏组使用独立显示覆盖，可在不改变各组选择下清除。"),
+      presetScope: t("This preset contains per-Code visibility and colors, hidden Groups, node positions, selected axes, camera and supported plot layers. It does not contain the Primary/Secondary pair, individual hidden Units, per-Group control preferences, global suppression and its saved visibility snapshots, complementary colors, Horizon filters or Group-centroid path choices. Those preferences stay unchanged when applying a preset. Restore global visibility before applying. Preset-hidden Groups use a separate display overlay that can be cleared without changing per-Group choices. When no confirmed inference exists, a 2D preset applies its plotted axes. When a confirmed inference already exists and those axes differ, the confirmed interpretation's axes are kept, the preset's other display settings are applied, and the unused dimensions are reported.", "此預設包含各代碼的可見性與顏色、隱藏群組、節點位置、所選座標軸、相機及支援的圖層；不包含主要／次要配對、個別隱藏單位、各群組控制偏好、全域隱藏與其可見性快照、互補色、視域篩選或群組質心路徑。套用時這些偏好保持不變。套用前請還原全域可見性。預設隱藏群組使用獨立顯示覆蓋，可在不改變各群組選擇下清除。尚無已確認推論時，二維預設會套用其繪製軸。已有已確認推論且預設軸不同時，會保留該確認解讀的軸、套用預設的其他顯示設定，並說明未使用的維度。", "此预设包含各代码的可见性与颜色、隐藏组、节点位置、所选坐标轴、相机及支持的图层；不包含主要／次要配对、个别隐藏单位、各组控制偏好、全局隐藏及其可见性快照、互补色、视域筛选或组质心路径。应用时这些偏好保持不变。应用前请恢复全局可见性。预设隐藏组使用独立显示覆盖，可在不改变各组选择下清除。尚无已确认推断时，二维预设会应用其绘制轴。已有已确认推断且预设轴不同时，会保留该确认解读的轴、应用预设的其他显示设置，并说明未使用的维度。"),
+      presetInferenceAxesWithheld: (dimensions) => t(`The confirmed interpretation's axes are kept. The preset's other display settings were applied. Plotted dimensions ${dimensions} were not used.`, `已保留確認解讀的軸。此預設的其他顯示設定已套用。繪製維度 ${dimensions} 未使用。`, `已保留确认解读的轴。此预设的其他显示设置已应用。绘制维度 ${dimensions} 未使用。`),
     },
     ai: {
       ready: t("Current native Stats result is ready for aggregate review.", "目前原生統計結果已可供彙總檢視。", "当前原生统计结果已可供汇总查看。"), unavailable: t("Run and review a current native Stats result first.", "請先執行並檢視目前原生統計結果。", "请先运行并查看当前原生统计结果。"), openStats: t("Open Stats", "開啟統計", "打开统计"), disabled: t("Run a current eligible native inference and review its aggregate evidence first.", "請先執行目前符合資格的原生推論，並檢視其彙總證據。", "请先运行当前符合资格的原生推断，并查看其汇总证据。"),
@@ -2676,8 +2678,8 @@ const en: OpenEnaCopy = {
       zoomOut: "Zoom out",
       fit: "Fit",
       zoomIn: "Zoom in",
-      resetAllPlotTools: "Reset all plot tools",
-      resetAll: "Reset all",
+      resetAllPlotTools: "Reset display settings",
+      resetAll: "Reset display settings",
       on: "On",
       off: "Off",
       settingLabel: (label) => `${label} setting`,
@@ -3338,8 +3340,8 @@ const zhHant: OpenEnaCopy = {
       zoomOut: "縮小",
       fit: "適合",
       zoomIn: "放大",
-      resetAllPlotTools: "重設所有繪圖工具",
-      resetAll: "全部重設",
+      resetAllPlotTools: "重設顯示設定",
+      resetAll: "重設顯示設定",
       on: "開",
       off: "關",
       settingLabel: (label) => `${label}設定`,
@@ -3744,8 +3746,8 @@ const zhHans: OpenEnaCopy = {
       zoomOut: "缩小",
       fit: "适合",
       zoomIn: "放大",
-      resetAllPlotTools: "重置所有绘图工具",
-      resetAll: "全部重置",
+      resetAllPlotTools: "重置显示设置",
+      resetAll: "重置显示设置",
       on: "开",
       off: "关",
       settingLabel: (label) => `${label}设置`,
