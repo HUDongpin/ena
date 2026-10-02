@@ -82,6 +82,7 @@ try {
  const literalAlias=labels.find(code=>code.sourceColumn==='Code 1').column;
  assert.equal(await page.getByTestId('open-ena-center-surface').locator('[data-ena-code='+JSON.stringify(aAlias)+']').count(),0,'source A maps through the actual dictionary');
  assert.ok(await page.getByTestId('open-ena-center-surface').locator('[data-ena-code='+JSON.stringify(literalAlias)+']').count()>0,'source Code 1 retains its distinct public identity');
+ await page.locator('details.ena-artifacts-disclosure > summary').click();
  const presetDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Export presentation preset',exact:true}).click();
  const presetBytes=await readFile(await (await presetDownload).path());const preset=JSON.parse(presetBytes);
  assert.ok(preset.hiddenCodes.includes(aAlias));assert.equal(preset.hiddenCodes.includes(literalAlias),false);
