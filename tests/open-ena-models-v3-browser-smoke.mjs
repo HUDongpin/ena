@@ -292,15 +292,38 @@ async function strictSourceBoundaries() {
     await button("Confirm types and create typed XLSX").click();
     await tab("Units").waitFor();
     assert.equal(await page.evaluate(() => window.__task37WorkerAudit.length), runsBefore, "ordinary upload cannot autorun");
+    // File admit keeps the live mapping (draftsForInstalledSourceV3). Journeys 8–12
+    // left the trajectory sample's Group/Speaker units, Period horizon, TE–TP codes,
+    // Accumulated Trajectory model, Frequency weighting, and a Reference rotation
+    // fitted to that code set. Those fields are absent from this CSV. Clear them
+    // before Build. EndPoint is the model this section's typing checks were written
+    // against; Accumulated Trajectory would still demand a Horizon order over Period.
+    // Binary is selected before the Code-manager assertions because "fraction is not
+    // a legal Binary code" is false under the retained Frequency weighting.
+    for (const field of ["Group", "Speaker"])
+        await button(`Remove ${field} from Unit fields`).click();
     await button("Add or remove Unit fields fields").click();
     await page.getByRole("region", { name: "Unit fields", exact: true }).getByLabel("team_id", { exact: true }).check();
     await button("Add or remove Unit fields fields").click();
     await page.getByRole("combobox", { name: "Create Sample / Group", exact: true }).selectOption("condition");
     await tab("Horizons").click();
+    await button("Remove Period from Horizon identity").click();
     await button("Add or remove Horizon identity fields").click();
     await page.getByRole("region", { name: "Horizon identity", exact: true }).getByLabel("conversation_id", { exact: true }).check();
     await button("Add or remove Horizon identity fields").click();
+    await tab("Windows").click();
+    await page.getByRole("combobox", { name: "Model", exact: true }).selectOption("EndPoint");
+    await page.getByRole("combobox", { name: "Window", exact: true }).selectOption("MovingStanzaWindow");
+    await page.getByRole("combobox", { name: /^Projection & Rotation/ }).selectOption("svd");
+    await page.getByLabel("Binary", { exact: true }).check();
+    await openRowOrderDisclosure();
+    await page.getByLabel("Use source order", { exact: true }).check();
+    await button("Review source-order statement").click();
+    await button("Accept statement").click();
+    await page.getByRole("group", { name: "Backward context", exact: true }).getByLabel("Rows", { exact: true }).fill("3");
     await tab("Codes").click();
+    for (const code of ["TE", "EX", "IN", "RE", "SP", "TP"])
+        await button(`Exclude ${code} Code`).click();
     await page.getByRole("toolbar", { name: "Code actions" }).getByRole("button", { name: "Manage Codes", exact: true }).click();
     for (const code of codeNames)
         await page.getByLabel(`Select ${code} as a Code`, { exact: true }).check();
@@ -309,14 +332,8 @@ async function strictSourceBoundaries() {
     assert.equal(await page.getByLabel("Select nonfinite as a Code", { exact: true }).isDisabled(), true);
     await page.getByLabel("Select logical as a Code", { exact: true }).check();
     await button("Close Code manager").click();
-    await tab("Windows").click();
-    await page.getByRole("combobox", { name: "Window", exact: true }).selectOption("MovingStanzaWindow");
-    await openRowOrderDisclosure();
-    await page.getByLabel("Use source order", { exact: true }).check();
-    await button("Review source-order statement").click();
-    await button("Accept statement").click();
-    await page.getByRole("group", { name: "Backward context", exact: true }).getByLabel("Rows", { exact: true }).fill("3");
     const binary = await run("strict-binary-number-and-boolean");
+    await tab("Windows").click();
     await page.getByLabel("Frequency", { exact: true }).check();
     assert.equal(await runModel().isDisabled(), true, "Boolean Code cannot silently coerce to frequency");
     await tab("Codes").click();
