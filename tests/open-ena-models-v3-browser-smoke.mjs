@@ -98,6 +98,12 @@ async function run(label) {
     json(`run-${label}.json`, audit);
     return audit;
 }
+async function openRowOrderDisclosure() {
+    // Standard Moving Stanza keeps row order inside a disclosure that is closed once a policy exists.
+    const disclosure = page.locator("details.ena-row-order-disclosure");
+    if (await disclosure.count() === 0) return;
+    if (await disclosure.getAttribute("open") === null) await disclosure.locator("> summary").click();
+}
 async function openArtifactsDisclosure() {
     // Export draft and Export Reference live in this closed disclosure.
     const details = page.locator("details.ena-artifacts-disclosure");
@@ -305,6 +311,7 @@ async function strictSourceBoundaries() {
     await button("Close Code manager").click();
     await tab("Windows").click();
     await page.getByRole("combobox", { name: "Window", exact: true }).selectOption("MovingStanzaWindow");
+    await openRowOrderDisclosure();
     await page.getByLabel("Use source order", { exact: true }).check();
     await button("Review source-order statement").click();
     await button("Accept statement").click();
@@ -446,6 +453,7 @@ async function journeys() {
                 await page.getByRole("combobox", { name: "Window", exact: true }).selectOption(window);
                 await page.getByLabel(weighting, { exact: true }).check();
                 if (window === "MovingStanzaWindow") {
+                    await openRowOrderDisclosure();
                     await page.getByLabel("Use source order", { exact: true }).check();
                     await button("Review source-order statement").click();
                     await button("Accept statement").click();
@@ -469,6 +477,7 @@ async function journeys() {
                 await page.getByRole("combobox", { name: "Model", exact: true }).selectOption(model);
                 await page.getByRole("combobox", { name: "Window", exact: true }).selectOption(window);
                 if (window === "MovingStanzaWindow") {
+                    await openRowOrderDisclosure();
                     await page.getByLabel("Use source order", { exact: true }).check();
                     await button("Review source-order statement").click();
                     await page.getByRole("dialog", { name: "Review source-order statement" }).getByRole("button", { name: "Accept statement" }).click();
@@ -578,6 +587,7 @@ async function journeys() {
         const displayOrder = await page.getByRole("button", { name: /^Reorder / }).evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-label")));
         await tab("Windows").click();
         await page.getByRole("group", { name: "Backward context", exact: true }).getByLabel("Rows", { exact: true }).fill("3");
+        await openRowOrderDisclosure();
         await page.getByLabel("Use source order", { exact: true }).check();
         await button("Review source-order statement").click();
         await button("Accept statement").click();
