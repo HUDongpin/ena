@@ -138,6 +138,8 @@ try {
  const artifactInput=page.getByLabel('Import configuration, result or Reference');
  await artifactInput.setInputFiles({name:'configuration.json',mimeType:'application/json',buffer:Buffer.from(standardDraft)});
  await page.getByRole('button',{name:'Replace configuration',exact:true}).click();
+ // Accepting a draft leaves the rail on Data. The build button is mounted only in Model mode.
+ await page.getByRole('button',{name:'Model',exact:true}).click();
  await page.waitForFunction(()=>{const button=document.querySelector('[data-testid="open-ena-run-model"]');return button instanceof HTMLButtonElement&&!button.disabled;});
  assert.equal(await page.evaluate(()=>window.workerStarts),3,'ordinary CSV preparation/config import never inherits sample autorun');
  await page.getByTestId('open-ena-run-model').click();await page.waitForFunction(()=>window.workerStarts===4);await current();
@@ -157,6 +159,7 @@ try {
  const onaDraft=await page.evaluate(text=>window.sampleDraftArtifact(text,true),sampleText);
  await page.getByRole('button',{name:'Data',exact:true}).click();await artifactInput.setInputFiles({name:'ona-draft.json',mimeType:'application/json',buffer:Buffer.from(onaDraft)});
  await page.getByRole('button',{name:'Replace configuration',exact:true}).click();
+ await page.getByRole('button',{name:'Model',exact:true}).click();
  await page.waitForFunction(()=>{const button=document.querySelector('[data-testid="open-ena-run-model"]');return button instanceof HTMLButtonElement&&!button.disabled;});
  assert.equal(await page.evaluate(()=>window.workerStarts),5);
  await page.getByTestId('open-ena-run-model').click();await page.waitForFunction(()=>window.workerStarts===6);await current();
