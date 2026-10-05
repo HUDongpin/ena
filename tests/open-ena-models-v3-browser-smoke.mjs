@@ -77,6 +77,7 @@ async function waitForHttp(url, label) {
     }, deadlines.readiness);
 }
 const button = name => page.getByRole("button", { name, exact: true });
+const runModel = () => page.getByTestId("open-ena-run-model");
 const tab = name => page.getByRole("tab", { name: new RegExp(`^${name}(,|$)`) });
 async function mode(name) { await page.getByRole("navigation", { name: "Analysis modes" }).getByRole("button", { name, exact: true }).click(); }
 async function shot(name, fullPage = true) { const path = join(directory, `${name}.png`); await page.screenshot({ path, fullPage }); receipt.screenshots.push({ path, sha256: hash(readFileSync(path)) }); }
@@ -86,7 +87,7 @@ async function current() { await page.waitForFunction(() => document.querySelect
 async function lastRun() { return page.evaluate(() => { const response = window.__task37WorkerAudit.filter(x => x.direction === "response" && x.message.kind === "result-v3").at(-1); const request = window.__task37WorkerAudit.find(x => x.direction === "request" && x.message.id === response?.message.id); return { request: request?.message, response: response?.message }; }); }
 async function run(label) {
     const before = await page.evaluate(() => window.__task37WorkerAudit.filter(x => x.message.kind === "result-v3").length);
-    await button("Run model").click();
+    await runModel().click();
     await page.waitForFunction(n => window.__task37WorkerAudit.filter(x => x.message.kind === "result-v3").length > n, before, { timeout: 60000 });
     await current();
     const audit = await lastRun();
@@ -97,7 +98,12 @@ async function run(label) {
     json(`run-${label}.json`, audit);
     return audit;
 }
-async function download(name, filename) { const pending = page.waitForEvent("download"); await button(name).click(); const item = await pending; const path = join(directory, filename); await item.saveAs(path); return { path, value: JSON.parse(readFileSync(path, "utf8")), sha256: hash(readFileSync(path)) }; }
+async function openArtifactsDisclosure() {
+    // Export draft and Export Reference live in this closed disclosure.
+    const details = page.locator("details.ena-artifacts-disclosure");
+    if (await details.getAttribute("open") === null) await details.locator("> summary").click();
+}
+async function download(name, filename) { await openArtifactsDisclosure(); const pending = page.waitForEvent("download"); await button(name).click(); const item = await pending; const path = join(directory, filename); await item.saveAs(path); return { path, value: JSON.parse(readFileSync(path, "utf8")), sha256: hash(readFileSync(path)) }; }
 async function layout(label) {
     const metrics = await page.evaluate(() => { const list = document.querySelector('[role="tablist"][aria-label="Model configuration"]'); const active = list?.querySelector('[aria-selected="true"]'); const panel = document.querySelector('[role="tabpanel"]'); const first = panel?.firstElementChild; return { width: innerWidth, scroll: document.documentElement.scrollWidth, tabTop: active?.getBoundingClientRect().top, listTop: list?.getBoundingClientRect().top, childGap: first && panel ? first.getBoundingClientRect().top - panel.getBoundingClientRect().top : null, panelHeight: panel?.getBoundingClientRect().height }; });
     assert.ok(metrics.scroll <= metrics.width + 1, `${label}: horizontal document overflow ${JSON.stringify(metrics)}`);
@@ -290,7 +296,7 @@ async function strictSourceBoundaries() {
     await page.getByRole("group", { name: "Backward context", exact: true }).getByLabel("Rows", { exact: true }).fill("3");
     const binary = await run("strict-binary-number-and-boolean");
     await page.getByLabel("Frequency", { exact: true }).check();
-    assert.equal(await button("Run model").isDisabled(), true, "Boolean Code cannot silently coerce to frequency");
+    assert.equal(await runModel().isDisabled(), true, "Boolean Code cannot silently coerce to frequency");
     await tab("Codes").click();
     await button("Exclude logical Code").click();
     await page.getByRole("toolbar", { name: "Code actions" }).getByRole("button", { name: "Manage Codes", exact: true }).click();
@@ -301,7 +307,7 @@ async function strictSourceBoundaries() {
     const frequency = await run("strict-frequency-decimals");
     await tab("Windows").click();
     await page.getByLabel("Binary", { exact: true }).check();
-    assert.equal(await button("Run model").isDisabled(), true, "fraction must not silently coerce to Binary");
+    assert.equal(await runModel().isDisabled(), true, "fraction must not silently coerce to Binary");
     await page.getByLabel("Frequency", { exact: true }).check();
     assert.notEqual(await page.getByTestId("open-ena-workspace-v3").getAttribute("data-result-status"), "current", "ABA configuration edits cannot revive the earlier result");
     await run("strict-frequency-after-aba");
@@ -370,7 +376,7 @@ async function journeys() {
         assert.equal(fit.response.result.configuration.analysis.rotation.type, "means");
         await button("Exclude group configuration").click();
         assert.equal(await page.getByRole("combobox", { name: "Create Sample / Group", exact: true }).inputValue(), "");
-        assert.equal(await button("Run model").isDisabled(), true);
+        assert.equal(await runModel().isDisabled(), true);
         await tab("Windows").click();
         assert.equal(await page.getByRole("combobox", { name: /^Projection & Rotation/ }).inputValue(), "means");
         await tab("Units").click();
@@ -394,7 +400,7 @@ async function journeys() {
         emptyConfiguration = draft.value;
         await button("Exclude all selected Codes").click();
         await page.getByRole("heading", { name: "No codes selected", exact: true }).waitFor();
-        assert.equal(await button("Run model").isDisabled(), true);
+        assert.equal(await runModel().isDisabled(), true);
         await shot("desktop-empty-codes");
         return { beforeDraftSha256: draft.sha256, displayOnlyIdentity: result.scientificResultSha256 };
     });
@@ -475,7 +481,7 @@ async function journeys() {
             const count = await page.evaluate(() => window.__task37WorkerAudit.length);
             await rows.fill(invalid);
             assert.equal(await rows.getAttribute("aria-invalid"), "true");
-            assert.equal(await button("Run model").isDisabled(), true);
+            assert.equal(await runModel().isDisabled(), true);
             assert.notEqual(await page.getByTestId("open-ena-workspace-v3").getAttribute("data-result-status"), "current");
             await tab("Codes").click();
             await tab("Windows").click();
@@ -611,7 +617,7 @@ async function journeys() {
                 evidence.push({ mode: setup.name, tab: name, ...await layout(`${setup.name} ${name}`) });
                 const controls = page.getByRole("tabpanel").locator("button:visible:enabled, input:not([type=radio]):visible:enabled, input[type=radio]:checked:visible:enabled, select:visible:enabled");
                 for (let index = 0; index < await controls.count(); index++) evidence.push(await assertReachable(controls.nth(index), `${setup.name} ${name} control ${index}`));
-                evidence.push(await assertReachable(button("Run model"), `${setup.name} Run model`));
+                evidence.push(await assertReachable(runModel(), `${setup.name} Run model`));
                 if (name === "Units") {
                     await button("Hide all group layers").click(); evidence.push(await assertReachable(button("Restore all group layers"), `${setup.name} Restore Groups`)); await button("Restore all group layers").click();
                 }

@@ -808,8 +808,10 @@ async function runYuPrivateLane(page, args) {
     // The native text comparator is explicit, including its collation policy.
     // The actual bound source order is checked against literal string order below.
     stage = "private setup Run";
-    const privateRun = page.getByRole("button", { name: "Run model", exact: true });
-    await page.waitForFunction(button => button && !button.disabled, await privateRun.elementHandle(), { timeout: 30000 });
+    await page.waitForFunction(() => {
+      const button = document.querySelector('[data-testid="open-ena-run-model"]');
+      return button instanceof HTMLButtonElement && !button.disabled;
+    }, null, { timeout: 30000 });
     await runNativeFixtureV3(page);
     stage = "private bound aggregate and explicit order";
     const aggregate = await page.evaluate(() => {
@@ -918,8 +920,8 @@ async function runYuPrivateLane(page, args) {
   } catch {
     const safeDiagnostics = await page.evaluate(catalog => {
       const summaries = [...document.querySelectorAll("[data-diagnostic-scope] li[data-severity] > p:first-child a, [data-diagnostic-scope] li[data-severity] > p:first-child strong")].map(node => node.textContent);
-      const run = [...document.querySelectorAll("button")].find(button => button.textContent === "Run model");
-      return { issueIds: catalog.filter(entry => summaries.includes(entry.summary)).map(entry => entry.id), invalidCount: document.querySelectorAll('[aria-invalid="true"]').length, runDisabled: run?.disabled === true, runStatus: document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-run-status"), requestCount: window.__openEnaNativeAudit.requests.length };
+      const run = document.querySelector('[data-testid="open-ena-run-model"]');
+      return { issueIds: catalog.filter(entry => summaries.includes(entry.summary)).map(entry => entry.id), invalidCount: document.querySelectorAll('[aria-invalid="true"]').length, runDisabled: run instanceof HTMLButtonElement ? run.disabled : true, runStatus: document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-run-status"), requestCount: window.__openEnaNativeAudit.requests.length };
     }, args.diagnosticCatalog).catch(() => ({ issueIds: [], invalidCount: null, runDisabled: true, runStatus: "unknown", requestCount: null }));
     throw new Error(`Private ONA gate failed: ${stage}; private details withheld; safeDiagnostics=${JSON.stringify(safeDiagnostics)}`);
   }

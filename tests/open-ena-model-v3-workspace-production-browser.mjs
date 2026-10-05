@@ -2,6 +2,26 @@ import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { readFile } from 'node:fs/promises';
+function displayedPlotlyCamera(camera, reference) {
+  const near = (value) => Math.round(value * 1e9) / 1e9;
+  const vector = (value) => ({ x: near(value.x), y: near(value.y), z: near(value.z) });
+  const length = Math.hypot(camera.eye.x, camera.eye.y, camera.eye.z) || 1;
+  const view = { x: camera.eye.x / length, y: camera.eye.y / length, z: camera.eye.z / length };
+  const requested = reference.up;
+  const alongView = requested.x * view.x + requested.y * view.y + requested.z * view.z;
+  const perpendicular = {
+    x: requested.x - view.x * alongView,
+    y: requested.y - view.y * alongView,
+    z: requested.z - view.z * alongView,
+  };
+  const perpendicularLength = Math.hypot(perpendicular.x, perpendicular.y, perpendicular.z) || 1;
+  return {
+    center: vector(camera.center),
+    eye: vector(camera.eye),
+    up: vector({ x: perpendicular.x / perpendicularLength, y: perpendicular.y / perpendicularLength, z: perpendicular.z / perpendicularLength }),
+    projection: camera.projection.type,
+  };
+}
 const bundleOptions={bundle:true,format:'esm',platform:'browser',jsx:'automatic',write:false,logLevel:'silent'};
 const main=await build({...bundleOptions,stdin:{contents:`import React from 'react'; import {createRoot} from 'react-dom/client'; import OpenEnaWorkspace from './components/open-ena/OpenEnaWorkspace'; import {exportDraftV3} from './lib/open-ena/model-artifact-exports-v3'; import {prepareTeachingSampleV3} from './lib/open-ena/sample-source-v3'; window.sampleDraftArtifact=async(text,ona=false)=>{const prepared=await prepareTeachingSampleV3(text,'endpoint',new Date());const standard=prepared.drafts.standard;const draft=ona?{unitColumns:standard.unitColumns,horizonColumns:standard.horizonColumns,groupColumn:standard.groupColumn,codes:standard.codes,backward:{kind:'finite',value:5},rowOrder:standard.movingStanza.rowOrder,directionalMask:{schemaVersion:1,codeOrder:standard.codes,enabled:standard.codes.map(()=>standard.codes.map(()=>true))}}:standard;return new TextDecoder().decode((await exportDraftV3(draft)).bytes);}; createRoot(document.getElementById('root')).render(<OpenEnaWorkspace locale="en"/>);`,loader:'tsx',resolveDir:process.cwd(),sourcefile:'task31-production-app.tsx'}});
 const worker=await build({...bundleOptions,entryPoints:['lib/open-ena/jena.worker.ts']});
@@ -57,7 +77,11 @@ try {
  await page.locator('.ena-reset-all-plot-tools').click();
  await page.locator('.ena-plot-settings-trigger').click();
  await page.waitForFunction(()=>document.querySelector('.js-plotly-plot')?._fullLayout.scene.camera.projection.type==='perspective');
- assert.deepEqual(await page.locator('.js-plotly-plot').first().evaluate(node=>JSON.parse(JSON.stringify(node._fullLayout.scene.camera))),originalCamera,'Reset applies the default actual Plotly camera');
+ // Plotly relayout stores `up` as the requested vector made unit-length and perpendicular to the eye.
+ // The first newPlot snapshot still holds the literal up, and eye components can differ by one float ulp.
+ // Compare that displayed camera instead of the raw _fullLayout object.
+ const resetCamera=await page.locator('.js-plotly-plot').first().evaluate(node=>JSON.parse(JSON.stringify(node._fullLayout.scene.camera)));
+ assert.deepEqual(displayedPlotlyCamera(resetCamera,originalCamera),displayedPlotlyCamera(originalCamera,originalCamera),'Reset applies the default actual Plotly camera');
  assert.equal(await page.evaluate(()=>window.workerStarts),3,'camera reset does not refit');
  await page.locator('.ena-visual-toolbar').getByRole('button',{name:'2D ENA',exact:true}).click();
  await page.getByRole('button',{name:'Stats & Export',exact:true}).click();
@@ -86,7 +110,10 @@ try {
  const sourceInput=page.getByLabel('Open coded CSV or XLSX');
  await sourceInput.setInputFiles({name:'review.csv',mimeType:'text/csv',buffer:Buffer.from(sampleText)});
  await page.getByRole('dialog',{name:'Review CSV source types'}).waitFor();
+ // The build button is mounted only in Model mode. Pending review still disables it via sourcePreview.
+ await page.getByRole('button',{name:'Model',exact:true}).click();
  assert.equal(await page.getByTestId('open-ena-run-model').isDisabled(),true,'pending source review cannot launch the previously active source');
+ await page.getByRole('button',{name:'Data',exact:true}).click();
  await page.getByLabel('Source type: team_id',{exact:true}).selectOption('number');
  assert.equal(await page.getByRole('button',{name:'Confirm types and create typed XLSX',exact:true}).isDisabled(),true,'invalid explicit typing cannot adopt source');
  await page.getByRole('button',{name:'Cancel source preparation',exact:true}).click();
@@ -114,6 +141,7 @@ try {
  await page.waitForFunction(()=>{const button=document.querySelector('[data-testid="open-ena-run-model"]');return button instanceof HTMLButtonElement&&!button.disabled;});
  assert.equal(await page.evaluate(()=>window.workerStarts),3,'ordinary CSV preparation/config import never inherits sample autorun');
  await page.getByTestId('open-ena-run-model').click();await page.waitForFunction(()=>window.workerStarts===4);await current();
+ const artifacts=page.locator('details.ena-artifacts-disclosure');if(await artifacts.getAttribute('open')===null)await artifacts.locator('> summary').click();
  const referenceDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Export Reference',exact:true}).click();
  const nativeReference=await referenceDownload;const referenceBytes=await readFile(await nativeReference.path());
  assert.equal(JSON.parse(referenceBytes).schemaVersion,2,'production witness mints a genuine native Reference');
