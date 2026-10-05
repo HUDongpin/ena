@@ -28,6 +28,11 @@ function sourceManifest() {
 function treeManifest(path, prefix = "") {
     return readdirSync(path).sort().flatMap(name => { const relative = join(prefix, name); const full = join(path, name); return statSync(full).isDirectory() ? treeManifest(full, relative) : [{ path: relative, sha256: hash(readFileSync(full)) }]; });
 }
+// next start writes server/route-cache while serving. That is runtime cache, same
+// class as .next/cache, and is not a change to the compiled build.
+function servedBuildManifest() {
+    return treeManifest(join(root, ".next")).filter(entry => !entry.path.startsWith("cache/") && !entry.path.startsWith("diagnostics/") && !entry.path.startsWith("server/route-cache/") && entry.path !== "trace" && entry.path !== "trace-build");
+}
 const credentials = { username: `task37_${randomBytes(12).toString("hex")}`, password: randomBytes(32).toString("hex"), secret: randomBytes(32).toString("hex"), account: `task37_${randomBytes(12).toString("hex")}` };
 const redact = value => Object.values(credentials).reduce((text, secret) => text.replaceAll(secret, "[redacted]"), String(value)).replace(/ws:\/\/[^\s]+\/devtools\/browser\/[^\s]+/g, "[redacted browser endpoint]").replace(/(postgresql:\/\/)[^\s]+/gu, "$1[redacted]");
 const receipt = { status: "running", directory, sourceGitSha: null, parentGitSha: null, node: process.version, npm: null, npmPath: null, harnessPid: process.pid, harnessParentPid: process.ppid, journeys: [], screenshots: [], errors: [], zoomMechanism: "CSS zoom: 2; reflow evidence, not native browser zoom", visualInspection: { status: "pending", actor: "agent" } };
@@ -711,7 +716,7 @@ async function main() {
     receipt.sourceContentSha256 = hash(JSON.stringify(sourceBefore));
     receipt.build = await child("npm", ["run", "build"], env, "build.log");
     assert.deepEqual(sourceManifest(), sourceBefore, "source content changed during build");
-    const buildManifest = treeManifest(join(root, ".next")).filter(x => !x.path.startsWith("cache/") && !x.path.startsWith("diagnostics/") && x.path !== "trace" && x.path !== "trace-build");
+    const buildManifest = servedBuildManifest();
     json("build-files.json", buildManifest);
     receipt.build.contentSha256 = hash(JSON.stringify(buildManifest));
     receipt.build.buildId = readFileSync(join(root, ".next/BUILD_ID"), "utf8").trim();
@@ -785,7 +790,7 @@ async function main() {
     assert.deepEqual(receipt.errors, []);
     assert.deepEqual(sourceManifest(), sourceBefore);
     json("source-after.json", sourceManifest());
-    assert.deepEqual(treeManifest(join(root, ".next")).filter(x => !x.path.startsWith("cache/") && !x.path.startsWith("diagnostics/") && x.path !== "trace" && x.path !== "trace-build"), buildManifest, "built content changed during served journey");
+    assert.deepEqual(servedBuildManifest(), buildManifest, "built content changed during served journey");
     receipt.status = "pass";
 
 }
