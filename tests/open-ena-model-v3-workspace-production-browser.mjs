@@ -147,6 +147,8 @@ try {
  const referenceDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Export Reference',exact:true}).click();
  const nativeReference=await referenceDownload;const referenceBytes=await readFile(await nativeReference.path());
  assert.equal(JSON.parse(referenceBytes).schemaVersion,2,'production witness mints a genuine native Reference');
+ // The artifact file input is mounted only in Data mode.
+ await page.getByRole('button',{name:'Data',exact:true}).click();
  await artifactInput.setInputFiles({name:'reference.json',mimeType:'application/json',buffer:referenceBytes});await page.getByRole('button',{name:'Add Reference',exact:true}).click();
  await page.getByRole('button',{name:'Model',exact:true}).click();await page.getByRole('tab',{name:/Windows,/}).click();
  assert.equal(await page.getByLabel('Projection & Rotation').inputValue(),'svd');
