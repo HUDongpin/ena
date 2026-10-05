@@ -322,8 +322,10 @@ async function strictSourceBoundaries() {
     await button("Accept statement").click();
     await page.getByRole("group", { name: "Backward context", exact: true }).getByLabel("Rows", { exact: true }).fill("3");
     await tab("Codes").click();
+    // A missing Code renders the same "Exclude … Code" name on the row icon and on
+    // its diagnostic action. The row control is the one that drops the retained code.
     for (const code of ["TE", "EX", "IN", "RE", "SP", "TP"])
-        await button(`Exclude ${code} Code`).click();
+        await page.getByTestId("open-ena-model-v3-codes-panel").locator(`button.ena-official-icon-button[aria-label="Exclude ${code} Code"]`).click();
     await page.getByRole("toolbar", { name: "Code actions" }).getByRole("button", { name: "Manage Codes", exact: true }).click();
     for (const code of codeNames)
         await page.getByLabel(`Select ${code} as a Code`, { exact: true }).check();
