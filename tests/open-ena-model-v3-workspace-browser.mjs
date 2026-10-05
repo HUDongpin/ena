@@ -52,10 +52,10 @@ try {
   return route.fulfill({contentType:'text/html',body:'<!doctype html><html><body><main id="root"></main></body></html>'});
  });
  await page.goto('http://localhost:31991/');await page.addScriptTag({content:bundle.outputFiles[0].text});
- const root=page.getByTestId('open-ena-workspace-v3'),run=page.getByRole('button',{name:'Run model',exact:true});
+ const root=page.getByTestId('open-ena-workspace-v3'),run=page.getByTestId('open-ena-run-model');
  await page.waitForFunction(()=>!document.querySelector('button')?.disabled);
  await page.getByRole('button',{name:'Model',exact:true}).click();
- await run.waitFor();await page.waitForFunction(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Run model')?.disabled===false);
+ await run.waitFor();await page.waitForFunction(()=>{const button=document.querySelector('[data-testid="open-ena-run-model"]');return button instanceof HTMLButtonElement&&!button.disabled;});
  await run.click();await page.waitForFunction(()=>window.jobs.length===1);
  await page.getByRole('tab',{name:/Windows,/}).click();
  const backward=page.getByRole('group',{name:'Backward context',exact:true}).getByLabel('Rows');
@@ -67,7 +67,7 @@ try {
  await forward.fill('0');assert.equal(await run.isDisabled(),true,'one repair cannot clear other active blocker');
  await page.getByRole('tab',{name:/Codes,/}).click();await page.getByRole('tab',{name:/Windows,/}).click();
  assert.equal(await backward.inputValue(),'','tab unmount preserves invalid raw text');
- await backward.fill('1');await page.waitForFunction(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Run model')?.disabled===false);
+ await backward.fill('1');await page.waitForFunction(()=>{const button=document.querySelector('[data-testid="open-ena-run-model"]');return button instanceof HTMLButtonElement&&!button.disabled;});
  await run.click();await page.waitForFunction(()=>window.jobs.length===2);
  await page.getByRole('tab',{name:/Codes,/}).click();await page.getByRole('button',{name:'Hide all code nodes',exact:true}).click();
  assert.equal(await page.evaluate(()=>window.jobs[1].signal.aborted),false,'display edit does not cancel B');
@@ -82,6 +82,7 @@ try {
  const literalAlias=labels.find(code=>code.sourceColumn==='Code 1').column;
  assert.equal(await page.getByTestId('open-ena-center-surface').locator('[data-ena-code='+JSON.stringify(aAlias)+']').count(),0,'source A maps through the actual dictionary');
  assert.ok(await page.getByTestId('open-ena-center-surface').locator('[data-ena-code='+JSON.stringify(literalAlias)+']').count()>0,'source Code 1 retains its distinct public identity');
+ await page.locator('details.ena-artifacts-disclosure > summary').click();
  const presetDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Export presentation preset',exact:true}).click();
  const presetBytes=await readFile(await (await presetDownload).path());const preset=JSON.parse(presetBytes);
  assert.ok(preset.hiddenCodes.includes(aAlias));assert.equal(preset.hiddenCodes.includes(literalAlias),false);
@@ -107,7 +108,7 @@ try {
  await page.getByRole('button',{name:'Choose color for A',exact:true}).click();
  assert.equal(await page.locator('[data-ena-code-color-hex="primary"]').inputValue(),'#0000ff','ONA preference persists independently of retained Standard geometry');
  await page.getByRole('dialog').getByRole('button',{name:'Cancel',exact:true}).click();
- await page.waitForFunction(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Run model')?.disabled===false);
+ await page.waitForFunction(()=>{const button=document.querySelector('[data-testid="open-ena-run-model"]');return button instanceof HTMLButtonElement&&!button.disabled;});
  await run.click();await page.waitForFunction(()=>window.jobs.length===3);await page.evaluate(()=>window.resolveRun(2));
  await page.waitForFunction(()=>document.querySelector('[data-testid="open-ena-workspace-v3"]').dataset.resultStatus==='current');
  assert.ok(await page.locator('[data-ona-code-node-position]').count()>0,'ONA native bound result reaches the actual directed renderer');

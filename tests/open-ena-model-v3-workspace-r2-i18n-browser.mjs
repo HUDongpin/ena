@@ -54,8 +54,11 @@ try {
   await page.goto("http://localhost:31998/");
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
   await page.getByRole("button", { name: "Model", exact: true }).click();
-  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Run model" && !button.disabled));
-  await page.getByRole("button", { name: "Run model", exact: true }).click();
+  await page.waitForFunction(() => {
+    const button = document.querySelector("[data-testid=open-ena-run-model]");
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
+  await page.getByTestId("open-ena-run-model").click();
   await page.waitForFunction(() => window.jobs.length === 1);
   await page.evaluate(() => window.resolveRun(0));
   await page.waitForFunction(() => document.querySelector("[data-testid=open-ena-workspace-v3]").dataset.resultStatus === "current");
@@ -162,8 +165,11 @@ try {
   await page.locator(".ena-rail-modes button").nth(1).click();
   await page.getByRole("tab", { name: /Codes,/u }).click();
   await page.getByRole("radio", { name: /Ordered Network Analysis/u }).check();
-  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Run model" && !button.disabled));
-  await page.getByRole("button", { name: "Run model", exact: true }).click();
+  await page.waitForFunction(() => {
+    const button = document.querySelector("[data-testid=open-ena-run-model]");
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
+  await page.getByTestId("open-ena-run-model").click();
   await page.waitForFunction(() => window.jobs.length === 2);
   await page.evaluate(() => window.resolveRun(1));
   await page.waitForFunction(() => document.querySelector("[data-testid=open-ena-workspace-v3]").dataset.resultStatus === "current");
@@ -193,8 +199,11 @@ try {
   await page.evaluate(() => window.task32MountTrajectory("en"));
   await page.getByTestId("open-ena-workspace-v3").waitFor();
   await page.locator(".ena-rail-modes button").nth(1).click();
-  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Run model" && !button.disabled));
-  await page.getByRole("button", { name: "Run model", exact: true }).click();
+  await page.waitForFunction(() => {
+    const button = document.querySelector("[data-testid=open-ena-run-model]");
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
+  await page.getByTestId("open-ena-run-model").click();
   await page.waitForFunction(() => window.jobs.length === 3);
   await page.evaluate(() => window.resolveRun(2));
   await page.waitForFunction(() => document.querySelector("[data-testid=open-ena-workspace-v3]").dataset.resultStatus === "current");
