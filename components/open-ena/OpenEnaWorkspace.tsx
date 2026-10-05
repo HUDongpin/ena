@@ -549,6 +549,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     plan: currentPlan?.header.executionPlanSha256 ?? null,
     current,
     controls,
+    resultCreatedAt: result?.createdAt ?? null,
   });
   const consumerKeyRef = useRef(consumerKey); consumerKeyRef.current = consumerKey;
   const activeInference = inference?.key === consumerKey && current ? inference.value : null;

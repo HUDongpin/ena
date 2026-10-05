@@ -380,12 +380,10 @@ test("stable result, warning, integrity and p-method codes have localized resear
   assert.doesNotMatch(panel, /<li key=\{warning\}>\{warning\}<\/li>/);
 });
 
-// #74 expected failure on main: consumerKey is built without result.createdAt, so two
-// result instances that share a binding still produce one key. Remove `todo` when
-// openEnaConsumerAuthorityKeyV3 includes resultCreatedAt.
+// #74 A rebuilt result keeps the scientific binding and mints a new createdAt.
+// consumerKey follows createdAt so inference and AI review cannot resurrect.
 test(
   "two results with the same binding and different createdAt yield different consumer keys",
-  { todo: "#74 consumerKey omits result.createdAt" },
   () => {
     const binding = {
       scientificResultSha256: "a".repeat(64),

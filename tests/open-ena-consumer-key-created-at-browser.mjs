@@ -1,7 +1,6 @@
-// #74 Regression for consumerKey omitting result.createdAt.
-// Expected to FAIL on current main: an identical rebuild keeps the previous
-// inference panel and AI request binding.analyzedAt. Not referenced by
-// package.json or .github/workflows/open-ena-ci.yml, so CI does not run it.
+// #74 consumerKey includes result.createdAt, so a rebuild drops the previous
+// inference panel and does not reuse binding.analyzedAt.
+// Not referenced by package.json or .github/workflows/open-ena-ci.yml.
 // Run: node tests/open-ena-consumer-key-created-at-browser.mjs
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
