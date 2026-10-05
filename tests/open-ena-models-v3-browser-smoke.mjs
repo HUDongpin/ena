@@ -135,6 +135,7 @@ async function workspaceModeStyleContract(state, name) {
     const panel = page.locator(".ena-workspace-controls-v3:visible");
     await panel.waitFor();
     assert.equal(await panel.count(), 1, `${state} ${name}: exactly one visible styled control panel`);
+    if (name === "Data") await openArtifactsDisclosure();
     await panel.evaluate(node => { for (let parent = node; parent; parent = parent.parentElement) parent.scrollTop = 0; });
     const metrics = await panel.evaluate(root => {
         const rendered = node => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== "hidden";
@@ -176,10 +177,11 @@ async function workspaceModeStyleContract(state, name) {
     const filename = name.toLowerCase().replace(/[^a-z]+/g, "-").replace(/-$/u, "");
     await shot(`desktop-${state}-${filename}-styled`);
     if (name === "Data") {
-        const artifacts = panel.getByRole("heading", { name: "Artifacts", exact: true });
+        // Artifacts is the disclosure summary, not a heading. The section is opened above so its controls are in the style sample.
+        const artifacts = panel.locator("details.ena-artifacts-disclosure");
         await artifacts.scrollIntoViewIfNeeded();
         await shot(`desktop-${state}-data-artifacts-styled`);
-        await panel.locator("button").last().scrollIntoViewIfNeeded();
+        await artifacts.locator("button").last().scrollIntoViewIfNeeded();
         await shot(`desktop-${state}-data-artifacts-bottom-styled`);
     }
     return metrics;
