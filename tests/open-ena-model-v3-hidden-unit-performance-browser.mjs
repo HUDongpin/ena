@@ -65,6 +65,8 @@ try {
       return { expected, actual, legacyMs: times(slow), indexedMs: window.q1Indexed ? times(() => window.q1Indexed(result, hiddenUnitKeys)) : null };
     });
     await page.goto('http://localhost:31993/?n=' + n);
+    // The build button is mounted only in Model mode. The workspace opens on Data.
+    await page.getByRole('button', { name: 'Model', exact: true }).click();
     await page.waitForFunction(() => {
       const button = document.querySelector('[data-testid="open-ena-run-model"]');
       return button instanceof HTMLButtonElement && !button.disabled;
