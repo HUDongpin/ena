@@ -636,8 +636,15 @@ async function runSyntheticLane(page, args) {
   for (let index = 0; index < 3; index++) {
     await page.getByRole("combobox", { name: `Axis ${index + 1}`, exact: true }).selectOption(permutedAxes[index]);
     if (index === 0) {
-      assertBrowser(await threeDButton.isDisabled(), "duplicate-axis 3D must be unavailable");
-      assertBrowser(await page.getByTestId("open-ena-ordered-result-layout").count() === 1, "duplicate axes must retain actual 2D geometry");
+      // updateOpenEnaWorkspace3dAxis swaps an occupied dimension instead of storing
+      // a duplicate, so the old "3D becomes unavailable and the 2D layout returns"
+      // state is not reachable from these comboboxes. The swap itself is the check.
+      const swapped = await Promise.all([1, 2, 3].map((axis) => page.getByRole("combobox", { name: `Axis ${axis}`, exact: true }).inputValue()));
+      assertBrowser(await threeDButton.isEnabled(), "swapped 3D axes must stay available");
+      assertBrowser(new Set(swapped).size === 3, "3D axis selection must not keep a duplicate dimension");
+      assertBrowser(JSON.stringify(swapped) === JSON.stringify([initialAxes[1], initialAxes[0], initialAxes[2]]), "choosing Axis 2's dimension for Axis 1 must swap those axes");
+      assertBrowser(await page.getByTestId("open-ena-ona-3d-overall-plot").count() === 1, "axis swap must keep the 3D scene");
+      assertBrowser(await page.getByTestId("open-ena-ordered-result-layout").count() === 0, "axis swap must not fall back to the 2D layout");
     }
   }
   await waitForOrderedPlots();
