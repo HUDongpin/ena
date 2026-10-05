@@ -145,9 +145,13 @@ async function workspaceModeStyleContract(state, name) {
             width: innerWidth, documentWidth: document.documentElement.scrollWidth,
             panel: { left: box.left, right: box.right, width: box.width },
             headings: [...root.querySelectorAll("h2")].filter(rendered).map(node => ({ text: node.textContent, fontSize: parseFloat(getComputedStyle(node).fontSize), mainAiTitle: node.parentElement === root && root.classList.contains("ena-ai-mode-panel") })),
-            buttons: [...root.querySelectorAll('button:not([class]):not([role="tab"]):not([role="switch"])')].filter(node => rendered(node) && !node.closest(".ena-group-display-units")).map(node => {
+            buttons: [...root.querySelectorAll('button:not([class]):not([role="tab"]):not([role="switch"])')].filter(node => rendered(node) && !node.closest(".ena-group-display-units") && !node.closest(".ena-view-toggle")).map(node => {
                 const style = getComputedStyle(node), rect = node.getBoundingClientRect();
                 return { text: node.textContent, pressed: node.getAttribute("aria-pressed") === "true", background: style.backgroundColor, minHeight: parseFloat(style.minHeight), paddingLeft: parseFloat(style.paddingLeft), paddingRight: parseFloat(style.paddingRight), borderWidth: style.borderTopWidth, borderStyle: style.borderTopStyle, left: rect.left, right: rect.right };
+            }),
+            viewToggles: [...root.querySelectorAll(".ena-view-toggle button")].filter(rendered).map(node => {
+                const style = getComputedStyle(node), rect = node.getBoundingClientRect();
+                return { text: node.textContent, pressed: node.getAttribute("aria-pressed") === "true", background: style.backgroundColor, minHeight: parseFloat(style.minHeight), paddingLeft: parseFloat(style.paddingLeft), paddingRight: parseFloat(style.paddingRight), borderWidth: style.borderTopWidth, left: rect.left, right: rect.right };
             }),
             files: [...root.querySelectorAll('input[type="file"]')].filter(rendered).map(node => {
                 const rect = node.getBoundingClientRect(), selector = getComputedStyle(node, "::file-selector-button");
@@ -166,6 +170,15 @@ async function workspaceModeStyleContract(state, name) {
         assert.equal(control.borderWidth, "1px", `${label}: native button border: ${control.text}`);
         assert.equal(control.borderStyle, "solid", `${label}: native button border style: ${control.text}`);
         assert.ok(control.left >= metrics.panel.left - 1 && control.right <= metrics.panel.right + 1, `${label}: button exceeds control panel: ${control.text}`);
+    }
+    // At the 1440px workspace width, 2D/3D is a segmented control (min-height 44px, 6px inline padding, no action-button chrome).
+    for (const toggle of metrics.viewToggles) {
+        assert.equal(toggle.minHeight, 44, `${label}: view toggle height: ${toggle.text}`);
+        assert.equal(toggle.paddingLeft, 6, `${label}: view toggle padding: ${toggle.text}`);
+        assert.equal(toggle.paddingRight, 6, `${label}: view toggle padding: ${toggle.text}`);
+        assert.equal(toggle.borderWidth, "0px", `${label}: view toggle border: ${toggle.text}`);
+        assert.equal(toggle.background, toggle.pressed ? "rgb(137, 207, 240)" : "rgba(0, 0, 0, 0)", `${label}: view toggle background: ${toggle.text}`);
+        assert.ok(toggle.left >= metrics.panel.left - 1 && toggle.right <= metrics.panel.right + 1, `${label}: view toggle exceeds control panel: ${toggle.text}`);
     }
     for (const input of metrics.files) {
         assert.ok(input.left >= metrics.panel.left - 1 && input.right <= metrics.panel.right + 1, `${label}: file input exceeds control panel: ${input.label}`);
