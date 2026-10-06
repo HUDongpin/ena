@@ -190,12 +190,35 @@ try {
     }
     localePanels.normal = await page.locator('[role="tab"][aria-selected="true"]').evaluate((node) => ({ fontSize: Number.parseFloat(getComputedStyle(node).fontSize), height: node.getBoundingClientRect().height, contentFontSize: Number.parseFloat(getComputedStyle(document.querySelector(".ena-model-tab-panel p")).fontSize) }));
     await page.setViewportSize({ width: 760, height: 1000 });
-    // Retired: assigning html { font-size: 200% } and requiring the panel paragraph's
-    // computed font-size to exceed 25px. html:has(.open-ena-page) is an inline-size
-    // container, so a later root font-size assignment does not change the used size,
-    // and .ena-model-control-content sets that paragraph in px. Browser zoom still
-    // scales the px type. The checks below stay on the 760px panel itself.
-    localePanels.zoom200 = await page.locator(".ena-control-panel").evaluate((node) => ({ clientWidth: node.clientWidth, scrollWidth: node.scrollWidth, tabFontSize: Number.parseFloat(getComputedStyle(node.querySelector('[role="tab"][aria-selected="true"]')).fontSize), tabHeight: node.querySelector('[role="tab"][aria-selected="true"]').getBoundingClientRect().height, contentFontSize: Number.parseFloat(getComputedStyle(node.querySelector(".ena-model-tab-panel p")).fontSize), reducedTransition: getComputedStyle(node.querySelector(".ena-model-help-button")).transitionDuration }));
+    // html:has(.open-ena-page) is an inline-size container, and the panel type is px,
+    // so a root font-size of 200% does not scale it. CSS zoom is the mechanism this
+    // layout already documents: it changes available container width and the used
+    // size of px text. Measure one glyph and the help control at 760px, then again
+    // under zoom 2. The toolbar and reachability probes below run while zoomed.
+    const readZoomSurface = () => page.locator(".ena-control-panel").evaluate((node) => {
+      const tab = node.querySelector('[role="tab"][aria-selected="true"]');
+      const paragraph = node.querySelector(".ena-model-tab-panel p");
+      const help = node.querySelector(".ena-model-help-button");
+      const box = (target) => { const rect = target.getBoundingClientRect(); return { width: rect.width, height: rect.height }; };
+      const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT, { acceptNode: (text) => text.textContent.trim().length > 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+      const glyph = walker.nextNode();
+      const range = document.createRange();
+      range.setStart(glyph, 0);
+      range.setEnd(glyph, 1);
+      return {
+        clientWidth: node.clientWidth, scrollWidth: node.scrollWidth,
+        tabFontSize: Number.parseFloat(getComputedStyle(tab).fontSize), tabBox: box(tab),
+        contentFontSize: Number.parseFloat(getComputedStyle(paragraph).fontSize), contentBox: box(paragraph), glyphBox: box(range),
+        helpBox: box(help), reducedTransition: getComputedStyle(help).transitionDuration,
+        rootZoom: getComputedStyle(document.documentElement).zoom,
+      };
+    });
+    localePanels.baseline760 = await readZoomSurface();
+    await page.evaluate(() => { document.documentElement.style.zoom = "2"; });
+    // prefers-reduced-motion sets transition-duration: 0.01ms !important on *, and
+    // an omitted transition-property is all, so zoom interpolates. Wait for the used value.
+    await page.waitForFunction(() => getComputedStyle(document.documentElement).zoom === "2");
+    localePanels.zoom200 = await readZoomSurface();
     localePanels.zoomPanels = {};
     for (const tab of ["units", "horizons", "windows", "codes"]) {
       await page.locator(`[data-model-tab="${tab}"]`).click();
@@ -216,6 +239,8 @@ try {
     await page.locator(".ena-rail-modes button").nth(2).click();
     await page.getByTestId("open-ena-persistent-plot-tools").scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${outputDir}/${locale}-plot-workspace-200.png`, fullPage: false });
+    await page.evaluate(() => { document.documentElement.style.zoom = ""; });
+    await page.waitForFunction(() => getComputedStyle(document.documentElement).zoom === "1");
     await page.setViewportSize({ width: 1440, height: 1050 });
     observations.locales[locale] = localePanels;
   }
@@ -234,6 +259,14 @@ try {
   if (observations.localeRestored.jobs !== 1 || observations.localeRestored.current !== "current" || observations.localeRestored.nodeCount < 1 || !observations.localeRestored.scientificEqual) failures.push("restoring hidden Codes changed science or did not restore nodes");
   for (const [locale, panels] of Object.entries(observations.locales)) {
     const zoomPanels = Object.values(panels.zoomPanels);
+    const scaled = (zoomed, original, label) => {
+      const ratio = zoomed / original;
+      if (!(original > 0) || ratio < 1.8 || ratio > 2.2) failures.push(`F3 ${locale} 200% ${label} scaled ${ratio} (baseline ${original}, zoomed ${zoomed})`);
+    };
+    scaled(panels.zoom200.glyphBox.height, panels.baseline760.glyphBox.height, "panel glyph height");
+    scaled(panels.zoom200.glyphBox.width, panels.baseline760.glyphBox.width, "panel glyph width");
+    scaled(panels.zoom200.helpBox.height, panels.baseline760.helpBox.height, "help control height");
+    scaled(panels.zoom200.helpBox.width, panels.baseline760.helpBox.width, "help control width");
     // Units global tools are flex-wrap: nowrap in the restored workbench. Other model toolbars still wrap.
     if (zoomPanels.reduce((sum, panel) => sum + panel.toolbarCount, 0) === 0 || zoomPanels.some((panel) => panel.wrappingToolbarCount !== panel.toolbarCount - panel.globalToolsCount)) failures.push(`F3 ${locale} real toolbar wrapping`);
     for (const tab of ["units", "horizons", "windows", "codes"]) {
