@@ -69,14 +69,19 @@ try {
   await page.goto("http://localhost:32002/");
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
   await page.getByRole("button", { name: "Model", exact: true }).click();
-  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Run model" && !button.disabled));
-  await page.getByRole("button", { name: "Run model", exact: true }).click();
+  await page.waitForFunction(() => {
+    const button = document.querySelector("[data-testid=open-ena-run-model]");
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
+  await page.getByTestId("open-ena-run-model").click();
   await page.waitForFunction(() => window.jobs.length === 1);
   await page.evaluate(() => window.resolveRun(0));
   await page.waitForFunction(() => document.querySelector("[data-testid=open-ena-workspace-v3]").dataset.resultStatus === "current");
   await page.getByTestId("open-ena-group-contrast").waitFor();
   const scientificResultBefore = await page.evaluate(() => JSON.stringify(window.jobs[0].result));
   const downloadCurrentAnalysis = async () => {
+    const artifacts = page.locator("details.ena-artifacts-disclosure");
+    if (await artifacts.getAttribute("open") === null) await artifacts.locator("> summary").click();
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.getByTestId("open-ena-export-current-analysis").click(),

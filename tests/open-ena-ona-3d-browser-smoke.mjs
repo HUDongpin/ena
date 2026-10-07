@@ -636,8 +636,15 @@ async function runSyntheticLane(page, args) {
   for (let index = 0; index < 3; index++) {
     await page.getByRole("combobox", { name: `Axis ${index + 1}`, exact: true }).selectOption(permutedAxes[index]);
     if (index === 0) {
-      assertBrowser(await threeDButton.isDisabled(), "duplicate-axis 3D must be unavailable");
-      assertBrowser(await page.getByTestId("open-ena-ordered-result-layout").count() === 1, "duplicate axes must retain actual 2D geometry");
+      // updateOpenEnaWorkspace3dAxis swaps an occupied dimension instead of storing
+      // a duplicate, so the old "3D becomes unavailable and the 2D layout returns"
+      // state is not reachable from these comboboxes. The swap itself is the check.
+      const swapped = await Promise.all([1, 2, 3].map((axis) => page.getByRole("combobox", { name: `Axis ${axis}`, exact: true }).inputValue()));
+      assertBrowser(await threeDButton.isEnabled(), "swapped 3D axes must stay available");
+      assertBrowser(new Set(swapped).size === 3, "3D axis selection must not keep a duplicate dimension");
+      assertBrowser(JSON.stringify(swapped) === JSON.stringify([initialAxes[1], initialAxes[0], initialAxes[2]]), "choosing Axis 2's dimension for Axis 1 must swap those axes");
+      assertBrowser(await page.getByTestId("open-ena-ona-3d-overall-plot").count() === 1, "axis swap must keep the 3D scene");
+      assertBrowser(await page.getByTestId("open-ena-ordered-result-layout").count() === 0, "axis swap must not fall back to the 2D layout");
     }
   }
   await waitForOrderedPlots();
@@ -808,8 +815,10 @@ async function runYuPrivateLane(page, args) {
     // The native text comparator is explicit, including its collation policy.
     // The actual bound source order is checked against literal string order below.
     stage = "private setup Run";
-    const privateRun = page.getByRole("button", { name: "Run model", exact: true });
-    await page.waitForFunction(button => button && !button.disabled, await privateRun.elementHandle(), { timeout: 30000 });
+    await page.waitForFunction(() => {
+      const button = document.querySelector('[data-testid="open-ena-run-model"]');
+      return button instanceof HTMLButtonElement && !button.disabled;
+    }, null, { timeout: 30000 });
     await runNativeFixtureV3(page);
     stage = "private bound aggregate and explicit order";
     const aggregate = await page.evaluate(() => {
@@ -918,8 +927,8 @@ async function runYuPrivateLane(page, args) {
   } catch {
     const safeDiagnostics = await page.evaluate(catalog => {
       const summaries = [...document.querySelectorAll("[data-diagnostic-scope] li[data-severity] > p:first-child a, [data-diagnostic-scope] li[data-severity] > p:first-child strong")].map(node => node.textContent);
-      const run = [...document.querySelectorAll("button")].find(button => button.textContent === "Run model");
-      return { issueIds: catalog.filter(entry => summaries.includes(entry.summary)).map(entry => entry.id), invalidCount: document.querySelectorAll('[aria-invalid="true"]').length, runDisabled: run?.disabled === true, runStatus: document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-run-status"), requestCount: window.__openEnaNativeAudit.requests.length };
+      const run = document.querySelector('[data-testid="open-ena-run-model"]');
+      return { issueIds: catalog.filter(entry => summaries.includes(entry.summary)).map(entry => entry.id), invalidCount: document.querySelectorAll('[aria-invalid="true"]').length, runDisabled: run instanceof HTMLButtonElement ? run.disabled : true, runStatus: document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-run-status"), requestCount: window.__openEnaNativeAudit.requests.length };
     }, args.diagnosticCatalog).catch(() => ({ issueIds: [], invalidCount: null, runDisabled: true, runStatus: "unknown", requestCount: null }));
     throw new Error(`Private ONA gate failed: ${stage}; private details withheld; safeDiagnostics=${JSON.stringify(safeDiagnostics)}`);
   }

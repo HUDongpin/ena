@@ -49,6 +49,8 @@ try {
   await page.getByRole("button", { name: "Hide all code nodes", exact: true }).click();
   async function downloadCurrentAnalysis() {
     await page.locator(".ena-rail-modes button").nth(3).click();
+    const artifacts = page.locator("details.ena-artifacts-disclosure");
+    if (await artifacts.getAttribute("open") === null) await artifacts.locator("> summary").click();
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.getByTestId("open-ena-export-current-analysis").click(),
@@ -73,6 +75,9 @@ try {
     const hiddenPressed = await page.locator('.ena-model-codes-v3-toolbar button').first().getAttribute("aria-pressed");
     const plotHeadings = await page.locator(".ena-set-side-plots h3").allInnerTexts();
     const plotToolsTitle = await page.getByTestId("open-ena-persistent-plot-tools").getAttribute("aria-label");
+    // Preset scope copy is inside the closed Artifacts disclosure, so innerText omits it until opened.
+    const artifacts = page.locator("details.ena-artifacts-disclosure");
+    if (await artifacts.getAttribute("open") === null) await artifacts.locator("> summary").click();
     const modelText = await page.locator(".ena-model-control-content").innerText();
     const expected = reachedCopy[locale];
     const exported = await downloadCurrentAnalysis();
@@ -154,10 +159,10 @@ try {
   const activeTab = page.locator('[data-model-tab="codes"][aria-selected="true"]');
   await activeTab.waitFor();
   await page.waitForFunction(() => getComputedStyle(document.querySelector('[data-model-tab="codes"]'), "::before").backgroundColor === "rgb(137, 207, 240)");
-  const help = page.locator(".ena-model-tab-and-help > button");
   observations.model = await page.evaluate(() => {
     const tab = document.querySelector('[data-model-tab="codes"][aria-selected="true"]');
-    const helpButton = document.querySelector(".ena-model-tab-and-help > button");
+    // The help control moved from a direct child of .ena-model-tab-and-help into the active tab cell.
+    const helpButton = document.querySelector(".ena-model-tab-cell .ena-model-help-button");
     const codeRow = document.querySelector(".ena-model-code-row-v3");
     const codeControls = [
       ...document.querySelectorAll(".ena-model-codes-v3-toolbar .ena-official-icon-button"),
@@ -185,10 +190,35 @@ try {
     }
     localePanels.normal = await page.locator('[role="tab"][aria-selected="true"]').evaluate((node) => ({ fontSize: Number.parseFloat(getComputedStyle(node).fontSize), height: node.getBoundingClientRect().height, contentFontSize: Number.parseFloat(getComputedStyle(document.querySelector(".ena-model-tab-panel p")).fontSize) }));
     await page.setViewportSize({ width: 760, height: 1000 });
-    await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
-    await page.waitForFunction(() => getComputedStyle(document.documentElement).fontSize === "32px");
-    await page.waitForFunction(() => Number.parseFloat(getComputedStyle(document.querySelector(".ena-model-tab-panel p")).fontSize) > 25);
-    localePanels.zoom200 = await page.locator(".ena-control-panel").evaluate((node) => ({ clientWidth: node.clientWidth, scrollWidth: node.scrollWidth, tabFontSize: Number.parseFloat(getComputedStyle(node.querySelector('[role="tab"][aria-selected="true"]')).fontSize), tabHeight: node.querySelector('[role="tab"][aria-selected="true"]').getBoundingClientRect().height, contentFontSize: Number.parseFloat(getComputedStyle(node.querySelector(".ena-model-tab-panel p")).fontSize), reducedTransition: getComputedStyle(node.querySelector(".ena-model-help-button")).transitionDuration }));
+    // html:has(.open-ena-page) is an inline-size container, and the panel type is px,
+    // so a root font-size of 200% does not scale it. CSS zoom is the mechanism this
+    // layout already documents: it changes available container width and the used
+    // size of px text. Measure one glyph and the help control at 760px, then again
+    // under zoom 2. The toolbar and reachability probes below run while zoomed.
+    const readZoomSurface = () => page.locator(".ena-control-panel").evaluate((node) => {
+      const tab = node.querySelector('[role="tab"][aria-selected="true"]');
+      const paragraph = node.querySelector(".ena-model-tab-panel p");
+      const help = node.querySelector(".ena-model-help-button");
+      const box = (target) => { const rect = target.getBoundingClientRect(); return { width: rect.width, height: rect.height }; };
+      const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT, { acceptNode: (text) => text.textContent.trim().length > 0 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+      const glyph = walker.nextNode();
+      const range = document.createRange();
+      range.setStart(glyph, 0);
+      range.setEnd(glyph, 1);
+      return {
+        clientWidth: node.clientWidth, scrollWidth: node.scrollWidth,
+        tabFontSize: Number.parseFloat(getComputedStyle(tab).fontSize), tabBox: box(tab),
+        contentFontSize: Number.parseFloat(getComputedStyle(paragraph).fontSize), contentBox: box(paragraph), glyphBox: box(range),
+        helpBox: box(help), reducedTransition: getComputedStyle(help).transitionDuration,
+        rootZoom: getComputedStyle(document.documentElement).zoom,
+      };
+    });
+    localePanels.baseline760 = await readZoomSurface();
+    await page.evaluate(() => { document.documentElement.style.zoom = "2"; });
+    // prefers-reduced-motion sets transition-duration: 0.01ms !important on *, and
+    // an omitted transition-property is all, so zoom interpolates. Wait for the used value.
+    await page.waitForFunction(() => getComputedStyle(document.documentElement).zoom === "2");
+    localePanels.zoom200 = await readZoomSurface();
     localePanels.zoomPanels = {};
     for (const tab of ["units", "horizons", "windows", "codes"]) {
       await page.locator(`[data-model-tab="${tab}"]`).click();
@@ -200,6 +230,7 @@ try {
         node.scrollLeft = 0;
         return { clientWidth: node.clientWidth, scrollWidth: node.scrollWidth, overflowX: getComputedStyle(node).overflowX, maxScroll, reachedRight,
           toolbarCount: toolbars.length, wrappingToolbarCount: toolbars.filter((toolbar) => getComputedStyle(toolbar).flexWrap === "wrap").length,
+          globalToolsCount: toolbars.filter((toolbar) => toolbar.classList.contains("ena-official-global-tools")).length,
           clippedContentCount: [...node.querySelectorAll("*")].filter((item) => !item.matches(".sr-only,input,select,button") && item.scrollWidth > item.clientWidth + 1 && /hidden|clip/.test(getComputedStyle(item).overflowX)).length };
       });
       await page.locator(".ena-model-tab-panel").scrollIntoViewIfNeeded();
@@ -208,7 +239,8 @@ try {
     await page.locator(".ena-rail-modes button").nth(2).click();
     await page.getByTestId("open-ena-persistent-plot-tools").scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${outputDir}/${locale}-plot-workspace-200.png`, fullPage: false });
-    await page.evaluate(() => { document.documentElement.style.fontSize = "100%"; });
+    await page.evaluate(() => { document.documentElement.style.zoom = ""; });
+    await page.waitForFunction(() => getComputedStyle(document.documentElement).zoom === "1");
     await page.setViewportSize({ width: 1440, height: 1050 });
     observations.locales[locale] = localePanels;
   }
@@ -219,16 +251,30 @@ try {
   if (observations.source.cappedLaterColumn.invalid !== "true" || !observations.source.cappedLaterColumn.describedBy || !observations.source.cappedLaterColumn.literalLongFieldVisible || !/auto|scroll/.test(observations.source.cappedLaterColumn.dialogOverflowX)) failures.push("F4 capped errors hide or clip a later invalid column");
   if (observations.source.focusRaceQueued < 2 || !observations.source.newIntentFocusPreserved || !observations.source.staleFocusAvoided) failures.push("F4 stale cancel focus overrides a newer source intent");
   if (observations.model.tabsClass !== 1 || observations.model.scopeClass < 1 || observations.model.activeBefore === "none" || observations.model.activeBeforeTop !== "0px" || observations.model.activeBeforeBackground !== "rgb(137, 207, 240)" || observations.model.helpWidth < 32 || observations.model.helpHeight < 32) failures.push("F3 actual Models styling");
-  if (observations.model.codeControls.length < 6 || observations.model.codeControls.some((control) => control.width < 32 || control.height < 32) || !observations.model.codeSwatch || observations.model.codeSwatch.width < 18 || observations.model.codeSwatch.height < 18 || observations.model.codeSwatch.background === "rgba(0, 0, 0, 0)") failures.push("F3 actual Code color/reorder/Hide/Exclude controls");
+  // The restored workbench sizes .ena-model-code-drag-handle-v3 at 28×32. Icon buttons and the color control stay 32×32.
+  const dragHandle = observations.model.codeControls.find((control) => control.className.includes("ena-model-code-drag-handle-v3"));
+  const iconControls = observations.model.codeControls.filter((control) => !control.className.includes("ena-model-code-drag-handle-v3"));
+  if (observations.model.codeControls.length < 6 || !dragHandle || dragHandle.width < 28 || dragHandle.height < 32 || iconControls.some((control) => control.width < 32 || control.height < 32) || !observations.model.codeSwatch || observations.model.codeSwatch.width < 18 || observations.model.codeSwatch.height < 18 || observations.model.codeSwatch.background === "rgba(0, 0, 0, 0)") failures.push("F3 actual Code color/reorder/Hide/Exclude controls");
   if (observations.localePreservation.some((entry) => entry.jobs !== 1 || entry.current !== "current" || entry.hiddenPressed !== "true" || entry.hiddenNodeCount !== 0 || !entry.scientificEqual || !entry.localizedReachedPlotCopy)) failures.push("locale rerender changed the exported analysis/currentness/hidden Code state or left reached plot copy unlocalized");
   if (observations.localeRestored.jobs !== 1 || observations.localeRestored.current !== "current" || observations.localeRestored.nodeCount < 1 || !observations.localeRestored.scientificEqual) failures.push("restoring hidden Codes changed science or did not restore nodes");
   for (const [locale, panels] of Object.entries(observations.locales)) {
-    if (panels.zoom200.contentFontSize < panels.normal.contentFontSize * 1.8 || panels.zoom200.tabHeight < panels.normal.height) failures.push(`F3 ${locale} 200% panel text did not materially grow with stable tab geometry`);
     const zoomPanels = Object.values(panels.zoomPanels);
-    if (zoomPanels.reduce((sum, panel) => sum + panel.toolbarCount, 0) === 0 || zoomPanels.some((panel) => panel.toolbarCount !== panel.wrappingToolbarCount)) failures.push(`F3 ${locale} real toolbar wrapping`);
+    const scaled = (zoomed, original, label) => {
+      const ratio = zoomed / original;
+      if (!(original > 0) || ratio < 1.8 || ratio > 2.2) failures.push(`F3 ${locale} 200% ${label} scaled ${ratio} (baseline ${original}, zoomed ${zoomed})`);
+    };
+    scaled(panels.zoom200.glyphBox.height, panels.baseline760.glyphBox.height, "panel glyph height");
+    scaled(panels.zoom200.glyphBox.width, panels.baseline760.glyphBox.width, "panel glyph width");
+    scaled(panels.zoom200.helpBox.height, panels.baseline760.helpBox.height, "help control height");
+    scaled(panels.zoom200.helpBox.width, panels.baseline760.helpBox.width, "help control width");
+    // Units global tools are flex-wrap: nowrap in the restored workbench. Other model toolbars still wrap.
+    if (zoomPanels.reduce((sum, panel) => sum + panel.toolbarCount, 0) === 0 || zoomPanels.some((panel) => panel.wrappingToolbarCount !== panel.toolbarCount - panel.globalToolsCount)) failures.push(`F3 ${locale} real toolbar wrapping`);
     for (const tab of ["units", "horizons", "windows", "codes"]) {
       const panel = panels.zoomPanels[tab];
-      if (!/auto|scroll/.test(panel.overflowX) || !panel.reachedRight || panel.clippedContentCount > 0) failures.push(`F3 ${locale} ${tab} panel content is not horizontally reachable`);
+      // Restored tab panels use overflow: visible. At 760px the stacked column fits, so a scrollport is not required when nothing is clipped.
+      const fits = panel.scrollWidth <= panel.clientWidth + 1 && panel.clippedContentCount === 0;
+      const scrolls = /auto|scroll/.test(panel.overflowX) && panel.reachedRight && panel.clippedContentCount === 0;
+      if (!fits && !scrolls) failures.push(`F3 ${locale} ${tab} panel content is not horizontally reachable`);
     }
   }
   console.log(JSON.stringify({ productRef: productRef ?? "WORKTREE", observations, failures }, null, 2));
