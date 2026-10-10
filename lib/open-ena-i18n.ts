@@ -1070,6 +1070,10 @@ export interface OpenEnaAiInterpretationCopy {
   retry: string;
   sessionRecovery: string;
   signInAgain: string;
+  failureUnavailable: string;
+  failureNetwork: string;
+  failureInvalidOutput: string;
+  evidenceBoundary: string;
   errorTitle: string;
   noCurrentResult: string;
   staleResult: string;
@@ -3180,6 +3184,10 @@ const en: OpenEnaCopy = {
     retry: "Retry",
     sessionRecovery: "Your Open ENA session is missing or no longer valid. Sign in again, then return to generate an interpretation.",
     signInAgain: "Sign in again",
+    failureUnavailable: "AI interpretation is temporarily unavailable or rate limited. Wait a moment, then retry this request.",
+    failureNetwork: "The AI interpretation request did not finish because the network failed or the request timed out. Check your connection, then retry this request.",
+    failureInvalidOutput: "The model returned output that could not be used as an interpretation. Retry this request to ask for a new interpretation.",
+    evidenceBoundary: "The computed ENA model results are still valid. Only the AI interpretation is missing.",
     errorTitle: "AI interpretation was not generated",
     noCurrentResult: "Run and confirm a current result in Stats & Export before requesting an AI interpretation.",
     staleResult: "Rebuild the ENA model so the interpretation matches the current configuration.",
@@ -3611,6 +3619,10 @@ const zhHant: OpenEnaCopy = {
     retry: "重試",
     sessionRecovery: "您的開放 ENA 工作階段不存在或已失效。請重新登入，再回到此處生成解讀。",
     signInAgain: "重新登入",
+    failureUnavailable: "AI 解讀暫時無法使用，或已達到請求次數限制。請稍候，再重試此請求。",
+    failureNetwork: "AI 解讀請求因網絡問題或逾時而未完成。請檢查連線，再重試此請求。",
+    failureInvalidOutput: "模型傳回的內容無法用作解讀。請重試此請求，以重新生成解讀。",
+    evidenceBoundary: "已計算的 ENA 模型結果仍然有效。缺少的只是 AI 解讀。",
     errorTitle: "未能生成 AI 解讀",
     noCurrentResult: "請先在「統計與匯出」執行並確認目前的結果，再請求 AI 解讀。",
     staleResult: "請重新建立 ENA 模型，確保解讀符合目前設定。",
@@ -4017,6 +4029,10 @@ const zhHans: OpenEnaCopy = {
     retry: "重试",
     sessionRecovery: "您的开放 ENA 会话不存在或已失效。请重新登录，再回到此处生成解读。",
     signInAgain: "重新登录",
+    failureUnavailable: "AI 解读暂时无法使用，或已达到请求次数限制。请稍候，再重试此请求。",
+    failureNetwork: "AI 解读请求因网络问题或超时而未完成。请检查连接，再重试此请求。",
+    failureInvalidOutput: "模型返回的内容无法用作解读。请重试此请求，以重新生成解读。",
+    evidenceBoundary: "已计算的 ENA 模型结果仍然有效。缺少的只是 AI 解读。",
     errorTitle: "未能生成 AI 解读",
     noCurrentResult: "请先在“统计与导出”运行并确认当前结果，再请求 AI 解读。",
     staleResult: "请重新构建 ENA 模型，确保解读符合当前设置。",

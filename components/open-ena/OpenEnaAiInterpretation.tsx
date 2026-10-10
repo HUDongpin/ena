@@ -42,8 +42,55 @@ type GenerationStatus = "idle" | "loading";
 
 export type OpenEnaAiFailureRecovery = "retry" | "sign-in";
 
+export const OPEN_ENA_AI_FAILURE_CLASSES = ["session", "unavailable", "network", "invalid-output"] as const;
+
+export type OpenEnaAiFailureClass = (typeof OPEN_ENA_AI_FAILURE_CLASSES)[number];
+
 export function openEnaAiFailureRecovery(status: number): OpenEnaAiFailureRecovery {
   return status === 401 ? "sign-in" : "retry";
+}
+
+export function classifyOpenEnaAiPanelFailure(input: {
+  status?: number;
+  failureClass?: unknown;
+  cause?: "network" | "invalid-output" | "http";
+}): { failureClass: OpenEnaAiFailureClass | null; recovery: OpenEnaAiFailureRecovery } {
+  if (input.status === 401) return { failureClass: "session", recovery: "sign-in" };
+  if (input.cause === "invalid-output") return { failureClass: "invalid-output", recovery: "retry" };
+  if (input.cause === "network") return { failureClass: "network", recovery: "retry" };
+  const declared = typeof input.failureClass === "string"
+    && (OPEN_ENA_AI_FAILURE_CLASSES as readonly string[]).includes(input.failureClass)
+    ? input.failureClass as OpenEnaAiFailureClass
+    : null;
+  if (declared && declared !== "session") return { failureClass: declared, recovery: "retry" };
+  if (input.status === 429 || input.status === 503) return { failureClass: "unavailable", recovery: "retry" };
+  if (input.status === 504) return { failureClass: "network", recovery: "retry" };
+  return {
+    failureClass: null,
+    recovery: input.status === undefined ? "retry" : openEnaAiFailureRecovery(input.status),
+  };
+}
+
+export function openEnaAiFailureClassMessage(
+  copy: OpenEnaAiInterpretationCopy,
+  failureClass: OpenEnaAiFailureClass | null | string,
+  fallback: string,
+) {
+  if (failureClass === "session") return copy.sessionRecovery;
+  if (failureClass === "unavailable") return copy.failureUnavailable;
+  if (failureClass === "network") return copy.failureNetwork;
+  if (failureClass === "invalid-output") return copy.failureInvalidOutput;
+  return fallback;
+}
+
+export function claimOpenEnaAiGeneration(gate: { inFlight: boolean }) {
+  if (gate.inFlight) return false;
+  gate.inFlight = true;
+  return true;
+}
+
+export function releaseOpenEnaAiGeneration(gate: { inFlight: boolean }) {
+  gate.inFlight = false;
 }
 
 export function mayRenewOpenEnaAiOperation(response: Response, operationId: string) {
@@ -98,8 +145,11 @@ export default function OpenEnaAiInterpretation({
   const [aiResponseRequestIdentity, setAiResponseRequestIdentity] = useState<string | null>(null);
   const [aiError, setAiError] = useState("");
   const [aiRecovery, setAiRecovery] = useState<OpenEnaAiFailureRecovery>("retry");
+  const [aiFailureClass, setAiFailureClass] = useState<OpenEnaAiFailureClass | null>(null);
   const [auditReceipt, setAuditReceipt] = useState<AiAuditReceiptView | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const generationGateRef = useRef({ inFlight: false });
+  const generationTokenRef = useRef(0);
   const operationIdRef = useRef<string | null>(null);
   const operationStorageKeyRef = useRef<string | null>(null);
   const requestIdentity = openEnaAiReviewedRequestIdentityV3({
@@ -117,6 +167,8 @@ export default function OpenEnaAiInterpretation({
   useEffect(() => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
+    generationTokenRef.current += 1;
+    releaseOpenEnaAiGeneration(generationGateRef.current);
     try {
       const previousKey = operationStorageKeyRef.current;
       if (previousKey && previousKey !== operationStorageKey) sessionStorage.removeItem(previousKey);
@@ -134,6 +186,7 @@ export default function OpenEnaAiInterpretation({
     setAiResponseRequestIdentity(null);
     setAiError("");
     setAiRecovery("retry");
+    setAiFailureClass(null);
     setAuditReceipt(null);
     setGenerationStatus("idle");
     setConsentedRequestIdentity(null);
@@ -146,6 +199,15 @@ export default function OpenEnaAiInterpretation({
     const requestedIdentity = requestIdentity;
     const requestedOperationStorageKey = operationStorageKey;
     if (!requestedIdentity || consentedRequestIdentity !== requestedIdentity) return;
+    if (!claimOpenEnaAiGeneration(generationGateRef.current)) return;
+    const generationToken = generationTokenRef.current + 1;
+    generationTokenRef.current = generationToken;
+    const releaseThisGeneration = () => {
+      if (generationTokenRef.current !== generationToken) return;
+      releaseOpenEnaAiGeneration(generationGateRef.current);
+      abortControllerRef.current = null;
+      setGenerationStatus("idle");
+    };
     let operationId = operationIdRef.current;
     if (!operationId || !OPEN_ENA_AI_OPERATION_ID.test(operationId)) {
       operationId = `aiop-${crypto.randomUUID()}`;
@@ -174,64 +236,101 @@ export default function OpenEnaAiInterpretation({
     );
     setGenerationStatus("loading");
     setAiError("");
-    await executeOpenEnaAiGeneration({
-      task: async () => {
-        const response = await fetch("/api/open-ena/ai-interpretation", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            "Content-Type": "application/json",
-            [OPEN_ENA_AI_CONSENT_HEADER]: OPEN_ENA_AI_CONSENT_VALUE,
-            [OPEN_ENA_AI_OPERATION_HEADER]: operationId,
-          },
-          body: JSON.stringify(request),
-          signal: controller.signal,
-        });
-        const payload = await response.json().catch(() => null) as unknown;
-        if (!response.ok) {
-          if (response.status === 409) clearOperation();
-          else if (mayRenewOpenEnaAiOperation(response, operationId)) clearOperation();
-          const recovery = openEnaAiFailureRecovery(response.status);
-          const payloadMessage = payload && typeof payload === "object" && "error" in payload
-            && typeof (payload as { error?: unknown }).error === "string"
-            ? (payload as { error: string }).error
-            : copy.errorTitle;
-          const safeMessage = recovery === "sign-in" ? copy.sessionRecovery : payloadMessage;
-          if (!isStaleGeneration()) setAiRecovery(recovery);
-          throw new Error(safeMessage);
-        }
-        const parsed = parseOpenEnaAiInterpretationResponse(payload, request);
-        const readHeader = (name: string) => response.headers.get(name) ?? "";
-        const receiptId = readHeader("x-open-ena-ai-receipt-id");
-        return {
-          parsed,
-          receipt: receiptId ? {
-            id: receiptId,
-            durable: readHeader("x-open-ena-ai-receipt-durable"),
-            status: readHeader("x-open-ena-ai-receipt-status"),
-            recordedAt: readHeader("x-open-ena-ai-receipt-recorded-at"),
-            operationId: readHeader("x-open-ena-ai-operation-id"),
-            requestSha256: readHeader("x-open-ena-ai-request-sha256"),
-            consentPolicyVersion: readHeader("x-open-ena-ai-consent-policy"),
-            provider: readHeader("x-open-ena-ai-receipt-provider"),
-            model: readHeader("x-open-ena-ai-receipt-model"),
-          } : null,
-        };
-      },
-      isStaleGeneration,
-      onSuccess: ({ parsed, receipt }) => {
-        clearOperation();
-        setAiResponse(parsed);
-        setAiResponseRequestIdentity(requestedIdentity);
-        setAuditReceipt(receipt);
-      },
-      onError: setAiError,
-      onSettled: () => {
-        abortControllerRef.current = null;
-        setGenerationStatus("idle");
-      },
-      fallbackError: copy.errorTitle,
-    });
+    setAiFailureClass(null);
+    try {
+      await executeOpenEnaAiGeneration({
+        task: async () => {
+          let response: Response;
+          try {
+            response = await fetch("/api/open-ena/ai-interpretation", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: {
+                "Content-Type": "application/json",
+                [OPEN_ENA_AI_CONSENT_HEADER]: OPEN_ENA_AI_CONSENT_VALUE,
+                [OPEN_ENA_AI_OPERATION_HEADER]: operationId,
+              },
+              body: JSON.stringify(request),
+              signal: controller.signal,
+            });
+          } catch (caught) {
+            if (caught instanceof DOMException && caught.name === "AbortError") throw caught;
+            const failureClass = classifyOpenEnaAiPanelFailure({ cause: "network" }).failureClass;
+            if (!isStaleGeneration()) {
+              setAiRecovery("retry");
+              setAiFailureClass(failureClass);
+            }
+            throw new Error(copy.failureNetwork);
+          }
+          const payload = await response.json().catch(() => null) as unknown;
+          if (!response.ok) {
+            if (response.status === 409) clearOperation();
+            else if (mayRenewOpenEnaAiOperation(response, operationId)) clearOperation();
+            const recovery = openEnaAiFailureRecovery(response.status);
+            const declaredFailureClass = payload && typeof payload === "object" && "failureClass" in payload
+              ? (payload as { failureClass?: unknown }).failureClass
+              : undefined;
+            const failureClass = classifyOpenEnaAiPanelFailure({
+              status: response.status,
+              failureClass: declaredFailureClass,
+              cause: "http",
+            }).failureClass;
+            const payloadMessage = payload && typeof payload === "object" && "error" in payload
+              && typeof (payload as { error?: unknown }).error === "string"
+              ? (payload as { error: string }).error
+              : copy.errorTitle;
+            const safeMessage = recovery === "sign-in" ? copy.sessionRecovery : openEnaAiFailureClassMessage(copy, failureClass, payloadMessage);
+            if (!isStaleGeneration()) {
+              setAiRecovery(recovery);
+              setAiFailureClass(failureClass);
+            }
+            throw new Error(safeMessage);
+          }
+          let parsed: ReturnType<typeof parseOpenEnaAiInterpretationResponse>;
+          try {
+            parsed = parseOpenEnaAiInterpretationResponse(payload, request);
+          } catch {
+            const failureClass = classifyOpenEnaAiPanelFailure({
+              status: response.status,
+              cause: "invalid-output",
+            }).failureClass;
+            if (!isStaleGeneration()) {
+              setAiRecovery("retry");
+              setAiFailureClass(failureClass);
+            }
+            throw new Error(copy.failureInvalidOutput);
+          }
+          const readHeader = (name: string) => response.headers.get(name) ?? "";
+          const receiptId = readHeader("x-open-ena-ai-receipt-id");
+          return {
+            parsed,
+            receipt: receiptId ? {
+              id: receiptId,
+              durable: readHeader("x-open-ena-ai-receipt-durable"),
+              status: readHeader("x-open-ena-ai-receipt-status"),
+              recordedAt: readHeader("x-open-ena-ai-receipt-recorded-at"),
+              operationId: readHeader("x-open-ena-ai-operation-id"),
+              requestSha256: readHeader("x-open-ena-ai-request-sha256"),
+              consentPolicyVersion: readHeader("x-open-ena-ai-consent-policy"),
+              provider: readHeader("x-open-ena-ai-receipt-provider"),
+              model: readHeader("x-open-ena-ai-receipt-model"),
+            } : null,
+          };
+        },
+        isStaleGeneration,
+        onSuccess: ({ parsed, receipt }) => {
+          clearOperation();
+          setAiResponse(parsed);
+          setAiResponseRequestIdentity(requestedIdentity);
+          setAuditReceipt(receipt);
+        },
+        onError: setAiError,
+        onSettled: releaseThisGeneration,
+        fallbackError: copy.errorTitle,
+      });
+    } catch {
+      releaseThisGeneration();
+    }
   }
 
   function handleRecoverSession() {
@@ -241,6 +340,8 @@ export default function OpenEnaAiInterpretation({
   function handleCancelInterpretation() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
+    generationTokenRef.current += 1;
+    releaseOpenEnaAiGeneration(generationGateRef.current);
     setGenerationStatus("idle");
   }
 
@@ -307,9 +408,15 @@ export default function OpenEnaAiInterpretation({
       </div>
 
       {aiError ? (
-        <div className="ena-ai-error" role="alert" data-ena-ai-recovery={aiRecovery}>
+        <div
+          className="ena-ai-error"
+          role="alert"
+          data-ena-ai-recovery={aiRecovery}
+          data-ena-ai-failure-class={aiFailureClass ?? "unclassified"}
+        >
           <strong>{copy.errorTitle}</strong>
           <p>{aiError}</p>
+          <p data-ena-ai-evidence-boundary="results-remain-valid">{copy.evidenceBoundary}</p>
           {aiRecovery === "sign-in" ? (
             <button
               type="button"
@@ -324,6 +431,7 @@ export default function OpenEnaAiInterpretation({
               type="button"
               className="ena-inline-link"
               data-ena-ai-recovery="retry"
+              disabled={generationStatus === "loading"}
               onClick={handleGenerateInterpretation}
             >
               {copy.retry}
