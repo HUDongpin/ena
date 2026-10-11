@@ -67,6 +67,7 @@
     "typescript": "5.8.3"
   },
   "overrides": {
+    "sharp": "0.35.5",
     "tinypool": "2.1.2"
   }
 }
