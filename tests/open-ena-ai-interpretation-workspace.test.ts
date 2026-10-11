@@ -189,8 +189,13 @@ test("the UI supports cancellation, a visible error, and an explicit retry", () 
   assert.match(aiComponent, /openEnaAiFailureRecovery\(response\.status\)/);
   assert.match(
     aiComponent,
-    /data-ena-ai-recovery=["']sign-in["'][\s\S]*?onClick=\{handleRecoverSession\}[\s\S]*?copy\.signInAgain/,
-    "authentication-required recovery must offer session sign-in",
+    /data-ena-ai-recovery=["']sign-in["'][\s\S]*?target=["']_blank["'][\s\S]*?rel=["']noopener noreferrer["'][\s\S]*?copy\.signInAgain/,
+    "authentication-required recovery must open sign-in in a new tab",
+  );
+  assert.doesNotMatch(
+    aiComponent,
+    /location\.assign\s*\(/,
+    "session recovery must not replace the current analysis document",
   );
   assert.match(
     aiComponent,
