@@ -444,10 +444,10 @@ export default function OpenEnaPlot({
             <line x1={WIDTH / 2} y1={PAD_Y / 2} x2={WIDTH / 2} y2={HEIGHT - PAD_Y / 2} />
             <line x1={PAD_X / 2} y1={HEIGHT / 2} x2={WIDTH - PAD_X / 2} y2={HEIGHT / 2} />
             <text x={WIDTH - 34} y={HEIGHT / 2 - 12} textAnchor="end">
-              {xDimension}{showVariance ? ` · ${varianceX.toFixed(1)}%` : ""}{flipX ? " · flipped" : ""}
+              {xDimension}{showVariance ? ` · ${varianceX.toFixed(1)}%` : ""}{flipX ? ` · ${copy.modelV3.workspace.plot.flippedLabel}` : ""}
             </text>
             <text x={WIDTH / 2 + 12} y={30}>
-              {yDimension}{showVariance ? ` · ${varianceY.toFixed(1)}%` : ""}{flipY ? " · flipped" : ""}
+              {yDimension}{showVariance ? ` · ${varianceY.toFixed(1)}%` : ""}{flipY ? ` · ${copy.modelV3.workspace.plot.flippedLabel}` : ""}
             </text>
           </g>
         ) : (
