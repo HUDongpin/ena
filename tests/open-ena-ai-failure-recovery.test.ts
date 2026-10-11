@@ -291,6 +291,25 @@ test("a second retry cannot claim the generation while one is in flight", async 
   assert.match(handler, /if\s*\(\s*!claimOpenEnaAiGeneration\(generationGateRef\.current\)\s*\)\s*return/);
 });
 
+test("removing a focused result restores focus before the idle panel can drop it on body", () => {
+  assert.match(
+    aiComponent,
+    /focusInsideBeforeCommitRef\.current\s*=\s*focusInsidePanel\(panelRef\.current\)/,
+    "focus inside the panel must be sampled during render, before the result heading unmounts",
+  );
+  const layoutEffect = aiComponent.match(/useLayoutEffect\(\(\)\s*=>\s*\{([\s\S]*?)\}\);/);
+  assert.ok(layoutEffect, "a layout effect must move focus before paint when the focused result disappears");
+  assert.match(layoutEffect[1], /focusInsideBeforeCommitRef\.current/);
+  assert.match(layoutEffect[1], /restoreFocusRef\.current/, "a queued keyboard restore must keep ownership of the next focus target");
+  assert.match(
+    layoutEffect[1],
+    /generateButtonRef\.current,\s*consentControlRef\.current,\s*panelRef\.current/,
+    "a removed result must move focus to Generate, then consent, then the panel",
+  );
+  assert.match(aiComponent, /detachedPanelFocusHandledRef\.current\s*=\s*false/);
+  assert.doesNotMatch(layoutEffect[1], /interpretationHeadingRef/, "a removed heading must not be focused again");
+});
+
 test("a retry started for older evidence is not applied after the current request changes", async () => {
   assert.match(workspace, /request=\{activeAiReview\?\.request \?\? null\}/);
   assert.match(workspace, /disabled=\{!activeAiReview \|\| !current\}/);

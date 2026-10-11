@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   OPEN_ENA_AI_CONSENT_HEADER,
   OPEN_ENA_AI_CONSENT_VALUE,
@@ -193,6 +193,8 @@ export default function OpenEnaAiInterpretation({
   const interpretationHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const restoreFocusRef = useRef(false);
   const focusRestoreTargetRef = useRef<"result" | "action" | "stable">("result");
+  const focusInsideBeforeCommitRef = useRef(false);
+  const detachedPanelFocusHandledRef = useRef(false);
   const activationKeyHeldRef = useRef(false);
   const [signInHref, setSignInHref] = useState("");
   const requestIdentity = openEnaAiReviewedRequestIdentityV3({
@@ -207,6 +209,11 @@ export default function OpenEnaAiInterpretation({
   const consentGranted = requestIdentity !== null && consentedRequestIdentity === requestIdentity;
   const currentResponse = aiResponse && aiResponseRequestIdentity === requestIdentity ? aiResponse : null;
   const showsRetainedInterpretation = currentResponse !== null;
+  // Sample while the previous result is still mounted. currentResponse drops
+  // during render, so the focused heading is gone before an effect can see it.
+  if (typeof document !== "undefined" && panelRef.current) {
+    focusInsideBeforeCommitRef.current = focusInsidePanel(panelRef.current);
+  }
 
   useEffect(() => {
     setSignInHref(`${window.location.pathname}${window.location.search}`);
@@ -227,8 +234,27 @@ export default function OpenEnaAiInterpretation({
     };
   }, []);
 
+  useLayoutEffect(() => {
+    const wasInside = focusInsideBeforeCommitRef.current;
+    if (!wasInside || restoreFocusRef.current || focusInsidePanel(panelRef.current)) return;
+    if (!focusIsRestorable(panelRef.current)) return;
+    const target = firstEnabledFocusTarget([
+      generateButtonRef.current,
+      consentControlRef.current,
+      panelRef.current,
+    ]);
+    if (!target) return;
+    target.focus();
+    detachedPanelFocusHandledRef.current = true;
+  });
+
   useEffect(() => {
-    if (restoreFocusRef.current || focusInsidePanel(panelRef.current)) {
+    if (detachedPanelFocusHandledRef.current) {
+      // Idle invalidation does not change generationStatus, aiError, or
+      // aiRecovery, so the restoration effect will not clear this flag.
+      detachedPanelFocusHandledRef.current = false;
+      restoreFocusRef.current = false;
+    } else if (restoreFocusRef.current || focusInsidePanel(panelRef.current)) {
       restoreFocusRef.current = true;
       focusRestoreTargetRef.current = "stable";
     } else {

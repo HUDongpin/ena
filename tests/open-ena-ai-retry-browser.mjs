@@ -413,8 +413,13 @@ try {
       };
       function Harness() {
         const [request, setRequest] = useState(initial);
-        window.__setAiRequest = (next) => setRequest(next ?? replacement);
-        return <Ai request={request} copy={getOpenEnaCopy('en').aiInterpretation} disabled={false} disabledReason="Current result required"/>;
+        const [panelDisabled, setPanelDisabled] = useState(false);
+        window.__setAiRequest = (next) => {
+          const resolved = next === undefined ? replacement : next;
+          setRequest(resolved);
+          setPanelDisabled(resolved === null);
+        };
+        return <Ai request={request} copy={getOpenEnaCopy('en').aiInterpretation} disabled={panelDisabled} disabledReason="Current result required"/>;
       }
       createRoot(document.getElementById('root')).render(<Harness />);
     `, loader: "tsx", resolveDir: process.cwd() },
@@ -471,6 +476,104 @@ try {
   );
   assert.deepEqual(successErrors, []);
   await successPage.close();
+
+  async function openKeyboardSuccessPage() {
+    const page = await browser.newPage();
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.route("**/*", async (route) => {
+      if (new URL(route.request().url()).pathname === "/api/open-ena/ai-interpretation") {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(syntheticInterpretation(route.request().postDataJSON())),
+        });
+      }
+      return route.fulfill({ contentType: "text/html", body: focusDocument });
+    });
+    await page.goto("http://localhost:32119");
+    await page.addScriptTag({ content: focusHarness.outputFiles[0].text });
+    await page.getByRole("checkbox").check();
+    const generate = page.getByRole("button", { name: "Generate AI interpretation", exact: true });
+    await generate.focus();
+    await page.keyboard.press("Enter");
+    try {
+      await page.waitForFunction(() => {
+        const heading = document.querySelector(".ena-ai-result h4");
+        return heading instanceof HTMLElement
+          && heading.tabIndex === -1
+          && document.activeElement === heading;
+      });
+    } catch (error) {
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${JSON.stringify(await focusDiagnostic(page))}`);
+    }
+    return { page, errors };
+  }
+
+  const replacedFocus = await openKeyboardSuccessPage();
+  await replacedFocus.page.evaluate(() => { window.__setAiRequest(); });
+  try {
+    await replacedFocus.page.waitForFunction(() => {
+      const panel = document.querySelector(".ena-ai-interpretation");
+      const consent = document.querySelector(".ena-ai-consent input");
+      return consent instanceof HTMLInputElement
+        && !consent.disabled
+        && document.activeElement === consent
+        && panel?.contains(document.activeElement)
+        && !document.querySelector(".ena-ai-result");
+    });
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${JSON.stringify(await focusDiagnostic(replacedFocus.page))}`);
+  }
+  assert.notEqual(
+    await replacedFocus.page.evaluate(() => document.activeElement?.tagName),
+    "BODY",
+    "invalidating a focused result must not drop focus on the document body",
+  );
+  assert.equal(
+    await replacedFocus.page.evaluate(() => document.activeElement === document.querySelector(".ena-ai-consent input")),
+    true,
+    "a replaced request must move focus to the consent control when Generate is disabled",
+  );
+  assert.deepEqual(replacedFocus.errors, []);
+  await replacedFocus.page.close();
+
+  const removedFocus = await openKeyboardSuccessPage();
+  await removedFocus.page.evaluate(() => { window.__setAiRequest(null); });
+  try {
+    await removedFocus.page.waitForFunction(() => {
+      const panel = document.querySelector(".ena-ai-interpretation");
+      return document.activeElement === panel
+        && panel?.getAttribute("tabindex") === "-1"
+        && !document.querySelector(".ena-ai-result");
+    });
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${JSON.stringify(await focusDiagnostic(removedFocus.page))}`);
+  }
+  assert.notEqual(
+    await removedFocus.page.evaluate(() => document.activeElement?.tagName),
+    "BODY",
+    "clearing the reviewed request must not drop focus on the document body",
+  );
+  assert.equal(
+    await removedFocus.page.evaluate(() => document.querySelector(".ena-ai-interpretation")?.contains(document.activeElement)),
+    true,
+    "focus must remain inside the panel after the reviewed request is cleared",
+  );
+  assert.deepEqual(removedFocus.errors, []);
+  await removedFocus.page.close();
+
+  const outsideIdentity = await openKeyboardSuccessPage();
+  await outsideIdentity.page.locator("#outside-panel").focus();
+  await outsideIdentity.page.evaluate(() => { window.__setAiRequest(); });
+  await outsideIdentity.page.waitForFunction(() => !document.querySelector(".ena-ai-result"));
+  assert.equal(
+    await outsideIdentity.page.evaluate(() => document.activeElement?.id),
+    "outside-panel",
+    "invalidating a result must not pull focus back into the panel",
+  );
+  assert.deepEqual(outsideIdentity.errors, []);
+  await outsideIdentity.page.close();
 
   const outsideSuccessPage = await browser.newPage();
   const outsideSuccessErrors = [];
