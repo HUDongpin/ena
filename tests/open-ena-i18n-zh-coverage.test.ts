@@ -14,6 +14,7 @@ import { getOpenEnaCopy } from "../lib/open-ena-i18n";
  *
  * PR #78 owns the AI-interpretation failure/retry/error region
  * (failureUnavailable, failureNetwork, failureInvalidOutput, evidenceBoundary,
+ * evidenceBoundaryRetained, previousInterpretation,
  * plus the existing retry / sessionRecovery / signInAgain / errorTitle cluster).
  * This audit does not edit that region. Those keys are already translated on
  * main; if a later merge leaves one identical to English, allowlist its path

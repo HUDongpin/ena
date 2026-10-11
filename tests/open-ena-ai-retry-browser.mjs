@@ -606,5 +606,343 @@ try {
   assert.deepEqual(identityErrors, []);
   await identityPage.close();
 
-  console.log("AI explicit retry: renewed confirmed failure, retained uncertain operation, auth-required uses sign-in, classed recovery copy, single in-flight retry, stale result dropped, sign-in keeps this document, Enter retries once, focus and busy state restored, success and cancel restore focus PASS");
+  const missingBoundary = "The computed ENA model results are still valid. Only the AI interpretation is missing.";
+  const retainedBoundary = "The ENA model results remain valid. This new AI interpretation attempt failed; the interpretation shown below is from an earlier request for the same evidence.";
+  const replayError = "This AI generation operation was already processed.";
+
+  async function withIdempotentAi(decide) {
+    const page = await browser.newPage();
+    const errors = [];
+    const operations = [];
+    const statuses = [];
+    const consumed = new Set();
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.route("**/*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname !== "/api/open-ena/ai-interpretation") {
+        return route.fulfill({ contentType: "text/html", body: focusDocument });
+      }
+      const id = route.request().headers()["x-open-ena-ai-operation-id"];
+      operations.push(id);
+      if (consumed.has(id)) {
+        statuses.push(409);
+        return route.fulfill({
+          status: 409,
+          contentType: "application/json",
+          body: JSON.stringify({ error: replayError }),
+        });
+      }
+      const decision = await decide({
+        route,
+        attempt: operations.length,
+        consume: () => consumed.add(id),
+      });
+      statuses.push(decision.status ?? 0);
+      if (decision.abort) return route.abort("failed");
+      return route.fulfill({
+        status: decision.status,
+        contentType: "application/json",
+        headers: decision.headers,
+        body: typeof decision.body === "string" ? decision.body : JSON.stringify(decision.body),
+      });
+    });
+    await page.goto("http://localhost:32119");
+    await page.addScriptTag({ content: focusHarness.outputFiles[0].text });
+    await page.getByRole("checkbox").check();
+    return { page, errors, operations, statuses };
+  }
+
+  function successDecision(route) {
+    return {
+      status: 200,
+      body: syntheticInterpretation(route.request().postDataJSON()),
+    };
+  }
+
+  const consumedFailures = [
+    {
+      name: "server-invalid-output",
+      status: 502,
+      body: { error: "The AI interpretation provider request failed.", failureClass: "invalid-output" },
+    },
+    {
+      name: "client-parse-schema",
+      status: 200,
+      body: { schemaVersion: "not-a-response" },
+    },
+    {
+      name: "client-parse-json",
+      status: 200,
+      body: "not-json",
+    },
+    {
+      name: "unavailable-after-dispatch",
+      status: 503,
+      body: { error: "AI interpretation is temporarily unavailable.", failureClass: "unavailable" },
+    },
+    {
+      name: "rate-limit-after-dispatch",
+      status: 429,
+      body: {
+        error: "The AI interpretation provider is rate limited. Please try again later.",
+        failureClass: "unavailable",
+      },
+    },
+    {
+      name: "network-after-dispatch",
+      status: 502,
+      body: { error: "The AI interpretation provider request failed.", failureClass: "network" },
+    },
+    {
+      name: "timeout-after-dispatch",
+      status: 504,
+      body: { error: "The AI interpretation provider timed out.", failureClass: "network" },
+    },
+  ];
+  for (const item of consumedFailures) {
+    const session = await withIdempotentAi(async ({ route, attempt, consume }) => {
+      if (attempt === 1) {
+        consume();
+        return { status: item.status, body: item.body };
+      }
+      return successDecision(route);
+    });
+    await session.page.getByRole("button", { name: "Generate AI interpretation", exact: true }).click();
+    const alert = session.page.getByRole("alert");
+    await alert.waitFor();
+    assert.equal(session.operations.length, 1, `${item.name} must not dispatch a retry by itself`);
+    assert.equal(await session.page.locator(".ena-ai-result").count(), 0, item.name);
+    assert.equal(
+      (await alert.locator("[data-ena-ai-evidence-boundary='results-remain-valid']").innerText()).trim(),
+      missingBoundary,
+      `${item.name} without a prior interpretation keeps the missing-interpretation boundary`,
+    );
+    assert.equal(await alert.locator("[data-ena-ai-evidence-boundary='previous-interpretation-retained']").count(), 0, item.name);
+    await alert.getByRole("button", { name: "Retry" }).click();
+    await session.page.locator(".ena-ai-result").waitFor();
+    assert.equal(session.operations.length, 2, `${item.name} retry sends one request`);
+    assert.notEqual(session.operations[0], session.operations[1], `${item.name} retry must send a new operation id`);
+    assert.equal(session.statuses.includes(409), false, `${item.name} retry must not replay the consumed id`);
+    assert.equal(session.statuses.at(-1), 200, item.name);
+    assert.equal(await session.page.getByRole("alert").count(), 0, item.name);
+    assert.deepEqual(session.errors, [], item.name);
+    await session.page.close();
+  }
+
+  const preReserveFailures = [
+    {
+      name: "pre-reserve-503",
+      status: 503,
+      body: { error: "AI interpretation is temporarily unavailable." },
+    },
+    {
+      name: "pre-reserve-429",
+      status: 429,
+      body: { error: "Too many AI interpretation requests. Please try again later." },
+    },
+  ];
+  for (const item of preReserveFailures) {
+    const session = await withIdempotentAi(async ({ route, attempt }) => {
+      if (attempt === 1) return { status: item.status, body: item.body };
+      return successDecision(route);
+    });
+    await session.page.getByRole("button", { name: "Generate AI interpretation", exact: true }).click();
+    await session.page.getByRole("alert").getByRole("button", { name: "Retry" }).click();
+    await session.page.locator(".ena-ai-result").waitFor();
+    assert.equal(session.operations.length, 2, item.name);
+    assert.equal(session.operations[0], session.operations[1], `${item.name} keeps the unconsumed operation id`);
+    assert.deepEqual(session.statuses, [item.status, 200], item.name);
+    assert.deepEqual(session.errors, [], item.name);
+    await session.page.close();
+  }
+
+  const thrownFetch = await withIdempotentAi(async ({ route, attempt }) => {
+    if (attempt === 1) return { abort: true };
+    return successDecision(route);
+  });
+  await thrownFetch.page.getByRole("button", { name: "Generate AI interpretation", exact: true }).click();
+  await thrownFetch.page.getByRole("alert").getByRole("button", { name: "Retry" }).click();
+  await thrownFetch.page.locator(".ena-ai-result").waitFor();
+  assert.equal(thrownFetch.operations[0], thrownFetch.operations[1], "a fetch that threw before a response reuses the operation id");
+  assert.equal(thrownFetch.statuses.at(-1), 200);
+  assert.equal(thrownFetch.statuses.includes(409), false);
+  assert.deepEqual(thrownFetch.errors, []);
+  await thrownFetch.page.close();
+
+  const thrownAfterReserve = await withIdempotentAi(async ({ route, attempt, consume }) => {
+    if (attempt === 1) {
+      consume();
+      return { abort: true };
+    }
+    return successDecision(route);
+  });
+  await thrownAfterReserve.page.getByRole("button", { name: "Generate AI interpretation", exact: true }).click();
+  const thrownAlert = thrownAfterReserve.page.getByRole("alert");
+  await thrownAlert.waitFor();
+  await thrownAlert.getByRole("button", { name: "Retry" }).click();
+  await thrownAfterReserve.page.getByText(replayError).waitFor();
+  assert.equal(thrownAfterReserve.operations[0], thrownAfterReserve.operations[1], "an unknown network failure must not mint a second billable id");
+  assert.equal(thrownAfterReserve.statuses[1], 409);
+  await thrownAfterReserve.page.getByRole("alert").getByRole("button", { name: "Retry" }).click();
+  await thrownAfterReserve.page.locator(".ena-ai-result").waitFor();
+  assert.equal(thrownAfterReserve.operations.length, 3);
+  assert.notEqual(thrownAfterReserve.operations[2], thrownAfterReserve.operations[0]);
+  assert.equal(thrownAfterReserve.statuses[2], 200);
+  assert.deepEqual(thrownAfterReserve.errors, []);
+  await thrownAfterReserve.page.close();
+
+  const retained = await withIdempotentAi(async ({ route, attempt, consume }) => {
+    consume();
+    if (attempt === 1) {
+      const body = syntheticInterpretation(route.request().postDataJSON());
+      body.interpretation.observedPatterns[0].statement = "Earlier aggregate pattern retained for the same evidence.";
+      return { status: 200, body };
+    }
+    return {
+      status: 502,
+      body: { error: "The AI interpretation provider request failed.", failureClass: "invalid-output" },
+    };
+  });
+  const retainedGenerate = retained.page.getByRole("button", { name: "Generate AI interpretation", exact: true });
+  await retainedGenerate.click();
+  await retained.page.locator(".ena-ai-result").waitFor();
+  await retainedGenerate.click();
+  const retainedAlert = retained.page.getByRole("alert");
+  await retainedAlert.waitFor();
+  assert.equal(retained.operations.length, 2);
+  assert.notEqual(retained.operations[0], retained.operations[1], "regeneration after success uses a new operation id");
+  assert.equal(retained.statuses.includes(409), false);
+  assert.match(await retainedAlert.innerText(), /could not be used as an interpretation/);
+  assert.equal(
+    (await retainedAlert.locator("[data-ena-ai-evidence-boundary='previous-interpretation-retained']").innerText()).trim(),
+    retainedBoundary,
+  );
+  assert.equal(await retainedAlert.locator("[data-ena-ai-evidence-boundary='results-remain-valid']").count(), 0);
+  assert.doesNotMatch(await retainedAlert.innerText(), /Only the AI interpretation is missing/);
+  assert.equal(
+    (await retained.page.locator("[data-ena-ai-retained-interpretation='previous']").innerText()).trim(),
+    "Previous interpretation",
+  );
+  assert.match(await retained.page.locator(".ena-ai-result").innerText(), /Earlier aggregate pattern retained for the same evidence/);
+  assert.deepEqual(retained.errors, []);
+  await retained.page.close();
+
+  const generateDouble = await browser.newPage();
+  const generateDoubleOps = [];
+  let releaseGenerateDouble = () => {};
+  const generateDoubleReleased = new Promise((resolve) => { releaseGenerateDouble = resolve; });
+  await generateDouble.route("**/*", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/open-ena/ai-interpretation") {
+      generateDoubleOps.push(route.request().headers()["x-open-ena-ai-operation-id"]);
+      await generateDoubleReleased;
+      return route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Synthetic unavailable response" }),
+      });
+    }
+    return route.fulfill({ contentType: "text/html", body: focusDocument });
+  });
+  await generateDouble.goto("http://localhost:32119");
+  await generateDouble.addScriptTag({ content: focusHarness.outputFiles[0].text });
+  await generateDouble.getByRole("checkbox").check();
+  await generateDouble.evaluate(() => {
+    const button = document.querySelector(".ena-ai-actions button");
+    button.click();
+    button.click();
+  });
+  await generateDouble.waitForFunction(() => document.querySelector(".ena-ai-interpretation")?.getAttribute("aria-busy") === "true");
+  await generateDouble.waitForTimeout(80);
+  assert.equal(generateDoubleOps.length, 1, "double click on Generate sends exactly one request");
+  releaseGenerateDouble();
+  await generateDouble.getByRole("alert").waitFor();
+  await generateDouble.close();
+
+  const generateEnter = await browser.newPage();
+  const generateEnterOps = [];
+  let releaseGenerateEnter = () => {};
+  const generateEnterReleased = new Promise((resolve) => { releaseGenerateEnter = resolve; });
+  await generateEnter.route("**/*", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/open-ena/ai-interpretation") {
+      generateEnterOps.push(route.request().headers()["x-open-ena-ai-operation-id"]);
+      await generateEnterReleased;
+      return route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Synthetic unavailable response" }),
+      });
+    }
+    return route.fulfill({ contentType: "text/html", body: focusDocument });
+  });
+  await generateEnter.goto("http://localhost:32119");
+  await generateEnter.addScriptTag({ content: focusHarness.outputFiles[0].text });
+  await generateEnter.getByRole("checkbox").check();
+  const generateEnterButton = generateEnter.getByRole("button", { name: "Generate AI interpretation", exact: true });
+  await generateEnterButton.focus();
+  await generateEnter.keyboard.down("Enter");
+  await generateEnter.keyboard.down("Enter");
+  await generateEnter.waitForFunction(() => document.querySelector(".ena-ai-interpretation")?.getAttribute("aria-busy") === "true");
+  await generateEnter.waitForTimeout(80);
+  assert.equal(generateEnterOps.length, 1, "Enter repeat on Generate sends exactly one request");
+  await generateEnter.keyboard.up("Enter");
+  releaseGenerateEnter();
+  await generateEnter.getByRole("alert").waitFor();
+  await generateEnter.close();
+
+  const retryDouble = await withIdempotentAi(async ({ route, attempt, consume }) => {
+    if (attempt === 1) {
+      consume();
+      return {
+        status: 502,
+        body: { error: "The AI interpretation provider request failed.", failureClass: "invalid-output" },
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    return successDecision(route);
+  });
+  await retryDouble.page.getByRole("button", { name: "Generate AI interpretation", exact: true }).click();
+  await retryDouble.page.getByRole("alert").waitFor();
+  await retryDouble.page.evaluate(() => {
+    const button = document.querySelector("button[data-ena-ai-recovery='retry']");
+    button.click();
+    button.click();
+  });
+  await retryDouble.page.locator(".ena-ai-result").waitFor();
+  assert.equal(retryDouble.operations.length, 2, "double click on Retry sends exactly one new request");
+  assert.notEqual(retryDouble.operations[0], retryDouble.operations[1]);
+  assert.equal(retryDouble.statuses.includes(409), false);
+  assert.deepEqual(retryDouble.errors, []);
+  await retryDouble.page.close();
+
+  let releaseRetryEnter = () => {};
+  const retryEnterReleased = new Promise((resolve) => { releaseRetryEnter = resolve; });
+  const retryEnter = await withIdempotentAi(async ({ route, attempt, consume }) => {
+    if (attempt === 1) {
+      consume();
+      return {
+        status: 502,
+        body: { error: "The AI interpretation provider request failed.", failureClass: "invalid-output" },
+      };
+    }
+    await retryEnterReleased;
+    return successDecision(route);
+  });
+  await retryEnter.page.getByRole("button", { name: "Generate AI interpretation", exact: true }).click();
+  const retryEnterButton = retryEnter.page.getByRole("alert").getByRole("button", { name: "Retry" });
+  await retryEnterButton.waitFor();
+  await retryEnterButton.focus();
+  await retryEnter.page.keyboard.down("Enter");
+  await retryEnter.page.keyboard.down("Enter");
+  await retryEnter.page.waitForFunction(() => document.querySelector(".ena-ai-interpretation")?.getAttribute("aria-busy") === "true");
+  await retryEnter.page.waitForTimeout(80);
+  assert.equal(retryEnter.operations.length, 2, "Enter repeat on Retry sends exactly one new request");
+  assert.notEqual(retryEnter.operations[0], retryEnter.operations[1]);
+  await retryEnter.page.keyboard.up("Enter");
+  releaseRetryEnter();
+  await retryEnter.page.locator(".ena-ai-result").waitFor();
+  assert.equal(retryEnter.statuses.includes(409), false);
+  assert.deepEqual(retryEnter.errors, []);
+  await retryEnter.page.close();
+
+  console.log("AI explicit retry: renewed confirmed failure, retained uncertain operation, auth-required uses sign-in, classed recovery copy, single in-flight retry, stale result dropped, sign-in keeps this document, Enter retries once, focus and busy state restored, success and cancel restore focus, settled failure renews once, retained interpretation boundary PASS");
 } finally { await browser.close(); }

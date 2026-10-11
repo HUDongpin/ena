@@ -10317,12 +10317,18 @@ body:has(.open-ena-page) #main-content {
   font-size: 0.68rem;
 }
 
-.ena-ai-error [data-ena-ai-evidence-boundary="results-remain-valid"] {
+.ena-ai-error [data-ena-ai-evidence-boundary="results-remain-valid"],
+.ena-ai-error [data-ena-ai-evidence-boundary="previous-interpretation-retained"] {
   color: #1f4f49;
   background: #f3faf7;
   border: 1px solid #c5ddd6;
   border-radius: 3px;
   padding: 6px 8px;
+}
+
+.ena-ai-result [data-ena-ai-retained-interpretation="previous"] {
+  color: #58696f;
+  font-size: 0.68rem;
 }
 
 .ena-ai-result {

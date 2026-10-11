@@ -119,6 +119,19 @@ export function mayRenewOpenEnaAiOperation(response: Response, operationId: stri
     && response.headers.get(OPEN_ENA_AI_OPERATION_HEADER) === operationId;
 }
 
+/**
+ * These classes are emitted only after the route reserved the operation and
+ * then settled or released it. reserveDetailed rejects that id afterwards.
+ * A status the panel infers on its own, such as a bare 503 before reserve, is
+ * not consumed and must keep its operation id. A fetch that throws is also
+ * excluded: the server may still be in flight, and a fresh id could bill twice.
+ */
+export function openEnaAiDeclaredFailureConsumedOperation(failureClass: unknown) {
+  return failureClass === "unavailable"
+    || failureClass === "network"
+    || failureClass === "invalid-output";
+}
+
 interface ExecuteOpenEnaAiGenerationInput<T> {
   task: () => Promise<T>;
   isStaleGeneration: () => boolean;
@@ -193,6 +206,7 @@ export default function OpenEnaAiInterpretation({
     : null;
   const consentGranted = requestIdentity !== null && consentedRequestIdentity === requestIdentity;
   const currentResponse = aiResponse && aiResponseRequestIdentity === requestIdentity ? aiResponse : null;
+  const showsRetainedInterpretation = currentResponse !== null;
 
   useEffect(() => {
     setSignInHref(`${window.location.pathname}${window.location.search}`);
@@ -324,7 +338,12 @@ export default function OpenEnaAiInterpretation({
     const clearOperation = () => {
       if (operationIdRef.current === operationId) operationIdRef.current = null;
       try {
-        if (requestedOperationStorageKey) sessionStorage.removeItem(requestedOperationStorageKey);
+        if (
+          requestedOperationStorageKey
+          && sessionStorage.getItem(requestedOperationStorageKey) === operationId
+        ) {
+          sessionStorage.removeItem(requestedOperationStorageKey);
+        }
       } catch {
         // Storage can be unavailable in restricted browsing modes.
       }
@@ -367,12 +386,13 @@ export default function OpenEnaAiInterpretation({
           }
           const payload = await response.json().catch(() => null) as unknown;
           if (!response.ok) {
-            if (response.status === 409) clearOperation();
-            else if (mayRenewOpenEnaAiOperation(response, operationId)) clearOperation();
-            const recovery = openEnaAiFailureRecovery(response.status);
             const declaredFailureClass = payload && typeof payload === "object" && "failureClass" in payload
               ? (payload as { failureClass?: unknown }).failureClass
               : undefined;
+            if (response.status === 409) clearOperation();
+            else if (mayRenewOpenEnaAiOperation(response, operationId)) clearOperation();
+            else if (openEnaAiDeclaredFailureConsumedOperation(declaredFailureClass)) clearOperation();
+            const recovery = openEnaAiFailureRecovery(response.status);
             const failureClass = classifyOpenEnaAiPanelFailure({
               status: response.status,
               failureClass: declaredFailureClass,
@@ -393,6 +413,7 @@ export default function OpenEnaAiInterpretation({
           try {
             parsed = parseOpenEnaAiInterpretationResponse(payload, request);
           } catch {
+            clearOperation();
             const failureClass = classifyOpenEnaAiPanelFailure({
               status: response.status,
               cause: "invalid-output",
@@ -526,7 +547,11 @@ export default function OpenEnaAiInterpretation({
         >
           <strong>{copy.errorTitle}</strong>
           <p>{aiError}</p>
-          <p data-ena-ai-evidence-boundary="results-remain-valid">{copy.evidenceBoundary}</p>
+          {showsRetainedInterpretation ? (
+            <p data-ena-ai-evidence-boundary="previous-interpretation-retained">{copy.evidenceBoundaryRetained}</p>
+          ) : (
+            <p data-ena-ai-evidence-boundary="results-remain-valid">{copy.evidenceBoundary}</p>
+          )}
           {aiRecovery === "sign-in" ? (
             // The current Open ENA URL renders the login page when the session
             // is missing. Opening it in a new tab leaves this analysis in place.
@@ -558,6 +583,9 @@ export default function OpenEnaAiInterpretation({
 
       {currentResponse ? (
         <article className="ena-ai-result" aria-live="polite">
+          {aiError ? (
+            <p data-ena-ai-retained-interpretation="previous">{copy.previousInterpretation}</p>
+          ) : null}
           <section>
             <h4 ref={interpretationHeadingRef} tabIndex={-1}>{copy.observedPatterns}</h4>
             <ol>

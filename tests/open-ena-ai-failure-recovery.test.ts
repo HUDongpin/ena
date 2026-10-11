@@ -20,6 +20,8 @@ const FAILURE_COPY = {
     failureNetwork: "The AI interpretation request did not finish because the network failed or the request timed out. Check your connection, then retry this request.",
     failureInvalidOutput: "The model returned output that could not be used as an interpretation. Retry this request to ask for a new interpretation.",
     evidenceBoundary: "The computed ENA model results are still valid. Only the AI interpretation is missing.",
+    evidenceBoundaryRetained: "The ENA model results remain valid. This new AI interpretation attempt failed; the interpretation shown below is from an earlier request for the same evidence.",
+    previousInterpretation: "Previous interpretation",
   },
   "zh-hant": {
     sessionRecovery: "您的開放 ENA 工作階段不存在或已失效。請重新登入，再回到此處生成解讀。",
@@ -29,6 +31,8 @@ const FAILURE_COPY = {
     failureNetwork: "AI 解讀請求因網絡問題或逾時而未完成。請檢查連線，再重試此請求。",
     failureInvalidOutput: "模型傳回的內容無法用作解讀。請重試此請求，以重新生成解讀。",
     evidenceBoundary: "已計算的 ENA 模型結果仍然有效。缺少的只是 AI 解讀。",
+    evidenceBoundaryRetained: "ENA 模型結果仍然有效。這次新的 AI 解讀嘗試失敗；下方顯示的解讀來自較早對同一證據的請求。",
+    previousInterpretation: "先前的解讀",
   },
   "zh-hans": {
     sessionRecovery: "您的开放 ENA 会话不存在或已失效。请重新登录，再回到此处生成解读。",
@@ -38,6 +42,8 @@ const FAILURE_COPY = {
     failureNetwork: "AI 解读请求因网络问题或超时而未完成。请检查连接，再重试此请求。",
     failureInvalidOutput: "模型返回的内容无法用作解读。请重试此请求，以重新生成解读。",
     evidenceBoundary: "已计算的 ENA 模型结果仍然有效。缺少的只是 AI 解读。",
+    evidenceBoundaryRetained: "ENA 模型结果仍然有效。这次新的 AI 解读尝试失败；下方显示的解读来自较早对同一证据的请求。",
+    previousInterpretation: "先前的解读",
   },
 } as const;
 
@@ -77,6 +83,9 @@ test("failure-class copy explains what happened and what to do in every AI local
     assert.equal(copy.sessionRecovery.includes("Retry") || copy.sessionRecovery.includes("重試") || copy.sessionRecovery.includes("重试"), false);
     assert.notEqual(copy.signInAgain, getOpenEnaCopy(locale).aiInterpretation.retry);
     assert.doesNotMatch(copy.evidenceBoundary, /invalid|不再有效|已经失效|已經失效/u);
+    assert.doesNotMatch(copy.evidenceBoundaryRetained, /invalid|missing|缺少|不再有效|已经失效|已經失效/u);
+    assert.match(copy.evidenceBoundaryRetained, /remain valid|仍然有效/u);
+    assert.doesNotMatch(copy.previousInterpretation, /missing|缺少/u);
   }
   assert.equal(seen.size, openEnaLocalizedLocales.length * Object.keys(FAILURE_COPY.en).length);
 });
@@ -217,6 +226,43 @@ test("the failure alert states the evidence boundary and retries only retryable 
   assert.match(aiComponent, /copy\.failureInvalidOutput/);
   assert.match(aiComponent, /cause:\s*["']network["']/);
   assert.match(aiComponent, /cause:\s*["']invalid-output["']/);
+  assert.match(
+    aiComponent,
+    /showsRetainedInterpretation \? \([\s\S]*?data-ena-ai-evidence-boundary=["']previous-interpretation-retained["'][\s\S]*?\{copy\.evidenceBoundaryRetained\}/,
+  );
+  assert.match(aiComponent, /data-ena-ai-retained-interpretation=["']previous["'][\s\S]*?\{copy\.previousInterpretation\}/);
+});
+
+test("a settled failure class renews the operation without a server new-operation header", async () => {
+  const module = await import("../components/open-ena/OpenEnaAiInterpretation") as Record<string, unknown>;
+  const consumed = module.openEnaAiDeclaredFailureConsumedOperation as ((failureClass: unknown) => boolean) | undefined;
+  assert.equal(typeof consumed, "function");
+  assert.equal(consumed!("invalid-output"), true);
+  assert.equal(consumed!("network"), true);
+  assert.equal(consumed!("unavailable"), true);
+  assert.equal(consumed!("session"), false);
+  assert.equal(consumed!(null), false);
+  assert.equal(consumed!(undefined), false);
+  assert.equal(consumed!("not-a-class"), false);
+
+  const handler = sourceBlock(
+    aiComponent,
+    /async function\s+handleGenerateInterpretation\s*\([^)]*\)/,
+    "handleGenerateInterpretation",
+  );
+  assert.match(
+    handler,
+    /if\s*\(response\.status\s*===\s*409\)\s*clearOperation\(\);\s*else if\s*\(mayRenewOpenEnaAiOperation\(response,\s*operationId\)\)\s*clearOperation\(\);\s*else if\s*\(openEnaAiDeclaredFailureConsumedOperation\(declaredFailureClass\)\)\s*clearOperation\(\)/,
+  );
+  assert.match(
+    handler,
+    /clearOperation\(\);\s*const failureClass = classifyOpenEnaAiPanelFailure\(\{\s*status: response\.status,\s*cause: ["']invalid-output["']/,
+  );
+  const networkAt = handler.indexOf('cause: "network"');
+  const payloadAt = handler.indexOf("const payload", networkAt);
+  assert.ok(networkAt !== -1 && payloadAt > networkAt);
+  assert.doesNotMatch(handler.slice(networkAt, payloadAt), /clearOperation\(/);
+  assert.doesNotMatch(handler, /openEnaAiDeclaredFailureConsumedOperation\(failureClass\)/);
 });
 
 test("a second retry cannot claim the generation while one is in flight", async () => {
