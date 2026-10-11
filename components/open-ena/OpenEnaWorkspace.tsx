@@ -424,6 +424,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const [originalSource, setOriginalSource] = useState<{ text: string; name: string } | null>(null);
   const sourceGeneration = useRef(0);
   const sourceFileTriggerRef = useRef<HTMLInputElement>(null);
+  const railTriggerRefs = useRef<Partial<Record<OpenEnaMode, HTMLButtonElement | null>>>({});
   const sourceDialogRef = useRef<HTMLElement>(null);
   const runButtonRef = useRef<HTMLButtonElement>(null);
   const staleRebuildRef = useRef<HTMLButtonElement>(null);
@@ -791,6 +792,20 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     event.preventDefault();
     event.stopPropagation();
     cancelSourcePreparation(true);
+  }
+  function onRailPanelKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest("[role='dialog'], dialog")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    scheduleOpenEnaDomFocusRestore(railTriggerRefs.current[mode] ?? null);
+  }
+  function onSkipToWorkspace(event: { preventDefault(): void }) {
+    const target = document.getElementById("open-ena-workspace");
+    if (!(target instanceof HTMLElement)) return;
+    event.preventDefault();
+    target.focus();
   }
   async function loadSample(trajectoryOrKind: boolean | TeachingSampleKind = false) {
     const kind = teachingSampleKindFromLoadRequest(trajectoryOrKind);
@@ -1400,8 +1415,9 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
             <ResearchTableV3 {...researchTableCopy} rows={dataViewPresentation.sourceTraversal} label={workspaceCopy.stats.globalTraversal} columnLabels={workspaceCopy.dataView.sourceTraversalLabels} />
           </>;
   return <div className="open-ena-page" data-testid="open-ena-workspace-v3" data-result-status={modelState.resultStatus} data-run-status={modelState.runStatus} data-ena-rebuild-cue={rebuildCue?.reason}>
+    <a className="skip-link" href="#open-ena-workspace" onClick={onSkipToWorkspace}>{workspaceCopy.landmarks.skipToWorkspace}</a>
     <OpenEnaFallbackNotice locale={locale} />
-    <section className="open-ena-workbench" aria-label={workspaceCopy.shell.workspaceAria} aria-busy={sourceBusy || modelState.runStatus === "running"}>
+    <section id="open-ena-workspace" tabIndex={-1} className="open-ena-workbench" aria-label={workspaceCopy.shell.workspaceAria} aria-busy={sourceBusy || modelState.runStatus === "running"}>
       <div className="ena-workbench-grid">
         <nav className="ena-tool-rail" aria-label={workspaceCopy.shell.modesAria} data-ena-workbench-region="rail">
           <div className="ena-rail-brand" data-ena-rail-brand="true" aria-label="ENA.HK Open ENA">
@@ -1409,11 +1425,11 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
             <a className="ena-rail-version" data-ena-rail-version="true" href={JENA_SOURCE_URL} target="_blank" rel="noopener noreferrer"
               aria-label={copy.workspace.jenaSourceAriaLabel(JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT.slice(0, 7))}>jENA {JENA_RUNTIME_VERSION.split("-", 1)[0]}</a>
           </div>
-          <div className="ena-rail-modes">{(["data", "model", "plot", "stats", "ai"] as const).map((entry) => <button key={entry} type="button" className="ena-rail-button" aria-current={mode === entry ? "step" : undefined} aria-label={entry === "ai" ? copy.aiInterpretation.title : copy.modes[entry]} onClick={() => setMode(entry)}>{modeIcons[entry]}<span>{copy.modes[entry]}</span></button>)}</div>
+          <div className="ena-rail-modes">{(["data", "model", "plot", "stats", "ai"] as const).map((entry) => <button key={entry} ref={(element) => { railTriggerRefs.current[entry] = element; }} type="button" className="ena-rail-button" aria-current={mode === entry ? "step" : undefined} aria-label={entry === "ai" ? copy.aiInterpretation.title : copy.modes[entry]} onClick={() => setMode(entry)}>{modeIcons[entry]}<span>{copy.modes[entry]}</span></button>)}</div>
           <form className="ena-rail-logout" action="/api/open-ena/logout" method="post" onSubmit={submitOpenEnaLogoutAsDocumentRequest}><input type="hidden" name="locale" value={locale} /><button type="submit" aria-label={authCopy.signOut} title={authCopy.signOut}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5m4-11 4 4-4 4m-5-4h9" /></svg><span>{authCopy.signOut}</span></button></form>
           <div className="ena-rail-meta"><span className="ena-rail-privacy">{workspaceCopy.shell.local}</span><span className="sr-only">{workspaceCopy.shell.runtimePrivacy(JENA_RUNTIME_VERSION)}</span></div>
         </nav>
-        <aside className="ena-control-panel" data-ena-workbench-region="controls"><OpenEnaPersistentRailPanels mode={mode} analysisPanel={analysisPanel} aiPanel={aiPanel} /></aside>
+        <aside className="ena-control-panel" data-ena-workbench-region="controls" data-ena-rail-panel={mode} role="region" aria-label={workspaceCopy.landmarks[mode]} onKeyDown={onRailPanelKeyDown}><OpenEnaPersistentRailPanels mode={mode} analysisPanel={analysisPanel} aiPanel={aiPanel} /></aside>
         <div className="ena-visual-workspace" data-ena-view={view} data-testid="open-ena-center-surface">
           <div className={`ena-visual-toolbar${view === "2d" && contrast ? " ena-visual-toolbar-group-contrast" : ""}`}><div><p>{copy.workspace.comparison}</p><span>{dataset?.name ?? workspaceCopy.toolbar.researchSpace}</span></div>
           <div className="ena-visual-toolbar-actions"><button type="button" data-testid="open-ena-data-view-toggle" disabled={!result} aria-pressed={centerSurface === "data"} aria-label={centerSurface === "data" ? (completedResultKind === "ona" ? copy.ona.dataView.returnAriaLabel : workspaceCopy.dataView.returnAriaLabel) : workspaceCopy.toolbar.dataView} onClick={() => setCenterSurface((value) => value === "plot" ? "data" : "plot")}>{centerSurface === "data" ? (completedResultKind === "ona" ? copy.ona.dataView.returnLabel : workspaceCopy.dataView.returnLabel) : workspaceCopy.toolbar.dataView}</button>

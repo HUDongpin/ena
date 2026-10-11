@@ -132,6 +132,8 @@ jobs:
         run: npm run test:browser:open-ena-ai-interpretation-retention
       - name: Run the keyboard focus-recovery gate
         run: npm run test:browser:open-ena-focus-recovery
+      - name: Run the workspace landmarks and narrow-viewport gate
+        run: npm run test:browser:open-ena-a11y-landmarks
       - name: Run the stale source-replacement Rebuild cue gate
         run: npm run test:browser:open-ena-stale-rebuild-cue
       - name: Run the teaching sample execution-plan recovery gate

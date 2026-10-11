@@ -115,6 +115,7 @@ export interface OpenEnaGroupContrastProps extends OpenEnaCodeGraphPresentation 
     readonly unitsDefinition: string;
     readonly horizonDefinition: string;
     readonly noNonzeroDifferences: string;
+    readonly flippedLabel?: string;
   };
 }
 
@@ -169,6 +170,7 @@ const DEFAULT_GROUP_CONTRAST_UI_COPY = {
   unitsDefinition: "Units",
   horizonDefinition: "Horizon",
   noNonzeroDifferences: "No nonzero Primary-minus-Secondary edge differences are present for this selected pair.",
+  flippedLabel: "flipped",
 } as const;
 
 type ContrastEdge = OpenEnaPairwiseContrast["edges"][number];
@@ -1110,6 +1112,7 @@ function ContrastSvg({
   networkRoles,
   sideRole,
   restorePanelForRole,
+  uiCopy,
 }: OpenEnaGroupContrastProps & {
   kind: PlotKind;
   comparisonScale: number;
@@ -1118,6 +1121,7 @@ function ContrastSvg({
   sideRole?: GroupRole;
   restorePanelForRole?: Partial<Record<GroupRole, { label: string; slot: GroupRole; onRestore: () => void }>>;
 }) {
+  const flippedLabel = uiCopy?.flippedLabel ?? "flipped";
   const comparisonSvgRef = useRef<SVGSVGElement | null>(null);
   const [svgScreenScale, setSvgScreenScale] = useState(1);
   const bindSvgRef = useCallback((node: SVGSVGElement | null) => {
@@ -1432,8 +1436,8 @@ function ContrastSvg({
               y={Math.max(16, Math.min(height - 35, origin.y + 10))}
               textAnchor="start"
             >
-              <title>{`${xAxisLabel}${showVariance ? ` · ${xVariance.toFixed(1)}%` : ""}${flipX ? " · flipped" : ""}`}</title>
-              <tspan x={0}>{xAxisLabel}{flipX ? " · flipped" : ""}</tspan>
+              <title>{`${xAxisLabel}${showVariance ? ` · ${xVariance.toFixed(1)}%` : ""}${flipX ? ` · ${flippedLabel}` : ""}`}</title>
+              <tspan x={0}>{xAxisLabel}{flipX ? ` · ${flippedLabel}` : ""}</tspan>
               {showVariance ? <tspan x={0} dy="15">({xVariance.toFixed(2)}%)</tspan> : null}
             </text>
             <text
@@ -1441,8 +1445,8 @@ function ContrastSvg({
               x={Math.max(8, Math.min(width - 90, origin.x + 5))}
               y={10}
             >
-              <title>{`${yAxisLabel}${showVariance ? ` · ${yVariance.toFixed(1)}%` : ""}${flipY ? " · flipped" : ""}`}</title>
-              <tspan x={Math.max(8, Math.min(width - 90, origin.x + 5))}>{yAxisLabel}{flipY ? " · flipped" : ""}</tspan>
+              <title>{`${yAxisLabel}${showVariance ? ` · ${yVariance.toFixed(1)}%` : ""}${flipY ? ` · ${flippedLabel}` : ""}`}</title>
+              <tspan x={Math.max(8, Math.min(width - 90, origin.x + 5))}>{yAxisLabel}{flipY ? ` · ${flippedLabel}` : ""}</tspan>
               {showVariance ? (
                 <tspan x={Math.max(8, Math.min(width - 90, origin.x + 5))} dy="15">
                   ({yVariance.toFixed(2)}%)
