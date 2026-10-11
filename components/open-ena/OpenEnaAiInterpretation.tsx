@@ -99,6 +99,19 @@ function focusIsRestorable(panel: HTMLElement | null) {
   return Boolean(panel?.contains(active));
 }
 
+function focusInsidePanel(panel: HTMLElement | null) {
+  const active = document.activeElement;
+  return Boolean(active && panel?.contains(active));
+}
+
+function firstEnabledFocusTarget(candidates: Array<HTMLElement | null>) {
+  for (const candidate of candidates) {
+    if (!candidate || candidate.matches(":disabled")) continue;
+    return candidate;
+  }
+  return null;
+}
+
 export function mayRenewOpenEnaAiOperation(response: Response, operationId: string) {
   return !response.ok
     && response.status >= 400
@@ -159,10 +172,14 @@ export default function OpenEnaAiInterpretation({
   const operationIdRef = useRef<string | null>(null);
   const operationStorageKeyRef = useRef<string | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
+  const generateButtonRef = useRef<HTMLButtonElement | null>(null);
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
   const retryControlRef = useRef<HTMLButtonElement | null>(null);
   const signInControlRef = useRef<HTMLAnchorElement | null>(null);
+  const consentControlRef = useRef<HTMLInputElement | null>(null);
+  const interpretationHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const restoreFocusRef = useRef(false);
+  const focusRestoreTargetRef = useRef<"result" | "action" | "stable">("result");
   const activationKeyHeldRef = useRef(false);
   const [signInHref, setSignInHref] = useState("");
   const requestIdentity = openEnaAiReviewedRequestIdentityV3({
@@ -197,11 +214,16 @@ export default function OpenEnaAiInterpretation({
   }, []);
 
   useEffect(() => {
+    if (restoreFocusRef.current || focusInsidePanel(panelRef.current)) {
+      restoreFocusRef.current = true;
+      focusRestoreTargetRef.current = "stable";
+    } else {
+      restoreFocusRef.current = false;
+    }
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     generationTokenRef.current += 1;
     releaseOpenEnaAiGeneration(generationGateRef.current);
-    restoreFocusRef.current = false;
     try {
       const previousKey = operationStorageKeyRef.current;
       if (previousKey && previousKey !== operationStorageKey) sessionStorage.removeItem(previousKey);
@@ -240,11 +262,19 @@ export default function OpenEnaAiInterpretation({
         cancelButtonRef.current?.focus();
         return;
       }
+      const recovery = signInControlRef.current ?? retryControlRef.current;
       if (aiError) {
-        (signInControlRef.current ?? retryControlRef.current)?.focus();
+        recovery?.focus();
         restoreFocusRef.current = false;
         return;
       }
+      const target = focusRestoreTargetRef.current;
+      const candidates: Array<HTMLElement | null> = target === "action"
+        ? [recovery, generateButtonRef.current, consentControlRef.current, panelRef.current]
+        : target === "stable"
+          ? [generateButtonRef.current, consentControlRef.current, panelRef.current]
+          : [interpretationHeadingRef.current, generateButtonRef.current, consentControlRef.current, panelRef.current];
+      firstEnabledFocusTarget(candidates)?.focus();
       restoreFocusRef.current = false;
     };
     if (!activationKeyHeldRef.current) {
@@ -269,7 +299,10 @@ export default function OpenEnaAiInterpretation({
     const requestedOperationStorageKey = operationStorageKey;
     if (!requestedIdentity || consentedRequestIdentity !== requestedIdentity) return;
     if (!claimOpenEnaAiGeneration(generationGateRef.current)) return;
-    if (focusIsRestorable(panelRef.current)) restoreFocusRef.current = true;
+    if (focusIsRestorable(panelRef.current)) {
+      restoreFocusRef.current = true;
+      focusRestoreTargetRef.current = "result";
+    }
     const generationToken = generationTokenRef.current + 1;
     generationTokenRef.current = generationToken;
     const releaseThisGeneration = () => {
@@ -389,6 +422,7 @@ export default function OpenEnaAiInterpretation({
         },
         isStaleGeneration,
         onSuccess: ({ parsed, receipt }) => {
+          if (restoreFocusRef.current) focusRestoreTargetRef.current = "result";
           clearOperation();
           setAiResponse(parsed);
           setAiResponseRequestIdentity(requestedIdentity);
@@ -404,6 +438,10 @@ export default function OpenEnaAiInterpretation({
   }
 
   function handleCancelInterpretation() {
+    if (restoreFocusRef.current || focusInsidePanel(panelRef.current)) {
+      restoreFocusRef.current = true;
+      focusRestoreTargetRef.current = "action";
+    }
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     generationTokenRef.current += 1;
@@ -414,6 +452,7 @@ export default function OpenEnaAiInterpretation({
   return (
     <section
       ref={panelRef}
+      tabIndex={-1}
       className="ena-ai-interpretation"
       aria-busy={generationStatus === "loading"}
       aria-label={showHeading ? undefined : copy.title}
@@ -445,6 +484,7 @@ export default function OpenEnaAiInterpretation({
 
       <label className="ena-ai-consent" data-ena-ai-consent="explicit">
         <input
+          ref={consentControlRef}
           type="checkbox"
           checked={consentGranted}
           disabled={disabled || !request || generationStatus === "loading"}
@@ -457,6 +497,7 @@ export default function OpenEnaAiInterpretation({
 
       <div className="ena-ai-actions">
         <button
+          ref={generateButtonRef}
           type="button"
           className="ena-action-button ena-action-primary"
           disabled={disabled || !request || !consentGranted || generationStatus === "loading"}
@@ -518,7 +559,7 @@ export default function OpenEnaAiInterpretation({
       {currentResponse ? (
         <article className="ena-ai-result" aria-live="polite">
           <section>
-            <h4>{copy.observedPatterns}</h4>
+            <h4 ref={interpretationHeadingRef} tabIndex={-1}>{copy.observedPatterns}</h4>
             <ol>
               {currentResponse.interpretation.observedPatterns.map((observation) => (
                 <li key={`${observation.statement}-${observation.evidenceRefs.join("-")}`}>

@@ -378,5 +378,233 @@ try {
   assert.deepEqual(outsideErrors, []);
   await outsidePage.close();
 
-  console.log("AI explicit retry: renewed confirmed failure, retained uncertain operation, auth-required uses sign-in, classed recovery copy, single in-flight retry, stale result dropped, sign-in keeps this document, Enter retries once, focus and busy state restored PASS");
+  function syntheticInterpretation(body) {
+    if (!body?.binding || body.schemaVersion !== "open-ena-ai-interpretation-request-v2") {
+      throw new Error("Synthetic success requires the posted v2 request.");
+    }
+    return {
+      schemaVersion: "open-ena-ai-interpretation-response-v2",
+      promptVersion: body.promptVersion,
+      binding: body.binding,
+      provider: "deepseek",
+      model: "synthetic-review",
+      generatedAt: "2026-09-27T06:00:00.000Z",
+      interpretation: {
+        observedPatterns: [{
+          statement: "Synthetic aggregate pattern for focus restoration.",
+          evidenceRefs: ["axis-1"],
+        }],
+        contextualQuestions: ["Which aggregate comparison should be checked next?"],
+        limitations: ["This synthetic response only exercises focus restoration."],
+      },
+    };
+  }
+  const focusHarness = await build({
+    stdin: { contents: `
+      import React, { useState } from 'react';
+      import { createRoot } from 'react-dom/client';
+      import Ai from './components/open-ena/OpenEnaAiInterpretation';
+      import { getOpenEnaCopy } from './lib/open-ena-i18n';
+      import { interpretationRequest } from './tests/helpers/ai-interpretation-request-v2';
+      const initial = interpretationRequest();
+      const replacement = {
+        ...initial,
+        binding: { ...initial.binding, analyzedAt: "2026-08-22T10:00:00.000Z" },
+      };
+      function Harness() {
+        const [request, setRequest] = useState(initial);
+        window.__setAiRequest = (next) => setRequest(next ?? replacement);
+        return <Ai request={request} copy={getOpenEnaCopy('en').aiInterpretation} disabled={false} disabledReason="Current result required"/>;
+      }
+      createRoot(document.getElementById('root')).render(<Harness />);
+    `, loader: "tsx", resolveDir: process.cwd() },
+    bundle: true, format: "iife", platform: "browser", jsx: "automatic", write: false,
+  });
+  const focusDocument = '<!doctype html><div id="root"></div><button id="outside-panel" type="button">Outside</button>';
+
+  async function focusDiagnostic(page) {
+    return page.evaluate(() => ({
+      activeTag: document.activeElement?.tagName ?? null,
+      activeText: document.activeElement?.textContent?.trim().slice(0, 160) ?? "",
+      activeId: document.activeElement?.id ?? "",
+      inside: Boolean(document.querySelector(".ena-ai-interpretation")?.contains(document.activeElement)),
+      busy: document.querySelector(".ena-ai-interpretation")?.getAttribute("aria-busy") ?? null,
+      alert: document.querySelector("[role=alert]")?.textContent?.trim().slice(0, 300) ?? "",
+      result: Boolean(document.querySelector(".ena-ai-result")),
+    }));
+  }
+
+  const successPage = await browser.newPage();
+  const successErrors = [];
+  successPage.on("pageerror", (error) => successErrors.push(error.message));
+  await successPage.route("**/*", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/open-ena/ai-interpretation") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(syntheticInterpretation(route.request().postDataJSON())),
+      });
+    }
+    return route.fulfill({ contentType: "text/html", body: focusDocument });
+  });
+  await successPage.goto("http://localhost:32119");
+  await successPage.addScriptTag({ content: focusHarness.outputFiles[0].text });
+  await successPage.getByRole("checkbox").check();
+  const successGenerate = successPage.getByRole("button", { name: "Generate AI interpretation", exact: true });
+  await successGenerate.focus();
+  await successPage.keyboard.press("Enter");
+  try {
+    await successPage.waitForFunction(() => {
+      const heading = document.querySelector(".ena-ai-result h4");
+      return heading instanceof HTMLElement
+        && heading.tabIndex === -1
+        && document.activeElement === heading;
+    });
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${JSON.stringify(await focusDiagnostic(successPage))}`);
+  }
+  assert.notEqual(await successPage.evaluate(() => document.activeElement?.tagName), "BODY", "a successful keyboard generation must not leave focus on the document body");
+  assert.equal(
+    await successPage.evaluate(() => document.querySelector(".ena-ai-interpretation")?.contains(document.activeElement)),
+    true,
+    "restored focus must stay inside the interpretation panel",
+  );
+  assert.deepEqual(successErrors, []);
+  await successPage.close();
+
+  const outsideSuccessPage = await browser.newPage();
+  const outsideSuccessErrors = [];
+  let releaseOutsideSuccess = () => {};
+  const outsideSuccessReleased = new Promise((resolve) => { releaseOutsideSuccess = resolve; });
+  outsideSuccessPage.on("pageerror", (error) => outsideSuccessErrors.push(error.message));
+  await outsideSuccessPage.route("**/*", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/open-ena/ai-interpretation") {
+      await outsideSuccessReleased;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(syntheticInterpretation(route.request().postDataJSON())),
+      });
+    }
+    return route.fulfill({ contentType: "text/html", body: focusDocument });
+  });
+  await outsideSuccessPage.goto("http://localhost:32119");
+  await outsideSuccessPage.addScriptTag({ content: focusHarness.outputFiles[0].text });
+  await outsideSuccessPage.getByRole("checkbox").check();
+  const outsideSuccessGenerate = outsideSuccessPage.getByRole("button", { name: "Generate AI interpretation", exact: true });
+  await outsideSuccessGenerate.focus();
+  await outsideSuccessPage.keyboard.press("Enter");
+  await outsideSuccessPage.waitForFunction(() => {
+    const active = document.activeElement;
+    return document.querySelector(".ena-ai-interpretation")?.getAttribute("aria-busy") === "true"
+      && active instanceof HTMLButtonElement
+      && active.textContent?.trim() === "Cancel";
+  });
+  await outsideSuccessPage.locator("#outside-panel").focus();
+  releaseOutsideSuccess();
+  await outsideSuccessPage.locator(".ena-ai-result").waitFor();
+  assert.equal(await outsideSuccessPage.evaluate(() => document.activeElement?.id), "outside-panel", "a completed generation must not pull focus back from outside the panel");
+  assert.deepEqual(outsideSuccessErrors, []);
+  await outsideSuccessPage.close();
+
+  const cancelPage = await browser.newPage();
+  const cancelErrors = [];
+  let releaseCancel = () => {};
+  const cancelReleased = new Promise((resolve) => { releaseCancel = resolve; });
+  cancelPage.on("pageerror", (error) => cancelErrors.push(error.message));
+  await cancelPage.route("**/*", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/open-ena/ai-interpretation") {
+      await cancelReleased;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ interpretation: "CANCELLED_RESULT_MUST_NOT_ATTACH" }),
+      });
+    }
+    return route.fulfill({ contentType: "text/html", body: focusDocument });
+  });
+  await cancelPage.goto("http://localhost:32119");
+  await cancelPage.addScriptTag({ content: bundle.outputFiles[0].text });
+  await cancelPage.getByRole("checkbox").check();
+  const cancelGenerate = cancelPage.getByRole("button", { name: "Generate AI interpretation", exact: true });
+  await cancelGenerate.focus();
+  await cancelPage.keyboard.press("Enter");
+  await cancelPage.waitForFunction(() => {
+    const active = document.activeElement;
+    return active instanceof HTMLButtonElement && active.textContent?.trim() === "Cancel";
+  });
+  await cancelPage.keyboard.press("Enter");
+  try {
+    await cancelPage.waitForFunction(() => {
+      const active = document.activeElement;
+      return active instanceof HTMLButtonElement
+        && active.textContent?.trim() === "Generate AI interpretation"
+        && !active.disabled;
+    });
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${JSON.stringify(await focusDiagnostic(cancelPage))}`);
+  }
+  assert.notEqual(await cancelPage.evaluate(() => document.activeElement?.tagName), "BODY", "keyboard cancel must not leave focus on the document body");
+  releaseCancel();
+  await cancelPage.waitForTimeout(80);
+  assert.equal(await cancelPage.getByText("CANCELLED_RESULT_MUST_NOT_ATTACH").count(), 0);
+  assert.equal(await cancelPage.getByRole("alert").count(), 0, "a cancelled request must not surface a late error");
+  assert.equal(
+    await cancelPage.evaluate(() => document.activeElement?.textContent?.trim()),
+    "Generate AI interpretation",
+    "a late response after cancel must not move focus again",
+  );
+  assert.deepEqual(cancelErrors, []);
+  await cancelPage.close();
+
+  const identityPage = await browser.newPage();
+  const identityErrors = [];
+  let releaseIdentity = () => {};
+  const identityReleased = new Promise((resolve) => { releaseIdentity = resolve; });
+  identityPage.on("pageerror", (error) => identityErrors.push(error.message));
+  await identityPage.route("**/*", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/open-ena/ai-interpretation") {
+      await identityReleased;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(syntheticInterpretation(route.request().postDataJSON())),
+      });
+    }
+    return route.fulfill({ contentType: "text/html", body: focusDocument });
+  });
+  await identityPage.goto("http://localhost:32119");
+  await identityPage.addScriptTag({ content: focusHarness.outputFiles[0].text });
+  await identityPage.getByRole("checkbox").check();
+  const identityGenerate = identityPage.getByRole("button", { name: "Generate AI interpretation", exact: true });
+  await identityGenerate.focus();
+  await identityPage.keyboard.press("Enter");
+  await identityPage.waitForFunction(() => document.activeElement?.textContent?.trim() === "Cancel");
+  await identityPage.evaluate(() => { window.__setAiRequest(); });
+  try {
+    await identityPage.waitForFunction(() => {
+      const panel = document.querySelector(".ena-ai-interpretation");
+      const consent = document.querySelector(".ena-ai-consent input");
+      return document.activeElement === consent
+        && panel?.contains(document.activeElement)
+        && panel?.getAttribute("aria-busy") === "false";
+    });
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${JSON.stringify(await focusDiagnostic(identityPage))}`);
+  }
+  assert.notEqual(await identityPage.evaluate(() => document.activeElement?.tagName), "BODY", "aborting for a new request must not leave focus on the document body");
+  assert.equal(await identityPage.locator(".ena-ai-result").count(), 0, "an in-flight interpretation must not attach after the request changes");
+  assert.equal(await identityPage.getByRole("checkbox").isChecked(), false, "the new request still requires its own consent");
+  releaseIdentity();
+  await identityPage.waitForTimeout(80);
+  assert.equal(await identityPage.locator(".ena-ai-result").count(), 0);
+  assert.equal(
+    await identityPage.evaluate(() => document.activeElement === document.querySelector(".ena-ai-consent input")),
+    true,
+    "a late response after an identity change must not move focus again",
+  );
+  assert.deepEqual(identityErrors, []);
+  await identityPage.close();
+
+  console.log("AI explicit retry: renewed confirmed failure, retained uncertain operation, auth-required uses sign-in, classed recovery copy, single in-flight retry, stale result dropped, sign-in keeps this document, Enter retries once, focus and busy state restored, success and cancel restore focus PASS");
 } finally { await browser.close(); }

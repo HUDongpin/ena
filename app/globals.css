@@ -10386,6 +10386,8 @@ body:has(.open-ena-page) #main-content {
   font-family: var(--font-geist-mono), monospace;
 }
 
+.ena-ai-interpretation:focus-visible,
+.ena-ai-result h4:focus-visible,
 .ena-ai-payload-preview > summary:focus-visible,
 .ena-ai-consent input:focus-visible,
 .ena-ai-interpretation button:focus-visible {
