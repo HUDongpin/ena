@@ -69,10 +69,26 @@ try {
   assert.equal(operations.length, 1, "an authentication failure must not automatically dispatch a retry");
   assert.match(await alert.innerText(), /Sign in again/);
   assert.equal(await alert.getByRole("button", { name: "Retry" }).count(), 0);
-  await alert.getByRole("button", { name: "Sign in again" }).click();
-  await page.waitForTimeout(50);
+  const signIn = alert.getByRole("link", { name: "Sign in again" });
+  assert.equal(await signIn.getAttribute("target"), "_blank");
+  assert.match(await signIn.getAttribute("rel") ?? "", /\bnoopener\b/);
+  assert.match(await signIn.getAttribute("rel") ?? "", /\bnoreferrer\b/);
+  const signInHref = await signIn.evaluate((element) => element.href);
+  const currentUrl = new URL(page.url());
+  const openedUrl = new URL(signInHref);
+  assert.equal(openedUrl.pathname, currentUrl.pathname);
+  assert.equal(openedUrl.search, currentUrl.search);
+  const urlBefore = page.url();
+  const previewBefore = await page.locator("pre").textContent();
+  const popupPromise = page.waitForEvent("popup");
+  await signIn.click();
+  const popup = await popupPromise;
+  assert.equal(page.url(), urlBefore, "sign-in must not replace the current analysis document");
+  assert.equal(await page.locator("pre").textContent(), previewBefore, "sign-in must keep the reviewed request on this page");
+  assert.equal(await page.getByRole("alert").count(), 1, "the failure and evidence boundary must stay on this page");
   assert.equal(operations.length, 1, "session recovery must not submit another AI generation");
   assert.deepEqual(errors, []);
+  await popup.close();
   await page.close();
 
   const boundary = "The computed ENA model results are still valid. Only the AI interpretation is missing.";
@@ -159,7 +175,7 @@ try {
     assert.equal(await failureAlert.getAttribute("data-ena-ai-failure-class"), item.failureClass, item.name);
     assert.equal(await failureAlert.locator("[data-ena-ai-evidence-boundary='results-remain-valid']").count(), 1, item.name);
     assert.equal(await failureAlert.getByRole("button", { name: "Retry" }).count(), item.retry ? 1 : 0, item.name);
-    assert.equal(await failureAlert.getByRole("button", { name: "Sign in again" }).count(), item.retry ? 0 : 1, item.name);
+    assert.equal(await failureAlert.getByRole("link", { name: "Sign in again" }).count(), item.retry ? 0 : 1, item.name);
     assert.deepEqual(pageErrors, [], item.name);
     await failurePage.close();
   }
@@ -272,5 +288,95 @@ try {
   assert.deepEqual(staleErrors, []);
   await stalePage.close();
 
-  console.log("AI explicit retry: renewed confirmed failure, retained uncertain operation, auth-required uses sign-in, classed recovery copy, single in-flight retry, stale result dropped PASS");
+  const keyboardPage = await browser.newPage();
+  const keyboardErrors = [];
+  const keyboardOperations = [];
+  let releaseKeyboard = () => {};
+  const keyboardReleased = new Promise((resolve) => { releaseKeyboard = resolve; });
+  keyboardPage.on("pageerror", (error) => keyboardErrors.push(error.message));
+  await keyboardPage.route("**/*", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/open-ena/ai-interpretation") {
+      keyboardOperations.push(route.request().headers()["x-open-ena-ai-operation-id"]);
+      if (keyboardOperations.length === 1) {
+        return route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "Synthetic unavailable response" }),
+        });
+      }
+      await keyboardReleased;
+      return route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Synthetic unavailable response" }),
+      });
+    }
+    return route.fulfill({ contentType: "text/html", body: '<!doctype html><div id="root"></div><button id="outside-panel" type="button">Outside</button>' });
+  });
+  await keyboardPage.goto("http://localhost:32119");
+  await keyboardPage.addScriptTag({ content: bundle.outputFiles[0].text });
+  await keyboardPage.getByRole("checkbox").check();
+  await keyboardPage.locator(".ena-ai-actions button").click();
+  await keyboardPage.getByRole("alert").waitFor();
+  assert.equal(keyboardOperations.length, 1);
+  const retryButton = keyboardPage.getByRole("alert").getByRole("button", { name: "Retry" });
+  await retryButton.focus();
+  await keyboardPage.keyboard.press("Enter");
+  await keyboardPage.waitForFunction(() => {
+    const panel = document.querySelector(".ena-ai-interpretation");
+    const active = document.activeElement;
+    return panel?.getAttribute("aria-busy") === "true"
+      && active instanceof HTMLButtonElement
+      && active.textContent?.trim() === "Cancel";
+  });
+  await keyboardPage.waitForTimeout(80);
+  assert.equal(keyboardOperations.length, 2, "Enter on Retry sends exactly one request");
+  assert.equal(
+    await keyboardPage.locator(".ena-ai-interpretation").getAttribute("aria-busy"),
+    "true",
+    "the panel must stay busy while that single retry is in flight",
+  );
+  releaseKeyboard();
+  await keyboardPage.waitForFunction(() => {
+    const panel = document.querySelector(".ena-ai-interpretation");
+    const active = document.activeElement;
+    return panel?.getAttribute("aria-busy") === "false"
+      && active instanceof HTMLButtonElement
+      && active.getAttribute("data-ena-ai-recovery") === "retry";
+  });
+  assert.deepEqual(keyboardErrors, []);
+  await keyboardPage.close();
+
+  const outsidePage = await browser.newPage();
+  const outsideErrors = [];
+  let releaseOutside = () => {};
+  const outsideReleased = new Promise((resolve) => { releaseOutside = resolve; });
+  outsidePage.on("pageerror", (error) => outsideErrors.push(error.message));
+  await outsidePage.route("**/*", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/open-ena/ai-interpretation") {
+      await outsideReleased;
+      return route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Synthetic unavailable response" }),
+      });
+    }
+    return route.fulfill({ contentType: "text/html", body: '<!doctype html><div id="root"></div><button id="outside-panel" type="button">Outside</button>' });
+  });
+  await outsidePage.goto("http://localhost:32119");
+  await outsidePage.addScriptTag({ content: bundle.outputFiles[0].text });
+  await outsidePage.getByRole("checkbox").check();
+  const outsideGenerate = outsidePage.locator(".ena-ai-actions button");
+  await outsideGenerate.focus();
+  await outsideGenerate.click();
+  await outsidePage.waitForFunction(() => document.querySelector(".ena-ai-interpretation")?.getAttribute("aria-busy") === "true");
+  await outsidePage.locator("#outside-panel").focus();
+  releaseOutside();
+  await outsidePage.getByRole("alert").waitFor();
+  assert.equal(await outsidePage.evaluate(() => document.activeElement?.id), "outside-panel", "a retry must not pull focus back from outside the panel");
+  assert.equal(await outsidePage.locator(".ena-ai-interpretation").getAttribute("aria-busy"), "false");
+  assert.deepEqual(outsideErrors, []);
+  await outsidePage.close();
+
+  console.log("AI explicit retry: renewed confirmed failure, retained uncertain operation, auth-required uses sign-in, classed recovery copy, single in-flight retry, stale result dropped, sign-in keeps this document, Enter retries once, focus and busy state restored PASS");
 } finally { await browser.close(); }

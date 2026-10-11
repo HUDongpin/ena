@@ -15,6 +15,7 @@ const FAILURE_COPY = {
   en: {
     sessionRecovery: "Your Open ENA session is missing or no longer valid. Sign in again, then return to generate an interpretation.",
     signInAgain: "Sign in again",
+    signInNewTab: "Opens in a new tab",
     failureUnavailable: "AI interpretation is temporarily unavailable or rate limited. Wait a moment, then retry this request.",
     failureNetwork: "The AI interpretation request did not finish because the network failed or the request timed out. Check your connection, then retry this request.",
     failureInvalidOutput: "The model returned output that could not be used as an interpretation. Retry this request to ask for a new interpretation.",
@@ -23,6 +24,7 @@ const FAILURE_COPY = {
   "zh-hant": {
     sessionRecovery: "您的開放 ENA 工作階段不存在或已失效。請重新登入，再回到此處生成解讀。",
     signInAgain: "重新登入",
+    signInNewTab: "在新分頁開啟",
     failureUnavailable: "AI 解讀暫時無法使用，或已達到請求次數限制。請稍候，再重試此請求。",
     failureNetwork: "AI 解讀請求因網絡問題或逾時而未完成。請檢查連線，再重試此請求。",
     failureInvalidOutput: "模型傳回的內容無法用作解讀。請重試此請求，以重新生成解讀。",
@@ -31,6 +33,7 @@ const FAILURE_COPY = {
   "zh-hans": {
     sessionRecovery: "您的开放 ENA 会话不存在或已失效。请重新登录，再回到此处生成解读。",
     signInAgain: "重新登录",
+    signInNewTab: "在新标签页打开",
     failureUnavailable: "AI 解读暂时无法使用，或已达到请求次数限制。请稍候，再重试此请求。",
     failureNetwork: "AI 解读请求因网络问题或超时而未完成。请检查连接，再重试此请求。",
     failureInvalidOutput: "模型返回的内容无法用作解读。请重试此请求，以重新生成解读。",
@@ -200,9 +203,14 @@ test("the failure alert states the evidence boundary and retries only retryable 
   const alertStart = aiComponent.indexOf('role="alert"');
   const alert = aiComponent.slice(alertStart, aiComponent.indexOf("currentResponse", alertStart));
   const signIn = alert.slice(alert.indexOf('data-ena-ai-recovery="sign-in"'), alert.indexOf('data-ena-ai-recovery="retry"'));
-  assert.match(signIn, /onClick=\{handleRecoverSession\}/);
+  assert.match(signIn, /target="_blank"/);
+  assert.match(signIn, /rel="noopener noreferrer"/);
   assert.match(signIn, /copy\.signInAgain/);
+  assert.match(signIn, /copy\.signInNewTab/);
   assert.doesNotMatch(signIn, /handleGenerateInterpretation/);
+  assert.doesNotMatch(signIn, /location\.assign/);
+  assert.doesNotMatch(aiComponent, /location\.assign\s*\(/);
+  assert.match(aiComponent, /aria-busy=\{generationStatus === "loading"\}/);
   assert.match(alert, /data-ena-ai-recovery=["']retry["'][\s\S]*?onClick=\{handleGenerateInterpretation\}/);
   assert.match(alert, /copy\.retry/);
   assert.match(aiComponent, /copy\.failureNetwork/);

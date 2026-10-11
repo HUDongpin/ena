@@ -93,6 +93,12 @@ export function releaseOpenEnaAiGeneration(gate: { inFlight: boolean }) {
   gate.inFlight = false;
 }
 
+function focusIsRestorable(panel: HTMLElement | null) {
+  const active = document.activeElement;
+  if (!active || active === document.body || active === document.documentElement) return true;
+  return Boolean(panel?.contains(active));
+}
+
 export function mayRenewOpenEnaAiOperation(response: Response, operationId: string) {
   return !response.ok
     && response.status >= 400
@@ -152,6 +158,13 @@ export default function OpenEnaAiInterpretation({
   const generationTokenRef = useRef(0);
   const operationIdRef = useRef<string | null>(null);
   const operationStorageKeyRef = useRef<string | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  const retryControlRef = useRef<HTMLButtonElement | null>(null);
+  const signInControlRef = useRef<HTMLAnchorElement | null>(null);
+  const restoreFocusRef = useRef(false);
+  const activationKeyHeldRef = useRef(false);
+  const [signInHref, setSignInHref] = useState("");
   const requestIdentity = openEnaAiReviewedRequestIdentityV3({
     localScientificIdentity,
     request,
@@ -165,10 +178,30 @@ export default function OpenEnaAiInterpretation({
   const currentResponse = aiResponse && aiResponseRequestIdentity === requestIdentity ? aiResponse : null;
 
   useEffect(() => {
+    setSignInHref(`${window.location.pathname}${window.location.search}`);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Enter" || event.key === " ") activationKeyHeldRef.current = true;
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === "Enter" || event.key === " ") activationKeyHeldRef.current = false;
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
+
+  useEffect(() => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     generationTokenRef.current += 1;
     releaseOpenEnaAiGeneration(generationGateRef.current);
+    restoreFocusRef.current = false;
     try {
       const previousKey = operationStorageKeyRef.current;
       if (previousKey && previousKey !== operationStorageKey) sessionStorage.removeItem(previousKey);
@@ -194,12 +227,49 @@ export default function OpenEnaAiInterpretation({
 
   useEffect(() => () => abortControllerRef.current?.abort(), []);
 
+  useEffect(() => {
+    if (!restoreFocusRef.current) return;
+    let cancelled = false;
+    const apply = () => {
+      if (cancelled || !restoreFocusRef.current) return;
+      if (!focusIsRestorable(panelRef.current)) {
+        restoreFocusRef.current = false;
+        return;
+      }
+      if (generationStatus === "loading") {
+        cancelButtonRef.current?.focus();
+        return;
+      }
+      if (aiError) {
+        (signInControlRef.current ?? retryControlRef.current)?.focus();
+        restoreFocusRef.current = false;
+        return;
+      }
+      restoreFocusRef.current = false;
+    };
+    if (!activationKeyHeldRef.current) {
+      apply();
+      return;
+    }
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      window.removeEventListener("keyup", onKeyUp, true);
+      apply();
+    };
+    window.addEventListener("keyup", onKeyUp, true);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("keyup", onKeyUp, true);
+    };
+  }, [generationStatus, aiError, aiRecovery]);
+
   async function handleGenerateInterpretation() {
     if (!request || disabled || !consentGranted || generationStatus === "loading") return;
     const requestedIdentity = requestIdentity;
     const requestedOperationStorageKey = operationStorageKey;
     if (!requestedIdentity || consentedRequestIdentity !== requestedIdentity) return;
     if (!claimOpenEnaAiGeneration(generationGateRef.current)) return;
+    if (focusIsRestorable(panelRef.current)) restoreFocusRef.current = true;
     const generationToken = generationTokenRef.current + 1;
     generationTokenRef.current = generationToken;
     const releaseThisGeneration = () => {
@@ -333,10 +403,6 @@ export default function OpenEnaAiInterpretation({
     }
   }
 
-  function handleRecoverSession() {
-    window.location.assign(`${window.location.pathname}${window.location.search}`);
-  }
-
   function handleCancelInterpretation() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
@@ -347,7 +413,9 @@ export default function OpenEnaAiInterpretation({
 
   return (
     <section
+      ref={panelRef}
       className="ena-ai-interpretation"
+      aria-busy={generationStatus === "loading"}
       aria-label={showHeading ? undefined : copy.title}
       aria-labelledby={showHeading ? "ena-ai-interpretation-title" : undefined}
     >
@@ -398,6 +466,7 @@ export default function OpenEnaAiInterpretation({
         </button>
         {generationStatus === "loading" ? (
           <button
+            ref={cancelButtonRef}
             type="button"
             className="ena-action-button ena-action-secondary"
             onClick={handleCancelInterpretation}
@@ -418,16 +487,22 @@ export default function OpenEnaAiInterpretation({
           <p>{aiError}</p>
           <p data-ena-ai-evidence-boundary="results-remain-valid">{copy.evidenceBoundary}</p>
           {aiRecovery === "sign-in" ? (
-            <button
-              type="button"
+            // The current Open ENA URL renders the login page when the session
+            // is missing. Opening it in a new tab leaves this analysis in place.
+            <a
+              ref={signInControlRef}
               className="ena-inline-link"
               data-ena-ai-recovery="sign-in"
-              onClick={handleRecoverSession}
+              href={signInHref}
+              target="_blank"
+              rel="noopener noreferrer"
             >
               {copy.signInAgain}
-            </button>
+              <span className="sr-only"> {copy.signInNewTab}</span>
+            </a>
           ) : (
             <button
+              ref={retryControlRef}
               type="button"
               className="ena-inline-link"
               data-ena-ai-recovery="retry"
