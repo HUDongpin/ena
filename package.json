@@ -33,6 +33,7 @@
     "test:browser:open-ena-ai-presentation-retention": "node tests/open-ena-ai-presentation-retention-browser.mjs",
     "test:browser:open-ena-ai-interpretation-retention": "node tests/open-ena-ai-interpretation-retention-browser.mjs",
     "test:browser:open-ena-focus-recovery": "node tests/open-ena-focus-recovery-browser.mjs",
+    "test:browser:open-ena-a11y-landmarks": "node tests/open-ena-a11y-landmarks-browser.mjs",
     "test:browser:open-ena-stale-rebuild-cue": "node tests/open-ena-stale-rebuild-cue-browser.mjs",
     "test:browser:longitudinal-v3": "node tests/open-ena-longitudinal-v3-browser-smoke.mjs",
     "prompt:verify": "node --import tsx scripts/verify-open-ena-ai-prompts.ts",
