@@ -801,12 +801,6 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     event.stopPropagation();
     scheduleOpenEnaDomFocusRestore(railTriggerRefs.current[mode] ?? null);
   }
-  function onSkipToWorkspace(event: { preventDefault(): void }) {
-    const target = document.getElementById("open-ena-workspace");
-    if (!(target instanceof HTMLElement)) return;
-    event.preventDefault();
-    target.focus();
-  }
   async function loadSample(trajectoryOrKind: boolean | TeachingSampleKind = false) {
     const kind = teachingSampleKindFromLoadRequest(trajectoryOrKind);
     const generation = ++sourceGeneration.current; setSourceBusy(true);
@@ -1415,9 +1409,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
             <ResearchTableV3 {...researchTableCopy} rows={dataViewPresentation.sourceTraversal} label={workspaceCopy.stats.globalTraversal} columnLabels={workspaceCopy.dataView.sourceTraversalLabels} />
           </>;
   return <div className="open-ena-page" data-testid="open-ena-workspace-v3" data-result-status={modelState.resultStatus} data-run-status={modelState.runStatus} data-ena-rebuild-cue={rebuildCue?.reason}>
-    <a className="skip-link" href="#open-ena-workspace" onClick={onSkipToWorkspace}>{workspaceCopy.landmarks.skipToWorkspace}</a>
     <OpenEnaFallbackNotice locale={locale} />
-    <section id="open-ena-workspace" tabIndex={-1} className="open-ena-workbench" aria-label={workspaceCopy.shell.workspaceAria} aria-busy={sourceBusy || modelState.runStatus === "running"}>
+    <section id="open-ena-workspace" tabIndex={-1} className="open-ena-workbench" aria-label={workspaceCopy.shell.workspaceAria} data-skip-label={workspaceCopy.landmarks.skipToWorkspace} aria-busy={sourceBusy || modelState.runStatus === "running"}>
       <div className="ena-workbench-grid">
         <nav className="ena-tool-rail" aria-label={workspaceCopy.shell.modesAria} data-ena-workbench-region="rail">
           <div className="ena-rail-brand" data-ena-rail-brand="true" aria-label="ENA.HK Open ENA">

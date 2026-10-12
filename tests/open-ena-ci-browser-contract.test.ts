@@ -95,6 +95,13 @@ test("Browser CI runs the workspace landmarks and narrow-viewport gate", () => {
   assert.match(workflow, /npm run test:browser:open-ena-a11y-landmarks/u);
   const source = readFileSync(join(process.cwd(), "tests/open-ena-a11y-landmarks-browser.mjs"), "utf8");
   assert.match(source, /Skip to workspace/u);
+  assert.match(source, /跳至工作區/u);
+  assert.match(source, /exactly one \.skip-link/u);
+  assert.match(source, /first Tab stop/u);
+  assert.match(source, /#main-content/u);
+  assert.match(source, /Skip to content/u);
+  assert.match(source, /app\/\[locale\]\/layout/u);
+  assert.match(source, /app\/\[locale\]\/page/u);
   assert.match(source, /scrollWidth/u);
   assert.match(source, /width: 390/u);
   assert.match(source, /width: 768/u);
