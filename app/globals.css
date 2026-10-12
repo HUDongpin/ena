@@ -14018,10 +14018,11 @@ html:has(.open-ena-page) {
   font-size: 12px;
   line-height: 1.45;
 }
-/* Author display on labels and sections beats the user-agent rule that hides
-   a closed details element's contents, which lets those controls paint over
-   the next disclosure. */
-.ena-workspace-controls-v3 details:not([open]) > :not(summary) {
+/* This Chromium leaves closed disclosure children in layout. Hide those
+   controls so they do not paint over the next block, but keep result tables
+   laid out: narrow Stats scrolling measures them even when the disclosure
+   was closed again by a tab change. */
+.ena-workspace-controls-v3 details:not([open]) > :not(summary):not(.ena-result-table-wrap) {
   display: none;
 }
 .ena-workspace-controls-v3 :where(select, textarea, input[type="text"], input[type="number"]) {
