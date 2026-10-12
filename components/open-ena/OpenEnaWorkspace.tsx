@@ -343,6 +343,7 @@ export function OpenEnaPersistentRailPanels({
 }
 
 const OPEN_ENA_RAIL_MODES = ["data", "model", "plot", "stats", "ai"] as const;
+const emptyNodePositions = new Map<string, OpenEnaNodeDimensionPosition>();
 
 function openEnaRailToolbarOrientation(toolbar: HTMLElement): "horizontal" | "vertical" {
   const buttons = toolbar.querySelectorAll<HTMLElement>(".ena-rail-button");
@@ -1045,9 +1046,12 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   }
 
   const renderedSource = presentation?.codeSourceByRenderedCode ?? {};
-  const codeColors = Object.fromEntries(Object.entries(renderedSource).map(([rendered, source]) => [rendered, display.codeColors[source] ?? codeColorFor(undefined, source)]));
-  const sourcePositions = nodeOverrides.hash === resultHash ? nodeOverrides.positions : new Map<string, OpenEnaNodeDimensionPosition>();
-  const nodeLayout: OpenEnaNodeLayoutPositions = new Map(Object.entries(renderedSource).flatMap(([rendered, source]) => sourcePositions.has(source) ? [[rendered, sourcePositions.get(source)!] as const] : []));
+  // These identities feed the 3D plot spec. A fresh object on every workspace
+  // render, including a rail-orientation update, rebuilds Plotly at its
+  // declared 590px height and leaves a shorter responsive canvas unmatched.
+  const codeColors = useMemo(() => Object.fromEntries(Object.entries(renderedSource).map(([rendered, source]) => [rendered, display.codeColors[source] ?? codeColorFor(undefined, source)])), [renderedSource, display.codeColors]);
+  const sourcePositions = nodeOverrides.hash === resultHash ? nodeOverrides.positions : emptyNodePositions;
+  const nodeLayout = useMemo<OpenEnaNodeLayoutPositions>(() => new Map(Object.entries(renderedSource).flatMap(([rendered, source]) => sourcePositions.has(source) ? [[rendered, sourcePositions.get(source)!] as const] : [])), [renderedSource, sourcePositions]);
   const moveNode = (rendered: string, position: OpenEnaNodeDimensionPosition) => {
     const source = renderedSource[rendered]; if (!Object.hasOwn(renderedSource, rendered) || !source) throw new Error(workspaceCopy.plot.unknownRenderedCode);
     setNodeOverrides((previous) => { const positions = new Map(previous.hash === resultHash ? previous.positions : []); positions.set(source, new Map([...(positions.get(source) ?? []), ...position])); return { hash: resultHash, positions }; });
