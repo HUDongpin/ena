@@ -106,6 +106,8 @@ test("Browser CI runs the workspace landmarks and narrow-viewport gate", () => {
   assert.match(source, /width: 390/u);
   assert.match(source, /width: 768/u);
   assert.match(source, /width: 1440/u);
+  assert.match(source, /defaultPrevented/u);
+  assert.match(source, /hashchange/u);
 });
 
 test("Browser CI runs the AI presentation retention gates", () => {

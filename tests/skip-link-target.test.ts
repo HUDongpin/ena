@@ -24,3 +24,13 @@ test("the locale shell owns one skip link and the workspace does not render a se
   assert.equal(getOpenEnaCopy("zh-hant").modelV3.workspace.landmarks.skipToWorkspace, "跳至工作區");
   assert.equal(getOpenEnaCopy("zh-hans").modelV3.workspace.landmarks.skipToWorkspace, "跳至工作区");
 });
+
+test("skip activation focuses a tabindex=-1 landmark and leaves #main-content to the browser", () => {
+  const skipLink = readFileSync(join(projectRoot, "components/SkipLink.tsx"), "utf8");
+  const workspace = readFileSync(join(projectRoot, "components/open-ena/OpenEnaWorkspace.tsx"), "utf8");
+  assert.match(workspace, /id="open-ena-workspace"[^>]*tabIndex=\{-1\}/u);
+  assert.match(skipLink, /hasAttribute\(\s*["']tabindex["']\s*\)/u);
+  assert.match(skipLink, /preventDefault\(\)/u);
+  assert.match(skipLink, /\.focus\(\)/u);
+  assert.doesNotMatch(skipLink, /tabIndex\s*<\s*0\s*\)\s*return/u);
+});

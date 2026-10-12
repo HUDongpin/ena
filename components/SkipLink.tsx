@@ -38,7 +38,10 @@ export function SkipLink({
   function onClick(event: MouseEvent<HTMLAnchorElement>) {
     const workspace = document.getElementById(WORKSPACE_TARGET_ID);
     const target = workspace instanceof HTMLElement ? workspace : document.getElementById("main-content");
-    if (!(target instanceof HTMLElement) || target.tabIndex < 0) return;
+    // tabIndex is -1 both for tabindex="-1" and for an element with no tabindex.
+    // Only an explicit tabindex is programmatically focusable. #main-content has
+    // none, so it keeps the browser's fragment navigation.
+    if (!(target instanceof HTMLElement) || (target.tabIndex < 0 && !target.hasAttribute("tabindex"))) return;
     event.preventDefault();
     target.focus();
   }
