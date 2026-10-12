@@ -13,6 +13,8 @@ import {
   type Locale,
 } from "@/lib/i18n";
 import { siteConfig } from "@/lib/site";
+import { SkipLink } from "@/components/SkipLink";
+import { getOpenEnaCopy, isOpenEnaLocalizedLocale } from "@/lib/open-ena-i18n";
 
 interface LocaleLayoutProps {
   children: React.ReactNode;
@@ -56,6 +58,7 @@ export default async function LocaleLayout({ children, params }: LocaleLayoutPro
 
   const typedLocale = locale as Locale;
   const dictionary = getDictionary(typedLocale);
+  const workspaceCopy = getOpenEnaCopy(isOpenEnaLocalizedLocale(typedLocale) ? typedLocale : "en");
   const meta = getLocaleMeta(typedLocale);
   const structuredData = {
     "@context": "https://schema.org",
@@ -71,9 +74,10 @@ export default async function LocaleLayout({ children, params }: LocaleLayoutPro
     <div lang={meta.htmlLang} dir={meta.dir}>
       <HtmlLangSync lang={meta.htmlLang} dir={meta.dir} />
       <JsonLd data={structuredData} />
-      <a href="#main-content" className="skip-link">
-        {dictionary.common.skipToContent}
-      </a>
+      <SkipLink
+        skipToContent={dictionary.common.skipToContent}
+        skipToWorkspace={workspaceCopy.modelV3.workspace.landmarks.skipToWorkspace}
+      />
       <Header locale={typedLocale} dictionary={dictionary} />
       <main id="main-content">{children}</main>
       <Footer locale={typedLocale} dictionary={dictionary} />
