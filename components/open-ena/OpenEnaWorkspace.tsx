@@ -342,6 +342,18 @@ export function OpenEnaPersistentRailPanels({
   );
 }
 
+const OPEN_ENA_RAIL_MODES = ["data", "model", "plot", "stats", "ai"] as const;
+
+function openEnaRailToolbarOrientation(toolbar: HTMLElement): "horizontal" | "vertical" {
+  const buttons = toolbar.querySelectorAll<HTMLElement>(".ena-rail-button");
+  const first = buttons[0]?.getBoundingClientRect();
+  const second = buttons[1]?.getBoundingClientRect();
+  if (!first || !second || first.width < 1 || second.width < 1) {
+    return window.matchMedia("(max-width: 900px)").matches ? "horizontal" : "vertical";
+  }
+  return Math.abs(second.left - first.left) > Math.abs(second.top - first.top) ? "horizontal" : "vertical";
+}
+
 const modeIcons: Record<OpenEnaMode, React.ReactNode> = {
   data: (
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v13H4zM4 10h16M9 5.5v13" /></svg>
@@ -408,6 +420,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   }, [baseDisplay, state.presetHiddenGroups, result]);
   const current = modelState.resultStatus === "current" && currentPlan !== null;
   const [mode, setMode] = useState<OpenEnaMode>("data");
+  const [railTabStop, setRailTabStop] = useState<OpenEnaMode>("data");
+  const [railOrientation, setRailOrientation] = useState<"horizontal" | "vertical">("vertical");
   const [teachingSampleKind, setTeachingSampleKind] = useState<TeachingSampleKind | null>(null);
   const [dataViewContext, setDataViewContext] = useState<OpenEnaDataViewContext>("comparison");
   const [centerSurface, setCenterSurface] = useState<"plot" | "data">("plot");
@@ -425,6 +439,22 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const sourceGeneration = useRef(0);
   const sourceFileTriggerRef = useRef<HTMLInputElement>(null);
   const railTriggerRefs = useRef<Partial<Record<OpenEnaMode, HTMLButtonElement | null>>>({});
+  const railToolbarRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const toolbar = railToolbarRef.current;
+    if (!toolbar) return;
+    const update = () => {
+      const next = openEnaRailToolbarOrientation(toolbar);
+      setRailOrientation((current) => current === next ? current : next);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(toolbar);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    setRailTabStop((current) => current === mode ? current : mode);
+  }, [mode]);
   const sourceDialogRef = useRef<HTMLElement>(null);
   const runButtonRef = useRef<HTMLButtonElement>(null);
   const staleRebuildRef = useRef<HTMLButtonElement>(null);
@@ -793,12 +823,49 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     event.stopPropagation();
     cancelSourcePreparation(true);
   }
+  function focusRailButton(entry: OpenEnaMode) {
+    setRailTabStop(entry);
+    for (const candidate of OPEN_ENA_RAIL_MODES) {
+      const element = railTriggerRefs.current[candidate];
+      if (element) element.tabIndex = candidate === entry ? 0 : -1;
+    }
+    railTriggerRefs.current[entry]?.focus();
+  }
+  function onRailToolbarKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const focusedButton = event.target instanceof Element ? event.target.closest(".ena-rail-button") : null;
+    const currentIndex = OPEN_ENA_RAIL_MODES.findIndex((entry) => railTriggerRefs.current[entry] === focusedButton);
+    if (currentIndex < 0) return;
+    let nextIndex = currentIndex;
+    switch (event.key) {
+      case "ArrowDown":
+      case "ArrowRight":
+        nextIndex = (currentIndex + 1) % OPEN_ENA_RAIL_MODES.length;
+        break;
+      case "ArrowUp":
+      case "ArrowLeft":
+        nextIndex = (currentIndex - 1 + OPEN_ENA_RAIL_MODES.length) % OPEN_ENA_RAIL_MODES.length;
+        break;
+      case "Home":
+        nextIndex = 0;
+        break;
+      case "End":
+        nextIndex = OPEN_ENA_RAIL_MODES.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    focusRailButton(OPEN_ENA_RAIL_MODES[nextIndex]);
+  }
   function onRailPanelKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (event.key !== "Escape" || event.defaultPrevented) return;
     const target = event.target;
     if (!(target instanceof Element) || target.closest("[role='dialog'], dialog")) return;
     event.preventDefault();
     event.stopPropagation();
+    focusRailButton(mode);
     scheduleOpenEnaDomFocusRestore(railTriggerRefs.current[mode] ?? null);
   }
   async function loadSample(trajectoryOrKind: boolean | TeachingSampleKind = false) {
@@ -1418,7 +1485,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
             <a className="ena-rail-version" data-ena-rail-version="true" href={JENA_SOURCE_URL} target="_blank" rel="noopener noreferrer"
               aria-label={copy.workspace.jenaSourceAriaLabel(JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT.slice(0, 7))}>jENA {JENA_RUNTIME_VERSION.split("-", 1)[0]}</a>
           </div>
-          <div className="ena-rail-modes">{(["data", "model", "plot", "stats", "ai"] as const).map((entry) => <button key={entry} ref={(element) => { railTriggerRefs.current[entry] = element; }} type="button" className="ena-rail-button" aria-current={mode === entry ? "step" : undefined} aria-label={entry === "ai" ? copy.aiInterpretation.title : copy.modes[entry]} onClick={() => setMode(entry)}>{modeIcons[entry]}<span>{copy.modes[entry]}</span></button>)}</div>
+          <div ref={railToolbarRef} className="ena-rail-modes" role="toolbar" aria-label={workspaceCopy.landmarks.railToolbar} aria-orientation={railOrientation} onKeyDown={onRailToolbarKeyDown}>{OPEN_ENA_RAIL_MODES.map((entry) => <button key={entry} ref={(element) => { railTriggerRefs.current[entry] = element; }} type="button" className="ena-rail-button" tabIndex={railTabStop === entry ? 0 : -1} aria-current={mode === entry ? "step" : undefined} aria-label={entry === "ai" ? copy.aiInterpretation.title : copy.modes[entry]} onClick={() => setMode(entry)}>{modeIcons[entry]}<span>{copy.modes[entry]}</span></button>)}</div>
           <form className="ena-rail-logout" action="/api/open-ena/logout" method="post" onSubmit={submitOpenEnaLogoutAsDocumentRequest}><input type="hidden" name="locale" value={locale} /><button type="submit" aria-label={authCopy.signOut} title={authCopy.signOut}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5m4-11 4 4-4 4m-5-4h9" /></svg><span>{authCopy.signOut}</span></button></form>
           <div className="ena-rail-meta"><span className="ena-rail-privacy">{workspaceCopy.shell.local}</span><span className="sr-only">{workspaceCopy.shell.runtimePrivacy(JENA_RUNTIME_VERSION)}</span></div>
         </nav>
