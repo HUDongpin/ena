@@ -675,6 +675,22 @@ try {
     const currentAfterArrows = await page.locator(".ena-rail-button[aria-current='step']").evaluate((element) => element.getAttribute("aria-label"));
     check(currentAfterArrows === "Data", `${label}: arrow focus changed aria-current to ${JSON.stringify(currentAfterArrows)}`);
     if (arrowsWork) {
+      // Arrow roving leaves the tab stop on Plot Tools while Data stays the active mode.
+      // Clicking the already-active mode must move the tab stop onto that button.
+      await page.getByRole("button", { name: "Data", exact: true }).click();
+      const tabStopsAfterActiveClick = await page.locator(".ena-rail-button").evaluateAll((elements) => elements.map((element) => ({
+        name: element.getAttribute("aria-label"),
+        tabIndex: element.tabIndex,
+        current: element.getAttribute("aria-current"),
+      })));
+      const clickedStop = tabStopsAfterActiveClick.find((entry) => entry.name === "Data");
+      const otherStops = tabStopsAfterActiveClick.filter((entry) => entry.name !== "Data");
+      check(
+        clickedStop?.tabIndex === 0 && otherStops.every((entry) => entry.tabIndex === -1) && clickedStop.current === "step",
+        `${label}: clicking the already-active Data rail after arrow roving left tab stops ${JSON.stringify(tabStopsAfterActiveClick)}`,
+      );
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowRight");
       await page.keyboard.press("Tab");
       const tabLanding = await focusedRailName(page);
       check(tabLanding === null, `${label}: Tab from the roving rail button landed on another rail button (${tabLanding})`);
