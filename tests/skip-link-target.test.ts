@@ -25,6 +25,12 @@ test("the locale shell owns one skip link and the workspace does not render a se
   assert.equal(getOpenEnaCopy("zh-hans").modelV3.workspace.landmarks.skipToWorkspace, "跳至工作区");
 });
 
+test("analysis-mode toolbar labels exist in en, zh-Hant, and zh-Hans", () => {
+  assert.equal(getOpenEnaCopy("en").modelV3.workspace.landmarks.railToolbar, "Analysis mode toolbar");
+  assert.equal(getOpenEnaCopy("zh-hant").modelV3.workspace.landmarks.railToolbar, "分析模式工具列");
+  assert.equal(getOpenEnaCopy("zh-hans").modelV3.workspace.landmarks.railToolbar, "分析模式工具栏");
+});
+
 test("skip activation focuses a tabindex=-1 landmark and leaves #main-content to the browser", () => {
   const skipLink = readFileSync(join(projectRoot, "components/SkipLink.tsx"), "utf8");
   const workspace = readFileSync(join(projectRoot, "components/open-ena/OpenEnaWorkspace.tsx"), "utf8");

@@ -14018,6 +14018,13 @@ html:has(.open-ena-page) {
   font-size: 12px;
   line-height: 1.45;
 }
+/* This Chromium leaves closed disclosure children in layout. Hide those
+   controls so they do not paint over the next block, but keep result tables
+   laid out: narrow Stats scrolling measures them even when the disclosure
+   was closed again by a tab change. */
+.ena-workspace-controls-v3 details:not([open]) > :not(summary):not(.ena-result-table-wrap) {
+  display: none;
+}
 .ena-workspace-controls-v3 :where(select, textarea, input[type="text"], input[type="number"]) {
   box-sizing: border-box;
   max-width: 100%;
@@ -14180,6 +14187,57 @@ html:has(.open-ena-page) {
   background: #858585;
   font-size: 10px;
   font-weight: 700;
+}
+@media (max-width: 900px) {
+  .ena-model-tab-cell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+  }
+  .ena-model-tab-cell > [role="tab"] {
+    width: auto;
+    min-width: 0;
+    height: auto;
+  }
+  .ena-model-tab-cell .ena-model-help-button {
+    position: static;
+    width: 32px;
+    height: auto;
+    min-width: 32px;
+    min-height: 32px;
+    align-self: center;
+  }
+  .ena-restored-workbench .ena-model-tab-cell[data-active="true"] > [role="tab"] {
+    padding-inline-end: 3px;
+  }
+}
+/* CSS zoom narrows the Open ENA container while the viewport stays above 900px,
+   so the media query above does not match. These rules follow the absolute
+   help-button placement so the container query can unpin it. */
+@media (min-width: 901px) {
+  @container open-ena-viewport (max-width: 900px) {
+    .ena-model-tab-cell {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: stretch;
+    }
+    .ena-model-tab-cell > [role="tab"] {
+      width: auto;
+      min-width: 0;
+      height: auto;
+    }
+    .ena-model-tab-cell .ena-model-help-button {
+      position: static;
+      width: 32px;
+      height: auto;
+      min-width: 32px;
+      min-height: 32px;
+      align-self: center;
+    }
+    .ena-restored-workbench .ena-model-tab-cell[data-active="true"] > [role="tab"] {
+      padding-inline-end: 3px;
+    }
+  }
 }
 .ena-restored-workbench .ena-model-tab-panel { scrollbar-gutter: auto; overflow: visible; }
 .ena-restored-workbench .ena-official-model-panel { gap: 8px; padding: 0; }
@@ -14449,6 +14507,7 @@ html:has(.open-ena-page) {
 .ena-restored-workbench.ena-ai-mode-panel > button { width: 100%; margin: 0 0 10px; }
 @media (max-width: 480px) {
   .ena-restored-workbench .ena-model-tabs [role="tab"] { font-size: 11px; }
+  .ena-restored-workbench .ena-model-tabs [role="tab"] > span:first-child { white-space: normal; }
   .ena-restored-workbench .ena-model-code-row-v3 { grid-template-columns: 24px minmax(0, 1fr) 24px repeat(3, 28px); }
   .ena-restored-workbench .ena-model-code-row-v3 .ena-official-icon-button,
   .ena-restored-workbench .ena-model-code-color-v3 { width: 28px; min-width: 28px; }

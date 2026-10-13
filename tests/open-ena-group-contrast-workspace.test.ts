@@ -79,7 +79,7 @@ test("one typed pair and two inference axes persist while inference requires exp
   assert.match(v3, /primaryGroup: primary.fields\[0\].value/);
   assert.match(v3, /axes: \[twoDAxes\[0\], twoDAxes\[1\]\]/);
   assert.match(v3, /onClick=\{\(\) => void attempt\(runInference\)\}/);
-  assert.match(v3, /onClick=\{\(\) => setMode\(entry\)\}/);
+  assert.match(v3, /onClick=\{\(\) => \{ setRailTabStop\(entry\); setMode\(entry\); \}\}/);
 
 });
 
