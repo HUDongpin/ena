@@ -344,6 +344,9 @@ export function OpenEnaPersistentRailPanels({
 
 const OPEN_ENA_RAIL_MODES = ["data", "model", "plot", "stats", "ai"] as const;
 const emptyNodePositions = new Map<string, OpenEnaNodeDimensionPosition>();
+// A fresh [] default is a new identity on every render, including a rail
+// orientation update, and rebuilds the 3D plot spec.
+const NO_RUNTIME_DISABLED_PLUGIN_IDS: readonly string[] = Object.freeze([]);
 
 function openEnaRailToolbarOrientation(toolbar: HTMLElement): "horizontal" | "vertical" {
   const buttons = toolbar.querySelectorAll<HTMLElement>(".ena-rail-button");
@@ -401,7 +404,7 @@ function ResearchTableV3({ rows, label, unavailable, boundedRows, columnLabels }
     })}</tr>)}</tbody></table>{rows.length > 100 && <p>{boundedRows(100, rows.length)}</p>}</div>;
 }
 
-export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSource, worker, runtimeDisabledPluginIds = [] }: OpenEnaWorkspaceProps) {
+export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSource, worker, runtimeDisabledPluginIds = NO_RUNTIME_DISABLED_PLUGIN_IDS }: OpenEnaWorkspaceProps) {
   const workspaceId = useId();
   const rebuildBlockingChecklistId = `${workspaceId}-rebuild-blocking-checklist`;
   const copy = getOpenEnaCopy(locale);
