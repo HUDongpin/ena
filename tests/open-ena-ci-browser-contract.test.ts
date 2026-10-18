@@ -84,6 +84,56 @@ for (const [id, script, filename, evidence, environment] of [
   });
 }
 
+test("Browser CI runs the workspace landmarks and narrow-viewport gate", () => {
+  const packageJson = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  };
+  assert.equal(
+    packageJson.scripts["test:browser:open-ena-a11y-landmarks"],
+    "node tests/open-ena-a11y-landmarks-browser.mjs",
+  );
+  assert.match(workflow, /npm run test:browser:open-ena-a11y-landmarks/u);
+  const source = readFileSync(join(process.cwd(), "tests/open-ena-a11y-landmarks-browser.mjs"), "utf8");
+  assert.match(source, /Skip to workspace/u);
+  assert.match(source, /跳至工作區/u);
+  assert.match(source, /exactly one \.skip-link/u);
+  assert.match(source, /first Tab stop/u);
+  assert.match(source, /#main-content/u);
+  assert.match(source, /Skip to content/u);
+  assert.match(source, /app\/\[locale\]\/layout/u);
+  assert.match(source, /app\/\[locale\]\/page/u);
+  assert.match(source, /scrollWidth/u);
+  assert.match(source, /width: 390/u);
+  assert.match(source, /width: 768/u);
+  assert.match(source, /width: 1440/u);
+  assert.match(source, /defaultPrevented/u);
+  assert.match(source, /hashchange/u);
+  assert.match(source, /getByRole\("toolbar", \{ name: "Analysis mode toolbar" \}/u);
+  assert.match(source, /分析模式工具列/u);
+  assert.match(source, /分析模式工具栏/u);
+  assert.match(source, /aria-orientation/u);
+  assert.match(source, /width: 320/u);
+  assert.match(source, /exactly one rail button in the Tab order/u);
+  for (const key of ["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"]) {
+    assert.match(source, new RegExp(`"${key}"`, "u"));
+  }
+  assert.match(source, /undersized rail\/panel targets/u);
+  assert.match(source, /overlapping rail\/panel controls/u);
+});
+
+test("Browser CI runs the AI presentation retention gates", () => {
+  const packageJson = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  };
+  for (const [script, filename] of [
+    ["test:browser:open-ena-ai-presentation-retention", "open-ena-ai-presentation-retention-browser.mjs"],
+    ["test:browser:open-ena-ai-interpretation-retention", "open-ena-ai-interpretation-retention-browser.mjs"],
+  ] as const) {
+    assert.equal(packageJson.scripts[script], `node tests/${filename}`);
+    assert.ok(workflow.includes(`npm run ${script}`));
+  }
+});
+
 test("Browser CI does not let skipped downstream evidence uploads mask the first smoke failure", () => {
   assert.match(
     workflow,

@@ -28,6 +28,11 @@ function sourceManifest() {
 function treeManifest(path, prefix = "") {
     return readdirSync(path).sort().flatMap(name => { const relative = join(prefix, name); const full = join(path, name); return statSync(full).isDirectory() ? treeManifest(full, relative) : [{ path: relative, sha256: hash(readFileSync(full)) }]; });
 }
+// next start writes server/route-cache while serving. That is runtime cache, same
+// class as .next/cache, and is not a change to the compiled build.
+function servedBuildManifest() {
+    return treeManifest(join(root, ".next")).filter(entry => !entry.path.startsWith("cache/") && !entry.path.startsWith("diagnostics/") && !entry.path.startsWith("server/route-cache/") && entry.path !== "trace" && entry.path !== "trace-build");
+}
 const credentials = { username: `task37_${randomBytes(12).toString("hex")}`, password: randomBytes(32).toString("hex"), secret: randomBytes(32).toString("hex"), account: `task37_${randomBytes(12).toString("hex")}` };
 const redact = value => Object.values(credentials).reduce((text, secret) => text.replaceAll(secret, "[redacted]"), String(value)).replace(/ws:\/\/[^\s]+\/devtools\/browser\/[^\s]+/g, "[redacted browser endpoint]").replace(/(postgresql:\/\/)[^\s]+/gu, "$1[redacted]");
 const receipt = { status: "running", directory, sourceGitSha: null, parentGitSha: null, node: process.version, npm: null, npmPath: null, harnessPid: process.pid, harnessParentPid: process.ppid, journeys: [], screenshots: [], errors: [], zoomMechanism: "CSS zoom: 2; reflow evidence, not native browser zoom", visualInspection: { status: "pending", actor: "agent" } };
@@ -77,6 +82,7 @@ async function waitForHttp(url, label) {
     }, deadlines.readiness);
 }
 const button = name => page.getByRole("button", { name, exact: true });
+const runModel = () => page.getByTestId("open-ena-run-model");
 const tab = name => page.getByRole("tab", { name: new RegExp(`^${name}(,|$)`) });
 async function mode(name) { await page.getByRole("navigation", { name: "Analysis modes" }).getByRole("button", { name, exact: true }).click(); }
 async function shot(name, fullPage = true) { const path = join(directory, `${name}.png`); await page.screenshot({ path, fullPage }); receipt.screenshots.push({ path, sha256: hash(readFileSync(path)) }); }
@@ -86,7 +92,7 @@ async function current() { await page.waitForFunction(() => document.querySelect
 async function lastRun() { return page.evaluate(() => { const response = window.__task37WorkerAudit.filter(x => x.direction === "response" && x.message.kind === "result-v3").at(-1); const request = window.__task37WorkerAudit.find(x => x.direction === "request" && x.message.id === response?.message.id); return { request: request?.message, response: response?.message }; }); }
 async function run(label) {
     const before = await page.evaluate(() => window.__task37WorkerAudit.filter(x => x.message.kind === "result-v3").length);
-    await button("Run model").click();
+    await runModel().click();
     await page.waitForFunction(n => window.__task37WorkerAudit.filter(x => x.message.kind === "result-v3").length > n, before, { timeout: 60000 });
     await current();
     const audit = await lastRun();
@@ -97,7 +103,18 @@ async function run(label) {
     json(`run-${label}.json`, audit);
     return audit;
 }
-async function download(name, filename) { const pending = page.waitForEvent("download"); await button(name).click(); const item = await pending; const path = join(directory, filename); await item.saveAs(path); return { path, value: JSON.parse(readFileSync(path, "utf8")), sha256: hash(readFileSync(path)) }; }
+async function openRowOrderDisclosure() {
+    // Standard Moving Stanza keeps row order inside a disclosure that is closed once a policy exists.
+    const disclosure = page.locator("details.ena-row-order-disclosure");
+    if (await disclosure.count() === 0) return;
+    if (await disclosure.getAttribute("open") === null) await disclosure.locator("> summary").click();
+}
+async function openArtifactsDisclosure() {
+    // Export draft and Export Reference live in this closed disclosure.
+    const details = page.locator("details.ena-artifacts-disclosure");
+    if (await details.getAttribute("open") === null) await details.locator("> summary").click();
+}
+async function download(name, filename) { await openArtifactsDisclosure(); const pending = page.waitForEvent("download"); await button(name).click(); const item = await pending; const path = join(directory, filename); await item.saveAs(path); return { path, value: JSON.parse(readFileSync(path, "utf8")), sha256: hash(readFileSync(path)) }; }
 async function layout(label) {
     const metrics = await page.evaluate(() => { const list = document.querySelector('[role="tablist"][aria-label="Model configuration"]'); const active = list?.querySelector('[aria-selected="true"]'); const panel = document.querySelector('[role="tabpanel"]'); const first = panel?.firstElementChild; return { width: innerWidth, scroll: document.documentElement.scrollWidth, tabTop: active?.getBoundingClientRect().top, listTop: list?.getBoundingClientRect().top, childGap: first && panel ? first.getBoundingClientRect().top - panel.getBoundingClientRect().top : null, panelHeight: panel?.getBoundingClientRect().height }; });
     assert.ok(metrics.scroll <= metrics.width + 1, `${label}: horizontal document overflow ${JSON.stringify(metrics)}`);
@@ -129,6 +146,7 @@ async function workspaceModeStyleContract(state, name) {
     const panel = page.locator(".ena-workspace-controls-v3:visible");
     await panel.waitFor();
     assert.equal(await panel.count(), 1, `${state} ${name}: exactly one visible styled control panel`);
+    if (name === "Data") await openArtifactsDisclosure();
     await panel.evaluate(node => { for (let parent = node; parent; parent = parent.parentElement) parent.scrollTop = 0; });
     const metrics = await panel.evaluate(root => {
         const rendered = node => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== "hidden";
@@ -138,9 +156,13 @@ async function workspaceModeStyleContract(state, name) {
             width: innerWidth, documentWidth: document.documentElement.scrollWidth,
             panel: { left: box.left, right: box.right, width: box.width },
             headings: [...root.querySelectorAll("h2")].filter(rendered).map(node => ({ text: node.textContent, fontSize: parseFloat(getComputedStyle(node).fontSize), mainAiTitle: node.parentElement === root && root.classList.contains("ena-ai-mode-panel") })),
-            buttons: [...root.querySelectorAll('button:not([class]):not([role="tab"]):not([role="switch"])')].filter(node => rendered(node) && !node.closest(".ena-group-display-units")).map(node => {
+            buttons: [...root.querySelectorAll('button:not([class]):not([role="tab"]):not([role="switch"])')].filter(node => rendered(node) && !node.closest(".ena-group-display-units") && !node.closest(".ena-view-toggle")).map(node => {
                 const style = getComputedStyle(node), rect = node.getBoundingClientRect();
                 return { text: node.textContent, pressed: node.getAttribute("aria-pressed") === "true", background: style.backgroundColor, minHeight: parseFloat(style.minHeight), paddingLeft: parseFloat(style.paddingLeft), paddingRight: parseFloat(style.paddingRight), borderWidth: style.borderTopWidth, borderStyle: style.borderTopStyle, left: rect.left, right: rect.right };
+            }),
+            viewToggles: [...root.querySelectorAll(".ena-view-toggle button")].filter(rendered).map(node => {
+                const style = getComputedStyle(node), rect = node.getBoundingClientRect();
+                return { text: node.textContent, pressed: node.getAttribute("aria-pressed") === "true", background: style.backgroundColor, minHeight: parseFloat(style.minHeight), paddingLeft: parseFloat(style.paddingLeft), paddingRight: parseFloat(style.paddingRight), borderWidth: style.borderTopWidth, left: rect.left, right: rect.right };
             }),
             files: [...root.querySelectorAll('input[type="file"]')].filter(rendered).map(node => {
                 const rect = node.getBoundingClientRect(), selector = getComputedStyle(node, "::file-selector-button");
@@ -160,6 +182,15 @@ async function workspaceModeStyleContract(state, name) {
         assert.equal(control.borderStyle, "solid", `${label}: native button border style: ${control.text}`);
         assert.ok(control.left >= metrics.panel.left - 1 && control.right <= metrics.panel.right + 1, `${label}: button exceeds control panel: ${control.text}`);
     }
+    // At the 1440px workspace width, 2D/3D is a segmented control (min-height 44px, 6px inline padding, no action-button chrome).
+    for (const toggle of metrics.viewToggles) {
+        assert.equal(toggle.minHeight, 44, `${label}: view toggle height: ${toggle.text}`);
+        assert.equal(toggle.paddingLeft, 6, `${label}: view toggle padding: ${toggle.text}`);
+        assert.equal(toggle.paddingRight, 6, `${label}: view toggle padding: ${toggle.text}`);
+        assert.equal(toggle.borderWidth, "0px", `${label}: view toggle border: ${toggle.text}`);
+        assert.equal(toggle.background, toggle.pressed ? "rgb(137, 207, 240)" : "rgba(0, 0, 0, 0)", `${label}: view toggle background: ${toggle.text}`);
+        assert.ok(toggle.left >= metrics.panel.left - 1 && toggle.right <= metrics.panel.right + 1, `${label}: view toggle exceeds control panel: ${toggle.text}`);
+    }
     for (const input of metrics.files) {
         assert.ok(input.left >= metrics.panel.left - 1 && input.right <= metrics.panel.right + 1, `${label}: file input exceeds control panel: ${input.label}`);
         assert.equal(input.selectorBackground, "rgb(237, 245, 249)", `${label}: file chooser lacks shared styling`);
@@ -170,10 +201,11 @@ async function workspaceModeStyleContract(state, name) {
     const filename = name.toLowerCase().replace(/[^a-z]+/g, "-").replace(/-$/u, "");
     await shot(`desktop-${state}-${filename}-styled`);
     if (name === "Data") {
-        const artifacts = panel.getByRole("heading", { name: "Artifacts", exact: true });
+        // Artifacts is the disclosure summary, not a heading. The section is opened above so its controls are in the style sample.
+        const artifacts = panel.locator("details.ena-artifacts-disclosure");
         await artifacts.scrollIntoViewIfNeeded();
         await shot(`desktop-${state}-data-artifacts-styled`);
-        await panel.locator("button").last().scrollIntoViewIfNeeded();
+        await artifacts.locator("button").last().scrollIntoViewIfNeeded();
         await shot(`desktop-${state}-data-artifacts-bottom-styled`);
     }
     return metrics;
@@ -265,15 +297,40 @@ async function strictSourceBoundaries() {
     await button("Confirm types and create typed XLSX").click();
     await tab("Units").waitFor();
     assert.equal(await page.evaluate(() => window.__task37WorkerAudit.length), runsBefore, "ordinary upload cannot autorun");
+    // File admit keeps the live mapping (draftsForInstalledSourceV3). Journeys 8–12
+    // left the trajectory sample's Group/Speaker units, Period horizon, TE–TP codes,
+    // Accumulated Trajectory model, Frequency weighting, and a Reference rotation
+    // fitted to that code set. Those fields are absent from this CSV. Clear them
+    // before Build. EndPoint is the model this section's typing checks were written
+    // against; Accumulated Trajectory would still demand a Horizon order over Period.
+    // Binary is selected before the Code-manager assertions because "fraction is not
+    // a legal Binary code" is false under the retained Frequency weighting.
+    for (const field of ["Group", "Speaker"])
+        await button(`Remove ${field} from Unit fields`).click();
     await button("Add or remove Unit fields fields").click();
     await page.getByRole("region", { name: "Unit fields", exact: true }).getByLabel("team_id", { exact: true }).check();
     await button("Add or remove Unit fields fields").click();
     await page.getByRole("combobox", { name: "Create Sample / Group", exact: true }).selectOption("condition");
     await tab("Horizons").click();
+    await button("Remove Period from Horizon identity").click();
     await button("Add or remove Horizon identity fields").click();
     await page.getByRole("region", { name: "Horizon identity", exact: true }).getByLabel("conversation_id", { exact: true }).check();
     await button("Add or remove Horizon identity fields").click();
+    await tab("Windows").click();
+    await page.getByRole("combobox", { name: "Model", exact: true }).selectOption("EndPoint");
+    await page.getByRole("combobox", { name: "Window", exact: true }).selectOption("MovingStanzaWindow");
+    await page.getByRole("combobox", { name: /^Projection & Rotation/ }).selectOption("svd");
+    await page.getByLabel("Binary", { exact: true }).check();
+    await openRowOrderDisclosure();
+    await page.getByLabel("Use source order", { exact: true }).check();
+    await button("Review source-order statement").click();
+    await button("Accept statement").click();
+    await page.getByRole("group", { name: "Backward context", exact: true }).getByLabel("Rows", { exact: true }).fill("3");
     await tab("Codes").click();
+    // A missing Code renders the same "Exclude … Code" name on the row icon and on
+    // its diagnostic action. The row control is the one that drops the retained code.
+    for (const code of ["TE", "EX", "IN", "RE", "SP", "TP"])
+        await page.getByTestId("open-ena-model-v3-codes-panel").locator(`button.ena-official-icon-button[aria-label="Exclude ${code} Code"]`).click();
     await page.getByRole("toolbar", { name: "Code actions" }).getByRole("button", { name: "Manage Codes", exact: true }).click();
     for (const code of codeNames)
         await page.getByLabel(`Select ${code} as a Code`, { exact: true }).check();
@@ -282,15 +339,10 @@ async function strictSourceBoundaries() {
     assert.equal(await page.getByLabel("Select nonfinite as a Code", { exact: true }).isDisabled(), true);
     await page.getByLabel("Select logical as a Code", { exact: true }).check();
     await button("Close Code manager").click();
-    await tab("Windows").click();
-    await page.getByRole("combobox", { name: "Window", exact: true }).selectOption("MovingStanzaWindow");
-    await page.getByLabel("Use source order", { exact: true }).check();
-    await button("Review source-order statement").click();
-    await button("Accept statement").click();
-    await page.getByRole("group", { name: "Backward context", exact: true }).getByLabel("Rows", { exact: true }).fill("3");
     const binary = await run("strict-binary-number-and-boolean");
+    await tab("Windows").click();
     await page.getByLabel("Frequency", { exact: true }).check();
-    assert.equal(await button("Run model").isDisabled(), true, "Boolean Code cannot silently coerce to frequency");
+    assert.equal(await runModel().isDisabled(), true, "Boolean Code cannot silently coerce to frequency");
     await tab("Codes").click();
     await button("Exclude logical Code").click();
     await page.getByRole("toolbar", { name: "Code actions" }).getByRole("button", { name: "Manage Codes", exact: true }).click();
@@ -301,7 +353,7 @@ async function strictSourceBoundaries() {
     const frequency = await run("strict-frequency-decimals");
     await tab("Windows").click();
     await page.getByLabel("Binary", { exact: true }).check();
-    assert.equal(await button("Run model").isDisabled(), true, "fraction must not silently coerce to Binary");
+    assert.equal(await runModel().isDisabled(), true, "fraction must not silently coerce to Binary");
     await page.getByLabel("Frequency", { exact: true }).check();
     assert.notEqual(await page.getByTestId("open-ena-workspace-v3").getAttribute("data-result-status"), "current", "ABA configuration edits cannot revive the earlier result");
     await run("strict-frequency-after-aba");
@@ -370,7 +422,7 @@ async function journeys() {
         assert.equal(fit.response.result.configuration.analysis.rotation.type, "means");
         await button("Exclude group configuration").click();
         assert.equal(await page.getByRole("combobox", { name: "Create Sample / Group", exact: true }).inputValue(), "");
-        assert.equal(await button("Run model").isDisabled(), true);
+        assert.equal(await runModel().isDisabled(), true);
         await tab("Windows").click();
         assert.equal(await page.getByRole("combobox", { name: /^Projection & Rotation/ }).inputValue(), "means");
         await tab("Units").click();
@@ -394,7 +446,7 @@ async function journeys() {
         emptyConfiguration = draft.value;
         await button("Exclude all selected Codes").click();
         await page.getByRole("heading", { name: "No codes selected", exact: true }).waitFor();
-        assert.equal(await button("Run model").isDisabled(), true);
+        assert.equal(await runModel().isDisabled(), true);
         await shot("desktop-empty-codes");
         return { beforeDraftSha256: draft.sha256, displayOnlyIdentity: result.scientificResultSha256 };
     });
@@ -425,6 +477,7 @@ async function journeys() {
                 await page.getByRole("combobox", { name: "Window", exact: true }).selectOption(window);
                 await page.getByLabel(weighting, { exact: true }).check();
                 if (window === "MovingStanzaWindow") {
+                    await openRowOrderDisclosure();
                     await page.getByLabel("Use source order", { exact: true }).check();
                     await button("Review source-order statement").click();
                     await button("Accept statement").click();
@@ -448,6 +501,7 @@ async function journeys() {
                 await page.getByRole("combobox", { name: "Model", exact: true }).selectOption(model);
                 await page.getByRole("combobox", { name: "Window", exact: true }).selectOption(window);
                 if (window === "MovingStanzaWindow") {
+                    await openRowOrderDisclosure();
                     await page.getByLabel("Use source order", { exact: true }).check();
                     await button("Review source-order statement").click();
                     await page.getByRole("dialog", { name: "Review source-order statement" }).getByRole("button", { name: "Accept statement" }).click();
@@ -475,7 +529,7 @@ async function journeys() {
             const count = await page.evaluate(() => window.__task37WorkerAudit.length);
             await rows.fill(invalid);
             assert.equal(await rows.getAttribute("aria-invalid"), "true");
-            assert.equal(await button("Run model").isDisabled(), true);
+            assert.equal(await runModel().isDisabled(), true);
             assert.notEqual(await page.getByTestId("open-ena-workspace-v3").getAttribute("data-result-status"), "current");
             await tab("Codes").click();
             await tab("Windows").click();
@@ -557,6 +611,7 @@ async function journeys() {
         const displayOrder = await page.getByRole("button", { name: /^Reorder / }).evaluateAll(nodes => nodes.map(node => node.getAttribute("aria-label")));
         await tab("Windows").click();
         await page.getByRole("group", { name: "Backward context", exact: true }).getByLabel("Rows", { exact: true }).fill("3");
+        await openRowOrderDisclosure();
         await page.getByLabel("Use source order", { exact: true }).check();
         await button("Review source-order statement").click();
         await button("Accept statement").click();
@@ -611,7 +666,7 @@ async function journeys() {
                 evidence.push({ mode: setup.name, tab: name, ...await layout(`${setup.name} ${name}`) });
                 const controls = page.getByRole("tabpanel").locator("button:visible:enabled, input:not([type=radio]):visible:enabled, input[type=radio]:checked:visible:enabled, select:visible:enabled");
                 for (let index = 0; index < await controls.count(); index++) evidence.push(await assertReachable(controls.nth(index), `${setup.name} ${name} control ${index}`));
-                evidence.push(await assertReachable(button("Run model"), `${setup.name} Run model`));
+                evidence.push(await assertReachable(runModel(), `${setup.name} Run model`));
                 if (name === "Units") {
                     await button("Hide all group layers").click(); evidence.push(await assertReachable(button("Restore all group layers"), `${setup.name} Restore Groups`)); await button("Restore all group layers").click();
                 }
@@ -661,7 +716,7 @@ async function main() {
     receipt.sourceContentSha256 = hash(JSON.stringify(sourceBefore));
     receipt.build = await child("npm", ["run", "build"], env, "build.log");
     assert.deepEqual(sourceManifest(), sourceBefore, "source content changed during build");
-    const buildManifest = treeManifest(join(root, ".next")).filter(x => !x.path.startsWith("cache/") && !x.path.startsWith("diagnostics/") && x.path !== "trace" && x.path !== "trace-build");
+    const buildManifest = servedBuildManifest();
     json("build-files.json", buildManifest);
     receipt.build.contentSha256 = hash(JSON.stringify(buildManifest));
     receipt.build.buildId = readFileSync(join(root, ".next/BUILD_ID"), "utf8").trim();
@@ -735,7 +790,7 @@ async function main() {
     assert.deepEqual(receipt.errors, []);
     assert.deepEqual(sourceManifest(), sourceBefore);
     json("source-after.json", sourceManifest());
-    assert.deepEqual(treeManifest(join(root, ".next")).filter(x => !x.path.startsWith("cache/") && !x.path.startsWith("diagnostics/") && x.path !== "trace" && x.path !== "trace-build"), buildManifest, "built content changed during served journey");
+    assert.deepEqual(servedBuildManifest(), buildManifest, "built content changed during served journey");
     receipt.status = "pass";
 
 }

@@ -2,6 +2,36 @@ import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { readFile } from 'node:fs/promises';
+function displayedPlotlyCamera(camera) {
+  const length = Math.hypot(camera.eye.x, camera.eye.y, camera.eye.z) || 1;
+  const view = { x: camera.eye.x / length, y: camera.eye.y / length, z: camera.eye.z / length };
+  const requested = camera.up;
+  const alongView = requested.x * view.x + requested.y * view.y + requested.z * view.z;
+  const perpendicular = {
+    x: requested.x - view.x * alongView,
+    y: requested.y - view.y * alongView,
+    z: requested.z - view.z * alongView,
+  };
+  const perpendicularLength = Math.hypot(perpendicular.x, perpendicular.y, perpendicular.z) || 1;
+  return {
+    center: camera.center,
+    eye: camera.eye,
+    up: { x: perpendicular.x / perpendicularLength, y: perpendicular.y / perpendicularLength, z: perpendicular.z / perpendicularLength },
+    projection: camera.projection.type,
+  };
+}
+function assertDisplayedCamerasMatch(actual, expected, label) {
+  const left = displayedPlotlyCamera(actual);
+  const right = displayedPlotlyCamera(expected);
+  assert.equal(left.projection, right.projection, label);
+  const tolerance = 1e-6;
+  for (const key of ["center", "eye", "up"]) {
+    for (const axis of ["x", "y", "z"]) {
+      const delta = Math.abs(left[key][axis] - right[key][axis]);
+      assert.ok(delta <= tolerance, `${label}: ${key}.${axis} differs by ${delta}`);
+    }
+  }
+}
 const bundleOptions={bundle:true,format:'esm',platform:'browser',jsx:'automatic',write:false,logLevel:'silent'};
 const main=await build({...bundleOptions,stdin:{contents:`import React from 'react'; import {createRoot} from 'react-dom/client'; import OpenEnaWorkspace from './components/open-ena/OpenEnaWorkspace'; import {exportDraftV3} from './lib/open-ena/model-artifact-exports-v3'; import {prepareTeachingSampleV3} from './lib/open-ena/sample-source-v3'; window.sampleDraftArtifact=async(text,ona=false)=>{const prepared=await prepareTeachingSampleV3(text,'endpoint',new Date());const standard=prepared.drafts.standard;const draft=ona?{unitColumns:standard.unitColumns,horizonColumns:standard.horizonColumns,groupColumn:standard.groupColumn,codes:standard.codes,backward:{kind:'finite',value:5},rowOrder:standard.movingStanza.rowOrder,directionalMask:{schemaVersion:1,codeOrder:standard.codes,enabled:standard.codes.map(()=>standard.codes.map(()=>true))}}:standard;return new TextDecoder().decode((await exportDraftV3(draft)).bytes);}; createRoot(document.getElementById('root')).render(<OpenEnaWorkspace locale="en"/>);`,loader:'tsx',resolveDir:process.cwd(),sourcefile:'task31-production-app.tsx'}});
 const worker=await build({...bundleOptions,entryPoints:['lib/open-ena/jena.worker.ts']});
@@ -57,7 +87,11 @@ try {
  await page.locator('.ena-reset-all-plot-tools').click();
  await page.locator('.ena-plot-settings-trigger').click();
  await page.waitForFunction(()=>document.querySelector('.js-plotly-plot')?._fullLayout.scene.camera.projection.type==='perspective');
- assert.deepEqual(await page.locator('.js-plotly-plot').first().evaluate(node=>JSON.parse(JSON.stringify(node._fullLayout.scene.camera))),originalCamera,'Reset applies the default actual Plotly camera');
+ // Each side is normalized from its own eye, center, and up. Gram-Schmidt uses that
+ // camera's up, so a wrong post-reset up cannot match the original by borrowing it.
+ // Eye components can still differ by one float ulp; 1e-6 covers that and rejects a flipped or rotated up.
+ const resetCamera=await page.locator('.js-plotly-plot').first().evaluate(node=>JSON.parse(JSON.stringify(node._fullLayout.scene.camera)));
+ assertDisplayedCamerasMatch(resetCamera,originalCamera,'Reset applies the default actual Plotly camera');
  assert.equal(await page.evaluate(()=>window.workerStarts),3,'camera reset does not refit');
  await page.locator('.ena-visual-toolbar').getByRole('button',{name:'2D ENA',exact:true}).click();
  await page.getByRole('button',{name:'Stats & Export',exact:true}).click();
@@ -86,7 +120,10 @@ try {
  const sourceInput=page.getByLabel('Open coded CSV or XLSX');
  await sourceInput.setInputFiles({name:'review.csv',mimeType:'text/csv',buffer:Buffer.from(sampleText)});
  await page.getByRole('dialog',{name:'Review CSV source types'}).waitFor();
- assert.equal(await page.getByRole('button',{name:'Run model',exact:true}).isDisabled(),true,'pending source review cannot launch the previously active source');
+ // The build button is mounted only in Model mode. Pending review still disables it via sourcePreview.
+ await page.getByRole('button',{name:'Model',exact:true}).click();
+ assert.equal(await page.getByTestId('open-ena-run-model').isDisabled(),true,'pending source review cannot launch the previously active source');
+ await page.getByRole('button',{name:'Data',exact:true}).click();
  await page.getByLabel('Source type: team_id',{exact:true}).selectOption('number');
  assert.equal(await page.getByRole('button',{name:'Confirm types and create typed XLSX',exact:true}).isDisabled(),true,'invalid explicit typing cannot adopt source');
  await page.getByRole('button',{name:'Cancel source preparation',exact:true}).click();
@@ -111,12 +148,17 @@ try {
  const artifactInput=page.getByLabel('Import configuration, result or Reference');
  await artifactInput.setInputFiles({name:'configuration.json',mimeType:'application/json',buffer:Buffer.from(standardDraft)});
  await page.getByRole('button',{name:'Replace configuration',exact:true}).click();
- await page.waitForFunction(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Run model')?.disabled===false);
+ // Accepting a draft leaves the rail on Data. The build button is mounted only in Model mode.
+ await page.getByRole('button',{name:'Model',exact:true}).click();
+ await page.waitForFunction(()=>{const button=document.querySelector('[data-testid="open-ena-run-model"]');return button instanceof HTMLButtonElement&&!button.disabled;});
  assert.equal(await page.evaluate(()=>window.workerStarts),3,'ordinary CSV preparation/config import never inherits sample autorun');
- await page.getByRole('button',{name:'Run model',exact:true}).click();await page.waitForFunction(()=>window.workerStarts===4);await current();
+ await page.getByTestId('open-ena-run-model').click();await page.waitForFunction(()=>window.workerStarts===4);await current();
+ const artifacts=page.locator('details.ena-artifacts-disclosure');if(await artifacts.getAttribute('open')===null)await artifacts.locator('> summary').click();
  const referenceDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Export Reference',exact:true}).click();
  const nativeReference=await referenceDownload;const referenceBytes=await readFile(await nativeReference.path());
  assert.equal(JSON.parse(referenceBytes).schemaVersion,2,'production witness mints a genuine native Reference');
+ // The artifact file input is mounted only in Data mode.
+ await page.getByRole('button',{name:'Data',exact:true}).click();
  await artifactInput.setInputFiles({name:'reference.json',mimeType:'application/json',buffer:referenceBytes});await page.getByRole('button',{name:'Add Reference',exact:true}).click();
  await page.getByRole('button',{name:'Model',exact:true}).click();await page.getByRole('tab',{name:/Windows,/}).click();
  assert.equal(await page.getByLabel('Projection & Rotation').inputValue(),'svd');
@@ -124,14 +166,15 @@ try {
  await page.getByLabel('Projection & Rotation').selectOption('reference');
  const referenceSelect=page.getByLabel('Reference source');
  const referenceOption=await referenceSelect.locator('option').nth(1).getAttribute('value');await referenceSelect.selectOption(referenceOption);
- await page.waitForFunction(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Run model')?.disabled===false);
- await page.getByRole('button',{name:'Run model',exact:true}).click();await page.waitForFunction(()=>window.workerStarts===5);await current();
+ await page.waitForFunction(()=>{const button=document.querySelector('[data-testid="open-ena-run-model"]');return button instanceof HTMLButtonElement&&!button.disabled;});
+ await page.getByTestId('open-ena-run-model').click();await page.waitForFunction(()=>window.workerStarts===5);await current();
  const onaDraft=await page.evaluate(text=>window.sampleDraftArtifact(text,true),sampleText);
  await page.getByRole('button',{name:'Data',exact:true}).click();await artifactInput.setInputFiles({name:'ona-draft.json',mimeType:'application/json',buffer:Buffer.from(onaDraft)});
  await page.getByRole('button',{name:'Replace configuration',exact:true}).click();
- await page.waitForFunction(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Run model')?.disabled===false);
+ await page.getByRole('button',{name:'Model',exact:true}).click();
+ await page.waitForFunction(()=>{const button=document.querySelector('[data-testid="open-ena-run-model"]');return button instanceof HTMLButtonElement&&!button.disabled;});
  assert.equal(await page.evaluate(()=>window.workerStarts),5);
- await page.getByRole('button',{name:'Run model',exact:true}).click();await page.waitForFunction(()=>window.workerStarts===6);await current();
+ await page.getByTestId('open-ena-run-model').click();await page.waitForFunction(()=>window.workerStarts===6);await current();
  assert.ok(await page.locator('[data-ona-code-node-position]').count()>0,'actual ONA worker reaches directed bound renderer');
  await page.evaluate(()=>{window.holdCompileDigest=true;});
  await page.getByRole('button',{name:'Data',exact:true}).click();await page.getByRole('button',{name:'Load sample',exact:true}).click();
@@ -141,7 +184,7 @@ try {
  await sampleBackward.fill('');
  await page.evaluate(()=>{window.holdCompileDigest=false;window.digestWaiters.splice(0).forEach(resolve=>resolve());});
  await sampleBackward.fill('5');
- await page.waitForFunction(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Run model')?.disabled===false);
+ await page.waitForFunction(()=>{const button=document.querySelector('[data-testid="open-ena-run-model"]');return button instanceof HTMLButtonElement&&!button.disabled;});
  await page.waitForTimeout(100);assert.equal(await page.evaluate(()=>window.workerStarts),6,'editing a sample while compile is pending consumes its one-shot auto-run intent');
  assert.deepEqual(errors,[]);
  console.log('Task31 production browser worker: actual CSV teaching files → typed XLSX → native compile/plan → real Worker → admitted BoundResult; same-source reload, reupload/no-auto-run, explicit CSV review/cancel/type conversion, genuine Reference witness export/import/projection, actual ONA worker, real Plotly camera/reset, native trajectory graph and explicit native repeated-inference export PASS.');

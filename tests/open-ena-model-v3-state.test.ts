@@ -1140,3 +1140,78 @@ test("late compilation cannot replace a newer run or reopen its cancelled, error
     );
   }
 });
+
+test("display actions keep the current result and scientific revision; scientific actions stale it", async () => {
+  const { state, result } = await current();
+  const codes = [...state.drafts.standard.codes];
+  const group = result.executionProvenance.identityDictionary.groups[0]?.token;
+  assert.ok(group);
+  const displayActions = [
+    { type: "hide-all-codes" as const },
+    { type: "set-code-visible" as const, code: codes[0], visible: false },
+    { type: "set-code-color" as const, code: codes[0], color: "#112233" },
+    { type: "set-code-order" as const, codes: [...codes].reverse() },
+    { type: "hide-all-groups" as const },
+    { type: "set-group-display" as const, groupToken: group, patch: { showMean: false } },
+  ];
+  for (const action of displayActions) {
+    const next = reduce(state, action);
+    assert.equal(next.resultStatus, "current", action.type);
+    assert.equal(next.scientificRevision, state.scientificRevision, action.type);
+    assert.equal(next.result, result, action.type);
+  }
+  const restoredCodes = reduce(reduce(state, { type: "hide-all-codes" }), { type: "restore-code-visibility" });
+  assert.equal(restoredCodes.resultStatus, "current");
+  assert.equal(restoredCodes.scientificRevision, state.scientificRevision);
+  const restoredGroups = reduce(reduce(state, { type: "hide-all-groups" }), { type: "restore-group-visibility" });
+  assert.equal(restoredGroups.resultStatus, "current");
+  assert.equal(restoredGroups.scientificRevision, state.scientificRevision);
+  const marked = reduce(state, {
+    type: "mark-running",
+    executionPlanSha256: "e".repeat(64),
+    context: modelScientificContextV3(state),
+  });
+  assert.equal(marked.resultStatus, "current");
+  assert.equal(marked.scientificRevision, state.scientificRevision);
+  assert.equal(marked.runStatus, "running");
+  assert.equal(reduce(state, { type: "replace-standard-draft", draft: state.drafts.standard }), state);
+  assert.equal(reduce(state, { type: "set-dataset", datasetSha256: state.datasetSha256 }), state);
+  const inactiveDraft = reduce(state, {
+    type: "replace-ona-draft",
+    draft: { ...state.drafts.ona, backward: { kind: "finite", value: state.drafts.ona.backward.kind === "finite" ? state.drafts.ona.backward.value + 1 : 2 } },
+  });
+  assert.equal(inactiveDraft.resultStatus, "current");
+  assert.equal(inactiveDraft.scientificRevision, state.scientificRevision);
+  const inactiveBlock = reduce(state, { type: "set-editor-blocked", family: "ona", blocked: true });
+  assert.equal(inactiveBlock.resultStatus, "current");
+  assert.equal(inactiveBlock.scientificRevision, state.scientificRevision);
+  const scientific = [
+    reduce(state, { type: "set-active-family", family: "ona" }),
+    reduce(state, { type: "set-dataset", datasetSha256: "c".repeat(64) }),
+    reduce(state, { type: "adopt-dataset", datasetSha256: state.datasetSha256 }),
+    reduce(state, {
+      type: "replace-standard-draft",
+      draft: {
+        ...state.drafts.standard,
+        movingStanza: {
+          ...state.drafts.standard.movingStanza,
+          backward: { kind: "finite", value: 4 },
+        },
+      },
+    }),
+    reduce(state, { type: "set-editor-blocked", family: "standard", blocked: true }),
+    reduce(state, { type: "set-codes", codes: [...codes].reverse() }),
+    reduce(state, { type: "exclude-code", code: codes[0] }),
+    reduce(state, { type: "exclude-all-codes" }),
+    reduce(state, { type: "exclude-group-configuration" }),
+  ];
+  for (const next of scientific) {
+    assert.equal(next.resultStatus, "stale");
+    assert.ok(next.scientificRevision > state.scientificRevision);
+    assert.equal(next.result, result);
+  }
+  const excluded = reduce(state, { type: "exclude-code", code: codes[0] });
+  const undone = reduce(excluded, { type: "undo-model-edit" });
+  assert.equal(undone.resultStatus, "stale");
+  assert.ok(undone.scientificRevision > excluded.scientificRevision);
+});

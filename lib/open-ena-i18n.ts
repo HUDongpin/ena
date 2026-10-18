@@ -8,6 +8,12 @@ import type {
   OpenEnaResolvedRankPMethod,
 } from "./open-ena/rank-inference";
 import type { OpenEnaResultTablesCopy } from "./open-ena/export";
+import {
+  OPEN_ENA_EXPORT_FAMILY_NAMES,
+  type OpenEnaExportApplicabilityCopy,
+  type OpenEnaExportFamily,
+} from "./open-ena/export-applicability";
+import type { TeachingSampleKind } from "./open-ena/teaching-sample-guide";
 import type {
   AnalysisSetCapturePredicateIdV3,
   AnalysisSetComparePredicateIdV3,
@@ -119,7 +125,34 @@ export interface OpenEnaWorkspaceV3Copy {
     };
   };
   readonly data: {
-    readonly ariaLabel: string; readonly title: string; readonly openFile: string; readonly loadSample: string; readonly loadTrajectorySample: string;
+    readonly ariaLabel: string; readonly title: string; readonly openFile: string;     readonly loadSample: string; readonly loadTrajectorySample: string;
+    readonly teachingSamples: {
+      readonly libraryLabel: string;
+      readonly familyLabel: string;
+      readonly rowShapeLabel: string;
+      readonly expectedOutputLabel: string;
+      readonly loadOnaSample: string;
+      readonly families: Readonly<Record<OpenEnaExportFamily, string>>;
+      readonly rowShapes: Readonly<Record<TeachingSampleKind, string>>;
+      readonly expectedOutputs: Readonly<Record<TeachingSampleKind, string>>;
+    };
+    readonly firstSuccess: {
+      readonly title: string;
+      readonly loaded: string;
+      readonly drafts: (family: string) => string;
+      readonly gates: string;
+      readonly gatesClear: string;
+      readonly gatesPending: string;
+      readonly gatesBlocked: string;
+      readonly build: string;
+      readonly buildRunning: string;
+      readonly buildDone: string;
+      readonly complete: string;
+      readonly incomplete: string;
+      readonly analysisSetNote: string;
+      readonly onaContractNote: string;
+      readonly trajectoryNote: string;
+    };
     readonly sampleExplanation: string; readonly importArtifact: string; readonly artifactTooLarge: string;
     readonly reviewTypes: string; readonly reviewTypesTitle: string; readonly typingExplanation: string;
     readonly sourceTypeLabel: (column: string) => string; readonly sourceTypes: Readonly<Record<"text" | "number" | "boolean", string>>;
@@ -137,7 +170,7 @@ export interface OpenEnaWorkspaceV3Copy {
     readonly title: string; readonly exportContrastJson: string; readonly exportContrastEdges: string; readonly switchPlots: string;
     readonly showCentroidPaths: string; readonly endpointsOnly: string; readonly fittedOrder: string; readonly displayHorizon: (label: string) => string;
     readonly points: string; readonly networks: string; readonly codeLabels: string; readonly unitLabels: string; readonly variance: string; readonly trajectories: string;
-    readonly flipX: string; readonly flipY: string; readonly edgeThreshold: string; readonly edgeScale: string; readonly pointScale: string; readonly zoom: string;
+    readonly flipX: string; readonly flipY: string; readonly flippedLabel: string; readonly edgeThreshold: string; readonly edgeScale: string; readonly pointScale: string; readonly zoom: string;
     readonly unavailable: string; readonly axis: (index: number) => string; readonly resetNodes: string;
     readonly pngCanvasUnavailable: string; readonly pngEncodingFailed: string; readonly pngRenderFailed: string;
     readonly unknownRenderedCode: string; readonly toolsTitle: string;
@@ -163,6 +196,7 @@ export interface OpenEnaWorkspaceV3Copy {
     readonly onaEdges: string; readonly onaAudit: string; readonly exportOnaEdges: string; readonly exportOnaAudit: string; readonly exportNative: string;
     readonly localDataView: string; readonly globalTraversal: string; readonly exportDataView: string; readonly exportDataViewConfirmation: string;
     readonly dataViewValidated: string; readonly exportMethods: string; readonly onaMeaning: string;
+    readonly exportApplicability: OpenEnaExportApplicabilityCopy;
   };
   readonly artifacts: {
     readonly ariaLabel: string; readonly title: string; readonly clearPreset: string; readonly exportPreset: string; readonly reviewPreset: string;
@@ -175,12 +209,22 @@ export interface OpenEnaWorkspaceV3Copy {
     readonly comparePredicates: Readonly<Record<AnalysisSetComparePredicateIdV3, string>>;
     readonly presetTooLarge: string; readonly referenceDisplayName: string;
     readonly presetScope: string;
+    readonly presetInferenceAxesWithheld: (dimensions: string) => string;
   };
   readonly ai: { readonly ready: string; readonly unavailable: string; readonly openStats: string; readonly disabled: string; readonly wireLimitations: string };
   readonly toolbar: { readonly dataView: string; readonly downloadModel: string; readonly exportSvg: string; readonly exportPng: string; readonly researchSpace: string };
   readonly shell: { readonly workspaceAria: string; readonly modesAria: string; readonly local: string; readonly runtimePrivacy: (version: string) => string };
   readonly result: { readonly plotAria: string; readonly historicalGeometry: string; readonly sourceReplacementNotice: string; readonly rebuildNow: string; readonly rebuildNowAria: string; readonly boundGeometry: string; readonly oneAxis: string; readonly fittedCoordinates: string; readonly contrastUnavailable: string; readonly codeLabels: string; readonly trajectorySteps: string; readonly cohortMeaning: string };
-  readonly empty: { readonly ariaLabel: string; readonly comparisonPlot: string; readonly setupRequired: string; readonly researchSpace: string; readonly networkAria: string; readonly pathway: string; readonly complete: string; readonly incomplete: string; readonly openRows: string; readonly defineModel: string; readonly buildModel: string; readonly primaryPlot: string; readonly secondaryPlot: string; readonly awaitingGroup: string; readonly primaryPending: string; readonly secondaryPending: string; readonly dataReady: (rows: number) => string; readonly dataPrompt: string };
+  readonly empty: { readonly ariaLabel: string; readonly comparisonPlot: string; readonly setupRequired: string; readonly researchSpace: string; readonly networkAria: string; readonly pathway: string; readonly complete: string; readonly incomplete: string; readonly openRows: string; readonly defineModel: string; readonly buildModel: string; readonly primaryPlot: string; readonly secondaryPlot: string; readonly awaitingGroup: string; readonly primaryPending: string; readonly secondaryPending: string; readonly dataReady: (rows: number) => string; readonly dataPrompt: string; readonly sampleLibraryHint: string };
+  readonly landmarks: {
+    readonly skipToWorkspace: string;
+    readonly railToolbar: string;
+    readonly data: string;
+    readonly model: string;
+    readonly plot: string;
+    readonly stats: string;
+    readonly ai: string;
+  };
 }
 
 export type OpenEnaWorkspaceFailureV3 =
@@ -1033,6 +1077,15 @@ export interface OpenEnaAiInterpretationCopy {
   generating: string;
   cancel: string;
   retry: string;
+  sessionRecovery: string;
+  signInAgain: string;
+  signInNewTab: string;
+  failureUnavailable: string;
+  failureNetwork: string;
+  failureInvalidOutput: string;
+  evidenceBoundary: string;
+  evidenceBoundaryRetained: string;
+  previousInterpretation: string;
   errorTitle: string;
   noCurrentResult: string;
   staleResult: string;
@@ -2049,6 +2102,12 @@ const MODEL_SHORT_LOCALES_V3: Readonly<Record<string, readonly [string, string]>
   "Scientific configuration": ["科學設定", "科学设置"], Family: ["分析系列", "分析系列"], Model: ["模型", "模型"], Window: ["窗口", "窗口"], Weighting: ["權重", "权重"], Rotation: ["旋轉", "旋转"], "Units count": ["單位數量", "单位数量"], "Horizons count": ["視域數量", "视域数量"], "Groups count": ["群組數量", "组数量"], "Codes count": ["代碼數量", "代码数量"],
   "Standard ENA": ["標準 ENA", "标准 ENA"], "Ordered Network Analysis": ["有序網絡分析", "有序网络分析"], "End Point": ["端點", "端点"], "Separate Trajectory": ["分離軌跡", "分离轨迹"], "Accumulated Trajectory": ["累積軌跡", "累积轨迹"], "Moving Stanza": ["移動節段", "移动节段"], Conversation: ["對話", "对话"], Binary: ["二元", "二元"], Frequency: ["頻數", "频数"], "Frequency (sum)": ["頻數（總和）", "频数（总和）"], Means: ["均值", "均值"], Reference: ["參考", "参考"], Unavailable: ["不可用", "不可用"],
   "Model diagnostics": ["模型診斷", "模型诊断"], "Global diagnostics": ["全域診斷", "全局诊断"], Dataset: ["資料集", "数据集"], Resources: ["資源", "资源"], Migration: ["遷移", "迁移"], Error: ["錯誤", "错误"], Warning: ["警告", "警告"], Information: ["資訊", "信息"], Evidence: ["證據", "证据"], "More evidence is available": ["尚有更多證據", "尚有更多证据"], "Confirm scientific change": ["確認科學設定變更", "确认科学设置更改"], Confirm: ["確認", "确认"], Cancel: ["取消", "取消"],
+  "Unmet prerequisites": ["未滿足的前置條件", "未满足的前置条件"],
+  "Rebuild and Run stay blocked until each condition below is resolved. Open an item to edit its Model control.": ["在下列每一項條件都處理完成之前，無法重新建立或執行。開啟項目即可編輯對應的模型控制項。", "在下列每一项条件都处理完成之前，无法重新构建或运行。打开项目即可编辑对应的模型控件。"],
+  "Complete the backward window extent.": ["請完成向後情境範圍。", "请完成后向上下文范围。"],
+  "Complete the forward window extent.": ["請完成向前情境範圍。", "请完成向前上下文范围。"],
+  "Resolve the row order.": ["請處理資料列順序。", "请处理数据行顺序。"],
+  "Resolve the Horizon order.": ["請處理視域順序。", "请处理视域顺序。"],
   Field: ["欄位", "字段"], Direction: ["方向", "方向"], Ascending: ["升序", "升序"], Descending: ["降序", "降序"], Comparator: ["比較器", "比较器"], Number: ["數字", "数字"], Text: ["文字", "文本"], Boolean: ["布林值", "布尔值"], String: ["字串", "字符串"], Locale: ["語系", "语言区域"], Sensitivity: ["敏感度", "敏感度"], Value: ["值", "值"], Diagnostics: ["診斷", "诊断"], Type: ["類型", "类型"],
   Unit: ["單位", "单位"], Horizon: ["視域", "视域"], Source: ["來源", "来源"], Selected: ["已選", "已选"], "Date (YYYY-MM-DD)": ["日期（YYYY-MM-DD）", "日期（YYYY-MM-DD）"],
   "Datetime (ISO-8601, offset in value)": ["日期時間（ISO-8601，值內含時區偏移）", "日期时间（ISO-8601，值内含时区偏移）"],
@@ -2304,6 +2363,46 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
     data: {
       ariaLabel: t("Data source", "資料來源", "数据来源"), title: t("Coded data", "編碼資料", "编码数据"), openFile: t("Open coded CSV or XLSX", "開啟編碼 CSV 或 XLSX", "打开编码 CSV 或 XLSX"),
       loadSample: t("Load sample", "載入樣本", "加载样本"), loadTrajectorySample: t("Load trajectory sample", "載入軌跡樣本", "加载轨迹样本"),
+      teachingSamples: {
+        libraryLabel: t("Teaching samples", "教學樣本", "教学样本"),
+        familyLabel: t("Family", "模型族", "模型族"),
+        rowShapeLabel: t("Row shape", "資料列形狀", "数据行形状"),
+        expectedOutputLabel: t("Expected output", "預期產出", "预期产出"),
+        loadOnaSample: t("Load ONA sample", "載入 ONA 樣本", "加载 ONA 样本"),
+        families: {
+          endpoint: t(OPEN_ENA_EXPORT_FAMILY_NAMES.endpoint, "端點", "端点"),
+          separate: t(OPEN_ENA_EXPORT_FAMILY_NAMES.separate, "分離軌跡", "分离轨迹"),
+          accumulated: t(OPEN_ENA_EXPORT_FAMILY_NAMES.accumulated, "累積軌跡", "累积轨迹"),
+          ona: t(OPEN_ENA_EXPORT_FAMILY_NAMES.ona, "ONA", "ONA"),
+        },
+        rowShapes: {
+          endpoint: t("48 synthetic rows · 8 teams · 5 codes", "48 個合成資料列 · 8 個團隊 · 5 個代碼", "48 个合成数据行 · 8 个团队 · 5 个代码"),
+          trajectory: t("54 synthetic rows · 6 learners · TP1–TP3 · 6 codes", "54 個合成資料列 · 6 位學習者 · TP1–TP3 · 6 個代碼", "54 个合成数据行 · 6 位学习者 · TP1–TP3 · 6 个代码"),
+          ona: t("48 synthetic rows · 8 teams · 5 codes", "48 個合成資料列 · 8 個團隊 · 5 個代碼", "48 个合成数据行 · 8 个团队 · 5 个代码"),
+        },
+        expectedOutputs: {
+          endpoint: t("Endpoint fit", "端點擬合", "端点拟合"),
+          trajectory: t(OPEN_ENA_EXPORT_FAMILY_NAMES.separate, "分離軌跡", "分离轨迹"),
+          ona: t("ONA-ready", "可建立 ONA", "可构建 ONA"),
+        },
+      },
+      firstSuccess: {
+        title: t("First Build", "第一次建立", "第一次构建"),
+        loaded: t("Sample loaded", "已載入樣本", "已加载样本"),
+        drafts: (family) => t(`Eligible drafts prefilled for ${family}`, `已為${family}預填符合門檻的草稿`, `已为${family}预填符合门槛的草稿`),
+        gates: t("Remaining gates", "尚餘門檻", "剩余门槛"),
+        gatesClear: t("No remaining Build gates", "沒有尚餘的建立門檻", "没有剩余的构建门槛"),
+        gatesPending: t("Checking admission gates", "正在檢查准入門檻", "正在检查准入门槛"),
+        gatesBlocked: t("Build is blocked. Review the model settings and any reported error.", "無法建立。請檢查模型設定及顯示的錯誤。", "无法构建。请检查模型设置及显示的错误。"),
+        build: t("Build", "建立", "构建"),
+        buildRunning: t("Build is running", "正在建立", "正在构建"),
+        buildDone: t("First Build succeeded", "第一次建立已成功", "第一次构建已成功"),
+        complete: t("Complete: ", "已完成：", "已完成："),
+        incomplete: t("Not complete: ", "未完成：", "未完成："),
+        analysisSetNote: t("Analysis sets stay an Endpoint gate. This path ends at the first Build.", "分析集仍是端點門檻。這條路徑到第一次成功建立為止。", "分析集仍是端点门槛。这条路径到第一次成功构建为止。"),
+        onaContractNote: t("The fixed ONA contract is prefilled and unchanged: EndPoint, backward-only window, frequency-sum weighting, SVD, explicit row order, and an all-enabled directional mask.", "已預填且未改動固定 ONA 契約：端點、僅向後窗口、頻數總和權重、SVD、明確資料列順序，以及全部啟用的方向遮罩。", "已预填且未改动固定 ONA 契约：端点、仅向后窗口、频数总和权重、SVD、明确数据行顺序，以及全部启用的方向遮罩。"),
+        trajectoryNote: t("Switching to ONA or Accumulated trajectory keeps that family's admission gates. Use the ONA teaching sample for a prefilled ONA Build.", "改為 ONA 或累積軌跡時，該模型族的准入門檻仍然有效。若要預填並建立 ONA，請使用 ONA 教學樣本。", "改为 ONA 或累积轨迹时，该模型族的准入门槛仍然有效。若要预填并构建 ONA，请使用 ONA 教学样本。"),
+      },
       sampleExplanation: t("Samples use versioned explicit type declarations and order policies, then run through the strict model compiler.", "樣本使用具版本的明確類型宣告與順序政策，再交由嚴格模型編譯器處理。", "样本使用带版本的明确类型声明与顺序策略，再交由严格模型编译器处理。"),
       importArtifact: t("Import configuration, result or Reference", "匯入設定、結果或參考", "导入设置、结果或参考"), artifactTooLarge: t("Artifact exceeds 16 MiB.", "成果超過 16 MiB。", "成果超过 16 MiB。"),
       reviewTypes: t("Review CSV source types", "檢視 CSV 來源類型", "查看 CSV 来源类型"), reviewTypesTitle: t("Review source column types", "檢視來源欄位類型", "查看来源字段类型"),
@@ -2326,7 +2425,7 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
     onaMask: { legend: t("ONA directional mask", "ONA 方向遮罩", "ONA 方向遮罩"), description: t("Rows are source/ground Codes; columns are response Codes. Changes alter the scientific configuration.", "資料列是來源／前項代碼；欄是回應代碼。變更會改動科學設定。", "数据行是来源／前项代码；列是回应代码。更改会改动科学设置。"), initialize: t("Initialize explicit all-enabled mask", "初始化明確全部啟用遮罩", "初始化明确全部启用遮罩") },
     plot: {
       title: t("Plot presentation", "圖形呈現", "图形呈现"), exportContrastJson: t("Export full-population contrast JSON", "匯出完整母體對比 JSON", "导出完整总体对比 JSON"), exportContrastEdges: t("Export full-population contrast edges", "匯出完整母體對比邊", "导出完整总体对比边"), switchPlots: t("Switch Plots", "交換圖形", "交换图形"), showCentroidPaths: t("Show Group centroid paths", "顯示群組質心路徑", "显示组质心路径"), endpointsOnly: t("Show endpoints only (display)", "僅顯示端點（呈現）", "仅显示端点（呈现）"), fittedOrder: t("Fitted Horizon order is locked. Display filters retain original ordinals and do not change inference cohorts.", "擬合的視域順序已鎖定。顯示篩選會保留原始序位，且不改變推論群組。", "拟合的视域顺序已锁定。显示筛选会保留原始序位，且不改变推断群组。"), displayHorizon: (label) => t(`Display ${label}`, `顯示 ${label}`, `显示 ${label}`),
-      points: t("Points", "點", "点"), networks: t("Networks", "網絡", "网络"), codeLabels: t("Code labels", "代碼標籤", "代码标签"), unitLabels: t("Unit labels", "單位標籤", "单位标签"), variance: t("Variance", "變異", "方差"), trajectories: t("Trajectories", "軌跡", "轨迹"), flipX: t("Flip X", "翻轉 X", "翻转 X"), flipY: t("Flip Y", "翻轉 Y", "翻转 Y"), edgeThreshold: t("Edge threshold", "邊閾值", "边阈值"), edgeScale: t("Edge scale", "邊比例", "边比例"), pointScale: t("Point scale", "點比例", "点比例"), zoom: t("Zoom", "縮放", "缩放"), unavailable: t("Unavailable", "不可用", "不可用"), axis: (index) => t(`Axis ${index}`, `軸 ${index}`, `轴 ${index}`), resetNodes: t("Reset node positions", "重設節點位置", "重置节点位置"),
+      points: t("Points", "點", "点"), networks: t("Networks", "網絡", "网络"), codeLabels: t("Code labels", "代碼標籤", "代码标签"), unitLabels: t("Unit labels", "單位標籤", "单位标签"), variance: t("Variance", "變異", "方差"), trajectories: t("Trajectories", "軌跡", "轨迹"), flipX: t("Flip X", "翻轉 X", "翻转 X"), flipY: t("Flip Y", "翻轉 Y", "翻转 Y"), flippedLabel: t("flipped", "已翻轉", "已翻转"), edgeThreshold: t("Edge threshold", "邊閾值", "边阈值"), edgeScale: t("Edge scale", "邊比例", "边比例"), pointScale: t("Point scale", "點比例", "点比例"), zoom: t("Zoom", "縮放", "缩放"), unavailable: t("Unavailable", "不可用", "不可用"), axis: (index) => t(`Axis ${index}`, `軸 ${index}`, `轴 ${index}`), resetNodes: t("Reset node positions", "重設節點位置", "重置节点位置"),
       pngCanvasUnavailable: t("The browser could not prepare the PNG canvas.", "瀏覽器無法準備 PNG 畫布。", "浏览器无法准备 PNG 画布。"), pngEncodingFailed: t("The browser could not encode the PNG figure.", "瀏覽器無法編碼 PNG 圖形。", "浏览器无法编码 PNG 图形。"), pngRenderFailed: t("The browser could not render the SVG figure as PNG.", "瀏覽器無法將 SVG 圖形轉譯為 PNG。", "浏览器无法将 SVG 图形渲染为 PNG。"),
       unknownRenderedCode: t("The rendered Code identity is not available in the source mapping.", "呈現的代碼識別在來源對應中不可用。", "呈现的代码标识在来源映射中不可用。"), toolsTitle: t("Plot Tools", "繪圖工具", "绘图工具"),
       comparisonPlot: t("Comparison Plot", "比較圖", "比较图"), primaryPlot: t("Primary Plot", "主要圖", "主图"), secondaryPlot: t("Secondary Plot", "次要圖", "次图"), dataView: t("Data View", "資料檢視", "数据视图"),
@@ -2358,11 +2457,29 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
       onaEdges: t("ONA directed aggregate edges", "ONA 有向彙總邊", "ONA 有向汇总边"), onaAudit: t("Full-run deidentified ordered audit", "完整執行去識別有序稽核", "完整运行去标识有序审计"), exportOnaEdges: t("Export ONA aggregate edges", "匯出 ONA 彙總邊", "导出 ONA 汇总边"), exportOnaAudit: t("Export ONA deidentified audit", "匯出 ONA 去識別稽核", "导出 ONA 去标识审计"), exportNative: t("Export native statistics", "匯出原生統計", "导出原生统计"),
       localDataView: t("Local identity-bearing bound Data View", "本機含識別綁定資料檢視", "本机含标识绑定数据视图"), globalTraversal: t("Global runtime source traversal (not per-point membership)", "全域執行時來源走訪（非逐點成員關係）", "全局运行时来源遍历（非逐点成员关系）"), exportDataView: t("Export current Data View", "匯出目前資料檢視", "导出当前数据视图"), exportDataViewConfirmation: t("This local identity-bearing view contains Unit and Group identities. Export it?", "此本機含識別檢視包含單位及群組識別。要匯出嗎？", "此本机含标识视图包含单位及组标识。要导出吗？"), dataViewValidated: t("Data View validated against the independent current plan.", "資料檢視已依獨立目前計畫驗證。", "数据视图已依独立当前计划验证。"), exportMethods: t("Export Methods", "匯出方法", "导出方法"),
       onaMeaning: t("Descriptive directed ground/source to response/target networks. Group filtering affects aggregate descriptive tables only; the deidentified audit covers the full run and carries no per-Group source membership. No difference test or inferential effect is computed.", "描述由前項／來源指向回應／目標的有向網絡。群組篩選只影響彙總描述表；去識別稽核涵蓋完整執行，且不包含逐群組來源成員關係。不會計算差異檢定或推論效應。", "描述由前项／来源指向回应／目标的有向网络。组筛选只影响汇总描述表；去标识审计涵盖完整运行，且不包含逐组来源成员关系。不会计算差异检验或推断效应。"),
+      exportApplicability: {
+        reasons: {
+          "not-applicable-family": t("Not applicable to this model family.", "不適用於此模型族。", "不适用于此模型族。"),
+          "would-be-empty": t("This export would be empty for this model family.", "此匯出在此模型族下會是空檔。", "此导出在此模型族下会是空文件。"),
+          "requires-rebuild": t("Requires a rebuild of the current result.", "需要重新建立目前結果。", "需要重新构建当前结果。"),
+          "projection-reference": t("Not applicable to projection-reference results.", "不適用於參考投影結果。", "不适用于参考投影结果。"),
+          "awaiting-inference": t("Run confirmed inference before exporting native statistics.", "請先執行已確認推論，再匯出原生統計。", "请先运行已确认推断，再导出原生统计。"),
+        },
+        hints: {
+          "all-families": t("Applies to Endpoint, Separate, Accumulated, and ONA results.", "適用於端點、分離軌跡、累積軌跡及 ONA 結果。", "适用于端点、分离轨迹、累积轨迹及 ONA 结果。"),
+          trajectory: t("Applies to Separate and Accumulated trajectory results.", "適用於分離軌跡與累積軌跡結果。", "适用于分离轨迹与累积轨迹结果。"),
+          ona: t("Applies to ONA results.", "適用於 ONA 結果。", "适用于 ONA 结果。"),
+          "endpoint-and-trajectory": t("Applies to Endpoint, Separate, and Accumulated results.", "適用於端點、分離軌跡及累積軌跡結果。", "适用于端点、分离轨迹及累积轨迹结果。"),
+          endpoint: t("Applies to Endpoint results.", "適用於端點結果。", "适用于端点结果。"),
+          "bound-reference": t("Re-exports the Reference already bound to this trajectory result.", "重新匯出已綁定至此軌跡結果的參考。", "重新导出已绑定至此轨迹结果的参考。"),
+        },
+      },
     },
     artifacts: {
       ariaLabel: t("Model artifacts", "模型成果", "模型成果"), title: t("Artifacts", "成果", "成果"), clearPreset: t("Clear preset Group hiding", "清除預設群組隱藏", "清除预设组隐藏"), exportPreset: t("Export presentation preset", "匯出呈現預設", "导出呈现预设"), reviewPreset: t("Review presentation preset", "檢視呈現預設", "查看呈现预设"), presetPreview: t("Presentation preset preview", "呈現預設預覽", "呈现预设预览"), presetMatches: t("This preset matches the retained result. Application changes display only.", "此預設符合保留結果；套用只會改變顯示。", "此预设符合保留结果；应用只会改变显示。"), presetMismatch: t("Unapplied preset: this belongs to a different scientific result.", "未套用預設：其屬於不同科學結果。", "未应用预设：其属于不同科学结果。"), presetCodesMismatch: t("The active editor excludes Codes used by this retained result. The preset remains unapplied.", "啟用中的編輯器排除了保留結果所用代碼；預設維持未套用。", "启用中的编辑器排除了保留结果所用代码；预设保持未应用。"), presetFamilyMismatch: t("The editor family differs from the retained result. The preset remains unapplied.", "編輯器分析系列與保留結果不同；預設維持未套用。", "编辑器分析系列与保留结果不同；预设保持未应用。"), cancelPreset: t("Cancel preset", "取消預設", "取消预设"), applyPreset: t("Apply matching presentation preset", "套用相符呈現預設", "应用匹配呈现预设"), exportDraft: t("Export draft", "匯出草稿", "导出草稿"), draftBlocked: t("Resolve unfinished raw input before exporting: the portable draft grammar cannot represent that visible text. Typed incomplete drafts remain exportable.", "匯出前請處理未完成的原始輸入：可攜式草稿語法無法表示該可見文字。具類型的不完整草稿仍可匯出。", "导出前请处理未完成的原始输入：可移植草稿语法无法表示该可见文本。带类型的不完整草稿仍可导出。"), exportConfig: t("Export canonical configuration", "匯出規範設定", "导出规范设置"), exportAnalysis: t("Export current analysis", "匯出目前分析", "导出当前分析"), exportAnalysisConfirmation: t("Export the full identity-bearing model bundle?", "要匯出完整且含識別的模型套件嗎？", "要导出完整且含标识的模型包吗？"), exportStale: t("Export STALE audit", "匯出過期稽核", "导出过期审计"), reexportReference: t("Re-export original Reference", "重新匯出原始參考", "重新导出原始参考"), exportReference: t("Export Reference", "匯出參考", "导出参考"), captureSet: (count) => t(`Capture analysis set (${count}/6)`, `擷取分析集（${count}/6）`, `捕获分析集（${count}/6）`), compareSets: t("Compare last two sets in the same basis", "在相同基底比較最後兩個分析集", "在相同基底比较最后两个分析集"), historicalComparison: t("Historical same-basis set comparison", "歷史相同基底分析集比較", "历史相同基底分析集比较"), unmetPrerequisites: t("Unmet prerequisites", "未滿足的前置條件", "未满足的前置条件"), capturePredicates: { "current-result": t("Current bound result", "目前綁定結果", "当前绑定结果"), "standard-family": t("Standard ENA family (ONA analysis sets are not verified)", "標準 ENA 系列（ONA 分析集尚未驗證）", "标准 ENA 系列（ONA 分析集尚未验证）"), "endpoint-model": t("EndPoint model (trajectory results cannot be captured as shared analysis sets; build an EndPoint model instead)", "端點模型（軌跡結果不能擷取為共享分析集；請改為建立端點模型）", "端点模型（轨迹结果不能捕获为共享分析集；请改为构建端点模型）"), "two-retained-dimensions": t("At least two supported retained dimensions", "至少兩個受支援的保留維度", "至少两个受支持的保留维度"), "retention-capacity": t("Fewer than 6 retained analysis sets", "保留的分析集少於 6 個", "保留的分析集少于 6 个") }, comparePredicates: { "two-captured-sets": t("At least two captured analysis sets", "至少兩個已擷取的分析集", "至少两个已捕获的分析集"), "same-basis-geometry": t("Same fitted source and exact compatible geometry (EndPoint-only same-basis)", "相同擬合來源且幾何完全相容（僅端點、同一基底）", "相同拟合来源且几何完全兼容（仅端点、同一基底）") },
       presetTooLarge: t("Presentation preset exceeds 16 MiB.", "呈現預設超過 16 MiB。", "呈现预设超过 16 MiB。"), referenceDisplayName: t("Reference", "參考", "参考"),
-      presetScope: t("This preset contains per-Code visibility and colors, hidden Groups, node positions, selected axes, camera and supported plot layers. It does not contain the Primary/Secondary pair, individual hidden Units, per-Group control preferences, global suppression and its saved visibility snapshots, complementary colors, Horizon filters or Group-centroid path choices. Those preferences stay unchanged when applying a preset. Restore global visibility before applying. Preset-hidden Groups use a separate display overlay that can be cleared without changing per-Group choices.", "此預設包含各代碼的可見性與顏色、隱藏群組、節點位置、所選座標軸、相機及支援的圖層；不包含主要／次要配對、個別隱藏單位、各群組控制偏好、全域隱藏與其可見性快照、互補色、視域篩選或群組質心路徑。套用時這些偏好保持不變。套用前請還原全域可見性。預設隱藏群組使用獨立顯示覆蓋，可在不改變各群組選擇下清除。", "此预设包含各代码的可见性与颜色、隐藏组、节点位置、所选坐标轴、相机及支持的图层；不包含主要／次要配对、个别隐藏单位、各组控制偏好、全局隐藏及其可见性快照、互补色、视域筛选或组质心路径。应用时这些偏好保持不变。应用前请恢复全局可见性。预设隐藏组使用独立显示覆盖，可在不改变各组选择下清除。"),
+      presetScope: t("This preset contains per-Code visibility and colors, hidden Groups, node positions, selected axes, camera and supported plot layers. It does not contain the Primary/Secondary pair, individual hidden Units, per-Group control preferences, global suppression and its saved visibility snapshots, complementary colors, Horizon filters or Group-centroid path choices. Those preferences stay unchanged when applying a preset. Restore global visibility before applying. Preset-hidden Groups use a separate display overlay that can be cleared without changing per-Group choices. When no confirmed inference exists, a 2D preset applies its plotted axes. When a confirmed inference already exists and those axes differ, the confirmed interpretation's axes are kept, the preset's other display settings are applied, and the unused dimensions are reported.", "此預設包含各代碼的可見性與顏色、隱藏群組、節點位置、所選座標軸、相機及支援的圖層；不包含主要／次要配對、個別隱藏單位、各群組控制偏好、全域隱藏與其可見性快照、互補色、視域篩選或群組質心路徑。套用時這些偏好保持不變。套用前請還原全域可見性。預設隱藏群組使用獨立顯示覆蓋，可在不改變各群組選擇下清除。尚無已確認推論時，二維預設會套用其繪製軸。已有已確認推論且預設軸不同時，會保留該確認解讀的軸、套用預設的其他顯示設定，並說明未使用的維度。", "此预设包含各代码的可见性与颜色、隐藏组、节点位置、所选坐标轴、相机及支持的图层；不包含主要／次要配对、个别隐藏单位、各组控制偏好、全局隐藏及其可见性快照、互补色、视域筛选或组质心路径。应用时这些偏好保持不变。应用前请恢复全局可见性。预设隐藏组使用独立显示覆盖，可在不改变各组选择下清除。尚无已确认推断时，二维预设会应用其绘制轴。已有已确认推断且预设轴不同时，会保留该确认解读的轴、应用预设的其他显示设置，并说明未使用的维度。"),
+      presetInferenceAxesWithheld: (dimensions) => t(`The confirmed interpretation's axes are kept. The preset's other display settings were applied. Plotted dimensions ${dimensions} were not used.`, `已保留確認解讀的軸。此預設的其他顯示設定已套用。繪製維度 ${dimensions} 未使用。`, `已保留确认解读的轴。此预设的其他显示设置已应用。绘制维度 ${dimensions} 未使用。`),
     },
     ai: {
       ready: t("Current native Stats result is ready for aggregate review.", "目前原生統計結果已可供彙總檢視。", "当前原生统计结果已可供汇总查看。"), unavailable: t("Run and review a current native Stats result first.", "請先執行並檢視目前原生統計結果。", "请先运行并查看当前原生统计结果。"), openStats: t("Open Stats", "開啟統計", "打开统计"), disabled: t("Run a current eligible native inference and review its aggregate evidence first.", "請先執行目前符合資格的原生推論，並檢視其彙總證據。", "请先运行当前符合资格的原生推断，并查看其汇总证据。"),
@@ -2371,7 +2488,16 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
     toolbar: { dataView: t("Data View", "資料檢視", "数据视图"), downloadModel: t("Download Model", "下載模型", "下载模型"), exportSvg: t("Export SVG", "匯出 SVG", "导出 SVG"), exportPng: t("Export PNG", "匯出 PNG", "导出 PNG"), researchSpace: t("SVD research space", "SVD 研究空間", "SVD 研究空间") },
     shell: { workspaceAria: t("Open ENA analysis workspace", "Open ENA 分析工作區", "Open ENA 分析工作区"), modesAria: t("Analysis modes", "分析模式", "分析模式"), local: t("Local", "本機", "本机"), runtimePrivacy: (version) => t(`ENA computation powered by jENA v${version} (GPL-3.0-only); ENA.HK provides the interface, plotting, and exports. Source data stays in this workspace's browser memory unless you intentionally export it.`, `ENA 運算由 jENA v${version}（GPL-3.0-only）提供；ENA.HK 提供介面、繪圖及匯出。除非您主動匯出，來源資料只會保留在此工作區的瀏覽器記憶體中。`, `ENA 计算由 jENA v${version}（GPL-3.0-only）提供；ENA.HK 提供界面、绘图及导出。除非您主动导出，来源数据只会保留在此工作区的浏览器内存中。`) },
     result: { plotAria: t("Bound model plot", "綁定模型圖", "绑定模型图"), historicalGeometry: t("Historical geometry: edits require a new run.", "歷史幾何：編輯後需要重新執行。", "历史几何：编辑后需要重新运行。"), sourceReplacementNotice: t("Source replaced. Historical geometry is retained until you rebuild.", "來源已替換。歷史幾何會保留，直到你重新建立模型。", "来源已替换。历史几何会保留，直到你重新构建模型。"), rebuildNow: t("Rebuild now", "立即重新建立", "立即重新构建"), rebuildNowAria: t("Rebuild the model after source replacement. The model does not run until you choose Rebuild.", "來源替換後重新建立模型。在你選擇重新建立之前，模型不會自動執行。", "来源替换后重新构建模型。在你选择重新构建之前，模型不会自动运行。"), boundGeometry: t("Bound fitted geometry", "已綁定擬合幾何", "已绑定拟合几何"), oneAxis: t("Only one supported fitted axis is available. No second coordinate is invented.", "只有一個受支援的擬合軸；不會虛構第二座標。", "只有一个受支持的拟合轴；不会虚构第二坐标。"), fittedCoordinates: t("Fitted coordinates", "擬合座標", "拟合坐标"), contrastUnavailable: t("Contrast requires two declared Groups and two supported fitted axes. The fitted model remains available for inspection.", "對比需要兩個已宣告群組及兩個受支援擬合軸；擬合模型仍可供檢視。", "对比需要两个已声明组及两个受支持拟合轴；拟合模型仍可供查看。"), codeLabels: t("Code labels", "代碼標籤", "代码标签"), trajectorySteps: t("Observed fitted trajectory steps and original ordinals", "觀察到的擬合軌跡步驟及原始序位", "观测到的拟合轨迹步骤及原始序位"), cohortMeaning: t("Downstream complete-case availability does not determine core trajectory validity. Display filters do not change the cohort or fitted ordinals.", "下游完整案例的可用性不決定核心軌跡是否有效。顯示篩選不會改變隊列或擬合序位。", "下游完整案例的可用性不决定核心轨迹是否有效。显示筛选不会改变队列或拟合序位。") },
-    empty: { ariaLabel: t("Open ENA model setup workbench", "Open ENA 模型設定工作台", "Open ENA 模型设置工作台"), comparisonPlot: t("COMPARISON PLOT", "比較圖", "比较图"), setupRequired: t("Model setup required", "需要設定模型", "需要设置模型"), researchSpace: t("2D research space", "2D 研究空間", "2D 研究空间"), networkAria: t("Connected four-node epistemic network", "四節點連接知識網絡", "四节点连接知识网络"), pathway: t("MODEL → VIEW → PRESENTER", "模型 → 檢視 → 呈現", "模型 → 视图 → 呈现"), complete: t("Complete: ", "已完成：", "已完成："), incomplete: t("Not complete: ", "未完成：", "未完成："), openRows: t("Open or load coded rows", "開啟或載入編碼資料列", "打开或加载编码数据行"), defineModel: t("Define Units, Horizons, Windows, and Codes; Group is optional", "設定單位、視域、窗口及代碼；群組可選", "设置单位、视域、窗口及代码；组可选"), buildModel: t("Build the model with jENA", "使用 jENA 建立模型", "使用 jENA 构建模型"), primaryPlot: t("PRIMARY PLOT", "主要圖", "主图"), secondaryPlot: t("SECONDARY PLOT", "次要圖", "次图"), awaitingGroup: t("Awaiting group selection", "等待群組選擇", "等待组选择"), primaryPending: t("Primary network appears after a model is built.", "建立模型後會顯示主要網絡。", "构建模型后会显示主网络。"), secondaryPending: t("Secondary network appears after a model is built.", "建立模型後會顯示次要網絡。", "构建模型后会显示次网络。"), dataReady: (rows) => t(`${rows.toLocaleString()} coded rows ready for review`, `${rows.toLocaleString()} 個編碼資料列可供檢視`, `${rows.toLocaleString()} 个编码数据行可供查看`), dataPrompt: t("Open a CSV or XLSX file, or load the teaching sample, to inspect coded rows.", "開啟 CSV 或 XLSX 檔案，或載入教學樣本，以檢視編碼資料列。", "打开 CSV 或 XLSX 文件，或加载教学样本，以查看编码数据行。") },
+    empty: { ariaLabel: t("Open ENA model setup workbench", "Open ENA 模型設定工作台", "Open ENA 模型设置工作台"), comparisonPlot: t("COMPARISON PLOT", "比較圖", "比较图"), setupRequired: t("Model setup required", "需要設定模型", "需要设置模型"), researchSpace: t("2D research space", "2D 研究空間", "2D 研究空间"), networkAria: t("Connected four-node epistemic network", "四節點連接知識網絡", "四节点连接知识网络"), pathway: t("MODEL → VIEW → PRESENTER", "模型 → 檢視 → 呈現", "模型 → 视图 → 呈现"), complete: t("Complete: ", "已完成：", "已完成："), incomplete: t("Not complete: ", "未完成：", "未完成："), openRows: t("Open or load coded rows", "開啟或載入編碼資料列", "打开或加载编码数据行"), defineModel: t("Define Units, Horizons, Windows, and Codes; Group is optional", "設定單位、視域、窗口及代碼；群組可選", "设置单位、视域、窗口及代码；组可选"), buildModel: t("Build the model with jENA", "使用 jENA 建立模型", "使用 jENA 构建模型"), primaryPlot: t("PRIMARY PLOT", "主要圖", "主图"), secondaryPlot: t("SECONDARY PLOT", "次要圖", "次图"), awaitingGroup: t("Awaiting group selection", "等待群組選擇", "等待组选择"), primaryPending: t("Primary network appears after a model is built.", "建立模型後會顯示主要網絡。", "构建模型后会显示主网络。"), secondaryPending: t("Secondary network appears after a model is built.", "建立模型後會顯示次要網絡。", "构建模型后会显示次网络。"), dataReady: (rows) => t(`${rows.toLocaleString()} coded rows ready for review`, `${rows.toLocaleString()} 個編碼資料列可供檢視`, `${rows.toLocaleString()} 个编码数据行可供查看`), dataPrompt: t("Open a CSV or XLSX file, or load a teaching sample, to inspect coded rows.", "開啟 CSV 或 XLSX 檔案，或載入教學樣本，以檢視編碼資料列。", "打开 CSV 或 XLSX 文件，或加载教学样本，以查看编码数据行。"), sampleLibraryHint: t("Trajectory and ONA samples are listed under Data, with family, row shape, and expected output.", "軌跡與 ONA 樣本列在資料區，並標明模型族、資料列形狀與預期產出。", "轨迹与 ONA 样本列在数据区，并标明模型族、数据行形状与预期产出。") },
+    landmarks: {
+      skipToWorkspace: t("Skip to workspace", "跳至工作區", "跳至工作区"),
+      railToolbar: t("Analysis mode toolbar", "分析模式工具列", "分析模式工具栏"),
+      data: t("Data", "資料", "数据"),
+      model: t("Model", "模型", "模型"),
+      plot: t("Plot Tools panel", "繪圖工具面板", "绘图工具面板"),
+      stats: t("Stats & Export", "統計與匯出", "统计与导出"),
+      ai: t("AI", "AI 解讀", "AI 解读"),
+    },
   };
 }
 
@@ -2577,8 +2703,8 @@ const en: OpenEnaCopy = {
       zoomOut: "Zoom out",
       fit: "Fit",
       zoomIn: "Zoom in",
-      resetAllPlotTools: "Reset all plot tools",
-      resetAll: "Reset all",
+      resetAllPlotTools: "Reset display settings",
+      resetAll: "Reset display settings",
       on: "On",
       off: "Off",
       settingLabel: (label) => `${label} setting`,
@@ -3077,6 +3203,15 @@ const en: OpenEnaCopy = {
     generating: "Generating interpretation…",
     cancel: "Cancel",
     retry: "Retry",
+    sessionRecovery: "Your Open ENA session is missing or no longer valid. Sign in again, then return to generate an interpretation.",
+    signInAgain: "Sign in again",
+    signInNewTab: "Opens in a new tab",
+    failureUnavailable: "AI interpretation is temporarily unavailable or rate limited. Wait a moment, then retry this request.",
+    failureNetwork: "The AI interpretation request did not finish because the network failed or the request timed out. Check your connection, then retry this request.",
+    failureInvalidOutput: "The model returned output that could not be used as an interpretation. Retry this request to ask for a new interpretation.",
+    evidenceBoundary: "The computed ENA model results are still valid. Only the AI interpretation is missing.",
+    evidenceBoundaryRetained: "The ENA model results remain valid. This new AI interpretation attempt failed; the interpretation shown below is from an earlier request for the same evidence.",
+    previousInterpretation: "Previous interpretation",
     errorTitle: "AI interpretation was not generated",
     noCurrentResult: "Run and confirm a current result in Stats & Export before requesting an AI interpretation.",
     staleResult: "Rebuild the ENA model so the interpretation matches the current configuration.",
@@ -3237,8 +3372,8 @@ const zhHant: OpenEnaCopy = {
       zoomOut: "縮小",
       fit: "適合",
       zoomIn: "放大",
-      resetAllPlotTools: "重設所有繪圖工具",
-      resetAll: "全部重設",
+      resetAllPlotTools: "重設顯示設定",
+      resetAll: "重設顯示設定",
       on: "開",
       off: "關",
       settingLabel: (label) => `${label}設定`,
@@ -3485,9 +3620,9 @@ const zhHant: OpenEnaCopy = {
     },
   },
   sets: { ...en.sets, title: "分析集", description: "將端點模型保留在瀏覽器記憶體中，並比較共享同一參照幾何的擬合或投影網絡。", capture: "擷取目前模型", captureHint: "只擷取衍生座標與等權單位網絡平均值，不保留原始來源資料列；分析單位識別碼仍會保留，必要時請先假名化。", emptyTitle: "尚未擷取分析集", emptyText: "先建立端點模型，再在這裡擷取。擬合模型會安裝其可重用參照，使之後的 CSV 或 XLSX 檔案可投影到完全相同的 ENA 空間。", fitted: "擬合", projected: "投影", generatedReference: "可重用擬合參照", projectionReference: "已投影至參照", sourceHash: "分析資料表 SHA-256", hashScope: "雜湊範圍", primary: "主要分析集", secondary: "次要分析集", choosePrimary: "選擇主要分析集", chooseSecondary: "選擇相容的次要分析集", comparisonHint: "帶符號連線差異為共享固定幾何中的「主要減次要」。JSON 會保留分析單位識別碼；需要分享時請先假名化。", noCompatibleSecondary: "沒有可用的相容次要分析集。請在同一參照幾何中擷取或投影另一個端點模型。", remove: "移除", exportJson: "匯出比較 JSON", exportEdges: "匯出連線差異 CSV" },
-  data: { ...en.data, title: "從編碼資料開始", description: "在此瀏覽器開啟 CSV 或 XLSX 檔案，或載入已記錄的學院範例以查看完整流程。", upload: "開啟 CSV 或 XLSX", uploadHint: "CSV 或 XLSX，最多 5 MB、20,000 列；XLSX 使用第一個工作表", sample: "載入教學範例", trajectorySample: "載入 3D 軌跡範例", trajectorySampleHint: "54 筆合成資料 · 6 位學習者 · TP1–TP3 · 6 個編碼", noFile: "尚未載入資料", active: "使用中的資料集", rows: "資料列", columns: "欄位", source: "來源", local: "核心 ENA 運算保留在此瀏覽器；原始來源資料列不會傳送至可選的 AI 解讀服務。" },
-  model: { ...en.model, title: "定義 ENA 模型", description: "對應賦予網絡分析意義的欄位，然後執行已驗證的 jENA 流程。", sequenceNote: "CSV 或 XLSX 資料列順序定義每段對話中的序列；若順序重要，請在分析前先排序來源檔案。", unit: "分析單位", conversation: "對話", group: "比較群組", identityHint: "可選一個或多個欄位；順序會定義複合識別。", noGroup: "不設比較群組（全部分析單位）", codes: "編碼", window: "窗口", movingWindow: "移動段落窗口", conversationWindow: "完整對話", back: "向後跨度（包括目前列）", forward: "向前資料列", configureTrajectory: "設定軌跡模型", modelType: "模型類型", endpoint: "端點（每個分析單位一個網絡）", separateTrajectory: "分離軌跡（每一步一個點）", accumulatedTrajectory: "累積軌跡（每一步為累積網絡）", trajectoryHint: "軌跡步驟依每個分析單位首次出現的對話順序排列；統計面板不會將重複步驟視為獨立分析單位。", rotation: "旋轉", svd: "SVD（資料變異）", means: "廣義均值旋轉（GMR）", center: "將零網絡分析單位置於原點", weighting: "加權", binary: "二元", run: "建立 ENA 模型", rerun: "重新建立模型", valid: "模型輸入有效" },
-  plot: { ...en.plot, title: "調整研究視圖", description: "這些控制只改變呈現方式，不會在未提示下重新建立模型。", showPoints: "分析單位點", showNetworks: "群組網絡", showLabels: "編碼標籤", showTrajectories: "軌跡路徑", edgeScale: "連線寬度", axisX: "X 軸", axisY: "Y 軸", axisZ: "Z 軸", camera: "相機", cameraPosition: "相機位置", default3dCamera: "預設 3D 相機", isometric: "等距", xy: "X-Y 平面", xz: "X-Z 平面", yz: "Y-Z 平面", yx: "Y-X 平面", zx: "Z-X 平面", zy: "Z-Y 平面", reset: "重設視圖", resetNodeLayout: "重設標籤位置", threeDComparisonPlot: "比較圖", threeDPrimaryPlot: "主要圖", threeDSecondaryPlot: "次要圖", threeDPlotActions: "3D 繪圖操作", zoomIn: "放大", zoomOut: "縮小", recenter: "回正", copyImage: "複製圖片", copyImageTitle: "複製繪圖圖片到剪貼簿", fullscreenEnter: "進入全螢幕", fullscreenExit: "離開全螢幕", fullscreenDialog: "全螢幕 3D 圖", actionUnavailable: "3D 視圖操作無法使用", copyingImage: "正在複製圖片", imageCopied: "圖片已複製", imageDataCopied: "圖片資料已複製", imageDownloaded: "圖片已下載", copyUnavailable: "無法複製", fullscreenOpening: "正在開啟全螢幕", fullscreenFallbackEnabled: "已啟用全螢幕備用模式", fullscreenClosed: "全螢幕已關閉", fullscreenExitFailed: "原生全螢幕無法關閉。請按 Escape 離開。", fullscreenUnavailable: "全螢幕無法使用", threeDInteractionHint: "拖曳以旋轉；滾動或使用五個繪圖操作來放大、縮小、回正、複製圖片或進入全螢幕。此幾何只作描述，不屬推論證據。", sameFittedSpace: "沿用同一個已擬合 jENA 空間；切換 2D 與 3D 不會重新執行或重新擬合分析。", threeDExportHint: "使用 3D 繪圖工具列的複製圖片按鈕，把 PNG 放到剪貼簿。SVG 與高解析度 PNG 研究圖匯出只適用於 2D 視圖。", threeDLoading: "正在載入 3D 繪圖", threeDUnavailable: "互動式 3D 暫時無法使用。已擬合結果仍保持完整；請切回 2D 或重新載入此視圖。", threeDRequiresThreeDimensions: "3D ENA 需要已完成結果具有三個不同維度；2D 結果仍可使用。" },
+  data: { ...en.data, title: "從編碼資料開始", description: "在此瀏覽器開啟 CSV 或 XLSX 檔案，或載入已記錄的學院範例以查看完整流程。", upload: "開啟 CSV 或 XLSX", uploadHint: "CSV 或 XLSX，最多 5 MB、20,000 列；XLSX 使用第一個工作表", sample: "載入教學範例", sampleHint: "48 筆合成資料 · 8 個團隊 · 5 個編碼", trajectorySample: "載入 3D 軌跡範例", trajectorySampleHint: "54 筆合成資料 · 6 位學習者 · TP1–TP3 · 6 個編碼", noFile: "尚未載入資料", active: "使用中的資料集", rows: "資料列", columns: "欄位", source: "來源", local: "核心 ENA 運算保留在此瀏覽器；原始來源資料列不會傳送至可選的 AI 解讀服務。" },
+  model: { ...en.model, title: "定義 ENA 模型", description: "對應賦予網絡分析意義的欄位，然後執行已驗證的 jENA 流程。", sequenceNote: "CSV 或 XLSX 資料列順序定義每段對話中的序列；若順序重要，請在分析前先排序來源檔案。", unit: "分析單位", conversation: "對話", group: "比較群組", identityHint: "可選一個或多個欄位；順序會定義複合識別。", noGroup: "不設比較群組（全部分析單位）", codes: "編碼", window: "窗口", movingWindow: "移動段落窗口", conversationWindow: "完整對話", back: "向後跨度（包括目前列）", forward: "向前資料列", configureTrajectory: "設定軌跡模型", modelType: "模型類型", endpoint: "端點（每個分析單位一個網絡）", separateTrajectory: "分離軌跡（每一步一個點）", accumulatedTrajectory: "累積軌跡（每一步為累積網絡）", trajectoryHint: "軌跡步驟依每個分析單位首次出現的對話順序排列；統計面板不會將重複步驟視為獨立分析單位。", rotation: "旋轉", svd: "SVD（資料變異）", means: "廣義均值旋轉（GMR）", center: "將零網絡分析單位置於原點", weighting: "加權", binary: "二元", sum: "原始乘積總和", run: "建立 ENA 模型", rerun: "重新建立模型", valid: "模型輸入有效" },
+  plot: { ...en.plot, title: "調整研究視圖", description: "這些控制只改變呈現方式，不會在未提示下重新建立模型。", showPoints: "分析單位點", showNetworks: "群組網絡", showLabels: "編碼標籤", showUnitLabels: "單位標籤", showVariance: "座標軸變異", showTrajectories: "軌跡路徑", edgeScale: "連線寬度", edgeThreshold: "最低相對連線", pointScale: "分析單位點大小", axisX: "X 軸", axisY: "Y 軸", axisZ: "Z 軸", camera: "相機", cameraPosition: "相機位置", default3dCamera: "預設 3D 相機", isometric: "等距", xy: "X-Y 平面", xz: "X-Z 平面", yz: "Y-Z 平面", yx: "Y-X 平面", zx: "Z-X 平面", zy: "Z-Y 平面", reset: "重設視圖", resetNodeLayout: "重設標籤位置", threeDComparisonPlot: "比較圖", threeDPrimaryPlot: "主要圖", threeDSecondaryPlot: "次要圖", threeDPlotActions: "3D 繪圖操作", zoomIn: "放大", zoomOut: "縮小", recenter: "回正", copyImage: "複製圖片", copyImageTitle: "複製繪圖圖片到剪貼簿", fullscreenEnter: "進入全螢幕", fullscreenExit: "離開全螢幕", fullscreenDialog: "全螢幕 3D 圖", actionUnavailable: "3D 視圖操作無法使用", copyingImage: "正在複製圖片", imageCopied: "圖片已複製", imageDataCopied: "圖片資料已複製", imageDownloaded: "圖片已下載", copyUnavailable: "無法複製", fullscreenOpening: "正在開啟全螢幕", fullscreenFallbackEnabled: "已啟用全螢幕備用模式", fullscreenClosed: "全螢幕已關閉", fullscreenExitFailed: "原生全螢幕無法關閉。請按 Escape 離開。", fullscreenUnavailable: "全螢幕無法使用", threeDInteractionHint: "拖曳以旋轉；滾動或使用五個繪圖操作來放大、縮小、回正、複製圖片或進入全螢幕。此幾何只作描述，不屬推論證據。", sameFittedSpace: "沿用同一個已擬合 jENA 空間；切換 2D 與 3D 不會重新執行或重新擬合分析。", threeDExportHint: "使用 3D 繪圖工具列的複製圖片按鈕，把 PNG 放到剪貼簿。SVG 與高解析度 PNG 研究圖匯出只適用於 2D 視圖。", threeDLoading: "正在載入 3D 繪圖", threeDUnavailable: "互動式 3D 暫時無法使用。已擬合結果仍保持完整；請切回 2D 或重新載入此視圖。", threeDRequiresThreeDimensions: "3D ENA 需要已完成結果具有三個不同維度；2D 結果仍可使用。" },
   contrast: { ...en.contrast, title: "端點群組對比", description: "依序選擇主要與次要群組。中央圖以同一比例尺疊加兩個平均網絡；帶符號的「主要減次要」差異保留在證據表與匯出中。", primary: "主要群組", secondary: "次要群組", swap: "交換主要與次要群組", selectedOrder: "所選群組順序", selectedAxes: "所選座標軸", multiplicity: "此網絡對比只作描述；已確認的統計推論工作流程會在明確執行後套用固定 Holm 檢定族。", exportJson: "匯出群組對比 JSON", exportEdges: "匯出群組對比連線 CSV", requiresGroup: "無法使用群組對比：端點模型需要群組變項。", requiresTwoGroups: "無法使用群組對比：端點模型需要至少兩個不同群組。", endpointOnly: "無法使用群組對比：此功能只適用於端點模型。" },
   longitudinal: { ...en.longitudinal, title: "縱向群組質心路徑", description: "依明確期間順序，在固定 jENA 空間中衍生等權實體群組質心。這些呈現設定不會重建 jENA 或改變投影座標。", repeatedEntity: "重複測量實體", timeOrder: "時間／順序欄位", observedOrder: "明確時間順序（依來源資料首次出現）", moveEarlier: "將期間向前移", moveLater: "將期間向後移", cohortPolicy: "隊列政策", available: "可用隊列", complete: "完整隊列", availableHint: "可用隊列使用各期間實際出現的重複實體。", completeHint: "完整隊列只保留每個排序期間均有資料的重複實體。", showIndividualPaths: "個別軌跡路徑", showGroupPaths: "群組質心路徑", descriptive: "描述性縱向幾何", noEndpointTests: "重複軌跡期間不套用端點 Mann–Whitney 或 Welch 檢定。", exportJson: "匯出縱向 JSON", exportCsv: "匯出縱向期間 CSV", exportInferenceCsv: "匯出推論比較 CSV", allUnits: "未設定比較群組：顯示一條「全部單位」總體質心路徑。", period: "期間", group: "群組", availableCount: "可用", completeCount: "完整", includedCount: "納入", excludedCount: "缺失／排除", unavailableModel: "縱向群組質心分析需要成功的分離或累積軌跡結果。", unavailableEntity: "縱向分析需要來自擬合單位對應的重複實體欄位。", unavailableTime: "縱向分析需要來自擬合對話對應的時間／順序欄位。", unavailablePeriods: "縱向分析至少需要兩個排序期間。", unavailableComplete: "完整隊列中沒有在每個所選期間均有資料的合資格重複實體。", figureAriaLabel: "群組質心軌跡圖；小螢幕可水平捲動。", geometryView: "軌跡幾何視圖", diagnosticsCaption: "群組與期間質心診斷", nUsed: "使用數", nExcluded: "排除數", centroid: "質心", status: "狀態", gap: "缺口", observed: "已觀察", gapRule: "缺失期間之間不連線。", noConnectedPaths: "無法繪製相連軌跡：所選相鄰期間沒有重複實體。請檢查重複實體與時間點對應。", legendAriaLabel: "縱向軌跡圖例", largerCentroidMarker: "較大輪廓方形＝群組期間質心", timeDirectionArrow: "箭頭＝觀察時間方向", flipped: "已翻轉", firstAxis: "維度 1", secondAxis: "維度 2", circle: "圓形", diamond: "菱形", triangle: "三角形", square: "方形", cross: "十字形", hexagon: "六邊形", solid: "實線", dashed: "虛線", dotted: "點線", dashDot: "點劃線", shortDashed: "短虛線", longShortDashed: "長短虛線", marker: "標記", path: "路徑", rowsTruncated: "畫面省略了其餘期間列；請使用縱向匯出取得完整診斷。", individualMarksSampled: "個別圖形標記已抽樣：顯示 {pointsShown}/{pointsTotal} 個點、{segmentsShown}/{segmentsTotal} 個整體實體路徑轉換，以及 {arrowsShown}/{arrowsTotal} 個方向箭頭。群組質心路徑保持完整。" },
   stats: { ...en.stats, title: "證據與可重現性", description: "將描述性摘要與模型規格一併閱讀；發表層級的推論需要有理據的檢定與研究設計。", variance: "解釋變異", groupSummary: "群組摘要", effect: "絕對 Cohen’s d", verifiedTests: "jENA 檢定統計量", correlations: "維度相關", notTest: "jENA 報告檢定統計量與自由度，但不計算 p 值；請依研究設計選擇及報告推論檢定。", manifest: "分析清單", export: "匯出清單", exportBundle: "匯出結果套件", identityExportWarning: "標準 ENA 衍生匯出可能保留所選分析單位與群組識別碼；軌跡資料表亦可能保留對話或時間識別碼。這些資料並非匿名；分享前請審閱並假名化。", identityExportConfirmation: "此標準 ENA 匯出可能包含分析單位、群組、對話或時間識別碼。請確認您已審閱或假名化，且分享受適當研究治理規範。", trajectoryNotice: "端點群組檢定與點—質心相關不適用於重複軌跡步驟。請以描述方式解讀軌跡幾何，或在工作區外使用符合研究設計的縱向方法。", ui: statsUiZhHant },
@@ -3506,6 +3641,15 @@ const zhHant: OpenEnaCopy = {
     generating: "正在生成解讀…",
     cancel: "取消",
     retry: "重試",
+    sessionRecovery: "您的開放 ENA 工作階段不存在或已失效。請重新登入，再回到此處生成解讀。",
+    signInAgain: "重新登入",
+    signInNewTab: "在新分頁開啟",
+    failureUnavailable: "AI 解讀暫時無法使用，或已達到請求次數限制。請稍候，再重試此請求。",
+    failureNetwork: "AI 解讀請求因網絡問題或逾時而未完成。請檢查連線，再重試此請求。",
+    failureInvalidOutput: "模型傳回的內容無法用作解讀。請重試此請求，以重新生成解讀。",
+    evidenceBoundary: "已計算的 ENA 模型結果仍然有效。缺少的只是 AI 解讀。",
+    evidenceBoundaryRetained: "ENA 模型結果仍然有效。這次新的 AI 解讀嘗試失敗；下方顯示的解讀來自較早對同一證據的請求。",
+    previousInterpretation: "先前的解讀",
     errorTitle: "未能生成 AI 解讀",
     noCurrentResult: "請先在「統計與匯出」執行並確認目前的結果，再請求 AI 解讀。",
     staleResult: "請重新建立 ENA 模型，確保解讀符合目前設定。",
@@ -3641,8 +3785,8 @@ const zhHans: OpenEnaCopy = {
       zoomOut: "缩小",
       fit: "适合",
       zoomIn: "放大",
-      resetAllPlotTools: "重置所有绘图工具",
-      resetAll: "全部重置",
+      resetAllPlotTools: "重置显示设置",
+      resetAll: "重置显示设置",
       on: "开",
       off: "关",
       settingLabel: (label) => `${label}设置`,
@@ -3889,9 +4033,9 @@ const zhHans: OpenEnaCopy = {
     },
   },
   sets: { ...zhHant.sets, title: "分析集", description: "将端点模型保留在浏览器内存中，并比较共享同一参考几何的拟合或投影网络。", capture: "捕获当前模型", captureHint: "只捕获派生坐标与等权单位网络均值，不保留原始来源数据行；分析单位标识符仍会保留，必要时请先假名化。", emptyTitle: "尚未捕获分析集", emptyText: "先构建端点模型，再在此捕获。拟合模型会安装其可复用参考，使之后的 CSV 或 XLSX 文件可投影到完全相同的 ENA 空间。", fitted: "拟合", projected: "投影", generatedReference: "可复用拟合参考", projectionReference: "已投影至参考", sourceHash: "分析数据表 SHA-256", hashScope: "哈希范围", primary: "主要分析集", secondary: "次要分析集", choosePrimary: "选择主要分析集", chooseSecondary: "选择兼容的次要分析集", comparisonHint: "带符号连线差异为共享固定几何中的“主要减次要”。JSON 会保留分析单位标识符；需要分享时请先假名化。", noCompatibleSecondary: "没有可用的兼容次要分析集。请在同一参考几何中捕获或投影另一个端点模型。", remove: "移除", exportJson: "导出比较 JSON", exportEdges: "导出连线差异 CSV" },
-  data: { ...zhHant.data, title: "从编码数据开始", description: "在此浏览器打开 CSV 或 XLSX 文件，或加载已有说明的学院示例以查看完整流程。", upload: "打开 CSV 或 XLSX", uploadHint: "CSV 或 XLSX，最多 5 MB、20,000 行；XLSX 使用第一个工作表", sample: "加载教学示例", trajectorySample: "加载 3D 轨迹示例", trajectorySampleHint: "54 条合成数据 · 6 位学习者 · TP1–TP3 · 6 个编码", noFile: "尚未加载数据", active: "当前数据集", rows: "数据行", columns: "字段", source: "来源", local: "核心 ENA 计算保留在此浏览器；原始来源数据行不会发送到可选的 AI 解读服务。" },
-  model: { ...zhHant.model, title: "定义 ENA 模型", description: "映射赋予网络分析意义的字段，然后运行已验证的 jENA 流程。", sequenceNote: "CSV 或 XLSX 数据行顺序定义每段对话中的序列；若顺序重要，请在分析前先排序源文件。", unit: "分析单位", conversation: "对话", group: "比较组", identityHint: "可选一个或多个字段；顺序会定义复合标识。", noGroup: "不设比较组（全部分析单位）", codes: "编码", window: "窗口", movingWindow: "移动段落窗口", conversationWindow: "完整对话", back: "向后跨度（包括当前行）", forward: "向前数据行", configureTrajectory: "配置轨迹模型", modelType: "模型类型", endpoint: "端点（每个分析单位一个网络）", separateTrajectory: "分离轨迹（每一步一个点）", accumulatedTrajectory: "累积轨迹（每一步为累积网络）", trajectoryHint: "轨迹步骤按每个分析单位首次出现的对话顺序排列；统计面板不会将重复步骤视为独立分析单位。", rotation: "旋转", svd: "SVD（数据方差）", means: "广义均值旋转（GMR）", center: "将零网络分析单位置于原点", weighting: "加权", binary: "二元", run: "构建 ENA 模型", rerun: "重新构建模型", valid: "模型输入有效" },
-  plot: { ...zhHant.plot, title: "调整研究视图", description: "这些控件只改变呈现方式，不会在未提示下重新构建模型。", showPoints: "分析单位点", showNetworks: "组网络", showLabels: "编码标签", showTrajectories: "轨迹路径", edgeScale: "连线宽度", axisX: "X 轴", axisY: "Y 轴", axisZ: "Z 轴", camera: "相机", cameraPosition: "相机位置", default3dCamera: "默认 3D 相机", isometric: "等距", xy: "X-Y 平面", xz: "X-Z 平面", yz: "Y-Z 平面", yx: "Y-X 平面", zx: "Z-X 平面", zy: "Z-Y 平面", reset: "重置视图", resetNodeLayout: "重置标签位置", threeDComparisonPlot: "比较图", threeDPrimaryPlot: "主要图", threeDSecondaryPlot: "次要图", threeDPlotActions: "3D 绘图操作", zoomIn: "放大", zoomOut: "缩小", recenter: "回正", copyImage: "复制图片", copyImageTitle: "复制绘图图片到剪贴板", fullscreenEnter: "进入全屏", fullscreenExit: "退出全屏", fullscreenDialog: "全屏 3D 图", actionUnavailable: "3D 视图操作不可用", copyingImage: "正在复制图片", imageCopied: "图片已复制", imageDataCopied: "图片数据已复制", imageDownloaded: "图片已下载", copyUnavailable: "无法复制", fullscreenOpening: "正在打开全屏", fullscreenFallbackEnabled: "已启用全屏备用模式", fullscreenClosed: "全屏已关闭", fullscreenExitFailed: "原生全屏无法关闭。请按 Escape 退出。", fullscreenUnavailable: "全屏不可用", threeDInteractionHint: "拖动以旋转；滚动或使用五个绘图操作来放大、缩小、回正、复制图片或进入全屏。此几何仅作描述，不属于推断证据。", sameFittedSpace: "沿用同一个已拟合 jENA 空间；切换 2D 与 3D 不会重新运行或重新拟合分析。", threeDExportHint: "使用 3D 绘图工具栏的复制图片按钮，把 PNG 放到剪贴板。SVG 与高分辨率 PNG 研究图导出仅适用于 2D 视图。", threeDLoading: "正在加载 3D 绘图", threeDUnavailable: "交互式 3D 暂时不可用。已拟合结果仍保持完整；请切回 2D 或重新加载此视图。", threeDRequiresThreeDimensions: "3D ENA 需要已完成结果具有三个不同维度；2D 结果仍可使用。" },
+  data: { ...zhHant.data, title: "从编码数据开始", description: "在此浏览器打开 CSV 或 XLSX 文件，或加载已有说明的学院示例以查看完整流程。", upload: "打开 CSV 或 XLSX", uploadHint: "CSV 或 XLSX，最多 5 MB、20,000 行；XLSX 使用第一个工作表", sample: "加载教学示例", sampleHint: "48 条合成数据 · 8 个团队 · 5 个编码", trajectorySample: "加载 3D 轨迹示例", trajectorySampleHint: "54 条合成数据 · 6 位学习者 · TP1–TP3 · 6 个编码", noFile: "尚未加载数据", active: "当前数据集", rows: "数据行", columns: "字段", source: "来源", local: "核心 ENA 计算保留在此浏览器；原始来源数据行不会发送到可选的 AI 解读服务。" },
+  model: { ...zhHant.model, title: "定义 ENA 模型", description: "映射赋予网络分析意义的字段，然后运行已验证的 jENA 流程。", sequenceNote: "CSV 或 XLSX 数据行顺序定义每段对话中的序列；若顺序重要，请在分析前先排序源文件。", unit: "分析单位", conversation: "对话", group: "比较组", identityHint: "可选一个或多个字段；顺序会定义复合标识。", noGroup: "不设比较组（全部分析单位）", codes: "编码", window: "窗口", movingWindow: "移动段落窗口", conversationWindow: "完整对话", back: "向后跨度（包括当前行）", forward: "向前数据行", configureTrajectory: "配置轨迹模型", modelType: "模型类型", endpoint: "端点（每个分析单位一个网络）", separateTrajectory: "分离轨迹（每一步一个点）", accumulatedTrajectory: "累积轨迹（每一步为累积网络）", trajectoryHint: "轨迹步骤按每个分析单位首次出现的对话顺序排列；统计面板不会将重复步骤视为独立分析单位。", rotation: "旋转", svd: "SVD（数据方差）", means: "广义均值旋转（GMR）", center: "将零网络分析单位置于原点", weighting: "加权", binary: "二元", sum: "原始乘积总和", run: "构建 ENA 模型", rerun: "重新构建模型", valid: "模型输入有效" },
+  plot: { ...zhHant.plot, title: "调整研究视图", description: "这些控件只改变呈现方式，不会在未提示下重新构建模型。", showPoints: "分析单位点", showNetworks: "组网络", showLabels: "编码标签", showUnitLabels: "单位标签", showVariance: "坐标轴方差", showTrajectories: "轨迹路径", edgeScale: "连线宽度", edgeThreshold: "最低相对连线", pointScale: "分析单位点大小", axisX: "X 轴", axisY: "Y 轴", axisZ: "Z 轴", camera: "相机", cameraPosition: "相机位置", default3dCamera: "默认 3D 相机", isometric: "等距", xy: "X-Y 平面", xz: "X-Z 平面", yz: "Y-Z 平面", yx: "Y-X 平面", zx: "Z-X 平面", zy: "Z-Y 平面", reset: "重置视图", resetNodeLayout: "重置标签位置", threeDComparisonPlot: "比较图", threeDPrimaryPlot: "主要图", threeDSecondaryPlot: "次要图", threeDPlotActions: "3D 绘图操作", zoomIn: "放大", zoomOut: "缩小", recenter: "回正", copyImage: "复制图片", copyImageTitle: "复制绘图图片到剪贴板", fullscreenEnter: "进入全屏", fullscreenExit: "退出全屏", fullscreenDialog: "全屏 3D 图", actionUnavailable: "3D 视图操作不可用", copyingImage: "正在复制图片", imageCopied: "图片已复制", imageDataCopied: "图片数据已复制", imageDownloaded: "图片已下载", copyUnavailable: "无法复制", fullscreenOpening: "正在打开全屏", fullscreenFallbackEnabled: "已启用全屏备用模式", fullscreenClosed: "全屏已关闭", fullscreenExitFailed: "原生全屏无法关闭。请按 Escape 退出。", fullscreenUnavailable: "全屏不可用", threeDInteractionHint: "拖动以旋转；滚动或使用五个绘图操作来放大、缩小、回正、复制图片或进入全屏。此几何仅作描述，不属于推断证据。", sameFittedSpace: "沿用同一个已拟合 jENA 空间；切换 2D 与 3D 不会重新运行或重新拟合分析。", threeDExportHint: "使用 3D 绘图工具栏的复制图片按钮，把 PNG 放到剪贴板。SVG 与高分辨率 PNG 研究图导出仅适用于 2D 视图。", threeDLoading: "正在加载 3D 绘图", threeDUnavailable: "交互式 3D 暂时不可用。已拟合结果仍保持完整；请切回 2D 或重新加载此视图。", threeDRequiresThreeDimensions: "3D ENA 需要已完成结果具有三个不同维度；2D 结果仍可使用。" },
   contrast: { ...en.contrast, title: "端点组对比", description: "依次选择主要组和次要组。中央图以同一比例尺叠加两个平均网络；带符号的“主要减次要”差异保留在证据表与导出中。", primary: "主要组", secondary: "次要组", swap: "交换主要组和次要组", selectedOrder: "所选组顺序", selectedAxes: "所选坐标轴", multiplicity: "此网络对比仅作描述；已确认的统计推断工作流程会在明确运行后应用固定 Holm 检验族。", exportJson: "导出组对比 JSON", exportEdges: "导出组对比连线 CSV", requiresGroup: "无法使用组对比：端点模型需要分组变量。", requiresTwoGroups: "无法使用组对比：端点模型需要至少两个不同组。", endpointOnly: "无法使用组对比：此功能仅适用于端点模型。" },
   longitudinal: { ...en.longitudinal, title: "纵向组质心路径", description: "按明确时期顺序，在固定 jENA 空间中派生等权实体组质心。这些呈现设置不会重建 jENA 或改变投影坐标。", repeatedEntity: "重复测量实体", timeOrder: "时间／顺序字段", observedOrder: "明确时间顺序（按来源数据首次出现）", moveEarlier: "将时期前移", moveLater: "将时期后移", cohortPolicy: "队列策略", available: "可用队列", complete: "完整队列", availableHint: "可用队列使用各时期实际出现的重复实体。", completeHint: "完整队列只保留每个排序时期均有数据的重复实体。", showIndividualPaths: "个体轨迹路径", showGroupPaths: "组质心路径", descriptive: "描述性纵向几何", noEndpointTests: "重复轨迹时期不应用端点 Mann–Whitney 或 Welch 检验。", exportJson: "导出纵向 JSON", exportCsv: "导出纵向时期 CSV", exportInferenceCsv: "导出推断比较 CSV", allUnits: "未设置比较组：显示一条“所有单位”总体质心路径。", period: "时期", group: "组", availableCount: "可用", completeCount: "完整", includedCount: "纳入", excludedCount: "缺失／排除", unavailableModel: "纵向组质心分析需要成功的分离或累积轨迹结果。", unavailableEntity: "纵向分析需要来自拟合单位映射的重复实体字段。", unavailableTime: "纵向分析需要来自拟合对话映射的时间／顺序字段。", unavailablePeriods: "纵向分析至少需要两个排序时期。", unavailableComplete: "完整队列中没有在每个所选时期均有数据的合格重复实体。", figureAriaLabel: "组质心轨迹图；小屏幕可水平滚动。", geometryView: "轨迹几何视图", diagnosticsCaption: "组与时期质心诊断", nUsed: "使用数", nExcluded: "排除数", centroid: "质心", status: "状态", gap: "缺口", observed: "已观察", gapRule: "缺失时期之间不连线。", noConnectedPaths: "无法绘制连接轨迹：所选相邻时期没有重复实体。请检查重复实体和时间点映射。", legendAriaLabel: "纵向轨迹图例", largerCentroidMarker: "较大轮廓方形＝组时期质心", timeDirectionArrow: "箭头＝观察时间方向", flipped: "已翻转", firstAxis: "维度 1", secondAxis: "维度 2", circle: "圆形", diamond: "菱形", triangle: "三角形", square: "方形", cross: "十字形", hexagon: "六边形", solid: "实线", dashed: "虚线", dotted: "点线", dashDot: "点划线", shortDashed: "短虚线", longShortDashed: "长短虚线", marker: "标记", path: "路径", rowsTruncated: "画面省略了其余时期行；请使用纵向导出获取完整诊断。", individualMarksSampled: "个体图形标记已抽样：显示 {pointsShown}/{pointsTotal} 个点、{segmentsShown}/{segmentsTotal} 个整实体路径转换，以及 {arrowsShown}/{arrowsTotal} 个方向箭头。组质心路径保持完整。" },
   stats: { ...zhHant.stats, title: "证据与可复现性", description: "将描述性摘要与模型规格一并解读；发表层级的推论需要有依据的检验与研究设计。", variance: "解释方差", groupSummary: "组摘要", effect: "绝对 Cohen’s d", verifiedTests: "jENA 检验统计量", correlations: "维度相关", notTest: "jENA 报告检验统计量和自由度，但不计算 p 值；请根据研究设计选择并报告推论检验。", manifest: "分析清单", export: "导出清单", exportBundle: "导出结果包", identityExportWarning: "标准 ENA 衍生导出可能保留所选分析单位与组标识符；轨迹数据表也可能保留对话或时间标识符。这些数据并非匿名；分享前请审阅并假名化。", identityExportConfirmation: "此标准 ENA 导出可能包含分析单位、组、对话或时间标识符。请确认您已审阅或假名化，且分享受适当研究治理规范。", trajectoryNotice: "端点组检验与点—质心相关不适用于重复轨迹步骤。请描述性解读轨迹几何，或在工作区外使用符合研究设计的纵向方法。", ui: statsUiZhHans },
@@ -3910,6 +4054,15 @@ const zhHans: OpenEnaCopy = {
     generating: "正在生成解读…",
     cancel: "取消",
     retry: "重试",
+    sessionRecovery: "您的开放 ENA 会话不存在或已失效。请重新登录，再回到此处生成解读。",
+    signInAgain: "重新登录",
+    signInNewTab: "在新标签页打开",
+    failureUnavailable: "AI 解读暂时无法使用，或已达到请求次数限制。请稍候，再重试此请求。",
+    failureNetwork: "AI 解读请求因网络问题或超时而未完成。请检查连接，再重试此请求。",
+    failureInvalidOutput: "模型返回的内容无法用作解读。请重试此请求，以重新生成解读。",
+    evidenceBoundary: "已计算的 ENA 模型结果仍然有效。缺少的只是 AI 解读。",
+    evidenceBoundaryRetained: "ENA 模型结果仍然有效。这次新的 AI 解读尝试失败；下方显示的解读来自较早对同一证据的请求。",
+    previousInterpretation: "先前的解读",
     errorTitle: "未能生成 AI 解读",
     noCurrentResult: "请先在“统计与导出”运行并确认当前结果，再请求 AI 解读。",
     staleResult: "请重新构建 ENA 模型，确保解读符合当前设置。",

@@ -1,7 +1,7 @@
 import { scrypt, timingSafeEqual } from "node:crypto";
 import {
   openEnaV2AuthConfigurationReady,
-  verifyOpenEnaSessionTokenAnyWithRevocation,
+  verifyOpenEnaSessionTokenAny,
   verifyOpenEnaSessionTokenV2WithRevocation,
   type OpenEnaAuthEnvironment,
   type OpenEnaPrincipal,
@@ -384,21 +384,59 @@ export async function createProductionOpenEnaAuthSecurityStore(
   return store;
 }
 
+export type OpenEnaProductionSessionVerification =
+  | { outcome: "authenticated"; principal: OpenEnaPrincipal }
+  | { outcome: "unauthenticated" }
+  | { outcome: OpenEnaAuthFailureReason };
+
+/**
+ * Distinguishes a missing or rejected session from auth configuration and
+ * store outages. Callers that only need a principal should keep using
+ * {@link verifyProductionOpenEnaSessionTokenAny}, which still fails closed
+ * to null for every non-authenticated outcome.
+ */
+export async function classifyProductionOpenEnaSessionTokenAny(
+  token: string | undefined,
+  nowMilliseconds = Date.now(),
+  environment: OpenEnaAuthEnvironment = process.env,
+  injectedQuery?: OpenEnaAuthSecurityQuery,
+  options?: CreateProductionOpenEnaAuthSecurityStoreOptions,
+): Promise<OpenEnaProductionSessionVerification> {
+  if (!openEnaAuthSecurityConfigurationReady(environment)) {
+    return { outcome: "not-configured" };
+  }
+
+  let store: OpenEnaAuthSecurityStore | null;
+  try {
+    store = await createProductionOpenEnaAuthSecurityStore(environment, injectedQuery, options);
+  } catch {
+    return { outcome: "store-error" };
+  }
+  if (!store) return { outcome: "store-unavailable" };
+
+  const principal = verifyOpenEnaSessionTokenAny(token, nowMilliseconds, environment);
+  if (!principal) return { outcome: "unauthenticated" };
+  try {
+    if (await store.isSessionRevoked(principal.jti)) return { outcome: "unauthenticated" };
+  } catch {
+    return { outcome: "store-error" };
+  }
+  return { outcome: "authenticated", principal };
+}
+
 export async function verifyProductionOpenEnaSessionTokenAny(
   token: string | undefined,
   nowMilliseconds = Date.now(),
   environment: OpenEnaAuthEnvironment = process.env,
   injectedQuery?: OpenEnaAuthSecurityQuery,
 ): Promise<OpenEnaPrincipal | null> {
-  if (!openEnaAuthSecurityConfigurationReady(environment)) return null;
-  const store = await createProductionOpenEnaAuthSecurityStore(environment, injectedQuery);
-  if (!store) return null;
-  return verifyOpenEnaSessionTokenAnyWithRevocation(
+  const verdict = await classifyProductionOpenEnaSessionTokenAny(
     token,
-    store,
     nowMilliseconds,
     environment,
+    injectedQuery,
   );
+  return verdict.outcome === "authenticated" ? verdict.principal : null;
 }
 
 /** Retained for callers that explicitly require the static-account v2 contract. */

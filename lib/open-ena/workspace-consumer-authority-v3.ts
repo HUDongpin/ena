@@ -30,6 +30,10 @@ export const OPEN_ENA_WORKBENCH_PRESENTATION_CONTROL_KEYS_V3 = [
   "xDimension",
   "yDimension",
   "zDimension",
+  "endpointsOnly",
+  "visibleHorizons",
+  "showGroupCentroidPaths",
+  "hiddenUnitKeys",
 ] as const;
 
 const PRESENTATION_CONTROL_KEY_SET = new Set<string>(
@@ -41,6 +45,7 @@ export interface OpenEnaConsumerAuthorityInputV3 {
   plan: string | null;
   current: boolean;
   controls: unknown;
+  resultCreatedAt?: string | null;
 }
 
 export interface OpenEnaAiReviewedRequestIdentityInputV3 {
@@ -72,6 +77,7 @@ export function openEnaConsumerAuthorityKeyV3(input: OpenEnaConsumerAuthorityInp
     plan: input.plan,
     current: input.current,
     controls: snapshotOpenEnaConsumerAuthorityControlsV3(input.controls),
+    resultCreatedAt: input.resultCreatedAt ?? null,
   });
 }
 

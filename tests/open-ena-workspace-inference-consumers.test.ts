@@ -15,6 +15,7 @@ import {
   longitudinalInferenceRowsToCsv,
 } from "../lib/open-ena/longitudinal";
 import { buildMethodsReport } from "../lib/open-ena/methods";
+import { openEnaConsumerAuthorityKeyV3 } from "../lib/open-ena/workspace-consumer-authority-v3";
 import {
   SAMPLE_CONFIG,
   type OpenEnaConfig,
@@ -378,3 +379,45 @@ test("stable result, warning, integrity and p-method codes have localized resear
   assert.doesNotMatch(panel, /\{row\.resolvedPMethod \?\? "—"\}/);
   assert.doesNotMatch(panel, /<li key=\{warning\}>\{warning\}<\/li>/);
 });
+
+// #74 A rebuilt result keeps the scientific binding and mints a new createdAt.
+// consumerKey follows createdAt so inference and AI review cannot resurrect.
+test(
+  "two results with the same binding and different createdAt yield different consumer keys",
+  () => {
+    const binding = {
+      scientificResultSha256: "a".repeat(64),
+      datasetSha256: "b".repeat(64),
+    };
+    const results = [
+      { binding, createdAt: "2026-10-05T00:00:00.000Z" },
+      { binding, createdAt: "2026-10-05T00:00:01.000Z" },
+    ] as const;
+    const keys = results.map((result) => {
+      const input = {
+        binding: result.binding,
+        plan: "c".repeat(64),
+        current: true,
+        controls: {
+          primaryGroup: "Control",
+          secondaryGroup: "Treatment",
+          axes: ["SVD1", "SVD2"],
+        },
+        resultCreatedAt: result.createdAt,
+      };
+      return openEnaConsumerAuthorityKeyV3(input);
+    });
+
+    assert.equal(results[0].binding, results[1].binding);
+    assert.equal(
+      results[0].binding.scientificResultSha256,
+      results[1].binding.scientificResultSha256,
+    );
+    assert.notEqual(results[0].createdAt, results[1].createdAt);
+    assert.notEqual(
+      keys[0],
+      keys[1],
+      "#74 consumerKey must change when only result.createdAt changes",
+    );
+  },
+);

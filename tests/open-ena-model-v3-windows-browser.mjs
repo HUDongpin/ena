@@ -180,7 +180,8 @@ const entry = `
       startRun() { dispatch({ type: "mark-running", executionPlanSha256: "d".repeat(64), context: modelScientificContextV3(state) }); },
     };
     return React.createElement("main", null,
-      React.createElement("button", { id: "run", disabled: runDisabled }, "Run model"),
+      // Idle label matches the workspace build button. This harness never admits a result, so it does not flip to "Rebuild model".
+      React.createElement("button", { id: "run", "data-testid": "open-ena-run-model", disabled: runDisabled }, "Build ENA model"),
       mounted ? React.createElement(OpenEnaWindowsPanelV3, {
         copy, orderCopy, state, fields: { id: (path) => "browser-field:" + path },
         columnOptions: ["student", "conversation", "turn", "time", "condition", "A", "B", "C"],
@@ -231,7 +232,7 @@ try {
   await panel.locator("summary").filter({ hasText: /^Execution resource preflight$/u }).click();
   await page.evaluate(() => document.getElementById("browser-field:resources").focus());
   assert.equal(await page.evaluate(() => document.activeElement?.id), "browser-field:resources", "resource diagnostics have a real focus target");
-  const run = page.getByRole("button", { name: "Run model" });
+  const run = page.getByTestId("open-ena-run-model");
   await page.waitForFunction(() => window.__task28.state.editorBlocked.standard === false);
   assert.equal(await run.isDisabled(), false);
   await panel.getByLabel("Binary", { exact: true }).check();

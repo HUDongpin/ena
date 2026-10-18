@@ -2723,6 +2723,55 @@ body:has(.open-ena-login-page) .back-to-top {
   font-size: calc(0.68rem + var(--ena-font-step, 1px));
 }
 
+.ena-teaching-sample-library {
+  display: grid;
+  gap: 8px;
+}
+
+.ena-teaching-sample-disclosure {
+  display: grid;
+  gap: 2px;
+  margin: -2px 0 8px;
+  color: #5e6b74;
+  font-size: calc(0.68rem + var(--ena-font-step, 1px));
+  line-height: 1.45;
+}
+
+.ena-teaching-sample-progress {
+  margin: 0 0 12px;
+}
+
+.ena-teaching-sample-progress ol {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ena-teaching-sample-progress li {
+  padding: 6px 8px;
+  border-inline-start: 3px solid #c5d0d4;
+  color: #59676e;
+  font-size: calc(0.72rem + var(--ena-font-step, 1px));
+}
+
+.ena-teaching-sample-progress li[data-done="true"] {
+  border-inline-start-color: #266e65;
+  color: #244038;
+}
+
+.ena-teaching-sample-progress ul {
+  margin: 6px 0 0;
+  padding-inline-start: 1.1em;
+}
+
+.ena-teaching-sample-progress-detail {
+  display: block;
+  margin-top: 2px;
+  color: #667985;
+}
+
 .ena-action-button {
   display: inline-flex;
   min-height: 44px;
@@ -3605,11 +3654,22 @@ body:has(.open-ena-login-page) .back-to-top {
   font-size: 12px;
   font-weight: 600;
 }
-.ena-unmet-prerequisite-list ul {
+.ena-unmet-prerequisite-list ul,
+.ena-rebuild-blocking-checklist ol {
   margin: 0;
   padding-inline-start: 1.2em;
   font-size: 11px;
   line-height: 1.55;
+}
+.ena-rebuild-blocking-checklist {
+  margin: 0 0 10px;
+}
+.ena-unmet-prerequisite-list .ena-rebuild-blocking-checklist-description {
+  font-weight: 500;
+}
+.ena-rebuild-blocking-checklist a:focus-visible {
+  outline: 3px solid var(--ena-accent-strong);
+  outline-offset: 2px;
 }
 .ena-result-table-unavailable-notes {
   margin: 10px 12px 0;
@@ -3635,6 +3695,21 @@ body:has(.open-ena-login-page) .back-to-top {
   padding: 12px;
   color: #644b13;
   background: #fffaf0;
+}
+
+.ena-export-applicability {
+  margin: 4px 0 8px;
+  color: #3d5c56;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.ena-export-applicability[data-export-applicability-reason="not-applicable-family"],
+.ena-export-applicability[data-export-applicability-reason="would-be-empty"],
+.ena-export-applicability[data-export-applicability-reason="requires-rebuild"],
+.ena-export-applicability[data-export-applicability-reason="projection-reference"],
+.ena-export-applicability[data-export-applicability-reason="awaiting-inference"] {
+  color: #644b13;
 }
 
 .ena-result-tabs button span {
@@ -10242,6 +10317,20 @@ body:has(.open-ena-page) #main-content {
   font-size: 0.68rem;
 }
 
+.ena-ai-error [data-ena-ai-evidence-boundary="results-remain-valid"],
+.ena-ai-error [data-ena-ai-evidence-boundary="previous-interpretation-retained"] {
+  color: #1f4f49;
+  background: #f3faf7;
+  border: 1px solid #c5ddd6;
+  border-radius: 3px;
+  padding: 6px 8px;
+}
+
+.ena-ai-result [data-ena-ai-retained-interpretation="previous"] {
+  color: #58696f;
+  font-size: 0.68rem;
+}
+
 .ena-ai-result {
   display: grid;
   gap: 12px;
@@ -10303,6 +10392,8 @@ body:has(.open-ena-page) #main-content {
   font-family: var(--font-geist-mono), monospace;
 }
 
+.ena-ai-interpretation:focus-visible,
+.ena-ai-result h4:focus-visible,
 .ena-ai-payload-preview > summary:focus-visible,
 .ena-ai-consent input:focus-visible,
 .ena-ai-interpretation button:focus-visible {
@@ -13927,6 +14018,13 @@ html:has(.open-ena-page) {
   font-size: 12px;
   line-height: 1.45;
 }
+/* This Chromium leaves closed disclosure children in layout. Hide those
+   controls so they do not paint over the next block, but keep result tables
+   laid out: narrow Stats scrolling measures them even when the disclosure
+   was closed again by a tab change. */
+.ena-workspace-controls-v3 details:not([open]) > :not(summary):not(.ena-result-table-wrap) {
+  display: none;
+}
 .ena-workspace-controls-v3 :where(select, textarea, input[type="text"], input[type="number"]) {
   box-sizing: border-box;
   max-width: 100%;
@@ -14089,6 +14187,66 @@ html:has(.open-ena-page) {
   background: #858585;
   font-size: 10px;
   font-weight: 700;
+}
+@media (max-width: 900px) {
+  .ena-model-tab-cell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: stretch;
+  }
+  .ena-model-tab-cell > [role="tab"] {
+    width: auto;
+    min-width: 0;
+    height: auto;
+  }
+  .ena-model-tab-cell .ena-model-help-button {
+    position: static;
+    width: 32px;
+    height: auto;
+    min-width: 32px;
+    min-height: 32px;
+    align-self: center;
+  }
+  .ena-restored-workbench .ena-model-tab-cell[data-active="true"] > [role="tab"] {
+    padding-inline-end: 3px;
+  }
+}
+/* CSS zoom narrows the Open ENA container while the viewport stays above 900px,
+   so the media query above does not match. These rules follow the absolute
+   help-button placement so the container query can unpin it. */
+@media (min-width: 901px) {
+  @container open-ena-viewport (max-width: 900px) {
+    .ena-model-tab-cell {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: stretch;
+    }
+    .ena-model-tab-cell > [role="tab"] {
+      width: auto;
+      min-width: 0;
+      height: auto;
+    }
+    .ena-model-tab-cell .ena-model-help-button {
+      position: static;
+      width: 32px;
+      height: auto;
+      min-width: 32px;
+      min-height: 32px;
+      align-self: center;
+    }
+    .ena-restored-workbench .ena-model-tab-cell[data-active="true"] > [role="tab"] {
+      padding-inline-end: 3px;
+    }
+  }
+}
+/* CSS zoom can shrink the Open ENA container to 480px while the viewport stays
+   wider, so the 480px media query below does not match. Mirror its tab-label
+   wrapping here. */
+@media (min-width: 481px) {
+  @container open-ena-viewport (max-width: 480px) {
+    .ena-restored-workbench .ena-model-tabs [role="tab"] { font-size: 11px; }
+    .ena-restored-workbench .ena-model-tabs [role="tab"] > span:first-child { white-space: normal; }
+  }
 }
 .ena-restored-workbench .ena-model-tab-panel { scrollbar-gutter: auto; overflow: visible; }
 .ena-restored-workbench .ena-official-model-panel { gap: 8px; padding: 0; }
@@ -14281,7 +14439,8 @@ html:has(.open-ena-page) {
 .ena-restored-workbench .ena-workspace-section-v3 { gap: 10px; margin: 0 0 10px; padding: 0 4px 10px; border-top: 0; }
 .ena-restored-workbench .ena-source-actions { display: grid; gap: 8px; }
 .ena-restored-workbench .ena-source-actions .ena-action-button { justify-content: center; gap: 8px; min-height: 44px; margin: 0; font-size: 13px; }
-.ena-restored-workbench .ena-source-actions p { margin: -2px 0 8px; color: #667985; font-size: 11px; }
+.ena-restored-workbench .ena-source-actions p,
+.ena-restored-workbench .ena-teaching-sample-disclosure { margin: -2px 0 8px; color: #667985; font-size: 11px; }
 .ena-restored-workbench label.ena-restored-file-action { position: relative; display: flex; flex-direction: row; align-items: center; cursor: pointer; }
 .ena-restored-workbench .ena-restored-file-action input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; opacity: 0; cursor: pointer; }
 .ena-restored-file-action:focus-within { outline: 3px solid var(--ena-accent-strong); outline-offset: 2px; }
@@ -14357,6 +14516,7 @@ html:has(.open-ena-page) {
 .ena-restored-workbench.ena-ai-mode-panel > button { width: 100%; margin: 0 0 10px; }
 @media (max-width: 480px) {
   .ena-restored-workbench .ena-model-tabs [role="tab"] { font-size: 11px; }
+  .ena-restored-workbench .ena-model-tabs [role="tab"] > span:first-child { white-space: normal; }
   .ena-restored-workbench .ena-model-code-row-v3 { grid-template-columns: 24px minmax(0, 1fr) 24px repeat(3, 28px); }
   .ena-restored-workbench .ena-model-code-row-v3 .ena-official-icon-button,
   .ena-restored-workbench .ena-model-code-color-v3 { width: 28px; min-width: 28px; }

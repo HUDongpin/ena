@@ -3,7 +3,13 @@ import {
   openEnaV2AuthConfigurationReady,
   OPEN_ENA_SESSION_COOKIE,
 } from "@/lib/open-ena-auth";
-import { verifyProductionOpenEnaSessionTokenAny } from "@/lib/server/open-ena-auth-security-store";
+import {
+  classifyProductionOpenEnaSessionTokenAny,
+  openEnaAuthFailureBody,
+  openEnaAuthFailureHeaders,
+  type OpenEnaAuthFailureReason,
+  type OpenEnaProductionSessionVerification,
+} from "@/lib/server/open-ena-auth-security-store";
 import { createProductionBillableStore, parseBillablePolicy, type BillableStore, type BillableLimits } from "./open-ena-billable";
 import { resolveOpenEnaRequestOrigin } from "@/lib/open-ena-auth-request";
 import {
@@ -54,6 +60,35 @@ export function openEnaAiAuthConfigurationReady(
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ) {
   return openEnaV2AuthConfigurationReady(environment);
+}
+
+export class OpenEnaAiAuthUnavailableError extends Error {
+  readonly reason: OpenEnaAuthFailureReason;
+
+  constructor(reason: OpenEnaAuthFailureReason) {
+    super(openEnaAuthFailureBody(reason));
+    this.name = "OpenEnaAiAuthUnavailableError";
+    this.reason = reason;
+  }
+}
+
+export function principalFromOpenEnaAiSessionVerdict(
+  verdict: OpenEnaProductionSessionVerification,
+): { principalRef: string } | null {
+  switch (verdict.outcome) {
+    case "authenticated":
+      return verdict.principal;
+    case "unauthenticated":
+      return null;
+    case "not-configured":
+    case "store-unavailable":
+    case "store-error":
+      throw new OpenEnaAiAuthUnavailableError(verdict.outcome);
+    default: {
+      const exhaustive: never = verdict;
+      return exhaustive;
+    }
+  }
 }
 
 function jsonResponse(body: unknown, status: number, extraHeaders: HeadersInit = {}) {
@@ -172,7 +207,13 @@ function errorProperty(error: unknown, property: string) {
   return (error as Record<string, unknown>)[property];
 }
 
-function safeProviderFailure(error: unknown) {
+export type OpenEnaAiRouteFailureClass = "session" | "unavailable" | "network" | "invalid-output";
+
+export function openEnaAiProviderFailurePresentation(error: unknown): {
+  status: number;
+  error: string;
+  failureClass: OpenEnaAiRouteFailureClass | null;
+} {
   const status = Number(
     errorProperty(error, "status")
       ?? errorProperty(error, "statusCode")
@@ -182,22 +223,25 @@ function safeProviderFailure(error: unknown) {
   const name = errorProperty(error, "name");
 
   if (status === 402 || code === "upstream-payment-required") {
-    return jsonResponse(
-      { error: "DeepSeek balance is required before AI interpretation can run." },
-      402,
-    );
+    return {
+      status: 402,
+      error: "DeepSeek balance is required before AI interpretation can run.",
+      failureClass: null,
+    };
   }
   if (status === 429 || code === "upstream-rate-limited") {
-    return jsonResponse(
-      { error: "The AI interpretation provider is rate limited. Please try again later." },
-      429,
-    );
+    return {
+      status: 429,
+      error: "The AI interpretation provider is rate limited. Please try again later.",
+      failureClass: "unavailable",
+    };
   }
   if (code === "upgrade-required") {
-    return jsonResponse(
-      { error: "Historical AI requests cannot be sent. Build and review a current v2 inference request." },
-      400,
-    );
+    return {
+      status: 400,
+      error: "Historical AI requests cannot be sent. Build and review a current v2 inference request.",
+      failureClass: null,
+    };
   }
   if (
     status === 503
@@ -206,10 +250,18 @@ function safeProviderFailure(error: unknown) {
     || code === "invalid-configuration"
     || code === "upstream-unavailable"
   ) {
-    return jsonResponse({ error: "AI interpretation is temporarily unavailable." }, 503);
+    return {
+      status: 503,
+      error: "AI interpretation is temporarily unavailable.",
+      failureClass: "unavailable",
+    };
   }
   if (code === "upstream-cancelled") {
-    return jsonResponse({ error: "The AI interpretation request was cancelled." }, 499);
+    return {
+      status: 499,
+      error: "The AI interpretation request was cancelled.",
+      failureClass: null,
+    };
   }
   if (
     status === 504
@@ -218,10 +270,42 @@ function safeProviderFailure(error: unknown) {
     || code === "ETIMEDOUT"
     || name === "AbortError"
   ) {
-    return jsonResponse({ error: "The AI interpretation provider timed out." }, 504);
+    return {
+      status: 504,
+      error: "The AI interpretation provider timed out.",
+      failureClass: "network",
+    };
+  }
+  if (code === "upstream-network") {
+    return {
+      status: 502,
+      error: "The AI interpretation provider request failed.",
+      failureClass: "network",
+    };
+  }
+  if (code === "upstream-malformed") {
+    return {
+      status: 502,
+      error: "The AI interpretation provider request failed.",
+      failureClass: "invalid-output",
+    };
   }
 
-  return jsonResponse({ error: "The AI interpretation provider request failed." }, 502);
+  return {
+    status: 502,
+    error: "The AI interpretation provider request failed.",
+    failureClass: null,
+  };
+}
+
+function safeProviderFailure(error: unknown) {
+  const presentation = openEnaAiProviderFailurePresentation(error);
+  return jsonResponse(
+    presentation.failureClass
+      ? { error: presentation.error, failureClass: presentation.failureClass }
+      : { error: presentation.error },
+    presentation.status,
+  );
 }
 
 export function createOpenEnaAiInterpretationPostHandler(
@@ -232,11 +316,18 @@ export function createOpenEnaAiInterpretationPostHandler(
     let principal: { principalRef: string } | null;
     try {
       principal = await dependencies.verifyPrincipal(sessionToken);
-    } catch {
+    } catch (error) {
+      if (error instanceof OpenEnaAiAuthUnavailableError) {
+        return jsonResponse(
+          { error: openEnaAuthFailureBody(error.reason) },
+          503,
+          openEnaAuthFailureHeaders(error.reason),
+        );
+      }
       return jsonResponse({ error: "Authentication service is temporarily unavailable." }, 503);
     }
     if (!principal) {
-      return jsonResponse({ error: "Authentication required." }, 401);
+      return jsonResponse({ error: "Authentication required.", failureClass: "session" }, 401);
     }
 
     let authReady = false;
@@ -541,7 +632,9 @@ export function createOpenEnaAiInterpretationPostHandler(
 }
 
 const productionPostHandler = createOpenEnaAiInterpretationPostHandler({
-  verifyPrincipal: (token) => verifyProductionOpenEnaSessionTokenAny(token),
+  verifyPrincipal: async (token) => principalFromOpenEnaAiSessionVerdict(
+    await classifyProductionOpenEnaSessionTokenAny(token),
+  ),
   authConfigurationReady: openEnaAiAuthConfigurationReady,
   environment: process.env,
   requireBillable: true,

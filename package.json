@@ -30,7 +30,10 @@
     "test:browser:open-ena-model-v3-codes": "node tests/open-ena-model-v3-codes-browser.mjs",
     "test:browser:open-ena-rebuild-cancel-pointer": "node tests/open-ena-rebuild-cancel-pointer-browser.mjs",
     "test:browser:open-ena-ai-retry": "node tests/open-ena-ai-retry-browser.mjs",
+    "test:browser:open-ena-ai-presentation-retention": "node tests/open-ena-ai-presentation-retention-browser.mjs",
+    "test:browser:open-ena-ai-interpretation-retention": "node tests/open-ena-ai-interpretation-retention-browser.mjs",
     "test:browser:open-ena-focus-recovery": "node tests/open-ena-focus-recovery-browser.mjs",
+    "test:browser:open-ena-a11y-landmarks": "node tests/open-ena-a11y-landmarks-browser.mjs",
     "test:browser:open-ena-stale-rebuild-cue": "node tests/open-ena-stale-rebuild-cue-browser.mjs",
     "test:browser:longitudinal-v3": "node tests/open-ena-longitudinal-v3-browser-smoke.mjs",
     "prompt:verify": "node --import tsx scripts/verify-open-ena-ai-prompts.ts",
@@ -48,7 +51,7 @@
     "@vercel/analytics": "^2.0.1",
     "j-3dena": "file:vendor/j-3dena/j-3dena-0.2.0-implemented-unverified.12.tgz",
     "jena-js": "0.7.0-ona.0",
-    "next": "16.3.4",
+    "next": "16.4.2",
     "pg": "8.22.0",
     "plotly.js-gl3d-dist-min": "3.7.0",
     "react": "19.2.7",
@@ -57,11 +60,15 @@
     "write-excel-file": "4.1.1"
   },
   "devDependencies": {
-    "@types/node": "24.10.1",
-    "@types/pg": "8.21.0",
-    "@types/react": "19.2.17",
-    "@types/react-dom": "19.2.3",
-    "tsx": "^4.22.4",
+    "@types/node": "24.10.15",
+    "@types/pg": "8.23.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "tsx": "^4.23.15",
     "typescript": "5.8.3"
+  },
+  "overrides": {
+    "sharp": "0.35.5",
+    "tinypool": "2.1.2"
   }
 }

@@ -54,6 +54,7 @@ try {
       return route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body><main id="root"></main><script type="module" src="/app.js"></script></body></html>' });
     });
     const button = name => page.getByRole('button', { name, exact: true });
+    const runModel = () => page.getByTestId('open-ena-run-model');
     const reset = () => page.evaluate(() => { window.q1Metrics = []; window.q1Counters = { units: 0, memberships: 0 }; window.q1Changes = 0; });
     const snapshot = () => page.evaluate(() => ({ metrics: window.q1Metrics, counters: window.q1Counters, changes: window.q1Changes, hidden: [...window.q1Plot.groupPresentation.hiddenUnits], workers: window.q1Workers }));
     const compareAndMeasure = () => page.evaluate(() => {
@@ -64,8 +65,13 @@ try {
       return { expected, actual, legacyMs: times(slow), indexedMs: window.q1Indexed ? times(() => window.q1Indexed(result, hiddenUnitKeys)) : null };
     });
     await page.goto('http://localhost:31993/?n=' + n);
-    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent === 'Run model' && !button.disabled), null, { timeout: 60000 });
-    await button('Run model').click();
+    // The build button is mounted only in Model mode. The workspace opens on Data.
+    await page.getByRole('button', { name: 'Model', exact: true }).click();
+    await page.waitForFunction(() => {
+      const button = document.querySelector('[data-testid="open-ena-run-model"]');
+      return button instanceof HTMLButtonElement && !button.disabled;
+    }, null, { timeout: 60000 });
+    await runModel().click();
     await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.dataset.resultStatus === 'current', null, { timeout: 60000 });
     const initial = await snapshot();
     await page.evaluate(() => { window.q1BoundBefore = JSON.stringify(window.q1Result); });
@@ -110,7 +116,7 @@ try {
       // An explicit new model run must replace the derived result. This action
       // is separate from the display-only no-refit assertions above.
       await page.evaluate(() => { window.q1PriorResult = window.q1Result; });
-      await reset(); await button('Run model').click();
+      await reset(); await runModel().click();
       await page.waitForFunction(() => window.q1Result !== window.q1PriorResult && document.querySelector('[data-testid="open-ena-workspace-v3"]')?.dataset.resultStatus === 'current', null, { timeout: 60000 });
       assert.equal(await page.evaluate(() => window.q1Plot.boundPresentation === window.q1Result), true);
       observation.explicitRerun = await snapshot();

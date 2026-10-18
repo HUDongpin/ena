@@ -122,8 +122,11 @@ try {
     await shot("historical-native-3d");
     record.checks.push("pending receipt cannot reappear after invalidation; historical geometry is unchanged; current model export is disabled");
     await rows.fill("5");
-    await page.getByRole("button", { name: "Run model", exact: true }).waitFor();
-    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent === "Run model" && !button.disabled));
+    await page.getByTestId("open-ena-run-model").waitFor();
+    await page.waitForFunction(() => {
+      const button = document.querySelector('[data-testid="open-ena-run-model"]');
+      return button instanceof HTMLButtonElement && !button.disabled;
+    });
     assert.equal(await figure().getAttribute("data-ena-plugin-display"), "historical", "restoring the same draft does not restore currentness");
     assert.equal((await counts()).snapshots, after.snapshots);
     await mode("Plot Tools");

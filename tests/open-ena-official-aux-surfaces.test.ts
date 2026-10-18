@@ -224,7 +224,7 @@ test("official Plot Settings sheet contains the less-frequent jENA controls with
     "Unit points",
     "Unit labels",
     "Plot zoom",
-    "Reset all plot tools",
+    "Reset display settings",
   ]) {
     assert.match(markup, new RegExp(`aria-label="${accessibleName}`));
   }

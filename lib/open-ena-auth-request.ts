@@ -25,6 +25,9 @@ function configuredAllowedOrigins(environment: OpenEnaRequestEnvironment) {
   if (environment.OPEN_ENA_ALLOWED_ORIGINS !== undefined) {
     configured.push(...environment.OPEN_ENA_ALLOWED_ORIGINS.split(","));
   }
+  if (environment.OPEN_ENA_ADDITIONAL_ORIGINS !== undefined) {
+    configured.push(...environment.OPEN_ENA_ADDITIONAL_ORIGINS.split(","));
+  }
   if (configured.length === 0) return null;
   const entries = configured.map((entry) => entry.trim());
   if (entries.some((entry) => !entry)) return false;

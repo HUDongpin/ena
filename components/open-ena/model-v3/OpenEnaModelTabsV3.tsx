@@ -23,6 +23,12 @@ import {
   type OpenEnaModelDiagnosticsV3Copy,
   type OpenEnaModelTabV3,
 } from "./OpenEnaModelDiagnosticsV3";
+import {
+  OpenEnaRebuildBlockingChecklistV3,
+  modelRebuildBlockingChecklistV3,
+  type ModelRebuildRawBlockersV3,
+  type OpenEnaRebuildBlockingChecklistCopyV3,
+} from "./OpenEnaRebuildBlockingChecklistV3";
 import type {
   ModelScientificContextV3,
   ModelStateV3,
@@ -74,6 +80,7 @@ export interface OpenEnaModelTabsV3Copy {
     readonly unavailable: string;
   };
   readonly diagnostics: OpenEnaModelDiagnosticsV3Copy;
+  readonly blockingChecklist: OpenEnaRebuildBlockingChecklistCopyV3;
 }
 
 export type OpenEnaModelSummaryCountV3 =
@@ -133,6 +140,10 @@ export interface OpenEnaModelTabsV3Props {
     action: ModelSuggestedActionV3,
     context: ModelScientificContextV3,
   ) => void;
+  /** Synchronous editor ledger. Omitted callers only list compiler build-model gates. */
+  readonly rawBlockers?: ModelRebuildRawBlockersV3;
+  /** Workspace-scoped id so two rendered workspaces do not share one checklist target. */
+  readonly blockingChecklistId?: string;
 }
 
 function tabIdV3(tab: OpenEnaModelTabV3): string {
@@ -172,6 +183,8 @@ export function OpenEnaModelTabsV3({
   renderPanel,
   onTabChange,
   onSuggestedAction,
+  rawBlockers,
+  blockingChecklistId,
 }: OpenEnaModelTabsV3Props) {
   const [activeTab, setActiveTab] = useState<OpenEnaModelTabV3>(initialTab);
   const [helpTab, setHelpTab] = useState<OpenEnaModelTabV3 | null>(null);
@@ -291,6 +304,11 @@ export function OpenEnaModelTabsV3({
   }, [activeTab, focusRequest]);
 
   const activeHelp = copy.help[activeTab];
+  const blockingItems = modelRebuildBlockingChecklistV3({
+    family: scientificContext.family,
+    diagnostics,
+    rawBlockers,
+  });
   return (
     <div className="ena-model-v3-shell">
       <div className="ena-model-tab-and-help">
@@ -355,6 +373,13 @@ export function OpenEnaModelTabsV3({
         <span className="ena-model-result-state" aria-hidden="true">{resultView === "current" || resultView === "none" ? null : copy.status.result[resultView]}</span>
         <span className="sr-only">{statusText}</span>
       </p>
+      <OpenEnaRebuildBlockingChecklistV3
+        items={blockingItems}
+        copy={copy.blockingChecklist}
+        localizeDiagnostic={copy.diagnostics.localize}
+        onNavigateField={navigateField}
+        id={blockingChecklistId}
+      />
       {actions}
       <details className="ena-model-summary-v3 ena-panel-details">
         <summary>{copy.scientificSummary.label}</summary>

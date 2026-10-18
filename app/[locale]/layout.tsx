@@ -14,6 +14,8 @@ import {
   type Locale,
 } from "@/lib/i18n";
 import { siteConfig } from "@/lib/site";
+import { SkipLink } from "@/components/SkipLink";
+import { getOpenEnaCopy, isOpenEnaLocalizedLocale } from "@/lib/open-ena-i18n";
 
 interface LocaleLayoutProps {
   children: React.ReactNode;
@@ -57,6 +59,7 @@ export default async function LocaleLayout({ children, params }: LocaleLayoutPro
 
   const typedLocale = locale as Locale;
   const dictionary = getDictionary(typedLocale);
+  const workspaceCopy = getOpenEnaCopy(isOpenEnaLocalizedLocale(typedLocale) ? typedLocale : "en");
   const meta = getLocaleMeta(typedLocale);
   const structuredData = {
     "@context": "https://schema.org",
@@ -72,7 +75,8 @@ export default async function LocaleLayout({ children, params }: LocaleLayoutPro
     <div lang={meta.htmlLang} dir={meta.dir}>
       <HtmlLangSync lang={meta.htmlLang} dir={meta.dir} />
       <JsonLd data={structuredData} />
-      <HomeAwareChrome locale={typedLocale} skipLabel={dictionary.common.skipToContent}
+      <HomeAwareChrome locale={typedLocale}
+        skipLink={<SkipLink key="site-skip" skipToContent={dictionary.common.skipToContent} skipToWorkspace={workspaceCopy.modelV3.workspace.landmarks.skipToWorkspace} />}
         header={<Header key="site-header" locale={typedLocale} dictionary={dictionary} />}
         footer={<Footer key="site-footer" locale={typedLocale} dictionary={dictionary} />}
         backToTop={<BackToTop key="back-to-top" label={dictionary.common.backToTop} progressLabel={dictionary.common.pageScrollProgress} />}

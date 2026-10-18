@@ -54,8 +54,11 @@ try {
   await page.goto("http://localhost:31998/");
   await page.addScriptTag({ content: bundle.outputFiles[0].text });
   await page.getByRole("button", { name: "Model", exact: true }).click();
-  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Run model" && !button.disabled));
-  await page.getByRole("button", { name: "Run model", exact: true }).click();
+  await page.waitForFunction(() => {
+    const button = document.querySelector("[data-testid=open-ena-run-model]");
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
+  await page.getByTestId("open-ena-run-model").click();
   await page.waitForFunction(() => window.jobs.length === 1);
   await page.evaluate(() => window.resolveRun(0));
   await page.waitForFunction(() => document.querySelector("[data-testid=open-ena-workspace-v3]").dataset.resultStatus === "current");
@@ -69,7 +72,16 @@ try {
     await page.evaluate((nextLocale) => window.task32Render(nextLocale), locale);
     await page.waitForTimeout(100);
     await page.locator(".ena-rail-modes button").nth(3).click();
-    const statsText = await page.locator(".ena-model-control-content").innerText();
+    // ena-model-control-content exists only in Model mode. The AI rail reuses
+    // ena-workspace-controls-v3, so the stats copy is the analysis panel's data-mode node.
+    // The retained source-row sentence is inside the closed local Data View disclosure.
+    const statsRoot = page.locator('.ena-workspace-controls-v3[data-mode]');
+    const statsDisclosures = statsRoot.locator('details.ena-panel-details:not(.ena-artifacts-disclosure)');
+    for (let index = 0; index < await statsDisclosures.count(); index += 1) {
+      const disclosure = statsDisclosures.nth(index);
+      if (await disclosure.getAttribute("open") === null) await disclosure.locator("> summary").click();
+    }
+    const statsText = await statsRoot.innerText();
     await page.getByTestId("open-ena-data-view-toggle").click();
     const dataView = page.getByTestId("open-ena-data-view");
     await dataView.waitFor();
@@ -113,7 +125,7 @@ try {
     await page.waitForTimeout(100);
   };
   const alertText = async () => {
-    const alert = page.locator(".ena-model-control-content > [role=alert]");
+    const alert = page.locator('.ena-workspace-controls-v3[data-mode] > [role=alert]');
     await alert.waitFor();
     return alert.innerText();
   };
@@ -148,6 +160,8 @@ try {
   observations.failures.sample = await alertText();
   assert.match(observations.failures.sample, /teaching sample.*unavailable/u);
   await page.locator(".ena-rail-modes button").nth(3).click();
+  const artifacts = page.locator("details.ena-artifacts-disclosure");
+  if (await artifacts.getAttribute("open") === null) await artifacts.locator("> summary").click();
   const presetFile = page.getByText("Review presentation preset", { exact: true }).locator('input[type="file"]');
   await presetFile.setInputFiles({ name: "oversize-preset.json", mimeType: "application/json", buffer: Buffer.alloc(16 * 1024 * 1024 + 1, 32) });
   await page.locator(".ena-rail-modes button").nth(0).click();
@@ -162,17 +176,22 @@ try {
   await page.locator(".ena-rail-modes button").nth(1).click();
   await page.getByRole("tab", { name: /Codes,/u }).click();
   await page.getByRole("radio", { name: /Ordered Network Analysis/u }).check();
-  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Run model" && !button.disabled));
-  await page.getByRole("button", { name: "Run model", exact: true }).click();
+  await page.waitForFunction(() => {
+    const button = document.querySelector("[data-testid=open-ena-run-model]");
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
+  await page.getByTestId("open-ena-run-model").click();
   await page.waitForFunction(() => window.jobs.length === 2);
   await page.evaluate(() => window.resolveRun(1));
   await page.waitForFunction(() => document.querySelector("[data-testid=open-ena-workspace-v3]").dataset.resultStatus === "current");
-  assert.equal(await page.locator('.ena-model-control-content > [role="alert"]').count(), 0, "a successful new run clears the previous operation failure");
+  assert.equal(await page.locator('.ena-workspace-controls-v3[data-mode] > [role="alert"]').count(), 0, "a successful new run clears the previous operation failure");
   observations.ona = {};
   for (const locale of ["en", "zh-hant", "zh-hans"]) {
     await renderLocale(locale);
     await page.locator(".ena-rail-modes button").nth(3).click();
-    const statsText = await page.locator(".ena-model-control-content").innerText();
+    // ena-model-control-content exists only in Model mode. The AI rail reuses
+    // ena-workspace-controls-v3, so the stats copy is the analysis panel's data-mode node.
+    const statsText = await page.locator('.ena-workspace-controls-v3[data-mode]').innerText();
     await page.getByTestId("open-ena-data-view-toggle").click();
     const dataViewText = await page.getByTestId("open-ena-data-view").innerText();
     if (locale === "zh-hans") await page.screenshot({ path: `${outputDir}/zh-hans-ona-data-view.png` });
@@ -193,8 +212,11 @@ try {
   await page.evaluate(() => window.task32MountTrajectory("en"));
   await page.getByTestId("open-ena-workspace-v3").waitFor();
   await page.locator(".ena-rail-modes button").nth(1).click();
-  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Run model" && !button.disabled));
-  await page.getByRole("button", { name: "Run model", exact: true }).click();
+  await page.waitForFunction(() => {
+    const button = document.querySelector("[data-testid=open-ena-run-model]");
+    return button instanceof HTMLButtonElement && !button.disabled;
+  });
+  await page.getByTestId("open-ena-run-model").click();
   await page.waitForFunction(() => window.jobs.length === 3);
   await page.evaluate(() => window.resolveRun(2));
   await page.waitForFunction(() => document.querySelector("[data-testid=open-ena-workspace-v3]").dataset.resultStatus === "current");
