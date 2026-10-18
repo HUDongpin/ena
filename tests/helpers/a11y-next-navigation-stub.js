@@ -1,5 +1,5 @@
 export function usePathname() {
-  return "/en";
+  return window.location.pathname;
 }
 
 export function useSearchParams() {

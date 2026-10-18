@@ -36,10 +36,8 @@ LocaleLayout({ children: workspace, params: Promise.resolve({ locale }) }).then(
 
 const homeEntry = `
 import React from "react";
-import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import LocaleLayout from "./app/[locale]/layout";
-import { SkipLink } from "./components/SkipLink";
 import HomePage from "./app/[locale]/page";
 const locale = "en";
 HomePage({ params: Promise.resolve({ locale }) }).then((page) => (
@@ -47,13 +45,6 @@ HomePage({ params: Promise.resolve({ locale }) }).then((page) => (
 )).then((shell) => {
   const root = document.getElementById("root");
   root.innerHTML = renderToStaticMarkup(shell);
-  const rendered = root.querySelector("a.skip-link");
-  const host = document.createElement("span");
-  rendered.replaceWith(host);
-  createRoot(host).render(React.createElement(SkipLink, {
-    skipToContent: rendered.textContent,
-    skipToWorkspace: "Skip to workspace",
-  }));
 });
 `;
 
@@ -65,6 +56,7 @@ async function bundleEntry(contents, sourcefile) {
     platform: "browser",
     jsx: "automatic",
     write: false,
+    outdir: `${projectRoot}/output/a11y-landmarks-bundle`,
     logLevel: "silent",
     define: { "process.env.NODE_ENV": '"development"' },
     banner: { js: "var process = { env: { NODE_ENV: 'development' } };" },
@@ -77,10 +69,20 @@ async function bundleEntry(contents, sourcefile) {
           "next/image": `${projectRoot}/tests/helpers/a11y-next-image-stub.tsx`,
         };
         pluginBuild.onResolve({ filter: /^next\/(navigation|link|image)$/ }, (args) => ({ path: stubs[args.path] }));
+        // next/font is transformed by Next's compiler. This component fixture
+        // uses the stylesheet's font fallback; served Next checks cover fonts.
+        pluginBuild.onResolve({ filter: /^next\/font\/google$/ }, () => ({ path: "google-font", namespace: "a11y-font" }));
+        pluginBuild.onLoad({ filter: /.*/, namespace: "a11y-font" }, () => ({
+          contents: 'export function Geist() { return { className: "", variable: "" }; }',
+          loader: "js",
+        }));
       },
     }],
   });
-  return result.outputFiles[0].text;
+  return {
+    script: result.outputFiles.find((file) => file.path.endsWith(".js")).text,
+    css: result.outputFiles.filter((file) => file.path.endsWith(".css")).map((file) => file.text).join("\n"),
+  };
 }
 
 const WORKSPACE_LOCALES = [
@@ -505,18 +507,19 @@ try {
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (url.hostname !== "localhost") return route.abort();
-    if (url.pathname === "/ena-mark.svg") {
+    if (url.pathname === "/ena-mark.svg" || /^\/unified-home\/(?:ena-mark|logo-open-ena(?:-compact|-mark)?)\.svg$/.test(url.pathname)) {
       return route.fulfill({
         contentType: "image/svg+xml",
-        body: await readFile(`${projectRoot}/public/ena-mark.svg`, "utf8"),
+        body: await readFile(`${projectRoot}/public${url.pathname}`, "utf8"),
       });
     }
     return route.fulfill({ contentType: "text/html; charset=utf-8", body: html });
   });
 
-  async function mount(script) {
-    await page.goto("http://localhost:32161/");
-    await page.addScriptTag({ content: script });
+  async function mount(bundle, pathname = "/en/open-ena") {
+    await page.goto(`http://localhost:32161${pathname}`);
+    if (bundle.css) await page.addStyleTag({ content: bundle.css });
+    await page.addScriptTag({ content: bundle.script });
   }
 
   for (const viewport of VIEWPORTS) {
@@ -770,7 +773,7 @@ try {
   for (const { locale, label: skipLabel, toolbar: toolbarLabel } of WORKSPACE_LOCALES) {
     if (locale === "en") continue;
     await page.setViewportSize({ width: VIEWPORTS[0].width, height: VIEWPORTS[0].height });
-    await mount(bundles[locale]);
+    await mount(bundles[locale], `/${locale}/open-ena`);
     await page.getByRole("link", { name: skipLabel, exact: true }).waitFor();
     const localizedToolbar = page.getByRole("toolbar", { name: toolbarLabel });
     check(
@@ -804,12 +807,12 @@ try {
   }
 
   await page.setViewportSize({ width: VIEWPORTS[0].width, height: VIEWPORTS[0].height });
-  await mount(bundles.home);
+  await mount(bundles.home, "/en");
   await page.locator("#main-content").waitFor();
   const homeSkipCount = await page.locator("a.skip-link").count();
   check(homeSkipCount === 1, `home: expected exactly one .skip-link, found ${homeSkipCount}`);
-  const homeSkip = page.getByRole("link", { name: "Skip to content", exact: true });
-  check(await homeSkip.count() === 1, `home: expected the global Skip to content link, found ${await homeSkip.count()}`);
+  const homeSkip = page.getByRole("link", { name: "Skip to main content", exact: true });
+  check(await homeSkip.count() === 1, `home: expected the Home Skip to main content link, found ${await homeSkip.count()}`);
   if (homeSkipCount === 1 && await homeSkip.count() === 1) {
     const homeHref = await homeSkip.getAttribute("href");
     check(homeHref === "#main-content", `home: skip link href was ${homeHref}`);
@@ -821,7 +824,7 @@ try {
       return active instanceof HTMLAnchorElement
         && active.classList.contains("skip-link")
         && active.getAttribute("href") === "#main-content"
-        && active.textContent?.trim() === "Skip to content"
+        && active.textContent?.trim() === "Skip to main content"
         && target instanceof HTMLElement;
     });
     check(homeFirstTab, "home: the global skip link is not the first Tab stop or #main-content is missing");
@@ -841,6 +844,7 @@ try {
   await page.locator(".open-ena-login-form").waitFor();
   const loginSkipCount = await page.locator("a.skip-link").count();
   check(loginSkipCount === 1, `login: expected exactly one .skip-link, found ${loginSkipCount}`);
+  check(await page.getByRole("link", { name: "Skip to content", exact: true }).count() === 1, "login: expected the ENA Skip to content label");
   const loginHref = loginSkipCount === 1 ? await page.locator("a.skip-link").getAttribute("href") : null;
   check(loginHref === "#main-content", `login: skip link href was ${loginHref}`);
   const loginTarget = await page.evaluate(() => document.getElementById("main-content") instanceof HTMLElement && document.getElementById("open-ena-workspace") === null);
