@@ -162,13 +162,21 @@ test("Open ENA uses the same neutral navigation treatment as the other destinati
   assert.match(headerSource, /mission[\s\S]*?open-ena[\s\S]*?news/);
 });
 
-test("the home page retains the standard ENA figure and source credit while Mission omits the removed definition region", () => {
+test("the shared Home uses the Open ENA preview and localized ENA footer", () => {
   const homeSource = readFileSync(join(projectRoot, "app", "[locale]", "page.tsx"), "utf8");
+  const sharedHome = readFileSync(join(projectRoot, "components", "home-source", "UnifiedHome.tsx"), "utf8");
+  assert.match(homeSource, /<UnifiedHome/);
+  assert.match(homeSource, /<HubFooter copy=\{getHomeFooterCopy\(locale, getDictionary\(locale\)\)\}/);
+  assert.match(sharedHome, /<NetworkHero/);
+  assert.match(sharedHome, /<OpenEnaPreview/);
+  assert.match(sharedHome, /lang="en" dir="ltr"/);
+});
+
+test("Mission omits the removed definition region and localized research credits remain available", () => {
   const missionSource = readFileSync(join(projectRoot, "app", "[locale]", "mission", "page.tsx"), "utf8");
   const figureSource = readFileSync(join(projectRoot, "components", "NetworkFigure.tsx"), "utf8");
   const css = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
 
-  assert.match(homeSource, /<NetworkFigure/);
   assert.doesNotMatch(
     missionSource,
     /<NetworkFigure|definition-section|definition-copy|dictionary\.mission\.definition(?:Title|Text)/,
@@ -176,16 +184,6 @@ test("the home page retains the standard ENA figure and source credit while Miss
   assert.doesNotMatch(missionSource, /definition-(?:visual|node|edge)/);
   assert.doesNotMatch(css, /\.definition-(?:visual|node|edge)/);
   assert.doesNotMatch(figureSource, /plot-key|key-line/);
-  assert.match(homeSource, /dictionary\.home\.originCredit/);
-  assert.match(
-    homeSource,
-    /<strong><bdi>Wisconsin Center for Education Research\.<\/bdi><\/strong>\s*\{" "\}\s*<strong><bdi dir=\{localeMeta\[typedLocale\]\.dir\}>\{dictionary\.home\.initiatorCredit\}<\/bdi><\/strong>/u,
-  );
-  assert.doesNotMatch(homeSource, /typedLocale === "en"/u);
-  assert.doesNotMatch(
-    homeSource,
-    /Dr\. Peter Hu Dongpin is the Initiator of the open access ENA Hub of Knowledge\./u,
-  );
   assert.equal(
     getDictionary("en").home.originCredit,
     "ENA was proposed and developed by researchers and developers from",

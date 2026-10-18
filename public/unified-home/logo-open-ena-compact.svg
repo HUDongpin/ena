@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 165 80" role="img" aria-labelledby="title desc">
+  <title id="title">Open ENA</title>
+  <desc id="desc">Compact Open ENA wordmark with ENA placed beneath Open and an open network-ring symbol.</desc>
+  <g transform="translate(4 8)">
+    <path d="M48.8 6.8A24 24 0 1 0 53 38.5" fill="none" stroke="#89CFF0" stroke-width="6" stroke-linecap="round"/>
+    <g fill="none" stroke="#0F172A" stroke-width="2.35" stroke-linecap="round">
+      <path d="M20.5 31.2 32.8 18.8 42.5 33.7 54.2 6.2"/>
+      <path d="M20.5 31.2 42.5 33.7" opacity=".58"/>
+    </g>
+    <g fill="#F7FBFE" stroke="#0F172A" stroke-width="2.2">
+      <circle cx="20.5" cy="31.2" r="4.3"/>
+      <circle cx="32.8" cy="18.8" r="4.3"/>
+      <circle cx="42.5" cy="33.7" r="4.3"/>
+    </g>
+    <circle cx="54.2" cy="6.2" r="5" fill="#89CFF0" stroke="#0F172A" stroke-width="2.2"/>
+  </g>
+  <text x="82" y="29" fill="#175F88" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="17" font-weight="750" letter-spacing="5">OPEN</text>
+  <text x="80" y="61" fill="#0F172A" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="36" font-weight="850" letter-spacing="-.8">ENA</text>
+</svg>
