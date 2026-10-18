@@ -451,8 +451,10 @@ test("login and logout handlers use a hardened HttpOnly session cookie", () => {
   assert.equal(existsSync(loginRoutePath), true);
   assert.equal(existsSync(logoutRoutePath), true);
 
-  const loginRoute = readFileSync(loginRoutePath, "utf8");
-  const logoutRoute = readFileSync(logoutRoutePath, "utf8");
+  const loginRoute = readFileSync(loginRoutePath, "utf8")
+    + readFileSync(join(projectRoot, "lib", "server", "open-ena-login-route.ts"), "utf8");
+  const logoutRoute = readFileSync(logoutRoutePath, "utf8")
+    + readFileSync(join(projectRoot, "lib", "server", "open-ena-logout-route.ts"), "utf8");
   assert.match(loginRoute, /verifyOpenEnaCredentials/);
   assert.match(loginRoute, /openEnaAuthSecurityConfigurationReady/);
   assert.match(loginRoute, /(?:status:\s*503|,\s*503\))/u);

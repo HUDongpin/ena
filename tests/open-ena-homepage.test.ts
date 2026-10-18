@@ -6,19 +6,23 @@ import { getOpenEnaHomeCopy } from "../lib/open-ena-home-copy";
 
 const projectRoot = process.cwd();
 
-test("the homepage gives Open ENA a dedicated concept section and internal entry point", () => {
+test("the merged homepage keeps the accessible preview and a local analysis entry point", () => {
   const home = readFileSync(join(projectRoot, "app", "[locale]", "page.tsx"), "utf8");
-  const feature = readFileSync(join(projectRoot, "components", "OpenEnaHomeFeature.tsx"), "utf8");
+  const shared = readFileSync(join(projectRoot, "components", "home-source", "UnifiedHome.tsx"), "utf8");
+  const figure = readFileSync(join(projectRoot, "components", "home-source", "NetworkHero.tsx"), "utf8");
+  const preview = readFileSync(join(projectRoot, "components", "home-source", "OpenEnaPreview.tsx"), "utf8");
+  const footer = readFileSync(join(projectRoot, "components", "shared-home-footer", "HubFooter.tsx"), "utf8");
 
-  assert.match(home, /<OpenEnaHomeFeature/);
-  assert.match(feature, /href=\{`\/\$\{locale\}\/open-ena`\}/);
-  assert.match(feature, /<figure className="open-ena-concept-figure">/);
-  assert.match(feature, /role="img"/);
-  assert.match(feature, /aria-labelledby="open-ena-figure-title open-ena-figure-description"/);
-  assert.match(feature, /copy\.figureLabels\.data/);
-  assert.match(feature, /copy\.figureLabels\.model/);
-  assert.match(feature, /copy\.figureLabels\.comparison/);
-  assert.match(feature, /copy\.figureLabels\.export/);
+  assert.match(home, /<UnifiedHome/);
+  assert.match(home, /featureBase=\{`\/\$\{locale\}`\}/);
+  assert.match(footer, /href: `\$\{featureBase\}\/open-ena`/);
+  assert.match(shared, /<NetworkHero/);
+  assert.match(shared, /<OpenEnaPreview/);
+  assert.match(figure, /role="img" aria-labelledby="network-title network-desc"/);
+  assert.match(preview, /data-ui-preview="static"/);
+  assert.match(preview, /aria-label="Preview analysis modes"/);
+  assert.match(preview, /It is not computed from user data/);
+  assert.match(preview, /disabled>Build model with jENA/);
 });
 
 test("Open ENA homepage copy explains openness, local processing, and reproducibility honestly", () => {

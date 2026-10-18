@@ -191,7 +191,7 @@ test("wrong, expired, or already-consumed disposable credentials do not issue a 
 });
 
 test("login falls through from the static account to a one-time disposable account", async () => {
-  const loginModule = await dynamicModule("../app/api/open-ena/login/route");
+  const loginModule = await dynamicModule("../lib/server/open-ena-login-route");
   assert.ok(loginModule);
   const createHandler = loginModule.createOpenEnaLoginPostHandler;
   assert.equal(typeof createHandler, "function");
@@ -230,7 +230,7 @@ test("login falls through from the static account to a one-time disposable accou
 });
 
 test("a static-account success keeps v2 duration and never touches a disposable credential", async () => {
-  const loginModule = await dynamicModule("../app/api/open-ena/login/route");
+  const loginModule = await dynamicModule("../lib/server/open-ena-login-route");
   assert.ok(loginModule);
   const createHandler = loginModule.createOpenEnaLoginPostHandler;
   assert.equal(typeof createHandler, "function");
@@ -260,7 +260,7 @@ test("a static-account success keeps v2 duration and never touches a disposable 
 });
 
 test("disposable credential store failures fail closed instead of becoming an invalid-password redirect", async () => {
-  const loginModule = await dynamicModule("../app/api/open-ena/login/route");
+  const loginModule = await dynamicModule("../lib/server/open-ena-login-route");
   assert.ok(loginModule);
   const createHandler = loginModule.createOpenEnaLoginPostHandler;
   assert.equal(typeof createHandler, "function");
@@ -285,7 +285,7 @@ test("disposable credential store failures fail closed instead of becoming an in
 
 test("a v3 disposable session uses the same durable logout and replay rejection boundary", async () => {
   const auth = await dynamicModule("../lib/open-ena-auth");
-  const logoutModule = await dynamicModule("../app/api/open-ena/logout/route");
+  const logoutModule = await dynamicModule("../lib/server/open-ena-logout-route");
   assert.ok(auth);
   assert.ok(logoutModule);
   const createV3 = auth.createOpenEnaSessionTokenV3;

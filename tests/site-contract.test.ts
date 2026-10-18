@@ -8,6 +8,8 @@ import { buildLocalePath } from "../lib/locale-path";
 import { getOpenEnaNavLabel } from "../lib/open-ena-i18n";
 import { getPluginLabCopy } from "../lib/plugin-lab/i18n";
 import { siteConfig } from "../lib/site";
+import { teamMembers } from "../components/about/open-ena/team";
+import { projectPublications } from "../components/about/open-ena/publications";
 
 const projectRoot = process.cwd();
 const publicRoutes = ["", "mission", "open-ena", "plugins", "news", "academy", "about"];
@@ -160,13 +162,21 @@ test("Open ENA uses the same neutral navigation treatment as the other destinati
   assert.match(headerSource, /mission[\s\S]*?open-ena[\s\S]*?news/);
 });
 
-test("the home page retains the standard ENA figure and source credit while Mission omits the removed definition region", () => {
+test("the shared Home uses the Open ENA preview and localized ENA footer", () => {
   const homeSource = readFileSync(join(projectRoot, "app", "[locale]", "page.tsx"), "utf8");
+  const sharedHome = readFileSync(join(projectRoot, "components", "home-source", "UnifiedHome.tsx"), "utf8");
+  assert.match(homeSource, /<UnifiedHome/);
+  assert.match(homeSource, /<HubFooter copy=\{getHomeFooterCopy\(locale, getDictionary\(locale\)\)\}/);
+  assert.match(sharedHome, /<NetworkHero/);
+  assert.match(sharedHome, /<OpenEnaPreview/);
+  assert.match(sharedHome, /lang="en" dir="ltr"/);
+});
+
+test("Mission omits the removed definition region and localized research credits remain available", () => {
   const missionSource = readFileSync(join(projectRoot, "app", "[locale]", "mission", "page.tsx"), "utf8");
   const figureSource = readFileSync(join(projectRoot, "components", "NetworkFigure.tsx"), "utf8");
   const css = readFileSync(join(projectRoot, "app", "globals.css"), "utf8");
 
-  assert.match(homeSource, /<NetworkFigure/);
   assert.doesNotMatch(
     missionSource,
     /<NetworkFigure|definition-section|definition-copy|dictionary\.mission\.definition(?:Title|Text)/,
@@ -174,16 +184,6 @@ test("the home page retains the standard ENA figure and source credit while Miss
   assert.doesNotMatch(missionSource, /definition-(?:visual|node|edge)/);
   assert.doesNotMatch(css, /\.definition-(?:visual|node|edge)/);
   assert.doesNotMatch(figureSource, /plot-key|key-line/);
-  assert.match(homeSource, /dictionary\.home\.originCredit/);
-  assert.match(
-    homeSource,
-    /<strong><bdi>Wisconsin Center for Education Research\.<\/bdi><\/strong>\s*\{" "\}\s*<strong><bdi dir=\{localeMeta\[typedLocale\]\.dir\}>\{dictionary\.home\.initiatorCredit\}<\/bdi><\/strong>/u,
-  );
-  assert.doesNotMatch(homeSource, /typedLocale === "en"/u);
-  assert.doesNotMatch(
-    homeSource,
-    /Dr\. Peter Hu Dongpin is the Initiator of the open access ENA Hub of Knowledge\./u,
-  );
   assert.equal(
     getDictionary("en").home.originCredit,
     "ENA was proposed and developed by researchers and developers from",
@@ -294,14 +294,24 @@ test("the visual system includes the exact ENA Baby Blue palette tokens", () => 
   assert.match(css, /\.language-menu\[data-align="left"\][^{]*\{[\s\S]*?inset-inline-start:\s*0/);
 });
 
-test("the ENA About page carries the Dr. Peter profile topology", () => {
+test("the ENA About page exposes the shared team, publications and local assets", () => {
   const aboutSource = readFileSync(join(projectRoot, "app", "[locale]", "about", "page.tsx"), "utf8");
-  assert.match(aboutSource, /Dr\. Peter Hu Dongpin/);
-  assert.match(aboutSource, /dr-peter-hu-dongpin\.png/);
-  assert.match(aboutSource, /PedaNova/);
-  assert.match(aboutSource, /personJsonLd/);
-  assert.match(aboutSource, /profileLinks/);
-  assert.equal(existsSync(join(projectRoot, "public", "images", "about", "dr-peter-hu-dongpin.png")), true);
+  assert.match(aboutSource, /<AboutContent/);
+  assert.deepEqual(teamMembers.map(member => member.name), [
+    "Dr. Peter HU Dongpin", "Prof. Eric Hamilton", "Prof. Sandy TU Yun-Fang", "Ms. Shirleen XU Qiaolin",
+  ]);
+  assert.deepEqual(projectPublications.map(publication => publication.id), [
+    "rena-to-jena", "data-literacy-reflection", "ena-3d",
+  ]);
+  assert.equal(projectPublications[0].href, undefined);
+  assert.equal(projectPublications[0].statusLabel, "ICQE 2026 · Publication details forthcoming");
+  assert.deepEqual(projectPublications.flatMap(publication => publication.href ? [publication.href] : []), [
+    "https://doi.org/10.1016/j.compedu.2025.105397",
+    "https://doi.org/10.1007/978-3-031-76335-9_11",
+  ]);
+  for (const image of [...teamMembers.map(member => member.image), ...projectPublications.map(publication => publication.cover)]) {
+    assert.equal(existsSync(join(projectRoot, "public", image)), true, `${image} must be available locally`);
+  }
 });
 
 test("sitemap publishes News and Academy detail routes", () => {

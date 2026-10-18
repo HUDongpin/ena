@@ -40,7 +40,6 @@ function ruleBodyForSelector(css: string, selector: string) {
 
 test("the premium public design is mounted only on the requested page families", () => {
   const premiumRoutes = [
-    ["app", "[locale]", "page.tsx"],
     ["app", "[locale]", "mission", "page.tsx"],
     ["app", "[locale]", "news", "page.tsx"],
     ["app", "[locale]", "news", "[slug]", "page.tsx"],
@@ -53,6 +52,9 @@ test("the premium public design is mounted only on the requested page families",
     assert.match(source(...route), /premium-public-page/, `Premium scope missing from ${route.join("/")}`);
   }
 
+  assert.match(source("app", "[locale]", "page.tsx"), /<UnifiedHome/);
+  assert.match(source("components", "home-source", "UnifiedHome.tsx"), /className=\{styles\.home\}/);
+  assert.doesNotMatch(source("app", "[locale]", "page.tsx"), /premium-public-page/);
   assert.doesNotMatch(source("app", "[locale]", "about", "page.tsx"), /premium-public-page/);
   assert.doesNotMatch(source("app", "[locale]", "open-ena", "page.tsx"), /premium-public-page/);
   assert.doesNotMatch(source("components", "open-ena", "OpenEnaWorkspace.tsx"), /premium-public-page/);

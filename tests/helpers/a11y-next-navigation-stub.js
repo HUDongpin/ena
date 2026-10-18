@@ -1,9 +1,9 @@
 export function usePathname() {
-  return "/en";
+  return window.location.pathname;
 }
 
 export function useSearchParams() {
-  return new URLSearchParams();
+  return new URLSearchParams(window.location.search);
 }
 
 export function useRouter() {

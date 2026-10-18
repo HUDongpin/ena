@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Open ENA mark</title>
+  <desc id="desc">An open blue ring releases one connected network node beyond its boundary.</desc>
+  <path d="M48.8 12.8A24 24 0 1 0 53 44.5" fill="none" stroke="#89CFF0" stroke-width="6" stroke-linecap="round"/>
+  <g fill="none" stroke="#0F172A" stroke-width="2.35" stroke-linecap="round">
+    <path d="M20.5 37.2 32.8 24.8 42.5 39.7 54.2 12.2"/>
+    <path d="M20.5 37.2 42.5 39.7" opacity=".58"/>
+  </g>
+  <g fill="#F7FBFE" stroke="#0F172A" stroke-width="2.2">
+    <circle cx="20.5" cy="37.2" r="4.3"/>
+    <circle cx="32.8" cy="24.8" r="4.3"/>
+    <circle cx="42.5" cy="39.7" r="4.3"/>
+  </g>
+  <circle cx="54.2" cy="12.2" r="5" fill="#89CFF0" stroke="#0F172A" stroke-width="2.2"/>
+</svg>

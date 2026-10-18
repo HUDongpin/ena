@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import HomeAwareChrome from "@/components/HomeAwareChrome";
 import BackToTop from "@/components/BackToTop";
 import Footer from "@/components/Footer";
 import Header from "@/components/Header";
@@ -74,17 +75,17 @@ export default async function LocaleLayout({ children, params }: LocaleLayoutPro
     <div lang={meta.htmlLang} dir={meta.dir}>
       <HtmlLangSync lang={meta.htmlLang} dir={meta.dir} />
       <JsonLd data={structuredData} />
-      <SkipLink
-        skipToContent={dictionary.common.skipToContent}
-        skipToWorkspace={workspaceCopy.modelV3.workspace.landmarks.skipToWorkspace}
-      />
-      <Header locale={typedLocale} dictionary={dictionary} />
-      <main id="main-content">{children}</main>
-      <Footer locale={typedLocale} dictionary={dictionary} />
-      <BackToTop
-        label={dictionary.common.backToTop}
-        progressLabel={dictionary.common.pageScrollProgress}
-      />
+      <HomeAwareChrome locale={typedLocale}
+        skipLink={<SkipLink key="site-skip-link"
+          skipToContent={dictionary.common.skipToContent}
+          skipToWorkspace={workspaceCopy.modelV3.workspace.landmarks.skipToWorkspace}
+        />}
+        header={<Header key="site-header" locale={typedLocale} dictionary={dictionary} />}
+        footer={<Footer key="site-footer" locale={typedLocale} dictionary={dictionary} />}
+        backToTop={<BackToTop key="back-to-top" label={dictionary.common.backToTop} progressLabel={dictionary.common.pageScrollProgress} />}
+      >
+        {children}
+      </HomeAwareChrome>
     </div>
   );
 }
