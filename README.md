@@ -501,4 +501,4 @@ This runs the content and route contract tests, TypeScript validation, and the p
 
 ## Deployment
 
-The canonical deployment target is the Vercel project `ena` under the owner's existing team. Both `www.ena.hk` and `ena.hk` are attached to production, while site metadata uses `https://www.ena.hk` as the canonical URL.
+The canonical deployment target is the Vercel project `ena` under the owner's existing team. The merged website supports `www.ena.hk`, `ena.hk`, `www.open-ena.com` and `open-ena.com` from this one project; site metadata uses `https://www.ena.hk` as the canonical URL. See [the source and deployment handover](docs/website-source-handover.md) for domain routing and release evidence.

@@ -33,19 +33,21 @@ and query strings. Old `/team/` and `/publications/` image paths redirect to the
 copies under `/open-ena-about/`; the former root logo and favicon URLs also resolve
 to ENA-owned assets. Publication structured data uses the actual ENA image paths.
 
-## Publication and domain move still pending
+## Production handover
 
-Read-only Vercel inspection on 2026-10-19 (Asia/Hong_Kong) confirmed:
+Before the production handover, Vercel inspection on 2026-10-19 (Asia/Hong_Kong) confirmed:
 
 | Hosting project | Git source | Current domains |
 | --- | --- | --- |
 | `ena` | `HUDongpin/ena`, `main` | `www.ena.hk`, `ena.hk` |
 | `open-ena` | `HUDongpin/open-ena`, `main` | `www.open-ena.com`, `open-ena.com` |
 
-These local changes do not publish the site or move either domain. The earlier
-owner instruction to refrain from pushing and publishing remains in effect.
+The owner authorized the dependency fixes, publication and both domain moves on
+2026-10-19. The release combines the reviewed Home/About/authentication work with
+live main `4ab3979`, retaining its accessibility and security changes. The active
+dirty checkout stays intact; publication uses an isolated, verified checkout.
 
-After publication is authorized:
+The production procedure is:
 
 1. Publish the reviewed ENA commits to the existing `ena` production project and
    verify the resulting deployment and its exact Git revision.
@@ -61,16 +63,23 @@ for the move. Source project: `prj_Ykvrow1HUV7e0AAbwh0eHGf8Ifud`; destination:
 The old repository and deployment history can remain for recovery; future website
 changes belong only in ENA.
 
-## Dependency finding for the later release
+## Dependency security and domain aliases
 
-A fresh install of the committed ENA lockfile reported three production-package
-advisories through `npm audit --omit=dev` on 2026-10-19: Next.js 16.3.4 (critical),
-sharp 0.35.4 (high), and source-map-js 1.2.1 (high). These versions predate this
-source handover. The separately modified package files in the active checkout
-were preserved and are not included in this change. Review and resolve the
-production dependency findings before publishing the merged site.
+The production dependency fixes use Next.js 16.4.2, sharp 0.35.5 and
+source-map-js 1.2.2. A fresh audit of the updated lockfile reports zero production
+vulnerabilities. The complete dependency audit has no high or critical findings;
+four existing low/moderate development-tool findings remain outside this release.
 
-## Local validation
+The Vercel production origin settings are write-only. To preserve their values,
+`OPEN_ENA_ADDITIONAL_ORIGINS` adds `https://www.open-ena.com` and
+`https://open-ena.com`. It uses the same exact-origin validation as the existing
+settings; malformed aliases fail closed and forwarded headers grant no access.
+The canonical origin remains `https://www.ena.hk`.
+
+Release evidence, exact commits, deployment status and domain-move receipts are
+retained locally under `output/production-cutover-20261019/`.
+
+## Initial source-handover validation
 
 Validated from an isolated export of ENA commit `64a3ff48` plus this handover,
 with a fresh lockfile install and no sibling OPEN-ENA checkout:
@@ -91,5 +100,5 @@ with a fresh lockfile install and no sibling OPEN-ENA checkout:
 
 Evidence is retained locally under `output/website-source-handover-20261019/` and
 `output/playwright/website-source-handover/`. These checks establish local source
-independence and the tested page behavior; the production domain move remains
-pending as described above.
+independence and the tested page behavior. The subsequent production release is
+verified separately using the release evidence described above.

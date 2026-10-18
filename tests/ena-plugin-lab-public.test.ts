@@ -128,7 +128,7 @@ test("navigation and sitemap include only public plugin routes", () => {
   assert.doesNotMatch(sitemap, /plugins\/(?:propose|status|operator)/u);
 });
 
-test("Plugin Lab invitations and migrated English pages declare their content language", () => {
+test("Plugin Lab invitations and migrated English pages retain explicit content-language decisions", () => {
   for (const path of [
     ["app", "[locale]", "mission", "page.tsx"],
     ["components", "open-ena", "OpenEnaLogin.tsx"],
@@ -137,7 +137,6 @@ test("Plugin Lab invitations and migrated English pages declare their content la
     assert.match(source, /contentFallback/u, path.join("/"));
     assert.match(source, /lang=\{pluginCopy\.contentFallback \? "en" : undefined\}/u, path.join("/"));
   }
-  // Home and About now use the approved English source, without the old invitation blocks.
   for (const path of [
     ["components", "home-source", "UnifiedHome.tsx"],
     ["components", "about", "open-ena", "AboutContent.tsx"],

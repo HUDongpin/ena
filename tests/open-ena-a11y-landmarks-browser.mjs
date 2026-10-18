@@ -64,7 +64,7 @@ async function bundleEntry(contents, sourcefile, pathname) {
   return {
     pathname,
     script: result.outputFiles.find(file => file.path.endsWith(".js")).text,
-    css: result.outputFiles.find(file => file.path.endsWith(".css"))?.text ?? "",
+    css: result.outputFiles.filter(file => file.path.endsWith(".css")).map(file => file.text).join("\n"),
   };
 }
 
@@ -497,6 +497,7 @@ try {
   }
 
   for (const viewport of VIEWPORTS) {
+    console.log(`Checking workspace viewport ${viewport.width}x${viewport.height}`);
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await mount(bundles.en);
     await page.getByTestId("open-ena-workspace-v3").waitFor();
@@ -694,11 +695,13 @@ try {
     );
 
     for (const rail of RAILS) {
+      console.log(`Checking ${label} rail ${rail.button}`);
       const trigger = page.getByRole("button", { name: rail.button, exact: true });
       await trigger.focus();
       check(await reachesViewport(page, trigger), `${label}: rail button ${rail.button} is clipped or unreachable`);
       await page.keyboard.press("Enter");
       const namedPanel = page.locator(`[data-ena-rail-panel="${rail.id}"]`);
+      await namedPanel.waitFor({ state: "visible" });
       const namedCount = await namedPanel.count();
       check(namedCount === 1, `${label}: ${rail.button} has no single rail panel`);
       const panel = namedCount === 1 ? namedPanel : page.locator(".ena-control-panel");
@@ -714,6 +717,7 @@ try {
 
       const control = rail.control(panel);
       await trigger.focus();
+      await control.waitFor({ state: "visible" });
       const reached = await tabTo(page, async () => control.evaluate((element) => document.activeElement === element).catch(() => false), 30);
       check(reached, `${label}: Tab from ${rail.button} did not reach its primary control`);
       if (!reached) continue;
@@ -728,6 +732,9 @@ try {
       check(leftPanel, `${label}: Shift+Tab did not leave the ${rail.button} panel (focus trap)`);
       await control.focus();
       await page.keyboard.press("Escape");
+      // The component deliberately restores focus across two animation frames.
+      // Assert the settled result before programmatically focusing the next rail.
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       let returned = false;
       try {
         await page.waitForFunction((buttonName) => {
@@ -781,6 +788,7 @@ try {
   }
 
   await page.setViewportSize({ width: VIEWPORTS[0].width, height: VIEWPORTS[0].height });
+  console.log("Checking unified Home skip link");
   await mount(bundles.home);
   await page.locator("#main-content").waitFor();
   const homeSkipCount = await page.locator("a.skip-link").count();
@@ -814,10 +822,12 @@ try {
     }
   }
 
+  console.log("Checking login and late workspace skip link");
   await mount(bundles.login);
   await page.locator(".open-ena-login-form").waitFor();
   const loginSkipCount = await page.locator("a.skip-link").count();
   check(loginSkipCount === 1, `login: expected exactly one .skip-link, found ${loginSkipCount}`);
+  check(await page.getByRole("link", { name: "Skip to content", exact: true }).count() === 1, "login: expected the ENA Skip to content label");
   const loginHref = loginSkipCount === 1 ? await page.locator("a.skip-link").getAttribute("href") : null;
   check(loginHref === "#main-content", `login: skip link href was ${loginHref}`);
   const loginTarget = await page.evaluate(() => document.getElementById("main-content") instanceof HTMLElement && document.getElementById("open-ena-workspace") === null);

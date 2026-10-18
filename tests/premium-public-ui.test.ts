@@ -38,7 +38,7 @@ function ruleBodyForSelector(css: string, selector: string) {
   return bodies[0];
 }
 
-test("the premium public design is mounted only on the requested page families", () => {
+test("knowledge pages retain the premium design and merged Home keeps its isolated design", () => {
   const premiumRoutes = [
     ["app", "[locale]", "mission", "page.tsx"],
     ["app", "[locale]", "news", "page.tsx"],
@@ -53,8 +53,11 @@ test("the premium public design is mounted only on the requested page families",
   }
 
   assert.match(source("app", "[locale]", "page.tsx"), /<UnifiedHome/);
-  assert.match(source("components", "home-source", "UnifiedHome.tsx"), /className=\{styles\.home\}/);
   assert.doesNotMatch(source("app", "[locale]", "page.tsx"), /premium-public-page/);
+  const home = source("components", "home-source", "UnifiedHome.tsx");
+  assert.match(home, /import styles from "\.\/unified-home\/Home\.module\.css"/);
+  assert.match(home, /className=\{styles\.home\}/);
+  assert.doesNotMatch(home, /premium-public-page/);
   assert.doesNotMatch(source("app", "[locale]", "about", "page.tsx"), /premium-public-page/);
   assert.doesNotMatch(source("app", "[locale]", "open-ena", "page.tsx"), /premium-public-page/);
   assert.doesNotMatch(source("components", "open-ena", "OpenEnaWorkspace.tsx"), /premium-public-page/);
