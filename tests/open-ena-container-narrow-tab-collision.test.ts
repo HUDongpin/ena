@@ -78,6 +78,22 @@ test("container-narrow layout flows the model help button beside the tab", () =>
   assert.ok(viewportNarrow, "the viewport-narrow media query must keep the same help-button flow");
 });
 
+const NARROW_TAB = `.ena-restored-workbench .ena-model-tabs [role="tab"]`;
+const NARROW_TAB_LABEL = `${NARROW_TAB} > span:first-child`;
+
+test("container at 480px wraps long model tab labels like the viewport media query", () => {
+  const blocks = blocksStartingAt(css, "@container open-ena-viewport (max-width: 480px)");
+  const narrow = blocks.find((block) => {
+    const tab = ruleBody(block.body, NARROW_TAB);
+    const label = ruleBody(block.body, NARROW_TAB_LABEL);
+    return /font-size:\s*11px;/u.test(tab) && /white-space:\s*normal;/u.test(label);
+  });
+  assert.ok(
+    narrow,
+    "an @container open-ena-viewport (max-width: 480px) block must set tab font-size 11px and span:first-child white-space normal",
+  );
+});
+
 function parameterList(source: string, functionName: string) {
   const marker = `function ${functionName}(`;
   const markerAt = source.indexOf(marker);

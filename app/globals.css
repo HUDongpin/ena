@@ -14239,6 +14239,15 @@ html:has(.open-ena-page) {
     }
   }
 }
+/* CSS zoom can shrink the Open ENA container to 480px while the viewport stays
+   wider, so the 480px media query below does not match. Mirror its tab-label
+   wrapping here. */
+@media (min-width: 481px) {
+  @container open-ena-viewport (max-width: 480px) {
+    .ena-restored-workbench .ena-model-tabs [role="tab"] { font-size: 11px; }
+    .ena-restored-workbench .ena-model-tabs [role="tab"] > span:first-child { white-space: normal; }
+  }
+}
 .ena-restored-workbench .ena-model-tab-panel { scrollbar-gutter: auto; overflow: visible; }
 .ena-restored-workbench .ena-official-model-panel { gap: 8px; padding: 0; }
 .ena-restored-workbench .ena-model-units-v3 { gap: 0; }
