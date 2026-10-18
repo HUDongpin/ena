@@ -93,7 +93,7 @@ function createFakePool(options: {
 }
 
 async function loginHandler(dependencies: DynamicModule) {
-  const loginModule = await dynamicModule("../app/api/open-ena/login/route");
+  const loginModule = await dynamicModule("../lib/server/open-ena-login-route");
   assert.ok(loginModule);
   const createHandler = loginModule.createOpenEnaLoginPostHandler;
   assert.equal(typeof createHandler, "function");
@@ -158,7 +158,7 @@ test("production origin configuration fails closed without an operator list", ()
 });
 
 test("login stops an unknown-length oversized form before buffering the complete body", async () => {
-  const loginModule = await dynamicModule("../app/api/open-ena/login/route");
+  const loginModule = await dynamicModule("../lib/server/open-ena-login-route");
   assert.ok(loginModule);
   const createHandler = loginModule.createOpenEnaLoginPostHandler;
   assert.equal(typeof createHandler, "function", "login needs an injectable application-layer security handler");
@@ -194,7 +194,7 @@ test("login stops an unknown-length oversized form before buffering the complete
 });
 
 test("login throttles repeated attempts in the shared store before another password check", async () => {
-  const loginModule = await dynamicModule("../app/api/open-ena/login/route");
+  const loginModule = await dynamicModule("../lib/server/open-ena-login-route");
   assert.ok(loginModule);
   const createHandler = loginModule.createOpenEnaLoginPostHandler;
   assert.equal(typeof createHandler, "function", "login needs an injectable application-layer security handler");
@@ -237,7 +237,7 @@ test("login throttles repeated attempts in the shared store before another passw
 
 test("logout revokes exactly one jti and another instance rejects its replay", async () => {
   const authModule = await dynamicModule("../lib/open-ena-auth");
-  const logoutModule = await dynamicModule("../app/api/open-ena/logout/route");
+  const logoutModule = await dynamicModule("../lib/server/open-ena-logout-route");
   assert.ok(authModule);
   assert.ok(logoutModule);
   const verifyWithRevocation = authModule.verifyOpenEnaSessionTokenV2WithRevocation;
@@ -298,7 +298,7 @@ test("logout revokes exactly one jti and another instance rejects its replay", a
 
 test("logout revalidates the localized Open ENA gate after clearing the session cookie", async () => {
   const authModule = await dynamicModule("../lib/open-ena-auth");
-  const logoutModule = await dynamicModule("../app/api/open-ena/logout/route");
+  const logoutModule = await dynamicModule("../lib/server/open-ena-logout-route");
   assert.ok(authModule);
   assert.ok(logoutModule);
   const createLogoutHandler = logoutModule.createOpenEnaLogoutPostHandler;
@@ -345,7 +345,7 @@ test("logout revalidates the localized Open ENA gate after clearing the session 
 });
 
 test("logout fails closed when durable revocation cannot be persisted", async () => {
-  const logoutModule = await dynamicModule("../app/api/open-ena/logout/route");
+  const logoutModule = await dynamicModule("../lib/server/open-ena-logout-route");
   assert.ok(logoutModule);
   const createLogoutHandler = logoutModule.createOpenEnaLogoutPostHandler;
   assert.equal(typeof createLogoutHandler, "function");
@@ -687,7 +687,7 @@ test("transient store failure detection stays conservative", () => {
 });
 
 test("logout store construction failures use the structured 503 contract", async () => {
-  const logoutModule = await dynamicModule("../app/api/open-ena/logout/route");
+  const logoutModule = await dynamicModule("../lib/server/open-ena-logout-route");
   assert.ok(logoutModule);
   const createLogoutHandler = logoutModule.createOpenEnaLogoutPostHandler;
   assert.equal(typeof createLogoutHandler, "function");
