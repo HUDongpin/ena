@@ -16,7 +16,7 @@ export default function UnifiedHome({ homeHref = "/", aboutHref = "/about", foot
             <p className="open-hero-lead">Open ENA is a focused, browser-based path from coded discourse to interpretable connections—designed around jENA and shaped for transparent research.</p>
             <div className="open-hero-actions">
               <a className="button-primary" href="#workspace">Explore the interface</a>
-              <Link className="button-secondary" href={aboutHref}>Meet the team</Link>
+              <Link className="button-secondary" href={aboutHref} prefetch={false}>Meet the team</Link>
             </div>
             <dl className="open-hero-facts">
               <div><dt>Framework</dt><dd>Next.js</dd></div>

@@ -84,7 +84,7 @@ export default function AboutContent({ homeHref = "/" }: { homeHref?: string }) 
             <p className={styles["eyebrow"]}>WHY OPEN</p>
             <h2 id="principle-title">Openness is more than access.</h2>
             <p>It means making the path from evidence to interpretation visible: what the model receives, what the computation does, what the figure shows, and what it cannot claim.</p>
-            <Link className={styles["button-primary"]} href={homeHref}>Explore Open ENA</Link>
+            <Link className={styles["button-primary"]} href={homeHref} prefetch={false}>Explore Open ENA</Link>
           </div>
         </section>
       </div>
