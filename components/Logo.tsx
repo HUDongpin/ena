@@ -13,6 +13,7 @@ export default function Logo({ locale, compact = false, priority = false }: Logo
   return (
     <Link
       href={`/${locale}`}
+      prefetch={false}
       className="brand-lockup focus-ring"
       aria-label={`${siteConfig.brandName} home`}
       dir="ltr"
