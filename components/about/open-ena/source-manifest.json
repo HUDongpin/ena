@@ -1,7 +1,9 @@
 {
-  "source": "https://www.open-ena.com/about",
-  "generator": "scripts/sync-open-ena-about.mjs",
-  "files": {
+  "role": "historical-migration-provenance",
+  "authoritativeRepository": "HUDongpin/ena",
+  "originalSource": "https://www.open-ena.com/about",
+  "maintenance": "Edit the ENA components and local assets directly. No synchronization is required.",
+  "originalFileSha256": {
     "components/about/AboutContent.tsx": "b748b86a0a21a6104da26697f4eadda701f72b9579681d22e305cbbbeb44a779",
     "components/about/AboutContent.module.css": "b1a18a97776fdd5c7e9348b3d2932fc9551251203019d4bc54fbed36f73b3110",
     "components/TeamCard.tsx": "c48e218611e8be087c1a15668e00931048f8dc9f4c7c0eacf607cfad767cc57a",

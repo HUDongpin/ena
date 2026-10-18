@@ -59,6 +59,19 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      // Preserve the old public URLs when the OPEN-ENA domains move to this app.
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "open-ena.com" }],
+        destination: "https://www.open-ena.com/:path*",
+        permanent: true,
+      },
+      { source: "/team/:path*", destination: "/open-ena-about/team/:path*", permanent: true },
+      { source: "/publications/:path*", destination: "/open-ena-about/publications/:path*", permanent: true },
+      { source: "/logo-open-ena.svg", destination: "/unified-home/logo-open-ena.svg", permanent: true },
+      { source: "/logo-open-ena-compact.svg", destination: "/unified-home/logo-open-ena-compact.svg", permanent: true },
+      { source: "/logo-open-ena-mark.svg", destination: "/unified-home/logo-open-ena-mark.svg", permanent: true },
+      { source: "/favicon.svg", destination: "/icon.svg", permanent: true },
       { source: "/mission", destination: "/en/mission", permanent: false },
       { source: "/open-ena", destination: "/en/open-ena", permanent: false },
       { source: "/plugins", destination: "/en/plugins", permanent: false },

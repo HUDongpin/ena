@@ -1,34 +1,23 @@
-# Shared About content
+# About content owned by ENA
 
-OPEN-ENA is the authoring source for the About body. Its `app/about/page.tsx`
-renders `components/about/AboutContent.tsx`, the existing `TeamCard` and
-`PublicationCard`, and the approved data in `lib/team.ts` and
-`lib/publications.ts`. About styling is isolated in `AboutContent.module.css`.
+The initial migration used the former OPEN-ENA About page as its content and
+design reference. That migration is complete. ENA now owns the page and all of
+its assets; edit this repository directly for future changes.
 
-ENA's `app/[locale]/about/page.tsx` renders the generated copy at
-`components/about/open-ena/AboutContent.tsx`. This keeps both repositories
-independently buildable and avoids runtime network requests, iframes, or
-cross-checkout imports. The locale layout owns ENA's main landmark, header,
-footer, language switcher, and consent behavior. The shared English body uses
-`lang="en" dir="ltr"`; its home link retains the selected locale.
+- Route: `app/[locale]/about/page.tsx`.
+- Content, cards, styles, team and publications: `components/about/open-ena/`.
+- Images: `public/open-ena-about/`.
+- `source-manifest.json` preserves the original migration hashes as historical
+  provenance. It is not a generator or a live synchronization contract.
 
-Edit the OPEN-ENA source only, then regenerate from the ENA checkout:
+The locale layout owns the main landmark, header, footer, language switcher and
+consent behavior. The English body retains `lang="en" dir="ltr"`, and its Home
+link preserves the selected locale. Publication metadata uses the ENA site's
+canonical origin and the same local image paths as the rendered cards.
 
-```sh
-node scripts/sync-open-ena-about.mjs
-node scripts/sync-open-ena-about.mjs --check
-```
+`scripts/sync-open-ena-about.mjs` is retired and exits with an explanation without
+reading or writing any source files. A sibling OPEN-ENA checkout is not required
+for development, validation, building or serving this page.
 
-The default source is the sibling `../OPEN-ENA` checkout. Use
-`--source /path/to/OPEN-ENA` when working elsewhere. The script copies the
-component, its CSS, both card components, both data files, and only the eight
-referenced images into an ENA-specific asset directory. It rewrites imports
-and local asset paths without changing names, affiliations, biographies,
-citations, publication status, image bytes, or external destinations.
-`source-manifest.json` records SHA-256 hashes of the source files and assets.
-The check exits unsuccessfully when the generated snapshot is missing or stale.
-
-Generated files are checked into ENA with the route change. ENA builds use that
-snapshot without requiring a sibling checkout. Regeneration and the drift check
-must be run when the OPEN-ENA About source changes; they are not a scheduled
-sync and do not publish either website.
+The intended domain handover, current hosting status and all website source
+locations are recorded in [Website source handover](./website-source-handover.md).
