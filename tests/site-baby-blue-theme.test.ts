@@ -36,7 +36,7 @@ test("public ENA identity assets and generated metadata use Baby Blue", () => {
 
   for (const relativePath of [
     "app/opengraph-image.tsx",
-    "app/[locale]/about/page.tsx",
+    "components/about/open-ena/AboutContent.module.css",
     "components/AcademyLessonVisual.tsx",
   ]) {
     const assetSource = source(relativePath);

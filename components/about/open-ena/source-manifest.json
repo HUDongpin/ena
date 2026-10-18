@@ -1,0 +1,20 @@
+{
+  "source": "https://www.open-ena.com/about",
+  "generator": "scripts/sync-open-ena-about.mjs",
+  "files": {
+    "components/about/AboutContent.tsx": "b748b86a0a21a6104da26697f4eadda701f72b9579681d22e305cbbbeb44a779",
+    "components/about/AboutContent.module.css": "b1a18a97776fdd5c7e9348b3d2932fc9551251203019d4bc54fbed36f73b3110",
+    "components/TeamCard.tsx": "c48e218611e8be087c1a15668e00931048f8dc9f4c7c0eacf607cfad767cc57a",
+    "components/PublicationCard.tsx": "0340ec9f2e2fe7e58528fcfe5fa6cb6ab218df52777505c75d4150676b8aeb2a",
+    "lib/team.ts": "a2ff21c6693c26fc86cb214c58b765e8f88c71f6af21180e73567fa76fe6034a",
+    "lib/publications.ts": "c0600d1bc028ee60fe329b08d1456e66b825cf8b69a472b399de774960af085b",
+    "public/logo-open-ena-mark.svg": "6b02ebe41fabb73b91f876b8210d4518453127afe4db4a2d116988a8b2763337",
+    "public/publications/arcs-data-literacy-reflection.webp": "3effa8a6abc1fbd3abd90e17e5ea53ee43275bcdc0f0334a160e25a2554cf038",
+    "public/publications/ena-3d-epistemic-network.webp": "0d67a44bc375b68d586eb6fdaf675aae61f2e942aca3f475a2c7a95be0d2371b",
+    "public/publications/rena-to-jena-open-tools.webp": "3afc322b8831555c24525e74fda5c4bc27240b085016a8732ca7e010f68e548f",
+    "public/team/eric-hamilton.png": "911a0396b92d15a2680a03b0eb5994efddcf216bd548f3a82b2bb88105efb02b",
+    "public/team/peter-hu-dongpin.png": "1b1fd7d8eef4d17cbf2d74610bf9d2e8f748e96b3db76a0f9ea7b75f2ec33071",
+    "public/team/sandy-tu-yun-fang.jpg": "bb9d95fa13d4d7fa576c3a47b03accb9401d125f2017bda6a82491ff42a96fa7",
+    "public/team/shirleen-xu-qiaolin.png": "752e97d22ee51a324da53f7a77004c0810f373bdf5df117b149374ee797b33ac"
+  }
+}
