@@ -108,6 +108,17 @@ test("Browser CI runs the workspace landmarks and narrow-viewport gate", () => {
   assert.match(source, /width: 1440/u);
   assert.match(source, /defaultPrevented/u);
   assert.match(source, /hashchange/u);
+  assert.match(source, /getByRole\("toolbar", \{ name: "Analysis mode toolbar" \}/u);
+  assert.match(source, /分析模式工具列/u);
+  assert.match(source, /分析模式工具栏/u);
+  assert.match(source, /aria-orientation/u);
+  assert.match(source, /width: 320/u);
+  assert.match(source, /exactly one rail button in the Tab order/u);
+  for (const key of ["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"]) {
+    assert.match(source, new RegExp(`"${key}"`, "u"));
+  }
+  assert.match(source, /undersized rail\/panel targets/u);
+  assert.match(source, /overlapping rail\/panel controls/u);
 });
 
 test("Browser CI runs the AI presentation retention gates", () => {

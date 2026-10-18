@@ -25,7 +25,7 @@ LocaleLayout({ children: workspace, params: Promise.resolve({ locale }) }).then(
   rendered.replaceWith(host);
   createRoot(host).render(React.createElement(SkipLink, {
     skipToContent: rendered.textContent,
-    skipToWorkspace: ${JSON.stringify(locale === "zh-hant" ? "跳至工作區" : "Skip to workspace")},
+    skipToWorkspace: ${JSON.stringify(locale === "zh-hant" ? "跳至工作區" : locale === "zh-hans" ? "跳至工作区" : "Skip to workspace")},
   }));
   const main = root.querySelector("#main-content");
   main.replaceChildren();
@@ -84,8 +84,9 @@ async function bundleEntry(contents, sourcefile) {
 }
 
 const WORKSPACE_LOCALES = [
-  { locale: "en", label: "Skip to workspace" },
-  { locale: "zh-hant", label: "跳至工作區" },
+  { locale: "en", label: "Skip to workspace", toolbar: "Analysis mode toolbar" },
+  { locale: "zh-hant", label: "跳至工作區", toolbar: "分析模式工具列" },
+  { locale: "zh-hans", label: "跳至工作区", toolbar: "分析模式工具栏" },
 ];
 
 const loginEntry = `
@@ -157,7 +158,10 @@ const VIEWPORTS = [
   { width: 1440, height: 900, columns: 3, sideBySide: true },
   { width: 768, height: 1024, columns: 1, sideBySide: false },
   { width: 390, height: 844, columns: 1, sideBySide: false },
+  { width: 320, height: 568, columns: 1, sideBySide: false },
 ];
+
+const RAIL_FOCUS_ORDER = ["Data", "Model", "Plot Tools", "Stats & Export", "AI-assisted interpretation"];
 
 function duplicateNames(entries) {
   const seen = new Set();
@@ -254,6 +258,163 @@ async function tabTo(page, predicate, steps, key = "Tab") {
   return predicate();
 }
 
+async function railPanelFitReport(page) {
+  return page.evaluate(() => {
+    const minimum = 24;
+    const circlesIntersect = (a, b, diameter) => {
+      const ax = a.left + a.width / 2;
+      const ay = a.top + a.height / 2;
+      const bx = b.left + b.width / 2;
+      const by = b.top + b.height / 2;
+      return Math.hypot(ax - bx, ay - by) < diameter;
+    };
+    const circleHitsBox = (circle, box, diameter) => {
+      const cx = circle.left + circle.width / 2;
+      const cy = circle.top + circle.height / 2;
+      const nearestX = Math.max(box.left, Math.min(cx, box.right));
+      const nearestY = Math.max(box.top, Math.min(cy, box.bottom));
+      return Math.hypot(cx - nearestX, cy - nearestY) < diameter / 2;
+    };
+    const roots = [document.querySelector(".ena-tool-rail"), document.querySelector(".ena-control-panel")].filter(Boolean);
+    const targets = [];
+    const seen = new Set();
+    for (const root of roots) {
+      const candidates = root.querySelectorAll("a[href], button, input, select, textarea, summary, [role='button'], [role='link'], [role='checkbox'], [role='radio'], [role='switch'], [role='tab'], [role='slider'], [role='combobox']");
+      for (const element of candidates) {
+        if (!(element instanceof HTMLElement)) continue;
+        if (element.closest("[hidden], [aria-hidden='true']")) continue;
+        const owner = element.closest("label, button, a");
+        const target = owner && owner !== element ? owner : element;
+        if (!(target instanceof HTMLElement) || seen.has(target)) continue;
+        if (target.closest("[hidden], [aria-hidden='true']")) continue;
+        const style = getComputedStyle(target);
+        if (style.display === "none" || style.visibility === "hidden" || style.pointerEvents === "none") continue;
+        const rect = target.getBoundingClientRect();
+        if (rect.width < 1 || rect.height < 1) continue;
+        seen.add(target);
+        let clipped = null;
+        let parent = target.parentElement;
+        while (parent && parent !== document.body) {
+          const parentStyle = getComputedStyle(parent);
+          const overflowX = parentStyle.overflowX;
+          const overflowY = parentStyle.overflowY;
+          const scrolls = overflowX === "auto" || overflowX === "scroll" || overflowY === "auto" || overflowY === "scroll";
+          if (scrolls) break;
+          const box = parent.getBoundingClientRect();
+          const hiddenX = overflowX === "hidden" || overflowX === "clip";
+          const hiddenY = overflowY === "hidden" || overflowY === "clip";
+          if (hiddenX && (rect.left < box.left - 1 || rect.right > box.right + 1)) {
+            clipped = "hidden-x";
+            break;
+          }
+          if (hiddenY) {
+            const visible = Math.min(rect.bottom, box.bottom) - Math.max(rect.top, box.top);
+            if (visible < Math.min(rect.height, minimum) - 1) {
+              clipped = "hidden-y";
+              break;
+            }
+          }
+          parent = parent.parentElement;
+        }
+        const viewportWidth = document.documentElement.clientWidth;
+        if (!clipped && (rect.left < -1 || rect.right > viewportWidth + 1)) clipped = "viewport-x";
+        targets.push({
+          name: (target.getAttribute("aria-label") || target.textContent || target.tagName).replace(/\s+/gu, " ").trim().slice(0, 80),
+          className: String(target.className).slice(0, 80),
+          tag: target.tagName.toLowerCase(),
+          parentClass: String(target.parentElement?.className ?? "").slice(0, 80),
+          position: style.position,
+          width: rect.width,
+          height: rect.height,
+          left: rect.left,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+          clipped,
+        });
+      }
+    }
+
+    const undersized = [];
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      if (target.width >= minimum - 0.5 && target.height >= minimum - 0.5) continue;
+      const problems = [];
+      for (let otherIndex = 0; otherIndex < targets.length; otherIndex += 1) {
+        if (otherIndex === index) continue;
+        const other = targets[otherIndex];
+        if (circleHitsBox(target, other, minimum)) problems.push(`circle hits ${other.name}`);
+        const otherUndersized = other.width < minimum - 0.5 || other.height < minimum - 0.5;
+        if (otherUndersized && circlesIntersect(target, other, minimum)) problems.push(`circle hits circle of ${other.name}`);
+      }
+      if (problems.length > 0) {
+        undersized.push({
+          name: target.name,
+          className: target.className,
+          width: Math.round(target.width),
+          height: Math.round(target.height),
+          problems: problems.slice(0, 3),
+        });
+      }
+    }
+
+    const overlaps = [];
+    for (let index = 0; index < targets.length; index += 1) {
+      for (let otherIndex = index + 1; otherIndex < targets.length; otherIndex += 1) {
+        const a = targets[index];
+        const b = targets[otherIndex];
+        const width = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const height = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (width > 4 && height > 4) {
+          overlaps.push({
+            a: a.name,
+            aTag: a.tag,
+            aClass: a.className,
+            aParent: a.parentClass,
+            aPosition: a.position,
+            aTop: Math.round(a.top),
+            aHeight: Math.round(a.height),
+            b: b.name,
+            bTag: b.tag,
+            bClass: b.className,
+            bParent: b.parentClass,
+            bPosition: b.position,
+            bTop: Math.round(b.top),
+            bHeight: Math.round(b.height),
+            width: Math.round(width),
+            height: Math.round(height),
+          });
+        }
+      }
+    }
+
+    return {
+      count: targets.length,
+      clipped: targets.filter((target) => target.clipped).slice(0, 8).map((target) => ({
+        name: target.name,
+        className: target.className,
+        clipped: target.clipped,
+        width: Math.round(target.width),
+        height: Math.round(target.height),
+      })),
+      undersized: undersized.slice(0, 8),
+      overlaps: overlaps.slice(0, 8),
+    };
+  });
+}
+
+async function focusedRailName(page) {
+  return page.evaluate(() => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || !active.classList.contains("ena-rail-button")) return null;
+    return active.getAttribute("aria-label");
+  });
+}
+
+async function activeRailId(page) {
+  return page.locator("[data-ena-rail-panel]").getAttribute("data-ena-rail-panel");
+}
+
 async function activeRailButton(page) {
   return page.evaluate(() => {
     const active = document.activeElement;
@@ -329,6 +490,10 @@ function check(condition, message) {
 const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage({ viewport: VIEWPORTS[0], reducedMotion: "reduce" });
+  // The Playwright library's default action timeout is infinite. Cap it so a
+  // stuck focus or route cannot hang the CI job.
+  page.setDefaultTimeout(30_000);
+  page.setDefaultNavigationTimeout(30_000);
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("console", (message) => {
@@ -454,16 +619,101 @@ try {
     }
 
     await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
-    const tabbedRails = [];
-    const sawRails = await tabTo(page, async () => {
-      const name = await activeRailButton(page);
-      if (name && tabbedRails.at(-1) !== name) tabbedRails.push(name);
-      return tabbedRails.length === RAILS.length;
-    }, 20);
-    check(sawRails, `${label}: Tab did not reach every rail button (saw ${tabbedRails.join(" → ")})`);
+    const toolbar = page.getByRole("toolbar", { name: "Analysis mode toolbar" });
+    const toolbarCount = await toolbar.count();
+    check(toolbarCount === 1, `${label}: expected one Analysis mode toolbar, found ${toolbarCount}`);
+    if (toolbarCount === 1) {
+      const expectedOrientation = viewport.width <= 900 ? "horizontal" : "vertical";
+      let orientation = await toolbar.getAttribute("aria-orientation");
+      if (orientation !== expectedOrientation) {
+        try {
+          await page.waitForFunction((expected) => document.querySelector(".ena-rail-modes")?.getAttribute("aria-orientation") === expected, expectedOrientation, { timeout: 1000 });
+          orientation = expectedOrientation;
+        } catch {
+          orientation = await toolbar.getAttribute("aria-orientation");
+        }
+      }
+      check(
+        orientation === expectedOrientation,
+        `${label}: toolbar aria-orientation was ${JSON.stringify(orientation)}, expected ${expectedOrientation}`,
+      );
+    }
+    const railTabIndexes = await page.locator(".ena-rail-button").evaluateAll((elements) => elements.map((element) => element.tabIndex));
     check(
-      JSON.stringify(tabbedRails) === JSON.stringify(RAILS.map((rail) => rail.button)),
-      `${label}: rail Tab order was ${tabbedRails.join(" → ")}`,
+      railTabIndexes.filter((value) => value >= 0).length === 1,
+      `${label}: expected exactly one rail button in the Tab order, tabIndexes=${JSON.stringify(railTabIndexes)}`,
+    );
+
+    await page.getByRole("button", { name: "Data", exact: true }).focus();
+    const panelAtArrowStart = await activeRailId(page);
+    const arrowSteps = [
+      ["ArrowDown", "Model"],
+      ["ArrowRight", "Plot Tools"],
+      ["End", "AI-assisted interpretation"],
+      ["ArrowDown", "Data"],
+      ["ArrowUp", "AI-assisted interpretation"],
+      ["Home", "Data"],
+      ["End", "AI-assisted interpretation"],
+      ["ArrowLeft", "Stats & Export"],
+      ["ArrowUp", "Plot Tools"],
+    ];
+    let arrowsWork = true;
+    for (const [key, expectedName] of arrowSteps) {
+      await page.keyboard.press(key);
+      const focused = await focusedRailName(page);
+      if (focused !== expectedName) {
+        check(false, `${label}: ${key} focused ${JSON.stringify(focused)}, expected ${expectedName}`);
+        arrowsWork = false;
+        break;
+      }
+    }
+    const panelAfterArrows = await activeRailId(page);
+    check(
+      panelAfterArrows === panelAtArrowStart,
+      `${label}: arrow focus changed the active rail from ${panelAtArrowStart} to ${panelAfterArrows}`,
+    );
+    const currentAfterArrows = await page.locator(".ena-rail-button[aria-current='step']").evaluate((element) => element.getAttribute("aria-label"));
+    check(currentAfterArrows === "Data", `${label}: arrow focus changed aria-current to ${JSON.stringify(currentAfterArrows)}`);
+    if (arrowsWork) {
+      // Arrow roving leaves the tab stop on Plot Tools while Data stays the active mode.
+      // Clicking the already-active mode must move the tab stop onto that button.
+      await page.getByRole("button", { name: "Data", exact: true }).click();
+      const tabStopsAfterActiveClick = await page.locator(".ena-rail-button").evaluateAll((elements) => elements.map((element) => ({
+        name: element.getAttribute("aria-label"),
+        tabIndex: element.tabIndex,
+        current: element.getAttribute("aria-current"),
+      })));
+      const clickedStop = tabStopsAfterActiveClick.find((entry) => entry.name === "Data");
+      const otherStops = tabStopsAfterActiveClick.filter((entry) => entry.name !== "Data");
+      check(
+        clickedStop?.tabIndex === 0 && otherStops.every((entry) => entry.tabIndex === -1) && clickedStop.current === "step",
+        `${label}: clicking the already-active Data rail after arrow roving left tab stops ${JSON.stringify(tabStopsAfterActiveClick)}`,
+      );
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("Tab");
+      const tabLanding = await focusedRailName(page);
+      check(tabLanding === null, `${label}: Tab from the roving rail button landed on another rail button (${tabLanding})`);
+      await page.keyboard.press("Shift+Tab");
+      const returned = await focusedRailName(page);
+      check(returned === "Plot Tools", `${label}: Shift+Tab returned to ${JSON.stringify(returned)}, expected the roving Plot Tools button`);
+      await page.keyboard.press("Enter");
+      check((await activeRailId(page)) === "plot", `${label}: Enter did not activate the focused Plot Tools rail`);
+      await page.keyboard.press("ArrowDown");
+      check((await focusedRailName(page)) === "Stats & Export", `${label}: ArrowDown after Enter did not move to Stats & Export`);
+      check((await activeRailId(page)) === "plot", `${label}: ArrowDown after Enter changed the active rail`);
+      await page.keyboard.press("Space");
+      check((await activeRailId(page)) === "stats", `${label}: Space did not activate the focused Stats & Export rail`);
+    }
+    await page.getByRole("button", { name: "Model", exact: true }).focus();
+    await page.keyboard.press("Space");
+    check((await activeRailId(page)) === "model", `${label}: Space on Model did not activate that rail`);
+    await page.getByRole("button", { name: "Data", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    check((await activeRailId(page)) === "data", `${label}: Enter on Data did not activate that rail`);
+    check(
+      JSON.stringify(RAIL_FOCUS_ORDER) === JSON.stringify(RAILS.map((rail) => rail.button)),
+      "rail focus order drifted from the rail fixtures",
     );
 
     for (const rail of RAILS) {
@@ -491,6 +741,12 @@ try {
       check(reached, `${label}: Tab from ${rail.button} did not reach its primary control`);
       if (!reached) continue;
       check(await reachesViewport(page, control), `${label}: primary control in ${rail.button} is clipped or unreachable`);
+      if (viewport.width <= 768) {
+        const fit = await railPanelFitReport(page);
+        check(fit.clipped.length === 0, `${label}: ${rail.button} clipped rail/panel controls ${JSON.stringify(fit.clipped)}`);
+        check(fit.undersized.length === 0, `${label}: ${rail.button} undersized rail/panel targets ${JSON.stringify(fit.undersized)}`);
+        check(fit.overlaps.length === 0, `${label}: ${rail.button} overlapping rail/panel controls ${JSON.stringify(fit.overlaps)}`);
+      }
       const leftPanel = await focusOutsidePanel(page, panel);
       check(leftPanel, `${label}: Shift+Tab did not leave the ${rail.button} panel (focus trap)`);
       await control.focus();
@@ -511,11 +767,16 @@ try {
     }
   }
 
-  for (const { locale, label: skipLabel } of WORKSPACE_LOCALES) {
+  for (const { locale, label: skipLabel, toolbar: toolbarLabel } of WORKSPACE_LOCALES) {
     if (locale === "en") continue;
     await page.setViewportSize({ width: VIEWPORTS[0].width, height: VIEWPORTS[0].height });
     await mount(bundles[locale]);
     await page.getByRole("link", { name: skipLabel, exact: true }).waitFor();
+    const localizedToolbar = page.getByRole("toolbar", { name: toolbarLabel });
+    check(
+      await localizedToolbar.count() === 1,
+      `${locale}: expected one ${toolbarLabel} toolbar, found ${await localizedToolbar.count()}`,
+    );
     const localeLabel = locale;
     const skipCount = await page.locator("a.skip-link").count();
     check(skipCount === 1, `${localeLabel}: expected exactly one .skip-link, found ${skipCount}`);
