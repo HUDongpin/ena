@@ -444,6 +444,11 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
   const sourceFileTriggerRef = useRef<HTMLInputElement>(null);
   const railTriggerRefs = useRef<Partial<Record<OpenEnaMode, HTMLButtonElement | null>>>({});
   const railToolbarRef = useRef<HTMLDivElement>(null);
+  const cancelRailFocusRestoreRef = useRef<() => void>(() => {});
+  function cancelScheduledRailFocusRestore() {
+    cancelRailFocusRestoreRef.current();
+    cancelRailFocusRestoreRef.current = () => {};
+  }
   useLayoutEffect(() => {
     const toolbar = railToolbarRef.current;
     if (!toolbar) return;
@@ -856,6 +861,18 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
       case "End":
         nextIndex = OPEN_ENA_RAIL_MODES.length - 1;
         break;
+      case "Enter":
+      case " ": {
+        // Activate the button that received the key. A synthesized click can
+        // land elsewhere if a deferred focus restore blurs this button first.
+        event.preventDefault();
+        event.stopPropagation();
+        const entry = OPEN_ENA_RAIL_MODES[currentIndex];
+        cancelScheduledRailFocusRestore();
+        setRailTabStop(entry);
+        setMode(entry);
+        return;
+      }
       default:
         return;
     }
@@ -870,7 +887,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
     event.preventDefault();
     event.stopPropagation();
     focusRailButton(mode);
-    scheduleOpenEnaDomFocusRestore(railTriggerRefs.current[mode] ?? null);
+    cancelRailFocusRestoreRef.current = scheduleOpenEnaDomFocusRestore(railTriggerRefs.current[mode] ?? null);
   }
   async function loadSample(trajectoryOrKind: boolean | TeachingSampleKind = false) {
     const kind = teachingSampleKindFromLoadRequest(trajectoryOrKind);
@@ -1492,7 +1509,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, initialSo
             <a className="ena-rail-version" data-ena-rail-version="true" href={JENA_SOURCE_URL} target="_blank" rel="noopener noreferrer"
               aria-label={copy.workspace.jenaSourceAriaLabel(JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT.slice(0, 7))}>jENA {JENA_RUNTIME_VERSION.split("-", 1)[0]}</a>
           </div>
-          <div ref={railToolbarRef} className="ena-rail-modes" role="toolbar" aria-label={workspaceCopy.landmarks.railToolbar} aria-orientation={railOrientation} onKeyDown={onRailToolbarKeyDown}>{OPEN_ENA_RAIL_MODES.map((entry) => <button key={entry} ref={(element) => { railTriggerRefs.current[entry] = element; }} type="button" className="ena-rail-button" tabIndex={railTabStop === entry ? 0 : -1} aria-current={mode === entry ? "step" : undefined} aria-label={entry === "ai" ? copy.aiInterpretation.title : copy.modes[entry]} onClick={() => { setRailTabStop(entry); setMode(entry); }}>{modeIcons[entry]}<span>{copy.modes[entry]}</span></button>)}</div>
+          <div ref={railToolbarRef} className="ena-rail-modes" role="toolbar" aria-label={workspaceCopy.landmarks.railToolbar} aria-orientation={railOrientation} onKeyDown={onRailToolbarKeyDown}>{OPEN_ENA_RAIL_MODES.map((entry) => <button key={entry} ref={(element) => { railTriggerRefs.current[entry] = element; }} type="button" className="ena-rail-button" tabIndex={railTabStop === entry ? 0 : -1} aria-current={mode === entry ? "step" : undefined} aria-label={entry === "ai" ? copy.aiInterpretation.title : copy.modes[entry]} onFocus={() => cancelScheduledRailFocusRestore()} onClick={() => { cancelScheduledRailFocusRestore(); setRailTabStop(entry); setMode(entry); }}>{modeIcons[entry]}<span>{copy.modes[entry]}</span></button>)}</div>
           <form className="ena-rail-logout" action="/api/open-ena/logout" method="post" onSubmit={submitOpenEnaLogoutAsDocumentRequest}><input type="hidden" name="locale" value={locale} /><button type="submit" aria-label={authCopy.signOut} title={authCopy.signOut}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5m4-11 4 4-4 4m-5-4h9" /></svg><span>{authCopy.signOut}</span></button></form>
           <div className="ena-rail-meta"><span className="ena-rail-privacy">{workspaceCopy.shell.local}</span><span className="sr-only">{workspaceCopy.shell.runtimePrivacy(JENA_RUNTIME_VERSION)}</span></div>
         </nav>
