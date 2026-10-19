@@ -38,6 +38,33 @@ jobs:
         run: npm audit --audit-level=high
       - name: Verify prompt governance and complete application
         run: npm run verify
+      - name: Package and verify the standalone Linux release
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          cp -a public .next/standalone/public
+          cp -a .next/static .next/standalone/.next/static
+          cp -a migrations .next/standalone/migrations
+          if find .next/standalone -name '.env*' -print -quit | grep -q .; then
+            echo 'Refusing to package environment files.' >&2
+            exit 1
+          fi
+          node --input-type=module -e 'import {writeFileSync} from "node:fs"; writeFileSync(".next/standalone/release.json", JSON.stringify({commit:process.env.GITHUB_SHA,platform:process.platform,arch:process.arch,node:process.version},null,2)+"\n")'
+          mkdir -p output/release
+          tar -C .next/standalone -czf "output/release/ena-linux-x64-${GITHUB_SHA}.tar.gz" .
+          (cd output/release && sha256sum "ena-linux-x64-${GITHUB_SHA}.tar.gz" > SHA256SUMS)
+          smoke_dir=$(mktemp -d "${RUNNER_TEMP}/ena-release-smoke.XXXXXX")
+          trap 'rm -rf "$smoke_dir"' EXIT
+          tar -C "$smoke_dir" -xzf "output/release/ena-linux-x64-${GITHUB_SHA}.tar.gz"
+          node scripts/smoke-standalone-release.mjs "$smoke_dir" > output/release/smoke.json
+      - name: Upload the verified standalone Linux release
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ena-linux-x64-${{ github.sha }}
+          path: output/release
+          if-no-files-found: error
+          retention-days: 14
 
   browser:
     name: Browser (Chromium)
