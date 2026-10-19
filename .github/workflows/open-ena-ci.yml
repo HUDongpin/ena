@@ -42,9 +42,11 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
-          cp -a public .next/standalone/public
-          cp -a .next/static .next/standalone/.next/static
-          cp -a migrations .next/standalone/migrations
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          mkdir -p .next/standalone/public .next/standalone/.next/static .next/standalone/migrations
+          cp -a public/. .next/standalone/public/
+          cp -a .next/static/. .next/standalone/.next/static/
+          cp -a migrations/. .next/standalone/migrations/
           if find .next/standalone -name '.env*' -print -quit | grep -q .; then
             echo 'Refusing to package environment files.' >&2
             exit 1
@@ -56,7 +58,7 @@ jobs:
           smoke_dir=$(mktemp -d "${RUNNER_TEMP}/ena-release-smoke.XXXXXX")
           trap 'rm -rf "$smoke_dir"' EXIT
           tar -C "$smoke_dir" -xzf "output/release/ena-linux-x64-${GITHUB_SHA}.tar.gz"
-          node scripts/smoke-standalone-release.mjs "$smoke_dir" > output/release/smoke.json
+          node scripts/smoke-standalone-release.mjs "$smoke_dir" "$GITHUB_SHA" > output/release/smoke.json
       - name: Upload the verified standalone Linux release
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -13,6 +13,15 @@ const checkout = await realpath(process.cwd());
 assert(directory !== checkout && !directory.startsWith(`${checkout}${sep}`),
   "Extract the release outside the source checkout before testing it.");
 await readFile(resolve(directory, "server.js"));
+const expectedCommit = process.argv[3];
+assert.match(expectedCommit ?? "", /^[a-f0-9]{40}$/, "Supply the expected source commit");
+const release = JSON.parse(await readFile(resolve(directory, "release.json"), "utf8"));
+assert.equal(release.commit, expectedCommit, "Release source commit mismatch");
+assert.equal(release.platform, process.platform, "Release operating system mismatch");
+assert.equal(release.arch, process.arch, "Release architecture mismatch");
+assert.equal(release.node.split(".")[0], process.version.split(".")[0], "Release Node major version mismatch");
+const buildId = (await readFile(resolve(directory, ".next/BUILD_ID"), "utf8")).trim();
+assert(buildId.length > 0, "Release build ID is missing");
 const socket = createServer();
 socket.listen(0, "127.0.0.1");
 await once(socket, "listening");
@@ -58,7 +67,7 @@ try {
   assert(ready, `Standalone server did not become ready: ${logs}`);
 
   let html = "";
-  for (const path of ["/en", "/zh-hans", "/zh-hant", "/en/open-ena", "/en/plugins"]) {
+  for (const path of ["/en", "/zh-hans", "/zh-hant", "/en/about", "/en/open-ena", "/en/plugins"]) {
     const response = await get(path);
     assert.equal(response.status, 200, path);
     assert.match(response.headers.get("content-type") ?? "", /text\/html/);
@@ -98,7 +107,8 @@ try {
   assert.equal(guarded.headers.get("x-open-ena-auth-error"), "not-configured");
   assert.equal(typeof (await guarded.json()).error, "string");
   checks.push({ path: "/api/open-ena/ai-interpretation", status: 503, authError: "not-configured" });
-  console.log(JSON.stringify({ passed: true, platform: process.platform, arch: process.arch, checks }, null, 2));
+  console.log(JSON.stringify({ passed: true, commit: release.commit, buildId,
+    platform: process.platform, arch: process.arch, node: process.version, checks }, null, 2));
 } catch (error) {
   console.error(logs);
   throw error;

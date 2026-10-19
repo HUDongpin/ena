@@ -4,6 +4,8 @@ For pushes to `main` and manual CI runs, the Verify job builds the Next.js
 standalone server on Linux x64 with Node 22. Its artifact is named
 `ena-linux-x64-<commit>`. It contains the runtime archive, `SHA256SUMS`, and the
 result of starting the extracted archive outside the source checkout.
+The smoke receipt verifies the expected commit, build ID, operating system,
+architecture, and Node major version before checking the running server.
 
 Only deploy an artifact whose exact commit passed all three CI jobs: Verify,
 Browser, and Reviewed regressions. Artifact availability alone is not release
