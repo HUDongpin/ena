@@ -2415,87 +2415,59 @@ function parseInferenceOmissionsV2(value: unknown) {
   return omissions;
 }
 
-function expectedPlannedMembersV2(scope: OpenEnaAiInferenceScopeV2) {
-  const expected = new Map<string, {
-    familyRole: OpenEnaAiFamilyRoleV2;
-    test: OpenEnaAiInferenceOmissionV2["test"];
-    axisRole: OpenEnaAiAxisRoleV2;
-    earlier: number | null;
-    later: number | null;
-  }>();
-  const axes: OpenEnaAiAxisRoleV2[] = ["axis-1", "axis-2"];
-  if (scope.kind === "endpoint-independent" || scope.kind === "trajectory-independent-period") {
-    for (const role of axes) {
-      expected.set(`comparison-${role}`, {
-        familyRole: "comparison-family",
-        test: "mann-whitney-u",
-        axisRole: role,
-        earlier: null,
-        later: null,
-      });
-    }
-    return expected;
-  }
-  if (scope.kind === "trajectory-paired-periods") {
-    for (const role of axes) {
-      expected.set(`comparison-${role}-period-${scope.earlierPeriodIndex + 1}-period-${scope.laterPeriodIndex + 1}`, {
-        familyRole: "comparison-family",
-        test: "wilcoxon-signed-rank",
-        axisRole: role,
-        earlier: scope.earlierPeriodIndex,
-        later: scope.laterPeriodIndex,
-      });
-    }
-    return expected;
-  }
-  for (const role of axes) {
-    expected.set(`omnibus-${role}`, {
-      familyRole: "omnibus-family",
-      test: "friedman",
-      axisRole: role,
-      earlier: null,
-      later: null,
-    });
-  }
-  for (let earlierIndex = 0; earlierIndex < scope.selectedPeriodIndices.length; earlierIndex += 1) {
-    for (let laterIndex = earlierIndex + 1; laterIndex < scope.selectedPeriodIndices.length; laterIndex += 1) {
-      const earlier = scope.selectedPeriodIndices[earlierIndex];
-      const later = scope.selectedPeriodIndices[laterIndex];
-      for (const role of axes) {
-        expected.set(`posthoc-${role}-period-${earlier + 1}-period-${later + 1}`, {
-          familyRole: "posthoc-family",
-          test: "wilcoxon-signed-rank",
-          axisRole: role,
-          earlier,
-          later,
-        });
-      }
-    }
-  }
-  return expected;
-}
-
 function validatePlannedMembersV2(
   scope: OpenEnaAiInferenceScopeV2,
   members: readonly OpenEnaAiInferenceMemberV2[],
   omissions: readonly OpenEnaAiInferenceOmissionV2[],
 ) {
-  const expected = expectedPlannedMembersV2(scope);
+  const expectedCount = scope.kind === "trajectory-repeated-periods"
+    ? scope.selectedPeriodIndices.length * (scope.selectedPeriodIndices.length - 1) + 2
+    : 2;
   const supplied = [...members, ...omissions];
-  if (supplied.length !== expected.size || new Set(supplied.map((entry) => entry.id)).size !== supplied.length) {
+  if (supplied.length !== expectedCount || new Set(supplied.map((entry) => entry.id)).size !== supplied.length) {
     throw new Error("AI v2 inference must represent every planned member exactly once.");
   }
+  const selectedPeriods = scope.kind === "trajectory-repeated-periods"
+    ? new Set(scope.selectedPeriodIndices)
+    : null;
+  // Exact cardinality plus unique canonical members proves completeness without
+  // allocating the quadratic universe of period pairs absent from the request.
   for (const entry of supplied) {
-    const planned = expected.get(entry.id);
-    if (!planned || entry.familyRole !== planned.familyRole || entry.test !== planned.test
-      || entry.axisRole !== planned.axisRole) {
-      throw new Error("AI v2 inference member role is inconsistent with the planned family.");
-    }
-    if (entry.test === "wilcoxon-signed-rank") {
-      if (entry.earlierPeriodIndex !== planned.earlier || entry.laterPeriodIndex !== planned.later) {
+    let expectedId: string;
+    let expectedFamily: OpenEnaAiFamilyRoleV2;
+    let expectedTest: OpenEnaAiInferenceOmissionV2["test"];
+    if (scope.kind === "endpoint-independent" || scope.kind === "trajectory-independent-period") {
+      expectedId = `comparison-${entry.axisRole}`;
+      expectedFamily = "comparison-family";
+      expectedTest = "mann-whitney-u";
+    } else if (scope.kind === "trajectory-paired-periods") {
+      expectedId = `comparison-${entry.axisRole}-period-${scope.earlierPeriodIndex + 1}-period-${scope.laterPeriodIndex + 1}`;
+      expectedFamily = "comparison-family";
+      expectedTest = "wilcoxon-signed-rank";
+      if (entry.test === "wilcoxon-signed-rank"
+        && (entry.earlierPeriodIndex !== scope.earlierPeriodIndex || entry.laterPeriodIndex !== scope.laterPeriodIndex)) {
         throw new Error("AI v2 Wilcoxon period roles are inconsistent with the planned contrast.");
       }
-    } else if ("earlierPeriodIndex" in entry
+    } else if (entry.familyRole === "omnibus-family") {
+      expectedId = `omnibus-${entry.axisRole}`;
+      expectedFamily = "omnibus-family";
+      expectedTest = "friedman";
+    } else if (entry.familyRole === "posthoc-family" && entry.test === "wilcoxon-signed-rank") {
+      const { earlierPeriodIndex: earlier, laterPeriodIndex: later } = entry;
+      if (earlier === null || later === null || earlier >= later
+        || !selectedPeriods!.has(earlier) || !selectedPeriods!.has(later)) {
+        throw new Error("AI v2 Wilcoxon period roles are inconsistent with the planned contrast.");
+      }
+      expectedId = `posthoc-${entry.axisRole}-period-${earlier + 1}-period-${later + 1}`;
+      expectedFamily = "posthoc-family";
+      expectedTest = "wilcoxon-signed-rank";
+    } else {
+      throw new Error("AI v2 inference member role is inconsistent with the planned family.");
+    }
+    if (entry.id !== expectedId || entry.familyRole !== expectedFamily || entry.test !== expectedTest) {
+      throw new Error("AI v2 inference member role is inconsistent with the planned family.");
+    }
+    if (entry.test !== "wilcoxon-signed-rank" && "earlierPeriodIndex" in entry
       && (entry.earlierPeriodIndex !== null || entry.laterPeriodIndex !== null)) {
       throw new Error("AI v2 non-Wilcoxon member cannot carry period-pair roles.");
     }

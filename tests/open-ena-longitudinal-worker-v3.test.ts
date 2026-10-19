@@ -264,6 +264,38 @@ test("scientific request cache ignores no display state and returns the same imm
   assert.equal(second.cacheHit, true);
 });
 
+test("cancellation during scientific result verification prevents adoption and caching", async () => {
+  clearOpenEnaLongitudinalExecutionCacheV3();
+  const request = await validOpenEnaLongitudinalRequestV3(20, 200);
+  const controller = new AbortController();
+  const verificationStarted = Promise.withResolvers<void>();
+  const finishVerification = Promise.withResolvers<void>();
+  const result = executeOpenEnaLongitudinalPreparedV3(request, {
+    signal: controller.signal,
+    forceLocal: true,
+    nodeExecutor: fakeBundle,
+    resultVerifier: async () => { verificationStarted.resolve(); await finishVerification.promise; },
+  });
+  await verificationStarted.promise;
+  controller.abort();
+  finishVerification.resolve();
+  await assert.rejects(result, (error: unknown) => error instanceof DOMException && error.name === "AbortError");
+  const retry = await executeOpenEnaLongitudinalPreparedV3(request, { forceLocal: true, nodeExecutor: fakeBundle, resultVerifier: async () => {} });
+  assert.equal(retry.cacheHit, false);
+});
+
+test("a cached scientific result does not override a cancelled request", async () => {
+  clearOpenEnaLongitudinalExecutionCacheV3();
+  const request = await validOpenEnaLongitudinalRequestV3(20, 200);
+  await executeOpenEnaLongitudinalPreparedV3(request, { forceLocal: true, nodeExecutor: fakeBundle, resultVerifier: async () => {} });
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(
+    executeOpenEnaLongitudinalPreparedV3(request, { signal: controller.signal }),
+    (error: unknown) => error instanceof DOMException && error.name === "AbortError",
+  );
+});
+
 test("result binding requires the canonical jENA plus SDK build identity", async () => {
   clearOpenEnaLongitudinalExecutionCacheV3();
   const request = await validOpenEnaLongitudinalRequestV3(20, 200);
@@ -607,6 +639,92 @@ test("remote bundle verifier failure is typed after the durable job is deleted",
   );
   assert.equal(transport.deletionCount(), 1);
 });
+
+test("remote metadata stops at its streaming limit and still deletes the job", async () => {
+  clearOpenEnaLongitudinalExecutionCacheV3();
+  const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+  const { value: capability, jobUrl } = remoteCapability("job-metadata-limit");
+  let bytesRead = 0;
+  let cancelled = false;
+  let deleted = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (bytesRead === 1024 * 1024) { controller.close(); return; }
+      bytesRead += 1024;
+      controller.enqueue(new Uint8Array(1024).fill(120));
+    },
+    cancel() { cancelled = true; },
+  }, { highWaterMark: 0 });
+  const fetchMock: typeof fetch = async (input, init) => {
+    if (String(input) === "/api/open-ena/longitudinal") return Response.json(capability, { status: 202 });
+    if (String(input) === jobUrl && init?.method === "DELETE") { deleted = true; return Response.json(remoteDeletionReceipt(capability.jobId)); }
+    return new Response(body, { headers: { "content-type": "application/json" } });
+  };
+  await assert.rejects(executeOpenEnaLongitudinalPreparedV3(request, {
+    allowRemote: true, remoteEndpoint: "/api/open-ena/longitudinal", fetchImpl: fetchMock,
+  }), (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_POLL_FAILED"));
+  assert.equal(cancelled, true);
+  assert.equal(bytesRead, 65 * 1024);
+  assert.equal(deleted, true);
+});
+
+test("a rejected remote submission cancels its unread response body", async () => {
+  clearOpenEnaLongitudinalExecutionCacheV3();
+  const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({ cancel() { cancelled = true; } });
+  await assert.rejects(executeOpenEnaLongitudinalPreparedV3(request, {
+    allowRemote: true, remoteEndpoint: "/api/open-ena/longitudinal", fetchImpl: async () => new Response(body, { status: 503 }),
+  }), (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_SUBMISSION_FAILED"));
+  assert.equal(cancelled, true);
+});
+
+test("remote artifacts verify decoded bytes when compressed wire Content-Length differs", async () => {
+  clearOpenEnaLongitudinalExecutionCacheV3();
+  const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+  const transport = await successfulRemoteTransport(request, "job-compressed-artifact");
+  const fetchMock: typeof fetch = async (input, init) => {
+    const response = await transport.fetchMock(input, init);
+    if (!String(input).endsWith("/artifact")) return response;
+    // Fetch exposes decoded body bytes but retains the compressed wire headers.
+    const headers = new Headers(response.headers);
+    headers.set("content-encoding", "gzip");
+    headers.set("content-length", "100");
+    return new Response(response.body, { headers });
+  };
+  const receipt = await executeOpenEnaLongitudinalPreparedV3(request, {
+    allowRemote: true, remoteEndpoint: "/api/open-ena/longitudinal", fetchImpl: fetchMock,
+    resultVerifier: async () => {},
+  });
+  assert.equal(receipt.cacheHit, false);
+  assert.equal(transport.deletionCount(), 1);
+});
+
+for (const corruption of ["truncated", "oversized", "checksum"] as const) {
+  test(`compressed artifact headers cannot bypass ${corruption} decoded-byte rejection`, async () => {
+    clearOpenEnaLongitudinalExecutionCacheV3();
+    const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+    const transport = await successfulRemoteTransport(request, `job-compressed-${corruption}`);
+    const fetchMock: typeof fetch = async (input, init) => {
+      const response = await transport.fetchMock(input, init);
+      if (!String(input).endsWith("/artifact")) return response;
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      let changed: Uint8Array;
+      if (corruption === "truncated") changed = bytes.slice(0, -1);
+      else if (corruption === "oversized") { changed = new Uint8Array(bytes.length + 1); changed.set(bytes); }
+      else { changed = bytes; changed[0] ^= 1; }
+      const headers = new Headers(response.headers);
+      headers.set("content-encoding", "gzip");
+      headers.set("content-length", "100");
+      return new Response(changed, { headers });
+    };
+    await assert.rejects(executeOpenEnaLongitudinalPreparedV3(request, {
+      allowRemote: true, remoteEndpoint: "/api/open-ena/longitudinal", fetchImpl: fetchMock,
+      resultVerifier: async () => {},
+    }), (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_RESULT_FAILED"));
+    assert.equal(transport.deletionCount(), 1);
+  });
+}
 
 test("remote hard deadline uses the controllable seam, is typed, and still deletes", async () => {
   clearOpenEnaLongitudinalExecutionCacheV3();

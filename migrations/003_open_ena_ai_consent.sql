@@ -48,7 +48,10 @@ BEGIN
     p_principal_ref_hash, p_operation_id, p_request_sha256,
     p_consent_policy_version, p_provider, p_model, 'authorized'
   )
-  ON CONFLICT (principal_ref_hash, operation_id) DO NOTHING
+  -- Concurrent attempts share both the deterministic primary key and operation
+  -- key. Handle either unique index; choosing only the operation index can
+  -- still raise a primary-key violation during speculative concurrent inserts.
+  ON CONFLICT DO NOTHING
   RETURNING * INTO v_receipt;
 
   IF NOT FOUND THEN

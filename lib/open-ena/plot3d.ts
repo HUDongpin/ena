@@ -1,4 +1,4 @@
-import { nativePlotGroupSettingsV3 } from "./bound-presentation-v3";
+import { nativePlotGroupSettingsV3, nativePlotSummaryGroupsV3 } from "./bound-presentation-v3";
 import type { OpenEnaContrastPresentation } from "./bound-presentation-v3";
 import type { OpenEnaPlotResult } from "./bound-presentation-v3";
 import type { Row } from "jena-js";
@@ -410,8 +410,16 @@ function escapeHoverText(value: unknown) {
     .replaceAll("'", "&#39;");
 }
 
+export function literalGlText(value: unknown) {
+  // The pinned GL vectorizer recognizes these exact tags but does not decode
+  // HTML entities. A zero-width separator preserves their visible characters
+  // without activating that parser. Keep this encoding in render text only;
+  // identities, source labels and SVG hover markup retain their own contracts.
+  return String(value ?? "").replace(/<(?=\/?(?:b|i|sup|sub|br)>)/gu, "<\u200b");
+}
+
 function formatCoordinate(value: number) {
-  return Number.isInteger(value) ? String(value) : value.toPrecision(6).replace(/\.?0+$/u, "");
+  return Number.isInteger(value) ? String(value) : Number(value.toPrecision(6)).toString();
 }
 
 function stableHash(value: string) {
@@ -455,13 +463,13 @@ function pointHover(
   ].join("<br>");
 }
 
-function edgeWeight(result: OpenEnaPlotResult, edgeName: string) {
-  const groups = result.groups;
+function edgeWeight(groups: GroupNetwork[], edgeName: string) {
   if (groups.length === 0) return { value: 0, groupIndex: 0, comparison: false };
   if (groups.length === 1) {
     return { value: Math.abs(groups[0]?.meanWeights[edgeName] ?? 0), groupIndex: 0, comparison: false };
   }
   if (groups.length === 2) {
+    if (groups.some(group => group.count === 0)) return { value: 0, groupIndex: 0, comparison: true };
     const difference = (groups[0]?.meanWeights[edgeName] ?? 0) - (groups[1]?.meanWeights[edgeName] ?? 0);
     return { value: Math.abs(difference), groupIndex: difference >= 0 ? 0 : 1, comparison: true };
   }
@@ -745,6 +753,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       summaryUnitIds: [...side.unitIds],
     };
   };
+  const summaryGroups = contrast ? result.groups : nativePlotSummaryGroupsV3(result);
   const displayGroupEntries = contrast
     ? ([
         {
@@ -760,7 +769,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
           display: resolveGroupDisplay("secondary", contrast.secondary),
         },
       ])
-    : result.groups.map((group, groupIndex) => ({ group, groupIndex, side: null, display: null }));
+    : summaryGroups.map((group, groupIndex) => ({ group, groupIndex, side: null, display: null }));
   const canonicalConfidenceMagnitudes = contrast
     ? result.groups.flatMap((_group, groupIndex) => dimensions.flatMap((dimension) => {
         const values = points
@@ -824,7 +833,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
           };
         })
       : result.set.adjacencyKey.map((edge) => {
-          const weighted = edgeWeight(result, edge.name);
+          const weighted = edgeWeight(summaryGroups, edge.name);
           return { edge, ...weighted, rawValue: weighted.value };
         });
     const maximumEdge = contrast
@@ -906,11 +915,11 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       traces.push({
         type: "scatter3d",
         mode: showUnitLabels ? "markers+text" : "markers",
-        name: `${group.name} units · ${markerLabel}`,
+        name: `${escapeHoverText(group.name)} units · ${markerLabel}`,
         x: selected.map((row) => coordinate(row, xDimension)),
         y: selected.map((row) => coordinate(row, yDimension)),
         z: selected.map((row) => coordinate(row, zDimension)),
-        text: selected.map((row, index) => String(row.ENA_UNIT ?? `unit-${index + 1}`)),
+        text: selected.map((row, index) => literalGlText(row.ENA_UNIT ?? `unit-${index + 1}`)),
         customdata: selected.map((row, index) => {
           const label = String(row.ENA_UNIT ?? `unit-${index + 1}`);
           const point = dimensions.map((dimension) => coordinate(row, dimension)) as [number, number, number];
@@ -958,7 +967,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       plotKind !== "comparison" || !selectedComparisonGroupIndices.has(groupIndex)
     )) return;
     if (display && !display.settings.showMean) return;
-    if (trajectory || !nativePlotGroupSettingsV3(result, group.name).showMean) return;
+    if (trajectory || group.count === 0 || !nativePlotGroupSettingsV3(result, group.name).showMean) return;
     const color = groupColor(group, groupIndex);
     const markerSymbol = "square";
     const meanSource = side?.meanPoint ?? group.meanPoint;
@@ -966,7 +975,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     traces.push({
       type: "scatter3d",
       mode: "markers",
-      name: `${group.name} mean · square`,
+      name: `${escapeHoverText(group.name)} mean · square`,
       x: [mean[0]],
       y: [mean[1]],
       z: [mean[2]],
@@ -1008,7 +1017,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       if (!nativePlotGroupSettingsV3(result, centroid.group).showMean) continue;
       traces.push({ type: "scatter3d", mode: "markers+text", name: "Observed Group centroid",
         x: [coordinate(centroid.point, xDimension)], y: [coordinate(centroid.point, yDimension)], z: [coordinate(centroid.point, zDimension)],
-        text: [`${centroid.horizon} · n=${centroid.n}`], marker: { color: "black", size: 7, symbol: "square" }, showlegend: false,
+        text: [literalGlText(`${centroid.horizon} · n=${centroid.n}`)], marker: { color: "black", size: 7, symbol: "square" }, showlegend: false,
         hovertemplate: `Observed n=${centroid.n}<extra></extra>`, meta: { role: "group-mean", groupName: centroid.group } });
     }
   }
@@ -1050,9 +1059,10 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       y: labels.map(row => coordinate(row, yDimension)),
       z: labels.map(row => coordinate(row, zDimension)),
       ids: labels.map(row => String(row.code)),
-      text: labels.map(row => openEnaRenderedCodeLabel(input, String(row.code))),
+      text: labels.map(row => literalGlText(openEnaRenderedCodeLabel(input, String(row.code)))),
+      customdata: labels.map(row => escapeHoverText(openEnaRenderedCodeLabel(input, String(row.code)))),
       textposition: "top center", textfont: { color: "#263740", size: 12 },
-      hovertemplate: "%{text}<extra></extra>", showlegend: false,
+      hovertemplate: "%{customdata}<extra></extra>", showlegend: false,
       meta: { role: "code-label" },
     });
   }

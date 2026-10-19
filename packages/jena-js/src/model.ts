@@ -15,7 +15,7 @@ import type {
   Row,
   RotationSet
 } from './types.js';
-import { centerData, meanColumns, multiplyMatrices, sphereNorm, varianceColumns } from './core/matrix.js';
+import { centerData, meanColumns, multiplyMatrices, sphereNorm, varianceProportions } from './core/matrix.js';
 import { assertOrderedSvdBudget } from './core/orderedLimits.js';
 import { validateENADataNetworkContract, validateMakeSetOptions } from './core/validate.js';
 import { svdRotation } from './rotation/svd.js';
@@ -54,7 +54,7 @@ function selectMatrixColumns(matrix: Matrix, count: number): Matrix {
 }
 
 function rowHasSignal(row: number[]): boolean {
-  return row.reduce((sum, value) => sum + value, 0) !== 0;
+  return row.some(value => value !== 0);
 }
 
 function centerForProjection(lineWeights: Matrix, centerAlignToOrigin: boolean, rotationSet?: RotationSet): { pointsForProjection: Matrix; centerVector: number[] } {
@@ -70,7 +70,7 @@ function centerForProjection(lineWeights: Matrix, centerAlignToOrigin: boolean, 
 
   if (!centerAlignToOrigin) {
     const centerVector = meanColumns(lineWeights);
-    return { pointsForProjection: centerData(lineWeights, centerVector), centerVector };
+    return { pointsForProjection: centerData(lineWeights), centerVector };
   }
 
   const nonZeroRows = lineWeights.filter(rowHasSignal);
@@ -78,9 +78,11 @@ function centerForProjection(lineWeights: Matrix, centerAlignToOrigin: boolean, 
     throw new Error('There were no co-occurrences of codes for any of the units within the model as defined.');
   }
   const centerVector = meanColumns(nonZeroRows);
+  const centered = centerData(nonZeroRows);
+  let signalIndex = 0;
   return {
     centerVector,
-    pointsForProjection: lineWeights.map((row) => (rowHasSignal(row) ? row.map((value, index) => value - (centerVector[index] ?? 0)) : row.map(() => 0)))
+    pointsForProjection: lineWeights.map((row) => (rowHasSignal(row) ? centered[signalIndex++]! : row.map(() => 0)))
   };
 }
 
@@ -222,7 +224,9 @@ export function makeSet(enadata: ENAData, options: MakeSetOptions = {}): ENASet 
   const lineWeightsMatrix = sphereNorm(enadata.connectionMatrix);
   retained += n * e;
   options.observer?.onStage?.('center');
-  observe(n * e + e);
+  // The fitted center, automatic centering mean, and its residual correction
+  // can overlap while the centered matrix is materialized.
+  observe(n * e + 3 * e);
   const { pointsForProjection, centerVector } = centerForProjection(lineWeightsMatrix, centerAlignToOrigin, options.rotationSet);
   retained += n * e + (options.rotationSet ? 0 : e);
   options.observer?.onStage?.('rotate-or-project');
@@ -283,9 +287,8 @@ export function makeSet(enadata: ENAData, options: MakeSetOptions = {}): ENASet 
   // Exact constant Reference targets have zero variance; repeated-sum rounding
   // must not become a normalized 100% axis when projection permits rank zero.
   const constantReference = fixedNodes !== undefined && fullPointsMatrix.every((row) => row.every((value, index) => value === fullPointsMatrix[0]?.[index]));
-  const variances = constantReference ? rotationResult.rotationColumns.map(() => 0) : varianceColumns(fullPointsMatrix);
-  const varianceTotal = variances.reduce((sum, value) => sum + value, 0);
-  const variance = Object.fromEntries(rotationResult.rotationColumns.map((name, index) => [name, varianceTotal === 0 ? 0 : (variances[index] ?? 0) / varianceTotal]));
+  const shares = constantReference ? rotationResult.rotationColumns.map(() => 0) : varianceProportions(fullPointsMatrix);
+  const variance = Object.fromEntries(rotationResult.rotationColumns.map((name, index) => [name, shares[index] ?? 0]));
 
   const rotation: RotationSet = {
     codes: enadata.codes,

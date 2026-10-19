@@ -1,6 +1,6 @@
 import type { Matrix } from '../types.js';
 import { cloneMatrix, identity, multiplyMatrices, transpose, zeros } from './matrix-extra.js';
-import { dot, l2Norm, scaleVector, subtractVectors } from './matrix.js';
+import { dot, l2Norm, meanColumns, scaleVector, subtractVectors } from './matrix.js';
 
 export interface EigenResult {
   eigenvalues: number[];
@@ -48,6 +48,15 @@ export function multiplyMatrixVector(matrix: Matrix, vector: number[]): number[]
 
 export function normalizeVector(vector: number[]): number[] {
   const norm = l2Norm(vector);
+  if ((norm === Infinity || (norm > 0 && norm < 2 ** -1022)) && vector.every(Number.isFinite)) {
+    // A finite direction still has a unit vector when its absolute length
+    // overflows or rounds in the subnormal range.
+    let scale = 0;
+    for (const value of vector) scale = Math.max(scale, Math.abs(value));
+    const scaled = vector.map(value => value / scale);
+    const scaledNorm = l2Norm(scaled);
+    return scaled.map(value => value / scaledNorm);
+  }
   return norm > 0 ? vector.map((value) => value / norm) : vector.map(() => 0);
 }
 
@@ -98,15 +107,37 @@ export function gramSchmidtComplete(columns: Matrix, dimension: number, toleranc
 // visible against rENA goldens. Directed node positioning retains the legacy ridge
 // via solveLinearSystem (see NUMERICS.md).
 export function designSolve(design: Matrix, response: Matrix, ridge = 0): Matrix {
-  const xt = transpose(design);
-  const xtx = multiplyMatrices(xt, design);
-  const xty = multiplyMatrices(xt, response);
+  // Center an explicit intercept design before forming normal equations.
+  // A common predictor origin (for example a timestamp) must not erase its
+  // represented variation. Ridge penalties and no-intercept designs retain
+  // their original coordinates and definition.
+  const centers = ridge === 0 && design.length > 0 && (design[0]?.length ?? 0) > 1
+    && design.every(row => row[0] === 1)
+    ? meanColumns(design).map((value, column) => column === 0 ? 0 : value)
+    : undefined;
+  const adjusted = centers ? design.map(row => row.map((value, column) => value - centers[column]!)) : design;
+  const responseCenters = centers ? meanColumns(response) : undefined;
+  const adjustedResponse = responseCenters
+    ? response.map(row => row.map((value, column) => value - responseCenters[column]!)) : response;
+  const xt = transpose(adjusted);
+  const xtx = multiplyMatrices(xt, adjusted);
+  const xty = multiplyMatrices(xt, adjustedResponse);
   const cols = response[0]?.length ?? 0;
   const coefficientsByColumn: Matrix = [];
   for (let col = 0; col < cols; col += 1) {
     coefficientsByColumn.push(solveLinearSystem(xtx, xty.map((row) => row[col] ?? 0), ridge));
   }
-  return transpose(coefficientsByColumn);
+  const coefficients = transpose(coefficientsByColumn);
+  if (centers && coefficients[0]) {
+    coefficients[0] = coefficients[0].map((value, responseColumn) => {
+      let intercept = value + (responseCenters?.[responseColumn] ?? 0);
+      for (let column = 1; column < centers.length; column += 1) {
+        intercept -= centers[column]! * (coefficients[column]?.[responseColumn] ?? 0);
+      }
+      return intercept;
+    });
+  }
+  return coefficients;
 }
 
 export function symmetricJacobiEigen(input: Matrix, maxSweeps = 100, tolerance?: number): EigenResult {

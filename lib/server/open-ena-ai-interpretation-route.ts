@@ -1,3 +1,4 @@
+import { OPEN_ENA_AI_OWNER_HEADER, openEnaAiOperationOwnerKey } from "../open-ena/ai-operation-owner";
 import { createHash } from "node:crypto";
 import {
   openEnaV2AuthConfigurationReady,
@@ -10,7 +11,7 @@ import {
   type OpenEnaAuthFailureReason,
   type OpenEnaProductionSessionVerification,
 } from "@/lib/server/open-ena-auth-security-store";
-import { createProductionBillableStore, parseBillablePolicy, type BillableStore, type BillableLimits } from "./open-ena-billable";
+import { billableReservationAllowsDispatch, createProductionBillableStore, parseBillablePolicy, type BillableStore, type BillableLimits } from "./open-ena-billable";
 import { resolveOpenEnaRequestOrigin } from "@/lib/open-ena-auth-request";
 import {
   OPEN_ENA_AI_CONSENT_HEADER,
@@ -24,6 +25,7 @@ import {
 } from "@/lib/open-ena/ai-interpretation";
 import {
   generateLunaInterpretation,
+  LunaClientError,
   OPEN_ENA_AI_DEFAULT_MODEL,
   type OpenEnaAiGenerationResult,
 } from "@/lib/server/deepseek-client";
@@ -356,6 +358,9 @@ export function createOpenEnaAiInterpretationPostHandler(
     if (request.headers.get(OPEN_ENA_AI_CONSENT_HEADER) !== OPEN_ENA_AI_CONSENT_VALUE) {
       return jsonResponse({ error: "Reviewed aggregate consent is required." }, 428);
     }
+    if (request.headers.get(OPEN_ENA_AI_OWNER_HEADER) !== openEnaAiOperationOwnerKey(principal.principalRef)) {
+      return jsonResponse({ error: "Your sign-in context changed or this page is outdated. Refresh the workspace and review the AI request again." }, 409);
+    }
     let store: BillableStore | null = dependencies.billableStore ?? null;
     try {
       if (!store && dependencies.billableStoreFactory) {
@@ -474,7 +479,21 @@ export function createOpenEnaAiInterpretationPostHandler(
       }
       if (!result.ok || !result.reservation) {
         if (!result.ok && result.reason === "idempotency-replayed") {
-          return jsonResponse({ error: "This AI generation operation was already processed." }, 409);
+          const replay = jsonResponse({ error: "This AI generation operation was already processed." }, 409);
+          try {
+            // A lost/cancelled release response must not trap retries forever.
+            // Ask the current principal's ledger; an older browser response may
+            // belong to another principal after a login in a different tab.
+            if (await store.isReleasedOperation?.({
+              principalRef: principal.principalRef,
+              resource: "ai-interpretation",
+              idempotencyKey: operationId,
+            }) === true) {
+              replay.headers.set(OPEN_ENA_AI_RETRY_HEADER, "new-operation");
+              replay.headers.set(OPEN_ENA_AI_OPERATION_HEADER, operationId);
+            }
+          } catch { /* Unknown ledger state retains replay protection. */ }
+          return replay;
         }
         try {
           await store.alert({
@@ -514,18 +533,28 @@ export function createOpenEnaAiInterpretationPostHandler(
       consentReceipt = null;
     }
     if (store && dependencies.requireBillable && (!recordReceipt || !updateReceipt || !consentReceipt)) {
+      const failure = jsonResponse({ error: "AI interpretation consent receipt storage is unavailable." }, 503);
       if (reservation) {
         try {
           await store.release(reservation);
+          // Generation has not started. Successful cleanup permits a fresh
+          // operation while the released ID retains its replay protection.
+          failure.headers.set(OPEN_ENA_AI_RETRY_HEADER, "new-operation");
+          failure.headers.set(OPEN_ENA_AI_OPERATION_HEADER, operationId);
         } catch {
           // Keep the response fail-closed even if cleanup is unavailable.
         }
       }
-      return jsonResponse({ error: "AI interpretation consent receipt storage is unavailable." }, 503);
+      return failure;
     }
 
     let result: OpenEnaAiGenerationResult;
     try {
+      if (reservation && !billableReservationAllowsDispatch(reservation)) {
+        throw Object.assign(new Error("AI reservation dispatch window expired."), {
+          code: "invalid-configuration", providerDispatched: false,
+        });
+      }
       result = await dependencies.generate(parsedRequest, request.signal);
     } catch (error) {
       let releasedBeforeDispatch = false;
@@ -551,10 +580,13 @@ export function createOpenEnaAiInterpretationPostHandler(
         }
       }
       if (reservation) {
-        const dispatched = errorProperty(error, "providerDispatched") === true;
+        // Only an explicit no-dispatch verdict permits release. Known usage
+        // from the bounded provider parser remains accountable even if output
+        // validation fails; an unknown outcome retains the reserved ceiling.
+        const dispatched = errorProperty(error, "providerDispatched") !== false;
         try {
           if (dispatched) {
-            await store!.settle(reservation, null, true);
+            await store!.settle(reservation, error instanceof LunaClientError ? error.usage?.costMicroUsd ?? null : null, true);
             try {
               await store!.alert({
                 code: "provider-dispatch-failed",
@@ -574,10 +606,9 @@ export function createOpenEnaAiInterpretationPostHandler(
           return jsonResponse({ error: "AI interpretation is temporarily unavailable." }, 503);
         }
       }
-      if (receiptTerminalFailure) {
-        return jsonResponse({ error: "AI interpretation consent receipt storage is unavailable." }, 503);
-      }
-      const failure = safeProviderFailure(error);
+      const failure = receiptTerminalFailure
+        ? jsonResponse({ error: "AI interpretation consent receipt storage is unavailable." }, 503)
+        : safeProviderFailure(error);
       if (releasedBeforeDispatch) {
         failure.headers.set(OPEN_ENA_AI_RETRY_HEADER, "new-operation");
         failure.headers.set(OPEN_ENA_AI_OPERATION_HEADER, operationId);

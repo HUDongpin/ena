@@ -3,6 +3,8 @@ import { OPEN_ENA_SESSION_COOKIE } from "@/lib/open-ena-auth";
 import { verifyProductionOpenEnaSessionTokenAny } from "@/lib/server/open-ena-auth-security-store";
 import {
   createProductionBillableStore,
+  billableReservationAllowsDispatch,
+  OPEN_ENA_BILLABLE_MAX_PROVIDER_REQUEST_MS,
   parseBillablePolicy,
   type BillableStore,
   type BillableLimits,
@@ -17,6 +19,7 @@ import {
 } from "j-3dena";
 
 const MAX_DERIVED_PAYLOAD_BYTES = 32 * 1024 * 1024;
+const MAX_CAPABILITY_RESPONSE_BYTES = 64 * 1024;
 const UPSTREAM_SUBMISSION_DEADLINE_MS = 10_000;
 const COMPUTE_CONTRACT_VERSION = "3dena.contract.v1";
 const OPEN_ENA_REMOTE_SUBMISSION_VERSION = "3dena.open-ena-longitudinal-remote-submit.v3";
@@ -149,6 +152,37 @@ function assertSameOriginRequest(
   const requestOrigin = resolveOpenEnaRequestOrigin(incoming.headers, requestUrl.origin, environment);
   if (!requestOrigin) fail("INVALID_REQUEST_ORIGIN", 403, "Invalid request origin.");
   return requestOrigin;
+}
+
+async function readCapabilityJson(response: Response): Promise<unknown> {
+  const declared = response.headers.get("content-length");
+  if (declared !== null && (!/^\d+$/u.test(declared) || Number(declared) > MAX_CAPABILITY_RESPONSE_BYTES)) {
+    throw new Error("Invalid capability response size.");
+  }
+  if (!response.body) throw new Error("Empty capability response.");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_CAPABILITY_RESPONSE_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error("Capability response is too large.");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  // Fetch may decompress the upstream response, so its declared wire length
+  // need not equal the decoded length; the streamed bytes are bounded above.
+  return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
 }
 
 function objectRecord(value: unknown, path: string): Record<string, unknown> {
@@ -348,8 +382,11 @@ function parseCapability(value: unknown, base: URL): OpenEnaLongitudinalComputeC
     cancelUrl: safeComputeUrl(urls.cancelUrl, base, "cancel URL"),
     deleteUrl: safeComputeUrl(urls.deleteUrl, base, "delete URL"),
   };
-  const encodedJobId = encodeURIComponent(capability.jobId);
-  if (Object.values(parsedUrls).some((value) => !new URL(value).pathname.includes(`/jobs/${encodedJobId}`))) {
+  const jobPath = `/jobs/${encodeURIComponent(capability.jobId)}`;
+  if (Object.values(parsedUrls).some((value) => {
+    const path = new URL(value).pathname;
+    return !(path.endsWith(jobPath) || path.includes(`${jobPath}/`));
+  })) {
     fail("INVALID_UPSTREAM_RESPONSE", 502, "Persistent compute returned control URLs for another job.");
   }
   return {
@@ -382,6 +419,10 @@ export function createOpenEnaLongitudinalPostHandlerV3(
   const environment = dependencies.environment ?? process.env;
   const validate = dependencies.validateRequest ?? validateScientificRequest;
   const deadlineMilliseconds = dependencies.submissionDeadlineMilliseconds ?? UPSTREAM_SUBMISSION_DEADLINE_MS;
+  if (!Number.isFinite(deadlineMilliseconds) || deadlineMilliseconds < 1
+    || deadlineMilliseconds > OPEN_ENA_BILLABLE_MAX_PROVIDER_REQUEST_MS) {
+    throw new RangeError("Persistent submission deadline exceeds the reservation safety budget.");
+  }
   const maximumDerivedPayloadBytes = dependencies.maximumDerivedPayloadBytes ?? MAX_DERIVED_PAYLOAD_BYTES;
   const verifyPrincipal = dependencies.verifyPrincipal
     ?? (dependencies.verifySessionToken
@@ -453,8 +494,8 @@ export function createOpenEnaLongitudinalPostHandlerV3(
         fail("INVALID_EXECUTION_ATTEMPT", 400, "Persistent trajectory execution attempt is invalid.");
       }
       const request = structuredClone(objectRecord(body.request, "body.request")) as unknown as LongitudinalExecutionRequestV2;
-      assertOpenEnaLongitudinalRemotePrivacyV3(request);
       try {
+        assertOpenEnaLongitudinalRemotePrivacyV3(request);
         validate(request);
       } catch (error) {
         if (error instanceof OpenEnaLongitudinalRouteErrorV3) throw error;
@@ -515,15 +556,20 @@ export function createOpenEnaLongitudinalPostHandlerV3(
       const timeout = setTimeout(() => controller.abort(), deadlineMilliseconds);
       const abortFromCaller = () => controller.abort();
       incoming.signal.addEventListener("abort", abortFromCaller, { once: true });
-      let upstream: Response;
+      let upstream: Response | undefined;
+      let capabilityValue: unknown;
       try {
         if (incoming.signal.aborted) {
           controller.abort();
           fail("REQUEST_CANCELLED", 499, "The longitudinal compute request was cancelled before submission.");
         }
+        if (reservation && !billableReservationAllowsDispatch(reservation)) {
+          fail("BILLING_UNAVAILABLE", 503, "Longitudinal compute reservation expired before submission.");
+        }
         dispatched = true;
         upstream = await upstreamFetch(new URL("v2/longitudinal-jobs", base), {
           method: "POST",
+          redirect: "error",
           headers: {
             accept: "application/json",
             "content-type": "application/json",
@@ -535,6 +581,17 @@ export function createOpenEnaLongitudinalPostHandlerV3(
           body: JSON.stringify(submission),
           signal: controller.signal,
         });
+        // A response is not complete when its headers arrive. Keep the request
+        // deadline/caller cancellation active until the capability body ends,
+        // so a live submission cannot outlast its billing reservation lease.
+        if (upstream.ok) {
+          try {
+            capabilityValue = await readCapabilityJson(upstream);
+          } catch (error) {
+            if (controller.signal.aborted) throw error;
+            fail("INVALID_UPSTREAM_RESPONSE", 502, "Persistent compute returned an invalid capability.");
+          }
+        }
       } catch (error) {
         if (error instanceof OpenEnaLongitudinalRouteErrorV3) throw error;
         if (incoming.signal.aborted) {
@@ -545,6 +602,9 @@ export function createOpenEnaLongitudinalPostHandlerV3(
         }
         fail("REMOTE_SERVICE_UNAVAILABLE", 503, "Persistent trajectory compute is unavailable.");
       } finally {
+        if (upstream?.body && !upstream.bodyUsed) {
+          void upstream.body.cancel().catch(() => undefined);
+        }
         clearTimeout(timeout);
         incoming.signal.removeEventListener("abort", abortFromCaller);
       }
@@ -586,12 +646,6 @@ export function createOpenEnaLongitudinalPostHandlerV3(
             ? { "retry-after": upstream.headers.get("retry-after")! }
             : {},
         );
-      }
-      let capabilityValue: unknown;
-      try {
-        capabilityValue = await upstream.json();
-      } catch {
-        fail("INVALID_UPSTREAM_RESPONSE", 502, "Persistent compute returned an invalid capability.");
       }
       const capability = parseCapability(capabilityValue, base);
       if (reservation) {

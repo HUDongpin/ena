@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Analytics, type BeforeSendEvent } from "@vercel/analytics/next";
 import {
@@ -28,6 +28,11 @@ export default function AnalyticsConsent({ disabled = false }: AnalyticsConsentP
   // until it is known whether this is the authenticated workspace.
   const isOpenEnaWorkspace = isOpenEnaAnalyticsDisabledPath(pathname);
   const analyticsDisabled = disabled || isOpenEnaWorkspace;
+  // A loaded provider can retain beforeSend after its component/script is
+  // removed. Keep the current-page choice authoritative if storage fails.
+  const dispatchAllowed = useRef(false);
+  const currentPageChoice = useRef<OpenEnaAnalyticsConsent | null>(null);
+  dispatchAllowed.current = consent === "granted" && !analyticsDisabled;
 
   useEffect(() => {
     if (analyticsDisabled) {
@@ -35,6 +40,10 @@ export default function AnalyticsConsent({ disabled = false }: AnalyticsConsentP
       return;
     }
     const readPreference = () => {
+      if (currentPageChoice.current !== null) {
+        setConsent(currentPageChoice.current);
+        return;
+      }
       try {
         const stored = window.localStorage.getItem(OPEN_ENA_ANALYTICS_CONSENT_STORAGE_KEY);
         setConsent(isOpenEnaAnalyticsConsent(stored) ? stored : "unknown");
@@ -45,11 +54,18 @@ export default function AnalyticsConsent({ disabled = false }: AnalyticsConsentP
     readPreference();
     const onPreferenceChange = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail;
-      if (detail === "granted" || detail === "denied") setConsent(detail);
+      if (detail === "denied") dispatchAllowed.current = false;
+      if (detail === "granted" || detail === "denied") {
+        currentPageChoice.current = detail;
+        setConsent(detail);
+      }
       else readPreference();
     };
     window.addEventListener(OPEN_ENA_ANALYTICS_CONSENT_EVENT, onPreferenceChange);
-    return () => window.removeEventListener(OPEN_ENA_ANALYTICS_CONSENT_EVENT, onPreferenceChange);
+    return () => {
+      dispatchAllowed.current = false;
+      window.removeEventListener(OPEN_ENA_ANALYTICS_CONSENT_EVENT, onPreferenceChange);
+    };
   }, [analyticsDisabled]);
 
   useEffect(() => {
@@ -72,6 +88,7 @@ export default function AnalyticsConsent({ disabled = false }: AnalyticsConsentP
 
   const beforeSend = useCallback((event: BeforeSendEvent) => {
     try {
+      if (!dispatchAllowed.current) return null;
       if (window.localStorage.getItem(OPEN_ENA_ANALYTICS_CONSENT_STORAGE_KEY) !== "granted") return null;
       if (isOpenEnaAnalyticsDisabledPath(window.location.pathname)) return null;
       // Query strings can contain researcher-provided labels or identifiers.

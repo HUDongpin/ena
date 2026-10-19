@@ -7,6 +7,7 @@ import {
   type LongitudinalAnalysisBundleV2,
   type LongitudinalExecutionRequestV2,
 } from "j-3dena";
+import { deepFreezeV3 } from "./model-v3/canonical-json";
 
 import type {
   OpenEnaLongitudinalWorkerResponseV3,
@@ -18,6 +19,7 @@ const LOCAL_MEMORY_BUDGET_BYTES = 128 * 1024 * 1024;
 const HARD_DEADLINE_MS = 60_000;
 const REMOTE_POLL_INTERVAL_MS = 250;
 const REMOTE_CLEANUP_DEADLINE_MS = 10_000;
+const MAX_REMOTE_METADATA_BYTES = 64 * 1024;
 const MAX_REMOTE_ARTIFACT_BYTES = 128 * 1024 * 1024;
 const COMPUTE_CONTRACT_VERSION = "3dena.contract.v1";
 const REMOTE_SUBMISSION_VERSION = "3dena.open-ena-longitudinal-remote-submit.v3";
@@ -297,8 +299,9 @@ function safeRemoteControlUrls(
     return [name, url] as const;
   });
   const origin = parsed[0]?.[1].origin;
-  const encodedJobId = encodeURIComponent(jobId);
-  if (!origin || parsed.some(([, url]) => url.origin !== origin || !url.pathname.includes(`/jobs/${encodedJobId}`))) {
+  const jobPath = `/jobs/${encodeURIComponent(jobId)}`;
+  if (!origin || parsed.some(([, url]) => url.origin !== origin
+    || !(url.pathname.endsWith(jobPath) || url.pathname.includes(`${jobPath}/`)))) {
     throw new Error("Persistent compute control URLs do not share one job-scoped origin.");
   }
 }
@@ -369,9 +372,38 @@ function computeHeaders(capability: RemoteCapabilityV3, accept = "application/js
 }
 
 async function jsonResponse(response: Response, label: string): Promise<unknown> {
-  if (!response.ok) throw new Error(`${label} returned HTTP ${response.status}.`);
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error(`${label} returned HTTP ${response.status}.`);
+  }
+  const declared = response.headers.get("content-length");
+  if (declared !== null && (!/^(?:0|[1-9][0-9]{0,15})$/u.test(declared) || Number(declared) > MAX_REMOTE_METADATA_BYTES)) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error(`${label} exceeds the persistent-compute metadata limit.`);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error(`${label} returned an empty body.`);
+  const chunks: Uint8Array[] = [];
+  let total = 0;
   try {
-    return await response.json();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_REMOTE_METADATA_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error(`${label} exceeds the persistent-compute metadata limit.`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch {
     throw new Error(`${label} returned invalid JSON.`);
   }
@@ -417,9 +449,12 @@ async function boundedResponseBytes(response: Response, expectedLength: number):
     throw new Error("Persistent trajectory artifact exceeds the Open ENA result limit.");
   }
   const declared = response.headers.get("content-length");
-  if (declared !== null && (!/^(?:0|[1-9][0-9]{0,15})$/u.test(declared) || Number(declared) !== expectedLength)) {
-    throw new Error("Persistent trajectory artifact Content-Length does not match its immutable receipt.");
+  if (declared !== null && (!/^(?:0|[1-9][0-9]{0,15})$/u.test(declared) || Number(declared) > MAX_REMOTE_ARTIFACT_BYTES)) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error("Persistent trajectory artifact Content-Length exceeds the Open ENA result limit.");
   }
+  // Fetch can decompress the body while retaining its compressed Content-Length.
+  // The decoded bytes below must still exactly match the immutable receipt.
   const reader = response.body?.getReader();
   if (!reader) throw new Error("Persistent trajectory artifact has no readable body.");
   const chunks: Uint8Array[] = [];
@@ -429,7 +464,7 @@ async function boundedResponseBytes(response: Response, expectedLength: number):
       const next = await reader.read();
       if (next.done) break;
       if (total + next.value.byteLength > expectedLength) {
-        await reader.cancel("artifact exceeds immutable receipt");
+        await reader.cancel("artifact exceeds immutable receipt").catch(() => undefined);
         throw new Error("Persistent trajectory artifact exceeds its immutable result receipt.");
       }
       const copy = new Uint8Array(next.value.byteLength);
@@ -465,6 +500,7 @@ async function deleteRemoteJob(
       const headers = computeHeaders(capability, "application/vnd.3dena.job-deletion-receipt.v2+json");
       headers.set("idempotency-key", operationKey);
       const response = await fetchImpl(capability.urls.deleteUrl, {
+        redirect: "error",
         method: "DELETE",
         headers,
         signal: controller.signal,
@@ -475,8 +511,21 @@ async function deleteRemoteJob(
         "schemaVersion", "jobId", "cancelled", "inputDeleted", "resultDeleted", "deletedAt",
         "intentAccepted", "termination", "capacity", "objects",
       ], "deletion receipt");
-      if (receipt.schemaVersion !== "3dena.job-deletion-receipt.v2" || receipt.jobId !== capability.jobId) {
+      if (receipt.schemaVersion !== "3dena.job-deletion-receipt.v2" || receipt.jobId !== capability.jobId
+        || typeof receipt.cancelled !== "boolean"
+        || typeof receipt.inputDeleted !== "boolean" || typeof receipt.resultDeleted !== "boolean"
+        || receipt.intentAccepted !== true
+        || !["not_required", "pending", "observed"].includes(receipt.termination as string)
+        || !["not_reserved", "held", "released"].includes(receipt.capacity as string)
+        || !["pending", "deleted"].includes(receipt.objects as string)
+        || (receipt.deletedAt !== null
+          && (typeof receipt.deletedAt !== "string" || Number.isNaN(Date.parse(receipt.deletedAt))))) {
         throw new Error("Persistent compute returned an invalid deletion receipt.");
+      }
+      if ((receipt.objects === "deleted")
+        !== (receipt.inputDeleted === true && receipt.resultDeleted === true && receipt.deletedAt !== null)
+        || (receipt.termination === "pending" && receipt.capacity !== "held")) {
+        throw new Error("Persistent compute returned contradictory deletion lifecycle facts.");
       }
       if (receipt.objects === "deleted" && receipt.inputDeleted === true && receipt.resultDeleted === true
         && receipt.termination !== "pending" && receipt.capacity !== "held" && typeof receipt.deletedAt === "string") return;
@@ -494,6 +543,7 @@ async function fetchRemoteBundle(
   signal: AbortSignal,
 ): Promise<LongitudinalAnalysisBundleV2> {
   const referenceResponse = await fetchImpl(capability.urls.resultUrl, {
+    redirect: "error",
     method: "GET",
     headers: computeHeaders(capability),
     signal,
@@ -510,11 +560,15 @@ async function fetchRemoteBundle(
   }
 
   const artifactResponse = await fetchImpl(capability.urls.artifactUrl, {
+    redirect: "error",
     method: "GET",
     headers: computeHeaders(capability, "application/json"),
     signal,
   });
-  if (!artifactResponse.ok) throw new Error(`Persistent trajectory artifact returned HTTP ${artifactResponse.status}.`);
+  if (!artifactResponse.ok) {
+    await artifactResponse.body?.cancel().catch(() => undefined);
+    throw new Error(`Persistent trajectory artifact returned HTTP ${artifactResponse.status}.`);
+  }
   const artifactBytes = await boundedResponseBytes(artifactResponse, Number(reference.byteLength));
   const artifactSha256 = await sha256Hex(artifactBytes);
   if (artifactBytes.byteLength !== reference.byteLength
@@ -569,6 +623,7 @@ async function runInBrowserWorker(
       callback();
     };
     const abortHandler = () => {
+      if (settled) return;
       worker.postMessage({ kind: "cancel", id });
       finish(() => reject(abortError("The longitudinal analysis was cancelled.")));
     };
@@ -576,9 +631,13 @@ async function runInBrowserWorker(
       finish(() => reject(new Error("The longitudinal Worker reached its 60 second hard deadline.")));
     }, HARD_DEADLINE_MS);
     worker.onmessage = (event: MessageEvent<OpenEnaLongitudinalWorkerResponseV3>) => {
+      if (settled) return;
       const message = event.data;
-      if (message.id !== id) return;
-      if (message.kind === "progress") options.onProgress?.({ progress: message.progress, stage: message.stage });
+      if (!message || message.id !== id) return;
+      if (message.kind === "progress") {
+        try { options.onProgress?.({ progress: message.progress, stage: message.stage }); }
+        catch (error) { finish(() => reject(error)); }
+      }
       else if (message.kind === "result") finish(() => resolve(message.result));
       else if (message.kind === "cancelled") finish(() => reject(abortError("The longitudinal analysis was cancelled.")));
       else if (message.kind === "error") finish(() => reject(new Error(message.message)));
@@ -623,11 +682,12 @@ async function runRemote(
   try {
     options.onProgress?.({ progress: 0.05, stage: "remote-submit" });
     const remoteRequest: LongitudinalExecutionRequestV2 = {
-      ...structuredClone(request),
+      ...request,
       execution: { ...request.execution, target: "persistent-compute-service" },
     };
     const attemptId = executionAttemptId();
     const response = await fetchImpl(options.remoteEndpoint, {
+      redirect: "error",
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -643,6 +703,7 @@ async function runRemote(
     options.onProgress?.({ progress: 0.1, stage: "remote-wait" });
     while (true) {
       const statusResponse = await fetchImpl(capability.urls.statusUrl, {
+        redirect: "error",
         method: "GET",
         headers: computeHeaders(capability),
         signal: controller.signal,
@@ -725,11 +786,15 @@ export async function executeOpenEnaLongitudinalPreparedV3(
   if (request.bootstrapTask !== undefined) {
     throw new Error("Trajectory analysis does not execute CI or bootstrap tasks; remove bootstrapTask and rerun.");
   }
+  if (options.signal?.aborted) throw abortError("The longitudinal analysis was cancelled before it started.");
+  // One owned snapshot binds admission, hashing, execution and verification even
+  // when the caller edits its request while one of those phases awaits.
+  request = deepFreezeV3(structuredClone(request));
   const decision = estimateOpenEnaLongitudinalExecutionV3(request);
   const key = await cacheKey(request);
+  if (options.signal?.aborted) throw abortError("The longitudinal analysis was cancelled before it started.");
   const cached = completedCache.get(key);
   if (cached) return { bundle: cached, cacheHit: true, decision };
-  if (options.signal?.aborted) throw abortError("The longitudinal analysis was cancelled before it started.");
   if (decision.requiresConfirmation && !options.forceLocal && !options.allowRemote) {
     throw new OpenEnaLongitudinalExecutionClientErrorV3(
       "REMOTE_CONFIRMATION_REQUIRED",
@@ -745,16 +810,20 @@ export async function executeOpenEnaLongitudinalPreparedV3(
     bundle = await options.nodeExecutor(request);
   } else if (typeof Worker !== "undefined") {
     bundle = await runInBrowserWorker({
-      ...structuredClone(request),
+      ...request,
       execution: { ...request.execution, target: "browser-worker" },
     }, options);
   } else {
     bundle = await executeLongitudinalAnalysisV2({
-      ...structuredClone(request),
+      ...request,
       execution: { ...request.execution, target: "node-service" },
     });
   }
+  if (options.signal?.aborted) throw abortError("The longitudinal analysis was cancelled.");
   try {
+    // Neither executor aliases nor consumers may mutate a verified cache entry.
+    // Capture before asynchronous verification; cache hits reuse this frozen copy.
+    bundle = deepFreezeV3(structuredClone(bundle));
     await (options.resultVerifier ?? verifyLongitudinalAnalysisBundleV2)(bundle);
     await assertResultBinding(bundle, request);
   } catch (error) {
@@ -767,7 +836,9 @@ export async function executeOpenEnaLongitudinalPreparedV3(
     }
     throw error;
   }
+  if (options.signal?.aborted) throw abortError("The longitudinal analysis was cancelled.");
   options.onProgress?.({ progress: 1, stage: "complete" });
+  if (options.signal?.aborted) throw abortError("The longitudinal analysis was cancelled.");
   completedCache.set(key, bundle);
   return { bundle, cacheHit: false, decision };
 }

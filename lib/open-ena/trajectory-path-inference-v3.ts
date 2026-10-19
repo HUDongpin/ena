@@ -1,6 +1,6 @@
 import { multiplyMatrices } from "jena-js/core";
 import type { IndependentTrajectoryComparisonInput, TrajectoryIdentity, TrajectoryStatisticsLimits } from "j-3dena";
-import { compareTrajectoryPaths, getTrajectoryPermutationUnits } from "./trajectory-path-statistics-v3";
+import { compareTrajectoryPaths, getTrajectoryPermutationUnits, trajectoryPermutationScratchBytes } from "./trajectory-path-statistics-v3";
 import { assertCurrentCapabilityV3, captureControlArrayV3 } from "./inference-consumers-v3";
 import { buildLongitudinalViewV3, type HorizonIdentityV3 } from "./longitudinal-bound-v3";
 import { canonicalJsonV3, deepFreezeV3, sha256CanonicalJsonV3, snapshotPlainJsonRecordV3 } from "./model-v3/canonical-json";
@@ -24,7 +24,7 @@ export interface OpenEnaTrajectoryPathControlsV3 {
 }
 // Original pinned algorithm defaults are ceilings for this browser consumer;
 // it never raises the original defaults or hard ceilings. Extra work/byte caps
-// bound the stored permutation plan and original per-test replicate arrays.
+// bound the stored permutation plan, streamed tails and exact comparison scratch.
 export const NATIVE_PATH_LIMITS_V3 = Object.freeze({ maxPoints: 100_000, maxDimensions: 200, maxPeriods: 1_000, maxParticipants: 50_000, maxCells: 5_000_000, maxResamples: 10_000, maxTests: 10_000,
   maxWork: 50_000_000, maxBytes: 64 * 1024 * 1024 });
 const algorithmLimits: TrajectoryStatisticsLimits = { maxPoints: NATIVE_PATH_LIMITS_V3.maxPoints, maxDimensions: NATIVE_PATH_LIMITS_V3.maxDimensions, maxPeriods: NATIVE_PATH_LIMITS_V3.maxPeriods, maxParticipants: NATIVE_PATH_LIMITS_V3.maxParticipants, maxCells: NATIVE_PATH_LIMITS_V3.maxCells, maxResamples: NATIVE_PATH_LIMITS_V3.maxResamples, maxTests: NATIVE_PATH_LIMITS_V3.maxTests };
@@ -71,7 +71,7 @@ async function captureInput(resultInput: unknown, plan: unknown, options: OpenEn
   const testCells = boundProduct("permutation test cells", limits.maxCells, tests, controls.repetitions);
   boundProduct("work", limits.maxWork, controls.repetitions, Math.max(1, points), periods, dimensions.length + 3);
   const sourceBytes = canonicalJsonByteLengthV3(result);
-  boundProduct("bytes", limits.maxBytes, 4 * sourceBytes + 16 * (planCells + testCells) + points * (dimensions.length + 3) * 32);
+  boundProduct("bytes", limits.maxBytes, 4 * sourceBytes + 16 * (planCells + testCells) + points * (dimensions.length + 3) * 32 + trajectoryPermutationScratchBytes(points, dimensions.length, periods, tests));
   const supportedAxes = p.projection.estimableAxes.filter(a => dimensions.includes(a) && result.set.points.every(pt => typeof pt[a] === "number" && Number.isFinite(pt[a])) && result.set.rotation.nodes!.every(pt => typeof pt[a] === "number" && Number.isFinite(pt[a])));
   if (controls.axes.some(a => !supportedAxes.includes(a))) throw new TypeError("Path inference requires three actual supported axes and complete retained full coordinates");
   // The bound display table retains three axes. Recover the full fitted basis

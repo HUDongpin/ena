@@ -1,7 +1,10 @@
+import { OPEN_ENA_AI_OWNER_HEADER, openEnaAiOperationOwnerKey } from "../lib/open-ena/ai-operation-owner";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
+import ts from "typescript";
 import type { NextConfig } from "next";
 import {
   createPostgresBillableStore,
@@ -82,6 +85,7 @@ function aiRequest(body = JSON.stringify({ browser: "payload-order-is-not-author
       "x-forwarded-proto": "http",
       "x-open-ena-ai-consent": "reviewed-aggregate-v3",
       "x-open-ena-ai-operation-id": operationId,
+      [OPEN_ENA_AI_OWNER_HEADER]: openEnaAiOperationOwnerKey("stable-test-principal"),
     },
     body,
   });
@@ -131,8 +135,8 @@ test("standard ENA identity-bearing exports require one explicit confirmation wh
   assert.match(workspace, /exportClassification="local-identity-bearing-view"/u);
   assert.match(dataView, /data-export-classification=\{exportClassification\}/u);
   assert.match(workspace, /exportCurrentAnalysisV3[\s\S]*confirmCurrentIdentityBearingExport/u);
-  assert.match(workspace, /function exportPlotSvg\(\)[\s\S]{0,220}confirmCurrentIdentityBearingExport/u);
-  assert.match(workspace, /function exportPlotPng\(\)[\s\S]{0,220}confirmCurrentIdentityBearingExport/u);
+  assert.match(workspace, /function exportPlotSvg\(\)[\s\S]{0,220}captureImageExport\(\)[\s\S]{0,100}if \(!lease\?\.\(\)\) return/u);
+  assert.match(workspace, /function exportPlotPng\(\)[\s\S]{0,220}captureImageExport\(\)[\s\S]{0,100}if \(!lease\?\.\(\)\) return/u);
   assert.match(workspace, /confirmCurrentIdentityBearingExport\(\)\) await navigator.clipboard.writeText/u);
   assert.match(workspace, /exportOpenEnaResultTableCsv[\s\S]*confirmOpenEnaIdentityBearingExport/u);
   const aggregateStart = workspace.indexOf('const value = await buildOnaBoundViewV3(result, currentPlan, primaryGroupName');
@@ -143,6 +147,43 @@ test("standard ENA identity-bearing exports require one explicit confirmation wh
 
   assert.match(i18n, /identityExportWarning/u);
   assert.match(i18n, /identityExportConfirmation/u);
+});
+
+test("actual toolbar image handlers require one confirmation before materialization and retire unavailable authority", () => {
+  const syntax = ts.createSourceFile("OpenEnaWorkspace.tsx", workspace, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const functions = new Map<string, string>();
+  let capture = "";
+  function visit(node: ts.Node) {
+    if (ts.isFunctionDeclaration(node) && node.name && ["confirmCurrentIdentityBearingExport", "exportPlotSvg", "exportPlotPng"].includes(node.name.text)) functions.set(node.name.text, node.getText(syntax));
+    if (ts.isVariableDeclaration(node) && node.name.getText(syntax) === "captureImageExport") capture = node.initializer!.getText(syntax);
+    ts.forEachChild(node, visit);
+  }
+  visit(syntax);
+  assert.equal(functions.size, 3, "extract actual confirmation and toolbar handlers");
+  assert.ok(capture, "extract actual Workspace lease acquisition");
+  for (const handler of ["exportPlotSvg", "exportPlotPng"]) {
+    const script = ts.transpileModule(`${[...functions.values()].join("\n")}\nconst captureImageExport = ${capture};\nglobalThis.execute = ${handler};`, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+    }).outputText;
+    for (const scenario of ["accepted", "declined", "stale", "unmounted"]) {
+      let confirmations = 0, materializations = 0;
+      const result = { binding: { scientificResultSha256: "synthetic-result" } };
+      const context = {
+        mounted: { current: scenario !== "unmounted" },
+        latest: { current: { current: scenario !== "stale", currentPlan: {}, state: { model: { result } } } },
+        copy: { stats: { identityExportConfirmation: "synthetic identity warning" } },
+        window: { confirm(message: string) { assert.equal(message, "synthetic identity warning"); confirmations++; return scenario !== "declined"; } },
+        canonicalJsonV3: JSON.stringify,
+        modelScientificContextV3: () => ({ scientificRevision: 1 }),
+        serializedPlotSvg: () => { materializations++; return null; },
+        execute: null as unknown as () => void,
+      };
+      runInNewContext(script, context);
+      context.execute();
+      assert.equal(confirmations, scenario === "accepted" || scenario === "declined" ? 1 : 0, `${handler}/${scenario}: exactly one available-action confirmation`);
+      assert.equal(materializations, scenario === "accepted" ? 1 : 0, `${handler}/${scenario}: denied, stale or unmounted data never materializes`);
+    }
+  }
 });
 
 test("AI removes the screenshot-selected disclosure cards while preserving explicit consent and privacy controls", () => {

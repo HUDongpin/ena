@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "package": "write-excel-file",
+  "version": "4.1.1",
+  "license": "MIT",
+  "resolved": "https://registry.npmjs.org/write-excel-file/-/write-excel-file-4.1.1.tgz",
+  "integrity": "sha512-MUnCnNtQrcZek832ZcU24uU0rSphFmKPD1DvIjXOlygVb93CV7Tme6H3jUTkxsMmjB2W7HIzERzjqTi5kui71A==",
+  "packageJsonSha256": "e62155d1b06a65e8f7365cda56c71be9a93cbad1e890f4175ac2115662182955",
+  "licenseSha256": "8cf9b31947daf7adb4a7a00a037459e58241af050cd0a603bfcf1756e533f75e",
+  "purpose": "Preserve literal carriage returns in typed source strings across standards-compliant XML readers. Protect original literal ST_Xstring-looking underscores without recursively escaping generated tokens. Index arbitrary literal shared strings without inherited Object.prototype collisions.",
+  "targets": [
+    {
+      "path": "modules/xlsx/files/sharedStrings.xml.js",
+      "upstreamSha256": "8144c3ad3585e1ff4f93e651f3ec48d18a9bad24e32e7a416bd2688e37355ca3",
+      "patchedSha256": "79148df0bd1b3f5d4bb8eca72d1c462f91a01cdd777d682285567e50d3574567",
+      "before": "    xml += sanitizeTextContent(string);",
+      "after": "    // A literal CR would normalize to LF in XML; a character reference preserves it.\n    xml += sanitizeTextContent(string).replace(/\\r/g, \"&#13;\");",
+      "previousSha256": "d75c347e2b756eb557e036aa4e42090cfdc057028c79149aef60a39af901bd48",
+      "followup": {
+        "before": "    // A literal CR would normalize to LF in XML; a character reference preserves it.\n    xml += sanitizeTextContent(string).replace(/\\r/g, \"&#13;\");",
+        "after": "    // A literal CR would normalize to LF in XML; a character reference preserves it.\n    xml += sanitizeTextContent(string.replace(/_(?=x[0-9a-fA-F]{4}_)/g, \"_x005F_\")).replace(/\\r/g, \"&#13;\");"
+      }
+    },
+    {
+      "path": "commonjs/xlsx/files/sharedStrings.xml.js",
+      "upstreamSha256": "3ded73602a75a37512aa3987859b4e3c0d072db6c8b9b26e4e5c504ef592a6c1",
+      "patchedSha256": "2267ccf745962016ae801d6f241c8145a6dc80d2c9f3ebc9b484ca57fe4d99cd",
+      "before": "    xml += (0, _sanitizeTextContent[\"default\"])(string);",
+      "after": "    // A literal CR would normalize to LF in XML; a character reference preserves it.\n    xml += (0, _sanitizeTextContent[\"default\"])(string).replace(/\\r/g, \"&#13;\");",
+      "previousSha256": "3488488edc05eb82a38ba8f49fe4c71cf85c13878191c3a5f6a426c57a5efb17",
+      "followup": {
+        "before": "    // A literal CR would normalize to LF in XML; a character reference preserves it.\n    xml += (0, _sanitizeTextContent[\"default\"])(string).replace(/\\r/g, \"&#13;\");",
+        "after": "    // A literal CR would normalize to LF in XML; a character reference preserves it.\n    xml += (0, _sanitizeTextContent[\"default\"])(string.replace(/_(?=x[0-9a-fA-F]{4}_)/g, \"_x005F_\")).replace(/\\r/g, \"&#13;\");"
+      }
+    },
+    {
+      "path": "modules/xlsx/initializeSharedStrings.js",
+      "upstreamSha256": "031ab01caa80c979ffa6d0f769c5ae22e614f2bfeee6728ce702a7a2c1a78cc1",
+      "patchedSha256": "1a423e639c04c07ea7b950c6b72d491e3f3450badd40ad7bf39bda4d14e5d116",
+      "before": "  var sharedStringIdByString = {};",
+      "after": "  var sharedStringIdByString = Object.create(null);"
+    },
+    {
+      "path": "commonjs/xlsx/initializeSharedStrings.js",
+      "upstreamSha256": "4af8397925d21b7f0173c822728ea2cd0bd027d4c0f64752af6c718621781897",
+      "patchedSha256": "0449597eee53f60d6e8b912d7d35b688d5b8f24c02fcf3b6bba27a5ffa4972c1",
+      "before": "  var sharedStringIdByString = {};",
+      "after": "  var sharedStringIdByString = Object.create(null);"
+    }
+  ]
+}

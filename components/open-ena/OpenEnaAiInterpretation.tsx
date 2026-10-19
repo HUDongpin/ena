@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   OPEN_ENA_AI_CONSENT_HEADER,
   OPEN_ENA_AI_CONSENT_VALUE,
@@ -11,6 +11,8 @@ import {
   type OpenEnaAiInterpretationRequest,
   type OpenEnaAiInterpretationResponse,
 } from "@/lib/open-ena/ai-interpretation";
+import { openEnaAiOperationScope, openEnaAiOperationStore } from "@/lib/open-ena/ai-operation-storage";
+import { OPEN_ENA_AI_OWNER_HEADER, OPEN_ENA_AI_OWNER_KEY } from "@/lib/open-ena/ai-operation-owner";
 import { openEnaAiReviewedRequestIdentityV3 } from "@/lib/open-ena/workspace-consumer-authority-v3";
 import type { OpenEnaAiInterpretationCopy } from "@/lib/open-ena-i18n";
 
@@ -18,6 +20,7 @@ interface OpenEnaAiInterpretationProps {
   /** Full native binding/context remains local and participates in consent,
    * cancellation and response adoption. It is never sent to the provider. */
   localScientificIdentity?: string | null;
+  operationOwnerKey?: string | null;
   request: OpenEnaAiInterpretationRequest | null;
   copy: OpenEnaAiInterpretationCopy;
   disabled: boolean;
@@ -119,19 +122,6 @@ export function mayRenewOpenEnaAiOperation(response: Response, operationId: stri
     && response.headers.get(OPEN_ENA_AI_OPERATION_HEADER) === operationId;
 }
 
-/**
- * These classes are emitted only after the route reserved the operation and
- * then settled or released it. reserveDetailed rejects that id afterwards.
- * A status the panel infers on its own, such as a bare 503 before reserve, is
- * not consumed and must keep its operation id. A fetch that throws is also
- * excluded: the server may still be in flight, and a fresh id could bill twice.
- */
-export function openEnaAiDeclaredFailureConsumedOperation(failureClass: unknown) {
-  return failureClass === "unavailable"
-    || failureClass === "network"
-    || failureClass === "invalid-output";
-}
-
 interface ExecuteOpenEnaAiGenerationInput<T> {
   task: () => Promise<T>;
   isStaleGeneration: () => boolean;
@@ -164,6 +154,7 @@ export async function executeOpenEnaAiGeneration<T>({
 
 export default function OpenEnaAiInterpretation({
   localScientificIdentity = null,
+  operationOwnerKey = null,
   request,
   copy,
   disabled,
@@ -182,8 +173,6 @@ export default function OpenEnaAiInterpretation({
   const abortControllerRef = useRef<AbortController | null>(null);
   const generationGateRef = useRef({ inFlight: false });
   const generationTokenRef = useRef(0);
-  const operationIdRef = useRef<string | null>(null);
-  const operationStorageKeyRef = useRef<string | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
   const generateButtonRef = useRef<HTMLButtonElement | null>(null);
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -197,15 +186,16 @@ export default function OpenEnaAiInterpretation({
   const detachedPanelFocusHandledRef = useRef(false);
   const activationKeyHeldRef = useRef(false);
   const [signInHref, setSignInHref] = useState("");
-  const requestIdentity = openEnaAiReviewedRequestIdentityV3({
+  const reviewedIdentity = openEnaAiReviewedRequestIdentityV3({
     localScientificIdentity,
     request,
   });
+  const owner = operationOwnerKey && OPEN_ENA_AI_OWNER_KEY.test(operationOwnerKey) ? operationOwnerKey : null;
+  const requestIdentity = owner && reviewedIdentity ? `${owner}:${reviewedIdentity}` : null;
   const currentRequestIdentityRef = useRef(requestIdentity);
   currentRequestIdentityRef.current = requestIdentity;
-  const operationStorageKey = request
-    ? `open-ena-ai-operation-v2:${request.binding.evidenceKey}`
-    : null;
+  const operationScope = useMemo(() => request && owner ? openEnaAiOperationScope(request, owner) : null, [request, owner, requestIdentity]);
+  const operationStorageKey = operationScope?.key ?? null;
   const consentGranted = requestIdentity !== null && consentedRequestIdentity === requestIdentity;
   const currentResponse = aiResponse && aiResponseRequestIdentity === requestIdentity ? aiResponse : null;
   const showsRetainedInterpretation = currentResponse !== null;
@@ -264,19 +254,7 @@ export default function OpenEnaAiInterpretation({
     abortControllerRef.current = null;
     generationTokenRef.current += 1;
     releaseOpenEnaAiGeneration(generationGateRef.current);
-    try {
-      const previousKey = operationStorageKeyRef.current;
-      if (previousKey && previousKey !== operationStorageKey) sessionStorage.removeItem(previousKey);
-      operationStorageKeyRef.current = operationStorageKey;
-      const stored = operationStorageKey ? sessionStorage.getItem(operationStorageKey) : null;
-      operationIdRef.current = stored && OPEN_ENA_AI_OPERATION_ID.test(stored) ? stored : null;
-      if (stored && !operationIdRef.current && operationStorageKey) {
-        sessionStorage.removeItem(operationStorageKey);
-      }
-    } catch {
-      operationStorageKeyRef.current = operationStorageKey;
-      operationIdRef.current = null;
-    }
+    if (operationScope) openEnaAiOperationStore.read(operationScope);
     setAiResponse(null);
     setAiResponseRequestIdentity(null);
     setAiError("");
@@ -334,9 +312,9 @@ export default function OpenEnaAiInterpretation({
   }, [generationStatus, aiError, aiRecovery]);
 
   async function handleGenerateInterpretation() {
-    if (!request || disabled || !consentGranted || generationStatus === "loading") return;
+    if (!request || !owner || !operationScope || disabled || !consentGranted || generationStatus === "loading") return;
     const requestedIdentity = requestIdentity;
-    const requestedOperationStorageKey = operationStorageKey;
+    const requestedOperationScope = operationScope;
     if (!requestedIdentity || consentedRequestIdentity !== requestedIdentity) return;
     if (!claimOpenEnaAiGeneration(generationGateRef.current)) return;
     if (focusIsRestorable(panelRef.current)) {
@@ -351,29 +329,12 @@ export default function OpenEnaAiInterpretation({
       abortControllerRef.current = null;
       setGenerationStatus("idle");
     };
-    let operationId = operationIdRef.current;
+    let operationId = openEnaAiOperationStore.read(requestedOperationScope);
     if (!operationId || !OPEN_ENA_AI_OPERATION_ID.test(operationId)) {
       operationId = `aiop-${crypto.randomUUID()}`;
-      operationIdRef.current = operationId;
-      try {
-        if (requestedOperationStorageKey) sessionStorage.setItem(requestedOperationStorageKey, operationId);
-      } catch {
-        // The in-memory operation ID still protects retries in this page lifecycle.
-      }
+      openEnaAiOperationStore.set(requestedOperationScope, operationId);
     }
-    const clearOperation = () => {
-      if (operationIdRef.current === operationId) operationIdRef.current = null;
-      try {
-        if (
-          requestedOperationStorageKey
-          && sessionStorage.getItem(requestedOperationStorageKey) === operationId
-        ) {
-          sessionStorage.removeItem(requestedOperationStorageKey);
-        }
-      } catch {
-        // Storage can be unavailable in restricted browsing modes.
-      }
-    };
+    const clearOperation = () => openEnaAiOperationStore.close(requestedOperationScope, operationId);
     abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -397,6 +358,7 @@ export default function OpenEnaAiInterpretation({
                 "Content-Type": "application/json",
                 [OPEN_ENA_AI_CONSENT_HEADER]: OPEN_ENA_AI_CONSENT_VALUE,
                 [OPEN_ENA_AI_OPERATION_HEADER]: operationId,
+                [OPEN_ENA_AI_OWNER_HEADER]: owner,
               },
               body: JSON.stringify(request),
               signal: controller.signal,
@@ -415,9 +377,10 @@ export default function OpenEnaAiInterpretation({
             const declaredFailureClass = payload && typeof payload === "object" && "failureClass" in payload
               ? (payload as { failureClass?: unknown }).failureClass
               : undefined;
-            if (response.status === 409) clearOperation();
-            else if (mayRenewOpenEnaAiOperation(response, operationId)) clearOperation();
-            else if (openEnaAiDeclaredFailureConsumedOperation(declaredFailureClass)) clearOperation();
+            // Error classifications describe the message, not whether another
+            // billable dispatch is safe. Only a current, operation-bound release
+            // proof can close this identity after a failed response.
+            if (!isStaleGeneration() && mayRenewOpenEnaAiOperation(response, operationId)) clearOperation();
             const recovery = openEnaAiFailureRecovery(response.status);
             const failureClass = classifyOpenEnaAiPanelFailure({
               status: response.status,
@@ -439,7 +402,8 @@ export default function OpenEnaAiInterpretation({
           try {
             parsed = parseOpenEnaAiInterpretationResponse(payload, request);
           } catch {
-            clearOperation();
+            // An unparseable 200 does not prove that the original dispatch is
+            // complete or safely released. Keep its identity on explicit retry.
             const failureClass = classifyOpenEnaAiPanelFailure({
               status: response.status,
               cause: "invalid-output",
@@ -534,7 +498,7 @@ export default function OpenEnaAiInterpretation({
           ref={consentControlRef}
           type="checkbox"
           checked={consentGranted}
-          disabled={disabled || !request || generationStatus === "loading"}
+          disabled={disabled || !request || !owner || generationStatus === "loading"}
           onChange={(event) => setConsentedRequestIdentity(
             event.currentTarget.checked ? requestIdentity : null,
           )}

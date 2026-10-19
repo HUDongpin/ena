@@ -509,6 +509,101 @@ test("persistent route fails safely for missing service, timeout, rejection, and
   }
 });
 
+test("persistent submission deadline covers the capability response body", async () => {
+  let bodyWasAborted = false;
+  const handler = createOpenEnaLongitudinalPostHandlerV3({
+    ...securityDependencies(),
+    submissionDeadlineMilliseconds: 5,
+    upstreamFetch: async (_input, init) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const delayed = setTimeout(() => {
+            controller.enqueue(new TextEncoder().encode(JSON.stringify(capability())));
+            controller.close();
+          }, 40);
+          init?.signal?.addEventListener("abort", () => {
+            bodyWasAborted = true;
+            clearTimeout(delayed);
+            controller.error(new DOMException("timeout", "AbortError"));
+          }, { once: true });
+        },
+      });
+      return new Response(body, { status: 202 });
+    },
+  });
+  const response = await handler(post(derivedRequest()));
+  assert.equal(response.status, 504);
+  assert.equal((await response.json()).error.code, "REMOTE_SUBMISSION_DEADLINE_EXCEEDED");
+  assert.equal(bodyWasAborted, true);
+});
+
+test("persistent route stops an oversized capability stream before buffering it in full", async () => {
+  const bytes = new TextEncoder().encode(JSON.stringify(capability()) + " ".repeat(256 * 1024));
+  let offset = 0;
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (offset >= bytes.length) { controller.close(); return; }
+      const next = bytes.slice(offset, offset + 16 * 1024);
+      offset += next.byteLength;
+      controller.enqueue(next);
+    },
+    cancel() { cancelled = true; },
+  });
+  const handler = createOpenEnaLongitudinalPostHandlerV3({
+    ...securityDependencies(),
+    upstreamFetch: async () => new Response(stream, { status: 202 }),
+  });
+  const response = await handler(post(derivedRequest()));
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).error.code, "INVALID_UPSTREAM_RESPONSE");
+  assert.equal(cancelled, true);
+  assert.ok(offset < bytes.length);
+});
+
+test("persistent route cancels an unread rejected upstream response", async () => {
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) { controller.enqueue(new TextEncoder().encode("private upstream detail")); },
+    cancel() { cancelled = true; },
+  });
+  const handler = createOpenEnaLongitudinalPostHandlerV3({
+    ...securityDependencies(),
+    upstreamFetch: async () => new Response(stream, { status: 503 }),
+  });
+  const response = await handler(post(derivedRequest()));
+  assert.equal(response.status, 503);
+  assert.equal(cancelled, true);
+  assert.doesNotMatch(await response.text(), /private upstream detail/u);
+});
+
+test("persistent submission cannot configure a deadline longer than its lease safety budget", () => {
+  for (const submissionDeadlineMilliseconds of [0, Number.NaN, 120_001]) {
+    assert.throws(() => createOpenEnaLongitudinalPostHandlerV3({
+      ...securityDependencies(), submissionDeadlineMilliseconds,
+    }), /deadline/u);
+  }
+});
+
+test("persistent compute cannot dispatch after slow reservation I/O exhausts its start window", async () => {
+  const store = new MemoryBillableStore();
+  const reserve = store.reserveDetailed.bind(store);
+  store.reserveDetailed = async (input) => {
+    const result = await reserve(input);
+    return result.ok
+      ? { ...result, reservation: { ...result.reservation, dispatchDeadlineMonotonicMs: 0 } }
+      : result;
+  };
+  let upstreamCalls = 0;
+  const handler = createOpenEnaLongitudinalPostHandlerV3({
+    ...securityDependencies(), billableStore: store, limits: BILLABLE_LIMITS,
+    upstreamFetch: async () => { upstreamCalls += 1; return Response.json(capability(), { status: 202 }); },
+  });
+  const response = await handler(post(derivedRequest()));
+  assert.equal(response.status, 503);
+  assert.equal(upstreamCalls, 0);
+});
+
 test("persistent route preserves actionable safe upstream statuses without reflecting private bodies", async (t) => {
   const cases = [
     [400, "REMOTE_SUBMISSION_INVALID"],

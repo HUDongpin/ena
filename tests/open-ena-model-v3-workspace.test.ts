@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { createWorkspaceStateV3, workspaceReducerV3, workspaceDraftExportableV3, workspaceRawBlockersV3, emptyWorkspaceDraftsV3, draftsForInstalledSourceV3 } from "../components/open-ena/model-v3/workspace-controller";
 import { modelScientificContextV3 } from "../components/open-ena/model-v3/model-state";
+import { createOrderPolicyEditorRawStateV3 } from "../components/open-ena/model-v3/OpenEnaOrderPolicyEditorV3";
 import { exportDraftV3 } from "../lib/open-ena/model-artifact-exports-v3";
 import { importOpenEnaArtifactV3 } from "../lib/open-ena/model-artifact-imports-v3";
 import { parseCsv } from "../lib/open-ena/csv";
@@ -83,6 +84,67 @@ test("preview Cancel and hostile import leave all scientific stores unchanged; a
   assert.equal(state.model.drafts.ona, original.model.drafts.ona);
   assert.equal(state.model.runStatus, "idle"); assert.equal(state.model.runningRequest, null);
   assert.equal(workspaceDraftExportableV3(state), true, "typed incomplete Codes remain exportable");
+});
+
+for (const sameEmptySibling of [false, true]) test(`explicit empty ONA import preserves its window through activation and repair (${sameEmptySibling ? "unchanged" : "replaced"} sibling)`, async () => {
+  const dataset: ParsedDataset = {
+    name: "ona-import.xlsx", source: "upload", sizeBytes: 512,
+    hashKind: "canonical-first-xlsx-worksheet-v1-sha256",
+    headers: ["unit", "horizon", "time", "A", "B", "C"],
+    rows: [
+      { unit: "u1", horizon: "h1", time: 1, A: 1, B: 1, C: 0 },
+      { unit: "u1", horizon: "h1", time: 2, A: 0, B: 1, C: 1 },
+      { unit: "u2", horizon: "h2", time: 1, A: 1, B: 0, C: 1 },
+      { unit: "u2", horizon: "h2", time: 2, A: 1, B: 1, C: 0 },
+    ],
+  };
+  const drafts = structuredClone(emptyWorkspaceDraftsV3());
+  const order: NonNullable<ModelWorkspaceDraftsV3["ona"]["rowOrder"]> = {
+    kind: "columns", keys: [{ column: "time", direction: "ascending", comparator: { type: "number" } }],
+  };
+  drafts.standard = { ...drafts.standard, unitColumns: ["unit"], horizonColumns: ["horizon"], codes: ["A", "B", "C"],
+    movingStanza: { ...drafts.standard.movingStanza, rowOrder: order } };
+  const imported = { ...drafts.ona, backward: { kind: "finite" as const, value: 1 } };
+  drafts.ona = sameEmptySibling ? imported : { ...drafts.ona, backward: { kind: "finite", value: 5 } };
+  let state = createWorkspaceStateV3({ dataset, datasetSha256: "c".repeat(64), drafts });
+  const before = state;
+  const artifact = await exportDraftV3(imported);
+  const preview = await importOpenEnaArtifactV3(new TextDecoder().decode(artifact.bytes));
+  state = workspaceReducerV3(state, { type: "preview", value: preview });
+  assert.equal(state.model, before.model, "preview does not initialize or edit a sibling");
+  state = workspaceReducerV3(state, { type: "cancel-preview" });
+  assert.equal(state.model, before.model, "cancel leaves the entire model state unchanged");
+  state = workspaceReducerV3(state, { type: "preview", value: preview });
+  state = workspaceReducerV3(state, { type: "accept-draft-preview", preview });
+  assert.deepEqual(state.model.drafts.ona, imported, "accept must not seed an explicitly imported incomplete draft from Standard");
+  assert.equal(state.raw.windows.ona.backward.finiteText, "1");
+  assert.equal(state.model.runStatus, "idle");
+  assert.equal(state.autoRunIntent, null);
+  assert.equal(workspaceRawBlockersV3(state).rowOrder, true, "missing order remains blocked until the researcher repairs it");
+  assert.equal((await compileOnaDraftV3(dataset, state.model.datasetSha256, state.model.drafts.ona)).status, "invalid");
+
+  state = workspaceReducerV3(state, { type: "model", action: { type: "set-active-family", family: "standard" } });
+  state = workspaceReducerV3(state, { type: "install-source", dataset: { ...dataset, name: "replacement.xlsx" }, datasetSha256: state.model.datasetSha256 });
+  state = workspaceReducerV3(state, { type: "model", action: { type: "set-active-family", family: "ona" } });
+  assert.deepEqual(state.model.drafts.ona, imported, "later family switches and file adoption must not reinterpret imported emptiness");
+  assert.equal(state.raw.windows.ona.backward.finiteText, "1");
+
+  // Mirror explicit mapping/Code/mask choices and the row-order editor's raw
+  // and typed updates, leaving the displayed backward extent untouched.
+  const codes = ["A", "B", "C"];
+  state = workspaceReducerV3(state, { type: "model", action: { type: "replace-ona-draft", draft: {
+    ...state.model.drafts.ona, unitColumns: ["unit"], horizonColumns: ["horizon"], codes,
+    directionalMask: { schemaVersion: 1, codeOrder: codes, enabled: codes.map(() => codes.map(() => true)) },
+  } } });
+  state = workspaceReducerV3(state, { type: "windows-raw", value: { ...state.raw.windows,
+    ona: { ...state.raw.windows.ona, rowOrder: createOrderPolicyEditorRawStateV3(order) } } });
+  state = workspaceReducerV3(state, { type: "model", action: { type: "replace-ona-draft", draft: { ...state.model.drafts.ona, rowOrder: order } } });
+  assert.equal(Object.values(workspaceRawBlockersV3(state)).some(Boolean), false);
+  const compiled = await compileOnaDraftV3(dataset, state.model.datasetSha256, state.model.drafts.ona);
+  assert.equal(compiled.status, "ready", compiled.diagnostics.map((entry) => entry.id).join(", "));
+  if (compiled.status !== "ready") return;
+  assert.deepEqual(compiled.canonicalConfiguration.window.backward, { kind: "finite", value: 1 });
+  assert.equal(state.raw.windows.ona.backward.finiteText, "1");
 });
 
 test("same-hash source re-adoption expires compilation and the exact in-flight request", async () => {
@@ -241,7 +303,7 @@ test("preset adoption is atomic display state and preserves science, requests, a
   assert.equal(workspaceReducerV3(changed, { ...action, context: modelScientificContextV3(changed.model) }), changed, "even a new intent cannot apply missing SOURCE Code controls");
 });
 
-test("family switch from an unseeded ONA sibling auto-applies the fixed contract and unblocks Build", async () => {
+for (const initialization of ["explicit", "fresh-workspace"] as const) test(`family switch from an unseeded ONA sibling auto-applies the fixed contract and unblocks Build (${initialization})`, async () => {
   const datasetSha256 = "c".repeat(64);
   const dataset: ParsedDataset = {
     name: "ona-family-switch.csv",
@@ -287,7 +349,16 @@ test("family switch from an unseeded ONA sibling auto-applies the fixed contract
       directionalMask: null,
     },
   };
-  let state = createWorkspaceStateV3({ dataset, datasetSha256, drafts });
+  let state = initialization === "explicit"
+    ? createWorkspaceStateV3({ dataset, datasetSha256, drafts })
+    : workspaceReducerV3(createWorkspaceStateV3(), { type: "install-source", dataset, datasetSha256 });
+  if (initialization === "fresh-workspace") {
+    const file = await exportDraftV3(drafts.standard);
+    const preview = await importOpenEnaArtifactV3(new TextDecoder().decode(file.bytes));
+    state = workspaceReducerV3(state, { type: "preview", value: preview });
+    state = workspaceReducerV3(state, { type: "accept-draft-preview", preview });
+    assert.deepEqual(state.model.drafts.standard, drafts.standard);
+  }
   const before = await compileOnaDraftV3(dataset, datasetSha256, state.model.drafts.ona);
   assert.equal(before.status, "invalid");
   assert.equal(before.diagnostics.some((entry) => entry.id === "ONA_DRAFT_INVALID" || entry.id === "ONA_ORDER_INVALID"), true);

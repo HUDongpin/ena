@@ -65,6 +65,7 @@ export function parseCsv(text: string, options: { name: string; sizeBytes?: numb
   let record: string[] = [];
   let field = "";
   let quoted = false;
+  let closedQuote = false;
 
   const finishRecord = () => {
     if (!record.some((value) => value.length > 0)) {
@@ -90,6 +91,7 @@ export function parseCsv(text: string, options: { name: string; sizeBytes?: numb
           index += 1;
         } else {
           quoted = false;
+          closedQuote = true;
         }
       } else {
         field += character;
@@ -97,12 +99,16 @@ export function parseCsv(text: string, options: { name: string; sizeBytes?: numb
       continue;
     }
 
+    if (closedQuote && character !== "," && character !== "\n" && character !== "\r") {
+      throw new Error(`Unexpected character after closing quote near character ${index + 1}.`);
+    }
     if (character === '"') {
       if (field.length > 0) throw new Error(`Unexpected quote near character ${index + 1}.`);
       quoted = true;
     } else if (character === ",") {
       record.push(field);
       field = "";
+      closedQuote = false;
       if (records.length === 0) assertColumnCount(record.length + 1);
       else if (record.length >= records[0].length) {
         throw new Error(`Row ${records.length + 1} has more fields than the ${records[0].length}-column header.`);
@@ -110,6 +116,7 @@ export function parseCsv(text: string, options: { name: string; sizeBytes?: numb
     } else if (character === "\n" || character === "\r") {
       record.push(field);
       field = "";
+      closedQuote = false;
       if (records.length === 0) assertColumnCount(record.length);
       finishRecord();
       if (character === "\r" && input[index + 1] === "\n") index += 1;

@@ -1,5 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 
+// Keep in sync with migration 006. Production provider requests are bounded to
+// at most 120 seconds (20 seconds for AI and 10 for compute by default). The
+// remaining margin covers receipt/accounting queries and delayed cleanup.
+export const OPEN_ENA_BILLABLE_RESERVATION_LEASE_MS = 5 * 60_000;
+export const OPEN_ENA_BILLABLE_MAX_PROVIDER_REQUEST_MS = 120_000;
+const DISPATCH_START_WINDOW_MS = OPEN_ENA_BILLABLE_RESERVATION_LEASE_MS
+  - OPEN_ENA_BILLABLE_MAX_PROVIDER_REQUEST_MS - 60_000;
+
 export type BillableLimits = {
   minuteRequests: number;
   dailyMicroUsd: number;
@@ -20,7 +28,15 @@ export type Reservation = {
   /** Kept for compatibility with older injected test stores. Values are micro-USD, not cents. */
   cents: number;
   dispatched: boolean;
+  /** Local monotonic deadline, captured before reservation I/O; never persisted or sent to a client. */
+  dispatchDeadlineMonotonicMs?: number;
 };
+
+export function billableReservationAllowsDispatch(reservation: Reservation) {
+  // Optional only for legacy injected test stores; both actual adapters set it.
+  const deadline = reservation.dispatchDeadlineMonotonicMs;
+  return deadline === undefined || (Number.isFinite(deadline) && performance.now() < deadline);
+}
 
 export type ReservationDenialReason =
   | "invalid-reservation"
@@ -201,6 +217,12 @@ export type BillableStore = {
     limits: BillableLimits;
     now?: Date;
   }): Promise<ReservationResult>;
+  /** Read-only proof for the current authenticated operation; unknown is false. */
+  isReleasedOperation?(input: {
+    principalRef: string;
+    resource: string;
+    idempotencyKey: string;
+  }): Promise<boolean>;
   settle(reservation: Reservation, actualMicroUsd: number | null, dispatched: boolean): Promise<void>;
   release(reservation: Reservation): Promise<void>;
   consumeQuota(
@@ -296,6 +318,7 @@ type MemoryReservation = {
   reservation: Reservation;
   dayKey: string;
   monthKey: string;
+  leaseExpiresAt: number;
   status: "reserved" | "settled" | "released";
 };
 
@@ -347,10 +370,9 @@ export class MemoryBillableStore implements BillableStore {
     limits: BillableLimits;
     now?: Date;
   }): Promise<ReservationResult> {
+    const dispatchDeadlineMonotonicMs = performance.now() + DISPATCH_START_WINDOW_MS;
     const resource = input.resource ?? "default";
     const idempotencyKey = usageKey(input.principalRef, resource, input.idempotencyKey);
-    const prior = this.reservationsByKey.get(idempotencyKey);
-    if (prior) return { ok: false, reason: "idempotency-replayed" };
     if (
       !input.principalRef
       || !input.idempotencyKey
@@ -359,6 +381,22 @@ export class MemoryBillableStore implements BillableStore {
     ) return { ok: false, reason: "invalid-reservation" };
 
     const now = input.now ?? new Date();
+    // Mirror the SQL transaction: expired work retains its full reserved spend
+    // and operation key. Never release/refund a dispatch whose outcome is unknown.
+    for (const record of this.reservationsById.values()) {
+      if (record.reservation.principalRef !== input.principalRef
+        || record.status !== "reserved" || record.leaseExpiresAt > now.getTime()) continue;
+      record.status = "settled";
+      record.reservation.dispatched = true;
+      this.decrementActive(input.principalRef, record.reservation.resource);
+      await this.alert({
+        code: "reservation-lease-expired",
+        principalRef: input.principalRef,
+        metadata: { resource: record.reservation.resource, reason: "unknown-usage-retained" },
+      });
+    }
+    const prior = this.reservationsByKey.get(idempotencyKey);
+    if (prior) return { ok: false, reason: "idempotency-replayed" };
     const dayKey = utcDayKey(now);
     const monthKey = utcMonthKey(now);
     const principalDay = usageKey(input.principalRef, "day", dayKey);
@@ -390,8 +428,13 @@ export class MemoryBillableStore implements BillableStore {
       reservedMicroUsd: input.microUsd,
       cents: input.microUsd,
       dispatched: false,
+      dispatchDeadlineMonotonicMs,
     };
-    const record: MemoryReservation = { reservation, dayKey, monthKey, status: "reserved" };
+    const record: MemoryReservation = {
+      reservation, dayKey, monthKey,
+      leaseExpiresAt: now.getTime() + OPEN_ENA_BILLABLE_RESERVATION_LEASE_MS,
+      status: "reserved",
+    };
     this.reservationsByKey.set(idempotencyKey, record);
     this.reservationsById.set(reservation.id, record);
     this.adjust(this.principalSpend, principalDay, input.microUsd);
@@ -468,6 +511,11 @@ export class MemoryBillableStore implements BillableStore {
         },
       });
     }
+  }
+
+  async isReleasedOperation(input: { principalRef: string; resource: string; idempotencyKey: string }) {
+    const record = this.reservationsByKey.get(usageKey(input.principalRef, input.resource, input.idempotencyKey));
+    return record?.status === "released" && record.reservation.dispatched === false;
   }
 
   async release(reservation: Reservation) {
@@ -610,6 +658,12 @@ export async function createProductionBillableStore(
         idleTimeoutMillis: 30_000,
         statement_timeout: 5_000,
       });
+      pool.on("error", () => {
+        // pg removes a failed idle client before emitting this event and can
+        // reconnect on the next query. Without a listener EventEmitter throws
+        // outside the request handler. Never log the error or its attached client.
+        console.error("open-ena-billable-store:idle-connection-error");
+      });
       return createPostgresBillableStore(async (sql, params) => {
         const result = await pool.query(sql, params as unknown[]);
         return { rows: result.rows as Array<Record<string, unknown>> };
@@ -645,9 +699,12 @@ function rowReservation(value: unknown): Reservation | null {
 export function createPostgresBillableStore(query: Query): BillableStore {
   return {
     async reserveDetailed(input) {
+      // Start before I/O so a slow connection, lock, or reply cannot return a
+      // seemingly fresh slot after another request has recovered its lease.
+      const dispatchDeadlineMonotonicMs = performance.now() + DISPATCH_START_WINDOW_MS;
       try {
         const result = await query(
-          "SELECT * FROM open_ena_reserve_billable($1,$2,$3,$4,$5)",
+          "SELECT * FROM open_ena_reserve_billable_v2($1,$2,$3,$4,$5)",
           [
             input.principalRef,
             input.resource ?? "default",
@@ -684,7 +741,7 @@ export function createPostgresBillableStore(query: Query): BillableStore {
         }
         const reservation = rowReservation(row?.reservation ?? row);
         return reservation
-          ? { ok: true, reservation }
+          ? { ok: true, reservation: { ...reservation, dispatchDeadlineMonotonicMs } }
           : { ok: false, reason: "store-failure" };
       } catch {
         return { ok: false, reason: "store-failure" };
@@ -699,6 +756,13 @@ export function createPostgresBillableStore(query: Query): BillableStore {
         "SELECT open_ena_settle_billable($1,$2,$3)",
         [reservation.id, actualMicroUsd, dispatched],
       );
+    },
+    async isReleasedOperation(input) {
+      const result = await query(
+        "SELECT status = 'released' AND dispatched = false AS released FROM open_ena_billable_reservations WHERE principal_ref = $1 AND resource = $2 AND idempotency_key = $3",
+        [input.principalRef, input.resource, input.idempotencyKey],
+      );
+      return result.rows.length === 1 && result.rows[0]?.released === true;
     },
     async release(reservation) {
       await query("SELECT open_ena_release_billable($1)", [reservation.id]);

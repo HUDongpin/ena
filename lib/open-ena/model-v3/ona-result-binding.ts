@@ -91,7 +91,8 @@ function guardBindingAllocation(plan: OnaExecutionPlanV3, retainedScientificCell
   const cells = 4 * plan.rows.length * plan.codeDictionary.codes.length + retainedScientificCells + scratch;
   if (!Number.isSafeInteger(cells) || cells > Math.min(plan.operationalAdmission.stages.bindingCells, plan.operationalAdmission.totalNumericCells, MAX_ESTIMATED_NUMERIC_CELLS_V3)) throw new TypeError("ONA binding allocation exceeds pre-diagnostic resource admission.");
   const a = plan.operationalAdmission, base = plan.header.resourceEstimate;
-  const structure = base.estimatedStructuralBytes + 8 * a.resultIdentityBytes;
+  const structure = base.estimatedStructuralBytes + 8 * a.resultIdentityBytes
+    + (a.version === "open-ena-ona-operational-v2" ? a.sourceProofSerializationBytes : 0);
   const bytes = base.estimatedWorkerMaterializationBytes + structure + 8 * cells + 192 * a.compactScientificCells;
   if (a.numericSerializationBytes !== 192 * a.compactScientificCells || a.metadataSerializationBytes !== 8 * a.resultIdentityBytes || a.totalStructuralBytes !== structure
     || !Number.isSafeInteger(bytes) || bytes > Math.min(a.totalPeakBytes, MAX_ESTIMATED_PEAK_BYTES_V3) || structure > MAX_ESTIMATED_STRUCTURAL_BYTES_V3) throw new TypeError("ONA serialization/diagnostic bytes exceed resource admission.");

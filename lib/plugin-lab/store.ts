@@ -62,7 +62,7 @@ export interface PluginLabStore {
   confirmEmail(proposalId: string, actorRef: string): Promise<boolean>;
   previewRetention(input: { before: string; limit: number }): Promise<readonly PluginLabRetentionCandidate[]>;
   requestPublicConsent(proposalId: string, actorRef: string): Promise<boolean>;
-  setPublicConsent(proposalId: string, action: "confirm" | "withdraw", actorRef: string): Promise<boolean>;
+  setPublicConsent(proposalId: string, action: "confirm" | "withdraw", actorRef: string, publicProjectionSha256: string): Promise<boolean>;
   listPublicSummaries(): Promise<readonly PluginLabPublicSummaryRecord[]>;
 }
 
@@ -262,7 +262,7 @@ export function createPostgresPluginLabStore(query: PluginLabQuery): PluginLabSt
         return result.rows[0]?.proposal_id === proposalId;
       } catch (error) { storeFailure(error); }
     },
-    async setPublicConsent(proposalId, action, actorRef) {
+    async setPublicConsent(proposalId, action, actorRef, publicProjectionSha256) {
       try {
         const target = action === "confirm" ? "confirmed" : "withdrawn";
         const permittedCurrent = action === "confirm" ? ["requested"] : ["requested", "confirmed"];
@@ -273,6 +273,7 @@ export function createPostgresPluginLabStore(query: PluginLabQuery): PluginLabSt
             WHERE proposal_id = $1 AND state = 'selected' AND visibility = 'public-after-review'
               AND email_confirmed_at IS NOT NULL AND public_moderation_status = 'approved'
               AND public_consent_status = ANY($3::text[])
+              AND public_projection_sha256 = $5
             FOR UPDATE
           ), changed AS (
             UPDATE ena_plugin_proposals p SET public_consent_status = $2, updated_at = clock_timestamp()
@@ -284,7 +285,7 @@ export function createPostgresPluginLabStore(query: PluginLabQuery): PluginLabSt
           SELECT proposal_id, CASE WHEN $2 = 'confirmed' THEN 'consent-confirmed' ELSE 'consent-withdrawn' END,
             public_consent_status, $2, public_moderation_status, public_moderation_status,
             'proposer', $4, public_projection_sha256 FROM changed
-          RETURNING proposal_id`, [proposalId, target, permittedCurrent, actorRef]);
+          RETURNING proposal_id`, [proposalId, target, permittedCurrent, actorRef, publicProjectionSha256]);
         return result.rows[0]?.proposal_id === proposalId;
       } catch (error) { storeFailure(error); }
     },
@@ -319,6 +320,11 @@ export async function createProductionPluginLabStore(
   if (!configuration) return null;
   const pending = import("pg").then(({ Pool }) => {
     const pool = new Pool({ connectionString: configuration.databaseUrl, max: 2, connectionTimeoutMillis: 2_000, idleTimeoutMillis: 30_000, statement_timeout: 5_000 });
+    pool.on("error", () => {
+      // pg removes failed idle clients itself. Consume its EventEmitter error so
+      // a disconnected idle client cannot crash the process or expose details.
+      console.error("plugin-lab-store:idle-connection-error");
+    });
     return createPostgresPluginLabStore(async (sql, params) => {
       const result = await pool.query(sql, params as unknown[]); return { rows: result.rows as Array<Record<string, unknown>> };
     });

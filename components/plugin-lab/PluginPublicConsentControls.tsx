@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import type { Locale } from "@/lib/i18n";
 import { getPluginProposalStatusCopy } from "@/lib/plugin-lab/i18n";
 
-export default function PluginPublicConsentControls({ title, publicSummary, locale, consentStatus }: { title: string; publicSummary: string; locale: Locale; consentStatus: "requested" | "confirmed" }) {
+export default function PluginPublicConsentControls({ proposalId, publicProjectionSha256, title, publicSummary, locale, consentStatus }: { proposalId: string; publicProjectionSha256: string; title: string; publicSummary: string; locale: Locale; consentStatus: "requested" | "confirmed" }) {
   const copy = getPluginProposalStatusCopy(locale);
   const router = useRouter(); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   async function decide(action: "confirm" | "withdraw") {
     setBusy(true); setError("");
     try {
-      const response = await fetch(`/${locale}/plugins/status/consent`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) });
+      const response = await fetch(`/${locale}/plugins/status/consent`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, proposalId, publicProjectionSha256 }) });
+      if (response.status === 409) router.refresh();
       if (!response.ok) throw new Error(await response.text());
       router.refresh();
     } catch { setError(copy.consentError); }

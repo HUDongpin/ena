@@ -99,6 +99,10 @@ test("the official comparison policy selects Means Rotation only for eligible tw
 
 test("the official two-group comparison is fitted with jENA's verified generalized means rotation", () => {
   const dataset = datasetWithGroups(["Experimental", "Control", "Experimental"]);
+  // Axis naming requires an estimable group direction, not identical networks.
+  dataset.rows = dataset.rows.map((row, index) => ({
+    ...row, A: index === 1 ? "0" : "1", B: index === 2 ? "0" : "1", C: index === 0 ? "0" : "1",
+  }));
   const config: OpenEnaConfig = {
     ...SAMPLE_CONFIG,
     unitColumns: ["unit"],
@@ -122,6 +126,15 @@ test("the official two-group comparison is fitted with jENA's verified generaliz
   assert.equal(result.dimensions[0], "MR1", "the exported reference/bundle axis remains backward-compatible");
   assert.ok(result.set.points.every((point) => !("RR1" in point)));
   assert.ok(result.set.rotation.nodes?.every((node) => !("RR1" in node)));
+});
+
+test("identical networks cannot establish an official generalized means direction", () => {
+  const dataset = datasetWithGroups(["Experimental", "Control", "Experimental"]);
+  assert.throws(() => analyzeDataset(dataset, {
+    ...SAMPLE_CONFIG,
+    unitColumns: ["unit"], conversationColumns: ["conversation"], groupColumn: "group",
+    codes: ["A", "B", "C"], model: "EndPoint", window: "Conversation", rotation: "mean",
+  }), /requires non-zero between-group signal/u);
 });
 
 test("an endpoint reference rotation remains protected while official comparison defaults are reconciled", () => {

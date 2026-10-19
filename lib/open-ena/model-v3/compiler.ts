@@ -49,6 +49,7 @@ import {
   validateOnaDatasetV3,
 } from "./ona-compiler-preflight";
 import type { OnaCompilerDiagnosticV3 } from "./ona-compiler-preflight";
+import { estimateOnaOperationalAdmissionV3 } from "./ona-resource-budget";
 
 export { ONA_COMPILER_DIAGNOSTIC_IDS_V3 } from "./ona-compiler-preflight";
 export type {
@@ -400,6 +401,20 @@ export async function compileOnaDraftV3(
       "resources",
       "The exact ONA configuration exceeds the fixed resource budget.",
       `The exact estimate was blocked by: ${resourceEstimate.blockedReasons.join(", ")}.`,
+    )]);
+  }
+
+  // A ready compiler result must satisfy the same operational/serialization
+  // admission as plan construction, before running scientific preflight.
+  try {
+    estimateOnaOperationalAdmissionV3(validatedDataset, canonicalConfiguration, resourceEstimate);
+  } catch (error) {
+    if (!(error instanceof TypeError) && !(error instanceof ResourceEstimateErrorV3)) throw error;
+    return invalidOnaResultV3(draftFingerprint, [onaDiagnosticV3(
+      "ONA_RESOURCE_BUDGET_EXCEEDED",
+      "resources",
+      "The exact ONA configuration exceeds the fixed resource budget.",
+      "The operational model and serialization estimate exceeds the existing ONA admission limits. No rows, Codes, masks, or backward extent were reduced automatically.",
     )]);
   }
 

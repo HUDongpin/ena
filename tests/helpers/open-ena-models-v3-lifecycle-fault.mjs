@@ -8,6 +8,8 @@ import { randomBytes } from "node:crypto";
 import { OwnedSmokeLifecycle } from "./open-ena-models-v3-lifecycle.mjs";
 
 if (process.argv[2] === "--service") {
+    // Deliberately reach the real overall deadline before this owned fixture is ready.
+    if (process.argv[4] === "--delay-readiness") await new Promise(resolve => setTimeout(resolve, 2000));
     process.on("SIGTERM", () => {});
     const child = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});process.send('ready');setInterval(()=>{},1000)"], { stdio: ["ignore", "ignore", "ignore", "ipc"] });
     child.once("message", () => {
@@ -24,10 +26,10 @@ if (process.argv[2] === "--service") {
     const redact = value => String(value).replaceAll(secret, "[redacted]");
     const receipt = { kind: "owned TCP fault fixtures, not served acceptance", status: "running" };
     const save = () => writeFileSync(join(directory, "receipt.json"), JSON.stringify(receipt, null, 2));
-    const owner = new OwnedSmokeLifecycle({ directory, redact, overallMs: mode === "overall-deadline" ? 1200 : 10000, graceMs: 100, forceMs: 2000, cleanupMs: 100, onUpdate: state => { receipt.lifecycle = state; save(); } });
+    const owner = new OwnedSmokeLifecycle({ directory, redact, overallMs: ["overall-deadline", "overall-preparation-deadline"].includes(mode) ? 1200 : 10000, graceMs: 100, forceMs: 2000, cleanupMs: 100, onUpdate: state => { receipt.lifecycle = state; save(); } });
     try {
         for (const name of ["database-fixture", "server-fixture"]) {
-            owner.spawnOwned(name, process.execPath, [fileURLToPath(import.meta.url), "--service", join(directory, `${name}.json`)], { env: { ...process.env, FAULT_SECRET: secret } });
+            owner.spawnOwned(name, process.execPath, [fileURLToPath(import.meta.url), "--service", join(directory, `${name}.json`), ...(mode === "overall-preparation-deadline" ? ["--delay-readiness"] : [])], { env: { ...process.env, FAULT_SECRET: secret } });
             await owner.stage(`${name} readiness`, async () => { while (!existsSync(join(directory, `${name}.json`))) { owner.signal.throwIfAborted(); await new Promise(resolve => setTimeout(resolve, 10)); } }, 3000);
         }
         const services = ["database-fixture", "server-fixture"].map(name => JSON.parse(readFileSync(join(directory, `${name}.json`), "utf8")));
@@ -42,7 +44,7 @@ if (process.argv[2] === "--service") {
     } catch (error) { receipt.status = "fail"; receipt.failure = redact(error.message); process.exitCode = owner.reason?.exitCode ?? 1; }
     finally {
         const cleanup = owner.cleanup(); receipt.idempotentCleanup = cleanup === owner.cleanup(); receipt.cleanup = await cleanup;
-        receipt.secretRedacted = !JSON.stringify(receipt).includes(secret) && ["database-fixture", "server-fixture"].every(name => !readFileSync(join(directory, `${name}.log`), "utf8").includes(secret));
+        receipt.secretRedacted = !JSON.stringify(receipt).includes(secret) && owner.snapshot().processes.every(({ log }) => !readFileSync(join(directory, log), "utf8").includes(secret));
         save(); owner.dispose();
     }
 }

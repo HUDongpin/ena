@@ -204,6 +204,32 @@ test("DeepSeek oversized response fails closed before schema parsing", async () 
   );
 });
 
+test("DeepSeek cancels unread response bodies on HTTP and declared-size rejection", async (t) => {
+  for (const [stage, status, declaredBytes] of [
+    ["balance", 401, undefined],
+    ["responses", 429, undefined],
+    ["responses", 200, "65537"],
+  ] as const) {
+    await t.test(`${stage}:${status}:${declaredBytes ?? "unknown-size"}`, async () => {
+      let cancelled = false;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new TextEncoder().encode("unread private provider body")); },
+        cancel() { cancelled = true; },
+      });
+      await assert.rejects(generateLunaInterpretation(interpretationRequest(), {
+        environment: configured,
+        fetch: async (input) => {
+          if (stage === "responses" && String(input).endsWith("/user/balance")) {
+            return Response.json({ is_available: true });
+          }
+          return new Response(stream, { status, headers: declaredBytes ? { "content-length": declaredBytes } : {} });
+        },
+      }), LunaClientError);
+      assert.equal(cancelled, true, "rejecting headers must stop the unread stream");
+    });
+  }
+});
+
 test("DeepSeek malformed completion does not echo model content", async () => {
   await assert.rejects(
     generateLunaInterpretation(interpretationRequest(), {

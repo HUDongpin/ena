@@ -66,6 +66,7 @@ const EXPECTED_DIAGNOSTIC_IDS = [
   "STANDARD_REFERENCE_INCOMPATIBLE",
   "STANDARD_REFERENCE_TARGET_DEGENERATE",
   "STANDARD_OUTPUT_NONFINITE",
+  "STANDARD_OUTPUT_UNDERFLOW",
   "RESOURCE_BUDGET_EXCEEDED",
 ] as const;
 
@@ -218,8 +219,8 @@ function confirmedSourceOrder(rowCount: number): CanonicalRowOrderV3 {
 
 test("diagnostic and suggested-action registries are exact, stable, and duplicate-free", () => {
   assert.deepEqual(MODEL_DIAGNOSTIC_IDS_V3, EXPECTED_DIAGNOSTIC_IDS);
-  assert.equal(MODEL_DIAGNOSTIC_IDS_V3.length, 37);
-  assert.equal(new Set(MODEL_DIAGNOSTIC_IDS_V3).size, 37);
+  assert.equal(MODEL_DIAGNOSTIC_IDS_V3.length, 38);
+  assert.equal(new Set(MODEL_DIAGNOSTIC_IDS_V3).size, 38);
   assert.deepEqual(MODEL_SUGGESTED_ACTION_IDS_V3, [
     "exclude-code", "replace-row-order", "replace-horizon-order", "select-endpoint",
     "select-svd", "select-reference", "clear-group",

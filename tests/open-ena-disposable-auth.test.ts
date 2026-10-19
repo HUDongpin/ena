@@ -413,7 +413,9 @@ test("operator documentation requires migration 004 and states the disposable cr
   assert.match(readme, /scrypt/u);
   assert.match(readme, /v3 session/u);
   assert.match(readme, /15-minute/u);
-  assert.match(readme, /Apply all four\s+migrations/u);
+  assert.match(readme, /Apply required\s+migrations/u);
+  assert.match(readme, /migrations\/007_open_ena_ai_consent_idempotency\.sql/u);
+  assert.match(readme, /migration 006 after migration 001/u);
   assert.match(readme, /same operator-controlled PostgreSQL deployment/u);
   assert.match(readme, /run-open-ena-production-auth-operator\.mjs/u);
   assert.match(readme, /--mode=migration/u);

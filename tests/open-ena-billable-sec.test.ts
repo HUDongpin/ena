@@ -31,6 +31,84 @@ test("billable reservations enforce principal concurrency and settle conservativ
   assert.ok(await store.reserve({ principalRef: "p", microUsd: 1, idempotencyKey: "j", limits }));
 });
 
+test("expired reservations recover concurrency without refunding unknown usage or permitting replay", async () => {
+  const store = new MemoryBillableStore();
+  const started = new Date("2026-09-30T12:00:00.000Z");
+  const reserve = (idempotencyKey: string, now: Date, microUsd = 10) => store.reserveDetailed({
+    principalRef: "abandoned-principal", resource: "ai-interpretation", microUsd,
+    idempotencyKey, limits, now,
+  });
+  const abandoned = await reserve("abandoned", started);
+  assert.equal(abandoned.ok, true);
+  if (!abandoned.ok) return;
+  assert.deepEqual(await reserve("replacement", new Date(started.getTime() + 299_999)), {
+    ok: false, reason: "concurrency",
+  }, "a live lease must keep its concurrency slot");
+  const recovered = await reserve("replacement", new Date(started.getTime() + 300_000));
+  assert.equal(recovered.ok, true, "an expired lease must free abandoned concurrency");
+  if (!recovered.ok) return;
+  assert.equal(store.alerts.some((event) => event.code === "reservation-lease-expired"), true);
+  assert.deepEqual(await reserve("abandoned", new Date(started.getTime() + 300_001)), {
+    ok: false, reason: "idempotency-replayed",
+  });
+  // Late callbacks from the abandoned handler cannot refund its conservative charge.
+  await store.release(abandoned.reservation);
+  await store.settle(abandoned.reservation, 0, false);
+  await store.settle(recovered.reservation, null, true);
+  assert.deepEqual(await reserve("over-budget", new Date(started.getTime() + 300_002), 1), {
+    ok: false, reason: "daily-ceiling",
+  }, "both full reservations must remain charged");
+});
+
+test("lease recovery keeps original-period global spend and covers both billable resources", async () => {
+  const store = new MemoryBillableStore();
+  const constrained = { ...limits, dailyMicroUsd: 100, globalMonthlyMicroUsd: 15 };
+  const reserve = (principalRef: string, resource: string, idempotencyKey: string, now: string, microUsd = 10) => store.reserveDetailed({
+    principalRef, resource, idempotencyKey, microUsd, limits: constrained, now: new Date(now),
+  });
+  assert.equal((await reserve("p", "longitudinal", "old", "2026-09-30T23:58:00Z")).ok, true);
+  const replacement = await reserve("p", "ai-interpretation", "new", "2026-10-01T00:03:00Z");
+  assert.equal(replacement.ok, true, "a previous-month longitudinal slot must be recoverable by AI");
+  assert.deepEqual(await reserve("other", "ai-interpretation", "old-period", "2026-09-30T23:59:00Z", 6), {
+    ok: false, reason: "global-monthly-ceiling",
+  }, "recovery cannot remove the original month's global spend");
+});
+
+test("PostgreSQL reservations require the atomic lease-aware migration and fail closed without it", async () => {
+  const calls: Array<{ sql: string; params: readonly unknown[] }> = [];
+  const store = createPostgresBillableStore(async (sql, params = []) => {
+    calls.push({ sql, params });
+    return { rows: [{ allowed: false, reason: "concurrency" }] };
+  });
+  assert.deepEqual(await store.reserveDetailed!({ principalRef: "p", resource: "ai-interpretation", microUsd: 10, idempotencyKey: "k", limits }), {
+    ok: false, reason: "concurrency",
+  });
+  assert.match(calls[0]!.sql, /open_ena_reserve_billable_v2\(\$1,\$2,\$3,\$4,\$5\)/u);
+  assert.equal(calls.length, 1, "recovery and admission must be one database transaction");
+  assert.deepEqual(calls[0]!.params.slice(0, 4), ["p", "ai-interpretation", 10, "k"]);
+  const unmigrated = createPostgresBillableStore(async () => { throw Object.assign(new Error("missing function"), { code: "42883" }); });
+  assert.deepEqual(await unmigrated.reserveDetailed!({ principalRef: "p", microUsd: 10, idempotencyKey: "k", limits }), {
+    ok: false, reason: "store-failure",
+  });
+});
+
+test("PostgreSQL dispatch freshness starts before reservation I/O rather than after it", async (t) => {
+  let elapsed = 1_000;
+  t.mock.method(performance, "now", () => elapsed);
+  const store = createPostgresBillableStore(async () => {
+    elapsed += 250_000; // A delayed DB reply must not renew the dispatch window.
+    return { rows: [{
+      allowed: true,
+      reservation: { id: "synthetic", principal_ref: "p", reserved_micro_usd: 10, resource: "ai-interpretation", dispatched: false },
+    }] };
+  });
+  const result = await store.reserveDetailed!({ principalRef: "p", microUsd: 10, idempotencyKey: "k", limits });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.reservation.dispatchDeadlineMonotonicMs, 121_000);
+  assert.ok(result.reservation.dispatchDeadlineMonotonicMs < performance.now());
+});
+
 test("stable account principals and durable quota survive a new session token", async () => {
   const store = new MemoryBillableStore();
   const principal = principalRefForAccount("stable-account-id");

@@ -1,8 +1,24 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const migration = readFileSync(new URL("../migrations/001_open_ena_billable.sql", import.meta.url), "utf8");
+
+test("lease migration recovers under the admission lock and retains unknown charges and operation keys", () => {
+  const path = new URL("../migrations/006_open_ena_billable_leases.sql", import.meta.url);
+  assert.ok(existsSync(path), "existing deployments require a new lease migration");
+  const source = readFileSync(path, "utf8");
+  assert.match(source, /lease_expires_at\s+timestamptz\s+NOT NULL\s+DEFAULT\s*\(clock_timestamp\(\)\s*\+\s*interval '5 minutes'\)/u);
+  assert.match(source, /FUNCTION open_ena_reserve_billable_v2/u);
+  const lock = source.indexOf("pg_advisory_xact_lock");
+  const recovery = source.indexOf("UPDATE open_ena_billable_reservations");
+  const admission = source.indexOf("SELECT * FROM open_ena_reserve_billable(");
+  assert.ok(lock >= 0 && recovery > lock && admission > recovery, "recovery must be atomic with admission");
+  assert.match(source, /status\s*=\s*'settled'[\s\S]*?actual_micro_usd\s*=\s*reserved_micro_usd[\s\S]*?dispatched\s*=\s*true/u);
+  assert.match(source, /WHERE principal_ref = p_principal[\s\S]*?status = 'reserved'[\s\S]*?lease_expires_at <= v_now/u);
+  assert.match(source, /'reservation-lease-expired'/u);
+  assert.doesNotMatch(source, /DELETE FROM open_ena_billable_reservations|UPDATE open_ena_spend/u);
+});
 
 test("durable billing migration uses scoped daily and monthly spend buckets", () => {
   assert.match(migration, /scope_kind\s+text\s+NOT NULL/u);

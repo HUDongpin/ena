@@ -62,6 +62,39 @@ test("operator transition requires verified v2 authority and a bound CSRF token 
   assert.equal((await csrfHandler(request({ from: "received", to: "under-review", reason: "Review started." }, "wrong"), "plg_AAAAAAAAAAAAAAAAAAAAAA")).status, 403);
 });
 
+for (const declaredLength of [undefined, "8"] as const) {
+  test(`operator JSON requests cancel oversized streams with ${declaredLength ? "false" : "no"} Content-Length`, async () => {
+    let bytesRead = 0;
+    let cancelled = false;
+    let storeRequested = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (bytesRead === 1024 * 1024) { controller.close(); return; }
+        bytesRead += 1024;
+        controller.enqueue(new Uint8Array(1024).fill(120));
+      },
+      cancel() { cancelled = true; },
+    }, { highWaterMark: 0 });
+    const handler = createPluginLabOperatorTransitionPostHandler({
+      environment, verifyOperator: async () => principal,
+      storeFactory: async () => { storeRequested = true; return fakeStore(); },
+    });
+    const headers = new Headers({
+      origin: "https://www.ena.hk", "content-type": "application/json",
+      cookie: "open-ena-session=valid-v2-token", "x-plugin-lab-csrf": createPluginLabOperatorCsrf(principal, environment.ENA_PLUGIN_LAB_SECRET),
+    });
+    if (declaredLength) headers.set("content-length", declaredLength);
+    const response = await handler(new Request("https://www.ena.hk/api/plugin-lab/operator/proposals/plg_AAAAAAAAAAAAAAAAAAAAAA/transition", {
+      method: "POST", body: stream, headers, duplex: "half",
+    } as RequestInit & { duplex: "half" }), "plg_AAAAAAAAAAAAAAAAAAAAAA");
+    assert.equal(response.status, 400);
+    assert.equal(await response.text(), "Invalid operator request.");
+    assert.equal(cancelled, true);
+    assert.equal(bytesRead, 9 * 1024);
+    assert.equal(storeRequested, false);
+  });
+}
+
 test("operator transition encrypts its reason and appends only a valid forward transition", async () => {
   const writes: unknown[] = [];
   const handler = createPluginLabOperatorTransitionPostHandler({
