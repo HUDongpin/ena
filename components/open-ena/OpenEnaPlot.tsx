@@ -663,7 +663,7 @@ export default function OpenEnaPlot({
           </g>
         ) : null}
       </svg>
-      <div className="open-ena-legend" aria-label="Plot legend">
+      <div className="open-ena-legend" aria-label={copy.modelV3.workspace.plot.legendAria}>
         {result.groups.map((group, index) => {
           const encoding = getGroupVisualEncoding(index);
           return (
@@ -700,11 +700,11 @@ export default function OpenEnaPlot({
             </span>
           );
         })}
-        <span aria-label="Group means use square centroid markers.">
+        <span aria-label={copy.modelV3.workspace.plot.squareCentroidLegend}>
           <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true">
             <rect x="2" y="2" width="11" height="11" fill="#52636a" stroke="#fff" strokeWidth="2.5" />
           </svg>
-          Square marker = group mean
+          {copy.modelV3.workspace.plot.squareCentroidLegendText}
         </span>
       </div>
       <details className="ena-result-summary">
@@ -731,7 +731,7 @@ export default function OpenEnaPlot({
         <table>
           <thead>
             <tr>
-              <th>Edge</th>
+              <th>{copy.modelV3.workspace.plot.edgeColumn}</th>
               <th>{isComparison ? copy.workspace.strongerGroup : copy.workspace.groups}</th>
               <th>{isComparison ? copy.workspace.difference : copy.workspace.meanWeight}</th>
             </tr>

@@ -323,6 +323,60 @@ const english = {
   disabled: "Disabled",
   status: "Status",
   cacheHit: "Reused verified cached envelope",
+  sourceRows: "Source rows",
+  participants: "Participants",
+  participantPeriods: "Participant-periods",
+  duplicateRows: "Duplicate rows",
+  duplicatedPeriods: "Duplicated periods",
+  identityConfirmed: "Identity confirmed",
+  yes: "Yes",
+  no: "No",
+  cohortLabel: "Cohort",
+  estimandLabel: "Estimand",
+  resultHash: "Result hash",
+  pathCaption: "Group-period centroids, changes, selected-3D/full-space distances, elapsed time, speed, and cohort diagnostics",
+  pathGroup: "Group",
+  pathPeriod: "Period",
+  pathRows: "Rows",
+  pathParticipantPeriods: "P-P",
+  pathIncluded: "Included",
+  pathDuplicate: "Duplicate",
+  path3dStep: "3D step",
+  pathFullStep: "Full step",
+  path3dCumulative: "3D cumulative",
+  pathFullCumulative: "Full cumulative",
+  pathElapsed: "Elapsed",
+  path3dSpeed: "3D speed",
+  pathFullSpeed: "Full speed",
+  inferenceCaption: "Independent, paired, repeated, post-hoc, and whole-path families with Holm adjustment",
+  requestColumn: "Request",
+  testColumn: "Test",
+  axisMetricColumn: "Axis / metric",
+  estimandColumn: "Estimand",
+  effectColumn: "Effect",
+  statisticColumn: "Statistic",
+  rawPColumn: "Raw p",
+  holmPColumn: "Holm p",
+  methodColumn: "Method",
+  tiesColumn: "Ties",
+  zerosColumn: "Zeros",
+  statusReasonColumn: "Status / reason",
+  noDiagnostics: "No diagnostics were emitted.",
+  provenanceCaption: "Immutable scientific and execution binding",
+  datasetHash: "Dataset hash",
+  specHash: "Spec hash",
+  sourceResultHash: "Source result hash",
+  requestHash: "Request hash",
+  runId: "Run ID",
+  jenaBuild: "jENA build",
+  jenaVersion: "jENA version",
+  jenaCommit: "jENA commit",
+  jenaIntegrity: "jENA integrity",
+  sdkLabel: "3DENA SDK",
+  executionTarget: "Execution target",
+  evidence: "Evidence",
+  permutationPlans: "Permutation plans",
+  resamplingPlans: "Resampling plans",
 };
 
 const zhHans: typeof english = {
@@ -414,6 +468,60 @@ const zhHans: typeof english = {
   disabled: "已禁用",
   status: "状态",
   cacheHit: "复用了已验证的缓存 envelope",
+  sourceRows: "来源数据行",
+  participants: "参与者",
+  participantPeriods: "参与者－时期",
+  duplicateRows: "重复数据行",
+  duplicatedPeriods: "重复时期",
+  identityConfirmed: "标识已确认",
+  yes: "是",
+  no: "否",
+  cohortLabel: "队列",
+  estimandLabel: "估计量",
+  resultHash: "结果哈希",
+  pathCaption: "组－时期质心、变化、所选三维／全空间距离、经过时间、速度及队列诊断",
+  pathGroup: "组",
+  pathPeriod: "时期",
+  pathRows: "数据行",
+  pathParticipantPeriods: "参与者－时期",
+  pathIncluded: "纳入",
+  pathDuplicate: "重复",
+  path3dStep: "三维步长",
+  pathFullStep: "全空间步长",
+  path3dCumulative: "三维累积",
+  pathFullCumulative: "全空间累积",
+  pathElapsed: "经过时间",
+  path3dSpeed: "三维速度",
+  pathFullSpeed: "全空间速度",
+  inferenceCaption: "独立、配对、重复测量、事后及全路径检验族，并采用 Holm 校正",
+  requestColumn: "请求",
+  testColumn: "检验",
+  axisMetricColumn: "坐标轴／指标",
+  estimandColumn: "估计量",
+  effectColumn: "效应",
+  statisticColumn: "统计量",
+  rawPColumn: "原始 p",
+  holmPColumn: "Holm 校正 p",
+  methodColumn: "方法",
+  tiesColumn: "结",
+  zerosColumn: "零值",
+  statusReasonColumn: "状态／原因",
+  noDiagnostics: "没有发出诊断。",
+  provenanceCaption: "不可变的科学与执行绑定",
+  datasetHash: "数据集哈希",
+  specHash: "规格哈希",
+  sourceResultHash: "来源结果哈希",
+  requestHash: "请求哈希",
+  runId: "运行 ID",
+  jenaBuild: "jENA 构建",
+  jenaVersion: "jENA 版本",
+  jenaCommit: "jENA 提交",
+  jenaIntegrity: "jENA 完整性",
+  sdkLabel: "3DENA 开发套件",
+  executionTarget: "执行目标",
+  evidence: "证据",
+  permutationPlans: "置换方案",
+  resamplingPlans: "重抽样方案",
 };
 
 const zhHant: typeof english = {
@@ -441,6 +549,60 @@ const zhHant: typeof english = {
   codeNodesHint: "ENA code 參考節點始終顯示，並直接使用擬合後的 jENA 幾何坐標。軌跡分析不繪製 ENA 平均網絡連線。",
   mappingAudit: "映射與實體審計",
   provenance: "來源與版本",
+  sourceRows: "來源資料列",
+  participants: "參與者",
+  participantPeriods: "參與者－期間",
+  duplicateRows: "重複資料列",
+  duplicatedPeriods: "重複期間",
+  identityConfirmed: "識別已確認",
+  yes: "是",
+  no: "否",
+  cohortLabel: "隊列",
+  estimandLabel: "估計目標",
+  resultHash: "結果雜湊",
+  pathCaption: "群組－期間質心、變化、所選三維／全空間距離、經過時間、速度及隊列診斷",
+  pathGroup: "群組",
+  pathPeriod: "期間",
+  pathRows: "資料列",
+  pathParticipantPeriods: "參與者－期間",
+  pathIncluded: "納入",
+  pathDuplicate: "重複",
+  path3dStep: "三維步長",
+  pathFullStep: "全空間步長",
+  path3dCumulative: "三維累積",
+  pathFullCumulative: "全空間累積",
+  pathElapsed: "經過時間",
+  path3dSpeed: "三維速度",
+  pathFullSpeed: "全空間速度",
+  inferenceCaption: "獨立、配對、重複測量、事後及全路徑檢定族，並採用 Holm 校正",
+  requestColumn: "請求",
+  testColumn: "檢定",
+  axisMetricColumn: "座標軸／指標",
+  estimandColumn: "估計目標",
+  effectColumn: "效應",
+  statisticColumn: "統計量",
+  rawPColumn: "原始 p",
+  holmPColumn: "Holm 校正 p",
+  methodColumn: "方法",
+  tiesColumn: "結",
+  zerosColumn: "零值",
+  statusReasonColumn: "狀態／原因",
+  noDiagnostics: "沒有發出診斷。",
+  provenanceCaption: "不可變的科學與執行綁定",
+  datasetHash: "資料集雜湊",
+  specHash: "規格雜湊",
+  sourceResultHash: "來源結果雜湊",
+  requestHash: "請求雜湊",
+  runId: "執行 ID",
+  jenaBuild: "jENA 組建",
+  jenaVersion: "jENA 版本",
+  jenaCommit: "jENA 提交",
+  jenaIntegrity: "jENA 完整性",
+  sdkLabel: "3DENA 開發套件",
+  executionTarget: "執行目標",
+  evidence: "證據",
+  permutationPlans: "置換方案",
+  resamplingPlans: "重抽樣方案",
 };
 
 export function getOpenEnaLongitudinalV3Copy(locale: Locale): typeof english {
@@ -866,15 +1028,15 @@ function AuditCards({ profile, settings, bundle, copy }: {
     <section className="ena-longitudinal-v3-result-section" data-testid="open-ena-longitudinal-v3-mapping-audit">
       <h3>{copy.mappingAudit}</h3>
       <dl className="ena-longitudinal-v3-audit-grid">
-        <div><dt>Source rows</dt><dd>{profile.sourceRows}</dd></div>
-        <div><dt>Participants</dt><dd>{profile.participants}</dd></div>
-        <div><dt>Participant-periods</dt><dd>{profile.participantPeriods}</dd></div>
-        <div><dt>Duplicate rows</dt><dd>{profile.duplicateRows}</dd></div>
-        <div><dt>Duplicated periods</dt><dd>{profile.duplicatedParticipantPeriods}</dd></div>
-        <div><dt>Identity confirmed</dt><dd>{settings.identityConfirmed ? "Yes" : "No"}</dd></div>
-        <div><dt>Cohort</dt><dd>{settings.cohortPolicy}</dd></div>
-        <div><dt>Estimand</dt><dd>{settings.estimand.kind}</dd></div>
-        <div><dt>Result hash</dt><dd title={bundle.identity.resultHash}>{bundle.identity.resultHash.slice(0, 14)}…</dd></div>
+        <div><dt>{copy.sourceRows}</dt><dd>{profile.sourceRows}</dd></div>
+        <div><dt>{copy.participants}</dt><dd>{profile.participants}</dd></div>
+        <div><dt>{copy.participantPeriods}</dt><dd>{profile.participantPeriods}</dd></div>
+        <div><dt>{copy.duplicateRows}</dt><dd>{profile.duplicateRows}</dd></div>
+        <div><dt>{copy.duplicatedPeriods}</dt><dd>{profile.duplicatedParticipantPeriods}</dd></div>
+        <div><dt>{copy.identityConfirmed}</dt><dd>{settings.identityConfirmed ? copy.yes : copy.no}</dd></div>
+        <div><dt>{copy.cohortLabel}</dt><dd>{settings.cohortPolicy}</dd></div>
+        <div><dt>{copy.estimandLabel}</dt><dd>{settings.estimand.kind}</dd></div>
+        <div><dt>{copy.resultHash}</dt><dd title={bundle.identity.resultHash}>{bundle.identity.resultHash.slice(0, 14)}…</dd></div>
       </dl>
     </section>
   );
@@ -892,8 +1054,8 @@ function ResultsTablesV3({ bundle, copy }: { bundle: LongitudinalAnalysisBundleV
       <section className="ena-longitudinal-v3-result-section" data-testid="open-ena-longitudinal-v3-path-table">
         <h3>{copy.pathTable}</h3>
         <div className="ena-longitudinal-v3-table-wrap"><table>
-          <caption>Group-period centroids, changes, selected-3D/full-space distances, elapsed time, speed, and cohort diagnostics</caption>
-          <thead><tr>{["Group", "Period", "Rows", "P-P", "Included", "Duplicate", "X", "Y", "Z", "ΔX", "ΔY", "ΔZ", "3D step", "Full step", "3D cumulative", "Full cumulative", "Elapsed", "3D speed", "Full speed"].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead>
+          <caption>{copy.pathCaption}</caption>
+          <thead><tr>{[copy.pathGroup, copy.pathPeriod, copy.pathRows, copy.pathParticipantPeriods, copy.pathIncluded, copy.pathDuplicate, "X", "Y", "Z", "ΔX", "ΔY", "ΔZ", copy.path3dStep, copy.pathFullStep, copy.path3dCumulative, copy.pathFullCumulative, copy.pathElapsed, copy.path3dSpeed, copy.pathFullSpeed].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead>
           <tbody>{paths.map((row, index) => <tr key={`${row.groupCanonical}-${row.periodCanonical}-${index}`}>
             <th scope="row">{finiteText(row.group)}</th><td>{finiteText(row.period)}</td><td>{finiteText(row.rows)}</td><td>{finiteText(row.participantPeriods)}</td><td>{finiteText(row.included)}</td><td>{finiteText(row.duplicateRows)}</td><td>{finiteText(row.x)}</td><td>{finiteText(row.y)}</td><td>{finiteText(row.z)}</td><td>{finiteText(row.deltaX)}</td><td>{finiteText(row.deltaY)}</td><td>{finiteText(row.deltaZ)}</td><td>{finiteText(row.selected3dStepDistance)}</td><td>{finiteText(row.fullSpaceStepDistance)}</td><td>{finiteText(row.selected3dCumulativeDistance)}</td><td>{finiteText(row.fullSpaceCumulativeDistance)}</td><td>{finiteText(row.elapsedFromPrevious)}</td><td>{finiteText(row.selected3dSpeed)}</td><td>{finiteText(row.fullSpaceSpeed)}</td>
           </tr>)}</tbody>
@@ -903,8 +1065,8 @@ function ResultsTablesV3({ bundle, copy }: { bundle: LongitudinalAnalysisBundleV
       <section className="ena-longitudinal-v3-result-section" data-testid="open-ena-longitudinal-v3-inference">
         <h3>{copy.inference}</h3>
         <div className="ena-longitudinal-v3-table-wrap"><table>
-          <caption>Independent, paired, repeated, post-hoc, and whole-path families with Holm adjustment</caption>
-          <thead><tr>{["Request", "Test", "Axis / metric", "Estimand", "n", "Effect", "Statistic", "Raw p", "Holm p", "Method", "Ties", "Zeros", "Status / reason"].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead>
+          <caption>{copy.inferenceCaption}</caption>
+          <thead><tr>{[copy.requestColumn, copy.testColumn, copy.axisMetricColumn, copy.estimandColumn, "n", copy.effectColumn, copy.statisticColumn, copy.rawPColumn, copy.holmPColumn, copy.methodColumn, copy.tiesColumn, copy.zerosColumn, copy.statusReasonColumn].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead>
           <tbody>{ranks.map((row, index) => <tr key={`${finiteText(row.familyId)}-${index}`}>
             <th scope="row">{finiteText(row.requestKind)}</th><td>{finiteText(row.test)}</td><td>{finiteText(row.axis ?? row.metric)}</td><td>{finiteText(row.estimand)}</td><td>{finiteText(row.n ?? `${finiteText(row.nPrimary)}/${finiteText(row.nSecondary)}`)}</td><td>{finiteText(row.effect)}</td><td>{finiteText(row.statistic)}</td><td>{finiteText(row.pRaw ?? row.pValue)}</td><td>{finiteText(row.pHolm ?? row.holmAdjustedPValue)}</td><td>{finiteText(row.method)}</td><td>{finiteText(row.ties)}</td><td>{finiteText(row.zeros)}</td><td>{finiteText(row.status ?? row.familyStatus)} {finiteText(row.reason ?? row.familyReason)}</td>
           </tr>)}</tbody>
@@ -913,15 +1075,15 @@ function ResultsTablesV3({ bundle, copy }: { bundle: LongitudinalAnalysisBundleV
 
       <section className="ena-longitudinal-v3-result-section" data-testid="open-ena-longitudinal-v3-warnings">
         <h3>{copy.warnings}</h3>
-        {warnings.length ? <ul className="ena-longitudinal-v3-warning-list">{warnings.map((warning, index) => <li key={`${warning.code}-${index}`} data-severity={warning.severity}><strong>{warning.severity.toUpperCase()} · {warning.code}</strong><span>{warning.message}</span></li>)}</ul> : <p>No diagnostics were emitted.</p>}
+        {warnings.length ? <ul className="ena-longitudinal-v3-warning-list">{warnings.map((warning, index) => <li key={`${warning.code}-${index}`} data-severity={warning.severity}><strong>{warning.severity.toUpperCase()} · {warning.code}</strong><span>{warning.message}</span></li>)}</ul> : <p>{copy.noDiagnostics}</p>}
       </section>
 
       <section className="ena-longitudinal-v3-result-section" data-testid="open-ena-longitudinal-v3-provenance">
         <h3>{copy.provenance}</h3>
         <div className="ena-longitudinal-v3-table-wrap"><table>
-          <caption>Immutable scientific and execution binding</caption>
+          <caption>{copy.provenanceCaption}</caption>
           <tbody>{[
-            ["Dataset hash", bundle.identity.datasetHash], ["Spec hash", bundle.identity.specHash], ["Source result hash", bundle.identity.sourceResultHash], ["Request hash", bundle.identity.requestHash], ["Result hash", bundle.identity.resultHash], ["Run ID", bundle.identity.runId], ["jENA build", bundle.identity.jenaBuildId], ["jENA version", bundle.execution.jenaVersion], ["jENA commit", bundle.execution.jenaCommit], ["jENA integrity", bundle.execution.jenaTarballIntegrity], ["3DENA SDK", `${bundle.execution.sdkVersion} · ${bundle.execution.buildId}`], ["Execution target", bundle.execution.target], ["Evidence", bundle.execution.evidenceStatus], ["Permutation plans", bundle.execution.permutationPlanHashes.join("; ") || "—"], ["Resampling plans", bundle.execution.resamplingPlanHashes.join("; ") || "—"],
+            [copy.datasetHash, bundle.identity.datasetHash], [copy.specHash, bundle.identity.specHash], [copy.sourceResultHash, bundle.identity.sourceResultHash], [copy.requestHash, bundle.identity.requestHash], [copy.resultHash, bundle.identity.resultHash], [copy.runId, bundle.identity.runId], [copy.jenaBuild, bundle.identity.jenaBuildId], [copy.jenaVersion, bundle.execution.jenaVersion], [copy.jenaCommit, bundle.execution.jenaCommit], [copy.jenaIntegrity, bundle.execution.jenaTarballIntegrity], [copy.sdkLabel, `${bundle.execution.sdkVersion} · ${bundle.execution.buildId}`], [copy.executionTarget, bundle.execution.target], [copy.evidence, bundle.execution.evidenceStatus], [copy.permutationPlans, bundle.execution.permutationPlanHashes.join("; ") || "—"], [copy.resamplingPlans, bundle.execution.resamplingPlanHashes.join("; ") || "—"],
           ].map(([label, value]) => <tr key={label}><th scope="row">{label}</th><td>{value}</td></tr>)}</tbody>
         </table></div>
       </section>
@@ -1239,7 +1401,7 @@ export default function OpenEnaLongitudinalWorkbenchV3({
             const next = cloneOpenEnaLongitudinalSettingsV3(settings);
             next.participantColumns = event.target.checked ? [...next.participantColumns, column] : next.participantColumns.filter((item) => item !== column);
             commitScientific(next, true);
-          }} /><span>{column}</span></label>)}</fieldset><dl className="ena-longitudinal-v3-mini-audit"><div><dt>Rows</dt><dd>{profile.sourceRows}</dd></div><div><dt>Participants</dt><dd>{profile.participants}</dd></div><div><dt>Duplicate rows</dt><dd>{profile.duplicateRows}</dd></div><div><dt>Repeated periods</dt><dd>{profile.duplicatedParticipantPeriods}</dd></div></dl></section>
+          }} /><span>{column}</span></label>)}</fieldset><dl className="ena-longitudinal-v3-mini-audit"><div><dt>{copy.pathRows}</dt><dd>{profile.sourceRows}</dd></div><div><dt>{copy.participants}</dt><dd>{profile.participants}</dd></div><div><dt>{copy.duplicateRows}</dt><dd>{profile.duplicateRows}</dd></div><div><dt>{copy.duplicatedPeriods}</dt><dd>{profile.duplicatedParticipantPeriods}</dd></div></dl></section>
 
           <section data-trajectory-step="3"><h3><b>3</b>Identity confirmation</h3><label className="ena-longitudinal-v3-confirm"><input type="checkbox" checked={settings.identityConfirmed} onChange={(event) => void (async () => {
             const next = event.target.checked

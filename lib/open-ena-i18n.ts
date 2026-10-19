@@ -189,6 +189,10 @@ export interface OpenEnaWorkspaceV3Copy {
     readonly signedEdgeDifferences: string; readonly groupMeanNetwork: string; readonly analyticUnits: (count: number) => string;
     readonly methodBoundary: string; readonly confidenceMethodBoundary: string; readonly outlierMethodBoundary: string;
     readonly unitsDefinition: string; readonly horizonDefinition: string; readonly noNonzeroDifferences: string;
+    readonly legendAria: string; readonly squareCentroidLegend: string; readonly squareCentroidLegendText: string; readonly edgeColumn: string;
+    readonly squareSummary: string; readonly squareSummaryPrimary: (name: string) => string; readonly squareSummarySecondary: (name: string) => string;
+    readonly strongestSignedEdgeDifferences: string; readonly connectionColumn: string; readonly primaryWeightColumn: string;
+    readonly secondaryWeightColumn: string; readonly signedDifferenceColumn: string; readonly strongerGroupColumn: string;
   };
   readonly stats: {
     readonly separation: string; readonly inferenceDesign: string; readonly designs: Readonly<Record<"independent" | "paired" | "repeated", string>>;
@@ -1006,6 +1010,17 @@ export interface OpenEnaCopy {
     strongerGroup: string;
     difference: string;
     meanWeight: string;
+    exactFittedCoordinates: string;
+    marginalConfidenceCaption: string;
+    confidenceAxisColumn: string;
+    confidenceMeanColumn: string;
+    confidenceLowerColumn: string;
+    confidenceUpperColumn: string;
+    confidenceDfColumn: string;
+    confidenceStatusColumn: string;
+    confidenceStatusEstimable: string;
+    marginalConfidenceBoundary: string;
+    pluginReceipt: string;
   };
 }
 
@@ -2450,6 +2465,19 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
       outlierMethodBoundary: t("Short-dashed guides are rENA-compatible mean-centered 1.5 × IQR display intervals; they are not Tukey fences, automatic exclusions, confidence intervals, or tests.", "短虛線引導線是與 rENA 相容、以平均值為中心的 1.5 × IQR 顯示區間；它們不是 Tukey 圍欄、自動排除、信賴區間或檢定。", "短虚线引导线是与 rENA 兼容、以平均值为中心的 1.5 × IQR 显示区间；它们不是 Tukey 围栏、自动排除、置信区间或检验。"),
       unitsDefinition: t("Units", "單位", "单位"), horizonDefinition: t("Horizon", "視域", "视域"),
       noNonzeroDifferences: t("No nonzero Primary-minus-Secondary edge differences are present for this selected pair.", "此所選配對沒有非零的主要群組減次要群組邊差異。", "此所选配对没有非零的主组减次组边差异。"),
+      legendAria: t("Plot legend", "圖例", "图例"),
+      squareCentroidLegend: t("Group means use square centroid markers.", "群組平均值使用方形質心標記。", "组平均值使用方形质心标记。"),
+      squareCentroidLegendText: t("Square marker = group mean", "方形標記＝群組平均值", "方形标记＝组平均值"),
+      edgeColumn: t("Edge", "連線", "连线"),
+      squareSummary: t("Square summary", "方形摘要", "方形摘要"),
+      squareSummaryPrimary: (name) => t(`Square summary · Primary: ${name}`, `方形摘要 · 主要：${name}`, `方形摘要 · 主要：${name}`),
+      squareSummarySecondary: (name) => t(`Square summary · Secondary: ${name}`, `方形摘要 · 次要：${name}`, `方形摘要 · 次要：${name}`),
+      strongestSignedEdgeDifferences: t("Strongest signed edge differences", "最強有符號連線差異", "最强有符号连线差异"),
+      connectionColumn: t("Connection", "連線", "连线"),
+      primaryWeightColumn: t("Primary weight", "主要權重", "主要权重"),
+      secondaryWeightColumn: t("Secondary weight", "次要權重", "次要权重"),
+      signedDifferenceColumn: t("Signed difference", "有符號差異", "有符号差异"),
+      strongerGroupColumn: t("Stronger group", "較強群組", "较强组"),
     },
     stats: {
       separation: t("Model bundles contain unavailable statistics. Inference below is an explicit, separate post-model request.", "模型套件包含不可用的統計項目。下方推論是明確且獨立的模型後要求。", "模型包包含不可用的统计项目。下方推断是明确且独立的模型后请求。"), inferenceDesign: t("Trajectory inference design", "軌跡推論設計", "轨迹推断设计"), designs: { independent: t("Independent groups at a period", "單一時段的獨立群組", "单一时段的独立组"), paired: t("Paired periods", "配對時段", "配对时段"), repeated: t("Repeated periods", "重複時段", "重复时段") },
@@ -3267,6 +3295,17 @@ const en: OpenEnaCopy = {
     strongerGroup: "Stronger group",
     difference: "Absolute difference",
     meanWeight: "Mean weight",
+    exactFittedCoordinates: "exact fitted coordinates",
+    marginalConfidenceCaption: "Separate marginal 95% Student-t confidence intervals — exact fitted coordinates",
+    confidenceAxisColumn: "Axis",
+    confidenceMeanColumn: "Mean",
+    confidenceLowerColumn: "Lower 95%",
+    confidenceUpperColumn: "Upper 95%",
+    confidenceDfColumn: "df",
+    confidenceStatusColumn: "Status",
+    confidenceStatusEstimable: "estimable",
+    marginalConfidenceBoundary: "Endpoint analytic units are the observations. The dashed wireframe is the Cartesian product of three separate marginal intervals; it is not a joint confidence region or significance test.",
+    pluginReceipt: "Plugin receipt ↓",
   },
 };
 
@@ -3680,7 +3719,7 @@ const zhHant: OpenEnaCopy = {
     contextualQuestions: "情境問題",
     limitations: "限制",
   },
-  workspace: { ...en.workspace, jenaSourceLabel: "原始碼", jenaSourceAriaLabel: (version, commit) => `jENA ${version} 對應原始碼，提交 ${commit}；在新分頁開啟`, comparison: "比較圖", groupNetworks: "群組網絡", emptyTitle: "建立教學範例", emptyText: "載入已記錄的範例或開啟編碼 CSV 或 XLSX 檔案，對應模型並建立分析。必要條件尚未完成時，比較圖、主要圖和次要圖框架仍會保持可見。", ready: "就緒", running: "正在以 jENA 建立…", result: "目前模型", units: "分析單位", trajectorySteps: "軌跡步驟", codes: "編碼", groups: "群組", runtime: "運行環境", methodNote: "請結合來源證據及已記錄的分析單位、對話、編碼、窗口、加權、標準化和旋轉選擇來解讀圖形。視覺分離本身並不代表顯著性或因果關係。", threeDNote: "互動式 3D 顯示與 2D 視圖相同的已擬合 jENA 座標。切換視圖不會重新執行或重新擬合分析；旋轉與縮放後仍應把幾何作描述性解讀，而非視為推論證據。", errorTitle: "未能建立模型", accessibleSummary: "無障礙結果摘要", groupMeans: "群組平均座標", strongestDifferences: "最強網絡差異", strongestConnections: "最強網絡連結", strongerGroup: "較強群組", difference: "絕對差異", meanWeight: "平均權重" },
+  workspace: { ...en.workspace, jenaSourceLabel: "原始碼", jenaSourceAriaLabel: (version, commit) => `jENA ${version} 對應原始碼，提交 ${commit}；在新分頁開啟`, comparison: "比較圖", groupNetworks: "群組網絡", emptyTitle: "建立教學範例", emptyText: "載入已記錄的範例或開啟編碼 CSV 或 XLSX 檔案，對應模型並建立分析。必要條件尚未完成時，比較圖、主要圖和次要圖框架仍會保持可見。", ready: "就緒", running: "正在以 jENA 建立…", result: "目前模型", units: "分析單位", trajectorySteps: "軌跡步驟", codes: "編碼", groups: "群組", runtime: "運行環境", methodNote: "請結合來源證據及已記錄的分析單位、對話、編碼、窗口、加權、標準化和旋轉選擇來解讀圖形。視覺分離本身並不代表顯著性或因果關係。", threeDNote: "互動式 3D 顯示與 2D 視圖相同的已擬合 jENA 座標。切換視圖不會重新執行或重新擬合分析；旋轉與縮放後仍應把幾何作描述性解讀，而非視為推論證據。", errorTitle: "未能建立模型", accessibleSummary: "無障礙結果摘要", groupMeans: "群組平均座標", strongestDifferences: "最強網絡差異", strongestConnections: "最強網絡連結", strongerGroup: "較強群組", difference: "絕對差異", meanWeight: "平均權重", exactFittedCoordinates: "精確擬合座標", marginalConfidenceCaption: "分開的邊際 95% Student-t 信賴區間 — 精確擬合座標", confidenceAxisColumn: "座標軸", confidenceMeanColumn: "平均值", confidenceLowerColumn: "95% 下限", confidenceUpperColumn: "95% 上限", confidenceDfColumn: "自由度", confidenceStatusColumn: "狀態", confidenceStatusEstimable: "可估計", marginalConfidenceBoundary: "觀察值是端點分析單位。虛線線框是三個分開邊際區間的笛卡兒積；它不是聯合信賴區域或顯著性檢定。", pluginReceipt: "外掛收據 ↓" },
 };
 
 const zhHans: OpenEnaCopy = {
@@ -4093,7 +4132,7 @@ const zhHans: OpenEnaCopy = {
     contextualQuestions: "情境问题",
     limitations: "限制",
   },
-  workspace: { ...zhHant.workspace, jenaSourceLabel: "源代码", jenaSourceAriaLabel: (version, commit) => `jENA ${version} 对应源代码，提交 ${commit}；在新标签页打开`, comparison: "比较图", groupNetworks: "组网络", emptyTitle: "构建教学示例", emptyText: "加载已有说明的示例或打开编码 CSV 或 XLSX 文件，映射模型并构建分析。必要条件尚未完成时，比较图、主要图和次要图框架仍会保持可见。", ready: "就绪", running: "正在使用 jENA 构建…", result: "当前模型", units: "分析单位", trajectorySteps: "轨迹步骤", codes: "编码", groups: "组", runtime: "运行环境", methodNote: "请结合来源证据以及记录的分析单位、对话、编码、窗口、加权、标准化和旋转选择来解读图形。视觉分离本身并不代表显著性或因果关系。", threeDNote: "交互式 3D 显示与 2D 视图相同的已拟合 jENA 坐标。切换视图不会重新运行或重新拟合分析；旋转与缩放后仍应把几何作描述性解读，而非视为推断证据。", errorTitle: "未能构建模型", accessibleSummary: "无障碍结果摘要", groupMeans: "组平均坐标", strongestDifferences: "最强网络差异", strongestConnections: "最强网络连接", strongerGroup: "较强组", difference: "绝对差异", meanWeight: "平均权重" },
+  workspace: { ...zhHant.workspace, jenaSourceLabel: "源代码", jenaSourceAriaLabel: (version, commit) => `jENA ${version} 对应源代码，提交 ${commit}；在新标签页打开`, comparison: "比较图", groupNetworks: "组网络", emptyTitle: "构建教学示例", emptyText: "加载已有说明的示例或打开编码 CSV 或 XLSX 文件，映射模型并构建分析。必要条件尚未完成时，比较图、主要图和次要图框架仍会保持可见。", ready: "就绪", running: "正在使用 jENA 构建…", result: "当前模型", units: "分析单位", trajectorySteps: "轨迹步骤", codes: "编码", groups: "组", runtime: "运行环境", methodNote: "请结合来源证据以及记录的分析单位、对话、编码、窗口、加权、标准化和旋转选择来解读图形。视觉分离本身并不代表显著性或因果关系。", threeDNote: "交互式 3D 显示与 2D 视图相同的已拟合 jENA 坐标。切换视图不会重新运行或重新拟合分析；旋转与缩放后仍应把几何作描述性解读，而非视为推断证据。", errorTitle: "未能构建模型", accessibleSummary: "无障碍结果摘要", groupMeans: "组平均坐标", strongestDifferences: "最强网络差异", strongestConnections: "最强网络连接", strongerGroup: "较强组", difference: "绝对差异", meanWeight: "平均权重", exactFittedCoordinates: "精确拟合坐标", marginalConfidenceCaption: "分开的边际 95% Student-t 置信区间 — 精确拟合坐标", confidenceAxisColumn: "坐标轴", confidenceMeanColumn: "平均值", confidenceLowerColumn: "95% 下限", confidenceUpperColumn: "95% 上限", confidenceDfColumn: "自由度", confidenceStatusColumn: "状态", confidenceStatusEstimable: "可估计", marginalConfidenceBoundary: "观察值是端点分析单位。虚线线框是三个分开边际区间的笛卡尔积；它不是联合置信区域或显著性检验。", pluginReceipt: "插件收据 ↓" },
 };
 
 Object.assign(zhHant.longitudinal, {
