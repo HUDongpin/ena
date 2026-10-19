@@ -33,6 +33,16 @@ that disables unreviewed `tsup` configuration discovery. These differences do
 not change the scientific TypeScript source, numerical contract, runtime
 behavior, or upstream prerelease version.
 
+On 2026-10-19, ENA updated this workspace's development tooling to Vitest and
+its Playwright provider 4.1.11 and tsup 9.0.0 to resolve the development-only
+dependency advisories. The workspace and root lockfiles and browser-provider
+configuration were refreshed together. Development verification requires a
+tsup-supported Node.js version (`^22.18.0`, `^24.11.0`, or `>=26.0.0`);
+ENA CI uses Node.js 22.
+This tooling update does not change `src/`, `NUMERICS.md`, or the upstream
+artifact identity. The local source-integrity contract records these explicit
+integration changes separately from the immutable upstream artifact provenance.
+
 ## Exclusions
 
 The snapshot excludes `.git`, `node_modules`, `dist`, `.github`, local
@@ -45,7 +55,8 @@ To refresh this workspace, start from a separately reviewed exact jENA commit,
 record its full SHA and canonical inclusion proof here, and mechanically replace
 the tracked snapshot files using the same exclusions. Mechanically reapply only
 the ENA-owned `private: true` manifest difference, the build-script
-`--no-config` hardening, and this note. Then regenerate the root npm lockfile,
+`--no-config` hardening, the security-related development-tooling changes
+recorded above, and this note. Then regenerate the workspace and root npm lockfiles,
 prove that `node_modules/jena-js` links to `packages/jena-js`, and rerun both the
 complete jENA verification suite and every Open ENA application gate. Do not
 hand-copy individual runtime source files or silently move the source SHA.

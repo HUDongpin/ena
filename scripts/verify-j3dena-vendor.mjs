@@ -99,12 +99,14 @@ export const J3DENA_VENDOR_CONTRACT = Object.freeze({
 // The facade artifact above records its immutable upstream build provenance.
 // The installed workspace peer has since received the accepted Models v3
 // numerical repair (Task35, 885287181e4564c8615297b8667dd26bdd286d70).
+// Development dependency manifests were refreshed on 2026-10-19 to patch the
+// Vitest and esbuild advisories; scientific src/ and NUMERICS.md are unchanged.
 // Pin that distinct local source tree without rewriting the artifact's identity.
 export const J3DENA_VERIFICATION_CONTRACT = Object.freeze({
   ...J3DENA_VENDOR_CONTRACT,
-  jenaSourceTreeSha256: "24fdcb7314ca89e0391987ea5a6e8127539100c2e5966cc9dea8bac615f8acc8",
+  jenaSourceTreeSha256: "2068298d99de428ba1875d8241b73338e988f89df78d4da83f8911e830d09764",
   jenaSourceTreeFileCount: 36,
-  jenaSourceTreeByteLength: 459_333,
+  jenaSourceTreeByteLength: 474_067,
 });
 
 const DEFAULT_PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
