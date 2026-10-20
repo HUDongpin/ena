@@ -126,6 +126,36 @@ export interface OpenEnaGroupContrastProps extends OpenEnaCodeGraphPresentation 
     readonly secondaryWeightColumn?: string;
     readonly signedDifferenceColumn?: string;
     readonly strongerGroupColumn?: string;
+    readonly solidPrimaryStronger?: (name: string) => string;
+    readonly solidSecondaryStronger?: (name: string) => string;
+    readonly equalMeanWeight?: string;
+    readonly dashedConfidenceLegend?: (names: string) => string;
+    readonly shortDashedOutlierLegend?: (names: string) => string;
+    readonly nameJoin?: string;
+    readonly comparisonDenominator?: (definition: string, value: string) => string;
+    readonly sidePanelDenominator?: (definition: string, value: string) => string;
+    readonly edgeScaleDefinition?: (definition: string) => string;
+    readonly thresholdNote?: (percent: string, scale: string, primary: string, secondary: string) => string;
+    readonly emptyThresholdRow?: string;
+    readonly equalWeight?: string;
+    readonly signedDifferenceEdge?: (source: string, target: string, difference: string, strongerName: string, role: string) => string;
+    readonly groupMeanWeightEdge?: (source: string, target: string, groupName: string, role: string, weight: string) => string;
+    readonly namedUnitPoint?: (groupName: string, unitLabel: string) => string;
+    readonly roleUnitPoint?: (role: string, index: number) => string;
+    readonly codeNodeLabel?: (codeLabel: string) => string;
+    readonly unnamedCode?: string;
+    readonly primaryRole?: string;
+    readonly secondaryRole?: string;
+    readonly signedNetworkTitle?: (first: string, second: string) => string;
+    readonly singleGroupNetworkTitle?: (name: string) => string;
+    readonly noGroupNetworkTitle?: string;
+    readonly signedNetworkDescription?: (xAxis: string, yAxis: string, confidence: string, outlier: string) => string;
+    readonly signedConfidenceClause?: string;
+    readonly signedOutlierClause?: string;
+    readonly groupMeanNetworkDescription?: string;
+    readonly pointSamplingDescription?: (shown: number, eligible: number) => string;
+    readonly unitPointsHidden?: string;
+    readonly analyticUnitMarksHidden?: (count: number) => string;
   };
 }
 
@@ -191,6 +221,36 @@ const DEFAULT_GROUP_CONTRAST_UI_COPY = {
   secondaryWeightColumn: englishPlotChrome.secondaryWeightColumn,
   signedDifferenceColumn: englishPlotChrome.signedDifferenceColumn,
   strongerGroupColumn: englishPlotChrome.strongerGroupColumn,
+  solidPrimaryStronger: englishPlotChrome.solidPrimaryStronger,
+  solidSecondaryStronger: englishPlotChrome.solidSecondaryStronger,
+  equalMeanWeight: englishPlotChrome.equalMeanWeight,
+  dashedConfidenceLegend: englishPlotChrome.dashedConfidenceLegend,
+  shortDashedOutlierLegend: englishPlotChrome.shortDashedOutlierLegend,
+  nameJoin: englishPlotChrome.nameJoin,
+  comparisonDenominator: englishPlotChrome.comparisonDenominator,
+  sidePanelDenominator: englishPlotChrome.sidePanelDenominator,
+  edgeScaleDefinition: englishPlotChrome.edgeScaleDefinition,
+  thresholdNote: englishPlotChrome.thresholdNote,
+  emptyThresholdRow: englishPlotChrome.emptyThresholdRow,
+  equalWeight: englishPlotChrome.equalWeight,
+  signedDifferenceEdge: englishPlotChrome.signedDifferenceEdge,
+  groupMeanWeightEdge: englishPlotChrome.groupMeanWeightEdge,
+  namedUnitPoint: englishPlotChrome.namedUnitPoint,
+  roleUnitPoint: englishPlotChrome.roleUnitPoint,
+  codeNodeLabel: englishPlotChrome.codeNodeLabel,
+  unnamedCode: englishPlotChrome.unnamedCode,
+  primaryRole: englishPlotChrome.primaryRole,
+  secondaryRole: englishPlotChrome.secondaryRole,
+  signedNetworkTitle: englishPlotChrome.signedNetworkTitle,
+  singleGroupNetworkTitle: englishPlotChrome.singleGroupNetworkTitle,
+  noGroupNetworkTitle: englishPlotChrome.noGroupNetworkTitle,
+  signedNetworkDescription: englishPlotChrome.signedNetworkDescription,
+  signedConfidenceClause: englishPlotChrome.signedConfidenceClause,
+  signedOutlierClause: englishPlotChrome.signedOutlierClause,
+  groupMeanNetworkDescription: englishPlotChrome.groupMeanNetworkDescription,
+  pointSamplingDescription: englishPlotChrome.pointSamplingDescription,
+  unitPointsHidden: englishPlotChrome.unitPointsHidden,
+  analyticUnitMarksHidden: englishPlotChrome.analyticUnitMarksHidden,
 } as const;
 
 type ContrastEdge = OpenEnaPairwiseContrast["edges"][number];
@@ -1145,6 +1205,7 @@ function ContrastSvg({
   restorePanelForRole?: Partial<Record<GroupRole, { label: string; slot: GroupRole; onRestore: () => void }>>;
 }) {
   const flippedLabel = uiCopy?.flippedLabel ?? "flipped";
+  const edgeCopy = uiCopy ?? DEFAULT_GROUP_CONTRAST_UI_COPY;
   const comparisonSvgRef = useRef<SVGSVGElement | null>(null);
   const [svgScreenScale, setSvgScreenScale] = useState(1);
   const bindSvgRef = useCallback((node: SVGSVGElement | null) => {
@@ -1316,22 +1377,27 @@ function ContrastSvg({
       && outlierGuideIsEstimable(side, contrast.axes)
   ));
   const title = signedComparison
-    ? `Signed group-network difference, ${activeNames[0]} minus ${activeNames[1]}`
+    ? (edgeCopy.signedNetworkTitle ?? DEFAULT_GROUP_CONTRAST_UI_COPY.signedNetworkTitle)(activeNames[0] ?? "", activeNames[1] ?? "")
     : activeNames.length === 1
-      ? `${activeNames[0]} group network`
-      : "No group network selected";
+      ? (edgeCopy.singleGroupNetworkTitle ?? DEFAULT_GROUP_CONTRAST_UI_COPY.singleGroupNetworkTitle)(activeNames[0] ?? "")
+      : (edgeCopy.noGroupNetworkTitle ?? DEFAULT_GROUP_CONTRAST_UI_COPY.noGroupNetworkTitle);
   const description = signedComparison
-    ? `Two-dimensional signed group comparison on ${xAxisLabel} and ${yAxisLabel}. Each connection is drawn once in the stable color of the stronger selected group; width encodes the absolute Primary-minus-Secondary difference.${shownConfidenceGroups.length ? " Dashed guides show separate marginal 95% Student-t confidence intervals for each displayed arithmetic group mean, not a joint region or significance test." : ""}${shownOutlierGroups.length ? " Short-dashed boxes show rENA-compatible mean-centered 1.5 × IQR display intervals; they are not Tukey fences, confidence intervals, automatic exclusions, or tests." : ""}`
-    : `Two-dimensional selected group mean network in the fixed full-result coordinate extent and shared group-mean edge scale.`;
+    ? (edgeCopy.signedNetworkDescription ?? DEFAULT_GROUP_CONTRAST_UI_COPY.signedNetworkDescription)(
+      xAxisLabel,
+      yAxisLabel,
+      shownConfidenceGroups.length ? (edgeCopy.signedConfidenceClause ?? DEFAULT_GROUP_CONTRAST_UI_COPY.signedConfidenceClause) : "",
+      shownOutlierGroups.length ? (edgeCopy.signedOutlierClause ?? DEFAULT_GROUP_CONTRAST_UI_COPY.signedOutlierClause) : "",
+    )
+    : (edgeCopy.groupMeanNetworkDescription ?? DEFAULT_GROUP_CONTRAST_UI_COPY.groupMeanNetworkDescription);
   const pointSamplingDescription = pointsShown < pointsEligible
-    ? ` Rendering ${pointsShown} sampled unit marks from ${pointsEligible} visible analytic-unit points.`
+    ? (edgeCopy.pointSamplingDescription ?? DEFAULT_GROUP_CONTRAST_UI_COPY.pointSamplingDescription)(pointsShown, pointsEligible)
     : "";
   const pointVisibilityDescription = kind !== "comparison"
     ? ""
     : !showPoints && pointsValid > 0
-      ? " Unit point marks are hidden by the global Plot Tools setting."
+      ? (edgeCopy.unitPointsHidden ?? DEFAULT_GROUP_CONTRAST_UI_COPY.unitPointsHidden)
       : pointsHidden > 0
-        ? ` ${pointsHidden} analytic-unit mark${pointsHidden === 1 ? " is" : "s are"} hidden by group or unit display controls.`
+        ? (edgeCopy.analyticUnitMarksHidden ?? DEFAULT_GROUP_CONTRAST_UI_COPY.analyticUnitMarksHidden)(pointsHidden)
         : "";
   const reference = contrast.resultProvenance?.projectionReference;
   const referenceId = reference ? safeFigureLabel(reference.referenceId, 30) : null;
@@ -1500,7 +1566,15 @@ function ContrastSvg({
                 const strongerSide = strongerSourceRole === "primary" ? contrast.primary : contrast.secondary;
                 const strongerName = strongerSide.name;
                 const stroke = groupColor(contrast, strongerSide, strongerSourceRole);
-                const edgeLabel = `${openEnaRenderedCodeLabel(codePresentation, edge.source)} ↔ ${openEnaRenderedCodeLabel(codePresentation, edge.target)}: signed Primary-minus-Secondary difference ${formatNumber(difference, true)}; ${strongerName} ${role} group is stronger`;
+                const edgeLabel = (edgeCopy.signedDifferenceEdge ?? DEFAULT_GROUP_CONTRAST_UI_COPY.signedDifferenceEdge)(
+                  openEnaRenderedCodeLabel(codePresentation, edge.source),
+                  openEnaRenderedCodeLabel(codePresentation, edge.target),
+                  formatNumber(difference, true),
+                  strongerName,
+                  role === "primary"
+                    ? (edgeCopy.primaryRole ?? DEFAULT_GROUP_CONTRAST_UI_COPY.primaryRole)
+                    : (edgeCopy.secondaryRole ?? DEFAULT_GROUP_CONTRAST_UI_COPY.secondaryRole),
+                );
                 return (
                   <line
                     key={edge.name}
@@ -1535,7 +1609,15 @@ function ContrastSvg({
                 const ratio = magnitude / safeDenominator;
                 if (magnitude <= ZERO_TOLERANCE || ratio < threshold) return null;
                 const stroke = groupColor(contrast, side, role);
-                const edgeLabel = `${openEnaRenderedCodeLabel(codePresentation, edge.source)} ↔ ${openEnaRenderedCodeLabel(codePresentation, edge.target)}: ${side.name} ${role} group mean weight ${formatNumber(value)}`;
+                const edgeLabel = (edgeCopy.groupMeanWeightEdge ?? DEFAULT_GROUP_CONTRAST_UI_COPY.groupMeanWeightEdge)(
+                  openEnaRenderedCodeLabel(codePresentation, edge.source),
+                  openEnaRenderedCodeLabel(codePresentation, edge.target),
+                  side.name,
+                  role === "primary"
+                    ? (edgeCopy.primaryRole ?? DEFAULT_GROUP_CONTRAST_UI_COPY.primaryRole)
+                    : (edgeCopy.secondaryRole ?? DEFAULT_GROUP_CONTRAST_UI_COPY.secondaryRole),
+                  formatNumber(value),
+                );
                 return (
                   <line
                     key={`${role}:${edge.name}`}
@@ -1595,9 +1677,12 @@ function ContrastSvg({
                 const projected = projectEvidence(point.x, point.y);
                 const markerRadius = 3.85 * markerScale;
                 const sourceLabel = showUnitLabels ? safeUnitLabel(point.unitId) : null;
+                const roleLabel = role === "primary"
+                  ? (edgeCopy.primaryRole ?? DEFAULT_GROUP_CONTRAST_UI_COPY.primaryRole)
+                  : (edgeCopy.secondaryRole ?? DEFAULT_GROUP_CONTRAST_UI_COPY.secondaryRole);
                 const accessibleLabel = sourceLabel
-                  ? `${side.name} unit ${sourceLabel}`
-                  : `${role === "primary" ? "Primary" : "Secondary"} unit point ${sourceIndex + 1}`;
+                  ? (edgeCopy.namedUnitPoint ?? DEFAULT_GROUP_CONTRAST_UI_COPY.namedUnitPoint)(side.name, sourceLabel)
+                  : (edgeCopy.roleUnitPoint ?? DEFAULT_GROUP_CONTRAST_UI_COPY.roleUnitPoint)(roleLabel, sourceIndex + 1);
                 const pointKey = `${role}:${sampleIndex}`;
                 return (
                   <g
@@ -1640,7 +1725,7 @@ function ContrastSvg({
           if (unitCircle && !connectedCodes.has(node.code)) return null;
           const point = nodePoints.get(node.code);
           if (!point) return null;
-          const codeLabel = safeFigureLabel(openEnaRenderedCodeLabel(codePresentation, node.code), 72) || "Unnamed code";
+          const codeLabel = safeFigureLabel(openEnaRenderedCodeLabel(codePresentation, node.code), 72) || (edgeCopy.unnamedCode ?? DEFAULT_GROUP_CONTRAST_UI_COPY.unnamedCode);
           const nodeSize = codeNodeSize(node.code);
           const nodeColor = codeColorFor(codeColors, node.code);
           const fitted = baseModelNodePoints.get(node.code)!;
@@ -1653,9 +1738,9 @@ function ContrastSvg({
               key={node.code}
               transform={`translate(${point.x} ${point.y})`}
               role="img"
-              aria-label={`${codeLabel} code node`}
+              aria-label={(edgeCopy.codeNodeLabel ?? DEFAULT_GROUP_CONTRAST_UI_COPY.codeNodeLabel)(codeLabel)}
             >
-              <title>{`${codeLabel} code node`}</title>
+              <title>{(edgeCopy.codeNodeLabel ?? DEFAULT_GROUP_CONTRAST_UI_COPY.codeNodeLabel)(codeLabel)}</title>
               <circle
                 r={nodeSize}
                 className="ena-set-result-node"
@@ -1873,6 +1958,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
   };
   const comparisonScale = Math.max(0, finiteOrZero(contrast.edgeScaleDenominators.difference));
   const groupMeanScale = Math.max(0, finiteOrZero(contrast.edgeScaleDenominators.sharedMean));
+  const edgeScaleDefinition = uiCopy.edgeScaleDefinition ?? DEFAULT_GROUP_CONTRAST_UI_COPY.edgeScaleDefinition;
   const [xAxis, yAxis] = contrast.axes;
   const xVariance = finiteOrZero(contrast.geometry.variance[xAxis]) * 100;
   const yVariance = finiteOrZero(contrast.geometry.variance[yAxis]) * 100;
@@ -2211,7 +2297,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
             aria-hidden="true"
             style={{ borderTopColor: groupColor(contrast, contrast.primary, "primary") }}
           />
-          <span>Solid {contrast.primary.name} color: Primary is stronger (+)</span>
+          <span>{(uiCopy.solidPrimaryStronger ?? DEFAULT_GROUP_CONTRAST_UI_COPY.solidPrimaryStronger)(contrast.primary.name)}</span>
         </li>
         <li data-ena-sign="negative" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
           <i
@@ -2219,11 +2305,11 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
             aria-hidden="true"
             style={{ borderTopColor: groupColor(contrast, contrast.secondary, "secondary") }}
           />
-          <span>Solid {contrast.secondary.name} color: Secondary is stronger (−)</span>
+          <span>{(uiCopy.solidSecondaryStronger ?? DEFAULT_GROUP_CONTRAST_UI_COPY.solidSecondaryStronger)(contrast.secondary.name)}</span>
         </li>
         <li data-ena-sign="equal" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
           <i className="ena-set-key-equal" aria-hidden="true" />
-          <span>Equal mean weight: no difference line drawn</span>
+          <span>{uiCopy.equalMeanWeight ?? DEFAULT_GROUP_CONTRAST_UI_COPY.equalMeanWeight}</span>
         </li>
         {anyConfidenceGuideShown ? (
         <li data-ena-interval-legend="marginal-student-t-95" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
@@ -2232,7 +2318,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
             aria-hidden="true"
             style={{ borderColor: groupColor(contrast, contrast.primary, "primary") }}
           />
-          <span>Dashed guides: separate marginal 95% Student-t intervals for {confidenceGuideNames.join(" and ")}; not a joint region or test</span>
+          <span>{(uiCopy.dashedConfidenceLegend ?? DEFAULT_GROUP_CONTRAST_UI_COPY.dashedConfidenceLegend)(confidenceGuideNames.join(uiCopy.nameJoin ?? DEFAULT_GROUP_CONTRAST_UI_COPY.nameJoin))}</span>
         </li>
         ) : null}
         {anyOutlierGuideShown ? (
@@ -2241,21 +2327,24 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
             className="ena-set-key-outlier"
             aria-hidden="true"
           />
-          <span>Short-dashed guides: rENA-compatible mean-centered 1.5 × IQR display intervals for {outlierGuideNames.join(" and ")}; not automatic exclusion or a test</span>
+          <span>{(uiCopy.shortDashedOutlierLegend ?? DEFAULT_GROUP_CONTRAST_UI_COPY.shortDashedOutlierLegend)(outlierGuideNames.join(uiCopy.nameJoin ?? DEFAULT_GROUP_CONTRAST_UI_COPY.nameJoin))}</span>
         </li>
         ) : null}
       </ol>
 
       <p className="ena-set-reference-id" style={{ maxWidth: "100%", textAlign: "start", paddingBlock: 4 }}>
-        Comparison denominator: {contrast.edgeScaleDenominators.differenceDefinition} ({formatNumber(comparisonScale)}).
-        {" "}Side-panel denominator: {contrast.edgeScaleDenominators.sharedMeanDefinition} ({formatNumber(groupMeanScale)}).
+        {(uiCopy.comparisonDenominator ?? DEFAULT_GROUP_CONTRAST_UI_COPY.comparisonDenominator)(edgeScaleDefinition(contrast.edgeScaleDenominators.differenceDefinition), formatNumber(comparisonScale))}
+        {" "}{(uiCopy.sidePanelDenominator ?? DEFAULT_GROUP_CONTRAST_UI_COPY.sidePanelDenominator)(edgeScaleDefinition(contrast.edgeScaleDenominators.sharedMeanDefinition), formatNumber(groupMeanScale))}
       </p>
 
       <div className="ena-set-difference-table" role="region" aria-label={uiCopy.strongestSignedEdgeDifferences ?? DEFAULT_GROUP_CONTRAST_UI_COPY.strongestSignedEdgeDifferences} tabIndex={0}>
         <p>
-          Threshold uses {(threshold * 100).toFixed(0)}% of the comparison signed-difference scale ({formatNumber(comparisonScale)}).
-          Signed difference is Primary minus Secondary: positive values are {contrast.primary.name} minus {contrast.secondary.name}.
-          This descriptive comparison does not imply significance.
+          {(uiCopy.thresholdNote ?? DEFAULT_GROUP_CONTRAST_UI_COPY.thresholdNote)(
+            (threshold * 100).toFixed(0),
+            formatNumber(comparisonScale),
+            contrast.primary.name,
+            contrast.secondary.name,
+          )}
         </p>
         <table>
           <caption>{uiCopy.strongestSignedEdgeDifferences ?? DEFAULT_GROUP_CONTRAST_UI_COPY.strongestSignedEdgeDifferences}</caption>
@@ -2275,10 +2364,10 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                 <td>{formatNumber(edge.primaryWeight)}</td>
                 <td>{formatNumber(edge.secondaryWeight)}</td>
                 <td data-ena-sign={differenceSign(edge)}>{formatNumber(edge.signedDifference, true)}</td>
-                <td>{edge.stronger === "primary" ? contrast.primary.name : edge.stronger === "secondary" ? contrast.secondary.name : "Equal"}</td>
+                <td>{edge.stronger === "primary" ? contrast.primary.name : edge.stronger === "secondary" ? contrast.secondary.name : (uiCopy.equalWeight ?? DEFAULT_GROUP_CONTRAST_UI_COPY.equalWeight)}</td>
               </tr>
             )) : (
-              <tr><td colSpan={5}>No signed edge differences meet the current network threshold.</td></tr>
+              <tr><td colSpan={5}>{uiCopy.emptyThresholdRow ?? DEFAULT_GROUP_CONTRAST_UI_COPY.emptyThresholdRow}</td></tr>
             )}
           </tbody>
         </table>

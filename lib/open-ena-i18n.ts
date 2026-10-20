@@ -195,6 +195,38 @@ export interface OpenEnaWorkspaceV3Copy {
     readonly squareSummary: string; readonly squareSummaryPrimary: (name: string) => string; readonly squareSummarySecondary: (name: string) => string;
     readonly strongestSignedEdgeDifferences: string; readonly connectionColumn: string; readonly primaryWeightColumn: string;
     readonly secondaryWeightColumn: string; readonly signedDifferenceColumn: string; readonly strongerGroupColumn: string;
+    readonly solidPrimaryStronger: (name: string) => string;
+    readonly solidSecondaryStronger: (name: string) => string;
+    readonly equalMeanWeight: string;
+    readonly dashedConfidenceLegend: (names: string) => string;
+    readonly shortDashedOutlierLegend: (names: string) => string;
+    readonly nameJoin: string;
+    readonly comparisonDenominator: (definition: string, value: string) => string;
+    readonly sidePanelDenominator: (definition: string, value: string) => string;
+    readonly differenceEdgeScaleDefinition: string;
+    readonly sharedMeanEdgeScaleDefinition: string;
+    readonly edgeScaleDefinition: (definition: string) => string;
+    readonly thresholdNote: (percent: string, scale: string, primary: string, secondary: string) => string;
+    readonly emptyThresholdRow: string;
+    readonly equalWeight: string;
+    readonly signedDifferenceEdge: (source: string, target: string, difference: string, strongerName: string, role: string) => string;
+    readonly groupMeanWeightEdge: (source: string, target: string, groupName: string, role: string, weight: string) => string;
+    readonly namedUnitPoint: (groupName: string, unitLabel: string) => string;
+    readonly roleUnitPoint: (role: string, index: number) => string;
+    readonly codeNodeLabel: (codeLabel: string) => string;
+    readonly unnamedCode: string;
+    readonly primaryRole: string;
+    readonly secondaryRole: string;
+    readonly signedNetworkTitle: (first: string, second: string) => string;
+    readonly singleGroupNetworkTitle: (name: string) => string;
+    readonly noGroupNetworkTitle: string;
+    readonly signedNetworkDescription: (xAxis: string, yAxis: string, confidence: string, outlier: string) => string;
+    readonly signedConfidenceClause: string;
+    readonly signedOutlierClause: string;
+    readonly groupMeanNetworkDescription: string;
+    readonly pointSamplingDescription: (shown: number, eligible: number) => string;
+    readonly unitPointsHidden: string;
+    readonly analyticUnitMarksHidden: (count: number) => string;
   };
   readonly stats: {
     readonly separation: string; readonly inferenceDesign: string; readonly designs: Readonly<Record<"independent" | "paired" | "repeated", string>>;
@@ -1909,7 +1941,7 @@ const MODEL_EXACT_ZH_HANT_V3: Readonly<Record<string, string>> = {
   "This result is historical. Its configuration is loaded only by an explicit action.": "此結果為歷史結果；只有明確操作才會載入其設定。",
   "Accepting an artifact does not start a model. References are added without selecting Rotation.": "接受成果不會啟動模型；新增參考時不會選取旋轉。",
   "Legacy schema 2 analysis packages cannot become a v3 Reference because they do not contain the required fitted basis evidence.": "舊版 schema 2 分析套件缺少必要的擬合基底證據，因此不能成為 v3 參考。",
-  "The imported Standard draft uses backward extent 1 for legacy value 0, preserving the current-row behavior. Conversation windows are unchanged; the historical artifact retains its original value.": "匯入的 Standard 草稿將舊版後向範圍 0 轉為 1，保留包含目前列的行為。Conversation 視窗不變；歷史成果仍保留原始值。",
+  "The imported Standard draft uses backward extent 1 for legacy value 0, preserving the current-row behavior. Conversation windows are unchanged; the historical artifact retains its original value.": "匯入的 Standard 草稿將舊版後向範圍 0 轉為 1，保留包含目前列的行為。Conversation 窗口不變；歷史成果仍保留原始值。",
   "A presentation preset hides this Group. Clear preset Group hiding to use these saved controls; individual Unit preferences are retained.": "呈現預設隱藏了此群組。清除預設群組隱藏後即可使用這些已儲存控制項；個別單位偏好仍會保留。",
   "All Groups are hidden. Restore Group visibility to use these saved controls; individual Unit preferences are retained.": "所有群組均已隱藏。還原群組可見性後即可使用這些已儲存控制項；個別單位偏好仍會保留。",
   "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.": "原生軌跡顯示摘要不提供信賴區間或離群區間；已儲存的區間偏好不適用於此檢視。",
@@ -2339,8 +2371,26 @@ const groupApplicabilityEnV3 = {
   trajectoryIntervals: "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.",
 } as const;
 
+// Keys match the fixed English edge-scale definition identifiers in lib/open-ena/contrasts.ts.
+const DIFFERENCE_EDGE_SCALE_DEFINITION = "maximum absolute Primary-minus-Secondary edge difference";
+const SHARED_MEAN_EDGE_SCALE_DEFINITION = "shared maximum absolute Primary or Secondary mean edge weight";
+
 function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3Copy {
   const t = (enValue: string, hantValue: string, hansValue: string) => locale === "en" ? enValue : locale === "zh-hant" ? hantValue : hansValue;
+  const differenceEdgeScaleDefinition = t(
+    DIFFERENCE_EDGE_SCALE_DEFINITION,
+    "主要群組減次要群組連線差異的最大絕對值",
+    "主要组减次要组连线差异的最大绝对值",
+  );
+  const sharedMeanEdgeScaleDefinition = t(
+    SHARED_MEAN_EDGE_SCALE_DEFINITION,
+    "主要群組或次要群組平均連線權重的共用最大絕對值",
+    "主要组或次要组平均连线权重的共享最大绝对值",
+  );
+  const edgeScaleDefinitions: Readonly<Record<string, string>> = {
+    [DIFFERENCE_EDGE_SCALE_DEFINITION]: differenceEdgeScaleDefinition,
+    [SHARED_MEAN_EDGE_SCALE_DEFINITION]: sharedMeanEdgeScaleDefinition,
+  };
   return {
     configureTrajectory: t("Configure trajectory model", "設定軌跡模型", "设置轨迹模型"),
     resultStatus: { current: t("Current result", "目前結果", "当前结果"), stale: t("Retained stale result", "保留的過期結果", "保留的过期结果"), none: t("No result", "沒有結果", "没有结果") },
@@ -2494,6 +2544,54 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
       secondaryWeightColumn: t("Secondary weight", "次要權重", "次要权重"),
       signedDifferenceColumn: t("Signed difference", "有符號差異", "有符号差异"),
       strongerGroupColumn: t("Stronger group", "較強群組", "较强组"),
+      solidPrimaryStronger: (name) => t(`Solid ${name} color: Primary is stronger (+)`, `實線 ${name} 顏色：主要群組較強（+）`, `实线 ${name} 颜色：主要组较强（+）`),
+      solidSecondaryStronger: (name) => t(`Solid ${name} color: Secondary is stronger (−)`, `實線 ${name} 顏色：次要群組較強（−）`, `实线 ${name} 颜色：次要组较强（−）`),
+      equalMeanWeight: t("Equal mean weight: no difference line drawn", "平均權重相等：不繪製差異連線", "平均权重相等：不绘制差异连线"),
+      dashedConfidenceLegend: (names) => t(`Dashed guides: separate marginal 95% Student-t intervals for ${names}; not a joint region or test`, `虛線引導線：${names} 的分開邊際 95% Student-t 信賴區間；不是聯合區域或檢定`, `虚线引导线：${names} 的分开边际 95% Student-t 置信区间；不是联合区域或检验`),
+      shortDashedOutlierLegend: (names) => t(`Short-dashed guides: rENA-compatible mean-centered 1.5 × IQR display intervals for ${names}; not automatic exclusion or a test`, `短虛線引導線：${names} 的 rENA 相容、以平均值為中心的 1.5 × IQR 顯示區間；不是自動排除或檢定`, `短虚线引导线：${names} 的 rENA 兼容、以平均值为中心的 1.5 × IQR 显示区间；不是自动排除或检验`),
+      nameJoin: t(" and ", "與", "与"),
+      comparisonDenominator: (definition, value) => t(`Comparison denominator: ${definition} (${value}).`, `比較分母：${definition}（${value}）。`, `比较分母：${definition}（${value}）。`),
+      sidePanelDenominator: (definition, value) => t(`Side-panel denominator: ${definition} (${value}).`, `側圖分母：${definition}（${value}）。`, `侧图分母：${definition}（${value}）。`),
+      differenceEdgeScaleDefinition,
+      sharedMeanEdgeScaleDefinition,
+      edgeScaleDefinition: (definition) => edgeScaleDefinitions[definition] ?? definition,
+      thresholdNote: (percent, scale, primary, secondary) => t(
+        `Threshold uses ${percent}% of the comparison signed-difference scale (${scale}). Signed difference is Primary minus Secondary: positive values are ${primary} minus ${secondary}. This descriptive comparison does not imply significance.`,
+        `閾值使用比較有符號差異比例（${scale}）的 ${percent}%。有符號差異是主要群組減次要群組：正值是 ${primary} 減 ${secondary}。此描述比較不代表顯著性。`,
+        `阈值使用比较有符号差异比例（${scale}）的 ${percent}%。有符号差异是主要组减次要组：正值是 ${primary} 减 ${secondary}。此描述比较不代表显著性。`,
+      ),
+      emptyThresholdRow: t("No signed edge differences meet the current network threshold.", "沒有有符號連線差異達到目前網絡閾值。", "没有有符号连线差异达到当前网络阈值。"),
+      equalWeight: t("Equal", "相等", "相等"),
+      signedDifferenceEdge: (source, target, difference, strongerName, role) => t(
+        `${source} ↔ ${target}: signed Primary-minus-Secondary difference ${difference}; ${strongerName} ${role} group is stronger`,
+        `${source} ↔ ${target}：有符號主要群組減次要群組差異 ${difference}；${strongerName} ${role}群組較強`,
+        `${source} ↔ ${target}：有符号主要组减次要组差异 ${difference}；${strongerName} ${role}组较强`,
+      ),
+      groupMeanWeightEdge: (source, target, groupName, role, weight) => t(
+        `${source} ↔ ${target}: ${groupName} ${role} group mean weight ${weight}`,
+        `${source} ↔ ${target}：${groupName} ${role}群組平均權重 ${weight}`,
+        `${source} ↔ ${target}：${groupName} ${role}组平均权重 ${weight}`,
+      ),
+      namedUnitPoint: (groupName, unitLabel) => t(`${groupName} unit ${unitLabel}`, `${groupName} 分析單位 ${unitLabel}`, `${groupName} 分析单位 ${unitLabel}`),
+      roleUnitPoint: (role, index) => t(`${role} unit point ${index}`, `${role}分析單位點 ${index}`, `${role}分析单位点 ${index}`),
+      codeNodeLabel: (codeLabel) => t(`${codeLabel} code node`, `${codeLabel} 代碼節點`, `${codeLabel} 代码节点`),
+      unnamedCode: t("Unnamed code", "未命名代碼", "未命名代码"),
+      primaryRole: t("Primary", "主要", "主要"),
+      secondaryRole: t("Secondary", "次要", "次要"),
+      signedNetworkTitle: (first, second) => t(`Signed group-network difference, ${first} minus ${second}`, `有符號群組網絡差異，${first} 減 ${second}`, `有符号组网络差异，${first} 减 ${second}`),
+      singleGroupNetworkTitle: (name) => t(`${name} group network`, `${name} 群組網絡`, `${name} 组网络`),
+      noGroupNetworkTitle: t("No group network selected", "未選擇群組網絡", "未选择组网络"),
+      signedNetworkDescription: (xAxis, yAxis, confidence, outlier) => t(
+        `Two-dimensional signed group comparison on ${xAxis} and ${yAxis}. Each connection is drawn once in the stable color of the stronger selected group; width encodes the absolute Primary-minus-Secondary difference.${confidence}${outlier}`,
+        `在${xAxis}與${yAxis}上的二維有符號群組比較。每條連線只繪製一次，使用較強所選群組的固定顏色；線寬表示主要群組減次要群組差異的絕對值。${confidence}${outlier}`,
+        `在${xAxis}与${yAxis}上的二维有符号组比较。每条连线只绘制一次，使用较强所选组的固定颜色；线宽表示主要组减次要组差异的绝对值。${confidence}${outlier}`,
+      ),
+      signedConfidenceClause: t(" Dashed guides show separate marginal 95% Student-t confidence intervals for each displayed arithmetic group mean, not a joint region or significance test.", "虛線引導線顯示每個已顯示算術群組平均值的分開邊際 95% Student-t 信賴區間，不是聯合區域或顯著性檢定。", "虚线引导线显示每个已显示算术组平均值的分开边际 95% Student-t 置信区间，不是联合区域或显著性检验。"),
+      signedOutlierClause: t(" Short-dashed boxes show rENA-compatible mean-centered 1.5 × IQR display intervals; they are not Tukey fences, confidence intervals, automatic exclusions, or tests.", "短虛線方框顯示與 rENA 相容、以平均值為中心的 1.5 × IQR 顯示區間；它們不是 Tukey 圍欄、信賴區間、自動排除或檢定。", "短虚线方框显示与 rENA 兼容、以平均值为中心的 1.5 × IQR 显示区间；它们不是 Tukey 围栏、置信区间、自动排除或检验。"),
+      groupMeanNetworkDescription: t("Two-dimensional selected group mean network in the fixed full-result coordinate extent and shared group-mean edge scale.", "在固定完整結果座標範圍與共用群組平均連線比例上的二維所選群組平均網絡。", "在固定完整结果坐标范围与共享组平均连线比例上的二维所选组平均网络。"),
+      pointSamplingDescription: (shown, eligible) => t(` Rendering ${shown} sampled unit marks from ${eligible} visible analytic-unit points.`, `正在繪製 ${eligible} 個可見分析單位點中的 ${shown} 個抽樣標記。`, `正在绘制 ${eligible} 个可见分析单位点中的 ${shown} 个抽样标记。`),
+      unitPointsHidden: t(" Unit point marks are hidden by the global Plot Tools setting.", "全域繪圖工具設定已隱藏分析單位點標記。", "全局绘图工具设置已隐藏分析单位点标记。"),
+      analyticUnitMarksHidden: (count) => t(` ${count} analytic-unit mark${count === 1 ? " is" : "s are"} hidden by group or unit display controls.`, `群組或分析單位顯示控制隱藏了 ${count} 個分析單位標記。`, `组或分析单位显示控制隐藏了 ${count} 个分析单位标记。`),
     },
     stats: {
       separation: t("Model bundles contain unavailable statistics. Inference below is an explicit, separate post-model request.", "模型套件包含不可用的統計項目。下方推論是明確且獨立的模型後要求。", "模型包包含不可用的统计项目。下方推断是明确且独立的模型后请求。"), inferenceDesign: t("Trajectory inference design", "軌跡推論設計", "轨迹推断设计"), designs: { independent: t("Independent groups at a period", "單一時段的獨立群組", "单一时段的独立组"), paired: t("Paired periods", "配對時段", "配对时段"), repeated: t("Repeated periods", "重複時段", "重复时段") },

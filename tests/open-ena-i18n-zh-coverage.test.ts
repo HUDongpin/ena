@@ -347,6 +347,159 @@ function jsxSource(source: string) {
     .replace(/const english = \{[\s\S]*?\n\};/, "");
 }
 
+/**
+ * Issue #62 follow-up. English wording stays in the catalog; components read
+ * these keys. Locked terms: https://github.com/HUDongpin/ena/issues/62#issuecomment-6283563279
+ */
+const CONTRAST_RESIDUE_KEYS = [
+  "openEna.modelV3.workspace.plot.solidPrimaryStronger",
+  "openEna.modelV3.workspace.plot.solidSecondaryStronger",
+  "openEna.modelV3.workspace.plot.equalMeanWeight",
+  "openEna.modelV3.workspace.plot.dashedConfidenceLegend",
+  "openEna.modelV3.workspace.plot.shortDashedOutlierLegend",
+  "openEna.modelV3.workspace.plot.nameJoin",
+  "openEna.modelV3.workspace.plot.comparisonDenominator",
+  "openEna.modelV3.workspace.plot.sidePanelDenominator",
+  "openEna.modelV3.workspace.plot.differenceEdgeScaleDefinition",
+  "openEna.modelV3.workspace.plot.sharedMeanEdgeScaleDefinition",
+  "openEna.modelV3.workspace.plot.thresholdNote",
+  "openEna.modelV3.workspace.plot.emptyThresholdRow",
+  "openEna.modelV3.workspace.plot.equalWeight",
+  "openEna.modelV3.workspace.plot.signedDifferenceEdge",
+  "openEna.modelV3.workspace.plot.groupMeanWeightEdge",
+  "openEna.modelV3.workspace.plot.namedUnitPoint",
+  "openEna.modelV3.workspace.plot.roleUnitPoint",
+  "openEna.modelV3.workspace.plot.codeNodeLabel",
+  "openEna.modelV3.workspace.plot.unnamedCode",
+  "openEna.modelV3.workspace.plot.primaryRole",
+  "openEna.modelV3.workspace.plot.secondaryRole",
+  "openEna.modelV3.workspace.plot.signedNetworkTitle",
+  "openEna.modelV3.workspace.plot.singleGroupNetworkTitle",
+  "openEna.modelV3.workspace.plot.noGroupNetworkTitle",
+  "openEna.modelV3.workspace.plot.signedNetworkDescription",
+  "openEna.modelV3.workspace.plot.signedConfidenceClause",
+  "openEna.modelV3.workspace.plot.signedOutlierClause",
+  "openEna.modelV3.workspace.plot.groupMeanNetworkDescription",
+  "openEna.modelV3.workspace.plot.pointSamplingDescription",
+  "openEna.modelV3.workspace.plot.unitPointsHidden",
+  "openEna.modelV3.workspace.plot.analyticUnitMarksHidden",
+] as const;
+
+const LONGITUDINAL_CONTROL_KEYS = [
+  "longitudinalV3.identityHeading",
+  "longitudinalV3.axisFlipsLegend",
+  "longitudinalV3.flipAxis",
+  "longitudinalV3.independentPermutation",
+  "longitudinalV3.pairedPermutation",
+  "longitudinalV3.accumulatedOrderLocked",
+  "longitudinalV3.periodGap",
+  "longitudinalV3.predictedTime",
+  "longitudinalV3.predictedMemory",
+  "longitudinalV3.hardDeadline",
+  "longitudinalV3.staleOverlay",
+  "longitudinalV3.notRun",
+  "longitudinalV3.emptyPlotSummary",
+  "longitudinalV3.sourceRowsWord",
+] as const;
+
+function invokeCopy(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (typeof value !== "function") return null;
+  const probe = ["Studio", "Seminar", "20", "+0.600", "primary", "Evidence", "Reflection", "", ""];
+  const rendered = value.length <= 1
+    ? value(probe[0])
+    : value(...probe.slice(0, value.length));
+  return typeof rendered === "string" ? rendered : null;
+}
+
+function catalogString(locale: "en" | "zh-hant" | "zh-hans", path: string) {
+  if (path.startsWith("longitudinalV3.")) {
+    const copy = getOpenEnaLongitudinalV3Copy(locale);
+    return invokeCopy(copy[path.slice("longitudinalV3.".length) as keyof typeof copy]);
+  }
+  const plot = getOpenEnaCopy(locale).modelV3.workspace.plot as unknown as Record<string, unknown>;
+  return invokeCopy(plot[path.slice("openEna.modelV3.workspace.plot.".length)]);
+}
+
+test("issue #62 glossary keeps Window as 窗口 and translates the remaining contrast and longitudinal control keys", () => {
+  const glossary = readFileSync(join(process.cwd(), "docs", "open-ena-zh-glossary.md"), "utf8");
+  assert.match(glossary, /#62/);
+  assert.match(glossary, /https:\/\/github\.com\/HUDongpin\/ena\/issues\/62#issuecomment-6283563279/);
+  assert.match(glossary, /\| Window \| 窗口 \| 窗口 \|/);
+  assert.match(glossary, /\| Group \| 群組 \| 组 \|/);
+  assert.match(glossary, /\| Edge \| 連線 \| 连线 \|/);
+
+  const hantCatalog = readFileSync(join(process.cwd(), "lib", "open-ena-i18n.ts"), "utf8");
+  const hantStrings = [...hantCatalog.matchAll(/"[^"\n]*"/g)].map((match) => match[0]);
+  assert.equal(hantStrings.some((value) => value.includes("視窗")), false, "zh catalog string values must not keep 視窗");
+
+  const violations: CopyViolation[] = [];
+  for (const locale of ["zh-hant", "zh-hans"] as const) {
+    for (const path of [...CONTRAST_RESIDUE_KEYS, ...LONGITUDINAL_CONTROL_KEYS]) {
+      const value = catalogString(locale, path);
+      const english = catalogString("en", path);
+      if (value === null || english === null) violations.push({ locale, path, detail: "missing key" });
+      else if (value === english && !IDENTICAL_VALUE_ALLOWLIST.has(path)) {
+        violations.push({ locale, path, detail: JSON.stringify(value) });
+      } else {
+        const wrongScript = locale === "zh-hant" ? SIMPLIFIED_ONLY : TRADITIONAL_ONLY;
+        const found = [...wrongScript].filter((character) => value.includes(character));
+        if (found.length > 0) violations.push({ locale, path, detail: `${found.join("")} in ${JSON.stringify(value.slice(0, 80))}` });
+        if (locale === "zh-hant" && value.includes("視窗")) violations.push({ locale, path, detail: "leftover 視窗" });
+      }
+    }
+  }
+  const hantEdge = getOpenEnaCopy("zh-hant").modelV3.workspace.plot.signedDifferenceEdge("A", "B", "+0.1", "Studio", "primary");
+  const hansEdge = getOpenEnaCopy("zh-hans").modelV3.workspace.plot.signedDifferenceEdge("A", "B", "+0.1", "Studio", "primary");
+  if (!hantEdge.includes("連線") && !hantEdge.includes("群組")) violations.push({ locale: "zh-hant", path: "openEna.modelV3.workspace.plot.signedDifferenceEdge", detail: hantEdge });
+  if (!hansEdge.includes("连线") && !hansEdge.includes("组")) violations.push({ locale: "zh-hans", path: "openEna.modelV3.workspace.plot.signedDifferenceEdge", detail: hansEdge });
+  assert.deepEqual(violations, [], formatViolations(violations));
+});
+
+test("contrast and longitudinal controls no longer hardcode the #62 English residue", () => {
+  const forbidden: Record<string, RegExp[]> = {
+    "components/open-ena/OpenEnaGroupContrast.tsx": [
+      /Solid \{contrast\.primary\.name\} color: Primary is stronger/,
+      /Solid \{contrast\.secondary\.name\} color: Secondary is stronger/,
+      /Equal mean weight: no difference line drawn/,
+      /Comparison denominator:/,
+      /Side-panel denominator:/,
+      /Threshold uses /,
+      /No signed edge differences meet the current network threshold/,
+      /signed Primary-minus-Secondary difference/,
+      /group mean weight/,
+      /code node/,
+      / unit point /,
+      /Unnamed code/,
+      /Signed group-network difference,/,
+      /Two-dimensional signed group comparison/,
+      /No group network selected/,
+      /Unit point marks are hidden/,
+    ],
+    "components/open-ena/OpenEnaLongitudinalWorkbenchV3.tsx": [
+      />Identity confirmation</,
+      /Axis flips \(display only\)/,
+      />Independent permutation</,
+      />Paired permutation</,
+      /AccumulatedTrajectory order is locked/,
+      />Predicted time</,
+      />Predicted memory</,
+      />Hard deadline</,
+      /STALE · RECOMPUTE REQUIRED/,
+      / · gap/,
+      />Estimand</,
+    ],
+  };
+  const violations: string[] = [];
+  for (const [relativePath, patterns] of Object.entries(forbidden)) {
+    const source = jsxSource(readFileSync(join(process.cwd(), relativePath), "utf8"));
+    for (const pattern of patterns) {
+      if (pattern.test(source)) violations.push(`${relativePath}: ${pattern}`);
+    }
+  }
+  assert.deepEqual(violations, [], violations.join("\n"));
+});
+
 test("live plot and longitudinal audit chrome no longer hardcode the deferred English strings", () => {
   const forbidden: Record<string, RegExp[]> = {
     "components/open-ena/OpenEnaPlot.tsx": [
@@ -393,4 +546,49 @@ test("live plot and longitudinal audit chrome no longer hardcode the deferred En
     }
   }
   assert.deepEqual(violations, [], violations.join("\n"));
+});
+
+const DIFFERENCE_EDGE_SCALE_DEFINITION = "maximum absolute Primary-minus-Secondary edge difference";
+const SHARED_MEAN_EDGE_SCALE_DEFINITION = "shared maximum absolute Primary or Secondary mean edge weight";
+
+test("zh group-contrast denominator notes translate the known edge-scale definitions", () => {
+  const english = getOpenEnaCopy("en").modelV3.workspace.plot;
+  const localizeEnglish = "edgeScaleDefinition" in english && typeof english.edgeScaleDefinition === "function"
+    ? english.edgeScaleDefinition
+    : (definition: string) => definition;
+  assert.equal(localizeEnglish(DIFFERENCE_EDGE_SCALE_DEFINITION), DIFFERENCE_EDGE_SCALE_DEFINITION);
+  assert.equal(localizeEnglish(SHARED_MEAN_EDGE_SCALE_DEFINITION), SHARED_MEAN_EDGE_SCALE_DEFINITION);
+  assert.equal(localizeEnglish("custom denominator"), "custom denominator");
+  assert.equal(
+    english.comparisonDenominator(localizeEnglish(DIFFERENCE_EDGE_SCALE_DEFINITION), "0.625"),
+    "Comparison denominator: maximum absolute Primary-minus-Secondary edge difference (0.625).",
+  );
+  assert.equal(
+    english.sidePanelDenominator(localizeEnglish(SHARED_MEAN_EDGE_SCALE_DEFINITION), "0.925"),
+    "Side-panel denominator: shared maximum absolute Primary or Secondary mean edge weight (0.925).",
+  );
+
+  for (const locale of ["zh-hant", "zh-hans"] as const) {
+    const plot = getOpenEnaCopy(locale).modelV3.workspace.plot;
+    const localize = "edgeScaleDefinition" in plot && typeof plot.edgeScaleDefinition === "function"
+      ? plot.edgeScaleDefinition
+      : (definition: string) => definition;
+    const comparison = plot.comparisonDenominator(localize(DIFFERENCE_EDGE_SCALE_DEFINITION), "0.625");
+    const side = plot.sidePanelDenominator(localize(SHARED_MEAN_EDGE_SCALE_DEFINITION), "0.925");
+    const unknown = plot.comparisonDenominator(localize("custom denominator"), "1.000");
+    assert.doesNotMatch(comparison, /maximum absolute Primary-minus-Secondary edge difference/);
+    assert.doesNotMatch(side, /shared maximum absolute Primary or Secondary mean edge weight/);
+    assert.match(unknown, /custom denominator/);
+    if (locale === "zh-hant") {
+      assert.equal(comparison, "比較分母：主要群組減次要群組連線差異的最大絕對值（0.625）。");
+      assert.equal(side, "側圖分母：主要群組或次要群組平均連線權重的共用最大絕對值（0.925）。");
+    } else {
+      assert.equal(comparison, "比较分母：主要组减次要组连线差异的最大绝对值（0.625）。");
+      assert.equal(side, "侧图分母：主要组或次要组平均连线权重的共享最大绝对值（0.925）。");
+    }
+  }
+
+  const source = jsxSource(readFileSync(join(process.cwd(), "components/open-ena/OpenEnaGroupContrast.tsx"), "utf8"));
+  assert.match(source, /edgeScaleDefinition\(contrast\.edgeScaleDenominators\.differenceDefinition\)/);
+  assert.match(source, /edgeScaleDefinition\(contrast\.edgeScaleDenominators\.sharedMeanDefinition\)/);
 });
