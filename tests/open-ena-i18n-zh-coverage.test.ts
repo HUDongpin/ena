@@ -360,6 +360,8 @@ const CONTRAST_RESIDUE_KEYS = [
   "openEna.modelV3.workspace.plot.nameJoin",
   "openEna.modelV3.workspace.plot.comparisonDenominator",
   "openEna.modelV3.workspace.plot.sidePanelDenominator",
+  "openEna.modelV3.workspace.plot.differenceEdgeScaleDefinition",
+  "openEna.modelV3.workspace.plot.sharedMeanEdgeScaleDefinition",
   "openEna.modelV3.workspace.plot.thresholdNote",
   "openEna.modelV3.workspace.plot.emptyThresholdRow",
   "openEna.modelV3.workspace.plot.equalWeight",
@@ -544,4 +546,49 @@ test("live plot and longitudinal audit chrome no longer hardcode the deferred En
     }
   }
   assert.deepEqual(violations, [], violations.join("\n"));
+});
+
+const DIFFERENCE_EDGE_SCALE_DEFINITION = "maximum absolute Primary-minus-Secondary edge difference";
+const SHARED_MEAN_EDGE_SCALE_DEFINITION = "shared maximum absolute Primary or Secondary mean edge weight";
+
+test("zh group-contrast denominator notes translate the known edge-scale definitions", () => {
+  const english = getOpenEnaCopy("en").modelV3.workspace.plot;
+  const localizeEnglish = "edgeScaleDefinition" in english && typeof english.edgeScaleDefinition === "function"
+    ? english.edgeScaleDefinition
+    : (definition: string) => definition;
+  assert.equal(localizeEnglish(DIFFERENCE_EDGE_SCALE_DEFINITION), DIFFERENCE_EDGE_SCALE_DEFINITION);
+  assert.equal(localizeEnglish(SHARED_MEAN_EDGE_SCALE_DEFINITION), SHARED_MEAN_EDGE_SCALE_DEFINITION);
+  assert.equal(localizeEnglish("custom denominator"), "custom denominator");
+  assert.equal(
+    english.comparisonDenominator(localizeEnglish(DIFFERENCE_EDGE_SCALE_DEFINITION), "0.625"),
+    "Comparison denominator: maximum absolute Primary-minus-Secondary edge difference (0.625).",
+  );
+  assert.equal(
+    english.sidePanelDenominator(localizeEnglish(SHARED_MEAN_EDGE_SCALE_DEFINITION), "0.925"),
+    "Side-panel denominator: shared maximum absolute Primary or Secondary mean edge weight (0.925).",
+  );
+
+  for (const locale of ["zh-hant", "zh-hans"] as const) {
+    const plot = getOpenEnaCopy(locale).modelV3.workspace.plot;
+    const localize = "edgeScaleDefinition" in plot && typeof plot.edgeScaleDefinition === "function"
+      ? plot.edgeScaleDefinition
+      : (definition: string) => definition;
+    const comparison = plot.comparisonDenominator(localize(DIFFERENCE_EDGE_SCALE_DEFINITION), "0.625");
+    const side = plot.sidePanelDenominator(localize(SHARED_MEAN_EDGE_SCALE_DEFINITION), "0.925");
+    const unknown = plot.comparisonDenominator(localize("custom denominator"), "1.000");
+    assert.doesNotMatch(comparison, /maximum absolute Primary-minus-Secondary edge difference/);
+    assert.doesNotMatch(side, /shared maximum absolute Primary or Secondary mean edge weight/);
+    assert.match(unknown, /custom denominator/);
+    if (locale === "zh-hant") {
+      assert.equal(comparison, "比較分母：主要群組減次要群組連線差異的最大絕對值（0.625）。");
+      assert.equal(side, "側圖分母：主要群組或次要群組平均連線權重的共用最大絕對值（0.925）。");
+    } else {
+      assert.equal(comparison, "比较分母：主要组减次要组连线差异的最大绝对值（0.625）。");
+      assert.equal(side, "侧图分母：主要组或次要组平均连线权重的共享最大绝对值（0.925）。");
+    }
+  }
+
+  const source = jsxSource(readFileSync(join(process.cwd(), "components/open-ena/OpenEnaGroupContrast.tsx"), "utf8"));
+  assert.match(source, /edgeScaleDefinition\(contrast\.edgeScaleDenominators\.differenceDefinition\)/);
+  assert.match(source, /edgeScaleDefinition\(contrast\.edgeScaleDenominators\.sharedMeanDefinition\)/);
 });

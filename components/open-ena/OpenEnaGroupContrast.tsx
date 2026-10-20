@@ -134,6 +134,7 @@ export interface OpenEnaGroupContrastProps extends OpenEnaCodeGraphPresentation 
     readonly nameJoin?: string;
     readonly comparisonDenominator?: (definition: string, value: string) => string;
     readonly sidePanelDenominator?: (definition: string, value: string) => string;
+    readonly edgeScaleDefinition?: (definition: string) => string;
     readonly thresholdNote?: (percent: string, scale: string, primary: string, secondary: string) => string;
     readonly emptyThresholdRow?: string;
     readonly equalWeight?: string;
@@ -228,6 +229,7 @@ const DEFAULT_GROUP_CONTRAST_UI_COPY = {
   nameJoin: englishPlotChrome.nameJoin,
   comparisonDenominator: englishPlotChrome.comparisonDenominator,
   sidePanelDenominator: englishPlotChrome.sidePanelDenominator,
+  edgeScaleDefinition: englishPlotChrome.edgeScaleDefinition,
   thresholdNote: englishPlotChrome.thresholdNote,
   emptyThresholdRow: englishPlotChrome.emptyThresholdRow,
   equalWeight: englishPlotChrome.equalWeight,
@@ -1956,6 +1958,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
   };
   const comparisonScale = Math.max(0, finiteOrZero(contrast.edgeScaleDenominators.difference));
   const groupMeanScale = Math.max(0, finiteOrZero(contrast.edgeScaleDenominators.sharedMean));
+  const edgeScaleDefinition = uiCopy.edgeScaleDefinition ?? DEFAULT_GROUP_CONTRAST_UI_COPY.edgeScaleDefinition;
   const [xAxis, yAxis] = contrast.axes;
   const xVariance = finiteOrZero(contrast.geometry.variance[xAxis]) * 100;
   const yVariance = finiteOrZero(contrast.geometry.variance[yAxis]) * 100;
@@ -2330,8 +2333,8 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
       </ol>
 
       <p className="ena-set-reference-id" style={{ maxWidth: "100%", textAlign: "start", paddingBlock: 4 }}>
-        {(uiCopy.comparisonDenominator ?? DEFAULT_GROUP_CONTRAST_UI_COPY.comparisonDenominator)(contrast.edgeScaleDenominators.differenceDefinition, formatNumber(comparisonScale))}
-        {" "}{(uiCopy.sidePanelDenominator ?? DEFAULT_GROUP_CONTRAST_UI_COPY.sidePanelDenominator)(contrast.edgeScaleDenominators.sharedMeanDefinition, formatNumber(groupMeanScale))}
+        {(uiCopy.comparisonDenominator ?? DEFAULT_GROUP_CONTRAST_UI_COPY.comparisonDenominator)(edgeScaleDefinition(contrast.edgeScaleDenominators.differenceDefinition), formatNumber(comparisonScale))}
+        {" "}{(uiCopy.sidePanelDenominator ?? DEFAULT_GROUP_CONTRAST_UI_COPY.sidePanelDenominator)(edgeScaleDefinition(contrast.edgeScaleDenominators.sharedMeanDefinition), formatNumber(groupMeanScale))}
       </p>
 
       <div className="ena-set-difference-table" role="region" aria-label={uiCopy.strongestSignedEdgeDifferences ?? DEFAULT_GROUP_CONTRAST_UI_COPY.strongestSignedEdgeDifferences} tabIndex={0}>

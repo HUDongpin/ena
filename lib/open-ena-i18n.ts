@@ -203,6 +203,9 @@ export interface OpenEnaWorkspaceV3Copy {
     readonly nameJoin: string;
     readonly comparisonDenominator: (definition: string, value: string) => string;
     readonly sidePanelDenominator: (definition: string, value: string) => string;
+    readonly differenceEdgeScaleDefinition: string;
+    readonly sharedMeanEdgeScaleDefinition: string;
+    readonly edgeScaleDefinition: (definition: string) => string;
     readonly thresholdNote: (percent: string, scale: string, primary: string, secondary: string) => string;
     readonly emptyThresholdRow: string;
     readonly equalWeight: string;
@@ -2368,8 +2371,26 @@ const groupApplicabilityEnV3 = {
   trajectoryIntervals: "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.",
 } as const;
 
+// Keys match the fixed English edge-scale definition identifiers in lib/open-ena/contrasts.ts.
+const DIFFERENCE_EDGE_SCALE_DEFINITION = "maximum absolute Primary-minus-Secondary edge difference";
+const SHARED_MEAN_EDGE_SCALE_DEFINITION = "shared maximum absolute Primary or Secondary mean edge weight";
+
 function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3Copy {
   const t = (enValue: string, hantValue: string, hansValue: string) => locale === "en" ? enValue : locale === "zh-hant" ? hantValue : hansValue;
+  const differenceEdgeScaleDefinition = t(
+    DIFFERENCE_EDGE_SCALE_DEFINITION,
+    "主要群組減次要群組連線差異的最大絕對值",
+    "主要组减次要组连线差异的最大绝对值",
+  );
+  const sharedMeanEdgeScaleDefinition = t(
+    SHARED_MEAN_EDGE_SCALE_DEFINITION,
+    "主要群組或次要群組平均連線權重的共用最大絕對值",
+    "主要组或次要组平均连线权重的共享最大绝对值",
+  );
+  const edgeScaleDefinitions: Readonly<Record<string, string>> = {
+    [DIFFERENCE_EDGE_SCALE_DEFINITION]: differenceEdgeScaleDefinition,
+    [SHARED_MEAN_EDGE_SCALE_DEFINITION]: sharedMeanEdgeScaleDefinition,
+  };
   return {
     configureTrajectory: t("Configure trajectory model", "設定軌跡模型", "设置轨迹模型"),
     resultStatus: { current: t("Current result", "目前結果", "当前结果"), stale: t("Retained stale result", "保留的過期結果", "保留的过期结果"), none: t("No result", "沒有結果", "没有结果") },
@@ -2531,6 +2552,9 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
       nameJoin: t(" and ", "與", "与"),
       comparisonDenominator: (definition, value) => t(`Comparison denominator: ${definition} (${value}).`, `比較分母：${definition}（${value}）。`, `比较分母：${definition}（${value}）。`),
       sidePanelDenominator: (definition, value) => t(`Side-panel denominator: ${definition} (${value}).`, `側圖分母：${definition}（${value}）。`, `侧图分母：${definition}（${value}）。`),
+      differenceEdgeScaleDefinition,
+      sharedMeanEdgeScaleDefinition,
+      edgeScaleDefinition: (definition) => edgeScaleDefinitions[definition] ?? definition,
       thresholdNote: (percent, scale, primary, secondary) => t(
         `Threshold uses ${percent}% of the comparison signed-difference scale (${scale}). Signed difference is Primary minus Secondary: positive values are ${primary} minus ${secondary}. This descriptive comparison does not imply significance.`,
         `閾值使用比較有符號差異比例（${scale}）的 ${percent}%。有符號差異是主要群組減次要群組：正值是 ${primary} 減 ${secondary}。此描述比較不代表顯著性。`,
