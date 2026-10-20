@@ -347,6 +347,157 @@ function jsxSource(source: string) {
     .replace(/const english = \{[\s\S]*?\n\};/, "");
 }
 
+/**
+ * Issue #62 follow-up. English wording stays in the catalog; components read
+ * these keys. Locked terms: https://github.com/HUDongpin/ena/issues/62#issuecomment-6283563279
+ */
+const CONTRAST_RESIDUE_KEYS = [
+  "openEna.modelV3.workspace.plot.solidPrimaryStronger",
+  "openEna.modelV3.workspace.plot.solidSecondaryStronger",
+  "openEna.modelV3.workspace.plot.equalMeanWeight",
+  "openEna.modelV3.workspace.plot.dashedConfidenceLegend",
+  "openEna.modelV3.workspace.plot.shortDashedOutlierLegend",
+  "openEna.modelV3.workspace.plot.nameJoin",
+  "openEna.modelV3.workspace.plot.comparisonDenominator",
+  "openEna.modelV3.workspace.plot.sidePanelDenominator",
+  "openEna.modelV3.workspace.plot.thresholdNote",
+  "openEna.modelV3.workspace.plot.emptyThresholdRow",
+  "openEna.modelV3.workspace.plot.equalWeight",
+  "openEna.modelV3.workspace.plot.signedDifferenceEdge",
+  "openEna.modelV3.workspace.plot.groupMeanWeightEdge",
+  "openEna.modelV3.workspace.plot.namedUnitPoint",
+  "openEna.modelV3.workspace.plot.roleUnitPoint",
+  "openEna.modelV3.workspace.plot.codeNodeLabel",
+  "openEna.modelV3.workspace.plot.unnamedCode",
+  "openEna.modelV3.workspace.plot.primaryRole",
+  "openEna.modelV3.workspace.plot.secondaryRole",
+  "openEna.modelV3.workspace.plot.signedNetworkTitle",
+  "openEna.modelV3.workspace.plot.singleGroupNetworkTitle",
+  "openEna.modelV3.workspace.plot.noGroupNetworkTitle",
+  "openEna.modelV3.workspace.plot.signedNetworkDescription",
+  "openEna.modelV3.workspace.plot.signedConfidenceClause",
+  "openEna.modelV3.workspace.plot.signedOutlierClause",
+  "openEna.modelV3.workspace.plot.groupMeanNetworkDescription",
+  "openEna.modelV3.workspace.plot.pointSamplingDescription",
+  "openEna.modelV3.workspace.plot.unitPointsHidden",
+  "openEna.modelV3.workspace.plot.analyticUnitMarksHidden",
+] as const;
+
+const LONGITUDINAL_CONTROL_KEYS = [
+  "longitudinalV3.identityHeading",
+  "longitudinalV3.axisFlipsLegend",
+  "longitudinalV3.flipAxis",
+  "longitudinalV3.independentPermutation",
+  "longitudinalV3.pairedPermutation",
+  "longitudinalV3.accumulatedOrderLocked",
+  "longitudinalV3.periodGap",
+  "longitudinalV3.predictedTime",
+  "longitudinalV3.predictedMemory",
+  "longitudinalV3.hardDeadline",
+  "longitudinalV3.staleOverlay",
+  "longitudinalV3.notRun",
+  "longitudinalV3.emptyPlotSummary",
+  "longitudinalV3.sourceRowsWord",
+] as const;
+
+function invokeCopy(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (typeof value !== "function") return null;
+  const probe = ["Studio", "Seminar", "20", "+0.600", "primary", "Evidence", "Reflection", "", ""];
+  const rendered = value.length <= 1
+    ? value(probe[0])
+    : value(...probe.slice(0, value.length));
+  return typeof rendered === "string" ? rendered : null;
+}
+
+function catalogString(locale: "en" | "zh-hant" | "zh-hans", path: string) {
+  if (path.startsWith("longitudinalV3.")) {
+    const copy = getOpenEnaLongitudinalV3Copy(locale);
+    return invokeCopy(copy[path.slice("longitudinalV3.".length) as keyof typeof copy]);
+  }
+  const plot = getOpenEnaCopy(locale).modelV3.workspace.plot as unknown as Record<string, unknown>;
+  return invokeCopy(plot[path.slice("openEna.modelV3.workspace.plot.".length)]);
+}
+
+test("issue #62 glossary keeps Window as 窗口 and translates the remaining contrast and longitudinal control keys", () => {
+  const glossary = readFileSync(join(process.cwd(), "docs", "open-ena-zh-glossary.md"), "utf8");
+  assert.match(glossary, /#62/);
+  assert.match(glossary, /https:\/\/github\.com\/HUDongpin\/ena\/issues\/62#issuecomment-6283563279/);
+  assert.match(glossary, /\| Window \| 窗口 \| 窗口 \|/);
+  assert.match(glossary, /\| Group \| 群組 \| 组 \|/);
+  assert.match(glossary, /\| Edge \| 連線 \| 连线 \|/);
+
+  const hantCatalog = readFileSync(join(process.cwd(), "lib", "open-ena-i18n.ts"), "utf8");
+  const hantStrings = [...hantCatalog.matchAll(/"[^"\n]*"/g)].map((match) => match[0]);
+  assert.equal(hantStrings.some((value) => value.includes("視窗")), false, "zh catalog string values must not keep 視窗");
+
+  const violations: CopyViolation[] = [];
+  for (const locale of ["zh-hant", "zh-hans"] as const) {
+    for (const path of [...CONTRAST_RESIDUE_KEYS, ...LONGITUDINAL_CONTROL_KEYS]) {
+      const value = catalogString(locale, path);
+      const english = catalogString("en", path);
+      if (value === null || english === null) violations.push({ locale, path, detail: "missing key" });
+      else if (value === english && !IDENTICAL_VALUE_ALLOWLIST.has(path)) {
+        violations.push({ locale, path, detail: JSON.stringify(value) });
+      } else {
+        const wrongScript = locale === "zh-hant" ? SIMPLIFIED_ONLY : TRADITIONAL_ONLY;
+        const found = [...wrongScript].filter((character) => value.includes(character));
+        if (found.length > 0) violations.push({ locale, path, detail: `${found.join("")} in ${JSON.stringify(value.slice(0, 80))}` });
+        if (locale === "zh-hant" && value.includes("視窗")) violations.push({ locale, path, detail: "leftover 視窗" });
+      }
+    }
+  }
+  const hantEdge = getOpenEnaCopy("zh-hant").modelV3.workspace.plot.signedDifferenceEdge("A", "B", "+0.1", "Studio", "primary");
+  const hansEdge = getOpenEnaCopy("zh-hans").modelV3.workspace.plot.signedDifferenceEdge("A", "B", "+0.1", "Studio", "primary");
+  if (!hantEdge.includes("連線") && !hantEdge.includes("群組")) violations.push({ locale: "zh-hant", path: "openEna.modelV3.workspace.plot.signedDifferenceEdge", detail: hantEdge });
+  if (!hansEdge.includes("连线") && !hansEdge.includes("组")) violations.push({ locale: "zh-hans", path: "openEna.modelV3.workspace.plot.signedDifferenceEdge", detail: hansEdge });
+  assert.deepEqual(violations, [], formatViolations(violations));
+});
+
+test("contrast and longitudinal controls no longer hardcode the #62 English residue", () => {
+  const forbidden: Record<string, RegExp[]> = {
+    "components/open-ena/OpenEnaGroupContrast.tsx": [
+      /Solid \{contrast\.primary\.name\} color: Primary is stronger/,
+      /Solid \{contrast\.secondary\.name\} color: Secondary is stronger/,
+      /Equal mean weight: no difference line drawn/,
+      /Comparison denominator:/,
+      /Side-panel denominator:/,
+      /Threshold uses /,
+      /No signed edge differences meet the current network threshold/,
+      /signed Primary-minus-Secondary difference/,
+      /group mean weight/,
+      /code node/,
+      / unit point /,
+      /Unnamed code/,
+      /Signed group-network difference,/,
+      /Two-dimensional signed group comparison/,
+      /No group network selected/,
+      /Unit point marks are hidden/,
+    ],
+    "components/open-ena/OpenEnaLongitudinalWorkbenchV3.tsx": [
+      />Identity confirmation</,
+      /Axis flips \(display only\)/,
+      />Independent permutation</,
+      />Paired permutation</,
+      /AccumulatedTrajectory order is locked/,
+      />Predicted time</,
+      />Predicted memory</,
+      />Hard deadline</,
+      /STALE · RECOMPUTE REQUIRED/,
+      / · gap/,
+      />Estimand</,
+    ],
+  };
+  const violations: string[] = [];
+  for (const [relativePath, patterns] of Object.entries(forbidden)) {
+    const source = jsxSource(readFileSync(join(process.cwd(), relativePath), "utf8"));
+    for (const pattern of patterns) {
+      if (pattern.test(source)) violations.push(`${relativePath}: ${pattern}`);
+    }
+  }
+  assert.deepEqual(violations, [], violations.join("\n"));
+});
+
 test("live plot and longitudinal audit chrome no longer hardcode the deferred English strings", () => {
   const forbidden: Record<string, RegExp[]> = {
     "components/open-ena/OpenEnaPlot.tsx": [
