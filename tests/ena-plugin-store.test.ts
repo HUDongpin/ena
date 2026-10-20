@@ -1,6 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createPostgresPluginLabStore } from "@/lib/plugin-lab/store";
+import { Pool } from "pg";
+import { createPostgresPluginLabStore, createProductionPluginLabStore } from "@/lib/plugin-lab/store";
+
+test("an idle Plugin Lab connection error cannot crash the application or disclose private details", async (context) => {
+  let pool: Pool | undefined;
+  context.mock.method(Pool.prototype, "query", async function (this: Pool) {
+    pool = this;
+    return { rows: [{ allowed: true }] };
+  });
+  const diagnostics: unknown[][] = [];
+  context.mock.method(console, "error", (...args: unknown[]) => diagnostics.push(args));
+  const store = await createProductionPluginLabStore({
+    ENA_PLUGIN_LAB_DATABASE_URL: "postgres://synthetic.invalid/plugin_lab_pool_test",
+    ENA_PLUGIN_LAB_ENCRYPTION_KEY_V1: Buffer.alloc(32, 6).toString("base64url"),
+    ENA_PLUGIN_LAB_SECRET: "synthetic-plugin-lab-test-secret-with-32-characters",
+  });
+  assert.ok(store);
+  const request = { scopeKind: "submission-source" as const, scopeRef: "A".repeat(43), limit: 5, windowSeconds: 3600 };
+  assert.equal(await store.consumeRateLimit(request), true);
+  assert.ok(pool);
+  try {
+    assert.doesNotThrow(() => pool!.emit("error", new Error("private connection and proposal details")));
+    assert.equal(await store.consumeRateLimit(request), true);
+    assert.equal(diagnostics.length, 1);
+    assert.doesNotMatch(JSON.stringify(diagnostics), /private connection|proposal details/u);
+  } finally {
+    await pool.end();
+  }
+});
 
 test("public-summary gates require selected state, verified email, moderation, and renewed consent", async () => {
   const calls: Array<{ sql: string; params: readonly unknown[] }> = [];
@@ -29,22 +57,24 @@ test("confirmed public consent can be withdrawn but cannot be re-confirmed witho
   const calls: Array<{ sql: string; params: readonly unknown[] }> = [];
   const proposalId = "plg_AAAAAAAAAAAAAAAAAAAAAA";
   const store = createPostgresPluginLabStore(async (sql, params = []) => { calls.push({ sql, params }); return { rows: [{ proposal_id: proposalId }] }; });
-  assert.equal(await store.setPublicConsent(proposalId, "withdraw", "C".repeat(43)), true);
-  assert.deepEqual(calls[0].params, [proposalId, "withdrawn", ["requested", "confirmed"], "C".repeat(43)]);
+  assert.equal(await store.setPublicConsent(proposalId, "withdraw", "C".repeat(43), "f".repeat(64)), true);
+  assert.deepEqual(calls[0].params, [proposalId, "withdrawn", ["requested", "confirmed"], "C".repeat(43), "f".repeat(64)]);
   assert.match(calls[0].sql, /public_consent_status = ANY\(\$3::text\[\]\)/u);
   assert.match(calls[0].sql, /state = 'selected'[\s\S]*visibility = 'public-after-review'[\s\S]*email_confirmed_at IS NOT NULL/u);
   assert.match(calls[0].sql, /INSERT INTO ena_plugin_proposal_publication_events/u);
+  assert.match(calls[0].sql, /WITH candidate AS \([\s\S]*AND public_projection_sha256 = \$5\s+FOR UPDATE[\s\S]*FROM candidate c/u);
 });
 
 test("publication consent confirmation appends an actor- and projection-bound audit event", async () => {
   const calls: Array<{ sql: string; params: readonly unknown[] }> = [];
   const proposalId = "plg_AAAAAAAAAAAAAAAAAAAAAA";
   const store = createPostgresPluginLabStore(async (sql, params = []) => { calls.push({ sql, params }); return { rows: [{ proposal_id: proposalId }] }; });
-  assert.equal(await store.setPublicConsent(proposalId, "confirm", "E".repeat(43)), true);
-  assert.deepEqual(calls[0].params, [proposalId, "confirmed", ["requested"], "E".repeat(43)]);
+  assert.equal(await store.setPublicConsent(proposalId, "confirm", "E".repeat(43), "a".repeat(64)), true);
+  assert.deepEqual(calls[0].params, [proposalId, "confirmed", ["requested"], "E".repeat(43), "a".repeat(64)]);
   assert.match(calls[0].sql, /'consent-confirmed'/u);
   assert.match(calls[0].sql, /public_projection_sha256/u);
   assert.match(calls[0].sql, /'proposer', \$4/u);
+  assert.match(calls[0].sql, /WITH candidate AS \([\s\S]*AND public_projection_sha256 = \$5\s+FOR UPDATE[\s\S]*FROM candidate c/u);
 });
 
 test("withdrawing a selected proposal atomically withdraws publication consent and appends both audit families", async () => {

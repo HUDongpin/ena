@@ -1,3 +1,4 @@
+import { OPEN_ENA_AI_OWNER_HEADER, openEnaAiOperationOwnerKey } from "../lib/open-ena/ai-operation-owner";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -60,9 +61,10 @@ function request(
     contentLength?: string | null;
     consent?: string | null;
     operationId?: string | null;
+    ownerPrincipal?: string;
   } = {},
 ) {
-  const headers = new Headers({ "content-type": "application/json" });
+  const headers = new Headers({ "content-type": "application/json", [OPEN_ENA_AI_OWNER_HEADER]: openEnaAiOperationOwnerKey(options.ownerPrincipal ?? "stable-test-principal") });
   const session = options.session === undefined ? VALID_SESSION : options.session;
   const origin = options.origin === undefined ? "http://localhost:3000" : options.origin;
   if (session !== null) headers.set("cookie", `open-ena-session=${encodeURIComponent(session)}`);
@@ -261,9 +263,9 @@ test("AI durable quota remains exhausted after a new login token for the same pr
       return generatedResult;
     },
   });
-  assert.equal((await handler(request("{}", { session: "first-login" }))).status, 400);
-  assert.equal((await handler(request("{}", { session: "first-login" }))).status, 400);
-  assert.equal((await handler(request("{}", { session: "second-login" }))).status, 429);
+  assert.equal((await handler(request("{}", { ownerPrincipal: "stable-account-principal", session: "first-login" }))).status, 400);
+  assert.equal((await handler(request("{}", { ownerPrincipal: "stable-account-principal", session: "first-login" }))).status, 400);
+  assert.equal((await handler(request("{}", { ownerPrincipal: "stable-account-principal", session: "second-login" }))).status, 429);
   assert.equal(providerCalls, 0);
 });
 
@@ -283,14 +285,57 @@ test("AI generation operation IDs are stable across login rotation and prevent a
       return generatedResult;
     },
   });
-  assert.equal((await handler(request(undefined, { session: "first-login" }))).status, 200);
-  assert.equal((await handler(request(undefined, { session: "second-login" }))).status, 409);
+  assert.equal((await handler(request(undefined, { ownerPrincipal: "stable-operation-principal", session: "first-login" }))).status, 200);
+  assert.equal((await handler(request(undefined, { ownerPrincipal: "stable-operation-principal", session: "second-login" }))).status, 409);
   assert.equal(providerCalls, 1);
   assert.equal((await handler(request(undefined, {
     session: "second-login",
+    ownerPrincipal: "stable-operation-principal",
     operationId: "aiop-fedcba98-7654-4321-8fed-cba987654321",
   }))).status, 200);
   assert.equal(providerCalls, 2);
+});
+
+test("AI recovers a failed settlement only after its lease and never replays the original operation", async () => {
+  const store = new MemoryBillableStore();
+  let now = new Date("2026-09-30T12:00:00.000Z");
+  const reserve = store.reserveDetailed.bind(store);
+  store.reserveDetailed = (input) => reserve({ ...input, now });
+  const settle = store.settle.bind(store);
+  let settlementUnavailable = true;
+  store.settle = async (...args) => {
+    if (settlementUnavailable) throw new Error("synthetic database outage");
+    return settle(...args);
+  };
+  let providerCalls = 0;
+  const { handler } = dependencies({
+    billableStore: store, limits: BILLABLE_LIMITS,
+    generate: async () => { providerCalls += 1; return generatedResult; },
+  });
+  assert.equal((await handler(request())).status, 503);
+  settlementUnavailable = false;
+  const next = () => request(undefined, { operationId: "aiop-fedcba98-7654-4321-8fed-cba987654321" });
+  assert.equal((await handler(next())).status, 503, "database recovery alone cannot expire live work");
+  now = new Date(now.getTime() + 300_000);
+  assert.equal((await handler(request())).status, 409, "an abandoned operation cannot dispatch twice");
+  assert.equal((await handler(next())).status, 200);
+  assert.equal(providerCalls, 2);
+});
+
+test("AI cannot dispatch after slow preflight exhausts its reservation start window", async () => {
+  const store = new MemoryBillableStore();
+  const reserve = store.reserveDetailed.bind(store);
+  store.reserveDetailed = async (input) => {
+    const result = await reserve(input);
+    return result.ok
+      ? { ...result, reservation: { ...result.reservation, dispatchDeadlineMonotonicMs: 0 } }
+      : result;
+  };
+  const { handler, calls } = dependencies({ billableStore: store, limits: BILLABLE_LIMITS });
+  const response = await handler(request());
+  assert.equal(response.status, 503);
+  assert.equal(calls.generatedRequests.length, 0, "a recovered or nearly expired slot cannot start paid work");
+  assert.equal((await handler(request())).status, 409, "the expired operation retains its replay guard");
 });
 
 test("a released pre-dispatch failure permits an explicit retry with a fresh operation", async () => {
@@ -349,12 +394,18 @@ test("failed reservation release cannot authorize a fresh operation", async () =
 });
 
 test("an unknown dispatch outcome cannot authorize a fresh operation", async () => {
+  const store = new MemoryBillableStore();
+  const constrained = { ...BILLABLE_LIMITS, dailyMicroUsd: BILLABLE_LIMITS.maxReservationMicroUsd };
   const { handler } = dependencies({
-    billableStore: new MemoryBillableStore(), limits: BILLABLE_LIMITS,
+    billableStore: store, limits: constrained,
     generate: async () => { throw new Error("unclassified provider failure"); },
   });
   const failed = await handler(request());
   assert.equal(failed.headers.get("x-open-ena-ai-retry"), null);
+  assert.deepEqual(await store.reserveDetailed({
+    principalRef: "stable-test-principal", resource: "ai-interpretation", microUsd: 1,
+    idempotencyKey: "after-unknown-dispatch", limits: constrained,
+  }), { ok: false, reason: "daily-ceiling" }, "unknown provider outcomes must retain their full reserved charge");
 });
 
 test("AI operation IDs are required and strictly bounded before parsing or provider use", async () => {

@@ -143,5 +143,6 @@ test("Plugin Lab invitations and migrated English pages retain explicit content-
   ]) {
     const source = readFileSync(join(projectRoot, ...path), "utf8");
     assert.match(source, /lang="en" dir="ltr"/u, path.join("/"));
+    assert.doesNotMatch(source, /pluginCopy\.invitation/u, path.join("/"));
   }
 });

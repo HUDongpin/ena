@@ -98,6 +98,8 @@ export interface OpenEnaWorkspaceV3Copy {
   readonly operationFailed: string;
   readonly failures: {
     readonly codedDataTooLarge: (input: { readonly limitMiB: number }) => string;
+    readonly codedDataInvalidUtf8: string;
+    readonly artifactInvalidUtf8: string; readonly presetInvalidUtf8: string;
     readonly artifactTooLarge: (input: { readonly limitMiB: number }) => string;
     readonly presetTooLarge: (input: { readonly limitMiB: number }) => string;
     readonly sampleUnavailable: string;
@@ -233,6 +235,9 @@ export interface OpenEnaWorkspaceV3Copy {
 
 export type OpenEnaWorkspaceFailureV3 =
   | { readonly id: "coded-data-too-large"; readonly limitMiB: number }
+  | { readonly id: "coded-data-invalid-utf8" }
+  | { readonly id: "artifact-invalid-utf8" }
+  | { readonly id: "preset-invalid-utf8" }
   | { readonly id: "artifact-too-large"; readonly limitMiB: number }
   | { readonly id: "preset-too-large"; readonly limitMiB: number }
   | { readonly id: "sample-unavailable" }
@@ -244,6 +249,9 @@ export type OpenEnaWorkspaceFailureV3 =
 export function formatOpenEnaWorkspaceFailureV3(copy: OpenEnaWorkspaceV3Copy, failure: OpenEnaWorkspaceFailureV3): string {
   switch (failure.id) {
     case "coded-data-too-large": return copy.failures.codedDataTooLarge({ limitMiB: failure.limitMiB });
+    case "coded-data-invalid-utf8": return copy.failures.codedDataInvalidUtf8;
+    case "artifact-invalid-utf8": return copy.failures.artifactInvalidUtf8;
+    case "preset-invalid-utf8": return copy.failures.presetInvalidUtf8;
     case "artifact-too-large": return copy.failures.artifactTooLarge({ limitMiB: failure.limitMiB });
     case "preset-too-large": return copy.failures.presetTooLarge({ limitMiB: failure.limitMiB });
     case "sample-unavailable": return copy.failures.sampleUnavailable;
@@ -1901,6 +1909,7 @@ const MODEL_EXACT_ZH_HANT_V3: Readonly<Record<string, string>> = {
   "This result is historical. Its configuration is loaded only by an explicit action.": "此結果為歷史結果；只有明確操作才會載入其設定。",
   "Accepting an artifact does not start a model. References are added without selecting Rotation.": "接受成果不會啟動模型；新增參考時不會選取旋轉。",
   "Legacy schema 2 analysis packages cannot become a v3 Reference because they do not contain the required fitted basis evidence.": "舊版 schema 2 分析套件缺少必要的擬合基底證據，因此不能成為 v3 參考。",
+  "The imported Standard draft uses backward extent 1 for legacy value 0, preserving the current-row behavior. Conversation windows are unchanged; the historical artifact retains its original value.": "匯入的 Standard 草稿將舊版後向範圍 0 轉為 1，保留包含目前列的行為。Conversation 視窗不變；歷史成果仍保留原始值。",
   "A presentation preset hides this Group. Clear preset Group hiding to use these saved controls; individual Unit preferences are retained.": "呈現預設隱藏了此群組。清除預設群組隱藏後即可使用這些已儲存控制項；個別單位偏好仍會保留。",
   "All Groups are hidden. Restore Group visibility to use these saved controls; individual Unit preferences are retained.": "所有群組均已隱藏。還原群組可見性後即可使用這些已儲存控制項；個別單位偏好仍會保留。",
   "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.": "原生軌跡顯示摘要不提供信賴區間或離群區間；已儲存的區間偏好不適用於此檢視。",
@@ -2102,6 +2111,7 @@ const MODEL_EXACT_ZH_HANS_V3: Readonly<Record<string, string>> = {
   "This result is historical. Its configuration is loaded only by an explicit action.": "这是历史结果；只有明确操作才会加载其设置。",
   "Accepting an artifact does not start a model. References are added without selecting Rotation.": "接受成果不会启动模型；添加参考时不会选择旋转。",
   "Legacy schema 2 analysis packages cannot become a v3 Reference because they do not contain the required fitted basis evidence.": "旧版 schema 2 分析套件缺少必要的拟合基底证据，因此不能成为 v3 参考。",
+  "The imported Standard draft uses backward extent 1 for legacy value 0, preserving the current-row behavior. Conversation windows are unchanged; the historical artifact retains its original value.": "导入的 Standard 草稿将旧版后向范围 0 转为 1，保留包含当前行的行为。Conversation 窗口不变；历史成果仍保留原始值。",
   "A presentation preset hides this Group. Clear preset Group hiding to use these saved controls; individual Unit preferences are retained.": "呈现预设隐藏了此组。清除预设组隐藏后即可使用这些已保存控件；个别单位偏好仍会保留。",
   "All Groups are hidden. Restore Group visibility to use these saved controls; individual Unit preferences are retained.": "所有组均已隐藏。恢复组可见性后即可使用这些已保存控件；个别单位偏好仍会保留。",
   "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.": "原生轨迹显示摘要不提供置信区间或离群区间；已保存的区间偏好不适用于此视图。",
@@ -2185,6 +2195,7 @@ const DIAGNOSTIC_SUMMARIES_V3: Readonly<Record<OpenEnaModelDiagnosticIdV3, reado
   STANDARD_REFERENCE_INCOMPATIBLE: ["The selected Reference is incompatible with this target", "所選參考與此目標不相容", "所选参考与此目标不兼容"],
   STANDARD_REFERENCE_TARGET_DEGENERATE: ["Reference projection remains valid although the target has rank zero", "即使目標秩為零，參考投影仍然有效", "即使目标秩为零，参考投影仍然有效"],
   STANDARD_OUTPUT_NONFINITE: ["The fitted output contains a nonfinite value", "擬合輸出包含非有限值", "拟合输出包含非有限值"],
+  STANDARD_OUTPUT_UNDERFLOW: ["A nonzero connection is too small to represent", "非零連結過小而無法表示", "非零连接过小而无法表示"],
   RESOURCE_BUDGET_EXCEEDED: ["The exact execution estimate exceeds a hard resource limit", "精確執行估算超出硬性資源上限", "精确运行估算超出硬性资源上限"],
   ONA_DATASET_BINDING_INVALID: ["ONA dataset binding is invalid", "ONA 資料集綁定無效", "ONA 数据集绑定无效"],
   ONA_DATASET_EMPTY: ["ONA requires at least one source row", "ONA 至少需要一個來源資料列", "ONA 至少需要一个来源数据行"],
@@ -2238,6 +2249,7 @@ const DIAGNOSTIC_GUIDANCE_V3: Readonly<Record<OpenEnaModelDiagnosticIdV3, readon
   STANDARD_REFERENCE_INCOMPATIBLE: ["Match Code identity/order, weighting, family, and fixed basis before projection.", "投影前配對代碼識別／順序、權重、系列及固定基底。", "投影前匹配代码标识／顺序、权重、系列及固定基底。"],
   STANDARD_REFERENCE_TARGET_DEGENERATE: ["The fixed Reference projection remains valid; only target-derived rank interpretation is degenerate.", "固定參考投影仍然有效；只有目標衍生的秩解讀退化。", "固定参考投影仍然有效；只有目标派生的秩解读退化。"],
   STANDARD_OUTPUT_NONFINITE: ["Review source magnitude; nonfinite fitted coordinates or weights are rejected.", "檢視來源量級；非有限擬合座標或權重會被拒絕。", "查看来源量级；非有限拟合坐标或权重会被拒绝。"],
+  STANDARD_OUTPUT_UNDERFLOW: ["Frequency multiplication rounded a nonzero connection to zero. Rescale the Code values to preserve the network before building the model.", "頻次相乘將非零連結捨入為零。請重新縮放編碼值，以保留網絡後再建立模型。", "频次相乘将非零连接舍入为零。请重新缩放编码值，以保留网络后再建立模型。"],
   RESOURCE_BUDGET_EXCEEDED: ["A hard cap blocks execution and never authorizes truncating rows, Codes, windows, or data.", "硬性上限會阻止執行，且絕不授權截斷資料列、代碼、窗口或資料。", "硬性上限会阻止运行，且绝不授权截断数据行、代码、窗口或数据。"],
   ONA_DATASET_BINDING_INVALID: ["Reopen the exact admitted ONA source so binding fields and digest agree.", "重新開啟精確准入的 ONA 來源，使綁定欄位與摘要一致。", "重新打开精确准入的 ONA 来源，使绑定字段与摘要一致。"],
   ONA_DATASET_EMPTY: ["Provide source rows; ONA does not invent an empty directed result.", "提供來源資料列；ONA 不會虛構空白有向結果。", "提供来源数据行；ONA 不会虚构空白有向结果。"],
@@ -2318,6 +2330,7 @@ const importPreviewCopyEnV3: OpenEnaImportPreviewCopyV3 = {
   registerReference: "Add Reference", historical: "This result is historical. Its configuration is loaded only by an explicit action.",
   noAutoRun: "Accepting an artifact does not start a model. References are added without selecting Rotation.",
   legacyReference: "Legacy schema 2 analysis packages cannot become a v3 Reference because they do not contain the required fitted basis evidence.",
+  legacyZeroBackward: "The imported Standard draft uses backward extent 1 for legacy value 0, preserving the current-row behavior. Conversation windows are unchanged; the historical artifact retains its original value.",
 };
 
 const groupApplicabilityEnV3 = {
@@ -2336,6 +2349,9 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
     cancelPendingImport: t("Cancel pending import", "取消待處理匯入", "取消待处理导入"), operationFailed: t("The requested operation failed. Review the current configuration and try again.", "要求的操作失敗。請檢查目前設定後再試。", "请求的操作失败。请检查当前设置后重试。"),
     failures: {
       codedDataTooLarge: ({ limitMiB }) => t(`Coded data exceeds the ${limitMiB} MB limit (${limitMiB} MiB, ${limitMiB} × 1,024 × 1,024 bytes).`, `編碼資料超過 ${limitMiB} MB 上限（${limitMiB} MiB，即 ${limitMiB} × 1,024 × 1,024 位元組）。`, `编码数据超过 ${limitMiB} MB 上限（${limitMiB} MiB，即 ${limitMiB} × 1,024 × 1,024 字节）。`),
+      codedDataInvalidUtf8: t("This CSV is not valid UTF-8. Save it as UTF-8 and open it again.", "此 CSV 並非有效的 UTF-8。請另存為 UTF-8 後重新開啟。", "此 CSV 不是有效的 UTF-8。请另存为 UTF-8 后重新打开。"),
+      artifactInvalidUtf8: t("This JSON artifact is not valid UTF-8. Save it as UTF-8 and import it again.", "此 JSON 成果並非有效的 UTF-8。請另存為 UTF-8 後重新匯入。", "此 JSON 成果不是有效的 UTF-8。请另存为 UTF-8 后重新导入。"),
+      presetInvalidUtf8: t("This presentation preset is not valid UTF-8. Save it as UTF-8 and open it again.", "此呈現預設並非有效的 UTF-8。請另存為 UTF-8 後重新開啟。", "此呈现预设不是有效的 UTF-8。请另存为 UTF-8 后重新打开。"),
       artifactTooLarge: ({ limitMiB }) => t(`The imported artifact exceeds the ${limitMiB} MiB limit.`, `匯入成果超過 ${limitMiB} MiB 上限。`, `导入成果超过 ${limitMiB} MiB 上限。`),
       presetTooLarge: ({ limitMiB }) => t(`The presentation preset exceeds the ${limitMiB} MiB limit.`, `呈現預設超過 ${limitMiB} MiB 上限。`, `呈现预设超过 ${limitMiB} MiB 上限。`),
       sampleUnavailable: t("The teaching sample is currently unavailable. Try again after checking the local sample route.", "教學樣本目前不可用；請檢查本機樣本路徑後再試。", "教学样本当前不可用；请检查本机样本路径后重试。"),

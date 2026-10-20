@@ -16,9 +16,11 @@ import {
 import {
   assertPluginProposalTransition,
   parsePluginProposalSubmission,
+  parseStoredPluginProposalSubmission,
 } from "@/lib/plugin-lab/proposal";
 import { verifyPluginLabOperatorToken } from "@/lib/plugin-lab/operator-auth";
 import { readPluginLabConfiguration } from "@/lib/plugin-lab/config";
+import { PLUGIN_LAB_MAX_SERIALIZED_BYTES } from "@/lib/plugin-lab/limits";
 
 const encryptionKey = Buffer.alloc(32, 7);
 const secret = "plugin-lab-test-secret-with-at-least-32-characters";
@@ -68,6 +70,26 @@ test("proposal parsing is strict, bounded, text-only, and requires the data-safe
   );
 });
 
+test("stored proposals validate canonical links separately from raw form limits", () => {
+  const parsed = parsePluginProposalSubmission({ ...validSubmission(), referenceLinks: `https://example.org/${"界".repeat(1_580)}` });
+  assert.deepEqual(parseStoredPluginProposalSubmission(parsed), parsed);
+  assert.throws(() => parsePluginProposalSubmission({ ...validSubmission(), referenceLinks: parsed.referenceLinks }), /referenceLinks is invalid/iu);
+  for (const referenceLinks of [
+    "https://example.org/",
+    ["https://example.org"],
+    ["http://example.org/"],
+    ["https://user:password@example.org/"],
+    ["https://example.org/", "https://example.org/"],
+    Array.from({ length: 9 }, (_, index) => `https://example.org/${index}`),
+    [`https://example.org/${"x".repeat(14_408)}`],
+    [null],
+  ]) {
+    assert.throws(() => parseStoredPluginProposalSubmission({ ...parsed, referenceLinks }), /referenceLinks/iu);
+  }
+  assert.throws(() => parseStoredPluginProposalSubmission({ ...parsed, dataSafetyConfirmed: "yes" }), /data-safety confirmation/iu);
+  assert.throws(() => parseStoredPluginProposalSubmission({ ...parsed, privacyConsent: "yes" }), /privacy consent/iu);
+});
+
 test("proposal encryption is authenticated, versioned, and detects tampering", () => {
   const binding = "proposal-payload:plg_AAAAAAAAAAAAAAAAAAAAAA";
   const encrypted = encryptPluginLabText("private proposal", encryptionKey, "v1", binding);
@@ -87,6 +109,15 @@ test("proposal encryption is authenticated, versioned, and detects tampering", (
     () => decryptPluginLabText(encrypted, { v1: encryptionKey }, "transition-reason:plg_AAAAAAAAAAAAAAAAAAAAAA:received:under-review"),
     /could not be decrypted/iu,
   );
+});
+
+test("proposal encryption enforces its serialized byte budget for multibyte text", () => {
+  const binding = "proposal-payload:plg_AAAAAAAAAAAAAAAAAAAAAA";
+  const text = `${"界".repeat(Math.floor(PLUGIN_LAB_MAX_SERIALIZED_BYTES / 3))}${"x".repeat(PLUGIN_LAB_MAX_SERIALIZED_BYTES % 3)}`;
+  assert.equal(Buffer.byteLength(text, "utf8"), PLUGIN_LAB_MAX_SERIALIZED_BYTES);
+  const encrypted = encryptPluginLabText(text, encryptionKey, "v1", binding);
+  assert.equal(decryptPluginLabText(encrypted, { v1: encryptionKey }, binding), text);
+  assert.throws(() => encryptPluginLabText(`${text}x`, encryptionKey, "v1", binding), /plaintext is invalid/iu);
 });
 
 test("proposal IDs and access codes are high-entropy opaque values and access hashes are domain-separated", () => {

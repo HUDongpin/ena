@@ -8,7 +8,7 @@ import { buildOnaExecutionPlanV3 } from "../../../lib/open-ena/model-v3/ona-adap
 import { validateBoundResultV3 } from "../../../lib/open-ena/model-v3/result-binding";
 import { analyzePlanWithReferenceSourceV3 } from "../../../lib/open-ena/model-v3/reference-v2";
 import { bindReferenceToTargetV3, decodeReferenceV2 } from "../../../lib/open-ena/model-v3/reference-codec-v2";
-import { canonicalJsonV3 } from "../../../lib/open-ena/model-v3/canonical-json";
+import { canonicalJsonV3, deepFreezeV3 } from "../../../lib/open-ena/model-v3/canonical-json";
 import { workspaceDraftsFromArtifactV3 } from "../../../lib/open-ena/model-v3/migration";
 import { importOpenEnaArtifactV3, type OpenEnaImportResultV3 } from "../../../lib/open-ena/model-artifact-imports-v3";
 import type { ParsedDataset } from "../../../lib/open-ena/types";
@@ -68,12 +68,15 @@ export type WorkspaceActionV3 =
   | { type: "error"; message: string | null };
 
 export function emptyWorkspaceDraftsV3(): ModelWorkspaceDraftsV3 {
-  return workspaceDraftsFromArtifactV3({
+  const drafts = workspaceDraftsFromArtifactV3({
     unitColumns: [], horizonColumns: [], groupColumn: null, codes: [],
     weighting: "binary", model: "EndPoint", windowType: "MovingStanzaWindow",
     movingStanza: { backward: { kind: "finite", value: 5 }, forward: { kind: "finite", value: 0 }, rowOrder: null },
     horizonOrder: null, rotation: { type: "svd", centerAlignToOrigin: true },
   });
+  // A fresh workspace has no adopted ONA intent yet. Keep its sibling at the
+  // unseeded sentinel so the first switch copies the then-current Standard draft.
+  return deepFreezeV3({ ...drafts, ona: { ...drafts.ona, backward: { kind: "finite", value: 1 } } });
 }
 
 function draftHasIdentityMappingV3(drafts: ModelWorkspaceDraftsV3): boolean {
@@ -229,16 +232,17 @@ export function workspaceReducerV3(state: WorkspaceStateV3, action: WorkspaceAct
       const family = drafts.activeFamily;
       let model = modelStateReducerV3(state.model, family === "standard"
         ? { type: "replace-standard-draft", draft: drafts.standard }
-        : { type: "replace-ona-draft", draft: drafts.ona });
+        : { type: "adopt-ona-draft", draft: drafts.ona });
       model = modelStateReducerV3(model, { type: "set-active-family", family });
-      const replacement = rawEditors(drafts);
+      const replacement = rawEditors(model.drafts);
       return reconcileRaw({ ...state, model, preview: null, autoRunIntent: null, raw: {
         windows: { ...state.raw.windows, [family]: replacement.windows[family] },
         horizonOrder: family === "standard" ? replacement.horizonOrder : state.raw.horizonOrder,
       } });
     }
     case "keep-historical": return state.preview === action.preview && action.preview.kind === "historical-result"
-      ? { ...state, historical: [...state.historical, action.preview], preview: null } : state;
+      ? { ...state, historical: state.historical.some((artifact) => artifact.receivedArtifactSha256 === action.preview.receivedArtifactSha256)
+        ? state.historical : [...state.historical, action.preview], preview: null } : state;
     case "register-reference": return state.preview === action.preview && action.preview.kind === "reference-candidate"
       ? { ...state, preview: null, references: state.references.some((r) => r.contentSha256 === action.reference.contentSha256)
         ? state.references : [...state.references, action.reference] } : state;
@@ -344,6 +348,9 @@ export function useOpenEnaWorkspaceV3(options: { initial?: Parameters<typeof cre
       if (generation !== importGeneration.current) return;
       dispatch({ type: "preview", value });
       return value;
+    } catch (failure) {
+      // Read/parse failures obey the same import intent as successful previews.
+      if (generation === importGeneration.current) throw failure;
     } finally { if (generation === importGeneration.current) setImportPending(false); }
   }, []);
   const addReference = useCallback(async () => {

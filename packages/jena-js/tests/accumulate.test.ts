@@ -64,7 +64,14 @@ describe("accumulateData", () => {
       expect(Number(row.SVD1)).toBeCloseTo(Number(set.points[index]?.SVD1), 12);
       expect(Number(row.SVD2)).toBeCloseTo(Number(set.points[index]?.SVD2), 12);
     });
-    expect(projected.variance).toEqual(set.variance);
+    expect(Object.keys(projected.variance)).toEqual(Object.keys(set.variance));
+    for (const [axis, expected] of Object.entries(set.variance)) {
+      const actual = projected.variance[axis]!;
+      // Reusing the rounded fixed center can change the last bit of a
+      // variance calculation; even tiny completion-axis shares retain a
+      // relative precision check rather than a large absolute tolerance.
+      expect(Math.abs(actual - expected)).toBeLessThanOrEqual(4 * Number.EPSILON * Math.max(Math.abs(actual), Math.abs(expected)));
+    }
     expect(projected.rotation.nodes).toEqual(set.rotation.nodes);
   });
 

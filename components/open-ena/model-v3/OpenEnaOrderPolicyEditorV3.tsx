@@ -294,7 +294,9 @@ export function OpenEnaOrderPolicyEditorV3({
     onRawStateChange(next);
     if (next.mode === "columns") {
       const policy = orderPolicyFromRawStateV3(next, columnOptions);
-      if (policy !== null) onChange(policy);
+      // Removing every key is a representable incomplete draft. Retaining the
+      // last policy here would resurrect deleted keys in a draft export.
+      if (policy !== null || next.rows.length === 0) onChange(policy);
     }
   }
 

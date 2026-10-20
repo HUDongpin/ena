@@ -6,7 +6,7 @@ import { canonicalJsonV3 } from "../../../lib/open-ena/model-v3/canonical-json";
 export interface OpenEnaImportPreviewCopyV3 {
   title: string; field: string; before: string; after: string; cancel: string;
   accept: string; loadConfiguration: string; keepHistorical: string; registerReference: string;
-  historical: string; noAutoRun: string; legacyReference: string;
+  historical: string; noAutoRun: string; legacyReference: string; legacyZeroBackward: string;
 }
 export const importPreviewCopyV3: OpenEnaImportPreviewCopyV3 = {
   title: "Review imported artifact", field: "Field", before: "Current draft", after: "Imported draft", cancel: "Cancel import",
@@ -14,6 +14,7 @@ export const importPreviewCopyV3: OpenEnaImportPreviewCopyV3 = {
   registerReference: "Add Reference", historical: "This result is historical. Its configuration is loaded only by an explicit action.",
   noAutoRun: "Accepting an artifact does not start a model. References are added without selecting Rotation.",
   legacyReference: "This legacy candidate lacks the native v2 computational contract and remains available for inspection only.",
+  legacyZeroBackward: "The imported Standard draft uses backward extent 1 for legacy value 0, preserving the current-row behavior. Conversation windows are unchanged; the historical artifact retains its original value.",
 };
 
 export function importedDraftDiffV3(current: ModelWorkspaceDraftsV3, preview: OpenEnaImportResultV3) {
@@ -42,6 +43,7 @@ export function OpenEnaImportPreviewV3({ preview, drafts, copy = importPreviewCo
     <h2 id="ena-import-preview-title">{copy.title}</h2>
     <p>{copy.noAutoRun}</p>
     {preview.kind === "historical-result" && <p>{copy.historical}</p>}
+    {preview.review.includes("legacy-standard-zero-backward") && <p data-testid="ena-import-zero-backward-notice">{copy.legacyZeroBackward}</p>}
     <p>{preview.receivedArtifactSha256}</p>
     {diff.length > 0 && <table><thead><tr><th>{copy.field}</th><th>{copy.before}</th><th>{copy.after}</th></tr></thead>
       <tbody>{diff.map((row) => <tr key={row.field} data-changed={row.changed}><th>{row.field}</th><td>{row.before}</td><td>{row.after}</td></tr>)}</tbody></table>}

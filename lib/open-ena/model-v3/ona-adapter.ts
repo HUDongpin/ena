@@ -8,7 +8,7 @@ import { captureDatasetBindingV3, compilerDatasetEnvelopeV3, exactOnaResourceEst
 import { buildStandardSourceProofPayloadV3, decodeStandardSourceProofV3, mapRowOrderingV3, parsedDatasetFromSourceProofV3, type ExecutionPlanHeaderV3, type ResolvedExecutionRowOrderingV3, type StandardExecutionRowV3, type StandardSourceProofV3 } from "./execution-plan";
 import { buildExecutionIdentityDictionaryV3, createExecutionIdentityResolverV3, resolveExecutionIdentitiesForRowsV3, type ExecutionIdentityDictionaryV3 } from "./identity";
 import { runOnaScientificPreflightV3, validateOnaDatasetV3, type OnaCompilerDiagnosticV3 } from "./ona-compiler-preflight";
-import { estimateOnaOperationalAdmissionV3, type OnaOperationalAdmissionV3 } from "./ona-resource-budget";
+import { estimateOnaOperationalAdmissionV3, estimateLegacyOnaOperationalAdmissionV3, LEGACY_ONA_OPERATIONAL_BUDGET_VERSION_V3, ONA_OPERATIONAL_BUDGET_VERSION_V3, type OnaOperationalAdmissionV3 } from "./ona-resource-budget";
 import { estimateOnaResourcesV3, MAX_ESTIMATED_PEAK_BYTES_V3, MAX_ESTIMATED_EXPORT_BYTES_V3, type OnaResourceEstimateV3 } from "./resource-budget";
 import { decodeCanonicalOnaConfigV3 } from "./schema";
 import { OPEN_ENA_EXECUTION_CONTRACT_VERSION_V3, OPEN_ENA_RUNTIME_POLICY_VERSION_V3, OPEN_ENA_VALIDATION_CONTRACT_VERSION_V3, type CanonicalCodeV3, type CanonicalOnaConfigV3 } from "./types";
@@ -120,6 +120,10 @@ export function onaExecutionPlanHashPayloadV3(plan: OnaExecutionPlanV3): Omit<On
 }
 
 export async function buildOnaExecutionPlanV3(datasetValue: ParsedDataset, datasetSha256: string, configurationValue: CanonicalOnaConfigV3): Promise<OnaExecutionPlanV3> {
+  return buildOnaExecutionPlanWithBudgetV3(datasetValue, datasetSha256, configurationValue, ONA_OPERATIONAL_BUDGET_VERSION_V3);
+}
+
+async function buildOnaExecutionPlanWithBudgetV3(datasetValue: ParsedDataset, datasetSha256: string, configurationValue: CanonicalOnaConfigV3, budgetVersion: OnaOperationalAdmissionV3["version"]): Promise<OnaExecutionPlanV3> {
   const envelope = compilerDatasetEnvelopeV3(datasetValue);
   const rawConfiguration = snapshotPlainJsonRecordV3(configurationValue, "ONA configuration");
   const n = arrayLength(envelope.rows, "dataset rows"), c = arrayLength(rawConfiguration.codes, "configuration Codes");
@@ -138,7 +142,11 @@ export async function buildOnaExecutionPlanV3(datasetValue: ParsedDataset, datas
   const prepared = validateOnaDatasetV3(dataset, binding, configuration);
   if (!prepared.ordering || prepared.diagnostics.some((entry) => entry.severity === "error")) throw new TypeError(`ONA dataset is not executable: ${prepared.diagnostics.map((entry) => entry.id).join(", ")}`);
   const resourceEstimate = exactOnaResourceEstimateV3(dataset, configuration);
-  const operationalAdmission = estimateOnaOperationalAdmissionV3(dataset, configuration, resourceEstimate);
+  // Legacy reconstruction preserves historical hashes, but never skips current
+  // safety admission. New public builds always use the current v2 ledger.
+  const currentAdmission = estimateOnaOperationalAdmissionV3(dataset, configuration, resourceEstimate);
+  const operationalAdmission = budgetVersion === LEGACY_ONA_OPERATIONAL_BUDGET_VERSION_V3
+    ? estimateLegacyOnaOperationalAdmissionV3(dataset, configuration, resourceEstimate) : currentAdmission;
   const scientific = runOnaScientificPreflightV3(dataset, configuration, prepared.ordering);
   if (scientific.diagnostics.some((entry) => entry.severity === "error")) throw new TypeError(`ONA scientific readiness failed: ${scientific.diagnostics.map((entry) => entry.id).join(", ")}`);
   const groupColumn = configuration.units.group.type === "stable-metadata" ? configuration.units.group.column : null;
@@ -398,7 +406,9 @@ export async function validateOnaExecutionPlanV3(input: unknown): Promise<OnaExe
   const binding = { hashKind: header.datasetHashKind as OnaExecutionPlanHeaderV3["datasetHashKind"], normalizedTableSha256: header.datasetSha256, rowCount: integer(header.rowCount, "row count"), headerSha256: header.headerSha256 };
   same(bindingValue, binding, "dataset/header binding");
   const source = decodeStandardSourceProofV3(record.sourceProof, configuration, binding, binding.rowCount);
-  const rebuilt = await buildOnaExecutionPlanV3(parsedDatasetFromSourceProofV3(source), binding.normalizedTableSha256, configuration);
+  const admission = snapshotPlainJsonRecordV3(record.operationalAdmission, "ONA operational admission");
+  if (admission.version !== ONA_OPERATIONAL_BUDGET_VERSION_V3 && admission.version !== LEGACY_ONA_OPERATIONAL_BUDGET_VERSION_V3) throw new TypeError("ONA operational admission version is unsupported.");
+  const rebuilt = await buildOnaExecutionPlanWithBudgetV3(parsedDatasetFromSourceProofV3(source), binding.normalizedTableSha256, configuration, admission.version);
   same(captured, rebuilt, "complete source-derived execution plan");
   return rebuilt;
 }

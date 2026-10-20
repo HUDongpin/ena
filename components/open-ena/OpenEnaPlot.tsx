@@ -1,4 +1,4 @@
-import { nativePlotGroupSettingsV3 } from "@/lib/open-ena/bound-presentation-v3";
+import { nativePlotGroupSettingsV3, nativePlotSummaryGroupsV3 } from "@/lib/open-ena/bound-presentation-v3";
 import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 import type { Row } from "jena-js";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
@@ -191,6 +191,10 @@ export function passesEdgeThreshold(value: number, maximum: number, threshold: n
 }
 
 function edgeWeight(groups: GroupNetwork[], edgeName: string) {
+  // An empty display cohort has no mean to subtract from the other group.
+  if (groups.length === 2 && groups.some(group => group.count === 0)) {
+    return { value: 0, group: undefined, direction: "single" as const };
+  }
   if (groups.length === 1) {
     return { value: Math.abs(groups[0]?.meanWeights[edgeName] ?? 0), group: groups[0], direction: "single" as const };
   }
@@ -350,13 +354,15 @@ export default function OpenEnaPlot({
     label: `unit-${index}-${String(row.ENA_UNIT ?? index)}`,
     row,
   }));
-  const meanPoints = result.groups.map((group, index) => ({
+  const summaryGroups = nativePlotSummaryGroupsV3(result);
+  const groupMeanPoints = (groups: GroupNetwork[]) => groups.map((group, index) => ({
     x: group.meanPoint[xDimension] ?? 0,
     y: group.meanPoint[yDimension] ?? 0,
     z: group.meanPoint[zDimension] ?? 0,
     key: `mean-${index}`,
     label: `mean-${index}`,
   }));
+  const meanPoints = groupMeanPoints(summaryGroups);
   const trajectory = result.trajectoryPresentation;
   const trajectoryCentroids = (trajectory?.centroids ?? []).map((centroid, index) => ({ key: `trajectory-centroid-${index}`, label: centroid.horizon,
     x: Number(centroid.point[xDimension]), y: Number(centroid.point[yDimension]), z: Number(centroid.point[zDimension] ?? 0) }));
@@ -370,14 +376,14 @@ export default function OpenEnaPlot({
     plotZoom,
     flipX,
     flipY,
-    [...canonicalNodes, ...unitPoints, ...meanPoints],
+    [...canonicalNodes, ...unitPoints, ...groupMeanPoints(result.groups)],
   );
   const positions = projection.positions;
   // Kept in the public prop shape so historical settings can still be read.
   // A legacy flag alone cannot manufacture trajectories. Native fitted-sequence
   // presentation is supplied explicitly by the bound Workspace.
   void _legacyShowTrajectories;
-  const edgeValues = result.set.adjacencyKey.map((edge) => edgeWeight(result.groups, edge.name).value);
+  const edgeValues = result.set.adjacencyKey.map((edge) => edgeWeight(summaryGroups, edge.name).value);
   const maxEdge = Math.max(1e-9, ...edgeValues);
   const varianceX = (result.set.variance[xDimension] ?? 0) * 100;
   const varianceY = (result.set.variance[yDimension] ?? 0) * 100;
@@ -385,7 +391,7 @@ export default function OpenEnaPlot({
   const isComparison = result.groups.length === 2;
   const strongestEdges = result.set.adjacencyKey
     .filter((edge) => openEnaRenderedEdgeIsVisible(codePresentation, edge.source, edge.target))
-    .map((edge) => ({ edge, ...edgeWeight(result.groups, edge.name) }))
+    .map((edge) => ({ edge, ...edgeWeight(summaryGroups, edge.name) }))
     .filter((item) => item.group && passesEdgeThreshold(item.value, maxEdge, edgeThreshold))
     .sort((left, right) => right.value - left.value)
     .slice(0, 5);
@@ -483,7 +489,7 @@ export default function OpenEnaPlot({
           if (!openEnaRenderedEdgeIsVisible(codePresentation, edge.source, edge.target)) return null;
           const source = positions.get(`node-${edge.source}`);
           const target = positions.get(`node-${edge.target}`);
-          const weighted = edgeWeight(result.groups, edge.name);
+          const weighted = edgeWeight(summaryGroups, edge.name);
           if (!source || !target || !weighted.group || !passesEdgeThreshold(weighted.value, maxEdge, edgeThreshold)) return null;
           const relative = weighted.value / maxEdge;
           const edgeLabel = isComparison
@@ -574,8 +580,8 @@ export default function OpenEnaPlot({
 
         {meanPoints.map((mean, index) => {
           const point = positions.get(mean.key);
-          const group = result.groups[index];
-          if (trajectory || !point || !group || !nativePlotGroupSettingsV3(result, group.name).showMean) return null;
+          const group = summaryGroups[index];
+          if (trajectory || !point || !group || group.count === 0 || !nativePlotGroupSettingsV3(result, group.name).showMean) return null;
           return (
             <g
               key={mean.label}
@@ -717,7 +723,7 @@ export default function OpenEnaPlot({
         <table>
           <thead><tr><th>{copy.workspace.groups}</th><th>{xDimension}</th><th>{yDimension}</th>{view === "3d" ? <th>{zDimension}</th> : null}</tr></thead>
           <tbody>
-            {result.groups.map((group) => (
+            {summaryGroups.filter(group => group.count > 0).map((group) => (
               <tr key={group.name}>
                 <th scope="row">{group.name} (n = {group.count})</th>
                 <td>{(group.meanPoint[xDimension] ?? 0).toFixed(3)}</td>

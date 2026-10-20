@@ -6,6 +6,7 @@ import {
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
+import { PLUGIN_LAB_MAX_SERIALIZED_BYTES } from "./limits";
 
 export const PLUGIN_LAB_STATUS_COOKIE = "ena-plugin-proposal-status";
 export const PLUGIN_LAB_STATUS_MAX_AGE_SECONDS = 30 * 60;
@@ -59,7 +60,7 @@ export function equalPluginLabAccessHash(left: string, right: string) {
 }
 
 export function encryptPluginLabText(text: string, key: Buffer, keyVersion: string, binding: string): PluginLabCiphertextV1 {
-  if (typeof text !== "string" || !text || text.length > 16_384) throw new TypeError("Plugin Lab plaintext is invalid.");
+  if (typeof text !== "string" || !text || Buffer.byteLength(text, "utf8") > PLUGIN_LAB_MAX_SERIALIZED_BYTES) throw new TypeError("Plugin Lab plaintext is invalid.");
   if (!/^[A-Za-z0-9._-]{1,24}$/u.test(keyVersion)) throw new TypeError("Plugin Lab key version is invalid.");
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", configuredKey(key), iv);

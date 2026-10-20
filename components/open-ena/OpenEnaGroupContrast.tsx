@@ -64,6 +64,7 @@ export interface OpenEnaGroupContrastProps extends OpenEnaCodeGraphPresentation 
   rightTools?: ReactNode;
   onSwitchPlots?: () => void;
   onConfirmIdentityBearingExport?: () => boolean;
+  captureImageExport?: () => (() => boolean) | null;
   nodeLayout?: OpenEnaNodeLayoutPositions;
   onNodeMove?: (code: string, dimensions: OpenEnaNodeDimensionPosition) => void;
   groupDisplay?: Pick<OpenEnaDerivedGroupDisplay, "primary" | "secondary" | "hiddenUnitKeys">;
@@ -366,7 +367,8 @@ function boundedZoom(value: number) {
   return bounded(value, 0.6, 2.4, 1);
 }
 
-async function copyPlotImage(button: HTMLButtonElement) {
+async function copyPlotImage(button: HTMLButtonElement, isCurrent: () => boolean) {
+  if (!isCurrent()) throw new Error("Plot image export is no longer current.");
   const svg = button.closest("figure")?.querySelector<SVGSVGElement>("svg[data-ena-plot-kind]");
   if (!(svg instanceof SVGSVGElement)) throw new Error("Plot image is unavailable.");
   const clone = svg.cloneNode(true) as SVGSVGElement;
@@ -398,6 +400,7 @@ async function copyPlotImage(button: HTMLButtonElement) {
     image.decoding = "async";
     image.src = objectUrl;
     await image.decode();
+    if (!isCurrent()) throw new Error("Plot image export is no longer current.");
     const scale = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(width * scale);
@@ -409,6 +412,7 @@ async function copyPlotImage(button: HTMLButtonElement) {
     const png = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Plot image encoding failed.")), "image/png");
     });
+    if (!isCurrent()) throw new Error("Plot image export is no longer current.");
     if (typeof ClipboardItem === "function" && navigator.clipboard?.write) {
       await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
       return "image" as const;
@@ -1744,6 +1748,11 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
   });
   const panelPairKey = [contrast.primary.name, contrast.secondary.name].toSorted().join("\u001f");
   const previousPanelPairKey = useRef(panelPairKey);
+  const copyMountedRef = useRef(true);
+  useEffect(() => {
+    copyMountedRef.current = true;
+    return () => { copyMountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     if (previousPanelPairKey.current === panelPairKey) return;
@@ -1833,23 +1842,28 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
     setPanelZooms((current) => ({ ...current, [kind]: boundedZoom(next) }));
   };
   const handleCopy = (button: HTMLButtonElement, kind: PlotKind) => {
-    if (!props.onConfirmIdentityBearingExport) {
+    if (!props.captureImageExport && !props.onConfirmIdentityBearingExport) {
       setCopyStatus((current) => ({ ...current, [kind]: "unavailable" }));
       return;
     }
-    let confirmed = false;
+    let lease: (() => boolean) | null = null;
     try {
-      confirmed = props.onConfirmIdentityBearingExport();
+      // The Workspace lease owns its confirmation and stays bound to the
+      // clicked result/plan through asynchronous image decoding and encoding.
+      lease = props.captureImageExport
+        ? props.captureImageExport()
+        : props.onConfirmIdentityBearingExport!() ? () => true : null;
     } catch {
       setCopyStatus((current) => ({ ...current, [kind]: "unavailable" }));
       return;
     }
-    if (!confirmed) {
+    if (!lease) {
       setCopyStatus((current) => ({ ...current, [kind]: "cancelled" }));
       return;
     }
+    const isCurrent = () => copyMountedRef.current && lease();
     setCopyStatus((current) => ({ ...current, [kind]: "copying" }));
-    void copyPlotImage(button).then(
+    void copyPlotImage(button, isCurrent).then(
       (format) => setCopyStatus((current) => ({
         ...current,
         [kind]: format === "image" ? "image-copied" : "svg-copied",

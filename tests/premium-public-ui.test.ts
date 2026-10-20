@@ -53,6 +53,7 @@ test("knowledge pages retain the premium design and merged Home keeps its isolat
   }
 
   assert.match(source("app", "[locale]", "page.tsx"), /<UnifiedHome/);
+  assert.doesNotMatch(source("app", "[locale]", "page.tsx"), /premium-public-page/);
   const home = source("components", "home-source", "UnifiedHome.tsx");
   assert.match(home, /import styles from "\.\/unified-home\/Home\.module\.css"/);
   assert.match(home, /className=\{styles\.home\}/);

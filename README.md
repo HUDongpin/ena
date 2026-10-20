@@ -85,10 +85,28 @@ Boolean declarations before creating a genuine typed XLSX derivative. Numbers us
 whole-token JSON decimal syntax; overflow, nonzero underflow and unsafe integers
 reject, and ordinary IEEE 754 fraction rounding is disclosed. Text preserves
 identifiers such as `001` and `9007199254740993`. Native XLSX cell types remain
-unchanged. The downloadable derivative reuploads through the same worksheet
+unchanged. Native ISO date cells accept date-only values and datetimes with an
+explicit offset whose precision is exactly representable in milliseconds; invalid
+calendars, ambiguous local times and nonzero sub-millisecond precision reject.
+Numeric date cells use the workbook’s 1900 or 1904 date system; the fictitious
+1900-02-29 serial day rejects instead of becoming a different calendar date.
+The downloadable derivative reuploads through the same worksheet
 parser and normalized worksheet hash. The original CSV and a separate derivation
 receipt remain downloadable; neither is claimed as authentication of the
 transformation. Serialization uses pinned MIT-licensed `write-excel-file@4.1.1`.
+
+Typed CSV preparation also requires an exact value-and-type roundtrip through the
+pinned XLSX writer. This conversion currently rejects text the writer removes,
+including literal `U+FFFD` and certain control or noncharacter code points, rather
+than adopting altered source cells. Acceptance in the type preview or native
+XLSX import does not imply support for CSV-to-XLSX conversion.
+
+XLSX admission checks a single-disk ZIP directory before decompression and rejects
+ZIP64 archives. Before the reader fills sparse coordinate gaps, the selected first
+worksheet is limited to 20,001 materialized rows including the header and 256
+columns; empty coordinate gaps count toward this allocation limit. The preflight
+uses pinned `fflate@0.8.3` and `saxen@11.1.1`, already present in the XLSX
+dependency tree.
 
 The current native Workspace provides:
 
@@ -339,6 +357,14 @@ truncating the scientific dataset.
 
 ### Optional AI-assisted interpretation
 
+**Status: PARTIAL (2026-09-24).** Live DeepSeek generation reached the provider,
+but a bounded 17-call synthetic stability check passed the runtime response
+parser only 8 times; none passed the stricter offline scientific evaluator.
+Keep the existing fail-closed response validation and explicit-operation retry
+controls. Do not describe AI generation as stable or scientifically accepted.
+The offline scientific evaluator is not a production-route gate; its findings
+need separate review. See [AI generation status and evidence](docs/ai-generation-partial-2026-09-24.md).
+
 AI interpretation is disabled unless the server is configured with
 `OPEN_ENA_AI_ENABLED=true` and a server-only `DEEPSEEK_API_KEY`. The only approved
 provider endpoint is `https://api.deepseek.com`; the model is `deepseek-flash`.
@@ -363,15 +389,19 @@ integration. For ledger settlement, reported token usage is costed conservativel
 at the documented peak DeepSeek Flash rates as of 2026-09-24; this is an upper
 bound estimate, not a provider invoice. Missing usage settles the full reservation.
 
-Vercel Web Analytics is an optional, aggregate-only service in the site shell.
-It is disabled until the visitor explicitly enables it in the footer disclosure,
-and the same control can disable future events. The disclosure names the Vercel
-provider and documented page-view fields, notes the documented 24-hour disposal
-of the visitor-session hash, and states that event retention, processing region,
-and a provider-issued per-event audit receipt are not established by this
-repository. The authenticated Open ENA workspace keeps analytics disabled even
-when a public-site preference is granted. The local preference contains no
-account or dataset identifier.
+Vercel Web Analytics is an optional service in the site shell. It remains disabled
+without a locally stored `granted` preference; a previously stored grant can still
+enable it on public pages. The current interface has no control for granting or
+withdrawing that preference: `AnalyticsConsentControl` is retained in the source
+but is not rendered. The retained consent event handler can suppress subsequent
+events for the current page, and removing the stored preference also blocks
+subsequent events through `beforeSend`. These controls do not delete events
+already sent to the provider. The authenticated Open ENA workspace and plugin
+proposal, status, and operator paths keep analytics disabled even when the public
+preference is granted. Before dispatch, the client requires a same-origin URL and
+removes its query string and fragment. The local preference contains no account
+or dataset identifier. Event retention, processing region, and a provider-issued
+per-event audit receipt are not established by this repository.
 
 The core ENA model and raw source rows remain in the browser. The AI request is not
 automatic: Stats & Export first shows the exact versioned aggregate JSON, and the
@@ -434,6 +464,13 @@ Set `OPEN_ENA_TRUSTED_CLIENT_IP_HEADER` only to a header that an operator-owned
 edge proxy forcibly rewrites or strips; an arbitrary client-supplied IP header is
 not a trust boundary. If that guarantee is unavailable, leave it blank so every
 request uses the shared account ceiling.
+Plugin Lab submission and status-access throttles use the same explicitly
+trusted, single-IP header. They ignore other forwarding headers and User-Agent.
+Without a valid trusted address, all unattributed visitors share the respective
+fallback bucket: five submissions per hour and ten status-access attempts per
+15 minutes. This fails closed but can temporarily deny other visitors after
+that shared bucket is exhausted; per-source availability requires a verified
+edge header as described above.
 The static account issues a randomly identified v2 session. Logout records that
 session's `jti` in the shared revocation table before clearing the cookie, and
 page, AI, and longitudinal requests reject revoked tokens. Set
@@ -445,7 +482,13 @@ redirect authority; a production deployment without an explicit origin list
 fails closed.
 
 Operator-created, one-time release test accounts additionally require
-`migrations/004_open_ena_disposable_accounts.sql`. The application sends only a
+`migrations/004_open_ena_disposable_accounts.sql` followed by
+`migrations/008_open_ena_disposable_expiry_after_lock.sql`. Migration 008 locks the
+credential row before checking PostgreSQL server time, so an account that expires
+while waiting for another transaction cannot establish a new session. It preserves
+existing account data, function identity, owner, grants, security attributes and
+function-local settings; unknown function bodies stop without replacement. Use
+the same schema/search path as migration 004. The application sends only a
 domain-separated HMAC username reference to PostgreSQL and verifies a fixed-parameter
 scrypt password derivation; raw usernames, raw passwords, cookies, and session tokens
 are not stored. A successful conditional database update consumes the account exactly
@@ -454,9 +497,15 @@ once across serverless instances. The resulting disposable principal uses a sepa
 Provision these rows only through a controlled operator process; this migration does
 not create a public registration or provisioning endpoint.
 
-Run the operator in two phases so migration 004 is committed on the target database
-before deploying the auth code that reads it. `vercel env run` injects Production
-variables into the child process without creating a local environment file:
+Run the operator in two phases so the required auth migrations are committed
+before deploying the auth code that reads them. On a fresh database it applies
+004 then 008 in one transaction. When the disposable table and function already
+exist, it skips 004 and applies 008, preserving existing function attributes and
+allowing 008 to reject an unknown body. A partial schema fails closed. Migration
+receipts list both input file hashes in order and whether each was applied; proof
+mode requires the corrected consume-function body. Do not replay 004 alone after
+008, because that would restore the old expiry check. `vercel env run` injects
+Production variables into the child process without creating a local environment file:
 
 ```bash
 vercel env run --environment=production -- \
@@ -470,6 +519,14 @@ vercel env run --environment=production -- \
   --deployment-id=<dpl-id>
 ```
 
+For an isolated upgrade and concurrency regression, with local PostgreSQL
+binaries installed, run `node --import tsx tests/review-server-migration-008-upgrade.mts`.
+The test uses temporary loopback databases and synthetic accounts/roles, checks
+fresh and existing operator paths, expiry during a row-lock wait, actual login,
+function attributes, rollback and repeat application, then removes its databases.
+It writes `output/postgres/migration-008-evidence/upgrade-evidence.json`; it does not run the
+production operator against configured credentials.
+
 Each command emits one redacted JSON receipt. The proof receipt deliberately marks
 its supplied SHA and deployment ID as `EXTERNAL_CROSS_CHECK_REQUIRED`; bind them to
 independent Vercel control-plane, GitHub CI, remote Git, and public-source evidence
@@ -479,10 +536,46 @@ AI consent receipts additionally require
 `migrations/003_open_ena_ai_consent.sql`. The durable receipt stores only a
 hash-bound principal reference, operation ID, canonical request SHA-256,
 consent-policy version, provider/model, timestamp, and terminal status; it does
-not store prompts, completions, raw rows, or dataset labels. Apply all four
-migrations with the same operator-controlled PostgreSQL deployment before
-enabling production AI. These settings are examples only and are not deployed
-by this repository.
+not store prompts, completions, raw rows, or dataset labels. Existing deployments
+also need `migrations/007_open_ena_ai_consent_idempotency.sql` to make concurrent
+receipt creation safe across both unique indexes; fresh migration 003 includes
+the same fix. Lease-aware billing requires migration 006 after migration 001.
+Apply required migrations through the same operator-controlled PostgreSQL deployment
+before enabling production AI. Preparing these files does not apply them to an
+existing database; deployment and migration remain separate operator actions.
+Migration 007 preserves the existing function owner, grants and function-local
+settings by patching its complete database definition. It accepts only the known
+legacy or corrected receipt bodies; missing or unrecognized definitions stop
+without replacement. LF and CRLF line endings are equivalent for this check;
+other body edits or reformatting require operator review. Use the same migration
+schema/search path and avoid concurrent operator changes to the function.
+
+For an isolated populated-001-to-006 lease upgrade regression, install the local
+PostgreSQL 16 binaries and run:
+
+```bash
+node tests/review-server-migration-006-upgrade.mjs
+```
+
+It verifies rollback, existing rows and spend periods, the five-minute migration
+grace period, repeat application, real recovery/settlement/release lock races,
+and an explicitly granted non-superuser invoker. Its default receipt is
+`output/postgres/migration-006-evidence/upgrade-evidence.json`; use
+`--evidence-dir <directory>` to select another output location. This temporary
+loopback database does not establish the grants or state of a deployed database.
+
+For an isolated old-003-to-007 upgrade regression, install the local PostgreSQL
+binaries (`initdb`, `pg_ctl`, `psql`) and run:
+
+```bash
+node tests/review-server-migration-007-upgrade.mjs
+```
+
+This explicit integration test creates and cleans its own temporary loopback
+database with synthetic receipts and roles. It checks existing data, function
+attributes, grants, rollback, concurrent idempotency and repeat application, and
+writes its receipt to `output/postgres/migration-007-evidence/upgrade-evidence.json`. It does not
+read deployment credentials or connect to an existing database.
 
 ```bash
 npm install

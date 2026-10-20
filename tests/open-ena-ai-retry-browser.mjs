@@ -8,9 +8,12 @@ const bundle = await build({
     import React from 'react';
     import { createRoot } from 'react-dom/client';
     import Ai from './components/open-ena/OpenEnaAiInterpretation';
+    import {openEnaAiOperationOwnerKey} from './lib/open-ena/ai-operation-owner';
+    const owner=openEnaAiOperationOwnerKey('synthetic-browser-principal');
     import { getOpenEnaCopy } from './lib/open-ena-i18n';
-    const request = { schemaVersion: 'retry-browser-fixture', promptVersion: 'fixture', locale: 'en', binding: { evidenceKey: 'fixture' }, evidence: {} };
-    createRoot(document.getElementById('root')).render(<Ai request={request} copy={getOpenEnaCopy('en').aiInterpretation} disabled={false}/>);
+    import { interpretationRequest } from './tests/helpers/ai-interpretation-request-v2';
+    const request = interpretationRequest();
+    createRoot(document.getElementById('root')).render(<Ai operationOwnerKey={owner} request={request} copy={getOpenEnaCopy('en').aiInterpretation} disabled={false}/>);
   `, loader: "tsx", resolveDir: process.cwd() },
   bundle: true, format: "iife", platform: "browser", jsx: "automatic", write: false,
 });
@@ -94,6 +97,15 @@ try {
   const boundary = "The computed ENA model results are still valid. Only the AI interpretation is missing.";
   const classCases = [
     {
+      name: "settled-unavailable",
+      status: 503,
+      body: { error: "Synthetic settled unavailable response", failureClass: "unavailable" },
+      failureClass: "unavailable",
+      message: "AI interpretation is temporarily unavailable or rate limited. Wait a moment, then retry this request.",
+      hidden: "Synthetic settled unavailable response",
+      retry: true,
+    },
+    {
       name: "unavailable",
       status: 503,
       body: { error: "Synthetic unavailable response" },
@@ -151,9 +163,11 @@ try {
   for (const item of classCases) {
     const failurePage = await browser.newPage();
     const pageErrors = [];
+    const classOperations = [];
     failurePage.on("pageerror", (error) => pageErrors.push(error.message));
     await failurePage.route("**/*", async (route) => {
       if (new URL(route.request().url()).pathname === "/api/open-ena/ai-interpretation") {
+        classOperations.push(route.request().headers()["x-open-ena-ai-operation-id"]);
         return route.fulfill({
           status: item.status,
           contentType: "application/json",
@@ -176,6 +190,13 @@ try {
     assert.equal(await failureAlert.locator("[data-ena-ai-evidence-boundary='results-remain-valid']").count(), 1, item.name);
     assert.equal(await failureAlert.getByRole("button", { name: "Retry" }).count(), item.retry ? 1 : 0, item.name);
     assert.equal(await failureAlert.getByRole("link", { name: "Sign in again" }).count(), item.retry ? 0 : 1, item.name);
+    assert.equal(classOperations.length, 1, `${item.name}: failure must not automatically resend`);
+    if (item.retry) {
+      await failureAlert.getByRole("button", { name: "Retry" }).click();
+      await failurePage.getByRole("alert").getByRole("button", { name: "Retry" }).waitFor();
+      assert.equal(classOperations.length, 2, `${item.name}: exactly one explicit retry`);
+      assert.equal(classOperations[0], classOperations[1], `${item.name}: a failure class does not authorize renewal`);
+    }
     assert.deepEqual(pageErrors, [], item.name);
     await failurePage.close();
   }
@@ -230,11 +251,15 @@ try {
       import { createRoot } from 'react-dom/client';
       import Ai from './components/open-ena/OpenEnaAiInterpretation';
       import { getOpenEnaCopy } from './lib/open-ena-i18n';
-      const initial = { schemaVersion: 'retry-browser-fixture', promptVersion: 'fixture', locale: 'en', binding: { evidenceKey: 'evidence-a' }, evidence: { id: 'a' } };
+      import { openEnaAiOperationOwnerKey } from './lib/open-ena/ai-operation-owner';
+      import { interpretationRequest } from './tests/helpers/ai-interpretation-request-v2';
+      const owner = openEnaAiOperationOwnerKey('synthetic-stale-browser-principal');
+      const initial = interpretationRequest();
+      window.__initialAiRequest = initial;
       function Harness() {
         const [request, setRequest] = useState(initial);
         window.__setAiRequest = setRequest;
-        return <Ai request={request} copy={getOpenEnaCopy('en').aiInterpretation} disabled={false} disabledReason="Current result required"/>;
+        return <Ai operationOwnerKey={owner} request={request} copy={getOpenEnaCopy('en').aiInterpretation} disabled={false} disabledReason="Current result required"/>;
       }
       createRoot(document.getElementById('root')).render(<Harness />);
     `, loader: "tsx", resolveDir: process.cwd() },
@@ -268,23 +293,19 @@ try {
     await stalePage.waitForTimeout(20);
   }
   await stalePage.evaluate(() => {
-    window.__setAiRequest({
-      schemaVersion: "retry-browser-fixture",
-      promptVersion: "fixture",
-      locale: "en",
-      binding: { evidenceKey: "evidence-b" },
-      evidence: { id: "b" },
-    });
+    const next = structuredClone(window.__initialAiRequest);
+    next.binding.datasetHash = "c".repeat(64);
+    window.__setAiRequest(next);
   });
   releaseStale();
   await stalePage.waitForTimeout(100);
-  assert.match(staleBodies[0], /evidence-a/);
+  assert.equal(JSON.parse(staleBodies[0]).binding.datasetHash, "b".repeat(64));
   assert.equal(staleBodies.length, 1, "changing evidence must not send a replacement AI request");
   assert.equal(await stalePage.locator(".ena-ai-result").count(), 0, "a late interpretation must not attach to newer evidence");
   assert.equal(await stalePage.getByText("STALE_RESULT_MUST_NOT_ATTACH").count(), 0);
   assert.equal(await stalePage.getByRole("alert").count(), 0, "a late failure for old evidence must not attach to newer evidence");
   assert.equal(await stalePage.getByRole("checkbox").isChecked(), false, "newer evidence still requires its own consent");
-  assert.match(await stalePage.locator("pre").textContent() ?? "", /evidence-b/);
+  assert.equal(JSON.parse(await stalePage.locator("pre").textContent()).binding.datasetHash, "c".repeat(64));
   assert.deepEqual(staleErrors, []);
   await stalePage.close();
 
@@ -406,6 +427,8 @@ try {
       import Ai from './components/open-ena/OpenEnaAiInterpretation';
       import { getOpenEnaCopy } from './lib/open-ena-i18n';
       import { interpretationRequest } from './tests/helpers/ai-interpretation-request-v2';
+      import { openEnaAiOperationOwnerKey } from './lib/open-ena/ai-operation-owner';
+      const owner = openEnaAiOperationOwnerKey('synthetic-focus-browser-principal');
       const initial = interpretationRequest();
       const replacement = {
         ...initial,
@@ -419,7 +442,7 @@ try {
           setRequest(resolved);
           setPanelDisabled(resolved === null);
         };
-        return <Ai request={request} copy={getOpenEnaCopy('en').aiInterpretation} disabled={panelDisabled} disabledReason="Current result required"/>;
+        return <Ai operationOwnerKey={owner} request={request} copy={getOpenEnaCopy('en').aiInterpretation} disabled={panelDisabled} disabledReason="Current result required"/>;
       }
       createRoot(document.getElementById('root')).render(<Harness />);
     `, loader: "tsx", resolveDir: process.cwd() },
@@ -803,7 +826,9 @@ try {
     },
   ];
   for (const item of consumedFailures) {
+    let dispatches = 0;
     const session = await withIdempotentAi(async ({ route, attempt, consume }) => {
+      dispatches += 1;
       if (attempt === 1) {
         consume();
         return { status: item.status, body: item.body };
@@ -822,12 +847,16 @@ try {
     );
     assert.equal(await alert.locator("[data-ena-ai-evidence-boundary='previous-interpretation-retained']").count(), 0, item.name);
     await alert.getByRole("button", { name: "Retry" }).click();
-    await session.page.locator(".ena-ai-result").waitFor();
+    await session.page.getByText(replayError).waitFor();
     assert.equal(session.operations.length, 2, `${item.name} retry sends one request`);
-    assert.notEqual(session.operations[0], session.operations[1], `${item.name} retry must send a new operation id`);
-    assert.equal(session.statuses.includes(409), false, `${item.name} retry must not replay the consumed id`);
-    assert.equal(session.statuses.at(-1), 200, item.name);
-    assert.equal(await session.page.getByRole("alert").count(), 0, item.name);
+    assert.equal(session.operations[0], session.operations[1], `${item.name} retains its unresolved operation id`);
+    await session.page.getByRole("alert").getByRole("button", { name: "Retry" }).click();
+    await session.page.getByText(replayError).waitFor();
+    assert.equal(session.operations.length, 3, `${item.name} sends only explicit retries`);
+    assert.equal(session.operations[2], session.operations[0], `${item.name} cannot escape replay protection`);
+    assert.deepEqual(session.statuses, [item.status, 409, 409], item.name);
+    assert.equal(dispatches, 1, `${item.name} cannot dispatch or bill twice`);
+    assert.equal(await session.page.locator(".ena-ai-result").count(), 0, item.name);
     assert.deepEqual(session.errors, [], item.name);
     await session.page.close();
   }
@@ -872,7 +901,9 @@ try {
   assert.deepEqual(thrownFetch.errors, []);
   await thrownFetch.page.close();
 
+  let unknownDispatches = 0;
   const thrownAfterReserve = await withIdempotentAi(async ({ route, attempt, consume }) => {
+    unknownDispatches += 1;
     if (attempt === 1) {
       consume();
       return { abort: true };
@@ -887,10 +918,12 @@ try {
   assert.equal(thrownAfterReserve.operations[0], thrownAfterReserve.operations[1], "an unknown network failure must not mint a second billable id");
   assert.equal(thrownAfterReserve.statuses[1], 409);
   await thrownAfterReserve.page.getByRole("alert").getByRole("button", { name: "Retry" }).click();
-  await thrownAfterReserve.page.locator(".ena-ai-result").waitFor();
+  await thrownAfterReserve.page.getByText(replayError).waitFor();
   assert.equal(thrownAfterReserve.operations.length, 3);
-  assert.notEqual(thrownAfterReserve.operations[2], thrownAfterReserve.operations[0]);
-  assert.equal(thrownAfterReserve.statuses[2], 200);
+  assert.equal(thrownAfterReserve.operations[2], thrownAfterReserve.operations[0], "an unproven 409 must keep the unresolved operation on every explicit retry");
+  assert.equal(thrownAfterReserve.statuses[2], 409);
+  assert.equal(unknownDispatches, 1, "an uncertain provider dispatch must not be repeated under a fresh operation id");
+  assert.equal(await thrownAfterReserve.page.locator(".ena-ai-result").count(), 0);
   assert.deepEqual(thrownAfterReserve.errors, []);
   await thrownAfterReserve.page.close();
 
@@ -996,8 +1029,9 @@ try {
     if (attempt === 1) {
       consume();
       return {
-        status: 502,
-        body: { error: "The AI interpretation provider request failed.", failureClass: "invalid-output" },
+        status: 503,
+        headers: { "x-open-ena-ai-retry": "new-operation", "x-open-ena-ai-operation-id": route.request().headers()["x-open-ena-ai-operation-id"] },
+        body: { error: "Synthetic pre-dispatch reservation was released.", failureClass: "unavailable" },
       };
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -1023,8 +1057,9 @@ try {
     if (attempt === 1) {
       consume();
       return {
-        status: 502,
-        body: { error: "The AI interpretation provider request failed.", failureClass: "invalid-output" },
+        status: 503,
+        headers: { "x-open-ena-ai-retry": "new-operation", "x-open-ena-ai-operation-id": route.request().headers()["x-open-ena-ai-operation-id"] },
+        body: { error: "Synthetic pre-dispatch reservation was released.", failureClass: "unavailable" },
       };
     }
     await retryEnterReleased;
@@ -1047,5 +1082,5 @@ try {
   assert.deepEqual(retryEnter.errors, []);
   await retryEnter.page.close();
 
-  console.log("AI explicit retry: renewed confirmed failure, retained uncertain operation, auth-required uses sign-in, classed recovery copy, single in-flight retry, stale result dropped, sign-in keeps this document, Enter retries once, focus and busy state restored, success and cancel restore focus, settled failure renews once, retained interpretation boundary PASS");
+  console.log("AI explicit retry: renewed bound release, retained uncertain and malformed operations, auth-required uses sign-in, classed recovery copy, single in-flight retry, stale result dropped, sign-in keeps this document, Enter retries once, focus and busy state restored, success and cancel restore focus, retained interpretation boundary PASS");
 } finally { await browser.close(); }

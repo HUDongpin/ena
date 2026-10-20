@@ -3,7 +3,7 @@ export function usePathname() {
 }
 
 export function useSearchParams() {
-  return new URLSearchParams();
+  return new URLSearchParams(window.location.search);
 }
 
 export function useRouter() {

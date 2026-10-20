@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { createOpenEnaPlotViewSyncV3, openEnaPlotViewFieldsV3 } from "@/lib/open-ena/plot-view-sync-v3";
+import { nativePlotSummaryGroupsV3 } from "@/lib/open-ena/bound-presentation-v3";
 import type { OpenEnaContrastPresentation } from "@/lib/open-ena/bound-presentation-v3";
 import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
@@ -1009,20 +1010,15 @@ export default function OpenEnaInteractive3DPlot({
   }, [Plotly, controlledAspectRatioKey, initialAspectRatio, status]);
 
   const fittedSpaceStatement = `${copy.plot.sameFittedSpace} ${copy.plot.threeDInteractionHint}`;
-  const summaryGroups = contrast && plotKind === "comparison"
+  const summaryGroups = contrast
     ? [
-        { side: contrast.primary, display: groupDisplay?.primary },
-        { side: contrast.secondary, display: groupDisplay?.secondary },
+        { role: "primary", side: contrast.primary, display: groupDisplay?.primary },
+        { role: "secondary", side: contrast.secondary, display: groupDisplay?.secondary },
       ]
-        .filter(({ display }) => display?.settings.showMean ?? true)
+        .filter(({ role, side, display }) => (plotKind === "comparison" || plotKind === role)
+          && side.unitCount > 0 && (display?.settings.showMean ?? true))
         .map(({ side }) => ({ name: side.name, count: side.unitCount, meanPoint: side.meanPoint }))
-    : contrast
-      ? result.groups.filter((group) => (
-          plotKind === "primary"
-            ? group.name === contrast.primary.name
-            : group.name === contrast.secondary.name
-        ))
-    : result.groups;
+    : nativePlotSummaryGroupsV3(result).filter(group => group.count > 0);
   const confidenceIntervalRows = contrast && plotKind === "comparison"
     ? [
         { side: contrast.primary, display: groupDisplay?.primary },

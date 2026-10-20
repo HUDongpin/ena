@@ -1,0 +1,1463 @@
+{
+  "provenance": "Synthetic three-row fixture generated with the frozen pre-F2 jena-js source at main 9c8acca, preserving the prior one-pass centering and naive variance recipe. No user data.",
+  "dataset": {
+    "name": "synthetic-historical-ona.csv",
+    "headers": [
+      "u",
+      "h",
+      "t",
+      "A",
+      "B",
+      "C"
+    ],
+    "sizeBytes": 0,
+    "source": "upload",
+    "rows": [
+      {
+        "u": "u1",
+        "h": "h1",
+        "t": 1,
+        "A": 2,
+        "B": 0,
+        "C": 1
+      },
+      {
+        "u": "u2",
+        "h": "h1",
+        "t": 2,
+        "A": 0,
+        "B": 3,
+        "C": 1
+      },
+      {
+        "u": "u1",
+        "h": "h2",
+        "t": 1,
+        "A": 0,
+        "B": 2,
+        "C": 2
+      }
+    ]
+  },
+  "config": {
+    "analysisKind": "ona",
+    "unitColumns": [
+      "u"
+    ],
+    "conversationColumns": [
+      "h"
+    ],
+    "groupColumn": null,
+    "codes": [
+      "A",
+      "B",
+      "C"
+    ],
+    "model": "EndPoint",
+    "window": "MovingStanzaWindow",
+    "windowSizeBack": 2,
+    "windowSizeForward": 0,
+    "weightBy": "sum",
+    "rotation": "svd",
+    "referenceRotationId": null,
+    "centerAlignToOrigin": true,
+    "orderPolicy": {
+      "kind": "columns",
+      "columns": [
+        "t"
+      ],
+      "comparators": {
+        "t": "number"
+      }
+    },
+    "directionalMask": {
+      "schemaVersion": 1,
+      "codeOrder": [
+        "A",
+        "B",
+        "C"
+      ],
+      "enabled": [
+        [
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true
+        ]
+      ]
+    }
+  },
+  "set": {
+    "modelType": "EndPoint",
+    "codes": [
+      "A",
+      "B",
+      "C"
+    ],
+    "units": [
+      "u"
+    ],
+    "conversation": [
+      "h"
+    ],
+    "codeColumns": [
+      "A & A",
+      "B & A",
+      "C & A",
+      "A & B",
+      "B & B",
+      "C & B",
+      "A & C",
+      "B & C",
+      "C & C"
+    ],
+    "adjacencyKey": [
+      {
+        "source": "A",
+        "target": "A",
+        "name": "A & A",
+        "sourceIndex": 0,
+        "targetIndex": 0
+      },
+      {
+        "source": "B",
+        "target": "A",
+        "name": "B & A",
+        "sourceIndex": 1,
+        "targetIndex": 0
+      },
+      {
+        "source": "C",
+        "target": "A",
+        "name": "C & A",
+        "sourceIndex": 2,
+        "targetIndex": 0
+      },
+      {
+        "source": "A",
+        "target": "B",
+        "name": "A & B",
+        "sourceIndex": 0,
+        "targetIndex": 1
+      },
+      {
+        "source": "B",
+        "target": "B",
+        "name": "B & B",
+        "sourceIndex": 1,
+        "targetIndex": 1
+      },
+      {
+        "source": "C",
+        "target": "B",
+        "name": "C & B",
+        "sourceIndex": 2,
+        "targetIndex": 1
+      },
+      {
+        "source": "A",
+        "target": "C",
+        "name": "A & C",
+        "sourceIndex": 0,
+        "targetIndex": 2
+      },
+      {
+        "source": "B",
+        "target": "C",
+        "name": "B & C",
+        "sourceIndex": 1,
+        "targetIndex": 2
+      },
+      {
+        "source": "C",
+        "target": "C",
+        "name": "C & C",
+        "sourceIndex": 2,
+        "targetIndex": 2
+      }
+    ],
+    "rawRows": [
+      {
+        "u": "u1",
+        "h": "h1",
+        "A": 2,
+        "B": 0,
+        "C": 1,
+        "ENA_UNIT": "u1"
+      },
+      {
+        "u": "u2",
+        "h": "h1",
+        "A": 0,
+        "B": 3,
+        "C": 1,
+        "ENA_UNIT": "u2"
+      },
+      {
+        "u": "u1",
+        "h": "h2",
+        "A": 0,
+        "B": 2,
+        "C": 2,
+        "ENA_UNIT": "u1"
+      }
+    ],
+    "rowConnectionCounts": [
+      {
+        "u": "u1",
+        "h": "h1",
+        "A": 2,
+        "B": 0,
+        "C": 1,
+        "ENA_UNIT": "u1",
+        "A & A": 0,
+        "B & A": 0,
+        "C & A": 1,
+        "A & B": 0,
+        "B & B": 0,
+        "C & B": 0,
+        "A & C": 1,
+        "B & C": 0,
+        "C & C": 0
+      },
+      {
+        "u": "u2",
+        "h": "h1",
+        "A": 0,
+        "B": 3,
+        "C": 1,
+        "ENA_UNIT": "u2",
+        "A & A": 0,
+        "B & A": 0,
+        "C & A": 0,
+        "A & B": 6,
+        "B & B": 0,
+        "C & B": 4.5,
+        "A & C": 2,
+        "B & C": 1.5,
+        "C & C": 1
+      },
+      {
+        "u": "u1",
+        "h": "h2",
+        "A": 0,
+        "B": 2,
+        "C": 2,
+        "ENA_UNIT": "u1",
+        "A & A": 0,
+        "B & A": 0,
+        "C & A": 0,
+        "A & B": 0,
+        "B & B": 0,
+        "C & B": 2,
+        "A & C": 0,
+        "B & C": 2,
+        "C & C": 0
+      }
+    ],
+    "connectionCounts": [
+      {
+        "ENA_UNIT": "u1",
+        "u": "u1",
+        "A & A": 0,
+        "B & A": 0,
+        "C & A": 1,
+        "A & B": 0,
+        "B & B": 0,
+        "C & B": 2,
+        "A & C": 1,
+        "B & C": 2,
+        "C & C": 0
+      },
+      {
+        "ENA_UNIT": "u2",
+        "u": "u2",
+        "A & A": 0,
+        "B & A": 0,
+        "C & A": 0,
+        "A & B": 6,
+        "B & B": 0,
+        "C & B": 4.5,
+        "A & C": 2,
+        "B & C": 1.5,
+        "C & C": 1
+      }
+    ],
+    "connectionMatrix": [
+      [
+        0,
+        0,
+        1,
+        0,
+        0,
+        2,
+        1,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        6,
+        0,
+        4.5,
+        2,
+        1.5,
+        1
+      ]
+    ],
+    "metaData": [
+      {
+        "ENA_UNIT": "u1",
+        "u": "u1"
+      },
+      {
+        "ENA_UNIT": "u2",
+        "u": "u2"
+      }
+    ],
+    "unitLabels": [
+      "u1",
+      "u2"
+    ],
+    "functionParams": {
+      "model": "EndPoint",
+      "weightBy": "sum",
+      "window": "MovingStanzaWindow",
+      "windowSizeBack": 2,
+      "windowSizeForward": 0,
+      "includeMeta": true,
+      "networkType": "ordered"
+    },
+    "networkType": "ordered",
+    "rowWindowProvenance": [
+      {
+        "responseRowIndex": 0,
+        "horizon": "h1",
+        "horizonIdentity": "[[\"h\",\"string\",\"h1\"]]",
+        "previousRowIndex": null,
+        "priorRowCount": 0
+      },
+      {
+        "responseRowIndex": 1,
+        "horizon": "h1",
+        "horizonIdentity": "[[\"h\",\"string\",\"h1\"]]",
+        "previousRowIndex": 0,
+        "priorRowCount": 1
+      },
+      {
+        "responseRowIndex": 2,
+        "horizon": "h2",
+        "horizonIdentity": "[[\"h\",\"string\",\"h2\"]]",
+        "previousRowIndex": null,
+        "priorRowCount": 0
+      }
+    ],
+    "lineWeights": [
+      {
+        "ENA_UNIT": "u1",
+        "u": "u1",
+        "A & A": 0,
+        "B & A": 0,
+        "C & A": 0.31622776601683794,
+        "A & B": 0,
+        "B & B": 0,
+        "C & B": 0.6324555320336759,
+        "A & C": 0.31622776601683794,
+        "B & C": 0.6324555320336759,
+        "C & C": 0
+      },
+      {
+        "ENA_UNIT": "u2",
+        "u": "u2",
+        "A & A": 0,
+        "B & A": 0,
+        "C & A": 0,
+        "A & B": 0.7529469661657904,
+        "B & B": 0,
+        "C & B": 0.5647102246243427,
+        "A & C": 0.25098232205526344,
+        "B & C": 0.1882367415414476,
+        "C & C": 0.12549116102763172
+      }
+    ],
+    "pointsForProjection": [
+      {
+        "ENA_UNIT": "u1",
+        "u": "u1",
+        "A & A": 0,
+        "B & A": 0,
+        "C & A": 0.15811388300841897,
+        "A & B": -0.3764734830828952,
+        "B & B": 0,
+        "C & B": 0.03387265370466663,
+        "A & C": 0.03262272198078725,
+        "B & C": 0.22210939524611417,
+        "C & C": -0.06274558051381586
+      },
+      {
+        "ENA_UNIT": "u2",
+        "u": "u2",
+        "A & A": 0,
+        "B & A": 0,
+        "C & A": -0.15811388300841897,
+        "A & B": 0.3764734830828952,
+        "B & B": 0,
+        "C & B": -0.03387265370466652,
+        "A & C": -0.03262272198078725,
+        "B & C": -0.22210939524611412,
+        "C & C": 0.06274558051381586
+      }
+    ],
+    "points": [
+      {
+        "ENA_UNIT": "u1",
+        "u": "u1",
+        "SVD1": -0.4713952412292782,
+        "SVD2": -2.7755575615628914e-17,
+        "SVD3": 2.7755575615628914e-17
+      },
+      {
+        "ENA_UNIT": "u2",
+        "u": "u2",
+        "SVD1": 0.4713952412292781,
+        "SVD2": -2.7755575615628914e-17,
+        "SVD3": -2.7755575615628914e-17
+      }
+    ],
+    "rotation": {
+      "codes": [
+        "A",
+        "B",
+        "C"
+      ],
+      "adjacencyKey": [
+        {
+          "source": "A",
+          "target": "A",
+          "name": "A & A",
+          "sourceIndex": 0,
+          "targetIndex": 0
+        },
+        {
+          "source": "B",
+          "target": "A",
+          "name": "B & A",
+          "sourceIndex": 1,
+          "targetIndex": 0
+        },
+        {
+          "source": "C",
+          "target": "A",
+          "name": "C & A",
+          "sourceIndex": 2,
+          "targetIndex": 0
+        },
+        {
+          "source": "A",
+          "target": "B",
+          "name": "A & B",
+          "sourceIndex": 0,
+          "targetIndex": 1
+        },
+        {
+          "source": "B",
+          "target": "B",
+          "name": "B & B",
+          "sourceIndex": 1,
+          "targetIndex": 1
+        },
+        {
+          "source": "C",
+          "target": "B",
+          "name": "C & B",
+          "sourceIndex": 2,
+          "targetIndex": 1
+        },
+        {
+          "source": "A",
+          "target": "C",
+          "name": "A & C",
+          "sourceIndex": 0,
+          "targetIndex": 2
+        },
+        {
+          "source": "B",
+          "target": "C",
+          "name": "B & C",
+          "sourceIndex": 1,
+          "targetIndex": 2
+        },
+        {
+          "source": "C",
+          "target": "C",
+          "name": "C & C",
+          "sourceIndex": 2,
+          "targetIndex": 2
+        }
+      ],
+      "rotationMatrix": [
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          -0.33541679927887774,
+          0.18287832813089705,
+          0.9219864597038363,
+          0.04504685707630179,
+          0.030628092479329905,
+          0,
+          0,
+          0,
+          -0.03201181973852805
+        ],
+        [
+          0.7986365795741781,
+          -0.4354383047322259,
+          0.38722211729546935,
+          -0.10725779964906498,
+          -0.0729263264963545,
+          0,
+          0,
+          0,
+          0.07622101897367058
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          -0.07185616387712217,
+          0.03917792771262482,
+          0,
+          0.009650364415804856,
+          0.006561440086393953,
+          0,
+          0,
+          0,
+          0.9965769411659309
+        ],
+        [
+          -0.06920460608748522,
+          0.03773222655348851,
+          0,
+          0.00929425719328014,
+          -0.9968453332181565,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          -0.4711744536642112,
+          -0.8797672242880122,
+          0,
+          0.06327926424033735,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0.1331060965956963,
+          0,
+          0,
+          0.9911017944939143,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "rotationColumns": [
+        "SVD1",
+        "SVD2",
+        "SVD3",
+        "SVD4",
+        "SVD5",
+        "SVD6",
+        "SVD7",
+        "SVD8",
+        "SVD9"
+      ],
+      "eigenvalues": [
+        0.4444269469072186,
+        1.2209222858938943e-17,
+        1.0237798464047932e-18,
+        7.956784677505704e-19,
+        3.9378314905231265e-19,
+        0,
+        0,
+        0,
+        0
+      ],
+      "centerVector": [
+        0,
+        0,
+        0.15811388300841897,
+        0.3764734830828952,
+        0,
+        0.5985828783290092,
+        0.2836050440360507,
+        0.4103461367875617,
+        0.06274558051381586
+      ],
+      "nodes": [
+        {
+          "code": "A",
+          "SVD1": 2.1984538280063823,
+          "SVD2": -2.1565838815723782e-17,
+          "SVD3": -1.2944413783504671e-16
+        },
+        {
+          "code": "B",
+          "SVD1": 1.8605511855625458,
+          "SVD2": -3.2913689581778146e-17,
+          "SVD3": -1.0954855996528621e-16
+        },
+        {
+          "code": "C",
+          "SVD1": -2.915975878719935,
+          "SVD2": -2.638007857014194e-17,
+          "SVD3": 1.7169157028338174e-16
+        }
+      ]
+    },
+    "variance": {
+      "SVD1": 1,
+      "SVD2": 0,
+      "SVD3": 3.466810386345552e-33,
+      "SVD4": 8.66702596586388e-34,
+      "SVD5": 2.16675649146597e-34,
+      "SVD6": 0,
+      "SVD7": 0,
+      "SVD8": 0,
+      "SVD9": 4.387681895218589e-33
+    },
+    "centroids": [
+      {
+        "unit": "u1",
+        "SVD1": -0.47139523950472173,
+        "SVD2": -2.7755575614950983e-17,
+        "SVD3": 2.7755575514087675e-17
+      },
+      {
+        "unit": "u2",
+        "SVD1": 0.4713952393904207,
+        "SVD2": -2.7755575608220875e-17,
+        "SVD3": -2.7755575507357674e-17
+      }
+    ]
+  },
+  "bundle": {
+    "schemaVersion": 2,
+    "app": "ENA.HK Open ENA",
+    "manifest": {
+      "schemaVersion": 2,
+      "app": "ENA.HK Open ENA",
+      "appVersion": "0.1.0",
+      "runtime": "jena-js",
+      "runtimeVersion": "0.7.0-ona.0",
+      "dataset": {
+        "name": "synthetic-historical-ona.csv",
+        "rows": 3,
+        "columns": 6,
+        "source": "upload",
+        "hashKind": "normalized-utf8-csv-text-sha256",
+        "normalizedUtf8TextSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "configuration": {
+        "analysisKind": "ona",
+        "unitColumns": [
+          "u"
+        ],
+        "conversationColumns": [
+          "h"
+        ],
+        "groupColumn": null,
+        "codes": [
+          "A",
+          "B",
+          "C"
+        ],
+        "model": "EndPoint",
+        "window": "MovingStanzaWindow",
+        "windowSizeBack": 2,
+        "windowSizeForward": 0,
+        "weightBy": "sum",
+        "rotation": "svd",
+        "referenceRotationId": null,
+        "centerAlignToOrigin": true,
+        "orderPolicy": {
+          "kind": "columns",
+          "columns": [
+            "t"
+          ],
+          "comparators": {
+            "t": "number"
+          }
+        },
+        "directionalMask": {
+          "schemaVersion": 1,
+          "codeOrder": [
+            "A",
+            "B",
+            "C"
+          ],
+          "enabled": [
+            [
+              true,
+              true,
+              true
+            ],
+            [
+              true,
+              true,
+              true
+            ],
+            [
+              true,
+              true,
+              true
+            ]
+          ]
+        }
+      },
+      "analysis": {
+        "analysisKind": "ona",
+        "networkType": "ordered",
+        "ordering": {
+          "requestedPolicy": {
+            "kind": "columns",
+            "columns": [
+              "t"
+            ],
+            "comparators": {
+              "t": "number"
+            }
+          },
+          "resolvedPolicy": {
+            "kind": "columns",
+            "columns": [
+              "t"
+            ],
+            "comparators": {
+              "t": "number"
+            },
+            "direction": "ascending",
+            "missing": "reject",
+            "ties": "reject",
+            "stable": true
+          },
+          "sourceMapping": "excluded-from-generic-bundle"
+        },
+        "directionalMask": {
+          "schemaVersion": 1,
+          "codeOrder": [
+            "A",
+            "B",
+            "C"
+          ],
+          "enabled": [
+            [
+              true,
+              true,
+              true
+            ],
+            [
+              true,
+              true,
+              true
+            ],
+            [
+              true,
+              true,
+              true
+            ]
+          ]
+        }
+      },
+      "result": {
+        "model": "EndPoint",
+        "units": 2,
+        "points": 2,
+        "groups": [
+          {
+            "name": "All units",
+            "count": 2
+          }
+        ],
+        "dimensions": [
+          "SVD1",
+          "SVD2",
+          "SVD3"
+        ],
+        "variance": {
+          "SVD1": 1,
+          "SVD2": 0,
+          "SVD3": 3.466810386345552e-33,
+          "SVD4": 8.66702596586388e-34,
+          "SVD5": 2.16675649146597e-34,
+          "SVD6": 0,
+          "SVD7": 0,
+          "SVD8": 0,
+          "SVD9": 4.387681895218589e-33
+        },
+        "statsDiagnostics": {
+          "correlations": "not-applicable-ordered-network",
+          "tests": "not-applicable-ordered-network",
+          "correlationUnitLimit": 500
+        },
+        "projectionReference": null,
+        "analyzedAt": "2026-10-01T12:33:16.175Z"
+      },
+      "effectiveJenaOptions": {
+        "units": [
+          "u"
+        ],
+        "conversation": [
+          "h"
+        ],
+        "codes": [
+          "A",
+          "B",
+          "C"
+        ],
+        "metadata": [],
+        "includeMeta": true,
+        "model": "EndPoint",
+        "window": "MovingStanzaWindow",
+        "windowSizeBack": 2,
+        "windowSizeForward": 0,
+        "weightBy": "sum",
+        "dimensions": 3,
+        "networkType": "ordered",
+        "mask": [
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            1,
+            1,
+            1
+          ]
+        ],
+        "rotation": {
+          "method": "svd"
+        },
+        "centerAlignToOrigin": true,
+        "normalization": "sphere",
+        "nodePositionMethod": "directed"
+      },
+      "generatedAt": "2026-10-01T12:33:16.176Z",
+      "boundaries": [
+        "The graph depends on the supplied codes, units, conversations, window, weighting, normalization, and rotation.",
+        "ONA rows were deterministically ordered within each typed horizon using the requested and resolved policies recorded in analysis.ordering; the runtime-only sorted-to-source row mapping is intentionally excluded from this generic bundle.",
+        "ONA directed cells use earlier ground/source codes as matrix rows and current response/target codes as matrix columns, including diagonal repeat connections and symmetric half-weight same-row contributions.",
+        "ONA output in this release is descriptive-only: inference, group subtraction, analysis sets, reference projection, trajectory, and AI interpretation are not verified and are excluded or blocked.",
+        "3D ONA is display-only and consumes the same completed fitted coordinates, ordered weights, directional mask, and audit as the 2D view; camera and screen presentation do not create a new scientific result.",
+        "Dataset hash scope is recorded in dataset.hashKind: CSV uses BOM-normalized UTF-8 source text; XLSX uses the versioned canonical values of the analyzed first worksheet, excluding workbook styling and unselected worksheets.",
+        "Moving stanza windows may span multiple units that share a conversation, matching jENA/rENA discourse-window semantics; whole-conversation windows are accumulated per unit and conversation.",
+        "Rotation-axis signs are arbitrary, so mirrored coordinates can represent the same ENA solution.",
+        "Visual separation and edge thickness are descriptive; they do not establish statistical significance or causality.",
+        "Trajectory steps are repeated observations of analytic units. Open ENA does not apply endpoint group tests or point-centroid correlation diagnostics to trajectory models.",
+        "For reference projections, the axes, center, and reference nodes remain fixed; variance describes the current dataset in that basis, not explained variance in the fitted reference sample.",
+        "For reference projections, point-centroid correlations and target-fitted centroid tables are withheld because jENA 0.7.0-ona.0 does not compute them from the displayed fixed reference nodes.",
+        "Imported reference names, analyzed-table hashes, hash kinds, timestamps, and fit descriptors are declared provenance: ENA.HK validates their structure but does not independently authenticate their origin.",
+        "Interactive 3D is an in-workspace display of the same completed fitted model; switching dimensions, camera, or view does not transfer, rerun, refit, or alter the computed result.",
+        "The generic ONA result bundle excludes raw source rows, row-level ordered connection counts, row-window provenance, and sorted-to-source row mappings. Preserve the exact source coded-data file and its codebook alongside the manifest and derived outputs for reproducibility."
+      ]
+    },
+    "tables": {
+      "coordinates": [
+        {
+          "ENA_UNIT": "u1",
+          "u": "u1",
+          "SVD1": -0.4713952412292782,
+          "SVD2": -2.7755575615628914e-17,
+          "SVD3": 2.7755575615628914e-17
+        },
+        {
+          "ENA_UNIT": "u2",
+          "u": "u2",
+          "SVD1": 0.4713952412292781,
+          "SVD2": -2.7755575615628914e-17,
+          "SVD3": -2.7755575615628914e-17
+        }
+      ],
+      "lineWeights": [
+        {
+          "ENA_UNIT": "u1",
+          "u": "u1",
+          "A & A": 0,
+          "B & A": 0,
+          "C & A": 0.31622776601683794,
+          "A & B": 0,
+          "B & B": 0,
+          "C & B": 0.6324555320336759,
+          "A & C": 0.31622776601683794,
+          "B & C": 0.6324555320336759,
+          "C & C": 0
+        },
+        {
+          "ENA_UNIT": "u2",
+          "u": "u2",
+          "A & A": 0,
+          "B & A": 0,
+          "C & A": 0,
+          "A & B": 0.7529469661657904,
+          "B & B": 0,
+          "C & B": 0.5647102246243427,
+          "A & C": 0.25098232205526344,
+          "B & C": 0.1882367415414476,
+          "C & C": 0.12549116102763172
+        }
+      ],
+      "connectionCounts": [
+        {
+          "ENA_UNIT": "u1",
+          "u": "u1",
+          "A & A": 0,
+          "B & A": 0,
+          "C & A": 1,
+          "A & B": 0,
+          "B & B": 0,
+          "C & B": 2,
+          "A & C": 1,
+          "B & C": 2,
+          "C & C": 0
+        },
+        {
+          "ENA_UNIT": "u2",
+          "u": "u2",
+          "A & A": 0,
+          "B & A": 0,
+          "C & A": 0,
+          "A & B": 6,
+          "B & B": 0,
+          "C & B": 4.5,
+          "A & C": 2,
+          "B & C": 1.5,
+          "C & C": 1
+        }
+      ],
+      "trajectories": [],
+      "pointsForProjection": [
+        {
+          "ENA_UNIT": "u1",
+          "u": "u1",
+          "A & A": 0,
+          "B & A": 0,
+          "C & A": 0.15811388300841897,
+          "A & B": -0.3764734830828952,
+          "B & B": 0,
+          "C & B": 0.03387265370466663,
+          "A & C": 0.03262272198078725,
+          "B & C": 0.22210939524611417,
+          "C & C": -0.06274558051381586
+        },
+        {
+          "ENA_UNIT": "u2",
+          "u": "u2",
+          "A & A": 0,
+          "B & A": 0,
+          "C & A": -0.15811388300841897,
+          "A & B": 0.3764734830828952,
+          "B & B": 0,
+          "C & B": -0.03387265370466652,
+          "A & C": -0.03262272198078725,
+          "B & C": -0.22210939524611412,
+          "C & C": 0.06274558051381586
+        }
+      ],
+      "centroids": [
+        {
+          "unit": "u1",
+          "SVD1": -0.47139523950472173,
+          "SVD2": -2.7755575614950983e-17,
+          "SVD3": 2.7755575514087675e-17
+        },
+        {
+          "unit": "u2",
+          "SVD1": 0.4713952393904207,
+          "SVD2": -2.7755575608220875e-17,
+          "SVD3": -2.7755575507357674e-17
+        }
+      ],
+      "nodePositions": [
+        {
+          "code": "A",
+          "SVD1": 2.1984538280063823,
+          "SVD2": -2.1565838815723782e-17,
+          "SVD3": -1.2944413783504671e-16
+        },
+        {
+          "code": "B",
+          "SVD1": 1.8605511855625458,
+          "SVD2": -3.2913689581778146e-17,
+          "SVD3": -1.0954855996528621e-16
+        },
+        {
+          "code": "C",
+          "SVD1": -2.915975878719935,
+          "SVD2": -2.638007857014194e-17,
+          "SVD3": 1.7169157028338174e-16
+        }
+      ],
+      "adjacencyKey": [
+        {
+          "source": "A",
+          "target": "A",
+          "name": "A & A",
+          "sourceIndex": 0,
+          "targetIndex": 0
+        },
+        {
+          "source": "B",
+          "target": "A",
+          "name": "B & A",
+          "sourceIndex": 1,
+          "targetIndex": 0
+        },
+        {
+          "source": "C",
+          "target": "A",
+          "name": "C & A",
+          "sourceIndex": 2,
+          "targetIndex": 0
+        },
+        {
+          "source": "A",
+          "target": "B",
+          "name": "A & B",
+          "sourceIndex": 0,
+          "targetIndex": 1
+        },
+        {
+          "source": "B",
+          "target": "B",
+          "name": "B & B",
+          "sourceIndex": 1,
+          "targetIndex": 1
+        },
+        {
+          "source": "C",
+          "target": "B",
+          "name": "C & B",
+          "sourceIndex": 2,
+          "targetIndex": 1
+        },
+        {
+          "source": "A",
+          "target": "C",
+          "name": "A & C",
+          "sourceIndex": 0,
+          "targetIndex": 2
+        },
+        {
+          "source": "B",
+          "target": "C",
+          "name": "B & C",
+          "sourceIndex": 1,
+          "targetIndex": 2
+        },
+        {
+          "source": "C",
+          "target": "C",
+          "name": "C & C",
+          "sourceIndex": 2,
+          "targetIndex": 2
+        }
+      ]
+    },
+    "rotationSet": {
+      "codes": [
+        "A",
+        "B",
+        "C"
+      ],
+      "adjacencyKey": [
+        {
+          "source": "A",
+          "target": "A",
+          "name": "A & A",
+          "sourceIndex": 0,
+          "targetIndex": 0
+        },
+        {
+          "source": "B",
+          "target": "A",
+          "name": "B & A",
+          "sourceIndex": 1,
+          "targetIndex": 0
+        },
+        {
+          "source": "C",
+          "target": "A",
+          "name": "C & A",
+          "sourceIndex": 2,
+          "targetIndex": 0
+        },
+        {
+          "source": "A",
+          "target": "B",
+          "name": "A & B",
+          "sourceIndex": 0,
+          "targetIndex": 1
+        },
+        {
+          "source": "B",
+          "target": "B",
+          "name": "B & B",
+          "sourceIndex": 1,
+          "targetIndex": 1
+        },
+        {
+          "source": "C",
+          "target": "B",
+          "name": "C & B",
+          "sourceIndex": 2,
+          "targetIndex": 1
+        },
+        {
+          "source": "A",
+          "target": "C",
+          "name": "A & C",
+          "sourceIndex": 0,
+          "targetIndex": 2
+        },
+        {
+          "source": "B",
+          "target": "C",
+          "name": "B & C",
+          "sourceIndex": 1,
+          "targetIndex": 2
+        },
+        {
+          "source": "C",
+          "target": "C",
+          "name": "C & C",
+          "sourceIndex": 2,
+          "targetIndex": 2
+        }
+      ],
+      "rotationMatrix": [
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          -0.33541679927887774,
+          0.18287832813089705,
+          0.9219864597038363,
+          0.04504685707630179,
+          0.030628092479329905,
+          0,
+          0,
+          0,
+          -0.03201181973852805
+        ],
+        [
+          0.7986365795741781,
+          -0.4354383047322259,
+          0.38722211729546935,
+          -0.10725779964906498,
+          -0.0729263264963545,
+          0,
+          0,
+          0,
+          0.07622101897367058
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          -0.07185616387712217,
+          0.03917792771262482,
+          0,
+          0.009650364415804856,
+          0.006561440086393953,
+          0,
+          0,
+          0,
+          0.9965769411659309
+        ],
+        [
+          -0.06920460608748522,
+          0.03773222655348851,
+          0,
+          0.00929425719328014,
+          -0.9968453332181565,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          -0.4711744536642112,
+          -0.8797672242880122,
+          0,
+          0.06327926424033735,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0.1331060965956963,
+          0,
+          0,
+          0.9911017944939143,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "rotationColumns": [
+        "SVD1",
+        "SVD2",
+        "SVD3",
+        "SVD4",
+        "SVD5",
+        "SVD6",
+        "SVD7",
+        "SVD8",
+        "SVD9"
+      ],
+      "eigenvalues": [
+        0.4444269469072186,
+        1.2209222858938943e-17,
+        1.0237798464047932e-18,
+        7.956784677505704e-19,
+        3.9378314905231265e-19,
+        0,
+        0,
+        0,
+        0
+      ],
+      "centerVector": [
+        0,
+        0,
+        0.15811388300841897,
+        0.3764734830828952,
+        0,
+        0.5985828783290092,
+        0.2836050440360507,
+        0.4103461367875617,
+        0.06274558051381586
+      ],
+      "nodes": [
+        {
+          "code": "A",
+          "SVD1": 2.1984538280063823,
+          "SVD2": -2.1565838815723782e-17,
+          "SVD3": -1.2944413783504671e-16
+        },
+        {
+          "code": "B",
+          "SVD1": 1.8605511855625458,
+          "SVD2": -3.2913689581778146e-17,
+          "SVD3": -1.0954855996528621e-16
+        },
+        {
+          "code": "C",
+          "SVD1": -2.915975878719935,
+          "SVD2": -2.638007857014194e-17,
+          "SVD3": 1.7169157028338174e-16
+        }
+      ]
+    },
+    "modelData": {
+      "modelType": "EndPoint",
+      "analysisKind": "ona",
+      "networkType": "ordered",
+      "units": [
+        "u"
+      ],
+      "conversation": [
+        "h"
+      ],
+      "codeColumns": [
+        "A & A",
+        "B & A",
+        "C & A",
+        "A & B",
+        "B & B",
+        "C & B",
+        "A & C",
+        "B & C",
+        "C & C"
+      ],
+      "unitLabels": [
+        "u1",
+        "u2"
+      ],
+      "connectionMatrix": [
+        [
+          0,
+          0,
+          1,
+          0,
+          0,
+          2,
+          1,
+          2,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          6,
+          0,
+          4.5,
+          2,
+          1.5,
+          1
+        ]
+      ],
+      "functionParams": {
+        "model": "EndPoint",
+        "weightBy": "sum",
+        "window": "MovingStanzaWindow",
+        "windowSizeBack": 2,
+        "windowSizeForward": 0,
+        "includeMeta": true,
+        "networkType": "ordered"
+      }
+    },
+    "statistics": {
+      "dimensions": [
+        {
+          "dimension": "SVD1",
+          "n": 2,
+          "mean": -2.7755575615628914e-17,
+          "sd": 0.6666535433845819,
+          "variance": 0.4444269469072186,
+          "min": -0.4713952412292782,
+          "max": 0.4713952412292781
+        },
+        {
+          "dimension": "SVD2",
+          "n": 2,
+          "mean": -2.7755575615628914e-17,
+          "sd": 0,
+          "variance": 0,
+          "min": -2.7755575615628914e-17,
+          "max": -2.7755575615628914e-17
+        },
+        {
+          "dimension": "SVD3",
+          "n": 2,
+          "mean": 0,
+          "sd": 3.925231146709438e-17,
+          "variance": 1.5407439555097887e-33,
+          "min": -2.7755575615628914e-17,
+          "max": 2.7755575615628914e-17
+        }
+      ],
+      "correlations": []
+    },
+    "statisticsDiagnostics": {
+      "correlations": "not-applicable-ordered-network",
+      "tests": "not-applicable-ordered-network",
+      "correlationUnitLimit": 500
+    },
+    "groupContrast": null,
+    "inference": null,
+    "presentation": {
+      "selectedAxes": [
+        "SVD1",
+        "SVD2"
+      ],
+      "flipX": false,
+      "flipY": false,
+      "edgeThreshold": 0,
+      "showNetworks": true,
+      "showPoints": true,
+      "showTrajectories": true,
+      "showLabels": true,
+      "showGroupLabels": true,
+      "showUnitLabels": false,
+      "showVariance": true,
+      "edgeScale": 1,
+      "pointScale": 1,
+      "plotZoom": 1
+    },
+    "methodsReportMarkdown": "# ENA.HK Open ENA Methods & Reproducibility Report\n\nGenerated from ENA.HK Open ENA 0.1.0; analysis completed 2026-10-01T12:33:16.175Z.\n\n## Data identity\n\n- Dataset: `synthetic-historical-ona.csv`\n- Analyzed-table SHA-256: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n- Hash scope: `normalized-utf8-csv-text-sha256`. CSV hashes BOM-normalized UTF-8 source text; XLSX hashes the versioned canonical values of the analyzed first worksheet, excluding workbook styling and other worksheets.\n- Input shape: 3 rows and 6 columns\n- Sequence was determined by the explicit requested and resolved order policies below within each typed horizon; it was not inferred from display order.\n- Raw source rows, row-window identities, ordered row counts, and the sorted-to-source mapping are intentionally excluded from generic derived exports.\n\n## Order Network Analysis (ONA) model\n\nThe ordered network model was computed in the browser with jENA `jena-js` 0.7.0-ona.0.\n- Model type: `EndPoint`\n- Analytic unit: `u`\n- Typed horizon: `h`\n- Comparison field: No comparison field; all units were summarized together.\n- Codes (3): `A`, `B`, `C`\n- Requested order policy: `t` using `number`.\n- Resolved order policy: ascending; missing order values reject; ties reject; stable traversal enabled.\n- Sorted-to-source row mapping: validated against the imported table during execution and excluded from this generic report and result bundle.\n- Window: Moving stanza window; windowSizeBack counts total stanza rows including the current row. Resolved backward policy: 2 total stanza rows including the current row; forward context: 0 rows.\n- Window context may span analytic units whose rows share the same typed horizon. Each contribution is assigned to the current response row’s analytic unit, not to the earlier ground row.\n- Directed cell geometry: 3² = 9 directed cells, including 3 diagonal repeat cells. Matrix row is ground/source; matrix column is response/target; flattened edge order is response-major then ground-minor; exported labels use `<ground> & <response>`.\n- Connection accumulation used raw code-count products: an earlier ground count times the current response count contributes full weight; same-row off-diagonal products contribute symmetric half-weight (0.5) in both directions; repeated codes across ordered rows contribute to diagonal cells.\n- Directional mask input: 9 of 9 cells enabled (3 × 3, label-bound in configured code order; row ground/source → column response/target).\n- Network vectors used sphere normalization; node positions used the directed method.\n- Zero-network handling: zero-network units were pinned to the origin and excluded from estimating the center.\n- Rotation: SVD rotation fitted to the current ordered model.\n\n## Result summary\n\n- 2 distinct analytic units and 2 projected points\n- 1 displayed group network(s) and 3 codes\n- Rotated dimensions: `SVD1` 100.0%, `SVD2` 0.0%, `SVD3` 0.0%\n- Displayed 2D axes: X `SVD1` (unflipped); Y `SVD2` (unflipped).\n- Axis flips are presentation-only. Coordinates and directed connection values remain in the unflipped model coordinate system.\n- Relative edge display threshold: 0.0% (0). This is a presentation-only filter; hidden directed cells remain in the computed model and exported tables.\n- Group networks: shown; Unit points: shown.\n- Code labels: shown; group labels: shown; unit labels: hidden; variance labels: shown.\n- Edge width scale: 1×; unit point scale: 1×; plot zoom: 1×.\n\n## Statistical scope\n\nThis ONA release is descriptive-only. Inferential comparison, group subtraction, analysis sets, trajectory models, reference rotation, and AI interpretation were not run and are not verified for ordered networks.\nThe 3D ONA view is display-only: it uses the same fitted coordinates and ordered weights as 2D and does not create a new analysis result.\nNo uncertainty guide or significance test was calculated for this ordered result. Visual separation, edge thickness, and direction must not be interpreted as statistical significance or causality.\n\n## Interpretation and reproducibility boundaries\n\n- Rotation axis signs are arbitrary; a mirrored solution can represent the same geometry.\n- A ground/source → response/target connection records ordered association under the declared horizon, order, window, weighting, and mask; it does not by itself establish a causal or temporal mechanism.\n- The exact source coded-data file, codebook, this report, analysis manifest, and derived result bundle should be preserved together.\n- Reproduction requires the recorded requested and resolved order policies; the private sorted-to-source mapping must be regenerated from the exact source table.\n- Camera position, screen rotation, line-width buckets, circular point glyphs, and copied PNG images are presentation-only. A PNG is a view artifact, not a new scientific result; SVG and high-resolution PNG research exports remain 2D-only.\n"
+  }
+}

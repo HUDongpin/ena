@@ -1,4 +1,5 @@
 import { directedNodePositions } from "jena-js/rotation";
+import { centerData, meanColumns, varianceProportions } from "jena-js/core";
 import {
   assertOpenEnaInferenceBindingV2,
   parseOpenEnaInferenceResultV2,
@@ -632,6 +633,20 @@ function assertOnaBundleContract(
   bundle: Record<string, unknown>,
   config: ReturnType<typeof canonicalizeOpenEnaConfig>,
 ) {
+  try {
+    assertOnaBundleContractRecipe(bundle, config, false);
+  } catch (currentError) {
+    // Schema-v2 artifacts predate stabilized fitting. Recheck their complete
+    // derivation under the old arithmetic, never individual retained fields.
+    try { assertOnaBundleContractRecipe(bundle, config, true); } catch { throw currentError; }
+  }
+}
+
+function assertOnaBundleContractRecipe(
+  bundle: Record<string, unknown>,
+  config: ReturnType<typeof canonicalizeOpenEnaConfig>,
+  historical: boolean,
+) {
   if (config.analysisKind !== "ona") return;
   const manifest = bundle.manifest as Record<string, unknown>;
   const tables = bundle.tables as Record<string, unknown>;
@@ -964,7 +979,7 @@ function assertOnaBundleContract(
     throw new Error("Schema-v2 ONA requires at least one analytic unit with network signal.");
   }
   const centerRows = config.centerAlignToOrigin ? nonzeroLineWeights : expectedLineWeights;
-  const expectedCenterVector = meanMatrixColumns(centerRows);
+  const expectedCenterVector = historical ? meanMatrixColumns(centerRows) : meanColumns(centerRows);
   expectedCenterVector.forEach((expected, edgeIndex) => {
     assertScientificallyEqual(
       centerVector[edgeIndex],
@@ -972,10 +987,14 @@ function assertOnaBundleContract(
       "Schema-v2 ONA center vector",
     );
   });
+  const centered = historical
+    ? centerRows.map((row) => row.map((value, edgeIndex) => value - expectedCenterVector[edgeIndex]))
+    : centerData(centerRows);
+  let centeredIndex = 0;
   const expectedProjectionInputs = expectedLineWeights.map((row) => {
     const hasSignal = row.some((value) => value !== 0);
     if (config.centerAlignToOrigin && !hasSignal) return row.map(() => 0);
-    return row.map((value, edgeIndex) => value - expectedCenterVector[edgeIndex]);
+    return centered[centeredIndex++];
   });
   const actualProjectionInputs = tableRows.pointsForProjection.map((row) => codeColumns.map((edge) => (
     asFiniteBundleNumber(row[edge], `Schema-v2 ONA centered projection input ${edge}`)
@@ -1063,13 +1082,16 @@ function assertOnaBundleContract(
     });
   });
 
-  const fullAxisVariances = Array.from({ length: edgeCount }, (_unused, axisIndex) => (
-    sampleVariance(expectedFullCoordinates.map((row) => row[axisIndex])) ?? 0
-  ));
-  const fullVarianceTotal = fullAxisVariances.reduce((sum, value) => sum + value, 0);
-  const expectedVariance = fullAxisVariances.map((value) => (
-    fullVarianceTotal === 0 ? 0 : value / fullVarianceTotal
-  ));
+  let expectedVariance: number[];
+  if (historical) {
+    const fullAxisVariances = Array.from({ length: edgeCount }, (_unused, axisIndex) => (
+      sampleVariance(expectedFullCoordinates.map((row) => row[axisIndex])) ?? 0
+    ));
+    const fullVarianceTotal = fullAxisVariances.reduce((sum, value) => sum + value, 0);
+    expectedVariance = fullAxisVariances.map(value => fullVarianceTotal === 0 ? 0 : value / fullVarianceTotal);
+  } else {
+    expectedVariance = varianceProportions(expectedFullCoordinates);
+  }
 
   exactKeys(
     result,

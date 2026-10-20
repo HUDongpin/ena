@@ -21,9 +21,10 @@ import type {
 import {
   adjacencyKey,
   orderedAdjacencyKey,
+  standardConnectionProduct,
+  standardWindowConnections,
   stringVectorToUpperTriangle,
-  sumColumns,
-  vectorToUpperTriangle
+  sumColumns
 } from './core/matrix.js';
 import { assertNonEmptyColumns, assertRowsHaveColumns } from './core/guards.js';
 import { mergeColumns, typedTupleIdentity } from './core/table.js';
@@ -514,7 +515,7 @@ export function rowsToCoOccurrencesTyped(table: NumericTable, binary = true): Nu
     let cursor = 0;
     for (let target = 1; target < table.cols; target += 1) {
       for (let source = 0; source < target; source += 1) {
-        const value = (table.data[row * table.cols + source] ?? 0) * (table.data[row * table.cols + target] ?? 0);
+        const value = standardConnectionProduct(table.data[row * table.cols + source] ?? 0, table.data[row * table.cols + target] ?? 0, cursor, binary);
         out[row * outCols + cursor] = binary ? (value > 0 ? 1 : 0) : value;
         cursor += 1;
       }
@@ -552,11 +553,6 @@ function zeros(length: number): number[] {
 function addVectors(left: number[], right: number[]): number[] {
   const width = Math.max(left.length, right.length);
   return Array.from({ length: width }, (_unused, index) => (left[index] ?? 0) + (right[index] ?? 0));
-}
-
-function subtractVectors(left: number[], right: number[]): number[] {
-  const width = Math.max(left.length, right.length);
-  return Array.from({ length: width }, (_unused, index) => (left[index] ?? 0) - (right[index] ?? 0));
 }
 
 function sumCodeVectors(vectors: number[][], width: number): number[] {
@@ -685,9 +681,8 @@ function applyWeight(values: number[], weightBy: WeightBy): number[] {
   return values.map((value) => weightBy([value]));
 }
 
-function coOccurrenceFromSums(total: number[], subtract: number[] | undefined, binary: boolean): number[] {
-  const co = subtract ? subtractVectors(vectorToUpperTriangle(total), vectorToUpperTriangle(subtract)) : vectorToUpperTriangle(total);
-  return binary ? co.map((value) => (value > 0 ? 1 : 0)) : co;
+function coOccurrenceFromSums(total: number[], binary: boolean, edgeMask: number[] | undefined): number[] {
+  return standardWindowConnections(total, undefined, undefined, binary, edgeMask);
 }
 
 function standardEdgeCodes(internals: StreamingInternals, edgeIndex: number): [string, string] {
@@ -892,12 +887,12 @@ function consumeRowConnection(internals: StreamingInternals, index: number, row:
 function makeNoForwardCoOccurrence(state: MovingConversationState, entry: StreamRowEntry, internals: StreamingInternals): number[] {
   const binary = internals.weightBy === 'binary';
   const back = internals.windowSizeBack;
-  if (back === 0 || back === 1) return coOccurrenceFromSums(entry.codeValues, undefined, binary);
+  if (back === 0 || back === 1) return coOccurrenceFromSums(entry.codeValues, binary, internals.mask);
   if (!Number.isFinite(back)) {
     const previous = state.noForwardRunningSum;
     const total = addVectors(previous, entry.codeValues);
     state.noForwardRunningSum = total;
-    return coOccurrenceFromSums(total, previous, binary);
+    return standardWindowConnections(entry.codeValues, previous, undefined, binary, internals.mask);
   }
   const previousRows = state.noForwardHistory.slice(-Math.max(0, back - 1));
   const previous = sumCodeVectors(previousRows, internals.codes.length);
@@ -907,7 +902,7 @@ function makeNoForwardCoOccurrence(state: MovingConversationState, entry: Stream
     state.noForwardHistory.shift();
     observeStorage(internals, -internals.codes.length, -1);
   }
-  return coOccurrenceFromSums(addVectors(previous, entry.codeValues), previous, binary);
+  return standardWindowConnections(entry.codeValues, previous, undefined, binary, internals.mask);
 }
 
 function assertOrderedProductDidNotUnderflow(
@@ -1234,21 +1229,19 @@ function computeWindowCoOccurrence(state: MovingConversationState, rowIndex: num
 
   const currRows = rowsForLocalRange(state, earliest, last);
   if (currRows.length !== last - earliest + 1) return undefined;
-  let co = vectorToUpperTriangle(sumCodeVectors(currRows, internals.codes.length));
   const currRowCount = currRows.length;
-  if (currRowCount > 0 && back > 1 && rowIndex - 1 >= 0) {
-    const headRows = currRowCount - 1 - forward;
-    if (headRows > 0) {
-      co = subtractVectors(co, vectorToUpperTriangle(sumCodeVectors(currRows.slice(0, headRows), internals.codes.length)));
-    }
-  }
-  if (currRowCount > 0 && forward > 0 && last <= rowCount - 1) {
-    const tailRowsToUse = last - rowIndex;
-    if (tailRowsToUse > 0) {
-      co = subtractVectors(co, vectorToUpperTriangle(sumCodeVectors(currRows.slice(-tailRowsToUse), internals.codes.length)));
-    }
-  }
-  return binary ? co.map((value) => (value > 0 ? 1 : 0)) : co;
+  // Preserve rENA's requested-forward prefix subtraction, including truncated
+  // and infinite forward windows: the retained middle can include prior rows.
+  const headRows = back > 1 && rowIndex > 0 ? Math.max(0, currRowCount - 1 - forward) : 0;
+  const tailRows = last - rowIndex;
+  const middleEnd = currRowCount - tailRows;
+  return standardWindowConnections(
+    sumCodeVectors(currRows.slice(headRows, middleEnd), internals.codes.length),
+    headRows > 0 ? sumCodeVectors(currRows.slice(0, headRows), internals.codes.length) : undefined,
+    tailRows > 0 ? sumCodeVectors(currRows.slice(middleEnd), internals.codes.length) : undefined,
+    binary,
+    internals.mask
+  );
 }
 
 function emitReadyRows(state: MovingConversationState, final: boolean, internals: StreamingInternals, limit = Infinity): number {
@@ -1367,7 +1360,7 @@ function flushConversationWindow(internals: StreamingInternals, start = 0, end =
     if (key === undefined) throw new Error('Conversation aggregate order is incomplete.');
     const aggregate = internals.conversationAggregates.get(key);
     if (!aggregate) continue;
-    const co = coOccurrenceFromSums(aggregate.sums, undefined, binary);
+    const co = coOccurrenceFromSums(aggregate.sums, binary, internals.mask);
     const row = {
       ...aggregate.row,
       ...Object.fromEntries(internals.codes.map((code, index) => [code, aggregate.sums[index] ?? 0]))
@@ -1469,7 +1462,7 @@ function makeTrajectoryResult(internals: StreamingInternals): { connectionCounts
   const perStepRows = makeTrajectoryRows(internals);
   const countRows: Row[] = [];
   if (internals.model === 'SeparateTrajectory') {
-    countRows.push(...perStepRows);
+    for (const row of perStepRows) countRows.push(row);
   } else {
     const rowsByUnit = new Map<string, Row[]>();
     for (const row of perStepRows) {

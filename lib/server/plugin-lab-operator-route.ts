@@ -6,6 +6,7 @@ import { readPluginLabConfiguration, type PluginLabEnvironment } from "@/lib/plu
 import { createPluginLabAccessCode, encryptPluginLabText, hashPluginLabAccessCode, isPluginLabProposalId } from "@/lib/plugin-lab/crypto";
 import { assertPluginProposalTransition, isPluginProposalState } from "@/lib/plugin-lab/proposal";
 import { createProductionPluginLabStore, type PluginLabStore } from "@/lib/plugin-lab/store";
+import { readPluginLabBoundedBody } from "@/lib/server/plugin-lab-proposal-route";
 
 type Environment = PluginLabEnvironment & OpenEnaAuthEnvironment;
 type Dependencies = {
@@ -32,7 +33,7 @@ function validCsrf(supplied: string | null, principal: OpenEnaPrincipal, secret:
 async function boundedJson(request: Request) {
   const declared = request.headers.get("content-length");
   if (declared && (!/^\d+$/u.test(declared) || Number(declared) > 8_192)) throw new TypeError("invalid body");
-  const body = await request.text(); if (Buffer.byteLength(body, "utf8") > 8_192) throw new TypeError("invalid body");
+  const body = new TextDecoder("utf-8", { fatal: true }).decode(await readPluginLabBoundedBody(request, 8_192));
   const parsed = JSON.parse(body) as unknown; if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || Object.getPrototypeOf(parsed) !== Object.prototype) throw new TypeError("invalid body");
   return parsed as Record<string, unknown>;
 }

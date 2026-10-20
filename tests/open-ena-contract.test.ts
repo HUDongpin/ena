@@ -19,10 +19,8 @@ test("Open ENA uses the canonical internal route from every requested entry poin
   const redirects = readFileSync(join(projectRoot, "next.config.ts"), "utf8");
 
   assert.match(header, /mission[\s\S]*?open-ena[\s\S]*?news/);
-  assert.match(home, /<HubFooter/);
-  assert.match(home, /featureBase=\{`\/\$\{locale\}`\}/);
-  assert.match(homeFooter, /href: `\$\{featureBase\}\/open-ena`/);
-  assert.match(homeFooter, /label: copy\.resources\.openWebtool, external: false/);
+  assert.match(home, /<HubFooter[\s\S]*?featureBase=\{`\/\$\{locale\}`\}/);
+  assert.match(homeFooter, /href: `\$\{featureBase\}\/open-ena`, label: copy\.resources\.openWebtool, external: false/);
   assert.doesNotMatch(home, /officialWebtoolUrl[\s\S]*?common\.openWebtool/);
   assert.match(mission, /href=\{`\/\$\{typedLocale\}\/open-ena`\}/);
   assert.match(footer, /`\/\$\{locale\}\/open-ena`/);

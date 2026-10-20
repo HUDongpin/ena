@@ -3,7 +3,7 @@ import type { OpenEnaAuthEnvironment, OpenEnaPrincipal } from "@/lib/open-ena-au
 import { verifyProductionOpenEnaSessionTokenV2 } from "@/lib/server/open-ena-auth-security-store";
 import { readPluginLabConfiguration, type PluginLabEnvironment } from "@/lib/plugin-lab/config";
 import { decryptPluginLabText, verifyPluginLabStatusSession } from "@/lib/plugin-lab/crypto";
-import { parsePluginProposalSubmission } from "@/lib/plugin-lab/proposal";
+import { parseStoredPluginProposalSubmission } from "@/lib/plugin-lab/proposal";
 import { createProductionPluginLabStore, type PluginLabStore } from "@/lib/plugin-lab/store";
 import { createPluginLabOperatorCsrf } from "./plugin-lab-operator-route";
 
@@ -34,13 +34,7 @@ export async function readPluginLabStatusForSession(
 }
 
 function parseStoredSubmission(serialized: string) {
-  const record = JSON.parse(serialized) as Record<string, unknown>;
-  return parsePluginProposalSubmission({
-    ...record,
-    referenceLinks: Array.isArray(record.referenceLinks) ? record.referenceLinks.join("\n") : record.referenceLinks,
-    dataSafetyConfirmed: record.dataSafetyConfirmed === true ? "yes" : record.dataSafetyConfirmed,
-    privacyConsent: record.privacyConsent === true ? "yes" : record.privacyConsent,
-  });
+  return parseStoredPluginProposalSubmission(JSON.parse(serialized));
 }
 
 function parseStoredPublicProjection(serialized: string) {
@@ -63,7 +57,7 @@ function decryptVerifiedPublicProjection(
   const plaintext = decryptPluginLabText(cipher, { [keyVersion]: encryptionKey }, `public-projection:${proposalId}`);
   const actual = createHash("sha256").update(plaintext, "utf8").digest("hex");
   if (actual !== expectedSha256) throw new TypeError("Public projection binding mismatch.");
-  return parseStoredPublicProjection(plaintext);
+  return { ...parseStoredPublicProjection(plaintext), publicProjectionSha256: actual };
 }
 
 export async function readPluginLabOperatorInbox(
@@ -102,7 +96,7 @@ export async function readPluginLabPublicSummaries(dependencies: CommonDependenc
     const records = await store.listPublicSummaries();
     return records.map((record) => {
       const projection = decryptVerifiedPublicProjection(record.proposalId, record.publicProjectionCipher, record.publicProjectionSha256, configuration.keyVersion, configuration.encryptionKey);
-      return { proposalId: record.proposalId, ...projection, updatedAt: record.updatedAt };
+      return { proposalId: record.proposalId, title: projection.title, publicSummary: projection.publicSummary, updatedAt: record.updatedAt };
     });
   } catch { return []; }
 }

@@ -142,8 +142,8 @@ test("the only AI network request is a POST inside the explicit Generate handler
   assert.match(aiComponent, /\[OPEN_ENA_AI_CONSENT_HEADER\]:\s*OPEN_ENA_AI_CONSENT_VALUE/);
   assert.match(aiComponent, /\[OPEN_ENA_AI_OPERATION_HEADER\]:\s*operationId/);
   assert.match(aiComponent, /operationId\s*=\s*`aiop-\$\{crypto\.randomUUID\(\)\}`/);
-  assert.match(aiComponent, /sessionStorage\.setItem\(requestedOperationStorageKey,\s*operationId\)/);
-  assert.match(aiComponent, /if\s*\(response\.status\s*===\s*409\)\s*clearOperation\(\)/);
+  assert.match(aiComponent, /openEnaAiOperationStore\.set\(requestedOperationScope,\s*operationId\)/);
+  assert.doesNotMatch(aiComponent, /if\s*\(response\.status\s*===\s*409\)\s*clearOperation\(\)/);
 });
 
 test("AI generation requires the exact current native review and full local scientific identity", () => {
@@ -214,9 +214,11 @@ test("the UI supports cancellation, a visible error, and an explicit retry", () 
 });
 
 test("changing the evidence binding aborts work, revokes consent, and makes old output unrenderable", () => {
+  assert.match(aiComponent, /const requestIdentity = owner && reviewedIdentity/);
+  assert.match(aiComponent, /\[OPEN_ENA_AI_OWNER_HEADER\]: owner/);
   assert.match(
     aiComponent,
-    /const\s+requestIdentity\s*=\s*openEnaAiReviewedRequestIdentityV3\(\{[\s\S]*?localScientificIdentity,[\s\S]*?request,/,
+    /const\s+reviewedIdentity\s*=\s*openEnaAiReviewedRequestIdentityV3\(\{[\s\S]*?localScientificIdentity,[\s\S]*?request,/,
     "response validity must be bound to the complete reviewed request, including its exact sanitized evidence",
   );
   assert.match(
@@ -387,6 +389,8 @@ test("the UI renews an operation only for a matching server-confirmed pre-dispat
   };
   assert.equal(mayRenew!(new Response(null, { status: 503, headers }), operationId), true);
   assert.equal(mayRenew!(new Response(null, { status: 503 }), operationId), false);
+  assert.equal(mayRenew!(new Response(null, { status: 409 }), operationId), false);
+  assert.equal(mayRenew!(new Response(null, { status: 409, headers }), operationId), true);
   assert.equal(mayRenew!(new Response(null, { status: 200, headers }), operationId), false);
   assert.equal(mayRenew!(new Response(null, { status: 503, headers }), "aiop-fedcba98-7654-4321-8fed-cba987654321"), false);
   assert.equal(mayRenew!(new Response(null, { status: 503, headers: { ...headers, "x-open-ena-ai-retry": "unknown" } }), operationId), false);

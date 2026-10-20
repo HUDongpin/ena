@@ -864,11 +864,11 @@ test("plot clipboard publication is fail-closed behind one identity confirmation
   const source = readFileSync(componentPath, "utf8");
   const handleCopy = source.slice(source.indexOf("const handleCopy ="), source.indexOf("const comparisonScale", source.indexOf("const handleCopy =")));
   assert.match(source, /onConfirmIdentityBearingExport\?:\s*\(\)\s*=>\s*boolean/u);
-  assert.match(handleCopy, /if\s*\(!props\.onConfirmIdentityBearingExport\)[\s\S]*?"unavailable"[\s\S]*?return;/u);
-  assert.match(handleCopy, /confirmed\s*=\s*props\.onConfirmIdentityBearingExport\(\)/u);
-  assert.match(handleCopy, /if\s*\(!confirmed\)[\s\S]*?"cancelled"[\s\S]*?return;/u);
-  assert.ok(handleCopy.indexOf("onConfirmIdentityBearingExport()") < handleCopy.indexOf("copyPlotImage(button)"));
-  assert.equal((handleCopy.match(/onConfirmIdentityBearingExport\(\)/gu) ?? []).length, 1, "one plot-copy intent asks once");
+  assert.match(handleCopy, /if\s*\(!props\.captureImageExport\s*&&\s*!props\.onConfirmIdentityBearingExport\)[\s\S]*?"unavailable"[\s\S]*?return;/u);
+  assert.match(handleCopy, /lease\s*=\s*props\.captureImageExport[\s\S]*?props\.captureImageExport\(\)[\s\S]*?props\.onConfirmIdentityBearingExport!\(\)/u);
+  assert.match(handleCopy, /if\s*\(!lease\)[\s\S]*?"cancelled"[\s\S]*?return;/u);
+  assert.ok(handleCopy.indexOf("onConfirmIdentityBearingExport!()") < handleCopy.indexOf("copyPlotImage(button, isCurrent)"));
+  assert.equal((handleCopy.match(/onConfirmIdentityBearingExport!\(\)/gu) ?? []).length, 1, "standalone plot-copy asks once; the Workspace lease owns its own confirmation");
   const workspace = readFileSync(join(process.cwd(), "components/open-ena/OpenEnaWorkspace.tsx"), "utf8");
   assert.match(workspace, /<OpenEnaGroupContrast[\s\S]*?onConfirmIdentityBearingExport=\{confirmCurrentIdentityBearingExport\}/u);
 });

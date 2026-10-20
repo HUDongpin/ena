@@ -68,15 +68,25 @@ function boundedText(value: unknown, label: keyof typeof limits, optional = fals
   return normalized;
 }
 
-function safeHttpsLinks(value: unknown) {
-  if (value === undefined || value === null || value === "") return [];
-  if (typeof value !== "string" || value.length > limits.referenceLinks) fail("referenceLinks is invalid.");
-  const lines = value.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+function safeHttpsLinks(value: unknown, representation: "form" | "stored") {
+  let lines: string[];
+  if (representation === "stored") {
+    if (!Array.isArray(value) || value.some((line) => typeof line !== "string")) fail("referenceLinks is invalid.");
+    lines = value;
+    // A Unicode code unit can expand to nine percent-encoded URL characters;
+    // allow one canonical trailing slash for each of the eight permitted URLs.
+    if (lines.reduce((total, line) => total + line.length, 0) > limits.referenceLinks * 9 + 8) fail("referenceLinks is invalid.");
+  } else {
+    if (value === undefined || value === null || value === "") return [];
+    if (typeof value !== "string" || value.length > limits.referenceLinks) fail("referenceLinks is invalid.");
+    lines = value.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+  }
   if (lines.length > 8) fail("referenceLinks contains too many links.");
   const parsed = lines.map((line) => {
     let url: URL;
     try { url = new URL(line); } catch { fail("referenceLinks must contain HTTPS URLs."); }
     if (url.protocol !== "https:" || url.username || url.password) fail("referenceLinks must contain HTTPS URLs without credentials.");
+    if (representation === "stored" && url.toString() !== line) fail("referenceLinks must contain canonical URLs.");
     return url.toString();
   });
   if (new Set(parsed).size !== parsed.length) fail("referenceLinks contains duplicates.");
@@ -90,7 +100,7 @@ function assertNoCredentialLikeContent(values: readonly string[]) {
   }
 }
 
-export function parsePluginProposalSubmission(value: unknown): PluginProposalSubmission {
+function parseProposalSubmission(value: unknown, representation: "form" | "stored"): PluginProposalSubmission {
   const record = plainRecord(value);
   const unknown = Object.keys(record).filter((key) => !(SUBMISSION_KEYS as readonly string[]).includes(key));
   if (unknown.length > 0) fail(`submission contains unknown field ${unknown[0]}.`);
@@ -109,11 +119,12 @@ export function parsePluginProposalSubmission(value: unknown): PluginProposalSub
   const unchangedBoundary = boundedText(record.unchangedBoundary, "unchangedBoundary")!;
   const publicSummary = boundedText(record.publicSummary, "publicSummary")!;
   const privateDetails = boundedText(record.privateDetails, "privateDetails")!;
-  const referenceLinks = safeHttpsLinks(record.referenceLinks);
+  const referenceLinks = safeHttpsLinks(record.referenceLinks, representation);
   if (record.visibility !== "private" && record.visibility !== "public-after-review") fail("visibility is unsupported.");
   if (record.track !== "academic" && record.track !== "commissioned" && record.track !== "unsure") fail("track is unsupported.");
-  if (record.dataSafetyConfirmed !== "yes") fail("the data-safety confirmation is required.");
-  if (record.privacyConsent !== "yes") fail("privacy consent is required.");
+  const confirmed = representation === "stored" ? true : "yes";
+  if (record.dataSafetyConfirmed !== confirmed) fail("the data-safety confirmation is required.");
+  if (record.privacyConsent !== confirmed) fail("privacy consent is required.");
   assertNoCredentialLikeContent([title, researchQuestion, currentGap, proposedChange, unchangedBoundary, publicSummary, privateDetails, ...referenceLinks]);
 
   return Object.freeze({
@@ -124,6 +135,14 @@ export function parsePluginProposalSubmission(value: unknown): PluginProposalSub
     dataSafetyConfirmed: true as const,
     privacyConsent: true as const,
   });
+}
+
+export function parsePluginProposalSubmission(value: unknown): PluginProposalSubmission {
+  return parseProposalSubmission(value, "form");
+}
+
+export function parseStoredPluginProposalSubmission(value: unknown): PluginProposalSubmission {
+  return parseProposalSubmission(value, "stored");
 }
 
 const TRANSITIONS: Readonly<Record<PluginProposalState, readonly PluginProposalState[]>> = {

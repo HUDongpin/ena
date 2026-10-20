@@ -85,7 +85,7 @@ test("control and resource admission happens before computation; capture survive
   await assert.rejects(a.assertOpenEnaTrajectoryPathInferenceConsumerV3(value, f.result, f.plan, copy), /controls|context|chronology/);
 });
 
-test("independent local numerical port matches callable pinned public execution on identical fitted histories", async () => {
+test("local path port preserves pinned resampling and ordinary tails, with documented stable-geometry rounding", async () => {
   const { analyzeDataset, bindOpenEnaResultProvenance } = await import("../lib/open-ena/analyze");
   const { createOpenEnaLongitudinalSettingsV3, buildOpenEnaLongitudinalExecutionRequestV3 } = await import("../lib/open-ena/longitudinal-v3");
   const { executeLongitudinalAnalysisV2, verifyLongitudinalAnalysisBundleV2 } = await import("j-3dena");
@@ -111,8 +111,42 @@ test("independent local numerical port matches callable pinned public execution 
   const plan = createNativePathPermutationPlanV3(input, 500, 2026);
   const actual = compareTrajectoryPaths({ ...input, permutationPlan: plan });
   assert.deepEqual(actual.permutation.unitOrder, expected.permutation.unitOrder);
-  assert.deepEqual(actual.periods, expected.periods);
-  assert.deepEqual(actual.tests, expected.tests);
+  // Both consumers receive identical fitted coordinates. The native port now
+  // translates once and resolves observed contrasts using exact dyadic means.
+  // Permit only the derived arithmetic fields to differ: 8 rounding operations
+  // per coordinate, with a dimension factor for norms and a period factor for
+  // cumulative sums. Identities, sample sizes, tails/counts and p-values remain
+  // exact SDK parity checks, independent of this arithmetic allowance.
+  const scale = Math.max(...[expected.sideA, expected.sideB].flatMap(s => s.participantPeriods.flatMap(p => p.fullCoordinates.map(Math.abs))));
+  const coordinateFields = ["selectedCentroidA", "selectedCentroidB", "selectedDifference", "fullCentroidA", "fullCentroidB", "fullDifference"] as const;
+  const distanceFields = ["selectedCentroidSeparation", "fullCentroidSeparation", "selectedStepDistanceA", "selectedStepDistanceB", "selectedStepDistanceDifference", "fullStepDistanceA", "fullStepDistanceB", "fullStepDistanceDifference", "selectedCumulativeDistanceA", "selectedCumulativeDistanceB", "selectedCumulativeDistanceDifference", "fullCumulativeDistanceA", "fullCumulativeDistanceB", "fullCumulativeDistanceDifference"] as const;
+  const close = (a: number | null, b: number | null, budget: number) => {
+    if (a === null || b === null) assert.equal(a, b);
+    else assert.ok(Math.abs(a - b) <= budget, `${a} vs ${b} (budget ${budget})`);
+  };
+  assert.equal(actual.periods.length, expected.periods.length);
+  assert.equal(actual.tests.length, expected.tests.length);
+  actual.periods.forEach((period, i) => {
+    const legacy = expected.periods[i], rest = { ...period }, legacyRest = { ...legacy };
+    for (const field of coordinateFields) {
+      const a = period[field], b = legacy[field];
+      if (a === null || b === null) assert.equal(a, b);
+      else { assert.equal(a.length, b.length); a.forEach((v, j) => close(v, b[j], 8 * Number.EPSILON * scale)); }
+      delete (rest as Partial<typeof rest>)[field]; delete (legacyRest as Partial<typeof legacyRest>)[field];
+    }
+    for (const field of distanceFields) {
+      const dimensions = field.startsWith("selected") ? 3 : expected.sideA.dimensions.length;
+      close(period[field], legacy[field], 8 * (dimensions + 1) * Number.EPSILON * scale * (field.includes("Cumulative") ? i + 1 : 1));
+      delete (rest as Partial<typeof rest>)[field]; delete (legacyRest as Partial<typeof legacyRest>)[field];
+    }
+    assert.deepEqual(rest, legacyRest);
+  });
+  actual.tests.forEach((row, i) => {
+    const { observed, ...rest } = row, { observed: priorObserved, ...legacyRest } = expected.tests[i];
+    const dimensions = row.distanceSpace === null ? 0 : row.distanceSpace === "selected-3d" ? 3 : expected.sideA.dimensions.length;
+    close(observed, priorObserved, 8 * (dimensions + 1) * Number.EPSILON * scale * (row.metric === "cumulative-distance-difference" ? row.timeIndex + 1 : 1));
+    assert.deepEqual(rest, legacyRest);
+  });
 });
 
 test("native full coordinates use exact retained edge order, support Reference source axes at zero target rank", async () => {

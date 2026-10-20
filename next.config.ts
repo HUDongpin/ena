@@ -30,6 +30,7 @@ const contentSecurityPolicy = [
 
 const nextConfig: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR?.trim() || ".next",
+  output: "standalone",
   poweredByHeader: false,
   reactStrictMode: true,
   agentRules: false,

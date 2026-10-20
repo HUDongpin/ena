@@ -62,6 +62,36 @@ export function nativePlotGroupSettingsV3(result: OpenEnaPlotResult, name: strin
   return result.groupPresentation?.allSuppressed ? { ...options, showUnitPoints: false, showMean: false, showConfidenceIntervals: false, showOutlierIntervals: false } : options;
 }
 
+/** Endpoint summaries are a display projection only. Keep fitted groups and
+ * their coordinate frame intact for inference, export and subsequent toggles. */
+export function nativePlotSummaryGroupsV3(result: OpenEnaPlotResult): GroupNetwork[] {
+  const configuration = result.boundPresentation?.configuration;
+  if (configuration?.analysisFamily !== "standard" || configuration.analysis.model.type !== "EndPoint"
+    || !result.groupPresentation?.hiddenUnits.size) return result.groups;
+  const hidden = result.groupPresentation.hiddenUnits;
+  const groupName = (row: ENASet["points"][number]) => configuration.units.group.type === "none" ? "All Units" : String(row.Group);
+  const partition = (rows: ENASet["points"]) => {
+    const byGroup = new Map<string, typeof rows>();
+    for (const row of rows) {
+      if (hidden.has(String(row.ENA_UNIT))) continue;
+      const name = groupName(row), entries = byGroup.get(name) ?? [];
+      entries.push(row);
+      byGroup.set(name, entries);
+    }
+    return byGroup;
+  };
+  const points = partition(result.set.points), weights = partition(result.set.lineWeights);
+  const means = (rows: ENASet["points"], keys: string[]) => Object.fromEntries(keys.map(key =>
+    [key, rows.length ? rows.reduce((sum, row) => sum + Number(row[key]), 0) / rows.length : 0]));
+  return result.groups.map(group => {
+    if (nativePlotGroupSettingsV3(result, group.name).includeHiddenPoints) return group;
+    const rows = points.get(group.name) ?? [];
+    return { ...group, count: rows.length, pointCount: rows.length,
+      meanPoint: means(rows, result.dimensions),
+      meanWeights: means(weights.get(group.name) ?? [], result.set.adjacencyKey.map(edge => edge.name)) };
+  });
+}
+
 /** Native contrast display filtering is never handed back to inference. The
  * canonical geometry and coordinate scale stay fixed. The display envelope may
  * expand for subset intervals, but never shrinks below the full-result frame. */
@@ -78,12 +108,14 @@ export function presentBoundGroupDisplayV3(value: BoundContrastGeometryV3, setti
     const summarySet = new Set(summary);
     const display: OpenEnaResolvedGroupDisplaySide = { name: original.name, settings: options, totalUnitCount: original.unitCount, validUnitCount: original.points.filter(point => Number.isFinite(point.x) && Number.isFinite(point.y)).length,
       hiddenUnitCount: original.unitCount - visible.length, visibleUnitIds: visible, summaryUnitIds: summary };
-    if (summary.length === 0) return { side: original, display: { ...display, settings: { ...options, showMean: false, showConfidenceIntervals: false, showOutlierIntervals: false } } };
     const points = value.result.set.points.filter((row) => summarySet.has(String(row.ENA_UNIT)));
     const weights = value.result.set.lineWeights.filter((row) => summarySet.has(String(row.ENA_UNIT)));
-    const means = (rows: typeof points, keys: readonly string[]) => Object.fromEntries(keys.map((key) => [key, rows.reduce((sum, row) => sum + Number(row[key]), 0) / rows.length]));
+    // Empty display populations carry zero edge weights only as rendering
+    // placeholders. Their mean/interval marks and pairwise differences are
+    // unavailable; never restore canonical summaries from excluded Units.
+    const means = (rows: typeof points, keys: readonly string[]) => Object.fromEntries(keys.map((key) => [key, rows.length ? rows.reduce((sum, row) => sum + Number(row[key]), 0) / rows.length : 0]));
     const meanPoint = means(points, value.geometry.dimensions);
-    return { display, side: { ...original, unitCount: summary.length, meanPoint,
+    return { display: summary.length ? display : { ...display, settings: { ...options, showMean: false, showConfidenceIntervals: false, showOutlierIntervals: false } }, side: { ...original, unitCount: summary.length, meanPoint,
       meanWeights: means(weights, value.result.set.codeColumns),
       meanConfidenceIntervals: marginalMeanIntervalPair(points.map((row) => ({ x: Number(row[value.axes[0]]), y: Number(row[value.axes[1]]) })), value.axes),
       outlierIntervals: meanCenteredIqrOutlierIntervalPair(points.map((row) => ({ x: Number(row[value.axes[0]]), y: Number(row[value.axes[1]]) })), value.axes),
@@ -91,6 +123,7 @@ export function presentBoundGroupDisplayV3(value: BoundContrastGeometryV3, setti
     } };
   }
   const primary = side(contrast.primary), secondary = side(contrast.secondary);
+  const differenceAvailable = primary.side.unitCount > 0 && secondary.side.unitCount > 0;
   const frame = contrast.officialPlotFrame;
   const intervalExtent = [primary.side, secondary.side].flatMap((side) => [
     ...Object.values(side.meanConfidenceIntervalsByDimension ?? {}),
@@ -99,7 +132,7 @@ export function presentBoundGroupDisplayV3(value: BoundContrastGeometryV3, setti
   const maxPosition = frame ? Math.max(frame.maxPosition, intervalExtent * frame.pointScaleFactor) : 0;
   const officialPlotFrame = frame ? { ...frame, maxPosition, extremePosition: Math.max(frame.extremePosition, maxPosition * WEB_ENA_MAX_POSITION_MODIFIER) } : undefined;
   return { contrast: { ...contrast, officialPlotFrame, primary: primary.side, secondary: secondary.side,
-    edges: contrast.edges.map((edge) => { const primaryWeight = primary.side.meanWeights[edge.name], secondaryWeight = secondary.side.meanWeights[edge.name]; const signedDifference = primaryWeight - secondaryWeight;
+    edges: contrast.edges.map((edge) => { const primaryWeight = primary.side.meanWeights[edge.name], secondaryWeight = secondary.side.meanWeights[edge.name]; const signedDifference = differenceAvailable ? primaryWeight - secondaryWeight : 0;
       return { ...edge, primaryWeight, secondaryWeight, signedDifference, stronger: signedDifference > 0 ? "primary" as const : signedDifference < 0 ? "secondary" as const : "equal" as const }; }) },
     primary: primary.display, secondary: secondary.display, hiddenUnitKeys: [...hiddenKeys] };
 }

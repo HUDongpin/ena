@@ -144,6 +144,23 @@ test("creation captures independent editable drafts and rejects unsafe structure
   assert.throws(() => createModelStateV3(drafts(), "not-a-hash"));
 });
 
+for (const initialization of ["active", "edited"] as const) test(`an ${initialization} empty ONA draft is not seeded again on a family switch`, () => {
+  const empty: ModelWorkspaceDraftsV3["ona"] = {
+    unitColumns: [], horizonColumns: [], groupColumn: null, codes: [],
+    backward: { kind: "finite", value: 1 }, rowOrder: null, directionalMask: null,
+  };
+  const input = drafts();
+  if (initialization === "active") {
+    input.activeFamily = "ona";
+    input.ona = empty;
+  }
+  let state = createModelStateV3(input, datasetSha256);
+  if (initialization === "edited") state = reduce(state, { type: "replace-ona-draft", draft: empty });
+  state = reduce(state, { type: "set-active-family", family: "standard" });
+  state = reduce(state, { type: "set-active-family", family: "ona" });
+  assert.deepEqual(state.drafts.ona, empty);
+});
+
 test("draft replacement preserves incomplete grammar without invoking getters or repairing masks", () => {
   const state = initial();
   const empty = { ...state.drafts.standard, codes: [], horizonOrder: null };

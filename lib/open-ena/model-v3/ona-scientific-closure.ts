@@ -1,5 +1,5 @@
 import type { ENASet, Matrix } from "jena-js";
-import { meanColumns, multiplyMatrices, sphereNorm, varianceColumns } from "jena-js/core";
+import { centerData, meanColumns, multiplyMatrices, sphereNorm, varianceProportions } from "jena-js/core";
 import { directedNodePositions } from "jena-js/rotation";
 
 /** Same numerical comparison policy as the existing closed ONA bundle oracle. */
@@ -110,14 +110,32 @@ export function assertOnaScientificClosureV3(input: {
 }
 
 /** Checks supplied geometry algebra only; source and audit conservation stay in the caller above. */
-export function assertOnaInternalDerivationsV3(set: ScientificSet): void {
+export function assertOnaInternalDerivationsV3(
+  set: ScientificSet,
+  options: { readonly allowHistoricalCentering?: boolean } = {},
+): void {
+  try {
+    assertOnaDerivationRecipe(set, false);
+  } catch (currentError) {
+    if (!options.allowHistoricalCentering) throw currentError;
+    // Only historical bundle reading opts in. Every derived surface must close
+    // under one complete recipe; no retained field selects its own fallback.
+    try { assertOnaDerivationRecipe(set, true); } catch { throw currentError; }
+  }
+}
+
+function assertOnaDerivationRecipe(set: ScientificSet, historical: boolean): void {
 
   const lineWeights = sphereNorm(set.connectionMatrix);
   const nonzero = lineWeights.filter((row) => row.some((value) => value !== 0));
   if (!nonzero.length) throw new TypeError("ONA scientific derivation requires enabled network signal.");
-  const center = meanColumns(nonzero);
+  const center = historical ? historicalMeanColumns(nonzero) : meanColumns(nonzero);
+  const centered = historical
+    ? nonzero.map((row) => row.map((value, edge) => value - center[edge]))
+    : centerData(nonzero);
+  let signalIndex = 0;
   const projectionInputs = lineWeights.map((row) => row.some((value) => value !== 0)
-    ? row.map((value, edge) => value - center[edge]) : row.map(() => 0));
+    ? centered[signalIndex++] : row.map(() => 0));
   lineWeights.forEach((row, unit) => row.forEach((expected, edge) => {
     assertEqual(set.lineWeights[unit][set.codeColumns[edge]], expected, "sphere-normalized line weight");
     assertEqual(set.pointsForProjection[unit][set.codeColumns[edge]], projectionInputs[unit][edge], "centered projection input");
@@ -142,7 +160,25 @@ export function assertOnaInternalDerivationsV3(set: ScientificSet): void {
 
   // Exactly the native runtime variance path: rank-zero does not imply zero
   // normalized variance when repeated floating-point means differ at roundoff.
-  const variances = varianceColumns(coordinates);
-  const total = variances.reduce((sum, value) => sum + value, 0);
-  axes.forEach((axis, ordinal) => assertEqual(set.variance[axis], total === 0 ? 0 : variances[ordinal] / total, "full-basis variance share"));
+  let expectedVariance: number[];
+  if (historical) {
+    const variances = historicalVarianceColumns(coordinates);
+    const total = variances.reduce((sum, value) => sum + value, 0);
+    expectedVariance = variances.map(value => total === 0 ? 0 : value / total);
+  } else {
+    expectedVariance = varianceProportions(coordinates);
+  }
+  axes.forEach((axis, ordinal) => assertEqual(set.variance[axis], expectedVariance[ordinal], "full-basis variance share"));
+}
+
+/** Pre-stabilization arithmetic retained solely to verify saved historical geometry. */
+function historicalMeanColumns(matrix: Matrix): number[] {
+  return (matrix[0] ?? []).map((_value, column) => matrix.reduce((sum, row) => sum + row[column], 0) / matrix.length);
+}
+
+function historicalVarianceColumns(matrix: Matrix): number[] {
+  if (matrix.length < 2) return (matrix[0] ?? []).map(() => 0);
+  return historicalMeanColumns(matrix).map((mean, column) => (
+    matrix.reduce((sum, row) => sum + (row[column] - mean) ** 2, 0) / (matrix.length - 1)
+  ));
 }
