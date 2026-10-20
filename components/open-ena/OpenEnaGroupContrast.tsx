@@ -21,6 +21,7 @@ import {
   type OpenEnaResolvedGroupDisplaySide,
 } from "@/lib/open-ena/group-display";
 import { codeColorFor, type OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
+import { getOpenEnaCopy } from "@/lib/open-ena-i18n";
 import type {
   OpenEnaNodeDimensionPosition,
   OpenEnaNodeLayoutPositions,
@@ -117,8 +118,18 @@ export interface OpenEnaGroupContrastProps extends OpenEnaCodeGraphPresentation 
     readonly horizonDefinition: string;
     readonly noNonzeroDifferences: string;
     readonly flippedLabel?: string;
+    readonly squareSummaryPrimary?: (name: string) => string;
+    readonly squareSummarySecondary?: (name: string) => string;
+    readonly strongestSignedEdgeDifferences?: string;
+    readonly connectionColumn?: string;
+    readonly primaryWeightColumn?: string;
+    readonly secondaryWeightColumn?: string;
+    readonly signedDifferenceColumn?: string;
+    readonly strongerGroupColumn?: string;
   };
 }
+
+const englishPlotChrome = getOpenEnaCopy("en").modelV3.workspace.plot;
 
 const DEFAULT_GROUP_CONTRAST_UI_COPY = {
   comparisonPlot: "Comparison Plot",
@@ -172,6 +183,14 @@ const DEFAULT_GROUP_CONTRAST_UI_COPY = {
   horizonDefinition: "Horizon",
   noNonzeroDifferences: "No nonzero Primary-minus-Secondary edge differences are present for this selected pair.",
   flippedLabel: "flipped",
+  squareSummaryPrimary: englishPlotChrome.squareSummaryPrimary,
+  squareSummarySecondary: englishPlotChrome.squareSummarySecondary,
+  strongestSignedEdgeDifferences: englishPlotChrome.strongestSignedEdgeDifferences,
+  connectionColumn: englishPlotChrome.connectionColumn,
+  primaryWeightColumn: englishPlotChrome.primaryWeightColumn,
+  secondaryWeightColumn: englishPlotChrome.secondaryWeightColumn,
+  signedDifferenceColumn: englishPlotChrome.signedDifferenceColumn,
+  strongerGroupColumn: englishPlotChrome.strongerGroupColumn,
 } as const;
 
 type ContrastEdge = OpenEnaPairwiseContrast["edges"][number];
@@ -2173,7 +2192,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
             aria-hidden="true"
             style={{ background: groupColor(contrast, contrast.primary, "primary"), borderColor: "#263740" }}
           />
-          <span><strong>Square summary</strong> · Primary: {contrast.primary.name}</span>
+          <span>{(uiCopy.squareSummaryPrimary ?? DEFAULT_GROUP_CONTRAST_UI_COPY.squareSummaryPrimary)(contrast.primary.name)}</span>
         </li>
         ) : null}
         {secondaryGroupDisplay.settings.showMean ? (
@@ -2183,7 +2202,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
             aria-hidden="true"
             style={{ background: groupColor(contrast, contrast.secondary, "secondary"), borderColor: "#263740" }}
           />
-          <span><strong>Square summary</strong> · Secondary: {contrast.secondary.name}</span>
+          <span>{(uiCopy.squareSummarySecondary ?? DEFAULT_GROUP_CONTRAST_UI_COPY.squareSummarySecondary)(contrast.secondary.name)}</span>
         </li>
         ) : null}
         <li data-ena-sign="positive" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
@@ -2232,21 +2251,21 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
         {" "}Side-panel denominator: {contrast.edgeScaleDenominators.sharedMeanDefinition} ({formatNumber(groupMeanScale)}).
       </p>
 
-      <div className="ena-set-difference-table" role="region" aria-label="Strongest signed edge differences" tabIndex={0}>
+      <div className="ena-set-difference-table" role="region" aria-label={uiCopy.strongestSignedEdgeDifferences ?? DEFAULT_GROUP_CONTRAST_UI_COPY.strongestSignedEdgeDifferences} tabIndex={0}>
         <p>
           Threshold uses {(threshold * 100).toFixed(0)}% of the comparison signed-difference scale ({formatNumber(comparisonScale)}).
           Signed difference is Primary minus Secondary: positive values are {contrast.primary.name} minus {contrast.secondary.name}.
           This descriptive comparison does not imply significance.
         </p>
         <table>
-          <caption>Strongest signed edge differences</caption>
+          <caption>{uiCopy.strongestSignedEdgeDifferences ?? DEFAULT_GROUP_CONTRAST_UI_COPY.strongestSignedEdgeDifferences}</caption>
           <thead>
             <tr>
-              <th scope="col">Connection</th>
-              <th scope="col">Primary weight</th>
-              <th scope="col">Secondary weight</th>
-              <th scope="col">Signed difference</th>
-              <th scope="col">Stronger group</th>
+              <th scope="col">{uiCopy.connectionColumn ?? DEFAULT_GROUP_CONTRAST_UI_COPY.connectionColumn}</th>
+              <th scope="col">{uiCopy.primaryWeightColumn ?? DEFAULT_GROUP_CONTRAST_UI_COPY.primaryWeightColumn}</th>
+              <th scope="col">{uiCopy.secondaryWeightColumn ?? DEFAULT_GROUP_CONTRAST_UI_COPY.secondaryWeightColumn}</th>
+              <th scope="col">{uiCopy.signedDifferenceColumn ?? DEFAULT_GROUP_CONTRAST_UI_COPY.signedDifferenceColumn}</th>
+              <th scope="col">{uiCopy.strongerGroupColumn ?? DEFAULT_GROUP_CONTRAST_UI_COPY.strongerGroupColumn}</th>
             </tr>
           </thead>
           <tbody>

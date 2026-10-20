@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { getOpenEnaLongitudinalV3Copy } from "../components/open-ena/OpenEnaLongitudinalWorkbenchV3";
 import { restoredWorkbenchCopy } from "../components/open-ena/workbench-restoration-copy";
 import { getDictionary } from "../lib/i18n";
 import { getOpenEnaAuthCopy } from "../lib/open-ena-auth-copy";
@@ -204,8 +205,8 @@ test("zh-Hant strings avoid simplified-only characters and zh-Hans strings avoid
 
 test("live Open ENA plot surfaces do not hardcode the English axis-flip label", () => {
   // OpenEnaSetComparison still hardcodes this label, but the workspace no longer
-  // mounts it. Header "Primary navigation" / "Mobile navigation", plot legends,
-  // contrast tables, and the longitudinal v3 audit chrome are deferred.
+  // mounts it. Shared header "Primary navigation" / "Mobile navigation" stay
+  // deferred because every locale uses that header.
   for (const relativePath of [
     "components/open-ena/OpenEnaPlot.tsx",
     "components/open-ena/OpenEnaGroupContrast.tsx",
@@ -213,4 +214,183 @@ test("live Open ENA plot surfaces do not hardcode the English axis-flip label", 
     const source = readFileSync(join(process.cwd(), relativePath), "utf8");
     assert.doesNotMatch(source, / · flipped/, relativePath);
   }
+});
+
+/**
+ * User-visible English left in the live plot and longitudinal audit chrome
+ * after PR #80. English catalog values stay the same; components read these
+ * keys and fall back to the English literal when no copy is passed.
+ */
+const PLOT_CHROME_KEYS = [
+  "openEna.modelV3.workspace.plot.legendAria",
+  "openEna.modelV3.workspace.plot.squareCentroidLegend",
+  "openEna.modelV3.workspace.plot.squareCentroidLegendText",
+  "openEna.modelV3.workspace.plot.edgeColumn",
+  "openEna.modelV3.workspace.plot.squareSummary",
+  "openEna.modelV3.workspace.plot.strongestSignedEdgeDifferences",
+  "openEna.modelV3.workspace.plot.connectionColumn",
+  "openEna.modelV3.workspace.plot.primaryWeightColumn",
+  "openEna.modelV3.workspace.plot.secondaryWeightColumn",
+  "openEna.modelV3.workspace.plot.signedDifferenceColumn",
+  "openEna.modelV3.workspace.plot.strongerGroupColumn",
+  "openEna.workspace.exactFittedCoordinates",
+  "openEna.workspace.marginalConfidenceCaption",
+  "openEna.workspace.confidenceAxisColumn",
+  "openEna.workspace.confidenceMeanColumn",
+  "openEna.workspace.confidenceLowerColumn",
+  "openEna.workspace.confidenceUpperColumn",
+  "openEna.workspace.confidenceDfColumn",
+  "openEna.workspace.confidenceStatusColumn",
+  "openEna.workspace.confidenceStatusEstimable",
+  "openEna.workspace.marginalConfidenceBoundary",
+  "openEna.workspace.pluginReceipt",
+] as const;
+
+const LONGITUDINAL_AUDIT_KEYS = [
+  "longitudinalV3.sourceRows",
+  "longitudinalV3.participants",
+  "longitudinalV3.participantPeriods",
+  "longitudinalV3.duplicateRows",
+  "longitudinalV3.duplicatedPeriods",
+  "longitudinalV3.identityConfirmed",
+  "longitudinalV3.yes",
+  "longitudinalV3.no",
+  "longitudinalV3.cohortLabel",
+  "longitudinalV3.estimandLabel",
+  "longitudinalV3.resultHash",
+  "longitudinalV3.pathCaption",
+  "longitudinalV3.pathGroup",
+  "longitudinalV3.pathPeriod",
+  "longitudinalV3.pathRows",
+  "longitudinalV3.pathParticipantPeriods",
+  "longitudinalV3.pathIncluded",
+  "longitudinalV3.pathDuplicate",
+  "longitudinalV3.path3dStep",
+  "longitudinalV3.pathFullStep",
+  "longitudinalV3.path3dCumulative",
+  "longitudinalV3.pathFullCumulative",
+  "longitudinalV3.pathElapsed",
+  "longitudinalV3.path3dSpeed",
+  "longitudinalV3.pathFullSpeed",
+  "longitudinalV3.inferenceCaption",
+  "longitudinalV3.requestColumn",
+  "longitudinalV3.testColumn",
+  "longitudinalV3.axisMetricColumn",
+  "longitudinalV3.estimandColumn",
+  "longitudinalV3.effectColumn",
+  "longitudinalV3.statisticColumn",
+  "longitudinalV3.rawPColumn",
+  "longitudinalV3.holmPColumn",
+  "longitudinalV3.methodColumn",
+  "longitudinalV3.tiesColumn",
+  "longitudinalV3.zerosColumn",
+  "longitudinalV3.statusReasonColumn",
+  "longitudinalV3.noDiagnostics",
+  "longitudinalV3.provenanceCaption",
+  "longitudinalV3.datasetHash",
+  "longitudinalV3.specHash",
+  "longitudinalV3.sourceResultHash",
+  "longitudinalV3.requestHash",
+  "longitudinalV3.runId",
+  "longitudinalV3.jenaBuild",
+  "longitudinalV3.jenaVersion",
+  "longitudinalV3.jenaCommit",
+  "longitudinalV3.jenaIntegrity",
+  "longitudinalV3.executionTarget",
+  "longitudinalV3.evidence",
+  "longitudinalV3.permutationPlans",
+  "longitudinalV3.resamplingPlans",
+] as const;
+
+function longitudinalAuditStrings(locale: "en" | "zh-hant" | "zh-hans") {
+  const copy = getOpenEnaLongitudinalV3Copy(locale);
+  return LONGITUDINAL_AUDIT_KEYS.map((path) => {
+    const key = path.slice("longitudinalV3.".length) as keyof typeof copy;
+    const value = copy[key];
+    return [path, typeof value === "string" ? value : ""] as const;
+  });
+}
+
+test("zh-Hant and zh-Hans translate the remaining plot and longitudinal audit chrome", () => {
+  // Only the new audit keys are walked. The rest of the V3 dictionary already
+  // mixes scripts in zh-Hant and is outside this follow-up.
+  const present = new Map<string, string>([
+    ...traditional.strings,
+    ...simplified.strings,
+    ...longitudinalAuditStrings("zh-hant"),
+    ...longitudinalAuditStrings("zh-hans"),
+  ]);
+  const violations: CopyViolation[] = [];
+  for (const path of PLOT_CHROME_KEYS) {
+    if (!present.has(path)) violations.push({ locale: "zh-hant", path, detail: "chrome key missing from walked catalogs" });
+  }
+  for (const locale of ["zh-hant", "zh-hans"] as const) {
+    for (const [path, text] of longitudinalAuditStrings(locale)) {
+      if (text.trim() === "") violations.push({ locale, path, detail: "empty audit string" });
+      else if (text === getOpenEnaLongitudinalV3Copy("en")[path.slice("longitudinalV3.".length) as keyof ReturnType<typeof getOpenEnaLongitudinalV3Copy>]
+        && !IDENTICAL_VALUE_ALLOWLIST.has(path)) {
+        violations.push({ locale, path, detail: JSON.stringify(text) });
+      }
+      const wrongScript = locale === "zh-hant" ? SIMPLIFIED_ONLY : TRADITIONAL_ONLY;
+      const found = [...wrongScript].filter((character) => text.includes(character));
+      if (found.length > 0) violations.push({ locale, path, detail: `${found.join("")} in ${JSON.stringify(text.slice(0, 80))}` });
+    }
+  }
+  assert.deepEqual(violations, [], formatViolations(violations));
+});
+
+function jsxSource(source: string) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^[ \t]*\/{2}.*$/gm, "")
+    .replace(/const DEFAULT_GROUP_CONTRAST_UI_COPY = \{[\s\S]*?\} as const;/, "")
+    .replace(/const english = \{[\s\S]*?\n\};/, "");
+}
+
+test("live plot and longitudinal audit chrome no longer hardcode the deferred English strings", () => {
+  const forbidden: Record<string, RegExp[]> = {
+    "components/open-ena/OpenEnaPlot.tsx": [
+      /aria-label="Plot legend"/,
+      /Group means use square centroid markers/,
+      /Square marker = group mean/,
+      />Edge</,
+    ],
+    "components/open-ena/OpenEnaGroupContrast.tsx": [
+      />Square summary</,
+      /Strongest signed edge differences/,
+      />Connection</,
+      />Primary weight</,
+      />Secondary weight</,
+      />Signed difference</,
+      />Stronger group</,
+    ],
+    "components/open-ena/OpenEnaInteractive3DPlot.tsx": [
+      /Separate marginal 95% Student-t confidence intervals — exact fitted coordinates/,
+      />Axis</,
+      />Mean</,
+      />Lower 95%</,
+      />Upper 95%</,
+      />Status</,
+      /Endpoint analytic units are the observations/,
+      /Plugin receipt ↓/,
+    ],
+    "components/open-ena/OpenEnaLongitudinalWorkbenchV3.tsx": [
+      />Source rows</,
+      /<dt>Participants<\/dt>/,
+      />Participant-periods</,
+      />Identity confirmed</,
+      /<caption>Group-period centroids, changes, selected-3D\/full-space distances/,
+      /<caption>Independent, paired, repeated, post-hoc, and whole-path families/,
+      /<caption>Immutable scientific and execution binding/,
+      />No diagnostics were emitted\.</,
+    ],
+  };
+  const violations: string[] = [];
+  for (const [relativePath, patterns] of Object.entries(forbidden)) {
+    const source = jsxSource(readFileSync(join(process.cwd(), relativePath), "utf8"));
+    for (const pattern of patterns) {
+      if (pattern.test(source)) violations.push(`${relativePath}: ${pattern}`);
+    }
+  }
+  assert.deepEqual(violations, [], violations.join("\n"));
 });

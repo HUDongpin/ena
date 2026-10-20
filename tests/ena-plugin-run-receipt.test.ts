@@ -49,5 +49,5 @@ test("the main standard 3D presenter offers the generated receipt outside the fi
   const source = readFileSync(join(process.cwd(), "components", "open-ena", "OpenEnaInteractive3DPlot.tsx"), "utf8");
   assert.match(source, /createOpenEnaPluginRunReceiptV1/u);
   assert.match(source, /downloadPluginReceipt/u);
-  assert.match(source, /Plugin receipt/u);
+  assert.match(source, /pluginReceipt/u);
 });

@@ -21,7 +21,7 @@ test("the central Comparison Plot renders one signed Primary-minus-Secondary net
 
 test("signed Primary-minus-Secondary evidence remains available outside the overlaid renderer", () => {
   assert.match(contrast, /edge\.signedDifference/);
-  assert.match(contrast, /Strongest signed edge differences/);
+  assert.match(contrast, /strongestSignedEdgeDifferences/);
   assert.match(contrast, /Primary minus Secondary/);
   assert.match(contrast, /data-ena-difference-edge-scale-max/);
 });

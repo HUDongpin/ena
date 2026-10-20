@@ -1547,7 +1547,7 @@ export default function OpenEnaInteractive3DPlot({
           <summary>{copy.workspace.accessibleSummary}</summary>
           <p data-ena-fitted-space="same-jena-space">{fittedSpaceStatement}</p>
           <table>
-            <caption>{copy.workspace.groupMeans} — exact fitted coordinates</caption>
+            <caption>{copy.workspace.groupMeans} — {copy.workspace.exactFittedCoordinates}</caption>
             <thead>
               <tr>
                 <th scope="col">{copy.workspace.groups}</th>
@@ -1570,17 +1570,17 @@ export default function OpenEnaInteractive3DPlot({
           {confidenceIntervalRows.length > 0 ? (
             <>
               <table data-ena-3d-confidence-interval-table="true">
-                <caption>Separate marginal 95% Student-t confidence intervals — exact fitted coordinates</caption>
+                <caption>{copy.workspace.marginalConfidenceCaption}</caption>
                 <thead>
                   <tr>
                     <th scope="col">{copy.workspace.groups}</th>
-                    <th scope="col">Axis</th>
+                    <th scope="col">{copy.workspace.confidenceAxisColumn}</th>
                     <th scope="col">n</th>
-                    <th scope="col">Mean</th>
-                    <th scope="col">Lower 95%</th>
-                    <th scope="col">Upper 95%</th>
-                    <th scope="col">df</th>
-                    <th scope="col">Status</th>
+                    <th scope="col">{copy.workspace.confidenceMeanColumn}</th>
+                    <th scope="col">{copy.workspace.confidenceLowerColumn}</th>
+                    <th scope="col">{copy.workspace.confidenceUpperColumn}</th>
+                    <th scope="col">{copy.workspace.confidenceDfColumn}</th>
+                    <th scope="col">{copy.workspace.confidenceStatusColumn}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1599,14 +1599,13 @@ export default function OpenEnaInteractive3DPlot({
                       <td>{interval.status === "estimable" ? exactCoordinate(interval.lower) : "—"}</td>
                       <td>{interval.status === "estimable" ? exactCoordinate(interval.upper) : "—"}</td>
                       <td>{interval.status === "estimable" ? interval.degreesFreedom : "—"}</td>
-                      <td>{interval.status === "estimable" ? "estimable" : interval.reason}</td>
+                      <td>{interval.status === "estimable" ? copy.workspace.confidenceStatusEstimable : interval.reason}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               <p data-ena-3d-confidence-interval-boundary="marginal-not-joint">
-                Endpoint analytic units are the observations. The dashed wireframe is the Cartesian product of
-                three separate marginal intervals; it is not a joint confidence region or significance test.
+                {copy.workspace.marginalConfidenceBoundary}
               </p>
             </>
           ) : null}
@@ -1618,7 +1617,7 @@ export default function OpenEnaInteractive3DPlot({
           {copy.workspace.methodNote} {fittedSpaceStatement}
           {analysisKind === "ena" && activePluginReceipt ? (
             <button type="button" className="ena-inline-link ena-plugin-receipt-download" onClick={downloadPluginReceipt}>
-              Plugin receipt ↓
+              {copy.workspace.pluginReceipt}
             </button>
           ) : null}
         </figcaption>
