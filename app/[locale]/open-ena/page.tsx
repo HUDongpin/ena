@@ -12,6 +12,7 @@ import {
   openEnaAuthSecurityConfigurationReady,
   verifyProductionOpenEnaSessionTokenAny,
 } from "@/lib/server/open-ena-auth-security-store";
+import { openEnaAiOperationOwnerKey } from "@/lib/open-ena/ai-operation-owner";
 import { OPEN_ENA_AI_DEFAULT_MODEL } from "@/lib/server/deepseek-client";
 import {
   getOpenEnaCopy,
@@ -69,11 +70,11 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
   const typedLocale = locale as Locale;
   const authConfigurationReady = openEnaAuthSecurityConfigurationReady();
   const sessionCookie = (await cookies()).get(OPEN_ENA_SESSION_COOKIE)?.value;
-  const isAuthenticated = authConfigurationReady
-    && Boolean(await verifyProductionOpenEnaSessionTokenAny(sessionCookie));
+  const principal = authConfigurationReady
+    ? await verifyProductionOpenEnaSessionTokenAny(sessionCookie) : null;
   const query = await searchParams;
 
-  if (!isAuthenticated) {
+  if (!principal) {
     return (
       <OpenEnaLogin
         locale={typedLocale}
@@ -123,6 +124,7 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
     <>
       <JsonLd data={structuredData} />
       <OpenEnaWorkspace locale={typedLocale}
+        operationOwnerKey={openEnaAiOperationOwnerKey(principal.principalRef)}
         providerDescriptor={providerDescriptor}
         runtimeDisabledPluginIds={parseOpenEnaDisabledPluginIds(process.env.ENA_PLUGIN_LAB_DISABLED_PLUGIN_IDS)}
       />

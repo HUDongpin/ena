@@ -7,6 +7,7 @@ const entry = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import OpenEnaWorkspace from './components/open-ena/OpenEnaWorkspace';
+import { openEnaAiOperationOwnerKey } from './lib/open-ena/ai-operation-owner';
 import { exportDraftV3 } from './lib/open-ena/model-artifact-exports-v3';
 import { runStandardPlanV3 } from './lib/open-ena/analyze';
 import { bindResultV3 } from './lib/open-ena/model-v3/result-binding';
@@ -46,7 +47,8 @@ window.resolveRun = async (index) => {
   job.result = result;
   job.resolve({ result, sourceWitness: null });
 };
-createRoot(document.getElementById('root')).render(<OpenEnaWorkspace locale="en" initialSource={{ dataset: data, datasetSha256: 'c'.repeat(64), drafts }} worker={worker} />);
+const operationOwnerKey = openEnaAiOperationOwnerKey('synthetic-workspace-retention-principal');
+createRoot(document.getElementById('root')).render(<OpenEnaWorkspace locale="en" operationOwnerKey={operationOwnerKey} initialSource={{ dataset: data, datasetSha256: 'c'.repeat(64), drafts }} worker={worker} />);
 `;
 
 const bundle = await build({

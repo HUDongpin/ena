@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { OpenEnaPrincipal } from "@/lib/open-ena-auth";
 import { encryptPluginLabText, issuePluginLabStatusSession } from "@/lib/plugin-lab/crypto";
+import { parsePluginProposalSubmission } from "@/lib/plugin-lab/proposal";
 import type { PluginLabStore } from "@/lib/plugin-lab/store";
+import { createPluginLabProposalPostHandler } from "@/lib/server/plugin-lab-proposal-route";
 import {
   readPluginLabOperatorInbox,
   readPluginLabStatusForSession,
@@ -67,4 +69,43 @@ test("operator inbox decrypts stored proposal fields only after verified v2 auth
     verifyOperator: async () => null,
     storeFactory: async () => { throw new Error("must not run"); },
   }), null);
+});
+
+test("a maximum-length proposal with normalized Unicode links round-trips through the operator inbox", async () => {
+  const input = {
+    email: "researcher@example.org", name: "x".repeat(120), affiliation: "x".repeat(160),
+    title: "x".repeat(160), researchQuestion: "x".repeat(2_000), currentGap: "x".repeat(2_000),
+    proposedChange: "x".repeat(3_000), unchangedBoundary: "x".repeat(1_600),
+    publicSummary: "x".repeat(1_200), privateDetails: "x".repeat(5_000),
+    referenceLinks: `https://example.org/${"界".repeat(1_580)}`,
+    visibility: "private", track: "academic", dataSafetyConfirmed: "yes", privacyConsent: "yes",
+  };
+  assert.equal(input.referenceLinks.length, 1_600);
+  const expected = parsePluginProposalSubmission(input);
+  assert.equal(expected.referenceLinks[0].length, 14_240);
+  const writes: Parameters<PluginLabStore["createProposal"]>[0][] = [];
+  const sharedStore = store({
+    createProposal: async (record) => { writes.push(record); },
+    listForOperator: async () => writes.map((record) => ({
+      ...status, ...record, emailConfirmed: false,
+      publicConsentStatus: "not-requested", publicModerationStatus: "pending",
+    })),
+  });
+  const handler = createPluginLabProposalPostHandler({
+    environment: { ...environment, OPEN_ENA_PUBLIC_ORIGIN: "https://www.ena.hk", ENA_PLUGIN_LAB_PROPOSALS_ENABLED: "true" },
+    storeFactory: async () => sharedStore,
+  });
+  const response = await handler(new Request("https://www.ena.hk/api/plugin-lab/proposals", {
+    method: "POST", body: JSON.stringify(input),
+    headers: { origin: "https://www.ena.hk", "content-type": "application/json" },
+  }));
+  assert.equal(response.status, 201);
+  const principal: OpenEnaPrincipal = { principalRef: "operator", jti: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", issuedAtSeconds: 1, expiresAtSeconds: 2_000_000_000 };
+  const inbox = await readPluginLabOperatorInbox("valid-v2", {
+    environment, verifyOperator: async () => principal, storeFactory: async () => sharedStore,
+  });
+  assert.ok(inbox);
+  assert.equal(inbox.records.length, 1);
+  assert.deepEqual(inbox.records[0].submission, expected);
+  assert.throws(() => parsePluginProposalSubmission({ ...input, referenceLinks: `${input.referenceLinks}x` }), /referenceLinks is invalid/iu);
 });

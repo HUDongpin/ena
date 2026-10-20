@@ -8,6 +8,7 @@ import {
   OPEN_ENA_3D_AXIS_COLORS,
   OPEN_ENA_3D_UI_REVISION,
   axisTraces,
+  literalGlText,
   displayAspectRatio,
   scaledCamera,
   type OpenEna3dPlotSpec,
@@ -678,11 +679,11 @@ function compileUnitTraces(input: {
     traces.push({
       type: "scatter3d",
       mode: input.showUnitLabels ? "markers+text" : "markers",
-      name: `${groupIndex + 1}. ${group.name} units · ${pointStyle}`,
+      name: `${groupIndex + 1}. ${escapeHoverText(group.name)} units · ${pointStyle}`,
       x: coordinates.map((point) => point[0]),
       y: coordinates.map((point) => point[1]),
       z: coordinates.map((point) => point[2]),
-      text: units,
+      text: units.map(literalGlText),
       customdata: coordinates.map((point, pointIndex) => (
         pointHover(units[pointIndex]!, group.name, point, input.dimensions)
       )),
@@ -879,9 +880,10 @@ export function compileOpenEnaOrdered3dPlotSpec(
       y: renderedNodeIndices.map(index => labelCoordinates[index]![1]),
       z: renderedNodeIndices.map(index => labelCoordinates[index]![2]),
       ids: renderedNodeIndices.map(index => model.nodes[index]!.code),
-      text: renderedNodeIndices.map(index => openEnaRenderedCodeLabel(input, model.nodes[index]!.code)),
+      text: renderedNodeIndices.map(index => literalGlText(openEnaRenderedCodeLabel(input, model.nodes[index]!.code))),
+      customdata: renderedNodeIndices.map(index => escapeHoverText(openEnaRenderedCodeLabel(input, model.nodes[index]!.code))),
       textposition: "top center", textfont: { color: "#263740", size: 12 },
-      hovertemplate: "%{text}<extra></extra>", showlegend: false,
+      hovertemplate: "%{customdata}<extra></extra>", showlegend: false,
       meta: { role: "code-label", analysisKind: "ona", scope: resolvedScope },
     });
   }

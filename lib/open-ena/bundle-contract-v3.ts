@@ -35,7 +35,7 @@ import type {
   ResolvedExecutionRowOrderingV3,
   ResolvedExecutionHorizonOrderingV3,
 } from "./model-v3/execution-plan";
-import { MAX_ESTIMATED_ROTATION_WORK_UNITS_V3 } from "./model-v3/resource-budget";
+import { MAX_ESTIMATED_ROTATION_WORK_UNITS_V3, MAX_ESTIMATED_EXPORT_BYTES_V3, MAX_ESTIMATED_STRUCTURAL_BYTES_V3, MAX_ESTIMATED_PEAK_BYTES_V3, MAX_ESTIMATED_NUMERIC_CELLS_V3 } from "./model-v3/resource-budget";
 import type {
   BoundResultV3,
   BoundStandardResultV3,
@@ -419,11 +419,22 @@ function assertResources(
       "totalExportBytes",
       "totalStructuralBytes",
     ];
+    if (op.version === "open-ena-ona-operational-v2") fields.push("sourceProofJsonBytes", "sourceProofCaptureBytes", "sourceProofSerializationBytes");
+    else same(op.version, "open-ena-ona-operational-v1", "ONA operational version");
     keys(op, ["version", "stages", ...fields]);
     fields.forEach((field) =>
       integer((op as unknown as Record<string, unknown>)[field]),
     );
-    same(op.version, "open-ena-ona-operational-v1", "ONA operational version");
+    if (op.version === "open-ena-ona-operational-v2") {
+      if (op.sourceProofCaptureBytes < op.sourceProofJsonBytes
+        || op.sourceProofSerializationBytes !== 8 * op.sourceProofCaptureBytes
+        || op.sourceProofCaptureBytes > op.totalExportBytes
+        || op.sourceProofSerializationBytes > op.totalStructuralBytes
+        || op.totalExportBytes > MAX_ESTIMATED_EXPORT_BYTES_V3
+        || op.totalStructuralBytes > MAX_ESTIMATED_STRUCTURAL_BYTES_V3
+        || op.totalPeakBytes > MAX_ESTIMATED_PEAK_BYTES_V3
+        || op.totalNumericCells > MAX_ESTIMATED_NUMERIC_CELLS_V3) fail("ONA source serialization admission");
+    }
     keys(op.stages, [
       "sourceCaptureCells",
       "accumulationCells",
@@ -2042,7 +2053,7 @@ export async function assertPortableBundleContractV3(
     );
     if (ona) {
       assertOnaEvidence(result as BoundOnaResultV3);
-      assertOnaInternalDerivationsV3(result.set);
+      assertOnaInternalDerivationsV3(result.set, { allowHistoricalCentering: true });
     } else {
       const p = (result as BoundStandardResultV3).executionProvenance;
       assertStandardInternalDerivationsV3(

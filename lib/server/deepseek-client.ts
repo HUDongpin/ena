@@ -11,6 +11,7 @@ import {
   getApprovedOpenEnaAiPromptArtifact,
   instantiateOpenEnaAiResponseSchema,
 } from "./open-ena-ai-prompt-governance";
+import { OPEN_ENA_BILLABLE_MAX_PROVIDER_REQUEST_MS } from "./open-ena-billable";
 
 export const OPEN_ENA_AI_DEFAULT_MODEL = "deepseek-flash";
 export const OPEN_ENA_AI_MAX_COMPLETION_TOKENS = OPEN_ENA_AI_PROMPT_SPEC_V1.tokenBudget;
@@ -50,11 +51,13 @@ export type LunaClientErrorCode =
 export class LunaClientError extends Error {
   readonly code: LunaClientErrorCode;
   readonly providerDispatched: boolean;
-  constructor(code: LunaClientErrorCode, message: string, providerDispatched = false) {
+  readonly usage: OpenEnaProviderUsage | null;
+  constructor(code: LunaClientErrorCode, message: string, providerDispatched = false, usage: OpenEnaProviderUsage | null = null) {
     super(message);
     this.name = "LunaClientError";
     this.code = code;
     this.providerDispatched = providerDispatched;
+    this.usage = usage;
   }
 }
 
@@ -105,7 +108,7 @@ function peakCostMicroUsd(inputTokens: number, outputTokens: number) {
   ) / 1_000_000);
 }
 
-function readUsage(value: unknown, reservationMicroUsd: number | undefined): OpenEnaProviderUsage | null {
+function readUsage(value: unknown): OpenEnaProviderUsage | null {
   if (!value || typeof value !== "object") return null;
   const usage = value as Record<string, unknown>;
   const input = usage.input_tokens;
@@ -114,7 +117,9 @@ function readUsage(value: unknown, reservationMicroUsd: number | undefined): Ope
   if (![input, output, total].every((item) => typeof item === "number" && Number.isSafeInteger(item) && item >= 0)
     || total !== (input as number) + (output as number)) return null;
   const cost = peakCostMicroUsd(input as number, output as number);
-  if (!Number.isSafeInteger(cost) || (reservationMicroUsd !== undefined && cost > reservationMicroUsd)) return null;
+  // A valid overrun must reach settlement: clipping it to the reservation would
+  // understate spend and suppress the ledger's reservation-overrun alert.
+  if (!Number.isSafeInteger(cost)) return null;
   return { promptTokens: input as number, completionTokens: output as number, totalTokens: total as number, costMicroUsd: cost };
 }
 
@@ -184,7 +189,7 @@ export async function generateLunaInterpretation(
     throw new LunaClientError("invalid-configuration", "AI interpretation provider model is not approved.");
   }
   const timeoutMs = options.timeoutMs ?? 20_000;
-  if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > OPEN_ENA_BILLABLE_MAX_PROVIDER_REQUEST_MS) {
     throw new LunaClientError("invalid-configuration", "AI interpretation provider configuration is invalid.");
   }
   const reservation = options.reservationMicroUsd;
@@ -211,11 +216,13 @@ export async function generateLunaInterpretation(
     options.signal?.aborted ? "AI interpretation provider request was cancelled." : "AI interpretation provider timed out.",
     dispatched,
   );
+  let activeResponse: Response | undefined;
   try {
     let balance: Response;
     try {
       balance = await fetcher(`${DEEPSEEK_BASE_URL}/user/balance`, {
         headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+        redirect: "error",
         signal: controller.signal,
       });
     } catch {
@@ -223,6 +230,7 @@ export async function generateLunaInterpretation(
       reportFailure("balance-network");
       throw new LunaClientError("upstream-network", "AI interpretation provider could not be reached.");
     }
+    activeResponse = balance;
     if (!balance.ok) {
       reportFailure("balance-http", balance.status);
       throw requestError(balance.status, false);
@@ -241,6 +249,7 @@ export async function generateLunaInterpretation(
     try {
       upstream = await fetcher(`${DEEPSEEK_BASE_URL}/responses`, {
         method: "POST",
+        redirect: "error",
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
         body: JSON.stringify({
           model,
@@ -260,6 +269,7 @@ export async function generateLunaInterpretation(
       reportFailure("responses-network");
       throw new LunaClientError("upstream-network", "AI interpretation provider could not be reached.", true);
     }
+    activeResponse = upstream;
     if (!upstream.ok) {
       reportFailure("responses-http", upstream.status);
       throw requestError(upstream.status, true);
@@ -273,6 +283,9 @@ export async function generateLunaInterpretation(
       throw new LunaClientError("upstream-malformed", "AI interpretation returned an invalid response.", true);
     }
     const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+    // Usage is independent of the scientific response contract. A paid response
+    // can be unusable while still carrying valid, accountable provider usage.
+    const usage = readUsage(record.usage);
     const output = Array.isArray(record.output) ? record.output : [];
     const texts = output.flatMap((item) => {
       if (!item || typeof item !== "object") return [];
@@ -285,7 +298,7 @@ export async function generateLunaInterpretation(
     });
     if (record.status !== "completed" || texts.length !== 1 || texts[0].includes(apiKey)) {
       reportFailure("responses-shape");
-      throw new LunaClientError("upstream-malformed", "AI interpretation returned an invalid response.", true);
+      throw new LunaClientError("upstream-malformed", "AI interpretation returned an invalid response.", true, usage);
     }
     try {
       const response = parseOpenEnaAiInterpretationResponse({
@@ -297,12 +310,18 @@ export async function generateLunaInterpretation(
         generatedAt: (options.clock ?? (() => new Date()))().toISOString(),
         interpretation: JSON.parse(texts[0]),
       }, normalized);
-      return { response, usage: readUsage(record.usage, reservation), providerDispatched: true };
+      return { response, usage, providerDispatched: true };
     } catch (error) {
       reportFailure(contractFailureStage(error));
-      throw new LunaClientError("upstream-malformed", "AI interpretation returned an invalid response.", true);
+      throw new LunaClientError("upstream-malformed", "AI interpretation returned an invalid response.", true, usage);
     }
   } finally {
+    // HTTP/header rejection does not consume the body. Cancel it before
+    // clearing the deadline so an unread provider stream cannot keep its
+    // connection alive after this generation has already failed.
+    if (activeResponse?.body && !activeResponse.bodyUsed) {
+      void activeResponse.body.cancel().catch(() => undefined);
+    }
     clearTimeout(timeout);
     options.signal?.removeEventListener("abort", abortFromCaller);
   }

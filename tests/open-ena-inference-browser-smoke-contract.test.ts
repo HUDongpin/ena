@@ -22,3 +22,18 @@ test("inference browser gate uses the native production workflow and retains its
   const workflow = readFileSync(join(process.cwd(), ".github/workflows/open-ena-ci.yml"), "utf8");
   assert.ok(workflow.indexOf("node tests/open-ena-inference-browser-smoke.mjs") > workflow.indexOf("npm run test:browser:longitudinal-v3"));
 });
+
+test("keyboard return to Comparison reopens the remounted tables after checking focus", () => {
+  const source = readFileSync(join(process.cwd(), "tests/open-ena-inference-browser-smoke.mjs"), "utf8");
+  const keyboard = source.slice(source.indexOf('await stage("keyboard Stats tabs'), source.indexOf('await stage("aggregate AI preview'));
+  const focus = keyboard.indexOf('"Tab reaches the focusable result panel"');
+  const widths = keyboard.indexOf("const widths = []");
+  assert.ok(focus >= 0 && widths > focus);
+  const preparation = keyboard.slice(focus, widths);
+  for (const summary of ["Native comparison statistics", "Researcher-requested post-model inference"]) {
+    assert.ok(preparation.includes(`filter({ hasText: /^${summary}$/ }).click()`), `reopen ${summary} after the keyboard focus assertion`);
+  }
+  assert.match(keyboard, /assert\.ok\(wraps\.length >= 2\)/u);
+  assert.match(keyboard, /wraps\.every\(node => node\.tabIndex === 0/u);
+  assert.match(keyboard, /wraps\.some\(node => node\.scrollWidth > node\.clientWidth\)/u);
+});

@@ -20,6 +20,7 @@ export function runOpenEnaProductionAuthOperator(input: {
   mode: OpenEnaOperatorMode;
   environment?: Readonly<Record<string, string | undefined>>;
   migrationSql?: string;
+  expiryMigrationSql?: string;
   expectedFinalGitSha?: string;
   deploymentId?: string;
   dependencies?: Record<string, unknown>;

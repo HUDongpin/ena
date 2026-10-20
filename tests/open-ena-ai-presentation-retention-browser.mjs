@@ -10,6 +10,7 @@ const bundle = await build({
       import React, { useState } from 'react';
       import { createRoot } from 'react-dom/client';
       import Ai from './components/open-ena/OpenEnaAiInterpretation';
+      import { openEnaAiOperationOwnerKey } from './lib/open-ena/ai-operation-owner';
       import { getOpenEnaCopy } from './lib/open-ena-i18n';
       import { analyzeDataset } from './lib/open-ena/analyze';
       import { parseCsv } from './lib/open-ena/csv';
@@ -21,6 +22,7 @@ const bundle = await build({
       const HASH = 'b'.repeat(64);
       const ANALYZED_AT = '2026-09-27T06:00:00.000Z';
       const LOCAL = 'retention-local-identity';
+      const operationOwnerKey = openEnaAiOperationOwnerKey('synthetic-presentation-retention-principal');
 
       function bindResult(result, configuration) {
         return {
@@ -113,6 +115,7 @@ const bundle = await build({
         return (
           <div data-render-serial={serial}>
             <Ai
+              operationOwnerKey={operationOwnerKey}
               request={current.request}
               localScientificIdentity={current.localScientificIdentity}
               copy={getOpenEnaCopy(current.locale).aiInterpretation}

@@ -233,36 +233,22 @@ test("the failure alert states the evidence boundary and retries only retryable 
   assert.match(aiComponent, /data-ena-ai-retained-interpretation=["']previous["'][\s\S]*?\{copy\.previousInterpretation\}/);
 });
 
-test("a settled failure class renews the operation without a server new-operation header", async () => {
+test("failure messages and malformed success cannot grant operation renewal", async () => {
   const module = await import("../components/open-ena/OpenEnaAiInterpretation") as Record<string, unknown>;
-  const consumed = module.openEnaAiDeclaredFailureConsumedOperation as ((failureClass: unknown) => boolean) | undefined;
-  assert.equal(typeof consumed, "function");
-  assert.equal(consumed!("invalid-output"), true);
-  assert.equal(consumed!("network"), true);
-  assert.equal(consumed!("unavailable"), true);
-  assert.equal(consumed!("session"), false);
-  assert.equal(consumed!(null), false);
-  assert.equal(consumed!(undefined), false);
-  assert.equal(consumed!("not-a-class"), false);
-
-  const handler = sourceBlock(
-    aiComponent,
-    /async function\s+handleGenerateInterpretation\s*\([^)]*\)/,
-    "handleGenerateInterpretation",
-  );
-  assert.match(
-    handler,
-    /if\s*\(response\.status\s*===\s*409\)\s*clearOperation\(\);\s*else if\s*\(mayRenewOpenEnaAiOperation\(response,\s*operationId\)\)\s*clearOperation\(\);\s*else if\s*\(openEnaAiDeclaredFailureConsumedOperation\(declaredFailureClass\)\)\s*clearOperation\(\)/,
-  );
-  assert.match(
-    handler,
-    /clearOperation\(\);\s*const failureClass = classifyOpenEnaAiPanelFailure\(\{\s*status: response\.status,\s*cause: ["']invalid-output["']/,
-  );
-  const networkAt = handler.indexOf('cause: "network"');
-  const payloadAt = handler.indexOf("const payload", networkAt);
-  assert.ok(networkAt !== -1 && payloadAt > networkAt);
-  assert.doesNotMatch(handler.slice(networkAt, payloadAt), /clearOperation\(/);
-  assert.doesNotMatch(handler, /openEnaAiDeclaredFailureConsumedOperation\(failureClass\)/);
+  const renew = module.mayRenewOpenEnaAiOperation as (response: Response, operationId: string) => boolean;
+  assert.equal(typeof renew, "function");
+  const operationId = "aiop-01234567-89ab-4cde-8f01-23456789abcd";
+  for (const status of [200, 429, 502, 503, 504]) {
+    for (const failureClass of ["network", "unavailable", "invalid-output"]) {
+      assert.equal(renew(new Response(JSON.stringify({ failureClass }), { status }), operationId), false);
+    }
+  }
+  const headers = { "x-open-ena-ai-retry": "new-operation", "x-open-ena-ai-operation-id": operationId };
+  assert.equal(renew(new Response("not-json", { status: 200, headers }), operationId), false);
+  assert.equal(renew(new Response(null, { status: 503, headers }), operationId), true);
+  assert.equal(renew(new Response(null, { status: 503, headers }), "another-operation"), false);
+  // The browser regressions additionally execute the real component and assert
+  // retained IDs and one provider dispatch for failed or malformed responses.
 });
 
 test("a second retry cannot claim the generation while one is in flight", async () => {

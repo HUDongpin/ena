@@ -4,7 +4,9 @@
  * Pinned package 0.2.0-implemented-unverified.12, src/trajectory-statistics.ts
  * (source-map lines 328-1091,1491-1497): normalization, path centroids/distances,
  * independent history pooling, metricDescriptors, permutationTests, holmAdjust.
- * Only paired/bootstrap branches are omitted; arithmetic/order/limits unchanged.
+ * Paired/bootstrap branches are omitted. Cohorts, ordering and RNG are unchanged.
+ * Common-frame arithmetic and adaptive inclusive permutation tails follow
+ * docs/open-ena-permutation-roundoff-v1.md instead of strict SDK comparisons.
  * This pure numerical port confers NO bound-result, currentness or receipt authority.
  * Original source SHA256: a2bc95586cc1868298a6bc31e9f2d4b8d17fd26bd2ba00055f1972ebdf6cd9e8
  * Installed index.js SHA256: dc84642d3aff7e253b4416071943ccbb379c0a9096a5f2412fd0b4df4458465f
@@ -625,7 +627,220 @@ export function holmAdjust(pValues: number[]): number[] {
   return adjusted;
 }
 
-function permutationTests(data: ComparisonData, input: IndependentTrajectoryComparisonInput, observedPeriods: TrajectoryComparisonPeriod[]): TrajectoryPermutationTest[] {
+/** Conservative additional live scratch for common-frame rows, time indexes,
+ * and exact original/current-allocation caches. Includes weighted binary64
+ * integer widths; no cache is retained across candidate allocations. */
+export function trajectoryPermutationScratchBytes(points: number, dimensions: number, periods: number, tests: number): number {
+  return points * ((dimensions + 3) * 16 + 128) + periods * dimensions * 4096 + tests * 8192;
+}
+
+/** One common midpoint per coordinate, across both groups and all periods.
+ * Translating before centroid arithmetic removes an irrelevant large origin
+ * without removing real movement between periods. Midpoints cannot overflow. */
+function translatedComparisonData(original: ComparisonData): { data: ComparisonData; origin: number[] } {
+  const dimensions = original.left.dimensions.length;
+  const minimum = Array<number>(dimensions).fill(Infinity), maximum = Array<number>(dimensions).fill(-Infinity);
+  for (const unit of original.independentUnits!) for (const row of unit.periods) row.fullCoordinates.forEach((value, i) => {
+    minimum[i] = Math.min(minimum[i]!, value); maximum[i] = Math.max(maximum[i]!, value);
+  });
+  const origin = minimum.map((value, i) => Number.isFinite(value) ? value / 2 + maximum[i]! / 2 : 0);
+  const translated = new Map<TrajectoryParticipantPeriod, TrajectoryParticipantPeriod>();
+  const row = (point: TrajectoryParticipantPeriod) => {
+    if (!point.includedInCohort) return point;
+    let value = translated.get(point);
+    if (!value) {
+      const fullCoordinates = subtract(point.fullCoordinates, origin);
+      value = { ...point, fullCoordinates, selectedCoordinates: original.left.selectedIndexes.map(i => fullCoordinates[i]!) as [number, number, number] };
+      translated.set(point, value);
+    }
+    return value;
+  };
+  const path = (input: TrajectoryPathStatistics) => {
+    const participantPeriods = input.participantPeriods.map(row);
+    const periods = input.periods.map(period => {
+      const used = participantPeriods.filter(p => p.includedInCohort && p.time.canonical === period.time.canonical);
+      const fullCentroid = participantCentroid(used, p => p.fullCoordinates, dimensions, input.estimand);
+      return { ...period, fullCentroid, selectedCentroid: fullCentroid === null ? null : original.left.selectedIndexes.map(i => fullCentroid[i]!) as [number, number, number] };
+    });
+    const selected = distanceMetrics(periods.map(p => p.selectedCentroid), input.selectedDimensions);
+    const full = distanceMetrics(periods.map(p => p.fullCentroid), input.dimensions);
+    return { ...input, participantPeriods, periods: periods.map((p, i) => ({ ...p, selected3d: selected[i]!, fullSpace: full[i]! })) };
+  };
+  return { origin, data: { ...original, pathA: path(original.pathA), pathB: path(original.pathB),
+    independentUnits: original.independentUnits!.map(unit => ({ ...unit, periods: unit.periods.map(row) })) } };
+}
+
+/** Exact dyadic means and squared norms, with bounded root intervals.
+ * Observed statistics are resolved once; candidate work is adaptive.
+ * Every finite double is an integer multiple of 2^-1074. The common factor
+ * cancels from comparisons, including weighted ratios; no rounding threshold
+ * can turn an exactly distinct coordinate contrast into a tie. */
+function exactMetricTail(data: ComparisonData) {
+  const zero = BigInt(0), one = BigInt(1), extraBits = BigInt(128);
+  const buffer = new DataView(new ArrayBuffer(8));
+  const integer = (value: number) => {
+    buffer.setFloat64(0, value);
+    const bits = buffer.getBigUint64(0), exponent = Number((bits >> BigInt(52)) & BigInt(2047));
+    const fraction = bits & ((BigInt(1) << BigInt(52)) - BigInt(1));
+    const magnitude = exponent === 0 ? fraction : ((BigInt(1) << BigInt(52)) | fraction) << BigInt(exponent - 1);
+    return bits >> BigInt(63) ? -magnitude : magnitude;
+  };
+  const originalA = new Set(data.pathA.participantPeriods.filter(p => p.includedInCohort).map(p => JSON.stringify([data.left.namespace, p.participant.canonical])));
+  const originalIndexes = new Set(data.unitOrder.flatMap((key, i) => originalA.has(key) ? [i] : []));
+  const pointsByTime = data.independentUnits!.map(unit => new Map(unit.periods.map(point => [point.time.canonical, point])));
+  interface ExactMeans { sumA: bigint[]; sumB: bigint[]; weightA: bigint; weightB: bigint }
+  interface ExactStep { low: bigint; high: bigint; cumulativeLow: bigint; cumulativeHigh: bigint }
+  interface ExactScore { numerator: bigint; denominator: bigint; low: bigint; high: bigint; value: number }
+  const cache = () => ({ means: new Map<number, ExactMeans>(), steps: new Map<string, ExactStep[]>(), scores: new Map<string, ExactScore>() });
+  const sqrtFloor = (n: bigint) => {
+    if (n < BigInt(2)) return n;
+    let root = one << BigInt(Math.ceil(n.toString(2).length / 2));
+    for (;;) { const next = (root + n / root) >> one; if (next >= root) return root; root = next; }
+  };
+  const sqrtInterval = (numerator: bigint, denominator: bigint) => {
+    const scaled = numerator << (BigInt(2) * extraBits), root = sqrtFloor(scaled / denominator);
+    return { low: root, high: root * root * denominator === scaled ? root : root + one };
+  };
+  const asNumber = (value: bigint) => {
+    const negative = value < zero, magnitude = negative ? -value : value;
+    const shift = Math.max(0, magnitude.toString(2).length - 1022);
+    const exponent = shift - 1074 - Number(extraBits), first = Math.max(-1022, exponent);
+    return (negative ? -1 : 1) * (Number(magnitude >> BigInt(shift)) * 2 ** first) * 2 ** (exponent - first);
+  };
+  const contrast = (metric: MetricDescriptor, sideA: Set<number>, computed: ReturnType<typeof cache>): ExactScore => {
+    const cached = computed.scores.get(metric.id);
+    if (cached) return cached;
+    const save = (score: ExactScore) => { computed.scores.set(metric.id, score); return score; };
+    const axes = metric.distanceSpace === null ? [data.left.dimensions.indexOf(metric.metric.slice("coordinate:".length))]
+      : metric.distanceSpace === "selected-3d" ? data.left.selectedIndexes : data.left.dimensions.map((_, i) => i);
+    const means = (timeIndex: number) => {
+      let full = computed.means.get(timeIndex);
+      if (!full) {
+      const time = data.left.timeOrder[timeIndex]!.canonical;
+      const sumA = data.left.dimensions.map(() => zero), sumB = data.left.dimensions.map(() => zero);
+      let weightA = zero, weightB = zero;
+      pointsByTime.forEach((points, index) => {
+        const point = points.get(time);
+        if (!point) return;
+        const weight = data.left.estimand === "weighted-participant" ? integer(point.participantWeight) : one;
+        const sums = sideA.has(index) ? sumA : sumB;
+        point.fullCoordinates.forEach((value, i) => { sums[i]! += integer(value) * weight; });
+        if (sideA.has(index)) weightA += weight; else weightB += weight;
+      });
+      full = { sumA, sumB, weightA, weightB };
+      computed.means.set(timeIndex, full);
+      }
+      return { ...full, sumA: axes.map(i => full!.sumA[i]!), sumB: axes.map(i => full!.sumB[i]!) };
+    };
+    if (metric.metric === "step-distance-difference" || metric.metric === "cumulative-distance-difference") {
+      const steps = computed.steps.get(metric.distanceSpace!) ?? [{ low: zero, high: zero, cumulativeLow: zero, cumulativeHigh: zero }];
+      computed.steps.set(metric.distanceSpace!, steps);
+      for (let time = steps.length; time <= metric.timeIndex; time++) {
+        let low = zero, high = zero;
+        const previous = means(time - 1);
+        const current = means(time);
+        // A missing early period invalidates cumulative distance, but must not
+        // prevent a later adjacent step. Float metric admission preserves nulls.
+        if (previous.weightA === zero || previous.weightB === zero || current.weightA === zero || current.weightB === zero) {
+          steps.push({ low: zero, high: zero, cumulativeLow: zero, cumulativeHigh: zero });
+          continue;
+        }
+        const norm = (now: bigint[], before: bigint[], nowWeight: bigint, beforeWeight: bigint) => ({
+          numerator: now.reduce((sum, value, i) => { const delta = value * beforeWeight - before[i]! * nowWeight; return sum + delta * delta; }, zero),
+          denominator: (nowWeight * beforeWeight) ** BigInt(2),
+        });
+        const a = norm(current.sumA, previous.sumA, current.weightA, previous.weightA);
+        const b = norm(current.sumB, previous.sumB, current.weightB, previous.weightB);
+        // Equal rational squared norms have exactly equal roots, even when
+        // irrational. Preserve that identity before subtracting intervals.
+        if (a.numerator * b.denominator !== b.numerator * a.denominator) {
+          const ai = sqrtInterval(a.numerator, a.denominator), bi = sqrtInterval(b.numerator, b.denominator);
+          low += bi.low - ai.high; high += bi.high - ai.low;
+        }
+        steps.push({ low, high, cumulativeLow: steps[time - 1]!.cumulativeLow + low, cumulativeHigh: steps[time - 1]!.cumulativeHigh + high });
+      }
+      const step = steps[metric.timeIndex]!;
+      const low = metric.metric === "step-distance-difference" ? step.low : step.cumulativeLow;
+      const high = metric.metric === "step-distance-difference" ? step.high : step.cumulativeHigh;
+      const absoluteLow = low <= zero && high >= zero ? zero : (low < zero ? -high : low);
+      const absoluteHigh = (low < zero ? -low : low) > (high < zero ? -high : high) ? (low < zero ? -low : low) : (high < zero ? -high : high);
+      return save({ numerator: zero, denominator: one, low: absoluteLow, high: absoluteHigh, value: asNumber((low + high) / BigInt(2)) });
+    }
+    const { sumA, sumB, weightA, weightB } = means(metric.timeIndex);
+    const differences = axes.map((_, i) => sumB[i]! * weightA - sumA[i]! * weightB);
+    const denominator = weightA * weightB;
+    if (metric.distanceSpace === null) return save({ numerator: differences[0]! < zero ? -differences[0]! : differences[0]!, denominator,
+      low: zero, high: zero, value: asNumber((differences[0]! << extraBits) / denominator) });
+    const numerator = differences.reduce((sum, value) => sum + value * value, zero), squaredDenominator = denominator * denominator;
+    return save({ numerator, denominator: squaredDenominator, low: zero, high: zero, value: asNumber(sqrtInterval(numerator, squaredDenominator).low) });
+  };
+  const observed = cache();
+  let priorReplicate: number[] | undefined, candidateCache = cache(), candidateIndexes = new Set<number>();
+  return { observed: (metric: MetricDescriptor) => contrast(metric, originalIndexes, observed).value,
+    compare: (metric: MetricDescriptor, replicate: number[]) => {
+    if (replicate !== priorReplicate) { priorReplicate = replicate; candidateCache = cache(); candidateIndexes = new Set(replicate.slice(0, data.sideACount!)); }
+    const target = contrast(metric, originalIndexes, observed);
+    const isPath = metric.metric === "step-distance-difference" || metric.metric === "cumulative-distance-difference";
+    if (isPath ? target.low === zero && target.high === zero : target.numerator === zero) return { extreme: true, observed: target.value };
+    const candidate = contrast(metric, candidateIndexes, candidateCache);
+    if (metric.metric === "step-distance-difference" || metric.metric === "cumulative-distance-difference") {
+      return { extreme: candidate.high >= target.low, observed: target.value };
+    }
+    const left = candidate.numerator * target.denominator, right = target.numerator * candidate.denominator;
+    if (left >= right) return { extreme: true, observed: target.value };
+    if (metric.distanceSpace === null) return { extreme: false, observed: target.value };
+    // Exact squared norms remove cancellation/mean/norm arithmetic errors.
+    // A relative allowance remains for fitted-rotation precision; it scales
+    // with the actual separation, never with an unrelated origin or scatter.
+    const dimensions = metric.distanceSpace === "selected-3d" ? 3 : data.left.dimensions.length;
+    return { extreme: ((right - left) << BigInt(52)) <= BigInt(32 + 4 * dimensions) * right, observed: target.value };
+  } };
+}
+
+/** Comparison-only forward-roundoff allowance, in the metric's own units.
+ * Compensated means still round their per-row divisions and final subtraction.
+ * Use the contributing coordinates, not a cancelled near-zero statistic, as
+ * the scale. No absolute floor or unrelated dimension affects coordinate tests.
+ * See the versioned policy for the operation budgets and unchanged estimands. */
+function permutationRoundoffAllowances(data: ComparisonData, metrics: MetricDescriptor[]): number[] {
+  const dimensionCount = data.left.dimensions.length;
+  const scales = data.left.timeOrder.map(() => Array<number>(dimensionCount).fill(0));
+  const timeIndexes = new Map(data.left.timeOrder.map((time, index) => [time.canonical, index]));
+  for (const path of [data.pathA, data.pathB]) for (const row of path.participantPeriods) {
+    if (!row.includedInCohort) continue;
+    const scale = scales[timeIndexes.get(row.time.canonical)!]!;
+    row.fullCoordinates.forEach((value, index) => { scale[index] = Math.max(scale[index]!, Math.abs(value)); });
+  }
+  // Equal-participant means use compensated summation. Weighted means also
+  // have a sequential weight denominator, whose error grows with pool size.
+  const meanOperations = 32 + (data.left.estimand === "weighted-participant" ? 2 * data.unitOrder.length : 0);
+  const coordinateErrors = scales.map(scale => scale.map(value => value * (meanOperations * Number.EPSILON)));
+  const distances = (indexes: number[]) => {
+    // Scale before hypot: a finite error allowance must not overflow merely
+    // because the unscaled coordinate norm exceeds the representable range.
+    const errors = scales.map(scale => Math.hypot(...indexes.map(index => scale[index]! * ((meanOperations + 4 * indexes.length) * Number.EPSILON))));
+    let cumulative = 0;
+    return errors.map((separation, time) => {
+      const step = time === 0 ? 0 : 2 * (separation + errors[time - 1]!);
+      cumulative += step;
+      return { separation, step, cumulative: cumulative * (time + 1) };
+    });
+  };
+  const selected = distances(data.left.selectedIndexes), full = distances(Array.from({ length: dimensionCount }, (_, i) => i));
+  return metrics.map(metric => {
+    if (metric.distanceSpace === null) {
+      const axis = data.left.dimensions.indexOf(metric.metric.slice("coordinate:".length));
+      return coordinateErrors[metric.timeIndex]![axis]!;
+    }
+    const error = (metric.distanceSpace === "selected-3d" ? selected : full)[metric.timeIndex]!;
+    const allowance = metric.metric === "centroid-separation" ? error.separation
+      : metric.metric === "step-distance-difference" ? error.step : error.cumulative;
+    if (!Number.isFinite(allowance)) reject("TRAJECTORY_NUMERIC_OVERFLOW", "comparison.roundoffAllowance", "permutation comparison uncertainty exceeds the finite numeric range");
+    return allowance;
+  });
+}
+
+function permutationTests(data: ComparisonData, input: IndependentTrajectoryComparisonInput, observedPeriods: TrajectoryComparisonPeriod[], original: ComparisonData): TrajectoryPermutationTest[] {
   const plan = input.permutationPlan;
   if (!plan) return [];
   validateUnitOrder(plan.unitOrder, data.unitOrder, "input.permutationPlan.unitOrder");
@@ -635,33 +850,67 @@ function permutationTests(data: ComparisonData, input: IndependentTrajectoryComp
   plan.replicates.forEach((replicate, index) => validateIndexList(replicate, data.unitOrder.length, `input.permutationPlan.replicates[${index}]`, input.design === "independent"));
   const observed = metricDescriptors(observedPeriods, data.left.selectedDimensions);
   if (observed.length > Math.min(data.left.limits.maxTests, data.right.limits.maxTests)) reject("TRAJECTORY_TEST_LIMIT", "comparison.tests", "exceeds configured maxTests");
-  const values = observed.map(() => [] as number[]);
+  const roundoff = permutationRoundoffAllowances(data, observed);
+  const exactTail = exactMetricTail(original);
+  // Fix every threshold before looking at the first replicate. This also
+  // makes the exported observed statistic independent of permutation order.
+  for (const metric of observed) {
+    metric.observed = exactTail.observed(metric);
+    const period = observedPeriods[metric.timeIndex]!;
+    if (metric.distanceSpace === null) {
+      const axis = metric.metric.slice("coordinate:".length);
+      period.selectedDifference![data.left.selectedDimensions.indexOf(axis)] = metric.observed;
+      period.fullDifference![data.left.dimensions.indexOf(axis)] = metric.observed;
+    } else if (metric.metric === "centroid-separation") {
+      if (metric.distanceSpace === "selected-3d") period.selectedCentroidSeparation = metric.observed;
+      else period.fullCentroidSeparation = metric.observed;
+    } else if (metric.metric === "step-distance-difference") {
+      if (metric.distanceSpace === "selected-3d") period.selectedStepDistanceDifference = metric.observed;
+      else period.fullStepDistanceDifference = metric.observed;
+    } else {
+      if (metric.distanceSpace === "selected-3d") period.selectedCumulativeDistanceDifference = metric.observed;
+      else period.fullCumulativeDistanceDifference = metric.observed;
+    }
+  }
+  const counts = observed.map(() => 0), extreme = observed.map(() => 0);
   for (const replicate of plan.replicates) {
     const map = metricMap(comparisonPeriods(permutedCentroidRows(data, input, replicate)), data.left.selectedDimensions);
     observed.forEach((metric, index) => {
       const value = map.get(metric.id);
-      if (value !== undefined && Number.isFinite(value)) values[index]!.push(value);
+      if (value === undefined || !Number.isFinite(value)) return;
+      counts[index]! += 1;
+      const threshold = metric.tail === "upper" ? metric.observed : Math.abs(metric.observed);
+      const score = metric.tail === "upper" ? value : Math.abs(value);
+      // A subnormal relative-error bound cannot cover absolute underflow
+      // rounding. Use exact arithmetic in that regime; this is a dispatch
+      // decision, not an absolute statistical tie tolerance.
+      const ambiguous = roundoff[index]! < 2 ** -1022
+        || Math.abs(threshold - score) <= roundoff[index]!;
+      if (ambiguous ? exactTail.compare(metric, replicate).extreme : score >= threshold) extreme[index]! += 1;
     });
   }
-  const raw = observed.map((metric, index) => {
-    const permutations = values[index]!;
-    const exceedances = permutations.filter((value) => metric.tail === "upper" ? value >= metric.observed : Math.abs(value) >= Math.abs(metric.observed)).length;
-    return (1 + exceedances) / (1 + permutations.length);
-  });
+  const raw = observed.map((_, index) => (1 + extreme[index]!) / (1 + counts[index]!));
   const adjusted = holmAdjust(raw);
   return observed.map((metric, index) => ({
     ...metric,
     pValue: raw[index]!,
     holmAdjustedPValue: adjusted[index]!,
-    permutationCount: values[index]!.length
+    permutationCount: counts[index]!
   }));
 }
 
 export function compareTrajectoryPaths(input: IndependentTrajectoryComparisonInput): TrajectoryComparisonResult {
-  const data = buildComparisonData(input);
+  const original = buildComparisonData(input);
+  const points = original.independentUnits!.reduce((count, unit) => count + unit.periods.length, 0);
+  const scratchBytes = trajectoryPermutationScratchBytes(points, original.left.dimensions.length, original.left.timeOrder.length, 9 * original.left.timeOrder.length - 4);
+  if (scratchBytes > 64 * 1024 * 1024) reject("TRAJECTORY_BYTE_LIMIT", "comparison.scratch", "comparison scratch exceeds 64 MiB");
+  const { data, origin } = translatedComparisonData(original);
   const rows = baseCentroidRows(data, input.design);
   const periods = comparisonPeriods(rows);
-  const tests = permutationTests(data, input, periods);
+  const tests = permutationTests(data, input, periods, original);
+  const restore = (values: number[] | null, selected = false) => values === null ? null : values.map((value, i) => value + origin[selected ? data.left.selectedIndexes[i]! : i]!);
+  const restorePath = (path: TrajectoryPathStatistics, prior: TrajectoryPathStatistics) => ({ ...path, participantPeriods: prior.participantPeriods,
+    periods: path.periods.map(p => ({ ...p, fullCentroid: restore(p.fullCentroid), selectedCentroid: restore(p.selectedCentroid, true) as [number, number, number] | null })) });
   const diagnostics: TrajectoryStatisticsDiagnostic[] = [];
   if (periods.some((period) => period.nAUsed < 2 || period.nBUsed < 2)) diagnostics.push({ code: "DEGENERATE_COMPARISON_GROUP", severity: "warning", message: "At least one comparison slice has fewer than two participant clusters." });
   if (!input.permutationPlan) diagnostics.push({ code: "PERMUTATION_NOT_REQUESTED", severity: "info", message: "No p-values were computed because no caller-bound permutation plan was supplied." });
@@ -670,9 +919,11 @@ export function compareTrajectoryPaths(input: IndependentTrajectoryComparisonInp
     design: input.design,
     direction: "B-minus-A",
     pairedId: null,
-    sideA: data.pathA,
-    sideB: data.pathB,
-    periods,
+    sideA: restorePath(data.pathA, original.pathA),
+    sideB: restorePath(data.pathB, original.pathB),
+    periods: periods.map(p => ({ ...p, fullCentroidA: restore(p.fullCentroidA), fullCentroidB: restore(p.fullCentroidB),
+      selectedCentroidA: restore(p.selectedCentroidA, true) as [number, number, number] | null,
+      selectedCentroidB: restore(p.selectedCentroidB, true) as [number, number, number] | null })),
     tests,
     permutation: {
       status: input.permutationPlan ? "complete" : "not-requested",

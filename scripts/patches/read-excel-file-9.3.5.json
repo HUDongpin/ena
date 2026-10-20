@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 1,
+  "package": "read-excel-file",
+  "version": "9.3.5",
+  "license": "MIT",
+  "resolved": "https://registry.npmjs.org/read-excel-file/-/read-excel-file-9.3.5.tgz",
+  "integrity": "sha512-A4EbaJxFrqzBNdU4Lw0g6wzme3m7ywW3MsPLLuBiGPUWJbxETyVDT5vyqsOnl/AW48OGM4MGoOgKFsEZNMMVVw==",
+  "packageJsonSha256": "99b41e237442e4cf1825f6db3d2af59ad18e59c9147cb29ff4be3da5d712b7f0",
+  "licenseSha256": "8cf9b31947daf7adb4a7a00a037459e58241af050cd0a603bfcf1756e533f75e",
+  "purpose": "Preserve optional metadata fallbacks, Excel 1900 dates, and complete XML character data during native XLSX import. Defer progress collection until worksheet data opens. Normalize literal XML line endings before character-reference decoding and chunk boundaries. Decode complete inline/shared ST_Xstring elements once before rich-run concatenation, and decode complete cached string values once without interpreting non-string cells.",
+  "targets": [
+    {
+      "path": "modules/xlsx/parseSpreadsheetContents.js",
+      "upstreamSha256": "926bc64dd276aa8e9567bdf5b29f9bfdc461c33157a168cee7ea400fac6ac69f",
+      "patchedSha256": "54a85135c9af2e8ea4ffc1ee056b130a43f0c43b80635adb2a5fd88af54f92ea",
+      "before": "return readFiles(getXmlFilesAtNonFixedPaths(filePaths), contents, parseXml).then(",
+      "after": "return Promise.resolve(readFiles(getXmlFilesAtNonFixedPaths(filePaths), contents, parseXml)).then("
+    },
+    {
+      "path": "commonjs/xlsx/parseSpreadsheetContents.js",
+      "upstreamSha256": "26f0df3216c2481b138a2107ecaee1a7fdcef62d32b049d691eff82c550a4ab3",
+      "patchedSha256": "8dde1cd4cc621ab5c71a8637daabcb17f6d6893c20b75555210e2ef5546bf9c7",
+      "before": "return readFiles(getXmlFilesAtNonFixedPaths(filePaths), contents, parseXml).then(",
+      "after": "return Promise.resolve(readFiles(getXmlFilesAtNonFixedPaths(filePaths), contents, parseXml)).then("
+    },
+    {
+      "path": "modules/xlsx/parseExcelTimestamp.js",
+      "upstreamSha256": "f217f91a28087d4164d184e902e0f4b4085eb2806573cfa26ed7b5b61f05c8b8",
+      "patchedSha256": "37aa5e3b54e689a070a7e005dd07331460889a751417d18f5b867526aa194a7a",
+      "before": "  if (epoch1904) {\n",
+      "after": "  // Excel serials 1–59 precede its fictional 1900-02-29. Preserve the\n  // real calendar, and reject that unrepresentable day instead of aliasing it.\n  if (!epoch1904) {\n    if (excelSerialDate >= 60 && excelSerialDate < 61) {\n      throw new Error(\"Excel date serial represents the nonexistent 1900-02-29.\");\n    }\n    if (excelSerialDate >= 1 && excelSerialDate < 60) excelSerialDate += 1;\n  }\n  if (epoch1904) {\n"
+    },
+    {
+      "path": "commonjs/xlsx/parseExcelTimestamp.js",
+      "upstreamSha256": "5942f122beb4aa21bd36d49c2e5250e09253c3168c45b16c86a17d90d69c7df0",
+      "patchedSha256": "4ffcdb44278ce800ce849bba808f0eb49e9b283097ddefe546c0326e7f392922",
+      "before": "  if (epoch1904) {\n",
+      "after": "  // Excel serials 1–59 precede its fictional 1900-02-29. Preserve the\n  // real calendar, and reject that unrepresentable day instead of aliasing it.\n  if (!epoch1904) {\n    if (excelSerialDate >= 60 && excelSerialDate < 61) {\n      throw new Error(\"Excel date serial represents the nonexistent 1900-02-29.\");\n    }\n    if (excelSerialDate >= 1 && excelSerialDate < 60) excelSerialDate += 1;\n  }\n  if (epoch1904) {\n"
+    },
+    {
+      "path": "modules/xlsx/parseSheet.js",
+      "upstreamSha256": "5ace21f19dfe753b4065715555ef63aa00e6790364a421b1dd8cbf57459ccf80",
+      "patchedSha256": "758a49fdfda16ea7b8defc466a738ece215bd7df875c074d0dd02c3953f0002a",
+      "before": "  function onTextInCell(text, state) {\n    if (state.v) {\n      state.vText = text;\n    } else if (state.is) {\n      if (state.rPh) {\n        // Ignore anything inside `<rPh/>` tags\n      } else if (state.t) {\n        if (state.r) {\n          // An `<r/>` element could contain multiple `<t/>` elements,\n          // the text content from all of which should be concatenated.\n          state.inlineString += text;\n        } else {\n          state.inlineString = text;\n        }\n      }\n    }\n  }\n",
+      "after": "  function onTextInCell(text, state) {\n    if (state.v) {\n      state.vText = (state.vText || '') + text;\n    } else if (state.is) {\n      if (state.rPh) {\n        // Ignore anything inside `<rPh/>` tags\n      } else if (state.t) {\n        if (state.r) {\n          // An `<r/>` element could contain multiple `<t/>` elements,\n          // the text content from all of which should be concatenated.\n          state.inlineString += text;\n        } else {\n          state.inlineString += text;\n        }\n      }\n    }\n  }\n",
+      "previousSha256": "f63e03d9483bf43d5ca2f06410c8cace1365979341e671f08f11e69601044836",
+      "followup": {
+        "before": "  function onProgress(end) {\n",
+        "after": "  function onProgress(end) {\n    // Valid worksheet metadata or formatting may span initial XML chunks.\n    if (!state.sheetData) return;\n"
+      },
+      "revision": {
+        "previousSha256": "986cf685ba6b2b2c2c0436eea8f1d1c718a7e6c0b6d125d15a1d89ce21231df9",
+        "replacements": [
+          {
+            "before": "      t: false,\n      r: false,",
+            "after": "      t: false,\n      tText: '',\n      r: false,"
+          },
+          {
+            "before": "    } else if (tagName === 't') {\n      state.t = true;",
+            "after": "    } else if (tagName === 't') {\n      state.t = true;\n      state.tText = '';"
+          },
+          {
+            "before": "    } else if (tagName === 't') {\n      state.t = false;",
+            "after": "    } else if (tagName === 't') {\n      // Decode each complete ST_Xstring once, before rich runs concatenate.\n      if (state.is && !state.rPh) state.inlineString += state.tText.replace(/_x([0-9a-fA-F]{4})_/g, function (_, hex) { return String.fromCharCode(parseInt(hex, 16)); });\n      state.tText = '';\n      state.t = false;"
+          },
+          {
+            "before": "        if (state.r) {\n          // An `<r/>` element could contain multiple `<t/>` elements,\n          // the text content from all of which should be concatenated.\n          state.inlineString += text;\n        } else {\n          state.inlineString += text;\n        }",
+            "after": "        state.tText += text;"
+          },
+          {
+            "before": "      state.vText || (state.vText = '');",
+            "after": "      state.vText || (state.vText = '');\n      // Cached string results also use ST_Xstring; decode only the complete value.\n      if (state.attributes.t === 'str') state.vText = state.vText.replace(/_x([0-9a-fA-F]{4})_/g, function (_, hex) { return String.fromCharCode(parseInt(hex, 16)); });"
+          }
+        ]
+      }
+    },
+    {
+      "path": "modules/xlsx/parseSharedStrings.js",
+      "upstreamSha256": "59153adf43177189455a68dbe4673a452f2d0e4e0f0726760bb4de3fa1ebbbf2",
+      "patchedSha256": "95ec0a3edcfbf7a523aaf9e457f351a63283d0b6a616dcf94ffcee04f6591965",
+      "before": "      } else {\n        state.string = text;\n      }",
+      "after": "      } else {\n        state.string += text;\n      }",
+      "revision": {
+        "previousSha256": "6abd0b3231ce86ccd3ef3c0822365c61207c9a52a02c0472cf4ab107e2f2eadc",
+        "replacements": [
+          {
+            "before": "      t: false,\n      r: false,",
+            "after": "      t: false,\n      tText: '',\n      r: false,"
+          },
+          {
+            "before": "    if (tagName === 't') {\n      state.t = true;",
+            "after": "    if (tagName === 't') {\n      state.t = true;\n      state.tText = '';"
+          },
+          {
+            "before": "    if (tagName === 't') {\n      state.t = false;",
+            "after": "    if (tagName === 't') {\n      // Decode each complete ST_Xstring once, before rich runs concatenate.\n      if (!state.rPh) state.string += state.tText.replace(/_x([0-9a-fA-F]{4})_/g, function (_, hex) { return String.fromCharCode(parseInt(hex, 16)); });\n      state.tText = '';\n      state.t = false;"
+          },
+          {
+            "before": "      if (state.r) {\n        // An `<r/>` element could contain multiple `<t/>` elements,\n        // the text content from all of which should be concatenated.\n        state.string += text;\n      } else {\n        state.string += text;\n      }",
+            "after": "      state.tText += text;"
+          }
+        ]
+      }
+    },
+    {
+      "path": "modules/xml/parseXmlStream.saxen.js",
+      "upstreamSha256": "53df70f9feee917ec098aa3f248de5f8151887c8acf848d0dcdd2cb004aa82b7",
+      "patchedSha256": "e60764338d74da89e6324812bc195c8ad535f032e5c0a7be2b35137a2edc72c7",
+      "before": "    parser.on('text', ontext);",
+      "after": "    parser.on('text', ontext);\n    // CDATA contains literal character data: do not decode entity-like text.\n    parser.on('cdata', function (text) {\n      if (onText) onText(text, state);\n    });"
+    },
+    {
+      "path": "commonjs/xlsx/parseSheet.js",
+      "upstreamSha256": "14b5afdd023e183f208e23ee446306a788a2087d07a2b5612d0b96bf1a48cef4",
+      "patchedSha256": "387a39ed45cb18ec99418e4a4bac2bc7adde57cdf1ab1218d136efcb4bc10e69",
+      "before": "  function onTextInCell(text, state) {\n    if (state.v) {\n      state.vText = text;\n    } else if (state.is) {\n      if (state.rPh) {\n        // Ignore anything inside `<rPh/>` tags\n      } else if (state.t) {\n        if (state.r) {\n          // An `<r/>` element could contain multiple `<t/>` elements,\n          // the text content from all of which should be concatenated.\n          state.inlineString += text;\n        } else {\n          state.inlineString = text;\n        }\n      }\n    }\n  }\n",
+      "after": "  function onTextInCell(text, state) {\n    if (state.v) {\n      state.vText = (state.vText || '') + text;\n    } else if (state.is) {\n      if (state.rPh) {\n        // Ignore anything inside `<rPh/>` tags\n      } else if (state.t) {\n        if (state.r) {\n          // An `<r/>` element could contain multiple `<t/>` elements,\n          // the text content from all of which should be concatenated.\n          state.inlineString += text;\n        } else {\n          state.inlineString += text;\n        }\n      }\n    }\n  }\n",
+      "previousSha256": "17393602b739c17e94e52df861b1be182e3656d7a071279fc0645bf7d2dcb531",
+      "followup": {
+        "before": "  function onProgress(end) {\n",
+        "after": "  function onProgress(end) {\n    // Valid worksheet metadata or formatting may span initial XML chunks.\n    if (!state.sheetData) return;\n"
+      },
+      "revision": {
+        "previousSha256": "e0f679978ec2dca26308ffa56836ea6e14d6fdc32a8a6af570d387dd0fc123d9",
+        "replacements": [
+          {
+            "before": "      t: false,\n      r: false,",
+            "after": "      t: false,\n      tText: '',\n      r: false,"
+          },
+          {
+            "before": "    } else if (tagName === 't') {\n      state.t = true;",
+            "after": "    } else if (tagName === 't') {\n      state.t = true;\n      state.tText = '';"
+          },
+          {
+            "before": "    } else if (tagName === 't') {\n      state.t = false;",
+            "after": "    } else if (tagName === 't') {\n      // Decode each complete ST_Xstring once, before rich runs concatenate.\n      if (state.is && !state.rPh) state.inlineString += state.tText.replace(/_x([0-9a-fA-F]{4})_/g, function (_, hex) { return String.fromCharCode(parseInt(hex, 16)); });\n      state.tText = '';\n      state.t = false;"
+          },
+          {
+            "before": "        if (state.r) {\n          // An `<r/>` element could contain multiple `<t/>` elements,\n          // the text content from all of which should be concatenated.\n          state.inlineString += text;\n        } else {\n          state.inlineString += text;\n        }",
+            "after": "        state.tText += text;"
+          },
+          {
+            "before": "      state.vText || (state.vText = '');",
+            "after": "      state.vText || (state.vText = '');\n      // Cached string results also use ST_Xstring; decode only the complete value.\n      if (state.attributes.t === 'str') state.vText = state.vText.replace(/_x([0-9a-fA-F]{4})_/g, function (_, hex) { return String.fromCharCode(parseInt(hex, 16)); });"
+          }
+        ]
+      }
+    },
+    {
+      "path": "commonjs/xlsx/parseSharedStrings.js",
+      "upstreamSha256": "d233d016145ee0bca2f556002cbd6c7f1d6f935f0268e9325d65e240c39212df",
+      "patchedSha256": "052a543200e8f996108a303d3964086225a3747066a48b5072d27468717da0a3",
+      "before": "      } else {\n        state.string = text;\n      }",
+      "after": "      } else {\n        state.string += text;\n      }",
+      "revision": {
+        "previousSha256": "5119e9d410fc12e4a067578bceb9eb59220e0a346030c81fde24b11f2c2c54b2",
+        "replacements": [
+          {
+            "before": "      t: false,\n      r: false,",
+            "after": "      t: false,\n      tText: '',\n      r: false,"
+          },
+          {
+            "before": "    if (tagName === 't') {\n      state.t = true;",
+            "after": "    if (tagName === 't') {\n      state.t = true;\n      state.tText = '';"
+          },
+          {
+            "before": "    if (tagName === 't') {\n      state.t = false;",
+            "after": "    if (tagName === 't') {\n      // Decode each complete ST_Xstring once, before rich runs concatenate.\n      if (!state.rPh) state.string += state.tText.replace(/_x([0-9a-fA-F]{4})_/g, function (_, hex) { return String.fromCharCode(parseInt(hex, 16)); });\n      state.tText = '';\n      state.t = false;"
+          },
+          {
+            "before": "      if (state.r) {\n        // An `<r/>` element could contain multiple `<t/>` elements,\n        // the text content from all of which should be concatenated.\n        state.string += text;\n      } else {\n        state.string += text;\n      }",
+            "after": "      state.tText += text;"
+          }
+        ]
+      }
+    },
+    {
+      "path": "commonjs/xml/parseXmlStream.saxen.js",
+      "upstreamSha256": "4c2b6a7b3c07c50b5085563e29979dfd8bdbea7ff24bceaea75a5f937bd74e04",
+      "patchedSha256": "bee7efd9f7418b9e92d1d31f38c1160e56665cc3960077b98da2e9c162ed5a03",
+      "before": "    parser.on('text', ontext);",
+      "after": "    parser.on('text', ontext);\n    // CDATA contains literal character data: do not decode entity-like text.\n    parser.on('cdata', function (text) {\n      if (onText) onText(text, state);\n    });"
+    },
+    {
+      "path": "modules/xml/parseXml.js",
+      "upstreamSha256": "5ada1d9663d788ed5f8e4d8a2c7c63f4ae08acd36dbd297001e0f349bf0ef756",
+      "patchedSha256": "603b31b86336513b626b4687f6be5fe8321ec5bdbeaf67af2c63c4b0f14067a5",
+      "before": "  var parser = parseXmlStream(state, onOpenTag, onCloseTag, onText);",
+      "after": "  // XML 1.0 line endings normalize before markup and character references.\n  xml = xml.replace(/\\r\\n?/g, '\\n');\n  var parser = parseXmlStream(state, onOpenTag, onCloseTag, onText);"
+    },
+    {
+      "path": "commonjs/xml/parseXml.js",
+      "upstreamSha256": "775ee498aa8a0c52b519af275e6ef46f81a05f053f0274dd5725c1f037380ac0",
+      "patchedSha256": "d2f991565b4a046c9222d738abc2995fddb973fe2071851431d7df2dd1430170",
+      "before": "  var parser = (0, _parseXmlStream[\"default\"])(state, onOpenTag, onCloseTag, onText);",
+      "after": "  // XML 1.0 line endings normalize before markup and character references.\n  xml = xml.replace(/\\r\\n?/g, '\\n');\n  var parser = (0, _parseXmlStream[\"default\"])(state, onOpenTag, onCloseTag, onText);"
+    }
+  ]
+}

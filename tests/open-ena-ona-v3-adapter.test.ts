@@ -195,7 +195,9 @@ test("the ONA ledger counts actual full/compact containers and generated table k
   assert.equal(admission.resultIdentityBytes, estimateResultIdentityBytesV3(dataset, configuration));
   assert.equal(admission.numericSerializationBytes, 192 * admission.compactScientificCells);
   assert.equal(admission.metadataSerializationBytes, 8 * admission.resultIdentityBytes);
-  assert.equal(admission.totalStructuralBytes, plan.header.resourceEstimate.estimatedStructuralBytes + admission.metadataSerializationBytes);
+  assert.equal(admission.version, "open-ena-ona-operational-v2");
+  if (admission.version !== "open-ena-ona-operational-v2") throw new Error("New plans require current source admission");
+  assert.equal(admission.totalStructuralBytes, plan.header.resourceEstimate.estimatedStructuralBytes + admission.metadataSerializationBytes + admission.sourceProofSerializationBytes);
   assert.equal(admission.totalPeakBytes, Math.max(plan.header.resourceEstimate.estimatedPeakBytes,
     plan.header.resourceEstimate.estimatedWorkerMaterializationBytes + admission.totalStructuralBytes + 8 * admission.totalNumericCells + admission.numericSerializationBytes));
   assert.equal(plan.sourceProof.dataset.sizeBytes, new TextEncoder().encode(csv).byteLength);
@@ -208,7 +210,7 @@ test("the ONA ledger counts actual full/compact containers and generated table k
     bufferedRowsPeakUpperBound: 2, numericCellsUpperBound: admission.totalNumericCells, peakBytesUpperBound: admission.totalPeakBytes, observationMethod: "dimension-bounds-and-chunk-boundary-stream-state" });
   const actualBytes = new TextEncoder().encode(canonicalJsonV3(result)).byteLength;
   assert.ok(actualBytes <= admission.totalExportBytes, `${actualBytes} > ${admission.totalExportBytes}`);
-  assert.equal(admission.totalExportBytes, Math.max(plan.header.resourceEstimate.estimatedExportBytes, admission.resultIdentityBytes + 24 * admission.compactScientificCells));
+  assert.equal(admission.totalExportBytes, Math.max(plan.header.resourceEstimate.estimatedExportBytes, admission.resultIdentityBytes + 24 * admission.compactScientificCells) + admission.sourceProofCaptureBytes);
   assert.deepEqual(await bindings.validateBoundResultV3(JSON.parse(canonicalJsonV3(result)), plan), result);
 });
 

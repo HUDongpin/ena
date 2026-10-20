@@ -27,6 +27,7 @@ export type MigrationReviewReasonV3 =
   | "horizon-order"
   | "means-direction"
   | "reference-content-hash"
+  | "legacy-standard-zero-backward"
   | "ona-directional-mask"
   | "ona-text-collation";
 
@@ -264,7 +265,10 @@ function standardDraftV3(config: OpenEnaConfig): StandardEnaDraftV3 {
     model: config.model,
     windowType: config.window,
     movingStanza: {
-      backward: extentV3(config.windowSizeBack, true),
+      // Legacy Standard windows always included the current row, so 0 and 1
+      // had the same extent. Preserve that meaning in v3's minimum-one grammar.
+      // This rule is Standard-only; ONA has always required at least one row.
+      backward: extentV3(config.windowSizeBack === 0 ? 1 : config.windowSizeBack, true),
       forward: extentV3(config.windowSizeForward, false),
       rowOrder: null,
     },
@@ -394,6 +398,7 @@ export function migrateLegacyOpenEnaConfigToDraftV3(
   }
   const standard = standardDraftV3(decoded);
   const requiresReview: MigrationReviewReasonV3[] = [
+    ...(decoded.windowSizeBack === 0 ? ["legacy-standard-zero-backward" as const] : []),
     ...(decoded.window === "MovingStanzaWindow" ? ["row-order" as const] : []),
     ...(decoded.model === "EndPoint" ? [] : ["horizon-order" as const]),
     ...(decoded.rotation === "mean" ? ["means-direction" as const] : []),

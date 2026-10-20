@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const RECEIPT_SCHEMA = "open-ena.production-auth-operator.v1";
 const MIGRATION_ID = "004_open_ena_disposable_accounts";
+const EXPIRY_MIGRATION_ID = "008_open_ena_disposable_expiry_after_lock";
 const SESSION_COOKIE_NAME = "open-ena-session";
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_READY_ATTEMPTS = 8;
@@ -36,6 +37,7 @@ const POSTCONDITION_KEYS = Object.freeze([
   "migration_004_constraints",
   "migration_004_index",
   "migration_004_function_contract",
+  "migration_008_function_contract",
 ]);
 const SAFE_FAILURE_CODES = new Set([
   "ACCOUNT_CONSUMPTION_NOT_OBSERVED",
@@ -184,7 +186,13 @@ SELECT
       AND lower(COALESCE(pg_get_functiondef(
         to_regprocedure('public.open_ena_consume_disposable_account(text,bytea)')
       ), '')) LIKE '%returning principal_ref%'
-  ) AS migration_004_function_contract
+  ) AS migration_004_function_contract,
+  (
+    SELECT COALESCE(pg_catalog.md5(pg_catalog.replace(p.prosrc, chr(13) || chr(10), chr(10)))
+      = '97c3f483614a4649fcdfd099ad3d7176', false)
+    FROM pg_catalog.pg_proc p
+    WHERE p.oid = to_regprocedure('public.open_ena_consume_disposable_account(text,bytea)')
+  ) AS migration_008_function_contract
 `;
 
 const INSERT_ACCOUNT_SQL = `
@@ -537,17 +545,31 @@ function checkMigrationPostconditions(result) {
   return Boolean(row && POSTCONDITION_KEYS.every((key) => row[key] === true));
 }
 
-async function applyMigrationAndVerify(database, migrationSql) {
+async function applyMigrationAndVerify(database, migrationSql, expiryMigrationSql) {
   try {
     await database.query("BEGIN");
     await database.query(
       "SELECT pg_advisory_xact_lock(hashtextextended($1, 0)) AS locked",
       ["open-ena:migration:004"],
     );
-    await database.query(migrationSql);
+    // Replaying 004 would replace existing function attributes and erase a
+    // patched or operator-reviewed body before 008 can inspect it.
+    const existing = await database.query(`SELECT
+      to_regclass('public.open_ena_disposable_accounts') IS NOT NULL AS disposable_table_present,
+      to_regprocedure('public.open_ena_consume_disposable_account(text,bytea)') IS NOT NULL AS disposable_function_present`);
+    const present = existing.rows?.[0];
+    if (!present || typeof present.disposable_table_present !== "boolean"
+      || typeof present.disposable_function_present !== "boolean"
+      || present.disposable_table_present !== present.disposable_function_present) {
+      fail("MIGRATION_POSTCONDITION_FAILED");
+    }
+    const legacyApplied = !present.disposable_function_present;
+    if (legacyApplied) await database.query(migrationSql);
+    await database.query(expiryMigrationSql);
     const postconditions = await database.query(POSTCONDITIONS_SQL);
     if (!checkMigrationPostconditions(postconditions)) fail("MIGRATION_POSTCONDITION_FAILED");
     await database.query("COMMIT");
+    return legacyApplied;
   } catch (error) {
     await database.query("ROLLBACK").catch(() => undefined);
     if (error instanceof OperatorError) throw error;
@@ -569,7 +591,12 @@ async function openDatabase(databaseFactory, databaseUrl) {
   return database;
 }
 
-function migrationReceipt(migrationSql, observedAtMilliseconds) {
+function migrationFiles(migrationSql, expiryMigrationSql, legacyApplied) {
+  return [[MIGRATION_ID, migrationSql, legacyApplied], [EXPIRY_MIGRATION_ID, expiryMigrationSql, true]]
+    .map(([id, sql, applied]) => ({ id, sha256: sha256(Buffer.from(sql, "utf8")), bytes: Buffer.byteLength(sql, "utf8"), applied }));
+}
+
+function migrationReceipt(migrationSql, expiryMigrationSql, observedAtMilliseconds, legacyApplied) {
   return {
     schemaVersion: RECEIPT_SCHEMA,
     status: "PASS",
@@ -583,9 +610,10 @@ function migrationReceipt(migrationSql, observedAtMilliseconds) {
     },
     migration: {
       id: MIGRATION_ID,
+      files: migrationFiles(migrationSql, expiryMigrationSql, legacyApplied),
       sha256: sha256(Buffer.from(migrationSql, "utf8")),
       bytes: Buffer.byteLength(migrationSql, "utf8"),
-      applied: true,
+      applied: legacyApplied,
       postconditions: Object.fromEntries(POSTCONDITION_KEYS.map((key) => [key, true])),
     },
   };
@@ -595,6 +623,7 @@ export async function runOpenEnaProductionAuthOperator({
   mode,
   environment = process.env,
   migrationSql,
+  expiryMigrationSql,
   expectedFinalGitSha,
   deploymentId,
   dependencies = {},
@@ -608,17 +637,18 @@ export async function runOpenEnaProductionAuthOperator({
   if (mode !== "migration" && mode !== "proof" && mode !== "all") fail("MODE_INVALID");
   if (mode === "all" && dependencies.allowCombinedMode !== true) fail("COMBINED_MODE_FORBIDDEN");
   if ((mode === "migration" || mode === "all")
-      && (typeof migrationSql !== "string" || migrationSql.length === 0)) {
+      && (typeof migrationSql !== "string" || migrationSql.length === 0
+        || typeof expiryMigrationSql !== "string" || expiryMigrationSql.length === 0)) {
     fail("MIGRATION_INPUT_INVALID");
   }
-  if (mode === "proof" && migrationSql !== undefined) fail("PROOF_MODE_MIGRATION_INPUT_FORBIDDEN");
+  if (mode === "proof" && (migrationSql !== undefined || expiryMigrationSql !== undefined)) fail("PROOF_MODE_MIGRATION_INPUT_FORBIDDEN");
 
   if (mode === "migration") {
     const configured = databaseConfiguration(environment);
     const database = await openDatabase(databaseFactory, configured.authDatabaseUrl);
     try {
-      await applyMigrationAndVerify(database, migrationSql);
-      return migrationReceipt(migrationSql, observedAtMilliseconds);
+      const legacyApplied = await applyMigrationAndVerify(database, migrationSql, expiryMigrationSql);
+      return migrationReceipt(migrationSql, expiryMigrationSql, observedAtMilliseconds, legacyApplied);
     } finally {
       await database.close().catch(() => undefined);
     }
@@ -679,6 +709,7 @@ export async function runOpenEnaProductionAuthOperator({
 
   let database;
   let provisioned = false;
+  let legacyMigrationApplied = false;
   let accountDisabled = false;
   let issuedSession = null;
   let sessionRevocationObserved = false;
@@ -691,7 +722,7 @@ export async function runOpenEnaProductionAuthOperator({
     }
 
     try {
-      if (mode === "all") await applyMigrationAndVerify(database, migrationSql);
+      if (mode === "all") legacyMigrationApplied = await applyMigrationAndVerify(database, migrationSql, expiryMigrationSql);
       else {
         const postconditions = await database.query(POSTCONDITIONS_SQL);
         if (!checkMigrationPostconditions(postconditions)) fail("MIGRATION_POSTCONDITION_FAILED");
@@ -859,13 +890,15 @@ export async function runOpenEnaProductionAuthOperator({
       },
       migration: mode === "all" ? {
         id: MIGRATION_ID,
+        files: migrationFiles(migrationSql, expiryMigrationSql, legacyMigrationApplied),
         sha256: sha256(Buffer.from(migrationSql, "utf8")),
         bytes: Buffer.byteLength(migrationSql, "utf8"),
-        applied: true,
+        applied: legacyMigrationApplied,
         verifiedPresent: true,
         postconditions: Object.fromEntries(POSTCONDITION_KEYS.map((key) => [key, true])),
       } : {
         id: MIGRATION_ID,
+        files: [MIGRATION_ID, EXPIRY_MIGRATION_ID].map((id) => ({ id, applied: false, verifiedPresent: true })),
         applied: false,
         verifiedPresent: true,
         postconditions: Object.fromEntries(POSTCONDITION_KEYS.map((key) => [key, true])),
@@ -1033,10 +1066,14 @@ async function executeCli(argv, environment) {
     const migrationSql = mode === "migration"
       ? await readFile(new URL("../migrations/004_open_ena_disposable_accounts.sql", import.meta.url), "utf8")
       : undefined;
+    const expiryMigrationSql = mode === "migration"
+      ? await readFile(new URL("../migrations/008_open_ena_disposable_expiry_after_lock.sql", import.meta.url), "utf8")
+      : undefined;
     const receipt = await runOpenEnaProductionAuthOperator({
       mode,
       environment,
       migrationSql,
+      expiryMigrationSql,
       expectedFinalGitSha: parsed.expectedFinalGitSha,
       deploymentId: parsed.deploymentId,
       dependencies: { databaseFactory: createDefaultPostgresDatabase },

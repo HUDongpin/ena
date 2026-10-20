@@ -203,6 +203,10 @@ try {
     assert.equal(await page.locator('[data-ena-stats-tab][tabindex="0"]').count(), 1);
     await page.keyboard.press("Tab");
     assert.ok(await page.locator('[data-ena-stats-panel="comparison"]').evaluate(node => document.activeElement === node), "Tab reaches the focusable result panel");
+    // Leaving Comparison unmounts its details. After proving keyboard focus,
+    // reopen the remounted tables through their visible summary controls.
+    await page.locator('[data-ena-stats-panel="comparison"] details > summary').filter({ hasText: /^Native comparison statistics$/ }).click();
+    await page.locator('[data-ena-stats-panel="comparison"] details > summary').filter({ hasText: /^Researcher-requested post-model inference$/ }).click();
     const widths = [];
     for (const width of [768, 390]) {
       await page.setViewportSize({ width, height: 844 });

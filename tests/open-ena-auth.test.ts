@@ -142,8 +142,9 @@ test("the localized Open ENA page renders a server-side login gate before the wo
   assert.match(page, /verifyProductionOpenEnaSessionTokenAny/);
   assert.match(page, /openEnaAuthSecurityConfigurationReady/);
   assert.doesNotMatch(page, /verifyOpenEnaSessionToken\(sessionCookie\)/);
-  assert.match(page, /isAuthenticated[\s\S]*?<OpenEnaWorkspace locale=\{typedLocale\}/);
-  assert.match(page, /!isAuthenticated[\s\S]*?<OpenEnaLogin[\s\S]*configurationReady=\{authConfigurationReady\}/);
+  assert.match(page, /const principal[\s\S]*?<OpenEnaWorkspace locale=\{typedLocale\}/);
+  assert.match(page, /!principal[\s\S]*?<OpenEnaLogin[\s\S]*configurationReady=\{authConfigurationReady\}/);
+  assert.match(page, /operationOwnerKey=\{openEnaAiOperationOwnerKey\(principal\.principalRef\)\}/);
   assert.match(page, /export const dynamic = "force-dynamic"/);
 });
 

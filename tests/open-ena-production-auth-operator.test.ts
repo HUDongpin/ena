@@ -10,6 +10,7 @@ const DATABASE_URL = "postgresql://operator:db-secret-value@same-db.invalid/open
 const SESSION_SECRET = "operator-session-secret-value-that-must-never-leak";
 const TARGET_ORIGIN = "https://production.example";
 const MIGRATION_SQL = "-- migration 004 fixture\nSELECT 'fixture migration';\n";
+const EXPIRY_MIGRATION_SQL = "-- migration 008 fixture\nSELECT 8;\n";
 const NOW_MILLISECONDS = 1_800_000_000_000;
 const JTI = "123e4567-e89b-42d3-a456-426614174000";
 const EXPECTED_FINAL_GIT_SHA = "a".repeat(40);
@@ -95,6 +96,7 @@ test("proof mode completes the disposable-account auth ceremony without executin
               migration_004_constraints: true,
               migration_004_index: true,
               migration_004_function_contract: true,
+                migration_008_function_contract: true,
             }],
           };
         }
@@ -365,6 +367,7 @@ test("a post-login failure revokes the issued session, disables the account, and
             migration_004_constraints: true,
             migration_004_index: true,
             migration_004_function_contract: true,
+                migration_008_function_contract: true,
           }],
         };
       }
@@ -462,7 +465,7 @@ test("a post-login failure revokes the issued session, disables the account, and
   ]) assert.equal(inspected.includes(forbidden), false);
 });
 
-test("migration mode applies 004 transactionally without credentials, HTTP, or new-auth configuration", async () => {
+test("migration mode applies 004 and 008 transactionally without credentials, HTTP, or new-auth configuration", async () => {
   const operator = await import("../scripts/run-open-ena-production-auth-operator.mjs");
   const queries: string[] = [];
   let closed = false;
@@ -473,10 +476,12 @@ test("migration mode applies 004 transactionally without credentials, HTTP, or n
       OPEN_ENA_BILLABLE_DATABASE_URL: DATABASE_URL,
     },
     migrationSql: MIGRATION_SQL,
+    expiryMigrationSql: EXPIRY_MIGRATION_SQL,
     dependencies: {
       databaseFactory: async () => ({
         async query(sql: string) {
           queries.push(sql);
+          if (sql.includes("AS disposable_table_present")) return { rows: [{ disposable_table_present: false, disposable_function_present: false }] };
           if (/to_regclass/u.test(sql)) {
             return {
               rowCount: 1,
@@ -493,6 +498,7 @@ test("migration mode applies 004 transactionally without credentials, HTTP, or n
                 migration_004_constraints: true,
                 migration_004_index: true,
                 migration_004_function_contract: true,
+                migration_008_function_contract: true,
               }],
             };
           }
@@ -516,6 +522,7 @@ test("migration mode applies 004 transactionally without credentials, HTTP, or n
     "migration_004_constraints",
     "migration_004_index",
     "migration_004_function_contract",
+    "migration_008_function_contract",
   ]) {
     assert.equal(receipt.migration.postconditions[key], true);
   }
@@ -523,13 +530,15 @@ test("migration mode applies 004 transactionally without credentials, HTTP, or n
   assert.equal(receipt.databaseBinding.allMigrationsPresentOnOneConnection, true);
   assert.equal(receipt.databaseBinding.migrationExecutionAndVerificationSameConnection, true);
   assert.equal(receipt.databaseBinding.migrationAndProvisioningSameConnection, undefined);
-  assert.deepEqual(queries.slice(0, 3), [
+  assert.deepEqual(queries.slice(0, 2), [
     "BEGIN",
     "SELECT pg_advisory_xact_lock(hashtextextended($1, 0)) AS locked",
-    MIGRATION_SQL,
   ]);
-  assert.match(queries[3], /to_regclass/u);
-  assert.equal(queries[4], "COMMIT");
+  assert.match(queries[2], /AS disposable_table_present/u);
+  assert.equal(queries[3], MIGRATION_SQL);
+  assert.equal(queries[4], EXPIRY_MIGRATION_SQL);
+  assert.match(queries[5], /to_regclass/u);
+  assert.equal(queries[6], "COMMIT");
   assert.equal(queries.some((sql) => /INSERT INTO open_ena_disposable_accounts/u.test(sql)), false);
 });
 

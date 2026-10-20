@@ -4,10 +4,11 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer } from "node:net";
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { OwnedSmokeLifecycle } from "./open-ena-models-v3-lifecycle.mjs";
+import { immutableBuildManifestV3 } from "./open-ena-build-custody-v3.mjs";
 const require = createRequire(import.meta.url);
 const hash = value => createHash("sha256").update(value).digest("hex");
 
@@ -37,9 +38,6 @@ function sourceManifest(root) {
     return { path, mode: (statSync(join(root, path)).mode & 0o777).toString(8), sha256: hash(readFileSync(join(root, path))) };
   });
 }
-function treeManifest(path, prefix = "") {
-  return readdirSync(path).sort().flatMap(name => { const relative = join(prefix, name); const full = join(path, name); return statSync(full).isDirectory() ? treeManifest(full, relative) : [{ path: relative, sha256: hash(readFileSync(full)) }]; });
-}
 async function port() {
   return new Promise((yes, no) => { const server = createServer(); server.once("error", no); server.listen(0, "127.0.0.1", () => { const value = server.address().port; server.close(error => error ? no(error) : yes(value)); }); });
 }
@@ -67,7 +65,7 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
   const json = (name, value) => writeFileSync(join(directory, name), JSON.stringify(value, null, 2) + "\n");
   const receipt = { status: "running", sourceGitSha: literalGit(root, ["rev-parse", "HEAD"]), sourceParentSha: literalGit(root, ["rev-parse", "HEAD^"]), harnessPid: process.pid, node: process.version, servedAssets: [], stages: [], consoleErrors: [], consoleWarnings: [], pageErrors: [] };
   const lifecycle = new OwnedSmokeLifecycle({ directory, redact: safe, overallMs: 1800000, onUpdate: state => { receipt.lifecycle = state; if (state.reason) { receipt.status = "fail"; receipt.failure = state.reason.message; } json("receipt.json", receipt); } });
-  let browser, page, databaseEntry, browserEntry, serverEntry, closing;
+  let browser, page, databaseEntry, browserEntry, serverEntry, closing, buildManifest;
   const database = join(directory, "postgres"), profile = join(directory, "browser-profile");
   const env = { ...process.env, NEXT_DIST_DIR: ".next", NODE_ENV: "production", NEXT_TELEMETRY_DISABLED: "1", OPEN_ENA_USERNAME: credentials.username, OPEN_ENA_PASSWORD: credentials.password, OPEN_ENA_SESSION_SECRET: credentials.secret, OPEN_ENA_ACCOUNT_ID: credentials.account ?? "task38-local-account", OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1", npm_config_cache: join(directory, "npm-cache") };
   const child = (label, command, args, timeout = 60000) => lifecycle.command(label, command, args, { cwd: root, env, logName: `${label}.log` }, timeout);
@@ -101,6 +99,7 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
     try {
       assert.equal(literalGit(root, ["rev-parse", "HEAD"]), receipt.sourceGitSha, "Git HEAD changed during browser gate");
       assert.deepEqual(sourceManifest(root), receipt.source, "source changed during browser gate");
+      if (buildManifest) assert.deepEqual(immutableBuildManifestV3(join(root, ".next")), buildManifest, "built content changed during browser gate");
       if (receipt.plotlyDependency) assert.deepEqual(verifyPlotlyDisposal(root), receipt.plotlyDependency, "applied Plotly dependency changed during browser gate");
       if (receipt.servedAssets.some(asset => asset.error || asset.status !== 200)) throw new Error("A served static asset response could not be verified");
     } catch (error) { receipt.cleanup.errors.push({ name: "source and served asset custody", message: safe(error.message) }); }
@@ -123,7 +122,7 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
     receipt.build = await child("build", "npm", ["run", "build"], 600000);
     assert.deepEqual(sourceManifest(root), receipt.source, "source changed during owned production build");
     receipt.plotlyDependency = verifyPlotlyDisposal(root); json("plotly-dependency.json", receipt.plotlyDependency);
-    const files = treeManifest(join(root, ".next")).filter(x => !x.path.startsWith("cache/") && !x.path.startsWith("diagnostics/") && !["trace", "trace-build"].includes(x.path));
+    const files = buildManifest = immutableBuildManifestV3(join(root, ".next"));
     json("build-files.json", files); receipt.build.contentSha256 = hash(JSON.stringify(files)); receipt.build.buildId = readFileSync(join(root, ".next/BUILD_ID"), "utf8").trim();
     await child("initdb", "initdb", ["--pgdata", database, "--auth", "trust", "--username", "postgres", "--encoding", "UTF8", "--no-locale"]);
     const databasePort = await port();

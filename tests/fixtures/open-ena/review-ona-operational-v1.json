@@ -1,0 +1,4041 @@
+{
+  "plan": {
+    "header": {
+      "schemaVersion": 3,
+      "analysisFamily": "ona",
+      "validationContractVersion": "open-ena-validation-v3.1",
+      "runtimePolicyVersion": "open-ena-runtime-policy-v3.1",
+      "executionContractVersion": "open-ena-execution-v3.1",
+      "datasetSha256": "9ab727db3d5e65ff936d340696a05083aad4e77559f89c00f11df01597dc3176",
+      "datasetHashKind": "canonical-first-xlsx-worksheet-v1-sha256",
+      "rowCount": 6,
+      "headerSha256": "6299819918e2afb75132e4692cb6d7ea2231fe4e5b378a51f820ca76c89a314f",
+      "datasetBinding": {
+        "hashKind": "canonical-first-xlsx-worksheet-v1-sha256",
+        "normalizedTableSha256": "9ab727db3d5e65ff936d340696a05083aad4e77559f89c00f11df01597dc3176",
+        "rowCount": 6,
+        "headerSha256": "6299819918e2afb75132e4692cb6d7ea2231fe4e5b378a51f820ca76c89a314f"
+      },
+      "configurationSha256": "4e92f8b20d2bca06a6779f3549016b7146fefbece28bb0d35ed21643a5c17da9",
+      "executionPlanSha256": "921a3a420f12ea7ab96e2aaf7a8707a5939eac292beca071b843410b34da0593",
+      "runtimeVersion": "0.7.0-ona.0",
+      "algorithmBuildSha": "90790856f00bdef63dbd27fc3a5b502e8cffe65f",
+      "resourceEstimate": {
+        "version": "open-ena-resource-v3.5",
+        "analysisFamily": "ona",
+        "rows": 6,
+        "units": 6,
+        "horizons": 1,
+        "windowPartitions": 1,
+        "codes": 3,
+        "adjacencyDimensions": 9,
+        "datasetSizeBytes": 2893,
+        "identityPayloadBytes": 2052,
+        "aggregateStateUpperBound": 1,
+        "estimatedStateCount": 20,
+        "estimatedStructuralBytes": 49950,
+        "endpointNetworks": 6,
+        "directionalMaskCells": 9,
+        "estimatedRotationWorkUnits": 1215,
+        "estimatedRotationMatrixBytes": 2808,
+        "estimatedForwardBufferRows": 0,
+        "estimatedRetainedWindowRows": 0,
+        "estimatedWindowStateCells": 11,
+        "estimatedWindowVisits": 6,
+        "estimatedNumericCells": 432,
+        "estimatedWorkerMaterializationBytes": 944,
+        "estimatedExportBytes": 1728,
+        "estimatedPeakBytes": 54350,
+        "blocked": false,
+        "blockedReasons": []
+      }
+    },
+    "configuration": {
+      "schemaVersion": 3,
+      "analysisFamily": "ona",
+      "contracts": {
+        "validationContractVersion": "open-ena-validation-v3.1",
+        "runtimePolicyVersion": "open-ena-runtime-policy-v3.1"
+      },
+      "units": {
+        "columns": [
+          "unit"
+        ],
+        "group": {
+          "type": "none"
+        }
+      },
+      "horizons": {
+        "columns": [
+          "horizon"
+        ]
+      },
+      "codes": [
+        {
+          "column": "A",
+          "displayLabel": "A"
+        },
+        {
+          "column": "B",
+          "displayLabel": "B"
+        },
+        {
+          "column": "C",
+          "displayLabel": "C"
+        }
+      ],
+      "model": {
+        "type": "EndPoint"
+      },
+      "weighting": {
+        "type": "frequency",
+        "engineMethod": "sum"
+      },
+      "window": {
+        "type": "MovingStanzaWindow",
+        "backward": {
+          "kind": "finite",
+          "value": 1
+        },
+        "forward": 0,
+        "rowOrder": {
+          "kind": "columns",
+          "keys": [
+            {
+              "column": "turn",
+              "direction": "ascending",
+              "comparator": {
+                "type": "number"
+              }
+            }
+          ]
+        }
+      },
+      "rotation": {
+        "type": "svd",
+        "centerAlignToOrigin": true
+      },
+      "directionalMask": {
+        "schemaVersion": 1,
+        "codeOrder": [
+          "A",
+          "B",
+          "C"
+        ],
+        "enabled": [
+          [
+            true,
+            true,
+            true
+          ],
+          [
+            true,
+            true,
+            true
+          ],
+          [
+            true,
+            true,
+            true
+          ]
+        ]
+      }
+    },
+    "sourceProof": {
+      "schemaVersion": 1,
+      "dataset": {
+        "name": "source-budget.typed.xlsx",
+        "source": "upload",
+        "hashKind": "canonical-first-xlsx-worksheet-v1-sha256",
+        "normalizedTableSha256": "9ab727db3d5e65ff936d340696a05083aad4e77559f89c00f11df01597dc3176",
+        "externalHashVerification": "provenance-only-no-normalized-table-preimage",
+        "rowCount": 6,
+        "sizeBytes": 2893
+      },
+      "headers": [
+        "unit",
+        "horizon",
+        "turn",
+        "A",
+        "B",
+        "C"
+      ],
+      "selectedColumns": [
+        "A",
+        "B",
+        "C",
+        "horizon",
+        "turn",
+        "unit"
+      ],
+      "rows": [
+        {
+          "sourceRowIndex": 0,
+          "values": {
+            "A": 1,
+            "B": 2,
+            "C": 1,
+            "horizon": "h",
+            "turn": 0,
+            "unit": "u0"
+          }
+        },
+        {
+          "sourceRowIndex": 1,
+          "values": {
+            "A": 2,
+            "B": 1,
+            "C": 2,
+            "horizon": "h",
+            "turn": 1,
+            "unit": "u1"
+          }
+        },
+        {
+          "sourceRowIndex": 2,
+          "values": {
+            "A": 1,
+            "B": 2,
+            "C": 3,
+            "horizon": "h",
+            "turn": 2,
+            "unit": "u2"
+          }
+        },
+        {
+          "sourceRowIndex": 3,
+          "values": {
+            "A": 2,
+            "B": 1,
+            "C": 1,
+            "horizon": "h",
+            "turn": 3,
+            "unit": "u3"
+          }
+        },
+        {
+          "sourceRowIndex": 4,
+          "values": {
+            "A": 1,
+            "B": 2,
+            "C": 2,
+            "horizon": "h",
+            "turn": 4,
+            "unit": "u4"
+          }
+        },
+        {
+          "sourceRowIndex": 5,
+          "values": {
+            "A": 2,
+            "B": 1,
+            "C": 3,
+            "horizon": "h",
+            "turn": 5,
+            "unit": "u5"
+          }
+        }
+      ],
+      "sourceProofSha256": "1f66d84a4b93bcc65d1021155f7a8029055a6a172079080651f6dfc1bbf989e2"
+    },
+    "identityDictionary": {
+      "units": [
+        {
+          "token": "__open_ena_unit_v3_000000",
+          "fields": [
+            {
+              "column": "unit",
+              "value": {
+                "type": "string",
+                "value": "u1"
+              }
+            }
+          ],
+          "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u1\"}}]}",
+          "sha256": "076daa03fa597844ae4e35cc9a7f25935166f9910263025057e25fb37709958c",
+          "displayLabel": "Unit unit=u1"
+        },
+        {
+          "token": "__open_ena_unit_v3_000001",
+          "fields": [
+            {
+              "column": "unit",
+              "value": {
+                "type": "string",
+                "value": "u3"
+              }
+            }
+          ],
+          "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u3\"}}]}",
+          "sha256": "0a422748b59eb71884792369e66125bcd2740374e58786cd71b02e2687147da3",
+          "displayLabel": "Unit unit=u3"
+        },
+        {
+          "token": "__open_ena_unit_v3_000002",
+          "fields": [
+            {
+              "column": "unit",
+              "value": {
+                "type": "string",
+                "value": "u5"
+              }
+            }
+          ],
+          "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u5\"}}]}",
+          "sha256": "4dd5a89737f74c17f0461f99d124567b470711b85f263fe5d7b5618ad1519ea7",
+          "displayLabel": "Unit unit=u5"
+        },
+        {
+          "token": "__open_ena_unit_v3_000003",
+          "fields": [
+            {
+              "column": "unit",
+              "value": {
+                "type": "string",
+                "value": "u4"
+              }
+            }
+          ],
+          "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u4\"}}]}",
+          "sha256": "9060317e88e114896155d12b2ce05b2cb868e50f6540b12bdab271233a356f45",
+          "displayLabel": "Unit unit=u4"
+        },
+        {
+          "token": "__open_ena_unit_v3_000004",
+          "fields": [
+            {
+              "column": "unit",
+              "value": {
+                "type": "string",
+                "value": "u2"
+              }
+            }
+          ],
+          "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u2\"}}]}",
+          "sha256": "aac9f17bd802cc9657e3a1fc07c04273f304512c99af2af2bcabbbca8819abb7",
+          "displayLabel": "Unit unit=u2"
+        },
+        {
+          "token": "__open_ena_unit_v3_000005",
+          "fields": [
+            {
+              "column": "unit",
+              "value": {
+                "type": "string",
+                "value": "u0"
+              }
+            }
+          ],
+          "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u0\"}}]}",
+          "sha256": "c6f0e922f45267d164d79415c8076c7671a1cf0f67256b07596ac18b7ed75dd2",
+          "displayLabel": "Unit unit=u0"
+        }
+      ],
+      "horizons": [
+        {
+          "token": "__open_ena_horizon_v3_000000",
+          "fields": [
+            {
+              "column": "horizon",
+              "value": {
+                "type": "string",
+                "value": "h"
+              }
+            }
+          ],
+          "canonicalJson": "{\"fields\":[{\"column\":\"horizon\",\"value\":{\"type\":\"string\",\"value\":\"h\"}}]}",
+          "sha256": "e9c007974c1302e93b18d091d1162f7b5407aac6f98c67c92923288d0f3034c4",
+          "displayLabel": "Horizon horizon=h"
+        }
+      ],
+      "groups": []
+    },
+    "codeDictionary": {
+      "codes": [
+        {
+          "token": "__open_ena_code_v3_000",
+          "sourceColumn": "A",
+          "displayLabel": "A",
+          "canonicalIdentity": "A"
+        },
+        {
+          "token": "__open_ena_code_v3_001",
+          "sourceColumn": "B",
+          "displayLabel": "B",
+          "canonicalIdentity": "B"
+        },
+        {
+          "token": "__open_ena_code_v3_002",
+          "sourceColumn": "C",
+          "displayLabel": "C",
+          "canonicalIdentity": "C"
+        }
+      ],
+      "edges": [
+        {
+          "token": "__open_ena_directed_edge_v3_000_000",
+          "sourceCodeIdentity": "A",
+          "targetCodeIdentity": "A",
+          "groundIndex": 0,
+          "responseIndex": 0
+        },
+        {
+          "token": "__open_ena_directed_edge_v3_001_000",
+          "sourceCodeIdentity": "B",
+          "targetCodeIdentity": "A",
+          "groundIndex": 1,
+          "responseIndex": 0
+        },
+        {
+          "token": "__open_ena_directed_edge_v3_002_000",
+          "sourceCodeIdentity": "C",
+          "targetCodeIdentity": "A",
+          "groundIndex": 2,
+          "responseIndex": 0
+        },
+        {
+          "token": "__open_ena_directed_edge_v3_000_001",
+          "sourceCodeIdentity": "A",
+          "targetCodeIdentity": "B",
+          "groundIndex": 0,
+          "responseIndex": 1
+        },
+        {
+          "token": "__open_ena_directed_edge_v3_001_001",
+          "sourceCodeIdentity": "B",
+          "targetCodeIdentity": "B",
+          "groundIndex": 1,
+          "responseIndex": 1
+        },
+        {
+          "token": "__open_ena_directed_edge_v3_002_001",
+          "sourceCodeIdentity": "C",
+          "targetCodeIdentity": "B",
+          "groundIndex": 2,
+          "responseIndex": 1
+        },
+        {
+          "token": "__open_ena_directed_edge_v3_000_002",
+          "sourceCodeIdentity": "A",
+          "targetCodeIdentity": "C",
+          "groundIndex": 0,
+          "responseIndex": 2
+        },
+        {
+          "token": "__open_ena_directed_edge_v3_001_002",
+          "sourceCodeIdentity": "B",
+          "targetCodeIdentity": "C",
+          "groundIndex": 1,
+          "responseIndex": 2
+        },
+        {
+          "token": "__open_ena_directed_edge_v3_002_002",
+          "sourceCodeIdentity": "C",
+          "targetCodeIdentity": "C",
+          "groundIndex": 2,
+          "responseIndex": 2
+        }
+      ]
+    },
+    "codeRepresentations": [
+      {
+        "runtimeToken": "__open_ena_code_v3_000",
+        "sourceColumn": "A",
+        "sourceRepresentation": "frequency",
+        "runtimeRepresentation": "number"
+      },
+      {
+        "runtimeToken": "__open_ena_code_v3_001",
+        "sourceColumn": "B",
+        "sourceRepresentation": "frequency",
+        "runtimeRepresentation": "number"
+      },
+      {
+        "runtimeToken": "__open_ena_code_v3_002",
+        "sourceColumn": "C",
+        "sourceRepresentation": "frequency",
+        "runtimeRepresentation": "number"
+      }
+    ],
+    "rows": [
+      {
+        "sourceRowIndex": 0,
+        "unitToken": "__open_ena_unit_v3_000005",
+        "horizonToken": "__open_ena_horizon_v3_000000",
+        "groupToken": null,
+        "codeValues": {
+          "__open_ena_code_v3_000": 1,
+          "__open_ena_code_v3_001": 2,
+          "__open_ena_code_v3_002": 1
+        },
+        "rowOrderTuple": [
+          0
+        ]
+      },
+      {
+        "sourceRowIndex": 1,
+        "unitToken": "__open_ena_unit_v3_000000",
+        "horizonToken": "__open_ena_horizon_v3_000000",
+        "groupToken": null,
+        "codeValues": {
+          "__open_ena_code_v3_000": 2,
+          "__open_ena_code_v3_001": 1,
+          "__open_ena_code_v3_002": 2
+        },
+        "rowOrderTuple": [
+          1
+        ]
+      },
+      {
+        "sourceRowIndex": 2,
+        "unitToken": "__open_ena_unit_v3_000004",
+        "horizonToken": "__open_ena_horizon_v3_000000",
+        "groupToken": null,
+        "codeValues": {
+          "__open_ena_code_v3_000": 1,
+          "__open_ena_code_v3_001": 2,
+          "__open_ena_code_v3_002": 3
+        },
+        "rowOrderTuple": [
+          2
+        ]
+      },
+      {
+        "sourceRowIndex": 3,
+        "unitToken": "__open_ena_unit_v3_000001",
+        "horizonToken": "__open_ena_horizon_v3_000000",
+        "groupToken": null,
+        "codeValues": {
+          "__open_ena_code_v3_000": 2,
+          "__open_ena_code_v3_001": 1,
+          "__open_ena_code_v3_002": 1
+        },
+        "rowOrderTuple": [
+          3
+        ]
+      },
+      {
+        "sourceRowIndex": 4,
+        "unitToken": "__open_ena_unit_v3_000003",
+        "horizonToken": "__open_ena_horizon_v3_000000",
+        "groupToken": null,
+        "codeValues": {
+          "__open_ena_code_v3_000": 1,
+          "__open_ena_code_v3_001": 2,
+          "__open_ena_code_v3_002": 2
+        },
+        "rowOrderTuple": [
+          4
+        ]
+      },
+      {
+        "sourceRowIndex": 5,
+        "unitToken": "__open_ena_unit_v3_000002",
+        "horizonToken": "__open_ena_horizon_v3_000000",
+        "groupToken": null,
+        "codeValues": {
+          "__open_ena_code_v3_000": 2,
+          "__open_ena_code_v3_001": 1,
+          "__open_ena_code_v3_002": 3
+        },
+        "rowOrderTuple": [
+          5
+        ]
+      }
+    ],
+    "rowOrdering": {
+      "type": "within-horizon-order",
+      "requestedPolicy": {
+        "keys": [
+          {
+            "column": "turn",
+            "comparator": {
+              "type": "number"
+            },
+            "direction": "ascending"
+          }
+        ],
+        "kind": "columns"
+      },
+      "mappings": [
+        {
+          "sourceRowIndex": 0,
+          "horizonToken": "__open_ena_horizon_v3_000000",
+          "orderTuple": [
+            0
+          ],
+          "withinHorizonOrdinal": 0
+        },
+        {
+          "sourceRowIndex": 1,
+          "horizonToken": "__open_ena_horizon_v3_000000",
+          "orderTuple": [
+            1
+          ],
+          "withinHorizonOrdinal": 1
+        },
+        {
+          "sourceRowIndex": 2,
+          "horizonToken": "__open_ena_horizon_v3_000000",
+          "orderTuple": [
+            2
+          ],
+          "withinHorizonOrdinal": 2
+        },
+        {
+          "sourceRowIndex": 3,
+          "horizonToken": "__open_ena_horizon_v3_000000",
+          "orderTuple": [
+            3
+          ],
+          "withinHorizonOrdinal": 3
+        },
+        {
+          "sourceRowIndex": 4,
+          "horizonToken": "__open_ena_horizon_v3_000000",
+          "orderTuple": [
+            4
+          ],
+          "withinHorizonOrdinal": 4
+        },
+        {
+          "sourceRowIndex": 5,
+          "horizonToken": "__open_ena_horizon_v3_000000",
+          "orderTuple": [
+            5
+          ],
+          "withinHorizonOrdinal": 5
+        }
+      ],
+      "orderedSourceRowIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "sourceOrderBinding": null,
+      "textCollationBindings": []
+    },
+    "horizonOrdering": {
+      "type": "not-applicable",
+      "reason": "endpoint-model"
+    },
+    "runtimeSourceRowIndices": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "adapterParameters": {
+      "networkType": "ordered",
+      "unitTokenColumn": "__open_ena_unit_token",
+      "horizonTokenColumn": "__open_ena_horizon_token",
+      "groupTokenColumn": "__open_ena_group_token",
+      "codeTokens": [
+        "__open_ena_code_v3_000",
+        "__open_ena_code_v3_001",
+        "__open_ena_code_v3_002"
+      ],
+      "model": "EndPoint",
+      "window": {
+        "type": "MovingStanzaWindow",
+        "backward": {
+          "kind": "finite",
+          "value": 1
+        },
+        "forward": 0
+      },
+      "weightBy": "sum",
+      "rotation": "svd",
+      "centerAlignToOrigin": true,
+      "nodePositionMethod": "directed",
+      "displayDimensions": 3
+    },
+    "weighting": {
+      "scientific": "frequency",
+      "runtime": "sum"
+    },
+    "directionalMask": {
+      "schemaVersion": 1,
+      "codeOrder": [
+        "A",
+        "B",
+        "C"
+      ],
+      "enabled": [
+        [
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true
+        ]
+      ]
+    },
+    "reference": null,
+    "operationalAdmission": {
+      "version": "open-ena-ona-operational-v1",
+      "compactScientificCells": 444,
+      "resultIdentityBytes": 108506,
+      "generatedTableKeyBytes": 16704,
+      "numericSerializationBytes": 85248,
+      "metadataSerializationBytes": 868048,
+      "closureWorkUnits": 2862,
+      "stages": {
+        "sourceCaptureCells": 135,
+        "accumulationCells": 600,
+        "modelCells": 1431,
+        "bindingCells": 2748,
+        "rankDiagnosticCells": 612,
+        "validationScratchCells": 846,
+        "scientificClosureCells": 486
+      },
+      "incrementalNumericCells": 2316,
+      "incrementalPeakBytes": 971824,
+      "incrementalExportBytes": 117434,
+      "totalNumericCells": 2748,
+      "totalPeakBytes": 1026174,
+      "totalExportBytes": 119162,
+      "totalStructuralBytes": 917998
+    }
+  },
+  "result": {
+    "schemaVersion": 3,
+    "kind": "open-ena-bound-result",
+    "binding": {
+      "datasetSha256": "9ab727db3d5e65ff936d340696a05083aad4e77559f89c00f11df01597dc3176",
+      "datasetHashKind": "canonical-first-xlsx-worksheet-v1-sha256",
+      "rowCount": 6,
+      "headerSha256": "6299819918e2afb75132e4692cb6d7ea2231fe4e5b378a51f820ca76c89a314f",
+      "configurationSha256": "4e92f8b20d2bca06a6779f3549016b7146fefbece28bb0d35ed21643a5c17da9",
+      "executionPlanSha256": "921a3a420f12ea7ab96e2aaf7a8707a5939eac292beca071b843410b34da0593",
+      "runtimeVersion": "0.7.0-ona.0",
+      "algorithmBuildSha": "90790856f00bdef63dbd27fc3a5b502e8cffe65f",
+      "validationContractVersion": "open-ena-validation-v3.1",
+      "runtimePolicyVersion": "open-ena-runtime-policy-v3.1",
+      "executionContractVersion": "open-ena-execution-v3.1",
+      "referenceId": null,
+      "referenceContentSha256": null,
+      "scientificResultSha256": "1fd0054319f118ca83c5913d659c99521f699a1e8f0fe156187eff1cef39a7d6"
+    },
+    "configuration": {
+      "schemaVersion": 3,
+      "analysisFamily": "ona",
+      "contracts": {
+        "validationContractVersion": "open-ena-validation-v3.1",
+        "runtimePolicyVersion": "open-ena-runtime-policy-v3.1"
+      },
+      "units": {
+        "columns": [
+          "unit"
+        ],
+        "group": {
+          "type": "none"
+        }
+      },
+      "horizons": {
+        "columns": [
+          "horizon"
+        ]
+      },
+      "codes": [
+        {
+          "column": "A",
+          "displayLabel": "A"
+        },
+        {
+          "column": "B",
+          "displayLabel": "B"
+        },
+        {
+          "column": "C",
+          "displayLabel": "C"
+        }
+      ],
+      "model": {
+        "type": "EndPoint"
+      },
+      "weighting": {
+        "type": "frequency",
+        "engineMethod": "sum"
+      },
+      "window": {
+        "type": "MovingStanzaWindow",
+        "backward": {
+          "kind": "finite",
+          "value": 1
+        },
+        "forward": 0,
+        "rowOrder": {
+          "kind": "columns",
+          "keys": [
+            {
+              "column": "turn",
+              "direction": "ascending",
+              "comparator": {
+                "type": "number"
+              }
+            }
+          ]
+        }
+      },
+      "rotation": {
+        "type": "svd",
+        "centerAlignToOrigin": true
+      },
+      "directionalMask": {
+        "schemaVersion": 1,
+        "codeOrder": [
+          "A",
+          "B",
+          "C"
+        ],
+        "enabled": [
+          [
+            true,
+            true,
+            true
+          ],
+          [
+            true,
+            true,
+            true
+          ],
+          [
+            true,
+            true,
+            true
+          ]
+        ]
+      }
+    },
+    "executionProvenance": {
+      "header": {
+        "schemaVersion": 3,
+        "analysisFamily": "ona",
+        "validationContractVersion": "open-ena-validation-v3.1",
+        "runtimePolicyVersion": "open-ena-runtime-policy-v3.1",
+        "executionContractVersion": "open-ena-execution-v3.1",
+        "datasetSha256": "9ab727db3d5e65ff936d340696a05083aad4e77559f89c00f11df01597dc3176",
+        "datasetHashKind": "canonical-first-xlsx-worksheet-v1-sha256",
+        "rowCount": 6,
+        "headerSha256": "6299819918e2afb75132e4692cb6d7ea2231fe4e5b378a51f820ca76c89a314f",
+        "datasetBinding": {
+          "hashKind": "canonical-first-xlsx-worksheet-v1-sha256",
+          "normalizedTableSha256": "9ab727db3d5e65ff936d340696a05083aad4e77559f89c00f11df01597dc3176",
+          "rowCount": 6,
+          "headerSha256": "6299819918e2afb75132e4692cb6d7ea2231fe4e5b378a51f820ca76c89a314f"
+        },
+        "configurationSha256": "4e92f8b20d2bca06a6779f3549016b7146fefbece28bb0d35ed21643a5c17da9",
+        "executionPlanSha256": "921a3a420f12ea7ab96e2aaf7a8707a5939eac292beca071b843410b34da0593",
+        "runtimeVersion": "0.7.0-ona.0",
+        "algorithmBuildSha": "90790856f00bdef63dbd27fc3a5b502e8cffe65f",
+        "resourceEstimate": {
+          "version": "open-ena-resource-v3.5",
+          "analysisFamily": "ona",
+          "rows": 6,
+          "units": 6,
+          "horizons": 1,
+          "windowPartitions": 1,
+          "codes": 3,
+          "adjacencyDimensions": 9,
+          "datasetSizeBytes": 2893,
+          "identityPayloadBytes": 2052,
+          "aggregateStateUpperBound": 1,
+          "estimatedStateCount": 20,
+          "estimatedStructuralBytes": 49950,
+          "endpointNetworks": 6,
+          "directionalMaskCells": 9,
+          "estimatedRotationWorkUnits": 1215,
+          "estimatedRotationMatrixBytes": 2808,
+          "estimatedForwardBufferRows": 0,
+          "estimatedRetainedWindowRows": 0,
+          "estimatedWindowStateCells": 11,
+          "estimatedWindowVisits": 6,
+          "estimatedNumericCells": 432,
+          "estimatedWorkerMaterializationBytes": 944,
+          "estimatedExportBytes": 1728,
+          "estimatedPeakBytes": 54350,
+          "blocked": false,
+          "blockedReasons": []
+        }
+      },
+      "sourceProofSha256": "1f66d84a4b93bcc65d1021155f7a8029055a6a172079080651f6dfc1bbf989e2",
+      "identityDictionary": {
+        "units": [
+          {
+            "token": "__open_ena_unit_v3_000000",
+            "fields": [
+              {
+                "column": "unit",
+                "value": {
+                  "type": "string",
+                  "value": "u1"
+                }
+              }
+            ],
+            "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u1\"}}]}",
+            "sha256": "076daa03fa597844ae4e35cc9a7f25935166f9910263025057e25fb37709958c",
+            "displayLabel": "Unit unit=u1"
+          },
+          {
+            "token": "__open_ena_unit_v3_000001",
+            "fields": [
+              {
+                "column": "unit",
+                "value": {
+                  "type": "string",
+                  "value": "u3"
+                }
+              }
+            ],
+            "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u3\"}}]}",
+            "sha256": "0a422748b59eb71884792369e66125bcd2740374e58786cd71b02e2687147da3",
+            "displayLabel": "Unit unit=u3"
+          },
+          {
+            "token": "__open_ena_unit_v3_000002",
+            "fields": [
+              {
+                "column": "unit",
+                "value": {
+                  "type": "string",
+                  "value": "u5"
+                }
+              }
+            ],
+            "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u5\"}}]}",
+            "sha256": "4dd5a89737f74c17f0461f99d124567b470711b85f263fe5d7b5618ad1519ea7",
+            "displayLabel": "Unit unit=u5"
+          },
+          {
+            "token": "__open_ena_unit_v3_000003",
+            "fields": [
+              {
+                "column": "unit",
+                "value": {
+                  "type": "string",
+                  "value": "u4"
+                }
+              }
+            ],
+            "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u4\"}}]}",
+            "sha256": "9060317e88e114896155d12b2ce05b2cb868e50f6540b12bdab271233a356f45",
+            "displayLabel": "Unit unit=u4"
+          },
+          {
+            "token": "__open_ena_unit_v3_000004",
+            "fields": [
+              {
+                "column": "unit",
+                "value": {
+                  "type": "string",
+                  "value": "u2"
+                }
+              }
+            ],
+            "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u2\"}}]}",
+            "sha256": "aac9f17bd802cc9657e3a1fc07c04273f304512c99af2af2bcabbbca8819abb7",
+            "displayLabel": "Unit unit=u2"
+          },
+          {
+            "token": "__open_ena_unit_v3_000005",
+            "fields": [
+              {
+                "column": "unit",
+                "value": {
+                  "type": "string",
+                  "value": "u0"
+                }
+              }
+            ],
+            "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u0\"}}]}",
+            "sha256": "c6f0e922f45267d164d79415c8076c7671a1cf0f67256b07596ac18b7ed75dd2",
+            "displayLabel": "Unit unit=u0"
+          }
+        ],
+        "horizons": [
+          {
+            "token": "__open_ena_horizon_v3_000000",
+            "fields": [
+              {
+                "column": "horizon",
+                "value": {
+                  "type": "string",
+                  "value": "h"
+                }
+              }
+            ],
+            "canonicalJson": "{\"fields\":[{\"column\":\"horizon\",\"value\":{\"type\":\"string\",\"value\":\"h\"}}]}",
+            "sha256": "e9c007974c1302e93b18d091d1162f7b5407aac6f98c67c92923288d0f3034c4",
+            "displayLabel": "Horizon horizon=h"
+          }
+        ],
+        "groups": []
+      },
+      "codeDictionary": {
+        "codes": [
+          {
+            "token": "__open_ena_code_v3_000",
+            "sourceColumn": "A",
+            "displayLabel": "A",
+            "canonicalIdentity": "A"
+          },
+          {
+            "token": "__open_ena_code_v3_001",
+            "sourceColumn": "B",
+            "displayLabel": "B",
+            "canonicalIdentity": "B"
+          },
+          {
+            "token": "__open_ena_code_v3_002",
+            "sourceColumn": "C",
+            "displayLabel": "C",
+            "canonicalIdentity": "C"
+          }
+        ],
+        "edges": [
+          {
+            "token": "__open_ena_directed_edge_v3_000_000",
+            "sourceCodeIdentity": "A",
+            "targetCodeIdentity": "A",
+            "groundIndex": 0,
+            "responseIndex": 0
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_001_000",
+            "sourceCodeIdentity": "B",
+            "targetCodeIdentity": "A",
+            "groundIndex": 1,
+            "responseIndex": 0
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_002_000",
+            "sourceCodeIdentity": "C",
+            "targetCodeIdentity": "A",
+            "groundIndex": 2,
+            "responseIndex": 0
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_000_001",
+            "sourceCodeIdentity": "A",
+            "targetCodeIdentity": "B",
+            "groundIndex": 0,
+            "responseIndex": 1
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_001_001",
+            "sourceCodeIdentity": "B",
+            "targetCodeIdentity": "B",
+            "groundIndex": 1,
+            "responseIndex": 1
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_002_001",
+            "sourceCodeIdentity": "C",
+            "targetCodeIdentity": "B",
+            "groundIndex": 2,
+            "responseIndex": 1
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_000_002",
+            "sourceCodeIdentity": "A",
+            "targetCodeIdentity": "C",
+            "groundIndex": 0,
+            "responseIndex": 2
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_001_002",
+            "sourceCodeIdentity": "B",
+            "targetCodeIdentity": "C",
+            "groundIndex": 1,
+            "responseIndex": 2
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_002_002",
+            "sourceCodeIdentity": "C",
+            "targetCodeIdentity": "C",
+            "groundIndex": 2,
+            "responseIndex": 2
+          }
+        ]
+      },
+      "codeRepresentations": [
+        {
+          "runtimeToken": "__open_ena_code_v3_000",
+          "sourceColumn": "A",
+          "sourceRepresentation": "frequency",
+          "runtimeRepresentation": "number"
+        },
+        {
+          "runtimeToken": "__open_ena_code_v3_001",
+          "sourceColumn": "B",
+          "sourceRepresentation": "frequency",
+          "runtimeRepresentation": "number"
+        },
+        {
+          "runtimeToken": "__open_ena_code_v3_002",
+          "sourceColumn": "C",
+          "sourceRepresentation": "frequency",
+          "runtimeRepresentation": "number"
+        }
+      ],
+      "unitGroups": [
+        {
+          "unitToken": "__open_ena_unit_v3_000000",
+          "groupToken": null
+        },
+        {
+          "unitToken": "__open_ena_unit_v3_000001",
+          "groupToken": null
+        },
+        {
+          "unitToken": "__open_ena_unit_v3_000002",
+          "groupToken": null
+        },
+        {
+          "unitToken": "__open_ena_unit_v3_000003",
+          "groupToken": null
+        },
+        {
+          "unitToken": "__open_ena_unit_v3_000004",
+          "groupToken": null
+        },
+        {
+          "unitToken": "__open_ena_unit_v3_000005",
+          "groupToken": null
+        }
+      ],
+      "labels": {
+        "unitColumn": "Unit",
+        "horizonColumn": "Horizon",
+        "groupColumn": "Group",
+        "codes": [
+          {
+            "runtimeToken": "__open_ena_code_v3_000",
+            "column": "Code 1",
+            "sourceColumn": "A",
+            "displayLabel": "A",
+            "canonicalIdentity": "A"
+          },
+          {
+            "runtimeToken": "__open_ena_code_v3_001",
+            "column": "Code 2",
+            "sourceColumn": "B",
+            "displayLabel": "B",
+            "canonicalIdentity": "B"
+          },
+          {
+            "runtimeToken": "__open_ena_code_v3_002",
+            "column": "Code 3",
+            "sourceColumn": "C",
+            "displayLabel": "C",
+            "canonicalIdentity": "C"
+          }
+        ],
+        "edges": [
+          {
+            "runtimeColumn": "__open_ena_code_v3_000 & __open_ena_code_v3_000",
+            "column": "Connection 1",
+            "sourceCodeIdentity": "A",
+            "targetCodeIdentity": "A"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_001 & __open_ena_code_v3_000",
+            "column": "Connection 2",
+            "sourceCodeIdentity": "B",
+            "targetCodeIdentity": "A"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_002 & __open_ena_code_v3_000",
+            "column": "Connection 3",
+            "sourceCodeIdentity": "C",
+            "targetCodeIdentity": "A"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_000 & __open_ena_code_v3_001",
+            "column": "Connection 4",
+            "sourceCodeIdentity": "A",
+            "targetCodeIdentity": "B"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_001 & __open_ena_code_v3_001",
+            "column": "Connection 5",
+            "sourceCodeIdentity": "B",
+            "targetCodeIdentity": "B"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_002 & __open_ena_code_v3_001",
+            "column": "Connection 6",
+            "sourceCodeIdentity": "C",
+            "targetCodeIdentity": "B"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_000 & __open_ena_code_v3_002",
+            "column": "Connection 7",
+            "sourceCodeIdentity": "A",
+            "targetCodeIdentity": "C"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_001 & __open_ena_code_v3_002",
+            "column": "Connection 8",
+            "sourceCodeIdentity": "B",
+            "targetCodeIdentity": "C"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_002 & __open_ena_code_v3_002",
+            "column": "Connection 9",
+            "sourceCodeIdentity": "C",
+            "targetCodeIdentity": "C"
+          }
+        ]
+      },
+      "ordering": {
+        "requestedRowOrder": {
+          "kind": "columns",
+          "keys": [
+            {
+              "column": "turn",
+              "direction": "ascending",
+              "comparator": {
+                "type": "number"
+              }
+            }
+          ]
+        },
+        "resolvedRowOrder": {
+          "type": "within-horizon-order",
+          "requestedPolicy": {
+            "keys": [
+              {
+                "column": "turn",
+                "comparator": {
+                  "type": "number"
+                },
+                "direction": "ascending"
+              }
+            ],
+            "kind": "columns"
+          },
+          "mappings": [
+            {
+              "sourceRowIndex": 0,
+              "horizonToken": "__open_ena_horizon_v3_000000",
+              "orderTuple": [
+                0
+              ],
+              "withinHorizonOrdinal": 0
+            },
+            {
+              "sourceRowIndex": 1,
+              "horizonToken": "__open_ena_horizon_v3_000000",
+              "orderTuple": [
+                1
+              ],
+              "withinHorizonOrdinal": 1
+            },
+            {
+              "sourceRowIndex": 2,
+              "horizonToken": "__open_ena_horizon_v3_000000",
+              "orderTuple": [
+                2
+              ],
+              "withinHorizonOrdinal": 2
+            },
+            {
+              "sourceRowIndex": 3,
+              "horizonToken": "__open_ena_horizon_v3_000000",
+              "orderTuple": [
+                3
+              ],
+              "withinHorizonOrdinal": 3
+            },
+            {
+              "sourceRowIndex": 4,
+              "horizonToken": "__open_ena_horizon_v3_000000",
+              "orderTuple": [
+                4
+              ],
+              "withinHorizonOrdinal": 4
+            },
+            {
+              "sourceRowIndex": 5,
+              "horizonToken": "__open_ena_horizon_v3_000000",
+              "orderTuple": [
+                5
+              ],
+              "withinHorizonOrdinal": 5
+            }
+          ],
+          "orderedSourceRowIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "sourceOrderBinding": null,
+          "textCollationBindings": []
+        },
+        "resolvedHorizonOrder": {
+          "type": "not-applicable",
+          "reason": "endpoint-model"
+        },
+        "runtimeSourceRowIndices": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "adapterParameters": {
+        "networkType": "ordered",
+        "unitTokenColumn": "__open_ena_unit_token",
+        "horizonTokenColumn": "__open_ena_horizon_token",
+        "groupTokenColumn": "__open_ena_group_token",
+        "codeTokens": [
+          "__open_ena_code_v3_000",
+          "__open_ena_code_v3_001",
+          "__open_ena_code_v3_002"
+        ],
+        "model": "EndPoint",
+        "window": {
+          "type": "MovingStanzaWindow",
+          "backward": {
+            "kind": "finite",
+            "value": 1
+          },
+          "forward": 0
+        },
+        "weightBy": "sum",
+        "rotation": "svd",
+        "centerAlignToOrigin": true,
+        "nodePositionMethod": "directed",
+        "displayDimensions": 3
+      },
+      "weighting": {
+        "scientific": "frequency",
+        "runtime": "sum"
+      },
+      "directionalMask": {
+        "schemaVersion": 1,
+        "codeOrder": [
+          "A",
+          "B",
+          "C"
+        ],
+        "enabled": [
+          [
+            true,
+            true,
+            true
+          ],
+          [
+            true,
+            true,
+            true
+          ],
+          [
+            true,
+            true,
+            true
+          ]
+        ]
+      },
+      "normalization": "sphere",
+      "boundary": "within-horizon",
+      "reference": null,
+      "projection": {
+        "type": "svd",
+        "centerAlignToOrigin": true,
+        "rank": 3,
+        "fullAxes": [
+          "SVD1",
+          "SVD2",
+          "SVD3",
+          "SVD4",
+          "SVD5",
+          "SVD6",
+          "SVD7",
+          "SVD8",
+          "SVD9"
+        ],
+        "estimableAxes": [
+          "SVD1",
+          "SVD2",
+          "SVD3"
+        ],
+        "geometryPath": "set.rotation",
+        "variancePath": "set.variance"
+      },
+      "populations": {
+        "fit": "endpoint-units",
+        "fitTokens": [
+          "__open_ena_unit_v3_000005",
+          "__open_ena_unit_v3_000000",
+          "__open_ena_unit_v3_000004",
+          "__open_ena_unit_v3_000001",
+          "__open_ena_unit_v3_000003",
+          "__open_ena_unit_v3_000002"
+        ],
+        "targetTokens": [
+          "__open_ena_unit_v3_000005",
+          "__open_ena_unit_v3_000000",
+          "__open_ena_unit_v3_000004",
+          "__open_ena_unit_v3_000001",
+          "__open_ena_unit_v3_000003",
+          "__open_ena_unit_v3_000002"
+        ],
+        "imputedStepCount": 0
+      },
+      "resources": {
+        "targetBaseline": {
+          "version": "open-ena-resource-v3.5",
+          "analysisFamily": "ona",
+          "rows": 6,
+          "units": 6,
+          "horizons": 1,
+          "windowPartitions": 1,
+          "codes": 3,
+          "adjacencyDimensions": 9,
+          "datasetSizeBytes": 2893,
+          "identityPayloadBytes": 2052,
+          "aggregateStateUpperBound": 1,
+          "estimatedStateCount": 20,
+          "estimatedStructuralBytes": 49950,
+          "endpointNetworks": 6,
+          "directionalMaskCells": 9,
+          "estimatedRotationWorkUnits": 1215,
+          "estimatedRotationMatrixBytes": 2808,
+          "estimatedForwardBufferRows": 0,
+          "estimatedRetainedWindowRows": 0,
+          "estimatedWindowStateCells": 11,
+          "estimatedWindowVisits": 6,
+          "estimatedNumericCells": 432,
+          "estimatedWorkerMaterializationBytes": 944,
+          "estimatedExportBytes": 1728,
+          "estimatedPeakBytes": 54350,
+          "blocked": false,
+          "blockedReasons": []
+        },
+        "operationalAdmission": {
+          "version": "open-ena-ona-operational-v1",
+          "compactScientificCells": 444,
+          "resultIdentityBytes": 108506,
+          "generatedTableKeyBytes": 16704,
+          "numericSerializationBytes": 85248,
+          "metadataSerializationBytes": 868048,
+          "closureWorkUnits": 2862,
+          "stages": {
+            "sourceCaptureCells": 135,
+            "accumulationCells": 600,
+            "modelCells": 1431,
+            "bindingCells": 2748,
+            "rankDiagnosticCells": 612,
+            "validationScratchCells": 846,
+            "scientificClosureCells": 486
+          },
+          "incrementalNumericCells": 2316,
+          "incrementalPeakBytes": 971824,
+          "incrementalExportBytes": 117434,
+          "totalNumericCells": 2748,
+          "totalPeakBytes": 1026174,
+          "totalExportBytes": 119162,
+          "totalStructuralBytes": 917998
+        },
+        "counterContract": {
+          "version": 1,
+          "numericCells": "conservative-phase-dimension-upper-bound",
+          "bufferedRows": "chunk-boundary-observation-plus-separate-peak-upper-bound",
+          "bytes": "conservative-structural-and-temporary-overlap-bound"
+        },
+        "observed": {
+          "processedRows": 6,
+          "maximumRetainedRowsAfterChunk": 0,
+          "bufferedRowsPeakUpperBound": 1,
+          "numericCellsUpperBound": 2748,
+          "peakBytesUpperBound": 1026174,
+          "observationMethod": "dimension-bounds-and-chunk-boundary-stream-state"
+        }
+      },
+      "diagnostics": []
+    },
+    "set": {
+      "modelType": "EndPoint",
+      "codes": [
+        "Code 1",
+        "Code 2",
+        "Code 3"
+      ],
+      "units": [
+        "Unit"
+      ],
+      "conversation": [
+        "Horizon"
+      ],
+      "codeColumns": [
+        "Connection 1",
+        "Connection 2",
+        "Connection 3",
+        "Connection 4",
+        "Connection 5",
+        "Connection 6",
+        "Connection 7",
+        "Connection 8",
+        "Connection 9"
+      ],
+      "adjacencyKey": [
+        {
+          "source": "Code 1",
+          "target": "Code 1",
+          "name": "Connection 1",
+          "sourceIndex": 0,
+          "targetIndex": 0
+        },
+        {
+          "source": "Code 2",
+          "target": "Code 1",
+          "name": "Connection 2",
+          "sourceIndex": 1,
+          "targetIndex": 0
+        },
+        {
+          "source": "Code 3",
+          "target": "Code 1",
+          "name": "Connection 3",
+          "sourceIndex": 2,
+          "targetIndex": 0
+        },
+        {
+          "source": "Code 1",
+          "target": "Code 2",
+          "name": "Connection 4",
+          "sourceIndex": 0,
+          "targetIndex": 1
+        },
+        {
+          "source": "Code 2",
+          "target": "Code 2",
+          "name": "Connection 5",
+          "sourceIndex": 1,
+          "targetIndex": 1
+        },
+        {
+          "source": "Code 3",
+          "target": "Code 2",
+          "name": "Connection 6",
+          "sourceIndex": 2,
+          "targetIndex": 1
+        },
+        {
+          "source": "Code 1",
+          "target": "Code 3",
+          "name": "Connection 7",
+          "sourceIndex": 0,
+          "targetIndex": 2
+        },
+        {
+          "source": "Code 2",
+          "target": "Code 3",
+          "name": "Connection 8",
+          "sourceIndex": 1,
+          "targetIndex": 2
+        },
+        {
+          "source": "Code 3",
+          "target": "Code 3",
+          "name": "Connection 9",
+          "sourceIndex": 2,
+          "targetIndex": 2
+        }
+      ],
+      "rawRows": [],
+      "rowConnectionCounts": [],
+      "connectionCounts": [
+        {
+          "ENA_UNIT": "Unit unit=u0",
+          "Unit": "Unit unit=u0",
+          "Connection 1": 0,
+          "Connection 2": 1,
+          "Connection 3": 0.5,
+          "Connection 4": 1,
+          "Connection 5": 0,
+          "Connection 6": 1,
+          "Connection 7": 0.5,
+          "Connection 8": 1,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u1",
+          "Unit": "Unit unit=u1",
+          "Connection 1": 0,
+          "Connection 2": 1,
+          "Connection 3": 2,
+          "Connection 4": 1,
+          "Connection 5": 0,
+          "Connection 6": 1,
+          "Connection 7": 2,
+          "Connection 8": 1,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u2",
+          "Unit": "Unit unit=u2",
+          "Connection 1": 0,
+          "Connection 2": 1,
+          "Connection 3": 1.5,
+          "Connection 4": 1,
+          "Connection 5": 0,
+          "Connection 6": 3,
+          "Connection 7": 1.5,
+          "Connection 8": 3,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u3",
+          "Unit": "Unit unit=u3",
+          "Connection 1": 0,
+          "Connection 2": 1,
+          "Connection 3": 1,
+          "Connection 4": 1,
+          "Connection 5": 0,
+          "Connection 6": 0.5,
+          "Connection 7": 1,
+          "Connection 8": 0.5,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u4",
+          "Unit": "Unit unit=u4",
+          "Connection 1": 0,
+          "Connection 2": 1,
+          "Connection 3": 1,
+          "Connection 4": 1,
+          "Connection 5": 0,
+          "Connection 6": 2,
+          "Connection 7": 1,
+          "Connection 8": 2,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u5",
+          "Unit": "Unit unit=u5",
+          "Connection 1": 0,
+          "Connection 2": 1,
+          "Connection 3": 3,
+          "Connection 4": 1,
+          "Connection 5": 0,
+          "Connection 6": 1.5,
+          "Connection 7": 3,
+          "Connection 8": 1.5,
+          "Connection 9": 0
+        }
+      ],
+      "connectionMatrix": [
+        [
+          0,
+          1,
+          0.5,
+          1,
+          0,
+          1,
+          0.5,
+          1,
+          0
+        ],
+        [
+          0,
+          1,
+          2,
+          1,
+          0,
+          1,
+          2,
+          1,
+          0
+        ],
+        [
+          0,
+          1,
+          1.5,
+          1,
+          0,
+          3,
+          1.5,
+          3,
+          0
+        ],
+        [
+          0,
+          1,
+          1,
+          1,
+          0,
+          0.5,
+          1,
+          0.5,
+          0
+        ],
+        [
+          0,
+          1,
+          1,
+          1,
+          0,
+          2,
+          1,
+          2,
+          0
+        ],
+        [
+          0,
+          1,
+          3,
+          1,
+          0,
+          1.5,
+          3,
+          1.5,
+          0
+        ]
+      ],
+      "metaData": [],
+      "unitLabels": [
+        "Unit unit=u0",
+        "Unit unit=u1",
+        "Unit unit=u2",
+        "Unit unit=u3",
+        "Unit unit=u4",
+        "Unit unit=u5"
+      ],
+      "functionParams": {
+        "model": "EndPoint",
+        "weightBy": "sum",
+        "window": "MovingStanzaWindow",
+        "windowSizeBack": 1,
+        "windowSizeForward": 0,
+        "includeMeta": true,
+        "networkType": "ordered"
+      },
+      "networkType": "ordered",
+      "rowWindowProvenance": [],
+      "lineWeights": [
+        {
+          "ENA_UNIT": "Unit unit=u0",
+          "Unit": "Unit unit=u0",
+          "Connection 1": 0,
+          "Connection 2": 0.47140452079103173,
+          "Connection 3": 0.23570226039551587,
+          "Connection 4": 0.47140452079103173,
+          "Connection 5": 0,
+          "Connection 6": 0.47140452079103173,
+          "Connection 7": 0.23570226039551587,
+          "Connection 8": 0.47140452079103173,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u1",
+          "Unit": "Unit unit=u1",
+          "Connection 1": 0,
+          "Connection 2": 0.2886751345948129,
+          "Connection 3": 0.5773502691896258,
+          "Connection 4": 0.2886751345948129,
+          "Connection 5": 0,
+          "Connection 6": 0.2886751345948129,
+          "Connection 7": 0.5773502691896258,
+          "Connection 8": 0.2886751345948129,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u2",
+          "Unit": "Unit unit=u2",
+          "Connection 1": 0,
+          "Connection 2": 0.20203050891044214,
+          "Connection 3": 0.30304576336566325,
+          "Connection 4": 0.20203050891044214,
+          "Connection 5": 0,
+          "Connection 6": 0.6060915267313265,
+          "Connection 7": 0.30304576336566325,
+          "Connection 8": 0.6060915267313265,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u3",
+          "Unit": "Unit unit=u3",
+          "Connection 1": 0,
+          "Connection 2": 0.47140452079103173,
+          "Connection 3": 0.47140452079103173,
+          "Connection 4": 0.47140452079103173,
+          "Connection 5": 0,
+          "Connection 6": 0.23570226039551587,
+          "Connection 7": 0.47140452079103173,
+          "Connection 8": 0.23570226039551587,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u4",
+          "Unit": "Unit unit=u4",
+          "Connection 1": 0,
+          "Connection 2": 0.2886751345948129,
+          "Connection 3": 0.2886751345948129,
+          "Connection 4": 0.2886751345948129,
+          "Connection 5": 0,
+          "Connection 6": 0.5773502691896258,
+          "Connection 7": 0.2886751345948129,
+          "Connection 8": 0.5773502691896258,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u5",
+          "Unit": "Unit unit=u5",
+          "Connection 1": 0,
+          "Connection 2": 0.20203050891044214,
+          "Connection 3": 0.6060915267313265,
+          "Connection 4": 0.20203050891044214,
+          "Connection 5": 0,
+          "Connection 6": 0.30304576336566325,
+          "Connection 7": 0.6060915267313265,
+          "Connection 8": 0.30304576336566325,
+          "Connection 9": 0
+        }
+      ],
+      "pointsForProjection": [
+        {
+          "ENA_UNIT": "Unit unit=u0",
+          "Unit": "Unit unit=u0",
+          "Connection 1": 0,
+          "Connection 2": 0.15070113269226948,
+          "Connection 3": -0.17800931878248016,
+          "Connection 4": 0.15070113269226948,
+          "Connection 5": 0,
+          "Connection 6": 0.05769294161303572,
+          "Connection 7": -0.17800931878248016,
+          "Connection 8": 0.05769294161303572,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u1",
+          "Unit": "Unit unit=u1",
+          "Connection 1": 0,
+          "Connection 2": -0.03202825350394934,
+          "Connection 3": 0.16363869001162984,
+          "Connection 4": -0.03202825350394934,
+          "Connection 5": 0,
+          "Connection 6": -0.12503644458318308,
+          "Connection 7": 0.16363869001162984,
+          "Connection 8": -0.12503644458318308,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u2",
+          "Unit": "Unit unit=u2",
+          "Connection 1": 0,
+          "Connection 2": -0.11867287918832013,
+          "Connection 3": -0.11066581581233277,
+          "Connection 4": -0.11867287918832013,
+          "Connection 5": 0,
+          "Connection 6": 0.1923799475533305,
+          "Connection 7": -0.11066581581233277,
+          "Connection 8": 0.1923799475533305,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u3",
+          "Unit": "Unit unit=u3",
+          "Connection 1": 0,
+          "Connection 2": 0.15070113269226948,
+          "Connection 3": 0.05769294161303572,
+          "Connection 4": 0.15070113269226948,
+          "Connection 5": 0,
+          "Connection 6": -0.17800931878248016,
+          "Connection 7": 0.05769294161303572,
+          "Connection 8": -0.17800931878248016,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u4",
+          "Unit": "Unit unit=u4",
+          "Connection 1": 0,
+          "Connection 2": -0.03202825350394934,
+          "Connection 3": -0.12503644458318308,
+          "Connection 4": -0.03202825350394934,
+          "Connection 5": 0,
+          "Connection 6": 0.16363869001162984,
+          "Connection 7": -0.12503644458318308,
+          "Connection 8": 0.16363869001162984,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u5",
+          "Unit": "Unit unit=u5",
+          "Connection 1": 0,
+          "Connection 2": -0.11867287918832013,
+          "Connection 3": 0.1923799475533305,
+          "Connection 4": -0.11867287918832013,
+          "Connection 5": 0,
+          "Connection 6": -0.11066581581233277,
+          "Connection 7": 0.1923799475533305,
+          "Connection 8": -0.11066581581233277,
+          "Connection 9": 0
+        }
+      ],
+      "points": [
+        {
+          "ENA_UNIT": "Unit unit=u0",
+          "Unit": "Unit unit=u0",
+          "SVD1": 0.23570226039551584,
+          "SVD2": -0.24471310014737768,
+          "SVD3": 0.0036320821721907252
+        },
+        {
+          "ENA_UNIT": "Unit unit=u1",
+          "Unit": "Unit unit=u1",
+          "SVD1": -0.28867513459481287,
+          "SVD2": 0.05824579331756045,
+          "SVD3": -0.012213883819349153
+        },
+        {
+          "ENA_UNIT": "Unit unit=u2",
+          "Unit": "Unit unit=u2",
+          "SVD1": 0.30304576336566325,
+          "SVD2": 0.18646730682981721,
+          "SVD3": 0.008581801647158382
+        },
+        {
+          "ENA_UNIT": "Unit unit=u3",
+          "Unit": "Unit unit=u3",
+          "SVD1": -0.23570226039551587,
+          "SVD2": -0.24471310014737765,
+          "SVD3": 0.003632082172190701
+        },
+        {
+          "ENA_UNIT": "Unit unit=u4",
+          "Unit": "Unit unit=u4",
+          "SVD1": 0.28867513459481287,
+          "SVD2": 0.05824579331756041,
+          "SVD3": -0.012213883819349118
+        },
+        {
+          "ENA_UNIT": "Unit unit=u5",
+          "Unit": "Unit unit=u5",
+          "SVD1": -0.30304576336566325,
+          "SVD2": 0.18646730682981724,
+          "SVD3": 0.008581801647158362
+        }
+      ],
+      "rotation": {
+        "codes": [
+          "Code 1",
+          "Code 2",
+          "Code 3"
+        ],
+        "adjacencyKey": [
+          {
+            "source": "Code 1",
+            "target": "Code 1",
+            "name": "Connection 1",
+            "sourceIndex": 0,
+            "targetIndex": 0
+          },
+          {
+            "source": "Code 2",
+            "target": "Code 1",
+            "name": "Connection 2",
+            "sourceIndex": 1,
+            "targetIndex": 0
+          },
+          {
+            "source": "Code 3",
+            "target": "Code 1",
+            "name": "Connection 3",
+            "sourceIndex": 2,
+            "targetIndex": 0
+          },
+          {
+            "source": "Code 1",
+            "target": "Code 2",
+            "name": "Connection 4",
+            "sourceIndex": 0,
+            "targetIndex": 1
+          },
+          {
+            "source": "Code 2",
+            "target": "Code 2",
+            "name": "Connection 5",
+            "sourceIndex": 1,
+            "targetIndex": 1
+          },
+          {
+            "source": "Code 3",
+            "target": "Code 2",
+            "name": "Connection 6",
+            "sourceIndex": 2,
+            "targetIndex": 1
+          },
+          {
+            "source": "Code 1",
+            "target": "Code 3",
+            "name": "Connection 7",
+            "sourceIndex": 0,
+            "targetIndex": 2
+          },
+          {
+            "source": "Code 2",
+            "target": "Code 3",
+            "name": "Connection 8",
+            "sourceIndex": 1,
+            "targetIndex": 2
+          },
+          {
+            "source": "Code 3",
+            "target": "Code 3",
+            "name": "Connection 9",
+            "sourceIndex": 2,
+            "targetIndex": 2
+          }
+        ],
+        "rotationMatrix": [
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            -4.8747970764355556e-17,
+            -0.6208510578136561,
+            -0.3384434428551691,
+            0.14381135908150366,
+            -0.3368710072547443,
+            -0.6048439612580329,
+            0,
+            0,
+            0
+          ],
+          [
+            -0.5000000000000001,
+            0.23931565349101602,
+            -0.4390079930868708,
+            -0.43897700661758704,
+            0.43333200286869894,
+            -0.3457203536832492,
+            0,
+            0,
+            0
+          ],
+          [
+            -7.177958764982187e-17,
+            -0.6208510578136561,
+            -0.3384434428551811,
+            -0.14381135908155596,
+            0.33687100725470415,
+            0.6048439612580361,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            0
+          ],
+          [
+            0.49999999999999994,
+            0.23931565349101613,
+            -0.43900799308694594,
+            0.5353666786980483,
+            0.4458041046927942,
+            -0.12100090734707926,
+            0,
+            0,
+            0
+          ],
+          [
+            -0.5,
+            0.23931565349101622,
+            -0.4390079930868844,
+            0.43897700661751904,
+            -0.4333320028687506,
+            0.34572035368325316,
+            0,
+            0,
+            0
+          ],
+          [
+            0.49999999999999983,
+            0.23931565349101602,
+            -0.43900799308680916,
+            -0.5353666786981166,
+            -0.4458041046928461,
+            0.12100090734708316,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1
+          ]
+        ],
+        "rotationColumns": [
+          "SVD1",
+          "SVD2",
+          "SVD3",
+          "SVD4",
+          "SVD5",
+          "SVD6",
+          "SVD7",
+          "SVD8",
+          "SVD9"
+        ],
+        "eigenvalues": [
+          0.09229024943310654,
+          0.03921885213571905,
+          0.00009440731934770921,
+          1.4274289792771408e-17,
+          1.1568362744319982e-18,
+          9.297046923423796e-19,
+          0,
+          0,
+          0
+        ],
+        "centerVector": [
+          0,
+          0.32070338809876225,
+          0.413711579177996,
+          0.32070338809876225,
+          0,
+          0.413711579177996,
+          0.413711579177996,
+          0.413711579177996,
+          0
+        ],
+        "nodes": [
+          {
+            "code": "Code 1",
+            "SVD1": -2.283558244024702,
+            "SVD2": -1.4334445721165052,
+            "SVD3": -0.0011692054422974478
+          },
+          {
+            "code": "Code 2",
+            "SVD1": 2.2835582440246913,
+            "SVD2": -1.4334445721164977,
+            "SVD3": -0.00116920544229724
+          },
+          {
+            "code": "Code 3",
+            "SVD1": 9.680654511847714e-15,
+            "SVD2": 2.5333202815546105,
+            "SVD3": 0.002066331630739254
+          }
+        ]
+      },
+      "variance": {
+        "SVD1": 0.7012749904071921,
+        "SVD2": 0.29800764787392003,
+        "SVD3": 0.0007173617188879814,
+        "SVD4": 4.368154118308053e-30,
+        "SVD5": 2.5062275717096552e-30,
+        "SVD6": 1.5436937676950428e-32,
+        "SVD7": 0,
+        "SVD8": 0,
+        "SVD9": 0
+      },
+      "centroids": [
+        {
+          "unit": "Unit unit=u0",
+          "SVD1": 0.22835582440246896,
+          "SVD2": -0.2434151160151674,
+          "SVD3": -0.0001985443203863542
+        },
+        {
+          "unit": "Unit unit=u1",
+          "SVD1": -0.2854447805030868,
+          "SVD2": 0.0540922480101651,
+          "SVD3": 0.00004412096009136744
+        },
+        {
+          "unit": "Unit unit=u2",
+          "SVD1": 0.3113943060033684,
+          "SVD2": 0.1893228680216812,
+          "SVD3": 0.00015442336030855122
+        },
+        {
+          "unit": "Unit unit=u3",
+          "SVD1": -0.22835582440247057,
+          "SVD2": -0.2434151160151683,
+          "SVD3": -0.00019854432038637492
+        },
+        {
+          "unit": "Unit unit=u4",
+          "SVD1": 0.28544478050308736,
+          "SVD2": 0.05409224801016599,
+          "SVD3": 0.000044120960091393355
+        },
+        {
+          "unit": "Unit unit=u5",
+          "SVD1": -0.311394306003367,
+          "SVD2": 0.18932286802168008,
+          "SVD3": 0.0001544233603085228
+        }
+      ]
+    },
+    "orderedAudit": {
+      "schemaVersion": 1,
+      "codeOrder": [
+        "Code 1",
+        "Code 2",
+        "Code 3"
+      ],
+      "edgeOrder": "response-major-ground-minor",
+      "responseRowIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "previousResponseRowIndices": [
+        null,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "priorRowCounts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "horizonOrdinals": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "edgeValues": [
+        [
+          0,
+          1,
+          0.5,
+          1,
+          0,
+          1,
+          0.5,
+          1,
+          0
+        ],
+        [
+          0,
+          1,
+          2,
+          1,
+          0,
+          1,
+          2,
+          1,
+          0
+        ],
+        [
+          0,
+          1,
+          1.5,
+          1,
+          0,
+          3,
+          1.5,
+          3,
+          0
+        ],
+        [
+          0,
+          1,
+          1,
+          1,
+          0,
+          0.5,
+          1,
+          0.5,
+          0
+        ],
+        [
+          0,
+          1,
+          1,
+          1,
+          0,
+          2,
+          1,
+          2,
+          0
+        ],
+        [
+          0,
+          1,
+          3,
+          1,
+          0,
+          1.5,
+          3,
+          1.5,
+          0
+        ]
+      ]
+    },
+    "orderedResponseNodeSummary": {
+      "schemaVersion": 1,
+      "codeOrder": [
+        "Code 1",
+        "Code 2",
+        "Code 3"
+      ],
+      "overallResponseCodeTotals": [
+        9,
+        9,
+        12
+      ],
+      "groups": [
+        {
+          "name": "All units",
+          "unitCount": 6,
+          "responseCodeTotals": [
+            9,
+            9,
+            12
+          ]
+        }
+      ]
+    },
+    "capabilityStatus": {
+      "build-model": "available",
+      "export-current-model": "available",
+      "export-reference": "blocked",
+      "group-inference": "blocked",
+      "trajectory-inference": "blocked",
+      "longitudinal-comparison": "blocked",
+      "ai-interpretation": "blocked"
+    },
+    "createdAt": "2026-10-12T04:00:54.551Z"
+  },
+  "bundle": {
+    "schemaVersion": 3,
+    "kind": "open-ena-analysis-bundle",
+    "manifest": {
+      "datasetSha256": "9ab727db3d5e65ff936d340696a05083aad4e77559f89c00f11df01597dc3176",
+      "datasetHashKind": "canonical-first-xlsx-worksheet-v1-sha256",
+      "rowCount": 6,
+      "headerSha256": "6299819918e2afb75132e4692cb6d7ea2231fe4e5b378a51f820ca76c89a314f",
+      "configurationSha256": "4e92f8b20d2bca06a6779f3549016b7146fefbece28bb0d35ed21643a5c17da9",
+      "executionPlanSha256": "921a3a420f12ea7ab96e2aaf7a8707a5939eac292beca071b843410b34da0593",
+      "runtimeVersion": "0.7.0-ona.0",
+      "algorithmBuildSha": "90790856f00bdef63dbd27fc3a5b502e8cffe65f",
+      "validationContractVersion": "open-ena-validation-v3.1",
+      "runtimePolicyVersion": "open-ena-runtime-policy-v3.1",
+      "executionContractVersion": "open-ena-execution-v3.1",
+      "referenceId": null,
+      "referenceContentSha256": null,
+      "scientificResultSha256": "1fd0054319f118ca83c5913d659c99521f699a1e8f0fe156187eff1cef39a7d6"
+    },
+    "createdAt": "2026-10-12T04:00:54.551Z",
+    "configuration": {
+      "schemaVersion": 3,
+      "analysisFamily": "ona",
+      "contracts": {
+        "validationContractVersion": "open-ena-validation-v3.1",
+        "runtimePolicyVersion": "open-ena-runtime-policy-v3.1"
+      },
+      "units": {
+        "columns": [
+          "unit"
+        ],
+        "group": {
+          "type": "none"
+        }
+      },
+      "horizons": {
+        "columns": [
+          "horizon"
+        ]
+      },
+      "codes": [
+        {
+          "column": "A",
+          "displayLabel": "A"
+        },
+        {
+          "column": "B",
+          "displayLabel": "B"
+        },
+        {
+          "column": "C",
+          "displayLabel": "C"
+        }
+      ],
+      "model": {
+        "type": "EndPoint"
+      },
+      "weighting": {
+        "type": "frequency",
+        "engineMethod": "sum"
+      },
+      "window": {
+        "type": "MovingStanzaWindow",
+        "backward": {
+          "kind": "finite",
+          "value": 1
+        },
+        "forward": 0,
+        "rowOrder": {
+          "kind": "columns",
+          "keys": [
+            {
+              "column": "turn",
+              "direction": "ascending",
+              "comparator": {
+                "type": "number"
+              }
+            }
+          ]
+        }
+      },
+      "rotation": {
+        "type": "svd",
+        "centerAlignToOrigin": true
+      },
+      "directionalMask": {
+        "schemaVersion": 1,
+        "codeOrder": [
+          "A",
+          "B",
+          "C"
+        ],
+        "enabled": [
+          [
+            true,
+            true,
+            true
+          ],
+          [
+            true,
+            true,
+            true
+          ],
+          [
+            true,
+            true,
+            true
+          ]
+        ]
+      }
+    },
+    "executionProvenance": {
+      "header": {
+        "schemaVersion": 3,
+        "analysisFamily": "ona",
+        "validationContractVersion": "open-ena-validation-v3.1",
+        "runtimePolicyVersion": "open-ena-runtime-policy-v3.1",
+        "executionContractVersion": "open-ena-execution-v3.1",
+        "datasetSha256": "9ab727db3d5e65ff936d340696a05083aad4e77559f89c00f11df01597dc3176",
+        "datasetHashKind": "canonical-first-xlsx-worksheet-v1-sha256",
+        "rowCount": 6,
+        "headerSha256": "6299819918e2afb75132e4692cb6d7ea2231fe4e5b378a51f820ca76c89a314f",
+        "datasetBinding": {
+          "hashKind": "canonical-first-xlsx-worksheet-v1-sha256",
+          "normalizedTableSha256": "9ab727db3d5e65ff936d340696a05083aad4e77559f89c00f11df01597dc3176",
+          "rowCount": 6,
+          "headerSha256": "6299819918e2afb75132e4692cb6d7ea2231fe4e5b378a51f820ca76c89a314f"
+        },
+        "configurationSha256": "4e92f8b20d2bca06a6779f3549016b7146fefbece28bb0d35ed21643a5c17da9",
+        "executionPlanSha256": "921a3a420f12ea7ab96e2aaf7a8707a5939eac292beca071b843410b34da0593",
+        "runtimeVersion": "0.7.0-ona.0",
+        "algorithmBuildSha": "90790856f00bdef63dbd27fc3a5b502e8cffe65f",
+        "resourceEstimate": {
+          "version": "open-ena-resource-v3.5",
+          "analysisFamily": "ona",
+          "rows": 6,
+          "units": 6,
+          "horizons": 1,
+          "windowPartitions": 1,
+          "codes": 3,
+          "adjacencyDimensions": 9,
+          "datasetSizeBytes": 2893,
+          "identityPayloadBytes": 2052,
+          "aggregateStateUpperBound": 1,
+          "estimatedStateCount": 20,
+          "estimatedStructuralBytes": 49950,
+          "endpointNetworks": 6,
+          "directionalMaskCells": 9,
+          "estimatedRotationWorkUnits": 1215,
+          "estimatedRotationMatrixBytes": 2808,
+          "estimatedForwardBufferRows": 0,
+          "estimatedRetainedWindowRows": 0,
+          "estimatedWindowStateCells": 11,
+          "estimatedWindowVisits": 6,
+          "estimatedNumericCells": 432,
+          "estimatedWorkerMaterializationBytes": 944,
+          "estimatedExportBytes": 1728,
+          "estimatedPeakBytes": 54350,
+          "blocked": false,
+          "blockedReasons": []
+        }
+      },
+      "sourceProofSha256": "1f66d84a4b93bcc65d1021155f7a8029055a6a172079080651f6dfc1bbf989e2",
+      "identityDictionary": {
+        "units": [
+          {
+            "token": "__open_ena_unit_v3_000000",
+            "fields": [
+              {
+                "column": "unit",
+                "value": {
+                  "type": "string",
+                  "value": "u1"
+                }
+              }
+            ],
+            "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u1\"}}]}",
+            "sha256": "076daa03fa597844ae4e35cc9a7f25935166f9910263025057e25fb37709958c",
+            "displayLabel": "Unit unit=u1"
+          },
+          {
+            "token": "__open_ena_unit_v3_000001",
+            "fields": [
+              {
+                "column": "unit",
+                "value": {
+                  "type": "string",
+                  "value": "u3"
+                }
+              }
+            ],
+            "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u3\"}}]}",
+            "sha256": "0a422748b59eb71884792369e66125bcd2740374e58786cd71b02e2687147da3",
+            "displayLabel": "Unit unit=u3"
+          },
+          {
+            "token": "__open_ena_unit_v3_000002",
+            "fields": [
+              {
+                "column": "unit",
+                "value": {
+                  "type": "string",
+                  "value": "u5"
+                }
+              }
+            ],
+            "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u5\"}}]}",
+            "sha256": "4dd5a89737f74c17f0461f99d124567b470711b85f263fe5d7b5618ad1519ea7",
+            "displayLabel": "Unit unit=u5"
+          },
+          {
+            "token": "__open_ena_unit_v3_000003",
+            "fields": [
+              {
+                "column": "unit",
+                "value": {
+                  "type": "string",
+                  "value": "u4"
+                }
+              }
+            ],
+            "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u4\"}}]}",
+            "sha256": "9060317e88e114896155d12b2ce05b2cb868e50f6540b12bdab271233a356f45",
+            "displayLabel": "Unit unit=u4"
+          },
+          {
+            "token": "__open_ena_unit_v3_000004",
+            "fields": [
+              {
+                "column": "unit",
+                "value": {
+                  "type": "string",
+                  "value": "u2"
+                }
+              }
+            ],
+            "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u2\"}}]}",
+            "sha256": "aac9f17bd802cc9657e3a1fc07c04273f304512c99af2af2bcabbbca8819abb7",
+            "displayLabel": "Unit unit=u2"
+          },
+          {
+            "token": "__open_ena_unit_v3_000005",
+            "fields": [
+              {
+                "column": "unit",
+                "value": {
+                  "type": "string",
+                  "value": "u0"
+                }
+              }
+            ],
+            "canonicalJson": "{\"fields\":[{\"column\":\"unit\",\"value\":{\"type\":\"string\",\"value\":\"u0\"}}]}",
+            "sha256": "c6f0e922f45267d164d79415c8076c7671a1cf0f67256b07596ac18b7ed75dd2",
+            "displayLabel": "Unit unit=u0"
+          }
+        ],
+        "horizons": [
+          {
+            "token": "__open_ena_horizon_v3_000000",
+            "fields": [
+              {
+                "column": "horizon",
+                "value": {
+                  "type": "string",
+                  "value": "h"
+                }
+              }
+            ],
+            "canonicalJson": "{\"fields\":[{\"column\":\"horizon\",\"value\":{\"type\":\"string\",\"value\":\"h\"}}]}",
+            "sha256": "e9c007974c1302e93b18d091d1162f7b5407aac6f98c67c92923288d0f3034c4",
+            "displayLabel": "Horizon horizon=h"
+          }
+        ],
+        "groups": []
+      },
+      "codeDictionary": {
+        "codes": [
+          {
+            "token": "__open_ena_code_v3_000",
+            "sourceColumn": "A",
+            "displayLabel": "A",
+            "canonicalIdentity": "A"
+          },
+          {
+            "token": "__open_ena_code_v3_001",
+            "sourceColumn": "B",
+            "displayLabel": "B",
+            "canonicalIdentity": "B"
+          },
+          {
+            "token": "__open_ena_code_v3_002",
+            "sourceColumn": "C",
+            "displayLabel": "C",
+            "canonicalIdentity": "C"
+          }
+        ],
+        "edges": [
+          {
+            "token": "__open_ena_directed_edge_v3_000_000",
+            "sourceCodeIdentity": "A",
+            "targetCodeIdentity": "A",
+            "groundIndex": 0,
+            "responseIndex": 0
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_001_000",
+            "sourceCodeIdentity": "B",
+            "targetCodeIdentity": "A",
+            "groundIndex": 1,
+            "responseIndex": 0
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_002_000",
+            "sourceCodeIdentity": "C",
+            "targetCodeIdentity": "A",
+            "groundIndex": 2,
+            "responseIndex": 0
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_000_001",
+            "sourceCodeIdentity": "A",
+            "targetCodeIdentity": "B",
+            "groundIndex": 0,
+            "responseIndex": 1
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_001_001",
+            "sourceCodeIdentity": "B",
+            "targetCodeIdentity": "B",
+            "groundIndex": 1,
+            "responseIndex": 1
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_002_001",
+            "sourceCodeIdentity": "C",
+            "targetCodeIdentity": "B",
+            "groundIndex": 2,
+            "responseIndex": 1
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_000_002",
+            "sourceCodeIdentity": "A",
+            "targetCodeIdentity": "C",
+            "groundIndex": 0,
+            "responseIndex": 2
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_001_002",
+            "sourceCodeIdentity": "B",
+            "targetCodeIdentity": "C",
+            "groundIndex": 1,
+            "responseIndex": 2
+          },
+          {
+            "token": "__open_ena_directed_edge_v3_002_002",
+            "sourceCodeIdentity": "C",
+            "targetCodeIdentity": "C",
+            "groundIndex": 2,
+            "responseIndex": 2
+          }
+        ]
+      },
+      "codeRepresentations": [
+        {
+          "runtimeToken": "__open_ena_code_v3_000",
+          "sourceColumn": "A",
+          "sourceRepresentation": "frequency",
+          "runtimeRepresentation": "number"
+        },
+        {
+          "runtimeToken": "__open_ena_code_v3_001",
+          "sourceColumn": "B",
+          "sourceRepresentation": "frequency",
+          "runtimeRepresentation": "number"
+        },
+        {
+          "runtimeToken": "__open_ena_code_v3_002",
+          "sourceColumn": "C",
+          "sourceRepresentation": "frequency",
+          "runtimeRepresentation": "number"
+        }
+      ],
+      "unitGroups": [
+        {
+          "unitToken": "__open_ena_unit_v3_000000",
+          "groupToken": null
+        },
+        {
+          "unitToken": "__open_ena_unit_v3_000001",
+          "groupToken": null
+        },
+        {
+          "unitToken": "__open_ena_unit_v3_000002",
+          "groupToken": null
+        },
+        {
+          "unitToken": "__open_ena_unit_v3_000003",
+          "groupToken": null
+        },
+        {
+          "unitToken": "__open_ena_unit_v3_000004",
+          "groupToken": null
+        },
+        {
+          "unitToken": "__open_ena_unit_v3_000005",
+          "groupToken": null
+        }
+      ],
+      "labels": {
+        "unitColumn": "Unit",
+        "horizonColumn": "Horizon",
+        "groupColumn": "Group",
+        "codes": [
+          {
+            "runtimeToken": "__open_ena_code_v3_000",
+            "column": "Code 1",
+            "sourceColumn": "A",
+            "displayLabel": "A",
+            "canonicalIdentity": "A"
+          },
+          {
+            "runtimeToken": "__open_ena_code_v3_001",
+            "column": "Code 2",
+            "sourceColumn": "B",
+            "displayLabel": "B",
+            "canonicalIdentity": "B"
+          },
+          {
+            "runtimeToken": "__open_ena_code_v3_002",
+            "column": "Code 3",
+            "sourceColumn": "C",
+            "displayLabel": "C",
+            "canonicalIdentity": "C"
+          }
+        ],
+        "edges": [
+          {
+            "runtimeColumn": "__open_ena_code_v3_000 & __open_ena_code_v3_000",
+            "column": "Connection 1",
+            "sourceCodeIdentity": "A",
+            "targetCodeIdentity": "A"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_001 & __open_ena_code_v3_000",
+            "column": "Connection 2",
+            "sourceCodeIdentity": "B",
+            "targetCodeIdentity": "A"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_002 & __open_ena_code_v3_000",
+            "column": "Connection 3",
+            "sourceCodeIdentity": "C",
+            "targetCodeIdentity": "A"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_000 & __open_ena_code_v3_001",
+            "column": "Connection 4",
+            "sourceCodeIdentity": "A",
+            "targetCodeIdentity": "B"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_001 & __open_ena_code_v3_001",
+            "column": "Connection 5",
+            "sourceCodeIdentity": "B",
+            "targetCodeIdentity": "B"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_002 & __open_ena_code_v3_001",
+            "column": "Connection 6",
+            "sourceCodeIdentity": "C",
+            "targetCodeIdentity": "B"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_000 & __open_ena_code_v3_002",
+            "column": "Connection 7",
+            "sourceCodeIdentity": "A",
+            "targetCodeIdentity": "C"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_001 & __open_ena_code_v3_002",
+            "column": "Connection 8",
+            "sourceCodeIdentity": "B",
+            "targetCodeIdentity": "C"
+          },
+          {
+            "runtimeColumn": "__open_ena_code_v3_002 & __open_ena_code_v3_002",
+            "column": "Connection 9",
+            "sourceCodeIdentity": "C",
+            "targetCodeIdentity": "C"
+          }
+        ]
+      },
+      "ordering": {
+        "requestedRowOrder": {
+          "kind": "columns",
+          "keys": [
+            {
+              "column": "turn",
+              "direction": "ascending",
+              "comparator": {
+                "type": "number"
+              }
+            }
+          ]
+        },
+        "resolvedRowOrder": {
+          "type": "within-horizon-order",
+          "requestedPolicy": {
+            "keys": [
+              {
+                "column": "turn",
+                "comparator": {
+                  "type": "number"
+                },
+                "direction": "ascending"
+              }
+            ],
+            "kind": "columns"
+          },
+          "mappings": [
+            {
+              "sourceRowIndex": 0,
+              "horizonToken": "__open_ena_horizon_v3_000000",
+              "orderTuple": [
+                0
+              ],
+              "withinHorizonOrdinal": 0
+            },
+            {
+              "sourceRowIndex": 1,
+              "horizonToken": "__open_ena_horizon_v3_000000",
+              "orderTuple": [
+                1
+              ],
+              "withinHorizonOrdinal": 1
+            },
+            {
+              "sourceRowIndex": 2,
+              "horizonToken": "__open_ena_horizon_v3_000000",
+              "orderTuple": [
+                2
+              ],
+              "withinHorizonOrdinal": 2
+            },
+            {
+              "sourceRowIndex": 3,
+              "horizonToken": "__open_ena_horizon_v3_000000",
+              "orderTuple": [
+                3
+              ],
+              "withinHorizonOrdinal": 3
+            },
+            {
+              "sourceRowIndex": 4,
+              "horizonToken": "__open_ena_horizon_v3_000000",
+              "orderTuple": [
+                4
+              ],
+              "withinHorizonOrdinal": 4
+            },
+            {
+              "sourceRowIndex": 5,
+              "horizonToken": "__open_ena_horizon_v3_000000",
+              "orderTuple": [
+                5
+              ],
+              "withinHorizonOrdinal": 5
+            }
+          ],
+          "orderedSourceRowIndices": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "sourceOrderBinding": null,
+          "textCollationBindings": []
+        },
+        "resolvedHorizonOrder": {
+          "type": "not-applicable",
+          "reason": "endpoint-model"
+        },
+        "runtimeSourceRowIndices": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "adapterParameters": {
+        "networkType": "ordered",
+        "unitTokenColumn": "__open_ena_unit_token",
+        "horizonTokenColumn": "__open_ena_horizon_token",
+        "groupTokenColumn": "__open_ena_group_token",
+        "codeTokens": [
+          "__open_ena_code_v3_000",
+          "__open_ena_code_v3_001",
+          "__open_ena_code_v3_002"
+        ],
+        "model": "EndPoint",
+        "window": {
+          "type": "MovingStanzaWindow",
+          "backward": {
+            "kind": "finite",
+            "value": 1
+          },
+          "forward": 0
+        },
+        "weightBy": "sum",
+        "rotation": "svd",
+        "centerAlignToOrigin": true,
+        "nodePositionMethod": "directed",
+        "displayDimensions": 3
+      },
+      "weighting": {
+        "scientific": "frequency",
+        "runtime": "sum"
+      },
+      "directionalMask": {
+        "schemaVersion": 1,
+        "codeOrder": [
+          "A",
+          "B",
+          "C"
+        ],
+        "enabled": [
+          [
+            true,
+            true,
+            true
+          ],
+          [
+            true,
+            true,
+            true
+          ],
+          [
+            true,
+            true,
+            true
+          ]
+        ]
+      },
+      "normalization": "sphere",
+      "boundary": "within-horizon",
+      "reference": null,
+      "projection": {
+        "type": "svd",
+        "centerAlignToOrigin": true,
+        "rank": 3,
+        "fullAxes": [
+          "SVD1",
+          "SVD2",
+          "SVD3",
+          "SVD4",
+          "SVD5",
+          "SVD6",
+          "SVD7",
+          "SVD8",
+          "SVD9"
+        ],
+        "estimableAxes": [
+          "SVD1",
+          "SVD2",
+          "SVD3"
+        ],
+        "geometryPath": "set.rotation",
+        "variancePath": "set.variance"
+      },
+      "populations": {
+        "fit": "endpoint-units",
+        "fitTokens": [
+          "__open_ena_unit_v3_000005",
+          "__open_ena_unit_v3_000000",
+          "__open_ena_unit_v3_000004",
+          "__open_ena_unit_v3_000001",
+          "__open_ena_unit_v3_000003",
+          "__open_ena_unit_v3_000002"
+        ],
+        "targetTokens": [
+          "__open_ena_unit_v3_000005",
+          "__open_ena_unit_v3_000000",
+          "__open_ena_unit_v3_000004",
+          "__open_ena_unit_v3_000001",
+          "__open_ena_unit_v3_000003",
+          "__open_ena_unit_v3_000002"
+        ],
+        "imputedStepCount": 0
+      },
+      "resources": {
+        "targetBaseline": {
+          "version": "open-ena-resource-v3.5",
+          "analysisFamily": "ona",
+          "rows": 6,
+          "units": 6,
+          "horizons": 1,
+          "windowPartitions": 1,
+          "codes": 3,
+          "adjacencyDimensions": 9,
+          "datasetSizeBytes": 2893,
+          "identityPayloadBytes": 2052,
+          "aggregateStateUpperBound": 1,
+          "estimatedStateCount": 20,
+          "estimatedStructuralBytes": 49950,
+          "endpointNetworks": 6,
+          "directionalMaskCells": 9,
+          "estimatedRotationWorkUnits": 1215,
+          "estimatedRotationMatrixBytes": 2808,
+          "estimatedForwardBufferRows": 0,
+          "estimatedRetainedWindowRows": 0,
+          "estimatedWindowStateCells": 11,
+          "estimatedWindowVisits": 6,
+          "estimatedNumericCells": 432,
+          "estimatedWorkerMaterializationBytes": 944,
+          "estimatedExportBytes": 1728,
+          "estimatedPeakBytes": 54350,
+          "blocked": false,
+          "blockedReasons": []
+        },
+        "operationalAdmission": {
+          "version": "open-ena-ona-operational-v1",
+          "compactScientificCells": 444,
+          "resultIdentityBytes": 108506,
+          "generatedTableKeyBytes": 16704,
+          "numericSerializationBytes": 85248,
+          "metadataSerializationBytes": 868048,
+          "closureWorkUnits": 2862,
+          "stages": {
+            "sourceCaptureCells": 135,
+            "accumulationCells": 600,
+            "modelCells": 1431,
+            "bindingCells": 2748,
+            "rankDiagnosticCells": 612,
+            "validationScratchCells": 846,
+            "scientificClosureCells": 486
+          },
+          "incrementalNumericCells": 2316,
+          "incrementalPeakBytes": 971824,
+          "incrementalExportBytes": 117434,
+          "totalNumericCells": 2748,
+          "totalPeakBytes": 1026174,
+          "totalExportBytes": 119162,
+          "totalStructuralBytes": 917998
+        },
+        "counterContract": {
+          "version": 1,
+          "numericCells": "conservative-phase-dimension-upper-bound",
+          "bufferedRows": "chunk-boundary-observation-plus-separate-peak-upper-bound",
+          "bytes": "conservative-structural-and-temporary-overlap-bound"
+        },
+        "observed": {
+          "processedRows": 6,
+          "maximumRetainedRowsAfterChunk": 0,
+          "bufferedRowsPeakUpperBound": 1,
+          "numericCellsUpperBound": 2748,
+          "peakBytesUpperBound": 1026174,
+          "observationMethod": "dimension-bounds-and-chunk-boundary-stream-state"
+        }
+      },
+      "diagnostics": []
+    },
+    "tables": {
+      "connectionCounts": [
+        {
+          "ENA_UNIT": "Unit unit=u0",
+          "Unit": "Unit unit=u0",
+          "Connection 1": 0,
+          "Connection 2": 1,
+          "Connection 3": 0.5,
+          "Connection 4": 1,
+          "Connection 5": 0,
+          "Connection 6": 1,
+          "Connection 7": 0.5,
+          "Connection 8": 1,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u1",
+          "Unit": "Unit unit=u1",
+          "Connection 1": 0,
+          "Connection 2": 1,
+          "Connection 3": 2,
+          "Connection 4": 1,
+          "Connection 5": 0,
+          "Connection 6": 1,
+          "Connection 7": 2,
+          "Connection 8": 1,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u2",
+          "Unit": "Unit unit=u2",
+          "Connection 1": 0,
+          "Connection 2": 1,
+          "Connection 3": 1.5,
+          "Connection 4": 1,
+          "Connection 5": 0,
+          "Connection 6": 3,
+          "Connection 7": 1.5,
+          "Connection 8": 3,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u3",
+          "Unit": "Unit unit=u3",
+          "Connection 1": 0,
+          "Connection 2": 1,
+          "Connection 3": 1,
+          "Connection 4": 1,
+          "Connection 5": 0,
+          "Connection 6": 0.5,
+          "Connection 7": 1,
+          "Connection 8": 0.5,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u4",
+          "Unit": "Unit unit=u4",
+          "Connection 1": 0,
+          "Connection 2": 1,
+          "Connection 3": 1,
+          "Connection 4": 1,
+          "Connection 5": 0,
+          "Connection 6": 2,
+          "Connection 7": 1,
+          "Connection 8": 2,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u5",
+          "Unit": "Unit unit=u5",
+          "Connection 1": 0,
+          "Connection 2": 1,
+          "Connection 3": 3,
+          "Connection 4": 1,
+          "Connection 5": 0,
+          "Connection 6": 1.5,
+          "Connection 7": 3,
+          "Connection 8": 1.5,
+          "Connection 9": 0
+        }
+      ],
+      "lineWeights": [
+        {
+          "ENA_UNIT": "Unit unit=u0",
+          "Unit": "Unit unit=u0",
+          "Connection 1": 0,
+          "Connection 2": 0.47140452079103173,
+          "Connection 3": 0.23570226039551587,
+          "Connection 4": 0.47140452079103173,
+          "Connection 5": 0,
+          "Connection 6": 0.47140452079103173,
+          "Connection 7": 0.23570226039551587,
+          "Connection 8": 0.47140452079103173,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u1",
+          "Unit": "Unit unit=u1",
+          "Connection 1": 0,
+          "Connection 2": 0.2886751345948129,
+          "Connection 3": 0.5773502691896258,
+          "Connection 4": 0.2886751345948129,
+          "Connection 5": 0,
+          "Connection 6": 0.2886751345948129,
+          "Connection 7": 0.5773502691896258,
+          "Connection 8": 0.2886751345948129,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u2",
+          "Unit": "Unit unit=u2",
+          "Connection 1": 0,
+          "Connection 2": 0.20203050891044214,
+          "Connection 3": 0.30304576336566325,
+          "Connection 4": 0.20203050891044214,
+          "Connection 5": 0,
+          "Connection 6": 0.6060915267313265,
+          "Connection 7": 0.30304576336566325,
+          "Connection 8": 0.6060915267313265,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u3",
+          "Unit": "Unit unit=u3",
+          "Connection 1": 0,
+          "Connection 2": 0.47140452079103173,
+          "Connection 3": 0.47140452079103173,
+          "Connection 4": 0.47140452079103173,
+          "Connection 5": 0,
+          "Connection 6": 0.23570226039551587,
+          "Connection 7": 0.47140452079103173,
+          "Connection 8": 0.23570226039551587,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u4",
+          "Unit": "Unit unit=u4",
+          "Connection 1": 0,
+          "Connection 2": 0.2886751345948129,
+          "Connection 3": 0.2886751345948129,
+          "Connection 4": 0.2886751345948129,
+          "Connection 5": 0,
+          "Connection 6": 0.5773502691896258,
+          "Connection 7": 0.2886751345948129,
+          "Connection 8": 0.5773502691896258,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u5",
+          "Unit": "Unit unit=u5",
+          "Connection 1": 0,
+          "Connection 2": 0.20203050891044214,
+          "Connection 3": 0.6060915267313265,
+          "Connection 4": 0.20203050891044214,
+          "Connection 5": 0,
+          "Connection 6": 0.30304576336566325,
+          "Connection 7": 0.6060915267313265,
+          "Connection 8": 0.30304576336566325,
+          "Connection 9": 0
+        }
+      ],
+      "pointsForProjection": [
+        {
+          "ENA_UNIT": "Unit unit=u0",
+          "Unit": "Unit unit=u0",
+          "Connection 1": 0,
+          "Connection 2": 0.15070113269226948,
+          "Connection 3": -0.17800931878248016,
+          "Connection 4": 0.15070113269226948,
+          "Connection 5": 0,
+          "Connection 6": 0.05769294161303572,
+          "Connection 7": -0.17800931878248016,
+          "Connection 8": 0.05769294161303572,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u1",
+          "Unit": "Unit unit=u1",
+          "Connection 1": 0,
+          "Connection 2": -0.03202825350394934,
+          "Connection 3": 0.16363869001162984,
+          "Connection 4": -0.03202825350394934,
+          "Connection 5": 0,
+          "Connection 6": -0.12503644458318308,
+          "Connection 7": 0.16363869001162984,
+          "Connection 8": -0.12503644458318308,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u2",
+          "Unit": "Unit unit=u2",
+          "Connection 1": 0,
+          "Connection 2": -0.11867287918832013,
+          "Connection 3": -0.11066581581233277,
+          "Connection 4": -0.11867287918832013,
+          "Connection 5": 0,
+          "Connection 6": 0.1923799475533305,
+          "Connection 7": -0.11066581581233277,
+          "Connection 8": 0.1923799475533305,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u3",
+          "Unit": "Unit unit=u3",
+          "Connection 1": 0,
+          "Connection 2": 0.15070113269226948,
+          "Connection 3": 0.05769294161303572,
+          "Connection 4": 0.15070113269226948,
+          "Connection 5": 0,
+          "Connection 6": -0.17800931878248016,
+          "Connection 7": 0.05769294161303572,
+          "Connection 8": -0.17800931878248016,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u4",
+          "Unit": "Unit unit=u4",
+          "Connection 1": 0,
+          "Connection 2": -0.03202825350394934,
+          "Connection 3": -0.12503644458318308,
+          "Connection 4": -0.03202825350394934,
+          "Connection 5": 0,
+          "Connection 6": 0.16363869001162984,
+          "Connection 7": -0.12503644458318308,
+          "Connection 8": 0.16363869001162984,
+          "Connection 9": 0
+        },
+        {
+          "ENA_UNIT": "Unit unit=u5",
+          "Unit": "Unit unit=u5",
+          "Connection 1": 0,
+          "Connection 2": -0.11867287918832013,
+          "Connection 3": 0.1923799475533305,
+          "Connection 4": -0.11867287918832013,
+          "Connection 5": 0,
+          "Connection 6": -0.11066581581233277,
+          "Connection 7": 0.1923799475533305,
+          "Connection 8": -0.11066581581233277,
+          "Connection 9": 0
+        }
+      ],
+      "points": [
+        {
+          "ENA_UNIT": "Unit unit=u0",
+          "Unit": "Unit unit=u0",
+          "SVD1": 0.23570226039551584,
+          "SVD2": -0.24471310014737768,
+          "SVD3": 0.0036320821721907252
+        },
+        {
+          "ENA_UNIT": "Unit unit=u1",
+          "Unit": "Unit unit=u1",
+          "SVD1": -0.28867513459481287,
+          "SVD2": 0.05824579331756045,
+          "SVD3": -0.012213883819349153
+        },
+        {
+          "ENA_UNIT": "Unit unit=u2",
+          "Unit": "Unit unit=u2",
+          "SVD1": 0.30304576336566325,
+          "SVD2": 0.18646730682981721,
+          "SVD3": 0.008581801647158382
+        },
+        {
+          "ENA_UNIT": "Unit unit=u3",
+          "Unit": "Unit unit=u3",
+          "SVD1": -0.23570226039551587,
+          "SVD2": -0.24471310014737765,
+          "SVD3": 0.003632082172190701
+        },
+        {
+          "ENA_UNIT": "Unit unit=u4",
+          "Unit": "Unit unit=u4",
+          "SVD1": 0.28867513459481287,
+          "SVD2": 0.05824579331756041,
+          "SVD3": -0.012213883819349118
+        },
+        {
+          "ENA_UNIT": "Unit unit=u5",
+          "Unit": "Unit unit=u5",
+          "SVD1": -0.30304576336566325,
+          "SVD2": 0.18646730682981724,
+          "SVD3": 0.008581801647158362
+        }
+      ],
+      "trajectories": []
+    },
+    "modelData": {
+      "modelType": "EndPoint",
+      "codes": [
+        "Code 1",
+        "Code 2",
+        "Code 3"
+      ],
+      "units": [
+        "Unit"
+      ],
+      "conversation": [
+        "Horizon"
+      ],
+      "codeColumns": [
+        "Connection 1",
+        "Connection 2",
+        "Connection 3",
+        "Connection 4",
+        "Connection 5",
+        "Connection 6",
+        "Connection 7",
+        "Connection 8",
+        "Connection 9"
+      ],
+      "adjacencyKey": [
+        {
+          "source": "Code 1",
+          "target": "Code 1",
+          "name": "Connection 1",
+          "sourceIndex": 0,
+          "targetIndex": 0
+        },
+        {
+          "source": "Code 2",
+          "target": "Code 1",
+          "name": "Connection 2",
+          "sourceIndex": 1,
+          "targetIndex": 0
+        },
+        {
+          "source": "Code 3",
+          "target": "Code 1",
+          "name": "Connection 3",
+          "sourceIndex": 2,
+          "targetIndex": 0
+        },
+        {
+          "source": "Code 1",
+          "target": "Code 2",
+          "name": "Connection 4",
+          "sourceIndex": 0,
+          "targetIndex": 1
+        },
+        {
+          "source": "Code 2",
+          "target": "Code 2",
+          "name": "Connection 5",
+          "sourceIndex": 1,
+          "targetIndex": 1
+        },
+        {
+          "source": "Code 3",
+          "target": "Code 2",
+          "name": "Connection 6",
+          "sourceIndex": 2,
+          "targetIndex": 1
+        },
+        {
+          "source": "Code 1",
+          "target": "Code 3",
+          "name": "Connection 7",
+          "sourceIndex": 0,
+          "targetIndex": 2
+        },
+        {
+          "source": "Code 2",
+          "target": "Code 3",
+          "name": "Connection 8",
+          "sourceIndex": 1,
+          "targetIndex": 2
+        },
+        {
+          "source": "Code 3",
+          "target": "Code 3",
+          "name": "Connection 9",
+          "sourceIndex": 2,
+          "targetIndex": 2
+        }
+      ],
+      "rawRows": [],
+      "rowConnectionCounts": [],
+      "connectionMatrix": [
+        [
+          0,
+          1,
+          0.5,
+          1,
+          0,
+          1,
+          0.5,
+          1,
+          0
+        ],
+        [
+          0,
+          1,
+          2,
+          1,
+          0,
+          1,
+          2,
+          1,
+          0
+        ],
+        [
+          0,
+          1,
+          1.5,
+          1,
+          0,
+          3,
+          1.5,
+          3,
+          0
+        ],
+        [
+          0,
+          1,
+          1,
+          1,
+          0,
+          0.5,
+          1,
+          0.5,
+          0
+        ],
+        [
+          0,
+          1,
+          1,
+          1,
+          0,
+          2,
+          1,
+          2,
+          0
+        ],
+        [
+          0,
+          1,
+          3,
+          1,
+          0,
+          1.5,
+          3,
+          1.5,
+          0
+        ]
+      ],
+      "metaData": [],
+      "unitLabels": [
+        "Unit unit=u0",
+        "Unit unit=u1",
+        "Unit unit=u2",
+        "Unit unit=u3",
+        "Unit unit=u4",
+        "Unit unit=u5"
+      ],
+      "functionParams": {
+        "model": "EndPoint",
+        "weightBy": "sum",
+        "window": "MovingStanzaWindow",
+        "windowSizeBack": 1,
+        "windowSizeForward": 0,
+        "includeMeta": true,
+        "networkType": "ordered"
+      },
+      "networkType": "ordered",
+      "rowWindowProvenance": [],
+      "variance": {
+        "SVD1": 0.7012749904071921,
+        "SVD2": 0.29800764787392003,
+        "SVD3": 0.0007173617188879814,
+        "SVD4": 4.368154118308053e-30,
+        "SVD5": 2.5062275717096552e-30,
+        "SVD6": 1.5436937676950428e-32,
+        "SVD7": 0,
+        "SVD8": 0,
+        "SVD9": 0
+      },
+      "centroids": [
+        {
+          "unit": "Unit unit=u0",
+          "SVD1": 0.22835582440246896,
+          "SVD2": -0.2434151160151674,
+          "SVD3": -0.0001985443203863542
+        },
+        {
+          "unit": "Unit unit=u1",
+          "SVD1": -0.2854447805030868,
+          "SVD2": 0.0540922480101651,
+          "SVD3": 0.00004412096009136744
+        },
+        {
+          "unit": "Unit unit=u2",
+          "SVD1": 0.3113943060033684,
+          "SVD2": 0.1893228680216812,
+          "SVD3": 0.00015442336030855122
+        },
+        {
+          "unit": "Unit unit=u3",
+          "SVD1": -0.22835582440247057,
+          "SVD2": -0.2434151160151683,
+          "SVD3": -0.00019854432038637492
+        },
+        {
+          "unit": "Unit unit=u4",
+          "SVD1": 0.28544478050308736,
+          "SVD2": 0.05409224801016599,
+          "SVD3": 0.000044120960091393355
+        },
+        {
+          "unit": "Unit unit=u5",
+          "SVD1": -0.311394306003367,
+          "SVD2": 0.18932286802168008,
+          "SVD3": 0.0001544233603085228
+        }
+      ]
+    },
+    "rotation": {
+      "codes": [
+        "Code 1",
+        "Code 2",
+        "Code 3"
+      ],
+      "adjacencyKey": [
+        {
+          "source": "Code 1",
+          "target": "Code 1",
+          "name": "Connection 1",
+          "sourceIndex": 0,
+          "targetIndex": 0
+        },
+        {
+          "source": "Code 2",
+          "target": "Code 1",
+          "name": "Connection 2",
+          "sourceIndex": 1,
+          "targetIndex": 0
+        },
+        {
+          "source": "Code 3",
+          "target": "Code 1",
+          "name": "Connection 3",
+          "sourceIndex": 2,
+          "targetIndex": 0
+        },
+        {
+          "source": "Code 1",
+          "target": "Code 2",
+          "name": "Connection 4",
+          "sourceIndex": 0,
+          "targetIndex": 1
+        },
+        {
+          "source": "Code 2",
+          "target": "Code 2",
+          "name": "Connection 5",
+          "sourceIndex": 1,
+          "targetIndex": 1
+        },
+        {
+          "source": "Code 3",
+          "target": "Code 2",
+          "name": "Connection 6",
+          "sourceIndex": 2,
+          "targetIndex": 1
+        },
+        {
+          "source": "Code 1",
+          "target": "Code 3",
+          "name": "Connection 7",
+          "sourceIndex": 0,
+          "targetIndex": 2
+        },
+        {
+          "source": "Code 2",
+          "target": "Code 3",
+          "name": "Connection 8",
+          "sourceIndex": 1,
+          "targetIndex": 2
+        },
+        {
+          "source": "Code 3",
+          "target": "Code 3",
+          "name": "Connection 9",
+          "sourceIndex": 2,
+          "targetIndex": 2
+        }
+      ],
+      "rotationMatrix": [
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          -4.8747970764355556e-17,
+          -0.6208510578136561,
+          -0.3384434428551691,
+          0.14381135908150366,
+          -0.3368710072547443,
+          -0.6048439612580329,
+          0,
+          0,
+          0
+        ],
+        [
+          -0.5000000000000001,
+          0.23931565349101602,
+          -0.4390079930868708,
+          -0.43897700661758704,
+          0.43333200286869894,
+          -0.3457203536832492,
+          0,
+          0,
+          0
+        ],
+        [
+          -7.177958764982187e-17,
+          -0.6208510578136561,
+          -0.3384434428551811,
+          -0.14381135908155596,
+          0.33687100725470415,
+          0.6048439612580361,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          0.49999999999999994,
+          0.23931565349101613,
+          -0.43900799308694594,
+          0.5353666786980483,
+          0.4458041046927942,
+          -0.12100090734707926,
+          0,
+          0,
+          0
+        ],
+        [
+          -0.5,
+          0.23931565349101622,
+          -0.4390079930868844,
+          0.43897700661751904,
+          -0.4333320028687506,
+          0.34572035368325316,
+          0,
+          0,
+          0
+        ],
+        [
+          0.49999999999999983,
+          0.23931565349101602,
+          -0.43900799308680916,
+          -0.5353666786981166,
+          -0.4458041046928461,
+          0.12100090734708316,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1
+        ]
+      ],
+      "rotationColumns": [
+        "SVD1",
+        "SVD2",
+        "SVD3",
+        "SVD4",
+        "SVD5",
+        "SVD6",
+        "SVD7",
+        "SVD8",
+        "SVD9"
+      ],
+      "eigenvalues": [
+        0.09229024943310654,
+        0.03921885213571905,
+        0.00009440731934770921,
+        1.4274289792771408e-17,
+        1.1568362744319982e-18,
+        9.297046923423796e-19,
+        0,
+        0,
+        0
+      ],
+      "centerVector": [
+        0,
+        0.32070338809876225,
+        0.413711579177996,
+        0.32070338809876225,
+        0,
+        0.413711579177996,
+        0.413711579177996,
+        0.413711579177996,
+        0
+      ],
+      "nodes": [
+        {
+          "code": "Code 1",
+          "SVD1": -2.283558244024702,
+          "SVD2": -1.4334445721165052,
+          "SVD3": -0.0011692054422974478
+        },
+        {
+          "code": "Code 2",
+          "SVD1": 2.2835582440246913,
+          "SVD2": -1.4334445721164977,
+          "SVD3": -0.00116920544229724
+        },
+        {
+          "code": "Code 3",
+          "SVD1": 9.680654511847714e-15,
+          "SVD2": 2.5333202815546105,
+          "SVD3": 0.002066331630739254
+        }
+      ]
+    },
+    "statistics": {
+      "available": false,
+      "diagnostics": [
+        "Statistics were not computed in this bound result."
+      ],
+      "value": null
+    },
+    "capabilityStatus": {
+      "build-model": "available",
+      "export-current-model": "available",
+      "export-reference": "blocked",
+      "group-inference": "blocked",
+      "trajectory-inference": "blocked",
+      "longitudinal-comparison": "blocked",
+      "ai-interpretation": "blocked"
+    },
+    "diagnostics": {
+      "warnings": [],
+      "execution": []
+    },
+    "methodsReportMarkdown": "# Open ENA v3 bound Methods report\n\nThis report was generated solely from the bound result and its retained execution provenance.\n\n## Data binding\n\n- Dataset SHA-256: `9ab727db3d5e65ff936d340696a05083aad4e77559f89c00f11df01597dc3176`\n- Dataset hash kind: `canonical-first-xlsx-worksheet-v1-sha256`\n- Header SHA-256: `6299819918e2afb75132e4692cb6d7ea2231fe4e5b378a51f820ca76c89a314f`\n- Input shape: 6 source rows\n- Configuration SHA-256: `4e92f8b20d2bca06a6779f3549016b7146fefbece28bb0d35ed21643a5c17da9`\n- Execution-plan SHA-256: `921a3a420f12ea7ab96e2aaf7a8707a5939eac292beca071b843410b34da0593`\n- Scientific-result SHA-256: `1fd0054319f118ca83c5913d659c99521f699a1e8f0fe156187eff1cef39a7d6`\n- Runtime: `0.7.0-ona.0`; algorithm build: `90790856f00bdef63dbd27fc3a5b502e8cffe65f`\n- Contracts: validation `open-ena-validation-v3.1`; runtime policy `open-ena-runtime-policy-v3.1`; execution `open-ena-execution-v3.1`\n- Bound result created: `2026-10-12T04:00:54.551Z`\n\n## Units\n\n- Unit fields: `unit`\n- Observed typed Units: 6\n- Group field: none.\n\n## Horizons\n\n- Horizon fields: `horizon`\n- Observed typed Horizons: 1\n- No shared-Horizon condition was recorded in the bound provenance.\n- Window boundaries were enforced within each Horizon.\n\n## Codes\n\n- Selected Codes (3):\n  - source `A`; display `A`; input `frequency`; runtime `number`\n  - source `B`; display `B`; input `frequency`; runtime `number`\n  - source `C`; display `C`; input `frequency`; runtime `number`\n\n## Window and weighting\n\n- Scientific weighting: `frequency`; runtime weighting: `sum`.\n- Frequency input retains nonnegative Code counts; the runtime summed windowed count products.\n- Window: MovingStanzaWindow.\n- Backward size 1 includes the current row and up to 0 preceding rows within each Horizon.\n- Forward size 0 includes no following rows within each Horizon.\n- Network vectors used sphere normalization before centering and rotation.\n\n## Ordering\n\n- Requested row order: `turn` ascending by number.\n- Resolved within-Horizon source-row sequences (6 rows):\n  - `Horizon horizon=h`: 0=source-row index 0, 1=source-row index 1, 2=source-row index 2, 3=source-row index 3, 4=source-row index 4, 5=source-row index 5\n- Bound runtime source-row traversal: 0, 1, 2, 3, 4, 5.\n- Requested Horizon order: not applicable.\n- Resolved Horizon order: not applicable (EndPoint model).\n\n## Model and trajectory\n\n- Model: EndPoint Order Network Analysis (ONA); directed ordered associations were accumulated for endpoint Units.\n- ONA did not run a trajectory model.\n- No missing trajectory steps were imputed.\n\n## Rotation\n\n- SVD rotation; intrinsic target rank: 3.\n- Full axes: `SVD1`, `SVD2`, `SVD3`, `SVD4`, `SVD5`, `SVD6`, `SVD7`, `SVD8`, `SVD9`; supported coordinates: `SVD1`, `SVD2`, `SVD3`. Supported coordinates do not assert additional independent dimensions.\n- Target full-basis variance shares: `SVD1`=70.127%; `SVD2`=29.801%; `SVD3`=0.072%; `SVD4`=0.000%; `SVD5`=0.000%; `SVD6`=0.000%; `SVD7`=0.000%; `SVD8`=0.000%; `SVD9`=0.000%.\n- Center policy: zero-network Units were aligned to the origin under sphere normalization.\n\n## Warnings and capabilities\n\n- Bound compiler/runtime warnings: none.\n- Capability status: `ai-interpretation`=blocked; `build-model`=available; `export-current-model`=available; `export-reference`=blocked; `group-inference`=blocked; `longitudinal-comparison`=blocked; `trajectory-inference`=blocked.\n- Capability blocks: `ai-interpretation`, `export-reference`, `group-inference`, `longitudinal-comparison`, `trajectory-inference`.\n- No inferential test, uncertainty analysis, longitudinal comparison, or AI interpretation was performed as part of constructing this bound result.\n\n## Limitations and artifact audit\n\n- ONA is descriptive only. Directed association does not establish causality, and no Standard ENA group subtraction, trajectory inference, or Reference projection was performed.\n- This report is derived only from the immutable bound result. It does not read or describe a current UI draft.\n- Artifact audit status: bound-only. Currentness is not established by this report; a stale label must come from a known stale-audit wrapper or importer context without rewriting scientific report bytes or hashes.\n- Dataset and component hashes provide integrity identifiers, not independent authentication of the source data.\n- Required resolved sequences and scientific distinctions are never truncated. If the complete report makes its bundle exceed the existing portable byte policy, bundle export is rejected.\n",
+    "orderedAudit": {
+      "schemaVersion": 1,
+      "codeOrder": [
+        "Code 1",
+        "Code 2",
+        "Code 3"
+      ],
+      "edgeOrder": "response-major-ground-minor",
+      "responseRowIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "previousResponseRowIndices": [
+        null,
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "priorRowCounts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "horizonOrdinals": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "edgeValues": [
+        [
+          0,
+          1,
+          0.5,
+          1,
+          0,
+          1,
+          0.5,
+          1,
+          0
+        ],
+        [
+          0,
+          1,
+          2,
+          1,
+          0,
+          1,
+          2,
+          1,
+          0
+        ],
+        [
+          0,
+          1,
+          1.5,
+          1,
+          0,
+          3,
+          1.5,
+          3,
+          0
+        ],
+        [
+          0,
+          1,
+          1,
+          1,
+          0,
+          0.5,
+          1,
+          0.5,
+          0
+        ],
+        [
+          0,
+          1,
+          1,
+          1,
+          0,
+          2,
+          1,
+          2,
+          0
+        ],
+        [
+          0,
+          1,
+          3,
+          1,
+          0,
+          1.5,
+          3,
+          1.5,
+          0
+        ]
+      ]
+    },
+    "orderedResponseNodeSummary": {
+      "schemaVersion": 1,
+      "codeOrder": [
+        "Code 1",
+        "Code 2",
+        "Code 3"
+      ],
+      "overallResponseCodeTotals": [
+        9,
+        9,
+        12
+      ],
+      "groups": [
+        {
+          "name": "All units",
+          "unitCount": 6,
+          "responseCodeTotals": [
+            9,
+            9,
+            12
+          ]
+        }
+      ]
+    },
+    "integrity": {
+      "componentHashes": {
+        "manifest": "71115283209701530322392322699bf1beac28b97c927409c9c9eed1b12e4b32",
+        "createdAt": "9f7e698df5a11ce0d46a2b0548f48d8256950064292d7844e133fc34fa7098db",
+        "configuration": "4e92f8b20d2bca06a6779f3549016b7146fefbece28bb0d35ed21643a5c17da9",
+        "executionProvenance": "e404c8eb31bb50bb9af8fd7f173b28f4cfa4c7071eaef855f3ccff673dcff992",
+        "tables": "176bdebb3eeb600d876e69fdca0469f0202614e94e6c3bacaa8649ca485ff6ed",
+        "modelData": "29848a9e7d4b4425048dae20b7c5e5642d904e16f5099ea62b537cbfa232e994",
+        "rotation": "dede5e984af032304755279004bd72eff4ab7ab6abad06acaf8705f8a02781ea",
+        "statistics": "b1cbcaf6072621aaa89b34421a7719043a590015df8c64b0989766afc33e6558",
+        "capabilityStatus": "8dc872ff92f9ea563c05c17957bdf1d356e03a1de7a93e9e973c7849b5722e3b",
+        "diagnostics": "8a5a3d863aede73d2d24a64acb53f6dbb1b2886480cbad84144623b93a5e776a",
+        "methodsReportMarkdown": "85e5806445e129bf4a81dfb7901d6428c883c86b9d685e8a5f9426f93cb312cc",
+        "orderedAudit": "4d1d389bb77d96d557404fdd47a284304d2bfdf19b66fabac7d3038f07ace95f",
+        "orderedResponseNodeSummary": "f8481ce0985756c740c3aa3b4ff179b7399a04096daca1fd4560e47ac7200b62"
+      },
+      "bundleContentSha256": "d8fb8cbc8d371aaed442b526f769c4696ce4242b4b4394d13c6493f97c467a21"
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import type { ENASet, RotationSet } from "jena-js";
-import { centerData, meanColumns, multiplyMatrices, normalizeVector, sphereNorm, subtractVectors, varianceColumns } from "jena-js/core";
+import { centerData, meanColumns, multiplyMatrices, normalizeVector, sphereNorm, subtractVectors, varianceProportions } from "jena-js/core";
 import { fixedNodePositions, lwsLeastSquaresPositions } from "jena-js/rotation";
 import { canonicalJsonV3 } from "./canonical-json";
 import type { StandardScientificEvidenceV3 } from "./diagnostics";
@@ -68,9 +68,16 @@ export function assertStandardInternalDerivationsV3(
   const signal = (row: number[]) => row.some((value) => value !== 0);
   const align = projection.centerAlignToOrigin;
   const center = referenceRotation ? referenceRotation.centerVector : meanColumns(align ? lineWeights.filter(signal) : lineWeights);
-  const inputs = referenceRotation || align
-    ? lineWeights.map((row) => align && !signal(row) ? row.map(() => 0) : row.map((value, edge) => value - center[edge]))
-    : centerData(lineWeights, center);
+  let inputs: number[][];
+  if (referenceRotation) {
+    inputs = lineWeights.map((row) => align && !signal(row) ? row.map(() => 0) : row.map((value, edge) => value - center[edge]));
+  } else if (align) {
+    const centered = centerData(lineWeights.filter(signal));
+    let signalIndex = 0;
+    inputs = lineWeights.map(row => signal(row) ? centered[signalIndex++] : row.map(() => 0));
+  } else {
+    inputs = centerData(lineWeights);
+  }
   center.forEach((value, edge) => equal(set.rotation.centerVector[edge], value, "center vector"));
   lineWeights.forEach((row, index) => row.forEach((value, edge) => {
     equal(set.lineWeights[index][set.codeColumns[edge]], value, "sphere-normalized line weight");
@@ -113,7 +120,6 @@ export function assertStandardInternalDerivationsV3(
   // Match native model.ts exactly, including the Reference-only constant-target
   // override. Tolerance-level rank0 with nonconstant coordinates remains legal.
   const constantReference = referenceRotation !== null && coordinates.every((row) => row.every((value, axis) => value === coordinates[0]?.[axis]));
-  const variances = constantReference ? axes.map(() => 0) : varianceColumns(coordinates);
-  const total = variances.reduce((sum, value) => sum + value, 0);
-  variances.forEach((value, axis) => equal(set.variance[axes[axis]], total === 0 ? 0 : value / total, "full-basis variance"));
+  const shares = constantReference ? axes.map(() => 0) : varianceProportions(coordinates);
+  shares.forEach((value, axis) => equal(set.variance[axes[axis]], value, "full-basis variance"));
 }

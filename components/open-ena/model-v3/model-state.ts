@@ -84,6 +84,8 @@ export type ModelDisplayStateV3 = Record<
 export interface ModelStateV3 {
   readonly datasetSha256: string;
   readonly drafts: ModelWorkspaceDraftsV3;
+  /** Session intent: an adopted or edited empty ONA draft is not an untouched sibling. */
+  readonly onaDraftInitialized: boolean;
   readonly display: ModelDisplayStateV3;
   readonly scientificRevision: number;
   readonly runStatus: "idle" | "running" | "obsolete" | "cancelled" | "error";
@@ -107,6 +109,8 @@ export type ModelStateActionV3 =
   | { type: "adopt-dataset"; datasetSha256: string }
   | { type: "replace-standard-draft"; draft: StandardEnaDraftV3 }
   | { type: "replace-ona-draft"; draft: OrderedNetworkDraftV3 }
+  /** Explicit artifact adoption counts even when its fields equal the empty sibling. */
+  | { type: "adopt-ona-draft"; draft: OrderedNetworkDraftV3 }
   | { type: "set-editor-blocked"; family: AnalysisFamilyV3; blocked: boolean }
   | { type: "hide-all-codes" }
   | { type: "restore-code-visibility" }
@@ -206,6 +210,7 @@ export function createModelStateV3(
   return Object.freeze({
     datasetSha256,
     drafts: captured,
+    onaDraftInitialized: captured.activeFamily === "ona" || !isUnseededOrderedNetworkDraftV3(captured.ona),
     display: Object.freeze({
       standard: defaultDisplay(captured.standard.codes),
       ona: defaultDisplay(captured.ona.codes),
@@ -342,9 +347,10 @@ function changeDraft(
     codeOrder,
     codeVisibility,
   });
+  const onaDraftInitialized = state.onaDraftInitialized || family === "ona";
   if (family !== state.drafts.activeFamily)
-    return Object.freeze({ ...displayed, drafts });
-  return scientificEdit(displayed, { drafts, undo });
+    return Object.freeze({ ...displayed, drafts, onaDraftInitialized });
+  return scientificEdit(displayed, { drafts, undo, onaDraftInitialized });
 }
 
 function excludeCodes(
@@ -514,7 +520,7 @@ export function modelStateReducerV3(
       assertFamily(action.family);
       if (action.family === family) return state;
       let next = state;
-      if (action.family === "ona" && isUnseededOrderedNetworkDraftV3(state.drafts.ona)) {
+      if (action.family === "ona" && !state.onaDraftInitialized && isUnseededOrderedNetworkDraftV3(state.drafts.ona)) {
         next = changeDraft(
           state,
           "ona",
@@ -527,6 +533,7 @@ export function modelStateReducerV3(
           ...next.drafts,
           activeFamily: action.family,
         }),
+        onaDraftInitialized: next.onaDraftInitialized || action.family === "ona",
         undo: null,
       });
     }
@@ -552,6 +559,10 @@ export function modelStateReducerV3(
       return changeDraft(state, "standard", action.draft, null);
     case "replace-ona-draft":
       return changeDraft(state, "ona", action.draft, null);
+    case "adopt-ona-draft": {
+      const next = changeDraft(state, "ona", action.draft, null);
+      return next.onaDraftInitialized ? next : Object.freeze({ ...next, onaDraftInitialized: true });
+    }
     case "set-editor-blocked": {
       assertFamily(action.family);
       if (typeof action.blocked !== "boolean")

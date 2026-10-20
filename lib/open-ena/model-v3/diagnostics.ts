@@ -5,6 +5,7 @@ import {
   snapshotPlainJsonRecordV3,
 } from "./canonical-json";
 import { EnaNumericalError, accumulateDataChunked, sphereNorm } from "jena-js";
+import { StandardProductUnderflowError } from "jena-js/core";
 import type { Row } from "jena-js";
 import { svdRotation } from "jena-js/rotation";
 import { scalarIdentityV3 } from "./identity";
@@ -90,6 +91,7 @@ export const MODEL_DIAGNOSTIC_IDS_V3 = Object.freeze([
   "STANDARD_REFERENCE_INCOMPATIBLE",
   "STANDARD_REFERENCE_TARGET_DEGENERATE",
   "STANDARD_OUTPUT_NONFINITE",
+  "STANDARD_OUTPUT_UNDERFLOW",
   "RESOURCE_BUDGET_EXCEEDED",
 ] as const);
 
@@ -1445,6 +1447,18 @@ function outputNonfiniteDiagnosticV3(): ModelDiagnosticV3 {
   });
 }
 
+function outputUnderflowDiagnosticV3(): ModelDiagnosticV3 {
+  return diagnosticV3({
+    id: "STANDARD_OUTPUT_UNDERFLOW",
+    severity: "error",
+    scope: "codes",
+    fieldPath: "weighting",
+    summary: "A nonzero scientific connection is too small to represent.",
+    detail: "Finite source values underflowed during Frequency edge multiplication. Rescale the Code values to preserve the network before building the model.",
+    blocks: ["build-model"],
+  });
+}
+
 function meanVectorV3(vectors: readonly (readonly number[])[]): number[] {
   const width = vectors[0]?.length ?? 0;
   if (vectors.length === 0) return zeroVectorV3(width);
@@ -2549,7 +2563,6 @@ export function prepareStandardDraftValidationV3(
     if (rankDiagnostic !== null) output.push(rankDiagnostic);
   } else if (scientificFieldPrerequisitesValid && rowOrderReady && horizonOrderReady
     && rotationShapeReady && !resourceBlocked && scientificAdmission !== null) {
-    let jenaNonfinite = false;
     try {
       networks = scientificNetworksV3(
         dataset.rows,
@@ -2564,11 +2577,9 @@ export function prepareStandardDraftValidationV3(
         resolvedHorizonOrder,
       );
     } catch (error) {
-      if (!isStandardJenaNonfiniteV3(error)) throw error;
-      jenaNonfinite = true;
-    }
-    if (jenaNonfinite) {
-      output.push(outputNonfiniteDiagnosticV3());
+      if (error instanceof StandardProductUnderflowError) output.push(outputUnderflowDiagnosticV3());
+      else if (isStandardJenaNonfiniteV3(error)) output.push(outputNonfiniteDiagnosticV3());
+      else throw error;
     }
     if (networks !== null && !scientificNetworksFiniteV3(networks)) {
       output.push(outputNonfiniteDiagnosticV3());

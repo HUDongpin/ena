@@ -140,6 +140,12 @@ function makeUniqueNames(names: string[]): string[] {
  */
 function assembleRotation(points: Matrix, leading: number[][], leadingNames: string[]): SvdRotationResult {
   const width = points[0]?.length ?? 0;
+  for (const [index, vector] of leading.entries()) {
+    const norm = l2Norm(vector);
+    if (!Number.isFinite(norm) || norm === 0) {
+      throw new Error(`Could not derive a finite non-zero rotation vector for ${leadingNames[index] ?? 'the requested axis'}.`);
+    }
+  }
   let deflated = points;
   for (const vector of leading) deflated = subtractOuterProjection(deflated, vector);
   const svd = svdRotation(deflated);
@@ -182,11 +188,21 @@ export function rotateByMean(pointsForProjection: Matrix, enadata: ENAData, para
   const data = centerData(pointsForProjection);
   let deflated = data;
   const weights: number[][] = [];
+  const contrasts = new Set<string>();
 
   for (const [leftSelector, rightSelector] of groups) {
-    const left = rowsByMask(deflated, groupMask(leftSelector, rows));
-    const right = rowsByMask(deflated, groupMask(rightSelector, rows));
+    const leftMask = groupMask(leftSelector, rows);
+    const rightMask = groupMask(rightSelector, rows);
+    const left = rowsByMask(deflated, leftMask);
+    const right = rowsByMask(deflated, rightMask);
     if (left.length === 0 || right.length === 0) throw new Error('Mean rotation groups must both contain at least one row.');
+    const leftKey = leftMask.map(Number).join('');
+    const rightKey = rightMask.map(Number).join('');
+    const contrast = leftKey < rightKey ? `${leftKey}:${rightKey}` : `${rightKey}:${leftKey}`;
+    if (contrasts.has(contrast)) {
+      throw new Error('Mean rotation cannot derive another axis from a repeated or reversed group pair.');
+    }
+    contrasts.add(contrast);
     const diff = subtractVectors(meanColumns(left), meanColumns(right));
     const direction = normalizeVector(diff);
     if (l2Norm(direction) === 0) throw new Error('Mean rotation groups have identical means.');
@@ -225,9 +241,16 @@ function resolveVarNames(value: string | string[]): string[] {
 }
 
 function simpleLinearFit(response: Matrix, predictor: number[]): { coefficients: Matrix; fitted: Matrix } {
-  const design = predictor.map((value) => [1, value]);
-  const coefficients = designSolve(design, response);
-  return { coefficients, fitted: multiplyMatrices(design, coefficients) };
+  const origin = meanColumns(predictor.map(value => [value]))[0] ?? 0;
+  const design = predictor.map((value) => [1, value - origin]);
+  const centeredCoefficients = designSolve(design, response);
+  // Evaluate in centered coordinates before restoring the original
+  // intercept; subtracting two large offset terms would lose the fit again.
+  const fitted = multiplyMatrices(design, centeredCoefficients);
+  const coefficients = centeredCoefficients.map(row => [...row]);
+  if (coefficients[0]) coefficients[0] = coefficients[0].map((value, column) =>
+    value - origin * (coefficients[1]?.[column] ?? 0));
+  return { coefficients, fitted };
 }
 
 function categoricalMainEffect(response: Matrix, target: Scalar[]): Matrix {
@@ -296,6 +319,10 @@ function gmr(points: Matrix, rows: Row[], vars: string[]): GmrResult {
 
   const scatter = computeBetweenGroupScatter(fittedMainEffect, target);
   const eigen = symmetricJacobiEigen(scatter);
+  const leadingVariance = eigen.eigenvalues[0] ?? 0;
+  if (!Number.isFinite(leadingVariance) || leadingVariance <= 0) {
+    throw new Error(`Generalized rotation requires non-zero between-group signal for ${vars[0] ?? 'the requested target'}.`);
+  }
   return {
     direction: normalizeVector(eigen.eigenvectors.map((row) => row[0] ?? 0)),
     fittedMainEffect,

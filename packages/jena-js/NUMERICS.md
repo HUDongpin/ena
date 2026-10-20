@@ -9,6 +9,8 @@ bound its numerical agreement. The current Standard contract is enforced by
 
 SVD/eigen decompositions determine each rotated dimension only up to sign. jena-js and rENA can legitimately return mirrored axes for the same model. Legacy tests compare projected tables up to per-column signs. The current Standard suite selects one sign from each nondegenerate SVD basis column and applies it consistently to points, nodes, centroids and Reference coordinates. Means MR1 is fixed Positive-minus-Negative and never receives sign forgiveness; its direction has declared group meaning. This also flips the sign of signed group statistics (e.g. the Welch t statistic) relative to an rENA run — magnitudes match.
 
+Means rejects an exactly repeated or reversed pair of resolved group memberships: after the first contrast is removed, that same contrast cannot define another axis. This prevents floating-point deflation residuals from becoming a named MR2/MR3. Equivalent boolean and unit-label selectors receive the same check. This is an explicit jena diagnostic, not a claim of parity with rENA on degenerate group requests; it introduces no tolerance for other nearly dependent contrasts.
+
 ## Ordered numerical boundary
 
 Ordered counts accept only finite non-negative raw values and masks. Products
@@ -41,9 +43,26 @@ is no opt-in bypass in this phase.
 
 `makeSet` projects the centered, sphere-normed line weights onto the **full** rotation matrix (rENA `ena.make.set.R`: `points.for.projection %*% rotation.matrix`) and reports `variance` as each rotated dimension's share of the total variance across **all** dimensions. Shares over the displayed 2 dimensions therefore do not sum to 1. Golden agreement: 1e-9 per dimension on every fixture configuration.
 
+When absolute variances underflow or their sum overflows, variance shares use
+per-column centered deviations in binary units. This retains representable
+fractions without changing the absolute units returned by `varianceColumns`.
+Constant large dimensions do not suppress small varying dimensions, and exactly
+constant Reference targets retain zero variance. The fallback keeps only
+O(dimensions) state; it does not copy the point matrix.
+
 ## SVD via covariance + Jacobi (vs prcomp/LAPACK)
 
 rENA uses `prcomp` (LAPACK SVD of the data matrix). jena-js builds the Gram matrix XᵀX and diagonalizes it with a classical Jacobi eigensolver (`symmetricJacobiEigen`), iterating until the largest off-diagonal is at machine precision relative to the matrix scale. Squaring the condition number costs precision in principle; in practice golden points agree with rENA to ~1e-9 or better (tests enforce 5e-7 absolute). Computed eigenvalues are clamped at 0 to suppress −1e-30-scale rounding.
+
+If all coordinates are too small to form reliable Gram products, or their
+largest squared magnitude could overflow the row sum, `svdRotation` accumulates
+the Gram matrix directly in power-of-two units. This avoids an additional
+rows-by-edges scaled copy and stays within the existing rotation scratch bound.
+Eigenvalues are restored to the original squared units; a mathematically positive
+eigenvalue below Float64 range is honestly returned as zero, while its direction
+and representable explained-variance share remain meaningful. This does not
+change the separate application/reference rank admission policy. Ordinary-scale
+fits retain the existing covariance arithmetic and R golden tolerances.
 
 rENA's `prcomp(tol = 0)` drops exactly-zero components, so rENA may report fewer rotated dimensions than jena-js (which keeps all). Golden tests require rENA's columns to be a prefix of jena's and every extra jena dimension to carry a negligible (< 1e-9) variance share.
 
@@ -77,16 +96,24 @@ allocation. Reference fixed-node and public ONA paths retain their existing
 solve and work accounting.
 
 Directed/ONA node positioning still uses its original `solveLinearSystem`
-`1e-10` ridge. Regression design solves remain ridge-free. The legacy 0.3.1
+`1e-10` ridge. Regression design solves remain ridge-free. Unpenalized designs with an explicit
+leading intercept column center both predictors and responses before forming
+normal equations, then restore the intercept in the original coordinates.
+Generalized fitted values are evaluated in centered coordinates as well. This
+keeps a represented common metadata offset from reversing or distorting a
+coefficient-defined axis. Ridge and no-intercept designs keep their existing
+coordinates; the solve's rank cutoff is unchanged. The Gram formulation still
+squares the condition number and does not guarantee accuracy for arbitrary
+ill-conditioned designs. The legacy 0.3.1
 node tolerance (`4e-6 + 2e-6·|value|`) is preserved only for that historical
 suite, including its singular fixtures; it is not a current Standard bound.
 
 ## Stats
 
 - `cohensD` is the exact port of `rENA::fun_cohens.d` (absolute mean difference / pooled SD): 1e-9 agreement.
-- `enaCorrelations` mirrors `rENA::ena.correlations` (Pearson/Spearman over all pairwise point/centroid differences): 1e-9 agreement. The confidence interval uses a Fisher-z construction with the pair count as n — rENA reports no CI; treat it as descriptive.
+- `enaCorrelations` mirrors `rENA::ena.correlations` (Pearson/Spearman over all pairwise point/centroid differences): 1e-9 agreement. The confidence interval uses a Fisher-z construction with the pair count as n — rENA reports no CI; treat it as descriptive. For finite confidence levels strictly between zero and one, the interval preserves the exact Fisher limit at correlations of ±1 and uses the lower-tail probability to avoid rounding a valid upper-tail probability to one. Fewer than four pairwise differences still yield unavailable (`NaN`) interval endpoints.
 - `welchTTest` / `oneWayAnova` (via `enaStats`) match R's `t.test` statistic magnitude/df and `aov` F/df at 1e-9, but return **no p-values** — only statistics and degrees of freedom. Group order (and hence t sign) follows first appearance in the points table.
-- `inverseNormal` is Acklam's rational approximation (relative error < 1.15e-9), tested against R `qnorm` at 1e-8.
+- `inverseNormal` is Acklam's rational approximation, tested against R `qnorm` at a relative tolerance of 1e-8, including extreme representable tail probabilities. This is an approximation rather than a correctly rounded quantile implementation.
 
 ## Regression and generalized rotations (verified)
 
@@ -95,6 +122,8 @@ suite, including its singular fixtures; it is not a current Standard bound.
 - With string formulas, rENA cannot extract the predictor name, so the first regression axis is named after the first *adjacency column* (e.g. `A & B_reg`), and `regression2` axes are named `V_reg`. When x and y produce the same name, the second becomes `..._reg.1` (R `make.unique` semantics).
 - rENA's y-direction regression is evaluated against the **original** points, not the x-deflated ones (its `with.ena.matrix` helper rebinds `V`), and the two leading axes are **not** orthogonalized against each other. jena reproduces both behaviors.
 - Regression design solves are ridge-free (matching R's `lm`); only directed node positioning retains the 1e-10 ridge described above.
+- A requested regression or generalized direction that is exactly zero or non-finite is rejected. A constant predictor/response or exactly zero association cannot define that axis; retaining it as a named zero column would consume a basis slot and silently discard network geometry. This check does not impose a tolerance on small nonzero coefficients, orthogonalize parallel requested axes, or change SVD's support for zero-signal and rank-deficient networks.
+- Categorical generalized targets additionally require a positive finite leading eigenvalue of their fitted between-group scatter. Zero scatter cannot define an interpretable RR axis, even though its eigendecomposition can return an arbitrary unit vector. This rejects a one-level target and exactly identical fitted group effects without imposing a positive numerical cutoff. A one-level factor also fails rENA's initial `lm(V ~ target)`; rejecting other exactly zero scatters is an explicit jena diagnostic.
 - `regression2` requires more units than adjacency columns; with fewer, R's `lm` returns NA coefficients and rENA errors — jena's validation of that case is the shared design-solve behavior.
 
 **Variance-share caveat (rENA artifact):** rENA completes the rotation basis with `prcomp`, whose numerically-null trailing directions come from LAPACK's arbitrary null-space basis. Those directions can overlap the regression axis and silently absorb a real variance share (~5% on our research fixture), contaminating every reported share in a way that is not reproducible across BLAS implementations (reported upstream as [rENA#48](https://gitlab.com/epistemic-analytics/qe-packages/rENA/-/issues/48)). jena instead keeps only directions genuinely spanned by the deflated data and completes the basis orthogonally, so null directions carry exactly zero variance and shares are well-defined. Golden tests therefore compare variance shares renormalized over the directions that carry variance on both sides; for SVD/mean rotations this reduces to the strict per-column check.
@@ -116,7 +145,7 @@ What cannot be verified: rENA selects lambda via `cv.glmnet`, which **randomizes
 
 ## spherical rotation (jena extension)
 
-`spherical` has **no rENA counterpart** (verified against the rENA 0.3.1 source). It anchors the first axis at a chosen adjacency direction (a co-occurrence column name or custom vector), orthogonalizes an optional secondary anchor against it, and completes the basis orthogonally. Its spec — anchor semantics, orthonormality, variance conservation — is locked by unit tests rather than rENA goldens.
+`spherical` has **no rENA counterpart** (verified against the rENA 0.3.1 source). It anchors the first axis at a chosen adjacency direction (a co-occurrence column name or custom vector), orthogonalizes an optional secondary anchor against it, and completes the basis orthogonally. Its spec — anchor semantics, orthonormality, variance conservation — is locked by unit tests rather than rENA goldens. Finite vector normalization uses scaled components when its absolute norm overflows or falls in the subnormal range. The unit direction remains representable in those cases; a large anchor must not silently become a zero vector or a different named axis.
 
 ## Custom weight functions (F-019, resolved)
 
