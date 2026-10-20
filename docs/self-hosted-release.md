@@ -17,6 +17,11 @@ assets, and SQL migrations. Packaging rejects `.env*` files. Runtime account,
 database, session, and provider configuration must be supplied separately by the
 server operator; none is bundled into the artifact.
 
+For an existing systemd deployment with incorrect static login credentials, use
+the [ECS authentication runtime procedure](ecs-auth-runtime.md). It preserves the
+account identity and database binding while updating the running service's
+environment through an interactive operator script.
+
 On the target Linux x64 server, verify `SHA256SUMS`, extract into a new versioned
 release directory, and run `node server.js` with Node 22. Use `HOSTNAME=127.0.0.1`
 and a dedicated free `PORT`, with the existing HTTPS reverse proxy in front.
