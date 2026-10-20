@@ -14,11 +14,21 @@ import LocaleLayout from "./app/[locale]/layout";
 import OpenEnaWorkspace from "./components/open-ena/OpenEnaWorkspace";
 const worker = () => new Promise(() => {});
 const locale = ${JSON.stringify(locale)};
-const root = document.getElementById("root");
-const workspace = React.createElement(OpenEnaWorkspace, { locale, worker });
-LocaleLayout({ children: workspace, params: Promise.resolve({ locale }) }).then((shell) => {
-  createRoot(root).render(React.createElement(React.StrictMode, null, shell));
-});
+let reactRoot = null;
+window.__renderOpenEnaLandmarks = () => {
+  const workspace = React.createElement(OpenEnaWorkspace, { locale, worker });
+  return LocaleLayout({ children: workspace, params: Promise.resolve({ locale }) }).then((shell) => {
+    reactRoot?.unmount();
+    const host = document.getElementById("root");
+    const next = host.cloneNode(false);
+    host.replaceWith(next);
+    reactRoot = createRoot(next);
+    history.replaceState(null, "", \`\${location.pathname}\${location.search}\`);
+    window.scrollTo(0, 0);
+    reactRoot.render(React.createElement(React.StrictMode, null, shell));
+  });
+};
+void window.__renderOpenEnaLandmarks();
 `;
 }
 
@@ -87,13 +97,15 @@ LocaleLayout({ children: page, params: Promise.resolve({ locale }) }).then((shel
 });
 `;
 
-const bundles = {
-  home: await bundleEntry(homeEntry, "open-ena-a11y-landmarks-home.tsx", "/en"),
-  login: await bundleEntry(loginEntry, "open-ena-a11y-landmarks-login.tsx", "/en/open-ena"),
-};
-for (const { locale } of WORKSPACE_LOCALES) {
-  bundles[locale] = await bundleEntry(workspaceEntry(locale), `open-ena-a11y-landmarks-${locale}.tsx`, `/${locale}/open-ena`);
-}
+const [homeBundle, loginBundle, ...localeBundles] = await Promise.all([
+  bundleEntry(homeEntry, "open-ena-a11y-landmarks-home.tsx", "/en"),
+  bundleEntry(loginEntry, "open-ena-a11y-landmarks-login.tsx", "/en/open-ena"),
+  ...WORKSPACE_LOCALES.map(({ locale }) => bundleEntry(workspaceEntry(locale), `open-ena-a11y-landmarks-${locale}.tsx`, `/${locale}/open-ena`)),
+]);
+const bundles = { home: homeBundle, login: loginBundle };
+WORKSPACE_LOCALES.forEach(({ locale }, index) => {
+  bundles[locale] = localeBundles[index];
+});
 const css = await readFile(`${projectRoot}/app/globals.css`, "utf8");
 const html = `<!doctype html><meta charset="utf-8"><style>${css}</style><div id="root"></div>`;
 
@@ -391,6 +403,48 @@ async function activeRailId(page) {
   return page.locator("[data-ena-rail-panel]").getAttribute("data-ena-rail-panel");
 }
 
+function railPrimaryName(id) {
+  if (id === "data") return "Load sample";
+  if (id === "plot") return "Points";
+  if (id === "stats") return "Primary group";
+  if (id === "ai") return "Open Stats";
+  return "";
+}
+
+// Enter returns before a large rail tree has committed on a busy runner.
+// The visible panel and its primary control have to be observed together:
+// a later count() still races and can report 0 or 2.
+function railPanelReady(expected) {
+  const shown = (element) => {
+    if (!(element instanceof HTMLElement)) return false;
+    if (element.closest("[hidden], [aria-hidden='true']")) return false;
+    const style = getComputedStyle(element);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+  const namedText = (element) => {
+    const aria = element.getAttribute("aria-label");
+    if (aria) return aria.trim();
+    const source = element.closest("label") ?? element;
+    const clone = source.cloneNode(true);
+    clone.querySelectorAll("[aria-hidden='true']").forEach((node) => node.remove());
+    return (clone.textContent ?? "").replace(/\s+/gu, " ").trim();
+  };
+  const primary = (panel, id, name) => {
+    if (id === "model") return panel.querySelector("[data-model-tab='units']");
+    if (id === "plot") return [...panel.querySelectorAll("input[type='checkbox']")].find((element) => namedText(element) === name) ?? null;
+    if (id === "stats") return panel.querySelector(`select[aria-label="${name}"]`);
+    return [...panel.querySelectorAll("button")].find((element) => namedText(element) === name) ?? null;
+  };
+  const panels = [...document.querySelectorAll("[data-ena-rail-panel]")];
+  if (panels.length !== 1) return false;
+  const panel = panels[0];
+  if (panel.getAttribute("data-ena-rail-panel") !== expected.id) return false;
+  if (!shown(panel) || panel.getAttribute("role") !== "region" || (panel.getAttribute("aria-label") ?? "") !== expected.region) return false;
+  return shown(primary(panel, expected.id, expected.name));
+}
+
 async function activeRailButton(page) {
   return page.evaluate(() => {
     const active = document.activeElement;
@@ -490,10 +544,19 @@ try {
     return route.fulfill({ contentType: "text/html; charset=utf-8", body: html });
   });
 
+  let englishWorkspaceReady = false;
   async function mount(bundle) {
+    if (bundle === bundles.en && englishWorkspaceReady) {
+      const rerendered = await page.evaluate(() => {
+        if (typeof window.__renderOpenEnaLandmarks !== "function") return false;
+        return window.__renderOpenEnaLandmarks().then(() => true);
+      });
+      if (rerendered) return;
+    }
     await page.goto(`http://localhost:32161${bundle.pathname}`);
     if (bundle.css) await page.addStyleTag({ content: bundle.css });
     await page.addScriptTag({ content: bundle.script });
+    englishWorkspaceReady = bundle === bundles.en;
   }
 
   for (const viewport of VIEWPORTS) {
@@ -697,28 +760,55 @@ try {
     for (const rail of RAILS) {
       console.log(`Checking ${label} rail ${rail.button}`);
       const trigger = page.getByRole("button", { name: rail.button, exact: true });
-      await trigger.focus();
       check(await reachesViewport(page, trigger), `${label}: rail button ${rail.button} is clipped or unreachable`);
+      // Scrolling the button into view can drop focus. Re-focus after that
+      // check so Enter is delivered to this rail button.
+      await trigger.focus();
       await page.keyboard.press("Enter");
       const namedPanel = page.locator(`[data-ena-rail-panel="${rail.id}"]`);
-      await namedPanel.waitFor({ state: "visible" });
-      const namedCount = await namedPanel.count();
-      check(namedCount === 1, `${label}: ${rail.button} has no single rail panel`);
-      const panel = namedCount === 1 ? namedPanel : page.locator(".ena-control-panel");
-      if (namedCount === 1) {
-        const regionName = await panel.evaluate((element) => element.getAttribute("aria-label") ?? "");
-        const regionRole = await panel.evaluate((element) => element.getAttribute("role") ?? "");
+      let railReady = false;
+      try {
+        await page.waitForFunction(railPanelReady, { id: rail.id, region: rail.region, name: railPrimaryName(rail.id) });
+        railReady = true;
+      } catch {
+        railReady = false;
+      }
+      const panelIds = railReady ? null : await page.evaluate(() => [...document.querySelectorAll("[data-ena-rail-panel]")].map((element) => element.getAttribute("data-ena-rail-panel")));
+      check(railReady, `${label}: ${rail.button} has no single rail panel${panelIds ? ` (panels=${JSON.stringify(panelIds)})` : ""}`);
+      if (railReady) {
+        const regionName = await namedPanel.evaluate((element) => element.getAttribute("aria-label") ?? "");
+        const regionRole = await namedPanel.evaluate((element) => element.getAttribute("role") ?? "");
         check(regionName === rail.region, `${label}: ${rail.button} landmark name was ${JSON.stringify(regionName)}, expected ${rail.region}`);
         check(regionRole === "region", `${label}: ${rail.button} panel role was ${regionRole}`);
         const activeLandmarks = await landmarkEntries(page);
         const activeDuplicates = duplicateNames(activeLandmarks);
         check(activeDuplicates.length === 0, `${label}: duplicate landmarks while ${rail.button} is active: ${activeDuplicates.join(", ")}`);
       }
+      if (!railReady) continue;
 
+      const panel = namedPanel;
       const control = rail.control(panel);
       await trigger.focus();
-      await control.waitFor({ state: "visible" });
-      const reached = await tabTo(page, async () => control.evaluate((element) => document.activeElement === element).catch(() => false), 30);
+      const reached = await tabTo(page, async () => page.evaluate((expected) => {
+        const panelElement = document.querySelector("[data-ena-rail-panel]");
+        if (!(panelElement instanceof HTMLElement) || panelElement.getAttribute("data-ena-rail-panel") !== expected.id) return false;
+        const namedText = (element) => {
+          const aria = element.getAttribute("aria-label");
+          if (aria) return aria.trim();
+          const source = element.closest("label") ?? element;
+          const clone = source.cloneNode(true);
+          clone.querySelectorAll("[aria-hidden='true']").forEach((node) => node.remove());
+          return (clone.textContent ?? "").replace(/\s+/gu, " ").trim();
+        };
+        const target = expected.id === "model"
+          ? panelElement.querySelector("[data-model-tab='units']")
+          : expected.id === "plot"
+            ? [...panelElement.querySelectorAll("input[type='checkbox']")].find((element) => namedText(element) === expected.name)
+            : expected.id === "stats"
+              ? panelElement.querySelector(`select[aria-label="${expected.name}"]`)
+              : [...panelElement.querySelectorAll("button")].find((element) => namedText(element) === expected.name);
+        return target != null && document.activeElement === target;
+      }, { id: rail.id, name: railPrimaryName(rail.id) }), 30);
       check(reached, `${label}: Tab from ${rail.button} did not reach its primary control`);
       if (!reached) continue;
       check(await reachesViewport(page, control), `${label}: primary control in ${rail.button} is clipped or unreachable`);
