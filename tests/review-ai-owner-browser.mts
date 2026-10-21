@@ -30,20 +30,20 @@ const bundle=await build({stdin:{contents:`
  import React from 'react';import {createRoot} from 'react-dom/client';
  import Ai from './components/open-ena/OpenEnaAiInterpretation';
  import {openEnaAiOperationOwnerKey} from './lib/open-ena/ai-operation-owner';
- import {openEnaAiOperationStorageKey,openEnaAiOperationScope} from './lib/open-ena/ai-operation-storage';
+ import {openEnaAiOperationStorageKey,openEnaAiOperationScope,openEnaAiOperationStore} from './lib/open-ena/ai-operation-storage';
  import {interpretationRequest} from './tests/helpers/ai-interpretation-request-v2';import {getOpenEnaCopy} from './lib/open-ena-i18n';
  window.requestFixture=interpretationRequest();window.ownerKey=openEnaAiOperationOwnerKey;
  window.scopeKey=principal=>openEnaAiOperationScope(window.requestFixture,openEnaAiOperationOwnerKey(principal)).key;
  window.legacyV3=openEnaAiOperationStorageKey(window.requestFixture);window.legacyV2='open-ena-ai-operation-v2:'+window.requestFixture.binding.evidenceKey;
  window.prepareStorage?.();let root=createRoot(document.getElementById('root'));
- window.mountAi=(principal='A',remount=false)=>{if(remount){root.unmount();root=createRoot(document.getElementById('root'));}root.render(<Ai operationOwnerKey={openEnaAiOperationOwnerKey(principal)} request={structuredClone(window.requestFixture)} localScientificIdentity='synthetic-local' copy={getOpenEnaCopy('en').aiInterpretation} disabled={false} disabledReason=''/>) };window.mountAi(window.initialOwner??'A');
+ window.mountAi=(principal='A',remount=false)=>{if(remount){root.unmount();root=createRoot(document.getElementById('root'));}window.currentOperation=()=>openEnaAiOperationStore.read(openEnaAiOperationScope(window.requestFixture,openEnaAiOperationOwnerKey(principal)));root.render(<Ai operationOwnerKey={openEnaAiOperationOwnerKey(principal)} request={structuredClone(window.requestFixture)} localScientificIdentity='synthetic-local' copy={getOpenEnaCopy('en').aiInterpretation} disabled={false} disabledReason=''/>) };window.mountAi(window.initialOwner??'A');
 `,loader:'tsx',resolveDir:project},bundle:true,platform:'browser',format:'iife',jsx:'automatic',write:false,logLevel:'silent'});
 const browser=await chromium.launch({headless:true});let cleanupResult;
 try{
  for(const scenario of ['stale-tab-cookie','roundtrip-release','roundtrip-success','roundtrip-unknown','token-rotation-reload','hint-cookie-switch','lost-unknown','lost-release','legacy-v2-release','legacy-v3-release','storage-denied','storage-quota-legacy','equivalent-rerender']){
   if(pool)await pool.query('TRUNCATE open_ena_quota_windows,open_ena_spend,open_ena_billable_reservations,open_ena_security_outbox,open_ena_ai_consent_receipts');
   const store=pool?createPostgresBillableStore((sql,params)=>pool.query(sql,params)):new MemoryBillableStore();
-  const calls:any[]=[],generations:any[]=[],errors:string[]=[],external:string[]=[];let activePrincipal='';
+  const calls:any[]=[],generations:any[]=[],errors:string[]=[],external:string[]=[],actions:any[]=[];let activePrincipal='';
   const handler=createOpenEnaAiInterpretationPostHandler({verifyPrincipal:token=>{activePrincipal=token?.startsWith('A-')?'A':token?.startsWith('B-')?'B':'';return activePrincipal?{principalRef:activePrincipal}:null;},authConfigurationReady:()=>true,environment:{},providerDescriptor:()=>({provider:'synthetic',model:'fixture'}),parseRequest:parseOpenEnaAiInterpretationRequest,billableStore:store,requireBillable:kind==='postgres',limits,generate:async request=>{
    generations.push({principal:activePrincipal,request});
    const first=generations.length===1;const release=(scenario==='hint-cookie-switch'||scenario==='lost-release')&&first || activePrincipal==='B'&&scenario!=='roundtrip-unknown'&&scenario!=='roundtrip-success'&&generations.length===2;
@@ -56,30 +56,44 @@ try{
   await page.goto('http://localhost:32168/');
   await page.evaluate(scenario=>{window.prepareStorage=()=>{const X='aiop-11111111-1111-4111-8111-111111111111';if(scenario==='legacy-v2-release'||scenario==='storage-quota-legacy')sessionStorage.setItem(window.legacyV2,X);if(scenario==='legacy-v3-release')sessionStorage.setItem(window.legacyV3,X);if(scenario==='storage-denied')for(const method of ['getItem','setItem','removeItem'])Storage.prototype[method]=()=>{throw new DOMException('Synthetic denied','SecurityError');};if(scenario==='storage-quota-legacy')Storage.prototype.setItem=()=>{throw new DOMException('Synthetic full','QuotaExceededError');};};},scenario);
   await page.addScriptTag({content:bundle.outputFiles[0].text});
-  const settle=async(n:number)=>{await page.waitForFunction(()=>!document.querySelector('.ena-ai-actions button')?.disabled);assert.equal(calls.length,n);await page.locator('[role=alert],.ena-ai-result').first().waitFor();};
-  const generate=async(n:number)=>{const consent=page.getByRole('checkbox');if(!await consent.isChecked())await consent.check();await page.locator('.ena-ai-actions button').first().click();await settle(n);};
+  const settle=async(n:number)=>{await page.waitForFunction(()=>document.querySelector('.ena-ai-interpretation')?.getAttribute('aria-busy')==='false');assert.equal(calls.length,n);await page.locator('[role=alert],.ena-ai-result').first().waitFor();};
+  const generate=async(n:number)=>{
+   const consent=page.getByRole('checkbox');if(!await consent.isChecked())await consent.check();
+   const main=page.locator('.ena-ai-actions button').first();
+   const explicitNew=await main.isDisabled();
+   const priorOperation=await page.evaluate(()=>window.currentOperation());
+   if(explicitNew){
+    assert.match(await page.locator('[data-ena-ai-new-generation-warning]').innerText(),/may incur additional charges/);
+    assert.equal(calls.length,n-1,'restoring a settled option must not dispatch automatically');
+    await page.getByRole('button',{name:'Generate a new interpretation',exact:true}).click();
+   }else await main.click();
+   actions.push({call:n,explicitNew,priorOperation});await settle(n);
+  };
   const mount=async(principal:string)=>{await cookie(principal+'-1');await page.evaluate(principal=>window.mountAi(principal,true),principal);await page.getByRole('checkbox').waitFor();};
   await generate(1);
   if(scenario==='stale-tab-cookie'){
-   await cookie('B-1');await generate(2);assert.equal(calls[1].status,409);assert.equal(calls[1].renew,null);await cookie('A-1');await generate(3);assert.equal(calls[2].id,calls[0].id);assert.equal(calls[2].status,409);assert.equal(generations.length,1);
+   await cookie('B-1');await generate(2);assert.equal(calls[1].status,409);assert.equal(calls[1].renew,null);assert.equal(generations.length,1,'stale owner hint cannot dispatch as the new cookie owner');
+   assert.equal(await page.getByRole('alert').getByRole('button').count(),0);
+   await mount('A');await generate(3);assert.equal(calls[2].id,calls[1].id);assert.notEqual(calls[2].id,calls[0].id);assert.equal(calls[2].status,502);assert.equal(generations.length,2);
   }else if(scenario==='hint-cookie-switch'){
-   await cookie('B-1');await generate(2);assert.equal(calls[1].status,409);assert.notEqual(calls[1].id,calls[0].id);await cookie('A-1');await generate(3);assert.equal(calls[2].id,calls[1].id);assert.equal(calls[2].status,502);assert.equal(generations.length,2);
+   await cookie('B-1');await generate(2);assert.equal(calls[1].status,409);assert.notEqual(calls[1].id,calls[0].id);await mount('A');await generate(3);assert.equal(calls[2].id,calls[1].id);assert.equal(calls[2].status,502);assert.equal(generations.length,2);
   }else if(scenario.startsWith('lost-')){
-   await generate(2);assert.equal(calls[1].status,409);assert.equal(calls[1].id,calls[0].id);await generate(3);assert.equal(calls[2].status,scenario==='lost-release'?502:409);assert.equal(generations.length,scenario==='lost-release'?2:1);
+   await generate(2);assert.equal(calls[1].status,409);assert.equal(calls[1].id,calls[0].id);await generate(3);assert.equal(calls[2].status,502);assert.notEqual(calls[2].id,calls[1].id);assert.equal(generations.length,2);
+   assert.equal(actions[2].explicitNew,scenario==='lost-unknown','only a settled dispatch requires the explicit cost-bearing action');
   }else if(scenario==='token-rotation-reload'){
-   await cookie('A-rotated');await generate(2);await page.reload();await page.addScriptTag({content:bundle.outputFiles[0].text});await generate(3);assert.ok(calls.every(call=>call.id===calls[0].id));assert.equal(generations.length,1);
+   await cookie('A-rotated');await generate(2);await page.reload();await page.addScriptTag({content:bundle.outputFiles[0].text});await generate(3);assert.equal(new Set(calls.map(call=>call.id)).size,3);assert.equal(generations.length,3);assert.ok(actions.slice(1).every(action=>action.explicitNew),'rotation and reload retain the warning and require explicit new generations');assert.equal(actions[1].priorOperation,calls[0].id);assert.equal(actions[2].priorOperation,calls[1].id);
   }else if(scenario==='equivalent-rerender'){
-   await page.evaluate(()=>window.mountAi('A'));assert.equal(await page.getByRole('checkbox').isChecked(),true);await generate(2);assert.equal(calls[1].id,calls[0].id);assert.equal(generations.length,1);
+   await page.evaluate(()=>window.mountAi('A'));assert.equal(await page.getByRole('checkbox').isChecked(),true);await generate(2);assert.notEqual(calls[1].id,calls[0].id);assert.equal(generations.length,2);assert.equal(actions[1].explicitNew,true);assert.equal(actions[1].priorOperation,calls[0].id);
   }else{
    await mount('B');await generate(2);const expectedB=scenario==='roundtrip-success'?200:scenario==='roundtrip-unknown'?502:503;assert.equal(calls[1].status,expectedB);
-   await mount('A');await generate(3);assert.equal(calls[2].id,calls[0].id);assert.equal(calls[2].status,409);assert.equal(generations.length,2);
+   await mount('A');await generate(3);assert.equal(actions[2].priorOperation,calls[0].id,'returning to A retains the original A ID until explicit replacement');assert.notEqual(calls[2].id,calls[0].id);assert.notEqual(calls[2].id,calls[1].id);assert.equal(calls[2].status,502);assert.equal(generations.length,3);assert.equal(actions[2].explicitNew,true);
    if(scenario!=='roundtrip-unknown'){
     if(scenario.startsWith('legacy-')){await cookie('B-1');await page.reload();await page.evaluate(()=>{window.initialOwner='B';});await page.addScriptTag({content:bundle.outputFiles[0].text});}
     else await mount('B');
-    await generate(4);assert.notEqual(calls[3].id,calls[1].id);assert.equal(generations.length,3);
+    await generate(4);assert.notEqual(calls[3].id,calls[1].id);assert.notEqual(calls[3].id,calls[2].id);assert.equal(generations.length,4);assert.equal(actions[3].explicitNew,false,'released or successful B operations must not borrow A settlement');assert.equal(actions[3].priorOperation,null,'B retains its own closed state');
    }
   }
-  assert.deepEqual(errors,[]);assert.deepEqual(external,[]);results.push({scenario,passed:true,calls,generationCalls:generations.length,errors,external});console.log('PASS',kind,scenario);await page.close();
+  assert.deepEqual(errors,[]);assert.deepEqual(external,[]);results.push({scenario,passed:true,calls,actions,generationCalls:generations.length,errors,external});console.log('PASS',kind,scenario);await page.close();
  }
 }finally{await browser.close();cleanupResult=await cleanup();if(process.argv[3])writeFileSync(process.argv[3],JSON.stringify({kind,results,cleanup:cleanupResult},null,2)+'\n');}
 assert.equal(results.length,13);console.log('PASS',kind,results.length,'cleanup',cleanupResult.confirmed);
