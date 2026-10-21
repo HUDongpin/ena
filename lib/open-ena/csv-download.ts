@@ -40,27 +40,3 @@ export function csvDownloadBytes(bytes: Uint8Array, type: string): { bytes: Uint
   return { bytes: prefixed, type: CSV_DOWNLOAD_MEDIA_TYPE };
 }
 
-function viewBytes(value: ArrayBufferView): Uint8Array {
-  if (value instanceof Uint8Array) return value;
-  const bytes = new Uint8Array(value.byteLength);
-  bytes.set(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
-  return bytes;
-}
-
-/** Prefix a CSV `BlobPart` once. ZIP, PNG, and other types pass through. */
-export function csvDownloadPart(value: BlobPart, type: string): { part: BlobPart; type: string } {
-  if (!isCsvDownloadMediaType(type)) return { part: value, type };
-  if (typeof value === "string") {
-    const payload = csvDownloadPayload(value, type);
-    return { part: payload.contents, type: payload.type };
-  }
-  if (value instanceof ArrayBuffer) {
-    const payload = csvDownloadBytes(new Uint8Array(value), type);
-    return { part: payload.bytes, type: payload.type };
-  }
-  if (ArrayBuffer.isView(value)) {
-    const payload = csvDownloadBytes(viewBytes(value), type);
-    return { part: payload.bytes, type: payload.type };
-  }
-  throw new TypeError("CSV downloads require text or bytes so the UTF-8 BOM can be applied.");
-}

@@ -4,7 +4,6 @@ import { parseCsv } from "../lib/open-ena/csv";
 import {
   CSV_DOWNLOAD_MEDIA_TYPE,
   csvDownloadBytes,
-  csvDownloadPart,
   csvDownloadPayload,
 } from "../lib/open-ena/csv-download";
 import { rowsToCsv } from "../lib/open-ena/export";
@@ -41,9 +40,9 @@ test("downloaded CSV bytes start with a single UTF-8 BOM and charset media type"
   const json = csvDownloadPayload('{"单元":"学生甲"}\n', "application/json;charset=utf-8");
   assert.equal(json.contents.startsWith("\uFEFF"), false);
   assert.equal(json.type, "application/json;charset=utf-8");
-  const zip = csvDownloadPart(Uint8Array.of(0x50, 0x4b, 0x03, 0x04), "application/zip");
+  const zip = csvDownloadBytes(Uint8Array.of(0x50, 0x4b, 0x03, 0x04), "application/zip");
   assert.equal(zip.type, "application/zip");
-  assert.deepEqual([...(zip.part as Uint8Array)], [0x50, 0x4b, 0x03, 0x04]);
+  assert.deepEqual([...zip.bytes], [0x50, 0x4b, 0x03, 0x04]);
 });
 
 test("a downloaded CSV with Chinese labels round-trips through parseCsv", () => {
