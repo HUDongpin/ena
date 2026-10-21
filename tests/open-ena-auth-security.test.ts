@@ -65,9 +65,7 @@ const LOGIN_FORM = "locale=en&username=researcher&password=a-different-strong-pa
 function validLoginAttempt() {
   return {
     sourceRef: "src",
-    accountRef: "acct",
-    sourceLimit: 5,
-    accountLimit: 10,
+    limit: 5,
     windowSeconds: 900,
   };
 }
@@ -78,7 +76,7 @@ function createFakePool(options: {
 } = {}) {
   const listeners: Array<(error: Error) => void> = [];
   const pool: OpenEnaAuthSecurityPool & { emitError: (error: Error) => void } = {
-    query: options.query ?? (async () => ({ rows: [{ allowed: true }] })),
+    query: options.query ?? (async () => ({ rows: [{ allowed: true, window_started_at: "2026-10-21T00:00:00.123456Z", retry_after_seconds: 0 }] })),
     on(event, listener) {
       if (event === "error") listeners.push(listener);
       return undefined;
@@ -178,7 +176,8 @@ test("login stops an unknown-length oversized form before buffering the complete
     },
   });
   const store = {
-    consumeLoginAttempt: async () => true,
+    reserveLoginAttempt: async ({ sourceRef }: { sourceRef: string }) => ({ allowed: true as const, reservation: { sourceRef, windowStartedAt: "2026-10-21T00:00:00.123456Z" } }),
+    refundLoginAttempt: async () => undefined,
     isSessionRevoked: async () => false,
     revokeSession: async () => undefined,
   };
@@ -205,9 +204,11 @@ test("login throttles repeated attempts in the shared store before another passw
   let credentialChecks = 0;
   let disposableChecks = 0;
   const store = {
-    consumeLoginAttempt: async () => {
+    reserveLoginAttempt: async ({ sourceRef }: { sourceRef: string }) => {
       attempts += 1;
-      return attempts <= 2;
+      return attempts <= 2
+        ? { allowed: true, reservation: { sourceRef, windowStartedAt: "2026-10-21T00:00:00.123456Z" } }
+        : { allowed: false, retryAfterSeconds: 900 };
     },
     consumeDisposableCredential: async () => {
       disposableChecks += 1;
@@ -254,12 +255,14 @@ test("logout revokes exactly one jti and another instance rejects its replay", a
   // required below to construct a PostgreSQL adapter and contain no memory map.
   const revokedJtis = new Set<string>();
   const firstInstance = {
-    consumeLoginAttempt: async () => true,
+    reserveLoginAttempt: async ({ sourceRef }: { sourceRef: string }) => ({ allowed: true as const, reservation: { sourceRef, windowStartedAt: "2026-10-21T00:00:00.123456Z" } }),
+    refundLoginAttempt: async () => undefined,
     isSessionRevoked: async (jti: string) => revokedJtis.has(jti),
     revokeSession: async (jti: string) => { revokedJtis.add(jti); },
   };
   const secondInstance = {
-    consumeLoginAttempt: async () => true,
+    reserveLoginAttempt: async ({ sourceRef }: { sourceRef: string }) => ({ allowed: true as const, reservation: { sourceRef, windowStartedAt: "2026-10-21T00:00:00.123456Z" } }),
+    refundLoginAttempt: async () => undefined,
     isSessionRevoked: async (jti: string) => revokedJtis.has(jti),
     revokeSession: async (jti: string) => { revokedJtis.add(jti); },
   };
@@ -320,7 +323,8 @@ test("logout revalidates the localized Open ENA gate after clearing the session 
     environment: AUTH_ENVIRONMENT,
     now: () => issuedAt + 2_000,
     securityStoreFactory: async () => ({
-      consumeLoginAttempt: async () => true,
+      reserveLoginAttempt: async ({ sourceRef }: { sourceRef: string }) => ({ allowed: true as const, reservation: { sourceRef, windowStartedAt: "2026-10-21T00:00:00.123456Z" } }),
+    refundLoginAttempt: async () => undefined,
       isSessionRevoked: async (jti: string) => revokedJtis.has(jti),
       revokeSession: async (jti: string) => { revokedJtis.add(jti); },
     }),
@@ -356,7 +360,8 @@ test("logout fails closed when durable revocation cannot be persisted", async ()
     environment: AUTH_ENVIRONMENT,
     now: () => 1_800_000_001_000,
     securityStoreFactory: async () => ({
-      consumeLoginAttempt: async () => true,
+      reserveLoginAttempt: async ({ sourceRef }: { sourceRef: string }) => ({ allowed: true as const, reservation: { sourceRef, windowStartedAt: "2026-10-21T00:00:00.123456Z" } }),
+    refundLoginAttempt: async () => undefined,
       isSessionRevoked: async () => false,
       revokeSession: async () => { throw new Error("database unavailable"); },
     }),
@@ -452,7 +457,7 @@ test("login returns a structured 503 when a store operation throws", async () =>
   const handler = await loginHandler({
     environment: AUTH_ENVIRONMENT,
     securityStoreFactory: async () => ({
-      consumeLoginAttempt: async () => {
+      reserveLoginAttempt: async () => {
         throw new Error("Durable login throttle store is unavailable.");
       },
       isSessionRevoked: async () => false,
@@ -540,7 +545,7 @@ test("production store creation retries a transient pool factory failure in the 
 
   assert.ok(store);
   assert.equal(createCount, 2);
-  assert.equal(await store.consumeLoginAttempt(validLoginAttempt()), true);
+  assert.equal((await store.reserveLoginAttempt(validLoginAttempt())).allowed, true);
 });
 
 test("a transient pool query failure discards the cached production store", async () => {
@@ -561,7 +566,7 @@ test("a transient pool query failure discards the cached production store", asyn
   );
   assert.ok(first);
   await assert.rejects(
-    () => first.consumeLoginAttempt(validLoginAttempt()),
+    () => first.reserveLoginAttempt(validLoginAttempt()),
     /Durable login throttle store is unavailable/u,
   );
 
@@ -594,7 +599,7 @@ test("a non-transient query failure keeps the cached production store", async ()
     { createPool },
   );
   assert.ok(first);
-  await assert.rejects(() => first.consumeLoginAttempt(validLoginAttempt()));
+  await assert.rejects(() => first.reserveLoginAttempt(validLoginAttempt()));
 
   const second = await createProductionOpenEnaAuthSecurityStore(
     AUTH_ENVIRONMENT,

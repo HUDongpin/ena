@@ -62,7 +62,9 @@ async function startDatabase() {
             catch (error) { lifecycle.signal.throwIfAborted(); if (databaseEntry.child.exitCode !== null) throw error; await new Promise(resolve => setTimeout(resolve, 100)); }
         }
     }, 60000);
-    await child("psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(value), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations/002_open_ena_auth_security.sql")], env, "auth-migration.log", 60000);
+    for (const migration of ["002_open_ena_auth_security.sql", "009_open_ena_login_source_reservations.sql"]) {
+        await child("psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(value), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations", migration)], env, `auth-migration-${migration}.log`, 60000);
+    }
     return `postgresql://postgres@127.0.0.1:${value}/postgres`;
 }
 async function waitForHttp(url, label) {

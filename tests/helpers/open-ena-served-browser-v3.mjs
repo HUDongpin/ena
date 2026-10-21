@@ -134,7 +134,9 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
         catch (error) { lifecycle.signal.throwIfAborted(); if (databaseEntry.child.exitCode !== null) throw error; await new Promise(resolve => setTimeout(resolve, 100)); }
       }
     }, 60000);
-    await child("auth-migration", "psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(databasePort), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations/002_open_ena_auth_security.sql")]);
+    for (const migration of ["002_open_ena_auth_security.sql", "009_open_ena_login_source_reservations.sql"]) {
+      await child(`auth-migration-${migration}`, "psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(databasePort), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations", migration)]);
+    }
     const serverPort = await port(), baseUrl = `http://127.0.0.1:${serverPort}`;
     serverEntry = lifecycle.spawnOwned("server", process.execPath, [join(root, "node_modules/next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "--port", String(serverPort)], { cwd: root, env: { ...env, OPEN_ENA_AUTH_DATABASE_URL: `postgresql://postgres@127.0.0.1:${databasePort}/postgres`, OPEN_ENA_PUBLIC_ORIGIN: baseUrl, OPEN_ENA_ALLOWED_ORIGINS: baseUrl } });
     receipt.server = { port: serverPort, baseUrl, pid: serverEntry.child.pid };

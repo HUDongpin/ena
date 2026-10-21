@@ -454,16 +454,23 @@ Hindi, Russian, Indonesian, and Bengali.
 
 The billable AI and longitudinal routes require a verified durable v2 or v3 session principal and a configured billing policy. They fail closed when the account ID, database/policy values, or provider hard-cap check is absent or malformed. Apply `migrations/001_open_ena_billable.sql` with a PostgreSQL operator before enabling a durable deployment; the migration uses server UTC time and idempotent reservation keys. Configure the OpenRouter `/key` monthly hard limit at or below both the provider and global ceilings. Security alerts are redacted and written to the outbox; an HTTPS webhook delivery worker may consume that outbox.
 
-Open ENA authentication also requires the shared PostgreSQL security migration
-(`migrations/002_open_ena_auth_security.sql`) and `OPEN_ENA_AUTH_DATABASE_URL`.
-Every login attempt is bounded to 16 KiB before URL-encoded parsing and consumes
-durable source/account attempt windows; a database outage fails closed. Login
-uses a five-attempt per attributed source ceiling and a ten-attempt fallback
-account ceiling within a 15-minute window.
+Open ENA authentication requires `OPEN_ENA_AUTH_DATABASE_URL`, the shared
+PostgreSQL security migration (`migrations/002_open_ena_auth_security.sql`), and
+`migrations/009_open_ena_login_source_reservations.sql` before deploying the
+source-reservation login handler. Every login form is bounded to 16 KiB before
+URL-encoded parsing. A durable source reservation precedes password verification;
+a successful login refunds only its own reservation, preserving failed and
+in-flight attempts. The ceiling is five attempts per attributed source or ten
+for the unattributed fallback within a 15-minute window. Denied requests do not
+increase the count, and `Retry-After` reports the remaining server-timed window.
+A database outage fails closed.
 Set `OPEN_ENA_TRUSTED_CLIENT_IP_HEADER` only to a header that an operator-owned
 edge proxy forcibly rewrites or strips; an arbitrary client-supplied IP header is
-not a trust boundary. If that guarantee is unavailable, leave it blank so every
-request uses the shared account ceiling.
+not a trust boundary. If that guarantee is unavailable, leave it blank. Missing
+or invalid trusted addresses share the unattributed fallback, so unrelated
+visitors can temporarily block one another there. Separating visitors requires
+a verified ingress header; the application does not infer one from arbitrary
+forwarding headers. Login no longer has a deployment-wide account ceiling.
 Plugin Lab submission and status-access throttles use the same explicitly
 trusted, single-IP header. They ignore other forwarding headers and User-Agent.
 Without a valid trusted address, all unattributed visitors share the respective
@@ -498,12 +505,15 @@ Provision these rows only through a controlled operator process; this migration 
 not create a public registration or provisioning endpoint.
 
 Run the operator in two phases so the required auth migrations are committed
-before deploying the auth code that reads them. On a fresh database it applies
-004 then 008 in one transaction. When the disposable table and function already
-exist, it skips 004 and applies 008, preserving existing function attributes and
-allowing 008 to reject an unknown body. A partial schema fails closed. Migration
-receipts list both input file hashes in order and whether each was applied; proof
-mode requires the corrected consume-function body. Do not replay 004 alone after
+before deploying the auth code that reads them. Migrations 001, 002, and 003
+remain prerequisites; this operator does not install them. With those present
+and no disposable schema, it applies 004, 008, and 009 in one transaction. When
+the disposable table and function already exist, it skips 004 and applies 008
+and 009, preserving existing disposable-function attributes and allowing 008 to
+reject an unknown body. A partial schema fails closed. Migration receipts list
+all three input file hashes in order and whether each was applied; proof mode
+executes no DDL and requires the corrected consume-function body plus both 009
+reservation/refund signatures and return contracts. Do not replay 004 alone after
 008, because that would restore the old expiry check. `vercel env run` injects
 Production variables into the child process without creating a local environment file:
 

@@ -192,15 +192,17 @@ async function startEphemeralPostgres() {
     "start",
   ], { stdio: "ignore", timeout: 60_000 });
   ephemeralPostgresRunning = true;
-  execFileSync("psql", [
-    "--no-psqlrc",
-    "--set", "ON_ERROR_STOP=1",
-    "--host", "127.0.0.1",
-    "--port", String(port),
-    "--username", "postgres",
-    "--dbname", "postgres",
-    "--file", join(projectRoot, "migrations", "002_open_ena_auth_security.sql"),
-  ], { stdio: "ignore", timeout: 60_000 });
+  for (const migration of ["002_open_ena_auth_security.sql", "009_open_ena_login_source_reservations.sql"]) {
+    execFileSync("psql", [
+      "--no-psqlrc",
+      "--set", "ON_ERROR_STOP=1",
+      "--host", "127.0.0.1",
+      "--port", String(port),
+      "--username", "postgres",
+      "--dbname", "postgres",
+      "--file", join(projectRoot, "migrations", migration),
+    ], { stdio: "ignore", timeout: 60_000 });
+  }
   return `postgresql://postgres@127.0.0.1:${port}/postgres`;
 }
 

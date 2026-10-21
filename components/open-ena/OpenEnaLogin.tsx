@@ -4,7 +4,9 @@ import type { ReactNode } from "react";
 import type { Locale } from "@/lib/i18n";
 import {
   getOpenEnaAuthCopy,
+  getOpenEnaAuthFailureMessage,
   OPEN_ENA_CONTACT_EMAIL,
+  type OpenEnaAuthFailure,
 } from "@/lib/open-ena-auth-copy";
 import { isOpenEnaLocalizedLocale } from "@/lib/open-ena-i18n";
 import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
@@ -14,6 +16,8 @@ interface OpenEnaLoginProps {
   locale: Locale;
   error: boolean;
   configurationReady: boolean;
+  failure?: OpenEnaAuthFailure | null;
+  retryAfterSeconds?: number;
 }
 
 export function OpenEnaLoginFrame({ locale, children }: { locale: Locale; children: ReactNode }) {
@@ -29,8 +33,10 @@ export function OpenEnaLoginFrame({ locale, children }: { locale: Locale; childr
   );
 }
 
-export default function OpenEnaLogin({ locale, error, configurationReady }: OpenEnaLoginProps) {
+export default function OpenEnaLogin({ locale, error, configurationReady, failure, retryAfterSeconds }: OpenEnaLoginProps) {
   const copy = getOpenEnaAuthCopy(locale);
+  const failureMessage = failure ? getOpenEnaAuthFailureMessage(locale, failure, retryAfterSeconds)
+    : error ? copy.invalidCredentials : null;
   const pluginCopy = getPluginLabCopy(locale);
   const [noticeBeforeEmail, noticeAfterEmail = ""] = copy.collaborationNotice.split(
     OPEN_ENA_CONTACT_EMAIL,
@@ -83,7 +89,7 @@ export default function OpenEnaLogin({ locale, error, configurationReady }: Open
           </div>
 
           {configurationReady ? (
-            <form action="/api/open-ena/login" method="post" className="open-ena-login-form">
+            <form action="/api/open-ena/login" method="post" className="open-ena-login-form" aria-describedby={failureMessage ? "open-ena-login-error" : undefined}>
             <input type="hidden" name="locale" value={locale} />
             <label htmlFor="open-ena-username">{copy.username}</label>
             <input
@@ -110,9 +116,9 @@ export default function OpenEnaLogin({ locale, error, configurationReady }: Open
               required
             />
 
-            {error ? (
+            {failureMessage ? (
               <p id="open-ena-login-error" className="open-ena-login-error" role="alert">
-                {copy.invalidCredentials}
+                {failureMessage}
               </p>
             ) : null}
 
@@ -123,7 +129,7 @@ export default function OpenEnaLogin({ locale, error, configurationReady }: Open
             </form>
           ) : (
             <p className="open-ena-login-error" role="alert">
-              {copy.unavailable}
+              {failureMessage ?? copy.unavailable}
             </p>
           )}
 

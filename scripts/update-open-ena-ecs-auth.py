@@ -143,7 +143,12 @@ const p=new Pool({connectionString:process.env.OPEN_ENA_AUTH_DATABASE_URL,
  connectionTimeoutMillis:5000});
 (async()=>{try {
  const r=await p.query(`SELECT
- to_regprocedure('public.open_ena_consume_login_attempt(text,text,integer,integer,integer)') IS NOT NULL AS login,
+ COALESCE(pg_get_function_result(to_regprocedure(
+  'public.open_ena_reserve_login_attempt_v2(text,integer,integer)'
+ )) = 'TABLE(allowed boolean, window_started_at text, retry_after_seconds integer)', false) AS login,
+ COALESCE(pg_get_function_result(to_regprocedure(
+  'public.open_ena_refund_login_attempt_v2(text,timestamptz)'
+ )) = 'boolean', false) AS refund,
  to_regprocedure('public.open_ena_revoke_session(text,bigint)') IS NOT NULL AS revoke,
  to_regprocedure('public.open_ena_session_is_revoked(text)') IS NOT NULL AS check`);
  if(!Object.values(r.rows[0]).every(Boolean)) process.exitCode=2;

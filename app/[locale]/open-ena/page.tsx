@@ -22,10 +22,11 @@ import {
 import { pageMetadata } from "@/lib/metadata";
 import { siteConfig } from "@/lib/site";
 import { parseOpenEnaDisabledPluginIds } from "@/lib/open-ena/plugins/runtime-registry";
+import { getOpenEnaAuthFailureMessage, parseOpenEnaAuthFailure } from "@/lib/open-ena-auth-copy";
 
 interface OpenEnaPageProps {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ auth?: string | string[] }>;
+  searchParams: Promise<{ auth?: string | string[]; retry?: string | string[] }>;
 }
 
 export const dynamic = "force-dynamic";
@@ -73,6 +74,9 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
   const principal = authConfigurationReady
     ? await verifyProductionOpenEnaSessionTokenAny(sessionCookie) : null;
   const query = await searchParams;
+  const failure = parseOpenEnaAuthFailure(query.auth);
+  const retryAfterSeconds = typeof query.retry === "string" && /^\d{1,3}$/u.test(query.retry)
+    ? Number(query.retry) : undefined;
 
   if (!principal) {
     return (
@@ -80,6 +84,8 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
         locale={typedLocale}
         error={query.auth === "invalid"}
         configurationReady={authConfigurationReady}
+        failure={failure}
+        retryAfterSeconds={retryAfterSeconds}
       />
     );
   }
@@ -123,6 +129,7 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
   return (
     <>
       <JsonLd data={structuredData} />
+      {failure ? <p className="open-ena-login-error" role="alert">{getOpenEnaAuthFailureMessage(typedLocale, failure, retryAfterSeconds)}</p> : null}
       <OpenEnaWorkspace locale={typedLocale}
         operationOwnerKey={openEnaAiOperationOwnerKey(principal.principalRef)}
         providerDescriptor={providerDescriptor}

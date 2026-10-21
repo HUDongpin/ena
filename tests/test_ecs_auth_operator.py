@@ -235,6 +235,31 @@ class OperatorLifecycleTests(unittest.TestCase):
         self.password_prompt.assert_not_called()
         self.run.assert_not_called()
 
+    def assert_missing_login_function_stops_before_mutation(self, function_name):
+        # The synthetic catalog has every old auth function, but not this new
+        # function. An incomplete preflight would proceed and change the file.
+        def inspect_schema(args, **_kwargs):
+            return types.SimpleNamespace(returncode=2 if function_name in args[2] else 0)
+
+        self.preflight.side_effect = inspect_schema
+        with http_fixture() as server, mock.patch.object(operator, "LOCAL", server.url):
+            with self.assertRaisesRegex(RuntimeError, "^AUTH_DATABASE_PREFLIGHT_FAILED$"):
+                operator.main()
+        self.assertEqual(self.env_file.read_text(), ORIGINAL)
+        self.assertFalse(self.backups.exists())
+        self.password_prompt.assert_not_called()
+        self.assertEqual(self.restart_calls(), [])
+
+    def test_missing_source_reservation_function_stops_before_mutation(self):
+        self.assert_missing_login_function_stops_before_mutation(
+            "public.open_ena_reserve_login_attempt_v2(text,integer,integer)"
+        )
+
+    def test_missing_source_refund_function_stops_before_mutation(self):
+        self.assert_missing_login_function_stops_before_mutation(
+            "public.open_ena_refund_login_attempt_v2(text,timestamptz)"
+        )
+
     def test_concurrent_change_is_preserved_without_backup_or_restart(self):
         concurrent = ORIGINAL + "CONCURRENT_SETTING=keep-this-change\n"
 

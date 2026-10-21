@@ -735,6 +735,7 @@ try {
   const missingBoundary = "The computed ENA model results are still valid. Only the AI interpretation is missing.";
   const retainedBoundary = "The ENA model results remain valid. This new AI interpretation attempt failed; the interpretation shown below is from an earlier request for the same evidence.";
   const replayError = "This AI generation operation was already processed.";
+  const terminalError = "This AI request has already been processed or has an unresolved outcome, so it cannot be retried. To generate another interpretation, change the analysis and review the new request first.";
 
   async function withIdempotentAi(decide) {
     const page = await browser.newPage();
@@ -755,7 +756,7 @@ try {
         return route.fulfill({
           status: 409,
           contentType: "application/json",
-          body: JSON.stringify({ error: replayError }),
+          body: JSON.stringify({ error: replayError, errorCode: "operation-not-retryable" }),
         });
       }
       const decision = await decide({
@@ -847,14 +848,12 @@ try {
     );
     assert.equal(await alert.locator("[data-ena-ai-evidence-boundary='previous-interpretation-retained']").count(), 0, item.name);
     await alert.getByRole("button", { name: "Retry" }).click();
-    await session.page.getByText(replayError).waitFor();
+    await session.page.getByText(terminalError).waitFor();
     assert.equal(session.operations.length, 2, `${item.name} retry sends one request`);
     assert.equal(session.operations[0], session.operations[1], `${item.name} retains its unresolved operation id`);
-    await session.page.getByRole("alert").getByRole("button", { name: "Retry" }).click();
-    await session.page.getByText(replayError).waitFor();
-    assert.equal(session.operations.length, 3, `${item.name} sends only explicit retries`);
-    assert.equal(session.operations[2], session.operations[0], `${item.name} cannot escape replay protection`);
-    assert.deepEqual(session.statuses, [item.status, 409, 409], item.name);
+    assert.equal(await session.page.getByRole("alert").getByRole("button", { name: "Retry" }).count(), 0, `${item.name} stops offering Retry after terminal replay`);
+    assert.equal(await session.page.getByRole("button", { name: "Generate AI interpretation", exact: true }).isDisabled(), true);
+    assert.deepEqual(session.statuses, [item.status, 409], item.name);
     assert.equal(dispatches, 1, `${item.name} cannot dispatch or bill twice`);
     assert.equal(await session.page.locator(".ena-ai-result").count(), 0, item.name);
     assert.deepEqual(session.errors, [], item.name);
@@ -914,14 +913,12 @@ try {
   const thrownAlert = thrownAfterReserve.page.getByRole("alert");
   await thrownAlert.waitFor();
   await thrownAlert.getByRole("button", { name: "Retry" }).click();
-  await thrownAfterReserve.page.getByText(replayError).waitFor();
+  await thrownAfterReserve.page.getByText(terminalError).waitFor();
   assert.equal(thrownAfterReserve.operations[0], thrownAfterReserve.operations[1], "an unknown network failure must not mint a second billable id");
   assert.equal(thrownAfterReserve.statuses[1], 409);
-  await thrownAfterReserve.page.getByRole("alert").getByRole("button", { name: "Retry" }).click();
-  await thrownAfterReserve.page.getByText(replayError).waitFor();
-  assert.equal(thrownAfterReserve.operations.length, 3);
-  assert.equal(thrownAfterReserve.operations[2], thrownAfterReserve.operations[0], "an unproven 409 must keep the unresolved operation on every explicit retry");
-  assert.equal(thrownAfterReserve.statuses[2], 409);
+  assert.equal(await thrownAfterReserve.page.getByRole("alert").getByRole("button", { name: "Retry" }).count(), 0);
+  assert.equal(await thrownAfterReserve.page.getByRole("button", { name: "Generate AI interpretation", exact: true }).isDisabled(), true);
+  assert.equal(thrownAfterReserve.operations.length, 2, "terminal replay stops the failed retry loop");
   assert.equal(unknownDispatches, 1, "an uncertain provider dispatch must not be repeated under a fresh operation id");
   assert.equal(await thrownAfterReserve.page.locator(".ena-ai-result").count(), 0);
   assert.deepEqual(thrownAfterReserve.errors, []);

@@ -300,12 +300,14 @@ export function openEnaAiProviderFailurePresentation(error: unknown): {
   };
 }
 
-function safeProviderFailure(error: unknown) {
+function safeProviderFailure(error: unknown, operationNotRetryable: boolean) {
   const presentation = openEnaAiProviderFailurePresentation(error);
   return jsonResponse(
-    presentation.failureClass
-      ? { error: presentation.error, failureClass: presentation.failureClass }
-      : { error: presentation.error },
+    {
+      error: presentation.error,
+      ...(presentation.failureClass ? { failureClass: presentation.failureClass } : {}),
+      ...(operationNotRetryable ? { errorCode: "operation-not-retryable" } : {}),
+    },
     presentation.status,
   );
 }
@@ -479,7 +481,7 @@ export function createOpenEnaAiInterpretationPostHandler(
       }
       if (!result.ok || !result.reservation) {
         if (!result.ok && result.reason === "idempotency-replayed") {
-          const replay = jsonResponse({ error: "This AI generation operation was already processed." }, 409);
+          let released = false;
           try {
             // A lost/cancelled release response must not trap retries forever.
             // Ask the current principal's ledger; an older browser response may
@@ -489,11 +491,16 @@ export function createOpenEnaAiInterpretationPostHandler(
               resource: "ai-interpretation",
               idempotencyKey: operationId,
             }) === true) {
-              replay.headers.set(OPEN_ENA_AI_RETRY_HEADER, "new-operation");
-              replay.headers.set(OPEN_ENA_AI_OPERATION_HEADER, operationId);
+              released = true;
             }
           } catch { /* Unknown ledger state retains replay protection. */ }
-          return replay;
+          return jsonResponse({
+            error: "This AI generation operation was already processed.",
+            ...(!released ? { errorCode: "operation-not-retryable" } : {}),
+          }, 409, released ? {
+            [OPEN_ENA_AI_RETRY_HEADER]: "new-operation",
+            [OPEN_ENA_AI_OPERATION_HEADER]: operationId,
+          } : {});
         }
         try {
           await store.alert({
@@ -533,19 +540,24 @@ export function createOpenEnaAiInterpretationPostHandler(
       consentReceipt = null;
     }
     if (store && dependencies.requireBillable && (!recordReceipt || !updateReceipt || !consentReceipt)) {
-      const failure = jsonResponse({ error: "AI interpretation consent receipt storage is unavailable." }, 503);
+      let released = false;
       if (reservation) {
         try {
           await store.release(reservation);
           // Generation has not started. Successful cleanup permits a fresh
           // operation while the released ID retains its replay protection.
-          failure.headers.set(OPEN_ENA_AI_RETRY_HEADER, "new-operation");
-          failure.headers.set(OPEN_ENA_AI_OPERATION_HEADER, operationId);
+          released = true;
         } catch {
           // Keep the response fail-closed even if cleanup is unavailable.
         }
       }
-      return failure;
+      return jsonResponse({
+        error: "AI interpretation consent receipt storage is unavailable.",
+        ...(reservation && !released ? { errorCode: "operation-not-retryable" } : {}),
+      }, 503, released ? {
+        [OPEN_ENA_AI_RETRY_HEADER]: "new-operation",
+        [OPEN_ENA_AI_OPERATION_HEADER]: operationId,
+      } : {});
     }
 
     let result: OpenEnaAiGenerationResult;
@@ -603,12 +615,12 @@ export function createOpenEnaAiInterpretationPostHandler(
             releasedBeforeDispatch = errorProperty(error, "providerDispatched") === false;
           }
         } catch {
-          return jsonResponse({ error: "AI interpretation is temporarily unavailable." }, 503);
+          return jsonResponse({ error: "AI interpretation is temporarily unavailable.", errorCode: "operation-not-retryable" }, 503);
         }
       }
       const failure = receiptTerminalFailure
-        ? jsonResponse({ error: "AI interpretation consent receipt storage is unavailable." }, 503)
-        : safeProviderFailure(error);
+        ? jsonResponse({ error: "AI interpretation consent receipt storage is unavailable.", ...(reservation && !releasedBeforeDispatch ? { errorCode: "operation-not-retryable" } : {}) }, 503)
+        : safeProviderFailure(error, Boolean(reservation && !releasedBeforeDispatch));
       if (releasedBeforeDispatch) {
         failure.headers.set(OPEN_ENA_AI_RETRY_HEADER, "new-operation");
         failure.headers.set(OPEN_ENA_AI_OPERATION_HEADER, operationId);
@@ -631,7 +643,7 @@ export function createOpenEnaAiInterpretationPostHandler(
           }
         }
       } catch {
-        return jsonResponse({ error: "AI interpretation is temporarily unavailable." }, 503);
+        return jsonResponse({ error: "AI interpretation is temporarily unavailable.", errorCode: "operation-not-retryable" }, 503);
       }
     }
     if (consentReceipt && store?.updateAiConsentReceiptStatus) {
@@ -655,7 +667,7 @@ export function createOpenEnaAiInterpretationPostHandler(
         consentReceipt = null;
       }
       if (receiptTerminalFailure) {
-        return jsonResponse({ error: "AI interpretation consent receipt storage is unavailable." }, 503);
+        return jsonResponse({ error: "AI interpretation consent receipt storage is unavailable.", ...(reservation ? { errorCode: "operation-not-retryable" } : {}) }, 503);
       }
     }
     return jsonResponse(result.response, 200, consentReceipt ? receiptHeaders(consentReceipt) : {});

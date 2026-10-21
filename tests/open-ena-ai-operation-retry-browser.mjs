@@ -69,7 +69,7 @@ try {
       if (["uncertain", "pending", "malformed-success", "malformed-json-success"].includes(scenario)) {
         if (dispatchedOperations.has(operationId)) {
           status = 409;
-          body = { error: "This operation has already been submitted." };
+          body = { error: "This operation has already been submitted.", errorCode: "operation-not-retryable" };
         } else {
           dispatchedOperations.add(operationId);
           status = 502;
@@ -124,7 +124,7 @@ try {
         window.operationStorageKey,
       ));
       const waitUntilSettled = () => page.waitForFunction(() => (
-        document.querySelector(".ena-ai-actions button:not(:disabled)")
+        document.querySelector('.ena-ai-interpretation[aria-busy="false"]')
         && document.querySelector("[role=alert], .ena-ai-result")
       ));
       await generate.click();
@@ -155,17 +155,21 @@ try {
         assert.equal(operations.length, 2);
         assert.equal(operations[1], operations[0], "the first retry must retain the original operation key");
         assert.equal(await storedOperation(), scenario === "renewable" ? "closed" : operations[0]);
-        await page.getByRole("alert").getByRole("button").click();
-        await waitUntilSettled();
-        assert.equal(operations.length, 3);
-        if (scenario === "renewable") {
-          assert.notEqual(operations[2], operations[0], "only correctly bound safe renewal permits a new operation");
-        } else {
-          assert.equal(operations[2], operations[0], "409 and mismatched renewal headers must preserve the original operation");
-        }
-        if (scenario === "uncertain" || scenario === "pending") {
-          assert.equal(dispatchedOperations.size, 1, "two Retry attempts cannot dispatch a second billable generation");
+        if (["uncertain", "pending", "malformed-success", "malformed-json-success"].includes(scenario)) {
+          assert.equal(await page.getByRole("alert").getAttribute("data-ena-ai-recovery"), "review-request");
+          assert.equal(await page.getByRole("alert").getByRole("button").count(), 0, "non-released replay must not offer useless Retry");
+          assert.equal(await generate.isDisabled(), true);
+          assert.equal(dispatchedOperations.size, 1, "terminal recovery cannot dispatch a second billable generation");
           if (scenario === "pending") assert.equal(firstProviderPending, true, "duplicate requests stay blocked while the first provider is unresolved");
+        } else {
+          await page.getByRole("alert").getByRole("button").click();
+          await waitUntilSettled();
+          assert.equal(operations.length, 3);
+          if (scenario === "renewable") {
+            assert.notEqual(operations[2], operations[0], "only correctly bound safe renewal permits a new operation");
+          } else {
+            assert.equal(operations[2], operations[0], "mismatched renewal headers must preserve the original operation");
+          }
         }
       }
       assert.equal(new Set(requestBodies).size, 1, "all attempts use the same reviewed request");

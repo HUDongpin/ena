@@ -43,9 +43,9 @@ type AiAuditReceiptView = {
 
 type GenerationStatus = "idle" | "loading";
 
-export type OpenEnaAiFailureRecovery = "retry" | "sign-in";
+export type OpenEnaAiFailureRecovery = "retry" | "sign-in" | "review-request";
 
-export const OPEN_ENA_AI_FAILURE_CLASSES = ["session", "unavailable", "network", "invalid-output"] as const;
+export const OPEN_ENA_AI_FAILURE_CLASSES = ["session", "unavailable", "network", "invalid-output", "operation-not-retryable"] as const;
 
 export type OpenEnaAiFailureClass = (typeof OPEN_ENA_AI_FAILURE_CLASSES)[number];
 
@@ -56,16 +56,21 @@ export function openEnaAiFailureRecovery(status: number): OpenEnaAiFailureRecove
 export function classifyOpenEnaAiPanelFailure(input: {
   status?: number;
   failureClass?: unknown;
+  errorCode?: unknown;
+  operationReleased?: boolean;
   cause?: "network" | "invalid-output" | "http";
 }): { failureClass: OpenEnaAiFailureClass | null; recovery: OpenEnaAiFailureRecovery } {
   if (input.status === 401) return { failureClass: "session", recovery: "sign-in" };
+  if (!input.operationReleased && (input.errorCode === "operation-not-retryable" || input.failureClass === "operation-not-retryable")) {
+    return { failureClass: "operation-not-retryable", recovery: "review-request" };
+  }
   if (input.cause === "invalid-output") return { failureClass: "invalid-output", recovery: "retry" };
   if (input.cause === "network") return { failureClass: "network", recovery: "retry" };
   const declared = typeof input.failureClass === "string"
     && (OPEN_ENA_AI_FAILURE_CLASSES as readonly string[]).includes(input.failureClass)
     ? input.failureClass as OpenEnaAiFailureClass
     : null;
-  if (declared && declared !== "session") return { failureClass: declared, recovery: "retry" };
+  if (declared && declared !== "session" && declared !== "operation-not-retryable") return { failureClass: declared, recovery: "retry" };
   if (input.status === 429 || input.status === 503) return { failureClass: "unavailable", recovery: "retry" };
   if (input.status === 504) return { failureClass: "network", recovery: "retry" };
   return {
@@ -83,6 +88,7 @@ export function openEnaAiFailureClassMessage(
   if (failureClass === "unavailable") return copy.failureUnavailable;
   if (failureClass === "network") return copy.failureNetwork;
   if (failureClass === "invalid-output") return copy.failureInvalidOutput;
+  if (failureClass === "operation-not-retryable") return copy.failureOperationNotRetryable;
   return fallback;
 }
 
@@ -168,6 +174,7 @@ export default function OpenEnaAiInterpretation({
   const [aiResponseRequestIdentity, setAiResponseRequestIdentity] = useState<string | null>(null);
   const [aiError, setAiError] = useState("");
   const [aiRecovery, setAiRecovery] = useState<OpenEnaAiFailureRecovery>("retry");
+  const [terminalRequestIdentity, setTerminalRequestIdentity] = useState<string | null>(null);
   const [aiFailureClass, setAiFailureClass] = useState<OpenEnaAiFailureClass | null>(null);
   const [auditReceipt, setAuditReceipt] = useState<AiAuditReceiptView | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -177,6 +184,7 @@ export default function OpenEnaAiInterpretation({
   const generateButtonRef = useRef<HTMLButtonElement | null>(null);
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
   const retryControlRef = useRef<HTMLButtonElement | null>(null);
+  const errorAlertRef = useRef<HTMLDivElement | null>(null);
   const signInControlRef = useRef<HTMLAnchorElement | null>(null);
   const consentControlRef = useRef<HTMLInputElement | null>(null);
   const interpretationHeadingRef = useRef<HTMLHeadingElement | null>(null);
@@ -197,6 +205,7 @@ export default function OpenEnaAiInterpretation({
   const operationScope = useMemo(() => request && owner ? openEnaAiOperationScope(request, owner) : null, [request, owner, requestIdentity]);
   const operationStorageKey = operationScope?.key ?? null;
   const consentGranted = requestIdentity !== null && consentedRequestIdentity === requestIdentity;
+  const operationNotRetryable = terminalRequestIdentity !== null && terminalRequestIdentity === requestIdentity;
   const currentResponse = aiResponse && aiResponseRequestIdentity === requestIdentity ? aiResponse : null;
   const showsRetainedInterpretation = currentResponse !== null;
   // Sample while the previous result is still mounted. currentResponse drops
@@ -259,6 +268,7 @@ export default function OpenEnaAiInterpretation({
     setAiResponseRequestIdentity(null);
     setAiError("");
     setAiRecovery("retry");
+    setTerminalRequestIdentity(null);
     setAiFailureClass(null);
     setAuditReceipt(null);
     setGenerationStatus("idle");
@@ -280,7 +290,7 @@ export default function OpenEnaAiInterpretation({
         cancelButtonRef.current?.focus();
         return;
       }
-      const recovery = signInControlRef.current ?? retryControlRef.current;
+      const recovery = signInControlRef.current ?? retryControlRef.current ?? errorAlertRef.current;
       if (aiError) {
         recovery?.focus();
         restoreFocusRef.current = false;
@@ -312,7 +322,7 @@ export default function OpenEnaAiInterpretation({
   }, [generationStatus, aiError, aiRecovery]);
 
   async function handleGenerateInterpretation() {
-    if (!request || !owner || !operationScope || disabled || !consentGranted || generationStatus === "loading") return;
+    if (!request || !owner || !operationScope || disabled || !consentGranted || operationNotRetryable || generationStatus === "loading") return;
     const requestedIdentity = requestIdentity;
     const requestedOperationScope = operationScope;
     if (!requestedIdentity || consentedRequestIdentity !== requestedIdentity) return;
@@ -377,16 +387,21 @@ export default function OpenEnaAiInterpretation({
             const declaredFailureClass = payload && typeof payload === "object" && "failureClass" in payload
               ? (payload as { failureClass?: unknown }).failureClass
               : undefined;
-            // Error classifications describe the message, not whether another
-            // billable dispatch is safe. Only a current, operation-bound release
+            const errorCode = payload && typeof payload === "object" && "errorCode" in payload
+              ? (payload as { errorCode?: unknown }).errorCode
+              : undefined;
+            // Failure classifications can stop retries, but cannot authorize a
+            // new billable dispatch. Only a current, operation-bound release
             // proof can close this identity after a failed response.
-            if (!isStaleGeneration() && mayRenewOpenEnaAiOperation(response, operationId)) clearOperation();
-            const recovery = openEnaAiFailureRecovery(response.status);
-            const failureClass = classifyOpenEnaAiPanelFailure({
+            const operationReleased = mayRenewOpenEnaAiOperation(response, operationId);
+            if (!isStaleGeneration() && operationReleased) clearOperation();
+            const { recovery, failureClass } = classifyOpenEnaAiPanelFailure({
               status: response.status,
               failureClass: declaredFailureClass,
+              errorCode,
+              operationReleased,
               cause: "http",
-            }).failureClass;
+            });
             const payloadMessage = payload && typeof payload === "object" && "error" in payload
               && typeof (payload as { error?: unknown }).error === "string"
               ? (payload as { error: string }).error
@@ -395,6 +410,7 @@ export default function OpenEnaAiInterpretation({
             if (!isStaleGeneration()) {
               setAiRecovery(recovery);
               setAiFailureClass(failureClass);
+              if (recovery === "review-request") setTerminalRequestIdentity(requestedIdentity);
             }
             throw new Error(safeMessage);
           }
@@ -511,7 +527,7 @@ export default function OpenEnaAiInterpretation({
           ref={generateButtonRef}
           type="button"
           className="ena-action-button ena-action-primary"
-          disabled={disabled || !request || !consentGranted || generationStatus === "loading"}
+          disabled={disabled || !request || !consentGranted || operationNotRetryable || generationStatus === "loading"}
           onClick={handleGenerateInterpretation}
         >
           {generationStatus === "loading" ? copy.generating : copy.generate}
@@ -530,6 +546,8 @@ export default function OpenEnaAiInterpretation({
 
       {aiError ? (
         <div
+          ref={errorAlertRef}
+          tabIndex={-1}
           className="ena-ai-error"
           role="alert"
           data-ena-ai-recovery={aiRecovery}
@@ -556,7 +574,7 @@ export default function OpenEnaAiInterpretation({
               {copy.signInAgain}
               <span className="sr-only"> {copy.signInNewTab}</span>
             </a>
-          ) : (
+          ) : aiRecovery === "retry" ? (
             <button
               ref={retryControlRef}
               type="button"
@@ -567,7 +585,7 @@ export default function OpenEnaAiInterpretation({
             >
               {copy.retry}
             </button>
-          )}
+          ) : null}
         </div>
       ) : null}
 

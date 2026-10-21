@@ -11,11 +11,19 @@ import { openEnaRequestOriginConfigurationReady } from "@/lib/open-ena-auth-requ
 
 export type OpenEnaLoginAttempt = {
   sourceRef: string;
-  accountRef: string;
-  sourceLimit: number;
-  accountLimit: number;
+  limit: number;
   windowSeconds: number;
 };
+
+export type OpenEnaLoginReservation = {
+  sourceRef: string;
+  /** Exact PostgreSQL timestamp text: never round-trip this through a JS Date. */
+  windowStartedAt: string;
+};
+
+export type OpenEnaLoginAttemptResult =
+  | { allowed: true; reservation: OpenEnaLoginReservation }
+  | { allowed: false; retryAfterSeconds: number };
 
 export type OpenEnaDisposableLogin = {
   usernameRef: string;
@@ -23,7 +31,8 @@ export type OpenEnaDisposableLogin = {
 };
 
 export type OpenEnaAuthSecurityStore = OpenEnaSessionRevocationLookup & {
-  consumeLoginAttempt(input: OpenEnaLoginAttempt): Promise<boolean>;
+  reserveLoginAttempt(input: OpenEnaLoginAttempt): Promise<OpenEnaLoginAttemptResult>;
+  refundLoginAttempt(reservation: OpenEnaLoginReservation): Promise<void>;
   consumeDisposableCredential(input: OpenEnaDisposableLogin): Promise<string | null>;
   revokeSession(jti: string, expiresAtSeconds: number): Promise<void>;
 };
@@ -86,29 +95,54 @@ export function createPostgresOpenEnaAuthSecurityStore(
   query: OpenEnaAuthSecurityQuery,
 ): OpenEnaAuthSecurityStore {
   return {
-    async consumeLoginAttempt(input) {
+    async reserveLoginAttempt(input) {
       if (
-        !input.sourceRef
-        || !input.accountRef
-        || !Number.isSafeInteger(input.sourceLimit)
-        || input.sourceLimit < 1
-        || !Number.isSafeInteger(input.accountLimit)
-        || input.accountLimit < input.sourceLimit
+        !/^[A-Za-z0-9_-]{1,128}$/u.test(input.sourceRef)
+        || !Number.isSafeInteger(input.limit)
+        || input.limit < 1
         || !Number.isSafeInteger(input.windowSeconds)
         || input.windowSeconds < 1
-      ) return false;
+      ) throw new TypeError("Invalid login reservation.");
       try {
         const result = await query(
-          "SELECT open_ena_consume_login_attempt($1,$2,$3,$4,$5) AS allowed",
-          [
-            input.sourceRef,
-            input.accountRef,
-            input.sourceLimit,
-            input.accountLimit,
-            input.windowSeconds,
-          ],
+          "SELECT allowed, window_started_at, retry_after_seconds FROM public.open_ena_reserve_login_attempt_v2($1,$2,$3)",
+          [input.sourceRef, input.limit, input.windowSeconds],
         );
-        return result.rows[0]?.allowed === true;
+        const row = result.rows[0];
+        if (result.rows.length !== 1) throw new TypeError("Invalid login reservation result.");
+        if (row?.allowed === true && row.retry_after_seconds === 0
+          && typeof row.window_started_at === "string"
+          && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/u.test(row.window_started_at)
+          && Number.isFinite(Date.parse(row.window_started_at))) {
+          return { allowed: true, reservation: { sourceRef: input.sourceRef, windowStartedAt: row.window_started_at } };
+        }
+        if (row?.allowed === false && row.window_started_at === null
+          && typeof row.retry_after_seconds === "number"
+          && Number.isSafeInteger(row.retry_after_seconds)
+          && row.retry_after_seconds >= 1 && row.retry_after_seconds <= input.windowSeconds) {
+          return { allowed: false, retryAfterSeconds: row.retry_after_seconds };
+        }
+        throw new TypeError("Invalid login reservation result.");
+      } catch (error) {
+        throw new Error("Durable login throttle store is unavailable.", { cause: error });
+      }
+    },
+    async refundLoginAttempt(reservation) {
+      if (!/^[A-Za-z0-9_-]{1,128}$/u.test(reservation.sourceRef)
+        || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/u.test(reservation.windowStartedAt)
+        || !Number.isFinite(Date.parse(reservation.windowStartedAt))) {
+        throw new TypeError("Invalid login reservation refund.");
+      }
+      try {
+        // Exactly once per admitted successful handler invocation. A transport
+        // failure may have committed the decrement, so never retry this query.
+        const result = await query(
+          "SELECT public.open_ena_refund_login_attempt_v2($1,$2::timestamptz) AS refunded",
+          [reservation.sourceRef, reservation.windowStartedAt],
+        );
+        if (result.rows.length !== 1 || typeof result.rows[0]?.refunded !== "boolean") {
+          throw new TypeError("Invalid login reservation refund result.");
+        }
       } catch (error) {
         throw new Error("Durable login throttle store is unavailable.", { cause: error });
       }

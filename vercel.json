@@ -1,4 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "codex/ena-confirmed-bugfixes-20261021": false
+    }
+  },
   "installCommand": "node scripts/verify-j3dena-vendor.mjs && npm ci && node scripts/verify-j3dena-vendor.mjs --require-installed"
 }

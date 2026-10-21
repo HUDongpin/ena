@@ -202,7 +202,8 @@ test("login falls through from the static account to a one-time disposable accou
   const handler = (createHandler as Function)({
     environment: AUTH_ENVIRONMENT,
     securityStoreFactory: async () => ({
-      consumeLoginAttempt: async () => true,
+      reserveLoginAttempt: async ({ sourceRef }: { sourceRef: string }) => ({ allowed: true as const, reservation: { sourceRef, windowStartedAt: "2026-10-21T00:00:00.123456Z" } }),
+    refundLoginAttempt: async () => undefined,
       consumeDisposableCredential: async (input: { usernameRef: string; password: string }) => {
         seen.usernameRef = input.usernameRef;
         seen.password = input.password;
@@ -240,7 +241,8 @@ test("a static-account success keeps v2 duration and never touches a disposable 
   const handler = (createHandler as Function)({
     environment: AUTH_ENVIRONMENT,
     securityStoreFactory: async () => ({
-      consumeLoginAttempt: async () => true,
+      reserveLoginAttempt: async ({ sourceRef }: { sourceRef: string }) => ({ allowed: true as const, reservation: { sourceRef, windowStartedAt: "2026-10-21T00:00:00.123456Z" } }),
+    refundLoginAttempt: async () => undefined,
       consumeDisposableCredential: async () => {
         disposableCalls += 1;
         return null;
@@ -269,7 +271,8 @@ test("disposable credential store failures fail closed instead of becoming an in
   const handler = (createHandler as Function)({
     environment: AUTH_ENVIRONMENT,
     securityStoreFactory: async () => ({
-      consumeLoginAttempt: async () => true,
+      reserveLoginAttempt: async ({ sourceRef }: { sourceRef: string }) => ({ allowed: true as const, reservation: { sourceRef, windowStartedAt: "2026-10-21T00:00:00.123456Z" } }),
+    refundLoginAttempt: async () => undefined,
       consumeDisposableCredential: async () => { throw new Error("database unavailable"); },
       isSessionRevoked: async () => false,
       revokeSession: async () => undefined,
@@ -304,7 +307,8 @@ test("a v3 disposable session uses the same durable logout and replay rejection 
   const token = (createV3 as Function)(issuedAt, AUTH_ENVIRONMENT, `d_${"v".repeat(43)}`);
   const revoked = new Set<string>();
   const store = {
-    consumeLoginAttempt: async () => true,
+    reserveLoginAttempt: async ({ sourceRef }: { sourceRef: string }) => ({ allowed: true as const, reservation: { sourceRef, windowStartedAt: "2026-10-21T00:00:00.123456Z" } }),
+    refundLoginAttempt: async () => undefined,
     consumeDisposableCredential: async () => null,
     isSessionRevoked: async (jti: string) => revoked.has(jti),
     revokeSession: async (jti: string) => { revoked.add(jti); },

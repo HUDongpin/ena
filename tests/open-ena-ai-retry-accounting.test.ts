@@ -111,6 +111,7 @@ for (const dispatchVerdict of ["dispatched", "unknown"] as const) {
       assert.equal(response.status, expectedStatus);
       assert.equal(response.headers.get("x-open-ena-ai-retry"), null);
       assert.equal(mayRenewOpenEnaAiOperation(response, FIRST_OPERATION), false);
+      assert.equal((await response.json()).errorCode, "operation-not-retryable", "the panel must be told that retry cannot recover this operation");
     }
     assert.equal(providerCalls, 1);
     await assertOnlyOneReservationCharged(store);
@@ -134,6 +135,7 @@ test("409 retries do not start overlapping generation even when concurrency two 
       const response = await post(request(FIRST_OPERATION));
       assert.equal(response.status, 409);
       assert.equal(mayRenewOpenEnaAiOperation(response, FIRST_OPERATION), false);
+      assert.equal((await response.json()).errorCode, "operation-not-retryable", "an in-progress operation must not offer another dispatch");
     }
     assert.equal(providerCalls, 1);
   } finally {
@@ -159,6 +161,11 @@ test("explicit pre-dispatch release permits a fresh operation without charging t
   assert.equal(failed.status, 503);
   assert.equal(mayRenewOpenEnaAiOperation(failed, FIRST_OPERATION), true);
   assert.equal(mayRenewOpenEnaAiOperation(failed, NEW_OPERATION), false);
+  assert.equal((await failed.json()).errorCode, undefined);
+  const releasedReplay = await post(request(FIRST_OPERATION));
+  assert.equal(releasedReplay.status, 409);
+  assert.equal(mayRenewOpenEnaAiOperation(releasedReplay, FIRST_OPERATION), true);
+  assert.equal((await releasedReplay.json()).errorCode, undefined, "confirmed release stays retryable");
   assert.equal((await post(request(NEW_OPERATION))).status, 200);
   assert.equal(generatorCalls, 2);
   await assertOnlyOneReservationCharged(store);

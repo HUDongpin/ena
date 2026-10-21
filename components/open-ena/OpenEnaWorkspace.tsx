@@ -1,5 +1,7 @@
 "use client";
 
+import { createOpenEnaTextDownloadBlob } from "@/lib/open-ena/download";
+
 import { restoredWorkbenchCopy } from "./workbench-restoration-copy";
 import { buildUnitDisplayLabelIndexV3, hiddenUnitLabelsV3 } from "../../lib/open-ena/hidden-unit-display-v3";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
@@ -385,7 +387,7 @@ const modeIcons: Record<OpenEnaMode, React.ReactNode> = {
 };
 
 function downloadText(filename: string, contents: string, type: string) {
-  const blob = new Blob([contents], { type });
+  const blob = createOpenEnaTextDownloadBlob(contents, type);
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;

@@ -16,6 +16,25 @@ test("Browser CI provisions an isolated PostgreSQL database and applies Open ENA
     /for migration in migrations\/001_open_ena_billable\.sql migrations\/002_open_ena_auth_security\.sql migrations\/003_open_ena_ai_consent\.sql migrations\/004_open_ena_disposable_accounts\.sql/u,
   );
   assert.match(workflow, /psql .*OPEN_ENA_CI_DATABASE_URL.*ON_ERROR_STOP/u);
+  assert.match(workflow, /008_open_ena_disposable_expiry_after_lock\.sql migrations\/009_open_ena_login_source_reservations\.sql; do/u);
+});
+
+test("reviewed PostgreSQL regressions exercise source reservation concurrency", () => {
+  const regressionJob = workflow.slice(workflow.indexOf("  regressions:"));
+  assert.match(regressionJob, /node --import tsx tests\/review-auth-login-source-postgres\.mjs/u);
+});
+
+test("owned authenticated browser databases include the source reservation migration", () => {
+  for (const filename of [
+    "tests/helpers/open-ena-served-browser-v3.mjs",
+    "tests/open-ena-models-v3-browser-smoke.mjs",
+    "tests/open-ena-ona-3d-browser-smoke.mjs",
+  ]) {
+    const source = readFileSync(join(process.cwd(), filename), "utf8");
+    const authSchema = source.indexOf("002_open_ena_auth_security.sql");
+    const reservations = source.indexOf("009_open_ena_login_source_reservations.sql");
+    assert.ok(authSchema >= 0 && reservations > authSchema, `${filename} must apply 009 after 002`);
+  }
 });
 
 test("Browser CI exports the complete synthetic production configuration to every durable-auth smoke", () => {
