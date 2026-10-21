@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Locale } from "../../../lib/i18n";
 import { canonicalJsonV3 } from "../../../lib/open-ena/model-v3/canonical-json";
+import { CSV_DOWNLOAD_MEDIA_TYPE, csvDownloadBytes } from "../../../lib/open-ena/csv-download";
 import { OpenEnaUnmetPrerequisiteList } from "../OpenEnaUnmetPrerequisiteList";
 import { OpenEnaExportApplicabilityNote } from "../OpenEnaExportApplicabilityNote";
 import { runOpenEnaTrajectoryPathInferenceV3, assertOpenEnaTrajectoryPathInferenceConsumerV3, type OpenEnaTrajectoryPathControlsV3, type OpenEnaTrajectoryPathInferenceResultV3 } from "../../../lib/open-ena/trajectory-path-inference-v3";
@@ -93,7 +94,8 @@ export function OpenEnaTrajectoryAnalysisPanelV3({ locale, hidden, frameKey, res
     return pathCurrent && path && completeControls ? { path: { value: path.value, controls: completeControls }, ranks, ...(participants ? { participantConsent: { includeParticipants: true as const } } : {}) } : null;
   }
   function save(bytes: Uint8Array, mimeType: string, filename: string) {
-    const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: mimeType }));
+    const payload = csvDownloadBytes(bytes, mimeType);
+    const url = URL.createObjectURL(new Blob([new Uint8Array(payload.bytes)], { type: payload.type }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = filename; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   async function exportFiles(filename?: string) {
@@ -105,7 +107,7 @@ export function OpenEnaTrajectoryAnalysisPanelV3({ locale, hidden, frameKey, res
       const value = filename && prepared?.key === captured.selectionKey ? prepared.value : await buildOpenEnaTrajectoryExportV3(captured.result, captured.plan, selected);
       await assertOpenEnaTrajectoryExportConsumerV3(value, captured.result, captured.plan, selected);
       if (!still(captured, serial, true)) return;
-      if (filename) { const file = value.files.find(file => file.filename === filename); if (!file) throw new Error("Missing owned export file"); save(new TextEncoder().encode(file.contents), file.mimeType, file.filename); }
+      if (filename) { const file = value.files.find(file => file.filename === filename); if (!file) throw new Error("Missing owned export file"); const mimeType = file.filename.endsWith(".csv") ? CSV_DOWNLOAD_MEDIA_TYPE : file.mimeType; save(new TextEncoder().encode(file.contents), mimeType, file.filename); }
       else save(value.bytes, value.mimeType, value.filename);
       setPrepared({ key: captured.selectionKey, value }); setMessage("exported");
     } catch { if (still(captured, serial, true)) setMessage("exportError"); }
