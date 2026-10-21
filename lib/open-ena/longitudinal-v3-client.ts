@@ -118,6 +118,8 @@ export interface OpenEnaLongitudinalExecutionReceiptV3 {
 export type OpenEnaLongitudinalExecutionClientErrorCodeV3 =
   | "REMOTE_CONFIRMATION_REQUIRED"
   | "REMOTE_SERVICE_UNAVAILABLE"
+  | "REMOTE_AUTH_REQUIRED"
+  | "REMOTE_RATE_LIMITED"
   | "REMOTE_SUBMISSION_FAILED"
   | "REMOTE_POLL_FAILED"
   | "REMOTE_TERMINAL_FAILED"
@@ -131,12 +133,24 @@ export class OpenEnaLongitudinalExecutionClientErrorV3 extends Error {
   readonly decision: OpenEnaLongitudinalRouteDecisionV3;
   readonly canContinueLocally: boolean;
   readonly canDisableInference: boolean;
+  /** Immediate remote retry is safe. Auth and rate-limit failures set this false. */
+  readonly canRetryRemote: boolean;
+  /** Server `error.code` when the route returned a structured JSON error. */
+  readonly serverCode: string | null;
+  /** Parsed `Retry-After` delay in seconds, when the route sent a delta-seconds value. */
+  readonly retryAfterSeconds: number | null;
 
   constructor(
     code: OpenEnaLongitudinalExecutionClientErrorCodeV3,
     message: string,
     decision: OpenEnaLongitudinalRouteDecisionV3,
-    options: { canContinueLocally: boolean; canDisableInference: boolean },
+    options: {
+      canContinueLocally: boolean;
+      canDisableInference: boolean;
+      canRetryRemote?: boolean;
+      serverCode?: string | null;
+      retryAfterSeconds?: number | null;
+    },
   ) {
     super(message);
     this.name = "OpenEnaLongitudinalExecutionClientErrorV3";
@@ -144,6 +158,9 @@ export class OpenEnaLongitudinalExecutionClientErrorV3 extends Error {
     this.decision = decision;
     this.canContinueLocally = options.canContinueLocally;
     this.canDisableInference = options.canDisableInference;
+    this.canRetryRemote = options.canRetryRemote ?? true;
+    this.serverCode = options.serverCode ?? null;
+    this.retryAfterSeconds = options.retryAfterSeconds ?? null;
   }
 }
 
@@ -371,8 +388,121 @@ function computeHeaders(capability: RemoteCapabilityV3, accept = "application/js
   });
 }
 
-async function jsonResponse(response: Response, label: string): Promise<unknown> {
+const SUBMISSION_ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/u;
+
+interface SubmissionHttpFailureV3 {
+  status: number;
+  serverCode: string | null;
+  retryAfterSeconds: number | null;
+}
+
+class SubmissionHttpErrorV3 extends Error {
+  readonly failure: SubmissionHttpFailureV3;
+
+  constructor(label: string, failure: SubmissionHttpFailureV3) {
+    const codeSuffix = failure.serverCode ? ` (${failure.serverCode})` : "";
+    super(`${label} returned HTTP ${failure.status}${codeSuffix}.`);
+    this.name = "SubmissionHttpErrorV3";
+    this.failure = failure;
+  }
+}
+
+function retryAfterSeconds(header: string | null): number | null {
+  if (header === null) return null;
+  const trimmed = header.trim();
+  if (!/^[1-9][0-9]{0,6}$/u.test(trimmed)) return null;
+  const seconds = Number(trimmed);
+  return Number.isSafeInteger(seconds) ? seconds : null;
+}
+
+function serverErrorCode(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const error = (value as { error?: unknown }).error;
+  if (!error || typeof error !== "object" || Array.isArray(error)) return null;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && SUBMISSION_ERROR_CODE_PATTERN.test(code) ? code : null;
+}
+
+/**
+ * Read a failed same-origin submission body only far enough to keep `error.code`.
+ * Non-JSON and oversized bodies keep the HTTP status and still release the stream.
+ */
+async function readSubmissionFailure(response: Response): Promise<SubmissionHttpFailureV3> {
+  const retryAfter = retryAfterSeconds(response.headers.get("retry-after"));
+  const failure = (serverCode: string | null): SubmissionHttpFailureV3 => ({
+    status: response.status,
+    serverCode,
+    retryAfterSeconds: retryAfter,
+  });
+  const declared = response.headers.get("content-length");
+  if (declared !== null && (!/^(?:0|[1-9][0-9]{0,15})$/u.test(declared) || Number(declared) > MAX_REMOTE_METADATA_BYTES)) {
+    await response.body?.cancel().catch(() => undefined);
+    return failure(null);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) return failure(null);
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let overflow = false;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_REMOTE_METADATA_BYTES) {
+        overflow = true;
+        await reader.cancel().catch(() => undefined);
+        break;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return failure(null);
+  } finally {
+    reader.releaseLock();
+  }
+  if (overflow) return failure(null);
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  try {
+    return failure(serverErrorCode(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))));
+  } catch {
+    return failure(null);
+  }
+}
+
+function submissionClientError(
+  error: SubmissionHttpErrorV3,
+  decision: OpenEnaLongitudinalRouteDecisionV3,
+): OpenEnaLongitudinalExecutionClientErrorV3 | null {
+  const { status, serverCode, retryAfterSeconds: retryAfter } = error.failure;
+  const auth = status === 401 || serverCode === "AUTHENTICATION_REQUIRED";
+  const rateLimited = status === 429 || serverCode === "RATE_LIMITED";
+  if (!auth && !rateLimited) return null;
+  return new OpenEnaLongitudinalExecutionClientErrorV3(
+    auth ? "REMOTE_AUTH_REQUIRED" : "REMOTE_RATE_LIMITED",
+    error.message,
+    decision,
+    {
+      canContinueLocally: true,
+      canDisableInference: true,
+      canRetryRemote: false,
+      serverCode,
+      retryAfterSeconds: rateLimited ? retryAfter : null,
+    },
+  );
+}
+
+async function jsonResponse(
+  response: Response,
+  label: string,
+  options: { preserveSubmissionFailure?: boolean } = {},
+): Promise<unknown> {
   if (!response.ok) {
+    if (options.preserveSubmissionFailure) {
+      throw new SubmissionHttpErrorV3(label, await readSubmissionFailure(response));
+    }
     await response.body?.cancel().catch(() => undefined);
     throw new Error(`${label} returned HTTP ${response.status}.`);
   }
@@ -698,7 +828,9 @@ async function runRemote(
       }),
       signal: controller.signal,
     });
-    capability = parseRemoteCapability(await jsonResponse(response, "Persistent trajectory submission"));
+    capability = parseRemoteCapability(await jsonResponse(response, "Persistent trajectory submission", {
+      preserveSubmissionFailure: true,
+    }));
     phase = "poll";
     options.onProgress?.({ progress: 0.1, stage: "remote-wait" });
     while (true) {
@@ -753,6 +885,10 @@ async function runRemote(
       );
     }
     if (error instanceof OpenEnaLongitudinalExecutionClientErrorV3) throw error;
+    if (phase === "submission" && error instanceof SubmissionHttpErrorV3) {
+      const typed = submissionClientError(error, decision);
+      if (typed) throw typed;
+    }
     const detail = caughtMessage(error);
     if (phase === "submission") {
       throw recoverableRemoteError(

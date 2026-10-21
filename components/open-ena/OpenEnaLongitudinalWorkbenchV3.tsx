@@ -289,6 +289,9 @@ const english = {
   remoteText: "Only preprojected coordinates, opaque participant tokens, group/time, required weights, and task parameters will be sent. Raw coded rows are excluded.",
   remoteRecoveryTitle: "Persistent compute did not complete",
   remoteRecoveryText: "The same immutable task can be retried remotely or continued locally. Inference is removed only if you explicitly choose that option.",
+  remoteAuthRequired: "Your Open ENA session has expired. Sign in again, then return to this trajectory task.",
+  remoteRateLimited: "Persistent compute is rate limited. Wait before trying the remote task again.",
+  remoteRateLimitedWait: (seconds: number) => `Persistent compute is rate limited. Wait ${seconds} seconds before trying the remote task again.`,
   downloads: "Downloads",
   bundleZip: "Analysis bundle ZIP",
   pathCsv: "Path CSV",
@@ -448,6 +451,9 @@ const zhHans: typeof english = {
   remoteText: "只发送预投影坐标、不透明参与者 token、组别／时间、必要权重以及任务参数；不发送原始编码行。",
   remoteRecoveryTitle: "持久计算未能完成",
   remoteRecoveryText: "可以用同一个不可变任务重试远端计算或继续本地运行；只有您明确选择时才会移除推断任务。",
+  remoteAuthRequired: "您的开放 ENA 会话已失效。请重新登录，再回到此轨迹任务。",
+  remoteRateLimited: "持久计算已达到请求次数限制。请稍候，再尝试远端任务。",
+  remoteRateLimitedWait: (seconds: number) => `持久计算已达到请求次数限制。请等待 ${seconds} 秒，再尝试远端任务。`,
   downloads: "下载",
   bundleZip: "分析 bundle ZIP",
   pathCsv: "路径 CSV",
@@ -573,6 +579,9 @@ const zhHant: typeof english = {
   retryRemote: "重試遠端計算",
   remoteRecoveryTitle: "持久計算未能完成",
   remoteRecoveryText: "可以用同一個不可變任務重試遠端計算或繼續本地運行；只有您明確選擇時才會移除推斷任務。",
+  remoteAuthRequired: "您的開放 ENA 工作階段已失效。請重新登入，再回到此軌跡任務。",
+  remoteRateLimited: "持久計算已達到請求次數限制。請稍候，再嘗試遠端任務。",
+  remoteRateLimitedWait: (seconds: number) => `持久計算已達到請求次數限制。請等待 ${seconds} 秒，再嘗試遠端任務。`,
   remoteText: "只發送預投影坐標、不透明參與者 token、組別／時間、必要權重以及任務參數；不發送原始編碼行。",
   codeNodesHint: "ENA code 參考節點始終顯示，並直接使用擬合後的 jENA 幾何坐標。軌跡分析不繪製 ENA 平均網絡連線。",
   mappingAudit: "映射與實體審計",
@@ -649,6 +658,19 @@ const zhHant: typeof english = {
 
 export function getOpenEnaLongitudinalV3Copy(locale: Locale): typeof english {
   return locale === "zh-hans" ? zhHans : locale === "zh-hant" ? zhHant : english;
+}
+
+function remoteRecoveryReason(
+  copy: ReturnType<typeof getOpenEnaLongitudinalV3Copy>,
+  failure: OpenEnaLongitudinalExecutionClientErrorV3,
+): string | null {
+  if (failure.code === "REMOTE_AUTH_REQUIRED") return copy.remoteAuthRequired;
+  if (failure.code === "REMOTE_RATE_LIMITED") {
+    return failure.retryAfterSeconds === null
+      ? copy.remoteRateLimited
+      : copy.remoteRateLimitedWait(failure.retryAfterSeconds);
+  }
+  return null;
 }
 
 function finiteText(value: unknown): string {
@@ -1501,7 +1523,7 @@ export default function OpenEnaLongitudinalWorkbenchV3({
 
           <section data-trajectory-step="9"><h3><b>9</b>{copy.paths}</h3><p>{copy.codeNodesHint}</p>{([['participants', copy.participantPoints], ['individualPaths', copy.individualPaths], ['paths', copy.centroids], ['directionArrows', copy.arrows], ['labels', copy.labels]] as const).map(([field, label]) => <label key={field} className="ena-longitudinal-v3-check"><input type="checkbox" checked={field === "paths" ? display.traces.paths && display.traces.centroids : display.traces[field]} onChange={(event) => setDisplay((current) => ({ ...current, traces: field === "paths" ? { ...current.traces, paths: event.target.checked, centroids: event.target.checked } : { ...current.traces, [field]: event.target.checked } }))} /><span>{label}</span></label>)}</section>
 
-          <section data-trajectory-step="10"><h3><b>10</b>{copy.status}</h3>{modelResultStale ? <p className="ena-longitudinal-v3-banner" role="status">{copy.modelStale}</p> : null}{stale ? <p className="ena-longitudinal-v3-banner" role="status">{copy.stale}</p> : null}{status === "remote-confirmation" && routeDecision ? <div className="ena-longitudinal-v3-remote" role="alert"><strong>{copy.remoteTitle}</strong><p>{copy.remoteText}</p><dl><div><dt>{copy.predictedTime}</dt><dd>{routeDecision.predictedMilliseconds} ms</dd></div><div><dt>{copy.predictedMemory}</dt><dd>{(routeDecision.predictedMemoryBytes / 1024 / 1024).toFixed(1)} MB</dd></div><div><dt>{copy.hardDeadline}</dt><dd>60 s</dd></div></dl><button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { allowRemote: true })}>{copy.confirmRemote}</button><button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { forceLocal: true })}>{copy.continueLocal}</button><button type="button" onClick={() => void runWithoutInference()}>{copy.disableHeavy}</button></div> : null}{status === "remote-recovery" && routeDecision && remoteFailure ? <div className="ena-longitudinal-v3-remote" role="alert"><strong>{copy.remoteRecoveryTitle}</strong><p>{copy.remoteRecoveryText}</p><p>{remoteFailure.message}</p><button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { allowRemote: true })}>{copy.retryRemote}</button>{remoteFailure.canContinueLocally ? <button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { forceLocal: true })}>{copy.continueLocal}</button> : null}{remoteFailure.canDisableInference ? <button type="button" onClick={() => void runWithoutInference()}>{copy.disableHeavy}</button> : null}</div> : null}<div className="ena-longitudinal-v3-run-status" role="status" aria-live="polite"><span data-state={status} /><strong>{status === "ready" ? copy.ready : status}</strong>{status === "running" || status === "preparing" ? <progress max="1" value={progress.progress}>{Math.round(progress.progress * 100)}%</progress> : null}{cacheHit ? <small>{copy.cacheHit}</small> : null}</div>{error && status !== "remote-recovery" ? <p className="ena-longitudinal-v3-error" role="alert">{error}</p> : null}<div className="ena-longitudinal-v3-run-actions"><button type="button" className="ena-longitudinal-v3-primary" onClick={() => void run()} disabled={status === "running" || status === "preparing" || settings.participantColumns.length === 0}>{bundle ? copy.recompute : copy.run}</button>{status === "running" || status === "preparing" ? <button type="button" onClick={cancelRun}>{copy.cancel}</button> : null}{status === "error" ? <button type="button" onClick={() => void run()}>{copy.retry}</button> : null}</div></section>
+          <section data-trajectory-step="10"><h3><b>10</b>{copy.status}</h3>{modelResultStale ? <p className="ena-longitudinal-v3-banner" role="status">{copy.modelStale}</p> : null}{stale ? <p className="ena-longitudinal-v3-banner" role="status">{copy.stale}</p> : null}{status === "remote-confirmation" && routeDecision ? <div className="ena-longitudinal-v3-remote" role="alert"><strong>{copy.remoteTitle}</strong><p>{copy.remoteText}</p><dl><div><dt>{copy.predictedTime}</dt><dd>{routeDecision.predictedMilliseconds} ms</dd></div><div><dt>{copy.predictedMemory}</dt><dd>{(routeDecision.predictedMemoryBytes / 1024 / 1024).toFixed(1)} MB</dd></div><div><dt>{copy.hardDeadline}</dt><dd>60 s</dd></div></dl><button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { allowRemote: true })}>{copy.confirmRemote}</button><button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { forceLocal: true })}>{copy.continueLocal}</button><button type="button" onClick={() => void runWithoutInference()}>{copy.disableHeavy}</button></div> : null}{status === "remote-recovery" && routeDecision && remoteFailure ? <div className="ena-longitudinal-v3-remote" role="alert"><strong>{copy.remoteRecoveryTitle}</strong><p>{copy.remoteRecoveryText}</p><p>{remoteRecoveryReason(copy, remoteFailure) ?? remoteFailure.message}</p>{remoteFailure.canRetryRemote ? <button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { allowRemote: true })}>{copy.retryRemote}</button> : null}{remoteFailure.canContinueLocally ? <button type="button" onClick={() => pendingRun && void runPrepared(pendingRun, { forceLocal: true })}>{copy.continueLocal}</button> : null}{remoteFailure.canDisableInference ? <button type="button" onClick={() => void runWithoutInference()}>{copy.disableHeavy}</button> : null}</div> : null}<div className="ena-longitudinal-v3-run-status" role="status" aria-live="polite"><span data-state={status} /><strong>{status === "ready" ? copy.ready : status}</strong>{status === "running" || status === "preparing" ? <progress max="1" value={progress.progress}>{Math.round(progress.progress * 100)}%</progress> : null}{cacheHit ? <small>{copy.cacheHit}</small> : null}</div>{error && status !== "remote-recovery" ? <p className="ena-longitudinal-v3-error" role="alert">{error}</p> : null}<div className="ena-longitudinal-v3-run-actions"><button type="button" className="ena-longitudinal-v3-primary" onClick={() => void run()} disabled={status === "running" || status === "preparing" || settings.participantColumns.length === 0}>{bundle ? copy.recompute : copy.run}</button>{status === "running" || status === "preparing" ? <button type="button" onClick={cancelRun}>{copy.cancel}</button> : null}{status === "error" ? <button type="button" onClick={() => void run()}>{copy.retry}</button> : null}</div></section>
 
           <section data-trajectory-step="11"><h3><b>11</b>{copy.downloads}</h3><div className="ena-longitudinal-v3-downloads">{([['bundle', copy.bundleZip], ['path', copy.pathCsv], ['metadata', copy.metadataCsv], ['inference', copy.inferenceCsv], ['analysis', copy.analysisJson], ['plotly', copy.plotlyJson], ['participant', copy.participantZip]] as const).map(([kind, label]) => <button type="button" key={kind} disabled={!bundle || stale} onClick={() => void download(kind)}>{label}</button>)}</div></section>
               </>

@@ -501,6 +501,85 @@ test("remote cancellation sends one durable DELETE intent with a stable operatio
   assert.deepEqual(deletionKeys, ["open-ena-delete-job-cancel-1"]);
 });
 
+test("remote POST 401 keeps AUTHENTICATION_REQUIRED and does not offer an immediate remote retry", async () => {
+  clearOpenEnaLongitudinalExecutionCacheV3();
+  const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+  let deleteCalls = 0;
+  const fetchMock: typeof fetch = async (_input, init) => {
+    if ((init?.method ?? "GET") === "DELETE") deleteCalls += 1;
+    return Response.json(
+      { error: { code: "AUTHENTICATION_REQUIRED", message: "Authentication required." } },
+      { status: 401 },
+    );
+  };
+
+  await assert.rejects(
+    executeOpenEnaLongitudinalPreparedV3(request, {
+      allowRemote: true,
+      remoteEndpoint: "/api/open-ena/longitudinal",
+      fetchImpl: fetchMock,
+      resultVerifier: async () => {},
+    }),
+    (error: unknown) => error instanceof OpenEnaLongitudinalExecutionClientErrorV3
+      && error.code === "REMOTE_AUTH_REQUIRED"
+      && error.serverCode === "AUTHENTICATION_REQUIRED"
+      && error.retryAfterSeconds === null
+      && error.canRetryRemote === false
+      && error.canContinueLocally
+      && error.canDisableInference
+      && !/REMOTE_SUBMISSION_FAILED/u.test(error.message),
+  );
+  assert.equal(deleteCalls, 0, "no durable job exists before a capability is issued");
+});
+
+test("remote POST 429 keeps RATE_LIMITED and the Retry-After delay", async () => {
+  clearOpenEnaLongitudinalExecutionCacheV3();
+  const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+  const fetchMock: typeof fetch = async () => Response.json(
+    { error: { code: "RATE_LIMITED", message: "Too many longitudinal compute requests. Please try again later." } },
+    { status: 429, headers: { "retry-after": "60" } },
+  );
+
+  await assert.rejects(
+    executeOpenEnaLongitudinalPreparedV3(request, {
+      allowRemote: true,
+      remoteEndpoint: "/api/open-ena/longitudinal",
+      fetchImpl: fetchMock,
+      resultVerifier: async () => {},
+    }),
+    (error: unknown) => error instanceof OpenEnaLongitudinalExecutionClientErrorV3
+      && error.code === "REMOTE_RATE_LIMITED"
+      && error.serverCode === "RATE_LIMITED"
+      && error.retryAfterSeconds === 60
+      && error.canRetryRemote === false
+      && error.canContinueLocally
+      && error.canDisableInference,
+  );
+});
+
+test("remote POST 429 without Retry-After stays rate limited and omits a wait", async () => {
+  clearOpenEnaLongitudinalExecutionCacheV3();
+  const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+  const fetchMock: typeof fetch = async () => Response.json(
+    { error: { code: "RATE_LIMITED", message: "Too many longitudinal compute requests. Please try again later." } },
+    { status: 429 },
+  );
+
+  await assert.rejects(
+    executeOpenEnaLongitudinalPreparedV3(request, {
+      allowRemote: true,
+      remoteEndpoint: "/api/open-ena/longitudinal",
+      fetchImpl: fetchMock,
+      resultVerifier: async () => {},
+    }),
+    (error: unknown) => error instanceof OpenEnaLongitudinalExecutionClientErrorV3
+      && error.code === "REMOTE_RATE_LIMITED"
+      && error.serverCode === "RATE_LIMITED"
+      && error.retryAfterSeconds === null
+      && error.canRetryRemote === false,
+  );
+});
+
 test("remote POST 503 is a typed recoverable submission failure", async () => {
   clearOpenEnaLongitudinalExecutionCacheV3();
   const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
@@ -517,8 +596,12 @@ test("remote POST 503 is a typed recoverable submission failure", async () => {
       fetchImpl: fetchMock,
       resultVerifier: async () => {},
     }),
-    (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_SUBMISSION_FAILED")
-      && /HTTP 503/u.test((error as Error).message),
+    (error: unknown) => error instanceof OpenEnaLongitudinalExecutionClientErrorV3
+      && isRecoverableRemoteFailure(error, "REMOTE_SUBMISSION_FAILED")
+      && error.canRetryRemote
+      && error.serverCode === null
+      && error.retryAfterSeconds === null
+      && /HTTP 503/u.test(error.message),
   );
   assert.equal(deleteCalls, 0, "no durable job exists before a capability is issued");
 });
