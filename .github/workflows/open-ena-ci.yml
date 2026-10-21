@@ -325,6 +325,7 @@ jobs:
           node tests/review-data-xlsx-browser.mjs
           node tests/review-artifact-utf8-browser.mjs output/review-regressions/artifact-utf8
           node tests/review-csv-utf8-browser.mjs output/review-regressions/csv-utf8
+          node tests/open-ena-csv-download-browser.mjs
           node tests/review-ui-import-failure-ownership-browser.mjs output/review-regressions/import-ownership.json
           OPEN_ENA_REVIEW_REPORT=output/review-regressions/analytics-consent.json node tests/review-ui-analytics-consent-browser.mjs
       - name: Verify literal labels, current exports, and native controls
