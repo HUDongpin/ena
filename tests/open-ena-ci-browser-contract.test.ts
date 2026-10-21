@@ -13,7 +13,7 @@ test("Browser CI provisions an isolated PostgreSQL database and applies Open ENA
   assert.match(workflow, /--health-cmd\s+"pg_isready -U open_ena_ci -d open_ena_ci"/u);
   assert.match(
     workflow,
-    /for migration in migrations\/001_open_ena_billable\.sql migrations\/002_open_ena_auth_security\.sql migrations\/003_open_ena_ai_consent\.sql migrations\/004_open_ena_disposable_accounts\.sql/u,
+    /for migration in migrations\/001_open_ena_billable\.sql migrations\/002_open_ena_auth_security\.sql migrations\/003_open_ena_ai_consent\.sql migrations\/004_open_ena_disposable_accounts\.sql migrations\/005_ena_plugin_lab\.sql migrations\/006_open_ena_billable_leases\.sql migrations\/007_open_ena_ai_consent_idempotency\.sql migrations\/008_open_ena_disposable_expiry_after_lock\.sql migrations\/009_open_ena_login_failure_windows\.sql/u,
   );
   assert.match(workflow, /psql .*OPEN_ENA_CI_DATABASE_URL.*ON_ERROR_STOP/u);
 });
@@ -26,6 +26,7 @@ test("Browser CI exports the complete synthetic production configuration to ever
     "OPEN_ENA_ACCOUNT_ID",
     "OPEN_ENA_PUBLIC_ORIGIN",
     "OPEN_ENA_ALLOWED_ORIGINS",
+    "OPEN_ENA_TRUSTED_CLIENT_IP_HEADER",
     "OPEN_ENA_AUTH_DATABASE_URL",
     "OPEN_ENA_BILLABLE_DATABASE_URL",
     "OPEN_ENA_BILLING_POLICY_VERSION",

@@ -174,7 +174,10 @@ async function waitForLoginBrand(page) {
 }
 
 async function auditBrandAtViewport(browser, name, viewport, { artifactDirectory, loginUrl, redact }) {
-  const context = await browser.newContext({ viewport });
+  const context = await browser.newContext({
+    viewport,
+    extraHTTPHeaders: { "x-ena-client-ip": "127.0.0.1" },
+  });
   const page = await context.newPage();
   const messages = collectBrowserMessages(page, redact);
 
@@ -297,7 +300,10 @@ async function auditBrandAtViewport(browser, name, viewport, { artifactDirectory
 }
 
 async function auditAuthentication(browser, { loginUrl, password, redact, username }) {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 1000 },
+    extraHTTPHeaders: { "x-ena-client-ip": "127.0.0.1" },
+  });
   const page = await context.newPage();
   const messages = collectBrowserMessages(page, redact);
 

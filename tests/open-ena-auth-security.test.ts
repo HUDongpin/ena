@@ -31,6 +31,7 @@ const AUTH_ENVIRONMENT = {
   OPEN_ENA_ACCOUNT_ID: "stable-deployment-account-id",
   OPEN_ENA_AUTH_DATABASE_URL: "postgresql://security.invalid/open_ena",
   OPEN_ENA_ALLOWED_ORIGINS: "https://www.ena.hk,https://ena.hk",
+  OPEN_ENA_TRUSTED_CLIENT_IP_HEADER: "x-ena-client-ip",
 } as const;
 
 type DynamicModule = Record<string, unknown>;
@@ -49,6 +50,7 @@ function formRequest(body: BodyInit, headers: HeadersInit = {}) {
     headers: {
       "content-type": "application/x-www-form-urlencoded",
       origin: "https://www.ena.hk",
+      "x-ena-client-ip": "203.0.113.10",
       ...headers,
     },
     body,
@@ -203,15 +205,15 @@ test("login throttles repeated attempts in the shared store before another passw
 
   let attempts = 0;
   let credentialChecks = 0;
-  let disposableChecks = 0;
   const store = {
-    consumeLoginAttempt: async () => {
+    authenticateLogin: async (input: {
+      authenticate: (context: { query: () => Promise<{ rows: [] }> }) => Promise<{ outcome: string }>;
+    }) => {
       attempts += 1;
-      return attempts <= 2;
-    },
-    consumeDisposableCredential: async () => {
-      disposableChecks += 1;
-      return null;
+      if (attempts > 2) {
+        return { outcome: "blocked", retryAfterSeconds: 60, blockingScope: "pair" };
+      }
+      return input.authenticate({ query: async () => ({ rows: [] }) });
     },
     isSessionRevoked: async () => false,
     revokeSession: async () => undefined,
@@ -231,9 +233,10 @@ test("login throttles repeated attempts in the shared store before another passw
   const denied = await handler(formRequest(body));
 
   assert.deepEqual([first.status, second.status, denied.status], [303, 303, 429]);
-  assert.equal(denied.headers.get("retry-after"), "900");
+  assert.equal(denied.headers.get("retry-after"), "60");
+  assert.equal(denied.headers.get("cache-control"), "no-store");
   assert.equal(credentialChecks, 2);
-  assert.equal(disposableChecks, 2);
+  assert.equal(attempts, 3);
 });
 
 test("logout revokes exactly one jti and another instance rejects its replay", async () => {
@@ -452,7 +455,7 @@ test("login returns a structured 503 when a store operation throws", async () =>
   const handler = await loginHandler({
     environment: AUTH_ENVIRONMENT,
     securityStoreFactory: async () => ({
-      consumeLoginAttempt: async () => {
+      authenticateLogin: async () => {
         throw new Error("Durable login throttle store is unavailable.");
       },
       isSessionRevoked: async () => false,

@@ -267,7 +267,8 @@ test("the login form is accessible and never exposes the default account or pass
   assert.match(login, /name="password"/);
   assert.match(login, /type="password"/);
   assert.match(login, /autoComplete="current-password"/);
-  assert.match(login, /aria-describedby=\{error \? "open-ena-login-error" : undefined\}/);
+  assert.match(login, /aria-invalid=\{invalidCredentials\}/);
+  assert.match(login, /aria-describedby=\{alertText \? "open-ena-login-error" : undefined\}/);
   assert.match(login, /href="mailto:sandy0692@gmail\.com"/);
   assert.doesNotMatch(login, /priority/u);
   assert.doesNotMatch(`${login}\n${copy}`, /sandytu/);
