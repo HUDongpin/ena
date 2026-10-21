@@ -321,6 +321,7 @@ jobs:
           node tests/open-ena-model-v3-order-clear-browser.mjs
           node tests/open-ena-pairwise-empty-group-browser.mjs
           node tests/open-ena-longitudinal-preparation-cancel-browser.mjs
+          node tests/open-ena-longitudinal-recovery-browser.mjs
           node tests/review-data-xlsx-browser.mjs
           node tests/review-artifact-utf8-browser.mjs output/review-regressions/artifact-utf8
           node tests/review-csv-utf8-browser.mjs output/review-regressions/csv-utf8

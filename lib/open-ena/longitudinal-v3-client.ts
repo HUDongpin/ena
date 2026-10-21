@@ -20,6 +20,7 @@ const HARD_DEADLINE_MS = 60_000;
 const REMOTE_POLL_INTERVAL_MS = 250;
 const REMOTE_CLEANUP_DEADLINE_MS = 10_000;
 const MAX_REMOTE_METADATA_BYTES = 64 * 1024;
+const REMOTE_ERROR_BODY_DEADLINE_MS = 1_000;
 const MAX_REMOTE_ARTIFACT_BYTES = 128 * 1024 * 1024;
 const COMPUTE_CONTRACT_VERSION = "3dena.contract.v1";
 const REMOTE_SUBMISSION_VERSION = "3dena.open-ena-longitudinal-remote-submit.v3";
@@ -118,6 +119,9 @@ export interface OpenEnaLongitudinalExecutionReceiptV3 {
 export type OpenEnaLongitudinalExecutionClientErrorCodeV3 =
   | "REMOTE_CONFIRMATION_REQUIRED"
   | "REMOTE_SERVICE_UNAVAILABLE"
+  | "REMOTE_AUTH_REQUIRED"
+  | "REMOTE_RATE_LIMITED"
+  | "REMOTE_REQUEST_REJECTED"
   | "REMOTE_SUBMISSION_FAILED"
   | "REMOTE_POLL_FAILED"
   | "REMOTE_TERMINAL_FAILED"
@@ -131,12 +135,28 @@ export class OpenEnaLongitudinalExecutionClientErrorV3 extends Error {
   readonly decision: OpenEnaLongitudinalRouteDecisionV3;
   readonly canContinueLocally: boolean;
   readonly canDisableInference: boolean;
+  /** Immediate remote retry is appropriate; recovery UI may enable a later explicit retry. */
+  readonly canRetryRemote: boolean;
+  /** Server `error.code` when the route returned a structured JSON error. */
+  readonly serverCode: string | null;
+  /** Parsed `Retry-After`, accepting delta-seconds and HTTP-date. */
+  readonly retryAfterSeconds: number | null;
+  readonly retryAtMilliseconds: number | null;
+  readonly httpStatus: number | null;
 
   constructor(
     code: OpenEnaLongitudinalExecutionClientErrorCodeV3,
     message: string,
     decision: OpenEnaLongitudinalRouteDecisionV3,
-    options: { canContinueLocally: boolean; canDisableInference: boolean },
+    options: {
+      canContinueLocally: boolean;
+      canDisableInference: boolean;
+      canRetryRemote?: boolean;
+      serverCode?: string | null;
+      retryAfterSeconds?: number | null;
+      retryAtMilliseconds?: number | null;
+      httpStatus?: number | null;
+    },
   ) {
     super(message);
     this.name = "OpenEnaLongitudinalExecutionClientErrorV3";
@@ -144,6 +164,12 @@ export class OpenEnaLongitudinalExecutionClientErrorV3 extends Error {
     this.decision = decision;
     this.canContinueLocally = options.canContinueLocally;
     this.canDisableInference = options.canDisableInference;
+    this.canRetryRemote = options.canRetryRemote ?? true;
+    this.serverCode = options.serverCode ?? null;
+    this.retryAfterSeconds = options.retryAfterSeconds ?? null;
+    this.retryAtMilliseconds = options.retryAtMilliseconds
+      ?? (this.retryAfterSeconds === null ? null : Date.now() + this.retryAfterSeconds * 1000);
+    this.httpStatus = options.httpStatus ?? null;
   }
 }
 
@@ -371,10 +397,144 @@ function computeHeaders(capability: RemoteCapabilityV3, accept = "application/js
   });
 }
 
-async function jsonResponse(response: Response, label: string): Promise<unknown> {
+const REMOTE_ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/u;
+
+interface RemoteHttpFailureV3 {
+  status: number;
+  serverCode: string | null;
+  retryAfterSeconds: number | null;
+  retryAtMilliseconds: number | null;
+}
+
+class RemoteHttpErrorV3 extends Error {
+  readonly failure: RemoteHttpFailureV3;
+
+  constructor(label: string, failure: RemoteHttpFailureV3) {
+    const codeSuffix = failure.serverCode ? ` (${failure.serverCode})` : "";
+    super(`${label} returned HTTP ${failure.status}${codeSuffix}.`);
+    this.name = "RemoteHttpErrorV3";
+    this.failure = failure;
+  }
+}
+
+function retryAtMilliseconds(header: string | null, now: number): number | null {
+  if (header === null) return null;
+  const trimmed = header.trim();
+  if (/^(?:0|[1-9][0-9]{0,6})$/u.test(trimmed)) return now + Number(trimmed) * 1000;
+  if (!/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/u.test(trimmed)) return null;
+  const deadline = Date.parse(trimmed);
+  return Number.isFinite(deadline) ? Math.max(now, deadline) : null;
+}
+
+function serverErrorCode(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const error = (value as { error?: unknown }).error;
+  if (!error || typeof error !== "object" || Array.isArray(error)) return null;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && REMOTE_ERROR_CODE_PATTERN.test(code) ? code : null;
+}
+
+function isJsonRemoteContentType(header: string | null): boolean {
+  const media = header?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  return media === "application/json" || media.endsWith("+json");
+}
+
+/**
+ * Read a failed remote response only far enough to keep `error.code`.
+ * Only a JSON content type is read, and only up to the metadata size within one second.
+ * Any other body, or a read that overflows, stalls, or fails, is cancelled; the HTTP status is kept.
+ */
+async function readRemoteFailure(response: Response): Promise<RemoteHttpFailureV3> {
+  const receivedAt = Date.now();
+  const retryAt = retryAtMilliseconds(response.headers.get("retry-after"), receivedAt);
+  const failure = (serverCode: string | null): RemoteHttpFailureV3 => ({
+    status: response.status,
+    serverCode,
+    retryAfterSeconds: retryAt === null ? null : Math.ceil((retryAt - receivedAt) / 1000),
+    retryAtMilliseconds: retryAt,
+  });
+  const release = () => response.body?.cancel().catch(() => undefined);
+  if (!isJsonRemoteContentType(response.headers.get("content-type"))) {
+    void release();
+    return failure(null);
+  }
+  const declared = response.headers.get("content-length");
+  if (declared !== null && (!/^(?:0|[1-9][0-9]{0,15})$/u.test(declared) || Number(declared) > MAX_REMOTE_METADATA_BYTES)) {
+    void release();
+    return failure(null);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) return failure(null);
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    reader.cancel().catch(() => undefined);
+  }, REMOTE_ERROR_BODY_DEADLINE_MS);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (timedOut) return failure(null);
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_REMOTE_METADATA_BYTES) {
+        void reader.cancel().catch(() => undefined);
+        return failure(null);
+      }
+      chunks.push(value);
+    }
+  } catch {
+    void reader.cancel().catch(() => undefined);
+    return failure(null);
+  } finally {
+    clearTimeout(timer);
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  try {
+    return failure(serverErrorCode(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))));
+  } catch {
+    return failure(null);
+  }
+}
+
+function remoteHttpClientError(
+  error: RemoteHttpErrorV3,
+  decision: OpenEnaLongitudinalRouteDecisionV3,
+  phase: "submission" | "poll" | "result",
+): OpenEnaLongitudinalExecutionClientErrorV3 {
+  const { status, serverCode, retryAfterSeconds: retryAfter, retryAtMilliseconds: retryAt } = error.failure;
+  const auth = status === 401;
+  const rateLimited = status === 429;
+  const unavailable = status === 503;
+  const rejected = status >= 400 && status < 500 && !auth && !rateLimited;
+  return new OpenEnaLongitudinalExecutionClientErrorV3(
+    auth ? "REMOTE_AUTH_REQUIRED" : rateLimited ? "REMOTE_RATE_LIMITED"
+      : unavailable ? "REMOTE_SERVICE_UNAVAILABLE" : rejected ? "REMOTE_REQUEST_REJECTED"
+        : phase === "submission" ? "REMOTE_SUBMISSION_FAILED" : phase === "poll" ? "REMOTE_POLL_FAILED" : "REMOTE_RESULT_FAILED",
+    error.message,
+    decision,
+    {
+      canContinueLocally: true,
+      canDisableInference: true,
+      canRetryRemote: !auth && !rateLimited && !unavailable && !rejected,
+      serverCode,
+      retryAfterSeconds: retryAfter,
+      retryAtMilliseconds: retryAt,
+      httpStatus: status,
+    },
+  );
+}
+
+async function jsonResponse(
+  response: Response,
+  label: string,
+): Promise<unknown> {
   if (!response.ok) {
-    await response.body?.cancel().catch(() => undefined);
-    throw new Error(`${label} returned HTTP ${response.status}.`);
+    throw new RemoteHttpErrorV3(label, await readRemoteFailure(response));
   }
   const declared = response.headers.get("content-length");
   if (declared !== null && (!/^(?:0|[1-9][0-9]{0,15})$/u.test(declared) || Number(declared) > MAX_REMOTE_METADATA_BYTES)) {
@@ -566,8 +726,7 @@ async function fetchRemoteBundle(
     signal,
   });
   if (!artifactResponse.ok) {
-    await artifactResponse.body?.cancel().catch(() => undefined);
-    throw new Error(`Persistent trajectory artifact returned HTTP ${artifactResponse.status}.`);
+    throw new RemoteHttpErrorV3("Persistent trajectory artifact", await readRemoteFailure(artifactResponse));
   }
   const artifactBytes = await boundedResponseBytes(artifactResponse, Number(reference.byteLength));
   const artifactSha256 = await sha256Hex(artifactBytes);
@@ -661,7 +820,7 @@ async function runRemote(
       "REMOTE_SERVICE_UNAVAILABLE",
       "Persistent trajectory compute is not configured. Continue locally or disable inference explicitly.",
       decision,
-      { canContinueLocally: true, canDisableInference: true },
+      { canContinueLocally: true, canDisableInference: true, canRetryRemote: false },
     );
   }
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -744,8 +903,11 @@ async function runRemote(
         // intent, if accepted, is completed by the service sweeper.
       }
     }
+    if (options.signal?.aborted) throw abortError("The persistent trajectory task was cancelled.");
+    // Cleanup may use the remaining execution budget. Preserve an HTTP policy
+    // failure already received, including its original Retry-After deadline.
+    if (error instanceof RemoteHttpErrorV3) throw remoteHttpClientError(error, decision, phase);
     if (controller.signal.aborted) {
-      if (options.signal?.aborted) throw abortError("The persistent trajectory task was cancelled.");
       throw recoverableRemoteError(
         "REMOTE_DEADLINE_EXCEEDED",
         "Persistent trajectory compute reached its 60 second hard deadline.",
