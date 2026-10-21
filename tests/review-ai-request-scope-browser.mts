@@ -87,7 +87,8 @@ try {
       await page.getByRole('alert').waitFor();
     };
     await page.getByRole('checkbox').check(); await generate(); await waitCalls(1);
-    // An explicit retry of the exact same reviewed request preserves the unresolved ID.
+    // A settled dispatched failure lets Retry start a new operation. Generate on
+    // that same reviewed wire keeps the new id and receives the idempotent 409.
     await page.getByRole('alert').getByRole('button').click(); await waitCalls(2);
     if (scenario === 'reload') {
       await page.reload(); await page.addScriptTag({ content: bundle.outputFiles[0].text });
@@ -116,17 +117,20 @@ try {
       await page.evaluate(() => window.mountAi(window.fixtureRequest));
       await page.waitForFunction(() => !document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked);
       await page.getByRole('checkbox').check(); await generate(); await waitCalls(4);
-      returnedRequest = { reusesOriginal: calls[3].operationId === calls[0].operationId, status: calls[3].status };
+      returnedRequest = {
+        reusesSettledRetry: calls[3].operationId === calls[1].operationId && calls[3].operationId !== calls[0].operationId,
+        status: calls[3].status,
+      };
     }
     const changed = ['locale', 'dataset-binding', 'round-trip-evidence', 'storage-unavailable', 'storage-quota', 'legacy-quota-roundtrip'].includes(scenario);
     const legacyRenewal = scenario === 'legacy-quota-renewal';
     const currentRetryProtected = legacyRenewal
       ? calls[0].operationId === LEGACY_ID && calls[0].status === 503 && calls[1].operationId !== LEGACY_ID && calls[1].status === 502
-      : calls[0].operationId === calls[1].operationId && calls[0].status === 502 && calls[1].status === 409;
+      : calls[0].operationId !== calls[1].operationId && calls[0].status === 502 && calls[1].status === 502;
     const requestScopeCorrect = changed
-      ? calls[2].operationId !== calls[1].operationId && calls[2].status === 502 && generations.length === 2
-        && (!returnedRequest || returnedRequest.reusesOriginal && returnedRequest.status === 409)
-      : calls[2].operationId === calls[1].operationId && calls[2].status === 409 && generations.length === (legacyRenewal ? 2 : 1);
+      ? calls[2].operationId !== calls[1].operationId && calls[2].status === 502 && generations.length === 3
+        && (!returnedRequest || returnedRequest.reusesSettledRetry && returnedRequest.status === 409)
+      : calls[2].operationId === calls[1].operationId && calls[2].status === 409 && generations.length === 2;
     const storage = await page.evaluate(() => {
       try { return Object.entries(sessionStorage); } catch { return null; }
     });
@@ -134,6 +138,7 @@ try {
     const opaqueStorage = storage === null || storage.every(([key, value]) => {
       if (scenario === 'invalid-legacy' && /^open-ena-ai-operation-v2:fnv1a32-[a-f0-9]{8}$/.test(key)) return value === 'synthetic malformed ID';
       if (/^open-ena-ai-operation-v4:[a-f0-9]{64}:[a-f0-9]{64}$/.test(key)) return value === 'closed' || /^aiop-[a-f0-9-]{36}$/.test(value);
+      if (/^open-ena-ai-operation-v4:[a-f0-9]{64}:[a-f0-9]{64}:settled-retry$/.test(key)) return value === '' || /^aiop-[a-f0-9-]{36}$/.test(value);
       if (/^open-ena-ai-legacy-claim-v4:[a-f0-9]{64}:[a-f0-9]{64}$/.test(key)) return /^open-ena-ai-operation-v4:[a-f0-9]{64}:[a-f0-9]{64}$/.test(value);
       return scenario.startsWith('legacy-') && /^open-ena-ai-operation-v2:fnv1a32-[a-f0-9]{8}$/.test(key) && value === LEGACY_ID;
     });
